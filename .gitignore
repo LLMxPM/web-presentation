@@ -1,0 +1,58 @@
+# 文件功能：忽略平台仓库在本地开发、构建、调试过程中产生的临时文件、依赖目录、环境变量文件与构建产物。
+
+# OS / Editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Logs
+*.log
+logs/
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Environment files
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyd
+*.so
+.python-version
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# Node.js / Frontend
+node_modules/
+.pnpm-store/
+.npm/
+dist/
+.vite/
+coverage/
+*.tsbuildinfo
+
+# Backend artifacts
+backend/build_artifacts/
+backend/data/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
