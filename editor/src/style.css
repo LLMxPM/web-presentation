@@ -1,0 +1,95 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/**
+ * 文件功能：定义后台管理端的全局样式、主题变量和基础布局规则。
+ * 已迁移至 TailwindCSS，并根据规则移除所有渐变色。
+ */
+:root {
+  font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  color: #1e293b;
+  background-color: #f8fafc;
+  line-height: 1.5;
+  font-weight: 400;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overscroll-behavior: none;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  min-width: 1280px;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+/* 基础组件封装 */
+@layer components {
+  .btn {
+    @apply inline-flex items-center justify-center px-4 py-2 rounded-lg font-semibold transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .btn-primary {
+    @apply btn bg-indigo-600 text-white hover:bg-indigo-700 active:scale-95 shadow-sm;
+  }
+
+  .btn-secondary {
+    @apply btn bg-slate-100 text-slate-700 hover:bg-slate-200 active:scale-95;
+  }
+
+  .btn-ghost {
+    @apply btn bg-transparent text-slate-600 hover:bg-slate-100 active:scale-95;
+  }
+
+  .btn-danger {
+    @apply btn bg-red-50 text-red-600 hover:bg-red-600 hover:text-white active:scale-95;
+  }
+
+  .input {
+    @apply w-full px-4 py-2 bg-white border border-slate-200 rounded-lg outline-none focus:border-indigo-500 transition-colors placeholder:text-slate-400;
+  }
+
+  .card {
+    @apply bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden;
+  }
+
+  /* 原有业务类迁移 */
+  .page-card {
+    @apply bg-white border border-slate-200 rounded-[20px] shadow-sm;
+  }
+
+  .page-header {
+    @apply flex items-center justify-between gap-4 mb-5;
+  }
+
+  .page-title {
+    @apply m-0 text-[28px] font-bold text-slate-900;
+  }
+
+  .page-subtitle {
+    @apply mt-1.5 text-slate-500 text-sm;
+  }
+
+  .toolbar {
+    @apply flex items-center gap-3 flex-wrap;
+  }
+}

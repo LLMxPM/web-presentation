@@ -1,0 +1,380 @@
+/**
+ * 文件功能：验证资源库页面对 SVG 图片文本资源与位图图片的编辑边界展示。
+ */
+import { defineComponent, h } from 'vue'
+import { fireEvent, render, screen, waitFor } from '@testing-library/vue'
+import { QueryClient, VueQueryPlugin } from '@tanstack/vue-query'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+import type { AssetReferenceSummary, AssetResponse } from '@/types/api'
+import AssetsView from '@/views/AssetsView.vue'
+
+const getWorkspaceMock = vi.fn()
+const listWorkspaceAssetsMock = vi.fn()
+const getWorkspaceAssetContentMock = vi.fn()
+const previewWorkspaceAssetReferencesMock = vi.fn()
+const uploadWorkspaceAssetMock = vi.fn()
+const batchArchiveWorkspaceAssetsMock = vi.fn()
+const batchDeleteWorkspaceAssetsMock = vi.fn()
+const createConfirmMock = vi.fn()
+const routerPushMock = vi.fn()
+
+vi.mock('vue-router', () => ({
+  useRoute: () => ({
+    params: {
+      workspaceId: '7',
+    },
+    query: {},
+  }),
+  useRouter: () => ({
+    push: routerPushMock,
+  }),
+}))
+
+vi.mock('@/api/catalog', () => ({
+  getWorkspace: (...args: unknown[]) => getWorkspaceMock(...args),
+}))
+
+vi.mock('@/api/assets', () => ({
+  archiveWorkspaceAsset: vi.fn(),
+  batchArchiveWorkspaceAssets: (...args: unknown[]) => batchArchiveWorkspaceAssetsMock(...args),
+  batchDeleteWorkspaceAssets: (...args: unknown[]) => batchDeleteWorkspaceAssetsMock(...args),
+  copyWorkspaceAsset: vi.fn(),
+  createWorkspaceAssetContent: vi.fn(),
+  deleteWorkspaceAsset: vi.fn(),
+  getWorkspaceAssetContent: (...args: unknown[]) => getWorkspaceAssetContentMock(...args),
+  listWorkspaceAssetTags: vi.fn().mockResolvedValue([]),
+  listWorkspaceAssets: (...args: unknown[]) => listWorkspaceAssetsMock(...args),
+  previewWorkspaceAssetReferences: (...args: unknown[]) => previewWorkspaceAssetReferencesMock(...args),
+  replaceWorkspaceAssetFile: vi.fn(),
+  restoreWorkspaceAsset: vi.fn(),
+  updateWorkspaceAsset: vi.fn(),
+  updateWorkspaceAssetContent: vi.fn(),
+  uploadWorkspaceAsset: (...args: unknown[]) => uploadWorkspaceAssetMock(...args),
+}))
+
+vi.mock('@/utils/message', () => ({
+  createConfirm: (...args: unknown[]) => createConfirmMock(...args),
+  Message: {
+    error: vi.fn(),
+    info: vi.fn(),
+    success: vi.fn(),
+    warning: vi.fn(),
+  },
+}))
+
+describe('AssetsView', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    createConfirmMock.mockResolvedValue(true)
+    getWorkspaceMock.mockResolvedValue({ id: 7, name: '默认工作空间' })
+    listWorkspaceAssetsMock.mockResolvedValue({
+      items: [
+        createImageAsset({
+          id: 1,
+          name: 'hero_illustration',
+          original_name: 'hero_illustration.svg',
+          content_type: 'image/svg+xml',
+          content_editable: true,
+          file_hash: 'hash-svg-image',
+        }),
+        createImageAsset({
+          id: 2,
+          name: 'bitmap_photo',
+          original_name: 'bitmap_photo.png',
+          content_type: 'image/png',
+          content_editable: false,
+          file_hash: 'hash-png-image',
+        }),
+      ],
+      total: 2,
+      page: 1,
+      page_size: 24,
+    })
+    getWorkspaceAssetContentMock.mockResolvedValue({
+      asset: createImageAsset({
+        id: 1,
+        name: 'hero_illustration',
+        original_name: 'hero_illustration.svg',
+        content_type: 'image/svg+xml',
+        content_editable: true,
+        file_hash: 'hash-svg-image',
+      }),
+      content: '<svg xmlns="http://www.w3.org/2000/svg"></svg>',
+    })
+    previewWorkspaceAssetReferencesMock.mockResolvedValue(createReferenceSummary())
+    uploadWorkspaceAssetMock.mockResolvedValue(createImageAsset({
+      id: 3,
+      name: 'uploaded_cover',
+      original_name: 'uploaded_cover.png',
+      content_type: 'image/png',
+      content_editable: false,
+      file_hash: 'hash-uploaded-cover',
+    }))
+    batchArchiveWorkspaceAssetsMock.mockResolvedValue({
+      requested_count: 2,
+      succeeded_count: 2,
+      failed_count: 0,
+      asset_ids: [1, 2],
+      failures: [],
+    })
+    batchDeleteWorkspaceAssetsMock.mockResolvedValue({
+      requested_count: 1,
+      succeeded_count: 1,
+      failed_count: 0,
+      asset_ids: [1],
+      failures: [],
+    })
+  })
+
+  it('SVG 图片应展示为可编辑，位图图片仍不可编辑', async () => {
+    renderAssetsView()
+
+    await waitFor(() => {
+      expect(screen.getAllByText('hero_illustration').length).toBeGreaterThan(0)
+      expect(screen.getByText('bitmap_photo')).toBeInTheDocument()
+    })
+    await fireEvent.click(screen.getAllByText('hero_illustration')[0])
+    await fireEvent.click(screen.getByText('内容编辑'))
+
+    await waitFor(() => {
+      expect(screen.getByText('写入内容会自动保留写入前副本。')).toBeInTheDocument()
+    })
+    expect(screen.getByDisplayValue('<svg xmlns="http://www.w3.org/2000/svg"></svg>')).toBeInTheDocument()
+
+    await fireEvent.click(screen.getByText('关闭'))
+
+    await fireEvent.click(screen.getByText('bitmap_photo'))
+    await fireEvent.click(screen.getByText('内容编辑'))
+
+    await waitFor(() => {
+      expect(screen.getByText('该资源不支持文本内容编辑')).toBeInTheDocument()
+    })
+    expect(screen.getByText('位图图标和位图图片只能复制、归档、删除或维护元数据。')).toBeInTheDocument()
+  })
+
+  it('资源管理页默认展示全部非字体资源，并不提供字体类型管理入口', async () => {
+    renderAssetsView()
+
+    await waitFor(() => {
+      expect(listWorkspaceAssetsMock).toHaveBeenCalledWith(7, expect.objectContaining({ excludeAssetType: 'font' }))
+      expect(screen.getAllByText('hero_illustration').length).toBeGreaterThan(0)
+    })
+    expect(screen.getAllByRole('button', { name: '全部' }).length).toBeGreaterThan(0)
+    expect(screen.queryByRole('button', { name: '字体' })).toBeNull()
+
+    await fireEvent.click(screen.getByText('上传资源'))
+    expect(screen.queryByRole('option', { name: '字体' })).toBeNull()
+    await fireEvent.click(screen.getByText('取消'))
+
+    await fireEvent.click(screen.getByText('新建内容资源'))
+    expect(screen.queryByRole('option', { name: '字体' })).toBeNull()
+  })
+
+  it('新建内容资源应允许选择图片并默认生成 image.svg', async () => {
+    renderAssetsView()
+
+    await waitFor(() => {
+      expect(screen.getAllByText('hero_illustration').length).toBeGreaterThan(0)
+    })
+    await fireEvent.click(screen.getByText('新建内容资源'))
+
+    const imageOption = screen.getByRole('option', { name: '图片' })
+    expect(imageOption).toBeInTheDocument()
+    await fireEvent.update(imageOption.closest('select')!, 'image')
+
+    expect(screen.getByDisplayValue('image.svg')).toBeInTheDocument()
+  })
+
+  it('资源管理页应能按选择类型上传资源', async () => {
+    const { container } = renderAssetsView()
+
+    await waitFor(() => {
+      expect(screen.getAllByText('hero_illustration').length).toBeGreaterThan(0)
+    })
+    await fireEvent.click(screen.getByText('上传资源'))
+    await fireEvent.update(screen.getByRole('option', { name: '图片' }).closest('select')!, 'image')
+    await fireEvent.update(screen.getByPlaceholderText('可留空'), '封面,营销')
+    await fireEvent.change(
+      container.querySelector('input[type="file"][multiple]')!,
+      { target: { files: [new File(['fake'], 'uploaded_cover.png', { type: 'image/png' })] } },
+    )
+
+    await waitFor(() => {
+      expect(uploadWorkspaceAssetMock).toHaveBeenCalledWith(
+        7,
+        expect.any(File),
+        'image',
+        ['封面', '营销'],
+      )
+    })
+  })
+
+  it('替换资源文件时应按当前资源类型限制可选扩展名', async () => {
+    const { container } = renderAssetsView()
+
+    await waitFor(() => {
+      expect(screen.getAllByText('hero_illustration').length).toBeGreaterThan(0)
+    })
+    await fireEvent.click(screen.getAllByText('hero_illustration')[0])
+
+    const replaceInput = container.querySelector('input[type="file"]:not([multiple])') as HTMLInputElement
+    expect(replaceInput.accept).toContain('.png')
+    expect(replaceInput.accept).toContain('.svg')
+    expect(replaceInput.accept).not.toContain('.ttf')
+  })
+
+  it('启用资源应支持多选后批量归档', async () => {
+    renderAssetsView()
+
+    await waitFor(() => {
+      expect(screen.getAllByText('hero_illustration').length).toBeGreaterThan(0)
+    })
+    await fireEvent.click(screen.getByLabelText('选择资源 hero_illustration'))
+    await fireEvent.click(screen.getByLabelText('选择资源 bitmap_photo'))
+    await fireEvent.click(screen.getByText('批量归档'))
+
+    await waitFor(() => {
+      expect(batchArchiveWorkspaceAssetsMock).toHaveBeenCalledWith(7, [1, 2])
+    })
+  })
+
+  it('归档资源应支持多选后批量删除', async () => {
+    listWorkspaceAssetsMock.mockImplementation((_workspaceId: number, options: { status?: string }) => {
+      if (options.status === 'archived') {
+        return Promise.resolve({
+          items: [
+            createImageAsset({
+              id: 4,
+              name: 'archived_cover',
+              status: 'archived',
+              archived_at: '2026-05-01T11:00:00+08:00',
+            }),
+          ],
+          total: 1,
+          page: 1,
+          page_size: 24,
+        })
+      }
+      return Promise.resolve({ items: [], total: 0, page: 1, page_size: 24 })
+    })
+    batchDeleteWorkspaceAssetsMock.mockResolvedValue({
+      requested_count: 1,
+      succeeded_count: 1,
+      failed_count: 0,
+      asset_ids: [4],
+      failures: [],
+    })
+    renderAssetsView()
+
+    await fireEvent.click(screen.getByText('已归档'))
+    await waitFor(() => {
+      expect(screen.getByText('archived_cover')).toBeInTheDocument()
+    })
+    await fireEvent.click(screen.getByLabelText('选择资源 archived_cover'))
+    await fireEvent.click(screen.getByText('批量删除'))
+
+    await waitFor(() => {
+      expect(batchDeleteWorkspaceAssetsMock).toHaveBeenCalledWith(7, [4])
+    })
+  })
+})
+
+function renderAssetsView() {
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: { retry: false },
+      mutations: { retry: false },
+    },
+  })
+
+  return render(AssetsView, {
+    global: {
+      plugins: [
+        [VueQueryPlugin, { queryClient }] as [typeof VueQueryPlugin, { queryClient: QueryClient }],
+      ],
+      stubs: {
+        AssetPreviewFrame: defineComponent({
+          name: 'AssetPreviewFrame',
+          props: {
+            asset: {
+              type: Object,
+              default: null,
+            },
+          },
+          setup(props) {
+            return () => h('section', `资源预览：${(props.asset as AssetResponse | null)?.name || ''}`)
+          },
+        }),
+        BaseButton: defineComponent({
+          name: 'BaseButton',
+          props: {
+            disabled: Boolean,
+          },
+          setup(props, { attrs, slots }) {
+            return () => h('button', { ...attrs, disabled: props.disabled }, slots.default?.())
+          },
+        }),
+        PageTitleBar: defineComponent({
+          name: 'PageTitleBar',
+          props: {
+            title: {
+              type: String,
+              required: true,
+            },
+          },
+          setup(props, { slots }) {
+            return () => h('header', [h('h1', props.title), slots.actions?.()])
+          },
+        }),
+      },
+    },
+  })
+}
+
+function createImageAsset(overrides: Partial<AssetResponse>): AssetResponse {
+  return {
+    id: 1,
+    workspace_id: 7,
+    name: 'hero_illustration',
+    file_name: 'hash.svg',
+    original_name: 'hero_illustration.svg',
+    description: null,
+    file_size: 128,
+    file_hash: 'hash-svg-image',
+    content_type: 'image/svg+xml',
+    asset_type: 'image',
+    asset_role: 'content',
+    render_type: 'image',
+    tags: [],
+    analysis_metadata: null,
+    render_metadata: null,
+    status: 'active',
+    archived_at: null,
+    archive_reason: null,
+    source_asset_id: null,
+    history_kind: null,
+    content_editable: true,
+    url: 'https://backend.example.com/public/assets/7/hash-svg-image',
+    font_config: null,
+    rename_block_reason: null,
+    delete_block_reason: null,
+    archive_block_reason: null,
+    archive_warning_reasons: [],
+    created_at: '2026-05-01T10:00:00+08:00',
+    updated_at: '2026-05-01T10:00:00+08:00',
+    ...overrides,
+  }
+}
+
+function createReferenceSummary(): AssetReferenceSummary {
+  return {
+    theme_count: 0,
+    font_count: 0,
+    page_count: 0,
+    component_count: 0,
+    component_version_count: 0,
+    references: [],
+    has_references: false,
+  }
+}

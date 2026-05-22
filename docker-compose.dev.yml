@@ -1,0 +1,38 @@
+# 文件功能：为平台仓库本地开发与平台级测试提供 PostgreSQL 与 Redis 启动入口。
+services:
+  postgres:
+    image: postgres:16
+    container_name: web-presentation-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: web_presentation
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - web-presentation-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d web_presentation"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7
+    container_name: web-presentation-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "no"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - web-presentation-redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  web-presentation-postgres-data:
+  web-presentation-redis-data:

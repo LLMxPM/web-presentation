@@ -46,6 +46,8 @@ dist/
 .vite/
 coverage/
 *.tsbuildinfo
+playwright-report/
+test-results/
 
 # Backend artifacts
 backend/build_artifacts/
@@ -55,4 +57,3 @@ backend/data/
 tmp/
 temp/
 *.tmp
-
