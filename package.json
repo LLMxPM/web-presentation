@@ -1,0 +1,24 @@
+{
+  "name": "web-presentation",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "packageManager": "pnpm@10.30.3",
+  "scripts": {
+    "test:backend": "uv run --project backend pytest -c backend/pyproject.toml",
+    "test:backend:unit": "uv run --project backend pytest -c backend/pyproject.toml -m unit",
+    "test:backend:api": "uv run --project backend pytest -c backend/pyproject.toml -m api",
+    "test:backend:integration": "uv run --project backend pytest -c backend/pyproject.toml -m integration",
+    "test:editor": "pnpm --dir editor test",
+    "test:runtime:delegated": "pnpm --dir runtime test",
+    "test:contracts": "vitest run",
+    "test:e2e": "playwright test",
+    "test:all": "pnpm run test:backend && pnpm run test:editor && pnpm run test:runtime:delegated && pnpm run test:contracts && pnpm run test:e2e",
+    "test:seed:smoke": "node ./scripts/testing/seed-smoke-data.mjs",
+    "test:reset:data": "node ./scripts/testing/reset-test-data.mjs"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.56.1",
+    "vitest": "^4.1.2"
+  }
+}

@@ -1,0 +1,24 @@
+"""文件功能：覆盖 AI 流式输出、事件标准化与会话互斥相关测试。"""
+
+from tests.integration.ai.ai_agents_cases import (
+    test_ai_active_run_cancel_route_should_proxy_interrupt_request,
+    test_ai_agent_run_events_should_be_normalized_for_editor,
+    test_ai_run_event_append_should_retry_sequence_conflict,
+    test_ai_mark_paused_should_not_duplicate_event_with_stale_task,
+    test_ai_tool_details_should_keep_separate_missing_call_id_pairs,
+    test_ai_session_context_status_should_return_budget_and_summary,
+    test_ai_session_messages_should_hide_system_and_split_reasoning,
+    test_ai_session_messages_should_preserve_tool_metadata,
+    test_ai_session_stream_should_allow_different_session_when_another_session_is_running,
+    test_ai_session_stream_should_reject_second_active_run_in_same_session,
+    test_ai_sessions_should_list_workspace_sessions_and_gate_new_runs,
+    test_ai_stream_delta_should_preserve_markdown_boundaries,
+    test_ai_stream_should_mark_cancelled_and_close_upstream_when_client_interrupts,
+    test_ai_coordinator_session_messages_should_be_visible,
+    test_ai_reasoning_stream_delta_should_preserve_newline_boundaries,
+    test_ai_run_stream_should_refresh_context_status_at_message_checkpoints,
+    test_ai_run_routes_should_stream_direct_page_apply,
+    test_ai_active_run_cancel_should_not_fail_when_agno_cancel_returns_false,
+    test_extract_tool_error_info_should_keep_structured_code,
+    test_extract_tool_error_info_should_parse_repair_metadata_from_json_string,
+)

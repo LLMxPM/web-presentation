@@ -1,0 +1,14 @@
+"""文件功能：覆盖组件与页面预览 artifact 组装相关测试。"""
+
+from tests.integration.component_preview.component_preview_cases import (
+    test_component_draft_preview_should_create_hidden_system_project,
+    test_component_draft_preview_should_publish_component_sandbox_config_bundle,
+    test_component_source_draft_preview_should_apply_preview_options,
+    test_component_source_draft_preview_should_render_unsaved_source_without_persisting_version,
+    test_page_module_dependencies_should_include_component_versions_and_runtime_public_modules,
+    test_project_preview_artifact_should_include_relative_page_modules_in_snapshot,
+    test_project_preview_artifact_should_publish_component_modules_and_module_resolver_config,
+    test_saved_component_preview_should_include_icons_from_transitive_component_dependencies,
+    test_saved_component_preview_should_use_default_preview_options,
+    test_standalone_page_preview_should_keep_entry_page_out_of_manifest_whitelist,
+)
