@@ -52,8 +52,9 @@ COPY runtime/src/runtime-kit/manifest/runtime-kit.manifest.json /app/runtime/src
 COPY --from=editor-build /app/editor/dist/ /usr/share/nginx/html/
 COPY docker/nginx/web-presentation.conf /etc/nginx/conf.d/default.conf
 
-RUN mkdir -p /app/backend/data /run/nginx /var/cache/nginx /var/log/nginx
+RUN mkdir -p /app/backend/data /run/nginx /var/cache/nginx /var/log/nginx \
+    && chmod +x /app/backend/scripts/start_simple_container.sh
 
 EXPOSE 80 8000
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["sh", "/app/backend/scripts/start_simple_container.sh"]

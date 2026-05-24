@@ -3,12 +3,12 @@
 
 ## 发布边界
 
-根仓只发布一个平台镜像：`web-presentation`。该镜像同时包含 Backend 代码、Editor 静态资源、Nginx 配置和 Backend 运行所需的 Runtime Kit manifest。
+根仓只发布一个平台镜像：`llmxpm/web-presentation`。该镜像同时包含 Backend 代码、Editor 静态资源、Nginx 配置和 Backend 运行所需的 Runtime Kit manifest。
 
 `runtime/` 仍是独立项目 `web-runtime-vue` 的子模块接入目录。根仓不会构建 Runtime 镜像，只会在平台 Release 前校验当前子模块 SHA 对应的 Runtime 镜像已存在：
 
 ```bash
-docker buildx imagetools inspect docker.io/$DOCKERHUB_NAMESPACE/web-runtime-vue:sha-<runtime_sha_short>
+docker buildx imagetools inspect docker.io/llmxpm/web-runtime-vue:sha-<runtime_sha_short>
 ```
 
 `web-runtime-vue` 子仓库自己的 Docker Release 会发布 `<release_tag>`、`sha-<runtime_sha_short>`，稳定 Release 还会发布 `latest`。平台仓库更新 `runtime` 子模块指针前，应先让对应 Runtime 提交完成子仓库 Release。
@@ -18,46 +18,62 @@ docker buildx imagetools inspect docker.io/$DOCKERHUB_NAMESPACE/web-runtime-vue:
 - PR：`.github/workflows/platform-test.yml` 继续执行 backend、editor、contracts、e2e smoke，并新增平台镜像 build smoke；该任务只构建，不推送。
 - Release：`.github/workflows/platform-release.yml` 在 GitHub Release `published` 后执行完整质量门禁、Runtime 镜像存在性校验，然后推送 Docker Hub。
 - Docker Hub 配置：
-  - `vars.DOCKERHUB_NAMESPACE`
   - `vars.DOCKER_USERNAME`
   - `secrets.DOCKER_PASSWORD`
 
 稳定 Release 会推送：
 
 ```text
-docker.io/<namespace>/web-presentation:<release_tag>
-docker.io/<namespace>/web-presentation:latest
+docker.io/llmxpm/web-presentation:<release_tag>
+docker.io/llmxpm/web-presentation:latest
 ```
 
 Pre-release 只推送版本标签，不移动 `latest`。
 
 ## 生产 Compose
 
-生产模板为 `docker-compose.prod.yml`，示例环境变量见 `deploy/.env.prod.example`。
+生产部署不在目标机器构建镜像，只拉取 CI/CD 已发布的两个业务镜像。镜像仓库固定为：
+
+- `llmxpm/web-presentation:latest`
+- `llmxpm/web-runtime-vue:latest`
+
+部署模板集中在 `deploy/` 目录：
+
+- `deploy/docker-compose.yml`：默认 simple 编排，使用已有 PostgreSQL 与 Redis，`platform` 容器同时运行 Backend 与 Gateway。
+- `deploy/docker-compose.production.yml`：生产可维护编排，拆分迁移、Backend、Runtime 与 Gateway。
+- `deploy/docker-compose.with-deps.yml`：simple 全量单机编排，随应用一起启动 PostgreSQL 与 Redis。
+- `deploy/.env.example`：环境变量示例。
 
 ```bash
-docker compose --env-file deploy/.env.prod.example -f docker-compose.prod.yml config
-docker compose --env-file .env.prod -f docker-compose.prod.yml up -d
+cp deploy/.env.example deploy/.env
+cd deploy
+docker compose config
+docker compose pull
+docker compose up -d
 ```
 
-正式部署前必须替换数据库密码、默认管理员密码和 `AI_SECRET_ENCRYPTION_KEY`；Fernet 密钥可用 `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"` 生成。
+如需使用生产可维护编排，将命令中的 compose 文件改为 `docker-compose.production.yml`；如需内置 PostgreSQL 与 Redis，改为 `docker-compose.with-deps.yml`。完整部署、升级、回滚和运维检查流程见 [生产部署指南](./deployment-guide.md)。
 
-同一个平台镜像会启动两个容器：
+正式部署前必须替换数据库密码、默认管理员密码和 `AI_SECRET_ENCRYPTION_KEY`；Fernet 兼容密钥可用 `python -c "import base64, os; print(base64.urlsafe_b64encode(os.urandom(32)).decode())"` 生成。
 
+默认 simple 编排中，同一个平台镜像只启动一个长期运行的 `platform` 容器。该容器入口脚本会先执行 `alembic upgrade head`，再同时启动：
+
+- `uvicorn app.main:app --host 0.0.0.0 --port 8000`
+- `nginx -g 'daemon off;'`
+
+生产可维护编排中，同一个平台镜像会拆分为三个容器：
+
+- `backend-migrate`：执行 `alembic upgrade head`
 - `backend`：执行 `uvicorn app.main:app --host 0.0.0.0 --port 8000`
 - `gateway`：执行 `nginx -g 'daemon off;'`，托管 Editor 并代理 Backend/Runtime
 
-`WEB_RUNTIME_IMAGE` 必须固定到 Runtime 子项目发布的 SHA 标签，例如：
-
-```text
-WEB_RUNTIME_IMAGE=your-dockerhub-namespace/web-runtime-vue:sha-c5273cf1564d
-```
+compose 默认跟随 `latest`。如果需要严格锁定 Runtime 与平台版本，可把对应 compose 文件中的 Runtime image 改为子项目发布的 `sha-<runtime_sha_short>` 标签。
 
 ## 关键访问关系
 
-- 浏览器访问 `gateway`。
-- `gateway` 代理 `/api`、`/public`、`/build-artifacts`、`/preview`、`/media` 到 `backend:8000`。
-- `gateway` 代理 `/runtime/` 到 `runtime:7373`，并去掉 `/runtime/` 前缀。
+- 浏览器访问默认 simple 编排的 `platform:80`，或生产可维护编排的 `gateway:80`。
+- 平台 Nginx 代理 `/api`、`/public`、`/build-artifacts`、`/preview`、`/media` 到 `backend:8000`。
+- 平台 Nginx 代理 `/runtime/` 到 `runtime:7373`，并去掉 `/runtime/` 前缀。
 - Backend 通过 `RUNTIME_BASE_URL=http://runtime:7373` 访问 Runtime 内网服务。
 - Runtime 通过 `RUNTIME_BACKEND_API_BASE_URL=http://backend:8000` 回源 Backend 内部接口。
 - Runtime 通过 `RUNTIME_PREVIEW_JWKS_URL=http://backend:8000/.well-known/jwks.json` 校验 Backend 签发的预览与构建令牌。

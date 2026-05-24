@@ -3,12 +3,13 @@
  */
 import { spawn } from 'node:child_process'
 import { resolve } from 'node:path'
+import { buildE2eBackendEnv } from './e2e-database-env.mjs'
 
 const child = spawn('uv', ['run', '--project', '.', 'python', '-m', 'app.scripts.reset_test_data'], {
   cwd: resolve(process.cwd(), 'backend'),
   stdio: 'inherit',
   shell: process.platform === 'win32',
-  env: process.env,
+  env: buildE2eBackendEnv(),
 })
 
 child.on('exit', (code) => {

@@ -1,4 +1,4 @@
-# 文件功能：提供生产/预发布环境的容器编排模板，使用同一个平台镜像启动 Backend 与 Editor Gateway。
+# 文件功能：提供 simple 全量单机部署编排模板，随应用一起启动 PostgreSQL 与 Redis。
 
 services:
   postgres:
@@ -6,12 +6,12 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-web_presentation}
-      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_USER: ${POSTGRES_USER:-wp_user}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?请设置 POSTGRES_PASSWORD}
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-web_presentation}"]
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -19,25 +19,26 @@ services:
   redis:
     image: redis:7
     restart: unless-stopped
-    command: ["redis-server", "--appendonly", "yes"]
+    command: ["sh", "-c", "redis-server --appendonly yes --requirepass \"$${REDIS_PASSWORD}\""]
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?请设置 REDIS_PASSWORD}
     volumes:
       - redis-data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", "redis-cli -a \"$${REDIS_PASSWORD}\" ping"]
       interval: 10s
       timeout: 5s
       retries: 5
 
-  backend-migrate:
-    image: ${WEB_PRESENTATION_IMAGE:?请设置 WEB_PRESENTATION_IMAGE}
-    restart: "no"
+  platform:
+    image: llmxpm/web-presentation:latest
+    restart: unless-stopped
     working_dir: /app/backend
-    command: ["alembic", "upgrade", "head"]
-    environment: &backend-env
+    environment:
       APP_RELOAD: "false"
       APP_TIMEZONE: ${APP_TIMEZONE:-Asia/Shanghai}
-      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://postgres:${POSTGRES_PASSWORD}@postgres:5432/web_presentation}
-      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      DATABASE_URL: "postgresql+asyncpg://${POSTGRES_USER:-wp_user}:${POSTGRES_PASSWORD:?请设置 POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-web_presentation}"
+      REDIS_URL: "redis://:${REDIS_PASSWORD:?请设置 REDIS_PASSWORD}@redis:6379/0"
       REDIS_KEY_PREFIX: ${REDIS_KEY_PREFIX:-web_presentation}
       BACKEND_PUBLIC_BASE_URL: ${BACKEND_PUBLIC_BASE_URL:-${PUBLIC_BASE_URL}}
       RUNTIME_BASE_URL: ${RUNTIME_BASE_URL:-http://runtime:7373}
@@ -50,6 +51,7 @@ services:
       DEFAULT_ADMIN_DISPLAY_NAME: ${DEFAULT_ADMIN_DISPLAY_NAME:-平台系统管理员}
       AI_ENABLED: ${AI_ENABLED:-true}
       AI_SECRET_ENCRYPTION_KEY: ${AI_SECRET_ENCRYPTION_KEY:?请设置 AI_SECRET_ENCRYPTION_KEY}
+      PLATFORM_SIMPLE_RUN_MIGRATIONS: ${PLATFORM_SIMPLE_RUN_MIGRATIONS:-true}
       PAGE_SCREENSHOT_LOCAL_ROOT: /app/backend/data
       ASSET_STORAGE_DRIVER: ${ASSET_STORAGE_DRIVER:-local}
       S3_ENDPOINT_URL: ${S3_ENDPOINT_URL:-}
@@ -59,33 +61,33 @@ services:
       S3_PUBLIC_BUCKET: ${S3_PUBLIC_BUCKET:-}
       S3_REGION: ${S3_REGION:-}
       S3_PUBLIC_BASE_URL: ${S3_PUBLIC_BASE_URL:-}
+    volumes:
+      - backend-data:/app/backend/data
+    ports:
+      - "${GATEWAY_HTTP_PORT:-80}:80"
+    expose:
+      - "8000"
+    extra_hosts:
+      - "backend:127.0.0.1"
+    networks:
+      default:
+        aliases:
+          - backend
     depends_on:
       postgres:
         condition: service_healthy
-
-  backend:
-    image: ${WEB_PRESENTATION_IMAGE:?请设置 WEB_PRESENTATION_IMAGE}
-    restart: unless-stopped
-    working_dir: /app/backend
-    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
-    environment: *backend-env
-    volumes:
-      - backend-data:/app/backend/data
-    expose:
-      - "8000"
-    depends_on:
-      backend-migrate:
-        condition: service_completed_successfully
       redis:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8000/healthz >/dev/null"]
+      test:
+        - CMD-SHELL
+        - curl -fsS http://127.0.0.1/healthz >/dev/null && curl -fsS http://127.0.0.1:8000/healthz >/dev/null
       interval: 10s
       timeout: 5s
       retries: 5
 
   runtime:
-    image: ${WEB_RUNTIME_IMAGE:?请设置 WEB_RUNTIME_IMAGE}
+    image: llmxpm/web-runtime-vue:latest
     restart: unless-stopped
     environment:
       RUNTIME_PREVIEW_JWKS_URL: ${RUNTIME_PREVIEW_JWKS_URL:-http://backend:8000/.well-known/jwks.json}
@@ -93,31 +95,25 @@ services:
       RUNTIME_BUILD_TOKEN_AUDIENCE: ${RUNTIME_BUILD_TOKEN_AUDIENCE:-runtime-build}
       RUNTIME_DIAGNOSTICS_TOKEN_AUDIENCE: ${RUNTIME_DIAGNOSTICS_TOKEN_AUDIENCE:-runtime-diagnostics}
       RUNTIME_BACKEND_API_BASE_URL: ${RUNTIME_BACKEND_API_BASE_URL:-http://backend:8000}
+      RUNTIME_SERVER_HOST: ${RUNTIME_SERVER_HOST:-0.0.0.0}
+      RUNTIME_SERVER_PORT: ${RUNTIME_SERVER_PORT:-7373}
       RUNTIME_STANDALONE_PREVIEW_ENABLED: ${RUNTIME_STANDALONE_PREVIEW_ENABLED:-false}
     expose:
       - "7373"
     depends_on:
-      backend:
+      platform:
         condition: service_healthy
-
-  gateway:
-    image: ${WEB_PRESENTATION_IMAGE:?请设置 WEB_PRESENTATION_IMAGE}
-    restart: unless-stopped
-    command: ["nginx", "-g", "daemon off;"]
-    ports:
-      - "${GATEWAY_HTTP_PORT:-80}:80"
-    depends_on:
-      backend:
-        condition: service_healthy
-      runtime:
-        condition: service_started
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1/healthz >/dev/null"]
+      test:
+        - CMD
+        - node
+        - -e
+        - const port=process.env.RUNTIME_SERVER_PORT||'7373'; fetch('http://127.0.0.1:'+port+'/__runtime_healthz').then((response)=>process.exit(response.ok?0:1)).catch(()=>process.exit(1))
       interval: 10s
       timeout: 5s
       retries: 5
 
 volumes:
+  backend-data:
   postgres-data:
   redis-data:
-  backend-data:
