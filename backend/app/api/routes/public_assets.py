@@ -145,7 +145,7 @@ async def _build_backend_asset_response(
     """从 Backend 返回资源内容；本地文件优先走 FileResponse，远程存储读取 bytes 后返回。"""
 
     media_type, _ = mimetypes.guess_type(asset.original_name)
-    resolved_media_type = media_type or asset.content_type or "application/octet-stream"
+    resolved_media_type = asset.content_type or media_type or "application/octet-stream"
     headers = _build_public_asset_headers(asset.original_name, is_download)
 
     local_file_path = await driver.get_physical_path(workspace_id, asset.file_name)

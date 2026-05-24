@@ -182,7 +182,7 @@ async def _ensure_project_routes(*, session, project_id: int, page_id: int, oper
             routes=[
                 ProjectRouteItemWrite(
                     route_type="page",
-                    route="/",
+                    route="home",
                     order=1,
                     page_id=page_id,
                 )
