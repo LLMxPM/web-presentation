@@ -212,6 +212,15 @@ async def test_public_asset_should_proxy_text_render_asset_with_s3_driver(
         calls["read"] += 1
         return content_by_key[storage_key]
 
+    def fake_guess_type(file_name: str) -> tuple[str | None, None]:
+        """模拟 CI 镜像系统 MIME 表对文本渲染资源扩展名的非通用识别。"""
+
+        if file_name.endswith(".mmd"):
+            return ("application/vnd.chipnuts.karaoke-mmd", None)
+        if file_name.endswith(".drawio"):
+            return ("application/vnd.jgraph.mxfile", None)
+        return (None, None)
+
     for item in cases:
         create_response = await authenticated_client.post(
             f"/api/workspaces/{workspace_id}/assets/content",
@@ -229,6 +238,7 @@ async def test_public_asset_should_proxy_text_render_asset_with_s3_driver(
         fake_generate_download_url,
     )
     monkeypatch.setattr(ObjectStorageService, "_read_s3_object", fake_read_s3_object)
+    monkeypatch.setattr("app.api.routes.public_assets.mimetypes.guess_type", fake_guess_type)
 
     for item, uploaded_asset in created_assets:
         response = await authenticated_client.get(f"/public/assets/{workspace_id}/{uploaded_asset['file_hash']}")

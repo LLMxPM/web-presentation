@@ -27,7 +27,7 @@ const errors: WorkspaceComponentDraftErrors = {
 }
 
 describe('ComponentEditorPane', () => {
-  it('应回写表单字段并触发预览、保存、发布和主题切换事件', async () => {
+  it('应回写表单字段并触发预览、保存和主题切换事件', async () => {
     const { emitted } = render(ComponentEditorPane, {
       props: {
         form,
@@ -64,9 +64,8 @@ describe('ComponentEditorPane', () => {
     await fireEvent.update(screen.getByPlaceholderText('如：SalesMetricCard'), 'SalesTrendCard')
     await fireEvent.click(screen.getByRole('button', { name: '暗黑' }))
     await fireEvent.click(screen.getByRole('button', { name: '发布历史' }))
-    await fireEvent.click(screen.getByRole('button', { name: '预览当前草稿' }))
+    await fireEvent.click(screen.getByRole('button', { name: '草稿预览' }))
     await fireEvent.click(screen.getByRole('button', { name: '保存草稿' }))
-    await fireEvent.click(screen.getByRole('button', { name: '发布版本' }))
 
     const formEvents = emitted('update:form') as Array<[WorkspaceComponentDraftForm]> | undefined
     const themeEvents = emitted('update:editorTheme') as Array<['dark']> | undefined
@@ -76,7 +75,6 @@ describe('ComponentEditorPane', () => {
     expect(emitted('open-version-history')).toHaveLength(1)
     expect(emitted('preview-draft')).toHaveLength(1)
     expect(emitted('save-draft')).toHaveLength(1)
-    expect(emitted('publish')).toHaveLength(1)
   })
 
   it('新建模式不应展示发布按钮', () => {
