@@ -93,7 +93,7 @@
 
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { ChevronDown, Code2, Copy, Moon, Sun } from 'lucide-vue-next'
+import { ChevronDown, Code2, Copy, Moon, Sun } from '@lucide/vue'
 
 import MonacoCodeEditor from '@/components/editor/MonacoCodeEditor.vue'
 import type {

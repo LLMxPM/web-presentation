@@ -155,9 +155,7 @@
               <h2 class="truncate text-lg font-bold text-slate-800">{{ previewFont.font_family }}</h2>
               <p class="mt-1 truncate font-mono text-xs text-slate-400">{{ previewFont.asset_name }}</p>
             </div>
-            <button class="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700" @click="previewFont = null">
-              <X class="h-4 w-4" />
-            </button>
+            <BaseCloseButton label="关闭字体预览" @click="previewFont = null" />
           </div>
 
           <div class="mt-6 space-y-4" :style="{ fontFamily: `'theme-sidebar-font-${previewFont.id}'` }">
@@ -174,7 +172,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { ArrowUpRight, Copy, Eye, SwatchBook, Type, X } from 'lucide-vue-next'
+import { ArrowUpRight, Copy, Eye, SwatchBook, Type } from '@lucide/vue'
 
 import { listWorkspaceFonts } from '@/api/assets'
 import { getWorkspace } from '@/api/catalog'
@@ -184,6 +182,7 @@ import type { WorkspaceFontConfigItem, WorkspaceItem, WorkspaceThemeItem } from 
 import { Message } from '@/utils/message'
 import { buildWorkspaceThemesPath } from '@/utils/workspace-routes'
 import ThemePreviewCard from '@/components/theme/ThemePreviewCard.vue'
+import BaseCloseButton from '@/components/ui/BaseCloseButton.vue'
 import LibrarySidebarPanel from '@/components/project/LibrarySidebarPanel.vue'
 
 type SidebarTab = 'themes' | 'fonts'

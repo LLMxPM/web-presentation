@@ -75,7 +75,7 @@ const routes = [
         path: 'workspaces/:workspaceId/projects/:projectId/pages/:pageId',
         name: 'pageDetail',
         component: () => import('@/views/PageDetailView.vue'),
-        meta: { workspaceNav: 'projects' },
+        meta: { fullHeight: true, workspaceNav: 'projects' },
       },
       {
         path: 'workspaces/:workspaceId/:pathMatch(.*)*',

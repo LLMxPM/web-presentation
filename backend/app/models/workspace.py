@@ -1,8 +1,9 @@
 """文件功能：定义工作空间与项目的层级数据模型。"""
 
 from datetime import datetime
+from typing import Any, Mapping
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, JSON, String, Text, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -74,5 +75,6 @@ class Project(TimestampMixin, AuditMixin, SoftDeleteMixin, Base):
     theme_key: Mapped[str | None] = mapped_column(String(64), nullable=True)
     theme_config_yaml: Mapped[str] = mapped_column(Text, nullable=False)
     style_spec_markdown: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default=text("''"))
+    build_extra_assets_json: Mapped[Mapping[str, Any] | None] = mapped_column(JSON, nullable=True)
 
     workspace: Mapped[Workspace] = relationship(back_populates="projects")

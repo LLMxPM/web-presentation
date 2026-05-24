@@ -17,13 +17,11 @@
             <!-- Header -->
             <div class="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-slate-50/50">
               <h3 class="text-lg font-bold text-slate-900 line-clamp-1">{{ title }}</h3>
-              <button @click="close" class="p-1 rounded-full text-slate-400 hover:text-slate-600 hover:bg-slate-200 transition-all">
-                <X class="w-5 h-5" />
-              </button>
+              <BaseCloseButton :label="title ? `关闭${title}` : '关闭弹窗'" @click="close" />
             </div>
             
             <!-- Body -->
-            <div class="px-6 py-5 max-h-[80vh] overflow-y-auto">
+            <div :class="props.bodyClass || 'px-6 py-5 max-h-[80vh] overflow-y-auto'">
               <slot></slot>
             </div>
             
@@ -40,7 +38,8 @@
 
 <script setup lang="ts">
 import { onMounted, onUnmounted } from 'vue'
-import { X } from 'lucide-vue-next'
+
+import BaseCloseButton from '@/components/ui/BaseCloseButton.vue'
 
 /**
  * 基础弹窗组件
@@ -49,6 +48,7 @@ const props = defineProps<{
   modelValue: boolean
   title?: string
   width?: string
+  bodyClass?: string
 }>()
 
 const emit = defineEmits(['update:modelValue'])

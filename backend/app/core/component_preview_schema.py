@@ -117,7 +117,7 @@ def _validate_slot_node(node: Any) -> None:
                 status_code=400,
                 code="COMPONENT_PREVIEW_SCHEMA_INVALID",
                 detail=(
-                    "previewSchema 的 slot.component 只能引用 @runtime-kit 清单项"
+                    "previewSchema 的 slot.component 只能引用 @runtime-kit 清单中的版本化组件"
                     "或 @workspace-components/<component_code>/v/<version_no>。"
                 ),
             )

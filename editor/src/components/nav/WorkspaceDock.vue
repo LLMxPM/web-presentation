@@ -43,7 +43,7 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import { Image, Layers, LayoutDashboard, Palette, SwatchBook } from 'lucide-vue-next'
+import { Image, Layers, LayoutDashboard, Palette, SwatchBook } from '@lucide/vue'
 
 import {
   buildWorkspaceAssetsPath,
@@ -54,7 +54,7 @@ import {
   type WorkspaceRouteKey,
 } from '@/utils/workspace-routes'
 
-type WorkspaceDockPanelKey = 'assets' | 'components' | 'themes'
+type WorkspaceDockPanelKey = 'assets' | 'components'
 
 const props = defineProps<{
   workspaceId: number
@@ -123,12 +123,6 @@ const panelItems = [
     label: '组件',
     title: '组件库侧栏',
     icon: Layers,
-  },
-  {
-    key: 'themes' as const,
-    label: '字体',
-    title: '打开侧栏：主题字体速览',
-    icon: SwatchBook,
   },
 ]
 </script>

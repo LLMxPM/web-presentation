@@ -7,7 +7,8 @@ import hashlib
 import json
 import re
 import xml.etree.ElementTree as ET
-from collections.abc import Iterable
+from collections.abc import AsyncIterator, Iterable
+from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -64,6 +65,17 @@ class BaseStorageDriver(Protocol):
         """读取已存储资源的原始内容。"""
         ...
 
+    def open_for_read(
+        self,
+        workspace_id: int,
+        file_name: str,
+        *,
+        expected_sha256: str | None = None,
+        expected_size: int | None = None,
+    ) -> AbstractAsyncContextManager[Path]:
+        """打开资源对象的本地可读路径。"""
+        ...
+
 
 class LocalStorageDriver:
     """本地磁盘存储驱动。"""
@@ -101,6 +113,24 @@ class LocalStorageDriver:
 
     async def read_content(self, workspace_id: int, file_name: str) -> bytes:
         return await self.object_storage.read_object(f"assets/{workspace_id}/{file_name}")
+
+    @asynccontextmanager
+    async def open_for_read(
+        self,
+        workspace_id: int,
+        file_name: str,
+        *,
+        expected_sha256: str | None = None,
+        expected_size: int | None = None,
+    ) -> AsyncIterator[Path]:
+        """打开本地资源文件路径，供需要 FileResponse 的入口复用。"""
+
+        async with self.object_storage.open_object_for_read(
+            f"assets/{workspace_id}/{file_name}",
+            expected_sha256=expected_sha256,
+            expected_size=expected_size,
+        ) as file_path:
+            yield file_path
 
 
 class S3StorageDriver:
@@ -181,6 +211,25 @@ class S3StorageDriver:
             self._get_s3_key(workspace_id, file_name),
             bucket_name=self._resolve_bucket_name(file_name),
         )
+
+    @asynccontextmanager
+    async def open_for_read(
+        self,
+        workspace_id: int,
+        file_name: str,
+        *,
+        expected_sha256: str | None = None,
+        expected_size: int | None = None,
+    ) -> AsyncIterator[Path]:
+        """打开 S3 资源的本地缓存路径，并沿用字体公开 bucket 分流规则。"""
+
+        async with self.object_storage.open_object_for_read(
+            self._get_s3_key(workspace_id, file_name),
+            expected_sha256=expected_sha256,
+            expected_size=expected_size,
+            bucket_name=self._resolve_bucket_name(file_name),
+        ) as file_path:
+            yield file_path
 
 
 def get_driver() -> BaseStorageDriver:

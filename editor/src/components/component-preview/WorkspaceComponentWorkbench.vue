@@ -1,8 +1,8 @@
 <!-- 文件功能：承载工作空间组件右侧工作台，负责预览/编辑/新建状态切换、草稿保存、发布和版本历史。 -->
 <template>
-  <section class="h-full min-h-0 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-    <div v-if="activeMode === 'empty' || activeMode === 'create'" class="flex h-full items-center justify-center bg-slate-50/70 p-8">
-      <div class="max-w-sm rounded-2xl border border-dashed border-slate-200 bg-white px-8 py-10 text-center">
+  <section class="h-full min-h-0 overflow-hidden bg-white">
+    <div v-if="activeMode === 'empty' || activeMode === 'create'" class="flex h-full items-center justify-center bg-slate-50/70 p-6">
+      <div class="max-w-sm rounded-xl border border-dashed border-slate-200 bg-white px-7 py-8 text-center">
         <Layers class="mx-auto mb-3 h-10 w-10 text-slate-300" />
         <p class="text-sm font-bold text-slate-600">{{ activeMode === 'create' ? '正在新建组件草稿' : '请选择组件' }}</p>
         <p class="mt-2 text-xs leading-6 text-slate-400">
@@ -32,12 +32,23 @@
         </div>
       </template>
 
-      <template #actions>
-        <BaseButton v-if="currentComponent" variant="ghost" size="sm" @click="openVersionHistoryDialog">
+      <template #component-actions="slotProps">
+        <BaseButton v-if="currentComponent" variant="ghost" size="sm" @click="openVersionHistoryFromPreview(slotProps?.closeFullPreview)">
           <History class="h-3.5 w-3.5" />
           发布历史
         </BaseButton>
-        <BaseButton variant="secondary" size="sm" @click="switchToEditMode">
+        <BaseButton
+          v-if="currentComponent && !slotProps?.insideFullPreview"
+          variant="ghost"
+          size="sm"
+          :disabled="currentComponent.current_version_no <= 0"
+          title="查看引用页面和引用组件"
+          @click="openReferenceFromPreview(slotProps?.closeFullPreview)"
+        >
+          <Link2 class="h-3.5 w-3.5" />
+          引用
+        </BaseButton>
+        <BaseButton variant="secondary" size="sm" @click="switchToEditModeFromPreview(slotProps?.closeFullPreview)">
           编辑组件
         </BaseButton>
         <BaseButton
@@ -45,7 +56,7 @@
           variant="primary"
           size="sm"
           :disabled="!canPublish"
-          @click="openReleaseDialog"
+          @click="openReleaseFromPreview(slotProps?.closeFullPreview)"
         >
           <Rocket class="h-3.5 w-3.5" />
           发布
@@ -67,6 +78,7 @@
         :saving="saving"
         :preview-loading="previewLoading"
         :can-publish="canPublish"
+        :can-view-history="Boolean(currentComponent)"
         class="h-full"
         @update:form="draft.replaceForm"
         @update:editor-theme="editorTheme = $event"
@@ -74,6 +86,7 @@
         @save-draft="handleSaveDraft"
         @publish="openReleaseDialog"
         @cancel-edit="handleCancelEdit"
+        @open-version-history="openVersionHistoryDialog"
         @open-schema-help="showSchemaHelp = true"
       />
     </ComponentPreviewDialog>
@@ -95,6 +108,16 @@
       @preview-version="toggleVersionPreview"
       @diff-version="toggleVersionDiff"
       @restore-version="restoreVersionToDraft"
+    />
+
+    <ComponentReferenceDialog
+      v-model="referenceDialogVisible"
+      :component="currentComponent"
+      :references="componentReferences"
+      :loading="referenceLoading"
+      :upgrading="referenceUpgrading"
+      @refresh="refreshComponentReferences"
+      @upgrade="handleUpgradeComponentReferences"
     />
 
     <ComponentReleaseDialog
@@ -126,19 +149,22 @@
 
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
-import { History, Layers, Rocket } from 'lucide-vue-next'
+import { History, Layers, Link2, Rocket } from '@lucide/vue'
 
 import {
   getComponentVersionContent,
+  getComponentReferences,
   listComponentVersions,
   publishComponent,
   restoreComponentVersionToDraft,
+  upgradeComponentReferences,
 } from '@/api/catalog'
 import { getErrorMessage } from '@/api/http'
 import { createComponentVersionPreviewArtifact } from '@/api/preview'
 import ComponentEditorPane from '@/components/component-preview/ComponentEditorPane.vue'
 import ComponentPreviewDialog from '@/components/component-preview/ComponentPreviewDialog.vue'
 import ComponentPreviewWorkbench from '@/components/component-preview/ComponentPreviewWorkbench.vue'
+import ComponentReferenceDialog from '@/components/component-preview/ComponentReferenceDialog.vue'
 import type { ComponentPreviewWorkbenchSource } from '@/components/component-preview/component-preview-workbench'
 import ComponentReleaseDialog from '@/components/component-preview/ComponentReleaseDialog.vue'
 import ComponentVersionHistoryDialog from '@/components/component-preview/ComponentVersionHistoryDialog.vue'
@@ -148,6 +174,9 @@ import { useWorkspaceComponentDraft } from '@/composables/useWorkspaceComponentD
 import type {
   PreviewArtifactResponse,
   WorkspaceComponentItem,
+  WorkspaceComponentReferenceUpgradePayload,
+  WorkspaceComponentReferenceUpgradeResponse,
+  WorkspaceComponentReferences,
   WorkspaceComponentVersionContent,
   WorkspaceComponentVersionListItem,
 } from '@/types/api'
@@ -156,6 +185,7 @@ import { getDefaultEditorTheme } from '@/utils/monaco'
 import { createConfirm, Message } from '@/utils/message'
 
 type WorkbenchMode = 'empty' | 'preview' | 'edit' | 'create'
+type CloseFullPreviewHandler = (() => void) | undefined
 
 const props = defineProps<{
   workspaceId: number | null
@@ -193,6 +223,10 @@ const previewingVersionNo = ref<number | null>(null)
 const loadingContentVersionNo = ref<number | null>(null)
 const restoringVersionNo = ref<number | null>(null)
 const versionPreviewRefreshToken = ref(0)
+const referenceDialogVisible = ref(false)
+const referenceLoading = ref(false)
+const referenceUpgrading = ref(false)
+const componentReferences = ref<WorkspaceComponentReferences | null>(null)
 
 const currentComponent = computed(() => draft.currentComponent.value)
 const canPublish = computed(() => Boolean(
@@ -273,10 +307,12 @@ watch(
       if (activeMode.value !== 'create') {
         activeMode.value = 'empty'
       }
+      resetReferenceState()
       return
     }
     draft.loadFromComponent(props.component)
     resetVersionHistoryState()
+    resetReferenceState()
     activeMode.value = 'preview'
     editorDialogVisible.value = false
     previewRefreshKey.value += 1
@@ -292,6 +328,7 @@ watch(
     }
     draft.resetForCreate()
     resetVersionHistoryState()
+    resetReferenceState()
     activeMode.value = 'create'
     editorDialogVisible.value = true
   },
@@ -303,6 +340,15 @@ watch(
 function switchToEditMode(): void {
   activeMode.value = currentComponent.value ? 'preview' : 'create'
   editorDialogVisible.value = true
+}
+
+/**
+ * 从完整预览弹窗进入编辑时，先关闭完整预览，避免弹窗叠加。
+ * @param closeFullPreview 预览工作台传入的完整预览关闭函数
+ */
+function switchToEditModeFromPreview(closeFullPreview?: CloseFullPreviewHandler): void {
+  closeFullPreview?.()
+  switchToEditMode()
 }
 
 /**
@@ -439,6 +485,93 @@ async function openVersionHistoryDialog(): Promise<void> {
   await refreshVersionHistory()
 }
 
+/**
+ * 从预览操作区打开发布历史；完整预览中触发时先关闭完整预览弹窗。
+ * @param closeFullPreview 预览工作台传入的完整预览关闭函数
+ */
+async function openVersionHistoryFromPreview(closeFullPreview?: CloseFullPreviewHandler): Promise<void> {
+  closeFullPreview?.()
+  await openVersionHistoryDialog()
+}
+
+/**
+ * 打开引用关系弹窗，并立即读取最新直接引用索引。
+ */
+async function openReferenceDialog(): Promise<void> {
+  if (!currentComponent.value || currentComponent.value.current_version_no <= 0) return
+  referenceDialogVisible.value = true
+  await refreshComponentReferences()
+}
+
+/**
+ * 从预览操作区打开引用关系；完整预览中触发时先关闭完整预览弹窗。
+ * @param closeFullPreview 预览工作台传入的完整预览关闭函数
+ */
+async function openReferenceFromPreview(closeFullPreview?: CloseFullPreviewHandler): Promise<void> {
+  closeFullPreview?.()
+  await openReferenceDialog()
+}
+
+/**
+ * 从预览操作区打开发布弹窗；完整预览中触发时先关闭完整预览弹窗。
+ * @param closeFullPreview 预览工作台传入的完整预览关闭函数
+ */
+function openReleaseFromPreview(closeFullPreview?: CloseFullPreviewHandler): void {
+  closeFullPreview?.()
+  openReleaseDialog()
+}
+
+/**
+ * 重新读取当前组件被页面和其他组件直接引用的情况。
+ */
+async function refreshComponentReferences(): Promise<void> {
+  if (!currentComponent.value) return
+  referenceLoading.value = true
+  try {
+    componentReferences.value = await getComponentReferences(currentComponent.value.id)
+  } catch (error) {
+    Message.error(getErrorMessage(error, '加载组件引用关系失败'))
+  } finally {
+    referenceLoading.value = false
+  }
+}
+
+/**
+ * 批量升级弹窗中勾选的页面与组件草稿引用。
+ * @param payload 勾选的页面 ID 和组件 ID
+ */
+async function handleUpgradeComponentReferences(payload: WorkspaceComponentReferenceUpgradePayload): Promise<void> {
+  if (!currentComponent.value || referenceUpgrading.value) return
+  referenceUpgrading.value = true
+  try {
+    const result = await upgradeComponentReferences(currentComponent.value.id, payload)
+    showReferenceUpgradeResult(result)
+    emit('request-list-refresh')
+    await refreshComponentReferences()
+  } catch (error) {
+    Message.error(getErrorMessage(error, '更新引用失败'))
+  } finally {
+    referenceUpgrading.value = false
+  }
+}
+
+/**
+ * 展示引用批量升级结果，区分成功、跳过和失败。
+ */
+function showReferenceUpgradeResult(result: WorkspaceComponentReferenceUpgradeResponse): void {
+  const updatedCount = result.updated_pages.length + result.updated_components.length
+  if (result.failures.length > 0) {
+    Message.error(`已更新 ${updatedCount} 项，${result.failures.length} 项失败。`)
+    return
+  }
+  if (updatedCount > 0) {
+    const skippedText = result.skipped.length ? `，跳过 ${result.skipped.length} 项` : ''
+    Message.success(`已更新 ${result.updated_pages.length} 个页面、${result.updated_components.length} 个组件草稿${skippedText}。`)
+    return
+  }
+  Message.warning(result.skipped.length ? `没有可更新引用，已跳过 ${result.skipped.length} 项。` : '没有可更新引用。')
+}
+
 async function refreshVersionHistory(): Promise<void> {
   if (!currentComponent.value) return
   versionHistoryLoading.value = true
@@ -566,5 +699,15 @@ function resetVersionHistoryState(): void {
   previewingVersionNo.value = null
   loadingContentVersionNo.value = null
   restoringVersionNo.value = null
+}
+
+/**
+ * 清空引用关系弹窗临时状态。
+ */
+function resetReferenceState(): void {
+  referenceDialogVisible.value = false
+  referenceLoading.value = false
+  referenceUpgrading.value = false
+  componentReferences.value = null
 }
 </script>

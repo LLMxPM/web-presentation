@@ -25,22 +25,21 @@
       >
         <div class="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-2">
           <span class="text-[11px] font-bold uppercase tracking-widest text-slate-400">快速切换项目</span>
-          <span class="text-[11px] font-medium text-slate-400">{{ projects.length }} 个项目</span>
+          <div class="flex shrink-0 items-center gap-2">
+            <button
+              type="button"
+              data-testid="project-quick-switcher-home"
+              class="overview-header-action"
+              :class="!currentProjectId ? 'overview-header-action-active' : 'overview-header-action-idle'"
+              @click="goToWorkspaceHome"
+            >
+              <span>项目总览</span>
+              <span class="overview-header-count">{{ projects.length }}</span>
+            </button>
+          </div>
         </div>
 
         <div class="max-h-72 overflow-y-auto px-1.5 py-1">
-          <button
-            type="button"
-            data-testid="project-quick-switcher-home"
-            class="project-item"
-            :class="!currentProjectId ? 'project-item-active' : 'project-item-idle'"
-            @click="goToWorkspaceHome"
-          >
-            <LayoutDashboard class="h-4 w-4 shrink-0" />
-            <span class="min-w-0 flex-1 truncate text-left">项目总览</span>
-            <Check v-if="!currentProjectId" class="h-4 w-4 shrink-0" />
-          </button>
-
           <button
             v-for="project in projects"
             :key="project.id"
@@ -71,7 +70,7 @@
 import { computed, ref, watch, type Directive } from 'vue'
 import { useRouter } from 'vue-router'
 import { useQuery } from '@tanstack/vue-query'
-import { Check, ChevronDown, FolderKanban, LayoutDashboard } from 'lucide-vue-next'
+import { Check, ChevronDown, FolderKanban } from '@lucide/vue'
 
 import { listProjects } from '@/api/catalog'
 import { buildProjectPagesPath, buildWorkspaceHomePath } from '@/utils/workspace-routes'
@@ -87,7 +86,7 @@ const dropdownVisible = ref(false)
 
 const projectsQuery = useQuery(
   computed(() => ({
-    queryKey: ['workspace-projects-quick-switcher', props.workspaceId],
+    queryKey: ['projects-by-ws', props.workspaceId, 'active'],
     queryFn: () => listProjects({
       page: 1,
       page_size: 100,
@@ -193,6 +192,53 @@ const vClickOutside: Directive<ClickOutsideElement, () => void> = {
 
 .project-item-active {
   background: rgb(238 242 255);
+  color: rgb(79 70 229);
+}
+
+.overview-header-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3125rem;
+  border-radius: 9999px;
+  border: 1px solid rgb(199 210 254);
+  background: rgb(238 242 255);
+  padding: 0.1875rem 0.25rem 0.1875rem 0.5625rem;
+  font-size: 0.6875rem;
+  font-weight: 900;
+  color: rgb(79 70 229);
+  transition: all 0.16s ease;
+}
+
+.overview-header-action-idle {
+  color: rgb(79 70 229);
+}
+
+.overview-header-action-idle:hover {
+  border-color: rgb(165 180 252);
+  background: rgb(224 231 255);
+  color: rgb(67 56 202);
+}
+
+.overview-header-action-active {
+  border-color: rgb(79 70 229);
+  background: rgb(79 70 229);
+  color: white;
+}
+
+.overview-header-count {
+  border-radius: 9999px;
+  background: rgb(67 56 202);
+  min-width: 1.125rem;
+  padding: 0.125rem 0.3125rem;
+  color: white;
+  font-size: 0.625rem;
+  font-weight: 900;
+  line-height: 1;
+  text-align: center;
+}
+
+.overview-header-action-active .overview-header-count {
+  background: white;
   color: rgb(79 70 229);
 }
 

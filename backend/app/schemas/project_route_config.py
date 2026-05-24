@@ -12,7 +12,6 @@ class ProjectRouteMeta(BaseModel):
 
     title: str = Field(min_length=1, max_length=128)
     order: int
-    icon: str | None = Field(default=None, min_length=1, max_length=128)
     hidden: bool | None = None
 
 

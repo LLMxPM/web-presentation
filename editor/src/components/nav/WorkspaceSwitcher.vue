@@ -83,7 +83,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Archive, Check, ChevronDown, LayoutGrid, Plus } from 'lucide-vue-next'
+import { Archive, Check, ChevronDown, LayoutGrid, Plus } from '@lucide/vue'
 
 import { createWorkspace, listWorkspaces, touchWorkspace, updateWorkspace } from '@/api/catalog'
 import { getErrorMessage } from '@/api/http'

@@ -86,7 +86,8 @@
                   <SearchableSelect
                     :model-value="form.heading_font_id"
                     :options="fontOptions"
-                    placeholder="请选择字体"
+                    clearable
+                    placeholder="浏览器默认"
                     search-placeholder="搜索字体名称"
                     @update:model-value="updateNullableNumberField('heading_font_id', $event)"
                   />
@@ -96,7 +97,8 @@
                   <SearchableSelect
                     :model-value="form.body_font_id"
                     :options="fontOptions"
-                    placeholder="请选择字体"
+                    clearable
+                    placeholder="浏览器默认"
                     search-placeholder="搜索字体名称"
                     @update:model-value="updateNullableNumberField('body_font_id', $event)"
                   />
@@ -106,7 +108,8 @@
                   <SearchableSelect
                     :model-value="form.code_font_id"
                     :options="fontOptions"
-                    placeholder="请选择字体"
+                    clearable
+                    placeholder="浏览器默认"
                     search-placeholder="搜索字体名称"
                     @update:model-value="updateNullableNumberField('code_font_id', $event)"
                   />
@@ -199,9 +202,9 @@
           :project-icon-url="selectedProjectIconAsset?.url"
           :project-icon-name="selectedProjectIconAsset?.name || form.project_icon_name"
           :project-icon-analysis="selectedProjectIconAsset?.analysis_metadata || null"
-          :heading-font-label="selectedHeadingFont?.font_family || 'sans-serif'"
-          :body-font-label="selectedBodyFont?.font_family || 'sans-serif'"
-          :code-font-label="selectedCodeFont?.font_family || 'monospace'"
+          :heading-font-label="selectedHeadingFont?.font_family || DEFAULT_HEADING_FONT_FAMILY"
+          :body-font-label="selectedBodyFont?.font_family || DEFAULT_BODY_FONT_FAMILY"
+          :code-font-label="selectedCodeFont?.font_family || DEFAULT_CODE_FONT_FAMILY"
         />
       </aside>
     </div>
@@ -260,6 +263,9 @@ const dialogVisible = computed({
 const logoAssets = ref<AssetResponse[]>([])
 const projectIconAssets = ref<AssetResponse[]>([])
 const fonts = ref<WorkspaceFontConfigItem[]>([])
+const DEFAULT_HEADING_FONT_FAMILY = 'system-ui'
+const DEFAULT_BODY_FONT_FAMILY = 'system-ui'
+const DEFAULT_CODE_FONT_FAMILY = 'monospace'
 const DEFAULT_THEME_PALETTE: ThemePalette = {
   text: { primary: '#0D286A', secondary: '#1D5297', invert: '#ffffff' },
   background: { default: '#ffffff', invert: '#0D286A' },
@@ -415,10 +421,6 @@ function handleSave() {
   }
   if (!/^[a-z0-9_-]+$/.test(normalizedKey)) {
     Message.error('主题 key 仅支持小写字母、数字、连字符和下划线。')
-    return
-  }
-  if (!form.heading_font_id || !form.body_font_id || !form.code_font_id) {
-    Message.error('请为标题、正文和代码字体分别选择已注册字体。')
     return
   }
   form.key = normalizedKey

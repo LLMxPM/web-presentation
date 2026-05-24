@@ -19,6 +19,9 @@ from app.schemas.component import (
     WorkspaceComponentItem,
     WorkspaceComponentListQuery,
     WorkspaceComponentPublishRequest,
+    WorkspaceComponentReferenceUpgradeRequest,
+    WorkspaceComponentReferenceUpgradeResponse,
+    WorkspaceComponentReferences,
     WorkspaceComponentRestoreDraftRequest,
     WorkspaceComponentSourcePreviewRequest,
     WorkspaceComponentUpdateRequest,
@@ -27,6 +30,7 @@ from app.schemas.component import (
 )
 from app.schemas.release import PreviewArtifactResponse
 from app.services.auth_service import AuthContext
+from app.services.component_reference_service import ComponentReferenceService
 from app.services.component_share_package_service import ComponentSharePackageService
 from app.services.component_preview_service import ComponentPreviewService
 from app.services.workspace_component_service import WorkspaceComponentService
@@ -138,6 +142,29 @@ async def get_component_current_dependencies(
     """查询组件当前版本的源码依赖索引。"""
 
     return await WorkspaceComponentService(session).get_current_dependencies(component_id, user_id=current.user.id)
+
+
+@router.get("/{component_id}/references", response_model=WorkspaceComponentReferences)
+async def get_component_references(
+    component_id: int,
+    current: Annotated[AuthContext, Depends(get_current_user)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> WorkspaceComponentReferences:
+    """查询组件被当前页面版本和当前组件发布版本直接引用的情况。"""
+
+    return await ComponentReferenceService(session).get_references(component_id, user_id=current.user.id)
+
+
+@router.post("/{component_id}/references/upgrade", response_model=WorkspaceComponentReferenceUpgradeResponse)
+async def upgrade_component_references(
+    component_id: int,
+    payload: WorkspaceComponentReferenceUpgradeRequest,
+    current: Annotated[AuthContext, Depends(get_current_user)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> WorkspaceComponentReferenceUpgradeResponse:
+    """批量升级页面和组件草稿中对指定组件的直接引用版本。"""
+
+    return await ComponentReferenceService(session).upgrade_references(component_id, payload, user_id=current.user.id)
 
 
 @router.post("/preview-artifacts/from-source", response_model=PreviewArtifactResponse, response_model_exclude_none=True)

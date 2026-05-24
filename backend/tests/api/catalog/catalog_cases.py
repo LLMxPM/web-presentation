@@ -542,7 +542,6 @@ async def test_archiving_page_should_remove_project_route_bindings(authenticated
             "route_type": "group",
             "route": "chapter",
             "order": 1,
-            "icon": None,
             "hidden": False,
             "group_title": "章节",
             "page_id": None,
@@ -555,7 +554,6 @@ async def test_archiving_page_should_remove_project_route_bindings(authenticated
                     "route_type": "page",
                     "route": "remaining",
                     "order": 1,
-                    "icon": None,
                     "hidden": False,
                     "page_id": remaining_page_id,
                     "page_code": remaining_page.json()["code"],
@@ -777,10 +775,8 @@ async def test_page_copy_to_project_should_append_routes_and_deduplicate(
     assert routes_after_copy.status_code == 200
     root_routes = routes_after_copy.json()["routes"]
     assert root_routes[2]["route"] == "home-2"
-    assert root_routes[2]["icon"] is None
     assert root_routes[2]["hidden"] is False
     assert root_routes[1]["children"][1]["route"] == "home-2"
-    assert root_routes[1]["children"][1]["icon"] is None
     assert root_routes[1]["children"][1]["hidden"] is False
 
 
@@ -1049,58 +1045,37 @@ async def test_project_route_tree_should_reject_invalid_route_segments(
     assert invalid_child_response.json()["code"] == "PROJECT_ROUTE_INVALID_SEGMENT"
 
 
-async def test_project_route_tree_should_validate_icon_assets(authenticated_client: AsyncClient) -> None:
-    """项目路由图标为空时允许保存，填写时必须命中当前工作空间已有 icon 资源。"""
+async def test_project_route_tree_should_reject_icon_field(authenticated_client: AsyncClient) -> None:
+    """项目路由树不再接收 icon 字段。"""
 
     workspace = await authenticated_client.post(
         "/api/workspaces",
-        json={"name": "路由图标工作空间", "status": "active"},
+        json={"name": "路由图标字段工作空间", "status": "active"},
     )
     assert workspace.status_code == 200
     workspace_id = workspace.json()["id"]
 
     project = await authenticated_client.post(
         "/api/projects",
-        json={"workspace_id": workspace_id, "name": "路由图标项目", "status": "active"},
+        json={"workspace_id": workspace_id, "name": "路由图标字段项目", "status": "active"},
     )
     assert project.status_code == 200
     project_id = project.json()["id"]
 
-    first_page = await authenticated_client.post(
+    page = await authenticated_client.post(
         "/api/pages",
         json={
-            "page_content": "<template><div>icon-route-1</div></template>",
+            "page_content": "<template><div>route-with-icon-field</div></template>",
             "file_type": "vue",
-            "title": "图标路由一",
+            "title": "路由图标字段页面",
             "status": "active",
             "workspace_id": workspace_id,
             "project_id": project_id,
         },
     )
-    assert first_page.status_code == 200
+    assert page.status_code == 200
 
-    second_page = await authenticated_client.post(
-        "/api/pages",
-        json={
-            "page_content": "<template><div>icon-route-2</div></template>",
-            "file_type": "vue",
-            "title": "图标路由二",
-            "status": "active",
-            "workspace_id": workspace_id,
-            "project_id": project_id,
-        },
-    )
-    assert second_page.status_code == 200
-
-    icon_response = await authenticated_client.post(
-        f"/api/workspaces/{workspace_id}/assets/upload",
-        files={"file": ("route-doc.svg", b"<svg><path d='M0 0h1v1H0z'/></svg>", "image/svg+xml")},
-        data={"asset_type": "icon", "tags": "[]"},
-    )
-    assert icon_response.status_code == 200
-    assert icon_response.json()["name"] == "route-doc"
-
-    missing_response = await authenticated_client.put(
+    response = await authenticated_client.put(
         f"/api/projects/{project_id}/routes",
         json={
             "routes": [
@@ -1109,63 +1084,12 @@ async def test_project_route_tree_should_validate_icon_assets(authenticated_clie
                     "route": "cover",
                     "order": 0,
                     "icon": "file",
-                    "page_id": first_page.json()["id"],
-                },
-                {
-                    "route_type": "group",
-                    "route": "chapter",
-                    "order": 10,
-                    "icon": "route-doc",
-                    "group_title": "章节",
-                    "children": [
-                        {
-                            "route": "overview",
-                            "order": 0,
-                            "icon": "missing-child-icon",
-                            "page_id": second_page.json()["id"],
-                        }
-                    ],
+                    "page_id": page.json()["id"],
                 },
             ]
         },
     )
-    assert missing_response.status_code == 400
-    assert missing_response.json()["code"] == "PROJECT_ROUTE_ICON_ASSET_NOT_FOUND"
-    assert "file" in missing_response.json()["message"]
-    assert "missing-child-icon" in missing_response.json()["message"]
-
-    valid_response = await authenticated_client.put(
-        f"/api/projects/{project_id}/routes",
-        json={
-            "routes": [
-                {
-                    "route_type": "page",
-                    "route": "cover",
-                    "order": 0,
-                    "icon": " route-doc ",
-                    "page_id": first_page.json()["id"],
-                },
-                {
-                    "route_type": "group",
-                    "route": "chapter",
-                    "order": 10,
-                    "icon": None,
-                    "group_title": "章节",
-                    "children": [
-                        {
-                            "route": "overview",
-                            "order": 0,
-                            "page_id": second_page.json()["id"],
-                        }
-                    ],
-                },
-            ]
-        },
-    )
-    assert valid_response.status_code == 200
-    assert valid_response.json()["routes"][0]["icon"] == "route-doc"
-    assert valid_response.json()["routes"][1]["icon"] is None
-    assert valid_response.json()["routes"][1]["children"][0]["icon"] is None
+    assert response.status_code == 422
 
 
 async def test_project_route_tree_should_accept_single_segment_routes(

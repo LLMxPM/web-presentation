@@ -1,1 +1,60 @@
-<?xml version="1.0" standalone="no"?><!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd"><svg t="1756951769180" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="5683" xmlns:xlink="http://www.w3.org/1999/xlink" width="200" height="200"><path d="M528.384 803.968l224 149.632c6.336 4.288 13.504 6.4 20.48 6.4 11.648 0 23.04-5.504 30.144-15.872 11.392-16.576 7.04-39.168-9.536-50.56l-199.296-127.424 266.88 0c20.096 0 35.008-16.256 35.008-36.352l0-538.88 26.24 0c20.096 0 36.352-9.856 36.352-30.016 0-20.032-16.256-29.952-36.352-29.952L576 130.944 576 103.936C575.872 82.752 573.824 73.92 555.584 67.584c-16.704-3.84-65.664 0-76.672 0-20.032 0-26.816 16.256-26.816 36.352l0 26.944L100.352 130.88C80.384 130.88 64 140.8 64 160.896c0 20.096 16.384 30.016 36.352 30.016l29.44 0 0 538.88c0 20.096 16.256 36.352 36.352 36.352l289.408 0-202.432 127.424c-16.512 11.392-20.8 33.984-9.472 50.56C250.752 954.496 262.144 960 273.728 960c7.04 0 14.208-2.048 20.416-6.4L528.384 803.968zM834.432 704 192 704 192 190.848l642.432 0L834.432 704zM704 555.264C704 566.72 713.344 576 724.736 576l22.528 0C758.72 576 768 566.72 768 555.264L768 347.776c0-11.52-9.28-20.8-20.736-20.8l-22.528 0C713.344 326.976 704 336.256 704 347.776L704 555.264zM576 471.104l0 84.096C576 566.72 585.344 576 596.864 576l22.336 0C630.656 576 640 566.72 640 555.264L640 471.104c0-11.52-9.344-20.8-20.8-20.8L596.864 450.304C585.344 450.304 576 459.648 576 471.104zM374.848 576C311.552 576 256 519.36 256 454.912 256 391.68 304.448 338.24 365.312 338.24c5.056 0 8.96 4.096 8.96 9.216 0 0 0 88.896 0 97.856C374.272 454.272 384 454.976 384 454.976l100.544 0c5.12 0 9.28 3.904 9.28 9.024C493.824 524.864 439.296 576 374.848 576zM519.296 421.952 418.368 421.952c-4.672 0-8.448-3.712-8.448-8.448L409.92 312.64c0-4.736 3.84-8.576 8.576-8.576 64.448 0 109.44 44.928 109.44 109.376C527.936 418.176 524.032 421.952 519.296 421.952z" fill="#13227a" p-id="5684"></path></svg>
+<svg width="1087" height="700" xmlns="http://www.w3.org/2000/svg" aria-labelledby="title desc" role="img">
+ <title id="title">Runtime icon</title>
+ <desc id="desc">清理后的窗口卡片图标，去除了光栅图转换产生的碎路径和毛边。</desc>
+ <defs>
+  <clipPath id="imageClip">
+   <rect id="svg_1" rx="15" height="303" width="312" y="256" x="133"/>
+  </clipPath>
+  <linearGradient y2="0.99699" x2="0.98778" y1="0.03916" x1="0.022" id="frameGradient">
+   <stop stop-color="#0647d2" offset="0"/>
+   <stop stop-color="#064ed2" offset="0.58"/>
+   <stop stop-color="#1f4bd6" offset="1"/>
+  </linearGradient>
+  <linearGradient y2="1" x2="0.97917" y1="0.02597" x1="0.30556" id="backCardOne">
+   <stop stop-color="#1b73d4" offset="0"/>
+   <stop stop-color="#3450d7" offset="0.52"/>
+   <stop stop-color="#3f4bd8" offset="1"/>
+  </linearGradient>
+  <linearGradient y2="1" x2="1" y1="0.00179" x1="0.30769" id="backCardTwo">
+   <stop stop-color="#246ad6" offset="0"/>
+   <stop stop-color="#3f52d8" offset="0.48"/>
+   <stop stop-color="#4d4bd8" offset="1"/>
+  </linearGradient>
+  <linearGradient y2="0.95346" x2="1.01911" y1="-0.59772" x1="-0.00637" id="imageBlue">
+   <stop stop-color="#1659dc" offset="0"/>
+   <stop stop-color="#073fc9" offset="1"/>
+  </linearGradient>
+  <mask id="frameCutouts" maskUnits="userSpaceOnUse" x="0" y="0" width="1087" height="700">
+   <rect fill="#ffffff" height="700" width="1087" y="0" x="0"/>
+   <circle fill="#000000" r="22" cy="84" cx="216"/>
+   <circle fill="#000000" r="22" cy="83" cx="286"/>
+   <rect fill="#000000" rx="44" height="492" width="750" y="160" x="68"/>
+   <circle fill="#000000" r="22" cy="83" cx="216"/>
+   <circle fill="#000000" r="22" cy="83" cx="146"/>
+  </mask>
+ </defs>
+ <g>
+  <title>Layer 1</title>
+  <path stroke="null" id="svg_2" d="m975.81818,156q0,-12 9.81818,-16l57.27273,-29.23269q22.09091,-11.27547 22.09091,47.23269l0,465q0,56 -45.81818,56l-71.18182,0q27.81818,-24 27.81818,-68l0,-455z" fill="url(#backCardTwo)"/>
+  <path stroke="null" id="svg_3" d="m862.80556,113q0,-12 10.16667,-17l62.69444,-32q20.33333,-10.37777 20.33333,37l0,523q0,56 -47.44444,56l-74.55555,0q28.80556,-24 28.80556,-68l0,-499z" fill="url(#backCardOne)"/>
+  <rect id="svg_4" fill="url(#frameGradient)" rx="56" height="664" width="818" y="16" x="28" mask="url(#frameCutouts)"/>
+  <circle id="svg_5" fill="none" r="22" cy="84" cx="216"/>
+  <circle id="svg_6" fill="none" r="22" cy="83" cx="286"/>
+  <rect id="svg_7" fill="none" rx="44" height="492" width="750" y="160" x="68"/>
+  <g id="svg_8">
+   <rect id="svg_9" fill="none" rx="15" height="303" width="312" y="256" x="133"/>
+   <g id="svg_10" clip-path="url(#imageClip)">
+    <circle id="svg_11" fill="#415bdc" r="36" cy="368" cx="350"/>
+    <path id="svg_12" d="m132,526l115,-136c13,-16 37,-15 49,2l46,66c6,9 19,10 26,2l21,-24c12,-14 32,-13 44,2l13,16l0,118l-314,0l0,-46z" fill="url(#imageBlue)"/>
+    <path id="svg_13" opacity="0.55" d="m248,572l84,-98c10,-10 28,-10 38,2l76,96l-198,0z" fill="#0b43c8"/>
+   </g>
+   <rect id="svg_14" stroke-width="10" stroke="#094dd2" fill="none" rx="15" height="303" width="312" y="256" x="133"/>
+  </g>
+  <rect id="svg_15" fill="#004ed0" rx="14" height="36" width="270" y="274" x="500"/>
+  <rect id="svg_16" fill="#8391d2" rx="13.5" height="27" width="270" y="364" x="500"/>
+  <rect id="svg_17" fill="#8391d2" rx="13.5" height="27" width="210" y="445" x="500"/>
+  <rect id="svg_18" fill="#8391d2" rx="14" height="66" width="165" y="515" x="500"/>
+  <circle id="svg_19" fill="none" r="22" cy="83" cx="216"/>
+  <circle id="svg_20" fill="none" r="22" cy="83" cx="146"/>
+ </g>
+</svg>

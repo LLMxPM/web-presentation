@@ -39,6 +39,71 @@ async def create_active_project(authenticated_client: AsyncClient) -> tuple[int,
     return workspace_id, project_response.json()["id"]
 
 
+async def upload_build_asset(
+    authenticated_client: AsyncClient,
+    workspace_id: int,
+    name: str,
+    *,
+    asset_type: str = "image",
+    file_name: str | None = None,
+) -> dict:
+    """上传构建测试使用的工作空间资源。"""
+
+    resolved_file_name = file_name or f"{name}.png"
+    content_type = "image/svg+xml" if asset_type == "icon" else "image/png"
+    content = (
+        f"<svg><path d='{name}' /></svg>".encode("utf-8")
+        if asset_type == "icon"
+        else f"fake-{name}".encode("utf-8")
+    )
+    response = await authenticated_client.post(
+        f"/api/workspaces/{workspace_id}/assets/upload",
+        files={"file": (resolved_file_name, content, content_type)},
+        data={"asset_type": asset_type, "tags": "[]", "name": name},
+    )
+    assert response.status_code == 200
+    return response.json()
+
+
+async def create_routed_build_page(
+    authenticated_client: AsyncClient,
+    workspace_id: int,
+    project_id: int,
+    page_content: str,
+) -> dict:
+    """创建并加入路由的构建测试页面。"""
+
+    page_response = await authenticated_client.post(
+        "/api/pages",
+        json={
+            "workspace_id": workspace_id,
+            "project_id": project_id,
+            "title": "构建资源页面",
+            "page_content": page_content,
+            "file_type": "vue",
+            "status": "active",
+        },
+    )
+    assert page_response.status_code == 200
+    page = page_response.json()
+
+    route_response = await authenticated_client.put(
+        f"/api/projects/{project_id}/routes",
+        json={
+            "routes": [
+                {
+                    "route_type": "page",
+                    "route": "home",
+                    "order": 0,
+                    "page_id": page["id"],
+                }
+            ]
+        },
+    )
+    assert route_response.status_code == 200
+    return page
+
+
 def build_fake_snapshot(workspace_id: int) -> ProjectArtifactSnapshot:
     """构造最小可用的项目 artifact 快照，避免测试依赖真实模块组装。"""
 
@@ -106,6 +171,175 @@ def test_normalize_project_build_base_url_should_reject_absolute_url() -> None:
 
 
 @pytest.mark.asyncio
+async def test_project_should_persist_normalized_build_extra_assets_json(
+    authenticated_client: AsyncClient,
+) -> None:
+    """项目接口应读写并归一化构建额外资源 JSON。"""
+
+    workspace_id, project_id = await create_active_project(authenticated_client)
+
+    update_response = await authenticated_client.patch(
+        f"/api/projects/{project_id}",
+        json={
+            "build_extra_assets_json": {
+                "asset_names": [" hero_bg ", "hero_bg", "./font/main.woff2", ""],
+            }
+        },
+    )
+    assert update_response.status_code == 200
+    assert update_response.json()["build_extra_assets_json"] == {
+        "asset_names": ["hero_bg", "font/main.woff2"]
+    }
+
+    invalid_response = await authenticated_client.patch(
+        f"/api/projects/{project_id}",
+        json={"build_extra_assets_json": {"asset_names": ["https://assets.example/logo.png"]}},
+    )
+    assert invalid_response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_project_build_snapshot_should_only_include_referenced_and_extra_assets(
+    authenticated_client: AsyncClient,
+    monkeypatch,
+) -> None:
+    """构建快照应只包含静态引用资源和项目 JSON 中声明的额外资源。"""
+
+    workspace_id, project_id = await create_active_project(authenticated_client)
+    await upload_build_asset(authenticated_client, workspace_id, "slider", asset_type="icon", file_name="slider.svg")
+    used_asset = await upload_build_asset(authenticated_client, workspace_id, "used_image")
+    extra_asset = await upload_build_asset(authenticated_client, workspace_id, "manual_extra")
+    await upload_build_asset(authenticated_client, workspace_id, "unused_large_image")
+    await create_routed_build_page(
+        authenticated_client,
+        workspace_id,
+        project_id,
+        '<template><AssetImage name="used_image" /></template>',
+    )
+    update_response = await authenticated_client.patch(
+        f"/api/projects/{project_id}",
+        json={"build_extra_assets_json": {"asset_names": ["manual_extra"]}},
+    )
+    assert update_response.status_code == 200
+
+    async def fake_run_project_build_job(job_id: int) -> None:  # pragma: no cover
+        return None
+
+    monkeypatch.setattr("app.api.routes.build_jobs.run_project_build_job", fake_run_project_build_job)
+    create_response = await authenticated_client.post(
+        f"/api/projects/{project_id}/build-jobs",
+        json={"base_url": "./"},
+    )
+    assert create_response.status_code == 200
+
+    async with get_session_factory()() as session:
+        release = await session.get(Release, create_response.json()["snapshot_release_id"])
+
+    assert release is not None
+    assert release.manifest["assets"]["used_image"] == used_asset["file_hash"]
+    assert release.manifest["assets"]["manual_extra"] == extra_asset["file_hash"]
+    assert "unused_large_image" not in release.manifest["assets"]
+
+
+@pytest.mark.asyncio
+async def test_project_build_asset_summary_should_split_automatic_and_extra_assets(
+    authenticated_client: AsyncClient,
+) -> None:
+    """构建资源摘要应区分后端自动包含资源和项目额外资源。"""
+
+    workspace_id, project_id = await create_active_project(authenticated_client)
+    await upload_build_asset(authenticated_client, workspace_id, "slider", asset_type="icon", file_name="slider.svg")
+    await upload_build_asset(authenticated_client, workspace_id, "used_image")
+    await upload_build_asset(authenticated_client, workspace_id, "manual_extra")
+    await upload_build_asset(authenticated_client, workspace_id, "unused_large_image")
+    await create_routed_build_page(
+        authenticated_client,
+        workspace_id,
+        project_id,
+        '<template><AssetImage name="used_image" /></template>',
+    )
+    update_response = await authenticated_client.patch(
+        f"/api/projects/{project_id}",
+        json={"build_extra_assets_json": {"asset_names": ["manual_extra"]}},
+    )
+    assert update_response.status_code == 200
+
+    response = await authenticated_client.get(f"/api/projects/{project_id}/build-assets")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert "used_image" in payload["automatic_asset_names"]
+    assert payload["extra_asset_names"] == ["manual_extra"]
+    assert "used_image" in payload["included_asset_names"]
+    assert "manual_extra" in payload["included_asset_names"]
+    assert "unused_large_image" not in payload["included_asset_names"]
+
+
+@pytest.mark.asyncio
+async def test_project_build_should_return_structured_dynamic_asset_error(
+    authenticated_client: AsyncClient,
+    monkeypatch,
+) -> None:
+    """动态资源无法静态解析且未配置额外资源时，应返回可展示的结构化错误。"""
+
+    workspace_id, project_id = await create_active_project(authenticated_client)
+    await upload_build_asset(authenticated_client, workspace_id, "slider", asset_type="icon", file_name="slider.svg")
+    await upload_build_asset(authenticated_client, workspace_id, "candidate_image")
+    await create_routed_build_page(
+        authenticated_client,
+        workspace_id,
+        project_id,
+        '<template><AssetImage :name="dynamicName" /></template>',
+    )
+
+    async def fake_run_project_build_job(job_id: int) -> None:  # pragma: no cover
+        return None
+
+    monkeypatch.setattr("app.api.routes.build_jobs.run_project_build_job", fake_run_project_build_job)
+    response = await authenticated_client.post(
+        f"/api/projects/{project_id}/build-jobs",
+        json={"base_url": "./"},
+    )
+
+    assert response.status_code == 409
+    payload = response.json()
+    assert payload["code"] == "PROJECT_BUILD_DYNAMIC_ASSET_REFERENCE"
+    assert payload["data"]["dynamic_module_paths"]
+    assert "candidate_image" in payload["data"]["candidate_asset_names"]
+
+
+@pytest.mark.asyncio
+async def test_project_build_should_return_structured_missing_asset_error(
+    authenticated_client: AsyncClient,
+    monkeypatch,
+) -> None:
+    """构建引用不存在资源时，应返回缺失资源名列表。"""
+
+    workspace_id, project_id = await create_active_project(authenticated_client)
+    await upload_build_asset(authenticated_client, workspace_id, "slider", asset_type="icon", file_name="slider.svg")
+    await create_routed_build_page(
+        authenticated_client,
+        workspace_id,
+        project_id,
+        '<template><AssetImage name="missing_image" /></template>',
+    )
+
+    async def fake_run_project_build_job(job_id: int) -> None:  # pragma: no cover
+        return None
+
+    monkeypatch.setattr("app.api.routes.build_jobs.run_project_build_job", fake_run_project_build_job)
+    response = await authenticated_client.post(
+        f"/api/projects/{project_id}/build-jobs",
+        json={"base_url": "./"},
+    )
+
+    assert response.status_code == 409
+    payload = response.json()
+    assert payload["code"] == "PROJECT_BUILD_ASSET_MISSING"
+    assert "missing_image" in payload["data"]["missing_asset_names"]
+
+
+@pytest.mark.asyncio
 async def test_project_build_job_routes_should_create_and_query_latest_job(
     authenticated_client: AsyncClient,
     monkeypatch,
@@ -123,8 +357,10 @@ async def test_project_build_job_routes_should_create_and_query_latest_job(
         project_id: int,
         entry_descriptor=None,
         asset_delivery_mode="public",
+        asset_snapshot_mode="all",
     ) -> ProjectArtifactSnapshot:
         captured_snapshot["asset_delivery_mode"] = asset_delivery_mode
+        captured_snapshot["asset_snapshot_mode"] = asset_snapshot_mode
         return build_fake_snapshot(workspace_id)
 
     async def fake_run_project_build_job(job_id: int) -> None:
@@ -157,6 +393,13 @@ async def test_project_build_job_routes_should_create_and_query_latest_job(
     assert detail_response.status_code == 200
     assert detail_response.json()["id"] == build_job["id"]
 
+    session_factory = get_session_factory()
+    async with session_factory() as session:
+        first_job = await session.get(ProjectBuildJob, build_job["id"])
+        assert first_job is not None
+        first_job.status = "succeeded"
+        await session.commit()
+
     second_create_response = await authenticated_client.post(
         f"/api/projects/{project_id}/build-jobs",
         json={"base_url": "./"},
@@ -171,7 +414,6 @@ async def test_project_build_job_routes_should_create_and_query_latest_job(
     assert history_payload[0]["base_url"] == "./"
     assert history_payload[1]["base_url"] == "/demo/"
 
-    session_factory = get_session_factory()
     async with session_factory() as session:
         release = await session.get(Release, build_job["snapshot_release_id"])
 
@@ -181,6 +423,57 @@ async def test_project_build_job_routes_should_create_and_query_latest_job(
     assert release.manifest["artifact_kind"] == "build_snapshot"
     assert release.manifest["asset_metadata"]["img/logo.svg"]["original_name"] == "logo.svg"
     assert captured_snapshot["asset_delivery_mode"] == "backend_cache"
+    assert captured_snapshot["asset_snapshot_mode"] == "referenced"
+
+
+@pytest.mark.asyncio
+async def test_create_project_build_job_should_reject_when_active_job_exists(
+    authenticated_client: AsyncClient,
+    monkeypatch,
+) -> None:
+    """已有排队或运行中的构建任务时，应拒绝重复创建新任务。"""
+
+    workspace_id, project_id = await create_active_project(authenticated_client)
+    background_job_ids: list[int] = []
+
+    async def fake_build_snapshot(  # noqa: ANN001
+        self,
+        *,
+        project_id: int,
+        entry_descriptor=None,
+        asset_delivery_mode="public",
+        asset_snapshot_mode="all",
+    ) -> ProjectArtifactSnapshot:
+        return build_fake_snapshot(workspace_id)
+
+    async def fake_run_project_build_job(job_id: int) -> None:
+        background_job_ids.append(job_id)
+
+    monkeypatch.setattr(
+        "app.services.project_build_service.ProjectArtifactBuilder.build_snapshot",
+        fake_build_snapshot,
+    )
+    monkeypatch.setattr("app.api.routes.build_jobs.run_project_build_job", fake_run_project_build_job)
+
+    first_response = await authenticated_client.post(
+        f"/api/projects/{project_id}/build-jobs",
+        json={"base_url": "./"},
+    )
+    assert first_response.status_code == 200
+    first_job = first_response.json()
+
+    second_response = await authenticated_client.post(
+        f"/api/projects/{project_id}/build-jobs",
+        json={"base_url": "./"},
+    )
+    assert second_response.status_code == 409
+    payload = second_response.json()
+    assert payload["code"] == "PROJECT_BUILD_ALREADY_RUNNING"
+    assert payload["data"] == {
+        "active_job_id": first_job["id"],
+        "active_job_status": "pending",
+    }
+    assert background_job_ids == [first_job["id"]]
 
 
 @pytest.mark.asyncio
@@ -198,6 +491,7 @@ async def test_run_project_build_job_should_update_status_for_success_and_failur
         project_id: int,
         entry_descriptor=None,
         asset_delivery_mode="public",
+        asset_snapshot_mode="all",
     ) -> ProjectArtifactSnapshot:
         return build_fake_snapshot(workspace_id)
 
@@ -292,6 +586,7 @@ async def test_project_build_artifact_upload_and_download_should_persist_metadat
         project_id: int,
         entry_descriptor=None,
         asset_delivery_mode="public",
+        asset_snapshot_mode="all",
     ) -> ProjectArtifactSnapshot:
         return build_fake_snapshot(workspace_id)
 
@@ -434,6 +729,7 @@ async def test_project_build_artifact_proxy_should_report_missing_archive(
         project_id: int,
         entry_descriptor=None,
         asset_delivery_mode="public",
+        asset_snapshot_mode="all",
     ) -> ProjectArtifactSnapshot:
         return build_fake_snapshot(workspace_id)
 

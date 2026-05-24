@@ -78,22 +78,14 @@ async def get_public_cached_asset(
     media_type, _ = mimetypes.guess_type(asset.original_name)
     headers = {"Cache-Control": CACHE_CONTROL_IMMUTABLE}
 
-    local_file_path = await driver.get_physical_path(workspace_id, asset.file_name)
-    if local_file_path and local_file_path.exists():
-        return FileResponse(
-            path=local_file_path,
-            media_type=media_type or "application/octet-stream",
-            headers=headers,
-        )
-
-    object_storage_service = ObjectStorageService()
-    async with object_storage_service.open_object_for_read(
-        f"assets/{workspace_id}/{asset.file_name}",
+    async with driver.open_for_read(
+        workspace_id,
+        asset.file_name,
         expected_sha256=asset.file_hash,
         expected_size=asset.file_size,
-    ) as cache_file_path:
+    ) as local_file_path:
         return FileResponse(
-            path=cache_file_path,
+            path=local_file_path,
             media_type=media_type or "application/octet-stream",
             headers=headers,
         )

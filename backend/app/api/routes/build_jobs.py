@@ -11,13 +11,25 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.dependencies import get_current_user
 from app.core.exceptions import AppException
 from app.db.session import get_db_session
-from app.schemas.project_build import ProjectBuildCreateRequest, ProjectBuildJobResponse
+from app.schemas.project_build import ProjectBuildAssetSummary, ProjectBuildCreateRequest, ProjectBuildJobResponse
 from app.services.auth_service import AuthContext
 from app.services.object_storage_service import ObjectStorageService
 from app.services.project_build_service import ProjectBuildService, run_project_build_job
 from app.services.project_service import ProjectService
 
 router = APIRouter()
+
+
+@router.get("/projects/{project_id}/build-assets", response_model=ProjectBuildAssetSummary)
+async def get_project_build_asset_summary(
+    project_id: int,
+    current: Annotated[AuthContext, Depends(get_current_user)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> ProjectBuildAssetSummary:
+    """读取项目当前构建会包含的资源摘要。"""
+
+    await ProjectService(session).get(project_id, user_id=current.user.id)
+    return await ProjectBuildService(session).get_asset_summary(project_id)
 
 
 @router.post("/projects/{project_id}/build-jobs", response_model=ProjectBuildJobResponse)

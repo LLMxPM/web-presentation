@@ -1,1 +1,9 @@
-Generic single-database configuration.
+文件功能：说明 Backend 数据库迁移目录的封版基线策略。
+
+# Backend 数据库迁移
+
+当前迁移面向首次发布，从空数据库直接创建最终结构。
+
+- `versions/20260523_0059_initial_release_schema.py` 是首次发布基线迁移。
+- 历史开发期增量迁移已合并，不再作为发布链路的一部分。
+- 首次发布前若开发库已具备最新结构，应使用 `alembic stamp 20260523_0059` 对齐版本号。

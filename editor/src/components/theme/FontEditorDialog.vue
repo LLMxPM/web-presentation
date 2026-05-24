@@ -10,9 +10,7 @@
               <h3 class="text-lg font-black text-slate-900">{{ editingFont ? '编辑字体注册' : '注册字体' }}</h3>
               <p class="mt-1 text-xs text-slate-400">字体注册用于主题的标题、正文和代码字体选择。</p>
             </div>
-            <button class="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700" @click="closeDialog">
-              <X class="h-4 w-4" />
-            </button>
+            <BaseCloseButton label="关闭字体注册弹窗" @click="closeDialog" />
           </header>
 
           <div class="min-h-0 flex-1 space-y-5 overflow-y-auto bg-slate-50/70 px-6 py-5">
@@ -119,8 +117,8 @@
 
 <script setup lang="ts">
 import { reactive, watch } from 'vue'
-import { X } from 'lucide-vue-next'
 
+import BaseCloseButton from '@/components/ui/BaseCloseButton.vue'
 import type { AssetResponse, RecordStatus, WorkspaceFontConfigItem } from '@/types/api'
 
 const props = withDefaults(defineProps<{

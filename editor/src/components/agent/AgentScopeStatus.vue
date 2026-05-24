@@ -28,7 +28,7 @@
 </template>
 
 <script setup lang="ts">
-import { MapPin, MessageCircle } from 'lucide-vue-next'
+import { MapPin, MessageCircle } from '@lucide/vue'
 
 import type { ScopeSummary } from '@/components/agent/agent-session-scope'
 

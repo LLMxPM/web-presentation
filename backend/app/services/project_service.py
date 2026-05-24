@@ -10,7 +10,12 @@ from app.models.workspace import Project
 from app.repositories.project_repository import ProjectRepository
 from app.repositories.workspace_repository import WorkspaceRepository
 from app.schemas.common import ListQuery, PagedResponse
-from app.schemas.project import ProjectCreateRequest, ProjectItem, ProjectUpdateRequest
+from app.schemas.project import (
+    ProjectCreateRequest,
+    ProjectItem,
+    ProjectUpdateRequest,
+    normalize_project_build_extra_assets_config,
+)
 from app.services.project_config_service import ProjectConfigService
 from app.services.workspace_theme_service import WorkspaceThemeService
 from app.services.workspace_service import WorkspaceService
@@ -51,6 +56,9 @@ class ProjectService:
                 "theme_key": project.theme_key,
                 "theme_config_yaml": project.theme_config_yaml,
                 "style_spec_markdown": project.style_spec_markdown,
+                "build_extra_assets_json": normalize_project_build_extra_assets_config(
+                    project.build_extra_assets_json
+                ).model_dump(mode="python"),
                 "created_at": project.created_at,
                 "updated_at": project.updated_at,
                 "created_by": project.created_by,
@@ -125,6 +133,7 @@ class ProjectService:
                 theme_key=resolved_theme_key,
                 theme_config_yaml=config_values["theme_config_yaml"],
                 style_spec_markdown=payload.style_spec_markdown,
+                build_extra_assets_json=payload.build_extra_assets_json.model_dump(mode="python"),
                 created_by=operator_id,
                 updated_by=operator_id,
             )
@@ -195,6 +204,8 @@ class ProjectService:
             project.theme_config_yaml = payload.theme_config_yaml
         if payload.style_spec_markdown is not None:
             project.style_spec_markdown = payload.style_spec_markdown
+        if payload.build_extra_assets_json is not None:
+            project.build_extra_assets_json = payload.build_extra_assets_json.model_dump(mode="python")
 
         project.updated_by = operator_id
         await self.session.commit()

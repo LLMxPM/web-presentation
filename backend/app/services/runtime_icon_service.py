@@ -30,14 +30,12 @@ class RuntimeIconService:
         *,
         workspace_id: int,
         project_icon_name: str | None,
-        runtime_route_config: dict[str, object],
         pages: list[Page],
     ) -> dict[str, list[dict[str, object | None]]]:
         """收集整项目预览所需图标，并输出最小 static_icons 配置。"""
 
         icon_names: list[str] = []
         self._append_unique_name(icon_names, project_icon_name)
-        self._extend_unique_names(icon_names, self._collect_route_icon_names(runtime_route_config))
         for page in pages:
             self._extend_unique_names(
                 icon_names,
@@ -106,14 +104,12 @@ class RuntimeIconService:
         *,
         workspace_id: int,
         project_icon_name: str | None,
-        runtime_route_config: dict[str, object],
         modules_data: Iterable[dict[str, str]],
     ) -> dict[str, list[dict[str, object | None]]]:
-        """基于项目发布模块图和路由元信息收集整项目预览/构建所需图标。"""
+        """基于项目发布模块图收集整项目预览/构建所需图标。"""
 
         icon_names: list[str] = []
         self._append_unique_name(icon_names, project_icon_name)
-        self._extend_unique_names(icon_names, self._collect_route_icon_names(runtime_route_config))
         self._extend_unique_names(icon_names, self.collect_static_icon_names_from_modules(modules_data))
         return await self.build_static_icon_config(workspace_id, icon_names)
 
@@ -211,29 +207,6 @@ class RuntimeIconService:
                 ),
             )
         return icon_names
-
-    @classmethod
-    def _collect_route_icon_names(cls, runtime_route_config: dict[str, object]) -> list[str]:
-        """从 Runtime 路由配置中递归收集项目导航使用到的 icon 名称。"""
-
-        result: list[str] = []
-        for route_item in runtime_route_config.get("routes", []) or []:
-            cls._collect_route_icon_names_recursive(result, route_item)
-        return result
-
-    @classmethod
-    def _collect_route_icon_names_recursive(cls, result: list[str], route_item: object) -> None:
-        """递归扫描单个路由节点及其子节点的 meta.icon。"""
-
-        if not isinstance(route_item, dict):
-            return
-
-        meta = route_item.get("meta")
-        if isinstance(meta, dict):
-            cls._append_unique_name(result, meta.get("icon"))
-
-        for child in route_item.get("children", []) or []:
-            cls._collect_route_icon_names_recursive(result, child)
 
     async def _list_workspace_icon_assets(self, workspace_id: int) -> list[WorkspaceAsset]:
         """读取工作空间内全部图标资产，供图标名存在性校验使用。"""

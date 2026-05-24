@@ -30,7 +30,6 @@ class ProjectRouteChildWrite(BaseModel):
         description="子页面路由片段，只允许单段相对路径，例如 home、chapter-1；不允许 /、/home、home/ 或 a/b。",
     )
     order: int = Field(description="同级排序值。")
-    icon: str | None = Field(default=None, min_length=1, max_length=128, description="可选图标名称，通常传 null 或省略；填写时必须是当前工作空间已有的 icon 资源名。")
     hidden: bool = Field(default=False, description="是否在导航中隐藏。")
     page_id: int = Field(ge=1, description="绑定页面 ID，必须来自当前项目页面列表。")
 
@@ -46,7 +45,6 @@ class ProjectRouteItemWrite(BaseModel):
         description="顶层路由片段，只允许单段相对路径，例如 home、chapter-1；不允许 /、/home、home/ 或 a/b。",
     )
     order: int = Field(description="同级排序值。")
-    icon: str | None = Field(default=None, min_length=1, max_length=128, description="可选图标名称，通常传 null 或省略；填写时必须是当前工作空间已有的 icon 资源名。")
     hidden: bool = Field(default=False, description="是否在导航中隐藏。")
     group_title: str | None = Field(default=None, min_length=1, max_length=128, description="分组标题，仅 group 节点允许。")
     page_id: int | None = Field(default=None, ge=1, description="绑定页面 ID，仅 page 节点允许，必须来自当前项目页面列表。")
@@ -89,7 +87,6 @@ class ProjectRouteChildItem(SchemaBase):
     route_type: Literal["page"] = "page"
     route: str
     order: int
-    icon: str | None = None
     hidden: bool = False
     page_id: int
     page_code: str
@@ -104,7 +101,6 @@ class ProjectRouteTreeItem(SchemaBase):
     route_type: Literal["group", "page"]
     route: str
     order: int
-    icon: str | None = None
     hidden: bool = False
     group_title: str | None = None
     page_id: int | None = None

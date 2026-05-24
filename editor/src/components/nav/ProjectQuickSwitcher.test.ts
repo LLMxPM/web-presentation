@@ -1,7 +1,7 @@
 /**
  * 文件功能：验证顶部项目快速切换组件的项目列表展示与路由跳转行为。
  */
-import { fireEvent, render, screen } from '@testing-library/vue'
+import { fireEvent, render, screen, waitFor } from '@testing-library/vue'
 import { QueryClient, VueQueryPlugin } from '@tanstack/vue-query'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -57,6 +57,30 @@ describe('ProjectQuickSwitcher', () => {
 
     expect(routerPushMock).toHaveBeenCalledWith('/workspaces/1/home')
   })
+
+  it('应在同工作空间项目列表缓存失效后刷新下拉数据', async () => {
+    const { queryClient } = renderSwitcher({ workspaceId: 1, currentProjectId: 2, currentProjectName: '当前项目' })
+
+    await fireEvent.click(screen.getByTestId('project-quick-switcher-trigger'))
+    expect(await screen.findByText('增长看板')).toBeTruthy()
+
+    listProjectsMock.mockResolvedValueOnce({
+      items: [
+        createProject(2, '当前项目'),
+        createProject(4, '新项目'),
+      ],
+      total: 2,
+      page: 1,
+      page_size: 100,
+    })
+
+    await queryClient.invalidateQueries({ queryKey: ['projects-by-ws', 1] })
+
+    await waitFor(() => {
+      expect(screen.getByText('新项目')).toBeTruthy()
+      expect(screen.queryByText('增长看板')).toBeNull()
+    })
+  })
 })
 
 /**
@@ -74,7 +98,7 @@ function renderSwitcher(props: {
     },
   })
 
-  return render(ProjectQuickSwitcher, {
+  const result = render(ProjectQuickSwitcher, {
     props,
     global: {
       plugins: [
@@ -82,6 +106,8 @@ function renderSwitcher(props: {
       ],
     },
   })
+
+  return { ...result, queryClient }
 }
 
 /**

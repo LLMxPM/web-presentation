@@ -15,6 +15,9 @@ export async function listRuntimeKitComponents(params: {
   keyword?: string
   category?: string
   kind?: RuntimeKitCapabilityKind
+  base_name?: string
+  version_no?: number
+  include_all_versions?: boolean
   previewable?: boolean
 } = {}) {
   const { data } = await http.get<RuntimeKitComponentCapabilityListResponse>('/runtime-kit/components', {
@@ -22,6 +25,9 @@ export async function listRuntimeKitComponents(params: {
       keyword: params.keyword || undefined,
       category: params.category || undefined,
       kind: params.kind || undefined,
+      base_name: params.base_name || undefined,
+      version_no: params.version_no || undefined,
+      include_all_versions: params.include_all_versions || undefined,
       previewable: typeof params.previewable === 'boolean' ? params.previewable : undefined,
     },
   })

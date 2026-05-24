@@ -11,6 +11,9 @@
       <div class="mt-2">
         <LibraryChipFilter v-model="selectedCategory" :options="categoryOptions" />
       </div>
+      <div class="mt-2">
+        <LibraryChipFilter v-model="selectedVersion" :options="versionOptions" all-label="最新版本" />
+      </div>
     </div>
 
     <div v-if="loading" class="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 p-6">
@@ -46,6 +49,9 @@
                 </span>
                 <span class="rounded bg-slate-50 px-1.5 py-0.5 text-[10px] font-black uppercase text-slate-500">
                   {{ item.kind }}
+                </span>
+                <span class="rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] font-black uppercase text-emerald-600">
+                  v{{ item.version_no }}
                 </span>
                 <span
                   v-if="!item.previewable"
@@ -92,7 +98,7 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { Copy, Eye, FileText, PackageOpen } from 'lucide-vue-next'
+import { Copy, Eye, FileText, PackageOpen } from '@lucide/vue'
 
 import { getErrorMessage } from '@/api/http'
 import { listRuntimeKitComponents } from '@/api/runtime-kit'
@@ -118,6 +124,7 @@ const loading = ref(false)
 const items = ref<RuntimeKitComponentCapabilityItem[]>([])
 const selectedKind = ref<RuntimeKitCapabilityKind | ''>('')
 const selectedCategory = ref('')
+const selectedVersion = ref('')
 
 const kindOptions: Array<{ value: RuntimeKitCapabilityKind | ''; label: string }> = [
   { value: '', label: '全部' },
@@ -131,9 +138,14 @@ const categories = computed(() => {
   return Array.from(new Set(sourceItems.map(item => item.category))).sort()
 })
 const categoryOptions = computed(() => categories.value.map(category => ({ label: category, value: category })))
+const versionOptions = computed(() => {
+  return Array.from(new Set(items.value.map(item => item.version_no)))
+    .sort((left, right) => left - right)
+    .map(versionNo => ({ label: `v${versionNo}`, value: String(versionNo) }))
+})
 const filteredItems = computed(() => {
   const keyword = props.keyword.trim().toLowerCase()
-  return items.value.filter(item => {
+  return getVisibleVersionItems(items.value, selectedVersion.value).filter(item => {
     if (selectedKind.value && item.kind !== selectedKind.value) {
       return false
     }
@@ -176,13 +188,36 @@ function handleSelectKind(value: string): void {
 async function fetchItems(): Promise<void> {
   loading.value = true
   try {
-    const response = await listRuntimeKitComponents()
+    const response = await listRuntimeKitComponents({ include_all_versions: true })
     items.value = response.items
   } catch (error) {
     Message.error(getErrorMessage(error, '加载 Runtime Kit 内建能力失败'))
   } finally {
     loading.value = false
   }
+}
+
+/**
+ * 按版本筛选能力；未选择版本时每个能力只展示最新版本。
+ * @param sourceItems Runtime Kit 能力项
+ * @param versionValue 当前版本筛选值
+ * @returns 可用于列表展示的能力项
+ */
+function getVisibleVersionItems(
+  sourceItems: RuntimeKitComponentCapabilityItem[],
+  versionValue: string,
+): RuntimeKitComponentCapabilityItem[] {
+  const selectedVersionNo = Number(versionValue)
+  if (Number.isInteger(selectedVersionNo) && selectedVersionNo > 0) {
+    return sourceItems.filter(item => item.version_no === selectedVersionNo)
+  }
+
+  const latestByKey = new Map<string, number>()
+  sourceItems.forEach((item) => {
+    const key = `${item.kind}:${item.base_name}`
+    latestByKey.set(key, Math.max(latestByKey.get(key) || 0, item.version_no))
+  })
+  return sourceItems.filter(item => item.version_no === latestByKey.get(`${item.kind}:${item.base_name}`))
 }
 
 /**

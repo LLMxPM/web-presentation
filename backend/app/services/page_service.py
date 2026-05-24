@@ -472,7 +472,6 @@ class PageService:
                 parent_id=parent_id,
                 route=route_segment,
                 order=order,
-                icon=None,
                 hidden=False,
                 page_id=page_model.id,
                 route_type=ProjectRouteType.PAGE.value,

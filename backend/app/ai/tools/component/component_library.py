@@ -189,6 +189,9 @@ def build_list_runtime_kit_capabilities_tool(session_factory: async_sessionmaker
     async def list_runtime_kit_capabilities(
         run_context: RunContext,
         kind: str | None = None,
+        base_name: str | None = None,
+        version_no: int | None = None,
+        include_all_versions: bool = False,
         keyword: str | None = None,
         category: str | None = None,
         limit: int = 50,
@@ -203,11 +206,16 @@ def build_list_runtime_kit_capabilities_tool(session_factory: async_sessionmaker
         normalized_kind = _normalize_runtime_kit_kind(kind)
         normalized_keyword = str(keyword or "").strip().lower()
         normalized_category = str(category or "").strip()
+        normalized_base_name = str(base_name or "").strip()
         bounded_limit = max(1, min(int(limit), 100))
 
         matched_items: list[dict[str, Any]] = []
         total_matches = 0
-        for item in _list_agent_runtime_kit_capabilities():
+        for item in _list_agent_runtime_kit_capabilities(
+            base_name=normalized_base_name or None,
+            version_no=version_no,
+            include_all_versions=include_all_versions,
+        ):
             if normalized_kind and item["kind"] != normalized_kind:
                 continue
             if normalized_category and item["category"] != normalized_category:
@@ -580,12 +588,21 @@ def _normalize_runtime_kit_kind(kind: str | None) -> str | None:
     return normalized_kind
 
 
-def _list_agent_runtime_kit_capabilities() -> list[dict[str, Any]]:
+def _list_agent_runtime_kit_capabilities(
+    *,
+    base_name: str | None = None,
+    version_no: int | None = None,
+    include_all_versions: bool = False,
+) -> list[dict[str, Any]]:
     """返回开放给 Agent 的 Runtime Kit 能力项。"""
 
     return [
         item
-        for item in list_runtime_kit_capability_items()
+        for item in list_runtime_kit_capability_items(
+            base_name=base_name,
+            version_no=version_no,
+            include_all_versions=include_all_versions,
+        )
         if "agent" in item.get("audiences", [])
     ]
 
@@ -596,6 +613,8 @@ def _build_runtime_kit_capability_search_text(item: dict[str, Any]) -> str:
     return " ".join(
         [
             str(item.get("kind") or ""),
+            str(item.get("base_name") or ""),
+            str(item.get("version_no") or ""),
             str(item.get("name") or ""),
             str(item.get("category") or ""),
             str(item.get("description") or ""),
@@ -614,6 +633,8 @@ def _dump_runtime_kit_capability_summary(item: dict[str, Any]) -> dict[str, Any]
 
     return {
         "kind": item["kind"],
+        "base_name": item["base_name"],
+        "version_no": item["version_no"],
         "name": item["name"],
         "display_name": item["display_name"],
         "summary": item["summary"],

@@ -786,6 +786,7 @@ async def test_component_and_coordinator_agents_should_register_expected_tools()
     assert "bg-background" in component_instruction_text
     assert "primary、secondary、invert" in component_instruction_text
     assert "link、link-hover、link-visited" in component_instruction_text
+    assert "ThemeLogo 组件" in component_instruction_text
     assert "themeLogo、themeInvertLogo、themeStyles" in component_instruction_text
     assert "不要硬编码主题 Logo 路径" in component_instruction_text
 
@@ -836,6 +837,7 @@ async def test_component_and_coordinator_agents_should_register_expected_tools()
     assert "accent1 到 accent6" in coordinator_instruction_text
     assert "primary、secondary、invert" in coordinator_instruction_text
     assert "link、link-hover、link-visited" in coordinator_instruction_text
+    assert "ThemeLogo 组件" in coordinator_instruction_text
     assert "themeLogo、themeInvertLogo、themeStyles" in coordinator_instruction_text
     assert "不要硬编码主题 Logo 路径" in coordinator_instruction_text
     assert "公开 import_path" in coordinator_instruction_text
@@ -1131,11 +1133,11 @@ async def test_coordinator_runtime_kit_tools_should_query_agent_capabilities(
     list_tool = _find_tool(tools, "list_runtime_kit_capabilities")
     listed = await list_tool.entrypoint(run_context, keyword="page", limit=100)
     names = {item["name"] for item in listed["items"]}
-    assert "usePageSize" in names
+    assert "usePageSize.v1" in names
 
     detail_tool = _find_tool(tools, "get_runtime_kit_capability")
-    detail = await detail_tool.entrypoint(run_context, name="DefaultContainer", kind="component")
-    assert detail["import_path"] == "@runtime-kit/public/components/page/layout/DefaultContainer.vue"
+    detail = await detail_tool.entrypoint(run_context, name="DefaultContainer.v1", kind="component")
+    assert detail["import_path"] == "@runtime-kit/public/components/page/layout/DefaultContainer.v1.vue"
     assert "agent" in detail["audiences"]
 
 
@@ -1345,7 +1347,7 @@ async def test_project_style_config_tools_should_read_and_update_with_confirmati
     assert config["authoring_width"] == 1920
     assert config["authoring_height"] == 1080
     assert config["theme"]["palette"]["text"]["primary"] == "#0D286A"
-    assert config["theme"]["typography"]["headingfont"] == "思源黑体"
+    assert config["theme"]["typography"]["headingfont"] == "system-ui"
     assert config["style_spec_markdown"] == "## 版式\n- 使用清晰标题。"
     assert "project" not in config
     assert "style_config" not in config
@@ -1453,33 +1455,33 @@ async def test_component_manager_runtime_kit_tools_should_query_agent_capabiliti
     list_tool = _find_tool(tools, "list_runtime_kit_capabilities")
     listed = await list_tool.entrypoint(run_context, keyword="page", limit=100)
     names = {item["name"] for item in listed["items"]}
-    assert "usePageSize" in names
+    assert "usePageSize.v1" in names
     assert all(item["import_path"].startswith("@runtime-kit/") for item in listed["items"])
     assert all("/internal/" not in item["import_path"] for item in listed["items"])
 
     component_listed = await list_tool.entrypoint(run_context, kind="component", keyword="Icon")
     component_names = {item["name"] for item in component_listed["items"]}
-    assert "Icon" in component_names
+    assert "Icon.v1" in component_names
 
     font_listed = await list_tool.entrypoint(run_context, keyword="font", limit=100)
     font_capability_names = {item["name"] for item in font_listed["items"]}
-    assert "useAssetFontFamily" in font_capability_names
-    assert "resolveAssetFontFamily" in font_capability_names
+    assert "useAssetFontFamily.v1" in font_capability_names
+    assert "resolveAssetFontFamily.v1" in font_capability_names
 
     detail_tool = _find_tool(tools, "get_runtime_kit_capability")
-    icon_detail = await detail_tool.entrypoint(run_context, name="Icon", kind="component")
-    assert icon_detail["import_path"] == "@runtime-kit/public/components/primitives/Icon.vue"
+    icon_detail = await detail_tool.entrypoint(run_context, name="Icon.v1", kind="component")
+    assert icon_detail["import_path"] == "@runtime-kit/public/components/primitives/Icon.v1.vue"
     assert len(icon_detail["usage"]) >= 1
     assert len(icon_detail["constraints"]) >= 1
 
-    util_detail = await detail_tool.entrypoint(run_context, name="resolveResourcePath")
+    util_detail = await detail_tool.entrypoint(run_context, name="resolveResourcePath.v1")
     assert util_detail["kind"] == "util"
-    assert util_detail["import_path"] == "@runtime-kit/public/utils/assets"
+    assert util_detail["import_path"] == "@runtime-kit/public/utils/assets.v1"
     assert "/internal/" not in util_detail["import_path"]
 
-    theme_detail = await detail_tool.entrypoint(run_context, name="useTheme")
+    theme_detail = await detail_tool.entrypoint(run_context, name="useTheme.v1")
     assert theme_detail["kind"] == "composable"
-    assert theme_detail["import_path"] == "@runtime-kit/public/composables/theme/useTheme"
+    assert theme_detail["import_path"] == "@runtime-kit/public/composables/theme/useTheme.v1"
 
 
 async def test_get_component_detail_tool_should_render_source(
@@ -3403,6 +3405,39 @@ def test_apply_user_feedback_selections_should_write_preset_and_custom_answers()
     assert requirement.is_resolved() is True
 
 
+def test_ai_continue_requirement_should_persist_confirmation_decision() -> None:
+    """确认/拒绝 HITL 时 RunRequirement 与 ToolExecution 都应带上用户决策。"""
+
+    confirmed = _build_run_requirement_from_tool_execution_payload(
+        {
+            "tool_call_id": "tool-confirmed",
+            "tool_name": "apply_project_route_tree",
+            "requires_confirmation": True,
+            "confirmed": True,
+        }
+    )
+    assert confirmed.confirmation is True
+    assert confirmed.tool_execution is not None
+    assert confirmed.tool_execution.confirmed is True
+    assert confirmed.is_resolved() is True
+
+    rejected = _build_run_requirement_from_tool_execution_payload(
+        {
+            "tool_call_id": "tool-rejected",
+            "tool_name": "apply_project_route_tree",
+            "requires_confirmation": True,
+            "confirmed": False,
+            "confirmation_note": "用户拒绝执行。",
+        }
+    )
+    assert rejected.confirmation is False
+    assert rejected.confirmation_note == "用户拒绝执行。"
+    assert rejected.tool_execution is not None
+    assert rejected.tool_execution.confirmed is False
+    assert rejected.tool_execution.confirmation_note == "用户拒绝执行。"
+    assert rejected.is_resolved() is True
+
+
 def test_team_run_output_continue_should_support_agent_tool_events() -> None:
     """Agno Team continue 复用 Agent 工具事件 helper 时，不应因缺少 agent_id 失败。"""
 
@@ -4190,6 +4225,51 @@ async def test_ai_mark_paused_should_not_duplicate_event_with_stale_task(
     assert [event.sequence for event in events] == [1, 2]
 
 
+async def test_ai_mark_paused_should_not_reopen_terminal_run(
+    authenticated_client: AsyncClient,
+) -> None:
+    """已完成 run 不应被 Agno 陈旧 requirement 重新覆盖成 paused。"""
+
+    workspace_id = await _create_workspace(authenticated_client, "AI 终态保护工作空间")
+    run_id = "run-terminal-mark-paused"
+    session_id = "session-terminal-mark-paused"
+    scope = AgentScopeContext(scope_type="workspace", workspace_id=workspace_id)
+    requirement = AgentPendingRequirement(
+        kind="confirmation",
+        run_id=run_id,
+        session_id=session_id,
+        tool_name="apply_project_route_tree",
+        tool_execution={
+            "tool_call_id": "tool-terminal-pause",
+            "tool_name": "apply_project_route_tree",
+            "tool_args": {"routes": []},
+            "requires_confirmation": True,
+        },
+    )
+
+    async with get_session_factory()() as db_session:
+        service = AiAgentRunService(db_session)
+        task = await service.create_task(
+            run_id=run_id,
+            session_id=session_id,
+            agent_id=AGENT_COORDINATOR_AGENT_ID,
+            user_id=1,
+            backend_session_id=None,
+            scope=scope,
+            input_summary="终态保护",
+        )
+        await service.append_event(
+            run_id=run_id,
+            event=AgentRunEvent(event="run.completed", run_id=run_id, session_id=session_id),
+        )
+        restored_task = await service.mark_paused(task=task, pending_requirement=requirement)
+        events = await service.list_events_after(run_id=run_id, user_id=1, after_sequence=0)
+
+    assert restored_task.status == "completed"
+    assert restored_task.pending_requirement_json is None
+    assert [event.event for event in events] == ["run.completed"]
+
+
 async def test_ai_session_stream_should_reject_second_active_run_in_same_session(authenticated_client: AsyncClient) -> None:
     """同一 Agno session 已存在非终态 run 时，应拒绝启动新 run。"""
 
@@ -4369,10 +4449,10 @@ async def test_ai_session_active_run_should_return_paused_requirement(authentica
     assert payload["pending_requirement"]["tool_execution"]["tool_call_id"] == "tool-confirm-1"
 
 
-async def test_ai_session_active_run_should_restore_feedback_requirement_from_completed_task(
+async def test_ai_session_active_run_should_not_restore_requirement_from_completed_task(
     authenticated_client: AsyncClient,
 ) -> None:
-    """task 曾误写为 completed 时，active-run 应从 Agno 未解决 requirement 恢复暂停态。"""
+    """completed task 应修正 Agno 终态残留，而不是恢复旧 requirement。"""
 
     workspace_id = await _create_workspace(authenticated_client, "AI Feedback Restore 工作空间")
     session_response = await authenticated_client.post(
@@ -4451,15 +4531,120 @@ async def test_ai_session_active_run_should_restore_feedback_requirement_from_co
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["status"] == "paused"
-    assert payload["pending_requirement"]["kind"] == "user_feedback"
-    assert payload["pending_requirement"]["tool_name"] == "ask_user"
-    assert payload["pending_requirement"]["user_feedback_schema"][0]["question"] == "这次优先调整哪个区域？"
+    assert payload is None
+
     async with get_session_factory()() as db_session:
         task = await AiAgentRunService(db_session).get_task_by_run(run_id=run_id, user_id=1)
     assert task is not None
-    assert task.status == "paused"
-    assert task.pending_requirement_json is not None
+    assert task.status == "completed"
+    assert task.pending_requirement_json is None
+
+    app = authenticated_client._transport.app  # type: ignore[attr-defined]
+    session_model = await asyncio.to_thread(app.state.ai_db.get_session, session_id, SessionType.AGENT, "1", True)
+    assert isinstance(session_model, AgentSession)
+    run = session_model.get_run(run_id)
+    assert run is not None
+    assert run.status == RunStatus.completed
+    assert not run.requirements
+    assert run.tools
+    assert run.tools[0].requires_user_input is False
+    assert run.tools[0].answered is True
+
+
+async def test_ai_completed_confirmed_route_tool_should_cleanup_agno_hitl(
+    authenticated_client: AsyncClient,
+) -> None:
+    """确认执行后的项目路由工具完成时，Agno session 不应残留旧确认弹窗。"""
+
+    workspace_id = await _create_workspace(authenticated_client, "AI Route HITL Cleanup 工作空间")
+    project_id = await _create_project(authenticated_client, workspace_id, "AI Route HITL Cleanup 项目")
+    session_response = await authenticated_client.post(
+        "/api/ai/sessions",
+        json={
+            "agent_id": AGENT_COORDINATOR_AGENT_ID,
+            "session_name": "Route HITL Cleanup 会话",
+            "scope": {
+                "scope_type": "project",
+                "workspace_id": workspace_id,
+                "project_id": project_id,
+                "source": "editor-agent-sidebar",
+            },
+        },
+    )
+    assert session_response.status_code == 201
+    session_id = session_response.json()["session_id"]
+    run_id = "run-completed-route-confirm"
+    route_tool = ToolExecution.from_dict(
+        {
+            "tool_call_id": "tool-route-confirm-cleanup",
+            "tool_name": "apply_project_route_tree",
+            "tool_args": {"routes": []},
+            "requires_confirmation": True,
+        }
+    )
+    await _append_test_run(
+        authenticated_client,
+        session_id=session_id,
+        run=RunOutput(
+            run_id=run_id,
+            session_id=session_id,
+            agent_id=AGENT_COORDINATOR_AGENT_ID,
+            status=RunStatus.completed,
+            tools=[route_tool],
+            requirements=[RunRequirement(tool_execution=route_tool)],
+        ),
+    )
+    scope = AgentScopeContext(
+        scope_type="project",
+        workspace_id=workspace_id,
+        project_id=project_id,
+        source="editor-agent-sidebar",
+    )
+    async with get_session_factory()() as db_session:
+        service = AiAgentRunService(db_session)
+        await service.create_task(
+            run_id=run_id,
+            session_id=session_id,
+            agent_id=AGENT_COORDINATOR_AGENT_ID,
+            user_id=1,
+            backend_session_id=None,
+            scope=scope,
+            input_summary="确认路由树写入",
+        )
+        await service.append_event(
+            run_id=run_id,
+            event=AgentRunEvent(
+                event="run.completed",
+                run_id=run_id,
+                session_id=session_id,
+                data={},
+            ),
+        )
+
+    response = await authenticated_client.get(
+        f"/api/ai/sessions/{session_id}/active-run",
+        params={
+            "workspace_id": workspace_id,
+            "project_id": project_id,
+            "scope_type": "project",
+            "source": "editor-agent-sidebar",
+            "agent_id": AGENT_COORDINATOR_AGENT_ID,
+        },
+    )
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload is None
+
+    app = authenticated_client._transport.app  # type: ignore[attr-defined]
+    session_model = await asyncio.to_thread(app.state.ai_db.get_session, session_id, SessionType.TEAM, "1", True)
+    assert isinstance(session_model, TeamSession)
+    run = session_model.get_run(run_id)
+    assert run is not None
+    assert run.status == RunStatus.completed
+    assert not run.requirements
+    assert run.tools
+    assert run.tools[0].requires_confirmation is False
+    assert run.tools[0].confirmed is True
 
 
 async def test_ai_session_active_run_should_restore_feedback_requirement_from_failed_task(
@@ -4976,11 +5161,15 @@ async def test_ai_continue_stream_should_not_reinject_current_run_history() -> N
     async def fake_set_existing_run_status(**_: object) -> None:
         return None
 
+    async def fake_sync_requirement_decision(**_: object) -> None:
+        return None
+
     facade.ensure_session_access = fake_ensure_session_access
     facade._resolve_run_session_metadata = lambda **kwargs: dict(kwargs["metadata"])
     facade._build_agent_for_descriptor = fake_build_agent_for_descriptor
     facade._build_tool_dependencies = lambda **_: {}
     facade._set_existing_run_status = fake_set_existing_run_status
+    facade._sync_agno_requirement_decision_before_continue = fake_sync_requirement_decision
 
     builder = facade._build_continue_stream(
         agent_id=COMPONENT_MANAGER_AGENT_ID,

@@ -111,10 +111,17 @@ PR 必跑：
 2. `editor`：Vitest
 3. 根仓 `contracts`
 4. 根仓 `e2e` 冒烟
+5. 平台镜像 build smoke：构建 `web-presentation` 单镜像但不推送
 
 条件执行：
 
-- 当 `runtime` 子模块 SHA 发生变化时，执行 `pnpm --dir runtime test`
+- 当 `runtime` 子模块 SHA 发生变化时，执行 `pnpm --dir runtime check && pnpm --dir runtime test && pnpm --dir runtime build`
+
+Release 发布：
+
+- GitHub Release `published` 后执行完整质量门禁。
+- 校验当前 `runtime` 子模块 SHA 对应的 Docker Hub 镜像 `web-runtime-vue:sha-<12位sha>` 已存在。
+- 构建并推送单个平台镜像 `web-presentation:<release_tag>`；稳定 Release 同时推送 `latest`。
 
 夜间或手动执行：
 

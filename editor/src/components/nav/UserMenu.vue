@@ -87,7 +87,7 @@
 <script setup lang="ts">
 import { computed, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { Bot, ChevronDown, LogOut, KeyRound, UserCog } from 'lucide-vue-next'
+import { Bot, ChevronDown, LogOut, KeyRound, UserCog } from '@lucide/vue'
 
 import { changePassword } from '@/api/auth'
 import { getErrorMessage } from '@/api/http'

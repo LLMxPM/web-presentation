@@ -8,9 +8,27 @@ pnpm-debug.log*
 lerna-debug.log*
 
 node_modules
+.pnpm-store/
+.npm/
 dist
 dist-ssr
+.vite/
+coverage/
+playwright-report/
+test-results/
+*.tsbuildinfo
 *.local
+
+# Environment files
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# Tool caches
+.codex/
+.cache/
+.tmp/
 
 # Editor directories and files
 .vscode/*

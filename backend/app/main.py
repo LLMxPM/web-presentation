@@ -57,14 +57,24 @@ def create_app() -> FastAPI:
     app.include_router(preview.router_public, tags=["preview"])
     app.include_router(internal_runtime.router, tags=["internal-runtime"])
     app.include_router(well_known.router, tags=["well-known"])
+
+    @app.get("/healthz", include_in_schema=False)
+    async def healthz() -> JSONResponse:
+        """返回容器存活状态；不触发数据库和外部服务探测。"""
+
+        return JSONResponse({"status": "ok"})
+
     _mount_ai_runtime(app)
     app.mount("/media", StaticFiles(directory=ObjectStorageService().ensure_local_root()), name="media")
 
     @app.exception_handler(AppException)
     async def handle_app_exception(_: Request, exc: AppException) -> JSONResponse:
+        content = {"code": exc.code, "message": exc.detail}
+        if exc.data is not None:
+            content["data"] = exc.data
         return JSONResponse(
             status_code=exc.status_code,
-            content={"code": exc.code, "message": exc.detail},
+            content=content,
         )
 
     return app

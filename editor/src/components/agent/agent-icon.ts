@@ -2,7 +2,7 @@
  * 文件功能：集中维护智能体图标键与前端 lucide 图标、视觉样式的映射。
  */
 import type { Component } from 'vue'
-import { Blocks, Bot, Images, Sparkles } from 'lucide-vue-next'
+import { Blocks, Bot, Images, Sparkles } from '@lucide/vue'
 
 interface AgentIconDefinition {
   component: Component

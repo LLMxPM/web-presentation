@@ -151,7 +151,7 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
-import { ChevronDown, Pencil, Plus, Trash2 } from 'lucide-vue-next'
+import { ChevronDown, Pencil, Plus, Trash2 } from '@lucide/vue'
 
 import { updatePreviewSizePresets } from '@/api/auth'
 import { useAuthStore } from '@/stores/auth'

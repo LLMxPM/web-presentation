@@ -176,7 +176,7 @@
 <script setup lang="ts">
 import 'markstream-vue/index.css'
 import MarkdownRender, { getMarkdown } from 'markstream-vue'
-import { ChevronRight } from 'lucide-vue-next'
+import { ChevronRight } from '@lucide/vue'
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import BaseButton from '@/components/ui/BaseButton.vue'

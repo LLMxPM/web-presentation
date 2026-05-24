@@ -15,15 +15,12 @@
           :style="{ maxWidth: width }"
           @click.stop
         >
-          <button
+          <BaseCloseButton
             v-if="showCloseButton"
-            type="button"
-            class="absolute right-3 top-3 z-20 flex h-9 w-9 items-center justify-center rounded-full bg-white/90 text-slate-400 shadow-sm ring-1 ring-slate-200 transition-colors hover:text-slate-700"
-            :aria-label="closeLabel"
+            class="absolute right-3 top-3 z-20 bg-white/90 shadow-sm ring-1 ring-slate-200 hover:bg-white"
+            :label="closeLabel"
             @click="close"
-          >
-            <X class="h-4 w-4" />
-          </button>
+          />
           <slot />
         </div>
       </div>
@@ -32,7 +29,7 @@
 </template>
 
 <script setup lang="ts">
-import { X } from 'lucide-vue-next'
+import BaseCloseButton from '@/components/ui/BaseCloseButton.vue'
 
 const props = withDefaults(defineProps<{
   modelValue: boolean

@@ -218,9 +218,7 @@
               <h3 class="truncate text-base font-bold text-slate-800">{{ runtimePreviewAsset.name }}</h3>
               <p class="mt-1 truncate font-mono text-xs text-slate-400">{{ runtimePreviewAsset.original_name }}</p>
             </div>
-            <button class="rounded-lg p-2 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800" title="关闭预览" @click="closeRuntimePreview">
-              <X class="h-4 w-4" />
-            </button>
+            <BaseCloseButton label="关闭资源预览" @click="closeRuntimePreview" />
           </header>
           <div class="min-h-0 flex-1 bg-slate-50 p-4">
             <AssetPreviewFrame
@@ -258,9 +256,7 @@
           <a v-if="previewAsset.url" :href="previewAsset.url + '?download=1'" download class="rounded-full bg-white/10 p-2.5 text-white backdrop-blur transition-all hover:bg-white/20" @click.stop>
             <Download class="h-5 w-5" />
           </a>
-          <button class="rounded-full bg-white/10 p-2.5 text-white backdrop-blur transition-all hover:bg-white/20" @click.stop="previewAsset = null">
-            <X class="h-5 w-5" />
-          </button>
+          <BaseCloseButton tone="inverse" label="关闭资源预览" @click.stop="previewAsset = null" />
         </div>
         <div class="pointer-events-none absolute bottom-6 left-1/2 -translate-x-1/2 rounded-full bg-slate-800/60 px-4 py-2 text-xs tracking-widest text-white backdrop-blur">
           {{ previewAsset.original_name }}
@@ -287,9 +283,8 @@ import {
   Upload,
   Video,
   Workflow,
-  X,
   ZoomIn,
-} from 'lucide-vue-next'
+} from '@lucide/vue'
 
 import {
   createWorkspaceAssetContent,
@@ -306,6 +301,7 @@ import AssetPreviewFrame from '@/components/project/AssetPreviewFrame.vue'
 import LibraryChipFilter from '@/components/project/LibraryChipFilter.vue'
 import LibrarySegmentedControl from '@/components/project/LibrarySegmentedControl.vue'
 import LibrarySidebarPanel from '@/components/project/LibrarySidebarPanel.vue'
+import BaseCloseButton from '@/components/ui/BaseCloseButton.vue'
 import PaginationControl from '@/components/ui/PaginationControl.vue'
 
 const props = defineProps<{

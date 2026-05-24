@@ -41,6 +41,30 @@ describe('ComponentPreviewParameterDock', () => {
     expect(screen.queryByText('标题')).not.toBeInTheDocument()
   })
 
+  it('再次点击当前 tab 应关闭抽屉', async () => {
+    renderDock()
+    const propsTab = screen.getByRole('button', { name: /Props 1/i })
+
+    await fireEvent.click(propsTab)
+    expect(screen.getByTitle('展开预览参数')).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByText('标题')).toBeInTheDocument()
+
+    await fireEvent.click(propsTab)
+    expect(screen.getByTitle('展开预览参数')).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.queryByText('标题')).not.toBeInTheDocument()
+  })
+
+  it('点击 Dock 外部区域应关闭抽屉', async () => {
+    renderDock()
+
+    await fireEvent.click(screen.getByRole('button', { name: /Props 1/i }))
+    expect(screen.getByText('标题')).toBeInTheDocument()
+
+    await fireEvent.pointerDown(document.body)
+    expect(screen.getByTitle('展开预览参数')).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.queryByText('标题')).not.toBeInTheDocument()
+  })
+
   it('抽屉开关按钮应按当前 tab 展开和收起', async () => {
     renderDock()
     const toggleButton = screen.getByTitle('展开预览参数')

@@ -178,6 +178,7 @@ app:
 - 分组路由只允许 `children`，不允许页面标识
 - 旧版 `component` 字段不再兼容
 - `page_code` 在当前工作空间范围内解析，不依赖全局唯一
+- 路由 `meta` 不支持 `icon`，导航菜单不再渲染项目路由图标
 - Runtime 预览和发布时，会由 Backend 根据 `page_code` 解析到页面记录，再自动转译为 `@/views/<page.code>.vue`
 
 ## 8. 内容助手（Agno）

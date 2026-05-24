@@ -46,3 +46,7 @@ class ComponentVersionComponentDependency(TimestampMixin, Base):
     dependency_component_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
     dependency_component_version_no: Mapped[int | None] = mapped_column(Integer, nullable=True)
     runtime_module_path: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    runtime_kit_name: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    runtime_kit_base_name: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    runtime_kit_version_no: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    runtime_kit_import_path: Mapped[str | None] = mapped_column(String(255), nullable=True)

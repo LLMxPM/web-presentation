@@ -24,7 +24,6 @@ class ProjectRoute(TimestampMixin, AuditMixin, Base):
     )
     route: Mapped[str] = mapped_column(String(128), nullable=False)
     order: Mapped[int] = mapped_column(Integer, nullable=False)
-    icon: Mapped[str | None] = mapped_column(String(128), nullable=True)
     hidden: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))
     page_id: Mapped[int | None] = mapped_column(ForeignKey("pages.id", ondelete="CASCADE"), nullable=True, index=True)
     route_type: Mapped[ProjectRouteType] = mapped_column(String(32), nullable=False)

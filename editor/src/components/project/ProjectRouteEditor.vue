@@ -64,7 +64,7 @@
       </div>
     </section>
 
-    <ProjectRouteTreeTable v-model="routesDraft" :pages="props.pages" :icons="props.icons" />
+    <ProjectRouteTreeTable v-model="routesDraft" :pages="props.pages" />
   </div>
 </template>
 
@@ -72,13 +72,12 @@
 import { computed, ref } from 'vue'
 
 import ProjectRouteTreeTable from '@/components/project/ProjectRouteTreeTable.vue'
-import type { AssetResponse, PageItem, ProjectRouteItemWrite } from '@/types/api'
+import type { PageItem, ProjectRouteItemWrite } from '@/types/api'
 import { appendRootPageRoute } from '@/utils/project-route'
 
 const props = withDefaults(defineProps<{
   modelValue: ProjectRouteItemWrite[]
   pages: PageItem[]
-  icons: AssetResponse[]
   loading?: boolean
 }>(), {
   loading: false,

@@ -307,7 +307,7 @@ async def test_preview_artifact_config_bundle_should_include_declared_non_theme_
         project_id=project_id,
         page_content="""
 <script setup lang="ts">
-import { useAssetFontFamily } from '@runtime-kit/public/composables/assets/useAsset'
+import { useAssetFontFamily } from '@runtime-kit/public/composables/assets/useAssetFontFamily.v1'
 const titleFont = useAssetFontFamily('BrandSerif')
 </script>
 <template><h1 :style="{ fontFamily: titleFont }">Brand</h1></template>
@@ -369,7 +369,7 @@ async def test_preview_artifact_config_bundle_should_include_component_declared_
             "import_name": "FontTitleComponent",
             "content": """
 <script setup lang="ts">
-import { resolveAssetFontFamily } from '@runtime-kit/public/utils/fonts'
+import { resolveAssetFontFamily } from '@runtime-kit/public/utils/fonts.v1'
 const componentFont = resolveAssetFontFamily('ComponentDisplay')
 </script>
 <template><strong :style="{ fontFamily: componentFont }">Component</strong></template>
@@ -442,7 +442,7 @@ async def test_preview_artifact_should_fail_when_declared_font_is_not_registered
         project_id=project_id,
         page_content="""
 <script setup lang="ts">
-import { useAssetFontFamily } from '@runtime-kit/public/composables/assets/useAsset'
+import { useAssetFontFamily } from '@runtime-kit/public/composables/assets/useAssetFontFamily.v1'
 const missingFont = useAssetFontFamily('MissingDisplay')
 </script>
 <template><h1 :style="{ fontFamily: missingFont }">Missing</h1></template>
@@ -805,7 +805,7 @@ async def test_unregistered_font_asset_delete_should_fail_when_source_still_decl
             "title": "字体声明页面",
             "page_content": """
 <script setup lang="ts">
-import { useAssetFontFamily } from '@runtime-kit/public/composables/assets/useAsset'
+import { useAssetFontFamily } from '@runtime-kit/public/composables/assets/useAssetFontFamily.v1'
 const fontFamily = useAssetFontFamily('DeclaredOnlyFont')
 </script>
 <template><div :style="{ fontFamily }">Declared</div></template>

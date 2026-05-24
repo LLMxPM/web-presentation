@@ -4,7 +4,7 @@
     @update:model-value="handleVisibleChange">
     <div v-if="project" class="space-y-3">
 
-      <ProjectRouteEditor v-model="draftRoutes" :pages="routePages" :icons="routeIcons" :loading="routeEditorLoading" />
+      <ProjectRouteEditor v-model="draftRoutes" :pages="routePages" :loading="routeEditorLoading" />
     </div>
 
     <div v-else class="py-10 text-center text-sm text-slate-400">
@@ -23,13 +23,12 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
 
-import { listWorkspaceAssets } from '@/api/assets'
 import { getProjectRoutes, listPages } from '@/api/catalog'
 import { getErrorMessage } from '@/api/http'
 import ProjectRouteEditor from '@/components/project/ProjectRouteEditor.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseDialog from '@/components/ui/BaseDialog.vue'
-import type { AssetResponse, PageItem, ProjectItem, ProjectRouteItemWrite } from '@/types/api'
+import type { PageItem, ProjectItem, ProjectRouteItemWrite } from '@/types/api'
 import { mapRouteTreeToWriteItems, validateProjectRoutes } from '@/utils/project-route'
 import { Message } from '@/utils/message'
 
@@ -49,7 +48,6 @@ const emit = defineEmits<{
 }>()
 
 const routePages = ref<PageItem[]>([])
-const routeIcons = ref<AssetResponse[]>([])
 const draftRoutes = ref<ProjectRouteItemWrite[]>([])
 const routeEditorLoading = ref(false)
 const routeLoadToken = ref(0)
@@ -77,7 +75,7 @@ function handleSave(): void {
 }
 
 /**
- * 加载项目路由编辑所需的页面列表、图标资源和当前路由树。
+ * 加载项目路由编辑所需的页面列表和当前路由树。
  * @param project 当前项目，用于读取项目 ID 和工作空间 ID
  */
 async function loadRouteEditorData(project: ProjectItem): Promise<void> {
@@ -86,10 +84,9 @@ async function loadRouteEditorData(project: ProjectItem): Promise<void> {
   routeEditorLoading.value = true
 
   try {
-    const [pagesResponse, routesResponse, iconResponse] = await Promise.all([
+    const [pagesResponse, routesResponse] = await Promise.all([
       listPages({ page: 1, page_size: 100, project_id: project.id }),
       getProjectRoutes(project.id),
-      listWorkspaceAssets(project.workspace_id, { assetType: 'icon', page: 1, page_size: 100 }),
     ])
 
     if (routeLoadToken.value !== currentToken) {
@@ -97,7 +94,6 @@ async function loadRouteEditorData(project: ProjectItem): Promise<void> {
     }
 
     routePages.value = pagesResponse.items
-    routeIcons.value = iconResponse.items
     draftRoutes.value = mapRouteTreeToWriteItems(routesResponse.routes)
   } catch (error) {
     if (routeLoadToken.value !== currentToken) {
@@ -105,7 +101,6 @@ async function loadRouteEditorData(project: ProjectItem): Promise<void> {
     }
 
     routePages.value = []
-    routeIcons.value = []
     draftRoutes.value = []
     Message.error(getErrorMessage(error, '加载项目路由数据失败。'))
   } finally {

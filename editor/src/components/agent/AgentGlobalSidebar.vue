@@ -101,7 +101,7 @@
 import { computed, defineAsyncComponent, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { useQuery } from '@tanstack/vue-query'
-import { PanelLeftClose } from 'lucide-vue-next'
+import { PanelLeftClose } from '@lucide/vue'
 
 import { listAgents } from '@/api/ai'
 import { getAgentIconShellClass, resolveAgentIconComponent } from '@/components/agent/agent-icon'

@@ -62,9 +62,10 @@
 
 - 运行时预览
 - 基于 Vite 的本地 HMR 与构建
-- 维护 `src/runtime-kit/manifest/runtime-kit.manifest.json`，作为 Backend 校验页面/组件可导入 Runtime 基础能力的公开清单
+- 维护 `src/runtime-kit/manifest/runtime-kit.manifest.json`，作为 Backend 校验页面/组件可导入 Runtime 基础能力的公开清单；清单项必须使用 `<ExportName>.v<整数版本>` 命名，并指向带 `.vN` 的公开 import path。
 
 Runtime shell 内部组件、component-preview 宿主页及其辅助类型/组合式能力、PDF 导出、侧栏/缩略图、Toast 与 ErrorBoundary 不应通过 `@runtime-kit` 暴露给页面源码、工作空间组件源码或智能体能力目录。
+页面源码、工作空间组件源码与 previewSchema 不允许引用未带 `.vN` 的 `@runtime-kit` 公开路径；需要不兼容演进时新增 v2/v3 文件，不修改仍被依赖的旧版本文件。
 
 
 ### 命名约定

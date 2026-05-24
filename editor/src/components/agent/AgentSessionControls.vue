@@ -108,7 +108,7 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { Check, ChevronDown, Plus, Search, X } from 'lucide-vue-next'
+import { Check, ChevronDown, Plus, Search, X } from '@lucide/vue'
 
 import BaseButton from '@/components/ui/BaseButton.vue'
 import {

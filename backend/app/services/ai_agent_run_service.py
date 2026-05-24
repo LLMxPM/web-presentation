@@ -225,6 +225,7 @@ class AiAgentRunService:
         task: AiRunRecord | AiAgentRunTask,
         pending_requirement: AgentPendingRequirement,
         append_event: bool = True,
+        allow_terminal_restore: bool = False,
     ) -> AiRunRecord | AiAgentRunTask:
         """把 run 收敛到暂停态，用于恢复 Agno 中仍未解决的 HITL requirement。"""
 
@@ -233,6 +234,7 @@ class AiAgentRunService:
             record=record,
             pending_requirement=pending_requirement,
             append_event=append_event,
+            allow_terminal_restore=allow_terminal_restore,
         )
 
     async def mark_terminal(
@@ -702,6 +704,7 @@ async def sync_agno_run_status(
     run.status = status
     if content is not None:
         run.content = content
+    _normalize_agno_terminal_run_payload(run, status=status)
     detail.upsert_run(run)
     await _to_thread_upsert_session(ai_db, detail)
 
@@ -868,6 +871,25 @@ def _extract_member_event_data(payload: dict[str, Any]) -> dict[str, Any]:
                     if field_name not in result and tool_execution.get(field_name) is not None:
                         result[field_name] = tool_execution.get(field_name)
     return result
+
+
+def _normalize_agno_terminal_run_payload(run: RunOutput | TeamRunOutput, *, status: RunStatus) -> None:
+    """终态 Agno run 不保留未解决 HITL，避免旧 requirement 被恢复为暂停。"""
+
+    if status not in {RunStatus.completed, RunStatus.cancelled}:
+        return
+    run.requirements = []
+    for item in list(getattr(run, "tools", None) or []):
+        if getattr(item, "requires_confirmation", None):
+            item.requires_confirmation = False
+            if getattr(item, "confirmed", None) is None:
+                item.confirmed = status == RunStatus.completed
+        if getattr(item, "requires_user_input", None):
+            item.requires_user_input = False
+            if getattr(item, "answered", None) is not True:
+                item.answered = status == RunStatus.completed
+        if getattr(item, "external_execution_required", None) and getattr(item, "result", None) is not None:
+            item.external_execution_required = False
 
 
 def _normalize_user_feedback_schema(raw_schema: Any) -> list[dict[str, Any]]:

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import posixpath
 import re
+from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -20,6 +21,18 @@ _WORKSPACE_COMPONENT_MODULE_PATH_PATTERN = re.compile(
 )
 _RUNTIME_KIT_CAPABILITY_KINDS = {"component", "composable", "util", "type"}
 _RUNTIME_KIT_CAPABILITY_AUDIENCES = {"backend", "agent"}
+_RUNTIME_KIT_VERSIONED_IMPORT_PATTERN = re.compile(r"\.v(?P<version_no>\d+)(?:\.[A-Za-z0-9]+)?$")
+
+
+@dataclass(frozen=True)
+class RuntimeKitImportDependency:
+    """Runtime Kit 版本化公开能力依赖。"""
+
+    name: str
+    base_name: str
+    version_no: int
+    import_path: str
+    module_path: str
 
 
 @lru_cache(maxsize=1)
@@ -34,7 +47,56 @@ def load_runtime_kit_manifest(manifest_path: str | Path | None = None) -> dict[s
         raise ValueError(f"Runtime Kit manifest alias 必须是 {RUNTIME_KIT_ALIAS}。")
     if not isinstance(manifest.get("exports"), list):
         raise ValueError("Runtime Kit manifest 必须包含 exports 数组。")
+    _validate_runtime_kit_manifest_versions(manifest)
     return manifest
+
+
+def _validate_runtime_kit_manifest_versions(manifest: dict[str, Any]) -> None:
+    """校验 manifest 中所有公开能力都采用文件名版本化规范。"""
+
+    seen_names: set[str] = set()
+    seen_base_versions: set[tuple[str, str, int]] = set()
+    for item in manifest["exports"]:
+        if not isinstance(item, dict):
+            continue
+        kind = str(item.get("kind") or "").strip()
+        base_name = str(item.get("base_name") or "").strip()
+        name = str(item.get("name") or "").strip()
+        import_path = str(item.get("import_path") or "").strip()
+        version_no = _coerce_positive_int(item.get("version_no"))
+        if not kind or not base_name or not name or not import_path or version_no is None:
+            raise ValueError("Runtime Kit capability 必须包含 kind、base_name、version_no、name 与 import_path。")
+        expected_name = f"{base_name}.v{version_no}"
+        if name != expected_name:
+            raise ValueError(f"Runtime Kit capability name 必须为 {expected_name}。")
+        if not is_versioned_runtime_kit_import_path(import_path):
+            raise ValueError(f"Runtime Kit import_path 必须包含 .v<整数版本>：{import_path}。")
+        if name in seen_names:
+            raise ValueError(f"Runtime Kit capability name 重复：{name}。")
+        base_version_key = (kind, base_name, version_no)
+        if base_version_key in seen_base_versions:
+            raise ValueError(f"Runtime Kit capability 版本重复：{kind}/{base_name}/v{version_no}。")
+        seen_names.add(name)
+        seen_base_versions.add(base_version_key)
+
+
+def _coerce_positive_int(value: Any) -> int | None:
+    """把 manifest 中的版本号转为正整数；非法值返回空。"""
+
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        return None
+    return number if number > 0 else None
+
+
+def is_versioned_runtime_kit_import_path(import_path: str) -> bool:
+    """判断 Runtime Kit import_path 是否符合文件名版本化规范。"""
+
+    normalized_path = str(import_path or "").strip().replace("\\", "/")
+    if not normalized_path.startswith(f"{RUNTIME_KIT_ALIAS}/"):
+        return False
+    return _RUNTIME_KIT_VERSIONED_IMPORT_PATTERN.search(normalized_path) is not None
 
 
 def get_runtime_kit_export_paths() -> set[str]:
@@ -75,11 +137,21 @@ def list_runtime_kit_component_capabilities(manifest_path: str | Path | None = N
     ]
 
 
-def list_runtime_kit_capabilities(manifest_path: str | Path | None = None) -> list[dict[str, Any]]:
+def list_runtime_kit_capabilities(
+    manifest_path: str | Path | None = None,
+    *,
+    base_name: str | None = None,
+    version_no: int | None = None,
+    include_all_versions: bool = False,
+) -> list[dict[str, Any]]:
     """返回 manifest 中声明为可暴露能力目录的 Runtime Kit 能力项。"""
 
     manifest = load_runtime_kit_manifest(manifest_path)
     result: list[dict[str, Any]] = []
+    normalized_base_name = str(base_name or "").strip()
+    normalized_version_no = _coerce_positive_int(version_no) if version_no is not None else None
+    if version_no is not None and normalized_version_no is None:
+        return []
     for item in manifest["exports"]:
         if not isinstance(item, dict):
             continue
@@ -92,9 +164,15 @@ def list_runtime_kit_capabilities(manifest_path: str | Path | None = None) -> li
             continue
 
         name = str(item.get("name") or "").strip()
+        item_base_name = str(item.get("base_name") or "").strip()
+        item_version_no = _coerce_positive_int(item.get("version_no"))
         import_path = str(item.get("import_path") or "").strip()
-        if not name or not import_path:
-            raise ValueError("Runtime Kit capability 必须包含 name 与 import_path。")
+        if not name or not item_base_name or item_version_no is None or not import_path:
+            raise ValueError("Runtime Kit capability 必须包含 name、base_name、version_no 与 import_path。")
+        if normalized_base_name and item_base_name != normalized_base_name:
+            continue
+        if normalized_version_no is not None and item_version_no != normalized_version_no:
+            continue
 
         previewable = bool(capability.get("previewable")) if kind == "component" else False
         tags = [
@@ -126,6 +204,8 @@ def list_runtime_kit_capabilities(manifest_path: str | Path | None = None) -> li
         result.append(
             {
                 "kind": kind,
+                "base_name": item_base_name,
+                "version_no": item_version_no,
                 "name": name,
                 "import_path": import_path,
                 "category": str(item.get("category") or "uncategorized").strip() or "uncategorized",
@@ -144,7 +224,23 @@ def list_runtime_kit_capabilities(manifest_path: str | Path | None = None) -> li
                 "manifest_version": str(manifest.get("version") or "").strip(),
             }
         )
-    return result
+    if include_all_versions or normalized_version_no is not None:
+        return result
+    return _filter_latest_runtime_kit_versions(result)
+
+
+def _filter_latest_runtime_kit_versions(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """按 kind + base_name 只保留最新版本能力，保持原始 manifest 顺序。"""
+
+    latest_by_key: dict[tuple[str, str], int] = {}
+    for item in items:
+        key = (str(item["kind"]), str(item["base_name"]))
+        latest_by_key[key] = max(latest_by_key.get(key, 0), int(item["version_no"]))
+    return [
+        item
+        for item in items
+        if int(item["version_no"]) == latest_by_key[(str(item["kind"]), str(item["base_name"]))]
+    ]
 
 
 def get_runtime_kit_component_capability(name: str, manifest_path: str | Path | None = None) -> dict[str, Any] | None:
@@ -163,9 +259,29 @@ def get_runtime_kit_capability(
 
     normalized_name = str(name or "").strip()
     normalized_kind = str(kind or "").strip() or None
-    for item in list_runtime_kit_capabilities(manifest_path):
+    for item in list_runtime_kit_capabilities(manifest_path, include_all_versions=True):
         if item["name"] == normalized_name and (normalized_kind is None or item["kind"] == normalized_kind):
             return item
+    return None
+
+
+def get_runtime_kit_capability_by_import_path(
+    import_path: str,
+    manifest_path: str | Path | None = None,
+) -> RuntimeKitImportDependency | None:
+    """按版本化 import_path 读取 Runtime Kit 能力依赖元数据。"""
+
+    normalized_path = str(import_path or "").strip().replace("\\", "/")
+    for item in list_runtime_kit_capabilities(manifest_path, include_all_versions=True):
+        if item["import_path"] != normalized_path:
+            continue
+        return RuntimeKitImportDependency(
+            name=str(item["name"]),
+            base_name=str(item["base_name"]),
+            version_no=int(item["version_no"]),
+            import_path=str(item["import_path"]),
+            module_path=normalize_runtime_module_path(str(item["import_path"])),
+        )
     return None
 
 

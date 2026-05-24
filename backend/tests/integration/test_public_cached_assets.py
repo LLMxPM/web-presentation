@@ -70,9 +70,15 @@ async def test_public_cached_asset_should_reuse_s3_cache_file(
 
     get_settings.cache_clear()
 
-    async def fake_read_s3_object(self: ObjectStorageService, storage_key: str) -> bytes:  # noqa: ARG001
+    async def fake_read_s3_object(
+        self: ObjectStorageService,  # noqa: ARG001
+        storage_key: str,
+        *,
+        bucket_name: str | None = None,
+    ) -> bytes:
         calls["read"] += 1
         assert storage_key == f"assets/{workspace_id}/{uploaded_asset['file_name']}"
+        assert bucket_name == "bucket"
         return content
 
     monkeypatch.setattr(ObjectStorageService, "_read_s3_object", fake_read_s3_object)
@@ -85,4 +91,66 @@ async def test_public_cached_asset_should_reuse_s3_cache_file(
     assert first_response.content == content
     assert second_response.content == content
     assert calls["read"] == 1
+    get_settings.cache_clear()
+
+
+async def test_public_cached_font_asset_should_read_s3_public_bucket(
+    authenticated_client: AsyncClient,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """缓存资源入口读取字体时应沿用 S3 公开字体 bucket 分流规则。"""
+
+    workspace_response = await authenticated_client.post(
+        "/api/workspaces",
+        json={"name": "S3 缓存字体资源工作空间", "status": "active"},
+    )
+    assert workspace_response.status_code == 200
+    workspace_id = workspace_response.json()["id"]
+    content = b"font-bytes"
+
+    upload_response = await authenticated_client.post(
+        f"/api/workspaces/{workspace_id}/assets/upload",
+        files={"file": ("SourceHanSansHWSC-VF.otf.woff2", content, "font/woff2")},
+        data={"asset_type": "font", "tags": "[]"},
+    )
+    assert upload_response.status_code == 200
+    uploaded_asset = upload_response.json()
+    file_hash = uploaded_asset["file_hash"]
+    calls: list[dict[str, str | None]] = []
+
+    monkeypatch.setenv("ASSET_STORAGE_DRIVER", "s3")
+    monkeypatch.setenv("PAGE_SCREENSHOT_LOCAL_ROOT", str(tmp_path))
+    monkeypatch.setenv("S3_ACCESS_KEY", "key")
+    monkeypatch.setenv("S3_SECRET_KEY", "secret")
+    monkeypatch.setenv("S3_BUCKET", "private-assets")
+    monkeypatch.setenv("S3_PUBLIC_BUCKET", "public-fonts")
+    from app.core.config import get_settings
+
+    get_settings.cache_clear()
+
+    async def fake_read_s3_object(
+        self: ObjectStorageService,  # noqa: ARG001
+        storage_key: str,
+        *,
+        bucket_name: str | None = None,
+    ) -> bytes:
+        calls.append({"storage_key": storage_key, "bucket_name": bucket_name})
+        return content
+
+    monkeypatch.setattr(ObjectStorageService, "_read_s3_object", fake_read_s3_object)
+
+    first_response = await authenticated_client.get(f"/public/cached-assets/{workspace_id}/{file_hash}")
+    second_response = await authenticated_client.get(f"/public/cached-assets/{workspace_id}/{file_hash}")
+
+    assert first_response.status_code == 200
+    assert second_response.status_code == 200
+    assert first_response.content == content
+    assert second_response.content == content
+    assert calls == [
+        {
+            "storage_key": f"assets/{workspace_id}/{uploaded_asset['file_name']}",
+            "bucket_name": "public-fonts",
+        }
+    ]
     get_settings.cache_clear()

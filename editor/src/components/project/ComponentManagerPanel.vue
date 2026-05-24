@@ -23,10 +23,7 @@
       class="h-full"
     >
       <template #actions>
-        <BaseButton variant="ghost" size="sm" aria-label="关闭组件预览" @click="closePreviewDialog">
-          <X class="h-3.5 w-3.5" />
-          关闭
-        </BaseButton>
+        <BaseCloseButton label="关闭组件预览" @click="closePreviewDialog" />
       </template>
     </ComponentPreviewWorkbench>
   </ComponentPreviewDialog>
@@ -39,7 +36,6 @@
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { X } from 'lucide-vue-next'
 
 import { getComponent } from '@/api/catalog'
 import ComponentPreviewDialog from '@/components/component-preview/ComponentPreviewDialog.vue'
@@ -47,7 +43,7 @@ import ComponentPreviewWorkbench from '@/components/component-preview/ComponentP
 import type { ComponentPreviewWorkbenchSource } from '@/components/component-preview/component-preview-workbench'
 import RuntimeKitCapabilityDocDialog from '@/components/component-preview/RuntimeKitCapabilityDocDialog.vue'
 import ComponentLibraryPanel from '@/components/project/ComponentLibraryPanel.vue'
-import BaseButton from '@/components/ui/BaseButton.vue'
+import BaseCloseButton from '@/components/ui/BaseCloseButton.vue'
 import type { RuntimeKitComponentCapabilityItem, WorkspaceComponentItem } from '@/types/api'
 
 const props = withDefaults(defineProps<{

@@ -37,6 +37,7 @@ describe('ComponentEditorPane', () => {
         saving: false,
         previewLoading: false,
         canPublish: true,
+        canViewHistory: true,
       },
       global: {
         stubs: {
@@ -62,6 +63,7 @@ describe('ComponentEditorPane', () => {
     await fireEvent.update(screen.getByPlaceholderText('如：数据统计卡片'), '销售趋势卡片')
     await fireEvent.update(screen.getByPlaceholderText('如：SalesMetricCard'), 'SalesTrendCard')
     await fireEvent.click(screen.getByRole('button', { name: '暗黑' }))
+    await fireEvent.click(screen.getByRole('button', { name: '发布历史' }))
     await fireEvent.click(screen.getByRole('button', { name: '预览当前草稿' }))
     await fireEvent.click(screen.getByRole('button', { name: '保存草稿' }))
     await fireEvent.click(screen.getByRole('button', { name: '发布版本' }))
@@ -71,6 +73,7 @@ describe('ComponentEditorPane', () => {
     expect(formEvents?.[0]?.[0]).toMatchObject({ name: '销售趋势卡片' })
     expect(formEvents?.[1]?.[0]).toMatchObject({ import_name: 'SalesTrendCard' })
     expect(themeEvents?.[0]).toEqual(['dark'])
+    expect(emitted('open-version-history')).toHaveLength(1)
     expect(emitted('preview-draft')).toHaveLength(1)
     expect(emitted('save-draft')).toHaveLength(1)
     expect(emitted('publish')).toHaveLength(1)
@@ -97,5 +100,6 @@ describe('ComponentEditorPane', () => {
 
     expect(screen.getByRole('button', { name: '创建草稿' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '发布版本' })).toBeNull()
+    expect(screen.queryByRole('button', { name: '发布历史' })).toBeNull()
   })
 })

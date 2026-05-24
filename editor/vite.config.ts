@@ -4,34 +4,8 @@
 import { fileURLToPath, URL } from 'node:url'
 
 import vue from '@vitejs/plugin-vue'
-import { loadEnv, type Plugin } from 'vite'
+import { loadEnv } from 'vite'
 import { defineConfig } from 'vitest/config'
-
-/**
- * 修正 markstream-vue 发布包 CSS 中残留的 Vue SFC 深度选择器，避免 Lightning CSS 压缩告警。
- */
-function normalizeMarkstreamVueCssDeepSelector(): Plugin {
-  return {
-    name: 'editor:normalize-markstream-vue-css-deep-selector',
-    enforce: 'pre',
-    transform(code, id) {
-      const normalizedId = id.replace(/\\/g, '/')
-      if (!normalizedId.endsWith('/markstream-vue/dist/index.css')) {
-        return null
-      }
-
-      const normalizedCode = code.replace(/\.icon-slot\s+:deep\(svg\)/g, '.icon-slot svg')
-      if (normalizedCode === code) {
-        return null
-      }
-
-      return {
-        code: normalizedCode,
-        map: null,
-      }
-    },
-  }
-}
 
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => {
@@ -39,7 +13,7 @@ export default defineConfig(({ mode }) => {
   const proxyTarget = env.VITE_API_PROXY_TARGET || 'http://127.0.0.1:8000'
 
   return {
-    plugins: [normalizeMarkstreamVueCssDeepSelector(), vue()],
+    plugins: [vue()],
     resolve: {
       alias: {
         '@': fileURLToPath(new URL('./src', import.meta.url)),

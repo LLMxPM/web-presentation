@@ -110,7 +110,7 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import { RotateCcw } from 'lucide-vue-next'
+import { RotateCcw } from '@lucide/vue'
 
 import MonacoDiffViewer from '@/components/editor/MonacoDiffViewer.vue'
 import RuntimePreviewFrame from '@/components/runtime-preview/RuntimePreviewFrame.vue'

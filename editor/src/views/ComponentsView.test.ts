@@ -60,8 +60,10 @@ const selectedComponent: WorkspaceComponentItem = {
 
 const runtimeKitItem: RuntimeKitComponentCapabilityItem = {
   kind: 'component',
-  name: 'AssetRenderer',
-  import_path: '@runtime-kit/components/assets/AssetRenderer',
+  base_name: 'AssetImage',
+  version_no: 1,
+  name: 'AssetImage.v1',
+  import_path: '@runtime-kit/public/components/assets/AssetImage.v1.vue',
   category: 'assets',
   description: '资源渲染组件',
   display_name: '资源渲染器',
@@ -130,7 +132,7 @@ describe('ComponentsView', () => {
 
     await waitFor(() => {
       expect(setSelectedComponentMock).toHaveBeenLastCalledWith(null)
-      expect(screen.getByText('Runtime Kit 预览：AssetRenderer')).toBeInTheDocument()
+      expect(screen.getByText('Runtime Kit 预览：AssetImage.v1')).toBeInTheDocument()
     })
     expect(routerReplaceMock).toHaveBeenCalledWith({
       path: '/workspaces/11/components',

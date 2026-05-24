@@ -10,6 +10,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.exceptions import AppException
 from app.core.runtime_module_policy import (
     RUNTIME_REMOTE_COMPONENT_PREFIX,
+    RuntimeKitImportDependency,
+    get_runtime_kit_capability_by_import_path,
     is_runtime_page_module_path,
     is_runtime_public_local_module,
     is_runtime_public_local_module_path,
@@ -42,7 +44,7 @@ class ParsedModuleDependencies:
     """源码解析后得到的远程组件依赖和 Runtime 本地公共模块依赖。"""
 
     component_imports: tuple[tuple[str, int], ...]
-    runtime_local_imports: tuple[str, ...]
+    runtime_local_imports: tuple[RuntimeKitImportDependency, ...]
     page_module_imports: tuple[str, ...]
 
 
@@ -153,7 +155,7 @@ class ComponentDependencyService:
             )
 
         component_imports: list[tuple[str, int]] = []
-        runtime_local_imports: list[str] = []
+        runtime_local_imports: list[RuntimeKitImportDependency] = []
         page_module_imports: list[str] = []
         for import_source in _STATIC_IMPORT_PATTERN.findall(script_content):
             normalized_source = str(import_source or "").strip()
@@ -181,16 +183,17 @@ class ComponentDependencyService:
                 )
 
             if normalized_source == "@runtime-kit" or normalized_source.startswith("@runtime-kit/"):
-                if not is_runtime_public_local_module(normalized_source):
+                runtime_dependency = get_runtime_kit_capability_by_import_path(normalized_source)
+                if runtime_dependency is None or not is_runtime_public_local_module(normalized_source):
                     raise AppException(
                         status_code=400,
                         code="RUNTIME_LOCAL_IMPORT_FORBIDDEN",
                         detail=(
                             f"{source_label} 引用了未在 Runtime Kit manifest 中开放的模块：{normalized_source}。"
-                            "请使用 @runtime-kit 清单中声明的 import_path。"
+                            "请使用 @runtime-kit 清单中声明的版本化 import_path，例如 Name.v1。"
                         ),
                     )
-                runtime_local_imports.append(normalized_source)
+                runtime_local_imports.append(runtime_dependency)
                 continue
 
             normalized_module_path = normalize_runtime_module_path(normalized_source)
@@ -211,10 +214,12 @@ class ComponentDependencyService:
                         code="RUNTIME_LOCAL_IMPORT_FORBIDDEN",
                         detail=(
                             f"{source_label} 引用了未开放的 Runtime 本地模块：{normalized_source}。"
-                            "当前仅允许使用 @runtime-kit 清单中的基础能力，以及 @workspace-components 组件别名。"
+                            "当前仅允许使用 @runtime-kit 清单中的版本化基础能力，以及 @workspace-components 组件别名。"
                         ),
                     )
-                runtime_local_imports.append(normalized_source)
+                runtime_dependency = get_runtime_kit_capability_by_import_path(normalized_source)
+                if runtime_dependency is not None:
+                    runtime_local_imports.append(runtime_dependency)
                 continue
 
             if allow_page_module_imports and is_runtime_page_module_path(candidate_module_path):
@@ -232,13 +237,13 @@ class ComponentDependencyService:
                     code="RUNTIME_LOCAL_IMPORT_FORBIDDEN",
                     detail=(
                         f"{source_label} 通过相对路径引用了 Runtime Kit 模块：{normalized_source}。"
-                        "请改用 manifest 中声明的 @runtime-kit import_path。"
+                        "请改用 manifest 中声明的版本化 @runtime-kit import_path。"
                     ),
                 )
 
         return ParsedModuleDependencies(
             component_imports=tuple(self._deduplicate_pairs(component_imports)),
-            runtime_local_imports=tuple(self._deduplicate_strings(runtime_local_imports)),
+            runtime_local_imports=tuple(self._deduplicate_runtime_kit_dependencies(runtime_local_imports)),
             page_module_imports=tuple(self._deduplicate_strings(page_module_imports)),
         )
 
@@ -252,6 +257,10 @@ class ComponentDependencyService:
                 "component_code": item.component_code,
                 "component_version_no": item.component_version_no,
                 "runtime_module_path": item.runtime_module_path,
+                "runtime_kit_name": item.runtime_kit_name,
+                "runtime_kit_base_name": item.runtime_kit_base_name,
+                "runtime_kit_version_no": item.runtime_kit_version_no,
+                "runtime_kit_import_path": item.runtime_kit_import_path,
             }
             for item in items
         ]
@@ -266,6 +275,10 @@ class ComponentDependencyService:
                 "component_code": item.dependency_component_code,
                 "component_version_no": item.dependency_component_version_no,
                 "runtime_module_path": item.runtime_module_path,
+                "runtime_kit_name": item.runtime_kit_name,
+                "runtime_kit_base_name": item.runtime_kit_base_name,
+                "runtime_kit_version_no": item.runtime_kit_version_no,
+                "runtime_kit_import_path": item.runtime_kit_import_path,
             }
             for item in items
         ]
@@ -419,5 +432,20 @@ class ComponentDependencyService:
             if item in seen:
                 continue
             seen.add(item)
+            result.append(item)
+        return result
+
+    @staticmethod
+    def _deduplicate_runtime_kit_dependencies(
+        items: list[RuntimeKitImportDependency],
+    ) -> list[RuntimeKitImportDependency]:
+        """在保留顺序的前提下按 import_path 去重 Runtime Kit 依赖。"""
+
+        result: list[RuntimeKitImportDependency] = []
+        seen: set[str] = set()
+        for item in items:
+            if item.import_path in seen:
+                continue
+            seen.add(item.import_path)
             result.append(item)
         return result

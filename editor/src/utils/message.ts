@@ -1,5 +1,5 @@
 import { createApp, h, ref } from 'vue'
-import { CheckCircle, AlertCircle, Info, XCircle } from 'lucide-vue-next'
+import { CheckCircle, AlertCircle, Info, XCircle } from '@lucide/vue'
 
 /**
  * 轻量级全局消息提示与弹窗工具，替代 ElMessage 和 ElMessageBox

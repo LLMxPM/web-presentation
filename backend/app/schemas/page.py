@@ -187,6 +187,10 @@ class PageModuleDependencyItem(SchemaBase):
     component_code: str | None = None
     component_version_no: int | None = None
     runtime_module_path: str | None = None
+    runtime_kit_name: str | None = None
+    runtime_kit_base_name: str | None = None
+    runtime_kit_version_no: int | None = None
+    runtime_kit_import_path: str | None = None
 
 
 class PageCurrentModuleDependencies(SchemaBase):

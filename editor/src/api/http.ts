@@ -112,3 +112,12 @@ export function getErrorCode(error: unknown): string | null {
   const data = error.response?.data as { code?: string } | undefined
   return typeof data?.code === 'string' && data.code.trim() ? data.code : null
 }
+
+/**
+ * 提取后端业务错误附带的结构化数据，供页面层展示可操作修复入口。
+ */
+export function getErrorData<T = unknown>(error: unknown): T | null {
+  if (!axios.isAxiosError(error)) return null
+  const data = error.response?.data as { data?: T } | undefined
+  return data?.data ?? null
+}

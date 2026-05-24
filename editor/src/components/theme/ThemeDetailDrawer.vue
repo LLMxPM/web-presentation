@@ -44,14 +44,7 @@
                   <Pencil class="h-3.5 w-3.5" />
                   编辑
                 </BaseButton>
-                <button
-                  type="button"
-                  class="rounded-lg p-2 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"
-                  title="关闭详情"
-                  @click="closeDrawer"
-                >
-                  <X class="h-5 w-5" />
-                </button>
+                <BaseCloseButton label="关闭主题详情" @click="closeDrawer" />
               </div>
             </header>
 
@@ -200,10 +193,11 @@
 
 <script setup lang="ts">
 import { computed, defineComponent, h, ref, watch } from 'vue'
-import { Copy, Pencil, Pin, SwatchBook, Trash2, X } from 'lucide-vue-next'
+import { Copy, Pencil, Pin, SwatchBook, Trash2 } from '@lucide/vue'
 
 import { getWorkspaceTheme } from '@/api/themes'
 import BaseButton from '@/components/ui/BaseButton.vue'
+import BaseCloseButton from '@/components/ui/BaseCloseButton.vue'
 import type { WorkspaceFontConfigItem, WorkspaceThemeItem } from '@/types/api'
 import ThemePreviewCard from './ThemePreviewCard.vue'
 

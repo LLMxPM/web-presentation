@@ -4,7 +4,6 @@
     <PageTitleBar
       class="shrink-0"
       :title="workspaceTitle"
-      description="集中维护 Runtime 可引用的主题预设、字体资源绑定和工作空间默认主题。"
     >
       <template #actions>
         <BaseButton variant="ghost" :disabled="loadingThemes || loadingFonts || loadingFontAssets" @click="reloadAll">
@@ -502,7 +501,7 @@ import {
   Trash2,
   Type,
   Upload,
-} from 'lucide-vue-next'
+} from '@lucide/vue'
 
 import {
   createWorkspaceFont,

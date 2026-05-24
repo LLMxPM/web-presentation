@@ -213,7 +213,6 @@ def route_tree_item_to_write(item: ProjectRouteTreeItem) -> ProjectRouteItemWrit
             route_type="group",
             route=item.route,
             order=item.order,
-            icon=item.icon,
             hidden=item.hidden,
             group_title=item.group_title,
             children=[route_child_item_to_write(child) for child in item.children],
@@ -222,7 +221,6 @@ def route_tree_item_to_write(item: ProjectRouteTreeItem) -> ProjectRouteItemWrit
         route_type="page",
         route=item.route,
         order=item.order,
-        icon=item.icon,
         hidden=item.hidden,
         page_id=item.page_id,
     )
@@ -234,7 +232,6 @@ def route_child_item_to_write(item: ProjectRouteChildItem) -> ProjectRouteChildW
     return ProjectRouteChildWrite(
         route=item.route,
         order=item.order,
-        icon=item.icon,
         hidden=item.hidden,
         page_id=item.page_id,
     )

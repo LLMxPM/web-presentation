@@ -36,14 +36,17 @@ export function buildWorkspaceComponentImportUsage(
  * @returns 可复制的 import 用法；非组件能力或缺少路径时返回 null
  */
 export function buildRuntimeKitComponentImportUsage(
-  item: Pick<RuntimeKitComponentCapabilityItem, 'kind' | 'name' | 'display_name' | 'import_path'>,
+  item: Pick<RuntimeKitComponentCapabilityItem, 'kind' | 'base_name' | 'name' | 'display_name' | 'import_path'>,
 ): ComponentImportUsage | null {
   const importPath = normalizeText(item.import_path)
   if (item.kind !== 'component' || !importPath) {
     return null
   }
 
-  const importName = toValidImportIdentifier(item.name) || toValidImportIdentifier(item.display_name) || 'RuntimeKitComponent'
+  const importName = toValidImportIdentifier(item.base_name)
+    || toValidImportIdentifier(item.name)
+    || toValidImportIdentifier(item.display_name)
+    || 'RuntimeKitComponent'
   return buildDefaultImportUsage(importName, importPath)
 }
 
