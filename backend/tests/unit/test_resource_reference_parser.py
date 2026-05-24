@@ -102,7 +102,7 @@ def test_collect_preview_schema_asset_references_should_read_component_node_prop
       "default": [
         {
           "type": "component",
-          "component": "@runtime-kit/public/components/assets/AssetImage.vue",
+          "component": "@runtime-kit/public/components/assets/AssetImage.v1.vue",
           "props": { "name": "schema_cover" }
         }
       ]
@@ -115,7 +115,7 @@ def test_collect_preview_schema_asset_references_should_read_component_node_prop
         "default": [
           {
             "type": "component",
-            "component": "@runtime-kit/public/components/primitives/Icon.vue",
+            "component": "@runtime-kit/public/components/primitives/Icon.v1.vue",
             "props": { "name": "schema_icon" }
           }
         ]

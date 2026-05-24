@@ -34,6 +34,30 @@ describe('ThemeEditorDialog', () => {
     })
   })
 
+  it('新建主题未选择字体时应提交空字体绑定', async () => {
+    const { emitted } = renderDialog(null)
+
+    await waitFor(() => {
+      expect(screen.getByDisplayValue('lightblue')).toBeInTheDocument()
+      expect(listWorkspaceFontsMock).toHaveBeenCalledWith(7, expect.objectContaining({ page: 1, page_size: 100 }))
+    })
+
+    await fireEvent.click(screen.getByRole('button', { name: /保存主题/ }))
+
+    const events = emitted() as Record<string, unknown[][]>
+    const savePayload = events.save[0][0] as {
+      heading_font_id: number | null
+      body_font_id: number | null
+      code_font_id: number | null
+    }
+
+    expect(savePayload).toMatchObject({
+      heading_font_id: null,
+      body_font_id: null,
+      code_font_id: null,
+    })
+  })
+
   it('保存编辑主题时应归一化 key，并且不再提交项目页面规格字段', async () => {
     const { emitted } = renderDialog()
 
@@ -73,12 +97,12 @@ describe('ThemeEditorDialog', () => {
   })
 })
 
-function renderDialog() {
+function renderDialog(theme: ReturnType<typeof createThemeItem> | null = createThemeItem()) {
   return render(ThemeEditorDialog, {
     props: {
       modelValue: true,
       workspaceId: 7,
-      theme: createThemeItem(),
+      theme,
       saving: false,
     },
     global: {

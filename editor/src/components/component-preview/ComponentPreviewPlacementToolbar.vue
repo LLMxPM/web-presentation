@@ -263,7 +263,7 @@ import {
   AlignVerticalJustifyEnd,
   AlignVerticalJustifyStart,
   ChevronDown,
-} from 'lucide-vue-next'
+} from '@lucide/vue'
 
 import BaseButton from '@/components/ui/BaseButton.vue'
 import type { ComponentPreviewAlignment, ComponentPreviewOptions, ComponentPreviewSizeMode } from '@/types/api'

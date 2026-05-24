@@ -5,12 +5,10 @@ from __future__ import annotations
 import re
 from collections import defaultdict
 
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import AppException
-from app.models.asset import WorkspaceAsset
-from app.models.enums import AssetType, PageFileType, ProjectRouteType, RecordStatus
+from app.models.enums import PageFileType, ProjectRouteType, RecordStatus
 from app.models.page import Page
 from app.models.project_route import ProjectRoute
 from app.models.workspace import Project
@@ -66,7 +64,6 @@ class ProjectRouteService:
                         parent_id=None,
                         route=route_item.route.strip(),
                         order=route_item.order,
-                        icon=self._normalize_optional_icon(route_item.icon),
                         hidden=route_item.hidden,
                         page_id=None,
                         route_type=ProjectRouteType.GROUP.value,
@@ -130,7 +127,6 @@ class ProjectRouteService:
                         ProjectRouteChildWrite(
                             route=child.route,
                             order=child.order,
-                            icon=child.icon,
                             hidden=child.hidden,
                             page_id=child.page_id,
                         )
@@ -142,7 +138,6 @@ class ProjectRouteService:
                         route_type=ProjectRouteType.GROUP.value,
                         route=item.route,
                         order=item.order,
-                        icon=item.icon,
                         hidden=item.hidden,
                         group_title=item.group_title,
                         children=children,
@@ -154,7 +149,6 @@ class ProjectRouteService:
                     route_type=ProjectRouteType.PAGE.value,
                     route=item.route,
                     order=item.order,
-                    icon=item.icon,
                     hidden=item.hidden,
                     page_id=item.page_id,
                 )
@@ -200,7 +194,6 @@ class ProjectRouteService:
                         "meta": self._build_runtime_meta(
                             title=str(route.group_title or "").strip(),
                             order=route.order,
-                            icon=route.icon,
                             hidden=route.hidden,
                         ),
                         "children": [
@@ -264,7 +257,6 @@ class ProjectRouteService:
                         route_type=ProjectRouteType.GROUP.value,
                         route=route.route,
                         order=route.order,
-                        icon=route.icon,
                         hidden=route.hidden,
                         group_title=route.group_title,
                         display_title=str(route.group_title or "").strip(),
@@ -283,7 +275,6 @@ class ProjectRouteService:
                     route_type=ProjectRouteType.PAGE.value,
                     route=route.route,
                     order=route.order,
-                    icon=route.icon,
                     hidden=route.hidden,
                     page_id=page.id,
                     page_code=page.code,
@@ -310,7 +301,6 @@ class ProjectRouteService:
                 parent_id=parent_id,
                 route=route_item.route.strip(),
                 order=route_item.order,
-                icon=self._normalize_optional_icon(route_item.icon),
                 hidden=route_item.hidden,
                 page_id=route_item.page_id,
                 route_type=ProjectRouteType.PAGE.value,
@@ -329,7 +319,6 @@ class ProjectRouteService:
 
         root_routes: set[str] = set()
         page_ids: list[int] = []
-        route_icon_names: list[str] = []
 
         for route_item in payload.routes:
             normalized_root_route = route_item.route.strip()
@@ -337,7 +326,6 @@ class ProjectRouteService:
             if normalized_root_route in root_routes:
                 raise AppException(status_code=400, code="PROJECT_ROUTE_DUPLICATE_ROUTE", detail=f"顶层路由重复：{normalized_root_route}")
             root_routes.add(normalized_root_route)
-            self._append_unique_icon_name(route_icon_names, route_item.icon)
 
             if route_item.route_type == ProjectRouteType.GROUP.value:
                 child_routes: set[str] = set()
@@ -352,16 +340,13 @@ class ProjectRouteService:
                             status_code=400,
                             code="PROJECT_ROUTE_DUPLICATE_CHILD_ROUTE",
                             detail=f"分组 {normalized_root_route} 下存在重复子路由：{normalized_child_route}",
-                        )
+                    )
                     child_routes.add(normalized_child_route)
                     page_ids.append(child.page_id)
-                    self._append_unique_icon_name(route_icon_names, child.icon)
                 continue
 
             if route_item.page_id is not None:
                 page_ids.append(route_item.page_id)
-
-        await self._ensure_route_icons_exist(project.workspace_id, route_icon_names)
 
         page_items = await self.page_repository.list_by_ids(page_ids)
         page_map = {page.id: page for page in page_items}
@@ -375,33 +360,6 @@ class ProjectRouteService:
 
         self._ensure_pages_are_runtime_ready(project, page_map)
         return page_map
-
-    async def _ensure_route_icons_exist(self, workspace_id: int, icon_names: list[str]) -> None:
-        """校验路由声明的图标名必须对应当前工作空间内启用中的 icon 资源。"""
-
-        if not icon_names:
-            return
-
-        rows = await self.session.scalars(
-            select(WorkspaceAsset.name)
-            .where(WorkspaceAsset.workspace_id == workspace_id)
-            .where(WorkspaceAsset.asset_type == AssetType.ICON.value)
-            .where(WorkspaceAsset.status == RecordStatus.ACTIVE.value)
-        )
-        available_icon_names = {
-            normalized_name
-            for name in rows.all()
-            if (normalized_name := self._normalize_optional_icon(name)) is not None
-        }
-        missing_icon_names = [name for name in icon_names if name not in available_icon_names]
-        if not missing_icon_names:
-            return
-
-        raise AppException(
-            status_code=400,
-            code="PROJECT_ROUTE_ICON_ASSET_NOT_FOUND",
-            detail=f"以下路由 Icon 资源在当前工作空间中不存在：{', '.join(missing_icon_names)}。",
-        )
 
     @classmethod
     def _ensure_valid_route_segment(cls, route: str, *, source_label: str) -> None:
@@ -488,7 +446,6 @@ class ProjectRouteService:
             id=route.id,
             route=route.route,
             order=route.order,
-            icon=route.icon,
             hidden=route.hidden,
             page_id=page.id,
             page_code=page.code,
@@ -505,24 +462,19 @@ class ProjectRouteService:
             "meta": self._build_runtime_meta(
                 title=page.title,
                 order=route.order,
-                icon=route.icon,
                 hidden=route.hidden,
             ),
         }
 
     @staticmethod
-    def _build_runtime_meta(*, title: str, order: int, icon: str | None, hidden: bool) -> dict[str, object]:
+    def _build_runtime_meta(*, title: str, order: int, hidden: bool) -> dict[str, object]:
         """按 Runtime 需要的格式构建 meta 字段。"""
 
-        meta: dict[str, object] = {
+        return {
             "title": title,
             "order": order,
             "hidden": hidden,
         }
-        normalized_icon = ProjectRouteService._normalize_optional_icon(icon)
-        if normalized_icon:
-            meta["icon"] = normalized_icon
-        return meta
 
     @staticmethod
     def _build_full_path(parent_route: str | None, route: str) -> str:
@@ -531,18 +483,3 @@ class ProjectRouteService:
         if str(parent_route or "").strip():
             return f"/{str(parent_route).strip()}/{route.strip()}".replace("//", "/")
         return f"/{route.strip()}".replace("//", "/")
-
-    @staticmethod
-    def _normalize_optional_icon(value: object) -> str | None:
-        """归一化可选图标名，空白值视为未配置。"""
-
-        normalized_value = str(value or "").strip()
-        return normalized_value or None
-
-    @classmethod
-    def _append_unique_icon_name(cls, target: list[str], value: object) -> None:
-        """将图标名按保序去重方式加入校验列表。"""
-
-        normalized_value = cls._normalize_optional_icon(value)
-        if normalized_value and normalized_value not in target:
-            target.append(normalized_value)

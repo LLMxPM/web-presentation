@@ -15,12 +15,15 @@ from app.core.exceptions import AppException
 from app.db.session import get_session_factory
 from app.models.project_build_job import ProjectBuildJob
 from app.models.release import Release, ReleaseModule
-from app.schemas.project_build import ProjectBuildCreateRequest
+from app.schemas.project_build import ProjectBuildAssetSummary, ProjectBuildCreateRequest
 from app.services.project_artifact_builder import ProjectArtifactBuilder
 from app.services.object_storage_service import ObjectStorageService
 from app.services.runtime_artifact_store import RuntimeArtifactStore
 from app.services.runtime_build_client import RuntimeBuildClient
 from app.services.token_service import TokenService
+
+
+ACTIVE_BUILD_STATUSES = ("pending", "running")
 
 
 class ProjectBuildService:
@@ -41,10 +44,23 @@ class ProjectBuildService:
     ) -> ProjectBuildJob:
         """创建整项目构建任务，并写入不可变构建快照。"""
 
+        active_job = await self.get_active_job(project_id)
+        if active_job is not None:
+            raise AppException(
+                status_code=409,
+                code="PROJECT_BUILD_ALREADY_RUNNING",
+                detail="当前项目已有构建任务正在执行，请等待完成后再发起构建。",
+                data={
+                    "active_job_id": active_job.id,
+                    "active_job_status": active_job.status,
+                },
+            )
+
         normalized_base_url = normalize_project_build_base_url(payload.base_url)
         snapshot = await self.artifact_builder.build_snapshot(
             project_id=project_id,
             asset_delivery_mode="backend_cache",
+            asset_snapshot_mode="referenced",
         )
         entry_descriptor_payload = snapshot.entry_descriptor.model_dump(mode="python", exclude_none=True)
         tenant_id = f"tenant_{created_by or 'system'}"
@@ -108,6 +124,31 @@ class ProjectBuildService:
             },
         )
         return job
+
+    async def get_asset_summary(self, project_id: int) -> ProjectBuildAssetSummary:
+        """读取项目当前构建资源引用摘要。"""
+
+        summary = await self.artifact_builder.collect_project_build_asset_reference_summary(project_id)
+        return ProjectBuildAssetSummary(
+            automatic_asset_names=summary.automatic_asset_names,
+            extra_asset_names=summary.extra_asset_names,
+            included_asset_names=summary.included_asset_names,
+            dynamic_module_paths=summary.dynamic_module_paths,
+        )
+
+    async def get_active_job(self, project_id: int) -> ProjectBuildJob | None:
+        """读取项目当前仍在执行链路中的构建任务。"""
+
+        await self.artifact_builder.get_project_or_raise(project_id)
+        stmt = (
+            select(ProjectBuildJob)
+            .where(
+                ProjectBuildJob.project_id == project_id,
+                ProjectBuildJob.status.in_(ACTIVE_BUILD_STATUSES),
+            )
+            .order_by(ProjectBuildJob.created_at.desc(), ProjectBuildJob.id.desc())
+        )
+        return (await self.session.execute(stmt)).scalars().first()
 
     async def get_latest_job(self, project_id: int) -> ProjectBuildJob | None:
         """读取项目最近一次构建任务。"""

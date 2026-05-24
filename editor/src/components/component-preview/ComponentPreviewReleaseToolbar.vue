@@ -5,7 +5,7 @@
     :class="resolveRootClass()"
   >
     <div v-if="inline" :class="simplified ? 'min-w-[220px] flex-[1_1_224px] space-y-1' : 'w-[224px] space-y-1'">
-      <span class="block text-[11px] font-semibold text-slate-500">尺寸规格</span>
+      <span class="block text-[11px] font-semibold text-slate-500">预览容器尺寸</span>
       <div class="inline-flex h-9 w-full items-center overflow-hidden rounded-xl border border-slate-200 bg-white">
         <div class="h-full min-w-0 flex-1">
           <PreviewSizePresetSelect
@@ -46,7 +46,7 @@
     </div>
 
     <div v-else class="grid grid-cols-[48px_164px] items-center gap-x-3 gap-y-1">
-      <span class="text-[11px] font-semibold text-slate-500">尺寸规格</span>
+      <span class="text-[11px] font-semibold text-slate-500">预览容器尺寸</span>
       <div class="min-w-0">
         <PreviewSizePresetSelect
           :current-width="modelValue.page.width"

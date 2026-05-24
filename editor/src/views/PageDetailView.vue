@@ -1,14 +1,15 @@
 <!-- 文件功能：提供页面详情查看与 page_content 编辑能力，支持 Monaco 编辑、快捷保存与自动保存配置。 -->
 <template>
-  <div data-testid="page-detail-view" class="page-detail-view h-[calc(100vh-112px)] min-h-[620px] overflow-hidden">
+  <div data-testid="page-detail-view" class="page-detail-view flex h-full min-h-0 flex-col overflow-hidden">
     <div v-if="pageQuery.isFetching.value && !pageDetails"
-      class="flex flex-col items-center justify-center min-h-[40vh] gap-6">
+      class="flex min-h-0 flex-1 flex-col items-center justify-center gap-6">
       <div class="w-16 h-16 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
       <span class="text-slate-400 font-extrabold text-lg animate-pulse tracking-wide">页面代码加载中...</span>
     </div>
 
-    <div v-else-if="pageDetails" class="flex h-full min-h-0 flex-col gap-3 animate-in fade-in slide-in-from-bottom-4 duration-700">
+    <div v-else-if="pageDetails" class="flex min-h-0 flex-1 flex-col gap-3 animate-in fade-in slide-in-from-bottom-4 duration-700">
       <PageTitleBar
+        class="shrink-0"
         :title="pageDetails.title"
         :code="pageDetails.code"
         :meta-items="pageTitleMetaItems"
@@ -123,7 +124,7 @@
         </template>
       </PageTitleBar>
 
-      <div class="min-h-0 flex-1">
+      <div class="min-h-0 flex-1 overflow-hidden">
         <PageDetailPreviewPanel
           v-if="activeDetailPane === 'preview'"
           :preview-enabled="isPreviewEnabled"
@@ -223,7 +224,7 @@
       />
     </div>
 
-    <div v-else class="flex flex-col items-center justify-center min-h-[60vh] gap-8">
+    <div v-else class="flex min-h-0 flex-1 flex-col items-center justify-center gap-8">
       <Frown class="w-24 h-24 text-slate-100" />
       <div class="text-center space-y-2">
         <h3 class="text-2xl font-extrabold text-slate-400">页面路由丢失</h3>
@@ -238,7 +239,7 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/vue-query'
-import { ArrowLeft, Camera, ChevronLeft, ChevronRight, Code2, Copy, Frown, History, Layers, Monitor, Save, SquarePen } from 'lucide-vue-next'
+import { ArrowLeft, Camera, ChevronLeft, ChevronRight, Code2, Copy, Frown, History, Layers, Monitor, Save, SquarePen } from '@lucide/vue'
 
 import { getErrorMessage } from '@/api/http'
 import {

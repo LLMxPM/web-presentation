@@ -32,9 +32,9 @@ DEFAULT_THEME_DESCRIPTION = "白底蓝色主题，简约经典"
 DEFAULT_THEME_LOGO_PATH = None
 DEFAULT_THEME_INVERT_LOGO_PATH = None
 DEFAULT_THEME_PROJECT_ICON_NAME = None
-DEFAULT_THEME_HEADING_FONT = "思源黑体"
-DEFAULT_THEME_BODY_FONT = "思源黑体"
-DEFAULT_THEME_CODE_FONT = "SourceCodePro"
+DEFAULT_THEME_HEADING_FONT = "system-ui"
+DEFAULT_THEME_BODY_FONT = "system-ui"
+DEFAULT_THEME_CODE_FONT = "monospace"
 DEFAULT_THEME_PALETTE = ThemePalette.model_validate(
     {
         "text": {
@@ -597,9 +597,27 @@ class WorkspaceThemeService:
             "heading_font_id": heading_font.id if heading_font is not None else None,
             "body_font_id": body_font.id if body_font is not None else None,
             "code_font_id": code_font.id if code_font is not None else None,
-            "heading_font_label": heading_font.font_family if heading_font is not None else current_theme.heading_font_label if current_theme else DEFAULT_THEME_HEADING_FONT,
-            "body_font_label": body_font.font_family if body_font is not None else current_theme.body_font_label if current_theme else DEFAULT_THEME_BODY_FONT,
-            "code_font_label": code_font.font_family if code_font is not None else current_theme.code_font_label if current_theme else DEFAULT_THEME_CODE_FONT,
+            "heading_font_label": self._resolve_theme_font_label(
+                payload_fields,
+                "heading_font_id",
+                heading_font,
+                current_theme.heading_font_label if current_theme else None,
+                DEFAULT_THEME_HEADING_FONT,
+            ),
+            "body_font_label": self._resolve_theme_font_label(
+                payload_fields,
+                "body_font_id",
+                body_font,
+                current_theme.body_font_label if current_theme else None,
+                DEFAULT_THEME_BODY_FONT,
+            ),
+            "code_font_label": self._resolve_theme_font_label(
+                payload_fields,
+                "code_font_id",
+                code_font,
+                current_theme.code_font_label if current_theme else None,
+                DEFAULT_THEME_CODE_FONT,
+            ),
         }
 
     async def _get_theme_logo_asset_or_none(self, workspace_id: int, asset_id: int | None) -> WorkspaceAsset | None:
@@ -730,9 +748,25 @@ class WorkspaceThemeService:
     ) -> int | None:
         """根据字段是否显式传入，解析更新请求中的可空引用字段。"""
 
-        if payload_fields and field_name not in payload_fields:
+        if current_value is not None and field_name not in payload_fields:
             return current_value
         return field_value
+
+    @staticmethod
+    def _resolve_theme_font_label(
+        payload_fields: set[str],
+        field_name: str,
+        font_config: WorkspaceFontConfig | None,
+        current_label: str | None,
+        default_label: str,
+    ) -> str:
+        """解析主题字体展示名，显式清空时回到浏览器默认字体。"""
+
+        if font_config is not None:
+            return font_config.font_family
+        if current_label is not None and field_name not in payload_fields:
+            return current_label
+        return default_label
 
     async def _resolve_runtime_font_asset_name(
         self,

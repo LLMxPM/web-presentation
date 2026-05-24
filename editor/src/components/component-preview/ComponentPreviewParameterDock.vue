@@ -1,20 +1,20 @@
 <!-- 文件功能：提供组件预览参数薄栏、Preset radio 切换与顶部浮层抽屉。 -->
 <template>
-  <section class="relative border-t border-slate-100 bg-slate-50/70">
-    <div class="flex h-11 items-center gap-3 overflow-hidden px-4">
+  <section ref="dockRootRef" class="relative border-t border-slate-100 bg-slate-50/70">
+    <div class="flex h-10 items-center gap-2.5 overflow-hidden px-3">
       <span class="shrink-0 text-xs font-bold text-slate-700">预览参数</span>
 
       <div
         v-if="presetOptions.length"
-        class="overflow-x-auto whitespace-nowrap"
-        :class="simplified ? 'min-w-0 flex-1 basis-[220px]' : 'min-w-[220px] max-w-[360px]'"
+        class="component-preview-scrollbar-hidden overflow-x-auto whitespace-nowrap"
+        :class="simplified ? 'min-w-0 flex-1 basis-[220px]' : 'min-w-[280px] flex-[1_1_560px]'"
         role="radiogroup"
         aria-label="预览参数预设"
       >
         <div class="inline-flex items-center gap-1.5">
           <label
             v-if="!simplified"
-            class="inline-flex cursor-pointer items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-colors"
+            class="inline-flex cursor-pointer items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold transition-colors"
             :class="resolvePresetRadioClass(!activePresetKey)"
           >
             <input
@@ -30,7 +30,7 @@
           <label
             v-for="preset in presetOptions"
             :key="preset.key"
-            class="inline-flex cursor-pointer items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-colors"
+            class="inline-flex cursor-pointer items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold transition-colors"
             :class="resolvePresetRadioClass(activePresetKey === preset.key)"
           >
             <input
@@ -50,7 +50,7 @@
           v-for="tab in panelTabs"
           :key="tab.key"
           type="button"
-          class="rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-colors"
+          class="rounded-full border px-2 py-0.5 text-[11px] font-semibold transition-colors"
           :class="activePanel === tab.key
             ? 'border-indigo-300 bg-indigo-50 text-indigo-700'
             : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900'"
@@ -62,8 +62,12 @@
       </div>
 
       <p
-        class="min-w-0 flex-1 truncate text-xs"
-        :class="errorMessage ? 'font-semibold text-rose-500' : 'text-slate-400'"
+        v-if="statusText"
+        class="min-w-0 truncate text-xs"
+        :class="[
+          simplified ? 'flex-1' : 'flex-[0_1_220px]',
+          errorMessage ? 'font-semibold text-rose-500' : 'text-slate-400',
+        ]"
       >
         {{ statusText }}
       </p>
@@ -113,8 +117,8 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
-import { ChevronDown, ChevronUp } from 'lucide-vue-next'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { ChevronDown, ChevronUp } from '@lucide/vue'
 
 import ComponentPreviewPanel from '@/components/component-preview/ComponentPreviewPanel.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
@@ -150,6 +154,7 @@ const emit = defineEmits<{
 }>()
 
 const presetRadioName = `component-preview-preset-${Math.random().toString(36).slice(2)}`
+const dockRootRef = ref<HTMLElement | null>(null)
 const drawerOpen = ref(false)
 const activePanel = ref<ComponentPreviewPanelKey>('props')
 
@@ -183,8 +188,7 @@ const statusText = computed(() => {
     return '当前组件未导出 previewSchema，只能查看静态预览。'
   }
   if (activePresetKey.value) {
-    const activePreset = presetOptions.value.find(item => item.key === activePresetKey.value)
-    return activePreset ? `当前预设：${activePreset.label}` : '当前预设已应用。'
+    return ''
   }
   if (!panelTabs.value.length) {
     return presetOptions.value.length
@@ -194,7 +198,7 @@ const statusText = computed(() => {
   if (props.simplified) {
     return presetOptions.value.length ? '请选择一个 preview preset。' : '当前无可切换的 preview preset。'
   }
-  return props.componentMeta ? `${props.componentMeta.displayName} · ${props.componentMeta.code}` : '当前为自定义参数。'
+  return ''
 })
 
 watch(
@@ -207,12 +211,33 @@ watch(
 )
 
 /**
- * 选择字段分组 tab，并按交互规则强制展开抽屉。
+ * 选择字段分组 tab；重复点击当前 tab 时收起抽屉，便于快速关闭。
  * @param panel 目标字段分组
  */
 function selectPanelTab(panel: ComponentPreviewPanelKey): void {
+  if (drawerOpen.value && activePanel.value === panel) {
+    drawerOpen.value = false
+    return
+  }
   activePanel.value = panel
   drawerOpen.value = true
+}
+
+/**
+ * 点击参数 Dock 之外的区域时关闭抽屉，避免浮层长期遮挡预览画布。
+ * @param event 指针事件
+ */
+function handleDocumentPointerDown(event: PointerEvent): void {
+  if (!drawerOpen.value) {
+    return
+  }
+  const rootElement = dockRootRef.value
+  if (!rootElement || !(event.target instanceof Node)) {
+    return
+  }
+  if (!rootElement.contains(event.target)) {
+    drawerOpen.value = false
+  }
 }
 
 /**
@@ -302,4 +327,23 @@ function resolvePresetRadioClass(active: boolean): string {
     ? 'border-indigo-300 bg-indigo-50 text-indigo-700'
     : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900'
 }
+
+onMounted(() => {
+  document.addEventListener('pointerdown', handleDocumentPointerDown)
+})
+
+onUnmounted(() => {
+  document.removeEventListener('pointerdown', handleDocumentPointerDown)
+})
 </script>
+
+<style scoped>
+.component-preview-scrollbar-hidden {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.component-preview-scrollbar-hidden::-webkit-scrollbar {
+  display: none;
+}
+</style>

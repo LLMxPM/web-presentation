@@ -28,7 +28,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Compass, Home, RouteOff } from 'lucide-vue-next'
+import { Compass, Home, RouteOff } from '@lucide/vue'
 
 import BaseButton from '@/components/ui/BaseButton.vue'
 import { buildWorkspaceHomePath } from '@/utils/workspace-routes'

@@ -176,7 +176,7 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { Archive, ImagePlus, Maximize2, Minimize2, SendHorizonal, Square, X } from 'lucide-vue-next'
+import { Archive, ImagePlus, Maximize2, Minimize2, SendHorizonal, Square, X } from '@lucide/vue'
 
 import AgentChoicePrompt from '@/components/agent/AgentChoicePrompt.vue'
 import AgentToolConfirmPrompt from '@/components/agent/AgentToolConfirmPrompt.vue'

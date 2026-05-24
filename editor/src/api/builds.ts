@@ -3,7 +3,7 @@
  */
 
 import { http } from '@/api/http'
-import type { ProjectBuildCreateRequest, ProjectBuildJob } from '@/types/api'
+import type { ProjectBuildAssetSummary, ProjectBuildCreateRequest, ProjectBuildJob } from '@/types/api'
 
 /**
  * 创建项目整包构建任务。
@@ -13,6 +13,11 @@ import type { ProjectBuildCreateRequest, ProjectBuildJob } from '@/types/api'
  */
 export async function createProjectBuildJob(projectId: number, payload: ProjectBuildCreateRequest) {
   const { data } = await http.post<ProjectBuildJob>(`/projects/${projectId}/build-jobs`, payload)
+  return data
+}
+
+export async function getProjectBuildAssetSummary(projectId: number) {
+  const { data } = await http.get<ProjectBuildAssetSummary>(`/projects/${projectId}/build-assets`)
   return data
 }
 

@@ -8,39 +8,34 @@
           <h3 class="truncate text-sm font-bold text-slate-900">
             {{ mode === 'create' ? '新建组件草稿' : '编辑组件草稿' }}
           </h3>
+          <span class="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-500">
+            {{ mode === 'create' ? '新建' : '编辑' }}
+          </span>
         </div>
         <p class="mt-1 text-xs text-slate-400">保存后仍是草稿，发布版本后才能被页面或其他组件引用。</p>
       </div>
 
-      <div class="flex shrink-0 items-center gap-2">
-        <BaseButton variant="ghost" size="sm" @click="emit('cancel-edit')">
-          取消
+      <div class="flex shrink-0 flex-wrap items-center justify-end gap-2">
+        <BaseButton v-if="canViewHistory" variant="ghost" size="sm" @click="emit('open-version-history')">
+          <History class="h-3.5 w-3.5" />
+          发布历史
         </BaseButton>
         <BaseButton variant="secondary" size="sm" :loading="previewLoading" @click="emit('preview-draft')">
-          预览当前草稿
+          <Eye class="h-3.5 w-3.5" />
+          草稿预览
         </BaseButton>
         <BaseButton variant="primary" size="sm" :loading="saving" @click="emit('save-draft')">
           {{ mode === 'create' ? '创建草稿' : '保存草稿' }}
         </BaseButton>
-        <BaseButton v-if="mode === 'edit'" variant="secondary" size="sm" :disabled="!canPublish" @click="emit('publish')">
-          发布版本
-        </BaseButton>
-        <button
-          type="button"
-          class="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-400 transition-colors hover:border-slate-300 hover:bg-slate-50 hover:text-slate-700"
-          aria-label="关闭组件编辑"
-          title="关闭组件编辑"
-          @click="emit('cancel-edit')"
-        >
-          <X class="h-4 w-4" />
-        </button>
+
+        <BaseCloseButton label="关闭组件编辑" @click="emit('cancel-edit')" />
       </div>
     </div>
 
-    <div class="grid min-h-0 flex-1 grid-cols-[420px_minmax(0,1fr)] divide-x divide-slate-100 overflow-hidden">
-      <aside class="h-full overflow-y-auto bg-slate-50/60 p-5">
-        <div class="space-y-6">
-          <section class="space-y-4">
+    <div class="grid min-h-0 flex-1 grid-cols-[380px_minmax(0,1fr)] divide-x divide-slate-100 overflow-hidden">
+      <aside class="h-full overflow-y-auto bg-slate-50/60 p-4">
+        <div class="space-y-4">
+          <section class="space-y-3">
             <h4 class="text-[11px] font-black uppercase tracking-[0.18em] text-slate-400">基本信息</h4>
             <BaseInput
               :model-value="form.name"
@@ -88,7 +83,7 @@
             />
           </section>
 
-          <section class="space-y-3 border-t border-slate-200/70 pt-5">
+          <section class="space-y-3 border-t border-slate-200/70 pt-4">
             <div class="flex items-center justify-between gap-3">
               <h4 class="text-[11px] font-black uppercase tracking-[0.18em] text-slate-400">预览配置 Schema</h4>
               <button
@@ -107,7 +102,7 @@
                 language="json"
                 theme="light"
                 :auto-save-delay="0"
-                height="320px"
+                height="260px"
                 @update:model-value="updateField('preview_schema', $event)"
               />
             </div>
@@ -156,14 +151,16 @@
         </div>
       </main>
     </div>
+
   </section>
 </template>
 
 <script setup lang="ts">
-import { Code2, HelpCircle, X } from 'lucide-vue-next'
+import { Code2, Eye, HelpCircle, History } from '@lucide/vue'
 
 import MonacoCodeEditor from '@/components/editor/MonacoCodeEditor.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
+import BaseCloseButton from '@/components/ui/BaseCloseButton.vue'
 import BaseInput from '@/components/ui/BaseInput.vue'
 import SearchableSelect from '@/components/ui/SearchableSelect.vue'
 import type { SelectModelValue, SelectOption } from '@/components/ui/select'
@@ -183,6 +180,7 @@ const props = defineProps<{
   saving: boolean
   previewLoading: boolean
   canPublish: boolean
+  canViewHistory?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -192,6 +190,7 @@ const emit = defineEmits<{
   'save-draft': []
   publish: []
   'cancel-edit': []
+  'open-version-history': []
   'open-schema-help': []
 }>()
 

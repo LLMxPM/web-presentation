@@ -26,10 +26,13 @@ async def test_runtime_kit_component_capability_list_should_expose_enabled_compo
     kinds = {item["kind"] for item in payload["items"]}
 
     assert payload["total"] >= 1
-    assert "Icon" in names
-    assert "DefaultContainer" in names
-    assert "Connector" in names
+    assert "Icon.v1" in names
+    assert "ThemeLogo.v1" in names
+    assert "DefaultContainer.v1" in names
+    assert "Connector.v1" in names
     assert "composable" in kinds
+    assert payload["manifest_version"] == "1.0.0"
+    assert all(item["name"] == f"{item['base_name']}.v{item['version_no']}" for item in payload["items"])
 
     previewable_response = await authenticated_client.get(
         "/api/runtime-kit/components",
@@ -40,10 +43,24 @@ async def test_runtime_kit_component_capability_list_should_expose_enabled_compo
     assert all(item["kind"] == "component" for item in previewable_items)
     assert all(item["previewable"] is True for item in previewable_items)
     assert all(isinstance(item["preview_schema"], dict) and item["preview_schema"] for item in previewable_items)
-    asset_image_item = next(item for item in previewable_items if item["name"] == "AssetImage")
+    asset_image_item = next(item for item in previewable_items if item["name"] == "AssetImage.v1")
     assert asset_image_item["preview_schema"]["props"]["fallback"]["type"] == "string"
+    assert asset_image_item["preview_schema"]["props"]["fallback"]["default"].startswith("data:image/svg+xml,")
+    assert asset_image_item["preview_schema"]["props"]["minHeight"]["default"] == "160px"
+    assert asset_image_item["preview_schema"]["props"]["backgroundColor"]["default"] == "#f8fafc"
     assert asset_image_item["preview_schema"]["props"]["showFallbackPlaceholder"]["default"] is True
+    assert asset_image_item["preview_schema"]["presets"][0]["key"] == "contain-preview"
     assert asset_image_item["preview_options"]["page"]["width"] == 960
+    icon_item = next(item for item in previewable_items if item["name"] == "Icon.v1")
+    assert icon_item["preview_schema"]["props"]["class"]["default"] == "size-16"
+    assert icon_item["preview_schema"]["props"]["strokeWidth"]["default"] == 2
+    theme_logo_item = next(item for item in previewable_items if item["name"] == "ThemeLogo.v1")
+    assert theme_logo_item["preview_schema"]["props"]["variant"]["default"] == "logo"
+    assert theme_logo_item["preview_schema"]["props"]["size"]["default"] == 4
+    assert "width" not in theme_logo_item["preview_schema"]["props"]
+    assert "height" not in theme_logo_item["preview_schema"]["props"]
+    assert "fit" not in theme_logo_item["preview_schema"]["props"]
+    assert "fallbackSrc" not in theme_logo_item["preview_schema"]["props"]
 
     doc_only_response = await authenticated_client.get(
         "/api/runtime-kit/components",
@@ -52,9 +69,16 @@ async def test_runtime_kit_component_capability_list_should_expose_enabled_compo
     assert doc_only_response.status_code == 200
     doc_items = doc_only_response.json()["items"]
     doc_names = {item["name"] for item in doc_items}
-    assert "usePageSize" in doc_names
-    use_page_size = next(item for item in doc_items if item["name"] == "usePageSize")
+    assert "usePageSize.v1" in doc_names
+    use_page_size = next(item for item in doc_items if item["name"] == "usePageSize.v1")
     assert len(use_page_size["return_example"]) >= 1
+
+    version_response = await authenticated_client.get(
+        "/api/runtime-kit/components",
+        params={"base_name": "Icon", "version_no": 1, "include_all_versions": True},
+    )
+    assert version_response.status_code == 200
+    assert [item["name"] for item in version_response.json()["items"]] == ["Icon.v1"]
 
 
 async def test_runtime_kit_component_preview_should_use_local_component_host(
@@ -65,7 +89,7 @@ async def test_runtime_kit_component_preview_should_use_local_component_host(
 
     workspace_id = await create_workspace(authenticated_client)
     preview_response = await authenticated_client.post(
-        "/api/runtime-kit/components/Icon/preview-artifacts",
+        "/api/runtime-kit/components/Icon.v1/preview-artifacts",
         json={
             "workspace_id": workspace_id,
             "preview_options": {
@@ -83,7 +107,7 @@ async def test_runtime_kit_component_preview_should_use_local_component_host(
     preview_payload = preview_response.json()
     assert preview_payload["preview_kind"] == "component"
     assert preview_payload["component_source"] == "runtime_kit"
-    assert preview_payload["runtime_kit_component_name"] == "Icon"
+    assert preview_payload["runtime_kit_component_name"] == "Icon.v1"
     assert preview_payload["viewport_width"] == 640
     assert preview_payload["viewport_height"] == 480
     assert "component_version_no" not in preview_payload
@@ -97,7 +121,7 @@ async def test_runtime_kit_component_preview_should_use_local_component_host(
     manifest = manifest_response.json()
     assert manifest["preview_kind"] == "component"
     assert manifest["owner_scope"]["scope_type"] == "runtime_kit_component"
-    assert manifest["owner_scope"]["runtime_kit_component_name"] == "Icon"
+    assert manifest["owner_scope"]["runtime_kit_component_name"] == "Icon.v1"
     assert manifest["modules"] == {}
 
     config_bundle_response = await authenticated_client.get(
@@ -106,10 +130,13 @@ async def test_runtime_kit_component_preview_should_use_local_component_host(
     )
     assert config_bundle_response.status_code == 200
     component_preview = config_bundle_response.json()["component_preview"]
-    assert component_preview["component_import_path"] == "@runtime-kit/public/components/primitives/Icon.vue"
+    assert component_preview["component_import_path"] == "@runtime-kit/public/components/primitives/Icon.v1.vue"
     assert component_preview["component_source"] == "runtime_kit"
-    assert component_preview["runtime_kit_component_name"] == "Icon"
+    assert component_preview["runtime_kit_component_name"] == "Icon.v1"
     assert component_preview["schema"]["props"]["name"]["default"] == "home"
+    assert component_preview["schema"]["props"]["class"]["default"] == "size-16"
+    assert component_preview["schema"]["props"]["fallback"]["default"] == "?"
+    assert component_preview["schema"]["presets"][1]["key"] == "fallback-icon"
     assert component_preview["placement"]["padding"] == 32
 
 
@@ -121,12 +148,12 @@ async def test_runtime_kit_asset_component_preview_should_include_manifest_schem
 
     workspace_id = await create_workspace(authenticated_client, "Runtime Kit 资源组件工作空间")
     preview_response = await authenticated_client.post(
-        "/api/runtime-kit/components/AssetImage/preview-artifacts",
+        "/api/runtime-kit/components/AssetImage.v1/preview-artifacts",
         json={"workspace_id": workspace_id},
     )
     assert preview_response.status_code == 200
     preview_payload = preview_response.json()
-    assert preview_payload["runtime_kit_component_name"] == "AssetImage"
+    assert preview_payload["runtime_kit_component_name"] == "AssetImage.v1"
     assert preview_payload["viewport_width"] == 960
     assert preview_payload["viewport_height"] == 540
 
@@ -137,14 +164,54 @@ async def test_runtime_kit_asset_component_preview_should_include_manifest_schem
     )
     assert config_bundle_response.status_code == 200
     component_preview = config_bundle_response.json()["component_preview"]
-    assert component_preview["component_import_path"] == "@runtime-kit/public/components/assets/AssetImage.vue"
+    assert component_preview["component_import_path"] == "@runtime-kit/public/components/assets/AssetImage.v1.vue"
     assert component_preview["component_source"] == "runtime_kit"
     assert component_preview["schema"]["props"]["name"]["default"] == ""
+    assert component_preview["schema"]["props"]["fallback"]["default"].startswith("data:image/svg+xml,")
     assert component_preview["schema"]["props"]["fallback"]["placeholder"] == "https://example.com/image.png"
+    assert component_preview["schema"]["props"]["minHeight"]["default"] == "160px"
+    assert component_preview["schema"]["props"]["backgroundColor"]["default"] == "#f8fafc"
     assert component_preview["schema"]["props"]["fit"]["default"] == "contain"
     assert component_preview["schema"]["props"]["showFallbackPlaceholder"]["default"] is True
+    assert component_preview["schema"]["presets"][1]["key"] == "cover-banner"
     assert component_preview["placement"]["width_value"] == 78
     assert component_preview["placement"]["padding"] == 56
+
+
+async def test_runtime_kit_theme_logo_preview_should_include_manifest_schema(
+    authenticated_client: AsyncClient,
+    runtime_service_headers: dict[str, str],
+) -> None:
+    """主题 Logo 组件预览应下发 manifest schema，且不提供兜底图片。"""
+
+    workspace_id = await create_workspace(authenticated_client, "Runtime Kit 主题 Logo 工作空间")
+    preview_response = await authenticated_client.post(
+        "/api/runtime-kit/components/ThemeLogo.v1/preview-artifacts",
+        json={"workspace_id": workspace_id},
+    )
+    assert preview_response.status_code == 200
+    preview_payload = preview_response.json()
+    assert preview_payload["runtime_kit_component_name"] == "ThemeLogo.v1"
+    assert preview_payload["viewport_width"] == 640
+    assert preview_payload["viewport_height"] == 360
+
+    artifact_id = preview_payload["artifact_id"]
+    config_bundle_response = await authenticated_client.get(
+        f"/internal/runtime/preview-artifacts/{artifact_id}/config-bundle",
+        headers=runtime_service_headers,
+    )
+    assert config_bundle_response.status_code == 200
+    component_preview = config_bundle_response.json()["component_preview"]
+    assert component_preview["component_import_path"] == "@runtime-kit/public/components/primitives/ThemeLogo.v1.vue"
+    assert component_preview["component_source"] == "runtime_kit"
+    assert component_preview["schema"]["props"]["variant"]["default"] == "logo"
+    assert component_preview["schema"]["props"]["size"]["default"] == 4
+    assert "width" not in component_preview["schema"]["props"]
+    assert "height" not in component_preview["schema"]["props"]
+    assert "fit" not in component_preview["schema"]["props"]
+    assert "fallbackSrc" not in component_preview["schema"]["props"]
+    assert component_preview["schema"]["presets"][1]["key"] == "theme-invert-logo"
+    assert component_preview["placement"]["padding"] == 72
 
 
 async def test_runtime_kit_default_container_preview_should_use_static_slot_defaults(
@@ -159,13 +226,14 @@ async def test_runtime_kit_default_container_preview_should_use_static_slot_defa
         params={"keyword": "页面根容器"},
     )
     assert list_response.status_code == 200
-    container_item = next(item for item in list_response.json()["items"] if item["name"] == "DefaultContainer")
+    container_item = next(item for item in list_response.json()["items"] if item["name"] == "DefaultContainer.v1")
     assert container_item["previewable"] is True
     assert container_item["preview_schema"]["slots"]["default"]["default"][0]["value"].find("Page Canvas") >= 0
+    assert container_item["preview_schema"]["presets"][1]["key"] == "section-stack"
     assert any("定位上下文" in item for item in container_item["constraints"])
 
     preview_response = await authenticated_client.post(
-        "/api/runtime-kit/components/DefaultContainer/preview-artifacts",
+        "/api/runtime-kit/components/DefaultContainer.v1/preview-artifacts",
         json={"workspace_id": workspace_id},
     )
     assert preview_response.status_code == 200
@@ -180,9 +248,10 @@ async def test_runtime_kit_default_container_preview_should_use_static_slot_defa
     component_preview = config_bundle["component_preview"]
     assert config_bundle["routes"] == {"routes": []}
     assert component_preview["component_import_path"] == (
-        "@runtime-kit/public/components/page/layout/DefaultContainer.vue"
+        "@runtime-kit/public/components/page/layout/DefaultContainer.v1.vue"
     )
     assert "Page Canvas" in component_preview["schema"]["slots"]["default"]["default"][0]["value"]
+    assert component_preview["schema"]["presets"][0]["key"] == "center-canvas"
 
 
 async def test_runtime_kit_component_preview_should_reject_disabled_or_unknown_component(
@@ -192,7 +261,7 @@ async def test_runtime_kit_component_preview_should_reject_disabled_or_unknown_c
 
     workspace_id = await create_workspace(authenticated_client, "Runtime Kit 拒绝预览工作空间")
     response = await authenticated_client.post(
-        "/api/runtime-kit/components/Connector/preview-artifacts",
+        "/api/runtime-kit/components/Connector.v1/preview-artifacts",
         json={"workspace_id": workspace_id},
     )
     assert response.status_code == 400

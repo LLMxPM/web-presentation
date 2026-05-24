@@ -81,11 +81,6 @@
         read-only
         :workspace-id="workspaceId"
       />
-      <ThemeManagerPanel
-        v-if="workspaceDockVisible && themePanelVisible"
-        v-model="themePanelVisible"
-        :workspace-id="workspaceId"
-      />
       <WorkspaceDock
         v-if="workspaceDockVisible && workspaceId"
         :workspace-id="workspaceId"
@@ -104,7 +99,7 @@
 import { computed, defineAsyncComponent, onMounted, onUnmounted, provide, ref, watch } from 'vue'
 import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
 import { useQuery } from '@tanstack/vue-query'
-import { ChevronRight } from 'lucide-vue-next'
+import { ChevronRight } from '@lucide/vue'
 import { getPage, getProject, getWorkspace } from '@/api/catalog'
 import UserMenu from '@/components/nav/UserMenu.vue'
 import WorkspaceSwitcher from '@/components/nav/WorkspaceSwitcher.vue'
@@ -118,9 +113,8 @@ import type { WorkspaceComponentItem } from '@/types/api'
 
 const AssetManagerPanel = defineAsyncComponent(() => import('@/components/project/AssetManagerPanel.vue'))
 const ComponentManagerPanel = defineAsyncComponent(() => import('@/components/project/ComponentManagerPanel.vue'))
-const ThemeManagerPanel = defineAsyncComponent(() => import('@/components/project/ThemeManagerPanel.vue'))
 
-type SupplementPanelKey = 'assets' | 'components' | 'themes'
+type SupplementPanelKey = 'assets' | 'components'
 
 const route = useRoute()
 const router = useRouter()
@@ -139,10 +133,6 @@ const assetPanelVisible = computed({
 const componentPanelVisible = computed({
   get: () => activeSupplementPanel.value === 'components',
   set: value => updateSupplementPanel('components', value),
-})
-const themePanelVisible = computed({
-  get: () => activeSupplementPanel.value === 'themes',
-  set: value => updateSupplementPanel('themes', value),
 })
 
 /**

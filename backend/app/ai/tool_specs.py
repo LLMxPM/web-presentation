@@ -333,20 +333,21 @@ _RUNTIME_KIT_LIST_RESPONSE_EXAMPLE = {
     "total": 1,
     "items": [
         {
-            "name": "DefaultContainer",
+            "name": "DefaultContainer.v1",
+            "base_name": "DefaultContainer",
+            "version_no": 1,
             "kind": "component",
             "category": "page",
-            "import_path": "@runtime-kit/public/components/page/layout/DefaultContainer.vue",
+            "import_path": "@runtime-kit/public/components/page/layout/DefaultContainer.v1.vue",
         }
     ],
-    "message": "Runtime Kit 能力仅用于生成页面或组件源码中的公开 import；生成代码时必须按工具返回 import_path 原样使用。",
+    "message": "Runtime Kit 能力仅用于生成页面或组件源码中的公开 import；生成代码时必须按工具返回的版本化 import_path 原样使用。",
 }
 
 _PROJECT_ROUTE_PAGE_WRITE_EXAMPLE = {
     "route_type": "page",
     "route": "cover",
     "order": 10,
-    "icon": None,
     "hidden": False,
     "page_id": 3,
     "children": [],
@@ -356,7 +357,6 @@ _PROJECT_ROUTE_GROUP_WRITE_EXAMPLE = {
     "route_type": "group",
     "route": "chapter-1",
     "order": 20,
-    "icon": None,
     "hidden": False,
     "group_title": "第一章",
     "page_id": None,
@@ -364,7 +364,6 @@ _PROJECT_ROUTE_GROUP_WRITE_EXAMPLE = {
         {
             "route": "overview",
             "order": 10,
-            "icon": None,
             "hidden": False,
             "page_id": 4,
         }
@@ -378,7 +377,6 @@ _PROJECT_ROUTE_TREE_RESPONSE_EXAMPLE = {
             "route_type": "page",
             "route": "cover",
             "order": 10,
-            "icon": None,
             "hidden": False,
             "page_id": 3,
             "page_code": "page_cover",
@@ -391,7 +389,6 @@ _PROJECT_ROUTE_TREE_RESPONSE_EXAMPLE = {
             "route_type": "group",
             "route": "chapter-1",
             "order": 20,
-            "icon": None,
             "hidden": False,
             "group_title": "第一章",
             "page_id": None,
@@ -404,7 +401,6 @@ _PROJECT_ROUTE_TREE_RESPONSE_EXAMPLE = {
                     "route_type": "page",
                     "route": "overview",
                     "order": 10,
-                    "icon": None,
                     "hidden": False,
                     "page_id": 4,
                     "page_code": "page_overview",
@@ -546,7 +542,7 @@ _COORDINATOR_TOOL_SPECS = (
         response_example={'authoring_width': 1536,
          'authoring_height': 864,
          'theme': {'palette': {'text': {'primary': '#0D286A'}},
-                   'typography': {'headingfont': '思源黑体', 'bodyfont': '思源黑体', 'codefont': 'SourceCodePro'}},
+                   'typography': {'headingfont': 'system-ui', 'bodyfont': 'system-ui', 'codefont': 'monospace'}},
          'style_spec_markdown': '## 版式\n- 标题保持简洁。'},
     ),
 
@@ -614,8 +610,7 @@ _COORDINATOR_TOOL_SPECS = (
             '不允许 /、/home、home/、a/b、空白或包含空格。page 节点必须传 route_type="page"、'
             'route、order、page_id，不能传 children 或 group_title；group 节点必须传 route_type="group"、'
             'route、order、group_title、children，不能传 page_id。page_id 只能来自 list_project_pages；'
-            'icon 是可选字段，绝大多数路由应传 null 或省略；不要为了“有个图标”而猜测或套用通用名称。'
-            '只有用户明确要求路由导航显示图标，且已从当前工作空间 icon 资源列表确认真实资源名时才填写。'
+            '不要传 icon 字段；项目路由菜单不再渲染路由图标，路由树接口也不再接收该字段。'
             'valid=false 或预览结果不符合预期时，'
             '不要继续调用 apply_project_route_tree。'
         ),
@@ -751,8 +746,7 @@ _COORDINATOR_TOOL_SPECS = (
             'a/b、空白或包含空格。page 节点必须传 route_type="page"、route、order、'
             'page_id，不能传 children 或 group_title；group 节点必须传 route_type="group"、'
             'route、order、group_title、children，不能传 page_id。page_id 只能来自 list_project_pages；'
-            'icon 是可选字段，绝大多数路由应传 null 或省略；不要为了“有个图标”而猜测或套用通用名称。'
-            '只有用户明确要求路由导航显示图标，且已从当前工作空间 icon 资源列表确认真实资源名时才填写。'
+            '不要传 icon 字段；项目路由菜单不再渲染路由图标，路由树接口也不再接收该字段。'
         ),
         requires_confirmation=True,
         risk_level='danger',
@@ -781,7 +775,6 @@ _COORDINATOR_TOOL_SPECS = (
                      'route_type': 'page',
                      'route': 'cover',
                      'order': 10,
-                     'icon': None,
                      'hidden': False,
                      'page_id': 3,
                      'page_code': 'page_cover',
@@ -821,8 +814,9 @@ _COORDINATOR_TOOL_SPECS = (
         'Runtime Kit',
         '查询 Agent 可引用的 Runtime Kit 只读能力，覆盖 component、composable、util 与 type。',
         default_instructions=(
-            'Runtime Kit 只提供可在页面或组件源码中 import 的公开能力，不是可直接调用的业务工具。'
+            'Runtime Kit 只提供可在页面或组件源码中 import 的版本化公开能力，不是可直接调用的业务工具。'
             '生成 Vue SFC 时必须按返回的公开 import_path、示例和约束原样使用，只使用工具结果中可见的 Runtime Kit 能力。'
+            '能力 name 带版本号，例如 Icon.v1；不要使用未带 .vN 的 @runtime-kit 路径。'
         ),
         response_example=_RUNTIME_KIT_LIST_RESPONSE_EXAMPLE,
     ),
@@ -834,12 +828,15 @@ _COORDINATOR_TOOL_SPECS = (
         'Runtime Kit',
         '读取 Agent 可引用的单个 Runtime Kit 能力详情和 import 用法。',
         default_instructions=(
-            'Runtime Kit 只提供可在页面或组件源码中 import 的公开能力，不是可直接调用的业务工具。'
+            'Runtime Kit 只提供可在页面或组件源码中 import 的版本化公开能力，不是可直接调用的业务工具。'
             '生成 Vue SFC 时必须按返回的公开 import_path、示例和约束原样使用，只使用工具结果中可见的 Runtime Kit 能力。'
+            '调用本工具时使用带版本号的能力 name，例如 Icon.v1；不要传未带版本的旧名称。'
         ),
-        response_example={'name': 'DefaultContainer',
+        response_example={'name': 'DefaultContainer.v1',
+         'base_name': 'DefaultContainer',
+         'version_no': 1,
          'kind': 'component',
-         'import_path': '@runtime-kit/public/components/page/layout/DefaultContainer.vue',
+         'import_path': '@runtime-kit/public/components/page/layout/DefaultContainer.v1.vue',
          'message': '生成代码时必须按工具返回 import_path 原样使用。'},
     ),
 
@@ -959,8 +956,9 @@ _COMPONENT_MANAGER_TOOL_SPECS = (
         '组件库',
         '查询 Agent 可引用的 Runtime Kit 只读能力，覆盖 component、composable、util 与 type。',
         default_instructions=(
-            'Runtime Kit 只提供可在页面或组件源码中 import 的公开能力，不是可直接调用的业务工具。'
+            'Runtime Kit 只提供可在页面或组件源码中 import 的版本化公开能力，不是可直接调用的业务工具。'
             '生成 Vue SFC 时必须按返回的公开 import_path、示例和约束原样使用，只使用工具结果中可见的 Runtime Kit 能力。'
+            '能力 name 带版本号，例如 Icon.v1；不要使用未带 .vN 的 @runtime-kit 路径。'
         ),
         response_example=_RUNTIME_KIT_LIST_RESPONSE_EXAMPLE,
     ),
@@ -972,12 +970,15 @@ _COMPONENT_MANAGER_TOOL_SPECS = (
         '组件库',
         '读取 Agent 可引用的单个 Runtime Kit 能力详情和 import 用法。',
         default_instructions=(
-            'Runtime Kit 只提供可在页面或组件源码中 import 的公开能力，不是可直接调用的业务工具。'
+            'Runtime Kit 只提供可在页面或组件源码中 import 的版本化公开能力，不是可直接调用的业务工具。'
             '生成 Vue SFC 时必须按返回的公开 import_path、示例和约束原样使用，只使用工具结果中可见的 Runtime Kit 能力。'
+            '调用本工具时使用带版本号的能力 name，例如 Icon.v1；不要传未带版本的旧名称。'
         ),
-        response_example={'name': 'DefaultContainer',
+        response_example={'name': 'DefaultContainer.v1',
+         'base_name': 'DefaultContainer',
+         'version_no': 1,
          'kind': 'component',
-         'import_path': '@runtime-kit/public/components/page/layout/DefaultContainer.vue',
+         'import_path': '@runtime-kit/public/components/page/layout/DefaultContainer.v1.vue',
          'message': '生成代码时必须按工具返回 import_path 原样使用。'},
     ),
 
@@ -1053,7 +1054,7 @@ _COMPONENT_MANAGER_TOOL_SPECS = (
             'select 必须提供 options。slots.default 和 presets.*.slots.* 必须是节点数组，节点 type 仅支持 text、html、component。'
             '创建后得到的是组件草稿；需要页面或其他组件正式引用时，必须再调用 publish_component 发布版本。'
             '示例：{"props":{"title":{"type":"string","label":"标题","default":"季度经营概览"},"tone":{"type":"select","label":"强调色","default":"accent1","options":[{"label":"蓝色","value":"accent1"},{"label":"绿色","value":"accent2"}]},"metrics":{"type":"json","label":"指标数据","default":[{"label":"收入","value":"1280 万","trend":"+12%"}]}},"slots":{"default":{"label":"补充说明","default":[{"type":"text","value":"数据口径：'
-            '截至本季度末。"},{"type":"component","component":"@runtime-kit/public/components/primitives/Icon.vue","props":{"name":"chart-line","size":20}}]}},"mocks":{"loading":{"label":"加载态","default":false}},"presets":[{"key":"growth","label":"增长场景","props":{"title":"增长亮点","tone":"accent2"}},{"key":"risk","label":"风险场景","props":{"title":"风险提醒","tone":"accent5"},"mocks":{"loading":false}}]}'
+            '截至本季度末。"},{"type":"component","component":"@runtime-kit/public/components/primitives/Icon.v1.vue","props":{"name":"chart-line","size":20}}]}},"mocks":{"loading":{"label":"加载态","default":false}},"presets":[{"key":"growth","label":"增长场景","props":{"title":"增长亮点","tone":"accent2"}},{"key":"risk","label":"风险场景","props":{"title":"风险提醒","tone":"accent5"},"mocks":{"loading":false}}]}'
         ),
         risk_level='write',
         response_example={'success': True,
@@ -1119,10 +1120,10 @@ _COMPONENT_MANAGER_TOOL_SPECS = (
             'schema 应与真实 props、slots 和 mock 数据保持一致，常用结构为 props、'
             'slots、mocks、presets。props 字段支持 string、textarea、number、'
             'boolean、select、json 类型；select 必须提供 options。slots.default 和 presets.*.slots.* 必须是节点数组，'
-            '节点 type 仅支持 text、html、component；component 节点只能引用 @runtime-kit 清单项或已发布的 @workspace-components/<component_code>/v/<version_no>。'
+            '节点 type 仅支持 text、html、component；component 节点只能引用 @runtime-kit 清单中的版本化组件或已发布的 @workspace-components/<component_code>/v/<version_no>。'
             'presets 建议提供 2-3 个业务化样例，key 使用稳定英文短横线命名，label 使用中文可读名称。'
             '示例：{"props":{"title":{"type":"string","label":"标题","default":"季度经营概览"},"tone":{"type":"select","label":"强调色","default":"accent1","options":[{"label":"蓝色","value":"accent1"},{"label":"绿色","value":"accent2"}]},"metrics":{"type":"json","label":"指标数据","default":[{"label":"收入","value":"1280 万","trend":"+12%"}]}},"slots":{"default":{"label":"补充说明","default":[{"type":"text","value":"数据口径：'
-            '截至本季度末。"},{"type":"component","component":"@runtime-kit/public/components/primitives/Icon.vue","props":{"name":"chart-line","size":20}}]}},"mocks":{"loading":{"label":"加载态","default":false}},"presets":[{"key":"growth","label":"增长场景","props":{"title":"增长亮点","tone":"accent2"}},{"key":"risk","label":"风险场景","props":{"title":"风险提醒","tone":"accent5"},"mocks":{"loading":false}}]}'
+            '截至本季度末。"},{"type":"component","component":"@runtime-kit/public/components/primitives/Icon.v1.vue","props":{"name":"chart-line","size":20}}]}},"mocks":{"loading":{"label":"加载态","default":false}},"presets":[{"key":"growth","label":"增长场景","props":{"title":"增长亮点","tone":"accent2"}},{"key":"risk","label":"风险场景","props":{"title":"风险提醒","tone":"accent5"},"mocks":{"loading":false}}]}'
         ),
         risk_level='write',
         response_example={'success': True,

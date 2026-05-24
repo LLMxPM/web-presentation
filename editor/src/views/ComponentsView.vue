@@ -25,7 +25,7 @@
       @change="handleImportFileSelected"
     />
 
-    <div class="grid min-h-0 flex-1 grid-cols-[430px_minmax(0,1fr)] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+    <div class="grid min-h-0 flex-1 grid-cols-[400px_minmax(0,1fr)] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
       <ComponentLibraryPanel
         v-model="componentPanelVisible"
         :workspace-id="workspaceId"
@@ -46,7 +46,7 @@
         @refresh-requested="refreshComponentList"
       />
 
-      <main class="min-w-0 overflow-hidden border-l border-slate-200 bg-slate-50/70 p-5">
+      <main class="min-w-0 overflow-hidden border-l border-slate-200 bg-slate-50/70">
         <WorkspaceComponentWorkbench
           v-if="activeWorkbench === 'workspace'"
           :workspace-id="workspaceId"
@@ -65,10 +65,10 @@
           :title="selectedRuntimeKitItem?.display_name || 'Runtime Kit 组件预览'"
           :subtitle="selectedRuntimeKitItem?.import_path || ''"
           simplified
-          class="h-full rounded-2xl border border-slate-200 bg-white shadow-sm"
+          class="h-full"
         />
 
-        <section v-else class="flex h-full items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-white px-8 text-center">
+        <section v-else class="flex h-full items-center justify-center bg-white px-6 text-center">
           <div class="max-w-sm">
             <p class="text-sm font-bold text-slate-600">请选择左侧组件</p>
             <p class="mt-2 text-xs leading-6 text-slate-400">
@@ -153,7 +153,7 @@
 import { computed, inject, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useQuery } from '@tanstack/vue-query'
-import { Plus, Upload } from 'lucide-vue-next'
+import { Plus, Upload } from '@lucide/vue'
 
 import {
   exportComponentPackage,

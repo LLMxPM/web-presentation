@@ -26,6 +26,9 @@ async def list_runtime_kit_components(
     keyword: str | None = None,
     category: str | None = None,
     kind: RuntimeKitCapabilityKind | None = None,
+    base_name: str | None = None,
+    version_no: int | None = None,
+    include_all_versions: bool = False,
     previewable: bool | None = None,
     _: Annotated[AuthContext, Depends(get_current_user)] = None,
     session: Annotated[AsyncSession, Depends(get_db_session)] = None,
@@ -36,6 +39,9 @@ async def list_runtime_kit_components(
         keyword=keyword,
         category=category,
         kind=kind,
+        base_name=base_name,
+        version_no=version_no,
+        include_all_versions=include_all_versions,
         previewable=previewable,
     )
 

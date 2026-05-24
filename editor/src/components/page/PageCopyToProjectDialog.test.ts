@@ -154,7 +154,6 @@ describe('PageCopyToProjectDialog', () => {
           route_type: 'group',
           route: 'chapter',
           order: 10,
-          icon: null,
           hidden: false,
           group_title: '章节',
           page_id: null,

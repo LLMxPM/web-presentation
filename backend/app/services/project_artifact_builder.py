@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import re
 from dataclasses import dataclass
+from collections.abc import Iterable
 from typing import Literal
 
 from sqlalchemy import select
@@ -27,14 +28,17 @@ from app.repositories.workspace_component_repository import WorkspaceComponentRe
 from app.repositories.workspace_component_version_repository import WorkspaceComponentVersionRepository
 from app.schemas.asset import resolve_asset_role
 from app.schemas.project_app_config import ProjectAppPageConfig
+from app.schemas.project import normalize_project_build_extra_assets_config
 from app.schemas.release import PreviewEntryDescriptor
 from app.services.component_dependency_service import ComponentDependencyService
 from app.services.project_config_service import ProjectConfigService
+from app.services.resource_reference_parser import ResourceReferenceParser
 from app.services.project_route_service import ProjectRouteService
 from app.services.runtime_icon_service import RuntimeIconService
 from app.services.workspace_font_service import WorkspaceFontService
 
 AssetDeliveryMode = Literal["public", "backend_cache"]
+AssetSnapshotMode = Literal["all", "referenced"]
 
 
 @dataclass(slots=True)
@@ -59,6 +63,16 @@ class ProjectPageModuleOverride:
 
     content: str
     page_version_id: int | None = None
+
+
+@dataclass(slots=True, frozen=True)
+class ProjectBuildAssetReferenceSummary:
+    """项目构建资源引用摘要，区分自动引用和项目额外声明。"""
+
+    automatic_asset_names: list[str]
+    extra_asset_names: list[str]
+    included_asset_names: list[str]
+    dynamic_module_paths: list[str]
 
 
 @dataclass(slots=True, frozen=True)
@@ -99,6 +113,7 @@ class ProjectArtifactBuilder:
         page_module_overrides: dict[str, ProjectPageModuleOverride] | None = None,
         transient_pages: list[Page] | None = None,
         asset_delivery_mode: AssetDeliveryMode = "public",
+        asset_snapshot_mode: AssetSnapshotMode = "all",
     ) -> ProjectArtifactSnapshot:
         """构建项目级预览/构建共用快照。"""
 
@@ -162,7 +177,6 @@ class ProjectArtifactBuilder:
             icon_config = await self.runtime_icon_service.build_project_icon_config_from_modules(
                 workspace_id=project.workspace_id,
                 project_icon_name=self.project_config_service.resolve_project_icon_name_from_theme_config(theme_config),
-                runtime_route_config=runtime_route_config,
                 modules_data=modules_data,
             )
 
@@ -175,7 +189,20 @@ class ProjectArtifactBuilder:
             "module_resolver": build_runtime_module_resolver_config(),
         }
 
-        asset_mapping, asset_metadata = await self.build_workspace_asset_snapshot(project.workspace_id)
+        required_asset_names: list[str] | None = None
+        if asset_snapshot_mode == "referenced":
+            required_asset_names = await self.collect_build_required_asset_names(
+                workspace_id=project.workspace_id,
+                modules_data=modules_data,
+                config_bundle=config_bundle,
+                extra_asset_names=normalize_project_build_extra_assets_config(
+                    project.build_extra_assets_json
+                ).asset_names,
+            )
+        asset_mapping, asset_metadata = await self.build_workspace_asset_snapshot(
+            project.workspace_id,
+            required_asset_names=required_asset_names,
+        )
         asset_base_url = self.build_asset_base_url(
             settings.backend_public_base_url,
             project.workspace_id,
@@ -193,6 +220,59 @@ class ProjectArtifactBuilder:
             asset_metadata=asset_metadata,
             modules_metadata=modules_metadata,
             modules_data=modules_data,
+        )
+
+    async def collect_project_build_asset_reference_summary(
+        self,
+        project_id: int,
+    ) -> ProjectBuildAssetReferenceSummary:
+        """收集项目构建资源引用摘要，不创建快照也不读取资源文件映射。"""
+
+        project = await self.get_project_or_raise(project_id)
+        runtime_route_config = await self.project_route_service.build_runtime_route_config(project.id)
+        theme_config = await self.project_config_service.resolve_runtime_theme_config(project)
+        app_config = await self.project_config_service.build_runtime_app_dict(project, theme_config=theme_config)
+        all_project_pages = await self.list_project_pages(project.id)
+        route_component_paths = self.collect_runtime_route_component_paths(runtime_route_config)
+        route_pages = [
+            page for page in all_project_pages
+            if f"@/views/{page.code}.{page.file_type}" in route_component_paths
+        ]
+        manifest_page_paths = self.build_manifest_page_paths(route_pages, None)
+        _, modules_data = await self.build_release_module_graph(
+            route_pages,
+            manifest_page_paths=manifest_page_paths,
+        )
+        font_service = WorkspaceFontService(self.session)
+        font_bundle = await font_service.build_font_bundle_for_project(
+            project,
+            explicit_asset_names=font_service.collect_declared_font_asset_names_from_modules(modules_data),
+        )
+        icon_config = await self.runtime_icon_service.build_project_icon_config_from_modules(
+            workspace_id=project.workspace_id,
+            project_icon_name=self.project_config_service.resolve_project_icon_name_from_theme_config(theme_config),
+            modules_data=modules_data,
+        )
+        config_bundle = {
+            "app": app_config,
+            "routes": runtime_route_config,
+            "icons": icon_config,
+            "themes": theme_config,
+            "fonts": font_bundle.model_dump(),
+            "module_resolver": build_runtime_module_resolver_config(),
+        }
+
+        static_module_asset_names, dynamic_module_paths = self.collect_module_asset_references(modules_data)
+        config_asset_names = self.collect_config_asset_names(config_bundle)
+        automatic_asset_names = self.normalize_asset_names([*static_module_asset_names, *config_asset_names])
+        extra_asset_names = self.normalize_asset_names(
+            normalize_project_build_extra_assets_config(project.build_extra_assets_json).asset_names
+        )
+        return ProjectBuildAssetReferenceSummary(
+            automatic_asset_names=automatic_asset_names,
+            extra_asset_names=extra_asset_names,
+            included_asset_names=self.normalize_asset_names([*automatic_asset_names, *extra_asset_names]),
+            dynamic_module_paths=dynamic_module_paths,
         )
 
     @staticmethod
@@ -222,8 +302,14 @@ class ProjectArtifactBuilder:
     async def build_workspace_asset_snapshot(
         self,
         workspace_id: int,
+        *,
+        required_asset_names: Iterable[str] | None = None,
     ) -> tuple[dict[str, str], dict[str, dict[str, str]]]:
         """构建 manifest 资源映射与构建期资源元信息。"""
+
+        normalized_required_names = self.normalize_asset_names(required_asset_names or [])
+        if required_asset_names is not None and not normalized_required_names:
+            return {}, {}
 
         stmt = (
             select(WorkspaceAsset)
@@ -231,6 +317,8 @@ class ProjectArtifactBuilder:
             .where(WorkspaceAsset.source_asset_id.is_(None))
             .order_by(WorkspaceAsset.created_at.desc(), WorkspaceAsset.id.desc())
         )
+        if required_asset_names is not None:
+            stmt = stmt.where(WorkspaceAsset.name.in_(normalized_required_names))
         workspace_assets = (await self.session.execute(stmt)).scalars().all()
 
         asset_mapping: dict[str, str] = {}
@@ -253,7 +341,156 @@ class ProjectArtifactBuilder:
                 },
             )
 
+        if required_asset_names is not None:
+            missing_names = [name for name in normalized_required_names if name not in asset_mapping]
+            if missing_names:
+                raise AppException(
+                    status_code=409,
+                    code="PROJECT_BUILD_ASSET_MISSING",
+                    detail=f"构建所需资源不存在或不是根资源：{', '.join(missing_names)}。",
+                    data={
+                        "missing_asset_names": missing_names,
+                        "required_asset_names": normalized_required_names,
+                    },
+                )
+            asset_mapping = {name: asset_mapping[name] for name in normalized_required_names if name in asset_mapping}
+            asset_metadata = {name: asset_metadata[name] for name in normalized_required_names if name in asset_metadata}
+
         return asset_mapping, asset_metadata
+
+    async def collect_build_required_asset_names(
+        self,
+        *,
+        workspace_id: int,
+        modules_data: list[dict[str, str]],
+        config_bundle: dict[str, object],
+        extra_asset_names: Iterable[str],
+    ) -> list[str]:
+        """收集整包构建必须物化的资源名，避免默认打包全量工作空间资源。"""
+
+        static_module_asset_names, dynamic_module_paths = self.collect_module_asset_references(modules_data)
+        config_asset_names = self.collect_config_asset_names(config_bundle)
+        normalized_extra_names = self.normalize_asset_names(extra_asset_names)
+        required_asset_names = self.normalize_asset_names(
+            [
+                *static_module_asset_names,
+                *config_asset_names,
+                *normalized_extra_names,
+            ]
+        )
+
+        if dynamic_module_paths and not normalized_extra_names:
+            candidate_asset_names = await self.list_workspace_build_asset_names(
+                workspace_id,
+                exclude_names=required_asset_names,
+            )
+            raise AppException(
+                status_code=409,
+                code="PROJECT_BUILD_DYNAMIC_ASSET_REFERENCE",
+                detail=(
+                    "构建源码中存在无法静态解析的资源名。请在项目构建额外资源 JSON 中补充这些动态资源后重试。"
+                ),
+                data={
+                    "dynamic_module_paths": dynamic_module_paths,
+                    "candidate_asset_names": candidate_asset_names,
+                    "current_extra_asset_names": normalized_extra_names,
+                },
+            )
+
+        return required_asset_names
+
+    async def list_workspace_build_asset_names(
+        self,
+        workspace_id: int,
+        *,
+        exclude_names: Iterable[str],
+    ) -> list[str]:
+        """读取可加入构建额外资源 JSON 的工作空间根资源名。"""
+
+        excluded = set(self.normalize_asset_names(exclude_names))
+        stmt = (
+            select(WorkspaceAsset.name)
+            .where(WorkspaceAsset.workspace_id == workspace_id)
+            .where(WorkspaceAsset.source_asset_id.is_(None))
+            .where(WorkspaceAsset.status == RecordStatus.ACTIVE.value)
+            .order_by(WorkspaceAsset.updated_at.desc(), WorkspaceAsset.id.desc())
+            .limit(200)
+        )
+        names = [str(item or "").strip() for item in (await self.session.execute(stmt)).scalars().all()]
+        return [name for name in names if name and name not in excluded]
+
+    @classmethod
+    def collect_module_asset_references(cls, modules_data: list[dict[str, str]]) -> tuple[list[str], list[str]]:
+        """从页面和组件源码快照中收集静态资源名，并记录动态资源模块。"""
+
+        asset_names: list[str] = []
+        dynamic_module_paths: list[str] = []
+        for module_item in modules_data:
+            logical_path = str(module_item.get("logical_path") or "").strip()
+            source_text = str(module_item.get("content") or "")
+            result = ResourceReferenceParser.collect_vue_asset_references(source_text)
+            asset_names.extend(result.asset_names)
+            if result.has_dynamic:
+                dynamic_module_paths.append(logical_path or "<unknown>")
+        return cls.normalize_asset_names(asset_names), cls.normalize_asset_names(dynamic_module_paths)
+
+    @classmethod
+    def collect_config_asset_names(cls, config_bundle: dict[str, object]) -> list[str]:
+        """从主题、图标和字体配置中收集必须进入构建产物的资源名。"""
+
+        asset_names: list[str] = []
+        themes_config = config_bundle.get("themes")
+        if isinstance(themes_config, dict):
+            themes = themes_config.get("themes")
+            if isinstance(themes, dict):
+                for theme_item in themes.values():
+                    if not isinstance(theme_item, dict):
+                        continue
+                    cls.append_asset_name(asset_names, theme_item.get("logo"))
+                    cls.append_asset_name(asset_names, theme_item.get("invertLogo"))
+
+        icons_config = config_bundle.get("icons")
+        if isinstance(icons_config, dict):
+            static_icons = icons_config.get("static_icons")
+            if isinstance(static_icons, list):
+                for icon_item in static_icons:
+                    if isinstance(icon_item, dict):
+                        cls.append_asset_name(asset_names, icon_item.get("src"))
+
+        fonts_config = config_bundle.get("fonts")
+        if isinstance(fonts_config, dict):
+            font_items = fonts_config.get("items")
+            if isinstance(font_items, dict):
+                for font_item in font_items.values():
+                    if isinstance(font_item, dict):
+                        cls.append_asset_name(asset_names, font_item.get("asset_name"))
+
+        return cls.normalize_asset_names(asset_names)
+
+    @staticmethod
+    def append_asset_name(target: list[str], raw_value: object) -> None:
+        """把单个资源名追加到目标列表，URL 和空值会被忽略。"""
+
+        normalized = str(raw_value or "").strip().replace("\\", "/").lstrip("./")
+        if not normalized or re.match(r"^https?://", normalized, flags=re.IGNORECASE):
+            return
+        target.append(normalized)
+
+    @staticmethod
+    def normalize_asset_names(values: Iterable[str]) -> list[str]:
+        """按顺序归一化资源名并去重。"""
+
+        result: list[str] = []
+        seen: set[str] = set()
+        for value in values:
+            normalized = str(value or "").strip().replace("\\", "/").lstrip("./")
+            if not normalized or re.match(r"^https?://", normalized, flags=re.IGNORECASE):
+                continue
+            if normalized in seen:
+                continue
+            seen.add(normalized)
+            result.append(normalized)
+        return result
 
     async def build_release_module_graph(
         self,

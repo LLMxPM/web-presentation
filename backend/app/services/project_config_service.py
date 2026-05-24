@@ -23,7 +23,6 @@ from app.schemas.project_app_config import (
     dump_project_app_config_document_yaml,
     parse_project_app_config_document,
 )
-from app.services.project_route_service import ProjectRouteService
 from app.services.runtime_icon_service import RuntimeIconService
 from app.services.workspace_theme_service import WorkspaceThemeService
 
@@ -62,7 +61,6 @@ class ProjectConfigService:
         self.repository = ProjectRepository(session)
         self.settings = get_settings()
         self.workspace_theme_service = WorkspaceThemeService(session)
-        self.project_route_service = ProjectRouteService(session)
         self.runtime_icon_service = RuntimeIconService(session)
 
     def build_create_config_values(
@@ -113,12 +111,10 @@ class ProjectConfigService:
             return await self.build_runtime_app_yaml(project)
         if config_name == "icons":
             runtime_theme_config = await self.resolve_runtime_theme_config(project)
-            runtime_route_config = await self.project_route_service.build_runtime_route_config(project.id)
             pages = await self._list_project_pages(project.id)
             icon_config = await self.runtime_icon_service.build_project_icon_config(
                 workspace_id=project.workspace_id,
                 project_icon_name=self.resolve_project_icon_name_from_theme_config(runtime_theme_config),
-                runtime_route_config=runtime_route_config,
                 pages=pages,
             )
             return yaml.safe_dump(icon_config, allow_unicode=True, sort_keys=False)

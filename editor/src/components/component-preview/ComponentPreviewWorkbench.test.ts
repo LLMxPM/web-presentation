@@ -29,8 +29,10 @@ vi.mock('@/api/runtime-kit', () => ({
 
 const runtimeKitItem: RuntimeKitComponentCapabilityItem = {
   kind: 'component',
-  name: 'AssetImage',
-  import_path: '@runtime-kit/public/components/assets/AssetImage.vue',
+  base_name: 'AssetImage',
+  version_no: 1,
+  name: 'AssetImage.v1',
+  import_path: '@runtime-kit/public/components/assets/AssetImage.v1.vue',
   category: 'asset',
   description: '按资源逻辑名渲染图片。',
   display_name: '图片资源渲染',
@@ -122,7 +124,7 @@ describe('ComponentPreviewWorkbench', () => {
     renderWorkbench(source)
 
     await waitFor(() => {
-      expect(createRuntimeKitComponentPreviewArtifactMock).toHaveBeenCalledWith('AssetImage', expect.objectContaining({
+      expect(createRuntimeKitComponentPreviewArtifactMock).toHaveBeenCalledWith('AssetImage.v1', expect.objectContaining({
         workspace_id: 11,
         preview_options: expect.objectContaining({
           page: expect.objectContaining({ width: 1280, height: 720 }),
@@ -225,6 +227,36 @@ describe('ComponentPreviewWorkbench', () => {
 
     expect(queryByText('placement')).not.toBeInTheDocument()
     expect(getByTitle('弹窗预览')).toBeInTheDocument()
+  })
+
+  it('完整预览弹窗应保留组件操作入口', async () => {
+    const { getByTitle, getAllByRole } = render(ComponentPreviewWorkbench, {
+      props: {
+        source: createWorkspaceSource(),
+        simplified: true,
+      },
+      slots: {
+        'component-actions': () => h('button', { type: 'button' }, '编辑组件'),
+      },
+      global: {
+        stubs: {
+          ComponentPreviewParameterDock: true,
+          ComponentPreviewPlacementToolbar: true,
+          ComponentPreviewReleaseToolbar: true,
+        },
+      },
+    })
+
+    await waitFor(() => {
+      expect(createComponentPreviewArtifactFromSourceMock).toHaveBeenCalledTimes(1)
+    })
+    expect(getAllByRole('button', { name: '编辑组件' })).toHaveLength(1)
+
+    await fireEvent.click(getByTitle('弹窗预览'))
+
+    await waitFor(() => {
+      expect(getAllByRole('button', { name: '编辑组件' })).toHaveLength(2)
+    })
   })
 })
 

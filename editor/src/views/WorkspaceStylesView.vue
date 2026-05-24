@@ -249,7 +249,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { Copy, Download, Info, Palette, Pencil, Plus, RefreshCw, Search, Trash2, Upload } from 'lucide-vue-next'
+import { Copy, Download, Info, Palette, Pencil, Plus, RefreshCw, Search, Trash2, Upload } from '@lucide/vue'
 
 import { getWorkspace } from '@/api/catalog'
 import { getErrorMessage } from '@/api/http'

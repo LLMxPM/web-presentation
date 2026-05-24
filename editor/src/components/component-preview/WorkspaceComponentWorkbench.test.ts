@@ -53,6 +53,7 @@ describe('WorkspaceComponentWorkbench', () => {
           }),
           ComponentEditorPane: true,
           ComponentVersionHistoryDialog: true,
+          ComponentReferenceDialog: true,
           ComponentReleaseDialog: true,
           StatusTag: true,
           BaseButton: true,
@@ -95,6 +96,7 @@ describe('WorkspaceComponentWorkbench', () => {
             setup(_, { slots }) {
               return () => h('section', [
                 h('div', '预览工作台'),
+                slots['component-actions']?.(),
                 slots.actions?.(),
               ])
             },
@@ -109,6 +111,7 @@ describe('WorkspaceComponentWorkbench', () => {
             },
           }),
           ComponentVersionHistoryDialog: true,
+          ComponentReferenceDialog: true,
           ComponentReleaseDialog: true,
           StatusTag: true,
           BaseButton: defineComponent({
@@ -172,6 +175,7 @@ describe('WorkspaceComponentWorkbench', () => {
             },
           }),
           ComponentVersionHistoryDialog: true,
+          ComponentReferenceDialog: true,
           ComponentReleaseDialog: true,
           StatusTag: true,
           BaseButton: true,

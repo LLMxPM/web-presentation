@@ -11,10 +11,15 @@ Thumbs.db
 # Logs
 *.log
 logs/
+.codex-run-logs/
 npm-debug.log*
 pnpm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+
+# Tool caches
+.codex/
+.cache/
 
 # Environment files
 .env
@@ -56,4 +61,5 @@ backend/data/
 # Temporary files
 tmp/
 temp/
+.tmp/
 *.tmp

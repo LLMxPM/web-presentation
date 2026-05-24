@@ -64,6 +64,24 @@ export function getProjectBuildStatusMeta(status: ProjectBuildStatus | null | un
 }
 
 /**
+ * 判断构建状态是否仍在执行链路中。
+ * @param status 构建状态
+ * @returns 是否不可再次提交构建
+ */
+export function isProjectBuildStatusActive(status: ProjectBuildStatus | null | undefined): boolean {
+  return status === 'pending' || status === 'running'
+}
+
+/**
+ * 判断构建任务是否仍在执行链路中。
+ * @param job 构建任务
+ * @returns 是否不可再次提交构建
+ */
+export function isProjectBuildJobActive(job: ProjectBuildJob | null | undefined): boolean {
+  return isProjectBuildStatusActive(job?.status)
+}
+
+/**
  * 格式化构建产物体积，便于在列表中快速识别。
  * @param sizeBytes 产物字节数
  * @returns 友好的体积文案

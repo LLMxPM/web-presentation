@@ -146,6 +146,10 @@ describe('router guard', () => {
     await router.push('/workspaces/1/projects/2/pages')
     expect(router.currentRoute.value.meta.workspaceNav).toBe('projects')
     expect(router.currentRoute.value.meta.fullHeight).toBe(true)
+
+    await router.push('/workspaces/1/projects/2/pages/3')
+    expect(router.currentRoute.value.meta.workspaceNav).toBe('projects')
+    expect(router.currentRoute.value.meta.fullHeight).toBe(true)
   })
 
   it('已登录时应允许进入空间首页，并把旧项目列表路径重定向到空间首页', async () => {

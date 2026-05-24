@@ -283,11 +283,12 @@ class AiRunStateStore:
         record: AiRunRecord,
         pending_requirement: AgentPendingRequirement,
         append_event: bool = True,
+        allow_terminal_restore: bool = False,
     ) -> AiRunRecord:
         """把 run 收敛到暂停态，并按需补写暂停事件。"""
 
         record = await self.get_run(run_id=record.run_id, user_id=record.user_id) or record
-        if record.status == "cancelled":
+        if record.status in AI_RUN_TERMINAL_STATUSES and not allow_terminal_restore:
             return record
         requirement_payload = pending_requirement.model_dump(mode="json")
         already_paused = (

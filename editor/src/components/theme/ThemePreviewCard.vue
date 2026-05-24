@@ -141,7 +141,7 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { ChevronDown, ChevronRight } from 'lucide-vue-next'
+import { ChevronDown, ChevronRight } from '@lucide/vue'
 
 import type { AssetAnalysisMetadata, ThemePalette } from '@/types/api'
 import { isStrokeWidthEditable } from '@/utils/assetAnalysis'

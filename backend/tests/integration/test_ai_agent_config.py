@@ -119,6 +119,7 @@ async def test_agent_config_api_should_manage_prompt_and_tool_overrides(authenti
     assert "--tw-font-body" in coordinator_prompt
     assert "--tw-font-size-base" not in coordinator_prompt
     assert "--tw-spacing-unit" not in coordinator_prompt
+    assert "ThemeLogo 组件" in coordinator_prompt
     assert "themeLogo、themeInvertLogo、themeStyles" in coordinator_prompt
     assert "useAssetFontFamily" in coordinator_prompt
     assert "按资源元数据的 render_type 显式选择 Runtime Kit 资源组件" in coordinator_prompt
@@ -193,6 +194,7 @@ async def test_agent_config_api_should_manage_prompt_and_tool_overrides(authenti
     assert "--tw-font-body" in component_prompt
     assert "--tw-font-size-base" not in component_prompt
     assert "--tw-spacing-unit" not in component_prompt
+    assert "ThemeLogo 组件" in component_prompt
     assert "themeLogo、themeInvertLogo、themeStyles" in component_prompt
     assert "useAssetFontFamily" in component_prompt
     assert "按资源元数据的 render_type 显式选择 Runtime Kit 资源组件" in component_prompt
@@ -330,7 +332,7 @@ async def test_agent_config_api_should_manage_prompt_and_tool_overrides(authenti
     )
     assert coordinator_runtime_kit_tool["agent_guide"]["required_context_fields"] == ["workspace_id"]
     assert coordinator_runtime_kit_tool["agent_guide"]["runtime_disclosure_groups"] == ["runtime_kit"]
-    assert "@runtime-kit/public/components/page/layout/DefaultContainer.vue" in json.dumps(
+    assert "@runtime-kit/public/components/page/layout/DefaultContainer.v1.vue" in json.dumps(
         coordinator_runtime_kit_tool["agent_guide"]["response_example"],
         ensure_ascii=False,
     )
@@ -367,13 +369,17 @@ async def test_agent_config_api_should_manage_prompt_and_tool_overrides(authenti
     assert "page 节点必须传" in route_preview_instructions
     assert "group 节点必须传" in route_preview_instructions
     assert "page_id 只能来自 list_project_pages" in route_preview_instructions
+    assert "不要传 icon 字段" in route_preview_instructions
     route_preview_schema = route_preview_tool["agent_guide"]["parameters_schema"] or {}
     route_item_schema = route_preview_schema["properties"]["routes"]["items"]
     route_item_properties = route_item_schema["properties"]
     assert {"route_type", "route", "order", "page_id", "group_title", "children"}.issubset(route_item_properties)
+    assert "icon" not in route_item_properties
     assert "route_type" in route_item_schema["required"]
     assert "route" in route_item_schema["required"]
-    assert "page_id" in route_item_properties["children"]["items"]["properties"]
+    child_route_properties = route_item_properties["children"]["items"]["properties"]
+    assert "page_id" in child_route_properties
+    assert "icon" not in child_route_properties
     create_page_tool = next(tool for tool in content_project_group["tools"] if tool["key"] == "create_project_page")
     create_page_instructions = create_page_tool["agent_guide"]["instructions"] or ""
     assert "页面标题" in create_page_instructions
@@ -401,6 +407,7 @@ async def test_agent_config_api_should_manage_prompt_and_tool_overrides(authenti
     assert "preview_project_route_tree" in route_apply_instructions
     assert "完整路由树覆盖内容，不是局部 patch" in route_apply_instructions
     assert "page_id 只能来自 list_project_pages" in route_apply_instructions
+    assert "不要传 icon 字段" in route_apply_instructions
     assert route_apply_tool["agent_guide"]["requires_confirmation"] is True
     route_remove_tool = next(tool for tool in content_project_group["tools"] if tool["key"] == "remove_project_route_node")
     route_remove_instructions = route_remove_tool["agent_guide"]["instructions"] or ""
@@ -422,7 +429,7 @@ async def test_agent_config_api_should_manage_prompt_and_tool_overrides(authenti
         ],
         ensure_ascii=False,
     )
-    assert "@runtime-kit/public/components/page/layout/DefaultContainer.vue" in runtime_kit_examples
+    assert "@runtime-kit/public/components/page/layout/DefaultContainer.v1.vue" in runtime_kit_examples
     assert "@runtime-kit/components" not in runtime_kit_examples
     assert "按工具返回 import_path 原样使用" in runtime_kit_examples
     metadata_tool = next(tool for tool in component_library_group["tools"] if tool["key"] == "update_component_metadata")
@@ -432,7 +439,7 @@ async def test_agent_config_api_should_manage_prompt_and_tool_overrides(authenti
     assert "省略该参数" in metadata_instructions
     assert "preview_schema" in metadata_instructions
     assert "季度经营概览" in metadata_instructions
-    assert "@runtime-kit/public/components/primitives/Icon.vue" in metadata_instructions
+    assert "@runtime-kit/public/components/primitives/Icon.v1.vue" in metadata_instructions
     component_tool_keys = {tool["key"] for tool in component_library_group["tools"]}
     assert "create_component_draft" not in component_tool_keys
     assert "publish_component" in component_tool_keys

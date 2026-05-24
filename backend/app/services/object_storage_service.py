@@ -88,6 +88,7 @@ class ObjectStorageService:
         *,
         expected_sha256: str | None = None,
         expected_size: int | None = None,
+        bucket_name: str | None = None,
     ) -> AsyncIterator[Path]:
         """返回对象的本地可读路径；S3 对象会下载到后端临时缓存后再返回。"""
 
@@ -104,6 +105,7 @@ class ObjectStorageService:
             normalized_key,
             expected_sha256=expected_sha256,
             expected_size=expected_size,
+            bucket_name=bucket_name,
         )
         self._touch_cache_file(cache_path)
         yield cache_path
@@ -276,25 +278,37 @@ class ObjectStorageService:
         *,
         expected_sha256: str | None,
         expected_size: int | None,
+        bucket_name: str | None,
     ) -> Path:
         """确保 S3 对象已下载到本地缓存，并校验声明的 hash 与大小。"""
 
-        cache_path = self._build_cache_path(storage_key, expected_sha256, expected_size)
+        cache_path = self._build_cache_path(storage_key, expected_sha256, expected_size, bucket_name)
         if self._is_valid_cache_file(cache_path, expected_sha256, expected_size):
             self._touch_cache_file(cache_path)
             return cache_path
 
-        content = await self._read_s3_object(storage_key)
+        if bucket_name is None:
+            content = await self._read_s3_object(storage_key)
+        else:
+            content = await self._read_s3_object(storage_key, bucket_name=bucket_name)
         self._validate_object_bytes(content, expected_sha256, expected_size)
         cache_path.parent.mkdir(parents=True, exist_ok=True)
         cache_path.write_bytes(content)
         self._touch_cache_file(cache_path)
         return cache_path
 
-    def _build_cache_path(self, storage_key: str, expected_sha256: str | None, expected_size: int | None) -> Path:
+    def _build_cache_path(
+        self,
+        storage_key: str,
+        expected_sha256: str | None,
+        expected_size: int | None,
+        bucket_name: str | None,
+    ) -> Path:
         """根据 key、hash 与大小构造稳定缓存文件名。"""
 
-        fingerprint = hashlib.sha256(f"{storage_key}:{expected_sha256 or ''}:{expected_size or ''}".encode("utf-8")).hexdigest()
+        fingerprint = hashlib.sha256(
+            f"{bucket_name or ''}:{storage_key}:{expected_sha256 or ''}:{expected_size or ''}".encode("utf-8")
+        ).hexdigest()
         suffix = Path(storage_key).suffix or ".bin"
         return self.cache_root / f"{fingerprint}{suffix}"
 

@@ -36,6 +36,10 @@ export interface PagedResponse<T> {
   page_size: number
 }
 
+export interface ProjectBuildExtraAssetsJson {
+  asset_names: string[]
+}
+
 export interface WorkspaceItem {
   id: number
   code: string
@@ -69,6 +73,7 @@ export interface ProjectItem {
   theme_key: string | null
   theme_config_yaml: string
   style_spec_markdown: string
+  build_extra_assets_json?: ProjectBuildExtraAssetsJson
   created_at: string
   updated_at: string
   created_by: number | null
@@ -148,6 +153,21 @@ export interface WorkspaceStyleImportResult {
 
 export interface ProjectBuildCreateRequest {
   base_url: string
+}
+
+export interface ProjectBuildAssetSummary {
+  automatic_asset_names: string[]
+  extra_asset_names: string[]
+  included_asset_names: string[]
+  dynamic_module_paths: string[]
+}
+
+export interface ProjectBuildResourceIssueData {
+  dynamic_module_paths?: string[]
+  candidate_asset_names?: string[]
+  current_extra_asset_names?: string[]
+  missing_asset_names?: string[]
+  required_asset_names?: string[]
 }
 
 export interface ProjectBuildJob {
@@ -237,7 +257,6 @@ export interface ProjectRouteChildItem {
   route_type: 'page'
   route: string
   order: number
-  icon: string | null
   hidden: boolean
   page_id: number
   page_code: string
@@ -250,7 +269,6 @@ export interface ProjectRouteTreeItem {
   route_type: ProjectRouteNodeType
   route: string
   order: number
-  icon: string | null
   hidden: boolean
   group_title: string | null
   page_id: number | null
@@ -267,7 +285,6 @@ export interface ProjectRouteTreeResponse {
 export interface ProjectRouteChildWrite {
   route: string
   order: number
-  icon?: string | null
   hidden: boolean
   page_id: number
 }
@@ -276,7 +293,6 @@ export interface ProjectRouteItemWrite {
   route_type: ProjectRouteNodeType
   route: string
   order: number
-  icon?: string | null
   hidden: boolean
   group_title?: string | null
   page_id?: number | null
@@ -334,6 +350,10 @@ export interface WorkspaceComponentDependencyItem {
   component_code: string | null
   component_version_no: number | null
   runtime_module_path: string | null
+  runtime_kit_name?: string | null
+  runtime_kit_base_name?: string | null
+  runtime_kit_version_no?: number | null
+  runtime_kit_import_path?: string | null
 }
 
 export interface WorkspaceComponentCurrentDependencies {
@@ -341,6 +361,76 @@ export interface WorkspaceComponentCurrentDependencies {
   current_version_no: number
   component_version_id: number | null
   dependencies: WorkspaceComponentDependencyItem[]
+}
+
+export interface WorkspaceComponentPageReferenceItem {
+  page_id: number
+  page_code: string
+  page_title: string
+  project_id: number | null
+  project_name: string | null
+  current_version_no: number
+  page_version_id: number
+  referenced_component_version_no: number
+  is_current_version: boolean
+  can_upgrade: boolean
+}
+
+export interface WorkspaceComponentComponentReferenceItem {
+  component_id: number
+  component_code: string
+  component_name: string
+  current_version_no: number
+  component_version_id: number
+  referenced_component_version_no: number
+  has_unpublished_changes: boolean
+  draft_referenced_component_version_no: number | null
+  draft_is_current_version: boolean
+  is_current_version: boolean
+  can_upgrade: boolean
+}
+
+export interface WorkspaceComponentReferences {
+  component_id: number
+  component_code: string
+  current_version_no: number
+  page_references: WorkspaceComponentPageReferenceItem[]
+  component_references: WorkspaceComponentComponentReferenceItem[]
+}
+
+export interface WorkspaceComponentReferenceUpgradePayload {
+  page_ids: number[]
+  component_ids: number[]
+}
+
+export interface WorkspaceComponentReferenceUpgradeItem {
+  kind: string
+  id: number
+  code: string
+  detail: string
+}
+
+export interface WorkspaceComponentReferenceUpgradePageItem {
+  page_id: number
+  page_code: string
+  page_title: string
+  previous_version_no: number
+  current_version_no: number
+}
+
+export interface WorkspaceComponentReferenceUpgradeComponentItem {
+  component_id: number
+  component_code: string
+  component_name: string
+  current_version_no: number
+  draft_referenced_component_version_no: number
+}
+
+export interface WorkspaceComponentReferenceUpgradeResponse {
+  updated_pages: WorkspaceComponentReferenceUpgradePageItem[]
+  updated_components: WorkspaceComponentReferenceUpgradeComponentItem[]
+  skipped: WorkspaceComponentReferenceUpgradeItem[]
+  failures: WorkspaceComponentReferenceUpgradeItem[]
 }
 
 export interface WorkspaceComponentItem {
@@ -472,6 +562,8 @@ export interface PreviewArtifactResponse {
 
 export interface RuntimeKitComponentCapabilityItem {
   kind: RuntimeKitCapabilityKind
+  base_name: string
+  version_no: number
   name: string
   import_path: string
   category: string
@@ -493,6 +585,7 @@ export interface RuntimeKitComponentCapabilityItem {
 export interface RuntimeKitComponentCapabilityListResponse {
   items: RuntimeKitComponentCapabilityItem[]
   total: number
+  manifest_version?: string | null
 }
 
 export interface AgentScopeContext {

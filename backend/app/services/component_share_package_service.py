@@ -453,11 +453,8 @@ class ComponentSharePackageService:
         errors: list[str] = []
         schema_version = self._coerce_int(parsed.manifest.get("schema_version"))
         runtime_version = str(parsed.manifest.get("runtime_kit_manifest_version") or "").strip()
-        current_runtime_version = str(load_runtime_kit_manifest().get("version") or "").strip()
         if schema_version != PACKAGE_SCHEMA_VERSION:
             errors.append(f"分享包 schema_version 必须是 {PACKAGE_SCHEMA_VERSION}。")
-        if runtime_version and current_runtime_version and runtime_version != current_runtime_version:
-            errors.append(f"Runtime Kit manifest 版本不兼容：包内 {runtime_version}，当前 {current_runtime_version}。")
         if not await self.component_repository.workspace_exists(workspace_id):
             errors.append("目标工作空间不存在。")
 

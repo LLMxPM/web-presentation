@@ -35,13 +35,12 @@
       <div class="overflow-x-auto xl:h-full xl:overflow-auto">
         <table class="min-w-full w-full table-fixed border-collapse text-sm text-slate-700">
           <colgroup>
-            <col style="width: 8%">
-            <col style="width: 10%">
-            <col style="width: 30%">
-            <col style="width: 19%">
-            <col style="width: 15%">
-            <col style="width: 8%">
-            <col style="width: 10%">
+            <col style="width: 9%">
+            <col style="width: 11%">
+            <col style="width: 35%">
+            <col style="width: 24%">
+            <col style="width: 9%">
+            <col style="width: 12%">
           </colgroup>
           <thead class="sticky top-0 z-10 bg-slate-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
             <tr>
@@ -49,7 +48,6 @@
               <th class="h-11 px-3 text-left whitespace-nowrap">节点</th>
               <th class="h-11 px-2 text-left whitespace-nowrap">标题 / 页面</th>
               <th class="h-11 px-2 text-left whitespace-nowrap">Route</th>
-              <th class="h-11 px-2 text-left whitespace-nowrap">Icon</th>
               <th class="h-11 px-3 text-center whitespace-nowrap">显示</th>
               <th class="h-11 px-3 text-left whitespace-nowrap">操作</th>
             </tr>
@@ -90,16 +88,6 @@
                   <input :value="routeItem.route" type="text"
                     class="h-9 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-indigo-400"
                     placeholder="route" @input="updateRootField(routeIndex, 'route', readInputValue($event))">
-                </td>
-                <td class="px-2 py-2">
-                  <IconPicker
-                    :model-value="routeItem.icon ?? null"
-                    :assets="icons"
-                    value-mode="name"
-                    placeholder="可选"
-                    size="compact"
-                    @update:model-value="updateRootField(routeIndex, 'icon', normalizeNullableIcon($event))"
-                  />
                 </td>
                 <td class="px-3 py-2 text-center">
                   <label class="inline-flex h-9 items-center justify-center">
@@ -152,16 +140,6 @@
                       placeholder="route"
                       @input="updateChildField(routeIndex, childIndex, 'route', readInputValue($event))">
                   </td>
-                  <td class="px-2 py-2">
-                    <IconPicker
-                      :model-value="childRoute.icon ?? null"
-                      :assets="icons"
-                      value-mode="name"
-                      placeholder="可选"
-                      size="compact"
-                      @update:model-value="updateChildField(routeIndex, childIndex, 'icon', normalizeNullableIcon($event))"
-                    />
-                  </td>
                   <td class="px-3 py-2 text-center">
                     <label class="inline-flex h-9 items-center justify-center">
                       <input :checked="!childRoute.hidden" type="checkbox"
@@ -199,9 +177,6 @@
                   <td class="px-2 py-2">
                     <div class="h-9 rounded-xl border border-transparent"></div>
                   </td>
-                  <td class="px-2 py-2">
-                    <div class="h-9 rounded-xl border border-transparent"></div>
-                  </td>
                   <td class="px-3 py-2">
                     <div class="h-9"></div>
                   </td>
@@ -226,12 +201,11 @@
 
 <script setup lang="ts">
 import { computed, reactive, ref } from 'vue'
-import { CornerDownRight, FileText, FolderTree, GripVertical, Plus } from 'lucide-vue-next'
+import { CornerDownRight, FileText, FolderTree, GripVertical, Plus } from '@lucide/vue'
 
-import IconPicker from '@/components/ui/IconPicker.vue'
 import SearchableSelect from '@/components/ui/SearchableSelect.vue'
 import type { SelectOption, SelectPrimitive } from '@/components/ui/select'
-import type { AssetResponse, PageItem, ProjectRouteChildWrite, ProjectRouteItemWrite } from '@/types/api'
+import type { PageItem, ProjectRouteChildWrite, ProjectRouteItemWrite } from '@/types/api'
 import {
   buildPageRouteSlug,
   buildUniqueRoute,
@@ -248,7 +222,6 @@ type DragTarget =
 const props = defineProps<{
   modelValue: ProjectRouteItemWrite[]
   pages: PageItem[]
-  icons: AssetResponse[]
 }>()
 
 const emit = defineEmits<{
@@ -306,7 +279,6 @@ function handleAddRootPage(): void {
     route_type: 'page',
     route: buildUniqueRoute(buildPageRouteSlug(page), nextRoutes.map(item => item.route)),
     order: 0,
-    icon: null,
     hidden: false,
     page_id: page.id,
     children: [],
@@ -324,7 +296,6 @@ function handleAddGroup(): void {
     route_type: 'group',
     route: buildUniqueRoute('group', nextRoutes.map(item => item.route)),
     order: 0,
-    icon: null,
     hidden: false,
     group_title: '新分组',
     children: [],
@@ -353,7 +324,6 @@ function handleAddChild(routeIndex: number): void {
       nextChildren.map(child => child.route),
     ),
     order: 0,
-    icon: null,
     hidden: false,
     page_id: page.id,
   })
@@ -631,15 +601,4 @@ function readInputChecked(event: Event): boolean {
   return Boolean((event.target as HTMLInputElement).checked)
 }
 
-/**
- * 将图标选择器回传值归一化为可空字符串。
- * @param value 图标选择器回传值
- */
-function normalizeNullableIcon(value: string | number | null): string | null {
-  if (typeof value !== 'string') {
-    return null
-  }
-  const normalizedValue = value.trim()
-  return normalizedValue || null
-}
 </script>

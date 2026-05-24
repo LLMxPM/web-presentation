@@ -116,7 +116,7 @@
 
 <script setup lang="ts">
 import { computed, reactive, watch } from 'vue'
-import { Eye, EyeOff, PanelBottom, PanelLeft, Type } from 'lucide-vue-next'
+import { Eye, EyeOff, PanelBottom, PanelLeft, Type } from '@lucide/vue'
 
 import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseDialog from '@/components/ui/BaseDialog.vue'

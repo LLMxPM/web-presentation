@@ -176,7 +176,7 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { Image as ImageIcon, Search, X } from 'lucide-vue-next'
+import { Image as ImageIcon, Search, X } from '@lucide/vue'
 
 import { listWorkspaceAssets } from '@/api/assets'
 import { getErrorMessage } from '@/api/http'

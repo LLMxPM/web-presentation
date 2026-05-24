@@ -98,7 +98,7 @@ async def test_component_publish_should_build_versions_and_current_dependencies(
 </template>
 <script setup lang=\"ts\">
 import BaseButton from '@workspace-components/{base_component_data['code']}/v/1'
-import Icon from '@runtime-kit/public/components/primitives/Icon.vue'
+import Icon from '@runtime-kit/public/components/primitives/Icon.v1.vue'
 </script>
             """.strip(),
             "file_type": "vue",
@@ -126,8 +126,12 @@ import Icon from '@runtime-kit/public/components/primitives/Icon.vue'
         item.get("runtime_module_path"),
     ) for item in dependency_data["dependencies"]} == {
         ("workspace_component", base_component_data["code"], 1, None),
-        ("runtime_local", None, None, "@runtime-kit/public/components/primitives/Icon.vue"),
+        ("runtime_local", None, None, "@runtime-kit/public/components/primitives/Icon.v1.vue"),
     }
+    icon_dependency = next(item for item in dependency_data["dependencies"] if item.get("runtime_kit_base_name") == "Icon")
+    assert icon_dependency["runtime_kit_name"] == "Icon.v1"
+    assert icon_dependency["runtime_kit_version_no"] == 1
+    assert icon_dependency["runtime_kit_import_path"] == "@runtime-kit/public/components/primitives/Icon.v1.vue"
 
     update_response = await authenticated_client.patch(
         f"/api/components/{wrapper_component_data['id']}",
@@ -138,7 +142,7 @@ import Icon from '@runtime-kit/public/components/primitives/Icon.vue'
 </template>
 <script setup lang=\"ts\">
 import BaseButton from '@workspace-components/{base_component_data['code']}/v/1'
-import {{ resolveResourcePath }} from '@runtime-kit/public/utils/assets'
+import {{ resolveResourcePath }} from '@runtime-kit/public/utils/assets.v1'
 const previewConfigUrl = resolveResourcePath('app')
 </script>
             """.strip(),
@@ -278,8 +282,8 @@ async def test_page_module_dependencies_should_include_component_versions_and_ru
 </template>
 <script setup lang=\"ts\">
 import RemoteCard from '@workspace-components/{component_data['code']}/v/1'
-import AssetImage from '@runtime-kit/public/components/assets/AssetImage.vue'
-import {{ resolveResourcePath }} from '@runtime-kit/public/utils/assets'
+import AssetImage from '@runtime-kit/public/components/assets/AssetImage.v1.vue'
+import {{ resolveResourcePath }} from '@runtime-kit/public/utils/assets.v1'
 const url = resolveResourcePath('app')
 </script>
             """.strip(),
@@ -303,9 +307,230 @@ const url = resolveResourcePath('app')
         item.get("runtime_module_path"),
     ) for item in dependency_data["dependencies"]} == {
         ("workspace_component", component_data["code"], 1, None),
-        ("runtime_local", None, None, "@runtime-kit/public/components/assets/AssetImage.vue"),
-        ("runtime_local", None, None, "@runtime-kit/public/utils/assets"),
+        ("runtime_local", None, None, "@runtime-kit/public/components/assets/AssetImage.v1.vue"),
+        ("runtime_local", None, None, "@runtime-kit/public/utils/assets.v1"),
     }
+    runtime_dependencies = {
+        item["runtime_kit_base_name"]: item
+        for item in dependency_data["dependencies"]
+        if item["dependency_kind"] == "runtime_local"
+    }
+    assert runtime_dependencies["AssetImage"]["runtime_kit_name"] == "AssetImage.v1"
+    assert runtime_dependencies["resolveResourcePath"]["runtime_kit_version_no"] == 1
+
+
+async def test_component_references_should_query_and_upgrade_direct_page_and_component_refs(
+    authenticated_client: AsyncClient,
+) -> None:
+    """组件引用接口应分开展示页面/组件直接引用，并支持升级到当前发布版本。"""
+
+    workspace_id = await create_workspace(authenticated_client, "组件引用升级工作空间")
+    project_id = await create_project(authenticated_client, workspace_id, "组件引用升级项目")
+
+    target_response = await authenticated_client.post(
+        "/api/components",
+        json={
+            "workspace_id": workspace_id,
+            "name": "目标组件",
+            "import_name": "TargetCard",
+            "content": "<template><article>v1</article></template>",
+            "file_type": "vue",
+            "status": "active",
+        },
+    )
+    assert target_response.status_code == 200
+    target_component = await publish_component(authenticated_client, target_response.json()["id"])
+
+    page_response = await authenticated_client.post(
+        "/api/pages",
+        json={
+            "page_content": f"""
+<template><TargetCard /></template>
+<script setup lang=\"ts\">
+import TargetCard from '@workspace-components/{target_component['code']}/v/1.vue'
+</script>
+            """.strip(),
+            "file_type": "vue",
+            "title": "引用目标组件页面",
+            "status": "active",
+            "workspace_id": workspace_id,
+            "project_id": project_id,
+        },
+    )
+    assert page_response.status_code == 200
+    page_id = page_response.json()["id"]
+
+    archived_page_response = await authenticated_client.post(
+        "/api/pages",
+        json={
+            "page_content": f"""
+<template><TargetCard /></template>
+<script setup lang=\"ts\">
+import TargetCard from '@workspace-components/{target_component['code']}/v/1'
+</script>
+            """.strip(),
+            "file_type": "vue",
+            "title": "归档引用页面",
+            "status": "archived",
+            "workspace_id": workspace_id,
+            "project_id": project_id,
+        },
+    )
+    assert archived_page_response.status_code == 200
+
+    archived_project_response = await authenticated_client.post(
+        "/api/projects",
+        json={"workspace_id": workspace_id, "name": "归档引用项目", "status": "archived"},
+    )
+    assert archived_project_response.status_code == 200
+    archived_project_page_response = await authenticated_client.post(
+        "/api/pages",
+        json={
+            "page_content": f"""
+<template><TargetCard /></template>
+<script setup lang=\"ts\">
+import TargetCard from '@workspace-components/{target_component['code']}/v/1'
+</script>
+            """.strip(),
+            "file_type": "vue",
+            "title": "归档项目引用页面",
+            "status": "active",
+            "workspace_id": workspace_id,
+            "project_id": archived_project_response.json()["id"],
+        },
+    )
+    assert archived_project_page_response.status_code == 200
+
+    wrapper_response = await authenticated_client.post(
+        "/api/components",
+        json={
+            "workspace_id": workspace_id,
+            "name": "引用方组件",
+            "import_name": "WrapperCard",
+            "content": f"""
+<template><TargetCard /></template>
+<script setup lang=\"ts\">
+import TargetCard from '@workspace-components/{target_component['code']}/v/1'
+</script>
+            """.strip(),
+            "file_type": "vue",
+            "status": "active",
+        },
+    )
+    assert wrapper_response.status_code == 200
+    wrapper_component = await publish_component(authenticated_client, wrapper_response.json()["id"])
+
+    archived_wrapper_response = await authenticated_client.post(
+        "/api/components",
+        json={
+            "workspace_id": workspace_id,
+            "name": "归档引用方组件",
+            "import_name": "ArchivedWrapperCard",
+            "content": f"""
+<template><TargetCard /></template>
+<script setup lang=\"ts\">
+import TargetCard from '@workspace-components/{target_component['code']}/v/1'
+</script>
+            """.strip(),
+            "file_type": "vue",
+            "status": "active",
+        },
+    )
+    assert archived_wrapper_response.status_code == 200
+    archived_wrapper = await publish_component(authenticated_client, archived_wrapper_response.json()["id"])
+    archive_wrapper_update = await authenticated_client.patch(
+        f"/api/components/{archived_wrapper['id']}",
+        json={"status": "archived"},
+    )
+    assert archive_wrapper_update.status_code == 200
+
+    update_target_response = await authenticated_client.patch(
+        f"/api/components/{target_component['id']}",
+        json={
+            "content": "<template><article>v2</article></template>",
+            "change_note": "准备发布 v2",
+        },
+    )
+    assert update_target_response.status_code == 200
+    target_component = await publish_component(authenticated_client, target_component["id"], release_name="v2")
+    assert target_component["current_version_no"] == 2
+
+    references_response = await authenticated_client.get(f"/api/components/{target_component['id']}/references")
+    assert references_response.status_code == 200
+    references = references_response.json()
+    assert references["current_version_no"] == 2
+    assert {item["page_title"] for item in references["page_references"]} == {"引用目标组件页面"}
+    assert {item["component_name"] for item in references["component_references"]} == {"引用方组件"}
+    assert references["page_references"] == [
+        {
+            "page_id": page_id,
+            "page_code": page_response.json()["code"],
+            "page_title": "引用目标组件页面",
+            "project_id": project_id,
+            "project_name": "组件引用升级项目",
+            "current_version_no": 1,
+            "page_version_id": references["page_references"][0]["page_version_id"],
+            "referenced_component_version_no": 1,
+            "is_current_version": False,
+            "can_upgrade": True,
+        }
+    ]
+    component_reference = references["component_references"][0]
+    assert component_reference["component_id"] == wrapper_component["id"]
+    assert component_reference["referenced_component_version_no"] == 1
+    assert component_reference["draft_referenced_component_version_no"] == 1
+    assert component_reference["can_upgrade"] is True
+
+    upgrade_response = await authenticated_client.post(
+        f"/api/components/{target_component['id']}/references/upgrade",
+        json={"page_ids": [page_id], "component_ids": [wrapper_component["id"]]},
+    )
+    assert upgrade_response.status_code == 200
+    upgrade_data = upgrade_response.json()
+    assert upgrade_data["updated_pages"][0]["page_id"] == page_id
+    assert upgrade_data["updated_pages"][0]["previous_version_no"] == 1
+    assert upgrade_data["updated_pages"][0]["current_version_no"] == 2
+    assert upgrade_data["updated_components"][0]["component_id"] == wrapper_component["id"]
+    assert upgrade_data["updated_components"][0]["current_version_no"] == 1
+    assert upgrade_data["failures"] == []
+
+    upgraded_page_response = await authenticated_client.get(f"/api/pages/{page_id}")
+    assert upgraded_page_response.status_code == 200
+    upgraded_page = upgraded_page_response.json()
+    assert upgraded_page["current_version_no"] == 2
+    assert f"@workspace-components/{target_component['code']}/v/2.vue" in upgraded_page["page_content"]
+
+    page_dependency_response = await authenticated_client.get(f"/api/pages/{page_id}/module-dependencies")
+    assert page_dependency_response.status_code == 200
+    assert [
+        item["component_version_no"]
+        for item in page_dependency_response.json()["dependencies"]
+        if item["dependency_kind"] == "workspace_component"
+    ] == [2]
+
+    upgraded_wrapper_response = await authenticated_client.get(f"/api/components/{wrapper_component['id']}")
+    assert upgraded_wrapper_response.status_code == 200
+    upgraded_wrapper = upgraded_wrapper_response.json()
+    assert upgraded_wrapper["current_version_no"] == 1
+    assert upgraded_wrapper["has_unpublished_changes"] is True
+    assert f"@workspace-components/{target_component['code']}/v/2" in upgraded_wrapper["content"]
+
+    second_references_response = await authenticated_client.get(f"/api/components/{target_component['id']}/references")
+    assert second_references_response.status_code == 200
+    second_references = second_references_response.json()
+    assert second_references["page_references"][0]["is_current_version"] is True
+    assert second_references["page_references"][0]["can_upgrade"] is False
+    assert second_references["component_references"][0]["is_current_version"] is False
+    assert second_references["component_references"][0]["draft_is_current_version"] is True
+    assert second_references["component_references"][0]["can_upgrade"] is False
+
+    second_upgrade_response = await authenticated_client.post(
+        f"/api/components/{target_component['id']}/references/upgrade",
+        json={"page_ids": [page_id], "component_ids": [wrapper_component["id"]]},
+    )
+    assert second_upgrade_response.status_code == 200
+    skipped_codes = {item["code"] for item in second_upgrade_response.json()["skipped"]}
+    assert {"ALREADY_CURRENT", "SOURCE_NOT_CHANGED"}.issubset(skipped_codes)
 
 
 async def test_remote_module_save_should_reject_invalid_component_alias_and_forbidden_runtime_local_import(
@@ -353,6 +578,25 @@ import AppIcon from '@/components/common/AppIcon.vue'
     assert forbidden_runtime_import_response.status_code == 400
     assert forbidden_runtime_import_response.json()["code"] == "RUNTIME_LOCAL_IMPORT_FORBIDDEN"
 
+    unversioned_runtime_import_response = await authenticated_client.post(
+        "/api/components",
+        json={
+            "workspace_id": workspace_id,
+            "name": "未版本化 Runtime Kit 组件",
+            "import_name": "UnversionedRuntimeKitComponent",
+            "content": """
+<script setup lang=\"ts\">
+import Icon from '@runtime-kit/public/components/primitives/Icon.vue'
+</script>
+<template><Icon name=\"home\" /></template>
+            """.strip(),
+            "file_type": "vue",
+            "status": "active",
+        },
+    )
+    assert unversioned_runtime_import_response.status_code == 400
+    assert unversioned_runtime_import_response.json()["code"] == "RUNTIME_LOCAL_IMPORT_FORBIDDEN"
+
     project_id = await create_project(authenticated_client, workspace_id, "非法页面依赖项目")
     forbidden_page_import_response = await authenticated_client.post(
         "/api/pages",
@@ -396,6 +640,34 @@ async def test_component_save_should_reject_invalid_preview_schema_json(
     assert invalid_schema_response.status_code == 400
     assert invalid_schema_response.json()["code"] == "COMPONENT_PREVIEW_SCHEMA_INVALID"
 
+    unversioned_schema_response = await authenticated_client.post(
+        "/api/components",
+        json={
+            "workspace_id": workspace_id,
+            "name": "未版本化 Slot 组件",
+            "import_name": "UnversionedSlotComponent",
+            "content": "<template><section><slot /></section></template>",
+            "preview_schema": """
+{
+  "slots": {
+    "default": {
+      "default": [
+        {
+          "type": "component",
+          "component": "@runtime-kit/public/components/primitives/Icon.vue"
+        }
+      ]
+    }
+  }
+}
+            """.strip(),
+            "file_type": "vue",
+            "status": "active",
+        },
+    )
+    assert unversioned_schema_response.status_code == 400
+    assert unversioned_schema_response.json()["code"] == "COMPONENT_PREVIEW_SCHEMA_INVALID"
+
 
 async def test_component_preview_schema_should_validate_slot_component_runtime_paths(
     authenticated_client: AsyncClient,
@@ -418,7 +690,7 @@ async def test_component_preview_schema_should_validate_slot_component_runtime_p
       "default": [
         {
           "type": "component",
-          "component": "@runtime-kit/public/components/primitives/Icon.vue",
+          "component": "@runtime-kit/public/components/primitives/Icon.v1.vue",
           "props": {
             "name": "Home"
           }
@@ -484,7 +756,7 @@ async def test_project_preview_artifact_should_publish_component_modules_and_mod
   <button class=\"primary\">Preview Button</button>
 </template>
 <script setup lang=\"ts\">
-import Icon from '@runtime-kit/public/components/primitives/Icon.vue'
+import Icon from '@runtime-kit/public/components/primitives/Icon.v1.vue'
 </script>
             """.strip(),
             "file_type": "vue",
@@ -504,7 +776,7 @@ import Icon from '@runtime-kit/public/components/primitives/Icon.vue'
 </template>
 <script setup lang=\"ts\">
 import PreviewButton from '@workspace-components/{component_data['code']}/v/1'
-import {{ resolveResourcePath }} from '@runtime-kit/public/utils/assets'
+import {{ resolveResourcePath }} from '@runtime-kit/public/utils/assets.v1'
 const configUrl = resolveResourcePath('app')
 </script>
             """.strip(),
@@ -565,9 +837,9 @@ const configUrl = resolveResourcePath('app')
         item["import_path"]
         for item in module_resolver["runtime_kit_exports"]
     } >= {
-        "@runtime-kit/public/components/assets/AssetImage.vue",
-        "@runtime-kit/public/components/primitives/Icon.vue",
-        "@runtime-kit/public/utils/assets",
+        "@runtime-kit/public/components/assets/AssetImage.v1.vue",
+        "@runtime-kit/public/components/primitives/Icon.v1.vue",
+        "@runtime-kit/public/utils/assets.v1",
     }
 
     component_module_response = await authenticated_client.get(

@@ -2,9 +2,9 @@
 <template>
   <div
     v-show="modelValue"
-    class="relative flex h-full min-h-0 w-[430px] shrink-0 flex-col overflow-hidden border-l border-slate-200 bg-white transition-all duration-300"
+    class="relative flex h-full min-h-0 w-[400px] shrink-0 flex-col overflow-hidden border-l border-slate-200 bg-white transition-all duration-300"
   >
-    <div class="flex shrink-0 items-center justify-between border-b border-slate-100 px-5 py-3">
+    <div class="flex shrink-0 items-center justify-between border-b border-slate-100 px-4 py-2.5">
       <div class="flex min-w-0 items-center gap-2">
         <slot name="icon" />
         <h2 class="truncate text-base font-bold text-slate-800">{{ title }}</h2>
@@ -23,7 +23,7 @@
       </div>
     </div>
 
-    <div v-if="showSearch" class="shrink-0 border-b border-slate-50 bg-slate-50/50 px-4 py-2">
+    <div v-if="showSearch" class="shrink-0 border-b border-slate-50 bg-slate-50/50 px-3 py-2">
       <div class="group relative">
         <Search
           class="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400 transition-colors group-focus-within:text-indigo-500"
@@ -32,7 +32,7 @@
           v-model="searchText"
           type="text"
           :placeholder="searchPlaceholder"
-          class="h-9 w-full rounded-xl border border-slate-200 bg-white pl-9 pr-9 text-xs transition-all focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+          class="h-8 w-full rounded-lg border border-slate-200 bg-white pl-9 pr-9 text-xs transition-all focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
         />
         <button
           v-if="searchText"
@@ -52,7 +52,7 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import { Search, X } from 'lucide-vue-next'
+import { Search, X } from '@lucide/vue'
 
 const props = withDefaults(defineProps<{
   modelValue: boolean

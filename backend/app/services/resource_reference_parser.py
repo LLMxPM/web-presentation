@@ -38,6 +38,7 @@ _STATIC_ASSET_CALL_PATTERN = re.compile(
     r"\s*(?:'(?P<single>(?:\\.|[^'\\])*)'|\"(?P<double>(?:\\.|[^\"\\])*)\")",
     flags=re.DOTALL,
 )
+_RUNTIME_KIT_VERSION_SUFFIX_PATTERN = re.compile(r"\.v\d+$")
 
 _VUE_NATIVE_TAGS = {
     "template",
@@ -790,4 +791,5 @@ class ResourceReferenceParser:
         base_name = posixpath.basename(normalized_path)
         if base_name.endswith(".vue"):
             base_name = base_name[:-4]
+        base_name = _RUNTIME_KIT_VERSION_SUFFIX_PATTERN.sub("", base_name)
         return ResourceReferenceParser.normalize_component_name(base_name) if base_name else None

@@ -69,14 +69,14 @@
       </button>
     </template>
 
-    <div class="shrink-0 border-b border-slate-50 bg-slate-50/50 px-4 pb-2">
+    <div class="shrink-0 border-b border-slate-50 bg-slate-50/50 px-3 pb-2">
       <LibrarySegmentedControl
         :model-value="componentPanelTab"
         :options="componentPanelOptions"
         :columns="2"
         @update:model-value="handleSelectComponentPanelTab"
       />
-      <div v-if="!readOnly && componentPanelTab === 'workspace'" class="mt-2 flex items-center justify-between gap-2 text-[11px]">
+      <div v-if="!readOnly && componentPanelTab === 'workspace'" class="mt-1.5 flex items-center justify-between gap-2 text-[11px]">
         <span class="font-bold text-slate-400">已选择 {{ batchSelectedComponentIds.length }} 个可导出组件</span>
         <div class="flex items-center gap-2">
           <button
@@ -113,24 +113,24 @@
       <span class="text-sm font-bold text-slate-400">正在加载组件...</span>
     </div>
 
-    <div v-else class="relative min-h-0 flex-1 overflow-y-auto p-4 pb-24">
+    <div v-else class="relative min-h-0 flex-1 overflow-y-auto p-3 pb-20">
       <div
         v-if="filteredComponents.length === 0"
-        class="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-slate-100 bg-slate-50 px-4 py-12 text-center"
+        class="flex flex-col items-center justify-center rounded-lg border border-dashed border-slate-100 bg-slate-50 px-4 py-10 text-center"
       >
         <Box class="mb-3 h-10 w-10 text-slate-300" />
         <p class="text-sm font-semibold text-slate-500">{{ searchKeyword ? '未找到相关组件' : '暂无共享组件' }}</p>
       </div>
 
-      <div v-else class="space-y-3">
+      <div v-else class="space-y-2.5">
         <article
           v-for="component in filteredComponents"
           :key="component.id"
-          class="group relative flex cursor-pointer flex-col rounded-xl border bg-white p-4 transition-all hover:border-indigo-300 hover:shadow-sm"
+          class="group relative flex cursor-pointer flex-col rounded-lg border bg-white p-3 transition-all hover:border-indigo-300 hover:shadow-sm"
           :class="resolveComponentCardClass(component)"
           @click="selectWorkspaceComponent(component)"
         >
-          <div class="mb-2.5 flex items-start justify-between gap-2">
+          <div class="mb-2 flex items-start justify-between gap-2">
             <label
               v-if="!readOnly"
               class="mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center"
@@ -146,7 +146,7 @@
               />
             </label>
             <div class="min-w-0 flex-1">
-              <div class="mb-1.5 flex flex-wrap items-center gap-2">
+              <div class="mb-1 flex flex-wrap items-center gap-1.5">
                 <h3 class="truncate text-sm font-bold text-slate-800 transition-colors group-hover:text-indigo-600">
                   {{ component.name }}
                 </h3>
@@ -195,11 +195,11 @@
             </div>
           </div>
 
-          <p v-if="component.summary" class="mb-3 line-clamp-2 text-[11px] leading-relaxed text-slate-500">
+          <p v-if="component.summary" class="mb-2 line-clamp-2 text-[11px] leading-relaxed text-slate-500">
             {{ component.summary }}
           </p>
 
-          <div class="mt-auto flex items-center justify-between border-t border-slate-50 pt-2.5 text-[10px] font-bold text-slate-400">
+          <div class="mt-auto flex items-center justify-between border-t border-slate-50 pt-2 text-[10px] font-bold text-slate-400">
             <div class="flex items-center gap-1.5">
               <Calendar class="h-3 w-3 text-slate-300" />
               <span>已更新于 {{ formatDateTime(component.updated_at) }}</span>
@@ -214,7 +214,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { ArrowUpRight, Box, Calendar, Copy, Download, Layers, Plus, RefreshCw, Trash2, Upload } from 'lucide-vue-next'
+import { ArrowUpRight, Box, Calendar, Copy, Download, Layers, Plus, RefreshCw, Trash2, Upload } from '@lucide/vue'
 
 import { deleteComponent, listComponents } from '@/api/catalog'
 import { getErrorMessage } from '@/api/http'

@@ -49,21 +49,23 @@ describe('component import helpers', () => {
   it('为 Runtime Kit 组件能力生成 import 语句', () => {
     const usage = buildRuntimeKitComponentImportUsage({
       kind: 'component',
-      name: 'DefaultContainer',
+      base_name: 'DefaultContainer',
+      name: 'DefaultContainer.v1',
       display_name: '默认容器',
-      import_path: '@runtime-kit/public/components/page/layout/DefaultContainer.vue',
+      import_path: '@runtime-kit/public/components/page/layout/DefaultContainer.v1.vue',
     })
 
     expect(usage).toEqual({
-      importPath: '@runtime-kit/public/components/page/layout/DefaultContainer.vue',
-      importStatement: "import DefaultContainer from '@runtime-kit/public/components/page/layout/DefaultContainer.vue'",
+      importPath: '@runtime-kit/public/components/page/layout/DefaultContainer.v1.vue',
+      importStatement: "import DefaultContainer from '@runtime-kit/public/components/page/layout/DefaultContainer.v1.vue'",
     })
   })
 
   it('Runtime Kit 非组件能力不生成默认 import 语句', () => {
     const usage = buildRuntimeKitComponentImportUsage({
       kind: 'util',
-      name: 'formatDate',
+      base_name: 'formatDate',
+      name: 'formatDate.v1',
       display_name: '日期格式化',
       import_path: '@runtime-kit/public/utils/format-date',
     })

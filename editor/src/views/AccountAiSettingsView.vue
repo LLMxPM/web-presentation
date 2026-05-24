@@ -519,7 +519,7 @@
 <script setup lang="ts">
 import { computed, nextTick, reactive, ref, watch } from 'vue'
 import { useQuery, useQueryClient } from '@tanstack/vue-query'
-import { Bot, ChevronDown, ChevronRight, Lock, Plus } from 'lucide-vue-next'
+import { Bot, ChevronDown, ChevronRight, Lock, Plus } from '@lucide/vue'
 
 import {
   createLlmConfig,

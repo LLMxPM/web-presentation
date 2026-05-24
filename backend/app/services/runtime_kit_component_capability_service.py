@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.component_preview_schema import parse_component_preview_schema_text
 from app.core.config import get_settings
 from app.core.exceptions import AppException
-from app.core.runtime_module_policy import get_runtime_kit_capability, list_runtime_kit_capabilities
+from app.core.runtime_module_policy import get_runtime_kit_capability, list_runtime_kit_capabilities, load_runtime_kit_manifest
 from app.repositories.workspace_repository import WorkspaceRepository
 from app.schemas.component_preview_options import ComponentPreviewOptions
 from app.schemas.release import PreviewArtifactResponse
@@ -38,6 +38,9 @@ class RuntimeKitComponentCapabilityService:
         keyword: str | None = None,
         category: str | None = None,
         kind: RuntimeKitCapabilityKind | None = None,
+        base_name: str | None = None,
+        version_no: int | None = None,
+        include_all_versions: bool = False,
         previewable: bool | None = None,
     ) -> RuntimeKitCapabilityListResponse:
         """查询 manifest 中可暴露给 Backend/Agent 的 Runtime Kit 能力目录。"""
@@ -47,7 +50,11 @@ class RuntimeKitComponentCapabilityService:
         normalized_kind = str(kind or "").strip() or None
         items = [
             self._to_capability_item(item)
-            for item in list_runtime_kit_capabilities()
+            for item in list_runtime_kit_capabilities(
+                base_name=base_name,
+                version_no=version_no,
+                include_all_versions=include_all_versions,
+            )
             if self._matches_filter(
                 item,
                 keyword=normalized_keyword,
@@ -56,7 +63,8 @@ class RuntimeKitComponentCapabilityService:
                 previewable=previewable,
             )
         ]
-        return RuntimeKitCapabilityListResponse(items=items, total=len(items))
+        manifest_version = str(load_runtime_kit_manifest().get("version") or "").strip() or None
+        return RuntimeKitCapabilityListResponse(items=items, total=len(items), manifest_version=manifest_version)
 
     def get_component(self, name: str) -> RuntimeKitCapabilityItem:
         """读取单个 Runtime Kit 能力详情。"""
@@ -205,6 +213,8 @@ class RuntimeKitComponentCapabilityService:
         haystack = " ".join(
             [
                 str(item.get("kind") or ""),
+                str(item.get("base_name") or ""),
+                str(item.get("version_no") or ""),
                 str(item.get("name") or ""),
                 str(item.get("display_name") or ""),
                 str(item.get("summary") or ""),

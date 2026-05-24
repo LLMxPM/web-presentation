@@ -15,6 +15,7 @@ import type {
   PagedResponse,
   ComponentShareImportResult,
   ComponentShareImportValidationResult,
+  ProjectBuildExtraAssetsJson,
   ProjectItem,
   ProjectMenuMode,
   ProjectRouteItemWrite,
@@ -22,6 +23,9 @@ import type {
   WorkspaceComponentType,
   WorkspaceComponentCurrentDependencies,
   WorkspaceComponentItem,
+  WorkspaceComponentReferenceUpgradePayload,
+  WorkspaceComponentReferenceUpgradeResponse,
+  WorkspaceComponentReferences,
   WorkspaceComponentVersionContent,
   WorkspaceComponentVersionListItem,
   WorkspaceItem,
@@ -123,6 +127,7 @@ export async function createProject(payload: {
   theme_key?: string | null
   theme_config_yaml?: string | null
   style_spec_markdown?: string
+  build_extra_assets_json?: ProjectBuildExtraAssetsJson
 }) {
   const { data } = await http.post<ProjectItem>('/projects', payload)
   return data
@@ -145,6 +150,7 @@ export async function updateProject(
     theme_key: string | null
     theme_config_yaml: string
     style_spec_markdown: string
+    build_extra_assets_json: ProjectBuildExtraAssetsJson
   }>,
 ) {
   const { data } = await http.patch<ProjectItem>(`/projects/${id}`, payload)
@@ -202,6 +208,18 @@ export async function getComponent(id: number) {
 /** 查询组件当前版本的源码依赖索引。 */
 export async function getComponentCurrentDependencies(id: number) {
   const { data } = await http.get<WorkspaceComponentCurrentDependencies>(`/components/${id}/current-dependencies`)
+  return data
+}
+
+/** 查询工作空间组件被当前页面和组件直接引用的情况。 */
+export async function getComponentReferences(id: number) {
+  const { data } = await http.get<WorkspaceComponentReferences>(`/components/${id}/references`)
+  return data
+}
+
+/** 批量升级页面和组件草稿中的工作空间组件引用版本。 */
+export async function upgradeComponentReferences(id: number, payload: WorkspaceComponentReferenceUpgradePayload) {
+  const { data } = await http.post<WorkspaceComponentReferenceUpgradeResponse>(`/components/${id}/references/upgrade`, payload)
   return data
 }
 

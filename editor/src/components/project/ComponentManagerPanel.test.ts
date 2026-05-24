@@ -11,6 +11,8 @@ import type { RuntimeKitComponentCapabilityItem, WorkspaceComponentItem } from '
 
 const listComponentsMock = vi.fn()
 const getComponentMock = vi.fn()
+const getComponentReferencesMock = vi.fn()
+const upgradeComponentReferencesMock = vi.fn()
 const listRuntimeKitComponentsMock = vi.fn()
 const routerPushMock = vi.fn()
 
@@ -22,7 +24,9 @@ vi.mock('vue-router', () => ({
 
 vi.mock('@/api/catalog', () => ({
   getComponent: (...args: unknown[]) => getComponentMock(...args),
+  getComponentReferences: (...args: unknown[]) => getComponentReferencesMock(...args),
   listComponents: (...args: unknown[]) => listComponentsMock(...args),
+  upgradeComponentReferences: (...args: unknown[]) => upgradeComponentReferencesMock(...args),
   deleteComponent: vi.fn(),
 }))
 
@@ -40,6 +44,19 @@ describe('ComponentManagerPanel', () => {
       page_size: 100,
     })
     getComponentMock.mockResolvedValue(createWorkspaceComponents()[0])
+    getComponentReferencesMock.mockResolvedValue({
+      component_id: 1,
+      component_code: 'CMP001',
+      current_version_no: 2,
+      page_references: [],
+      component_references: [],
+    })
+    upgradeComponentReferencesMock.mockResolvedValue({
+      updated_pages: [],
+      updated_components: [],
+      skipped: [],
+      failures: [],
+    })
     listRuntimeKitComponentsMock.mockResolvedValue({
       items: createRuntimeKitItems(),
     })
@@ -268,8 +285,10 @@ function createRuntimeKitItems(): RuntimeKitComponentCapabilityItem[] {
   return [
     {
       kind: 'component',
-      name: 'AssetRenderer',
-      import_path: '@runtime-kit/components/assets/AssetRenderer',
+      base_name: 'AssetImage',
+      version_no: 1,
+      name: 'AssetImage.v1',
+      import_path: '@runtime-kit/public/components/assets/AssetImage.v1.vue',
       category: 'assets',
       description: '资源渲染组件',
       display_name: '资源渲染器',
@@ -287,8 +306,10 @@ function createRuntimeKitItems(): RuntimeKitComponentCapabilityItem[] {
     },
     {
       kind: 'util',
-      name: 'formatValue',
-      import_path: '@runtime-kit/utils/formatValue',
+      base_name: 'formatValue',
+      version_no: 1,
+      name: 'formatValue.v1',
+      import_path: '@runtime-kit/public/utils/formatValue.v1',
       category: 'format',
       description: '格式化工具',
       display_name: '格式化工具',

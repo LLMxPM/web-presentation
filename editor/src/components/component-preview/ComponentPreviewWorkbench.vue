@@ -2,14 +2,17 @@
 <template>
   <section class="flex h-full min-h-0 flex-col overflow-hidden bg-slate-50/60">
     <header
-      class="flex shrink-0 border-b border-slate-200 bg-white py-3"
-      :class="simplified ? 'component-preview-header--simplified flex-wrap items-center justify-between gap-3 px-4' : 'items-center justify-between gap-4 px-5'"
+      class="flex shrink-0 border-b border-slate-200 bg-white py-2.5"
+      :class="simplified ? 'component-preview-header--simplified flex-wrap items-center justify-between gap-2 px-3' : 'items-center justify-between gap-3 px-4'"
     >
       <div :class="simplified ? 'component-preview-header-title min-w-0' : 'min-w-0'">
         <div class="flex flex-wrap items-center gap-2">
           <slot name="title">
             <h3 class="truncate text-sm font-bold text-slate-900">{{ resolvedTitle }}</h3>
           </slot>
+          <span v-if="!$slots.title && titleBarComponentCode" class="max-w-[10rem] shrink truncate rounded-full bg-white px-2 py-0.5 text-[10px] font-mono font-bold text-slate-500 ring-1 ring-slate-200">
+            {{ titleBarComponentCode }}
+          </span>
           <span v-if="source?.kind === 'runtime-kit'" class="rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-black text-indigo-600">
             Runtime Kit
           </span>
@@ -24,34 +27,39 @@
         class="flex shrink-0 flex-wrap items-center justify-end gap-2"
         :class="simplified ? 'component-preview-header-actions' : ''"
       >
-        <button
-          v-if="simplified"
-          type="button"
-          class="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 transition-colors hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-600 disabled:cursor-not-allowed disabled:border-slate-100 disabled:bg-slate-50 disabled:text-slate-300"
-          :disabled="!source"
-          title="弹窗预览"
-          aria-label="弹窗预览"
-          @click="openFullPreviewDialog"
-        >
-          <Maximize2 class="h-4 w-4" />
-        </button>
-        <button
-          type="button"
-          class="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 transition-colors hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-600 disabled:cursor-not-allowed disabled:border-slate-100 disabled:bg-slate-50 disabled:text-slate-300"
-          :loading="previewLoading"
-          :disabled="!source"
-          title="刷新预览"
-          aria-label="刷新预览"
-          @click="refreshCurrentPreview"
-        >
-          <RefreshCw class="h-4 w-4" :class="previewLoading ? 'animate-spin' : ''" />
-        </button>
-        <slot name="actions" />
+        <div v-if="$slots['component-actions']" class="flex flex-wrap items-center justify-end gap-1.5 border-r border-slate-200 pr-2">
+          <slot name="component-actions" :close-full-preview="closeFullPreviewDialog" :inside-full-preview="false" />
+        </div>
+        <div class="flex items-center justify-end gap-1.5">
+          <button
+            v-if="simplified"
+            type="button"
+            class="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 transition-colors hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-600 disabled:cursor-not-allowed disabled:border-slate-100 disabled:bg-slate-50 disabled:text-slate-300"
+            :disabled="!source"
+            title="弹窗预览"
+            aria-label="弹窗预览"
+            @click="openFullPreviewDialog"
+          >
+            <Maximize2 class="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            class="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 transition-colors hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-600 disabled:cursor-not-allowed disabled:border-slate-100 disabled:bg-slate-50 disabled:text-slate-300"
+            :loading="previewLoading"
+            :disabled="!source"
+            title="刷新预览"
+            aria-label="刷新预览"
+            @click="refreshCurrentPreview"
+          >
+            <RefreshCw class="h-4 w-4" :class="previewLoading ? 'animate-spin' : ''" />
+          </button>
+          <slot name="actions" />
+        </div>
       </div>
     </header>
 
     <div v-if="!source" class="flex min-h-0 flex-1 items-center justify-center p-8">
-      <div class="max-w-sm rounded-2xl border border-dashed border-slate-200 bg-white px-8 py-10 text-center">
+      <div class="max-w-sm rounded-xl border border-dashed border-slate-200 bg-white px-7 py-8 text-center">
         <PackageOpen class="mx-auto mb-3 h-10 w-10 text-slate-300" />
         <p class="text-sm font-bold text-slate-600">请选择左侧组件</p>
         <p class="mt-2 text-xs leading-6 text-slate-400">工作空间组件会默认进入预览，Runtime Kit 可预览能力也会显示在这里。</p>
@@ -61,7 +69,7 @@
     <main v-else class="flex min-h-0 flex-1 flex-col overflow-hidden">
       <div class="shrink-0 border-b border-slate-200 bg-white">
         <div
-          class="flex min-w-0 gap-3 px-4 py-2"
+          class="component-preview-toolbar-scrollbar-hidden flex min-w-0 gap-2 px-3 py-1.5"
           :class="simplified ? 'flex-wrap items-end overflow-visible' : 'items-center overflow-x-auto'"
         >
           <div v-if="!simplified" class="min-w-max">
@@ -74,7 +82,7 @@
             />
           </div>
 
-          <div v-if="!simplified" class="h-9 w-px shrink-0 bg-slate-200" />
+          <div v-if="!simplified" class="h-8 w-px shrink-0 bg-slate-200" />
 
           <div :class="simplified ? 'min-w-0 flex-1' : 'min-w-max'">
             <ComponentPreviewReleaseToolbar
@@ -103,11 +111,11 @@
         <div
           :ref="bindPreviewViewportRef"
           class="relative flex h-full items-center justify-center"
-          :class="simplified ? 'p-3' : 'p-5'"
+          :class="simplified ? 'p-2' : 'p-4'"
         >
           <div class="relative shrink-0" :style="previewFrameStageStyle">
             <div
-              class="absolute left-0 top-0 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm shadow-slate-200/70"
+              class="absolute left-0 top-0 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm shadow-slate-200/70"
               :style="previewFrameContainerStyle"
             >
               <iframe
@@ -146,10 +154,11 @@
         :subtitle="resolvedSubtitle"
         class="h-full"
       >
+        <template v-if="$slots['component-actions']" #component-actions>
+          <slot name="component-actions" :close-full-preview="closeFullPreviewDialog" :inside-full-preview="true" />
+        </template>
         <template #actions>
-          <BaseButton variant="ghost" size="sm" aria-label="关闭组件预览" @click="closeFullPreviewDialog">
-            关闭
-          </BaseButton>
+          <BaseCloseButton label="关闭组件预览" @click="closeFullPreviewDialog" />
         </template>
       </ComponentPreviewWorkbench>
     </ComponentPreviewDialog>
@@ -159,7 +168,7 @@
 <script setup lang="ts">
 import { computed, onUnmounted, ref, watch } from 'vue'
 import type { ComponentPublicInstance } from 'vue'
-import { Maximize2, PackageOpen, RefreshCw } from 'lucide-vue-next'
+import { Maximize2, PackageOpen, RefreshCw } from '@lucide/vue'
 
 import { getErrorMessage } from '@/api/http'
 import { createComponentPreviewArtifactFromSource } from '@/api/preview'
@@ -168,7 +177,7 @@ import ComponentPreviewParameterDock from '@/components/component-preview/Compon
 import ComponentPreviewDialog from '@/components/component-preview/ComponentPreviewDialog.vue'
 import ComponentPreviewPlacementToolbar from '@/components/component-preview/ComponentPreviewPlacementToolbar.vue'
 import ComponentPreviewReleaseToolbar from '@/components/component-preview/ComponentPreviewReleaseToolbar.vue'
-import BaseButton from '@/components/ui/BaseButton.vue'
+import BaseCloseButton from '@/components/ui/BaseCloseButton.vue'
 import { useComponentPreviewSession } from '@/composables/useComponentPreviewSession'
 import { usesZeroPaddingComponentPreview } from '@/composables/useWorkspaceComponentDraft'
 import type { ComponentPreviewWorkbenchSource } from '@/components/component-preview/component-preview-workbench'
@@ -243,6 +252,7 @@ const resolvedSubtitle = computed(() => {
   return source.kind === 'runtime-kit' ? source.item.import_path : ''
 })
 
+const titleBarComponentCode = computed(() => previewComponentMeta.value?.code || '')
 const isDraftPreview = computed(() => props.source?.kind === 'workspace-draft' && props.source.isDraftPreview)
 const iframeTitle = computed(() => props.source?.kind === 'runtime-kit' ? 'runtime-kit-component-preview' : 'component-preview')
 const previewPlaceholderText = computed(() => (
@@ -474,5 +484,14 @@ defineExpose({
   .component-preview-header-title :deep(.component-preview-title-code) {
     display: none;
   }
+}
+
+.component-preview-toolbar-scrollbar-hidden {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.component-preview-toolbar-scrollbar-hidden::-webkit-scrollbar {
+  display: none;
 }
 </style>

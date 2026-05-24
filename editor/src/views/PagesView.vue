@@ -73,338 +73,69 @@
     </div>
 
     <div v-else class="min-h-0 flex-1 space-y-10 overflow-y-auto pb-12 pr-1">
-      <section class="space-y-4">
-        <div class="flex flex-wrap items-center justify-between gap-4">
-          <div class="flex flex-wrap items-center gap-3">
-            <h2 class="text-lg font-bold text-slate-900">已加入路由</h2>
-            <span class="text-xs font-semibold text-slate-400">{{ routedPageEntries.length }} 条路由绑定</span>
-          </div>
-          <div class="flex flex-wrap items-center justify-end gap-2">
-            <BaseButton
-              data-testid="batch-refresh-routed-page-screenshots"
-              variant="ghost"
-              size="sm"
-              :loading="batchScreenshotRefreshScope === 'routed'"
-              :disabled="!projectDetails || routedRefreshableScreenshotCount === 0 || screenshotPendingPageId !== null || batchScreenshotRefreshing"
-              @click="handleRefreshSectionPageScreenshots('routed')"
-            >
-              <template #icon>
-                <RefreshCw class="h-3.5 w-3.5" />
-              </template>
-              刷新截图
-              <span v-if="routedRefreshableScreenshotCount > 0">({{ routedRefreshableScreenshotCount }})</span>
-            </BaseButton>
-            <BaseButton variant="ghost" size="sm" :disabled="!projectDetails" @click="openRouteConfigDialog">
-              <template #icon>
-                <RouteIcon class="h-3.5 w-3.5" />
-              </template>
-              路由
-            </BaseButton>
-            <BaseButton
-              data-testid="project-build-open"
-              variant="primary"
-              size="sm"
-              custom-class="project-build-action"
-              :disabled="!projectDetails"
-              @click="openBuildDialog"
-            >
-              <template #icon>
-                <Hammer class="h-3.5 w-3.5" />
-              </template>
-              构建
-            </BaseButton>
-            <label
-              v-if="routedPagesForBatch.length > 0"
-              class="batch-select-toggle"
-              :class="isAllRoutedSelected ? 'batch-select-toggle-active' : ''"
-            >
-              <input
-                data-testid="batch-routed-select-all"
-                type="checkbox"
-                class="sr-only"
-                :checked="isAllRoutedSelected"
-                @change="handleRoutedSelectAllChange"
-              >
-              <span class="batch-select-box">
-                <Check v-if="isAllRoutedSelected" class="h-3 w-3" />
-              </span>
-              <span>{{ isAllRoutedSelected ? '已全选' : '全选' }}</span>
-            </label>
-            <div v-if="selectedRoutedPages.length > 0" class="batch-toolbar">
-              <span class="batch-toolbar-count">已选 {{ selectedRoutedPages.length }}</span>
-              <button type="button" data-testid="batch-routed-remove-route" class="batch-toolbar-action" :disabled="batchActionPending !== null" @click="handleBatchRemoveFromRoute">
-                <RouteOff class="h-3.5 w-3.5" />
-                移出路由
-              </button>
-              <button type="button" data-testid="batch-routed-screenshot" class="batch-toolbar-action" :disabled="batchActionPending !== null" @click="handleBatchSaveScreenshots('routed')">
-                <Camera class="h-3.5 w-3.5" />
-                截图
-              </button>
-              <button type="button" data-testid="batch-routed-copy" class="batch-toolbar-action" :disabled="batchActionPending !== null" @click="openBatchCopyDialog('routed')">
-                <Copy class="h-3.5 w-3.5" />
-                复制
-              </button>
-              <button type="button" data-testid="batch-routed-archive" class="batch-toolbar-action text-amber-700 hover:bg-amber-50" :disabled="batchActionPending !== null" @click="handleBatchArchivePages('routed')">
-                <Archive class="h-3.5 w-3.5" />
-                归档
-              </button>
-              <button type="button" class="batch-toolbar-icon" title="清空选择" aria-label="清空已加入路由选择" @click="clearRoutedSelection">
-                <X class="h-3.5 w-3.5" />
-              </button>
-            </div>
-          </div>
-        </div>
+      <RoutedPageSection
+        :entries="routedPageEntries"
+        :project-ready="!!projectDetails"
+        :refreshable-screenshot-count="routedRefreshableScreenshotCount"
+        :batch-screenshot-refresh-scope="batchScreenshotRefreshScope"
+        :batch-screenshot-refreshing="batchScreenshotRefreshing"
+        :screenshot-pending-page-id="screenshotPendingPageId"
+        :archiving-page-id="archivingPageId"
+        :batchable-count="routedPagesForBatch.length"
+        :is-all-selected="isAllRoutedSelected"
+        :selected-count="selectedRoutedPages.length"
+        :selected-page-ids="selectedRoutedPageIds"
+        :batch-action-pending="batchActionPending"
+        :page-card-grid-style="pageCardGridStyle"
+        :screenshot-aspect-ratio="projectScreenshotAspectRatio"
+        @refresh-screenshots="handleRefreshSectionPageScreenshots('routed')"
+        @open-route-config="openRouteConfigDialog"
+        @open-build="openBuildDialog"
+        @select-all-change="handleRoutedSelectAllChange"
+        @batch-remove-route="handleBatchRemoveFromRoute"
+        @batch-save-screenshots="handleBatchSaveScreenshots('routed')"
+        @open-batch-copy="openBatchCopyDialog('routed')"
+        @batch-archive-pages="handleBatchArchivePages('routed')"
+        @clear-selection="clearRoutedSelection"
+        @open-page="goToPage"
+        @page-select-change="handleRoutedPageSelectionChange"
+        @copy-page="openPageCopyDialog"
+        @save-page-screenshot="handleSavePageScreenshot"
+        @archive-page="handleArchivePage"
+      />
 
-        <div v-if="routedPageEntries.length === 0"
-          class="rounded-lg border border-dashed border-slate-200 bg-white px-4 py-10 text-center text-sm text-slate-400">
-          当前没有页面加入项目路由。
-        </div>
-
-        <div v-else class="grid gap-4" :style="pageCardGridStyle">
-          <article v-for="entry in routedPageEntries" :key="entry.key" data-testid="page-card"
-            class="group/card relative flex cursor-pointer flex-col overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm transition-all duration-300 hover:-translate-y-1 hover:border-indigo-300 hover:shadow-md"
-            :class="isRoutedPageSelected(entry.page.id) ? 'border-indigo-400 ring-2 ring-indigo-100' : ''"
-            @click="goToPage(entry.page.id)">
-            <div class="relative overflow-hidden bg-slate-100" :style="{ aspectRatio: projectScreenshotAspectRatio }">
-              <img v-if="entry.page.screenshot_url" :src="entry.page.screenshot_url" :alt="`${entry.page.title} 截图`"
-                class="h-full w-full object-cover transition-transform duration-300 group-hover/card:scale-[1.02]"
-                loading="lazy">
-              <div v-else class="flex h-full w-full flex-col items-center justify-center gap-1.5 text-slate-400">
-                <Layout class="h-6 w-6" />
-                <span class="text-[10px] font-semibold tracking-wide">尚未保存截图</span>
-              </div>
-              <div
-                class="page-card-topbar"
-                :class="isRoutedPageSelected(entry.page.id) ? 'page-card-topbar-active' : ''"
-              >
-                <div class="page-card-route-path">
-                  <RouteIcon class="h-3 w-3 shrink-0" />
-                  <span class="min-w-0 truncate">{{ entry.routePath }}</span>
-                  <span v-if="entry.isDuplicate" class="shrink-0 rounded-full bg-amber-50 px-1.5 py-0.5 text-amber-700">
-                    重复 {{ entry.duplicateIndex }}/{{ entry.duplicateTotal }}
-                  </span>
-                </div>
-                <div class="page-card-top-actions">
-                  <span v-if="entry.page.screenshot_url && !entry.page.screenshot_is_latest" class="page-card-stale-badge">
-                    旧截图
-                  </span>
-                  <label
-                    class="page-card-select"
-                    :class="isRoutedPageSelected(entry.page.id) ? 'page-card-select-active' : ''"
-                    title="选择页面"
-                    aria-label="选择页面"
-                    @click.stop
-                  >
-                    <input
-                      :data-testid="`batch-routed-select-${entry.page.id}`"
-                      type="checkbox"
-                      class="sr-only"
-                      :checked="isRoutedPageSelected(entry.page.id)"
-                      @change="event => handleRoutedPageSelectionChange(entry.page.id, event)"
-                    >
-                    <span class="page-card-select-box">
-                      <Check v-if="isRoutedPageSelected(entry.page.id)" class="h-3 w-3" />
-                    </span>
-                  </label>
-                </div>
-              </div>
-              <div
-                class="pointer-events-none absolute inset-x-2 bottom-2 z-20 flex translate-y-1 justify-end gap-1 opacity-0 transition-all group-hover/card:pointer-events-auto group-hover/card:translate-y-0 group-hover/card:opacity-100">
-                <button type="button" class="page-card-action" title="管理路由" aria-label="管理路由"
-                  @click.stop="openRouteConfigDialog">
-                  <RouteIcon class="h-3.5 w-3.5" />
-                </button>
-                <button type="button" class="page-card-action" title="复制到其他项目" aria-label="复制到其他项目"
-                  @click.stop="openPageCopyDialog(entry.page)">
-                  <Copy class="h-3.5 w-3.5" />
-                </button>
-                <button type="button" data-testid="page-card-screenshot" class="page-card-action" title="更新截图" aria-label="更新截图"
-                  :disabled="screenshotPendingPageId !== null || batchScreenshotRefreshing" @click.stop="handleSavePageScreenshot(entry.page)">
-                  <LoaderCircle v-if="screenshotPendingPageId === entry.page.id" class="h-3.5 w-3.5 animate-spin" />
-                  <Camera v-else class="h-3.5 w-3.5" />
-                </button>
-                <button type="button" class="page-card-action text-amber-600 hover:bg-amber-50" title="归档页面"
-                  aria-label="归档页面" :disabled="archivingPageId === entry.page.id"
-                  @click.stop="handleArchivePage(entry.page)">
-                  <Archive class="h-3.5 w-3.5" />
-                </button>
-              </div>
-            </div>
-
-            <div class="p-3">
-              <div class="flex min-w-0 items-center gap-2">
-                <h3
-                  class="truncate text-sm font-bold leading-tight text-slate-800 transition-colors group-hover/card:text-indigo-600"
-                  :title="entry.page.title">
-                  {{ entry.page.title }}
-                </h3>
-                <div class="shrink-0 font-mono text-[10px] font-semibold uppercase tracking-widest text-slate-400">
-                  {{ entry.page.code }}
-                </div>
-              </div>
-            </div>
-          </article>
-        </div>
-      </section>
-
-      <section class="space-y-4">
-        <div class="flex flex-wrap items-center justify-between gap-4">
-          <div class="flex flex-wrap items-center gap-3">
-            <h2 class="text-lg font-bold text-slate-900">未加入路由</h2>
-            <span class="text-xs font-semibold text-slate-400">{{ unroutedPages.length }} 个页面</span>
-          </div>
-          <div class="flex flex-wrap items-center justify-end gap-2">
-            <BaseButton
-              data-testid="batch-refresh-unrouted-page-screenshots"
-              variant="ghost"
-              size="sm"
-              :loading="batchScreenshotRefreshScope === 'unrouted'"
-              :disabled="!projectDetails || unroutedRefreshableScreenshotCount === 0 || screenshotPendingPageId !== null || batchScreenshotRefreshing"
-              @click="handleRefreshSectionPageScreenshots('unrouted')"
-            >
-              <template #icon>
-                <RefreshCw class="h-3.5 w-3.5" />
-              </template>
-              刷新截图
-              <span v-if="unroutedRefreshableScreenshotCount > 0">({{ unroutedRefreshableScreenshotCount }})</span>
-            </BaseButton>
-            <BaseButton variant="ghost" size="sm" :disabled="!projectDetails" @click="archivedPagesDialogVisible = true">
-              <template #icon>
-                <Archive class="h-3.5 w-3.5" />
-              </template>
-              归档页面
-            </BaseButton>
-            <label
-              v-if="unroutedPages.length > 0"
-              class="batch-select-toggle"
-              :class="isAllUnroutedSelected ? 'batch-select-toggle-active' : ''"
-            >
-              <input
-                data-testid="batch-unrouted-select-all"
-                type="checkbox"
-                class="sr-only"
-                :checked="isAllUnroutedSelected"
-                @change="handleUnroutedSelectAllChange"
-              >
-              <span class="batch-select-box">
-                <Check v-if="isAllUnroutedSelected" class="h-3 w-3" />
-              </span>
-              <span>{{ isAllUnroutedSelected ? '已全选' : '全选' }}</span>
-            </label>
-            <div v-if="selectedUnroutedPages.length > 0" class="batch-toolbar">
-              <span class="batch-toolbar-count">已选 {{ selectedUnroutedPages.length }}</span>
-              <button type="button" data-testid="batch-unrouted-add-route" class="batch-toolbar-action" :disabled="batchActionPending !== null" @click="handleBatchAddToRoute">
-                <ListPlus class="h-3.5 w-3.5" />
-                加入路由
-              </button>
-              <button type="button" data-testid="batch-unrouted-screenshot" class="batch-toolbar-action" :disabled="batchActionPending !== null" @click="handleBatchSaveScreenshots('unrouted')">
-                <Camera class="h-3.5 w-3.5" />
-                截图
-              </button>
-              <button type="button" data-testid="batch-unrouted-copy" class="batch-toolbar-action" :disabled="batchActionPending !== null" @click="openBatchCopyDialog('unrouted')">
-                <Copy class="h-3.5 w-3.5" />
-                复制
-              </button>
-              <button type="button" data-testid="batch-unrouted-archive" class="batch-toolbar-action text-amber-700 hover:bg-amber-50" :disabled="batchActionPending !== null" @click="handleBatchArchivePages('unrouted')">
-                <Archive class="h-3.5 w-3.5" />
-                归档
-              </button>
-              <button type="button" class="batch-toolbar-icon" title="清空选择" aria-label="清空未加入路由选择" @click="clearUnroutedSelection">
-                <X class="h-3.5 w-3.5" />
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <div class="grid gap-4" :style="pageCardGridStyle">
-          <article v-for="page in unroutedPages" :key="page.id" data-testid="page-card"
-            class="group/card relative flex cursor-pointer flex-col overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm transition-all duration-300 hover:-translate-y-1 hover:border-indigo-300 hover:shadow-md"
-            :class="isUnroutedPageSelected(page.id) ? 'border-indigo-400 ring-2 ring-indigo-100' : ''"
-            @click="goToPage(page.id)">
-            <div class="relative overflow-hidden bg-slate-100" :style="{ aspectRatio: projectScreenshotAspectRatio }">
-              <img v-if="page.screenshot_url" :src="page.screenshot_url" :alt="`${page.title} 截图`"
-                class="h-full w-full object-cover transition-transform duration-300 group-hover/card:scale-[1.02]"
-                loading="lazy">
-              <div v-else class="flex h-full w-full flex-col items-center justify-center gap-1.5 text-slate-400">
-                <Layout class="h-6 w-6" />
-                <span class="text-[10px] font-semibold tracking-wide">尚未保存截图</span>
-              </div>
-              <div
-                class="page-card-topbar page-card-topbar-end"
-                :class="isUnroutedPageSelected(page.id) ? 'page-card-topbar-active' : ''"
-              >
-                <div class="page-card-top-actions">
-                  <span v-if="page.screenshot_url && !page.screenshot_is_latest" class="page-card-stale-badge">
-                    旧截图
-                  </span>
-                  <label
-                    class="page-card-select"
-                    :class="isUnroutedPageSelected(page.id) ? 'page-card-select-active' : ''"
-                    title="选择页面"
-                    aria-label="选择页面"
-                    @click.stop
-                  >
-                    <input
-                      :data-testid="`batch-unrouted-select-${page.id}`"
-                      type="checkbox"
-                      class="sr-only"
-                      :checked="isUnroutedPageSelected(page.id)"
-                      @change="event => handleUnroutedPageSelectionChange(page.id, event)"
-                    >
-                    <span class="page-card-select-box">
-                      <Check v-if="isUnroutedPageSelected(page.id)" class="h-3 w-3" />
-                    </span>
-                  </label>
-                </div>
-              </div>
-              <div
-                class="pointer-events-none absolute inset-x-2 bottom-2 z-20 flex translate-y-1 justify-end gap-1 opacity-0 transition-all group-hover/card:pointer-events-auto group-hover/card:translate-y-0 group-hover/card:opacity-100">
-                <button type="button" class="page-card-action" title="加入顶层路由" aria-label="加入顶层路由"
-                  :disabled="pageRoutePendingId === page.id" @click.stop="handleAddPageToRoute(page)">
-                  <RouteIcon class="h-3.5 w-3.5" />
-                </button>
-                <button type="button" class="page-card-action" title="复制到其他项目" aria-label="复制到其他项目"
-                  @click.stop="openPageCopyDialog(page)">
-                  <Copy class="h-3.5 w-3.5" />
-                </button>
-                <button type="button" data-testid="page-card-screenshot" class="page-card-action" title="更新截图" aria-label="更新截图"
-                  :disabled="screenshotPendingPageId !== null || batchScreenshotRefreshing" @click.stop="handleSavePageScreenshot(page)">
-                  <LoaderCircle v-if="screenshotPendingPageId === page.id" class="h-3.5 w-3.5 animate-spin" />
-                  <Camera v-else class="h-3.5 w-3.5" />
-                </button>
-                <button type="button" class="page-card-action text-amber-600 hover:bg-amber-50" title="归档页面"
-                  aria-label="归档页面" :disabled="archivingPageId === page.id" @click.stop="handleArchivePage(page)">
-                  <Archive class="h-3.5 w-3.5" />
-                </button>
-              </div>
-            </div>
-
-            <div class="p-3">
-              <div class="flex min-w-0 items-center gap-2">
-                <h3
-                  class="truncate text-sm font-bold leading-tight text-slate-800 transition-colors group-hover/card:text-indigo-600"
-                  :title="page.title">
-                  {{ page.title }}
-                </h3>
-                <div class="shrink-0 font-mono text-[10px] font-semibold uppercase tracking-widest text-slate-400">
-                  {{ page.code }}
-                </div>
-              </div>
-            </div>
-          </article>
-
-          <button type="button"
-            class="flex min-h-[220px] flex-col items-center justify-center rounded-lg border-2 border-dashed border-slate-200 bg-slate-50/50 p-6 text-slate-500 transition-all duration-300 hover:border-indigo-400 hover:bg-indigo-50 hover:text-indigo-600"
-            :style="pageCreateCardStyle"
-            @click="openCreateDialog">
-            <div
-              class="mb-4 flex h-12 w-12 items-center justify-center rounded-full border border-slate-200 bg-white shadow-sm">
-              <Plus class="h-6 w-6" />
-            </div>
-            <span class="text-base font-bold">新增页面</span>
-          </button>
-        </div>
-      </section>
+      <UnroutedPageSection
+        :pages="unroutedPages"
+        :project-ready="!!projectDetails"
+        :refreshable-screenshot-count="unroutedRefreshableScreenshotCount"
+        :batch-screenshot-refresh-scope="batchScreenshotRefreshScope"
+        :batch-screenshot-refreshing="batchScreenshotRefreshing"
+        :screenshot-pending-page-id="screenshotPendingPageId"
+        :archiving-page-id="archivingPageId"
+        :page-route-pending-id="pageRoutePendingId"
+        :is-all-selected="isAllUnroutedSelected"
+        :selected-count="selectedUnroutedPages.length"
+        :selected-page-ids="selectedUnroutedPageIds"
+        :batch-action-pending="batchActionPending"
+        :page-card-grid-style="pageCardGridStyle"
+        :page-create-card-style="pageCreateCardStyle"
+        :screenshot-aspect-ratio="projectScreenshotAspectRatio"
+        @refresh-screenshots="handleRefreshSectionPageScreenshots('unrouted')"
+        @open-archived-pages="archivedPagesDialogVisible = true"
+        @select-all-change="handleUnroutedSelectAllChange"
+        @batch-add-route="handleBatchAddToRoute"
+        @batch-save-screenshots="handleBatchSaveScreenshots('unrouted')"
+        @open-batch-copy="openBatchCopyDialog('unrouted')"
+        @batch-archive-pages="handleBatchArchivePages('unrouted')"
+        @clear-selection="clearUnroutedSelection"
+        @open-page="goToPage"
+        @page-select-change="handleUnroutedPageSelectionChange"
+        @add-page-route="handleAddPageToRoute"
+        @copy-page="openPageCopyDialog"
+        @save-page-screenshot="handleSavePageScreenshot"
+        @archive-page="handleArchivePage"
+        @open-create="openCreateDialog"
+      />
     </div>
 
     <BaseDialog v-model="dialogVisible" title="新增页面" width="960px">
@@ -475,43 +206,36 @@
     <ProjectBuildDialog v-model="projectBuildDialogVisible" :history="buildHistory"
       :history-loading="buildHistoryQuery.isFetching.value" :latest-job="latestBuildJob"
       :latest-job-id="latestBuildJob?.id ?? null" :default-base-url="latestBuildJob?.base_url ?? './'"
-      :loading="projectBuildSubmitting" @refresh="handleBuildHistoryRefresh" @download="handleBuildArtifactDownload"
-      @open="handleBuildArtifactOpen" @submit="handleProjectBuildSubmit" />
+      :workspace-id="workspaceId" :build-extra-assets-json="projectDetails?.build_extra_assets_json ?? null"
+      :automatic-asset-names="projectBuildAutomaticAssetNames"
+      :resource-issue-code="projectBuildResourceIssueCode" :resource-issue="projectBuildResourceIssue"
+      :extra-assets-saving="projectBuildExtraAssetsSaving" :loading="projectBuildSubmitting"
+      @refresh="handleBuildHistoryRefresh" @download="handleBuildArtifactDownload"
+      @open="handleBuildArtifactOpen" @save-extra-assets="handleProjectBuildExtraAssetsSave"
+      @submit="handleProjectBuildSubmit" />
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
-import type { Component } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/vue-query'
 import {
-  Archive,
   ArrowLeft,
-  Camera,
-  Check,
-  Copy,
   Expand,
-  Hammer,
-  Layout,
-  ListPlus,
-  LoaderCircle,
   Maximize2,
   Minimize2,
   Play,
   Plus,
-  RefreshCw,
-  Route as RouteIcon,
-  RouteOff,
   SlidersHorizontal,
   Square,
   SquarePen,
-  X,
-} from 'lucide-vue-next'
+} from '@lucide/vue'
 
 import {
   createProjectBuildJob,
   downloadProjectBuildArtifact,
+  getProjectBuildAssetSummary,
   getLatestProjectBuildJob,
   getProjectBuildJob,
   listProjectBuildJobs,
@@ -529,12 +253,21 @@ import {
   updateProject,
 } from '@/api/catalog'
 import { createProjectPreviewArtifact } from '@/api/preview'
-import { getErrorMessage } from '@/api/http'
+import { getErrorCode, getErrorData, getErrorMessage } from '@/api/http'
 import MonacoCodeEditor from '@/components/editor/MonacoCodeEditor.vue'
 import PageTitleBar from '@/components/layout/PageTitleBar.vue'
 import ArchivedPagesDialog from '@/components/page/ArchivedPagesDialog.vue'
 import PageBatchCopyToProjectDialog from '@/components/page/PageBatchCopyToProjectDialog.vue'
 import PageCopyToProjectDialog from '@/components/page/PageCopyToProjectDialog.vue'
+import RoutedPageSection from '@/components/page/RoutedPageSection.vue'
+import UnroutedPageSection from '@/components/page/UnroutedPageSection.vue'
+import type {
+  PageBatchAction,
+  PageBatchScope,
+  PageCardSize,
+  PageCardSizeOption,
+  RoutedPageEntry,
+} from '@/components/page/page-list-types'
 import ProjectBuildDialog from '@/components/project/ProjectBuildDialog.vue'
 import ProjectIdentityDialog from '@/components/project/ProjectIdentityDialog.vue'
 import ProjectPresentationConfigDialog from '@/components/project/ProjectPresentationConfigDialog.vue'
@@ -548,6 +281,7 @@ import type {
   PageFileType,
   PageItem,
   ProjectBuildJob,
+  ProjectBuildResourceIssueData,
   ProjectMenuMode,
   ProjectRouteBinding,
   ProjectRouteItemWrite,
@@ -558,16 +292,6 @@ import { canDownloadProjectBuildArtifact, canOpenProjectBuildArtifact } from '@/
 import { appendRootPageRoute, mapRouteTreeToWriteItems, normalizeProjectRouteOrders } from '@/utils/project-route'
 import { buildPageDetailPath, buildWorkspaceHomePath } from '@/utils/workspace-routes'
 
-interface RoutedPageEntry {
-  key: string
-  page: PageItem
-  routePath: string
-  routeOrderKey: number[]
-  duplicateIndex: number
-  duplicateTotal: number
-  isDuplicate: boolean
-}
-
 interface AgentProjectPagesMutationDetail {
   workspaceId?: number | null
   projectId?: number | null
@@ -577,15 +301,9 @@ interface AgentProjectPagesMutationDetail {
   result?: unknown
 }
 
-type PageBatchScope = 'routed' | 'unrouted'
-type PageBatchAction = 'add-route' | 'remove-route' | 'screenshot' | 'archive' | 'copy'
-type PageCardSize = 'compact' | 'standard' | 'large' | 'huge'
-
-interface PageCardSizeOption {
-  value: PageCardSize
-  label: string
-  minWidth: number
-  icon: Component
+interface ProjectBuildSubmitPayload {
+  base_url: string
+  extra_asset_names: string[]
 }
 
 const PAGE_CARD_SIZE_STORAGE_KEY = 'web-presentation:pages-view:preview-card-size'
@@ -714,6 +432,9 @@ const batchScreenshotRefreshing = ref(false)
 const batchScreenshotRefreshScope = ref<PageBatchScope | null>(null)
 const projectBuildDialogVisible = ref(false)
 const projectBuildSubmitting = ref(false)
+const projectBuildExtraAssetsSaving = ref(false)
+const projectBuildResourceIssueCode = ref<string | null>(null)
+const projectBuildResourceIssue = ref<ProjectBuildResourceIssueData | null>(null)
 const projectIdentityDialogVisible = ref(false)
 const presentationConfigDialogVisible = ref(false)
 const routeConfigDialogVisible = ref(false)
@@ -749,8 +470,19 @@ const buildHistoryQuery = useQuery(
   })),
 )
 
+const projectBuildAssetSummaryQuery = useQuery(
+  computed(() => ({
+    queryKey: ['project-build-assets', projectId.value],
+    queryFn: () => getProjectBuildAssetSummary(projectId.value),
+    enabled: !!projectId.value && projectBuildDialogVisible.value,
+  })),
+)
+
 const latestBuildJob = computed<ProjectBuildJob | null>(() => latestBuildJobQuery.data.value ?? null)
 const buildHistory = computed(() => buildHistoryQuery.data.value ?? [])
+const projectBuildAutomaticAssetNames = computed(() => (
+  projectBuildAssetSummaryQuery.data.value?.automatic_asset_names ?? []
+))
 
 const dialogVisible = ref(false)
 const saving = ref(false)
@@ -845,22 +577,6 @@ function normalizeRoutePath(path: string | null | undefined): string {
 }
 
 /**
- * 判断已加入路由分区的页面是否被选中。
- * @param pageId 页面 ID
- */
-function isRoutedPageSelected(pageId: number): boolean {
-  return selectedRoutedPageIds.value.has(pageId)
-}
-
-/**
- * 判断未加入路由分区的页面是否被选中。
- * @param pageId 页面 ID
- */
-function isUnroutedPageSelected(pageId: number): boolean {
-  return selectedUnroutedPageIds.value.has(pageId)
-}
-
-/**
  * 更新已加入路由分区单页选择状态。
  * @param pageId 页面 ID
  * @param event 勾选框事件
@@ -880,20 +596,20 @@ function handleUnroutedPageSelectionChange(pageId: number, event: Event): void {
 
 /**
  * 批量勾选或取消已加入路由分区页面。
- * @param event 勾选框事件
+ * @param checked 是否全选
  */
-function handleRoutedSelectAllChange(event: Event): void {
-  selectedRoutedPageIds.value = (event.target as HTMLInputElement).checked
+function handleRoutedSelectAllChange(checked: boolean): void {
+  selectedRoutedPageIds.value = checked
     ? new Set(routedPagesForBatch.value.map(page => page.id))
     : new Set()
 }
 
 /**
  * 批量勾选或取消未加入路由分区页面。
- * @param event 勾选框事件
+ * @param checked 是否全选
  */
-function handleUnroutedSelectAllChange(event: Event): void {
-  selectedUnroutedPageIds.value = (event.target as HTMLInputElement).checked
+function handleUnroutedSelectAllChange(checked: boolean): void {
+  selectedUnroutedPageIds.value = checked
     ? new Set(unroutedPages.value.map(page => page.id))
     : new Set()
 }
@@ -1450,7 +1166,10 @@ async function handleSavePageScreenshot(page: PageItem): Promise<void> {
  * 打开项目构建中心弹窗。
  */
 function openBuildDialog(): void {
+  projectBuildResourceIssueCode.value = null
+  projectBuildResourceIssue.value = null
   projectBuildDialogVisible.value = true
+  void projectBuildAssetSummaryQuery.refetch()
 }
 
 /**
@@ -1645,14 +1364,22 @@ function handleBuildArtifactOpen(job: ProjectBuildJob): void {
  * 提交整项目构建任务，并回读一次任务详情。
  * @param payload 构建参数
  */
-async function handleProjectBuildSubmit(payload: { base_url: string }): Promise<void> {
+async function handleProjectBuildSubmit(payload: ProjectBuildSubmitPayload): Promise<void> {
   if (!projectDetails.value) {
     return
   }
 
   projectBuildSubmitting.value = true
   try {
-    const createdJob = await createProjectBuildJob(projectDetails.value.id, payload)
+    projectBuildResourceIssueCode.value = null
+    projectBuildResourceIssue.value = null
+    const extraAssetNames = normalizeProjectBuildExtraAssetNames(payload.extra_asset_names)
+    const extraAssetsChanged = !isSameStringArray(extraAssetNames, getSavedProjectBuildExtraAssetNames())
+    if (extraAssetsChanged) {
+      await saveProjectBuildExtraAssetsConfig(extraAssetNames)
+    }
+
+    const createdJob = await createProjectBuildJob(projectDetails.value.id, { base_url: payload.base_url })
     const latestJob = await getProjectBuildJob(createdJob.id)
     queryClient.setQueryData(['project-build-latest', projectId.value], latestJob)
     queryClient.setQueryData<ProjectBuildJob[]>(['project-build-history', projectId.value], (previous) => {
@@ -1660,12 +1387,111 @@ async function handleProjectBuildSubmit(payload: { base_url: string }): Promise<
       return nextItems.slice(0, 20)
     })
     projectBuildDialogVisible.value = false
-    Message.success('构建任务已提交。')
+    Message.success(extraAssetsChanged ? '额外构建资源已保存，构建任务已提交。' : '构建任务已提交。')
   } catch (error) {
+    if (handleProjectBuildResourceError(error)) {
+      return
+    }
     Message.error(getErrorMessage(error, '提交构建任务失败。'))
   } finally {
     projectBuildSubmitting.value = false
   }
+}
+
+/**
+ * 识别构建资源错误，并保留弹窗展示可操作修复面板。
+ * @param error 接口错误
+ */
+function handleProjectBuildResourceError(error: unknown): boolean {
+  const code = getErrorCode(error)
+  if (!code || !['PROJECT_BUILD_DYNAMIC_ASSET_REFERENCE', 'PROJECT_BUILD_ASSET_MISSING'].includes(code)) {
+    return false
+  }
+  projectBuildResourceIssueCode.value = code
+  projectBuildResourceIssue.value = getErrorData<ProjectBuildResourceIssueData>(error)
+  Message.error(getErrorMessage(error, '构建资源配置不完整。'))
+  return true
+}
+
+/**
+ * 保存项目额外构建资源 JSON。
+ * @param assetNames 需要保存的资源名列表
+ */
+async function handleProjectBuildExtraAssetsSave(assetNames: string[]): Promise<void> {
+  if (!projectDetails.value) {
+    return
+  }
+
+  try {
+    await saveProjectBuildExtraAssetsConfig(normalizeProjectBuildExtraAssetNames(assetNames))
+    Message.success('额外构建资源已保存，可重新发起构建。')
+  } catch (error) {
+    Message.error(getErrorMessage(error, '保存额外构建资源失败。'))
+  }
+}
+
+/**
+ * 保存项目额外构建资源配置，并刷新依赖项目与资源摘要的缓存。
+ * @param assetNames 已归一化的资源名列表
+ */
+async function saveProjectBuildExtraAssetsConfig(assetNames: string[]): Promise<void> {
+  if (!projectDetails.value) {
+    return
+  }
+
+  projectBuildExtraAssetsSaving.value = true
+  try {
+    const updatedProject = await updateProject(projectDetails.value.id, {
+      build_extra_assets_json: {
+        asset_names: assetNames,
+      },
+    })
+    queryClient.setQueryData(['project', projectId.value], updatedProject)
+    await queryClient.invalidateQueries({ queryKey: ['projects-by-ws', workspaceId.value] })
+    await queryClient.invalidateQueries({ queryKey: ['project-build-assets', projectId.value] })
+  } finally {
+    projectBuildExtraAssetsSaving.value = false
+  }
+}
+
+/**
+ * 读取项目当前保存的额外构建资源名。
+ * @returns 归一化后的资源名列表
+ */
+function getSavedProjectBuildExtraAssetNames(): string[] {
+  return normalizeProjectBuildExtraAssetNames(projectDetails.value?.build_extra_assets_json?.asset_names ?? [])
+}
+
+/**
+ * 归一化构建额外资源名列表，和弹窗侧保持一致。
+ * @param values 原始资源名列表
+ * @returns 去空、去重后的资源名
+ */
+function normalizeProjectBuildExtraAssetNames(values: string[]): string[] {
+  const result: string[] = []
+  const seen = new Set<string>()
+  for (const value of values) {
+    const normalized = String(value || '').trim().replace(/\\/g, '/').replace(/^\.?\//, '')
+    if (!normalized || /^https?:\/\//i.test(normalized) || seen.has(normalized)) {
+      continue
+    }
+    seen.add(normalized)
+    result.push(normalized)
+  }
+  return result
+}
+
+/**
+ * 比较两个字符串数组是否完全一致。
+ * @param left 左侧数组
+ * @param right 右侧数组
+ * @returns 是否长度和顺序均一致
+ */
+function isSameStringArray(left: string[], right: string[]): boolean {
+  if (left.length !== right.length) {
+    return false
+  }
+  return left.every((item, index) => item === right[index])
 }
 
 onMounted(() => {
@@ -1711,239 +1537,6 @@ onUnmounted(() => {
 .page-card-size-button:focus-visible {
   outline: 2px solid rgb(129 140 248);
   outline-offset: 2px;
-}
-
-:deep(.project-build-action) {
-  border-color: rgb(99 102 241);
-  background: linear-gradient(135deg, rgb(79 70 229), rgb(14 165 233));
-  box-shadow: 0 8px 18px rgb(79 70 229 / 0.22);
-}
-
-:deep(.project-build-action:hover) {
-  border-color: rgb(67 56 202);
-  box-shadow: 0 10px 22px rgb(79 70 229 / 0.28);
-}
-
-.page-card-action {
-  display: inline-flex;
-  height: 1.875rem;
-  width: 1.875rem;
-  align-items: center;
-  justify-content: center;
-  border-radius: 0.5rem;
-  border: 1px solid rgb(226 232 240);
-  background: rgb(255 255 255 / 0.95);
-  color: rgb(71 85 105);
-  box-shadow: 0 1px 2px rgb(15 23 42 / 0.08);
-  transition: all 0.2s ease;
-}
-
-.page-card-action:hover {
-  border-color: rgb(199 210 254);
-  background: rgb(238 242 255);
-  color: rgb(79 70 229);
-}
-
-.page-card-action:disabled {
-  cursor: not-allowed;
-  opacity: 0.5;
-}
-
-.page-card-select {
-  display: inline-flex;
-  height: 1.5rem;
-  width: 1.5rem;
-  align-items: center;
-  justify-content: center;
-  border-radius: 9999px;
-  border: 1px solid rgb(203 213 225);
-  background: rgb(255 255 255 / 0.95);
-  color: rgb(100 116 139);
-  box-shadow: 0 1px 2px rgb(15 23 42 / 0.08);
-  backdrop-filter: blur(6px);
-  cursor: pointer;
-  transition: all 0.18s ease;
-}
-
-.page-card-select:hover,
-.page-card-select-active {
-  border-color: rgb(129 140 248);
-  background: rgb(238 242 255 / 0.96);
-  color: rgb(79 70 229);
-  opacity: 1;
-  transform: translateY(-1px);
-}
-
-.page-card-select-active {
-  background: rgb(79 70 229 / 0.96);
-  color: white;
-}
-
-.page-card-select-box {
-  display: inline-flex;
-  height: 0.875rem;
-  width: 0.875rem;
-  align-items: center;
-  justify-content: center;
-  border-radius: 9999px;
-  border: 1px solid currentColor;
-}
-
-.page-card-topbar {
-  pointer-events: none;
-  position: absolute;
-  inset: 0.5rem 0.5rem auto;
-  z-index: 20;
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 0.5rem;
-  opacity: 0;
-  transform: translateY(-0.25rem);
-  transition: all 0.2s ease;
-}
-
-.group\/card:hover .page-card-topbar,
-.page-card-topbar-active {
-  pointer-events: auto;
-  opacity: 1;
-  transform: translateY(0);
-}
-
-.page-card-topbar-end {
-  justify-content: flex-end;
-}
-
-.page-card-route-path {
-  display: inline-flex;
-  min-width: 0;
-  max-width: calc(100% - 2rem);
-  min-height: 1.5rem;
-  align-items: center;
-  gap: 0.375rem;
-  border-radius: 9999px;
-  border: 1px solid rgb(167 243 208);
-  background: rgb(255 255 255 / 0.95);
-  padding: 0.25rem 0.5rem;
-  font-size: 0.625rem;
-  font-weight: 700;
-  color: rgb(4 120 87);
-  box-shadow: 0 1px 2px rgb(15 23 42 / 0.08);
-  backdrop-filter: blur(6px);
-}
-
-.page-card-top-actions {
-  display: inline-flex;
-  flex-shrink: 0;
-  align-items: center;
-  gap: 0.375rem;
-}
-
-.page-card-stale-badge {
-  display: inline-flex;
-  min-height: 1.5rem;
-  align-items: center;
-  border-radius: 9999px;
-  border: 1px solid rgb(253 230 138);
-  background: rgb(255 251 235 / 0.95);
-  padding: 0.25rem 0.5rem;
-  font-size: 0.625rem;
-  font-weight: 700;
-  color: rgb(180 83 9);
-  box-shadow: 0 1px 2px rgb(15 23 42 / 0.08);
-  backdrop-filter: blur(6px);
-}
-
-.batch-select-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.45rem;
-  min-height: 2.125rem;
-  border-radius: 9999px;
-  border: 1px solid rgb(226 232 240);
-  background: white;
-  padding: 0.35rem 0.75rem 0.35rem 0.5rem;
-  font-size: 0.75rem;
-  font-weight: 700;
-  color: rgb(71 85 105);
-  cursor: pointer;
-  box-shadow: 0 1px 2px rgb(15 23 42 / 0.06);
-  transition: all 0.18s ease;
-}
-
-.batch-select-toggle:hover,
-.batch-select-toggle-active {
-  border-color: rgb(199 210 254);
-  background: rgb(238 242 255);
-  color: rgb(79 70 229);
-}
-
-.batch-select-box {
-  display: inline-flex;
-  height: 1rem;
-  width: 1rem;
-  align-items: center;
-  justify-content: center;
-  border-radius: 9999px;
-  border: 1px solid rgb(148 163 184);
-  background: white;
-  color: white;
-}
-
-.batch-select-toggle-active .batch-select-box {
-  border-color: rgb(79 70 229);
-  background: rgb(79 70 229);
-}
-
-.batch-toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.4rem;
-  border-radius: 9999px;
-  border: 1px solid rgb(226 232 240);
-  background: white;
-  padding: 0.3rem;
-  box-shadow: 0 1px 2px rgb(15 23 42 / 0.06);
-}
-
-.batch-toolbar-count {
-  padding: 0 0.4rem;
-  font-size: 0.75rem;
-  font-weight: 700;
-  color: rgb(100 116 139);
-}
-
-.batch-toolbar-action,
-.batch-toolbar-icon {
-  display: inline-flex;
-  height: 2rem;
-  align-items: center;
-  justify-content: center;
-  gap: 0.25rem;
-  border-radius: 0.5rem;
-  padding: 0 0.55rem;
-  font-size: 0.75rem;
-  font-weight: 700;
-  color: rgb(71 85 105);
-  transition: all 0.2s ease;
-}
-
-.batch-toolbar-icon {
-  width: 2rem;
-  padding: 0;
-}
-
-.batch-toolbar-action:hover,
-.batch-toolbar-icon:hover {
-  background: rgb(238 242 255);
-  color: rgb(79 70 229);
-}
-
-.batch-toolbar-action:disabled,
-.batch-toolbar-icon:disabled {
-  cursor: not-allowed;
-  opacity: 0.5;
 }
 
 .project-identity-action {

@@ -238,9 +238,7 @@
                 <h2 class="text-base font-bold text-slate-800">上传资源</h2>
                 <p class="mt-1 text-xs text-slate-400">选择资源类型后上传文件；同名资源会询问是否覆盖。</p>
               </div>
-              <button type="button" class="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700" @click="closeUploadForm">
-                <X class="h-4 w-4" />
-              </button>
+              <BaseCloseButton label="关闭上传资源弹窗" @click="closeUploadForm" />
             </div>
             <div class="mt-5 space-y-4">
               <div>
@@ -308,9 +306,7 @@
                   <h2 class="truncate text-base font-bold text-slate-800">{{ detailAsset.name }}</h2>
                   <p class="mt-1 truncate font-mono text-xs text-slate-400">{{ detailAsset.original_name }}</p>
                 </div>
-                <button class="rounded-lg p-2 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800" @click="closeAssetDetail">
-                  <X class="h-4 w-4" />
-                </button>
+                <BaseCloseButton label="关闭资源详情" @click="closeAssetDetail" />
               </header>
               <div class="min-h-0 flex-1 p-5">
                 <AssetPreviewFrame
@@ -517,7 +513,7 @@ import {
   Workflow,
   X,
   ZoomIn,
-} from 'lucide-vue-next'
+} from '@lucide/vue'
 
 import {
   archiveWorkspaceAsset,
@@ -545,6 +541,7 @@ import type { AgentMutationRefreshEvent } from '@/components/agent/agent-convers
 import LibraryChipFilter from '@/components/project/LibraryChipFilter.vue'
 import LibrarySegmentedControl from '@/components/project/LibrarySegmentedControl.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
+import BaseCloseButton from '@/components/ui/BaseCloseButton.vue'
 import PaginationControl from '@/components/ui/PaginationControl.vue'
 import type { AssetBatchOperationResponse, AssetReferenceSummary, AssetResponse, AssetType } from '@/types/api'
 import { createConfirm, Message } from '@/utils/message'

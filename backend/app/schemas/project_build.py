@@ -40,6 +40,15 @@ class ProjectBuildJobResponse(SchemaBase):
     finished_at: datetime | None
 
 
+class ProjectBuildAssetSummary(BaseModel):
+    """项目当前构建资源引用摘要，用于前端区分自动包含资源和额外资源。"""
+
+    automatic_asset_names: list[str] = Field(default_factory=list)
+    extra_asset_names: list[str] = Field(default_factory=list)
+    included_asset_names: list[str] = Field(default_factory=list)
+    dynamic_module_paths: list[str] = Field(default_factory=list)
+
+
 class RuntimeBuildDispatchRequest(BaseModel):
     """Backend 派发给 Runtime 的整项目构建请求。"""
 

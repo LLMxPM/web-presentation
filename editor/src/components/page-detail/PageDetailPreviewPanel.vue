@@ -28,15 +28,7 @@
           <div class="flex h-full min-h-0 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
             <div class="flex h-12 shrink-0 items-center justify-between border-b border-slate-100 px-4">
               <h3 class="min-w-0 truncate text-sm font-semibold text-slate-900">{{ previewDialogTitle }}</h3>
-              <button
-                type="button"
-                title="关闭"
-                aria-label="关闭预览"
-                class="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
-                @click="isPreviewDialogOpen = false"
-              >
-                <X class="h-4 w-4" />
-              </button>
+              <BaseCloseButton label="关闭预览" @click="isPreviewDialogOpen = false" />
             </div>
             <div class="min-h-0 flex-1 bg-slate-100 p-3">
               <RuntimePreviewFrame
@@ -57,9 +49,10 @@
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { Maximize2, X } from 'lucide-vue-next'
+import { Maximize2 } from '@lucide/vue'
 
 import RuntimePreviewFrame from '@/components/runtime-preview/RuntimePreviewFrame.vue'
+import BaseCloseButton from '@/components/ui/BaseCloseButton.vue'
 
 interface Props {
   previewEnabled: boolean

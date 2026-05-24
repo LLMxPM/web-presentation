@@ -41,7 +41,7 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { RefreshCw } from 'lucide-vue-next'
+import { RefreshCw } from '@lucide/vue'
 
 import { getErrorMessage } from '@/api/http'
 import { listWorkspaceStyles } from '@/api/styles'

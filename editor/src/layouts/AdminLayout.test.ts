@@ -136,7 +136,7 @@ describe('AdminLayout', () => {
 
     expect(screen.getByTestId('workspace-dock-panel-assets').getAttribute('title')).toContain('侧栏')
     expect(screen.getByTestId('workspace-dock-panel-components').getAttribute('title')).toContain('侧栏')
-    expect(screen.getByTestId('workspace-dock-panel-themes').getAttribute('title')).toContain('侧栏')
+    expect(screen.queryByTestId('workspace-dock-panel-themes')).toBeNull()
   })
 
   it.each([
@@ -204,9 +204,7 @@ describe('AdminLayout', () => {
     expect(await screen.findByTestId('component-panel')).toBeTruthy()
     expect(screen.queryByTestId('asset-panel')).toBeNull()
 
-    await fireEvent.click(screen.getByTestId('workspace-dock-panel-themes'))
-    expect(await screen.findByTestId('theme-panel')).toBeTruthy()
-    expect(screen.queryByTestId('component-panel')).toBeNull()
+    expect(screen.queryByTestId('workspace-dock-panel-themes')).toBeNull()
   })
 
   it('进入 AI 设置页时应关闭左右两侧栏、右侧 Dock 和辅助面板', async () => {
@@ -300,7 +298,6 @@ function renderLayout() {
       stubs: {
         AssetManagerPanel: { template: '<aside data-testid="asset-panel" />' },
         ComponentManagerPanel: { template: '<aside data-testid="component-panel" />' },
-        ThemeManagerPanel: { template: '<aside data-testid="theme-panel" />' },
       },
     },
   })

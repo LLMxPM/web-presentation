@@ -51,7 +51,7 @@
 </template>
 
 <script setup lang="ts">
-import { CornerDownLeft } from 'lucide-vue-next'
+import { CornerDownLeft } from '@lucide/vue'
 
 import BaseButton from '@/components/ui/BaseButton.vue'
 

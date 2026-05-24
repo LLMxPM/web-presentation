@@ -55,7 +55,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/vue-query'
-import { ImageOff } from 'lucide-vue-next'
+import { ImageOff } from '@lucide/vue'
 
 import { listPages, updatePage } from '@/api/catalog'
 import { getErrorMessage } from '@/api/http'

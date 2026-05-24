@@ -102,6 +102,10 @@ class WorkspaceComponentDependencyItem(SchemaBase):
     component_code: str | None = None
     component_version_no: int | None = None
     runtime_module_path: str | None = None
+    runtime_kit_name: str | None = None
+    runtime_kit_base_name: str | None = None
+    runtime_kit_version_no: int | None = None
+    runtime_kit_import_path: str | None = None
 
 
 class WorkspaceComponentItem(SchemaBase):
@@ -168,6 +172,92 @@ class WorkspaceComponentCurrentDependencies(SchemaBase):
     current_version_no: int
     component_version_id: int | None
     dependencies: list[WorkspaceComponentDependencyItem]
+
+
+class WorkspaceComponentPageReferenceItem(SchemaBase):
+    """页面当前版本对工作空间组件的直接引用项。"""
+
+    page_id: int
+    page_code: str
+    page_title: str
+    project_id: int | None = None
+    project_name: str | None = None
+    current_version_no: int
+    page_version_id: int
+    referenced_component_version_no: int
+    is_current_version: bool
+    can_upgrade: bool
+
+
+class WorkspaceComponentComponentReferenceItem(SchemaBase):
+    """组件当前发布版本对另一个工作空间组件的直接引用项。"""
+
+    component_id: int
+    component_code: str
+    component_name: str
+    current_version_no: int
+    component_version_id: int
+    referenced_component_version_no: int
+    has_unpublished_changes: bool
+    draft_referenced_component_version_no: int | None = None
+    draft_is_current_version: bool
+    is_current_version: bool
+    can_upgrade: bool
+
+
+class WorkspaceComponentReferences(SchemaBase):
+    """工作空间组件被页面与组件直接引用的当前索引汇总。"""
+
+    component_id: int
+    component_code: str
+    current_version_no: int
+    page_references: list[WorkspaceComponentPageReferenceItem]
+    component_references: list[WorkspaceComponentComponentReferenceItem]
+
+
+class WorkspaceComponentReferenceUpgradeRequest(BaseModel):
+    """批量升级组件引用到目标组件当前发布版本的入参。"""
+
+    page_ids: list[int] = Field(default_factory=list)
+    component_ids: list[int] = Field(default_factory=list)
+
+
+class WorkspaceComponentReferenceUpgradePageItem(SchemaBase):
+    """页面引用升级成功项。"""
+
+    page_id: int
+    page_code: str
+    page_title: str
+    previous_version_no: int
+    current_version_no: int
+
+
+class WorkspaceComponentReferenceUpgradeComponentItem(SchemaBase):
+    """组件草稿引用升级成功项。"""
+
+    component_id: int
+    component_code: str
+    component_name: str
+    current_version_no: int
+    draft_referenced_component_version_no: int
+
+
+class WorkspaceComponentReferenceUpgradeIssue(SchemaBase):
+    """批量引用升级中的跳过或失败明细。"""
+
+    kind: str
+    id: int
+    code: str
+    detail: str
+
+
+class WorkspaceComponentReferenceUpgradeResponse(SchemaBase):
+    """批量升级组件引用的结果汇总。"""
+
+    updated_pages: list[WorkspaceComponentReferenceUpgradePageItem] = Field(default_factory=list)
+    updated_components: list[WorkspaceComponentReferenceUpgradeComponentItem] = Field(default_factory=list)
+    skipped: list[WorkspaceComponentReferenceUpgradeIssue] = Field(default_factory=list)
+    failures: list[WorkspaceComponentReferenceUpgradeIssue] = Field(default_factory=list)
 
 
 class WorkspaceComponentPublishRequest(BaseModel):

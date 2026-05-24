@@ -17,6 +17,8 @@ class RuntimeKitCapabilityItem(SchemaBase):
     """Runtime Kit 内建能力目录项。"""
 
     kind: RuntimeKitCapabilityKind
+    base_name: str
+    version_no: int
     name: str
     import_path: str
     category: str
@@ -40,6 +42,7 @@ class RuntimeKitCapabilityListResponse(BaseModel):
 
     items: list[RuntimeKitCapabilityItem]
     total: int
+    manifest_version: str | None = None
 
 
 class RuntimeKitComponentPreviewRequest(BaseModel):

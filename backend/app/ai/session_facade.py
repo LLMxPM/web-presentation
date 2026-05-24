@@ -482,6 +482,7 @@ class AgentSessionFacade:
                 latest_task = await task_service.mark_paused(
                     task=latest_task,
                     pending_requirement=restored_run.pending_requirement,
+                    allow_terminal_restore=getattr(latest_task, "status", None) == "failed",
                 )
             if task_is_active(latest_task):
                 return map_task_to_active_run(latest_task)
@@ -536,6 +537,7 @@ class AgentSessionFacade:
                 latest_task = await task_service.mark_paused(
                     task=latest_task,
                     pending_requirement=restored_run.pending_requirement,
+                    allow_terminal_restore=getattr(latest_task, "status", None) == "failed",
                 )
             mapped_task = map_task_to_active_run(latest_task)
             if task_is_active(latest_task):
@@ -918,6 +920,7 @@ class AgentSessionFacade:
             scope=scope,
             runtime_context=runtime_context,
             initial_history_messages=initial_history_messages,
+            resolved_tool_execution=updated_tool_execution,
             stream_builder=self._build_continue_stream(
                 agent_id=agent_id,
                 session_id=session_id,
@@ -1164,6 +1167,7 @@ class AgentSessionFacade:
                 session_metadata=session_metadata,
                 agent_config=agent_config,
             )
+            requirement = _build_run_requirement_from_tool_execution_payload(updated_tool_execution)
             await self._set_existing_run_status(
                 session_id=session_id,
                 agent_id=agent_id,
@@ -1171,7 +1175,11 @@ class AgentSessionFacade:
                 status=RunStatus.running,
                 content=None,
             )
-            requirement = _build_run_requirement_from_tool_execution_payload(updated_tool_execution)
+            await self._sync_agno_requirement_decision_before_continue(
+                session_detail=session_detail,
+                run_id=run_id,
+                requirement=requirement,
+            )
             continue_run_response = _prepare_team_run_output_for_agno_continue(
                 session_detail.get_run(run_id) if isinstance(session_detail, TeamSession) else None,
                 agent_id=agent_id,
@@ -1207,6 +1215,7 @@ class AgentSessionFacade:
         stream_builder,
         reserved_lock: asyncio.Lock | None = None,
         initial_history_messages: list[Any] | None = None,
+        resolved_tool_execution: dict[str, Any] | None = None,
     ) -> AsyncGenerator[AgentRunEvent, None]:
         """把 Agno 事件流重写为前端稳定消费的统一事件。"""
 
@@ -1263,6 +1272,18 @@ class AgentSessionFacade:
                         if normalized_event.event in _TERMINAL_RUN_EVENTS:
                             terminal_seen = True
                             history_tracker.flush_assistant_content(normalized_event.content)
+                            if (
+                                normalized_event.event == "run.completed"
+                                and active_run_id
+                                and resolved_tool_execution is not None
+                            ):
+                                await self._normalize_agno_completed_run_after_continue(
+                                    session_id=session_id,
+                                    agent_id=agent_id,
+                                    run_id=active_run_id,
+                                    content=normalized_event.content,
+                                    resolved_tool_execution=resolved_tool_execution,
+                                )
                             yield await self._build_context_status_event(
                                 session_id=session_id,
                                 agent_id=agent_id,
@@ -1956,7 +1977,7 @@ class AgentSessionFacade:
     ) -> AgentActiveRunItem | None:
         """当 task 误收敛到终态但 Agno 仍有 HITL requirement 时恢复暂停态。"""
 
-        if getattr(task, "status", None) == "cancelled":
+        if getattr(task, "status", None) in {"completed", "cancelled"}:
             return None
         run = session_detail.get_run(str(getattr(task, "run_id", "") or ""))
         if run is None:
@@ -2105,8 +2126,78 @@ class AgentSessionFacade:
         run.status = status
         if content is not None:
             run.content = content
+        _normalize_agno_terminal_run_payload(run, status=status)
         detail.upsert_run(run)
         await asyncio.to_thread(self._ai_db.upsert_session, detail)
+
+    async def _sync_agno_requirement_decision_before_continue(
+        self,
+        *,
+        session_detail: AgnoSessionDetail,
+        run_id: str,
+        requirement: RunRequirement,
+    ) -> None:
+        """继续前先把用户决策写回 Agno session，避免刷新读到旧暂停态。"""
+
+        run = session_detail.get_run(run_id)
+        if run is None:
+            return
+        run.status = RunStatus.running
+        run.content = None
+        _apply_resolved_requirement_to_agno_run(run, requirement=requirement)
+        session_detail.upsert_run(run)
+        await asyncio.to_thread(self._ai_db.upsert_session, session_detail)
+
+    async def _normalize_agno_completed_run_after_continue(
+        self,
+        *,
+        session_id: str,
+        agent_id: str,
+        run_id: str,
+        content: str | None,
+        resolved_tool_execution: dict[str, Any] | None,
+    ) -> None:
+        """continue 完成后规范化 Agno run，确保终态不残留未解决 HITL。"""
+
+        detail = await self._read_session_detail(session_id=session_id, agent_id=agent_id)
+        if not isinstance(detail, (AgentSession, TeamSession)):
+            return
+        run = detail.get_run(run_id)
+        if run is None:
+            return
+        tool_call_id = _coerce_str((resolved_tool_execution or {}).get("tool_call_id"))
+        fallback_result = await self._find_completed_tool_result(run_id=run_id, tool_call_id=tool_call_id)
+        run.status = RunStatus.completed
+        if content is not None:
+            run.content = content
+        _normalize_agno_terminal_run_payload(
+            run,
+            status=RunStatus.completed,
+            resolved_tool_execution=resolved_tool_execution,
+            fallback_tool_result=fallback_result,
+        )
+        detail.upsert_run(run)
+        await asyncio.to_thread(self._ai_db.upsert_session, detail)
+
+    async def _find_completed_tool_result(self, *, run_id: str, tool_call_id: str | None) -> Any:
+        """从 Redis 事件流中兜底读取已完成工具结果，用于修正 Agno 历史。"""
+
+        if not tool_call_id:
+            return None
+        try:
+            events = await AiAgentRunService(self._session).list_events_after(
+                run_id=run_id,
+                user_id=self._current.user.id,
+                after_sequence=0,
+            )
+        except Exception:  # noqa: BLE001
+            return None
+        for event in reversed(events):
+            if event.event != "tool.completed" or not isinstance(event.data, dict):
+                continue
+            if _coerce_str(event.data.get("tool_call_id")) == tool_call_id:
+                return event.data.get("result")
+        return None
 
     async def _mark_run_terminal(
         self,
@@ -2503,10 +2594,130 @@ def _apply_user_feedback_selections(
     return updated_tool_execution
 
 
+def _apply_resolved_requirement_to_agno_run(run: RunOutput | TeamRunOutput, *, requirement: RunRequirement) -> None:
+    """把本次 HITL 决策同步到 Agno run 的 requirement 与 tool 列表。"""
+
+    tool_execution = requirement.tool_execution
+    tool_call_id = _tool_call_id(tool_execution)
+    if not tool_call_id:
+        return
+    updated_requirements: list[Any] = []
+    replaced = False
+    for item in list(getattr(run, "requirements", None) or []):
+        if _requirement_tool_call_id(item) == tool_call_id:
+            updated_requirements.append(requirement)
+            replaced = True
+        else:
+            updated_requirements.append(item)
+    if not replaced:
+        updated_requirements.append(requirement)
+    run.requirements = updated_requirements
+
+    updated_tools: list[Any] = []
+    tool_replaced = False
+    for item in list(getattr(run, "tools", None) or []):
+        if _tool_call_id(item) == tool_call_id:
+            _copy_tool_execution_state(item, tool_execution)
+            updated_tools.append(item)
+            tool_replaced = True
+        else:
+            updated_tools.append(item)
+    if not tool_replaced and tool_execution is not None:
+        updated_tools.append(tool_execution)
+    run.tools = updated_tools
+
+
+def _normalize_agno_terminal_run_payload(
+    run: RunOutput | TeamRunOutput,
+    *,
+    status: RunStatus,
+    resolved_tool_execution: dict[str, Any] | None = None,
+    fallback_tool_result: Any = None,
+) -> None:
+    """终态 run 不再携带未解决 HITL，避免后续刷新把旧动作恢复为 paused。"""
+
+    if status not in {RunStatus.completed, RunStatus.cancelled}:
+        return
+    tool_call_id = _coerce_str((resolved_tool_execution or {}).get("tool_call_id"))
+    run.requirements = []
+    for item in list(getattr(run, "tools", None) or []):
+        item_call_id = _tool_call_id(item)
+        is_target_tool = bool(tool_call_id and item_call_id == tool_call_id)
+        if is_target_tool and resolved_tool_execution is not None:
+            _copy_tool_execution_payload_state(item, resolved_tool_execution)
+        if getattr(item, "requires_confirmation", None):
+            item.requires_confirmation = False
+            if getattr(item, "confirmed", None) is None:
+                item.confirmed = status == RunStatus.completed
+        if getattr(item, "requires_user_input", None):
+            item.requires_user_input = False
+            if getattr(item, "answered", None) is not True:
+                item.answered = status == RunStatus.completed
+        if getattr(item, "external_execution_required", None) and getattr(item, "result", None) is not None:
+            item.external_execution_required = False
+        if is_target_tool and fallback_tool_result is not None and getattr(item, "result", None) is None:
+            item.result = fallback_tool_result
+
+
+def _copy_tool_execution_state(target: Any, source: Any) -> None:
+    """把 Agno ToolExecution 对象中的决策字段复制到旧对象。"""
+
+    if target is None or source is None:
+        return
+    for field_name in (
+        "confirmed",
+        "confirmation_note",
+        "requires_user_input",
+        "user_input_schema",
+        "user_feedback_schema",
+        "answered",
+        "external_execution_required",
+        "external_execution_silent",
+        "result",
+    ):
+        value = getattr(source, field_name, None)
+        if value is not None:
+            setattr(target, field_name, value)
+
+
+def _copy_tool_execution_payload_state(target: Any, source: dict[str, Any]) -> None:
+    """把前端 ToolExecution payload 中的决策字段复制到 Agno ToolExecution。"""
+
+    for field_name in (
+        "confirmed",
+        "confirmation_note",
+        "requires_user_input",
+        "user_input_schema",
+        "user_feedback_schema",
+        "answered",
+        "external_execution_required",
+        "external_execution_silent",
+        "result",
+    ):
+        if field_name in source and source[field_name] is not None:
+            setattr(target, field_name, source[field_name])
+
+
+def _requirement_tool_call_id(requirement: Any) -> str:
+    """提取 Agno RunRequirement 中的 tool_call_id。"""
+
+    return _tool_call_id(getattr(requirement, "tool_execution", None))
+
+
+def _tool_call_id(tool_execution: Any) -> str:
+    """兼容对象与 dict，提取 ToolExecution 的稳定调用 ID。"""
+
+    if isinstance(tool_execution, dict):
+        return _coerce_str(tool_execution.get("tool_call_id"))
+    return _coerce_str(getattr(tool_execution, "tool_call_id", None))
+
+
 def _build_run_requirement_from_tool_execution_payload(tool_execution: dict[str, Any]) -> RunRequirement:
     """从前端提交的 ToolExecution payload 构造 Agno requirement，并补齐 Agno 反序列化遗漏字段。"""
 
     execution = ToolExecution.from_dict(tool_execution)
+    confirmed = tool_execution.get("confirmed")
+    confirmation_note = _coerce_str(tool_execution.get("confirmation_note"))
     answered = tool_execution.get("answered")
     if answered is True or _tool_execution_payload_has_complete_user_answers(tool_execution):
         execution.answered = True
@@ -2519,7 +2730,16 @@ def _build_run_requirement_from_tool_execution_payload(tool_execution: dict[str,
         requirement = RunRequirement(tool_execution=execution)
         requirement.external_execution_result = execution.result
         return requirement
-    return RunRequirement(tool_execution=execution)
+    requirement = RunRequirement(tool_execution=execution)
+    if confirmed is True:
+        requirement.confirmation = True
+        execution.confirmed = True
+    elif confirmed is False:
+        requirement.confirmation = False
+        requirement.confirmation_note = confirmation_note
+        execution.confirmed = False
+        execution.confirmation_note = confirmation_note
+    return requirement
 
 
 def _build_user_feedback_tool_result(tool_execution: dict[str, Any]) -> str:
