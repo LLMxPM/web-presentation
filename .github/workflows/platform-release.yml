@@ -154,17 +154,10 @@ jobs:
         with:
           submodules: recursive
       - id: runtime
-        env:
-          DOCKERHUB_NAMESPACE: ${{ vars.DOCKERHUB_NAMESPACE }}
         run: |
-          if [ -z "${DOCKERHUB_NAMESPACE}" ]; then
-            echo "vars.DOCKERHUB_NAMESPACE 未配置。" >&2
-            exit 1
-          fi
-
           runtime_sha="$(git -C runtime rev-parse HEAD)"
           runtime_short_sha="${runtime_sha:0:12}"
-          runtime_image="docker.io/${DOCKERHUB_NAMESPACE}/web-runtime-vue:sha-${runtime_short_sha}"
+          runtime_image="docker.io/llmxpm/web-runtime-vue:sha-${runtime_short_sha}"
 
           echo "runtime_sha=${runtime_sha}" >> "${GITHUB_OUTPUT}"
           echo "runtime_short_sha=${runtime_short_sha}" >> "${GITHUB_OUTPUT}"
@@ -197,7 +190,7 @@ jobs:
       - id: meta
         uses: docker/metadata-action@v6
         with:
-          images: docker.io/${{ vars.DOCKERHUB_NAMESPACE }}/web-presentation
+          images: docker.io/llmxpm/web-presentation
           tags: |
             type=raw,value=${{ needs.release-meta.outputs.release_tag }}
             type=raw,value=latest,enable=${{ needs.release-meta.outputs.push_latest == 'true' }}

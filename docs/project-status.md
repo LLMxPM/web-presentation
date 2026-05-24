@@ -15,7 +15,7 @@
 - 项目页面展示配置已统一维护页面宽高、基础字号和默认描边宽度。
 - Runtime 预览与构建态通过 Backend 配置接口在线拉取 `app/icons/routes/themes`，临时预览、代码检查、组件预览和截图预览 artifact 使用 Redis 保存。
 - 项目级路由由 Editor 通过 UI 编排并以 Backend 结构化数据存储，Runtime 所需路由结构由 Backend 动态组装。
-- 根仓已具备平台单镜像 `Dockerfile`、生产 compose 模板和 GitHub Release 到 Docker Hub 的发布 workflow。
+- 根仓已具备平台单镜像 `Dockerfile`、`deploy/` simple/生产可维护/内置依赖 compose 模板和 GitHub Release 到 Docker Hub 的发布 workflow。
 
 ## 当前限制
 

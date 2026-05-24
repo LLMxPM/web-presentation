@@ -1,98 +1,75 @@
-<!-- 文件功能：项目首页文档，用于面向新成员、部署方和协作者介绍 web-presentation 的定位、能力、架构入口与文档导航。 -->
+<!-- 文件功能：项目首页文档，面向最终用户介绍 web-presentation 的产品定位、核心能力、部署入口与文档导航。 -->
 # web-presentation
 
-`web-presentation` 是一个面向 Vue 演示页面、组件资产和可视化编排场景的云端构建平台。它把 **Editor 工作台**、**Backend 控制面**、**Runtime 预览/构建引擎** 和 **AI 辅助创作能力** 组合在一起，让团队可以在浏览器中完成页面创建、组件复用、主题配置、智能体辅助编辑、实时预览和发布构建。
+`web-presentation` 是一个面向 AI 的演示文稿创作平台，用于创作 PPT、图文卡片、专题报告页、数据解读页等视觉化内容。平台把页面内容代码化，把资源、组件、主题和样式沉淀为可复用资产，再通过 Vue、Vite 和 Runtime 预览链路提供快速反馈，让 AI 更适合参与内容生成、结构调整、样式改写和多场景复用。
 
 > 配图预留：平台产品总览图或首页截图，可放置在这里。
 
-## 项目定位
+## 产品定位
 
-这个仓库不是单一前端项目，而是平台集成仓库：
+现有 PPT 制作 skill 已经覆盖了几条典型路径，证明了 AI 很适合处理演示文稿中的内容组织、视觉生成和代码化表达。
 
-- 维护 Backend、Editor、Runtime 的集成关系和接口边界。
-- 承载平台级 Docker 编排、CI/CD、测试策略和部署说明。
-- 通过 `runtime/` Git 子模块接入独立项目 `web-runtime-vue`，让 Runtime 同时保持独立演进和平台运行时形态。
-- 沉淀页面、组件、资源、主题、样式、构建产物和 AI Agent 的控制面契约。
+| 方向 | 典型产物 | 主要优势 | 常见边界 |
+| :--- | :--- | :--- | :--- |
+| HTML deck skill | 单文件 HTML 演示页 | 风格稳定、轻交付、适合演讲和封面/配图扩展 | 更偏单次文件生成，团队资产、权限、版本和引用关系通常不进入系统模型 |
+| 原生 PPTX skill | 可逐元素编辑的 `.pptx` | 保留 PowerPoint 文本、形状、图表、动画和模板复刻能力 | 重点在最终 PPTX 质量，运行时能力和跨项目资产复用不是核心 |
+| 前端 slides skill | 零依赖 HTML / Web Slides | 浏览器预览、视觉风格探索、响应式和动效表现强 | 多以本地工作流为中心，项目上下文和组件资产沉淀有限 |
+| `web-presentation` | 平台化页面、组件、资源与构建产物 | 工作空间资产复用、上下文注入、Runtime 预览构建、多用户协作和私有化部署 | 更适合长期项目和团队资产沉淀，不是追求一次性生成单个文件的最短路径 |
+
+`web-presentation` 的定位不同：它不是一次性的 PPT 生成 skill，也不是单纯的 HTML-to-PPTX 转换链路，而是面向 AI 的演示文稿创作平台。平台把资源、组件、主题、样式和字体抽象为工作空间资产，把页面内容代码化，让不同项目、不同风格、不同内容类型的演示资产可以持续沉淀和复用。AI 看到的是经过隔离和注入的项目上下文、页面上下文、资源清单、组件能力和样式约束；Runtime 负责承载 Vue/Vite 预览、构建、资源加载和基础能力，既利用前端框架的表达力，又避免运行环境细节干扰 AI 的创作任务。
 
 ## 核心能力
 
-- **云端页面管理**：支持工作空间、项目、页面、组件、资源、主题和样式的结构化管理。
-- **实时预览链路**：Backend 生成无状态 preview artifact，Runtime 通过 Vite 插件加载远程模块并渲染 iframe 预览。
-- **Runtime Kit 契约**：页面和工作空间组件只能通过 `@runtime-kit` manifest 引用公开基础能力；公开能力使用 `<ExportName>.v<整数版本>` 文件名锁定依赖，未带 `.vN` 的路径不允许进入工作空间源码。
-- **发布构建**：Backend 调度 Runtime 生成标准化构建产物，产物由 Backend 统一托管。
-- **AI 辅助创作**：Backend 基于 Agno 构建智能体运行时，为 Editor 提供项目、页面、组件和资源相关的助手能力。
-- **容器化交付**：根仓发布单个平台镜像 `web-presentation`，Runtime 子仓库独立发布 `web-runtime-vue` 镜像。
+- **AI 原生创作**：页面内容以代码、结构化配置和工具调用契约表达，进入 LLM 更擅长理解、生成、修改和审查的领域。
+- **资产抽象复用**：工作空间沉淀资源、组件、主题、样式和字体，支持 PPT、图文卡片、报告页、展示页等不同内容形态复用同一套基础资产。
+- **快速可视反馈**：Runtime 基于 Vue 与 Vite 加载页面、组件和配置包，为 Editor 提供 iframe 预览、截图预览、组件预览和构建能力。
+- **上下文隔离与注入**：Backend 为 AI 构造当前项目、页面、组件和资源的必要上下文，让 AI 聚焦具体创作，不需要关心 Runtime 内部实现。
+- **平台化管理**：支持多用户、工作空间、项目、页面、组件、资源、主题、样式、AI 设置和构建产物的集中管理。
+- **私有化交付**：平台镜像、Runtime 镜像和 compose 模板支持在自有环境中部署，便于团队控制数据、模型凭证和发布流程。
 
-## 架构概览
+## 产品组成
 
-> 配图预留：控制面 / 数据面架构图，可展示 Browser、Gateway、Backend、PostgreSQL、Redis、Runtime 和对象存储之间的关系。
-
-| 模块 | 角色 | 主要技术 | 说明 |
-| :--- | :--- | :--- | :--- |
-| Backend | 控制面 / 数据持久化 | FastAPI、SQLAlchemy、PostgreSQL、Redis、Agno | 负责业务 API、权限、预览 artifact、构建调度、产物托管和 AI Agent 运行时 |
-| Editor | 管理工作台 | Vue 3、Vite、Pinia、Monaco Editor | 负责项目配置、页面编辑、组件管理、资源管理和预览交互 |
-| Runtime | 预览与构建引擎 | Vite Core API、Vue 3 | 负责加载 Backend 下发的预览上下文、远程模块、配置包并执行构建 |
-| Infra | 交付与运行环境 | Docker、Docker Compose、GitHub Actions | 负责本地依赖、生产编排、镜像构建和 Docker Hub 发布 |
+| 模块 | 面向用户的角色 | 说明 |
+| :--- | :--- | :--- |
+| Editor | 创作工作台 | 管理工作空间、项目、页面、组件、资源、主题和样式，并提供代码编辑、AI 侧边栏和实时预览 |
+| Backend | 平台控制面 | 负责用户、权限、数据持久化、AI Agent、预览上下文、构建任务和产物托管 |
+| Runtime | 预览与构建引擎 | 基于 Vue/Vite 渲染页面和组件，承接预览、截图、诊断和发布构建 |
+| Infra | 部署与运行环境 | 提供 Docker 镜像、compose 模板、发布流程和运行时依赖约束 |
 
 详细架构、模块边界和目标业务流程见 [平台架构说明](./docs/platform-architecture.md)。
 
-## 典型流程
+## 快速部署
 
-1. 用户在 Editor 中维护项目、页面、组件、资源、主题和样式。
-2. Editor 调用 Backend 保存业务事实，Backend 写入 PostgreSQL。
-3. 预览时 Backend 创建 preview artifact，并签发短期上下文令牌。
-4. Runtime 通过 `/__preview` 加载预览上下文、配置包和远程模块。
-5. 发布构建时 Backend 调度 Runtime 执行构建，Runtime 上传 zip 产物回 Backend。
+试部署推荐使用内置依赖的单机编排。它会拉起平台镜像、Runtime 镜像、PostgreSQL 和 Redis，适合在一台机器上快速验证完整链路。
 
-> 配图预留：预览与发布时序图，可放置在这里。
+1. 准备 Docker Engine 与 Docker Compose v2。
+2. 复制 `deploy/.env.example` 为 `deploy/.env`。
+3. 修改 `deploy/.env` 中的访问地址、默认管理员密码、数据库/Redis 密码和 `AI_SECRET_ENCRYPTION_KEY`。
+4. 在 `deploy/` 目录启动服务：
 
-## 快速开始
-
-准备本地基础服务：
-
-```powershell
-docker compose -f .\docker-compose.dev.yml up -d
+```bash
+docker compose -f docker-compose.with-deps.yml pull
+docker compose -f docker-compose.with-deps.yml up -d
 ```
 
-安装根仓测试依赖并运行常用检查：
+启动后，通过 `GATEWAY_HTTP_PORT` 对应的 HTTP 入口访问平台。生产环境、外部 PostgreSQL/Redis、HTTPS、升级和回滚见 [生产部署指南](./docs/deployment-guide.md)。
 
-```powershell
-pnpm install
-pnpm run test:backend
-pnpm run test:editor
-pnpm run test:contracts
-```
+## 当前阶段
 
-Runtime 是子项目，进入 `runtime/` 后使用它自己的脚本：
+平台已经具备登录、多用户隔离、工作空间/项目/页面管理、资源库、组件库、主题库、样式库、AI Agent 会话、工具确认、预览、截图、构建和容器发布的基础能力。完整资源中心、Dashboard、项目关联使用关系和 Runtime 反向回传能力仍在持续建设中。
 
-```powershell
-pnpm --dir runtime install
-pnpm --dir runtime check
-pnpm --dir runtime test
-pnpm --dir runtime build
-```
-
-更完整的本地开发、测试数据和 Redis 切换说明见 [开发与测试指南](./docs/development-guide.md)。
-
-## 容器与发布
-
-当前容器发布策略：
-
-- 根仓发布一个平台镜像：`web-presentation`，同一镜像可分别启动 Backend 容器和 Editor Gateway 容器。
-- Runtime 子仓库发布独立镜像：`web-runtime-vue`，并提供 `sha-<12位提交>` 标签供平台 Release 校验。
-- 平台 Release 会先跑质量门禁，再检查当前 `runtime` 子模块 SHA 对应的 Runtime 镜像是否存在，最后推送 Docker Hub。
-
-详细 CI/CD 与生产 compose 模板见 [CI/CD 与容器部署说明](./docs/deployment-cicd.md)。
+更详细的能力清单见 [当前状态与路线](./docs/project-status.md)。
 
 ## 文档导航
 
 | 文档 | 内容 |
 | :--- | :--- |
 | [平台架构说明](./docs/platform-architecture.md) | 平台目标、模块职责、目标流程和 Runtime 子模块协作 |
-| [开发与测试指南](./docs/development-guide.md) | 本地依赖、测试入口、测试数据和运行态维护 |
 | [当前状态与路线](./docs/project-status.md) | 已落地能力、当前限制和后续方向 |
+| [开发与测试指南](./docs/development-guide.md) | 本地依赖、测试入口、测试数据和运行态维护 |
 | [测试治理说明](./docs/testing-strategy.md) | L0-L3 测试分层、目录归属和 CI 策略 |
-| [CI/CD 与容器部署说明](./docs/deployment-cicd.md) | 平台镜像、Runtime 镜像、Docker Hub 发布和生产 compose |
+| [生产部署指南](./docs/deployment-guide.md) | simple、生产可维护、内置依赖 compose 部署与运维 |
+| [CI/CD 与容器部署说明](./docs/deployment-cicd.md) | 平台镜像、Runtime 镜像、Docker Hub 发布和 compose 策略 |
 | [Runtime 项目说明](./runtime/README.md) | `web-runtime-vue` 子项目自身的能力、运行方式和对接文档 |
 
 ## 仓库结构
@@ -100,20 +77,14 @@ pnpm --dir runtime build
 ```text
 web-presentation/
 ├── backend/                 # Backend 控制面服务
-├── editor/                  # Editor 管理工作台
+├── editor/                  # Editor 创作工作台
 ├── runtime/                 # web-runtime-vue Git 子模块
 ├── tests/                   # 根仓契约测试与 E2E smoke
 ├── docs/                    # 平台架构、开发、部署和测试文档
+├── deploy/                  # simple、生产可维护和内置依赖 compose 模板
 ├── Dockerfile               # 平台单镜像构建入口
-├── docker-compose.dev.yml   # 本地 PostgreSQL / Redis 入口
-└── docker-compose.prod.yml  # 生产 compose 模板
+└── docker-compose.dev.yml   # 本地 PostgreSQL / Redis 入口
 ```
-
-## 当前阶段
-
-平台已经具备 Backend、Editor、Runtime、AI Agent、主题/样式/资源/组件管理和容器发布的基础能力；仍在持续补齐更完整的资源中心、Dashboard、项目关联使用关系和 Runtime 反向回传能力。
-
-更详细的能力清单见 [当前状态与路线](./docs/project-status.md)。
 
 ## License
 

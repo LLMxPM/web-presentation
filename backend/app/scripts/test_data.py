@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import asyncpg
 from sqlalchemy import select
+from sqlalchemy.engine import make_url
 
 import app.models  # noqa: F401
 from app.schemas.llm import LlmConfigCreateRequest, LlmSlotBindingUpdateRequest
@@ -25,6 +27,9 @@ from app.services.page_service import PageService
 from app.services.project_route_service import ProjectRouteService
 from app.services.project_service import ProjectService
 from app.services.workspace_service import WorkspaceService
+
+E2E_DATABASE_MARKER = "_e2e"
+POSTGRES_MAINTENANCE_DATABASE = "postgres"
 
 
 @dataclass(slots=True, frozen=True)
@@ -65,6 +70,7 @@ const title = 'Smoke Page'
 async def ensure_database_schema() -> None:
     """确保测试脚本运行前数据库表已就绪。"""
 
+    await ensure_configured_database_exists()
     engine = get_engine()
     async with engine.begin() as connection:
         await connection.run_sync(Base.metadata.create_all)
@@ -73,6 +79,8 @@ async def ensure_database_schema() -> None:
 async def reset_all_test_data() -> None:
     """重建全部业务表，供 smoke 场景在本地或 CI 中回到干净状态。"""
 
+    require_e2e_database_url()
+    await ensure_configured_database_exists()
     engine = get_engine()
     async with engine.begin() as connection:
         await connection.run_sync(Base.metadata.drop_all)
@@ -223,3 +231,78 @@ async def _ensure_mock_llm_binding(*, session, user_id: int, operator_id: int) -
             LlmSlotBindingUpdateRequest(llm_config_id=target_config.id),
             operator_id=operator_id,
         )
+
+
+def require_e2e_database_url() -> None:
+    """限制重置脚本只能作用于名称包含 _e2e 的数据库。"""
+
+    database_name = extract_database_name(get_settings().database_url)
+    if E2E_DATABASE_MARKER not in database_name:
+        raise RuntimeError(
+            f"拒绝重置非 E2E 数据库：当前数据库名为 {database_name or '<unknown>'}，"
+            f"必须包含 {E2E_DATABASE_MARKER}。"
+        )
+
+
+async def ensure_configured_database_exists() -> None:
+    """为 PostgreSQL E2E 默认库自动建库，避免 CI 初始化库名和测试库名耦合。"""
+
+    settings = get_settings()
+    url = make_url(settings.database_url)
+    if not url.drivername.startswith("postgresql"):
+        return
+
+    target_database = url.database or ""
+    if not target_database:
+        raise RuntimeError("DATABASE_URL 缺少数据库名。")
+    if E2E_DATABASE_MARKER not in target_database:
+        return
+    if target_database == POSTGRES_MAINTENANCE_DATABASE:
+        return
+    if await can_connect_to_postgres_database(url, target_database):
+        return
+
+    connection = await asyncpg.connect(**build_asyncpg_connection_kwargs(url, POSTGRES_MAINTENANCE_DATABASE))
+    try:
+        exists = await connection.fetchval("select 1 from pg_database where datname = $1", target_database)
+        if exists:
+            return
+        await connection.execute(f"create database {quote_postgres_identifier(target_database)}")
+    finally:
+        await connection.close()
+
+
+async def can_connect_to_postgres_database(url, database_name: str) -> bool:
+    """检查目标 PostgreSQL 数据库是否已经存在且可连接。"""
+
+    try:
+        connection = await asyncpg.connect(**build_asyncpg_connection_kwargs(url, database_name))
+    except asyncpg.InvalidCatalogNameError:
+        return False
+
+    await connection.close()
+    return True
+
+
+def build_asyncpg_connection_kwargs(url, database_name: str) -> dict[str, object]:
+    """从 SQLAlchemy URL 提取 asyncpg 连接参数。"""
+
+    return {
+        "user": url.username,
+        "password": url.password,
+        "host": url.host or "127.0.0.1",
+        "port": url.port or 5432,
+        "database": database_name,
+    }
+
+
+def extract_database_name(database_url: str) -> str:
+    """从 SQLAlchemy URL 中提取数据库名，供危险操作校验使用。"""
+
+    return make_url(database_url).database or ""
+
+
+def quote_postgres_identifier(value: str) -> str:
+    """转义 PostgreSQL 标识符，避免建库语句受特殊字符影响。"""
+
+    return '"' + value.replace('"', '""') + '"'
