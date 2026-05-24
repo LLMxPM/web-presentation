@@ -10,6 +10,9 @@ test('页面列表应暴露截图操作入口', async ({ page }) => {
   await loginAsAdmin(page)
   await waitForWorkspaceHome(page)
   await openFirstProject(page)
-  await expect(page.locator('[data-testid="batch-refresh-page-screenshots"]')).toBeVisible()
-  await expect(page.locator('[data-testid="page-card-screenshot"]').first()).toBeVisible()
+  await expect(page.locator('[data-testid="batch-refresh-routed-page-screenshots"]')).toBeVisible()
+
+  const firstCard = page.locator('[data-testid="page-card"]').first()
+  await firstCard.hover()
+  await expect(firstCard.locator('[data-testid="page-card-screenshot"]')).toBeVisible()
 })
