@@ -3,6 +3,7 @@
  */
 import { spawnPersistentBackground, waitForHttpReady } from './process-utils.mjs'
 import { resolveServiceUrls } from './service-env.mjs'
+import path from 'node:path'
 
 const urls = resolveServiceUrls()
 
@@ -16,8 +17,8 @@ async function main() {
     url: urls.backend,
     shouldStart: shouldStartBackend,
     start: () =>
-      spawnPersistentBackground('uv', ['run', '--project', 'backend', 'uvicorn', 'app.main:app', '--host', '127.0.0.1', '--port', '8000'], {
-        cwd: process.cwd(),
+      spawnPersistentBackground('uv', ['run', 'uvicorn', 'app.main:app', '--host', '127.0.0.1', '--port', '8000'], {
+        cwd: path.join(process.cwd(), 'backend'),
         env: {
           ...process.env,
           AI_TEST_MODE: process.env.AI_TEST_MODE || 'mock',
