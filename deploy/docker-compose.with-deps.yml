@@ -1,13 +1,22 @@
-# 文件功能：提供 simple 全量单机部署编排模板，随应用一起启动 PostgreSQL 与 Redis。
+# 文件功能：提供内置 PostgreSQL/Redis 的简化单机部署编排模板，环境变量直接在本文件内配置。
+
+# 使用前请至少修改：
+# - POSTGRES_PASSWORD、REDIS_PASSWORD 及 platform 中对应连接串密码。
+# - BACKEND_PUBLIC_BASE_URL、RUNTIME_PUBLIC_BASE_URL、CORS_ORIGINS：改为实际访问入口。
+# - DEFAULT_ADMIN_PASSWORD、AI_SECRET_ENCRYPTION_KEY：正式部署前必须替换。
+# - AI_SECRET_ENCRYPTION_KEY 必须是 Fernet 密钥：32 字节随机值的 URL-safe base64 编码，
+#   通常长度为 44 个字符并以 = 结尾；可用命令生成：
+#   python -c "import base64, os; print(base64.urlsafe_b64encode(os.urandom(32)).decode())"
+#   该值用于加密大模型api key，部署后必须长期保存，更换会导致已有密文无法解密。
 
 services:
   postgres:
     image: postgres:16
     restart: unless-stopped
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:-web_presentation}
-      POSTGRES_USER: ${POSTGRES_USER:-wp_user}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?请设置 POSTGRES_PASSWORD}
+      POSTGRES_DB: "web_presentation"
+      POSTGRES_USER: "wp_user"
+      POSTGRES_PASSWORD: "change-postgres-password"
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
@@ -21,7 +30,7 @@ services:
     restart: unless-stopped
     command: ["sh", "-c", "redis-server --appendonly yes --requirepass \"$${REDIS_PASSWORD}\""]
     environment:
-      REDIS_PASSWORD: ${REDIS_PASSWORD:?请设置 REDIS_PASSWORD}
+      REDIS_PASSWORD: "change-redis-password"
     volumes:
       - redis-data:/data
     healthcheck:
@@ -35,36 +44,18 @@ services:
     restart: unless-stopped
     working_dir: /app/backend
     environment:
-      APP_RELOAD: "false"
-      APP_TIMEZONE: ${APP_TIMEZONE:-Asia/Shanghai}
-      DATABASE_URL: "postgresql+asyncpg://${POSTGRES_USER:-wp_user}:${POSTGRES_PASSWORD:?请设置 POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-web_presentation}"
-      REDIS_URL: "redis://:${REDIS_PASSWORD:?请设置 REDIS_PASSWORD}@redis:6379/0"
-      REDIS_KEY_PREFIX: ${REDIS_KEY_PREFIX:-web_presentation}
-      BACKEND_PUBLIC_BASE_URL: ${BACKEND_PUBLIC_BASE_URL:-${PUBLIC_BASE_URL}}
-      RUNTIME_BASE_URL: ${RUNTIME_BASE_URL:-http://runtime:7373}
-      RUNTIME_PUBLIC_BASE_URL: ${RUNTIME_PUBLIC_BASE_URL:-${PUBLIC_BASE_URL}/runtime}
-      RUNTIME_SERVICE_TOKEN_AUDIENCE: ${RUNTIME_SERVICE_TOKEN_AUDIENCE:-runtime-backend}
-      SESSION_SECURE: ${SESSION_SECURE:-true}
-      CORS_ORIGINS: ${CORS_ORIGINS:-["${PUBLIC_BASE_URL}"]}
-      DEFAULT_ADMIN_USERNAME: ${DEFAULT_ADMIN_USERNAME:-admin}
-      DEFAULT_ADMIN_PASSWORD: ${DEFAULT_ADMIN_PASSWORD:?请设置 DEFAULT_ADMIN_PASSWORD}
-      DEFAULT_ADMIN_DISPLAY_NAME: ${DEFAULT_ADMIN_DISPLAY_NAME:-平台系统管理员}
-      AI_ENABLED: ${AI_ENABLED:-true}
-      AI_SECRET_ENCRYPTION_KEY: ${AI_SECRET_ENCRYPTION_KEY:?请设置 AI_SECRET_ENCRYPTION_KEY}
-      PLATFORM_SIMPLE_RUN_MIGRATIONS: ${PLATFORM_SIMPLE_RUN_MIGRATIONS:-true}
-      PAGE_SCREENSHOT_LOCAL_ROOT: /app/backend/data
-      ASSET_STORAGE_DRIVER: ${ASSET_STORAGE_DRIVER:-local}
-      S3_ENDPOINT_URL: ${S3_ENDPOINT_URL:-}
-      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-}
-      S3_SECRET_KEY: ${S3_SECRET_KEY:-}
-      S3_BUCKET: ${S3_BUCKET:-}
-      S3_PUBLIC_BUCKET: ${S3_PUBLIC_BUCKET:-}
-      S3_REGION: ${S3_REGION:-}
-      S3_PUBLIC_BASE_URL: ${S3_PUBLIC_BASE_URL:-}
+      DATABASE_URL: "postgresql+asyncpg://wp_user:change-postgres-password@postgres:5432/web_presentation"
+      REDIS_URL: "redis://:change-redis-password@redis:6379/0"
+      BACKEND_PUBLIC_BASE_URL: "http://127.0.0.1:8080"
+      RUNTIME_BASE_URL: "http://runtime:7373"
+      RUNTIME_PUBLIC_BASE_URL: "http://127.0.0.1:8080/runtime"
+      CORS_ORIGINS: '["http://127.0.0.1:8080"]'
+      DEFAULT_ADMIN_PASSWORD: "change-admin-password"
+      AI_SECRET_ENCRYPTION_KEY: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
     volumes:
       - backend-data:/app/backend/data
     ports:
-      - "${GATEWAY_HTTP_PORT:-80}:80"
+      - "8080:80"
     expose:
       - "8000"
     extra_hosts:
@@ -92,14 +83,8 @@ services:
     image: llmxpm/web-runtime-vue:latest
     restart: unless-stopped
     environment:
-      RUNTIME_PREVIEW_JWKS_URL: ${RUNTIME_PREVIEW_JWKS_URL:-http://backend:8000/.well-known/jwks.json}
-      RUNTIME_PREVIEW_TOKEN_AUDIENCE: ${RUNTIME_PREVIEW_TOKEN_AUDIENCE:-runtime-preview}
-      RUNTIME_BUILD_TOKEN_AUDIENCE: ${RUNTIME_BUILD_TOKEN_AUDIENCE:-runtime-build}
-      RUNTIME_DIAGNOSTICS_TOKEN_AUDIENCE: ${RUNTIME_DIAGNOSTICS_TOKEN_AUDIENCE:-runtime-diagnostics}
-      RUNTIME_BACKEND_API_BASE_URL: ${RUNTIME_BACKEND_API_BASE_URL:-http://backend:8000}
-      RUNTIME_SERVER_HOST: ${RUNTIME_SERVER_HOST:-0.0.0.0}
-      RUNTIME_SERVER_PORT: ${RUNTIME_SERVER_PORT:-7373}
-      RUNTIME_STANDALONE_PREVIEW_ENABLED: ${RUNTIME_STANDALONE_PREVIEW_ENABLED:-false}
+      RUNTIME_PREVIEW_JWKS_URL: "http://backend:8000/.well-known/jwks.json"
+      RUNTIME_BACKEND_API_BASE_URL: "http://backend:8000"
     expose:
       - "7373"
     healthcheck:

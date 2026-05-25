@@ -27,7 +27,7 @@
 推荐直接在仓库根目录启动开发数据库：
 
 ```powershell
-docker compose -f ..\docker-compose.dev.yml up -d
+docker compose -f .\docker-compose.dev.yml up -d
 ```
 
 平台测试分层、目录约定和 CI 规则见：

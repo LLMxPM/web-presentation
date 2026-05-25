@@ -43,16 +43,15 @@
 试部署推荐使用内置依赖的单机编排。它会拉起平台镜像、Runtime 镜像、PostgreSQL 和 Redis，适合在一台机器上快速验证完整链路。
 
 1. 准备 Docker Engine 与 Docker Compose v2。
-2. 复制 `deploy/.env.example` 为 `deploy/.env`。
-3. 修改 `deploy/.env` 中的访问地址、默认管理员密码、数据库/Redis 密码和 `AI_SECRET_ENCRYPTION_KEY`。
-4. 在 `deploy/` 目录启动服务：
+2. 打开 `deploy/docker-compose.with-deps.yml`，修改文件顶部注释列出的密码、访问地址和 `AI_SECRET_ENCRYPTION_KEY`。
+3. 在 `deploy/` 目录启动服务：
 
 ```bash
 docker compose -f docker-compose.with-deps.yml pull
 docker compose -f docker-compose.with-deps.yml up -d
 ```
 
-启动后，通过 `GATEWAY_HTTP_PORT` 对应的 HTTP 入口访问平台。生产环境、外部 PostgreSQL/Redis、HTTPS、升级和回滚见 [生产部署指南](./docs/deployment-guide.md)。
+默认启动后访问 `http://127.0.0.1:8080`。外部 PostgreSQL/Redis、production env 版、HTTPS、升级和回滚见 [生产部署指南](./docs/deployment-guide.md)。
 
 ## 当前阶段
 
@@ -68,7 +67,7 @@ docker compose -f docker-compose.with-deps.yml up -d
 | [当前状态与路线](./docs/project-status.md) | 已落地能力、当前限制和后续方向 |
 | [开发与测试指南](./docs/development-guide.md) | 本地依赖、测试入口、测试数据和运行态维护 |
 | [测试治理说明](./docs/testing-strategy.md) | L0-L3 测试分层、目录归属和 CI 策略 |
-| [生产部署指南](./docs/deployment-guide.md) | simple、生产可维护、内置依赖 compose 部署与运维 |
+| [生产部署指南](./docs/deployment-guide.md) | 外部依赖简化版、内置依赖简化版、production env 版 compose 部署与运维 |
 | [CI/CD 与容器部署说明](./docs/deployment-cicd.md) | 平台镜像、Runtime 镜像、Docker Hub 发布和 compose 策略 |
 | [Runtime 项目说明](./runtime/README.md) | `web-runtime-vue` 子项目自身的能力、运行方式和对接文档 |
 
@@ -81,9 +80,9 @@ web-presentation/
 ├── runtime/                 # web-runtime-vue Git 子模块
 ├── tests/                   # 根仓契约测试与 E2E smoke
 ├── docs/                    # 平台架构、开发、部署和测试文档
-├── deploy/                  # simple、生产可维护和内置依赖 compose 模板
+├── deploy/                  # 外部依赖简化版、内置依赖简化版和 production env 版 compose 模板
 ├── Dockerfile               # 平台单镜像构建入口
-└── docker-compose.dev.yml   # 本地 PostgreSQL / Redis 入口
+└── docker-compose.dev.yml   # 本地开发/测试 PostgreSQL 与 Redis 入口，非部署模板
 ```
 
 ## License
