@@ -39,29 +39,30 @@ Pre-release 只推送版本标签，不移动 `latest`。
 
 部署模板集中在 `deploy/` 目录：
 
-- `deploy/docker-compose.yml`：默认 simple 编排，使用已有 PostgreSQL 与 Redis，`platform` 容器同时运行 Backend 与 Gateway。
-- `deploy/docker-compose.production.yml`：生产可维护编排，拆分迁移、Backend、Runtime 与 Gateway。
-- `deploy/docker-compose.with-deps.yml`：simple 全量单机编排，随应用一起启动 PostgreSQL 与 Redis。
-- `deploy/.env.example`：环境变量示例。
+- `deploy/docker-compose.yml`：外部 PostgreSQL/Redis 简化版，环境变量直接写在 compose 内。
+- `deploy/docker-compose.with-deps.yml`：内置 PostgreSQL/Redis 简化版，随应用一起启动 PostgreSQL 与 Redis，环境变量直接写在 compose 内。
+- `deploy/docker-compose.production.yml`：production env 版，拆分迁移、Backend、Runtime 与 Gateway，并通过 `env_file: .env` 读取环境变量。
+- `deploy/.env.example`：仅供 production env 版复制为 `deploy/.env` 使用。
+
+内置依赖简化版启动方式：
 
 ```bash
-cp deploy/.env.example deploy/.env
 cd deploy
-docker compose config
-docker compose pull
-docker compose up -d
+docker compose -f docker-compose.with-deps.yml config
+docker compose -f docker-compose.with-deps.yml pull
+docker compose -f docker-compose.with-deps.yml up -d
 ```
 
-如需使用生产可维护编排，将命令中的 compose 文件改为 `docker-compose.production.yml`；如需内置 PostgreSQL 与 Redis，改为 `docker-compose.with-deps.yml`。完整部署、升级、回滚和运维检查流程见 [生产部署指南](./deployment-guide.md)。
+外部依赖简化版使用默认 `docker-compose.yml`；production env 版需要先复制 `deploy/.env.example` 为 `deploy/.env`，再将命令中的 compose 文件改为 `docker-compose.production.yml`。完整部署、升级、回滚和运维检查流程见 [生产部署指南](./deployment-guide.md)。
 
-正式部署前必须替换数据库密码、默认管理员密码和 `AI_SECRET_ENCRYPTION_KEY`；Fernet 兼容密钥可用 `python -c "import base64, os; print(base64.urlsafe_b64encode(os.urandom(32)).decode())"` 生成。
+正式部署前必须替换数据库密码、默认管理员密码和 `AI_SECRET_ENCRYPTION_KEY`。`AI_SECRET_ENCRYPTION_KEY` 必须是 Fernet 密钥，即 32 字节随机值的 URL-safe base64 编码，通常长度为 44 个字符并以 `=` 结尾；可用 `python -c "import base64, os; print(base64.urlsafe_b64encode(os.urandom(32)).decode())"` 生成。部署后应长期保存，随意更换会导致已有用户模型凭证密文无法解密。
 
-默认 simple 编排中，同一个平台镜像只启动一个长期运行的 `platform` 容器。该容器入口脚本会先执行 `alembic upgrade head`，再同时启动：
+两个简化版中，同一个平台镜像只启动一个长期运行的 `platform` 容器。该容器入口脚本会先执行 `alembic upgrade head`，再同时启动：
 
 - `uvicorn app.main:app --host 0.0.0.0 --port 8000`
 - `nginx -g 'daemon off;'`
 
-生产可维护编排中，同一个平台镜像会拆分为三个容器：
+production env 版中，同一个平台镜像会拆分为三个容器：
 
 - `backend-migrate`：执行 `alembic upgrade head`
 - `backend`：执行 `uvicorn app.main:app --host 0.0.0.0 --port 8000`
@@ -71,7 +72,7 @@ compose 默认跟随 `latest`。如果需要严格锁定 Runtime 与平台版本
 
 ## 关键访问关系
 
-- 浏览器访问默认 simple 编排的 `platform:80`，或生产可维护编排的 `gateway:80`。
+- 浏览器访问简化版的 `platform:80`，或 production env 版的 `gateway:80`。
 - 平台 Nginx 代理 `/api`、`/public`、`/build-artifacts`、`/preview`、`/media` 到 `backend:8000`。
 - 平台 Nginx 代理 `/runtime/` 到 `runtime:7373`，并去掉 `/runtime/` 前缀。
 - Backend 通过 `RUNTIME_BASE_URL=http://runtime:7373` 访问 Runtime 内网服务。

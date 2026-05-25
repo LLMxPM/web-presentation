@@ -1,44 +1,23 @@
-# 文件功能：提供生产可维护环境应用容器编排模板，拆分迁移、Backend、Runtime 与 Gateway 以便独立观测和重启。
+# 文件功能：提供链接 deploy/.env 的生产可维护编排模板，拆分迁移、Backend、Runtime 与 Gateway 以便独立观测和重启。
+
+x-production-env: &production-env
+  env_file:
+    - .env
 
 services:
   backend-migrate:
+    <<: *production-env
     image: llmxpm/web-presentation:latest
     restart: "no"
     working_dir: /app/backend
     command: ["alembic", "upgrade", "head"]
-    environment: &backend-env
-      APP_RELOAD: "false"
-      APP_TIMEZONE: ${APP_TIMEZONE:-Asia/Shanghai}
-      DATABASE_URL: ${DATABASE_URL:?请设置 DATABASE_URL}
-      REDIS_URL: ${REDIS_URL:?请设置 REDIS_URL}
-      REDIS_KEY_PREFIX: ${REDIS_KEY_PREFIX:-web_presentation}
-      BACKEND_PUBLIC_BASE_URL: ${BACKEND_PUBLIC_BASE_URL:-${PUBLIC_BASE_URL}}
-      RUNTIME_BASE_URL: ${RUNTIME_BASE_URL:-http://runtime:7373}
-      RUNTIME_PUBLIC_BASE_URL: ${RUNTIME_PUBLIC_BASE_URL:-${PUBLIC_BASE_URL}/runtime}
-      RUNTIME_SERVICE_TOKEN_AUDIENCE: ${RUNTIME_SERVICE_TOKEN_AUDIENCE:-runtime-backend}
-      SESSION_SECURE: ${SESSION_SECURE:-true}
-      CORS_ORIGINS: ${CORS_ORIGINS:-["${PUBLIC_BASE_URL}"]}
-      DEFAULT_ADMIN_USERNAME: ${DEFAULT_ADMIN_USERNAME:-admin}
-      DEFAULT_ADMIN_PASSWORD: ${DEFAULT_ADMIN_PASSWORD:?请设置 DEFAULT_ADMIN_PASSWORD}
-      DEFAULT_ADMIN_DISPLAY_NAME: ${DEFAULT_ADMIN_DISPLAY_NAME:-平台系统管理员}
-      AI_ENABLED: ${AI_ENABLED:-true}
-      AI_SECRET_ENCRYPTION_KEY: ${AI_SECRET_ENCRYPTION_KEY:?请设置 AI_SECRET_ENCRYPTION_KEY}
-      PAGE_SCREENSHOT_LOCAL_ROOT: /app/backend/data
-      ASSET_STORAGE_DRIVER: ${ASSET_STORAGE_DRIVER:-local}
-      S3_ENDPOINT_URL: ${S3_ENDPOINT_URL:-}
-      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-}
-      S3_SECRET_KEY: ${S3_SECRET_KEY:-}
-      S3_BUCKET: ${S3_BUCKET:-}
-      S3_PUBLIC_BUCKET: ${S3_PUBLIC_BUCKET:-}
-      S3_REGION: ${S3_REGION:-}
-      S3_PUBLIC_BASE_URL: ${S3_PUBLIC_BASE_URL:-}
 
   backend:
+    <<: *production-env
     image: llmxpm/web-presentation:latest
     restart: unless-stopped
     working_dir: /app/backend
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
-    environment: *backend-env
     volumes:
       - backend-data:/app/backend/data
     expose:
@@ -53,17 +32,9 @@ services:
       retries: 5
 
   runtime:
+    <<: *production-env
     image: llmxpm/web-runtime-vue:latest
     restart: unless-stopped
-    environment:
-      RUNTIME_PREVIEW_JWKS_URL: ${RUNTIME_PREVIEW_JWKS_URL:-http://backend:8000/.well-known/jwks.json}
-      RUNTIME_PREVIEW_TOKEN_AUDIENCE: ${RUNTIME_PREVIEW_TOKEN_AUDIENCE:-runtime-preview}
-      RUNTIME_BUILD_TOKEN_AUDIENCE: ${RUNTIME_BUILD_TOKEN_AUDIENCE:-runtime-build}
-      RUNTIME_DIAGNOSTICS_TOKEN_AUDIENCE: ${RUNTIME_DIAGNOSTICS_TOKEN_AUDIENCE:-runtime-diagnostics}
-      RUNTIME_BACKEND_API_BASE_URL: ${RUNTIME_BACKEND_API_BASE_URL:-http://backend:8000}
-      RUNTIME_SERVER_HOST: ${RUNTIME_SERVER_HOST:-0.0.0.0}
-      RUNTIME_SERVER_PORT: ${RUNTIME_SERVER_PORT:-7373}
-      RUNTIME_STANDALONE_PREVIEW_ENABLED: ${RUNTIME_STANDALONE_PREVIEW_ENABLED:-false}
     expose:
       - "7373"
     depends_on:
@@ -84,7 +55,7 @@ services:
     restart: unless-stopped
     command: ["nginx", "-g", "daemon off;"]
     ports:
-      - "${GATEWAY_HTTP_PORT:-80}:80"
+      - "80:80"
     depends_on:
       backend:
         condition: service_healthy
