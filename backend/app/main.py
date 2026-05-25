@@ -1,5 +1,6 @@
 """文件功能：定义 FastAPI 应用入口、生命周期和全局异常处理。"""
 
+import logging
 from contextlib import asynccontextmanager
 
 import uvicorn
@@ -7,6 +8,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.ai.agent_factory import AIAgentFactory
 from app.ai.db import build_agno_db
@@ -16,6 +18,11 @@ from app.api.router import api_router
 from app.api.routes import build_artifacts, public_assets, internal_runtime, runtime_configs, well_known, preview
 from app.core.config import get_settings
 from app.core.exceptions import AppException
+from app.db.errors import (
+    DatabaseConnectivityError,
+    format_database_connectivity_error,
+    is_database_connectivity_error,
+)
 from app.db.session import get_session_factory
 from app.services.bootstrap_service import BootstrapService
 from app.services.ai_agent_run_service import recover_ai_agent_runs_on_startup
@@ -24,17 +31,25 @@ from app.services.project_build_service import recover_interrupted_build_jobs_on
 from app.services.redis_runtime_client import ensure_redis_runtime_available
 
 
+logger = logging.getLogger(__name__)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """应用启动时校验数据库、Redis 运行态并初始化默认管理员。"""
 
-    session_factory = get_session_factory()
-    await BootstrapService(session_factory).ensure_default_admin()
-    ensure_redis_runtime_available()
-    await recover_interrupted_build_jobs_on_startup(session_factory)
-    ai_db = getattr(app.state, "ai_db", None)
-    if getattr(app.state, "ai_run_manager", None) is not None:
-        await recover_ai_agent_runs_on_startup(session_factory, ai_db=ai_db)
+    try:
+        session_factory = get_session_factory()
+        await BootstrapService(session_factory).ensure_default_admin()
+        ensure_redis_runtime_available()
+        await recover_interrupted_build_jobs_on_startup(session_factory)
+        ai_db = getattr(app.state, "ai_db", None)
+        if getattr(app.state, "ai_run_manager", None) is not None:
+            await recover_ai_agent_runs_on_startup(session_factory, ai_db=ai_db)
+    except SQLAlchemyError as exc:
+        if is_database_connectivity_error(exc):
+            _raise_database_connectivity_error(exc, phase="Backend 启动时")
+        raise
     yield
 
 
@@ -77,6 +92,17 @@ def create_app() -> FastAPI:
             content=content,
         )
 
+    @app.exception_handler(SQLAlchemyError)
+    async def handle_sqlalchemy_exception(_: Request, exc: SQLAlchemyError) -> JSONResponse:
+        if is_database_connectivity_error(exc):
+            message = format_database_connectivity_error(exc, settings.database_url, phase="Backend 请求时")
+            logger.error("%s", message)
+            return JSONResponse(
+                status_code=503,
+                content={"code": "DATABASE_UNAVAILABLE", "message": "数据库连接不可用，请稍后重试。"},
+            )
+        raise exc
+
     return app
 
 
@@ -97,6 +123,14 @@ def _mount_ai_runtime(app: FastAPI) -> None:
     app.state.ai_registry = registry
     app.state.ai_db = agno_db
     app.state.ai_run_manager = AgentBackgroundRunManager(session_factory=get_session_factory())
+
+
+def _raise_database_connectivity_error(exc: SQLAlchemyError, *, phase: str) -> None:
+    """将底层连库异常压缩为一条安全日志，并阻止原始调用栈继续向外展示。"""
+
+    message = format_database_connectivity_error(exc, get_settings().database_url, phase=phase)
+    logger.error("%s", message)
+    raise DatabaseConnectivityError(message) from None
 
 
 app = create_app()

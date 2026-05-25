@@ -44,6 +44,9 @@ services:
       default:
         aliases:
           - backend
+    depends_on:
+      runtime:
+        condition: service_healthy
     healthcheck:
       test:
         - CMD-SHELL
@@ -66,9 +69,6 @@ services:
       RUNTIME_STANDALONE_PREVIEW_ENABLED: ${RUNTIME_STANDALONE_PREVIEW_ENABLED:-false}
     expose:
       - "7373"
-    depends_on:
-      platform:
-        condition: service_healthy
     healthcheck:
       test:
         - CMD

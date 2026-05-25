@@ -23,6 +23,7 @@ class AppSettings(BaseSettings):
     app_reload: bool = True
     app_timezone: str = "Asia/Shanghai"
     database_url: str = "postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/web_presentation"
+    database_connect_timeout_seconds: float = 10.0
     default_admin_username: str = "admin"
     default_admin_password: str = "Admin123456"
     default_admin_display_name: str = "平台系统管理员"
@@ -96,6 +97,15 @@ class AppSettings(BaseSettings):
             raise ValueError(f"APP_TIMEZONE 配置无效：{normalized}") from exc
 
         return normalized
+
+    @field_validator("database_connect_timeout_seconds")
+    @classmethod
+    def validate_database_connect_timeout_seconds(cls, value: float) -> float:
+        """校验数据库连接超时时间有效，避免启动期长时间卡在网络探测。"""
+
+        if value <= 0:
+            raise ValueError("数据库连接超时时间必须大于 0。")
+        return value
 
     @field_validator("asset_storage_driver")
     @classmethod
