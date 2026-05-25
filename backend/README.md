@@ -19,6 +19,11 @@
 3. 配置 Runtime 内网访问地址与共享密钥
 4. 使用 `uv` 安装依赖并初始化虚拟环境
 
+数据库连接相关环境变量：
+
+- `DATABASE_URL`：Backend 主数据库连接串
+- `DATABASE_CONNECT_TIMEOUT_SECONDS`：数据库连接超时时间（秒），用于启动期和请求期快速暴露连库故障，默认 `10`
+
 推荐直接在仓库根目录启动开发数据库：
 
 ```powershell

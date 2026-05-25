@@ -274,7 +274,7 @@ class AiLlmService:
             raise AppException(
                 status_code=409,
                 code="AI_LLM_SLOT_UNBOUND",
-                detail="当前智能体槽位尚未绑定可用的大模型配置。",
+                detail="当前智能体未绑定模型，请前往AI设置绑定后重试。",
             )
         if binding.llm_config.status != RecordStatus.ACTIVE.value:
             raise AppException(
