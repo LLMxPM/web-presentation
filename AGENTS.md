@@ -45,7 +45,7 @@ Backend 是平台控制面，负责用户、权限、工作空间、项目、页
 - 新增 Python 代码时按 `api/routes`、`schemas`、`models`、`repositories`、`services`、`ai` 等现有分层放置，不要把路由、模型、仓储和业务逻辑写进同一个文件。
 - 新增或调整接口契约时，先明确路径、入参、出参、权限和错误语义，再联动 Editor、Runtime 或测试。
 - 涉及资源、组件、页面源码和 previewSchema 的导入能力时，必须经过 Backend 侧边界校验。
-- Backend 默认项目配置模板由 `backend/app/config_templates/` 自身维护；不要在 Backend 运行时代码中直接读取 `runtime/public/config/`。Runtime 自带的 `public/config/*.config.yaml` 仅作为 Runtime 独立运行和本地 fixture 使用，两侧同步由契约测试约束。
+- Backend 默认项目配置模板由 `backend/app/config_templates/` 自身维护；不要在 Backend 运行时代码中直接读取 `runtime/public/config/`。Runtime 自带的 `public/config/*.config.yaml` 仅作为 Runtime 独立运行和本地 fixture 使用，根仓契约测试只约束两侧模板入口和必要结构。
 - 涉及 Agno 新特性或不确定用法时，先查阅 `https://docs.agno.com/introduction` 再确定实现方式。
 
 ### backend/app/ai
