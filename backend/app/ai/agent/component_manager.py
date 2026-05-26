@@ -53,6 +53,7 @@ def build_component_manager_agent(
         max_tool_calls_from_history=max_tool_calls_from_history,
         enable_session_summaries=enable_session_summaries,
         add_session_summary_to_context=add_session_summary_to_context,
+        store_events=True,
         markdown=True,
         instructions=build_effective_instructions(catalog, agent_config),
         additional_context=build_scope_context_text(runtime_context),

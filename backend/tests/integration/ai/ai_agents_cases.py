@@ -12,11 +12,11 @@ from httpx import AsyncClient
 from agno.db.base import SessionType
 from agno.models.message import Message
 from agno.models.response import ToolExecution
-from agno.run.agent import RunCompletedEvent, RunContentEvent, RunOutput
+from agno.run.agent import RunCompletedEvent, RunContentEvent, RunEvent, RunOutput
 from agno.run import RunContext
 from agno.run.base import RunStatus
 from agno.run.requirement import RunRequirement
-from agno.run.team import TeamRunOutput
+from agno.run.team import TeamRunEvent, TeamRunOutput
 from agno.session.agent import AgentSession
 from agno.session.summary import SessionSummary
 from agno.session.team import TeamSession
@@ -764,6 +764,8 @@ async def test_component_and_coordinator_agents_should_register_expected_tools()
         ),
     )
     component_tools = {tool.name: tool for tool in component_agent.tools}
+    assert component_agent.store_events is True
+    assert component_agent.events_to_skip == [RunEvent.run_content]
     assert "list_runtime_kit_capabilities" in component_tools
     assert "get_runtime_kit_capability" in component_tools
     assert "list_resource_assets" in component_tools
@@ -798,7 +800,15 @@ async def test_component_and_coordinator_agents_should_register_expected_tools()
         ),
     )
     assert coordinator.mode == TeamMode.coordinate
+    assert coordinator.store_events is True
+    assert coordinator.events_to_skip == [
+        RunEvent.run_content,
+        TeamRunEvent.run_content,
+        TeamRunEvent.run_intermediate_content,
+    ]
     assert {member.id for member in coordinator.members} == {COMPONENT_MANAGER_AGENT_ID, RESOURCE_MANAGER_AGENT_ID}
+    assert all(member.store_events is True for member in coordinator.members)
+    assert all(member.events_to_skip == [RunEvent.run_content] for member in coordinator.members)
     coordinator_tools = {tool.name: tool for tool in coordinator.tools}
     coordinator_tool_names = set(coordinator_tools)
     assert "get_page_content" in coordinator_tool_names
@@ -854,6 +864,8 @@ async def test_component_and_coordinator_agents_should_register_expected_tools()
         ),
     )
     resource_tools = {tool.name: tool for tool in resource_agent.tools}
+    assert resource_agent.store_events is True
+    assert resource_agent.events_to_skip == [RunEvent.run_content]
     assert "list_resource_assets" in resource_tools
     assert "preview_resource_references" not in resource_tools
     assert "create_resource_asset" in resource_tools
