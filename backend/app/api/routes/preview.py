@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+import logging
 from typing import Annotated
 
 import httpx
@@ -13,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.dependencies import get_current_user
 from app.core.config import get_settings
 from app.core.exceptions import AppException
+from app.core.logging_config import get_current_request_id
 from app.db.session import get_db_session
 from app.schemas.release import PreviewArtifactCreateRequest, PreviewArtifactResponse
 from app.services.auth_service import AuthContext
@@ -23,6 +25,7 @@ from app.services.token_service import TokenService
 router_admin = APIRouter()
 router_public = APIRouter()
 RUNTIME_SERVICE_TOKEN_HEADER = "x-runtime-service-token"
+logger = logging.getLogger(__name__)
 
 
 @router_admin.post("/{project_id}/preview-artifacts", response_model=PreviewArtifactResponse, response_model_exclude_none=True)
@@ -77,14 +80,21 @@ async def _proxy_runtime_preview(request: Request, preview_token: str, runtime_s
     headers["x-runtime-preview-context"] = preview_token
     headers["x-runtime-public-base-url"] = runtime_public_base_url
     headers[RUNTIME_SERVICE_TOKEN_HEADER] = runtime_service_token
+    headers["X-Request-ID"] = get_current_request_id()
 
     try:
         async with httpx.AsyncClient(timeout=settings.runtime_request_timeout_seconds) as client:
             response = await client.get(runtime_url, headers=headers)
     except httpx.TimeoutException as exc:
+        logger.error("Runtime 预览入口请求超时。", extra={"event": "runtime.preview.timeout"})
         raise AppException(status_code=504, code="RUNTIME_PREVIEW_TIMEOUT", detail="Runtime 预览入口请求超时。") from exc
     except httpx.RequestError as exc:
+        logger.error("Runtime 预览入口不可访问。", extra={"event": "runtime.preview.unavailable"})
         raise AppException(status_code=502, code="RUNTIME_PREVIEW_UNAVAILABLE", detail="Runtime 预览入口不可访问。") from exc
+    logger.info(
+        "Runtime 预览入口代理完成。",
+        extra={"event": "runtime.preview.proxy.completed", "status_code": response.status_code},
+    )
 
     return StreamingResponse(
         iter([response.content]),

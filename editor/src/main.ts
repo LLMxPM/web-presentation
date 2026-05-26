@@ -8,12 +8,14 @@ import { createApp } from 'vue'
 import App from './App.vue'
 import { setupUnauthorizedRedirect } from './auth/unauthorized'
 import { router } from './router'
+import { installEditorClientLogger } from './utils/client-logger'
 import './style.css'
 
 const app = createApp(App)
 
 app.use(createPinia())
 setupUnauthorizedRedirect(router)
+installEditorClientLogger(app, router)
 app.use(router)
 app.use(VueQueryPlugin, {
   queryClientConfig: {

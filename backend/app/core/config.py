@@ -22,6 +22,11 @@ class AppSettings(BaseSettings):
     app_port: int = 8000
     app_reload: bool = True
     app_timezone: str = "Asia/Shanghai"
+    log_level: str = "INFO"
+    log_format: str = "json"
+    access_log_enabled: bool = True
+    client_error_log_enabled: bool = True
+    client_error_log_max_bytes: int = 16384
     database_url: str = "postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/web_presentation"
     database_connect_timeout_seconds: float = 10.0
     default_admin_username: str = "admin"
@@ -116,6 +121,35 @@ class AppSettings(BaseSettings):
         if normalized not in {"local", "s3"}:
             raise ValueError("ASSET_STORAGE_DRIVER 当前仅支持 local, s3。")
         return normalized
+
+    @field_validator("log_level")
+    @classmethod
+    def validate_log_level(cls, value: str) -> str:
+        """校验日志等级配置，避免启动后才发现不可识别等级。"""
+
+        normalized = value.strip().upper()
+        if normalized not in {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}:
+            raise ValueError("LOG_LEVEL 仅支持 DEBUG, INFO, WARNING, ERROR, CRITICAL。")
+        return normalized
+
+    @field_validator("log_format")
+    @classmethod
+    def validate_log_format(cls, value: str) -> str:
+        """校验日志格式配置；生产默认使用 JSON Lines。"""
+
+        normalized = value.strip().lower()
+        if normalized not in {"json", "text"}:
+            raise ValueError("LOG_FORMAT 仅支持 json, text。")
+        return normalized
+
+    @field_validator("client_error_log_max_bytes")
+    @classmethod
+    def validate_client_error_log_max_bytes(cls, value: int) -> int:
+        """校验浏览器错误上报日志大小上限。"""
+
+        if value <= 0:
+            raise ValueError("CLIENT_ERROR_LOG_MAX_BYTES 必须大于 0。")
+        return value
 
     @field_validator(
         "page_screenshot_default_viewport_width",

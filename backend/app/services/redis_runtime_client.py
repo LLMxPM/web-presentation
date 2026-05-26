@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import fnmatch
+import logging
 import threading
 import time
 from collections import defaultdict
@@ -17,6 +18,9 @@ from redis.exceptions import AuthenticationError, ConnectionError, TimeoutError
 
 from app.core.config import get_settings
 from app.core.exceptions import AppException
+
+
+logger = logging.getLogger(__name__)
 
 
 class RedisRuntimeError(RuntimeError):
@@ -94,9 +98,12 @@ def ensure_redis_runtime_available() -> None:
 
     try:
         get_redis_runtime_client().ping()
+        logger.info("Redis 运行态健康检查通过。", extra={"event": "redis.runtime.health.ok"})
     except RedisRuntimeError:
+        logger.error("Redis 运行态健康检查失败。", extra={"event": "redis.runtime.health.failed"})
         raise
     except Exception as exc:  # noqa: BLE001
+        logger.error("Redis 运行态健康检查异常。", extra={"event": "redis.runtime.health.failed"})
         raise RedisRuntimeError(_format_redis_runtime_error(exc)) from exc
 
 

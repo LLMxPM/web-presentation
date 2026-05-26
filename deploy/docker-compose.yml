@@ -23,6 +23,11 @@ services:
       CORS_ORIGINS: '["http://127.0.0.1:8080"]'
       DEFAULT_ADMIN_PASSWORD: "change-admin-password"
       AI_SECRET_ENCRYPTION_KEY: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+      LOG_LEVEL: "INFO"
+      LOG_FORMAT: "json"
+      ACCESS_LOG_ENABLED: "true"
+      CLIENT_ERROR_LOG_ENABLED: "true"
+      CLIENT_ERROR_LOG_MAX_BYTES: "16384"
     volumes:
       - backend-data:/app/backend/data
     ports:
@@ -52,6 +57,9 @@ services:
     environment:
       RUNTIME_PREVIEW_JWKS_URL: "http://backend:8000/.well-known/jwks.json"
       RUNTIME_BACKEND_API_BASE_URL: "http://backend:8000"
+      RUNTIME_LOG_LEVEL: "info"
+      RUNTIME_LOG_FORMAT: "json"
+      RUNTIME_ACCESS_LOG_ENABLED: "true"
     expose:
       - "7373"
     healthcheck:

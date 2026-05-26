@@ -203,6 +203,7 @@ import type {
   AgentSuggestedPatch,
 } from '@/types/api'
 import { useAgentSessionStore } from '@/stores/agent-session'
+import { logClientWarning } from '@/utils/client-logger'
 import { Message } from '@/utils/message'
 
 interface Props {
@@ -667,7 +668,7 @@ function ensureRunEventSubscription(sessionId: string, run: AgentActiveRunItem, 
       if (error instanceof AgentStreamInterruptedError) {
         return
       }
-      console.warn('Failed to subscribe agent run events', error)
+      logClientWarning('Failed to subscribe agent run events', error)
     })
     .finally(() => {
       clearStreamAbortController(run.run_id, streamAbortController)
@@ -739,7 +740,7 @@ async function refreshContextStatusForSession(sessionId: string) {
     const latestStatus = await getAgentSessionContextStatus(sessionId, runtimeRequest.scope, runtimeRequest.agentId)
     agentSessionStore.setContextStatus(sessionId, latestStatus)
   } catch (error) {
-    console.warn('Failed to refresh agent context status', error)
+    logClientWarning('Failed to refresh agent context status', error)
   }
 }
 
@@ -1438,7 +1439,7 @@ async function refreshAfterStreamInterrupted(sessionId: string) {
       ensureRunEventSubscription(sessionId, run, run.event_sequence ?? 0)
     }
   } catch (error) {
-    console.warn('Failed to refresh after stream interruption', error)
+    logClientWarning('Failed to refresh after stream interruption', error)
   }
 }
 
@@ -1760,7 +1761,7 @@ async function maybeAutonameActiveSession(
     await queryClient.invalidateQueries({ queryKey: ['ai-sessions'] })
     await sessionsQuery.refetch()
   } catch (error) {
-    console.warn('Failed to autogenerate session name', error)
+    logClientWarning('Failed to autogenerate session name', error)
   } finally {
     autoNamingSessionIds.delete(sessionId)
   }

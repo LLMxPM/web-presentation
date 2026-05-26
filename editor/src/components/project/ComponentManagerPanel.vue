@@ -45,6 +45,7 @@ import RuntimeKitCapabilityDocDialog from '@/components/component-preview/Runtim
 import ComponentLibraryPanel from '@/components/project/ComponentLibraryPanel.vue'
 import BaseCloseButton from '@/components/ui/BaseCloseButton.vue'
 import type { RuntimeKitComponentCapabilityItem, WorkspaceComponentItem } from '@/types/api'
+import { logClientWarning } from '@/utils/client-logger'
 
 const props = withDefaults(defineProps<{
   modelValue: boolean
@@ -256,7 +257,7 @@ async function fetchComponent(componentId: number): Promise<WorkspaceComponentIt
   try {
     return await getComponent(componentId)
   } catch (error) {
-    console.warn('Failed to refresh selected component after agent mutation', error)
+    logClientWarning('Failed to refresh selected component after agent mutation', error)
     return null
   }
 }

@@ -89,6 +89,7 @@ import { createWorkspace, listWorkspaces, touchWorkspace, updateWorkspace } from
 import { getErrorMessage } from '@/api/http'
 import type { WorkspaceItem } from '@/types/api'
 import { createConfirm, Message } from '@/utils/message'
+import { reportClientError } from '@/utils/client-logger'
 import ArchivedWorkspacesDialog from '@/components/nav/ArchivedWorkspacesDialog.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseInput from '@/components/ui/BaseInput.vue'
@@ -134,7 +135,7 @@ async function fetchWorkspaces() {
     const res = await listWorkspaces({ page: 1, page_size: 100, sort_by: 'last_opened_at', sort_order: 'desc' })
     workspaces.value = res.items
   } catch (error) {
-    console.error('Failed to load workspaces', error)
+    reportClientError(error, { message: 'Failed to load workspaces', component: 'WorkspaceSwitcher' })
   }
 }
 
