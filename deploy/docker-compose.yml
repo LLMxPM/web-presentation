@@ -3,6 +3,8 @@
 # 使用前请至少修改：
 # - DATABASE_URL、REDIS_URL：改为已有 PostgreSQL/Redis 地址。
 # - BACKEND_PUBLIC_BASE_URL、RUNTIME_PUBLIC_BASE_URL、CORS_ORIGINS：改为实际访问入口。
+# - RUNTIME_SERVER_BASE_PATH 应与 RUNTIME_PUBLIC_BASE_URL 的 URL path 保持一致：
+#   同域 /runtime 使用 /runtime/；独立 Runtime 根域名 https://runtime.example.com 使用 /。
 # - DEFAULT_ADMIN_PASSWORD、AI_SECRET_ENCRYPTION_KEY：正式部署前必须替换。
 # - AI_SECRET_ENCRYPTION_KEY 必须是 Fernet 密钥：32 字节随机值的 URL-safe base64 编码，
 #   通常长度为 44 个字符并以 = 结尾；可用命令生成：
@@ -19,6 +21,7 @@ services:
       REDIS_URL: "redis://:change-redis-password@redis.example.internal:6379/0"
       BACKEND_PUBLIC_BASE_URL: "http://127.0.0.1:8080"
       RUNTIME_BASE_URL: "http://runtime:7373"
+      # 浏览器访问 Runtime 的地址；独立 Runtime 域名部署时可改为 "https://runtime.example.com"。
       RUNTIME_PUBLIC_BASE_URL: "http://127.0.0.1:8080/runtime"
       CORS_ORIGINS: '["http://127.0.0.1:8080"]'
       DEFAULT_ADMIN_PASSWORD: "change-admin-password"
@@ -28,6 +31,7 @@ services:
       ACCESS_LOG_ENABLED: "true"
       CLIENT_ERROR_LOG_ENABLED: "true"
       CLIENT_ERROR_LOG_MAX_BYTES: "16384"
+      ASSET_STORAGE_DRIVER: "local"
     volumes:
       - backend-data:/app/backend/data
     ports:
@@ -57,6 +61,8 @@ services:
     environment:
       RUNTIME_PREVIEW_JWKS_URL: "http://backend:8000/.well-known/jwks.json"
       RUNTIME_BACKEND_API_BASE_URL: "http://backend:8000"
+      # Runtime Vite 资源挂载路径，应等于 RUNTIME_PUBLIC_BASE_URL 的 path；独立 Runtime 根域名部署时改为 "/"。
+      RUNTIME_SERVER_BASE_PATH: "/runtime/"
       RUNTIME_LOG_LEVEL: "info"
       RUNTIME_LOG_FORMAT: "json"
       RUNTIME_ACCESS_LOG_ENABLED: "true"

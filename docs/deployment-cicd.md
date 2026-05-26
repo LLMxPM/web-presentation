@@ -74,7 +74,7 @@ compose 默认跟随 `latest`。如果需要严格锁定 Runtime 与平台版本
 
 - 浏览器访问简化版的 `platform:80`，或 production env 版的 `gateway:80`。
 - 平台 Nginx 代理 `/api`、`/public`、`/build-artifacts`、`/preview`、`/media` 到 `backend:8000`。
-- 平台 Nginx 代理 `/runtime/` 到 `runtime:7373`，并去掉 `/runtime/` 前缀。
+- 平台 Nginx 代理 `/runtime/` 到 `runtime:7373`，并保留 `/runtime/` 前缀。
 - Backend 通过 `RUNTIME_BASE_URL=http://runtime:7373` 访问 Runtime 内网服务。
 - Runtime 通过 `RUNTIME_BACKEND_API_BASE_URL=http://backend:8000` 回源 Backend 内部接口。
 - Runtime 通过 `RUNTIME_PREVIEW_JWKS_URL=http://backend:8000/.well-known/jwks.json` 校验 Backend 签发的预览与构建令牌。

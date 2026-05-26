@@ -34,6 +34,10 @@ test-results/
 .env.*
 !.env.example
 !.env.*.example
+backend/.env
+backend/.env.*
+!backend/.env.example
+!backend/.env.*.example
 
 backend/build_artifacts/
 backend/data/

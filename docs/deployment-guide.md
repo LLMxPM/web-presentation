@@ -52,6 +52,7 @@ production env 版至少修改：
 | :--- | :--- |
 | `BACKEND_PUBLIC_BASE_URL` | Backend 对外公开地址，用于生成资源、截图、构建产物和预览入口链接 |
 | `RUNTIME_PUBLIC_BASE_URL` | Runtime 对外公开地址；同域 Gateway 模式通常为平台入口追加 `/runtime` |
+| `RUNTIME_SERVER_BASE_PATH` | Runtime Vite 资源挂载路径，应与 `RUNTIME_PUBLIC_BASE_URL` 的 URL path 一致；例如 `/runtime/` 或 `/` |
 | `CORS_ORIGINS` | JSON 数组字符串，应包含浏览器访问平台的公网地址 |
 | `DATABASE_URL` | 已有 PostgreSQL 连接串，数据库和用户需要提前创建 |
 | `REDIS_URL` | 已有 Redis 连接串 |
@@ -75,16 +76,18 @@ python -c "import base64, os; print(base64.urlsafe_b64encode(os.urandom(32)).dec
 ```text
 BACKEND_PUBLIC_BASE_URL=https://presentation.example.com
 RUNTIME_PUBLIC_BASE_URL=https://presentation.example.com/runtime
+RUNTIME_SERVER_BASE_PATH=/runtime/
 CORS_ORIGINS=["https://presentation.example.com"]
 ```
 
-这种模式下，外部反向代理不需要单独处理 `/runtime`，平台 Gateway 会把 `/runtime/` 转发到 `runtime:7373` 并去掉 `/runtime/` 前缀。
+这种模式下，外部反向代理不需要单独处理 `/runtime`，平台 Gateway 会把 `/runtime/` 转发到 `runtime:7373` 并保留 `/runtime/` 前缀，Runtime Vite 会按 `RUNTIME_SERVER_BASE_PATH=/runtime/` 解析资源路径。
 
 如果要把 Backend 或 Runtime 单独暴露成独立域名，可以改成：
 
 ```text
 BACKEND_PUBLIC_BASE_URL=https://api.presentation.example.com
 RUNTIME_PUBLIC_BASE_URL=https://runtime.presentation.example.com
+RUNTIME_SERVER_BASE_PATH=/
 CORS_ORIGINS=["https://presentation.example.com"]
 ```
 
@@ -95,6 +98,8 @@ CORS_ORIGINS=["https://presentation.example.com"]
 - `runtime.presentation.example.com` 转发到 `runtime:7373`，路径不要再加 `/runtime` 前缀。
 
 `RUNTIME_BASE_URL=http://runtime:7373` 是 Backend 容器访问 Runtime 的内网地址，不是浏览器访问地址；即使单独配置 `RUNTIME_PUBLIC_BASE_URL`，通常也不需要改它。
+
+`RUNTIME_SERVER_BASE_PATH` 本质上就是 `RUNTIME_PUBLIC_BASE_URL` 的 URL path 部分，并规范化为以 `/` 开头和结尾。比如 `https://presentation.example.com/runtime` 对应 `/runtime/`，`https://runtime.example.com` 对应 `/`，`https://runtime.example.com/app-runtime` 对应 `/app-runtime/`。
 
 ## 启动部署
 
@@ -221,7 +226,7 @@ flowchart LR
 
 - `/` 由 Gateway 返回 Editor 静态资源。
 - `/api`、`/public`、`/build-artifacts`、`/preview`、`/media` 代理到 Backend。
-- `/runtime/` 代理到 Runtime，并去掉 `/runtime/` 前缀。
+- `/runtime/` 代理到 Runtime，并保留 `/runtime/` 前缀。
 - Backend 通过 `RUNTIME_BASE_URL=http://runtime:7373` 访问 Runtime。
 - Runtime 通过 `RUNTIME_BACKEND_API_BASE_URL=http://backend:8000` 回源 Backend。
 - 简化版中，`backend:8000` 在 `platform` 容器内指向本机 Backend，对 `runtime` 则是 `platform` 的网络别名；production env 版中，它是独立 `backend` 容器。
@@ -266,6 +271,8 @@ CORS_ORIGINS=["https://presentation.example.com"]
 ### Runtime 预览不可用
 
 先确认 Runtime 容器健康，再检查 `RUNTIME_PREVIEW_JWKS_URL`、`RUNTIME_BACKEND_API_BASE_URL` 和 `RUNTIME_PUBLIC_BASE_URL`。平台部署模式下 `RUNTIME_STANDALONE_PREVIEW_ENABLED` 应保持 `false`。
+
+如果浏览器控制台出现 `Failed to load module script` 且模块响应类型为 `text/html`，通常是同域 `/runtime` 部署没有让 Runtime Vite 资源带上 `/runtime/` 前缀。检查 `RUNTIME_SERVER_BASE_PATH=/runtime/` 是否已传给 Runtime 容器，并确认外层反向代理把整站流量转发到平台 Gateway，而不是只把 `/runtime` 单独转发出去。
 
 ### AI 设置保存后无法解密
 
