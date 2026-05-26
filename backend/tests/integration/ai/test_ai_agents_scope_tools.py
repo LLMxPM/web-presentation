@@ -30,8 +30,6 @@ from tests.integration.ai.ai_agents_cases import (
     test_project_style_config_tools_should_read_and_update_with_confirmation,
     test_resource_create_tool_should_support_svg_image_asset,
     test_resource_list_tool_should_return_active_non_history_assets_by_tag,
-    test_tool_run_task_auth_should_refresh_window_and_reject_invalid_scope,
-    test_tool_run_task_auth_should_reject_expired_and_mismatched_context,
     test_apply_component_edits_should_allow_new_unpublished_component,
     test_apply_component_edits_should_reject_stale_draft_base_after_restore,
     test_apply_component_edits_should_reject_stale_draft_hash,

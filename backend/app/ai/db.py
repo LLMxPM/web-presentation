@@ -15,6 +15,7 @@ from agno.run.requirement import RunRequirement
 from agno.run.team import TeamRunInput, TeamRunOutput, team_run_output_event_from_dict
 from agno.run.workflow import WorkflowRunOutput
 from agno.session.agent import AgentSession
+from agno.session.summary import SessionSummary
 from agno.session.team import TeamSession
 from agno.session.workflow import WorkflowSession
 from sqlalchemy.engine import make_url
@@ -100,6 +101,9 @@ def _normalize_agno_session_for_upsert(session: Any) -> Any:
     runs = getattr(session, "runs", None)
     if isinstance(runs, list):
         session.runs = [_normalize_agno_run_for_upsert(run) for run in runs]
+    summary = getattr(session, "summary", None)
+    if isinstance(summary, dict):
+        session.summary = _session_summary_from_dict(summary)
     return session
 
 
@@ -121,6 +125,8 @@ def _normalize_run_common_fields(run: Any) -> None:
     _normalize_sequence_attr(run, "additional_input", _message_from_dict)
     _normalize_sequence_attr(run, "reasoning_messages", _message_from_dict)
     _normalize_sequence_attr(run, "events", _event_from_dict)
+    for event in getattr(run, "events", None) or []:
+        _normalize_event_common_fields(event)
     _normalize_sequence_attr(run, "tools", _tool_execution_from_dict)
     _normalize_sequence_attr(run, "requirements", _requirement_from_dict)
     _normalize_input_attr(run)
@@ -174,10 +180,21 @@ def _event_from_dict(payload: dict[str, Any]) -> Any:
     data = _copy_payload(payload)
     try:
         if str(data.get("event") or "").startswith("Team") or data.get("team_id"):
-            return team_run_output_event_from_dict(data)
-        return run_output_event_from_dict(data)
+            event = team_run_output_event_from_dict(data)
+        else:
+            event = run_output_event_from_dict(data)
+        _normalize_event_common_fields(event)
+        return event
     except Exception:  # noqa: BLE001
         return _SerializableMapping(data)
+
+
+def _normalize_event_common_fields(event: Any) -> None:
+    """修正 Agno event 中会被 to_dict 递归访问的可选对象字段。"""
+
+    summary = getattr(event, "session_summary", None)
+    if isinstance(summary, dict):
+        event.session_summary = _session_summary_from_dict(summary)
 
 
 def _message_from_dict(payload: dict[str, Any]) -> Any:
@@ -206,6 +223,16 @@ def _requirement_from_dict(payload: dict[str, Any]) -> Any:
     data = _copy_payload(payload)
     try:
         return RunRequirement.from_dict(data)
+    except Exception:  # noqa: BLE001
+        return _SerializableMapping(data)
+
+
+def _session_summary_from_dict(payload: dict[str, Any]) -> Any:
+    """还原 Agno SessionSummary；失败时仍保证 session.to_dict 可继续。"""
+
+    data = _copy_payload(payload)
+    try:
+        return SessionSummary.from_dict(data)
     except Exception:  # noqa: BLE001
         return _SerializableMapping(data)
 

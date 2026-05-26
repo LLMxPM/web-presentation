@@ -15,7 +15,6 @@ from sqlalchemy.exc import SQLAlchemyError
 from app.ai.agent_factory import AIAgentFactory
 from app.ai.db import build_agno_db
 from app.ai.registry import AgentRegistry
-from app.ai.run_background import AgentBackgroundRunManager
 from app.api.router import api_router
 from app.api.routes import build_artifacts, public_assets, internal_runtime, runtime_configs, well_known, preview
 from app.core.config import get_settings
@@ -28,7 +27,6 @@ from app.db.errors import (
 )
 from app.db.session import get_session_factory
 from app.services.bootstrap_service import BootstrapService
-from app.services.ai_agent_run_service import recover_ai_agent_runs_on_startup
 from app.services.object_storage_service import ObjectStorageService
 from app.services.project_build_service import recover_interrupted_build_jobs_on_startup
 from app.services.redis_runtime_client import ensure_redis_runtime_available
@@ -47,9 +45,6 @@ async def lifespan(app: FastAPI):
         await BootstrapService(session_factory).ensure_default_admin()
         ensure_redis_runtime_available()
         await recover_interrupted_build_jobs_on_startup(session_factory)
-        ai_db = getattr(app.state, "ai_db", None)
-        if getattr(app.state, "ai_run_manager", None) is not None:
-            await recover_ai_agent_runs_on_startup(session_factory, ai_db=ai_db)
     except SQLAlchemyError as exc:
         if is_database_connectivity_error(exc):
             _raise_database_connectivity_error(exc, phase="Backend 启动时")
@@ -171,7 +166,6 @@ def _mount_ai_runtime(app: FastAPI) -> None:
     )
     app.state.ai_registry = registry
     app.state.ai_db = agno_db
-    app.state.ai_run_manager = AgentBackgroundRunManager(session_factory=get_session_factory())
 
 
 def _raise_database_connectivity_error(exc: SQLAlchemyError, *, phase: str) -> None:

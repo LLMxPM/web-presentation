@@ -29,7 +29,7 @@ docker compose -f .\docker-compose.dev.yml up -d
 
 `docker-compose.dev.yml` 保留在仓库根目录，因为它是本地开发和 CI 测试共享的基础设施入口，不属于 `deploy/` 下的交付部署模板。当前 `.github/workflows/*`、本指南、测试治理文档和 Backend README 都直接引用该路径；如果未来移动文件，需要同步更新这些引用。
 
-Backend 测试默认会把 `REDIS_URL` 设置为 `memory://test`，不依赖本机 Redis。手动联调预览、截图、代码检查、AI 后台 run 或构建时必须启动 Redis。
+Backend 测试默认会把 `REDIS_URL` 设置为 `memory://test`，不依赖本机 Redis。手动联调预览、截图、代码检查、构建等临时 artifact 能力时必须启动 Redis；AI run/HITL 状态由 Agno DB 承担，不再依赖 Redis。
 
 ## Backend 本地启动
 
@@ -119,19 +119,11 @@ pnpm run test:seed:smoke
 
 E2E 默认应使用 `AI_TEST_MODE=mock`，避免依赖真实 LLM 响应顺序、时延和内容。
 
-## Redis 运行态维护
+## Redis 临时态维护
 
-Redis 保存 Agent run、SSE 事件、预览 artifact、截图锁与构建心跳等正在发生的运行态，不保存长期业务事实。
+Redis 保存预览 artifact、截图锁与构建心跳等临时运行态，不保存 AI run/HITL 事实源。
 
-Redis 运行态切换维护窗口前，可在 `backend/` 下执行旧 active run 检查：
-
-```powershell
-uv run python -m app.scripts.prepare_redis_runtime_cutover
-uv run python -m app.scripts.prepare_redis_runtime_cutover --migrate-paused
-uv run python -m app.scripts.prepare_redis_runtime_cutover --force-cancel-active --migrate-paused
-```
-
-默认发现 `pending`、`running` 或 `cancelling` 会阻断；确认切换时再显式迁移 paused 或强制取消 active。
+AI run 状态已经切到 Agno session/run/events；旧 Redis run key 不需要维护脚本清理，按已有 TTL 自然过期。
 
 ## Runtime 子项目命令
 

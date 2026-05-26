@@ -831,11 +831,13 @@ export interface AgentPendingRequirement {
 
 export interface AgentRunEvent {
   event: string
-  run_id: string | null
-  session_id: string | null
-  content: string | null
+  run_id?: string | null
+  session_id?: string | null
+  content?: string | null
   data: Record<string, unknown>
   sequence?: number | null
+  event_index?: number | null
+  [key: string]: unknown
 }
 
 export type AgentActiveRunStatus = 'pending' | 'running' | 'paused' | 'cancelling' | 'completed' | 'cancelled' | 'failed'
@@ -850,14 +852,14 @@ export interface AgentActiveRunItem {
   created_at: string | null
   updated_at?: string | null
   cancel_requested_at?: string | null
-  event_sequence?: number
+  event_index?: number
 }
 
 export interface AgentRunStartResponse {
   run_id: string
   session_id: string
   status: 'pending' | 'running'
-  event_cursor: number
+  event_index: number
 }
 
 export interface AgentToolCallDetailItem {
@@ -884,7 +886,7 @@ export interface AgentSessionRuntimeSnapshot {
   active_run: AgentActiveRunItem | null
   last_run: AgentActiveRunItem | null
   pending_requirement: AgentPendingRequirement | null
-  event_cursor: number
+  event_index: number
   pending_attachments: AgentImageAttachmentItem[]
 }
 

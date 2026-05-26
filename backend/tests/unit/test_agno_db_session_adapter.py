@@ -6,6 +6,7 @@ import pytest
 from agno.run.agent import RunEvent, RunOutput
 from agno.run.base import RunStatus
 from agno.session.agent import AgentSession
+from agno.session.summary import SessionSummary
 
 from app.ai.db import AgnoDbSessionWriteAdapter
 
@@ -91,3 +92,23 @@ def test_adapter_should_restore_dict_event_before_upsert() -> None:
 
     assert db.last_payload is not None
     assert db.last_payload["runs"][0]["events"][0]["event"] == RunEvent.run_started.value
+
+
+def test_adapter_should_restore_dict_session_summary_before_upsert() -> None:
+    """summary 中混入 dict 时，适配器应还原为 SessionSummary 后再写入。"""
+
+    summary_payload = SessionSummary(summary="用户正在制作封面页。", topics=["封面"]).to_dict()
+    session = AgentSession(
+        session_id="session-1",
+        agent_id="resource-manager",
+        user_id="1",
+        summary=summary_payload,  # type: ignore[arg-type]
+    )
+    with pytest.raises(AttributeError):
+        session.to_dict()
+
+    db = _RecordingAgnoDb()
+    AgnoDbSessionWriteAdapter(db).upsert_session(session)  # type: ignore[arg-type]
+
+    assert db.last_payload is not None
+    assert db.last_payload["summary"]["summary"] == "用户正在制作封面页。"

@@ -2,7 +2,6 @@
 
 from app.models.ai_agent_config import AiAgentToolUserConfig, AiAgentUserConfig
 from app.models.ai_agent_attachment import AiAgentImageAttachment
-from app.models.ai_agent_run import AiAgentRunEvent, AiAgentRunTask
 from app.models.ai_llm import AiLlmConfig, AiLlmSlotBinding
 from app.models.user import UserSession, User
 from app.models.asset import WorkspaceAsset
@@ -27,8 +26,6 @@ __all__ = [
     "AiLlmConfig",
     "AiLlmSlotBinding",
     "AiAgentImageAttachment",
-    "AiAgentRunTask",
-    "AiAgentRunEvent",
     "AiAgentUserConfig",
     "AiAgentToolUserConfig",
     "UserSession",

@@ -97,7 +97,7 @@ describe('ai api', () => {
     }), { status: 200 })
     fetchMock.mockImplementation(() => Promise.resolve(buildEmptyStreamResponse()))
 
-    await streamAgentRun('session-1', scope, { message: '开始' }, { signal })
+    await streamAgentRun('session-1', scope, { run_id: 'run-1', message: '开始' }, { signal })
     await continueAgentSessionActiveRun('session-1', scope, {
       decision: 'confirm',
       note: null,
@@ -145,7 +145,7 @@ describe('ai api', () => {
   it('fetch 被 AbortController 中断时应抛出流式中断错误', async () => {
     fetchMock.mockRejectedValueOnce(Object.assign(new Error('aborted'), { name: 'AbortError' }))
 
-    await expect(streamAgentRun('session-1', scope, { message: '开始' }))
+    await expect(streamAgentRun('session-1', scope, { run_id: 'run-abort', message: '开始' }))
       .rejects
       .toBeInstanceOf(AgentStreamInterruptedError)
   })
@@ -158,7 +158,7 @@ describe('ai api', () => {
       },
     }), { status: 200 }))
 
-    await expect(streamAgentRun('session-1', scope, { message: '开始' }))
+    await expect(streamAgentRun('session-1', scope, { run_id: 'run-body-abort', message: '开始' }))
       .rejects
       .toBeInstanceOf(AgentStreamInterruptedError)
   })
@@ -173,7 +173,7 @@ describe('ai api', () => {
       },
     }), { status: 200 }))
 
-    await streamAgentRun('session-1', scope, { message: '开始' }, {
+    await streamAgentRun('session-1', scope, { run_id: 'run-sse', message: '开始' }, {
       onEvent: event => events.push(event),
     })
 

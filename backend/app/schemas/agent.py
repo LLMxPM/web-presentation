@@ -172,6 +172,7 @@ class AgentRunEvent(SchemaBase):
     content: str | None = None
     data: dict[str, Any] = Field(default_factory=dict)
     sequence: int | None = None
+    event_index: int | None = None
 
 
 AgentActiveRunStatus = Literal["pending", "running", "paused", "cancelling", "completed", "cancelled", "failed"]
@@ -189,7 +190,7 @@ class AgentActiveRunItem(SchemaBase):
     created_at: str | None = None
     updated_at: str | None = None
     cancel_requested_at: str | None = None
-    event_sequence: int = 0
+    event_index: int = -1
 
 
 class AgentRunStartResponse(SchemaBase):
@@ -198,7 +199,7 @@ class AgentRunStartResponse(SchemaBase):
     run_id: str
     session_id: str
     status: Literal["pending", "running"] = "pending"
-    event_cursor: int = 0
+    event_index: int = -1
 
 
 class AgentToolCallDetailItem(SchemaBase):
@@ -229,7 +230,7 @@ class AgentSessionRuntimeSnapshot(SchemaBase):
     active_run: AgentActiveRunItem | None = None
     last_run: AgentActiveRunItem | None = None
     pending_requirement: AgentPendingRequirement | None = None
-    event_cursor: int = 0
+    event_index: int = -1
     pending_attachments: list[AgentImageAttachmentItem] = Field(default_factory=list)
 
 
@@ -261,6 +262,7 @@ class RenameAgentSessionRequest(BaseModel):
 class AgentRunRequest(BaseModel):
     """向 Agent 发送消息并启动一次 run 的请求体。"""
 
+    run_id: str | None = Field(default=None, max_length=64)
     message: str = ""
     image_attachment_ids: list[int] = Field(default_factory=list)
 

@@ -10,7 +10,6 @@ import type {
   AgentMessageItem,
   AgentRunCancelResponse,
   AgentRunEvent,
-  AgentRunStartResponse,
   AgentScopeContext,
   AgentSessionItem,
   AgentSessionRuntimeSnapshot,
@@ -130,7 +129,7 @@ export async function renameAgentSession(
 export async function streamAgentRun(
   sessionId: string,
   scope: AgentScopeContext,
-  payload: { message: string; agent_id?: string; image_attachment_ids?: number[] },
+  payload: { run_id: string; message: string; agent_id?: string; image_attachment_ids?: number[] },
   options: AgentStreamOptions = {},
 ) {
   logAgentDev('run.start', { sessionId, scope, payload })
@@ -139,6 +138,7 @@ export async function streamAgentRun(
     {
       method: 'POST',
       body: JSON.stringify({
+        run_id: payload.run_id,
         message: payload.message,
         image_attachment_ids: payload.image_attachment_ids ?? [],
       }),
@@ -148,61 +148,20 @@ export async function streamAgentRun(
 }
 
 /**
- * 启动一次后台智能体运行；事件需要再通过 run_id 订阅。
- */
-export async function startAgentRun(
-  sessionId: string,
-  scope: AgentScopeContext,
-  payload: { message: string; agent_id?: string; image_attachment_ids?: number[] },
-) {
-  const { data } = await http.post<AgentRunStartResponse>(
-    `/ai/sessions/${sessionId}/runs`,
-    {
-      message: payload.message,
-      image_attachment_ids: payload.image_attachment_ids ?? [],
-    },
-    {
-      params: buildScopeParams(scope, payload.agent_id ?? 'agent-coordinator'),
-    },
-  )
-  return data
-}
-
-/**
  * 订阅已存在后台 run 的事件流，先回放历史事件再接收 live 事件。
  */
 export async function streamAgentRunEvents(
   sessionId: string,
   runId: string,
   scope: AgentScopeContext,
-  payload: { agent_id?: string; after_sequence?: number },
+  payload: { agent_id?: string; event_index?: number },
   options: AgentStreamOptions = {},
 ) {
   logAgentDev('run.events.subscribe', { sessionId, runId, scope, payload })
   await streamSse(
     `/ai/sessions/${sessionId}/runs/${runId}/events/stream?${buildScopeQuery(scope, payload.agent_id, {
-      after_sequence: String(payload.after_sequence ?? 0),
+      event_index: String(payload.event_index ?? -1),
     })}`,
-    {
-      method: 'GET',
-    },
-    options,
-  )
-}
-
-/**
- * 按 run_id 订阅后台事件，接口会先回放历史事件再返回 live 事件。
- */
-export async function streamAgentRunEventsByRunId(
-  runId: string,
-  payload: { after_sequence?: number },
-  options: AgentStreamOptions = {},
-) {
-  logAgentDev('run.events.subscribe-by-run', { runId, payload })
-  await streamSse(
-    `/ai/runs/${runId}/events?${new URLSearchParams({
-      after_sequence: String(payload.after_sequence ?? 0),
-    }).toString()}`,
     {
       method: 'GET',
     },
@@ -332,34 +291,6 @@ export async function continueAgentSessionActiveRun(
 }
 
 /**
- * 按 run_id 继续暂停运行。
- */
-export async function continueAgentRun(
-  runId: string,
-  payload: {
-    decision?: 'confirm' | 'reject' | null
-    note?: string | null
-    tool_execution: Record<string, unknown>
-    feedback_selections?: Array<{
-      question: string
-      selected_label?: string | null
-      custom_text?: string | null
-    }>
-  },
-) {
-  const { data } = await http.post<AgentRunStartResponse>(
-    `/ai/runs/${runId}/continue`,
-    {
-      decision: payload.decision ?? null,
-      note: payload.note ?? null,
-      tool_execution: payload.tool_execution,
-      feedback_selections: payload.feedback_selections ?? [],
-    },
-  )
-  return data
-}
-
-/**
  * 向后端发送中断请求，要求当前会话的 active run 在安全点停止。
  */
 export async function cancelAgentSessionActiveRun(
@@ -382,26 +313,6 @@ export async function cancelAgentSessionActiveRun(
     },
   )
   logAgentDev('run.cancel.response', data)
-  return data
-}
-
-/**
- * 按 run_id 取消或强制结束运行。
- */
-export async function cancelAgentRun(
-  runId: string,
-  payload: {
-    force?: boolean
-  } = {},
-) {
-  logAgentDev('run.cancel-by-run.request', { runId, payload })
-  const { data } = await http.post<AgentRunCancelResponse>(
-    `/ai/runs/${runId}/cancel`,
-    {
-      force: payload.force ?? false,
-    },
-  )
-  logAgentDev('run.cancel-by-run.response', data)
   return data
 }
 
@@ -527,7 +438,9 @@ function parseSseBlock(block: string): AgentRunEvent | null {
     if (!payload.event && eventName) {
       payload.event = eventName
     }
+    payload.data = payload.data ?? {}
     payload.sequence = payload.sequence ?? null
+    payload.event_index = payload.event_index ?? payload.sequence ?? null
     return payload
   } catch {
     return {
@@ -537,6 +450,7 @@ function parseSseBlock(block: string): AgentRunEvent | null {
       content: dataLines.join('\n'),
       data: {},
       sequence: null,
+      event_index: null,
     }
   }
 }

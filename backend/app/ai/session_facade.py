@@ -38,6 +38,7 @@ from app.ai.auth_tokens import (
     COMPONENT_TOOL_WRITE_SCOPES,
     RESOURCE_TOOL_READ_SCOPES,
     RESOURCE_TOOL_WRITE_SCOPES,
+    build_agent_tool_token,
 )
 from app.ai.history_policy import build_history_policy, estimate_text_tokens
 from app.ai.model_resolver import LlmModelResolver
@@ -62,13 +63,6 @@ from app.schemas.agent import (
     AgentSuggestedPatch,
 )
 from app.schemas.page import PageItem
-from app.services.ai_agent_run_service import (
-    AiAgentRunService,
-    map_task_to_active_run,
-    sync_agno_run_status,
-    task_is_active,
-    task_status_to_run_status,
-)
 from app.services.ai_llm_service import AiLlmService
 from app.services.ai_agent_config_service import AiAgentConfigService
 from app.services.agent_image_attachment_service import AgentImageAttachmentService
@@ -339,8 +333,6 @@ class AgentSessionFacade:
         """读取当前会话消息历史。"""
 
         detail = await self.ensure_session_access(session_id=session_id, agent_id=agent_id, scope=scope)
-        if await self._preserve_cancelled_task_output_if_needed(session_id=session_id, agent_id=agent_id):
-            detail = await self.ensure_session_access(session_id=session_id, agent_id=agent_id, scope=scope)
         attachments_by_run = await AgentImageAttachmentService(
             self._session,
             user_id=self._current.user.id,
@@ -379,19 +371,6 @@ class AgentSessionFacade:
                 )
             )
         return message_items
-
-    async def _preserve_cancelled_task_output_if_needed(self, *, session_id: str, agent_id: str) -> bool:
-        """读取消息前兜底补偿用户取消 run 已流出的内容。"""
-
-        task_service = AiAgentRunService(self._session)
-        latest_task = await task_service.get_latest_task(
-            session_id=session_id,
-            agent_id=agent_id,
-            user_id=self._current.user.id,
-        )
-        if latest_task is None or latest_task.status != "cancelled":
-            return False
-        return await task_service.preserve_user_cancelled_run_output(ai_db=self._ai_db, task=latest_task)
 
     async def get_context_status(
         self,
@@ -460,35 +439,15 @@ class AgentSessionFacade:
         """读取当前会话最近一次非终态 run，供前端刷新后恢复界面。"""
 
         detail = await self.ensure_session_access(session_id=session_id, agent_id=agent_id, scope=scope)
-        task_service = AiAgentRunService(self._session)
-        latest_task = await task_service.get_latest_task(
-            session_id=session_id,
-            agent_id=agent_id,
-            user_id=self._current.user.id,
-        )
-        if latest_task is not None:
-            await self._sync_terminal_task_to_agno_if_needed(latest_task)
-            restored_run = await self._restore_task_pending_requirement_from_agno(
-                task=latest_task,
-                session_detail=detail,
-                agent_id=agent_id,
-                runtime_context=runtime_context,
-            )
-            if (
-                restored_run is not None
-                and restored_run.pending_requirement is not None
-                and (latest_task.status != "paused" or latest_task.pending_requirement_json is None)
-            ):
-                latest_task = await task_service.mark_paused(
-                    task=latest_task,
-                    pending_requirement=restored_run.pending_requirement,
-                    allow_terminal_restore=getattr(latest_task, "status", None) == "failed",
-                )
-            if task_is_active(latest_task):
-                return map_task_to_active_run(latest_task)
-            return None
         latest_run = _find_latest_session_run(detail, agent_id=agent_id, statuses=_ACTIVE_RUN_STATUSES)
         if latest_run is None:
+            return None
+        latest_run = await self._cancel_stale_running_run_if_needed(
+            run=latest_run,
+            session_id=session_id,
+            agent_id=agent_id,
+        )
+        if _coerce_run_status(getattr(latest_run, "status", None)) not in _ACTIVE_RUN_STATUSES:
             return None
         effective_runtime_context = runtime_context
         if _normalize_run_status_value(getattr(latest_run, "status", None)) == "paused":
@@ -513,57 +472,31 @@ class AgentSessionFacade:
         """一次性返回 Editor 恢复会话 UI 需要的运行时快照。"""
 
         detail = await self.ensure_session_access(session_id=session_id, agent_id=agent_id, scope=scope)
-        task_service = AiAgentRunService(self._session)
-        latest_task = await task_service.get_latest_task(
-            session_id=session_id,
-            agent_id=agent_id,
-            user_id=self._current.user.id,
-        )
         active_run: AgentActiveRunItem | None = None
         last_run: AgentActiveRunItem | None = None
-        if latest_task is not None:
-            await self._sync_terminal_task_to_agno_if_needed(latest_task)
-            restored_run = await self._restore_task_pending_requirement_from_agno(
-                task=latest_task,
-                session_detail=detail,
+        latest_run = _find_latest_session_run(detail, agent_id=agent_id)
+        if latest_run is not None:
+            latest_run = await self._cancel_stale_running_run_if_needed(
+                run=latest_run,
+                session_id=session_id,
+                agent_id=agent_id,
+            )
+            mapped_run = self._map_active_run_item(
+                latest_run,
+                session_id=session_id,
                 agent_id=agent_id,
                 runtime_context=runtime_context,
             )
-            if (
-                restored_run is not None
-                and restored_run.pending_requirement is not None
-                and (latest_task.status != "paused" or latest_task.pending_requirement_json is None)
-            ):
-                latest_task = await task_service.mark_paused(
-                    task=latest_task,
-                    pending_requirement=restored_run.pending_requirement,
-                    allow_terminal_restore=getattr(latest_task, "status", None) == "failed",
-                )
-            mapped_task = map_task_to_active_run(latest_task)
-            if task_is_active(latest_task):
-                active_run = mapped_task
+            if mapped_run.status in {"pending", "running", "paused", "cancelling"}:
+                active_run = mapped_run
             else:
-                last_run = mapped_task
-        else:
-            latest_run = _find_latest_session_run(detail, agent_id=agent_id)
-            if latest_run is not None:
-                mapped_run = self._map_active_run_item(
-                    latest_run,
-                    session_id=session_id,
-                    agent_id=agent_id,
-                    runtime_context=runtime_context,
-                )
-                if mapped_run.status in {"pending", "running", "paused", "cancelling"}:
-                    active_run = mapped_run
-                else:
-                    last_run = mapped_run
+                last_run = mapped_run
 
         attachment_service = AgentImageAttachmentService(self._session, user_id=self._current.user.id)
         messages = await self.get_messages(session_id=session_id, agent_id=agent_id, scope=scope)
-        tool_details = await task_service.list_tool_details_for_session(
-            session_id=session_id,
+        tool_details = _list_tool_details_from_agno_runs(
+            detail,
             agent_id=agent_id,
-            user_id=self._current.user.id,
             assistant_message_ids_by_run=_assistant_message_ids_by_run(messages),
         )
         return AgentSessionRuntimeSnapshot(
@@ -579,7 +512,7 @@ class AgentSessionFacade:
             active_run=active_run,
             last_run=last_run,
             pending_requirement=active_run.pending_requirement if active_run is not None else None,
-            event_cursor=active_run.event_sequence if active_run is not None else (last_run.event_sequence if last_run else 0),
+            event_index=active_run.event_index if active_run is not None else (last_run.event_index if last_run else -1),
             pending_attachments=await attachment_service.list_pending_attachments(
                 workspace_id=scope.workspace_id,
                 session_id=session_id,
@@ -604,21 +537,8 @@ class AgentSessionFacade:
                 code="AI_SESSION_RUN_ACTIVE",
                 detail="当前会话已有运行中的智能体任务，请等待完成后再发送新消息。",
             )
-        active_task = await AiAgentRunService(self._session).get_latest_active_task(
-            session_id=session_id,
-            agent_id=agent_id,
-            user_id=self._current.user.id,
-        )
-        if active_task is not None:
-            raise AppException(
-                status_code=409,
-                code="AI_SESSION_RUN_ACTIVE",
-                detail="当前会话已有未结束的智能体运行，请等待完成或先处理待确认动作。",
-            )
         active_run = await self._get_non_terminal_run(session_id=session_id, agent_id=agent_id, scope=scope)
         if active_run is not None:
-            if await self._terminal_task_covers_run(active_run):
-                return
             raise AppException(
                 status_code=409,
                 code="AI_SESSION_RUN_ACTIVE",
@@ -645,26 +565,12 @@ class AgentSessionFacade:
             )
         await lock.acquire()
         try:
-            active_task = await AiAgentRunService(self._session).get_latest_active_task(
-                session_id=session_id,
-                agent_id=agent_id,
-                user_id=self._current.user.id,
-            )
-            if active_task is not None:
-                lock.release()
-                raise AppException(
-                    status_code=409,
-                    code="AI_SESSION_RUN_ACTIVE",
-                    detail="当前会话已有未结束的智能体运行，请等待完成或先处理待确认动作。",
-                )
             active_run = await self._get_non_terminal_run(session_id=session_id, agent_id=agent_id, scope=scope)
         except Exception:
             if lock.locked():
                 lock.release()
             raise
         if active_run is not None:
-            if await self._terminal_task_covers_run(active_run):
-                return lock
             lock.release()
             raise AppException(
                 status_code=409,
@@ -1001,6 +907,201 @@ class AgentSessionFacade:
         ):
             yield event
 
+    def run_raw_sse(
+        self,
+        *,
+        session_id: str,
+        agent_id: str,
+        scope: AgentScopeContext,
+        message: str,
+        runtime_context: AgentRuntimeContext,
+        reserved_lock: asyncio.Lock | None = None,
+        image_attachment_ids: list[int] | None = None,
+        run_id: str | None = None,
+    ) -> AsyncGenerator[bytes, None]:
+        """按 Agno 官方 background stream 输出原始 SSE，不再写平台 run 状态。"""
+
+        return self._stream_agno_raw_sse(
+            session_id=session_id,
+            agent_id=agent_id,
+            scope=scope,
+            stream_builder=self._build_run_stream(
+                agent_id=agent_id,
+                session_id=session_id,
+                scope=scope,
+                message=message,
+                runtime_context=runtime_context,
+                image_attachment_ids=image_attachment_ids,
+                run_id=run_id,
+            ),
+            reserved_lock=reserved_lock,
+        )
+
+    async def prepare_continue_active_raw_sse(
+        self,
+        *,
+        session_id: str,
+        agent_id: str,
+        scope: AgentScopeContext,
+        tool_execution: dict[str, Any],
+        decision: str | None,
+        note: str | None,
+        feedback_selections: list[dict[str, Any]] | None,
+        runtime_context: AgentRuntimeContext,
+    ) -> AsyncGenerator[bytes, None]:
+        """读取并校验 Agno active requirement，返回继续执行的原始 SSE 流。"""
+
+        active_run, active_requirement = await self._get_continuable_pending_run(
+            session_id=session_id,
+            agent_id=agent_id,
+            scope=scope,
+            runtime_context=runtime_context,
+        )
+        if active_run is None or active_requirement is None:
+            raise AppException(
+                status_code=409,
+                code="AI_RUN_NOT_PAUSED",
+                detail="当前会话没有待继续的暂停运行。",
+            )
+        run_id = str(active_run.run_id or "")
+        if not run_id:
+            raise AppException(
+                status_code=409,
+                code="AI_RUN_NOT_PAUSED",
+                detail="当前暂停运行缺少 run_id。",
+            )
+
+        incoming_tool_call_id = _coerce_str((tool_execution or {}).get("tool_call_id"))
+        active_tool_call_id = _coerce_str(active_requirement.tool_execution.get("tool_call_id"))
+        if incoming_tool_call_id and active_tool_call_id and incoming_tool_call_id != active_tool_call_id:
+            raise AppException(
+                status_code=409,
+                code="AI_RUN_REQUIREMENT_STALE",
+                detail="待确认动作已变化，请刷新会话后重试。",
+            )
+
+        session_detail = await self.ensure_session_access(session_id=session_id, agent_id=agent_id, scope=scope)
+        run_scope = self._resolve_run_scope(active_run, fallback_metadata=_session_metadata(session_detail)) or scope
+        run_runtime_context = await build_agent_runtime_context(session=self._session, scope=run_scope)
+        merged_tool_execution = {**active_requirement.tool_execution, **(tool_execution or {})}
+        if decision is not None:
+            merged_tool_execution["confirmed"] = decision == "confirm"
+        if note:
+            merged_tool_execution["confirmation_note"] = note
+        if feedback_selections:
+            merged_tool_execution = _apply_user_feedback_selections(merged_tool_execution, feedback_selections)
+
+        return self._stream_agno_raw_sse(
+            session_id=session_id,
+            agent_id=agent_id,
+            scope=run_scope,
+            stream_builder=self._build_continue_stream(
+                agent_id=agent_id,
+                session_id=session_id,
+                scope=run_scope,
+                run_id=run_id,
+                updated_tool_execution=merged_tool_execution,
+                runtime_context=run_runtime_context,
+            ),
+        )
+
+    async def continue_active_raw_sse(
+        self,
+        *,
+        session_id: str,
+        agent_id: str,
+        scope: AgentScopeContext,
+        tool_execution: dict[str, Any],
+        decision: str | None,
+        note: str | None,
+        feedback_selections: list[dict[str, Any]] | None,
+        runtime_context: AgentRuntimeContext,
+    ) -> AsyncGenerator[bytes, None]:
+        """继续 paused run，并原样转发 Agno SSE。"""
+
+        stream = await self.prepare_continue_active_raw_sse(
+            session_id=session_id,
+            agent_id=agent_id,
+            scope=scope,
+            tool_execution=tool_execution,
+            decision=decision,
+            note=note,
+            feedback_selections=feedback_selections,
+            runtime_context=runtime_context,
+        )
+        async for chunk in stream:
+            yield chunk
+
+    async def resume_raw_sse(
+        self,
+        *,
+        run_id: str,
+        session_id: str,
+        agent_id: str,
+        scope: AgentScopeContext,
+        event_index: int | None = None,
+    ) -> AsyncGenerator[bytes, None]:
+        """按 Agno event_buffer 或 Agno DB events 回放原始 SSE。"""
+
+        from agno.os.managers import event_buffer, sse_subscriber_manager
+        from agno.os.utils import format_sse_event_with_index
+
+        await self.ensure_session_access(session_id=session_id, agent_id=agent_id, scope=scope)
+        last_index = event_index if event_index is not None else -1
+        buffer_status = event_buffer.get_run_status(run_id)
+        if buffer_status is None:
+            detail = await self._read_session_detail(session_id=session_id, agent_id=agent_id)
+            run = detail.get_run(run_id) if isinstance(detail, (AgentSession, TeamSession)) else None
+            events = list(getattr(run, "events", None) or []) if run is not None else []
+            if not events:
+                yield _format_raw_sse_error(
+                    run_id=run_id,
+                    session_id=session_id,
+                    message="当前运行不在事件缓冲区，且数据库中没有可回放事件。",
+                    code="AI_RUN_EVENTS_NOT_FOUND",
+                )
+                return
+            for index, event in enumerate(events):
+                if index <= last_index:
+                    continue
+                yield _ensure_sse_bytes(format_sse_event_with_index(event, event_index=index, run_id=run_id))
+            return
+
+        if buffer_status in (RunStatus.completed, RunStatus.error, RunStatus.cancelled, RunStatus.paused):
+            for index, event in event_buffer.get_events(run_id, last_event_index=last_index):
+                yield _ensure_sse_bytes(format_sse_event_with_index(event, event_index=index, run_id=run_id))
+            return
+
+        queue = sse_subscriber_manager.subscribe(run_id)
+        last_replayed_index = last_index
+        try:
+            for index, event in event_buffer.get_events(run_id, last_event_index=last_index):
+                yield _ensure_sse_bytes(format_sse_event_with_index(event, event_index=index, run_id=run_id))
+                last_replayed_index = index
+            if event_buffer.get_run_status(run_id) != RunStatus.running:
+                for index, event in event_buffer.get_events(run_id, last_event_index=last_replayed_index):
+                    yield _ensure_sse_bytes(format_sse_event_with_index(event, event_index=index, run_id=run_id))
+                return
+            while True:
+                try:
+                    item = await asyncio.wait_for(queue.get(), timeout=30.0)
+                except asyncio.TimeoutError:
+                    if event_buffer.get_run_status(run_id) != RunStatus.running:
+                        for index, event in event_buffer.get_events(run_id, last_event_index=last_replayed_index):
+                            yield _ensure_sse_bytes(format_sse_event_with_index(event, event_index=index, run_id=run_id))
+                        return
+                    yield b": keep-alive\n\n"
+                    continue
+                if item is None:
+                    return
+                index, sse_data = item
+                if index <= last_replayed_index:
+                    continue
+                last_replayed_index = index
+                yield _ensure_sse_bytes(sse_data)
+        finally:
+            sse_subscriber_manager.unsubscribe(run_id, queue)
+
     async def cancel_run(
         self,
         *,
@@ -1104,6 +1205,7 @@ class AgentSessionFacade:
                 run_id=resolved_run_id,
                 stream=True,
                 stream_events=True,
+                background=True,
                 add_history_to_context=False if history_messages else None,
                 images=[resolved.image for resolved in resolved_images] or None,
                 dependencies=self._build_tool_dependencies(
@@ -1191,6 +1293,7 @@ class AgentSessionFacade:
             continue_run_kwargs = (
                 {"run_response": continue_run_response} if continue_run_response is not None else {"run_id": run_id}
             )
+            background_kwargs = {"background": True} if not isinstance(agent, AgnoTeam) else {}
             stream = agent.acontinue_run(
                 **continue_run_kwargs,
                 session_id=session_id,
@@ -1200,6 +1303,7 @@ class AgentSessionFacade:
                 stream_events=True,
                 dependencies=dependencies,
                 metadata=metadata,
+                **background_kwargs,
             )
             return _ActiveAgentStream(agent=agent, stream=stream, run_id=run_id)
 
@@ -1369,6 +1473,71 @@ class AgentSessionFacade:
                         lock.release()
                 if cleanup_cancelled:
                     raise asyncio.CancelledError
+
+        return generator()
+
+    def _stream_agno_raw_sse(
+        self,
+        *,
+        session_id: str,
+        agent_id: str,
+        scope: AgentScopeContext,
+        stream_builder,
+        reserved_lock: asyncio.Lock | None = None,
+    ) -> AsyncGenerator[bytes, None]:
+        """执行 Agno background stream，并直接透传 Agno 生成的 SSE 文本。"""
+
+        async def generator() -> AsyncGenerator[bytes, None]:
+            lock = reserved_lock or self._get_session_run_lock(session_id=session_id, agent_id=agent_id)
+            lock_acquired = reserved_lock is not None
+            if not lock_acquired:
+                if lock.locked():
+                    yield _format_raw_sse_error(
+                        run_id=None,
+                        session_id=session_id,
+                        message="当前会话已有运行中的智能体任务。",
+                        code="AI_SESSION_RUN_ACTIVE",
+                    )
+                    return
+                await lock.acquire()
+                lock_acquired = True
+            try:
+                await self.ensure_session_access(session_id=session_id, agent_id=agent_id, scope=scope)
+                active_stream = await stream_builder()
+                local_event_index = -1
+                async for sse_data in active_stream.stream:
+                    if isinstance(sse_data, (str, bytes)):
+                        yield _ensure_sse_bytes(sse_data)
+                    else:
+                        from agno.os.utils import format_sse_event_with_index
+
+                        local_event_index += 1
+                        yield _ensure_sse_bytes(
+                            format_sse_event_with_index(
+                                sse_data,
+                                event_index=local_event_index,
+                                run_id=active_stream.run_id,
+                            )
+                        )
+            except asyncio.CancelledError:
+                raise
+            except AppException as exc:
+                yield _format_raw_sse_error(
+                    run_id=None,
+                    session_id=session_id,
+                    message=exc.detail,
+                    code=exc.code,
+                )
+            except Exception:  # noqa: BLE001
+                yield _format_raw_sse_error(
+                    run_id=None,
+                    session_id=session_id,
+                    message="智能体执行失败，请稍后重试。",
+                    code="AI_RUN_FAILED",
+                )
+            finally:
+                if lock_acquired and lock.locked():
+                    lock.release()
 
         return generator()
 
@@ -1680,11 +1849,26 @@ class AgentSessionFacade:
     ) -> dict[str, Any]:
         """构造供 Agno tools 使用的泛化依赖上下文。"""
 
-        _ = agent_config
+        tool_scopes = self._resolve_tool_scopes(
+            agent_id=agent_id,
+            agent_config=agent_config,
+            supports_image_input=bool(session_metadata.get("model_supports_image_input", False)),
+        )
+        tool_token = build_agent_tool_token(
+            self._current,
+            run_id=run_id,
+            session_id=session_id,
+            agent_id=agent_id,
+            workspace_id=scope.workspace_id,
+            project_id=scope.project_id,
+            page_id=scope.page_id,
+            component_id=scope.component_id,
+            source=scope.source,
+            scopes=tool_scopes,
+        )
         return {
             "run_id": run_id,
             "session_id": session_id,
-            "user_id": self._current.user.id,
             "user_id": str(self._current.user.id),
             "agent_id": agent_id,
             "scope_type": scope.scope_type,
@@ -1700,6 +1884,8 @@ class AgentSessionFacade:
             "role": "admin",
             "backend_session_id": self._current.backend_session_id,
             "source": scope.source,
+            "tool_auth_token": tool_token,
+            "tool_scopes": list(tool_scopes),
         }
 
     @staticmethod
@@ -1965,36 +2151,9 @@ class AgentSessionFacade:
             pending_requirement=pending_requirement,
             content=_stringify_content(payload.get("content")),
             created_at=_normalize_timestamp(getattr(run, "created_at", None)),
+            updated_at=_normalize_timestamp(getattr(run, "updated_at", None)),
+            event_index=_run_latest_event_index(run),
         )
-
-    async def _restore_task_pending_requirement_from_agno(
-        self,
-        *,
-        task: Any,
-        session_detail: AgnoSessionDetail,
-        agent_id: str,
-        runtime_context: AgentRuntimeContext | None,
-    ) -> AgentActiveRunItem | None:
-        """当 task 误收敛到终态但 Agno 仍有 HITL requirement 时恢复暂停态。"""
-
-        if getattr(task, "status", None) in {"completed", "cancelled"}:
-            return None
-        run = session_detail.get_run(str(getattr(task, "run_id", "") or ""))
-        if run is None:
-            return None
-        effective_runtime_context = runtime_context
-        run_scope = self._resolve_run_scope(run, fallback_metadata=_session_metadata(session_detail))
-        if run_scope is not None:
-            effective_runtime_context = await build_agent_runtime_context(session=self._session, scope=run_scope)
-        run_item = self._map_active_run_item(
-            run,
-            session_id=str(getattr(task, "session_id", "") or ""),
-            agent_id=agent_id,
-            runtime_context=effective_runtime_context,
-        )
-        if run_item.status != "paused" or run_item.pending_requirement is None:
-            return None
-        return run_item
 
     async def _get_continuable_pending_run(
         self,
@@ -2039,36 +2198,6 @@ class AgentSessionFacade:
             lock = asyncio.Lock()
             self._session_run_locks[lock_key] = lock
         return lock
-
-    async def _terminal_task_covers_run(self, run: RunOutput | TeamRunOutput) -> bool:
-        """若 task 表已把同一 run 推进终态，则同步 Agno 并忽略旧非终态占位。"""
-
-        run_id = str(getattr(run, "run_id", "") or "")
-        if not run_id:
-            return False
-        task = await AiAgentRunService(self._session).get_task_by_run(
-            run_id=run_id,
-            user_id=self._current.user.id,
-        )
-        if task is None or task_is_active(task):
-            return False
-        await self._sync_terminal_task_to_agno_if_needed(task)
-        return True
-
-    async def _sync_terminal_task_to_agno_if_needed(self, task: Any) -> None:
-        """把后台 task 终态写回 Agno session.runs。"""
-
-        if task_is_active(task):
-            return
-        await sync_agno_run_status(
-            ai_db=self._ai_db,
-            user_id=str(self._current.user.id),
-            session_id=task.session_id,
-            agent_id=task.agent_id,
-            run_id=task.run_id,
-            status=task_status_to_run_status(task.status),
-            content=task.error_message,
-        )
 
     async def _upsert_run_marker(
         self,
@@ -2165,8 +2294,6 @@ class AgentSessionFacade:
         run = detail.get_run(run_id)
         if run is None:
             return
-        tool_call_id = _coerce_str((resolved_tool_execution or {}).get("tool_call_id"))
-        fallback_result = await self._find_completed_tool_result(run_id=run_id, tool_call_id=tool_call_id)
         run.status = RunStatus.completed
         if content is not None:
             run.content = content
@@ -2174,30 +2301,9 @@ class AgentSessionFacade:
             run,
             status=RunStatus.completed,
             resolved_tool_execution=resolved_tool_execution,
-            fallback_tool_result=fallback_result,
         )
         detail.upsert_run(run)
         await asyncio.to_thread(self._ai_db.upsert_session, detail)
-
-    async def _find_completed_tool_result(self, *, run_id: str, tool_call_id: str | None) -> Any:
-        """从 Redis 事件流中兜底读取已完成工具结果，用于修正 Agno 历史。"""
-
-        if not tool_call_id:
-            return None
-        try:
-            events = await AiAgentRunService(self._session).list_events_after(
-                run_id=run_id,
-                user_id=self._current.user.id,
-                after_sequence=0,
-            )
-        except Exception:  # noqa: BLE001
-            return None
-        for event in reversed(events):
-            if event.event != "tool.completed" or not isinstance(event.data, dict):
-                continue
-            if _coerce_str(event.data.get("tool_call_id")) == tool_call_id:
-                return event.data.get("result")
-        return None
 
     async def _mark_run_terminal(
         self,
@@ -2217,6 +2323,43 @@ class AgentSessionFacade:
             status=status,
             content=content,
         )
+
+    async def _cancel_stale_running_run_if_needed(
+        self,
+        *,
+        run: RunOutput | TeamRunOutput,
+        session_id: str,
+        agent_id: str,
+    ) -> RunOutput | TeamRunOutput:
+        """后台重启后 Agno buffer 丢失时，把陈旧 running run 收敛为 cancelled。"""
+
+        if _coerce_run_status(getattr(run, "status", None)) not in {RunStatus.pending, RunStatus.running}:
+            return run
+        run_id = str(getattr(run, "run_id", "") or "")
+        if not run_id:
+            return run
+        from agno.os.managers import event_buffer
+
+        if event_buffer.get_run_status(run_id) is not None:
+            return run
+        timestamp = getattr(run, "updated_at", None) or getattr(run, "created_at", None)
+        try:
+            run_age_seconds = int(datetime.now(tz=UTC).timestamp()) - int(timestamp)
+        except (TypeError, ValueError):
+            return run
+        if run_age_seconds < 30:
+            return run
+        await self._mark_run_terminal(
+            session_id=session_id,
+            agent_id=agent_id,
+            run_id=run_id,
+            status=RunStatus.cancelled,
+            content="后台服务已重启，运行事件缓冲丢失，本次运行已停止。",
+        )
+        refreshed = await self._read_session_detail(session_id=session_id, agent_id=agent_id)
+        if isinstance(refreshed, (AgentSession, TeamSession)):
+            return refreshed.get_run(run_id) or run
+        return run
 
     def _map_session_item(self, payload: AgnoSessionDetail, *, metadata: dict[str, Any] | None = None) -> AgentSessionItem:
         """把 Agno session 映射成前端会话项结构。"""
@@ -2903,6 +3046,13 @@ def _normalize_run_status_value(status: Any) -> str:
     return normalized.name
 
 
+def _run_latest_event_index(run: RunOutput | TeamRunOutput) -> int:
+    """按 Agno run.events 计算当前可回放的最后事件下标。"""
+
+    events = getattr(run, "events", None) or []
+    return len(events) - 1
+
+
 def _resolve_requirement_payload(payload: dict[str, Any]) -> dict[str, Any] | None:
     """优先从 requirements 提取待确认项；若缺失，则从暂停 tools 中兜底合成。"""
 
@@ -3342,6 +3492,98 @@ def _raw_event_text_content(payload: dict[str, Any]) -> str | None:
     return content
 
 
+def _list_tool_details_from_agno_runs(
+    detail: AgnoSessionDetail,
+    *,
+    agent_id: str,
+    assistant_message_ids_by_run: dict[str, str] | None = None,
+) -> list[AgentToolCallDetailItem]:
+    """从 Agno run.events 恢复历史工具详情，避免依赖旧 run 表或 Redis。"""
+
+    assistant_ids = assistant_message_ids_by_run or {}
+    detail_by_id: dict[str, AgentToolCallDetailItem] = {}
+    pending_without_call_id: dict[tuple[str, str], str] = {}
+    for run in getattr(detail, "runs", None) or []:
+        if _resolve_run_owner_id(run) not in {None, agent_id}:
+            continue
+        run_id = str(getattr(run, "run_id", "") or "")
+        if not run_id:
+            continue
+        for index, raw_event in enumerate(getattr(run, "events", None) or []):
+            payload = jsonable_encoder(raw_event)
+            if not isinstance(payload, dict):
+                continue
+            event_name = str(payload.get("event") or type(raw_event).__name__)
+            status = _tool_status_from_agno_event(event_name)
+            if status is None:
+                continue
+            tool_payload = payload.get("tool") if isinstance(payload.get("tool"), dict) else {}
+            member_event_data = _extract_member_event_data(payload)
+            tool_name = _coerce_str(tool_payload.get("tool_name")) or "工具调用"
+            tool_call_id = _coerce_str(tool_payload.get("tool_call_id"))
+            detail_id = _resolve_tool_detail_id_for_agno(
+                run_id=run_id,
+                tool_name=tool_name,
+                tool_call_id=tool_call_id,
+                event_name=event_name,
+                event_index=index,
+                pending_without_call_id=pending_without_call_id,
+            )
+            existing = detail_by_id.get(detail_id)
+            result = tool_payload.get("result")
+            if result is None:
+                result = payload.get("content")
+            detail_by_id[detail_id] = AgentToolCallDetailItem(
+                id=detail_id,
+                run_id=run_id,
+                tool_call_id=tool_call_id,
+                tool_name=tool_name,
+                member_agent_id=_coerce_str(member_event_data.get("member_agent_id")) or (existing.member_agent_id if existing else None),
+                member_agent_name=_coerce_str(member_event_data.get("member_agent_name")) or (existing.member_agent_name if existing else None),
+                member_run_id=_coerce_str(member_event_data.get("member_run_id")) or (existing.member_run_id if existing else None),
+                status=status,
+                assistant_message_id=assistant_ids.get(run_id),
+                input_payload=tool_payload.get("tool_args") or (existing.input_payload if existing else None),
+                output_payload=result if result is not None else (existing.output_payload if existing else None),
+                message=_stringify_content(payload.get("content") or tool_payload.get("error") or (existing.message if existing else "")),
+                created_at=existing.created_at if existing else _normalize_timestamp(payload.get("created_at")),
+            )
+    return list(detail_by_id.values())
+
+
+def _tool_status_from_agno_event(event_name: str) -> str | None:
+    """把 Agno 工具事件名映射到前端工具状态。"""
+
+    if event_name in {"ToolCallStarted", "ToolCallStartedEvent", "TeamToolCallStarted"}:
+        return "running"
+    if event_name in {"ToolCallCompleted", "ToolCallCompletedEvent", "TeamToolCallCompleted"}:
+        return "completed"
+    if event_name in {"ToolCallError", "ToolCallErrorEvent", "TeamToolCallError"}:
+        return "error"
+    return None
+
+
+def _resolve_tool_detail_id_for_agno(
+    *,
+    run_id: str,
+    tool_name: str,
+    tool_call_id: str | None,
+    event_name: str,
+    event_index: int,
+    pending_without_call_id: dict[tuple[str, str], str],
+) -> str:
+    """为 Agno 工具事件生成稳定详情 ID。"""
+
+    if tool_call_id:
+        return f"{run_id}:{tool_call_id}"
+    key = (run_id, tool_name)
+    if event_name in {"ToolCallStarted", "ToolCallStartedEvent", "TeamToolCallStarted"}:
+        detail_id = f"{run_id}:{tool_name}:{event_index}"
+        pending_without_call_id[key] = detail_id
+        return detail_id
+    return pending_without_call_id.get(key) or f"{run_id}:{tool_name}:{event_index}"
+
+
 async def _close_async_iterator(stream: AsyncIterator[Any]) -> None:
     """关闭上游 Agno 流，确保客户端断线后不继续消费模型输出。"""
 
@@ -3369,6 +3611,28 @@ def _format_sse(event: AgentRunEvent) -> bytes:
     """把统一事件模型编码为标准 SSE 文本块。"""
 
     return f"event: {event.event}\ndata: {event.model_dump_json()}\n\n".encode("utf-8")
+
+
+def _ensure_sse_bytes(value: Any) -> bytes:
+    """把 Agno background stream 返回的 SSE 字符串统一成字节。"""
+
+    if isinstance(value, bytes):
+        return value
+    return str(value).encode("utf-8")
+
+
+def _format_raw_sse_error(*, run_id: str | None, session_id: str | None, message: str, code: str) -> bytes:
+    """构造 Agno raw SSE 兼容的错误事件。"""
+
+    payload = {
+        "event": "RunError",
+        "run_id": run_id,
+        "session_id": session_id,
+        "content": message,
+        "error": message,
+        "error_type": code,
+    }
+    return f"event: RunError\ndata: {json.dumps(payload, ensure_ascii=False, separators=(',', ':'))}\n\n".encode("utf-8")
 
 
 def _stream_sse_events(events: AsyncGenerator[AgentRunEvent, None]) -> AsyncGenerator[bytes, None]:

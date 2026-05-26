@@ -58,10 +58,6 @@ class AppSettings(BaseSettings):
     redis_url: str = "redis://127.0.0.1:6379/0"
     redis_key_prefix: str = "web_presentation"
     redis_healthcheck_timeout_seconds: float = 2.0
-    ai_run_active_ttl_seconds: int = 86400
-    ai_run_paused_ttl_seconds: int = 604800
-    ai_run_terminal_ttl_seconds: int = 86400
-    ai_run_event_maxlen: int = 5000
     runtime_preview_artifact_ttl_seconds: int = 3600
     runtime_build_state_ttl_seconds: int = 604800
     page_screenshot_default_viewport_width: int = 1920
@@ -301,19 +297,15 @@ class AppSettings(BaseSettings):
         return value
 
     @field_validator(
-        "ai_run_active_ttl_seconds",
-        "ai_run_paused_ttl_seconds",
-        "ai_run_terminal_ttl_seconds",
-        "ai_run_event_maxlen",
         "runtime_preview_artifact_ttl_seconds",
         "runtime_build_state_ttl_seconds",
     )
     @classmethod
     def validate_positive_runtime_state_int(cls, value: int) -> int:
-        """校验 Redis 运行态 TTL 与事件裁剪配置为正整数。"""
+        """校验 Redis 临时运行态 TTL 配置为正整数。"""
 
         if value <= 0:
-            raise ValueError("Redis 运行态配置必须为正整数。")
+            raise ValueError("Redis 临时运行态配置必须为正整数。")
         return value
 
     @property

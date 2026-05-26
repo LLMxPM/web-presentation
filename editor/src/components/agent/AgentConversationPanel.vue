@@ -143,8 +143,8 @@ import { ExternalLink } from '@lucide/vue'
 import {
   AgentRequestError,
   AgentStreamInterruptedError,
-  cancelAgentRun,
-  continueAgentRun,
+  cancelAgentSessionActiveRun,
+  continueAgentSessionActiveRun,
   createAgentSession,
   deleteAgentImageAttachment,
   getAgentSessionContextStatus,
@@ -153,8 +153,8 @@ import {
   listAgentSessions,
   promoteAgentImageAttachment,
   renameAgentSession,
-  startAgentRun,
-  streamAgentRunEventsByRunId,
+  streamAgentRun,
+  streamAgentRunEvents,
   uploadAgentImageAttachment,
 } from '@/api/ai'
 import {
@@ -181,7 +181,7 @@ import {
   resolveSessionScope,
   setSelectedSession,
 } from '@/components/agent/agent-session-scope'
-import { buildAgentLocalMessage as buildLocalMessage } from '@/components/agent/agent-run-state'
+import { buildAgentLocalMessage as buildLocalMessage, normalizeAgnoRunEvent } from '@/components/agent/agent-run-state'
 import AgentComposer from '@/components/agent/AgentComposer.vue'
 import AgentConversationBody from '@/components/agent/AgentConversationBody.vue'
 import AgentConversationDialogs from '@/components/agent/AgentConversationDialogs.vue'
@@ -638,23 +638,26 @@ function hasLocalActiveRunProgressForSession(sessionId: string, runtime: AgentSe
   if (localRunId !== run.run_id) {
     return false
   }
-  return agentSessionStore.getLastSequence(sessionId, run.run_id) > 0
+  return agentSessionStore.getLastSequence(sessionId, run.run_id) >= 0
     || readSessionValue(streamingAssistantMessageIdBySession.value, sessionId, null) !== null
 }
 
 /**
  * 订阅已存在后台 run 的事件流；用于刷新、切回会话和停止后的状态收敛。
  */
-function ensureRunEventSubscription(sessionId: string, run: AgentActiveRunItem, afterSequence = 0) {
+function ensureRunEventSubscription(sessionId: string, run: AgentActiveRunItem, afterEventIndex = -1) {
   if (componentDisposed || !sessionId || !run.run_id || streamAbortControllersByRun.has(run.run_id)) {
     return
   }
   const streamAbortController = createStreamAbortController(run.run_id)
   setSessionStreaming(sessionId, true)
-  streamAgentRunEventsByRunId(
+  streamAgentRunEvents(
+    sessionId,
     run.run_id,
+    scope.value,
     {
-      after_sequence: Math.max(afterSequence, agentSessionStore.getLastSequence(sessionId, run.run_id)),
+      agent_id: agentId.value,
+      event_index: Math.max(afterEventIndex, agentSessionStore.getLastSequence(sessionId, run.run_id)),
     },
     { onEvent: event => handleRunEvent(event, sessionId), signal: streamAbortController.signal },
   )
@@ -1210,28 +1213,32 @@ async function handleSend() {
   agentSessionStore.setAssistantSegmentClosedByTool(sessionId, false)
   setSessionStreaming(sessionId, true)
 
-  let runId = ''
+  let runId = crypto.randomUUID()
   try {
-    const startedRun = await startAgentRun(sessionId, runScope, {
-      message,
-      agent_id: runAgentId,
-      image_attachment_ids: attachments.map(attachment => attachment.id),
-    })
-    runId = startedRun.run_id
     agentSessionStore.setCurrentRunId(sessionId, runId)
     syncActiveRun(sessionId, {
       run_id: runId,
-      session_id: startedRun.session_id,
+      session_id: sessionId,
       agent_id: runAgentId,
-      status: startedRun.status,
+      status: 'running',
       pending_requirement: null,
       content: null,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
       cancel_requested_at: null,
-      event_sequence: startedRun.event_cursor,
+      event_index: -1,
     })
-    await streamRunEventsUntilClosed(sessionId, runId, startedRun.event_cursor)
+    const streamAbortController = createStreamAbortController(runId)
+    await streamAgentRun(sessionId, runScope, {
+      run_id: runId,
+      message,
+      agent_id: runAgentId,
+      image_attachment_ids: attachments.map(attachment => attachment.id),
+    }, {
+      onEvent: event => handleRunEvent(event, sessionId),
+      signal: streamAbortController.signal,
+    })
+    clearStreamAbortController(runId, streamAbortController)
     await finalizeRun(sessionId)
   } catch (error) {
     if (error instanceof AgentStreamInterruptedError) {
@@ -1278,12 +1285,17 @@ async function handleContinueRun(decision: 'confirm' | 'reject') {
   syncActiveRun(sessionId, activeRun.value ? { ...activeRun.value, status: 'running', pending_requirement: null } : null)
 
   const runId = requirement.run_id || activeRun.value?.run_id || ''
+  let streamAbortController: AbortController | null = null
   try {
-    const continuedRun = await continueAgentRun(runId, {
+    streamAbortController = createStreamAbortController(runId)
+    await continueAgentSessionActiveRun(sessionId, scope.value, {
+      agent_id: agentId.value,
       decision,
       tool_execution: requirement.tool_execution,
+    }, {
+      onEvent: event => handleRunEvent(event, sessionId),
+      signal: streamAbortController.signal,
     })
-    await streamRunEventsUntilClosed(sessionId, runId, continuedRun.event_cursor)
     await finalizeRun(sessionId)
   } catch (error) {
     if (error instanceof AgentStreamInterruptedError) {
@@ -1294,6 +1306,9 @@ async function handleContinueRun(decision: 'confirm' | 'reject') {
     }
     Message.error(error instanceof Error ? error.message : '继续智能体执行失败。')
   } finally {
+    if (streamAbortController) {
+      clearStreamAbortController(runId, streamAbortController)
+    }
     setSessionStreaming(sessionId, false)
   }
 }
@@ -1317,13 +1332,18 @@ async function handleSubmitFeedbackRun(selections: AgentFeedbackSelection[]) {
   syncActiveRun(sessionId, activeRun.value ? { ...activeRun.value, status: 'running', pending_requirement: null } : null)
 
   const runId = requirement.run_id || activeRun.value?.run_id || ''
+  let streamAbortController: AbortController | null = null
   try {
-    const continuedRun = await continueAgentRun(runId, {
+    streamAbortController = createStreamAbortController(runId)
+    await continueAgentSessionActiveRun(sessionId, scope.value, {
+      agent_id: agentId.value,
       decision: null,
       tool_execution: requirement.tool_execution,
       feedback_selections: selections,
+    }, {
+      onEvent: event => handleRunEvent(event, sessionId),
+      signal: streamAbortController.signal,
     })
-    await streamRunEventsUntilClosed(sessionId, runId, continuedRun.event_cursor)
     await finalizeRun(sessionId)
   } catch (error) {
     if (error instanceof AgentStreamInterruptedError) {
@@ -1334,6 +1354,9 @@ async function handleSubmitFeedbackRun(selections: AgentFeedbackSelection[]) {
     }
     Message.error(error instanceof Error ? error.message : '继续智能体执行失败。')
   } finally {
+    if (streamAbortController) {
+      clearStreamAbortController(runId, streamAbortController)
+    }
     setSessionStreaming(sessionId, false)
   }
 }
@@ -1349,7 +1372,9 @@ async function handleCancelPausedRun() {
 
   try {
     pendingRequirement.value = null
-    const response = await cancelAgentRun(activeRun.value.run_id)
+    const response = await cancelAgentSessionActiveRun(sessionId, scope.value, {
+      agent_id: agentId.value,
+    })
     Message.info('已停止。')
     await finalizeRun(response.session_id, { preserveLocalCancelled: true })
   } catch (error) {
@@ -1372,7 +1397,9 @@ async function handleInterruptRun() {
     if (!targetRunId) {
       throw new Error('当前运行缺少 run_id，无法停止。')
     }
-    const response = await cancelAgentRun(targetRunId)
+    const response = await cancelAgentSessionActiveRun(sessionId, scope.value, {
+      agent_id: agentId.value,
+    })
     syncActiveRun(sessionId, {
       run_id: response.run_id,
       session_id: response.session_id,
@@ -1383,7 +1410,7 @@ async function handleInterruptRun() {
       created_at: activeRun.value?.created_at ?? new Date().toISOString(),
       updated_at: new Date().toISOString(),
       cancel_requested_at: new Date().toISOString(),
-      event_sequence: activeRun.value?.event_sequence ?? 0,
+      event_index: activeRun.value?.event_index ?? -1,
     })
     ensureRunEventSubscription(sessionId, {
       run_id: response.run_id,
@@ -1395,8 +1422,8 @@ async function handleInterruptRun() {
       created_at: activeRun.value?.created_at ?? new Date().toISOString(),
       updated_at: new Date().toISOString(),
       cancel_requested_at: new Date().toISOString(),
-      event_sequence: activeRun.value?.event_sequence ?? 0,
-    }, activeRun.value?.event_sequence ?? 0)
+      event_index: activeRun.value?.event_index ?? -1,
+    }, activeRun.value?.event_index ?? -1)
     window.setTimeout(() => {
       void refreshAfterStreamInterrupted(sessionId)
     }, 5000)
@@ -1415,7 +1442,8 @@ async function handleForceCancelRun() {
     return
   }
   try {
-    const response = await cancelAgentRun(activeRun.value.run_id, {
+    const response = await cancelAgentSessionActiveRun(sessionId, scope.value, {
+      agent_id: agentId.value,
       force: true,
     })
     Message.info('已停止。')
@@ -1436,7 +1464,7 @@ async function refreshAfterStreamInterrupted(sessionId: string) {
     await finalizeRun(sessionId, { preserveLocalCancelled: true })
     const run = readSessionValue(activeRunBySession.value, sessionId, null)
     if (run && shouldSubscribeRunEvents(run)) {
-      ensureRunEventSubscription(sessionId, run, run.event_sequence ?? 0)
+      ensureRunEventSubscription(sessionId, run, run.event_index ?? -1)
     }
   } catch (error) {
     logClientWarning('Failed to refresh after stream interruption', error)
@@ -1450,25 +1478,9 @@ async function recoverActiveRunAfterConflict(sessionId: string) {
   await finalizeRun(sessionId)
   const run = readSessionValue(activeRunBySession.value, sessionId, null)
   if (run && shouldSubscribeRunEvents(run)) {
-    ensureRunEventSubscription(sessionId, run, run.event_sequence ?? 0)
+    ensureRunEventSubscription(sessionId, run, run.event_index ?? -1)
   }
   Message.warning('当前会话已有未结束的智能体运行，已恢复运行状态。')
-}
-
-/**
- * 订阅指定 run 的事件直到后端关闭连接。
- */
-async function streamRunEventsUntilClosed(sessionId: string, runId: string, afterSequence = 0): Promise<void> {
-  const streamAbortController = createStreamAbortController(runId)
-  try {
-    await streamAgentRunEventsByRunId(
-      runId,
-      { after_sequence: afterSequence },
-      { onEvent: event => handleRunEvent(event, sessionId), signal: streamAbortController.signal },
-    )
-  } finally {
-    clearStreamAbortController(runId, streamAbortController)
-  }
 }
 
 /**
@@ -1482,19 +1494,20 @@ function isAgentRunActiveError(error: unknown) {
  * 消费后端返回的流式事件，并同步更新消息、内嵌工具状态与待确认状态。
  */
 function handleRunEvent(event: AgentRunEvent, fallbackSessionId = activeSessionId.value) {
-  const targetSessionId = event.session_id || fallbackSessionId
+  const normalizedEvent = normalizeAgnoRunEvent(event)
+  const targetSessionId = normalizedEvent.session_id || fallbackSessionId
   if (!targetSessionId) {
     return
   }
   const isActiveEvent = targetSessionId === activeSessionId.value
-  const result = agentSessionStore.applyRunEvent(targetSessionId, event, {
+  const result = agentSessionStore.applyRunEvent(targetSessionId, normalizedEvent, {
     agentId: agentId.value,
     agentDisplayName: agentDisplayName.value,
   })
   if (!result.applied) {
     return
   }
-  switch (event.event) {
+  switch (normalizedEvent.event) {
     case 'context.status':
       break
     case 'run.started':
@@ -1506,7 +1519,7 @@ function handleRunEvent(event: AgentRunEvent, fallbackSessionId = activeSessionI
     case 'tool.started':
       break
     case 'tool.completed':
-      appendMutationRefreshEvents(targetSessionId, event)
+      appendMutationRefreshEvents(targetSessionId, normalizedEvent)
       emitMutationRefreshEvents(targetSessionId)
       break
     case 'tool.error':

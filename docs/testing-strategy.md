@@ -83,9 +83,9 @@ docker compose -f docker-compose.dev.yml up -d
 
 该 compose 文件只服务本地开发和 CI 测试基础设施，不属于 `deploy/` 下的交付部署模板；移动它时需要同步更新文档和 `.github/workflows/*` 中的引用。
 
-Backend 测试默认把 `REDIS_URL` 设置为 `memory://test`，不依赖本机 Redis。手动联调预览、截图、代码检查、AI 后台 run 或构建时必须启动 compose 中的 Redis；Redis 不可用会在启动期或调用运行态能力时给出明确错误，避免出现任务已经执行但事件或 artifact 丢失的半可用状态。
+Backend 测试默认把 `REDIS_URL` 设置为 `memory://test`，不依赖本机 Redis。手动联调预览、截图、代码检查或构建时必须启动 compose 中的 Redis；AI run/HITL 状态由 Agno DB 承担，不再依赖 Redis run hash 或 Redis stream。
 
-Redis 运行态上线前应在维护窗口执行 `uv run python -m app.scripts.prepare_redis_runtime_cutover`。默认模式只检查旧 `AiAgentRunTask/AiAgentRunEvent`，存在 `pending/running/cancelling` 会返回非 0；确认切换时使用 `--migrate-paused` 迁移 paused run，必要时再追加 `--force-cancel-active` 强制收敛旧 active run。
+AI run 状态切换后无需执行 Redis run 迁移脚本；旧 Redis run key 等待 TTL 自然过期。
 
 ## 4. 稳定测试选择器约定
 

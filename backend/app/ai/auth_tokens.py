@@ -66,6 +66,52 @@ def build_agent_access_token(
     )
 
 
+def build_agent_tool_token(
+    current: AuthContext,
+    *,
+    run_id: str,
+    session_id: str,
+    agent_id: str,
+    workspace_id: int,
+    project_id: int | None,
+    page_id: int | None,
+    component_id: int | None,
+    source: str,
+    scopes: tuple[str, ...],
+) -> str:
+    """签发工具调用短期令牌，避免工具执行再依赖 Redis run 状态。"""
+
+    settings = get_settings()
+    payload: dict[str, Any] = {
+        "aud": "agent-tool",
+        "sub": f"user:{current.user.id}",
+        "run_id": run_id,
+        "session_id": session_id,
+        "agent_id": agent_id,
+        "workspace_id": workspace_id,
+        "project_id": project_id,
+        "page_id": page_id,
+        "component_id": component_id,
+        "source": source,
+        "backend_session_id": current.backend_session_id,
+        "scopes": list(scopes),
+    }
+    return TokenService.generate_signed_token(
+        payload,
+        expires_in_seconds=settings.ai_agent_token_ttl_seconds,
+        subject=f"user:{current.user.id}",
+    )
+
+
+def verify_agent_tool_token(token: str) -> dict[str, Any]:
+    """校验工具调用令牌并返回 claims。"""
+
+    try:
+        return TokenService.verify_signed_token(token, audience="agent-tool")
+    except Exception as exc:  # noqa: BLE001
+        raise AppException(status_code=401, code="AI_TOOL_TOKEN_INVALID", detail="工具调用令牌无效或已过期。") from exc
+
+
 def extract_user_id(subject: str | None) -> int:
     """从 `user:{id}` 形式的 subject 中提取用户主键。"""
 

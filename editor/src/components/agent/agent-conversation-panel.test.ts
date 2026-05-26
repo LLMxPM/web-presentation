@@ -166,7 +166,7 @@ function createRuntimeSnapshot(overrides: Record<string, unknown> = {}) {
     active_run: null,
     last_run: null,
     pending_requirement: null,
-    event_cursor: 0,
+    event_index: -1,
     pending_attachments: [],
     ...overrides,
   }
@@ -345,7 +345,7 @@ describe('AgentConversationPanel', () => {
       active_run: null,
       last_run: null,
       pending_requirement: null,
-      event_cursor: 0,
+      event_index: -1,
       pending_attachments: [],
     })
     renameAgentSessionMock.mockResolvedValue({
@@ -366,7 +366,7 @@ describe('AgentConversationPanel', () => {
       run_id: 'run-1',
       session_id: 'session-1',
       status: 'pending',
-      event_cursor: 0,
+      event_index: -1,
     })
     cancelAgentSessionActiveRunMock.mockResolvedValue({
       run_id: 'run-1',
@@ -382,7 +382,7 @@ describe('AgentConversationPanel', () => {
       run_id: 'run-1',
       session_id: 'session-1',
       status: 'pending',
-      event_cursor: 0,
+      event_index: -1,
     })
     streamAgentRunEventsByRunIdMock.mockImplementation(async (_runId: string, _payload: unknown, options?: { onEvent?: (event: any) => void }) => {
       options?.onEvent?.({ event: 'run.started', run_id: 'run-1', session_id: 'session-1', content: null, data: {} })
@@ -442,7 +442,13 @@ describe('AgentConversationPanel', () => {
         sequence: 4,
       })
     })
-    streamAgentRunEventsMock.mockResolvedValue(undefined)
+    streamAgentRunMock.mockImplementation(async (sessionId: string, scope: unknown, payload: { run_id?: string }, options?: { onEvent?: (event: any) => void, signal?: AbortSignal }) => {
+      startAgentRunMock(sessionId, scope, payload)
+      await streamAgentRunEventsByRunIdMock(payload?.run_id ?? 'run-1', { after_sequence: -1 }, options)
+    })
+    streamAgentRunEventsMock.mockImplementation(async (_sessionId: string, runId: string, _scope: unknown, payload: { event_index?: number }, options?: { onEvent?: (event: any) => void, signal?: AbortSignal }) => {
+      await streamAgentRunEventsByRunIdMock(runId, { after_sequence: payload?.event_index ?? -1 }, options)
+    })
   })
 
   it('apply_page_edits 完成后应直接刷新页面，而不是进入确认流程', async () => {
@@ -852,7 +858,7 @@ describe('AgentConversationPanel', () => {
 
   it('运行中应允许发起中断请求', async () => {
     const streamSignalRef: { value: AbortSignal | null } = { value: null }
-    cancelAgentRunMock.mockResolvedValueOnce({
+    cancelAgentSessionActiveRunMock.mockResolvedValueOnce({
       run_id: 'run-2',
       session_id: 'session-1',
       cancel_requested: true,
@@ -882,7 +888,11 @@ describe('AgentConversationPanel', () => {
     await fireEvent.click(screen.getByRole('button', { name: '停止' }))
 
     await waitFor(() => {
-      expect(cancelAgentRunMock).toHaveBeenCalledWith('run-2')
+      expect(cancelAgentSessionActiveRunMock).toHaveBeenCalledWith(
+        'session-1',
+        expect.objectContaining({ page_id: 31 }),
+        expect.objectContaining({ agent_id: DEFAULT_AGENT_ID }),
+      )
     })
     expect(streamSignalRef.value?.aborted).toBe(false)
     expect(messageErrorMock).not.toHaveBeenCalled()
@@ -895,7 +905,7 @@ describe('AgentConversationPanel', () => {
       run_id: 'run-cancel',
       session_id: 'session-1',
       status: 'pending',
-      event_cursor: 0,
+      event_index: -1,
     })
     const cancelledRuntime = createRuntimeSnapshot({
       messages: [],
@@ -907,9 +917,9 @@ describe('AgentConversationPanel', () => {
         pending_requirement: null,
         content: null,
         created_at: '2026-04-18T10:05:00+08:00',
-        event_sequence: 3,
+        event_index: 3,
       },
-      event_cursor: 3,
+      event_index: 3,
     })
     getAgentSessionRuntimeMock.mockImplementation(async () => (
       streamAgentRunEventsByRunIdMock.mock.calls.length > 0
@@ -967,12 +977,12 @@ describe('AgentConversationPanel', () => {
     getAgentSessionActiveRunMock.mockResolvedValue(fallbackRun)
     getAgentSessionRuntimeMock.mockResolvedValueOnce(createRuntimeSnapshot({
       active_run: fallbackRun,
-      event_cursor: 0,
+      event_index: -1,
     }))
     streamAgentRunEventsByRunIdMock.mockImplementationOnce(async () => {
       await new Promise<void>(() => {})
     })
-    cancelAgentRunMock.mockResolvedValueOnce({
+    cancelAgentSessionActiveRunMock.mockResolvedValueOnce({
       run_id: 'run-fallback',
       session_id: 'session-1',
       cancel_requested: true,
@@ -987,7 +997,11 @@ describe('AgentConversationPanel', () => {
     await fireEvent.click(screen.getByRole('button', { name: '停止' }))
 
     await waitFor(() => {
-      expect(cancelAgentRunMock).toHaveBeenCalledWith('run-fallback')
+      expect(cancelAgentSessionActiveRunMock).toHaveBeenCalledWith(
+        'session-1',
+        expect.objectContaining({ page_id: 31 }),
+        expect.objectContaining({ agent_id: DEFAULT_AGENT_ID }),
+      )
     })
     expect(messageInfoMock).not.toHaveBeenCalledWith('已停止。')
   })
@@ -1020,17 +1034,17 @@ describe('AgentConversationPanel', () => {
       created_at: '2026-04-18T10:05:00+08:00',
       updated_at: '2026-04-18T10:05:05+08:00',
       cancel_requested_at: '2026-04-18T10:05:05+08:00',
-      event_sequence: 2,
+      event_index: 2,
     }
     getAgentSessionActiveRunMock.mockResolvedValue(cancellingRun)
     getAgentSessionRuntimeMock.mockResolvedValueOnce(createRuntimeSnapshot({
       active_run: cancellingRun,
-      event_cursor: 2,
+      event_index: 2,
     }))
     streamAgentRunEventsByRunIdMock.mockImplementationOnce(async () => {
       await new Promise<void>(() => {})
     })
-    cancelAgentRunMock.mockResolvedValueOnce({
+    cancelAgentSessionActiveRunMock.mockResolvedValueOnce({
       run_id: 'run-force',
       session_id: 'session-1',
       cancel_requested: true,
@@ -1045,7 +1059,11 @@ describe('AgentConversationPanel', () => {
     await fireEvent.click(screen.getByRole('button', { name: '强制结束' }))
 
     await waitFor(() => {
-      expect(cancelAgentRunMock).toHaveBeenCalledWith('run-force', { force: true })
+      expect(cancelAgentSessionActiveRunMock).toHaveBeenCalledWith(
+        'session-1',
+        expect.objectContaining({ page_id: 31 }),
+        expect.objectContaining({ agent_id: DEFAULT_AGENT_ID, force: true }),
+      )
     })
     expect(messageInfoMock).toHaveBeenCalledWith('已停止。')
   })
@@ -1964,9 +1982,9 @@ describe('AgentConversationPanel', () => {
         pending_requirement: null,
         content: null,
         created_at: '2026-04-18T10:30:00+08:00',
-        event_sequence: 5,
+        event_index: 5,
       },
-      event_cursor: 5,
+      event_index: 5,
     }))
     streamAgentRunEventsByRunIdMock.mockImplementationOnce(async () => {
       await new Promise<void>(() => {})
@@ -2030,9 +2048,9 @@ describe('AgentConversationPanel', () => {
           pending_requirement: null,
           content: null,
           created_at: '2026-04-18T10:30:00+08:00',
-          event_sequence: 0,
+          event_index: 0,
         },
-        event_cursor: 0,
+        event_index: 0,
       }))
       .mockResolvedValueOnce(createRuntimeSnapshot({
         session: {
@@ -2167,7 +2185,7 @@ describe('AgentConversationPanel', () => {
     getAgentSessionRuntimeMock.mockResolvedValueOnce(createRuntimeSnapshot({
       active_run: pausedRun,
       pending_requirement: pausedRun.pending_requirement,
-      event_cursor: 0,
+      event_index: -1,
     }))
 
     render(AgentConversationPanel, createTestingRenderOptions())
@@ -2180,14 +2198,14 @@ describe('AgentConversationPanel', () => {
     await fireEvent.click(screen.getByRole('button', { name: /提交/ }))
 
     await waitFor(() => {
-      expect(continueAgentRunMock).toHaveBeenCalled()
+      expect(continueAgentSessionActiveRunMock).toHaveBeenCalled()
     })
-    expect(continueAgentRunMock.mock.calls[0][0]).toBe('run-paused-1')
-    expect(continueAgentRunMock.mock.calls[0][1]).toEqual(expect.objectContaining({
+    expect(continueAgentSessionActiveRunMock.mock.calls[0][0]).toBe('session-1')
+    expect(continueAgentSessionActiveRunMock.mock.calls[0][2]).toEqual(expect.objectContaining({
       decision: 'confirm',
       tool_execution: { tool_name: 'apply_page_edits', tool_call_id: 'tool-confirm-1', tool_args: {} },
     }))
-    expect(continueAgentRunMock.mock.calls[0][1]).not.toHaveProperty('note')
+    expect(continueAgentSessionActiveRunMock.mock.calls[0][2]).not.toHaveProperty('note')
   })
 
   it('应将工具调用内嵌到助手消息中，并支持查看输入输出详情', async () => {

@@ -10,12 +10,11 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.registry import AgentRegistry
-from app.ai.run_background import get_agent_run_manager
 from app.ai.runtime_context_builder import build_agent_runtime_context
 from app.ai.session_facade import AgentSessionFacade
 from app.api.dependencies import get_current_user
 from app.core.exceptions import AppException
-from app.db.session import get_db_session, get_session_factory
+from app.db.session import get_db_session
 from app.schemas.agent import (
     AgentActiveRunItem,
     AgentCancelRunRequest,
@@ -41,13 +40,7 @@ from app.schemas.agent_config import (
     AgentConfigUpdateRequest,
     AgentToolConfigUpdateRequest,
 )
-from app.models.ai_agent_run import AiAgentRunTask
 from app.services.ai_agent_config_service import AiAgentConfigService
-from app.services.ai_agent_run_service import (
-    AiAgentRunService,
-    build_agent_run_input_payload,
-    task_is_active,
-)
 from app.services.ai_llm_service import AiLlmService
 from app.services.agent_image_attachment_service import AgentImageAttachmentService
 from app.services.auth_service import AuthContext
@@ -548,28 +541,10 @@ async def start_agent_run(
     source: str = "editor-page-detail",
     agent_id: str = "agent-coordinator",
 ) -> AgentRunStartResponse:
-    """创建后台 run 并返回事件订阅游标。"""
+    """旧的两步式启动接口已废弃；新链路必须直接消费 Agno raw SSE。"""
 
-    scope = await _resolve_scope_context(
-        session=session,
-        user_id=current.user.id,
-        workspace_id=workspace_id,
-        project_id=project_id,
-        page_id=page_id,
-        component_id=component_id,
-        scope_type=scope_type,
-        source=source,
-    )
-    run_id = await _start_agent_run_task(
-        session_id=session_id,
-        payload=payload,
-        request=request,
-        current=current,
-        session=session,
-        scope=scope,
-        agent_id=agent_id,
-    )
-    return AgentRunStartResponse(run_id=run_id, session_id=session_id, status="pending", event_cursor=0)
+    _ = session_id, payload, workspace_id, request, current, session, project_id, page_id, component_id, scope_type, source, agent_id
+    raise AppException(status_code=410, code="AI_RUN_START_DEPRECATED", detail="请使用流式运行接口启动智能体。")
 
 
 @router.post("/sessions/{session_id}/runs/stream")
@@ -587,7 +562,7 @@ async def stream_agent_run(
     source: str = "editor-page-detail",
     agent_id: str = "agent-coordinator",
 ) -> StreamingResponse:
-    """向 Agent 发送消息，并把运行事件以 SSE 方式转发给 Editor。"""
+    """向 Agent 发送消息，并直接转发 Agno raw SSE。"""
 
     scope = await _resolve_scope_context(
         session=session,
@@ -599,97 +574,26 @@ async def stream_agent_run(
         scope_type=scope_type,
         source=source,
     )
-    run_id = await _start_agent_run_task(
-        session_id=session_id,
-        payload=payload,
-        request=request,
-        current=current,
-        session=session,
-        scope=scope,
-        agent_id=agent_id,
-    )
-    return StreamingResponse(
-        get_agent_run_manager(request.app).stream_sse_events(run_id=run_id, current=current),
-        media_type="text/event-stream",
-    )
-
-
-async def _start_agent_run_task(
-    *,
-    session_id: str,
-    payload: AgentRunRequest,
-    request: Request,
-    current: AuthContext,
-    session: AsyncSession,
-    scope: AgentScopeContext,
-    agent_id: str,
-) -> str:
-    """校验请求并启动后台 run，供新旧入口复用。"""
-
     descriptor = _get_agent_registry(request).get_descriptor(agent_id)
     _ensure_agent_launch_available(descriptor, scope)
     runtime_context = await _build_runtime_context(session=session, scope=scope)
     facade = AgentSessionFacade(app=request.app, current=current, session=session)
-    model_supports_image_input = False
-    try:
-        model_config = await AiLlmService(session, user_id=current.user.id).get_bound_config_or_raise(descriptor.llm_slot or "")
-        model_supports_image_input = bool(model_config.supports_image_input)
-    except AppException:
-        if payload.image_attachment_ids:
-            raise
-    if payload.image_attachment_ids:
-        if not model_supports_image_input:
-            raise AppException(
-                status_code=409,
-                code="AI_LLM_IMAGE_INPUT_UNSUPPORTED",
-                detail="当前绑定模型不支持图片输入，不能发送图片附件。",
-            )
-        await AgentImageAttachmentService(session, user_id=current.user.id).validate_attachments_for_run(
-            workspace_id=scope.workspace_id,
-            session_id=session_id,
-            attachment_ids=payload.image_attachment_ids,
-        )
-    agent_config = await AiAgentConfigService(session, user_id=current.user.id).get_effective_runtime_config(agent_id)
-    tool_scopes = AgentSessionFacade._resolve_tool_scopes(
-        agent_id=agent_id,
-        agent_config=agent_config,
-        supports_image_input=model_supports_image_input,
-    )
     reserved_lock = await facade.reserve_run_slot(session_id=session_id, agent_id=agent_id, scope=scope)
-    run_id = str(uuid4())
-    try:
-        await AiAgentRunService(session).create_task(
-            run_id=run_id,
-            session_id=session_id,
-            agent_id=agent_id,
-            user_id=current.user.id,
-            backend_session_id=current.backend_session_id,
-            scope=scope,
-            input_summary=payload.message,
-            input_payload_json=build_agent_run_input_payload(
-                message=payload.message,
-                image_attachment_ids=payload.image_attachment_ids,
-            ),
-            tool_scopes=tool_scopes,
-        )
-        manager = get_agent_run_manager(request.app)
-        await manager.start_run(
-            app=request.app,
-            current=current,
+    run_id = payload.run_id or str(uuid4())
+    return StreamingResponse(
+        facade.run_raw_sse(
             session_id=session_id,
             agent_id=agent_id,
             scope=scope,
-            runtime_context=runtime_context,
             message=payload.message,
-            image_attachment_ids=payload.image_attachment_ids,
+            runtime_context=runtime_context,
             reserved_lock=reserved_lock,
+            image_attachment_ids=payload.image_attachment_ids,
             run_id=run_id,
-        )
-    except Exception:
-        if reserved_lock.locked():
-            reserved_lock.release()
-        raise
-    return run_id
+        ),
+        media_type="text/event-stream",
+        headers={"X-Agent-Run-Id": run_id},
+    )
 
 
 @router.get("/sessions/{session_id}/runs/{run_id}/events/stream")
@@ -706,9 +610,9 @@ async def stream_agent_run_events(
     scope_type: Literal["workspace", "project", "page", "component"] | None = None,
     source: str = "editor-page-detail",
     agent_id: str = "agent-coordinator",
-    after_sequence: int = 0,
+    event_index: int = -1,
 ) -> StreamingResponse:
-    """订阅或回放指定 run 的后台事件流。"""
+    """按 Agno event_index 订阅或回放指定 run 的原始事件流。"""
 
     scope = await _resolve_scope_context(
         session=session,
@@ -727,14 +631,13 @@ async def stream_agent_run_events(
         agent_id=agent_id,
         scope=scope,
     )
-    task = await AiAgentRunService(session).get_task_by_run(run_id=run_id, user_id=current.user.id)
-    if task is None or task.session_id != session_id or task.agent_id != agent_id:
-        raise AppException(status_code=404, code="AI_RUN_NOT_FOUND", detail="智能体运行记录不存在。")
     return StreamingResponse(
-        get_agent_run_manager(request.app).stream_sse_events(
+        AgentSessionFacade(app=request.app, current=current, session=session).resume_raw_sse(
             run_id=run_id,
-            current=current,
-            after_sequence=after_sequence,
+            session_id=session_id,
+            agent_id=agent_id,
+            scope=scope,
+            event_index=event_index,
         ),
         media_type="text/event-stream",
     )
@@ -746,19 +649,11 @@ async def stream_agent_run_events_by_run(
     current: Annotated[AuthContext, Depends(get_current_user)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
     request: Request,
-    after_sequence: int = 0,
 ) -> StreamingResponse:
-    """按 run_id 订阅或回放后台事件流。"""
+    """旧 run-id 事件接口已废弃；新链路需要带 session/scope 的 resume。"""
 
-    await _get_authorized_run_task_or_raise(session=session, run_id=run_id, current=current)
-    return StreamingResponse(
-        get_agent_run_manager(request.app).stream_sse_events(
-            run_id=run_id,
-            current=current,
-            after_sequence=after_sequence,
-        ),
-        media_type="text/event-stream",
-    )
+    _ = run_id, current, session, request
+    raise AppException(status_code=410, code="AI_RUN_EVENTS_DEPRECATED", detail="请使用会话范围内的运行事件接口。")
 
 
 @router.post("/runs/{run_id}/continue")
@@ -769,39 +664,10 @@ async def continue_agent_run_by_run_id(
     session: Annotated[AsyncSession, Depends(get_db_session)],
     request: Request,
 ) -> AgentRunStartResponse:
-    """按 run_id 继续当前暂停运行。"""
+    """旧 run-id continue 接口已废弃；新链路使用会话范围的流式 continue。"""
 
-    task = await _get_authorized_run_task_or_raise(session=session, run_id=run_id, current=current)
-    if task.status != "paused":
-        raise AppException(status_code=409, code="AI_SESSION_RUN_NOT_PAUSED", detail="当前运行不处于暂停态。")
-    scope = _scope_from_run_task(task)
-    descriptor = _get_agent_registry(request).get_descriptor(task.agent_id)
-    _ensure_agent_launch_available(descriptor, scope)
-    runtime_context = await _build_runtime_context(session=session, scope=scope)
-    facade = AgentSessionFacade(app=request.app, current=current, session=session)
-    active_run = await facade.get_active_run(
-        session_id=task.session_id,
-        agent_id=task.agent_id,
-        scope=scope,
-        runtime_context=runtime_context,
-    )
-    if active_run is None or active_run.status != "paused" or active_run.run_id != run_id:
-        raise AppException(status_code=409, code="AI_SESSION_RUN_NOT_PAUSED", detail="当前会话没有待继续的智能体运行。")
-    await AiAgentRunService(session).mark_running(task=task, reset_tool_auth=True)
-    await get_agent_run_manager(request.app).start_continue(
-        app=request.app,
-        current=current,
-        session_id=task.session_id,
-        agent_id=task.agent_id,
-        scope=scope,
-        runtime_context=runtime_context,
-        tool_execution=payload.tool_execution,
-        decision=payload.decision,
-        note=payload.note,
-        feedback_selections=payload.feedback_selections,
-        run_id=run_id,
-    )
-    return AgentRunStartResponse(run_id=run_id, session_id=task.session_id, status="pending", event_cursor=active_run.event_sequence)
+    _ = run_id, payload, current, session, request
+    raise AppException(status_code=410, code="AI_RUN_CONTINUE_DEPRECATED", detail="请使用会话范围内的流式继续接口。")
 
 
 @router.post("/runs/{run_id}/cancel", response_model=AgentCancelRunResponse)
@@ -812,52 +678,10 @@ async def cancel_agent_run_by_run_id(
     session: Annotated[AsyncSession, Depends(get_db_session)],
     request: Request,
 ) -> AgentCancelRunResponse:
-    """按 run_id 中断或强制结束当前运行。"""
+    """旧 run-id cancel 接口已废弃；新链路使用会话范围的 cancel。"""
 
-    task = await _get_authorized_run_task_or_raise(session=session, run_id=run_id, current=current)
-    if not task_is_active(task):
-        raise AppException(status_code=409, code="AI_RUN_NOT_ACTIVE", detail="当前运行已结束，不能取消。")
-    response = await get_agent_run_manager(request.app).cancel_active_run(
-        app=request.app,
-        current=current,
-        session_id=task.session_id,
-        agent_id=task.agent_id,
-        scope=_scope_from_run_task(task),
-        force=payload.force,
-    )
-    if response.cancel_requested:
-        ai_db = getattr(request.app.state, "ai_db", None)
-        if ai_db is not None:
-            async with get_session_factory()() as preserve_session:
-                await AiAgentRunService(preserve_session).preserve_user_cancelled_run_output(ai_db=ai_db, task=task)
-    return response
-
-
-async def _get_authorized_run_task_or_raise(
-    *,
-    session: AsyncSession,
-    run_id: str,
-    current: AuthContext,
-) -> AiAgentRunTask:
-    """按 run_id 读取当前用户可访问的后台任务。"""
-
-    task = await AiAgentRunService(session).get_task_by_run(run_id=run_id, user_id=current.user.id)
-    if task is None:
-        raise AppException(status_code=404, code="AI_RUN_NOT_FOUND", detail="智能体运行记录不存在。")
-    return task
-
-
-def _scope_from_run_task(task: AiAgentRunTask) -> AgentScopeContext:
-    """从 run task 还原执行时绑定的业务范围。"""
-
-    return AgentScopeContext(
-        scope_type=task.scope_type,  # type: ignore[arg-type]
-        workspace_id=task.workspace_id,
-        project_id=task.project_id,
-        page_id=task.page_id,
-        component_id=task.component_id,
-        source=task.source,
-    )
+    _ = run_id, payload, current, session, request
+    raise AppException(status_code=410, code="AI_RUN_CANCEL_DEPRECATED", detail="请使用会话范围内的取消接口。")
 
 
 @router.get("/sessions/{session_id}/active-run", response_model=AgentActiveRunItem | None)
@@ -965,13 +789,11 @@ async def cancel_agent_session_active_run(
     )
     descriptor = _get_agent_registry(request).get_descriptor(agent_id)
     _ensure_agent_available(descriptor, scope)
-    return await get_agent_run_manager(request.app).cancel_active_run(
-        app=request.app,
-        current=current,
+    _ = payload.force
+    return await AgentSessionFacade(app=request.app, current=current, session=session).cancel_active_run(
         session_id=session_id,
         agent_id=agent_id,
         scope=scope,
-        force=payload.force,
     )
 
 
@@ -1014,38 +836,7 @@ async def continue_agent_session_active_run(
     )
     if active_run is None or active_run.status != "paused":
         raise AppException(status_code=409, code="AI_SESSION_RUN_NOT_PAUSED", detail="当前会话没有待继续的智能体运行。")
-    run_id = active_run.run_id
-    task_service = AiAgentRunService(session)
-    existing_task = await task_service.get_task_by_run(run_id=run_id, user_id=current.user.id)
-    model_supports_image_input = False
-    try:
-        model_config = await AiLlmService(session, user_id=current.user.id).get_bound_config_or_raise(descriptor.llm_slot or "")
-        model_supports_image_input = bool(model_config.supports_image_input)
-    except AppException:
-        model_supports_image_input = False
-    agent_config = await AiAgentConfigService(session, user_id=current.user.id).get_effective_runtime_config(agent_id)
-    tool_scopes = AgentSessionFacade._resolve_tool_scopes(
-        agent_id=agent_id,
-        agent_config=agent_config,
-        supports_image_input=model_supports_image_input,
-    )
-    if existing_task is None:
-        existing_task = await task_service.create_task(
-            run_id=run_id,
-            session_id=session_id,
-            agent_id=agent_id,
-            user_id=current.user.id,
-            backend_session_id=current.backend_session_id,
-            scope=scope,
-            input_summary="继续已暂停的智能体运行。",
-            tool_scopes=tool_scopes,
-        )
-    elif task_is_active(existing_task) and existing_task.status != "paused":
-        raise AppException(status_code=409, code="AI_SESSION_RUN_ACTIVE", detail="当前会话已有运行中的智能体任务。")
-    await task_service.mark_running(task=existing_task, reset_tool_auth=True)
-    await get_agent_run_manager(request.app).start_continue(
-        app=request.app,
-        current=current,
+    event_stream = await facade.prepare_continue_active_raw_sse(
         session_id=session_id,
         agent_id=agent_id,
         scope=scope,
@@ -1054,14 +845,9 @@ async def continue_agent_session_active_run(
         decision=payload.decision,
         note=payload.note,
         feedback_selections=payload.feedback_selections,
-        run_id=run_id,
     )
     return StreamingResponse(
-        get_agent_run_manager(request.app).stream_sse_events(
-            run_id=run_id,
-            current=current,
-            after_sequence=active_run.event_sequence,
-        ),
+        event_stream,
         media_type="text/event-stream",
     )
 

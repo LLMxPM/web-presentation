@@ -47,7 +47,7 @@ export const useAgentSessionStore = defineStore('agent-session', {
         pendingRequirement: snapshot.pending_requirement,
         pendingImageAttachments: snapshot.pending_attachments,
         contextStatus: snapshot.context_status,
-        eventCursor: snapshot.event_cursor,
+        eventIndex: snapshot.event_index,
         toolDetails: snapshot.tool_details,
       })
       this.syncFlatMaps(sessionId)
@@ -123,8 +123,8 @@ export const useAgentSessionStore = defineStore('agent-session', {
       this.syncFlatMaps(sessionId)
     },
     getLastSequence(sessionId: string, runId: string): number {
-      if (!sessionId) return 0
-      return this.ensureSession(sessionId).stream.lastSequenceByRun[runId] ?? 0
+      if (!sessionId) return -1
+      return this.ensureSession(sessionId).stream.lastSequenceByRun[runId] ?? -1
     },
     beginLocalRun(sessionId: string, message: string, attachments: AgentImageAttachmentItem[]): void {
       if (!sessionId) return

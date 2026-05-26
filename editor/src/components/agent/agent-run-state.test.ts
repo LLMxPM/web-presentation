@@ -216,13 +216,13 @@ describe('agent-run-state', () => {
         pending_requirement: null,
         content: null,
         created_at: '2026-04-18T10:00:00+08:00',
-        event_sequence: 5,
+        event_index: 5,
       },
       lastRun: null,
       pendingRequirement: null,
       pendingImageAttachments: [],
       contextStatus: null,
-      eventCursor: 5,
+      eventIndex: 5,
     })
 
     expect(state.stream.lastSequenceByRun['run-1']).toBeUndefined()
@@ -256,12 +256,12 @@ describe('agent-run-state', () => {
         pending_requirement: null,
         content: null,
         created_at: '2026-04-18T10:00:00+08:00',
-        event_sequence: 3,
+        event_index: 3,
       },
       pendingRequirement: null,
       pendingImageAttachments: [],
       contextStatus: null,
-      eventCursor: 3,
+      eventIndex: 3,
       toolDetails: [{
         id: 'run-1:list_workspace_render_assets:2',
         run_id: 'run-1',
@@ -322,12 +322,12 @@ describe('agent-run-state', () => {
         pending_requirement: null,
         content: null,
         created_at: '2026-04-18T10:00:00+08:00',
-        event_sequence: 3,
+        event_index: 3,
       },
       pendingRequirement: null,
       pendingImageAttachments: [],
       contextStatus: null,
-      eventCursor: 3,
+      eventIndex: 3,
       toolDetails: [{
         id: 'run-1:list_workspace_render_assets:2',
         run_id: 'run-1',
@@ -390,7 +390,7 @@ describe('agent-run-state', () => {
       pending_requirement: null,
       content: null,
       created_at: '2026-04-18T10:00:00+08:00',
-      event_sequence: 2,
+      event_index: 2,
     }
     state.messages = [{
       id: 'local-assistant',
@@ -417,12 +417,12 @@ describe('agent-run-state', () => {
         pending_requirement: null,
         content: null,
         created_at: '2026-04-18T10:00:00+08:00',
-        event_sequence: 3,
+        event_index: 3,
       },
       pendingRequirement: null,
       pendingImageAttachments: [],
       contextStatus: null,
-      eventCursor: 3,
+      eventIndex: 3,
       toolDetails: [],
     })
 
@@ -457,12 +457,12 @@ describe('agent-run-state', () => {
         pending_requirement: null,
         content: null,
         created_at: '2026-04-18T10:00:00+08:00',
-        event_sequence: 1,
+        event_index: 1,
       },
       pendingRequirement: null,
       pendingImageAttachments: [],
       contextStatus: null,
-      eventCursor: 1,
+      eventIndex: 1,
       toolDetails: [],
     })
 
@@ -493,5 +493,36 @@ describe('agent-run-state', () => {
     })
 
     expect(store.sessions[sessionId].pendingRequirement).toBeNull()
+  })
+
+  it('Agno raw event 应投影成运行中、消息增量和 HITL 暂停状态', () => {
+    const state = createAgentSessionRuntimeState()
+    const options = { agentId: 'agent-coordinator', agentDisplayName: '内容助手' }
+
+    applyAgentRunEvent(state, event({ event: 'RunStarted', event_index: 0, sequence: null }), options)
+    applyAgentRunEvent(state, event({ event: 'RunContent', content: '半截输出', event_index: 1, sequence: null }), options)
+    applyAgentRunEvent(state, event({
+      event: 'RunPaused',
+      event_index: 2,
+      sequence: null,
+      requirements: [{
+        id: 'req-1',
+        tool_execution: {
+          tool_name: 'apply_page_edits',
+          tool_call_id: 'call-1',
+          requires_confirmation: true,
+          confirmed: null,
+          tool_args: { note: '写入页面' },
+        },
+      }],
+    }), options)
+
+    expect(state.messages.at(-1)?.content).toBe('半截输出')
+    expect(state.activeRun?.status).toBe('paused')
+    expect(state.activeRun?.event_index).toBe(2)
+    expect(state.pendingRequirement).toEqual(expect.objectContaining({
+      id: 'req-1',
+      tool_name: 'apply_page_edits',
+    }))
   })
 })

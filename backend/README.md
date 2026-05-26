@@ -188,7 +188,7 @@ app:
 
 ## 8. 内容助手（Agno）
 
-Backend 现已内嵌基于 Agno 的智能体运行时，但不挂载 AgentOS routes，也不使用 AgentOS run API。Editor 通过 `/api/ai/*` 调用 Backend BFF，Backend 直接构建 Agno `Agent` 或 `Team`，并通过后台 run task、事件回放表与 Agno session/run 共同维护会话运行状态。
+Backend 现已内嵌基于 Agno 的智能体运行时，但不挂载 AgentOS routes，也不使用 AgentOS run API。Editor 通过 `/api/ai/*` 调用 Backend BFF，Backend 直接构建 Agno `Agent` 或 `Team`，并以 Agno session/run/events 作为会话、运行与 HITL 状态事实源。
 
 当前开放的稳定 Agent 包括：
 
@@ -203,16 +203,15 @@ Backend 现已内嵌基于 Agno 的智能体运行时，但不挂载 AgentOS rou
 - 浏览器继续只持有 `wp_user_session` Cookie
 - Editor 调用 Backend BFF 路由 `/api/ai/*`
 - Editor 以 `session_id` 作为唯一会话主键，主入口为 `POST /api/ai/sessions/{session_id}/runs/stream`
-- Backend 收到新消息后创建 `ai_agent_run_tasks` 记录并启动后台任务；SSE 连接只订阅事件，不再等同于 run 生命周期
-- 后台任务调用 Agno `agent/team.arun(..., session_id=..., stream=True, stream_events=True)` 或 `agent/team.acontinue_run(...)`，把 Agno 事件规范化后写入 `ai_agent_run_events`，再广播给当前订阅者
-- 客户端断开、切换会话、关闭面板只会关闭事件订阅；后台 run 会继续执行，重新进入后可通过 `active-run` 与 `runs/{run_id}/events/stream?after_sequence=N` 回放并恢复界面
-- Backend 以 `ai_agent_run_tasks` 作为 active-run 主状态源；`pending/running/paused/cancelling` 视为非终态，`completed/cancelled/failed` 视为终态，同一 session 同时只允许一个非终态 run
-- Agno `AgentSession.runs` 或 `TeamSession.runs` 继续保存历史与 HITL 状态；`agent-coordinator` 新会话写入 `TeamSession`，历史 `AgentSession` 仍可读取、回放和重命名；启动新 run 前会用 task 终态同步清理 stale Agno run，避免旧的 `running/paused` 永久阻塞
-- Editor 停止运行时必须调用 `POST /active-run/cancel`；后端先把 task 标记为 `cancelling` 并调用 Agno `cancel_run()`，不把 `False` 返回值视为取消失败，超时后可由前端调用 `force=true` 强制清理当前 session 占用
-- 后端进程启动时会把上次进程遗留且无人承接的 `pending/running/cancelling` 任务标记为 `cancelled` 并同步 Agno session；当前不保证进程重启后继续未完成的 LLM 调用
+- 前端生成 `run_id`，Backend 调用 Agno `agent/team.arun(..., stream=True, stream_events=True, background=True, run_id=...)`，SSE 直接透传 Agno 原始事件
+- HITL 继续执行走 `POST /active-run/continue`，Backend 从 Agno 当前 run 的 active requirements 匹配用户决策，再调用 `agent/team.acontinue_run(...)`
+- 客户端断开、切换会话、关闭面板只会关闭当前订阅；重新进入后通过 `runs/{run_id}/events/stream?event_index=N` 从 Agno event buffer 或 Agno DB events 回放
+- Backend 以 Agno `AgentSession.runs` 或 `TeamSession.runs` 作为 active-run 主状态源；`pending/running/paused/cancelling` 视为非终态，`completed/cancelled/failed` 视为终态，同一 session 同时只允许一个非终态 run
+- Editor 停止运行时调用 `POST /active-run/cancel`；running run 调用 Agno `cancel_run()`，paused run 无后台任务时直接把 Agno DB 中对应 run 标记为 `cancelled`
+- Backend 重启后 Agno event buffer 会丢失；paused run 仍可继续，running 且缺少 buffer 的 run 会在懒加载快照时标记为 `cancelled`
 - 历史上下文使用 Agno 内置历史注入，按模型 `context_window_tokens`、`max_output_tokens`、`history_token_ratio` 动态计算 `num_history_messages`，不再固定 `num_history_runs=20`
-- Agent 工具级鉴权复用 `ai_agent_run_tasks`：run 创建时快照工具 scopes，并使用短租约 `tool_auth_expires_at` 滑动刷新；工具调用通过 `run_id` 校验当前用户、会话、Agent、来源、scope 与 run 状态，不再签发嵌套工具 JWT
-- 不同 session 可并行执行；当前默认单进程部署下使用进程内 session 锁、内存广播与后台任务承接，多 worker 部署需要补共享队列或共享 cancellation manager
+- Agent 工具级鉴权使用短期签名 token，承载 `run_id/session_id/agent_id/user_id/workspace/page/scopes/exp`；工具调用只校验 token、scope 和资源归属，不再查询 Redis run 状态
+- 不同 session 可并行执行；当前默认单实例或按 session/run 粘性路由部署，不额外支持跨实例实时续流
 
 当前工具按入口分组装配：
 

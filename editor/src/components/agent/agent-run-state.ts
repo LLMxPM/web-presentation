@@ -104,6 +104,7 @@ export function applyAgentRunEvent(
   event: AgentRunEvent,
   options: ApplyAgentRunEventOptions,
 ): ApplyAgentRunEventResult {
+  event = normalizeAgnoRunEvent(event)
   const runId = event.run_id || state.stream.runId
   if (!runId) {
     return { applied: false, terminal: false }
@@ -111,7 +112,7 @@ export function applyAgentRunEvent(
   if (!shouldApplyEvent(state, event, runId)) {
     return { applied: false, terminal: false }
   }
-  rememberEventSequence(state, runId, event.sequence)
+  rememberEventSequence(state, runId, event.event_index ?? event.sequence)
 
   switch (event.event) {
     case 'context.status':
@@ -194,7 +195,7 @@ export function applyAgentRuntimeSnapshot(
     pendingRequirement: AgentPendingRequirement | null
     pendingImageAttachments: AgentImageAttachmentItem[]
     contextStatus: unknown | null
-    eventCursor: number
+    eventIndex: number
     toolDetails?: AgentToolCallDetailItem[]
   },
 ): void {
@@ -232,8 +233,218 @@ export function applyAgentRuntimeSnapshot(
     ? payload.activeRun
     : payload.lastRun
   if (cursorRun?.run_id) {
-    state.stream.lastSequenceByRun[cursorRun.run_id] = payload.eventCursor
+    state.stream.lastSequenceByRun[cursorRun.run_id] = payload.eventIndex
   }
+}
+
+/**
+ * 将 Agno raw event 投影成内部 UI 状态机事件；SSE 公共契约仍保留 raw payload。
+ */
+export function normalizeAgnoRunEvent(rawEvent: AgentRunEvent): AgentRunEvent {
+  if (rawEvent.event.includes('.')) {
+    return { ...rawEvent, data: rawEvent.data ?? {}, event_index: rawEvent.event_index ?? rawEvent.sequence ?? null }
+  }
+  const eventName = rawEvent.event
+  const runId = resolveRawString(rawEvent.run_id) ?? null
+  const sessionId = resolveRawString(rawEvent.session_id) ?? null
+  const eventIndex = resolveRawNumber(rawEvent.event_index) ?? resolveRawNumber(rawEvent.sequence)
+  const data: Record<string, unknown> = { ...rawEvent }
+  delete data.data
+
+  if (['RunStarted', 'RunStartedEvent', 'TeamRunStarted'].includes(eventName)) {
+    return {
+      event: 'run.started',
+      run_id: runId,
+      session_id: sessionId,
+      content: null,
+      data: { ...data, agent_id: rawEvent.agent_id ?? rawEvent.team_id },
+      event_index: eventIndex,
+    }
+  }
+  if (['RunContinued', 'RunContinuedEvent', 'TeamRunContinued'].includes(eventName)) {
+    return { event: 'run.continued', run_id: runId, session_id: sessionId, content: null, data, event_index: eventIndex }
+  }
+  if ([
+    'RunContent',
+    'RunContentEvent',
+    'IntermediateRunContent',
+    'IntermediateRunContentEvent',
+    'RunIntermediateContent',
+    'TeamRunContent',
+    'TeamRunIntermediateContent',
+    'ReasoningContentDelta',
+  ].includes(eventName)) {
+    const content = typeof rawEvent.content === 'string' ? rawEvent.content : ''
+    const reasoning = typeof rawEvent.reasoning_content === 'string'
+      ? rawEvent.reasoning_content
+      : typeof rawEvent.redacted_reasoning_content === 'string'
+        ? rawEvent.redacted_reasoning_content
+        : null
+    return {
+      event: 'message.delta',
+      run_id: runId,
+      session_id: sessionId,
+      content,
+      data: { ...data, reasoning_content: reasoning },
+      event_index: eventIndex,
+    }
+  }
+  if (['ToolCallStarted', 'ToolCallStartedEvent', 'TeamToolCallStarted'].includes(eventName)) {
+    const tool = resolveRawObject(rawEvent.tool)
+    return {
+      event: 'tool.started',
+      run_id: runId,
+      session_id: sessionId,
+      content: null,
+      data: {
+        ...data,
+        tool_name: tool.tool_name,
+        tool_call_id: tool.tool_call_id,
+        tool_args: tool.tool_args ?? {},
+      },
+      event_index: eventIndex,
+    }
+  }
+  if (['ToolCallCompleted', 'ToolCallCompletedEvent', 'TeamToolCallCompleted'].includes(eventName)) {
+    const tool = resolveRawObject(rawEvent.tool)
+    return {
+      event: 'tool.completed',
+      run_id: runId,
+      session_id: sessionId,
+      content: typeof rawEvent.content === 'string' ? rawEvent.content : null,
+      data: {
+        ...data,
+        tool_name: tool.tool_name,
+        tool_call_id: tool.tool_call_id,
+        result: tool.result ?? rawEvent.content ?? null,
+        message: rawEvent.content ?? null,
+      },
+      event_index: eventIndex,
+    }
+  }
+  if (['ToolCallError', 'ToolCallErrorEvent', 'TeamToolCallError'].includes(eventName)) {
+    const tool = resolveRawObject(rawEvent.tool)
+    return {
+      event: 'tool.error',
+      run_id: runId,
+      session_id: sessionId,
+      content: typeof rawEvent.content === 'string' ? rawEvent.content : null,
+      data: {
+        ...data,
+        tool_name: tool.tool_name,
+        tool_call_id: tool.tool_call_id,
+        message: rawEvent.content ?? rawEvent.error ?? tool.error ?? null,
+      },
+      event_index: eventIndex,
+    }
+  }
+  if (['RunPaused', 'RunPausedEvent', 'TeamRunPaused'].includes(eventName)) {
+    return {
+      event: 'run.paused',
+      run_id: runId,
+      session_id: sessionId,
+      content: null,
+      data: { ...data, requirement: buildPendingRequirementFromAgno(rawEvent, runId, sessionId) },
+      event_index: eventIndex,
+    }
+  }
+  if (['RunCompleted', 'RunCompletedEvent', 'TeamRunCompleted'].includes(eventName)) {
+    return {
+      event: 'run.completed',
+      run_id: runId,
+      session_id: sessionId,
+      content: typeof rawEvent.content === 'string' ? rawEvent.content : null,
+      data,
+      event_index: eventIndex,
+    }
+  }
+  if (['RunCancelled', 'RunCancelledEvent', 'TeamRunCancelled'].includes(eventName)) {
+    return { event: 'run.cancelled', run_id: runId, session_id: sessionId, content: null, data, event_index: eventIndex }
+  }
+  if (['RunError', 'RunErrorEvent', 'TeamRunError'].includes(eventName)) {
+    return {
+      event: 'run.error',
+      run_id: runId,
+      session_id: sessionId,
+      content: typeof rawEvent.content === 'string' ? rawEvent.content : null,
+      data: { ...data, message: rawEvent.content ?? rawEvent.error ?? data.message },
+      event_index: eventIndex,
+    }
+  }
+  return { event: 'trace.event', run_id: runId, session_id: sessionId, content: null, data, event_index: eventIndex }
+}
+
+function buildPendingRequirementFromAgno(
+  rawEvent: AgentRunEvent,
+  runId: string | null,
+  sessionId: string | null,
+): AgentPendingRequirement | null {
+  const requirement = resolveActiveRequirement(rawEvent)
+  if (!requirement || !runId || !sessionId) {
+    return null
+  }
+  const toolExecution = resolveRawObject(requirement.tool_execution)
+  const toolArgs = resolveRawObject(toolExecution.tool_args)
+  const kind = toolExecution.requires_user_input === true ? 'user_feedback' : 'confirmation'
+  return {
+    id: resolveRawString(requirement.id),
+    kind,
+    run_id: runId,
+    session_id: sessionId,
+    member_agent_id: resolveRawString(requirement.member_agent_id),
+    member_agent_name: resolveRawString(requirement.member_agent_name),
+    member_run_id: resolveRawString(requirement.member_run_id),
+    tool_name: resolveRawString(toolExecution.tool_name),
+    tool_execution: toolExecution,
+    suggested_patch: null,
+    user_feedback_schema: Array.isArray(toolArgs.questions) ? toolArgs.questions as AgentPendingRequirement['user_feedback_schema'] : [],
+    note: resolveRawString(requirement.note),
+  }
+}
+
+function resolveActiveRequirement(rawEvent: AgentRunEvent): Record<string, unknown> | null {
+  const requirements = Array.isArray(rawEvent.requirements) ? rawEvent.requirements : []
+  for (const item of [...requirements].reverse()) {
+    const requirement = resolveRawObject(item)
+    const toolExecution = resolveRawObject(requirement.tool_execution)
+    if (isAgnoRequirementActive(requirement, toolExecution)) {
+      return requirement
+    }
+  }
+  const tools = Array.isArray(rawEvent.tools) ? rawEvent.tools : []
+  for (const item of [...tools].reverse()) {
+    const toolExecution = resolveRawObject(item)
+    if (isAgnoToolExecutionActive(toolExecution)) {
+      return { id: null, tool_execution: toolExecution }
+    }
+  }
+  return null
+}
+
+function isAgnoRequirementActive(requirement: Record<string, unknown>, toolExecution: Record<string, unknown>) {
+  if (toolExecution.requires_confirmation === true && requirement.confirmation == null && toolExecution.confirmed == null) return true
+  if (toolExecution.requires_user_input === true && toolExecution.answered !== true) return true
+  if (toolExecution.external_execution_required === true && requirement.external_execution_result == null && toolExecution.result == null) return true
+  return false
+}
+
+function isAgnoToolExecutionActive(toolExecution: Record<string, unknown>) {
+  if (toolExecution.requires_confirmation === true && toolExecution.confirmed == null) return true
+  if (toolExecution.requires_user_input === true && toolExecution.answered !== true) return true
+  if (toolExecution.external_execution_required === true && toolExecution.result == null) return true
+  return false
+}
+
+function resolveRawObject(value: unknown): Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : {}
+}
+
+function resolveRawString(value: unknown): string | null {
+  return typeof value === 'string' && value ? value : null
+}
+
+function resolveRawNumber(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null
 }
 
 /**
@@ -244,7 +455,7 @@ function shouldApplyEvent(state: AgentSessionRuntimeState, event: AgentRunEvent,
   if (currentRunId && runId !== currentRunId && !['run.started', 'run.continued'].includes(event.event)) {
     return false
   }
-  const sequence = event.sequence ?? null
+  const sequence = event.event_index ?? event.sequence ?? null
   if (sequence === null) {
     return true
   }
@@ -256,7 +467,7 @@ function shouldApplyEvent(state: AgentSessionRuntimeState, event: AgentRunEvent,
  */
 function rememberEventSequence(state: AgentSessionRuntimeState, runId: string, sequence?: number | null): void {
   if (sequence === null || sequence === undefined) return
-  state.stream.lastSequenceByRun[runId] = Math.max(state.stream.lastSequenceByRun[runId] ?? 0, sequence)
+  state.stream.lastSequenceByRun[runId] = Math.max(state.stream.lastSequenceByRun[runId] ?? -1, sequence)
 }
 
 function buildEventRunState(
@@ -273,11 +484,11 @@ function buildEventRunState(
     agent_id: String(event.data.agent_id || agentId),
     status,
     pending_requirement: requirement,
-    content: event.content,
+    content: event.content ?? null,
     created_at: state.activeRun?.created_at ?? new Date().toISOString(),
     updated_at: new Date().toISOString(),
     cancel_requested_at: status === 'cancelling' ? new Date().toISOString() : null,
-    event_sequence: event.sequence ?? state.stream.lastSequenceByRun[runId] ?? 0,
+    event_index: event.event_index ?? event.sequence ?? state.stream.lastSequenceByRun[runId] ?? -1,
   }
 }
 

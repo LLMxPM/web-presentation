@@ -45,6 +45,7 @@ from app.ai.auth_tokens import (
     RESOURCE_TOOL_READ_SCOPES,
     RESOURCE_TOOL_WRITE_SCOPES,
     build_agent_access_token,
+    build_agent_tool_token,
 )
 from app.ai.authoring_canvas import resolve_authoring_canvas_size
 from app.ai.history_policy import build_history_policy
@@ -87,7 +88,6 @@ from app.schemas.agent import AgentContextStatusItem, AgentPendingRequirement, A
 from app.schemas.component import WorkspaceComponentItem
 from app.schemas.page import PageItem
 from app.services.auth_service import AuthContext
-from app.services.ai_agent_run_service import AiAgentRunService, build_agent_run_input_payload
 from app.services.token_service import TokenService
 
 
@@ -240,30 +240,24 @@ async def _build_tool_run_context(
     page_id: int | None = None,
     component_id: int | None = None,
 ) -> RunContext:
-    """构造带 run task 工具授权的 Agno RunContext。"""
+    """构造带签名工具 token 授权的 Agno RunContext。"""
 
     source = "editor-agent-sidebar"
     run_id = f"run-tool-test-{uuid4()}"
     session_id = f"session-tool-test-{uuid4()}"
     scope_type = "component" if component_id is not None else "page" if page_id is not None else "project" if project_id is not None else "workspace"
-    async with get_session_factory()() as session:
-        await AiAgentRunService(session).create_task(
-            run_id=run_id,
-            session_id=session_id,
-            agent_id=AGENT_COORDINATOR_AGENT_ID,
-            user_id=current.user.id,
-            backend_session_id=current.backend_session_id,
-            scope=AgentScopeContext(
-                scope_type=scope_type,  # type: ignore[arg-type]
-                workspace_id=workspace_id,
-                project_id=project_id,
-                page_id=page_id,
-                component_id=component_id,
-                source=source,
-            ),
-            input_summary="工具测试运行。",
-            tool_scopes=tool_scopes,
-        )
+    tool_token = build_agent_tool_token(
+        current,
+        run_id=run_id,
+        session_id=session_id,
+        agent_id=AGENT_COORDINATOR_AGENT_ID,
+        workspace_id=workspace_id,
+        project_id=project_id,
+        page_id=page_id,
+        component_id=component_id,
+        source=source,
+        scopes=tool_scopes,
+    )
     return RunContext(
         run_id=run_id,
         session_id=session_id,
@@ -279,6 +273,9 @@ async def _build_tool_run_context(
             "backend_session_id": current.backend_session_id,
             "role": "admin",
             "source": source,
+            "scope_type": scope_type,
+            "tool_auth_token": tool_token,
+            "tool_scopes": list(tool_scopes),
         },
     )
 
@@ -2478,36 +2475,46 @@ async def test_ai_run_routes_should_stream_direct_page_apply(authenticated_clien
             "chat_history": [],
         }
 
-    async def fake_run_events(self, **kwargs: object):  # type: ignore[no-untyped-def]
+    def fake_run_raw_sse(self, **kwargs: object):  # type: ignore[no-untyped-def]
         run_id = str(kwargs.get("run_id") or "run-1")
-        tool_completed_event = AgentRunEvent(
-            event="tool.completed",
-            run_id=run_id,
-            session_id=session_id,
-            data={
-                "tool_call_id": "tool-1",
-                "tool_name": "apply_page_edits",
-                "result": {
-                    "success": True,
-                    "message": "页面代码已更新并生成新版本。",
-                    "page_code": "PG1",
-                    "version_no": 2,
-                    "edits_applied": 1,
+
+        async def generator():
+            for event_index, payload in enumerate([
+                {
+                    "event": "ToolCallCompleted",
+                    "run_id": run_id,
+                    "session_id": session_id,
+                    "event_index": 0,
+                    "tool": {
+                        "tool_call_id": "tool-1",
+                        "tool_name": "apply_page_edits",
+                        "result": {
+                            "success": True,
+                            "message": "页面代码已更新并生成新版本。",
+                            "page_code": "PG1",
+                            "version_no": 2,
+                            "edits_applied": 1,
+                        },
+                    },
                 },
-            },
-        )
-        completed_event = AgentRunEvent(
-            event="run.completed",
-            run_id=run_id,
-            session_id=session_id,
-            content="已完成写回。",
-            data={},
-        )
-        yield tool_completed_event
-        yield completed_event
+                {
+                    "event": "RunCompleted",
+                    "run_id": run_id,
+                    "session_id": session_id,
+                    "event_index": 1,
+                    "content": "已完成写回。",
+                },
+            ]):
+                payload["event_index"] = event_index
+                yield (
+                    f"event: {payload['event']}\n"
+                    f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+                ).encode("utf-8")
+
+        return generator()
 
     monkeypatch.setattr("app.api.routes.agents.AgentSessionFacade.ensure_session_access", fake_ensure_session_access)
-    monkeypatch.setattr("app.api.routes.agents.AgentSessionFacade.run_events", fake_run_events)
+    monkeypatch.setattr("app.api.routes.agents.AgentSessionFacade.run_raw_sse", fake_run_raw_sse)
 
     stream_response = await authenticated_client.post(
         f"/api/ai/sessions/{session_id}/runs/stream",
@@ -2520,30 +2527,15 @@ async def test_ai_run_routes_should_stream_direct_page_apply(authenticated_clien
         json={"message": "帮我优化一下页面"},
     )
     assert stream_response.status_code == 200
-    assert "event: tool.completed" in stream_response.text
-    assert "event: run.completed" in stream_response.text
-    assert "event: run.paused" not in stream_response.text
+    assert "event: ToolCallCompleted" in stream_response.text
+    assert "event: RunCompleted" in stream_response.text
+    assert "event: RunPaused" not in stream_response.text
     event_payloads = [
         json.loads(line.removeprefix("data: "))
         for line in stream_response.text.splitlines()
         if line.startswith("data: ")
     ]
-    assert [item["sequence"] for item in event_payloads] == [1, 2]
-    run_id = event_payloads[0]["run_id"]
-
-    replay_response = await authenticated_client.get(
-        f"/api/ai/sessions/{session_id}/runs/{run_id}/events/stream",
-        params={
-            "workspace_id": workspace_id,
-            "project_id": project_id,
-            "page_id": page_id,
-            "agent_id": AGENT_COORDINATOR_AGENT_ID,
-            "after_sequence": 1,
-        },
-    )
-    assert replay_response.status_code == 200
-    assert "event: tool.completed" not in replay_response.text
-    assert "event: run.completed" in replay_response.text
+    assert [item["event_index"] for item in event_payloads] == [0, 1]
 
 
 async def test_ai_stream_should_mark_cancelled_and_close_upstream_when_client_interrupts() -> None:
