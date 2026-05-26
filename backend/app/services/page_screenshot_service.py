@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 from dataclasses import dataclass
 from urllib.parse import parse_qs, urlsplit
@@ -35,6 +36,7 @@ from app.services.token_service import TokenService
 RUNTIME_SERVICE_TOKEN_HEADER = "x-runtime-service-token"
 RUNTIME_PREVIEW_CONTEXT_HEADER = "x-runtime-preview-context"
 RUNTIME_PUBLIC_BASE_URL_HEADER = "x-runtime-public-base-url"
+logger = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
@@ -253,6 +255,16 @@ class PageScreenshotService:
             return await self._wait_for_concurrent_screenshot(page=page, config_hash=config_snapshot.config_hash)
 
         try:
+            logger.info(
+                "页面截图开始生成。",
+                extra={
+                    "event": "page.screenshot.capture.start",
+                    "page_id": page.id,
+                    "project_id": page.project_id,
+                    "workspace_id": page.workspace_id,
+                    "viewport": f"{viewport.width}x{viewport.height}",
+                },
+            )
             preview = await self.preview_service.create_page_preview(page, operator_id, asset_delivery_mode="backend_cache")
             capture_target = self._build_browser_capture_target(preview)
             await self._release_session_before_browser_capture()
@@ -267,7 +279,28 @@ class PageScreenshotService:
                 operator_id=operator_id,
                 config_hash=config_snapshot.config_hash,
             )
+            logger.info(
+                "页面截图保存完成。",
+                extra={
+                    "event": "page.screenshot.capture.done",
+                    "page_id": page.id,
+                    "project_id": page.project_id,
+                    "workspace_id": page.workspace_id,
+                    "size_bytes": len(screenshot_content),
+                },
+            )
             return page
+        except Exception:
+            logger.exception(
+                "页面截图生成失败。",
+                extra={
+                    "event": "page.screenshot.capture.failed",
+                    "page_id": page.id,
+                    "project_id": page.project_id,
+                    "workspace_id": page.workspace_id,
+                },
+            )
+            raise
         finally:
             await self._release_screenshot_lock(lock_key)
 

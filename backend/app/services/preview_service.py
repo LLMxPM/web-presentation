@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+import logging
 from urllib.parse import urlencode
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,6 +14,9 @@ from app.services.project_artifact_builder import AssetDeliveryMode, ProjectArti
 from app.schemas.release import PreviewArtifactResponse, PreviewEntryDescriptor
 from app.services.runtime_artifact_store import RuntimeArtifactStore
 from app.services.token_service import TokenService
+
+
+logger = logging.getLogger(__name__)
 
 
 class PreviewService:
@@ -68,6 +72,7 @@ class PreviewService:
             config_bundle=snapshot.config_bundle,
             modules_data=snapshot.modules_data,
         )
+        trace_id = f"req-{uuid.uuid4().hex[:8]}"
         preview_token = TokenService.generate_preview_context_token(
             tenant_id=tenant_id,
             artifact_id=artifact_id,
@@ -77,7 +82,19 @@ class PreviewService:
             project_id=project_id,
             entry_descriptor=entry_descriptor_payload,
             asset_base_url=snapshot.asset_base_url,
-            trace_id=f"req-{uuid.uuid4().hex[:8]}",
+            trace_id=trace_id,
+        )
+        logger.info(
+            "预览 artifact 创建完成。",
+            extra={
+                "event": "preview.artifact.created",
+                "trace_id": trace_id,
+                "artifact_id": artifact_id,
+                "project_id": project_id,
+                "workspace_id": snapshot.project.workspace_id,
+                "module_count": len(snapshot.modules_data),
+                "asset_count": len(snapshot.asset_mapping),
+            },
         )
         preview_url = (
             f"{settings.backend_public_base_url.rstrip('/')}/preview/artifacts/"

@@ -1,6 +1,8 @@
 """文件功能：定义 FastAPI 应用入口、生命周期和全局异常处理。"""
 
 import logging
+import time
+import uuid
 from contextlib import asynccontextmanager
 
 import uvicorn
@@ -18,6 +20,7 @@ from app.api.router import api_router
 from app.api.routes import build_artifacts, public_assets, internal_runtime, runtime_configs, well_known, preview
 from app.core.config import get_settings
 from app.core.exceptions import AppException
+from app.core.logging_config import bind_request_id, configure_app_logging, reset_request_id, sanitize_log_text
 from app.db.errors import (
     DatabaseConnectivityError,
     format_database_connectivity_error,
@@ -32,6 +35,7 @@ from app.services.redis_runtime_client import ensure_redis_runtime_available
 
 
 logger = logging.getLogger(__name__)
+access_logger = logging.getLogger("app.access")
 
 
 @asynccontextmanager
@@ -57,6 +61,7 @@ def create_app() -> FastAPI:
     """创建应用实例并注册路由与异常处理。"""
 
     settings = get_settings()
+    configure_app_logging(settings)
     app = FastAPI(title=settings.app_name, lifespan=lifespan)
     app.add_middleware(
         CORSMiddleware,
@@ -81,6 +86,50 @@ def create_app() -> FastAPI:
 
     _mount_ai_runtime(app)
     app.mount("/media", StaticFiles(directory=ObjectStorageService().ensure_local_root()), name="media")
+
+    @app.middleware("http")
+    async def bind_request_context(request: Request, call_next):  # noqa: ANN001
+        """为每个请求绑定 request_id，并输出安全访问日志。"""
+
+        request_id = _resolve_request_id(request)
+        token = bind_request_id(request_id)
+        start_time = time.perf_counter()
+        path = request.url.path
+        try:
+            response = await call_next(request)
+        except Exception:
+            duration_ms = round((time.perf_counter() - start_time) * 1000, 2)
+            logger.exception(
+                "Backend 请求出现未处理异常。",
+                extra={
+                    "event": "http.request.failed",
+                    "request_id": request_id,
+                    "method": request.method,
+                    "path": path,
+                    "status_code": 500,
+                    "duration_ms": duration_ms,
+                },
+            )
+            reset_request_id(token)
+            raise
+
+        response.headers["X-Request-ID"] = request_id
+        if settings.access_log_enabled and path != "/healthz":
+            duration_ms = round((time.perf_counter() - start_time) * 1000, 2)
+            access_logger.info(
+                "Backend 请求完成。",
+                extra={
+                    "event": "http.request.completed",
+                    "request_id": request_id,
+                    "method": request.method,
+                    "path": path,
+                    "status_code": response.status_code,
+                    "duration_ms": duration_ms,
+                    "client_ip": request.client.host if request.client else "",
+                },
+            )
+        reset_request_id(token)
+        return response
 
     @app.exception_handler(AppException)
     async def handle_app_exception(_: Request, exc: AppException) -> JSONResponse:
@@ -133,6 +182,16 @@ def _raise_database_connectivity_error(exc: SQLAlchemyError, *, phase: str) -> N
     raise DatabaseConnectivityError(message) from None
 
 
+def _resolve_request_id(request: Request) -> str:
+    """优先使用上游请求 ID；缺失或非法时生成短 ID。"""
+
+    raw_request_id = request.headers.get("x-request-id") or ""
+    normalized = "".join(ch for ch in sanitize_log_text(raw_request_id, max_length=128) if ch.isalnum() or ch in "-_.")
+    if normalized:
+        return normalized[:128]
+    return f"req-{uuid.uuid4().hex[:16]}"
+
+
 app = create_app()
 
 
@@ -145,4 +204,6 @@ def main() -> None:
         host=settings.app_host,
         port=settings.app_port,
         reload=settings.app_reload,
+        access_log=False,
+        log_config=None,
     )

@@ -2,12 +2,19 @@
 
 from __future__ import annotations
 
+import logging
+import time
+
 import httpx
 
 from app.core.config import get_settings
 from app.core.exceptions import AppException
+from app.core.logging_config import get_current_request_id
 from app.services.runtime_build_client import RUNTIME_SERVICE_TOKEN_HEADER
 from app.services.token_service import TokenService
+
+
+logger = logging.getLogger(__name__)
 
 
 class RuntimeDiagnosticsClient:
@@ -25,22 +32,38 @@ class RuntimeDiagnosticsClient:
     ) -> dict[str, object]:
         """向 Runtime 派发 artifact 代码检查任务。"""
 
+        start_time = time.perf_counter()
+        logger.info(
+            "开始派发 Runtime 代码诊断。",
+            extra={"event": "runtime.diagnostics.dispatch.start", "artifact_id": artifact_id, "label": label},
+        )
         payload = {
             "artifact_id": artifact_id,
             "label": label,
         }
-        return await self._request_json(
+        result = await self._request_json(
             "POST",
             "/__runtime_internal/v1/diagnostics/artifact",
             payload,
             headers={
                 "Authorization": f"Bearer {diagnostics_token}",
+                "X-Request-ID": get_current_request_id(),
                 RUNTIME_SERVICE_TOKEN_HEADER: TokenService.generate_runtime_service_access_token(
                     artifact_id=artifact_id,
                     expires_in_seconds=900,
                 ),
             },
         )
+        logger.info(
+            "Runtime 代码诊断派发完成。",
+            extra={
+                "event": "runtime.diagnostics.dispatch.done",
+                "artifact_id": artifact_id,
+                "status": result.get("status"),
+                "duration_ms": round((time.perf_counter() - start_time) * 1000, 2),
+            },
+        )
+        return result
 
     async def _request_json(
         self,
@@ -58,8 +81,16 @@ class RuntimeDiagnosticsClient:
             response = await client.request(method, path, json=payload, headers=headers or {})
 
         if response.status_code >= 500:
+            logger.error(
+                "Runtime 代码诊断请求返回服务端错误。",
+                extra={"event": "runtime.diagnostics.request.failed", "path": path, "status_code": response.status_code},
+            )
             raise self._build_app_exception(response, force_status_code=502)
         if response.status_code >= 400:
+            logger.warning(
+                "Runtime 代码诊断请求返回业务错误。",
+                extra={"event": "runtime.diagnostics.request.rejected", "path": path, "status_code": response.status_code},
+            )
             raise self._build_app_exception(response)
 
         try:

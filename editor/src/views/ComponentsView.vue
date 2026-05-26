@@ -177,6 +177,7 @@ import type {
   RuntimeKitComponentCapabilityItem,
   WorkspaceComponentItem,
 } from '@/types/api'
+import { logClientWarning } from '@/utils/client-logger'
 import { Message } from '@/utils/message'
 
 type ActiveWorkbench = 'empty' | 'workspace' | 'runtime-kit'
@@ -481,7 +482,7 @@ async function fetchComponentFromDetail(componentId: number | null): Promise<Wor
   try {
     return await getComponent(componentId)
   } catch (error) {
-    console.warn('Failed to refresh component after agent mutation', error)
+    logClientWarning('Failed to refresh component after agent mutation', error)
     return null
   }
 }

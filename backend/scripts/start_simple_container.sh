@@ -29,7 +29,8 @@ fi
 
 uvicorn app.main:app \
     --host "${BACKEND_HOST:-0.0.0.0}" \
-    --port "${BACKEND_PORT:-8000}" &
+    --port "${BACKEND_PORT:-8000}" \
+    --no-access-log &
 backend_pid="$!"
 
 nginx -g "daemon off;" &

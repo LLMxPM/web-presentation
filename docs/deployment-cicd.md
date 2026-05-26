@@ -59,13 +59,13 @@ docker compose -f docker-compose.with-deps.yml up -d
 
 两个简化版中，同一个平台镜像只启动一个长期运行的 `platform` 容器。该容器入口脚本会先执行 `alembic upgrade head`，再同时启动：
 
-- `uvicorn app.main:app --host 0.0.0.0 --port 8000`
+- `uvicorn app.main:app --host 0.0.0.0 --port 8000 --no-access-log`
 - `nginx -g 'daemon off;'`
 
 production env 版中，同一个平台镜像会拆分为三个容器：
 
 - `backend-migrate`：执行 `alembic upgrade head`
-- `backend`：执行 `uvicorn app.main:app --host 0.0.0.0 --port 8000`
+- `backend`：执行 `uvicorn app.main:app --host 0.0.0.0 --port 8000 --no-access-log`
 - `gateway`：执行 `nginx -g 'daemon off;'`，托管 Editor 并代理 Backend/Runtime
 
 compose 默认跟随 `latest`。如果需要严格锁定 Runtime 与平台版本，可把对应 compose 文件中的 Runtime image 改为子项目发布的 `sha-<runtime_sha_short>` 标签。

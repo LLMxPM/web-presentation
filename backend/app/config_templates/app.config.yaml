@@ -1,0 +1,12 @@
+app:
+  icon: slider
+  title: web-runtime-vue
+  description: ""
+  page:
+    width: 1920
+    height: 1080
+    baseFontSize: 16px
+    iconDefaultStrokeWidth: 2
+  features:
+    showPdfExportButton: true
+    menuMode: preview

@@ -184,6 +184,23 @@ production env 版使用：
 docker compose -f docker-compose.production.yml logs -f backend runtime gateway
 ```
 
+应用侧日志默认使用 JSON Lines 输出到容器标准输出，便于 `docker compose logs` 之后接入 Loki、ELK 或云日志采集。`gateway` 负责生成或透传 `X-Request-ID`，`backend` 会在响应头返回同一个请求 ID，并在访问日志中只记录 path，不记录 query。`runtime` 是独立镜像且长期运行 Vite dev server，平台预览、构建和诊断相关日志由 Runtime 插件输出。
+
+常用日志环境变量：
+
+```text
+LOG_LEVEL=INFO
+LOG_FORMAT=json
+ACCESS_LOG_ENABLED=true
+CLIENT_ERROR_LOG_ENABLED=true
+CLIENT_ERROR_LOG_MAX_BYTES=16384
+RUNTIME_LOG_LEVEL=info
+RUNTIME_LOG_FORMAT=json
+RUNTIME_ACCESS_LOG_ENABLED=true
+```
+
+PostgreSQL 与 Redis 保持官方镜像原生日志格式；它们作为依赖服务查看，不纳入应用 JSON 日志契约。`/healthz` 健康检查默认不输出 Gateway 访问日志。
+
 浏览器访问 compose 中配置的 `BACKEND_PUBLIC_BASE_URL` 对应平台入口后，使用默认管理员账号登录。
 
 ## 访问链路

@@ -15,6 +15,7 @@ import type {
   AgentSessionItem,
   AgentSessionRuntimeSnapshot,
 } from '@/types/api'
+import { logClientDebug } from '@/utils/client-logger'
 
 export interface AgentStreamOptions {
   onEvent?: (event: AgentRunEvent) => void
@@ -47,7 +48,7 @@ function logAgentDev(stage: string, payload?: unknown) {
   if (!import.meta.env.DEV) {
     return
   }
-  console.debug(`[agent:${stage}]`, payload)
+  logClientDebug(`[agent:${stage}]`, payload)
 }
 
 /**

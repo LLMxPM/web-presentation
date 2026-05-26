@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 import hashlib
+import logging
 from pathlib import Path
 import re
 
@@ -24,6 +25,7 @@ from app.services.token_service import TokenService
 
 
 ACTIVE_BUILD_STATUSES = ("pending", "running")
+logger = logging.getLogger(__name__)
 
 
 class ProjectBuildService:
@@ -121,6 +123,17 @@ class ProjectBuildService:
                 "runtime_dispatch_at": "",
                 "last_heartbeat_at": datetime.now().astimezone().isoformat(),
                 "error_message": "",
+            },
+        )
+        logger.info(
+            "项目构建任务已创建。",
+            extra={
+                "event": "project.build.job.created",
+                "job_id": job.id,
+                "project_id": project_id,
+                "workspace_id": snapshot.project.workspace_id,
+                "artifact_id": str(release.id),
+                "base_url": job.base_url,
             },
         )
         return job
@@ -282,6 +295,10 @@ async def run_project_build_job(job_id: int) -> None:
                 "error_message": "",
             },
         )
+        logger.info(
+            "项目构建任务开始执行。",
+            extra={"event": "project.build.job.started", "job_id": job.id, "project_id": job.project_id},
+        )
 
         try:
             release = await session.get(Release, job.snapshot_release_id)
@@ -314,6 +331,16 @@ async def run_project_build_job(job_id: int) -> None:
                     "error_message": "",
                 },
             )
+            logger.info(
+                "项目构建任务已派发 Runtime。",
+                extra={
+                    "event": "project.build.job.dispatched",
+                    "job_id": job.id,
+                    "project_id": project_id,
+                    "workspace_id": workspace_id,
+                    "artifact_id": str(job.snapshot_release_id),
+                },
+            )
             await RuntimeBuildClient().dispatch_project_build(
                 artifact_id=str(job.snapshot_release_id),
                 base_url=job.base_url,
@@ -335,6 +362,10 @@ async def run_project_build_job(job_id: int) -> None:
                     "error_message": "",
                 },
             )
+            logger.info(
+                "项目构建任务执行成功。",
+                extra={"event": "project.build.job.succeeded", "job_id": job.id, "project_id": project_id},
+            )
         except Exception as exc:  # noqa: BLE001
             job.status = "failed"
             job.error_message = _extract_build_error_message(exc)
@@ -349,6 +380,15 @@ async def run_project_build_job(job_id: int) -> None:
                     "base_url": job.base_url,
                     "last_heartbeat_at": datetime.now().astimezone().isoformat(),
                     "error_message": job.error_message,
+                },
+            )
+            logger.exception(
+                "项目构建任务执行失败。",
+                extra={
+                    "event": "project.build.job.failed",
+                    "job_id": job.id,
+                    "project_id": job.project_id,
+                    "artifact_id": str(job.snapshot_release_id),
                 },
             )
 

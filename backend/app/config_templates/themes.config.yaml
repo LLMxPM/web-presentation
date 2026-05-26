@@ -1,0 +1,69 @@
+themes:
+  dark:
+    name: 深邃背景
+    description: 黑底白字，专业风格
+    app:
+      icon: slider
+    logo: img/logo/runtime_icon_white.svg
+    invertLogo: img/logo/runtime_icon.svg
+    palette:
+      text:
+        primary: "#F4F4F4"
+        secondary: "#9ca3af"
+        invert: "#1f2937"
+      background:
+        default: "#1f2937"
+        invert: "#F4F4F4"
+      border:
+        default: "#6b7280"
+        subtle: "#4b5563"
+      link:
+        default: "#60a5fa"
+        hover: "#3b82f6"
+        visited: "#a78bfa"
+      accent:
+        - "#6366f1"
+        - "#f87171"
+        - "#fbbf24"
+        - "#34d399"
+        - "#a78bfa"
+        - "#facc15"
+    typography:
+      headingfont: 思源黑体
+      bodyfont: 思源黑体
+      codefont: SourceCodePro
+  lightblue:
+    name: 白底蓝色
+    description: 白底蓝色主题，简约经典
+    app:
+      icon: slider
+    logo: img/logo/runtime_icon.svg
+    invertLogo: img/logo/runtime_icon_white.svg
+    palette:
+      text:
+        primary: "#0D286A"
+        secondary: "#1D5297"
+        invert: "#ffffff"
+      background:
+        default: "#ffffff"
+        invert: "#0D286A"
+      border:
+        default: "#e5e7eb"
+        subtle: "#d1d5db"
+      link:
+        default: "#3b82f6"
+        hover: "#2563eb"
+        visited: "#7c3aed"
+      accent:
+        - "#0D286A"
+        - "#260E6D"
+        - "#9E8403"
+        - "#9E6B03"
+        - "#A110AB"
+        - "#C5003C"
+    typography:
+      headingfont: 思源黑体
+      bodyfont: 思源黑体
+      codefont: SourceCodePro
+default:
+  theme: lightblue

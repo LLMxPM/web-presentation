@@ -157,7 +157,7 @@ Backend 统一采用以下时间语义：
 - `file_path`：已推送到 Runtime 的页面文件路径，用于生成签名预览票据
 - `project_id`：当前预览或构建对应的项目 ID，用于拼接项目级配置根地址
 
-项目创建后，Backend 会自动写入 `app/icons/routes` 默认 YAML 模板，并为项目自动带上工作空间默认主题。项目页面展示配置由结构化字段维护，包括 `page_width/page_height/base_font_size/icon_default_stroke_width`；Runtime 下发时会映射到 `app.config.yaml`：
+Backend 自带项目默认配置模板，路径为 `backend/app/config_templates/*.config.yaml`；Runtime 自身的 `runtime/public/config/*.config.yaml` 仅作为独立运行和本地 fixture 使用。项目创建后，Backend 会自动写入默认主题配置，并为项目自动带上工作空间默认主题。项目页面展示配置由结构化字段维护，包括 `page_width/page_height/base_font_size/icon_default_stroke_width`；Runtime 下发时会映射到 `app.config.yaml`：
 
 ```yaml
 app:

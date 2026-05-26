@@ -55,6 +55,19 @@ class AgentBackgroundRunManager:
     ) -> None:
         """启动一次新的后台 run。"""
 
+        logger.info(
+            "后台 AI run 已启动。",
+            extra={
+                "event": "ai.run.background.started",
+                "run_id": run_id,
+                "session_id": session_id,
+                "agent_id": agent_id,
+                "workspace_id": scope.workspace_id,
+                "project_id": scope.project_id,
+                "page_id": scope.page_id,
+                "component_id": scope.component_id,
+            },
+        )
         task = asyncio.create_task(
             self._run_new_agent_stream(
                 app=app,
@@ -88,6 +101,19 @@ class AgentBackgroundRunManager:
     ) -> None:
         """在后台继续一个 paused run。"""
 
+        logger.info(
+            "后台 AI run 继续执行。",
+            extra={
+                "event": "ai.run.background.continued",
+                "run_id": run_id,
+                "session_id": session_id,
+                "agent_id": agent_id,
+                "workspace_id": scope.workspace_id,
+                "project_id": scope.project_id,
+                "page_id": scope.page_id,
+                "component_id": scope.component_id,
+            },
+        )
         task = asyncio.create_task(
             self._run_continue_agent_stream(
                 app=app,
@@ -245,6 +271,10 @@ class AgentBackgroundRunManager:
                         user_id=current.user.id,
                     )
         except Exception as exc:  # noqa: BLE001
+            logger.exception(
+                "后台 AI run 执行失败。",
+                extra={"event": "ai.run.background.failed", "run_id": run_id, "session_id": session_id},
+            )
             await self._persist_and_publish(
                 run_id=run_id,
                 event=AgentRunEvent(
@@ -302,6 +332,10 @@ class AgentBackgroundRunManager:
                         user_id=current.user.id,
                     )
         except Exception as exc:  # noqa: BLE001
+            logger.exception(
+                "后台 AI run 继续执行失败。",
+                extra={"event": "ai.run.background.continue.failed", "run_id": run_id, "session_id": session_id},
+            )
             await self._persist_and_publish(
                 run_id=run_id,
                 event=AgentRunEvent(

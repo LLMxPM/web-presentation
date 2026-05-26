@@ -37,16 +37,16 @@ CONFIG_FILE_MAP: dict[ProjectConfigName, str] = {
     "icons": "icons.config.yaml",
     "themes": "themes.config.yaml",
 }
+PROJECT_CONFIG_TEMPLATE_ROOT = Path(__file__).resolve().parents[1] / "config_templates"
 
 
 @lru_cache
 def load_default_project_config_templates() -> dict[ProjectConfigName, str]:
     """读取项目初始化所需的默认 YAML 模板。"""
 
-    runtime_config_root = Path(__file__).resolve().parents[3] / "runtime" / "public" / "config"
     templates: dict[ProjectConfigName, str] = {}
     for config_name, file_name in CONFIG_FILE_MAP.items():
-        file_path = runtime_config_root / file_name
+        file_path = PROJECT_CONFIG_TEMPLATE_ROOT / file_name
         if not file_path.is_file():
             raise RuntimeError(f"默认项目配置模板不存在：{file_path}")
         templates[config_name] = file_path.read_text(encoding="utf-8")

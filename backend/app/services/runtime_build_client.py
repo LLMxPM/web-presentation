@@ -3,16 +3,20 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import logging
+import time
 
 import httpx
 
 from app.core.config import get_settings
 from app.core.exceptions import AppException
+from app.core.logging_config import get_current_request_id
 from app.schemas.project_build import RuntimeBuildDispatchRequest
 from app.services.token_service import TokenService
 
 
 RUNTIME_SERVICE_TOKEN_HEADER = "x-runtime-service-token"
+logger = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
@@ -43,6 +47,11 @@ class RuntimeBuildClient:
         """向 Runtime 派发整项目构建任务。"""
 
         payload = RuntimeBuildDispatchRequest(artifact_id=artifact_id, base_url=base_url)
+        start_time = time.perf_counter()
+        logger.info(
+            "开始派发 Runtime 整包构建。",
+            extra={"event": "runtime.build.dispatch.start", "artifact_id": artifact_id, "base_url": base_url},
+        )
         response = await self._request_json(
             "POST",
             "/__runtime_internal/v1/builds/project",
@@ -50,10 +59,19 @@ class RuntimeBuildClient:
             headers={
                 "Authorization": f"Bearer {build_token}",
                 "Content-Type": "application/json",
+                "X-Request-ID": get_current_request_id(),
                 RUNTIME_SERVICE_TOKEN_HEADER: TokenService.generate_runtime_service_access_token(
                     artifact_id=artifact_id,
                     expires_in_seconds=3600,
                 ),
+            },
+        )
+        logger.info(
+            "Runtime 整包构建派发完成。",
+            extra={
+                "event": "runtime.build.dispatch.done",
+                "artifact_id": artifact_id,
+                "duration_ms": round((time.perf_counter() - start_time) * 1000, 2),
             },
         )
         return RuntimeBuildDispatchResult(
@@ -81,8 +99,16 @@ class RuntimeBuildClient:
             response = await client.request(method, path, content=content, headers=headers or {})
 
         if response.status_code >= 500:
+            logger.error(
+                "Runtime 请求返回服务端错误。",
+                extra={"event": "runtime.request.failed", "path": path, "status_code": response.status_code},
+            )
             raise self._build_app_exception(response, force_status_code=502)
         if response.status_code >= 400:
+            logger.warning(
+                "Runtime 请求返回业务错误。",
+                extra={"event": "runtime.request.rejected", "path": path, "status_code": response.status_code},
+            )
             raise self._build_app_exception(response)
 
         try:

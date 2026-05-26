@@ -18,6 +18,8 @@
 import { onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { listWorkspaces } from '@/api/catalog'
+import { Message } from '@/utils/message'
+import { reportClientError } from '@/utils/client-logger'
 import { buildWorkspaceHomePath } from '@/utils/workspace-routes'
 
 const router = useRouter()
@@ -39,10 +41,7 @@ onMounted(async () => {
       Message.warning('当前没有可进入的启用工作空间，请先恢复归档工作空间或联系管理员。')
     }
   } catch (error) {
-    console.error('获取工作空间失败，请检查网络。', error)
+    reportClientError(error, { message: '获取工作空间失败，请检查网络。', component: 'EntryView' })
   }
 })
-
-// 导入 Message 工具（虽然原逻辑没用提示，但在空状态下补充一个）
-import { Message } from '@/utils/message'
 </script>
