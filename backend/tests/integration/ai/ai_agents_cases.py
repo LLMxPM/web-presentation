@@ -10,13 +10,14 @@ from uuid import uuid4
 
 from httpx import AsyncClient
 from agno.db.base import SessionType
+from agno.media import Image
 from agno.models.message import Message
 from agno.models.response import ToolExecution
 from agno.run.agent import RunCompletedEvent, RunContentEvent, RunEvent, RunOutput
 from agno.run import RunContext
 from agno.run.base import RunStatus
 from agno.run.requirement import RunRequirement
-from agno.run.team import TeamRunEvent, TeamRunOutput
+from agno.run.team import TeamRunEvent, TeamRunInput, TeamRunOutput
 from agno.session.agent import AgentSession
 from agno.session.summary import SessionSummary
 from agno.session.team import TeamSession
@@ -3029,6 +3030,210 @@ async def test_ai_session_messages_should_hide_system_and_split_reasoning(authen
     assert messages[1]["reasoning_content"] == "模型原生思考\n\n先判断用户意图"
 
 
+async def test_ai_session_messages_should_hide_agno_context_note(authenticated_client: AsyncClient, monkeypatch) -> None:
+    """Agno 为图片上下文注入的 Take note 消息不应渲染成用户消息。"""
+
+    workspace_id = await _create_workspace(authenticated_client, "AI 框架消息过滤工作空间")
+    context_note_session = AgentSession(
+        session_id="context-note-session-1",
+        agent_id=AGENT_COORDINATOR_AGENT_ID,
+        user_id="1",
+        session_data={"session_name": "框架消息过滤会话"},
+        metadata={
+            "scope_type": "workspace",
+            "workspace_id": workspace_id,
+            "source": "editor-agent-sidebar",
+        },
+        agent_data={"agent_id": AGENT_COORDINATOR_AGENT_ID},
+        runs=[
+            RunOutput(
+                run_id="run-context-note-1",
+                session_id="context-note-session-1",
+                agent_id=AGENT_COORDINATOR_AGENT_ID,
+                messages=[
+                    Message(role="user", content="真实用户输入"),
+                    Message(
+                        role="user",
+                        content="Take note of the following content",
+                        images=[Image(content=b"fake-image", mime_type="image/png")],
+                    ),
+                    Message(role="assistant", content="真实助手回复"),
+                    Message(role="assistant", content="历史注入回复", from_history=True),
+                ],
+                status=RunStatus.completed,
+            )
+        ],
+    )
+
+    async def fake_ensure_session_access(self, *, session_id: str, agent_id: str, scope):  # type: ignore[no-untyped-def]
+        assert session_id == "context-note-session-1"
+        assert agent_id == AGENT_COORDINATOR_AGENT_ID
+        assert scope.workspace_id == workspace_id
+        return context_note_session
+
+    monkeypatch.setattr("app.api.routes.agents.AgentSessionFacade.ensure_session_access", fake_ensure_session_access)
+
+    response = await authenticated_client.get(
+        "/api/ai/sessions/context-note-session-1/messages",
+        params={
+            "workspace_id": workspace_id,
+            "agent_id": AGENT_COORDINATOR_AGENT_ID,
+        },
+    )
+
+    assert response.status_code == 200
+    messages = response.json()
+    assert [item["content"] for item in messages] == ["真实用户输入", "真实助手回复"]
+    assert [item["role"] for item in messages] == ["user", "assistant"]
+
+
+async def test_ai_cancelled_raw_run_should_preserve_input_and_streamed_content(authenticated_client: AsyncClient) -> None:
+    """raw SSE 取消后若 Agno 未写 messages，应补偿真实输入和已展示内容。"""
+
+    workspace_id = await _create_workspace(authenticated_client, "AI raw 取消补偿工作空间")
+    project_id = await _create_project(authenticated_client, workspace_id, "AI raw 取消补偿项目")
+    page_id = await _create_page(
+        authenticated_client,
+        workspace_id=workspace_id,
+        project_id=project_id,
+        title="AI raw 取消补偿页面",
+        content="<template><div>draft</div></template>",
+    )
+    session_response = await authenticated_client.post(
+        "/api/ai/sessions",
+        json={
+            "agent_id": AGENT_COORDINATOR_AGENT_ID,
+            "session_name": "raw 取消补偿会话",
+            "scope": {
+                "workspace_id": workspace_id,
+                "project_id": project_id,
+                "page_id": page_id,
+                "source": "editor-page-detail",
+            },
+        },
+    )
+    assert session_response.status_code == 201
+    session_id = session_response.json()["session_id"]
+    run_id = "run-raw-cancel-preserve"
+    await _append_test_run(
+        authenticated_client,
+        session_id=session_id,
+        run=TeamRunOutput(
+            run_id=run_id,
+            session_id=session_id,
+            team_id=AGENT_COORDINATOR_AGENT_ID,
+            user_id="1",
+            input=TeamRunInput(input_content="真实取消输入"),
+            status=RunStatus.cancelled,
+            content=f"Run {run_id} was cancelled",
+        ),
+    )
+
+    app = authenticated_client._transport.app  # type: ignore[attr-defined]
+    async with get_session_factory()() as db_session:
+        facade = AgentSessionFacade(app=app, current=_build_auth_context(), session=db_session)
+        await facade._preserve_cancelled_raw_run_messages(
+            session_id=session_id,
+            agent_id=AGENT_COORDINATOR_AGENT_ID,
+            run_id=run_id,
+            fallback_user_message="兜底输入不应优先",
+            assistant_content="已流出的正文。",
+            reasoning_content="已展示 reasoning。",
+        )
+
+    response = await authenticated_client.get(
+        f"/api/ai/sessions/{session_id}/messages",
+        params={
+            "workspace_id": workspace_id,
+            "project_id": project_id,
+            "page_id": page_id,
+            "agent_id": AGENT_COORDINATOR_AGENT_ID,
+        },
+    )
+
+    assert response.status_code == 200
+    messages = response.json()
+    assert [item["role"] for item in messages] == ["user", "assistant"]
+    assert messages[0]["content"] == "真实取消输入"
+    assert messages[1]["content"] == "已流出的正文。"
+    assert messages[1]["reasoning_content"] == "已展示 reasoning。"
+
+    session_detail = await asyncio.to_thread(app.state.ai_db.get_session, session_id, SessionType.TEAM, "1", True)
+    assert isinstance(session_detail, TeamSession)
+    run = session_detail.get_run(run_id)
+    assert run is not None
+    assert run.metadata is not None
+    assert run.metadata["user_cancel_preserved"] is True
+
+
+async def test_ai_raw_sse_cancelled_event_should_trigger_preservation() -> None:
+    """raw SSE 收到 Agno 取消终态时，应把跟踪到的用户输入和 delta 交给补偿流程。"""
+
+    class FakeRawEvent:
+        """提供 Agno SSE formatter 所需的 event 与 to_dict。"""
+
+        def __init__(self, **payload: object) -> None:
+            self.event = str(payload.get("event"))
+            self._payload = payload
+            for key, value in payload.items():
+                setattr(self, key, value)
+
+        def to_dict(self) -> dict[str, object]:
+            return dict(self._payload)
+
+    async def fake_raw_stream():
+        yield FakeRawEvent(event="TeamRunStarted", run_id="run-raw-event", session_id="session-raw-event")
+        yield FakeRawEvent(
+            event="TeamRunContent",
+            run_id="run-raw-event",
+            session_id="session-raw-event",
+            content="已输出正文",
+        )
+        yield FakeRawEvent(
+            event="ReasoningContentDelta",
+            run_id="run-raw-event",
+            session_id="session-raw-event",
+            reasoning_content="已输出思考",
+        )
+        yield FakeRawEvent(event="TeamRunCancelled", run_id="run-raw-event", session_id="session-raw-event")
+
+    async def fake_stream_builder() -> SimpleNamespace:
+        return SimpleNamespace(agent=SimpleNamespace(), stream=fake_raw_stream(), run_id="run-raw-event")
+
+    preserved_payloads: list[dict[str, object]] = []
+    facade = AgentSessionFacade.__new__(AgentSessionFacade)
+    facade._get_session_run_lock = lambda **_: asyncio.Lock()
+    facade.ensure_session_access = lambda **_: _async_value(SimpleNamespace(metadata={}))
+
+    async def fake_preserve(**kwargs: object) -> None:
+        preserved_payloads.append(dict(kwargs))
+
+    facade._preserve_cancelled_raw_run_messages = fake_preserve
+
+    chunks = [
+        chunk
+        async for chunk in facade._stream_agno_raw_sse(
+            session_id="session-raw-event",
+            agent_id=AGENT_COORDINATOR_AGENT_ID,
+            scope=AgentScopeContext(scope_type="workspace", workspace_id=1, source="editor-agent-sidebar"),
+            fallback_user_message="真实用户输入",
+            stream_builder=fake_stream_builder,
+        )
+    ]
+
+    assert len(chunks) == 4
+    assert preserved_payloads == [
+        {
+            "session_id": "session-raw-event",
+            "agent_id": AGENT_COORDINATOR_AGENT_ID,
+            "run_id": "run-raw-event",
+            "fallback_user_message": "真实用户输入",
+            "assistant_content": "已输出正文",
+            "reasoning_content": "已输出思考",
+        }
+    ]
+
+
 async def test_ai_coordinator_session_messages_should_be_visible(authenticated_client: AsyncClient, monkeypatch) -> None:
     """统一智能体使用 AgentSession 持久化时，历史消息应能被会话接口读取。"""
 
@@ -4536,6 +4741,97 @@ async def test_ai_session_active_run_should_return_paused_requirement(authentica
     assert payload["status"] == "paused"
     assert payload["pending_requirement"]["tool_name"] == "apply_page_edits"
     assert payload["pending_requirement"]["tool_execution"]["tool_call_id"] == "tool-confirm-1"
+
+
+async def test_ai_session_runtime_should_ignore_binary_images_in_active_run(
+    authenticated_client: AsyncClient,
+    monkeypatch,
+) -> None:
+    """runtime 快照恢复 active-run 时不应把历史图片 bytes 当 UTF-8 序列化。"""
+
+    workspace_id = await _create_workspace(authenticated_client, "AI Active Run 图片工作空间")
+    project_id = await _create_project(authenticated_client, workspace_id, "AI Active Run 图片项目")
+    page_id = await _create_page(
+        authenticated_client,
+        workspace_id=workspace_id,
+        project_id=project_id,
+        title="AI Active Run 图片页面",
+        content="<template><div>image</div></template>",
+    )
+    session_response = await authenticated_client.post(
+        "/api/ai/sessions",
+        json={
+            "agent_id": AGENT_COORDINATOR_AGENT_ID,
+            "session_name": "Active Run 图片会话",
+            "scope": {
+                "workspace_id": workspace_id,
+                "project_id": project_id,
+                "page_id": page_id,
+                "source": "editor-page-detail",
+            },
+        },
+    )
+    assert session_response.status_code == 201
+    session_id = session_response.json()["session_id"]
+    await _append_test_run(
+        authenticated_client,
+        session_id=session_id,
+        run=RunOutput(
+            run_id="run-active-image-bytes",
+            session_id=session_id,
+            agent_id=AGENT_COORDINATOR_AGENT_ID,
+            status=RunStatus.running,
+            messages=[
+                Message(
+                    role="user",
+                    content="请分析这张图",
+                    images=[Image(content=b"\x89PNG\r\n\x1a\n", mime_type="image/png", detail="auto")],
+                )
+            ],
+        ),
+    )
+
+    async def fake_get_context_status(self, **_: object) -> AgentContextStatusItem:
+        return AgentContextStatusItem(
+            session_id=session_id,
+            agent_id=AGENT_COORDINATOR_AGENT_ID,
+            compression_enabled=True,
+            compression_required=False,
+            summary_available=False,
+            summary=None,
+            topics=[],
+            summary_updated_at=None,
+            context_window_tokens=4096,
+            max_output_tokens=1024,
+            history_token_ratio=0.4,
+            compression_target_ratio=0.1,
+            safety_margin_tokens=256,
+            current_input_tokens=0,
+            fixed_context_tokens=0,
+            history_budget_tokens=2048,
+            compression_target_tokens=512,
+            estimated_history_tokens=0,
+            retained_recent_history_tokens=0,
+            retained_recent_message_count=1,
+        )
+
+    monkeypatch.setattr("app.api.routes.agents.AgentSessionFacade.get_context_status", fake_get_context_status)
+
+    response = await authenticated_client.get(
+        f"/api/ai/sessions/{session_id}/runtime",
+        params={
+            "workspace_id": workspace_id,
+            "project_id": project_id,
+            "page_id": page_id,
+            "agent_id": AGENT_COORDINATOR_AGENT_ID,
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["active_run"]["run_id"] == "run-active-image-bytes"
+    assert payload["active_run"]["status"] == "running"
+    assert payload["messages"][0]["content"] == "请分析这张图"
 
 
 async def test_ai_session_active_run_should_not_restore_requirement_from_completed_task(

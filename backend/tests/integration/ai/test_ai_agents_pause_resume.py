@@ -5,6 +5,7 @@ from tests.integration.ai.ai_agents_cases import (
     test_ai_resolve_requirement_payload_should_use_latest_active_requirement,
     test_ai_run_output_with_pending_feedback_should_be_normalized_as_paused,
     test_ai_session_active_run_should_return_paused_requirement,
+    test_ai_session_runtime_should_ignore_binary_images_in_active_run,
     test_ai_stream_should_release_session_lock_after_pause_event,
     test_apply_user_feedback_selections_should_write_preset_and_custom_answers,
     test_extract_pending_requirement_should_fallback_to_paused_tools,

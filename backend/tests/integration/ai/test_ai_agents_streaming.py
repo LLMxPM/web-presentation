@@ -3,7 +3,9 @@
 from tests.integration.ai.ai_agents_cases import (
     test_ai_active_run_cancel_route_should_proxy_interrupt_request,
     test_ai_agent_run_events_should_be_normalized_for_editor,
+    test_ai_cancelled_raw_run_should_preserve_input_and_streamed_content,
     test_ai_session_context_status_should_return_budget_and_summary,
+    test_ai_session_messages_should_hide_agno_context_note,
     test_ai_session_messages_should_hide_system_and_split_reasoning,
     test_ai_session_messages_should_preserve_tool_metadata,
     test_ai_session_stream_should_allow_different_session_when_another_session_is_running,
@@ -13,6 +15,7 @@ from tests.integration.ai.ai_agents_cases import (
     test_ai_stream_should_mark_cancelled_and_close_upstream_when_client_interrupts,
     test_ai_coordinator_session_messages_should_be_visible,
     test_ai_reasoning_stream_delta_should_preserve_newline_boundaries,
+    test_ai_raw_sse_cancelled_event_should_trigger_preservation,
     test_ai_run_stream_should_refresh_context_status_at_message_checkpoints,
     test_ai_run_routes_should_stream_direct_page_apply,
     test_extract_tool_error_info_should_keep_structured_code,

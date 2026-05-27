@@ -199,11 +199,7 @@ export function applyAgentRuntimeSnapshot(
     toolDetails?: AgentToolCallDetailItem[]
   },
 ): void {
-  const localRunId = state.activeRun?.run_id ?? state.lastRun?.run_id ?? state.stream.runId
-  const shouldKeepLocalCancelledMessages = payload.messages.length === 0
-    && payload.lastRun?.status === 'cancelled'
-    && (!localRunId || payload.lastRun.run_id === localRunId)
-    && state.messages.length > 0
+  const shouldKeepLocalCancelledMessages = shouldPreserveLocalCancelledSnapshotMessages(state, payload)
   const activeStreamingRunId = payload.activeRun && STREAMING_RUN_STATUSES.has(payload.activeRun.status)
     ? payload.activeRun.run_id
     : null
@@ -235,6 +231,41 @@ export function applyAgentRuntimeSnapshot(
   if (cursorRun?.run_id) {
     state.stream.lastSequenceByRun[cursorRun.run_id] = payload.eventIndex
   }
+}
+
+function shouldPreserveLocalCancelledSnapshotMessages(
+  state: AgentSessionRuntimeState,
+  payload: {
+    messages: AgentMessageItem[]
+    lastRun: AgentActiveRunItem | null
+  },
+): boolean {
+  const cancelledRun = payload.lastRun?.status === 'cancelled' ? payload.lastRun : null
+  if (!cancelledRun || state.messages.length === 0) {
+    return false
+  }
+  const localRunId = state.activeRun?.run_id ?? state.lastRun?.run_id ?? state.stream.runId
+  if (localRunId && cancelledRun.run_id !== localRunId) {
+    return false
+  }
+  const runtimeRunMessages = payload.messages.filter(message => message.run_id === cancelledRun.run_id)
+  if (runtimeRunMessages.length === 0) {
+    return true
+  }
+  return hasAssistantProgressForRun(state.messages, cancelledRun.run_id)
+    && !hasAssistantProgressForRun(runtimeRunMessages, cancelledRun.run_id)
+}
+
+function hasAssistantProgressForRun(messages: AgentMessageItem[], runId: string): boolean {
+  return messages.some(message => (
+    messageBelongsToCancelledRun(message, runId)
+    && message.role === 'assistant'
+    && (message.content.length > 0 || Boolean(message.reasoning_content))
+  ))
+}
+
+function messageBelongsToCancelledRun(message: AgentMessageItem, runId: string): boolean {
+  return message.run_id === runId || (message.run_id === null && message.id.startsWith('local-'))
 }
 
 /**

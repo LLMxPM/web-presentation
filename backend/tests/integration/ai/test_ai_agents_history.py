@@ -5,4 +5,5 @@ from tests.integration.ai.ai_agents_cases import (
     test_ai_history_policy_should_expand_budget_with_history_ratio,
     test_ai_history_policy_should_scale_with_model_context_window,
     test_ai_history_policy_should_trigger_compression_by_token_budget,
+    test_ai_new_run_should_inject_cancelled_history_to_model_context,
 )

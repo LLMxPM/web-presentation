@@ -1648,7 +1648,7 @@ async function finalizeRun(
  * 取消终态刚到达时，后端 runtime messages 可能短暂为空；此时保留本地已回放内容。
  */
 function shouldPreserveLocalCancelledMessages(sessionId: string, runtime: AgentSessionRuntimeSnapshot) {
-  if (runtime.messages.length > 0 || runtime.last_run?.status !== 'cancelled') {
+  if (runtime.last_run?.status !== 'cancelled') {
     return false
   }
   const localMessages = readSessionValue(conversationMessagesBySession.value, sessionId, [])
@@ -1661,7 +1661,34 @@ function shouldPreserveLocalCancelledMessages(sessionId: string, runtime: AgentS
     ?? localState.stream.runId
     ?? readSessionValue(currentRunIdBySession.value, sessionId, null)
     ?? readSessionValue(activeRunBySession.value, sessionId, null)?.run_id
-  return !localRunId || runtime.last_run.run_id === localRunId
+  if (localRunId && runtime.last_run.run_id !== localRunId) {
+    return false
+  }
+  return shouldKeepLocalCancelledRunMessages(localMessages, runtime.messages, runtime.last_run.run_id)
+}
+
+/**
+ * 后端可能只返回旧历史或只返回当前取消轮 user，需保留本地 assistant 增量。
+ */
+function shouldKeepLocalCancelledRunMessages(
+  localMessages: AgentMessageItem[],
+  runtimeMessages: AgentMessageItem[],
+  runId: string,
+) {
+  const runtimeRunMessages = runtimeMessages.filter(message => message.run_id === runId)
+  if (!runtimeRunMessages.length) {
+    return true
+  }
+  return hasLocalAssistantProgress(localMessages, runId)
+    && !hasLocalAssistantProgress(runtimeRunMessages, runId)
+}
+
+function hasLocalAssistantProgress(messages: AgentMessageItem[], runId: string) {
+  return messages.some(message => (
+    (message.run_id === runId || (message.run_id === null && message.id.startsWith('local-')))
+    && message.role === 'assistant'
+    && (message.content.length > 0 || Boolean(message.reasoning_content))
+  ))
 }
 
 /**

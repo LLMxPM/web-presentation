@@ -470,6 +470,96 @@ describe('agent-run-state', () => {
     expect(state.lastRun?.run_id).toBe('run-unknown-locally')
   })
 
+  it('取消终态快照只有旧历史时应保留本地当前 run 消息', () => {
+    const state = createAgentSessionRuntimeState()
+    state.lastRun = {
+      run_id: 'run-cancelled',
+      session_id: 'session-1',
+      agent_id: 'agent-coordinator',
+      status: 'cancelled',
+      pending_requirement: null,
+      content: null,
+      created_at: '2026-04-18T10:00:00+08:00',
+      event_index: 3,
+    }
+    state.messages = [
+      {
+        id: 'history-user',
+        run_id: 'run-old',
+        role: 'user',
+        content: '旧消息',
+        reasoning_content: null,
+        created_at: '2026-04-18T09:00:00+08:00',
+        tool_name: null,
+        tool_call_id: null,
+        tool_args: null,
+        tool_call_error: null,
+        attachments: [],
+      },
+      {
+        id: 'local-user',
+        run_id: 'run-cancelled',
+        role: 'user',
+        content: '刚发送的消息',
+        reasoning_content: null,
+        created_at: '2026-04-18T10:00:00+08:00',
+        tool_name: null,
+        tool_call_id: null,
+        tool_args: null,
+        tool_call_error: null,
+        attachments: [],
+      },
+      {
+        id: 'local-assistant',
+        run_id: 'run-cancelled',
+        role: 'assistant',
+        content: '本地已流出内容',
+        reasoning_content: null,
+        created_at: '2026-04-18T10:00:01+08:00',
+        tool_name: null,
+        tool_call_id: null,
+        tool_args: null,
+        tool_call_error: null,
+        attachments: [],
+      },
+    ]
+
+    applyAgentRuntimeSnapshot(state, {
+      messages: [{
+        id: 'history-user',
+        run_id: 'run-old',
+        role: 'user',
+        content: '旧消息',
+        reasoning_content: null,
+        created_at: '2026-04-18T09:00:00+08:00',
+        tool_name: null,
+        tool_call_id: null,
+        tool_args: null,
+        tool_call_error: null,
+        attachments: [],
+      }],
+      activeRun: null,
+      lastRun: {
+        run_id: 'run-cancelled',
+        session_id: 'session-1',
+        agent_id: 'agent-coordinator',
+        status: 'cancelled',
+        pending_requirement: null,
+        content: null,
+        created_at: '2026-04-18T10:00:00+08:00',
+        event_index: 4,
+      },
+      pendingRequirement: null,
+      pendingImageAttachments: [],
+      contextStatus: null,
+      eventIndex: 4,
+      toolDetails: [],
+    })
+
+    expect(state.messages.map(message => message.content)).toEqual(['旧消息', '刚发送的消息', '本地已流出内容'])
+    expect(state.lastRun?.status).toBe('cancelled')
+  })
+
   it('store 扁平缓存中的 null 应能清理嵌套 paused requirement', () => {
     setActivePinia(createPinia())
     const store = useAgentSessionStore()

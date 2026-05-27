@@ -6,9 +6,10 @@ import asyncio
 import json
 import re
 from copy import deepcopy
-from dataclasses import dataclass
+from dataclasses import dataclass, field, fields, is_dataclass
 from collections.abc import AsyncGenerator, AsyncIterator, Awaitable
 from datetime import UTC, datetime
+from enum import Enum
 from typing import Any
 from uuid import uuid4
 
@@ -77,6 +78,7 @@ _REASONING_BLOCK_PATTERN = re.compile(r"<reasoning>(.*?)</reasoning>", re.IGNORE
 _THINK_BLOCK_PATTERN = re.compile(r"<think>(.*?)</think>", re.IGNORECASE | re.DOTALL)
 _OPEN_REASONING_TAG_PATTERN = re.compile(r"<(?:reasoning|think)>", re.IGNORECASE)
 _REASONING_TAG_PATTERN = re.compile(r"</?(?:reasoning|think)>", re.IGNORECASE)
+_AGNO_CONTEXT_NOTE_PREFIX = "Take note of the following content"
 
 
 @dataclass(slots=True)
@@ -170,6 +172,74 @@ class _StreamingHistoryTracker:
             )
         )
         return True
+
+
+@dataclass(slots=True)
+class _RawSseRunMessageTracker:
+    """跟踪 Agno raw SSE 中已展示给用户的当前 run 内容。"""
+
+    fallback_user_message: str | None = None
+    run_id: str | None = None
+    cancelled: bool = False
+    assistant_parts: list[str] = field(default_factory=list)
+    reasoning_parts: list[str] = field(default_factory=list)
+
+    def observe(self, raw_event: Any, *, fallback_run_id: str | None = None) -> None:
+        """读取 raw Agno 事件中的 run、正文、reasoning 和取消终态。"""
+
+        payload = _normalize_raw_event_payload(raw_event)
+        event_name = _raw_event_name(raw_event, payload)
+        event_run_id = _coerce_str(payload.get("run_id")) or fallback_run_id
+        if event_run_id:
+            self.run_id = event_run_id
+        if event_name in {
+            "RunContent",
+            "RunContentEvent",
+            "IntermediateRunContent",
+            "IntermediateRunContentEvent",
+            "RunIntermediateContent",
+            "TeamRunContent",
+            "TeamRunIntermediateContent",
+        }:
+            content, reasoning_content = _split_reasoning_content(
+                _extract_text_content(payload.get("content")),
+                _resolve_reasoning_content(payload, preserve_stream_boundary=True),
+                preserve_reasoning_boundary=True,
+            )
+            if content:
+                self.assistant_parts.append(content)
+            if reasoning_content:
+                self.reasoning_parts.append(reasoning_content)
+        elif event_name == "ReasoningContentDelta":
+            reasoning_content = _resolve_reasoning_content(payload, preserve_stream_boundary=True)
+            if reasoning_content:
+                self.reasoning_parts.append(reasoning_content)
+        elif event_name in {"RunCompleted", "RunCompletedEvent", "TeamRunCompleted"}:
+            content, reasoning_content = _split_reasoning_content(
+                _extract_text_content(payload.get("content")),
+                _resolve_reasoning_content(payload, preserve_stream_boundary=True),
+                preserve_reasoning_boundary=True,
+            )
+            if content and not "".join(self.assistant_parts):
+                self.assistant_parts.append(content)
+            if reasoning_content and not "".join(self.reasoning_parts):
+                self.reasoning_parts.append(reasoning_content)
+        elif event_name in {"RunCancelled", "RunCancelledEvent", "TeamRunCancelled"}:
+            self.cancelled = True
+
+    @property
+    def assistant_content(self) -> str | None:
+        """返回当前 run 已流出的 assistant 正文。"""
+
+        content = "".join(self.assistant_parts or [])
+        return content or None
+
+    @property
+    def reasoning_content(self) -> str | None:
+        """返回当前 run 已流出的 reasoning 内容。"""
+
+        content = "".join(self.reasoning_parts or [])
+        return content or None
 
 
 _ACTIVE_RUN_STATUSES = {RunStatus.pending, RunStatus.running, RunStatus.paused}
@@ -347,9 +417,7 @@ class AgentSessionFacade:
         for index, record in enumerate(_get_session_message_records(detail, agent_id=agent_id, **message_kwargs)):
             item = record.message
             role = str(item.role or "assistant")
-            if role == "system":
-                continue
-            if role not in {"user", "assistant", "tool"}:
+            if not _is_displayable_session_message(item, role=role):
                 continue
             content, reasoning_content = _split_reasoning_content(
                 _stringify_content(item.content),
@@ -926,6 +994,7 @@ class AgentSessionFacade:
             session_id=session_id,
             agent_id=agent_id,
             scope=scope,
+            fallback_user_message=message,
             stream_builder=self._build_run_stream(
                 agent_id=agent_id,
                 session_id=session_id,
@@ -996,6 +1065,7 @@ class AgentSessionFacade:
             session_id=session_id,
             agent_id=agent_id,
             scope=run_scope,
+            fallback_user_message=note,
             stream_builder=self._build_continue_stream(
                 agent_id=agent_id,
                 session_id=session_id,
@@ -1485,10 +1555,13 @@ class AgentSessionFacade:
         scope: AgentScopeContext,
         stream_builder,
         reserved_lock: asyncio.Lock | None = None,
+        fallback_user_message: str | None = None,
     ) -> AsyncGenerator[bytes, None]:
         """执行 Agno background stream，并直接透传 Agno 生成的 SSE 文本。"""
 
         async def generator() -> AsyncGenerator[bytes, None]:
+            tracker = _RawSseRunMessageTracker(fallback_user_message=fallback_user_message)
+            active_run_id: str | None = None
             lock = reserved_lock or self._get_session_run_lock(session_id=session_id, agent_id=agent_id)
             lock_acquired = reserved_lock is not None
             if not lock_acquired:
@@ -1505,6 +1578,8 @@ class AgentSessionFacade:
             try:
                 await self.ensure_session_access(session_id=session_id, agent_id=agent_id, scope=scope)
                 active_stream = await stream_builder()
+                active_run_id = active_stream.run_id
+                tracker.run_id = active_run_id
                 local_event_index = -1
                 async for sse_data in active_stream.stream:
                     if isinstance(sse_data, (str, bytes)):
@@ -1513,6 +1588,8 @@ class AgentSessionFacade:
                         from agno.os.utils import format_sse_event_with_index
 
                         local_event_index += 1
+                        tracker.observe(sse_data, fallback_run_id=active_stream.run_id)
+                        active_run_id = tracker.run_id or active_run_id
                         yield _ensure_sse_bytes(
                             format_sse_event_with_index(
                                 sse_data,
@@ -1520,6 +1597,15 @@ class AgentSessionFacade:
                                 run_id=active_stream.run_id,
                             )
                         )
+                if tracker.cancelled and (tracker.run_id or active_run_id):
+                    await self._preserve_cancelled_raw_run_messages(
+                        session_id=session_id,
+                        agent_id=agent_id,
+                        run_id=str(tracker.run_id or active_run_id),
+                        fallback_user_message=tracker.fallback_user_message,
+                        assistant_content=tracker.assistant_content,
+                        reasoning_content=tracker.reasoning_content,
+                    )
             except asyncio.CancelledError:
                 raise
             except AppException as exc:
@@ -1577,7 +1663,7 @@ class AgentSessionFacade:
     ) -> AgentRunEvent | None:
         """把 Agno 原始事件翻译成 Editor 约定的事件协议。"""
 
-        payload = jsonable_encoder(raw_event)
+        payload = _event_payload(raw_event)
         if not isinstance(payload, dict):
             return None
 
@@ -2157,7 +2243,7 @@ class AgentSessionFacade:
     ) -> AgentActiveRunItem:
         """把 Agno RunOutput 映射成前端 session 级 active-run 状态。"""
 
-        payload = jsonable_encoder(run)
+        payload = _active_run_payload(run)
         if not isinstance(payload, dict):
             payload = {}
         payload.setdefault("session_id", session_id)
@@ -2346,6 +2432,87 @@ class AgentSessionFacade:
             status=status,
             content=content,
         )
+
+    async def _preserve_cancelled_raw_run_messages(
+        self,
+        *,
+        session_id: str,
+        agent_id: str,
+        run_id: str,
+        fallback_user_message: str | None,
+        assistant_content: str | None,
+        reasoning_content: str | None,
+    ) -> None:
+        """Agno 取消 run 未写 messages 时，补回 Editor 已展示的最小对话历史。"""
+
+        detail = await self._read_session_detail(session_id=session_id, agent_id=agent_id)
+        if not isinstance(detail, (AgentSession, TeamSession)):
+            return
+        run = detail.get_run(run_id)
+        if run is None:
+            if isinstance(detail, TeamSession):
+                run = TeamRunOutput(
+                    run_id=run_id,
+                    session_id=session_id,
+                    team_id=agent_id,
+                    user_id=str(self._current.user.id),
+                    status=RunStatus.cancelled,
+                )
+            else:
+                run = RunOutput(
+                    run_id=run_id,
+                    session_id=session_id,
+                    agent_id=agent_id,
+                    user_id=str(self._current.user.id),
+                    status=RunStatus.cancelled,
+                )
+        displayable_messages = [
+            message
+            for message in list(getattr(run, "messages", None) or [])
+            if _is_displayable_session_message(message)
+        ]
+        has_user_message = any(str(getattr(message, "role", "") or "") == "user" for message in displayable_messages)
+        has_assistant_message = any(
+            str(getattr(message, "role", "") or "") == "assistant"
+            and (_stringify_content(getattr(message, "content", None)) or _resolve_reasoning_content(message))
+            for message in displayable_messages
+        )
+        user_content = _resolve_run_input_text(run) or (fallback_user_message or "").strip() or None
+        assistant_text = (assistant_content or "").strip() or None
+        reasoning_text = (reasoning_content or "").strip() or None
+        next_messages: list[Any] = []
+        if user_content and not has_user_message:
+            next_messages.append(
+                Message(
+                    role="user",
+                    content=user_content,
+                    created_at=_coerce_int(getattr(run, "created_at", None)) or int(datetime.now(tz=UTC).timestamp()),
+                )
+            )
+        next_messages.extend(displayable_messages)
+        if (assistant_text or reasoning_text) and not has_assistant_message:
+            next_messages.append(
+                Message(
+                    role="assistant",
+                    content=assistant_text or "",
+                    reasoning_content=reasoning_text,
+                    created_at=_coerce_int(getattr(run, "updated_at", None))
+                    or _coerce_int(getattr(run, "created_at", None))
+                    or int(datetime.now(tz=UTC).timestamp()),
+                )
+            )
+        if not next_messages:
+            return
+        run.messages = next_messages
+        run.status = RunStatus.cancelled
+        if assistant_text is not None:
+            run.content = assistant_text
+        metadata = dict(getattr(run, "metadata", None) or {})
+        metadata["user_cancel_preserved"] = True
+        run.metadata = metadata
+        _normalize_agno_terminal_run_payload(run, status=RunStatus.cancelled)
+        detail.upsert_run(run)
+        await asyncio.to_thread(self._ai_db.upsert_session, detail)
 
     async def _cancel_stale_running_run_if_needed(
         self,
@@ -2610,6 +2777,43 @@ def _get_session_message_records(session_detail: AgnoSessionDetail, *, agent_id:
                 continue
             records.append(_SessionMessageRecord(run_id=run_id, message=message))
     return records
+
+
+def _message_attr(message: Any, field_name: str, default: Any = None) -> Any:
+    """兼容 Agno Message 对象和 dict 测试替身读取字段。"""
+
+    if isinstance(message, dict):
+        return message.get(field_name, default)
+    return getattr(message, field_name, default)
+
+
+def _is_displayable_session_message(message: Any, *, role: str | None = None) -> bool:
+    """判断消息是否属于用户可见对话，过滤 Agno 历史和框架上下文注入。"""
+
+    resolved_role = role or str(_message_attr(message, "role", "") or "")
+    if resolved_role == "system":
+        return False
+    if resolved_role not in {"user", "assistant", "tool"}:
+        return False
+    if bool(_message_attr(message, "from_history", False)):
+        return False
+    if _is_agno_context_note_message(message, role=resolved_role):
+        return False
+    return True
+
+
+def _is_agno_context_note_message(message: Any, *, role: str) -> bool:
+    """识别 Agno 为图片或上下文附加的非用户输入提示消息。"""
+
+    if role != "user":
+        return False
+    content = _stringify_content(_message_attr(message, "content", None)).strip()
+    if not content.startswith(_AGNO_CONTEXT_NOTE_PREFIX):
+        return False
+    for field_name in ("images", "videos", "audio", "files"):
+        if _message_attr(message, field_name, None):
+            return True
+    return False
 
 
 def _assistant_message_ids_by_run(messages: list[AgentMessageItem]) -> dict[str, str]:
@@ -3479,6 +3683,96 @@ def _stringify_content(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False)
 
 
+def _safe_json_payload(value: Any) -> Any:
+    """把 Agno/Pydantic 对象转为 JSON 兼容结构，并用轻量占位替换二进制内容。"""
+
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, (bytes, bytearray, memoryview)):
+        return {"type": "binary", "size": len(value)}
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, Enum):
+        return value.value
+    if isinstance(value, dict):
+        return {str(key): _safe_json_payload(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        return [_safe_json_payload(item) for item in value]
+    if hasattr(value, "model_dump"):
+        try:
+            return _safe_json_payload(value.model_dump(mode="python", exclude_none=True))
+        except TypeError:
+            return _safe_json_payload(value.model_dump())
+    if is_dataclass(value):
+        return {
+            field.name: _safe_json_payload(getattr(value, field.name))
+            for field in fields(value)
+            if not field.name.startswith("_")
+        }
+    if hasattr(value, "__dict__"):
+        return {
+            key: _safe_json_payload(item)
+            for key, item in vars(value).items()
+            if not key.startswith("_") and item is not None
+        }
+    if hasattr(value, "to_dict"):
+        return _safe_json_payload(value.to_dict())
+    try:
+        return _safe_json_payload(jsonable_encoder(value))
+    except Exception:
+        return str(value)
+
+
+def _event_payload(raw_event: Any) -> Any:
+    """优先沿用 FastAPI 编码，遇到图片 bytes 等异常时降级为安全结构。"""
+
+    try:
+        return jsonable_encoder(raw_event)
+    except Exception:
+        return _safe_json_payload(raw_event)
+
+
+def _active_run_payload(run: RunOutput | TeamRunOutput) -> dict[str, Any]:
+    """仅抽取 runtime/active-run 恢复所需字段，避免序列化历史图片 bytes。"""
+
+    payload = {
+        "run_id": getattr(run, "run_id", None),
+        "session_id": getattr(run, "session_id", None),
+        "agent_id": getattr(run, "agent_id", None),
+        "agent_name": getattr(run, "agent_name", None),
+        "team_id": getattr(run, "team_id", None),
+        "team_name": getattr(run, "team_name", None),
+        "parent_run_id": getattr(run, "parent_run_id", None),
+        "content": getattr(run, "content", None),
+        "requirements": getattr(run, "requirements", None) or [],
+        "tools": getattr(run, "tools", None) or [],
+    }
+    return _safe_json_payload(payload)
+
+
+def _resolve_run_input_text(run: Any) -> str | None:
+    """从 Agno run.input 中提取真实用户输入文本，避免使用 additional_input 历史。"""
+
+    raw_input = getattr(run, "input", None)
+    if raw_input is None:
+        return None
+    payload = _safe_json_payload(raw_input)
+    if isinstance(payload, dict):
+        for field_name in ("input_content", "content", "message", "input"):
+            candidate = payload.get(field_name)
+            if isinstance(candidate, str) and candidate.strip():
+                return candidate.strip()
+        nested_input = payload.get("input")
+        if isinstance(nested_input, dict):
+            for field_name in ("input_content", "content", "message"):
+                candidate = nested_input.get(field_name)
+                if isinstance(candidate, str) and candidate.strip():
+                    return candidate.strip()
+    if isinstance(payload, str) and payload.strip():
+        return payload.strip()
+    return None
+
+
 def _extract_text_content(value: Any) -> str | None:
     """仅提取适合直接渲染为助手正文的文本内容，避免把工具结构化结果误当成回答。"""
 
@@ -3492,7 +3786,7 @@ def _extract_text_content(value: Any) -> str | None:
 def _normalize_raw_event_payload(raw_event: Any) -> dict[str, Any]:
     """把 Agno 原始事件归一成字典，供检查点识别和临时历史估算使用。"""
 
-    payload = jsonable_encoder(raw_event)
+    payload = _event_payload(raw_event)
     return payload if isinstance(payload, dict) else {}
 
 
@@ -3533,7 +3827,7 @@ def _list_tool_details_from_agno_runs(
         if not run_id:
             continue
         for index, raw_event in enumerate(getattr(run, "events", None) or []):
-            payload = jsonable_encoder(raw_event)
+            payload = _event_payload(raw_event)
             if not isinstance(payload, dict):
                 continue
             event_name = str(payload.get("event") or type(raw_event).__name__)
