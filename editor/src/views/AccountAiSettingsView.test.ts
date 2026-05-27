@@ -193,7 +193,12 @@ describe('AccountAiSettingsView', () => {
         supports_thinking: true,
         thinking_mode: 'openai_reasoning',
         default_base_url: 'https://api.openai.com/v1',
+        default_model_id: null,
+        default_thinking_enabled: false,
         default_thinking_effort: 'medium',
+        default_context_window_tokens: null,
+        default_max_output_tokens: null,
+        default_supports_image_input: false,
         thinking_effort_options: ['low', 'medium', 'high'],
         advanced_json_hint: {},
       },
@@ -334,6 +339,96 @@ describe('AccountAiSettingsView', () => {
         advanced_config_json: {},
       })
     })
+  })
+
+  it('新建 MiMo 模型时应只预填 Base URL，不预填模型和图片能力', async () => {
+    listLlmProvidersMock.mockResolvedValue([
+      {
+        provider_key: 'mimo',
+        label: 'MiMo',
+        agno_class_path: 'app.ai.providers.mimo.MiMo',
+        docs_url: 'https://platform.xiaomimimo.com/docs/zh-CN/quick-start/first-api-call',
+        supports_base_url: true,
+        supports_api_key: true,
+        supports_thinking: true,
+        thinking_mode: 'openai_extra_body_thinking',
+        default_base_url: 'https://api.xiaomimimo.com/v1',
+        default_model_id: null,
+        default_thinking_enabled: false,
+        default_thinking_effort: null,
+        default_context_window_tokens: null,
+        default_max_output_tokens: null,
+        default_supports_image_input: false,
+        thinking_effort_options: [],
+        advanced_json_hint: {},
+      },
+    ])
+    render(AccountAiSettingsView, createTestingRenderOptions())
+
+    await waitFor(() => {
+      expect(screen.getByText('页面写入')).toBeTruthy()
+    })
+
+    await fireEvent.click(screen.getByRole('button', { name: '模型' }))
+    await fireEvent.click(screen.getByRole('button', { name: '新建模型' }))
+    const modelIdInput = screen.getByPlaceholderText('例如：gpt-4.1-mini') as HTMLInputElement
+    expect(modelIdInput.value).toBe('')
+
+    await fireEvent.update(screen.getByPlaceholderText('例如：总控默认模型'), 'MiMo 模型')
+    await fireEvent.update(modelIdInput, 'mimo-v2.5')
+    await fireEvent.click(screen.getByRole('button', { name: '创建模型' }))
+
+    await waitFor(() => {
+      expect(createLlmConfigMock).toHaveBeenCalled()
+    })
+    const payload = createLlmConfigMock.mock.calls[0][0] as Record<string, unknown>
+    expect(payload.provider_key).toBe('mimo')
+    expect(payload.base_url).toBe('https://api.xiaomimimo.com/v1')
+    expect(payload.supports_image_input).toBe(false)
+    expect(payload.advanced_config_json).toEqual({})
+  })
+
+  it('OpenRouter 新建模型不应保存旧 app_name 高级配置', async () => {
+    listLlmProvidersMock.mockResolvedValue([
+      {
+        provider_key: 'openrouter',
+        label: 'OpenRouter',
+        agno_class_path: 'agno.models.openrouter.openrouter.OpenRouter',
+        docs_url: 'https://docs.agno.com/models/providers/gateways/openrouter/overview',
+        supports_base_url: true,
+        supports_api_key: true,
+        supports_thinking: true,
+        thinking_mode: 'openai_reasoning',
+        default_base_url: 'https://openrouter.ai/api/v1',
+        default_model_id: null,
+        default_thinking_enabled: false,
+        default_thinking_effort: 'medium',
+        default_context_window_tokens: null,
+        default_max_output_tokens: null,
+        default_supports_image_input: false,
+        thinking_effort_options: ['low', 'medium', 'high'],
+        advanced_json_hint: {},
+      },
+    ])
+    render(AccountAiSettingsView, createTestingRenderOptions())
+
+    await waitFor(() => {
+      expect(screen.getByText('页面写入')).toBeTruthy()
+    })
+
+    await fireEvent.click(screen.getByRole('button', { name: '模型' }))
+    await fireEvent.click(screen.getByRole('button', { name: '新建模型' }))
+    await fireEvent.update(screen.getByPlaceholderText('例如：总控默认模型'), 'OpenRouter 模型')
+    await fireEvent.update(screen.getByPlaceholderText('例如：gpt-4.1-mini'), 'openai/gpt-4.1-mini')
+    await fireEvent.click(screen.getByRole('button', { name: '创建模型' }))
+
+    await waitFor(() => {
+      expect(createLlmConfigMock).toHaveBeenCalled()
+    })
+    const payload = createLlmConfigMock.mock.calls[0][0] as Record<string, unknown>
+    expect(payload.provider_key).toBe('openrouter')
+    expect(payload.base_url).toBe('https://openrouter.ai/api/v1')
+    expect(payload.advanced_config_json).toEqual({})
   })
 
   it('编辑模型时 API Key 留空应保留原值', async () => {

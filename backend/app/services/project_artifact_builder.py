@@ -114,6 +114,7 @@ class ProjectArtifactBuilder:
         transient_pages: list[Page] | None = None,
         asset_delivery_mode: AssetDeliveryMode = "public",
         asset_snapshot_mode: AssetSnapshotMode = "all",
+        asset_base_url_override: str | None = None,
     ) -> ProjectArtifactSnapshot:
         """构建项目级预览/构建共用快照。"""
 
@@ -203,8 +204,9 @@ class ProjectArtifactBuilder:
             project.workspace_id,
             required_asset_names=required_asset_names,
         )
+        asset_base_source = asset_base_url_override or settings.backend_public_base_url
         asset_base_url = self.build_asset_base_url(
-            settings.backend_public_base_url,
+            asset_base_source,
             project.workspace_id,
             asset_delivery_mode,
         )

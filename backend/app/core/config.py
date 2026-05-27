@@ -69,6 +69,8 @@ class AppSettings(BaseSettings):
     page_screenshot_batch_concurrency: int = 2
     page_screenshot_local_root: str = "data"
     page_screenshot_browser_executable_path: str | None = None
+    page_screenshot_backend_base_url: str | None = None
+    page_screenshot_runtime_public_base_url: str | None = None
     object_cache_idle_days: int = 30
     object_cache_max_bytes: int = 10737418240
     object_cache_sweep_interval_seconds: int = 21600
@@ -203,6 +205,17 @@ class AppSettings(BaseSettings):
     @classmethod
     def validate_runtime_public_base_url(cls, value: str | None) -> str | None:
         """校验浏览器可访问的 Runtime 公网地址；未配置时允许回退到内网地址。"""
+
+        if value is None:
+            return None
+
+        normalized = value.strip().rstrip("/")
+        return normalized or None
+
+    @field_validator("page_screenshot_backend_base_url", "page_screenshot_runtime_public_base_url")
+    @classmethod
+    def validate_optional_page_screenshot_base_url(cls, value: str | None) -> str | None:
+        """校验截图浏览器专用基址；未配置时由截图服务按运行环境兜底。"""
 
         if value is None:
             return None

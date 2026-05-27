@@ -579,6 +579,17 @@ async def stream_agent_run(
     runtime_context = await _build_runtime_context(session=session, scope=scope)
     facade = AgentSessionFacade(app=request.app, current=current, session=session)
     reserved_lock = await facade.reserve_run_slot(session_id=session_id, agent_id=agent_id, scope=scope)
+    try:
+        await _ensure_stream_image_input_supported(
+            session=session,
+            current=current,
+            descriptor=descriptor,
+            image_attachment_ids=payload.image_attachment_ids,
+        )
+    except Exception:
+        if reserved_lock.locked():
+            reserved_lock.release()
+        raise
     run_id = payload.run_id or str(uuid4())
     return StreamingResponse(
         facade.run_raw_sse(
@@ -594,6 +605,30 @@ async def stream_agent_run(
         media_type="text/event-stream",
         headers={"X-Agent-Run-Id": run_id},
     )
+
+
+async def _ensure_stream_image_input_supported(
+    *,
+    session: AsyncSession,
+    current: AuthContext,
+    descriptor: RegisteredAgentDescriptor,
+    image_attachment_ids: list[int] | None,
+) -> None:
+    """在返回流式响应前校验绑定模型是否支持图片输入。"""
+
+    if not image_attachment_ids:
+        return
+    model_config = await AiLlmService(
+        session,
+        user_id=current.user.id,
+        user_role=current.user.role,
+    ).get_bound_config_or_raise(descriptor.llm_slot or "")
+    if not bool(model_config.supports_image_input):
+        raise AppException(
+            status_code=409,
+            code="AI_LLM_IMAGE_INPUT_UNSUPPORTED",
+            detail="当前绑定模型不支持图片输入，不能发送图片附件。",
+        )
 
 
 @router.get("/sessions/{session_id}/runs/{run_id}/events/stream")

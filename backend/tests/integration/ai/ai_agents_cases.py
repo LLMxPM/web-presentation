@@ -995,6 +995,87 @@ async def test_resource_create_tool_should_support_svg_image_asset(
     assert asset["analysis_metadata"] is None
 
 
+async def test_resource_member_write_tool_should_accept_member_token_from_coordinator_run(
+    authenticated_client: AsyncClient,
+    monkeypatch,
+) -> None:
+    """内容助手委派资源助手时，资源写入工具应能使用成员助手 token 授权。"""
+
+    workspace_id = await _create_workspace(authenticated_client, "AI 资源成员授权工作空间")
+    now = datetime.now(UTC)
+
+    async def fake_create_content_asset(self, workspace_id: int, **kwargs):  # type: ignore[no-untyped-def]
+        """替换真实对象存储写入，只保留工具授权链路验证。"""
+
+        asset_type = str(getattr(kwargs["asset_type"], "value", kwargs["asset_type"]))
+        content = str(kwargs["content"])
+        return SimpleNamespace(
+            id=801,
+            workspace_id=workspace_id,
+            name=kwargs["name"],
+            file_name="mass-energy-equation.tex",
+            original_name=kwargs["original_name"],
+            description=kwargs.get("description"),
+            file_size=len(content.encode("utf-8")),
+            file_hash="fake-formula-hash",
+            content_type="text/plain",
+            asset_type=asset_type,
+            tags=kwargs.get("tags") or [],
+            analysis_metadata=None,
+            render_metadata=None,
+            status=RecordStatus.ACTIVE.value,
+            archived_at=None,
+            archive_reason=None,
+            source_asset_id=None,
+            history_kind=None,
+            font_config=None,
+            created_at=now,
+            updated_at=now,
+        )
+
+    monkeypatch.setattr("app.services.asset_service.AssetService.create_content_asset", fake_create_content_asset)
+    current = _build_auth_context()
+    create_tool = _find_tool(build_resource_manager_tools(get_session_factory()), "create_resource_asset")
+    run_context = await _build_tool_run_context(
+        current=current,
+        tool_scopes=RESOURCE_TOOL_READ_SCOPES,
+        workspace_id=workspace_id,
+    )
+    dependencies = run_context.dependencies
+    assert dependencies is not None
+    member_scopes = AgentSessionFacade._resolve_tool_scopes(agent_id=RESOURCE_MANAGER_AGENT_ID)
+    dependencies["member_tool_auth_tokens"] = {
+        RESOURCE_MANAGER_AGENT_ID: build_agent_tool_token(
+            current,
+            run_id=dependencies["run_id"],
+            session_id=dependencies["session_id"],
+            agent_id=RESOURCE_MANAGER_AGENT_ID,
+            workspace_id=workspace_id,
+            project_id=None,
+            page_id=None,
+            component_id=None,
+            source=dependencies["source"],
+            scopes=member_scopes,
+        )
+    }
+    dependencies["member_tool_scopes"] = {RESOURCE_MANAGER_AGENT_ID: list(member_scopes)}
+
+    result = await create_tool.entrypoint(
+        run_context,
+        asset_type="formula",
+        name="mass-energy-equation",
+        original_name="mass-energy-equation.tex",
+        content="\\[ E = mc^{2} \\]",
+        description="爱因斯坦质能方程，揭示质量与能量的等价关系",
+        tags=["physics", "relativity", "einstein"],
+    )
+
+    assert result["success"] is True
+    asset = result["asset"]
+    assert asset["asset_type"] == "formula"
+    assert asset["original_name"] == "mass-energy-equation.tex"
+
+
 async def test_workspace_component_usage_tools_should_not_require_page_scope(
     authenticated_client: AsyncClient,
 ) -> None:
@@ -2253,6 +2334,10 @@ async def test_agent_tool_dependencies_and_scope_summary_should_include_authorin
     assert "tool_access_token" not in dependencies
     assert "allowed_tool_groups" not in dependencies
     assert "tool_group_catalog" not in dependencies
+    assert RESOURCE_TOOL_WRITE_SCOPES[0] not in dependencies["tool_scopes"]
+    assert set(dependencies["member_tool_auth_tokens"]) == {COMPONENT_MANAGER_AGENT_ID, RESOURCE_MANAGER_AGENT_ID}
+    assert COMPONENT_TOOL_WRITE_SCOPES[0] in dependencies["member_tool_scopes"][COMPONENT_MANAGER_AGENT_ID]
+    assert RESOURCE_TOOL_WRITE_SCOPES[0] in dependencies["member_tool_scopes"][RESOURCE_MANAGER_AGENT_ID]
 
 
 async def test_ai_sessions_should_list_workspace_sessions_and_gate_new_runs(authenticated_client: AsyncClient) -> None:

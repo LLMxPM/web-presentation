@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+from agno.media import Image
+from agno.models.message import Message
 from httpx import AsyncClient
 
 from app.ai.model_resolver import LlmModelResolver
+from app.ai.providers.mimo import MiMo
 from app.ai.secret_cipher import LlmSecretCipher
 from app.models.ai_llm import AiLlmConfig
 from app.models.enums import RecordStatus
@@ -67,6 +70,7 @@ async def test_llm_provider_catalog_should_only_include_supported_providers(auth
         "dashscope",
         "deepseek",
         "google",
+        "mimo",
         "nvidia",
         "ollama",
         "openai",
@@ -80,13 +84,30 @@ async def test_llm_provider_catalog_should_only_include_supported_providers(auth
         assert providers[provider_key]["docs_url"].startswith("https://")
     assert providers["ollama"]["supports_thinking"] is True
     assert providers["ollama"]["thinking_mode"] == "ollama_think"
+    assert providers["ollama"]["default_base_url"] == "http://localhost:11434"
+    assert providers["ollama"]["default_model_id"] == "llama3.1"
     assert providers["ollama"]["default_thinking_effort"] == "medium"
     assert providers["ollama"]["thinking_effort_options"] == ["low", "medium", "high"]
     assert providers["google"]["supports_thinking"] is True
     assert providers["google"]["thinking_mode"] == "google_thinking_level"
+    assert providers["google"]["default_model_id"] == "gemini-flash-latest"
     assert providers["google"]["thinking_effort_options"] == ["low", "high"]
-    assert providers["deepseek"]["advanced_json_hint"]["timeout"] == 1200
-    assert providers["deepseek"]["advanced_json_hint"]["retries"] == 1
+    assert providers["openai"]["default_base_url"] == "https://api.openai.com/v1"
+    assert providers["openrouter"]["default_base_url"] == "https://openrouter.ai/api/v1"
+    assert providers["openrouter"]["advanced_json_hint"] == {}
+    assert providers["dashscope"]["default_model_id"] == "qwen-plus"
+    assert providers["nvidia"]["default_model_id"] == "meta/llama-3.3-70b-instruct"
+    assert providers["deepseek"]["thinking_mode"] == "openai_extra_body_thinking"
+    assert providers["deepseek"]["default_base_url"] == "https://api.deepseek.com"
+    assert providers["deepseek"]["default_model_id"] == "deepseek-v4-pro"
+    assert providers["deepseek"]["default_thinking_enabled"] is True
+    assert providers["deepseek"]["default_context_window_tokens"] == 1_000_000
+    assert providers["deepseek"]["default_max_output_tokens"] == 384_000
+    assert providers["deepseek"]["thinking_effort_options"] == ["high", "max"]
+    assert providers["mimo"]["default_base_url"] == "https://api.xiaomimimo.com/v1"
+    assert providers["mimo"]["default_model_id"] is None
+    assert providers["mimo"]["default_supports_image_input"] is False
+    assert all(item["advanced_json_hint"] == {} for item in providers.values())
 
 
 async def test_llm_config_crud_should_encrypt_and_mask_api_key(authenticated_client: AsyncClient) -> None:
@@ -302,7 +323,7 @@ def test_llm_model_resolver_should_build_common_provider_models() -> None:
         )
     )
     assert openai_model.__class__.__name__ == "OpenAIResponses"
-    assert getattr(openai_model, "reasoning_effort", None) == "medium"
+    assert getattr(openai_model, "reasoning_effort", None) is None
 
     openrouter_model = resolver.resolve_model(
         AiLlmConfig(
@@ -332,6 +353,7 @@ def test_llm_model_resolver_should_build_common_provider_models() -> None:
             base_url="https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
             api_key_ciphertext=cipher.encrypt("sk-dashscope-test"),
             thinking_enabled=True,
+            thinking_effort="medium",
             advanced_config_json={},
             status=RecordStatus.ACTIVE.value,
         )
@@ -375,12 +397,10 @@ def test_llm_model_resolver_should_build_common_provider_models() -> None:
         )
     )
     assert deepseek_model.__class__.__name__ == "DeepSeek"
-    assert getattr(deepseek_model, "reasoning_effort", None) == "xhigh"
+    assert getattr(deepseek_model, "reasoning_effort", None) == "max"
     assert getattr(deepseek_model, "extra_body", None) == {"thinking": {"type": "enabled"}}
-    assert getattr(deepseek_model, "timeout", None) == 1200.0
-    assert getattr(deepseek_model, "retries", None) == 1
-    assert getattr(deepseek_model, "delay_between_retries", None) == 3
-    assert getattr(deepseek_model, "exponential_backoff", None) is True
+    assert getattr(deepseek_model, "timeout", None) is None
+    assert getattr(deepseek_model, "retries", None) == 0
 
     deepseek_disabled_model = resolver.resolve_model(
         AiLlmConfig(
@@ -400,6 +420,24 @@ def test_llm_model_resolver_should_build_common_provider_models() -> None:
     assert getattr(deepseek_disabled_model, "reasoning_effort", None) is None
     assert getattr(deepseek_disabled_model, "extra_body", None) == {"thinking": {"type": "disabled"}}
     assert getattr(deepseek_disabled_model, "timeout", None) is None
+
+    deepseek_legacy_effort_model = resolver.resolve_model(
+        AiLlmConfig(
+            id=12,
+            user_id=1,
+            name="deepseek-legacy-effort",
+            provider_key="deepseek",
+            model_id="deepseek-v4-pro",
+            base_url="https://api.deepseek.com",
+            api_key_ciphertext=cipher.encrypt("sk-deepseek-test"),
+            thinking_enabled=True,
+            thinking_effort="medium",
+            advanced_config_json={},
+            status=RecordStatus.ACTIVE.value,
+        )
+    )
+    assert getattr(deepseek_legacy_effort_model, "reasoning_effort", None) == "high"
+    assert getattr(deepseek_legacy_effort_model, "extra_body", None) == {"thinking": {"type": "enabled"}}
 
     deepseek_custom_model = resolver.resolve_model(
         AiLlmConfig(
@@ -439,6 +477,7 @@ def test_llm_model_resolver_should_build_common_provider_models() -> None:
             base_url="http://localhost:11434",
             api_key_ciphertext=cipher.encrypt(""),
             thinking_enabled=True,
+            thinking_effort="medium",
             advanced_config_json={},
             status=RecordStatus.ACTIVE.value,
         )
@@ -497,4 +536,45 @@ def test_llm_model_resolver_should_build_common_provider_models() -> None:
         )
     )
     assert nvidia_model.__class__.__name__ == "Nvidia"
-    assert getattr(nvidia_model, "reasoning_effort", None) == "medium"
+    assert getattr(nvidia_model, "reasoning_effort", None) is None
+
+    mimo_model = resolver.resolve_model(
+        AiLlmConfig(
+            id=13,
+            user_id=1,
+            name="mimo",
+            provider_key="mimo",
+            model_id="mimo-v2.5",
+            base_url="https://api.xiaomimimo.com/v1",
+            api_key_ciphertext=cipher.encrypt("sk-mimo-test"),
+            thinking_enabled=True,
+            thinking_effort="max",
+            advanced_config_json={},
+            status=RecordStatus.ACTIVE.value,
+        )
+    )
+    assert mimo_model.__class__.__name__ == "MiMo"
+    assert getattr(mimo_model, "base_url", None) == "https://api.xiaomimimo.com/v1"
+    assert getattr(mimo_model, "reasoning_effort", None) is None
+    assert getattr(mimo_model, "extra_body", None) == {"thinking": {"type": "enabled"}}
+
+
+def test_mimo_formatter_should_preserve_reasoning_content_and_strip_image_detail() -> None:
+    """MiMo formatter 应回传历史 reasoning_content，并生成无 detail 的 image_url parts。"""
+
+    model = MiMo(id="mimo-v2.5", api_key="sk-mimo-test")
+    formatted = model._format_message(
+        Message(
+            role="assistant",
+            content="先看图",
+            reasoning_content="上一轮思考",
+            images=[Image(content=b"image-bytes", mime_type="image/png", detail="auto")],
+        )
+    )
+
+    assert formatted["reasoning_content"] == "上一轮思考"
+    assert formatted["content"][0] == {"type": "text", "text": "先看图"}
+    image_part = formatted["content"][1]
+    assert image_part["type"] == "image_url"
+    assert image_part["image_url"]["url"].startswith("data:image/png;base64,")
+    assert "detail" not in image_part["image_url"]

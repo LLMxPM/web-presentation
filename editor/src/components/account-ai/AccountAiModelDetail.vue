@@ -136,7 +136,7 @@
         <span>
           <span class="block font-semibold">支持图片输入</span>
           <span class="mt-1 block text-xs text-slate-500">
-            开启后，Agent 可发送用户图片附件并申请页面截图视觉工具。
+            {{ imageInputHint }}
           </span>
         </span>
       </label>
@@ -261,7 +261,20 @@ const thinkingEffortHint = computed(() => {
   if (props.currentProvider.thinking_mode === 'ollama_think') {
     return 'Ollama 会映射到 request_params.think。'
   }
+  if (props.currentProvider.thinking_mode === 'openai_extra_body_thinking') {
+    if (props.currentProvider.provider_key === 'deepseek') {
+      return 'DeepSeek 会写入 extra_body.thinking.type；强度仅使用 high / max，历史 low / medium 会兼容为 high，xhigh 会兼容为 max。'
+    }
+    return '该供应商会写入 extra_body.thinking.type；MiMo 不使用 reasoning_effort。'
+  }
   return 'OpenAI 兼容供应商会映射为 reasoning_effort。'
+})
+
+const imageInputHint = computed(() => {
+  if (props.currentProvider?.provider_key === 'mimo') {
+    return 'MiMo 仅 mimo-v2.5 / mimo-v2-omni 支持图片理解；选择其他 MiMo 模型时不要勾选。'
+  }
+  return '开启后，Agent 可发送用户图片附件并申请页面截图视觉工具。'
 })
 
 const readOnlyModel = computed(() => Boolean(props.selectedModel && !props.selectedModel.editable))

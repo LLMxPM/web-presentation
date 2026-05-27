@@ -16,6 +16,7 @@ GOOGLE_DOCS_URL = "https://docs.agno.com/models/providers/native/google/overview
 DEEPSEEK_DOCS_URL = "https://docs.agno.com/models/providers/native/deepseek/overview"
 OLLAMA_DOCS_URL = "https://docs.agno.com/models/providers/local/ollama/overview"
 NVIDIA_DOCS_URL = "https://docs.agno.com/reference/models/nvidia"
+MIMO_DOCS_URL = "https://platform.xiaomimimo.com/docs/zh-CN/quick-start/first-api-call"
 
 
 @dataclass(slots=True, frozen=True)
@@ -31,7 +32,12 @@ class LlmProviderCatalogEntry:
     supports_thinking: bool
     thinking_mode: str
     default_base_url: str | None = None
+    default_model_id: str | None = None
+    default_thinking_enabled: bool = False
     default_thinking_effort: str | None = None
+    default_context_window_tokens: int | None = None
+    default_max_output_tokens: int | None = None
+    default_supports_image_input: bool = False
     thinking_effort_options: tuple[str, ...] = ()
     advanced_json_hint: dict[str, Any] | None = None
 
@@ -81,9 +87,9 @@ LLM_PROVIDER_CATALOG: dict[str, LlmProviderCatalogEntry] = {
         supports_api_key=True,
         supports_thinking=True,
         thinking_mode=AiThinkingMode.OPENAI_REASONING.value,
+        default_base_url="https://api.openai.com/v1",
         default_thinking_effort="medium",
         thinking_effort_options=("low", "medium", "high"),
-        advanced_json_hint={"verbosity": "low"},
     ),
     "openrouter": LlmProviderCatalogEntry(
         provider_key="openrouter",
@@ -97,7 +103,6 @@ LLM_PROVIDER_CATALOG: dict[str, LlmProviderCatalogEntry] = {
         default_base_url="https://openrouter.ai/api/v1",
         default_thinking_effort="medium",
         thinking_effort_options=("low", "medium", "high"),
-        advanced_json_hint={"app_name": "web-presentation"},
     ),
     "dashscope": LlmProviderCatalogEntry(
         provider_key="dashscope",
@@ -109,6 +114,7 @@ LLM_PROVIDER_CATALOG: dict[str, LlmProviderCatalogEntry] = {
         supports_thinking=True,
         thinking_mode=AiThinkingMode.DASHSCOPE_ENABLE_THINKING.value,
         default_base_url="https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+        default_model_id="qwen-plus",
         default_thinking_effort="medium",
         thinking_effort_options=("low", "medium", "high"),
     ),
@@ -123,7 +129,6 @@ LLM_PROVIDER_CATALOG: dict[str, LlmProviderCatalogEntry] = {
         thinking_mode=AiThinkingMode.OPENAI_REASONING.value,
         default_thinking_effort="medium",
         thinking_effort_options=("low", "medium", "high"),
-        advanced_json_hint={"temperature": 0.2},
     ),
     "google": LlmProviderCatalogEntry(
         provider_key="google",
@@ -134,9 +139,9 @@ LLM_PROVIDER_CATALOG: dict[str, LlmProviderCatalogEntry] = {
         supports_api_key=True,
         supports_thinking=True,
         thinking_mode=AiThinkingMode.GOOGLE_THINKING_LEVEL.value,
+        default_model_id="gemini-flash-latest",
         default_thinking_effort="high",
         thinking_effort_options=("low", "high"),
-        advanced_json_hint={"temperature": 0.2},
     ),
     "deepseek": LlmProviderCatalogEntry(
         provider_key="deepseek",
@@ -146,15 +151,14 @@ LLM_PROVIDER_CATALOG: dict[str, LlmProviderCatalogEntry] = {
         supports_base_url=True,
         supports_api_key=True,
         supports_thinking=True,
-        thinking_mode=AiThinkingMode.OPENAI_REASONING.value,
+        thinking_mode=AiThinkingMode.OPENAI_EXTRA_BODY_THINKING.value,
+        default_base_url="https://api.deepseek.com",
+        default_model_id="deepseek-v4-pro",
+        default_thinking_enabled=True,
         default_thinking_effort="high",
-        thinking_effort_options=("low", "medium", "high"),
-        advanced_json_hint={
-            "timeout": 1200,
-            "retries": 1,
-            "delay_between_retries": 3,
-            "exponential_backoff": True,
-        },
+        default_context_window_tokens=1_000_000,
+        default_max_output_tokens=384_000,
+        thinking_effort_options=("high", "max"),
     ),
     "ollama": LlmProviderCatalogEntry(
         provider_key="ollama",
@@ -166,9 +170,9 @@ LLM_PROVIDER_CATALOG: dict[str, LlmProviderCatalogEntry] = {
         supports_thinking=True,
         thinking_mode=AiThinkingMode.OLLAMA_THINK.value,
         default_base_url="http://localhost:11434",
+        default_model_id="llama3.1",
         default_thinking_effort="medium",
         thinking_effort_options=("low", "medium", "high"),
-        advanced_json_hint={"options": {"temperature": 0.2}},
     ),
     "nvidia": LlmProviderCatalogEntry(
         provider_key="nvidia",
@@ -180,8 +184,20 @@ LLM_PROVIDER_CATALOG: dict[str, LlmProviderCatalogEntry] = {
         supports_thinking=True,
         thinking_mode=AiThinkingMode.OPENAI_REASONING.value,
         default_base_url="https://integrate.api.nvidia.com/v1",
+        default_model_id="meta/llama-3.3-70b-instruct",
         default_thinking_effort="medium",
         thinking_effort_options=("low", "medium", "high"),
+    ),
+    "mimo": LlmProviderCatalogEntry(
+        provider_key="mimo",
+        label="MiMo",
+        agno_class_path="app.ai.providers.mimo.MiMo",
+        docs_url=MIMO_DOCS_URL,
+        supports_base_url=True,
+        supports_api_key=True,
+        supports_thinking=True,
+        thinking_mode=AiThinkingMode.OPENAI_EXTRA_BODY_THINKING.value,
+        default_base_url="https://api.xiaomimimo.com/v1",
     ),
 }
 

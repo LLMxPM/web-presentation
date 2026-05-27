@@ -7,6 +7,7 @@ from urllib.parse import quote, urlsplit
 
 from httpx import AsyncClient
 
+from app.core.config import get_settings
 from app.core.exceptions import AppException
 from app.schemas.project_app_config import ProjectAppPageConfig
 from app.services.browser_capture_service import BrowserCaptureJob, BrowserCaptureJobResult, BrowserCaptureService
@@ -52,10 +53,18 @@ async def test_page_screenshot_should_save_and_expose_public_url(
 
     captured: dict[str, object] = {}
 
-    async def fake_create_page_preview(self, page, user_id, *, asset_delivery_mode="public"):  # noqa: ANN001
+    async def fake_create_page_preview(  # noqa: ANN001
+        self,
+        page,
+        user_id,
+        *,
+        asset_delivery_mode="public",
+        asset_base_url_override=None,
+    ):
         captured["preview_page_id"] = page.id
         captured["preview_user_id"] = user_id
         captured["asset_delivery_mode"] = asset_delivery_mode
+        captured["asset_base_url_override"] = asset_base_url_override
         return PagePreviewResult(
             file_path=f"src/views/2026-04-02/{user_id}/{page.code}.vue",
             preview_url="http://runtime.local/__preview?ticket=demo",
@@ -92,6 +101,7 @@ async def test_page_screenshot_should_save_and_expose_public_url(
     assert captured["preview_page_id"] == page_data["id"]
     assert captured["preview_user_id"] == 1
     assert captured["asset_delivery_mode"] == "backend_cache"
+    assert captured["asset_base_url_override"] == "http://127.0.0.1:8000"
     assert captured["preview_url"] == "http://runtime.local/__preview?ticket=demo"
     assert captured["viewport"] == (1920, 1080)
     assert captured["storage_key"] == f"page-screenshots/{page_data['code']}.png"
@@ -161,7 +171,14 @@ async def test_page_screenshot_should_be_marked_outdated_after_page_update(
     assert create_response.status_code == 200
     page_data = create_response.json()
 
-    async def fake_create_page_preview(self, page, user_id, *, asset_delivery_mode="public"):  # noqa: ANN001, ARG001
+    async def fake_create_page_preview(  # noqa: ANN001, ARG001
+        self,
+        page,
+        user_id,
+        *,
+        asset_delivery_mode="public",
+        asset_base_url_override=None,
+    ):
         return PagePreviewResult(
             file_path=f"src/views/2026-04-02/{user_id}/{page.code}.vue",
             preview_url="http://runtime.local/__preview?ticket=outdated",
@@ -260,7 +277,14 @@ async def test_page_screenshot_should_be_marked_outdated_after_project_display_c
     assert page_response.status_code == 200
     page_data = page_response.json()
 
-    async def fake_create_page_preview(self, page, user_id, *, asset_delivery_mode="public"):  # noqa: ANN001, ARG001
+    async def fake_create_page_preview(  # noqa: ANN001, ARG001
+        self,
+        page,
+        user_id,
+        *,
+        asset_delivery_mode="public",
+        asset_base_url_override=None,
+    ):
         return PagePreviewResult(
             file_path=f"src/views/{page.code}.vue",
             preview_url="http://runtime.local/__preview?ticket=config",
@@ -328,7 +352,14 @@ async def test_page_screenshot_should_prioritize_explicit_viewport(
 
     captured: dict[str, object] = {}
 
-    async def fake_create_page_preview(self, page, user_id, *, asset_delivery_mode="public"):  # noqa: ANN001, ARG001
+    async def fake_create_page_preview(  # noqa: ANN001, ARG001
+        self,
+        page,
+        user_id,
+        *,
+        asset_delivery_mode="public",
+        asset_base_url_override=None,
+    ):
         return PagePreviewResult(
             file_path=f"src/views/2026-04-02/{user_id}/{page.code}.vue",
             preview_url="http://runtime.local/__preview?ticket=viewport",
@@ -395,6 +426,11 @@ async def test_page_screenshot_preview_artifact_should_use_cached_asset_base(
     monkeypatch,
 ) -> None:
     """截图链路创建的预览 artifact 应使用 Backend 缓存资源入口。"""
+
+    monkeypatch.setenv("ASSET_STORAGE_DRIVER", "local")
+    monkeypatch.setenv("BACKEND_PUBLIC_BASE_URL", "http://127.0.0.1:18080")
+    monkeypatch.setenv("RUNTIME_PUBLIC_BASE_URL", "http://127.0.0.1:18080/runtime")
+    get_settings.cache_clear()
 
     workspace_response = await authenticated_client.post(
         "/api/workspaces",
@@ -474,7 +510,7 @@ async def test_page_screenshot_preview_artifact_should_use_cached_asset_base(
     assert captured["preview_url"] == "http://127.0.0.1:7373/__preview"
     extra_http_headers = captured["extra_http_headers"]
     assert isinstance(extra_http_headers, dict)
-    assert extra_http_headers["x-runtime-public-base-url"] == "http://127.0.0.1:7373"
+    assert extra_http_headers["x-runtime-public-base-url"] == "http://127.0.0.1:7373/runtime"
     preview_claims = TokenService.verify_preview_context_token(extra_http_headers["x-runtime-preview-context"])
     artifact_id = str(preview_claims["artifact_id"])
     manifest_response = await authenticated_client.get(
@@ -507,7 +543,14 @@ async def test_page_screenshot_should_not_save_when_visual_assets_not_ready(
     page_data = create_response.json()
     captured = {"put_called": False}
 
-    async def fake_create_page_preview(self, page, user_id, *, asset_delivery_mode="public"):  # noqa: ANN001, ARG001
+    async def fake_create_page_preview(  # noqa: ANN001, ARG001
+        self,
+        page,
+        user_id,
+        *,
+        asset_delivery_mode="public",
+        asset_base_url_override=None,
+    ):
         return PagePreviewResult(
             file_path=f"src/views/{page.code}.vue",
             preview_url="http://runtime.local/__preview?ticket=asset-not-ready",
@@ -601,7 +644,14 @@ async def test_batch_refresh_page_screenshots_should_refresh_missing_and_outdate
         )
         assert page_response.status_code == 200
 
-    async def fake_create_page_preview(self, page, user_id, *, asset_delivery_mode="public"):  # noqa: ANN001, ARG001
+    async def fake_create_page_preview(  # noqa: ANN001, ARG001
+        self,
+        page,
+        user_id,
+        *,
+        asset_delivery_mode="public",
+        asset_base_url_override=None,
+    ):
         return PagePreviewResult(
             file_path=f"src/views/{page.code}.vue",
             preview_url=f"http://runtime.local/__preview?ticket={page.id}",

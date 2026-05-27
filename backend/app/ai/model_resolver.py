@@ -14,9 +14,6 @@ from app.core.exceptions import AppException
 from app.models.ai_llm import AiLlmConfig
 from app.models.enums import AiThinkingMode, RecordStatus
 
-_DEEPSEEK_THINKING_TIMEOUT_SECONDS = 1200.0
-_DEEPSEEK_THINKING_STREAM_RETRIES = 1
-_DEEPSEEK_THINKING_RETRY_DELAY_SECONDS = 3
 _DASHSCOPE_THINKING_BUDGET_BY_EFFORT = {
     "low": 2000,
     "medium": 5000,
@@ -61,9 +58,7 @@ class LlmModelResolver:
 
         thinking_effort = self._resolve_thinking_effort(
             config.thinking_effort,
-            default_effort=entry.default_thinking_effort,
         )
-        self._apply_provider_defaults(entry.provider_key, kwargs, thinking_enabled=config.thinking_enabled)
         self._apply_thinking(
             entry.thinking_mode,
             kwargs,
@@ -114,26 +109,12 @@ class LlmModelResolver:
         return dict(value)
 
     @staticmethod
-    def _apply_provider_defaults(provider_key: str, kwargs: dict[str, Any], *, thinking_enabled: bool) -> None:
-        """按供应商补齐稳态默认值；用户高级配置拥有更高优先级。"""
-
-        if provider_key != "deepseek" or not thinking_enabled:
-            return
-
-        kwargs.setdefault("timeout", _DEEPSEEK_THINKING_TIMEOUT_SECONDS)
-        kwargs.setdefault("retries", _DEEPSEEK_THINKING_STREAM_RETRIES)
-        kwargs.setdefault("delay_between_retries", _DEEPSEEK_THINKING_RETRY_DELAY_SECONDS)
-        kwargs.setdefault("exponential_backoff", True)
-
-    @staticmethod
     def _resolve_thinking_effort(
         value: str | None,
-        *,
-        default_effort: str | None,
     ) -> str | None:
-        """归一化运行时思考强度，保留供应商未来扩展值。"""
+        """归一化用户显式填写的运行时思考强度，保留供应商未来扩展值。"""
 
-        normalized = str(value or "").strip().lower() or default_effort
+        normalized = str(value or "").strip().lower()
         return normalized or None
 
     @staticmethod
@@ -150,16 +131,17 @@ class LlmModelResolver:
         if thinking_mode == AiThinkingMode.NONE.value:
             return
         if thinking_mode == AiThinkingMode.OPENAI_REASONING.value:
-            if provider_key == "deepseek":
-                extra_body = dict(kwargs.get("extra_body") or {})
-                thinking = dict(extra_body.get("thinking") or {})
-                thinking["type"] = "enabled" if enabled else "disabled"
-                extra_body["thinking"] = thinking
-                kwargs["extra_body"] = extra_body
-            if not enabled:
-                return
-            default_effort = thinking_effort or ("high" if provider_key == "deepseek" else "medium")
-            kwargs.setdefault("reasoning_effort", kwargs.pop("reasoning_effort", default_effort))
+            if enabled and thinking_effort:
+                kwargs.setdefault("reasoning_effort", thinking_effort)
+            return
+        if thinking_mode == AiThinkingMode.OPENAI_EXTRA_BODY_THINKING.value:
+            extra_body = dict(kwargs.get("extra_body") or {})
+            thinking = dict(extra_body.get("thinking") or {})
+            thinking["type"] = "enabled" if enabled else "disabled"
+            extra_body["thinking"] = thinking
+            kwargs["extra_body"] = extra_body
+            if enabled and provider_key == "deepseek" and thinking_effort:
+                kwargs.setdefault("reasoning_effort", _normalize_deepseek_reasoning_effort(thinking_effort))
             return
         if not enabled:
             return
@@ -179,3 +161,14 @@ class LlmModelResolver:
         if thinking_mode == AiThinkingMode.GOOGLE_THINKING_LEVEL.value:
             if thinking_effort:
                 kwargs.setdefault("thinking_level", thinking_effort)
+
+
+def _normalize_deepseek_reasoning_effort(value: str) -> str:
+    """把历史 DeepSeek effort 值映射到新版 high/max 取值。"""
+
+    normalized = value.strip().lower()
+    if normalized in {"low", "medium"}:
+        return "high"
+    if normalized == "xhigh":
+        return "max"
+    return normalized

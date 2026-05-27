@@ -690,7 +690,7 @@ const providerOptions = computed<SelectOption[]>(() => (
     label: provider.label,
     value: provider.provider_key,
     description: provider.supports_thinking
-      ? `支持 thinking · ${provider.thinking_mode} · 默认 ${provider.default_thinking_effort ?? '默认'}`
+      ? `支持 thinking · ${provider.thinking_mode}${provider.default_model_id ? ` · ${provider.default_model_id}` : ''}`
       : '不支持 thinking',
     keywords: [provider.provider_key, provider.agno_class_path],
   })) ?? []
@@ -752,8 +752,9 @@ watch(
   () => providersQuery.data.value,
   (providers) => {
     if (!modelForm.provider_key && providers?.length) {
-      modelForm.provider_key = providers[0].provider_key
-      modelForm.base_url = providers[0].default_base_url ?? ''
+      const provider = providers[0]
+      modelForm.provider_key = provider.provider_key
+      prefillModelFormFromProvider(provider)
     }
   },
   { immediate: true },
@@ -766,14 +767,43 @@ watch(
     if (!provider || applyingExistingModel.value) {
       return
     }
+    if (providerKey !== previousProviderKey && (!modelForm.model_id || modelForm.model_id === findProviderDefaultModelId(previousProviderKey))) {
+      modelForm.model_id = provider.default_model_id ?? ''
+    }
     if (providerKey !== previousProviderKey && (!modelForm.base_url || modelForm.base_url === findProviderDefaultBaseUrl(previousProviderKey))) {
       modelForm.base_url = provider.default_base_url ?? ''
     }
     if (!provider.supports_thinking) {
       modelForm.thinking_enabled = false
       modelForm.thinking_effort = null
-    } else if (!modelForm.thinking_effort) {
-      modelForm.thinking_effort = provider.default_thinking_effort ?? null
+    } else {
+      if (
+        providerKey !== previousProviderKey
+        && modelForm.thinking_enabled === findProviderDefaultThinkingEnabled(previousProviderKey)
+      ) {
+        modelForm.thinking_enabled = provider.default_thinking_enabled
+      }
+      if (!modelForm.thinking_effort || modelForm.thinking_effort === findProviderDefaultThinkingEffort(previousProviderKey)) {
+        modelForm.thinking_effort = provider.default_thinking_effort ?? null
+      }
+    }
+    if (
+      providerKey !== previousProviderKey
+      && modelForm.supports_image_input === findProviderDefaultSupportsImageInput(previousProviderKey)
+    ) {
+      modelForm.supports_image_input = provider.default_supports_image_input
+    }
+    if (
+      providerKey !== previousProviderKey
+      && shouldReplaceTokenDefault(modelForm.context_window_tokens, previousProviderKey, 'context')
+    ) {
+      modelForm.context_window_tokens = provider.default_context_window_tokens ?? DEFAULT_CONTEXT_WINDOW_TOKENS
+    }
+    if (
+      providerKey !== previousProviderKey
+      && shouldReplaceTokenDefault(modelForm.max_output_tokens, previousProviderKey, 'output')
+    ) {
+      modelForm.max_output_tokens = provider.default_max_output_tokens ?? DEFAULT_MAX_OUTPUT_TOKENS
     }
     if (!provider.supports_base_url) {
       modelForm.base_url = ''
@@ -787,6 +817,17 @@ watch(
   },
 )
 
+/** 使用供应商目录默认值预填新建表单，不影响已有模型装载。 */
+function prefillModelFormFromProvider(provider: LlmProviderCatalogItem | null) {
+  modelForm.model_id = provider?.default_model_id ?? ''
+  modelForm.base_url = provider?.supports_base_url ? provider.default_base_url ?? '' : ''
+  modelForm.thinking_enabled = Boolean(provider?.supports_thinking && provider.default_thinking_enabled)
+  modelForm.thinking_effort = provider?.supports_thinking ? provider.default_thinking_effort ?? null : null
+  modelForm.supports_image_input = Boolean(provider?.default_supports_image_input)
+  modelForm.context_window_tokens = provider?.default_context_window_tokens ?? DEFAULT_CONTEXT_WINDOW_TOKENS
+  modelForm.max_output_tokens = provider?.default_max_output_tokens ?? DEFAULT_MAX_OUTPUT_TOKENS
+}
+
 /** 选中左侧智能体卡片并切换到智能体详情。 */
 function selectAgent(agentId: string) {
   selectedAgentId.value = agentId
@@ -796,6 +837,35 @@ function selectAgent(agentId: string) {
 /** 从供应商列表中查找默认 Base URL。 */
 function findProviderDefaultBaseUrl(providerKey: string | null | undefined) {
   return providersQuery.data.value?.find(item => item.provider_key === providerKey)?.default_base_url ?? ''
+}
+
+/** 从供应商列表中查找默认模型 ID。 */
+function findProviderDefaultModelId(providerKey: string | null | undefined) {
+  return providersQuery.data.value?.find(item => item.provider_key === providerKey)?.default_model_id ?? ''
+}
+
+/** 从供应商列表中查找默认 thinking enabled。 */
+function findProviderDefaultThinkingEnabled(providerKey: string | null | undefined) {
+  return Boolean(providersQuery.data.value?.find(item => item.provider_key === providerKey)?.default_thinking_enabled)
+}
+
+/** 从供应商列表中查找默认 thinking effort。 */
+function findProviderDefaultThinkingEffort(providerKey: string | null | undefined) {
+  return providersQuery.data.value?.find(item => item.provider_key === providerKey)?.default_thinking_effort ?? null
+}
+
+/** 从供应商列表中查找默认图片输入能力。 */
+function findProviderDefaultSupportsImageInput(providerKey: string | null | undefined) {
+  return Boolean(providersQuery.data.value?.find(item => item.provider_key === providerKey)?.default_supports_image_input)
+}
+
+/** 判断 token 字段是否仍是默认值，可在切换供应商时替换。 */
+function shouldReplaceTokenDefault(value: number, providerKey: string | null | undefined, kind: 'context' | 'output') {
+  const provider = providersQuery.data.value?.find(item => item.provider_key === providerKey)
+  const previousDefault = kind === 'context'
+    ? provider?.default_context_window_tokens ?? DEFAULT_CONTEXT_WINDOW_TOKENS
+    : provider?.default_max_output_tokens ?? DEFAULT_MAX_OUTPUT_TOKENS
+  return value === previousDefault
 }
 
 /** 返回智能体模型绑定状态文案。 */
@@ -1076,15 +1146,10 @@ function resetModelForm() {
   selectedConfigId.value = null
   modelForm.scope = 'personal'
   modelForm.name = ''
-  modelForm.provider_key = providersQuery.data.value?.[0]?.provider_key ?? null
-  modelForm.model_id = ''
-  modelForm.base_url = findProviderDefaultBaseUrl(modelForm.provider_key)
+  const provider = providersQuery.data.value?.[0] ?? null
+  modelForm.provider_key = provider?.provider_key ?? null
+  prefillModelFormFromProvider(provider)
   modelForm.api_key = ''
-  modelForm.thinking_enabled = false
-  modelForm.thinking_effort = currentProvider.value?.default_thinking_effort ?? null
-  modelForm.supports_image_input = false
-  modelForm.context_window_tokens = DEFAULT_CONTEXT_WINDOW_TOKENS
-  modelForm.max_output_tokens = DEFAULT_MAX_OUTPUT_TOKENS
   modelForm.history_token_ratio = 0.5
   modelForm.compression_target_ratio = DEFAULT_COMPRESSION_TARGET_RATIO
   advancedConfigText.value = '{}'

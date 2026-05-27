@@ -61,6 +61,7 @@ from app.schemas.agent import (
     AgentSessionItem,
     AgentSessionRuntimeSnapshot,
     AgentSuggestedPatch,
+    AgentToolCallDetailItem,
 )
 from app.schemas.page import PageItem
 from app.services.ai_llm_service import AiLlmService
@@ -1866,7 +1867,7 @@ class AgentSessionFacade:
             source=scope.source,
             scopes=tool_scopes,
         )
-        return {
+        dependencies = {
             "run_id": run_id,
             "session_id": session_id,
             "user_id": str(self._current.user.id),
@@ -1887,6 +1888,28 @@ class AgentSessionFacade:
             "tool_auth_token": tool_token,
             "tool_scopes": list(tool_scopes),
         }
+        if agent_id == AGENT_COORDINATOR_AGENT_ID:
+            # Agno Team 委派成员时复用 leader dependencies，因此成员工具需要独立授权 token。
+            member_tokens: dict[str, str] = {}
+            member_scopes: dict[str, list[str]] = {}
+            for member_agent_id in (COMPONENT_MANAGER_AGENT_ID, RESOURCE_MANAGER_AGENT_ID):
+                scopes = self._resolve_tool_scopes(agent_id=member_agent_id)
+                member_tokens[member_agent_id] = build_agent_tool_token(
+                    self._current,
+                    run_id=run_id,
+                    session_id=session_id,
+                    agent_id=member_agent_id,
+                    workspace_id=scope.workspace_id,
+                    project_id=scope.project_id,
+                    page_id=scope.page_id,
+                    component_id=scope.component_id,
+                    source=scope.source,
+                    scopes=scopes,
+                )
+                member_scopes[member_agent_id] = list(scopes)
+            dependencies["member_tool_auth_tokens"] = member_tokens
+            dependencies["member_tool_scopes"] = member_scopes
+        return dependencies
 
     @staticmethod
     def _resolve_tool_scopes(

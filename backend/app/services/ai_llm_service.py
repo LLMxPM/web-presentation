@@ -55,7 +55,12 @@ class AiLlmService:
                 supports_thinking=item.supports_thinking,
                 thinking_mode=item.thinking_mode,
                 default_base_url=item.default_base_url,
+                default_model_id=item.default_model_id,
+                default_thinking_enabled=item.default_thinking_enabled,
                 default_thinking_effort=item.default_thinking_effort,
+                default_context_window_tokens=item.default_context_window_tokens,
+                default_max_output_tokens=item.default_max_output_tokens,
+                default_supports_image_input=item.default_supports_image_input,
                 thinking_effort_options=list(item.thinking_effort_options),
                 advanced_json_hint=item.advanced_json_hint or {},
             )
@@ -399,7 +404,7 @@ class AiLlmService:
             model_id=config.model_id,
             base_url=config.base_url,
             thinking_enabled=bool(config.thinking_enabled and provider_entry.supports_thinking),
-            thinking_effort=config.thinking_effort or provider_entry.default_thinking_effort,
+            thinking_effort=config.thinking_effort,
             supports_image_input=bool(config.supports_image_input),
             context_window_tokens=int(config.context_window_tokens or LLM_CONTEXT_WINDOW_TOKEN_DEFAULT),
             max_output_tokens=int(config.max_output_tokens or LLM_MAX_OUTPUT_TOKEN_DEFAULT),
@@ -462,7 +467,7 @@ class AiLlmService:
 
         if not provider_entry.supports_thinking:
             return None
-        normalized = str(value or "").strip().lower() or provider_entry.default_thinking_effort
+        normalized = str(value or "").strip().lower()
         return normalized or None
 
     def _validate_provider_constraints(

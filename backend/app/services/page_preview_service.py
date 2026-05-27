@@ -39,10 +39,16 @@ class PagePreviewService:
         user_id: int | str,
         *,
         asset_delivery_mode: AssetDeliveryMode = "public",
+        asset_base_url_override: str | None = None,
     ) -> PagePreviewResult:
         """为当前页面生成草稿临时发布快照，然后返回截图/预览链路需要的地址。"""
 
-        preview_response = await self.create_page_preview_artifact(page, user_id, asset_delivery_mode=asset_delivery_mode)
+        preview_response = await self.create_page_preview_artifact(
+            page,
+            user_id,
+            asset_delivery_mode=asset_delivery_mode,
+            asset_base_url_override=asset_base_url_override,
+        )
         module_path = self._build_page_module_path(page)
         return PagePreviewResult(file_path=module_path, preview_url=preview_response.preview_url)
 
@@ -52,6 +58,7 @@ class PagePreviewService:
         user_id: int | str,
         *,
         asset_delivery_mode: AssetDeliveryMode = "public",
+        asset_base_url_override: str | None = None,
     ) -> PreviewArtifactResponse:
         """基于当前页面最新内容生成单页预览 artifact。"""
 
@@ -66,6 +73,7 @@ class PagePreviewService:
             entry_descriptor=PreviewEntryDescriptor(entry_type="module", module_path=module_path),
             tenant_id=tenant_id,
             asset_delivery_mode=asset_delivery_mode,
+            asset_base_url_override=asset_base_url_override,
         )
 
     async def create_page_version_preview_artifact(

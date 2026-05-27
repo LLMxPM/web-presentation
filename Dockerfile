@@ -35,6 +35,7 @@ LABEL org.opencontainers.image.description="web-presentation Backend and Editor 
 
 ENV APP_RELOAD=false
 ENV PATH="/app/backend/.venv/bin:${PATH}"
+ENV PLAYWRIGHT_BROWSERS_PATH="/ms-playwright"
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 ENV VIRTUAL_ENV="/app/backend/.venv"
@@ -47,6 +48,9 @@ RUN apt-get update \
 WORKDIR /app/backend
 
 COPY --from=backend-deps /app/backend/.venv /app/backend/.venv
+RUN playwright install --with-deps chromium \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY backend/ /app/backend/
 COPY runtime/src/runtime-kit/manifest/runtime-kit.manifest.json /app/runtime/src/runtime-kit/manifest/runtime-kit.manifest.json
 COPY --from=editor-build /app/editor/dist/ /usr/share/nginx/html/

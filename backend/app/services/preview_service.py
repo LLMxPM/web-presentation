@@ -35,6 +35,7 @@ class PreviewService:
         page_module_overrides: dict[str, ProjectPageModuleOverride] | None = None,
         transient_pages: list[Page] | None = None,
         asset_delivery_mode: AssetDeliveryMode = "public",
+        asset_base_url_override: str | None = None,
     ) -> PreviewArtifactResponse:
         """基于项目当前状态创建无状态预览 artifact，并返回带签名的预览入口。"""
 
@@ -45,6 +46,7 @@ class PreviewService:
             page_module_overrides=page_module_overrides,
             transient_pages=transient_pages,
             asset_delivery_mode=asset_delivery_mode,
+            asset_base_url_override=asset_base_url_override,
         )
         entry_descriptor_payload = snapshot.entry_descriptor.model_dump(mode="python", exclude_none=True)
 

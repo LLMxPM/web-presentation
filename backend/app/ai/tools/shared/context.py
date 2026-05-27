@@ -34,23 +34,23 @@ async def resolve_tool_context(
     if not run_id or user_id is None or not session_id or not agent_id or not source or not token:
         raise AppException(status_code=401, code="AI_TOOL_CONTEXT_REQUIRED", detail="当前工具缺少必要运行上下文。")
 
-    claims = verify_agent_tool_token(token)
-    _ensure_claim_matches(claims, "run_id", run_id)
-    _ensure_claim_matches(claims, "session_id", session_id)
-    _ensure_claim_matches(claims, "agent_id", agent_id)
-    _ensure_claim_matches(claims, "source", source)
-    _ensure_claim_matches(claims, "sub", f"user:{user_id}")
     backend_session_id = _coerce_optional_str(dependencies.get("backend_session_id"))
-    if backend_session_id is not None:
-        _ensure_claim_matches(claims, "backend_session_id", backend_session_id)
-    claim_scopes = set(claims.get("scopes") or [])
-    if not set(required_scopes).issubset(claim_scopes):
-        raise AppException(status_code=403, code="AI_TOOL_SCOPE_DENIED", detail="当前工具缺少所需权限。")
+    claims = _resolve_authorized_claims(
+        dependencies=dependencies,
+        token=token,
+        required_scopes=required_scopes,
+        run_id=run_id,
+        session_id=session_id,
+        agent_id=agent_id,
+        source=source,
+        user_id=user_id,
+        backend_session_id=backend_session_id,
+    )
     await _raise_if_cancelled(run_id)
     authorized_context = {
         "user_id": user_id,
         "session_id": session_id,
-        "agent_id": agent_id,
+        "agent_id": _coerce_optional_str(claims.get("agent_id")) or agent_id,
         "run_id": run_id,
         "workspace_id": _coerce_int(claims.get("workspace_id"), "workspace_id"),
         "project_id": _coerce_int(claims.get("project_id"), "project_id") if claims.get("project_id") is not None else None,
@@ -70,6 +70,83 @@ async def resolve_tool_context(
                 detail=f"当前工具缺少必要上下文字段：{field_name}。",
             )
     return resolved_dependencies, claims
+
+
+def _resolve_authorized_claims(
+    *,
+    dependencies: dict[str, Any],
+    token: str,
+    required_scopes: tuple[str, ...],
+    run_id: str,
+    session_id: str,
+    agent_id: str,
+    source: str,
+    user_id: int,
+    backend_session_id: str | None,
+) -> dict[str, Any]:
+    """按主 token 优先、成员 token 兜底的顺序解析可授权 claims。"""
+
+    claims = _verify_tool_claims(
+        token,
+        expected_agent_id=agent_id,
+        run_id=run_id,
+        session_id=session_id,
+        source=source,
+        user_id=user_id,
+        backend_session_id=backend_session_id,
+    )
+    if _claims_include_scopes(claims, required_scopes):
+        return claims
+
+    member_tokens = dependencies.get("member_tool_auth_tokens")
+    if isinstance(member_tokens, dict):
+        for raw_member_agent_id, raw_member_token in member_tokens.items():
+            member_agent_id = str(raw_member_agent_id or "").strip()
+            member_token = str(raw_member_token or "").strip()
+            if not member_agent_id or not member_token:
+                continue
+            member_claims = _verify_tool_claims(
+                member_token,
+                expected_agent_id=member_agent_id,
+                run_id=run_id,
+                session_id=session_id,
+                source=source,
+                user_id=user_id,
+                backend_session_id=backend_session_id,
+            )
+            if _claims_include_scopes(member_claims, required_scopes):
+                return member_claims
+
+    raise AppException(status_code=403, code="AI_TOOL_SCOPE_DENIED", detail="当前工具缺少所需权限。")
+
+
+def _verify_tool_claims(
+    token: str,
+    *,
+    expected_agent_id: str,
+    run_id: str,
+    session_id: str,
+    source: str,
+    user_id: int,
+    backend_session_id: str | None,
+) -> dict[str, Any]:
+    """校验工具 token 与本轮运行上下文的一致性。"""
+
+    claims = verify_agent_tool_token(token)
+    _ensure_claim_matches(claims, "run_id", run_id)
+    _ensure_claim_matches(claims, "session_id", session_id)
+    _ensure_claim_matches(claims, "agent_id", expected_agent_id)
+    _ensure_claim_matches(claims, "source", source)
+    _ensure_claim_matches(claims, "sub", f"user:{user_id}")
+    if backend_session_id is not None:
+        _ensure_claim_matches(claims, "backend_session_id", backend_session_id)
+    return claims
+
+
+def _claims_include_scopes(claims: dict[str, Any], required_scopes: tuple[str, ...]) -> bool:
+    """判断 token claims 是否覆盖工具要求的全部 scope。"""
+
+    return set(required_scopes).issubset(set(claims.get("scopes") or []))
 
 
 def _ensure_claim_matches(claims: dict[str, Any], field_name: str, expected: str) -> None:

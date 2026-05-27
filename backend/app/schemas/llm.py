@@ -28,7 +28,12 @@ class LlmProviderCatalogItem(SchemaBase):
     supports_thinking: bool
     thinking_mode: str
     default_base_url: str | None = None
+    default_model_id: str | None = None
+    default_thinking_enabled: bool = False
     default_thinking_effort: str | None = None
+    default_context_window_tokens: int | None = None
+    default_max_output_tokens: int | None = None
+    default_supports_image_input: bool = False
     thinking_effort_options: list[str] = Field(default_factory=list)
     advanced_json_hint: dict[str, Any] = Field(default_factory=dict)
 

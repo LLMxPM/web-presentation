@@ -141,6 +141,7 @@ class PageScreenshotService:
                     page,
                     current.user.id,
                     asset_delivery_mode="backend_cache",
+                    asset_base_url_override=self._resolve_browser_backend_base_url(),
                 )
                 capture_target = self._build_browser_capture_target(preview)
                 capture_jobs.append(
@@ -265,7 +266,12 @@ class PageScreenshotService:
                     "viewport": f"{viewport.width}x{viewport.height}",
                 },
             )
-            preview = await self.preview_service.create_page_preview(page, operator_id, asset_delivery_mode="backend_cache")
+            preview = await self.preview_service.create_page_preview(
+                page,
+                operator_id,
+                asset_delivery_mode="backend_cache",
+                asset_base_url_override=self._resolve_browser_backend_base_url(),
+            )
             capture_target = self._build_browser_capture_target(preview)
             await self._release_session_before_browser_capture()
             screenshot_content = await self.browser_capture_service.capture_preview(
@@ -368,7 +374,7 @@ class PageScreenshotService:
             artifact_id=artifact_id,
             expires_in_seconds=self._resolve_runtime_service_token_ttl(preview_claims),
         )
-        runtime_public_base_url = str(settings.runtime_public_base_url or settings.runtime_base_url).strip().rstrip("/")
+        runtime_public_base_url = self._resolve_browser_runtime_public_base_url()
         return PageScreenshotCaptureTarget(
             preview_url=f"{settings.runtime_base_url.rstrip('/')}/__preview",
             extra_http_headers={
@@ -377,6 +383,31 @@ class PageScreenshotService:
                 RUNTIME_PUBLIC_BASE_URL_HEADER: runtime_public_base_url,
             },
         )
+
+    @staticmethod
+    def _resolve_browser_backend_base_url() -> str:
+        """返回截图浏览器可访问的 Backend 基址，用于 artifact 中资源 URL。"""
+
+        settings = get_settings()
+        configured = str(settings.page_screenshot_backend_base_url or "").strip().rstrip("/")
+        if configured:
+            return configured
+        return f"http://127.0.0.1:{settings.app_port}"
+
+    @staticmethod
+    def _resolve_browser_runtime_public_base_url() -> str:
+        """返回截图浏览器可访问的 Runtime 基址，用于 Runtime HTML 中脚本和样式 URL。"""
+
+        settings = get_settings()
+        configured = str(settings.page_screenshot_runtime_public_base_url or "").strip().rstrip("/")
+        if configured:
+            return configured
+
+        runtime_base_url = settings.runtime_base_url.rstrip("/")
+        public_path = urlsplit(str(settings.runtime_public_base_url or "")).path.strip("/")
+        if public_path:
+            return f"{runtime_base_url}/{public_path}"
+        return runtime_base_url
 
     @staticmethod
     def _extract_preview_token(preview_url: str) -> str:

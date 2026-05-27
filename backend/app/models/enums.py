@@ -102,6 +102,7 @@ class AiThinkingMode(str, Enum):
 
     NONE = "none"
     OPENAI_REASONING = "openai_reasoning"
+    OPENAI_EXTRA_BODY_THINKING = "openai_extra_body_thinking"
     DASHSCOPE_ENABLE_THINKING = "dashscope_enable_thinking"
     OLLAMA_THINK = "ollama_think"
     GOOGLE_THINKING_LEVEL = "google_thinking_level"

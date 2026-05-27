@@ -906,7 +906,12 @@ export interface LlmProviderCatalogItem {
   supports_thinking: boolean
   thinking_mode: string
   default_base_url: string | null
+  default_model_id: string | null
+  default_thinking_enabled: boolean
   default_thinking_effort: string | null
+  default_context_window_tokens: number | null
+  default_max_output_tokens: number | null
+  default_supports_image_input: boolean
   thinking_effort_options: string[]
   advanced_json_hint: Record<string, unknown>
 }
