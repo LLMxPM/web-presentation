@@ -3,7 +3,7 @@
 from tests.integration.ai.ai_agents_cases import (
     test_agent_registry_should_expose_coordinator_and_component_manager,
     test_agent_coordinator_availability_should_require_project_scope,
-    test_agent_runtime_context_should_include_authoring_canvas_size,
+    test_agent_runtime_context_should_include_page_canvas_config,
     test_ai_run_scope_should_prefer_run_metadata_over_session_scope,
     test_ai_session_scope_should_use_hierarchical_route_containment,
     test_agent_token_should_embed_audience_and_scope,
@@ -23,8 +23,7 @@ from tests.integration.ai.ai_agents_cases import (
     test_get_component_detail_tool_should_render_source,
     test_get_page_content_prompt_should_render_source,
     test_get_page_content_tool_should_accept_explicit_page_id,
-    test_authoring_canvas_size_should_follow_project_visual_density,
-    test_get_page_content_tool_should_render_authoring_canvas_size,
+    test_get_page_content_tool_should_render_page_canvas_config,
     test_project_page_tools_should_create_and_update_metadata,
     test_project_page_tools_should_reject_invalid_scope_or_payload,
     test_project_style_config_tools_should_read_and_update_with_confirmation,
@@ -38,5 +37,5 @@ from tests.integration.ai.ai_agents_cases import (
     test_workspace_component_usage_tools_should_not_require_page_scope,
     test_workspace_font_asset_tool_should_return_runtime_font_fields,
     test_workspace_render_assets_tool_should_include_video_assets,
-    test_agent_tool_dependencies_and_scope_summary_should_include_authoring_canvas_size,
+    test_agent_tool_dependencies_and_scope_summary_should_include_page_canvas_config,
 )

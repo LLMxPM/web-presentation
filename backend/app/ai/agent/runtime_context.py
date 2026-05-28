@@ -15,8 +15,9 @@ class AgentRuntimeContext:
     project_id: int | None = None
     page_id: int | None = None
     component_id: int | None = None
-    authoring_width: int | None = None
-    authoring_height: int | None = None
+    page_width: int | None = None
+    page_height: int | None = None
+    base_font_size: str | None = None
     style_spec_markdown: str | None = None
     page_title: str | None = None
     page_summary: str | None = None
@@ -39,11 +40,14 @@ def build_scope_context_text(runtime_context: AgentRuntimeContext) -> str:
         f"- 组件 ID：{runtime_context.component_id or '（无）'}",
         f"- 来源：{runtime_context.source}",
     ]
-    if runtime_context.authoring_width is not None and runtime_context.authoring_height is not None:
+    if runtime_context.page_width is not None and runtime_context.page_height is not None:
         lines.extend(
             [
-                f"- 当前作者画布尺寸（authoring_width / authoring_height）：{runtime_context.authoring_width} x {runtime_context.authoring_height} px",
-                "- 页面和整页组件应按作者画布常规使用 Vue 与 Tailwind；优先使用 text-*、p-*、gap-*、grid/flex，不手算字号或间距。",
+                f"- 当前页面画布尺寸（page_width / page_height）：{runtime_context.page_width} x {runtime_context.page_height} px",
+                f"- 当前项目基础字号（base_font_size）：{runtime_context.base_font_size or '（未知）'}",
+                "- base_font_size 是页面 Tailwind 字号和间距的基础尺度：text-base 等于该值，text-* 字号、p-/m-/gap-/space-* 等 spacing 按 Runtime Tailwind 预设比例派生；page_width/page_height 不参与该换算。",
+                "- 直接写 px、rem 或 Tailwind arbitrary values 属于固定 CSS 尺度，不会随 base_font_size 自动变化；需要跟随基础字号时使用 Tailwind 语义尺度，或以 base_font_size 为基准计算。",
+                "- 页面和整页组件应按真实画布编写 Vue 与 Tailwind；可使用 Tailwind 语义类，也可在需要精确版式时使用 px、rem 或 Tailwind arbitrary values。",
             ]
         )
     if str(runtime_context.style_spec_markdown or "").strip():

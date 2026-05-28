@@ -48,8 +48,9 @@ def build_get_page_content_tool(session_factory: async_sessionmaker[AsyncSession
             return ToolResult(
                 content=build_page_content_prompt(
                     page_item,
-                    authoring_width=_coerce_optional_int(dependencies.get("authoring_width")),
-                    authoring_height=_coerce_optional_int(dependencies.get("authoring_height")),
+                    page_width=_coerce_optional_int(dependencies.get("page_width")),
+                    page_height=_coerce_optional_int(dependencies.get("page_height")),
+                    base_font_size=_coerce_optional_str(dependencies.get("base_font_size")),
                     source_info=PageContentSourceInfo(
                         resolved_from=resolved_from,
                         context_page_id=_coerce_optional_int(dependencies.get("page_id")),
@@ -66,8 +67,9 @@ def build_get_page_content_tool(session_factory: async_sessionmaker[AsyncSession
 def build_page_content_prompt(
     page_item: PageItem,
     *,
-    authoring_width: int | None = None,
-    authoring_height: int | None = None,
+    page_width: int | None = None,
+    page_height: int | None = None,
+    base_font_size: str | None = None,
     source_info: PageContentSourceInfo | None = None,
 ) -> str:
     """把页面信息渲染为适合 LLM 读取和生成 edits 的纯文本。"""
@@ -75,11 +77,14 @@ def build_page_content_prompt(
     file_type = page_item.file_type.value
     page_content = str(page_item.page_content or "")
     summary_text = page_item.summary or "（未填写）"
-    authoring_canvas_lines = []
-    if authoring_width is not None and authoring_height is not None:
-        authoring_canvas_lines = [
-            f"当前作者画布尺寸（authoring_width / authoring_height）：{authoring_width} x {authoring_height} px",
-            "页面排版约束：按作者画布常规使用 Tailwind 的 text-*、p-*、gap-*、grid/flex，不手算字号或间距。",
+    page_canvas_lines = []
+    if page_width is not None and page_height is not None:
+        page_canvas_lines = [
+            f"当前页面画布尺寸（page_width / page_height）：{page_width} x {page_height} px",
+            f"当前项目基础字号（base_font_size）：{base_font_size or '（未知）'}",
+            "base_font_size 作用：text-base 等于该值，text-* 字号、p-/m-/gap-/space-* 等 spacing 按 Runtime Tailwind 预设比例派生；page_width/page_height 不参与该换算。",
+            "固定尺度说明：直接写 px、rem 或 Tailwind arbitrary values 不会随 base_font_size 自动变化；需要跟随基础字号时使用 Tailwind 语义尺度，或以 base_font_size 为基准计算。",
+            "页面排版约束：按真实画布编写；可使用 Tailwind 语义类，也可在需要精确版式时使用 px、rem 或 Tailwind arbitrary values。",
         ]
 
     return "\n".join(
@@ -92,7 +97,7 @@ def build_page_content_prompt(
             f"文件类型：{file_type}",
             f"当前版本：v{page_item.current_version_no}",
             f"页面状态：{page_item.status.value}",
-            *authoring_canvas_lines,
+            *page_canvas_lines,
             "",
             "以下是当前页面完整源码。",
             "生成 edits 时，直接复制源码中的真实片段作为 old_text、anchor_text 或 content。",

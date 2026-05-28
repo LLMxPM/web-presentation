@@ -48,7 +48,6 @@ from app.ai.auth_tokens import (
     build_agent_access_token,
     build_agent_tool_token,
 )
-from app.ai.authoring_canvas import resolve_authoring_canvas_size
 from app.ai.history_policy import build_history_policy
 from app.ai.registry import AgentRegistry
 from app.ai.runtime_context_builder import build_agent_runtime_context
@@ -1400,7 +1399,7 @@ async def test_project_route_tools_should_list_project_pages_with_user_context(
 async def test_project_style_config_tools_should_read_and_update_with_confirmation(
     authenticated_client: AsyncClient,
 ) -> None:
-    """项目样式配置工具应只暴露作者画布、主题摘要与样式规范。"""
+    """项目样式配置工具应只暴露真实画布、基础字号、主题摘要与样式规范。"""
 
     workspace_id = await _create_workspace(authenticated_client, "项目样式工具工作空间")
     project_response = await authenticated_client.post(
@@ -1435,16 +1434,16 @@ async def test_project_style_config_tools_should_read_and_update_with_confirmati
 
     get_tool = _find_tool(tools, "get_project_style_config")
     config = await get_tool.entrypoint(read_context)
-    assert config["authoring_width"] == 1920
-    assert config["authoring_height"] == 1080
+    assert config["page_width"] == 1280
+    assert config["page_height"] == 720
+    assert config["base_font_size"] == "16px"
     assert config["theme"]["palette"]["text"]["primary"] == "#0D286A"
     assert config["theme"]["typography"]["headingfont"] == "system-ui"
     assert config["style_spec_markdown"] == "## 版式\n- 使用清晰标题。"
     assert "project" not in config
     assert "style_config" not in config
-    assert "page_width" not in config
-    assert "page_height" not in config
-    assert "base_font_size" not in config
+    assert "authoring_width" not in config
+    assert "authoring_height" not in config
     assert "theme_key" not in config
     assert "theme_config_yaml" not in config
     assert "effective_app_config" not in config
@@ -2020,31 +2019,10 @@ def test_get_component_detail_prompt_should_render_source() -> None:
     assert "直接复制源码中的真实片段作为 old_text、anchor_text 或 content" in prompt
 
 
-def test_authoring_canvas_size_should_follow_project_visual_density() -> None:
-    """作者画布尺寸应随项目展示规格和基础字号稳定派生。"""
-
-    cases = [
-        (1920, 1080, "16px", 1920, 1080),
-        (1280, 720, "16px", 1920, 1080),
-        (1280, 720, "18px", 1707, 960),
-        (1600, 900, "14px", 2194, 1234),
-    ]
-
-    for page_width, page_height, base_font_size, expected_width, expected_height in cases:
-        size = resolve_authoring_canvas_size(
-            page_width=page_width,
-            page_height=page_height,
-            base_font_size=base_font_size,
-        )
-        assert size is not None
-        assert size.authoring_width == expected_width
-        assert size.authoring_height == expected_height
-
-
-async def test_get_page_content_tool_should_render_authoring_canvas_size(
+async def test_get_page_content_tool_should_render_page_canvas_config(
     authenticated_client: AsyncClient,
 ) -> None:
-    """页面源码读取工具应只把作者画布尺寸写入返回文本。"""
+    """页面源码读取工具应把真实画布尺寸和基础字号写入返回文本。"""
 
     workspace_id = await _create_workspace(authenticated_client, "AI 页面尺寸工具工作空间")
     project_id = await _create_project(
@@ -2072,17 +2050,21 @@ async def test_get_page_content_tool_should_render_authoring_canvas_size(
         project_id=project_id,
         page_id=page_id,
     )
-    run_context.dependencies["authoring_width"] = 1708
-    run_context.dependencies["authoring_height"] = 960
+    run_context.dependencies["page_width"] = 1366
+    run_context.dependencies["page_height"] = 768
+    run_context.dependencies["base_font_size"] = "18px"
 
     result = await tool.entrypoint(run_context)
 
-    assert "当前作者画布尺寸（authoring_width / authoring_height）：1708 x 960 px" in result.content
-    assert "按作者画布常规使用 Tailwind" in result.content
-    assert "当前项目页面尺寸" not in result.content
-    assert "当前项目基础字号" not in result.content
-    assert "1366 x 768" not in result.content
-    assert "18px" not in result.content
+    assert "当前页面画布尺寸（page_width / page_height）：1366 x 768 px" in result.content
+    assert "当前项目基础字号（base_font_size）：18px" in result.content
+    assert "base_font_size 作用：text-base 等于该值" in result.content
+    assert "page_width/page_height 不参与该换算" in result.content
+    assert "固定尺度说明：直接写 px、rem 或 Tailwind arbitrary values 不会随 base_font_size 自动变化" in result.content
+    assert "按真实画布编写" in result.content
+    assert "px、rem 或 Tailwind arbitrary values" in result.content
+    assert "authoring_width" not in result.content
+    assert "作者画布" not in result.content
     assert "当前项目默认图标规格" not in result.content
     assert "<template><div>size</div></template>" in result.content
     assert "0001 |" not in result.content
@@ -2241,10 +2223,10 @@ async def test_apply_page_edits_should_reject_stale_base_version(authenticated_c
     assert result["edits_applied"] == 1
 
 
-async def test_agent_runtime_context_should_include_authoring_canvas_size(
+async def test_agent_runtime_context_should_include_page_canvas_config(
     authenticated_client: AsyncClient,
 ) -> None:
-    """运行时上下文应从页面绑定项目解析作者画布尺寸。"""
+    """运行时上下文应从页面绑定项目读取真实画布和基础字号。"""
 
     workspace_id = await _create_workspace(authenticated_client, "AI 运行上下文尺寸工作空间")
     project_id = await _create_project(
@@ -2277,23 +2259,28 @@ async def test_agent_runtime_context_should_include_authoring_canvas_size(
         )
 
     assert runtime_context.project_id == project_id
-    assert runtime_context.authoring_width == 1707
-    assert runtime_context.authoring_height == 960
+    assert runtime_context.page_width == 1600
+    assert runtime_context.page_height == 900
+    assert runtime_context.base_font_size == "18px"
     assert runtime_context.style_spec_markdown == "## 页面规范\n- 保持网格对齐。"
     scope_text = build_scope_context_text(runtime_context)
-    assert "当前作者画布尺寸（authoring_width / authoring_height）：1707 x 960 px" in scope_text
-    assert "按作者画布常规使用 Vue 与 Tailwind" in scope_text
-    assert "当前项目页面尺寸" not in scope_text
-    assert "当前项目基础字号" not in scope_text
-    assert "1600 x 900" not in scope_text
-    assert "18px" not in scope_text
+    assert "当前页面画布尺寸（page_width / page_height）：1600 x 900 px" in scope_text
+    assert "当前项目基础字号（base_font_size）：18px" in scope_text
+    assert "base_font_size 是页面 Tailwind 字号和间距的基础尺度" in scope_text
+    assert "page_width/page_height 不参与该换算" in scope_text
+    assert "px、rem 或 Tailwind arbitrary values 属于固定 CSS 尺度" in scope_text
+    assert "不会随 base_font_size 自动变化" in scope_text
+    assert "按真实画布编写 Vue 与 Tailwind" in scope_text
+    assert "px、rem 或 Tailwind arbitrary values" in scope_text
+    assert "authoring_width" not in scope_text
+    assert "作者画布" not in scope_text
     assert "当前项目默认图标规格" not in scope_text
     assert "当前项目样式规范" in scope_text
     assert "保持网格对齐" in scope_text
 
 
-async def test_agent_tool_dependencies_and_scope_summary_should_include_authoring_canvas_size() -> None:
-    """工具依赖和当前范围摘要应只包含作者画布尺寸。"""
+async def test_agent_tool_dependencies_and_scope_summary_should_include_page_canvas_config() -> None:
+    """工具依赖和当前范围摘要应包含真实画布和基础字号。"""
 
     facade = AgentSessionFacade.__new__(AgentSessionFacade)
     facade._current = _build_auth_context()
@@ -2302,8 +2289,9 @@ async def test_agent_tool_dependencies_and_scope_summary_should_include_authorin
         workspace_id=11,
         project_id=21,
         page_id=31,
-        authoring_width=1707,
-        authoring_height=960,
+        page_width=1600,
+        page_height=900,
+        base_font_size="18px",
         style_spec_markdown="## 规范\n- 使用统一标题。",
         source="editor-page-detail",
     )
@@ -2322,11 +2310,11 @@ async def test_agent_tool_dependencies_and_scope_summary_should_include_authorin
         session_metadata={},
         agent_config=None,  # type: ignore[arg-type]
     )
-    assert dependencies["authoring_width"] == 1707
-    assert dependencies["authoring_height"] == 960
-    assert "page_width" not in dependencies
-    assert "page_height" not in dependencies
-    assert "base_font_size" not in dependencies
+    assert dependencies["page_width"] == 1600
+    assert dependencies["page_height"] == 900
+    assert dependencies["base_font_size"] == "18px"
+    assert "authoring_width" not in dependencies
+    assert "authoring_height" not in dependencies
     assert "icon_default_size" not in dependencies
     assert "icon_default_stroke_width" not in dependencies
     assert dependencies["style_spec_markdown"] == "## 规范\n- 使用统一标题。"

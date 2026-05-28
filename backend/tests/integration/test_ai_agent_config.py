@@ -92,11 +92,17 @@ async def test_agent_config_api_should_manage_prompt_and_tool_overrides(authenti
     assert "工作空间是页面、资源和可复用组件的业务资产边界" in coordinator_prompt
     assert "DefaultContainer" in coordinator_prompt
     assert "衍生容器组件" in coordinator_prompt
-    assert "作者画布" in coordinator_prompt
-    assert "生成或改写页面时必须考虑当前作者画布尺寸" in coordinator_prompt
+    assert "真实页面画布" in coordinator_prompt
+    assert "生成或改写页面时必须考虑当前真实页面画布尺寸" in coordinator_prompt
     assert "不要无视画布尺寸套用同一种版式" in coordinator_prompt
-    assert "常规编写 Vue 与 Tailwind" in coordinator_prompt
-    assert "不要手算字号、间距或比例" in coordinator_prompt
+    assert "可使用 text-*、p-*、gap-*、grid/flex 等语义类组织层级" in coordinator_prompt
+    assert "px、rem 或 Tailwind arbitrary values" in coordinator_prompt
+    assert "base_font_size 是页面 Tailwind 字号和间距的基础尺度" in coordinator_prompt
+    assert "text-base 等于该值" in coordinator_prompt
+    assert "page_width/page_height 不参与该换算" in coordinator_prompt
+    assert "px、rem 或 Tailwind arbitrary values 属于固定 CSS 尺度" in coordinator_prompt
+    assert "不会随 base_font_size 自动变化" in coordinator_prompt
+    assert "页面画布尺寸是真实 CSS 坐标" in coordinator_prompt
     assert "页面按固定演示页/PPT 画布生成" in coordinator_prompt
     assert "若项目样式规范提供字号、密度或拆页规则，必须优先遵守" in coordinator_prompt
     assert "relative h-full w-full overflow-hidden" in coordinator_prompt
@@ -175,9 +181,15 @@ async def test_agent_config_api_should_manage_prompt_and_tool_overrides(authenti
     assert "不在组件内维护项目路由树" in component_prompt
     assert "DefaultContainer" in component_prompt
     assert "衍生容器组件" in component_prompt
-    assert "作者画布" in component_prompt
-    assert "常规编写 Vue 与 Tailwind" in component_prompt
-    assert "不要手算字号、间距或比例" in component_prompt
+    assert "真实页面画布" in component_prompt
+    assert "可使用 text-*、p-*、gap-*、grid/flex 等语义类组织层级" in component_prompt
+    assert "px、rem 或 Tailwind arbitrary values" in component_prompt
+    assert "base_font_size 是页面 Tailwind 字号和间距的基础尺度" in component_prompt
+    assert "text-base 等于该值" in component_prompt
+    assert "page_width/page_height 不参与该换算" in component_prompt
+    assert "px、rem 或 Tailwind arbitrary values 属于固定 CSS 尺度" in component_prompt
+    assert "不会随 base_font_size 自动变化" in component_prompt
+    assert "页面画布尺寸是真实 CSS 坐标" in component_prompt
     assert "页面按固定演示页/PPT 画布生成" in component_prompt
     assert "若项目样式规范提供字号、密度或拆页规则，必须优先遵守" in component_prompt
     assert "relative h-full w-full overflow-hidden" in component_prompt
@@ -351,10 +363,18 @@ async def test_agent_config_api_should_manage_prompt_and_tool_overrides(authenti
     assert coordinator_resource_tool["agent_guide"]["runtime_disclosure_groups"] == ["resource_read"]
     style_read_tool = next(tool for tool in content_project_group["tools"] if tool["key"] == "get_project_style_config")
     style_read_response = style_read_tool["agent_guide"]["response_example"]
-    assert "作者画布" in (style_read_tool["agent_guide"]["instructions"] or "")
-    assert {"authoring_width", "authoring_height", "theme", "style_spec_markdown"} <= set(style_read_response)
+    assert "真实页面画布" in (style_read_tool["agent_guide"]["instructions"] or "")
+    assert "基础字号" in (style_read_tool["agent_guide"]["instructions"] or "")
+    assert "base_font_size 是页面 Tailwind 字号和间距的基础尺度" in (
+        style_read_tool["agent_guide"]["instructions"] or ""
+    )
+    assert "px、rem 或 Tailwind arbitrary values 属于固定 CSS 尺度" in (
+        style_read_tool["agent_guide"]["instructions"] or ""
+    )
+    assert {"page_width", "page_height", "base_font_size", "theme", "style_spec_markdown"} <= set(style_read_response)
+    assert "authoring_width" not in style_read_response
+    assert "authoring_height" not in style_read_response
     assert "theme_key" not in style_read_response
-    assert "page_width" not in style_read_response
     assert "effective_theme_config" not in style_read_response
     style_update_tool = next(tool for tool in content_project_group["tools"] if tool["key"] == "update_project_style_config")
     assert style_update_tool["agent_guide"]["requires_confirmation"] is True
