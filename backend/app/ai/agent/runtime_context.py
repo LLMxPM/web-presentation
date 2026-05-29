@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 
 @dataclass(slots=True, frozen=True)
@@ -26,6 +27,7 @@ class AgentRuntimeContext:
     file_type: str | None = None
     component_code: str | None = None
     component_name: str | None = None
+    suggested_reference_assets: tuple[dict[str, Any], ...] = ()
 
 
 def build_scope_context_text(runtime_context: AgentRuntimeContext) -> str:
@@ -59,6 +61,23 @@ def build_scope_context_text(runtime_context: AgentRuntimeContext) -> str:
                 "```",
             ]
         )
+    if runtime_context.suggested_reference_assets:
+        lines.extend(
+            [
+                "- 项目建议引用资源：",
+                "以下为项目建议引用资源；当任务需要使用资源素材时，建议优先考虑这些资源，不合适时可以使用其他资源或询问用户。",
+            ]
+        )
+        for asset in runtime_context.suggested_reference_assets:
+            lines.append(
+                "  - "
+                f"id={asset.get('id')}，"
+                f"name={asset.get('name')}，"
+                f"original_name={asset.get('original_name')}，"
+                f"asset_type={asset.get('asset_type')}，"
+                f"description={asset.get('description') or '（未填写）'}，"
+                f"content_editable={asset.get('content_editable')}"
+            )
     if runtime_context.page_id is not None:
         lines.extend(
             [

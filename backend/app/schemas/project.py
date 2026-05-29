@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from app.core.text_normalizer import normalize_text_to_lf
 from app.models.enums import RecordStatus
+from app.models.enums import AssetType
 from app.schemas.common import SchemaBase
 from app.schemas.project_app_config import (
     DEFAULT_PAGE_HEIGHT,
@@ -22,6 +23,7 @@ from app.schemas.project_app_config import (
 _HTTP_URL_PATTERN = re.compile(r"^https?://", flags=re.IGNORECASE)
 _PROJECT_BUILD_EXTRA_ASSET_NAMES_MAX_COUNT = 500
 _PROJECT_BUILD_EXTRA_ASSET_NAME_MAX_LENGTH = 255
+_PROJECT_SUGGESTED_REFERENCE_ASSET_MAX_COUNT = 100
 
 
 class ProjectBuildExtraAssetsConfig(BaseModel):
@@ -191,3 +193,26 @@ class ProjectItem(SchemaBase):
     updated_at: datetime
     created_by: int | None
     updated_by: int | None
+
+
+class ProjectSuggestedReferenceAssetItem(BaseModel):
+    """项目建议引用资源摘要，避免向 AI 默认上下文暴露 URL 与标签。"""
+
+    id: int
+    name: str
+    original_name: str
+    description: str | None = None
+    asset_type: AssetType
+    content_editable: bool = False
+
+
+class ProjectSuggestedReferenceAssetsResponse(BaseModel):
+    """项目建议引用资源列表响应。"""
+
+    items: list[ProjectSuggestedReferenceAssetItem] = Field(default_factory=list)
+
+
+class ProjectSuggestedReferenceAssetsUpdateRequest(BaseModel):
+    """覆盖保存项目建议引用资源的请求体。"""
+
+    asset_ids: list[int] = Field(default_factory=list, max_length=_PROJECT_SUGGESTED_REFERENCE_ASSET_MAX_COUNT)

@@ -15,6 +15,7 @@ from app.models.page_component_usage import PageVersionComponentUsage
 from app.models.page_version import PageVersion
 from app.models.project_build_job import ProjectBuildJob
 from app.models.project_route import ProjectRoute
+from app.models.project_suggested_reference_asset import ProjectSuggestedReferenceAsset
 from app.models.release import Release, ReleaseModule
 from app.models.workspace_component import WorkspaceComponent
 from app.models.workspace_component_version import WorkspaceComponentVersion
@@ -40,6 +41,7 @@ __all__ = [
     "PageVersionComponentUsage",
     "PageVersionComponentResource",
     "ProjectBuildJob",
+    "ProjectSuggestedReferenceAsset",
     "WorkspaceComponent",
     "WorkspaceComponentVersion",
     "ComponentVersionComponentDependency",

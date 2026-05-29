@@ -8,11 +8,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.dependencies import get_current_user, get_list_query
 from app.db.session import get_db_session
 from app.schemas.common import ListQuery, MessageResponse, PagedResponse
-from app.schemas.project import ProjectCreateRequest, ProjectItem, ProjectUpdateRequest
+from app.schemas.project import (
+    ProjectCreateRequest,
+    ProjectItem,
+    ProjectSuggestedReferenceAssetsResponse,
+    ProjectSuggestedReferenceAssetsUpdateRequest,
+    ProjectUpdateRequest,
+)
 from app.schemas.project_route import ProjectRouteTreeResponse, ProjectRouteTreeWriteRequest
 from app.services.auth_service import AuthContext
 from app.services.project_service import ProjectService
 from app.services.project_route_service import ProjectRouteService
+from app.services.project_suggested_reference_asset_service import ProjectSuggestedReferenceAssetService
 
 router = APIRouter()
 
@@ -61,6 +68,33 @@ async def update_project(
     """更新指定项目。"""
 
     return await ProjectService(session).update(project_id, payload, current.user.id)
+
+
+@router.get("/{project_id}/suggested-reference-assets", response_model=ProjectSuggestedReferenceAssetsResponse)
+async def list_project_suggested_reference_assets(
+    project_id: int,
+    current: Annotated[AuthContext, Depends(get_current_user)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> ProjectSuggestedReferenceAssetsResponse:
+    """读取项目建议引用内容资源列表。"""
+
+    await ProjectService(session).get(project_id, user_id=current.user.id)
+    items = await ProjectSuggestedReferenceAssetService(session).list_asset_items(project_id)
+    return ProjectSuggestedReferenceAssetsResponse(items=items)
+
+
+@router.put("/{project_id}/suggested-reference-assets", response_model=ProjectSuggestedReferenceAssetsResponse)
+async def replace_project_suggested_reference_assets(
+    project_id: int,
+    payload: ProjectSuggestedReferenceAssetsUpdateRequest,
+    current: Annotated[AuthContext, Depends(get_current_user)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> ProjectSuggestedReferenceAssetsResponse:
+    """覆盖保存项目建议引用内容资源列表。"""
+
+    await ProjectService(session).get(project_id, user_id=current.user.id)
+    items = await ProjectSuggestedReferenceAssetService(session).replace_assets(project_id, payload.asset_ids)
+    return ProjectSuggestedReferenceAssetsResponse(items=items)
 
 
 @router.get("/{project_id}/routes", response_model=ProjectRouteTreeResponse)

@@ -295,6 +295,7 @@ async def test_agent_config_api_should_manage_prompt_and_tool_overrides(authenti
         "component_read",
         "runtime_kit",
         "resource_read",
+        "project_suggested_reference_read",
     }
     guide_tool = next(tool for tool in content_project_group["tools"] if tool["key"] == "apply_page_edits")
     assert guide_tool["agent_guide"]["tool_name"] == "apply_page_edits"
@@ -372,6 +373,30 @@ async def test_agent_config_api_should_manage_prompt_and_tool_overrides(authenti
     )
     assert coordinator_resource_tool["agent_guide"]["required_context_fields"] == ["workspace_id"]
     assert coordinator_resource_tool["agent_guide"]["runtime_disclosure_groups"] == ["resource_read"]
+    coordinator_suggested_reference_group = next(
+        group
+        for group in configs[AGENT_COORDINATOR_AGENT_ID]["tool_groups"]
+        if group["key"] == "project_suggested_reference_read"
+    )
+    assert {tool["key"] for tool in coordinator_suggested_reference_group["tools"]} == {
+        "list_project_suggested_reference_assets",
+    }
+    coordinator_suggested_reference_tool = coordinator_suggested_reference_group["tools"][0]
+    assert coordinator_suggested_reference_tool["agent_guide"]["required_context_fields"] == [
+        "workspace_id",
+        "project_id",
+    ]
+    assert coordinator_suggested_reference_tool["agent_guide"]["runtime_disclosure_groups"] == [
+        "project_suggested_reference_read",
+    ]
+    assert "url" not in json.dumps(
+        coordinator_suggested_reference_tool["agent_guide"]["response_example"],
+        ensure_ascii=False,
+    )
+    assert "tags" not in json.dumps(
+        coordinator_suggested_reference_tool["agent_guide"]["response_example"],
+        ensure_ascii=False,
+    )
     style_read_tool = next(tool for tool in content_project_group["tools"] if tool["key"] == "get_project_style_config")
     style_read_response = style_read_tool["agent_guide"]["response_example"]
     assert "真实页面画布" in (style_read_tool["agent_guide"]["instructions"] or "")

@@ -40,6 +40,19 @@ export interface ProjectBuildExtraAssetsJson {
   asset_names: string[]
 }
 
+export interface ProjectSuggestedReferenceAssetItem {
+  id: number
+  name: string
+  original_name: string
+  description: string | null
+  asset_type: AssetType
+  content_editable: boolean
+}
+
+export interface ProjectSuggestedReferenceAssetsResponse {
+  items: ProjectSuggestedReferenceAssetItem[]
+}
+
 export interface WorkspaceItem {
   id: number
   code: string

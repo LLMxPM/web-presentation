@@ -14,6 +14,7 @@ from app.core.config import get_settings
 from app.models.enums import AssetType, RecordStatus
 from app.schemas.asset import AssetResponse
 from app.services.asset_service import AssetService
+from app.services.project_suggested_reference_asset_service import ProjectSuggestedReferenceAssetService
 
 
 def build_resource_manager_tools(session_factory: async_sessionmaker[AsyncSession]) -> list[Any]:
@@ -21,6 +22,7 @@ def build_resource_manager_tools(session_factory: async_sessionmaker[AsyncSessio
 
     return [
         build_list_resource_assets_tool(session_factory),
+        build_list_project_suggested_reference_assets_tool(session_factory),
         build_get_resource_asset_content_tool(session_factory),
         build_list_resource_tags_tool(session_factory),
         build_create_resource_asset_tool(session_factory),
@@ -75,6 +77,29 @@ def build_list_resource_assets_tool(session_factory: async_sessionmaker[AsyncSes
             return {"total": len(items), "items": items}
 
     return list_resource_assets
+
+
+def build_list_project_suggested_reference_assets_tool(session_factory: async_sessionmaker[AsyncSession]) -> Any:
+    """构建项目建议引用资源列表工具。"""
+
+    @tool(show_result=False)
+    async def list_project_suggested_reference_assets(run_context: RunContext) -> dict[str, Any]:
+        """读取当前项目建议优先参考的内容资源摘要，不返回 URL 和标签。"""
+
+        dependencies, _ = await resolve_tool_context(
+            session_factory,
+            run_context,
+            required_scopes=RESOURCE_TOOL_READ_SCOPES,
+            required_dependency_fields=("workspace_id", "project_id"),
+        )
+        async with session_factory() as session:
+            items = await ProjectSuggestedReferenceAssetService(session).list_asset_items(
+                int(dependencies["project_id"]),
+                workspace_id=int(dependencies["workspace_id"]),
+            )
+            return {"total": len(items), "items": [item.model_dump(mode="json") for item in items]}
+
+    return list_project_suggested_reference_assets
 
 
 def build_get_resource_asset_content_tool(session_factory: async_sessionmaker[AsyncSession]) -> Any:

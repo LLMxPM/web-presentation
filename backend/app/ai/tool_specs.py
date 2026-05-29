@@ -287,6 +287,12 @@ def _build_coordinator_resource_read_tools(session_factory: async_sessionmaker[A
     )
 
 
+def _build_project_suggested_reference_tools(session_factory: async_sessionmaker[AsyncSession]) -> list[Any]:
+    """构建项目建议引用资源只读查询工具。"""
+
+    return _filter_tools(build_resource_manager_tools(session_factory), ("list_project_suggested_reference_assets",))
+
+
 def _build_coordinator_runtime_kit_tools(session_factory: async_sessionmaker[AsyncSession]) -> list[Any]:
     """构建内容助手可直接使用的 Runtime Kit 只读查询工具。"""
 
@@ -471,6 +477,7 @@ _COMPONENT_LIBRARY_TOOL_KEYS = (
 
 _RESOURCE_LIBRARY_TOOL_KEYS = (
     'list_resource_assets',
+    'list_project_suggested_reference_assets',
     'get_resource_asset_content',
     'list_resource_tags',
     'create_resource_asset',
@@ -865,6 +872,22 @@ _COORDINATOR_TOOL_SPECS = (
     ),
 
     _tool(
+        'list_project_suggested_reference_assets',
+        '读取项目建议资源',
+        'project_suggested_reference_read',
+        '项目建议资源',
+        '读取当前项目建议优先参考的内容资源摘要；仅返回 id、name、original_name、asset_type、description 和 content_editable，不返回 URL 或标签。',
+        default_instructions='当任务需要使用资源素材时，建议优先考虑这些项目建议引用资源；不合适时可以使用其他资源或询问用户。',
+        response_example={'total': 1,
+         'items': [{'id': 8,
+                    'name': 'hero_illustration',
+                    'original_name': 'hero.svg',
+                    'description': '首页主视觉插图',
+                    'asset_type': 'image',
+                    'content_editable': True}]},
+    ),
+
+    _tool(
         'get_resource_asset_content',
         '读取资源内容',
         'resource_read',
@@ -1195,6 +1218,22 @@ _RESOURCE_MANAGER_TOOL_SPECS = (
     ),
 
     _tool(
+        'list_project_suggested_reference_assets',
+        '读取项目建议资源',
+        'resource_library',
+        '资源库',
+        '读取当前项目建议优先参考的内容资源摘要；仅返回 id、name、original_name、asset_type、description 和 content_editable，不返回 URL 或标签。',
+        default_instructions='当任务需要使用资源素材时，建议优先考虑这些项目建议引用资源；不合适时可以使用其他资源或询问用户。',
+        response_example={'total': 1,
+         'items': [{'id': 8,
+                    'name': 'hero_illustration',
+                    'original_name': 'hero.svg',
+                    'description': '首页主视觉插图',
+                    'asset_type': 'image',
+                    'content_editable': True}]},
+    ),
+
+    _tool(
         'get_resource_asset_content',
         '读取资源内容',
         'resource_library',
@@ -1373,6 +1412,16 @@ _COORDINATOR_GROUP_SPECS = (
         disclosable=True,
     ),
     _group(
+        "project_suggested_reference_read",
+        "项目建议资源",
+        "查询当前项目建议优先参考的内容资源摘要，仅用于资源选择建议。",
+        ("list_project_suggested_reference_assets",),
+        required_context_fields=("workspace_id", "project_id"),
+        token_scopes=RESOURCE_TOOL_READ_SCOPES,
+        build_tools=_build_project_suggested_reference_tools,
+        disclosable=True,
+    ),
+    _group(
         "page_visual_read",
         "页面截图",
         "读取页面当前版本截图，用于视觉检查、布局诊断和截图级描述。",
@@ -1500,7 +1549,7 @@ _RESOURCE_MANAGER_GROUP_SPECS = (
     _group(
         "resource_library",
         "资源库",
-        "面向资源助手展示的合并工具组，覆盖资源读取、内容写入、元数据维护、复制和归档。",
+        "面向资源助手展示的合并工具组，覆盖资源读取、项目建议资源、内容写入、元数据维护、复制和归档。",
         _RESOURCE_LIBRARY_TOOL_KEYS,
     ),
     _group(
@@ -1514,6 +1563,15 @@ _RESOURCE_MANAGER_GROUP_SPECS = (
             build_resource_manager_tools(session_factory),
             ("list_resource_assets", "get_resource_asset_content", "list_resource_tags"),
         ),
+    ),
+    _group(
+        "project_suggested_reference_read",
+        "项目建议资源",
+        "读取当前项目建议优先参考的内容资源摘要。",
+        ("list_project_suggested_reference_assets",),
+        required_context_fields=("workspace_id", "project_id"),
+        token_scopes=RESOURCE_TOOL_READ_SCOPES,
+        build_tools=_build_project_suggested_reference_tools,
     ),
     _group(
         "resource_write",

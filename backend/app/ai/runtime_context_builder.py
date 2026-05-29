@@ -8,6 +8,7 @@ from app.ai.agent import AgentRuntimeContext
 from app.schemas.agent import AgentScopeContext
 from app.services.page_service import PageService
 from app.services.project_service import ProjectService
+from app.services.project_suggested_reference_asset_service import ProjectSuggestedReferenceAssetService
 from app.services.workspace_component_service import WorkspaceComponentService
 
 
@@ -18,6 +19,11 @@ async def build_agent_runtime_context(*, session: AsyncSession, scope: AgentScop
     component_item = await WorkspaceComponentService(session).get(scope.component_id) if scope.component_id is not None else None
     project_id = scope.project_id or (page_item.project_id if page_item else None)
     project_item = await ProjectService(session).get(project_id) if project_id is not None else None
+    suggested_reference_assets = (
+        await ProjectSuggestedReferenceAssetService(session).list_asset_items(project_id)
+        if project_id is not None
+        else []
+    )
     return AgentRuntimeContext(
         scope_type=scope.scope_type,
         workspace_id=scope.workspace_id,
@@ -36,4 +42,5 @@ async def build_agent_runtime_context(*, session: AsyncSession, scope: AgentScop
         file_type=page_item.file_type.value if page_item else None,
         component_code=component_item.code if component_item else None,
         component_name=component_item.name if component_item else None,
+        suggested_reference_assets=tuple(item.model_dump(mode="json") for item in suggested_reference_assets),
     )

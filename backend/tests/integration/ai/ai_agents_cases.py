@@ -2518,6 +2518,118 @@ async def test_agent_runtime_context_should_include_page_canvas_config(
     assert "保持网格对齐" in scope_text
 
 
+async def test_agent_runtime_context_should_include_project_suggested_reference_assets(
+    authenticated_client: AsyncClient,
+) -> None:
+    """页面或项目会话上下文应默认带入项目建议引用内容资源精简摘要。"""
+
+    workspace_id = await _create_workspace(authenticated_client, "AI 建议资源上下文空间")
+    project_id = await _create_project(authenticated_client, workspace_id, "AI 建议资源上下文项目")
+    asset_response = await authenticated_client.post(
+        f"/api/workspaces/{workspace_id}/assets/content",
+        json={
+            "asset_type": "image",
+            "name": "hero_illustration",
+            "original_name": "hero.svg",
+            "description": "首页主视觉插图",
+            "content": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 16 16\"><rect width=\"16\" height=\"16\"/></svg>",
+            "tags": ["不应进入上下文"],
+        },
+    )
+    assert asset_response.status_code == 200
+    save_response = await authenticated_client.put(
+        f"/api/projects/{project_id}/suggested-reference-assets",
+        json={"asset_ids": [asset_response.json()["id"]]},
+    )
+    assert save_response.status_code == 200
+    page_id = await _create_page(
+        authenticated_client,
+        workspace_id=workspace_id,
+        project_id=project_id,
+        title="建议资源页面",
+        content="<template><div>context</div></template>",
+    )
+
+    async with get_session_factory()() as session:
+        runtime_context = await build_agent_runtime_context(
+            session=session,
+            scope=AgentScopeContext(
+                scope_type="page",
+                workspace_id=workspace_id,
+                page_id=page_id,
+                source="editor-page-detail",
+            ),
+        )
+
+    assert [item["name"] for item in runtime_context.suggested_reference_assets] == ["hero_illustration"]
+    assert set(runtime_context.suggested_reference_assets[0]) == {
+        "id",
+        "name",
+        "original_name",
+        "description",
+        "asset_type",
+        "content_editable",
+    }
+    scope_text = build_scope_context_text(runtime_context)
+    assert "以下为项目建议引用资源" in scope_text
+    assert "需要使用资源素材时，建议优先考虑这些资源" in scope_text
+    assert "hero_illustration" in scope_text
+    assert "url" not in scope_text
+    assert "tags" not in scope_text
+    assert "不应进入上下文" not in scope_text
+
+
+async def test_project_suggested_reference_assets_tool_should_return_slim_items(
+    authenticated_client: AsyncClient,
+) -> None:
+    """项目建议引用资源工具应要求项目上下文，并返回不含 URL 和标签的精简字段。"""
+
+    workspace_id = await _create_workspace(authenticated_client, "AI 建议资源工具空间")
+    project_id = await _create_project(authenticated_client, workspace_id, "AI 建议资源工具项目")
+    asset_response = await authenticated_client.post(
+        f"/api/workspaces/{workspace_id}/assets/content",
+        json={
+            "asset_type": "mermaid",
+            "name": "process_flow",
+            "original_name": "process.mmd",
+            "description": "流程图素材",
+            "content": "flowchart TD\n  A[开始] --> B[结束]",
+            "tags": ["不应返回"],
+        },
+    )
+    assert asset_response.status_code == 200
+    save_response = await authenticated_client.put(
+        f"/api/projects/{project_id}/suggested-reference-assets",
+        json={"asset_ids": [asset_response.json()["id"]]},
+    )
+    assert save_response.status_code == 200
+
+    tool_item = _find_tool(build_resource_manager_tools(get_session_factory()), "list_project_suggested_reference_assets")
+    run_context = await _build_tool_run_context(
+        current=_build_auth_context(),
+        tool_scopes=RESOURCE_TOOL_READ_SCOPES,
+        workspace_id=workspace_id,
+        project_id=project_id,
+    )
+    result = await tool_item.entrypoint(run_context)
+
+    assert result["total"] == 1
+    assert result["items"][0]["name"] == "process_flow"
+    assert set(result["items"][0]) == {"id", "name", "original_name", "description", "asset_type", "content_editable"}
+
+    missing_project_context = await _build_tool_run_context(
+        current=_build_auth_context(),
+        tool_scopes=RESOURCE_TOOL_READ_SCOPES,
+        workspace_id=workspace_id,
+    )
+    try:
+        await tool_item.entrypoint(missing_project_context)
+    except AppException as error:
+        assert error.code == "AI_TOOL_SCOPE_REQUIRED"
+    else:  # pragma: no cover
+        raise AssertionError("缺少 project_id 时应拒绝调用项目建议资源工具。")
+
+
 async def test_agent_tool_dependencies_and_scope_summary_should_include_page_canvas_config() -> None:
     """工具依赖和当前范围摘要应包含真实画布和基础字号。"""
 

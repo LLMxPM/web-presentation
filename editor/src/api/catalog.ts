@@ -20,6 +20,7 @@ import type {
   ProjectMenuMode,
   ProjectRouteItemWrite,
   ProjectRouteTreeResponse,
+  ProjectSuggestedReferenceAssetsResponse,
   WorkspaceComponentType,
   WorkspaceComponentCurrentDependencies,
   WorkspaceComponentItem,
@@ -154,6 +155,23 @@ export async function updateProject(
   }>,
 ) {
   const { data } = await http.patch<ProjectItem>(`/projects/${id}`, payload)
+  return data
+}
+
+/** 读取项目建议引用内容资源。 */
+export async function getProjectSuggestedReferenceAssets(projectId: number) {
+  const { data } = await http.get<ProjectSuggestedReferenceAssetsResponse>(
+    `/projects/${projectId}/suggested-reference-assets`,
+  )
+  return data
+}
+
+/** 覆盖保存项目建议引用内容资源。 */
+export async function updateProjectSuggestedReferenceAssets(projectId: number, assetIds: number[]) {
+  const { data } = await http.put<ProjectSuggestedReferenceAssetsResponse>(
+    `/projects/${projectId}/suggested-reference-assets`,
+    { asset_ids: assetIds },
+  )
   return data
 }
 

@@ -242,6 +242,47 @@ async def test_project_build_snapshot_should_only_include_referenced_and_extra_a
 
 
 @pytest.mark.asyncio
+async def test_project_build_snapshot_should_not_include_suggested_reference_assets(
+    authenticated_client: AsyncClient,
+    monkeypatch,
+) -> None:
+    """项目建议引用资源只服务 AI 上下文，不应自动进入整包构建资源。"""
+
+    workspace_id, project_id = await create_active_project(authenticated_client)
+    await upload_build_asset(authenticated_client, workspace_id, "slider", asset_type="icon", file_name="slider.svg")
+    used_asset = await upload_build_asset(authenticated_client, workspace_id, "used_image")
+    suggested_asset = await upload_build_asset(authenticated_client, workspace_id, "suggested_only")
+    await create_routed_build_page(
+        authenticated_client,
+        workspace_id,
+        project_id,
+        '<template><AssetImage name="used_image" /></template>',
+    )
+    suggested_response = await authenticated_client.put(
+        f"/api/projects/{project_id}/suggested-reference-assets",
+        json={"asset_ids": [suggested_asset["id"]]},
+    )
+    assert suggested_response.status_code == 200
+
+    async def fake_run_project_build_job(job_id: int) -> None:  # pragma: no cover
+        return None
+
+    monkeypatch.setattr("app.api.routes.build_jobs.run_project_build_job", fake_run_project_build_job)
+    create_response = await authenticated_client.post(
+        f"/api/projects/{project_id}/build-jobs",
+        json={"base_url": "./"},
+    )
+    assert create_response.status_code == 200
+
+    async with get_session_factory()() as session:
+        release = await session.get(Release, create_response.json()["snapshot_release_id"])
+
+    assert release is not None
+    assert release.manifest["assets"]["used_image"] == used_asset["file_hash"]
+    assert "suggested_only" not in release.manifest["assets"]
+
+
+@pytest.mark.asyncio
 async def test_project_build_asset_summary_should_split_automatic_and_extra_assets(
     authenticated_client: AsyncClient,
 ) -> None:

@@ -17,6 +17,7 @@ from app.schemas.project import (
     normalize_project_build_extra_assets_config,
 )
 from app.services.project_config_service import ProjectConfigService
+from app.services.project_suggested_reference_asset_service import ProjectSuggestedReferenceAssetService
 from app.services.workspace_theme_service import WorkspaceThemeService
 from app.services.workspace_service import WorkspaceService
 
@@ -161,6 +162,7 @@ class ProjectService:
             if not await self.repository.workspace_exists(payload.workspace_id):
                 raise AppException(status_code=404, code="WORKSPACE_NOT_FOUND", detail="所属工作空间不存在。")
             await self.workspace_service.ensure_access(payload.workspace_id, user_id=operator_id)
+            await ProjectSuggestedReferenceAssetService(self.session).clear_project_assets(project_id, commit=False)
             project.workspace_id = payload.workspace_id
             if project.theme_key is not None:
                 project.theme_key = await self.workspace_theme_service.ensure_theme_key_exists(

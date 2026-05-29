@@ -42,6 +42,12 @@
             </template>
             样式
           </BaseButton>
+          <BaseButton variant="ghost" :disabled="!projectDetails" @click="openSuggestedReferenceAssetsDialog">
+            <template #icon>
+              <Image class="h-4 w-4" />
+            </template>
+            建议资源
+          </BaseButton>
           <div class="page-card-size-control" role="group" aria-label="预览卡片大小">
             <button
               v-for="option in pageCardSizeOptions"
@@ -200,6 +206,13 @@
       :workspace-id="workspaceId" :default-theme-key="workspaceQuery.data.value?.default_theme_key ?? null"
       :loading="presentationConfigSaving" @save="handlePresentationConfigSave" />
 
+    <ProjectSuggestedReferenceAssetsDialog
+      v-model="suggestedReferenceAssetsDialogVisible"
+      :project-id="projectDetails?.id ?? null"
+      :workspace-id="workspaceId"
+      @saved="handleProjectSuggestedReferenceAssetsSaved"
+    />
+
     <ProjectRouteConfigDialog v-model="routeConfigDialogVisible" :project="projectDetails" :loading="routeSaving"
       @save="handleRouteSave" />
 
@@ -223,6 +236,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/vue-query'
 import {
   ArrowLeft,
   Expand,
+  Image,
   Maximize2,
   Minimize2,
   Play,
@@ -272,6 +286,7 @@ import ProjectBuildDialog from '@/components/project/ProjectBuildDialog.vue'
 import ProjectIdentityDialog from '@/components/project/ProjectIdentityDialog.vue'
 import ProjectPresentationConfigDialog from '@/components/project/ProjectPresentationConfigDialog.vue'
 import ProjectRouteConfigDialog from '@/components/project/ProjectRouteConfigDialog.vue'
+import ProjectSuggestedReferenceAssetsDialog from '@/components/project/ProjectSuggestedReferenceAssetsDialog.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseDialog from '@/components/ui/BaseDialog.vue'
 import BaseInput from '@/components/ui/BaseInput.vue'
@@ -285,6 +300,7 @@ import type {
   ProjectMenuMode,
   ProjectRouteBinding,
   ProjectRouteItemWrite,
+  ProjectSuggestedReferenceAssetItem,
 } from '@/types/api'
 import { Message, createConfirm } from '@/utils/message'
 import { getDefaultEditorTheme } from '@/utils/monaco'
@@ -437,6 +453,7 @@ const projectBuildResourceIssueCode = ref<string | null>(null)
 const projectBuildResourceIssue = ref<ProjectBuildResourceIssueData | null>(null)
 const projectIdentityDialogVisible = ref(false)
 const presentationConfigDialogVisible = ref(false)
+const suggestedReferenceAssetsDialogVisible = ref(false)
 const routeConfigDialogVisible = ref(false)
 const archivedPagesDialogVisible = ref(false)
 const pageCopyDialogVisible = ref(false)
@@ -1187,10 +1204,26 @@ function openPresentationConfigDialog(): void {
 }
 
 /**
+ * 打开项目建议资源配置弹窗。
+ */
+function openSuggestedReferenceAssetsDialog(): void {
+  suggestedReferenceAssetsDialogVisible.value = true
+}
+
+/**
  * 打开项目路由配置弹窗。
  */
 function openRouteConfigDialog(): void {
   routeConfigDialogVisible.value = true
+}
+
+/**
+ * 项目建议资源保存后刷新相关缓存。
+ * @param items 最新建议资源列表
+ */
+async function handleProjectSuggestedReferenceAssetsSaved(items: ProjectSuggestedReferenceAssetItem[]): Promise<void> {
+  void items
+  await queryClient.invalidateQueries({ queryKey: ['project-suggested-reference-assets', projectId.value] })
 }
 
 /**
