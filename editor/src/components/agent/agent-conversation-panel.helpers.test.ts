@@ -81,7 +81,7 @@ describe('agent-conversation-panel helpers', () => {
     const beforeAssistantMessages = [
       message('user-1', 'user', '检查组件'),
       message('tool-1', 'tool', '{"success":true}', {
-        tool_name: 'preview_component_edits',
+        tool_name: 'apply_component_edits',
         tool_call_id: 'tool-call-before',
       }),
       message('assistant-1', 'assistant', '组件检查完成。'),
@@ -90,7 +90,7 @@ describe('agent-conversation-panel helpers', () => {
       message('user-1', 'user', '检查组件'),
       message('assistant-1', 'assistant', '组件检查完成。'),
       message('tool-1', 'tool', '{"success":true}', {
-        tool_name: 'preview_component_edits',
+        tool_name: 'apply_component_edits',
         tool_call_id: 'tool-call-after',
       }),
     ]
@@ -106,8 +106,8 @@ describe('agent-conversation-panel helpers', () => {
 
     const beforeAssistant = beforeItems.find(item => item.message.id === 'assistant-1')
     const afterAssistant = afterItems.find(item => item.message.id === 'assistant-1')
-    expect(beforeAssistant?.embeddedTools.map(tool => tool.toolName)).toEqual(['preview_component_edits'])
-    expect(afterAssistant?.embeddedTools.map(tool => tool.toolName)).toEqual(['preview_component_edits'])
+    expect(beforeAssistant?.embeddedTools.map(tool => tool.toolName)).toEqual(['apply_component_edits'])
+    expect(afterAssistant?.embeddedTools.map(tool => tool.toolName)).toEqual(['apply_component_edits'])
   })
 
   it('历史工具消息缺少 tool_call_id 时仍应保留输入输出并挂回助手消息', () => {

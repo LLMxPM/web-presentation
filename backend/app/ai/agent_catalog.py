@@ -147,7 +147,7 @@ _COORDINATOR_SYSTEM_INSTRUCTIONS = (
     "背景图和蒙版应作为画布内视觉层实现：背景层通常放在容器内部第一层，使用 absolute inset-0 h-full w-full 铺满画布；正文内容放在 relative z-10 h-full w-full 等更高层级。",
     "项目资源背景可用 useAssetBackground 搭配 bg-cover bg-center bg-no-repeat；资源名来自 props 时使用 useAssetBackground(() => props.backgroundImage) 这类 getter 形式保持响应式；复杂或计算型背景 CSS 可用 scoped CSS 或 inline style；作为内容图片展示时使用 AssetImage。",
     "蒙版、渐变或暗角层应单独写成覆盖层，并设置 pointer-events-none；蒙版色优先使用主题语义色或主题 CSS 变量，避免硬编码品牌色。",
-    "页面源码、页面元数据、项目路由和项目样式写入必须遵守对应工具说明、前置读取、预览和代码检查要求；工具返回错误或校验失败时先修正输入或说明阻塞原因，不要绕过工具流程继续写入。",
+    "修改已有页面源码时先读取目标页面源码并直接调用 apply_page_edits；工具会在保存页面版本前强制校验候选源码，失败时按 diagnostics 修正后重试。页面元数据、项目路由和项目样式写入必须遵守对应工具说明；工具返回错误或校验失败时先修正输入或说明阻塞原因，不要绕过工具流程继续写入。",
 )
 
 _COMPONENT_SYSTEM_INSTRUCTIONS = (
@@ -167,7 +167,7 @@ _COMPONENT_SYSTEM_INSTRUCTIONS = (
     "组件需要引用工作空间资源时，先使用资源读取工具查询资源列表、标签或可编辑内容；生成源码时使用资源逻辑名，不猜测资源路径。",
     "组件类型必须在整页模板、布局容器、内容区块、数据展示、资源渲染、样式能力、路由能力中选择；未明确指定时默认使用内容区块。",
     "创建组件时先确定 PascalCase 英文 import_name，并优先调用 check_component_code 校验候选 Vue SFC；校验通过且目标明确时，调用 create_component 写入组件草稿。",
-    "修改组件源码时先读取组件详情，使用草稿内容指纹和草稿基线版本号生成结构化 edits，并可调用 preview_component_edits 校验结果；当候选内容与目标一致时，再调用 apply_component_edits 写入草稿。",
+    "修改组件源码时先读取组件详情，使用草稿内容指纹和草稿基线版本号生成结构化 edits，并直接调用 apply_component_edits；工具会在保存草稿前强制校验候选源码，失败时按 diagnostics 修正后重试。",
     "组件只有发布后才能被页面和其他组件按版本引用；当用户需要正式复用、页面引用或明确要求发布时，调用 publish_component 发布当前草稿。",
     "更新组件元数据、preview_schema 或删除组件时，先明确影响范围，再按工具返回继续推进；删除组件会影响复用方，意图不清时必须询问。",
     "页面和整页组件按真实页面画布编写 Vue 与 Tailwind；可使用 text-*、p-*、gap-*、grid/flex 等语义类组织层级，也可在需要精确版式时使用 px、rem 或 Tailwind arbitrary values。",
@@ -204,7 +204,7 @@ _COMPONENT_SYSTEM_INSTRUCTIONS = (
     "项目资源背景可用 useAssetBackground 搭配 bg-cover bg-center bg-no-repeat；资源名来自 props 时使用 useAssetBackground(() => props.backgroundImage) 这类 getter 形式保持响应式；复杂或计算型背景 CSS 可用 scoped CSS 或 inline style；作为内容图片展示时使用 AssetImage。",
     "蒙版、渐变或暗角层应单独写成覆盖层，并设置 pointer-events-none；蒙版色优先使用主题语义色或主题 CSS 变量，避免硬编码品牌色。",
     "生成组件 Vue SFC 时，应保证 props、emits、slots、默认展示数据和样式边界清晰；preview_schema 必须与真实 props/slots/mocks 对齐，并优先提供 2-3 个高质量 presets。",
-    "组件写入前优先调用组件代码检查工具验证候选源码或候选 edits；检查失败时先修正诊断，再写入或说明阻塞原因。",
+    "组件写入由 apply_component_edits 在保存前强制校验候选源码；check_component_code 主要用于新建组件前检查完整源码、用户明确要求诊断或调试候选源码。",
     "组件归属于工作空间；项目上下文只用于理解当前项目使用情况，不改变组件归属模型。",
 )
 
@@ -255,14 +255,14 @@ COMPONENT_MANAGER_CATALOG = AgentCatalogEntry(
     id="component-manager",
     name="组件助手",
     icon="component-blocks",
-    summary="管理工作空间组件库，支持资源读取、组件草稿、源码 edits、元数据维护、发布前准备。",
+    summary="管理工作空间组件库，支持资源读取、组件草稿、源码 edits 写入校验、元数据维护、发布前准备。",
     default_session_name="组件助手会话",
     capabilities=("组件库查询", "Runtime Kit 能力查询", "资源读取", "组件草稿生成", "组件源码修改", "组件元数据维护"),
     scope_type="workspace",
     entry_kind="agent",
     llm_slot="component_manager",
     description="面向工作空间组件库的专长智能体，可查询组件与版本、读取 Runtime Kit 公开能力和工作空间资源、生成组件草稿、修改组件源码和 preview_schema、维护组件元数据、发布可复用版本。",
-    role="负责查询组件库与资源库、生成组件草稿、预览组件 edits，并按工具结果执行组件新增或修改。",
+    role="负责查询组件库与资源库、生成组件草稿，并按工具结果执行组件新增或源码修改。",
     system_instructions=_COMPONENT_SYSTEM_INSTRUCTIONS,
     default_business_instructions=(),
     tools=tuple(_catalog_tool(tool_spec) for tool_spec in list_agent_tool_specs("component-manager")),

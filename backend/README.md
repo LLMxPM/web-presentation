@@ -217,10 +217,10 @@ Backend 现已内嵌基于 Agno 的智能体运行时，但不挂载 AgentOS rou
 
 - 所有智能体：内置不可关闭的 `ask_user`，用于一次提出一个或多个结构化单选问题；Editor 在输入区覆盖式展示，支持逐题回答、前后切换、预设选项或自定义回答，不暴露 `get_user_input` 自由字段工具
 - `agent-coordinator`：按用户工具配置直接启用内容读取、项目描述/样式配置读取、组件读取、资源读取、页面写入、页面截图与项目写入工具；组件读取仅包含 `list_components`、`get_component_detail`，资源读取包含 `list_resource_assets`、`get_resource_asset_content`、`list_resource_tags`；项目样式配置写入工具 `update_project_style_config` 会通过 Agno 用户确认暂停执行；组件/资源维护能力通过 Team 成员工具执行，成员工具事件会带 `member_agent_id`、`member_agent_name`、`member_run_id` 供 Editor 展示来源
-- `component-manager`：`list_components`、`get_component_detail`、`list_component_versions`、`get_component_dependencies`、`list_runtime_kit_capabilities`、`get_runtime_kit_capability`、`list_resource_assets`、`get_resource_asset_content`、`list_resource_tags`、`check_component_code`、`create_component`、`preview_component_edits`、`apply_component_edits`、`update_component_metadata`、`publish_component`、`delete_component`
+- `component-manager`：`list_components`、`get_component_detail`、`list_component_versions`、`get_component_dependencies`、`list_runtime_kit_capabilities`、`get_runtime_kit_capability`、`list_resource_assets`、`get_resource_asset_content`、`list_resource_tags`、`check_component_code`、`create_component`、`apply_component_edits`、`update_component_metadata`、`publish_component`、`delete_component`
 - `resource-manager`：`list_resource_assets`、`get_resource_asset_content`、`list_resource_tags`、`create_resource_asset`、`preview_resource_content_diff`、`apply_resource_content_diff`、`update_resource_asset_metadata`、`copy_resource_asset`、`archive_resource_asset`
 
-其中项目样式配置写入、路由整树覆盖、路由节点移除与组件删除通过 Agno 确认暂停执行；结构化提问同样通过 Agno paused run 恢复；`apply_page_edits` 维持当前直接写回行为，调用时必须显式传入目标 `page_id`。页面写入使用 `base_version_no` 做乐观锁，组件写入使用 `base_draft_hash` 与 `base_published_version_no` 锁定当前草稿。
+其中项目样式配置写入、路由整树覆盖、路由节点移除与组件删除通过 Agno 确认暂停执行；结构化提问同样通过 Agno paused run 恢复；`apply_page_edits` 和 `apply_component_edits` 在写入前强制执行 Runtime validate，校验失败不落库。页面写入调用时必须显式传入目标 `page_id`，并使用 `base_version_no` 做乐观锁；组件写入使用 `base_draft_hash` 与 `base_published_version_no` 锁定当前草稿。
 
 用户级智能体配置由内置目录和用户配置合成：
 

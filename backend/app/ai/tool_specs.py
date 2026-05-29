@@ -462,7 +462,6 @@ _COMPONENT_LIBRARY_TOOL_KEYS = (
     'list_resource_tags',
     'check_component_code',
     'create_component',
-    'preview_component_edits',
     'apply_component_edits',
     'update_component_metadata',
     'publish_component',
@@ -631,8 +630,9 @@ _COORDINATOR_TOOL_SPECS = (
         '内容与项目',
         '基于 Runtime 原生预览/构建链路检查页面当前源码、完整候选源码、新增页面未保存源码或 edits 应用后的候选源码，不修改页面。',
         default_instructions=(
-            '用于页面写入前验证当前源码、完整候选源码或 edits 应用后的候选源码；新增页面尚无 page_id 时，'
-            '在项目上下文中传入完整 content 即可检查未保存页面源码。'
+            '主要用于新建页面完整 content 检查、用户明确要求只读诊断，或排查当前页面 Runtime 编译问题；'
+            '已有页面 edits 修改的默认路径是读取源码后直接调用 apply_page_edits，由 apply_page_edits 保存前内置校验。'
+            '新增页面尚无 page_id 时，在项目上下文中传入完整 content 即可检查未保存页面源码。'
             'content 和 edits 只能二选一；使用 edits 检查候选修改时，edits 必须传真实 JSON 数组，数组元素必须是对象，'
             '禁止把 edits 序列化成字符串、包在引号中或传 JSON.stringify 结果。正确示例：'
             '{"edits":[{"type":"replace_exact","old_text":"...","new_text":"..."}]}。'
@@ -668,8 +668,8 @@ _COORDINATOR_TOOL_SPECS = (
             'edits 使用结构化对象数组，每个对象必须带 type：type="replace_exact" 传 old_text/new_text，'
             'type="insert_after" 传 anchor_text/new_text，type="rewrite_file" 传完整 content。'
             'old_text 和 anchor_text 必须来自 get_page_content 返回的源码区块，并在当前源码中唯一命中。涉及 Runtime Kit、工作空间组件或资源 import 时，'
-            '必须使用工具返回的 import_path，不要猜测路径。写入前优先调用 check_page_code 检查候选源码或候选 edits；'
-            '检查失败时先修正诊断。'
+            '必须使用工具返回的 import_path，不要猜测路径。该工具会在保存前强制执行 Runtime validate；'
+            'validate 失败时不会保存页面版本，并返回 diagnostics、canonical_diff 和 edits_applied。根据 diagnostics 修正后重新调用本工具。'
         ),
         risk_level='write',
         response_example={'success': True,
@@ -1031,7 +1031,9 @@ _COMPONENT_MANAGER_TOOL_SPECS = (
         '组件库',
         '基于 Runtime 原生组件预览链路检查组件当前草稿、完整候选源码或 edits 应用后的候选源码，不修改组件。',
         default_instructions=(
-            '用于组件写入前验证当前草稿、完整候选源码或 edits 应用后的候选源码。component_type 仅为兼容创建前校验时的分类传参，'
+            '主要用于新建组件完整 content 与 preview_schema 检查、用户明确要求只读诊断，或调试完整候选源码；'
+            '已有组件 edits 修改的默认路径是读取组件详情后直接调用 apply_component_edits，由 apply_component_edits 保存前内置校验。'
+            'component_type 仅为兼容创建前校验时的分类传参，'
             '不参与检查、不落库；真正组件类型由 create_component 或元数据更新工具决定。preview_schema 可传 JSON 对象字符串，'
             '也可传 JSON 对象；工具会在检查前归一化为对象字符串。该工具不落库；success=false 时根据 diagnostics 修正 Vue、'
             'TypeScript、import、preview_schema 相关问题，遇到动态资源名诊断时，将资源名改为字符串字面量，'
@@ -1057,7 +1059,6 @@ _COMPONENT_MANAGER_TOOL_SPECS = (
             '创建组件前先确认组件名称、PascalCase import_name、component_type、组件说明、源码内容和是否需要 preview_schema；'
             'component_type 未明确指定时默认使用内容区块。'
             'content 必须是非空、可运行的 Vue SFC；创建前优先调用 check_component_code 检查完整候选源码和 preview_schema。'
-            '不要用 preview_component_edits 校验新建组件，因为新建前尚无 component_id。'
             'preview_schema 必须是 JSON 对象字符串或 JSON 对象，字段名使用 snake_case 入参 preview_schema；'
             '不要写成 Vue 代码里的 previewSchema 导出。schema 应与真实 props、slots 和 mock 数据保持一致，'
             '常用结构为 props、slots、mocks、presets。props 字段支持 string、textarea、number、boolean、select、json 类型；'
@@ -1073,26 +1074,6 @@ _COMPONENT_MANAGER_TOOL_SPECS = (
     ),
 
     _tool(
-        'preview_component_edits',
-        '预览组件 Edits',
-        'component_library',
-        '组件库',
-        '预览指定组件应用结构化 edits 后的源码内容。',
-        default_instructions=(
-            '仅在用户明确要求修改已有组件时使用；新建组件不能使用 preview_component_edits，'
-            '因为尚无 component_id。调用前必须已经读取组件详情；base_draft_hash 使用草稿内容指纹，'
-            'base_published_version_no 使用草稿基线版本号。edits 使用 replace_exact、insert_after 或 rewrite_file，'
-            'old_text 和 anchor_text 必须来自组件详情源码区块并唯一命中。写入前优先调用 preview_component_edits 和 check_component_code 验证候选结果。'
-        ),
-        risk_level='write',
-        response_example={'component_id': 12,
-         'component_code': 'cmp_hero_card',
-         'edits_applied': 1,
-         'canonical_diff': '--- current\n+++ proposed\n@@ ...',
-         'message': '组件 Edits 预览完成。'},
-    ),
-
-    _tool(
         'apply_component_edits',
         '应用组件 Edits',
         'component_library',
@@ -1102,7 +1083,8 @@ _COMPONENT_MANAGER_TOOL_SPECS = (
             '仅在用户明确要求修改已有组件时使用；新建组件不能使用 apply_component_edits，'
             '因为尚无 component_id。调用前必须已经读取组件详情；base_draft_hash 使用草稿内容指纹，'
             'base_published_version_no 使用草稿基线版本号。edits 使用 replace_exact、insert_after 或 rewrite_file，'
-            'old_text 和 anchor_text 必须来自组件详情源码区块并唯一命中。写入前优先调用 preview_component_edits 和 check_component_code 验证候选结果。'
+            'old_text 和 anchor_text 必须来自组件详情源码区块并唯一命中。该工具会在保存草稿前强制执行 Runtime validate；'
+            'validate 失败时不会保存组件草稿，并返回 diagnostics、canonical_diff 和 edits_applied。根据 diagnostics 修正后重新调用本工具。'
         ),
         risk_level='write',
         response_example={'success': True,
@@ -1500,10 +1482,10 @@ _COMPONENT_MANAGER_GROUP_SPECS = (
     _group(
         "component_write",
         "组件写入",
-        "创建组件草稿、预览组件 Edits、发布组件，并执行组件写入或删除。",
-        ("create_component", "preview_component_edits", "apply_component_edits", "update_component_metadata", "publish_component", "delete_component"),
+        "创建组件草稿、应用组件 Edits、发布组件，并执行组件元数据写入或删除。",
+        ("create_component", "apply_component_edits", "update_component_metadata", "publish_component", "delete_component"),
         required_context_fields=("workspace_id",),
-        build_tools=lambda session_factory: _filter_tools(build_component_manager_tools(session_factory), ("create_component", "preview_component_edits", "apply_component_edits", "update_component_metadata", "publish_component", "delete_component")),
+        build_tools=lambda session_factory: _filter_tools(build_component_manager_tools(session_factory), ("create_component", "apply_component_edits", "update_component_metadata", "publish_component", "delete_component")),
     ),
 )
 

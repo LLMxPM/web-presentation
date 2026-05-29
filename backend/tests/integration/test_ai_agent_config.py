@@ -307,9 +307,12 @@ async def test_agent_config_api_should_manage_prompt_and_tool_overrides(authenti
     page_diff_instructions = guide_tool["agent_guide"]["instructions"] or ""
     assert "读取目标页面源码" in page_diff_instructions
     assert "每个对象必须带 type" in page_diff_instructions
-    assert "check_page_code" in page_diff_instructions
+    assert "保存前强制执行 Runtime validate" in page_diff_instructions
+    assert "validate 失败时不会保存页面版本" in page_diff_instructions
     check_page_tool = next(tool for tool in content_project_group["tools"] if tool["key"] == "check_page_code")
     check_page_instructions = check_page_tool["agent_guide"]["instructions"] or ""
+    assert "新建页面完整 content 检查" in check_page_instructions
+    assert "默认路径是读取源码后直接调用 apply_page_edits" in check_page_instructions
     assert "content 和 edits 只能二选一" in check_page_instructions
     assert "edits 必须传真实 JSON 数组" in check_page_instructions
     assert "禁止把 edits 序列化成字符串" in check_page_instructions
@@ -470,6 +473,7 @@ async def test_agent_config_api_should_manage_prompt_and_tool_overrides(authenti
     assert "@runtime-kit/public/components/primitives/Icon.v1.vue" in metadata_instructions
     component_tool_keys = {tool["key"] for tool in component_library_group["tools"]}
     assert "create_component_draft" not in component_tool_keys
+    assert "preview_component_edits" not in component_tool_keys
     assert "publish_component" in component_tool_keys
     assert {"list_resource_assets", "get_resource_asset_content", "list_resource_tags"} <= component_tool_keys
     component_resource_tool = next(tool for tool in component_library_group["tools"] if tool["key"] == "list_resource_assets")
@@ -482,7 +486,7 @@ async def test_agent_config_api_should_manage_prompt_and_tool_overrides(authenti
     assert "默认使用内容区块" in create_component_instructions
     assert "content 必须是非空、可运行的 Vue SFC" in create_component_instructions
     assert "check_component_code" in create_component_instructions
-    assert "不要用 preview_component_edits 校验新建组件" in create_component_instructions
+    assert "preview_component_edits" not in create_component_instructions
     assert "props" in create_component_instructions
     assert "slots" in create_component_instructions
     assert "presets" in create_component_instructions
@@ -502,6 +506,15 @@ async def test_agent_config_api_should_manage_prompt_and_tool_overrides(authenti
     publish_component_instructions = publish_component_tool["agent_guide"]["instructions"] or ""
     assert "不可变正式版本" in publish_component_instructions
     assert "@workspace-components/<component_code>/v/<version_no>" in publish_component_instructions
+    check_component_tool = next(tool for tool in component_library_group["tools"] if tool["key"] == "check_component_code")
+    check_component_instructions = check_component_tool["agent_guide"]["instructions"] or ""
+    assert "新建组件完整 content 与 preview_schema 检查" in check_component_instructions
+    assert "默认路径是读取组件详情后直接调用 apply_component_edits" in check_component_instructions
+    apply_component_tool = next(tool for tool in component_library_group["tools"] if tool["key"] == "apply_component_edits")
+    apply_component_instructions = apply_component_tool["agent_guide"]["instructions"] or ""
+    assert "保存草稿前强制执行 Runtime validate" in apply_component_instructions
+    assert "validate 失败时不会保存组件草稿" in apply_component_instructions
+    assert "preview_component_edits" not in apply_component_instructions
     resource_library_group = next(
         group for group in configs[RESOURCE_MANAGER_AGENT_ID]["tool_groups"] if group["key"] == "resource_library"
     )
@@ -699,7 +712,8 @@ def test_agent_coordinator_system_message_should_use_main_executor_framework() -
     assert "不要为了形式化协作而委派" in content
     assert "<team_members>" in content
     assert "Tools: ask_user, list_components" in content
-    assert "页面源码、页面元数据、项目路由和项目样式写入必须遵守对应工具说明" in content
+    assert "修改已有页面源码时先读取目标页面源码并直接调用 apply_page_edits" in content
+    assert "工具会在保存页面版本前强制校验候选源码" in content
     assert "<additional_context>" in content
     assert "当前模型不支持图片输入" in content
     assert "页面截图视觉工具不会进入本轮工具列表" in content

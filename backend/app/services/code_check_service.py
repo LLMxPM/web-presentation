@@ -31,6 +31,34 @@ class CandidateSource:
     canonical_diff: str | None = None
 
 
+def build_code_check_failed_result(
+    *,
+    code: str,
+    message: str,
+    source: str = "backend",
+    canonical_diff: str | None = None,
+) -> dict[str, object]:
+    """构造统一代码检查失败响应，供只读检查和 apply 内置校验复用。"""
+
+    return {
+        "success": False,
+        "status": "failed",
+        "artifact_id": None,
+        "summary": message,
+        "message": message,
+        "patch_repaired": False,
+        "canonical_diff": canonical_diff,
+        "diagnostics": [
+            {
+                "severity": "error",
+                "source": source,
+                "code": code,
+                "message": message,
+            }
+        ],
+    }
+
+
 class CodeCheckService:
     """页面/组件代码检查服务。"""
 
@@ -300,19 +328,4 @@ class CodeCheckService:
     def _failed_result(*, code: str, message: str, source: str = "backend") -> dict[str, object]:
         """构造统一失败响应。"""
 
-        return {
-            "success": False,
-            "status": "failed",
-            "artifact_id": None,
-            "summary": message,
-            "patch_repaired": False,
-            "canonical_diff": None,
-            "diagnostics": [
-                {
-                    "severity": "error",
-                    "source": source,
-                    "code": code,
-                    "message": message,
-                }
-            ],
-        }
+        return build_code_check_failed_result(code=code, message=message, source=source)

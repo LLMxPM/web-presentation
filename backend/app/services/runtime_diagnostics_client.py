@@ -32,6 +32,15 @@ class RuntimeDiagnosticsClient:
     ) -> dict[str, object]:
         """向 Runtime 派发 artifact 代码检查任务。"""
 
+        if self.settings.ai_test_mode == "mock":
+            return {
+                "success": True,
+                "status": "passed",
+                "artifact_id": artifact_id,
+                "summary": "代码检查通过。",
+                "diagnostics": [],
+            }
+
         start_time = time.perf_counter()
         logger.info(
             "开始派发 Runtime 代码诊断。",

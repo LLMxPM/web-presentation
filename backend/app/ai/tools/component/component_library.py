@@ -45,6 +45,7 @@ from app.schemas.component import (
     WorkspaceComponentPublishRequest,
     WorkspaceComponentUpdateRequest,
 )
+from app.services.code_check_service import CodeCheckService, build_code_check_failed_result
 from app.services.workspace_component_service import WorkspaceComponentService
 
 
@@ -63,7 +64,6 @@ def build_component_manager_tools(session_factory: async_sessionmaker[AsyncSessi
         build_list_resource_tags_tool(session_factory),
         build_check_component_code_tool(session_factory),
         build_create_component_tool(session_factory),
-        build_preview_component_edits_tool(session_factory),
         build_apply_component_edits_tool(session_factory),
         build_update_component_metadata_tool(session_factory),
         build_publish_component_tool(session_factory),
@@ -315,49 +315,6 @@ def build_create_component_tool(session_factory: async_sessionmaker[AsyncSession
     return create_component
 
 
-def build_preview_component_edits_tool(session_factory: async_sessionmaker[AsyncSession]) -> Any:
-    """构建组件源码 Edits 预览工具，不写入数据库。"""
-
-    @tool(show_result=False)
-    async def preview_component_edits(
-        run_context: RunContext,
-        component_id: int,
-        edits: list[SourceEditInput],
-        base_draft_hash: str,
-        base_published_version_no: int,
-        change_note: str | None = None,
-    ) -> dict[str, Any]:
-        """预览指定组件应用结构化 edits 后的源码内容。"""
-
-        dependencies, _ = await resolve_tool_context(session_factory,
-            run_context,
-            required_scopes=COMPONENT_TOOL_READ_SCOPES,
-            required_dependency_fields=("workspace_id",),
-        )
-        async with session_factory() as session:
-            component = await WorkspaceComponentService(session).get(int(component_id))
-            _ensure_component_workspace(component.workspace_id, int(dependencies["workspace_id"]))
-            _ensure_component_edit_lock(
-                component,
-                base_draft_hash=base_draft_hash,
-                base_published_version_no=base_published_version_no,
-            )
-            edit_result = apply_source_edits(component.content, edits)
-            return {
-                "component_id": component.id,
-                "component_code": component.code,
-                "change_note": change_note,
-                "proposed_content": edit_result.next_content,
-                "canonical_diff": edit_result.canonical_diff,
-                "edits_applied": edit_result.applied_edit_count,
-                "draft_hash": calculate_source_hash(component.content),
-                "base_published_version_no": component.draft_base_version_no,
-                "message": "组件 Edits 预览完成。",
-            }
-
-    return preview_component_edits
-
-
 def build_apply_component_edits_tool(session_factory: async_sessionmaker[AsyncSession]) -> Any:
     """构建应用组件源码 Edits 的工具。"""
 
@@ -387,7 +344,26 @@ def build_apply_component_edits_tool(session_factory: async_sessionmaker[AsyncSe
                 base_draft_hash=base_draft_hash,
                 base_published_version_no=base_published_version_no,
             )
-            edit_result = apply_source_edits(component.content, edits)
+            try:
+                edit_result = apply_source_edits(component.content, edits)
+            except AppException as exc:
+                return build_code_check_failed_result(code=exc.code, message=exc.detail, source="edits")
+            validation_result = await CodeCheckService(session).check_component_code(
+                component_id=component.id,
+                workspace_id=component.workspace_id,
+                user_id=operator_id,
+                content=edit_result.next_content,
+            )
+            validation_result = _with_apply_validation_metadata(
+                validation_result,
+                canonical_diff=edit_result.canonical_diff,
+                edits_applied=edit_result.applied_edit_count,
+                message="组件代码校验失败，未保存草稿。",
+            )
+            if not _is_validation_passed(validation_result):
+                validation_result["component_id"] = component.id
+                validation_result["component_code"] = component.code
+                return validation_result
             updated = await service.update(
                 component.id,
                 WorkspaceComponentUpdateRequest(
@@ -410,6 +386,31 @@ def build_apply_component_edits_tool(session_factory: async_sessionmaker[AsyncSe
             }
 
     return apply_component_edits
+
+
+def _is_validation_passed(result: dict[str, Any]) -> bool:
+    """判断 Runtime 代码检查结果是否通过。"""
+
+    return bool(result.get("success") is True or result.get("status") == "passed")
+
+
+def _with_apply_validation_metadata(
+    result: dict[str, Any],
+    *,
+    canonical_diff: str,
+    edits_applied: int,
+    message: str,
+) -> dict[str, Any]:
+    """为组件 apply 内置校验结果补齐 edits 元数据和失败提示。"""
+
+    enriched = dict(result)
+    enriched["canonical_diff"] = enriched.get("canonical_diff") or canonical_diff
+    enriched["edits_applied"] = edits_applied
+    if not _is_validation_passed(enriched):
+        enriched["success"] = False
+        enriched["status"] = "failed"
+        enriched["message"] = message
+    return enriched
 
 
 def build_update_component_metadata_tool(session_factory: async_sessionmaker[AsyncSession]) -> Any:

@@ -12,6 +12,7 @@ from app.ai.auth_tokens import PAGE_TOOL_WRITE_SCOPES, extract_user_id
 from app.ai.tools.shared import SourceEditInput, apply_source_edits, resolve_tool_context
 from app.core.exceptions import AppException
 from app.schemas.page import PageItem, PageUpdateRequest
+from app.services.code_check_service import CodeCheckService, build_code_check_failed_result
 from app.services.page_service import PageService
 
 
@@ -42,7 +43,24 @@ def build_apply_page_edits_tool(session_factory: async_sessionmaker[AsyncSession
             current_page = await page_service.get(target_page_id, user_id=operator_id)
             _ensure_page_in_context(current_page, dependencies)
             _ensure_page_base_version(current_page.current_version_no, base_version_no)
-            edit_result = apply_source_edits(current_page.page_content, edits)
+            try:
+                edit_result = apply_source_edits(current_page.page_content, edits)
+            except AppException as exc:
+                return build_code_check_failed_result(code=exc.code, message=exc.detail, source="edits")
+            validation_result = await CodeCheckService(session).check_page_code(
+                page_id=target_page_id,
+                workspace_id=current_page.workspace_id,
+                user_id=operator_id,
+                content=edit_result.next_content,
+            )
+            validation_result = _with_apply_validation_metadata(
+                validation_result,
+                canonical_diff=edit_result.canonical_diff,
+                edits_applied=edit_result.applied_edit_count,
+                message="页面代码校验失败，未保存页面版本。",
+            )
+            if not _is_validation_passed(validation_result):
+                return validation_result
             updated_page = await page_service.update(
                 target_page_id,
                 PageUpdateRequest(
@@ -62,6 +80,31 @@ def build_apply_page_edits_tool(session_factory: async_sessionmaker[AsyncSession
             }
 
     return apply_page_edits
+
+
+def _is_validation_passed(result: dict[str, Any]) -> bool:
+    """判断 Runtime 代码检查结果是否通过。"""
+
+    return bool(result.get("success") is True or result.get("status") == "passed")
+
+
+def _with_apply_validation_metadata(
+    result: dict[str, Any],
+    *,
+    canonical_diff: str,
+    edits_applied: int,
+    message: str,
+) -> dict[str, Any]:
+    """为 apply 内置校验结果补齐 edits 元数据和失败提示。"""
+
+    enriched = dict(result)
+    enriched["canonical_diff"] = enriched.get("canonical_diff") or canonical_diff
+    enriched["edits_applied"] = edits_applied
+    if not _is_validation_passed(enriched):
+        enriched["success"] = False
+        enriched["status"] = "failed"
+        enriched["message"] = message
+    return enriched
 
 
 def _ensure_page_in_context(page_item: PageItem, dependencies: dict[str, Any]) -> None:
