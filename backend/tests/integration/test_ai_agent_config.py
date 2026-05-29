@@ -140,7 +140,8 @@ async def test_agent_config_api_should_manage_prompt_and_tool_overrides(authenti
     assert "relative z-10 h-full w-full" in coordinator_prompt
     assert "useAssetBackground" in coordinator_prompt
     assert "bg-cover bg-center bg-no-repeat" in coordinator_prompt
-    assert "AssetBackground" in coordinator_prompt
+    assert "Runtime Kit 的 AssetBackground" not in coordinator_prompt
+    assert "也可以用 AssetBackground" not in coordinator_prompt
     assert "useAssetBackground(() => props.backgroundImage)" in coordinator_prompt
     assert "pointer-events-none" in coordinator_prompt
     assert "--tw-color-text-primary" in coordinator_prompt
@@ -221,7 +222,8 @@ async def test_agent_config_api_should_manage_prompt_and_tool_overrides(authenti
     assert "relative z-10 h-full w-full" in component_prompt
     assert "useAssetBackground" in component_prompt
     assert "bg-cover bg-center bg-no-repeat" in component_prompt
-    assert "AssetBackground" in component_prompt
+    assert "Runtime Kit 的 AssetBackground" not in component_prompt
+    assert "也可以用 AssetBackground" not in component_prompt
     assert "useAssetBackground(() => props.backgroundImage)" in component_prompt
     assert "pointer-events-none" in component_prompt
     assert "--tw-color-text-primary" in component_prompt
@@ -259,7 +261,8 @@ async def test_agent_config_api_should_manage_prompt_and_tool_overrides(authenti
     assert "computed、条件分支或普通函数" in resource_prompt
     assert "absolute inset-0 h-full w-full" in resource_prompt
     assert "bg-cover bg-center bg-no-repeat" in resource_prompt
-    assert "AssetBackground" in resource_prompt
+    assert "Runtime Kit 的 AssetBackground" not in resource_prompt
+    assert "也可以用 AssetBackground" not in resource_prompt
     assert "backgroundSize: 'cover'" in resource_prompt
     assert "AssetImage" in resource_prompt
     assert "pointer-events-none" in resource_prompt

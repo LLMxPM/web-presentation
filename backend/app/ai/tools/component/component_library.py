@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
 from typing import Any
 
 from agno.run import RunContext
@@ -656,8 +657,40 @@ def _dump_runtime_kit_capability_detail(item: dict[str, Any]) -> dict[str, Any]:
         "returns": item["returns"],
         "return_example": item["return_example"],
         "constraints": item["constraints"],
-        "preview_schema": item["preview_schema"],
+        "preview_schema": _filter_agent_runtime_kit_preview_schema(item["preview_schema"]),
         "preview_options": item["preview_options"],
         "audiences": item["audiences"],
         "message": "该能力只能通过公开 import_path 在页面或组件源码中引用，不能作为后端工具调用。",
     }
+
+
+def _filter_agent_runtime_kit_preview_schema(value: dict[str, Any] | None) -> dict[str, Any] | None:
+    """过滤不应暴露给 Agent 的 preview_schema 字段。"""
+
+    if not isinstance(value, dict):
+        return value
+
+    schema = deepcopy(value)
+    props = schema.get("props")
+    hidden_prop_names: set[str] = set()
+    if isinstance(props, dict):
+        filtered_props: dict[str, Any] = {}
+        for prop_name, prop_schema in props.items():
+            if isinstance(prop_schema, dict) and prop_schema.get("agent_visible") is False:
+                hidden_prop_names.add(str(prop_name))
+                continue
+            if isinstance(prop_schema, dict):
+                prop_schema.pop("agent_visible", None)
+            filtered_props[str(prop_name)] = prop_schema
+        schema["props"] = filtered_props
+
+    presets = schema.get("presets")
+    if hidden_prop_names and isinstance(presets, list):
+        for preset in presets:
+            if not isinstance(preset, dict):
+                continue
+            preset_props = preset.get("props")
+            if isinstance(preset_props, dict):
+                for prop_name in hidden_prop_names:
+                    preset_props.pop(prop_name, None)
+    return schema

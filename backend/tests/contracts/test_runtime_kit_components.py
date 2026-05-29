@@ -19,6 +19,19 @@ async def test_runtime_kit_component_capability_list_should_expose_enabled_compo
 ) -> None:
     """Runtime Kit 能力目录应支持 kind/previewable 筛选并包含 doc-only 能力。"""
 
+    asset_image_class = "w-full h-64 min-h-40 rounded-lg border border-border p-0 bg-transparent overflow-hidden"
+    hidden_surface_props = {
+        "width",
+        "height",
+        "minHeight",
+        "backgroundColor",
+        "showBorder",
+        "borderRadius",
+        "padding",
+        "textColor",
+        "highlightColor",
+    }
+
     response = await authenticated_client.get("/api/runtime-kit/components")
     assert response.status_code == 200
     payload = response.json()
@@ -45,10 +58,11 @@ async def test_runtime_kit_component_capability_list_should_expose_enabled_compo
     assert all(isinstance(item["preview_schema"], dict) and item["preview_schema"] for item in previewable_items)
     asset_image_item = next(item for item in previewable_items if item["name"] == "AssetImage.v1")
     assert asset_image_item["preview_schema"]["props"]["fallback"]["type"] == "string"
-    assert asset_image_item["preview_schema"]["props"]["fallback"]["default"].startswith("data:image/svg+xml,")
-    assert asset_image_item["preview_schema"]["props"]["minHeight"]["default"] == "160px"
-    assert asset_image_item["preview_schema"]["props"]["backgroundColor"]["default"] == "#f8fafc"
-    assert asset_image_item["preview_schema"]["props"]["showFallbackPlaceholder"]["default"] is True
+    assert asset_image_item["preview_schema"]["props"]["fallback"]["default"] == "图片资源无法渲染，请检查资源名称或资源内容。"
+    assert asset_image_item["preview_schema"]["props"]["fallback"]["agent_visible"] is False
+    assert asset_image_item["preview_schema"]["props"]["class"]["default"] == asset_image_class
+    assert not hidden_surface_props.intersection(asset_image_item["preview_schema"]["props"])
+    assert "showFallbackPlaceholder" not in asset_image_item["preview_schema"]["props"]
     assert asset_image_item["preview_schema"]["presets"][0]["key"] == "contain-preview"
     assert asset_image_item["preview_options"]["page"]["width"] == 960
     icon_item = next(item for item in previewable_items if item["name"] == "Icon.v1")
@@ -167,12 +181,20 @@ async def test_runtime_kit_asset_component_preview_should_include_manifest_schem
     assert component_preview["component_import_path"] == "@runtime-kit/public/components/assets/AssetImage.v1.vue"
     assert component_preview["component_source"] == "runtime_kit"
     assert component_preview["schema"]["props"]["name"]["default"] == ""
-    assert component_preview["schema"]["props"]["fallback"]["default"].startswith("data:image/svg+xml,")
-    assert component_preview["schema"]["props"]["fallback"]["placeholder"] == "https://example.com/image.png"
-    assert component_preview["schema"]["props"]["minHeight"]["default"] == "160px"
-    assert component_preview["schema"]["props"]["backgroundColor"]["default"] == "#f8fafc"
+    assert component_preview["schema"]["props"]["fallback"]["default"] == "图片资源无法渲染，请检查资源名称或资源内容。"
+    assert component_preview["schema"]["props"]["fallback"]["agent_visible"] is False
+    assert component_preview["schema"]["props"]["class"]["default"] == (
+        "w-full h-64 min-h-40 rounded-lg border border-border p-0 bg-transparent overflow-hidden"
+    )
     assert component_preview["schema"]["props"]["fit"]["default"] == "contain"
-    assert component_preview["schema"]["props"]["showFallbackPlaceholder"]["default"] is True
+    assert "width" not in component_preview["schema"]["props"]
+    assert "height" not in component_preview["schema"]["props"]
+    assert "minHeight" not in component_preview["schema"]["props"]
+    assert "showBorder" not in component_preview["schema"]["props"]
+    assert "borderRadius" not in component_preview["schema"]["props"]
+    assert "padding" not in component_preview["schema"]["props"]
+    assert "backgroundColor" not in component_preview["schema"]["props"]
+    assert "showFallbackPlaceholder" not in component_preview["schema"]["props"]
     assert component_preview["schema"]["presets"][1]["key"] == "cover-banner"
     assert component_preview["placement"]["width_value"] == 78
     assert component_preview["placement"]["padding"] == 56

@@ -1564,6 +1564,19 @@ async def test_component_manager_runtime_kit_tools_should_query_agent_capabiliti
     assert len(icon_detail["usage"]) >= 1
     assert len(icon_detail["constraints"]) >= 1
 
+    asset_drawio_detail = await detail_tool.entrypoint(run_context, name="AssetDrawio.v1", kind="component")
+    asset_drawio_props = asset_drawio_detail["preview_schema"]["props"]
+    assert "content" in asset_drawio_props
+    assert "fallback" not in asset_drawio_props
+    assert "fallback" not in json.dumps(asset_drawio_detail, ensure_ascii=False)
+    assert "name 与 content 二选一" in "\n".join(asset_drawio_detail["constraints"])
+
+    asset_video_detail = await detail_tool.entrypoint(run_context, name="AssetVideo.v1", kind="component")
+    asset_video_props = asset_video_detail["preview_schema"]["props"]
+    assert "fallback" not in asset_video_props
+    assert "posterFallback" not in asset_video_props
+    assert "fallback" not in json.dumps(asset_video_detail, ensure_ascii=False)
+
     util_detail = await detail_tool.entrypoint(run_context, name="resolveResourcePath.v1")
     assert util_detail["kind"] == "util"
     assert util_detail["import_path"] == "@runtime-kit/public/utils/assets.v1"
