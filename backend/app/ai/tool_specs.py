@@ -632,7 +632,11 @@ _COORDINATOR_TOOL_SPECS = (
         '基于 Runtime 原生预览/构建链路检查页面当前源码、完整候选源码、新增页面未保存源码或 edits 应用后的候选源码，不修改页面。',
         default_instructions=(
             '用于页面写入前验证当前源码、完整候选源码或 edits 应用后的候选源码；新增页面尚无 page_id 时，'
-            '在项目上下文中传入完整 content 即可检查未保存页面源码。该工具不落库；success=false 时根据 diagnostics 修正语法、'
+            '在项目上下文中传入完整 content 即可检查未保存页面源码。'
+            'content 和 edits 只能二选一；使用 edits 检查候选修改时，edits 必须传真实 JSON 数组，数组元素必须是对象，'
+            '禁止把 edits 序列化成字符串、包在引号中或传 JSON.stringify 结果。正确示例：'
+            '{"edits":[{"type":"replace_exact","old_text":"...","new_text":"..."}]}。'
+            '该工具不落库；success=false 时根据 diagnostics 修正语法、'
             'import、资源引用或 Runtime 编译问题，遇到动态资源名诊断时，将资源名改为字符串字面量，'
             '或改为同一 Vue 文件顶层 const 数组对象字面量中可静态枚举的字段；不要用 computed、'
             '函数返回、imported data、拼接或条件表达式生成 Icon/Asset* 的 name。不要在未处理错误的情况下继续写入页面。'

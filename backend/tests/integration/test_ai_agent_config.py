@@ -308,6 +308,11 @@ async def test_agent_config_api_should_manage_prompt_and_tool_overrides(authenti
     assert "读取目标页面源码" in page_diff_instructions
     assert "每个对象必须带 type" in page_diff_instructions
     assert "check_page_code" in page_diff_instructions
+    check_page_tool = next(tool for tool in content_project_group["tools"] if tool["key"] == "check_page_code")
+    check_page_instructions = check_page_tool["agent_guide"]["instructions"] or ""
+    assert "content 和 edits 只能二选一" in check_page_instructions
+    assert "edits 必须传真实 JSON 数组" in check_page_instructions
+    assert "禁止把 edits 序列化成字符串" in check_page_instructions
     assert {tool["key"] for tool in content_project_group["tools"]} == {
         "get_page_content",
         "get_project_style_config",
