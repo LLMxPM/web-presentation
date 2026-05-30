@@ -34,6 +34,7 @@ const mocked = vi.hoisted(() => ({
     updated_by: 1,
   },
 }))
+const anchorClickMock = vi.fn()
 
 vi.mock('vue-router', () => ({
   useRoute: () => ({ params: { workspaceId: '1' } }),
@@ -97,6 +98,8 @@ describe('WorkspaceStylesView', () => {
       assets: [],
       fonts: [],
     })
+    anchorClickMock.mockImplementation(() => undefined)
+    Object.defineProperty(HTMLAnchorElement.prototype, 'click', { configurable: true, value: anchorClickMock })
     vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:styles')
     vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined)
   })
@@ -132,6 +135,8 @@ describe('WorkspaceStylesView', () => {
     await fireEvent.click(exportButton)
 
     expect(mocked.exportWorkspaceStylePackage).toHaveBeenCalledWith(1, { style_ids: [9] })
+    expect(anchorClickMock).toHaveBeenCalledTimes(1)
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:styles')
   })
 
   it('选择 Zip 后应展示预检结果并确认导入', async () => {
