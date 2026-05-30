@@ -120,11 +120,13 @@ describe('agent-conversation-panel timeline helpers', () => {
     expect(items.map(item => item.kind)).toEqual(['feedback_request'])
     const feedbackItem = items[0]
     expect(feedbackItem.kind).toBe('feedback_request')
-    expect(feedbackItem.kind === 'feedback_request' ? feedbackItem.title : '').toBe('是否继续整理资源？')
+    expect(feedbackItem.kind === 'feedback_request' ? feedbackItem.entries : []).toEqual([
+      { question: '是否继续整理资源？', answerText: null },
+    ])
     expect(feedbackItem.kind === 'feedback_request' ? feedbackItem.tool?.toolName : '').toBe('ask_user')
   })
 
-  it('已回答 ask_user 应显示完成态和答案摘要', () => {
+  it('已回答 ask_user 应只提取选择答案', () => {
     const items = buildTimelineDisplayItems([
       timelineItem({ id: 'tool-ask', kind: 'tool', role: null, order_index: 1, status: 'completed', tool: {
         tool_call_id: 'tool-ask-1',
@@ -148,8 +150,36 @@ describe('agent-conversation-panel timeline helpers', () => {
     expect(items.map(item => item.kind)).toEqual(['feedback_request'])
     const feedbackItem = items[0]
     expect(feedbackItem.kind === 'feedback_request' ? feedbackItem.pending : true).toBe(false)
-    expect(feedbackItem.kind === 'feedback_request' ? feedbackItem.subtitle : '').toBe('已回复')
-    expect(feedbackItem.kind === 'feedback_request' ? feedbackItem.answerSummary : '').toContain('任务甘特图')
+    expect(feedbackItem.kind === 'feedback_request' ? feedbackItem.entries : []).toEqual([
+      { question: '请为这个甘特图组件指定一个中文名称？', answerText: '任务甘特图' },
+    ])
+  })
+
+  it('已回答 ask_user 应只提取自定义输入内容', () => {
+    const items = buildTimelineDisplayItems([
+      timelineItem({ id: 'tool-ask-custom', kind: 'tool', role: null, order_index: 1, status: 'completed', tool: {
+        tool_call_id: 'tool-ask-2',
+        tool_name: 'ask_user',
+        status: 'completed',
+        input_payload: {
+          questions: [
+            {
+              question: '视觉风格倾向是什么？',
+              header: '风格',
+              multi_select: false,
+              options: [{ label: '极简', description: '减少装饰。' }],
+            },
+          ],
+        },
+        output_payload: 'User feedback received: [{"question": "视觉风格倾向是什么？", "selected": ["用户补充：保留当前图标风格"]}]',
+        message: '',
+      } }),
+    ])
+
+    const feedbackItem = items[0]
+    expect(feedbackItem.kind === 'feedback_request' ? feedbackItem.entries : []).toEqual([
+      { question: '视觉风格倾向是什么？', answerText: '保留当前图标风格' },
+    ])
   })
 
   it('工具详情应直接从 timeline tool item 提取', () => {

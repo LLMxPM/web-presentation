@@ -111,56 +111,20 @@
 
           <article v-else-if="item.kind === 'feedback_request'" class="conversation-message conversation-message--assistant flex justify-start px-0.5 py-0">
             <div class="message-group w-[92%] min-w-0 px-1 py-0.5">
-              <div
-                class="rounded-md border px-2.5 py-2"
-                :class="item.pending ? 'border-sky-100 bg-sky-50/70 text-sky-900' : 'border-emerald-100 bg-emerald-50/60 text-emerald-900'"
-              >
-                <div class="flex items-start justify-between gap-2">
-                  <div class="flex min-w-0 items-start gap-1.5">
-                    <HelpCircle
-                      class="mt-0.5 h-3.5 w-3.5 shrink-0"
-                      :class="item.pending ? 'text-sky-500' : 'text-emerald-500'"
-                    />
-                    <div class="min-w-0">
-                      <p class="break-words text-[12.5px] font-semibold leading-5">{{ item.title }}</p>
-                      <p
-                        v-if="item.subtitle"
-                        class="mt-0.5 text-[11px] leading-4"
-                        :class="item.pending ? 'text-sky-700/75' : 'text-emerald-700/75'"
-                      >
-                        {{ item.subtitle }}
-                      </p>
-                    </div>
-                  </div>
-                  <span
-                    class="shrink-0 rounded border bg-white/70 px-1.5 py-0.5 text-[10px] font-medium"
-                    :class="item.pending ? 'border-sky-200 text-sky-700' : 'border-emerald-200 text-emerald-700'"
-                  >
-                    {{ item.pending ? '等待回复' : '用户已回复' }}
-                  </span>
-                </div>
-                <p v-if="!item.pending && item.answerSummary" class="mt-1.5 line-clamp-2 text-[11px] leading-4 text-emerald-800/80">
-                  {{ item.answerSummary }}
-                </p>
-                <div v-if="item.questions[0]?.options.length" class="mt-1.5 flex flex-wrap gap-1">
-                  <span
-                    v-for="option in item.questions[0].options.slice(0, 4)"
-                    :key="option.label"
-                    class="max-w-full truncate rounded border bg-white/60 px-1.5 py-0.5 text-[10px]"
-                    :class="item.pending ? 'border-sky-100 text-sky-700' : 'border-emerald-100 text-emerald-700'"
-                  >
-                    {{ option.label }}
-                  </span>
-                </div>
-                <button
-                  v-if="item.tool"
-                  type="button"
-                  class="mt-1.5 inline-flex items-center rounded px-1 py-0.5 text-[10px] font-medium transition hover:bg-white/70"
-                  :class="item.pending ? 'text-sky-600 hover:text-sky-800' : 'text-emerald-600 hover:text-emerald-800'"
-                  @click="$emit('open-tool-detail', item.tool.id)"
+              <div class="rounded-md border border-sky-100 border-l-[3px] border-l-sky-400 bg-sky-50/65 px-2.5 py-1.5 text-slate-700 shadow-[0_1px_0_rgba(14,165,233,0.06)]">
+                <div
+                  v-for="(entry, entryIndex) in item.entries"
+                  :key="`${entry.question}-${entryIndex}`"
+                  class="border-t border-sky-100/70 pt-1.5 first:border-t-0 first:pt-0"
                 >
-                  查看调用详情
-                </button>
+                  <p class="break-words text-[12.5px] font-medium leading-[18px] text-slate-700">{{ entry.question }}</p>
+                  <p
+                    class="mt-1 inline-flex max-w-full break-words rounded bg-white/70 px-1.5 py-0.5 text-[11.5px] leading-4"
+                    :class="entry.answerText ? 'text-slate-700' : 'text-sky-500'"
+                  >
+                    {{ entry.answerText || '未回复' }}
+                  </p>
+                </div>
               </div>
             </div>
           </article>
@@ -240,7 +204,7 @@
 <script setup lang="ts">
 import 'markstream-vue/index.css'
 import MarkdownRender, { getMarkdown, parseMarkdownToStructure } from 'markstream-vue'
-import { ChevronRight, HelpCircle } from '@lucide/vue'
+import { ChevronRight } from '@lucide/vue'
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import BaseButton from '@/components/ui/BaseButton.vue'
@@ -387,7 +351,9 @@ function buildConversationChangeSignature() {
     props.timelineDisplayItems.length,
     lastItem?.id ?? '',
     lastItem && 'content' in lastItem ? lastItem.content.length : '',
-    lastItem?.kind === 'feedback_request' ? `${lastItem.title}:${lastItem.status}:${lastItem.answerSummary}` : '',
+    lastItem?.kind === 'feedback_request'
+      ? lastItem.entries.map(entry => `${entry.question}:${entry.answerText ?? ''}`).join('|')
+      : '',
     lastItem?.kind === 'tool_group' ? lastItem.tools.map(tool => `${tool.id}:${tool.status}`).join(',') : '',
     props.lastRunIssue?.detail ?? '',
     props.activeRun?.status ?? '',

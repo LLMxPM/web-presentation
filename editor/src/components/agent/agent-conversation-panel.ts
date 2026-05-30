@@ -19,6 +19,11 @@ export interface ToolCallDetail {
   createdAt: string | null
 }
 
+export interface FeedbackRequestEntry {
+  question: string
+  answerText: string | null
+}
+
 export type TimelineDisplayItem =
   | { id: string, kind: 'message', item: AgentTimelineItem, message: AgentMessageItem }
   | { id: string, kind: 'reasoning', item: AgentTimelineItem, content: string, streaming: boolean }
@@ -29,10 +34,7 @@ export type TimelineDisplayItem =
     item: AgentTimelineItem
     requirement: AgentPendingRequirement | null
     tool: ToolCallDetail | null
-    title: string
-    subtitle: string
-    questions: AgentUserFeedbackQuestion[]
-    answerSummary: string
+    entries: FeedbackRequestEntry[]
     pending: boolean
     status: string | null
   }
@@ -286,9 +288,6 @@ function buildFeedbackRequestDisplayItem(
   requirement: AgentPendingRequirement | null,
   tool: ToolCallDetail | null,
 ): Extract<TimelineDisplayItem, { kind: 'feedback_request' }> {
-  const questions = resolveFeedbackQuestions(requirement, tool, item)
-  const firstQuestion = questions[0]?.question?.trim()
-  const title = firstQuestion || item.content || requirement?.note || '等待用户回复'
   const pending = item.status !== 'completed' && item.status !== 'cancelled'
   return {
     id: `feedback-request:${item.id}`,
@@ -296,10 +295,7 @@ function buildFeedbackRequestDisplayItem(
     item,
     requirement,
     tool,
-    title,
-    subtitle: buildFeedbackRequestSubtitle(requirement, questions, pending),
-    questions,
-    answerSummary: resolveAskUserAnswerSummary(tool?.outputPayload),
+    entries: resolveFeedbackEntries(requirement, tool, item),
     pending,
     status: item.status || 'pending',
   }
@@ -320,7 +316,7 @@ function findMatchingAskUserRequirement(
 }
 
 /**
- * 从 requirement 反查 ask_user 工具详情，供提问卡片保留调试入口。
+ * 从 requirement 反查 ask_user 工具详情，用于恢复已回答内容。
  */
 function findMatchingAskUserToolDetail(
   items: AgentTimelineItem[],
@@ -365,43 +361,99 @@ function resolveToolExecutionCallId(toolExecution: Record<string, unknown>) {
   return typeof value === 'string' && value ? value : null
 }
 
-function buildFeedbackRequestSubtitle(
+function resolveFeedbackEntries(
   requirement: AgentPendingRequirement | null,
-  questions: AgentUserFeedbackQuestion[],
-  pending: boolean,
-) {
-  const parts = [
-    requirement?.member_agent_name ? `来自 ${requirement.member_agent_name}` : '',
-    questions.length > 1 ? `${questions.length} 个问题` : pending ? '等待回复' : '已回复',
-  ].filter(Boolean)
-  return parts.join(' · ')
+  tool: ToolCallDetail | null,
+  item: AgentTimelineItem,
+): FeedbackRequestEntry[] {
+  const questions = resolveFeedbackQuestions(requirement, tool, item)
+  const answersByQuestion = resolveAskUserAnswers(tool?.outputPayload)
+  if (questions.length) {
+    return questions.map(question => ({
+      question: question.question,
+      answerText: answersByQuestion.get(question.question) ?? resolveQuestionSelectedText(question),
+    }))
+  }
+  const answeredEntries = [...answersByQuestion.entries()]
+    .filter((entry): entry is [string, string] => Boolean(entry[0] && entry[1]))
+    .map(([question, answerText]) => ({ question, answerText }))
+  if (answeredEntries.length) {
+    return answeredEntries
+  }
+  return [{
+    question: item.content?.trim() || requirement?.note?.trim() || '需要补充信息',
+    answerText: null,
+  }]
 }
 
-function resolveAskUserAnswerSummary(outputPayload: unknown) {
-  const text = typeof outputPayload === 'string' ? outputPayload : ''
+function resolveAskUserAnswers(outputPayload: unknown) {
+  const parsed = parseFeedbackResultPayload(outputPayload)
+  const answers = new Map<string, string>()
+  if (!Array.isArray(parsed)) {
+    return answers
+  }
+  for (const item of parsed) {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) {
+      continue
+    }
+    const record = item as Record<string, unknown>
+    const question = typeof record.question === 'string' ? record.question.trim() : ''
+    const answerText = resolveFeedbackAnswerText(
+      record.custom_text ?? record.selected ?? record.selected_options ?? record.selected_label ?? record.answer,
+    )
+    if (question && answerText) {
+      answers.set(question, answerText)
+    }
+  }
+  return answers
+}
+
+function parseFeedbackResultPayload(outputPayload: unknown) {
+  if (Array.isArray(outputPayload)) {
+    return outputPayload
+  }
+  if (typeof outputPayload !== 'string') {
+    return null
+  }
+  const text = outputPayload.trim()
   const match = text.match(/User feedback received:\s*(\[[\s\S]*\])$/)
-  if (!match) {
-    return text
+  const jsonText = match ? match[1] : text.startsWith('[') ? text : ''
+  if (!jsonText) {
+    return null
   }
   try {
-    const parsed = JSON.parse(match[1])
-    if (!Array.isArray(parsed)) {
-      return text
-    }
-    return parsed.map(item => {
-      if (!item || typeof item !== 'object') {
-        return ''
-      }
-      const record = item as Record<string, unknown>
-      const question = typeof record.question === 'string' ? record.question : ''
-      const selected = Array.isArray(record.selected)
-        ? record.selected.filter((value): value is string => typeof value === 'string')
-        : []
-      return question && selected.length ? `${question}：${selected.join('、')}` : selected.join('、')
-    }).filter(Boolean).join('；')
+    return JSON.parse(jsonText)
   } catch {
-    return text
+    return null
   }
+}
+
+function resolveQuestionSelectedText(question: AgentUserFeedbackQuestion) {
+  const selectedOptions = question.selected_options?.length
+    ? question.selected_options
+    : question.options.filter(option => option.selected).map(option => option.label)
+  return resolveFeedbackAnswerText(selectedOptions)
+}
+
+function resolveFeedbackAnswerText(value: unknown): string | null {
+  if (Array.isArray(value)) {
+    const parts = value
+      .map(normalizeFeedbackAnswerValue)
+      .filter((item): item is string => Boolean(item))
+    return parts.length ? parts.join('、') : null
+  }
+  return normalizeFeedbackAnswerValue(value)
+}
+
+function normalizeFeedbackAnswerValue(value: unknown) {
+  if (typeof value !== 'string') {
+    return value === null || value === undefined ? null : String(value)
+  }
+  const trimmed = value.trim()
+  if (!trimmed) {
+    return null
+  }
+  return trimmed.startsWith('用户补充：') ? trimmed.slice('用户补充：'.length).trim() || null : trimmed
 }
 
 function resolveFeedbackQuestions(
