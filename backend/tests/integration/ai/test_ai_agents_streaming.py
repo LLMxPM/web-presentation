@@ -22,6 +22,7 @@ from tests.integration.ai.ai_agents_cases import (
     test_ai_raw_sse_cancelled_event_should_trigger_preservation,
     test_ai_run_stream_should_refresh_context_status_at_message_checkpoints,
     test_ai_run_routes_should_stream_direct_page_apply,
+    test_ai_runtime_snapshot_should_attach_delegate_member_runs,
     test_extract_tool_error_info_should_keep_structured_code,
     test_extract_tool_error_info_should_parse_repair_metadata_from_json_string,
 )

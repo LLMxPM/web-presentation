@@ -1,7 +1,7 @@
 /**
  * 文件功能：抽离内容助手面板的 run-first 时间线展示、工具详情与格式化逻辑。
  */
-import type { AgentMessageItem, AgentPendingRequirement, AgentTimelineItem, AgentUserFeedbackQuestion } from '@/types/api'
+import type { AgentMemberRunItem, AgentMessageItem, AgentPendingRequirement, AgentTimelineItem, AgentUserFeedbackQuestion } from '@/types/api'
 
 export interface ToolCallDetail {
   id: string
@@ -17,6 +17,7 @@ export interface ToolCallDetail {
   message: string
   source: 'event' | 'message' | 'synthetic'
   createdAt: string | null
+  delegatedMemberRuns: AgentMemberRunItem[]
 }
 
 export interface FeedbackRequestEntry {
@@ -55,10 +56,11 @@ export interface AgentMutationRefreshEvent {
 /**
  * 将 timeline tool item 转成弹窗与工具卡片统一使用的详情结构。
  */
-export function toolDetailFromTimelineItem(item: AgentTimelineItem): ToolCallDetail | null {
+export function toolDetailFromTimelineItem(item: AgentTimelineItem, memberRuns: AgentMemberRunItem[] = []): ToolCallDetail | null {
   if (item.kind !== 'tool' || !item.tool) {
     return null
   }
+  const delegateToolCallId = item.tool.tool_call_id || item.id
   return {
     id: item.id,
     runId: item.run_id || null,
@@ -73,6 +75,15 @@ export function toolDetailFromTimelineItem(item: AgentTimelineItem): ToolCallDet
     message: item.tool.message,
     source: item.source,
     createdAt: item.created_at,
+    delegatedMemberRuns: isDelegateToolName(item.tool.tool_name)
+      ? memberRuns.filter(memberRun => (
+          memberRun.parent_run_id === item.run_id
+          && (
+            memberRun.delegate_tool_call_id === delegateToolCallId
+            || (!memberRun.delegate_tool_call_id && delegateToolMatchesMember(item.tool?.input_payload, memberRun.agent_id))
+          )
+        ))
+      : [],
   }
 }
 
@@ -81,11 +92,12 @@ export function toolDetailFromTimelineItem(item: AgentTimelineItem): ToolCallDet
  */
 export function buildTimelineDisplayItems(
   timelineItems: AgentTimelineItem[],
-  options: { pendingRequirement?: AgentPendingRequirement | null } = {},
+  options: { pendingRequirement?: AgentPendingRequirement | null, memberRuns?: AgentMemberRunItem[] } = {},
 ): TimelineDisplayItem[] {
   const orderedItems = [...timelineItems].sort(compareTimelineItems)
   const displayItems: TimelineDisplayItem[] = []
   const pendingRequirement = options.pendingRequirement ?? null
+  const memberRuns = options.memberRuns ?? []
   const skippedRequirementIds = new Set<string>()
   let pendingTools: AgentTimelineItem[] = []
   for (const item of orderedItems) {
@@ -103,7 +115,7 @@ export function buildTimelineDisplayItems(
       return
     }
     const tools = pendingTools
-      .map(toolDetailFromTimelineItem)
+      .map(item => toolDetailFromTimelineItem(item, memberRuns))
       .filter((tool): tool is ToolCallDetail => tool !== null)
     if (tools.length) {
       displayItems.push({
@@ -126,7 +138,7 @@ export function buildTimelineDisplayItems(
         const matchedRequirement = findMatchingAskUserRequirement(orderedItems, item, pendingRequirement)
           ? pendingRequirement
           : null
-        displayItems.push(buildFeedbackRequestDisplayItem(item, matchedRequirement, toolDetailFromTimelineItem(item)))
+        displayItems.push(buildFeedbackRequestDisplayItem(item, matchedRequirement, toolDetailFromTimelineItem(item, memberRuns)))
         continue
       }
       pendingTools.push(item)
@@ -184,10 +196,10 @@ export function buildTimelineDisplayItems(
 /**
  * 从时间线中提取所有工具详情，供详情弹窗按 id 查询。
  */
-export function extractTimelineToolDetails(timelineItems: AgentTimelineItem[]): ToolCallDetail[] {
+export function extractTimelineToolDetails(timelineItems: AgentTimelineItem[], memberRuns: AgentMemberRunItem[] = []): ToolCallDetail[] {
   return [...timelineItems]
     .sort(compareTimelineItems)
-    .map(toolDetailFromTimelineItem)
+    .map(item => toolDetailFromTimelineItem(item, memberRuns))
     .filter((tool): tool is ToolCallDetail => tool !== null)
 }
 
@@ -278,6 +290,21 @@ function buildDisplayMessage(item: AgentTimelineItem): AgentMessageItem {
  */
 function isAskUserToolItem(item: AgentTimelineItem) {
   return item.kind === 'tool' && item.tool?.tool_name === 'ask_user'
+}
+
+/**
+ * 判断工具是否为内容助手委派成员助手的入口。
+ */
+export function isDelegateToolName(toolName: string | null | undefined) {
+  return toolName === 'delegate_task_to_member' || toolName === 'delegate_task_to_members'
+}
+
+function delegateToolMatchesMember(inputPayload: unknown, memberAgentId: string) {
+  if (!inputPayload || typeof inputPayload !== 'object' || Array.isArray(inputPayload)) {
+    return true
+  }
+  const memberId = (inputPayload as Record<string, unknown>).member_id
+  return typeof memberId !== 'string' || !memberId || memberId === memberAgentId
 }
 
 /**

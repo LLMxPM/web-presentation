@@ -4,6 +4,7 @@
 import type {
   AgentActiveRunItem,
   AgentImageAttachmentItem,
+  AgentMemberRunItem,
   AgentPendingRequirement,
   AgentRunEvent,
   AgentTimelineItem,
@@ -16,10 +17,12 @@ export interface AgentRunStreamState {
   lastSequenceByRun: Record<string, number>
   streaming: boolean
   streamingTimelineItemId: string | null
+  memberStreamingTimelineItemIdByRun: Record<string, string | null>
 }
 
 export interface AgentSessionRuntimeState {
   timelineItems: AgentTimelineItem[]
+  memberRuns: AgentMemberRunItem[]
   activeRun: AgentActiveRunItem | null
   lastRun: AgentActiveRunItem | null
   pendingRequirement: AgentPendingRequirement | null
@@ -47,6 +50,7 @@ const STREAMING_RUN_STATUSES = new Set(['pending', 'running', 'cancelling'])
 export function createAgentSessionRuntimeState(): AgentSessionRuntimeState {
   return {
     timelineItems: [],
+    memberRuns: [],
     activeRun: null,
     lastRun: null,
     pendingRequirement: null,
@@ -58,6 +62,7 @@ export function createAgentSessionRuntimeState(): AgentSessionRuntimeState {
       lastSequenceByRun: {},
       streaming: false,
       streamingTimelineItemId: null,
+      memberStreamingTimelineItemIdByRun: {},
     },
   }
 }
@@ -114,6 +119,11 @@ export function applyAgentRunEvent(
     return { applied: false, terminal: false }
   }
   rememberEventSequence(state, runId, event.event_index ?? event.sequence)
+
+  if (event.event.startsWith('member.')) {
+    applyMemberRunEvent(state, event)
+    return { applied: true, terminal: false }
+  }
 
   switch (event.event) {
     case 'run.started':
@@ -202,6 +212,7 @@ export function applyAgentRuntimeSnapshot(
   state: AgentSessionRuntimeState,
   payload: {
     timelineItems: AgentTimelineItem[]
+    memberRuns?: AgentMemberRunItem[]
     activeRun: AgentActiveRunItem | null
     lastRun: AgentActiveRunItem | null
     pendingRequirement: AgentPendingRequirement | null
@@ -226,6 +237,7 @@ export function applyAgentRuntimeSnapshot(
   } else {
     state.timelineItems = snapshotItems
   }
+  state.memberRuns = [...(payload.memberRuns ?? [])]
   state.activeRun = payload.activeRun
   state.lastRun = payload.lastRun
   state.pendingRequirement = payload.pendingRequirement
@@ -257,8 +269,19 @@ export function normalizeAgnoRunEvent(rawEvent: AgentRunEvent): AgentRunEvent {
   const eventIndex = resolveRawNumber(rawEvent.event_index) ?? resolveRawNumber(rawEvent.sequence)
   const data: Record<string, unknown> = { ...rawEvent }
   delete data.data
+  const memberEventData = resolveRawMemberEventData(rawEvent, runId)
 
   if (['RunStarted', 'RunStartedEvent', 'TeamRunStarted'].includes(eventName)) {
+    if (memberEventData) {
+      return {
+        event: 'member.run.started',
+        run_id: memberEventData.parent_run_id,
+        session_id: sessionId,
+        content: null,
+        data: { ...data, ...memberEventData },
+        event_index: eventIndex,
+      }
+    }
     return {
       event: 'run.started',
       run_id: runId,
@@ -269,6 +292,16 @@ export function normalizeAgnoRunEvent(rawEvent: AgentRunEvent): AgentRunEvent {
     }
   }
   if (['RunContinued', 'RunContinuedEvent', 'TeamRunContinued'].includes(eventName)) {
+    if (memberEventData) {
+      return {
+        event: 'member.run.continued',
+        run_id: memberEventData.parent_run_id,
+        session_id: sessionId,
+        content: null,
+        data: { ...data, ...memberEventData },
+        event_index: eventIndex,
+      }
+    }
     return { event: 'run.continued', run_id: runId, session_id: sessionId, content: null, data, event_index: eventIndex }
   }
   if ([
@@ -287,6 +320,16 @@ export function normalizeAgnoRunEvent(rawEvent: AgentRunEvent): AgentRunEvent {
       : typeof rawEvent.redacted_reasoning_content === 'string'
         ? rawEvent.redacted_reasoning_content
         : null
+    if (memberEventData) {
+      return {
+        event: 'member.message.delta',
+        run_id: memberEventData.parent_run_id,
+        session_id: sessionId,
+        content,
+        data: { ...data, ...memberEventData, reasoning_content: reasoning },
+        event_index: eventIndex,
+      }
+    }
     return {
       event: 'message.delta',
       run_id: runId,
@@ -298,6 +341,22 @@ export function normalizeAgnoRunEvent(rawEvent: AgentRunEvent): AgentRunEvent {
   }
   if (['ToolCallStarted', 'ToolCallStartedEvent', 'TeamToolCallStarted'].includes(eventName)) {
     const tool = resolveRawObject(rawEvent.tool)
+    if (memberEventData) {
+      return {
+        event: 'member.tool.started',
+        run_id: memberEventData.parent_run_id,
+        session_id: sessionId,
+        content: null,
+        data: {
+          ...data,
+          ...memberEventData,
+          tool_name: tool.tool_name,
+          tool_call_id: tool.tool_call_id,
+          tool_args: tool.tool_args ?? {},
+        },
+        event_index: eventIndex,
+      }
+    }
     return {
       event: 'tool.started',
       run_id: runId,
@@ -314,6 +373,23 @@ export function normalizeAgnoRunEvent(rawEvent: AgentRunEvent): AgentRunEvent {
   }
   if (['ToolCallCompleted', 'ToolCallCompletedEvent', 'TeamToolCallCompleted'].includes(eventName)) {
     const tool = resolveRawObject(rawEvent.tool)
+    if (memberEventData) {
+      return {
+        event: 'member.tool.completed',
+        run_id: memberEventData.parent_run_id,
+        session_id: sessionId,
+        content: typeof rawEvent.content === 'string' ? rawEvent.content : null,
+        data: {
+          ...data,
+          ...memberEventData,
+          tool_name: tool.tool_name,
+          tool_call_id: tool.tool_call_id,
+          result: tool.result ?? rawEvent.content ?? null,
+          message: rawEvent.content ?? null,
+        },
+        event_index: eventIndex,
+      }
+    }
     return {
       event: 'tool.completed',
       run_id: runId,
@@ -331,6 +407,22 @@ export function normalizeAgnoRunEvent(rawEvent: AgentRunEvent): AgentRunEvent {
   }
   if (['ToolCallError', 'ToolCallErrorEvent', 'TeamToolCallError'].includes(eventName)) {
     const tool = resolveRawObject(rawEvent.tool)
+    if (memberEventData) {
+      return {
+        event: 'member.tool.error',
+        run_id: memberEventData.parent_run_id,
+        session_id: sessionId,
+        content: typeof rawEvent.content === 'string' ? rawEvent.content : null,
+        data: {
+          ...data,
+          ...memberEventData,
+          tool_name: tool.tool_name,
+          tool_call_id: tool.tool_call_id,
+          message: rawEvent.content ?? rawEvent.error ?? tool.error ?? null,
+        },
+        event_index: eventIndex,
+      }
+    }
     return {
       event: 'tool.error',
       run_id: runId,
@@ -346,6 +438,16 @@ export function normalizeAgnoRunEvent(rawEvent: AgentRunEvent): AgentRunEvent {
     }
   }
   if (['RunPaused', 'RunPausedEvent', 'TeamRunPaused'].includes(eventName)) {
+    if (memberEventData) {
+      return {
+        event: 'member.run.paused',
+        run_id: memberEventData.parent_run_id,
+        session_id: sessionId,
+        content: null,
+        data: { ...data, ...memberEventData },
+        event_index: eventIndex,
+      }
+    }
     return {
       event: 'run.paused',
       run_id: runId,
@@ -356,6 +458,16 @@ export function normalizeAgnoRunEvent(rawEvent: AgentRunEvent): AgentRunEvent {
     }
   }
   if (['RunCompleted', 'RunCompletedEvent', 'TeamRunCompleted'].includes(eventName)) {
+    if (memberEventData) {
+      return {
+        event: 'member.run.completed',
+        run_id: memberEventData.parent_run_id,
+        session_id: sessionId,
+        content: typeof rawEvent.content === 'string' ? rawEvent.content : null,
+        data: { ...data, ...memberEventData },
+        event_index: eventIndex,
+      }
+    }
     return {
       event: 'run.completed',
       run_id: runId,
@@ -366,9 +478,29 @@ export function normalizeAgnoRunEvent(rawEvent: AgentRunEvent): AgentRunEvent {
     }
   }
   if (['RunCancelled', 'RunCancelledEvent', 'TeamRunCancelled'].includes(eventName)) {
+    if (memberEventData) {
+      return {
+        event: 'member.run.cancelled',
+        run_id: memberEventData.parent_run_id,
+        session_id: sessionId,
+        content: null,
+        data: { ...data, ...memberEventData },
+        event_index: eventIndex,
+      }
+    }
     return { event: 'run.cancelled', run_id: runId, session_id: sessionId, content: null, data, event_index: eventIndex }
   }
   if (['RunError', 'RunErrorEvent', 'TeamRunError'].includes(eventName)) {
+    if (memberEventData) {
+      return {
+        event: 'member.run.error',
+        run_id: memberEventData.parent_run_id,
+        session_id: sessionId,
+        content: typeof rawEvent.content === 'string' ? rawEvent.content : null,
+        data: { ...data, ...memberEventData, message: rawEvent.content ?? rawEvent.error ?? data.message },
+        event_index: eventIndex,
+      }
+    }
     return {
       event: 'run.error',
       run_id: runId,
@@ -407,6 +539,19 @@ function buildPendingRequirementFromAgno(
     suggested_patch: null,
     user_feedback_schema: userFeedbackSchema,
     note: resolveRawString(requirement.note),
+  }
+}
+
+function resolveRawMemberEventData(rawEvent: AgentRunEvent, runId: string | null) {
+  const parentRunId = resolveRawString(rawEvent.parent_run_id)
+  if (!parentRunId || !runId) {
+    return null
+  }
+  return {
+    parent_run_id: parentRunId,
+    member_run_id: runId,
+    member_agent_id: resolveRawString(rawEvent.agent_id) ?? resolveRawString(rawEvent.team_id),
+    member_agent_name: resolveRawString(rawEvent.agent_name) ?? resolveRawString(rawEvent.team_name),
   }
 }
 
@@ -561,6 +706,305 @@ function upsertToolTimelineItem(
   state.timelineItems = existingItem
     ? state.timelineItems.map(item => (item.id === existingItem.id ? nextItem : item))
     : [...state.timelineItems, nextItem]
+}
+
+function applyMemberRunEvent(state: AgentSessionRuntimeState, event: AgentRunEvent): void {
+  const memberRun = ensureMemberRunItem(state, event)
+  if (!memberRun) {
+    return
+  }
+  switch (event.event) {
+    case 'member.run.started':
+    case 'member.run.continued':
+      memberRun.status = 'running'
+      memberRun.updated_at = new Date().toISOString()
+      break
+    case 'member.message.delta':
+      {
+        const splitContent = splitInlineReasoningDelta(event.content ?? '')
+        appendMemberReasoningDelta(
+          state,
+          memberRun,
+          event,
+          [resolveEventReasoningContent(event), splitContent.reasoning].filter(Boolean).join('') || null,
+        )
+        appendMemberAssistantDelta(state, memberRun, event, splitContent.content)
+      }
+      break
+    case 'member.tool.started':
+      upsertMemberToolTimelineItem(memberRun, event, 'running')
+      closeMemberTextSegment(state, memberRun.run_id)
+      break
+    case 'member.tool.completed':
+      upsertMemberToolTimelineItem(memberRun, event, 'completed')
+      closeMemberTextSegment(state, memberRun.run_id)
+      break
+    case 'member.tool.error':
+      upsertMemberToolTimelineItem(memberRun, event, 'error')
+      closeMemberTextSegment(state, memberRun.run_id)
+      break
+    case 'member.run.paused':
+      memberRun.status = 'paused'
+      appendMemberRunStatusItem(memberRun, event, 'paused', '等待用户处理。')
+      clearMemberStreamState(state, memberRun)
+      break
+    case 'member.run.cancelled':
+      memberRun.status = 'cancelled'
+      appendMemberRunStatusItem(memberRun, event, 'cancelled', '运行已停止。')
+      clearMemberStreamState(state, memberRun)
+      break
+    case 'member.run.error':
+      memberRun.status = 'failed'
+      appendMemberRunStatusItem(
+        memberRun,
+        event,
+        'failed',
+        String(event.data.message || event.content || '成员助手执行失败。'),
+      )
+      clearMemberStreamState(state, memberRun)
+      break
+    case 'member.run.completed':
+      memberRun.status = 'completed'
+      if (event.content && shouldUseMemberCompletedEventContent(memberRun, event.content)) {
+        appendMemberAssistantDelta(state, memberRun, event, event.content)
+      }
+      appendMemberReasoningDelta(state, memberRun, event, resolveEventReasoningContent(event))
+      appendMemberRunStatusItem(memberRun, event, 'completed', '运行已完成。')
+      clearMemberStreamState(state, memberRun)
+      break
+    default:
+      break
+  }
+  memberRun.updated_at = new Date().toISOString()
+  assignMemberRunToDelegate(state, memberRun)
+}
+
+function ensureMemberRunItem(state: AgentSessionRuntimeState, event: AgentRunEvent): AgentMemberRunItem | null {
+  const parentRunId = event.run_id || state.stream.runId || ''
+  const memberRunId = resolveEventString(event.data.member_run_id, null)
+  if (!parentRunId || !memberRunId) {
+    return null
+  }
+  const existing = state.memberRuns.find(item => item.run_id === memberRunId)
+  if (existing) {
+    existing.agent_id = resolveEventString(event.data.member_agent_id, existing.agent_id) || existing.agent_id
+    existing.agent_name = resolveEventString(event.data.member_agent_name, existing.agent_name ?? null)
+    return existing
+  }
+  const memberRun: AgentMemberRunItem = {
+    parent_run_id: parentRunId,
+    run_id: memberRunId,
+    agent_id: resolveEventString(event.data.member_agent_id, null) || '',
+    agent_name: resolveEventString(event.data.member_agent_name, null),
+    status: 'running',
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+    delegate_tool_call_id: null,
+    timeline_items: [],
+  }
+  state.memberRuns = [...state.memberRuns, memberRun].sort(compareMemberRuns)
+  return memberRun
+}
+
+function appendMemberAssistantDelta(
+  state: AgentSessionRuntimeState,
+  memberRun: AgentMemberRunItem,
+  event: AgentRunEvent,
+  delta: string,
+): void {
+  if (!delta) return
+  const item = ensureMemberStreamingTextItem(state, memberRun, event, 'message', 'assistant')
+  item.content = `${item.content ?? ''}${delta}`
+}
+
+function appendMemberReasoningDelta(
+  state: AgentSessionRuntimeState,
+  memberRun: AgentMemberRunItem,
+  event: AgentRunEvent,
+  reasoning: string | null,
+): void {
+  if (!reasoning) return
+  const item = ensureMemberStreamingTextItem(state, memberRun, event, 'reasoning', null)
+  item.content = `${item.content ?? ''}${reasoning}`
+}
+
+function ensureMemberStreamingTextItem(
+  state: AgentSessionRuntimeState,
+  memberRun: AgentMemberRunItem,
+  event: AgentRunEvent,
+  kind: 'message' | 'reasoning',
+  role: AgentTimelineItem['role'],
+): AgentTimelineItem {
+  const streamingItemId = state.stream.memberStreamingTimelineItemIdByRun[memberRun.run_id]
+  const existing = streamingItemId
+    ? memberRun.timeline_items.find(item => item.id === streamingItemId)
+    : null
+  if (existing && existing.kind === kind && existing.role === role) {
+    return existing
+  }
+  const item = buildAgentLocalTimelineItem(event.session_id || '', {
+    runId: memberRun.run_id,
+    kind,
+    role,
+    content: '',
+    status: 'running',
+  })
+  item.event_index = event.event_index ?? event.sequence ?? null
+  item.order_index = nextMemberTimelineOrderIndex(memberRun)
+  memberRun.timeline_items = [...memberRun.timeline_items, item]
+  state.stream.memberStreamingTimelineItemIdByRun[memberRun.run_id] = item.id
+  return item
+}
+
+function upsertMemberToolTimelineItem(
+  memberRun: AgentMemberRunItem,
+  event: AgentRunEvent,
+  status: AgentTimelineToolItem['status'],
+): void {
+  const toolCallId = typeof event.data.tool_call_id === 'string' ? event.data.tool_call_id : null
+  const toolName = String(event.data.tool_name || '工具调用')
+  const existingItem = findExistingMemberToolTimelineItem(memberRun, { toolCallId, toolName })
+  const itemId = existingItem?.id ?? (toolCallId
+    ? `${event.session_id || 'session'}:${memberRun.run_id}:${toolCallId}`
+    : `${event.session_id || 'session'}:${memberRun.run_id}:${toolName}:${event.event_index ?? event.sequence ?? Date.now()}`)
+  const previousTool = existingItem?.tool
+  const tool: AgentTimelineToolItem = {
+    tool_call_id: toolCallId,
+    tool_name: toolName,
+    member_agent_id: memberRun.agent_id || null,
+    member_agent_name: memberRun.agent_name ?? null,
+    member_run_id: memberRun.run_id,
+    status,
+    input_payload: event.data.arguments ?? event.data.args ?? event.data.tool_args ?? previousTool?.input_payload ?? null,
+    output_payload: event.data.result ?? event.data.output ?? previousTool?.output_payload ?? null,
+    message: String(event.data.message || event.content || previousTool?.message || ''),
+  }
+  const nextItem: AgentTimelineItem = {
+    id: itemId,
+    session_id: event.session_id || '',
+    run_id: memberRun.run_id,
+    kind: 'tool',
+    role: null,
+    event_index: existingItem?.event_index ?? event.event_index ?? event.sequence ?? null,
+    order_index: existingItem?.order_index ?? nextMemberTimelineOrderIndex(memberRun),
+    content: null,
+    status,
+    tool,
+    source: 'event',
+    created_at: existingItem?.created_at ?? new Date().toISOString(),
+  }
+  memberRun.timeline_items = existingItem
+    ? memberRun.timeline_items.map(item => (item.id === existingItem.id ? nextItem : item))
+    : [...memberRun.timeline_items, nextItem]
+}
+
+function findExistingMemberToolTimelineItem(
+  memberRun: AgentMemberRunItem,
+  payload: { toolCallId: string | null, toolName: string },
+): AgentTimelineItem | undefined {
+  const directMatch = memberRun.timeline_items.find(item => (
+    item.kind === 'tool'
+    && item.tool
+    && (
+      (payload.toolCallId && item.tool.tool_call_id === payload.toolCallId)
+      || item.id.endsWith(`:${payload.toolCallId}`)
+    )
+  ))
+  if (directMatch || payload.toolCallId) {
+    return directMatch
+  }
+  return [...memberRun.timeline_items].reverse().find(item => (
+    item.kind === 'tool'
+    && item.tool
+    && item.tool.tool_call_id === null
+    && item.tool.status === 'running'
+    && item.tool.tool_name === payload.toolName
+  ))
+}
+
+function appendMemberRunStatusItem(
+  memberRun: AgentMemberRunItem,
+  event: AgentRunEvent,
+  status: string,
+  content: string,
+): void {
+  const itemId = `${event.session_id || ''}:${memberRun.run_id}:status:${status}`
+  const existing = memberRun.timeline_items.find(item => item.id === itemId)
+  const item: AgentTimelineItem = {
+    id: itemId,
+    session_id: event.session_id || '',
+    run_id: memberRun.run_id,
+    kind: 'run_status',
+    role: null,
+    event_index: event.event_index ?? event.sequence ?? null,
+    order_index: existing?.order_index ?? nextMemberTimelineOrderIndex(memberRun),
+    content,
+    status,
+    tool: null,
+    source: 'event',
+    created_at: existing?.created_at ?? new Date().toISOString(),
+  }
+  memberRun.timeline_items = existing
+    ? memberRun.timeline_items.map(current => (current.id === itemId ? item : current))
+    : [...memberRun.timeline_items, item]
+}
+
+function closeMemberTextSegment(state: AgentSessionRuntimeState, memberRunId: string): void {
+  state.stream.memberStreamingTimelineItemIdByRun[memberRunId] = null
+}
+
+function clearMemberStreamState(state: AgentSessionRuntimeState, memberRun: AgentMemberRunItem): void {
+  for (const item of memberRun.timeline_items) {
+    if (item.status === 'running' && item.kind !== 'tool') {
+      item.status = null
+    }
+  }
+  state.stream.memberStreamingTimelineItemIdByRun[memberRun.run_id] = null
+}
+
+function shouldUseMemberCompletedEventContent(memberRun: AgentMemberRunItem, content: string): boolean {
+  if (looksLikeStructuredAggregate(content)) {
+    return false
+  }
+  return !memberRun.timeline_items.some(item => (
+    item.kind === 'message'
+    && item.role === 'assistant'
+    && Boolean(item.content)
+  ))
+}
+
+function assignMemberRunToDelegate(state: AgentSessionRuntimeState, memberRun: AgentMemberRunItem): void {
+  if (memberRun.delegate_tool_call_id) {
+    return
+  }
+  const usedDelegateIds = new Set(
+    state.memberRuns
+      .filter(item => item.run_id !== memberRun.run_id)
+      .map(item => item.delegate_tool_call_id)
+      .filter((item): item is string => Boolean(item)),
+  )
+  const candidates = state.timelineItems
+    .filter(item => (
+      item.kind === 'tool'
+      && item.run_id === memberRun.parent_run_id
+      && item.tool
+      && (item.tool.tool_name === 'delegate_task_to_member' || item.tool.tool_name === 'delegate_task_to_members')
+      && (!usedDelegateIds.has(item.tool.tool_call_id || item.id) || item.tool.tool_name === 'delegate_task_to_members')
+      && delegateToolMatchesMember(item.tool.input_payload, memberRun.agent_id)
+    ))
+    .sort((left, right) => left.order_index - right.order_index)
+  const delegateItem = candidates[0]
+  if (delegateItem?.tool) {
+    memberRun.delegate_tool_call_id = delegateItem.tool.tool_call_id || delegateItem.id
+  }
+}
+
+function delegateToolMatchesMember(inputPayload: unknown, memberAgentId: string): boolean {
+  if (!inputPayload || typeof inputPayload !== 'object' || Array.isArray(inputPayload)) {
+    return true
+  }
+  const memberId = (inputPayload as Record<string, unknown>).member_id
+  return typeof memberId !== 'string' || !memberId || memberId === memberAgentId
 }
 
 function findExistingToolTimelineItem(
@@ -740,6 +1184,21 @@ function itemBelongsToRun(item: AgentTimelineItem, runId: string): boolean {
 
 function nextTimelineOrderIndex(state: AgentSessionRuntimeState): number {
   return Math.max(-1, ...state.timelineItems.map(item => item.order_index)) + 1
+}
+
+function nextMemberTimelineOrderIndex(memberRun: AgentMemberRunItem): number {
+  return Math.max(-1, ...memberRun.timeline_items.map(item => item.order_index)) + 1
+}
+
+function compareMemberRuns(left: AgentMemberRunItem, right: AgentMemberRunItem): number {
+  const leftCreated = left.created_at ?? ''
+  const rightCreated = right.created_at ?? ''
+  if (leftCreated !== rightCreated) {
+    if (!leftCreated) return 1
+    if (!rightCreated) return -1
+    return leftCreated.localeCompare(rightCreated)
+  }
+  return left.run_id.localeCompare(right.run_id)
 }
 
 function resolveEventString(value: unknown, fallback: string | null): string | null {

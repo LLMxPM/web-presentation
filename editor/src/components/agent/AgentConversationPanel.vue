@@ -79,6 +79,7 @@
           @apply-suggested-patch="applySuggestedPatch"
           @remove-draft-patch="removeDraftPatch"
           @open-tool-detail="openToolDetail"
+          @open-member-run-detail="openMemberRunDetail"
           @force-cancel-run="handleForceCancelRun"
         />
 
@@ -128,7 +129,10 @@
 
   <AgentConversationDialogs
     v-model:tool-detail-visible="toolDetailDialogVisible"
+    v-model:member-run-visible="memberRunDialogVisible"
     :active-tool-detail="activeToolDetail"
+    :active-member-runs="activeMemberRuns"
+    @open-tool-detail="openToolDetail"
   />
 </template>
 
@@ -192,6 +196,7 @@ import type {
   AgentDescriptor,
   AgentFeedbackSelection,
   AgentImageAttachmentItem,
+  AgentMemberRunItem,
   AgentPendingRequirement,
   AgentRunEvent,
   AgentScopeContext,
@@ -262,6 +267,7 @@ const queryClient = useQueryClient()
 const agentSessionStore = useAgentSessionStore()
 const {
   timelineItemsBySession,
+  memberRunsBySession,
   pendingRequirementBySession,
   pendingImageAttachmentsBySession,
   activeRunBySession,
@@ -290,7 +296,9 @@ const headerScopeReady = ref(false)
 const headerActionsReady = ref(false)
 const sessionMenuVisible = ref(false)
 const toolDetailDialogVisible = ref(false)
+const memberRunDialogVisible = ref(false)
 const activeToolDetailId = ref<string | null>(null)
+const activeMemberRunIds = ref<string[]>([])
 const sendInFlight = ref(false)
 const streamAbortControllersByRun = new Map<string, AbortController>()
 const autoNamingSessionIds = new Set<string>()
@@ -329,6 +337,9 @@ const timelineItems = computed<AgentTimelineItem[]>({
   get: () => readSessionValue(timelineItemsBySession.value, activeSessionId.value, []),
   set: value => agentSessionStore.setTimelineItems(activeSessionId.value, value),
 })
+const memberRuns = computed<AgentMemberRunItem[]>(() => (
+  readSessionValue(memberRunsBySession.value, activeSessionId.value, [])
+))
 const pendingRequirement = computed<AgentPendingRequirement | null>({
   get: () => activeRun.value?.pending_requirement ?? readSessionValue(pendingRequirementBySession.value, activeSessionId.value, null),
   set: value => agentSessionStore.setPendingRequirement(activeSessionId.value, value),
@@ -501,9 +512,17 @@ const imageUploadDisabledReason = computed(() => {
   return ''
 })
 const imageUploadDisabled = computed(() => Boolean(imageUploadDisabledReason.value))
-const resolvedToolCallDetails = computed(() => extractTimelineToolDetails(timelineItems.value))
+const resolvedToolCallDetails = computed(() => [
+  ...extractTimelineToolDetails(timelineItems.value, memberRuns.value),
+  ...memberRuns.value.flatMap(memberRun => extractTimelineToolDetails(memberRun.timeline_items)),
+])
 const activeToolDetail = computed<ToolCallDetail | null>(() => (
   resolvedToolCallDetails.value.find(item => item.id === activeToolDetailId.value) ?? null
+))
+const activeMemberRuns = computed(() => (
+  activeMemberRunIds.value
+    .map(runId => memberRuns.value.find(item => item.run_id === runId))
+    .filter((item): item is AgentMemberRunItem => Boolean(item))
 ))
 const panelShellClass = computed(() => (
   props.embedded
@@ -512,6 +531,7 @@ const panelShellClass = computed(() => (
 ))
 const timelineDisplayItems = computed(() => buildTimelineDisplayItems(timelineItems.value, {
   pendingRequirement: pendingRequirement.value,
+  memberRuns: memberRuns.value,
 }))
 const composerActionDisabled = computed(() => (
   isStreaming.value
@@ -871,7 +891,9 @@ watch(
 watch(activeSessionId, () => {
   sessionMenuVisible.value = false
   toolDetailDialogVisible.value = false
+  memberRunDialogVisible.value = false
   activeToolDetailId.value = null
+  activeMemberRunIds.value = []
   if (activeSessionId.value) {
     const session = sessionsQuery.data.value?.find(item => item.session_id === activeSessionId.value)
     if (!session || isSessionTargetCurrentScope(session, scope.value)) {
@@ -1749,6 +1771,17 @@ function resolveSessionRuntimeRequest(sessionId: string, sessions: AgentSessionI
 function openToolDetail(toolId: string) {
   activeToolDetailId.value = toolId
   toolDetailDialogVisible.value = true
+}
+
+function openMemberRunDetail(toolId: string) {
+  const tool = resolvedToolCallDetails.value.find(item => item.id === toolId)
+  const memberRunIds = tool?.delegatedMemberRuns.map(item => item.run_id) ?? []
+  if (!memberRunIds.length) {
+    openToolDetail(toolId)
+    return
+  }
+  activeMemberRunIds.value = memberRunIds
+  memberRunDialogVisible.value = true
 }
 
 /**

@@ -902,9 +902,22 @@ export interface AgentTimelineItem {
   created_at: string | null
 }
 
+export interface AgentMemberRunItem {
+  parent_run_id: string
+  run_id: string
+  agent_id: string
+  agent_name: string | null
+  status: AgentActiveRunStatus
+  created_at: string | null
+  updated_at: string | null
+  delegate_tool_call_id: string | null
+  timeline_items: AgentTimelineItem[]
+}
+
 export interface AgentSessionRuntimeSnapshot {
   session: AgentSessionItem
   timeline_items: AgentTimelineItem[]
+  member_runs: AgentMemberRunItem[]
   context_status: AgentContextStatusItem
   active_run: AgentActiveRunItem | null
   last_run: AgentActiveRunItem | null

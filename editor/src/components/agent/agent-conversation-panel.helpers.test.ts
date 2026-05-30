@@ -8,7 +8,7 @@ import {
   buildTimelineDisplayItems,
   extractTimelineToolDetails,
 } from '@/components/agent/agent-conversation-panel'
-import type { AgentPendingRequirement, AgentTimelineItem } from '@/types/api'
+import type { AgentMemberRunItem, AgentPendingRequirement, AgentTimelineItem } from '@/types/api'
 
 /**
  * 构造最小时间线项，便于覆盖 run-first 展示顺序。
@@ -207,6 +207,36 @@ describe('agent-conversation-panel timeline helpers', () => {
       outputPayload: { total: 2 },
       source: 'event',
     })])
+  })
+
+  it('delegate 工具详情应关联匹配的成员运行', () => {
+    const memberRuns: AgentMemberRunItem[] = [
+      {
+        parent_run_id: 'run-1',
+        run_id: 'member-run-resource',
+        agent_id: 'resource-manager',
+        agent_name: '资源助手',
+        status: 'completed',
+        created_at: '2026-04-18T10:00:01+08:00',
+        updated_at: '2026-04-18T10:00:02+08:00',
+        delegate_tool_call_id: 'delegate-call-resource',
+        timeline_items: [],
+      },
+    ]
+    const items = buildTimelineDisplayItems([
+      timelineItem({ id: 'delegate-tool', kind: 'tool', role: null, order_index: 0, status: 'completed', tool: {
+        tool_call_id: 'delegate-call-resource',
+        tool_name: 'delegate_task_to_member',
+        status: 'completed',
+        input_payload: { member_id: 'resource-manager', task: '整理资源' },
+        output_payload: { success: true },
+        message: '',
+      } }),
+    ], { memberRuns })
+
+    const toolGroup = items.find(item => item.kind === 'tool_group')
+    expect(toolGroup?.kind).toBe('tool_group')
+    expect(toolGroup?.kind === 'tool_group' ? toolGroup.tools[0].delegatedMemberRuns : []).toEqual(memberRuns)
   })
 
   it('运行失败标题应使用当前智能体名称', () => {

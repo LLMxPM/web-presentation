@@ -4619,6 +4619,165 @@ async def test_ai_cancelled_runtime_snapshot_should_restore_tool_timeline(authen
     assert tool_item["tool"]["output_payload"] == {"total": 2}
 
 
+async def test_ai_runtime_snapshot_should_attach_delegate_member_runs(
+    authenticated_client: AsyncClient,
+    monkeypatch,
+) -> None:
+    """delegate_task_to_member 触发的成员 run 应独立进入 member_runs，并从父时间线隐藏子工具。"""
+
+    workspace_id = await _create_workspace(authenticated_client, "AI 成员运行快照工作空间")
+    session_id = "delegate-member-run-session"
+    parent_run_id = "parent-run-delegate-member"
+    member_run_id = "member-run-resource-manager"
+    timeline_session = TeamSession(
+        session_id=session_id,
+        team_id=AGENT_COORDINATOR_AGENT_ID,
+        user_id="1",
+        session_data={"session_name": "成员运行快照会话"},
+        metadata={"scope_type": "workspace", "workspace_id": workspace_id, "source": "editor-agent-sidebar"},
+        team_data={"team_id": AGENT_COORDINATOR_AGENT_ID},
+        runs=[
+            TeamRunOutput(
+                run_id=parent_run_id,
+                session_id=session_id,
+                team_id=AGENT_COORDINATOR_AGENT_ID,
+                team_name="内容助手",
+                created_at=10,
+                messages=[Message(role="user", content="整理资源")],
+                events=[
+                    {
+                        "event": "TeamToolCallStarted",
+                        "run_id": parent_run_id,
+                        "tool": {
+                            "tool_call_id": "delegate-call-resource",
+                            "tool_name": "delegate_task_to_member",
+                            "tool_args": {"member_id": RESOURCE_MANAGER_AGENT_ID, "task": "整理资源"},
+                        },
+                    },
+                    {
+                        "event": "TeamToolCallCompleted",
+                        "run_id": parent_run_id,
+                        "tool": {
+                            "tool_call_id": "delegate-call-resource",
+                            "tool_name": "delegate_task_to_member",
+                            "result": {"success": True},
+                        },
+                    },
+                    {
+                        "event": "ToolCallCompleted",
+                        "run_id": member_run_id,
+                        "parent_run_id": parent_run_id,
+                        "agent_id": RESOURCE_MANAGER_AGENT_ID,
+                        "agent_name": "资源助手",
+                        "tool": {
+                            "tool_call_id": "child-tool-list-assets",
+                            "tool_name": "list_workspace_render_assets",
+                            "tool_args": {"workspace_id": workspace_id},
+                            "result": {"total": 2},
+                        },
+                    },
+                ],
+                member_responses=[
+                    RunOutput(
+                        run_id=member_run_id,
+                        parent_run_id=parent_run_id,
+                        session_id=session_id,
+                        agent_id=RESOURCE_MANAGER_AGENT_ID,
+                        agent_name="资源助手",
+                        created_at=11,
+                        messages=[Message(role="assistant", content="已整理资源。")],
+                        events=[
+                            {
+                                "event": "ToolCallStarted",
+                                "run_id": member_run_id,
+                                "parent_run_id": parent_run_id,
+                                "agent_id": RESOURCE_MANAGER_AGENT_ID,
+                                "agent_name": "资源助手",
+                                "tool": {
+                                    "tool_call_id": "child-tool-list-assets",
+                                    "tool_name": "list_workspace_render_assets",
+                                    "tool_args": {"workspace_id": workspace_id},
+                                },
+                            },
+                            {
+                                "event": "ToolCallCompleted",
+                                "run_id": member_run_id,
+                                "parent_run_id": parent_run_id,
+                                "agent_id": RESOURCE_MANAGER_AGENT_ID,
+                                "agent_name": "资源助手",
+                                "tool": {
+                                    "tool_call_id": "child-tool-list-assets",
+                                    "tool_name": "list_workspace_render_assets",
+                                    "result": {"total": 2},
+                                },
+                            },
+                        ],
+                        status=RunStatus.completed,
+                    )
+                ],
+                status=RunStatus.completed,
+            )
+        ],
+    )
+
+    async def fake_ensure_session_access(self, *, session_id: str, agent_id: str, scope):  # type: ignore[no-untyped-def]
+        assert session_id == "delegate-member-run-session"
+        assert agent_id == AGENT_COORDINATOR_AGENT_ID
+        assert scope.workspace_id == workspace_id
+        return timeline_session
+
+    async def fake_get_context_status(self, **_: object) -> AgentContextStatusItem:
+        return AgentContextStatusItem(
+            session_id=session_id,
+            agent_id=AGENT_COORDINATOR_AGENT_ID,
+            compression_enabled=True,
+            compression_required=False,
+            summary_available=False,
+            summary=None,
+            topics=[],
+            summary_updated_at=None,
+            context_window_tokens=4096,
+            max_output_tokens=1024,
+            history_token_ratio=0.4,
+            compression_target_ratio=0.1,
+            safety_margin_tokens=256,
+            current_input_tokens=0,
+            fixed_context_tokens=0,
+            history_budget_tokens=2048,
+            compression_target_tokens=512,
+            estimated_history_tokens=0,
+            retained_recent_history_tokens=0,
+            retained_recent_message_count=1,
+        )
+
+    monkeypatch.setattr("app.api.routes.agents.AgentSessionFacade.ensure_session_access", fake_ensure_session_access)
+    monkeypatch.setattr("app.api.routes.agents.AgentSessionFacade.get_context_status", fake_get_context_status)
+
+    response = await authenticated_client.get(
+        f"/api/ai/sessions/{session_id}/runtime",
+        params={"workspace_id": workspace_id, "agent_id": AGENT_COORDINATOR_AGENT_ID},
+    )
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    parent_tools = [item["tool"]["tool_name"] for item in payload["timeline_items"] if item["kind"] == "tool"]
+    assert parent_tools == ["delegate_task_to_member"]
+
+    member_runs = payload["member_runs"]
+    assert len(member_runs) == 1
+    member_run = member_runs[0]
+    assert member_run["parent_run_id"] == parent_run_id
+    assert member_run["run_id"] == member_run_id
+    assert member_run["agent_id"] == RESOURCE_MANAGER_AGENT_ID
+    assert member_run["agent_name"] == "资源助手"
+    assert member_run["delegate_tool_call_id"] == "delegate-call-resource"
+    child_tool_items = [item for item in member_run["timeline_items"] if item["kind"] == "tool"]
+    assert len(child_tool_items) == 1
+    assert child_tool_items[0]["tool"]["tool_name"] == "list_workspace_render_assets"
+    assert child_tool_items[0]["tool"]["input_payload"] == {"workspace_id": workspace_id}
+    assert child_tool_items[0]["tool"]["output_payload"] == {"total": 2}
+
+
 async def test_ai_timeline_should_keep_separate_missing_call_id_pairs(authenticated_client: AsyncClient, monkeypatch) -> None:
     """缺少 tool_call_id 的连续同名工具调用应按 started/completed 配对，不应互相覆盖。"""
 

@@ -138,7 +138,7 @@
                   type="button"
                   class="tool-call-row flex w-full min-w-0 items-center justify-between gap-2 border border-slate-200/80 bg-slate-50/60 px-1.5 py-0.5 text-left text-[10px] transition hover:bg-slate-100/70"
                   :class="getToolChipClass(tool.status)"
-                  @click="$emit('open-tool-detail', tool.id)"
+                  @click="handleToolRowClick(tool)"
                 >
                   <span class="min-w-0 truncate">{{ resolveToolDisplayName(tool) }}</span>
                   <span class="shrink-0 opacity-60" aria-hidden="true">{{ toolStatusLabelMap[tool.status] }}</span>
@@ -156,7 +156,7 @@
                     type="button"
                     class="tool-call-row flex w-full min-w-0 items-center justify-between gap-2 border border-slate-200/80 bg-slate-50/60 px-1.5 py-0.5 text-left text-[10px] transition hover:bg-slate-100/70"
                     :class="getToolChipClass(tool.status)"
-                    @click="$emit('open-tool-detail', tool.id)"
+                    @click="handleToolRowClick(tool)"
                   >
                     <span class="min-w-0 truncate">{{ resolveToolDisplayName(tool) }}</span>
                     <span class="shrink-0 opacity-60" aria-hidden="true">{{ toolStatusLabelMap[tool.status] }}</span>
@@ -247,10 +247,11 @@ const props = defineProps<{
   streamingTimelineItemId: string | null
 }>()
 
-defineEmits<{
+const emit = defineEmits<{
   'apply-suggested-patch': [patch: AgentSuggestedPatch]
   'remove-draft-patch': [patch: AgentSuggestedPatch]
   'open-tool-detail': [toolId: string]
+  'open-member-run-detail': [toolId: string]
   'force-cancel-run': []
 }>()
 
@@ -319,7 +320,21 @@ function resolveReasoningMarkdownNodes(item: Extract<TimelineDisplayItem, { kind
  * Team 成员工具调用在消息流中展示成员来源，避免与内容助手直连工具混淆。
  */
 function resolveToolDisplayName(tool: ToolCallDetail) {
+  if (tool.delegatedMemberRuns.length === 1) {
+    return `${tool.delegatedMemberRuns[0].agent_name || tool.delegatedMemberRuns[0].agent_id || '成员助手'}运行`
+  }
+  if (tool.delegatedMemberRuns.length > 1) {
+    return `成员助手运行 · ${tool.delegatedMemberRuns.length} 个`
+  }
   return tool.memberAgentName ? `${tool.memberAgentName} · ${tool.toolName}` : tool.toolName
+}
+
+function handleToolRowClick(tool: ToolCallDetail) {
+  if (tool.delegatedMemberRuns.length) {
+    emit('open-member-run-detail', tool.id)
+    return
+  }
+  emit('open-tool-detail', tool.id)
 }
 
 /**

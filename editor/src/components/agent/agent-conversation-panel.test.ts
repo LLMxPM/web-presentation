@@ -167,6 +167,7 @@ function createRuntimeSnapshot(overrides: Record<string, unknown> = {}) {
       : Array.isArray(messages)
         ? timelineFromMessages(messages)
         : [],
+    member_runs: [],
     context_status: createContextStatus(),
     active_run: null,
     last_run: null,
@@ -381,6 +382,7 @@ describe('AgentConversationPanel', () => {
         },
       },
       timeline_items: [],
+      member_runs: [],
       context_status: {
         session_id: 'session-1',
         agent_id: DEFAULT_AGENT_ID,
@@ -2354,6 +2356,112 @@ describe('AgentConversationPanel', () => {
       expect(screen.getByText(/"workspace_id": 11/)).toBeTruthy()
       expect(screen.getByText(/hero\.png/)).toBeTruthy()
       expect(screen.queryByText(/completed in 0\.0111s/)).toBeNull()
+    })
+  })
+
+  it('delegate 工具应打开成员运行弹窗，并可查看成员子工具详情', async () => {
+    localStorage.setItem('agent-session:agent-coordinator:11', 'session-1')
+    listAgentSessionsMock.mockResolvedValueOnce([
+      {
+        session_id: 'session-1',
+        agent_id: DEFAULT_AGENT_ID,
+        session_name: '成员运行历史',
+        created_at: '2026-04-18T10:00:00+08:00',
+        updated_at: '2026-04-18T10:20:00+08:00',
+        metadata: {
+          scope_type: 'page',
+          workspace_id: 11,
+          project_id: 21,
+          page_id: 31,
+          page_title: 'AI 页面',
+          source: 'editor-page-detail',
+        },
+      },
+    ])
+    getAgentSessionRuntimeMock.mockResolvedValueOnce(createRuntimeSnapshot({
+      timeline_items: [
+        {
+          id: 'delegate-tool',
+          session_id: 'session-1',
+          run_id: 'parent-run-1',
+          kind: 'tool',
+          role: null,
+          event_index: 1,
+          order_index: 0,
+          content: null,
+          status: 'completed',
+          tool: {
+            tool_call_id: 'delegate-call-resource',
+            tool_name: 'delegate_task_to_member',
+            status: 'completed',
+            input_payload: { member_id: 'resource-manager', task: '整理资源' },
+            output_payload: { success: true },
+            message: '',
+          },
+          source: 'event',
+          created_at: '2026-04-18T10:00:00+08:00',
+        },
+      ],
+      member_runs: [
+        {
+          parent_run_id: 'parent-run-1',
+          run_id: 'member-run-resource',
+          agent_id: 'resource-manager',
+          agent_name: '资源助手',
+          status: 'completed',
+          created_at: '2026-04-18T10:00:01+08:00',
+          updated_at: '2026-04-18T10:00:02+08:00',
+          delegate_tool_call_id: 'delegate-call-resource',
+          timeline_items: [
+            {
+              id: 'member-tool-list-assets',
+              session_id: 'session-1',
+              run_id: 'member-run-resource',
+              kind: 'tool',
+              role: null,
+              event_index: 1,
+              order_index: 0,
+              content: null,
+              status: 'completed',
+              tool: {
+                tool_call_id: 'child-tool-list-assets',
+                tool_name: 'list_workspace_render_assets',
+                member_agent_id: 'resource-manager',
+                member_agent_name: '资源助手',
+                member_run_id: 'member-run-resource',
+                status: 'completed',
+                input_payload: { workspace_id: 11 },
+                output_payload: { total: 2, items: ['hero.png'] },
+                message: '',
+              },
+              source: 'event',
+              created_at: '2026-04-18T10:00:02+08:00',
+            },
+          ],
+        },
+      ],
+    }))
+
+    render(AgentConversationPanel, createTestingRenderOptions())
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: '资源助手运行' })).toBeTruthy()
+    })
+
+    await fireEvent.click(screen.getByRole('button', { name: '资源助手运行' }))
+
+    await waitFor(() => {
+      expect(screen.getByText('资源助手运行详情')).toBeTruthy()
+      expect(screen.getByRole('button', { name: /list_workspace_render_assets/ })).toBeTruthy()
+    })
+
+    await fireEvent.click(screen.getByRole('button', { name: /list_workspace_render_assets/ }))
+
+    await waitFor(() => {
+      expect(screen.getByText('工具输入')).toBeTruthy()
+      expect(screen.getByText('工具输出')).toBeTruthy()
+      expect(screen.getByText(/"workspace_id": 11/)).toBeTruthy()
+      expect(screen.getByText(/hero\.png/)).toBeTruthy()
     })
   })
 

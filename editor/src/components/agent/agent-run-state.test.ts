@@ -408,4 +408,90 @@ describe('agent-run-state timeline', () => {
       tool_name: 'apply_page_edits',
     }))
   })
+
+  it('Agno raw member 事件应进入独立成员运行，不污染父 run 时间线', () => {
+    const state = createAgentSessionRuntimeState()
+    const options = { agentId: 'agent-coordinator', agentDisplayName: '内容助手' }
+
+    applyAgentRunEvent(state, event({ event: 'TeamRunStarted', run_id: 'parent-run-1', event_index: 0, sequence: null }), options)
+    applyAgentRunEvent(state, event({
+      event: 'TeamToolCallStarted',
+      run_id: 'parent-run-1',
+      event_index: 1,
+      sequence: null,
+      tool: {
+        tool_call_id: 'delegate-call-resource',
+        tool_name: 'delegate_task_to_member',
+        tool_args: { member_id: 'resource-manager', task: '整理资源' },
+      },
+    }), options)
+    applyAgentRunEvent(state, event({
+      event: 'RunStarted',
+      run_id: 'member-run-1',
+      parent_run_id: 'parent-run-1',
+      agent_id: 'resource-manager',
+      agent_name: '资源助手',
+      event_index: 2,
+      sequence: null,
+    }), options)
+    applyAgentRunEvent(state, event({
+      event: 'ToolCallStarted',
+      run_id: 'member-run-1',
+      parent_run_id: 'parent-run-1',
+      agent_id: 'resource-manager',
+      agent_name: '资源助手',
+      event_index: 3,
+      sequence: null,
+      tool: {
+        tool_call_id: 'child-tool-list-assets',
+        tool_name: 'list_workspace_render_assets',
+        tool_args: { workspace_id: 11 },
+      },
+    }), options)
+    applyAgentRunEvent(state, event({
+      event: 'ToolCallCompleted',
+      run_id: 'member-run-1',
+      parent_run_id: 'parent-run-1',
+      agent_id: 'resource-manager',
+      agent_name: '资源助手',
+      event_index: 4,
+      sequence: null,
+      tool: {
+        tool_call_id: 'child-tool-list-assets',
+        tool_name: 'list_workspace_render_assets',
+        result: { total: 2 },
+      },
+    }), options)
+    applyAgentRunEvent(state, event({
+      event: 'RunCompleted',
+      run_id: 'member-run-1',
+      parent_run_id: 'parent-run-1',
+      agent_id: 'resource-manager',
+      agent_name: '资源助手',
+      content: '资源整理完成。',
+      event_index: 5,
+      sequence: null,
+    }), options)
+
+    expect(state.timelineItems.filter(item => item.kind === 'tool').map(item => item.tool?.tool_name)).toEqual([
+      'delegate_task_to_member',
+    ])
+    expect(state.memberRuns).toHaveLength(1)
+    expect(state.memberRuns[0]).toEqual(expect.objectContaining({
+      parent_run_id: 'parent-run-1',
+      run_id: 'member-run-1',
+      agent_id: 'resource-manager',
+      agent_name: '资源助手',
+      status: 'completed',
+      delegate_tool_call_id: 'delegate-call-resource',
+    }))
+    expect(state.memberRuns[0].timeline_items.filter(item => item.kind === 'tool').map(item => item.tool)).toEqual([
+      expect.objectContaining({
+        tool_call_id: 'child-tool-list-assets',
+        tool_name: 'list_workspace_render_assets',
+        input_payload: { workspace_id: 11 },
+        output_payload: { total: 2 },
+      }),
+    ])
+  })
 })

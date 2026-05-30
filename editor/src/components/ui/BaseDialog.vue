@@ -2,7 +2,11 @@
 <template>
   <Teleport to="body">
     <Transition name="fade">
-      <div v-if="modelValue" class="fixed inset-0 z-[1000] flex items-center justify-center p-4">
+      <div
+        v-if="modelValue"
+        class="fixed inset-0 flex items-center justify-center p-4"
+        :style="{ zIndex: props.zIndex ?? 1000 }"
+      >
         <!-- Overlay -->
         <div class="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" @click="close"></div>
         
@@ -49,6 +53,7 @@ const props = defineProps<{
   title?: string
   width?: string
   bodyClass?: string
+  zIndex?: number
 }>()
 
 const emit = defineEmits(['update:modelValue'])
