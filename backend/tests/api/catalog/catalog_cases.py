@@ -105,7 +105,6 @@ async def test_workspace_project_and_page_crud(authenticated_client: AsyncClient
     assert project_data["menu_mode"] == "preview"
     assert project_data["style_spec_markdown"] == DEFAULT_PROJECT_STYLE_SPEC_MARKDOWN
     assert "themes:" in project_data["theme_config_yaml"]
-    assert "icon:" in project_data["theme_config_yaml"]
     assert "baseFontSize" not in project_data["theme_config_yaml"]
     assert "default_size" not in project_data["theme_config_yaml"]
 

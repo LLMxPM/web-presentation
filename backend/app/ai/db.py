@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from copy import deepcopy
 from pathlib import Path
 from typing import Any, Callable
@@ -20,6 +21,7 @@ from agno.session.team import TeamSession
 from agno.session.workflow import WorkflowSession
 from sqlalchemy.engine import make_url
 
+from app.ai.session_storage_compaction import compact_agno_event_payload_for_storage
 from app.core.config import get_settings
 
 
@@ -125,8 +127,7 @@ def _normalize_run_common_fields(run: Any) -> None:
     _normalize_sequence_attr(run, "additional_input", _message_from_dict)
     _normalize_sequence_attr(run, "reasoning_messages", _message_from_dict)
     _normalize_sequence_attr(run, "events", _event_from_dict)
-    for event in getattr(run, "events", None) or []:
-        _normalize_event_common_fields(event)
+    _compact_event_sequence_attr(run)
     _normalize_sequence_attr(run, "tools", _tool_execution_from_dict)
     _normalize_sequence_attr(run, "requirements", _requirement_from_dict)
     _normalize_input_attr(run)
@@ -197,6 +198,28 @@ def _normalize_event_common_fields(event: Any) -> None:
         event.session_summary = _session_summary_from_dict(summary)
 
 
+def _compact_event_sequence_attr(run: Any) -> None:
+    """压缩 run.events 的持久化体积，避免图片和大工具结果在每个事件中重复落库。"""
+
+    events = getattr(run, "events", None)
+    if not isinstance(events, list):
+        return
+    compacted_events = []
+    for event in events:
+        _normalize_event_common_fields(event)
+        compacted_events.append(_compact_event_for_storage(event))
+    run.events = compacted_events
+
+
+def _compact_event_for_storage(event: Any) -> Any:
+    """把单个 Agno 事件转换为适合 DB 长期保存的轻量事件对象。"""
+
+    payload = compact_agno_event_payload_for_storage(event)
+    if payload is None:
+        return event
+    return _event_from_dict(payload)
+
+
 def _message_from_dict(payload: dict[str, Any]) -> Any:
     """还原 Agno Message，避免 run.to_dict 对普通 dict 调用 to_dict。"""
 
@@ -250,9 +273,17 @@ class _SerializableMapping:
         """保存原始 JSON payload。"""
 
         self._payload = payload
+        self.event = payload.get("event")
 
     def to_dict(self) -> dict[str, Any]:
         """返回可写入 Agno sessions 表的 JSON payload。"""
 
         return self._payload
+
+    def to_json(self, **kwargs: Any) -> str:
+        """兼容 Agno 原始 SSE 回放对未知事件对象的 JSON 序列化调用。"""
+
+        kwargs.setdefault("ensure_ascii", False)
+        kwargs.setdefault("default", str)
+        return json.dumps(self._payload, **kwargs)
 
