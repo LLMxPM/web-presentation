@@ -248,11 +248,12 @@ export function applyAgentRuntimeSnapshot(
   if (!state.stream.streaming) {
     state.stream.streamingTimelineItemId = null
   }
-  const cursorRun = payload.activeRun && !STREAMING_RUN_STATUSES.has(payload.activeRun.status)
-    ? payload.activeRun
-    : payload.lastRun
+  const cursorRun = payload.activeRun ?? payload.lastRun
   if (cursorRun?.run_id) {
-    state.stream.lastSequenceByRun[cursorRun.run_id] = payload.eventIndex
+    state.stream.lastSequenceByRun[cursorRun.run_id] = Math.max(
+      state.stream.lastSequenceByRun[cursorRun.run_id] ?? -1,
+      payload.eventIndex,
+    )
   }
 }
 

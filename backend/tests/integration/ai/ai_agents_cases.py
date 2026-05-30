@@ -3593,6 +3593,73 @@ async def test_ai_raw_sse_cancelled_event_should_trigger_preservation() -> None:
     ]
 
 
+async def test_ai_raw_sse_object_events_should_continue_existing_event_index() -> None:
+    """非 background 原始事件包装时，应沿用已有 run.events 游标继续编号。"""
+
+    class FakeRawEvent:
+        """提供 Agno SSE formatter 所需的 event 与 to_dict。"""
+
+        def __init__(self, **payload: object) -> None:
+            self.event = str(payload.get("event"))
+            self._payload = payload
+            for key, value in payload.items():
+                setattr(self, key, value)
+
+        def to_dict(self) -> dict[str, object]:
+            return dict(self._payload)
+
+    run_id = "run-continue-index"
+    session_id = "session-continue-index"
+    session_detail = TeamSession(
+        session_id=session_id,
+        team_id=AGENT_COORDINATOR_AGENT_ID,
+        user_id="1",
+        team_data={"team_id": AGENT_COORDINATOR_AGENT_ID},
+        runs=[
+            TeamRunOutput(
+                run_id=run_id,
+                session_id=session_id,
+                team_id=AGENT_COORDINATOR_AGENT_ID,
+                events=[
+                    {"event": "TeamRunStarted", "run_id": run_id},
+                    {"event": "TeamRunPaused", "run_id": run_id},
+                ],
+                status=RunStatus.running,
+            )
+        ],
+    )
+
+    async def fake_raw_stream():
+        yield FakeRawEvent(event="TeamRunContent", run_id=run_id, session_id=session_id, content="继续输出")
+        yield FakeRawEvent(event="TeamRunCompleted", run_id=run_id, session_id=session_id, content="完成")
+
+    async def fake_stream_builder() -> SimpleNamespace:
+        return SimpleNamespace(agent=SimpleNamespace(), stream=fake_raw_stream(), run_id=run_id)
+
+    facade = AgentSessionFacade.__new__(AgentSessionFacade)
+    facade._get_session_run_lock = lambda **_: asyncio.Lock()
+    facade.ensure_session_access = lambda **_: _async_value(session_detail)
+
+    chunks = [
+        chunk
+        async for chunk in facade._stream_agno_raw_sse(
+            session_id=session_id,
+            agent_id=AGENT_COORDINATOR_AGENT_ID,
+            scope=AgentScopeContext(scope_type="workspace", workspace_id=1, source="editor-agent-sidebar"),
+            fallback_user_message=None,
+            stream_builder=fake_stream_builder,
+        )
+    ]
+
+    event_payloads = [
+        json.loads(line.removeprefix("data: "))
+        for chunk in chunks
+        for line in chunk.decode("utf-8").splitlines()
+        if line.startswith("data: ")
+    ]
+    assert [payload["event_index"] for payload in event_payloads] == [2, 3]
+
+
 async def test_ai_coordinator_session_messages_should_be_visible(authenticated_client: AsyncClient, monkeypatch) -> None:
     """统一智能体使用 AgentSession 持久化时，历史消息应能被会话接口读取。"""
 

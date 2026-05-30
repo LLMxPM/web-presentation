@@ -306,6 +306,58 @@ describe('agent-run-state timeline', () => {
     expect(state.stream.lastSequenceByRun['run-1']).toBe(3)
   })
 
+  it('运行中 runtime snapshot 应推进回放游标避免旧事件重复插入', () => {
+    const state = createAgentSessionRuntimeState()
+    const options = { agentId: 'agent-coordinator', agentDisplayName: '内容助手' }
+
+    applyAgentRuntimeSnapshot(state, {
+      timelineItems: [
+        timelineItem({ id: 'reasoning-1', kind: 'reasoning', role: null, order_index: 0, event_index: 1, content: '先分析。' }),
+        timelineItem({ id: 'tool-1', kind: 'tool', role: null, order_index: 1, event_index: 2, status: 'completed', tool: {
+          tool_call_id: 'call-1',
+          tool_name: 'list_workspace_render_assets',
+          status: 'completed',
+          input_payload: { workspace_id: 1 },
+          output_payload: { total: 2 },
+          message: '',
+        } }),
+      ],
+      activeRun: {
+        run_id: 'run-1',
+        session_id: 'session-1',
+        agent_id: 'agent-coordinator',
+        status: 'running',
+        pending_requirement: null,
+        content: null,
+        created_at: '2026-04-18T10:00:00+08:00',
+        event_index: 2,
+      },
+      lastRun: null,
+      pendingRequirement: null,
+      pendingImageAttachments: [],
+      contextStatus: null,
+      eventIndex: 2,
+    })
+
+    const replayed = applyAgentRunEvent(state, event({
+      event: 'message.delta',
+      content: '旧片段不应重复出现。',
+      event_index: 1,
+      sequence: null,
+    }), options)
+    const next = applyAgentRunEvent(state, event({
+      event: 'message.delta',
+      content: '新片段。',
+      event_index: 3,
+      sequence: null,
+    }), options)
+
+    expect(state.stream.lastSequenceByRun['run-1']).toBe(3)
+    expect(replayed.applied).toBe(false)
+    expect(next.applied).toBe(true)
+    expect(state.timelineItems.map(item => item.content)).toEqual(['先分析。', null, '新片段。'])
+  })
+
   it('取消终态快照缺少当前 run 进度时应保留本地 timeline', () => {
     const state = createAgentSessionRuntimeState()
     state.activeRun = {

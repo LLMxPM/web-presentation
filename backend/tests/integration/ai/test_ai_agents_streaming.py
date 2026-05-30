@@ -20,6 +20,7 @@ from tests.integration.ai.ai_agents_cases import (
     test_ai_coordinator_session_messages_should_be_visible,
     test_ai_reasoning_stream_delta_should_preserve_newline_boundaries,
     test_ai_raw_sse_cancelled_event_should_trigger_preservation,
+    test_ai_raw_sse_object_events_should_continue_existing_event_index,
     test_ai_run_stream_should_refresh_context_status_at_message_checkpoints,
     test_ai_run_routes_should_stream_direct_page_apply,
     test_ai_runtime_snapshot_should_attach_delegate_member_runs,

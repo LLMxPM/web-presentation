@@ -1586,11 +1586,11 @@ class AgentSessionFacade:
                 await lock.acquire()
                 lock_acquired = True
             try:
-                await self.ensure_session_access(session_id=session_id, agent_id=agent_id, scope=scope)
+                session_detail = await self.ensure_session_access(session_id=session_id, agent_id=agent_id, scope=scope)
                 active_stream = await stream_builder()
                 active_run_id = active_stream.run_id
                 tracker.run_id = active_run_id
-                local_event_index = -1
+                local_event_index = _run_latest_event_index_from_detail(session_detail, active_run_id)
                 async for sse_data in active_stream.stream:
                     if isinstance(sse_data, (str, bytes)):
                         yield _ensure_sse_bytes(sse_data)
@@ -3295,6 +3295,15 @@ def _run_latest_event_index(run: RunOutput | TeamRunOutput) -> int:
 
     events = getattr(run, "events", None) or []
     return len(events) - 1
+
+
+def _run_latest_event_index_from_detail(detail: AgnoSessionDetail | Any, run_id: str | None) -> int:
+    """从会话详情读取指定 run 已持久化的最后事件下标。"""
+
+    if not run_id or not isinstance(detail, (AgentSession, TeamSession)):
+        return -1
+    run = detail.get_run(run_id)
+    return _run_latest_event_index(run) if run is not None else -1
 
 
 def _resolve_requirement_payload(payload: dict[str, Any]) -> dict[str, Any] | None:
