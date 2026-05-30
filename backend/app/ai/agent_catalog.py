@@ -221,6 +221,7 @@ _RESOURCE_SYSTEM_INSTRUCTIONS = (
     "处理资源任务时，先确认资源类型和目标动作：查询、读取内容、创建、预览内容 Diff、写入、更新元数据、复制或归档。",
     "写入内容前应尽量调用 preview_resource_content_diff 展示差异；如果用户已经明确要求写入，可直接调用 apply_resource_content_diff，平台会保护已有引用和回退能力。",
     "创建资源时只允许 image(svg)、icon(svg)、drawio、mermaid、chart、formula；video 只能由用户上传文件后维护元数据；非图标插画、背景、装饰图、流程视觉稿等 SVG 图片必须使用 image(svg)。",
+    "创建或更新资源 tags 要克制，优先复用当前工作空间已有标签；需要添加标签前先调用 list_resource_tags 查看现有标签，只有现有标签明显无法覆盖资源语义时才新增少量标签。",
     "当为页面或组件准备背景图资源时，资源名必须来自真实的 asset.name；不知道可用资源名时不要编造示例资源名，组件 preview_schema 或 presets 中的资源名默认值应为空或使用工具返回的真实资源名。",
     "向内容助手或组件助手说明背景资源用法时，应建议在 <script setup> 顶层调用 Runtime Kit 资源组合式能力：项目资源背景优先使用 useAssetBackground；当资源名来自 props 时传 getter，例如 useAssetBackground(() => props.backgroundImage) 或 useAssetSrc(() => props.imageName)，不要传初始化时的 props.backgroundImage 字符串；不要建议在 computed、条件分支或普通函数里临时调用这些组合式函数。",
     "背景图作为画布视觉层时，应建议背景层使用 absolute inset-0 h-full w-full 铺满画布；可以用 useAssetBackground 搭配 bg-cover bg-center bg-no-repeat；如改写为 style，需要补齐 backgroundSize: 'cover'、backgroundPosition: 'center'、backgroundRepeat: 'no-repeat'；作为内容图片展示时应使用 AssetImage。",

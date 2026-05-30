@@ -22,6 +22,7 @@ from agno.session.agent import AgentSession
 from agno.session.summary import SessionSummary
 from agno.session.team import TeamSession
 from agno.team import TeamMode
+from agno.tools.function import FunctionCall
 from agno.utils.events import create_tool_call_started_event
 
 from app.ai.agent import (
@@ -1038,6 +1039,23 @@ async def test_resource_create_tool_should_support_svg_image_asset(
     assert asset["original_name"] == "illustration.svg"
     assert asset["content_editable"] is True
     assert asset["analysis_metadata"] is None
+
+
+def test_resource_create_tool_should_repair_stringified_tags_before_validation() -> None:
+    """资源创建工具应在校验前修复模型把 tags 数组二次编码成字符串的参数。"""
+
+    create_tool = _find_tool(build_resource_manager_tools(get_session_factory()), "create_resource_asset")
+    tags_schema = create_tool.parameters["properties"]["tags"]
+    assert tags_schema["anyOf"][0]["type"] == "array"
+
+    function_call = FunctionCall(
+        function=create_tool,
+        arguments={"tags": '["物理学", "电磁学", "麦克斯韦方程组", "物理学"]'},
+    )
+    assert create_tool.pre_hook is not None
+    create_tool.pre_hook(fc=function_call)
+
+    assert function_call.arguments == {"tags": ["物理学", "电磁学", "麦克斯韦方程组"]}
 
 
 async def test_resource_member_write_tool_should_accept_member_token_from_coordinator_run(

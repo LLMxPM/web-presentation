@@ -259,6 +259,8 @@ async def test_agent_config_api_should_manage_prompt_and_tool_overrides(authenti
     assert "不要传初始化时的 props.backgroundImage 字符串" in resource_prompt
     assert "useAssetSrc" in resource_prompt
     assert "computed、条件分支或普通函数" in resource_prompt
+    assert "创建或更新资源 tags 要克制" in resource_prompt
+    assert "list_resource_tags 查看现有标签" in resource_prompt
     assert "absolute inset-0 h-full w-full" in resource_prompt
     assert "bg-cover bg-center bg-no-repeat" in resource_prompt
     assert "Runtime Kit 的 AssetBackground" not in resource_prompt
@@ -555,8 +557,10 @@ async def test_agent_config_api_should_manage_prompt_and_tool_overrides(authenti
     assert "MathML" in create_resource_instructions
     assert "<svg>" in create_resource_instructions
     assert "foreignObject" in create_resource_instructions
-    assert "tags 必须传 JSON 数组/list[str]" in create_resource_instructions
-    assert "不要传 JSON 字符串" in create_resource_instructions
+    assert "tags 字段必须直接传 JSON 数组/list[str]" in create_resource_instructions
+    assert "不要把数组再编码成 JSON 字符串" in create_resource_instructions
+    assert "创建 tags 要克制" in create_resource_instructions
+    assert "先用 list_resource_tags 查看现有标签" in create_resource_instructions
     preview_resource_tool = next(
         tool for tool in resource_library_group["tools"] if tool["key"] == "preview_resource_content_diff"
     )

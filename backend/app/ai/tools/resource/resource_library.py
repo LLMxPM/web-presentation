@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import re
 from typing import Any
 
 from agno.run import RunContext
@@ -144,7 +146,7 @@ def build_list_resource_tags_tool(session_factory: async_sessionmaker[AsyncSessi
 def build_create_resource_asset_tool(session_factory: async_sessionmaker[AsyncSession]) -> Any:
     """构建资源内容创建工具。"""
 
-    @tool(show_result=False)
+    @tool(show_result=False, pre_hook=_repair_tags_argument_before_validation)
     async def create_resource_asset(
         run_context: RunContext,
         asset_type: AssetType,
@@ -169,7 +171,7 @@ def build_create_resource_asset_tool(session_factory: async_sessionmaker[AsyncSe
                 original_name=original_name,
                 content=content,
                 description=description,
-                tags=tags or [],
+                tags=_normalize_tags_argument(tags) or [],
             )
             return {"success": True, "message": "资源已创建。", "asset": _dump_asset(asset)}
 
@@ -226,7 +228,7 @@ def build_apply_resource_content_diff_tool(session_factory: async_sessionmaker[A
 def build_update_resource_asset_metadata_tool(session_factory: async_sessionmaker[AsyncSession]) -> Any:
     """构建资源元数据更新工具。"""
 
-    @tool(show_result=False)
+    @tool(show_result=False, pre_hook=_repair_tags_argument_before_validation)
     async def update_resource_asset_metadata(
         run_context: RunContext,
         asset_id: int,
@@ -249,7 +251,7 @@ def build_update_resource_asset_metadata_tool(session_factory: async_sessionmake
                 name=name,
                 original_name=original_name,
                 description=description,
-                tags=tags,
+                tags=_normalize_tags_argument(tags) if tags is not None else None,
             )
             return {"success": True, "message": "资源元数据已更新。", "asset": _dump_asset(asset)}
 
@@ -259,7 +261,7 @@ def build_update_resource_asset_metadata_tool(session_factory: async_sessionmake
 def build_copy_resource_asset_tool(session_factory: async_sessionmaker[AsyncSession]) -> Any:
     """构建资源复制工具。"""
 
-    @tool(show_result=False)
+    @tool(show_result=False, pre_hook=_repair_tags_argument_before_validation)
     async def copy_resource_asset(
         run_context: RunContext,
         asset_id: int,
@@ -284,7 +286,7 @@ def build_copy_resource_asset_tool(session_factory: async_sessionmaker[AsyncSess
                 name=name,
                 original_name=original_name,
                 description=description,
-                tags=tags,
+                tags=_normalize_tags_argument(tags) if tags is not None else None,
                 status=status,
                 archive_reason=archive_reason,
             )
@@ -359,3 +361,61 @@ def _build_asset_search_text(asset: Any) -> str:
             " ".join(str(tag) for tag in asset.tags or []),
         ]
     ).lower()
+
+
+_TAG_SPLIT_PATTERN = re.compile(r"[,，、;；\r\n]+")
+
+
+def _repair_tags_argument_before_validation(fc: Any | None = None) -> None:
+    """在 Pydantic 校验前修复模型把 tags 二次编码为字符串的常见情况。"""
+
+    arguments = getattr(fc, "arguments", None)
+    if not isinstance(arguments, dict) or "tags" not in arguments:
+        return
+
+    raw_tags = arguments.get("tags")
+    if isinstance(raw_tags, str) or isinstance(raw_tags, list):
+        arguments["tags"] = _normalize_tags_argument(raw_tags)
+
+
+def _normalize_tags_argument(value: list[Any] | str | None) -> list[str] | None:
+    """把资源工具 tags 入参归一化为字符串列表，并兼容 JSON 数组字符串。"""
+
+    if value is None:
+        return None
+    if isinstance(value, str):
+        stripped = value.strip()
+        if not stripped:
+            return []
+        if stripped.lower() in {"none", "null"}:
+            return None
+        parsed = _parse_tag_json_string(stripped)
+        if parsed is not _UNPARSED_JSON:
+            return _normalize_tags_argument(parsed)
+        return _normalize_tag_items(_TAG_SPLIT_PATTERN.split(stripped))
+    return _normalize_tag_items(value)
+
+
+_UNPARSED_JSON = object()
+
+
+def _parse_tag_json_string(value: str) -> Any:
+    """仅尝试解析 JSON 数组或 JSON 字符串形式的标签输入。"""
+
+    if not value.startswith(("[", '"')):
+        return _UNPARSED_JSON
+    try:
+        return json.loads(value)
+    except json.JSONDecodeError:
+        return _UNPARSED_JSON
+
+
+def _normalize_tag_items(items: list[Any]) -> list[str]:
+    """清理标签列表中的空项并保持去重顺序。"""
+
+    tags: list[str] = []
+    for item in items:
+        text = str(item or "").strip()
+        if text and text not in tags:
+            tags.append(text)
+    return tags
