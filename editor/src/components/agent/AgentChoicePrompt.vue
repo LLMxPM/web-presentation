@@ -3,9 +3,11 @@
   <AgentHitlShell
     :title="currentQuestionTitle"
     :subtitle="questionProgressLabel"
-    badge="提问"
+    badge="需要回答"
     :loading="loading"
     :can-submit="allAnswered"
+    submit-label="提交回答"
+    ignore-label="取消本次运行"
     @ignore="emit('ignore')"
     @submit="submitAnswers"
   >

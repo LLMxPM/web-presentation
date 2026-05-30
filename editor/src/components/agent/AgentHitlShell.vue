@@ -31,7 +31,7 @@
           :disabled="loading"
           @click="emitIgnore"
         >
-          忽略
+          {{ ignoreLabel }}
           <kbd class="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-500">ESC</kbd>
         </button>
         <BaseButton
@@ -62,12 +62,14 @@ const props = withDefaults(defineProps<{
   canSubmit?: boolean
   loading?: boolean
   submitLabel?: string
+  ignoreLabel?: string
 }>(), {
   subtitle: '',
   badge: '',
   canSubmit: true,
   loading: false,
   submitLabel: '提交',
+  ignoreLabel: '忽略',
 })
 
 const emit = defineEmits<{

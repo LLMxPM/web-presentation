@@ -875,26 +875,36 @@ export interface AgentRunStartResponse {
   event_index: number
 }
 
-export interface AgentToolCallDetailItem {
-  id: string
-  run_id: string
+export interface AgentTimelineToolItem {
   tool_call_id: string | null
   tool_name: string
   member_agent_id?: string | null
   member_agent_name?: string | null
   member_run_id?: string | null
   status: 'running' | 'completed' | 'error'
-  assistant_message_id: string | null
   input_payload: unknown
   output_payload: unknown
   message: string
+}
+
+export interface AgentTimelineItem {
+  id: string
+  session_id: string
+  run_id: string
+  kind: 'message' | 'reasoning' | 'tool' | 'run_status' | 'requirement'
+  role: 'user' | 'assistant' | null
+  event_index: number | null
+  order_index: number
+  content: string | null
+  status: string | null
+  tool: AgentTimelineToolItem | null
+  source: 'message' | 'event' | 'synthetic'
   created_at: string | null
 }
 
 export interface AgentSessionRuntimeSnapshot {
   session: AgentSessionItem
-  messages: AgentMessageItem[]
-  tool_details: AgentToolCallDetailItem[]
+  timeline_items: AgentTimelineItem[]
   context_status: AgentContextStatusItem
   active_run: AgentActiveRunItem | null
   last_run: AgentActiveRunItem | null

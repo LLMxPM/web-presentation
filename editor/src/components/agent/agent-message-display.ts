@@ -52,8 +52,11 @@ export function getToolChipClass(status: ToolCallDetail['status']) {
  * 返回工具详情来源标签文案。
  */
 export function getToolSourceLabel(source: ToolCallDetail['source']) {
-  if (source === 'history') {
-    return '历史消息回放'
+  if (source === 'message') {
+    return '历史消息'
+  }
+  if (source === 'synthetic') {
+    return '本地状态'
   }
   return '本轮运行采集'
 }
@@ -158,12 +161,12 @@ export function resolveMessageReasoning(
  */
 export function createMessageStreamingResolver(
   isStreaming: () => boolean,
-  getStreamingAssistantMessageId: () => string | null,
+  getStreamingTimelineItemId: () => string | null,
 ) {
   return (message: AgentMessageItem) => (
     isStreaming()
     && message.role === 'assistant'
-    && message.id === getStreamingAssistantMessageId()
+    && message.id === getStreamingTimelineItemId()
   )
 }
 

@@ -1,246 +1,182 @@
 /**
- * 文件功能：验证内容助手消息展示辅助逻辑，确保历史工具调用在刷新后归位稳定。
+ * 文件功能：验证内容助手 run-first 时间线展示辅助逻辑，确保刷新后工具调用独立回放。
  */
 import { describe, expect, it } from 'vitest'
 
 import {
   buildRunIssueState,
-  buildConversationDisplayItems,
-  extractHistoryToolCallDetails,
-  mergeToolCallDetails,
-  type ToolCallDetail,
+  buildTimelineDisplayItems,
+  extractTimelineToolDetails,
 } from '@/components/agent/agent-conversation-panel'
-import type { AgentMessageItem } from '@/types/api'
+import type { AgentPendingRequirement, AgentTimelineItem } from '@/types/api'
 
 /**
- * 构造最小会话消息，便于覆盖不同历史顺序。
+ * 构造最小时间线项，便于覆盖 run-first 展示顺序。
  */
-function message(
-  id: string,
-  role: AgentMessageItem['role'],
-  content: string,
-  overrides: Partial<AgentMessageItem> = {},
-): AgentMessageItem {
+function timelineItem(overrides: Partial<AgentTimelineItem>): AgentTimelineItem {
   return {
-    id,
-    role,
-    content,
+    id: overrides.id ?? `item-${overrides.order_index ?? 0}`,
+    session_id: 'session-1',
+    run_id: 'run-1',
+    kind: 'message',
+    role: 'assistant',
+    event_index: null,
+    order_index: 0,
+    content: null,
+    status: null,
+    tool: null,
+    source: 'event',
     created_at: null,
-    tool_name: null,
-    tool_call_id: null,
-    tool_args: null,
-    tool_call_error: null,
     ...overrides,
   }
 }
 
-describe('agent-conversation-panel helpers', () => {
-  it('assistant.tool_calls 后续 tool 结果应挂在调用发生的助手消息上', () => {
-    const messages = [
-      message('user-1', 'user', '检查资源', { run_id: 'run-1' }),
-      message('assistant-call', 'assistant', '我先读取资源。', {
-        run_id: 'run-1',
-        tool_calls: [
-          {
-            id: 'tool-assets',
-            type: 'function',
-            function: {
-              name: 'list_workspace_render_assets',
-              arguments: '{"workspace_id":11,"limit":20}',
-            },
-          },
-        ],
-      }),
-      message('tool-assets-result', 'tool', '{"total":2}', {
-        run_id: 'run-1',
+describe('agent-conversation-panel timeline helpers', () => {
+  it('应按 order_index 渲染 user、reasoning、assistant、tool 与状态项', () => {
+    const items = buildTimelineDisplayItems([
+      timelineItem({ id: 'tool-1', kind: 'tool', role: null, order_index: 3, status: 'completed', tool: {
+        tool_call_id: 'call-1',
         tool_name: 'list_workspace_render_assets',
-        tool_call_id: 'tool-assets',
-        tool_args: { workspace_id: 11, limit: 20 },
-      }),
-      message('assistant-final', 'assistant', '资源检查完成。', { run_id: 'run-1' }),
-    ]
+        status: 'completed',
+        input_payload: { workspace_id: 11 },
+        output_payload: { total: 2 },
+        message: '',
+      } }),
+      timelineItem({ id: 'user-1', kind: 'message', role: 'user', order_index: 0, content: '检查资源' }),
+      timelineItem({ id: 'assistant-1', kind: 'message', role: 'assistant', order_index: 2, content: '资源检查完成。' }),
+      timelineItem({ id: 'reasoning-1', kind: 'reasoning', role: null, order_index: 1, content: '先读取资源。' }),
+      timelineItem({ id: 'status-1', kind: 'run_status', role: null, order_index: 4, status: 'completed', content: '运行已完成。' }),
+    ])
 
-    const items = buildConversationDisplayItems(messages, extractHistoryToolCallDetails(messages))
-    const callAssistant = items.find(item => item.message.id === 'assistant-call')
-    const finalAssistant = items.find(item => item.message.id === 'assistant-final')
-
-    expect(callAssistant?.embeddedTools).toHaveLength(1)
-    expect(callAssistant?.embeddedTools[0]).toEqual(expect.objectContaining({
-      id: 'tool-assets',
-      toolCallId: 'tool-assets',
-      toolName: 'list_workspace_render_assets',
-      assistantMessageId: 'assistant-call',
-      inputPayload: { workspace_id: 11, limit: 20 },
-      outputPayload: { total: 2 },
-      status: 'completed',
-    }))
-    expect(finalAssistant?.embeddedTools).toHaveLength(0)
+    expect(items.map(item => item.kind)).toEqual(['message', 'reasoning', 'message', 'tool_group', 'run_status'])
+    expect(items[0].kind === 'message' ? items[0].message.role : '').toBe('user')
+    expect(items[3].kind === 'tool_group' ? items[3].tools[0].toolName : '').toBe('list_workspace_render_assets')
   })
 
-  it('历史工具消息位于 assistant 前后时应挂到同一轮助手消息', () => {
-    const beforeAssistantMessages = [
-      message('user-1', 'user', '检查组件'),
-      message('tool-1', 'tool', '{"success":true}', {
-        tool_name: 'apply_component_edits',
-        tool_call_id: 'tool-call-before',
-      }),
-      message('assistant-1', 'assistant', '组件检查完成。'),
-    ]
-    const afterAssistantMessages = [
-      message('user-1', 'user', '检查组件'),
-      message('assistant-1', 'assistant', '组件检查完成。'),
-      message('tool-1', 'tool', '{"success":true}', {
-        tool_name: 'apply_component_edits',
-        tool_call_id: 'tool-call-after',
-      }),
-    ]
-
-    const beforeItems = buildConversationDisplayItems(
-      beforeAssistantMessages,
-      extractHistoryToolCallDetails(beforeAssistantMessages),
-    )
-    const afterItems = buildConversationDisplayItems(
-      afterAssistantMessages,
-      extractHistoryToolCallDetails(afterAssistantMessages),
-    )
-
-    const beforeAssistant = beforeItems.find(item => item.message.id === 'assistant-1')
-    const afterAssistant = afterItems.find(item => item.message.id === 'assistant-1')
-    expect(beforeAssistant?.embeddedTools.map(tool => tool.toolName)).toEqual(['apply_component_edits'])
-    expect(afterAssistant?.embeddedTools.map(tool => tool.toolName)).toEqual(['apply_component_edits'])
-  })
-
-  it('历史工具消息缺少 tool_call_id 时仍应保留输入输出并挂回助手消息', () => {
-    const messages = [
-      message('user-1', 'user', '检查资源'),
-      message('assistant-1', 'assistant', '资源检查完成。'),
-      message('tool-without-call-id', 'tool', '{"total":2}', {
-        tool_name: 'list_workspace_render_assets',
+  it('连续工具调用应折叠为独立工具组，不依赖 assistant 消息', () => {
+    const items = buildTimelineDisplayItems([
+      timelineItem({ id: 'user-1', kind: 'message', role: 'user', order_index: 0, content: '检查资源' }),
+      timelineItem({ id: 'tool-1', kind: 'tool', role: null, order_index: 1, status: 'running', tool: {
         tool_call_id: null,
-        tool_args: { workspace_id: 11 },
-      }),
-    ]
-
-    const items = buildConversationDisplayItems(messages, extractHistoryToolCallDetails(messages))
-    const assistantItem = items.find(item => item.message.id === 'assistant-1')
-
-    expect(assistantItem?.embeddedTools).toHaveLength(1)
-    expect(assistantItem?.embeddedTools[0]).toEqual(expect.objectContaining({
-      id: 'history-tool-without-call-id',
-      toolCallId: null,
-      toolName: 'list_workspace_render_assets',
-      inputPayload: { workspace_id: 11 },
-      outputPayload: { total: 2 },
-    }))
-  })
-
-  it('实时工具详情缺少 assistantMessageId 时应按 run_id 挂到同 run 最后一条助手消息', () => {
-    const messages = [
-      message('user-1', 'user', '检查资源', { run_id: 'run-1' }),
-      message('assistant-1', 'assistant', '资源检查完成。', { run_id: 'run-1' }),
-      message('assistant-2', 'assistant', '另一个运行的回复。', { run_id: 'run-2' }),
-    ]
-    const tools: ToolCallDetail[] = [{
-      id: 'tool-event-1',
-      runId: 'run-1',
-      toolCallId: null,
-      toolName: 'list_workspace_render_assets',
-      memberAgentId: null,
-      memberAgentName: null,
-      memberRunId: null,
-      status: 'completed',
-      assistantMessageId: null,
-      inputPayload: null,
-      outputPayload: { total: 1 },
-      message: '',
-      source: 'event',
-      createdAt: null,
-    }]
-
-    const items = buildConversationDisplayItems(messages, tools)
-    const firstAssistant = items.find(item => item.message.id === 'assistant-1')
-    const secondAssistant = items.find(item => item.message.id === 'assistant-2')
-
-    expect(firstAssistant?.embeddedTools.map(tool => tool.id)).toEqual(['tool-event-1'])
-    expect(secondAssistant?.embeddedTools).toHaveLength(0)
-  })
-
-  it('历史工具详情缓存不应覆盖 Agno 消息历史中的工具锚点', () => {
-    const messages = [
-      message('user-1', 'user', '检查资源', { run_id: 'run-1' }),
-      message('assistant-call', 'assistant', '我先读取资源。', {
-        run_id: 'run-1',
-        tool_calls: [
-          {
-            id: 'tool-assets',
-            type: 'function',
-            function: {
-              name: 'list_workspace_render_assets',
-              arguments: '{"workspace_id":11}',
-            },
-          },
-        ],
-      }),
-      message('tool-assets-result', 'tool', '{"total":2}', {
-        run_id: 'run-1',
         tool_name: 'list_workspace_render_assets',
-        tool_call_id: 'tool-assets',
-        tool_args: { workspace_id: 11 },
-      }),
-      message('assistant-final', 'assistant', '资源检查完成。', { run_id: 'run-1' }),
-    ]
-    const historyTools = extractHistoryToolCallDetails(messages)
-    const cachedTools: ToolCallDetail[] = [{
-      id: 'tool-assets-cache',
-      runId: 'run-1',
-      toolCallId: 'tool-assets',
-      toolName: 'list_workspace_render_assets',
-      memberAgentId: null,
-      memberAgentName: null,
-      memberRunId: null,
-      status: 'completed',
-      assistantMessageId: 'assistant-final',
-      inputPayload: { workspace_id: 11 },
-      outputPayload: { total: 2 },
-      message: '{"total":2}',
-      source: 'history',
-      createdAt: null,
-    }]
+        status: 'running',
+        input_payload: { workspace_id: 11 },
+        output_payload: null,
+        message: '',
+      } }),
+      timelineItem({ id: 'tool-2', kind: 'tool', role: null, order_index: 2, status: 'completed', tool: {
+        tool_call_id: null,
+        tool_name: 'read_workspace_render_asset',
+        status: 'completed',
+        input_payload: { name: 'hero.png' },
+        output_payload: { name: 'hero.png' },
+        message: '',
+      } }),
+    ])
 
-    const items = buildConversationDisplayItems(messages, mergeToolCallDetails(historyTools, cachedTools))
-    const callAssistant = items.find(item => item.message.id === 'assistant-call')
-    const finalAssistant = items.find(item => item.message.id === 'assistant-final')
-
-    expect(callAssistant?.embeddedTools.map(tool => tool.assistantMessageId)).toEqual(['assistant-call'])
-    expect(finalAssistant?.embeddedTools).toHaveLength(0)
+    const toolGroup = items.find(item => item.kind === 'tool_group')
+    expect(toolGroup?.kind).toBe('tool_group')
+    expect(toolGroup?.kind === 'tool_group' ? toolGroup.tools.map(tool => tool.toolName) : []).toEqual([
+      'list_workspace_render_assets',
+      'read_workspace_render_asset',
+    ])
   })
 
-  it('未匹配到 Agno 消息锚点的历史工具缓存不参与回放定位', () => {
-    const messages = [
-      message('user-1', 'user', '检查资源', { run_id: 'run-1' }),
-      message('assistant-1', 'assistant', '资源检查完成。', { run_id: 'run-1' }),
-    ]
-    const cachedTools: ToolCallDetail[] = [{
-      id: 'tool-history-cache',
+  it('ask_user 工具和 requirement 应合并为等待回复卡片', () => {
+    const pendingRequirement: AgentPendingRequirement = {
+      id: 'req-ask-1',
+      kind: 'user_feedback',
+      run_id: 'run-1',
+      session_id: 'session-1',
+      tool_name: 'ask_user',
+      tool_execution: { tool_name: 'ask_user', tool_call_id: 'tool-ask-1' },
+      suggested_patch: null,
+      user_feedback_schema: [
+        {
+          question: '是否继续整理资源？',
+          header: '继续',
+          multi_select: false,
+          selected_options: null,
+          options: [
+            { label: '继续', description: '继续整理资源。' },
+            { label: '停止', description: '停止当前任务。' },
+          ],
+        },
+      ],
+      note: null,
+    }
+    const items = buildTimelineDisplayItems([
+      timelineItem({ id: 'tool-ask', kind: 'tool', role: null, order_index: 1, status: 'running', tool: {
+        tool_call_id: 'tool-ask-1',
+        tool_name: 'ask_user',
+        status: 'running',
+        input_payload: { questions: pendingRequirement.user_feedback_schema },
+        output_payload: null,
+        message: '',
+      } }),
+      timelineItem({ id: 'requirement-ask', kind: 'requirement', role: null, order_index: 2, status: 'pending', content: '是否继续整理资源？' }),
+    ], { pendingRequirement })
+
+    expect(items.map(item => item.kind)).toEqual(['feedback_request'])
+    const feedbackItem = items[0]
+    expect(feedbackItem.kind).toBe('feedback_request')
+    expect(feedbackItem.kind === 'feedback_request' ? feedbackItem.title : '').toBe('是否继续整理资源？')
+    expect(feedbackItem.kind === 'feedback_request' ? feedbackItem.tool?.toolName : '').toBe('ask_user')
+  })
+
+  it('已回答 ask_user 应显示完成态和答案摘要', () => {
+    const items = buildTimelineDisplayItems([
+      timelineItem({ id: 'tool-ask', kind: 'tool', role: null, order_index: 1, status: 'completed', tool: {
+        tool_call_id: 'tool-ask-1',
+        tool_name: 'ask_user',
+        status: 'completed',
+        input_payload: {
+          questions: [
+            {
+              question: '请为这个甘特图组件指定一个中文名称？',
+              header: '组件名称',
+              multi_select: false,
+              options: [{ label: '任务甘特图', description: '适用于任务排期。' }],
+            },
+          ],
+        },
+        output_payload: 'User feedback received: [{"question": "请为这个甘特图组件指定一个中文名称？", "selected": ["任务甘特图"]}]',
+        message: '',
+      } }),
+    ])
+
+    expect(items.map(item => item.kind)).toEqual(['feedback_request'])
+    const feedbackItem = items[0]
+    expect(feedbackItem.kind === 'feedback_request' ? feedbackItem.pending : true).toBe(false)
+    expect(feedbackItem.kind === 'feedback_request' ? feedbackItem.subtitle : '').toBe('已回复')
+    expect(feedbackItem.kind === 'feedback_request' ? feedbackItem.answerSummary : '').toContain('任务甘特图')
+  })
+
+  it('工具详情应直接从 timeline tool item 提取', () => {
+    const details = extractTimelineToolDetails([
+      timelineItem({ id: 'tool-1', kind: 'tool', role: null, order_index: 0, status: 'completed', source: 'event', tool: {
+        tool_call_id: 'call-1',
+        tool_name: 'list_workspace_render_assets',
+        member_agent_id: 'resource-manager',
+        member_agent_name: '资源助手',
+        member_run_id: 'member-run-1',
+        status: 'completed',
+        input_payload: { workspace_id: 11 },
+        output_payload: { total: 2 },
+        message: '完成',
+      } }),
+    ])
+
+    expect(details).toEqual([expect.objectContaining({
+      id: 'tool-1',
       runId: 'run-1',
-      toolCallId: 'tool-cache',
+      toolCallId: 'call-1',
       toolName: 'list_workspace_render_assets',
-      memberAgentId: null,
-      memberAgentName: null,
-      memberRunId: null,
-      status: 'completed',
-      assistantMessageId: null,
+      memberAgentName: '资源助手',
       inputPayload: { workspace_id: 11 },
-      outputPayload: { total: 1 },
-      message: '{"total":1}',
-      source: 'history',
-      createdAt: null,
-    }]
-
-    const items = buildConversationDisplayItems(messages, mergeToolCallDetails([], cachedTools))
-    const assistantItem = items.find(item => item.message.id === 'assistant-1')
-
-    expect(assistantItem?.embeddedTools).toHaveLength(0)
+      outputPayload: { total: 2 },
+      source: 'event',
+    })])
   })
 
   it('运行失败标题应使用当前智能体名称', () => {

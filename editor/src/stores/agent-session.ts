@@ -1,30 +1,36 @@
 /**
- * 文件功能：集中管理智能体会话运行时状态，承接后端 runtime snapshot 与 run 事件流。
+ * 文件功能：集中管理智能体会话运行时状态，承接后端 runtime timeline 与 run 事件流。
  */
 import { defineStore } from 'pinia'
 
 import {
   applyAgentRunEvent,
   applyAgentRuntimeSnapshot,
-  buildAgentLocalMessage,
+  buildAgentLocalTimelineItem,
   createAgentSessionRuntimeState,
   type AgentSessionRuntimeState,
 } from '@/components/agent/agent-run-state'
-import type { AgentActiveRunItem, AgentContextStatusItem, AgentImageAttachmentItem, AgentMessageItem, AgentPendingRequirement, AgentRunEvent, AgentSessionRuntimeSnapshot } from '@/types/api'
-import type { AgentMutationRefreshEvent, ToolCallDetail } from '@/components/agent/agent-conversation-panel'
+import type {
+  AgentActiveRunItem,
+  AgentContextStatusItem,
+  AgentImageAttachmentItem,
+  AgentPendingRequirement,
+  AgentRunEvent,
+  AgentSessionRuntimeSnapshot,
+  AgentTimelineItem,
+} from '@/types/api'
+import type { AgentMutationRefreshEvent } from '@/components/agent/agent-conversation-panel'
 
 export const useAgentSessionStore = defineStore('agent-session', {
   state: () => ({
     sessions: {} as Record<string, AgentSessionRuntimeState>,
-    conversationMessagesBySession: {} as Record<string, AgentMessageItem[]>,
-    toolCallDetailsBySession: {} as Record<string, ToolCallDetail[]>,
+    timelineItemsBySession: {} as Record<string, AgentTimelineItem[]>,
     pendingRequirementBySession: {} as Record<string, AgentPendingRequirement | null>,
     pendingImageAttachmentsBySession: {} as Record<string, AgentImageAttachmentItem[]>,
     activeRunBySession: {} as Record<string, AgentActiveRunItem | null>,
     streamingBySession: {} as Record<string, boolean>,
     currentRunIdBySession: {} as Record<string, string | null>,
-    streamingAssistantMessageIdBySession: {} as Record<string, string | null>,
-    assistantSegmentClosedByToolBySession: {} as Record<string, boolean>,
+    streamingTimelineItemIdBySession: {} as Record<string, string | null>,
     lastRunIssueBySession: {} as Record<string, { title: string, detail: string } | null>,
     contextStatusBySession: {} as Record<string, AgentContextStatusItem | null>,
     mutationRefreshEventsBySession: {} as Record<string, AgentMutationRefreshEvent[]>,
@@ -41,14 +47,13 @@ export const useAgentSessionStore = defineStore('agent-session', {
     applyRuntimeSnapshot(sessionId: string, snapshot: AgentSessionRuntimeSnapshot): void {
       if (!sessionId) return
       applyAgentRuntimeSnapshot(this.ensureSession(sessionId), {
-        messages: snapshot.messages,
+        timelineItems: snapshot.timeline_items,
         activeRun: snapshot.active_run,
         lastRun: snapshot.last_run,
         pendingRequirement: snapshot.pending_requirement,
         pendingImageAttachments: snapshot.pending_attachments,
         contextStatus: snapshot.context_status,
         eventIndex: snapshot.event_index,
-        toolDetails: snapshot.tool_details,
       })
       this.syncFlatMaps(sessionId)
     },
@@ -59,14 +64,15 @@ export const useAgentSessionStore = defineStore('agent-session', {
       this.syncFlatMaps(sessionId)
       return result
     },
-    setMessages(sessionId: string, messages: AgentMessageItem[]): void {
+    setTimelineItems(sessionId: string, items: AgentTimelineItem[]): void {
       if (!sessionId) return
-      this.ensureSession(sessionId).messages = messages
+      this.ensureSession(sessionId).timelineItems = items
       this.syncFlatMaps(sessionId)
     },
-    setToolCallDetails(sessionId: string, details: ToolCallDetail[]): void {
-      if (!sessionId) return
-      this.ensureSession(sessionId).toolCallDetails = details
+    appendTimelineItems(sessionId: string, items: AgentTimelineItem[]): void {
+      if (!sessionId || !items.length) return
+      const state = this.ensureSession(sessionId)
+      state.timelineItems = [...state.timelineItems, ...items]
       this.syncFlatMaps(sessionId)
     },
     setActiveRun(sessionId: string, run: AgentActiveRunItem | null): void {
@@ -112,14 +118,9 @@ export const useAgentSessionStore = defineStore('agent-session', {
       this.ensureSession(sessionId).stream.runId = runId
       this.syncFlatMaps(sessionId)
     },
-    setStreamingAssistantMessageId(sessionId: string, messageId: string | null): void {
+    setStreamingTimelineItemId(sessionId: string, itemId: string | null): void {
       if (!sessionId) return
-      this.ensureSession(sessionId).stream.streamingAssistantMessageId = messageId
-      this.syncFlatMaps(sessionId)
-    },
-    setAssistantSegmentClosedByTool(sessionId: string, value: boolean): void {
-      if (!sessionId) return
-      this.ensureSession(sessionId).stream.assistantSegmentClosedByTool = value
+      this.ensureSession(sessionId).stream.streamingTimelineItemId = itemId
       this.syncFlatMaps(sessionId)
     },
     getLastSequence(sessionId: string, runId: string): number {
@@ -132,37 +133,38 @@ export const useAgentSessionStore = defineStore('agent-session', {
       state.pendingImageAttachments = []
       state.pendingRequirement = null
       state.lastIssue = null
-      state.messages = [
-        ...state.messages,
-        buildAgentLocalMessage('user', message || '（已发送图片）', attachments),
-        buildAgentLocalMessage('assistant', ''),
+      const content = message || (attachments.length ? '（已发送图片）' : '')
+      state.timelineItems = [
+        ...state.timelineItems,
+        {
+          ...buildAgentLocalTimelineItem(sessionId, {
+            kind: 'message',
+            role: 'user',
+            content,
+          }),
+          order_index: nextTimelineOrderIndex(state),
+        },
       ]
-      state.stream.streamingAssistantMessageId = state.messages[state.messages.length - 1]?.id ?? null
-      state.stream.assistantSegmentClosedByTool = false
+      state.stream.streamingTimelineItemId = null
       state.stream.streaming = true
       this.syncFlatMaps(sessionId)
     },
     syncFlatMaps(sessionId: string): void {
       const state = this.ensureSession(sessionId)
-      this.conversationMessagesBySession[sessionId] = state.messages
-      this.toolCallDetailsBySession[sessionId] = state.toolCallDetails
+      this.timelineItemsBySession[sessionId] = state.timelineItems
       this.pendingRequirementBySession[sessionId] = state.pendingRequirement
       this.pendingImageAttachmentsBySession[sessionId] = state.pendingImageAttachments
       this.activeRunBySession[sessionId] = state.activeRun
       this.streamingBySession[sessionId] = state.stream.streaming
       this.currentRunIdBySession[sessionId] = state.stream.runId
-      this.streamingAssistantMessageIdBySession[sessionId] = state.stream.streamingAssistantMessageId
-      this.assistantSegmentClosedByToolBySession[sessionId] = state.stream.assistantSegmentClosedByTool
+      this.streamingTimelineItemIdBySession[sessionId] = state.stream.streamingTimelineItemId
       this.lastRunIssueBySession[sessionId] = state.lastIssue
       this.contextStatusBySession[sessionId] = state.contextStatus as AgentContextStatusItem | null
     },
     hydrateSessionFromFlatMaps(sessionId: string): void {
       const state = this.ensureSession(sessionId)
-      if (hasSessionValue(this.conversationMessagesBySession, sessionId)) {
-        state.messages = this.conversationMessagesBySession[sessionId]
-      }
-      if (hasSessionValue(this.toolCallDetailsBySession, sessionId)) {
-        state.toolCallDetails = this.toolCallDetailsBySession[sessionId]
+      if (hasSessionValue(this.timelineItemsBySession, sessionId)) {
+        state.timelineItems = this.timelineItemsBySession[sessionId]
       }
       if (hasSessionValue(this.pendingRequirementBySession, sessionId)) {
         state.pendingRequirement = this.pendingRequirementBySession[sessionId]
@@ -179,11 +181,8 @@ export const useAgentSessionStore = defineStore('agent-session', {
       if (hasSessionValue(this.currentRunIdBySession, sessionId)) {
         state.stream.runId = this.currentRunIdBySession[sessionId]
       }
-      if (hasSessionValue(this.streamingAssistantMessageIdBySession, sessionId)) {
-        state.stream.streamingAssistantMessageId = this.streamingAssistantMessageIdBySession[sessionId]
-      }
-      if (hasSessionValue(this.assistantSegmentClosedByToolBySession, sessionId)) {
-        state.stream.assistantSegmentClosedByTool = this.assistantSegmentClosedByToolBySession[sessionId]
+      if (hasSessionValue(this.streamingTimelineItemIdBySession, sessionId)) {
+        state.stream.streamingTimelineItemId = this.streamingTimelineItemIdBySession[sessionId]
       }
       if (hasSessionValue(this.lastRunIssueBySession, sessionId)) {
         state.lastIssue = this.lastRunIssueBySession[sessionId]
@@ -200,4 +199,11 @@ export const useAgentSessionStore = defineStore('agent-session', {
  */
 function hasSessionValue<T>(source: Record<string, T>, sessionId: string): boolean {
   return Object.prototype.hasOwnProperty.call(source, sessionId)
+}
+
+/**
+ * 读取下一条本地时间线排序号。
+ */
+function nextTimelineOrderIndex(state: AgentSessionRuntimeState) {
+  return Math.max(-1, ...state.timelineItems.map(item => item.order_index)) + 1
 }

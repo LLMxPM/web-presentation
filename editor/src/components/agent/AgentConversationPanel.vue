@@ -68,15 +68,14 @@
 
       <template v-else>
         <AgentConversationBody
-          :conversation-messages="conversationMessages"
-          :conversation-display-items="conversationDisplayItems"
+          :timeline-display-items="timelineDisplayItems"
           :draft-patches="draftPatches"
           :empty-conversation-text="emptyConversationText"
           :last-run-issue="lastRunIssue"
           :active-run="activeRun"
           :cancelling-run-force-available="cancellingRunForceAvailable"
           :is-streaming="isStreaming"
-          :streaming-assistant-message-id="streamingAssistantMessageId"
+          :streaming-timeline-item-id="streamingTimelineItemId"
           @apply-suggested-patch="applySuggestedPatch"
           @remove-draft-patch="removeDraftPatch"
           @open-tool-detail="openToolDetail"
@@ -158,10 +157,9 @@ import {
   uploadAgentImageAttachment,
 } from '@/api/ai'
 import {
-  buildConversationDisplayItems,
+  buildTimelineDisplayItems,
   buildRunIssueState,
-  extractHistoryToolCallDetails,
-  mergeToolCallDetails,
+  extractTimelineToolDetails,
   type AgentMutationRefreshEvent,
   type ToolCallDetail,
 } from '@/components/agent/agent-conversation-panel'
@@ -181,7 +179,7 @@ import {
   resolveSessionScope,
   setSelectedSession,
 } from '@/components/agent/agent-session-scope'
-import { buildAgentLocalMessage as buildLocalMessage, normalizeAgnoRunEvent } from '@/components/agent/agent-run-state'
+import { buildAgentLocalTimelineItem, normalizeAgnoRunEvent } from '@/components/agent/agent-run-state'
 import AgentComposer from '@/components/agent/AgentComposer.vue'
 import AgentConversationBody from '@/components/agent/AgentConversationBody.vue'
 import AgentConversationDialogs from '@/components/agent/AgentConversationDialogs.vue'
@@ -194,13 +192,13 @@ import type {
   AgentDescriptor,
   AgentFeedbackSelection,
   AgentImageAttachmentItem,
-  AgentMessageItem,
   AgentPendingRequirement,
   AgentRunEvent,
   AgentScopeContext,
   AgentSessionItem,
   AgentSessionRuntimeSnapshot,
   AgentSuggestedPatch,
+  AgentTimelineItem,
 } from '@/types/api'
 import { useAgentSessionStore } from '@/stores/agent-session'
 import { logClientWarning } from '@/utils/client-logger'
@@ -263,8 +261,7 @@ const emit = defineEmits<{
 const queryClient = useQueryClient()
 const agentSessionStore = useAgentSessionStore()
 const {
-  conversationMessagesBySession,
-  toolCallDetailsBySession,
+  timelineItemsBySession,
   pendingRequirementBySession,
   pendingImageAttachmentsBySession,
   activeRunBySession,
@@ -272,7 +269,7 @@ const {
   interruptingBySession,
   imageUploadingBySession,
   currentRunIdBySession,
-  streamingAssistantMessageIdBySession,
+  streamingTimelineItemIdBySession,
   lastRunIssueBySession,
   contextStatusBySession,
   mutationRefreshEventsBySession,
@@ -328,21 +325,17 @@ const routeScopeSummary = computed(() => resolveScopeSummary(currentRouteScope.v
 const activeRun = computed(() => readSessionValue(activeRunBySession.value, activeSessionId.value, null))
 const isStreaming = computed(() => isSessionRunning(activeSessionId.value))
 const isInterrupting = computed(() => readSessionValue(interruptingBySession.value, activeSessionId.value, false))
-const conversationMessages = computed<AgentMessageItem[]>({
-  get: () => readSessionValue(conversationMessagesBySession.value, activeSessionId.value, []),
-  set: value => agentSessionStore.setMessages(activeSessionId.value, value),
-})
-const toolCallDetails = computed<ToolCallDetail[]>({
-  get: () => readSessionValue(toolCallDetailsBySession.value, activeSessionId.value, []),
-  set: value => agentSessionStore.setToolCallDetails(activeSessionId.value, value),
+const timelineItems = computed<AgentTimelineItem[]>({
+  get: () => readSessionValue(timelineItemsBySession.value, activeSessionId.value, []),
+  set: value => agentSessionStore.setTimelineItems(activeSessionId.value, value),
 })
 const pendingRequirement = computed<AgentPendingRequirement | null>({
   get: () => activeRun.value?.pending_requirement ?? readSessionValue(pendingRequirementBySession.value, activeSessionId.value, null),
   set: value => agentSessionStore.setPendingRequirement(activeSessionId.value, value),
 })
-const streamingAssistantMessageId = computed<string | null>({
-  get: () => readSessionValue(streamingAssistantMessageIdBySession.value, activeSessionId.value, null),
-  set: value => agentSessionStore.setStreamingAssistantMessageId(activeSessionId.value, value),
+const streamingTimelineItemId = computed<string | null>({
+  get: () => readSessionValue(streamingTimelineItemIdBySession.value, activeSessionId.value, null),
+  set: value => agentSessionStore.setStreamingTimelineItemId(activeSessionId.value, value),
 })
 const lastRunIssue = computed<{ title: string, detail: string } | null>({
   get: () => readSessionValue(lastRunIssueBySession.value, activeSessionId.value, null),
@@ -508,11 +501,7 @@ const imageUploadDisabledReason = computed(() => {
   return ''
 })
 const imageUploadDisabled = computed(() => Boolean(imageUploadDisabledReason.value))
-const historyToolCallDetails = computed(() => extractHistoryToolCallDetails(conversationMessages.value))
-const resolvedToolCallDetails = computed(() => mergeToolCallDetails(
-  historyToolCallDetails.value,
-  toolCallDetails.value,
-))
+const resolvedToolCallDetails = computed(() => extractTimelineToolDetails(timelineItems.value))
 const activeToolDetail = computed<ToolCallDetail | null>(() => (
   resolvedToolCallDetails.value.find(item => item.id === activeToolDetailId.value) ?? null
 ))
@@ -521,10 +510,9 @@ const panelShellClass = computed(() => (
     ? 'flex h-full min-h-0 flex-col bg-transparent'
     : 'flex min-h-[720px] flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white/95 shadow-sm backdrop-blur'
 ))
-const conversationDisplayItems = computed(() => buildConversationDisplayItems(
-  conversationMessages.value,
-  resolvedToolCallDetails.value,
-))
+const timelineDisplayItems = computed(() => buildTimelineDisplayItems(timelineItems.value, {
+  pendingRequirement: pendingRequirement.value,
+}))
 const composerActionDisabled = computed(() => (
   isStreaming.value
     ? isInterrupting.value
@@ -549,6 +537,25 @@ function writeSessionValue<T>(source: Record<string, T>, sessionId: string, valu
     return
   }
   source[sessionId] = value
+}
+
+/**
+ * 继续 paused run 时插入一个本地 assistant 占位，后续 SSE delta 会接管内容。
+ */
+function appendLocalAssistantPlaceholder(sessionId: string, runId: string | null) {
+  const currentItems = readSessionValue(timelineItemsBySession.value, sessionId, [])
+  const item = {
+    ...buildAgentLocalTimelineItem(sessionId, {
+      runId,
+      kind: 'message',
+      role: 'assistant',
+      content: '',
+      status: 'running',
+    }),
+    order_index: Math.max(-1, ...currentItems.map(entry => entry.order_index)) + 1,
+  }
+  agentSessionStore.appendTimelineItems(sessionId, [item])
+  agentSessionStore.setStreamingTimelineItemId(sessionId, item.id)
 }
 
 /**
@@ -639,7 +646,7 @@ function hasLocalActiveRunProgressForSession(sessionId: string, runtime: AgentSe
     return false
   }
   return agentSessionStore.getLastSequence(sessionId, run.run_id) >= 0
-    || readSessionValue(streamingAssistantMessageIdBySession.value, sessionId, null) !== null
+    || readSessionValue(streamingTimelineItemIdBySession.value, sessionId, null) !== null
 }
 
 /**
@@ -1210,7 +1217,6 @@ async function handleSend() {
   writeSessionValue(mutationRefreshEventsBySession.value, sessionId, [])
 
   agentSessionStore.beginLocalRun(sessionId, message, attachments)
-  agentSessionStore.setAssistantSegmentClosedByTool(sessionId, false)
   setSessionStreaming(sessionId, true)
 
   let runId = crypto.randomUUID()
@@ -1275,12 +1281,7 @@ async function handleContinueRun(decision: 'confirm' | 'reject') {
   if (!sessionId || !requirement || activeRun.value?.status !== 'paused') return
 
   pendingRequirement.value = null
-  conversationMessages.value = [
-    ...conversationMessages.value,
-    buildLocalMessage('assistant', ''),
-  ]
-  streamingAssistantMessageId.value = conversationMessages.value[conversationMessages.value.length - 1]?.id ?? null
-  agentSessionStore.setAssistantSegmentClosedByTool(sessionId, false)
+  appendLocalAssistantPlaceholder(sessionId, requirement.run_id || activeRun.value?.run_id || '')
   setSessionStreaming(sessionId, true)
   syncActiveRun(sessionId, activeRun.value ? { ...activeRun.value, status: 'running', pending_requirement: null } : null)
 
@@ -1322,12 +1323,7 @@ async function handleSubmitFeedbackRun(selections: AgentFeedbackSelection[]) {
   if (!sessionId || !requirement || activeRun.value?.status !== 'paused') return
 
   pendingRequirement.value = null
-  conversationMessages.value = [
-    ...conversationMessages.value,
-    buildLocalMessage('assistant', ''),
-  ]
-  streamingAssistantMessageId.value = conversationMessages.value[conversationMessages.value.length - 1]?.id ?? null
-  agentSessionStore.setAssistantSegmentClosedByTool(sessionId, false)
+  appendLocalAssistantPlaceholder(sessionId, requirement.run_id || activeRun.value?.run_id || '')
   setSessionStreaming(sessionId, true)
   syncActiveRun(sessionId, activeRun.value ? { ...activeRun.value, status: 'running', pending_requirement: null } : null)
 
@@ -1608,14 +1604,11 @@ async function finalizeRun(
   const latestRuntime = sessionId === activeSessionId.value
     ? (await runtimeQuery.refetch()).data ?? null
     : await getAgentSessionRuntime(sessionId, runtimeRequest.scope, runtimeRequest.agentId)
-  const preserveLocalActiveRunMessages = latestRuntime
+  const preserveLocalActiveRunTimeline = latestRuntime
     ? hasLocalActiveRunProgressForSession(sessionId, latestRuntime)
     : false
-  const preserveLocalCancelledMessages = latestRuntime
-    ? shouldPreserveLocalCancelledMessages(sessionId, latestRuntime)
-    : false
   if (latestRuntime) {
-    if (!preserveLocalActiveRunMessages) {
+    if (!preserveLocalActiveRunTimeline) {
       agentSessionStore.applyRuntimeSnapshot(sessionId, latestRuntime)
     }
   }
@@ -1625,70 +1618,13 @@ async function finalizeRun(
   }
   const latestContextStatus = latestRuntime?.context_status ?? null
   agentSessionStore.setContextStatus(sessionId, latestContextStatus)
-  const latestMessages = latestRuntime?.messages ?? null
-  if (latestMessages && !preserveLocalActiveRunMessages && !preserveLocalCancelledMessages) {
-    reconcileToolDetailAnchors(
-      sessionId,
-      sessionId === activeSessionId.value
-        ? conversationMessages.value
-        : readSessionValue(conversationMessagesBySession.value, sessionId, []),
-      latestMessages,
-    )
-    agentSessionStore.setMessages(sessionId, [...latestMessages])
-    await maybeAutonameActiveSession(latestSessions, latestMessages, sessionId)
+  if (latestRuntime && !preserveLocalActiveRunTimeline) {
+    await maybeAutonameActiveSession(latestSessions, latestRuntime.timeline_items, sessionId)
   }
   emitMutationRefreshEvents(sessionId)
-  if (!preserveLocalActiveRunMessages) {
-    agentSessionStore.setStreamingAssistantMessageId(sessionId, null)
-    agentSessionStore.setAssistantSegmentClosedByTool(sessionId, false)
+  if (!preserveLocalActiveRunTimeline) {
+    agentSessionStore.setStreamingTimelineItemId(sessionId, null)
   }
-}
-
-/**
- * 取消终态刚到达时，后端 runtime messages 可能短暂为空；此时保留本地已回放内容。
- */
-function shouldPreserveLocalCancelledMessages(sessionId: string, runtime: AgentSessionRuntimeSnapshot) {
-  if (runtime.last_run?.status !== 'cancelled') {
-    return false
-  }
-  const localMessages = readSessionValue(conversationMessagesBySession.value, sessionId, [])
-  if (!localMessages.length) {
-    return false
-  }
-  const localState = agentSessionStore.ensureSession(sessionId)
-  const localRunId = localState.activeRun?.run_id
-    ?? localState.lastRun?.run_id
-    ?? localState.stream.runId
-    ?? readSessionValue(currentRunIdBySession.value, sessionId, null)
-    ?? readSessionValue(activeRunBySession.value, sessionId, null)?.run_id
-  if (localRunId && runtime.last_run.run_id !== localRunId) {
-    return false
-  }
-  return shouldKeepLocalCancelledRunMessages(localMessages, runtime.messages, runtime.last_run.run_id)
-}
-
-/**
- * 后端可能只返回旧历史或只返回当前取消轮 user，需保留本地 assistant 增量。
- */
-function shouldKeepLocalCancelledRunMessages(
-  localMessages: AgentMessageItem[],
-  runtimeMessages: AgentMessageItem[],
-  runId: string,
-) {
-  const runtimeRunMessages = runtimeMessages.filter(message => message.run_id === runId)
-  if (!runtimeRunMessages.length) {
-    return true
-  }
-  return hasLocalAssistantProgress(localMessages, runId)
-    && !hasLocalAssistantProgress(runtimeRunMessages, runId)
-}
-
-function hasLocalAssistantProgress(messages: AgentMessageItem[], runId: string) {
-  return messages.some(message => (
-    (message.run_id === runId || (message.run_id === null && message.id.startsWith('local-')))
-    && message.role === 'assistant'
-    && (message.content.length > 0 || Boolean(message.reasoning_content))
-  ))
 }
 
 /**
@@ -1700,41 +1636,6 @@ function shouldPreserveLocalCancelled(sessionId: string, latestRun: AgentActiveR
     && latestRun !== null
     && (!localRun.run_id || localRun.run_id === latestRun.run_id)
     && (latestRun.status === 'pending' || latestRun.status === 'running')
-}
-
-/**
- * 把当前流式阶段的本地 assistant 占位消息映射到最终持久化消息 id。
- */
-function reconcileToolDetailAnchors(sessionId: string, previousMessages: AgentMessageItem[], nextMessages: AgentMessageItem[]) {
-  const previousAssistantIds = previousMessages
-    .filter(message => message.role === 'assistant')
-    .map(message => message.id)
-  const nextAssistantIds = nextMessages
-    .filter(message => message.role === 'assistant')
-    .map(message => message.id)
-
-  if (!previousAssistantIds.length || !nextAssistantIds.length) {
-    return
-  }
-
-  const assistantIdMap = new Map<string, string>()
-  previousAssistantIds.forEach((id, index) => {
-    const targetId = nextAssistantIds[index]
-    if (targetId) {
-      assistantIdMap.set(id, targetId)
-    }
-  })
-
-  const currentToolDetails = readSessionValue(toolCallDetailsBySession.value, sessionId, [])
-  agentSessionStore.setToolCallDetails(sessionId, currentToolDetails.map((tool) => {
-    if (!tool.assistantMessageId) {
-      return tool
-    }
-    return {
-      ...tool,
-      assistantMessageId: assistantIdMap.get(tool.assistantMessageId) ?? tool.assistantMessageId,
-    }
-  }))
 }
 
 /**
@@ -1784,14 +1685,14 @@ function isAllowedImageFile(file: File) {
  */
 async function maybeAutonameActiveSession(
   sessions: AgentSessionItem[],
-  messages: AgentMessageItem[],
+  items: AgentTimelineItem[],
   sessionId = activeSessionId.value,
 ) {
   if (!sessionId || autoNamingSessionIds.has(sessionId)) {
     return
   }
   const session = sessions.find(item => item.session_id === sessionId)
-  if (!shouldAutonameSession(session, messages)) {
+  if (!shouldAutonameSession(session, items)) {
     return
   }
   autoNamingSessionIds.add(sessionId)
@@ -1810,12 +1711,12 @@ async function maybeAutonameActiveSession(
 /**
  * 判断当前会话是否仍应视为“临时名”，满足首轮完成后自动改名的条件。
  */
-function shouldAutonameSession(session: AgentSessionItem | null | undefined, messages: AgentMessageItem[]) {
+function shouldAutonameSession(session: AgentSessionItem | null | undefined, items: AgentTimelineItem[]) {
   if (!session) {
     return false
   }
-  const visibleMessages = messages.filter(message => message.role === 'user' || message.role === 'assistant')
-  if (visibleMessages.length < 2 || !visibleMessages.some(message => message.role === 'assistant' && message.content.trim())) {
+  const visibleMessages = items.filter(item => item.kind === 'message' && (item.role === 'user' || item.role === 'assistant'))
+  if (visibleMessages.length < 2 || !visibleMessages.some(item => item.role === 'assistant' && (item.content ?? '').trim())) {
     return false
   }
   const sessionName = (session.session_name || '').trim()

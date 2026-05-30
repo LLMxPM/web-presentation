@@ -145,6 +145,7 @@ function buildTestingRoutePath(props: Record<string, unknown>) {
  * 构造 runtime 快照，组件刷新和切换会话时只依赖该快照恢复运行态。
  */
 function createRuntimeSnapshot(overrides: Record<string, unknown> = {}) {
+  const { messages, timeline_items: timelineItems, ...restOverrides } = overrides
   return {
     session: {
       session_id: 'session-1',
@@ -161,14 +162,74 @@ function createRuntimeSnapshot(overrides: Record<string, unknown> = {}) {
         source: 'editor-page-detail',
       },
     },
-    messages: [],
+    timeline_items: Array.isArray(timelineItems)
+      ? timelineItems
+      : Array.isArray(messages)
+        ? timelineFromMessages(messages)
+        : [],
     context_status: createContextStatus(),
     active_run: null,
     last_run: null,
     pending_requirement: null,
     event_index: -1,
     pending_attachments: [],
-    ...overrides,
+    ...restOverrides,
+  }
+}
+
+/**
+ * 兼容旧测试数据写法，把消息数组转换成 runtime timeline 响应。
+ */
+function timelineFromMessages(messages: any[]) {
+  return messages.map((message, index) => {
+    if (message.role === 'tool') {
+      return {
+        id: message.id,
+        session_id: 'session-1',
+        run_id: message.run_id ?? 'run-1',
+        kind: 'tool',
+        role: null,
+        event_index: null,
+        order_index: index,
+        content: null,
+        status: message.tool_call_error ? 'error' : 'completed',
+        tool: {
+          tool_call_id: message.tool_call_id ?? null,
+          tool_name: message.tool_name || '工具调用',
+          status: message.tool_call_error ? 'error' : 'completed',
+          input_payload: message.tool_args ?? null,
+          output_payload: parseMaybeJson(message.content),
+          message: message.tool_call_error || '',
+        },
+        source: 'message',
+        created_at: message.created_at ?? null,
+      }
+    }
+    return {
+      id: message.id,
+      session_id: 'session-1',
+      run_id: message.run_id ?? 'run-1',
+      kind: message.reasoning_content ? 'reasoning' : 'message',
+      role: message.reasoning_content ? null : message.role,
+      event_index: null,
+      order_index: index,
+      content: message.reasoning_content || message.content || '',
+      status: null,
+      tool: null,
+      source: 'message',
+      created_at: message.created_at ?? null,
+    }
+  })
+}
+
+function parseMaybeJson(value: unknown) {
+  if (typeof value !== 'string') {
+    return value
+  }
+  try {
+    return JSON.parse(value)
+  } catch {
+    return value
   }
 }
 
@@ -319,7 +380,7 @@ describe('AgentConversationPanel', () => {
           source: 'editor-page-detail',
         },
       },
-      messages: [],
+      timeline_items: [],
       context_status: {
         session_id: 'session-1',
         agent_id: DEFAULT_AGENT_ID,
@@ -2430,7 +2491,7 @@ describe('AgentConversationPanel', () => {
     releaseStream()
   })
 
-  it('工具调用后的流式输出应新建助手消息块，避免运行中混在同一块', async () => {
+  it('工具调用后的流式输出应形成独立 reasoning、tool 和 assistant 时间线项', async () => {
     let releaseStream = () => {}
     streamAgentRunEventsByRunIdMock.mockImplementationOnce(async (_runId: string, _payload: unknown, options?: { onEvent?: (event: any) => void }) => {
       options?.onEvent?.({ event: 'run.started', run_id: 'run-segmented-stream', session_id: 'session-1', content: null, data: {} })
@@ -2485,7 +2546,7 @@ describe('AgentConversationPanel', () => {
     const reasoningArticle = screen.getByText(/思考(中|过程)/).closest('article')
     expect(toolArticle).toBeTruthy()
     expect(answerArticle).toBeTruthy()
-    expect(reasoningArticle).toBe(toolArticle)
+    expect(reasoningArticle).not.toBe(toolArticle)
     expect(answerArticle).not.toBe(toolArticle)
 
     releaseStream()

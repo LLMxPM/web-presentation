@@ -62,7 +62,8 @@ from app.schemas.agent import (
     AgentSessionItem,
     AgentSessionRuntimeSnapshot,
     AgentSuggestedPatch,
-    AgentToolCallDetailItem,
+    AgentTimelineItem,
+    AgentTimelineToolItem,
 )
 from app.schemas.page import PageItem
 from app.services.ai_llm_service import AiLlmService
@@ -562,16 +563,15 @@ class AgentSessionFacade:
                 last_run = mapped_run
 
         attachment_service = AgentImageAttachmentService(self._session, user_id=self._current.user.id)
-        messages = await self.get_messages(session_id=session_id, agent_id=agent_id, scope=scope)
-        tool_details = _list_tool_details_from_agno_runs(
+        timeline_items = _build_timeline_items_from_agno_runs(
             detail,
+            session_id=session_id,
             agent_id=agent_id,
-            assistant_message_ids_by_run=_assistant_message_ids_by_run(messages),
+            runtime_context=runtime_context,
         )
         return AgentSessionRuntimeSnapshot(
             session=self._map_session_item(detail, metadata=await self._enrich_session_scope_metadata(detail.metadata or {})),
-            messages=messages,
-            tool_details=tool_details,
+            timeline_items=timeline_items,
             context_status=await self.get_context_status(
                 session_id=session_id,
                 agent_id=agent_id,
@@ -2817,16 +2817,6 @@ def _is_agno_context_note_message(message: Any, *, role: str) -> bool:
     return False
 
 
-def _assistant_message_ids_by_run(messages: list[AgentMessageItem]) -> dict[str, str]:
-    """按 run_id 记录最后一条 assistant 消息，供工具详情锚定到同一轮回复。"""
-
-    result: dict[str, str] = {}
-    for message in messages:
-        if message.role == "assistant" and message.run_id:
-            result[message.run_id] = message.id
-    return result
-
-
 def _session_metadata(payload: Any) -> dict[str, Any]:
     """从 Agno session 或测试替身中读取 metadata。"""
 
@@ -3175,7 +3165,9 @@ def _extract_pending_requirement(
     tool_name = tool_execution.get("tool_name")
     tool_args = tool_execution.get("tool_args") or {}
     user_feedback_schema = _normalize_user_feedback_schema(
-        requirement_payload.get("user_feedback_schema") or tool_execution.get("user_feedback_schema")
+        requirement_payload.get("user_feedback_schema")
+        or tool_execution.get("user_feedback_schema")
+        or tool_args.get("questions")
     )
     requirement_kind = "user_feedback" if (tool_name == "ask_user" or user_feedback_schema) else "confirmation"
     suggested_patch, preview_note = (None, None)
@@ -3222,6 +3214,20 @@ def _extract_pending_requirement(
         user_feedback_schema=user_feedback_schema,
         note=normalized_tool_execution.get("confirmation_note") or preview_note,
     )
+
+
+def _pending_requirement_timeline_content(requirement: AgentPendingRequirement) -> str:
+    """生成 requirement 时间线文案，ask_user 优先展示真实问题而不是内部工具名。"""
+
+    if requirement.kind == "user_feedback" or requirement.tool_name == "ask_user":
+        for item in requirement.user_feedback_schema or []:
+            if not isinstance(item, dict):
+                continue
+            question = _coerce_str(item.get("question"))
+            if question:
+                return question
+        return requirement.note or "等待用户回复。"
+    return requirement.note or requirement.tool_name or "等待用户处理。"
 
 
 def _find_latest_session_run(
@@ -3810,63 +3816,567 @@ def _raw_event_text_content(payload: dict[str, Any]) -> str | None:
     return content
 
 
-def _list_tool_details_from_agno_runs(
+def _build_timeline_items_from_agno_runs(
     detail: AgnoSessionDetail,
     *,
+    session_id: str,
     agent_id: str,
-    assistant_message_ids_by_run: dict[str, str] | None = None,
-) -> list[AgentToolCallDetailItem]:
-    """从 Agno run.events 恢复历史工具详情，避免依赖旧 run 表或 Redis。"""
+    runtime_context: AgentRuntimeContext | None = None,
+) -> list[AgentTimelineItem]:
+    """从 Agno runs/messages/events 派生 session-first 时间线。"""
 
-    assistant_ids = assistant_message_ids_by_run or {}
-    detail_by_id: dict[str, AgentToolCallDetailItem] = {}
-    pending_without_call_id: dict[tuple[str, str], str] = {}
-    for run in getattr(detail, "runs", None) or []:
-        if _resolve_run_owner_id(run) not in {None, agent_id}:
+    items: list[AgentTimelineItem] = []
+    order_index = 0
+    sort_keys_by_id: dict[str, tuple[float, float, float]] = {}
+
+    def append_item(
+        *,
+        item_id: str,
+        run_id: str,
+        kind: str,
+        role: str | None = None,
+        event_index: int | None = None,
+        content: str | None = None,
+        status: str | None = None,
+        tool: AgentTimelineToolItem | None = None,
+        source: str = "synthetic",
+        created_at: str | None = None,
+        sort_key: tuple[float, float] | None = None,
+    ) -> AgentTimelineItem:
+        """追加一个时间线项，最终顺序由 run/event/message 混合排序键统一决定。"""
+
+        nonlocal order_index
+        sequence = order_index
+        item = AgentTimelineItem(
+            id=item_id,
+            session_id=session_id,
+            run_id=run_id,
+            kind=kind,  # type: ignore[arg-type]
+            role=role,  # type: ignore[arg-type]
+            event_index=event_index,
+            order_index=sequence,
+            content=content,
+            status=status,
+            tool=tool,
+            source=source,  # type: ignore[arg-type]
+            created_at=created_at,
+        )
+        order_index += 1
+        resolved_sort_key = sort_key or (float(sequence), 0.0)
+        sort_keys_by_id[item.id] = (resolved_sort_key[0], resolved_sort_key[1], float(sequence))
+        items.append(item)
+        return item
+
+    for run_index, run in enumerate(getattr(detail, "runs", None) or []):
+        owner_id = _resolve_run_owner_id(run)
+        if owner_id is not None and str(owner_id) != agent_id:
             continue
-        run_id = str(getattr(run, "run_id", "") or "")
-        if not run_id:
+        if getattr(run, "parent_run_id", None) is not None:
             continue
-        for index, raw_event in enumerate(getattr(run, "events", None) or []):
+        run_id = _coerce_str(getattr(run, "run_id", None)) or f"run-{run_index}"
+        run_sort_base = float(run_index * 1_000_000_000)
+        run_created_at = _normalize_timestamp(getattr(run, "created_at", None))
+
+        def user_message_sort_key(message_index: int) -> tuple[float, float]:
+            """用户输入固定排在当前 run 事件轴之前。"""
+
+            return (run_sort_base + float(message_index), 0.0)
+
+        def event_sort_key(event_index: int, slot: float = 0.0) -> tuple[float, float]:
+            """事件使用 Agno run.events 列表下标作为主排序轴。"""
+
+            return (run_sort_base + 10_000.0 + float(event_index * 10) + slot, 0.0)
+
+        def message_fallback_sort_key(message_index: int, slot: float = 0.0) -> tuple[float, float]:
+            """没有事件锚点的 message fallback 保留 Agno messages 自身顺序。"""
+
+            return (run_sort_base + 500_000_000.0 + float(message_index * 10) + slot, 0.0)
+
+        def run_tail_sort_key(slot: float = 0.0) -> tuple[float, float]:
+            """requirement/status 等运行尾部合成项排在当前 run 末尾。"""
+
+            return (run_sort_base + 900_000_000.0 + slot, 0.0)
+
+        displayable_messages = [
+            message
+            for message in list(getattr(run, "messages", None) or [])
+            if _is_displayable_session_message(message)
+        ]
+        ask_user_answers_by_call_id, ask_user_answers_by_question = _index_answered_ask_user_messages(displayable_messages)
+        consumed_ask_user_answer_message_indexes: set[int] = set()
+        user_messages = [
+            (message_index, message)
+            for message_index, message in enumerate(displayable_messages)
+            if str(_message_attr(message, "role", "") or "") == "user"
+        ]
+        if user_messages:
+            for original_message_index, message in user_messages:
+                content, _ = _split_reasoning_content(
+                    _stringify_content(_message_attr(message, "content", None)),
+                    _resolve_reasoning_content(message),
+                )
+                append_item(
+                    item_id=f"{session_id}:{run_id}:message:user:{original_message_index}",
+                    run_id=run_id,
+                    kind="message",
+                    role="user",
+                    content=content,
+                    source="message",
+                    created_at=_normalize_timestamp(_message_attr(message, "created_at", None)) or run_created_at,
+                    sort_key=user_message_sort_key(original_message_index),
+                )
+        else:
+            user_input = _resolve_run_input_text(run)
+            if user_input:
+                append_item(
+                    item_id=f"{session_id}:{run_id}:input:user",
+                    run_id=run_id,
+                    kind="message",
+                    role="user",
+                    content=user_input,
+                    source="synthetic",
+                    created_at=run_created_at,
+                    sort_key=user_message_sort_key(0),
+                )
+
+        assistant_from_events = False
+        reasoning_from_events = False
+        event_tool_sort_keys_by_key: dict[tuple[str | None, str], list[tuple[float, float]]] = {}
+        detail_by_id: dict[str, AgentTimelineItem] = {}
+        pending_without_call_id: dict[tuple[str, str], str] = {}
+        current_assistant_item: AgentTimelineItem | None = None
+        current_reasoning_item: AgentTimelineItem | None = None
+        requirement_from_events = False
+
+        for event_index, raw_event in enumerate(getattr(run, "events", None) or []):
             payload = _event_payload(raw_event)
             if not isinstance(payload, dict):
                 continue
-            event_name = str(payload.get("event") or type(raw_event).__name__)
+            event_name = _raw_event_name(raw_event, payload)
             status = _tool_status_from_agno_event(event_name)
-            if status is None:
+            if status is not None:
+                current_assistant_item = None
+                current_reasoning_item = None
+                tool_payload = payload.get("tool") if isinstance(payload.get("tool"), dict) else {}
+                member_event_data = _extract_member_event_data(payload)
+                tool_name = _coerce_str(tool_payload.get("tool_name")) or "工具调用"
+                tool_call_id = _coerce_str(tool_payload.get("tool_call_id"))
+                detail_id = _resolve_tool_detail_id_for_agno(
+                    run_id=run_id,
+                    tool_name=tool_name,
+                    tool_call_id=tool_call_id,
+                    event_name=event_name,
+                    event_index=event_index,
+                    pending_without_call_id=pending_without_call_id,
+                )
+                existing = detail_by_id.get(detail_id)
+                existing_tool = existing.tool if existing is not None else None
+                result = tool_payload.get("result")
+                if result is None:
+                    result = payload.get("content")
+                input_payload = tool_payload.get("tool_args") if "tool_args" in tool_payload else None
+                if input_payload is None and existing_tool is not None:
+                    input_payload = existing_tool.input_payload
+                message = _stringify_content(
+                    payload.get("content")
+                    or tool_payload.get("error")
+                    or (existing_tool.message if existing_tool is not None else "")
+                )
+                tool_item = AgentTimelineToolItem(
+                    tool_call_id=tool_call_id,
+                    tool_name=tool_name,
+                    member_agent_id=_coerce_str(member_event_data.get("member_agent_id"))
+                    or (existing_tool.member_agent_id if existing_tool is not None else None),
+                    member_agent_name=_coerce_str(member_event_data.get("member_agent_name"))
+                    or (existing_tool.member_agent_name if existing_tool is not None else None),
+                    member_run_id=_coerce_str(member_event_data.get("member_run_id"))
+                    or (existing_tool.member_run_id if existing_tool is not None else None),
+                    status=status,  # type: ignore[arg-type]
+                    input_payload=input_payload,
+                    output_payload=result if result is not None else (existing_tool.output_payload if existing_tool is not None else None),
+                    message=message,
+                )
+                tool_sort_key = event_sort_key(event_index)
+                if existing is not None:
+                    existing.tool = tool_item
+                    existing.status = status
+                    if existing.created_at is None:
+                        existing.created_at = _normalize_timestamp(payload.get("created_at"))
+                else:
+                    detail_by_id[detail_id] = append_item(
+                        item_id=f"{session_id}:{detail_id}",
+                        run_id=run_id,
+                        kind="tool",
+                        event_index=event_index,
+                        status=status,
+                        tool=tool_item,
+                        source="event",
+                        created_at=_normalize_timestamp(payload.get("created_at")) or run_created_at,
+                        sort_key=tool_sort_key,
+                    )
+                    event_tool_sort_keys_by_key.setdefault((tool_call_id, tool_name), []).append(tool_sort_key)
                 continue
-            tool_payload = payload.get("tool") if isinstance(payload.get("tool"), dict) else {}
-            member_event_data = _extract_member_event_data(payload)
-            tool_name = _coerce_str(tool_payload.get("tool_name")) or "工具调用"
-            tool_call_id = _coerce_str(tool_payload.get("tool_call_id"))
-            detail_id = _resolve_tool_detail_id_for_agno(
-                run_id=run_id,
-                tool_name=tool_name,
-                tool_call_id=tool_call_id,
-                event_name=event_name,
-                event_index=index,
-                pending_without_call_id=pending_without_call_id,
+
+            if event_name in {"RunPaused", "RunPausedEvent", "TeamRunPaused"}:
+                requirement = _extract_pending_requirement(
+                    payload={**payload, "session_id": session_id, "run_id": run_id},
+                    runtime_context=runtime_context,
+                )
+                if requirement is not None:
+                    answered_message = _pop_answered_ask_user_message(
+                        requirement,
+                        by_call_id=ask_user_answers_by_call_id,
+                        by_question=ask_user_answers_by_question,
+                    )
+                    if answered_message is not None:
+                        consumed_ask_user_answer_message_indexes.add(answered_message.message_index)
+                        append_item(
+                            item_id=f"{session_id}:{run_id}:ask-user:{answered_message.tool_call_id or event_index}",
+                            run_id=run_id,
+                            kind="tool",
+                            event_index=event_index,
+                            status="completed",
+                            tool=AgentTimelineToolItem(
+                                tool_call_id=answered_message.tool_call_id,
+                                tool_name="ask_user",
+                                status="completed",
+                                input_payload=answered_message.input_payload,
+                                output_payload=answered_message.output_payload,
+                                message=answered_message.message,
+                            ),
+                            source="message",
+                            created_at=answered_message.created_at or _normalize_timestamp(payload.get("created_at")) or run_created_at,
+                            sort_key=event_sort_key(event_index, 5.0),
+                        )
+                    else:
+                        requirement_from_events = True
+                        append_item(
+                            item_id=f"{session_id}:{run_id}:event:{event_index}:requirement:{requirement.id or requirement.tool_name or 'pending'}",
+                            run_id=run_id,
+                            kind="requirement",
+                            event_index=event_index,
+                            status="pending",
+                            content=_pending_requirement_timeline_content(requirement),
+                            source="event",
+                            created_at=_normalize_timestamp(payload.get("created_at")) or run_created_at,
+                            sort_key=event_sort_key(event_index, 5.0),
+                        )
+                continue
+
+            content, reasoning_content = _timeline_content_from_event(event_name=event_name, payload=payload)
+            if _is_timeline_completed_event(event_name):
+                if assistant_from_events:
+                    content = None
+                if reasoning_from_events:
+                    reasoning_content = None
+            if reasoning_content:
+                reasoning_from_events = True
+                if current_reasoning_item is not None:
+                    current_reasoning_item.content = f"{current_reasoning_item.content or ''}{reasoning_content}"
+                else:
+                    current_reasoning_item = append_item(
+                        item_id=f"{session_id}:{run_id}:event:{event_index}:reasoning",
+                        run_id=run_id,
+                        kind="reasoning",
+                        event_index=event_index,
+                        content=reasoning_content,
+                        source="event",
+                        created_at=_normalize_timestamp(payload.get("created_at")) or run_created_at,
+                        sort_key=event_sort_key(event_index, 1.0),
+                    )
+            if content:
+                assistant_from_events = True
+                if current_assistant_item is not None:
+                    current_assistant_item.content = f"{current_assistant_item.content or ''}{content}"
+                else:
+                    current_assistant_item = append_item(
+                        item_id=f"{session_id}:{run_id}:event:{event_index}:assistant",
+                        run_id=run_id,
+                        kind="message",
+                        role="assistant",
+                        event_index=event_index,
+                        content=content,
+                        source="event",
+                        created_at=_normalize_timestamp(payload.get("created_at")) or run_created_at,
+                        sort_key=event_sort_key(event_index, 2.0),
+                    )
+
+        tool_message_event_sort_keys_by_index: dict[int, tuple[float, float]] = {}
+        tool_event_key_usage: dict[tuple[str | None, str], int] = {}
+        for message_index, message in enumerate(displayable_messages):
+            if str(_message_attr(message, "role", "") or "") != "tool":
+                continue
+            if message_index in consumed_ask_user_answer_message_indexes:
+                continue
+            tool_name = _coerce_str(_message_attr(message, "tool_name", None)) or "工具调用"
+            tool_call_id = _coerce_str(_message_attr(message, "tool_call_id", None))
+            key = (tool_call_id, tool_name)
+            candidates = event_tool_sort_keys_by_key.get(key) or []
+            used_count = tool_event_key_usage.get(key, 0)
+            if used_count < len(candidates):
+                tool_message_event_sort_keys_by_index[message_index] = candidates[used_count]
+                tool_event_key_usage[key] = used_count + 1
+
+        def assistant_message_sort_key(message_index: int) -> tuple[float, float]:
+            """把 assistant fallback 锚到相邻 tool 事件之间，避免刷新后按类型分桶。"""
+
+            previous_tool_key: tuple[float, float] | None = None
+            next_tool_key: tuple[float, float] | None = None
+            for previous_index in range(message_index - 1, -1, -1):
+                previous_tool_key = tool_message_event_sort_keys_by_index.get(previous_index)
+                if previous_tool_key is not None:
+                    break
+            for next_index in range(message_index + 1, len(displayable_messages)):
+                next_tool_key = tool_message_event_sort_keys_by_index.get(next_index)
+                if next_tool_key is not None:
+                    break
+            offset = float(message_index) / 1_000_000.0
+            if previous_tool_key is not None and next_tool_key is not None:
+                return (((previous_tool_key[0] + next_tool_key[0]) / 2.0) + offset, 0.0)
+            if previous_tool_key is not None:
+                return (previous_tool_key[0] + 5.0 + offset, 0.0)
+            if next_tool_key is not None:
+                return (next_tool_key[0] - 5.0 + offset, 0.0)
+            return message_fallback_sort_key(message_index)
+
+        for message_index, message in enumerate(displayable_messages):
+            if str(_message_attr(message, "role", "") or "") != "assistant":
+                continue
+            content, reasoning_content = _split_reasoning_content(
+                _stringify_content(_message_attr(message, "content", None)),
+                _resolve_reasoning_content(message),
             )
-            existing = detail_by_id.get(detail_id)
-            result = tool_payload.get("result")
-            if result is None:
-                result = payload.get("content")
-            detail_by_id[detail_id] = AgentToolCallDetailItem(
-                id=detail_id,
-                run_id=run_id,
+            created_at = _normalize_timestamp(_message_attr(message, "created_at", None)) or run_created_at
+            assistant_sort_key = assistant_message_sort_key(message_index)
+            if reasoning_content and not reasoning_from_events:
+                append_item(
+                    item_id=f"{session_id}:{run_id}:message:assistant:{message_index}:reasoning",
+                    run_id=run_id,
+                    kind="reasoning",
+                    content=reasoning_content,
+                    source="message",
+                    created_at=created_at,
+                    sort_key=(assistant_sort_key[0] - 0.2, 0.0),
+                )
+            if content and not assistant_from_events:
+                append_item(
+                    item_id=f"{session_id}:{run_id}:message:assistant:{message_index}",
+                    run_id=run_id,
+                    kind="message",
+                    role="assistant",
+                    content=content,
+                    source="message",
+                    created_at=created_at,
+                    sort_key=assistant_sort_key,
+                )
+
+        for message_index, message in enumerate(displayable_messages):
+            if str(_message_attr(message, "role", "") or "") != "tool":
+                continue
+            if message_index in consumed_ask_user_answer_message_indexes:
+                continue
+            tool_name = _coerce_str(_message_attr(message, "tool_name", None)) or "工具调用"
+            tool_call_id = _coerce_str(_message_attr(message, "tool_call_id", None))
+            if message_index in tool_message_event_sort_keys_by_index:
+                continue
+            is_error = bool(_message_attr(message, "tool_call_error", None))
+            tool_item = AgentTimelineToolItem(
                 tool_call_id=tool_call_id,
                 tool_name=tool_name,
-                member_agent_id=_coerce_str(member_event_data.get("member_agent_id")) or (existing.member_agent_id if existing else None),
-                member_agent_name=_coerce_str(member_event_data.get("member_agent_name")) or (existing.member_agent_name if existing else None),
-                member_run_id=_coerce_str(member_event_data.get("member_run_id")) or (existing.member_run_id if existing else None),
-                status=status,
-                assistant_message_id=assistant_ids.get(run_id),
-                input_payload=tool_payload.get("tool_args") or (existing.input_payload if existing else None),
-                output_payload=result if result is not None else (existing.output_payload if existing else None),
-                message=_stringify_content(payload.get("content") or tool_payload.get("error") or (existing.message if existing else "")),
-                created_at=existing.created_at if existing else _normalize_timestamp(payload.get("created_at")),
+                status="error" if is_error else "completed",
+                input_payload=_message_attr(message, "tool_args", None),
+                output_payload=_safe_json_payload(_message_attr(message, "content", None)),
+                message=_stringify_content(_message_attr(message, "tool_call_error", None) or ""),
             )
-    return list(detail_by_id.values())
+            append_item(
+                item_id=f"{session_id}:{run_id}:message:tool:{message_index}",
+                run_id=run_id,
+                kind="tool",
+                status=tool_item.status,
+                tool=tool_item,
+                source="message",
+                created_at=_normalize_timestamp(_message_attr(message, "created_at", None)) or run_created_at,
+                sort_key=message_fallback_sort_key(message_index),
+            )
+
+        if not requirement_from_events:
+            requirement = _extract_pending_requirement(
+                payload={**_active_run_payload(run), "session_id": session_id, "run_id": run_id},
+                runtime_context=runtime_context,
+            )
+        else:
+            requirement = None
+        if requirement is not None:
+            append_item(
+                item_id=f"{session_id}:{run_id}:requirement:{requirement.id or requirement.tool_name or 'pending'}",
+                run_id=run_id,
+                kind="requirement",
+                status="pending",
+                content=_pending_requirement_timeline_content(requirement),
+                source="synthetic",
+                created_at=_normalize_timestamp(getattr(run, "updated_at", None)) or run_created_at,
+                sort_key=run_tail_sort_key(0.0),
+            )
+
+        run_status = _normalize_run_status_value(getattr(run, "status", None))
+        if run_status in {"paused", "cancelled", "failed", "completed"}:
+            latest_event_index = _run_latest_event_index(run)
+            append_item(
+                item_id=f"{session_id}:{run_id}:status:{run_status}",
+                run_id=run_id,
+                kind="run_status",
+                event_index=latest_event_index if latest_event_index >= 0 else None,
+                content=_timeline_run_status_content(run_status, getattr(run, "content", None)),
+                status=run_status,
+                source="synthetic",
+                created_at=_normalize_timestamp(getattr(run, "updated_at", None)) or run_created_at,
+                sort_key=run_tail_sort_key(10.0),
+            )
+
+    items.sort(key=lambda item: sort_keys_by_id.get(item.id, (float(item.order_index), 0.0, float(item.order_index))))
+    for item_index, item in enumerate(items):
+        item.order_index = item_index
+    return items
+
+
+def _timeline_content_from_event(*, event_name: str, payload: dict[str, Any]) -> tuple[str | None, str | None]:
+    """从 Agno 内容事件提取可直接进入时间线的 assistant 正文和 reasoning。"""
+
+    member_event_data = _extract_member_event_data(payload)
+    if member_event_data.get("parent_run_id") and member_event_data.get("member_run_id"):
+        return None, None
+    if event_name in {
+        "RunContent",
+        "RunContentEvent",
+        "IntermediateRunContent",
+        "IntermediateRunContentEvent",
+        "RunIntermediateContent",
+        "TeamRunContent",
+        "TeamRunIntermediateContent",
+        "RunCompleted",
+        "RunCompletedEvent",
+        "TeamRunCompleted",
+    }:
+        return _split_reasoning_content(
+            _extract_text_content(payload.get("content")),
+            _resolve_reasoning_content(payload, preserve_stream_boundary=True),
+            preserve_reasoning_boundary=True,
+        )
+    if event_name == "ReasoningContentDelta":
+        return None, _resolve_reasoning_content(payload, preserve_stream_boundary=True)
+    return None, None
+
+
+def _is_timeline_completed_event(event_name: str) -> bool:
+    """判断内容事件是否是终态聚合事件，避免与流式 delta 重复。"""
+
+    return event_name in {"RunCompleted", "RunCompletedEvent", "TeamRunCompleted"}
+
+
+def _timeline_run_status_content(status: str, run_content: Any) -> str:
+    """生成运行状态时间线的紧凑文案。"""
+
+    content = _extract_text_content(run_content)
+    if status == "failed":
+        return content or "运行失败。"
+    if status == "cancelled":
+        return content or "运行已停止。"
+    if status == "paused":
+        return "等待用户处理。"
+    return "运行已完成。"
+
+
+@dataclass
+class _AnsweredAskUserMessage:
+    """记录已回答 ask_user 的 Agno tool message，供暂停事件回锚。"""
+
+    message_index: int
+    tool_call_id: str | None
+    input_payload: Any
+    output_payload: Any
+    questions: list[str]
+    message: str
+    created_at: str | None
+
+
+def _index_answered_ask_user_messages(
+    messages: list[Any],
+) -> tuple[dict[str, list[_AnsweredAskUserMessage]], dict[str, list[_AnsweredAskUserMessage]]]:
+    """索引已回答 ask_user tool message，兼容 tool_call_id 变化时按问题文案回退匹配。"""
+
+    by_call_id: dict[str, list[_AnsweredAskUserMessage]] = {}
+    by_question: dict[str, list[_AnsweredAskUserMessage]] = {}
+    for message_index, message in enumerate(messages):
+        if str(_message_attr(message, "role", "") or "") != "tool":
+            continue
+        if _coerce_str(_message_attr(message, "tool_name", None)) != "ask_user":
+            continue
+        input_payload = _message_attr(message, "tool_args", None)
+        output_payload = _safe_json_payload(_message_attr(message, "content", None))
+        answered = _AnsweredAskUserMessage(
+            message_index=message_index,
+            tool_call_id=_coerce_str(_message_attr(message, "tool_call_id", None)),
+            input_payload=input_payload,
+            output_payload=output_payload,
+            questions=_ask_user_questions_from_payload(input_payload),
+            message=_stringify_content(_message_attr(message, "tool_call_error", None) or ""),
+            created_at=_normalize_timestamp(_message_attr(message, "created_at", None)),
+        )
+        if answered.tool_call_id:
+            by_call_id.setdefault(answered.tool_call_id, []).append(answered)
+        for question in answered.questions:
+            by_question.setdefault(question, []).append(answered)
+    return by_call_id, by_question
+
+
+def _pop_answered_ask_user_message(
+    requirement: AgentPendingRequirement,
+    *,
+    by_call_id: dict[str, list[_AnsweredAskUserMessage]],
+    by_question: dict[str, list[_AnsweredAskUserMessage]],
+) -> _AnsweredAskUserMessage | None:
+    """按 tool_call_id 优先、问题文案其次，消费一条已回答 ask_user message。"""
+
+    if requirement.tool_name != "ask_user" and requirement.kind != "user_feedback":
+        return None
+    tool_call_id = _coerce_str(requirement.tool_execution.get("tool_call_id"))
+    if tool_call_id:
+        candidates = by_call_id.get(tool_call_id) or []
+        if candidates:
+            return candidates.pop(0)
+    for question in _ask_user_questions_from_payload(requirement.tool_execution):
+        candidates = by_question.get(question) or []
+        if candidates:
+            return candidates.pop(0)
+    for item in requirement.user_feedback_schema or []:
+        if not isinstance(item, dict):
+            continue
+        question = _coerce_str(item.get("question"))
+        if not question:
+            continue
+        candidates = by_question.get(question) or []
+        if candidates:
+            return candidates.pop(0)
+    return None
+
+
+def _ask_user_questions_from_payload(payload: Any) -> list[str]:
+    """从 ask_user 参数结构中提取问题文案。"""
+
+    if not isinstance(payload, dict):
+        return []
+    raw_questions = payload.get("questions") or payload.get("user_feedback_schema")
+    if raw_questions is None and isinstance(payload.get("tool_args"), dict):
+        raw_questions = payload["tool_args"].get("questions") or payload["tool_args"].get("user_feedback_schema")
+    if not isinstance(raw_questions, list):
+        return []
+    questions: list[str] = []
+    for item in raw_questions:
+        if isinstance(item, dict):
+            question = _coerce_str(item.get("question"))
+            if question:
+                questions.append(question)
+    return questions
 
 
 def _tool_status_from_agno_event(event_name: str) -> str | None:

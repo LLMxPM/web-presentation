@@ -1,7 +1,7 @@
 /**
- * 文件功能：抽离内容助手面板的工具详情、消息归并与展示格式化逻辑，降低组件复杂度。
+ * 文件功能：抽离内容助手面板的 run-first 时间线展示、工具详情与格式化逻辑。
  */
-import type { AgentMessageItem, AgentMessageToolCallItem } from '@/types/api'
+import type { AgentMessageItem, AgentPendingRequirement, AgentTimelineItem, AgentUserFeedbackQuestion } from '@/types/api'
 
 export interface ToolCallDetail {
   id: string
@@ -12,18 +12,32 @@ export interface ToolCallDetail {
   memberAgentName?: string | null
   memberRunId?: string | null
   status: 'running' | 'completed' | 'error'
-  assistantMessageId: string | null
   inputPayload: unknown
   outputPayload: unknown
   message: string
-  source: 'event' | 'history'
+  source: 'event' | 'message' | 'synthetic'
   createdAt: string | null
 }
 
-export interface ConversationDisplayItem {
-  message: AgentMessageItem
-  embeddedTools: ToolCallDetail[]
-}
+export type TimelineDisplayItem =
+  | { id: string, kind: 'message', item: AgentTimelineItem, message: AgentMessageItem }
+  | { id: string, kind: 'reasoning', item: AgentTimelineItem, content: string, streaming: boolean }
+  | { id: string, kind: 'tool_group', items: AgentTimelineItem[], tools: ToolCallDetail[] }
+  | {
+    id: string
+    kind: 'feedback_request'
+    item: AgentTimelineItem
+    requirement: AgentPendingRequirement | null
+    tool: ToolCallDetail | null
+    title: string
+    subtitle: string
+    questions: AgentUserFeedbackQuestion[]
+    answerSummary: string
+    pending: boolean
+    status: string | null
+  }
+  | { id: string, kind: 'run_status', item: AgentTimelineItem, status: string | null, content: string }
+  | { id: string, kind: 'requirement', item: AgentTimelineItem, status: string | null, content: string }
 
 export interface AgentMutationRefreshEvent {
   kind: 'page' | 'project-pages' | 'project' | 'component' | 'asset'
@@ -37,360 +51,142 @@ export interface AgentMutationRefreshEvent {
 }
 
 /**
- * 从 Agno 消息历史中提取工具调用详情，assistant.tool_calls 是唯一位置锚点。
+ * 将 timeline tool item 转成弹窗与工具卡片统一使用的详情结构。
  */
-export function extractHistoryToolCallDetails(messages: AgentMessageItem[]): ToolCallDetail[] {
-  const toolDetails: ToolCallDetail[] = []
-  const toolByCallId = new Map<string, ToolCallDetail>()
-  const pendingToolsWithoutCallId = new Map<string, ToolCallDetail[]>()
-
-  for (let index = 0; index < messages.length; index += 1) {
-    const message = messages[index]
-    if (message.role === 'assistant') {
-      const assistantToolCalls = normalizeAssistantToolCalls(message)
-      for (let toolIndex = 0; toolIndex < assistantToolCalls.length; toolIndex += 1) {
-        const toolCall = assistantToolCalls[toolIndex]
-        const runId = message.run_id ?? null
-        const toolCallId = readToolCallId(toolCall)
-        const detail: ToolCallDetail = {
-          id: toolCallId || `history-${message.id}-tool-${toolIndex}`,
-          runId,
-          toolCallId,
-          toolName: readToolCallName(toolCall) || '工具调用',
-          memberAgentId: null,
-          memberAgentName: null,
-          memberRunId: null,
-          status: 'running',
-          assistantMessageId: message.id,
-          inputPayload: readToolCallInput(toolCall),
-          outputPayload: null,
-          message: '',
-          source: 'history',
-          createdAt: message.created_at,
-        }
-        toolDetails.push(detail)
-        if (toolCallId) {
-          toolByCallId.set(resolveToolCallMapKey(runId, toolCallId), detail)
-        } else {
-          const pendingTools = pendingToolsWithoutCallId.get(resolveRunKey(runId)) ?? []
-          pendingTools.push(detail)
-          pendingToolsWithoutCallId.set(resolveRunKey(runId), pendingTools)
-        }
-      }
-      continue
-    }
-    if (message.role !== 'tool') {
-      continue
-    }
-    const matchedTool = resolveHistoryToolResultMatch(message, toolByCallId, pendingToolsWithoutCallId)
-    if (matchedTool) {
-      mergeToolMessageIntoDetail(matchedTool, message)
-      continue
-    }
-    toolDetails.push({
-      id: message.tool_call_id || `history-${message.id}`,
-      runId: message.run_id ?? null,
-      toolCallId: message.tool_call_id,
-      toolName: message.tool_name || '工具调用',
-      memberAgentId: null,
-      memberAgentName: null,
-      memberRunId: null,
-      status: message.tool_call_error ? 'error' : 'completed',
-      assistantMessageId: resolveAdjacentToolAssistantId(messages, index),
-      inputPayload: message.tool_args,
-      outputPayload: parseStructuredPayload(message.content),
-      message: message.content,
-      source: 'history',
-      createdAt: message.created_at,
-    })
-  }
-
-  return toolDetails
-}
-
-/**
- * 标准化 assistant.tool_calls，兼容 Agno 与 OpenAI 风格的工具调用结构。
- */
-function normalizeAssistantToolCalls(message: AgentMessageItem): AgentMessageToolCallItem[] {
-  if (!Array.isArray(message.tool_calls)) {
-    return []
-  }
-  return message.tool_calls.filter(isToolCallPayload)
-}
-
-/**
- * 读取工具调用 ID，优先使用 OpenAI 风格 id，再兼容 Agno 字段。
- */
-function readToolCallId(toolCall: AgentMessageToolCallItem) {
-  return readStringProperty(toolCall, 'id') ?? readStringProperty(toolCall, 'tool_call_id')
-}
-
-/**
- * 读取工具名称，兼容 function.name、name 与 tool_name。
- */
-function readToolCallName(toolCall: AgentMessageToolCallItem) {
-  const functionPayload = readRecordProperty(toolCall, 'function')
-  if (isRecord(functionPayload)) {
-    const functionName = readStringProperty(functionPayload, 'name')
-    if (functionName) {
-      return functionName
-    }
-  }
-  return readStringProperty(toolCall, 'name') ?? readStringProperty(toolCall, 'tool_name')
-}
-
-/**
- * 读取工具输入参数；字符串参数会尽量解析为结构化 JSON。
- */
-function readToolCallInput(toolCall: AgentMessageToolCallItem) {
-  const functionPayload = readRecordProperty(toolCall, 'function')
-  if (isRecord(functionPayload)) {
-    const functionArguments = readRecordProperty(functionPayload, 'arguments')
-    if (functionArguments !== undefined) {
-      return parseStructuredPayload(functionArguments)
-    }
-  }
-  const argumentsPayload = readRecordProperty(toolCall, 'arguments')
-  if (argumentsPayload !== undefined) {
-    return parseStructuredPayload(argumentsPayload)
-  }
-  return parseStructuredPayload(readRecordProperty(toolCall, 'tool_args') ?? null)
-}
-
-/**
- * 用 tool_call_id 匹配后续 tool 结果；无 ID 时只在同 run 的未完成调用中按顺序匹配。
- */
-function resolveHistoryToolResultMatch(
-  message: AgentMessageItem,
-  toolByCallId: Map<string, ToolCallDetail>,
-  pendingToolsWithoutCallId: Map<string, ToolCallDetail[]>,
-) {
-  const runId = message.run_id ?? null
-  if (message.tool_call_id) {
-    return toolByCallId.get(resolveToolCallMapKey(runId, message.tool_call_id)) ?? null
-  }
-  const pendingTools = pendingToolsWithoutCallId.get(resolveRunKey(runId))
-  return pendingTools?.shift() ?? null
-}
-
-/**
- * 将 Agno tool 结果消息补充到对应的 assistant.tool_calls 详情上。
- */
-function mergeToolMessageIntoDetail(detail: ToolCallDetail, message: AgentMessageItem) {
-  detail.toolCallId = message.tool_call_id ?? detail.toolCallId
-  detail.toolName = message.tool_name || detail.toolName
-  detail.status = message.tool_call_error ? 'error' : 'completed'
-  detail.inputPayload = message.tool_args ?? detail.inputPayload
-  detail.outputPayload = parseStructuredPayload(message.content)
-  detail.message = message.content
-  detail.createdAt = message.created_at ?? detail.createdAt
-}
-
-/**
- * 兼容旧历史中只有 tool 消息、没有 assistant.tool_calls 的情况，只在相邻回合内找锚点。
- */
-function resolveAdjacentToolAssistantId(messages: AgentMessageItem[], toolIndex: number) {
-  const runId = messages[toolIndex].run_id ?? null
-  const previousUserIndex = findPreviousRoleIndex(messages, toolIndex, 'user')
-  const nextUserIndex = findNextRoleIndex(messages, toolIndex, 'user')
-  const turnStart = previousUserIndex + 1
-  const turnEnd = nextUserIndex >= 0 ? nextUserIndex : messages.length
-  const previousAssistant = findPreviousRoleIndex(messages, toolIndex, 'assistant', turnStart, runId)
-  if (previousAssistant >= 0) {
-    return messages[previousAssistant].id
-  }
-  const nextAssistant = findNextRoleIndex(messages, toolIndex, 'assistant', turnEnd, runId)
-  if (nextAssistant >= 0) {
-    return messages[nextAssistant].id
-  }
-  return null
-}
-
-/**
- * 向前查找指定角色消息，可选限制最小索引和 run_id。
- */
-function findPreviousRoleIndex(
-  messages: AgentMessageItem[],
-  startIndex: number,
-  role: AgentMessageItem['role'],
-  minIndex = 0,
-  runId: string | null = null,
-) {
-  for (let index = startIndex - 1; index >= minIndex; index -= 1) {
-    if (messages[index].role === role && messageMatchesRun(messages[index], runId)) {
-      return index
-    }
-  }
-  return -1
-}
-
-/**
- * 向后查找指定角色消息，可选限制最大索引和 run_id。
- */
-function findNextRoleIndex(
-  messages: AgentMessageItem[],
-  startIndex: number,
-  role: AgentMessageItem['role'],
-  maxIndex = messages.length,
-  runId: string | null = null,
-) {
-  for (let index = startIndex + 1; index < maxIndex; index += 1) {
-    if (messages[index].role === role && messageMatchesRun(messages[index], runId)) {
-      return index
-    }
-  }
-  return -1
-}
-
-/**
- * 判断消息是否属于同一个 run；缺少 run_id 的旧消息只在无法判断时参与相邻匹配。
- */
-function messageMatchesRun(message: AgentMessageItem, runId: string | null) {
-  if (!runId) {
-    return true
-  }
-  return !message.run_id || message.run_id === runId
-}
-
-/**
- * 构造同 run 下 tool_call_id 的稳定索引键。
- */
-function resolveToolCallMapKey(runId: string | null, toolCallId: string) {
-  return `${resolveRunKey(runId)}:${toolCallId}`
-}
-
-/**
- * 构造 run 维度索引键。
- */
-function resolveRunKey(runId: string | null) {
-  return runId || 'run-unbound'
-}
-
-/**
- * 判断 unknown 是否是可读取的工具调用对象。
- */
-function isToolCallPayload(value: unknown): value is AgentMessageToolCallItem {
-  return isRecord(value)
-}
-
-/**
- * 判断 unknown 是否是普通对象。
- */
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value && typeof value === 'object' && !Array.isArray(value))
-}
-
-/**
- * 从普通对象读取字段，避免对不同来源的 JSON 结构做强制类型假设。
- */
-function readRecordProperty(payload: unknown, key: string) {
-  if (!isRecord(payload)) {
-    return undefined
-  }
-  return payload[key]
-}
-
-/**
- * 从普通对象读取非空字符串字段。
- */
-function readStringProperty(payload: unknown, key: string) {
-  const value = readRecordProperty(payload, key)
-  if (typeof value !== 'string') {
+export function toolDetailFromTimelineItem(item: AgentTimelineItem): ToolCallDetail | null {
+  if (item.kind !== 'tool' || !item.tool) {
     return null
   }
-  const trimmed = value.trim()
-  return trimmed || null
+  return {
+    id: item.id,
+    runId: item.run_id || null,
+    toolCallId: item.tool.tool_call_id,
+    toolName: item.tool.tool_name || '工具调用',
+    memberAgentId: item.tool.member_agent_id ?? null,
+    memberAgentName: item.tool.member_agent_name ?? null,
+    memberRunId: item.tool.member_run_id ?? null,
+    status: item.tool.status,
+    inputPayload: item.tool.input_payload,
+    outputPayload: item.tool.output_payload,
+    message: item.tool.message,
+    source: item.source,
+    createdAt: item.created_at,
+  }
 }
 
 /**
- * 合并实时事件和历史缓存，历史消息锚点优先，缓存只补输入输出等详情。
+ * 将 run-first 时间线转换成渲染项，普通工具轻量折叠，ask_user 作为提问卡片展示。
  */
-export function mergeToolCallDetails(
-  historyTools: ToolCallDetail[],
-  eventTools: ToolCallDetail[],
-): ToolCallDetail[] {
-  const mergedMap = new Map<string, ToolCallDetail>()
-
-  for (const tool of historyTools) {
-    mergedMap.set(resolveToolIdentity(tool), tool)
+export function buildTimelineDisplayItems(
+  timelineItems: AgentTimelineItem[],
+  options: { pendingRequirement?: AgentPendingRequirement | null } = {},
+): TimelineDisplayItem[] {
+  const orderedItems = [...timelineItems].sort(compareTimelineItems)
+  const displayItems: TimelineDisplayItem[] = []
+  const pendingRequirement = options.pendingRequirement ?? null
+  const skippedRequirementIds = new Set<string>()
+  let pendingTools: AgentTimelineItem[] = []
+  for (const item of orderedItems) {
+    if (!isAskUserToolItem(item)) {
+      continue
+    }
+    const requirementItem = findMatchingAskUserRequirement(orderedItems, item, pendingRequirement)
+    if (requirementItem) {
+      skippedRequirementIds.add(requirementItem.id)
+    }
   }
 
-  for (const tool of eventTools) {
-    const identity = resolveToolIdentity(tool)
-    const historyTool = mergedMap.get(identity)
-    if (!historyTool) {
-      if (tool.source === 'history') {
+  const flushPendingTools = () => {
+    if (!pendingTools.length) {
+      return
+    }
+    const tools = pendingTools
+      .map(toolDetailFromTimelineItem)
+      .filter((tool): tool is ToolCallDetail => tool !== null)
+    if (tools.length) {
+      displayItems.push({
+        id: `tool-group:${pendingTools.map(item => item.id).join('|')}`,
+        kind: 'tool_group',
+        items: [...pendingTools],
+        tools,
+      })
+    }
+    pendingTools = []
+  }
+
+  for (const item of orderedItems) {
+    if (skippedRequirementIds.has(item.id)) {
+      continue
+    }
+    if (item.kind === 'tool') {
+      if (isAskUserToolItem(item)) {
+        flushPendingTools()
+        const matchedRequirement = findMatchingAskUserRequirement(orderedItems, item, pendingRequirement)
+          ? pendingRequirement
+          : null
+        displayItems.push(buildFeedbackRequestDisplayItem(item, matchedRequirement, toolDetailFromTimelineItem(item)))
         continue
       }
-      mergedMap.set(identity, tool)
+      pendingTools.push(item)
       continue
     }
-    mergedMap.set(identity, {
-      ...historyTool,
-      ...tool,
-      toolCallId: tool.toolCallId ?? historyTool.toolCallId,
-      memberAgentId: tool.memberAgentId ?? historyTool.memberAgentId,
-      memberAgentName: tool.memberAgentName ?? historyTool.memberAgentName,
-      memberRunId: tool.memberRunId ?? historyTool.memberRunId,
-      runId: tool.runId ?? historyTool.runId,
-      assistantMessageId: historyTool.assistantMessageId ?? tool.assistantMessageId,
-      inputPayload: tool.inputPayload ?? historyTool.inputPayload,
-      outputPayload: tool.outputPayload ?? historyTool.outputPayload,
-      message: tool.message || historyTool.message,
-      createdAt: tool.createdAt ?? historyTool.createdAt,
-    })
+    flushPendingTools()
+    if (item.kind === 'message' && (item.role === 'user' || item.role === 'assistant')) {
+      displayItems.push({
+        id: item.id,
+        kind: 'message',
+        item,
+        message: buildDisplayMessage(item),
+      })
+      continue
+    }
+    if (item.kind === 'reasoning') {
+      displayItems.push({
+        id: item.id,
+        kind: 'reasoning',
+        item,
+        content: item.content ?? '',
+        streaming: item.status === 'running',
+      })
+      continue
+    }
+    if (item.kind === 'run_status') {
+      displayItems.push({
+        id: item.id,
+        kind: 'run_status',
+        item,
+        status: item.status,
+        content: item.content || resolveRunStatusText(item.status),
+      })
+      continue
+    }
+    if (item.kind === 'requirement') {
+      const requirement = resolveAskUserRequirementForItem(item, pendingRequirement)
+      if (requirement) {
+        displayItems.push(buildFeedbackRequestDisplayItem(item, requirement, findMatchingAskUserToolDetail(orderedItems, item, requirement)))
+        continue
+      }
+      displayItems.push({
+        id: item.id,
+        kind: 'requirement',
+        item,
+        status: item.status,
+        content: item.content || '等待用户处理。',
+      })
+    }
   }
-
-  return [...mergedMap.values()]
+  flushPendingTools()
+  return displayItems
 }
 
 /**
- * 解析消息流与工具调用明细，构造面向渲染的对话项。
+ * 从时间线中提取所有工具详情，供详情弹窗按 id 查询。
  */
-export function buildConversationDisplayItems(
-  messages: AgentMessageItem[],
-  tools: ToolCallDetail[],
-): ConversationDisplayItem[] {
-  const items: ConversationDisplayItem[] = []
-  const assistantItemMap = new Map<string, ConversationDisplayItem>()
-  const lastAssistantIdByRun = new Map<string, string>()
-  let lastAssistantId: string | null = null
-
-  for (const message of messages) {
-    if (message.role === 'tool') {
-      continue
-    }
-    const nextItem: ConversationDisplayItem = {
-      message,
-      embeddedTools: [],
-    }
-    items.push(nextItem)
-    if (message.role === 'assistant') {
-      assistantItemMap.set(message.id, nextItem)
-      lastAssistantId = message.id
-      if (message.run_id) {
-        lastAssistantIdByRun.set(message.run_id, message.id)
-      }
-    }
-  }
-
-  for (const tool of tools) {
-    const targetAssistantId = tool.assistantMessageId ?? (
-      tool.source === 'event'
-        ? (tool.runId ? lastAssistantIdByRun.get(tool.runId) : null) ?? lastAssistantId
-        : null
-    )
-    if (!targetAssistantId) {
-      continue
-    }
-    const assistantItem = assistantItemMap.get(targetAssistantId)
-    if (!assistantItem) {
-      continue
-    }
-    assistantItem.embeddedTools.push(tool)
-  }
-
-  return items
+export function extractTimelineToolDetails(timelineItems: AgentTimelineItem[]): ToolCallDetail[] {
+  return [...timelineItems]
+    .sort(compareTimelineItems)
+    .map(toolDetailFromTimelineItem)
+    .filter((tool): tool is ToolCallDetail => tool !== null)
 }
 
 /**
@@ -456,34 +252,247 @@ export function parseStructuredPayload(payload: unknown) {
 }
 
 /**
- * 把工具 identity 统一折叠为稳定键，便于历史与实时详情合并。
+ * 将时间线消息转换成既有 Markdown 渲染 helper 可消费的消息结构。
  */
-function resolveToolIdentity(tool: ToolCallDetail) {
-  if (tool.toolCallId) {
-    return `tool-call:${tool.toolCallId}`
+function buildDisplayMessage(item: AgentTimelineItem): AgentMessageItem {
+  return {
+    id: item.id,
+    run_id: item.run_id,
+    role: item.role === 'user' ? 'user' : 'assistant',
+    content: item.content ?? '',
+    reasoning_content: null,
+    created_at: item.created_at,
+    tool_name: null,
+    tool_call_id: null,
+    tool_args: null,
+    tool_call_error: null,
+    tool_calls: [],
+    attachments: [],
   }
-  return [
-    tool.runId || 'run-unbound',
-    tool.assistantMessageId || 'assistant-unbound',
-    tool.toolName,
-    normalizeToolPayloadForKey(tool.outputPayload, tool.message),
-  ].join('|')
 }
 
 /**
- * 将工具输出压平成稳定键值，供去重与归并时使用。
+ * ask_user 是面向用户的提问，不作为普通工具名暴露在主时间线里。
  */
-function normalizeToolPayloadForKey(payload: unknown, fallbackMessage: string) {
-  const resolved = payload ?? fallbackMessage
-  if (resolved === null || resolved === undefined || resolved === '') {
-    return 'empty'
+function isAskUserToolItem(item: AgentTimelineItem) {
+  return item.kind === 'tool' && item.tool?.tool_name === 'ask_user'
+}
+
+/**
+ * 构造提问展示项，优先使用 requirement schema，其次从工具参数里恢复问题。
+ */
+function buildFeedbackRequestDisplayItem(
+  item: AgentTimelineItem,
+  requirement: AgentPendingRequirement | null,
+  tool: ToolCallDetail | null,
+): Extract<TimelineDisplayItem, { kind: 'feedback_request' }> {
+  const questions = resolveFeedbackQuestions(requirement, tool, item)
+  const firstQuestion = questions[0]?.question?.trim()
+  const title = firstQuestion || item.content || requirement?.note || '等待用户回复'
+  const pending = item.status !== 'completed' && item.status !== 'cancelled'
+  return {
+    id: `feedback-request:${item.id}`,
+    kind: 'feedback_request',
+    item,
+    requirement,
+    tool,
+    title,
+    subtitle: buildFeedbackRequestSubtitle(requirement, questions, pending),
+    questions,
+    answerSummary: resolveAskUserAnswerSummary(tool?.outputPayload),
+    pending,
+    status: item.status || 'pending',
   }
-  if (typeof resolved === 'string') {
-    return resolved
+}
+
+/**
+ * 同 run 且同 tool_call_id 的 ask_user 工具和 requirement 视为同一条提问。
+ */
+function findMatchingAskUserRequirement(
+  items: AgentTimelineItem[],
+  toolItem: AgentTimelineItem,
+  requirement: AgentPendingRequirement | null,
+) {
+  if (!requirement || !isAskUserRequirement(requirement) || !itemMatchesRequirement(toolItem, requirement)) {
+    return null
+  }
+  return items.find(item => item.kind === 'requirement' && itemMatchesRequirement(item, requirement)) ?? null
+}
+
+/**
+ * 从 requirement 反查 ask_user 工具详情，供提问卡片保留调试入口。
+ */
+function findMatchingAskUserToolDetail(
+  items: AgentTimelineItem[],
+  requirementItem: AgentTimelineItem,
+  requirement: AgentPendingRequirement,
+) {
+  const toolItem = items.find(item => (
+    isAskUserToolItem(item)
+    && item.run_id === requirementItem.run_id
+    && itemMatchesRequirement(item, requirement)
+  ))
+  return toolItem ? toolDetailFromTimelineItem(toolItem) : null
+}
+
+function resolveAskUserRequirementForItem(
+  item: AgentTimelineItem,
+  requirement: AgentPendingRequirement | null,
+) {
+  if (item.kind !== 'requirement' || !requirement || !isAskUserRequirement(requirement)) {
+    return null
+  }
+  return itemMatchesRequirement(item, requirement) ? requirement : null
+}
+
+function isAskUserRequirement(requirement: AgentPendingRequirement) {
+  return requirement.kind === 'user_feedback' || requirement.tool_name === 'ask_user'
+}
+
+function itemMatchesRequirement(item: AgentTimelineItem, requirement: AgentPendingRequirement) {
+  if (item.run_id !== requirement.run_id) {
+    return false
+  }
+  const requirementCallId = resolveToolExecutionCallId(requirement.tool_execution)
+  if (item.tool?.tool_call_id && requirementCallId) {
+    return item.tool.tool_call_id === requirementCallId
+  }
+  return true
+}
+
+function resolveToolExecutionCallId(toolExecution: Record<string, unknown>) {
+  const value = toolExecution.tool_call_id
+  return typeof value === 'string' && value ? value : null
+}
+
+function buildFeedbackRequestSubtitle(
+  requirement: AgentPendingRequirement | null,
+  questions: AgentUserFeedbackQuestion[],
+  pending: boolean,
+) {
+  const parts = [
+    requirement?.member_agent_name ? `来自 ${requirement.member_agent_name}` : '',
+    questions.length > 1 ? `${questions.length} 个问题` : pending ? '等待回复' : '已回复',
+  ].filter(Boolean)
+  return parts.join(' · ')
+}
+
+function resolveAskUserAnswerSummary(outputPayload: unknown) {
+  const text = typeof outputPayload === 'string' ? outputPayload : ''
+  const match = text.match(/User feedback received:\s*(\[[\s\S]*\])$/)
+  if (!match) {
+    return text
   }
   try {
-    return JSON.stringify(resolved)
+    const parsed = JSON.parse(match[1])
+    if (!Array.isArray(parsed)) {
+      return text
+    }
+    return parsed.map(item => {
+      if (!item || typeof item !== 'object') {
+        return ''
+      }
+      const record = item as Record<string, unknown>
+      const question = typeof record.question === 'string' ? record.question : ''
+      const selected = Array.isArray(record.selected)
+        ? record.selected.filter((value): value is string => typeof value === 'string')
+        : []
+      return question && selected.length ? `${question}：${selected.join('、')}` : selected.join('、')
+    }).filter(Boolean).join('；')
   } catch {
-    return String(resolved)
+    return text
   }
+}
+
+function resolveFeedbackQuestions(
+  requirement: AgentPendingRequirement | null,
+  tool: ToolCallDetail | null,
+  item: AgentTimelineItem,
+): AgentUserFeedbackQuestion[] {
+  for (const source of [
+    requirement?.user_feedback_schema,
+    resolveFeedbackSchema(requirement?.tool_execution),
+    resolveFeedbackSchema(tool?.inputPayload),
+    resolveFeedbackSchema(item.tool?.input_payload),
+  ]) {
+    const questions = normalizeFeedbackQuestions(source)
+    if (questions.length) {
+      return questions
+    }
+  }
+  return []
+}
+
+function resolveFeedbackSchema(payload: unknown): unknown {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    return null
+  }
+  const record = payload as Record<string, unknown>
+  if (Array.isArray(record.user_feedback_schema)) {
+    return record.user_feedback_schema
+  }
+  if (Array.isArray(record.questions)) {
+    return record.questions
+  }
+  const toolArgs = record.tool_args
+  if (toolArgs && typeof toolArgs === 'object' && !Array.isArray(toolArgs)) {
+    const args = toolArgs as Record<string, unknown>
+    if (Array.isArray(args.questions)) {
+      return args.questions
+    }
+  }
+  return null
+}
+
+function normalizeFeedbackQuestions(value: unknown): AgentUserFeedbackQuestion[] {
+  if (!Array.isArray(value)) {
+    return []
+  }
+  return value
+    .filter((item): item is Record<string, unknown> => typeof item === 'object' && item !== null && !Array.isArray(item))
+    .map(item => ({
+      question: typeof item.question === 'string' ? item.question : '',
+      header: typeof item.header === 'string' ? item.header : '',
+      multi_select: false,
+      options: Array.isArray(item.options)
+        ? item.options
+            .filter((option): option is Record<string, unknown> => typeof option === 'object' && option !== null && !Array.isArray(option))
+            .map(option => ({
+              label: typeof option.label === 'string' ? option.label : '',
+              description: typeof option.description === 'string' ? option.description : '',
+              selected: typeof option.selected === 'boolean' ? option.selected : undefined,
+            }))
+            .filter(option => option.label)
+        : [],
+      selected_options: Array.isArray(item.selected_options)
+        ? item.selected_options.filter((option): option is string => typeof option === 'string')
+        : null,
+    }))
+    .filter(item => item.question)
+}
+
+/**
+ * 时间线排序以 order_index 为主，缺失时用 event_index 和 id 兜底。
+ */
+function compareTimelineItems(left: AgentTimelineItem, right: AgentTimelineItem) {
+  if (left.order_index !== right.order_index) {
+    return left.order_index - right.order_index
+  }
+  const leftEventIndex = left.event_index ?? Number.MAX_SAFE_INTEGER
+  const rightEventIndex = right.event_index ?? Number.MAX_SAFE_INTEGER
+  if (leftEventIndex !== rightEventIndex) {
+    return leftEventIndex - rightEventIndex
+  }
+  return left.id.localeCompare(right.id)
+}
+
+/**
+ * 为缺少文案的运行状态项补齐前端兜底展示。
+ */
+function resolveRunStatusText(status: string | null) {
+  if (status === 'failed') return '运行失败。'
+  if (status === 'cancelled') return '运行已停止。'
+  if (status === 'paused') return '等待用户处理。'
+  if (status === 'completed') return '运行已完成。'
+  return '运行状态已更新。'
 }

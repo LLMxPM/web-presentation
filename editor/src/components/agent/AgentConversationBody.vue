@@ -1,4 +1,4 @@
-<!-- 文件功能：渲染智能体会话正文、草稿箱、内嵌工具调用与运行状态提示。 -->
+<!-- 文件功能：渲染智能体 run-first 时间线正文、草稿箱、工具调用与运行状态提示。 -->
 <template>
   <div
     ref="scrollContainerRef"
@@ -37,119 +37,183 @@
     <section class="flex min-h-[140px] flex-1 flex-col">
       <div class="flex flex-1 flex-col gap-1 py-0.5">
         <div
-          v-if="conversationMessages.length === 0"
+          v-if="timelineDisplayItems.length === 0"
           class="flex min-h-[140px] items-center justify-center text-center text-[12px] leading-5 text-slate-400"
         >
           {{ emptyConversationText }}
         </div>
 
-        <article
-          v-for="item in conversationDisplayItems"
-          :key="item.message.id"
-          class="conversation-message flex px-0.5 py-0"
-          :class="item.message.role === 'user' ? 'conversation-message--user justify-end' : item.message.role === 'assistant' ? 'conversation-message--assistant justify-start' : 'conversation-message--system justify-start'"
-        >
-          <div class="message-group min-w-0" :class="item.message.role === 'user' ? 'max-w-[92%]' : 'w-[92%]'">
-            <div
-              class="message-shell min-w-0"
-              :class="item.message.role === 'user'
-                ? 'rounded-md border border-slate-200 bg-slate-100 px-2.5 py-1 text-slate-700'
-                : item.message.role === 'assistant'
-                  ? 'px-1 py-0.5 text-slate-700'
-                  : 'rounded-md border border-slate-100 bg-slate-50/70 px-2 py-1 text-slate-600'"
-            >
-              <div v-if="item.message.role === 'assistant'" class="assistant-markdown">
-                <details v-if="resolveMessageReasoning(item.message)" class="reasoning-details mb-0.5 text-slate-500">
-                  <summary class="inline-flex cursor-pointer select-none items-center gap-0.5 rounded px-1 py-0 font-medium text-slate-400 transition hover:bg-slate-50 hover:text-slate-600">
-                    <ChevronRight class="h-2.5 w-2.5 transition details-chevron" />
-                    <span>{{ isMessageStreaming(item.message) ? '思考中' : '思考过程' }}</span>
-                    <span v-if="isMessageStreaming(item.message)" class="thinking-dots" aria-hidden="true">
-                      <span />
-                      <span />
-                      <span />
-                    </span>
-                  </summary>
-                  <div class="reasoning-markdown mt-0.5 max-h-[100px] overflow-auto border-l border-slate-100 pl-1.5">
-                    <MarkdownRender
-                      :nodes="resolveMessageReasoningMarkdownNodes(item.message)"
-                      :max-live-nodes="isMessageStreaming(item.message) ? 0 : 160"
-                      batch-rendering
-                      :initial-render-batch-size="assistantBatchRendering.initialRenderBatchSize"
-                      :render-batch-size="assistantBatchRendering.renderBatchSize"
-                      :render-batch-delay="assistantBatchRendering.renderBatchDelay"
-                      :render-batch-budget-ms="assistantBatchRendering.renderBatchBudgetMs"
+        <template v-for="item in timelineDisplayItems" :key="item.id">
+          <article
+            v-if="item.kind === 'message'"
+            class="conversation-message flex px-0.5 py-0"
+            :class="item.message.role === 'user' ? 'conversation-message--user justify-end' : 'conversation-message--assistant justify-start'"
+          >
+            <div class="message-group min-w-0" :class="item.message.role === 'user' ? 'max-w-[92%]' : 'w-[92%]'">
+              <div
+                class="message-shell min-w-0"
+                :class="item.message.role === 'user'
+                  ? 'rounded-md border border-slate-200 bg-slate-100 px-2.5 py-1 text-slate-700'
+                  : 'px-1 py-0.5 text-slate-700'"
+              >
+                <div v-if="item.message.role === 'assistant'" class="assistant-markdown">
+                  <p v-if="shouldShowAssistantPlaceholder(item)" class="text-[13px] leading-[18px] text-slate-400">...</p>
+                  <MarkdownRender
+                    v-else-if="resolveMessageContent(item.message)"
+                    :nodes="resolveMessageMarkdownNodes(item.message)"
+                    :max-live-nodes="isMessageStreaming(item.message) ? 0 : 320"
+                    batch-rendering
+                    :initial-render-batch-size="assistantBatchRendering.initialRenderBatchSize"
+                    :render-batch-size="assistantBatchRendering.renderBatchSize"
+                    :render-batch-delay="assistantBatchRendering.renderBatchDelay"
+                    :render-batch-budget-ms="assistantBatchRendering.renderBatchBudgetMs"
+                  />
+                </div>
+                <div v-else>
+                  <pre class="whitespace-pre-wrap break-words text-[12.5px] font-sans leading-[17px]">{{ item.message.content || '...' }}</pre>
+                </div>
+              </div>
+              <div
+                v-if="item.message.role === 'user' && item.message.created_at"
+                class="message-time mt-0.5 px-1 text-right text-[10px] font-medium text-slate-400"
+              >
+                {{ formatMessageTime(item.message.created_at) }}
+              </div>
+            </div>
+          </article>
+
+          <article v-else-if="item.kind === 'reasoning'" class="conversation-message conversation-message--assistant flex justify-start px-0.5 py-0">
+            <div class="message-group w-[92%] min-w-0 px-1 py-0.5">
+              <details class="reasoning-details text-slate-500" :open="item.streaming">
+                <summary class="inline-flex cursor-pointer select-none items-center gap-0.5 rounded px-1 py-0 font-medium text-slate-400 transition hover:bg-slate-50 hover:text-slate-600">
+                  <ChevronRight class="h-2.5 w-2.5 transition details-chevron" />
+                  <span>{{ item.streaming ? '思考中' : '思考过程' }}</span>
+                  <span v-if="item.streaming" class="thinking-dots" aria-hidden="true">
+                    <span />
+                    <span />
+                    <span />
+                  </span>
+                </summary>
+                <div class="reasoning-markdown mt-0.5 max-h-[100px] overflow-auto border-l border-slate-100 pl-1.5">
+                  <MarkdownRender
+                    :nodes="resolveReasoningMarkdownNodes(item)"
+                    :max-live-nodes="item.streaming ? 0 : 160"
+                    batch-rendering
+                    :initial-render-batch-size="assistantBatchRendering.initialRenderBatchSize"
+                    :render-batch-size="assistantBatchRendering.renderBatchSize"
+                    :render-batch-delay="assistantBatchRendering.renderBatchDelay"
+                    :render-batch-budget-ms="assistantBatchRendering.renderBatchBudgetMs"
+                  />
+                </div>
+              </details>
+            </div>
+          </article>
+
+          <article v-else-if="item.kind === 'feedback_request'" class="conversation-message conversation-message--assistant flex justify-start px-0.5 py-0">
+            <div class="message-group w-[92%] min-w-0 px-1 py-0.5">
+              <div
+                class="rounded-md border px-2.5 py-2"
+                :class="item.pending ? 'border-sky-100 bg-sky-50/70 text-sky-900' : 'border-emerald-100 bg-emerald-50/60 text-emerald-900'"
+              >
+                <div class="flex items-start justify-between gap-2">
+                  <div class="flex min-w-0 items-start gap-1.5">
+                    <HelpCircle
+                      class="mt-0.5 h-3.5 w-3.5 shrink-0"
+                      :class="item.pending ? 'text-sky-500' : 'text-emerald-500'"
                     />
-                  </div>
-                </details>
-
-                <p v-if="shouldShowAssistantPlaceholder(item)" class="text-[13px] leading-[18px] text-slate-400">...</p>
-                <MarkdownRender
-                  v-else-if="resolveMessageContent(item.message)"
-                  :nodes="resolveMessageMarkdownNodes(item.message)"
-                  :max-live-nodes="isMessageStreaming(item.message) ? 0 : 320"
-                  batch-rendering
-                  :initial-render-batch-size="assistantBatchRendering.initialRenderBatchSize"
-                  :render-batch-size="assistantBatchRendering.renderBatchSize"
-                  :render-batch-delay="assistantBatchRendering.renderBatchDelay"
-                  :render-batch-budget-ms="assistantBatchRendering.renderBatchBudgetMs"
-                />
-
-                <div v-if="item.embeddedTools.length" class="tool-call-block mt-1.5 space-y-1 text-[10px] text-slate-500">
-                  <template v-if="item.embeddedTools.length === 1">
-                    <button
-                      v-for="tool in item.embeddedTools"
-                      :key="tool.id"
-                      type="button"
-                      class="tool-call-row flex w-full min-w-0 items-center justify-between gap-2 border border-slate-200/80 bg-slate-50/60 px-1.5 py-0.5 text-left text-[10px] transition hover:bg-slate-100/70"
-                      :class="getToolChipClass(tool.status)"
-                      @click="$emit('open-tool-detail', tool.id)"
-                    >
-                      <span class="min-w-0 truncate">{{ resolveToolDisplayName(tool) }}</span>
-                      <span class="shrink-0 opacity-60" aria-hidden="true">{{ toolStatusLabelMap[tool.status] }}</span>
-                    </button>
-                  </template>
-                  <details v-else class="tool-call-group" :open="shouldExpandToolGroup(item.embeddedTools)">
-                    <summary class="flex cursor-pointer select-none items-center gap-1.5 border border-slate-200/80 bg-slate-50/60 px-1.5 py-0.5 text-[10px] text-slate-500 transition hover:bg-slate-100/70">
-                      <ChevronRight class="h-2.5 w-2.5 transition details-chevron" />
-                      <span class="min-w-0 flex-1 truncate">{{ formatToolGroupSummary(item.embeddedTools) }}</span>
-                    </summary>
-                    <div class="mt-1 space-y-1">
-                      <button
-                        v-for="tool in item.embeddedTools"
-                        :key="tool.id"
-                        type="button"
-                        class="tool-call-row flex w-full min-w-0 items-center justify-between gap-2 border border-slate-200/80 bg-slate-50/60 px-1.5 py-0.5 text-left text-[10px] transition hover:bg-slate-100/70"
-                        :class="getToolChipClass(tool.status)"
-                        @click="$emit('open-tool-detail', tool.id)"
+                    <div class="min-w-0">
+                      <p class="break-words text-[12.5px] font-semibold leading-5">{{ item.title }}</p>
+                      <p
+                        v-if="item.subtitle"
+                        class="mt-0.5 text-[11px] leading-4"
+                        :class="item.pending ? 'text-sky-700/75' : 'text-emerald-700/75'"
                       >
-                        <span class="min-w-0 truncate">{{ resolveToolDisplayName(tool) }}</span>
-                        <span class="shrink-0 opacity-60" aria-hidden="true">{{ toolStatusLabelMap[tool.status] }}</span>
-                      </button>
+                        {{ item.subtitle }}
+                      </p>
                     </div>
-                  </details>
-                </div>
-              </div>
-              <div v-else>
-                <div v-if="item.message.attachments?.length" class="mt-1.5 flex flex-wrap gap-1.5">
-                  <img
-                    v-for="attachment in item.message.attachments"
-                    :key="attachment.id"
-                    :src="attachment.url"
-                    :alt="attachment.original_name"
-                    class="h-14 w-14 rounded border border-white/30 object-cover shadow-sm"
+                  </div>
+                  <span
+                    class="shrink-0 rounded border bg-white/70 px-1.5 py-0.5 text-[10px] font-medium"
+                    :class="item.pending ? 'border-sky-200 text-sky-700' : 'border-emerald-200 text-emerald-700'"
                   >
+                    {{ item.pending ? '等待回复' : '用户已回复' }}
+                  </span>
                 </div>
-                <pre class="whitespace-pre-wrap break-words text-[12.5px] font-sans leading-[17px]">{{ item.message.content || (item.message.attachments?.length ? '（已发送图片）' : '...') }}</pre>
+                <p v-if="!item.pending && item.answerSummary" class="mt-1.5 line-clamp-2 text-[11px] leading-4 text-emerald-800/80">
+                  {{ item.answerSummary }}
+                </p>
+                <div v-if="item.questions[0]?.options.length" class="mt-1.5 flex flex-wrap gap-1">
+                  <span
+                    v-for="option in item.questions[0].options.slice(0, 4)"
+                    :key="option.label"
+                    class="max-w-full truncate rounded border bg-white/60 px-1.5 py-0.5 text-[10px]"
+                    :class="item.pending ? 'border-sky-100 text-sky-700' : 'border-emerald-100 text-emerald-700'"
+                  >
+                    {{ option.label }}
+                  </span>
+                </div>
+                <button
+                  v-if="item.tool"
+                  type="button"
+                  class="mt-1.5 inline-flex items-center rounded px-1 py-0.5 text-[10px] font-medium transition hover:bg-white/70"
+                  :class="item.pending ? 'text-sky-600 hover:text-sky-800' : 'text-emerald-600 hover:text-emerald-800'"
+                  @click="$emit('open-tool-detail', item.tool.id)"
+                >
+                  查看调用详情
+                </button>
               </div>
             </div>
-            <div
-              v-if="item.message.role === 'user' && item.message.created_at"
-              class="message-time mt-0.5 px-1 text-right text-[10px] font-medium text-slate-400"
-            >
-              {{ formatMessageTime(item.message.created_at) }}
+          </article>
+
+          <article v-else-if="item.kind === 'tool_group'" class="conversation-message conversation-message--assistant flex justify-start px-0.5 py-0">
+            <div class="message-group w-[92%] min-w-0 px-1 py-0.5">
+              <template v-if="item.tools.length === 1">
+                <button
+                  v-for="tool in item.tools"
+                  :key="tool.id"
+                  type="button"
+                  class="tool-call-row flex w-full min-w-0 items-center justify-between gap-2 border border-slate-200/80 bg-slate-50/60 px-1.5 py-0.5 text-left text-[10px] transition hover:bg-slate-100/70"
+                  :class="getToolChipClass(tool.status)"
+                  @click="$emit('open-tool-detail', tool.id)"
+                >
+                  <span class="min-w-0 truncate">{{ resolveToolDisplayName(tool) }}</span>
+                  <span class="shrink-0 opacity-60" aria-hidden="true">{{ toolStatusLabelMap[tool.status] }}</span>
+                </button>
+              </template>
+              <details v-else class="tool-call-group" :open="shouldExpandToolGroup(item.tools)">
+                <summary class="flex cursor-pointer select-none items-center gap-1.5 border border-slate-200/80 bg-slate-50/60 px-1.5 py-0.5 text-[10px] text-slate-500 transition hover:bg-slate-100/70">
+                  <ChevronRight class="h-2.5 w-2.5 transition details-chevron" />
+                  <span class="min-w-0 flex-1 truncate">{{ formatToolGroupSummary(item.tools) }}</span>
+                </summary>
+                <div class="mt-1 space-y-1">
+                  <button
+                    v-for="tool in item.tools"
+                    :key="tool.id"
+                    type="button"
+                    class="tool-call-row flex w-full min-w-0 items-center justify-between gap-2 border border-slate-200/80 bg-slate-50/60 px-1.5 py-0.5 text-left text-[10px] transition hover:bg-slate-100/70"
+                    :class="getToolChipClass(tool.status)"
+                    @click="$emit('open-tool-detail', tool.id)"
+                  >
+                    <span class="min-w-0 truncate">{{ resolveToolDisplayName(tool) }}</span>
+                    <span class="shrink-0 opacity-60" aria-hidden="true">{{ toolStatusLabelMap[tool.status] }}</span>
+                  </button>
+                </div>
+              </details>
             </div>
-          </div>
-        </article>
+          </article>
+
+          <article
+            v-else
+            class="conversation-message conversation-message--system flex justify-start px-0.5 py-0"
+          >
+            <div
+              class="message-group max-w-[92%] rounded-md border px-2 py-1 text-[11px] leading-5"
+              :class="getTimelineStatusClass(item.status)"
+            >
+              {{ item.content }}
+            </div>
+          </article>
+        </template>
       </div>
     </section>
 
@@ -175,8 +239,8 @@
 
 <script setup lang="ts">
 import 'markstream-vue/index.css'
-import MarkdownRender, { getMarkdown } from 'markstream-vue'
-import { ChevronRight } from '@lucide/vue'
+import MarkdownRender, { getMarkdown, parseMarkdownToStructure } from 'markstream-vue'
+import { ChevronRight, HelpCircle } from '@lucide/vue'
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import BaseButton from '@/components/ui/BaseButton.vue'
@@ -187,25 +251,22 @@ import {
   getToolChipClass,
   resolveMessageContent,
   resolveMessageMarkdownNodes as buildMessageMarkdownNodes,
-  resolveMessageReasoning as resolveDisplayedMessageReasoning,
-  resolveMessageReasoningMarkdownNodes as buildMessageReasoningMarkdownNodes,
   shouldExpandToolGroup,
   shouldShowAssistantPlaceholder as shouldDisplayAssistantPlaceholder,
   toolStatusLabelMap,
 } from '@/components/agent/agent-message-display'
-import type { ConversationDisplayItem, ToolCallDetail } from '@/components/agent/agent-conversation-panel'
+import type { TimelineDisplayItem, ToolCallDetail } from '@/components/agent/agent-conversation-panel'
 import type { AgentActiveRunItem, AgentMessageItem, AgentSuggestedPatch } from '@/types/api'
 
 const props = defineProps<{
-  conversationMessages: AgentMessageItem[]
-  conversationDisplayItems: ConversationDisplayItem[]
+  timelineDisplayItems: TimelineDisplayItem[]
   draftPatches: AgentSuggestedPatch[]
   emptyConversationText: string
   lastRunIssue: { title: string, detail: string } | null
   activeRun: AgentActiveRunItem | null
   cancellingRunForceAvailable: boolean
   isStreaming: boolean
-  streamingAssistantMessageId: string | null
+  streamingTimelineItemId: string | null
 }>()
 
 defineEmits<{
@@ -228,7 +289,7 @@ const assistantBatchRendering = {
 }
 const isMessageStreaming = createMessageStreamingResolver(
   () => props.isStreaming,
-  () => props.streamingAssistantMessageId,
+  () => props.streamingTimelineItemId,
 )
 
 watch(
@@ -250,10 +311,10 @@ onBeforeUnmount(() => {
 })
 
 /**
- * 只有空 assistant 占位才显示省略号；已有思考过程或工具调用时不再额外占位。
+ * 只有空 assistant 占位才显示省略号。
  */
-function shouldShowAssistantPlaceholder(item: ConversationDisplayItem) {
-  return shouldDisplayAssistantPlaceholder(item, isMessageStreaming)
+function shouldShowAssistantPlaceholder(item: Extract<TimelineDisplayItem, { kind: 'message' }>) {
+  return shouldDisplayAssistantPlaceholder({ message: item.message, embeddedTools: [] }, isMessageStreaming)
 }
 
 /**
@@ -261,26 +322,19 @@ function shouldShowAssistantPlaceholder(item: ConversationDisplayItem) {
  */
 function resolveMessageMarkdownNodes(message: AgentMessageItem) {
   return readMarkdownCache(
-    buildMarkdownCacheKey('content', message, isMessageStreaming(message)),
+    buildMarkdownCacheKey('content', message.id, message.content, isMessageStreaming(message)),
     () => buildMessageMarkdownNodes(message, markdownParser, isMessageStreaming),
   )
 }
 
 /**
- * 思考过程也使用 Markdown 结构渲染，但保持更弱的视觉层级。
+ * 思考过程作为独立时间线项渲染。
  */
-function resolveMessageReasoningMarkdownNodes(message: AgentMessageItem) {
+function resolveReasoningMarkdownNodes(item: Extract<TimelineDisplayItem, { kind: 'reasoning' }>) {
   return readMarkdownCache(
-    buildMarkdownCacheKey('reasoning', message, isMessageStreaming(message)),
-    () => buildMessageReasoningMarkdownNodes(message, markdownParser, isMessageStreaming),
+    buildMarkdownCacheKey('reasoning', item.id, item.content, item.streaming),
+    () => parseMarkdownToStructure(item.content, markdownParser, { final: !item.streaming }),
   )
-}
-
-/**
- * 返回消息思考内容，优先使用后端拆出的 reasoning_content。
- */
-function resolveMessageReasoning(message: AgentMessageItem | undefined) {
-  return resolveDisplayedMessageReasoning(message, isMessageStreaming)
 }
 
 /**
@@ -328,26 +382,24 @@ function isNearConversationBottom(container: HTMLElement) {
 }
 
 function buildConversationChangeSignature() {
-  const lastItem = props.conversationDisplayItems.at(-1)
-  const lastMessage = lastItem?.message
+  const lastItem = props.timelineDisplayItems.at(-1)
   return [
-    props.conversationDisplayItems.length,
-    lastMessage?.id ?? '',
-    lastMessage?.content.length ?? 0,
-    lastMessage?.reasoning_content?.length ?? 0,
-    lastItem?.embeddedTools.map(tool => `${tool.id}:${tool.status}`).join(',') ?? '',
+    props.timelineDisplayItems.length,
+    lastItem?.id ?? '',
+    lastItem && 'content' in lastItem ? lastItem.content.length : '',
+    lastItem?.kind === 'feedback_request' ? `${lastItem.title}:${lastItem.status}:${lastItem.answerSummary}` : '',
+    lastItem?.kind === 'tool_group' ? lastItem.tools.map(tool => `${tool.id}:${tool.status}`).join(',') : '',
     props.lastRunIssue?.detail ?? '',
     props.activeRun?.status ?? '',
   ].join('|')
 }
 
-function buildMarkdownCacheKey(kind: 'content' | 'reasoning', message: AgentMessageItem, streaming: boolean) {
+function buildMarkdownCacheKey(kind: 'content' | 'reasoning', id: string, content: string, streaming: boolean) {
   return [
     kind,
-    message.id,
+    id,
     streaming ? 'live' : 'final',
-    message.content,
-    message.reasoning_content ?? '',
+    content,
   ].join('\u001f')
 }
 
@@ -374,6 +426,13 @@ function trimMarkdownCache() {
     }
     markdownNodeCache.delete(firstKey)
   }
+}
+
+function getTimelineStatusClass(status: string | null) {
+  if (status === 'failed') return 'border-red-100 bg-red-50/70 text-red-600'
+  if (status === 'cancelled' || status === 'cancelling') return 'border-amber-100 bg-amber-50/70 text-amber-700'
+  if (status === 'paused' || status === 'pending') return 'border-sky-100 bg-sky-50/70 text-sky-700'
+  return 'border-slate-100 bg-slate-50/70 text-slate-500'
 }
 </script>
 
@@ -415,11 +474,13 @@ details[open] .details-chevron {
   line-height: 1.32;
 }
 
-.assistant-markdown :deep(.markstream-vue > :first-child) {
+.assistant-markdown :deep(.markstream-vue > :first-child),
+.reasoning-markdown :deep(.markstream-vue > :first-child) {
   margin-top: 0;
 }
 
-.assistant-markdown :deep(.markstream-vue > :last-child) {
+.assistant-markdown :deep(.markstream-vue > :last-child),
+.reasoning-markdown :deep(.markstream-vue > :last-child) {
   margin-bottom: 0;
 }
 
@@ -477,14 +538,6 @@ details[open] .details-chevron {
   font-size: 0.6875rem;
   line-height: 1.28;
   white-space: pre-wrap;
-}
-
-.reasoning-markdown :deep(.markstream-vue > :first-child) {
-  margin-top: 0;
-}
-
-.reasoning-markdown :deep(.markstream-vue > :last-child) {
-  margin-bottom: 0;
 }
 
 .reasoning-markdown :deep(.markstream-vue > * + *) {

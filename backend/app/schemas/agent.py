@@ -202,21 +202,34 @@ class AgentRunStartResponse(SchemaBase):
     event_index: int = -1
 
 
-class AgentToolCallDetailItem(SchemaBase):
-    """从 run 事件恢复出的工具调用详情，供 Editor 历史 UI 使用。"""
+class AgentTimelineToolItem(SchemaBase):
+    """时间线中的工具调用详情，独立于 assistant 消息存在。"""
 
-    id: str
-    run_id: str
     tool_call_id: str | None = None
     tool_name: str
     member_agent_id: str | None = None
     member_agent_name: str | None = None
     member_run_id: str | None = None
     status: Literal["running", "completed", "error"]
-    assistant_message_id: str | None = None
     input_payload: Any | None = None
     output_payload: Any | None = None
     message: str = ""
+
+
+class AgentTimelineItem(SchemaBase):
+    """按 session/run/event_index 派生的会话时间线项。"""
+
+    id: str
+    session_id: str
+    run_id: str
+    kind: Literal["message", "reasoning", "tool", "run_status", "requirement"]
+    role: Literal["user", "assistant"] | None = None
+    event_index: int | None = None
+    order_index: int
+    content: str | None = None
+    status: str | None = None
+    tool: AgentTimelineToolItem | None = None
+    source: Literal["message", "event", "synthetic"]
     created_at: str | None = None
 
 
@@ -224,8 +237,7 @@ class AgentSessionRuntimeSnapshot(SchemaBase):
     """会话运行时快照，供 Editor 刷新和切会话后一次性恢复状态。"""
 
     session: AgentSessionItem
-    messages: list[AgentMessageItem] = Field(default_factory=list)
-    tool_details: list[AgentToolCallDetailItem] = Field(default_factory=list)
+    timeline_items: list[AgentTimelineItem] = Field(default_factory=list)
     context_status: AgentContextStatusItem
     active_run: AgentActiveRunItem | None = None
     last_run: AgentActiveRunItem | None = None
