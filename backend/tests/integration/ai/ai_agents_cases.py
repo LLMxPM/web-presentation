@@ -153,6 +153,33 @@ async def _create_workspace(authenticated_client: AsyncClient, name: str) -> int
     return response.json()["id"]
 
 
+def _build_empty_context_status(session_id: str, *, retained_recent_message_count: int = 0) -> AgentContextStatusItem:
+    """构造 runtime snapshot 测试所需的最小上下文状态。"""
+
+    return AgentContextStatusItem(
+        session_id=session_id,
+        agent_id=AGENT_COORDINATOR_AGENT_ID,
+        compression_enabled=True,
+        compression_required=False,
+        summary_available=False,
+        summary=None,
+        topics=[],
+        summary_updated_at=None,
+        context_window_tokens=4096,
+        max_output_tokens=1024,
+        history_token_ratio=0.4,
+        compression_target_ratio=0.1,
+        safety_margin_tokens=256,
+        current_input_tokens=0,
+        fixed_context_tokens=0,
+        history_budget_tokens=2048,
+        compression_target_tokens=512,
+        estimated_history_tokens=0,
+        retained_recent_history_tokens=0,
+        retained_recent_message_count=retained_recent_message_count,
+    )
+
+
 async def _create_project(
     authenticated_client: AsyncClient,
     workspace_id: int,
@@ -5097,6 +5124,232 @@ async def test_ai_runtime_timeline_should_interleave_message_fallback_with_tool_
         ("tool", None, None, "ask_user"),
         ("requirement", None, "是否继续整理资源？", None),
         ("run_status", None, "等待用户处理。", None),
+    ]
+
+
+async def test_ai_runtime_timeline_should_preserve_post_tool_assistant_message_from_history(
+    authenticated_client: AsyncClient,
+    monkeypatch,
+) -> None:
+    """工具前已有流式 assistant 时，工具后的 assistant message 仍应按工具锚点补齐。"""
+
+    workspace_id = await _create_workspace(authenticated_client, "AI 工具后消息补齐工作空间")
+    run_id = "run-post-tool-assistant-fallback"
+    session_id = "session-post-tool-assistant-fallback"
+    timeline_session = AgentSession(
+        session_id=session_id,
+        agent_id=AGENT_COORDINATOR_AGENT_ID,
+        user_id="1",
+        session_data={"session_name": "工具后消息补齐会话"},
+        metadata={"scope_type": "workspace", "workspace_id": workspace_id, "source": "editor-agent-sidebar"},
+        agent_data={"agent_id": AGENT_COORDINATOR_AGENT_ID},
+        runs=[
+            RunOutput(
+                run_id=run_id,
+                session_id=session_id,
+                agent_id=AGENT_COORDINATOR_AGENT_ID,
+                messages=[
+                    Message(role="user", content="先读取资源，再告诉我结论"),
+                    Message(role="assistant", content="我先读取资源。"),
+                    Message(
+                        role="tool",
+                        content='{"total": 2, "items": ["a", "b"]}',
+                        tool_name="list_workspace_render_assets",
+                        tool_call_id="tool-assets-post-message",
+                        tool_args={"workspace_id": workspace_id},
+                        tool_call_error=False,
+                    ),
+                    Message(role="assistant", content="资源读取完成，共 2 个。"),
+                ],
+                events=[
+                    {
+                        "event": "RunContent",
+                        "run_id": run_id,
+                        "content": "我先读取资源。",
+                    },
+                    {
+                        "event": "ToolCallStarted",
+                        "run_id": run_id,
+                        "tool": {
+                            "tool_name": "list_workspace_render_assets",
+                            "tool_call_id": "tool-assets-post-message",
+                            "tool_args": {"workspace_id": workspace_id},
+                        },
+                    },
+                    {
+                        "event": "ToolCallCompleted",
+                        "run_id": run_id,
+                        "content": "工具调用完成。",
+                        "tool": {
+                            "tool_name": "list_workspace_render_assets",
+                            "tool_call_id": "tool-assets-post-message",
+                        },
+                    },
+                ],
+                status=RunStatus.completed,
+            )
+        ],
+    )
+
+    async def fake_ensure_session_access(self, *, session_id: str, agent_id: str, scope):  # type: ignore[no-untyped-def]
+        assert session_id == "session-post-tool-assistant-fallback"
+        assert agent_id == AGENT_COORDINATOR_AGENT_ID
+        assert scope.workspace_id == workspace_id
+        return timeline_session
+
+    async def fake_get_context_status(self, **_: object) -> AgentContextStatusItem:
+        return _build_empty_context_status(session_id, retained_recent_message_count=4)
+
+    monkeypatch.setattr("app.api.routes.agents.AgentSessionFacade.ensure_session_access", fake_ensure_session_access)
+    monkeypatch.setattr("app.api.routes.agents.AgentSessionFacade.get_context_status", fake_get_context_status)
+
+    response = await authenticated_client.get(
+        f"/api/ai/sessions/{session_id}/runtime",
+        params={"workspace_id": workspace_id, "agent_id": AGENT_COORDINATOR_AGENT_ID},
+    )
+
+    assert response.status_code == 200
+    timeline_items = response.json()["timeline_items"]
+    assert [
+        (item["kind"], item["role"], item["content"], item["tool"]["tool_name"] if item["tool"] else None)
+        for item in timeline_items
+    ] == [
+        ("message", "user", "先读取资源，再告诉我结论", None),
+        ("message", "assistant", "我先读取资源。", None),
+        ("tool", None, None, "list_workspace_render_assets"),
+        ("message", "assistant", "资源读取完成，共 2 个。", None),
+        ("run_status", None, "运行已完成。", None),
+    ]
+    tool_item = next(item for item in timeline_items if item["kind"] == "tool")
+    assert tool_item["status"] == "completed"
+    assert tool_item["tool"]["status"] == "completed"
+    assert tool_item["tool"]["input_payload"] == {"workspace_id": workspace_id}
+    assert tool_item["tool"]["output_payload"] == {"total": 2, "items": ["a", "b"]}
+    assert tool_item["tool"]["message"] == "工具调用完成。"
+
+
+async def test_ai_runtime_timeline_should_split_alternating_reasoning_and_content_events(
+    authenticated_client: AsyncClient,
+    monkeypatch,
+) -> None:
+    """reasoning 与 assistant 交替流出时，刷新恢复后不应分别合并成两大块。"""
+
+    workspace_id = await _create_workspace(authenticated_client, "AI 思考正文交替工作空间")
+    run_id = "run-alternating-reasoning-content"
+    session_id = "session-alternating-reasoning-content"
+    timeline_session = AgentSession(
+        session_id=session_id,
+        agent_id=AGENT_COORDINATOR_AGENT_ID,
+        user_id="1",
+        session_data={"session_name": "思考正文交替会话"},
+        metadata={"scope_type": "workspace", "workspace_id": workspace_id, "source": "editor-agent-sidebar"},
+        agent_data={"agent_id": AGENT_COORDINATOR_AGENT_ID},
+        runs=[
+            RunOutput(
+                run_id=run_id,
+                session_id=session_id,
+                agent_id=AGENT_COORDINATOR_AGENT_ID,
+                messages=[Message(role="user", content="分步说明")],
+                events=[
+                    {"event": "ReasoningContentDelta", "run_id": run_id, "reasoning_content": "先判断。"},
+                    {"event": "RunContent", "run_id": run_id, "content": "第一步。"},
+                    {"event": "ReasoningContentDelta", "run_id": run_id, "reasoning_content": "再确认。"},
+                    {"event": "RunContent", "run_id": run_id, "content": "第二步。"},
+                ],
+                status=RunStatus.completed,
+            )
+        ],
+    )
+
+    async def fake_ensure_session_access(self, *, session_id: str, agent_id: str, scope):  # type: ignore[no-untyped-def]
+        assert session_id == "session-alternating-reasoning-content"
+        assert agent_id == AGENT_COORDINATOR_AGENT_ID
+        assert scope.workspace_id == workspace_id
+        return timeline_session
+
+    async def fake_get_context_status(self, **_: object) -> AgentContextStatusItem:
+        return _build_empty_context_status(session_id, retained_recent_message_count=1)
+
+    monkeypatch.setattr("app.api.routes.agents.AgentSessionFacade.ensure_session_access", fake_ensure_session_access)
+    monkeypatch.setattr("app.api.routes.agents.AgentSessionFacade.get_context_status", fake_get_context_status)
+
+    response = await authenticated_client.get(
+        f"/api/ai/sessions/{session_id}/runtime",
+        params={"workspace_id": workspace_id, "agent_id": AGENT_COORDINATOR_AGENT_ID},
+    )
+
+    assert response.status_code == 200
+    assert [
+        (item["kind"], item["role"], item["content"])
+        for item in response.json()["timeline_items"]
+    ] == [
+        ("message", "user", "分步说明"),
+        ("reasoning", None, "先判断。"),
+        ("message", "assistant", "第一步。"),
+        ("reasoning", None, "再确认。"),
+        ("message", "assistant", "第二步。"),
+        ("run_status", None, "运行已完成。"),
+    ]
+
+
+async def test_ai_runtime_timeline_should_not_render_structured_completed_payload_as_assistant(
+    authenticated_client: AsyncClient,
+    monkeypatch,
+) -> None:
+    """RunCompleted 的结构化聚合内容不应在刷新后显示成 assistant 正文。"""
+
+    workspace_id = await _create_workspace(authenticated_client, "AI 聚合完成事件工作空间")
+    run_id = "run-structured-completed-payload"
+    session_id = "session-structured-completed-payload"
+    timeline_session = AgentSession(
+        session_id=session_id,
+        agent_id=AGENT_COORDINATOR_AGENT_ID,
+        user_id="1",
+        session_data={"session_name": "聚合完成事件会话"},
+        metadata={"scope_type": "workspace", "workspace_id": workspace_id, "source": "editor-agent-sidebar"},
+        agent_data={"agent_id": AGENT_COORDINATOR_AGENT_ID},
+        runs=[
+            RunOutput(
+                run_id=run_id,
+                session_id=session_id,
+                agent_id=AGENT_COORDINATOR_AGENT_ID,
+                messages=[Message(role="user", content="返回结构化结果")],
+                events=[
+                    {
+                        "event": "RunCompleted",
+                        "run_id": run_id,
+                        "content": '{"messages": [{"role": "assistant", "content": "完成"}], "tools": []}',
+                    }
+                ],
+                status=RunStatus.completed,
+            )
+        ],
+    )
+
+    async def fake_ensure_session_access(self, *, session_id: str, agent_id: str, scope):  # type: ignore[no-untyped-def]
+        assert session_id == "session-structured-completed-payload"
+        assert agent_id == AGENT_COORDINATOR_AGENT_ID
+        assert scope.workspace_id == workspace_id
+        return timeline_session
+
+    async def fake_get_context_status(self, **_: object) -> AgentContextStatusItem:
+        return _build_empty_context_status(session_id, retained_recent_message_count=1)
+
+    monkeypatch.setattr("app.api.routes.agents.AgentSessionFacade.ensure_session_access", fake_ensure_session_access)
+    monkeypatch.setattr("app.api.routes.agents.AgentSessionFacade.get_context_status", fake_get_context_status)
+
+    response = await authenticated_client.get(
+        f"/api/ai/sessions/{session_id}/runtime",
+        params={"workspace_id": workspace_id, "agent_id": AGENT_COORDINATOR_AGENT_ID},
+    )
+
+    assert response.status_code == 200
+    assert [
+        (item["kind"], item["role"], item["content"])
+        for item in response.json()["timeline_items"]
+    ] == [
+        ("message", "user", "返回结构化结果"),
+        ("run_status", None, "运行已完成。"),
     ]
 
 
