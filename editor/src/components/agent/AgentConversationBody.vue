@@ -166,13 +166,27 @@
             </div>
           </article>
 
+          <article v-else-if="item.kind === 'run_status'" class="conversation-message conversation-message--run-status px-4 py-1">
+            <div class="flex w-full items-center gap-2">
+              <span class="h-px flex-1" :class="getRunStatusLineClass(item.status)" />
+              <span
+                class="inline-flex max-w-[80%] shrink-0 items-center gap-1.5 rounded-full px-2 py-0.5 text-[10.5px] font-medium leading-4"
+                :class="getRunStatusBadgeClass(item.status)"
+              >
+                <span class="h-1.5 w-1.5 shrink-0 rounded-full" :class="getRunStatusDotClass(item.status)" />
+                <span class="truncate">{{ item.content }}</span>
+              </span>
+              <span class="h-px flex-1" :class="getRunStatusLineClass(item.status)" />
+            </div>
+          </article>
+
           <article
             v-else
             class="conversation-message conversation-message--system flex justify-start px-0.5 py-0"
           >
             <div
               class="message-group max-w-[92%] rounded-md border px-2 py-1 text-[11px] leading-5"
-              :class="getTimelineStatusClass(item.status)"
+              :class="getRequirementStatusClass(item.status)"
             >
               {{ item.content }}
             </div>
@@ -394,7 +408,28 @@ function trimMarkdownCache() {
   }
 }
 
-function getTimelineStatusClass(status: string | null) {
+function getRunStatusBadgeClass(status: string | null) {
+  if (status === 'failed') return 'bg-red-50 text-red-600 ring-1 ring-red-100'
+  if (status === 'cancelled' || status === 'cancelling') return 'bg-amber-50 text-amber-600 ring-1 ring-amber-100'
+  if (status === 'completed') return 'bg-slate-50 text-slate-400 ring-1 ring-slate-100'
+  return 'bg-sky-50 text-sky-600 ring-1 ring-sky-100'
+}
+
+function getRunStatusDotClass(status: string | null) {
+  if (status === 'failed') return 'bg-red-400'
+  if (status === 'cancelled' || status === 'cancelling') return 'bg-amber-400'
+  if (status === 'completed') return 'bg-slate-300'
+  return 'bg-sky-400'
+}
+
+function getRunStatusLineClass(status: string | null) {
+  if (status === 'failed') return 'bg-red-100'
+  if (status === 'cancelled' || status === 'cancelling') return 'bg-amber-100'
+  if (status === 'completed') return 'bg-slate-100'
+  return 'bg-sky-100'
+}
+
+function getRequirementStatusClass(status: string | null) {
   if (status === 'failed') return 'border-red-100 bg-red-50/70 text-red-600'
   if (status === 'cancelled' || status === 'cancelling') return 'border-amber-100 bg-amber-50/70 text-amber-700'
   if (status === 'paused' || status === 'pending') return 'border-sky-100 bg-sky-50/70 text-sky-700'
