@@ -118,6 +118,7 @@ export function applyAgentRunEvent(
   switch (event.event) {
     case 'run.started':
     case 'run.continued':
+      state.pendingRequirement = null
       state.stream.runId = runId
       state.stream.streaming = true
       tagTrailingLocalItemsWithRunId(state, runId)

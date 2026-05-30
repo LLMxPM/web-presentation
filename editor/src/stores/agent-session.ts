@@ -10,9 +10,11 @@ import {
   createAgentSessionRuntimeState,
   type AgentSessionRuntimeState,
 } from '@/components/agent/agent-run-state'
+import { resolveAgentUserFeedbackRequirement } from '@/components/agent/agent-user-feedback-state'
 import type {
   AgentActiveRunItem,
   AgentContextStatusItem,
+  AgentFeedbackSelection,
   AgentImageAttachmentItem,
   AgentPendingRequirement,
   AgentRunEvent,
@@ -91,6 +93,15 @@ export const useAgentSessionStore = defineStore('agent-session', {
     setPendingRequirement(sessionId: string, requirement: AgentPendingRequirement | null): void {
       if (!sessionId) return
       this.ensureSession(sessionId).pendingRequirement = requirement
+      this.syncFlatMaps(sessionId)
+    },
+    resolveUserFeedbackRequirement(
+      sessionId: string,
+      requirement: AgentPendingRequirement,
+      selections: AgentFeedbackSelection[],
+    ): void {
+      if (!sessionId) return
+      resolveAgentUserFeedbackRequirement(this.ensureSession(sessionId), requirement, selections)
       this.syncFlatMaps(sessionId)
     },
     setPendingImageAttachments(sessionId: string, attachments: AgentImageAttachmentItem[]): void {

@@ -1278,14 +1278,15 @@ async function handleSend() {
 async function handleContinueRun(decision: 'confirm' | 'reject') {
   const sessionId = activeSessionId.value
   const requirement = pendingRequirement.value
-  if (!sessionId || !requirement || activeRun.value?.status !== 'paused') return
+  const pausedRun = activeRun.value
+  if (!sessionId || !requirement || pausedRun?.status !== 'paused') return
 
   pendingRequirement.value = null
-  appendLocalAssistantPlaceholder(sessionId, requirement.run_id || activeRun.value?.run_id || '')
+  appendLocalAssistantPlaceholder(sessionId, requirement.run_id || pausedRun.run_id || '')
   setSessionStreaming(sessionId, true)
-  syncActiveRun(sessionId, activeRun.value ? { ...activeRun.value, status: 'running', pending_requirement: null } : null)
+  syncActiveRun(sessionId, { ...pausedRun, status: 'running', pending_requirement: null })
 
-  const runId = requirement.run_id || activeRun.value?.run_id || ''
+  const runId = requirement.run_id || pausedRun.run_id || ''
   let streamAbortController: AbortController | null = null
   try {
     streamAbortController = createStreamAbortController(runId)
@@ -1320,14 +1321,15 @@ async function handleContinueRun(decision: 'confirm' | 'reject') {
 async function handleSubmitFeedbackRun(selections: AgentFeedbackSelection[]) {
   const sessionId = activeSessionId.value
   const requirement = pendingRequirement.value
-  if (!sessionId || !requirement || activeRun.value?.status !== 'paused') return
+  const pausedRun = activeRun.value
+  if (!sessionId || !requirement || pausedRun?.status !== 'paused') return
 
-  pendingRequirement.value = null
-  appendLocalAssistantPlaceholder(sessionId, requirement.run_id || activeRun.value?.run_id || '')
+  agentSessionStore.resolveUserFeedbackRequirement(sessionId, requirement, selections)
+  appendLocalAssistantPlaceholder(sessionId, requirement.run_id || pausedRun.run_id || '')
   setSessionStreaming(sessionId, true)
-  syncActiveRun(sessionId, activeRun.value ? { ...activeRun.value, status: 'running', pending_requirement: null } : null)
+  syncActiveRun(sessionId, { ...pausedRun, status: 'running', pending_requirement: null })
 
-  const runId = requirement.run_id || activeRun.value?.run_id || ''
+  const runId = requirement.run_id || pausedRun.run_id || ''
   let streamAbortController: AbortController | null = null
   try {
     streamAbortController = createStreamAbortController(runId)

@@ -83,7 +83,8 @@ describe('ProjectSuggestedReferenceAssetsDialog', () => {
     await waitFor(() => {
       expect(updateProjectSuggestedReferenceAssetsMock).toHaveBeenCalledWith(7, [1, 2])
     })
-    expect(view.emitted().saved?.[0]?.[0]).toEqual([...savedAssets, toSuggestedItem(createAsset(2, 'chart_data', 'chart'))])
+    const savedEvents = view.emitted('saved') as [ProjectSuggestedReferenceAssetItem[]][]
+    expect(savedEvents[0]?.[0]).toEqual([...savedAssets, toSuggestedItem(createAsset(2, 'chart_data', 'chart'))])
   })
 })
 
