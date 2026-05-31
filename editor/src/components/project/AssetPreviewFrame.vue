@@ -32,9 +32,11 @@ import RuntimePreviewFrame from '@/components/runtime-preview/RuntimePreviewFram
 import type { AssetResponse } from '@/types/api'
 import { getErrorMessage } from '@/api/http'
 
+type AssetPreviewTarget = Pick<AssetResponse, 'id' | 'name'> & Partial<Pick<AssetResponse, 'file_hash'>>
+
 const props = defineProps<{
   workspaceId: number | null
-  asset: AssetResponse | null
+  asset: AssetPreviewTarget | null
 }>()
 
 const loading = ref(false)
@@ -58,7 +60,7 @@ watch(
   () => [
     props.workspaceId,
     props.asset?.id ?? null,
-    props.asset?.file_hash ?? '',
+    props.asset?.file_hash ?? props.asset?.id ?? '',
   ],
   () => {
     void loadPreview()

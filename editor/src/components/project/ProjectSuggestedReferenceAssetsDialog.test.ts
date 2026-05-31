@@ -9,11 +9,14 @@ import type { AssetResponse, ProjectSuggestedReferenceAssetItem } from '@/types/
 import ProjectSuggestedReferenceAssetsDialog from './ProjectSuggestedReferenceAssetsDialog.vue'
 
 const listWorkspaceAssetsMock = vi.fn()
+const uploadWorkspaceAssetMock = vi.fn()
 const getProjectSuggestedReferenceAssetsMock = vi.fn()
 const updateProjectSuggestedReferenceAssetsMock = vi.fn()
+const createConfirmMock = vi.fn()
 
 vi.mock('@/api/assets', () => ({
   listWorkspaceAssets: (...args: unknown[]) => listWorkspaceAssetsMock(...args),
+  uploadWorkspaceAsset: (...args: unknown[]) => uploadWorkspaceAssetMock(...args),
 }))
 
 vi.mock('@/api/catalog', () => ({
@@ -21,11 +24,20 @@ vi.mock('@/api/catalog', () => ({
   updateProjectSuggestedReferenceAssets: (...args: unknown[]) => updateProjectSuggestedReferenceAssetsMock(...args),
 }))
 
+vi.mock('@/components/project/AssetPreviewFrame.vue', () => ({
+  default: {
+    props: ['workspaceId', 'asset'],
+    template: '<div data-testid="asset-preview-frame">{{ asset && asset.name }}</div>',
+  },
+}))
+
 vi.mock('@/api/http', () => ({
+  getErrorCode: () => null,
   getErrorMessage: (_error: unknown, fallback: string) => fallback,
 }))
 
 vi.mock('@/utils/message', () => ({
+  createConfirm: (...args: unknown[]) => createConfirmMock(...args),
   Message: {
     success: vi.fn(),
     error: vi.fn(),
@@ -48,6 +60,8 @@ describe('ProjectSuggestedReferenceAssetsDialog', () => {
     vi.clearAllMocks()
     getProjectSuggestedReferenceAssetsMock.mockResolvedValue({ items: savedAssets })
     updateProjectSuggestedReferenceAssetsMock.mockResolvedValue({ items: savedAssets })
+    uploadWorkspaceAssetMock.mockResolvedValue(createAsset(4, 'uploaded_cover', 'image', { original_name: 'uploaded_cover.png' }))
+    createConfirmMock.mockResolvedValue(true)
     listWorkspaceAssetsMock.mockResolvedValue({
       items: [
         createAsset(1, 'hero_image', 'image'),
@@ -86,6 +100,60 @@ describe('ProjectSuggestedReferenceAssetsDialog', () => {
     const savedEvents = view.emitted('saved') as [ProjectSuggestedReferenceAssetItem[]][]
     expect(savedEvents[0]?.[0]).toEqual([...savedAssets, toSuggestedItem(createAsset(2, 'chart_data', 'chart'))])
   })
+
+  it('应支持上传内容资源并立即保存到项目建议资源', async () => {
+    const uploadedAsset = createAsset(4, 'uploaded_cover', 'image', { original_name: 'uploaded_cover.png' })
+    uploadWorkspaceAssetMock.mockResolvedValue(uploadedAsset)
+    updateProjectSuggestedReferenceAssetsMock.mockResolvedValue({
+      items: [...savedAssets, toSuggestedItem(uploadedAsset)],
+    })
+    renderDialog()
+
+    await screen.findAllByText('hero_image')
+    await fireEvent.click(screen.getByText('图片'))
+    expect((document.body.querySelector('input[type="file"][multiple]') as HTMLInputElement).accept).toContain('.png')
+    await fireEvent.change(
+      document.body.querySelector('input[type="file"][multiple]')!,
+      { target: { files: [new File(['fake'], 'uploaded_cover.png', { type: 'image/png' })] } },
+    )
+
+    await waitFor(() => {
+      expect(uploadWorkspaceAssetMock).toHaveBeenCalledWith(3, expect.any(File), 'image', [])
+      expect(updateProjectSuggestedReferenceAssetsMock).toHaveBeenCalledWith(7, [1, 4])
+    })
+    expect(screen.getAllByText('uploaded_cover').length).toBeGreaterThan(0)
+  })
+
+  it('上传时应按当前资源类型传递 asset_type', async () => {
+    const uploadedAsset = createAsset(5, 'flow_reference', 'mermaid', { original_name: 'flow_reference.txt' })
+    uploadWorkspaceAssetMock.mockResolvedValue(uploadedAsset)
+    updateProjectSuggestedReferenceAssetsMock.mockResolvedValue({
+      items: [...savedAssets, toSuggestedItem(uploadedAsset)],
+    })
+    renderDialog()
+
+    await screen.findAllByText('hero_image')
+    await fireEvent.click(screen.getByText('Mermaid'))
+    await fireEvent.change(
+      document.body.querySelector('input[type="file"][multiple]')!,
+      { target: { files: [new File(['flowchart TD'], 'flow_reference.txt', { type: 'text/plain' })] } },
+    )
+
+    await waitFor(() => {
+      expect(uploadWorkspaceAssetMock).toHaveBeenCalledWith(3, expect.any(File), 'mermaid', [])
+      expect(updateProjectSuggestedReferenceAssetsMock).toHaveBeenCalledWith(7, [1, 5])
+    })
+  })
+
+  it('应支持预览待选资源', async () => {
+    renderDialog()
+
+    await screen.findByText('chart_data')
+    await fireEvent.click(screen.getByLabelText('预览资源 chart_data'))
+
+    expect(screen.getByText('资源预览：chart_data')).toBeInTheDocument()
+    expect(screen.getByTestId('asset-preview-frame')).toHaveTextContent('chart_data')
+  })
 })
 
 function renderDialog() {
@@ -98,7 +166,12 @@ function renderDialog() {
   })
 }
 
-function createAsset(id: number, name: string, assetType: AssetResponse['asset_type']): AssetResponse {
+function createAsset(
+  id: number,
+  name: string,
+  assetType: AssetResponse['asset_type'],
+  overrides: Partial<AssetResponse> = {},
+): AssetResponse {
   return {
     id,
     workspace_id: 3,
@@ -129,6 +202,7 @@ function createAsset(id: number, name: string, assetType: AssetResponse['asset_t
     archive_warning_reasons: [],
     created_at: '2026-05-29T08:00:00+08:00',
     updated_at: '2026-05-29T08:00:00+08:00',
+    ...overrides,
   }
 }
 

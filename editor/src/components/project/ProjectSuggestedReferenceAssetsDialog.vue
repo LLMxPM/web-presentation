@@ -4,11 +4,11 @@
     :model-value="modelValue"
     title="项目建议资源"
     width="980px"
-    body-class="px-6 py-5 max-h-[78vh] overflow-hidden"
+    body-class="h-[min(78vh,720px)] px-6 py-5 overflow-hidden"
     @update:model-value="handleVisibleChange"
   >
-    <div v-if="projectId && workspaceId" class="grid min-h-[520px] gap-4 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.2fr)]">
-      <section class="flex min-h-0 flex-col rounded-lg border border-indigo-100 bg-indigo-50/40 p-3">
+    <div v-if="projectId && workspaceId" class="grid h-full min-h-0 gap-4 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.2fr)]">
+      <section class="flex h-full min-h-0 flex-col rounded-lg border border-indigo-100 bg-indigo-50/40 p-3">
         <div class="flex shrink-0 items-center justify-between gap-2">
           <div class="flex min-w-0 items-center gap-2">
             <Image class="h-4 w-4 shrink-0 text-indigo-600" />
@@ -24,15 +24,12 @@
           正在加载
         </div>
         <div v-else-if="selectedAssetSummaries.length" class="asset-column-scroll mt-3 min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
-          <button
+          <article
             v-for="asset in selectedAssetSummaries"
             :key="asset.id"
-            type="button"
             class="flex w-full min-w-0 items-center justify-between gap-2 rounded-md border border-indigo-200 bg-white px-3 py-2 text-left transition hover:border-indigo-300"
-            :title="`移除 ${asset.name}`"
-            @click="removeAsset(asset.id)"
           >
-            <span class="min-w-0">
+            <span class="min-w-0 text-left">
               <span class="block truncate text-xs font-bold text-slate-800">{{ asset.name }}</span>
               <span class="mt-0.5 block truncate text-[11px] text-slate-400">{{ asset.original_name }}</span>
             </span>
@@ -40,15 +37,32 @@
               <span class="rounded-full bg-indigo-50 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-600">
                 {{ resolveAssetTypeLabel(asset.asset_type) }}
               </span>
-              <X class="h-3.5 w-3.5 text-indigo-500" />
+              <button
+                type="button"
+                class="rounded-md p-1 text-indigo-500 transition hover:bg-indigo-50 hover:text-indigo-700"
+                :aria-label="`预览资源 ${asset.name}`"
+                :title="`预览 ${asset.name}`"
+                @click="openAssetPreview(asset)"
+              >
+                <ZoomIn class="h-3.5 w-3.5" />
+              </button>
+              <button
+                type="button"
+                class="rounded-md p-1 text-indigo-500 transition hover:bg-indigo-50 hover:text-indigo-700"
+                :aria-label="`移除资源 ${asset.name}`"
+                :title="`移除 ${asset.name}`"
+                @click="removeAsset(asset.id)"
+              >
+                <X class="h-3.5 w-3.5" />
+              </button>
             </span>
-          </button>
+          </article>
         </div>
         <p v-else class="mt-3 flex min-h-0 flex-1 items-center justify-center text-xs text-slate-400">未选择资源</p>
       </section>
 
-      <section class="flex min-h-0 flex-col rounded-lg border border-slate-200 bg-white p-3">
-        <div class="grid shrink-0 grid-cols-[minmax(0,1fr)_auto_auto] gap-2">
+      <section class="flex h-full min-h-0 flex-col rounded-lg border border-slate-200 bg-white p-3">
+        <div class="grid shrink-0 grid-cols-[minmax(0,1fr)_auto_auto_auto] gap-2">
           <BaseInput
             :model-value="assetKeyword"
             placeholder="按资源 name 搜索"
@@ -78,6 +92,28 @@
             </template>
             刷新
           </BaseButton>
+          <BaseButton
+            variant="secondary"
+            size="sm"
+            :loading="uploading"
+            :disabled="!projectId || !workspaceId || loading || saving"
+            custom-class="h-11 min-w-[108px] whitespace-nowrap"
+            :title="uploadButtonTitle"
+            @click="triggerUpload"
+          >
+            <template #icon>
+              <Upload class="h-4 w-4" />
+            </template>
+            {{ uploadButtonText }}
+          </BaseButton>
+          <input
+            :ref="setUploadFileInput"
+            type="file"
+            class="hidden"
+            multiple
+            :accept="uploadAccept"
+            @change="handleUploadFileChange"
+          />
         </div>
 
         <div class="mt-3 flex shrink-0 flex-wrap gap-1.5">
@@ -101,22 +137,35 @@
           正在加载资源
         </div>
         <div v-else-if="activeTabAssets.length" class="asset-column-scroll mt-3 grid min-h-0 flex-1 content-start gap-2 overflow-y-auto pr-1 sm:grid-cols-2">
-          <button
+          <article
             v-for="asset in activeTabAssets"
             :key="asset.id"
-            type="button"
-            class="flex min-h-16 min-w-0 items-center justify-between gap-2 rounded-md border px-3 py-2 text-left transition"
+            class="flex min-h-16 min-w-0 items-stretch justify-between gap-1 rounded-md border text-left transition"
             :class="assetOptionClass(asset.id)"
-            @click="toggleAsset(asset.id)"
           >
-            <span class="min-w-0">
-              <span class="block truncate text-xs font-bold">{{ asset.name }}</span>
-              <span class="mt-0.5 block truncate text-[11px] opacity-70">{{ asset.original_name }}</span>
-              <span v-if="asset.description" class="mt-0.5 block truncate text-[11px] opacity-70">{{ asset.description }}</span>
-            </span>
-            <Check v-if="isSelected(asset.id)" class="h-4 w-4 shrink-0" />
-            <Plus v-else class="h-4 w-4 shrink-0" />
-          </button>
+            <button
+              type="button"
+              class="flex min-w-0 flex-1 items-center justify-between gap-2 px-3 py-2 text-left"
+              @click="toggleAsset(asset.id)"
+            >
+              <span class="min-w-0 text-left">
+                <span class="block truncate text-xs font-bold">{{ asset.name }}</span>
+                <span class="mt-0.5 block truncate text-[11px] opacity-70">{{ asset.original_name }}</span>
+                <span v-if="asset.description" class="mt-0.5 block truncate text-[11px] opacity-70">{{ asset.description }}</span>
+              </span>
+              <Check v-if="isSelected(asset.id)" class="h-4 w-4 shrink-0" />
+              <Plus v-else class="h-4 w-4 shrink-0" />
+            </button>
+            <button
+              type="button"
+              class="flex w-9 shrink-0 items-center justify-center rounded-r-md border-l border-current/10 opacity-80 transition hover:bg-white/60 hover:opacity-100"
+              :aria-label="`预览资源 ${asset.name}`"
+              :title="`预览 ${asset.name}`"
+              @click="openAssetPreview(asset)"
+            >
+              <ZoomIn class="h-4 w-4" />
+            </button>
+          </article>
         </div>
         <p v-else class="mt-3 flex min-h-0 flex-1 items-center justify-center text-xs text-slate-400">没有匹配的内容资源</p>
       </section>
@@ -128,17 +177,28 @@
 
     <template #footer>
       <BaseButton variant="ghost" @click="handleVisibleChange(false)">取消</BaseButton>
-      <BaseButton variant="ghost" :disabled="loading || saving || !projectId" @click="loadDialogData">恢复当前值</BaseButton>
-      <BaseButton variant="primary" :loading="saving" :disabled="!projectId || !workspaceId" @click="saveSelection">
+      <BaseButton variant="ghost" :disabled="loading || saving || uploading || !projectId" @click="loadDialogData">恢复当前值</BaseButton>
+      <BaseButton variant="primary" :loading="saving" :disabled="!projectId || !workspaceId || uploading" @click="saveSelection">
         保存资源
       </BaseButton>
     </template>
+  </BaseDialog>
+
+  <BaseDialog
+    :model-value="!!previewAsset"
+    :title="previewDialogTitle"
+    width="1040px"
+    body-class="h-[72vh] p-0"
+    :z-index="1110"
+    @update:model-value="handlePreviewVisibleChange"
+  >
+    <AssetPreviewFrame :workspace-id="workspaceId" :asset="previewAsset" />
   </BaseDialog>
 </template>
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { Check, Image, Plus, RefreshCw, Search, X } from '@lucide/vue'
+import { Check, Image, Plus, RefreshCw, Search, Upload, X, ZoomIn } from '@lucide/vue'
 
 import { listWorkspaceAssets } from '@/api/assets'
 import {
@@ -149,11 +209,17 @@ import { getErrorMessage } from '@/api/http'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseDialog from '@/components/ui/BaseDialog.vue'
 import BaseInput from '@/components/ui/BaseInput.vue'
+import AssetPreviewFrame from '@/components/project/AssetPreviewFrame.vue'
 import type { AssetResponse, AssetType, ProjectSuggestedReferenceAssetItem } from '@/types/api'
 import { Message } from '@/utils/message'
+import {
+  PROJECT_SUGGESTED_REFERENCE_ASSET_TYPES,
+  type ProjectSuggestedReferenceAssetTabKey,
+} from './project-suggested-reference-assets'
+import { useProjectSuggestedReferenceAssetUpload } from './project-suggested-reference-upload'
 
-type AssetTypeTabKey = 'all' | AssetType
 type ReferenceAssetSummary = Pick<ProjectSuggestedReferenceAssetItem, 'id' | 'name' | 'original_name' | 'description' | 'asset_type'>
+type PreviewAssetTarget = Pick<ProjectSuggestedReferenceAssetItem, 'id' | 'name'> & { file_hash?: string }
 
 const props = defineProps<{
   modelValue: boolean
@@ -166,7 +232,7 @@ const emit = defineEmits<{
   saved: [items: ProjectSuggestedReferenceAssetItem[]]
 }>()
 
-const CONTENT_ASSET_TYPES: AssetType[] = ['image', 'video', 'drawio', 'mermaid', 'chart', 'formula']
+const CONTENT_ASSET_TYPES = PROJECT_SUGGESTED_REFERENCE_ASSET_TYPES
 const ASSET_TYPE_LABELS: Record<AssetType, string> = {
   image: '图片',
   icon: '图标',
@@ -185,8 +251,26 @@ const assetOptions = ref<AssetResponse[]>([])
 const savedAssets = ref<ProjectSuggestedReferenceAssetItem[]>([])
 const selectedAssetIds = ref<number[]>([])
 const assetKeyword = ref('')
-const activeAssetTypeTab = ref<AssetTypeTabKey>('all')
+const activeAssetTypeTab = ref<ProjectSuggestedReferenceAssetTabKey>('all')
+const previewAsset = ref<PreviewAssetTarget | null>(null)
 
+const {
+  uploading,
+  uploadFileInput,
+  uploadAccept,
+  uploadButtonTitle,
+  triggerUpload,
+  handleUploadFileChange,
+} = useProjectSuggestedReferenceAssetUpload({
+  getProjectId: () => props.projectId,
+  getWorkspaceId: () => props.workspaceId,
+  activeAssetTypeTab,
+  assetOptions,
+  selectedAssetIds,
+  savedAssets,
+  emitSaved: items => emit('saved', items),
+  resolveAssetTypeLabel,
+})
 const selectedAssetIdSet = computed(() => new Set(selectedAssetIds.value))
 const assetOptionSummaryById = computed(() => {
   const result = new Map<number, ReferenceAssetSummary>()
@@ -207,7 +291,7 @@ const groupedAssetOptions = computed(() => CONTENT_ASSET_TYPES.map(type => ({
   type,
   label: ASSET_TYPE_LABELS[type],
   items: assetOptions.value.filter(asset => asset.asset_type === type),
-})).filter(group => group.items.length > 0))
+})))
 const assetTypeTabs = computed(() => [
   { key: 'all' as const, label: '全部', count: assetOptions.value.length },
   ...groupedAssetOptions.value.map(group => ({
@@ -222,6 +306,12 @@ const activeTabAssets = computed(() => {
   }
   return assetOptions.value.filter(asset => asset.asset_type === activeAssetTypeTab.value)
 })
+const uploadButtonText = computed(() => (
+  activeAssetTypeTab.value === 'all'
+    ? '上传并关联'
+    : `上传${resolveAssetTypeLabel(activeAssetTypeTab.value)}`
+))
+const previewDialogTitle = computed(() => previewAsset.value ? `资源预览：${previewAsset.value.name}` : '资源预览')
 
 watch(
   () => [props.modelValue, props.projectId, props.workspaceId] as const,
@@ -327,6 +417,36 @@ function removeAsset(assetId: number): void {
  */
 function isSelected(assetId: number): boolean {
   return selectedAssetIdSet.value.has(assetId)
+}
+
+/**
+ * 接收模板中的隐藏文件输入引用，供上传按钮主动触发选择文件。
+ * @param element Vue ref 回调传入的 DOM 节点或组件实例
+ */
+function setUploadFileInput(element: unknown): void {
+  uploadFileInput.value = element instanceof HTMLInputElement ? element : null
+}
+
+/**
+ * 打开资源预览弹窗。
+ * @param asset 待预览资源摘要或完整资源
+ */
+function openAssetPreview(asset: ReferenceAssetSummary | AssetResponse): void {
+  previewAsset.value = {
+    id: asset.id,
+    name: asset.name,
+    file_hash: 'file_hash' in asset ? asset.file_hash : undefined,
+  }
+}
+
+/**
+ * 同步资源预览弹窗可见状态。
+ * @param value 目标可见状态
+ */
+function handlePreviewVisibleChange(value: boolean): void {
+  if (!value) {
+    previewAsset.value = null
+  }
 }
 
 /**
