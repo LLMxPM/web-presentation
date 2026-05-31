@@ -684,7 +684,7 @@ class AgentSessionFacade:
                 agent_id=agent_id,
                 run_id=run_id,
                 status=RunStatus.cancelled,
-                content="用户取消了待确认动作。",
+                content="用户取消了待确认动作",
             )
         else:
             descriptor = self._registry.get_descriptor(agent_id)

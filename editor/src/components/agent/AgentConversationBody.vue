@@ -37,7 +37,17 @@
     <section class="flex min-h-[140px] flex-1 flex-col">
       <div class="flex flex-1 flex-col gap-1 py-0.5">
         <div
-          v-if="timelineDisplayItems.length === 0"
+          v-if="loading"
+          class="flex min-h-[140px] flex-col items-center justify-center gap-2 text-center text-[12px] leading-5 text-slate-400"
+          role="status"
+          aria-live="polite"
+        >
+          <span class="h-5 w-5 animate-spin rounded-full border-2 border-sky-200 border-t-sky-500" aria-hidden="true" />
+          <span>{{ loadingText }}</span>
+        </div>
+
+        <div
+          v-else-if="timelineDisplayItems.length === 0"
           class="flex min-h-[140px] items-center justify-center text-center text-[12px] leading-5 text-slate-400"
         >
           {{ emptyConversationText }}
@@ -240,6 +250,8 @@ const props = defineProps<{
   timelineDisplayItems: TimelineDisplayItem[]
   draftPatches: AgentSuggestedPatch[]
   emptyConversationText: string
+  loading: boolean
+  loadingText: string
   lastRunIssue: { title: string, detail: string } | null
   activeRun: AgentActiveRunItem | null
   cancellingRunForceAvailable: boolean

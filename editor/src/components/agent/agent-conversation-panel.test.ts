@@ -294,10 +294,10 @@ function mockContentAgentRouteUnavailable() {
 /**
  * 构造可手动释放的 Promise，方便测试工具完成和 run 完成之间的即时刷新时机。
  */
-function createDeferred() {
-  let resolve!: () => void
+function createDeferred<T = void>() {
+  let resolve!: (value: T | PromiseLike<T>) => void
   let reject!: (reason?: unknown) => void
-  const promise = new Promise<void>((nextResolve, nextReject) => {
+  const promise = new Promise<T>((nextResolve, nextReject) => {
     resolve = nextResolve
     reject = nextReject
   })
@@ -511,6 +511,63 @@ describe('AgentConversationPanel', () => {
     })
     streamAgentRunEventsMock.mockImplementation(async (_sessionId: string, runId: string, _scope: unknown, payload: { event_index?: number }, options?: { onEvent?: (event: any) => void, signal?: AbortSignal }) => {
       await streamAgentRunEventsByRunIdMock(runId, { after_sequence: payload?.event_index ?? -1 }, options)
+    })
+  })
+
+  it('会话列表与 runtime 快照首次加载时应展示明确加载态', async () => {
+    const sessionsDeferred = createDeferred<any[]>()
+    const runtimeDeferred = createDeferred<any>()
+    listAgentSessionsMock.mockReturnValueOnce(sessionsDeferred.promise)
+    getAgentSessionRuntimeMock.mockReturnValueOnce(runtimeDeferred.promise)
+
+    render(AgentConversationPanel, createTestingRenderOptions())
+
+    expect(await screen.findByText('正在加载智能体会话...')).toBeTruthy()
+
+    sessionsDeferred.resolve([
+      {
+        session_id: 'session-1',
+        agent_id: DEFAULT_AGENT_ID,
+        session_name: '历史会话',
+        created_at: '2026-04-18T10:00:00+08:00',
+        updated_at: '2026-04-18T10:30:00+08:00',
+        metadata: {
+          scope_type: 'page',
+          workspace_id: 11,
+          project_id: 21,
+          page_id: 31,
+          page_title: 'AI 页面',
+          source: 'editor-page-detail',
+        },
+      },
+    ])
+
+    await waitFor(() => {
+      expect(getAgentSessionRuntimeMock).toHaveBeenCalledWith(
+        'session-1',
+        expect.objectContaining({ page_id: 31 }),
+        DEFAULT_AGENT_ID,
+      )
+    })
+    expect(screen.getByText('正在恢复会话内容...')).toBeTruthy()
+
+    runtimeDeferred.resolve(createRuntimeSnapshot({
+      messages: [
+        {
+          id: 'message-assistant-1',
+          role: 'assistant',
+          content: '历史会话已经恢复。',
+          created_at: '2026-04-18T10:30:00+08:00',
+          tool_name: null,
+          tool_call_id: null,
+          tool_args: null,
+          tool_call_error: null,
+        },
+      ],
+    }))
+
+    await waitFor(() => {
+      expect(screen.getByText('历史会话已经恢复。')).toBeTruthy()
     })
   })
 
@@ -1977,7 +2034,9 @@ describe('AgentConversationPanel', () => {
       )
     })
     expect(screen.queryByText('页面一的旧快照不应显示在页面二。')).toBeNull()
-    expect(screen.getByText(/内容助手 会结合当前上下文/)).toBeTruthy()
+    await waitFor(() => {
+      expect(screen.getByText(/内容助手 会结合当前上下文/)).toBeTruthy()
+    })
   })
 
   it('切回本地已有进度的运行中会话时应从本地 sequence 恢复订阅', async () => {

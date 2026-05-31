@@ -78,6 +78,8 @@
           :timeline-display-items="selectedMemberTimelineItems"
           :draft-patches="[]"
           empty-conversation-text="暂无成员助手输出。"
+          :loading="false"
+          loading-text=""
           :last-run-issue="null"
           :active-run="null"
           :cancelling-run-force-available="false"

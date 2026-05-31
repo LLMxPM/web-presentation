@@ -71,6 +71,8 @@
           :timeline-display-items="timelineDisplayItems"
           :draft-patches="draftPatches"
           :empty-conversation-text="emptyConversationText"
+          :loading="sessionLoading"
+          :loading-text="sessionLoadingText"
           :last-run-issue="lastRunIssue"
           :active-run="activeRun"
           :cancelling-run-force-available="cancellingRunForceAvailable"
@@ -427,6 +429,22 @@ const runtimeQuery = useQuery(
     refetchOnWindowFocus: true,
   })),
 )
+
+const sessionsInitialLoading = computed(() => (
+  !virtualNewSessionKey.value
+  && sessionsQuery.isFetching.value
+  && sessionsQuery.data.value === undefined
+))
+const runtimeInitialLoading = computed(() => (
+  Boolean(activeSessionId.value)
+  && runtimeQuery.isFetching.value
+  && runtimeQuery.data.value === undefined
+  && timelineItems.value.length === 0
+))
+const sessionLoading = computed(() => sessionsInitialLoading.value || runtimeInitialLoading.value)
+const sessionLoadingText = computed(() => (
+  sessionsInitialLoading.value ? '正在加载智能体会话...' : '正在恢复会话内容...'
+))
 
 const createSessionMutation = useMutation({
   mutationFn: (sessionName?: string | null) => createAgentSession({
