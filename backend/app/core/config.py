@@ -53,6 +53,9 @@ class AppSettings(BaseSettings):
     ai_db_schema: str = "agno"
     ai_session_table: str = "agno_sessions"
     ai_approvals_table: str = "agno_approvals"
+    ai_session_retention_days: int = 15
+    ai_session_cleanup_interval_seconds: int = 21600
+    ai_session_cleanup_batch_size: int = 500
     ai_image_transport_mode: str = "auto"
     ai_image_attachment_max_bytes: int = 10 * 1024 * 1024
     redis_url: str = "redis://127.0.0.1:6379/0"
@@ -259,6 +262,24 @@ class AppSettings(BaseSettings):
 
         if value < 1800:
             raise ValueError("AI 工具授权绝对上限不能小于默认滑动窗口 1800 秒。")
+        return value
+
+    @field_validator("ai_session_retention_days", "ai_session_cleanup_batch_size")
+    @classmethod
+    def validate_ai_session_positive_int(cls, value: int) -> int:
+        """校验 AI 会话清理保留天数与批大小为正整数。"""
+
+        if value <= 0:
+            raise ValueError("AI 会话清理配置必须大于 0。")
+        return value
+
+    @field_validator("ai_session_cleanup_interval_seconds")
+    @classmethod
+    def validate_ai_session_cleanup_interval_seconds(cls, value: int) -> int:
+        """校验 AI 会话清理间隔，允许 0 表示关闭后台清理。"""
+
+        if value < 0:
+            raise ValueError("AI 会话清理间隔不能小于 0。")
         return value
 
     @field_validator("ai_test_mode")

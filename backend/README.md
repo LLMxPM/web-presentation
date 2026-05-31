@@ -241,7 +241,12 @@ Backend 现已内嵌基于 Agno 的智能体运行时，但不挂载 AgentOS rou
 - `AI_TOOL_AUTH_MAX_SECONDS`：工具 run 级授权绝对上限（秒），默认 7200
 - `AI_DB_URL`：可选，覆盖 Agno 会话数据库连接
 - `AI_DB_SCHEMA` / `AI_SESSION_TABLE` / `AI_APPROVALS_TABLE`：Agno 会话与审批存储配置
+- `AI_SESSION_RETENTION_DAYS`：Agno 会话保留天数，默认 `15`；按 `updated_at` 判断，缺失时使用 `created_at`
+- `AI_SESSION_CLEANUP_INTERVAL_SECONDS`：Agno 会话历史后台清理间隔，默认 `21600`，设为 `0` 时关闭清理
+- `AI_SESSION_CLEANUP_BATCH_SIZE`：单批扫描和删除的 session 数量上限，默认 `500`
 - `AI_TEST_MODE`：测试模式；当前支持 `disabled`、`mock`，平台 E2E 推荐使用 `mock`
+
+Agno 会话历史清理只删除超过保留期未更新的整条 session，不做消息级裁剪、事件压缩或摘要迁移。PostgreSQL JSONB/TOAST 已产生的表膨胀不会因为普通删除立即释放物理磁盘；如需回收磁盘空间，应由运维窗口手动执行 `VACUUM FULL`、`pg_repack` 等维护操作，Backend 不会自动执行重型 vacuum。
 
 当前接口：
 

@@ -1,9 +1,10 @@
 """文件功能：定义 FastAPI 应用入口、生命周期和全局异常处理。"""
 
+import asyncio
 import logging
 import time
 import uuid
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 
 import uvicorn
 from fastapi import FastAPI, Request
@@ -17,7 +18,7 @@ from app.ai.db import build_agno_db
 from app.ai.registry import AgentRegistry
 from app.api.router import api_router
 from app.api.routes import build_artifacts, public_assets, internal_runtime, runtime_configs, well_known, preview
-from app.core.config import get_settings
+from app.core.config import AppSettings, get_settings
 from app.core.exceptions import AppException
 from app.core.logging_config import bind_request_id, configure_app_logging, reset_request_id, sanitize_log_text
 from app.db.errors import (
@@ -26,6 +27,11 @@ from app.db.errors import (
     is_database_connectivity_error,
 )
 from app.db.session import get_session_factory
+from app.services.ai_session_retention_service import (
+    build_ai_session_retention_service,
+    run_ai_session_retention_loop,
+    should_start_ai_session_retention_task,
+)
 from app.services.bootstrap_service import BootstrapService
 from app.services.object_storage_service import ObjectStorageService
 from app.services.project_build_service import recover_interrupted_build_jobs_on_startup
@@ -40,16 +46,22 @@ access_logger = logging.getLogger("app.access")
 async def lifespan(app: FastAPI):
     """应用启动时校验数据库、Redis 运行态并初始化默认管理员。"""
 
+    ai_session_cleanup_task: asyncio.Task[None] | None = None
     try:
         session_factory = get_session_factory()
         await BootstrapService(session_factory).ensure_default_admin()
         ensure_redis_runtime_available()
         await recover_interrupted_build_jobs_on_startup(session_factory)
+        ai_session_cleanup_task = _start_ai_session_retention_task(app, get_settings())
     except SQLAlchemyError as exc:
         if is_database_connectivity_error(exc):
             _raise_database_connectivity_error(exc, phase="Backend 启动时")
         raise
-    yield
+    try:
+        yield
+    finally:
+        if ai_session_cleanup_task is not None:
+            await _stop_background_task(ai_session_cleanup_task)
 
 
 def create_app() -> FastAPI:
@@ -166,6 +178,40 @@ def _mount_ai_runtime(app: FastAPI) -> None:
     )
     app.state.ai_registry = registry
     app.state.ai_db = agno_db
+
+
+def _start_ai_session_retention_task(app: FastAPI, settings: AppSettings) -> asyncio.Task[None] | None:
+    """按配置启动 AI session 历史清理后台任务。"""
+
+    agno_db = getattr(app.state, "ai_db", None)
+    if not should_start_ai_session_retention_task(settings, agno_db):
+        return None
+
+    service = build_ai_session_retention_service(settings, agno_db)
+    logger.info(
+        "AI 会话历史清理后台任务已启动。",
+        extra={
+            "event": "ai.session_retention.started",
+            "retention_days": settings.ai_session_retention_days,
+            "interval_seconds": settings.ai_session_cleanup_interval_seconds,
+            "batch_size": settings.ai_session_cleanup_batch_size,
+        },
+    )
+    return asyncio.create_task(
+        run_ai_session_retention_loop(
+            service,
+            interval_seconds=settings.ai_session_cleanup_interval_seconds,
+        ),
+        name="ai-session-retention-cleanup",
+    )
+
+
+async def _stop_background_task(task: asyncio.Task[None]) -> None:
+    """取消后台任务并等待退出，避免应用关闭时遗留清理协程。"""
+
+    task.cancel()
+    with suppress(asyncio.CancelledError):
+        await task
 
 
 def _raise_database_connectivity_error(exc: SQLAlchemyError, *, phase: str) -> None:
