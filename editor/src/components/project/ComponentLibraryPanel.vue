@@ -104,6 +104,7 @@
       class="min-h-0 flex-1"
       :keyword="searchKeyword"
       :selected-name="selectedRuntimeKitName"
+      :components-only="runtimeKitComponentsOnly"
       @runtime-kit-preview-selected="emit('runtime-kit-preview-selected', $event)"
       @runtime-kit-doc-selected="emit('runtime-kit-doc-selected', $event)"
     />
@@ -119,7 +120,7 @@
         class="flex flex-col items-center justify-center rounded-lg border border-dashed border-slate-100 bg-slate-50 px-4 py-10 text-center"
       >
         <Box class="mb-3 h-10 w-10 text-slate-300" />
-        <p class="text-sm font-semibold text-slate-500">{{ searchKeyword ? '未找到相关组件' : '暂无共享组件' }}</p>
+        <p class="text-sm font-semibold text-slate-500">{{ resolveEmptyWorkspaceComponentText() }}</p>
       </div>
 
       <div v-else class="space-y-2.5">
@@ -241,6 +242,8 @@ const props = withDefaults(defineProps<{
   showCreateImportActions?: boolean
   selectedRuntimeKitName?: string | null
   refreshKey?: number
+  publishedOnly?: boolean
+  runtimeKitComponentsOnly?: boolean
 }>(), {
   readOnly: false,
   closable: true,
@@ -251,6 +254,8 @@ const props = withDefaults(defineProps<{
   showCreateImportActions: true,
   selectedRuntimeKitName: null,
   refreshKey: 0,
+  publishedOnly: false,
+  runtimeKitComponentsOnly: false,
 })
 
 const emit = defineEmits<{
@@ -275,10 +280,15 @@ const componentPanelOptions = [
   { label: '内建能力', value: 'runtime-kit' },
 ]
 
+const visibleComponents = computed(() => (
+  props.publishedOnly
+    ? components.value.filter(isPublishedWorkspaceComponent)
+    : components.value
+))
 const filteredComponents = computed(() => {
   const keyword = normalizeSearchKeyword(searchKeyword.value)
-  if (!keyword) return components.value
-  return components.value.filter(component => isComponentMatchedByKeyword(component, keyword))
+  if (!keyword) return visibleComponents.value
+  return visibleComponents.value.filter(component => isComponentMatchedByKeyword(component, keyword))
 })
 const filteredExportableComponentIds = computed(() => (
   filteredComponents.value
@@ -308,7 +318,12 @@ async function refresh(): Promise<void> {
 async function fetchComponents(workspaceId: number): Promise<void> {
   loading.value = true
   try {
-    const response = await listComponents({ page: 1, page_size: 100, workspace_id: workspaceId })
+    const response = await listComponents({
+      page: 1,
+      page_size: 100,
+      workspace_id: workspaceId,
+      published_only: props.publishedOnly,
+    })
     components.value = response.items
     pruneBatchSelection()
   } catch (error) {
@@ -408,7 +423,7 @@ function pruneBatchSelection(): void {
   if (props.readOnly || props.batchSelectedComponentIds.length === 0) {
     return
   }
-  const exportableIds = new Set(components.value.filter(canBatchSelectComponent).map(component => component.id))
+  const exportableIds = new Set(visibleComponents.value.filter(canBatchSelectComponent).map(component => component.id))
   const nextIds = props.batchSelectedComponentIds.filter(componentId => exportableIds.has(componentId))
   if (nextIds.length !== props.batchSelectedComponentIds.length) {
     emit('update:batchSelectedComponentIds', nextIds)
@@ -459,11 +474,19 @@ function canCopyWorkspaceComponentImport(component: WorkspaceComponentItem): boo
 }
 
 function canBatchSelectComponent(component: WorkspaceComponentItem): boolean {
-  return component.current_version_no > 0
+  return isPublishedWorkspaceComponent(component)
 }
 
 function isBatchSelected(componentId: number): boolean {
   return props.batchSelectedComponentIds.includes(componentId)
+}
+
+/**
+ * 判断组件是否已有可被页面或其它组件引用的正式版本。
+ * @param component 工作空间组件条目
+ */
+function isPublishedWorkspaceComponent(component: WorkspaceComponentItem): boolean {
+  return component.current_version_no > 0
 }
 
 /**
@@ -511,6 +534,16 @@ function resolveComponentCardClass(component: WorkspaceComponentItem): string {
     return 'border-emerald-300 ring-1 ring-emerald-100'
   }
   return 'border-slate-200'
+}
+
+/**
+ * 根据当前筛选状态生成工作空间组件空态文案。
+ */
+function resolveEmptyWorkspaceComponentText(): string {
+  if (searchKeyword.value) {
+    return '未找到相关组件'
+  }
+  return props.publishedOnly ? '暂无已发布组件' : '暂无共享组件'
 }
 
 function normalizeSearchKeyword(keyword: string): string {

@@ -58,6 +58,9 @@ class WorkspaceComponentRepository:
         if query.workspace_id is not None:
             statement = statement.where(WorkspaceComponent.workspace_id == query.workspace_id)
             count_statement = count_statement.where(WorkspaceComponent.workspace_id == query.workspace_id)
+        if query.published_only:
+            statement = statement.where(WorkspaceComponent.current_version_no > 0)
+            count_statement = count_statement.where(WorkspaceComponent.current_version_no > 0)
 
         sort_column = getattr(WorkspaceComponent, query.sort_by, WorkspaceComponent.updated_at)
         sort_expression = sort_column.asc() if query.sort_order == "asc" else sort_column.desc()

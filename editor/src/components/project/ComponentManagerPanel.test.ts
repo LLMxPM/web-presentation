@@ -62,19 +62,20 @@ describe('ComponentManagerPanel', () => {
     })
   })
 
-  it('只读模式不展示新建、编辑、删除和发布入口，未发布组件不能复制 import', async () => {
+  it('只读模式只展示已发布组件，并不展示新建、编辑、删除和发布入口', async () => {
     renderPanel()
 
     await waitFor(() => {
       expect(screen.getByText('已发布组件')).toBeInTheDocument()
-      expect(screen.getByText('未发布组件')).toBeInTheDocument()
     })
 
+    expect(screen.queryByText('未发布组件')).toBeNull()
     expect(screen.queryByText('新建')).toBeNull()
     expect(screen.queryByTitle('删除组件')).toBeNull()
     expect(screen.queryByText('编辑组件')).toBeNull()
     expect(screen.queryByText('发布')).toBeNull()
-    expect(screen.getByTitle('发布后可复制 import 语句')).toHaveProperty('disabled', true)
+    expect(screen.queryByTitle('发布后可复制 import 语句')).toBeNull()
+    expect(listComponentsMock).toHaveBeenCalledWith(expect.objectContaining({ published_only: true }))
   })
 
   it('点击组件管理应关闭侧边栏并跳转完整组件库页面', async () => {
@@ -118,16 +119,14 @@ describe('ComponentManagerPanel', () => {
     })
   })
 
-  it('选择 Runtime Kit doc-only 能力应打开说明弹窗，不进入预览工作台', async () => {
+  it('Runtime Kit 侧栏只展示组件能力，不展示 doc-only 工具能力', async () => {
     renderPanel()
 
     await switchToRuntimeKitTab()
-    await fireEvent.click(screen.getByText('格式化工具'))
 
-    await waitFor(() => {
-      expect(screen.getByTestId('runtime-doc-dialog')).toHaveTextContent('能力说明：格式化工具')
-    })
+    expect(screen.queryByText('格式化工具')).toBeNull()
     expect(screen.queryByTestId('preview-workbench')).toBeNull()
+    expect(listRuntimeKitComponentsMock).toHaveBeenCalledWith(expect.objectContaining({ kind: 'component' }))
   })
 
   it('收到智能体组件写入事件后应刷新侧边栏列表', async () => {
@@ -177,8 +176,8 @@ async function switchToRuntimeKitTab(): Promise<void> {
   await fireEvent.click(screen.getByText('内建能力'))
   await waitFor(() => {
     expect(screen.getByText('资源渲染器')).toBeInTheDocument()
-    expect(screen.getByText('格式化工具')).toBeInTheDocument()
   })
+  expect(screen.queryByText('格式化工具')).toBeNull()
 }
 
 function createPreviewWorkbenchStub() {

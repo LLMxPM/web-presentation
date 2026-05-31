@@ -5,6 +5,8 @@
     :workspace-id="workspaceId"
     :read-only="true"
     :closable="closable"
+    :published-only="true"
+    :runtime-kit-components-only="true"
     :selected-component-id="selectedComponent?.id ?? null"
     :selected-runtime-kit-name="selectedRuntimeKitItem?.name ?? null"
     :refresh-key="componentListRefreshKey"

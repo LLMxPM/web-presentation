@@ -212,7 +212,11 @@ export async function getPageCurrentComponentIndex(id: number) {
 }
 
 /** 查询工作空间组件列表。 */
-export async function listComponents(params: ListParams & { workspace_id?: number | ''; component_type?: WorkspaceComponentType | '' }) {
+export async function listComponents(params: ListParams & {
+  workspace_id?: number | ''
+  component_type?: WorkspaceComponentType | ''
+  published_only?: boolean
+}) {
   const { data } = await http.get<PagedResponse<WorkspaceComponentItem>>('/components', { params: buildParams(params) })
   return data
 }

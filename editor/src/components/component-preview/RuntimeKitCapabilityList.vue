@@ -3,6 +3,7 @@
   <section class="flex min-h-0 flex-col">
     <div class="shrink-0 border-b border-slate-100 bg-white px-4 py-2">
       <LibrarySegmentedControl
+        v-if="!componentsOnly"
         :model-value="selectedKind"
         :options="kindOptions"
         :columns="4"
@@ -111,8 +112,10 @@ import { Message } from '@/utils/message'
 const props = withDefaults(defineProps<{
   keyword: string
   selectedName?: string | null
+  componentsOnly?: boolean
 }>(), {
   selectedName: null,
+  componentsOnly: false,
 })
 
 const emit = defineEmits<{
@@ -133,20 +136,30 @@ const kindOptions: Array<{ value: RuntimeKitCapabilityKind | ''; label: string }
   { value: 'util', label: 'Utils' },
 ]
 
+const componentScopedItems = computed(() => (
+  props.componentsOnly
+    ? items.value.filter(item => item.kind === 'component')
+    : items.value
+))
+const effectiveSelectedKind = computed<RuntimeKitCapabilityKind | ''>(() => (
+  props.componentsOnly ? 'component' : selectedKind.value
+))
 const categories = computed(() => {
-  const sourceItems = selectedKind.value ? items.value.filter(item => item.kind === selectedKind.value) : items.value
+  const sourceItems = effectiveSelectedKind.value
+    ? componentScopedItems.value.filter(item => item.kind === effectiveSelectedKind.value)
+    : componentScopedItems.value
   return Array.from(new Set(sourceItems.map(item => item.category))).sort()
 })
 const categoryOptions = computed(() => categories.value.map(category => ({ label: category, value: category })))
 const versionOptions = computed(() => {
-  return Array.from(new Set(items.value.map(item => item.version_no)))
+  return Array.from(new Set(componentScopedItems.value.map(item => item.version_no)))
     .sort((left, right) => left - right)
     .map(versionNo => ({ label: `v${versionNo}`, value: String(versionNo) }))
 })
 const filteredItems = computed(() => {
   const keyword = props.keyword.trim().toLowerCase()
-  return getVisibleVersionItems(items.value, selectedVersion.value).filter(item => {
-    if (selectedKind.value && item.kind !== selectedKind.value) {
+  return getVisibleVersionItems(componentScopedItems.value, selectedVersion.value).filter(item => {
+    if (effectiveSelectedKind.value && item.kind !== effectiveSelectedKind.value) {
       return false
     }
     if (selectedCategory.value && item.category !== selectedCategory.value) {
@@ -170,7 +183,7 @@ const filteredItems = computed(() => {
   })
 })
 
-watch(() => selectedKind.value, () => {
+watch(() => effectiveSelectedKind.value, () => {
   selectedCategory.value = ''
 })
 
@@ -179,6 +192,10 @@ watch(() => selectedKind.value, () => {
  * @param value 能力类型，空字符串表示全部
  */
 function handleSelectKind(value: string): void {
+  if (props.componentsOnly) {
+    selectedKind.value = 'component'
+    return
+  }
   selectedKind.value = value as RuntimeKitCapabilityKind | ''
 }
 
@@ -188,7 +205,10 @@ function handleSelectKind(value: string): void {
 async function fetchItems(): Promise<void> {
   loading.value = true
   try {
-    const response = await listRuntimeKitComponents({ include_all_versions: true })
+    const response = await listRuntimeKitComponents({
+      include_all_versions: true,
+      kind: props.componentsOnly ? 'component' : undefined,
+    })
     items.value = response.items
   } catch (error) {
     Message.error(getErrorMessage(error, '加载 Runtime Kit 内建能力失败'))

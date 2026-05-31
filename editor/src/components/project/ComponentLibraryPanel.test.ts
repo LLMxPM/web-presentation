@@ -44,6 +44,18 @@ const componentItem: WorkspaceComponentItem = {
   updated_by: 1,
 }
 
+const unpublishedComponentItem: WorkspaceComponentItem = {
+  ...componentItem,
+  id: 100,
+  code: 'CMP100',
+  name: '草稿组件',
+  import_name: 'DraftCard',
+  current_version_no: 0,
+  draft_base_version_no: 0,
+  has_unpublished_changes: true,
+  published_at: null,
+}
+
 describe('ComponentLibraryPanel', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -104,6 +116,39 @@ describe('ComponentLibraryPanel', () => {
     expect(screen.queryByTitle('新建组件')).toBeNull()
     expect(screen.queryByTitle('删除组件')).toBeNull()
     expect(screen.getByTitle('打开完整组件库页面')).toBeInTheDocument()
+  })
+
+  it('开启发布过滤时只展示已有正式版本的工作空间组件', async () => {
+    listComponentsMock.mockResolvedValueOnce({
+      items: [componentItem, unpublishedComponentItem],
+      total: 2,
+      page: 1,
+      page_size: 100,
+    })
+
+    render(ComponentLibraryPanel, {
+      props: {
+        modelValue: true,
+        workspaceId: 11,
+        publishedOnly: true,
+      },
+      global: {
+        stubs: {
+          RuntimeKitCapabilityList: true,
+          StatusTag: true,
+        },
+      },
+    })
+
+    await waitFor(() => {
+      expect(screen.getByText('销售卡片')).toBeInTheDocument()
+    })
+
+    expect(screen.queryByText('草稿组件')).toBeNull()
+    expect(listComponentsMock).toHaveBeenCalledWith(expect.objectContaining({
+      workspace_id: 11,
+      published_only: true,
+    }))
   })
 
   it('未勾选导出组件时展示刷新入口，勾选后切换为导出入口', async () => {

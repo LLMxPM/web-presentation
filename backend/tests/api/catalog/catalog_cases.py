@@ -1731,6 +1731,58 @@ async def test_workspace_component_should_persist_component_type_and_support_fil
     assert filtered_response.json()["items"][0]["import_name"] == "StatsResourceCard"
 
 
+async def test_workspace_component_list_should_support_published_only_filter(authenticated_client: AsyncClient) -> None:
+    """工作空间组件列表应支持只返回已有正式版本的组件，供只读侧栏引用。"""
+
+    workspace_response = await authenticated_client.post(
+        "/api/workspaces",
+        json={"name": "组件发布过滤工作空间", "status": "active"},
+    )
+    assert workspace_response.status_code == 200
+    workspace_id = workspace_response.json()["id"]
+
+    published_response = await authenticated_client.post(
+        "/api/components",
+        json={
+            "workspace_id": workspace_id,
+            "name": "已发布侧栏组件",
+            "import_name": "PublishedSidebarComponent",
+            "content": "<template><div>published</div></template>",
+            "file_type": "vue",
+            "status": "active",
+        },
+    )
+    assert published_response.status_code == 200
+    draft_response = await authenticated_client.post(
+        "/api/components",
+        json={
+            "workspace_id": workspace_id,
+            "name": "未发布侧栏组件",
+            "import_name": "DraftSidebarComponent",
+            "content": "<template><div>draft</div></template>",
+            "file_type": "vue",
+            "status": "active",
+        },
+    )
+    assert draft_response.status_code == 200
+
+    publish_response = await authenticated_client.post(
+        f"/api/components/{published_response.json()['id']}/publish",
+        json={"release_name": "侧栏可引用版本"},
+    )
+    assert publish_response.status_code == 200
+
+    filtered_response = await authenticated_client.get(
+        "/api/components",
+        params={"workspace_id": workspace_id, "published_only": "true"},
+    )
+    assert filtered_response.status_code == 200
+    filtered_data = filtered_response.json()
+    assert filtered_data["total"] == 1
+    assert {item["name"] for item in filtered_data["items"]} == {"已发布侧栏组件"}
+    assert all(item["current_version_no"] > 0 for item in filtered_data["items"])
+
+
 async def test_workspace_component_import_name_should_be_required_valid_and_unique(authenticated_client: AsyncClient) -> None:
     """工作空间组件引用名应必填、符合 PascalCase，并在同一工作空间启用组件内唯一。"""
 

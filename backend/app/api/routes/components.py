@@ -104,6 +104,7 @@ async def list_components(
     sort_by: str = "updated_at",
     sort_order: Annotated[str, Query(pattern="^(asc|desc)$")] = "desc",
     workspace_id: int | None = None,
+    published_only: bool = False,
     current: Annotated[AuthContext, Depends(get_current_user)] = None,
     session: Annotated[AsyncSession, Depends(get_db_session)] = None,
 ) -> PagedResponse[WorkspaceComponentItem]:
@@ -118,6 +119,7 @@ async def list_components(
         sort_by=sort_by,
         sort_order=sort_order,
         workspace_id=workspace_id,
+        published_only=published_only,
     )
     return await WorkspaceComponentService(session).list(query, user_id=current.user.id)
 

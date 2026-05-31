@@ -93,6 +93,7 @@ class WorkspaceComponentListQuery(ListQuery):
 
     workspace_id: int | None = None
     component_type: WorkspaceComponentType | None = None
+    published_only: bool = False
 
 
 class WorkspaceComponentDependencyItem(SchemaBase):
