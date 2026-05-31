@@ -86,7 +86,7 @@ def build_list_project_suggested_reference_assets_tool(session_factory: async_se
 
     @tool(show_result=False)
     async def list_project_suggested_reference_assets(run_context: RunContext) -> dict[str, Any]:
-        """读取当前项目建议优先参考的内容资源摘要，不返回 URL 和标签。"""
+        """读取当前项目建议优先参考的内容资源摘要。"""
 
         dependencies, _ = await resolve_tool_context(
             session_factory,

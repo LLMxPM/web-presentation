@@ -496,7 +496,7 @@ _COORDINATOR_TOOL_SPECS = (
         '向用户单选提问',
         'user_feedback',
         '用户交互',
-        '向用户提出一个或多个结构化单选问题；每题提供业务选项，平台前端允许用户选择预设项或直接填写自定义回答。',
+        '向用户提出一个或多个结构化单选问题。',
         default_instructions=(
             '当缺少必要业务信息且不能从当前上下文或工具结果中推断时，调用 ask_user 一次性提出需要用户回答的问题。'
             '每个问题必须是单选，multi_select 必须为 false；只提供真实业务选项，不要提供“其他”或自由输入字段，'
@@ -736,7 +736,7 @@ _COORDINATOR_TOOL_SPECS = (
         '更新项目样式配置',
         'content_project',
         '内容与项目',
-        '更新当前项目 Markdown 样式规范；平台会处理确认流程。',
+        '更新当前项目 Markdown 样式规范。',
         default_instructions=(
             '这是会影响后续页面生成约束的项目级配置写入工具，调用前必须已读取 get_project_style_config。'
             '本工具只能修改 style_spec_markdown；style_spec_markdown 是 Markdown 纯文本，按用户意图完整传入。'
@@ -876,7 +876,7 @@ _COORDINATOR_TOOL_SPECS = (
         '读取项目建议资源',
         'project_suggested_reference_read',
         '项目建议资源',
-        '读取当前项目建议优先参考的内容资源摘要；仅返回 id、name、original_name、asset_type、description 和 content_editable，不返回 URL 或标签。',
+        '读取当前项目建议优先参考的内容资源摘要。',
         default_instructions='当任务需要使用资源素材时，建议优先考虑这些项目建议引用资源；不合适时可以使用其他资源或询问用户。',
         response_example={'total': 1,
          'items': [{'id': 8,
@@ -915,7 +915,7 @@ _COMPONENT_MANAGER_TOOL_SPECS = (
         '向用户单选提问',
         'user_feedback',
         '用户交互',
-        '向用户提出一个或多个结构化单选问题；每题提供业务选项，平台前端允许用户选择预设项或直接填写自定义回答。',
+        '向用户提出一个或多个结构化单选问题。',
         default_instructions=(
             '当缺少必要业务信息且不能从当前上下文或工具结果中推断时，调用 ask_user 一次性提出需要用户回答的问题。'
             '每个问题必须是单选，multi_select 必须为 false；只提供真实业务选项，不要提供“其他”或自由输入字段，'
@@ -1187,7 +1187,7 @@ _RESOURCE_MANAGER_TOOL_SPECS = (
         '向用户单选提问',
         'user_feedback',
         '用户交互',
-        '向用户提出一个或多个结构化单选问题；每题提供业务选项，平台前端允许用户选择预设项或直接填写自定义回答。',
+        '向用户提出一个或多个结构化单选问题。',
         default_instructions=(
             '当缺少必要业务信息且不能从当前上下文或工具结果中推断时，调用 ask_user 一次性提出需要用户回答的问题。'
             '每个问题必须是单选，multi_select 必须为 false；只提供真实业务选项，不要提供“其他”或自由输入字段，'
@@ -1222,7 +1222,7 @@ _RESOURCE_MANAGER_TOOL_SPECS = (
         '读取项目建议资源',
         'resource_library',
         '资源库',
-        '读取当前项目建议优先参考的内容资源摘要；仅返回 id、name、original_name、asset_type、description 和 content_editable，不返回 URL 或标签。',
+        '读取当前项目建议优先参考的内容资源摘要。',
         default_instructions='当任务需要使用资源素材时，建议优先考虑这些项目建议引用资源；不合适时可以使用其他资源或询问用户。',
         response_example={'total': 1,
          'items': [{'id': 8,
@@ -1308,7 +1308,7 @@ _RESOURCE_MANAGER_TOOL_SPECS = (
         '写入资源内容',
         'resource_library',
         '资源库',
-        '写入资源新内容；平台会保护已有引用和回退能力，不需要额外确认。',
+        '写入资源新内容。',
         default_instructions=(
             '写入资源内容会由平台保护已有引用和回退能力。写入前优先调用 preview_resource_content_diff；'
             '用户已明确要求直接写入时，也必须确保内容类型合法，SVG 不含脚本、事件处理器、foreignObject 或远程引用。'
@@ -1332,7 +1332,7 @@ _RESOURCE_MANAGER_TOOL_SPECS = (
         '复制资源',
         'resource_library',
         '资源库',
-        '复制资源记录并复用物理文件；可用于基于现有资源创建新资源。',
+        '复制资源记录并复用物理文件。',
         risk_level='write',
         response_example={'success': True, 'message': '资源已复制。', 'asset': {'id': 9, 'name': 'hero_illustration_copy'}},
     ),
@@ -1342,7 +1342,7 @@ _RESOURCE_MANAGER_TOOL_SPECS = (
         '归档资源',
         'resource_library',
         '资源库',
-        '归档资源；归档不影响已存在引用，不需要额外确认。',
+        '归档资源，不影响已存在引用。',
         risk_level='write',
         response_example={'success': True, 'message': '资源已归档，现有引用仍可解析。', 'asset': {'id': 8, 'name': 'hero_illustration'}},
     ),
@@ -1353,7 +1353,7 @@ _COORDINATOR_GROUP_SPECS = (
     _group(
         "user_feedback",
         "用户交互",
-        "在缺少必要业务信息时，向用户提出一个或多个结构化单选问题；平台前端支持预设选项和自定义回答。",
+        "在缺少必要业务信息时，向用户提出结构化单选问题。",
         ("ask_user",),
         build_tools=_build_user_feedback_tools,
         disclosable=True,
@@ -1416,7 +1416,7 @@ _COORDINATOR_GROUP_SPECS = (
     _group(
         "project_suggested_reference_read",
         "项目建议资源",
-        "查询当前项目建议优先参考的内容资源摘要，仅用于资源选择建议。",
+        "读取当前项目建议优先参考的内容资源摘要。",
         ("list_project_suggested_reference_assets",),
         required_context_fields=("workspace_id", "project_id"),
         token_scopes=RESOURCE_TOOL_READ_SCOPES,
@@ -1483,7 +1483,7 @@ _COMPONENT_MANAGER_GROUP_SPECS = (
     _group(
         "user_feedback",
         "用户交互",
-        "在缺少必要业务信息时，向用户提出一个或多个结构化单选问题；平台前端支持预设选项和自定义回答。",
+        "在缺少必要业务信息时，向用户提出结构化单选问题。",
         ("ask_user",),
         build_tools=_build_user_feedback_tools,
     ),
@@ -1544,7 +1544,7 @@ _RESOURCE_MANAGER_GROUP_SPECS = (
     _group(
         "user_feedback",
         "用户交互",
-        "在缺少必要业务信息时，向用户提出一个或多个结构化单选问题；平台前端支持预设选项和自定义回答。",
+        "在缺少必要业务信息时，向用户提出结构化单选问题。",
         ("ask_user",),
         build_tools=_build_user_feedback_tools,
     ),
