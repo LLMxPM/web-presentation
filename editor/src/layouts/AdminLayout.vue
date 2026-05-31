@@ -319,7 +319,7 @@ const headerBreadcrumbs = computed<HeaderBreadcrumb[]>(() => {
 
   if (projectId.value) {
     breadcrumbs.push({
-      label: '页面列表',
+      label: '项目首页',
       to: pageId.value ? buildProjectPagesPath(workspaceId.value, projectId.value) : undefined,
     })
   }

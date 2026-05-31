@@ -177,7 +177,7 @@ describe('AdminLayout', () => {
     })
     renderLayout()
 
-    expect(screen.getByText('页面列表')).toBeTruthy()
+    expect(screen.getByText('项目首页')).toBeTruthy()
     expect(await screen.findByText('演示页面')).toBeTruthy()
   })
 
