@@ -3,13 +3,13 @@
   <BaseDialog
     v-model="toolDetailDialogVisible"
     :title="activeToolDetail ? `工具调用 · ${resolveToolDetailName(activeToolDetail)}` : '工具调用详情'"
-    width="720px"
+    width="960px"
     :z-index="memberRunDialogVisible ? 1010 : 1000"
   >
     <div v-if="activeToolDetail" class="space-y-4">
       <section class="rounded-2xl border border-slate-200 bg-slate-50/80 p-4">
         <div class="flex flex-wrap items-center justify-between gap-3">
-          <div>
+          <div class="min-w-0">
             <p class="text-sm font-semibold text-slate-800">{{ resolveToolDetailName(activeToolDetail) }}</p>
             <div class="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500">
               <span>{{ getToolSourceLabel(activeToolDetail.source) }}</span>
@@ -18,23 +18,36 @@
               <span v-if="activeToolDetail.createdAt">{{ formatDateTime(activeToolDetail.createdAt) }}</span>
             </div>
           </div>
-          <span class="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-600">
-            {{ toolStatusLabelMap[activeToolDetail.status] }}
-          </span>
+          <div class="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              class="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 shadow-sm transition hover:border-sky-200 hover:text-sky-700"
+              title="复制工具调用详情"
+              @click="copyActiveToolDetail"
+            >
+              <Copy class="h-3.5 w-3.5" />
+              复制详情
+            </button>
+            <span class="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-600">
+              {{ toolStatusLabelMap[activeToolDetail.status] }}
+            </span>
+          </div>
         </div>
       </section>
 
-      <section class="space-y-2">
-        <h4 class="text-sm font-semibold text-slate-800">工具输入</h4>
-        <pre class="max-h-[240px] overflow-auto rounded-2xl bg-slate-950 p-4 text-xs leading-6 text-slate-100">{{
-          formatToolPayload(activeToolDetail.inputPayload, '历史消息未保留输入参数。') }}</pre>
-      </section>
+      <div class="grid gap-3 md:grid-cols-2">
+        <section class="min-w-0 space-y-2">
+          <h4 class="text-sm font-semibold text-slate-800">工具输入</h4>
+          <pre class="max-h-[360px] overflow-auto whitespace-pre-wrap break-words rounded-2xl bg-slate-950 p-4 text-xs leading-6 text-slate-100">{{
+            formatToolPayload(activeToolDetail.inputPayload, '历史消息未保留输入参数。') }}</pre>
+        </section>
 
-      <section class="space-y-2">
-        <h4 class="text-sm font-semibold text-slate-800">工具输出</h4>
-        <pre class="max-h-[280px] overflow-auto rounded-2xl bg-slate-950 p-4 text-xs leading-6 text-slate-100">{{
-          formatToolPayload(activeToolDetail.outputPayload, activeToolDetail.message || '暂无输出。') }}</pre>
-      </section>
+        <section class="min-w-0 space-y-2">
+          <h4 class="text-sm font-semibold text-slate-800">工具输出</h4>
+          <pre class="max-h-[360px] overflow-auto whitespace-pre-wrap break-words rounded-2xl bg-slate-950 p-4 text-xs leading-6 text-slate-100">{{
+            formatToolPayload(activeToolDetail.outputPayload, activeToolDetail.message || '暂无输出。') }}</pre>
+        </section>
+      </div>
     </div>
   </BaseDialog>
 
@@ -96,6 +109,7 @@
 </template>
 
 <script setup lang="ts">
+import { Copy } from '@lucide/vue'
 import { computed, ref, watch } from 'vue'
 
 import BaseDialog from '@/components/ui/BaseDialog.vue'
@@ -104,6 +118,7 @@ import { buildTimelineDisplayItems, formatToolPayload, type ToolCallDetail } fro
 import { getToolSourceLabel, toolStatusLabelMap } from '@/components/agent/agent-message-display'
 import type { AgentActiveRunStatus, AgentMemberRunItem } from '@/types/api'
 import { formatDateTime } from '@/utils/format'
+import { Message } from '@/utils/message'
 
 const props = defineProps<{
   activeToolDetail: ToolCallDetail | null
@@ -148,6 +163,33 @@ watch(
 
 function resolveToolDetailName(tool: ToolCallDetail): string {
   return tool.memberAgentName ? `${tool.memberAgentName} · ${tool.toolName}` : tool.toolName
+}
+
+/**
+ * 复制当前工具调用详情，便于用户把工具上下文直接反馈给 LLM 或开发者。
+ */
+async function copyActiveToolDetail(): Promise<void> {
+  if (!props.activeToolDetail) {
+    return
+  }
+  try {
+    await navigator.clipboard.writeText(buildToolDetailCopyText(props.activeToolDetail))
+    Message.success('工具调用详情已复制。')
+  } catch {
+    Message.error('复制工具调用详情失败，请检查浏览器剪贴板权限。')
+  }
+}
+
+/**
+ * 生成工具详情复制文本；工具 id 使用工具注册名，缺失时再退回调用 id 或时间线项 id。
+ * @param tool 当前弹窗展示的工具调用详情
+ * @returns 分行展示的工具详情复制文本
+ */
+function buildToolDetailCopyText(tool: ToolCallDetail): string {
+  const toolId = tool.toolName || tool.toolCallId || tool.id
+  const input = formatToolPayload(tool.inputPayload, '历史消息未保留输入参数。')
+  const output = formatToolPayload(tool.outputPayload, tool.message || '暂无输出。')
+  return `工具id:${toolId}\nLLM输入:\n${input}\n工具输出:\n${output}`
 }
 
 function resolveMemberRunStatusLabel(status: AgentActiveRunStatus): string {

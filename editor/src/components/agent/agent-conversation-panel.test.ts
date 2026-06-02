@@ -34,6 +34,7 @@ const messageSuccessMock = vi.fn()
 const messageErrorMock = vi.fn()
 const messageInfoMock = vi.fn()
 const messageWarningMock = vi.fn()
+const clipboardWriteTextMock = vi.fn()
 const DEFAULT_AGENT_ID = 'agent-coordinator'
 const DEFAULT_PLACEHOLDER = '描述目标；内容助手会处理页面/项目任务，并按需调用组件或资源助手。'
 
@@ -309,6 +310,13 @@ describe('AgentConversationPanel', () => {
     vi.resetAllMocks()
     localStorage.clear()
     routerPushMock.mockReset()
+    clipboardWriteTextMock.mockResolvedValue(undefined)
+    Object.defineProperty(window.navigator, 'clipboard', {
+      value: {
+        writeText: clipboardWriteTextMock,
+      },
+      configurable: true,
+    })
     listAgentsMock.mockResolvedValue([
       {
         id: DEFAULT_AGENT_ID,
@@ -2416,6 +2424,13 @@ describe('AgentConversationPanel', () => {
       expect(screen.getByText(/hero\.png/)).toBeTruthy()
       expect(screen.queryByText(/completed in 0\.0111s/)).toBeNull()
     })
+
+    await fireEvent.click(screen.getByRole('button', { name: '复制详情' }))
+
+    expect(clipboardWriteTextMock).toHaveBeenCalledWith(
+      '工具id:list_workspace_render_assets\nLLM输入:\n{\n  "workspace_id": 11,\n  "limit": 20\n}\n工具输出:\n{\n  "total": 2,\n  "items": [\n    "hero.png",\n    "cover.png"\n  ]\n}',
+    )
+    expect(messageSuccessMock).toHaveBeenCalledWith('工具调用详情已复制。')
   })
 
   it('delegate 工具应打开成员运行弹窗，并可查看成员子工具详情', async () => {
