@@ -530,7 +530,7 @@ def build_delete_component_tool(session_factory: async_sessionmaker[AsyncSession
             service = WorkspaceComponentService(session)
             component = await service.get(int(component_id))
             _ensure_component_workspace(component.workspace_id, int(dependencies["workspace_id"]))
-            await service.delete(component.id)
+            await service.delete(component.id, user_id=operator_id)
             return {
                 "success": True,
                 "operator_id": operator_id,
