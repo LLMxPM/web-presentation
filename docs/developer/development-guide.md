@@ -134,4 +134,4 @@ pnpm --dir runtime test
 pnpm --dir runtime build
 ```
 
-Runtime 内部能力、运行方式和镜像发布见 [runtime/README.md](../runtime/README.md)。
+Runtime 内部能力、运行方式和镜像发布见 [runtime/README.md](../../runtime/README.md)。

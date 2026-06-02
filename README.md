@@ -3,7 +3,7 @@
 
 `web-presentation` 是一个面向 AI 的演示文稿创作平台，用于创作 PPT、图文卡片、专题报告页、数据解读页等视觉化内容。平台把页面内容代码化，把资源、组件、主题和样式沉淀为可复用资产，再通过 Vue、Vite 和 Runtime 预览链路提供快速反馈，让 AI 更适合参与内容生成、结构调整、样式改写和多场景复用。
 
-> 配图预留：平台产品总览图或首页截图，可放置在这里。
+![平台产品总览占位图](./docs/assets/platform-overview-placeholder.svg)
 
 ## 产品定位
 
@@ -36,7 +36,7 @@
 | Runtime | 预览与构建引擎 | 基于 Vue/Vite 渲染页面和组件，承接预览、截图、诊断和发布构建 |
 | Infra | 部署与运行环境 | 提供 Docker 镜像、compose 模板、发布流程和运行时依赖约束 |
 
-详细架构、模块边界和目标业务流程见 [平台架构说明](./docs/platform-architecture.md)。
+详细架构、模块边界和目标业务流程见 [平台架构说明](./docs/developer/platform-architecture.md)。
 
 ## 快速部署
 
@@ -51,24 +51,31 @@ docker compose -f docker-compose.with-deps.yml pull
 docker compose -f docker-compose.with-deps.yml up -d
 ```
 
-默认启动后访问 `http://127.0.0.1:8080`。外部 PostgreSQL/Redis、production env 版、HTTPS、升级和回滚见 [生产部署指南](./docs/deployment-guide.md)。
+默认启动后访问 `http://127.0.0.1:8080`。外部 PostgreSQL/Redis、production env 版、HTTPS、升级和回滚见 [生产部署指南](./docs/developer/deployment-guide.md)。
 
 ## 当前阶段
 
-平台已经具备登录、多用户隔离、工作空间/项目/页面管理、资源库、组件库、主题库、样式库、AI Agent 会话、工具确认、预览、截图、构建和容器发布的基础能力。完整资源中心、Dashboard、项目关联使用关系和 Runtime 反向回传能力仍在持续建设中。
+平台已经具备登录、多用户隔离、工作空间/项目/页面管理、资源库、组件库、主题库、样式库、AI Agent 会话、工具确认、预览、截图、构建和容器发布的基础能力。跨项目资产治理、Dashboard、项目/页面使用关系运营视图和 Runtime 反向回传能力仍在持续建设中。
 
-更详细的能力清单见 [当前状态与路线](./docs/project-status.md)。
+更详细的能力清单见 [当前状态与路线](./docs/user/project-status.md)。
 
 ## 文档导航
 
 | 文档 | 内容 |
 | :--- | :--- |
-| [平台架构说明](./docs/platform-architecture.md) | 平台目标、模块职责、目标流程和 Runtime 子模块协作 |
-| [当前状态与路线](./docs/project-status.md) | 已落地能力、当前限制和后续方向 |
-| [开发与测试指南](./docs/development-guide.md) | 本地依赖、测试入口、测试数据和运行态维护 |
-| [测试治理说明](./docs/testing-strategy.md) | L0-L3 测试分层、目录归属和 CI 策略 |
-| [生产部署指南](./docs/deployment-guide.md) | 外部依赖简化版、内置依赖简化版、production env 版 compose 部署与运维 |
-| [CI/CD 与容器部署说明](./docs/deployment-cicd.md) | 平台镜像、Runtime 镜像、Docker Hub 发布和 compose 策略 |
+| [文档中心](./docs/README.md) | 用户文档、开发文档和图片资源目录 |
+| [平台介绍](./docs/user/platform-overview.md) | 产品定位、核心概念、典型场景和平台组成 |
+| [用户快速上手](./docs/user/getting-started.md) | 登录、工作空间、项目页面、AI、预览和构建流程 |
+| [AI 协作创作指南](./docs/user/ai-assisted-creation.md) | AI 侧边栏、工具确认、上下文边界和提示词建议 |
+| [主题、字体与样式管理体系](./docs/user/design-system-management.md) | 主题库、字体注册、样式库、离线包和项目应用边界 |
+| [组件管理体系](./docs/user/component-management.md) | 组件草稿、发布版本、引用升级、离线包和 AI 协作方式 |
+| [资源管理体系](./docs/user/resource-management.md) | 资源类型、可编辑内容、替换归档删除、引用检查和字体资源 |
+| [当前状态与路线](./docs/user/project-status.md) | 已落地能力、当前限制和后续方向 |
+| [平台架构说明](./docs/developer/platform-architecture.md) | 平台目标、模块职责、目标流程和 Runtime 子模块协作 |
+| [开发与测试指南](./docs/developer/development-guide.md) | 本地依赖、测试入口、测试数据和运行态维护 |
+| [测试治理说明](./docs/developer/testing-strategy.md) | L0-L3 测试分层、目录归属和 CI 策略 |
+| [生产部署指南](./docs/developer/deployment-guide.md) | 外部依赖简化版、内置依赖简化版、production env 版 compose 部署与运维 |
+| [CI/CD 与容器部署说明](./docs/developer/deployment-cicd.md) | 平台镜像、Runtime 镜像、Docker Hub 发布和 compose 策略 |
 | [Runtime 项目说明](./runtime/README.md) | `web-runtime-vue` 子项目自身的能力、运行方式和对接文档 |
 
 ## 仓库结构
@@ -79,7 +86,7 @@ web-presentation/
 ├── editor/                  # Editor 创作工作台
 ├── runtime/                 # web-runtime-vue Git 子模块
 ├── tests/                   # 根仓契约测试与 E2E smoke
-├── docs/                    # 平台架构、开发、部署和测试文档
+├── docs/                    # 用户文档、开发文档和文档图片资源
 ├── deploy/                  # 外部依赖简化版、内置依赖简化版和 production env 版 compose 模板
 ├── Dockerfile               # 平台单镜像构建入口
 └── docker-compose.dev.yml   # 本地开发/测试 PostgreSQL 与 Redis 入口，非部署模板

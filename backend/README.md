@@ -32,7 +32,7 @@ docker compose -f .\docker-compose.dev.yml up -d
 
 平台测试分层、目录约定和 CI 规则见：
 
-- [../docs/testing-strategy.md](../docs/testing-strategy.md)
+- [../docs/developer/testing-strategy.md](../docs/developer/testing-strategy.md)
 
 ## 2. 常用命令
 
