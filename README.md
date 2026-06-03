@@ -1,9 +1,8 @@
-<!-- 文件功能：项目首页文档，面向最终用户介绍 web-presentation 的产品定位、核心能力、部署入口与文档导航。 -->
 # web-presentation
 
 `web-presentation` 是一个面向 AI 的演示文稿创作平台，用于创作 PPT、图文卡片、专题报告页、数据解读页等视觉化内容。平台把页面内容代码化，把资源、组件、主题和样式沉淀为可复用资产，再通过 Vue、Vite 和 Runtime 预览链路提供快速反馈，让 AI 更适合参与内容生成、结构调整、样式改写和多场景复用。
 
-![平台产品总览占位图](./docs/assets/platform-overview-placeholder.svg)
+[平台产品总览图（DrawIO）](./docs/assets/平台总览.png)
 
 ## 产品定位
 
@@ -38,6 +37,10 @@
 
 详细架构、模块边界和目标业务流程见 [平台架构说明](./docs/developer/platform-architecture.md)。
 
+## 在线 Demo
+
+可以直接访问公开 Demo 体验平台主流程，访问地址、账号密码、推荐体验步骤和 AI 设置说明见 [Demo 使用指南](./docs/user/demo-guide.md)。
+
 ## 快速部署
 
 试部署推荐使用内置依赖的单机编排。它会拉起平台镜像、Runtime 镜像、PostgreSQL 和 Redis，适合在一台机器上快速验证完整链路。
@@ -67,6 +70,8 @@ docker compose -f docker-compose.with-deps.yml up -d
 | :--- | :--- |
 | [文档中心](./docs/README.md) | 用户文档、开发文档和图片资源目录 |
 | [平台介绍](./docs/user/platform-overview.md) | 产品定位、核心概念、典型场景和平台组成 |
+| [演示文稿创作路径对比](./docs/user/platform-comparison.md) | 对比演示创作产品、PPT skills、OOXML/HTML/图片生成工具与平台化资产沉淀路径 |
+| [Demo 使用指南](./docs/user/demo-guide.md) | 公开 Demo 地址、体验账号、推荐流程和 AI 设置注意事项 |
 | [用户快速上手](./docs/user/getting-started.md) | 登录、工作空间、项目页面、AI、预览和构建流程 |
 | [AI 协作创作指南](./docs/user/ai-assisted-creation/README.md) | AI 侧边栏、工具确认、上下文注入和协作建议 |
 | [主题、字体与样式管理体系](./docs/user/design-system-management.md) | 主题库、字体注册、样式库、离线包和项目应用边界 |

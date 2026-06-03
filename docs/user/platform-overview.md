@@ -3,7 +3,7 @@
 
 `web-presentation` 是面向 AI 演示文稿创作的平台，用于创作 PPT、图文卡片、专题报告页、数据解读页等视觉化内容。平台把页面内容代码化，并把资源、组件、主题和样式沉淀为可复用资产，让团队可以在同一套工作空间中持续创作、预览、迭代和交付。
 
-![平台总览占位图](../assets/platform-overview-placeholder.svg)
+[平台总览图（DrawIO）](../assets/platform-overview.drawio)
 
 ## 适用场景
 
@@ -34,6 +34,6 @@
 | Runtime | 预览与构建引擎 | 渲染页面、生成截图、执行诊断和构建 |
 | 部署环境 | 私有化运行 | 通过平台镜像、Runtime 镜像和 compose 模板部署到自有环境 |
 
-## 与一次性生成工具的区别
+## 与其他创作路径的区别
 
-一次性生成工具更适合快速产出单个文件；`web-presentation` 更适合长期项目和团队资产沉淀。它把素材、组件、主题和页面放进平台模型中，让 AI 每次创作都能获得更稳定的上下文，也让团队后续可以继续编辑、复用和构建。
+传统 Keynote/PowerPoint、套模板的 AI PPT、Codex/Claude Code + PPT skills、OOXML/PPTX 生成、HTML 生成和图片生成路线都能解决不同阶段的演示文稿创作问题；`web-presentation` 更强调把页面、资源、组件、主题、样式和构建链路纳入平台模型，服务长期项目与团队资产沉淀。详细对比见 [演示文稿创作路径对比](./platform-comparison.md)。

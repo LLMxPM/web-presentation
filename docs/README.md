@@ -1,4 +1,3 @@
-<!-- 文件功能：提供 docs 文档中心入口，区分用户文档、开发文档和文档图片资源目录。 -->
 # 文档中心
 
 `docs/` 按阅读对象拆分为用户文档和开发文档，图片、示意图和截图占位资源统一放在 `docs/assets/`。
@@ -8,6 +7,9 @@
 | 文档 | 内容 |
 | :--- | :--- |
 | [平台介绍](./user/platform-overview.md) | 面向使用者说明产品定位、核心概念、典型场景和平台组成 |
+| [演示文稿创作路径对比](./user/platform-comparison.md) | 对比演示创作产品、PPT skills、OOXML/HTML/图片生成工具与平台化资产沉淀路径 |
+| [平台宣传 PPT 大纲](./user/platform-pitch-deck-outline.md) | 面向宣传介绍场景，规划平台介绍 deck 的页面叙事、布局和配图建议 |
+| [Demo 使用指南](./user/demo-guide.md) | 公开 Demo 地址、体验账号、推荐流程和 AI 设置注意事项 |
 | [用户快速上手](./user/getting-started.md) | 从登录到创建项目、编辑页面、预览和构建的基础流程 |
 | [AI 协作创作指南](./user/ai-assisted-creation/README.md) | 说明 AI 侧边栏、工具确认、上下文注入和协作建议 |
 | [主题、字体与样式管理体系](./user/design-system-management.md) | 说明主题库、字体注册、样式库、离线包和项目应用边界 |
