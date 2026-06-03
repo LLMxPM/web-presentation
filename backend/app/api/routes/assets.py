@@ -148,13 +148,19 @@ async def list_workspace_asset_tags(
     session: Annotated[AsyncSession, Depends(get_db_session)],
     asset_type: AssetType | None = None,
     exclude_asset_type: AssetType | None = None,
+    status: RecordStatus | None = RecordStatus.ACTIVE,
+    include_history: bool = False,
+    history_only: Annotated[bool, Query()] = False,
 ) -> list[str]:
-    """按资源类型汇总工作空间资源标签。"""
+    """按资源类型、状态和历史范围汇总工作空间资源标签。"""
 
     return await AssetService(session).list_tags(
         workspace_id,
         asset_type=asset_type,
         exclude_asset_type=exclude_asset_type,
+        status=status,
+        include_history=include_history,
+        history_only=history_only,
     )
 
 

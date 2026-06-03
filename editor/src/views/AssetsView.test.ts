@@ -11,6 +11,7 @@ import AssetsView from '@/views/AssetsView.vue'
 
 const getWorkspaceMock = vi.fn()
 const listWorkspaceAssetsMock = vi.fn()
+const listWorkspaceAssetTagsMock = vi.fn()
 const getWorkspaceAssetContentMock = vi.fn()
 const previewWorkspaceAssetReferencesMock = vi.fn()
 const uploadWorkspaceAssetMock = vi.fn()
@@ -43,7 +44,7 @@ vi.mock('@/api/assets', () => ({
   createWorkspaceAssetContent: vi.fn(),
   deleteWorkspaceAsset: vi.fn(),
   getWorkspaceAssetContent: (...args: unknown[]) => getWorkspaceAssetContentMock(...args),
-  listWorkspaceAssetTags: vi.fn().mockResolvedValue([]),
+  listWorkspaceAssetTags: (...args: unknown[]) => listWorkspaceAssetTagsMock(...args),
   listWorkspaceAssets: (...args: unknown[]) => listWorkspaceAssetsMock(...args),
   previewWorkspaceAssetReferences: (...args: unknown[]) => previewWorkspaceAssetReferencesMock(...args),
   replaceWorkspaceAssetFile: vi.fn(),
@@ -68,6 +69,7 @@ describe('AssetsView', () => {
     vi.clearAllMocks()
     createConfirmMock.mockResolvedValue(true)
     getWorkspaceMock.mockResolvedValue({ id: 7, name: '默认工作空间' })
+    listWorkspaceAssetTagsMock.mockResolvedValue(['封面'])
     listWorkspaceAssetsMock.mockResolvedValue({
       items: [
         createImageAsset({
@@ -169,6 +171,46 @@ describe('AssetsView', () => {
 
     await fireEvent.click(screen.getByText('新建内容资源'))
     expect(screen.queryByRole('option', { name: '字体' })).toBeNull()
+  })
+
+  it('选择标签时应按当前状态范围筛选资源列表', async () => {
+    renderAssetsView()
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: '封面' })).toBeInTheDocument()
+    })
+    await fireEvent.click(screen.getByRole('button', { name: '封面' }))
+
+    await waitFor(() => {
+      expect(listWorkspaceAssetsMock).toHaveBeenLastCalledWith(7, expect.objectContaining({
+        status: 'active',
+        includeHistory: false,
+        historyOnly: false,
+        excludeAssetType: 'font',
+        tag: '封面',
+      }))
+    })
+  })
+
+  it('切换归档视图时应按归档范围重新读取标签', async () => {
+    renderAssetsView()
+
+    await waitFor(() => {
+      expect(listWorkspaceAssetTagsMock).toHaveBeenCalledWith(7, expect.objectContaining({
+        status: 'active',
+        includeHistory: false,
+        historyOnly: false,
+      }))
+    })
+    await fireEvent.click(screen.getByText('已归档'))
+
+    await waitFor(() => {
+      expect(listWorkspaceAssetTagsMock).toHaveBeenCalledWith(7, expect.objectContaining({
+        status: 'archived',
+        includeHistory: false,
+        historyOnly: false,
+      }))
+    })
   })
 
   it('新建内容资源应允许选择图片并默认生成 image.svg', async () => {

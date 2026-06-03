@@ -162,7 +162,7 @@ const capabilityItems = [
 ]
 
 const form = reactive({
-  username: 'admin',
+  username: '',
   password: '',
 })
 

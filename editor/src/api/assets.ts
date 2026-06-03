@@ -35,6 +35,9 @@ export interface ListWorkspaceAssetsOptions {
 export interface ListWorkspaceAssetTagsOptions {
   assetType?: AssetType
   excludeAssetType?: AssetType
+  status?: RecordStatus | null
+  includeHistory?: boolean
+  historyOnly?: boolean
 }
 
 /**
@@ -139,6 +142,15 @@ export async function listWorkspaceAssetTags(
   }
   if (options.excludeAssetType) {
     params.exclude_asset_type = options.excludeAssetType
+  }
+  if (options.status !== undefined && options.status !== null) {
+    params.status = options.status
+  }
+  if (options.includeHistory !== undefined) {
+    params.include_history = String(options.includeHistory)
+  }
+  if (options.historyOnly !== undefined) {
+    params.history_only = String(options.historyOnly)
   }
   const { data } = await http.get<string[]>(`/workspaces/${workspaceId}/assets/tags`, { params })
   return data

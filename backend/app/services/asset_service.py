@@ -334,16 +334,19 @@ class AssetService:
             stmt = stmt.where(keyword_condition)
             count_stmt = count_stmt.where(keyword_condition)
 
-        normalized_tag = str(tag or "").strip()
-        if normalized_tag:
-            tag_condition = self._build_tag_filter_condition(normalized_tag)
-            stmt = stmt.where(tag_condition)
-            count_stmt = count_stmt.where(tag_condition)
-
         sort_column = getattr(WorkspaceAsset, sort_by, WorkspaceAsset.updated_at)
         sort_expression = sort_column.asc() if sort_order == "asc" else sort_column.desc()
         bounded_page = max(1, int(page))
         bounded_page_size = max(1, min(int(page_size), 100))
+        normalized_tag = str(tag or "").strip()
+        if normalized_tag:
+            ordered_stmt = stmt.order_by(sort_expression, WorkspaceAsset.id.desc())
+            candidate_assets = list((await self.session.execute(ordered_stmt)).scalars().all())
+            filtered_assets = [asset for asset in candidate_assets if self._asset_has_tag(asset, normalized_tag)]
+            total = len(filtered_assets)
+            offset = (bounded_page - 1) * bounded_page_size
+            return filtered_assets[offset:offset + bounded_page_size], total
+
         stmt = (
             stmt
             .order_by(sort_expression, WorkspaceAsset.id.desc())
@@ -365,15 +368,13 @@ class AssetService:
         return or_(*conditions)
 
     @staticmethod
-    def _build_tag_filter_condition(tag: str) -> Any:
-        """构建单个标签精确筛选条件，保持分页 count 在数据库层完成。"""
+    def _asset_has_tag(asset: WorkspaceAsset, tag: str) -> bool:
+        """按 JSON 数组实际内容判断资源是否包含指定标签，避免依赖数据库 JSON 文本格式。"""
 
-        tag_text = WorkspaceAsset.tags.cast(String)
-        conditions = [tag_text.ilike(f'%"{tag}"%')]
-        escaped_tag = json.dumps(tag, ensure_ascii=True)
-        if escaped_tag != f'"{tag}"':
-            conditions.append(tag_text.ilike(f"%{escaped_tag}%"))
-        return or_(*conditions)
+        normalized_tag = str(tag or "").strip()
+        if not normalized_tag:
+            return False
+        return any(str(item or "").strip() == normalized_tag for item in asset.tags or [])
 
     async def upload_asset(
         self,
@@ -869,14 +870,24 @@ class AssetService:
         *,
         asset_type: AssetType | None = None,
         exclude_asset_type: AssetType | None = None,
+        status: RecordStatus | str | None = RecordStatus.ACTIVE,
+        include_history: bool = False,
+        history_only: bool = False,
     ) -> list[str]:
-        """按资源类型汇总工作空间资源标签。"""
+        """按资源类型、状态和历史范围汇总工作空间资源标签。"""
 
         stmt = select(WorkspaceAsset).where(WorkspaceAsset.workspace_id == workspace_id)
         if asset_type is not None:
             stmt = stmt.where(WorkspaceAsset.asset_type == asset_type.value)
         elif exclude_asset_type is not None:
             stmt = stmt.where(WorkspaceAsset.asset_type != exclude_asset_type.value)
+        if status is not None:
+            status_value = status.value if isinstance(status, RecordStatus) else str(status)
+            stmt = stmt.where(WorkspaceAsset.status == status_value)
+        if history_only:
+            stmt = stmt.where(WorkspaceAsset.source_asset_id.is_not(None))
+        elif not include_history:
+            stmt = stmt.where(WorkspaceAsset.source_asset_id.is_(None))
         assets = list((await self.session.execute(stmt)).scalars().all())
         tags: set[str] = set()
         for asset in assets:

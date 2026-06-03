@@ -543,7 +543,7 @@ import LibrarySegmentedControl from '@/components/project/LibrarySegmentedContro
 import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseCloseButton from '@/components/ui/BaseCloseButton.vue'
 import PaginationControl from '@/components/ui/PaginationControl.vue'
-import type { AssetBatchOperationResponse, AssetReferenceSummary, AssetResponse, AssetType } from '@/types/api'
+import type { AssetBatchOperationResponse, AssetReferenceSummary, AssetResponse, AssetType, RecordStatus } from '@/types/api'
 import { createConfirm, Message } from '@/utils/message'
 import { buildWorkspaceComponentsPath } from '@/utils/workspace-routes'
 
@@ -732,7 +732,7 @@ watch([activeView, assetTypeFilter, activeTag, searchKeyword, sortValue, page, p
   clearBatchSelection()
 })
 
-watch([workspaceId, assetTypeFilter], ([id]) => {
+watch([workspaceId, activeView, assetTypeFilter], ([id]) => {
   if (Number.isFinite(id)) {
     void loadTags()
   }
@@ -754,12 +754,9 @@ async function refreshAssets(): Promise<void> {
   if (!Number.isFinite(workspaceId.value)) return
   loading.value = true
   try {
-    const status = activeView.value === 'active' ? 'active' : 'archived'
-    const includeHistory = activeView.value === 'history'
+    const statusScope = resolveAssetStatusScope()
     const response = await listWorkspaceAssets(workspaceId.value, {
-      status,
-      includeHistory,
-      historyOnly: activeView.value === 'history',
+      ...statusScope,
       assetType: assetTypeFilter.value || undefined,
       excludeAssetType: assetTypeFilter.value ? undefined : 'font',
       tag: activeTag.value || undefined,
@@ -784,6 +781,7 @@ async function refreshAssets(): Promise<void> {
 async function loadTags(): Promise<void> {
   try {
     const tags = await listWorkspaceAssetTags(workspaceId.value, {
+      ...resolveAssetStatusScope(),
       assetType: assetTypeFilter.value || undefined,
       excludeAssetType: assetTypeFilter.value ? undefined : 'font',
     })
@@ -795,6 +793,14 @@ async function loadTags(): Promise<void> {
   } catch {
     availableTags.value = []
     activeTag.value = null
+  }
+}
+
+function resolveAssetStatusScope(): { status: RecordStatus; includeHistory: boolean; historyOnly: boolean } {
+  return {
+    status: activeView.value === 'active' ? 'active' : 'archived',
+    includeHistory: activeView.value === 'history',
+    historyOnly: activeView.value === 'history',
   }
 }
 
