@@ -9,11 +9,11 @@
 | :--- | :--- |
 | [平台介绍](./user/platform-overview.md) | 面向使用者说明产品定位、核心概念、典型场景和平台组成 |
 | [用户快速上手](./user/getting-started.md) | 从登录到创建项目、编辑页面、预览和构建的基础流程 |
-| [AI 协作创作指南](./user/ai-assisted-creation.md) | 说明 AI 侧边栏、工具确认、上下文和协作建议 |
+| [AI 协作创作指南](./user/ai-assisted-creation/README.md) | 说明 AI 侧边栏、工具确认、上下文注入和协作建议 |
 | [主题、字体与样式管理体系](./user/design-system-management.md) | 说明主题库、字体注册、样式库、离线包和项目应用边界 |
 | [组件管理体系](./user/component-management.md) | 说明组件草稿、发布版本、引用升级、离线包和 AI 协作方式 |
 | [资源管理体系](./user/resource-management.md) | 说明资源类型、可编辑内容、替换归档删除、引用检查和字体资源 |
-| [当前状态与路线](./user/project-status.md) | 已落地能力、当前限制和后续方向 |
+| [当前状态与路线](./user/project-status.md) | 已落地能力、建设中事项和后续方向 |
 
 ## 开发文档
 
