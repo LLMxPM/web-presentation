@@ -1,9 +1,8 @@
-<!-- 文件功能：项目首页文档，面向最终用户介绍 web-presentation 的产品定位、核心能力、部署入口与文档导航。 -->
 # web-presentation
 
 `web-presentation` 是一个面向 AI 的演示文稿创作平台，用于创作 PPT、图文卡片、专题报告页、数据解读页等视觉化内容。平台把页面内容代码化，把资源、组件、主题和样式沉淀为可复用资产，再通过 Vue、Vite 和 Runtime 预览链路提供快速反馈，让 AI 更适合参与内容生成、结构调整、样式改写和多场景复用。
 
-> 配图预留：平台产品总览图或首页截图，可放置在这里。
+[平台产品总览图（DrawIO）](./docs/assets/平台总览.png)
 
 ## 产品定位
 
@@ -14,7 +13,7 @@
 | HTML deck skill | 单文件 HTML 演示页 | 风格稳定、轻交付、适合演讲和封面/配图扩展 | 更偏单次文件生成，团队资产、权限、版本和引用关系通常不进入系统模型 |
 | 原生 PPTX skill | 可逐元素编辑的 `.pptx` | 保留 PowerPoint 文本、形状、图表、动画和模板复刻能力 | 重点在最终 PPTX 质量，运行时能力和跨项目资产复用不是核心 |
 | 前端 slides skill | 零依赖 HTML / Web Slides | 浏览器预览、视觉风格探索、响应式和动效表现强 | 多以本地工作流为中心，项目上下文和组件资产沉淀有限 |
-| `web-presentation` | 平台化页面、组件、资源与构建产物 | 工作空间资产复用、上下文注入、Runtime 预览构建、多用户协作和私有化部署 | 更适合长期项目和团队资产沉淀，不是追求一次性生成单个文件的最短路径 |
+| `web-presentation` | 平台化页面、组件、资源与构建产物 | 工作空间资产管理、上下文注入、Runtime 预览构建、多用户隔离和私有化部署 | 更适合长期项目和团队资产沉淀，不是追求一次性生成单个文件的最短路径 |
 
 `web-presentation` 的定位不同：它不是一次性的 PPT 生成 skill，也不是单纯的 HTML-to-PPTX 转换链路，而是面向 AI 的演示文稿创作平台。平台把资源、组件、主题、样式和字体抽象为工作空间资产，把页面内容代码化，让不同项目、不同风格、不同内容类型的演示资产可以持续沉淀和复用。AI 看到的是经过隔离和注入的项目上下文、页面上下文、资源清单、组件能力和样式约束；Runtime 负责承载 Vue/Vite 预览、构建、资源加载和基础能力，既利用前端框架的表达力，又避免运行环境细节干扰 AI 的创作任务。
 
@@ -36,7 +35,11 @@
 | Runtime | 预览与构建引擎 | 基于 Vue/Vite 渲染页面和组件，承接预览、截图、诊断和发布构建 |
 | Infra | 部署与运行环境 | 提供 Docker 镜像、compose 模板、发布流程和运行时依赖约束 |
 
-详细架构、模块边界和目标业务流程见 [平台架构说明](./docs/platform-architecture.md)。
+详细架构、模块边界和目标业务流程见 [平台架构说明](./docs/developer/platform-architecture.md)。
+
+## 在线 Demo
+
+可以直接访问公开 Demo 体验平台主流程，访问地址、账号密码、推荐体验步骤和 AI 设置说明见 [Demo 使用指南](./docs/user/demo-guide.md)。
 
 ## 快速部署
 
@@ -51,24 +54,35 @@ docker compose -f docker-compose.with-deps.yml pull
 docker compose -f docker-compose.with-deps.yml up -d
 ```
 
-默认启动后访问 `http://127.0.0.1:8080`。外部 PostgreSQL/Redis、production env 版、HTTPS、升级和回滚见 [生产部署指南](./docs/deployment-guide.md)。
+默认启动后访问 `http://127.0.0.1:8080`。外部 PostgreSQL/Redis、production env 版、HTTPS、升级和回滚见 [生产部署指南](./docs/developer/deployment-guide.md)。
 
 ## 当前阶段
 
-平台已经具备登录、多用户隔离、工作空间/项目/页面管理、资源库、组件库、主题库、样式库、AI Agent 会话、工具确认、预览、截图、构建和容器发布的基础能力。完整资源中心、Dashboard、项目关联使用关系和 Runtime 反向回传能力仍在持续建设中。
+平台已经具备登录、多用户隔离、工作空间/项目/页面管理、资源库、组件库、主题库、样式库、AI Agent 会话、工具确认、预览、截图、构建和容器发布的基础能力，主链路可以支撑从创作到预览、构建和私有化部署的闭环。
 
-更详细的能力清单见 [当前状态与路线](./docs/project-status.md)。
+下一阶段会重点补齐共享样式库、共享组件库和共享资源库，增强多用户协作，优化预览、截图等高频链路性能，并继续优化项目上下文，让项目上下文与工作空间上下文保持更清晰的软隔离。
+
+更详细的能力清单见 [当前状态与路线](./docs/user/project-status.md)。
 
 ## 文档导航
 
 | 文档 | 内容 |
 | :--- | :--- |
-| [平台架构说明](./docs/platform-architecture.md) | 平台目标、模块职责、目标流程和 Runtime 子模块协作 |
-| [当前状态与路线](./docs/project-status.md) | 已落地能力、当前限制和后续方向 |
-| [开发与测试指南](./docs/development-guide.md) | 本地依赖、测试入口、测试数据和运行态维护 |
-| [测试治理说明](./docs/testing-strategy.md) | L0-L3 测试分层、目录归属和 CI 策略 |
-| [生产部署指南](./docs/deployment-guide.md) | 外部依赖简化版、内置依赖简化版、production env 版 compose 部署与运维 |
-| [CI/CD 与容器部署说明](./docs/deployment-cicd.md) | 平台镜像、Runtime 镜像、Docker Hub 发布和 compose 策略 |
+| [文档中心](./docs/README.md) | 用户文档、开发文档和图片资源目录 |
+| [平台介绍](./docs/user/platform-overview.md) | 产品定位、核心概念、典型场景和平台组成 |
+| [演示文稿创作路径对比](./docs/user/platform-comparison.md) | 对比演示创作产品、PPT skills、OOXML/HTML/图片生成工具与平台化资产沉淀路径 |
+| [Demo 使用指南](./docs/user/demo-guide.md) | 公开 Demo 地址、体验账号、推荐流程和 AI 设置注意事项 |
+| [用户快速上手](./docs/user/getting-started.md) | 登录、工作空间、项目页面、AI、预览和构建流程 |
+| [AI 协作创作指南](./docs/user/ai-assisted-creation/README.md) | AI 侧边栏、工具确认、上下文注入和协作建议 |
+| [主题、字体与样式管理体系](./docs/user/design-system-management.md) | 主题库、字体注册、样式库、离线包和项目应用边界 |
+| [组件管理体系](./docs/user/component-management.md) | 组件草稿、发布版本、引用升级、离线包和 AI 协作方式 |
+| [资源管理体系](./docs/user/resource-management.md) | 资源类型、可编辑内容、替换归档删除、引用检查和字体资源 |
+| [当前状态与路线](./docs/user/project-status.md) | 已落地能力、建设中事项和后续方向 |
+| [平台架构说明](./docs/developer/platform-architecture.md) | 平台目标、模块职责、目标流程和 Runtime 子模块协作 |
+| [开发与测试指南](./docs/developer/development-guide.md) | 本地依赖、测试入口、测试数据和运行态维护 |
+| [测试治理说明](./docs/developer/testing-strategy.md) | L0-L3 测试分层、目录归属和 CI 策略 |
+| [生产部署指南](./docs/developer/deployment-guide.md) | 外部依赖简化版、内置依赖简化版、production env 版 compose 部署与运维 |
+| [CI/CD 与容器部署说明](./docs/developer/deployment-cicd.md) | 平台镜像、Runtime 镜像、Docker Hub 发布和 compose 策略 |
 | [Runtime 项目说明](./runtime/README.md) | `web-runtime-vue` 子项目自身的能力、运行方式和对接文档 |
 
 ## 仓库结构
@@ -79,7 +93,7 @@ web-presentation/
 ├── editor/                  # Editor 创作工作台
 ├── runtime/                 # web-runtime-vue Git 子模块
 ├── tests/                   # 根仓契约测试与 E2E smoke
-├── docs/                    # 平台架构、开发、部署和测试文档
+├── docs/                    # 用户文档、开发文档和文档图片资源
 ├── deploy/                  # 外部依赖简化版、内置依赖简化版和 production env 版 compose 模板
 ├── Dockerfile               # 平台单镜像构建入口
 └── docker-compose.dev.yml   # 本地开发/测试 PostgreSQL 与 Redis 入口，非部署模板

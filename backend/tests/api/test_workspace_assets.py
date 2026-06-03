@@ -248,6 +248,67 @@ async def test_asset_list_and_tags_should_support_excluding_font_type(
     assert tags_response.json() == ["封面"]
 
 
+async def test_asset_tags_should_follow_asset_status_scope(
+    authenticated_client: AsyncClient,
+) -> None:
+    """标签汇总与标签筛选应跟随资源状态范围，避免启用视图展示归档标签。"""
+
+    workspace_id = await _create_workspace(authenticated_client, "资源标签状态范围空间")
+    cases = [
+        ("active_cover", ["启用标签"]),
+        ("archived_cover", ["归档标签"]),
+    ]
+    created_assets: dict[str, dict] = {}
+    for name, tags in cases:
+        response = await authenticated_client.post(
+            f"/api/workspaces/{workspace_id}/assets/content",
+            json={
+                "asset_type": "image",
+                "name": name,
+                "original_name": f"{name}.svg",
+                "content": '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><rect width="16" height="16"/></svg>',
+                "tags": tags,
+            },
+        )
+        assert response.status_code == 200
+        created_assets[name] = response.json()
+
+    archive_response = await authenticated_client.post(
+        f"/api/workspaces/{workspace_id}/assets/{created_assets['archived_cover']['id']}/archive",
+        json={"archive_reason": "测试标签范围"},
+    )
+    assert archive_response.status_code == 200
+
+    active_tags_response = await authenticated_client.get(
+        f"/api/workspaces/{workspace_id}/assets/tags",
+        params={"asset_type": "image"},
+    )
+    assert active_tags_response.status_code == 200
+    assert active_tags_response.json() == ["启用标签"]
+
+    archived_tags_response = await authenticated_client.get(
+        f"/api/workspaces/{workspace_id}/assets/tags",
+        params={"asset_type": "image", "status": "archived"},
+    )
+    assert archived_tags_response.status_code == 200
+    assert archived_tags_response.json() == ["归档标签"]
+
+    active_list_response = await authenticated_client.get(
+        f"/api/workspaces/{workspace_id}/assets",
+        params={"asset_type": "image", "tag": "归档标签"},
+    )
+    assert active_list_response.status_code == 200
+    assert active_list_response.json()["total"] == 0
+
+    archived_list_response = await authenticated_client.get(
+        f"/api/workspaces/{workspace_id}/assets",
+        params={"asset_type": "image", "status": "archived", "tag": "归档标签"},
+    )
+    assert archived_list_response.status_code == 200
+    assert archived_list_response.json()["total"] == 1
+    assert archived_list_response.json()["items"][0]["name"] == "archived_cover"
+
+
 async def test_asset_update_should_persist_and_normalize_description(
     authenticated_client: AsyncClient,
 ) -> None:

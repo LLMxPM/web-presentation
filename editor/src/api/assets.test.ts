@@ -80,14 +80,17 @@ describe('assets api', () => {
     })
   })
 
-  it('读取资源标签时应传递资源类型筛选参数', async () => {
+  it('读取资源标签时应传递资源类型和状态范围筛选参数', async () => {
     getMock.mockResolvedValueOnce({ data: ['品牌'] })
 
-    await listWorkspaceAssetTags(5, { assetType: 'icon' })
+    await listWorkspaceAssetTags(5, { assetType: 'icon', status: 'archived', includeHistory: true, historyOnly: true })
 
     expect(getMock).toHaveBeenCalledWith('/workspaces/5/assets/tags', {
       params: {
         asset_type: 'icon',
+        status: 'archived',
+        include_history: 'true',
+        history_only: 'true',
       },
     })
   })
