@@ -46,7 +46,6 @@
 
 详细架构、模块边界和目标业务流程见 [平台架构说明](./docs/developer/platform-architecture.md)。
 
-
 ## 成果展示
 
 ![成果展示](./docs/assets/成果展示.png)
@@ -54,7 +53,6 @@
 预览链接：[https://demo.926655.xyz/build-artifacts/4/1/](https://demo.926655.xyz/build-artifacts/4/1/)
 
 这是一轮对话直接跑出来的成果，未做细化调整；使用模型为 `mimo-v2.5-pro`，费用约 **0.48** 元人民币。
-
 
 ## 在线 Demo
 
@@ -74,7 +72,6 @@ docker compose -f docker-compose.with-deps.yml up -d
 ```
 
 默认启动后访问 `http://127.0.0.1:8080`。外部 PostgreSQL/Redis、production env 版、HTTPS、升级和回滚见 [生产部署指南](./docs/developer/deployment-guide.md)。
-
 
 ## 文档导航
 
