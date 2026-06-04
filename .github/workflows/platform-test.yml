@@ -5,9 +5,32 @@ on:
     branches:
       - main
   pull_request:
+  schedule:
+    # 每周一 03:00（Asia/Shanghai）执行一次全量门禁。
+    - cron: '0 19 * * 0'
   workflow_dispatch:
+    inputs:
+      full_tests:
+        description: 是否执行全量测试（包含 integration、E2E 和镜像构建 smoke）
+        required: true
+        default: true
+        type: boolean
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
+  test-scope:
+    runs-on: ubuntu-latest
+    outputs:
+      full_tests: ${{ steps.scope.outputs.full_tests }}
+    steps:
+      - id: scope
+        env:
+          FULL_TESTS: ${{ github.event_name != 'pull_request' && (github.event_name != 'workflow_dispatch' || inputs.full_tests) }}
+        run: echo "full_tests=${FULL_TESTS}" >> "${GITHUB_OUTPUT}"
+
   detect-runtime-change:
     runs-on: ubuntu-latest
     outputs:
@@ -26,6 +49,7 @@ jobs:
 
   backend-tests:
     runs-on: ubuntu-latest
+    needs: test-scope
     steps:
       - uses: actions/checkout@v4
         with:
@@ -34,7 +58,8 @@ jobs:
       - run: uv sync --project backend --group dev
       - run: uv run --project backend pytest -c backend/pyproject.toml -m unit
       - run: uv run --project backend pytest -c backend/pyproject.toml -m api
-      - run: uv run --project backend pytest -c backend/pyproject.toml -m integration
+      - if: needs.test-scope.outputs.full_tests == 'true'
+        run: uv run --project backend pytest -c backend/pyproject.toml -m integration
 
   editor-tests:
     runs-on: ubuntu-latest
@@ -71,8 +96,10 @@ jobs:
 
   runtime-delegated:
     runs-on: ubuntu-latest
-    needs: detect-runtime-change
-    if: needs.detect-runtime-change.outputs.runtime_changed == 'true'
+    needs:
+      - detect-runtime-change
+      - test-scope
+    if: needs.test-scope.outputs.full_tests == 'true' || needs.detect-runtime-change.outputs.runtime_changed == 'true'
     steps:
       - uses: actions/checkout@v4
         with:
@@ -92,6 +119,8 @@ jobs:
 
   e2e-smoke:
     runs-on: ubuntu-latest
+    needs: test-scope
+    if: needs.test-scope.outputs.full_tests == 'true'
     steps:
       - uses: actions/checkout@v4
         with:
@@ -133,6 +162,8 @@ jobs:
 
   platform-image-build-smoke:
     runs-on: ubuntu-latest
+    needs: test-scope
+    if: needs.test-scope.outputs.full_tests == 'true'
     steps:
       - uses: actions/checkout@v4
         with:

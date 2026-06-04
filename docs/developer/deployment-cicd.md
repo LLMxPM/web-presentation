@@ -15,7 +15,8 @@ docker buildx imagetools inspect docker.io/llmxpm/web-runtime-vue:sha-<runtime_s
 
 ## GitHub Actions
 
-- PR：`.github/workflows/platform-test.yml` 继续执行 backend、editor、contracts、e2e smoke，并新增平台镜像 build smoke；该任务只构建，不推送。
+- PR：`.github/workflows/platform-test.yml` 执行快速质量门禁，包括 Backend unit/api、Editor、根仓 contracts；当 `runtime` 子模块或 `.gitmodules` 变化时，额外执行 Runtime 委托校验。
+- 全量测试：`.github/workflows/platform-test.yml` 仅在 `main` push、每周一 03:00（Asia/Shanghai）定时任务或手动触发且 `full_tests=true` 时执行；全量会在快速门禁基础上补充 Backend integration、Runtime 委托校验、e2e smoke 和平台镜像 build smoke。平台镜像 build smoke 只构建，不推送。
 - Release：`.github/workflows/platform-release.yml` 在 GitHub Release `published` 后执行完整质量门禁、Runtime 镜像存在性校验，然后推送 Docker Hub。
 - Docker Hub 配置：
   - `vars.DOCKER_USERNAME`
