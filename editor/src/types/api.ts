@@ -53,6 +53,20 @@ export interface ProjectSuggestedReferenceAssetsResponse {
   items: ProjectSuggestedReferenceAssetItem[]
 }
 
+export interface SuggestedComponentItem {
+  id: number
+  code: string
+  name: string
+  import_name: string
+  component_type: WorkspaceComponentType
+  summary: string | null
+  current_version_no: number
+}
+
+export interface SuggestedComponentsResponse {
+  items: SuggestedComponentItem[]
+}
+
 export interface WorkspaceItem {
   id: number
   code: string

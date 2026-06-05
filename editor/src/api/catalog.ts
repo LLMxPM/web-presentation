@@ -21,6 +21,7 @@ import type {
   ProjectRouteItemWrite,
   ProjectRouteTreeResponse,
   ProjectSuggestedReferenceAssetsResponse,
+  SuggestedComponentsResponse,
   WorkspaceComponentType,
   WorkspaceComponentCurrentDependencies,
   WorkspaceComponentItem,
@@ -129,6 +130,7 @@ export async function createProject(payload: {
   theme_config_yaml?: string | null
   style_spec_markdown?: string
   build_extra_assets_json?: ProjectBuildExtraAssetsJson
+  suggested_component_source_style_id?: number | null
 }) {
   const { data } = await http.post<ProjectItem>('/projects', payload)
   return data
@@ -152,6 +154,7 @@ export async function updateProject(
     theme_config_yaml: string
     style_spec_markdown: string
     build_extra_assets_json: ProjectBuildExtraAssetsJson
+    suggested_component_source_style_id: number | null
   }>,
 ) {
   const { data } = await http.patch<ProjectItem>(`/projects/${id}`, payload)
@@ -171,6 +174,21 @@ export async function updateProjectSuggestedReferenceAssets(projectId: number, a
   const { data } = await http.put<ProjectSuggestedReferenceAssetsResponse>(
     `/projects/${projectId}/suggested-reference-assets`,
     { asset_ids: assetIds },
+  )
+  return data
+}
+
+/** 读取项目建议组件快照。 */
+export async function getProjectSuggestedComponents(projectId: number) {
+  const { data } = await http.get<SuggestedComponentsResponse>(`/projects/${projectId}/suggested-components`)
+  return data
+}
+
+/** 覆盖保存项目建议组件快照。 */
+export async function updateProjectSuggestedComponents(projectId: number, componentIds: number[]) {
+  const { data } = await http.put<SuggestedComponentsResponse>(
+    `/projects/${projectId}/suggested-components`,
+    { component_ids: componentIds },
   )
   return data
 }

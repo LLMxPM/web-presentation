@@ -115,7 +115,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, watch } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import { Eye, EyeOff, PanelBottom, PanelLeft, Type } from '@lucide/vue'
 
 import BaseButton from '@/components/ui/BaseButton.vue'
@@ -158,6 +158,7 @@ const emit = defineEmits<{
     menu_mode: ProjectMenuMode
     theme_key: string | null
     style_spec_markdown: string
+    suggested_component_source_style_id?: number | null
   }]
 }>()
 
@@ -179,6 +180,7 @@ const errors = reactive({
   name: '',
   theme: '',
 })
+const appliedWorkspaceStyleId = ref<number | null>(null)
 
 const menuModeOptions = [
   { label: '侧边', value: 'preview' as const, icon: PanelLeft },
@@ -212,6 +214,7 @@ function syncFormFromProject(project: ProjectItem | null): void {
   form.menu_mode = project?.menu_mode ?? 'preview'
   form.theme_key = project?.theme_key ?? props.defaultThemeKey ?? null
   form.style_spec_markdown = project?.style_spec_markdown ?? DEFAULT_PROJECT_STYLE_SPEC_MARKDOWN
+  appliedWorkspaceStyleId.value = null
   errors.name = ''
   errors.theme = ''
 }
@@ -249,6 +252,7 @@ function applyWorkspaceStyle(style: WorkspaceStyleItem): void {
     form.theme_key = style.theme_key
   }
   form.style_spec_markdown = style.style_spec_markdown
+  appliedWorkspaceStyleId.value = style.id
 }
 
 /**
@@ -277,7 +281,20 @@ function handleSubmit(): void {
 
   errors.name = ''
   errors.theme = ''
-  emit('submit', {
+  const payload: {
+    name: string
+    description: string | null
+    status: RecordStatus
+    page_width: number
+    page_height: number
+    base_font_size: string
+    icon_default_stroke_width: number
+    show_pdf_export_button: boolean
+    menu_mode: ProjectMenuMode
+    theme_key: string | null
+    style_spec_markdown: string
+    suggested_component_source_style_id?: number | null
+  } = {
     name: form.name.trim(),
     description: form.description.trim() ? form.description.trim() : null,
     status: form.status,
@@ -289,7 +306,11 @@ function handleSubmit(): void {
     menu_mode: form.menu_mode,
     theme_key: form.theme_key,
     style_spec_markdown: form.style_spec_markdown,
-  })
+  }
+  if (appliedWorkspaceStyleId.value !== null) {
+    payload.suggested_component_source_style_id = appliedWorkspaceStyleId.value
+  }
+  emit('submit', payload)
 }
 
 /**

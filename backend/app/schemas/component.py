@@ -9,6 +9,7 @@ from app.schemas.common import ListQuery, SchemaBase
 from app.schemas.component_preview_options import ComponentPreviewOptions
 
 COMPONENT_IMPORT_NAME_PATTERN = r"^[A-Z][A-Za-z0-9]{0,63}$"
+SUGGESTED_COMPONENT_MAX_COUNT = 100
 
 
 def normalize_component_import_name(value: str) -> str:
@@ -132,6 +133,30 @@ class WorkspaceComponentItem(SchemaBase):
     updated_at: datetime
     created_by: int | None
     updated_by: int | None
+
+
+class SuggestedComponentItem(SchemaBase):
+    """建议组件摘要，用于样式关联、项目快照和内容助手组件查询。"""
+
+    id: int
+    code: str
+    name: str
+    import_name: str
+    component_type: WorkspaceComponentType
+    summary: str | None
+    current_version_no: int
+
+
+class SuggestedComponentsResponse(BaseModel):
+    """建议组件列表响应。"""
+
+    items: list[SuggestedComponentItem] = Field(default_factory=list)
+
+
+class SuggestedComponentsUpdateRequest(BaseModel):
+    """覆盖保存建议组件的请求体。"""
+
+    component_ids: list[int] = Field(default_factory=list, max_length=SUGGESTED_COMPONENT_MAX_COUNT)
 
 
 class WorkspaceComponentVersionListItem(SchemaBase):

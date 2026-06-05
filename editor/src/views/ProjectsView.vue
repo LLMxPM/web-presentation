@@ -180,6 +180,7 @@ const saveMutation = useMutation({
     menu_mode: ProjectMenuMode
     theme_key: string | null
     style_spec_markdown?: string
+    suggested_component_source_style_id?: number | null
   }) => createProject({ ...payload, workspace_id: workspaceId.value }),
 })
 
@@ -202,6 +203,7 @@ async function handleCreateProject(payload: {
   menu_mode: ProjectMenuMode
   theme_key: string | null
   style_spec_markdown?: string
+  suggested_component_source_style_id?: number | null
 }) {
   saving.value = true
   try {

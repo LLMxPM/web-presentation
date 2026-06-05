@@ -74,6 +74,7 @@ class WorkspaceStylePackagePayloads:
         """按现有样式创建请求规则归一化离线包样式载荷。"""
 
         package_payload = dict(payload)
+        package_payload.pop("suggested_components", None)
         package_payload.setdefault("style_spec_markdown", "")
         return WorkspaceStyleCreateRequest.model_validate(package_payload).model_dump(mode="json")
 

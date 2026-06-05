@@ -136,6 +136,7 @@ const emit = defineEmits<{
     menu_mode: ProjectMenuMode
     theme_key: string | null
     style_spec_markdown: string
+    suggested_component_source_style_id?: number | null
   }]
 }>()
 
@@ -152,6 +153,7 @@ const draft = reactive({
 
 const saveAsStyleDialogVisible = ref(false)
 const saveAsStyleSaving = ref(false)
+const appliedWorkspaceStyleId = ref<number | null>(null)
 
 const menuModeOptions = [
   { label: '侧边缩略图', value: 'preview' as const },
@@ -195,6 +197,7 @@ function syncDraftFromProject(project: ProjectItem | null): void {
   draft.menuMode = project?.menu_mode ?? 'preview'
   draft.themeKey = project?.theme_key ?? props.defaultThemeKey ?? null
   draft.styleSpecMarkdown = project?.style_spec_markdown ?? ''
+  appliedWorkspaceStyleId.value = null
 }
 
 /**
@@ -239,6 +242,7 @@ function applyWorkspaceStyle(style: WorkspaceStyleItem): void {
     draft.themeKey = style.theme_key
   }
   draft.styleSpecMarkdown = style.style_spec_markdown
+  appliedWorkspaceStyleId.value = style.id
 }
 
 /**
@@ -252,7 +256,17 @@ function resetDraft(): void {
  * 提交项目展示配置。
  */
 function handleSave(): void {
-  emit('save', {
+  const payload: {
+    page_width: number
+    page_height: number
+    base_font_size: string
+    icon_default_stroke_width: number
+    show_pdf_export_button: boolean
+    menu_mode: ProjectMenuMode
+    theme_key: string | null
+    style_spec_markdown: string
+    suggested_component_source_style_id?: number | null
+  } = {
     page_width: normalizedPageWidth.value,
     page_height: normalizedPageHeight.value,
     base_font_size: normalizedBaseFontSize.value,
@@ -261,7 +275,11 @@ function handleSave(): void {
     menu_mode: draft.menuMode,
     theme_key: draft.themeKey,
     style_spec_markdown: draft.styleSpecMarkdown,
-  })
+  }
+  if (appliedWorkspaceStyleId.value !== null) {
+    payload.suggested_component_source_style_id = appliedWorkspaceStyleId.value
+  }
+  emit('save', payload)
 }
 
 /**

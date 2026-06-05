@@ -16,10 +16,12 @@ from app.models.page_version import PageVersion
 from app.models.project_build_job import ProjectBuildJob
 from app.models.project_route import ProjectRoute
 from app.models.project_suggested_reference_asset import ProjectSuggestedReferenceAsset
+from app.models.project_suggested_component import ProjectSuggestedComponent
 from app.models.release import Release, ReleaseModule
 from app.models.workspace_component import WorkspaceComponent
 from app.models.workspace_component_version import WorkspaceComponentVersion
 from app.models.workspace_style import WorkspaceStyle
+from app.models.workspace_style_suggested_component import WorkspaceStyleSuggestedComponent
 from app.models.workspace_theme import WorkspaceTheme
 from app.models.workspace import Project, Workspace, WorkspaceMember
 
@@ -42,6 +44,7 @@ __all__ = [
     "PageVersionComponentResource",
     "ProjectBuildJob",
     "ProjectSuggestedReferenceAsset",
+    "ProjectSuggestedComponent",
     "WorkspaceComponent",
     "WorkspaceComponentVersion",
     "ComponentVersionComponentDependency",
@@ -49,6 +52,7 @@ __all__ = [
     "WorkspaceAsset",
     "WorkspaceFontConfig",
     "WorkspaceStyle",
+    "WorkspaceStyleSuggestedComponent",
     "WorkspaceTheme",
     "Release",
     "ReleaseModule",

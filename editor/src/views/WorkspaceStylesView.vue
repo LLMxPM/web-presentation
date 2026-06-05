@@ -132,6 +132,15 @@
                     >
                       <Info class="h-4 w-4" />
                     </button>
+                    <button
+                      type="button"
+                      class="style-icon-button"
+                      title="建议组件"
+                      :aria-label="`管理 ${style.name} 建议组件`"
+                      @click.stop="openSuggestedComponentsDialog(style)"
+                    >
+                      <Layers class="h-4 w-4" />
+                    </button>
                     <button type="button" class="style-icon-button" title="编辑" @click.stop="openEditStyle(style)">
                       <Pencil class="h-4 w-4" />
                     </button>
@@ -169,6 +178,13 @@
       v-model="styleDetailVisible"
       :style="selectedStyle"
       @edit="openEditStyle"
+    />
+
+    <WorkspaceStyleSuggestedComponentsDialog
+      v-model="suggestedComponentsDialogVisible"
+      :workspace-id="workspaceId"
+      :style="suggestedComponentsStyle"
+      @saved="handleSuggestedComponentsSaved"
     />
 
     <BaseDialog v-model="importDialogVisible" title="导入样式" width="760px">
@@ -249,7 +265,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { Copy, Download, Info, Palette, Pencil, Plus, RefreshCw, Search, Trash2, Upload } from '@lucide/vue'
+import { Copy, Download, Info, Layers, Palette, Pencil, Plus, RefreshCw, Search, Trash2, Upload } from '@lucide/vue'
 
 import { getWorkspace } from '@/api/catalog'
 import { getErrorMessage } from '@/api/http'
@@ -269,7 +285,8 @@ import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseDialog from '@/components/ui/BaseDialog.vue'
 import WorkspaceStyleDetailDialog from '@/components/project/WorkspaceStyleDetailDialog.vue'
 import WorkspaceStyleEditorDialog from '@/components/project/WorkspaceStyleEditorDialog.vue'
-import type { ProjectMenuMode, WorkspaceItem, WorkspaceStyleImportValidationResult, WorkspaceStyleItem } from '@/types/api'
+import WorkspaceStyleSuggestedComponentsDialog from '@/components/project/WorkspaceStyleSuggestedComponentsDialog.vue'
+import type { ProjectMenuMode, SuggestedComponentItem, WorkspaceItem, WorkspaceStyleImportValidationResult, WorkspaceStyleItem } from '@/types/api'
 import { createConfirm, Message } from '@/utils/message'
 
 const route = useRoute()
@@ -293,6 +310,8 @@ const importValidation = ref<WorkspaceStyleImportValidationResult | null>(null)
 const editorVisible = ref(false)
 const editingStyle = ref<WorkspaceStyleItem | null>(null)
 const styleDetailVisible = ref(false)
+const suggestedComponentsDialogVisible = ref(false)
+const suggestedComponentsStyle = ref<WorkspaceStyleItem | null>(null)
 
 const workspaceTitle = computed(() => workspaceDetails.value?.name ? `${workspaceDetails.value.name} · 样式库` : '样式库')
 
@@ -372,6 +391,15 @@ function openEditStyle(style: WorkspaceStyleItem): void {
 function openStyleDetailDialog(style: WorkspaceStyleItem): void {
   selectedStyle.value = style
   styleDetailVisible.value = true
+}
+
+/**
+ * 打开样式建议组件管理弹窗。
+ * @param style 当前样式
+ */
+function openSuggestedComponentsDialog(style: WorkspaceStyleItem): void {
+  suggestedComponentsStyle.value = style
+  suggestedComponentsDialogVisible.value = true
 }
 
 /**
@@ -562,6 +590,14 @@ async function deleteStyle(style: WorkspaceStyleItem): Promise<void> {
   } catch (error) {
     Message.error(getErrorMessage(error, '删除样式失败。'))
   }
+}
+
+/**
+ * 建议组件保存后保留当前列表，仅关闭弹窗并给出轻量提示。
+ * @param _items 后端返回的建议组件摘要
+ */
+function handleSuggestedComponentsSaved(_items: SuggestedComponentItem[]): void {
+  suggestedComponentsStyle.value = null
 }
 
 /**

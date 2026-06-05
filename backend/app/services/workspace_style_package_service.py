@@ -41,6 +41,7 @@ from app.services.workspace_style_package_format import (
     WorkspaceStylePackageFormat,
 )
 from app.services.workspace_style_package_payloads import WorkspaceStylePackagePayloads
+from app.services.suggested_component_service import SuggestedComponentService
 
 
 class WorkspaceStylePackageService:
@@ -201,7 +202,16 @@ class WorkspaceStylePackageService:
         """按标准目录结构生成样式离线包 Zip。"""
 
         buffer = io.BytesIO()
-        style_entries = [WorkspaceStylePackagePayloads.build_style_payload(style) for style in styles]
+        suggested_component_service = SuggestedComponentService(self.session)
+        style_entries: list[dict[str, Any]] = []
+        for style in styles:
+            style_payload = WorkspaceStylePackagePayloads.build_style_payload(style)
+            suggested_components = await suggested_component_service.list_style_component_items(workspace_id, style.id)
+            style_payload["suggested_components"] = [
+                item.model_dump(mode="json")
+                for item in suggested_components
+            ]
+            style_entries.append(style_payload)
         theme_entries = [await self._build_theme_payload(theme) for theme in themes]
         asset_entries = [WorkspaceStylePackagePayloads.build_asset_payload(asset) for asset in assets]
         font_entries = [WorkspaceStylePackagePayloads.build_font_payload(item) for item in font_configs]
@@ -209,7 +219,12 @@ class WorkspaceStylePackageService:
             "schema_version": STYLE_PACKAGE_SCHEMA_VERSION,
             "exported_at": utc_now().isoformat(),
             "styles": [
-                {"key": item["key"], "name": item["name"], "theme_key": item["theme_key"]}
+                {
+                    "key": item["key"],
+                    "name": item["name"],
+                    "theme_key": item["theme_key"],
+                    "suggested_component_count": len(item.get("suggested_components") or []),
+                }
                 for item in style_entries
             ],
             "themes": [
@@ -577,23 +592,35 @@ class WorkspaceStylePackageService:
             payload = WorkspaceStylePackagePayloads.normalize_style_payload(package_style.payload)
             if await self.style_repository.get_by_key(workspace_id, str(payload["key"])) is not None:
                 continue
-            self.session.add(
-                WorkspaceStyle(
-                    workspace_id=workspace_id,
-                    key=str(payload["key"]),
-                    name=str(payload["name"]),
-                    description=payload.get("description"),
-                    page_width=int(payload["page_width"]),
-                    page_height=int(payload["page_height"]),
-                    base_font_size=str(payload["base_font_size"]),
-                    icon_default_stroke_width=int(payload["icon_default_stroke_width"]),
-                    show_pdf_export_button=bool(payload["show_pdf_export_button"]),
-                    menu_mode=str(payload["menu_mode"]),
-                    theme_key=payload.get("theme_key"),
-                    style_spec_markdown=str(payload.get("style_spec_markdown") or ""),
-                    created_by=operator_id,
-                    updated_by=operator_id,
-                )
+            style = WorkspaceStyle(
+                workspace_id=workspace_id,
+                key=str(payload["key"]),
+                name=str(payload["name"]),
+                description=payload.get("description"),
+                page_width=int(payload["page_width"]),
+                page_height=int(payload["page_height"]),
+                base_font_size=str(payload["base_font_size"]),
+                icon_default_stroke_width=int(payload["icon_default_stroke_width"]),
+                show_pdf_export_button=bool(payload["show_pdf_export_button"]),
+                menu_mode=str(payload["menu_mode"]),
+                theme_key=payload.get("theme_key"),
+                style_spec_markdown=str(payload.get("style_spec_markdown") or ""),
+                created_by=operator_id,
+                updated_by=operator_id,
+            )
+            self.session.add(style)
+            await self.session.flush()
+            raw_suggested_components = package_style.payload.get("suggested_components")
+            suggested_component_summaries = raw_suggested_components if isinstance(raw_suggested_components, list) else []
+            suggested_component_ids = await SuggestedComponentService(self.session).find_package_component_ids(
+                workspace_id,
+                [item for item in suggested_component_summaries if isinstance(item, dict)],
+            )
+            await SuggestedComponentService(self.session).replace_style_components(
+                workspace_id,
+                style.id,
+                suggested_component_ids,
+                commit=False,
             )
         await self.session.flush()
 

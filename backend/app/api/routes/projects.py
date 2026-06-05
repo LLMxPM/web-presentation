@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.dependencies import get_current_user, get_list_query
 from app.db.session import get_db_session
 from app.schemas.common import ListQuery, MessageResponse, PagedResponse
+from app.schemas.component import SuggestedComponentsResponse, SuggestedComponentsUpdateRequest
 from app.schemas.project import (
     ProjectCreateRequest,
     ProjectItem,
@@ -20,6 +21,7 @@ from app.services.auth_service import AuthContext
 from app.services.project_service import ProjectService
 from app.services.project_route_service import ProjectRouteService
 from app.services.project_suggested_reference_asset_service import ProjectSuggestedReferenceAssetService
+from app.services.suggested_component_service import SuggestedComponentService
 
 router = APIRouter()
 
@@ -95,6 +97,33 @@ async def replace_project_suggested_reference_assets(
     await ProjectService(session).get(project_id, user_id=current.user.id)
     items = await ProjectSuggestedReferenceAssetService(session).replace_assets(project_id, payload.asset_ids)
     return ProjectSuggestedReferenceAssetsResponse(items=items)
+
+
+@router.get("/{project_id}/suggested-components", response_model=SuggestedComponentsResponse)
+async def list_project_suggested_components(
+    project_id: int,
+    current: Annotated[AuthContext, Depends(get_current_user)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> SuggestedComponentsResponse:
+    """读取项目建议组件快照列表。"""
+
+    await ProjectService(session).get(project_id, user_id=current.user.id)
+    items = await SuggestedComponentService(session).list_project_component_items(project_id)
+    return SuggestedComponentsResponse(items=items)
+
+
+@router.put("/{project_id}/suggested-components", response_model=SuggestedComponentsResponse)
+async def replace_project_suggested_components(
+    project_id: int,
+    payload: SuggestedComponentsUpdateRequest,
+    current: Annotated[AuthContext, Depends(get_current_user)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> SuggestedComponentsResponse:
+    """覆盖保存项目建议组件快照列表。"""
+
+    await ProjectService(session).get(project_id, user_id=current.user.id)
+    items = await SuggestedComponentService(session).replace_project_components(project_id, payload.component_ids)
+    return SuggestedComponentsResponse(items=items)
 
 
 @router.get("/{project_id}/routes", response_model=ProjectRouteTreeResponse)

@@ -1204,17 +1204,97 @@ async def test_workspace_component_usage_tools_should_not_require_page_scope(
     list_result = await list_tool.entrypoint(run_context, limit=10)
     usage_result = await usage_tool.entrypoint(run_context, component_code=published_component["code"])
 
-    assert list_result == [
-        {
-            "name": "营销卡片",
-            "import_name": "MarketingCard",
-            "description": None,
-            "component_code": published_component["code"],
-            "current_version_no": 1,
-        }
-    ]
+    assert list_result == {
+        "source": "workspace_all",
+        "fallback_reason": "no_project_context",
+        "total": 1,
+        "items": [
+            {
+                "name": "营销卡片",
+                "import_name": "MarketingCard",
+                "description": None,
+                "component_code": published_component["code"],
+                "current_version_no": 1,
+            }
+        ],
+    }
     assert usage_result["component_code"] == published_component["code"]
     assert usage_result["import_path"] == f"@workspace-components/{published_component['code']}/v/1"
+
+
+async def test_workspace_component_list_tool_should_default_to_project_suggested_components(
+    authenticated_client: AsyncClient,
+) -> None:
+    """内容助手组件列表工具默认应优先返回项目建议组件，并在为空时回退全库。"""
+
+    workspace_id = await _create_workspace(authenticated_client, "AI 建议组件空间")
+    project_id = await _create_project(authenticated_client, workspace_id, "AI 建议组件项目")
+    suggested_response = await authenticated_client.post(
+        "/api/components",
+        json={
+            "workspace_id": workspace_id,
+            "name": "推荐指标卡",
+            "import_name": "SuggestedMetricCard",
+            "content": "<template><section>Suggested</section></template>",
+            "file_type": "vue",
+            "status": "active",
+        },
+    )
+    assert suggested_response.status_code == 200
+    suggested_publish_response = await authenticated_client.post(
+        f"/api/components/{suggested_response.json()['id']}/publish",
+        json={"release_name": None, "change_note": "发布建议组件"},
+    )
+    assert suggested_publish_response.status_code == 200
+    suggested_component = suggested_publish_response.json()
+    general_response = await authenticated_client.post(
+        "/api/components",
+        json={
+            "workspace_id": workspace_id,
+            "name": "全库图表",
+            "import_name": "GeneralChartBlock",
+            "content": "<template><section>General</section></template>",
+            "file_type": "vue",
+            "status": "active",
+        },
+    )
+    assert general_response.status_code == 200
+    general_publish_response = await authenticated_client.post(
+        f"/api/components/{general_response.json()['id']}/publish",
+        json={"release_name": None, "change_note": "发布全库组件"},
+    )
+    assert general_publish_response.status_code == 200
+    general_component = general_publish_response.json()
+    save_response = await authenticated_client.put(
+        f"/api/projects/{project_id}/suggested-components",
+        json={"component_ids": [suggested_component["id"]]},
+    )
+    assert save_response.status_code == 200
+
+    run_context = await _build_tool_run_context(
+        current=_build_auth_context(),
+        tool_scopes=COMPONENT_TOOL_READ_SCOPES,
+        workspace_id=workspace_id,
+        project_id=project_id,
+    )
+    list_tool = build_list_workspace_components_tool(get_session_factory())
+
+    suggested_result = await list_tool.entrypoint(run_context, limit=10)
+    fallback_result = await list_tool.entrypoint(run_context, keyword="全库", limit=10)
+    all_result = await list_tool.entrypoint(run_context, scope="all", limit=10)
+
+    assert suggested_result["source"] == "project_suggested"
+    assert suggested_result["fallback_reason"] is None
+    assert [item["component_code"] for item in suggested_result["items"]] == [suggested_component["code"]]
+    assert fallback_result["source"] == "workspace_all"
+    assert fallback_result["fallback_reason"] == "suggested_filter_empty"
+    assert [item["component_code"] for item in fallback_result["items"]] == [general_component["code"]]
+    assert all_result["source"] == "workspace_all"
+    assert all_result["fallback_reason"] is None
+    assert {item["component_code"] for item in all_result["items"]} == {
+        suggested_component["code"],
+        general_component["code"],
+    }
 
 
 async def test_workspace_render_assets_tool_should_include_video_assets(

@@ -99,6 +99,7 @@ class ProjectCreateRequest(BaseModel):
     theme_config_yaml: str | None = None
     style_spec_markdown: str = DEFAULT_PROJECT_STYLE_SPEC_MARKDOWN
     build_extra_assets_json: ProjectBuildExtraAssetsConfig = Field(default_factory=ProjectBuildExtraAssetsConfig)
+    suggested_component_source_style_id: int | None = Field(default=None, ge=1)
 
     @field_validator("base_font_size", mode="before")
     @classmethod
@@ -141,6 +142,7 @@ class ProjectUpdateRequest(BaseModel):
     theme_config_yaml: str | None = None
     style_spec_markdown: str | None = None
     build_extra_assets_json: ProjectBuildExtraAssetsConfig | None = None
+    suggested_component_source_style_id: int | None = Field(default=None, ge=1)
 
     @field_validator("base_font_size", mode="before")
     @classmethod

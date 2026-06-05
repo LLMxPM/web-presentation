@@ -8,6 +8,7 @@ import type {
   ListParams,
   PagedResponse,
   ProjectMenuMode,
+  SuggestedComponentsResponse,
   WorkspaceStyleImportResult,
   WorkspaceStyleImportValidationResult,
   WorkspaceStyleItem,
@@ -55,6 +56,27 @@ export async function listWorkspaceStyles(workspaceId: number, params: ListParam
 /** 获取工作空间样式详情。 */
 export async function getWorkspaceStyle(workspaceId: number, styleId: number) {
   const { data } = await http.get<WorkspaceStyleItem>(`/workspaces/${workspaceId}/styles/${styleId}`)
+  return data
+}
+
+/** 读取样式建议组件。 */
+export async function getWorkspaceStyleSuggestedComponents(workspaceId: number, styleId: number) {
+  const { data } = await http.get<SuggestedComponentsResponse>(
+    `/workspaces/${workspaceId}/styles/${styleId}/suggested-components`,
+  )
+  return data
+}
+
+/** 覆盖保存样式建议组件。 */
+export async function updateWorkspaceStyleSuggestedComponents(
+  workspaceId: number,
+  styleId: number,
+  componentIds: number[],
+) {
+  const { data } = await http.put<SuggestedComponentsResponse>(
+    `/workspaces/${workspaceId}/styles/${styleId}/suggested-components`,
+    { component_ids: componentIds },
+  )
   return data
 }
 

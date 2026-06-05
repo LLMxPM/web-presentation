@@ -71,7 +71,7 @@ production env 版中，同一个平台镜像会拆分为三个容器：
 - `backend`：执行 `uvicorn app.main:app --host 0.0.0.0 --port 8000 --no-access-log`
 - `gateway`：执行 `nginx -g 'daemon off;'`，托管 Editor 并代理 Backend/Runtime
 
-compose 默认跟随 `latest`。如果需要严格锁定 Runtime 与平台版本，可把对应 compose 文件中的 Runtime image 改为子项目发布的 `sha-<runtime_sha_short>` 标签。
+compose 默认跟随 `latest`。如果需要严格锁定 Runtime 与平台版本，应同时把对应 compose 文件中的平台 image 改为 `llmxpm/web-presentation:<release_tag>`，把 Runtime image 改为 `llmxpm/web-runtime-vue:<release_tag>` 或子项目发布的 `sha-<runtime_sha_short>` 标签。不要只回滚平台镜像或只回滚 Runtime 镜像；数据库迁移一旦前进，平台镜像必须仍然包含数据库 `alembic_version` 指向的 revision 文件。
 
 ## 关键访问关系
 

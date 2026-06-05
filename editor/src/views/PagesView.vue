@@ -48,6 +48,12 @@
             </template>
             建议资源
           </BaseButton>
+          <BaseButton variant="ghost" :disabled="!projectDetails" @click="openSuggestedComponentsDialog">
+            <template #icon>
+              <Layers class="h-4 w-4" />
+            </template>
+            建议组件
+          </BaseButton>
           <div class="page-card-size-control" role="group" aria-label="预览卡片大小">
             <button
               v-for="option in pageCardSizeOptions"
@@ -213,6 +219,14 @@
       @saved="handleProjectSuggestedReferenceAssetsSaved"
     />
 
+    <ProjectSuggestedComponentsDialog
+      v-model="suggestedComponentsDialogVisible"
+      :project-id="projectDetails?.id ?? null"
+      :workspace-id="workspaceId"
+      :project-name="projectDetails?.name ?? null"
+      @saved="handleProjectSuggestedComponentsSaved"
+    />
+
     <ProjectRouteConfigDialog v-model="routeConfigDialogVisible" :project="projectDetails" :loading="routeSaving"
       @save="handleRouteSave" />
 
@@ -237,6 +251,7 @@ import {
   ArrowLeft,
   Expand,
   Image,
+  Layers,
   Maximize2,
   Minimize2,
   Play,
@@ -286,6 +301,7 @@ import ProjectBuildDialog from '@/components/project/ProjectBuildDialog.vue'
 import ProjectIdentityDialog from '@/components/project/ProjectIdentityDialog.vue'
 import ProjectPresentationConfigDialog from '@/components/project/ProjectPresentationConfigDialog.vue'
 import ProjectRouteConfigDialog from '@/components/project/ProjectRouteConfigDialog.vue'
+import ProjectSuggestedComponentsDialog from '@/components/project/ProjectSuggestedComponentsDialog.vue'
 import ProjectSuggestedReferenceAssetsDialog from '@/components/project/ProjectSuggestedReferenceAssetsDialog.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseDialog from '@/components/ui/BaseDialog.vue'
@@ -300,6 +316,7 @@ import type {
   ProjectMenuMode,
   ProjectRouteBinding,
   ProjectRouteItemWrite,
+  SuggestedComponentItem,
   ProjectSuggestedReferenceAssetItem,
 } from '@/types/api'
 import { Message, createConfirm } from '@/utils/message'
@@ -454,6 +471,7 @@ const projectBuildResourceIssue = ref<ProjectBuildResourceIssueData | null>(null
 const projectIdentityDialogVisible = ref(false)
 const presentationConfigDialogVisible = ref(false)
 const suggestedReferenceAssetsDialogVisible = ref(false)
+const suggestedComponentsDialogVisible = ref(false)
 const routeConfigDialogVisible = ref(false)
 const archivedPagesDialogVisible = ref(false)
 const pageCopyDialogVisible = ref(false)
@@ -1211,6 +1229,13 @@ function openSuggestedReferenceAssetsDialog(): void {
 }
 
 /**
+ * 打开项目建议组件配置弹窗。
+ */
+function openSuggestedComponentsDialog(): void {
+  suggestedComponentsDialogVisible.value = true
+}
+
+/**
  * 打开项目路由配置弹窗。
  */
 function openRouteConfigDialog(): void {
@@ -1224,6 +1249,15 @@ function openRouteConfigDialog(): void {
 async function handleProjectSuggestedReferenceAssetsSaved(items: ProjectSuggestedReferenceAssetItem[]): Promise<void> {
   void items
   await queryClient.invalidateQueries({ queryKey: ['project-suggested-reference-assets', projectId.value] })
+}
+
+/**
+ * 项目建议组件保存后刷新相关缓存，供 AI 工具上下文和其它视图复用。
+ * @param items 最新建议组件摘要
+ */
+async function handleProjectSuggestedComponentsSaved(items: SuggestedComponentItem[]): Promise<void> {
+  void items
+  await queryClient.invalidateQueries({ queryKey: ['project-suggested-components', projectId.value] })
 }
 
 /**
@@ -1290,6 +1324,7 @@ async function handlePresentationConfigSave(payload: {
   menu_mode: ProjectMenuMode
   theme_key: string | null
   style_spec_markdown: string
+  suggested_component_source_style_id?: number | null
 }): Promise<void> {
   if (!projectDetails.value) {
     return

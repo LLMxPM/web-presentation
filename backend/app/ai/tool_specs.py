@@ -315,15 +315,20 @@ _COMPONENT_LIST_RESPONSE_EXAMPLE = {
     ],
 }
 
-_WORKSPACE_COMPONENT_LIST_RESPONSE_EXAMPLE = [
-    {
-        "name": "HeroCard",
-        "import_name": "HeroCard",
-        "description": "首页英雄区卡片。",
-        "component_code": "cmp_hero_card",
-        "current_version_no": 3,
-    }
-]
+_WORKSPACE_COMPONENT_LIST_RESPONSE_EXAMPLE = {
+    "source": "project_suggested",
+    "fallback_reason": None,
+    "total": 1,
+    "items": [
+        {
+            "name": "HeroCard",
+            "import_name": "HeroCard",
+            "description": "首页英雄区卡片。",
+            "component_code": "cmp_hero_card",
+            "current_version_no": 3,
+        }
+    ],
+}
 
 _WORKSPACE_COMPONENT_USAGE_RESPONSE_EXAMPLE = {
     "component_code": "cmp_hero_card",
@@ -806,8 +811,12 @@ _COORDINATOR_TOOL_SPECS = (
         '读取可用组件',
         'component_read',
         '组件读取',
-        '查询当前工作空间已发布且可被页面引用的组件摘要，支持按类型和关键字过滤。',
-        default_instructions='页面需要选择复用组件时先调用该工具；只返回已发布组件，未发布草稿不应被页面引用。',
+        '查询当前项目建议组件或工作空间全量已发布组件摘要，支持按类型和关键字过滤。',
+        default_instructions=(
+            '页面需要选择复用组件时先调用该工具；默认 scope=suggested，优先返回项目建议组件。'
+            '当没有项目上下文、没有建议组件或建议组件筛选为空时，工具会自动回退全工作空间已发布组件，'
+            '并通过 source 与 fallback_reason 说明来源；明确需要全库时传 scope=all。未发布草稿不应被页面引用。'
+        ),
         response_example=_WORKSPACE_COMPONENT_LIST_RESPONSE_EXAMPLE,
     ),
 
@@ -1386,7 +1395,7 @@ _COORDINATOR_GROUP_SPECS = (
     _group(
         "component_read",
         "组件读取",
-        "查询当前工作空间可直接用于页面生成或改写的已发布组件列表和引用用法；不负责组件草稿、版本审计、依赖分析或组件维护。",
+        "默认查询项目建议组件并可回退全工作空间已发布组件，同时提供组件引用用法；不负责组件草稿、版本审计、依赖分析或组件维护。",
         ("list_workspace_components", "get_workspace_component_usage"),
         required_context_fields=("workspace_id",),
         token_scopes=COMPONENT_TOOL_READ_SCOPES,

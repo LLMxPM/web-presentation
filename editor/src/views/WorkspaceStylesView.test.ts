@@ -68,6 +68,14 @@ vi.mock('@/components/project/WorkspaceStyleEditorDialog.vue', () => ({
   },
 }))
 
+vi.mock('@/components/project/WorkspaceStyleSuggestedComponentsDialog.vue', () => ({
+  default: {
+    props: ['modelValue', 'style'],
+    emits: ['update:modelValue', 'saved'],
+    template: '<div v-if="modelValue" data-testid="style-suggested-components-dialog">{{ style?.name }}</div>',
+  },
+}))
+
 import WorkspaceStylesView from './WorkspaceStylesView.vue'
 
 describe('WorkspaceStylesView', () => {
@@ -120,6 +128,16 @@ describe('WorkspaceStylesView', () => {
     expect(await screen.findByText('路演样式 · 样式详情')).toBeInTheDocument()
     expect(screen.getAllByText('1920 x 1080').length).toBeGreaterThan(0)
     expect(screen.getByText('使用强标题。')).toBeInTheDocument()
+  })
+
+  it('应在样式卡片上提供建议组件管理入口', async () => {
+    renderWorkspaceStylesView()
+
+    expect(await screen.findByText('路演样式')).toBeInTheDocument()
+
+    await fireEvent.click(screen.getByRole('button', { name: '管理 路演样式 建议组件' }))
+
+    expect(screen.getByTestId('style-suggested-components-dialog')).toHaveTextContent('路演样式')
   })
 
   it('勾选样式后应允许导出离线包', async () => {
