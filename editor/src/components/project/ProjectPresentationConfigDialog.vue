@@ -98,7 +98,7 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
 
-import { createWorkspaceStyle, type WorkspaceStylePayload } from '@/api/styles'
+import { createWorkspaceStyle, updateWorkspaceStyleSuggestedComponents, type WorkspaceStylePayload } from '@/api/styles'
 import ThemeSelectorField from '@/components/theme/ThemeSelectorField.vue'
 import PreviewSizePresetSelect from '@/components/preview-size/PreviewSizePresetSelect.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
@@ -183,6 +183,7 @@ const saveAsStyleInitialValue = computed<Partial<WorkspaceStylePayload>>(() => (
   theme_key: draft.themeKey,
   style_spec_markdown: draft.styleSpecMarkdown,
 }))
+type WorkspaceStyleEditorSavePayload = WorkspaceStylePayload & { suggested_component_ids?: number[] }
 
 /**
  * 根据项目详情刷新展示配置草稿。
@@ -293,13 +294,17 @@ function openSaveAsStyleDialog(): void {
  * 将当前项目样式草稿保存为工作空间样式。
  * @param payload 样式创建参数
  */
-async function handleSaveAsStyle(payload: WorkspaceStylePayload): Promise<void> {
+async function handleSaveAsStyle(payload: WorkspaceStyleEditorSavePayload): Promise<void> {
   if (!props.workspaceId) {
     return
   }
+  const { suggested_component_ids: suggestedComponentIds, ...stylePayload } = payload
   saveAsStyleSaving.value = true
   try {
-    await createWorkspaceStyle(props.workspaceId, payload)
+    const savedStyle = await createWorkspaceStyle(props.workspaceId, stylePayload)
+    if (suggestedComponentIds) {
+      await updateWorkspaceStyleSuggestedComponents(props.workspaceId, savedStyle.id, suggestedComponentIds)
+    }
     saveAsStyleDialogVisible.value = false
     Message.success('样式已保存到工作空间样式库。')
   } catch (error) {

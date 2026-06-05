@@ -3,7 +3,12 @@
   <div :class="compact ? 'space-y-1.5' : 'space-y-3'">
     <div v-if="!compact || label || hint || loading" class="flex items-center justify-between gap-3">
       <div>
-        <p v-if="label" class="text-[11px] font-semibold text-slate-500">{{ label }}</p>
+        <p
+          v-if="label"
+          :class="compact ? 'text-[11px] font-semibold text-slate-500' : 'ml-1 text-sm font-semibold text-slate-700'"
+        >
+          {{ label }}
+        </p>
         <p v-if="hint" class="mt-1 text-[11px] leading-5 text-slate-400">{{ hint }}</p>
       </div>
       <span v-if="loading" class="text-[11px] text-slate-400">正在加载主题...</span>

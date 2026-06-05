@@ -1,8 +1,8 @@
 /**
  * 文件功能：验证通用下拉选择组件的搜索过滤、单选与多选输出行为。
  */
-import { fireEvent, render, screen } from '@testing-library/vue'
-import { describe, expect, it } from 'vitest'
+import { fireEvent, render, screen, waitFor } from '@testing-library/vue'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import SearchableSelect from './SearchableSelect.vue'
 
@@ -11,6 +11,10 @@ function getEmittedEvents(view: ReturnType<typeof render>) {
 }
 
 describe('SearchableSelect', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
   it('应支持搜索过滤并输出单选结果', async () => {
     const view = render(SearchableSelect, {
       props: {
@@ -69,4 +73,62 @@ describe('SearchableSelect', () => {
     const events = getEmittedEvents(view)['update:modelValue'] ?? []
     expect(events[events.length - 1]?.[0]).toEqual(['logo', 'invert-logo'])
   })
+
+  it('向上展开时应按实际面板高度贴近触发器', async () => {
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 600 })
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1000 })
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      if (this.classList.contains('fixed')) {
+        return createRect({ top: 0, left: 0, width: 320, height: 180 })
+      }
+      return createRect({ top: 420, left: 40, width: 320, height: 40 })
+    })
+
+    render(SearchableSelect, {
+      props: {
+        modelValue: null,
+        options: [
+          { label: '浅海蓝', value: 'lightblue', description: 'lightblue' },
+          { label: '深海蓝', value: 'deepblue', description: 'deepblue' },
+        ],
+        placeholder: '请选择主题',
+      },
+    })
+
+    await fireEvent.click(screen.getByText('请选择主题'))
+
+    const dropdown = await findDropdownElement('浅海蓝')
+    await waitFor(() => {
+      expect(dropdown.style.top).toBe('232px')
+    })
+  })
 })
+
+/**
+ * 构造测试用 DOMRect，便于稳定模拟触发器与浮层尺寸。
+ */
+function createRect(rect: { top: number; left: number; width: number; height: number }): DOMRect {
+  return {
+    top: rect.top,
+    left: rect.left,
+    width: rect.width,
+    height: rect.height,
+    right: rect.left + rect.width,
+    bottom: rect.top + rect.height,
+    x: rect.left,
+    y: rect.top,
+    toJSON: () => ({}),
+  } as DOMRect
+}
+
+/**
+ * 从 Teleport 到 body 的节点中定位当前展开的下拉面板。
+ */
+async function findDropdownElement(optionText: string): Promise<HTMLElement> {
+  await screen.findByText(optionText)
+  const dropdown = Array.from(document.body.querySelectorAll('div')).find(element => (
+    element.classList.contains('fixed') && element.textContent?.includes(optionText)
+  ))
+  expect(dropdown).toBeTruthy()
+  return dropdown as HTMLElement
+}

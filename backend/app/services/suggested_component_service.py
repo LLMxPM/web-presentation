@@ -27,9 +27,17 @@ class SuggestedComponentService:
         self.project_repository = ProjectRepository(session)
         self.style_repository = WorkspaceStyleRepository(session)
 
-    async def list_style_component_items(self, workspace_id: int, style_id: int) -> list[SuggestedComponentItem]:
+    async def list_style_component_items(
+        self,
+        workspace_id: int,
+        style_id: int,
+        *,
+        include_unavailable: bool = False,
+    ) -> list[SuggestedComponentItem]:
         """读取样式建议组件摘要，按维护顺序返回。"""
 
+        if include_unavailable:
+            return await self._list_style_component_items_for_management(workspace_id, style_id)
         components = await self.list_style_components(workspace_id, style_id)
         return [self.dump_component_item(component) for component in components]
 
@@ -43,11 +51,49 @@ class SuggestedComponentService:
         project_id: int,
         *,
         workspace_id: int | None = None,
+        include_unavailable: bool = False,
     ) -> list[SuggestedComponentItem]:
         """读取项目建议组件快照摘要，按项目保存顺序返回。"""
 
+        if include_unavailable:
+            return await self._list_project_component_items_for_management(project_id, workspace_id=workspace_id)
         components = await self.list_project_components(project_id, workspace_id=workspace_id)
         return [self.dump_component_item(component) for component in components]
+
+    async def _list_style_component_items_for_management(
+        self,
+        workspace_id: int,
+        style_id: int,
+    ) -> list[SuggestedComponentItem]:
+        """读取样式管理界面使用的建议组件摘要，保留已失效组件并标注原因。"""
+
+        await self._get_style_or_raise(workspace_id, style_id)
+        statement = (
+            select(WorkspaceComponent)
+            .join(WorkspaceStyleSuggestedComponent, WorkspaceStyleSuggestedComponent.component_id == WorkspaceComponent.id)
+            .where(WorkspaceStyleSuggestedComponent.style_id == style_id)
+            .order_by(WorkspaceStyleSuggestedComponent.sort_order.asc(), WorkspaceStyleSuggestedComponent.id.asc())
+        )
+        components = list((await self.session.execute(statement)).scalars().all())
+        return [self.dump_component_item_for_management(component, workspace_id) for component in components]
+
+    async def _list_project_component_items_for_management(
+        self,
+        project_id: int,
+        *,
+        workspace_id: int | None = None,
+    ) -> list[SuggestedComponentItem]:
+        """读取项目管理界面使用的建议组件摘要，保留已失效组件并标注原因。"""
+
+        project = await self._get_project_or_raise(project_id, workspace_id=workspace_id)
+        statement = (
+            select(WorkspaceComponent)
+            .join(ProjectSuggestedComponent, ProjectSuggestedComponent.component_id == WorkspaceComponent.id)
+            .where(ProjectSuggestedComponent.project_id == project_id)
+            .order_by(ProjectSuggestedComponent.sort_order.asc(), ProjectSuggestedComponent.id.asc())
+        )
+        components = list((await self.session.execute(statement)).scalars().all())
+        return [self.dump_component_item_for_management(component, project.workspace_id) for component in components]
 
     async def list_style_components(self, workspace_id: int, style_id: int) -> list[WorkspaceComponent]:
         """读取样式关联的有效已发布组件模型列表。"""
@@ -341,5 +387,35 @@ class SuggestedComponentService:
                 "component_type": WorkspaceComponentType(component.component_type),
                 "summary": component.summary,
                 "current_version_no": component.current_version_no,
+                "available": True,
+                "unavailable_reason": None,
             }
         )
+
+    @classmethod
+    def dump_component_item_for_management(
+        cls,
+        component: WorkspaceComponent,
+        workspace_id: int,
+    ) -> SuggestedComponentItem:
+        """转换管理界面摘要，保留不可用组件并提示清理。"""
+
+        unavailable_reason = cls.resolve_unavailable_reason(component, workspace_id)
+        item = cls.dump_component_item(component)
+        item.available = unavailable_reason is None
+        item.unavailable_reason = unavailable_reason
+        return item
+
+    @staticmethod
+    def resolve_unavailable_reason(component: WorkspaceComponent, workspace_id: int) -> str | None:
+        """判断建议组件是否仍可用，并返回面向用户的清理提示。"""
+
+        if component.workspace_id != workspace_id:
+            return "组件不属于当前工作空间，请移除后保存。"
+        if component.deleted_at is not None:
+            return "组件已删除，请移除后保存。"
+        if component.status != RecordStatus.ACTIVE.value:
+            return "组件已归档，请移除后保存。"
+        if component.current_version_no <= 0:
+            return "组件未发布，请移除后保存。"
+        return None

@@ -19,6 +19,20 @@ vi.mock('@/api/catalog', () => ({
   listComponents: (...args: unknown[]) => mocked.listComponents(...args),
 }))
 
+vi.mock('@/components/component-preview/ComponentPreviewDialog.vue', () => ({
+  default: {
+    props: ['modelValue'],
+    template: '<section v-if="modelValue" data-testid="component-preview-dialog"><slot /></section>',
+  },
+}))
+
+vi.mock('@/components/component-preview/ComponentPreviewWorkbench.vue', () => ({
+  default: {
+    props: ['source', 'title', 'subtitle'],
+    template: '<div data-testid="component-preview-workbench">{{ title }} · {{ source?.componentName }} · {{ subtitle }}</div>',
+  },
+}))
+
 describe('ProjectSuggestedComponentsDialog', () => {
   const savedComponent: SuggestedComponentItem = {
     id: 1,
@@ -77,7 +91,7 @@ describe('ProjectSuggestedComponentsDialog', () => {
     })
 
     expect((await screen.findAllByText('指标卡片')).length).toBeGreaterThan(0)
-    await fireEvent.click(screen.getByRole('button', { name: /趋势图表/ }))
+    await fireEvent.click(screen.getByRole('button', { name: /^趋势图表/ }))
     await fireEvent.click(screen.getByRole('button', { name: '保存组件' }))
 
     await waitFor(() => {
@@ -90,6 +104,54 @@ describe('ProjectSuggestedComponentsDialog', () => {
     }))
     const savedEvents = emitted('saved') as Array<[SuggestedComponentItem[]]> | undefined
     expect(savedEvents?.[0]?.[0].map(item => item.id)).toEqual([1, 2])
+  })
+
+  it('应支持打开候选组件预览弹窗', async () => {
+    render(ProjectSuggestedComponentsDialog, {
+      props: {
+        modelValue: true,
+        projectId: 7,
+        workspaceId: 3,
+        projectName: '年度路演',
+      },
+    })
+
+    expect(await screen.findByLabelText('预览组件 趋势图表')).toBeInTheDocument()
+    await fireEvent.click(screen.getByLabelText('预览组件 趋势图表'))
+
+    expect(screen.getByTestId('component-preview-workbench')).toHaveTextContent('趋势图表 · 趋势图表 · CMP002 · v1 已发布')
+  })
+
+  it('应提示移除已不可用的已选组件', async () => {
+    mocked.getProjectSuggestedComponents.mockResolvedValue({
+      items: [{
+        ...savedComponent,
+        available: false,
+        unavailable_reason: '组件已删除，请移除后保存。',
+      }],
+    })
+    mocked.listComponents.mockResolvedValue({
+      items: [availableComponent],
+      total: 1,
+      page: 1,
+      page_size: 100,
+    })
+
+    render(ProjectSuggestedComponentsDialog, {
+      props: {
+        modelValue: true,
+        projectId: 7,
+        workspaceId: 3,
+        projectName: '年度路演',
+      },
+    })
+
+    expect(await screen.findByText('组件已删除，请移除后保存。')).toBeInTheDocument()
+    expect(screen.getByText('有 1 个建议组件已不可用，请移除后保存。')).toBeInTheDocument()
+
+    await fireEvent.click(screen.getByRole('button', { name: '保存组件' }))
+
+    expect(mocked.updateProjectSuggestedComponents).not.toHaveBeenCalled()
   })
 })
 

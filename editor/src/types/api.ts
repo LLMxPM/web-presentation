@@ -61,6 +61,8 @@ export interface SuggestedComponentItem {
   component_type: WorkspaceComponentType
   summary: string | null
   current_version_no: number
+  available?: boolean
+  unavailable_reason?: string | null
 }
 
 export interface SuggestedComponentsResponse {
@@ -161,6 +163,16 @@ export interface WorkspaceStylePackageFontSummary {
   action: 'create' | 'reuse' | string
 }
 
+export interface WorkspaceStylePackageComponentSummary {
+  source_component_code: string
+  source_version_no: number
+  name: string
+  import_name: string
+  component_type: WorkspaceComponentType | string
+  dependencies: string[]
+  action: 'create' | 'reuse' | string
+}
+
 export interface WorkspaceStyleImportValidationResult {
   valid: boolean
   schema_version: number | null
@@ -168,6 +180,7 @@ export interface WorkspaceStyleImportValidationResult {
   themes: WorkspaceStylePackageThemeSummary[]
   assets: WorkspaceStylePackageAssetSummary[]
   fonts: WorkspaceStylePackageFontSummary[]
+  components: WorkspaceStylePackageComponentSummary[]
   errors: string[]
 }
 
@@ -176,6 +189,7 @@ export interface WorkspaceStyleImportResult {
   themes: WorkspaceStylePackageThemeSummary[]
   assets: WorkspaceStylePackageAssetSummary[]
   fonts: WorkspaceStylePackageFontSummary[]
+  components: WorkspaceStylePackageComponentSummary[]
 }
 
 export interface ProjectBuildCreateRequest {

@@ -192,7 +192,7 @@
         <div class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
           <p class="text-sm font-bold text-slate-700">{{ importFile?.name || '未选择文件' }}</p>
           <p v-if="importValidation" class="mt-1 text-xs text-slate-500">
-            样式 {{ importValidation.styles.length }} 个，主题 {{ importValidation.themes.length }} 个，资源 {{ importValidation.assets.length }} 个，字体 {{ importValidation.fonts.length }} 个
+            样式 {{ importValidation.styles.length }} 个，组件 {{ importValidation.components.length }} 个，主题 {{ importValidation.themes.length }} 个，资源 {{ importValidation.assets.length }} 个，字体 {{ importValidation.fonts.length }} 个
           </p>
           <p v-else-if="importValidatePending" class="mt-1 text-xs text-slate-500">正在预检样式离线包...</p>
         </div>
@@ -215,7 +215,16 @@
             </div>
           </section>
 
-          <section class="grid gap-3 lg:grid-cols-3">
+          <section class="grid gap-3 lg:grid-cols-2">
+            <div class="rounded-xl border border-slate-200 bg-white p-4">
+              <h4 class="text-sm font-bold text-slate-700">组件</h4>
+              <div class="mt-2 max-h-32 space-y-1 overflow-y-auto text-xs text-slate-500">
+                <p v-if="importValidation.components.length === 0">无组件</p>
+                <p v-for="component in importValidation.components" :key="`${component.source_component_code}-${component.source_version_no}`">
+                  {{ component.name }} · {{ component.import_name }} · {{ resolveImportActionText(component.action) }}
+                </p>
+              </div>
+            </div>
             <div class="rounded-xl border border-slate-200 bg-white p-4">
               <h4 class="text-sm font-bold text-slate-700">主题</h4>
               <div class="mt-2 max-h-32 space-y-1 overflow-y-auto text-xs text-slate-500">
@@ -276,6 +285,7 @@ import {
   exportWorkspaceStylePackage,
   importWorkspaceStylePackage,
   listWorkspaceStyles,
+  updateWorkspaceStyleSuggestedComponents,
   updateWorkspaceStyle,
   validateWorkspaceStylePackageImport,
   type WorkspaceStylePayload,
@@ -314,6 +324,8 @@ const suggestedComponentsDialogVisible = ref(false)
 const suggestedComponentsStyle = ref<WorkspaceStyleItem | null>(null)
 
 const workspaceTitle = computed(() => workspaceDetails.value?.name ? `${workspaceDetails.value.name} · 样式库` : '样式库')
+
+type WorkspaceStyleEditorSavePayload = WorkspaceStylePayload & { suggested_component_ids?: number[] }
 
 onMounted(() => {
   void loadWorkspace()
@@ -534,16 +546,18 @@ function resolveImportActionText(action: string): string {
 /**
  * 创建或更新样式。
  */
-async function saveStyle(payload: WorkspaceStylePayload): Promise<void> {
+async function saveStyle(payload: WorkspaceStyleEditorSavePayload): Promise<void> {
   if (!workspaceId.value) {
     return
   }
+  const { suggested_component_ids: suggestedComponentIds, ...stylePayload } = payload
   saving.value = true
   try {
-    if (editingStyle.value) {
-      await updateWorkspaceStyle(workspaceId.value, editingStyle.value.id, payload)
-    } else {
-      await createWorkspaceStyle(workspaceId.value, payload)
+    const savedStyle = editingStyle.value
+      ? await updateWorkspaceStyle(workspaceId.value, editingStyle.value.id, stylePayload)
+      : await createWorkspaceStyle(workspaceId.value, stylePayload)
+    if (suggestedComponentIds) {
+      await updateWorkspaceStyleSuggestedComponents(workspaceId.value, savedStyle.id, suggestedComponentIds)
     }
     editorVisible.value = false
     editingStyle.value = null

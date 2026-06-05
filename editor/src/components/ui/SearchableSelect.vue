@@ -225,12 +225,26 @@ watch(open, async (visible) => {
     searchKeyword.value = ''
     return
   }
+  dropdownStyle.value = {}
+  panelMaxHeight.value = 348
+  optionsPanelMaxHeight.value = 280
   await nextTick()
   syncDropdownPosition()
   if (props.searchable) {
     searchInputRef.value?.focus()
   }
 })
+
+watch(
+  () => [searchKeyword.value, props.options.length] as const,
+  async () => {
+    if (!open.value) {
+      return
+    }
+    await nextTick()
+    syncDropdownPosition()
+  },
+)
 
 /**
  * 打开或关闭下拉面板，并在展开后同步浮层位置。
@@ -264,10 +278,12 @@ function syncDropdownPosition() {
   const spaceAbove = rect.top - margin
   const shouldOpenAbove = spaceBelow < 260 && spaceAbove > spaceBelow
   const availableHeight = Math.max(180, Math.min(360, shouldOpenAbove ? spaceAbove : spaceBelow))
+  const renderedHeight = dropdownRef.value?.getBoundingClientRect().height ?? 0
+  const positionHeight = renderedHeight > 0 ? Math.min(renderedHeight, availableHeight) : availableHeight
   panelMaxHeight.value = availableHeight
   const top = shouldOpenAbove
-    ? Math.max(margin, rect.top - panelMaxHeight.value - 8)
-    : Math.min(window.innerHeight - margin - panelMaxHeight.value, rect.bottom + 8)
+    ? Math.max(margin, rect.top - positionHeight - 8)
+    : Math.min(window.innerHeight - margin - positionHeight, rect.bottom + 8)
   const left = Math.min(rect.left, window.innerWidth - panelWidth - margin)
 
   optionsPanelMaxHeight.value = Math.max(140, panelMaxHeight.value - 68)

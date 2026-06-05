@@ -115,7 +115,11 @@ async def list_workspace_style_suggested_components(
 ) -> SuggestedComponentsResponse:
     """读取工作空间样式建议组件列表。"""
 
-    items = await SuggestedComponentService(session).list_style_component_items(workspace_id, style_id)
+    items = await SuggestedComponentService(session).list_style_component_items(
+        workspace_id,
+        style_id,
+        include_unavailable=True,
+    )
     return SuggestedComponentsResponse(items=items)
 
 

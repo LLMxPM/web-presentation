@@ -108,7 +108,10 @@ async def list_project_suggested_components(
     """读取项目建议组件快照列表。"""
 
     await ProjectService(session).get(project_id, user_id=current.user.id)
-    items = await SuggestedComponentService(session).list_project_component_items(project_id)
+    items = await SuggestedComponentService(session).list_project_component_items(
+        project_id,
+        include_unavailable=True,
+    )
     return SuggestedComponentsResponse(items=items)
 
 

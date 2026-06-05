@@ -104,9 +104,13 @@ async def test_workspace_style_suggested_components_should_save_published_compon
         "component_type",
         "summary",
         "current_version_no",
+        "available",
+        "unavailable_reason",
     }
     assert "content" not in items[0]
     assert items[0]["current_version_no"] == 1
+    assert items[0]["available"] is True
+    assert items[0]["unavailable_reason"] is None
 
     get_response = await authenticated_client.get(
         f"/api/workspaces/{workspace_id}/styles/{style_id}/suggested-components"
@@ -147,6 +151,56 @@ async def test_suggested_components_should_reject_invalid_or_unpublished_compone
         )
         assert project_response.status_code == 400
         assert project_response.json()["code"] == "PROJECT_SUGGESTED_COMPONENT_INVALID"
+
+
+async def test_suggested_components_should_keep_unavailable_items_for_cleanup(
+    authenticated_client: AsyncClient,
+) -> None:
+    """管理接口应显示已失效建议组件，并提示用户移除后保存。"""
+
+    workspace_id = await _create_workspace(authenticated_client, "建议组件清理空间")
+    style_id = await _create_style(authenticated_client, workspace_id, "cleanup", "清理样式")
+    project_id = await _create_project(authenticated_client, workspace_id, "建议组件清理项目")
+    deleted_component = await _create_component(authenticated_client, workspace_id, "旧组件", "LegacyBlock")
+    active_component = await _create_component(authenticated_client, workspace_id, "新组件", "FreshBlock")
+
+    style_save_response = await authenticated_client.put(
+        f"/api/workspaces/{workspace_id}/styles/{style_id}/suggested-components",
+        json={"component_ids": [deleted_component["id"], active_component["id"]]},
+    )
+    assert style_save_response.status_code == 200
+    project_save_response = await authenticated_client.put(
+        f"/api/projects/{project_id}/suggested-components",
+        json={"component_ids": [deleted_component["id"], active_component["id"]]},
+    )
+    assert project_save_response.status_code == 200
+
+    delete_response = await authenticated_client.delete(f"/api/components/{deleted_component['id']}")
+    assert delete_response.status_code == 200
+
+    style_get_response = await authenticated_client.get(
+        f"/api/workspaces/{workspace_id}/styles/{style_id}/suggested-components"
+    )
+    assert style_get_response.status_code == 200
+    style_items = style_get_response.json()["items"]
+    assert [item["id"] for item in style_items] == [deleted_component["id"], active_component["id"]]
+    assert style_items[0]["available"] is False
+    assert style_items[0]["unavailable_reason"] == "组件已删除，请移除后保存。"
+    assert style_items[1]["available"] is True
+
+    project_get_response = await authenticated_client.get(f"/api/projects/{project_id}/suggested-components")
+    assert project_get_response.status_code == 200
+    project_items = project_get_response.json()["items"]
+    assert [item["id"] for item in project_items] == [deleted_component["id"], active_component["id"]]
+    assert project_items[0]["available"] is False
+    assert project_items[0]["unavailable_reason"] == "组件已删除，请移除后保存。"
+
+    cleanup_response = await authenticated_client.put(
+        f"/api/workspaces/{workspace_id}/styles/{style_id}/suggested-components",
+        json={"component_ids": [active_component["id"]]},
+    )
+    assert cleanup_response.status_code == 200
+    assert [item["id"] for item in cleanup_response.json()["items"]] == [active_component["id"]]
 
 
 async def test_style_copy_and_project_apply_should_copy_suggested_component_snapshots(

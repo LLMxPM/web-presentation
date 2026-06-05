@@ -198,6 +198,18 @@ class WorkspaceStylePackageFontSummary(SchemaBase):
     action: str = "create"
 
 
+class WorkspaceStylePackageComponentSummary(SchemaBase):
+    """样式离线包中的组件摘要。"""
+
+    source_component_code: str
+    source_version_no: int
+    name: str
+    import_name: str
+    component_type: str
+    dependencies: list[str] = Field(default_factory=list)
+    action: str = "create"
+
+
 class WorkspaceStyleImportValidationResult(SchemaBase):
     """样式离线包导入预检结果。"""
 
@@ -207,6 +219,7 @@ class WorkspaceStyleImportValidationResult(SchemaBase):
     themes: list[WorkspaceStylePackageThemeSummary] = Field(default_factory=list)
     assets: list[WorkspaceStylePackageAssetSummary] = Field(default_factory=list)
     fonts: list[WorkspaceStylePackageFontSummary] = Field(default_factory=list)
+    components: list[WorkspaceStylePackageComponentSummary] = Field(default_factory=list)
     errors: list[str] = Field(default_factory=list)
 
 
@@ -217,6 +230,7 @@ class WorkspaceStyleImportResult(SchemaBase):
     themes: list[WorkspaceStylePackageThemeSummary] = Field(default_factory=list)
     assets: list[WorkspaceStylePackageAssetSummary] = Field(default_factory=list)
     fonts: list[WorkspaceStylePackageFontSummary] = Field(default_factory=list)
+    components: list[WorkspaceStylePackageComponentSummary] = Field(default_factory=list)
 
 
 class WorkspaceStyleItem(SchemaBase):

@@ -1,4 +1,4 @@
-"""文件功能：构建、预检和导入工作空间样式离线包，携带样式引用的主题、资源与字体配置。"""
+"""文件功能：构建、预检和导入工作空间样式离线包，携带样式引用的主题、建议组件、资源与字体配置。"""
 
 from __future__ import annotations
 
@@ -10,13 +10,18 @@ from typing import Any
 
 from pydantic import ValidationError
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.code_generator import DEFAULT_CODE_RETRY_LIMIT, is_code_unique_integrity_error
 from app.core.exceptions import AppException
+from app.core.runtime_module_policy import load_runtime_kit_manifest
+from app.core.text_normalizer import normalize_text_to_lf
 from app.core.time_utils import utc_now
 from app.models.asset import WorkspaceAsset
 from app.models.enums import AssetType, RecordStatus
 from app.models.font import WorkspaceFontConfig
+from app.models.workspace_component import WorkspaceComponent
 from app.models.workspace_style import WorkspaceStyle
 from app.models.workspace_theme import WorkspaceTheme
 from app.repositories.workspace_repository import WorkspaceRepository
@@ -32,6 +37,8 @@ from app.schemas.workspace_style import (
     WorkspaceStylePackageThemeSummary,
 )
 from app.services.asset_service import AssetService
+from app.services.component_share_package_service import ComponentSharePackageService, PackageComponent
+from app.services.workspace_style_package_components import WorkspaceStylePackageComponentService
 from app.services.workspace_style_package_format import (
     STYLE_PACKAGE_SCHEMA_VERSION,
     PackageAsset,
@@ -55,21 +62,36 @@ class WorkspaceStylePackageService:
         self.asset_service = AssetService(session)
 
     async def export_package(self, *, workspace_id: int, style_ids: list[int]) -> tuple[bytes, str]:
-        """按样式 ID 导出离线包，自动携带引用主题及主题依赖。"""
+        """按样式 ID 导出离线包，自动携带引用主题、建议组件及其依赖。"""
 
         if await self.workspace_repository.get_by_id(workspace_id) is None:
             raise AppException(status_code=404, code="WORKSPACE_NOT_FOUND", detail="工作空间不存在。")
 
         styles = await self._load_export_styles(workspace_id, style_ids)
         themes = await self._collect_export_themes(workspace_id, styles)
-        assets, font_configs = await self._collect_export_dependencies(workspace_id, list(themes.values()))
+        theme_assets, theme_font_configs = await self._collect_export_dependencies(workspace_id, list(themes.values()))
+        style_component_service = WorkspaceStylePackageComponentService(self.session)
+        suggested_components_by_style = await style_component_service.collect_style_suggested_components(workspace_id, styles)
+        root_components = style_component_service.deduplicate_components(
+            component
+            for components in suggested_components_by_style.values()
+            for component in components
+        )
+        component_package_service = ComponentSharePackageService(self.session)
+        component_snapshots = await component_package_service._build_export_component_closure(root_components)
+        component_assets = await component_package_service._collect_export_assets(workspace_id, component_snapshots)
+        component_font_configs = await component_package_service._collect_export_font_configs(workspace_id, component_snapshots)
+        assets = self._deduplicate_assets([*theme_assets, *component_assets])
+        font_configs = self._deduplicate_font_configs([*theme_font_configs, *component_font_configs])
         WorkspaceStylePackagePayloads.assert_unique_asset_hash_metadata(assets)
         archive_content = await self._build_zip_archive(
             workspace_id=workspace_id,
             styles=styles,
+            suggested_components_by_style=suggested_components_by_style,
             themes=list(themes.values()),
             assets=assets,
             font_configs=font_configs,
+            component_snapshots=component_snapshots,
         )
         return archive_content, WorkspaceStylePackagePayloads.build_export_filename(styles)
 
@@ -77,13 +99,16 @@ class WorkspaceStylePackageService:
         """预检样式离线包，不写入数据库。"""
 
         parsed = WorkspaceStylePackageFormat.parse_package(archive_content)
-        return await self._validate_parsed_package(workspace_id, parsed)
+        package_components = WorkspaceStylePackageComponentService(self.session).parse_package_components(archive_content)
+        return await self._validate_parsed_package(workspace_id, parsed, package_components)
 
     async def import_package(self, *, workspace_id: int, archive_content: bytes, operator_id: int) -> WorkspaceStyleImportResult:
-        """正式导入样式离线包，按资源、字体、主题、样式顺序写入。"""
+        """正式导入样式离线包，按资源、字体、主题、组件、样式顺序写入。"""
 
         parsed = WorkspaceStylePackageFormat.parse_package(archive_content)
-        validation = await self._validate_parsed_package(workspace_id, parsed)
+        style_component_service = WorkspaceStylePackageComponentService(self.session)
+        package_components = style_component_service.parse_package_components(archive_content)
+        validation = await self._validate_parsed_package(workspace_id, parsed, package_components)
         if not validation.valid:
             raise AppException(
                 status_code=400,
@@ -91,17 +116,37 @@ class WorkspaceStylePackageService:
                 detail="样式离线包预检未通过：" + "；".join(validation.errors),
             )
 
-        await self._import_assets(workspace_id, parsed.assets)
-        await self._import_font_configs(workspace_id, parsed.font_configs)
-        await self._import_themes(workspace_id, parsed.themes, operator_id)
-        await self._import_styles(workspace_id, parsed.styles, operator_id)
-        await self.session.commit()
-        return WorkspaceStyleImportResult(
-            styles=validation.styles,
-            themes=validation.themes,
-            assets=validation.assets,
-            fonts=validation.fonts,
-        )
+        last_error: IntegrityError | None = None
+        for _ in range(DEFAULT_CODE_RETRY_LIMIT):
+            try:
+                await self._import_assets(workspace_id, parsed.assets)
+                await self._import_font_configs(workspace_id, parsed.font_configs)
+                await self._import_themes(workspace_id, parsed.themes, operator_id)
+                component_mapping = await style_component_service.import_or_reuse_components(
+                    workspace_id,
+                    package_components,
+                    operator_id,
+                )
+                await self._import_styles(workspace_id, parsed.styles, operator_id, component_mapping)
+                await self.session.commit()
+                return WorkspaceStyleImportResult(
+                    styles=validation.styles,
+                    themes=validation.themes,
+                    assets=validation.assets,
+                    fonts=validation.fonts,
+                    components=validation.components,
+                )
+            except IntegrityError as error:
+                await self.session.rollback()
+                if not is_code_unique_integrity_error(error, WorkspaceComponent):
+                    raise
+                last_error = error
+
+        raise AppException(
+            status_code=409,
+            code="CODE_GENERATION_CONFLICT",
+            detail="业务编码生成遇到并发冲突，请稍后重试。",
+        ) from last_error
 
     async def _load_export_styles(self, workspace_id: int, style_ids: list[int]) -> list[WorkspaceStyle]:
         """读取并校验待导出的样式。"""
@@ -158,6 +203,32 @@ class WorkspaceStylePackageService:
                 fonts_by_id[font_config.id] = font_config
         return list(assets_by_id.values()), list(fonts_by_id.values())
 
+    @staticmethod
+    def _deduplicate_assets(assets: list[WorkspaceAsset]) -> list[WorkspaceAsset]:
+        """按资源 ID 去重并保留依赖收集顺序。"""
+
+        result: list[WorkspaceAsset] = []
+        seen_ids: set[int] = set()
+        for asset in assets:
+            if asset.id in seen_ids:
+                continue
+            seen_ids.add(asset.id)
+            result.append(asset)
+        return result
+
+    @staticmethod
+    def _deduplicate_font_configs(font_configs: list[WorkspaceFontConfig]) -> list[WorkspaceFontConfig]:
+        """按字体配置 ID 去重并保留依赖收集顺序。"""
+
+        result: list[WorkspaceFontConfig] = []
+        seen_ids: set[int] = set()
+        for font_config in font_configs:
+            if font_config.id in seen_ids:
+                continue
+            seen_ids.add(font_config.id)
+            result.append(font_config)
+        return result
+
     async def _get_asset_or_raise(self, workspace_id: int, asset_id: int, theme_name: str) -> WorkspaceAsset:
         """读取主题依赖资源，不存在时阻断导出。"""
 
@@ -195,29 +266,36 @@ class WorkspaceStylePackageService:
         *,
         workspace_id: int,
         styles: list[WorkspaceStyle],
+        suggested_components_by_style: dict[int, list[WorkspaceComponent]],
         themes: list[WorkspaceTheme],
         assets: list[WorkspaceAsset],
         font_configs: list[WorkspaceFontConfig],
+        component_snapshots: list[Any],
     ) -> bytes:
         """按标准目录结构生成样式离线包 Zip。"""
 
         buffer = io.BytesIO()
-        suggested_component_service = SuggestedComponentService(self.session)
+        component_package_service = ComponentSharePackageService(self.session)
+        style_component_service = WorkspaceStylePackageComponentService(self.session)
+        runtime_manifest_version = str(load_runtime_kit_manifest().get("version") or "")
         style_entries: list[dict[str, Any]] = []
         for style in styles:
             style_payload = WorkspaceStylePackagePayloads.build_style_payload(style)
-            suggested_components = await suggested_component_service.list_style_component_items(workspace_id, style.id)
-            style_payload["suggested_components"] = [
-                item.model_dump(mode="json")
-                for item in suggested_components
-            ]
+            style_payload["suggested_components"] = style_component_service.build_style_suggested_component_payloads(
+                suggested_components_by_style.get(style.id, [])
+            )
             style_entries.append(style_payload)
         theme_entries = [await self._build_theme_payload(theme) for theme in themes]
         asset_entries = [WorkspaceStylePackagePayloads.build_asset_payload(asset) for asset in assets]
         font_entries = [WorkspaceStylePackagePayloads.build_font_payload(item) for item in font_configs]
+        component_entries = [
+            component_package_service._build_component_manifest_entry(snapshot)
+            for snapshot in component_snapshots
+        ]
         manifest = {
             "schema_version": STYLE_PACKAGE_SCHEMA_VERSION,
             "exported_at": utc_now().isoformat(),
+            "runtime_kit_manifest_version": runtime_manifest_version,
             "styles": [
                 {
                     "key": item["key"],
@@ -231,6 +309,7 @@ class WorkspaceStylePackageService:
                 {"key": item["key"], "name": item["name"]}
                 for item in theme_entries
             ],
+            "components": component_entries,
             "assets": [
                 {
                     "name": item["name"],
@@ -249,6 +328,14 @@ class WorkspaceStylePackageService:
                 archive.writestr(f"styles/{style_payload['key']}.json", WorkspaceStylePackageFormat.dump_json(style_payload))
             for theme_payload in theme_entries:
                 archive.writestr(f"themes/{theme_payload['key']}.json", WorkspaceStylePackageFormat.dump_json(theme_payload))
+            for snapshot in component_snapshots:
+                base_path = f"components/{snapshot.component.code}"
+                archive.writestr(
+                    f"{base_path}/component.json",
+                    WorkspaceStylePackageFormat.dump_json(component_package_service._build_component_payload(snapshot)),
+                )
+                archive.writestr(f"{base_path}/index.vue", normalize_text_to_lf(snapshot.version.content))
+                archive.writestr(f"{base_path}/preview.schema.json", snapshot.version.preview_schema or "{}")
             for asset in assets:
                 asset_payload = WorkspaceStylePackagePayloads.build_asset_payload(asset)
                 asset_base_path = f"assets/{asset.file_hash}"
@@ -260,7 +347,12 @@ class WorkspaceStylePackageService:
             archive.writestr("fonts/font-configs.json", WorkspaceStylePackageFormat.dump_json(font_entries))
         return buffer.getvalue()
 
-    async def _validate_parsed_package(self, workspace_id: int, parsed: ParsedStylePackage) -> WorkspaceStyleImportValidationResult:
+    async def _validate_parsed_package(
+        self,
+        workspace_id: int,
+        parsed: ParsedStylePackage,
+        package_components: list[PackageComponent],
+    ) -> WorkspaceStyleImportValidationResult:
         """对已解析离线包执行跨对象预检。"""
 
         if await self.workspace_repository.get_by_id(workspace_id) is None:
@@ -275,6 +367,16 @@ class WorkspaceStylePackageService:
         font_summaries = await self._build_font_summaries(workspace_id, parsed.font_configs, parsed.assets, errors)
         theme_summaries = await self._build_theme_summaries(workspace_id, parsed.themes, parsed.assets, parsed.font_configs, errors)
         style_summaries = await self._build_style_summaries(workspace_id, parsed.styles, parsed.themes, errors)
+        style_component_service = WorkspaceStylePackageComponentService(self.session)
+        component_summaries = await style_component_service.build_component_summaries(workspace_id, package_components, errors)
+        await style_component_service.validate_component_imports(workspace_id, package_components, errors)
+        style_component_service.validate_package_component_integrity(
+            parsed.styles,
+            package_components,
+            parsed.assets,
+            parsed.font_configs,
+            errors,
+        )
         return WorkspaceStyleImportValidationResult(
             valid=not errors,
             schema_version=schema_version,
@@ -282,6 +384,7 @@ class WorkspaceStylePackageService:
             themes=theme_summaries,
             assets=asset_summaries,
             fonts=font_summaries,
+            components=component_summaries,
             errors=errors,
         )
 
@@ -585,36 +688,41 @@ class WorkspaceStylePackageService:
             )
         await self.session.flush()
 
-    async def _import_styles(self, workspace_id: int, package_styles: list[PackageStyle], operator_id: int) -> None:
-        """导入或复用包内样式。"""
+    async def _import_styles(
+        self,
+        workspace_id: int,
+        package_styles: list[PackageStyle],
+        operator_id: int,
+        component_mapping: dict[tuple[str, int], WorkspaceComponent],
+    ) -> None:
+        """导入或复用包内样式，并按包内声明重建样式建议组件关联。"""
 
         for package_style in package_styles:
             payload = WorkspaceStylePackagePayloads.normalize_style_payload(package_style.payload)
-            if await self.style_repository.get_by_key(workspace_id, str(payload["key"])) is not None:
-                continue
-            style = WorkspaceStyle(
-                workspace_id=workspace_id,
-                key=str(payload["key"]),
-                name=str(payload["name"]),
-                description=payload.get("description"),
-                page_width=int(payload["page_width"]),
-                page_height=int(payload["page_height"]),
-                base_font_size=str(payload["base_font_size"]),
-                icon_default_stroke_width=int(payload["icon_default_stroke_width"]),
-                show_pdf_export_button=bool(payload["show_pdf_export_button"]),
-                menu_mode=str(payload["menu_mode"]),
-                theme_key=payload.get("theme_key"),
-                style_spec_markdown=str(payload.get("style_spec_markdown") or ""),
-                created_by=operator_id,
-                updated_by=operator_id,
-            )
-            self.session.add(style)
-            await self.session.flush()
-            raw_suggested_components = package_style.payload.get("suggested_components")
-            suggested_component_summaries = raw_suggested_components if isinstance(raw_suggested_components, list) else []
-            suggested_component_ids = await SuggestedComponentService(self.session).find_package_component_ids(
+            style = await self.style_repository.get_by_key(workspace_id, str(payload["key"]))
+            if style is None:
+                style = WorkspaceStyle(
+                    workspace_id=workspace_id,
+                    key=str(payload["key"]),
+                    name=str(payload["name"]),
+                    description=payload.get("description"),
+                    page_width=int(payload["page_width"]),
+                    page_height=int(payload["page_height"]),
+                    base_font_size=str(payload["base_font_size"]),
+                    icon_default_stroke_width=int(payload["icon_default_stroke_width"]),
+                    show_pdf_export_button=bool(payload["show_pdf_export_button"]),
+                    menu_mode=str(payload["menu_mode"]),
+                    theme_key=payload.get("theme_key"),
+                    style_spec_markdown=str(payload.get("style_spec_markdown") or ""),
+                    created_by=operator_id,
+                    updated_by=operator_id,
+                )
+                self.session.add(style)
+                await self.session.flush()
+            suggested_component_ids = await WorkspaceStylePackageComponentService(self.session).resolve_style_suggested_component_ids(
                 workspace_id,
-                [item for item in suggested_component_summaries if isinstance(item, dict)],
+                package_style,
+                component_mapping,
             )
             await SuggestedComponentService(self.session).replace_style_components(
                 workspace_id,

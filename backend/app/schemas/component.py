@@ -145,6 +145,8 @@ class SuggestedComponentItem(SchemaBase):
     component_type: WorkspaceComponentType
     summary: str | None
     current_version_no: int
+    available: bool = True
+    unavailable_reason: str | None = None
 
 
 class SuggestedComponentsResponse(BaseModel):

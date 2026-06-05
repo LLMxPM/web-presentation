@@ -1,7 +1,7 @@
 /**
  * 文件功能：验证工作空间样式库页面的详情查看、导出和导入入口。
  */
-import { fireEvent, render, screen } from '@testing-library/vue'
+import { fireEvent, render, screen, waitFor } from '@testing-library/vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocked = vi.hoisted(() => ({
@@ -13,6 +13,7 @@ const mocked = vi.hoisted(() => ({
   importWorkspaceStylePackage: vi.fn(),
   listWorkspaceStyles: vi.fn(),
   updateWorkspaceStyle: vi.fn(),
+  updateWorkspaceStyleSuggestedComponents: vi.fn(),
   validateWorkspaceStylePackageImport: vi.fn(),
   style: {
     id: 9,
@@ -57,6 +58,7 @@ vi.mock('@/api/styles', () => ({
   importWorkspaceStylePackage: (...args: unknown[]) => mocked.importWorkspaceStylePackage(...args),
   listWorkspaceStyles: (...args: unknown[]) => mocked.listWorkspaceStyles(...args),
   updateWorkspaceStyle: (...args: unknown[]) => mocked.updateWorkspaceStyle(...args),
+  updateWorkspaceStyleSuggestedComponents: (...args: unknown[]) => mocked.updateWorkspaceStyleSuggestedComponents(...args),
   validateWorkspaceStylePackageImport: (...args: unknown[]) => mocked.validateWorkspaceStylePackageImport(...args),
 }))
 
@@ -64,7 +66,29 @@ vi.mock('@/components/project/WorkspaceStyleEditorDialog.vue', () => ({
   default: {
     props: ['modelValue'],
     emits: ['update:modelValue', 'save'],
-    template: '<div data-testid="style-editor-dialog"></div>',
+    template: `
+      <div v-if="modelValue" data-testid="style-editor-dialog">
+        <button
+          type="button"
+          @click="$emit('save', {
+            key: 'pitch',
+            name: '路演样式',
+            description: '适合路演展示。',
+            page_width: 1920,
+            page_height: 1080,
+            base_font_size: '18px',
+            icon_default_stroke_width: 2,
+            show_pdf_export_button: true,
+            menu_mode: 'preview',
+            theme_key: 'default',
+            style_spec_markdown: '## 版式\\n- 使用强标题。',
+            suggested_component_ids: [1, 2],
+          })"
+        >
+          提交样式
+        </button>
+      </div>
+    `,
   },
 }))
 
@@ -95,6 +119,15 @@ describe('WorkspaceStylesView', () => {
       valid: true,
       schema_version: 2,
       styles: [{ key: 'pitch', name: '路演样式', theme_key: 'default', action: 'create' }],
+      components: [{
+        source_component_code: 'CMP001',
+        source_version_no: 1,
+        name: '路演卡片',
+        import_name: 'PitchCard',
+        component_type: '内容区块',
+        dependencies: [],
+        action: 'create',
+      }],
       themes: [],
       assets: [],
       fonts: [],
@@ -102,10 +135,22 @@ describe('WorkspaceStylesView', () => {
     })
     mocked.importWorkspaceStylePackage.mockResolvedValue({
       styles: [{ key: 'pitch', name: '路演样式', theme_key: 'default', action: 'create' }],
+      components: [{
+        source_component_code: 'CMP001',
+        source_version_no: 1,
+        name: '路演卡片',
+        import_name: 'PitchCard',
+        component_type: '内容区块',
+        dependencies: [],
+        action: 'create',
+      }],
       themes: [],
       assets: [],
       fonts: [],
     })
+    mocked.createWorkspaceStyle.mockResolvedValue({ ...mocked.style, id: 10 })
+    mocked.updateWorkspaceStyle.mockResolvedValue(mocked.style)
+    mocked.updateWorkspaceStyleSuggestedComponents.mockResolvedValue({ items: [] })
     anchorClickMock.mockImplementation(() => undefined)
     Object.defineProperty(HTMLAnchorElement.prototype, 'click', { configurable: true, value: anchorClickMock })
     vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:styles')
@@ -140,6 +185,26 @@ describe('WorkspaceStylesView', () => {
     expect(screen.getByTestId('style-suggested-components-dialog')).toHaveTextContent('路演样式')
   })
 
+  it('编辑样式保存时应同步保存建议组件并剥离临时字段', async () => {
+    renderWorkspaceStylesView()
+
+    expect(await screen.findByText('路演样式')).toBeInTheDocument()
+
+    await fireEvent.click(screen.getByTitle('编辑'))
+    await fireEvent.click(screen.getByRole('button', { name: '提交样式' }))
+
+    await waitFor(() => {
+      expect(mocked.updateWorkspaceStyle).toHaveBeenCalled()
+    })
+    const stylePayload = mocked.updateWorkspaceStyle.mock.calls[0]?.[2] as Record<string, unknown>
+    expect(stylePayload).not.toHaveProperty('suggested_component_ids')
+    expect(mocked.updateWorkspaceStyle).toHaveBeenCalledWith(1, 9, expect.objectContaining({
+      key: 'pitch',
+      style_spec_markdown: '## 版式\n- 使用强标题。',
+    }))
+    expect(mocked.updateWorkspaceStyleSuggestedComponents).toHaveBeenCalledWith(1, 9, [1, 2])
+  })
+
   it('勾选样式后应允许导出离线包', async () => {
     renderWorkspaceStylesView()
 
@@ -164,7 +229,8 @@ describe('WorkspaceStylesView', () => {
 
     await fireEvent.change(fileInput, { target: { files: [file] } })
 
-    expect(await screen.findByText('样式 1 个，主题 0 个，资源 0 个，字体 0 个')).toBeInTheDocument()
+    expect(await screen.findByText('样式 1 个，组件 1 个，主题 0 个，资源 0 个，字体 0 个')).toBeInTheDocument()
+    expect(screen.getByText(/路演卡片/)).toBeInTheDocument()
     expect(screen.getAllByText('路演样式').length).toBeGreaterThan(0)
 
     await fireEvent.click(screen.getByRole('button', { name: '确认导入' }))

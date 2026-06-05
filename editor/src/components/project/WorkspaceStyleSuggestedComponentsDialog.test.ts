@@ -98,7 +98,7 @@ describe('WorkspaceStyleSuggestedComponentsDialog', () => {
     })
 
     expect((await screen.findAllByText('指标卡片')).length).toBeGreaterThan(0)
-    await fireEvent.click(screen.getByRole('button', { name: /趋势图表/ }))
+    await fireEvent.click(screen.getByRole('button', { name: /^趋势图表/ }))
     await fireEvent.click(screen.getByRole('button', { name: '保存组件' }))
 
     await waitFor(() => {
