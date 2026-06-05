@@ -156,6 +156,10 @@ class ComponentSharePackageService:
                 await self._import_assets(workspace_id, parsed.assets)
                 await self._import_font_configs(workspace_id, parsed.font_configs)
                 imported_components = await self._import_components(workspace_id, parsed.components, operator_id)
+                await self.session.flush()
+                for component in imported_components:
+                    # 发布草稿会触发 onupdate 字段，刷新后再序列化，避免异步隐式加载。
+                    await self.session.refresh(component)
                 imported_component_items = [
                     await self.component_service._to_item(component)
                     for component in imported_components
