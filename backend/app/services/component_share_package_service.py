@@ -44,13 +44,18 @@ from app.schemas.component import (
     ComponentSharePackageFontSummary,
 )
 from app.services.asset_service import AssetService
+from app.services.component_fingerprint_service import (
+    FINGERPRINT_SCHEMA_VERSION,
+    ComponentFingerprintResult,
+    ComponentFingerprintService,
+)
 from app.services.component_resource_index_service import ComponentResourceIndexService
 from app.services.resource_reference_parser import DYNAMIC_RESOURCE_NAME
 from app.services.workspace_component_service import CODE_PREFIX_COMPONENT, WorkspaceComponentService
 from app.services.workspace_component_version_service import WorkspaceComponentVersionService
 from app.services.workspace_font_service import WorkspaceFontService
 
-PACKAGE_SCHEMA_VERSION = 1
+PACKAGE_SCHEMA_VERSION = 2
 COMPONENT_IMPORT_PATTERN = re.compile(
     r"@workspace-components/(?P<component_code>[A-Za-z0-9_-]+)/v/(?P<version_no>\d+)(?:\.vue)?"
 )
@@ -79,6 +84,10 @@ class PackageComponent:
     dependencies: list[tuple[str, int]]
     asset_names: list[str]
     font_asset_names: list[str]
+    content_hash: str | None = None
+    preview_schema_hash: str | None = None
+    component_fingerprint: str | None = None
+    fingerprint_schema_version: int | None = None
 
 
 @dataclass(slots=True)
@@ -97,6 +106,17 @@ class ParsedPackage:
     components: list[PackageComponent]
     assets: list[PackageAsset]
     font_configs: list[dict[str, Any]]
+
+
+@dataclass(slots=True)
+class PackageComponentImportAction:
+    """组件分享包预检和导入时的组件处理动作。"""
+
+    package_component: PackageComponent
+    action: str
+    component_fingerprint: str | None
+    matched_component: WorkspaceComponent | None
+    match_reason: str | None
 
 
 class ComponentSharePackageService:
@@ -155,7 +175,15 @@ class ComponentSharePackageService:
             try:
                 await self._import_assets(workspace_id, parsed.assets)
                 await self._import_font_configs(workspace_id, parsed.font_configs)
-                imported_components = await self._import_components(workspace_id, parsed.components, operator_id)
+                imported_components, _, component_summaries = await self.import_or_reuse_components(
+                    workspace_id,
+                    parsed.components,
+                    parsed.assets,
+                    parsed.font_configs,
+                    operator_id,
+                    release_name="离线导入",
+                    change_note_prefix="从组件分享包导入",
+                )
                 await self.session.flush()
                 for component in imported_components:
                     # 发布草稿会触发 onupdate 字段，刷新后再序列化，避免异步隐式加载。
@@ -167,6 +195,7 @@ class ComponentSharePackageService:
                 await self.session.commit()
                 return ComponentShareImportResult(
                     imported_components=imported_component_items,
+                    components=component_summaries,
                     assets=validation.assets,
                     fonts=validation.fonts,
                 )
@@ -377,6 +406,12 @@ class ComponentSharePackageService:
 
         buffer = io.BytesIO()
         runtime_manifest_version = str(load_runtime_kit_manifest().get("version") or "")
+        fingerprint_service = ComponentFingerprintService(self.session)
+        for snapshot in snapshots:
+            await fingerprint_service.ensure_workspace_component_version_fingerprint(
+                component=snapshot.component,
+                version=snapshot.version,
+            )
         component_entries = [self._build_component_manifest_entry(snapshot) for snapshot in snapshots]
         asset_entries = [self._build_asset_manifest_entry(asset) for asset in assets]
         font_entries = [self._build_font_config_payload(item) for item in font_configs]
@@ -462,12 +497,19 @@ class ComponentSharePackageService:
         if not await self.component_repository.workspace_exists(workspace_id):
             errors.append("目标工作空间不存在。")
 
-        component_summaries = self._build_component_summaries(parsed.components, errors)
         asset_summaries = await self._build_asset_summaries(workspace_id, parsed.assets, errors)
         font_summaries = await self._build_font_summaries(workspace_id, parsed.font_configs, errors)
         await self._validate_component_imports(workspace_id, parsed.components, errors)
         self._validate_package_dependency_closure(parsed.components, errors)
         self._validate_package_font_assets(parsed, errors)
+        component_actions = await self._build_component_import_actions(
+            workspace_id=workspace_id,
+            package_components=parsed.components,
+            package_assets=parsed.assets,
+            font_configs=parsed.font_configs,
+            errors=errors,
+        )
+        component_summaries = self._build_component_summaries(component_actions)
 
         return ComponentShareImportValidationResult(
             valid=not errors,
@@ -547,17 +589,64 @@ class ComponentSharePackageService:
             )
         await self.session.flush()
 
-    async def _import_components(
+    async def import_or_reuse_components(
         self,
         workspace_id: int,
         package_components: list[PackageComponent],
+        package_assets: list[PackageAsset],
+        font_configs: list[dict[str, Any]],
         operator_id: int,
-    ) -> list[WorkspaceComponent]:
-        """按依赖顺序导入组件并发布为本地 v1。"""
+        *,
+        release_name: str,
+        change_note_prefix: str,
+    ) -> tuple[list[WorkspaceComponent], dict[tuple[str, int], WorkspaceComponent], list[ComponentSharePackageComponentSummary]]:
+        """按指纹复用或创建包内组件，并返回源组件到目标组件的映射。"""
+
+        errors: list[str] = []
+        actions = await self._build_component_import_actions(
+            workspace_id=workspace_id,
+            package_components=package_components,
+            package_assets=package_assets,
+            font_configs=font_configs,
+            errors=errors,
+        )
+        if errors:
+            raise AppException(
+                status_code=400,
+                code="COMPONENT_SHARE_PACKAGE_INVALID",
+                detail="组件分享包预检未通过：" + "；".join(errors),
+            )
+        imported, mapping = await self._apply_component_import_actions(
+            workspace_id=workspace_id,
+            actions=actions,
+            operator_id=operator_id,
+            release_name=release_name,
+            change_note_prefix=change_note_prefix,
+        )
+        return imported, mapping, self._build_component_summaries(actions)
+
+    async def _apply_component_import_actions(
+        self,
+        *,
+        workspace_id: int,
+        actions: list[PackageComponentImportAction],
+        operator_id: int,
+        release_name: str,
+        change_note_prefix: str,
+    ) -> tuple[list[WorkspaceComponent], dict[tuple[str, int], WorkspaceComponent]]:
+        """按预检动作执行组件复用或创建。"""
 
         imported: list[WorkspaceComponent] = []
+        component_mapping: dict[tuple[str, int], WorkspaceComponent] = {}
         code_mapping: dict[tuple[str, int], str] = {}
-        for package_component in self._topological_sort_package_components(package_components):
+        for action in actions:
+            package_component = action.package_component
+            key = (package_component.source_component_code, package_component.source_version_no)
+            if action.action == "reuse" and action.matched_component is not None:
+                component_mapping[key] = action.matched_component
+                code_mapping[key] = action.matched_component.code
+                continue
+
             content = self._rewrite_component_imports(package_component.content, code_mapping)
             preview_schema = self._rewrite_component_imports(package_component.preview_schema or "", code_mapping)
             metadata = package_component.metadata
@@ -585,12 +674,13 @@ class ComponentSharePackageService:
             await self.component_version_service.publish_draft(
                 component=component,
                 operator_id=operator_id,
-                release_name="离线导入",
-                change_note=f"从组件分享包导入：{package_component.source_component_code} v{package_component.source_version_no}",
+                release_name=release_name,
+                change_note=f"{change_note_prefix}：{package_component.source_component_code} v{package_component.source_version_no}",
             )
             imported.append(component)
-            code_mapping[(package_component.source_component_code, package_component.source_version_no)] = component.code
-        return imported
+            component_mapping[key] = component
+            code_mapping[key] = component.code
+        return imported, component_mapping
 
     async def _validate_component_imports(
         self,
@@ -598,7 +688,7 @@ class ComponentSharePackageService:
         components: list[PackageComponent],
         errors: list[str],
     ) -> None:
-        """校验组件源码 import 边界和目标工作空间 import_name 冲突。"""
+        """校验组件源码 import 边界和包内 import_name 唯一性。"""
 
         seen_import_names: set[str] = set()
         component_key_set = {(item.source_component_code, item.source_version_no) for item in components}
@@ -607,12 +697,6 @@ class ComponentSharePackageService:
             if import_name in seen_import_names:
                 errors.append(f"分享包内存在重复 import_name：{import_name}。")
             seen_import_names.add(import_name)
-            existing = await self.component_repository.get_active_by_import_name(
-                workspace_id=workspace_id,
-                import_name=import_name,
-            )
-            if existing is not None:
-                errors.append(f"目标工作空间已存在 import_name 为 {import_name} 的启用组件。")
             try:
                 parsed = self.component_version_service.dependency_service.parse_dependencies(
                     package_component.content,
@@ -644,15 +728,30 @@ class ComponentSharePackageService:
             if asset_name and asset_name not in asset_names:
                 errors.append(f"字体配置引用的资源不在包内：{asset_name}。")
 
-    def _build_component_summaries(
+    async def _build_component_import_actions(
         self,
-        components: list[PackageComponent],
+        *,
+        workspace_id: int,
+        package_components: list[PackageComponent],
+        package_assets: list[PackageAsset],
+        font_configs: list[dict[str, Any]],
         errors: list[str],
-    ) -> list[ComponentSharePackageComponentSummary]:
-        """构建组件预检摘要。"""
+    ) -> list[PackageComponentImportAction]:
+        """构建包内组件的指纹匹配和导入动作规划。"""
 
-        summaries: list[ComponentSharePackageComponentSummary] = []
-        for component in components:
+        actions: list[PackageComponentImportAction] = []
+        fingerprint_service = ComponentFingerprintService(self.session)
+        try:
+            calculated_fingerprints = fingerprint_service.calculate_package_component_fingerprints(
+                package_components=package_components,
+                package_assets=package_assets,
+                font_configs=font_configs,
+            )
+        except AppException as error:
+            errors.append(str(error.detail))
+            calculated_fingerprints = {}
+
+        for component in self._topological_sort_package_components(package_components):
             metadata = component.metadata
             required_fields = ["name", "import_name", "component_type"]
             missing = [field for field in required_fields if not str(metadata.get(field) or "").strip()]
@@ -664,6 +763,65 @@ class ComponentSharePackageService:
                 WorkspaceComponentType(str(metadata.get("component_type") or ""))
             except ValueError:
                 errors.append(f"组件 {component.source_component_code} 的 component_type 不受支持。")
+
+            key = (component.source_component_code, component.source_version_no)
+            calculated = calculated_fingerprints.get(key)
+            self._validate_component_declared_fingerprint(component, calculated, errors)
+            component_fingerprint = calculated.component_fingerprint if calculated is not None else component.component_fingerprint
+            matched_component: WorkspaceComponent | None = None
+            action = "create"
+            match_reason = "未找到相同指纹组件，将创建新组件。"
+            import_name = str(metadata.get("import_name") or "").strip()
+
+            if component_fingerprint:
+                candidates = await fingerprint_service.list_current_components_by_fingerprint(
+                    workspace_id=workspace_id,
+                    component_fingerprint=component_fingerprint,
+                )
+                matched_component = self._select_fingerprint_candidate(
+                    candidates=candidates,
+                    import_name=import_name,
+                    component_label=f"{component.source_component_code} v{component.source_version_no}",
+                    errors=errors,
+                )
+                if matched_component is not None:
+                    action = "reuse"
+                    match_reason = "组件指纹一致，复用目标工作空间中的已发布组件。"
+                elif candidates:
+                    action = "conflict"
+                    match_reason = "匹配到多个同指纹组件，不能自动选择复用目标。"
+
+            if import_name:
+                existing = await self.component_repository.get_active_by_import_name(
+                    workspace_id=workspace_id,
+                    import_name=import_name,
+                )
+                if existing is not None and (matched_component is None or existing.id != matched_component.id):
+                    action = "conflict"
+                    errors.append(f'目标工作空间已存在 import_name 为 {import_name} 但指纹不同的启用组件。')
+                    match_reason = "同名组件指纹不同，不能自动复用。"
+
+            actions.append(
+                PackageComponentImportAction(
+                    package_component=component,
+                    action=action,
+                    component_fingerprint=component_fingerprint,
+                    matched_component=matched_component,
+                    match_reason=match_reason,
+                )
+            )
+        return actions
+
+    def _build_component_summaries(
+        self,
+        actions: list[PackageComponentImportAction],
+    ) -> list[ComponentSharePackageComponentSummary]:
+        """构建组件预检摘要。"""
+
+        summaries: list[ComponentSharePackageComponentSummary] = []
+        for action in actions:
+            component = action.package_component
+            metadata = component.metadata
             summaries.append(
                 ComponentSharePackageComponentSummary(
                     source_component_code=component.source_component_code,
@@ -672,9 +830,64 @@ class ComponentSharePackageService:
                     import_name=str(metadata.get("import_name") or "").strip(),
                     component_type=str(metadata.get("component_type") or "").strip(),
                     dependencies=[f"{code}@v{version_no}" for code, version_no in component.dependencies],
+                    component_fingerprint=action.component_fingerprint,
+                    matched_component_id=action.matched_component.id if action.matched_component is not None else None,
+                    matched_component_code=action.matched_component.code if action.matched_component is not None else None,
+                    action=action.action,
+                    match_reason=action.match_reason,
                 )
             )
         return summaries
+
+    @staticmethod
+    def _validate_component_declared_fingerprint(
+        component: PackageComponent,
+        calculated: ComponentFingerprintResult | None,
+        errors: list[str],
+    ) -> None:
+        """校验包内声明的组件指纹字段与实际内容一致。"""
+
+        required = {
+            "content_hash": component.content_hash,
+            "preview_schema_hash": component.preview_schema_hash,
+            "component_fingerprint": component.component_fingerprint,
+            "fingerprint_schema_version": component.fingerprint_schema_version,
+        }
+        missing = [field for field, value in required.items() if value is None or value == ""]
+        if missing:
+            errors.append(f"组件 {component.source_component_code} 缺少指纹字段：{', '.join(missing)}。")
+            return
+        if component.fingerprint_schema_version != FINGERPRINT_SCHEMA_VERSION:
+            errors.append(f"组件 {component.source_component_code} 的 fingerprint_schema_version 不受支持。")
+            return
+        if calculated is None:
+            return
+        if component.content_hash != calculated.content_hash:
+            errors.append(f"组件 {component.source_component_code} 的 content_hash 与实际源码不一致。")
+        if component.preview_schema_hash != calculated.preview_schema_hash:
+            errors.append(f"组件 {component.source_component_code} 的 preview_schema_hash 与实际预览 schema 不一致。")
+        if component.component_fingerprint != calculated.component_fingerprint:
+            errors.append(f"组件 {component.source_component_code} 的 component_fingerprint 与实际内容不一致。")
+
+    @staticmethod
+    def _select_fingerprint_candidate(
+        *,
+        candidates: list[WorkspaceComponent],
+        import_name: str,
+        component_label: str,
+        errors: list[str],
+    ) -> WorkspaceComponent | None:
+        """从同指纹候选组件中选择唯一复用目标。"""
+
+        if not candidates:
+            return None
+        same_import_name = [component for component in candidates if component.import_name == import_name]
+        if len(same_import_name) == 1:
+            return same_import_name[0]
+        if len(candidates) == 1:
+            return candidates[0]
+        errors.append(f"组件 {component_label} 在目标工作空间匹配到多个同指纹组件，请先合并或归档重复组件。")
+        return None
 
     async def _build_asset_summaries(
         self,
@@ -929,6 +1142,10 @@ class ComponentSharePackageService:
             dependencies=sorted(dependency_set),
             asset_names=[str(item).strip() for item in metadata.get("asset_names", []) if str(item).strip()],
             font_asset_names=[str(item).strip() for item in metadata.get("font_asset_names", []) if str(item).strip()],
+            content_hash=str(metadata.get("content_hash") or "").strip() or None,
+            preview_schema_hash=str(metadata.get("preview_schema_hash") or "").strip() or None,
+            component_fingerprint=str(metadata.get("component_fingerprint") or "").strip() or None,
+            fingerprint_schema_version=self._coerce_int(metadata.get("fingerprint_schema_version")),
         )
 
     def _read_package_asset(self, archive: zipfile.ZipFile, asset_hash: str) -> PackageAsset:
@@ -995,6 +1212,10 @@ class ComponentSharePackageService:
             ],
             "asset_names": snapshot.asset_names,
             "font_asset_names": snapshot.font_asset_names,
+            "content_hash": snapshot.version.content_hash,
+            "preview_schema_hash": snapshot.version.preview_schema_hash,
+            "component_fingerprint": snapshot.version.component_fingerprint,
+            "fingerprint_schema_version": snapshot.version.fingerprint_schema_version,
         }
 
     @staticmethod
@@ -1006,6 +1227,8 @@ class ComponentSharePackageService:
             "source_version_no": snapshot.version.version_no,
             "name": snapshot.component.name,
             "import_name": snapshot.component.import_name,
+            "component_fingerprint": snapshot.version.component_fingerprint,
+            "fingerprint_schema_version": snapshot.version.fingerprint_schema_version,
         }
 
     @staticmethod

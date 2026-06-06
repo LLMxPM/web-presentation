@@ -1,4 +1,4 @@
-<!-- 文件功能：项目展示配置弹窗，统一编辑主题、页面尺寸、菜单模式与 PDF 导出按钮。 -->
+<!-- 文件功能：项目展示配置弹窗，统一编辑主题、页面尺寸、菜单模式与导出按钮。 -->
 <template>
   <BaseDialog :model-value="modelValue" title="项目展示配置" width="1040px" @update:model-value="handleVisibleChange">
     <div v-if="project && modelValue" class="grid gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
@@ -58,7 +58,7 @@
         </div>
 
         <div class="rounded-lg border border-slate-200 bg-white p-4">
-          <label class="ml-1 text-sm font-semibold text-slate-700">PDF 导出按钮</label>
+          <label class="ml-1 text-sm font-semibold text-slate-700">导出按钮</label>
           <div class="mt-3 grid grid-cols-2 gap-2 rounded-lg bg-slate-100 p-1">
             <button v-for="option in pdfButtonOptions" :key="String(option.value)" type="button"
               class="flex min-h-11 items-center justify-center rounded-md px-3 py-2.5 text-xs font-bold transition-all"

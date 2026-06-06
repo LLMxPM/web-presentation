@@ -135,7 +135,14 @@ export interface WorkspaceStylePackageStyleSummary {
   key: string
   name: string
   theme_key: string | null
-  action: 'create' | 'reuse' | string
+  page_width: number
+  page_height: number
+  base_font_size: string
+  icon_default_stroke_width: number
+  show_pdf_export_button: boolean
+  menu_mode: ProjectMenuMode
+  style_spec_markdown: string
+  action: 'create' | 'overwrite' | string
 }
 
 export interface WorkspaceStylePackageThemeSummary {
@@ -170,7 +177,11 @@ export interface WorkspaceStylePackageComponentSummary {
   import_name: string
   component_type: WorkspaceComponentType | string
   dependencies: string[]
+  component_fingerprint: string | null
+  matched_component_id: number | null
+  matched_component_code: string | null
   action: 'create' | 'reuse' | string
+  match_reason: string | null
 }
 
 export interface WorkspaceStyleImportValidationResult {
@@ -534,6 +545,11 @@ export interface ComponentSharePackageComponentSummary {
   import_name: string
   component_type: string
   dependencies: string[]
+  component_fingerprint: string | null
+  matched_component_id: number | null
+  matched_component_code: string | null
+  action: 'create' | 'reuse' | string
+  match_reason: string | null
 }
 
 export interface ComponentSharePackageAssetSummary {
@@ -567,6 +583,7 @@ export interface ComponentShareImportValidationResult {
 
 export interface ComponentShareImportResult {
   imported_components: WorkspaceComponentItem[]
+  components: ComponentSharePackageComponentSummary[]
   assets: ComponentSharePackageAssetSummary[]
   fonts: ComponentSharePackageFontSummary[]
 }

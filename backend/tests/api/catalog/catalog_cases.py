@@ -1,6 +1,9 @@
 """文件功能：验证工作空间、项目和页面资源库的 CRUD 及编码自动生成。"""
 
+import io
+import json
 import re
+import zipfile
 from datetime import UTC, datetime
 from zoneinfo import ZoneInfo
 
@@ -9,6 +12,8 @@ from sqlalchemy import select
 
 from app.db.session import get_session_factory
 from app.models.page import Page
+from app.models.workspace_component import WorkspaceComponent
+from app.models.workspace_component_version import WorkspaceComponentVersion
 from app.schemas.project_app_config import DEFAULT_PROJECT_STYLE_SPEC_MARKDOWN
 
 
@@ -21,6 +26,21 @@ async def _create_catalog_workspace(client: AsyncClient, name: str) -> dict:
     )
     assert response.status_code == 200
     return response.json()
+
+
+def _rewrite_zip_json(archive_content: bytes, target_name: str, rewrite) -> bytes:
+    """重写 Zip 内指定 JSON 文件，保留其它条目不变。"""
+
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(io.BytesIO(archive_content)) as source_archive:
+        with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as target_archive:
+            for item in source_archive.infolist():
+                content = source_archive.read(item.filename)
+                if item.filename == target_name:
+                    payload = json.loads(content.decode("utf-8"))
+                    content = json.dumps(rewrite(payload), ensure_ascii=False).encode("utf-8")
+                target_archive.writestr(item, content)
+    return buffer.getvalue()
 
 
 async def _create_catalog_project(
@@ -1967,6 +1987,13 @@ async def test_component_package_import_should_return_imported_components(authen
         json={"workspace_id": source_workspace_id, "component_ids": [component_id]},
     )
     assert export_response.status_code == 200
+    with zipfile.ZipFile(io.BytesIO(export_response.content)) as archive:
+        manifest = json.loads(archive.read("manifest.json").decode("utf-8"))
+        component_payload = json.loads(archive.read(f"components/{publish_response.json()['code']}/component.json").decode("utf-8"))
+        assert manifest["schema_version"] == 2
+        assert isinstance(manifest["components"][0]["component_fingerprint"], str)
+        assert isinstance(component_payload["component_fingerprint"], str)
+        assert component_payload["fingerprint_schema_version"] == 1
 
     import_response = await authenticated_client.post(
         "/api/components/import-package",
@@ -1981,3 +2008,93 @@ async def test_component_package_import_should_return_imported_components(authen
     assert imported_components[0]["import_name"] == "ExportedCard"
     assert imported_components[0]["component_type"] == "内容区块"
     assert imported_components[0]["current_version_no"] == 1
+    assert import_response.json()["components"][0]["action"] == "create"
+    async with get_session_factory()() as session:
+        version = await session.scalar(
+            select(WorkspaceComponentVersion)
+            .join(WorkspaceComponent, WorkspaceComponent.id == WorkspaceComponentVersion.component_id)
+            .where(WorkspaceComponent.id == imported_components[0]["id"])
+            .where(WorkspaceComponentVersion.version_no == WorkspaceComponent.current_version_no)
+        )
+        assert version is not None
+        version.content_hash = None
+        version.preview_schema_hash = None
+        version.component_fingerprint = None
+        version.fingerprint_schema_version = None
+        await session.commit()
+
+    reuse_validation_response = await authenticated_client.post(
+        "/api/components/import-package/validate",
+        data={"workspace_id": str(target_workspace_id)},
+        files={"archive": ("components.zip", export_response.content, "application/zip")},
+    )
+    assert reuse_validation_response.status_code == 200
+    assert reuse_validation_response.json()["valid"] is True
+    assert reuse_validation_response.json()["components"][0]["action"] == "reuse"
+
+    reuse_import_response = await authenticated_client.post(
+        "/api/components/import-package",
+        data={"workspace_id": str(target_workspace_id)},
+        files={"archive": ("components.zip", export_response.content, "application/zip")},
+    )
+    assert reuse_import_response.status_code == 200
+    assert reuse_import_response.json()["imported_components"] == []
+    assert reuse_import_response.json()["components"][0]["action"] == "reuse"
+
+
+async def test_component_package_import_should_reject_legacy_schema_and_tampered_fingerprint(
+    authenticated_client: AsyncClient,
+) -> None:
+    """组件分享包应拒绝旧 schema 和被篡改的组件指纹。"""
+
+    workspace = await _create_catalog_workspace(authenticated_client, "组件指纹源空间")
+    target = await _create_catalog_workspace(authenticated_client, "组件指纹目标空间")
+    create_response = await authenticated_client.post(
+        "/api/components",
+        json={
+            "workspace_id": workspace["id"],
+            "name": "指纹卡片",
+            "import_name": "FingerprintCard",
+            "component_type": "内容区块",
+            "content": "<template><section>fingerprint</section></template>",
+            "file_type": "vue",
+            "status": "active",
+        },
+    )
+    assert create_response.status_code == 200
+    component_id = create_response.json()["id"]
+    publish_response = await authenticated_client.post(
+        f"/api/components/{component_id}/publish",
+        json={"release_name": "导出版"},
+    )
+    assert publish_response.status_code == 200
+    export_response = await authenticated_client.post(
+        "/api/components/export-package",
+        json={"workspace_id": workspace["id"], "component_ids": [component_id]},
+    )
+    assert export_response.status_code == 200
+
+    legacy_archive = _rewrite_zip_json(export_response.content, "manifest.json", lambda payload: {**payload, "schema_version": 1})
+    legacy_response = await authenticated_client.post(
+        "/api/components/import-package/validate",
+        data={"workspace_id": str(target["id"])},
+        files={"archive": ("components.zip", legacy_archive, "application/zip")},
+    )
+    assert legacy_response.status_code == 200
+    assert legacy_response.json()["valid"] is False
+    assert any("schema_version" in error for error in legacy_response.json()["errors"])
+
+    component_code = publish_response.json()["code"]
+    tampered_archive = _rewrite_zip_json(
+        export_response.content,
+        f"components/{component_code}/component.json",
+        lambda payload: {**payload, "component_fingerprint": "0" * 64},
+    )
+    tampered_response = await authenticated_client.post(
+        "/api/components/import-package/validate",
+        data={"workspace_id": str(target["id"])},
+        files={"archive": ("components.zip", tampered_archive, "application/zip")},
+    )
+    assert tampered_response.status_code == 200
+    assert tampered_response.json()["valid"] is False
+    assert any("component_fingerprint" in error for error in tampered_response.json()["errors"])

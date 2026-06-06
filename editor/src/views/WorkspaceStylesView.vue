@@ -176,7 +176,9 @@
 
     <WorkspaceStyleDetailDialog
       v-model="styleDetailVisible"
+      :workspace-id="workspaceId"
       :style="selectedStyle"
+      :default-theme-key="workspaceDetails?.default_theme_key"
       @edit="openEditStyle"
     />
 
@@ -204,13 +206,28 @@
           </ul>
         </div>
 
-        <div v-if="importValidation && importValidation.valid" class="space-y-3">
+        <div v-if="importValidation" class="space-y-3">
           <section class="rounded-xl border border-slate-200 bg-white p-4">
             <h4 class="text-sm font-bold text-slate-700">样式</h4>
             <div class="mt-2 max-h-40 space-y-2 overflow-y-auto">
               <div v-for="style in importValidation.styles" :key="style.key" class="flex items-center justify-between gap-3 text-xs">
                 <span class="font-semibold text-slate-700">{{ style.name }}</span>
-                <span class="font-mono text-slate-400">{{ style.key }} · {{ resolveImportActionText(style.action) }}</span>
+                <span class="flex shrink-0 items-center gap-2">
+                  <span class="font-mono text-slate-400">{{ style.key }}</span>
+                  <span
+                    class="rounded-full px-2 py-0.5 text-[11px] font-bold ring-1"
+                    :class="resolveImportActionBadgeClass(style.action)"
+                  >
+                    {{ resolveImportActionText(style.action) }}
+                  </span>
+                  <button
+                    type="button"
+                    class="rounded border border-slate-200 px-1.5 py-0.5 text-[11px] font-semibold text-slate-500 hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-600"
+                    @click="openImportStyleSpec(style)"
+                  >
+                    查看规范
+                  </button>
+                </span>
               </div>
             </div>
           </section>
@@ -218,38 +235,85 @@
           <section class="grid gap-3 lg:grid-cols-2">
             <div class="rounded-xl border border-slate-200 bg-white p-4">
               <h4 class="text-sm font-bold text-slate-700">组件</h4>
-              <div class="mt-2 max-h-32 space-y-1 overflow-y-auto text-xs text-slate-500">
-                <p v-if="importValidation.components.length === 0">无组件</p>
-                <p v-for="component in importValidation.components" :key="`${component.source_component_code}-${component.source_version_no}`">
-                  {{ component.name }} · {{ component.import_name }} · {{ resolveImportActionText(component.action) }}
-                </p>
+              <div class="mt-2 max-h-40 overflow-y-auto rounded-lg border border-slate-100 text-xs text-slate-500">
+                <p v-if="importValidation.components.length === 0" class="px-3 py-2">无组件</p>
+                <div
+                  v-for="component in importValidation.components"
+                  :key="`${component.source_component_code}-${component.source_version_no}`"
+                  class="border-b border-slate-100 px-3 py-2.5 last:border-b-0 even:bg-slate-50/60"
+                >
+                  <div class="flex items-center justify-between gap-3">
+                    <div class="min-w-0 flex items-baseline gap-2">
+                      <span class="truncate font-semibold text-slate-700">{{ component.name }}</span>
+                      <span class="shrink-0 font-mono text-[11px] text-slate-400">{{ component.import_name }}</span>
+                    </div>
+                    <span
+                      class="shrink-0 rounded-full px-2 py-0.5 text-[11px] font-bold ring-1"
+                      :class="resolveImportActionBadgeClass(component.action)"
+                      :title="component.match_reason || resolveImportActionText(component.action)"
+                    >
+                      {{ resolveImportActionText(component.action) }}
+                    </span>
+                  </div>
+                  <div class="mt-1 flex min-w-0 items-center gap-2 text-[11px] text-slate-400">
+                    <span class="font-mono">fp: {{ formatFingerprint(component.component_fingerprint) }}</span>
+                    <span v-if="component.matched_component_code" class="truncate">
+                      匹配 {{ component.matched_component_code }}
+                    </span>
+                  </div>
+                </div>
               </div>
             </div>
             <div class="rounded-xl border border-slate-200 bg-white p-4">
               <h4 class="text-sm font-bold text-slate-700">主题</h4>
               <div class="mt-2 max-h-32 space-y-1 overflow-y-auto text-xs text-slate-500">
                 <p v-if="importValidation.themes.length === 0">无主题</p>
-                <p v-for="theme in importValidation.themes" :key="theme.key">
-                  {{ theme.name }} · {{ resolveImportActionText(theme.action) }}
-                </p>
+                <div v-for="theme in importValidation.themes" :key="theme.key" class="flex items-center justify-between gap-2">
+                  <span class="truncate">{{ theme.name }}</span>
+                  <span
+                    class="shrink-0 rounded-full px-2 py-0.5 text-[11px] font-bold ring-1"
+                    :class="resolveImportActionBadgeClass(theme.action)"
+                  >
+                    {{ resolveImportActionText(theme.action) }}
+                  </span>
+                </div>
               </div>
             </div>
             <div class="rounded-xl border border-slate-200 bg-white p-4">
               <h4 class="text-sm font-bold text-slate-700">资源</h4>
               <div class="mt-2 max-h-32 space-y-1 overflow-y-auto text-xs text-slate-500">
                 <p v-if="importValidation.assets.length === 0">无资源</p>
-                <p v-for="asset in importValidation.assets" :key="asset.name">
-                  {{ asset.name }} · {{ resolveImportActionText(asset.action) }}
-                </p>
+                <div v-for="asset in importValidation.assets" :key="asset.name" class="flex items-center justify-between gap-2">
+                  <span class="flex min-w-0 items-center gap-1.5">
+                    <span class="truncate">{{ asset.name }}</span>
+                    <span class="shrink-0 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold text-slate-500">
+                      {{ resolveAssetTypeLabel(asset.asset_type) }}
+                    </span>
+                  </span>
+                  <span class="flex shrink-0 items-center gap-1.5">
+                    <span
+                      class="rounded-full px-2 py-0.5 text-[11px] font-bold ring-1"
+                      :class="resolveImportActionBadgeClass(asset.action)"
+                    >
+                      {{ resolveImportActionText(asset.action) }}
+                    </span>
+                  </span>
+                </div>
               </div>
             </div>
             <div class="rounded-xl border border-slate-200 bg-white p-4">
               <h4 class="text-sm font-bold text-slate-700">字体</h4>
               <div class="mt-2 max-h-32 space-y-1 overflow-y-auto text-xs text-slate-500">
                 <p v-if="importValidation.fonts.length === 0">无字体</p>
-                <p v-for="font in importValidation.fonts" :key="font.asset_name">
-                  {{ font.asset_name }} · {{ resolveImportActionText(font.action) }}
-                </p>
+                <div v-for="font in importValidation.fonts" :key="font.asset_name" class="flex items-center justify-between gap-2">
+                  <span class="truncate">{{ font.asset_name }}</span>
+                  <span
+                    class="shrink-0 rounded-full px-2 py-0.5 text-[11px] font-bold ring-1"
+                    :class="resolveImportActionBadgeClass(font.action)"
+                  >
+                    {{ resolveImportActionText(font.action) }}
+                  </span>
+                </div>
               </div>
             </div>
           </section>
@@ -267,6 +331,39 @@
           确认导入
         </BaseButton>
       </template>
+    </BaseDialog>
+
+    <BaseDialog
+      v-model="importStyleSpecDialogVisible"
+      :title="selectedImportStyleSpec ? `${selectedImportStyleSpec.name} · 最终导入规范` : '最终导入规范'"
+      width="760px"
+    >
+      <div class="space-y-3">
+        <div class="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs">
+          <span class="min-w-0 truncate font-semibold text-slate-700">{{ selectedImportStyleSpec?.key }}</span>
+          <span
+            v-if="selectedImportStyleSpec"
+            class="shrink-0 rounded-full px-2 py-0.5 text-[11px] font-bold ring-1"
+            :class="resolveImportActionBadgeClass(selectedImportStyleSpec.action)"
+          >
+            {{ resolveImportActionText(selectedImportStyleSpec.action) }}
+          </span>
+        </div>
+        <section v-if="selectedImportStyleSpec" class="rounded-xl border border-slate-200 bg-white p-4">
+          <h4 class="text-sm font-black text-slate-900">展示配置</h4>
+          <div class="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <div
+              v-for="item in importStyleSpecDetailItems"
+              :key="item.label"
+              class="rounded-lg border border-slate-100 bg-slate-50 px-3 py-2"
+            >
+              <p class="text-[11px] font-bold text-slate-400">{{ item.label }}</p>
+              <p class="mt-1 text-sm font-black text-slate-800">{{ item.value }}</p>
+            </div>
+          </div>
+        </section>
+        <pre class="max-h-[60vh] overflow-auto whitespace-pre-wrap rounded-xl border border-slate-200 bg-white p-4 text-sm leading-6 text-slate-700">{{ selectedImportStyleSpec?.style_spec_markdown || '无样式规范' }}</pre>
+      </div>
     </BaseDialog>
   </div>
 </template>
@@ -296,7 +393,14 @@ import BaseDialog from '@/components/ui/BaseDialog.vue'
 import WorkspaceStyleDetailDialog from '@/components/project/WorkspaceStyleDetailDialog.vue'
 import WorkspaceStyleEditorDialog from '@/components/project/WorkspaceStyleEditorDialog.vue'
 import WorkspaceStyleSuggestedComponentsDialog from '@/components/project/WorkspaceStyleSuggestedComponentsDialog.vue'
-import type { ProjectMenuMode, SuggestedComponentItem, WorkspaceItem, WorkspaceStyleImportValidationResult, WorkspaceStyleItem } from '@/types/api'
+import type {
+  ProjectMenuMode,
+  SuggestedComponentItem,
+  WorkspaceItem,
+  WorkspaceStyleImportValidationResult,
+  WorkspaceStyleItem,
+  WorkspaceStylePackageStyleSummary,
+} from '@/types/api'
 import { createConfirm, Message } from '@/utils/message'
 
 const route = useRoute()
@@ -317,6 +421,8 @@ const importDialogVisible = ref(false)
 const importFileInputRef = ref<HTMLInputElement | null>(null)
 const importFile = ref<File | null>(null)
 const importValidation = ref<WorkspaceStyleImportValidationResult | null>(null)
+const importStyleSpecDialogVisible = ref(false)
+const selectedImportStyleSpec = ref<WorkspaceStylePackageStyleSummary | null>(null)
 const editorVisible = ref(false)
 const editingStyle = ref<WorkspaceStyleItem | null>(null)
 const styleDetailVisible = ref(false)
@@ -324,6 +430,20 @@ const suggestedComponentsDialogVisible = ref(false)
 const suggestedComponentsStyle = ref<WorkspaceStyleItem | null>(null)
 
 const workspaceTitle = computed(() => workspaceDetails.value?.name ? `${workspaceDetails.value.name} · 样式库` : '样式库')
+const importStyleSpecDetailItems = computed(() => {
+  const style = selectedImportStyleSpec.value
+  if (!style) {
+    return []
+  }
+  return [
+    { label: '画布尺寸', value: `${style.page_width} x ${style.page_height}` },
+    { label: '画布比例', value: formatAspectRatio(style.page_width, style.page_height) },
+    { label: '基础字号', value: style.base_font_size },
+    { label: '图标描边宽度', value: String(style.icon_default_stroke_width) },
+    { label: '导航按钮位置', value: formatMenuMode(style.menu_mode) },
+    { label: '导出按钮', value: style.show_pdf_export_button ? '显示' : '隐藏' },
+  ]
+})
 
 type WorkspaceStyleEditorSavePayload = WorkspaceStylePayload & { suggested_component_ids?: number[] }
 
@@ -514,12 +634,23 @@ async function handleConfirmImportPackage(): Promise<void> {
 }
 
 /**
+ * 打开样式离线包中将最终写入的样式规范预览。
+ * @param style 样式导入摘要
+ */
+function openImportStyleSpec(style: WorkspaceStylePackageStyleSummary): void {
+  selectedImportStyleSpec.value = style
+  importStyleSpecDialogVisible.value = true
+}
+
+/**
  * 关闭导入弹窗并清理临时文件状态。
  */
 function closeImportDialog(): void {
   importDialogVisible.value = false
   importFile.value = null
   importValidation.value = null
+  importStyleSpecDialogVisible.value = false
+  selectedImportStyleSpec.value = null
 }
 
 /**
@@ -540,7 +671,71 @@ function downloadBlob(blob: Blob, filename: string): void {
  * 展示导入预检中的处理动作。
  */
 function resolveImportActionText(action: string): string {
-  return action === 'reuse' ? '复用' : '新增'
+  if (action === 'overwrite') return '覆盖'
+  if (action === 'reuse') return '复用'
+  if (action === 'conflict') return '冲突'
+  return '新增'
+}
+
+/**
+ * 为样式导入组件列表中的处理动作提供醒目的状态样式。
+ */
+function resolveImportActionBadgeClass(action: string): string {
+  if (action === 'overwrite') return 'bg-amber-50 text-amber-700 ring-amber-200'
+  if (action === 'reuse') return 'bg-emerald-50 text-emerald-700 ring-emerald-200'
+  if (action === 'conflict') return 'bg-rose-50 text-rose-700 ring-rose-200'
+  return 'bg-sky-50 text-sky-700 ring-sky-200'
+}
+
+/**
+ * 将资源类型转为导入预检中的中文标识；未知类型保留原始值方便排查。
+ */
+function resolveAssetTypeLabel(assetType: string | null | undefined): string {
+  const labels: Record<string, string> = {
+    icon: '图标',
+    font: '字体',
+    image: '图片',
+    video: '视频',
+    drawio: 'Draw.io',
+    mermaid: 'Mermaid',
+    chart: '图表',
+    formula: '公式',
+  }
+  return assetType ? labels[assetType] || assetType : '未知'
+}
+
+/**
+ * 将组件指纹缩短为导入预检中可快速识别的短码。
+ */
+function formatFingerprint(value: string | null | undefined): string {
+  return value ? value.slice(0, 8) : '无指纹'
+}
+
+/**
+ * 将页面宽高格式化为最简比例。
+ */
+function formatAspectRatio(width: number, height: number): string {
+  const normalizedWidth = Math.max(0, Math.trunc(width))
+  const normalizedHeight = Math.max(0, Math.trunc(height))
+  if (!normalizedWidth || !normalizedHeight) {
+    return '未知'
+  }
+  const divisor = greatestCommonDivisor(normalizedWidth, normalizedHeight)
+  return `${normalizedWidth / divisor}:${normalizedHeight / divisor}`
+}
+
+/**
+ * 计算两个正整数的最大公约数。
+ */
+function greatestCommonDivisor(left: number, right: number): number {
+  let a = left
+  let b = right
+  while (b) {
+    const next = a % b
+    a = b
+    b = next
+  }
+  return a || 1
 }
 
 /**

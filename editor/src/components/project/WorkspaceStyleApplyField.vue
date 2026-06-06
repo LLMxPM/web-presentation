@@ -57,7 +57,7 @@ const props = withDefaults(defineProps<{
   embedded?: boolean
 }>(), {
   label: '应用工作空间样式',
-  hint: '会填充主题、页面尺寸、菜单模式、PDF 导出按钮和 Markdown 样式规范，保存后才会写入项目。',
+  hint: '会填充主题、页面尺寸、菜单模式、导出按钮和 Markdown 样式规范，保存后才会写入项目。',
   embedded: false,
 })
 

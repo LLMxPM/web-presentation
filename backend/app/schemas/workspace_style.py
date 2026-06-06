@@ -164,6 +164,13 @@ class WorkspaceStylePackageStyleSummary(SchemaBase):
     key: str
     name: str
     theme_key: str | None = None
+    page_width: int
+    page_height: int
+    base_font_size: str
+    icon_default_stroke_width: int
+    show_pdf_export_button: bool
+    menu_mode: ProjectMenuMode
+    style_spec_markdown: str = ""
     action: str = "create"
 
 
@@ -207,7 +214,11 @@ class WorkspaceStylePackageComponentSummary(SchemaBase):
     import_name: str
     component_type: str
     dependencies: list[str] = Field(default_factory=list)
+    component_fingerprint: str | None = None
+    matched_component_id: int | None = None
+    matched_component_code: str | None = None
     action: str = "create"
+    match_reason: str | None = None
 
 
 class WorkspaceStyleImportValidationResult(SchemaBase):

@@ -5,7 +5,7 @@
       <div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
         <p class="text-sm font-semibold text-slate-700">{{ project.code }}</p>
         <p class="mt-1 text-xs leading-5 text-slate-500">
-          这里只修改项目名称与描述，不影响页面尺寸、菜单模式、PDF 导出按钮和主题配置。
+          这里只修改项目名称与描述，不影响页面尺寸、菜单模式、导出按钮和主题配置。
         </p>
       </div>
 

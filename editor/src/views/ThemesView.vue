@@ -455,15 +455,12 @@
       </aside>
     </div>
 
-    <ThemeDetailDrawer
+    <ThemeDetailDialog
       v-model="themeDetailVisible"
       :workspace-id="workspaceId"
       :theme-id="detailThemeId"
       :default-theme-key="workspace?.default_theme_key"
       @set-default="setDefaultTheme"
-      @edit="openEditThemeFromDetail"
-      @copy="copyTheme"
-      @delete="deleteThemeFromDetail"
     />
 
     <ThemeEditorDialog
@@ -521,7 +518,7 @@ import type { WorkspaceThemePayload } from '@/api/themes'
 import PageTitleBar from '@/components/layout/PageTitleBar.vue'
 import { ASSET_UPLOAD_ACCEPT, getAcceptedAssetExtensionText, isAcceptedAssetFile } from '@/components/project/asset-manager'
 import FontEditorDialog from '@/components/theme/FontEditorDialog.vue'
-import ThemeDetailDrawer from '@/components/theme/ThemeDetailDrawer.vue'
+import ThemeDetailDialog from '@/components/theme/ThemeDetailDialog.vue'
 import ThemeEditorDialog from '@/components/theme/ThemeEditorDialog.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import PaginationControl from '@/components/ui/PaginationControl.vue'
@@ -788,11 +785,6 @@ function openEditTheme(theme: WorkspaceThemeItem): void {
   themeEditorVisible.value = true
 }
 
-function openEditThemeFromDetail(theme: WorkspaceThemeItem): void {
-  themeDetailVisible.value = false
-  openEditTheme(theme)
-}
-
 function openThemeDetail(theme: WorkspaceThemeItem): void {
   detailThemeId.value = theme.id
   themeDetailVisible.value = true
@@ -854,10 +846,6 @@ async function deleteTheme(theme: WorkspaceThemeItem): Promise<void> {
   } catch (error) {
     Message.error(getErrorMessage(error, '删除主题失败。'))
   }
-}
-
-async function deleteThemeFromDetail(theme: WorkspaceThemeItem): Promise<void> {
-  await deleteTheme(theme)
 }
 
 async function loadWorkspaceOnly(): Promise<void> {

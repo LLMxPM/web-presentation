@@ -100,13 +100,18 @@
           </ul>
         </div>
 
-        <div v-if="importValidation && importValidation.valid" class="space-y-3">
+        <div v-if="importValidation" class="space-y-3">
           <section class="rounded-xl border border-slate-200 bg-white p-4">
             <h4 class="text-sm font-bold text-slate-700">组件</h4>
             <div class="mt-2 max-h-40 space-y-2 overflow-y-auto">
               <div v-for="component in importValidation.components" :key="`${component.source_component_code}-${component.source_version_no}`" class="flex items-center justify-between gap-3 text-xs">
-                <span class="font-semibold text-slate-700">{{ component.name }}</span>
-                <span class="font-mono text-slate-400">{{ component.import_name }}</span>
+                <span class="min-w-0">
+                  <span class="block truncate font-semibold text-slate-700">{{ component.name }}</span>
+                  <span v-if="component.match_reason" class="mt-0.5 block truncate text-slate-400">{{ component.match_reason }}</span>
+                </span>
+                <span class="shrink-0 text-right font-mono text-slate-400">
+                  {{ component.import_name }} · {{ resolveImportActionText(component.action) }} · {{ formatFingerprint(component.component_fingerprint) }}
+                </span>
               </div>
             </div>
           </section>
@@ -413,7 +418,16 @@ function downloadBlob(blob: Blob, filename: string): void {
  * 展示导入预检中的资源和字体处理动作。
  */
 function resolveImportActionText(action: string): string {
-  return action === 'reuse' ? '复用' : '新增'
+  if (action === 'reuse') return '复用'
+  if (action === 'conflict') return '冲突'
+  return '新增'
+}
+
+/**
+ * 将组件指纹缩短为导入预检中可快速识别的短码。
+ */
+function formatFingerprint(value: string | null | undefined): string {
+  return value ? value.slice(0, 8) : '无指纹'
 }
 
 /**

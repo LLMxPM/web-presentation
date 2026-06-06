@@ -84,7 +84,7 @@
             </div>
 
             <div class="rounded-lg border border-slate-200 bg-white p-4">
-              <label class="ml-1 text-sm font-semibold text-slate-700">PDF 导出按钮</label>
+              <label class="ml-1 text-sm font-semibold text-slate-700">导出按钮</label>
               <div class="mt-3 grid grid-cols-2 gap-2 rounded-lg bg-slate-100 p-1">
                 <button
                   v-for="option in pdfButtonOptions"

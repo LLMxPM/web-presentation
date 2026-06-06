@@ -37,6 +37,7 @@ from app.schemas.workspace_style import (
     WorkspaceStylePackageThemeSummary,
 )
 from app.services.asset_service import AssetService
+from app.services.component_fingerprint_service import ComponentFingerprintService
 from app.services.component_share_package_service import ComponentSharePackageService, PackageComponent
 from app.services.workspace_style_package_components import WorkspaceStylePackageComponentService
 from app.services.workspace_style_package_format import (
@@ -122,9 +123,11 @@ class WorkspaceStylePackageService:
                 await self._import_assets(workspace_id, parsed.assets)
                 await self._import_font_configs(workspace_id, parsed.font_configs)
                 await self._import_themes(workspace_id, parsed.themes, operator_id)
-                component_mapping = await style_component_service.import_or_reuse_components(
+                component_mapping, component_summaries = await style_component_service.import_or_reuse_components(
                     workspace_id,
                     package_components,
+                    parsed.assets,
+                    parsed.font_configs,
                     operator_id,
                 )
                 await self._import_styles(workspace_id, parsed.styles, operator_id, component_mapping)
@@ -134,7 +137,7 @@ class WorkspaceStylePackageService:
                     themes=validation.themes,
                     assets=validation.assets,
                     fonts=validation.fonts,
-                    components=validation.components,
+                    components=component_summaries,
                 )
             except IntegrityError as error:
                 await self.session.rollback()
@@ -278,6 +281,12 @@ class WorkspaceStylePackageService:
         component_package_service = ComponentSharePackageService(self.session)
         style_component_service = WorkspaceStylePackageComponentService(self.session)
         runtime_manifest_version = str(load_runtime_kit_manifest().get("version") or "")
+        fingerprint_service = ComponentFingerprintService(self.session)
+        for snapshot in component_snapshots:
+            await fingerprint_service.ensure_workspace_component_version_fingerprint(
+                component=snapshot.component,
+                version=snapshot.version,
+            )
         style_entries: list[dict[str, Any]] = []
         for style in styles:
             style_payload = WorkspaceStylePackagePayloads.build_style_payload(style)
@@ -368,7 +377,13 @@ class WorkspaceStylePackageService:
         theme_summaries = await self._build_theme_summaries(workspace_id, parsed.themes, parsed.assets, parsed.font_configs, errors)
         style_summaries = await self._build_style_summaries(workspace_id, parsed.styles, parsed.themes, errors)
         style_component_service = WorkspaceStylePackageComponentService(self.session)
-        component_summaries = await style_component_service.build_component_summaries(workspace_id, package_components, errors)
+        component_summaries = await style_component_service.build_component_summaries(
+            workspace_id,
+            package_components,
+            parsed.assets,
+            parsed.font_configs,
+            errors,
+        )
         await style_component_service.validate_component_imports(workspace_id, package_components, errors)
         style_component_service.validate_package_component_integrity(
             parsed.styles,
@@ -539,7 +554,7 @@ class WorkspaceStylePackageService:
         package_themes: list[PackageTheme],
         errors: list[str],
     ) -> list[WorkspaceStylePackageStyleSummary]:
-        """构建样式预检摘要，并校验主题引用与同 key 冲突。"""
+        """构建样式预检摘要，并标识同 key 样式将被覆盖。"""
 
         summaries: list[WorkspaceStylePackageStyleSummary] = []
         seen_keys: set[str] = set()
@@ -568,15 +583,19 @@ class WorkspaceStylePackageService:
             existing = await self.style_repository.get_by_key(workspace_id, key)
             action = "create"
             if existing is not None:
-                existing_payload = WorkspaceStylePackagePayloads.build_style_payload(existing)
-                if WorkspaceStylePackageFormat.canonical_payload(existing_payload) != WorkspaceStylePackageFormat.canonical_payload(payload):
-                    errors.append(f'目标工作空间已存在同 key 但内容不同的样式 "{key}"。')
-                action = "reuse"
+                action = "overwrite"
             summaries.append(
                 WorkspaceStylePackageStyleSummary(
                     key=key,
                     name=str(payload["name"]),
                     theme_key=payload.get("theme_key"),
+                    page_width=int(payload["page_width"]),
+                    page_height=int(payload["page_height"]),
+                    base_font_size=str(payload["base_font_size"]),
+                    icon_default_stroke_width=int(payload["icon_default_stroke_width"]),
+                    show_pdf_export_button=bool(payload["show_pdf_export_button"]),
+                    menu_mode=str(payload["menu_mode"]),
+                    style_spec_markdown=str(payload.get("style_spec_markdown") or ""),
                     action=action,
                 )
             )
@@ -695,7 +714,7 @@ class WorkspaceStylePackageService:
         operator_id: int,
         component_mapping: dict[tuple[str, int], WorkspaceComponent],
     ) -> None:
-        """导入或复用包内样式，并按包内声明重建样式建议组件关联。"""
+        """导入或覆盖包内样式，并按包内声明重建样式建议组件关联。"""
 
         for package_style in package_styles:
             payload = WorkspaceStylePackagePayloads.normalize_style_payload(package_style.payload)
@@ -719,6 +738,18 @@ class WorkspaceStylePackageService:
                 )
                 self.session.add(style)
                 await self.session.flush()
+            else:
+                style.name = str(payload["name"])
+                style.description = payload.get("description")
+                style.page_width = int(payload["page_width"])
+                style.page_height = int(payload["page_height"])
+                style.base_font_size = str(payload["base_font_size"])
+                style.icon_default_stroke_width = int(payload["icon_default_stroke_width"])
+                style.show_pdf_export_button = bool(payload["show_pdf_export_button"])
+                style.menu_mode = str(payload["menu_mode"])
+                style.theme_key = payload.get("theme_key")
+                style.style_spec_markdown = str(payload.get("style_spec_markdown") or "")
+                style.updated_by = operator_id
             suggested_component_ids = await WorkspaceStylePackageComponentService(self.session).resolve_style_suggested_component_ids(
                 workspace_id,
                 package_style,

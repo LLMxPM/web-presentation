@@ -15,6 +15,7 @@ from app.models.workspace_component_version import WorkspaceComponentVersion
 from app.repositories.workspace_component_version_repository import WorkspaceComponentVersionRepository
 from app.schemas.component import WorkspaceComponentVersionContent, WorkspaceComponentVersionListItem
 from app.services.component_dependency_service import ComponentDependencyService
+from app.services.component_fingerprint_service import ComponentFingerprintService
 from app.services.component_resource_index_service import ComponentResourceIndexService
 
 
@@ -108,6 +109,10 @@ class WorkspaceComponentVersionService:
         await self.resource_index_service.rebuild_component_version_index(
             component=component,
             component_version=version,
+        )
+        await ComponentFingerprintService(self.session).ensure_workspace_component_version_fingerprint(
+            component=component,
+            version=version,
         )
 
         component.current_version_no = version.version_no

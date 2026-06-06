@@ -81,7 +81,7 @@
           </div>
         </div>
 
-        <div class="mt-3 flex flex-col gap-2.5">
+        <div class="mt-3" :class="previewDetailLayoutClass">
           <article class="border px-3 py-2.5" :style="contentCardStyle">
             <div class="flex items-start justify-between gap-4">
               <div class="min-w-0">
@@ -124,14 +124,24 @@
         </div>
       </section>
 
-      <section class="border px-3 py-2.5" :style="summaryCardStyle">
+      <section
+        v-if="showAccentSummary"
+        class="border"
+        :class="accentSummarySectionClass"
+        :style="summaryCardStyle"
+      >
         <div class="text-[10px] font-bold uppercase tracking-[0.18em] opacity-55">主题强调色</div>
 
-        <div class="mt-2 flex gap-1.5">
-          <div v-for="(color, index) in palette.accent" :key="`${color}-${index}`"
-            class="min-w-0 flex-1 flex flex-col items-center border p-1.5" :style="accentTokenStyle(color)">
-            <div class="h-6 w-full rounded-[2px]" :style="{ backgroundColor: color }" />
-            <div class="mt-1.5 text-[10px] font-mono font-medium tracking-tight" :style="{ color }">{{ color }}</div>
+        <div :class="accentSummaryGridClass">
+          <div
+            v-for="(color, index) in palette.accent"
+            :key="`${color}-${index}`"
+            class="min-w-0 flex-1 flex flex-col items-center border"
+            :class="accentTokenClass"
+            :style="accentTokenStyle(color)"
+          >
+            <div class="w-full rounded-[2px]" :class="accentSwatchClass" :style="{ backgroundColor: color }" />
+            <div class="font-mono font-medium tracking-tight" :class="accentLabelClass" :style="{ color }">{{ color }}</div>
           </div>
         </div>
       </section>
@@ -163,11 +173,15 @@ const props = withDefaults(defineProps<{
   iconDefaultStrokeWidth?: number
   collapsible?: boolean
   defaultExpanded?: boolean
+  layoutMode?: 'default' | 'compact'
+  showAccentSummary?: boolean
 }>(), {
   baseFontSize: '16px',
   iconDefaultStrokeWidth: 2,
   collapsible: false,
   defaultExpanded: true,
+  layoutMode: 'default',
+  showAccentSummary: true,
 })
 
 const isExpanded = ref(props.defaultExpanded)
@@ -358,6 +372,42 @@ const summaryCardStyle = computed(() => ({
   borderColor: palette.value.border.subtle,
   backgroundColor: mixColor(palette.value.background.default, palette.value.background.invert, 0.02),
 }))
+const previewDetailLayoutClass = computed(() => {
+  if (props.layoutMode === 'compact') {
+    return 'grid gap-2.5 lg:grid-cols-[minmax(0,1fr)_240px] lg:items-stretch'
+  }
+  return 'flex flex-col gap-2.5'
+})
+const accentSummarySectionClass = computed(() => {
+  if (props.layoutMode === 'compact') {
+    return 'px-3 py-2'
+  }
+  return 'px-3 py-2.5'
+})
+const accentSummaryGridClass = computed(() => {
+  if (props.layoutMode === 'compact') {
+    return 'mt-2 grid grid-cols-3 gap-1.5 lg:grid-cols-6'
+  }
+  return 'mt-2 flex gap-1.5'
+})
+const accentTokenClass = computed(() => {
+  if (props.layoutMode === 'compact') {
+    return 'p-1'
+  }
+  return 'p-1.5'
+})
+const accentSwatchClass = computed(() => {
+  if (props.layoutMode === 'compact') {
+    return 'h-4'
+  }
+  return 'h-6'
+})
+const accentLabelClass = computed(() => {
+  if (props.layoutMode === 'compact') {
+    return 'mt-1 text-[9px]'
+  }
+  return 'mt-1.5 text-[10px]'
+})
 
 
 /**

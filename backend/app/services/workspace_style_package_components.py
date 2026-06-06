@@ -3,26 +3,18 @@
 from __future__ import annotations
 
 import io
-import re
 import zipfile
 from types import SimpleNamespace
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.code_generator import generate_code
-from app.core.component_preview_schema import validate_component_preview_schema_text
 from app.core.exceptions import AppException
-from app.core.text_normalizer import normalize_text_to_lf
-from app.core.time_utils import utc_now
-from app.models.enums import PageFileType, RecordStatus, WorkspaceComponentType
 from app.models.workspace_component import WorkspaceComponent
 from app.models.workspace_style import WorkspaceStyle
-from app.schemas.component import COMPONENT_IMPORT_NAME_PATTERN
 from app.schemas.workspace_style import WorkspaceStylePackageComponentSummary
 from app.services.component_share_package_service import ComponentSharePackageService, PackageComponent
 from app.services.suggested_component_service import SuggestedComponentService
-from app.services.workspace_component_service import CODE_PREFIX_COMPONENT
 from app.services.workspace_style_package_format import PackageAsset, PackageStyle, WorkspaceStylePackageFormat
 
 
@@ -102,47 +94,24 @@ class WorkspaceStylePackageComponentService:
         self,
         workspace_id: int,
         package_components: list[PackageComponent],
+        package_assets: list[PackageAsset],
+        font_configs: list[dict[str, Any]],
         errors: list[str],
     ) -> list[WorkspaceStylePackageComponentSummary]:
         """构建样式包内组件预检摘要，并判断目标工作空间中创建或复用动作。"""
 
-        summaries: list[WorkspaceStylePackageComponentSummary] = []
-        component_repository = ComponentSharePackageService(self.session).component_repository
-        for component in package_components:
-            metadata = component.metadata
-            required_fields = ["name", "import_name", "component_type"]
-            missing = [field for field in required_fields if not str(metadata.get(field) or "").strip()]
-            if missing:
-                errors.append(f"组件 {component.source_component_code} 元数据缺少字段：{', '.join(missing)}。")
-            import_name = str(metadata.get("import_name") or "").strip()
-            if not re.match(COMPONENT_IMPORT_NAME_PATTERN, import_name):
-                errors.append(f"组件 {component.source_component_code} 的 import_name 不合法。")
-            try:
-                WorkspaceComponentType(str(metadata.get("component_type") or ""))
-            except ValueError:
-                errors.append(f"组件 {component.source_component_code} 的 component_type 不受支持。")
-
-            action = "create"
-            existing = await component_repository.get_active_by_import_name(
-                workspace_id=workspace_id,
-                import_name=import_name,
-            )
-            if existing is not None:
-                if not self.can_reuse_existing_component(existing, component):
-                    errors.append(f'目标工作空间已存在 import_name 为 {import_name} 但元数据不同或未发布的组件。')
-                action = "reuse"
-            summaries.append(
-                WorkspaceStylePackageComponentSummary(
-                    source_component_code=component.source_component_code,
-                    source_version_no=component.source_version_no,
-                    name=str(metadata.get("name") or "").strip(),
-                    import_name=import_name,
-                    component_type=str(metadata.get("component_type") or "").strip(),
-                    dependencies=[f"{code}@v{version_no}" for code, version_no in component.dependencies],
-                    action=action,
-                )
-            )
-        return summaries
+        component_package_service = ComponentSharePackageService(self.session)
+        actions = await component_package_service._build_component_import_actions(
+            workspace_id=workspace_id,
+            package_components=package_components,
+            package_assets=package_assets,
+            font_configs=font_configs,
+            errors=errors,
+        )
+        return [
+            self._to_style_component_summary(summary)
+            for summary in component_package_service._build_component_summaries(actions)
+        ]
 
     async def validate_component_imports(
         self,
@@ -163,13 +132,6 @@ class WorkspaceStylePackageComponentService:
             if import_name in seen_import_names:
                 errors.append(f"样式包内存在重复 import_name：{import_name}。")
             seen_import_names.add(import_name)
-
-            existing = await component_package_service.component_repository.get_active_by_import_name(
-                workspace_id=workspace_id,
-                import_name=import_name,
-            )
-            if existing is not None and not self.can_reuse_existing_component(existing, package_component):
-                errors.append(f'目标工作空间已存在 import_name 为 {import_name} 但不能作为样式包组件复用。')
 
             try:
                 parsed = component_package_service.component_version_service.dependency_service.parse_dependencies(
@@ -238,59 +200,26 @@ class WorkspaceStylePackageComponentService:
         self,
         workspace_id: int,
         package_components: list[PackageComponent],
+        package_assets: list[PackageAsset],
+        font_configs: list[dict[str, Any]],
         operator_id: int,
-    ) -> dict[tuple[str, int], WorkspaceComponent]:
-        """导入样式包组件；目标工作空间已有同 import_name 且可复用时直接建立映射。"""
+    ) -> tuple[dict[tuple[str, int], WorkspaceComponent], list[WorkspaceStylePackageComponentSummary]]:
+        """导入样式包组件；目标工作空间已有同指纹组件时直接建立映射。"""
 
         component_package_service = ComponentSharePackageService(self.session)
-        component_mapping: dict[tuple[str, int], WorkspaceComponent] = {}
-        for package_component in component_package_service._topological_sort_package_components(package_components):
-            key = (package_component.source_component_code, package_component.source_version_no)
-            import_name = str(package_component.metadata["import_name"]).strip()
-            existing = await component_package_service.component_repository.get_active_by_import_name(
-                workspace_id=workspace_id,
-                import_name=import_name,
-            )
-            if existing is not None:
-                component_mapping[key] = existing
-                continue
-
-            code_mapping = {
-                component_key: component.code
-                for component_key, component in component_mapping.items()
-            }
-            content = component_package_service._rewrite_component_imports(package_component.content, code_mapping)
-            preview_schema = component_package_service._rewrite_component_imports(package_component.preview_schema or "", code_mapping)
-            metadata = package_component.metadata
-            now = utc_now()
-            component = WorkspaceComponent(
-                workspace_id=workspace_id,
-                code=await generate_code(self.session, WorkspaceComponent, CODE_PREFIX_COMPONENT),
-                content=normalize_text_to_lf(content),
-                preview_schema=validate_component_preview_schema_text(preview_schema),
-                current_version_no=0,
-                draft_base_version_no=0,
-                file_type=PageFileType.VUE.value,
-                name=str(metadata["name"]).strip(),
-                import_name=import_name,
-                component_type=str(metadata.get("component_type") or WorkspaceComponentType.CONTENT_BLOCK.value),
-                summary=metadata.get("summary"),
-                status=RecordStatus.ACTIVE.value,
-                created_by=operator_id,
-                updated_by=operator_id,
-                created_at=now,
-                updated_at=now,
-            )
-            self.session.add(component)
-            await self.session.flush()
-            await component_package_service.component_version_service.publish_draft(
-                component=component,
-                operator_id=operator_id,
-                release_name="样式包导入",
-                change_note=f"从样式离线包导入：{package_component.source_component_code} v{package_component.source_version_no}",
-            )
-            component_mapping[key] = component
-        return component_mapping
+        _, component_mapping, component_summaries = await component_package_service.import_or_reuse_components(
+            workspace_id,
+            package_components,
+            package_assets,
+            font_configs,
+            operator_id,
+            release_name="样式包导入",
+            change_note_prefix="从样式离线包导入",
+        )
+        return component_mapping, [
+            self._to_style_component_summary(summary)
+            for summary in component_summaries
+        ]
 
     async def resolve_style_suggested_component_ids(
         self,
@@ -342,15 +271,19 @@ class WorkspaceStylePackageComponentService:
         return source_code, version_no
 
     @staticmethod
-    def can_reuse_existing_component(existing: WorkspaceComponent, package_component: PackageComponent) -> bool:
-        """判断目标工作空间已有组件是否可作为样式包组件复用。"""
+    def _to_style_component_summary(summary: Any) -> WorkspaceStylePackageComponentSummary:
+        """把组件分享包摘要转换为样式包组件摘要。"""
 
-        metadata = package_component.metadata
-        return (
-            existing.status == RecordStatus.ACTIVE.value
-            and existing.deleted_at is None
-            and existing.current_version_no > 0
-            and existing.import_name == str(metadata.get("import_name") or "").strip()
-            and existing.name == str(metadata.get("name") or "").strip()
-            and existing.component_type == str(metadata.get("component_type") or "").strip()
+        return WorkspaceStylePackageComponentSummary(
+            source_component_code=summary.source_component_code,
+            source_version_no=summary.source_version_no,
+            name=summary.name,
+            import_name=summary.import_name,
+            component_type=summary.component_type,
+            dependencies=list(summary.dependencies),
+            component_fingerprint=summary.component_fingerprint,
+            matched_component_id=summary.matched_component_id,
+            matched_component_code=summary.matched_component_code,
+            action=summary.action,
+            match_reason=summary.match_reason,
         )

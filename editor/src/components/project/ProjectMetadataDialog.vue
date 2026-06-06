@@ -89,7 +89,7 @@
                 </button>
               </div>
 
-              <label class="ml-1 mt-2 block text-sm font-semibold text-slate-700">PDF 导出按钮</label>
+              <label class="ml-1 mt-2 block text-sm font-semibold text-slate-700">导出按钮</label>
               <div class="mt-2 grid grid-cols-2 gap-1.5 rounded-lg bg-slate-100 p-1">
                 <button v-for="option in pdfButtonOptions" :key="String(option.value)" type="button"
                   class="flex min-h-10 items-center justify-center gap-1.5 rounded-md px-3 py-2 text-xs font-bold transition-all whitespace-nowrap"

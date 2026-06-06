@@ -317,6 +317,11 @@ class ComponentSharePackageComponentSummary(SchemaBase):
     import_name: str
     component_type: str
     dependencies: list[str] = Field(default_factory=list)
+    component_fingerprint: str | None = None
+    matched_component_id: int | None = None
+    matched_component_code: str | None = None
+    action: str = "create"
+    match_reason: str | None = None
 
 
 class ComponentSharePackageAssetSummary(SchemaBase):
@@ -358,5 +363,6 @@ class ComponentShareImportResult(SchemaBase):
     """组件分享包正式导入结果。"""
 
     imported_components: list[WorkspaceComponentItem] = Field(default_factory=list)
+    components: list[ComponentSharePackageComponentSummary] = Field(default_factory=list)
     assets: list[ComponentSharePackageAssetSummary] = Field(default_factory=list)
     fonts: list[ComponentSharePackageFontSummary] = Field(default_factory=list)

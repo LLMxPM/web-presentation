@@ -121,7 +121,7 @@ describe('ThemesView', () => {
     expect(screen.getByDisplayValue('SourceHanSans')).toBeInTheDocument()
   })
 
-  it('点击主题卡应打开主题详情抽屉', async () => {
+  it('点击主题卡应打开主题详情弹窗', async () => {
     renderThemesView()
 
     await waitFor(() => {
@@ -130,7 +130,7 @@ describe('ThemesView', () => {
 
     await fireEvent.click(screen.getByText('主题描述'))
 
-    expect(screen.getByTestId('theme-detail-drawer')).toHaveTextContent('theme-id:1')
+    expect(screen.getByTestId('theme-detail-dialog')).toHaveTextContent('theme-id:1')
   })
 
   it('应支持在页面内上传字体文件，并用上传结果打开注册弹窗', async () => {
@@ -228,15 +228,15 @@ function renderThemesView() {
           },
         }),
         ThemeEditorDialog: true,
-        ThemeDetailDrawer: defineComponent({
-          name: 'ThemeDetailDrawer',
+        ThemeDetailDialog: defineComponent({
+          name: 'ThemeDetailDialog',
           props: {
             modelValue: Boolean,
             themeId: Number,
           },
           setup(props) {
             return () => props.modelValue
-              ? h('aside', { 'data-testid': 'theme-detail-drawer' }, `theme-id:${props.themeId}`)
+              ? h('aside', { 'data-testid': 'theme-detail-dialog' }, `theme-id:${props.themeId}`)
               : null
           },
         }),

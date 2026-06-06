@@ -1,11 +1,11 @@
 /**
- * 文件功能：验证主题详情抽屉会加载详情、展示关键配置，并把操作事件交回父组件。
+ * 文件功能：验证主题详情弹窗会加载详情、展示关键配置，并只暴露保留的详情操作。
  */
 import { defineComponent, h } from 'vue'
 import { fireEvent, render, screen, waitFor } from '@testing-library/vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import ThemeDetailDrawer from './ThemeDetailDrawer.vue'
+import ThemeDetailDialog from './ThemeDetailDialog.vue'
 
 const getWorkspaceThemeMock = vi.fn()
 
@@ -13,54 +13,50 @@ vi.mock('@/api/themes', () => ({
   getWorkspaceTheme: (...args: unknown[]) => getWorkspaceThemeMock(...args),
 }))
 
-describe('ThemeDetailDrawer', () => {
+describe('ThemeDetailDialog', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     getWorkspaceThemeMock.mockResolvedValue(createThemeItem())
   })
 
-  it('应加载并展示主题详情、颜色 token、字体绑定和 Runtime YAML', async () => {
-    renderDrawer()
+  it('应加载并展示快速预览、颜色 token、字体绑定和品牌资源', async () => {
+    renderDialog()
 
     await waitFor(() => {
       expect(getWorkspaceThemeMock).toHaveBeenCalledWith(7, 1)
       expect(screen.getAllByText('默认主题卡').length).toBeGreaterThan(0)
     })
 
+    expect(screen.getByText('快速预览')).toBeInTheDocument()
     expect(screen.getByText('颜色 token')).toBeInTheDocument()
+    expect(screen.getByText('品牌资源')).toBeInTheDocument()
     expect(screen.getAllByText('标题字体').length).toBeGreaterThan(0)
     expect(screen.getAllByText('思源黑体').length).toBeGreaterThan(0)
-    expect(screen.getByText('Runtime YAML')).toBeInTheDocument()
-    expect(screen.getByText(/themes:/)).toBeInTheDocument()
+    expect(screen.queryByText('Runtime YAML')).not.toBeInTheDocument()
+    expect(screen.queryByText('配置摘要')).not.toBeInTheDocument()
   })
 
-  it('应通过事件暴露设为默认、编辑、复制和删除操作', async () => {
-    const { emitted } = renderDrawer({ defaultThemeKey: 'other' })
+  it('应只暴露设为默认操作，并移除编辑复制删除入口', async () => {
+    const { emitted } = renderDialog({ defaultThemeKey: 'other' })
 
     await waitFor(() => {
       expect(screen.getAllByText('默认主题卡').length).toBeGreaterThan(0)
     })
 
     await fireEvent.click(screen.getByRole('button', { name: /设为默认/ }))
-    await fireEvent.click(screen.getByRole('button', { name: /编辑/ }))
-    await fireEvent.click(screen.getByRole('button', { name: /复制/ }))
-    await fireEvent.click(screen.getByRole('button', { name: /删除主题/ }))
 
     const events = emitted() as Record<string, unknown[][]>
     const setDefaultPayload = events.setDefault[0][0] as { id: number; key: string }
-    const editPayload = events.edit[0][0] as { id: number; key: string }
-    const copyPayload = events.copy[0][0] as { id: number; key: string }
-    const deletePayload = events.delete[0][0] as { id: number; key: string }
 
     expect(setDefaultPayload).toMatchObject({ id: 1, key: 'default' })
-    expect(editPayload).toMatchObject({ id: 1, key: 'default' })
-    expect(copyPayload).toMatchObject({ id: 1, key: 'default' })
-    expect(deletePayload).toMatchObject({ id: 1, key: 'default' })
+    expect(screen.queryByRole('button', { name: /编辑/ })).toBeNull()
+    expect(screen.queryByRole('button', { name: /复制/ })).toBeNull()
+    expect(screen.queryByRole('button', { name: /删除主题/ })).toBeNull()
   })
 })
 
-function renderDrawer(options: { defaultThemeKey?: string } = {}) {
-  return render(ThemeDetailDrawer, {
+function renderDialog(options: { defaultThemeKey?: string } = {}) {
+  return render(ThemeDetailDialog, {
     props: {
       modelValue: true,
       workspaceId: 7,
@@ -76,6 +72,15 @@ function renderDrawer(options: { defaultThemeKey?: string } = {}) {
           },
           setup(props, { attrs, slots }) {
             return () => h('button', { ...attrs, disabled: props.disabled }, slots.default?.())
+          },
+        }),
+        BaseDialog: defineComponent({
+          name: 'BaseDialog',
+          props: {
+            modelValue: Boolean,
+          },
+          setup(props, { slots }) {
+            return () => props.modelValue ? h('section', slots.default?.()) : null
           },
         }),
         ThemePreviewCard: defineComponent({
