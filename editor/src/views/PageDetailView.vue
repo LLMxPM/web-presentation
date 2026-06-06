@@ -62,6 +62,15 @@
                 <Code2 class="h-4 w-4" />
                 编辑器
               </button>
+              <button
+                type="button"
+                class="inline-flex h-7 items-center gap-1.5 rounded-md px-2.5 text-xs font-semibold transition"
+                :class="activeDetailPane === 'notes' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'"
+                @click="activeDetailPane = 'notes'"
+              >
+                <FileText class="h-4 w-4" />
+                备注
+              </button>
             </div>
 
             <div class="flex flex-wrap items-center justify-end gap-1">
@@ -133,6 +142,16 @@
           :preview-frame-url="previewFrameUrl"
           :preview-viewport="previewViewport"
           :page-title="pageDetails.title"
+        />
+
+        <PageSpeakerNotesPanel
+          v-else-if="activeDetailPane === 'notes'"
+          v-model="speakerNotesDraft"
+          :page-title="pageDetails.title"
+          :dirty="isSpeakerNotesDirty"
+          :loading="isSpeakerNotesSaving"
+          :disabled="isSaveActionPending"
+          @save="handleSpeakerNotesSave"
         />
 
         <PageDetailWorkbenchPanel
@@ -239,7 +258,7 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/vue-query'
-import { ArrowLeft, Camera, ChevronLeft, ChevronRight, Code2, Copy, Frown, History, Layers, Monitor, Save, SquarePen } from '@lucide/vue'
+import { ArrowLeft, Camera, ChevronLeft, ChevronRight, Code2, Copy, FileText, Frown, History, Layers, Monitor, Save, SquarePen } from '@lucide/vue'
 
 import { getErrorMessage } from '@/api/http'
 import {
@@ -262,6 +281,7 @@ import PageDetailPreviewPanel from '@/components/page-detail/PageDetailPreviewPa
 import PageDetailWorkbenchPanel from '@/components/page-detail/PageDetailWorkbenchPanel.vue'
 import PageScreenshotDialog from '@/components/page-detail/PageScreenshotDialog.vue'
 import PageSnapshotDialog from '@/components/page-detail/PageSnapshotDialog.vue'
+import PageSpeakerNotesPanel from '@/components/page-detail/PageSpeakerNotesPanel.vue'
 import PageUsageDialog from '@/components/page-detail/PageUsageDialog.vue'
 import PageVersionHistoryDialog from '@/components/page-detail/PageVersionHistoryDialog.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
@@ -287,7 +307,7 @@ import { buildPageDetailPath, buildProjectPagesPath } from '@/utils/workspace-ro
 
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error'
 type PageWorkbenchPane = 'editor' | 'assistant'
-type PageDetailPane = 'preview' | 'editor'
+type PageDetailPane = 'preview' | 'editor' | 'notes'
 
 interface SaveRequestOptions {
   refreshPreview?: boolean
@@ -309,6 +329,7 @@ const route = useRoute()
 const router = useRouter()
 const queryClient = useQueryClient()
 const DEFAULT_PREVIEW_VIEWPORT: { width: number; height: number } = { width: 1920, height: 1080 }
+const SPEAKER_NOTES_MAX_LENGTH = 10000
 
 const workspaceId = computed(() => parseInt(route.params.workspaceId as string, 10))
 const projectId = computed(() => parseInt(route.params.projectId as string, 10))
@@ -332,6 +353,7 @@ const isScreenshotDialogOpen = ref(false)
 const isUsageDialogOpen = ref(false)
 const isPageIdentityDialogOpen = ref(false)
 const isPageIdentitySaving = ref(false)
+const isSpeakerNotesSaving = ref(false)
 const isCopyDialogOpen = ref(false)
 const isCopyPending = ref(false)
 const isPreviewEnabled = ref(true)
@@ -350,6 +372,8 @@ const versionPreviewLinkMap = ref<Record<number, PreviewArtifactResponse>>({})
 const isSnapshotDialogOpen = ref(false)
 const snapshotDialogVersionNo = ref<number | null>(null)
 const snapshotDraftName = ref('')
+const speakerNotesDraft = ref('')
+const lastLoadedSpeakerNotesPageId = ref<number | null>(null)
 
 const autoSaveOptions = [
   { label: '关闭', value: 0 },
@@ -360,7 +384,7 @@ const autoSaveOptions = [
 ]
 
 const editorHeight = '100%'
-const isSaveActionPending = computed(() => saveMutation.isPending.value || isPreviewPending.value)
+const isSaveActionPending = computed(() => saveMutation.isPending.value || isPreviewPending.value || isSpeakerNotesSaving.value)
 const isScreenshotPending = computed(() => screenshotMutation.isPending.value)
 const previewDisplayFileName = computed(() => {
   const path = previewFilePath.value.trim()
@@ -511,6 +535,9 @@ const usedResourceItems = computed(() => pageComponentIndex.value?.resources ?? 
 const editorLanguage = computed<EditorLanguage>(() => 'vue')
 const isFileTypeDirty = computed(() => false) // 固定为 vue
 const hasPendingChanges = computed(() => isEditorDirty.value)
+const isSpeakerNotesDirty = computed(() => {
+  return speakerNotesDraft.value !== (pageDetails.value?.speaker_notes ?? '')
+})
 
 /**
  * 返回当前页面所属项目的页面列表。
@@ -608,6 +635,53 @@ async function handlePageIdentityUpdate(payload: { title: string; summary: strin
   }
 }
 
+/**
+ * 保存页面演讲者备注，并同步页面详情、页面列表与版本历史缓存。
+ */
+async function handleSpeakerNotesSave(): Promise<boolean> {
+  if (!pageDetails.value || isSpeakerNotesSaving.value) {
+    return false
+  }
+  if (!isSpeakerNotesDirty.value) {
+    Message.info('暂无需要保存的备注。')
+    return true
+  }
+  if (speakerNotesDraft.value.length > SPEAKER_NOTES_MAX_LENGTH) {
+    Message.error(`演讲者备注不能超过 ${SPEAKER_NOTES_MAX_LENGTH} 个字符。`)
+    return false
+  }
+
+  isSpeakerNotesSaving.value = true
+  try {
+    const updatedPage = await updatePage(pageId.value, {
+      speaker_notes: normalizeSpeakerNotesPayload(speakerNotesDraft.value),
+      change_note: '更新演讲者备注',
+    })
+    speakerNotesDraft.value = updatedPage.speaker_notes ?? ''
+    queryClient.setQueryData(['page', pageId.value], updatedPage)
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['pages-by-project', projectId.value] }),
+      queryClient.invalidateQueries({ queryKey: ['page-versions', pageId.value] }),
+    ])
+    previewInitializedPageId.value = null
+    Message.success('演讲者备注已保存。')
+    return true
+  } catch (error) {
+    Message.error(getErrorMessage(error, '保存演讲者备注失败。'))
+    return false
+  } finally {
+    isSpeakerNotesSaving.value = false
+  }
+}
+
+/**
+ * 将备注文本转为后端可接受的可空字段，空白文本视为清空备注。
+ * @param value 当前输入框内容
+ */
+function normalizeSpeakerNotesPayload(value: string): string | null {
+  return value.trim() ? value : null
+}
+
 const saveMutation = useMutation({
   mutationFn: (payload: { pageCode: string; fileType: PageFileType }) => updatePage(pageId.value, {
     page_content: payload.pageCode,
@@ -661,6 +735,19 @@ watch(pageDetails, (page) => {
       snapshotDialogVersionNo.value = null
       snapshotDraftName.value = ''
     }
+  }
+}, { immediate: true })
+
+/**
+ * 同步页面备注草稿；页面切换时强制重置，普通详情刷新不覆盖本地未保存备注。
+ */
+watch(pageDetails, (page) => {
+  if (!page) return
+
+  const isNewPage = lastLoadedSpeakerNotesPageId.value !== page.id
+  if (isNewPage || !isSpeakerNotesDirty.value) {
+    speakerNotesDraft.value = page.speaker_notes ?? ''
+    lastLoadedSpeakerNotesPageId.value = page.id
   }
 }, { immediate: true })
 
@@ -724,6 +811,13 @@ async function handlePreviewPaneSelect(): Promise<void> {
   const currentPage = pageDetails.value
   if (!currentPage || isSaveActionPending.value) return
   if (activeDetailPane.value === 'preview') return
+
+  if (activeDetailPane.value === 'notes' && isSpeakerNotesDirty.value) {
+    const notesSaved = await handleSpeakerNotesSave()
+    if (!notesSaved) {
+      return
+    }
+  }
 
   const saved = await requestSave('manual', editorCode.value, {
     refreshPreview: false,

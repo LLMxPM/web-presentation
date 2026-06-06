@@ -1,4 +1,4 @@
-"""文件功能：定义页面版本链模型，支持最新版本基线、向后 diff 与重点快照。"""
+"""文件功能：定义页面版本链模型，支持源码与演讲备注的最新基线、向后 diff 与重点快照。"""
 
 from sqlalchemy import Boolean, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
@@ -23,6 +23,7 @@ class PageVersion(TimestampMixin, Base):
     file_type: Mapped[PageFileType] = mapped_column(String(32), nullable=False)
     storage_type: Mapped[PageVersionStorageType] = mapped_column(String(32), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
+    speaker_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     is_important: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="0")
     snapshot_name: Mapped[str | None] = mapped_column(String(128), nullable=True)
     change_note: Mapped[str | None] = mapped_column(String(255), nullable=True)

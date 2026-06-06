@@ -17,6 +17,7 @@ class PageCreateRequest(BaseModel):
     file_type: PageFileType = PageFileType.VUE
     title: str = Field(min_length=1, max_length=128)
     summary: str | None = Field(default=None, max_length=500)
+    speaker_notes: str | None = Field(default=None, max_length=10000)
     status: RecordStatus = RecordStatus.ACTIVE
     workspace_id: int | None = None
     project_id: int | None = None
@@ -30,6 +31,7 @@ class PageUpdateRequest(BaseModel):
     change_note: str | None = Field(default=None, max_length=255)
     title: str | None = Field(default=None, min_length=1, max_length=128)
     summary: str | None = Field(default=None, max_length=500)
+    speaker_notes: str | None = Field(default=None, max_length=10000)
     status: RecordStatus | None = None
     workspace_id: int | None = None
     project_id: int | None = None
@@ -58,6 +60,7 @@ class PageItem(SchemaBase):
     file_type: PageFileType
     title: str
     summary: str | None
+    speaker_notes: str | None = None
     status: RecordStatus
     workspace_id: int | None
     workspace_name: str | None = None
@@ -112,6 +115,7 @@ class PageVersionContent(SchemaBase):
     is_important: bool
     snapshot_name: str | None
     change_note: str | None
+    speaker_notes: str | None = None
     content_mode: Literal["full", "diff"]
     content: str
     resolved_content: str

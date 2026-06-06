@@ -48,6 +48,7 @@ async def _create_catalog_page(
     *,
     page_content: str = "<template><div>copy-page</div></template>",
     summary: str | None = None,
+    speaker_notes: str | None = None,
     status: str = "active",
 ) -> dict:
     """创建测试页面并返回响应 JSON。"""
@@ -59,6 +60,7 @@ async def _create_catalog_page(
             "file_type": "vue",
             "title": title,
             "summary": summary,
+            "speaker_notes": speaker_notes,
             "status": status,
             "workspace_id": workspace_id,
             "project_id": project_id,
@@ -116,6 +118,7 @@ async def test_workspace_project_and_page_crud(authenticated_client: AsyncClient
             "file_type": "vue",
             "title": "页面标题",
             "summary": "summary",
+            "speaker_notes": "开场介绍本页目标。",
             "status": "active",
             "workspace_id": workspace_id,
             "project_id": project_id,
@@ -126,6 +129,7 @@ async def test_workspace_project_and_page_crud(authenticated_client: AsyncClient
     page_id = page_data["id"]
     assert page_data["code"].startswith("PG")
     assert page_data["page_content"] == "demo-page"
+    assert page_data["speaker_notes"] == "开场介绍本页目标。"
     assert page_data["file_type"] == "vue"
     assert page_data["current_version_no"] == 1
 
@@ -134,6 +138,7 @@ async def test_workspace_project_and_page_crud(authenticated_client: AsyncClient
     assert page_detail_response.status_code == 200
     assert page_detail_response.json()["id"] == page_id
     assert page_detail_response.json()["page_content"] == "demo-page"
+    assert page_detail_response.json()["speaker_notes"] == "开场介绍本页目标。"
     assert page_detail_response.json()["file_type"] == "vue"
     assert page_detail_response.json()["current_version_no"] == 1
 
@@ -588,6 +593,7 @@ async def test_page_copy_to_project_should_create_current_version_only(
         "源页面",
         page_content="<template><div>v1</div></template>",
         summary="源摘要",
+        speaker_notes="源页面演讲备注",
     )
 
     update_response = await authenticated_client.patch(
@@ -625,6 +631,7 @@ async def test_page_copy_to_project_should_create_current_version_only(
     assert copied_page["project_id"] == target_project["id"]
     assert copied_page["title"] == "复制页面"
     assert copied_page["summary"] is None
+    assert copied_page["speaker_notes"] == "源页面演讲备注"
     assert copied_page["page_content"] == "<template><div>v2</div></template>"
     assert copied_page["current_version_no"] == 1
     assert copied_page["screenshot_url"] is None
@@ -1300,6 +1307,7 @@ async def test_page_version_history_snapshot_and_restore(authenticated_client: A
             "page_content": "<template><div>v1</div></template>",
             "file_type": "vue",
             "title": "版本页面",
+            "speaker_notes": "讲解 V1 的核心结论。",
             "status": "active",
             "workspace_id": workspace["id"],
             "project_id": project["id"],
@@ -1314,11 +1322,13 @@ async def test_page_version_history_snapshot_and_restore(authenticated_client: A
         json={
             "page_content": "<template><div>v2</div></template>\n<script setup lang=\"ts\">\nconst version = 2\n</script>",
             "file_type": "ts",
+            "speaker_notes": "讲解 V2 新增逻辑。",
             "change_note": "增加脚本逻辑",
         },
     )
     assert update_response.status_code == 200
     assert update_response.json()["current_version_no"] == 2
+    assert update_response.json()["speaker_notes"] == "讲解 V2 新增逻辑。"
 
     versions_response = await authenticated_client.get(f"/api/pages/{page_id}/versions")
     assert versions_response.status_code == 200
@@ -1339,6 +1349,7 @@ async def test_page_version_history_snapshot_and_restore(authenticated_client: A
     assert "-<template><div>v1</div></template>" in version_1_response.json()["content"]
     assert "+<template><div>v2</div></template>" in version_1_response.json()["content"]
     assert version_1_response.json()["resolved_content"] == "<template><div>v1</div></template>"
+    assert version_1_response.json()["speaker_notes"] == "讲解 V1 的核心结论。"
     assert re.fullmatch(r"\d{8}-\d{6}", version_1_response.json()["version_label"])
     assert version_1_response.json()["storage_type"] == "diff"
 
@@ -1352,6 +1363,7 @@ async def test_page_version_history_snapshot_and_restore(authenticated_client: A
     assert snapshot_response.json()["snapshot_name"] == "里程碑 V1"
     assert snapshot_response.json()["content_mode"] == "full"
     assert snapshot_response.json()["resolved_content"] == "<template><div>v1</div></template>"
+    assert snapshot_response.json()["speaker_notes"] == "讲解 V1 的核心结论。"
     assert snapshot_response.json()["storage_type"] == "snapshot"
 
     restored_response = await authenticated_client.post(
@@ -1362,6 +1374,7 @@ async def test_page_version_history_snapshot_and_restore(authenticated_client: A
     restored_page = restored_response.json()
     assert restored_page["current_version_no"] == 3
     assert restored_page["page_content"] == "<template><div>v1</div></template>"
+    assert restored_page["speaker_notes"] == "讲解 V1 的核心结论。"
     assert restored_page["file_type"] == "vue"
 
     versions_after_restore = await authenticated_client.get(f"/api/pages/{page_id}/versions")
@@ -1373,6 +1386,36 @@ async def test_page_version_history_snapshot_and_restore(authenticated_client: A
     assert versions_data[1]["storage_type"] == "diff"
     assert versions_data[2]["is_important"] is True
     assert versions_data[2]["version_label"] == "V1"
+
+
+async def test_page_speaker_notes_update_should_create_page_version(authenticated_client: AsyncClient) -> None:
+    """仅修改演讲者备注时也应生成页面版本，供演讲模式回溯备注。"""
+
+    workspace = await _create_catalog_workspace(authenticated_client, "备注版本页面空间")
+    project = await _create_catalog_project(authenticated_client, workspace["id"], "备注版本页面项目")
+    page = await _create_catalog_page(
+        authenticated_client,
+        workspace["id"],
+        project["id"],
+        "备注版本页面",
+        page_content="<template><div>notes</div></template>",
+        speaker_notes="初始备注",
+    )
+
+    update_response = await authenticated_client.patch(
+        f"/api/pages/{page['id']}",
+        json={"speaker_notes": "只更新备注", "change_note": "更新演讲者备注"},
+    )
+
+    assert update_response.status_code == 200
+    assert update_response.json()["current_version_no"] == 2
+    assert update_response.json()["page_content"] == "<template><div>notes</div></template>"
+    assert update_response.json()["speaker_notes"] == "只更新备注"
+
+    version_1_response = await authenticated_client.get(f"/api/pages/{page['id']}/versions/1")
+    assert version_1_response.status_code == 200
+    assert version_1_response.json()["resolved_content"] == "<template><div>notes</div></template>"
+    assert version_1_response.json()["speaker_notes"] == "初始备注"
 
 
 async def test_snapshot_version_labels_support_major_and_sub_versions(authenticated_client: AsyncClient) -> None:

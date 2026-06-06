@@ -442,6 +442,7 @@ async def test_agent_config_api_should_manage_prompt_and_tool_overrides(authenti
     create_page_instructions = create_page_tool["agent_guide"]["instructions"] or ""
     assert "页面标题" in create_page_instructions
     assert "页面说明" in create_page_instructions
+    assert "演讲者备注" in create_page_instructions
     assert "是否需要加入路由" in create_page_instructions
     assert "page_content" in create_page_instructions
     assert "非空、可运行的 Vue SFC" in create_page_instructions
@@ -459,6 +460,14 @@ async def test_agent_config_api_should_manage_prompt_and_tool_overrides(authenti
         "不要拼接 text-${tone}、from-${color}",
     ):
         assert global_rule_text not in create_page_instructions
+    create_page_schema = create_page_tool["agent_guide"]["parameters_schema"] or {}
+    assert "speaker_notes" in create_page_schema["properties"]
+    assert "speaker_notes" in create_page_tool["agent_guide"]["response_example"]
+    update_page_tool = next(tool for tool in content_project_group["tools"] if tool["key"] == "update_page_metadata")
+    update_page_instructions = update_page_tool["agent_guide"]["instructions"] or ""
+    assert "speaker_notes" in update_page_instructions
+    assert "speaker_notes" in update_page_tool["agent_guide"]["parameters_schema"]["properties"]
+    assert "speaker_notes" in update_page_tool["agent_guide"]["response_example"]
     route_apply_tool = next(tool for tool in content_project_group["tools"] if tool["key"] == "apply_project_route_tree")
     route_apply_instructions = route_apply_tool["agent_guide"]["instructions"] or ""
     assert "读取项目页面列表" in route_apply_instructions

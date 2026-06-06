@@ -715,15 +715,24 @@ _COORDINATOR_TOOL_SPECS = (
         '创建项目页面',
         'content_project',
         '内容与项目',
-        '在当前项目创建页面；page_content 必填，建议先提供可运行的占位 Vue SFC。',
+        '在当前项目创建页面；page_content 必填，可同时写入演讲者备注。',
         default_instructions=(
-            '创建页面前先确认当前项目、页面标题、页面说明、页面编码语义和是否需要加入路由。'
+            '创建页面前先确认当前项目、页面标题、页面说明、演讲者备注、页面编码语义和是否需要加入路由。'
             'page_content 必须是非空、可运行的 Vue SFC；创建前优先调用 check_page_code 检查候选 page_content。'
+            'speaker_notes 是演讲模式展示给演讲者的纯文本备注，按普通文本保留换行，不写 HTML。'
             '本工具只创建页面记录和初始源码，不会自动维护项目路由；如需加入导航，创建后按路由工具流程读取、预览并写入路由树。'
             '创建后如需视觉精修，应在页面上下文中读取新页面源码并通过结构化 edits 修改。'
         ),
         risk_level='write',
-        response_example={'success': True, 'page_id': 4, 'page_code': 'page_new', 'title': '新页面', 'version_no': 1},
+        response_example={
+            'success': True,
+            'page_id': 4,
+            'page_code': 'page_new',
+            'title': '新页面',
+            'summary': '页面说明。',
+            'speaker_notes': '开场先介绍议程。',
+            'version_no': 1,
+        },
     ),
 
     _tool(
@@ -731,9 +740,22 @@ _COORDINATOR_TOOL_SPECS = (
         '更新页面元数据',
         'content_project',
         '内容与项目',
-        '修改当前项目内页面的名称或说明，不修改页面源码。',
+        '修改当前项目内页面的名称、说明或演讲者备注，不修改页面源码。',
+        default_instructions=(
+            '只用于页面基础信息维护，不修改 page_content。'
+            'title、summary 与 speaker_notes 至少传一个；如果需要调整页面内容，改用 get_page_content + apply_page_edits。'
+            'speaker_notes 是演讲模式展示给演讲者的纯文本备注，按普通文本保留换行，不写 HTML。'
+        ),
         risk_level='write',
-        response_example={'success': True, 'page_id': 3, 'page_code': 'page_demo', 'title': '新标题', 'version_no': 5},
+        response_example={
+            'success': True,
+            'page_id': 3,
+            'page_code': 'page_demo',
+            'title': '新标题',
+            'summary': '新版页面说明。',
+            'speaker_notes': '重点说明关键结论。',
+            'version_no': 5,
+        },
     ),
 
     _tool(

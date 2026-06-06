@@ -237,7 +237,7 @@ async def _create_page(
     return response.json()["id"]
 
 
-def _build_page_item(*, page_id: int, content: str) -> PageItem:
+def _build_page_item(*, page_id: int, content: str, speaker_notes: str | None = None) -> PageItem:
     """构造测试所需的最小页面对象，供暂停需求解析单测复用。"""
 
     now = datetime.now(tz=UTC)
@@ -249,6 +249,7 @@ def _build_page_item(*, page_id: int, content: str) -> PageItem:
         file_type=PageFileType.VUE,
         title="测试页面",
         summary=None,
+        speaker_notes=speaker_notes,
         status=RecordStatus.ACTIVE,
         workspace_id=1,
         project_id=1,
@@ -1505,10 +1506,12 @@ async def test_project_page_tools_should_create_and_update_metadata(authenticate
         run_context,
         title="新建页面",
         summary="用于后续细化的占位页面",
+        speaker_notes="创建时的演讲备注",
         page_content=page_content,
     )
     assert created["success"] is True
     assert created["title"] == "新建页面"
+    assert created["speaker_notes"] == "创建时的演讲备注"
     assert created["project_id"] == project_id
 
     get_response = await authenticated_client.get(f"/api/pages/{created['page_id']}")
@@ -1516,6 +1519,7 @@ async def test_project_page_tools_should_create_and_update_metadata(authenticate
     page_payload = get_response.json()
     assert page_payload["page_content"] == page_content
     assert page_payload["summary"] == "用于后续细化的占位页面"
+    assert page_payload["speaker_notes"] == "创建时的演讲备注"
 
     update_tool = _find_tool(tools, "update_page_metadata")
     updated = await update_tool.entrypoint(
@@ -1528,12 +1532,23 @@ async def test_project_page_tools_should_create_and_update_metadata(authenticate
     assert updated["success"] is True
     assert updated["title"] == "更新后的页面"
     assert updated["summary"] == ""
+    assert updated["speaker_notes"] == "创建时的演讲备注"
 
     updated_response = await authenticated_client.get(f"/api/pages/{created['page_id']}")
     assert updated_response.status_code == 200
     updated_payload = updated_response.json()
     assert updated_payload["title"] == "更新后的页面"
     assert updated_payload["summary"] == ""
+    assert updated_payload["speaker_notes"] == "创建时的演讲备注"
+
+    notes_updated = await update_tool.entrypoint(
+        run_context,
+        page_id=created["page_id"],
+        speaker_notes="单独更新后的演讲备注",
+        change_note="更新演讲者备注",
+    )
+    assert notes_updated["success"] is True
+    assert notes_updated["speaker_notes"] == "单独更新后的演讲备注"
 
 
 async def test_project_route_tools_should_list_project_pages_with_user_context(
@@ -2263,11 +2278,13 @@ async def test_get_page_content_prompt_should_render_source() -> None:
     page_item = _build_page_item(
         page_id=88,
         content="<template>\n  <div>hello</div>\n</template>\n",
+        speaker_notes="演讲时强调 hello 页面。",
     )
     prompt = build_page_content_prompt(page_item)
 
     assert "页面源信息：" in prompt
     assert "目标页面 ID：88" in prompt
+    assert "演讲者备注：演讲时强调 hello 页面。" in prompt
     assert "源码：" in prompt
     assert "行号版源码：" not in prompt
     assert "```vue" not in prompt

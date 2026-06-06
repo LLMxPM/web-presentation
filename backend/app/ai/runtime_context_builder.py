@@ -37,6 +37,7 @@ async def build_agent_runtime_context(*, session: AsyncSession, scope: AgentScop
         style_spec_markdown=project_item.style_spec_markdown if project_item else None,
         page_title=page_item.title if page_item else None,
         page_summary=page_item.summary if page_item else None,
+        page_speaker_notes=page_item.speaker_notes if page_item else None,
         page_code=page_item.code if page_item else None,
         page_content=page_item.page_content if page_item else None,
         file_type=page_item.file_type.value if page_item else None,

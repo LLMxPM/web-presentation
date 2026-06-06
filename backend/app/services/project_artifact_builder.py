@@ -63,6 +63,8 @@ class ProjectPageModuleOverride:
 
     content: str
     page_version_id: int | None = None
+    speaker_notes: str | None = None
+    override_speaker_notes: bool = False
 
 
 @dataclass(slots=True, frozen=True)
@@ -148,6 +150,7 @@ class ProjectArtifactBuilder:
                 code="PREVIEW_ENTRY_PAGE_NOT_FOUND",
                 detail="单页面预览入口对应的页面不存在，无法生成预览快照。",
             )
+        self.apply_page_meta_overrides(runtime_route_config, page_module_overrides or {})
 
         preview_kind: Literal["project", "page"] = (
             "page" if normalized_entry_descriptor.entry_type == "module" else "project"
@@ -717,6 +720,56 @@ class ProjectArtifactBuilder:
                 if child_component:
                     component_paths.add(child_component)
         return component_paths
+
+    @classmethod
+    def apply_page_meta_overrides(
+        cls,
+        runtime_route_config: dict[str, list[dict[str, object]]],
+        page_module_overrides: dict[str, ProjectPageModuleOverride],
+    ) -> None:
+        """按临时页面模块覆盖路由备注，主要用于历史版本预览保留版本备注。"""
+
+        speaker_notes_overrides = {
+            cls.normalize_direct_entry_module_path(module_path): override
+            for module_path, override in page_module_overrides.items()
+            if override.override_speaker_notes
+        }
+        speaker_notes_overrides = {
+            module_path: override
+            for module_path, override in speaker_notes_overrides.items()
+            if module_path
+        }
+        if not speaker_notes_overrides:
+            return
+
+        for route_item in runtime_route_config.get("routes", []) or []:
+            cls._apply_page_meta_override_to_route(route_item, speaker_notes_overrides)
+
+    @classmethod
+    def _apply_page_meta_override_to_route(
+        cls,
+        route_item: object,
+        speaker_notes_overrides: dict[str, ProjectPageModuleOverride],
+    ) -> None:
+        """递归处理路由树，仅对带 component 的页面路由应用备注覆盖。"""
+
+        if not isinstance(route_item, dict):
+            return
+
+        component_path = cls.normalize_direct_entry_module_path(str(route_item.get("component") or ""))
+        override = speaker_notes_overrides.get(component_path)
+        if override is not None:
+            meta = route_item.get("meta")
+            if not isinstance(meta, dict):
+                meta = {}
+                route_item["meta"] = meta
+            if override.speaker_notes is None:
+                meta.pop("speakerNotes", None)
+            else:
+                meta["speakerNotes"] = override.speaker_notes
+
+        for child in route_item.get("children", []) or []:
+            cls._apply_page_meta_override_to_route(child, speaker_notes_overrides)
 
     @classmethod
     def resolve_direct_entry_page(cls, all_project_pages: list[Page], module_path: str) -> Page | None:

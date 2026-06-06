@@ -453,6 +453,7 @@ export async function createPage(payload: {
   file_type: string
   title: string
   summary?: string | null
+  speaker_notes?: string | null
   status: string
   workspace_id?: number | null
   project_id?: number | null
@@ -470,6 +471,7 @@ export async function updatePage(
     change_note: string | null
     title: string
     summary: string | null
+    speaker_notes: string | null
     status: string
     workspace_id: number | null
     project_id: number | null

@@ -77,6 +77,7 @@ def build_page_content_prompt(
     file_type = page_item.file_type.value
     page_content = str(page_item.page_content or "")
     summary_text = page_item.summary or "（未填写）"
+    speaker_notes_text = page_item.speaker_notes or "（未填写）"
     page_canvas_lines = []
     if page_width is not None and page_height is not None:
         page_canvas_lines = [
@@ -94,6 +95,7 @@ def build_page_content_prompt(
             f"页面编码：{page_item.code}",
             f"页面标题：{page_item.title}",
             f"页面描述：{summary_text}",
+            f"演讲者备注：{speaker_notes_text}",
             f"文件类型：{file_type}",
             f"当前版本：v{page_item.current_version_no}",
             f"页面状态：{page_item.status.value}",

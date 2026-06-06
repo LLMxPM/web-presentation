@@ -463,18 +463,22 @@ class ProjectRouteService:
                 title=page.title,
                 order=route.order,
                 hidden=route.hidden,
+                speaker_notes=page.speaker_notes,
             ),
         }
 
     @staticmethod
-    def _build_runtime_meta(*, title: str, order: int, hidden: bool) -> dict[str, object]:
+    def _build_runtime_meta(*, title: str, order: int, hidden: bool, speaker_notes: str | None = None) -> dict[str, object]:
         """按 Runtime 需要的格式构建 meta 字段。"""
 
-        return {
+        meta: dict[str, object] = {
             "title": title,
             "order": order,
             "hidden": hidden,
         }
+        if speaker_notes is not None:
+            meta["speakerNotes"] = speaker_notes
+        return meta
 
     @staticmethod
     def _build_full_path(parent_route: str | None, route: str) -> str:

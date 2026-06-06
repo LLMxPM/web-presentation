@@ -205,6 +205,7 @@ function createPageDetailPayload(overrides: Record<string, unknown> = {}) {
     file_type: 'vue',
     title: '页面详情',
     summary: '摘要',
+    speaker_notes: null,
     status: 'active',
     workspace_id: 11,
     workspace_name: '工作空间 A',
@@ -1458,6 +1459,34 @@ describe('page screenshot views', () => {
     await waitFor(() => {
       expect(messageSuccessMock).toHaveBeenCalledWith('页面信息已更新。')
       expect(screen.getByText('页面详情新标题')).toBeInTheDocument()
+    })
+  })
+
+  it('PageDetailView 应在备注面板编辑并保存演讲者备注', async () => {
+    getPageMock.mockResolvedValue(createPageDetailPayload({
+      speaker_notes: '旧备注',
+    }))
+    updatePageMock.mockResolvedValue(createPageDetailPayload({
+      speaker_notes: '新备注\n第二行',
+      current_version_no: 2,
+    }))
+
+    render(PageDetailView, createTestingRenderOptions())
+
+    expect(await screen.findByText('页面详情')).toBeInTheDocument()
+    await fireEvent.click(screen.getByRole('button', { name: '备注' }))
+    const textarea = screen.getByPlaceholderText(/记录演讲时只给自己看的提示/) as HTMLTextAreaElement
+    expect(textarea.value).toBe('旧备注')
+
+    await fireEvent.update(textarea, '新备注\n第二行')
+    await fireEvent.click(screen.getByRole('button', { name: '保存备注' }))
+
+    await waitFor(() => {
+      expect(updatePageMock).toHaveBeenCalledWith(31, {
+        speaker_notes: '新备注\n第二行',
+        change_note: '更新演讲者备注',
+      })
+      expect(messageSuccessMock).toHaveBeenCalledWith('演讲者备注已保存。')
     })
   })
 

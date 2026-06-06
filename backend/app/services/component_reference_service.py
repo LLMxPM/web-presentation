@@ -163,6 +163,7 @@ class ComponentReferenceService:
                 page_content=updated_content,
                 file_type=PageFileType(page.file_type),
                 operator_id=operator_id,
+                speaker_notes=page.speaker_notes,
                 change_note=f"升级组件 {target_component_code} 到 v{target_version_no}",
             )
             page.updated_by = operator_id

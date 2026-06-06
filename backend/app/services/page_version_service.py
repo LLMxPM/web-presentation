@@ -1,10 +1,11 @@
-"""文件功能：封装页面版本链的核心算法，支持最新基线、向后 diff、重点快照与版本恢复。"""
+"""文件功能：封装页面版本链的核心算法，支持源码与演讲备注的最新基线、向后 diff、重点快照与版本恢复。"""
 
 from __future__ import annotations
 
 import json
 from datetime import datetime
 from difflib import SequenceMatcher, restore, unified_diff
+from typing import Final
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -18,6 +19,13 @@ from app.repositories.page_version_repository import PageVersionRepository
 from app.schemas.page import PageVersionContent, PageVersionListItem
 from app.services.component_dependency_service import ComponentDependencyService
 from app.services.page_component_index_service import PageComponentIndexService
+
+
+class _SpeakerNotesUnset:
+    """演讲备注未传入标记，区别于显式传入 None 清空备注。"""
+
+
+_SPEAKER_NOTES_UNSET: Final = _SpeakerNotesUnset()
 
 
 class PageVersionService:
@@ -48,6 +56,7 @@ class PageVersionService:
             file_type=page.file_type,
             storage_type=PageVersionStorageType.SNAPSHOT.value,
             content=normalized_page_content,
+            speaker_notes=page.speaker_notes,
             is_important=False,
             change_note=change_note,
             created_by=operator_id,
@@ -75,14 +84,28 @@ class PageVersionService:
         page_content: str,
         file_type: PageFileType,
         operator_id: int,
+        speaker_notes: str | None | _SpeakerNotesUnset = _SPEAKER_NOTES_UNSET,
         change_note: str | None = None,
     ) -> PageVersion | None:
         """保存页面新版本，并将旧最新版本降级为向后 diff 或保留为重点快照。"""
 
         normalized_page_content = normalize_text_to_lf(page_content)
         normalized_existing_content = normalize_text_to_lf(page.page_content)
+        normalized_existing_speaker_notes = (
+            normalize_text_to_lf(page.speaker_notes) if page.speaker_notes is not None else None
+        )
+        if speaker_notes is _SPEAKER_NOTES_UNSET:
+            normalized_speaker_notes = normalized_existing_speaker_notes
+        elif speaker_notes is None:
+            normalized_speaker_notes = None
+        else:
+            normalized_speaker_notes = normalize_text_to_lf(str(speaker_notes))
         normalized_file_type = file_type.value
-        if normalized_existing_content == normalized_page_content and page.file_type == normalized_file_type:
+        if (
+            normalized_existing_content == normalized_page_content
+            and page.file_type == normalized_file_type
+            and normalized_existing_speaker_notes == normalized_speaker_notes
+        ):
             return None
 
         latest_version = await self.repository.get_latest_by_page_id(page.id)
@@ -105,6 +128,7 @@ class PageVersionService:
             file_type=normalized_file_type,
             storage_type=PageVersionStorageType.SNAPSHOT.value,
             content=normalized_page_content,
+            speaker_notes=normalized_speaker_notes,
             is_important=False,
             change_note=change_note,
             created_by=operator_id,
@@ -127,6 +151,7 @@ class PageVersionService:
 
         page.page_content = normalized_page_content
         page.file_type = normalized_file_type
+        page.speaker_notes = normalized_speaker_notes
         page.current_version_no = new_version.version_no
         return new_version
 
@@ -187,6 +212,7 @@ class PageVersionService:
             is_important=target.is_important,
             snapshot_name=target.snapshot_name,
             change_note=target.change_note,
+            speaker_notes=target.speaker_notes,
             content_mode=content_mode,
             content=display_content,
             resolved_content=resolved_content,
@@ -224,6 +250,7 @@ class PageVersionService:
             is_important=target.is_important,
             snapshot_name=target.snapshot_name,
             change_note=target.change_note,
+            speaker_notes=target.speaker_notes,
             content_mode="full",
             content=target.content,
             resolved_content=target.content,
@@ -247,6 +274,7 @@ class PageVersionService:
             page_content=target.resolved_content,
             file_type=target.file_type,
             operator_id=operator_id,
+            speaker_notes=target.speaker_notes,
             change_note=restore_note,
         )
 

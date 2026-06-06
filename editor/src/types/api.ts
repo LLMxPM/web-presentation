@@ -248,6 +248,7 @@ export interface PageItem {
   file_type: PageFileType
   title: string
   summary: string | null
+  speaker_notes?: string | null
   status: RecordStatus
   workspace_id: number | null
   workspace_name: string | null
@@ -365,6 +366,7 @@ export interface PageVersionContent {
   is_important: boolean
   snapshot_name: string | null
   change_note: string | null
+  speaker_notes?: string | null
   content_mode: 'full' | 'diff'
   content: string
   resolved_content: string
