@@ -200,7 +200,7 @@
         </div>
 
         <div v-if="importValidation?.errors.length" class="rounded-xl border border-rose-100 bg-rose-50 px-4 py-3">
-          <p class="mb-2 text-sm font-bold text-rose-700">预检未通过</p>
+          <p class="mb-2 text-sm font-bold text-rose-700">预检未通过，请修改或删除相应资源后重试</p>
           <ul class="space-y-1 text-xs leading-5 text-rose-700">
             <li v-for="error in importValidation.errors" :key="error">{{ error }}</li>
           </ul>

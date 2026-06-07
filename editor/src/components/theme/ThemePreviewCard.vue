@@ -34,114 +34,119 @@
 
     <div v-show="!collapsible || isExpanded" class="space-y-2.5 px-3 py-3">
       <section class="border p-3" :style="surfaceCardStyle">
-        <div class="flex items-start justify-between gap-3">
-          <div class="min-w-0">
-            <div class="text-[10px] font-bold uppercase tracking-[0.18em] opacity-55">页面组件示意</div>
-            <div class="mt-1.5 text-[20px] font-bold leading-tight" :style="headingStyle">
-              大标题：{{ headingFontLabel }}
-            </div>
-            <p class="mt-1 text-[11px] leading-5 opacity-90" :style="{ color: palette.text.secondary, ...bodyStyle }">
-              正文{{ bodyFontLabel }}，展示字号 {{ baseFontSize }}
-            </p>
-            <p class="mt-1 text-[10px] leading-5 opacity-75" :style="{ color: palette.text.secondary, ...bodyStyle }">
-              图标描边宽度 {{ iconDefaultStrokeWidth }}
-            </p>
-            <div class="mt-2 flex items-center gap-4">
-              <div class="flex items-center gap-2">
-                <div class="flex shrink-0 items-center justify-center rounded-lg border transition-all"
-                  :style="projectIconFrameStyle">
-                  <span v-if="showProjectIconSvg" class="app-preview-icon" :style="projectIconSvgStyle"
-                    v-html="projectIconSvgMarkup" />
-                  <img v-else-if="projectIconUrl" :src="projectIconUrl" alt="theme-project-icon"
-                    class="object-contain transition-all" :style="projectIconImageStyle">
-                  <span v-else class="font-semibold uppercase tracking-[0.08em] transition-all"
-                    :style="projectIconFallbackStyle">
-                    {{ projectIconInitial }}
-                  </span>
-                </div>
+        <div class="space-y-2.5">
+          <div :class="previewTopRowClass">
+            <article class="border px-3 py-3" :style="componentPanelStyle">
+              <div class="flex items-start justify-between gap-3">
                 <div class="min-w-0">
-                  <div class="text-[10px] font-bold uppercase tracking-[0.18em] opacity-55">项目图标</div>
+                  <div class="text-[10px] font-bold uppercase tracking-[0.18em] opacity-55">页面组件示意</div>
+                  <div class="mt-1.5 text-[20px] font-bold leading-tight" :style="headingStyle">
+                    大标题：{{ headingFontLabel }}
+                  </div>
+                  <p class="mt-1 text-[11px] leading-5 opacity-90" :style="{ color: palette.text.secondary, ...bodyStyle }">
+                    正文{{ bodyFontLabel }}，展示字号 {{ baseFontSize }}
+                  </p>
+                  <p class="mt-1 text-[10px] leading-5 opacity-75" :style="{ color: palette.text.secondary, ...bodyStyle }">
+                    图标描边宽度 {{ iconDefaultStrokeWidth }}
+                  </p>
+                  <div class="mt-2 flex items-center gap-4">
+                    <div class="flex items-center gap-2">
+                      <div class="flex shrink-0 items-center justify-center rounded-lg border transition-all"
+                        :style="projectIconFrameStyle">
+                        <span v-if="showProjectIconSvg" class="app-preview-icon" :style="projectIconSvgStyle"
+                          v-html="projectIconSvgMarkup" />
+                        <img v-else-if="projectIconUrl" :src="projectIconUrl" alt="theme-project-icon"
+                          class="object-contain transition-all" :style="projectIconImageStyle">
+                        <span v-else class="font-semibold uppercase tracking-[0.08em] transition-all"
+                          :style="projectIconFallbackStyle">
+                          {{ projectIconInitial }}
+                        </span>
+                      </div>
+                      <div class="min-w-0">
+                        <div class="text-[10px] font-bold uppercase tracking-[0.18em] opacity-55">项目图标</div>
+                      </div>
+                    </div>
+                    <div class="flex items-center gap-2">
+                      <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border"
+                        :style="pageIconFrameStyle">
+                        <span class="app-preview-icon" :style="pageDemoIconStyle" v-html="pageDemoIconSvg" />
+                      </div>
+                      <div class="min-w-0">
+                        <div class="text-[10px] font-bold uppercase tracking-[0.18em] opacity-55">图标示例</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div class="flex h-10 w-24 shrink-0 items-center justify-center border px-2" :style="logoFrameStyle">
+                  <img v-if="logoUrl" :src="logoUrl" alt="theme-logo-light" class="h-6 max-w-[80px] object-contain">
+                  <span v-else class="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Logo</span>
                 </div>
               </div>
-              <div class="flex items-center gap-2">
-                <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border"
-                  :style="pageIconFrameStyle">
-                  <span class="app-preview-icon" :style="pageDemoIconStyle" v-html="pageDemoIconSvg" />
+            </article>
+
+            <section
+              v-if="showAccentSummary"
+              class="border"
+              :class="accentSummarySectionClass"
+              :style="summaryCardStyle"
+            >
+              <div class="text-[10px] font-bold uppercase tracking-[0.18em] opacity-55">主题强调色</div>
+
+              <div :class="accentSummaryGridClass">
+                <div
+                  v-for="(color, index) in palette.accent"
+                  :key="`${color}-${index}`"
+                  class="min-w-0 flex flex-col items-center border"
+                  :class="accentTokenClass"
+                  :style="accentTokenStyle(color)"
+                >
+                  <div class="w-full rounded-[2px]" :class="accentSwatchClass" :style="{ backgroundColor: color }" />
+                  <div class="font-mono font-medium tracking-tight" :class="accentLabelClass" :style="{ color }">{{ color }}</div>
                 </div>
+              </div>
+            </section>
+          </div>
+
+          <div :class="previewBottomRowClass">
+            <article class="border px-3 py-2.5" :style="contentCardStyle">
+              <div class="flex items-start justify-between gap-4">
                 <div class="min-w-0">
-                  <div class="text-[10px] font-bold uppercase tracking-[0.18em] opacity-55">图标示例</div>
+                  <div class="text-[10px] font-bold uppercase tracking-[0.18em] opacity-55">文本与交互</div>
+                  <p class="mt-1.5 text-[11px] leading-relaxed" :style="{ color: palette.text.primary, ...bodyStyle }">
+                    正文提供核心阅读体验。右侧展示了
+                    <span :style="{ color: palette.link.default, fontWeight: 600 }">链接</span>、
+                    <span :style="{ color: palette.link.hover, fontWeight: 600 }">悬停</span>及
+                    <span :style="{ color: palette.link.visited, fontWeight: 600 }">已访问</span>状态的区别。
+                  </p>
+                </div>
+                <div class="mt-0.5 flex shrink-0 flex-col items-end gap-1.5 text-[10px] font-semibold">
+                  <button class="rounded-[2px] px-2 py-0.5" :style="primaryActionStyle">操作按钮</button>
+                  <span class="rounded-[2px] px-2 py-0.5" :style="inverseChipStyle">标签</span>
                 </div>
               </div>
-
-            </div>
-          </div>
-          <div class="flex h-10 w-24 shrink-0 items-center justify-center border px-2" :style="logoFrameStyle">
-            <img v-if="logoUrl" :src="logoUrl" alt="theme-logo-light" class="h-6 max-w-[80px] object-contain">
-            <span v-else class="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Logo</span>
-          </div>
-        </div>
-
-        <div class="mt-3" :class="previewDetailLayoutClass">
-          <article class="border px-3 py-2.5" :style="contentCardStyle">
-            <div class="flex items-start justify-between gap-4">
-              <div class="min-w-0">
-                <div class="text-[10px] font-bold uppercase tracking-[0.18em] opacity-55">文本与交互</div>
-                <p class="mt-1.5 text-[11px] leading-relaxed" :style="{ color: palette.text.primary, ...bodyStyle }">
-                  正文提供核心阅读体验。右侧展示了
-                  <span :style="{ color: palette.link.default, fontWeight: 600 }">链接</span>、
-                  <span :style="{ color: palette.link.hover, fontWeight: 600 }">悬停</span>及
-                  <span :style="{ color: palette.link.visited, fontWeight: 600 }">已访问</span>状态的区别。
-                </p>
+              <div class="mt-3 border-t pt-2" :style="{ borderColor: palette.border.subtle }">
+                <code class="text-[10px]" :style="inlineCodeStyle">{{ codeFontLabel }} | key: {{ key }}</code>
               </div>
-              <div class="flex shrink-0 flex-col items-end gap-1.5 text-[10px] font-semibold mt-0.5">
-                <button class="rounded-[2px] px-2 py-0.5" :style="primaryActionStyle">操作按钮</button>
-                <span class="rounded-[2px] px-2 py-0.5" :style="inverseChipStyle">标签</span>
-              </div>
-            </div>
-            <div class="mt-3 border-t pt-2" :style="{ borderColor: palette.border.subtle }">
-              <code class="text-[10px]" :style="inlineCodeStyle">{{ codeFontLabel }} | key: {{ key }}</code>
-            </div>
-          </article>
+            </article>
 
-          <aside class="flex flex-col justify-center border px-3 py-2.5" :style="inversePanelStyle">
-            <div class="flex items-center justify-between gap-2">
-              <div class="min-w-0">
-                <div class="text-[10px] font-bold uppercase tracking-[0.18em]" :style="inverseMutedStyle">反色</div>
-                <div class="mt-1 text-[13px] font-bold leading-snug"
-                  :style="{ color: palette.text.invert, ...headingStyle }">
-                  反色文字是这个颜色
+            <aside class="flex flex-col justify-center border px-3 py-2.5" :style="inversePanelStyle">
+              <div class="flex items-center justify-between gap-2">
+                <div class="min-w-0">
+                  <div class="text-[10px] font-bold uppercase tracking-[0.18em]" :style="inverseMutedStyle">反色</div>
+                  <div class="mt-1 text-[13px] font-bold leading-snug"
+                    :style="{ color: palette.text.invert, ...headingStyle }">
+                    反色文字是这个颜色
+                  </div>
+                </div>
+                <div class="flex h-8 w-20 shrink-0 items-center justify-center border px-1.5"
+                  :style="inverseLogoFrameStyle">
+                  <img v-if="invertLogoUrl" :src="invertLogoUrl" alt="theme-logo-invert"
+                    class="h-5 max-w-[64px] object-contain">
+                  <span v-else class="whitespace-nowrap text-[9px] font-semibold uppercase tracking-[0.1em]"
+                    :style="inverseMutedStyle">反色 Logo</span>
                 </div>
               </div>
-              <div class="flex h-6 w-16 shrink-0 items-center justify-center border px-1"
-                :style="inverseLogoFrameStyle">
-                <img v-if="invertLogoUrl" :src="invertLogoUrl" alt="theme-logo-invert"
-                  class="h-4 max-w-[48px] object-contain">
-                <span v-else class="scale-[0.85] whitespace-nowrap text-[9px] font-semibold uppercase tracking-[0.1em]"
-                  :style="inverseMutedStyle">反色 Logo</span>
-              </div>
-            </div>
-          </aside>
-        </div>
-      </section>
-
-      <section
-        v-if="showAccentSummary"
-        class="border"
-        :class="accentSummarySectionClass"
-        :style="summaryCardStyle"
-      >
-        <div class="text-[10px] font-bold uppercase tracking-[0.18em] opacity-55">主题强调色</div>
-
-        <div :class="accentSummaryGridClass">
-          <div
-            v-for="(color, index) in palette.accent"
-            :key="`${color}-${index}`"
-            class="min-w-0 flex-1 flex flex-col items-center border"
-            :class="accentTokenClass"
-            :style="accentTokenStyle(color)"
-          >
-            <div class="w-full rounded-[2px]" :class="accentSwatchClass" :style="{ backgroundColor: color }" />
-            <div class="font-mono font-medium tracking-tight" :class="accentLabelClass" :style="{ color }">{{ color }}</div>
+            </aside>
           </div>
         </div>
       </section>
@@ -290,6 +295,11 @@ const surfaceCardStyle = computed(() => ({
   backgroundColor: palette.value.background.default,
 }))
 
+const componentPanelStyle = computed(() => ({
+  borderColor: palette.value.border.subtle,
+  backgroundColor: mixColor(palette.value.background.default, palette.value.background.invert, 0.015),
+}))
+
 const contentCardStyle = computed(() => ({
   borderColor: palette.value.border.subtle,
   backgroundColor: mixColor(palette.value.background.default, palette.value.background.invert, 0.03),
@@ -372,11 +382,14 @@ const summaryCardStyle = computed(() => ({
   borderColor: palette.value.border.subtle,
   backgroundColor: mixColor(palette.value.background.default, palette.value.background.invert, 0.02),
 }))
-const previewDetailLayoutClass = computed(() => {
-  if (props.layoutMode === 'compact') {
-    return 'grid gap-2.5 lg:grid-cols-[minmax(0,1fr)_240px] lg:items-stretch'
+const previewTopRowClass = computed(() => {
+  if (!props.showAccentSummary) {
+    return 'grid gap-2.5'
   }
-  return 'flex flex-col gap-2.5'
+  return 'grid gap-2.5 md:grid-cols-[minmax(0,6fr)_minmax(0,4fr)] md:items-stretch'
+})
+const previewBottomRowClass = computed(() => {
+  return 'grid gap-2.5 md:grid-cols-[minmax(0,6fr)_minmax(0,4fr)] md:items-stretch'
 })
 const accentSummarySectionClass = computed(() => {
   if (props.layoutMode === 'compact') {
@@ -386,9 +399,9 @@ const accentSummarySectionClass = computed(() => {
 })
 const accentSummaryGridClass = computed(() => {
   if (props.layoutMode === 'compact') {
-    return 'mt-2 grid grid-cols-3 gap-1.5 lg:grid-cols-6'
+    return 'mt-2 grid grid-cols-2 gap-1.5 xl:grid-cols-3'
   }
-  return 'mt-2 flex gap-1.5'
+  return 'mt-2 grid grid-cols-2 gap-1.5 xl:grid-cols-3'
 })
 const accentTokenClass = computed(() => {
   if (props.layoutMode === 'compact') {
@@ -398,13 +411,13 @@ const accentTokenClass = computed(() => {
 })
 const accentSwatchClass = computed(() => {
   if (props.layoutMode === 'compact') {
-    return 'h-4'
+    return 'h-7'
   }
   return 'h-6'
 })
 const accentLabelClass = computed(() => {
   if (props.layoutMode === 'compact') {
-    return 'mt-1 text-[9px]'
+    return 'mt-1 text-[12px]'
   }
   return 'mt-1.5 text-[10px]'
 })
