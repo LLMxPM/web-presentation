@@ -43,6 +43,8 @@ export interface ApplyAgentRunEventResult {
 }
 
 const STREAMING_RUN_STATUSES = new Set(['pending', 'running', 'cancelling'])
+const MODEL_REQUEST_STATUS = 'model_request'
+const MODEL_REQUEST_STATUS_TEXT = '正在准备工具调用参数...'
 
 /**
  * 创建单个会话的默认运行时状态。
@@ -143,26 +145,47 @@ export function applyAgentRunEvent(
       state.lastIssue = null
       appendRunStatusItem(state, event, 'cancelling', '正在停止当前运行。')
       return { applied: true, terminal: false }
+    case 'model.request.started':
+      state.pendingRequirement = null
+      state.stream.runId = runId
+      state.stream.streaming = true
+      if (!state.activeRun || state.activeRun.run_id === runId) {
+        state.activeRun = buildEventRunState(state, event, options.agentId, 'running')
+      }
+      state.lastIssue = null
+      appendRunStatusItem(state, event, MODEL_REQUEST_STATUS, MODEL_REQUEST_STATUS_TEXT)
+      return { applied: true, terminal: false }
+    case 'model.request.completed':
+      state.stream.runId = runId
+      state.stream.streaming = true
+      return { applied: true, terminal: false }
     case 'message.delta':
       {
         const splitContent = splitInlineReasoningDelta(event.content ?? '')
+        const reasoning = [resolveEventReasoningContent(event), splitContent.reasoning].filter(Boolean).join('') || null
+        if (reasoning || splitContent.content) {
+          removeModelRequestStatusItem(state, runId)
+        }
         appendReasoningDelta(
           state,
           event,
-          [resolveEventReasoningContent(event), splitContent.reasoning].filter(Boolean).join('') || null,
+          reasoning,
         )
         appendAssistantDelta(state, event, splitContent.content)
       }
       return { applied: true, terminal: false }
     case 'tool.started':
+      removeModelRequestStatusItem(state, runId)
       upsertToolTimelineItem(state, event, 'running')
       closeCurrentTextSegmentAfterTool(state)
       return { applied: true, terminal: false }
     case 'tool.completed':
+      removeModelRequestStatusItem(state, runId)
       upsertToolTimelineItem(state, event, 'completed')
       closeCurrentTextSegmentAfterTool(state)
       return { applied: true, terminal: false }
     case 'tool.error':
+      removeModelRequestStatusItem(state, runId)
       upsertToolTimelineItem(state, event, 'error')
       closeCurrentTextSegmentAfterTool(state)
       return { applied: true, terminal: false }
@@ -171,6 +194,7 @@ export function applyAgentRunEvent(
       state.activeRun = buildEventRunState(state, event, options.agentId, 'paused', state.pendingRequirement)
       state.stream.streaming = false
       state.lastIssue = null
+      removeModelRequestStatusItem(state, runId)
       appendRequirementItem(state, event, state.pendingRequirement)
       clearStreamingTextItem(state)
       return { applied: true, terminal: true }
@@ -178,6 +202,7 @@ export function applyAgentRunEvent(
       state.pendingRequirement = null
       state.activeRun = null
       state.lastRun = buildEventRunState(state, event, options.agentId, 'cancelled')
+      removeModelRequestStatusItem(state, runId)
       appendRunStatusItem(state, event, 'cancelled', '运行已停止。')
       clearStreamState(state)
       state.lastIssue = null
@@ -185,6 +210,7 @@ export function applyAgentRunEvent(
     case 'run.error':
       state.activeRun = null
       state.lastRun = buildEventRunState(state, event, options.agentId, 'failed')
+      removeModelRequestStatusItem(state, runId)
       appendRunStatusItem(state, event, 'failed', String(event.data.message || event.content || '智能体执行失败。'))
       clearStreamState(state)
       state.lastIssue = buildRunIssueState(String(event.data.message || event.content || '智能体执行失败。'), options.agentDisplayName)
@@ -192,6 +218,7 @@ export function applyAgentRunEvent(
     case 'run.completed':
       state.activeRun = null
       state.lastRun = buildEventRunState(state, event, options.agentId, 'completed')
+      removeModelRequestStatusItem(state, runId)
       if (event.content && shouldUseCompletedEventContent(state, event.content)) {
         appendAssistantDelta(state, event, event.content)
       }
@@ -304,6 +331,32 @@ export function normalizeAgnoRunEvent(rawEvent: AgentRunEvent): AgentRunEvent {
       }
     }
     return { event: 'run.continued', run_id: runId, session_id: sessionId, content: null, data, event_index: eventIndex }
+  }
+  if (['ModelRequestStarted', 'ModelRequestStartedEvent', 'TeamModelRequestStarted'].includes(eventName)) {
+    if (memberEventData) {
+      return {
+        event: 'member.model.request.started',
+        run_id: memberEventData.parent_run_id,
+        session_id: sessionId,
+        content: null,
+        data: { ...data, ...memberEventData },
+        event_index: eventIndex,
+      }
+    }
+    return { event: 'model.request.started', run_id: runId, session_id: sessionId, content: null, data, event_index: eventIndex }
+  }
+  if (['ModelRequestCompleted', 'ModelRequestCompletedEvent', 'TeamModelRequestCompleted'].includes(eventName)) {
+    if (memberEventData) {
+      return {
+        event: 'member.model.request.completed',
+        run_id: memberEventData.parent_run_id,
+        session_id: sessionId,
+        content: null,
+        data: { ...data, ...memberEventData },
+        event_index: eventIndex,
+      }
+    }
+    return { event: 'model.request.completed', run_id: runId, session_id: sessionId, content: null, data, event_index: eventIndex }
   }
   if ([
     'RunContent',
@@ -720,42 +773,59 @@ function applyMemberRunEvent(state: AgentSessionRuntimeState, event: AgentRunEve
       memberRun.status = 'running'
       memberRun.updated_at = new Date().toISOString()
       break
+    case 'member.model.request.started':
+      memberRun.status = 'running'
+      appendMemberRunStatusItem(memberRun, event, MODEL_REQUEST_STATUS, MODEL_REQUEST_STATUS_TEXT)
+      break
+    case 'member.model.request.completed':
+      memberRun.status = 'running'
+      break
     case 'member.message.delta':
       {
         const splitContent = splitInlineReasoningDelta(event.content ?? '')
+        const reasoning = [resolveEventReasoningContent(event), splitContent.reasoning].filter(Boolean).join('') || null
+        if (reasoning || splitContent.content) {
+          removeMemberModelRequestStatusItem(memberRun)
+        }
         appendMemberReasoningDelta(
           state,
           memberRun,
           event,
-          [resolveEventReasoningContent(event), splitContent.reasoning].filter(Boolean).join('') || null,
+          reasoning,
         )
         appendMemberAssistantDelta(state, memberRun, event, splitContent.content)
       }
       break
     case 'member.tool.started':
+      removeMemberModelRequestStatusItem(memberRun)
       upsertMemberToolTimelineItem(memberRun, event, 'running')
       closeMemberTextSegment(state, memberRun.run_id)
       break
     case 'member.tool.completed':
+      removeMemberModelRequestStatusItem(memberRun)
       upsertMemberToolTimelineItem(memberRun, event, 'completed')
       closeMemberTextSegment(state, memberRun.run_id)
       break
     case 'member.tool.error':
+      removeMemberModelRequestStatusItem(memberRun)
       upsertMemberToolTimelineItem(memberRun, event, 'error')
       closeMemberTextSegment(state, memberRun.run_id)
       break
     case 'member.run.paused':
       memberRun.status = 'paused'
+      removeMemberModelRequestStatusItem(memberRun)
       appendMemberRunStatusItem(memberRun, event, 'paused', '等待用户处理。')
       clearMemberStreamState(state, memberRun)
       break
     case 'member.run.cancelled':
       memberRun.status = 'cancelled'
+      removeMemberModelRequestStatusItem(memberRun)
       appendMemberRunStatusItem(memberRun, event, 'cancelled', '运行已停止。')
       clearMemberStreamState(state, memberRun)
       break
     case 'member.run.error':
       memberRun.status = 'failed'
+      removeMemberModelRequestStatusItem(memberRun)
       appendMemberRunStatusItem(
         memberRun,
         event,
@@ -766,6 +836,7 @@ function applyMemberRunEvent(state: AgentSessionRuntimeState, event: AgentRunEve
       break
     case 'member.run.completed':
       memberRun.status = 'completed'
+      removeMemberModelRequestStatusItem(memberRun)
       if (event.content && shouldUseMemberCompletedEventContent(memberRun, event.content)) {
         appendMemberAssistantDelta(state, memberRun, event, event.content)
       }
@@ -1097,6 +1168,28 @@ function appendRunStatusItem(
     source: 'event',
     created_at: new Date().toISOString(),
   })
+}
+
+/**
+ * 清理模型准备工具参数期间的临时状态，避免它进入最终时间线。
+ */
+function removeModelRequestStatusItem(state: AgentSessionRuntimeState, runId: string): void {
+  state.timelineItems = state.timelineItems.filter(item => !(
+    item.kind === 'run_status'
+    && item.status === MODEL_REQUEST_STATUS
+    && itemBelongsToRun(item, runId)
+  ))
+}
+
+/**
+ * 清理成员助手中模型准备工具参数期间的临时状态。
+ */
+function removeMemberModelRequestStatusItem(memberRun: AgentMemberRunItem): void {
+  memberRun.timeline_items = memberRun.timeline_items.filter(item => !(
+    item.kind === 'run_status'
+    && item.status === MODEL_REQUEST_STATUS
+    && item.run_id === memberRun.run_id
+  ))
 }
 
 function appendUniqueTimelineItem(state: AgentSessionRuntimeState, item: AgentTimelineItem): void {
