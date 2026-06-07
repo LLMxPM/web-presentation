@@ -1,6 +1,6 @@
 <!-- 文件功能：展示当前工作空间下的已归档项目列表，支持按名称搜索并恢复项目。 -->
 <template>
-  <BaseDialog :model-value="modelValue" title="已归档项目" width="760px" @update:modelValue="handleDialogVisibleChange">
+  <BaseDialog :model-value="modelValue" title="已归档项目" size="standard" @update:modelValue="handleDialogVisibleChange">
     <div class="flex flex-col gap-4">
       <BaseInput
         v-model="keyword"
@@ -139,3 +139,4 @@ async function handleRestoreProject(projectId: number) {
   }
 }
 </script>
+

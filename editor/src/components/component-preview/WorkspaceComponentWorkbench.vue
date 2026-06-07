@@ -66,7 +66,7 @@
 
     <ComponentPreviewDialog
       :model-value="editorDialogVisible"
-      width="1600px"
+      size="workbench"
       close-label="关闭组件编辑"
       @update:model-value="handleEditorDialogVisibleChange"
     >
@@ -128,7 +128,7 @@
       @submit="submitReleaseDialog"
     />
 
-    <BaseDialog v-model="showSchemaHelp" title="Preview Schema 配置指南" width="760px">
+    <BaseDialog v-model="showSchemaHelp" title="Preview Schema 配置指南" size="standard">
       <div class="space-y-4 text-sm leading-7 text-slate-600">
         <p>
           <code class="font-bold text-indigo-600">previewSchema</code>
@@ -711,3 +711,4 @@ function resetReferenceState(): void {
   componentReferences.value = null
 }
 </script>
+

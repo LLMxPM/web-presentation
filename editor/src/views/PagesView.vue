@@ -150,7 +150,7 @@
       />
     </div>
 
-    <BaseDialog v-model="dialogVisible" title="新增页面" width="960px">
+    <BaseDialog v-model="dialogVisible" title="新增页面" size="wide">
       <div class="space-y-6">
         <BaseInput v-model="form.title" label="标题" placeholder="请输入页面标题" required :error="errors.title" />
 
@@ -1626,3 +1626,4 @@ onUnmounted(() => {
   color: rgb(79 70 229);
 }
 </style>
+

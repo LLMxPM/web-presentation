@@ -346,7 +346,7 @@ describe('WorkspaceStylesView', () => {
     expect(screen.getByText((_, element) => {
       return element?.tagName.toLowerCase() === 'pre' && element.textContent === '## 导入规范\n- 使用强标题。'
     })).toBeInTheDocument()
-    await fireEvent.click(screen.getByRole('button', { name: '关闭路演样式 · 最终导入规范' }))
+    await fireEvent.click(screen.getByTitle('关闭路演样式 · 最终导入规范'))
 
     await fireEvent.click(screen.getByRole('button', { name: '确认导入' }))
 

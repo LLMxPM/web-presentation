@@ -168,7 +168,7 @@
     <WorkspaceStyleEditorDialog
       v-model="editorVisible"
       :workspace-id="workspaceId"
-      :style="editingStyle"
+      :style="editingStyle ?? null"
       :default-theme-key="workspaceDetails?.default_theme_key"
       :loading="saving"
       @save="saveStyle"
@@ -177,7 +177,7 @@
     <WorkspaceStyleDetailDialog
       v-model="styleDetailVisible"
       :workspace-id="workspaceId"
-      :style="selectedStyle"
+      :style="selectedStyle ?? null"
       :default-theme-key="workspaceDetails?.default_theme_key"
       @edit="openEditStyle"
     />
@@ -185,11 +185,11 @@
     <WorkspaceStyleSuggestedComponentsDialog
       v-model="suggestedComponentsDialogVisible"
       :workspace-id="workspaceId"
-      :style="suggestedComponentsStyle"
+      :style="suggestedComponentsStyle ?? null"
       @saved="handleSuggestedComponentsSaved"
     />
 
-    <BaseDialog v-model="importDialogVisible" title="导入样式" width="760px">
+    <BaseDialog v-model="importDialogVisible" title="导入样式" size="standard">
       <div class="space-y-4">
         <div class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
           <p class="text-sm font-bold text-slate-700">{{ importFile?.name || '未选择文件' }}</p>
@@ -336,7 +336,7 @@
     <BaseDialog
       v-model="importStyleSpecDialogVisible"
       :title="selectedImportStyleSpec ? `${selectedImportStyleSpec.name} · 最终导入规范` : '最终导入规范'"
-      width="760px"
+      size="standard"
     >
       <div class="space-y-3">
         <div class="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs">
@@ -842,3 +842,4 @@ function formatMenuMode(mode: ProjectMenuMode): string {
   color: rgb(225 29 72);
 }
 </style>
+

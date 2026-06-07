@@ -3,7 +3,7 @@
   <BaseDialog
     v-model="toolDetailDialogVisible"
     :title="activeToolDetail ? `工具调用 · ${resolveToolDetailName(activeToolDetail)}` : '工具调用详情'"
-    width="960px"
+    size="wide"
     :z-index="memberRunDialogVisible ? 1010 : 1000"
   >
     <div v-if="activeToolDetail" class="space-y-4">
@@ -54,8 +54,8 @@
   <BaseDialog
     v-model="memberRunDialogVisible"
     :title="selectedMemberRun ? `${selectedMemberRun.agent_name || selectedMemberRun.agent_id || '成员助手'}运行详情` : '成员助手运行详情'"
-    width="860px"
-    body-class="flex h-[calc(100vh-10rem)] max-h-[640px] flex-col overflow-hidden px-6 py-5"
+    size="standard"
+    body-preset="dense"
   >
     <div v-if="selectedMemberRun" class="flex min-h-0 flex-1 flex-col gap-3">
       <div
@@ -200,3 +200,4 @@ function resolveMemberRunStatusLabel(status: AgentActiveRunStatus): string {
   return '已完成'
 }
 </script>
+

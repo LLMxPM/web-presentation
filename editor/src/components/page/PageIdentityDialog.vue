@@ -1,6 +1,6 @@
 <!-- 文件功能：页面名称与描述独立编辑弹窗，用于维护页面基础信息。 -->
 <template>
-  <BaseDialog :model-value="modelValue" :title="page ? `编辑页面 · ${page.title}` : '编辑页面'" width="560px" @update:modelValue="handleVisibleChange">
+  <BaseDialog :model-value="modelValue" :title="page ? `编辑页面 · ${page.title}` : '编辑页面'" size="compact" @update:modelValue="handleVisibleChange">
     <div class="space-y-4">
       <BaseInput v-model="form.title" label="页面名称" placeholder="请输入页面名称" required :error="errors.title" />
       <BaseInput
@@ -90,3 +90,4 @@ function handleSubmit(): void {
   })
 }
 </script>
+

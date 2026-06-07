@@ -16,7 +16,7 @@
     @runtime-kit-doc-selected="handleRuntimeKitDocSelected"
   />
 
-  <ComponentPreviewDialog v-model="previewDialogVisible" width="1520px">
+  <ComponentPreviewDialog v-model="previewDialogVisible" size="workbench">
     <ComponentPreviewWorkbench
       :source="previewSource"
       :refresh-key="previewRefreshKey"
@@ -325,3 +325,4 @@ onBeforeUnmount(() => {
   window.removeEventListener('agent:component-updated', handleGlobalAgentComponentUpdated)
 })
 </script>
+

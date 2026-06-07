@@ -3,7 +3,7 @@
   <BaseDialog
     :model-value="modelValue"
     title="主题配置"
-    width="720px"
+    size="standard"
     @update:model-value="handleVisibleChange"
   >
     <div v-if="project" class="space-y-4">
@@ -112,3 +112,4 @@ watch(
   { immediate: true },
 )
 </script>
+

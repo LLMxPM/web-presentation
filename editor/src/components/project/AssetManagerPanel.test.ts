@@ -129,6 +129,28 @@ describe('AssetManagerPanel', () => {
       expect(listWorkspaceAssetTagsMock.mock.calls.length).toBeGreaterThan(initialTagCallCount)
     })
   })
+
+  it('图片快速预览弹窗的透明区域应穿透到遮罩关闭层', async () => {
+    listWorkspaceAssetsMock.mockResolvedValue({
+      items: [createRasterAsset()],
+      total: 1,
+      page: 1,
+      page_size: 24,
+    })
+
+    const { container } = renderPanel()
+
+    await waitFor(() => {
+      expect(screen.getByText('cover_image')).toBeInTheDocument()
+    })
+
+    await fireEvent.click(container.querySelector('img')!)
+
+    const panel = document.body.querySelector('.dialog-panel')
+    expect(panel).toHaveStyle({ background: 'transparent' })
+    expect(panel).toHaveClass('!pointer-events-none', '!border-0', '!bg-transparent', '!shadow-none')
+    expect(screen.getByLabelText('关闭资源预览')).toBeInTheDocument()
+  })
 })
 
 function renderPanel() {
@@ -207,5 +229,18 @@ function createSvgAsset(): AssetResponse {
     archive_warning_reasons: [],
     created_at: '2026-05-01T10:00:00+08:00',
     updated_at: '2026-05-01T10:00:00+08:00',
+  }
+}
+
+function createRasterAsset(): AssetResponse {
+  return {
+    ...createSvgAsset(),
+    name: 'cover_image',
+    original_name: 'cover-image.png',
+    file_hash: 'hash-png',
+    content_type: 'image/png',
+    asset_type: 'image',
+    render_type: 'image',
+    url: 'https://backend.example.com/public/assets/7/hash-png',
   }
 }

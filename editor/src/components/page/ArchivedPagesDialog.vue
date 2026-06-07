@@ -1,6 +1,6 @@
 <!-- 文件功能：展示当前项目下的归档页面列表，支持搜索、查看截图并恢复页面。 -->
 <template>
-  <BaseDialog :model-value="modelValue" title="归档页面" width="860px" @update:modelValue="handleDialogVisibleChange">
+  <BaseDialog :model-value="modelValue" title="归档页面" size="standard" @update:modelValue="handleDialogVisibleChange">
     <div class="flex flex-col gap-4">
       <BaseInput v-model="keyword" placeholder="按页面名称、编码或源码搜索" type="text" />
 
@@ -141,3 +141,4 @@ async function handleRestorePage(pageId: number): Promise<void> {
   }
 }
 </script>
+

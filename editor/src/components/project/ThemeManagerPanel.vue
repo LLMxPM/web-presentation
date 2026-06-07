@@ -145,28 +145,21 @@
     </div>
   </LibrarySidebarPanel>
 
-  <Teleport to="body">
-    <Transition name="fade">
-      <div v-if="previewFont" class="fixed inset-0 z-[240] flex items-center justify-center p-4">
-        <div class="absolute inset-0 bg-slate-950/60 backdrop-blur-sm" @click="previewFont = null"></div>
-        <div class="relative w-full max-w-2xl rounded-2xl bg-white p-6 shadow-2xl">
-          <div class="flex items-start justify-between gap-4">
-            <div class="min-w-0">
-              <h2 class="truncate text-lg font-bold text-slate-800">{{ previewFont.font_family }}</h2>
-              <p class="mt-1 truncate font-mono text-xs text-slate-400">{{ previewFont.asset_name }}</p>
-            </div>
-            <BaseCloseButton label="关闭字体预览" @click="previewFont = null" />
-          </div>
-
-          <div class="mt-6 space-y-4" :style="{ fontFamily: `'theme-sidebar-font-${previewFont.id}'` }">
-            <p class="text-5xl leading-tight text-slate-900">AaBbCc 012345</p>
-            <p class="text-3xl leading-relaxed text-slate-800">字体效果预览：主题标题、正文与数字展示</p>
-            <p class="text-lg leading-8 text-slate-600">Web Presentation 主题字体预览，用于快速确认字体注册后的视觉效果。</p>
-          </div>
-        </div>
-      </div>
-    </Transition>
-  </Teleport>
+  <BaseDialog
+    :model-value="!!previewFont"
+    :title="previewFont?.font_family || '字体预览'"
+    :description="previewFont?.asset_name || ''"
+    size="standard"
+    body-preset="auto"
+    :z-index="240"
+    @update:model-value="handlePreviewDialogVisibleChange"
+  >
+    <div v-if="previewFont" class="space-y-4" :style="{ fontFamily: `'theme-sidebar-font-${previewFont.id}'` }">
+      <p class="text-5xl leading-tight text-slate-900">AaBbCc 012345</p>
+      <p class="text-3xl leading-relaxed text-slate-800">字体效果预览：主题标题、正文与数字展示</p>
+      <p class="text-lg leading-8 text-slate-600">Web Presentation 主题字体预览，用于快速确认字体注册后的视觉效果。</p>
+    </div>
+  </BaseDialog>
 </template>
 
 <script setup lang="ts">
@@ -178,11 +171,11 @@ import { listWorkspaceFonts } from '@/api/assets'
 import { getWorkspace } from '@/api/catalog'
 import { getErrorMessage } from '@/api/http'
 import { listWorkspaceThemes } from '@/api/themes'
+import BaseDialog from '@/components/ui/BaseDialog.vue'
 import type { WorkspaceFontConfigItem, WorkspaceItem, WorkspaceThemeItem } from '@/types/api'
 import { Message } from '@/utils/message'
 import { buildWorkspaceThemesPath } from '@/utils/workspace-routes'
 import ThemePreviewCard from '@/components/theme/ThemePreviewCard.vue'
-import BaseCloseButton from '@/components/ui/BaseCloseButton.vue'
 import LibrarySidebarPanel from '@/components/project/LibrarySidebarPanel.vue'
 
 type SidebarTab = 'themes' | 'fonts'
@@ -315,16 +308,14 @@ function openThemeFontPage(): void {
   emit('update:modelValue', false)
   void router.push(buildWorkspaceThemesPath(props.workspaceId))
 }
+
+/**
+ * 同步字体预览弹窗可见状态，关闭时清空当前预览字体。
+ * @param value 弹窗目标可见状态
+ */
+function handlePreviewDialogVisibleChange(value: boolean): void {
+  if (!value) {
+    previewFont.value = null
+  }
+}
 </script>
-
-<style scoped>
-.fade-enter-active,
-.fade-leave-active {
-  transition: opacity 0.2s ease;
-}
-
-.fade-enter-from,
-.fade-leave-to {
-  opacity: 0;
-}
-</style>

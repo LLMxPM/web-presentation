@@ -3,7 +3,7 @@
   <BaseDialog
     :model-value="modelValue"
     :title="style ? `${style.name} · 样式详情` : '样式详情'"
-    width="860px"
+    size="standard"
     @update:model-value="handleVisibleChange"
   >
     <div v-if="style" class="space-y-5">
@@ -301,3 +301,4 @@ function greatestCommonDivisor(left: number, right: number): number {
   color: rgb(226 232 240);
 }
 </style>
+

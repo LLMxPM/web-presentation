@@ -57,7 +57,7 @@
     </Transition>
 
     <!-- Password Dialog -->
-    <BaseDialog v-model="passwordVisible" title="安全设置 - 修改密码" width="420px">
+    <BaseDialog v-model="passwordVisible" title="安全设置 - 修改密码" size="compact">
       <div class="space-y-5">
         <BaseInput 
           v-model="form.old_password" 
@@ -201,3 +201,4 @@ async function handleUpdatePassword() {
   transform: scale(0.95) translateY(-10px);
 }
 </style>
+

@@ -3,22 +3,22 @@
   <BaseDialog
     :model-value="modelValue"
     :title="theme ? `${theme.name} · 主题详情` : '主题详情'"
-    width="1280px"
-    body-class="max-h-[86vh] overflow-y-auto bg-slate-50/80 px-6 py-5"
+    size="canvas"
+    body-preset="auto"
     @update:model-value="handleVisibleChange"
   >
-    <div v-if="loading" class="flex min-h-[320px] items-center justify-center text-sm font-bold text-slate-400">
+    <div v-if="loading" class="flex min-h-[320px] items-center justify-center rounded-2xl bg-slate-50/80 text-sm font-bold text-slate-400">
       正在加载主题详情...
     </div>
 
-    <div v-else-if="!theme" class="flex min-h-[320px] items-center justify-center">
+    <div v-else-if="!theme" class="flex min-h-[320px] items-center justify-center rounded-2xl bg-slate-50/80">
       <div class="rounded-2xl border border-dashed border-slate-200 bg-white px-8 py-10 text-center shadow-sm">
         <SwatchBook class="mx-auto mb-3 h-10 w-10 text-slate-300" />
         <p class="text-sm font-bold text-slate-500">未找到主题详情</p>
       </div>
     </div>
 
-    <div v-else data-testid="theme-detail-dialog" class="space-y-5">
+    <div v-else data-testid="theme-detail-dialog" class="space-y-5 rounded-2xl bg-slate-50/80 p-0.5">
       <section class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
         <div class="mb-3 flex items-start justify-between gap-3">
           <div>
@@ -107,7 +107,6 @@
           <section class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
             <div>
               <h3 class="text-sm font-black text-slate-900">字体与品牌资源</h3>
-              <p class="mt-1 text-xs text-slate-400">把主题绑定字体和品牌资源收敛到同一块区域，便于快速核对。</p>
             </div>
 
             <div class="mt-4 grid gap-4 sm:grid-cols-2">
@@ -273,3 +272,4 @@ const ThemeDetailMetaCard = defineComponent({
   },
 })
 </script>
+

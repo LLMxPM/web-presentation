@@ -1,6 +1,6 @@
 <!-- 文件功能：项目展示配置弹窗，统一编辑主题、页面尺寸、菜单模式与导出按钮。 -->
 <template>
-  <BaseDialog :model-value="modelValue" title="项目展示配置" width="1040px" @update:model-value="handleVisibleChange">
+  <BaseDialog :model-value="modelValue" title="项目展示配置" size="wide" @update:model-value="handleVisibleChange">
     <div v-if="project && modelValue" class="grid gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
       <section class="space-y-4">
         <WorkspaceStyleApplyField
@@ -383,3 +383,4 @@ watch(
   { immediate: true },
 )
 </script>
+

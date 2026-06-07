@@ -1,124 +1,116 @@
 <!-- 文件功能：提供工作空间字体注册的创建与编辑弹窗，封装字体资源、声明参数和状态表单。 -->
 <template>
-  <Teleport to="body">
-    <Transition name="fade">
-      <div v-if="modelValue" class="fixed inset-0 z-[220] flex items-center justify-center p-4">
-        <div class="absolute inset-0 bg-slate-950/45 backdrop-blur-sm" @click="closeDialog"></div>
-        <div class="relative flex max-h-[calc(100vh-48px)] w-full max-w-xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
-          <header class="flex shrink-0 items-start justify-between gap-3 border-b border-slate-100 px-6 py-5">
-            <div>
-              <h3 class="text-lg font-black text-slate-900">{{ editingFont ? '编辑字体注册' : '注册字体' }}</h3>
-              <p class="mt-1 text-xs text-slate-400">字体注册用于主题的标题、正文和代码字体选择。</p>
-            </div>
-            <BaseCloseButton label="关闭字体注册弹窗" @click="closeDialog" />
-          </header>
-
-          <div class="min-h-0 flex-1 space-y-5 overflow-y-auto bg-slate-50/70 px-6 py-5">
-            <section class="rounded-2xl border border-slate-200 bg-white p-4">
-              <div class="mb-4">
-                <h4 class="text-sm font-black text-slate-900">资源与名称</h4>
-                <p class="mt-1 text-xs text-slate-400">注册后会以 font-family 暴露给主题配置。</p>
-              </div>
-              <div class="space-y-4">
-                <div v-if="!editingFont">
-                  <label class="mb-1 block text-xs font-bold text-slate-500">字体资源</label>
-                  <select
-                    v-model.number="form.asset_id"
-                    class="h-10 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm outline-none focus:border-indigo-500"
-                  >
-                    <option :value="0">请选择字体资源</option>
-                    <option v-for="asset in fontAssets" :key="asset.id" :value="asset.id">
-                      {{ asset.name }} / {{ asset.original_name }}
-                    </option>
-                  </select>
-                </div>
-                <div>
-                  <label class="mb-1 block text-xs font-bold text-slate-500">font-family</label>
-                  <input
-                    v-model="form.font_family"
-                    class="h-10 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm outline-none focus:border-indigo-500"
-                  />
-                </div>
-              </div>
-            </section>
-
-            <section class="rounded-2xl border border-slate-200 bg-white p-4">
-              <div class="mb-4">
-                <h4 class="text-sm font-black text-slate-900">字体声明</h4>
-              </div>
-              <div class="grid grid-cols-2 gap-3">
-                <div>
-                  <label class="mb-1 block text-xs font-bold text-slate-500">字体格式</label>
-                  <select v-model="form.font_format" class="h-10 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm outline-none focus:border-indigo-500">
-                    <option value="woff2">woff2</option>
-                    <option value="woff">woff</option>
-                    <option value="ttf">ttf</option>
-                    <option value="otf">otf</option>
-                  </select>
-                </div>
-                <div>
-                  <label class="mb-1 block text-xs font-bold text-slate-500">font-weight</label>
-                  <input v-model="form.font_weight" class="h-10 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm outline-none focus:border-indigo-500" />
-                </div>
-                <div>
-                  <label class="mb-1 block text-xs font-bold text-slate-500">font-style</label>
-                  <select v-model="form.font_style" class="h-10 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm outline-none focus:border-indigo-500">
-                    <option value="normal">normal</option>
-                    <option value="italic">italic</option>
-                  </select>
-                </div>
-                <div>
-                  <label class="mb-1 block text-xs font-bold text-slate-500">font-display</label>
-                  <select v-model="form.font_display" class="h-10 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm outline-none focus:border-indigo-500">
-                    <option value="swap">swap</option>
-                    <option value="auto">auto</option>
-                    <option value="block">block</option>
-                    <option value="fallback">fallback</option>
-                    <option value="optional">optional</option>
-                  </select>
-                </div>
-              </div>
-            </section>
-
-            <section class="rounded-2xl border border-slate-200 bg-white p-4">
-              <label class="mb-2 block text-xs font-bold text-slate-500">状态</label>
-              <div class="grid grid-cols-2 gap-2 rounded-xl bg-slate-100 p-1">
-                <button
-                  type="button"
-                  class="rounded-lg py-2 text-xs font-bold transition-all"
-                  :class="form.status === 'active' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500'"
-                  @click="form.status = 'active'"
-                >
-                  启用
-                </button>
-                <button
-                  type="button"
-                  class="rounded-lg py-2 text-xs font-bold transition-all"
-                  :class="form.status === 'archived' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500'"
-                  @click="form.status = 'archived'"
-                >
-                  归档
-                </button>
-              </div>
-            </section>
-          </div>
-
-          <footer class="flex shrink-0 justify-end gap-3 border-t border-slate-100 bg-white px-6 py-4">
-            <button class="rounded-xl bg-slate-100 px-4 py-2 text-sm font-bold text-slate-600 transition-all hover:bg-slate-200" @click="closeDialog">取消</button>
-            <button class="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-bold text-white shadow-sm transition-all hover:bg-indigo-700 disabled:opacity-50" :disabled="saving" @click="emitSave">
-              {{ saving ? '保存中...' : '保存字体' }}
-            </button>
-          </footer>
+  <BaseDialog
+    :model-value="modelValue"
+    :title="editingFont ? '编辑字体注册' : '注册字体'"
+    description="字体注册用于主题的标题、正文和代码字体选择。"
+    size="compact"
+    body-preset="auto"
+    @update:model-value="closeDialog"
+  >
+    <div class="space-y-5 rounded-2xl bg-slate-50/70 p-0.5">
+      <section class="rounded-2xl border border-slate-200 bg-white p-4">
+        <div class="mb-4">
+          <h4 class="text-sm font-black text-slate-900">资源与名称</h4>
+          <p class="mt-1 text-xs text-slate-400">注册后会以 font-family 暴露给主题配置。</p>
         </div>
-      </div>
-    </Transition>
-  </Teleport>
+        <div class="space-y-4">
+          <div v-if="!editingFont">
+            <label class="mb-1 block text-xs font-bold text-slate-500">字体资源</label>
+            <select
+              v-model.number="form.asset_id"
+              class="h-10 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm outline-none focus:border-indigo-500"
+            >
+              <option :value="0">请选择字体资源</option>
+              <option v-for="asset in fontAssets" :key="asset.id" :value="asset.id">
+                {{ asset.name }} / {{ asset.original_name }}
+              </option>
+            </select>
+          </div>
+          <div>
+            <label class="mb-1 block text-xs font-bold text-slate-500">font-family</label>
+            <input
+              v-model="form.font_family"
+              class="h-10 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm outline-none focus:border-indigo-500"
+            />
+          </div>
+        </div>
+      </section>
+
+      <section class="rounded-2xl border border-slate-200 bg-white p-4">
+        <div class="mb-4">
+          <h4 class="text-sm font-black text-slate-900">字体声明</h4>
+        </div>
+        <div class="grid gap-3 sm:grid-cols-2">
+          <div>
+            <label class="mb-1 block text-xs font-bold text-slate-500">字体格式</label>
+            <select v-model="form.font_format" class="h-10 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm outline-none focus:border-indigo-500">
+              <option value="woff2">woff2</option>
+              <option value="woff">woff</option>
+              <option value="ttf">ttf</option>
+              <option value="otf">otf</option>
+            </select>
+          </div>
+          <div>
+            <label class="mb-1 block text-xs font-bold text-slate-500">font-weight</label>
+            <input v-model="form.font_weight" class="h-10 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm outline-none focus:border-indigo-500" />
+          </div>
+          <div>
+            <label class="mb-1 block text-xs font-bold text-slate-500">font-style</label>
+            <select v-model="form.font_style" class="h-10 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm outline-none focus:border-indigo-500">
+              <option value="normal">normal</option>
+              <option value="italic">italic</option>
+            </select>
+          </div>
+          <div>
+            <label class="mb-1 block text-xs font-bold text-slate-500">font-display</label>
+            <select v-model="form.font_display" class="h-10 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm outline-none focus:border-indigo-500">
+              <option value="swap">swap</option>
+              <option value="auto">auto</option>
+              <option value="block">block</option>
+              <option value="fallback">fallback</option>
+              <option value="optional">optional</option>
+            </select>
+          </div>
+        </div>
+      </section>
+
+      <section class="rounded-2xl border border-slate-200 bg-white p-4">
+        <label class="mb-2 block text-xs font-bold text-slate-500">状态</label>
+        <div class="grid grid-cols-2 gap-2 rounded-xl bg-slate-100 p-1">
+          <button
+            type="button"
+            class="rounded-lg py-2 text-xs font-bold transition-all"
+            :class="form.status === 'active' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500'"
+            @click="form.status = 'active'"
+          >
+            启用
+          </button>
+          <button
+            type="button"
+            class="rounded-lg py-2 text-xs font-bold transition-all"
+            :class="form.status === 'archived' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500'"
+            @click="form.status = 'archived'"
+          >
+            归档
+          </button>
+        </div>
+      </section>
+    </div>
+
+    <template #footer>
+      <button class="rounded-xl bg-slate-100 px-4 py-2 text-sm font-bold text-slate-600 transition-all hover:bg-slate-200" @click="closeDialog">取消</button>
+      <button class="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-bold text-white shadow-sm transition-all hover:bg-indigo-700 disabled:opacity-50" :disabled="saving" @click="emitSave">
+        {{ saving ? '保存中...' : '保存字体' }}
+      </button>
+    </template>
+  </BaseDialog>
 </template>
 
 <script setup lang="ts">
 import { reactive, watch } from 'vue'
 
-import BaseCloseButton from '@/components/ui/BaseCloseButton.vue'
+import BaseDialog from '@/components/ui/BaseDialog.vue'
 import type { AssetResponse, RecordStatus, WorkspaceFontConfigItem } from '@/types/api'
 
 const props = withDefaults(defineProps<{
@@ -228,15 +220,3 @@ function inferFontFamily(name: string): string {
   return name.replace(/\.(woff2|woff|ttf|otf)$/i, '')
 }
 </script>
-
-<style scoped>
-.fade-enter-active,
-.fade-leave-active {
-  transition: opacity 0.2s ease;
-}
-
-.fade-enter-from,
-.fade-leave-to {
-  opacity: 0;
-}
-</style>

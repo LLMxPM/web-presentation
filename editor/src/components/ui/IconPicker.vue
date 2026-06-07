@@ -65,7 +65,7 @@
     </p>
   </div>
 
-  <BaseDialog v-model="dialogVisible" :title="title" width="1080px">
+  <BaseDialog v-model="dialogVisible" :title="title" size="wide">
     <div class="grid gap-4 lg:grid-cols-[300px_minmax(0,1fr)]">
       <aside class="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
         <div class="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">图标预览</div>
@@ -408,3 +408,4 @@ function buildSearchKeywords(asset: AssetResponse): string[] {
   ]
 }
 </script>
+

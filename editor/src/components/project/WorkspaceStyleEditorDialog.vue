@@ -3,8 +3,8 @@
   <BaseDialog
     :model-value="modelValue"
     :title="style ? '编辑样式' : '新建样式'"
-    width="1180px"
-    body-class="h-[min(82vh,760px)] px-6 py-5 overflow-hidden"
+    size="canvas"
+    body-preset="editor"
     @update:model-value="handleVisibleChange"
   >
     <div class="flex h-full min-h-0 flex-col gap-4">
@@ -388,3 +388,4 @@ watch(
   }
 }
 </style>
+

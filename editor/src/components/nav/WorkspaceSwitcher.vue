@@ -63,7 +63,7 @@
     </Transition>
 
     <!-- Workspace Dialog (Refactored) -->
-    <BaseDialog v-model="dialogVisible" title="创建工作空间" width="500px">
+    <BaseDialog v-model="dialogVisible" title="创建工作空间" size="compact">
       <div class="space-y-5">
         <BaseInput v-model="form.name" label="空间名称" placeholder="给工作空间起个响亮的名字" required :error="errors.name" />
 
@@ -270,3 +270,4 @@ async function handleWorkspaceListUpdated() {
   transform: scale(0.95) translateY(-10px);
 }
 </style>
+

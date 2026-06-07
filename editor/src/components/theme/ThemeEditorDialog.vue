@@ -1,6 +1,6 @@
 <!-- 文件功能：提供工作空间主题的创建与编辑弹窗，支持资源选择和实时预览。 -->
 <template>
-  <BaseDialog v-model="dialogVisible" :title="theme ? '编辑主题' : '新建主题'" width="1440px">
+  <BaseDialog v-model="dialogVisible" :title="theme ? '编辑主题' : '新建主题'" size="canvas">
     <div class="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_500px] 2xl:grid-cols-[minmax(0,1fr)_560px]">
       <div class="min-w-0 space-y-4">
         <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -439,3 +439,4 @@ function handleSave() {
   })
 }
 </script>
+

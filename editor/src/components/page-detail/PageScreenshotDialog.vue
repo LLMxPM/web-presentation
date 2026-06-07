@@ -1,8 +1,8 @@
 <!-- 文件功能：展示页面截图信息、大图与下载入口，并提供重新截图操作。 -->
 <template>
-  <BaseDialog :model-value="props.modelValue" :title="`${props.pageTitle} · 页面截图`" width="1120px"
+  <BaseDialog :model-value="props.modelValue" :title="`${props.pageTitle} · 页面截图`" size="wide" body-preset="editor"
     @update:model-value="emit('update:modelValue', $event)">
-    <div class="-mx-2 -my-1 space-y-4">
+    <div class="flex h-full min-h-0 flex-col gap-4">
       <div class="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
         <div class="min-w-0">
           <p class="text-sm font-semibold text-slate-900">{{ screenshotUpdatedText }}</p>
@@ -35,14 +35,14 @@
         </div>
       </div>
 
-      <div class="overflow-hidden rounded-2xl border border-slate-200 bg-slate-50">
+      <div class="min-h-0 flex-1 overflow-hidden rounded-2xl border border-slate-200 bg-slate-50">
         <img
           v-if="props.screenshotUrl"
           :src="props.screenshotUrl"
           :alt="`${props.pageTitle} 页面截图大图`"
-          class="block max-h-[70vh] w-full object-contain"
+          class="block h-full w-full object-contain"
         >
-        <div v-else class="flex h-[360px] items-center justify-center px-6 text-center text-sm text-slate-400">
+        <div v-else class="flex h-full items-center justify-center px-6 text-center text-sm text-slate-400">
           暂无截图，点击“重新截图”后会在这里展示最新画面。
         </div>
       </div>
@@ -154,3 +154,4 @@ function resolveScreenshotExtension(screenshotUrl: string | null): string {
   return 'png'
 }
 </script>
+

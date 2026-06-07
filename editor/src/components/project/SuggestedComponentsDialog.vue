@@ -3,8 +3,8 @@
   <BaseDialog
     :model-value="modelValue"
     :title="title"
-    width="980px"
-    body-class="h-[min(78vh,720px)] px-6 py-5 overflow-hidden"
+    size="wide"
+    body-preset="dense"
     @update:model-value="handleVisibleChange"
   >
     <SuggestedComponentsSelectorPanel
@@ -131,3 +131,4 @@ async function saveSelection(): Promise<void> {
   }
 }
 </script>
+

@@ -31,6 +31,16 @@ const baseComponent: WorkspaceComponentItem = {
   updated_by: 1,
 }
 
+const BaseDialogStub = defineComponent({
+  name: 'BaseDialogStub',
+  props: {
+    modelValue: { type: Boolean, default: false },
+  },
+  setup(props, { slots }) {
+    return () => (props.modelValue ? h('section', slots.default?.()) : null)
+  },
+})
+
 describe('WorkspaceComponentWorkbench', () => {
   it('同 ID 组件状态变化后应重新载入草稿并刷新预览', async () => {
     const { rerender } = render(WorkspaceComponentWorkbench, {
@@ -57,7 +67,7 @@ describe('WorkspaceComponentWorkbench', () => {
           ComponentReleaseDialog: true,
           StatusTag: true,
           BaseButton: true,
-          BaseDialog: true,
+          BaseDialog: BaseDialogStub,
         },
       },
     })
@@ -121,7 +131,7 @@ describe('WorkspaceComponentWorkbench', () => {
               return () => h('button', { type: 'button', onClick: () => emit('click') }, slots.default?.())
             },
           }),
-          BaseDialog: true,
+          BaseDialog: BaseDialogStub,
         },
       },
     })
@@ -179,7 +189,7 @@ describe('WorkspaceComponentWorkbench', () => {
           ComponentReleaseDialog: true,
           StatusTag: true,
           BaseButton: true,
-          BaseDialog: true,
+          BaseDialog: BaseDialogStub,
         },
       },
     })

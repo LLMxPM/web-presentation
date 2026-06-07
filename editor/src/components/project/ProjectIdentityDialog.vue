@@ -1,6 +1,6 @@
 <!-- 文件功能：项目名称与描述独立编辑弹窗，用于在页面列表页快速修改项目基础标识信息。 -->
 <template>
-  <BaseDialog :model-value="modelValue" title="修改项目基础信息" width="720px" @update:model-value="handleVisibleChange">
+  <BaseDialog :model-value="modelValue" title="修改项目基础信息" size="standard" @update:model-value="handleVisibleChange">
     <div v-if="project" class="space-y-5">
       <div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
         <p class="text-sm font-semibold text-slate-700">{{ project.code }}</p>
@@ -104,3 +104,4 @@ watch(
   { immediate: true },
 )
 </script>
+

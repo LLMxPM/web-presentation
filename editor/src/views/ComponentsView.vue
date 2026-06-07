@@ -84,7 +84,7 @@
       :item="runtimeKitDocItem"
     />
 
-    <BaseDialog v-model="importDialogVisible" title="导入组件" width="720px">
+    <BaseDialog v-model="importDialogVisible" title="导入组件" size="standard">
       <div class="space-y-4">
         <div class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
           <p class="text-sm font-bold text-slate-700">{{ importFile?.name || '未选择文件' }}</p>
@@ -606,3 +606,4 @@ onBeforeUnmount(() => {
   componentAgentContext?.setSelectedComponent(null)
 })
 </script>
+

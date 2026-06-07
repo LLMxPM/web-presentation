@@ -228,96 +228,97 @@
       @change="handleUploadFileChange"
     />
 
-    <Teleport to="body">
-      <Transition name="fade">
-        <div v-if="uploadMode" class="fixed inset-0 z-[205] flex items-center justify-center p-4">
-          <div class="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" @click="closeUploadForm"></div>
-          <div class="relative w-full max-w-xl rounded-2xl bg-white p-6 shadow-xl">
-            <div class="flex items-start justify-between gap-3">
-              <div>
-                <h2 class="text-base font-bold text-slate-800">上传资源</h2>
-                <p class="mt-1 text-xs text-slate-400">选择资源类型后上传文件；同名资源会询问是否覆盖。</p>
-              </div>
-              <BaseCloseButton label="关闭上传资源弹窗" @click="closeUploadForm" />
-            </div>
-            <div class="mt-5 space-y-4">
-              <div>
-                <label class="mb-1 block text-xs font-bold text-slate-500">资源类型</label>
-                <select v-model="uploadForm.asset_type" class="h-10 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm font-semibold text-slate-700 outline-none focus:border-indigo-400">
-                  <option v-for="item in assetTypeOptions" :key="item.value" :value="item.value">{{ item.label }}</option>
-                </select>
-              </div>
-              <div>
-                <label class="mb-1 block text-xs font-bold text-slate-500">标签，逗号分隔</label>
-                <input v-model="uploadTagsText" class="h-10 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm outline-none focus:border-indigo-400" placeholder="可留空" />
-              </div>
-            </div>
-            <footer class="mt-6 flex items-center justify-end gap-3">
-              <BaseButton variant="ghost" :disabled="uploading" @click="closeUploadForm">取消</BaseButton>
-              <BaseButton :disabled="uploading" @click="triggerUploadSelect">
-                <Upload class="h-3.5 w-3.5" />
-                {{ uploading ? '上传中...' : '选择文件上传' }}
-              </BaseButton>
-            </footer>
-          </div>
+    <BaseDialog
+      :model-value="uploadMode"
+      title="上传资源"
+      description="选择资源类型后上传文件；同名资源会询问是否覆盖。"
+      size="compact"
+      body-preset="auto"
+      :z-index="205"
+      @update:model-value="value => { if (!value) closeUploadForm() }"
+    >
+      <div class="space-y-4">
+        <div>
+          <label class="mb-1 block text-xs font-bold text-slate-500">资源类型</label>
+          <select v-model="uploadForm.asset_type" class="h-10 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm font-semibold text-slate-700 outline-none focus:border-indigo-400">
+            <option v-for="item in assetTypeOptions" :key="item.value" :value="item.value">{{ item.label }}</option>
+          </select>
         </div>
-      </Transition>
-
-      <Transition name="fade">
-        <div v-if="createMode" class="fixed inset-0 z-[210] flex items-center justify-center p-4">
-          <div class="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" @click="closeCreateForm"></div>
-          <div class="relative flex max-h-[86vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl bg-white shadow-xl">
-            <header class="flex shrink-0 items-center justify-between border-b border-slate-100 px-5 py-4">
-              <div>
-                <h2 class="text-base font-bold text-slate-800">新建内容资源</h2>
-                <p class="mt-1 text-xs text-slate-400">支持 SVG 图片、SVG 图标、Draw.io、Mermaid、Chart 和 Formula。</p>
-              </div>
-              <BaseButton variant="ghost" size="sm" @click="closeCreateForm">取消</BaseButton>
-            </header>
-            <div class="min-h-0 flex-1 overflow-y-auto p-5">
-              <div class="grid gap-3 lg:grid-cols-[160px_minmax(0,1fr)_minmax(0,1fr)]">
-                <select v-model="createForm.asset_type" class="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700">
-                  <option v-for="item in creatableTypes" :key="item.value" :value="item.value">{{ item.label }}</option>
-                </select>
-                <input v-model.trim="createForm.name" class="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm" placeholder="资源 name，如 brand_icon" />
-                <input v-model.trim="createForm.original_name" class="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm" placeholder="展示文件名，如 brand_icon.svg" />
-              </div>
-              <textarea
-                v-model="createForm.content"
-                class="mt-4 h-[420px] w-full rounded-xl border border-slate-200 bg-slate-50 p-4 font-mono text-xs leading-5 text-slate-800 outline-none focus:border-indigo-400"
-                placeholder="输入 SVG 图片 / SVG 图标 / Draw.io XML / Mermaid / Chart JSON/YAML / Formula 内容"
-              />
-            </div>
-            <footer class="flex shrink-0 items-center justify-between gap-3 border-t border-slate-100 bg-slate-50 px-5 py-4">
-              <p class="text-xs text-slate-500">SVG 会拒绝脚本、事件属性、foreignObject 与远程引用。</p>
-              <BaseButton :disabled="saving" @click="createAsset">创建资源</BaseButton>
-            </footer>
-          </div>
+        <div>
+          <label class="mb-1 block text-xs font-bold text-slate-500">标签，逗号分隔</label>
+          <input v-model="uploadTagsText" class="h-10 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm outline-none focus:border-indigo-400" placeholder="可留空" />
         </div>
-      </Transition>
+      </div>
 
-      <Transition name="fade">
-        <div v-if="detailAsset" class="fixed inset-0 z-[220] flex p-5">
-          <div class="absolute inset-0 bg-slate-950/70 backdrop-blur-sm" @click="closeAssetDetail"></div>
-          <div class="relative grid min-h-0 w-full overflow-hidden rounded-2xl bg-white shadow-2xl lg:grid-cols-[minmax(0,1.35fr)_460px]">
-            <section class="flex min-h-0 flex-col bg-slate-50">
-              <header class="flex shrink-0 items-center justify-between border-b border-slate-200 bg-white px-5 py-4">
-                <div class="min-w-0">
-                  <h2 class="truncate text-base font-bold text-slate-800">{{ detailAsset.name }}</h2>
-                  <p class="mt-1 truncate font-mono text-xs text-slate-400">{{ detailAsset.original_name }}</p>
-                </div>
-                <BaseCloseButton label="关闭资源详情" @click="closeAssetDetail" />
-              </header>
-              <div class="min-h-0 flex-1 p-5">
-                <AssetPreviewFrame
-                  :key="`${detailAsset.id}:${detailAsset.file_hash}`"
-                  :workspace-id="workspaceId"
-                  :asset="detailAsset"
-                />
-              </div>
-            </section>
+      <template #footer>
+        <BaseButton variant="ghost" :disabled="uploading" @click="closeUploadForm">取消</BaseButton>
+        <BaseButton :disabled="uploading" @click="triggerUploadSelect">
+          <Upload class="h-3.5 w-3.5" />
+          {{ uploading ? '上传中...' : '选择文件上传' }}
+        </BaseButton>
+      </template>
+    </BaseDialog>
 
-            <aside class="flex min-h-0 flex-col border-l border-slate-200 bg-white">
+    <BaseDialog
+      :model-value="createMode"
+      title="新建内容资源"
+      description="支持 SVG 图片、SVG 图标、Draw.io、Mermaid、Chart 和 Formula。"
+      size="wide"
+      body-preset="editor"
+      :z-index="210"
+      @update:model-value="value => { if (!value) closeCreateForm() }"
+    >
+      <div class="flex h-full min-h-0 flex-col gap-4">
+        <div class="grid gap-3 lg:grid-cols-[160px_minmax(0,1fr)_minmax(0,1fr)]">
+          <select v-model="createForm.asset_type" class="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700">
+            <option v-for="item in creatableTypes" :key="item.value" :value="item.value">{{ item.label }}</option>
+          </select>
+          <input v-model.trim="createForm.name" class="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm" placeholder="资源 name，如 brand_icon" />
+          <input v-model.trim="createForm.original_name" class="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm" placeholder="展示文件名，如 brand_icon.svg" />
+        </div>
+        <textarea
+          v-model="createForm.content"
+          class="min-h-[320px] min-w-0 flex-1 rounded-xl border border-slate-200 bg-slate-50 p-4 font-mono text-xs leading-5 text-slate-800 outline-none focus:border-indigo-400"
+          placeholder="输入 SVG 图片 / SVG 图标 / Draw.io XML / Mermaid / Chart JSON/YAML / Formula 内容"
+        />
+      </div>
+
+      <template #footer>
+        <p class="mr-auto text-xs text-slate-500">SVG 会拒绝脚本、事件属性、foreignObject 与远程引用。</p>
+        <BaseButton variant="ghost" size="sm" @click="closeCreateForm">取消</BaseButton>
+        <BaseButton :disabled="saving" @click="createAsset">创建资源</BaseButton>
+      </template>
+    </BaseDialog>
+
+    <BaseDialog
+      :model-value="!!detailAsset"
+      size="workbench"
+      body-preset="immersive"
+      :show-header="false"
+      overlay-class="bg-slate-950/70 backdrop-blur-sm"
+      :z-index="220"
+      @update:model-value="handleDetailDialogVisibleChange"
+    >
+      <div v-if="detailAsset" class="grid h-full min-h-0 grid-rows-[minmax(280px,0.95fr)_minmax(0,1.05fr)] overflow-hidden xl:grid-cols-[minmax(0,1.35fr)_460px] xl:grid-rows-1">
+        <section class="flex min-h-0 flex-col bg-slate-50">
+          <header class="flex shrink-0 items-center justify-between border-b border-slate-200 bg-white px-5 py-4">
+            <div class="min-w-0">
+              <h2 class="truncate text-base font-bold text-slate-800">{{ detailAsset.name }}</h2>
+              <p class="mt-1 truncate font-mono text-xs text-slate-400">{{ detailAsset.original_name }}</p>
+            </div>
+            <BaseCloseButton label="关闭资源详情" @click="closeAssetDetail" />
+          </header>
+          <div class="min-h-0 flex-1 p-5">
+            <AssetPreviewFrame
+              :key="`${detailAsset.id}:${detailAsset.file_hash}`"
+              class="h-full"
+              :workspace-id="workspaceId"
+              :asset="detailAsset"
+            />
+          </div>
+        </section>
+
+        <aside class="flex min-h-0 flex-col border-t border-slate-200 bg-white xl:border-l xl:border-t-0">
               <div class="shrink-0 border-b border-slate-100 bg-white">
                 <div class="px-5 pb-3 pt-4">
                   <div class="grid grid-cols-3 rounded-xl bg-slate-100 p-1">
@@ -425,7 +426,7 @@
                   </div>
                 </div>
 
-                <div v-else-if="detailTab === 'content'" class="flex min-h-[520px] flex-col">
+                <div v-else-if="detailTab === 'content'" class="flex h-full min-h-0 flex-col">
                   <div v-if="!detailAsset.content_editable" class="flex flex-1 items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50 p-6 text-center">
                     <div>
                       <FileText class="mx-auto mb-3 h-10 w-10 text-slate-300" />
@@ -481,10 +482,8 @@
                 </BaseButton>
               </footer>
             </aside>
-          </div>
-        </div>
-      </Transition>
-    </Teleport>
+      </div>
+    </BaseDialog>
   </div>
 </template>
 
@@ -541,6 +540,7 @@ import type { AgentMutationRefreshEvent } from '@/components/agent/agent-convers
 import LibraryChipFilter from '@/components/project/LibraryChipFilter.vue'
 import LibrarySegmentedControl from '@/components/project/LibrarySegmentedControl.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
+import BaseDialog from '@/components/ui/BaseDialog.vue'
 import BaseCloseButton from '@/components/ui/BaseCloseButton.vue'
 import PaginationControl from '@/components/ui/PaginationControl.vue'
 import type { AssetBatchOperationResponse, AssetReferenceSummary, AssetResponse, AssetType, RecordStatus } from '@/types/api'
@@ -897,6 +897,16 @@ async function openAssetDetail(asset: AssetResponse): Promise<void> {
 
 function closeAssetDetail(): void {
   detailAsset.value = null
+}
+
+/**
+ * 同步资源详情弹窗显隐状态，关闭时清空当前详情资源。
+ * @param value 弹窗目标可见状态
+ */
+function handleDetailDialogVisibleChange(value: boolean): void {
+  if (!value) {
+    closeAssetDetail()
+  }
 }
 
 function syncEditForm(asset: AssetResponse): void {
@@ -1387,14 +1397,3 @@ onBeforeUnmount(() => {
 })
 </script>
 
-<style scoped>
-.fade-enter-active,
-.fade-leave-active {
-  transition: opacity 0.2s ease;
-}
-
-.fade-enter-from,
-.fade-leave-to {
-  opacity: 0;
-}
-</style>

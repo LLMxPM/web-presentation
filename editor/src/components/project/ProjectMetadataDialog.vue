@@ -1,6 +1,6 @@
 <!-- 文件功能：项目元数据编辑弹窗，统一承载项目创建与基础信息修改表单。 -->
 <template>
-  <BaseDialog :model-value="modelValue" :title="isEditMode ? '修改项目' : '新增项目'" width="1040px"
+  <BaseDialog :model-value="modelValue" :title="isEditMode ? '修改项目' : '新增项目'" size="wide"
     @update:model-value="handleVisibleChange">
     <div class="space-y-4">
       <section class="rounded-lg border border-slate-200 bg-white p-3">
@@ -369,3 +369,4 @@ watch(
   { immediate: true },
 )
 </script>
+

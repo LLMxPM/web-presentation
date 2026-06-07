@@ -1,6 +1,6 @@
 <!-- 文件功能：展示已归档工作空间列表，支持按名称搜索并将工作空间恢复为启用状态。 -->
 <template>
-  <BaseDialog :model-value="modelValue" title="已归档工作空间" width="760px" @update:modelValue="handleDialogVisibleChange">
+  <BaseDialog :model-value="modelValue" title="已归档工作空间" size="standard" @update:modelValue="handleDialogVisibleChange">
     <div class="flex flex-col gap-4">
       <BaseInput
         v-model="keyword"
@@ -163,3 +163,4 @@ watch(
   },
 )
 </script>
+

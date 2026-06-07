@@ -179,91 +179,101 @@
     />
   </LibrarySidebarPanel>
 
-  <Teleport to="body">
-    <Transition name="fade">
-      <div v-if="textCreating" class="fixed inset-0 z-[210] flex items-center justify-center p-4">
-        <div class="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" @click="closeTextCreateModal"></div>
-        <div class="relative w-full max-w-xl rounded-2xl bg-white p-6 shadow-xl">
-          <h3 class="mb-4 text-lg font-bold text-slate-800">新建{{ activeTypeLabel }}资源</h3>
-          <div class="grid grid-cols-2 gap-3">
-            <div>
-              <label class="mb-1 block text-xs font-bold text-slate-500">资源 name</label>
-              <input v-model="textCreateForm.name" type="text" class="h-9 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm outline-none focus:border-indigo-500 focus:bg-white" />
-            </div>
-            <div>
-              <label class="mb-1 block text-xs font-bold text-slate-500">文件名</label>
-              <input v-model="textCreateForm.file_name" type="text" class="h-9 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm outline-none focus:border-indigo-500 focus:bg-white" />
-            </div>
-          </div>
-          <div class="mt-4">
-            <label class="mb-1 block text-xs font-bold text-slate-500">文本内容</label>
-            <textarea v-model="textCreateForm.content" rows="12" class="w-full resize-y rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 font-mono text-xs leading-5 outline-none focus:border-indigo-500 focus:bg-white"></textarea>
-          </div>
-          <div class="mt-6 flex justify-end gap-3">
-            <button type="button" class="rounded-xl bg-slate-100 px-4 py-2 text-sm font-bold text-slate-600 transition-all hover:bg-slate-200" @click="closeTextCreateModal">取消</button>
-            <button type="button" class="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-bold text-white shadow-sm transition-all hover:bg-indigo-700 disabled:opacity-50" :disabled="uploading" @click="saveTextAsset">
-              {{ uploading ? '创建中...' : '创建资源' }}
-            </button>
-          </div>
+  <BaseDialog
+    :model-value="textCreating"
+    :title="`新建${activeTypeLabel}资源`"
+    size="compact"
+    body-preset="auto"
+    :z-index="210"
+    @update:model-value="value => { if (!value) closeTextCreateModal() }"
+  >
+    <div class="space-y-4">
+      <div class="grid gap-3 sm:grid-cols-2">
+        <div>
+          <label class="mb-1 block text-xs font-bold text-slate-500">资源 name</label>
+          <input v-model="textCreateForm.name" type="text" class="h-9 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm outline-none focus:border-indigo-500 focus:bg-white" />
+        </div>
+        <div>
+          <label class="mb-1 block text-xs font-bold text-slate-500">文件名</label>
+          <input v-model="textCreateForm.file_name" type="text" class="h-9 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm outline-none focus:border-indigo-500 focus:bg-white" />
         </div>
       </div>
-    </Transition>
+      <div>
+        <label class="mb-1 block text-xs font-bold text-slate-500">文本内容</label>
+        <textarea v-model="textCreateForm.content" rows="12" class="w-full resize-y rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 font-mono text-xs leading-5 outline-none focus:border-indigo-500 focus:bg-white"></textarea>
+      </div>
+    </div>
 
-    <Transition name="fade">
-      <div v-if="runtimePreviewAsset" class="fixed inset-0 z-[300] flex flex-col p-6 lg:p-10">
-        <div class="absolute inset-0 bg-slate-900/90 backdrop-blur-md" @click="closeRuntimePreview"></div>
-        <div class="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
-          <header class="flex shrink-0 items-center justify-between gap-4 border-b border-slate-200 px-5 py-4">
-            <div class="min-w-0">
-              <h3 class="truncate text-base font-bold text-slate-800">{{ runtimePreviewAsset.name }}</h3>
-              <p class="mt-1 truncate font-mono text-xs text-slate-400">{{ runtimePreviewAsset.original_name }}</p>
-            </div>
-            <BaseCloseButton label="关闭资源预览" @click="closeRuntimePreview" />
-          </header>
-          <div class="min-h-0 flex-1 bg-slate-50 p-4">
-            <AssetPreviewFrame
-              :key="`${runtimePreviewAsset.id}:${runtimePreviewAsset.file_hash}`"
-              :workspace-id="workspaceId"
-              :asset="runtimePreviewAsset"
-            />
-          </div>
-        </div>
-      </div>
-    </Transition>
+    <template #footer>
+      <button type="button" class="rounded-xl bg-slate-100 px-4 py-2 text-sm font-bold text-slate-600 transition-all hover:bg-slate-200" @click="closeTextCreateModal">取消</button>
+      <button type="button" class="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-bold text-white shadow-sm transition-all hover:bg-indigo-700 disabled:opacity-50" :disabled="uploading" @click="saveTextAsset">
+        {{ uploading ? '创建中...' : '创建资源' }}
+      </button>
+    </template>
+  </BaseDialog>
 
-    <Transition name="fade">
-      <div v-if="previewAsset" class="fixed inset-0 z-[300] flex flex-col items-center justify-center p-8 lg:p-12" @click="previewAsset = null">
-        <div class="absolute inset-0 bg-slate-900/90 backdrop-blur-md"></div>
-        <img
-          v-if="previewAsset.asset_type !== 'font' && isImage(previewAsset.original_name)"
-          :src="previewAsset.url!"
-          class="relative max-h-full max-w-full rounded-lg object-contain shadow-2xl drop-shadow-2xl"
-          @click.stop
-        />
-        <div
-          v-else
-          class="relative mx-4 flex w-full max-w-4xl flex-col items-center justify-center gap-6 rounded-2xl bg-white p-10 shadow-2xl"
-          @click.stop
-        >
-          <div class="space-y-5 text-center" :style="previewAsset.asset_type === 'font' ? { fontFamily: `'preview-font-${previewAsset.id}'` } : undefined">
-            <div class="text-5xl text-slate-800">Aa Bb Cc Dd Ee Ff</div>
-            <div class="text-5xl text-slate-800">0123456789</div>
-            <div class="pt-2 text-6xl text-slate-800">字体效果预览测试</div>
-            <div class="pt-2 text-4xl text-slate-800 opacity-80">The quick brown fox jumps over the lazy dog.</div>
-          </div>
-        </div>
-        <div class="absolute right-6 top-6 flex gap-3">
-          <a v-if="previewAsset.url" :href="previewAsset.url + '?download=1'" download class="rounded-full bg-white/10 p-2.5 text-white backdrop-blur transition-all hover:bg-white/20" @click.stop>
-            <Download class="h-5 w-5" />
-          </a>
-          <BaseCloseButton tone="inverse" label="关闭资源预览" @click.stop="previewAsset = null" />
-        </div>
-        <div class="pointer-events-none absolute bottom-6 left-1/2 -translate-x-1/2 rounded-full bg-slate-800/60 px-4 py-2 text-xs tracking-widest text-white backdrop-blur">
-          {{ previewAsset.original_name }}
+  <BaseDialog
+    :model-value="!!runtimePreviewAsset"
+    :title="runtimePreviewAsset?.name || '资源预览'"
+    :description="runtimePreviewAsset?.original_name || ''"
+    size="workbench"
+    body-preset="immersive"
+    overlay-class="bg-slate-900/90 backdrop-blur-md"
+    :z-index="300"
+    @update:model-value="handleRuntimePreviewVisibleChange"
+  >
+    <div v-if="runtimePreviewAsset" class="h-full min-h-0 bg-slate-50 p-4">
+      <AssetPreviewFrame
+        :key="`${runtimePreviewAsset.id}:${runtimePreviewAsset.file_hash}`"
+        class="h-full"
+        :workspace-id="workspaceId"
+        :asset="runtimePreviewAsset"
+      />
+    </div>
+  </BaseDialog>
+
+  <BaseDialog
+    :model-value="!!previewAsset"
+    size="workbench"
+    body-preset="immersive"
+    :show-header="false"
+    :show-close-button="false"
+    :panel-style="{
+      background: 'transparent',
+    }"
+    panel-class="!pointer-events-none !border-0 !bg-transparent !shadow-none"
+    overlay-class="bg-slate-900/90 backdrop-blur-md"
+    :z-index="300"
+    @update:model-value="handleQuickPreviewDialogVisibleChange"
+  >
+    <div v-if="previewAsset" class="pointer-events-none relative flex h-full min-h-0 items-center justify-center p-4 sm:p-6">
+      <img
+        v-if="previewAsset.asset_type !== 'font' && isImage(previewAsset.original_name)"
+        :src="previewAsset.url!"
+        class="pointer-events-auto relative max-h-full max-w-full rounded-lg object-contain shadow-2xl drop-shadow-2xl"
+      />
+      <div
+        v-else
+        class="pointer-events-auto relative flex w-full max-w-4xl flex-col items-center justify-center gap-6 rounded-2xl bg-white p-6 shadow-2xl sm:p-10"
+      >
+        <div class="space-y-5 text-center" :style="previewAsset.asset_type === 'font' ? { fontFamily: `'preview-font-${previewAsset.id}'` } : undefined">
+          <div class="text-5xl text-slate-800">Aa Bb Cc Dd Ee Ff</div>
+          <div class="text-5xl text-slate-800">0123456789</div>
+          <div class="pt-2 text-6xl text-slate-800">字体效果预览测试</div>
+          <div class="pt-2 text-4xl text-slate-800 opacity-80">The quick brown fox jumps over the lazy dog.</div>
         </div>
       </div>
-    </Transition>
-  </Teleport>
+      <div class="pointer-events-auto absolute right-3 top-3 flex gap-3 sm:right-6 sm:top-6">
+        <a v-if="previewAsset.url" :href="previewAsset.url + '?download=1'" download class="rounded-full bg-white/10 p-2.5 text-white backdrop-blur transition-all hover:bg-white/20">
+          <Download class="h-5 w-5" />
+        </a>
+        <BaseCloseButton tone="inverse" label="关闭资源预览" @click="previewAsset = null" />
+      </div>
+      <div class="pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full bg-slate-800/60 px-4 py-2 text-xs tracking-widest text-white backdrop-blur sm:bottom-6">
+        {{ previewAsset.original_name }}
+      </div>
+    </div>
+  </BaseDialog>
 </template>
 
 <script setup lang="ts">
@@ -301,6 +311,7 @@ import AssetPreviewFrame from '@/components/project/AssetPreviewFrame.vue'
 import LibraryChipFilter from '@/components/project/LibraryChipFilter.vue'
 import LibrarySegmentedControl from '@/components/project/LibrarySegmentedControl.vue'
 import LibrarySidebarPanel from '@/components/project/LibrarySidebarPanel.vue'
+import BaseDialog from '@/components/ui/BaseDialog.vue'
 import BaseCloseButton from '@/components/ui/BaseCloseButton.vue'
 import PaginationControl from '@/components/ui/PaginationControl.vue'
 
@@ -617,6 +628,26 @@ function closeRuntimePreview(): void {
   runtimePreviewAsset.value = null
 }
 
+/**
+ * 同步 Runtime 资源预览弹窗可见状态，关闭时清空预览对象。
+ * @param value 弹窗目标可见状态
+ */
+function handleRuntimePreviewVisibleChange(value: boolean): void {
+  if (!value) {
+    closeRuntimePreview()
+  }
+}
+
+/**
+ * 同步快速媒体预览弹窗可见状态，关闭时清空当前资源。
+ * @param value 弹窗目标可见状态
+ */
+function handleQuickPreviewDialogVisibleChange(value: boolean): void {
+  if (!value) {
+    previewAsset.value = null
+  }
+}
+
 function shouldUseEditorNativePreview(asset: AssetResponse): boolean {
   if (asset.asset_type === 'font') return true
   if (asset.asset_type === 'image' && isImage(asset.original_name)) return true
@@ -658,16 +689,6 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
-.fade-enter-active,
-.fade-leave-active {
-  transition: opacity 0.2s ease;
-}
-
-.fade-enter-from,
-.fade-leave-to {
-  opacity: 0;
-}
-
 .asset-list-scroll {
   scrollbar-gutter: stable;
 }

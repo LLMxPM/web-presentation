@@ -146,7 +146,7 @@
       </div>
     </main>
 
-    <ComponentPreviewDialog v-model="fullPreviewDialogVisible" width="1520px">
+    <ComponentPreviewDialog v-model="fullPreviewDialogVisible" size="workbench">
       <ComponentPreviewWorkbench
         :source="source"
         :refresh-key="fullPreviewRefreshKey"
@@ -495,3 +495,4 @@ defineExpose({
   display: none;
 }
 </style>
+
