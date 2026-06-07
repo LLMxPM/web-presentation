@@ -13,7 +13,7 @@ from agno.db.base import SessionType
 from agno.media import Image
 from agno.models.message import Message
 from agno.models.response import ToolExecution
-from agno.run.agent import RunCompletedEvent, RunContentEvent, RunEvent, RunOutput
+from agno.run.agent import RunCompletedEvent, RunContentEvent, RunEvent, RunInput, RunOutput
 from agno.run import RunContext
 from agno.run.base import RunStatus
 from agno.run.requirement import RunRequirement
@@ -3649,6 +3649,61 @@ async def test_ai_cancelled_raw_run_should_preserve_input_and_streamed_content(a
     assert run.metadata["user_cancel_preserved"] is True
 
 
+async def test_ai_cancelled_session_messages_should_lazy_preserve_input_and_run_content(
+    authenticated_client: AsyncClient,
+) -> None:
+    """读取消息时应懒补偿 cancelled run 中已持久化但未写入 messages 的内容。"""
+
+    workspace_id = await _create_workspace(authenticated_client, "AI 懒补偿工作空间")
+    session_response = await authenticated_client.post(
+        "/api/ai/sessions",
+        json={
+            "agent_id": COMPONENT_MANAGER_AGENT_ID,
+            "session_name": "懒补偿会话",
+            "scope": {
+                "workspace_id": workspace_id,
+                "scope_type": "workspace",
+                "source": "editor-component-library",
+            },
+        },
+    )
+    assert session_response.status_code == 201
+    session_id = session_response.json()["session_id"]
+    run_id = "run-lazy-cancel-preserve"
+    await _append_test_run(
+        authenticated_client,
+        session_id=session_id,
+        run=RunOutput(
+            run_id=run_id,
+            session_id=session_id,
+            agent_id=COMPONENT_MANAGER_AGENT_ID,
+            user_id="1",
+            input=RunInput(input_content="创建一个复杂组件"),
+            status=RunStatus.cancelled,
+            content="已经完成设计和代码校验，准备创建组件。",
+            reasoning_content="先分析需求，再准备调用创建工具。",
+            messages=[],
+        ),
+    )
+
+    response = await authenticated_client.get(
+        f"/api/ai/sessions/{session_id}/messages",
+        params={
+            "workspace_id": workspace_id,
+            "scope_type": "workspace",
+            "source": "editor-component-library",
+            "agent_id": COMPONENT_MANAGER_AGENT_ID,
+        },
+    )
+
+    assert response.status_code == 200
+    messages = response.json()
+    assert [item["role"] for item in messages] == ["user", "assistant"]
+    assert messages[0]["content"] == "创建一个复杂组件"
+    assert messages[1]["content"] == "已经完成设计和代码校验，准备创建组件。"
+    assert messages[1]["reasoning_content"] == "先分析需求，再准备调用创建工具。"
+
+
 async def test_ai_raw_sse_cancelled_event_should_trigger_preservation() -> None:
     """raw SSE 收到 Agno 取消终态时，应把跟踪到的用户输入和 delta 交给补偿流程。"""
 
@@ -3713,6 +3768,50 @@ async def test_ai_raw_sse_cancelled_event_should_trigger_preservation() -> None:
             "fallback_user_message": "真实用户输入",
             "assistant_content": "已输出正文",
             "reasoning_content": "已输出思考",
+        }
+    ]
+
+
+async def test_ai_raw_sse_string_stream_should_trigger_cancelled_preservation() -> None:
+    """raw SSE 若已被 Agno 格式化为字符串，流结束后仍应尝试按 DB 状态补偿取消消息。"""
+
+    async def fake_raw_stream():
+        yield "event: TeamRunStarted\ndata: {\"run_id\":\"run-raw-string\"}\n\n"
+        yield "event: TeamRunCancelled\ndata: {\"run_id\":\"run-raw-string\"}\n\n"
+
+    async def fake_stream_builder() -> SimpleNamespace:
+        return SimpleNamespace(agent=SimpleNamespace(), stream=fake_raw_stream(), run_id="run-raw-string")
+
+    preserved_payloads: list[dict[str, object]] = []
+    facade = AgentSessionFacade.__new__(AgentSessionFacade)
+    facade._get_session_run_lock = lambda **_: asyncio.Lock()
+    facade.ensure_session_access = lambda **_: _async_value(SimpleNamespace(metadata={}))
+
+    async def fake_preserve(**kwargs: object) -> None:
+        preserved_payloads.append(dict(kwargs))
+
+    facade._preserve_cancelled_raw_run_messages = fake_preserve
+
+    chunks = [
+        chunk
+        async for chunk in facade._stream_agno_raw_sse(
+            session_id="session-raw-string",
+            agent_id=AGENT_COORDINATOR_AGENT_ID,
+            scope=AgentScopeContext(scope_type="workspace", workspace_id=1, source="editor-agent-sidebar"),
+            fallback_user_message="字符串流用户输入",
+            stream_builder=fake_stream_builder,
+        )
+    ]
+
+    assert len(chunks) == 2
+    assert preserved_payloads == [
+        {
+            "session_id": "session-raw-string",
+            "agent_id": AGENT_COORDINATOR_AGENT_ID,
+            "run_id": "run-raw-string",
+            "fallback_user_message": "字符串流用户输入",
+            "assistant_content": None,
+            "reasoning_content": None,
         }
     ]
 
@@ -6854,6 +6953,16 @@ async def test_ai_new_run_should_inject_cancelled_history_to_model_context() -> 
                 ],
             ),
             RunOutput(
+                run_id="run-cancelled-empty-messages",
+                session_id="cancelled-history-session",
+                agent_id=COMPONENT_MANAGER_AGENT_ID,
+                status=RunStatus.cancelled,
+                input=RunInput(input_content="被停止但未写 messages 的问题"),
+                content="被停止前已输出的回答",
+                reasoning_content="被停止前已输出的思考",
+                messages=[],
+            ),
+            RunOutput(
                 run_id="run-error-history",
                 session_id="cancelled-history-session",
                 agent_id=COMPONENT_MANAGER_AGENT_ID,
@@ -6878,6 +6987,7 @@ async def test_ai_new_run_should_inject_cancelled_history_to_model_context() -> 
     facade._build_agent_for_descriptor = fake_build_agent_for_descriptor
     facade._build_tool_dependencies = lambda **_: {}
     facade._upsert_run_marker = fake_upsert_run_marker
+    facade._ai_db = SimpleNamespace(upsert_session=lambda detail: None)
 
     builder = facade._build_run_stream(
         agent_id=COMPONENT_MANAGER_AGENT_ID,
@@ -6903,9 +7013,12 @@ async def test_ai_new_run_should_inject_cancelled_history_to_model_context() -> 
         "上一轮完整回答",
         "被停止的用户问题",
         "被停止前的局部回答",
+        "被停止但未写 messages 的问题",
+        "被停止前已输出的回答",
     ]
     assert all(message.from_history for message in fake_agent.additional_input)
-    assert fake_agent.additional_input[-1].reasoning_content == "已暴露思考"
+    assert fake_agent.additional_input[-3].reasoning_content == "已暴露思考"
+    assert fake_agent.additional_input[-1].reasoning_content == "被停止前已输出的思考"
 
 
 def test_ai_resolve_requirement_payload_should_use_latest_active_requirement() -> None:
