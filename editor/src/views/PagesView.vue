@@ -98,6 +98,7 @@
         :selected-count="selectedRoutedPages.length"
         :selected-page-ids="selectedRoutedPageIds"
         :batch-action-pending="batchActionPending"
+        :batch-progress-text="routedBatchScreenshotDownloadProgressText"
         :page-card-grid-style="pageCardGridStyle"
         :screenshot-aspect-ratio="projectScreenshotAspectRatio"
         @refresh-screenshots="handleRefreshSectionPageScreenshots('routed')"
@@ -105,7 +106,7 @@
         @open-build="openBuildDialog"
         @select-all-change="handleRoutedSelectAllChange"
         @batch-remove-route="handleBatchRemoveFromRoute"
-        @batch-save-screenshots="handleBatchSaveScreenshots('routed')"
+        @batch-download-screenshots="handleBatchDownloadScreenshots('routed')"
         @open-batch-copy="openBatchCopyDialog('routed')"
         @batch-archive-pages="handleBatchArchivePages('routed')"
         @clear-selection="clearRoutedSelection"
@@ -129,6 +130,7 @@
         :selected-count="selectedUnroutedPages.length"
         :selected-page-ids="selectedUnroutedPageIds"
         :batch-action-pending="batchActionPending"
+        :batch-progress-text="unroutedBatchScreenshotDownloadProgressText"
         :page-card-grid-style="pageCardGridStyle"
         :page-create-card-style="pageCreateCardStyle"
         :screenshot-aspect-ratio="projectScreenshotAspectRatio"
@@ -136,7 +138,7 @@
         @open-archived-pages="archivedPagesDialogVisible = true"
         @select-all-change="handleUnroutedSelectAllChange"
         @batch-add-route="handleBatchAddToRoute"
-        @batch-save-screenshots="handleBatchSaveScreenshots('unrouted')"
+        @batch-download-screenshots="handleBatchDownloadScreenshots('unrouted')"
         @open-batch-copy="openBatchCopyDialog('unrouted')"
         @batch-archive-pages="handleBatchArchivePages('unrouted')"
         @clear-selection="clearUnroutedSelection"
@@ -275,11 +277,14 @@ import {
   getProject,
   getProjectRoutes,
   getWorkspace,
+  batchRefreshPageScreenshotJobs,
   listPages,
   replaceProjectRoutes,
   savePageScreenshot,
+  downloadPageScreenshotsArchive,
   updatePage,
   updateProject,
+  waitForPageScreenshotJobGroup,
 } from '@/api/catalog'
 import { createProjectPreviewArtifact } from '@/api/preview'
 import { getErrorCode, getErrorData, getErrorMessage } from '@/api/http'
@@ -337,6 +342,11 @@ interface AgentProjectPagesMutationDetail {
 interface ProjectBuildSubmitPayload {
   base_url: string
   extra_asset_names: string[]
+}
+
+interface BatchScreenshotDownloadProgress {
+  scope: PageBatchScope
+  text: string
 }
 
 const PAGE_CARD_SIZE_STORAGE_KEY = 'web-presentation:pages-view:preview-card-size'
@@ -481,6 +491,7 @@ const presentationConfigSaving = ref(false)
 const routeSaving = ref(false)
 const pageCopySaving = ref(false)
 const batchActionPending = ref<PageBatchAction | null>(null)
+const batchScreenshotDownloadProgress = ref<BatchScreenshotDownloadProgress | null>(null)
 const pageRoutePendingId = ref<number | null>(null)
 const archivingPageId = ref<number | null>(null)
 const screenshotPendingPageId = ref<number | null>(null)
@@ -488,6 +499,12 @@ const copyingPage = ref<PageItem | null>(null)
 const batchCopyPages = ref<PageItem[]>([])
 const selectedRoutedPageIds = ref<Set<number>>(new Set())
 const selectedUnroutedPageIds = ref<Set<number>>(new Set())
+const routedBatchScreenshotDownloadProgressText = computed(() => (
+  batchScreenshotDownloadProgress.value?.scope === 'routed' ? batchScreenshotDownloadProgress.value.text : null
+))
+const unroutedBatchScreenshotDownloadProgressText = computed(() => (
+  batchScreenshotDownloadProgress.value?.scope === 'unrouted' ? batchScreenshotDownloadProgress.value.text : null
+))
 
 const latestBuildJobQuery = useQuery(
   computed(() => ({
@@ -711,6 +728,37 @@ function isPageCardSize(value: string | null): value is PageCardSize {
  */
 function isRefreshableScreenshotPage(page: PageItem): boolean {
   return page.file_type === 'vue' && (!page.screenshot_url || !page.screenshot_is_latest)
+}
+
+/**
+ * 判断页面是否已经具备可下载的最新截图。
+ * @param page 页面资源
+ */
+function isDownloadableLatestScreenshotPage(page: PageItem): boolean {
+  return Boolean(page.screenshot_url && page.screenshot_is_latest)
+}
+
+/**
+ * 生成人类可读的截图未就绪原因，避免批量下载混入旧图。
+ * @param page 页面资源
+ */
+function buildScreenshotNotReadyMessage(page: PageItem): string {
+  if (page.file_type !== 'vue' && !page.screenshot_url) {
+    return `「${page.title}」不是 Vue 页面，无法自动生成截图。`
+  }
+  if (!page.screenshot_url) {
+    return `「${page.title}」暂无可下载截图。`
+  }
+  return `「${page.title}」截图仍不是最新版本。`
+}
+
+/**
+ * 更新批量截图下载进度，供当前分区工具条展示。
+ * @param scope 页面分区
+ * @param text 进度文本
+ */
+function updateBatchScreenshotDownloadProgress(scope: PageBatchScope, text: string): void {
+  batchScreenshotDownloadProgress.value = { scope, text }
 }
 
 /**
@@ -994,30 +1042,60 @@ async function handleBatchRemoveFromRoute(): Promise<void> {
 }
 
 /**
- * 为当前分区已选页面逐个刷新截图。
+ * 为当前分区已选页面下载截图；若存在缺失或旧截图，先刷新到最新版本。
  * @param scope 页面分区
  */
-async function handleBatchSaveScreenshots(scope: PageBatchScope): Promise<void> {
+async function handleBatchDownloadScreenshots(scope: PageBatchScope): Promise<void> {
   const selectedPages = getSelectedPagesByScope(scope)
   if (selectedPages.length === 0 || batchActionPending.value !== null) {
     return
   }
 
-  batchActionPending.value = 'screenshot'
-  let succeededCount = 0
+  batchActionPending.value = 'download-screenshot'
+  const downloadablePages: PageItem[] = []
+  let refreshedCount = 0
   let firstErrorMessage = ''
   try {
-    for (const page of selectedPages) {
+    updateBatchScreenshotDownloadProgress(scope, `检查截图 0/${selectedPages.length}`)
+    for (const [index, page] of selectedPages.entries()) {
+      let latestPage = page
       try {
-        await savePageScreenshot(page.id)
-        succeededCount += 1
+        if (isRefreshableScreenshotPage(page)) {
+          updateBatchScreenshotDownloadProgress(scope, `刷新截图 ${index + 1}/${selectedPages.length}`)
+          latestPage = await savePageScreenshot(page.id)
+          refreshedCount += 1
+        } else {
+          updateBatchScreenshotDownloadProgress(scope, `检查截图 ${index + 1}/${selectedPages.length}`)
+        }
       } catch (error) {
         firstErrorMessage ||= getErrorMessage(error, `更新「${page.title}」截图失败。`)
+        continue
       }
+
+      if (!isDownloadableLatestScreenshotPage(latestPage)) {
+        firstErrorMessage ||= buildScreenshotNotReadyMessage(latestPage)
+        continue
+      }
+
+      downloadablePages.push(latestPage)
     }
-    await refreshPageListCaches()
-    showBatchResultMessage('截图', succeededCount, firstErrorMessage)
+
+    if (refreshedCount > 0) {
+      await refreshPageListCaches()
+    }
+
+    if (firstErrorMessage || downloadablePages.length !== selectedPages.length) {
+      Message.warning(`批量下载截图已停止：${firstErrorMessage || '存在页面截图尚未就绪。'}`)
+      return
+    }
+
+    updateBatchScreenshotDownloadProgress(scope, `打包下载 ${downloadablePages.length} 个截图`)
+    await downloadPageScreenshotsArchive(downloadablePages.map(page => page.id))
+    Message.success(refreshedCount > 0
+      ? `已更新 ${refreshedCount} 个页面截图，并下载包含 ${downloadablePages.length} 个截图的压缩包。`
+      : `已下载包含 ${downloadablePages.length} 个页面截图的压缩包。`)
   } finally {
+    batchScreenshotDownloadProgress.value = null
     batchActionPending.value = null
   }
 }
@@ -1034,19 +1112,19 @@ async function handleRefreshSectionPageScreenshots(scope: PageBatchScope): Promi
 
   batchScreenshotRefreshing.value = true
   batchScreenshotRefreshScope.value = scope
-  let succeededCount = 0
-  let firstErrorMessage = ''
   try {
-    for (const page of targetPages) {
-      try {
-        await savePageScreenshot(page.id)
-        succeededCount += 1
-      } catch (error) {
-        firstErrorMessage ||= getErrorMessage(error, `更新「${page.title}」截图失败。`)
-      }
+    const group = await batchRefreshPageScreenshotJobs(projectId.value)
+    if (group.requested_count === 0) {
+      Message.info('当前分区没有需要刷新的页面截图。')
+      return
     }
+    const completedGroup = await waitForPageScreenshotJobGroup(group.job_group_id)
     await refreshPageListCaches()
+    const succeededCount = completedGroup.succeeded_count + completedGroup.skipped_count
+    const firstErrorMessage = completedGroup.failures[0]?.detail ?? ''
     showBatchResultMessage('截图', succeededCount, firstErrorMessage)
+  } catch (error) {
+    Message.error(getErrorMessage(error, '批量刷新截图失败。'))
   } finally {
     batchScreenshotRefreshing.value = false
     batchScreenshotRefreshScope.value = null

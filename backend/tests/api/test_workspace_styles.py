@@ -267,6 +267,64 @@ async def test_workspace_style_package_should_export_import_with_theme_dependenc
     assert imported_theme["heading_font"]["asset_name"] == "style_pkg_font"
 
 
+async def test_workspace_style_package_export_should_warn_for_suggested_component_dynamic_assets(
+    authenticated_client: AsyncClient,
+) -> None:
+    """样式包导出遇到建议组件动态资源时应 warning，并允许手动补充资源。"""
+
+    source_workspace_id = await _create_workspace(authenticated_client, "样式动态资源源空间")
+    style = await _create_style(authenticated_client, source_workspace_id, "dynamic-style", None)
+    manual_asset = await _create_svg_asset(authenticated_client, source_workspace_id, "style_manual_asset")
+    suggested_component = await _create_published_component(
+        authenticated_client,
+        source_workspace_id,
+        name="动态建议组件",
+        import_name="DynamicSuggestedCard",
+        content=(
+            "<template>"
+            '<AssetImage :name="props.runtimeAssetName" />'
+            "</template>"
+            "<script setup>const props = defineProps({ runtimeAssetName: String })</script>"
+        ),
+    )
+    suggested_response = await authenticated_client.put(
+        f"/api/workspaces/{source_workspace_id}/styles/{style['id']}/suggested-components",
+        json={"component_ids": [suggested_component["id"]]},
+    )
+    assert suggested_response.status_code == 200
+
+    validate_response = await authenticated_client.post(
+        f"/api/workspaces/{source_workspace_id}/styles/export-package/validate",
+        json={"style_ids": [style["id"]], "manual_asset_names": ["style_manual_asset"]},
+    )
+    assert validate_response.status_code == 200
+    validation = validate_response.json()
+    assert validation["can_export"] is True
+    assert validation["dynamic_resource_components"] == ["动态建议组件"]
+    assert {item["name"] for item in validation["manual_assets"]} == {"style_manual_asset"}
+    assert validation["warnings"]
+
+    export_response = await authenticated_client.post(
+        f"/api/workspaces/{source_workspace_id}/styles/export-package",
+        json={"style_ids": [style["id"]], "manual_asset_names": ["style_manual_asset"]},
+    )
+    assert export_response.status_code == 200
+    with zipfile.ZipFile(io.BytesIO(export_response.content)) as archive:
+        manifest = json.loads(archive.read("manifest.json").decode("utf-8"))
+        component_payload = json.loads(archive.read(f"components/{suggested_component['code']}/component.json").decode("utf-8"))
+        assert manifest["export_warnings"]
+        assert manifest["manual_asset_names"] == ["style_manual_asset"]
+        assert manifest["dynamic_resource_components"] == ["动态建议组件"]
+        assert {item["name"] for item in manifest["assets"]} == {"style_manual_asset"}
+        assert component_payload["asset_names"] == []
+        assert f"assets/{manual_asset['file_hash']}/asset.json" in archive.namelist()
+
+    target_workspace_id = await _create_workspace(authenticated_client, "样式动态资源目标空间")
+    import_validation = await _validate_style_package(authenticated_client, target_workspace_id, export_response.content)
+    assert import_validation["valid"] is True
+    assert import_validation["warnings"] == manifest["export_warnings"]
+
+
 async def test_workspace_style_package_should_overwrite_style_and_reject_dependency_conflicts(
     authenticated_client: AsyncClient,
 ) -> None:
@@ -550,6 +608,7 @@ async def _create_published_component(
     *,
     name: str,
     import_name: str,
+    content: str | None = None,
 ) -> dict:
     """创建并发布用于样式包建议组件测试的工作空间组件。"""
 
@@ -560,7 +619,7 @@ async def _create_published_component(
             "name": name,
             "import_name": import_name,
             "component_type": "内容区块",
-            "content": f"<template><section>{name}</section></template>",
+            "content": content or f"<template><section>{name}</section></template>",
             "file_type": "vue",
             "status": "active",
         },

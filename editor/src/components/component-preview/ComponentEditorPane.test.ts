@@ -64,7 +64,7 @@ describe('ComponentEditorPane', () => {
     await fireEvent.update(screen.getByPlaceholderText('如：SalesMetricCard'), 'SalesTrendCard')
     await fireEvent.click(screen.getByRole('button', { name: '暗黑' }))
     await fireEvent.click(screen.getByRole('button', { name: '发布历史' }))
-    await fireEvent.click(screen.getByRole('button', { name: '草稿预览' }))
+    await fireEvent.click(screen.getByRole('button', { name: '保存并预览' }))
     await fireEvent.click(screen.getByRole('button', { name: '保存草稿' }))
 
     const formEvents = emitted('update:form') as Array<[WorkspaceComponentDraftForm]> | undefined

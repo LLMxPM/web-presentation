@@ -1,5 +1,7 @@
 """文件功能：定义工作空间组件的请求与响应模型，以及版本、依赖索引与分享包响应。"""
 
+from __future__ import annotations
+
 from datetime import datetime
 
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -306,6 +308,42 @@ class WorkspaceComponentExportPackageRequest(BaseModel):
 
     workspace_id: int
     component_ids: list[int] = Field(min_length=1)
+    manual_asset_names: list[str] = Field(default_factory=list)
+
+
+class ComponentShareExportComponentSummary(SchemaBase):
+    """组件分享包导出预检中的组件摘要。"""
+
+    source_component_code: str
+    source_version_no: int
+    name: str
+    import_name: str
+    has_dynamic_resources: bool = False
+    missing_static_asset_names: list[str] = Field(default_factory=list)
+
+
+class ComponentShareExportAssetSummary(SchemaBase):
+    """组件分享包导出预检中的资源摘要。"""
+
+    name: str
+    original_name: str
+    asset_type: str
+    file_hash: str
+    source: str = "automatic"
+
+
+class ComponentShareExportValidationResult(SchemaBase):
+    """组件分享包导出预检结果。"""
+
+    can_export: bool = True
+    components: list[ComponentShareExportComponentSummary] = Field(default_factory=list)
+    automatic_assets: list[ComponentShareExportAssetSummary] = Field(default_factory=list)
+    manual_assets: list[ComponentShareExportAssetSummary] = Field(default_factory=list)
+    fonts: list[ComponentSharePackageFontSummary] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    missing_static_asset_names: list[str] = Field(default_factory=list)
+    missing_manual_asset_names: list[str] = Field(default_factory=list)
+    dynamic_resource_components: list[str] = Field(default_factory=list)
 
 
 class ComponentSharePackageComponentSummary(SchemaBase):
@@ -357,6 +395,7 @@ class ComponentShareImportValidationResult(SchemaBase):
     assets: list[ComponentSharePackageAssetSummary] = Field(default_factory=list)
     fonts: list[ComponentSharePackageFontSummary] = Field(default_factory=list)
     errors: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
 
 
 class ComponentShareImportResult(SchemaBase):
@@ -366,3 +405,4 @@ class ComponentShareImportResult(SchemaBase):
     components: list[ComponentSharePackageComponentSummary] = Field(default_factory=list)
     assets: list[ComponentSharePackageAssetSummary] = Field(default_factory=list)
     fonts: list[ComponentSharePackageFontSummary] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)

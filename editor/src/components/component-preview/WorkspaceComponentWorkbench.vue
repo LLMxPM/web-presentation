@@ -13,7 +13,6 @@
 
     <ComponentPreviewWorkbench
       v-else
-      ref="previewWorkbenchRef"
       :source="previewSource"
       :refresh-key="previewRefreshKey"
       :title="previewTitle"
@@ -148,7 +147,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { History, Layers, Link2, Rocket } from '@lucide/vue'
 
 import {
@@ -207,7 +206,6 @@ const saving = ref(false)
 const publishing = ref(false)
 const previewLoading = ref(false)
 const previewRefreshKey = ref(0)
-const previewWorkbenchRef = ref<InstanceType<typeof ComponentPreviewWorkbench> | null>(null)
 const editorDialogVisible = ref(false)
 const showSchemaHelp = ref(false)
 const releaseDialogVisible = ref(false)
@@ -378,26 +376,21 @@ function handleEditorDialogVisibleChange(visible: boolean): void {
 }
 
 /**
- * 从编辑区切回右侧预览，并触发一次草稿预览刷新。
+ * 保存当前组件草稿后切回右侧预览，确保刷新或切换组件不会丢失刚预览的内容。
  */
 async function handlePreviewDraft(): Promise<void> {
-  draft.errors.content = draft.form.content.trim() ? '' : '源码不能为空'
-  draft.normalizePreviewSchemaInput()
-  if (draft.errors.content || draft.errors.preview_schema) {
-    return
-  }
   previewLoading.value = true
-  activeMode.value = 'preview'
-  editorDialogVisible.value = false
-  previewRefreshKey.value += 1
-  await nextTick()
-  await previewWorkbenchRef.value?.refreshCurrentPreview()
+  const savedComponent = await handleSaveDraft({ previewAfterSave: true })
+  if (!savedComponent) {
+    previewLoading.value = false
+  }
 }
 
 /**
  * 保存当前草稿，并同步最新组件给父层和左侧列表。
+ * @param options 保存后的界面行为
  */
-async function handleSaveDraft(): Promise<WorkspaceComponentItem | null> {
+async function handleSaveDraft(options: { previewAfterSave?: boolean } = {}): Promise<WorkspaceComponentItem | null> {
   saving.value = true
   const wasEditMode = Boolean(currentComponent.value)
   try {
@@ -409,7 +402,9 @@ async function handleSaveDraft(): Promise<WorkspaceComponentItem | null> {
     emit('component-saved', savedComponent)
     emit('request-list-refresh')
     activeMode.value = 'preview'
-    editorDialogVisible.value = false
+    if (options.previewAfterSave) {
+      editorDialogVisible.value = false
+    }
     previewRefreshKey.value += 1
     return savedComponent
   } catch (error) {

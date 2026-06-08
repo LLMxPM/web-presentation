@@ -18,7 +18,10 @@
   </button>
 
   <div v-if="selectedCount > 0" class="batch-toolbar">
-    <span class="batch-toolbar-count">已选 {{ selectedCount }}</span>
+    <span class="batch-toolbar-count">
+      已选 {{ selectedCount }}
+      <span v-if="batchProgressText" class="batch-toolbar-progress">· {{ batchProgressText }}</span>
+    </span>
     <button
       v-if="scope === 'routed'"
       type="button"
@@ -46,10 +49,11 @@
       :data-testid="`batch-${scope}-screenshot`"
       class="batch-toolbar-action"
       :disabled="batchActionPending !== null"
-      @click="emit('batch-save-screenshots')"
+      @click="emit('batch-download-screenshots')"
     >
-      <Camera class="h-3.5 w-3.5" />
-      截图
+      <LoaderCircle v-if="batchActionPending === 'download-screenshot'" class="h-3.5 w-3.5 animate-spin" />
+      <Download v-else class="h-3.5 w-3.5" />
+      {{ batchActionPending === 'download-screenshot' ? '处理中' : '下载截图' }}
     </button>
     <button
       type="button"
@@ -84,7 +88,7 @@
 </template>
 
 <script setup lang="ts">
-import { Archive, Camera, Check, Copy, ListPlus, RouteOff, X } from '@lucide/vue'
+import { Archive, Check, Copy, Download, ListPlus, LoaderCircle, RouteOff, X } from '@lucide/vue'
 
 import type { PageBatchAction, PageBatchScope } from './page-list-types'
 
@@ -94,13 +98,14 @@ defineProps<{
   isAllSelected: boolean
   selectedCount: number
   batchActionPending: PageBatchAction | null
+  batchProgressText?: string | null
 }>()
 
 const emit = defineEmits<{
   'select-all-change': [checked: boolean]
   'batch-add-route': []
   'batch-remove-route': []
-  'batch-save-screenshots': []
+  'batch-download-screenshots': []
   'open-batch-copy': []
   'batch-archive-pages': []
   'clear-selection': []
@@ -179,6 +184,10 @@ const emit = defineEmits<{
   font-size: 0.75rem;
   font-weight: 700;
   color: rgb(100 116 139);
+}
+
+.batch-toolbar-progress {
+  color: rgb(79 70 229);
 }
 
 .batch-toolbar-action,

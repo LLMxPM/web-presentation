@@ -35,6 +35,9 @@ const getProjectRoutesMock = vi.fn()
 const replaceProjectRoutesMock = vi.fn()
 const copyPageToProjectMock = vi.fn()
 const savePageScreenshotMock = vi.fn()
+const batchRefreshPageScreenshotJobsMock = vi.fn()
+const waitForPageScreenshotJobGroupMock = vi.fn()
+const downloadPageScreenshotsArchiveMock = vi.fn()
 const createProjectPreviewArtifactMock = vi.fn()
 const messageSuccessMock = vi.fn()
 const messageErrorMock = vi.fn()
@@ -89,6 +92,9 @@ vi.mock('@/api/catalog', () => ({
   updatePage: (...args: unknown[]) => updatePageMock(...args),
   updateProject: (...args: unknown[]) => updateProjectMock(...args),
   savePageScreenshot: (...args: unknown[]) => savePageScreenshotMock(...args),
+  batchRefreshPageScreenshotJobs: (...args: unknown[]) => batchRefreshPageScreenshotJobsMock(...args),
+  waitForPageScreenshotJobGroup: (...args: unknown[]) => waitForPageScreenshotJobGroupMock(...args),
+  downloadPageScreenshotsArchive: (...args: unknown[]) => downloadPageScreenshotsArchiveMock(...args),
   createPageSnapshot: vi.fn(),
   getPageVersionContent: vi.fn(),
   restorePageVersion: vi.fn(),
@@ -299,6 +305,32 @@ describe('page screenshot views', () => {
     })
     getProjectRoutesMock.mockResolvedValue({ routes: [] })
     replaceProjectRoutesMock.mockResolvedValue({ routes: [] })
+    batchRefreshPageScreenshotJobsMock.mockResolvedValue({
+      job_group_id: 'screenshot-group-1',
+      status: 'running',
+      requested_count: 1,
+      pending_count: 1,
+      running_count: 0,
+      succeeded_count: 0,
+      failed_count: 0,
+      skipped_count: 0,
+      page_ids: [],
+      jobs: [],
+      failures: [],
+    })
+    waitForPageScreenshotJobGroupMock.mockResolvedValue({
+      job_group_id: 'screenshot-group-1',
+      status: 'succeeded',
+      requested_count: 1,
+      pending_count: 0,
+      running_count: 0,
+      succeeded_count: 1,
+      failed_count: 0,
+      skipped_count: 0,
+      page_ids: [31],
+      jobs: [],
+      failures: [],
+    })
     listPagesMock.mockResolvedValue({
       items: [createPageListPayload()],
       total: 1,
@@ -905,7 +937,32 @@ describe('page screenshot views', () => {
       page: 1,
       page_size: 100,
     })
-    savePageScreenshotMock.mockResolvedValue({})
+    batchRefreshPageScreenshotJobsMock.mockResolvedValue({
+      job_group_id: 'screenshot-group-refresh',
+      status: 'running',
+      requested_count: 2,
+      pending_count: 2,
+      running_count: 0,
+      succeeded_count: 0,
+      failed_count: 0,
+      skipped_count: 0,
+      page_ids: [],
+      jobs: [],
+      failures: [],
+    })
+    waitForPageScreenshotJobGroupMock.mockResolvedValue({
+      job_group_id: 'screenshot-group-refresh',
+      status: 'succeeded',
+      requested_count: 2,
+      pending_count: 0,
+      running_count: 0,
+      succeeded_count: 2,
+      failed_count: 0,
+      skipped_count: 0,
+      page_ids: [31, 32],
+      jobs: [],
+      failures: [],
+    })
 
     render(PagesView, createTestingRenderOptions())
 
@@ -914,13 +971,83 @@ describe('page screenshot views', () => {
     await fireEvent.click(screen.getByTestId('batch-refresh-unrouted-page-screenshots'))
 
     await waitFor(() => {
-      expect(savePageScreenshotMock).toHaveBeenCalledTimes(2)
+      expect(batchRefreshPageScreenshotJobsMock).toHaveBeenCalledWith(21)
+      expect(waitForPageScreenshotJobGroupMock).toHaveBeenCalledWith('screenshot-group-refresh')
     })
-    expect(savePageScreenshotMock).toHaveBeenNthCalledWith(1, 31)
-    expect(savePageScreenshotMock).toHaveBeenNthCalledWith(2, 32)
+    expect(savePageScreenshotMock).not.toHaveBeenCalled()
     await waitFor(() => {
       expect(messageSuccessMock).toHaveBeenCalledWith('批量截图完成 2 个页面。')
     })
+  })
+
+  it('PagesView 选中页面后应先刷新旧截图再下载截图压缩包', async () => {
+    listPagesMock.mockResolvedValue({
+      items: [
+        createPageListPayload({
+          id: 31,
+          code: 'PG202604020001',
+          title: 'A 旧截图页面',
+          current_version_no: 2,
+          screenshot_url: '/media/page-screenshots/PG202604020001.png?v=1712049120000',
+          screenshot_version_no: 1,
+          screenshot_config_hash: 'old-config',
+          screenshot_is_latest: false,
+          screenshot_updated_at: '2026-04-02T10:05:00Z',
+        }),
+        createPageListPayload({
+          id: 32,
+          code: 'PG202604020002',
+          title: 'B 最新截图页面',
+          current_version_no: 3,
+          screenshot_url: '/media/page-screenshots/PG202604020002.png?v=1712049660000',
+          screenshot_version_no: 3,
+          screenshot_config_hash: 'current-config',
+          screenshot_is_latest: true,
+          screenshot_updated_at: '2026-04-02T10:21:00Z',
+        }),
+      ],
+      total: 2,
+      page: 1,
+      page_size: 100,
+    })
+    const updatedScreenshotPage = createPageListPayload({
+      id: 31,
+      code: 'PG202604020001',
+      title: 'A 旧截图页面',
+      current_version_no: 2,
+      screenshot_url: '/media/page-screenshots/PG202604020001.png?v=1712049720000',
+      screenshot_version_no: 2,
+      screenshot_config_hash: 'current-config',
+      screenshot_is_latest: true,
+      screenshot_updated_at: '2026-04-02T10:12:00Z',
+    })
+    let resolveScreenshotSave!: (value: unknown) => void
+    savePageScreenshotMock.mockImplementation(() => new Promise((resolve) => {
+      resolveScreenshotSave = resolve
+    }))
+    downloadPageScreenshotsArchiveMock.mockResolvedValue(undefined)
+
+    render(PagesView, createTestingRenderOptions())
+
+    expect(await screen.findByText('A 旧截图页面')).toBeInTheDocument()
+    await fireEvent.click(screen.getByTestId('batch-unrouted-select-all'))
+    expect(screen.getByRole('button', { name: '下载截图' })).toBeInTheDocument()
+
+    await fireEvent.click(screen.getByTestId('batch-unrouted-screenshot'))
+
+    await waitFor(() => {
+      expect(savePageScreenshotMock).toHaveBeenCalledTimes(1)
+    })
+    expect(screen.getByText(/刷新截图 1\/2/)).toBeInTheDocument()
+    expect(savePageScreenshotMock).toHaveBeenCalledWith(31)
+    resolveScreenshotSave(updatedScreenshotPage)
+
+    await waitFor(() => {
+      expect(downloadPageScreenshotsArchiveMock).toHaveBeenCalledTimes(1)
+    })
+    expect(downloadPageScreenshotsArchiveMock).toHaveBeenCalledWith([31, 32])
+    expect(anchorClickMock).not.toHaveBeenCalled()
+    expect(messageSuccessMock).toHaveBeenCalledWith('已更新 1 个页面截图，并下载包含 2 个截图的压缩包。')
   })
 
   it('PagesView 无需刷新的 Vue 截图时应禁用刷新截图按钮', async () => {

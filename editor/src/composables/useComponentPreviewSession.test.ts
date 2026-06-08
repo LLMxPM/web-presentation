@@ -47,12 +47,79 @@ describe('useComponentPreviewSession', () => {
       expect(screen.getByTestId('error')).toHaveTextContent('Element is missing end tag.')
     })
   })
+
+  it('旧预览请求慢返回时不应覆盖最新草稿预览地址', async () => {
+    const firstPreview = createDeferred<PreviewArtifactResponse>()
+    const latestPreview = createDeferred<PreviewArtifactResponse>()
+
+    render(defineComponent({
+      name: 'ComponentPreviewSessionRaceTestHost',
+      setup() {
+        const session = useComponentPreviewSession()
+        onMounted(() => {
+          void session.runPreview(() => firstPreview.promise)
+          void session.runPreview(() => latestPreview.promise)
+        })
+
+        return () => h('span', { 'data-testid': 'frame-url' }, session.previewFrameUrl.value)
+      },
+    }))
+
+    latestPreview.resolve(createPreviewResponse('artifact-latest', 'http://localhost/preview/latest'))
+
+    await waitFor(() => {
+      expect(screen.getByTestId('frame-url')).toHaveTextContent('http://localhost/preview/latest')
+    })
+
+    firstPreview.resolve(createPreviewResponse('artifact-old', 'http://localhost/preview/old'))
+
+    await waitFor(() => {
+      expect(screen.getByTestId('frame-url')).toHaveTextContent('http://localhost/preview/latest')
+    })
+  })
+
+  it('旧预览请求失败时不应覆盖最新草稿预览状态', async () => {
+    const firstPreview = createDeferred<PreviewArtifactResponse>()
+    const latestPreview = createDeferred<PreviewArtifactResponse>()
+
+    render(defineComponent({
+      name: 'ComponentPreviewSessionStaleErrorTestHost',
+      setup() {
+        const session = useComponentPreviewSession()
+        onMounted(() => {
+          void session.runPreview(() => firstPreview.promise)
+          void session.runPreview(() => latestPreview.promise)
+        })
+
+        return () => h('div', [
+          h('span', { 'data-testid': 'frame-url' }, session.previewFrameUrl.value),
+          h('span', { 'data-testid': 'error' }, session.previewErrorMessage.value),
+        ])
+      },
+    }))
+
+    latestPreview.resolve(createPreviewResponse('artifact-latest', 'http://localhost/preview/latest'))
+
+    await waitFor(() => {
+      expect(screen.getByTestId('frame-url')).toHaveTextContent('http://localhost/preview/latest')
+    })
+
+    firstPreview.reject(new Error('old preview failed'))
+
+    await waitFor(() => {
+      expect(screen.getByTestId('frame-url')).toHaveTextContent('http://localhost/preview/latest')
+      expect(screen.getByTestId('error').textContent).toBe('')
+    })
+  })
 })
 
-function createPreviewResponse(): PreviewArtifactResponse {
+function createPreviewResponse(
+  artifactId = 'artifact-1',
+  previewUrl = 'http://localhost/preview/component',
+): PreviewArtifactResponse {
   return {
-    preview_url: 'http://localhost/preview/component',
-    artifact_id: 'artifact-1',
+    preview_url: previewUrl,
+    artifact_id: artifactId,
     preview_kind: 'component',
     entry_descriptor: {
       entry_type: 'component_host',
@@ -60,4 +127,14 @@ function createPreviewResponse(): PreviewArtifactResponse {
     viewport_width: 1920,
     viewport_height: 1080,
   }
+}
+
+function createDeferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise
+    reject = rejectPromise
+  })
+  return { promise, resolve, reject }
 }

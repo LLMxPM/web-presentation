@@ -12,8 +12,10 @@ const mocked = vi.hoisted(() => ({
   exportWorkspaceStylePackage: vi.fn(),
   importWorkspaceStylePackage: vi.fn(),
   listWorkspaceStyles: vi.fn(),
+  listWorkspaceAssets: vi.fn(),
   updateWorkspaceStyle: vi.fn(),
   updateWorkspaceStyleSuggestedComponents: vi.fn(),
+  validateWorkspaceStylePackageExport: vi.fn(),
   validateWorkspaceStylePackageImport: vi.fn(),
   listWorkspaceThemes: vi.fn(),
   getWorkspaceTheme: vi.fn(),
@@ -96,7 +98,12 @@ vi.mock('@/api/styles', () => ({
   listWorkspaceStyles: (...args: unknown[]) => mocked.listWorkspaceStyles(...args),
   updateWorkspaceStyle: (...args: unknown[]) => mocked.updateWorkspaceStyle(...args),
   updateWorkspaceStyleSuggestedComponents: (...args: unknown[]) => mocked.updateWorkspaceStyleSuggestedComponents(...args),
+  validateWorkspaceStylePackageExport: (...args: unknown[]) => mocked.validateWorkspaceStylePackageExport(...args),
   validateWorkspaceStylePackageImport: (...args: unknown[]) => mocked.validateWorkspaceStylePackageImport(...args),
+}))
+
+vi.mock('@/api/assets', () => ({
+  listWorkspaceAssets: (...args: unknown[]) => mocked.listWorkspaceAssets(...args),
 }))
 
 vi.mock('@/api/themes', () => ({
@@ -164,6 +171,22 @@ describe('WorkspaceStylesView', () => {
       blob: new Blob(['zip']),
       filename: 'workspace-styles.zip',
     })
+    mocked.validateWorkspaceStylePackageExport.mockResolvedValue({
+      can_export: true,
+      automatic_assets: [],
+      manual_assets: [],
+      fonts: [],
+      warnings: [],
+      missing_static_asset_names: [],
+      missing_manual_asset_names: [],
+      dynamic_resource_components: [],
+    })
+    mocked.listWorkspaceAssets.mockResolvedValue({
+      items: [],
+      total: 0,
+      page: 1,
+      page_size: 100,
+    })
     mocked.validateWorkspaceStylePackageImport.mockResolvedValue({
       valid: true,
       schema_version: 3,
@@ -203,6 +226,7 @@ describe('WorkspaceStylesView', () => {
       }],
       fonts: [],
       errors: [],
+      warnings: [],
     })
     mocked.importWorkspaceStylePackage.mockResolvedValue({
       styles: [{
@@ -240,6 +264,7 @@ describe('WorkspaceStylesView', () => {
         action: 'create',
       }],
       fonts: [],
+      warnings: [],
     })
     mocked.createWorkspaceStyle.mockResolvedValue({ ...mocked.style, id: 10 })
     mocked.updateWorkspaceStyle.mockResolvedValue(mocked.style)
@@ -319,7 +344,14 @@ describe('WorkspaceStylesView', () => {
 
     await fireEvent.click(exportButton)
 
-    expect(mocked.exportWorkspaceStylePackage).toHaveBeenCalledWith(1, { style_ids: [9] })
+    expect(mocked.validateWorkspaceStylePackageExport).toHaveBeenCalledWith(1, {
+      style_ids: [9],
+      manual_asset_names: [],
+    })
+    expect(mocked.exportWorkspaceStylePackage).toHaveBeenCalledWith(1, {
+      style_ids: [9],
+      manual_asset_names: [],
+    })
     expect(anchorClickMock).toHaveBeenCalledTimes(1)
     expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:styles')
   })

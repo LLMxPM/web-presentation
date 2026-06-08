@@ -1401,6 +1401,10 @@ async def test_coordinator_runtime_kit_tools_should_query_agent_capabilities(
     assert detail["import_path"] == "@runtime-kit/public/components/page/layout/DefaultContainer.v1.vue"
     assert "agent" in detail["audiences"]
 
+    asset_image_detail = await detail_tool.entrypoint(run_context, name="AssetImage", kind="component")
+    assert asset_image_detail["name"] == "AssetImage.v1"
+    assert asset_image_detail["import_path"] == "@runtime-kit/public/components/assets/AssetImage.v1.vue"
+
 
 def test_component_manager_should_receive_component_write_tool_scopes() -> None:
     """组件助手应固定获得组件读写删除、资源读取和代码检查工具权限。"""

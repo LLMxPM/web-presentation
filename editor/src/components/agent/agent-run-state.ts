@@ -44,7 +44,7 @@ export interface ApplyAgentRunEventResult {
 
 const STREAMING_RUN_STATUSES = new Set(['pending', 'running', 'cancelling'])
 const MODEL_REQUEST_STATUS = 'model_request'
-const MODEL_REQUEST_STATUS_TEXT = '正在准备工具调用参数...'
+const MODEL_REQUEST_STATUS_TEXT = '等待智能体输出中'
 
 /**
  * 创建单个会话的默认运行时状态。
@@ -1171,7 +1171,7 @@ function appendRunStatusItem(
 }
 
 /**
- * 清理模型准备工具参数期间的临时状态，避免它进入最终时间线。
+ * 清理等待智能体输出期间的临时状态，避免它进入最终时间线。
  */
 function removeModelRequestStatusItem(state: AgentSessionRuntimeState, runId: string): void {
   state.timelineItems = state.timelineItems.filter(item => !(
@@ -1182,7 +1182,7 @@ function removeModelRequestStatusItem(state: AgentSessionRuntimeState, runId: st
 }
 
 /**
- * 清理成员助手中模型准备工具参数期间的临时状态。
+ * 清理成员助手等待输出期间的临时状态。
  */
 function removeMemberModelRequestStatusItem(memberRun: AgentMemberRunItem): void {
   memberRun.timeline_items = memberRun.timeline_items.filter(item => !(

@@ -14,7 +14,7 @@ from app.ai.auth_tokens import PAGE_TOOL_VISUAL_SCOPES, extract_user_id
 from app.ai.tools.shared import resolve_tool_context
 from app.core.exceptions import AppException
 from app.services.agent_image_transport_resolver import AgentImageTransportResolver
-from app.services.page_screenshot_service import PageScreenshotService
+from app.services.page_screenshot_job_service import PageScreenshotJobService
 
 
 def build_get_page_screenshot_tool(session_factory: async_sessionmaker[AsyncSession]) -> Any:
@@ -41,7 +41,7 @@ def build_get_page_screenshot_tool(session_factory: async_sessionmaker[AsyncSess
         user_id = extract_user_id(claims.get("sub"))
 
         async with session_factory() as session:
-            screenshot = await PageScreenshotService(session).ensure_latest_page_screenshot(
+            screenshot = await PageScreenshotJobService(session).ensure_latest_page_screenshot_via_queue(
                 page_id=int(page_id),
                 user_id=user_id,
                 workspace_id=workspace_id,

@@ -22,7 +22,7 @@
         </BaseButton>
         <BaseButton variant="secondary" size="sm" :loading="previewLoading" @click="emit('preview-draft')">
           <Eye class="h-3.5 w-3.5" />
-          草稿预览
+          保存并预览
         </BaseButton>
         <BaseButton variant="primary" size="sm" :loading="saving" @click="emit('save-draft')">
           {{ mode === 'create' ? '创建草稿' : '保存草稿' }}

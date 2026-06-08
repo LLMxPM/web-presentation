@@ -27,6 +27,7 @@ import {
   importWorkspaceStylePackage,
   listWorkspaceStyles,
   updateWorkspaceStyle,
+  validateWorkspaceStylePackageExport,
   validateWorkspaceStylePackageImport,
 } from '@/api/styles'
 
@@ -104,6 +105,21 @@ describe('styles api', () => {
       { responseType: 'blob' },
     )
     expect(result).toEqual({ blob, filename: 'workspace-styles-pitch.zip' })
+  })
+
+  it('预检样式离线包导出时应请求 validate 接口', async () => {
+    postMock.mockResolvedValueOnce({ data: { can_export: true } })
+
+    const result = await validateWorkspaceStylePackageExport(5, {
+      style_ids: [9],
+      manual_asset_names: ['hero-image'],
+    })
+
+    expect(postMock).toHaveBeenCalledWith(
+      '/workspaces/5/styles/export-package/validate',
+      { style_ids: [9], manual_asset_names: ['hero-image'] },
+    )
+    expect(result).toEqual({ can_export: true })
   })
 
   it('预检和导入样式离线包时应使用 multipart 请求', async () => {

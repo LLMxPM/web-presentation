@@ -10,9 +10,12 @@ import type {
   PageCopyToProjectPayload,
   PageItem,
   PageScreenshotBatchRefreshResponse,
+  PageScreenshotJob,
+  PageScreenshotJobGroup,
   PageVersionContent,
   PageVersionListItem,
   PagedResponse,
+  ComponentShareExportValidationResult,
   ComponentShareImportResult,
   ComponentShareImportValidationResult,
   ProjectBuildExtraAssetsJson,
@@ -328,12 +331,23 @@ export async function getComponentVersionContent(id: number, versionNo: number) 
 export async function exportComponentPackage(payload: {
   workspace_id: number
   component_ids: number[]
+  manual_asset_names?: string[]
 }) {
   const response = await postDownloadBlob('/components/export-package', payload)
   return {
     blob: response.data,
     filename: resolveDownloadFilename(response.headers['content-disposition']) || 'workspace-components.zip',
   }
+}
+
+/** 预检工作空间组件离线分享包导出资源。 */
+export async function validateComponentPackageExport(payload: {
+  workspace_id: number
+  component_ids: number[]
+  manual_asset_names?: string[]
+}) {
+  const { data } = await http.post<ComponentShareExportValidationResult>('/components/export-package/validate', payload)
+  return data
 }
 
 /**
@@ -516,7 +530,20 @@ export async function savePageScreenshot(
   id: number,
   payload: { viewport_width?: number; viewport_height?: number } = {},
 ) {
-  const { data } = await http.post<PageItem>(`/pages/${id}/screenshot`, payload, { timeout: 20000 })
+  const job = await createPageScreenshotJob(id, payload)
+  const completedJob = await waitForPageScreenshotJob(job.id)
+  if (completedJob.status === 'failed') {
+    throw new Error(completedJob.error_message || '页面截图任务执行失败。')
+  }
+  return await getPage(id)
+}
+
+/** 为指定页面创建或复用截图队列任务。 */
+export async function createPageScreenshotJob(
+  id: number,
+  payload: { viewport_width?: number; viewport_height?: number } = {},
+) {
+  const { data } = await http.post<PageScreenshotJob>(`/pages/${id}/screenshot-jobs`, payload)
   return data
 }
 
@@ -528,6 +555,118 @@ export async function batchRefreshPageScreenshots(projectId: number) {
     { timeout: 120000 },
   )
   return data
+}
+
+/** 为指定项目中缺失或已过期的页面截图创建任务组。 */
+export async function batchRefreshPageScreenshotJobs(projectId: number) {
+  const { data } = await http.post<PageScreenshotJobGroup>(
+    '/pages/batch-refresh-screenshot-jobs',
+    { project_id: projectId },
+  )
+  return data
+}
+
+/** 查询单个页面截图任务。 */
+export async function getPageScreenshotJob(jobId: number) {
+  const { data } = await http.get<PageScreenshotJob>(`/page-screenshot-jobs/${jobId}`)
+  return data
+}
+
+/** 查询页面截图任务组聚合进度。 */
+export async function getPageScreenshotJobGroup(groupId: string) {
+  const { data } = await http.get<PageScreenshotJobGroup>(`/page-screenshot-job-groups/${groupId}`)
+  return data
+}
+
+/** 等待页面截图任务进入终态。 */
+export async function waitForPageScreenshotJob(
+  jobId: number,
+  options: { timeoutMs?: number; intervalMs?: number } = {},
+) {
+  const timeoutMs = options.timeoutMs ?? 120000
+  const intervalMs = options.intervalMs ?? 1000
+  const deadlineAt = Date.now() + timeoutMs
+  while (Date.now() <= deadlineAt) {
+    const job = await getPageScreenshotJob(jobId)
+    if (!isPageScreenshotJobActive(job.status)) {
+      return job
+    }
+    await sleep(intervalMs)
+  }
+  throw new Error('页面截图任务等待超时。')
+}
+
+/** 等待页面截图任务组进入终态。 */
+export async function waitForPageScreenshotJobGroup(
+  groupId: string,
+  options: {
+    timeoutMs?: number
+    intervalMs?: number
+    onProgress?: (group: PageScreenshotJobGroup) => void
+  } = {},
+) {
+  const timeoutMs = options.timeoutMs ?? 180000
+  const intervalMs = options.intervalMs ?? 1000
+  const deadlineAt = Date.now() + timeoutMs
+  while (Date.now() <= deadlineAt) {
+    const group = await getPageScreenshotJobGroup(groupId)
+    options.onProgress?.(group)
+    if (!isPageScreenshotJobGroupActive(group.status)) {
+      return group
+    }
+    await sleep(intervalMs)
+  }
+  throw new Error('页面截图任务组等待超时。')
+}
+
+/** 判断截图任务是否仍在执行链路中。 */
+function isPageScreenshotJobActive(status: PageScreenshotJob['status']): boolean {
+  return status === 'pending' || status === 'running'
+}
+
+/** 判断截图任务组是否仍在执行链路中。 */
+function isPageScreenshotJobGroupActive(status: PageScreenshotJobGroup['status']): boolean {
+  return status === 'pending' || status === 'running'
+}
+
+/** 延迟指定毫秒。 */
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => window.setTimeout(resolve, Math.max(0, ms)))
+}
+
+/** 将指定页面的最新截图打包为 ZIP 并触发浏览器下载。 */
+export async function downloadPageScreenshotsArchive(pageIds: number[]): Promise<void> {
+  const response = await http.post<Blob>(
+    '/pages/batch-download-screenshots',
+    { page_ids: pageIds },
+    { responseType: 'blob', timeout: 120000 },
+  )
+  const downloadUrl = window.URL.createObjectURL(response.data)
+  const link = document.createElement('a')
+  link.href = downloadUrl
+  link.download = resolvePageScreenshotsArchiveFileName(response.headers['content-disposition'])
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  window.URL.revokeObjectURL(downloadUrl)
+}
+
+/**
+ * 从响应头推导截图压缩包文件名，缺省时回落到稳定命名。
+ * @param contentDisposition 后端下载响应头
+ */
+function resolvePageScreenshotsArchiveFileName(contentDisposition: string | undefined): string {
+  const encodedMatch = contentDisposition?.match(/filename\*=UTF-8''([^;]+)/i)
+  if (encodedMatch?.[1]) {
+    return decodeURIComponent(encodedMatch[1])
+  }
+
+  const plainMatch = contentDisposition?.match(/filename="?([^"]+)"?/i)
+  if (plainMatch?.[1]) {
+    return plainMatch[1]
+  }
+
+  return 'page-screenshots.zip'
 }
 
 /** 删除页面资源。 */

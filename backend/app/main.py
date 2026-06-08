@@ -34,6 +34,10 @@ from app.services.ai_session_retention_service import (
 )
 from app.services.bootstrap_service import BootstrapService
 from app.services.object_storage_service import ObjectStorageService
+from app.services.page_screenshot_job_service import (
+    recover_interrupted_screenshot_jobs_on_startup,
+    run_page_screenshot_queue_loop,
+)
 from app.services.project_build_service import recover_interrupted_build_jobs_on_startup
 from app.services.redis_runtime_client import ensure_redis_runtime_available
 
@@ -47,11 +51,14 @@ async def lifespan(app: FastAPI):
     """应用启动时校验数据库、Redis 运行态并初始化默认管理员。"""
 
     ai_session_cleanup_task: asyncio.Task[None] | None = None
+    page_screenshot_queue_task: asyncio.Task[None] | None = None
     try:
         session_factory = get_session_factory()
         await BootstrapService(session_factory).ensure_default_admin()
         ensure_redis_runtime_available()
         await recover_interrupted_build_jobs_on_startup(session_factory)
+        await recover_interrupted_screenshot_jobs_on_startup(session_factory)
+        page_screenshot_queue_task = _start_page_screenshot_queue_task()
         ai_session_cleanup_task = _start_ai_session_retention_task(app, get_settings())
     except SQLAlchemyError as exc:
         if is_database_connectivity_error(exc):
@@ -60,6 +67,8 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
+        if page_screenshot_queue_task is not None:
+            await _stop_background_task(page_screenshot_queue_task)
         if ai_session_cleanup_task is not None:
             await _stop_background_task(ai_session_cleanup_task)
 
@@ -203,6 +212,15 @@ def _start_ai_session_retention_task(app: FastAPI, settings: AppSettings) -> asy
             interval_seconds=settings.ai_session_cleanup_interval_seconds,
         ),
         name="ai-session-retention-cleanup",
+    )
+
+
+def _start_page_screenshot_queue_task() -> asyncio.Task[None]:
+    """启动页面截图队列后台任务。"""
+
+    return asyncio.create_task(
+        run_page_screenshot_queue_loop(get_session_factory()),
+        name="page-screenshot-queue",
     )
 
 

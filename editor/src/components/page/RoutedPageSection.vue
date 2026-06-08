@@ -54,9 +54,10 @@
           :is-all-selected="isAllSelected"
           :selected-count="selectedCount"
           :batch-action-pending="batchActionPending"
+          :batch-progress-text="batchProgressText"
           @select-all-change="emit('select-all-change', $event)"
           @batch-remove-route="emit('batch-remove-route')"
-          @batch-save-screenshots="emit('batch-save-screenshots')"
+          @batch-download-screenshots="emit('batch-download-screenshots')"
           @open-batch-copy="emit('open-batch-copy')"
           @batch-archive-pages="emit('batch-archive-pages')"
           @clear-selection="emit('clear-selection')"
@@ -121,6 +122,7 @@ defineProps<{
   selectedCount: number
   selectedPageIds: Set<number>
   batchActionPending: PageBatchAction | null
+  batchProgressText?: string | null
   pageCardGridStyle: CSSProperties
   screenshotAspectRatio: string
 }>()
@@ -131,7 +133,7 @@ const emit = defineEmits<{
   'open-build': []
   'select-all-change': [checked: boolean]
   'batch-remove-route': []
-  'batch-save-screenshots': []
+  'batch-download-screenshots': []
   'open-batch-copy': []
   'batch-archive-pages': []
   'clear-selection': []

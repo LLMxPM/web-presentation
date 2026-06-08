@@ -878,7 +878,7 @@ _COORDINATOR_TOOL_SPECS = (
         default_instructions=(
             'Runtime Kit 只提供可在页面或组件源码中 import 的版本化公开能力，不是可直接调用的业务工具。'
             '生成 Vue SFC 时必须按返回的公开 import_path、示例和约束原样使用，只使用工具结果中可见的 Runtime Kit 能力。'
-            '调用本工具时使用带版本号的能力 name，例如 Icon.v1；不要传未带版本的旧名称。'
+            '调用本工具时优先使用带版本号的能力 name，例如 Icon.v1；如果只传裸 base_name，例如 Icon，工具会自动匹配最新开放版本。'
         ),
         response_example={'name': 'DefaultContainer.v1',
          'base_name': 'DefaultContainer',
@@ -1036,7 +1036,7 @@ _COMPONENT_MANAGER_TOOL_SPECS = (
         default_instructions=(
             'Runtime Kit 只提供可在页面或组件源码中 import 的版本化公开能力，不是可直接调用的业务工具。'
             '生成 Vue SFC 时必须按返回的公开 import_path、示例和约束原样使用，只使用工具结果中可见的 Runtime Kit 能力。'
-            '调用本工具时使用带版本号的能力 name，例如 Icon.v1；不要传未带版本的旧名称。'
+            '调用本工具时优先使用带版本号的能力 name，例如 Icon.v1；如果只传裸 base_name，例如 Icon，工具会自动匹配最新开放版本。'
         ),
         response_example={'name': 'DefaultContainer.v1',
          'base_name': 'DefaultContainer',

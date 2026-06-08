@@ -461,7 +461,7 @@ describe('agent-run-state timeline', () => {
     }))
   })
 
-  it('Agno ModelRequestStarted 应显示工具参数准备提示并在工具开始后清理', () => {
+  it('Agno ModelRequestStarted 应显示等待智能体输出提示并在工具开始后清理', () => {
     const state = createAgentSessionRuntimeState()
     const options = { agentId: 'agent-coordinator', agentDisplayName: '内容助手' }
 
@@ -471,7 +471,7 @@ describe('agent-run-state timeline', () => {
     const requestStatus = state.timelineItems.find(item => item.kind === 'run_status')
     expect(requestStatus).toEqual(expect.objectContaining({
       status: 'model_request',
-      content: '正在准备工具调用参数...',
+      content: '等待智能体输出中',
     }))
     expect(state.activeRun?.status).toBe('running')
 
@@ -500,7 +500,7 @@ describe('agent-run-state timeline', () => {
     }))
   })
 
-  it('Agno ModelRequestStarted 后出现普通文本时应清理工具参数准备提示', () => {
+  it('Agno ModelRequestStarted 后出现普通文本时应清理等待智能体输出提示', () => {
     const state = createAgentSessionRuntimeState()
     const options = { agentId: 'agent-coordinator', agentDisplayName: '内容助手' }
 
@@ -510,6 +510,31 @@ describe('agent-run-state timeline', () => {
 
     expect(state.timelineItems.some(item => item.status === 'model_request')).toBe(false)
     expect(state.timelineItems.find(item => item.kind === 'message')?.content).toBe('先说明当前处理思路。')
+  })
+
+  it('Agno TeamModelRequestStarted 缺少 session 时应绑定当前 run 并显示等待提示', () => {
+    const state = createAgentSessionRuntimeState()
+    const options = { agentId: 'agent-coordinator', agentDisplayName: '内容助手' }
+
+    state.stream.runId = 'run-1'
+    state.stream.streaming = true
+
+    applyAgentRunEvent(state, event({
+      event: 'TeamModelRequestStarted',
+      run_id: null,
+      session_id: null,
+      event_index: 1,
+      sequence: null,
+    }), options)
+
+    expect(state.timelineItems).toEqual([
+      expect.objectContaining({
+        run_id: 'run-1',
+        kind: 'run_status',
+        status: 'model_request',
+        content: '等待智能体输出中',
+      }),
+    ])
   })
 
   it('Agno raw member 事件应进入独立成员运行，不污染父 run 时间线', () => {
@@ -625,7 +650,7 @@ describe('agent-run-state timeline', () => {
     expect(state.memberRuns).toHaveLength(1)
     expect(state.memberRuns[0].timeline_items.find(item => item.kind === 'run_status')).toEqual(expect.objectContaining({
       status: 'model_request',
-      content: '正在准备工具调用参数...',
+      content: '等待智能体输出中',
     }))
 
     applyAgentRunEvent(state, event({

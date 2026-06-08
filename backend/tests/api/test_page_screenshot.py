@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import io
+import zipfile
 from urllib.parse import quote, urlsplit
 
 from httpx import AsyncClient
@@ -12,6 +14,7 @@ from app.core.exceptions import AppException
 from app.schemas.project_app_config import ProjectAppPageConfig
 from app.services.browser_capture_service import BrowserCaptureJob, BrowserCaptureJobResult, BrowserCaptureService
 from app.services.capture_viewport_resolver import CaptureViewport, CaptureViewportResolver
+from app.services.page_screenshot_job_service import PageScreenshotJobService, run_page_screenshot_job
 from app.services.page_preview_service import PagePreviewResult
 from app.services.token_service import TokenService
 
@@ -136,6 +139,7 @@ async def test_page_screenshot_should_save_and_expose_public_url(
         return b"fake-png"
 
     monkeypatch.setattr("app.api.routes.public_assets.ObjectStorageService.read_object", fake_read_object)
+    monkeypatch.setattr("app.services.page_screenshot_service.ObjectStorageService.read_object", fake_read_object)
     screenshot_url_parts = urlsplit(screenshot_data["screenshot_url"])
     public_response = await authenticated_client.get(f"{screenshot_url_parts.path}?{screenshot_url_parts.query}")
     assert public_response.status_code == 200
@@ -148,6 +152,17 @@ async def test_page_screenshot_should_save_and_expose_public_url(
     assert download_response.headers["content-disposition"].startswith("attachment;")
     assert quote("截图页面-v1.png") in download_response.headers["content-disposition"]
     assert download_response.content == b"fake-png"
+
+    archive_response = await authenticated_client.post(
+        "/api/pages/batch-download-screenshots",
+        json={"page_ids": [page_data["id"]]},
+    )
+    assert archive_response.status_code == 200
+    assert archive_response.headers["content-type"] == "application/zip"
+    assert archive_response.headers["content-disposition"] == 'attachment; filename="page-screenshots.zip"'
+    with zipfile.ZipFile(io.BytesIO(archive_response.content)) as archive:
+        assert archive.namelist() == ["01-截图页面-v1.png"]
+        assert archive.read("01-截图页面-v1.png") == b"fake-png"
 
 
 async def test_page_screenshot_should_be_marked_outdated_after_page_update(
@@ -589,6 +604,85 @@ async def test_page_screenshot_should_not_save_when_visual_assets_not_ready(
     detail_response = await authenticated_client.get(f"/api/pages/{page_data['id']}")
     assert detail_response.status_code == 200
     assert detail_response.json()["screenshot_url"] is None
+
+
+async def test_page_screenshot_job_should_reuse_and_execute_pending_job(
+    authenticated_client: AsyncClient,
+    monkeypatch,
+) -> None:
+    """截图任务接口应复用同配置活跃任务，并可由队列执行器落库。"""
+
+    workspace_id, project_id = await _create_workspace_project(authenticated_client, "截图任务页面")
+    create_response = await authenticated_client.post(
+        "/api/pages",
+        json={
+            "page_content": "<template><div>job</div></template>",
+            "file_type": "vue",
+            "title": "截图任务页面",
+            "status": "active",
+            "workspace_id": workspace_id,
+            "project_id": project_id,
+        },
+    )
+    assert create_response.status_code == 200
+    page_data = create_response.json()
+
+    async def fake_create_page_preview(  # noqa: ANN001, ARG001
+        self,
+        page,
+        user_id,
+        *,
+        asset_delivery_mode="public",
+        asset_base_url_override=None,
+    ):
+        return PagePreviewResult(
+            file_path=f"src/views/{page.code}.vue",
+            preview_url=f"http://runtime.local/__preview?ticket=job-{page.id}",
+        )
+
+    async def fake_capture_preview(  # noqa: ARG001
+        self,
+        preview_url: str,
+        viewport: CaptureViewport,
+        *,
+        extra_http_headers=None,  # noqa: ANN001
+    ) -> bytes:
+        return b"job-png"
+
+    async def fake_put_object(self, storage_key: str, content: bytes, content_type: str | None = None) -> str:  # noqa: ARG001
+        return storage_key
+
+    monkeypatch.setattr("app.services.page_screenshot_service.PagePreviewService.create_page_preview", fake_create_page_preview)
+    monkeypatch.setattr("app.services.page_screenshot_service.BrowserCaptureService.capture_preview", fake_capture_preview)
+    monkeypatch.setattr("app.services.page_screenshot_service.ObjectStorageService.put_object", fake_put_object)
+
+    job_response = await authenticated_client.post(f"/api/pages/{page_data['id']}/screenshot-jobs", json={})
+    assert job_response.status_code == 200
+    job_data = job_response.json()
+    assert job_data["status"] == "pending"
+    assert job_data["page_id"] == page_data["id"]
+
+    duplicate_response = await authenticated_client.post(f"/api/pages/{page_data['id']}/screenshot-jobs", json={})
+    assert duplicate_response.status_code == 200
+    assert duplicate_response.json()["id"] == job_data["id"]
+
+    from app.db.session import get_session_factory
+
+    session_factory = get_session_factory()
+    async with session_factory() as session:
+        claimed_jobs = await PageScreenshotJobService(session).claim_pending_jobs(limit=1)
+        assert [job.id for job in claimed_jobs] == [job_data["id"]]
+
+    await run_page_screenshot_job(job_data["id"], session_factory=session_factory)
+
+    queried_response = await authenticated_client.get(f"/api/page-screenshot-jobs/{job_data['id']}")
+    assert queried_response.status_code == 200
+    assert queried_response.json()["status"] == "succeeded"
+
+    detail_response = await authenticated_client.get(f"/api/pages/{page_data['id']}")
+    assert detail_response.status_code == 200
+    assert detail_response.json()["screenshot_url"] is not None
+    assert detail_response.json()["screenshot_is_latest"] is True
 
 
 async def test_batch_refresh_page_screenshots_should_refresh_missing_and_outdated_screenshots(

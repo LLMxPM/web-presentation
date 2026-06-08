@@ -148,6 +148,12 @@ class PageScreenshotBatchRefreshRequest(BaseModel):
     project_id: int = Field(gt=0)
 
 
+class PageScreenshotBatchDownloadRequest(BaseModel):
+    """批量下载页面截图请求。"""
+
+    page_ids: list[int] = Field(min_length=1, max_length=100)
+
+
 class PageScreenshotBatchFailure(BaseModel):
     """批量刷新截图中单页失败明细。"""
 
@@ -163,6 +169,56 @@ class PageScreenshotBatchRefreshResponse(BaseModel):
     succeeded_count: int
     failed_count: int
     page_ids: list[int] = Field(default_factory=list)
+    failures: list[PageScreenshotBatchFailure] = Field(default_factory=list)
+
+
+PageScreenshotJobStatus = Literal["pending", "running", "succeeded", "failed", "skipped"]
+PageScreenshotJobGroupStatus = Literal["pending", "running", "succeeded", "failed", "partial"]
+
+
+class PageScreenshotJobRequest(BaseModel):
+    """创建单页截图任务请求，允许显式传入本次截图视口。"""
+
+    viewport_width: int | None = Field(default=None, ge=1, le=8192)
+    viewport_height: int | None = Field(default=None, ge=1, le=8192)
+
+
+class PageScreenshotJobResponse(SchemaBase):
+    """页面截图任务响应。"""
+
+    id: int
+    job_group_id: str | None
+    source: str
+    page_id: int
+    workspace_id: int | None
+    project_id: int | None
+    viewport_width: int
+    viewport_height: int
+    config_hash: str
+    status: PageScreenshotJobStatus
+    attempt_count: int
+    error_code: str | None
+    error_message: str | None
+    created_by: int | None
+    created_at: datetime
+    updated_at: datetime
+    started_at: datetime | None
+    finished_at: datetime | None
+
+
+class PageScreenshotJobGroupResponse(BaseModel):
+    """页面截图任务组聚合响应。"""
+
+    job_group_id: str
+    status: PageScreenshotJobGroupStatus
+    requested_count: int
+    pending_count: int
+    running_count: int
+    succeeded_count: int
+    failed_count: int
+    skipped_count: int
+    page_ids: list[int] = Field(default_factory=list)
+    jobs: list[PageScreenshotJobResponse] = Field(default_factory=list)
     failures: list[PageScreenshotBatchFailure] = Field(default_factory=list)
 
 

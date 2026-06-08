@@ -9,6 +9,7 @@ import type {
   PagedResponse,
   ProjectMenuMode,
   SuggestedComponentsResponse,
+  WorkspaceStyleExportValidationResult,
   WorkspaceStyleImportResult,
   WorkspaceStyleImportValidationResult,
   WorkspaceStyleItem,
@@ -115,13 +116,25 @@ export async function deleteWorkspaceStyle(workspaceId: number, styleId: number)
 /** 下载工作空间样式离线包。 */
 export async function exportWorkspaceStylePackage(
   workspaceId: number,
-  payload: { style_ids: number[] },
+  payload: { style_ids: number[]; manual_asset_names?: string[] },
 ) {
   const response = await postDownloadBlob(`/workspaces/${workspaceId}/styles/export-package`, payload)
   return {
     blob: response.data,
     filename: resolveDownloadFilename(response.headers['content-disposition']) || 'workspace-styles.zip',
   }
+}
+
+/** 预检工作空间样式离线包导出资源。 */
+export async function validateWorkspaceStylePackageExport(
+  workspaceId: number,
+  payload: { style_ids: number[]; manual_asset_names?: string[] },
+) {
+  const { data } = await http.post<WorkspaceStyleExportValidationResult>(
+    `/workspaces/${workspaceId}/styles/export-package/validate`,
+    payload,
+  )
+  return data
 }
 
 /** 预检样式离线包。 */

@@ -165,10 +165,9 @@ class BrowserCaptureService:
             "viewport": {"width": viewport.width, "height": viewport.height},
             "device_scale_factor": 1,
         }
-        if extra_http_headers:
-            page_options["extra_http_headers"] = dict(extra_http_headers)
         page = browser.new_page(**page_options)
         try:
+            self._install_initial_preview_header_route(page, preview_url, extra_http_headers)
             page.on(
                 "pageerror",
                 lambda error: logger.error("页面截图运行时异常：%s", error),
@@ -223,6 +222,61 @@ class BrowserCaptureService:
                 page.close()
             except Exception:  # noqa: BLE001
                 logger.warning("页面截图标签页关闭失败。", exc_info=True)
+
+    def _install_initial_preview_header_route(
+        self,
+        page: object,
+        preview_url: str,
+        extra_http_headers: Mapping[str, str] | None,
+    ) -> None:
+        """仅为初始 Runtime 预览文档请求附加鉴权头，避免污染跨源资源请求。"""
+
+        if not extra_http_headers:
+            return
+
+        def handle_route(route: object) -> None:
+            """按请求目标决定是否附加 Runtime 预览头。"""
+
+            request = route.request
+            if self._should_attach_initial_preview_headers(
+                request_url=request.url,
+                preview_url=preview_url,
+                is_navigation_request=bool(request.is_navigation_request()),
+                resource_type=str(request.resource_type or ""),
+            ):
+                headers = dict(request.headers)
+                headers.update(extra_http_headers)
+                route.continue_(headers=headers)
+                return
+
+            route.continue_()
+
+        page.route("**/*", handle_route)
+
+    @staticmethod
+    def _should_attach_initial_preview_headers(
+        *,
+        request_url: str,
+        preview_url: str,
+        is_navigation_request: bool,
+        resource_type: str,
+    ) -> bool:
+        """判断当前请求是否为需要 Runtime 预览鉴权头的首个文档请求。"""
+
+        if not is_navigation_request or resource_type != "document":
+            return False
+
+        try:
+            request_parts = urlsplit(request_url)
+            preview_parts = urlsplit(preview_url)
+        except Exception:  # noqa: BLE001
+            return False
+
+        return (
+            request_parts.scheme == preview_parts.scheme
+            and request_parts.netloc == preview_parts.netloc
+            and request_parts.path == preview_parts.path
+        )
 
     @classmethod
     def _build_capture_failed_exception(cls, error: Exception) -> AppException:

@@ -28,6 +28,27 @@ async def _create_catalog_workspace(client: AsyncClient, name: str) -> dict:
     return response.json()
 
 
+async def _create_catalog_svg_asset(client: AsyncClient, workspace_id: int, name: str) -> dict:
+    """创建组件分享包测试使用的 SVG 资源。"""
+
+    response = await client.post(
+        f"/api/workspaces/{workspace_id}/assets/content",
+        json={
+            "asset_type": "icon",
+            "name": name,
+            "original_name": f"{name}.svg",
+            "content": (
+                '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">'
+                f"<title>{name}</title><path d=\"M2 2h20v20H2z\"/>"
+                "</svg>"
+            ),
+            "tags": [],
+        },
+    )
+    assert response.status_code == 200
+    return response.json()
+
+
 def _rewrite_zip_json(archive_content: bytes, target_name: str, rewrite) -> bytes:
     """重写 Zip 内指定 JSON 文件，保留其它条目不变。"""
 
@@ -2040,6 +2061,106 @@ async def test_component_package_import_should_return_imported_components(authen
     assert reuse_import_response.status_code == 200
     assert reuse_import_response.json()["imported_components"] == []
     assert reuse_import_response.json()["components"][0]["action"] == "reuse"
+
+
+async def test_component_package_export_should_warn_and_allow_manual_assets(authenticated_client: AsyncClient) -> None:
+    """组件包导出遇到动态资源和缺失静态资源时应 warning，可手动补充资源。"""
+
+    source_workspace = await _create_catalog_workspace(authenticated_client, "组件动态资源源空间")
+    target_workspace = await _create_catalog_workspace(authenticated_client, "组件动态资源目标空间")
+    static_asset = await _create_catalog_svg_asset(authenticated_client, source_workspace["id"], "share_static_logo")
+    missing_asset = await _create_catalog_svg_asset(authenticated_client, source_workspace["id"], "share_missing_logo")
+    manual_asset = await _create_catalog_svg_asset(authenticated_client, source_workspace["id"], "share_manual_photo")
+    create_response = await authenticated_client.post(
+        "/api/components",
+        json={
+            "workspace_id": source_workspace["id"],
+            "name": "动态资源卡片",
+            "import_name": "DynamicAssetCard",
+            "component_type": "资源渲染",
+            "content": (
+                "<template>"
+                '<AssetImage name="share_static_logo" />'
+                '<AssetImage name="share_missing_logo" />'
+                '<AssetImage :name="props.runtimeAssetName" />'
+                "</template>"
+                "<script setup>const props = defineProps({ runtimeAssetName: String })</script>"
+            ),
+            "file_type": "vue",
+            "status": "active",
+        },
+    )
+    assert create_response.status_code == 200
+    component_id = create_response.json()["id"]
+    publish_response = await authenticated_client.post(
+        f"/api/components/{component_id}/publish",
+        json={"release_name": "动态资源导出版"},
+    )
+    assert publish_response.status_code == 200
+
+    archive_response = await authenticated_client.post(
+        f"/api/workspaces/{source_workspace['id']}/assets/{missing_asset['id']}/archive",
+        json={"archive_reason": "测试缺失静态资源 warning"},
+    )
+    assert archive_response.status_code == 200
+
+    validate_response = await authenticated_client.post(
+        "/api/components/export-package/validate",
+        json={
+            "workspace_id": source_workspace["id"],
+            "component_ids": [component_id],
+            "manual_asset_names": ["share_manual_photo", "not_exists"],
+        },
+    )
+    assert validate_response.status_code == 200, validate_response.json()
+    validation = validate_response.json()
+    assert validation["can_export"] is True
+    assert validation["dynamic_resource_components"] == ["动态资源卡片"]
+    assert validation["missing_static_asset_names"] == ["share_missing_logo"]
+    assert validation["missing_manual_asset_names"] == ["not_exists"]
+    assert {item["name"] for item in validation["automatic_assets"]} == {"share_static_logo"}
+    assert {item["name"] for item in validation["manual_assets"]} == {"share_manual_photo"}
+
+    export_response = await authenticated_client.post(
+        "/api/components/export-package",
+        json={
+            "workspace_id": source_workspace["id"],
+            "component_ids": [component_id],
+            "manual_asset_names": ["share_manual_photo", "not_exists"],
+        },
+    )
+    assert export_response.status_code == 200
+    with zipfile.ZipFile(io.BytesIO(export_response.content)) as archive:
+        manifest = json.loads(archive.read("manifest.json").decode("utf-8"))
+        component_payload = json.loads(archive.read(f"components/{publish_response.json()['code']}/component.json").decode("utf-8"))
+        assert manifest["export_warnings"]
+        assert manifest["manual_asset_names"] == ["share_manual_photo"]
+        assert manifest["missing_asset_names"] == ["share_missing_logo", "not_exists"]
+        assert manifest["dynamic_resource_components"] == ["动态资源卡片"]
+        assert {item["name"] for item in manifest["assets"]} == {"share_static_logo", "share_manual_photo"}
+        assert component_payload["asset_names"] == ["share_static_logo"]
+        assert "share_manual_photo" not in component_payload["asset_names"]
+        assert f"assets/{static_asset['file_hash']}/asset.json" in archive.namelist()
+        assert f"assets/{manual_asset['file_hash']}/asset.json" in archive.namelist()
+
+    import_validation_response = await authenticated_client.post(
+        "/api/components/import-package/validate",
+        data={"workspace_id": str(target_workspace["id"])},
+        files={"archive": ("components.zip", export_response.content, "application/zip")},
+    )
+    assert import_validation_response.status_code == 200
+    import_validation = import_validation_response.json()
+    assert import_validation["valid"] is True
+    assert import_validation["warnings"] == manifest["export_warnings"]
+
+    import_response = await authenticated_client.post(
+        "/api/components/import-package",
+        data={"workspace_id": str(target_workspace["id"])},
+        files={"archive": ("components.zip", export_response.content, "application/zip")},
+    )
+    assert import_response.status_code == 200
+    assert import_response.json()["warnings"] == manifest["export_warnings"]
+    assert import_response.json()["components"][0]["action"] == "create"
 
 
 async def test_component_package_import_should_reject_legacy_schema_and_tampered_fingerprint(

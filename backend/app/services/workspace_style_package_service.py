@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import io
 import zipfile
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -29,6 +30,8 @@ from app.repositories.workspace_style_repository import WorkspaceStyleRepository
 from app.repositories.workspace_theme_repository import WorkspaceThemeRepository
 from app.schemas.theme import ThemePalette
 from app.schemas.workspace_style import (
+    WorkspaceStyleExportAssetSummary,
+    WorkspaceStyleExportValidationResult,
     WorkspaceStyleImportResult,
     WorkspaceStyleImportValidationResult,
     WorkspaceStylePackageAssetSummary,
@@ -37,7 +40,6 @@ from app.schemas.workspace_style import (
     WorkspaceStylePackageThemeSummary,
 )
 from app.services.asset_service import AssetService
-from app.services.component_fingerprint_service import ComponentFingerprintService
 from app.services.component_share_package_service import ComponentSharePackageService, PackageComponent
 from app.services.workspace_style_package_components import WorkspaceStylePackageComponentService
 from app.services.workspace_style_package_format import (
@@ -52,6 +54,20 @@ from app.services.workspace_style_package_payloads import WorkspaceStylePackageP
 from app.services.suggested_component_service import SuggestedComponentService
 
 
+@dataclass(slots=True)
+class WorkspaceStyleExportPackagePlan:
+    """样式离线包导出前的完整准备结果。"""
+
+    styles: list[WorkspaceStyle]
+    themes: list[WorkspaceTheme]
+    suggested_components_by_style: dict[int, list[WorkspaceComponent]]
+    assets: list[WorkspaceAsset]
+    font_configs: list[WorkspaceFontConfig]
+    component_snapshots: list[Any]
+    component_asset_collection: Any
+    automatic_asset_names: list[str]
+
+
 class WorkspaceStylePackageService:
     """样式离线包服务，负责导出、预检和事务化导入。"""
 
@@ -62,15 +78,72 @@ class WorkspaceStylePackageService:
         self.theme_repository = WorkspaceThemeRepository(session)
         self.asset_service = AssetService(session)
 
-    async def export_package(self, *, workspace_id: int, style_ids: list[int]) -> tuple[bytes, str]:
+    async def export_package(
+        self,
+        *,
+        workspace_id: int,
+        style_ids: list[int],
+        manual_asset_names: list[str] | None = None,
+    ) -> tuple[bytes, str]:
         """按样式 ID 导出离线包，自动携带引用主题、建议组件及其依赖。"""
+
+        plan = await self._prepare_export_package(
+            workspace_id=workspace_id,
+            style_ids=style_ids,
+            manual_asset_names=manual_asset_names,
+        )
+        archive_content = await self._build_zip_archive(
+            workspace_id=workspace_id,
+            styles=plan.styles,
+            suggested_components_by_style=plan.suggested_components_by_style,
+            themes=plan.themes,
+            assets=plan.assets,
+            font_configs=plan.font_configs,
+            component_snapshots=plan.component_snapshots,
+            export_warnings=plan.component_asset_collection.warnings,
+            manual_asset_names=plan.component_asset_collection.manual_asset_names,
+            missing_asset_names=ComponentSharePackageService._deduplicate_names(
+                [
+                    *plan.component_asset_collection.missing_static_asset_names,
+                    *plan.component_asset_collection.missing_manual_asset_names,
+                ]
+            ),
+            dynamic_resource_components=plan.component_asset_collection.dynamic_resource_components,
+        )
+        return archive_content, WorkspaceStylePackagePayloads.build_export_filename(plan.styles)
+
+    async def validate_export_package(
+        self,
+        *,
+        workspace_id: int,
+        style_ids: list[int],
+        manual_asset_names: list[str] | None = None,
+    ) -> WorkspaceStyleExportValidationResult:
+        """预检样式离线包导出资源，不生成 Zip。"""
+
+        plan = await self._prepare_export_package(
+            workspace_id=workspace_id,
+            style_ids=style_ids,
+            manual_asset_names=manual_asset_names,
+        )
+        return self._build_export_validation_result(plan)
+
+    async def _prepare_export_package(
+        self,
+        *,
+        workspace_id: int,
+        style_ids: list[int],
+        manual_asset_names: list[str] | None = None,
+    ) -> WorkspaceStyleExportPackagePlan:
+        """准备样式离线包导出所需样式、主题、组件、资源与 warning。"""
 
         if await self.workspace_repository.get_by_id(workspace_id) is None:
             raise AppException(status_code=404, code="WORKSPACE_NOT_FOUND", detail="工作空间不存在。")
 
         styles = await self._load_export_styles(workspace_id, style_ids)
-        themes = await self._collect_export_themes(workspace_id, styles)
-        theme_assets, theme_font_configs = await self._collect_export_dependencies(workspace_id, list(themes.values()))
+        themes_by_key = await self._collect_export_themes(workspace_id, styles)
+        themes = list(themes_by_key.values())
+        theme_assets, theme_font_configs = await self._collect_export_dependencies(workspace_id, themes)
         style_component_service = WorkspaceStylePackageComponentService(self.session)
         suggested_components_by_style = await style_component_service.collect_style_suggested_components(workspace_id, styles)
         root_components = style_component_service.deduplicate_components(
@@ -80,21 +153,31 @@ class WorkspaceStylePackageService:
         )
         component_package_service = ComponentSharePackageService(self.session)
         component_snapshots = await component_package_service._build_export_component_closure(root_components)
-        component_assets = await component_package_service._collect_export_assets(workspace_id, component_snapshots)
+        component_asset_collection = await component_package_service._collect_export_assets(
+            workspace_id,
+            component_snapshots,
+            manual_asset_names=manual_asset_names,
+        )
         component_font_configs = await component_package_service._collect_export_font_configs(workspace_id, component_snapshots)
-        assets = self._deduplicate_assets([*theme_assets, *component_assets])
+        assets = self._deduplicate_assets([*theme_assets, *component_asset_collection.assets])
         font_configs = self._deduplicate_font_configs([*theme_font_configs, *component_font_configs])
         WorkspaceStylePackagePayloads.assert_unique_asset_hash_metadata(assets)
-        archive_content = await self._build_zip_archive(
-            workspace_id=workspace_id,
+        automatic_asset_names = ComponentSharePackageService._deduplicate_names(
+            [
+                *[asset.name for asset in theme_assets],
+                *component_asset_collection.automatic_asset_names,
+            ]
+        )
+        return WorkspaceStyleExportPackagePlan(
             styles=styles,
+            themes=themes,
             suggested_components_by_style=suggested_components_by_style,
-            themes=list(themes.values()),
             assets=assets,
             font_configs=font_configs,
             component_snapshots=component_snapshots,
+            component_asset_collection=component_asset_collection,
+            automatic_asset_names=automatic_asset_names,
         )
-        return archive_content, WorkspaceStylePackagePayloads.build_export_filename(styles)
 
     async def validate_import_package(self, *, workspace_id: int, archive_content: bytes) -> WorkspaceStyleImportValidationResult:
         """预检样式离线包，不写入数据库。"""
@@ -138,6 +221,7 @@ class WorkspaceStylePackageService:
                     assets=validation.assets,
                     fonts=validation.fonts,
                     components=component_summaries,
+                    warnings=validation.warnings,
                 )
             except IntegrityError as error:
                 await self.session.rollback()
@@ -232,6 +316,58 @@ class WorkspaceStylePackageService:
             result.append(font_config)
         return result
 
+    def _build_export_validation_result(self, plan: WorkspaceStyleExportPackagePlan) -> WorkspaceStyleExportValidationResult:
+        """把样式导出准备结果转换为前端可展示的预检响应。"""
+
+        automatic_names = set(plan.automatic_asset_names)
+        manual_names = {
+            name
+            for name in plan.component_asset_collection.manual_asset_names
+            if name not in automatic_names
+        }
+        return WorkspaceStyleExportValidationResult(
+            can_export=True,
+            automatic_assets=[
+                self._build_export_asset_summary(asset, "automatic")
+                for asset in plan.assets
+                if asset.name in automatic_names
+            ],
+            manual_assets=[
+                self._build_export_asset_summary(asset, "manual")
+                for asset in plan.assets
+                if asset.name in manual_names
+            ],
+            fonts=[
+                WorkspaceStylePackageFontSummary(
+                    asset_name=item.asset_name,
+                    font_family=item.font_family,
+                    font_format=item.font_format,
+                    font_weight=item.font_weight,
+                    font_style=item.font_style,
+                    font_display=item.font_display,
+                    status=item.status,
+                    action="export",
+                )
+                for item in plan.font_configs
+            ],
+            warnings=list(plan.component_asset_collection.warnings),
+            missing_static_asset_names=list(plan.component_asset_collection.missing_static_asset_names),
+            missing_manual_asset_names=list(plan.component_asset_collection.missing_manual_asset_names),
+            dynamic_resource_components=list(plan.component_asset_collection.dynamic_resource_components),
+        )
+
+    @staticmethod
+    def _build_export_asset_summary(asset: WorkspaceAsset, source: str) -> WorkspaceStyleExportAssetSummary:
+        """构建样式导出预检资源摘要。"""
+
+        return WorkspaceStyleExportAssetSummary(
+            name=asset.name,
+            original_name=asset.original_name,
+            asset_type=asset.asset_type,
+            file_hash=asset.file_hash,
+            source=source,
+        )
+
     async def _get_asset_or_raise(self, workspace_id: int, asset_id: int, theme_name: str) -> WorkspaceAsset:
         """读取主题依赖资源，不存在时阻断导出。"""
 
@@ -274,6 +410,10 @@ class WorkspaceStylePackageService:
         assets: list[WorkspaceAsset],
         font_configs: list[WorkspaceFontConfig],
         component_snapshots: list[Any],
+        export_warnings: list[str] | None = None,
+        manual_asset_names: list[str] | None = None,
+        missing_asset_names: list[str] | None = None,
+        dynamic_resource_components: list[str] | None = None,
     ) -> bytes:
         """按标准目录结构生成样式离线包 Zip。"""
 
@@ -281,12 +421,11 @@ class WorkspaceStylePackageService:
         component_package_service = ComponentSharePackageService(self.session)
         style_component_service = WorkspaceStylePackageComponentService(self.session)
         runtime_manifest_version = str(load_runtime_kit_manifest().get("version") or "")
-        fingerprint_service = ComponentFingerprintService(self.session)
-        for snapshot in component_snapshots:
-            await fingerprint_service.ensure_workspace_component_version_fingerprint(
-                component=snapshot.component,
-                version=snapshot.version,
-            )
+        fingerprint_results = component_package_service._calculate_export_package_fingerprints(
+            snapshots=component_snapshots,
+            assets=assets,
+            font_configs=font_configs,
+        )
         style_entries: list[dict[str, Any]] = []
         for style in styles:
             style_payload = WorkspaceStylePackagePayloads.build_style_payload(style)
@@ -298,7 +437,10 @@ class WorkspaceStylePackageService:
         asset_entries = [WorkspaceStylePackagePayloads.build_asset_payload(asset) for asset in assets]
         font_entries = [WorkspaceStylePackagePayloads.build_font_payload(item) for item in font_configs]
         component_entries = [
-            component_package_service._build_component_manifest_entry(snapshot)
+            component_package_service._build_component_manifest_entry(
+                snapshot,
+                fingerprint_results.get((snapshot.component.code, snapshot.version.version_no)),
+            )
             for snapshot in component_snapshots
         ]
         manifest = {
@@ -329,6 +471,10 @@ class WorkspaceStylePackageService:
                 for item in asset_entries
             ],
             "fonts": font_entries,
+            "export_warnings": list(export_warnings or []),
+            "manual_asset_names": list(manual_asset_names or []),
+            "missing_asset_names": list(missing_asset_names or []),
+            "dynamic_resource_components": list(dynamic_resource_components or []),
         }
 
         with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as archive:
@@ -339,9 +485,12 @@ class WorkspaceStylePackageService:
                 archive.writestr(f"themes/{theme_payload['key']}.json", WorkspaceStylePackageFormat.dump_json(theme_payload))
             for snapshot in component_snapshots:
                 base_path = f"components/{snapshot.component.code}"
+                fingerprint = fingerprint_results.get((snapshot.component.code, snapshot.version.version_no))
                 archive.writestr(
                     f"{base_path}/component.json",
-                    WorkspaceStylePackageFormat.dump_json(component_package_service._build_component_payload(snapshot)),
+                    WorkspaceStylePackageFormat.dump_json(
+                        component_package_service._build_component_payload(snapshot, fingerprint)
+                    ),
                 )
                 archive.writestr(f"{base_path}/index.vue", normalize_text_to_lf(snapshot.version.content))
                 archive.writestr(f"{base_path}/preview.schema.json", snapshot.version.preview_schema or "{}")
@@ -368,6 +517,7 @@ class WorkspaceStylePackageService:
             raise AppException(status_code=404, code="WORKSPACE_NOT_FOUND", detail="工作空间不存在。")
 
         errors: list[str] = []
+        warnings = ComponentSharePackageService._extract_manifest_warnings(parsed.manifest)
         schema_version = WorkspaceStylePackageFormat.coerce_int(parsed.manifest.get("schema_version"))
         if schema_version != STYLE_PACKAGE_SCHEMA_VERSION:
             errors.append(f"样式离线包 schema_version 不受支持：{schema_version}。")
@@ -401,6 +551,7 @@ class WorkspaceStylePackageService:
             fonts=font_summaries,
             components=component_summaries,
             errors=errors,
+            warnings=warnings,
         )
 
     async def _build_asset_summaries(

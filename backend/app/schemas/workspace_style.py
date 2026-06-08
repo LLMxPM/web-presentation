@@ -156,6 +156,30 @@ class WorkspaceStyleExportPackageRequest(BaseModel):
     """导出样式离线包请求。"""
 
     style_ids: list[int] = Field(min_length=1, max_length=100)
+    manual_asset_names: list[str] = Field(default_factory=list)
+
+
+class WorkspaceStyleExportAssetSummary(SchemaBase):
+    """样式离线包导出预检中的资源摘要。"""
+
+    name: str
+    original_name: str
+    asset_type: str
+    file_hash: str
+    source: str = "automatic"
+
+
+class WorkspaceStyleExportValidationResult(SchemaBase):
+    """样式离线包导出预检结果。"""
+
+    can_export: bool = True
+    automatic_assets: list[WorkspaceStyleExportAssetSummary] = Field(default_factory=list)
+    manual_assets: list[WorkspaceStyleExportAssetSummary] = Field(default_factory=list)
+    fonts: list[WorkspaceStylePackageFontSummary] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    missing_static_asset_names: list[str] = Field(default_factory=list)
+    missing_manual_asset_names: list[str] = Field(default_factory=list)
+    dynamic_resource_components: list[str] = Field(default_factory=list)
 
 
 class WorkspaceStylePackageStyleSummary(SchemaBase):
@@ -232,6 +256,7 @@ class WorkspaceStyleImportValidationResult(SchemaBase):
     fonts: list[WorkspaceStylePackageFontSummary] = Field(default_factory=list)
     components: list[WorkspaceStylePackageComponentSummary] = Field(default_factory=list)
     errors: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
 
 
 class WorkspaceStyleImportResult(SchemaBase):
@@ -242,6 +267,7 @@ class WorkspaceStyleImportResult(SchemaBase):
     assets: list[WorkspaceStylePackageAssetSummary] = Field(default_factory=list)
     fonts: list[WorkspaceStylePackageFontSummary] = Field(default_factory=list)
     components: list[WorkspaceStylePackageComponentSummary] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
 
 
 class WorkspaceStyleItem(SchemaBase):

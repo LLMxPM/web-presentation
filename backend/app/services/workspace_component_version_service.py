@@ -73,6 +73,7 @@ class WorkspaceComponentVersionService:
         operator_id: int,
         release_name: str | None = None,
         change_note: str | None = None,
+        fingerprint_asset_names: list[str] | None = None,
     ) -> WorkspaceComponentVersion | None:
         """将组件当前草稿发布为新的不可变版本。"""
 
@@ -113,6 +114,7 @@ class WorkspaceComponentVersionService:
         await ComponentFingerprintService(self.session).ensure_workspace_component_version_fingerprint(
             component=component,
             version=version,
+            asset_names_override=fingerprint_asset_names,
         )
 
         component.current_version_no = version.version_no

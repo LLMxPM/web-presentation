@@ -37,6 +37,9 @@ from app.repositories.workspace_component_repository import WorkspaceComponentRe
 from app.repositories.workspace_component_version_repository import WorkspaceComponentVersionRepository
 from app.schemas.component import (
     COMPONENT_IMPORT_NAME_PATTERN,
+    ComponentShareExportAssetSummary,
+    ComponentShareExportComponentSummary,
+    ComponentShareExportValidationResult,
     ComponentShareImportResult,
     ComponentShareImportValidationResult,
     ComponentSharePackageAssetSummary,
@@ -70,6 +73,31 @@ class ExportComponentSnapshot:
     dependencies: list[tuple[str, int]]
     asset_names: list[str]
     font_asset_names: list[str]
+    missing_static_asset_names: list[str]
+    dynamic_resource_component_names: list[str]
+
+
+@dataclass(slots=True)
+class ExportAssetCollection:
+    """组件导出资源收集结果，区分自动、手动和 warning。"""
+
+    assets: list[WorkspaceAsset]
+    automatic_asset_names: list[str]
+    manual_asset_names: list[str]
+    missing_static_asset_names: list[str]
+    missing_manual_asset_names: list[str]
+    dynamic_resource_components: list[str]
+    warnings: list[str]
+
+
+@dataclass(slots=True)
+class ExportPackagePlan:
+    """组件分享包导出前的完整准备结果。"""
+
+    root_components: list[WorkspaceComponent]
+    snapshots: list[ExportComponentSnapshot]
+    asset_collection: ExportAssetCollection
+    font_configs: list[WorkspaceFontConfig]
 
 
 @dataclass(slots=True)
@@ -132,25 +160,81 @@ class ComponentSharePackageService:
         self.component_service = WorkspaceComponentService(session)
         self.component_version_service = WorkspaceComponentVersionService(session)
 
-    async def export_package(self, *, workspace_id: int, component_ids: list[int]) -> tuple[bytes, str]:
+    async def export_package(
+        self,
+        *,
+        workspace_id: int,
+        component_ids: list[int],
+        manual_asset_names: list[str] | None = None,
+    ) -> tuple[bytes, str]:
         """按组件 ID 导出离线分享包，返回 Zip 内容与下载文件名。"""
+
+        plan = await self._prepare_export_package(
+            workspace_id=workspace_id,
+            component_ids=component_ids,
+            manual_asset_names=manual_asset_names,
+        )
+        archive_content = await self._build_zip_archive(
+            workspace_id=workspace_id,
+            root_components=plan.root_components,
+            snapshots=plan.snapshots,
+            assets=plan.asset_collection.assets,
+            font_configs=plan.font_configs,
+            export_warnings=plan.asset_collection.warnings,
+            manual_asset_names=plan.asset_collection.manual_asset_names,
+            missing_asset_names=self._deduplicate_names(
+                [
+                    *plan.asset_collection.missing_static_asset_names,
+                    *plan.asset_collection.missing_manual_asset_names,
+                ]
+            ),
+            dynamic_resource_components=plan.asset_collection.dynamic_resource_components,
+        )
+        filename = self._build_export_filename(plan.root_components)
+        return archive_content, filename
+
+    async def validate_export_package(
+        self,
+        *,
+        workspace_id: int,
+        component_ids: list[int],
+        manual_asset_names: list[str] | None = None,
+    ) -> ComponentShareExportValidationResult:
+        """预检组件分享包导出资源，不生成 Zip。"""
+
+        plan = await self._prepare_export_package(
+            workspace_id=workspace_id,
+            component_ids=component_ids,
+            manual_asset_names=manual_asset_names,
+        )
+        return self._build_export_validation_result(plan)
+
+    async def _prepare_export_package(
+        self,
+        *,
+        workspace_id: int,
+        component_ids: list[int],
+        manual_asset_names: list[str] | None = None,
+    ) -> ExportPackagePlan:
+        """准备组件分享包导出所需组件闭包、资源、字体与 warning。"""
 
         if not await self.component_repository.workspace_exists(workspace_id):
             raise AppException(status_code=404, code="WORKSPACE_NOT_FOUND", detail="所属工作空间不存在。")
 
         root_components = await self._load_root_components(workspace_id, component_ids)
         snapshots = await self._build_export_component_closure(root_components)
-        assets = await self._collect_export_assets(workspace_id, snapshots)
+        asset_collection = await self._collect_export_assets(
+            workspace_id,
+            snapshots,
+            manual_asset_names=manual_asset_names,
+        )
         font_configs = await self._collect_export_font_configs(workspace_id, snapshots)
-        archive_content = await self._build_zip_archive(
-            workspace_id=workspace_id,
+        return ExportPackagePlan(
             root_components=root_components,
             snapshots=snapshots,
-            assets=assets,
+            asset_collection=asset_collection,
             font_configs=font_configs,
         )
-        filename = self._build_export_filename(root_components)
-        return archive_content, filename
 
     async def validate_import_package(self, *, workspace_id: int, archive_content: bytes) -> ComponentShareImportValidationResult:
         """预检组件分享包，不写入任何数据库记录。"""
@@ -198,6 +282,7 @@ class ComponentSharePackageService:
                     components=component_summaries,
                     assets=validation.assets,
                     fonts=validation.fonts,
+                    warnings=validation.warnings,
                 )
             except IntegrityError as error:
                 await self.session.rollback()
@@ -285,6 +370,8 @@ class ComponentSharePackageService:
                 dependencies=dependencies,
                 asset_names=[],
                 font_asset_names=WorkspaceFontService.collect_declared_font_asset_names([version.content]),
+                missing_static_asset_names=[],
+                dynamic_resource_component_names=[],
             )
             snapshots_by_version_id[version.id] = snapshot
             ordered.append(snapshot)
@@ -299,72 +386,81 @@ class ComponentSharePackageService:
         self,
         workspace_id: int,
         snapshots: list[ExportComponentSnapshot],
-    ) -> list[WorkspaceAsset]:
-        """收集组件源码和预览 schema 中引用的 active 普通资源。"""
+        *,
+        manual_asset_names: list[str] | None = None,
+    ) -> ExportAssetCollection:
+        """收集组件源码、预览 schema 和手动选择中的可导出资源。"""
 
         all_assets = await self._list_exportable_assets(workspace_id)
         asset_by_name = {asset.name: asset for asset in all_assets}
-        missing_by_component: dict[str, list[str]] = {}
+        missing_static_names: list[str] = []
         dynamic_components: list[str] = []
         for snapshot in snapshots:
-            asset_names, has_dynamic = await self._collect_snapshot_asset_names(snapshot)
-            if has_dynamic:
+            asset_names, dynamic_resource_component_names = await self._collect_snapshot_asset_names(snapshot)
+            if dynamic_resource_component_names:
                 dynamic_components.append(snapshot.component.name)
-            snapshot.asset_names = asset_names
+            snapshot.dynamic_resource_component_names = dynamic_resource_component_names
             missing_names = [name for name in asset_names if name not in asset_by_name]
             if missing_names:
-                missing_by_component[snapshot.component.name] = missing_names
+                missing_static_names.extend(missing_names)
+            snapshot.missing_static_asset_names = sorted(set(missing_names))
+            snapshot.asset_names = sorted({name for name in asset_names if name in asset_by_name})
 
-        if dynamic_components:
-            raise AppException(
-                status_code=409,
-                code="COMPONENT_SHARE_DYNAMIC_ASSET_REFERENCE",
-                detail=(
-                    "组件存在动态资源引用，离线包无法确定需要导出的资源，请改成静态资源名："
-                    + "、".join(dynamic_components)
-                    + "。"
-                ),
-            )
-
-        required_names = sorted({
-            *[name for snapshot in snapshots for name in snapshot.asset_names],
-            *[name for snapshot in snapshots for name in snapshot.font_asset_names],
-        })
-        missing = [name for name in required_names if name not in asset_by_name]
-        if missing_by_component or missing:
-            missing_detail = "；".join(
-                f'{component_name}：{", ".join(names)}'
-                for component_name, names in sorted(missing_by_component.items())
-            )
-            if not missing_detail:
-                missing_detail = ", ".join(missing)
+        font_asset_names = sorted({name for snapshot in snapshots for name in snapshot.font_asset_names})
+        missing_font_assets = [name for name in font_asset_names if name not in asset_by_name]
+        if missing_font_assets:
             raise AppException(
                 status_code=409,
                 code="COMPONENT_SHARE_ASSET_MISSING",
-                detail=f"组件引用的资源不存在或不可导出：{missing_detail}。",
+                detail=f"组件声明的字体资源不存在或不可导出：{', '.join(missing_font_assets)}。",
             )
 
+        normalized_manual_names = self._normalize_export_asset_names(manual_asset_names or [])
+        available_manual_names = [name for name in normalized_manual_names if name in asset_by_name]
+        missing_manual_names = [name for name in normalized_manual_names if name not in asset_by_name]
+        automatic_names = sorted({
+            *[name for snapshot in snapshots for name in snapshot.asset_names],
+            *font_asset_names,
+        })
+        required_names = self._deduplicate_names([*automatic_names, *available_manual_names])
         selected_assets = [asset_by_name[name] for name in required_names]
         self._assert_unique_asset_hash_metadata(selected_assets)
-        return selected_assets
+        warnings = self._build_export_warnings(
+            dynamic_components=dynamic_components,
+            missing_static_asset_names=missing_static_names,
+            missing_manual_asset_names=missing_manual_names,
+        )
+        return ExportAssetCollection(
+            assets=selected_assets,
+            automatic_asset_names=automatic_names,
+            manual_asset_names=available_manual_names,
+            missing_static_asset_names=sorted(set(missing_static_names)),
+            missing_manual_asset_names=missing_manual_names,
+            dynamic_resource_components=sorted(set(dynamic_components)),
+            warnings=warnings,
+        )
 
-    async def _collect_snapshot_asset_names(self, snapshot: ExportComponentSnapshot) -> tuple[list[str], bool]:
+    async def _collect_snapshot_asset_names(self, snapshot: ExportComponentSnapshot) -> tuple[list[str], list[str]]:
         """从组件版本资源索引读取资源名，旧版本无索引时使用内存解析回退。"""
 
         indexed_items = await self.component_resource_index_repository.list_component_resources_by_version(snapshot.version.id)
         if indexed_items:
-            names = [item.resource_name for item in indexed_items]
+            items = [(item.component_name, item.resource_name) for item in indexed_items]
         else:
-            names = [
-                resource_name
-                for _, resource_name in ComponentResourceIndexService.collect_version_resource_items(
+            items = list(
+                ComponentResourceIndexService.collect_version_resource_items(
                     content=snapshot.version.content,
                     preview_schema=snapshot.version.preview_schema,
                 )
-            ]
-        has_dynamic = DYNAMIC_RESOURCE_NAME in names
+            )
+        names = [resource_name for _, resource_name in items]
+        dynamic_component_names = sorted({
+            component_name
+            for component_name, resource_name in items
+            if resource_name == DYNAMIC_RESOURCE_NAME
+        })
         static_names = sorted({name for name in names if name and name != DYNAMIC_RESOURCE_NAME})
-        return static_names, has_dynamic
+        return static_names, dynamic_component_names
 
     async def _collect_export_font_configs(
         self,
@@ -393,6 +489,66 @@ class ComponentSharePackageService:
             )
         return font_configs
 
+    def _build_export_validation_result(self, plan: ExportPackagePlan) -> ComponentShareExportValidationResult:
+        """把导出准备结果转换为前端可展示的预检响应。"""
+
+        manual_names = set(plan.asset_collection.manual_asset_names)
+        automatic_assets = [
+            self._build_export_asset_summary(asset, "automatic")
+            for asset in plan.asset_collection.assets
+            if asset.name in plan.asset_collection.automatic_asset_names
+        ]
+        manual_assets = [
+            self._build_export_asset_summary(asset, "manual")
+            for asset in plan.asset_collection.assets
+            if asset.name in manual_names and asset.name not in plan.asset_collection.automatic_asset_names
+        ]
+        return ComponentShareExportValidationResult(
+            can_export=True,
+            components=[
+                ComponentShareExportComponentSummary(
+                    source_component_code=snapshot.component.code,
+                    source_version_no=snapshot.version.version_no,
+                    name=snapshot.component.name,
+                    import_name=snapshot.component.import_name,
+                    has_dynamic_resources=bool(snapshot.dynamic_resource_component_names),
+                    missing_static_asset_names=list(snapshot.missing_static_asset_names),
+                )
+                for snapshot in plan.snapshots
+            ],
+            automatic_assets=automatic_assets,
+            manual_assets=manual_assets,
+            fonts=[
+                ComponentSharePackageFontSummary(
+                    asset_name=item.asset_name,
+                    font_family=item.font_family,
+                    font_format=item.font_format,
+                    font_weight=item.font_weight,
+                    font_style=item.font_style,
+                    font_display=item.font_display,
+                    status=item.status,
+                    action="export",
+                )
+                for item in plan.font_configs
+            ],
+            warnings=list(plan.asset_collection.warnings),
+            missing_static_asset_names=list(plan.asset_collection.missing_static_asset_names),
+            missing_manual_asset_names=list(plan.asset_collection.missing_manual_asset_names),
+            dynamic_resource_components=list(plan.asset_collection.dynamic_resource_components),
+        )
+
+    @staticmethod
+    def _build_export_asset_summary(asset: WorkspaceAsset, source: str) -> ComponentShareExportAssetSummary:
+        """构建导出预检资源摘要。"""
+
+        return ComponentShareExportAssetSummary(
+            name=asset.name,
+            original_name=asset.original_name,
+            asset_type=asset.asset_type,
+            file_hash=asset.file_hash,
+            source=source,
+        )
+
     async def _build_zip_archive(
         self,
         *,
@@ -401,18 +557,27 @@ class ComponentSharePackageService:
         snapshots: list[ExportComponentSnapshot],
         assets: list[WorkspaceAsset],
         font_configs: list[WorkspaceFontConfig],
+        export_warnings: list[str] | None = None,
+        manual_asset_names: list[str] | None = None,
+        missing_asset_names: list[str] | None = None,
+        dynamic_resource_components: list[str] | None = None,
     ) -> bytes:
         """按标准目录结构生成组件分享包 Zip。"""
 
         buffer = io.BytesIO()
         runtime_manifest_version = str(load_runtime_kit_manifest().get("version") or "")
-        fingerprint_service = ComponentFingerprintService(self.session)
-        for snapshot in snapshots:
-            await fingerprint_service.ensure_workspace_component_version_fingerprint(
-                component=snapshot.component,
-                version=snapshot.version,
+        fingerprint_results = self._calculate_export_package_fingerprints(
+            snapshots=snapshots,
+            assets=assets,
+            font_configs=font_configs,
+        )
+        component_entries = [
+            self._build_component_manifest_entry(
+                snapshot,
+                fingerprint_results.get((snapshot.component.code, snapshot.version.version_no)),
             )
-        component_entries = [self._build_component_manifest_entry(snapshot) for snapshot in snapshots]
+            for snapshot in snapshots
+        ]
         asset_entries = [self._build_asset_manifest_entry(asset) for asset in assets]
         font_entries = [self._build_font_config_payload(item) for item in font_configs]
         manifest = {
@@ -423,13 +588,21 @@ class ComponentSharePackageService:
             "components": component_entries,
             "assets": asset_entries,
             "fonts": font_entries,
+            "export_warnings": list(export_warnings or []),
+            "manual_asset_names": list(manual_asset_names or []),
+            "missing_asset_names": list(missing_asset_names or []),
+            "dynamic_resource_components": list(dynamic_resource_components or []),
         }
 
         with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as archive:
             archive.writestr("manifest.json", self._dump_json(manifest))
             for snapshot in snapshots:
                 base_path = f"components/{snapshot.component.code}"
-                archive.writestr(f"{base_path}/component.json", self._dump_json(self._build_component_payload(snapshot)))
+                fingerprint = fingerprint_results.get((snapshot.component.code, snapshot.version.version_no))
+                archive.writestr(
+                    f"{base_path}/component.json",
+                    self._dump_json(self._build_component_payload(snapshot, fingerprint)),
+                )
                 archive.writestr(f"{base_path}/index.vue", normalize_text_to_lf(snapshot.version.content))
                 archive.writestr(f"{base_path}/preview.schema.json", snapshot.version.preview_schema or "{}")
 
@@ -442,6 +615,44 @@ class ComponentSharePackageService:
                 )
             archive.writestr("fonts/font-configs.json", self._dump_json(font_entries))
         return buffer.getvalue()
+
+    def _calculate_export_package_fingerprints(
+        self,
+        *,
+        snapshots: list[ExportComponentSnapshot],
+        assets: list[WorkspaceAsset],
+        font_configs: list[WorkspaceFontConfig],
+    ) -> dict[tuple[str, int], ComponentFingerprintResult]:
+        """按本次实际打包资源计算组件指纹，不回写源发布版本。"""
+
+        package_components = [
+            PackageComponent(
+                source_component_code=snapshot.component.code,
+                source_version_no=snapshot.version.version_no,
+                metadata={
+                    "file_type": snapshot.version.file_type,
+                    "name": snapshot.component.name,
+                    "import_name": snapshot.component.import_name,
+                    "component_type": snapshot.component.component_type,
+                    "asset_names": list(snapshot.asset_names),
+                },
+                content=snapshot.version.content,
+                preview_schema=snapshot.version.preview_schema,
+                dependencies=snapshot.dependencies,
+                asset_names=list(snapshot.asset_names),
+                font_asset_names=list(snapshot.font_asset_names),
+            )
+            for snapshot in snapshots
+        ]
+        package_assets = [
+            PackageAsset(metadata=self._build_asset_payload(asset), content=b"")
+            for asset in assets
+        ]
+        return ComponentFingerprintService(self.session).calculate_package_component_fingerprints(
+            package_components=package_components,
+            package_assets=package_assets,
+            font_configs=[self._build_font_config_payload(item) for item in font_configs],
+        )
 
     def _parse_package(self, archive_content: bytes) -> ParsedPackage:
         """从 Zip 二进制内容解析分享包结构。"""
@@ -490,6 +701,7 @@ class ComponentSharePackageService:
         """校验分享包内容并返回可展示的预检摘要。"""
 
         errors: list[str] = []
+        warnings = self._extract_manifest_warnings(parsed.manifest)
         schema_version = self._coerce_int(parsed.manifest.get("schema_version"))
         runtime_version = str(parsed.manifest.get("runtime_kit_manifest_version") or "").strip()
         if schema_version != PACKAGE_SCHEMA_VERSION:
@@ -519,6 +731,7 @@ class ComponentSharePackageService:
             assets=asset_summaries,
             fonts=font_summaries,
             errors=errors,
+            warnings=warnings,
         )
 
     async def _import_assets(self, workspace_id: int, package_assets: list[PackageAsset]) -> None:
@@ -676,6 +889,7 @@ class ComponentSharePackageService:
                 operator_id=operator_id,
                 release_name=release_name,
                 change_note=f"{change_note_prefix}：{package_component.source_component_code} v{package_component.source_version_no}",
+                fingerprint_asset_names=package_component.asset_names,
             )
             imported.append(component)
             component_mapping[key] = component
@@ -996,6 +1210,76 @@ class ComponentSharePackageService:
         )
         return list(result.all())
 
+    @staticmethod
+    def _normalize_export_asset_names(values: list[str]) -> list[str]:
+        """归一化手动导出资源名，过滤空值、URL 和路径前缀。"""
+
+        normalized_names: list[str] = []
+        seen: set[str] = set()
+        for value in values:
+            normalized = str(value or "").strip().replace("\\", "/").lstrip("./")
+            if not normalized or re.match(r"^https?://", normalized, flags=re.IGNORECASE):
+                continue
+            if normalized in seen:
+                continue
+            seen.add(normalized)
+            normalized_names.append(normalized)
+        return normalized_names
+
+    @staticmethod
+    def _deduplicate_names(values: list[str]) -> list[str]:
+        """按传入顺序去重资源名。"""
+
+        result: list[str] = []
+        seen: set[str] = set()
+        for value in values:
+            if not value or value in seen:
+                continue
+            seen.add(value)
+            result.append(value)
+        return result
+
+    @staticmethod
+    def _build_export_warnings(
+        *,
+        dynamic_components: list[str],
+        missing_static_asset_names: list[str],
+        missing_manual_asset_names: list[str],
+    ) -> list[str]:
+        """根据导出资源收集结果生成用户可读 warning。"""
+
+        warnings: list[str] = []
+        unique_dynamic = sorted(set(dynamic_components))
+        unique_missing_static = sorted(set(missing_static_asset_names))
+        if unique_dynamic:
+            warnings.append(
+                "组件存在动态资源引用，离线包不会自动包含运行时传入的资源："
+                + "、".join(unique_dynamic)
+                + "。"
+            )
+        if unique_missing_static:
+            warnings.append(
+                "组件静态引用的资源不存在或不可导出，已从离线包资源清单中跳过："
+                + "、".join(unique_missing_static)
+                + "。"
+            )
+        if missing_manual_asset_names:
+            warnings.append(
+                "手动选择的资源不存在或不可导出，已跳过："
+                + "、".join(missing_manual_asset_names)
+                + "。"
+            )
+        return warnings
+
+    @staticmethod
+    def _extract_manifest_warnings(manifest: dict[str, Any]) -> list[str]:
+        """从 manifest 读取导出阶段 warning，兼容旧包缺省字段。"""
+
+        raw_warnings = manifest.get("export_warnings")
+        if not isinstance(raw_warnings, list):
+            return []
+        return [str(item).strip() for item in raw_warnings if str(item).strip()]
+
     async def _get_asset_by_name(self, workspace_id: int, name: str) -> WorkspaceAsset | None:
         """按资源逻辑名读取工作空间资源。"""
 
@@ -1195,9 +1479,20 @@ class ComponentSharePackageService:
         return normalized
 
     @staticmethod
-    def _build_component_payload(snapshot: ExportComponentSnapshot) -> dict[str, Any]:
+    def _build_component_payload(
+        snapshot: ExportComponentSnapshot,
+        fingerprint: ComponentFingerprintResult | None = None,
+    ) -> dict[str, Any]:
         """构建 component.json 内容。"""
 
+        content_hash = fingerprint.content_hash if fingerprint is not None else snapshot.version.content_hash
+        preview_schema_hash = fingerprint.preview_schema_hash if fingerprint is not None else snapshot.version.preview_schema_hash
+        component_fingerprint = (
+            fingerprint.component_fingerprint if fingerprint is not None else snapshot.version.component_fingerprint
+        )
+        fingerprint_schema_version = (
+            fingerprint.fingerprint_schema_version if fingerprint is not None else snapshot.version.fingerprint_schema_version
+        )
         return {
             "source_component_code": snapshot.component.code,
             "source_version_no": snapshot.version.version_no,
@@ -1212,23 +1507,32 @@ class ComponentSharePackageService:
             ],
             "asset_names": snapshot.asset_names,
             "font_asset_names": snapshot.font_asset_names,
-            "content_hash": snapshot.version.content_hash,
-            "preview_schema_hash": snapshot.version.preview_schema_hash,
-            "component_fingerprint": snapshot.version.component_fingerprint,
-            "fingerprint_schema_version": snapshot.version.fingerprint_schema_version,
+            "content_hash": content_hash,
+            "preview_schema_hash": preview_schema_hash,
+            "component_fingerprint": component_fingerprint,
+            "fingerprint_schema_version": fingerprint_schema_version,
         }
 
     @staticmethod
-    def _build_component_manifest_entry(snapshot: ExportComponentSnapshot) -> dict[str, Any]:
+    def _build_component_manifest_entry(
+        snapshot: ExportComponentSnapshot,
+        fingerprint: ComponentFingerprintResult | None = None,
+    ) -> dict[str, Any]:
         """构建 manifest.components 中的组件摘要。"""
 
+        component_fingerprint = (
+            fingerprint.component_fingerprint if fingerprint is not None else snapshot.version.component_fingerprint
+        )
+        fingerprint_schema_version = (
+            fingerprint.fingerprint_schema_version if fingerprint is not None else snapshot.version.fingerprint_schema_version
+        )
         return {
             "source_component_code": snapshot.component.code,
             "source_version_no": snapshot.version.version_no,
             "name": snapshot.component.name,
             "import_name": snapshot.component.import_name,
-            "component_fingerprint": snapshot.version.component_fingerprint,
-            "fingerprint_schema_version": snapshot.version.fingerprint_schema_version,
+            "component_fingerprint": component_fingerprint,
+            "fingerprint_schema_version": fingerprint_schema_version,
         }
 
     @staticmethod

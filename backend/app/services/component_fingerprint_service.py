@@ -53,11 +53,13 @@ class ComponentFingerprintService:
         *,
         component: WorkspaceComponent,
         version: WorkspaceComponentVersion,
+        asset_names_override: list[str] | None = None,
     ) -> ComponentFingerprintResult:
         """确保指定组件版本拥有当前 schema 的指纹字段，并返回计算结果。"""
 
         if (
-            version.content_hash
+            asset_names_override is None
+            and version.content_hash
             and version.preview_schema_hash
             and version.component_fingerprint
             and version.fingerprint_schema_version == FINGERPRINT_SCHEMA_VERSION
@@ -73,6 +75,7 @@ class ComponentFingerprintService:
             component=component,
             version=version,
             visiting=set(),
+            asset_names_override=asset_names_override,
         )
         version.content_hash = result.content_hash
         version.preview_schema_hash = result.preview_schema_hash
@@ -87,6 +90,7 @@ class ComponentFingerprintService:
         component: WorkspaceComponent,
         version: WorkspaceComponentVersion,
         visiting: set[int],
+        asset_names_override: list[str] | None = None,
     ) -> ComponentFingerprintResult:
         """递归计算数据库中组件发布版本的稳定指纹。"""
 
@@ -107,7 +111,11 @@ class ComponentFingerprintService:
 
         asset_hashes = await self._resolve_workspace_asset_hashes(
             workspace_id=component.workspace_id,
-            asset_names=self._collect_static_asset_names(version.content, version.preview_schema),
+            asset_names=(
+                list(asset_names_override)
+                if asset_names_override is not None
+                else self._collect_static_asset_names(version.content, version.preview_schema)
+            ),
         )
         font_signatures = await self._resolve_workspace_font_signatures(
             workspace_id=component.workspace_id,
@@ -356,7 +364,12 @@ class ComponentFingerprintService:
     ) -> dict[str, str]:
         """把包内组件资源名解析为包内资源 hash。"""
 
-        asset_names = cls._collect_static_asset_names(package_component.content, package_component.preview_schema)
+        metadata = getattr(package_component, "metadata", {}) or {}
+        declared_asset_names = getattr(package_component, "asset_names", None)
+        if declared_asset_names is None or ("asset_names" not in metadata and not declared_asset_names):
+            asset_names = cls._collect_static_asset_names(package_component.content, package_component.preview_schema)
+        else:
+            asset_names = sorted({str(name).strip() for name in declared_asset_names if str(name).strip()})
         result: dict[str, str] = {}
         missing: list[str] = []
         for name in asset_names:

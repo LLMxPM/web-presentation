@@ -597,6 +597,47 @@ function appendLocalAssistantPlaceholder(sessionId: string, runId: string | null
 }
 
 /**
+ * 本地插入等待智能体输出的临时状态，覆盖后端首个可见事件到达前的空白窗口。
+ */
+function appendLocalWaitingOutputPlaceholder(sessionId: string, runId: string | null) {
+  if (!sessionId || !runId || hasVisibleRunProgress(sessionId, runId)) {
+    return
+  }
+  const run = readSessionValue(activeRunBySession.value, sessionId, null)
+  if (run?.run_id === runId && run.status !== 'pending' && run.status !== 'running') {
+    return
+  }
+  agentSessionStore.applyRunEvent(sessionId, {
+    event: 'model.request.started',
+    run_id: runId,
+    session_id: sessionId,
+    content: null,
+    data: { agent_id: agentId.value },
+    sequence: null,
+    event_index: null,
+  }, {
+    agentId: agentId.value,
+    agentDisplayName: agentDisplayName.value,
+  })
+}
+
+/**
+ * 判断指定 run 是否已经有助手文本、推理、工具或状态进度，避免重复插入占位。
+ */
+function hasVisibleRunProgress(sessionId: string, runId: string) {
+  return readSessionValue(timelineItemsBySession.value, sessionId, []).some(item => (
+    item.run_id === runId
+    && (
+      item.kind === 'tool'
+      || item.kind === 'reasoning'
+      || item.kind === 'requirement'
+      || item.kind === 'run_status'
+      || (item.kind === 'message' && item.role === 'assistant' && Boolean(item.content))
+    )
+  ))
+}
+
+/**
  * 更新当前会话的流式执行标记，用于脱离 task store 后控制按钮状态。
  */
 function setSessionStreaming(sessionId: string, value: boolean) {
@@ -696,6 +737,7 @@ function ensureRunEventSubscription(sessionId: string, run: AgentActiveRunItem, 
   }
   const streamAbortController = createStreamAbortController(run.run_id)
   setSessionStreaming(sessionId, true)
+  appendLocalWaitingOutputPlaceholder(sessionId, run.run_id)
   streamAgentRunEvents(
     sessionId,
     run.run_id,
@@ -1274,6 +1316,7 @@ async function handleSend() {
       cancel_requested_at: null,
       event_index: -1,
     })
+    appendLocalWaitingOutputPlaceholder(sessionId, runId)
     const streamAbortController = createStreamAbortController(runId)
     await streamAgentRun(sessionId, runScope, {
       run_id: runId,
@@ -1329,6 +1372,7 @@ async function handleContinueRun(decision: 'confirm' | 'reject') {
   const runId = requirement.run_id || pausedRun.run_id || ''
   let streamAbortController: AbortController | null = null
   try {
+    appendLocalWaitingOutputPlaceholder(sessionId, runId)
     streamAbortController = createStreamAbortController(runId)
     await continueAgentSessionActiveRun(sessionId, scope.value, {
       agent_id: agentId.value,
@@ -1372,6 +1416,7 @@ async function handleSubmitFeedbackRun(selections: AgentFeedbackSelection[]) {
   const runId = requirement.run_id || pausedRun.run_id || ''
   let streamAbortController: AbortController | null = null
   try {
+    appendLocalWaitingOutputPlaceholder(sessionId, runId)
     streamAbortController = createStreamAbortController(runId)
     await continueAgentSessionActiveRun(sessionId, scope.value, {
       agent_id: agentId.value,

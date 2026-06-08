@@ -16,6 +16,7 @@ from app.schemas.workspace_style import (
     WorkspaceStyleCopyRequest,
     WorkspaceStyleCreateRequest,
     WorkspaceStyleExportPackageRequest,
+    WorkspaceStyleExportValidationResult,
     WorkspaceStyleImportResult,
     WorkspaceStyleImportValidationResult,
     WorkspaceStyleItem,
@@ -53,11 +54,28 @@ async def export_workspace_style_package(
     archive_content, filename = await WorkspaceStylePackageService(session).export_package(
         workspace_id=workspace_id,
         style_ids=payload.style_ids,
+        manual_asset_names=payload.manual_asset_names,
     )
     return Response(
         content=archive_content,
         media_type="application/zip",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.post("/workspaces/{workspace_id}/styles/export-package/validate", response_model=WorkspaceStyleExportValidationResult)
+async def validate_workspace_style_package_export(
+    workspace_id: int,
+    payload: WorkspaceStyleExportPackageRequest,
+    _: Annotated[AuthContext, Depends(get_current_user)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> WorkspaceStyleExportValidationResult:
+    """预检工作空间样式离线包导出资源，不生成 Zip。"""
+
+    return await WorkspaceStylePackageService(session).validate_export_package(
+        workspace_id=workspace_id,
+        style_ids=payload.style_ids,
+        manual_asset_names=payload.manual_asset_names,
     )
 
 

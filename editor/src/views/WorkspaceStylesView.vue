@@ -189,6 +189,29 @@
       @saved="handleSuggestedComponentsSaved"
     />
 
+    <ExportPackageAssetsDialog
+      v-model="exportDialogVisible"
+      title="确认导出样式"
+      description="动态资源来自样式建议组件中的组件源码；手动资源会随样式包一起导出。"
+      :workspace-id="workspaceId"
+      :automatic-assets="exportValidation?.automatic_assets ?? []"
+      :manual-assets="exportValidation?.manual_assets ?? []"
+      :manual-asset-names="exportManualAssetNames"
+      :asset-options="exportAssetOptions"
+      :asset-keyword="exportAssetKeyword"
+      :asset-options-loading="exportAssetOptionsLoading"
+      :export-pending="exportPackagePending"
+      :warnings="exportValidation?.warnings ?? []"
+      :missing-static-asset-names="exportValidation?.missing_static_asset_names ?? []"
+      :missing-manual-asset-names="exportValidation?.missing_manual_asset_names ?? []"
+      :dynamic-resource-components="exportValidation?.dynamic_resource_components ?? []"
+      @update:asset-keyword="exportAssetKeyword = $event"
+      @load-assets="loadExportAssetOptions"
+      @toggle-asset="toggleExportManualAsset"
+      @remove-asset="removeExportManualAsset"
+      @confirm="handleConfirmExportPackage"
+    />
+
     <BaseDialog v-model="importDialogVisible" title="导入样式" size="standard">
       <div class="space-y-4">
         <div class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
@@ -203,6 +226,13 @@
           <p class="mb-2 text-sm font-bold text-rose-700">预检未通过，请修改或删除相应资源后重试</p>
           <ul class="space-y-1 text-xs leading-5 text-rose-700">
             <li v-for="error in importValidation.errors" :key="error">{{ error }}</li>
+          </ul>
+        </div>
+
+        <div v-if="importValidation?.warnings.length" class="rounded-xl border border-amber-100 bg-amber-50 px-4 py-3">
+          <p class="mb-2 text-sm font-bold text-amber-800">包内提示</p>
+          <ul class="space-y-1 text-xs leading-5 text-amber-800">
+            <li v-for="warning in importValidation.warnings" :key="warning">{{ warning }}</li>
           </ul>
         </div>
 
@@ -374,6 +404,7 @@ import { useRoute } from 'vue-router'
 import { Copy, Download, Info, Layers, Palette, Pencil, Plus, RefreshCw, Search, Trash2, Upload } from '@lucide/vue'
 
 import { getWorkspace } from '@/api/catalog'
+import { listWorkspaceAssets } from '@/api/assets'
 import { getErrorMessage } from '@/api/http'
 import {
   copyWorkspaceStyle,
@@ -384,18 +415,22 @@ import {
   listWorkspaceStyles,
   updateWorkspaceStyleSuggestedComponents,
   updateWorkspaceStyle,
+  validateWorkspaceStylePackageExport,
   validateWorkspaceStylePackageImport,
   type WorkspaceStylePayload,
 } from '@/api/styles'
 import PageTitleBar from '@/components/layout/PageTitleBar.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseDialog from '@/components/ui/BaseDialog.vue'
+import ExportPackageAssetsDialog from '@/components/project/ExportPackageAssetsDialog.vue'
 import WorkspaceStyleDetailDialog from '@/components/project/WorkspaceStyleDetailDialog.vue'
 import WorkspaceStyleEditorDialog from '@/components/project/WorkspaceStyleEditorDialog.vue'
 import WorkspaceStyleSuggestedComponentsDialog from '@/components/project/WorkspaceStyleSuggestedComponentsDialog.vue'
 import type {
+  AssetResponse,
   ProjectMenuMode,
   SuggestedComponentItem,
+  WorkspaceStyleExportValidationResult,
   WorkspaceItem,
   WorkspaceStyleImportValidationResult,
   WorkspaceStyleItem,
@@ -415,6 +450,12 @@ const styleTotal = ref(0)
 const loading = ref(false)
 const saving = ref(false)
 const exportPackagePending = ref(false)
+const exportDialogVisible = ref(false)
+const exportValidation = ref<WorkspaceStyleExportValidationResult | null>(null)
+const exportManualAssetNames = ref<string[]>([])
+const exportAssetOptions = ref<AssetResponse[]>([])
+const exportAssetKeyword = ref('')
+const exportAssetOptionsLoading = ref(false)
 const importValidatePending = ref(false)
 const importPackagePending = ref(false)
 const importDialogVisible = ref(false)
@@ -569,16 +610,116 @@ async function handleExportSelectedStyles(): Promise<void> {
   }
   exportPackagePending.value = true
   try {
-    const { blob, filename } = await exportWorkspaceStylePackage(workspaceId.value, {
+    exportManualAssetNames.value = []
+    const validation = await validateWorkspaceStylePackageExport(workspaceId.value, {
       style_ids: selectedStyleIds.value,
+      manual_asset_names: [],
     })
-    downloadBlob(blob, filename)
+    exportValidation.value = validation
+    if (!shouldConfirmExport(validation)) {
+      await downloadSelectedStylePackage([])
+      Message.success('样式离线包已生成。')
+      return
+    }
+    exportDialogVisible.value = true
+    exportAssetKeyword.value = ''
+    void loadExportAssetOptions()
+  } catch (error) {
+    Message.error(`导出样式失败：${getErrorMessage(error, '未知原因')}`)
+  } finally {
+    exportPackagePending.value = false
+  }
+}
+
+/**
+ * 判断样式导出预检结果是否需要用户确认。
+ * @param validation 导出预检结果
+ */
+function shouldConfirmExport(validation: WorkspaceStyleExportValidationResult): boolean {
+  return (
+    validation.warnings.length > 0
+    || validation.dynamic_resource_components.length > 0
+    || validation.missing_static_asset_names.length > 0
+    || validation.missing_manual_asset_names.length > 0
+  )
+}
+
+/**
+ * 加载可手动补充到样式离线包的工作空间资源。
+ */
+async function loadExportAssetOptions(): Promise<void> {
+  if (!workspaceId.value) {
+    exportAssetOptions.value = []
+    return
+  }
+  exportAssetOptionsLoading.value = true
+  try {
+    const response = await listWorkspaceAssets(workspaceId.value, {
+      page: 1,
+      page_size: 100,
+      keyword: exportAssetKeyword.value.trim() || undefined,
+      status: 'active',
+    })
+    exportAssetOptions.value = response.items
+  } catch (error) {
+    Message.error(getErrorMessage(error, '加载可选资源失败。'))
+  } finally {
+    exportAssetOptionsLoading.value = false
+  }
+}
+
+/**
+ * 切换本次样式导出的手动资源。
+ * @param assetName 资源名
+ */
+function toggleExportManualAsset(assetName: string): void {
+  if (exportManualAssetNames.value.includes(assetName)) {
+    removeExportManualAsset(assetName)
+    return
+  }
+  exportManualAssetNames.value = [...exportManualAssetNames.value, assetName]
+}
+
+/**
+ * 移除本次样式导出的手动资源。
+ * @param assetName 资源名
+ */
+function removeExportManualAsset(assetName: string): void {
+  exportManualAssetNames.value = exportManualAssetNames.value.filter(name => name !== assetName)
+}
+
+/**
+ * 在确认弹窗中继续导出样式离线包。
+ */
+async function handleConfirmExportPackage(): Promise<void> {
+  if (!workspaceId.value || selectedStyleIds.value.length === 0) {
+    return
+  }
+  exportPackagePending.value = true
+  try {
+    await downloadSelectedStylePackage(exportManualAssetNames.value)
+    exportDialogVisible.value = false
     Message.success('样式离线包已生成。')
   } catch (error) {
     Message.error(`导出样式失败：${getErrorMessage(error, '未知原因')}`)
   } finally {
     exportPackagePending.value = false
   }
+}
+
+/**
+ * 调用下载接口生成样式离线包。
+ * @param manualAssetNames 本次导出手动补充资源名
+ */
+async function downloadSelectedStylePackage(manualAssetNames: string[]): Promise<void> {
+  if (!workspaceId.value) {
+    return
+  }
+  const { blob, filename } = await exportWorkspaceStylePackage(workspaceId.value, {
+    style_ids: selectedStyleIds.value,
+    manual_asset_names: manualAssetNames,
+  })
+  downloadBlob(blob, filename)
 }
 
 /**

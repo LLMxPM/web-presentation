@@ -614,6 +614,27 @@ describe('AgentConversationPanel', () => {
     expect(screen.queryByText('只有在你确认后，页面代码才会真正写回后端并生成新版本。')).toBeNull()
   })
 
+  it('发送后首个 SSE 可见事件到达前应显示等待智能体输出提示', async () => {
+    const streamDeferred = createDeferred<void>()
+    streamAgentRunMock.mockImplementationOnce(async (sessionId: string, scope: unknown, payload: { run_id?: string }) => {
+      startAgentRunMock(sessionId, scope, payload)
+      await streamDeferred.promise
+    })
+
+    render(AgentConversationPanel, createTestingRenderOptions())
+
+    await waitFor(() => {
+      expect(listAgentsMock).toHaveBeenCalled()
+    })
+
+    const textarea = screen.getByPlaceholderText(DEFAULT_PLACEHOLDER)
+    await fireEvent.update(textarea, '帮我整理页面资源')
+    await fireEvent.click(screen.getByRole('button', { name: /发送/ }))
+
+    expect(await screen.findByText('等待智能体输出中')).toBeTruthy()
+    streamDeferred.resolve()
+  })
+
   it('create_project_page 完成后应发出项目页面列表刷新事件', async () => {
     const projectPagesUpdatedSpy = vi.fn()
     streamAgentRunEventsByRunIdMock.mockImplementationOnce(async (_runId: string, _payload: unknown, options?: { onEvent?: (event: any) => void }) => {

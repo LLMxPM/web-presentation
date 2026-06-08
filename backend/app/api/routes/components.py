@@ -11,11 +11,12 @@ from app.db.session import get_db_session
 from app.models.enums import WorkspaceComponentType
 from app.schemas.common import MessageResponse, PagedResponse
 from app.schemas.component import (
+    ComponentShareExportValidationResult,
+    ComponentShareImportResult,
+    ComponentShareImportValidationResult,
     WorkspaceComponentCreateRequest,
     WorkspaceComponentCurrentDependencies,
     WorkspaceComponentExportPackageRequest,
-    ComponentShareImportResult,
-    ComponentShareImportValidationResult,
     WorkspaceComponentItem,
     WorkspaceComponentListQuery,
     WorkspaceComponentPublishRequest,
@@ -51,11 +52,28 @@ async def export_component_package(
     archive_content, filename = await ComponentSharePackageService(session).export_package(
         workspace_id=payload.workspace_id,
         component_ids=payload.component_ids,
+        manual_asset_names=payload.manual_asset_names,
     )
     return Response(
         content=archive_content,
         media_type="application/zip",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.post("/export-package/validate", response_model=ComponentShareExportValidationResult)
+async def validate_component_package_export(
+    payload: WorkspaceComponentExportPackageRequest,
+    current: Annotated[AuthContext, Depends(get_current_user)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> ComponentShareExportValidationResult:
+    """预检工作空间组件离线分享包导出资源，不生成 Zip。"""
+
+    await WorkspaceService(session).ensure_access(payload.workspace_id, user_id=current.user.id)
+    return await ComponentSharePackageService(session).validate_export_package(
+        workspace_id=payload.workspace_id,
+        component_ids=payload.component_ids,
+        manual_asset_names=payload.manual_asset_names,
     )
 
 

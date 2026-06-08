@@ -12,6 +12,7 @@ from app.models.page import Page
 from app.models.page_component_dependency import PageVersionComponentDependency
 from app.models.page_component_resource import PageVersionComponentResource
 from app.models.page_component_usage import PageVersionComponentUsage
+from app.models.page_screenshot_job import PageScreenshotJob
 from app.models.page_version import PageVersion
 from app.models.project_build_job import ProjectBuildJob
 from app.models.project_route import ProjectRoute
@@ -42,6 +43,7 @@ __all__ = [
     "PageVersionComponentDependency",
     "PageVersionComponentUsage",
     "PageVersionComponentResource",
+    "PageScreenshotJob",
     "ProjectBuildJob",
     "ProjectSuggestedReferenceAsset",
     "ProjectSuggestedComponent",
