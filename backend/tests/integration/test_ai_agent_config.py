@@ -169,16 +169,15 @@ async def test_agent_config_api_should_manage_prompt_and_tool_overrides(authenti
     assert "以字面量出现的 Tailwind 语义类和常用工具类" in component_prompt
     assert "枚举映射对象返回完整类名字符串" in component_prompt
     assert "不要拼接 text-${tone}、from-${color}" in component_prompt
-    assert "整页模板、布局容器、内容区块、数据展示、资源渲染、样式能力、路由能力" in component_prompt
-    assert "component_type 为整页模板" in component_prompt
-    assert "component_type 为布局容器" in component_prompt
-    assert "component_type 为内容区块" in component_prompt
-    assert "component_type 为数据展示" in component_prompt
-    assert "component_type 为资源渲染" in component_prompt
-    assert "component_type 为样式能力" in component_prompt
-    assert "component_type 为路由能力" in component_prompt
+    assert "页面组件、内容组件、原子组件" in component_prompt
+    assert "component_type 为页面组件" in component_prompt
+    assert "component_type 为内容组件" in component_prompt
+    assert "component_type 为原子组件" in component_prompt
+    assert "数据展示、资源渲染、样式能力和路由能力不再作为组件类型" in component_prompt
+    assert "固定大小的布局槽位" in component_prompt
+    assert "width、height、minHeight、aspectRatio、fit" in component_prompt
+    assert "size、fontSize、padding、strokeWidth、variant" in component_prompt
     assert "基础页面画布容器 DefaultContainer 或已发布衍生容器组件" in component_prompt
-    assert "不承载具体业务内容" in component_prompt
     assert "不在组件内维护项目路由树" in component_prompt
     assert "DefaultContainer" in component_prompt
     assert "衍生容器组件" in component_prompt
@@ -519,7 +518,10 @@ async def test_agent_config_api_should_manage_prompt_and_tool_overrides(authenti
     create_component_instructions = create_component_tool["agent_guide"]["instructions"] or ""
     assert "PascalCase import_name" in create_component_instructions
     assert "component_type" in create_component_instructions
-    assert "默认使用内容区块" in create_component_instructions
+    assert "默认使用内容组件" in create_component_instructions
+    assert "页面组件用于封面、目录、页面骨架或整页视觉" in create_component_instructions
+    assert "内容组件用于卡片、图表、指标组、表格、资源展示块等固定布局槽位" in create_component_instructions
+    assert "原子组件用于页码、角标、图标、主题 Logo、小标签等小型单元" in create_component_instructions
     assert "content 必须是非空、可运行的 Vue SFC" in create_component_instructions
     assert "check_component_code" in create_component_instructions
     assert "preview_component_edits" not in create_component_instructions
@@ -530,7 +532,7 @@ async def test_agent_config_api_should_manage_prompt_and_tool_overrides(authenti
     assert "previewSchema 导出" in create_component_instructions
     assert "publish_component" in create_component_instructions
     for global_rule_text in (
-        "component_type 为整页模板",
+        "component_type 为页面组件",
         "DefaultContainer",
         "AssetImage、AssetVideo、AssetDrawio、AssetMermaid、AssetChart、AssetFormula",
         "useAssetBackground",

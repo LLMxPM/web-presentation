@@ -8,6 +8,7 @@ from contextlib import asynccontextmanager, suppress
 
 import uvicorn
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -157,6 +158,19 @@ def create_app() -> FastAPI:
             content=content,
         )
 
+    @app.exception_handler(RequestValidationError)
+    async def handle_request_validation_exception(_: Request, exc: RequestValidationError) -> JSONResponse:
+        first_error = exc.errors()[0] if exc.errors() else {}
+        message = _format_request_validation_message(first_error)
+        return JSONResponse(
+            status_code=422,
+            content={
+                "code": "VALIDATION_ERROR",
+                "message": message,
+                "detail": exc.errors(),
+            },
+        )
+
     @app.exception_handler(SQLAlchemyError)
     async def handle_sqlalchemy_exception(_: Request, exc: SQLAlchemyError) -> JSONResponse:
         if is_database_connectivity_error(exc):
@@ -169,6 +183,19 @@ def create_app() -> FastAPI:
         raise exc
 
     return app
+
+
+def _format_request_validation_message(error: dict) -> str:
+    """将 FastAPI 参数校验错误转换为面向前端用户的中文提示。"""
+
+    loc = error.get("loc")
+    field_path = ".".join(str(item) for item in loc if item not in {"body", "query", "path"}) if isinstance(loc, (list, tuple)) else ""
+    raw_message = str(error.get("msg") or "").strip()
+    if field_path and raw_message:
+        return f"请求参数 {field_path} 不符合要求：{raw_message}"
+    if field_path:
+        return f"请求参数 {field_path} 不符合要求。"
+    return "请求参数不符合要求，请检查后再提交。"
 
 
 def _mount_ai_runtime(app: FastAPI) -> None:

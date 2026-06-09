@@ -7,6 +7,8 @@ import zipfile
 
 from httpx import AsyncClient
 
+CONTENT_COMPONENT_SIZE_PREVIEW_SCHEMA = '{"props":{"height":{"type":"number","label":"高度","default":320}}}'
+
 from app.schemas.project_app_config import DEFAULT_PROJECT_STYLE_SPEC_MARKDOWN
 
 
@@ -618,8 +620,9 @@ async def _create_published_component(
             "workspace_id": workspace_id,
             "name": name,
             "import_name": import_name,
-            "component_type": "内容区块",
+            "component_type": "内容组件",
             "content": content or f"<template><section>{name}</section></template>",
+            "preview_schema": CONTENT_COMPONENT_SIZE_PREVIEW_SCHEMA,
             "file_type": "vue",
             "status": "active",
         },

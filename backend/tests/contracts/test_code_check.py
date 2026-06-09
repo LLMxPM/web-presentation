@@ -8,6 +8,8 @@ from app.db.session import get_session_factory
 from app.services.code_check_service import CodeCheckService
 from app.services.token_service import TokenService
 
+CONTENT_COMPONENT_SIZE_PREVIEW_SCHEMA = '{"props":{"height":{"type":"number","label":"高度","default":320}}}'
+
 
 class FakeRuntimeDiagnosticsClient:
     """测试用 Runtime 诊断客户端，记录调用并返回固定结果。"""
@@ -133,6 +135,7 @@ async def test_page_code_check_should_build_transient_dependency_graph(
             "name": "检查用组件",
             "import_name": "CheckCard",
             "content": "<template><article>组件内容</article></template>",
+            "preview_schema": CONTENT_COMPONENT_SIZE_PREVIEW_SCHEMA,
             "file_type": "vue",
             "status": "active",
         },
@@ -220,6 +223,7 @@ async def test_component_code_check_should_return_edits_metadata(authenticated_c
             "name": "检查组件",
             "import_name": "CheckComponent",
             "content": "<template><section>旧内容</section></template>",
+            "preview_schema": CONTENT_COMPONENT_SIZE_PREVIEW_SCHEMA,
             "file_type": "vue",
             "status": "active",
         },

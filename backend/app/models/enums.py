@@ -39,13 +39,9 @@ class PageFileType(str, Enum):
 class WorkspaceComponentType(str, Enum):
     """工作空间组件固定分类，用于约束组件库筛选与元数据维护。"""
 
-    FULL_PAGE_TEMPLATE = "整页模板"
-    LAYOUT_CONTAINER = "布局容器"
-    CONTENT_BLOCK = "内容区块"
-    DATA_DISPLAY = "数据展示"
-    RESOURCE_RENDERER = "资源渲染"
-    STYLE_CAPABILITY = "样式能力"
-    ROUTE_CAPABILITY = "路由能力"
+    PAGE_COMPONENT = "页面组件"
+    CONTENT_COMPONENT = "内容组件"
+    ATOMIC_COMPONENT = "原子组件"
 
 
 class PageVersionStorageType(str, Enum):

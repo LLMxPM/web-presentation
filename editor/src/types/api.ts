@@ -9,7 +9,7 @@ export type PageVersionStorageType = 'snapshot' | 'diff'
 export type AssetType = 'icon' | 'font' | 'image' | 'video' | 'drawio' | 'mermaid' | 'chart' | 'formula'
 export type AssetRole = 'foundation' | 'content'
 export type ProjectMenuMode = 'text' | 'preview' | 'bottom-preview'
-export type WorkspaceComponentType = '整页模板' | '布局容器' | '内容区块' | '数据展示' | '资源渲染' | '样式能力' | '路由能力'
+export type WorkspaceComponentType = '页面组件' | '内容组件' | '原子组件'
 
 export interface PreviewSizePreset {
   name: string

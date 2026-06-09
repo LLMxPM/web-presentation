@@ -28,7 +28,7 @@ class WorkspaceComponentCreateRequest(BaseModel):
     file_type: PageFileType = PageFileType.VUE
     name: str = Field(min_length=1, max_length=128)
     import_name: str = Field(min_length=1, max_length=64, pattern=COMPONENT_IMPORT_NAME_PATTERN)
-    component_type: WorkspaceComponentType = WorkspaceComponentType.CONTENT_BLOCK
+    component_type: WorkspaceComponentType = WorkspaceComponentType.CONTENT_COMPONENT
     summary: str | None = Field(default=None, max_length=2000)
     preview_schema: str | None = None
     status: RecordStatus = RecordStatus.ACTIVE

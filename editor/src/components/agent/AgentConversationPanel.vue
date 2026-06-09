@@ -162,6 +162,7 @@ import {
   streamAgentRunEvents,
   uploadAgentImageAttachment,
 } from '@/api/ai'
+import { getErrorMessage } from '@/api/http'
 import {
   buildTimelineDisplayItems,
   buildRunIssueState,
@@ -1205,7 +1206,7 @@ async function handleUploadImage(file: File) {
   try {
     sessionId = await ensureActiveSession()
   } catch (error) {
-    Message.error(error instanceof Error ? error.message : '初始化智能体会话失败。')
+    Message.error(getErrorMessage(error, '初始化智能体会话失败。'))
     return
   }
 
@@ -1217,7 +1218,7 @@ async function handleUploadImage(file: File) {
       attachment,
     ])
   } catch (error) {
-    Message.error(error instanceof Error ? error.message : '上传图片失败。')
+    Message.error(getErrorMessage(error, '上传图片失败。'))
   } finally {
     writeSessionValue(imageUploadingBySession.value, sessionId, false)
   }
@@ -1235,7 +1236,7 @@ async function handleRemoveImage(attachmentId: number) {
   try {
     await deleteAgentImageAttachment(sessionId, scope.value, attachmentId, agentId.value)
   } catch (error) {
-    Message.error(error instanceof Error ? error.message : '删除图片失败。')
+    Message.error(getErrorMessage(error, '删除图片失败。'))
   }
 }
 
@@ -1255,7 +1256,7 @@ async function handlePromoteImage(attachmentId: number) {
     await queryClient.invalidateQueries({ queryKey: ['workspace-assets'] })
     Message.success('图片已保存为资源。')
   } catch (error) {
-    Message.error(error instanceof Error ? error.message : '保存为资源失败。')
+    Message.error(getErrorMessage(error, '保存为资源失败。'))
   }
 }
 
@@ -1288,7 +1289,7 @@ async function handleSend() {
     sessionId = await ensureActiveSession()
   } catch (error) {
     sendInFlight.value = false
-    Message.error(error instanceof Error ? error.message : '初始化智能体会话失败。')
+    Message.error(getErrorMessage(error, '初始化智能体会话失败。'))
     return
   }
 
@@ -1340,7 +1341,7 @@ async function handleSend() {
       await recoverActiveRunAfterConflict(sessionId)
       return
     }
-    const detail = error instanceof Error ? error.message : '智能体执行失败。'
+    const detail = getErrorMessage(error, '智能体执行失败。')
     agentSessionStore.setLastIssue(sessionId, buildRunIssueState(detail, runAgentDisplayName))
     Message.error(detail)
   } finally {
@@ -1390,7 +1391,7 @@ async function handleContinueRun(decision: 'confirm' | 'reject') {
       }
       return
     }
-    Message.error(error instanceof Error ? error.message : '继续智能体执行失败。')
+    Message.error(getErrorMessage(error, '继续智能体执行失败。'))
   } finally {
     if (streamAbortController) {
       clearStreamAbortController(runId, streamAbortController)
@@ -1435,7 +1436,7 @@ async function handleSubmitFeedbackRun(selections: AgentFeedbackSelection[]) {
       }
       return
     }
-    Message.error(error instanceof Error ? error.message : '继续智能体执行失败。')
+    Message.error(getErrorMessage(error, '继续智能体执行失败。'))
   } finally {
     if (streamAbortController) {
       clearStreamAbortController(runId, streamAbortController)
@@ -1461,7 +1462,7 @@ async function handleCancelPausedRun() {
     Message.info('已停止。')
     await finalizeRun(response.session_id, { preserveLocalCancelled: true })
   } catch (error) {
-    Message.error(error instanceof Error ? error.message : '忽略失败，请稍后再试。')
+    Message.error(getErrorMessage(error, '忽略失败，请稍后再试。'))
   }
 }
 
@@ -1512,7 +1513,7 @@ async function handleInterruptRun() {
     }, 5000)
   } catch (error) {
     writeSessionValue(interruptingBySession.value, sessionId, false)
-    Message.error(error instanceof Error ? error.message : '停止失败，请稍后再试。')
+    Message.error(getErrorMessage(error, '停止失败，请稍后再试。'))
   }
 }
 
@@ -1532,7 +1533,7 @@ async function handleForceCancelRun() {
     Message.info('已停止。')
     await finalizeRun(response.session_id, { preserveLocalCancelled: true })
   } catch (error) {
-    Message.error(error instanceof Error ? error.message : '强制结束失败，请稍后再试。')
+    Message.error(getErrorMessage(error, '强制结束失败，请稍后再试。'))
   }
 }
 

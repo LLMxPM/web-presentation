@@ -1,6 +1,8 @@
 """文件功能：验证 icon 资产结构化分析元数据与按逻辑名下发的预览配置。"""
 
 from httpx import AsyncClient
+
+CONTENT_COMPONENT_SIZE_PREVIEW_SCHEMA = '{"props":{"height":{"type":"number","label":"高度","default":320}}}'
 from sqlalchemy import select
 
 from app.db.session import get_session_factory
@@ -212,6 +214,7 @@ async def test_project_preview_icon_config_should_include_icons_from_transitive_
             "name": "叶子图标组件",
             "import_name": "LeafIconComponent",
             "content": '<template><section><Icon name="nested-icon" /></section></template>',
+            "preview_schema": CONTENT_COMPONENT_SIZE_PREVIEW_SCHEMA,
             "file_type": "vue",
             "status": "active",
         },
@@ -239,6 +242,7 @@ async def test_project_preview_icon_config_should_include_icons_from_transitive_
 import LeafIcon from '@workspace-components/{leaf_component["code"]}/v/1'
 </script>
             """.strip(),
+            "preview_schema": CONTENT_COMPONENT_SIZE_PREVIEW_SCHEMA,
             "file_type": "vue",
             "status": "active",
         },
@@ -335,6 +339,7 @@ async def test_component_preview_should_backfill_legacy_icon_analysis_metadata(
             "name": "老图标组件",
             "import_name": "LegacyIconComponent",
             "content": '<template><section><Icon name="legacy-icon" /></section></template>',
+            "preview_schema": CONTENT_COMPONENT_SIZE_PREVIEW_SCHEMA,
             "file_type": "vue",
             "status": "active",
         },
@@ -426,6 +431,7 @@ const items = [
   </section>
 </template>
             """.strip(),
+            "preview_schema": CONTENT_COMPONENT_SIZE_PREVIEW_SCHEMA,
             "file_type": "vue",
             "status": "active",
         },
@@ -468,6 +474,7 @@ async def test_component_preview_should_reject_dynamic_icon_name(
             "name": "动态图标组件",
             "import_name": "DynamicIconComponent",
             "content": '<template><section><Icon :name="iconName" /></section></template>',
+            "preview_schema": CONTENT_COMPONENT_SIZE_PREVIEW_SCHEMA,
             "file_type": "vue",
             "status": "active",
         },

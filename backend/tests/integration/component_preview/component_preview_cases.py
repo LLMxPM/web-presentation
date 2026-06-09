@@ -2,6 +2,8 @@
 
 from httpx import AsyncClient
 
+CONTENT_COMPONENT_SIZE_PREVIEW_SCHEMA = '{"props":{"height":{"type":"number","label":"高度","default":320}}}'
+
 
 async def create_workspace(authenticated_client: AsyncClient, name: str = "组件工作空间") -> int:
     """创建一个启用中的工作空间并返回主键。"""
@@ -74,6 +76,7 @@ async def test_component_publish_should_build_versions_and_current_dependencies(
             "name": "基础按钮",
             "import_name": "BaseButton",
             "content": "<template><button>Base</button></template>",
+            "preview_schema": CONTENT_COMPONENT_SIZE_PREVIEW_SCHEMA,
             "file_type": "vue",
             "status": "active",
         },
@@ -101,6 +104,7 @@ import BaseButton from '@workspace-components/{base_component_data['code']}/v/1'
 import Icon from '@runtime-kit/public/components/primitives/Icon.v1.vue'
 </script>
             """.strip(),
+            "preview_schema": CONTENT_COMPONENT_SIZE_PREVIEW_SCHEMA,
             "file_type": "vue",
             "status": "active",
         },
@@ -132,6 +136,7 @@ import Icon from '@runtime-kit/public/components/primitives/Icon.v1.vue'
     assert icon_dependency["runtime_kit_name"] == "Icon.v1"
     assert icon_dependency["runtime_kit_version_no"] == 1
     assert icon_dependency["runtime_kit_import_path"] == "@runtime-kit/public/components/primitives/Icon.v1.vue"
+    await upload_icon_asset(authenticated_client, workspace_id, file_name="app")
 
     update_response = await authenticated_client.patch(
         f"/api/components/{wrapper_component_data['id']}",
@@ -179,6 +184,7 @@ async def test_component_draft_save_publish_restore_and_version_preview(
             "name": "草稿组件",
             "import_name": "DraftComponent",
             "content": "<template><div>draft v1</div></template>",
+            "preview_schema": CONTENT_COMPONENT_SIZE_PREVIEW_SCHEMA,
             "file_type": "vue",
             "status": "active",
         },
@@ -264,6 +270,7 @@ async def test_page_module_dependencies_should_include_component_versions_and_ru
             "name": "页面卡片",
             "import_name": "PageCard",
             "content": "<template><div>card</div></template>",
+            "preview_schema": CONTENT_COMPONENT_SIZE_PREVIEW_SCHEMA,
             "file_type": "vue",
             "status": "active",
         },
@@ -334,6 +341,7 @@ async def test_component_references_should_query_and_upgrade_direct_page_and_com
             "name": "目标组件",
             "import_name": "TargetCard",
             "content": "<template><article>v1</article></template>",
+            "preview_schema": CONTENT_COMPONENT_SIZE_PREVIEW_SCHEMA,
             "file_type": "vue",
             "status": "active",
         },
@@ -413,6 +421,7 @@ import TargetCard from '@workspace-components/{target_component['code']}/v/1'
 import TargetCard from '@workspace-components/{target_component['code']}/v/1'
 </script>
             """.strip(),
+            "preview_schema": CONTENT_COMPONENT_SIZE_PREVIEW_SCHEMA,
             "file_type": "vue",
             "status": "active",
         },
@@ -432,6 +441,7 @@ import TargetCard from '@workspace-components/{target_component['code']}/v/1'
 import TargetCard from '@workspace-components/{target_component['code']}/v/1'
 </script>
             """.strip(),
+            "preview_schema": CONTENT_COMPONENT_SIZE_PREVIEW_SCHEMA,
             "file_type": "vue",
             "status": "active",
         },
@@ -552,6 +562,7 @@ import DemoCard from '@workspace-components/CMP_BAD'
 </script>
 <template><DemoCard /></template>
             """.strip(),
+            "preview_schema": CONTENT_COMPONENT_SIZE_PREVIEW_SCHEMA,
             "file_type": "vue",
             "status": "active",
         },
@@ -571,6 +582,7 @@ import AppIcon from '@/components/common/AppIcon.vue'
 </script>
 <template><AppIcon /></template>
             """.strip(),
+            "preview_schema": CONTENT_COMPONENT_SIZE_PREVIEW_SCHEMA,
             "file_type": "vue",
             "status": "active",
         },
@@ -590,6 +602,7 @@ import Icon from '@runtime-kit/public/components/primitives/Icon.vue'
 </script>
 <template><Icon name=\"home\" /></template>
             """.strip(),
+            "preview_schema": CONTENT_COMPONENT_SIZE_PREVIEW_SCHEMA,
             "file_type": "vue",
             "status": "active",
         },
@@ -649,6 +662,12 @@ async def test_component_save_should_reject_invalid_preview_schema_json(
             "content": "<template><section><slot /></section></template>",
             "preview_schema": """
 {
+  "props": {
+    "height": {
+      "type": "number",
+      "default": 320
+    }
+  },
   "slots": {
     "default": {
       "default": [
@@ -685,6 +704,12 @@ async def test_component_preview_schema_should_validate_slot_component_runtime_p
             "content": "<template><section><slot /></section></template>",
             "preview_schema": """
 {
+  "props": {
+    "height": {
+      "type": "number",
+      "default": 320
+    }
+  },
   "slots": {
     "default": {
       "default": [
@@ -759,6 +784,7 @@ async def test_project_preview_artifact_should_publish_component_modules_and_mod
 import Icon from '@runtime-kit/public/components/primitives/Icon.v1.vue'
 </script>
             """.strip(),
+            "preview_schema": CONTENT_COMPONENT_SIZE_PREVIEW_SCHEMA,
             "file_type": "vue",
             "status": "active",
         },
@@ -970,6 +996,7 @@ async def test_standalone_page_preview_should_keep_entry_page_out_of_manifest_wh
             "name": "单页预览卡片",
             "import_name": "StandalonePreviewCard",
             "content": "<template><div>standalone component</div></template>",
+            "preview_schema": CONTENT_COMPONENT_SIZE_PREVIEW_SCHEMA,
             "file_type": "vue",
             "status": "active",
         },
@@ -1050,6 +1077,10 @@ defineProps<{ title?: string }>()
             "preview_schema": """
 {
   "props": {
+    "height": {
+      "type": "number",
+      "default": 320
+    },
     "title": {
       "type": "string",
       "default": "Hello Preview"
@@ -1100,11 +1131,15 @@ defineProps<{ title?: string }>()
         "component_code": component_data["code"],
         "component_version_no": 1,
         "display_name": "宿主页测试组件",
-        "schema": {
-            "props": {
-                "title": {
-                    "type": "string",
-                    "default": "Hello Preview",
+            "schema": {
+                "props": {
+                    "height": {
+                        "type": "number",
+                        "default": 320,
+                    },
+                    "title": {
+                        "type": "string",
+                        "default": "Hello Preview",
                 }
             }
         },
@@ -1136,6 +1171,7 @@ async def test_saved_component_preview_should_use_default_preview_options(
             "name": "默认配置组件",
             "import_name": "DefaultConfigComponent",
             "content": "<template><section><Icon name=\"icon-home\" />saved preview</section></template>",
+            "preview_schema": CONTENT_COMPONENT_SIZE_PREVIEW_SCHEMA,
             "file_type": "vue",
             "status": "active",
         },
@@ -1199,6 +1235,7 @@ async def test_saved_component_preview_should_include_icons_from_transitive_comp
             "name": "叶子图标组件",
             "import_name": "LeafIconComponent",
             "content": '<template><section><Icon name="icon-leaf" /></section></template>',
+            "preview_schema": CONTENT_COMPONENT_SIZE_PREVIEW_SCHEMA,
             "file_type": "vue",
             "status": "active",
         },
@@ -1221,6 +1258,7 @@ async def test_saved_component_preview_should_include_icons_from_transitive_comp
 import LeafIcon from '@workspace-components/{leaf_component["code"]}/v/1'
 </script>
             """.strip(),
+            "preview_schema": CONTENT_COMPONENT_SIZE_PREVIEW_SCHEMA,
             "file_type": "vue",
             "status": "active",
         },
@@ -1264,6 +1302,7 @@ async def test_component_draft_preview_should_create_hidden_system_project(
             "name": "系统项目测试组件",
             "import_name": "SystemProjectTestComponent",
             "content": "<template><div>system project preview</div></template>",
+            "preview_schema": CONTENT_COMPONENT_SIZE_PREVIEW_SCHEMA,
             "file_type": "vue",
             "status": "active",
         },
@@ -1298,6 +1337,7 @@ async def test_component_source_draft_preview_should_render_unsaved_source_witho
             "name": "被引用组件",
             "import_name": "ReferencedComponent",
             "content": "<template><div>dependency</div></template>",
+            "preview_schema": CONTENT_COMPONENT_SIZE_PREVIEW_SCHEMA,
             "file_type": "vue",
             "status": "active",
         },
@@ -1474,6 +1514,7 @@ async def test_component_source_draft_preview_should_reject_transient_cycle(
             "name": "组件A",
             "import_name": "ComponentA",
             "content": "<template><div>A</div></template>",
+            "preview_schema": CONTENT_COMPONENT_SIZE_PREVIEW_SCHEMA,
             "file_type": "vue",
             "status": "active",
         },
@@ -1494,6 +1535,7 @@ async def test_component_source_draft_preview_should_reject_transient_cycle(
 import ComponentA from '@workspace-components/{component_a['code']}/v/1'
 </script>
             """.strip(),
+            "preview_schema": CONTENT_COMPONENT_SIZE_PREVIEW_SCHEMA,
             "file_type": "vue",
             "status": "active",
         },

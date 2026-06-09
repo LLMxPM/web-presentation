@@ -874,7 +874,7 @@ class ComponentSharePackageService:
                 file_type=PageFileType.VUE.value,
                 name=str(metadata["name"]).strip(),
                 import_name=str(metadata["import_name"]).strip(),
-                component_type=str(metadata.get("component_type") or WorkspaceComponentType.CONTENT_BLOCK.value),
+                component_type=str(metadata.get("component_type") or WorkspaceComponentType.CONTENT_COMPONENT.value),
                 summary=metadata.get("summary"),
                 status=RecordStatus.ACTIVE.value,
                 created_by=operator_id,

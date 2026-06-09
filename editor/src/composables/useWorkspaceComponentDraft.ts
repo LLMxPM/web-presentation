@@ -6,17 +6,35 @@ import { computed, reactive, ref } from 'vue'
 import { createComponent, updateComponent } from '@/api/catalog'
 import type { RecordStatus, WorkspaceComponentItem, WorkspaceComponentType } from '@/types/api'
 
-export const DEFAULT_WORKSPACE_COMPONENT_TYPE: WorkspaceComponentType = '内容区块'
+export const DEFAULT_WORKSPACE_COMPONENT_TYPE: WorkspaceComponentType = '内容组件'
 export const workspaceComponentTypeValues: WorkspaceComponentType[] = [
-  '整页模板',
-  '布局容器',
-  '内容区块',
-  '数据展示',
-  '资源渲染',
-  '样式能力',
-  '路由能力',
+  '页面组件',
+  '内容组件',
+  '原子组件',
 ]
 const IMPORT_NAME_PATTERN = /^[A-Z][A-Za-z0-9]{0,63}$/
+const CONTENT_COMPONENT_SIZE_PROP_KEYS = new Set([
+  'width',
+  'height',
+  'minWidth',
+  'minHeight',
+  'maxWidth',
+  'maxHeight',
+  'aspectRatio',
+  'containerWidth',
+  'containerHeight',
+  'contentWidth',
+  'contentHeight',
+  'min_width',
+  'min_height',
+  'max_width',
+  'max_height',
+  'aspect_ratio',
+  'container_width',
+  'container_height',
+  'content_width',
+  'content_height',
+])
 
 export interface WorkspaceComponentDraftForm {
   name: string
@@ -195,6 +213,9 @@ export function useWorkspaceComponentDraft(options: DraftOptions) {
     if (form.preview_schema.trim() && !normalizedPreviewSchema && !errors.preview_schema) {
       errors.preview_schema = 'previewSchema JSON 解析失败。'
     }
+    if (!errors.preview_schema && form.component_type === '内容组件') {
+      errors.preview_schema = validateContentComponentSizeControls(normalizedPreviewSchema)
+    }
     return !errors.name && !errors.import_name && !errors.component_type && !errors.content && !errors.preview_schema
   }
 
@@ -233,7 +254,7 @@ export function isWorkspaceComponentType(value: unknown): value is WorkspaceComp
 }
 
 /**
- * 归一化组件分类，非法值回退到默认内容区块。
+ * 归一化组件分类，非法值回退到默认内容组件。
  * @param value 原始组件分类
  */
 export function normalizeComponentType(value: unknown): WorkspaceComponentType {
@@ -244,8 +265,8 @@ export function normalizeComponentType(value: unknown): WorkspaceComponentType {
  * 判断组件分类是否应使用零留白预览。
  * @param value 原始组件分类
  */
-export function usesZeroPaddingComponentPreview(value: unknown): value is '整页模板' | '布局容器' {
-  return value === '整页模板' || value === '布局容器'
+export function usesZeroPaddingComponentPreview(value: unknown): value is '页面组件' {
+  return value === '页面组件'
 }
 
 function createEmptyForm(): WorkspaceComponentDraftForm {
@@ -283,4 +304,18 @@ function validateImportName(value: string): string {
     return '需使用 PascalCase 英文标识符，如 SalesMetricCard'
   }
   return ''
+}
+
+function validateContentComponentSizeControls(previewSchema: string | null): string {
+  if (!previewSchema) {
+    return '内容组件必须在 previewSchema props 中声明 width、height、minHeight 或 aspectRatio 等尺寸控制参数'
+  }
+  const parsedSchema = JSON.parse(previewSchema) as { props?: unknown }
+  if (!parsedSchema.props || Array.isArray(parsedSchema.props) || typeof parsedSchema.props !== 'object') {
+    return '内容组件的 previewSchema.props 必须包含尺寸控制参数'
+  }
+  const propNames = Object.keys(parsedSchema.props)
+  return propNames.some(propName => CONTENT_COMPONENT_SIZE_PROP_KEYS.has(propName))
+    ? ''
+    : '内容组件必须在 previewSchema.props 中声明至少一个尺寸控制参数，例如 width、height、minHeight 或 aspectRatio'
 }

@@ -8,6 +8,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import WorkspaceComponentWorkbench from '@/components/component-preview/WorkspaceComponentWorkbench.vue'
 import type { WorkspaceComponentItem } from '@/types/api'
 
+const CONTENT_COMPONENT_SIZE_PREVIEW_SCHEMA = '{"props":{"height":{"type":"number","label":"高度","default":320}}}'
+
 const catalogMocks = vi.hoisted(() => ({
   createComponent: vi.fn(),
   updateComponent: vi.fn(),
@@ -37,11 +39,11 @@ const baseComponent: WorkspaceComponentItem = {
   code: 'CMP099',
   name: '销售卡片',
   import_name: 'SalesCard',
-  component_type: '内容区块',
+  component_type: '内容组件',
   summary: '销售数据展示组件',
   status: 'active',
   content: '<template><div>old</div></template>',
-  preview_schema: null,
+  preview_schema: CONTENT_COMPONENT_SIZE_PREVIEW_SCHEMA,
   current_version_no: 1,
   draft_base_version_no: 1,
   has_unpublished_changes: false,
@@ -366,7 +368,7 @@ describe('WorkspaceComponentWorkbench', () => {
                     ...props.form,
                     name: '整页预览组件',
                     import_name: 'FullPreview',
-                    component_type: '布局容器',
+                    component_type: '页面组件',
                     content: '<template><div /></template>',
                   })
                   emit('preview-draft')
@@ -396,10 +398,71 @@ describe('WorkspaceComponentWorkbench', () => {
       expect(catalogMocks.createComponent).toHaveBeenCalledWith(expect.objectContaining({
         name: '整页预览组件',
         import_name: 'FullPreview',
-        component_type: '布局容器',
+        component_type: '页面组件',
         content: '<template><div /></template>',
       }))
-      expect(screen.getByText('组件类型：布局容器')).toBeInTheDocument()
+      expect(screen.getByText('组件类型：页面组件')).toBeInTheDocument()
+    })
+  })
+
+  it('新建内容组件缺少尺寸参数时不应提交草稿', async () => {
+    const { rerender } = render(WorkspaceComponentWorkbench, {
+      props: {
+        workspaceId: 11,
+        component: null,
+        createToken: 0,
+      },
+      global: {
+        stubs: {
+          ComponentPreviewWorkbench: true,
+          ComponentEditorPane: defineComponent({
+            name: 'ComponentEditorPane',
+            props: {
+              errors: { type: Object, required: true },
+              form: { type: Object, required: true },
+            },
+            emits: ['update:form', 'preview-draft'],
+            setup(props, { emit }) {
+              return () => h('section', [
+                h('div', String(props.errors.preview_schema || '')),
+                h('button', {
+                  type: 'button',
+                  onClick: () => {
+                    emit('update:form', {
+                      ...props.form,
+                      name: '内容卡片',
+                      import_name: 'ContentCard',
+                      component_type: '内容组件',
+                      content: '<template><div /></template>',
+                      preview_schema: '',
+                    })
+                    emit('preview-draft')
+                  },
+                }, '提交缺少尺寸的内容组件'),
+              ])
+            },
+          }),
+          ComponentVersionHistoryDialog: true,
+          ComponentReferenceDialog: true,
+          ComponentReleaseDialog: true,
+          StatusTag: true,
+          BaseButton: true,
+          BaseDialog: BaseDialogStub,
+        },
+      },
+    })
+
+    await rerender({
+      workspaceId: 11,
+      component: null,
+      createToken: 1,
+    })
+
+    await fireEvent.click(await screen.findByText('提交缺少尺寸的内容组件'))
+
+    await waitFor(() => {
+      expect(catalogMocks.createComponent).not.toHaveBeenCalled()
+      expect(screen.getByText(/内容组件必须在 previewSchema props 中声明/)).toBeInTheDocument()
     })
   })
 })

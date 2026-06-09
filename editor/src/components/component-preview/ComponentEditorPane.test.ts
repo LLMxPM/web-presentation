@@ -11,7 +11,7 @@ import type { WorkspaceComponentDraftErrors, WorkspaceComponentDraftForm } from 
 const form: WorkspaceComponentDraftForm = {
   name: '销售卡片',
   import_name: 'SalesCard',
-  component_type: '内容区块',
+  component_type: '内容组件',
   summary: '销售数据展示组件',
   status: 'active',
   content: '<template><div /></template>',

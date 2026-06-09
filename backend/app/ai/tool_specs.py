@@ -307,7 +307,7 @@ _COMPONENT_LIST_RESPONSE_EXAMPLE = {
             "component_code": "cmp_hero_card",
             "name": "HeroCard",
             "import_name": "HeroCard",
-            "component_type": "内容区块",
+            "component_type": "内容组件",
             "summary": "首页英雄区卡片。",
             "current_version_no": 3,
             "status": "active",
@@ -334,7 +334,7 @@ _WORKSPACE_COMPONENT_USAGE_RESPONSE_EXAMPLE = {
     "component_code": "cmp_hero_card",
     "name": "HeroCard",
     "import_name": "HeroCard",
-    "component_type": "内容区块",
+    "component_type": "内容组件",
     "content": "<template>\n  <section>示例</section>\n</template>",
     "import_path": "@workspace-components/cmp_hero_card/v/3",
     "import_statement": "import HeroCard from '@workspace-components/cmp_hero_card/v/3'",
@@ -1111,7 +1111,10 @@ _COMPONENT_MANAGER_TOOL_SPECS = (
         '创建工作空间组件草稿，正式引用前需要发布。',
         default_instructions=(
             '创建组件前先确认组件名称、PascalCase import_name、component_type、组件说明、源码内容和是否需要 preview_schema；'
-            'component_type 未明确指定时默认使用内容区块。'
+            'component_type 未明确指定时默认使用内容组件；'
+            '页面组件用于封面、目录、页面骨架或整页视觉；内容组件用于卡片、图表、指标组、表格、资源展示块等固定布局槽位，'
+            '必须在 props 或 preview_schema 中声明 width、height、minHeight、aspectRatio、fit 等尺寸控制参数；'
+            '原子组件用于页码、角标、图标、主题 Logo、小标签等小型单元，不强制 width/height，但应提供 size、fontSize、padding、variant 等轻量尺寸参数。'
             'content 必须是非空、可运行的 Vue SFC；创建前优先调用 check_component_code 检查完整候选源码和 preview_schema。'
             'preview_schema 必须是 JSON 对象字符串或 JSON 对象，字段名使用 snake_case 入参 preview_schema；'
             '不要写成 Vue 代码里的 previewSchema 导出。schema 应与真实 props、slots 和 mock 数据保持一致，'

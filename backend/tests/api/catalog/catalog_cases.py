@@ -16,6 +16,8 @@ from app.models.workspace_component import WorkspaceComponent
 from app.models.workspace_component_version import WorkspaceComponentVersion
 from app.schemas.project_app_config import DEFAULT_PROJECT_STYLE_SPEC_MARKDOWN
 
+CONTENT_COMPONENT_SIZE_PREVIEW_SCHEMA = '{"props":{"height":{"type":"number","label":"高度","default":320}}}'
+
 
 async def _create_catalog_workspace(client: AsyncClient, name: str) -> dict:
     """创建测试工作空间并返回响应 JSON。"""
@@ -1784,6 +1786,7 @@ async def test_workspace_component_should_persist_component_type_and_support_fil
             "name": "统计卡片",
             "import_name": "StatsCard",
             "content": "<template><div>card</div></template>",
+            "preview_schema": CONTENT_COMPONENT_SIZE_PREVIEW_SCHEMA,
             "file_type": "vue",
             "summary": "展示统计信息",
             "status": "active",
@@ -1791,27 +1794,27 @@ async def test_workspace_component_should_persist_component_type_and_support_fil
     )
     assert create_response.status_code == 200
     component_data = create_response.json()
-    assert component_data["component_type"] == "内容区块"
+    assert component_data["component_type"] == "内容组件"
     assert component_data["import_name"] == "StatsCard"
 
     update_response = await authenticated_client.patch(
         f"/api/components/{component_data['id']}",
         json={
             "import_name": "StatsResourceCard",
-            "component_type": "数据展示",
+            "component_type": "原子组件",
             "change_note": "补充组件类型",
         },
     )
     assert update_response.status_code == 200
-    assert update_response.json()["component_type"] == "数据展示"
+    assert update_response.json()["component_type"] == "原子组件"
     assert update_response.json()["import_name"] == "StatsResourceCard"
 
     filtered_response = await authenticated_client.get(
         "/api/components",
-        params={"workspace_id": workspace_id, "component_type": "数据展示"},
+        params={"workspace_id": workspace_id, "component_type": "原子组件"},
     )
     assert filtered_response.status_code == 200
-    assert filtered_response.json()["items"][0]["component_type"] == "数据展示"
+    assert filtered_response.json()["items"][0]["component_type"] == "原子组件"
     assert filtered_response.json()["items"][0]["import_name"] == "StatsResourceCard"
 
 
@@ -1832,6 +1835,7 @@ async def test_workspace_component_list_should_support_published_only_filter(aut
             "name": "已发布侧栏组件",
             "import_name": "PublishedSidebarComponent",
             "content": "<template><div>published</div></template>",
+            "preview_schema": CONTENT_COMPONENT_SIZE_PREVIEW_SCHEMA,
             "file_type": "vue",
             "status": "active",
         },
@@ -1844,6 +1848,7 @@ async def test_workspace_component_list_should_support_published_only_filter(aut
             "name": "未发布侧栏组件",
             "import_name": "DraftSidebarComponent",
             "content": "<template><div>draft</div></template>",
+            "preview_schema": CONTENT_COMPONENT_SIZE_PREVIEW_SCHEMA,
             "file_type": "vue",
             "status": "active",
         },
@@ -1909,6 +1914,7 @@ async def test_workspace_component_import_name_should_be_required_valid_and_uniq
             "name": "统计卡片",
             "import_name": "StatsCard",
             "content": "<template><div>card</div></template>",
+            "preview_schema": CONTENT_COMPONENT_SIZE_PREVIEW_SCHEMA,
             "file_type": "vue",
             "status": "active",
         },
@@ -1922,6 +1928,7 @@ async def test_workspace_component_import_name_should_be_required_valid_and_uniq
             "name": "重复统计卡片",
             "import_name": "StatsCard",
             "content": "<template><div>duplicate</div></template>",
+            "preview_schema": CONTENT_COMPONENT_SIZE_PREVIEW_SCHEMA,
             "file_type": "vue",
             "status": "active",
         },
@@ -1936,6 +1943,7 @@ async def test_workspace_component_import_name_should_be_required_valid_and_uniq
             "name": "归档重复统计卡片",
             "import_name": "StatsCard",
             "content": "<template><div>archived</div></template>",
+            "preview_schema": CONTENT_COMPONENT_SIZE_PREVIEW_SCHEMA,
             "file_type": "vue",
             "status": "archived",
         },
@@ -1965,6 +1973,87 @@ async def test_workspace_component_should_reject_unknown_component_type(authenti
         },
     )
     assert create_response.status_code == 422
+    assert create_response.json()["code"] == "VALIDATION_ERROR"
+    assert "component_type" in create_response.json()["message"]
+
+    legacy_response = await authenticated_client.post(
+        "/api/components",
+        json={
+            "workspace_id": workspace_response.json()["id"],
+            "name": "旧分类组件",
+            "import_name": "LegacyCategoryComponent",
+            "content": "<template><div>legacy</div></template>",
+            "file_type": "vue",
+            "component_type": "内容区块",
+            "status": "active",
+        },
+    )
+    assert legacy_response.status_code == 422
+    assert legacy_response.json()["code"] == "VALIDATION_ERROR"
+    assert "component_type" in legacy_response.json()["message"]
+
+
+async def test_content_component_should_require_size_control_preview_schema(authenticated_client: AsyncClient) -> None:
+    """内容组件必须在 previewSchema props 中声明尺寸控制参数。"""
+
+    workspace_response = await authenticated_client.post(
+        "/api/workspaces",
+        json={"name": "内容组件尺寸校验工作空间", "status": "active"},
+    )
+    assert workspace_response.status_code == 200
+    workspace_id = workspace_response.json()["id"]
+
+    missing_schema_response = await authenticated_client.post(
+        "/api/components",
+        json={
+            "workspace_id": workspace_id,
+            "name": "缺少尺寸的内容组件",
+            "import_name": "MissingSizeContentComponent",
+            "content": "<template><section>missing-size</section></template>",
+            "file_type": "vue",
+            "component_type": "内容组件",
+            "status": "active",
+        },
+    )
+    assert missing_schema_response.status_code == 400
+    assert missing_schema_response.json()["code"] == "CONTENT_COMPONENT_SIZE_CONTROL_REQUIRED"
+
+    missing_size_prop_response = await authenticated_client.post(
+        "/api/components",
+        json={
+            "workspace_id": workspace_id,
+            "name": "无尺寸参数内容组件",
+            "import_name": "NoSizePropContentComponent",
+            "content": "<template><section>no-size-prop</section></template>",
+            "preview_schema": '{"props":{"title":{"type":"string","label":"标题","default":"示例"}}}',
+            "file_type": "vue",
+            "component_type": "内容组件",
+            "status": "active",
+        },
+    )
+    assert missing_size_prop_response.status_code == 400
+    assert missing_size_prop_response.json()["code"] == "CONTENT_COMPONENT_SIZE_CONTROL_REQUIRED"
+
+    atomic_response = await authenticated_client.post(
+        "/api/components",
+        json={
+            "workspace_id": workspace_id,
+            "name": "页码原子组件",
+            "import_name": "PageNumberAtom",
+            "content": "<template><span>1</span></template>",
+            "file_type": "vue",
+            "component_type": "原子组件",
+            "status": "active",
+        },
+    )
+    assert atomic_response.status_code == 200
+
+    update_response = await authenticated_client.patch(
+        f"/api/components/{atomic_response.json()['id']}",
+        json={"component_type": "内容组件", "change_note": "切换为内容组件"},
+    )
+    assert update_response.status_code == 400
+    assert update_response.json()["code"] == "CONTENT_COMPONENT_SIZE_CONTROL_REQUIRED"
 
 
 async def test_component_package_import_should_return_imported_components(authenticated_client: AsyncClient) -> None:
@@ -1989,8 +2078,9 @@ async def test_component_package_import_should_return_imported_components(authen
             "workspace_id": source_workspace_id,
             "name": "导出卡片",
             "import_name": "ExportedCard",
-            "component_type": "内容区块",
+            "component_type": "内容组件",
             "content": "<template><section>exported</section></template>",
+            "preview_schema": CONTENT_COMPONENT_SIZE_PREVIEW_SCHEMA,
             "file_type": "vue",
             "status": "active",
         },
@@ -2027,7 +2117,7 @@ async def test_component_package_import_should_return_imported_components(authen
     assert imported_components[0]["workspace_id"] == target_workspace_id
     assert imported_components[0]["name"] == "导出卡片"
     assert imported_components[0]["import_name"] == "ExportedCard"
-    assert imported_components[0]["component_type"] == "内容区块"
+    assert imported_components[0]["component_type"] == "内容组件"
     assert imported_components[0]["current_version_no"] == 1
     assert import_response.json()["components"][0]["action"] == "create"
     async with get_session_factory()() as session:
@@ -2077,7 +2167,7 @@ async def test_component_package_export_should_warn_and_allow_manual_assets(auth
             "workspace_id": source_workspace["id"],
             "name": "动态资源卡片",
             "import_name": "DynamicAssetCard",
-            "component_type": "资源渲染",
+            "component_type": "内容组件",
             "content": (
                 "<template>"
                 '<AssetImage name="share_static_logo" />'
@@ -2086,6 +2176,7 @@ async def test_component_package_export_should_warn_and_allow_manual_assets(auth
                 "</template>"
                 "<script setup>const props = defineProps({ runtimeAssetName: String })</script>"
             ),
+            "preview_schema": CONTENT_COMPONENT_SIZE_PREVIEW_SCHEMA,
             "file_type": "vue",
             "status": "active",
         },
@@ -2176,8 +2267,9 @@ async def test_component_package_import_should_reject_legacy_schema_and_tampered
             "workspace_id": workspace["id"],
             "name": "指纹卡片",
             "import_name": "FingerprintCard",
-            "component_type": "内容区块",
+            "component_type": "内容组件",
             "content": "<template><section>fingerprint</section></template>",
+            "preview_schema": CONTENT_COMPONENT_SIZE_PREVIEW_SCHEMA,
             "file_type": "vue",
             "status": "active",
         },

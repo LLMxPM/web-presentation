@@ -276,7 +276,7 @@ def build_create_component_tool(session_factory: async_sessionmaker[AsyncSession
         name: str,
         import_name: str,
         content: str,
-        component_type: WorkspaceComponentType = WorkspaceComponentType.CONTENT_BLOCK,
+        component_type: WorkspaceComponentType = WorkspaceComponentType.CONTENT_COMPONENT,
         summary: str | None = None,
         preview_schema: str | dict[str, Any] | None = None,
         change_note: str | None = None,

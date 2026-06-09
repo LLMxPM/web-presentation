@@ -39,7 +39,7 @@ describe('ProjectSuggestedComponentsDialog', () => {
     code: 'CMP001',
     name: '指标卡片',
     import_name: 'MetricCard',
-    component_type: '内容区块',
+    component_type: '内容组件',
     summary: '指标展示。',
     current_version_no: 1,
   }
@@ -57,7 +57,7 @@ describe('ProjectSuggestedComponentsDialog', () => {
     file_type: 'vue',
     name: '趋势图表',
     import_name: 'TrendChart',
-    component_type: '数据展示',
+    component_type: '原子组件',
     summary: '趋势展示。',
     status: 'active',
     created_at: '2026-06-05T00:00:00Z',
@@ -70,7 +70,7 @@ describe('ProjectSuggestedComponentsDialog', () => {
     vi.clearAllMocks()
     mocked.getProjectSuggestedComponents.mockResolvedValue({ items: [savedComponent] })
     mocked.listComponents.mockResolvedValue({
-      items: [{ ...availableComponent, id: 1, code: 'CMP001', name: '指标卡片', import_name: 'MetricCard', component_type: '内容区块' }, availableComponent],
+      items: [{ ...availableComponent, id: 1, code: 'CMP001', name: '指标卡片', import_name: 'MetricCard', component_type: '内容组件' }, availableComponent],
       total: 2,
       page: 1,
       page_size: 100,

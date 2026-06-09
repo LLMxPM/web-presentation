@@ -3,7 +3,7 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { http, registerUnauthorizedHandler, resolveApiBaseUrl } from '@/api/http'
+import { getErrorMessage, http, registerUnauthorizedHandler, resolveApiBaseUrl } from '@/api/http'
 
 describe('http api base url', () => {
   afterEach(() => {
@@ -49,5 +49,19 @@ describe('http api base url', () => {
     })).rejects.toMatchObject({ response: { status: 401 } })
 
     expect(handler).not.toHaveBeenCalled()
+  })
+
+  it('Axios 错误缺少业务错误体时应按状态码返回中文兜底提示', () => {
+    expect(getErrorMessage({
+      isAxiosError: true,
+      message: 'Request failed with status code 500',
+      response: { status: 500 },
+    })).toBe('服务端处理失败，请稍后重试；如反复出现，请联系管理员查看后台日志。')
+
+    expect(getErrorMessage({
+      isAxiosError: true,
+      message: 'Request failed with status code 422',
+      response: { status: 422 },
+    })).toBe('请求参数不符合要求，请检查后再提交。')
   })
 })

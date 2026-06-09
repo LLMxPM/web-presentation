@@ -56,29 +56,32 @@
     :title="selectedMemberRun ? `${selectedMemberRun.agent_name || selectedMemberRun.agent_id || '成员助手'}运行详情` : '成员助手运行详情'"
     size="standard"
     body-preset="dense"
+    body-class="flex min-h-0 flex-col overflow-hidden"
   >
-    <div v-if="selectedMemberRun" class="flex min-h-0 flex-1 flex-col gap-3">
+    <div v-if="selectedMemberRun" class="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden">
       <div
         v-if="activeMemberRuns.length > 1"
-        class="flex flex-wrap gap-1.5"
+        class="max-h-24 shrink-0 overflow-y-auto pr-1"
       >
-        <button
-          v-for="memberRun in activeMemberRuns"
-          :key="memberRun.run_id"
-          type="button"
-          class="rounded-md border px-2 py-1 text-xs"
-          :class="memberRun.run_id === selectedMemberRun.run_id ? 'border-sky-300 bg-sky-50 text-sky-700' : 'border-slate-200 bg-white text-slate-500'"
-          @click="selectedMemberRunId = memberRun.run_id"
-        >
-          {{ memberRun.agent_name || memberRun.agent_id || '成员助手' }}
-        </button>
+        <div class="flex flex-wrap gap-1.5">
+          <button
+            v-for="memberRun in activeMemberRuns"
+            :key="memberRun.run_id"
+            type="button"
+            class="rounded-md border px-2 py-1 text-xs"
+            :class="memberRun.run_id === selectedMemberRun.run_id ? 'border-sky-300 bg-sky-50 text-sky-700' : 'border-slate-200 bg-white text-slate-500'"
+            @click="selectedMemberRunId = memberRun.run_id"
+          >
+            {{ memberRun.agent_name || memberRun.agent_id || '成员助手' }}
+          </button>
+        </div>
       </div>
 
-      <section class="rounded-lg border border-slate-200 bg-slate-50/80 px-3 py-2">
+      <section class="shrink-0 rounded-lg border border-slate-200 bg-slate-50/80 px-3 py-2">
         <div class="flex flex-wrap items-center justify-between gap-2">
           <div class="min-w-0">
             <p class="truncate text-sm font-semibold text-slate-800">{{ selectedMemberRun.agent_name || selectedMemberRun.agent_id || '成员助手' }}</p>
-            <p class="mt-0.5 text-xs text-slate-500">Run ID：{{ selectedMemberRun.run_id }}</p>
+            <p class="mt-0.5 break-all text-xs text-slate-500">Run ID：{{ selectedMemberRun.run_id }}</p>
           </div>
           <span class="rounded-full border border-slate-200 bg-white px-2 py-0.5 text-xs text-slate-600">
             {{ resolveMemberRunStatusLabel(selectedMemberRun.status) }}
@@ -86,7 +89,7 @@
         </div>
       </section>
 
-      <div class="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-slate-100 bg-white">
+      <div class="flex min-h-[180px] flex-1 flex-col overflow-hidden rounded-lg border border-slate-100 bg-white">
         <AgentConversationBody
           :timeline-display-items="selectedMemberTimelineItems"
           :draft-patches="[]"

@@ -2,6 +2,8 @@
 
 from httpx import AsyncClient
 
+CONTENT_COMPONENT_SIZE_PREVIEW_SCHEMA = '{"props":{"height":{"type":"number","label":"高度","default":320}}}'
+
 
 async def _create_workspace(authenticated_client: AsyncClient, name: str) -> int:
     """创建测试工作空间并返回主键。"""
@@ -62,6 +64,7 @@ async def _create_component(
             "name": name,
             "import_name": import_name,
             "content": f"<template><section>{name}</section></template>",
+            "preview_schema": CONTENT_COMPONENT_SIZE_PREVIEW_SCHEMA,
             "file_type": "vue",
             "status": "active",
         },

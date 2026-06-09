@@ -9,6 +9,7 @@ from app.ai.auth_tokens import COMPONENT_TOOL_DELETE_SCOPES, build_agent_tool_to
 from app.ai.tools.component import build_component_manager_tools
 from app.db.session import get_session_factory
 from tests.integration.ai.ai_agents_cases import (
+    CONTENT_COMPONENT_SIZE_PREVIEW_SCHEMA,
     _build_auth_context,
     _build_tool_run_context,
     _create_workspace,
@@ -29,6 +30,7 @@ async def test_delete_component_tool_should_pass_user_context_and_soft_delete(
             "name": "删除测试组件",
             "import_name": "DeleteTestComponent",
             "content": "<template><article>delete</article></template>",
+            "preview_schema": CONTENT_COMPONENT_SIZE_PREVIEW_SCHEMA,
             "file_type": "vue",
             "status": "active",
         },

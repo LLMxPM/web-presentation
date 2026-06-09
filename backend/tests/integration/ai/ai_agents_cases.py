@@ -91,6 +91,8 @@ from app.schemas.page import PageItem
 from app.services.auth_service import AuthContext
 from app.services.token_service import TokenService
 
+CONTENT_COMPONENT_SIZE_PREVIEW_SCHEMA = '{"props":{"height":{"type":"number","label":"高度","default":320}}}'
+
 
 async def _async_value(value: object) -> object:
     """把普通值包装为异步返回值，便于替换服务方法。"""
@@ -278,7 +280,7 @@ def _build_component_item(*, component_id: int, content: str) -> WorkspaceCompon
         file_type=PageFileType.VUE,
         name="测试组件",
         import_name="TestComponent",
-        component_type=WorkspaceComponentType.CONTENT_BLOCK,
+        component_type=WorkspaceComponentType.CONTENT_COMPONENT,
         summary=None,
         status=RecordStatus.ACTIVE,
         created_at=now,
@@ -1180,6 +1182,7 @@ async def test_workspace_component_usage_tools_should_not_require_page_scope(
             "name": "营销卡片",
             "import_name": "MarketingCard",
             "content": "<template><section>Card</section></template>",
+            "preview_schema": CONTENT_COMPONENT_SIZE_PREVIEW_SCHEMA,
             "file_type": "vue",
             "status": "active",
         },
@@ -1237,6 +1240,7 @@ async def test_workspace_component_list_tool_should_default_to_project_suggested
             "name": "推荐指标卡",
             "import_name": "SuggestedMetricCard",
             "content": "<template><section>Suggested</section></template>",
+            "preview_schema": CONTENT_COMPONENT_SIZE_PREVIEW_SCHEMA,
             "file_type": "vue",
             "status": "active",
         },
@@ -1255,6 +1259,7 @@ async def test_workspace_component_list_tool_should_default_to_project_suggested
             "name": "全库图表",
             "import_name": "GeneralChartBlock",
             "content": "<template><section>General</section></template>",
+            "preview_schema": CONTENT_COMPONENT_SIZE_PREVIEW_SCHEMA,
             "file_type": "vue",
             "status": "active",
         },
@@ -1404,6 +1409,9 @@ async def test_coordinator_runtime_kit_tools_should_query_agent_capabilities(
     asset_image_detail = await detail_tool.entrypoint(run_context, name="AssetImage", kind="component")
     assert asset_image_detail["name"] == "AssetImage.v1"
     assert asset_image_detail["import_path"] == "@runtime-kit/public/components/assets/AssetImage.v1.vue"
+    asset_image_text = json.dumps(asset_image_detail, ensure_ascii=False)
+    assert "外层图片框" in asset_image_text
+    assert "fit 控制 object-fit" in asset_image_text
 
 
 def test_component_manager_should_receive_component_write_tool_scopes() -> None:
@@ -1790,6 +1798,7 @@ async def test_get_component_detail_tool_should_render_source(
             "name": "详情测试组件",
             "import_name": "DetailTestComponent",
             "content": component_content,
+            "preview_schema": CONTENT_COMPONENT_SIZE_PREVIEW_SCHEMA,
             "file_type": "vue",
             "status": "active",
         },
@@ -1828,6 +1837,7 @@ async def test_update_component_metadata_tool_should_not_require_import_name(
             "name": "元数据测试组件",
             "import_name": "MetadataTestComponent",
             "content": "<template><article>metadata</article></template>",
+            "preview_schema": CONTENT_COMPONENT_SIZE_PREVIEW_SCHEMA,
             "file_type": "vue",
             "status": "active",
         },
@@ -1867,6 +1877,7 @@ async def test_apply_component_edits_should_reject_stale_draft_hash(
             "name": "草稿指纹组件",
             "import_name": "DraftHashComponent",
             "content": "<template><article>v1</article></template>",
+            "preview_schema": CONTENT_COMPONENT_SIZE_PREVIEW_SCHEMA,
             "file_type": "vue",
             "status": "active",
         },
@@ -1919,6 +1930,7 @@ async def test_apply_component_edits_should_reject_stale_draft_base_after_restor
             "name": "草稿基线组件",
             "import_name": "DraftBaseComponent",
             "content": "<template><article>v1</article></template>",
+            "preview_schema": CONTENT_COMPONENT_SIZE_PREVIEW_SCHEMA,
             "file_type": "vue",
             "status": "active",
         },
@@ -1975,6 +1987,7 @@ async def test_apply_component_edits_should_allow_new_unpublished_component(
             "name": "未发布组件",
             "import_name": "UnpublishedComponent",
             "content": "<template><article>draft</article></template>",
+            "preview_schema": CONTENT_COMPONENT_SIZE_PREVIEW_SCHEMA,
             "file_type": "vue",
             "status": "active",
         },
@@ -2019,6 +2032,7 @@ async def test_apply_component_edits_should_return_diagnostics_without_saving(
             "name": "Validate 失败组件",
             "import_name": "ValidateFailComponent",
             "content": "<template><article>draft</article></template>",
+            "preview_schema": CONTENT_COMPONENT_SIZE_PREVIEW_SCHEMA,
             "file_type": "vue",
             "status": "active",
         },
@@ -2065,6 +2079,7 @@ async def test_apply_component_edits_should_reject_invalid_edits_before_validate
             "name": "Edits 失败组件",
             "import_name": "EditFailComponent",
             "content": "<template><article>draft</article></template>",
+            "preview_schema": CONTENT_COMPONENT_SIZE_PREVIEW_SCHEMA,
             "file_type": "vue",
             "status": "active",
         },
@@ -2104,6 +2119,7 @@ async def test_publish_component_tool_should_create_reusable_version(
             "name": "发布测试组件",
             "import_name": "PublishTestComponent",
             "content": "<template><article>publish</article></template>",
+            "preview_schema": CONTENT_COMPONENT_SIZE_PREVIEW_SCHEMA,
             "file_type": "vue",
             "status": "active",
         },
