@@ -83,7 +83,7 @@
           :enable-page-patch-actions="scope.scope_type === 'page'"
           :empty-text="emptyText"
           :composer-placeholder="composerPlaceholder"
-          :route-available="isAgentSwitchAvailable(agentId)"
+          :route-available="isAgentRunAvailable(agentId)"
           :route-unavailable-reason="activeAgentUnavailableReason"
           @apply-suggested-content="handleApplySuggestedContent"
           @page-updated="handlePageUpdated"
@@ -98,7 +98,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, defineAsyncComponent, ref } from 'vue'
+import { computed, defineAsyncComponent, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useQuery } from '@tanstack/vue-query'
 import { PanelLeftClose } from '@lucide/vue'
@@ -152,6 +152,8 @@ const headerActionsTarget = `#${headerActionsId}`
 const autoCreateKey = ref<string | number | null>(null)
 const autoCreateSequence = ref(0)
 const contentAgentProjectRequiredReason = '内容助手需要进入具体项目后才能启动。'
+const componentAgentRouteRequiredReason = '组件助手只能在组件库页面发起对话。'
+const resourceAgentRouteRequiredReason = '资源助手只能在资源库页面发起对话。'
 
 const workspaceId = computed(() => props.workspaceId)
 const projectId = computed(() => props.projectId ?? null)
@@ -185,11 +187,11 @@ const selectedAgent = computed(() => (
   agentButtons.value.find(agent => agent.id === agentId.value) ?? resolveFallbackAgentButton(agentId.value)
 ))
 const activeAgentUnavailableReason = computed(() => (
-  resolveAgentUnavailableReason(agentId.value) ?? ''
+  resolveAgentRunUnavailableReason(agentId.value) ?? ''
 ))
 const contextTitle = computed(() => agentTarget.value.contextTitle)
 const contextTypeLabel = computed(() => agentTarget.value.contextTypeLabel)
-const emptyText = computed(() => `智能体会根据当前 ${contextTitle.value}${contextTypeLabel.value ? `（${contextTypeLabel.value}）` : ''}直接处理可用任务，并按需调度组件或资源助手。`)
+const emptyText = computed(() => `智能体会在 ${contextTitle.value}${contextTypeLabel.value ? `（${contextTypeLabel.value}）` : ''}内执行任务。`)
 const composerPlaceholder = computed(() => '描述目标；内容助手会处理页面/项目任务，并按需调用组件或资源助手。')
 
 function normalizeContextName(value: string | null | undefined): string {
@@ -391,11 +393,16 @@ function resolveContentSource(): string {
 }
 
 /**
- * 读取当前路由上下文下指定助手的不可用原因；返回空值表示可以打开和运行。
+ * 读取当前路由上下文下指定助手的运行不可用原因；返回空值表示可以发起对话。
+ * @param targetAgentId 待判断的智能体 ID
  */
-function resolveAgentUnavailableReason(targetAgentId: string): string | null {
+function resolveAgentRunUnavailableReason(targetAgentId: string): string | null {
   if (!workspaceId.value) {
     return '当前路由缺少工作空间上下文。'
+  }
+  const routeBoundReason = resolveRouteBoundAgentUnavailableReason(targetAgentId)
+  if (routeBoundReason) {
+    return routeBoundReason
   }
   if (targetAgentId === 'agent-coordinator' && !projectId.value) {
     return contentAgentProjectRequiredReason
@@ -407,19 +414,48 @@ function resolveAgentUnavailableReason(targetAgentId: string): string | null {
   return null
 }
 
-function isAgentSwitchAvailable(targetAgentId: string): boolean {
-  return resolveAgentUnavailableReason(targetAgentId) === null
+/**
+ * 读取侧栏切换入口的不可用原因；库助手允许跨页面切换，但不能跨页面发起对话。
+ * @param targetAgentId 待判断的智能体 ID
+ */
+function resolveAgentSwitchUnavailableReason(targetAgentId: string): string | null {
+  if (!workspaceId.value) {
+    return '当前路由缺少工作空间上下文。'
+  }
+  const loadedAgent = agentsQuery.data.value?.find(agent => agent.id === targetAgentId)
+  if (loadedAgent?.available === false) {
+    return loadedAgent.unavailable_reason || '当前路由上下文下不可用。'
+  }
+  return null
+}
+
+function isAgentRunAvailable(targetAgentId: string): boolean {
+  return resolveAgentRunUnavailableReason(targetAgentId) === null
 }
 
 function canOpenAgent(targetAgentId: string): boolean {
   if (targetAgentId === 'agent-coordinator') {
     return Boolean(workspaceId.value)
   }
-  return isAgentSwitchAvailable(targetAgentId)
+  return resolveAgentSwitchUnavailableReason(targetAgentId) === null
+}
+
+/**
+ * 组件与资源助手只允许在各自完整库页面发起新对话，避免跨页面写入库资源。
+ * @param targetAgentId 待判断的智能体 ID
+ */
+function resolveRouteBoundAgentUnavailableReason(targetAgentId: string): string | null {
+  if (targetAgentId === 'component-manager' && route.name !== 'components') {
+    return componentAgentRouteRequiredReason
+  }
+  if (targetAgentId === 'resource-manager' && route.name !== 'assets') {
+    return resourceAgentRouteRequiredReason
+  }
+  return null
 }
 
 function resolveAgentButtonTitle(targetAgentId: string, name: string): string {
-  const unavailableReason = resolveAgentUnavailableReason(targetAgentId)
+  const unavailableReason = resolveAgentSwitchUnavailableReason(targetAgentId)
   return unavailableReason ? `${name}：${unavailableReason}` : name
 }
 
@@ -481,11 +517,25 @@ function openAgent(targetAgentId: string): void {
   const agentChanged = targetAgentId !== activeAgentId.value
   activeAgentId.value = targetAgentId
   expanded.value = true
-  if (agentChanged) {
+  if (agentChanged && isAgentRunAvailable(targetAgentId)) {
     autoCreateSequence.value += 1
     autoCreateKey.value = `${targetAgentId}:${autoCreateSequence.value}`
+    return
   }
+  autoCreateKey.value = null
 }
+
+watch(
+  () => [props.agentId, route.name, workspaceId.value] as const,
+  ([nextAgentId]) => {
+    const routeAgentId = nextAgentId || 'agent-coordinator'
+    if (!canOpenAgent(activeAgentId.value)) {
+      activeAgentId.value = routeAgentId
+      autoCreateKey.value = null
+    }
+  },
+  { immediate: true },
+)
 
 function handleApplySuggestedContent(content: string): void {
   window.dispatchEvent(new CustomEvent('agent:apply-suggested-content', {
