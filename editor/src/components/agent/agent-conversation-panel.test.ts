@@ -635,6 +635,65 @@ describe('AgentConversationPanel', () => {
     streamDeferred.resolve()
   })
 
+  it('reasoning 后工具参数静默阶段应切换为等待智能体输出提示', async () => {
+    const toolStartDeferred = createDeferred<void>()
+    const streamDeferred = createDeferred<void>()
+    streamAgentRunMock.mockImplementationOnce(async (sessionId: string, scope: unknown, payload: { run_id?: string }, options?: { onEvent?: (event: any) => void }) => {
+      const runId = payload?.run_id ?? 'run-tool-args-silent'
+      startAgentRunMock(sessionId, scope, payload)
+      options?.onEvent?.({ event: 'RunStarted', run_id: runId, session_id: sessionId, content: null, data: {}, event_index: 0 })
+      options?.onEvent?.({
+        event: 'RunContent',
+        run_id: runId,
+        session_id: sessionId,
+        content: '',
+        reasoning_content: '先判断需要读取资源。',
+        data: {},
+        event_index: 1,
+      })
+      await toolStartDeferred.promise
+      options?.onEvent?.({
+        event: 'ToolCallStarted',
+        run_id: runId,
+        session_id: sessionId,
+        content: null,
+        tool: {
+          tool_call_id: 'tool-assets-silent',
+          tool_name: 'list_workspace_render_assets',
+          tool_args: { workspace_id: 11 },
+        },
+        data: {},
+        event_index: 2,
+      })
+      await streamDeferred.promise
+    })
+
+    render(AgentConversationPanel, createTestingRenderOptions())
+
+    await waitFor(() => {
+      expect(listAgentsMock).toHaveBeenCalled()
+    })
+
+    const textarea = screen.getByPlaceholderText(DEFAULT_PLACEHOLDER)
+    await fireEvent.update(textarea, '帮我整理页面资源')
+    await fireEvent.click(screen.getByRole('button', { name: /发送/ }))
+
+    await waitFor(() => {
+      expect(screen.getByText('思考中')).toBeTruthy()
+    })
+    await waitFor(() => {
+      expect(screen.getByText('等待智能体输出中')).toBeTruthy()
+    }, { timeout: 2000 })
+    expect(screen.queryByText('思考中')).toBeNull()
+
+    toolStartDeferred.resolve()
+    await waitFor(() => {
+      expect(screen.queryByText('等待智能体输出中')).toBeNull()
+      expect(screen.getByRole('button', { name: 'list_workspace_render_assets' })).toBeTruthy()
+    })
+    streamDeferred.resolve()
+  })
+
   it('create_project_page 完成后应发出项目页面列表刷新事件', async () => {
     const projectPagesUpdatedSpy = vi.fn()
     streamAgentRunEventsByRunIdMock.mockImplementationOnce(async (_runId: string, _payload: unknown, options?: { onEvent?: (event: any) => void }) => {

@@ -305,11 +305,14 @@ const activeMemberRunIds = ref<string[]>([])
 const sendInFlight = ref(false)
 const streamAbortControllersByRun = new Map<string, AbortController>()
 const autoNamingSessionIds = new Set<string>()
+const waitingOutputInferenceTimersBySession = new Map<string, number>()
+const waitingOutputInferenceRevisionsBySession = new Map<string, number>()
 const forceCancelTick = ref(Date.now())
 let forceCancelTimer: number | null = null
 let componentDisposed = false
 const IMAGE_ATTACHMENT_MAX_BYTES = 10 * 1024 * 1024
 const ALLOWED_IMAGE_ATTACHMENT_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp'])
+const WAITING_OUTPUT_INFERENCE_DELAY_MS = 900
 
 const scope = computed<AgentScopeContext>(() => props.scope ?? {
   scope_type: props.pageId ? 'page' : props.projectId ? 'project' : 'workspace',
@@ -604,8 +607,25 @@ function appendLocalWaitingOutputPlaceholder(sessionId: string, runId: string | 
   if (!sessionId || !runId || hasVisibleRunProgress(sessionId, runId)) {
     return
   }
+  appendLocalWaitingOutputStatus(sessionId, runId)
+}
+
+/**
+ * 本地插入等待输出状态；允许在已有 reasoning 后用于静默窗口推断。
+ */
+function appendLocalWaitingOutputStatus(sessionId: string, runId: string | null) {
+  if (!sessionId || !runId) {
+    return
+  }
   const run = readSessionValue(activeRunBySession.value, sessionId, null)
   if (run?.run_id === runId && run.status !== 'pending' && run.status !== 'running') {
+    return
+  }
+  if (readSessionValue(timelineItemsBySession.value, sessionId, []).some(item => (
+    item.run_id === runId
+    && item.kind === 'run_status'
+    && item.status === 'model_request'
+  ))) {
     return
   }
   agentSessionStore.applyRunEvent(sessionId, {
@@ -643,6 +663,9 @@ function hasVisibleRunProgress(sessionId: string, runId: string) {
  */
 function setSessionStreaming(sessionId: string, value: boolean) {
   agentSessionStore.setStreaming(sessionId, value)
+  if (!value) {
+    clearWaitingOutputInferenceTimer(sessionId)
+  }
 }
 
 /**
@@ -661,6 +684,89 @@ function clearStreamAbortController(runId: string, controller: AbortController) 
   if (streamAbortControllersByRun.get(runId) === controller) {
     streamAbortControllersByRun.delete(runId)
   }
+}
+
+/**
+ * 推进会话流活动版本，并取消上一轮等待输出推断计时。
+ */
+function markWaitingOutputInferenceActivity(sessionId: string): number {
+  if (!sessionId) {
+    return 0
+  }
+  clearWaitingOutputInferenceTimer(sessionId)
+  const nextRevision = (waitingOutputInferenceRevisionsBySession.get(sessionId) ?? 0) + 1
+  waitingOutputInferenceRevisionsBySession.set(sessionId, nextRevision)
+  return nextRevision
+}
+
+/**
+ * 清除指定会话的等待输出推断计时器。
+ */
+function clearWaitingOutputInferenceTimer(sessionId: string) {
+  const timer = waitingOutputInferenceTimersBySession.get(sessionId)
+  if (timer !== undefined) {
+    window.clearTimeout(timer)
+    waitingOutputInferenceTimersBySession.delete(sessionId)
+  }
+}
+
+/**
+ * 清理所有等待输出推断计时器，组件卸载时避免异步回写已销毁状态。
+ */
+function clearAllWaitingOutputInferenceTimers() {
+  for (const sessionId of waitingOutputInferenceTimersBySession.keys()) {
+    clearWaitingOutputInferenceTimer(sessionId)
+  }
+}
+
+/**
+ * 推断 reasoning 后模型进入无正文输出阶段；静默一小段时间后切换为等待输出提示。
+ */
+function scheduleWaitingOutputInference(sessionId: string, runId: string | null, revision: number) {
+  if (!sessionId || !runId) {
+    return
+  }
+  const timer = window.setTimeout(() => {
+    waitingOutputInferenceTimersBySession.delete(sessionId)
+    if (componentDisposed) {
+      return
+    }
+    if ((waitingOutputInferenceRevisionsBySession.get(sessionId) ?? 0) !== revision) {
+      return
+    }
+    if (!readSessionValue(streamingBySession.value, sessionId, false)) {
+      return
+    }
+    if (!hasRunningReasoningSegment(sessionId, runId)) {
+      return
+    }
+    appendLocalWaitingOutputStatus(sessionId, runId)
+  }, WAITING_OUTPUT_INFERENCE_DELAY_MS)
+  waitingOutputInferenceTimersBySession.set(sessionId, timer)
+}
+
+/**
+ * 判断指定 run 是否仍有正在展示的 reasoning 段。
+ */
+function hasRunningReasoningSegment(sessionId: string, runId: string): boolean {
+  return readSessionValue(timelineItemsBySession.value, sessionId, []).some(item => (
+    item.run_id === runId
+    && item.kind === 'reasoning'
+    && item.status === 'running'
+  ))
+}
+
+/**
+ * reasoning-only delta 后可能进入工具参数流，Agno 当前不会为参数增量单独下发 run event。
+ */
+function shouldInferWaitingOutputAfterEvent(event: AgentRunEvent, sessionId: string, runId: string | null): runId is string {
+  if (!runId || event.event !== 'message.delta') {
+    return false
+  }
+  const reasoning = event.data.reasoning_content
+  const hasReasoning = typeof reasoning === 'string' && reasoning.length > 0
+  const hasVisibleContent = typeof event.content === 'string' && event.content.length > 0
+  return hasReasoning && !hasVisibleContent && hasRunningReasoningSegment(sessionId, runId)
 }
 
 /**
@@ -988,6 +1094,7 @@ watch(
 
 onBeforeUnmount(() => {
   componentDisposed = true
+  clearAllWaitingOutputInferenceTimers()
   for (const controller of streamAbortControllersByRun.values()) {
     if (!controller.signal.aborted) {
       controller.abort()
@@ -1583,6 +1690,7 @@ function handleRunEvent(event: AgentRunEvent, fallbackSessionId = activeSessionI
   if (!targetSessionId) {
     return
   }
+  const targetRunId = normalizedEvent.run_id || readSessionValue(currentRunIdBySession.value, targetSessionId, null)
   const isActiveEvent = targetSessionId === activeSessionId.value
   const result = agentSessionStore.applyRunEvent(targetSessionId, normalizedEvent, {
     agentId: agentId.value,
@@ -1590,6 +1698,12 @@ function handleRunEvent(event: AgentRunEvent, fallbackSessionId = activeSessionI
   })
   if (!result.applied) {
     return
+  }
+  const inferenceRevision = markWaitingOutputInferenceActivity(targetSessionId)
+  if (shouldInferWaitingOutputAfterEvent(normalizedEvent, targetSessionId, targetRunId)) {
+    scheduleWaitingOutputInference(targetSessionId, targetRunId, inferenceRevision)
+  } else if (normalizedEvent.event === 'model.request.completed' && targetRunId && hasRunningReasoningSegment(targetSessionId, targetRunId)) {
+    appendLocalWaitingOutputStatus(targetSessionId, targetRunId)
   }
   switch (normalizedEvent.event) {
     case 'context.status':
@@ -1611,18 +1725,21 @@ function handleRunEvent(event: AgentRunEvent, fallbackSessionId = activeSessionI
     case 'run.paused':
       break
     case 'run.cancelled':
+      clearWaitingOutputInferenceTimer(targetSessionId)
       writeSessionValue(interruptingBySession.value, targetSessionId, false)
       if (isActiveEvent) {
         Message.info('已停止。')
       }
       break
     case 'run.error':
+      clearWaitingOutputInferenceTimer(targetSessionId)
       writeSessionValue(interruptingBySession.value, targetSessionId, false)
       if (isActiveEvent && lastRunIssue.value) {
         Message.error(lastRunIssue.value.detail)
       }
       break
     case 'run.completed':
+      clearWaitingOutputInferenceTimer(targetSessionId)
       writeSessionValue(interruptingBySession.value, targetSessionId, false)
       break
     default:
@@ -1685,6 +1802,7 @@ async function finalizeRun(
   if (!sessionId) {
     return
   }
+  clearWaitingOutputInferenceTimer(sessionId)
   await queryClient.invalidateQueries({ queryKey: ['ai-sessions'] })
   await queryClient.invalidateQueries({ queryKey: ['ai-session-runtime'] })
   const latestSessions = (await sessionsQuery.refetch()).data ?? []
