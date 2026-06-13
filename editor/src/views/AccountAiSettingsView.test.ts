@@ -341,6 +341,71 @@ describe('AccountAiSettingsView', () => {
     })
   })
 
+  it('新建模型应优先默认选择 DeepSeek 供应商', async () => {
+    listLlmProvidersMock.mockResolvedValue([
+      {
+        provider_key: 'openai',
+        label: 'OpenAI',
+        agno_class_path: 'agno.models.openai.responses.OpenAIResponses',
+        docs_url: 'https://docs.agno.com/models/providers/native/openai/responses/overview',
+        supports_base_url: true,
+        supports_api_key: true,
+        supports_thinking: true,
+        thinking_mode: 'openai_reasoning',
+        default_base_url: 'https://api.openai.com/v1',
+        default_model_id: null,
+        default_thinking_enabled: false,
+        default_thinking_effort: 'medium',
+        default_context_window_tokens: null,
+        default_max_output_tokens: null,
+        default_supports_image_input: false,
+        thinking_effort_options: ['low', 'medium', 'high'],
+        advanced_json_hint: {},
+      },
+      {
+        provider_key: 'deepseek',
+        label: 'DeepSeek',
+        agno_class_path: 'agno.models.deepseek.deepseek.DeepSeek',
+        docs_url: 'https://docs.agno.com/models/providers/native/deepseek/overview',
+        supports_base_url: true,
+        supports_api_key: true,
+        supports_thinking: true,
+        thinking_mode: 'openai_extra_body_thinking',
+        default_base_url: 'https://api.deepseek.com',
+        default_model_id: 'deepseek-v4-pro',
+        default_thinking_enabled: true,
+        default_thinking_effort: 'high',
+        default_context_window_tokens: 1000000,
+        default_max_output_tokens: 384000,
+        default_supports_image_input: false,
+        thinking_effort_options: ['high', 'max'],
+        advanced_json_hint: {},
+      },
+    ])
+    render(AccountAiSettingsView, createTestingRenderOptions())
+
+    await waitFor(() => {
+      expect(screen.getByText('页面写入')).toBeTruthy()
+    })
+
+    await fireEvent.click(screen.getByRole('button', { name: '模型' }))
+    await fireEvent.click(screen.getByRole('button', { name: '新建模型' }))
+    await fireEvent.update(screen.getByPlaceholderText('例如：总控默认模型'), 'DeepSeek 模型')
+    await fireEvent.click(screen.getByRole('button', { name: '创建模型' }))
+
+    await waitFor(() => {
+      expect(createLlmConfigMock).toHaveBeenCalled()
+    })
+    const payload = createLlmConfigMock.mock.calls[0][0] as Record<string, unknown>
+    expect(payload.provider_key).toBe('deepseek')
+    expect(payload.model_id).toBe('deepseek-v4-pro')
+    expect(payload.base_url).toBe('https://api.deepseek.com')
+    expect(payload.thinking_enabled).toBe(true)
+    expect(payload.thinking_effort).toBe('high')
+    expect(payload.context_window_tokens).toBe(1000000)
+    expect(payload.max_output_tokens).toBe(384000)
+  })
+
   it('新建 MiMo 模型时应只预填 Base URL，不预填模型和图片能力', async () => {
     listLlmProvidersMock.mockResolvedValue([
       {

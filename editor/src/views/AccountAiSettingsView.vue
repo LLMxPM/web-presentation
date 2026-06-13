@@ -560,6 +560,7 @@ type ActiveSection = 'agents' | 'models'
 const DEFAULT_CONTEXT_WINDOW_TOKENS = 128000
 const DEFAULT_MAX_OUTPUT_TOKENS = 32000
 const DEFAULT_COMPRESSION_TARGET_RATIO = 0.1
+const DEFAULT_NEW_MODEL_PROVIDER_KEY = 'deepseek'
 
 interface LlmFormState {
   scope: AiLlmConfigScope
@@ -752,7 +753,7 @@ watch(
   () => providersQuery.data.value,
   (providers) => {
     if (!modelForm.provider_key && providers?.length) {
-      const provider = providers[0]
+      const provider = findDefaultNewModelProvider(providers)
       modelForm.provider_key = provider.provider_key
       prefillModelFormFromProvider(provider)
     }
@@ -816,6 +817,11 @@ watch(
     }
   },
 )
+
+/** 选择新建模型的默认供应商；DeepSeek 不可用时回退到目录首项。 */
+function findDefaultNewModelProvider(providers: LlmProviderCatalogItem[]) {
+  return providers.find(provider => provider.provider_key === DEFAULT_NEW_MODEL_PROVIDER_KEY) ?? providers[0]
+}
 
 /** 使用供应商目录默认值预填新建表单，不影响已有模型装载。 */
 function prefillModelFormFromProvider(provider: LlmProviderCatalogItem | null) {
@@ -1146,7 +1152,9 @@ function resetModelForm() {
   selectedConfigId.value = null
   modelForm.scope = 'personal'
   modelForm.name = ''
-  const provider = providersQuery.data.value?.[0] ?? null
+  const provider = providersQuery.data.value?.length
+    ? findDefaultNewModelProvider(providersQuery.data.value)
+    : null
   modelForm.provider_key = provider?.provider_key ?? null
   prefillModelFormFromProvider(provider)
   modelForm.api_key = ''
