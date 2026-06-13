@@ -7,7 +7,7 @@
     body-preset="editor"
     @update:model-value="handleVisibleChange"
   >
-    <div class="flex h-full min-h-0 flex-col gap-4">
+    <div class="flex h-full min-h-0 flex-col gap-2">
       <div class="shrink-0 rounded-lg bg-slate-100 p-1">
         <div class="grid grid-cols-2 gap-1">
           <button

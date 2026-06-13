@@ -1,97 +1,104 @@
 <!-- 文件功能：后台主布局，统一承载顶部栏、左侧 AI 助手、主工作区与右侧工作空间 Dock。 -->
 <template>
-  <div class="flex flex-col h-screen bg-slate-50 overflow-hidden">
-    <!-- Header Area -->
-    <header class="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-6 z-10 shrink-0">
-      <div class="flex w-48 items-center">
-        <div class="text-xl font-extrabold text-slate-800 tracking-tight select-none">Web-Presentation</div>
-      </div>
+  <div class="flex h-screen bg-slate-50 overflow-hidden">
+    <AgentGlobalSidebar
+      v-if="sidebarsVisible"
+      :agent-id="activeAgentId"
+      :workspace-id="workspaceId"
+      :project-id="projectId"
+      :page-id="pageId"
+      :component-id="activeAgentComponentId"
+      :workspace-name="workspaceQuery.data.value?.name"
+      :project-name="projectQuery.data.value?.name"
+      :page-title="pageQuery.data.value?.title"
+      :component-name="activeAgentComponentName"
+      :source="activeAgentSource"
+      @update:expanded="agentSidebarExpanded = $event"
+    />
 
-      <div class="flex min-w-0 flex-1 items-center justify-start gap-2 px-4">
-        <WorkspaceSwitcher />
-        <ProjectQuickSwitcher
-          v-if="workspaceId && sidebarsVisible"
-          :workspace-id="workspaceId"
-          :current-project-id="projectId"
-          :current-project-name="projectQuery.data.value?.name"
-        />
-        <nav
-          v-if="headerBreadcrumbs.length > 0"
-          aria-label="当前位置"
-          class="ml-1 flex min-w-0 items-center gap-2 border-l border-slate-200 pl-3 text-sm font-semibold text-slate-500"
-        >
-          <template v-for="(item, index) in headerBreadcrumbs" :key="`${item.label}-${index}`">
-            <ChevronRight v-if="index > 0" class="h-4 w-4 shrink-0 text-slate-300" />
-            <RouterLink
-              v-if="item.to"
-              :to="item.to"
-              class="max-w-[180px] truncate transition-colors hover:text-slate-800"
-            >
-              {{ item.label }}
-            </RouterLink>
-            <span v-else class="max-w-[180px] truncate text-slate-700">{{ item.label }}</span>
-          </template>
-        </nav>
-      </div>
-
-      <div class="flex items-center justify-end min-w-[180px] gap-4">
-        <UserMenu />
-      </div>
-    </header>
-
-    <!-- Main Content Area -->
-    <div class="flex-1 flex overflow-hidden">
-      <AgentGlobalSidebar
-        v-if="sidebarsVisible"
-        :agent-id="activeAgentId"
-        :workspace-id="workspaceId"
-        :project-id="projectId"
-        :page-id="pageId"
-        :component-id="activeAgentComponentId"
-        :workspace-name="workspaceQuery.data.value?.name"
-        :project-name="projectQuery.data.value?.name"
-        :page-title="pageQuery.data.value?.title"
-        :component-name="activeAgentComponentName"
-        :source="activeAgentSource"
-      />
-      <main
-        class="min-h-0 min-w-0 flex-1 p-6"
-        :class="fullHeightPage ? 'overflow-hidden' : 'overflow-y-auto scroll-smooth'"
-      >
+    <div class="flex min-w-0 flex-1 flex-col overflow-hidden">
+      <!-- Header Area -->
+      <header class="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-6 z-10 shrink-0">
         <div
-          class="max-w-[1600px] mx-auto"
-          :class="fullHeightPage ? 'h-full min-h-0' : 'min-h-full'"
+          class="flex items-center transition-[width,opacity] duration-150"
+          :class="agentSidebarExpanded ? 'w-0 overflow-hidden opacity-0' : 'w-48 opacity-100'"
         >
-          <RouterView v-slot="{ Component }">
-            <Transition name="page" mode="out-in">
-              <component :is="Component" />
-            </Transition>
-          </RouterView>
+          <div v-if="!agentSidebarExpanded" data-testid="app-brand-title" class="text-xl font-extrabold text-slate-800 tracking-tight select-none">Web-Presentation</div>
         </div>
-      </main>
 
-      <AssetManagerPanel
-        v-if="workspaceDockVisible && assetPanelVisible"
-        v-model="assetPanelVisible"
-        :workspace-id="workspaceId"
-      />
-      <ComponentManagerPanel
-        v-if="workspaceDockVisible && componentPanelVisible"
-        v-model="componentPanelVisible"
-        read-only
-        :workspace-id="workspaceId"
-      />
-      <WorkspaceDock
-        v-if="workspaceDockVisible && workspaceId"
-        :workspace-id="workspaceId"
-        :active-key="activeWorkspaceRouteKey"
-        :active-panel="activeSupplementPanel"
-        @navigate="handleDockNavigate"
-        @toggle-panel="toggleSupplementPanel"
-      />
+        <div class="flex min-w-0 flex-1 items-center justify-start gap-2 px-4">
+          <WorkspaceSwitcher />
+          <ProjectQuickSwitcher
+            v-if="workspaceId && sidebarsVisible"
+            :workspace-id="workspaceId"
+            :current-project-id="projectId"
+            :current-project-name="projectQuery.data.value?.name"
+          />
+          <nav
+            v-if="headerBreadcrumbs.length > 0"
+            aria-label="当前位置"
+            class="ml-1 flex min-w-0 items-center gap-2 border-l border-slate-200 pl-3 text-sm font-semibold text-slate-500"
+          >
+            <template v-for="(item, index) in headerBreadcrumbs" :key="`${item.label}-${index}`">
+              <ChevronRight v-if="index > 0" class="h-4 w-4 shrink-0 text-slate-300" />
+              <RouterLink
+                v-if="item.to"
+                :to="item.to"
+                class="max-w-[180px] truncate transition-colors hover:text-slate-800"
+              >
+                {{ item.label }}
+              </RouterLink>
+              <span v-else class="max-w-[180px] truncate text-slate-700">{{ item.label }}</span>
+            </template>
+          </nav>
+        </div>
+
+        <div class="flex items-center justify-end min-w-[180px] gap-4">
+          <UserMenu />
+        </div>
+      </header>
+
+      <!-- Main Content Area -->
+      <div class="flex-1 flex overflow-hidden">
+        <main
+          class="min-h-0 min-w-0 flex-1 p-3"
+          :class="fullHeightPage ? 'overflow-hidden' : 'overflow-y-auto scroll-smooth'"
+        >
+          <div
+            class="max-w-[1600px] mx-auto"
+            :class="fullHeightPage ? 'h-full min-h-0' : 'min-h-full'"
+          >
+            <RouterView v-slot="{ Component }">
+              <Transition name="page" mode="out-in">
+                <component :is="Component" />
+              </Transition>
+            </RouterView>
+          </div>
+        </main>
+
+        <AssetManagerPanel
+          v-if="workspaceDockVisible && assetPanelVisible"
+          v-model="assetPanelVisible"
+          :workspace-id="workspaceId"
+        />
+        <ComponentManagerPanel
+          v-if="workspaceDockVisible && componentPanelVisible"
+          v-model="componentPanelVisible"
+          read-only
+          :workspace-id="workspaceId"
+        />
+        <WorkspaceDock
+          v-if="workspaceDockVisible && workspaceId"
+          :workspace-id="workspaceId"
+          :active-key="activeWorkspaceRouteKey"
+          :active-panel="activeSupplementPanel"
+          @navigate="handleDockNavigate"
+          @toggle-panel="toggleSupplementPanel"
+        />
+      </div>
+
+      <OpenSourceFooter />
     </div>
-
-    <OpenSourceFooter />
   </div>
 </template>
 
@@ -120,6 +127,7 @@ const route = useRoute()
 const router = useRouter()
 const activeSupplementPanel = ref<SupplementPanelKey | null>(null)
 const componentAgentSelection = ref<WorkspaceComponentItem | null>(null)
+const agentSidebarExpanded = ref(false)
 
 interface HeaderBreadcrumb {
   label: string
@@ -240,6 +248,7 @@ watch(
   () => [sidebarsVisible.value, workspaceId.value] as const,
   ([visible, nextWorkspaceId]) => {
     if (!visible || !nextWorkspaceId) {
+      agentSidebarExpanded.value = false
       closeSupplementPanels()
     }
   },

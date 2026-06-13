@@ -1,6 +1,6 @@
 <!-- 文件功能：提供工作空间级资源库页面，承载资源筛选、视觉预览、详情编辑、引用检查与归档删除。 -->
 <template>
-  <div data-testid="assets-view" class="flex h-full min-h-0 flex-col gap-4">
+  <div data-testid="assets-view" class="flex h-full min-h-0 flex-col gap-2">
     <PageTitleBar class="shrink-0" :title="workspaceTitle">
       <template #actions>
         <BaseButton variant="ghost" :disabled="!workspaceId || uploading" @click="openUploadForm">
@@ -268,7 +268,7 @@
       :z-index="210"
       @update:model-value="value => { if (!value) closeCreateForm() }"
     >
-      <div class="flex h-full min-h-0 flex-col gap-4">
+      <div class="flex h-full min-h-0 flex-col gap-2">
         <div class="grid gap-3 lg:grid-cols-[160px_minmax(0,1fr)_minmax(0,1fr)]">
           <select v-model="createForm.asset_type" class="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700">
             <option v-for="item in creatableTypes" :key="item.value" :value="item.value">{{ item.label }}</option>

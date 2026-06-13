@@ -1,6 +1,6 @@
 <!-- 文件功能：提供工作空间级组件库页面，左侧浏览组件库，右侧承载组件预览、编辑与 Runtime Kit 预览工作台。 -->
 <template>
-  <div data-testid="components-view" class="flex h-full min-h-0 flex-col gap-4">
+  <div data-testid="components-view" class="flex h-full min-h-0 flex-col gap-2">
     <PageTitleBar class="shrink-0" :title="workspaceTitle">
       <template #actions>
         <BaseButton

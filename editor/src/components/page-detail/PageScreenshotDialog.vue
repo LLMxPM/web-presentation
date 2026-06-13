@@ -2,7 +2,7 @@
 <template>
   <BaseDialog :model-value="props.modelValue" :title="`${props.pageTitle} · 页面截图`" size="wide" body-preset="editor"
     @update:model-value="emit('update:modelValue', $event)">
-    <div class="flex h-full min-h-0 flex-col gap-4">
+    <div class="flex h-full min-h-0 flex-col gap-2">
       <div class="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
         <div class="min-w-0">
           <p class="text-sm font-semibold text-slate-900">{{ screenshotUpdatedText }}</p>

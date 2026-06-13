@@ -1,6 +1,6 @@
 <!-- 文件功能：提供工作空间级主题与字体管理页面，统一维护主题库、主题详情和字体注册。 -->
 <template>
-  <div data-testid="themes-view" class="flex h-full min-h-0 flex-col gap-4">
+  <div data-testid="themes-view" class="flex h-full min-h-0 flex-col gap-2">
     <PageTitleBar
       class="shrink-0"
       :title="workspaceTitle"

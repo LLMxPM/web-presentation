@@ -89,7 +89,12 @@ vi.mock('@/components/agent/AgentGlobalSidebar.vue', () => ({
   default: {
     name: 'AgentGlobalSidebar',
     props: ['agentId', 'source'],
-    template: '<aside data-testid="agent-sidebar" :data-agent-id="agentId" :data-source="source" />',
+    emits: ['update:expanded'],
+    template: `
+      <aside data-testid="agent-sidebar" :data-agent-id="agentId" :data-source="source">
+        <button type="button" data-testid="agent-expand-state" @click="$emit('update:expanded', true)">展开智能体</button>
+      </aside>
+    `,
   },
 }))
 
@@ -137,6 +142,16 @@ describe('AdminLayout', () => {
     expect(screen.getByTestId('workspace-dock-panel-assets').getAttribute('title')).toContain('侧栏')
     expect(screen.getByTestId('workspace-dock-panel-components').getAttribute('title')).toContain('侧栏')
     expect(screen.queryByTestId('workspace-dock-panel-themes')).toBeNull()
+  })
+
+  it('智能体侧栏展开时应隐藏顶部品牌标题', async () => {
+    renderLayout()
+
+    expect(screen.getByTestId('app-brand-title')).toBeTruthy()
+
+    await fireEvent.click(screen.getByTestId('agent-expand-state'))
+
+    expect(screen.queryByTestId('app-brand-title')).toBeNull()
   })
 
   it.each([

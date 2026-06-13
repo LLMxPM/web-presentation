@@ -20,7 +20,7 @@
     </div>
 
     <Transition name="agent-panel">
-      <section v-if="expanded" data-testid="agent-sidebar-panel" class="flex h-full w-[576px] flex-col overflow-hidden border border-slate-200 bg-slate-50">
+      <section v-if="expanded" data-testid="agent-sidebar-panel" class="agent-sidebar-panel flex h-full flex-col overflow-hidden border border-slate-200 bg-slate-50">
         <header class="border-b border-slate-200 bg-white p-3">
           <div class="grid h-8 grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
             <div class="min-w-0 flex-1 overflow-hidden">
@@ -139,6 +139,9 @@ const props = withDefaults(defineProps<Props>(), {
   componentName: null,
   source: '',
 })
+const emit = defineEmits<{
+  'update:expanded': [expanded: boolean]
+}>()
 
 const AgentAssistantPanel = defineAsyncComponent(() => import('@/components/agent/AgentAssistantPanel.vue'))
 const expanded = ref(false)
@@ -526,6 +529,14 @@ function openAgent(targetAgentId: string): void {
 }
 
 watch(
+  expanded,
+  (value) => {
+    emit('update:expanded', value)
+  },
+  { immediate: true },
+)
+
+watch(
   () => [props.agentId, route.name, workspaceId.value] as const,
   ([nextAgentId]) => {
     const routeAgentId = nextAgentId || 'agent-coordinator'
@@ -598,5 +609,15 @@ function buildMutationEventDetail(event: AgentMutationRefreshEvent): AgentMutati
 .agent-panel-leave-to {
   width: 0;
   opacity: 0;
+}
+
+.agent-sidebar-panel {
+  width: 544px;
+}
+
+@media (max-width: 1399px) {
+  .agent-sidebar-panel {
+    width: 480px;
+  }
 }
 </style>

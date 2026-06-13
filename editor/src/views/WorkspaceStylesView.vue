@@ -1,6 +1,6 @@
 <!-- 文件功能：提供工作空间级样式库管理页面，维护可复制到项目的展示配置与 Markdown 样式规范。 -->
 <template>
-  <div data-testid="workspace-styles-view" class="flex h-full min-h-0 flex-col gap-4">
+  <div data-testid="workspace-styles-view" class="flex h-full min-h-0 flex-col gap-2">
     <input
       ref="importFileInputRef"
       class="hidden"
