@@ -27,7 +27,15 @@
         </div>
 
         <div class="flex min-w-0 flex-1 items-center justify-start gap-2 px-4">
-          <WorkspaceSwitcher />
+          <div
+            v-if="showWorkspaceSelectionHint"
+            class="flex shrink-0 items-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50 px-3.5 py-2 text-sm font-bold text-indigo-700 shadow-sm"
+          >
+            <MapPin class="h-4 w-4" />
+            <span>选择对应工作空间，返回创作</span>
+            <ArrowRight class="h-4 w-4 text-indigo-400" />
+          </div>
+          <WorkspaceSwitcher :prominent="showWorkspaceSelectionHint" />
           <ProjectQuickSwitcher
             v-if="workspaceId && sidebarsVisible"
             :workspace-id="workspaceId"
@@ -106,7 +114,7 @@
 import { computed, defineAsyncComponent, onMounted, onUnmounted, provide, ref, watch } from 'vue'
 import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
 import { useQuery } from '@tanstack/vue-query'
-import { ChevronRight } from '@lucide/vue'
+import { ArrowRight, ChevronRight, MapPin } from '@lucide/vue'
 import { getPage, getProject, getWorkspace } from '@/api/catalog'
 import UserMenu from '@/components/nav/UserMenu.vue'
 import WorkspaceSwitcher from '@/components/nav/WorkspaceSwitcher.vue'
@@ -116,7 +124,7 @@ import AgentGlobalSidebar from '@/components/agent/AgentGlobalSidebar.vue'
 import OpenSourceFooter from '@/components/layout/OpenSourceFooter.vue'
 import { agentSidebarExpandedKey } from '@/composables/agent-sidebar-state'
 import { componentAgentContextKey } from '@/composables/component-agent-context'
-import { buildProjectPagesPath, type WorkspaceRouteKey } from '@/utils/workspace-routes'
+import { buildProjectPagesPath, buildWorkspaceHomePath, type WorkspaceRouteKey } from '@/utils/workspace-routes'
 import type { WorkspaceComponentItem } from '@/types/api'
 
 const AssetManagerPanel = defineAsyncComponent(() => import('@/components/project/AssetManagerPanel.vue'))
@@ -221,6 +229,7 @@ const activeAgentSource = computed(() => {
 })
 const fullHeightPage = computed(() => Boolean(route.meta.fullHeight))
 const sidebarsVisible = computed(() => !route.meta.hideSidebars)
+const showWorkspaceSelectionHint = computed(() => route.name === 'accountAiSettings')
 const workspaceDockVisible = computed(() => sidebarsVisible.value && !!workspaceId.value)
 const activeWorkspaceRouteKey = computed<WorkspaceRouteKey>(() => {
   const routeKey = route.meta.workspaceNav
@@ -296,7 +305,7 @@ function handleGlobalAgentProjectUpdated(event: Event): void {
 
 const headerBreadcrumbs = computed<HeaderBreadcrumb[]>(() => {
   if (route.name === 'accountAiSettings') {
-    return [{ label: 'AI 设置' }]
+    return []
   }
 
   if (!workspaceId.value) {
@@ -305,8 +314,13 @@ const headerBreadcrumbs = computed<HeaderBreadcrumb[]>(() => {
 
   const breadcrumbs: HeaderBreadcrumb[] = []
   if (route.name === 'workspaceHome') {
-    return [{ label: '项目总览' }]
+    return [{ label: '项目列表' }]
   }
+
+  breadcrumbs.push({
+    label: '项目列表',
+    to: buildWorkspaceHomePath(workspaceId.value),
+  })
 
   if (route.name === 'components') {
     breadcrumbs.push({ label: '组件库' })

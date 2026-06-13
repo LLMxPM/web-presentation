@@ -4,7 +4,7 @@
     <!-- Trigger -->
     <div @click="dropdownVisible = !dropdownVisible"
       class="flex items-center gap-3 px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 transition-all cursor-pointer select-none border border-slate-200/50 shadow-sm"
-      :class="{ 'bg-slate-200': dropdownVisible }">
+      :class="triggerClass">
       <div class="flex items-center gap-2">
         <LayoutGrid class="w-4 h-4 text-indigo-600" />
         <div class="flex items-baseline gap-1.5">
@@ -99,6 +99,12 @@ import { buildWorkspaceHomePath } from '@/utils/workspace-routes'
 const route = useRoute()
 const router = useRouter()
 
+const props = withDefaults(defineProps<{
+  prominent?: boolean
+}>(), {
+  prominent: false,
+})
+
 const workspaces = ref<WorkspaceItem[]>([])
 const dropdownVisible = ref(false)
 const dialogVisible = ref(false)
@@ -126,6 +132,12 @@ const currentWorkspace = computed(() => {
   if (!currentWorkspaceId.value) return null
   return workspaces.value.find(w => w.id === currentWorkspaceId.value) || null
 })
+
+const triggerClass = computed(() => ({
+  'bg-slate-200': dropdownVisible.value && !props.prominent,
+  'border-indigo-300 bg-white ring-2 ring-indigo-100 hover:bg-indigo-50': props.prominent,
+  'border-indigo-400 bg-indigo-50 ring-2 ring-indigo-200': props.prominent && dropdownVisible.value,
+}))
 
 /**
  * 加载所有工作空间列表

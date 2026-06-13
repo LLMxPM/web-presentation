@@ -33,7 +33,7 @@
               :class="!currentProjectId ? 'overview-header-action-active' : 'overview-header-action-idle'"
               @click="goToWorkspaceHome"
             >
-              <span>项目总览</span>
+              <span>项目列表</span>
               <span class="overview-header-count">{{ projects.length }}</span>
             </button>
           </div>
