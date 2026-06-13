@@ -1544,6 +1544,7 @@ describe('page screenshot views', () => {
     expect(screen.getByRole('button', { name: '上一页' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '下一页' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '版本' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '刷新预览' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '截图' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '资源' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '复制' })).toBeInTheDocument()
@@ -1557,9 +1558,35 @@ describe('page screenshot views', () => {
     expect(screen.getByRole('button', { name: '保存' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '上一页' })).toBeNull()
     expect(screen.queryByRole('button', { name: '下一页' })).toBeNull()
+    expect(screen.queryByRole('button', { name: '刷新预览' })).toBeNull()
     expect(screen.queryByRole('button', { name: '截图' })).toBeNull()
     expect(screen.queryByRole('button', { name: '复制' })).toBeNull()
     expect(screen.queryByRole('button', { name: '刷新' })).toBeNull()
+  })
+
+  it('PageDetailView 预览模式应支持手动刷新当前 iframe', async () => {
+    const dateNowSpy = vi.spyOn(Date, 'now')
+    getPageMock.mockResolvedValue(createPageDetailPayload())
+
+    try {
+      render(PageDetailView, createTestingRenderOptions())
+
+      expect(await screen.findByText('页面详情')).toBeInTheDocument()
+      await waitFor(() => {
+        expect(screen.getByTitle('runtime-preview')).toHaveAttribute('src', expect.stringContaining('http://runtime.local/__preview?ticket=current&t='))
+      })
+      createProjectPreviewArtifactMock.mockClear()
+
+      dateNowSpy.mockReturnValue(222)
+      await fireEvent.click(screen.getByRole('button', { name: '刷新预览' }))
+
+      await waitFor(() => {
+        expect(screen.getByTitle('runtime-preview')).toHaveAttribute('src', 'http://runtime.local/__preview?ticket=current&t=222')
+      })
+      expect(createProjectPreviewArtifactMock).not.toHaveBeenCalled()
+    } finally {
+      dateNowSpy.mockRestore()
+    }
   })
 
   it('PageDetailView 应在详情页编辑页面名称和描述', async () => {

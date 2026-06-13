@@ -1,9 +1,11 @@
 """文件功能：处理工作空间资源的上传、内容写入、归档、复制和删除管理。"""
 
 import json
+import urllib.parse
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
+from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import get_current_user, get_list_query, require_workspace_access
@@ -22,6 +24,8 @@ from app.schemas.asset import (
     AssetContentResponse,
     AssetContentUpdateRequest,
     AssetCopyRequest,
+    AssetPackageExportRequest,
+    AssetPackageImportResult,
     AssetReferenceSummary,
     AssetResponse,
     AssetRestoreRequest,
@@ -29,6 +33,7 @@ from app.schemas.asset import (
 )
 from app.schemas.common import ListQuery, PagedResponse
 from app.schemas.release import PreviewArtifactResponse
+from app.services.asset_package_service import AssetPackageService
 from app.services.asset_service import AssetService
 from app.services.asset_preview_service import AssetPreviewService
 from app.services.auth_service import AuthContext
@@ -339,6 +344,42 @@ async def batch_archive_workspace_assets(
     return AssetBatchOperationResponse.model_validate(result)
 
 
+@router.post("/workspaces/{workspace_id}/assets/export-package")
+async def export_workspace_asset_package(
+    workspace_id: int,
+    request: AssetPackageExportRequest,
+    _: Annotated[AuthContext, Depends(get_current_user)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> Response:
+    """导出资源离线包，包含原始文件及标签、描述等元数据。"""
+
+    archive_content, filename = await AssetPackageService(session).export_package(
+        workspace_id=workspace_id,
+        asset_ids=request.asset_ids,
+    )
+    return Response(
+        content=archive_content,
+        media_type="application/zip",
+        headers={"Content-Disposition": _build_download_content_disposition(filename)},
+    )
+
+
+@router.post("/workspaces/{workspace_id}/assets/import-package", response_model=AssetPackageImportResult)
+async def import_workspace_asset_package(
+    workspace_id: int,
+    archive: Annotated[UploadFile, File(...)],
+    _: Annotated[AuthContext, Depends(get_current_user)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> AssetPackageImportResult:
+    """导入资源离线包，创建缺失资源并同步同名同文件资源的元数据。"""
+
+    archive_content = await archive.read()
+    return await AssetPackageService(session).import_package(
+        workspace_id=workspace_id,
+        archive_content=archive_content,
+    )
+
+
 @router.post("/workspaces/{workspace_id}/assets/{asset_id}/restore", response_model=AssetResponse)
 async def restore_workspace_asset(
     workspace_id: int,
@@ -388,3 +429,10 @@ async def batch_delete_workspace_assets(
 
     result = await AssetService(session).batch_delete_assets(workspace_id, request.asset_ids)
     return AssetBatchOperationResponse.model_validate(result)
+
+
+def _build_download_content_disposition(filename: str) -> str:
+    """构建兼容中文文件名的下载响应头。"""
+
+    encoded_name = urllib.parse.quote(filename)
+    return f"attachment; filename*=UTF-8''{encoded_name}"

@@ -19,7 +19,7 @@
     <!-- Dropdown Menu -->
     <Transition name="fade-scale">
       <div v-if="dropdownVisible"
-        class="absolute left-1/2 -translate-x-1/2 mt-2 w-64 bg-white border border-slate-200 rounded-2xl shadow-xl z-50 py-2">
+        class="absolute left-0 mt-2 w-64 origin-top-left bg-white border border-slate-200 rounded-2xl shadow-xl z-50 py-2">
         <div class="px-4 py-2 border-b border-slate-50 mb-1 flex items-center justify-between gap-3">
           <span class="text-[11px] font-bold text-slate-400 uppercase tracking-widest">所属工作空间</span>
           <button type="button" class="text-[11px] font-medium text-slate-400 transition-colors hover:text-slate-600"
@@ -267,7 +267,7 @@ async function handleWorkspaceListUpdated() {
 .fade-scale-enter-from,
 .fade-scale-leave-to {
   opacity: 0;
-  transform: scale(0.95) translateY(-10px);
+  transform: translateY(-10px) scale(0.95);
 }
 </style>
 

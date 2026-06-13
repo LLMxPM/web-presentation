@@ -7,6 +7,10 @@
           <Upload class="h-3.5 w-3.5" />
           {{ uploading ? '上传中' : '上传资源' }}
         </BaseButton>
+        <BaseButton variant="ghost" :disabled="!workspaceId || packageImporting" @click="triggerPackageImport">
+          <Upload class="h-3.5 w-3.5" />
+          {{ packageImporting ? '导入中' : '导入资源包' }}
+        </BaseButton>
         <BaseButton :disabled="!workspaceId" @click="openCreateForm">
           <FilePlus2 class="h-3.5 w-3.5" />
           新建内容资源
@@ -14,7 +18,7 @@
       </template>
     </PageTitleBar>
 
-    <div class="grid min-h-0 flex-1 grid-cols-[240px_minmax(0,1fr)] gap-4 overflow-hidden">
+    <div class="grid min-h-0 flex-1 grid-cols-[240px_minmax(0,1fr)] gap-2 overflow-hidden">
       <aside class="flex min-h-0 flex-col overflow-hidden rounded-xl border border-slate-200 bg-slate-50/80 shadow-sm">
         <div class="border-b border-slate-200 bg-white p-3">
           <div class="relative">
@@ -79,9 +83,17 @@
         <header class="flex shrink-0 items-center justify-between gap-4 border-b border-slate-100 px-5 py-4">
           <div>
             <h2 class="text-base font-bold text-slate-800">资源预览</h2>
-            <p class="mt-1 text-xs text-slate-400">点击资源打开详情弹窗，页面卡片只保留轻量信息。</p>
           </div>
           <div class="flex shrink-0 items-center gap-2">
+            <BaseButton
+              variant="ghost"
+              size="sm"
+              :disabled="!hasBatchSelection || batchOperating"
+              @click="exportSelectedAssets"
+            >
+              <Download class="h-3.5 w-3.5" />
+              {{ batchExporting ? '导出中' : '导出选中' }}
+            </BaseButton>
             <BaseButton
               v-if="activeView === 'active'"
               variant="ghost"
@@ -227,6 +239,7 @@
       multiple
       @change="handleUploadFileChange"
     />
+    <input ref="packageFileInput" type="file" class="hidden" accept=".zip,application/zip" @change="handlePackageFileChange" />
 
     <BaseDialog
       :model-value="uploadMode"
@@ -496,6 +509,7 @@ import {
   ArrowUpRight,
   BarChart3,
   Copy,
+  Download,
   FilePlus2,
   FileText,
   FolderArchive,
@@ -521,7 +535,9 @@ import {
   copyWorkspaceAsset,
   createWorkspaceAssetContent,
   deleteWorkspaceAsset,
+  exportWorkspaceAssetPackage,
   getWorkspaceAssetContent,
+  importWorkspaceAssetPackage,
   listWorkspaceAssetTags,
   listWorkspaceAssets,
   previewWorkspaceAssetReferences,
@@ -546,6 +562,7 @@ import PaginationControl from '@/components/ui/PaginationControl.vue'
 import type { AssetBatchOperationResponse, AssetReferenceSummary, AssetResponse, AssetType, RecordStatus } from '@/types/api'
 import { createConfirm, Message } from '@/utils/message'
 import { buildWorkspaceComponentsPath } from '@/utils/workspace-routes'
+import { downloadBlob } from '@/utils/zip-download'
 
 type AssetView = 'active' | 'archived' | 'history'
 type DetailTab = 'basic' | 'content' | 'references'
@@ -568,7 +585,9 @@ const sortValue = ref('updated_at:desc')
 const loading = ref(false)
 const saving = ref(false)
 const uploading = ref(false)
+const packageImporting = ref(false)
 const batchOperating = ref(false)
+const batchExporting = ref(false)
 const referencesLoading = ref(false)
 const createMode = ref(false)
 const uploadMode = ref(false)
@@ -586,6 +605,7 @@ const originalContent = ref('')
 const referenceSummary = ref<AssetReferenceSummary | null>(null)
 const replaceFileInput = ref<HTMLInputElement | null>(null)
 const uploadFileInput = ref<HTMLInputElement | null>(null)
+const packageFileInput = ref<HTMLInputElement | null>(null)
 const replacingAsset = ref<AssetResponse | null>(null)
 const openedQueryAssetId = ref<number | null>(null)
 const editForm = reactive({
@@ -1222,6 +1242,27 @@ async function deleteSelectedAssets(): Promise<void> {
   }
 }
 
+/**
+ * 导出当前选中的资源文件，前端拉取下载 Blob 后组装为单个 ZIP。
+ */
+async function exportSelectedAssets(): Promise<void> {
+  const assetIds = [...selectedAssetIds.value]
+  if (!Number.isFinite(workspaceId.value) || assetIds.length === 0) return
+
+  batchOperating.value = true
+  batchExporting.value = true
+  try {
+    const { blob, filename } = await exportWorkspaceAssetPackage(workspaceId.value, assetIds)
+    downloadBlob(blob, filename)
+    Message.success(`已导出 ${assetIds.length} 个资源`)
+  } catch (error) {
+    Message.error(getErrorMessage(error, '批量导出资源失败'))
+  } finally {
+    batchExporting.value = false
+    batchOperating.value = false
+  }
+}
+
 function showBatchOperationResult(result: AssetBatchOperationResponse, actionLabel: string): void {
   if (result.failed_count === 0) {
     Message.success(`已${actionLabel} ${result.succeeded_count} 个资源`)
@@ -1236,6 +1277,44 @@ function showBatchOperationResult(result: AssetBatchOperationResponse, actionLab
 
 function formatBatchFailure(result: AssetBatchOperationResponse): string {
   return result.failures[0]?.detail || '请检查资源状态或引用关系'
+}
+
+/**
+ * 打开资源包文件选择器。
+ */
+function triggerPackageImport(): void {
+  packageFileInput.value?.click()
+}
+
+/**
+ * 选择资源包后立即上传导入。
+ */
+async function handlePackageFileChange(event: Event): Promise<void> {
+  const target = event.target as HTMLInputElement
+  const file = target.files?.[0] ?? null
+  target.value = ''
+  if (!file || !Number.isFinite(workspaceId.value)) return
+
+  packageImporting.value = true
+  try {
+    const result = await importWorkspaceAssetPackage(workspaceId.value, file)
+    if (result.failed_count > 0) {
+      const firstFailure = result.failures[0]
+      const importedText = result.imported_count > 0 ? `已导入 ${result.imported_count} 个资源，` : ''
+      Message.warning(`${importedText}${result.failed_count} 个资源失败：${firstFailure?.detail || '请检查资源包内容'}`)
+    } else {
+      const updatedText = result.updated_count > 0 ? `，同步 ${result.updated_count} 个同名资源元数据` : ''
+      const reusedText = result.reused_count > 0 ? `，复用 ${result.reused_count} 个同名资源` : ''
+      Message.success(`已导入 ${result.imported_count} 个资源${updatedText}${reusedText}`)
+    }
+    activeView.value = 'active'
+    page.value = 1
+    await Promise.all([refreshAssets(), loadTags()])
+  } catch (error) {
+    Message.error(getErrorMessage(error, '导入资源包失败'))
+  } finally {
+    packageImporting.value = false
+  }
 }
 
 function closeDetailIfSelected(assetIds: number[]): void {

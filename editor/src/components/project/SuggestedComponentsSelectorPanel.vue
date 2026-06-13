@@ -1,6 +1,6 @@
 <!-- 文件功能：提供可嵌入的建议组件双栏选择面板，维护有序已选组件与工作空间已发布组件候选。 -->
 <template>
-  <div v-if="workspaceId" class="grid h-full min-h-0 grid-rows-[minmax(220px,0.95fr)_minmax(0,1.05fr)] gap-4 overflow-hidden lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.2fr)] lg:grid-rows-1">
+  <div v-if="workspaceId" class="grid h-full min-h-0 grid-rows-[minmax(220px,0.95fr)_minmax(0,1.05fr)] gap-2 overflow-hidden lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.2fr)] lg:grid-rows-1">
     <section class="flex h-full min-h-0 flex-col rounded-lg border border-indigo-100 bg-indigo-50/40 p-3">
       <div class="flex shrink-0 items-center justify-between gap-2">
         <div class="flex min-w-0 items-center gap-2">

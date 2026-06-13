@@ -13,7 +13,7 @@
       </template>
     </PageTitleBar>
 
-    <div class="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_380px] gap-4 overflow-hidden">
+    <div class="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_380px] gap-2 overflow-hidden">
       <section class="flex min-h-0 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
         <header class="flex shrink-0 items-center justify-between gap-4 border-b border-slate-100 px-5 py-4">
           <div class="min-w-0">

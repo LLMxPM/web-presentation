@@ -207,6 +207,12 @@ class AssetBatchDeleteRequest(BaseModel):
     asset_ids: list[int] = Field(min_length=1, max_length=100)
 
 
+class AssetPackageExportRequest(BaseModel):
+    """资源离线包导出的请求体。"""
+
+    asset_ids: list[int] = Field(min_length=1, max_length=100)
+
+
 class AssetBatchOperationFailure(BaseModel):
     """批量资源操作中单个资源失败的明细。"""
 
@@ -223,6 +229,36 @@ class AssetBatchOperationResponse(BaseModel):
     failed_count: int
     asset_ids: list[int] = Field(default_factory=list)
     failures: list[AssetBatchOperationFailure] = Field(default_factory=list)
+
+
+class AssetPackageImportFailure(BaseModel):
+    """资源离线包导入中单个资源失败的明细。"""
+
+    name: str
+    code: str
+    detail: str
+
+
+class AssetPackageImportItem(BaseModel):
+    """资源离线包导入后单个资源的处理结果。"""
+
+    name: str
+    original_name: str
+    asset_type: AssetType
+    file_hash: str
+    action: Literal["create", "update_metadata", "reuse"]
+    asset_id: int | None = None
+
+
+class AssetPackageImportResult(BaseModel):
+    """资源离线包导入汇总结果。"""
+
+    imported_count: int = 0
+    updated_count: int = 0
+    reused_count: int = 0
+    failed_count: int = 0
+    assets: list[AssetPackageImportItem] = Field(default_factory=list)
+    failures: list[AssetPackageImportFailure] = Field(default_factory=list)
 
 
 class AssetReferenceSummary(BaseModel):

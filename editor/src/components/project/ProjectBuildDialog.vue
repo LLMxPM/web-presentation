@@ -3,7 +3,7 @@
   <BaseDialog v-model="visible" title="项目构建中心" size="canvas" body-preset="editor">
     <div
       data-testid="project-build-dialog"
-      class="grid h-full min-w-0 min-h-0 grid-rows-[minmax(0,1.15fr)_minmax(220px,0.85fr)] gap-4 overflow-hidden lg:grid-cols-[minmax(0,1.25fr)_minmax(360px,0.85fr)] lg:grid-rows-1"
+      class="grid h-full min-w-0 min-h-0 grid-rows-[minmax(0,1.15fr)_minmax(220px,0.85fr)] gap-2 overflow-hidden lg:grid-cols-[minmax(0,1.25fr)_minmax(360px,0.85fr)] lg:grid-rows-1"
     >
       <div class="flex min-h-0 min-w-0 flex-col gap-3 overflow-hidden">
         <ProjectBuildSettingsPanel

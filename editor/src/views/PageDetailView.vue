@@ -42,35 +42,48 @@
 
         <template #actions>
           <div class="page-detail-title-actions flex flex-col items-end gap-1">
-            <div class="flex items-center rounded-lg border border-slate-200 bg-slate-50 p-0.5">
-              <button
-                type="button"
-                class="inline-flex h-7 items-center gap-1.5 rounded-md px-2.5 text-xs font-semibold transition"
-                :class="activeDetailPane === 'preview' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'"
-                :disabled="isSaveActionPending"
-                @click="handlePreviewPaneSelect"
+            <div class="flex items-center gap-1">
+              <BaseButton
+                v-if="activeDetailPane === 'preview'"
+                variant="ghost"
+                size="sm"
+                title="刷新预览"
+                :disabled="isSaveActionPending || !previewFrameUrl"
+                @click="refreshPreviewFrame"
               >
-                <Monitor class="h-4 w-4" />
-                预览
-              </button>
-              <button
-                type="button"
-                class="inline-flex h-7 items-center gap-1.5 rounded-md px-2.5 text-xs font-semibold transition"
-                :class="activeDetailPane === 'editor' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'"
-                @click="activeDetailPane = 'editor'"
-              >
-                <Code2 class="h-4 w-4" />
-                编辑器
-              </button>
-              <button
-                type="button"
-                class="inline-flex h-7 items-center gap-1.5 rounded-md px-2.5 text-xs font-semibold transition"
-                :class="activeDetailPane === 'notes' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'"
-                @click="activeDetailPane = 'notes'"
-              >
-                <FileText class="h-4 w-4" />
-                备注
-              </button>
+                <RefreshCw class="h-3.5 w-3.5" />
+                刷新预览
+              </BaseButton>
+              <div class="flex items-center rounded-lg border border-slate-200 bg-slate-50 p-0.5">
+                <button
+                  type="button"
+                  class="inline-flex h-7 items-center gap-1.5 rounded-md px-2.5 text-xs font-semibold transition"
+                  :class="activeDetailPane === 'preview' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'"
+                  :disabled="isSaveActionPending"
+                  @click="handlePreviewPaneSelect"
+                >
+                  <Monitor class="h-4 w-4" />
+                  预览
+                </button>
+                <button
+                  type="button"
+                  class="inline-flex h-7 items-center gap-1.5 rounded-md px-2.5 text-xs font-semibold transition"
+                  :class="activeDetailPane === 'editor' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'"
+                  @click="activeDetailPane = 'editor'"
+                >
+                  <Code2 class="h-4 w-4" />
+                  编辑器
+                </button>
+                <button
+                  type="button"
+                  class="inline-flex h-7 items-center gap-1.5 rounded-md px-2.5 text-xs font-semibold transition"
+                  :class="activeDetailPane === 'notes' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'"
+                  @click="activeDetailPane = 'notes'"
+                >
+                  <FileText class="h-4 w-4" />
+                  备注
+                </button>
+              </div>
             </div>
 
             <div class="flex flex-wrap items-center justify-end gap-1">
@@ -258,7 +271,7 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/vue-query'
-import { ArrowLeft, Camera, ChevronLeft, ChevronRight, Code2, Copy, FileText, Frown, History, Layers, Monitor, Save, SquarePen } from '@lucide/vue'
+import { ArrowLeft, Camera, ChevronLeft, ChevronRight, Code2, Copy, FileText, Frown, History, Layers, Monitor, RefreshCw, Save, SquarePen } from '@lucide/vue'
 
 import { getErrorMessage } from '@/api/http'
 import {

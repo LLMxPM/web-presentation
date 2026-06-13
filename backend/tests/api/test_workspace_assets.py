@@ -1,4 +1,8 @@
-"""文件功能：验证工作空间静态资源描述字段的上传、列表与更新行为。"""
+"""文件功能：验证工作空间静态资源描述字段的上传、列表、导入导出与更新行为。"""
+
+import io
+import json
+import zipfile
 
 from httpx import AsyncClient
 
@@ -917,6 +921,67 @@ async def test_asset_batch_delete_should_cleanup_legacy_soft_deleted_theme_fk(
 
     async with get_session_factory()() as session:
         assert await session.get(WorkspaceTheme, theme_id) is None
+
+
+async def test_asset_package_export_and_import_should_preserve_metadata(
+    authenticated_client: AsyncClient,
+) -> None:
+    """资源离线包应携带文件、标签、描述等元数据，并可导入到新工作空间。"""
+
+    source_workspace_id = await _create_workspace(authenticated_client, "资源包源空间")
+    target_workspace_id = await _create_workspace(authenticated_client, "资源包目标空间")
+    create_response = await authenticated_client.post(
+        f"/api/workspaces/{source_workspace_id}/assets/content",
+        json={
+            "asset_type": "image",
+            "name": "资源包封面",
+            "original_name": "package_hero.svg",
+            "description": "资源包封面图",
+            "content": '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><rect width="16" height="16"/></svg>',
+            "tags": ["封面", "可复用"],
+        },
+    )
+    assert create_response.status_code == 200
+    source_asset = create_response.json()
+
+    export_response = await authenticated_client.post(
+        f"/api/workspaces/{source_workspace_id}/assets/export-package",
+        json={"asset_ids": [source_asset["id"]]},
+    )
+    assert export_response.status_code == 200
+    assert export_response.headers["content-type"] == "application/zip"
+    assert "filename*=UTF-8''" in export_response.headers["content-disposition"]
+
+    with zipfile.ZipFile(io.BytesIO(export_response.content)) as archive:
+        manifest = json.loads(archive.read("manifest.json").decode("utf-8"))
+        assert manifest["package_kind"] == "workspace-assets"
+        exported_asset = manifest["assets"][0]
+        assert exported_asset["name"] == "资源包封面"
+        assert exported_asset["description"] == "资源包封面图"
+        assert exported_asset["tags"] == ["封面", "可复用"]
+        asset_json = json.loads(archive.read(f"assets/{exported_asset['entry_key']}/asset.json").decode("utf-8"))
+        assert asset_json["asset_type"] == "image"
+
+    import_response = await authenticated_client.post(
+        f"/api/workspaces/{target_workspace_id}/assets/import-package",
+        files={"archive": ("workspace-assets.zip", export_response.content, "application/zip")},
+    )
+    assert import_response.status_code == 200
+    import_payload = import_response.json()
+    assert import_payload["imported_count"] == 1
+    assert import_payload["failed_count"] == 0
+    assert import_payload["assets"][0]["action"] == "create"
+
+    list_response = await authenticated_client.get(
+        f"/api/workspaces/{target_workspace_id}/assets",
+        params={"asset_type": "image"},
+    )
+    assert list_response.status_code == 200
+    imported_asset = list_response.json()["items"][0]
+    assert imported_asset["name"] == "资源包封面"
+    assert imported_asset["description"] == "资源包封面图"
+    assert imported_asset["tags"] == ["封面", "可复用"]
+    assert imported_asset["file_hash"] == source_asset["file_hash"]
 
 
 async def test_asset_content_validation_should_reject_unsafe_svg(authenticated_client: AsyncClient) -> None:

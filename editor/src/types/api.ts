@@ -1337,6 +1337,30 @@ export interface AssetBatchOperationResponse {
   failures: AssetBatchOperationFailure[]
 }
 
+export interface AssetPackageImportFailure {
+  name: string
+  code: string
+  detail: string
+}
+
+export interface AssetPackageImportItem {
+  name: string
+  original_name: string
+  asset_type: AssetType
+  file_hash: string
+  action: 'create' | 'update_metadata' | 'reuse' | string
+  asset_id: number | null
+}
+
+export interface AssetPackageImportResult {
+  imported_count: number
+  updated_count: number
+  reused_count: number
+  failed_count: number
+  assets: AssetPackageImportItem[]
+  failures: AssetPackageImportFailure[]
+}
+
 export interface ListParams {
   page: number
   page_size: number
