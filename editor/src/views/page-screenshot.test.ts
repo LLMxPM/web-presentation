@@ -455,7 +455,7 @@ describe('page screenshot views', () => {
     render(PagesView, createTestingRenderOptions(true))
 
     expect(await screen.findByText('项目 A')).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: '项目 A' })).toHaveClass('max-w-[18rem]')
+    expect(screen.getByRole('heading', { name: '项目 A' })).toHaveClass('max-w-[10rem]')
     expect(screen.queryByText('PRJ202604020001')).toBeNull()
   })
 

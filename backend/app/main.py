@@ -5,6 +5,7 @@ import logging
 import time
 import uuid
 from contextlib import asynccontextmanager, suppress
+from typing import Any
 
 import uvicorn
 from fastapi import FastAPI, Request
@@ -160,14 +161,15 @@ def create_app() -> FastAPI:
 
     @app.exception_handler(RequestValidationError)
     async def handle_request_validation_exception(_: Request, exc: RequestValidationError) -> JSONResponse:
-        first_error = exc.errors()[0] if exc.errors() else {}
+        validation_errors = _sanitize_validation_errors(exc.errors())
+        first_error = validation_errors[0] if validation_errors else {}
         message = _format_request_validation_message(first_error)
         return JSONResponse(
             status_code=422,
             content={
                 "code": "VALIDATION_ERROR",
                 "message": message,
-                "detail": exc.errors(),
+                "detail": validation_errors,
             },
         )
 
@@ -196,6 +198,26 @@ def _format_request_validation_message(error: dict) -> str:
     if field_path:
         return f"请求参数 {field_path} 不符合要求。"
     return "请求参数不符合要求，请检查后再提交。"
+
+
+def _sanitize_validation_errors(errors: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """清洗 FastAPI 校验错误，确保 detail 可被 JSONResponse 序列化。"""
+
+    return [_sanitize_jsonable(error) for error in errors]
+
+
+def _sanitize_jsonable(value: Any) -> Any:
+    """递归转换异常等非 JSON 友好对象，保留校验错误的结构化字段。"""
+
+    if isinstance(value, dict):
+        return {str(key): _sanitize_jsonable(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_sanitize_jsonable(item) for item in value]
+    if isinstance(value, tuple):
+        return [_sanitize_jsonable(item) for item in value]
+    if isinstance(value, Exception):
+        return str(value)
+    return value
 
 
 def _mount_ai_runtime(app: FastAPI) -> None:

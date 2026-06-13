@@ -194,7 +194,7 @@ describe('WorkspaceComponentWorkbench', () => {
       },
     })
 
-    await fireEvent.click(await screen.findByText('编辑组件'))
+    await fireEvent.click(await screen.findByRole('button', { name: '编辑' }))
 
     expect(await screen.findByText('编辑弹窗：edit')).toBeInTheDocument()
   })
@@ -255,7 +255,7 @@ describe('WorkspaceComponentWorkbench', () => {
       },
     })
 
-    await fireEvent.click(await screen.findByText('编辑组件'))
+    await fireEvent.click(await screen.findByRole('button', { name: '编辑' }))
     await fireEvent.click(await screen.findByText('保存并预览测试'))
 
     await waitFor(() => {
@@ -322,7 +322,7 @@ describe('WorkspaceComponentWorkbench', () => {
       },
     })
 
-    await fireEvent.click(await screen.findByText('编辑组件'))
+    await fireEvent.click(await screen.findByRole('button', { name: '编辑' }))
     await fireEvent.click(await screen.findByText('保存草稿测试'))
 
     await waitFor(() => {
