@@ -15,7 +15,13 @@
 
         <div class="flex min-w-0 flex-wrap items-center gap-2">
           <slot name="title-leading" />
-          <h1 class="truncate text-xl font-bold tracking-tight text-slate-900">{{ title }}</h1>
+          <h1
+            class="min-w-0 truncate text-xl font-bold tracking-tight text-slate-900"
+            :class="titleClass"
+            :title="title"
+          >
+            {{ title }}
+          </h1>
           <span
             v-if="code"
             class="rounded border border-slate-200 bg-slate-100 px-2 py-0.5 font-mono text-xs font-medium text-slate-500"
@@ -34,7 +40,7 @@
         </div>
       </div>
 
-      <div v-if="$slots.actions" class="flex shrink-0 flex-wrap items-center gap-2">
+      <div v-if="$slots.actions" class="flex shrink-0 flex-wrap items-center gap-1">
         <slot name="actions" />
       </div>
     </div>
@@ -56,12 +62,14 @@ withDefaults(
     code?: string | null
     description?: string | null
     metaItems?: string[]
+    titleClass?: string
   }>(),
   {
     breadcrumbs: () => [],
     code: null,
     description: null,
     metaItems: () => [],
+    titleClass: '',
   },
 )
 </script>

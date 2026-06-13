@@ -114,6 +114,7 @@ import ProjectQuickSwitcher from '@/components/nav/ProjectQuickSwitcher.vue'
 import WorkspaceDock from '@/components/nav/WorkspaceDock.vue'
 import AgentGlobalSidebar from '@/components/agent/AgentGlobalSidebar.vue'
 import OpenSourceFooter from '@/components/layout/OpenSourceFooter.vue'
+import { agentSidebarExpandedKey } from '@/composables/agent-sidebar-state'
 import { componentAgentContextKey } from '@/composables/component-agent-context'
 import { buildProjectPagesPath, type WorkspaceRouteKey } from '@/utils/workspace-routes'
 import type { WorkspaceComponentItem } from '@/types/api'
@@ -194,6 +195,7 @@ provide(componentAgentContextKey, {
   selectedComponent: componentAgentSelection,
   setSelectedComponent: setComponentAgentSelection,
 })
+provide(agentSidebarExpandedKey, agentSidebarExpanded)
 
 const workspaceId = computed(() => {
   const wid = route.params.workspaceId

@@ -106,7 +106,7 @@ export function useWorkspaceComponentDraft(options: DraftOptions) {
   }
 
   /**
-   * 进入新建组件状态，清空组件引用和全部表单错误。
+   * 进入新增组件状态，清空组件引用和全部表单错误。
    */
   function resetForCreate(): void {
     currentComponent.value = null
@@ -131,7 +131,7 @@ export function useWorkspaceComponentDraft(options: DraftOptions) {
   }
 
   /**
-   * 保存当前草稿。已有组件走更新，新建组件走创建。
+   * 保存当前草稿。已有组件走更新，新增组件走创建。
    * @returns 保存后的组件；校验失败时返回 null
    */
   async function saveDraft(): Promise<WorkspaceComponentItem | null> {

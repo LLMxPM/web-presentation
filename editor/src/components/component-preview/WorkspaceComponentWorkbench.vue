@@ -4,9 +4,9 @@
     <div v-if="activeMode === 'empty' || activeMode === 'create'" class="flex h-full items-center justify-center bg-slate-50/70 p-6">
       <div class="max-w-sm rounded-xl border border-dashed border-slate-200 bg-white px-7 py-8 text-center">
         <Layers class="mx-auto mb-3 h-10 w-10 text-slate-300" />
-        <p class="text-sm font-bold text-slate-600">{{ activeMode === 'create' ? '正在新建组件草稿' : '请选择组件' }}</p>
+        <p class="text-sm font-bold text-slate-600">{{ activeMode === 'create' ? '正在新增组件草稿' : '请选择组件' }}</p>
         <p class="mt-2 text-xs leading-6 text-slate-400">
-          {{ activeMode === 'create' ? '请在弹窗中完成基础信息、预览配置和源码编辑。' : '点击左侧工作空间组件后会在这里打开预览，也可以新建组件草稿。' }}
+          {{ activeMode === 'create' ? '请在弹窗中完成基础信息、预览配置和源码编辑。' : '点击左侧工作空间组件后会在这里打开预览，也可以新增组件草稿。' }}
         </p>
       </div>
     </div>
@@ -34,7 +34,7 @@
       <template #component-actions="slotProps">
         <BaseButton v-if="currentComponent" variant="ghost" size="sm" @click="openVersionHistoryFromPreview(slotProps?.closeFullPreview)">
           <History class="h-3.5 w-3.5" />
-          发布历史
+          版本
         </BaseButton>
         <BaseButton
           v-if="currentComponent && !slotProps?.insideFullPreview"
@@ -48,7 +48,7 @@
           引用
         </BaseButton>
         <BaseButton variant="secondary" size="sm" @click="switchToEditModeFromPreview(slotProps?.closeFullPreview)">
-          编辑组件
+          编辑
         </BaseButton>
         <BaseButton
           v-if="currentComponent"

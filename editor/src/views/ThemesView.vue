@@ -23,7 +23,6 @@
                 共 {{ themeTotal }} 个主题
               </span>
             </div>
-            <p class="mt-1 text-xs text-slate-400">点击主题查看详情，常用操作可直接在卡片右侧完成。</p>
           </div>
           <BaseButton size="sm" @click="openCreateTheme">
             <Plus class="h-3.5 w-3.5" />
@@ -45,7 +44,7 @@
         <div v-if="loadingThemes" class="flex flex-1 items-center justify-center text-sm font-semibold text-slate-400">
           正在加载主题...
         </div>
-        <div v-else class="min-h-0 flex-1 overflow-y-auto p-5">
+        <div v-else class="min-h-0 flex-1 overflow-y-auto p-3">
           <div
             v-if="themes.length === 0"
             class="flex min-h-[140px] flex-col items-center justify-center rounded-xl border-2 border-dashed border-slate-100 bg-slate-50 text-center"
@@ -166,7 +165,6 @@
                   注册 {{ fontTotal }} / 文件 {{ fontAssetTotal }}
                 </span>
               </div>
-              <p class="mt-1 text-xs text-slate-400">字体文件在这里上传维护，注册后可绑定到主题。</p>
             </div>
             <div class="flex shrink-0 items-center gap-1">
               <BaseButton size="sm" variant="ghost" :disabled="!workspaceId || uploadingFontAsset" @click="triggerFontUpload">

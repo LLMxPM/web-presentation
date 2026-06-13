@@ -5,7 +5,8 @@
       <PageTitleBar
         v-if="projectDetails"
         :title="projectDetails.name"
-        :code="projectDetails.code"
+        :title-class="projectTitleClass"
+        :code="projectTitleCode"
         :description="projectDetails.description"
       >
         <template #title-leading>
@@ -29,6 +30,21 @@
         </template>
 
         <template #actions>
+          <div class="page-card-size-control" role="group" aria-label="预览卡片大小">
+            <button
+              v-for="option in pageCardSizeOptions"
+              :key="option.value"
+              type="button"
+              class="page-card-size-button"
+              :class="pageCardSize === option.value ? 'page-card-size-button-active' : ''"
+              :title="`卡片${option.label}`"
+              :aria-label="`卡片${option.label}`"
+              :aria-pressed="pageCardSize === option.value"
+              @click="setPageCardSize(option.value)"
+            >
+              <component :is="option.icon" class="h-3.5 w-3.5" />
+            </button>
+          </div>
           <BaseButton variant="primary" :loading="previewLoading" :disabled="!projectDetails"
             @click="handlePreviewProject">
             <template #icon>
@@ -46,34 +62,20 @@
             <template #icon>
               <Image class="h-4 w-4" />
             </template>
-            建议资源
+            资源
           </BaseButton>
           <BaseButton variant="ghost" :disabled="!projectDetails" @click="openSuggestedComponentsDialog">
             <template #icon>
               <Layers class="h-4 w-4" />
             </template>
-            建议组件
+            组件
           </BaseButton>
-          <div class="page-card-size-control" role="group" aria-label="预览卡片大小">
-            <button
-              v-for="option in pageCardSizeOptions"
-              :key="option.value"
-              type="button"
-              class="page-card-size-button"
-              :class="pageCardSize === option.value ? 'page-card-size-button-active' : ''"
-              :title="`卡片${option.label}`"
-              :aria-label="`卡片${option.label}`"
-              :aria-pressed="pageCardSize === option.value"
-              @click="setPageCardSize(option.value)"
-            >
-              <component :is="option.icon" class="h-3.5 w-3.5" />
-            </button>
-          </div>
+
           <BaseButton variant="primary" :disabled="!projectDetails" @click="openCreateDialog">
             <template #icon>
               <Plus class="h-4 w-4" />
             </template>
-            新增页面
+            新增
           </BaseButton>
         </template>
       </PageTitleBar>
@@ -311,6 +313,7 @@ import ProjectSuggestedReferenceAssetsDialog from '@/components/project/ProjectS
 import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseDialog from '@/components/ui/BaseDialog.vue'
 import BaseInput from '@/components/ui/BaseInput.vue'
+import { useAgentSidebarExpanded } from '@/composables/agent-sidebar-state'
 import type { EditorThemeMode } from '@/types/monaco'
 import type {
   PageCopyToProjectPayload,
@@ -360,6 +363,7 @@ const pageCardSizeOptions: PageCardSizeOption[] = [
 const route = useRoute()
 const router = useRouter()
 const queryClient = useQueryClient()
+const agentSidebarExpanded = useAgentSidebarExpanded()
 
 const workspaceId = computed(() => parseInt(route.params.workspaceId as string, 10))
 const projectId = computed(() => parseInt(route.params.projectId as string, 10))
@@ -389,6 +393,8 @@ const workspaceQuery = useQuery(
 )
 
 const projectDetails = computed(() => projectQuery.data.value ?? null)
+const projectTitleCode = computed(() => (agentSidebarExpanded.value ? null : projectDetails.value?.code ?? null))
+const projectTitleClass = computed(() => (agentSidebarExpanded.value ? 'max-w-[10rem]' : ''))
 const projectScreenshotAspectRatio = computed(() => {
   const width = Number(projectDetails.value?.page_width ?? 0)
   const height = Number(projectDetails.value?.page_height ?? 0)

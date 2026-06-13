@@ -1085,7 +1085,7 @@ _COMPONENT_MANAGER_TOOL_SPECS = (
         '组件库',
         '基于 Runtime 原生组件预览链路检查组件当前草稿、完整候选源码或 edits 应用后的候选源码，不修改组件。',
         default_instructions=(
-            '主要用于新建组件完整 content 与 preview_schema 检查、用户明确要求只读诊断，或调试完整候选源码；'
+            '主要用于新增组件完整 content 与 preview_schema 检查、用户明确要求只读诊断，或调试完整候选源码；'
             '已有组件 edits 修改的默认路径是读取组件详情后直接调用 apply_component_edits，由 apply_component_edits 保存前内置校验。'
             'component_type 仅为兼容创建前校验时的分类传参，'
             '不参与检查、不落库；真正组件类型由 create_component 或元数据更新工具决定。preview_schema 可传 JSON 对象字符串，'
@@ -1137,7 +1137,7 @@ _COMPONENT_MANAGER_TOOL_SPECS = (
         '组件库',
         '对指定组件源码应用结构化 edits 并保存为草稿。',
         default_instructions=(
-            '仅在用户明确要求修改已有组件时使用；新建组件不能使用 apply_component_edits，'
+            '仅在用户明确要求修改已有组件时使用；新增组件不能使用 apply_component_edits，'
             '因为尚无 component_id。调用前必须已经读取组件详情；base_draft_hash 使用草稿内容指纹，'
             'base_published_version_no 使用草稿基线版本号。edits 使用 replace_exact、insert_after 或 rewrite_file，'
             'old_text 和 anchor_text 必须来自组件详情源码区块并唯一命中。该工具会在保存草稿前强制执行 Runtime validate；'

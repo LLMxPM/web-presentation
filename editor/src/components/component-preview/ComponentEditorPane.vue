@@ -6,7 +6,7 @@
         <div class="flex items-center gap-2">
           <Code2 class="h-4 w-4 text-indigo-500" />
           <h3 class="truncate text-sm font-bold text-slate-900">
-            {{ mode === 'create' ? '新建组件草稿' : '编辑组件草稿' }}
+            {{ mode === 'create' ? '新增组件草稿' : '编辑组件草稿' }}
           </h3>
           <span class="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-500">
             {{ mode === 'create' ? '新建' : '编辑' }}
@@ -18,7 +18,7 @@
       <div class="flex shrink-0 flex-wrap items-center justify-end gap-2">
         <BaseButton v-if="canViewHistory" variant="ghost" size="sm" @click="emit('open-version-history')">
           <History class="h-3.5 w-3.5" />
-          发布历史
+          版本
         </BaseButton>
         <BaseButton variant="secondary" size="sm" :loading="previewLoading" @click="emit('preview-draft')">
           <Eye class="h-3.5 w-3.5" />

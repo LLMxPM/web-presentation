@@ -546,7 +546,7 @@ async def test_agent_config_api_should_manage_prompt_and_tool_overrides(authenti
     assert "@workspace-components/<component_code>/v/<version_no>" in publish_component_instructions
     check_component_tool = next(tool for tool in component_library_group["tools"] if tool["key"] == "check_component_code")
     check_component_instructions = check_component_tool["agent_guide"]["instructions"] or ""
-    assert "新建组件完整 content 与 preview_schema 检查" in check_component_instructions
+    assert "新增组件完整 content 与 preview_schema 检查" in check_component_instructions
     assert "默认路径是读取组件详情后直接调用 apply_component_edits" in check_component_instructions
     apply_component_tool = next(tool for tool in component_library_group["tools"] if tool["key"] == "apply_component_edits")
     apply_component_instructions = apply_component_tool["agent_guide"]["instructions"] or ""

@@ -402,7 +402,7 @@
                 </div>
               </div>
 
-              <div class="min-h-0 flex-1 overflow-y-auto p-5">
+              <div class="min-h-0 flex-1 overflow-y-auto p-3">
                 <div v-if="detailTab === 'basic'" class="space-y-4">
                   <section class="rounded-xl border border-slate-200 bg-slate-50 p-4">
                     <div class="flex items-start justify-between gap-3">

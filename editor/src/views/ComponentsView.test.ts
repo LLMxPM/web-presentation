@@ -191,10 +191,10 @@ describe('ComponentsView', () => {
     })
   })
 
-  it('点击新建组件后应清空上下文并打开右侧创建工作台', async () => {
+  it('点击新增组件后应清空上下文并打开右侧创建工作台', async () => {
     const { setSelectedComponentMock } = renderComponentsView()
 
-    await fireEvent.click(screen.getByRole('button', { name: '新建组件' }))
+    await fireEvent.click(screen.getByRole('button', { name: '新增组件' }))
 
     await waitFor(() => {
       expect(setSelectedComponentMock).toHaveBeenLastCalledWith(null)
@@ -308,7 +308,7 @@ function renderComponentsView() {
                 buttons.push(h('button', {
                   type: 'button',
                   onClick: () => emit('create-workspace-component'),
-                }, '新建组件'))
+                }, '新增组件'))
               }
               return h('div', buttons)
             }

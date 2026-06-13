@@ -201,7 +201,7 @@ _COMPONENT_SYSTEM_INSTRUCTIONS = (
     "项目资源背景可用 useAssetBackground 搭配 bg-cover bg-center bg-no-repeat；资源名来自 props 时使用 useAssetBackground(() => props.backgroundImage) 这类 getter 形式保持响应式；复杂或计算型背景 CSS 可用 scoped CSS 或 inline style；作为内容图片展示时使用 AssetImage。",
     "蒙版、渐变或暗角层应单独写成覆盖层，并设置 pointer-events-none；蒙版色优先使用主题语义色或主题 CSS 变量，避免硬编码品牌色。",
     "生成组件 Vue SFC 时，应保证 props、emits、slots、默认展示数据和样式边界清晰；preview_schema 必须与真实 props/slots/mocks 对齐，并优先提供 2-3 个高质量 presets。",
-    "组件写入由 apply_component_edits 在保存前强制校验候选源码；check_component_code 主要用于新建组件前检查完整源码、用户明确要求诊断或调试候选源码。",
+    "组件写入由 apply_component_edits 在保存前强制校验候选源码；check_component_code 主要用于新增组件前检查完整源码、用户明确要求诊断或调试候选源码。",
     "组件归属于工作空间；项目上下文只用于理解当前项目使用情况，不改变组件归属模型。",
 )
 

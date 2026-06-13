@@ -1,7 +1,7 @@
 /**
  * 文件功能：验证页面截图在列表展示和详情页保存流程中的关键交互。
  */
-import { defineComponent, h, onMounted } from 'vue'
+import { defineComponent, h, onMounted, ref } from 'vue'
 import { render, fireEvent, screen, waitFor } from '@testing-library/vue'
 import { QueryClient, VueQueryPlugin } from '@tanstack/vue-query'
 import { createPinia, setActivePinia } from 'pinia'
@@ -9,6 +9,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import PagesView from '@/views/PagesView.vue'
 import PageDetailView from '@/views/PageDetailView.vue'
+import { agentSidebarExpandedKey } from '@/composables/agent-sidebar-state'
 import { useAuthStore } from '@/stores/auth'
 
 const routeState = {
@@ -164,7 +165,7 @@ vi.mock('@/components/agent/AgentConversationPanel.vue', () => ({
   }),
 }))
 
-function createTestingRenderOptions() {
+function createTestingRenderOptions(agentSidebarExpanded = false) {
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: {
@@ -197,6 +198,9 @@ function createTestingRenderOptions() {
       stubs: {
         teleport: true,
         'router-link': true,
+      },
+      provide: {
+        [agentSidebarExpandedKey as symbol]: ref(agentSidebarExpanded),
       },
     },
   }
@@ -439,6 +443,20 @@ describe('page screenshot views', () => {
 
     expect(localStorage.getItem('web-presentation:pages-view:preview-card-size')).toBe('huge')
     expect(screen.getByRole('button', { name: '卡片超大' })).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  it('PagesView 智能体对话面板打开时应隐藏项目编码', async () => {
+    const { unmount } = render(PagesView, createTestingRenderOptions())
+
+    expect(await screen.findByText('项目 A')).toBeInTheDocument()
+    expect(screen.getByText('PRJ202604020001')).toBeInTheDocument()
+
+    unmount()
+    render(PagesView, createTestingRenderOptions(true))
+
+    expect(await screen.findByText('项目 A')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '项目 A' })).toHaveClass('max-w-[18rem]')
+    expect(screen.queryByText('PRJ202604020001')).toBeNull()
   })
 
   it('PagesView 未加入路由分区应支持批量加入顶层路由', async () => {

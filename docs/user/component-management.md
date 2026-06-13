@@ -89,7 +89,7 @@ import SalesMetricCard from '@workspace-components/<component_code>/v/<version_n
 
 使用 AI 时建议明确：
 
-- 目标是新建组件、修改草稿、发布组件，还是只查看依赖。
+- 目标是新增组件、修改草稿、发布组件，还是只查看依赖。
 - 组件要接收哪些 props，预览时需要哪些 presets。
 - 是否允许改 `import_name`、摘要和组件类型；如果是内容组件，应明确需要哪些尺寸控制参数。
 - 是否需要发布；只保存草稿不会让页面引用到新版本。

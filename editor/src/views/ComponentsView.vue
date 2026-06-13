@@ -13,7 +13,7 @@
         </BaseButton>
         <BaseButton :disabled="!workspaceId" @click="handleCreateWorkspaceComponent">
           <Plus class="h-3.5 w-3.5" />
-          新建组件
+          新增组件
         </BaseButton>
       </template>
     </PageTitleBar>
@@ -303,7 +303,7 @@ function handleWorkspaceComponentSelected(
 }
 
 /**
- * 新建组件时清空选择并让右侧工作台进入创建模式。
+ * 新增组件时清空选择并让右侧工作台进入创建模式。
  */
 function handleCreateWorkspaceComponent(): void {
   selectedComponent.value = null
