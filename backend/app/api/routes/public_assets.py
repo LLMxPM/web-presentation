@@ -76,7 +76,10 @@ async def get_public_cached_asset(
     service = AssetService(session)
     asset, driver = await service.get_asset_by_hash(workspace_id, file_hash)
     media_type, _ = mimetypes.guess_type(asset.original_name)
-    headers = {"Cache-Control": CACHE_CONTROL_IMMUTABLE}
+    headers = {
+        "Cache-Control": CACHE_CONTROL_IMMUTABLE,
+        "Access-Control-Allow-Origin": "*",
+    }
 
     async with driver.open_for_read(
         workspace_id,

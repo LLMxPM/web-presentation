@@ -5,9 +5,11 @@ import logging
 import time
 import uuid
 from contextlib import asynccontextmanager, suppress
+from typing import Any
 
 import uvicorn
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -34,6 +36,10 @@ from app.services.ai_session_retention_service import (
 )
 from app.services.bootstrap_service import BootstrapService
 from app.services.object_storage_service import ObjectStorageService
+from app.services.page_screenshot_job_service import (
+    recover_interrupted_screenshot_jobs_on_startup,
+    run_page_screenshot_queue_loop,
+)
 from app.services.project_build_service import recover_interrupted_build_jobs_on_startup
 from app.services.redis_runtime_client import ensure_redis_runtime_available
 
@@ -47,11 +53,14 @@ async def lifespan(app: FastAPI):
     """应用启动时校验数据库、Redis 运行态并初始化默认管理员。"""
 
     ai_session_cleanup_task: asyncio.Task[None] | None = None
+    page_screenshot_queue_task: asyncio.Task[None] | None = None
     try:
         session_factory = get_session_factory()
         await BootstrapService(session_factory).ensure_default_admin()
         ensure_redis_runtime_available()
         await recover_interrupted_build_jobs_on_startup(session_factory)
+        await recover_interrupted_screenshot_jobs_on_startup(session_factory)
+        page_screenshot_queue_task = _start_page_screenshot_queue_task()
         ai_session_cleanup_task = _start_ai_session_retention_task(app, get_settings())
     except SQLAlchemyError as exc:
         if is_database_connectivity_error(exc):
@@ -60,6 +69,8 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
+        if page_screenshot_queue_task is not None:
+            await _stop_background_task(page_screenshot_queue_task)
         if ai_session_cleanup_task is not None:
             await _stop_background_task(ai_session_cleanup_task)
 
@@ -148,6 +159,20 @@ def create_app() -> FastAPI:
             content=content,
         )
 
+    @app.exception_handler(RequestValidationError)
+    async def handle_request_validation_exception(_: Request, exc: RequestValidationError) -> JSONResponse:
+        validation_errors = _sanitize_validation_errors(exc.errors())
+        first_error = validation_errors[0] if validation_errors else {}
+        message = _format_request_validation_message(first_error)
+        return JSONResponse(
+            status_code=422,
+            content={
+                "code": "VALIDATION_ERROR",
+                "message": message,
+                "detail": validation_errors,
+            },
+        )
+
     @app.exception_handler(SQLAlchemyError)
     async def handle_sqlalchemy_exception(_: Request, exc: SQLAlchemyError) -> JSONResponse:
         if is_database_connectivity_error(exc):
@@ -160,6 +185,39 @@ def create_app() -> FastAPI:
         raise exc
 
     return app
+
+
+def _format_request_validation_message(error: dict) -> str:
+    """将 FastAPI 参数校验错误转换为面向前端用户的中文提示。"""
+
+    loc = error.get("loc")
+    field_path = ".".join(str(item) for item in loc if item not in {"body", "query", "path"}) if isinstance(loc, (list, tuple)) else ""
+    raw_message = str(error.get("msg") or "").strip()
+    if field_path and raw_message:
+        return f"请求参数 {field_path} 不符合要求：{raw_message}"
+    if field_path:
+        return f"请求参数 {field_path} 不符合要求。"
+    return "请求参数不符合要求，请检查后再提交。"
+
+
+def _sanitize_validation_errors(errors: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """清洗 FastAPI 校验错误，确保 detail 可被 JSONResponse 序列化。"""
+
+    return [_sanitize_jsonable(error) for error in errors]
+
+
+def _sanitize_jsonable(value: Any) -> Any:
+    """递归转换异常等非 JSON 友好对象，保留校验错误的结构化字段。"""
+
+    if isinstance(value, dict):
+        return {str(key): _sanitize_jsonable(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_sanitize_jsonable(item) for item in value]
+    if isinstance(value, tuple):
+        return [_sanitize_jsonable(item) for item in value]
+    if isinstance(value, Exception):
+        return str(value)
+    return value
 
 
 def _mount_ai_runtime(app: FastAPI) -> None:
@@ -203,6 +261,15 @@ def _start_ai_session_retention_task(app: FastAPI, settings: AppSettings) -> asy
             interval_seconds=settings.ai_session_cleanup_interval_seconds,
         ),
         name="ai-session-retention-cleanup",
+    )
+
+
+def _start_page_screenshot_queue_task() -> asyncio.Task[None]:
+    """启动页面截图队列后台任务。"""
+
+    return asyncio.create_task(
+        run_page_screenshot_queue_loop(get_session_factory()),
+        name="page-screenshot-queue",
     )
 
 

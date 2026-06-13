@@ -10,6 +10,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.page import Page
 from app.models.workspace_component import WorkspaceComponent
 
+CONTENT_COMPONENT_SIZE_PREVIEW_SCHEMA = '{"props":{"height":{"type":"number","label":"高度","default":320}}}'
+
 
 async def _create_workspace_project(client: AsyncClient) -> tuple[int, int]:
     """创建页面编码测试所需的工作空间和项目。"""
@@ -85,6 +87,7 @@ async def test_component_create_should_retry_when_generated_code_conflicts(
         json={
             "workspace_id": workspace_id,
             "content": "<template><div>first component</div></template>",
+            "preview_schema": CONTENT_COMPONENT_SIZE_PREVIEW_SCHEMA,
             "file_type": "vue",
             "name": "已有组件",
             "import_name": "ExistingRetryComponent",
@@ -101,6 +104,7 @@ async def test_component_create_should_retry_when_generated_code_conflicts(
         json={
             "workspace_id": workspace_id,
             "content": "<template><div>second component</div></template>",
+            "preview_schema": CONTENT_COMPONENT_SIZE_PREVIEW_SCHEMA,
             "file_type": "vue",
             "name": "并发重试组件",
             "import_name": "CreatedRetryComponent",

@@ -11,10 +11,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.dependencies import get_current_user, get_list_query, require_workspace_access
 from app.db.session import get_db_session
 from app.schemas.common import ListQuery, MessageResponse, PagedResponse
+from app.schemas.component import SuggestedComponentsResponse, SuggestedComponentsUpdateRequest
 from app.schemas.workspace_style import (
     WorkspaceStyleCopyRequest,
     WorkspaceStyleCreateRequest,
     WorkspaceStyleExportPackageRequest,
+    WorkspaceStyleExportValidationResult,
     WorkspaceStyleImportResult,
     WorkspaceStyleImportValidationResult,
     WorkspaceStyleItem,
@@ -23,6 +25,7 @@ from app.schemas.workspace_style import (
 from app.services.auth_service import AuthContext
 from app.services.workspace_style_package_service import WorkspaceStylePackageService
 from app.services.workspace_style_service import WorkspaceStyleService
+from app.services.suggested_component_service import SuggestedComponentService
 
 router = APIRouter(dependencies=[Depends(require_workspace_access)])
 
@@ -51,11 +54,28 @@ async def export_workspace_style_package(
     archive_content, filename = await WorkspaceStylePackageService(session).export_package(
         workspace_id=workspace_id,
         style_ids=payload.style_ids,
+        manual_asset_names=payload.manual_asset_names,
     )
     return Response(
         content=archive_content,
         media_type="application/zip",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.post("/workspaces/{workspace_id}/styles/export-package/validate", response_model=WorkspaceStyleExportValidationResult)
+async def validate_workspace_style_package_export(
+    workspace_id: int,
+    payload: WorkspaceStyleExportPackageRequest,
+    _: Annotated[AuthContext, Depends(get_current_user)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> WorkspaceStyleExportValidationResult:
+    """预检工作空间样式离线包导出资源，不生成 Zip。"""
+
+    return await WorkspaceStylePackageService(session).validate_export_package(
+        workspace_id=workspace_id,
+        style_ids=payload.style_ids,
+        manual_asset_names=payload.manual_asset_names,
     )
 
 
@@ -102,6 +122,41 @@ async def get_workspace_style(
     """查询单个工作空间样式详情。"""
 
     return await WorkspaceStyleService(session).get(workspace_id, style_id)
+
+
+@router.get("/workspaces/{workspace_id}/styles/{style_id}/suggested-components", response_model=SuggestedComponentsResponse)
+async def list_workspace_style_suggested_components(
+    workspace_id: int,
+    style_id: int,
+    _: Annotated[AuthContext, Depends(get_current_user)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> SuggestedComponentsResponse:
+    """读取工作空间样式建议组件列表。"""
+
+    items = await SuggestedComponentService(session).list_style_component_items(
+        workspace_id,
+        style_id,
+        include_unavailable=True,
+    )
+    return SuggestedComponentsResponse(items=items)
+
+
+@router.put("/workspaces/{workspace_id}/styles/{style_id}/suggested-components", response_model=SuggestedComponentsResponse)
+async def replace_workspace_style_suggested_components(
+    workspace_id: int,
+    style_id: int,
+    payload: SuggestedComponentsUpdateRequest,
+    _: Annotated[AuthContext, Depends(get_current_user)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> SuggestedComponentsResponse:
+    """覆盖保存工作空间样式建议组件列表。"""
+
+    items = await SuggestedComponentService(session).replace_style_components(
+        workspace_id,
+        style_id,
+        payload.component_ids,
+    )
+    return SuggestedComponentsResponse(items=items)
 
 
 @router.post("/workspaces/{workspace_id}/styles", response_model=WorkspaceStyleItem)

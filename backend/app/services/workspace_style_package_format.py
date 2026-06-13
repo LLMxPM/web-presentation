@@ -12,7 +12,7 @@ from typing import Any
 
 from app.core.exceptions import AppException
 
-STYLE_PACKAGE_SCHEMA_VERSION = 2
+STYLE_PACKAGE_SCHEMA_VERSION = 3
 
 
 @dataclass(slots=True)

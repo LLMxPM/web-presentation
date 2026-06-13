@@ -3,11 +3,11 @@
   <BaseDialog
     :model-value="modelValue"
     title="项目建议资源"
-    width="980px"
-    body-class="h-[min(78vh,720px)] px-6 py-5 overflow-hidden"
+    size="wide"
+    body-preset="dense"
     @update:model-value="handleVisibleChange"
   >
-    <div v-if="projectId && workspaceId" class="grid h-full min-h-0 gap-4 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.2fr)]">
+    <div v-if="projectId && workspaceId" class="grid h-full min-h-0 grid-rows-[minmax(220px,0.95fr)_minmax(0,1.05fr)] gap-2 overflow-hidden lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.2fr)] lg:grid-rows-1">
       <section class="flex h-full min-h-0 flex-col rounded-lg border border-indigo-100 bg-indigo-50/40 p-3">
         <div class="flex shrink-0 items-center justify-between gap-2">
           <div class="flex min-w-0 items-center gap-2">
@@ -187,12 +187,12 @@
   <BaseDialog
     :model-value="!!previewAsset"
     :title="previewDialogTitle"
-    width="1040px"
-    body-class="h-[72vh] p-0"
+    size="wide"
+    body-preset="split"
     :z-index="1110"
     @update:model-value="handlePreviewVisibleChange"
   >
-    <AssetPreviewFrame :workspace-id="workspaceId" :asset="previewAsset" />
+    <AssetPreviewFrame class="h-full" :workspace-id="workspaceId" :asset="previewAsset" />
   </BaseDialog>
 </template>
 
@@ -525,3 +525,4 @@ function assetOptionClass(assetId: number): string {
   background: rgb(203 213 225);
 }
 </style>
+

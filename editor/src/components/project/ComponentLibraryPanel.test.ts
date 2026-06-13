@@ -28,7 +28,7 @@ const componentItem: WorkspaceComponentItem = {
   code: 'CMP099',
   name: '销售卡片',
   import_name: 'SalesCard',
-  component_type: '内容区块',
+  component_type: '内容组件',
   summary: '销售数据展示组件',
   status: 'active',
   content: '<template><div /></template>',
@@ -88,7 +88,7 @@ describe('ComponentLibraryPanel', () => {
     })
 
     await fireEvent.click(screen.getByText('销售卡片'))
-    await fireEvent.click(screen.getByTitle('新建组件'))
+    await fireEvent.click(screen.getByTitle('新增组件'))
 
     expect(emitted('workspace-component-selected')?.[0]).toEqual([componentItem])
     expect(emitted('create-workspace-component')).toHaveLength(1)
@@ -113,7 +113,7 @@ describe('ComponentLibraryPanel', () => {
       expect(screen.getByText('销售卡片')).toBeInTheDocument()
     })
 
-    expect(screen.queryByTitle('新建组件')).toBeNull()
+    expect(screen.queryByTitle('新增组件')).toBeNull()
     expect(screen.queryByTitle('删除组件')).toBeNull()
     expect(screen.getByTitle('打开完整组件库页面')).toBeInTheDocument()
   })
@@ -210,7 +210,7 @@ describe('ComponentLibraryPanel', () => {
     })
 
     expect(screen.queryByTitle('导入组件离线包')).toBeNull()
-    expect(screen.queryByTitle('新建组件')).toBeNull()
+    expect(screen.queryByTitle('新增组件')).toBeNull()
     expect(screen.getByTitle('刷新组件列表')).toBeInTheDocument()
 
     await rerender({
@@ -222,7 +222,7 @@ describe('ComponentLibraryPanel', () => {
     })
 
     expect(screen.queryByTitle('导入组件离线包')).toBeNull()
-    expect(screen.queryByTitle('新建组件')).toBeNull()
+    expect(screen.queryByTitle('新增组件')).toBeNull()
     expect(screen.getByTitle('导出已勾选组件')).toBeInTheDocument()
   })
 })

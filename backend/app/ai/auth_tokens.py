@@ -82,6 +82,7 @@ def build_agent_tool_token(
     """签发工具调用短期令牌，避免工具执行再依赖 Redis run 状态。"""
 
     settings = get_settings()
+    tool_token_ttl_seconds = min(settings.ai_tool_auth_window_seconds, settings.ai_tool_auth_max_seconds)
     payload: dict[str, Any] = {
         "aud": "agent-tool",
         "sub": f"user:{current.user.id}",
@@ -98,7 +99,7 @@ def build_agent_tool_token(
     }
     return TokenService.generate_signed_token(
         payload,
-        expires_in_seconds=settings.ai_agent_token_ttl_seconds,
+        expires_in_seconds=tool_token_ttl_seconds,
         subject=f"user:{current.user.id}",
     )
 

@@ -4,16 +4,15 @@
     <div v-if="activeMode === 'empty' || activeMode === 'create'" class="flex h-full items-center justify-center bg-slate-50/70 p-6">
       <div class="max-w-sm rounded-xl border border-dashed border-slate-200 bg-white px-7 py-8 text-center">
         <Layers class="mx-auto mb-3 h-10 w-10 text-slate-300" />
-        <p class="text-sm font-bold text-slate-600">{{ activeMode === 'create' ? '正在新建组件草稿' : '请选择组件' }}</p>
+        <p class="text-sm font-bold text-slate-600">{{ activeMode === 'create' ? '正在新增组件草稿' : '请选择组件' }}</p>
         <p class="mt-2 text-xs leading-6 text-slate-400">
-          {{ activeMode === 'create' ? '请在弹窗中完成基础信息、预览配置和源码编辑。' : '点击左侧工作空间组件后会在这里打开预览，也可以新建组件草稿。' }}
+          {{ activeMode === 'create' ? '请在弹窗中完成基础信息、预览配置和源码编辑。' : '点击左侧工作空间组件后会在这里打开预览，也可以新增组件草稿。' }}
         </p>
       </div>
     </div>
 
     <ComponentPreviewWorkbench
       v-else
-      ref="previewWorkbenchRef"
       :source="previewSource"
       :refresh-key="previewRefreshKey"
       :title="previewTitle"
@@ -35,7 +34,7 @@
       <template #component-actions="slotProps">
         <BaseButton v-if="currentComponent" variant="ghost" size="sm" @click="openVersionHistoryFromPreview(slotProps?.closeFullPreview)">
           <History class="h-3.5 w-3.5" />
-          发布历史
+          版本
         </BaseButton>
         <BaseButton
           v-if="currentComponent && !slotProps?.insideFullPreview"
@@ -49,7 +48,7 @@
           引用
         </BaseButton>
         <BaseButton variant="secondary" size="sm" @click="switchToEditModeFromPreview(slotProps?.closeFullPreview)">
-          编辑组件
+          编辑
         </BaseButton>
         <BaseButton
           v-if="currentComponent"
@@ -66,7 +65,7 @@
 
     <ComponentPreviewDialog
       :model-value="editorDialogVisible"
-      width="1600px"
+      size="workbench"
       close-label="关闭组件编辑"
       @update:model-value="handleEditorDialogVisibleChange"
     >
@@ -128,7 +127,7 @@
       @submit="submitReleaseDialog"
     />
 
-    <BaseDialog v-model="showSchemaHelp" title="Preview Schema 配置指南" width="760px">
+    <BaseDialog v-model="showSchemaHelp" title="Preview Schema 配置指南" size="standard">
       <div class="space-y-4 text-sm leading-7 text-slate-600">
         <p>
           <code class="font-bold text-indigo-600">previewSchema</code>
@@ -148,7 +147,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { History, Layers, Link2, Rocket } from '@lucide/vue'
 
 import {
@@ -207,7 +206,6 @@ const saving = ref(false)
 const publishing = ref(false)
 const previewLoading = ref(false)
 const previewRefreshKey = ref(0)
-const previewWorkbenchRef = ref<InstanceType<typeof ComponentPreviewWorkbench> | null>(null)
 const editorDialogVisible = ref(false)
 const showSchemaHelp = ref(false)
 const releaseDialogVisible = ref(false)
@@ -378,26 +376,21 @@ function handleEditorDialogVisibleChange(visible: boolean): void {
 }
 
 /**
- * 从编辑区切回右侧预览，并触发一次草稿预览刷新。
+ * 保存当前组件草稿后切回右侧预览，确保刷新或切换组件不会丢失刚预览的内容。
  */
 async function handlePreviewDraft(): Promise<void> {
-  draft.errors.content = draft.form.content.trim() ? '' : '源码不能为空'
-  draft.normalizePreviewSchemaInput()
-  if (draft.errors.content || draft.errors.preview_schema) {
-    return
-  }
   previewLoading.value = true
-  activeMode.value = 'preview'
-  editorDialogVisible.value = false
-  previewRefreshKey.value += 1
-  await nextTick()
-  await previewWorkbenchRef.value?.refreshCurrentPreview()
+  const savedComponent = await handleSaveDraft({ previewAfterSave: true })
+  if (!savedComponent) {
+    previewLoading.value = false
+  }
 }
 
 /**
  * 保存当前草稿，并同步最新组件给父层和左侧列表。
+ * @param options 保存后的界面行为
  */
-async function handleSaveDraft(): Promise<WorkspaceComponentItem | null> {
+async function handleSaveDraft(options: { previewAfterSave?: boolean } = {}): Promise<WorkspaceComponentItem | null> {
   saving.value = true
   const wasEditMode = Boolean(currentComponent.value)
   try {
@@ -409,7 +402,9 @@ async function handleSaveDraft(): Promise<WorkspaceComponentItem | null> {
     emit('component-saved', savedComponent)
     emit('request-list-refresh')
     activeMode.value = 'preview'
-    editorDialogVisible.value = false
+    if (options.previewAfterSave) {
+      editorDialogVisible.value = false
+    }
     previewRefreshKey.value += 1
     return savedComponent
   } catch (error) {
@@ -711,3 +706,4 @@ function resetReferenceState(): void {
   componentReferences.value = null
 }
 </script>
+

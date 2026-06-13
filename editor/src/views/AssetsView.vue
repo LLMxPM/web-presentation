@@ -1,11 +1,15 @@
 <!-- 文件功能：提供工作空间级资源库页面，承载资源筛选、视觉预览、详情编辑、引用检查与归档删除。 -->
 <template>
-  <div data-testid="assets-view" class="flex h-full min-h-0 flex-col gap-4">
+  <div data-testid="assets-view" class="flex h-full min-h-0 flex-col gap-2">
     <PageTitleBar class="shrink-0" :title="workspaceTitle">
       <template #actions>
         <BaseButton variant="ghost" :disabled="!workspaceId || uploading" @click="openUploadForm">
           <Upload class="h-3.5 w-3.5" />
           {{ uploading ? '上传中' : '上传资源' }}
+        </BaseButton>
+        <BaseButton variant="ghost" :disabled="!workspaceId || packageImporting" @click="triggerPackageImport">
+          <Upload class="h-3.5 w-3.5" />
+          {{ packageImporting ? '导入中' : '导入资源包' }}
         </BaseButton>
         <BaseButton :disabled="!workspaceId" @click="openCreateForm">
           <FilePlus2 class="h-3.5 w-3.5" />
@@ -14,7 +18,7 @@
       </template>
     </PageTitleBar>
 
-    <div class="grid min-h-0 flex-1 grid-cols-[240px_minmax(0,1fr)] gap-4 overflow-hidden">
+    <div class="grid min-h-0 flex-1 grid-cols-[240px_minmax(0,1fr)] gap-2 overflow-hidden">
       <aside class="flex min-h-0 flex-col overflow-hidden rounded-xl border border-slate-200 bg-slate-50/80 shadow-sm">
         <div class="border-b border-slate-200 bg-white p-3">
           <div class="relative">
@@ -79,9 +83,17 @@
         <header class="flex shrink-0 items-center justify-between gap-4 border-b border-slate-100 px-5 py-4">
           <div>
             <h2 class="text-base font-bold text-slate-800">资源预览</h2>
-            <p class="mt-1 text-xs text-slate-400">点击资源打开详情弹窗，页面卡片只保留轻量信息。</p>
           </div>
           <div class="flex shrink-0 items-center gap-2">
+            <BaseButton
+              variant="ghost"
+              size="sm"
+              :disabled="!hasBatchSelection || batchOperating"
+              @click="exportSelectedAssets"
+            >
+              <Download class="h-3.5 w-3.5" />
+              {{ batchExporting ? '导出中' : '导出选中' }}
+            </BaseButton>
             <BaseButton
               v-if="activeView === 'active'"
               variant="ghost"
@@ -227,97 +239,99 @@
       multiple
       @change="handleUploadFileChange"
     />
+    <input ref="packageFileInput" type="file" class="hidden" accept=".zip,application/zip" @change="handlePackageFileChange" />
 
-    <Teleport to="body">
-      <Transition name="fade">
-        <div v-if="uploadMode" class="fixed inset-0 z-[205] flex items-center justify-center p-4">
-          <div class="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" @click="closeUploadForm"></div>
-          <div class="relative w-full max-w-xl rounded-2xl bg-white p-6 shadow-xl">
-            <div class="flex items-start justify-between gap-3">
-              <div>
-                <h2 class="text-base font-bold text-slate-800">上传资源</h2>
-                <p class="mt-1 text-xs text-slate-400">选择资源类型后上传文件；同名资源会询问是否覆盖。</p>
-              </div>
-              <BaseCloseButton label="关闭上传资源弹窗" @click="closeUploadForm" />
-            </div>
-            <div class="mt-5 space-y-4">
-              <div>
-                <label class="mb-1 block text-xs font-bold text-slate-500">资源类型</label>
-                <select v-model="uploadForm.asset_type" class="h-10 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm font-semibold text-slate-700 outline-none focus:border-indigo-400">
-                  <option v-for="item in assetTypeOptions" :key="item.value" :value="item.value">{{ item.label }}</option>
-                </select>
-              </div>
-              <div>
-                <label class="mb-1 block text-xs font-bold text-slate-500">标签，逗号分隔</label>
-                <input v-model="uploadTagsText" class="h-10 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm outline-none focus:border-indigo-400" placeholder="可留空" />
-              </div>
-            </div>
-            <footer class="mt-6 flex items-center justify-end gap-3">
-              <BaseButton variant="ghost" :disabled="uploading" @click="closeUploadForm">取消</BaseButton>
-              <BaseButton :disabled="uploading" @click="triggerUploadSelect">
-                <Upload class="h-3.5 w-3.5" />
-                {{ uploading ? '上传中...' : '选择文件上传' }}
-              </BaseButton>
-            </footer>
-          </div>
+    <BaseDialog
+      :model-value="uploadMode"
+      title="上传资源"
+      description="选择资源类型后上传文件；同名资源会询问是否覆盖。"
+      size="compact"
+      body-preset="auto"
+      :z-index="205"
+      @update:model-value="value => { if (!value) closeUploadForm() }"
+    >
+      <div class="space-y-4">
+        <div>
+          <label class="mb-1 block text-xs font-bold text-slate-500">资源类型</label>
+          <select v-model="uploadForm.asset_type" class="h-10 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm font-semibold text-slate-700 outline-none focus:border-indigo-400">
+            <option v-for="item in assetTypeOptions" :key="item.value" :value="item.value">{{ item.label }}</option>
+          </select>
         </div>
-      </Transition>
-
-      <Transition name="fade">
-        <div v-if="createMode" class="fixed inset-0 z-[210] flex items-center justify-center p-4">
-          <div class="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" @click="closeCreateForm"></div>
-          <div class="relative flex max-h-[86vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl bg-white shadow-xl">
-            <header class="flex shrink-0 items-center justify-between border-b border-slate-100 px-5 py-4">
-              <div>
-                <h2 class="text-base font-bold text-slate-800">新建内容资源</h2>
-                <p class="mt-1 text-xs text-slate-400">支持 SVG 图片、SVG 图标、Draw.io、Mermaid、Chart 和 Formula。</p>
-              </div>
-              <BaseButton variant="ghost" size="sm" @click="closeCreateForm">取消</BaseButton>
-            </header>
-            <div class="min-h-0 flex-1 overflow-y-auto p-5">
-              <div class="grid gap-3 lg:grid-cols-[160px_minmax(0,1fr)_minmax(0,1fr)]">
-                <select v-model="createForm.asset_type" class="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700">
-                  <option v-for="item in creatableTypes" :key="item.value" :value="item.value">{{ item.label }}</option>
-                </select>
-                <input v-model.trim="createForm.name" class="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm" placeholder="资源 name，如 brand_icon" />
-                <input v-model.trim="createForm.original_name" class="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm" placeholder="展示文件名，如 brand_icon.svg" />
-              </div>
-              <textarea
-                v-model="createForm.content"
-                class="mt-4 h-[420px] w-full rounded-xl border border-slate-200 bg-slate-50 p-4 font-mono text-xs leading-5 text-slate-800 outline-none focus:border-indigo-400"
-                placeholder="输入 SVG 图片 / SVG 图标 / Draw.io XML / Mermaid / Chart JSON/YAML / Formula 内容"
-              />
-            </div>
-            <footer class="flex shrink-0 items-center justify-between gap-3 border-t border-slate-100 bg-slate-50 px-5 py-4">
-              <p class="text-xs text-slate-500">SVG 会拒绝脚本、事件属性、foreignObject 与远程引用。</p>
-              <BaseButton :disabled="saving" @click="createAsset">创建资源</BaseButton>
-            </footer>
-          </div>
+        <div>
+          <label class="mb-1 block text-xs font-bold text-slate-500">标签，逗号分隔</label>
+          <input v-model="uploadTagsText" class="h-10 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm outline-none focus:border-indigo-400" placeholder="可留空" />
         </div>
-      </Transition>
+      </div>
 
-      <Transition name="fade">
-        <div v-if="detailAsset" class="fixed inset-0 z-[220] flex p-5">
-          <div class="absolute inset-0 bg-slate-950/70 backdrop-blur-sm" @click="closeAssetDetail"></div>
-          <div class="relative grid min-h-0 w-full overflow-hidden rounded-2xl bg-white shadow-2xl lg:grid-cols-[minmax(0,1.35fr)_460px]">
-            <section class="flex min-h-0 flex-col bg-slate-50">
-              <header class="flex shrink-0 items-center justify-between border-b border-slate-200 bg-white px-5 py-4">
-                <div class="min-w-0">
-                  <h2 class="truncate text-base font-bold text-slate-800">{{ detailAsset.name }}</h2>
-                  <p class="mt-1 truncate font-mono text-xs text-slate-400">{{ detailAsset.original_name }}</p>
-                </div>
-                <BaseCloseButton label="关闭资源详情" @click="closeAssetDetail" />
-              </header>
-              <div class="min-h-0 flex-1 p-5">
-                <AssetPreviewFrame
-                  :key="`${detailAsset.id}:${detailAsset.file_hash}`"
-                  :workspace-id="workspaceId"
-                  :asset="detailAsset"
-                />
-              </div>
-            </section>
+      <template #footer>
+        <BaseButton variant="ghost" :disabled="uploading" @click="closeUploadForm">取消</BaseButton>
+        <BaseButton :disabled="uploading" @click="triggerUploadSelect">
+          <Upload class="h-3.5 w-3.5" />
+          {{ uploading ? '上传中...' : '选择文件上传' }}
+        </BaseButton>
+      </template>
+    </BaseDialog>
 
-            <aside class="flex min-h-0 flex-col border-l border-slate-200 bg-white">
+    <BaseDialog
+      :model-value="createMode"
+      title="新建内容资源"
+      description="支持 SVG 图片、SVG 图标、Draw.io、Mermaid、Chart 和 Formula。"
+      size="wide"
+      body-preset="editor"
+      :z-index="210"
+      @update:model-value="value => { if (!value) closeCreateForm() }"
+    >
+      <div class="flex h-full min-h-0 flex-col gap-2">
+        <div class="grid gap-3 lg:grid-cols-[160px_minmax(0,1fr)_minmax(0,1fr)]">
+          <select v-model="createForm.asset_type" class="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700">
+            <option v-for="item in creatableTypes" :key="item.value" :value="item.value">{{ item.label }}</option>
+          </select>
+          <input v-model.trim="createForm.name" class="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm" placeholder="资源 name，如 brand_icon" />
+          <input v-model.trim="createForm.original_name" class="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm" placeholder="展示文件名，如 brand_icon.svg" />
+        </div>
+        <textarea
+          v-model="createForm.content"
+          class="min-h-[320px] min-w-0 flex-1 rounded-xl border border-slate-200 bg-slate-50 p-4 font-mono text-xs leading-5 text-slate-800 outline-none focus:border-indigo-400"
+          placeholder="输入 SVG 图片 / SVG 图标 / Draw.io XML / Mermaid / Chart JSON/YAML / Formula 内容"
+        />
+      </div>
+
+      <template #footer>
+        <p class="mr-auto text-xs text-slate-500">SVG 会拒绝脚本、事件属性、foreignObject 与远程引用。</p>
+        <BaseButton variant="ghost" size="sm" @click="closeCreateForm">取消</BaseButton>
+        <BaseButton :disabled="saving" @click="createAsset">创建资源</BaseButton>
+      </template>
+    </BaseDialog>
+
+    <BaseDialog
+      :model-value="!!detailAsset"
+      size="workbench"
+      body-preset="immersive"
+      :show-header="false"
+      overlay-class="bg-slate-950/70 backdrop-blur-sm"
+      :z-index="220"
+      @update:model-value="handleDetailDialogVisibleChange"
+    >
+      <div v-if="detailAsset" class="grid h-full min-h-0 grid-rows-[minmax(280px,0.95fr)_minmax(0,1.05fr)] overflow-hidden xl:grid-cols-[minmax(0,1.35fr)_460px] xl:grid-rows-1">
+        <section class="flex min-h-0 flex-col bg-slate-50">
+          <header class="flex shrink-0 items-center justify-between border-b border-slate-200 bg-white px-5 py-4">
+            <div class="min-w-0">
+              <h2 class="truncate text-base font-bold text-slate-800">{{ detailAsset.name }}</h2>
+              <p class="mt-1 truncate font-mono text-xs text-slate-400">{{ detailAsset.original_name }}</p>
+            </div>
+            <BaseCloseButton label="关闭资源详情" @click="closeAssetDetail" />
+          </header>
+          <div class="min-h-0 flex-1 p-5">
+            <AssetPreviewFrame
+              :key="`${detailAsset.id}:${detailAsset.file_hash}`"
+              class="h-full"
+              :workspace-id="workspaceId"
+              :asset="detailAsset"
+            />
+          </div>
+        </section>
+
+        <aside class="flex min-h-0 flex-col border-t border-slate-200 bg-white xl:border-l xl:border-t-0">
               <div class="shrink-0 border-b border-slate-100 bg-white">
                 <div class="px-5 pb-3 pt-4">
                   <div class="grid grid-cols-3 rounded-xl bg-slate-100 p-1">
@@ -388,7 +402,7 @@
                 </div>
               </div>
 
-              <div class="min-h-0 flex-1 overflow-y-auto p-5">
+              <div class="min-h-0 flex-1 overflow-y-auto p-3">
                 <div v-if="detailTab === 'basic'" class="space-y-4">
                   <section class="rounded-xl border border-slate-200 bg-slate-50 p-4">
                     <div class="flex items-start justify-between gap-3">
@@ -425,7 +439,7 @@
                   </div>
                 </div>
 
-                <div v-else-if="detailTab === 'content'" class="flex min-h-[520px] flex-col">
+                <div v-else-if="detailTab === 'content'" class="flex h-full min-h-0 flex-col">
                   <div v-if="!detailAsset.content_editable" class="flex flex-1 items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50 p-6 text-center">
                     <div>
                       <FileText class="mx-auto mb-3 h-10 w-10 text-slate-300" />
@@ -481,10 +495,8 @@
                 </BaseButton>
               </footer>
             </aside>
-          </div>
-        </div>
-      </Transition>
-    </Teleport>
+      </div>
+    </BaseDialog>
   </div>
 </template>
 
@@ -497,6 +509,7 @@ import {
   ArrowUpRight,
   BarChart3,
   Copy,
+  Download,
   FilePlus2,
   FileText,
   FolderArchive,
@@ -522,7 +535,9 @@ import {
   copyWorkspaceAsset,
   createWorkspaceAssetContent,
   deleteWorkspaceAsset,
+  exportWorkspaceAssetPackage,
   getWorkspaceAssetContent,
+  importWorkspaceAssetPackage,
   listWorkspaceAssetTags,
   listWorkspaceAssets,
   previewWorkspaceAssetReferences,
@@ -541,11 +556,13 @@ import type { AgentMutationRefreshEvent } from '@/components/agent/agent-convers
 import LibraryChipFilter from '@/components/project/LibraryChipFilter.vue'
 import LibrarySegmentedControl from '@/components/project/LibrarySegmentedControl.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
+import BaseDialog from '@/components/ui/BaseDialog.vue'
 import BaseCloseButton from '@/components/ui/BaseCloseButton.vue'
 import PaginationControl from '@/components/ui/PaginationControl.vue'
 import type { AssetBatchOperationResponse, AssetReferenceSummary, AssetResponse, AssetType, RecordStatus } from '@/types/api'
 import { createConfirm, Message } from '@/utils/message'
 import { buildWorkspaceComponentsPath } from '@/utils/workspace-routes'
+import { downloadBlob } from '@/utils/zip-download'
 
 type AssetView = 'active' | 'archived' | 'history'
 type DetailTab = 'basic' | 'content' | 'references'
@@ -568,7 +585,9 @@ const sortValue = ref('updated_at:desc')
 const loading = ref(false)
 const saving = ref(false)
 const uploading = ref(false)
+const packageImporting = ref(false)
 const batchOperating = ref(false)
+const batchExporting = ref(false)
 const referencesLoading = ref(false)
 const createMode = ref(false)
 const uploadMode = ref(false)
@@ -586,6 +605,7 @@ const originalContent = ref('')
 const referenceSummary = ref<AssetReferenceSummary | null>(null)
 const replaceFileInput = ref<HTMLInputElement | null>(null)
 const uploadFileInput = ref<HTMLInputElement | null>(null)
+const packageFileInput = ref<HTMLInputElement | null>(null)
 const replacingAsset = ref<AssetResponse | null>(null)
 const openedQueryAssetId = ref<number | null>(null)
 const editForm = reactive({
@@ -897,6 +917,16 @@ async function openAssetDetail(asset: AssetResponse): Promise<void> {
 
 function closeAssetDetail(): void {
   detailAsset.value = null
+}
+
+/**
+ * 同步资源详情弹窗显隐状态，关闭时清空当前详情资源。
+ * @param value 弹窗目标可见状态
+ */
+function handleDetailDialogVisibleChange(value: boolean): void {
+  if (!value) {
+    closeAssetDetail()
+  }
 }
 
 function syncEditForm(asset: AssetResponse): void {
@@ -1212,6 +1242,27 @@ async function deleteSelectedAssets(): Promise<void> {
   }
 }
 
+/**
+ * 导出当前选中的资源文件，前端拉取下载 Blob 后组装为单个 ZIP。
+ */
+async function exportSelectedAssets(): Promise<void> {
+  const assetIds = [...selectedAssetIds.value]
+  if (!Number.isFinite(workspaceId.value) || assetIds.length === 0) return
+
+  batchOperating.value = true
+  batchExporting.value = true
+  try {
+    const { blob, filename } = await exportWorkspaceAssetPackage(workspaceId.value, assetIds)
+    downloadBlob(blob, filename)
+    Message.success(`已导出 ${assetIds.length} 个资源`)
+  } catch (error) {
+    Message.error(getErrorMessage(error, '批量导出资源失败'))
+  } finally {
+    batchExporting.value = false
+    batchOperating.value = false
+  }
+}
+
 function showBatchOperationResult(result: AssetBatchOperationResponse, actionLabel: string): void {
   if (result.failed_count === 0) {
     Message.success(`已${actionLabel} ${result.succeeded_count} 个资源`)
@@ -1226,6 +1277,44 @@ function showBatchOperationResult(result: AssetBatchOperationResponse, actionLab
 
 function formatBatchFailure(result: AssetBatchOperationResponse): string {
   return result.failures[0]?.detail || '请检查资源状态或引用关系'
+}
+
+/**
+ * 打开资源包文件选择器。
+ */
+function triggerPackageImport(): void {
+  packageFileInput.value?.click()
+}
+
+/**
+ * 选择资源包后立即上传导入。
+ */
+async function handlePackageFileChange(event: Event): Promise<void> {
+  const target = event.target as HTMLInputElement
+  const file = target.files?.[0] ?? null
+  target.value = ''
+  if (!file || !Number.isFinite(workspaceId.value)) return
+
+  packageImporting.value = true
+  try {
+    const result = await importWorkspaceAssetPackage(workspaceId.value, file)
+    if (result.failed_count > 0) {
+      const firstFailure = result.failures[0]
+      const importedText = result.imported_count > 0 ? `已导入 ${result.imported_count} 个资源，` : ''
+      Message.warning(`${importedText}${result.failed_count} 个资源失败：${firstFailure?.detail || '请检查资源包内容'}`)
+    } else {
+      const updatedText = result.updated_count > 0 ? `，同步 ${result.updated_count} 个同名资源元数据` : ''
+      const reusedText = result.reused_count > 0 ? `，复用 ${result.reused_count} 个同名资源` : ''
+      Message.success(`已导入 ${result.imported_count} 个资源${updatedText}${reusedText}`)
+    }
+    activeView.value = 'active'
+    page.value = 1
+    await Promise.all([refreshAssets(), loadTags()])
+  } catch (error) {
+    Message.error(getErrorMessage(error, '导入资源包失败'))
+  } finally {
+    packageImporting.value = false
+  }
 }
 
 function closeDetailIfSelected(assetIds: number[]): void {
@@ -1387,14 +1476,3 @@ onBeforeUnmount(() => {
 })
 </script>
 
-<style scoped>
-.fade-enter-active,
-.fade-leave-active {
-  transition: opacity 0.2s ease;
-}
-
-.fade-enter-from,
-.fade-leave-to {
-  opacity: 0;
-}
-</style>

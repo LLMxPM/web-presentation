@@ -3,7 +3,7 @@
   <BaseDialog
     :model-value="modelValue"
     title="发布组件版本"
-    width="520px"
+    size="compact"
     @update:model-value="emit('update:modelValue', $event)"
   >
     <div class="space-y-4">
@@ -56,3 +56,4 @@ const emit = defineEmits<{
   submit: []
 }>()
 </script>
+

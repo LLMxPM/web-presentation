@@ -106,7 +106,7 @@ function createComponent(): WorkspaceComponentItem {
     code: 'CMP009',
     name: '目标组件',
     import_name: 'TargetCard',
-    component_type: '内容区块',
+    component_type: '内容组件',
     summary: null,
     status: 'active',
     content: '<template><div /></template>',

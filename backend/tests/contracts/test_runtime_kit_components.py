@@ -61,6 +61,10 @@ async def test_runtime_kit_component_capability_list_should_expose_enabled_compo
     assert asset_image_item["preview_schema"]["props"]["fallback"]["default"] == "图片资源无法渲染，请检查资源名称或资源内容。"
     assert asset_image_item["preview_schema"]["props"]["fallback"]["agent_visible"] is False
     assert asset_image_item["preview_schema"]["props"]["class"]["default"] == asset_image_class
+    assert "外层图片框" in asset_image_item["preview_schema"]["props"]["class"]["description"]
+    assert "边框框体内" in asset_image_item["preview_schema"]["props"]["fit"]["description"]
+    assert "object-position" in asset_image_item["preview_schema"]["props"]["position"]["description"]
+    assert any("fit 控制 object-fit" in item for item in asset_image_item["constraints"])
     assert not hidden_surface_props.intersection(asset_image_item["preview_schema"]["props"])
     assert "showFallbackPlaceholder" not in asset_image_item["preview_schema"]["props"]
     assert asset_image_item["preview_schema"]["presets"][0]["key"] == "contain-preview"

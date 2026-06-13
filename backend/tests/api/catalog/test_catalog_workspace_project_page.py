@@ -3,6 +3,7 @@
 from tests.api.catalog.catalog_cases import (
     test_auto_generated_codes_are_unique,
     test_page_content_accepts_long_text,
+    test_page_speaker_notes_update_should_create_page_version,
     test_project_archive_and_restore_should_maintain_archived_at,
     test_project_config_update_should_reject_invalid_structured_fields,
     test_project_menu_mode_should_support_bottom_preview,

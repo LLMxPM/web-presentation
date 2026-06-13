@@ -9,7 +9,7 @@ export type PageVersionStorageType = 'snapshot' | 'diff'
 export type AssetType = 'icon' | 'font' | 'image' | 'video' | 'drawio' | 'mermaid' | 'chart' | 'formula'
 export type AssetRole = 'foundation' | 'content'
 export type ProjectMenuMode = 'text' | 'preview' | 'bottom-preview'
-export type WorkspaceComponentType = '整页模板' | '布局容器' | '内容区块' | '数据展示' | '资源渲染' | '样式能力' | '路由能力'
+export type WorkspaceComponentType = '页面组件' | '内容组件' | '原子组件'
 
 export interface PreviewSizePreset {
   name: string
@@ -51,6 +51,22 @@ export interface ProjectSuggestedReferenceAssetItem {
 
 export interface ProjectSuggestedReferenceAssetsResponse {
   items: ProjectSuggestedReferenceAssetItem[]
+}
+
+export interface SuggestedComponentItem {
+  id: number
+  code: string
+  name: string
+  import_name: string
+  component_type: WorkspaceComponentType
+  summary: string | null
+  current_version_no: number
+  available?: boolean
+  unavailable_reason?: string | null
+}
+
+export interface SuggestedComponentsResponse {
+  items: SuggestedComponentItem[]
 }
 
 export interface WorkspaceItem {
@@ -119,7 +135,14 @@ export interface WorkspaceStylePackageStyleSummary {
   key: string
   name: string
   theme_key: string | null
-  action: 'create' | 'reuse' | string
+  page_width: number
+  page_height: number
+  base_font_size: string
+  icon_default_stroke_width: number
+  show_pdf_export_button: boolean
+  menu_mode: ProjectMenuMode
+  style_spec_markdown: string
+  action: 'create' | 'overwrite' | string
 }
 
 export interface WorkspaceStylePackageThemeSummary {
@@ -147,6 +170,39 @@ export interface WorkspaceStylePackageFontSummary {
   action: 'create' | 'reuse' | string
 }
 
+export interface WorkspaceStylePackageComponentSummary {
+  source_component_code: string
+  source_version_no: number
+  name: string
+  import_name: string
+  component_type: WorkspaceComponentType | string
+  dependencies: string[]
+  component_fingerprint: string | null
+  matched_component_id: number | null
+  matched_component_code: string | null
+  action: 'create' | 'reuse' | string
+  match_reason: string | null
+}
+
+export interface WorkspaceStyleExportAssetSummary {
+  name: string
+  original_name: string
+  asset_type: string
+  file_hash: string
+  source: 'automatic' | 'manual' | string
+}
+
+export interface WorkspaceStyleExportValidationResult {
+  can_export: boolean
+  automatic_assets: WorkspaceStyleExportAssetSummary[]
+  manual_assets: WorkspaceStyleExportAssetSummary[]
+  fonts: WorkspaceStylePackageFontSummary[]
+  warnings: string[]
+  missing_static_asset_names: string[]
+  missing_manual_asset_names: string[]
+  dynamic_resource_components: string[]
+}
+
 export interface WorkspaceStyleImportValidationResult {
   valid: boolean
   schema_version: number | null
@@ -154,7 +210,9 @@ export interface WorkspaceStyleImportValidationResult {
   themes: WorkspaceStylePackageThemeSummary[]
   assets: WorkspaceStylePackageAssetSummary[]
   fonts: WorkspaceStylePackageFontSummary[]
+  components: WorkspaceStylePackageComponentSummary[]
   errors: string[]
+  warnings: string[]
 }
 
 export interface WorkspaceStyleImportResult {
@@ -162,6 +220,8 @@ export interface WorkspaceStyleImportResult {
   themes: WorkspaceStylePackageThemeSummary[]
   assets: WorkspaceStylePackageAssetSummary[]
   fonts: WorkspaceStylePackageFontSummary[]
+  components: WorkspaceStylePackageComponentSummary[]
+  warnings: string[]
 }
 
 export interface ProjectBuildCreateRequest {
@@ -220,6 +280,7 @@ export interface PageItem {
   file_type: PageFileType
   title: string
   summary: string | null
+  speaker_notes?: string | null
   status: RecordStatus
   workspace_id: number | null
   workspace_name: string | null
@@ -260,6 +321,44 @@ export interface PageScreenshotBatchRefreshResponse {
   succeeded_count: number
   failed_count: number
   page_ids: number[]
+  failures: PageScreenshotBatchRefreshFailure[]
+}
+
+export type PageScreenshotJobStatus = 'pending' | 'running' | 'succeeded' | 'failed' | 'skipped'
+export type PageScreenshotJobGroupStatus = 'pending' | 'running' | 'succeeded' | 'failed' | 'partial'
+
+export interface PageScreenshotJob {
+  id: number
+  job_group_id: string | null
+  source: string
+  page_id: number
+  workspace_id: number | null
+  project_id: number | null
+  viewport_width: number
+  viewport_height: number
+  config_hash: string
+  status: PageScreenshotJobStatus
+  attempt_count: number
+  error_code: string | null
+  error_message: string | null
+  created_by: number | null
+  created_at: string
+  updated_at: string
+  started_at: string | null
+  finished_at: string | null
+}
+
+export interface PageScreenshotJobGroup {
+  job_group_id: string
+  status: PageScreenshotJobGroupStatus
+  requested_count: number
+  pending_count: number
+  running_count: number
+  succeeded_count: number
+  failed_count: number
+  skipped_count: number
+  page_ids: number[]
+  jobs: PageScreenshotJob[]
   failures: PageScreenshotBatchRefreshFailure[]
 }
 
@@ -337,6 +436,7 @@ export interface PageVersionContent {
   is_important: boolean
   snapshot_name: string | null
   change_note: string | null
+  speaker_notes?: string | null
   content_mode: 'full' | 'diff'
   content: string
   resolved_content: string
@@ -504,6 +604,11 @@ export interface ComponentSharePackageComponentSummary {
   import_name: string
   component_type: string
   dependencies: string[]
+  component_fingerprint: string | null
+  matched_component_id: number | null
+  matched_component_code: string | null
+  action: 'create' | 'reuse' | string
+  match_reason: string | null
 }
 
 export interface ComponentSharePackageAssetSummary {
@@ -525,6 +630,35 @@ export interface ComponentSharePackageFontSummary {
   action: 'create' | 'reuse' | string
 }
 
+export interface ComponentShareExportComponentSummary {
+  source_component_code: string
+  source_version_no: number
+  name: string
+  import_name: string
+  has_dynamic_resources: boolean
+  missing_static_asset_names: string[]
+}
+
+export interface ComponentShareExportAssetSummary {
+  name: string
+  original_name: string
+  asset_type: string
+  file_hash: string
+  source: 'automatic' | 'manual' | string
+}
+
+export interface ComponentShareExportValidationResult {
+  can_export: boolean
+  components: ComponentShareExportComponentSummary[]
+  automatic_assets: ComponentShareExportAssetSummary[]
+  manual_assets: ComponentShareExportAssetSummary[]
+  fonts: ComponentSharePackageFontSummary[]
+  warnings: string[]
+  missing_static_asset_names: string[]
+  missing_manual_asset_names: string[]
+  dynamic_resource_components: string[]
+}
+
 export interface ComponentShareImportValidationResult {
   valid: boolean
   schema_version: number | null
@@ -533,12 +667,15 @@ export interface ComponentShareImportValidationResult {
   assets: ComponentSharePackageAssetSummary[]
   fonts: ComponentSharePackageFontSummary[]
   errors: string[]
+  warnings: string[]
 }
 
 export interface ComponentShareImportResult {
   imported_components: WorkspaceComponentItem[]
+  components: ComponentSharePackageComponentSummary[]
   assets: ComponentSharePackageAssetSummary[]
   fonts: ComponentSharePackageFontSummary[]
+  warnings: string[]
 }
 
 export type PreviewKind = 'project' | 'page' | 'component' | 'asset'
@@ -1198,6 +1335,30 @@ export interface AssetBatchOperationResponse {
   failed_count: number
   asset_ids: number[]
   failures: AssetBatchOperationFailure[]
+}
+
+export interface AssetPackageImportFailure {
+  name: string
+  code: string
+  detail: string
+}
+
+export interface AssetPackageImportItem {
+  name: string
+  original_name: string
+  asset_type: AssetType
+  file_hash: string
+  action: 'create' | 'update_metadata' | 'reuse' | string
+  asset_id: number | null
+}
+
+export interface AssetPackageImportResult {
+  imported_count: number
+  updated_count: number
+  reused_count: number
+  failed_count: number
+  assets: AssetPackageImportItem[]
+  failures: AssetPackageImportFailure[]
 }
 
 export interface ListParams {

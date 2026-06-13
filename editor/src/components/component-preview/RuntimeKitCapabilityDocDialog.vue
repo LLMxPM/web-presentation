@@ -3,11 +3,11 @@
   <BaseDialog
     :model-value="modelValue"
     title="能力说明"
-    width="1120px"
+    size="wide"
+    body-preset="auto"
     @update:model-value="emit('update:modelValue', $event)"
   >
-    <div class="-mx-6 -my-5 h-[72vh] overflow-y-auto p-6">
-      <div v-if="item" class="space-y-5">
+    <div v-if="item" class="space-y-5">
         <header class="space-y-2">
           <div class="flex flex-wrap items-center gap-2">
             <h3 class="truncate text-lg font-bold text-slate-800">{{ item.display_name }}</h3>
@@ -77,7 +77,6 @@
             </span>
           </div>
         </section>
-      </div>
     </div>
   </BaseDialog>
 </template>
@@ -95,3 +94,4 @@ const emit = defineEmits<{
   'update:modelValue': [value: boolean]
 }>()
 </script>
+

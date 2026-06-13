@@ -4,7 +4,7 @@
     <!-- Trigger -->
     <div @click="dropdownVisible = !dropdownVisible"
       class="flex items-center gap-3 px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 transition-all cursor-pointer select-none border border-slate-200/50 shadow-sm"
-      :class="{ 'bg-slate-200': dropdownVisible }">
+      :class="triggerClass">
       <div class="flex items-center gap-2">
         <LayoutGrid class="w-4 h-4 text-indigo-600" />
         <div class="flex items-baseline gap-1.5">
@@ -19,7 +19,7 @@
     <!-- Dropdown Menu -->
     <Transition name="fade-scale">
       <div v-if="dropdownVisible"
-        class="absolute left-1/2 -translate-x-1/2 mt-2 w-64 bg-white border border-slate-200 rounded-2xl shadow-xl z-50 py-2">
+        class="absolute left-0 mt-2 w-64 origin-top-left bg-white border border-slate-200 rounded-2xl shadow-xl z-50 py-2">
         <div class="px-4 py-2 border-b border-slate-50 mb-1 flex items-center justify-between gap-3">
           <span class="text-[11px] font-bold text-slate-400 uppercase tracking-widest">所属工作空间</span>
           <button type="button" class="text-[11px] font-medium text-slate-400 transition-colors hover:text-slate-600"
@@ -63,7 +63,7 @@
     </Transition>
 
     <!-- Workspace Dialog (Refactored) -->
-    <BaseDialog v-model="dialogVisible" title="创建工作空间" width="500px">
+    <BaseDialog v-model="dialogVisible" title="创建工作空间" size="compact">
       <div class="space-y-5">
         <BaseInput v-model="form.name" label="空间名称" placeholder="给工作空间起个响亮的名字" required :error="errors.name" />
 
@@ -99,6 +99,12 @@ import { buildWorkspaceHomePath } from '@/utils/workspace-routes'
 const route = useRoute()
 const router = useRouter()
 
+const props = withDefaults(defineProps<{
+  prominent?: boolean
+}>(), {
+  prominent: false,
+})
+
 const workspaces = ref<WorkspaceItem[]>([])
 const dropdownVisible = ref(false)
 const dialogVisible = ref(false)
@@ -126,6 +132,12 @@ const currentWorkspace = computed(() => {
   if (!currentWorkspaceId.value) return null
   return workspaces.value.find(w => w.id === currentWorkspaceId.value) || null
 })
+
+const triggerClass = computed(() => ({
+  'bg-slate-200': dropdownVisible.value && !props.prominent,
+  'border-indigo-300 bg-white ring-2 ring-indigo-100 hover:bg-indigo-50': props.prominent,
+  'border-indigo-400 bg-indigo-50 ring-2 ring-indigo-200': props.prominent && dropdownVisible.value,
+}))
 
 /**
  * 加载所有工作空间列表
@@ -267,6 +279,7 @@ async function handleWorkspaceListUpdated() {
 .fade-scale-enter-from,
 .fade-scale-leave-to {
   opacity: 0;
-  transform: scale(0.95) translateY(-10px);
+  transform: translateY(-10px) scale(0.95);
 }
 </style>
+

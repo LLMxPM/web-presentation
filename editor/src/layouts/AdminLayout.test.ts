@@ -74,7 +74,11 @@ vi.mock('@/components/nav/UserMenu.vue', () => ({
 }))
 
 vi.mock('@/components/nav/WorkspaceSwitcher.vue', () => ({
-  default: { name: 'WorkspaceSwitcher', template: '<div>空间切换</div>' },
+  default: {
+    name: 'WorkspaceSwitcher',
+    props: ['prominent'],
+    template: '<div data-testid="workspace-switcher" :data-prominent="prominent ? \'true\' : \'false\'">空间切换</div>',
+  },
 }))
 
 vi.mock('@/components/nav/ProjectQuickSwitcher.vue', () => ({
@@ -89,7 +93,12 @@ vi.mock('@/components/agent/AgentGlobalSidebar.vue', () => ({
   default: {
     name: 'AgentGlobalSidebar',
     props: ['agentId', 'source'],
-    template: '<aside data-testid="agent-sidebar" :data-agent-id="agentId" :data-source="source" />',
+    emits: ['update:expanded'],
+    template: `
+      <aside data-testid="agent-sidebar" :data-agent-id="agentId" :data-source="source">
+        <button type="button" data-testid="agent-expand-state" @click="$emit('update:expanded', true)">展开智能体</button>
+      </aside>
+    `,
   },
 }))
 
@@ -139,6 +148,16 @@ describe('AdminLayout', () => {
     expect(screen.queryByTestId('workspace-dock-panel-themes')).toBeNull()
   })
 
+  it('智能体侧栏展开时应隐藏顶部品牌标题', async () => {
+    renderLayout()
+
+    expect(screen.getByTestId('app-brand-title')).toBeTruthy()
+
+    await fireEvent.click(screen.getByTestId('agent-expand-state'))
+
+    expect(screen.queryByTestId('app-brand-title')).toBeNull()
+  })
+
   it.each([
     ['components', 'workspace-dock-components', 'component-manager', 'editor-component-library'],
     ['assets', 'workspace-dock-assets', 'resource-manager', 'editor-asset-library'],
@@ -177,8 +196,22 @@ describe('AdminLayout', () => {
     })
     renderLayout()
 
+    expect(screen.getByText('项目列表')).toBeTruthy()
     expect(screen.getByText('项目首页')).toBeTruthy()
     expect(await screen.findByText('演示页面')).toBeTruthy()
+  })
+
+  it('项目页面列表应显示项目列表到项目首页的面包屑', () => {
+    setRoute({
+      name: 'pages',
+      params: { workspaceId: '1', projectId: '2' },
+      meta: { workspaceNav: 'projects' },
+    })
+    renderLayout()
+
+    const breadcrumb = screen.getByLabelText('当前位置')
+    expect(breadcrumb.textContent).toContain('项目列表')
+    expect(breadcrumb.textContent).toContain('项目首页')
   })
 
   it('点击 Dock 完整页面入口时应关闭辅助面板并切换主路由', async () => {
@@ -226,6 +259,26 @@ describe('AdminLayout', () => {
       expect(screen.queryByTestId('project-quick-switcher')).toBeNull()
       expect(screen.queryByTestId('asset-panel')).toBeNull()
     })
+  })
+
+  it('AI 设置页顶部应显著提示选择对应工作空间', () => {
+    setRoute({
+      name: 'accountAiSettings',
+      params: {},
+      meta: { hideSidebars: true },
+    })
+    renderLayout()
+
+    expect(screen.getByText('选择对应工作空间，返回创作')).toBeTruthy()
+    expect(screen.getByTestId('workspace-switcher').dataset.prominent).toBe('true')
+    expect(screen.queryByLabelText('当前位置')).toBeNull()
+  })
+
+  it('普通工作空间页面不展示 AI 设置页的工作空间选择提示', () => {
+    renderLayout()
+
+    expect(screen.queryByText('选择对应工作空间，返回创作')).toBeNull()
+    expect(screen.getByTestId('workspace-switcher').dataset.prominent).toBe('false')
   })
 
   it('收到智能体项目配置事件后应刷新顶部项目缓存', async () => {

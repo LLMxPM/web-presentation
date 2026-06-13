@@ -9,6 +9,8 @@ from app.models.font import WorkspaceFontConfig
 from app.models.workspace_theme import WorkspaceTheme
 from app.core.time_utils import utc_now
 
+CONTENT_COMPONENT_SIZE_PREVIEW_SCHEMA = '{"props":{"height":{"type":"number","label":"高度","default":320}}}'
+
 
 async def _create_home_route(
     authenticated_client: AsyncClient,
@@ -374,6 +376,7 @@ const componentFont = resolveAssetFontFamily('ComponentDisplay')
 </script>
 <template><strong :style="{ fontFamily: componentFont }">Component</strong></template>
             """.strip(),
+            "preview_schema": CONTENT_COMPONENT_SIZE_PREVIEW_SCHEMA,
             "file_type": "vue",
             "status": "active",
         },

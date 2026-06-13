@@ -1,14 +1,14 @@
 <!-- 文件功能：承载页面版本历史弹窗，负责展示版本列表、源码差异和历史 Runtime 预览。 -->
 <template>
-  <BaseDialog :model-value="props.modelValue" title="版本历史" width="1320px"
+  <BaseDialog :model-value="props.modelValue" title="版本历史" size="canvas" body-preset="split"
     @update:model-value="emit('update:modelValue', $event)">
-    <div class="-mx-6 -my-5 h-[72vh] max-h-[72vh] overflow-hidden">
+    <div class="h-full overflow-hidden">
       <div v-if="props.loading && !props.versions.length" class="px-6 py-10 text-sm text-slate-400">
         版本历史加载中...
       </div>
 
       <div v-else-if="props.versions.length"
-        class="grid h-full gap-0 overflow-hidden lg:grid-cols-[minmax(0,0.95fr)_minmax(420px,1.25fr)]">
+        class="grid h-full min-h-0 grid-rows-[minmax(220px,0.9fr)_minmax(0,1.1fr)] gap-0 overflow-hidden xl:grid-cols-[minmax(0,0.95fr)_minmax(420px,1.25fr)] xl:grid-rows-1">
         <div class="h-full overflow-y-auto divide-y divide-slate-100 border-r border-slate-100">
           <article v-for="version in props.versions" :key="version.id" class="px-6 py-4">
             <div class="flex items-start justify-between gap-4 flex-wrap">
@@ -161,3 +161,4 @@ const shouldShowDiff = computed(() => (
   props.historyPanel?.mode === 'diff' && Boolean(activeVersionContent.value)
 ))
 </script>
+

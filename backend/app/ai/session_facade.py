@@ -119,7 +119,9 @@ class _StreamingHistoryTracker:
     def __init__(self, initial_messages: list[Any] | None = None) -> None:
         self._messages: list[Any] = list(initial_messages or [])
         self._assistant_parts: list[str] = []
+        self._reasoning_parts: list[str] = []
         self._last_assistant_content = ""
+        self._last_reasoning_content = ""
         self._tool_args_by_call_id: dict[str, Any] = {}
 
     def snapshot(self) -> list[Any]:
@@ -127,19 +129,57 @@ class _StreamingHistoryTracker:
 
         return [*self._messages]
 
-    def append_assistant_delta(self, content: str | None) -> None:
+    @property
+    def fallback_user_content(self) -> str | None:
+        """返回本轮用户输入兜底文本，用于取消时补偿历史。"""
+
+        for message in self._messages:
+            if str(getattr(message, "role", "") or "") != "user":
+                continue
+            content = getattr(message, "content", None)
+            if isinstance(content, str) and content.strip():
+                return content.strip()
+        return None
+
+    @property
+    def assistant_content(self) -> str | None:
+        """返回本轮已稳定或仍在缓冲中的 assistant 正文。"""
+
+        content = "".join(self._assistant_parts) or self._last_assistant_content
+        return content or None
+
+    @property
+    def reasoning_content(self) -> str | None:
+        """返回本轮已稳定或仍在缓冲中的 reasoning 内容。"""
+
+        content = "".join(self._reasoning_parts) or self._last_reasoning_content
+        return content or None
+
+    @property
+    def has_preservable_content(self) -> bool:
+        """判断当前 tracker 是否有可写入取消历史的内容。"""
+
+        return bool(self.fallback_user_content or self.assistant_content or self.reasoning_content)
+
+    def append_assistant_delta(self, content: str | None, reasoning_content: str | None = None) -> None:
         """累计流式 assistant 文本片段，等内容完成检查点再落入临时历史。"""
 
         if content:
             self._assistant_parts.append(content)
+        if reasoning_content:
+            self._reasoning_parts.append(reasoning_content)
 
     def flush_assistant_content(self, fallback_content: str | None = None) -> bool:
         """把当前 assistant 文本缓冲固化为一条临时历史消息。"""
 
         content = "".join(self._assistant_parts)
+        reasoning_content = "".join(self._reasoning_parts)
         self._assistant_parts = []
+        self._reasoning_parts = []
         if not content and fallback_content:
             content = fallback_content
+        if reasoning_content:
+            self._last_reasoning_content = reasoning_content
         if not content or content == self._last_assistant_content:
             return False
         self._messages.append(_TempHistoryMessage(role="assistant", content=content))
@@ -407,6 +447,7 @@ class AgentSessionFacade:
         """读取当前会话消息历史。"""
 
         detail = await self.ensure_session_access(session_id=session_id, agent_id=agent_id, scope=scope)
+        detail = await self._ensure_cancelled_session_messages_preserved(detail, agent_id=agent_id)
         attachments_by_run = await AgentImageAttachmentService(
             self._session,
             user_id=self._current.user.id,
@@ -457,6 +498,7 @@ class AgentSessionFacade:
         """读取当前会话的上下文预算、摘要状态和最近原文保留策略。"""
 
         detail = await self.ensure_session_access(session_id=session_id, agent_id=agent_id, scope=scope)
+        detail = await self._ensure_cancelled_session_messages_preserved(detail, agent_id=agent_id)
         descriptor = self._registry.get_descriptor(agent_id)
         agent_config = await self._agent_config_service.get_effective_runtime_config(agent_id)
         model_config = await self._llm_service.get_bound_config_or_raise(descriptor.llm_slot or "")
@@ -544,6 +586,7 @@ class AgentSessionFacade:
         """一次性返回 Editor 恢复会话 UI 需要的运行时快照。"""
 
         detail = await self.ensure_session_access(session_id=session_id, agent_id=agent_id, scope=scope)
+        detail = await self._ensure_cancelled_session_messages_preserved(detail, agent_id=agent_id)
         active_run: AgentActiveRunItem | None = None
         last_run: AgentActiveRunItem | None = None
         latest_run = _find_latest_session_run(detail, agent_id=agent_id)
@@ -1218,6 +1261,7 @@ class AgentSessionFacade:
         async def builder() -> _ActiveAgentStream:
             descriptor = self._registry.get_descriptor(agent_id)
             session_detail = await self.ensure_session_access(session_id=session_id, agent_id=agent_id, scope=scope)
+            session_detail = await self._ensure_cancelled_session_messages_preserved(session_detail, agent_id=agent_id)
             session_metadata = _session_metadata(session_detail)
             self._ensure_route_scope_in_session_scope(session_metadata, scope)
             agent_config = await self._agent_config_service.get_effective_runtime_config(agent_id)
@@ -1457,6 +1501,15 @@ class AgentSessionFacade:
                         if normalized_event.event in _TERMINAL_RUN_EVENTS:
                             terminal_seen = True
                             history_tracker.flush_assistant_content(normalized_event.content)
+                            if normalized_event.event == "run.cancelled" and active_run_id:
+                                await self._preserve_cancelled_raw_run_messages(
+                                    session_id=session_id,
+                                    agent_id=agent_id,
+                                    run_id=active_run_id,
+                                    fallback_user_message=history_tracker.fallback_user_content,
+                                    assistant_content=history_tracker.assistant_content,
+                                    reasoning_content=history_tracker.reasoning_content,
+                                )
                             if (
                                 normalized_event.event == "run.completed"
                                 and active_run_id
@@ -1482,7 +1535,10 @@ class AgentSessionFacade:
                                 break
                             continue
                         if normalized_event.event == "message.delta":
-                            history_tracker.append_assistant_delta(normalized_event.content)
+                            history_tracker.append_assistant_delta(
+                                normalized_event.content,
+                                _coerce_str((normalized_event.data or {}).get("reasoning_content")),
+                            )
                         elif normalized_event.event == "tool.started":
                             history_tracker.remember_tool_started(normalized_event)
                         elif normalized_event.event in {"tool.completed", "tool.error"}:
@@ -1549,6 +1605,17 @@ class AgentSessionFacade:
                                 content="流式连接已断开，本次运行已停止。",
                             )
                         ) or cleanup_cancelled
+                        if history_tracker.has_preservable_content:
+                            cleanup_cancelled = await _finish_shielded_cleanup(
+                                self._preserve_cancelled_raw_run_messages(
+                                    session_id=session_id,
+                                    agent_id=agent_id,
+                                    run_id=active_run_id,
+                                    fallback_user_message=history_tracker.fallback_user_content,
+                                    assistant_content=history_tracker.assistant_content,
+                                    reasoning_content=history_tracker.reasoning_content,
+                                )
+                            ) or cleanup_cancelled
                 finally:
                     if lock_acquired and lock.locked():
                         lock.release()
@@ -1572,6 +1639,7 @@ class AgentSessionFacade:
         async def generator() -> AsyncGenerator[bytes, None]:
             tracker = _RawSseRunMessageTracker(fallback_user_message=fallback_user_message)
             active_run_id: str | None = None
+            raw_string_seen = False
             lock = reserved_lock or self._get_session_run_lock(session_id=session_id, agent_id=agent_id)
             lock_acquired = reserved_lock is not None
             if not lock_acquired:
@@ -1593,6 +1661,7 @@ class AgentSessionFacade:
                 local_event_index = _run_latest_event_index_from_detail(session_detail, active_run_id)
                 async for sse_data in active_stream.stream:
                     if isinstance(sse_data, (str, bytes)):
+                        raw_string_seen = True
                         yield _ensure_sse_bytes(sse_data)
                     else:
                         from agno.os.utils import format_sse_event_with_index
@@ -1607,7 +1676,7 @@ class AgentSessionFacade:
                                 run_id=active_stream.run_id,
                             )
                         )
-                if tracker.cancelled and (tracker.run_id or active_run_id):
+                if (raw_string_seen or tracker.cancelled) and (tracker.run_id or active_run_id):
                     await self._preserve_cancelled_raw_run_messages(
                         session_id=session_id,
                         agent_id=agent_id,
@@ -2444,6 +2513,111 @@ class AgentSessionFacade:
             content=content,
         )
 
+    async def _ensure_cancelled_session_messages_preserved(
+        self,
+        detail: AgnoSessionDetail,
+        *,
+        agent_id: str,
+        run_id: str | None = None,
+        fallback_user_message: str | None = None,
+        assistant_content: str | None = None,
+        reasoning_content: str | None = None,
+    ) -> AgnoSessionDetail:
+        """懒补偿 cancelled run 的最小可展示消息，确保下一轮能读到已中断上下文。"""
+
+        if not isinstance(detail, (AgentSession, TeamSession)):
+            return detail
+        changed = False
+        for run in list(detail.runs or []):
+            current_run_id = _coerce_str(getattr(run, "run_id", None))
+            if run_id is not None and current_run_id != run_id:
+                continue
+            owner_id = _resolve_run_owner_id(run)
+            if owner_id is not None and str(owner_id) != agent_id:
+                continue
+            if getattr(run, "parent_run_id", None) is not None:
+                continue
+            if not self._preserve_cancelled_run_messages(
+                run,
+                fallback_user_message=fallback_user_message,
+                assistant_content=assistant_content,
+                reasoning_content=reasoning_content,
+            ):
+                continue
+            detail.upsert_run(run)
+            changed = True
+        if changed:
+            await asyncio.to_thread(self._ai_db.upsert_session, detail)
+        return detail
+
+    @staticmethod
+    def _preserve_cancelled_run_messages(
+        run: RunOutput | TeamRunOutput,
+        *,
+        fallback_user_message: str | None,
+        assistant_content: str | None,
+        reasoning_content: str | None,
+    ) -> bool:
+        """从 cancelled run 的输入和输出字段补齐 messages，返回是否修改。"""
+
+        if _coerce_run_status(getattr(run, "status", None)) != RunStatus.cancelled:
+            return False
+
+        original_messages = list(getattr(run, "messages", None) or [])
+        displayable_messages = [
+            message
+            for message in original_messages
+            if _is_displayable_session_message(message)
+        ]
+        has_user_message = any(str(_message_attr(message, "role", "") or "") == "user" for message in displayable_messages)
+        has_assistant_message = any(
+            str(_message_attr(message, "role", "") or "") == "assistant"
+            and (_stringify_content(_message_attr(message, "content", None)) or _resolve_reasoning_content(message))
+            for message in displayable_messages
+        )
+        if has_user_message and has_assistant_message:
+            return False
+
+        user_content = _resolve_run_input_text(run) or (fallback_user_message or "").strip() or None
+        assistant_text = (assistant_content or "").strip() or _stringify_content(getattr(run, "content", None)).strip() or None
+        reasoning_text = (reasoning_content or "").strip() or (_resolve_reasoning_content(run) or "").strip() or None
+        next_messages: list[Any] = []
+        added_message = False
+        if user_content and not has_user_message:
+            next_messages.append(
+                Message(
+                    role="user",
+                    content=user_content,
+                    created_at=_coerce_int(getattr(run, "created_at", None)) or int(datetime.now(tz=UTC).timestamp()),
+                )
+            )
+            added_message = True
+        next_messages.extend(displayable_messages)
+        if (assistant_text or reasoning_text) and not has_assistant_message:
+            next_messages.append(
+                Message(
+                    role="assistant",
+                    content=assistant_text or "",
+                    reasoning_content=reasoning_text,
+                    created_at=_coerce_int(getattr(run, "updated_at", None))
+                    or _coerce_int(getattr(run, "created_at", None))
+                    or int(datetime.now(tz=UTC).timestamp()),
+                )
+            )
+            added_message = True
+        if not added_message:
+            return False
+
+        run.messages = next_messages
+        run.status = RunStatus.cancelled
+        if assistant_text is not None:
+            run.content = assistant_text
+        metadata = dict(getattr(run, "metadata", None) or {})
+        metadata["user_cancel_preserved"] = True
+        run.metadata = metadata
+        _normalize_agno_terminal_run_payload(run, status=RunStatus.cancelled)
+        return True
+
     async def _preserve_cancelled_raw_run_messages(
         self,
         *,
@@ -2461,67 +2635,14 @@ class AgentSessionFacade:
             return
         run = detail.get_run(run_id)
         if run is None:
-            if isinstance(detail, TeamSession):
-                run = TeamRunOutput(
-                    run_id=run_id,
-                    session_id=session_id,
-                    team_id=agent_id,
-                    user_id=str(self._current.user.id),
-                    status=RunStatus.cancelled,
-                )
-            else:
-                run = RunOutput(
-                    run_id=run_id,
-                    session_id=session_id,
-                    agent_id=agent_id,
-                    user_id=str(self._current.user.id),
-                    status=RunStatus.cancelled,
-                )
-        displayable_messages = [
-            message
-            for message in list(getattr(run, "messages", None) or [])
-            if _is_displayable_session_message(message)
-        ]
-        has_user_message = any(str(getattr(message, "role", "") or "") == "user" for message in displayable_messages)
-        has_assistant_message = any(
-            str(getattr(message, "role", "") or "") == "assistant"
-            and (_stringify_content(getattr(message, "content", None)) or _resolve_reasoning_content(message))
-            for message in displayable_messages
-        )
-        user_content = _resolve_run_input_text(run) or (fallback_user_message or "").strip() or None
-        assistant_text = (assistant_content or "").strip() or None
-        reasoning_text = (reasoning_content or "").strip() or None
-        next_messages: list[Any] = []
-        if user_content and not has_user_message:
-            next_messages.append(
-                Message(
-                    role="user",
-                    content=user_content,
-                    created_at=_coerce_int(getattr(run, "created_at", None)) or int(datetime.now(tz=UTC).timestamp()),
-                )
-            )
-        next_messages.extend(displayable_messages)
-        if (assistant_text or reasoning_text) and not has_assistant_message:
-            next_messages.append(
-                Message(
-                    role="assistant",
-                    content=assistant_text or "",
-                    reasoning_content=reasoning_text,
-                    created_at=_coerce_int(getattr(run, "updated_at", None))
-                    or _coerce_int(getattr(run, "created_at", None))
-                    or int(datetime.now(tz=UTC).timestamp()),
-                )
-            )
-        if not next_messages:
             return
-        run.messages = next_messages
-        run.status = RunStatus.cancelled
-        if assistant_text is not None:
-            run.content = assistant_text
-        metadata = dict(getattr(run, "metadata", None) or {})
-        metadata["user_cancel_preserved"] = True
-        run.metadata = metadata
-        _normalize_agno_terminal_run_payload(run, status=RunStatus.cancelled)
+        if not self._preserve_cancelled_run_messages(
+            run,
+            fallback_user_message=fallback_user_message,
+            assistant_content=assistant_content,
+            reasoning_content=reasoning_content,
+        ):
+            return
         detail.upsert_run(run)
         await asyncio.to_thread(self._ai_db.upsert_session, detail)
 

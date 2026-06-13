@@ -4,12 +4,15 @@ from __future__ import annotations
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.component_preview_schema import validate_component_preview_schema_text
+from app.core.component_preview_schema import (
+    validate_component_preview_schema_text,
+    validate_content_component_size_controls,
+)
 from app.core.code_generator import create_with_generated_code
 from app.core.exceptions import AppException
 from app.core.text_normalizer import normalize_text_to_lf
 from app.core.time_utils import utc_now
-from app.models.enums import PageFileType, RecordStatus
+from app.models.enums import PageFileType, RecordStatus, WorkspaceComponentType
 from app.models.workspace_component import WorkspaceComponent
 from app.repositories.workspace_component_repository import WorkspaceComponentRepository
 from app.repositories.workspace_component_version_repository import WorkspaceComponentVersionRepository
@@ -80,6 +83,10 @@ class WorkspaceComponentService:
         )
 
         preview_schema = validate_component_preview_schema_text(payload.preview_schema)
+        self._validate_component_type_contract(
+            component_type=payload.component_type.value,
+            preview_schema=preview_schema,
+        )
 
         async def write_component(code: str) -> WorkspaceComponent:
             """使用指定编码创建组件草稿并校验依赖。"""
@@ -142,6 +149,11 @@ class WorkspaceComponentService:
         next_preview_schema = component.preview_schema
         if "preview_schema" in payload.model_fields_set:
             next_preview_schema = validate_component_preview_schema_text(payload.preview_schema)
+        next_component_type = payload.component_type.value if payload.component_type is not None else component.component_type
+        self._validate_component_type_contract(
+            component_type=next_component_type,
+            preview_schema=next_preview_schema,
+        )
         next_file_type = payload.file_type if payload.file_type is not None else PageFileType(component.file_type)
         if next_file_type != PageFileType.VUE:
             raise AppException(status_code=400, code="COMPONENT_FILE_TYPE_INVALID", detail="当前阶段仅支持 Vue 组件。")
@@ -159,7 +171,7 @@ class WorkspaceComponentService:
         if payload.import_name is not None:
             component.import_name = payload.import_name
         if payload.component_type is not None:
-            component.component_type = payload.component_type.value
+            component.component_type = next_component_type
         if payload.summary is not None:
             component.summary = payload.summary
         if payload.status is not None:
@@ -305,6 +317,13 @@ class WorkspaceComponentService:
                 code="COMPONENT_IMPORT_NAME_CONFLICT",
                 detail=f"组件引用名 {import_name} 已被当前工作空间中的启用组件使用。",
             )
+
+    @staticmethod
+    def _validate_component_type_contract(*, component_type: str, preview_schema: str | None) -> None:
+        """按组件类型校验元数据契约，目前内容组件必须声明尺寸控制。"""
+
+        if component_type == WorkspaceComponentType.CONTENT_COMPONENT.value:
+            validate_content_component_size_controls(preview_schema)
 
     async def _to_item(self, component: WorkspaceComponent) -> WorkspaceComponentItem:
         """将 ORM 组件对象转换为接口响应结构，并补齐草稿发布状态。"""

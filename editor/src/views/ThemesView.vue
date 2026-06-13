@@ -1,6 +1,6 @@
 <!-- 文件功能：提供工作空间级主题与字体管理页面，统一维护主题库、主题详情和字体注册。 -->
 <template>
-  <div data-testid="themes-view" class="flex h-full min-h-0 flex-col gap-4">
+  <div data-testid="themes-view" class="flex h-full min-h-0 flex-col gap-2">
     <PageTitleBar
       class="shrink-0"
       :title="workspaceTitle"
@@ -13,7 +13,7 @@
       </template>
     </PageTitleBar>
 
-    <div class="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_380px] gap-4 overflow-hidden">
+    <div class="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_380px] gap-2 overflow-hidden">
       <section class="flex min-h-0 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
         <header class="flex shrink-0 items-center justify-between gap-4 border-b border-slate-100 px-5 py-4">
           <div class="min-w-0">
@@ -23,7 +23,6 @@
                 共 {{ themeTotal }} 个主题
               </span>
             </div>
-            <p class="mt-1 text-xs text-slate-400">点击主题查看详情，常用操作可直接在卡片右侧完成。</p>
           </div>
           <BaseButton size="sm" @click="openCreateTheme">
             <Plus class="h-3.5 w-3.5" />
@@ -45,7 +44,7 @@
         <div v-if="loadingThemes" class="flex flex-1 items-center justify-center text-sm font-semibold text-slate-400">
           正在加载主题...
         </div>
-        <div v-else class="min-h-0 flex-1 overflow-y-auto p-5">
+        <div v-else class="min-h-0 flex-1 overflow-y-auto p-3">
           <div
             v-if="themes.length === 0"
             class="flex min-h-[140px] flex-col items-center justify-center rounded-xl border-2 border-dashed border-slate-100 bg-slate-50 text-center"
@@ -166,7 +165,6 @@
                   注册 {{ fontTotal }} / 文件 {{ fontAssetTotal }}
                 </span>
               </div>
-              <p class="mt-1 text-xs text-slate-400">字体文件在这里上传维护，注册后可绑定到主题。</p>
             </div>
             <div class="flex shrink-0 items-center gap-1">
               <BaseButton size="sm" variant="ghost" :disabled="!workspaceId || uploadingFontAsset" @click="triggerFontUpload">
@@ -455,15 +453,12 @@
       </aside>
     </div>
 
-    <ThemeDetailDrawer
+    <ThemeDetailDialog
       v-model="themeDetailVisible"
       :workspace-id="workspaceId"
       :theme-id="detailThemeId"
       :default-theme-key="workspace?.default_theme_key"
       @set-default="setDefaultTheme"
-      @edit="openEditThemeFromDetail"
-      @copy="copyTheme"
-      @delete="deleteThemeFromDetail"
     />
 
     <ThemeEditorDialog
@@ -521,7 +516,7 @@ import type { WorkspaceThemePayload } from '@/api/themes'
 import PageTitleBar from '@/components/layout/PageTitleBar.vue'
 import { ASSET_UPLOAD_ACCEPT, getAcceptedAssetExtensionText, isAcceptedAssetFile } from '@/components/project/asset-manager'
 import FontEditorDialog from '@/components/theme/FontEditorDialog.vue'
-import ThemeDetailDrawer from '@/components/theme/ThemeDetailDrawer.vue'
+import ThemeDetailDialog from '@/components/theme/ThemeDetailDialog.vue'
 import ThemeEditorDialog from '@/components/theme/ThemeEditorDialog.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import PaginationControl from '@/components/ui/PaginationControl.vue'
@@ -788,11 +783,6 @@ function openEditTheme(theme: WorkspaceThemeItem): void {
   themeEditorVisible.value = true
 }
 
-function openEditThemeFromDetail(theme: WorkspaceThemeItem): void {
-  themeDetailVisible.value = false
-  openEditTheme(theme)
-}
-
 function openThemeDetail(theme: WorkspaceThemeItem): void {
   detailThemeId.value = theme.id
   themeDetailVisible.value = true
@@ -854,10 +844,6 @@ async function deleteTheme(theme: WorkspaceThemeItem): Promise<void> {
   } catch (error) {
     Message.error(getErrorMessage(error, '删除主题失败。'))
   }
-}
-
-async function deleteThemeFromDetail(theme: WorkspaceThemeItem): Promise<void> {
-  await deleteTheme(theme)
 }
 
 async function loadWorkspaceOnly(): Promise<void> {

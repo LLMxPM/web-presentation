@@ -46,7 +46,7 @@
       </table>
     </div>
 
-    <BaseDialog v-model="editorVisible" :title="editingUser ? '编辑用户' : '新建用户'" width="520px">
+    <BaseDialog v-model="editorVisible" :title="editingUser ? '编辑用户' : '新建用户'" size="compact">
       <div class="space-y-4">
         <BaseInput v-if="!editingUser" v-model="form.username" label="用户名" required />
         <BaseInput v-model="form.display_name" label="显示名" required />
@@ -72,7 +72,7 @@
       </template>
     </BaseDialog>
 
-    <BaseDialog v-model="resetVisible" title="重置密码" width="420px">
+    <BaseDialog v-model="resetVisible" title="重置密码" size="compact">
       <BaseInput v-model="resetPassword" type="password" label="新密码" required />
       <template #footer>
         <BaseButton variant="ghost" @click="resetVisible = false">取消</BaseButton>
@@ -180,3 +180,4 @@ async function savePassword() {
   }
 }
 </script>
+

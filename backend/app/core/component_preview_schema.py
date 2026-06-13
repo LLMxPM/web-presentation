@@ -11,6 +11,31 @@ from app.core.runtime_module_policy import (
     parse_workspace_component_import_path,
 )
 
+CONTENT_COMPONENT_SIZE_PROP_KEYS = frozenset(
+    {
+        "width",
+        "height",
+        "minWidth",
+        "minHeight",
+        "maxWidth",
+        "maxHeight",
+        "aspectRatio",
+        "containerWidth",
+        "containerHeight",
+        "contentWidth",
+        "contentHeight",
+        "min_width",
+        "min_height",
+        "max_width",
+        "max_height",
+        "aspect_ratio",
+        "container_width",
+        "container_height",
+        "content_width",
+        "content_height",
+    }
+)
+
 
 def normalize_component_preview_schema_text(schema_text: str | None) -> str | None:
     """归一化 previewSchema 文本；空白输入会被视为未配置。"""
@@ -39,6 +64,34 @@ def parse_component_preview_schema_text(schema_text: str | None) -> dict[str, An
     if normalized_text is None:
         return None
     return _parse_component_preview_schema_object(normalized_text)
+
+
+def validate_content_component_size_controls(schema_text: str | None) -> None:
+    """校验内容组件必须在 previewSchema props 中声明真实尺寸控制字段。"""
+
+    parsed_schema = parse_component_preview_schema_text(schema_text)
+    if parsed_schema is None:
+        raise AppException(
+            status_code=400,
+            code="CONTENT_COMPONENT_SIZE_CONTROL_REQUIRED",
+            detail="内容组件必须配置 previewSchema，并在 props 中声明 width、height、minHeight 或 aspectRatio 等尺寸控制参数。",
+        )
+
+    props_value = parsed_schema.get("props")
+    if not isinstance(props_value, dict):
+        raise AppException(
+            status_code=400,
+            code="CONTENT_COMPONENT_SIZE_CONTROL_REQUIRED",
+            detail="内容组件的 previewSchema.props 必须包含 width、height、minHeight 或 aspectRatio 等尺寸控制参数。",
+        )
+
+    size_prop_names = sorted(str(key) for key in props_value if str(key) in CONTENT_COMPONENT_SIZE_PROP_KEYS)
+    if not size_prop_names:
+        raise AppException(
+            status_code=400,
+            code="CONTENT_COMPONENT_SIZE_CONTROL_REQUIRED",
+            detail="内容组件必须在 previewSchema.props 中声明至少一个尺寸控制参数，例如 width、height、minHeight 或 aspectRatio。",
+        )
 
 
 def _parse_component_preview_schema_object(schema_text: str) -> dict[str, Any]:

@@ -1,6 +1,6 @@
 <!-- 文件功能：提供工作空间级组件库页面，左侧浏览组件库，右侧承载组件预览、编辑与 Runtime Kit 预览工作台。 -->
 <template>
-  <div data-testid="components-view" class="flex h-full min-h-0 flex-col gap-4">
+  <div data-testid="components-view" class="flex h-full min-h-0 flex-col gap-2">
     <PageTitleBar class="shrink-0" :title="workspaceTitle">
       <template #actions>
         <BaseButton
@@ -13,7 +13,7 @@
         </BaseButton>
         <BaseButton :disabled="!workspaceId" @click="handleCreateWorkspaceComponent">
           <Plus class="h-3.5 w-3.5" />
-          新建组件
+          新增组件
         </BaseButton>
       </template>
     </PageTitleBar>
@@ -84,7 +84,30 @@
       :item="runtimeKitDocItem"
     />
 
-    <BaseDialog v-model="importDialogVisible" title="导入组件" width="720px">
+    <ExportPackageAssetsDialog
+      v-model="exportDialogVisible"
+      title="确认导出组件"
+      description="动态资源和缺失资源会作为提示写入离线包；手动补充资源仅随本次导出打包。"
+      :workspace-id="workspaceId"
+      :automatic-assets="exportValidation?.automatic_assets ?? []"
+      :manual-assets="exportValidation?.manual_assets ?? []"
+      :manual-asset-names="exportManualAssetNames"
+      :asset-options="exportAssetOptions"
+      :asset-keyword="exportAssetKeyword"
+      :asset-options-loading="exportAssetOptionsLoading"
+      :export-pending="exportPackagePending"
+      :warnings="exportValidation?.warnings ?? []"
+      :missing-static-asset-names="exportValidation?.missing_static_asset_names ?? []"
+      :missing-manual-asset-names="exportValidation?.missing_manual_asset_names ?? []"
+      :dynamic-resource-components="exportValidation?.dynamic_resource_components ?? []"
+      @update:asset-keyword="exportAssetKeyword = $event"
+      @load-assets="loadExportAssetOptions"
+      @toggle-asset="toggleExportManualAsset"
+      @remove-asset="removeExportManualAsset"
+      @confirm="handleConfirmExportPackage"
+    />
+
+    <BaseDialog v-model="importDialogVisible" title="导入组件" size="standard">
       <div class="space-y-4">
         <div class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
           <p class="text-sm font-bold text-slate-700">{{ importFile?.name || '未选择文件' }}</p>
@@ -100,13 +123,25 @@
           </ul>
         </div>
 
-        <div v-if="importValidation && importValidation.valid" class="space-y-3">
+        <div v-if="importValidation?.warnings.length" class="rounded-xl border border-amber-100 bg-amber-50 px-4 py-3">
+          <p class="mb-2 text-sm font-bold text-amber-800">包内提示</p>
+          <ul class="space-y-1 text-xs leading-5 text-amber-800">
+            <li v-for="warning in importValidation.warnings" :key="warning">{{ warning }}</li>
+          </ul>
+        </div>
+
+        <div v-if="importValidation" class="space-y-3">
           <section class="rounded-xl border border-slate-200 bg-white p-4">
             <h4 class="text-sm font-bold text-slate-700">组件</h4>
             <div class="mt-2 max-h-40 space-y-2 overflow-y-auto">
               <div v-for="component in importValidation.components" :key="`${component.source_component_code}-${component.source_version_no}`" class="flex items-center justify-between gap-3 text-xs">
-                <span class="font-semibold text-slate-700">{{ component.name }}</span>
-                <span class="font-mono text-slate-400">{{ component.import_name }}</span>
+                <span class="min-w-0">
+                  <span class="block truncate font-semibold text-slate-700">{{ component.name }}</span>
+                  <span v-if="component.match_reason" class="mt-0.5 block truncate text-slate-400">{{ component.match_reason }}</span>
+                </span>
+                <span class="shrink-0 text-right font-mono text-slate-400">
+                  {{ component.import_name }} · {{ resolveImportActionText(component.action) }} · {{ formatFingerprint(component.component_fingerprint) }}
+                </span>
               </div>
             </div>
           </section>
@@ -160,8 +195,10 @@ import {
   getComponent,
   getWorkspace,
   importComponentPackage,
+  validateComponentPackageExport,
   validateComponentPackageImport,
 } from '@/api/catalog'
+import { listWorkspaceAssets } from '@/api/assets'
 import { getErrorMessage } from '@/api/http'
 import ComponentPreviewWorkbench from '@/components/component-preview/ComponentPreviewWorkbench.vue'
 import type { ComponentPreviewWorkbenchSource } from '@/components/component-preview/component-preview-workbench'
@@ -169,10 +206,13 @@ import RuntimeKitCapabilityDocDialog from '@/components/component-preview/Runtim
 import WorkspaceComponentWorkbench from '@/components/component-preview/WorkspaceComponentWorkbench.vue'
 import PageTitleBar from '@/components/layout/PageTitleBar.vue'
 import ComponentLibraryPanel from '@/components/project/ComponentLibraryPanel.vue'
+import ExportPackageAssetsDialog from '@/components/project/ExportPackageAssetsDialog.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseDialog from '@/components/ui/BaseDialog.vue'
 import { componentAgentContextKey } from '@/composables/component-agent-context'
 import type {
+  AssetResponse,
+  ComponentShareExportValidationResult,
   ComponentShareImportValidationResult,
   RuntimeKitComponentCapabilityItem,
   WorkspaceComponentItem,
@@ -205,6 +245,12 @@ const createComponentToken = ref(0)
 const runtimeKitPreviewRefreshKey = ref(0)
 const batchSelectedComponentIds = ref<number[]>([])
 const exportPackagePending = ref(false)
+const exportDialogVisible = ref(false)
+const exportValidation = ref<ComponentShareExportValidationResult | null>(null)
+const exportManualAssetNames = ref<string[]>([])
+const exportAssetOptions = ref<AssetResponse[]>([])
+const exportAssetKeyword = ref('')
+const exportAssetOptionsLoading = ref(false)
 const importValidatePending = ref(false)
 const importPackagePending = ref(false)
 const importDialogVisible = ref(false)
@@ -257,7 +303,7 @@ function handleWorkspaceComponentSelected(
 }
 
 /**
- * 新建组件时清空选择并让右侧工作台进入创建模式。
+ * 新增组件时清空选择并让右侧工作台进入创建模式。
  */
 function handleCreateWorkspaceComponent(): void {
   selectedComponent.value = null
@@ -319,17 +365,115 @@ async function handleExportSelectedComponents(): Promise<void> {
   }
   exportPackagePending.value = true
   try {
-    const { blob, filename } = await exportComponentPackage({
+    exportManualAssetNames.value = []
+    const validation = await validateComponentPackageExport({
       workspace_id: workspaceId.value,
       component_ids: batchSelectedComponentIds.value,
+      manual_asset_names: [],
     })
-    downloadBlob(blob, filename)
+    exportValidation.value = validation
+    if (!shouldConfirmExport(validation)) {
+      await downloadSelectedComponentPackage([])
+      Message.success('组件分享包已生成。')
+      return
+    }
+    exportDialogVisible.value = true
+    exportAssetKeyword.value = ''
+    void loadExportAssetOptions()
+  } catch (error) {
+    Message.error(`导出组件失败：${getErrorMessage(error, '未知原因')}`)
+  } finally {
+    exportPackagePending.value = false
+  }
+}
+
+/**
+ * 判断导出预检结果是否需要用户确认。
+ * @param validation 导出预检结果
+ */
+function shouldConfirmExport(validation: ComponentShareExportValidationResult): boolean {
+  return (
+    validation.warnings.length > 0
+    || validation.dynamic_resource_components.length > 0
+    || validation.missing_static_asset_names.length > 0
+    || validation.missing_manual_asset_names.length > 0
+  )
+}
+
+/**
+ * 加载可手动补充到组件分享包的工作空间资源。
+ */
+async function loadExportAssetOptions(): Promise<void> {
+  if (!workspaceId.value) {
+    exportAssetOptions.value = []
+    return
+  }
+  exportAssetOptionsLoading.value = true
+  try {
+    const response = await listWorkspaceAssets(workspaceId.value, {
+      page: 1,
+      page_size: 100,
+      keyword: exportAssetKeyword.value.trim() || undefined,
+      status: 'active',
+    })
+    exportAssetOptions.value = response.items
+  } catch (error) {
+    Message.error(getErrorMessage(error, '加载可选资源失败。'))
+  } finally {
+    exportAssetOptionsLoading.value = false
+  }
+}
+
+/**
+ * 切换本次组件导出的手动资源。
+ * @param assetName 资源名
+ */
+function toggleExportManualAsset(assetName: string): void {
+  if (exportManualAssetNames.value.includes(assetName)) {
+    removeExportManualAsset(assetName)
+    return
+  }
+  exportManualAssetNames.value = [...exportManualAssetNames.value, assetName]
+}
+
+/**
+ * 移除本次组件导出的手动资源。
+ * @param assetName 资源名
+ */
+function removeExportManualAsset(assetName: string): void {
+  exportManualAssetNames.value = exportManualAssetNames.value.filter(name => name !== assetName)
+}
+
+/**
+ * 在确认弹窗中继续导出组件分享包。
+ */
+async function handleConfirmExportPackage(): Promise<void> {
+  if (batchSelectedComponentIds.value.length === 0 || !workspaceId.value) {
+    return
+  }
+  exportPackagePending.value = true
+  try {
+    await downloadSelectedComponentPackage(exportManualAssetNames.value)
+    exportDialogVisible.value = false
     Message.success('组件分享包已生成。')
   } catch (error) {
     Message.error(`导出组件失败：${getErrorMessage(error, '未知原因')}`)
   } finally {
     exportPackagePending.value = false
   }
+}
+
+/**
+ * 调用下载接口生成组件分享包。
+ * @param manualAssetNames 本次导出手动补充资源名
+ */
+async function downloadSelectedComponentPackage(manualAssetNames: string[]): Promise<void> {
+  const { blob, filename } = await exportComponentPackage({
+    workspace_id: workspaceId.value,
+    component_ids: batchSelectedComponentIds.value,
+    manual_asset_names: manualAssetNames,
+  })
+  downloadBlob(blob, filename)
 }
 
 /**
@@ -413,7 +557,16 @@ function downloadBlob(blob: Blob, filename: string): void {
  * 展示导入预检中的资源和字体处理动作。
  */
 function resolveImportActionText(action: string): string {
-  return action === 'reuse' ? '复用' : '新增'
+  if (action === 'reuse') return '复用'
+  if (action === 'conflict') return '冲突'
+  return '新增'
+}
+
+/**
+ * 将组件指纹缩短为导入预检中可快速识别的短码。
+ */
+function formatFingerprint(value: string | null | undefined): string {
+  return value ? value.slice(0, 8) : '无指纹'
 }
 
 /**
@@ -592,3 +745,4 @@ onBeforeUnmount(() => {
   componentAgentContext?.setSelectedComponent(null)
 })
 </script>
+

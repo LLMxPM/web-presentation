@@ -1,7 +1,7 @@
 /**
  * 文件功能：验证全局智能体侧栏的手动助手切换、业务 scope 与可用性禁用态。
  */
-import { defineComponent, h } from 'vue'
+import { defineComponent, h, reactive } from 'vue'
 import { fireEvent, render, screen, waitFor } from '@testing-library/vue'
 import { QueryClient, VueQueryPlugin } from '@tanstack/vue-query'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -9,9 +9,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import AgentGlobalSidebar from '@/components/agent/AgentGlobalSidebar.vue'
 
 const listAgentsMock = vi.fn()
-const routeMock = {
+const routeMock = reactive({
   name: 'components',
-}
+})
 
 vi.mock('@/api/ai', () => ({
   listAgents: (...args: unknown[]) => listAgentsMock(...args),
@@ -53,7 +53,7 @@ describe('AgentGlobalSidebar', () => {
     ])
   })
 
-  it('主题页手动打开 resource-manager 时应落到资源库范围', async () => {
+  it('主题页可切换到 resource-manager，但不能发起资源库对话', async () => {
     routeMock.name = 'themes'
     listAgentsMock.mockResolvedValueOnce([
       {
@@ -101,14 +101,16 @@ describe('AgentGlobalSidebar', () => {
         stubs: {
           AgentAssistantPanel: defineComponent({
             name: 'AgentAssistantPanel',
-            props: ['agentId', 'scope', 'autoNavigateTarget', 'routeAvailable'],
+            props: ['agentId', 'scope', 'autoCreateKey', 'autoNavigateTarget', 'routeAvailable', 'routeUnavailableReason'],
             setup(props) {
               return () => h('div', {
                 'data-testid': 'agent-panel',
                 'data-agent-id': props.agentId,
                 'data-source': props.scope?.source,
+                'data-auto-create-key': String(props.autoCreateKey ?? ''),
                 'data-auto-navigate-target': props.autoNavigateTarget,
                 'data-route-available': String(props.routeAvailable),
+                'data-route-unavailable-reason': props.routeUnavailableReason,
               })
             },
           }),
@@ -123,8 +125,10 @@ describe('AgentGlobalSidebar', () => {
     const panel = screen.getByTestId('agent-panel')
     expect(panel.dataset.agentId).toBe('resource-manager')
     expect(panel.dataset.source).toBe('editor-asset-library')
+    expect(panel.dataset.autoCreateKey).toBe('')
     expect(panel.dataset.autoNavigateTarget).toBe('/workspaces/11/assets')
-    expect(panel.dataset.routeAvailable).toBe('true')
+    expect(panel.dataset.routeAvailable).toBe('false')
+    expect(panel.dataset.routeUnavailableReason).toBe('资源助手只能在资源库页面发起对话。')
   })
 
   it('组件库路由可用同一侧栏打开 component-manager，并使用组件库工作空间 scope', async () => {
@@ -245,7 +249,7 @@ describe('AgentGlobalSidebar', () => {
     expect(disabledButton).toHaveProperty('disabled', true)
   })
 
-  it('页面路由可自由切换到组件助手，并触发新会话落到组件库', async () => {
+  it('页面路由可切换到组件助手，但不能发起组件库对话', async () => {
     routeMock.name = 'pageDetail'
     const queryClient = new QueryClient({
       defaultOptions: {
@@ -270,7 +274,7 @@ describe('AgentGlobalSidebar', () => {
         stubs: {
           AgentAssistantPanel: defineComponent({
             name: 'AgentAssistantPanel',
-            props: ['agentId', 'scope', 'autoCreateKey', 'autoNavigateTarget', 'routeAvailable'],
+            props: ['agentId', 'scope', 'autoCreateKey', 'autoNavigateTarget', 'routeAvailable', 'routeUnavailableReason'],
             setup(props) {
               return () => h('div', {
                 'data-testid': 'agent-panel',
@@ -281,6 +285,7 @@ describe('AgentGlobalSidebar', () => {
                 'data-auto-create-key': String(props.autoCreateKey ?? ''),
                 'data-auto-navigate-target': props.autoNavigateTarget,
                 'data-route-available': String(props.routeAvailable),
+                'data-route-unavailable-reason': props.routeUnavailableReason,
               })
             },
           }),
@@ -288,22 +293,25 @@ describe('AgentGlobalSidebar', () => {
       },
     })
 
-    await fireEvent.click(await waitFor(() => screen.getByTitle('组件助手')))
+    const openButton = await waitFor(() => screen.getByTitle('组件助手'))
+    expect(openButton).toHaveProperty('disabled', false)
+    await fireEvent.click(openButton)
 
     const panel = screen.getByTestId('agent-panel')
     expect(panel.dataset.agentId).toBe('component-manager')
     expect(panel.dataset.scopeType).toBe('workspace')
     expect(panel.dataset.componentId).toBe('')
     expect(panel.dataset.source).toBe('editor-component-library')
-    expect(panel.dataset.autoCreateKey).toBe('component-manager:1')
+    expect(panel.dataset.autoCreateKey).toBe('')
     expect(panel.dataset.autoNavigateTarget).toBe('/workspaces/11/components')
-    expect(panel.dataset.routeAvailable).toBe('true')
+    expect(panel.dataset.routeAvailable).toBe('false')
+    expect(panel.dataset.routeUnavailableReason).toBe('组件助手只能在组件库页面发起对话。')
   })
 
   it.each([
-    ['component-manager', '组件助手', 'editor-component-library', '/workspaces/11/components'],
-    ['resource-manager', '资源助手', 'editor-asset-library', '/workspaces/11/assets'],
-  ])('页面路由切换到 %s 时应保留真实当前路由 scope 用于越界检测', async (targetAgentId, buttonTitle, targetSource, targetRoute) => {
+    ['component-manager', '组件助手', '组件助手只能在组件库页面发起对话。'],
+    ['resource-manager', '资源助手', '资源助手只能在资源库页面发起对话。'],
+  ])('页面路由切换到 %s 后应禁用发起能力', async (targetAgentId, buttonTitle, unavailableReason) => {
     routeMock.name = 'pageDetail'
     const queryClient = new QueryClient({
       defaultOptions: {
@@ -328,7 +336,7 @@ describe('AgentGlobalSidebar', () => {
         stubs: {
           AgentAssistantPanel: defineComponent({
             name: 'AgentAssistantPanel',
-            props: ['agentId', 'scope', 'routeScope', 'autoNavigateTarget'],
+            props: ['agentId', 'scope', 'routeScope', 'autoCreateKey', 'autoNavigateTarget', 'routeAvailable', 'routeUnavailableReason'],
             setup(props) {
               return () => h('div', {
                 'data-testid': 'agent-panel',
@@ -337,7 +345,10 @@ describe('AgentGlobalSidebar', () => {
                 'data-route-scope-type': props.routeScope?.scope_type,
                 'data-route-source': props.routeScope?.source,
                 'data-route-page-id': String(props.routeScope?.page_id ?? ''),
+                'data-auto-create-key': String(props.autoCreateKey ?? ''),
                 'data-auto-navigate-target': props.autoNavigateTarget,
+                'data-route-available': String(props.routeAvailable),
+                'data-route-unavailable-reason': props.routeUnavailableReason,
               })
             },
           }),
@@ -345,19 +356,22 @@ describe('AgentGlobalSidebar', () => {
       },
     })
 
-    await fireEvent.click(await waitFor(() => screen.getByTitle(buttonTitle)))
+    const openButton = await waitFor(() => screen.getByTitle(buttonTitle))
+    expect(openButton).toHaveProperty('disabled', false)
+    await fireEvent.click(openButton)
 
     const panel = screen.getByTestId('agent-panel')
     expect(panel.dataset.agentId).toBe(targetAgentId)
-    expect(panel.dataset.scopeSource).toBe(targetSource)
     expect(panel.dataset.routeScopeType).toBe('page')
     expect(panel.dataset.routeSource).toBe('editor-agent-sidebar')
     expect(panel.dataset.routePageId).toBe('31')
-    expect(panel.dataset.autoNavigateTarget).toBe(targetRoute)
+    expect(panel.dataset.autoCreateKey).toBe('')
+    expect(panel.dataset.routeAvailable).toBe('false')
+    expect(panel.dataset.routeUnavailableReason).toBe(unavailableReason)
   })
 
-  it('路由 props 变化不应覆盖当前手动选择的助手', async () => {
-    routeMock.name = 'pageDetail'
+  it('路由切到其他库页面时应保留当前助手但禁止继续发起', async () => {
+    routeMock.name = 'components'
     const queryClient = new QueryClient({
       defaultOptions: {
         queries: { retry: false },
@@ -367,12 +381,9 @@ describe('AgentGlobalSidebar', () => {
 
     const { rerender } = render(AgentGlobalSidebar, {
       props: {
-        agentId: 'agent-coordinator',
+        agentId: 'component-manager',
         workspaceId: 11,
-        projectId: 21,
-        pageId: 31,
-        pageTitle: 'AI 页面',
-        source: 'editor-agent-sidebar',
+        source: 'editor-component-library',
       },
       global: {
         plugins: [
@@ -381,13 +392,15 @@ describe('AgentGlobalSidebar', () => {
         stubs: {
           AgentAssistantPanel: defineComponent({
             name: 'AgentAssistantPanel',
-            props: ['agentId', 'scope', 'routeAvailable'],
+            props: ['agentId', 'scope', 'routeAvailable', 'routeUnavailableReason'],
             setup(props) {
               return () => h('div', {
                 'data-testid': 'agent-panel',
                 'data-agent-id': props.agentId,
                 'data-scope-type': props.scope?.scope_type,
+                'data-source': props.scope?.source,
                 'data-route-available': String(props.routeAvailable),
+                'data-route-unavailable-reason': props.routeUnavailableReason,
               })
             },
           }),
@@ -407,10 +420,20 @@ describe('AgentGlobalSidebar', () => {
       source: 'editor-asset-library',
     })
 
-    const panel = screen.getByTestId('agent-panel')
-    expect(panel.dataset.agentId).toBe('component-manager')
-    expect(panel.dataset.scopeType).toBe('workspace')
-    expect(panel.dataset.routeAvailable).toBe('true')
+    await waitFor(() => {
+      const panel = screen.getByTestId('agent-panel')
+      expect(panel.dataset.agentId).toBe('component-manager')
+      expect(panel.dataset.scopeType).toBe('workspace')
+      expect(panel.dataset.source).toBe('editor-component-library')
+      expect(panel.dataset.routeAvailable).toBe('false')
+      expect(panel.dataset.routeUnavailableReason).toBe('组件助手只能在组件库页面发起对话。')
+    })
+
+    await fireEvent.click(await waitFor(() => screen.getByTitle('资源助手')))
+    const switchedPanel = screen.getByTestId('agent-panel')
+    expect(switchedPanel.dataset.agentId).toBe('resource-manager')
+    expect(switchedPanel.dataset.source).toBe('editor-asset-library')
+    expect(switchedPanel.dataset.routeAvailable).toBe('true')
   })
 
   it.each([
@@ -453,7 +476,7 @@ describe('AgentGlobalSidebar', () => {
       },
     })
 
-    const contentButton = await waitFor(() => screen.getByTitle('内容助手：内容助手需要进入具体项目后才能启动。'))
+    const contentButton = await waitFor(() => screen.getByTitle('内容助手'))
     expect(contentButton).toHaveProperty('disabled', false)
     await fireEvent.click(contentButton)
 

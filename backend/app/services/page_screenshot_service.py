@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+import io
 import logging
+import re
 import time
+import zipfile
 from dataclasses import dataclass
 from urllib.parse import parse_qs, urlsplit
 
@@ -203,6 +206,39 @@ class PageScreenshotService:
             page_ids=succeeded_ids,
             failures=failures,
         )
+
+    async def build_screenshot_zip_archive(
+        self,
+        *,
+        page_ids: list[int],
+        current: AuthContext,
+    ) -> tuple[bytes, str]:
+        """读取指定页面的最新截图并打包为 ZIP；截图未就绪时拒绝下载。"""
+
+        unique_page_ids = list(dict.fromkeys(page_ids))
+        if not unique_page_ids:
+            raise AppException(status_code=400, code="PAGE_SCREENSHOT_BATCH_EMPTY", detail="请选择需要下载截图的页面。")
+
+        screenshots: list[tuple[Page, bytes]] = []
+        for page_id in unique_page_ids:
+            page = await self.page_service._get_page_or_raise(page_id)
+            await self.page_service._ensure_page_access(page, user_id=current.user.id)
+            self._validate_page_screenshot_supported(page)
+
+            if not await self._is_page_screenshot_current(page):
+                raise AppException(
+                    status_code=409,
+                    code="PAGE_SCREENSHOT_NOT_READY",
+                    detail=f"「{page.title}」截图尚未生成或不是最新版本，请先刷新截图。",
+                )
+
+            if not page.screenshot_storage_key:
+                raise AppException(status_code=404, code="PAGE_SCREENSHOT_NOT_FOUND", detail=f"「{page.title}」截图不存在。")
+
+            content = await self.object_storage_service.read_object(str(page.screenshot_storage_key))
+            screenshots.append((page, content))
+
+        return self._build_zip_archive(screenshots), "page-screenshots.zip"
 
     async def ensure_latest_page_screenshot(
         self,
@@ -529,3 +565,22 @@ class PageScreenshotService:
         else:
             detail = str(error) or "截图刷新失败。"
         return PageScreenshotBatchFailure(page_id=page.id, code=page.code, detail=detail)
+
+    @classmethod
+    def _build_zip_archive(cls, screenshots: list[tuple[Page, bytes]]) -> bytes:
+        """把页面截图内容写入 ZIP，文件名按选择顺序编号避免重名。"""
+
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+            for index, (page, content) in enumerate(screenshots, start=1):
+                archive.writestr(cls._build_zip_entry_name(page, index), content)
+        return buffer.getvalue()
+
+    @staticmethod
+    def _build_zip_entry_name(page: Page, index: int) -> str:
+        """生成 ZIP 内部截图文件名，保留页面标题并补充版本号。"""
+
+        raw_name = str(page.title or page.code or f"page-{page.id}").strip()
+        safe_name = re.sub(r'[\\/:*?"<>|\s]+', "-", raw_name).strip("-")[:64] or f"page-{page.id}"
+        version_suffix = f"-v{page.screenshot_version_no}" if page.screenshot_version_no else ""
+        return f"{index:02d}-{safe_name}{version_suffix}.png"

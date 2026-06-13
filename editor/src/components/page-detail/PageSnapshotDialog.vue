@@ -1,6 +1,6 @@
 <!-- 文件功能：承载页面版本快照创建弹窗，负责编辑快照名称并提交创建事件。 -->
 <template>
-  <BaseDialog :model-value="props.modelValue" :title="`创建快照 · ${props.versionLabel}`" width="520px"
+  <BaseDialog :model-value="props.modelValue" :title="`创建快照 · ${props.versionLabel}`" size="compact"
     @update:model-value="emit('update:modelValue', $event)">
     <div class="space-y-4">
       <p class="text-sm text-slate-500">
@@ -45,3 +45,4 @@ const emit = defineEmits<{
   submit: []
 }>()
 </script>
+

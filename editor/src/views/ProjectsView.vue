@@ -6,12 +6,7 @@
         :title="workspaceQuery.data.value?.name ?? '正在加载工作空间...'"
       >
         <template #actions>
-          <BaseButton variant="primary" :disabled="!workspaceDetails" @click="openCreateDialog">
-            <template #icon>
-              <Plus class="w-4 h-4" />
-            </template>
-            新增项目
-          </BaseButton>
+
           <BaseButton variant="ghost" :disabled="!workspaceDetails" @click="openWorkspaceEditDialog">
             <template #icon>
               <Settings2 class="w-4 h-4" />
@@ -180,6 +175,7 @@ const saveMutation = useMutation({
     menu_mode: ProjectMenuMode
     theme_key: string | null
     style_spec_markdown?: string
+    suggested_component_source_style_id?: number | null
   }) => createProject({ ...payload, workspace_id: workspaceId.value }),
 })
 
@@ -202,6 +198,7 @@ async function handleCreateProject(payload: {
   menu_mode: ProjectMenuMode
   theme_key: string | null
   style_spec_markdown?: string
+  suggested_component_source_style_id?: number | null
 }) {
   saving.value = true
   try {

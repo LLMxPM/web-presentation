@@ -51,6 +51,7 @@ export function useComponentPreviewSession() {
   const hasPreviewStateSnapshot = ref(false)
   const previewComponentMeta = ref<ComponentPreviewReadyMessage['payload']['componentMeta'] | null>(null)
   const previewFrameRef = ref<HTMLIFrameElement | null>(null)
+  let previewRequestSeq = 0
   const {
     viewportRef: previewViewportRef,
     viewportSize: previewViewportSize,
@@ -155,12 +156,25 @@ export function useComponentPreviewSession() {
    * 执行一次预览 artifact 创建，并刷新 iframe 地址。
    * @param loader 实际创建 artifact 的函数
    */
-  async function runPreview(loader: () => Promise<PreviewArtifactResponse>): Promise<PreviewArtifactResponse> {
+  async function runPreview(loader: () => Promise<PreviewArtifactResponse>): Promise<PreviewArtifactResponse | null> {
+    const requestSeq = previewRequestSeq + 1
+    previewRequestSeq = requestSeq
     previewLoading.value = true
     previewErrorMessage.value = ''
     previewSchema.value = null
     previewComponentMeta.value = null
-    const previewResponse = await loader()
+    let previewResponse: PreviewArtifactResponse
+    try {
+      previewResponse = await loader()
+    } catch (error) {
+      if (requestSeq !== previewRequestSeq) {
+        return null
+      }
+      throw error
+    }
+    if (requestSeq !== previewRequestSeq) {
+      return null
+    }
     previewUrl.value = previewResponse.preview_url
     previewArtifactId.value = previewResponse.artifact_id
     previewAppliedConfig.value = cloneComponentPreviewOptions(previewConfigDraft.value)
@@ -189,6 +203,7 @@ export function useComponentPreviewSession() {
    * 清空当前预览会话，避免不同组件之间串用状态。
    */
   function resetPreviewState(): void {
+    previewRequestSeq += 1
     previewLoading.value = false
     previewUrl.value = ''
     previewArtifactId.value = ''

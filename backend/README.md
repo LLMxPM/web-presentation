@@ -175,7 +175,7 @@ app:
 - 当 `theme_key` 为空时，Backend 仍兼容 legacy `theme_config_yaml`
 - 主题只负责颜色、字体绑定、Logo 与项目图标；基础字号和默认描边宽度不再写入 `themes.config.yaml`
 - 组件预览默认配置与会话覆盖也遵循同样规则，并通过 `preview_options.page` 覆盖页面宽高和页面视觉规格
-- 样式离线包当前 schema_version 为 2，导入时不再兼容旧 v1 包
+- 样式离线包当前 schema_version 为 3，导入时不再兼容旧包；同 key 样式按包内容覆盖，包内建议组件通过组件指纹严格复用，指纹不同的同名组件会被拒绝
 
 其中项目级 `routes.config.yaml` 采用以下约束：
 

@@ -14,7 +14,7 @@ export interface RoutedPageEntry {
 }
 
 export type PageBatchScope = 'routed' | 'unrouted'
-export type PageBatchAction = 'add-route' | 'remove-route' | 'screenshot' | 'archive' | 'copy'
+export type PageBatchAction = 'add-route' | 'remove-route' | 'download-screenshot' | 'archive' | 'copy'
 export type PageCardSize = 'compact' | 'standard' | 'large' | 'huge'
 
 export interface PageCardSizeOption {

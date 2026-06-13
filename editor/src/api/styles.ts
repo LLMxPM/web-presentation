@@ -8,6 +8,8 @@ import type {
   ListParams,
   PagedResponse,
   ProjectMenuMode,
+  SuggestedComponentsResponse,
+  WorkspaceStyleExportValidationResult,
   WorkspaceStyleImportResult,
   WorkspaceStyleImportValidationResult,
   WorkspaceStyleItem,
@@ -58,6 +60,27 @@ export async function getWorkspaceStyle(workspaceId: number, styleId: number) {
   return data
 }
 
+/** 读取样式建议组件。 */
+export async function getWorkspaceStyleSuggestedComponents(workspaceId: number, styleId: number) {
+  const { data } = await http.get<SuggestedComponentsResponse>(
+    `/workspaces/${workspaceId}/styles/${styleId}/suggested-components`,
+  )
+  return data
+}
+
+/** 覆盖保存样式建议组件。 */
+export async function updateWorkspaceStyleSuggestedComponents(
+  workspaceId: number,
+  styleId: number,
+  componentIds: number[],
+) {
+  const { data } = await http.put<SuggestedComponentsResponse>(
+    `/workspaces/${workspaceId}/styles/${styleId}/suggested-components`,
+    { component_ids: componentIds },
+  )
+  return data
+}
+
 /** 创建工作空间样式。 */
 export async function createWorkspaceStyle(workspaceId: number, payload: WorkspaceStylePayload) {
   const { data } = await http.post<WorkspaceStyleItem>(`/workspaces/${workspaceId}/styles`, payload)
@@ -93,13 +116,25 @@ export async function deleteWorkspaceStyle(workspaceId: number, styleId: number)
 /** 下载工作空间样式离线包。 */
 export async function exportWorkspaceStylePackage(
   workspaceId: number,
-  payload: { style_ids: number[] },
+  payload: { style_ids: number[]; manual_asset_names?: string[] },
 ) {
   const response = await postDownloadBlob(`/workspaces/${workspaceId}/styles/export-package`, payload)
   return {
     blob: response.data,
     filename: resolveDownloadFilename(response.headers['content-disposition']) || 'workspace-styles.zip',
   }
+}
+
+/** 预检工作空间样式离线包导出资源。 */
+export async function validateWorkspaceStylePackageExport(
+  workspaceId: number,
+  payload: { style_ids: number[]; manual_asset_names?: string[] },
+) {
+  const { data } = await http.post<WorkspaceStyleExportValidationResult>(
+    `/workspaces/${workspaceId}/styles/export-package/validate`,
+    payload,
+  )
+  return data
 }
 
 /** 预检样式离线包。 */

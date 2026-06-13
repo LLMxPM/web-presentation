@@ -173,10 +173,10 @@ describe('ComponentPreviewWorkbench', () => {
     expect(createComponentPreviewArtifactFromSourceMock).toHaveBeenCalledTimes(1)
   })
 
-  it('整页模板默认预览留白应为 0', async () => {
+  it('页面组件默认预览留白应为 0', async () => {
     renderWorkbench({
       ...createWorkspaceSource(),
-      componentType: '整页模板',
+      componentType: '页面组件',
     })
 
     await waitFor(() => {
@@ -188,25 +188,25 @@ describe('ComponentPreviewWorkbench', () => {
     })
   })
 
-  it('布局容器默认预览留白应为 0', async () => {
+  it('原子组件默认预览应保留常规边距', async () => {
     renderWorkbench({
       ...createWorkspaceSource(),
-      componentType: '布局容器',
+      componentType: '原子组件',
     })
 
     await waitFor(() => {
       expect(createComponentPreviewArtifactFromSourceMock).toHaveBeenCalledWith(expect.objectContaining({
         preview_options: expect.objectContaining({
-          placement: expect.objectContaining({ padding: 0 }),
+          placement: expect.not.objectContaining({ padding: 0 }),
         }),
       }))
     })
   })
 
-  it('普通内容区块默认预览应保留常规边距', async () => {
+  it('内容组件默认预览应保留常规边距', async () => {
     renderWorkbench({
       ...createWorkspaceSource(),
-      componentType: '内容区块',
+      componentType: '内容组件',
     })
 
     await waitFor(() => {

@@ -461,6 +461,183 @@ describe('agent-run-state timeline', () => {
     }))
   })
 
+  it('Agno ModelRequestStarted 应显示等待智能体输出提示并在工具开始后清理', () => {
+    const state = createAgentSessionRuntimeState()
+    const options = { agentId: 'agent-coordinator', agentDisplayName: '内容助手' }
+
+    applyAgentRunEvent(state, event({ event: 'RunStarted', event_index: 0, sequence: null }), options)
+    applyAgentRunEvent(state, event({ event: 'ModelRequestStarted', event_index: 1, sequence: null }), options)
+
+    const requestStatus = state.timelineItems.find(item => item.kind === 'run_status')
+    expect(requestStatus).toEqual(expect.objectContaining({
+      status: 'model_request',
+      content: '等待智能体输出中',
+    }))
+    expect(state.activeRun?.status).toBe('running')
+
+    applyAgentRunEvent(state, event({ event: 'ModelRequestCompleted', event_index: 2, sequence: null }), options)
+    expect(state.timelineItems.some(item => item.status === 'model_request')).toBe(true)
+
+    applyAgentRunEvent(state, event({
+      event: 'ToolCallStarted',
+      event_index: 3,
+      sequence: null,
+      tool: {
+        tool_call_id: 'tool-call-1',
+        tool_name: 'list_workspace_render_assets',
+        tool_args: { workspace_id: 11 },
+      },
+    }), options)
+
+    const tools = state.timelineItems.filter(item => item.kind === 'tool')
+    expect(state.timelineItems.some(item => item.status === 'model_request')).toBe(false)
+    expect(tools).toHaveLength(1)
+    expect(tools[0].tool).toEqual(expect.objectContaining({
+      tool_call_id: 'tool-call-1',
+      tool_name: 'list_workspace_render_assets',
+      status: 'running',
+      input_payload: { workspace_id: 11 },
+    }))
+  })
+
+  it('Agno ModelRequestStarted 后出现普通文本时应清理等待智能体输出提示', () => {
+    const state = createAgentSessionRuntimeState()
+    const options = { agentId: 'agent-coordinator', agentDisplayName: '内容助手' }
+
+    applyAgentRunEvent(state, event({ event: 'RunStarted', event_index: 0, sequence: null }), options)
+    applyAgentRunEvent(state, event({ event: 'ModelRequestStarted', event_index: 1, sequence: null }), options)
+    applyAgentRunEvent(state, event({ event: 'RunContent', content: '先说明当前处理思路。', event_index: 2, sequence: null }), options)
+
+    expect(state.timelineItems.some(item => item.status === 'model_request')).toBe(false)
+    expect(state.timelineItems.find(item => item.kind === 'message')?.content).toBe('先说明当前处理思路。')
+  })
+
+  it('Agno RunContent 仅携带工具参数时应显示等待输出并结束思考中状态', () => {
+    const state = createAgentSessionRuntimeState()
+    const options = { agentId: 'agent-coordinator', agentDisplayName: '内容助手' }
+
+    applyAgentRunEvent(state, event({ event: 'RunStarted', event_index: 0, sequence: null }), options)
+    applyAgentRunEvent(state, event({
+      event: 'RunContent',
+      content: '',
+      reasoning_content: '先判断需要读取资源。',
+      event_index: 1,
+      sequence: null,
+    }), options)
+
+    expect(state.timelineItems.find(item => item.kind === 'reasoning')).toEqual(expect.objectContaining({
+      content: '先判断需要读取资源。',
+      status: 'running',
+    }))
+
+    applyAgentRunEvent(state, event({
+      event: 'RunContent',
+      content: null,
+      event_index: 2,
+      sequence: null,
+      tools: [{
+        tool_call_id: 'tool-call-args-1',
+        tool_name: 'list_workspace_render_assets',
+        tool_args: { workspace_id: 11 },
+      }],
+    }), options)
+
+    expect(state.timelineItems.find(item => item.kind === 'reasoning')).toEqual(expect.objectContaining({
+      content: '先判断需要读取资源。',
+      status: null,
+    }))
+    expect(state.timelineItems.find(item => item.kind === 'run_status')).toEqual(expect.objectContaining({
+      status: 'model_request',
+      content: '等待智能体输出中',
+    }))
+    expect(state.timelineItems.some(item => item.kind === 'tool')).toBe(false)
+
+    applyAgentRunEvent(state, event({
+      event: 'ToolCallStarted',
+      event_index: 3,
+      sequence: null,
+      tool: {
+        tool_call_id: 'tool-call-args-1',
+        tool_name: 'list_workspace_render_assets',
+        tool_args: { workspace_id: 11 },
+      },
+    }), options)
+
+    expect(state.timelineItems.some(item => item.status === 'model_request')).toBe(false)
+    expect(state.timelineItems.find(item => item.kind === 'tool')?.tool).toEqual(expect.objectContaining({
+      tool_call_id: 'tool-call-args-1',
+      tool_name: 'list_workspace_render_assets',
+      status: 'running',
+      input_payload: { workspace_id: 11 },
+    }))
+  })
+
+  it('Agno ModelRequestStarted 应结束同一 run 内已流出的 reasoning 和正文运行态', () => {
+    const state = createAgentSessionRuntimeState()
+    const options = { agentId: 'agent-coordinator', agentDisplayName: '内容助手' }
+
+    applyAgentRunEvent(state, event({ event: 'RunStarted', event_index: 0, sequence: null }), options)
+    applyAgentRunEvent(state, event({
+      event: 'RunContent',
+      content: '',
+      reasoning_content: '先判断需要读取资源。',
+      event_index: 1,
+      sequence: null,
+    }), options)
+    applyAgentRunEvent(state, event({
+      event: 'RunContent',
+      content: '我先检查现有资源。',
+      event_index: 2,
+      sequence: null,
+    }), options)
+
+    expect(state.timelineItems.find(item => item.kind === 'reasoning')).toEqual(expect.objectContaining({
+      status: 'running',
+    }))
+    expect(state.timelineItems.find(item => item.kind === 'message')).toEqual(expect.objectContaining({
+      content: '我先检查现有资源。',
+      status: 'running',
+    }))
+
+    applyAgentRunEvent(state, event({ event: 'ModelRequestStarted', event_index: 3, sequence: null }), options)
+
+    expect(state.timelineItems.find(item => item.kind === 'reasoning')).toEqual(expect.objectContaining({
+      status: null,
+    }))
+    expect(state.timelineItems.find(item => item.kind === 'message')).toEqual(expect.objectContaining({
+      status: null,
+    }))
+    expect(state.timelineItems.find(item => item.kind === 'run_status')).toEqual(expect.objectContaining({
+      status: 'model_request',
+      content: '等待智能体输出中',
+    }))
+  })
+
+  it('Agno TeamModelRequestStarted 缺少 session 时应绑定当前 run 并显示等待提示', () => {
+    const state = createAgentSessionRuntimeState()
+    const options = { agentId: 'agent-coordinator', agentDisplayName: '内容助手' }
+
+    state.stream.runId = 'run-1'
+    state.stream.streaming = true
+
+    applyAgentRunEvent(state, event({
+      event: 'TeamModelRequestStarted',
+      run_id: null,
+      session_id: null,
+      event_index: 1,
+      sequence: null,
+    }), options)
+
+    expect(state.timelineItems).toEqual([
+      expect.objectContaining({
+        run_id: 'run-1',
+        kind: 'run_status',
+        status: 'model_request',
+        content: '等待智能体输出中',
+      }),
+    ])
+  })
+
   it('Agno raw member 事件应进入独立成员运行，不污染父 run 时间线', () => {
     const state = createAgentSessionRuntimeState()
     const options = { agentId: 'agent-coordinator', agentDisplayName: '内容助手' }
@@ -543,6 +720,63 @@ describe('agent-run-state timeline', () => {
         tool_name: 'list_workspace_render_assets',
         input_payload: { workspace_id: 11 },
         output_payload: { total: 2 },
+      }),
+    ])
+  })
+
+  it('Agno member ModelRequestStarted 应进入成员运行并在子工具开始后清理', () => {
+    const state = createAgentSessionRuntimeState()
+    const options = { agentId: 'agent-coordinator', agentDisplayName: '内容助手' }
+
+    applyAgentRunEvent(state, event({ event: 'TeamRunStarted', run_id: 'parent-run-1', event_index: 0, sequence: null }), options)
+    applyAgentRunEvent(state, event({
+      event: 'RunStarted',
+      run_id: 'member-run-1',
+      parent_run_id: 'parent-run-1',
+      agent_id: 'resource-manager',
+      agent_name: '资源助手',
+      event_index: 1,
+      sequence: null,
+    }), options)
+    applyAgentRunEvent(state, event({
+      event: 'ModelRequestStarted',
+      run_id: 'member-run-1',
+      parent_run_id: 'parent-run-1',
+      agent_id: 'resource-manager',
+      agent_name: '资源助手',
+      event_index: 2,
+      sequence: null,
+    }), options)
+
+    expect(state.memberRuns).toHaveLength(1)
+    expect(state.memberRuns[0].timeline_items.find(item => item.kind === 'run_status')).toEqual(expect.objectContaining({
+      status: 'model_request',
+      content: '等待智能体输出中',
+    }))
+
+    applyAgentRunEvent(state, event({
+      event: 'ToolCallStarted',
+      run_id: 'member-run-1',
+      parent_run_id: 'parent-run-1',
+      agent_id: 'resource-manager',
+      agent_name: '资源助手',
+      event_index: 3,
+      sequence: null,
+      tool: {
+        tool_call_id: 'child-tool-list-assets',
+        tool_name: 'list_workspace_render_assets',
+        tool_args: { workspace_id: 11 },
+      },
+    }), options)
+
+    const memberTimeline = state.memberRuns[0].timeline_items
+    expect(memberTimeline.some(item => item.status === 'model_request')).toBe(false)
+    expect(memberTimeline.filter(item => item.kind === 'tool').map(item => item.tool)).toEqual([
+      expect.objectContaining({
+        tool_call_id: 'child-tool-list-assets',
+        tool_name: 'list_workspace_render_assets',
+        status: 'running',
+        input_payload: { workspace_id: 11 },
       }),
     ])
   })

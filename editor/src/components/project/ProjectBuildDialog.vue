@@ -1,10 +1,9 @@
 <!-- 文件功能：提供项目构建中心弹窗，编排构建设置、额外资源、资源问题与构建历史。 -->
 <template>
-  <BaseDialog v-model="visible" title="项目构建中心" width="1220px" body-class="overflow-hidden px-6 py-5">
+  <BaseDialog v-model="visible" title="项目构建中心" size="canvas" body-preset="editor">
     <div
       data-testid="project-build-dialog"
-      class="grid min-w-0 gap-4 overflow-hidden lg:grid-cols-[minmax(0,1.25fr)_minmax(360px,0.85fr)]"
-      style="height: clamp(420px, 72vh, 760px); max-height: calc(100vh - 170px);"
+      class="grid h-full min-w-0 min-h-0 grid-rows-[minmax(0,1.15fr)_minmax(220px,0.85fr)] gap-2 overflow-hidden lg:grid-cols-[minmax(0,1.25fr)_minmax(360px,0.85fr)] lg:grid-rows-1"
     >
       <div class="flex min-h-0 min-w-0 flex-col gap-3 overflow-hidden">
         <ProjectBuildSettingsPanel
@@ -321,3 +320,4 @@ function normalizeStringArray(values: string[]): string[] {
   return values.map(item => String(item || '').trim()).filter(Boolean)
 }
 </script>
+

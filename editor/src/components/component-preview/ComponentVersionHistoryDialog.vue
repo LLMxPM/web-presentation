@@ -3,17 +3,18 @@
   <BaseDialog
     :model-value="modelValue"
     title="发布历史"
-    width="1280px"
+    size="canvas"
+    body-preset="split"
     @update:model-value="emit('update:modelValue', $event)"
   >
-    <div class="-mx-6 -my-5 h-[72vh] max-h-[72vh] overflow-hidden">
+    <div class="h-full overflow-hidden">
       <div v-if="loading && !versions.length" class="px-6 py-10 text-sm text-slate-400">
         发布历史加载中...
       </div>
 
       <div
         v-else-if="versions.length"
-        class="grid h-full overflow-hidden lg:grid-cols-[minmax(0,0.9fr)_minmax(420px,1.2fr)]"
+        class="grid h-full min-h-0 grid-rows-[minmax(220px,0.9fr)_minmax(0,1.1fr)] overflow-hidden xl:grid-cols-[minmax(0,0.9fr)_minmax(420px,1.2fr)] xl:grid-rows-1"
       >
         <div class="h-full overflow-y-auto divide-y divide-slate-100 border-r border-slate-100">
           <article v-for="version in versions" :key="version.id" class="px-6 py-4">
@@ -154,3 +155,4 @@ const activeVersionContent = computed(() => (
   activeVersionNo.value ? props.versionContentMap[activeVersionNo.value] ?? null : null
 ))
 </script>
+

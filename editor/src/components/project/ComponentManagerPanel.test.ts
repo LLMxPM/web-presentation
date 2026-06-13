@@ -100,7 +100,7 @@ describe('ComponentManagerPanel', () => {
     await waitFor(() => {
       expect(screen.getByTestId('preview-workbench')).toHaveTextContent('预览工作台：workspace-draft:已发布组件')
     })
-    expect(screen.getByTestId('preview-workbench')).toHaveTextContent('组件类型：内容区块')
+    expect(screen.getByTestId('preview-workbench')).toHaveTextContent('组件类型：内容组件')
     const selectedEvents = emitted()['component-selected'] as Array<[WorkspaceComponentItem | null]>
     expect(selectedEvents[0][0]).toMatchObject({
       id: 1,
@@ -240,7 +240,7 @@ function createWorkspaceComponents(): WorkspaceComponentItem[] {
       code: 'CMP001',
       name: '已发布组件',
       import_name: 'PublishedComponent',
-      component_type: '内容区块',
+      component_type: '内容组件',
       summary: null,
       status: 'active',
       content: '<template><div /></template>',
@@ -262,7 +262,7 @@ function createWorkspaceComponents(): WorkspaceComponentItem[] {
       code: 'CMP002',
       name: '未发布组件',
       import_name: 'DraftComponent',
-      component_type: '内容区块',
+      component_type: '内容组件',
       summary: null,
       status: 'active',
       content: '<template><div /></template>',

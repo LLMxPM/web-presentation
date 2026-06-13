@@ -162,6 +162,7 @@ import {
   streamAgentRunEvents,
   uploadAgentImageAttachment,
 } from '@/api/ai'
+import { getErrorMessage } from '@/api/http'
 import {
   buildTimelineDisplayItems,
   buildRunIssueState,
@@ -304,11 +305,14 @@ const activeMemberRunIds = ref<string[]>([])
 const sendInFlight = ref(false)
 const streamAbortControllersByRun = new Map<string, AbortController>()
 const autoNamingSessionIds = new Set<string>()
+const waitingOutputInferenceTimersBySession = new Map<string, number>()
+const waitingOutputInferenceRevisionsBySession = new Map<string, number>()
 const forceCancelTick = ref(Date.now())
 let forceCancelTimer: number | null = null
 let componentDisposed = false
 const IMAGE_ATTACHMENT_MAX_BYTES = 10 * 1024 * 1024
 const ALLOWED_IMAGE_ATTACHMENT_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp'])
+const WAITING_OUTPUT_INFERENCE_DELAY_MS = 900
 
 const scope = computed<AgentScopeContext>(() => props.scope ?? {
   scope_type: props.pageId ? 'page' : props.projectId ? 'project' : 'workspace',
@@ -597,10 +601,71 @@ function appendLocalAssistantPlaceholder(sessionId: string, runId: string | null
 }
 
 /**
+ * 本地插入等待智能体输出的临时状态，覆盖后端首个可见事件到达前的空白窗口。
+ */
+function appendLocalWaitingOutputPlaceholder(sessionId: string, runId: string | null) {
+  if (!sessionId || !runId || hasVisibleRunProgress(sessionId, runId)) {
+    return
+  }
+  appendLocalWaitingOutputStatus(sessionId, runId)
+}
+
+/**
+ * 本地插入等待输出状态；允许在已有 reasoning 后用于静默窗口推断。
+ */
+function appendLocalWaitingOutputStatus(sessionId: string, runId: string | null) {
+  if (!sessionId || !runId) {
+    return
+  }
+  const run = readSessionValue(activeRunBySession.value, sessionId, null)
+  if (run?.run_id === runId && run.status !== 'pending' && run.status !== 'running') {
+    return
+  }
+  if (readSessionValue(timelineItemsBySession.value, sessionId, []).some(item => (
+    item.run_id === runId
+    && item.kind === 'run_status'
+    && item.status === 'model_request'
+  ))) {
+    return
+  }
+  agentSessionStore.applyRunEvent(sessionId, {
+    event: 'model.request.started',
+    run_id: runId,
+    session_id: sessionId,
+    content: null,
+    data: { agent_id: agentId.value },
+    sequence: null,
+    event_index: null,
+  }, {
+    agentId: agentId.value,
+    agentDisplayName: agentDisplayName.value,
+  })
+}
+
+/**
+ * 判断指定 run 是否已经有助手文本、推理、工具或状态进度，避免重复插入占位。
+ */
+function hasVisibleRunProgress(sessionId: string, runId: string) {
+  return readSessionValue(timelineItemsBySession.value, sessionId, []).some(item => (
+    item.run_id === runId
+    && (
+      item.kind === 'tool'
+      || item.kind === 'reasoning'
+      || item.kind === 'requirement'
+      || item.kind === 'run_status'
+      || (item.kind === 'message' && item.role === 'assistant' && Boolean(item.content))
+    )
+  ))
+}
+
+/**
  * 更新当前会话的流式执行标记，用于脱离 task store 后控制按钮状态。
  */
 function setSessionStreaming(sessionId: string, value: boolean) {
   agentSessionStore.setStreaming(sessionId, value)
+  if (!value) {
+    clearWaitingOutputInferenceTimer(sessionId)
+  }
 }
 
 /**
@@ -619,6 +684,92 @@ function clearStreamAbortController(runId: string, controller: AbortController) 
   if (streamAbortControllersByRun.get(runId) === controller) {
     streamAbortControllersByRun.delete(runId)
   }
+}
+
+/**
+ * 推进会话流活动版本，并取消上一轮等待输出推断计时。
+ */
+function markWaitingOutputInferenceActivity(sessionId: string): number {
+  if (!sessionId) {
+    return 0
+  }
+  clearWaitingOutputInferenceTimer(sessionId)
+  const nextRevision = (waitingOutputInferenceRevisionsBySession.get(sessionId) ?? 0) + 1
+  waitingOutputInferenceRevisionsBySession.set(sessionId, nextRevision)
+  return nextRevision
+}
+
+/**
+ * 清除指定会话的等待输出推断计时器。
+ */
+function clearWaitingOutputInferenceTimer(sessionId: string) {
+  const timer = waitingOutputInferenceTimersBySession.get(sessionId)
+  if (timer !== undefined) {
+    window.clearTimeout(timer)
+    waitingOutputInferenceTimersBySession.delete(sessionId)
+  }
+}
+
+/**
+ * 清理所有等待输出推断计时器，组件卸载时避免异步回写已销毁状态。
+ */
+function clearAllWaitingOutputInferenceTimers() {
+  for (const sessionId of waitingOutputInferenceTimersBySession.keys()) {
+    clearWaitingOutputInferenceTimer(sessionId)
+  }
+}
+
+/**
+ * 推断模型在文本输出后进入工具参数生成阶段；静默一小段时间后切换为等待输出提示。
+ */
+function scheduleWaitingOutputInference(sessionId: string, runId: string | null, revision: number) {
+  if (!sessionId || !runId) {
+    return
+  }
+  const timer = window.setTimeout(() => {
+    waitingOutputInferenceTimersBySession.delete(sessionId)
+    if (componentDisposed) {
+      return
+    }
+    if ((waitingOutputInferenceRevisionsBySession.get(sessionId) ?? 0) !== revision) {
+      return
+    }
+    if (!readSessionValue(streamingBySession.value, sessionId, false)) {
+      return
+    }
+    if (!hasRunningAssistantTextSegment(sessionId, runId)) {
+      return
+    }
+    appendLocalWaitingOutputStatus(sessionId, runId)
+  }, WAITING_OUTPUT_INFERENCE_DELAY_MS)
+  waitingOutputInferenceTimersBySession.set(sessionId, timer)
+}
+
+/**
+ * 判断指定 run 是否仍有正在展示的助手文本段。
+ */
+function hasRunningAssistantTextSegment(sessionId: string, runId: string): boolean {
+  return readSessionValue(timelineItemsBySession.value, sessionId, []).some(item => (
+    item.run_id === runId
+    && (
+      item.kind === 'reasoning'
+      || (item.kind === 'message' && item.role === 'assistant')
+    )
+    && item.status === 'running'
+  ))
+}
+
+/**
+ * 正文或 reasoning delta 后都可能进入工具参数流，Agno 当前不会为参数增量单独下发 run event。
+ */
+function shouldInferWaitingOutputAfterEvent(event: AgentRunEvent, sessionId: string, runId: string | null): runId is string {
+  if (!runId || event.event !== 'message.delta') {
+    return false
+  }
+  const reasoning = event.data.reasoning_content
+  const hasReasoning = typeof reasoning === 'string' && reasoning.length > 0
+  const hasContent = typeof event.content === 'string' && event.content.length > 0
+  return (hasReasoning || hasContent) && hasRunningAssistantTextSegment(sessionId, runId)
 }
 
 /**
@@ -696,6 +847,7 @@ function ensureRunEventSubscription(sessionId: string, run: AgentActiveRunItem, 
   }
   const streamAbortController = createStreamAbortController(run.run_id)
   setSessionStreaming(sessionId, true)
+  appendLocalWaitingOutputPlaceholder(sessionId, run.run_id)
   streamAgentRunEvents(
     sessionId,
     run.run_id,
@@ -945,6 +1097,7 @@ watch(
 
 onBeforeUnmount(() => {
   componentDisposed = true
+  clearAllWaitingOutputInferenceTimers()
   for (const controller of streamAbortControllersByRun.values()) {
     if (!controller.signal.aborted) {
       controller.abort()
@@ -1163,7 +1316,7 @@ async function handleUploadImage(file: File) {
   try {
     sessionId = await ensureActiveSession()
   } catch (error) {
-    Message.error(error instanceof Error ? error.message : '初始化智能体会话失败。')
+    Message.error(getErrorMessage(error, '初始化智能体会话失败。'))
     return
   }
 
@@ -1175,7 +1328,7 @@ async function handleUploadImage(file: File) {
       attachment,
     ])
   } catch (error) {
-    Message.error(error instanceof Error ? error.message : '上传图片失败。')
+    Message.error(getErrorMessage(error, '上传图片失败。'))
   } finally {
     writeSessionValue(imageUploadingBySession.value, sessionId, false)
   }
@@ -1193,7 +1346,7 @@ async function handleRemoveImage(attachmentId: number) {
   try {
     await deleteAgentImageAttachment(sessionId, scope.value, attachmentId, agentId.value)
   } catch (error) {
-    Message.error(error instanceof Error ? error.message : '删除图片失败。')
+    Message.error(getErrorMessage(error, '删除图片失败。'))
   }
 }
 
@@ -1213,7 +1366,7 @@ async function handlePromoteImage(attachmentId: number) {
     await queryClient.invalidateQueries({ queryKey: ['workspace-assets'] })
     Message.success('图片已保存为资源。')
   } catch (error) {
-    Message.error(error instanceof Error ? error.message : '保存为资源失败。')
+    Message.error(getErrorMessage(error, '保存为资源失败。'))
   }
 }
 
@@ -1246,7 +1399,7 @@ async function handleSend() {
     sessionId = await ensureActiveSession()
   } catch (error) {
     sendInFlight.value = false
-    Message.error(error instanceof Error ? error.message : '初始化智能体会话失败。')
+    Message.error(getErrorMessage(error, '初始化智能体会话失败。'))
     return
   }
 
@@ -1274,6 +1427,7 @@ async function handleSend() {
       cancel_requested_at: null,
       event_index: -1,
     })
+    appendLocalWaitingOutputPlaceholder(sessionId, runId)
     const streamAbortController = createStreamAbortController(runId)
     await streamAgentRun(sessionId, runScope, {
       run_id: runId,
@@ -1297,7 +1451,7 @@ async function handleSend() {
       await recoverActiveRunAfterConflict(sessionId)
       return
     }
-    const detail = error instanceof Error ? error.message : '智能体执行失败。'
+    const detail = getErrorMessage(error, '智能体执行失败。')
     agentSessionStore.setLastIssue(sessionId, buildRunIssueState(detail, runAgentDisplayName))
     Message.error(detail)
   } finally {
@@ -1329,6 +1483,7 @@ async function handleContinueRun(decision: 'confirm' | 'reject') {
   const runId = requirement.run_id || pausedRun.run_id || ''
   let streamAbortController: AbortController | null = null
   try {
+    appendLocalWaitingOutputPlaceholder(sessionId, runId)
     streamAbortController = createStreamAbortController(runId)
     await continueAgentSessionActiveRun(sessionId, scope.value, {
       agent_id: agentId.value,
@@ -1346,7 +1501,7 @@ async function handleContinueRun(decision: 'confirm' | 'reject') {
       }
       return
     }
-    Message.error(error instanceof Error ? error.message : '继续智能体执行失败。')
+    Message.error(getErrorMessage(error, '继续智能体执行失败。'))
   } finally {
     if (streamAbortController) {
       clearStreamAbortController(runId, streamAbortController)
@@ -1372,6 +1527,7 @@ async function handleSubmitFeedbackRun(selections: AgentFeedbackSelection[]) {
   const runId = requirement.run_id || pausedRun.run_id || ''
   let streamAbortController: AbortController | null = null
   try {
+    appendLocalWaitingOutputPlaceholder(sessionId, runId)
     streamAbortController = createStreamAbortController(runId)
     await continueAgentSessionActiveRun(sessionId, scope.value, {
       agent_id: agentId.value,
@@ -1390,7 +1546,7 @@ async function handleSubmitFeedbackRun(selections: AgentFeedbackSelection[]) {
       }
       return
     }
-    Message.error(error instanceof Error ? error.message : '继续智能体执行失败。')
+    Message.error(getErrorMessage(error, '继续智能体执行失败。'))
   } finally {
     if (streamAbortController) {
       clearStreamAbortController(runId, streamAbortController)
@@ -1416,7 +1572,7 @@ async function handleCancelPausedRun() {
     Message.info('已停止。')
     await finalizeRun(response.session_id, { preserveLocalCancelled: true })
   } catch (error) {
-    Message.error(error instanceof Error ? error.message : '忽略失败，请稍后再试。')
+    Message.error(getErrorMessage(error, '忽略失败，请稍后再试。'))
   }
 }
 
@@ -1467,7 +1623,7 @@ async function handleInterruptRun() {
     }, 5000)
   } catch (error) {
     writeSessionValue(interruptingBySession.value, sessionId, false)
-    Message.error(error instanceof Error ? error.message : '停止失败，请稍后再试。')
+    Message.error(getErrorMessage(error, '停止失败，请稍后再试。'))
   }
 }
 
@@ -1487,7 +1643,7 @@ async function handleForceCancelRun() {
     Message.info('已停止。')
     await finalizeRun(response.session_id, { preserveLocalCancelled: true })
   } catch (error) {
-    Message.error(error instanceof Error ? error.message : '强制结束失败，请稍后再试。')
+    Message.error(getErrorMessage(error, '强制结束失败，请稍后再试。'))
   }
 }
 
@@ -1537,6 +1693,7 @@ function handleRunEvent(event: AgentRunEvent, fallbackSessionId = activeSessionI
   if (!targetSessionId) {
     return
   }
+  const targetRunId = normalizedEvent.run_id || readSessionValue(currentRunIdBySession.value, targetSessionId, null)
   const isActiveEvent = targetSessionId === activeSessionId.value
   const result = agentSessionStore.applyRunEvent(targetSessionId, normalizedEvent, {
     agentId: agentId.value,
@@ -1544,6 +1701,12 @@ function handleRunEvent(event: AgentRunEvent, fallbackSessionId = activeSessionI
   })
   if (!result.applied) {
     return
+  }
+  const inferenceRevision = markWaitingOutputInferenceActivity(targetSessionId)
+  if (shouldInferWaitingOutputAfterEvent(normalizedEvent, targetSessionId, targetRunId)) {
+    scheduleWaitingOutputInference(targetSessionId, targetRunId, inferenceRevision)
+  } else if (normalizedEvent.event === 'model.request.completed' && targetRunId && hasRunningAssistantTextSegment(targetSessionId, targetRunId)) {
+    appendLocalWaitingOutputStatus(targetSessionId, targetRunId)
   }
   switch (normalizedEvent.event) {
     case 'context.status':
@@ -1565,18 +1728,21 @@ function handleRunEvent(event: AgentRunEvent, fallbackSessionId = activeSessionI
     case 'run.paused':
       break
     case 'run.cancelled':
+      clearWaitingOutputInferenceTimer(targetSessionId)
       writeSessionValue(interruptingBySession.value, targetSessionId, false)
       if (isActiveEvent) {
         Message.info('已停止。')
       }
       break
     case 'run.error':
+      clearWaitingOutputInferenceTimer(targetSessionId)
       writeSessionValue(interruptingBySession.value, targetSessionId, false)
       if (isActiveEvent && lastRunIssue.value) {
         Message.error(lastRunIssue.value.detail)
       }
       break
     case 'run.completed':
+      clearWaitingOutputInferenceTimer(targetSessionId)
       writeSessionValue(interruptingBySession.value, targetSessionId, false)
       break
     default:
@@ -1639,6 +1805,7 @@ async function finalizeRun(
   if (!sessionId) {
     return
   }
+  clearWaitingOutputInferenceTimer(sessionId)
   await queryClient.invalidateQueries({ queryKey: ['ai-sessions'] })
   await queryClient.invalidateQueries({ queryKey: ['ai-session-runtime'] })
   const latestSessions = (await sessionsQuery.refetch()).data ?? []

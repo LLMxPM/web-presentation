@@ -1,6 +1,6 @@
 <!-- 文件功能：项目元数据编辑弹窗，统一承载项目创建与基础信息修改表单。 -->
 <template>
-  <BaseDialog :model-value="modelValue" :title="isEditMode ? '修改项目' : '新增项目'" width="1040px"
+  <BaseDialog :model-value="modelValue" :title="isEditMode ? '修改项目' : '新增项目'" size="canvas"
     @update:model-value="handleVisibleChange">
     <div class="space-y-4">
       <section class="rounded-lg border border-slate-200 bg-white p-3">
@@ -20,7 +20,7 @@
         </div>
       </section>
 
-      <div class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
+      <div class="grid gap-4 xl:grid-cols-[minmax(360px,0.9fr)_minmax(520px,1.1fr)]">
         <div class="space-y-3">
           <section class="rounded-lg border border-slate-200 bg-slate-50/70 p-3">
             <div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_260px]">
@@ -52,56 +52,59 @@
           </section>
 
           <section class="rounded-lg border border-slate-200 bg-white p-3">
-            <BaseInput
-              v-model="form.style_spec_markdown"
-              type="textarea"
-              label="样式规范 Markdown"
-              placeholder="可记录版式、排版、色彩和内容生成约束"
-              :rows="9"
-            />
+            <div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_300px]">
+              <div>
+                <PreviewSizePresetSelect :current-width="normalizedPageWidth" :current-height="normalizedPageHeight"
+                  :current-base-font-size="normalizedBaseFontSize"
+                  :current-icon-default-stroke-width="normalizedIconDefaultStrokeWidth"
+                  label="尺寸模板" @apply="applyPageSizePreset" />
+                <div class="mt-2 grid grid-cols-2 gap-3">
+                  <BaseInput v-model="form.page_width" type="number" label="页面宽度(px)" placeholder="1920" />
+                  <BaseInput v-model="form.page_height" type="number" label="页面高度(px)" placeholder="1080" />
+                </div>
+                <div class="mt-2 grid grid-cols-2 gap-3">
+                  <BaseInput v-model="form.base_font_size" label="基础字号" placeholder="20px" />
+                  <BaseInput v-model="form.icon_default_stroke_width" type="number" label="图标描边" placeholder="2" />
+                </div>
+              </div>
+
+              <div class="border-t border-slate-200 pt-3 lg:border-l lg:border-t-0 lg:pl-4 lg:pt-0">
+                <label class="ml-1 text-sm font-semibold text-slate-700">菜单模式</label>
+                <div class="mt-2 grid grid-cols-3 gap-1.5 rounded-lg bg-slate-100 p-1">
+                  <button v-for="option in menuModeOptions" :key="option.value" type="button"
+                    class="flex min-h-10 items-center justify-center gap-1.5 rounded-md px-2.5 py-2 text-xs font-bold leading-none transition-all whitespace-nowrap"
+                    :class="form.menu_mode === option.value ? 'bg-white text-indigo-600 shadow-sm ring-1 ring-indigo-100' : 'text-slate-500 hover:bg-white/60 hover:text-slate-700'"
+                    @click="form.menu_mode = option.value">
+                    <component :is="option.icon" class="h-3.5 w-3.5 shrink-0" />
+                    <span>{{ option.label }}</span>
+                  </button>
+                </div>
+
+                <label class="ml-1 mt-3 block text-sm font-semibold text-slate-700">导出按钮</label>
+                <div class="mt-2 grid grid-cols-2 gap-1.5 rounded-lg bg-slate-100 p-1">
+                  <button v-for="option in pdfButtonOptions" :key="String(option.value)" type="button"
+                    class="flex min-h-10 items-center justify-center gap-1.5 rounded-md px-3 py-2 text-xs font-bold transition-all whitespace-nowrap"
+                    :class="form.show_pdf_export_button === option.value ? 'bg-white text-indigo-600 shadow-sm ring-1 ring-indigo-100' : 'text-slate-500 hover:bg-white/60 hover:text-slate-700'"
+                    @click="form.show_pdf_export_button = option.value">
+                    <component :is="option.icon" class="h-3.5 w-3.5 shrink-0" />
+                    <span>{{ option.label }}</span>
+                  </button>
+                </div>
+              </div>
+            </div>
           </section>
         </div>
 
-        <aside class="space-y-3">
-          <section class="rounded-lg border border-slate-200 bg-slate-50/70 p-3">
-            <PreviewSizePresetSelect :current-width="normalizedPageWidth" :current-height="normalizedPageHeight"
-              :current-base-font-size="normalizedBaseFontSize"
-              :current-icon-default-stroke-width="normalizedIconDefaultStrokeWidth"
-              label="尺寸模板" @apply="applyPageSizePreset" />
-            <div class="mt-2 grid grid-cols-2 gap-3">
-              <BaseInput v-model="form.page_width" type="number" label="页面宽度(px)" placeholder="1920" />
-              <BaseInput v-model="form.page_height" type="number" label="页面高度(px)" placeholder="1080" />
-            </div>
-            <div class="mt-2 grid grid-cols-2 gap-3">
-              <BaseInput v-model="form.base_font_size" label="基础字号" placeholder="20px" />
-              <BaseInput v-model="form.icon_default_stroke_width" type="number" label="图标描边" placeholder="2" />
-            </div>
-
-            <div class="mt-3 border-t border-slate-200 pt-2">
-              <label class="ml-1 text-sm font-semibold text-slate-700">菜单模式</label>
-              <div class="mt-2 grid grid-cols-3 gap-1.5 rounded-lg bg-slate-100 p-1">
-                <button v-for="option in menuModeOptions" :key="option.value" type="button"
-                  class="flex min-h-10 items-center justify-center gap-1.5 rounded-md px-2.5 py-2 text-xs font-bold leading-none transition-all whitespace-nowrap"
-                  :class="form.menu_mode === option.value ? 'bg-white text-indigo-600 shadow-sm ring-1 ring-indigo-100' : 'text-slate-500 hover:bg-white/60 hover:text-slate-700'"
-                  @click="form.menu_mode = option.value">
-                  <component :is="option.icon" class="h-3.5 w-3.5 shrink-0" />
-                  <span>{{ option.label }}</span>
-                </button>
-              </div>
-
-              <label class="ml-1 mt-2 block text-sm font-semibold text-slate-700">PDF 导出按钮</label>
-              <div class="mt-2 grid grid-cols-2 gap-1.5 rounded-lg bg-slate-100 p-1">
-                <button v-for="option in pdfButtonOptions" :key="String(option.value)" type="button"
-                  class="flex min-h-10 items-center justify-center gap-1.5 rounded-md px-3 py-2 text-xs font-bold transition-all whitespace-nowrap"
-                  :class="form.show_pdf_export_button === option.value ? 'bg-white text-indigo-600 shadow-sm ring-1 ring-indigo-100' : 'text-slate-500 hover:bg-white/60 hover:text-slate-700'"
-                  @click="form.show_pdf_export_button = option.value">
-                  <component :is="option.icon" class="h-3.5 w-3.5 shrink-0" />
-                  <span>{{ option.label }}</span>
-                </button>
-              </div>
-            </div>
-          </section>
-        </aside>
+        <section class="rounded-lg border border-slate-200 bg-white p-3">
+          <BaseInput
+            v-model="form.style_spec_markdown"
+            type="textarea"
+            label="样式规范 Markdown"
+            placeholder="可记录版式、排版、色彩和内容生成约束"
+            :rows="22"
+            class="min-h-[520px]"
+          />
+        </section>
       </div>
     </div>
 
@@ -115,7 +118,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, watch } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import { Eye, EyeOff, PanelBottom, PanelLeft, Type } from '@lucide/vue'
 
 import BaseButton from '@/components/ui/BaseButton.vue'
@@ -158,6 +161,7 @@ const emit = defineEmits<{
     menu_mode: ProjectMenuMode
     theme_key: string | null
     style_spec_markdown: string
+    suggested_component_source_style_id?: number | null
   }]
 }>()
 
@@ -179,6 +183,7 @@ const errors = reactive({
   name: '',
   theme: '',
 })
+const appliedWorkspaceStyleId = ref<number | null>(null)
 
 const menuModeOptions = [
   { label: '侧边', value: 'preview' as const, icon: PanelLeft },
@@ -212,6 +217,7 @@ function syncFormFromProject(project: ProjectItem | null): void {
   form.menu_mode = project?.menu_mode ?? 'preview'
   form.theme_key = project?.theme_key ?? props.defaultThemeKey ?? null
   form.style_spec_markdown = project?.style_spec_markdown ?? DEFAULT_PROJECT_STYLE_SPEC_MARKDOWN
+  appliedWorkspaceStyleId.value = null
   errors.name = ''
   errors.theme = ''
 }
@@ -249,6 +255,7 @@ function applyWorkspaceStyle(style: WorkspaceStyleItem): void {
     form.theme_key = style.theme_key
   }
   form.style_spec_markdown = style.style_spec_markdown
+  appliedWorkspaceStyleId.value = style.id
 }
 
 /**
@@ -277,7 +284,20 @@ function handleSubmit(): void {
 
   errors.name = ''
   errors.theme = ''
-  emit('submit', {
+  const payload: {
+    name: string
+    description: string | null
+    status: RecordStatus
+    page_width: number
+    page_height: number
+    base_font_size: string
+    icon_default_stroke_width: number
+    show_pdf_export_button: boolean
+    menu_mode: ProjectMenuMode
+    theme_key: string | null
+    style_spec_markdown: string
+    suggested_component_source_style_id?: number | null
+  } = {
     name: form.name.trim(),
     description: form.description.trim() ? form.description.trim() : null,
     status: form.status,
@@ -289,7 +309,11 @@ function handleSubmit(): void {
     menu_mode: form.menu_mode,
     theme_key: form.theme_key,
     style_spec_markdown: form.style_spec_markdown,
-  })
+  }
+  if (appliedWorkspaceStyleId.value !== null) {
+    payload.suggested_component_source_style_id = appliedWorkspaceStyleId.value
+  }
+  emit('submit', payload)
 }
 
 /**
@@ -348,3 +372,4 @@ watch(
   { immediate: true },
 )
 </script>
+

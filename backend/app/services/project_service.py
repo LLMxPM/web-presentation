@@ -18,6 +18,7 @@ from app.schemas.project import (
 )
 from app.services.project_config_service import ProjectConfigService
 from app.services.project_suggested_reference_asset_service import ProjectSuggestedReferenceAssetService
+from app.services.suggested_component_service import SuggestedComponentService
 from app.services.workspace_theme_service import WorkspaceThemeService
 from app.services.workspace_service import WorkspaceService
 
@@ -114,6 +115,11 @@ class ProjectService:
                 payload.workspace_id,
                 resolved_theme_key,
             )
+        if payload.suggested_component_source_style_id is not None:
+            await SuggestedComponentService(self.session).ensure_style_in_workspace(
+                payload.workspace_id,
+                payload.suggested_component_source_style_id,
+            )
 
         async def write_project(code: str) -> Project:
             """使用指定编码创建项目。"""
@@ -139,6 +145,13 @@ class ProjectService:
                 updated_by=operator_id,
             )
             await self.repository.create(project)
+            if payload.suggested_component_source_style_id is not None:
+                await SuggestedComponentService(self.session).copy_style_components_to_project(
+                    project.id,
+                    payload.suggested_component_source_style_id,
+                    workspace_id=payload.workspace_id,
+                    commit=False,
+                )
             return project
 
         project = await create_with_generated_code(
@@ -163,6 +176,7 @@ class ProjectService:
                 raise AppException(status_code=404, code="WORKSPACE_NOT_FOUND", detail="所属工作空间不存在。")
             await self.workspace_service.ensure_access(payload.workspace_id, user_id=operator_id)
             await ProjectSuggestedReferenceAssetService(self.session).clear_project_assets(project_id, commit=False)
+            await SuggestedComponentService(self.session).clear_project_components(project_id, commit=False)
             project.workspace_id = payload.workspace_id
             if project.theme_key is not None:
                 project.theme_key = await self.workspace_theme_service.ensure_theme_key_exists(
@@ -208,6 +222,13 @@ class ProjectService:
             project.style_spec_markdown = payload.style_spec_markdown
         if payload.build_extra_assets_json is not None:
             project.build_extra_assets_json = payload.build_extra_assets_json.model_dump(mode="python")
+        if payload.suggested_component_source_style_id is not None:
+            await SuggestedComponentService(self.session).copy_style_components_to_project(
+                project_id,
+                payload.suggested_component_source_style_id,
+                workspace_id=project.workspace_id,
+                commit=False,
+            )
 
         project.updated_by = operator_id
         await self.session.commit()

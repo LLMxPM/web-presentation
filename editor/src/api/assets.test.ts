@@ -20,6 +20,8 @@ vi.mock('@/api/http', () => ({
 import {
   batchArchiveWorkspaceAssets,
   batchDeleteWorkspaceAssets,
+  exportWorkspaceAssetPackage,
+  importWorkspaceAssetPackage,
   listWorkspaceAssets,
   listWorkspaceAssetTags,
   listWorkspaceFonts,
@@ -119,6 +121,39 @@ describe('assets api', () => {
     })
     expect(postMock).toHaveBeenCalledWith('/workspaces/5/assets/batch-delete', {
       asset_ids: [1, 2],
+    })
+  })
+
+  it('导出资源包时应以 Blob 下载并解析文件名', async () => {
+    const blob = new Blob(['zip'])
+    postMock.mockResolvedValueOnce({
+      data: blob,
+      headers: { 'content-disposition': 'attachment; filename="workspace-assets-demo.zip"' },
+    })
+
+    const result = await exportWorkspaceAssetPackage(5, [1, 2])
+
+    expect(postMock).toHaveBeenCalledWith('/workspaces/5/assets/export-package', {
+      asset_ids: [1, 2],
+    }, { responseType: 'blob' })
+    expect(result).toEqual({ blob, filename: 'workspace-assets-demo.zip' })
+  })
+
+  it('导入资源包时应上传 archive 表单字段', async () => {
+    postMock.mockResolvedValueOnce({
+      data: { imported_count: 1, updated_count: 0, reused_count: 0, failed_count: 0, assets: [], failures: [] },
+    })
+    const file = new File(['zip'], 'workspace-assets.zip', { type: 'application/zip' })
+
+    await importWorkspaceAssetPackage(5, file)
+
+    const [url, formData, config] = postMock.mock.calls[postMock.mock.calls.length - 1]
+    expect(url).toBe('/workspaces/5/assets/import-package')
+    expect((formData as FormData).get('archive')).toBe(file)
+    expect(config).toEqual({
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
     })
   })
 

@@ -122,6 +122,7 @@ class PageService:
                 file_type=payload.file_type.value,
                 title=payload.title,
                 summary=payload.summary,
+                speaker_notes=self._normalize_optional_text(payload.speaker_notes),
                 status=payload.status.value,
                 workspace_id=payload.workspace_id,
                 project_id=payload.project_id,
@@ -169,6 +170,7 @@ class PageService:
                 file_type=source_page.file_type,
                 title=next_title,
                 summary=next_summary,
+                speaker_notes=source_page.speaker_notes,
                 status=RecordStatus.ACTIVE.value,
                 workspace_id=target_project.workspace_id,
                 project_id=target_project.id,
@@ -210,17 +212,25 @@ class PageService:
             else page_model.page_content
         )
         next_file_type = payload.file_type if payload.file_type is not None else PageFileType(page_model.file_type)
+        next_speaker_notes = (
+            self._normalize_optional_text(payload.speaker_notes)
+            if "speaker_notes" in payload.model_fields_set
+            else page_model.speaker_notes
+        )
         await self.version_service.save_new_version(
             page=page_model,
             page_content=next_page_content,
             file_type=next_file_type,
             operator_id=operator_id,
+            speaker_notes=next_speaker_notes,
             change_note=payload.change_note,
         )
         if payload.title is not None:
             page_model.title = payload.title
         if payload.summary is not None:
             page_model.summary = payload.summary
+        if "speaker_notes" in payload.model_fields_set:
+            page_model.speaker_notes = next_speaker_notes
         if payload.status is not None:
             should_remove_route_bindings = (
                 payload.status == RecordStatus.ARCHIVED
@@ -585,3 +595,9 @@ class PageService:
         version = int(normalize_utc(page_model.screenshot_updated_at).timestamp() * 1000)
         separator = "&" if "?" in screenshot_url else "?"
         return f"{screenshot_url}{separator}v={version}"
+
+    @staticmethod
+    def _normalize_optional_text(value: str | None) -> str | None:
+        """归一化可空长文本字段；空白字符串保留为空字符串，便于明确清空。"""
+
+        return normalize_text_to_lf(value) if value is not None else None

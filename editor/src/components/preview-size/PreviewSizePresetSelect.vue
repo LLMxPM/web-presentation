@@ -154,6 +154,7 @@ import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from
 import { ChevronDown, Pencil, Plus, Trash2 } from '@lucide/vue'
 
 import { updatePreviewSizePresets } from '@/api/auth'
+import { getErrorMessage } from '@/api/http'
 import { useAuthStore } from '@/stores/auth'
 import type { PreviewSizePreset } from '@/types/api'
 import { Message } from '@/utils/message'
@@ -392,7 +393,7 @@ async function saveDraftPresets() {
     emit('presets-updated', user.preview_size_presets)
     Message.success('预设尺寸已保存。')
   } catch (error) {
-    Message.error(error instanceof Error ? error.message : '保存预设尺寸失败。')
+    Message.error(getErrorMessage(error, '保存预设尺寸失败。'))
   } finally {
     saving.value = false
   }

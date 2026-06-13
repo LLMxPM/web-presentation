@@ -105,6 +105,8 @@ class PagePreviewService:
                 module_path: ProjectPageModuleOverride(
                     content=version_content.resolved_content,
                     page_version_id=target_version.id,
+                    speaker_notes=version_content.speaker_notes,
+                    override_speaker_notes=True,
                 )
             },
         )

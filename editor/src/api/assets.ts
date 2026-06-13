@@ -1,11 +1,14 @@
 /**
  * 文件功能：与后端 Workspace 静态资产接口交互。
  */
+import axios from 'axios'
+
 import { http } from '@/api/http'
 import type {
   AssetBatchOperationResponse,
   AssetContentPreviewResponse,
   AssetContentResponse,
+  AssetPackageImportResult,
   AssetReferenceSummary,
   AssetResponse,
   AssetRole,
@@ -316,6 +319,33 @@ export async function batchDeleteWorkspaceAssets(
   return data
 }
 
+export async function exportWorkspaceAssetPackage(
+  workspaceId: number,
+  assetIds: number[],
+): Promise<{ blob: Blob; filename: string }> {
+  const response = await postDownloadBlob(`/workspaces/${workspaceId}/assets/export-package`, {
+    asset_ids: assetIds,
+  })
+  return {
+    blob: response.data,
+    filename: resolveDownloadFilename(response.headers['content-disposition']) || 'workspace-assets.zip',
+  }
+}
+
+export async function importWorkspaceAssetPackage(
+  workspaceId: number,
+  file: File,
+): Promise<AssetPackageImportResult> {
+  const formData = new FormData()
+  formData.append('archive', file)
+  const { data } = await http.post<AssetPackageImportResult>(
+    `/workspaces/${workspaceId}/assets/import-package`,
+    formData,
+    { headers: { 'Content-Type': 'multipart/form-data' } },
+  )
+  return data
+}
+
 export async function listWorkspaceFonts(
   workspaceId: number,
   params: ListParams = { page: 1, page_size: 100 },
@@ -372,4 +402,70 @@ export async function deleteWorkspaceFont(
 
 export async function deleteWorkspaceFontAsset(workspaceId: number, assetId: number): Promise<void> {
   await http.delete(`/workspaces/${workspaceId}/font-assets/${assetId}`)
+}
+
+/**
+ * 下载接口失败时可能返回 Blob JSON，这里转换成普通 Error 供 UI 展示。
+ */
+async function postDownloadBlob(url: string, payload: unknown) {
+  try {
+    return await http.post<Blob>(url, payload, { responseType: 'blob' })
+  } catch (error) {
+    throw await normalizeDownloadError(error)
+  }
+}
+
+/**
+ * 归一化下载接口错误，优先读取后端业务错误详情。
+ */
+async function normalizeDownloadError(error: unknown): Promise<Error> {
+  if (axios.isAxiosError(error) && error.response?.data instanceof Blob) {
+    const message = await resolveBlobErrorMessage(error.response.data)
+    if (message) {
+      return new Error(message)
+    }
+  }
+  return error instanceof Error ? error : new Error('下载失败。')
+}
+
+/**
+ * 从 Blob JSON 中解析后端错误文案。
+ */
+async function resolveBlobErrorMessage(blob: Blob): Promise<string | null> {
+  const text = (await blob.text()).trim()
+  if (!text) {
+    return null
+  }
+  try {
+    const data = JSON.parse(text) as unknown
+    if (!isRecord(data)) {
+      return text
+    }
+    return readNonEmptyString(data.message)
+      || readNonEmptyString(data.detail)
+      || (readNonEmptyString(data.code) ? `下载失败（${readNonEmptyString(data.code)}）` : text)
+  } catch {
+    return text
+  }
+}
+
+/**
+ * 从 Content-Disposition 响应头解析下载文件名。
+ */
+function resolveDownloadFilename(contentDisposition: unknown): string | null {
+  const value = String(contentDisposition || '')
+  const utf8Match = value.match(/filename\*=UTF-8''([^;]+)/i)
+  if (utf8Match?.[1]) {
+    return decodeURIComponent(utf8Match[1])
+  }
+  const plainMatch = value.match(/filename="?([^"]+)"?/i)
+  return plainMatch?.[1] || null
+}
+
+function readNonEmptyString(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() ? value : null
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }

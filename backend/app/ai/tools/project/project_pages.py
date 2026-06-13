@@ -34,8 +34,9 @@ def build_create_project_page_tool(session_factory: async_sessionmaker[AsyncSess
         title: str,
         page_content: str,
         summary: str | None = None,
+        speaker_notes: str | None = None,
     ) -> dict[str, Any]:
-        """在当前项目创建页面；page_content 必填，建议先提供可运行的占位 Vue SFC。"""
+        """在当前项目创建页面；page_content 必填，可同时写入演讲者备注。"""
 
         normalized_title = str(title or "").strip()
         normalized_page_content = str(page_content or "")
@@ -61,6 +62,7 @@ def build_create_project_page_tool(session_factory: async_sessionmaker[AsyncSess
                     project_id=int(dependencies["project_id"]),
                     title=normalized_title,
                     summary=summary,
+                    speaker_notes=speaker_notes,
                     page_content=normalized_page_content,
                     file_type=PageFileType.VUE,
                     status=RecordStatus.ACTIVE,
@@ -74,6 +76,7 @@ def build_create_project_page_tool(session_factory: async_sessionmaker[AsyncSess
                 "page_code": created.code,
                 "title": created.title,
                 "summary": created.summary,
+                "speaker_notes": created.speaker_notes,
                 "project_id": created.project_id,
                 "version_no": created.current_version_no,
             }
@@ -90,15 +93,16 @@ def build_update_page_metadata_tool(session_factory: async_sessionmaker[AsyncSes
         page_id: int,
         title: str | None = None,
         summary: str | None = None,
+        speaker_notes: str | None = None,
         change_note: str | None = None,
     ) -> dict[str, Any]:
-        """修改当前项目内页面的名称或说明，不修改页面源码。"""
+        """修改当前项目内页面的名称、说明或演讲者备注，不修改页面源码。"""
 
-        if title is None and summary is None:
+        if title is None and summary is None and speaker_notes is None:
             raise AppException(
                 status_code=400,
                 code="AI_PAGE_METADATA_REQUIRED",
-                detail="修改页面元数据时，title 与 summary 至少提供其一。",
+                detail="修改页面元数据时，title、summary 与 speaker_notes 至少提供其一。",
             )
         normalized_title = None if title is None else str(title).strip()
         if title is not None and not normalized_title:
@@ -121,13 +125,16 @@ def build_update_page_metadata_tool(session_factory: async_sessionmaker[AsyncSes
                 expected_workspace_id=workspace_id,
                 expected_project_id=project_id,
             )
+            update_payload: dict[str, Any] = {"change_note": change_note or "AI 助手页面元数据更新"}
+            if title is not None:
+                update_payload["title"] = normalized_title
+            if summary is not None:
+                update_payload["summary"] = summary
+            if speaker_notes is not None:
+                update_payload["speaker_notes"] = speaker_notes
             updated = await page_service.update(
                 int(page_id),
-                PageUpdateRequest(
-                    title=normalized_title,
-                    summary=summary,
-                    change_note=change_note or "AI 助手页面元数据更新",
-                ),
+                PageUpdateRequest(**update_payload),
                 operator_id,
             )
             return {
@@ -137,6 +144,7 @@ def build_update_page_metadata_tool(session_factory: async_sessionmaker[AsyncSes
                 "page_code": updated.code,
                 "title": updated.title,
                 "summary": updated.summary,
+                "speaker_notes": updated.speaker_notes,
                 "project_id": updated.project_id,
                 "version_no": updated.current_version_no,
             }

@@ -1,6 +1,6 @@
 <!-- 文件功能：提供工作空间基础信息编辑弹窗，统一承载名称与描述的修改表单。 -->
 <template>
-  <BaseDialog :model-value="modelValue" title="编辑工作空间" width="560px" @update:model-value="handleVisibleChange">
+  <BaseDialog :model-value="modelValue" title="编辑工作空间" size="compact" @update:model-value="handleVisibleChange">
     <div class="space-y-5">
       <BaseInput v-model="form.name" label="工作空间名称" placeholder="给工作空间起个清晰的名字" required :error="errors.name" />
 
@@ -89,3 +89,4 @@ watch(
   { immediate: true },
 )
 </script>
+

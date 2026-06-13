@@ -3,7 +3,7 @@
   <BaseDialog
     :model-value="modelValue"
     title="批量复制到项目"
-    width="640px"
+    size="standard"
     @update:model-value="handleDialogVisibleUpdate"
   >
     <div class="space-y-5">
@@ -283,3 +283,4 @@ function handleSubmit(): void {
   })
 }
 </script>
+

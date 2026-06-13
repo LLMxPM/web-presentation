@@ -1,6 +1,9 @@
 """文件功能：验证工作空间、项目和页面资源库的 CRUD 及编码自动生成。"""
 
+import io
+import json
 import re
+import zipfile
 from datetime import UTC, datetime
 from zoneinfo import ZoneInfo
 
@@ -9,7 +12,11 @@ from sqlalchemy import select
 
 from app.db.session import get_session_factory
 from app.models.page import Page
+from app.models.workspace_component import WorkspaceComponent
+from app.models.workspace_component_version import WorkspaceComponentVersion
 from app.schemas.project_app_config import DEFAULT_PROJECT_STYLE_SPEC_MARKDOWN
+
+CONTENT_COMPONENT_SIZE_PREVIEW_SCHEMA = '{"props":{"height":{"type":"number","label":"高度","default":320}}}'
 
 
 async def _create_catalog_workspace(client: AsyncClient, name: str) -> dict:
@@ -21,6 +28,42 @@ async def _create_catalog_workspace(client: AsyncClient, name: str) -> dict:
     )
     assert response.status_code == 200
     return response.json()
+
+
+async def _create_catalog_svg_asset(client: AsyncClient, workspace_id: int, name: str) -> dict:
+    """创建组件分享包测试使用的 SVG 资源。"""
+
+    response = await client.post(
+        f"/api/workspaces/{workspace_id}/assets/content",
+        json={
+            "asset_type": "icon",
+            "name": name,
+            "original_name": f"{name}.svg",
+            "content": (
+                '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">'
+                f"<title>{name}</title><path d=\"M2 2h20v20H2z\"/>"
+                "</svg>"
+            ),
+            "tags": [],
+        },
+    )
+    assert response.status_code == 200
+    return response.json()
+
+
+def _rewrite_zip_json(archive_content: bytes, target_name: str, rewrite) -> bytes:
+    """重写 Zip 内指定 JSON 文件，保留其它条目不变。"""
+
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(io.BytesIO(archive_content)) as source_archive:
+        with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as target_archive:
+            for item in source_archive.infolist():
+                content = source_archive.read(item.filename)
+                if item.filename == target_name:
+                    payload = json.loads(content.decode("utf-8"))
+                    content = json.dumps(rewrite(payload), ensure_ascii=False).encode("utf-8")
+                target_archive.writestr(item, content)
+    return buffer.getvalue()
 
 
 async def _create_catalog_project(
@@ -48,6 +91,7 @@ async def _create_catalog_page(
     *,
     page_content: str = "<template><div>copy-page</div></template>",
     summary: str | None = None,
+    speaker_notes: str | None = None,
     status: str = "active",
 ) -> dict:
     """创建测试页面并返回响应 JSON。"""
@@ -59,6 +103,7 @@ async def _create_catalog_page(
             "file_type": "vue",
             "title": title,
             "summary": summary,
+            "speaker_notes": speaker_notes,
             "status": status,
             "workspace_id": workspace_id,
             "project_id": project_id,
@@ -116,6 +161,7 @@ async def test_workspace_project_and_page_crud(authenticated_client: AsyncClient
             "file_type": "vue",
             "title": "页面标题",
             "summary": "summary",
+            "speaker_notes": "开场介绍本页目标。",
             "status": "active",
             "workspace_id": workspace_id,
             "project_id": project_id,
@@ -126,6 +172,7 @@ async def test_workspace_project_and_page_crud(authenticated_client: AsyncClient
     page_id = page_data["id"]
     assert page_data["code"].startswith("PG")
     assert page_data["page_content"] == "demo-page"
+    assert page_data["speaker_notes"] == "开场介绍本页目标。"
     assert page_data["file_type"] == "vue"
     assert page_data["current_version_no"] == 1
 
@@ -134,6 +181,7 @@ async def test_workspace_project_and_page_crud(authenticated_client: AsyncClient
     assert page_detail_response.status_code == 200
     assert page_detail_response.json()["id"] == page_id
     assert page_detail_response.json()["page_content"] == "demo-page"
+    assert page_detail_response.json()["speaker_notes"] == "开场介绍本页目标。"
     assert page_detail_response.json()["file_type"] == "vue"
     assert page_detail_response.json()["current_version_no"] == 1
 
@@ -588,6 +636,7 @@ async def test_page_copy_to_project_should_create_current_version_only(
         "源页面",
         page_content="<template><div>v1</div></template>",
         summary="源摘要",
+        speaker_notes="源页面演讲备注",
     )
 
     update_response = await authenticated_client.patch(
@@ -625,6 +674,7 @@ async def test_page_copy_to_project_should_create_current_version_only(
     assert copied_page["project_id"] == target_project["id"]
     assert copied_page["title"] == "复制页面"
     assert copied_page["summary"] is None
+    assert copied_page["speaker_notes"] == "源页面演讲备注"
     assert copied_page["page_content"] == "<template><div>v2</div></template>"
     assert copied_page["current_version_no"] == 1
     assert copied_page["screenshot_url"] is None
@@ -1300,6 +1350,7 @@ async def test_page_version_history_snapshot_and_restore(authenticated_client: A
             "page_content": "<template><div>v1</div></template>",
             "file_type": "vue",
             "title": "版本页面",
+            "speaker_notes": "讲解 V1 的核心结论。",
             "status": "active",
             "workspace_id": workspace["id"],
             "project_id": project["id"],
@@ -1314,11 +1365,13 @@ async def test_page_version_history_snapshot_and_restore(authenticated_client: A
         json={
             "page_content": "<template><div>v2</div></template>\n<script setup lang=\"ts\">\nconst version = 2\n</script>",
             "file_type": "ts",
+            "speaker_notes": "讲解 V2 新增逻辑。",
             "change_note": "增加脚本逻辑",
         },
     )
     assert update_response.status_code == 200
     assert update_response.json()["current_version_no"] == 2
+    assert update_response.json()["speaker_notes"] == "讲解 V2 新增逻辑。"
 
     versions_response = await authenticated_client.get(f"/api/pages/{page_id}/versions")
     assert versions_response.status_code == 200
@@ -1339,6 +1392,7 @@ async def test_page_version_history_snapshot_and_restore(authenticated_client: A
     assert "-<template><div>v1</div></template>" in version_1_response.json()["content"]
     assert "+<template><div>v2</div></template>" in version_1_response.json()["content"]
     assert version_1_response.json()["resolved_content"] == "<template><div>v1</div></template>"
+    assert version_1_response.json()["speaker_notes"] == "讲解 V1 的核心结论。"
     assert re.fullmatch(r"\d{8}-\d{6}", version_1_response.json()["version_label"])
     assert version_1_response.json()["storage_type"] == "diff"
 
@@ -1352,6 +1406,7 @@ async def test_page_version_history_snapshot_and_restore(authenticated_client: A
     assert snapshot_response.json()["snapshot_name"] == "里程碑 V1"
     assert snapshot_response.json()["content_mode"] == "full"
     assert snapshot_response.json()["resolved_content"] == "<template><div>v1</div></template>"
+    assert snapshot_response.json()["speaker_notes"] == "讲解 V1 的核心结论。"
     assert snapshot_response.json()["storage_type"] == "snapshot"
 
     restored_response = await authenticated_client.post(
@@ -1362,6 +1417,7 @@ async def test_page_version_history_snapshot_and_restore(authenticated_client: A
     restored_page = restored_response.json()
     assert restored_page["current_version_no"] == 3
     assert restored_page["page_content"] == "<template><div>v1</div></template>"
+    assert restored_page["speaker_notes"] == "讲解 V1 的核心结论。"
     assert restored_page["file_type"] == "vue"
 
     versions_after_restore = await authenticated_client.get(f"/api/pages/{page_id}/versions")
@@ -1373,6 +1429,36 @@ async def test_page_version_history_snapshot_and_restore(authenticated_client: A
     assert versions_data[1]["storage_type"] == "diff"
     assert versions_data[2]["is_important"] is True
     assert versions_data[2]["version_label"] == "V1"
+
+
+async def test_page_speaker_notes_update_should_create_page_version(authenticated_client: AsyncClient) -> None:
+    """仅修改演讲者备注时也应生成页面版本，供演讲模式回溯备注。"""
+
+    workspace = await _create_catalog_workspace(authenticated_client, "备注版本页面空间")
+    project = await _create_catalog_project(authenticated_client, workspace["id"], "备注版本页面项目")
+    page = await _create_catalog_page(
+        authenticated_client,
+        workspace["id"],
+        project["id"],
+        "备注版本页面",
+        page_content="<template><div>notes</div></template>",
+        speaker_notes="初始备注",
+    )
+
+    update_response = await authenticated_client.patch(
+        f"/api/pages/{page['id']}",
+        json={"speaker_notes": "只更新备注", "change_note": "更新演讲者备注"},
+    )
+
+    assert update_response.status_code == 200
+    assert update_response.json()["current_version_no"] == 2
+    assert update_response.json()["page_content"] == "<template><div>notes</div></template>"
+    assert update_response.json()["speaker_notes"] == "只更新备注"
+
+    version_1_response = await authenticated_client.get(f"/api/pages/{page['id']}/versions/1")
+    assert version_1_response.status_code == 200
+    assert version_1_response.json()["resolved_content"] == "<template><div>notes</div></template>"
+    assert version_1_response.json()["speaker_notes"] == "初始备注"
 
 
 async def test_snapshot_version_labels_support_major_and_sub_versions(authenticated_client: AsyncClient) -> None:
@@ -1700,6 +1786,7 @@ async def test_workspace_component_should_persist_component_type_and_support_fil
             "name": "统计卡片",
             "import_name": "StatsCard",
             "content": "<template><div>card</div></template>",
+            "preview_schema": CONTENT_COMPONENT_SIZE_PREVIEW_SCHEMA,
             "file_type": "vue",
             "summary": "展示统计信息",
             "status": "active",
@@ -1707,27 +1794,27 @@ async def test_workspace_component_should_persist_component_type_and_support_fil
     )
     assert create_response.status_code == 200
     component_data = create_response.json()
-    assert component_data["component_type"] == "内容区块"
+    assert component_data["component_type"] == "内容组件"
     assert component_data["import_name"] == "StatsCard"
 
     update_response = await authenticated_client.patch(
         f"/api/components/{component_data['id']}",
         json={
             "import_name": "StatsResourceCard",
-            "component_type": "数据展示",
+            "component_type": "原子组件",
             "change_note": "补充组件类型",
         },
     )
     assert update_response.status_code == 200
-    assert update_response.json()["component_type"] == "数据展示"
+    assert update_response.json()["component_type"] == "原子组件"
     assert update_response.json()["import_name"] == "StatsResourceCard"
 
     filtered_response = await authenticated_client.get(
         "/api/components",
-        params={"workspace_id": workspace_id, "component_type": "数据展示"},
+        params={"workspace_id": workspace_id, "component_type": "原子组件"},
     )
     assert filtered_response.status_code == 200
-    assert filtered_response.json()["items"][0]["component_type"] == "数据展示"
+    assert filtered_response.json()["items"][0]["component_type"] == "原子组件"
     assert filtered_response.json()["items"][0]["import_name"] == "StatsResourceCard"
 
 
@@ -1748,6 +1835,7 @@ async def test_workspace_component_list_should_support_published_only_filter(aut
             "name": "已发布侧栏组件",
             "import_name": "PublishedSidebarComponent",
             "content": "<template><div>published</div></template>",
+            "preview_schema": CONTENT_COMPONENT_SIZE_PREVIEW_SCHEMA,
             "file_type": "vue",
             "status": "active",
         },
@@ -1760,6 +1848,7 @@ async def test_workspace_component_list_should_support_published_only_filter(aut
             "name": "未发布侧栏组件",
             "import_name": "DraftSidebarComponent",
             "content": "<template><div>draft</div></template>",
+            "preview_schema": CONTENT_COMPONENT_SIZE_PREVIEW_SCHEMA,
             "file_type": "vue",
             "status": "active",
         },
@@ -1825,6 +1914,7 @@ async def test_workspace_component_import_name_should_be_required_valid_and_uniq
             "name": "统计卡片",
             "import_name": "StatsCard",
             "content": "<template><div>card</div></template>",
+            "preview_schema": CONTENT_COMPONENT_SIZE_PREVIEW_SCHEMA,
             "file_type": "vue",
             "status": "active",
         },
@@ -1838,6 +1928,7 @@ async def test_workspace_component_import_name_should_be_required_valid_and_uniq
             "name": "重复统计卡片",
             "import_name": "StatsCard",
             "content": "<template><div>duplicate</div></template>",
+            "preview_schema": CONTENT_COMPONENT_SIZE_PREVIEW_SCHEMA,
             "file_type": "vue",
             "status": "active",
         },
@@ -1852,6 +1943,7 @@ async def test_workspace_component_import_name_should_be_required_valid_and_uniq
             "name": "归档重复统计卡片",
             "import_name": "StatsCard",
             "content": "<template><div>archived</div></template>",
+            "preview_schema": CONTENT_COMPONENT_SIZE_PREVIEW_SCHEMA,
             "file_type": "vue",
             "status": "archived",
         },
@@ -1881,6 +1973,87 @@ async def test_workspace_component_should_reject_unknown_component_type(authenti
         },
     )
     assert create_response.status_code == 422
+    assert create_response.json()["code"] == "VALIDATION_ERROR"
+    assert "component_type" in create_response.json()["message"]
+
+    legacy_response = await authenticated_client.post(
+        "/api/components",
+        json={
+            "workspace_id": workspace_response.json()["id"],
+            "name": "旧分类组件",
+            "import_name": "LegacyCategoryComponent",
+            "content": "<template><div>legacy</div></template>",
+            "file_type": "vue",
+            "component_type": "内容区块",
+            "status": "active",
+        },
+    )
+    assert legacy_response.status_code == 422
+    assert legacy_response.json()["code"] == "VALIDATION_ERROR"
+    assert "component_type" in legacy_response.json()["message"]
+
+
+async def test_content_component_should_require_size_control_preview_schema(authenticated_client: AsyncClient) -> None:
+    """内容组件必须在 previewSchema props 中声明尺寸控制参数。"""
+
+    workspace_response = await authenticated_client.post(
+        "/api/workspaces",
+        json={"name": "内容组件尺寸校验工作空间", "status": "active"},
+    )
+    assert workspace_response.status_code == 200
+    workspace_id = workspace_response.json()["id"]
+
+    missing_schema_response = await authenticated_client.post(
+        "/api/components",
+        json={
+            "workspace_id": workspace_id,
+            "name": "缺少尺寸的内容组件",
+            "import_name": "MissingSizeContentComponent",
+            "content": "<template><section>missing-size</section></template>",
+            "file_type": "vue",
+            "component_type": "内容组件",
+            "status": "active",
+        },
+    )
+    assert missing_schema_response.status_code == 400
+    assert missing_schema_response.json()["code"] == "CONTENT_COMPONENT_SIZE_CONTROL_REQUIRED"
+
+    missing_size_prop_response = await authenticated_client.post(
+        "/api/components",
+        json={
+            "workspace_id": workspace_id,
+            "name": "无尺寸参数内容组件",
+            "import_name": "NoSizePropContentComponent",
+            "content": "<template><section>no-size-prop</section></template>",
+            "preview_schema": '{"props":{"title":{"type":"string","label":"标题","default":"示例"}}}',
+            "file_type": "vue",
+            "component_type": "内容组件",
+            "status": "active",
+        },
+    )
+    assert missing_size_prop_response.status_code == 400
+    assert missing_size_prop_response.json()["code"] == "CONTENT_COMPONENT_SIZE_CONTROL_REQUIRED"
+
+    atomic_response = await authenticated_client.post(
+        "/api/components",
+        json={
+            "workspace_id": workspace_id,
+            "name": "页码原子组件",
+            "import_name": "PageNumberAtom",
+            "content": "<template><span>1</span></template>",
+            "file_type": "vue",
+            "component_type": "原子组件",
+            "status": "active",
+        },
+    )
+    assert atomic_response.status_code == 200
+
+    update_response = await authenticated_client.patch(
+        f"/api/components/{atomic_response.json()['id']}",
+        json={"component_type": "内容组件", "change_note": "切换为内容组件"},
+    )
+    assert update_response.status_code == 400
+    assert update_response.json()["code"] == "CONTENT_COMPONENT_SIZE_CONTROL_REQUIRED"
 
 
 async def test_component_package_import_should_return_imported_components(authenticated_client: AsyncClient) -> None:
@@ -1905,8 +2078,9 @@ async def test_component_package_import_should_return_imported_components(authen
             "workspace_id": source_workspace_id,
             "name": "导出卡片",
             "import_name": "ExportedCard",
-            "component_type": "内容区块",
+            "component_type": "内容组件",
             "content": "<template><section>exported</section></template>",
+            "preview_schema": CONTENT_COMPONENT_SIZE_PREVIEW_SCHEMA,
             "file_type": "vue",
             "status": "active",
         },
@@ -1924,6 +2098,13 @@ async def test_component_package_import_should_return_imported_components(authen
         json={"workspace_id": source_workspace_id, "component_ids": [component_id]},
     )
     assert export_response.status_code == 200
+    with zipfile.ZipFile(io.BytesIO(export_response.content)) as archive:
+        manifest = json.loads(archive.read("manifest.json").decode("utf-8"))
+        component_payload = json.loads(archive.read(f"components/{publish_response.json()['code']}/component.json").decode("utf-8"))
+        assert manifest["schema_version"] == 2
+        assert isinstance(manifest["components"][0]["component_fingerprint"], str)
+        assert isinstance(component_payload["component_fingerprint"], str)
+        assert component_payload["fingerprint_schema_version"] == 1
 
     import_response = await authenticated_client.post(
         "/api/components/import-package",
@@ -1936,5 +2117,197 @@ async def test_component_package_import_should_return_imported_components(authen
     assert imported_components[0]["workspace_id"] == target_workspace_id
     assert imported_components[0]["name"] == "导出卡片"
     assert imported_components[0]["import_name"] == "ExportedCard"
-    assert imported_components[0]["component_type"] == "内容区块"
+    assert imported_components[0]["component_type"] == "内容组件"
     assert imported_components[0]["current_version_no"] == 1
+    assert import_response.json()["components"][0]["action"] == "create"
+    async with get_session_factory()() as session:
+        version = await session.scalar(
+            select(WorkspaceComponentVersion)
+            .join(WorkspaceComponent, WorkspaceComponent.id == WorkspaceComponentVersion.component_id)
+            .where(WorkspaceComponent.id == imported_components[0]["id"])
+            .where(WorkspaceComponentVersion.version_no == WorkspaceComponent.current_version_no)
+        )
+        assert version is not None
+        version.content_hash = None
+        version.preview_schema_hash = None
+        version.component_fingerprint = None
+        version.fingerprint_schema_version = None
+        await session.commit()
+
+    reuse_validation_response = await authenticated_client.post(
+        "/api/components/import-package/validate",
+        data={"workspace_id": str(target_workspace_id)},
+        files={"archive": ("components.zip", export_response.content, "application/zip")},
+    )
+    assert reuse_validation_response.status_code == 200
+    assert reuse_validation_response.json()["valid"] is True
+    assert reuse_validation_response.json()["components"][0]["action"] == "reuse"
+
+    reuse_import_response = await authenticated_client.post(
+        "/api/components/import-package",
+        data={"workspace_id": str(target_workspace_id)},
+        files={"archive": ("components.zip", export_response.content, "application/zip")},
+    )
+    assert reuse_import_response.status_code == 200
+    assert reuse_import_response.json()["imported_components"] == []
+    assert reuse_import_response.json()["components"][0]["action"] == "reuse"
+
+
+async def test_component_package_export_should_warn_and_allow_manual_assets(authenticated_client: AsyncClient) -> None:
+    """组件包导出遇到动态资源和缺失静态资源时应 warning，可手动补充资源。"""
+
+    source_workspace = await _create_catalog_workspace(authenticated_client, "组件动态资源源空间")
+    target_workspace = await _create_catalog_workspace(authenticated_client, "组件动态资源目标空间")
+    static_asset = await _create_catalog_svg_asset(authenticated_client, source_workspace["id"], "share_static_logo")
+    missing_asset = await _create_catalog_svg_asset(authenticated_client, source_workspace["id"], "share_missing_logo")
+    manual_asset = await _create_catalog_svg_asset(authenticated_client, source_workspace["id"], "share_manual_photo")
+    create_response = await authenticated_client.post(
+        "/api/components",
+        json={
+            "workspace_id": source_workspace["id"],
+            "name": "动态资源卡片",
+            "import_name": "DynamicAssetCard",
+            "component_type": "内容组件",
+            "content": (
+                "<template>"
+                '<AssetImage name="share_static_logo" />'
+                '<AssetImage name="share_missing_logo" />'
+                '<AssetImage :name="props.runtimeAssetName" />'
+                "</template>"
+                "<script setup>const props = defineProps({ runtimeAssetName: String })</script>"
+            ),
+            "preview_schema": CONTENT_COMPONENT_SIZE_PREVIEW_SCHEMA,
+            "file_type": "vue",
+            "status": "active",
+        },
+    )
+    assert create_response.status_code == 200
+    component_id = create_response.json()["id"]
+    publish_response = await authenticated_client.post(
+        f"/api/components/{component_id}/publish",
+        json={"release_name": "动态资源导出版"},
+    )
+    assert publish_response.status_code == 200
+
+    archive_response = await authenticated_client.post(
+        f"/api/workspaces/{source_workspace['id']}/assets/{missing_asset['id']}/archive",
+        json={"archive_reason": "测试缺失静态资源 warning"},
+    )
+    assert archive_response.status_code == 200
+
+    validate_response = await authenticated_client.post(
+        "/api/components/export-package/validate",
+        json={
+            "workspace_id": source_workspace["id"],
+            "component_ids": [component_id],
+            "manual_asset_names": ["share_manual_photo", "not_exists"],
+        },
+    )
+    assert validate_response.status_code == 200, validate_response.json()
+    validation = validate_response.json()
+    assert validation["can_export"] is True
+    assert validation["dynamic_resource_components"] == ["动态资源卡片"]
+    assert validation["missing_static_asset_names"] == ["share_missing_logo"]
+    assert validation["missing_manual_asset_names"] == ["not_exists"]
+    assert {item["name"] for item in validation["automatic_assets"]} == {"share_static_logo"}
+    assert {item["name"] for item in validation["manual_assets"]} == {"share_manual_photo"}
+
+    export_response = await authenticated_client.post(
+        "/api/components/export-package",
+        json={
+            "workspace_id": source_workspace["id"],
+            "component_ids": [component_id],
+            "manual_asset_names": ["share_manual_photo", "not_exists"],
+        },
+    )
+    assert export_response.status_code == 200
+    with zipfile.ZipFile(io.BytesIO(export_response.content)) as archive:
+        manifest = json.loads(archive.read("manifest.json").decode("utf-8"))
+        component_payload = json.loads(archive.read(f"components/{publish_response.json()['code']}/component.json").decode("utf-8"))
+        assert manifest["export_warnings"]
+        assert manifest["manual_asset_names"] == ["share_manual_photo"]
+        assert manifest["missing_asset_names"] == ["share_missing_logo", "not_exists"]
+        assert manifest["dynamic_resource_components"] == ["动态资源卡片"]
+        assert {item["name"] for item in manifest["assets"]} == {"share_static_logo", "share_manual_photo"}
+        assert component_payload["asset_names"] == ["share_static_logo"]
+        assert "share_manual_photo" not in component_payload["asset_names"]
+        assert f"assets/{static_asset['file_hash']}/asset.json" in archive.namelist()
+        assert f"assets/{manual_asset['file_hash']}/asset.json" in archive.namelist()
+
+    import_validation_response = await authenticated_client.post(
+        "/api/components/import-package/validate",
+        data={"workspace_id": str(target_workspace["id"])},
+        files={"archive": ("components.zip", export_response.content, "application/zip")},
+    )
+    assert import_validation_response.status_code == 200
+    import_validation = import_validation_response.json()
+    assert import_validation["valid"] is True
+    assert import_validation["warnings"] == manifest["export_warnings"]
+
+    import_response = await authenticated_client.post(
+        "/api/components/import-package",
+        data={"workspace_id": str(target_workspace["id"])},
+        files={"archive": ("components.zip", export_response.content, "application/zip")},
+    )
+    assert import_response.status_code == 200
+    assert import_response.json()["warnings"] == manifest["export_warnings"]
+    assert import_response.json()["components"][0]["action"] == "create"
+
+
+async def test_component_package_import_should_reject_legacy_schema_and_tampered_fingerprint(
+    authenticated_client: AsyncClient,
+) -> None:
+    """组件分享包应拒绝旧 schema 和被篡改的组件指纹。"""
+
+    workspace = await _create_catalog_workspace(authenticated_client, "组件指纹源空间")
+    target = await _create_catalog_workspace(authenticated_client, "组件指纹目标空间")
+    create_response = await authenticated_client.post(
+        "/api/components",
+        json={
+            "workspace_id": workspace["id"],
+            "name": "指纹卡片",
+            "import_name": "FingerprintCard",
+            "component_type": "内容组件",
+            "content": "<template><section>fingerprint</section></template>",
+            "preview_schema": CONTENT_COMPONENT_SIZE_PREVIEW_SCHEMA,
+            "file_type": "vue",
+            "status": "active",
+        },
+    )
+    assert create_response.status_code == 200
+    component_id = create_response.json()["id"]
+    publish_response = await authenticated_client.post(
+        f"/api/components/{component_id}/publish",
+        json={"release_name": "导出版"},
+    )
+    assert publish_response.status_code == 200
+    export_response = await authenticated_client.post(
+        "/api/components/export-package",
+        json={"workspace_id": workspace["id"], "component_ids": [component_id]},
+    )
+    assert export_response.status_code == 200
+
+    legacy_archive = _rewrite_zip_json(export_response.content, "manifest.json", lambda payload: {**payload, "schema_version": 1})
+    legacy_response = await authenticated_client.post(
+        "/api/components/import-package/validate",
+        data={"workspace_id": str(target["id"])},
+        files={"archive": ("components.zip", legacy_archive, "application/zip")},
+    )
+    assert legacy_response.status_code == 200
+    assert legacy_response.json()["valid"] is False
+    assert any("schema_version" in error for error in legacy_response.json()["errors"])
+
+    component_code = publish_response.json()["code"]
+    tampered_archive = _rewrite_zip_json(
+        export_response.content,
+        f"components/{component_code}/component.json",
+        lambda payload: {**payload, "component_fingerprint": "0" * 64},
+    )
+    tampered_response = await authenticated_client.post(
+        "/api/components/import-package/validate",
+        data={"workspace_id": str(target["id"])},
+        files={"archive": ("components.zip", tampered_archive, "application/zip")},
+    )
+    assert tampered_response.status_code == 200
+    assert tampered_response.json()["valid"] is False
+    assert any("component_fingerprint" in error for error in tampered_response.json()["errors"])

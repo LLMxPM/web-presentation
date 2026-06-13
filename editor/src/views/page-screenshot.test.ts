@@ -1,7 +1,7 @@
 /**
  * 文件功能：验证页面截图在列表展示和详情页保存流程中的关键交互。
  */
-import { defineComponent, h, onMounted } from 'vue'
+import { defineComponent, h, onMounted, ref } from 'vue'
 import { render, fireEvent, screen, waitFor } from '@testing-library/vue'
 import { QueryClient, VueQueryPlugin } from '@tanstack/vue-query'
 import { createPinia, setActivePinia } from 'pinia'
@@ -9,6 +9,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import PagesView from '@/views/PagesView.vue'
 import PageDetailView from '@/views/PageDetailView.vue'
+import { agentSidebarExpandedKey } from '@/composables/agent-sidebar-state'
 import { useAuthStore } from '@/stores/auth'
 
 const routeState = {
@@ -35,6 +36,9 @@ const getProjectRoutesMock = vi.fn()
 const replaceProjectRoutesMock = vi.fn()
 const copyPageToProjectMock = vi.fn()
 const savePageScreenshotMock = vi.fn()
+const batchRefreshPageScreenshotJobsMock = vi.fn()
+const waitForPageScreenshotJobGroupMock = vi.fn()
+const downloadPageScreenshotsArchiveMock = vi.fn()
 const createProjectPreviewArtifactMock = vi.fn()
 const messageSuccessMock = vi.fn()
 const messageErrorMock = vi.fn()
@@ -89,6 +93,9 @@ vi.mock('@/api/catalog', () => ({
   updatePage: (...args: unknown[]) => updatePageMock(...args),
   updateProject: (...args: unknown[]) => updateProjectMock(...args),
   savePageScreenshot: (...args: unknown[]) => savePageScreenshotMock(...args),
+  batchRefreshPageScreenshotJobs: (...args: unknown[]) => batchRefreshPageScreenshotJobsMock(...args),
+  waitForPageScreenshotJobGroup: (...args: unknown[]) => waitForPageScreenshotJobGroupMock(...args),
+  downloadPageScreenshotsArchive: (...args: unknown[]) => downloadPageScreenshotsArchiveMock(...args),
   createPageSnapshot: vi.fn(),
   getPageVersionContent: vi.fn(),
   restorePageVersion: vi.fn(),
@@ -158,7 +165,7 @@ vi.mock('@/components/agent/AgentConversationPanel.vue', () => ({
   }),
 }))
 
-function createTestingRenderOptions() {
+function createTestingRenderOptions(agentSidebarExpanded = false) {
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: {
@@ -192,6 +199,9 @@ function createTestingRenderOptions() {
         teleport: true,
         'router-link': true,
       },
+      provide: {
+        [agentSidebarExpandedKey as symbol]: ref(agentSidebarExpanded),
+      },
     },
   }
 }
@@ -205,6 +215,7 @@ function createPageDetailPayload(overrides: Record<string, unknown> = {}) {
     file_type: 'vue',
     title: '页面详情',
     summary: '摘要',
+    speaker_notes: null,
     status: 'active',
     workspace_id: 11,
     workspace_name: '工作空间 A',
@@ -298,6 +309,32 @@ describe('page screenshot views', () => {
     })
     getProjectRoutesMock.mockResolvedValue({ routes: [] })
     replaceProjectRoutesMock.mockResolvedValue({ routes: [] })
+    batchRefreshPageScreenshotJobsMock.mockResolvedValue({
+      job_group_id: 'screenshot-group-1',
+      status: 'running',
+      requested_count: 1,
+      pending_count: 1,
+      running_count: 0,
+      succeeded_count: 0,
+      failed_count: 0,
+      skipped_count: 0,
+      page_ids: [],
+      jobs: [],
+      failures: [],
+    })
+    waitForPageScreenshotJobGroupMock.mockResolvedValue({
+      job_group_id: 'screenshot-group-1',
+      status: 'succeeded',
+      requested_count: 1,
+      pending_count: 0,
+      running_count: 0,
+      succeeded_count: 1,
+      failed_count: 0,
+      skipped_count: 0,
+      page_ids: [31],
+      jobs: [],
+      failures: [],
+    })
     listPagesMock.mockResolvedValue({
       items: [createPageListPayload()],
       total: 1,
@@ -406,6 +443,20 @@ describe('page screenshot views', () => {
 
     expect(localStorage.getItem('web-presentation:pages-view:preview-card-size')).toBe('huge')
     expect(screen.getByRole('button', { name: '卡片超大' })).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  it('PagesView 智能体对话面板打开时应隐藏项目编码', async () => {
+    const { unmount } = render(PagesView, createTestingRenderOptions())
+
+    expect(await screen.findByText('项目 A')).toBeInTheDocument()
+    expect(screen.getByText('PRJ202604020001')).toBeInTheDocument()
+
+    unmount()
+    render(PagesView, createTestingRenderOptions(true))
+
+    expect(await screen.findByText('项目 A')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '项目 A' })).toHaveClass('max-w-[10rem]')
+    expect(screen.queryByText('PRJ202604020001')).toBeNull()
   })
 
   it('PagesView 未加入路由分区应支持批量加入顶层路由', async () => {
@@ -904,7 +955,32 @@ describe('page screenshot views', () => {
       page: 1,
       page_size: 100,
     })
-    savePageScreenshotMock.mockResolvedValue({})
+    batchRefreshPageScreenshotJobsMock.mockResolvedValue({
+      job_group_id: 'screenshot-group-refresh',
+      status: 'running',
+      requested_count: 2,
+      pending_count: 2,
+      running_count: 0,
+      succeeded_count: 0,
+      failed_count: 0,
+      skipped_count: 0,
+      page_ids: [],
+      jobs: [],
+      failures: [],
+    })
+    waitForPageScreenshotJobGroupMock.mockResolvedValue({
+      job_group_id: 'screenshot-group-refresh',
+      status: 'succeeded',
+      requested_count: 2,
+      pending_count: 0,
+      running_count: 0,
+      succeeded_count: 2,
+      failed_count: 0,
+      skipped_count: 0,
+      page_ids: [31, 32],
+      jobs: [],
+      failures: [],
+    })
 
     render(PagesView, createTestingRenderOptions())
 
@@ -913,13 +989,83 @@ describe('page screenshot views', () => {
     await fireEvent.click(screen.getByTestId('batch-refresh-unrouted-page-screenshots'))
 
     await waitFor(() => {
-      expect(savePageScreenshotMock).toHaveBeenCalledTimes(2)
+      expect(batchRefreshPageScreenshotJobsMock).toHaveBeenCalledWith(21)
+      expect(waitForPageScreenshotJobGroupMock).toHaveBeenCalledWith('screenshot-group-refresh')
     })
-    expect(savePageScreenshotMock).toHaveBeenNthCalledWith(1, 31)
-    expect(savePageScreenshotMock).toHaveBeenNthCalledWith(2, 32)
+    expect(savePageScreenshotMock).not.toHaveBeenCalled()
     await waitFor(() => {
       expect(messageSuccessMock).toHaveBeenCalledWith('批量截图完成 2 个页面。')
     })
+  })
+
+  it('PagesView 选中页面后应先刷新旧截图再下载截图压缩包', async () => {
+    listPagesMock.mockResolvedValue({
+      items: [
+        createPageListPayload({
+          id: 31,
+          code: 'PG202604020001',
+          title: 'A 旧截图页面',
+          current_version_no: 2,
+          screenshot_url: '/media/page-screenshots/PG202604020001.png?v=1712049120000',
+          screenshot_version_no: 1,
+          screenshot_config_hash: 'old-config',
+          screenshot_is_latest: false,
+          screenshot_updated_at: '2026-04-02T10:05:00Z',
+        }),
+        createPageListPayload({
+          id: 32,
+          code: 'PG202604020002',
+          title: 'B 最新截图页面',
+          current_version_no: 3,
+          screenshot_url: '/media/page-screenshots/PG202604020002.png?v=1712049660000',
+          screenshot_version_no: 3,
+          screenshot_config_hash: 'current-config',
+          screenshot_is_latest: true,
+          screenshot_updated_at: '2026-04-02T10:21:00Z',
+        }),
+      ],
+      total: 2,
+      page: 1,
+      page_size: 100,
+    })
+    const updatedScreenshotPage = createPageListPayload({
+      id: 31,
+      code: 'PG202604020001',
+      title: 'A 旧截图页面',
+      current_version_no: 2,
+      screenshot_url: '/media/page-screenshots/PG202604020001.png?v=1712049720000',
+      screenshot_version_no: 2,
+      screenshot_config_hash: 'current-config',
+      screenshot_is_latest: true,
+      screenshot_updated_at: '2026-04-02T10:12:00Z',
+    })
+    let resolveScreenshotSave!: (value: unknown) => void
+    savePageScreenshotMock.mockImplementation(() => new Promise((resolve) => {
+      resolveScreenshotSave = resolve
+    }))
+    downloadPageScreenshotsArchiveMock.mockResolvedValue(undefined)
+
+    render(PagesView, createTestingRenderOptions())
+
+    expect(await screen.findByText('A 旧截图页面')).toBeInTheDocument()
+    await fireEvent.click(screen.getByTestId('batch-unrouted-select-all'))
+    expect(screen.getByRole('button', { name: '下载截图' })).toBeInTheDocument()
+
+    await fireEvent.click(screen.getByTestId('batch-unrouted-screenshot'))
+
+    await waitFor(() => {
+      expect(savePageScreenshotMock).toHaveBeenCalledTimes(1)
+    })
+    expect(screen.getByText(/刷新截图 1\/2/)).toBeInTheDocument()
+    expect(savePageScreenshotMock).toHaveBeenCalledWith(31)
+    resolveScreenshotSave(updatedScreenshotPage)
+
+    await waitFor(() => {
+      expect(downloadPageScreenshotsArchiveMock).toHaveBeenCalledTimes(1)
+    })
+    expect(downloadPageScreenshotsArchiveMock).toHaveBeenCalledWith([31, 32])
+    expect(anchorClickMock).not.toHaveBeenCalled()
+    expect(messageSuccessMock).toHaveBeenCalledWith('已更新 1 个页面截图，并下载包含 2 个截图的压缩包。')
   })
 
   it('PagesView 无需刷新的 Vue 截图时应禁用刷新截图按钮', async () => {
@@ -1416,6 +1562,7 @@ describe('page screenshot views', () => {
     expect(screen.getByRole('button', { name: '上一页' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '下一页' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '版本' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '刷新预览' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '截图' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '资源' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '复制' })).toBeInTheDocument()
@@ -1429,9 +1576,35 @@ describe('page screenshot views', () => {
     expect(screen.getByRole('button', { name: '保存' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '上一页' })).toBeNull()
     expect(screen.queryByRole('button', { name: '下一页' })).toBeNull()
+    expect(screen.queryByRole('button', { name: '刷新预览' })).toBeNull()
     expect(screen.queryByRole('button', { name: '截图' })).toBeNull()
     expect(screen.queryByRole('button', { name: '复制' })).toBeNull()
     expect(screen.queryByRole('button', { name: '刷新' })).toBeNull()
+  })
+
+  it('PageDetailView 预览模式应支持手动刷新当前 iframe', async () => {
+    const dateNowSpy = vi.spyOn(Date, 'now')
+    getPageMock.mockResolvedValue(createPageDetailPayload())
+
+    try {
+      render(PageDetailView, createTestingRenderOptions())
+
+      expect(await screen.findByText('页面详情')).toBeInTheDocument()
+      await waitFor(() => {
+        expect(screen.getByTitle('runtime-preview')).toHaveAttribute('src', expect.stringContaining('http://runtime.local/__preview?ticket=current&t='))
+      })
+      createProjectPreviewArtifactMock.mockClear()
+
+      dateNowSpy.mockReturnValue(222)
+      await fireEvent.click(screen.getByRole('button', { name: '刷新预览' }))
+
+      await waitFor(() => {
+        expect(screen.getByTitle('runtime-preview')).toHaveAttribute('src', 'http://runtime.local/__preview?ticket=current&t=222')
+      })
+      expect(createProjectPreviewArtifactMock).not.toHaveBeenCalled()
+    } finally {
+      dateNowSpy.mockRestore()
+    }
   })
 
   it('PageDetailView 应在详情页编辑页面名称和描述', async () => {
@@ -1458,6 +1631,34 @@ describe('page screenshot views', () => {
     await waitFor(() => {
       expect(messageSuccessMock).toHaveBeenCalledWith('页面信息已更新。')
       expect(screen.getByText('页面详情新标题')).toBeInTheDocument()
+    })
+  })
+
+  it('PageDetailView 应在备注面板编辑并保存演讲者备注', async () => {
+    getPageMock.mockResolvedValue(createPageDetailPayload({
+      speaker_notes: '旧备注',
+    }))
+    updatePageMock.mockResolvedValue(createPageDetailPayload({
+      speaker_notes: '新备注\n第二行',
+      current_version_no: 2,
+    }))
+
+    render(PageDetailView, createTestingRenderOptions())
+
+    expect(await screen.findByText('页面详情')).toBeInTheDocument()
+    await fireEvent.click(screen.getByRole('button', { name: '备注' }))
+    const textarea = screen.getByPlaceholderText(/记录演讲时只给自己看的提示/) as HTMLTextAreaElement
+    expect(textarea.value).toBe('旧备注')
+
+    await fireEvent.update(textarea, '新备注\n第二行')
+    await fireEvent.click(screen.getByRole('button', { name: '保存备注' }))
+
+    await waitFor(() => {
+      expect(updatePageMock).toHaveBeenCalledWith(31, {
+        speaker_notes: '新备注\n第二行',
+        change_note: '更新演讲者备注',
+      })
+      expect(messageSuccessMock).toHaveBeenCalledWith('演讲者备注已保存。')
     })
   })
 

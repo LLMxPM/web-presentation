@@ -61,7 +61,7 @@
         v-if="showCreateImportActions && !readOnly && componentPanelTab === 'workspace'"
         type="button"
         class="flex items-center gap-1 rounded-lg p-1.5 text-xs font-bold text-indigo-600 transition-colors hover:bg-indigo-50"
-        title="新建组件"
+        title="新增组件"
         @click="emitCreateRequest"
       >
         <Plus class="h-4 w-4" />

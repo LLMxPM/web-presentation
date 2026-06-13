@@ -184,7 +184,12 @@
                 :class="getRunStatusBadgeClass(item.status)"
               >
                 <span class="h-1.5 w-1.5 shrink-0 rounded-full" :class="getRunStatusDotClass(item.status)" />
-                <span class="truncate">{{ item.content }}</span>
+                <span class="min-w-0 truncate">{{ item.content }}</span>
+                <span v-if="shouldAnimateRunStatus(item.status)" class="thinking-dots shrink-0" aria-hidden="true">
+                  <span />
+                  <span />
+                  <span />
+                </span>
               </span>
               <span class="h-px flex-1" :class="getRunStatusLineClass(item.status)" />
             </div>
@@ -454,6 +459,13 @@ function getRunStatusLineClass(status: string | null) {
   if (status === 'cancelled' || status === 'cancelling') return 'bg-amber-100'
   if (status === 'completed') return 'bg-slate-100'
   return 'bg-sky-100'
+}
+
+/**
+ * 运行中的模型请求状态用省略号提示用户仍在等待输出。
+ */
+function shouldAnimateRunStatus(status: string | null) {
+  return status === 'model_request'
 }
 
 function getRequirementStatusClass(status: string | null) {

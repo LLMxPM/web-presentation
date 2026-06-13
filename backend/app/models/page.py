@@ -1,4 +1,4 @@
-"""文件功能：定义工作空间页面资源库模型，管理页面源码内容、文件类型与截图信息。"""
+"""文件功能：定义工作空间页面资源库模型，管理页面源码、演讲备注、文件类型与截图信息。"""
 
 from datetime import datetime
 
@@ -22,6 +22,7 @@ class Page(TimestampMixin, AuditMixin, SoftDeleteMixin, Base):
     file_type: Mapped[PageFileType] = mapped_column(String(32), nullable=False, default=PageFileType.VUE.value)
     title: Mapped[str] = mapped_column(String(128), nullable=False)
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    speaker_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[RecordStatus] = mapped_column(String(32), nullable=False, default=RecordStatus.ACTIVE.value)
     workspace_id: Mapped[int | None] = mapped_column(ForeignKey("workspaces.id"), nullable=True, index=True)
     project_id: Mapped[int | None] = mapped_column(ForeignKey("projects.id"), nullable=True, index=True)

@@ -1,7 +1,7 @@
 /**
  * 文件功能：验证工作空间样式库页面的详情查看、导出和导入入口。
  */
-import { fireEvent, render, screen } from '@testing-library/vue'
+import { fireEvent, render, screen, waitFor } from '@testing-library/vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocked = vi.hoisted(() => ({
@@ -12,8 +12,48 @@ const mocked = vi.hoisted(() => ({
   exportWorkspaceStylePackage: vi.fn(),
   importWorkspaceStylePackage: vi.fn(),
   listWorkspaceStyles: vi.fn(),
+  listWorkspaceAssets: vi.fn(),
   updateWorkspaceStyle: vi.fn(),
+  updateWorkspaceStyleSuggestedComponents: vi.fn(),
+  validateWorkspaceStylePackageExport: vi.fn(),
   validateWorkspaceStylePackageImport: vi.fn(),
+  listWorkspaceThemes: vi.fn(),
+  getWorkspaceTheme: vi.fn(),
+  theme: {
+    id: 3,
+    workspace_id: 1,
+    key: 'default',
+    name: '默认主题',
+    description: '默认品牌主题。',
+    logo_asset_id: null,
+    invert_logo_asset_id: null,
+    project_icon_asset_id: null,
+    project_icon_name: null,
+    heading_font_id: null,
+    body_font_id: null,
+    code_font_id: null,
+    heading_font_label: null,
+    body_font_label: null,
+    code_font_label: null,
+    palette: {
+      text: { primary: '#111111', secondary: '#334155', invert: '#ffffff' },
+      background: { default: '#ffffff', invert: '#111111' },
+      border: { default: '#cbd5e1', subtle: '#e2e8f0' },
+      link: { default: '#2563eb', hover: '#1d4ed8', visited: '#7c3aed' },
+      accent: ['#2563eb'],
+    },
+    logo_asset: null,
+    invert_logo_asset: null,
+    project_icon_asset: null,
+    heading_font: null,
+    body_font: null,
+    code_font: null,
+    resolved_theme_config_yaml: 'themes: {}',
+    created_at: '2026-05-16T00:00:00Z',
+    updated_at: '2026-05-16T00:00:00Z',
+    created_by: 1,
+    updated_by: 1,
+  },
   style: {
     id: 9,
     workspace_id: 1,
@@ -57,14 +97,55 @@ vi.mock('@/api/styles', () => ({
   importWorkspaceStylePackage: (...args: unknown[]) => mocked.importWorkspaceStylePackage(...args),
   listWorkspaceStyles: (...args: unknown[]) => mocked.listWorkspaceStyles(...args),
   updateWorkspaceStyle: (...args: unknown[]) => mocked.updateWorkspaceStyle(...args),
+  updateWorkspaceStyleSuggestedComponents: (...args: unknown[]) => mocked.updateWorkspaceStyleSuggestedComponents(...args),
+  validateWorkspaceStylePackageExport: (...args: unknown[]) => mocked.validateWorkspaceStylePackageExport(...args),
   validateWorkspaceStylePackageImport: (...args: unknown[]) => mocked.validateWorkspaceStylePackageImport(...args),
+}))
+
+vi.mock('@/api/assets', () => ({
+  listWorkspaceAssets: (...args: unknown[]) => mocked.listWorkspaceAssets(...args),
+}))
+
+vi.mock('@/api/themes', () => ({
+  listWorkspaceThemes: (...args: unknown[]) => mocked.listWorkspaceThemes(...args),
+  getWorkspaceTheme: (...args: unknown[]) => mocked.getWorkspaceTheme(...args),
 }))
 
 vi.mock('@/components/project/WorkspaceStyleEditorDialog.vue', () => ({
   default: {
     props: ['modelValue'],
     emits: ['update:modelValue', 'save'],
-    template: '<div data-testid="style-editor-dialog"></div>',
+    template: `
+      <div v-if="modelValue" data-testid="style-editor-dialog">
+        <button
+          type="button"
+          @click="$emit('save', {
+            key: 'pitch',
+            name: '路演样式',
+            description: '适合路演展示。',
+            page_width: 1920,
+            page_height: 1080,
+            base_font_size: '18px',
+            icon_default_stroke_width: 2,
+            show_pdf_export_button: true,
+            menu_mode: 'preview',
+            theme_key: 'default',
+            style_spec_markdown: '## 版式\\n- 使用强标题。',
+            suggested_component_ids: [1, 2],
+          })"
+        >
+          提交样式
+        </button>
+      </div>
+    `,
+  },
+}))
+
+vi.mock('@/components/project/WorkspaceStyleSuggestedComponentsDialog.vue', () => ({
+  default: {
+    props: ['modelValue', 'style'],
+    emits: ['update:modelValue', 'saved'],
+    template: '<div v-if="modelValue" data-testid="style-suggested-components-dialog">{{ style?.name }}</div>',
   },
 }))
 
@@ -79,25 +160,115 @@ describe('WorkspaceStylesView', () => {
       page: 1,
       page_size: 100,
     })
+    mocked.listWorkspaceThemes.mockResolvedValue({
+      items: [mocked.theme],
+      total: 1,
+      page: 1,
+      page_size: 100,
+    })
+    mocked.getWorkspaceTheme.mockResolvedValue(mocked.theme)
     mocked.exportWorkspaceStylePackage.mockResolvedValue({
       blob: new Blob(['zip']),
       filename: 'workspace-styles.zip',
     })
+    mocked.validateWorkspaceStylePackageExport.mockResolvedValue({
+      can_export: true,
+      automatic_assets: [],
+      manual_assets: [],
+      fonts: [],
+      warnings: [],
+      missing_static_asset_names: [],
+      missing_manual_asset_names: [],
+      dynamic_resource_components: [],
+    })
+    mocked.listWorkspaceAssets.mockResolvedValue({
+      items: [],
+      total: 0,
+      page: 1,
+      page_size: 100,
+    })
     mocked.validateWorkspaceStylePackageImport.mockResolvedValue({
       valid: true,
-      schema_version: 2,
-      styles: [{ key: 'pitch', name: '路演样式', theme_key: 'default', action: 'create' }],
+      schema_version: 3,
+      styles: [{
+        key: 'pitch',
+        name: '路演样式',
+        theme_key: 'default',
+        page_width: 1920,
+        page_height: 1080,
+        base_font_size: '18px',
+        icon_default_stroke_width: 2,
+        show_pdf_export_button: true,
+        menu_mode: 'preview',
+        style_spec_markdown: '## 导入规范\n- 使用强标题。',
+        action: 'overwrite',
+      }],
+      components: [{
+        source_component_code: 'CMP001',
+        source_version_no: 1,
+        name: '路演卡片',
+        import_name: 'PitchCard',
+        component_type: '内容组件',
+        dependencies: [],
+        component_fingerprint: '1234567890abcdef',
+        matched_component_id: null,
+        matched_component_code: null,
+        action: 'create',
+        match_reason: '未找到相同指纹组件，将创建新组件。',
+      }],
       themes: [],
-      assets: [],
+      assets: [{
+        name: 'hero-image',
+        original_name: 'hero.svg',
+        asset_type: 'image',
+        file_hash: 'asset-hash',
+        action: 'create',
+      }],
       fonts: [],
       errors: [],
+      warnings: [],
     })
     mocked.importWorkspaceStylePackage.mockResolvedValue({
-      styles: [{ key: 'pitch', name: '路演样式', theme_key: 'default', action: 'create' }],
+      styles: [{
+        key: 'pitch',
+        name: '路演样式',
+        theme_key: 'default',
+        page_width: 1920,
+        page_height: 1080,
+        base_font_size: '18px',
+        icon_default_stroke_width: 2,
+        show_pdf_export_button: true,
+        menu_mode: 'preview',
+        style_spec_markdown: '## 导入规范\n- 使用强标题。',
+        action: 'overwrite',
+      }],
+      components: [{
+        source_component_code: 'CMP001',
+        source_version_no: 1,
+        name: '路演卡片',
+        import_name: 'PitchCard',
+        component_type: '内容组件',
+        dependencies: [],
+        component_fingerprint: '1234567890abcdef',
+        matched_component_id: null,
+        matched_component_code: null,
+        action: 'create',
+        match_reason: '未找到相同指纹组件，将创建新组件。',
+      }],
       themes: [],
-      assets: [],
+      assets: [{
+        name: 'hero-image',
+        original_name: 'hero.svg',
+        asset_type: 'image',
+        file_hash: 'asset-hash',
+        action: 'create',
+      }],
       fonts: [],
+      warnings: [],
     })
+    mocked.createWorkspaceStyle.mockResolvedValue({ ...mocked.style, id: 10 })
+    mocked.updateWorkspaceStyle.mockResolvedValue(mocked.style)
+    mocked.updateWorkspaceStyleSuggestedComponents.mockResolvedValue({ items: [] })
     anchorClickMock.mockImplementation(() => undefined)
     Object.defineProperty(HTMLAnchorElement.prototype, 'click', { configurable: true, value: anchorClickMock })
     vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:styles')
@@ -118,8 +289,47 @@ describe('WorkspaceStylesView', () => {
     await fireEvent.click(screen.getByRole('button', { name: '查看 路演样式 详情' }))
 
     expect(await screen.findByText('路演样式 · 样式详情')).toBeInTheDocument()
+    expect(screen.getByText('展示配置')).toBeInTheDocument()
     expect(screen.getAllByText('1920 x 1080').length).toBeGreaterThan(0)
+    expect(screen.getByText('16:9')).toBeInTheDocument()
+    expect(screen.getByText('导航按钮位置')).toBeInTheDocument()
+    expect(screen.getByText('侧边缩略图导航')).toBeInTheDocument()
+    expect(await screen.findByText('默认主题 / default')).toBeInTheDocument()
+    await fireEvent.click(screen.getByRole('button', { name: '默认主题 / default' }))
+    expect(await screen.findByText('快速预览')).toBeInTheDocument()
+    expect(mocked.getWorkspaceTheme).toHaveBeenCalledWith(1, 3)
+    expect(screen.getByText('导出按钮')).toBeInTheDocument()
     expect(screen.getByText('使用强标题。')).toBeInTheDocument()
+  })
+
+  it('应在样式卡片上提供建议组件管理入口', async () => {
+    renderWorkspaceStylesView()
+
+    expect(await screen.findByText('路演样式')).toBeInTheDocument()
+
+    await fireEvent.click(screen.getByRole('button', { name: '管理 路演样式 建议组件' }))
+
+    expect(screen.getByTestId('style-suggested-components-dialog')).toHaveTextContent('路演样式')
+  })
+
+  it('编辑样式保存时应同步保存建议组件并剥离临时字段', async () => {
+    renderWorkspaceStylesView()
+
+    expect(await screen.findByText('路演样式')).toBeInTheDocument()
+
+    await fireEvent.click(screen.getByTitle('编辑'))
+    await fireEvent.click(screen.getByRole('button', { name: '提交样式' }))
+
+    await waitFor(() => {
+      expect(mocked.updateWorkspaceStyle).toHaveBeenCalled()
+    })
+    const stylePayload = mocked.updateWorkspaceStyle.mock.calls[0]?.[2] as Record<string, unknown>
+    expect(stylePayload).not.toHaveProperty('suggested_component_ids')
+    expect(mocked.updateWorkspaceStyle).toHaveBeenCalledWith(1, 9, expect.objectContaining({
+      key: 'pitch',
+      style_spec_markdown: '## 版式\n- 使用强标题。',
+    }))
+    expect(mocked.updateWorkspaceStyleSuggestedComponents).toHaveBeenCalledWith(1, 9, [1, 2])
   })
 
   it('勾选样式后应允许导出离线包', async () => {
@@ -134,7 +344,14 @@ describe('WorkspaceStylesView', () => {
 
     await fireEvent.click(exportButton)
 
-    expect(mocked.exportWorkspaceStylePackage).toHaveBeenCalledWith(1, { style_ids: [9] })
+    expect(mocked.validateWorkspaceStylePackageExport).toHaveBeenCalledWith(1, {
+      style_ids: [9],
+      manual_asset_names: [],
+    })
+    expect(mocked.exportWorkspaceStylePackage).toHaveBeenCalledWith(1, {
+      style_ids: [9],
+      manual_asset_names: [],
+    })
     expect(anchorClickMock).toHaveBeenCalledTimes(1)
     expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:styles')
   })
@@ -146,8 +363,22 @@ describe('WorkspaceStylesView', () => {
 
     await fireEvent.change(fileInput, { target: { files: [file] } })
 
-    expect(await screen.findByText('样式 1 个，主题 0 个，资源 0 个，字体 0 个')).toBeInTheDocument()
+    expect(await screen.findByText('样式 1 个，组件 1 个，主题 0 个，资源 1 个，字体 0 个')).toBeInTheDocument()
+    expect(screen.getByText(/路演卡片/)).toBeInTheDocument()
+    expect(screen.getByText('覆盖')).toBeInTheDocument()
+    expect(screen.getByText('图片')).toBeInTheDocument()
     expect(screen.getAllByText('路演样式').length).toBeGreaterThan(0)
+
+    await fireEvent.click(screen.getByRole('button', { name: '查看规范' }))
+
+    expect(screen.getByText('路演样式 · 最终导入规范')).toBeInTheDocument()
+    expect(screen.getByText('展示配置')).toBeInTheDocument()
+    expect(screen.getByText('导出按钮')).toBeInTheDocument()
+    expect(screen.getAllByText('1920 x 1080').length).toBeGreaterThan(0)
+    expect(screen.getByText((_, element) => {
+      return element?.tagName.toLowerCase() === 'pre' && element.textContent === '## 导入规范\n- 使用强标题。'
+    })).toBeInTheDocument()
+    await fireEvent.click(screen.getByTitle('关闭路演样式 · 最终导入规范'))
 
     await fireEvent.click(screen.getByRole('button', { name: '确认导入' }))
 

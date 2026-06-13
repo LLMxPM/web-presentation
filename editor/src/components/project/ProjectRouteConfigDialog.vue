@@ -1,8 +1,8 @@
 <!-- 文件功能：项目路由配置弹窗，负责加载并编辑项目的结构化路由树。 -->
 <template>
-  <BaseDialog :model-value="modelValue" :title="project ? `路由配置 · ${project.name}` : '路由配置'" width="1240px"
+  <BaseDialog :model-value="modelValue" :title="project ? `路由配置 · ${project.name}` : '路由配置'" size="canvas" body-preset="editor"
     @update:model-value="handleVisibleChange">
-    <div v-if="project" class="space-y-3">
+    <div v-if="project" class="h-full min-h-0">
 
       <ProjectRouteEditor v-model="draftRoutes" :pages="routePages" :loading="routeEditorLoading" />
     </div>
@@ -120,3 +120,4 @@ watch(
   { immediate: true },
 )
 </script>
+

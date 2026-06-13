@@ -13,7 +13,7 @@ from agno.db.base import SessionType
 from agno.media import Image
 from agno.models.message import Message
 from agno.models.response import ToolExecution
-from agno.run.agent import RunCompletedEvent, RunContentEvent, RunEvent, RunOutput
+from agno.run.agent import RunCompletedEvent, RunContentEvent, RunEvent, RunInput, RunOutput
 from agno.run import RunContext
 from agno.run.base import RunStatus
 from agno.run.requirement import RunRequirement
@@ -90,6 +90,8 @@ from app.schemas.component import WorkspaceComponentItem
 from app.schemas.page import PageItem
 from app.services.auth_service import AuthContext
 from app.services.token_service import TokenService
+
+CONTENT_COMPONENT_SIZE_PREVIEW_SCHEMA = '{"props":{"height":{"type":"number","label":"高度","default":320}}}'
 
 
 async def _async_value(value: object) -> object:
@@ -237,7 +239,7 @@ async def _create_page(
     return response.json()["id"]
 
 
-def _build_page_item(*, page_id: int, content: str) -> PageItem:
+def _build_page_item(*, page_id: int, content: str, speaker_notes: str | None = None) -> PageItem:
     """构造测试所需的最小页面对象，供暂停需求解析单测复用。"""
 
     now = datetime.now(tz=UTC)
@@ -249,6 +251,7 @@ def _build_page_item(*, page_id: int, content: str) -> PageItem:
         file_type=PageFileType.VUE,
         title="测试页面",
         summary=None,
+        speaker_notes=speaker_notes,
         status=RecordStatus.ACTIVE,
         workspace_id=1,
         project_id=1,
@@ -277,7 +280,7 @@ def _build_component_item(*, component_id: int, content: str) -> WorkspaceCompon
         file_type=PageFileType.VUE,
         name="测试组件",
         import_name="TestComponent",
-        component_type=WorkspaceComponentType.CONTENT_BLOCK,
+        component_type=WorkspaceComponentType.CONTENT_COMPONENT,
         summary=None,
         status=RecordStatus.ACTIVE,
         created_at=now,
@@ -1179,6 +1182,7 @@ async def test_workspace_component_usage_tools_should_not_require_page_scope(
             "name": "营销卡片",
             "import_name": "MarketingCard",
             "content": "<template><section>Card</section></template>",
+            "preview_schema": CONTENT_COMPONENT_SIZE_PREVIEW_SCHEMA,
             "file_type": "vue",
             "status": "active",
         },
@@ -1204,17 +1208,99 @@ async def test_workspace_component_usage_tools_should_not_require_page_scope(
     list_result = await list_tool.entrypoint(run_context, limit=10)
     usage_result = await usage_tool.entrypoint(run_context, component_code=published_component["code"])
 
-    assert list_result == [
-        {
-            "name": "营销卡片",
-            "import_name": "MarketingCard",
-            "description": None,
-            "component_code": published_component["code"],
-            "current_version_no": 1,
-        }
-    ]
+    assert list_result == {
+        "source": "workspace_all",
+        "fallback_reason": "no_project_context",
+        "total": 1,
+        "items": [
+            {
+                "name": "营销卡片",
+                "import_name": "MarketingCard",
+                "description": None,
+                "component_code": published_component["code"],
+                "current_version_no": 1,
+            }
+        ],
+    }
     assert usage_result["component_code"] == published_component["code"]
     assert usage_result["import_path"] == f"@workspace-components/{published_component['code']}/v/1"
+
+
+async def test_workspace_component_list_tool_should_default_to_project_suggested_components(
+    authenticated_client: AsyncClient,
+) -> None:
+    """内容助手组件列表工具默认应优先返回项目建议组件，并在为空时回退全库。"""
+
+    workspace_id = await _create_workspace(authenticated_client, "AI 建议组件空间")
+    project_id = await _create_project(authenticated_client, workspace_id, "AI 建议组件项目")
+    suggested_response = await authenticated_client.post(
+        "/api/components",
+        json={
+            "workspace_id": workspace_id,
+            "name": "推荐指标卡",
+            "import_name": "SuggestedMetricCard",
+            "content": "<template><section>Suggested</section></template>",
+            "preview_schema": CONTENT_COMPONENT_SIZE_PREVIEW_SCHEMA,
+            "file_type": "vue",
+            "status": "active",
+        },
+    )
+    assert suggested_response.status_code == 200
+    suggested_publish_response = await authenticated_client.post(
+        f"/api/components/{suggested_response.json()['id']}/publish",
+        json={"release_name": None, "change_note": "发布建议组件"},
+    )
+    assert suggested_publish_response.status_code == 200
+    suggested_component = suggested_publish_response.json()
+    general_response = await authenticated_client.post(
+        "/api/components",
+        json={
+            "workspace_id": workspace_id,
+            "name": "全库图表",
+            "import_name": "GeneralChartBlock",
+            "content": "<template><section>General</section></template>",
+            "preview_schema": CONTENT_COMPONENT_SIZE_PREVIEW_SCHEMA,
+            "file_type": "vue",
+            "status": "active",
+        },
+    )
+    assert general_response.status_code == 200
+    general_publish_response = await authenticated_client.post(
+        f"/api/components/{general_response.json()['id']}/publish",
+        json={"release_name": None, "change_note": "发布全库组件"},
+    )
+    assert general_publish_response.status_code == 200
+    general_component = general_publish_response.json()
+    save_response = await authenticated_client.put(
+        f"/api/projects/{project_id}/suggested-components",
+        json={"component_ids": [suggested_component["id"]]},
+    )
+    assert save_response.status_code == 200
+
+    run_context = await _build_tool_run_context(
+        current=_build_auth_context(),
+        tool_scopes=COMPONENT_TOOL_READ_SCOPES,
+        workspace_id=workspace_id,
+        project_id=project_id,
+    )
+    list_tool = build_list_workspace_components_tool(get_session_factory())
+
+    suggested_result = await list_tool.entrypoint(run_context, limit=10)
+    fallback_result = await list_tool.entrypoint(run_context, keyword="全库", limit=10)
+    all_result = await list_tool.entrypoint(run_context, scope="all", limit=10)
+
+    assert suggested_result["source"] == "project_suggested"
+    assert suggested_result["fallback_reason"] is None
+    assert [item["component_code"] for item in suggested_result["items"]] == [suggested_component["code"]]
+    assert fallback_result["source"] == "workspace_all"
+    assert fallback_result["fallback_reason"] == "suggested_filter_empty"
+    assert [item["component_code"] for item in fallback_result["items"]] == [general_component["code"]]
+    assert all_result["source"] == "workspace_all"
+    assert all_result["fallback_reason"] is None
+    assert {item["component_code"] for item in all_result["items"]} == {
+        suggested_component["code"],
+        general_component["code"],
+    }
 
 
 async def test_workspace_render_assets_tool_should_include_video_assets(
@@ -1319,6 +1405,13 @@ async def test_coordinator_runtime_kit_tools_should_query_agent_capabilities(
     detail = await detail_tool.entrypoint(run_context, name="DefaultContainer.v1", kind="component")
     assert detail["import_path"] == "@runtime-kit/public/components/page/layout/DefaultContainer.v1.vue"
     assert "agent" in detail["audiences"]
+
+    asset_image_detail = await detail_tool.entrypoint(run_context, name="AssetImage", kind="component")
+    assert asset_image_detail["name"] == "AssetImage.v1"
+    assert asset_image_detail["import_path"] == "@runtime-kit/public/components/assets/AssetImage.v1.vue"
+    asset_image_text = json.dumps(asset_image_detail, ensure_ascii=False)
+    assert "外层图片框" in asset_image_text
+    assert "fit 控制 object-fit" in asset_image_text
 
 
 def test_component_manager_should_receive_component_write_tool_scopes() -> None:
@@ -1425,10 +1518,12 @@ async def test_project_page_tools_should_create_and_update_metadata(authenticate
         run_context,
         title="新建页面",
         summary="用于后续细化的占位页面",
+        speaker_notes="创建时的演讲备注",
         page_content=page_content,
     )
     assert created["success"] is True
     assert created["title"] == "新建页面"
+    assert created["speaker_notes"] == "创建时的演讲备注"
     assert created["project_id"] == project_id
 
     get_response = await authenticated_client.get(f"/api/pages/{created['page_id']}")
@@ -1436,6 +1531,7 @@ async def test_project_page_tools_should_create_and_update_metadata(authenticate
     page_payload = get_response.json()
     assert page_payload["page_content"] == page_content
     assert page_payload["summary"] == "用于后续细化的占位页面"
+    assert page_payload["speaker_notes"] == "创建时的演讲备注"
 
     update_tool = _find_tool(tools, "update_page_metadata")
     updated = await update_tool.entrypoint(
@@ -1448,12 +1544,23 @@ async def test_project_page_tools_should_create_and_update_metadata(authenticate
     assert updated["success"] is True
     assert updated["title"] == "更新后的页面"
     assert updated["summary"] == ""
+    assert updated["speaker_notes"] == "创建时的演讲备注"
 
     updated_response = await authenticated_client.get(f"/api/pages/{created['page_id']}")
     assert updated_response.status_code == 200
     updated_payload = updated_response.json()
     assert updated_payload["title"] == "更新后的页面"
     assert updated_payload["summary"] == ""
+    assert updated_payload["speaker_notes"] == "创建时的演讲备注"
+
+    notes_updated = await update_tool.entrypoint(
+        run_context,
+        page_id=created["page_id"],
+        speaker_notes="单独更新后的演讲备注",
+        change_note="更新演讲者备注",
+    )
+    assert notes_updated["success"] is True
+    assert notes_updated["speaker_notes"] == "单独更新后的演讲备注"
 
 
 async def test_project_route_tools_should_list_project_pages_with_user_context(
@@ -1691,6 +1798,7 @@ async def test_get_component_detail_tool_should_render_source(
             "name": "详情测试组件",
             "import_name": "DetailTestComponent",
             "content": component_content,
+            "preview_schema": CONTENT_COMPONENT_SIZE_PREVIEW_SCHEMA,
             "file_type": "vue",
             "status": "active",
         },
@@ -1729,6 +1837,7 @@ async def test_update_component_metadata_tool_should_not_require_import_name(
             "name": "元数据测试组件",
             "import_name": "MetadataTestComponent",
             "content": "<template><article>metadata</article></template>",
+            "preview_schema": CONTENT_COMPONENT_SIZE_PREVIEW_SCHEMA,
             "file_type": "vue",
             "status": "active",
         },
@@ -1768,6 +1877,7 @@ async def test_apply_component_edits_should_reject_stale_draft_hash(
             "name": "草稿指纹组件",
             "import_name": "DraftHashComponent",
             "content": "<template><article>v1</article></template>",
+            "preview_schema": CONTENT_COMPONENT_SIZE_PREVIEW_SCHEMA,
             "file_type": "vue",
             "status": "active",
         },
@@ -1820,6 +1930,7 @@ async def test_apply_component_edits_should_reject_stale_draft_base_after_restor
             "name": "草稿基线组件",
             "import_name": "DraftBaseComponent",
             "content": "<template><article>v1</article></template>",
+            "preview_schema": CONTENT_COMPONENT_SIZE_PREVIEW_SCHEMA,
             "file_type": "vue",
             "status": "active",
         },
@@ -1876,6 +1987,7 @@ async def test_apply_component_edits_should_allow_new_unpublished_component(
             "name": "未发布组件",
             "import_name": "UnpublishedComponent",
             "content": "<template><article>draft</article></template>",
+            "preview_schema": CONTENT_COMPONENT_SIZE_PREVIEW_SCHEMA,
             "file_type": "vue",
             "status": "active",
         },
@@ -1920,6 +2032,7 @@ async def test_apply_component_edits_should_return_diagnostics_without_saving(
             "name": "Validate 失败组件",
             "import_name": "ValidateFailComponent",
             "content": "<template><article>draft</article></template>",
+            "preview_schema": CONTENT_COMPONENT_SIZE_PREVIEW_SCHEMA,
             "file_type": "vue",
             "status": "active",
         },
@@ -1966,6 +2079,7 @@ async def test_apply_component_edits_should_reject_invalid_edits_before_validate
             "name": "Edits 失败组件",
             "import_name": "EditFailComponent",
             "content": "<template><article>draft</article></template>",
+            "preview_schema": CONTENT_COMPONENT_SIZE_PREVIEW_SCHEMA,
             "file_type": "vue",
             "status": "active",
         },
@@ -2005,6 +2119,7 @@ async def test_publish_component_tool_should_create_reusable_version(
             "name": "发布测试组件",
             "import_name": "PublishTestComponent",
             "content": "<template><article>publish</article></template>",
+            "preview_schema": CONTENT_COMPONENT_SIZE_PREVIEW_SCHEMA,
             "file_type": "vue",
             "status": "active",
         },
@@ -2183,11 +2298,13 @@ async def test_get_page_content_prompt_should_render_source() -> None:
     page_item = _build_page_item(
         page_id=88,
         content="<template>\n  <div>hello</div>\n</template>\n",
+        speaker_notes="演讲时强调 hello 页面。",
     )
     prompt = build_page_content_prompt(page_item)
 
     assert "页面源信息：" in prompt
     assert "目标页面 ID：88" in prompt
+    assert "演讲者备注：演讲时强调 hello 页面。" in prompt
     assert "源码：" in prompt
     assert "行号版源码：" not in prompt
     assert "```vue" not in prompt
@@ -3552,6 +3669,61 @@ async def test_ai_cancelled_raw_run_should_preserve_input_and_streamed_content(a
     assert run.metadata["user_cancel_preserved"] is True
 
 
+async def test_ai_cancelled_session_messages_should_lazy_preserve_input_and_run_content(
+    authenticated_client: AsyncClient,
+) -> None:
+    """读取消息时应懒补偿 cancelled run 中已持久化但未写入 messages 的内容。"""
+
+    workspace_id = await _create_workspace(authenticated_client, "AI 懒补偿工作空间")
+    session_response = await authenticated_client.post(
+        "/api/ai/sessions",
+        json={
+            "agent_id": COMPONENT_MANAGER_AGENT_ID,
+            "session_name": "懒补偿会话",
+            "scope": {
+                "workspace_id": workspace_id,
+                "scope_type": "workspace",
+                "source": "editor-component-library",
+            },
+        },
+    )
+    assert session_response.status_code == 201
+    session_id = session_response.json()["session_id"]
+    run_id = "run-lazy-cancel-preserve"
+    await _append_test_run(
+        authenticated_client,
+        session_id=session_id,
+        run=RunOutput(
+            run_id=run_id,
+            session_id=session_id,
+            agent_id=COMPONENT_MANAGER_AGENT_ID,
+            user_id="1",
+            input=RunInput(input_content="创建一个复杂组件"),
+            status=RunStatus.cancelled,
+            content="已经完成设计和代码校验，准备创建组件。",
+            reasoning_content="先分析需求，再准备调用创建工具。",
+            messages=[],
+        ),
+    )
+
+    response = await authenticated_client.get(
+        f"/api/ai/sessions/{session_id}/messages",
+        params={
+            "workspace_id": workspace_id,
+            "scope_type": "workspace",
+            "source": "editor-component-library",
+            "agent_id": COMPONENT_MANAGER_AGENT_ID,
+        },
+    )
+
+    assert response.status_code == 200
+    messages = response.json()
+    assert [item["role"] for item in messages] == ["user", "assistant"]
+    assert messages[0]["content"] == "创建一个复杂组件"
+    assert messages[1]["content"] == "已经完成设计和代码校验，准备创建组件。"
+    assert messages[1]["reasoning_content"] == "先分析需求，再准备调用创建工具。"
+
+
 async def test_ai_raw_sse_cancelled_event_should_trigger_preservation() -> None:
     """raw SSE 收到 Agno 取消终态时，应把跟踪到的用户输入和 delta 交给补偿流程。"""
 
@@ -3616,6 +3788,50 @@ async def test_ai_raw_sse_cancelled_event_should_trigger_preservation() -> None:
             "fallback_user_message": "真实用户输入",
             "assistant_content": "已输出正文",
             "reasoning_content": "已输出思考",
+        }
+    ]
+
+
+async def test_ai_raw_sse_string_stream_should_trigger_cancelled_preservation() -> None:
+    """raw SSE 若已被 Agno 格式化为字符串，流结束后仍应尝试按 DB 状态补偿取消消息。"""
+
+    async def fake_raw_stream():
+        yield "event: TeamRunStarted\ndata: {\"run_id\":\"run-raw-string\"}\n\n"
+        yield "event: TeamRunCancelled\ndata: {\"run_id\":\"run-raw-string\"}\n\n"
+
+    async def fake_stream_builder() -> SimpleNamespace:
+        return SimpleNamespace(agent=SimpleNamespace(), stream=fake_raw_stream(), run_id="run-raw-string")
+
+    preserved_payloads: list[dict[str, object]] = []
+    facade = AgentSessionFacade.__new__(AgentSessionFacade)
+    facade._get_session_run_lock = lambda **_: asyncio.Lock()
+    facade.ensure_session_access = lambda **_: _async_value(SimpleNamespace(metadata={}))
+
+    async def fake_preserve(**kwargs: object) -> None:
+        preserved_payloads.append(dict(kwargs))
+
+    facade._preserve_cancelled_raw_run_messages = fake_preserve
+
+    chunks = [
+        chunk
+        async for chunk in facade._stream_agno_raw_sse(
+            session_id="session-raw-string",
+            agent_id=AGENT_COORDINATOR_AGENT_ID,
+            scope=AgentScopeContext(scope_type="workspace", workspace_id=1, source="editor-agent-sidebar"),
+            fallback_user_message="字符串流用户输入",
+            stream_builder=fake_stream_builder,
+        )
+    ]
+
+    assert len(chunks) == 2
+    assert preserved_payloads == [
+        {
+            "session_id": "session-raw-string",
+            "agent_id": AGENT_COORDINATOR_AGENT_ID,
+            "run_id": "run-raw-string",
+            "fallback_user_message": "字符串流用户输入",
+            "assistant_content": None,
+            "reasoning_content": None,
         }
     ]
 
@@ -6757,6 +6973,16 @@ async def test_ai_new_run_should_inject_cancelled_history_to_model_context() -> 
                 ],
             ),
             RunOutput(
+                run_id="run-cancelled-empty-messages",
+                session_id="cancelled-history-session",
+                agent_id=COMPONENT_MANAGER_AGENT_ID,
+                status=RunStatus.cancelled,
+                input=RunInput(input_content="被停止但未写 messages 的问题"),
+                content="被停止前已输出的回答",
+                reasoning_content="被停止前已输出的思考",
+                messages=[],
+            ),
+            RunOutput(
                 run_id="run-error-history",
                 session_id="cancelled-history-session",
                 agent_id=COMPONENT_MANAGER_AGENT_ID,
@@ -6781,6 +7007,7 @@ async def test_ai_new_run_should_inject_cancelled_history_to_model_context() -> 
     facade._build_agent_for_descriptor = fake_build_agent_for_descriptor
     facade._build_tool_dependencies = lambda **_: {}
     facade._upsert_run_marker = fake_upsert_run_marker
+    facade._ai_db = SimpleNamespace(upsert_session=lambda detail: None)
 
     builder = facade._build_run_stream(
         agent_id=COMPONENT_MANAGER_AGENT_ID,
@@ -6806,9 +7033,12 @@ async def test_ai_new_run_should_inject_cancelled_history_to_model_context() -> 
         "上一轮完整回答",
         "被停止的用户问题",
         "被停止前的局部回答",
+        "被停止但未写 messages 的问题",
+        "被停止前已输出的回答",
     ]
     assert all(message.from_history for message in fake_agent.additional_input)
-    assert fake_agent.additional_input[-1].reasoning_content == "已暴露思考"
+    assert fake_agent.additional_input[-3].reasoning_content == "已暴露思考"
+    assert fake_agent.additional_input[-1].reasoning_content == "被停止前已输出的思考"
 
 
 def test_ai_resolve_requirement_payload_should_use_latest_active_requirement() -> None:

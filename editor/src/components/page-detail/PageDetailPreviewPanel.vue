@@ -22,37 +22,33 @@
       :empty-description="currentPreviewEmptyDescription"
     />
 
-    <Teleport to="body">
-      <Transition name="preview-dialog">
-        <div v-if="isPreviewDialogOpen" class="fixed inset-0 z-[1000] bg-slate-950/70 p-4 backdrop-blur-sm">
-          <div class="flex h-full min-h-0 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
-            <div class="flex h-12 shrink-0 items-center justify-between border-b border-slate-100 px-4">
-              <h3 class="min-w-0 truncate text-sm font-semibold text-slate-900">{{ previewDialogTitle }}</h3>
-              <BaseCloseButton label="关闭预览" @click="isPreviewDialogOpen = false" />
-            </div>
-            <div class="min-h-0 flex-1 bg-slate-100 p-3">
-              <RuntimePreviewFrame
-                v-if="props.previewFrameUrl"
-                :frame-url="props.previewFrameUrl"
-                title="runtime-preview-dialog"
-                :viewport="props.previewViewport"
-                layout="fill"
-                container-class="h-full overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm"
-              />
-            </div>
-          </div>
-        </div>
-      </Transition>
-    </Teleport>
+    <BaseDialog
+      v-model="isPreviewDialogOpen"
+      :title="previewDialogTitle"
+      size="workbench"
+      body-preset="immersive"
+      overlay-class="bg-slate-950/70 backdrop-blur-sm"
+    >
+      <div class="h-full min-h-0 bg-slate-100 p-3">
+        <RuntimePreviewFrame
+          v-if="props.previewFrameUrl"
+          :frame-url="props.previewFrameUrl"
+          title="runtime-preview-dialog"
+          :viewport="props.previewViewport"
+          layout="fill"
+          container-class="h-full overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm"
+        />
+      </div>
+    </BaseDialog>
   </section>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, ref } from 'vue'
 import { Maximize2 } from '@lucide/vue'
 
 import RuntimePreviewFrame from '@/components/runtime-preview/RuntimePreviewFrame.vue'
-import BaseCloseButton from '@/components/ui/BaseCloseButton.vue'
+import BaseDialog from '@/components/ui/BaseDialog.vue'
 
 interface Props {
   previewEnabled: boolean
@@ -95,28 +91,4 @@ function openPreviewDialog(): void {
   isPreviewDialogOpen.value = true
 }
 
-/**
- * 支持在放大预览中使用 Esc 快速关闭，避免用户被全屏浮层阻塞。
- * @param event 键盘事件
- */
-function handleDialogKeydown(event: KeyboardEvent): void {
-  if (event.key === 'Escape' && isPreviewDialogOpen.value) {
-    isPreviewDialogOpen.value = false
-  }
-}
-
-onMounted(() => window.addEventListener('keydown', handleDialogKeydown))
-onUnmounted(() => window.removeEventListener('keydown', handleDialogKeydown))
 </script>
-
-<style scoped>
-.preview-dialog-enter-active,
-.preview-dialog-leave-active {
-  transition: opacity 0.18s ease;
-}
-
-.preview-dialog-enter-from,
-.preview-dialog-leave-to {
-  opacity: 0;
-}
-</style>

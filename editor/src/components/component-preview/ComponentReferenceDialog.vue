@@ -3,11 +3,11 @@
   <BaseDialog
     :model-value="modelValue"
     title="引用关系"
-    width="1160px"
-    body-class="px-6 py-5 max-h-[76vh] overflow-y-auto"
+    size="canvas"
+    body-preset="split"
     @update:model-value="emit('update:modelValue', $event)"
   >
-    <div class="space-y-4">
+    <div class="flex h-full min-h-0 flex-col">
       <section class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
         <div class="min-w-0">
           <p class="truncate text-sm font-bold text-slate-800">{{ component?.name || '未选择组件' }}</p>
@@ -21,16 +21,16 @@
         </BaseButton>
       </section>
 
-      <div v-if="loading" class="rounded-xl border border-dashed border-slate-200 bg-white px-4 py-10 text-center text-sm font-semibold text-slate-400">
+      <div v-if="loading" class="mt-4 flex min-h-0 flex-1 items-center justify-center rounded-xl border border-dashed border-slate-200 bg-white px-4 py-10 text-center text-sm font-semibold text-slate-400">
         正在读取引用关系...
       </div>
 
-      <div v-else-if="!references" class="rounded-xl border border-dashed border-slate-200 bg-white px-4 py-10 text-center text-sm font-semibold text-slate-400">
+      <div v-else-if="!references" class="mt-4 flex min-h-0 flex-1 items-center justify-center rounded-xl border border-dashed border-slate-200 bg-white px-4 py-10 text-center text-sm font-semibold text-slate-400">
         暂无引用数据。
       </div>
 
-      <div v-else class="grid gap-4 lg:grid-cols-2">
-        <section class="min-w-0 rounded-xl border border-slate-200 bg-white">
+      <div v-else class="mt-4 grid min-h-0 flex-1 gap-4 lg:grid-cols-2">
+        <section class="flex min-h-0 min-w-0 flex-col rounded-xl border border-slate-200 bg-white">
           <div class="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-3">
             <div>
               <h3 class="text-sm font-bold text-slate-800">页面引用</h3>
@@ -41,10 +41,10 @@
             </span>
           </div>
 
-          <div v-if="references.page_references.length === 0" class="px-4 py-8 text-sm text-slate-400">
+          <div v-if="references.page_references.length === 0" class="flex min-h-0 flex-1 items-center px-4 py-8 text-sm text-slate-400">
             当前没有页面直接引用该组件。
           </div>
-          <div v-else class="max-h-[44vh] divide-y divide-slate-100 overflow-y-auto">
+          <div v-else class="min-h-0 flex-1 divide-y divide-slate-100 overflow-y-auto">
             <label
               v-for="item in references.page_references"
               :key="item.page_id"
@@ -72,7 +72,7 @@
           </div>
         </section>
 
-        <section class="min-w-0 rounded-xl border border-slate-200 bg-white">
+        <section class="flex min-h-0 min-w-0 flex-col rounded-xl border border-slate-200 bg-white">
           <div class="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-3">
             <div>
               <h3 class="text-sm font-bold text-slate-800">组件引用</h3>
@@ -83,10 +83,10 @@
             </span>
           </div>
 
-          <div v-if="references.component_references.length === 0" class="px-4 py-8 text-sm text-slate-400">
+          <div v-if="references.component_references.length === 0" class="flex min-h-0 flex-1 items-center px-4 py-8 text-sm text-slate-400">
             当前没有组件直接引用该组件。
           </div>
-          <div v-else class="max-h-[44vh] divide-y divide-slate-100 overflow-y-auto">
+          <div v-else class="min-h-0 flex-1 divide-y divide-slate-100 overflow-y-auto">
             <label
               v-for="item in references.component_references"
               :key="item.component_id"
@@ -236,3 +236,4 @@ const ReferenceStatusTag = defineComponent({
   },
 })
 </script>
+

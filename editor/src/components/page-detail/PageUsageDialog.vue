@@ -1,8 +1,8 @@
 <!-- 文件功能：展示当前页面使用的组件与资源索引，避免资源信息占用主编辑画布空间。 -->
 <template>
-  <BaseDialog :model-value="props.modelValue" title="组件与资源" width="980px"
+  <BaseDialog :model-value="props.modelValue" title="组件与资源" size="wide" body-preset="auto"
     @update:model-value="emit('update:modelValue', $event)">
-    <div class="-mx-2 -my-1 grid max-h-[70vh] gap-4 overflow-y-auto lg:grid-cols-[0.86fr_1.14fr]">
+    <div class="grid gap-4 lg:grid-cols-[0.86fr_1.14fr]">
       <article class="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
         <div class="flex items-center justify-between gap-3">
           <p class="text-sm font-semibold text-slate-900">使用组件</p>
@@ -101,3 +101,4 @@ const groupedResourceItems = computed<GroupedResourceItem[]>(() => {
     }))
 })
 </script>
+

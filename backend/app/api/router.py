@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter
 
-from app.api.routes import build_jobs, agents, auth, assets, client_logs, components, fonts, llm, pages, preview, projects, runtime_kit, styles, themes, users, workspaces
+from app.api.routes import build_jobs, agents, auth, assets, client_logs, components, fonts, llm, page_screenshot_jobs, pages, preview, projects, runtime_kit, styles, themes, users, workspaces
 
 api_router = APIRouter()
 api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
@@ -13,6 +13,7 @@ api_router.include_router(llm.router, tags=["llm"])
 api_router.include_router(workspaces.router, prefix="/workspaces", tags=["workspaces"])
 api_router.include_router(projects.router, prefix="/projects", tags=["projects"])
 api_router.include_router(pages.router, prefix="/pages", tags=["pages"])
+api_router.include_router(page_screenshot_jobs.router, tags=["page-screenshot-jobs"])
 api_router.include_router(components.router, prefix="/components", tags=["components"])
 api_router.include_router(runtime_kit.router, prefix="/runtime-kit", tags=["runtime-kit"])
 api_router.include_router(assets.router, tags=["assets"])

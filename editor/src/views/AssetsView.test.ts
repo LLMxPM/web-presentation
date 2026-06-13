@@ -17,8 +17,13 @@ const previewWorkspaceAssetReferencesMock = vi.fn()
 const uploadWorkspaceAssetMock = vi.fn()
 const batchArchiveWorkspaceAssetsMock = vi.fn()
 const batchDeleteWorkspaceAssetsMock = vi.fn()
+const exportWorkspaceAssetPackageMock = vi.fn()
+const importWorkspaceAssetPackageMock = vi.fn()
 const createConfirmMock = vi.fn()
 const routerPushMock = vi.fn()
+const createObjectURLMock = vi.fn()
+const revokeObjectURLMock = vi.fn()
+const anchorClickMock = vi.fn()
 
 vi.mock('vue-router', () => ({
   useRoute: () => ({
@@ -43,7 +48,9 @@ vi.mock('@/api/assets', () => ({
   copyWorkspaceAsset: vi.fn(),
   createWorkspaceAssetContent: vi.fn(),
   deleteWorkspaceAsset: vi.fn(),
+  exportWorkspaceAssetPackage: (...args: unknown[]) => exportWorkspaceAssetPackageMock(...args),
   getWorkspaceAssetContent: (...args: unknown[]) => getWorkspaceAssetContentMock(...args),
+  importWorkspaceAssetPackage: (...args: unknown[]) => importWorkspaceAssetPackageMock(...args),
   listWorkspaceAssetTags: (...args: unknown[]) => listWorkspaceAssetTagsMock(...args),
   listWorkspaceAssets: (...args: unknown[]) => listWorkspaceAssetsMock(...args),
   previewWorkspaceAssetReferences: (...args: unknown[]) => previewWorkspaceAssetReferencesMock(...args),
@@ -67,6 +74,10 @@ vi.mock('@/utils/message', () => ({
 describe('AssetsView', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    createObjectURLMock.mockReturnValue('blob:assets-zip')
+    Object.defineProperty(window.URL, 'createObjectURL', { configurable: true, value: createObjectURLMock })
+    Object.defineProperty(window.URL, 'revokeObjectURL', { configurable: true, value: revokeObjectURLMock })
+    Object.defineProperty(HTMLAnchorElement.prototype, 'click', { configurable: true, value: anchorClickMock })
     createConfirmMock.mockResolvedValue(true)
     getWorkspaceMock.mockResolvedValue({ id: 7, name: '默认工作空间' })
     listWorkspaceAssetTagsMock.mockResolvedValue(['封面'])
@@ -87,6 +98,7 @@ describe('AssetsView', () => {
           content_type: 'image/png',
           content_editable: false,
           file_hash: 'hash-png-image',
+          url: 'https://backend.example.com/public/assets/7/hash-png-image',
         }),
       ],
       total: 2,
@@ -125,6 +137,18 @@ describe('AssetsView', () => {
       succeeded_count: 1,
       failed_count: 0,
       asset_ids: [1],
+      failures: [],
+    })
+    exportWorkspaceAssetPackageMock.mockResolvedValue({
+      blob: new Blob(['zip']),
+      filename: 'workspace-assets.zip',
+    })
+    importWorkspaceAssetPackageMock.mockResolvedValue({
+      imported_count: 1,
+      updated_count: 0,
+      reused_count: 0,
+      failed_count: 0,
+      assets: [],
       failures: [],
     })
   })
@@ -278,6 +302,40 @@ describe('AssetsView', () => {
 
     await waitFor(() => {
       expect(batchArchiveWorkspaceAssetsMock).toHaveBeenCalledWith(7, [1, 2])
+    })
+  })
+
+  it('选中资源后应支持批量导出 zip', async () => {
+    renderAssetsView()
+
+    await waitFor(() => {
+      expect(screen.getAllByText('hero_illustration').length).toBeGreaterThan(0)
+    })
+    await fireEvent.click(screen.getByLabelText('选择资源 hero_illustration'))
+    await fireEvent.click(screen.getByLabelText('选择资源 bitmap_photo'))
+    await fireEvent.click(screen.getByText('导出选中'))
+
+    await waitFor(() => {
+      expect(exportWorkspaceAssetPackageMock).toHaveBeenCalledWith(7, [1, 2])
+      expect(anchorClickMock).toHaveBeenCalledTimes(1)
+    })
+    expect(createObjectURLMock).toHaveBeenCalledWith(expect.any(Blob))
+  })
+
+  it('应支持选择资源压缩包导入并刷新列表', async () => {
+    const { container } = renderAssetsView()
+
+    await waitFor(() => {
+      expect(screen.getAllByText('hero_illustration').length).toBeGreaterThan(0)
+    })
+    await fireEvent.change(
+      container.querySelector('input[type="file"][accept=".zip,application/zip"]')!,
+      { target: { files: [new File(['zip'], 'workspace-assets.zip', { type: 'application/zip' })] } },
+    )
+
+    await waitFor(() => {
+      expect(importWorkspaceAssetPackageMock).toHaveBeenCalledWith(7, expect.any(File))
+      expect(listWorkspaceAssetsMock).toHaveBeenCalled()
     })
   })
 

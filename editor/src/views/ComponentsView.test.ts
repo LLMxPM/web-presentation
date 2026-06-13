@@ -12,6 +12,11 @@ import ComponentsView from '@/views/ComponentsView.vue'
 
 const getWorkspaceMock = vi.fn()
 const getComponentMock = vi.fn()
+const exportComponentPackageMock = vi.fn()
+const importComponentPackageMock = vi.fn()
+const validateComponentPackageExportMock = vi.fn()
+const validateComponentPackageImportMock = vi.fn()
+const listWorkspaceAssetsMock = vi.fn()
 const routerPushMock = vi.fn()
 const routerReplaceMock = vi.fn()
 const routeMock = {
@@ -33,6 +38,14 @@ vi.mock('vue-router', () => ({
 vi.mock('@/api/catalog', () => ({
   getWorkspace: (...args: unknown[]) => getWorkspaceMock(...args),
   getComponent: (...args: unknown[]) => getComponentMock(...args),
+  exportComponentPackage: (...args: unknown[]) => exportComponentPackageMock(...args),
+  importComponentPackage: (...args: unknown[]) => importComponentPackageMock(...args),
+  validateComponentPackageExport: (...args: unknown[]) => validateComponentPackageExportMock(...args),
+  validateComponentPackageImport: (...args: unknown[]) => validateComponentPackageImportMock(...args),
+}))
+
+vi.mock('@/api/assets', () => ({
+  listWorkspaceAssets: (...args: unknown[]) => listWorkspaceAssetsMock(...args),
 }))
 
 const selectedComponent: WorkspaceComponentItem = {
@@ -42,7 +55,7 @@ const selectedComponent: WorkspaceComponentItem = {
   code: 'CMP099',
   name: '销售卡片',
   import_name: 'SalesCard',
-  component_type: '内容区块',
+  component_type: '内容组件',
   summary: '销售数据展示组件',
   status: 'active',
   content: '<template><div /></template>',
@@ -86,6 +99,44 @@ describe('ComponentsView', () => {
     routeMock.query = {}
     routeMock.path = '/workspaces/11/components'
     getComponentMock.mockResolvedValue(selectedComponent)
+    validateComponentPackageExportMock.mockResolvedValue({
+      can_export: true,
+      components: [],
+      automatic_assets: [],
+      manual_assets: [],
+      fonts: [],
+      warnings: [],
+      missing_static_asset_names: [],
+      missing_manual_asset_names: [],
+      dynamic_resource_components: [],
+    })
+    exportComponentPackageMock.mockResolvedValue({
+      blob: new Blob(['zip']),
+      filename: 'workspace-components.zip',
+    })
+    validateComponentPackageImportMock.mockResolvedValue({
+      valid: true,
+      schema_version: 2,
+      runtime_kit_manifest_version: null,
+      components: [],
+      assets: [],
+      fonts: [],
+      errors: [],
+      warnings: [],
+    })
+    importComponentPackageMock.mockResolvedValue({
+      imported_components: [],
+      components: [],
+      assets: [],
+      fonts: [],
+      warnings: [],
+    })
+    listWorkspaceAssetsMock.mockResolvedValue({
+      items: [],
+      total: 0,
+      page: 1,
+      page_size: 100,
+    })
   })
 
   it('选择工作空间组件后应同步上下文并在右侧显示组件工作台', async () => {
@@ -140,10 +191,10 @@ describe('ComponentsView', () => {
     })
   })
 
-  it('点击新建组件后应清空上下文并打开右侧创建工作台', async () => {
+  it('点击新增组件后应清空上下文并打开右侧创建工作台', async () => {
     const { setSelectedComponentMock } = renderComponentsView()
 
-    await fireEvent.click(screen.getByRole('button', { name: '新建组件' }))
+    await fireEvent.click(screen.getByRole('button', { name: '新增组件' }))
 
     await waitFor(() => {
       expect(setSelectedComponentMock).toHaveBeenLastCalledWith(null)
@@ -257,7 +308,7 @@ function renderComponentsView() {
                 buttons.push(h('button', {
                   type: 'button',
                   onClick: () => emit('create-workspace-component'),
-                }, '新建组件'))
+                }, '新增组件'))
               }
               return h('div', buttons)
             }

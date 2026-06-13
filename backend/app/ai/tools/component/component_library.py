@@ -255,8 +255,8 @@ def build_get_runtime_kit_capability_tool(session_factory: async_sessionmaker[As
         if not normalized_name:
             raise AppException(status_code=400, code="RUNTIME_KIT_CAPABILITY_NAME_REQUIRED", detail="能力名称不能为空。")
         normalized_kind = _normalize_runtime_kit_kind(kind)
-        item = get_runtime_kit_capability_item(normalized_name, kind=normalized_kind)
-        if item is None or "agent" not in item.get("audiences", []):
+        item = _get_agent_runtime_kit_capability(normalized_name, kind=normalized_kind)
+        if item is None:
             raise AppException(
                 status_code=404,
                 code="RUNTIME_KIT_CAPABILITY_NOT_FOUND",
@@ -276,7 +276,7 @@ def build_create_component_tool(session_factory: async_sessionmaker[AsyncSession
         name: str,
         import_name: str,
         content: str,
-        component_type: WorkspaceComponentType = WorkspaceComponentType.CONTENT_BLOCK,
+        component_type: WorkspaceComponentType = WorkspaceComponentType.CONTENT_COMPONENT,
         summary: str | None = None,
         preview_schema: str | dict[str, Any] | None = None,
         change_note: str | None = None,
@@ -607,6 +607,28 @@ def _list_agent_runtime_kit_capabilities(
         )
         if "agent" in item.get("audiences", [])
     ]
+
+
+def _get_agent_runtime_kit_capability(name: str, *, kind: str | None = None) -> dict[str, Any] | None:
+    """按完整能力名读取 Agent 可见能力；裸 base_name 自动回退到最新版本。"""
+
+    item = get_runtime_kit_capability_item(name, kind=kind)
+    if item is not None and "agent" in item.get("audiences", []):
+        return item
+    if _is_versioned_runtime_kit_name(name):
+        return None
+
+    candidates = _list_agent_runtime_kit_capabilities(base_name=name)
+    if kind is not None:
+        candidates = [candidate for candidate in candidates if candidate["kind"] == kind]
+    return candidates[0] if candidates else None
+
+
+def _is_versioned_runtime_kit_name(name: str) -> bool:
+    """判断能力名是否已经包含 .vN 版本后缀。"""
+
+    _, separator, version_text = str(name or "").strip().rpartition(".v")
+    return bool(separator and version_text.isdigit())
 
 
 def _build_runtime_kit_capability_search_text(item: dict[str, Any]) -> str:

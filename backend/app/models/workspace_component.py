@@ -29,8 +29,8 @@ class WorkspaceComponent(TimestampMixin, AuditMixin, SoftDeleteMixin, Base):
     component_type: Mapped[str] = mapped_column(
         String(64),
         nullable=False,
-        default=WorkspaceComponentType.CONTENT_BLOCK.value,
-        server_default=WorkspaceComponentType.CONTENT_BLOCK.value,
+        default=WorkspaceComponentType.CONTENT_COMPONENT.value,
+        server_default=WorkspaceComponentType.CONTENT_COMPONENT.value,
         index=True,
     )
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)

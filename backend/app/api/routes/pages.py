@@ -3,6 +3,7 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends
+from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import get_current_user, get_page_list_query
@@ -15,7 +16,11 @@ from app.schemas.page import (
     PageCreateRequest,
     PageItem,
     PageListQuery,
+    PageScreenshotJobGroupResponse,
+    PageScreenshotJobRequest,
+    PageScreenshotJobResponse,
     PageScreenshotRequest,
+    PageScreenshotBatchDownloadRequest,
     PageScreenshotBatchRefreshRequest,
     PageScreenshotBatchRefreshResponse,
     PageSnapshotCreateRequest,
@@ -27,6 +32,7 @@ from app.schemas.page import (
 from app.schemas.release import PreviewArtifactResponse
 from app.services.auth_service import AuthContext
 from app.services.page_preview_service import PagePreviewService
+from app.services.page_screenshot_job_service import PageScreenshotJobService
 from app.services.page_service import PageService
 from app.services.page_screenshot_service import PageScreenshotService
 
@@ -112,6 +118,61 @@ async def batch_refresh_page_screenshots(
         project_id=payload.project_id,
         current=current,
     )
+
+
+@router.post("/batch-refresh-screenshot-jobs", response_model=PageScreenshotJobGroupResponse)
+async def batch_refresh_page_screenshot_jobs(
+    payload: PageScreenshotBatchRefreshRequest,
+    current: Annotated[AuthContext, Depends(get_current_user)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> PageScreenshotJobGroupResponse:
+    """为指定项目中缺失或已过期的页面截图创建队列任务组。"""
+
+    return await PageScreenshotJobService(session).create_batch_refresh_screenshot_jobs(
+        project_id=payload.project_id,
+        current=current,
+    )
+
+
+@router.post("/batch-download-screenshots")
+async def batch_download_page_screenshots(
+    payload: PageScreenshotBatchDownloadRequest,
+    current: Annotated[AuthContext, Depends(get_current_user)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> Response:
+    """把指定页面的最新截图打包为 ZIP 下载。"""
+
+    archive_content, filename = await PageScreenshotService(session).build_screenshot_zip_archive(
+        page_ids=payload.page_ids,
+        current=current,
+    )
+    return Response(
+        content=archive_content,
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get("/screenshot-jobs/{job_id}", response_model=PageScreenshotJobResponse)
+async def get_page_screenshot_job(
+    job_id: int,
+    current: Annotated[AuthContext, Depends(get_current_user)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> PageScreenshotJobResponse:
+    """查询单个页面截图任务状态。"""
+
+    return await PageScreenshotJobService(session).get_job_response(job_id=job_id, current=current)
+
+
+@router.get("/screenshot-job-groups/{group_id}", response_model=PageScreenshotJobGroupResponse)
+async def get_page_screenshot_job_group(
+    group_id: str,
+    current: Annotated[AuthContext, Depends(get_current_user)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> PageScreenshotJobGroupResponse:
+    """查询页面截图任务组聚合进度。"""
+
+    return await PageScreenshotJobService(session).get_group_response(group_id=group_id, current=current)
 
 
 @router.patch("/{page_id}", response_model=PageItem)
@@ -204,6 +265,23 @@ async def save_page_screenshot(
     """为指定页面保存一张最新截图。"""
 
     return await PageScreenshotService(session).save_page_screenshot(
+        page_id=page_id,
+        current=current,
+        viewport_width=payload.viewport_width,
+        viewport_height=payload.viewport_height,
+    )
+
+
+@router.post("/{page_id}/screenshot-jobs", response_model=PageScreenshotJobResponse)
+async def create_page_screenshot_job(
+    page_id: int,
+    payload: PageScreenshotJobRequest,
+    current: Annotated[AuthContext, Depends(get_current_user)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> PageScreenshotJobResponse:
+    """为指定页面创建或复用截图队列任务。"""
+
+    return await PageScreenshotJobService(session).create_page_screenshot_job(
         page_id=page_id,
         current=current,
         viewport_width=payload.viewport_width,

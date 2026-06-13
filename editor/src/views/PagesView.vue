@@ -5,7 +5,8 @@
       <PageTitleBar
         v-if="projectDetails"
         :title="projectDetails.name"
-        :code="projectDetails.code"
+        :title-class="projectTitleClass"
+        :code="projectTitleCode"
         :description="projectDetails.description"
       >
         <template #title-leading>
@@ -29,6 +30,21 @@
         </template>
 
         <template #actions>
+          <div class="page-card-size-control" role="group" aria-label="预览卡片大小">
+            <button
+              v-for="option in pageCardSizeOptions"
+              :key="option.value"
+              type="button"
+              class="page-card-size-button"
+              :class="pageCardSize === option.value ? 'page-card-size-button-active' : ''"
+              :title="`卡片${option.label}`"
+              :aria-label="`卡片${option.label}`"
+              :aria-pressed="pageCardSize === option.value"
+              @click="setPageCardSize(option.value)"
+            >
+              <component :is="option.icon" class="h-3.5 w-3.5" />
+            </button>
+          </div>
           <BaseButton variant="primary" :loading="previewLoading" :disabled="!projectDetails"
             @click="handlePreviewProject">
             <template #icon>
@@ -46,28 +62,20 @@
             <template #icon>
               <Image class="h-4 w-4" />
             </template>
-            建议资源
+            资源
           </BaseButton>
-          <div class="page-card-size-control" role="group" aria-label="预览卡片大小">
-            <button
-              v-for="option in pageCardSizeOptions"
-              :key="option.value"
-              type="button"
-              class="page-card-size-button"
-              :class="pageCardSize === option.value ? 'page-card-size-button-active' : ''"
-              :title="`卡片${option.label}`"
-              :aria-label="`卡片${option.label}`"
-              :aria-pressed="pageCardSize === option.value"
-              @click="setPageCardSize(option.value)"
-            >
-              <component :is="option.icon" class="h-3.5 w-3.5" />
-            </button>
-          </div>
+          <BaseButton variant="ghost" :disabled="!projectDetails" @click="openSuggestedComponentsDialog">
+            <template #icon>
+              <Layers class="h-4 w-4" />
+            </template>
+            组件
+          </BaseButton>
+
           <BaseButton variant="primary" :disabled="!projectDetails" @click="openCreateDialog">
             <template #icon>
               <Plus class="h-4 w-4" />
             </template>
-            新增页面
+            新增
           </BaseButton>
         </template>
       </PageTitleBar>
@@ -92,6 +100,7 @@
         :selected-count="selectedRoutedPages.length"
         :selected-page-ids="selectedRoutedPageIds"
         :batch-action-pending="batchActionPending"
+        :batch-progress-text="routedBatchScreenshotDownloadProgressText"
         :page-card-grid-style="pageCardGridStyle"
         :screenshot-aspect-ratio="projectScreenshotAspectRatio"
         @refresh-screenshots="handleRefreshSectionPageScreenshots('routed')"
@@ -99,7 +108,7 @@
         @open-build="openBuildDialog"
         @select-all-change="handleRoutedSelectAllChange"
         @batch-remove-route="handleBatchRemoveFromRoute"
-        @batch-save-screenshots="handleBatchSaveScreenshots('routed')"
+        @batch-download-screenshots="handleBatchDownloadScreenshots('routed')"
         @open-batch-copy="openBatchCopyDialog('routed')"
         @batch-archive-pages="handleBatchArchivePages('routed')"
         @clear-selection="clearRoutedSelection"
@@ -123,6 +132,7 @@
         :selected-count="selectedUnroutedPages.length"
         :selected-page-ids="selectedUnroutedPageIds"
         :batch-action-pending="batchActionPending"
+        :batch-progress-text="unroutedBatchScreenshotDownloadProgressText"
         :page-card-grid-style="pageCardGridStyle"
         :page-create-card-style="pageCreateCardStyle"
         :screenshot-aspect-ratio="projectScreenshotAspectRatio"
@@ -130,7 +140,7 @@
         @open-archived-pages="archivedPagesDialogVisible = true"
         @select-all-change="handleUnroutedSelectAllChange"
         @batch-add-route="handleBatchAddToRoute"
-        @batch-save-screenshots="handleBatchSaveScreenshots('unrouted')"
+        @batch-download-screenshots="handleBatchDownloadScreenshots('unrouted')"
         @open-batch-copy="openBatchCopyDialog('unrouted')"
         @batch-archive-pages="handleBatchArchivePages('unrouted')"
         @clear-selection="clearUnroutedSelection"
@@ -144,7 +154,7 @@
       />
     </div>
 
-    <BaseDialog v-model="dialogVisible" title="新增页面" width="960px">
+    <BaseDialog v-model="dialogVisible" title="新增页面" size="wide">
       <div class="space-y-6">
         <BaseInput v-model="form.title" label="标题" placeholder="请输入页面标题" required :error="errors.title" />
 
@@ -213,6 +223,14 @@
       @saved="handleProjectSuggestedReferenceAssetsSaved"
     />
 
+    <ProjectSuggestedComponentsDialog
+      v-model="suggestedComponentsDialogVisible"
+      :project-id="projectDetails?.id ?? null"
+      :workspace-id="workspaceId"
+      :project-name="projectDetails?.name ?? null"
+      @saved="handleProjectSuggestedComponentsSaved"
+    />
+
     <ProjectRouteConfigDialog v-model="routeConfigDialogVisible" :project="projectDetails" :loading="routeSaving"
       @save="handleRouteSave" />
 
@@ -237,6 +255,7 @@ import {
   ArrowLeft,
   Expand,
   Image,
+  Layers,
   Maximize2,
   Minimize2,
   Play,
@@ -260,11 +279,14 @@ import {
   getProject,
   getProjectRoutes,
   getWorkspace,
+  batchRefreshPageScreenshotJobs,
   listPages,
   replaceProjectRoutes,
   savePageScreenshot,
+  downloadPageScreenshotsArchive,
   updatePage,
   updateProject,
+  waitForPageScreenshotJobGroup,
 } from '@/api/catalog'
 import { createProjectPreviewArtifact } from '@/api/preview'
 import { getErrorCode, getErrorData, getErrorMessage } from '@/api/http'
@@ -286,10 +308,12 @@ import ProjectBuildDialog from '@/components/project/ProjectBuildDialog.vue'
 import ProjectIdentityDialog from '@/components/project/ProjectIdentityDialog.vue'
 import ProjectPresentationConfigDialog from '@/components/project/ProjectPresentationConfigDialog.vue'
 import ProjectRouteConfigDialog from '@/components/project/ProjectRouteConfigDialog.vue'
+import ProjectSuggestedComponentsDialog from '@/components/project/ProjectSuggestedComponentsDialog.vue'
 import ProjectSuggestedReferenceAssetsDialog from '@/components/project/ProjectSuggestedReferenceAssetsDialog.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseDialog from '@/components/ui/BaseDialog.vue'
 import BaseInput from '@/components/ui/BaseInput.vue'
+import { useAgentSidebarExpanded } from '@/composables/agent-sidebar-state'
 import type { EditorThemeMode } from '@/types/monaco'
 import type {
   PageCopyToProjectPayload,
@@ -300,6 +324,7 @@ import type {
   ProjectMenuMode,
   ProjectRouteBinding,
   ProjectRouteItemWrite,
+  SuggestedComponentItem,
   ProjectSuggestedReferenceAssetItem,
 } from '@/types/api'
 import { Message, createConfirm } from '@/utils/message'
@@ -322,6 +347,11 @@ interface ProjectBuildSubmitPayload {
   extra_asset_names: string[]
 }
 
+interface BatchScreenshotDownloadProgress {
+  scope: PageBatchScope
+  text: string
+}
+
 const PAGE_CARD_SIZE_STORAGE_KEY = 'web-presentation:pages-view:preview-card-size'
 const pageCardSizeOptions: PageCardSizeOption[] = [
   { value: 'compact', label: '紧凑', minWidth: 200, icon: Minimize2 },
@@ -333,6 +363,7 @@ const pageCardSizeOptions: PageCardSizeOption[] = [
 const route = useRoute()
 const router = useRouter()
 const queryClient = useQueryClient()
+const agentSidebarExpanded = useAgentSidebarExpanded()
 
 const workspaceId = computed(() => parseInt(route.params.workspaceId as string, 10))
 const projectId = computed(() => parseInt(route.params.projectId as string, 10))
@@ -362,6 +393,8 @@ const workspaceQuery = useQuery(
 )
 
 const projectDetails = computed(() => projectQuery.data.value ?? null)
+const projectTitleCode = computed(() => (agentSidebarExpanded.value ? null : projectDetails.value?.code ?? null))
+const projectTitleClass = computed(() => (agentSidebarExpanded.value ? 'max-w-[10rem]' : ''))
 const projectScreenshotAspectRatio = computed(() => {
   const width = Number(projectDetails.value?.page_width ?? 0)
   const height = Number(projectDetails.value?.page_height ?? 0)
@@ -454,6 +487,7 @@ const projectBuildResourceIssue = ref<ProjectBuildResourceIssueData | null>(null
 const projectIdentityDialogVisible = ref(false)
 const presentationConfigDialogVisible = ref(false)
 const suggestedReferenceAssetsDialogVisible = ref(false)
+const suggestedComponentsDialogVisible = ref(false)
 const routeConfigDialogVisible = ref(false)
 const archivedPagesDialogVisible = ref(false)
 const pageCopyDialogVisible = ref(false)
@@ -463,6 +497,7 @@ const presentationConfigSaving = ref(false)
 const routeSaving = ref(false)
 const pageCopySaving = ref(false)
 const batchActionPending = ref<PageBatchAction | null>(null)
+const batchScreenshotDownloadProgress = ref<BatchScreenshotDownloadProgress | null>(null)
 const pageRoutePendingId = ref<number | null>(null)
 const archivingPageId = ref<number | null>(null)
 const screenshotPendingPageId = ref<number | null>(null)
@@ -470,6 +505,12 @@ const copyingPage = ref<PageItem | null>(null)
 const batchCopyPages = ref<PageItem[]>([])
 const selectedRoutedPageIds = ref<Set<number>>(new Set())
 const selectedUnroutedPageIds = ref<Set<number>>(new Set())
+const routedBatchScreenshotDownloadProgressText = computed(() => (
+  batchScreenshotDownloadProgress.value?.scope === 'routed' ? batchScreenshotDownloadProgress.value.text : null
+))
+const unroutedBatchScreenshotDownloadProgressText = computed(() => (
+  batchScreenshotDownloadProgress.value?.scope === 'unrouted' ? batchScreenshotDownloadProgress.value.text : null
+))
 
 const latestBuildJobQuery = useQuery(
   computed(() => ({
@@ -693,6 +734,37 @@ function isPageCardSize(value: string | null): value is PageCardSize {
  */
 function isRefreshableScreenshotPage(page: PageItem): boolean {
   return page.file_type === 'vue' && (!page.screenshot_url || !page.screenshot_is_latest)
+}
+
+/**
+ * 判断页面是否已经具备可下载的最新截图。
+ * @param page 页面资源
+ */
+function isDownloadableLatestScreenshotPage(page: PageItem): boolean {
+  return Boolean(page.screenshot_url && page.screenshot_is_latest)
+}
+
+/**
+ * 生成人类可读的截图未就绪原因，避免批量下载混入旧图。
+ * @param page 页面资源
+ */
+function buildScreenshotNotReadyMessage(page: PageItem): string {
+  if (page.file_type !== 'vue' && !page.screenshot_url) {
+    return `「${page.title}」不是 Vue 页面，无法自动生成截图。`
+  }
+  if (!page.screenshot_url) {
+    return `「${page.title}」暂无可下载截图。`
+  }
+  return `「${page.title}」截图仍不是最新版本。`
+}
+
+/**
+ * 更新批量截图下载进度，供当前分区工具条展示。
+ * @param scope 页面分区
+ * @param text 进度文本
+ */
+function updateBatchScreenshotDownloadProgress(scope: PageBatchScope, text: string): void {
+  batchScreenshotDownloadProgress.value = { scope, text }
 }
 
 /**
@@ -976,30 +1048,60 @@ async function handleBatchRemoveFromRoute(): Promise<void> {
 }
 
 /**
- * 为当前分区已选页面逐个刷新截图。
+ * 为当前分区已选页面下载截图；若存在缺失或旧截图，先刷新到最新版本。
  * @param scope 页面分区
  */
-async function handleBatchSaveScreenshots(scope: PageBatchScope): Promise<void> {
+async function handleBatchDownloadScreenshots(scope: PageBatchScope): Promise<void> {
   const selectedPages = getSelectedPagesByScope(scope)
   if (selectedPages.length === 0 || batchActionPending.value !== null) {
     return
   }
 
-  batchActionPending.value = 'screenshot'
-  let succeededCount = 0
+  batchActionPending.value = 'download-screenshot'
+  const downloadablePages: PageItem[] = []
+  let refreshedCount = 0
   let firstErrorMessage = ''
   try {
-    for (const page of selectedPages) {
+    updateBatchScreenshotDownloadProgress(scope, `检查截图 0/${selectedPages.length}`)
+    for (const [index, page] of selectedPages.entries()) {
+      let latestPage = page
       try {
-        await savePageScreenshot(page.id)
-        succeededCount += 1
+        if (isRefreshableScreenshotPage(page)) {
+          updateBatchScreenshotDownloadProgress(scope, `刷新截图 ${index + 1}/${selectedPages.length}`)
+          latestPage = await savePageScreenshot(page.id)
+          refreshedCount += 1
+        } else {
+          updateBatchScreenshotDownloadProgress(scope, `检查截图 ${index + 1}/${selectedPages.length}`)
+        }
       } catch (error) {
         firstErrorMessage ||= getErrorMessage(error, `更新「${page.title}」截图失败。`)
+        continue
       }
+
+      if (!isDownloadableLatestScreenshotPage(latestPage)) {
+        firstErrorMessage ||= buildScreenshotNotReadyMessage(latestPage)
+        continue
+      }
+
+      downloadablePages.push(latestPage)
     }
-    await refreshPageListCaches()
-    showBatchResultMessage('截图', succeededCount, firstErrorMessage)
+
+    if (refreshedCount > 0) {
+      await refreshPageListCaches()
+    }
+
+    if (firstErrorMessage || downloadablePages.length !== selectedPages.length) {
+      Message.warning(`批量下载截图已停止：${firstErrorMessage || '存在页面截图尚未就绪。'}`)
+      return
+    }
+
+    updateBatchScreenshotDownloadProgress(scope, `打包下载 ${downloadablePages.length} 个截图`)
+    await downloadPageScreenshotsArchive(downloadablePages.map(page => page.id))
+    Message.success(refreshedCount > 0
+      ? `已更新 ${refreshedCount} 个页面截图，并下载包含 ${downloadablePages.length} 个截图的压缩包。`
+      : `已下载包含 ${downloadablePages.length} 个页面截图的压缩包。`)
   } finally {
+    batchScreenshotDownloadProgress.value = null
     batchActionPending.value = null
   }
 }
@@ -1016,19 +1118,19 @@ async function handleRefreshSectionPageScreenshots(scope: PageBatchScope): Promi
 
   batchScreenshotRefreshing.value = true
   batchScreenshotRefreshScope.value = scope
-  let succeededCount = 0
-  let firstErrorMessage = ''
   try {
-    for (const page of targetPages) {
-      try {
-        await savePageScreenshot(page.id)
-        succeededCount += 1
-      } catch (error) {
-        firstErrorMessage ||= getErrorMessage(error, `更新「${page.title}」截图失败。`)
-      }
+    const group = await batchRefreshPageScreenshotJobs(projectId.value)
+    if (group.requested_count === 0) {
+      Message.info('当前分区没有需要刷新的页面截图。')
+      return
     }
+    const completedGroup = await waitForPageScreenshotJobGroup(group.job_group_id)
     await refreshPageListCaches()
+    const succeededCount = completedGroup.succeeded_count + completedGroup.skipped_count
+    const firstErrorMessage = completedGroup.failures[0]?.detail ?? ''
     showBatchResultMessage('截图', succeededCount, firstErrorMessage)
+  } catch (error) {
+    Message.error(getErrorMessage(error, '批量刷新截图失败。'))
   } finally {
     batchScreenshotRefreshing.value = false
     batchScreenshotRefreshScope.value = null
@@ -1211,6 +1313,13 @@ function openSuggestedReferenceAssetsDialog(): void {
 }
 
 /**
+ * 打开项目建议组件配置弹窗。
+ */
+function openSuggestedComponentsDialog(): void {
+  suggestedComponentsDialogVisible.value = true
+}
+
+/**
  * 打开项目路由配置弹窗。
  */
 function openRouteConfigDialog(): void {
@@ -1224,6 +1333,15 @@ function openRouteConfigDialog(): void {
 async function handleProjectSuggestedReferenceAssetsSaved(items: ProjectSuggestedReferenceAssetItem[]): Promise<void> {
   void items
   await queryClient.invalidateQueries({ queryKey: ['project-suggested-reference-assets', projectId.value] })
+}
+
+/**
+ * 项目建议组件保存后刷新相关缓存，供 AI 工具上下文和其它视图复用。
+ * @param items 最新建议组件摘要
+ */
+async function handleProjectSuggestedComponentsSaved(items: SuggestedComponentItem[]): Promise<void> {
+  void items
+  await queryClient.invalidateQueries({ queryKey: ['project-suggested-components', projectId.value] })
 }
 
 /**
@@ -1290,6 +1408,7 @@ async function handlePresentationConfigSave(payload: {
   menu_mode: ProjectMenuMode
   theme_key: string | null
   style_spec_markdown: string
+  suggested_component_source_style_id?: number | null
 }): Promise<void> {
   if (!projectDetails.value) {
     return
@@ -1591,3 +1710,4 @@ onUnmounted(() => {
   color: rgb(79 70 229);
 }
 </style>
+

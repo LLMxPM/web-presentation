@@ -26,6 +26,7 @@ from app.schemas.workspace_style import (
     WorkspaceStyleUpdateRequest,
 )
 from app.services.workspace_theme_service import WorkspaceThemeService
+from app.services.suggested_component_service import SuggestedComponentService
 
 DEFAULT_WORKSPACE_STYLE_KEY = "default"
 DEFAULT_WORKSPACE_STYLE_NAME = "默认样式"
@@ -127,6 +128,12 @@ class WorkspaceStyleService:
             updated_by=operator_id,
         )
         await self.style_repository.create(copied_style)
+        await SuggestedComponentService(self.session).copy_style_components(
+            workspace_id,
+            source_style_id=source_style.id,
+            target_style_id=copied_style.id,
+            commit=False,
+        )
         await self.session.commit()
         return await self.get(workspace_id, copied_style.id)
 
@@ -174,6 +181,7 @@ class WorkspaceStyleService:
         """删除工作空间样式；样式不与项目关联，因此可直接硬删除。"""
 
         style = await self._get_style_or_raise(workspace_id, style_id)
+        await SuggestedComponentService(self.session).clear_style_components(style.id, commit=False)
         await self.session.delete(style)
         await self.session.commit()
 

@@ -307,7 +307,7 @@ _COMPONENT_LIST_RESPONSE_EXAMPLE = {
             "component_code": "cmp_hero_card",
             "name": "HeroCard",
             "import_name": "HeroCard",
-            "component_type": "内容区块",
+            "component_type": "内容组件",
             "summary": "首页英雄区卡片。",
             "current_version_no": 3,
             "status": "active",
@@ -315,21 +315,26 @@ _COMPONENT_LIST_RESPONSE_EXAMPLE = {
     ],
 }
 
-_WORKSPACE_COMPONENT_LIST_RESPONSE_EXAMPLE = [
-    {
-        "name": "HeroCard",
-        "import_name": "HeroCard",
-        "description": "首页英雄区卡片。",
-        "component_code": "cmp_hero_card",
-        "current_version_no": 3,
-    }
-]
+_WORKSPACE_COMPONENT_LIST_RESPONSE_EXAMPLE = {
+    "source": "project_suggested",
+    "fallback_reason": None,
+    "total": 1,
+    "items": [
+        {
+            "name": "HeroCard",
+            "import_name": "HeroCard",
+            "description": "首页英雄区卡片。",
+            "component_code": "cmp_hero_card",
+            "current_version_no": 3,
+        }
+    ],
+}
 
 _WORKSPACE_COMPONENT_USAGE_RESPONSE_EXAMPLE = {
     "component_code": "cmp_hero_card",
     "name": "HeroCard",
     "import_name": "HeroCard",
-    "component_type": "内容区块",
+    "component_type": "内容组件",
     "content": "<template>\n  <section>示例</section>\n</template>",
     "import_path": "@workspace-components/cmp_hero_card/v/3",
     "import_statement": "import HeroCard from '@workspace-components/cmp_hero_card/v/3'",
@@ -710,15 +715,24 @@ _COORDINATOR_TOOL_SPECS = (
         '创建项目页面',
         'content_project',
         '内容与项目',
-        '在当前项目创建页面；page_content 必填，建议先提供可运行的占位 Vue SFC。',
+        '在当前项目创建页面；page_content 必填，可同时写入演讲者备注。',
         default_instructions=(
-            '创建页面前先确认当前项目、页面标题、页面说明、页面编码语义和是否需要加入路由。'
+            '创建页面前先确认当前项目、页面标题、页面说明、演讲者备注、页面编码语义和是否需要加入路由。'
             'page_content 必须是非空、可运行的 Vue SFC；创建前优先调用 check_page_code 检查候选 page_content。'
+            'speaker_notes 是演讲模式展示给演讲者的纯文本备注，按普通文本保留换行，不写 HTML。'
             '本工具只创建页面记录和初始源码，不会自动维护项目路由；如需加入导航，创建后按路由工具流程读取、预览并写入路由树。'
             '创建后如需视觉精修，应在页面上下文中读取新页面源码并通过结构化 edits 修改。'
         ),
         risk_level='write',
-        response_example={'success': True, 'page_id': 4, 'page_code': 'page_new', 'title': '新页面', 'version_no': 1},
+        response_example={
+            'success': True,
+            'page_id': 4,
+            'page_code': 'page_new',
+            'title': '新页面',
+            'summary': '页面说明。',
+            'speaker_notes': '开场先介绍议程。',
+            'version_no': 1,
+        },
     ),
 
     _tool(
@@ -726,9 +740,22 @@ _COORDINATOR_TOOL_SPECS = (
         '更新页面元数据',
         'content_project',
         '内容与项目',
-        '修改当前项目内页面的名称或说明，不修改页面源码。',
+        '修改当前项目内页面的名称、说明或演讲者备注，不修改页面源码。',
+        default_instructions=(
+            '只用于页面基础信息维护，不修改 page_content。'
+            'title、summary 与 speaker_notes 至少传一个；如果需要调整页面内容，改用 get_page_content + apply_page_edits。'
+            'speaker_notes 是演讲模式展示给演讲者的纯文本备注，按普通文本保留换行，不写 HTML。'
+        ),
         risk_level='write',
-        response_example={'success': True, 'page_id': 3, 'page_code': 'page_demo', 'title': '新标题', 'version_no': 5},
+        response_example={
+            'success': True,
+            'page_id': 3,
+            'page_code': 'page_demo',
+            'title': '新标题',
+            'summary': '新版页面说明。',
+            'speaker_notes': '重点说明关键结论。',
+            'version_no': 5,
+        },
     ),
 
     _tool(
@@ -806,8 +833,12 @@ _COORDINATOR_TOOL_SPECS = (
         '读取可用组件',
         'component_read',
         '组件读取',
-        '查询当前工作空间已发布且可被页面引用的组件摘要，支持按类型和关键字过滤。',
-        default_instructions='页面需要选择复用组件时先调用该工具；只返回已发布组件，未发布草稿不应被页面引用。',
+        '查询当前项目建议组件或工作空间全量已发布组件摘要，支持按类型和关键字过滤。',
+        default_instructions=(
+            '页面需要选择复用组件时先调用该工具；默认 scope=suggested，优先返回项目建议组件。'
+            '当没有项目上下文、没有建议组件或建议组件筛选为空时，工具会自动回退全工作空间已发布组件，'
+            '并通过 source 与 fallback_reason 说明来源；明确需要全库时传 scope=all。未发布草稿不应被页面引用。'
+        ),
         response_example=_WORKSPACE_COMPONENT_LIST_RESPONSE_EXAMPLE,
     ),
 
@@ -847,7 +878,7 @@ _COORDINATOR_TOOL_SPECS = (
         default_instructions=(
             'Runtime Kit 只提供可在页面或组件源码中 import 的版本化公开能力，不是可直接调用的业务工具。'
             '生成 Vue SFC 时必须按返回的公开 import_path、示例和约束原样使用，只使用工具结果中可见的 Runtime Kit 能力。'
-            '调用本工具时使用带版本号的能力 name，例如 Icon.v1；不要传未带版本的旧名称。'
+            '调用本工具时优先使用带版本号的能力 name，例如 Icon.v1；如果只传裸 base_name，例如 Icon，工具会自动匹配最新开放版本。'
         ),
         response_example={'name': 'DefaultContainer.v1',
          'base_name': 'DefaultContainer',
@@ -1005,7 +1036,7 @@ _COMPONENT_MANAGER_TOOL_SPECS = (
         default_instructions=(
             'Runtime Kit 只提供可在页面或组件源码中 import 的版本化公开能力，不是可直接调用的业务工具。'
             '生成 Vue SFC 时必须按返回的公开 import_path、示例和约束原样使用，只使用工具结果中可见的 Runtime Kit 能力。'
-            '调用本工具时使用带版本号的能力 name，例如 Icon.v1；不要传未带版本的旧名称。'
+            '调用本工具时优先使用带版本号的能力 name，例如 Icon.v1；如果只传裸 base_name，例如 Icon，工具会自动匹配最新开放版本。'
         ),
         response_example={'name': 'DefaultContainer.v1',
          'base_name': 'DefaultContainer',
@@ -1054,7 +1085,7 @@ _COMPONENT_MANAGER_TOOL_SPECS = (
         '组件库',
         '基于 Runtime 原生组件预览链路检查组件当前草稿、完整候选源码或 edits 应用后的候选源码，不修改组件。',
         default_instructions=(
-            '主要用于新建组件完整 content 与 preview_schema 检查、用户明确要求只读诊断，或调试完整候选源码；'
+            '主要用于新增组件完整 content 与 preview_schema 检查、用户明确要求只读诊断，或调试完整候选源码；'
             '已有组件 edits 修改的默认路径是读取组件详情后直接调用 apply_component_edits，由 apply_component_edits 保存前内置校验。'
             'component_type 仅为兼容创建前校验时的分类传参，'
             '不参与检查、不落库；真正组件类型由 create_component 或元数据更新工具决定。preview_schema 可传 JSON 对象字符串，'
@@ -1080,7 +1111,10 @@ _COMPONENT_MANAGER_TOOL_SPECS = (
         '创建工作空间组件草稿，正式引用前需要发布。',
         default_instructions=(
             '创建组件前先确认组件名称、PascalCase import_name、component_type、组件说明、源码内容和是否需要 preview_schema；'
-            'component_type 未明确指定时默认使用内容区块。'
+            'component_type 未明确指定时默认使用内容组件；'
+            '页面组件用于封面、目录、页面骨架或整页视觉；内容组件用于卡片、图表、指标组、表格、资源展示块等固定布局槽位，'
+            '必须在 props 或 preview_schema 中声明 width、height、minHeight、aspectRatio、fit 等尺寸控制参数；'
+            '原子组件用于页码、角标、图标、主题 Logo、小标签等小型单元，不强制 width/height，但应提供 size、fontSize、padding、variant 等轻量尺寸参数。'
             'content 必须是非空、可运行的 Vue SFC；创建前优先调用 check_component_code 检查完整候选源码和 preview_schema。'
             'preview_schema 必须是 JSON 对象字符串或 JSON 对象，字段名使用 snake_case 入参 preview_schema；'
             '不要写成 Vue 代码里的 previewSchema 导出。schema 应与真实 props、slots 和 mock 数据保持一致，'
@@ -1103,7 +1137,7 @@ _COMPONENT_MANAGER_TOOL_SPECS = (
         '组件库',
         '对指定组件源码应用结构化 edits 并保存为草稿。',
         default_instructions=(
-            '仅在用户明确要求修改已有组件时使用；新建组件不能使用 apply_component_edits，'
+            '仅在用户明确要求修改已有组件时使用；新增组件不能使用 apply_component_edits，'
             '因为尚无 component_id。调用前必须已经读取组件详情；base_draft_hash 使用草稿内容指纹，'
             'base_published_version_no 使用草稿基线版本号。edits 使用 replace_exact、insert_after 或 rewrite_file，'
             'old_text 和 anchor_text 必须来自组件详情源码区块并唯一命中。该工具会在保存草稿前强制执行 Runtime validate；'
@@ -1386,7 +1420,7 @@ _COORDINATOR_GROUP_SPECS = (
     _group(
         "component_read",
         "组件读取",
-        "查询当前工作空间可直接用于页面生成或改写的已发布组件列表和引用用法；不负责组件草稿、版本审计、依赖分析或组件维护。",
+        "默认查询项目建议组件并可回退全工作空间已发布组件，同时提供组件引用用法；不负责组件草稿、版本审计、依赖分析或组件维护。",
         ("list_workspace_components", "get_workspace_component_usage"),
         required_context_fields=("workspace_id",),
         token_scopes=COMPONENT_TOOL_READ_SCOPES,

@@ -22,6 +22,7 @@ class AgentRuntimeContext:
     style_spec_markdown: str | None = None
     page_title: str | None = None
     page_summary: str | None = None
+    page_speaker_notes: str | None = None
     page_code: str | None = None
     page_content: str | None = None
     file_type: str | None = None
@@ -83,6 +84,7 @@ def build_scope_context_text(runtime_context: AgentRuntimeContext) -> str:
             [
                 f"- 页面标题：{runtime_context.page_title or '（未知）'}",
                 f"- 页面描述：{runtime_context.page_summary or '（未填写）'}",
+                f"- 演讲者备注：{runtime_context.page_speaker_notes or '（未填写）'}",
                 f"- 页面编码：{runtime_context.page_code or '（未知）'}",
                 f"- 页面文件类型：{runtime_context.file_type or '（未知）'}",
             ]

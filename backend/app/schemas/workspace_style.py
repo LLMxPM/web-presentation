@@ -156,6 +156,30 @@ class WorkspaceStyleExportPackageRequest(BaseModel):
     """导出样式离线包请求。"""
 
     style_ids: list[int] = Field(min_length=1, max_length=100)
+    manual_asset_names: list[str] = Field(default_factory=list)
+
+
+class WorkspaceStyleExportAssetSummary(SchemaBase):
+    """样式离线包导出预检中的资源摘要。"""
+
+    name: str
+    original_name: str
+    asset_type: str
+    file_hash: str
+    source: str = "automatic"
+
+
+class WorkspaceStyleExportValidationResult(SchemaBase):
+    """样式离线包导出预检结果。"""
+
+    can_export: bool = True
+    automatic_assets: list[WorkspaceStyleExportAssetSummary] = Field(default_factory=list)
+    manual_assets: list[WorkspaceStyleExportAssetSummary] = Field(default_factory=list)
+    fonts: list[WorkspaceStylePackageFontSummary] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    missing_static_asset_names: list[str] = Field(default_factory=list)
+    missing_manual_asset_names: list[str] = Field(default_factory=list)
+    dynamic_resource_components: list[str] = Field(default_factory=list)
 
 
 class WorkspaceStylePackageStyleSummary(SchemaBase):
@@ -164,6 +188,13 @@ class WorkspaceStylePackageStyleSummary(SchemaBase):
     key: str
     name: str
     theme_key: str | None = None
+    page_width: int
+    page_height: int
+    base_font_size: str
+    icon_default_stroke_width: int
+    show_pdf_export_button: bool
+    menu_mode: ProjectMenuMode
+    style_spec_markdown: str = ""
     action: str = "create"
 
 
@@ -198,6 +229,22 @@ class WorkspaceStylePackageFontSummary(SchemaBase):
     action: str = "create"
 
 
+class WorkspaceStylePackageComponentSummary(SchemaBase):
+    """样式离线包中的组件摘要。"""
+
+    source_component_code: str
+    source_version_no: int
+    name: str
+    import_name: str
+    component_type: str
+    dependencies: list[str] = Field(default_factory=list)
+    component_fingerprint: str | None = None
+    matched_component_id: int | None = None
+    matched_component_code: str | None = None
+    action: str = "create"
+    match_reason: str | None = None
+
+
 class WorkspaceStyleImportValidationResult(SchemaBase):
     """样式离线包导入预检结果。"""
 
@@ -207,7 +254,9 @@ class WorkspaceStyleImportValidationResult(SchemaBase):
     themes: list[WorkspaceStylePackageThemeSummary] = Field(default_factory=list)
     assets: list[WorkspaceStylePackageAssetSummary] = Field(default_factory=list)
     fonts: list[WorkspaceStylePackageFontSummary] = Field(default_factory=list)
+    components: list[WorkspaceStylePackageComponentSummary] = Field(default_factory=list)
     errors: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
 
 
 class WorkspaceStyleImportResult(SchemaBase):
@@ -217,6 +266,8 @@ class WorkspaceStyleImportResult(SchemaBase):
     themes: list[WorkspaceStylePackageThemeSummary] = Field(default_factory=list)
     assets: list[WorkspaceStylePackageAssetSummary] = Field(default_factory=list)
     fonts: list[WorkspaceStylePackageFontSummary] = Field(default_factory=list)
+    components: list[WorkspaceStylePackageComponentSummary] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
 
 
 class WorkspaceStyleItem(SchemaBase):

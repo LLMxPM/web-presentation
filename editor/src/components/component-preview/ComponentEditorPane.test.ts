@@ -11,7 +11,7 @@ import type { WorkspaceComponentDraftErrors, WorkspaceComponentDraftForm } from 
 const form: WorkspaceComponentDraftForm = {
   name: '销售卡片',
   import_name: 'SalesCard',
-  component_type: '内容区块',
+  component_type: '内容组件',
   summary: '销售数据展示组件',
   status: 'active',
   content: '<template><div /></template>',
@@ -63,8 +63,8 @@ describe('ComponentEditorPane', () => {
     await fireEvent.update(screen.getByPlaceholderText('如：数据统计卡片'), '销售趋势卡片')
     await fireEvent.update(screen.getByPlaceholderText('如：SalesMetricCard'), 'SalesTrendCard')
     await fireEvent.click(screen.getByRole('button', { name: '暗黑' }))
-    await fireEvent.click(screen.getByRole('button', { name: '发布历史' }))
-    await fireEvent.click(screen.getByRole('button', { name: '草稿预览' }))
+    await fireEvent.click(screen.getByRole('button', { name: '版本' }))
+    await fireEvent.click(screen.getByRole('button', { name: '保存并预览' }))
     await fireEvent.click(screen.getByRole('button', { name: '保存草稿' }))
 
     const formEvents = emitted('update:form') as Array<[WorkspaceComponentDraftForm]> | undefined
@@ -98,6 +98,6 @@ describe('ComponentEditorPane', () => {
 
     expect(screen.getByRole('button', { name: '创建草稿' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '发布版本' })).toBeNull()
-    expect(screen.queryByRole('button', { name: '发布历史' })).toBeNull()
+    expect(screen.queryByRole('button', { name: '版本' })).toBeNull()
   })
 })

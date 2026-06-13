@@ -166,7 +166,7 @@ async def test_page_version_preview_artifact_should_use_historical_page_content(
     authenticated_client: AsyncClient,
     runtime_service_headers: dict[str, str],
 ) -> None:
-    """历史版本单页预览应以内存物化后的版本源码作为入口模块内容。"""
+    """历史版本单页预览应以内存物化后的版本源码与备注作为入口内容。"""
 
     workspace_response = await authenticated_client.post(
         "/api/workspaces",
@@ -188,6 +188,7 @@ async def test_page_version_preview_artifact_should_use_historical_page_content(
             "page_content": "<template><div>历史版本 V1</div></template>",
             "file_type": "vue",
             "title": "历史版本页面",
+            "speaker_notes": "历史版本 V1 备注",
             "status": "active",
             "workspace_id": workspace_id,
             "project_id": project_id,
@@ -196,11 +197,27 @@ async def test_page_version_preview_artifact_should_use_historical_page_content(
     assert page_response.status_code == 200
     page = page_response.json()
 
+    route_response = await authenticated_client.put(
+        f"/api/projects/{project_id}/routes",
+        json={
+            "routes": [
+                {
+                    "route_type": "page",
+                    "route": "history",
+                    "order": 0,
+                    "page_id": page["id"],
+                }
+            ]
+        },
+    )
+    assert route_response.status_code == 200
+
     update_response = await authenticated_client.patch(
         f"/api/pages/{page['id']}",
         json={
             "page_content": "<template><div>当前版本 V2</div></template>",
             "file_type": "vue",
+            "speaker_notes": "当前版本 V2 备注",
             "change_note": "更新到 V2",
         },
     )
@@ -236,6 +253,13 @@ async def test_page_version_preview_artifact_should_use_historical_page_content(
     )
     assert module_response.status_code == 200
     assert module_response.text == "<template><div>历史版本 V1</div></template>"
+
+    config_bundle_response = await authenticated_client.get(
+        f"/internal/runtime/preview-artifacts/{artifact_id}/config-bundle",
+        headers=runtime_service_headers,
+    )
+    assert config_bundle_response.status_code == 200
+    assert config_bundle_response.json()["routes"]["routes"][0]["meta"]["speakerNotes"] == "历史版本 V1 备注"
 
 
 async def test_asset_upload_should_generate_default_name_and_support_manual_override(
@@ -330,6 +354,7 @@ async def test_preview_artifact_config_bundle_should_translate_routes_to_compone
             "page_content": "<template><div>route-page</div></template>",
             "file_type": "vue",
             "title": "路由页面",
+            "speaker_notes": "演讲时说明路由页面备注。",
             "status": "active",
             "workspace_id": workspace_id,
             "project_id": project_id,
@@ -375,6 +400,7 @@ async def test_preview_artifact_config_bundle_should_translate_routes_to_compone
                 "title": "路由页面",
                 "order": 0,
                 "hidden": False,
+                "speakerNotes": "演讲时说明路由页面备注。",
             },
         }
     ]
