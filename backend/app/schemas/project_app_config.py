@@ -12,7 +12,7 @@ from app.core.exceptions import AppException
 DEFAULT_PAGE_WIDTH = 1920
 DEFAULT_PAGE_HEIGHT = 1080
 DEFAULT_PROJECT_BASE_FONT_SIZE = "20px"
-DEFAULT_PROJECT_STYLE_SPEC_MARKDOWN = """## 演示页排版尺度
+DEFAULT_PROJECT_STYLE_SPEC_MARKDOWN = """## 字号规范
 
 - 本项目是固定 16:9 演示页/PPT 画布，不是普通网页桌面页。
 - 页面应按投屏和远距离阅读设计，避免用网页信息流方式堆内容。
@@ -20,8 +20,7 @@ DEFAULT_PROJECT_STYLE_SPEC_MARKDOWN = """## 演示页排版尺度
 - 章节标题、模块标题优先使用 text-3xl 到 text-5xl。
 - 主体阅读文本优先使用 text-xl 到 text-3xl，不使用 text-sm、text-base 承载主要内容。
 - text-xs、text-sm、text-base 只用于页脚、标签、角标、图例、注释或少量辅助信息。
-- 单页只表达一个核心结论；内容过多时优先拆页，而不是缩小字号。
-- 表格和指标区块应减少列数和行数，优先突出关键数字与结论。"""
+- 单页只表达一个核心结论；内容过多时优先拆页，而不是缩小字号。"""
 DEFAULT_PROJECT_ICON_DEFAULT_STROKE_WIDTH = 2
 MAX_PAGE_DIMENSION = 8192
 DEFAULT_PROJECT_ICON = "slider"

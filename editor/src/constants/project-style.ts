@@ -2,7 +2,7 @@
  * 文件功能：提供项目与样式库创建表单使用的默认演示页样式规范。
  */
 
-export const DEFAULT_PROJECT_STYLE_SPEC_MARKDOWN = `## 演示页排版尺度
+export const DEFAULT_PROJECT_STYLE_SPEC_MARKDOWN = `## 字号规范
 
 - 本项目是固定 16:9 演示页/PPT 画布，不是普通网页桌面页。
 - 页面应按投屏和远距离阅读设计，避免用网页信息流方式堆内容。

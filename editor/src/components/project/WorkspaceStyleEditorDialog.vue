@@ -36,8 +36,8 @@
         <section class="style-editor-scroll min-h-0 space-y-4 overflow-y-auto pr-1">
           <div class="rounded-lg border border-slate-200 bg-white p-4">
             <div class="grid grid-cols-2 gap-3">
-              <BaseInput v-model="draft.key" label="样式 key" placeholder="default" required :error="errors.key" />
-              <BaseInput v-model="draft.name" label="样式名称" placeholder="默认样式" required :error="errors.name" />
+              <BaseInput v-model="draft.key" label="样式 key" placeholder="NEW_STYLE_KEY" required :error="errors.key" />
+              <BaseInput v-model="draft.name" label="样式名称" placeholder="样式名称" required :error="errors.name" />
             </div>
             <BaseInput v-model="draft.description" class="mt-3" label="样式描述" placeholder="说明适用场景" />
           </div>
@@ -171,15 +171,15 @@ const emit = defineEmits<{
 }>()
 
 const draft = reactive({
-  key: 'default',
-  name: '默认样式',
+  key: 'NEW_STYLE_KEY',
+  name: '样式名称',
   description: '',
   pageWidth: String(DEFAULT_PROJECT_PAGE_WIDTH),
   pageHeight: String(DEFAULT_PROJECT_PAGE_HEIGHT),
   baseFontSize: DEFAULT_PROJECT_BASE_FONT_SIZE,
   iconDefaultStrokeWidth: '2',
   showPdfExportButton: true,
-  menuMode: 'preview' as ProjectMenuMode,
+  menuMode: 'bottom-preview' as ProjectMenuMode,
   themeKey: null as string | null,
   styleSpecMarkdown: DEFAULT_PROJECT_STYLE_SPEC_MARKDOWN,
 })
@@ -214,15 +214,15 @@ const normalizedIconDefaultStrokeWidth = computed(() => normalizeIntegerWithinRa
  */
 function syncDraft(): void {
   const source = (props.style ?? props.initialStyle ?? {}) as Partial<WorkspaceStylePayload> & Partial<WorkspaceStyleItem>
-  draft.key = String(source.key ?? 'default')
-  draft.name = String(source.name ?? '默认样式')
+  draft.key = String(source.key ?? 'NEW_STYLE_KEY')
+  draft.name = String(source.name ?? '样式名称')
   draft.description = String(source.description ?? '')
   draft.pageWidth = String(source.page_width ?? DEFAULT_PROJECT_PAGE_WIDTH)
   draft.pageHeight = String(source.page_height ?? DEFAULT_PROJECT_PAGE_HEIGHT)
   draft.baseFontSize = String(source.base_font_size ?? DEFAULT_PROJECT_BASE_FONT_SIZE)
   draft.iconDefaultStrokeWidth = String(source.icon_default_stroke_width ?? 2)
   draft.showPdfExportButton = source.show_pdf_export_button ?? true
-  draft.menuMode = source.menu_mode ?? 'preview'
+  draft.menuMode = source.menu_mode ?? 'bottom-preview'
   draft.themeKey = source.theme_key ?? props.defaultThemeKey ?? null
   draft.styleSpecMarkdown = String(source.style_spec_markdown ?? DEFAULT_PROJECT_STYLE_SPEC_MARKDOWN)
   errors.key = ''

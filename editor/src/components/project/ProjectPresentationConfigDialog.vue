@@ -1,74 +1,103 @@
 <!-- 文件功能：项目展示配置弹窗，统一编辑主题、页面尺寸、菜单模式与导出按钮。 -->
 <template>
-  <BaseDialog :model-value="modelValue" title="项目展示配置" size="wide" @update:model-value="handleVisibleChange">
-    <div v-if="project && modelValue" class="grid gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
-      <section class="space-y-4">
-        <WorkspaceStyleApplyField
-          v-if="workspaceId"
-          :workspace-id="workspaceId"
-          @apply="applyWorkspaceStyle"
-        />
-
-        <div class="rounded-lg border border-slate-200 bg-white p-4">
-          <ThemeSelectorField :workspace-id="workspaceId" :model-value="draft.themeKey" :preferred-key="defaultThemeKey"
-            label="项目主题" :show-preview="false" @update:model-value="updateThemeKey" />
-        </div>
-
-        <div class="rounded-lg border border-slate-200 bg-white p-4">
-          <BaseInput
-            v-model="draft.styleSpecMarkdown"
-            type="textarea"
-            label="样式规范 Markdown"
-            placeholder="记录内容助手生成页面时应遵循的版式、排版和视觉约束"
-            :rows="12"
+  <BaseDialog
+    :model-value="modelValue"
+    title="项目展示配置"
+    size="canvas"
+    width="1480px"
+    body-preset="dense"
+    @update:model-value="handleVisibleChange"
+  >
+    <div v-if="project && modelValue" class="project-config-layout">
+      <section class="project-config-panel">
+        <section class="project-config-card shrink-0 bg-slate-50/70">
+          <WorkspaceStyleApplyField
+            v-if="workspaceId"
+            :workspace-id="workspaceId"
+            embedded
+            label="样式模板"
+            hint="从模板快速填充项目展示配置。"
+            @apply="applyWorkspaceStyle"
           />
-        </div>
+          <div v-else>
+            <label class="text-sm font-semibold text-slate-700">应用样式</label>
+            <p class="mt-1 text-xs text-slate-400">缺少工作空间上下文，暂时不能从样式库填充项目草稿。</p>
+          </div>
+
+          <div class="mt-4 border-t border-slate-200 pt-4">
+            <ThemeSelectorField
+              :workspace-id="workspaceId"
+              :model-value="draft.themeKey"
+              :preferred-key="defaultThemeKey"
+              label="项目主题"
+              :show-preview="false"
+              @update:model-value="updateThemeKey"
+            />
+          </div>
+        </section>
+
+        <section class="project-config-card project-config-card--fill bg-white">
+          <div class="grid h-full min-h-0 gap-4 2xl:grid-cols-[minmax(0,0.92fr)_minmax(280px,0.78fr)]">
+            <div class="min-w-0">
+              <PreviewSizePresetSelect
+                :current-width="normalizedPageWidth"
+                :current-height="normalizedPageHeight"
+                :current-base-font-size="normalizedBaseFontSize"
+                :current-icon-default-stroke-width="normalizedIconDefaultStrokeWidth"
+                label="尺寸模板"
+                @apply="applyPageSizePreset"
+              />
+              <div class="mt-3 grid grid-cols-2 gap-3">
+                <BaseInput v-model="draft.pageWidth" label="宽度(px)" placeholder="1920" />
+                <BaseInput v-model="draft.pageHeight" label="高度(px)" placeholder="1080" />
+              </div>
+              <div class="mt-3 grid grid-cols-2 gap-3">
+                <BaseInput v-model="draft.baseFontSize" label="基础字号" placeholder="20px" />
+                <BaseInput v-model="draft.iconDefaultStrokeWidth" label="图标描边" placeholder="2" />
+              </div>
+            </div>
+
+            <div class="grid content-start gap-4 border-t border-slate-200 pt-3 sm:grid-cols-2 2xl:block 2xl:border-l 2xl:border-t-0 2xl:pl-4 2xl:pt-0">
+              <div>
+                <label class="ml-1 text-sm font-semibold text-slate-700">菜单模式</label>
+                <div class="mt-2 grid grid-cols-3 gap-1.5 rounded-lg bg-slate-100 p-1.5">
+                  <button v-for="option in menuModeOptions" :key="option.value" type="button"
+                    class="flex min-h-11 flex-col items-center justify-center gap-1 rounded-md px-2 py-2 text-xs font-bold leading-none transition-all"
+                    :class="draft.menuMode === option.value ? 'bg-white text-indigo-600 shadow-sm ring-1 ring-indigo-100' : 'text-slate-500 hover:bg-white/60 hover:text-slate-700'"
+                    @click="draft.menuMode = option.value">
+                    <component :is="option.icon" class="h-3.5 w-3.5 shrink-0" />
+                    <span>{{ option.label }}</span>
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label class="ml-1 block text-sm font-semibold text-slate-700 2xl:mt-3">导出按钮</label>
+                <div class="mt-2 grid grid-cols-2 gap-1.5 rounded-lg bg-slate-100 p-1.5">
+                  <button v-for="option in pdfButtonOptions" :key="String(option.value)" type="button"
+                    class="flex min-h-11 items-center justify-center gap-1.5 whitespace-nowrap rounded-md px-3 py-2 text-xs font-bold transition-all"
+                    :class="draft.showPdfExportButton === option.value ? 'bg-white text-indigo-600 shadow-sm ring-1 ring-indigo-100' : 'text-slate-500 hover:bg-white/60 hover:text-slate-700'"
+                    @click="draft.showPdfExportButton = option.value">
+                    <component :is="option.icon" class="h-3.5 w-3.5 shrink-0" />
+                    <span>{{ option.label }}</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
       </section>
 
-      <aside class="space-y-4">
-        <div class="rounded-lg border border-slate-200 bg-slate-50/70 p-4">
-          <PreviewSizePresetSelect
-            :current-width="normalizedPageWidth"
-            :current-height="normalizedPageHeight"
-            :current-base-font-size="normalizedBaseFontSize"
-            :current-icon-default-stroke-width="normalizedIconDefaultStrokeWidth"
-            label="尺寸模板"
-            @apply="applyPageSizePreset"
-          />
-          <div class="mt-3 grid grid-cols-2 gap-3">
-            <BaseInput v-model="draft.pageWidth" label="页面宽度(px)" placeholder="1920" />
-            <BaseInput v-model="draft.pageHeight" label="页面高度(px)" placeholder="1080" />
-          </div>
-          <div class="mt-3 grid grid-cols-2 gap-3">
-            <BaseInput v-model="draft.baseFontSize" label="基础字号" placeholder="20px" />
-            <BaseInput v-model="draft.iconDefaultStrokeWidth" label="图标描边" placeholder="2" />
-          </div>
-        </div>
-
-        <div class="rounded-lg border border-slate-200 bg-white p-4">
-          <label class="ml-1 text-sm font-semibold text-slate-700">菜单模式</label>
-          <div class="mt-3 grid grid-cols-3 gap-2 rounded-lg bg-slate-100 p-1">
-            <button v-for="option in menuModeOptions" :key="option.value" type="button"
-              class="flex min-h-11 flex-col items-center justify-center rounded-md px-3 py-2.5 text-xs font-bold transition-all"
-              :class="draft.menuMode === option.value ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'"
-              @click="draft.menuMode = option.value">
-              <span>{{ option.label }}</span>
-            </button>
-          </div>
-        </div>
-
-        <div class="rounded-lg border border-slate-200 bg-white p-4">
-          <label class="ml-1 text-sm font-semibold text-slate-700">导出按钮</label>
-          <div class="mt-3 grid grid-cols-2 gap-2 rounded-lg bg-slate-100 p-1">
-            <button v-for="option in pdfButtonOptions" :key="String(option.value)" type="button"
-              class="flex min-h-11 items-center justify-center rounded-md px-3 py-2.5 text-xs font-bold transition-all"
-              :class="draft.showPdfExportButton === option.value ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'"
-              @click="draft.showPdfExportButton = option.value">
-              {{ option.label }}
-            </button>
-          </div>
-        </div>
-      </aside>
+      <section class="project-config-card project-config-spec-card bg-white">
+        <BaseInput
+          v-model="draft.styleSpecMarkdown"
+          type="textarea"
+          label="样式规范 Markdown"
+          placeholder="记录内容助手生成页面时应遵循的版式、排版和视觉约束"
+          :rows="16"
+          class="project-config-spec-textarea resize-none"
+        />
+      </section>
     </div>
 
     <div v-else class="py-10 text-center text-sm text-slate-400">
@@ -76,12 +105,16 @@
     </div>
 
     <template #footer>
-      <BaseButton variant="ghost" @click="handleVisibleChange(false)">取消</BaseButton>
-      <BaseButton variant="ghost" :disabled="!project" @click="resetDraft">恢复当前值</BaseButton>
-      <BaseButton variant="ghost" :disabled="!project || !workspaceId" @click="openSaveAsStyleDialog">另存为样式</BaseButton>
-      <BaseButton variant="primary" :loading="loading" :disabled="!project" @click="handleSave">
-        保存配置
-      </BaseButton>
+      <div class="flex w-full flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <BaseButton variant="ghost" @click="handleVisibleChange(false)">取消</BaseButton>
+        <div class="flex flex-wrap justify-end gap-2">
+          <BaseButton variant="ghost" :disabled="!project" @click="resetDraft">恢复当前值</BaseButton>
+          <BaseButton variant="ghost" :disabled="!project || !workspaceId" @click="openSaveAsStyleDialog">另存为样式</BaseButton>
+          <BaseButton variant="primary" :loading="loading" :disabled="!project" @click="handleSave">
+            保存配置
+          </BaseButton>
+        </div>
+      </div>
     </template>
   </BaseDialog>
 
@@ -97,6 +130,7 @@
 
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
+import { Eye, EyeOff, PanelBottom, PanelLeft, Type } from '@lucide/vue'
 
 import { createWorkspaceStyle, updateWorkspaceStyleSuggestedComponents, type WorkspaceStylePayload } from '@/api/styles'
 import ThemeSelectorField from '@/components/theme/ThemeSelectorField.vue'
@@ -156,14 +190,14 @@ const saveAsStyleSaving = ref(false)
 const appliedWorkspaceStyleId = ref<number | null>(null)
 
 const menuModeOptions = [
-  { label: '侧边缩略图', value: 'preview' as const },
-  { label: '底部缩略图', value: 'bottom-preview' as const },
-  { label: '文本', value: 'text' as const },
+  { label: '侧边缩略图', value: 'preview' as const, icon: PanelLeft },
+  { label: '底部缩略图', value: 'bottom-preview' as const, icon: PanelBottom },
+  { label: '文本', value: 'text' as const, icon: Type },
 ]
 
 const pdfButtonOptions = [
-  { label: '显示', value: true },
-  { label: '隐藏', value: false },
+  { label: '显示', value: true, icon: Eye },
+  { label: '隐藏', value: false, icon: EyeOff },
 ]
 
 const normalizedPageWidth = computed(() => normalizeDimension(draft.pageWidth, DEFAULT_PROJECT_PAGE_WIDTH))
@@ -383,4 +417,76 @@ watch(
   { immediate: true },
 )
 </script>
+
+<style scoped>
+.project-config-layout {
+  display: grid;
+  grid-template-columns: minmax(520px, 0.92fr) minmax(640px, 1.08fr);
+  gap: 1rem;
+  height: 100%;
+  min-height: 0;
+}
+
+.project-config-panel {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  gap: 0.75rem;
+  overflow-y: auto;
+  padding-right: 0.25rem;
+}
+
+.project-config-card {
+  min-width: 0;
+  border: 1px solid rgb(226 232 240);
+  border-radius: 0.5rem;
+  padding: 1rem;
+}
+
+.project-config-card--fill {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.project-config-spec-card {
+  min-height: 0;
+}
+
+.project-config-spec-textarea {
+  height: min(620px, calc(88dvh - 250px));
+  min-height: 360px;
+}
+
+@media (max-height: 820px) {
+  .project-config-layout {
+    gap: 0.75rem;
+  }
+
+  .project-config-card {
+    padding: 0.875rem;
+  }
+
+  .project-config-spec-textarea {
+    height: calc(100dvh - 330px);
+    min-height: 260px;
+  }
+}
+
+@media (max-width: 1280px) {
+  .project-config-layout {
+    grid-template-columns: 1fr;
+    overflow-y: auto;
+    padding-right: 0.25rem;
+  }
+
+  .project-config-panel {
+    overflow: visible;
+    padding-right: 0;
+  }
+
+  .project-config-spec-textarea {
+    height: min(420px, calc(100dvh - 330px));
+  }
+}
+</style>
 
