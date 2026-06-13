@@ -1237,14 +1237,17 @@ function appendUniqueTimelineItem(state: AgentSessionRuntimeState, item: AgentTi
 }
 
 /**
- * 结束当前流式文本段，避免工具参数输出期间仍显示“思考中”。
+ * 结束当前 run 的流式文本段，避免工具参数输出期间仍显示正文或“思考中”运行态。
  */
 function finishCurrentTextSegment(state: AgentSessionRuntimeState): void {
   const itemId = state.stream.streamingTimelineItemId
-  if (!itemId) {
+  const currentItem = itemId
+    ? state.timelineItems.find(item => item.id === itemId)
+    : null
+  const runId = currentItem?.run_id || state.stream.runId
+  if (!itemId && !runId) {
     return
   }
-  const currentItem = state.timelineItems.find(item => item.id === itemId)
   if (currentItem && currentItem.kind !== 'tool') {
     if (currentItem.kind === 'message' && currentItem.role === 'assistant' && !currentItem.content) {
       state.timelineItems = state.timelineItems.filter(item => item.id !== itemId)
@@ -1252,11 +1255,16 @@ function finishCurrentTextSegment(state: AgentSessionRuntimeState): void {
       currentItem.status = null
     }
   }
+  for (const item of state.timelineItems) {
+    if (item.id !== itemId && item.run_id === runId && item.kind !== 'tool' && item.status === 'running') {
+      item.status = null
+    }
+  }
   state.stream.streamingTimelineItemId = null
 }
 
 /**
- * 结束成员助手当前流式文本段，确保成员工具调用前的思考状态收尾。
+ * 结束成员助手当前 run 的流式文本段，确保成员工具调用前的文本运行态收尾。
  */
 function finishMemberTextSegment(state: AgentSessionRuntimeState, memberRunId: string): void {
   const itemId = state.stream.memberStreamingTimelineItemIdByRun[memberRunId]
@@ -1274,6 +1282,11 @@ function finishMemberTextSegment(state: AgentSessionRuntimeState, memberRunId: s
       memberRun.timeline_items = memberRun.timeline_items.filter(item => item.id !== itemId)
     } else if (currentItem.status === 'running') {
       currentItem.status = null
+    }
+  }
+  for (const item of memberRun.timeline_items) {
+    if (item.id !== itemId && item.run_id === memberRun.run_id && item.kind !== 'tool' && item.status === 'running') {
+      item.status = null
     }
   }
   state.stream.memberStreamingTimelineItemIdByRun[memberRunId] = null

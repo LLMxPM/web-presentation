@@ -572,6 +572,47 @@ describe('agent-run-state timeline', () => {
     }))
   })
 
+  it('Agno ModelRequestStarted 应结束同一 run 内已流出的 reasoning 和正文运行态', () => {
+    const state = createAgentSessionRuntimeState()
+    const options = { agentId: 'agent-coordinator', agentDisplayName: '内容助手' }
+
+    applyAgentRunEvent(state, event({ event: 'RunStarted', event_index: 0, sequence: null }), options)
+    applyAgentRunEvent(state, event({
+      event: 'RunContent',
+      content: '',
+      reasoning_content: '先判断需要读取资源。',
+      event_index: 1,
+      sequence: null,
+    }), options)
+    applyAgentRunEvent(state, event({
+      event: 'RunContent',
+      content: '我先检查现有资源。',
+      event_index: 2,
+      sequence: null,
+    }), options)
+
+    expect(state.timelineItems.find(item => item.kind === 'reasoning')).toEqual(expect.objectContaining({
+      status: 'running',
+    }))
+    expect(state.timelineItems.find(item => item.kind === 'message')).toEqual(expect.objectContaining({
+      content: '我先检查现有资源。',
+      status: 'running',
+    }))
+
+    applyAgentRunEvent(state, event({ event: 'ModelRequestStarted', event_index: 3, sequence: null }), options)
+
+    expect(state.timelineItems.find(item => item.kind === 'reasoning')).toEqual(expect.objectContaining({
+      status: null,
+    }))
+    expect(state.timelineItems.find(item => item.kind === 'message')).toEqual(expect.objectContaining({
+      status: null,
+    }))
+    expect(state.timelineItems.find(item => item.kind === 'run_status')).toEqual(expect.objectContaining({
+      status: 'model_request',
+      content: '等待智能体输出中',
+    }))
+  })
+
   it('Agno TeamModelRequestStarted 缺少 session 时应绑定当前 run 并显示等待提示', () => {
     const state = createAgentSessionRuntimeState()
     const options = { agentId: 'agent-coordinator', agentDisplayName: '内容助手' }

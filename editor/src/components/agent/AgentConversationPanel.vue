@@ -720,7 +720,7 @@ function clearAllWaitingOutputInferenceTimers() {
 }
 
 /**
- * 推断 reasoning 后模型进入无正文输出阶段；静默一小段时间后切换为等待输出提示。
+ * 推断模型在文本输出后进入工具参数生成阶段；静默一小段时间后切换为等待输出提示。
  */
 function scheduleWaitingOutputInference(sessionId: string, runId: string | null, revision: number) {
   if (!sessionId || !runId) {
@@ -737,7 +737,7 @@ function scheduleWaitingOutputInference(sessionId: string, runId: string | null,
     if (!readSessionValue(streamingBySession.value, sessionId, false)) {
       return
     }
-    if (!hasRunningReasoningSegment(sessionId, runId)) {
+    if (!hasRunningAssistantTextSegment(sessionId, runId)) {
       return
     }
     appendLocalWaitingOutputStatus(sessionId, runId)
@@ -746,18 +746,21 @@ function scheduleWaitingOutputInference(sessionId: string, runId: string | null,
 }
 
 /**
- * 判断指定 run 是否仍有正在展示的 reasoning 段。
+ * 判断指定 run 是否仍有正在展示的助手文本段。
  */
-function hasRunningReasoningSegment(sessionId: string, runId: string): boolean {
+function hasRunningAssistantTextSegment(sessionId: string, runId: string): boolean {
   return readSessionValue(timelineItemsBySession.value, sessionId, []).some(item => (
     item.run_id === runId
-    && item.kind === 'reasoning'
+    && (
+      item.kind === 'reasoning'
+      || (item.kind === 'message' && item.role === 'assistant')
+    )
     && item.status === 'running'
   ))
 }
 
 /**
- * reasoning-only delta 后可能进入工具参数流，Agno 当前不会为参数增量单独下发 run event。
+ * 正文或 reasoning delta 后都可能进入工具参数流，Agno 当前不会为参数增量单独下发 run event。
  */
 function shouldInferWaitingOutputAfterEvent(event: AgentRunEvent, sessionId: string, runId: string | null): runId is string {
   if (!runId || event.event !== 'message.delta') {
@@ -765,8 +768,8 @@ function shouldInferWaitingOutputAfterEvent(event: AgentRunEvent, sessionId: str
   }
   const reasoning = event.data.reasoning_content
   const hasReasoning = typeof reasoning === 'string' && reasoning.length > 0
-  const hasVisibleContent = typeof event.content === 'string' && event.content.length > 0
-  return hasReasoning && !hasVisibleContent && hasRunningReasoningSegment(sessionId, runId)
+  const hasContent = typeof event.content === 'string' && event.content.length > 0
+  return (hasReasoning || hasContent) && hasRunningAssistantTextSegment(sessionId, runId)
 }
 
 /**
@@ -1702,7 +1705,7 @@ function handleRunEvent(event: AgentRunEvent, fallbackSessionId = activeSessionI
   const inferenceRevision = markWaitingOutputInferenceActivity(targetSessionId)
   if (shouldInferWaitingOutputAfterEvent(normalizedEvent, targetSessionId, targetRunId)) {
     scheduleWaitingOutputInference(targetSessionId, targetRunId, inferenceRevision)
-  } else if (normalizedEvent.event === 'model.request.completed' && targetRunId && hasRunningReasoningSegment(targetSessionId, targetRunId)) {
+  } else if (normalizedEvent.event === 'model.request.completed' && targetRunId && hasRunningAssistantTextSegment(targetSessionId, targetRunId)) {
     appendLocalWaitingOutputStatus(targetSessionId, targetRunId)
   }
   switch (normalizedEvent.event) {
