@@ -119,7 +119,12 @@ jobs:
 
   e2e-smoke:
     runs-on: ubuntu-latest
-    needs: test-scope
+    needs:
+      - test-scope
+      - backend-tests
+      - editor-tests
+      - contracts
+      - runtime-delegated
     if: needs.test-scope.outputs.full_tests == 'true'
     steps:
       - uses: actions/checkout@v4
@@ -162,7 +167,13 @@ jobs:
 
   platform-image-build-smoke:
     runs-on: ubuntu-latest
-    needs: test-scope
+    needs:
+      - test-scope
+      - backend-tests
+      - editor-tests
+      - contracts
+      - runtime-delegated
+      - e2e-smoke
     if: needs.test-scope.outputs.full_tests == 'true'
     steps:
       - uses: actions/checkout@v4

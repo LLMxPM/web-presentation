@@ -4563,10 +4563,20 @@ async def test_ai_active_run_cancel_route_should_proxy_interrupt_request(authent
             "chat_history": [],
         }
 
-    async def fake_cancel_active_run(self, *, session_id: str, agent_id: str, scope):  # type: ignore[no-untyped-def]
+    async def fake_cancel_active_run(  # type: ignore[no-untyped-def]
+        self,
+        *,
+        session_id: str,
+        agent_id: str,
+        scope,
+        force: bool = False,
+        tool_call_id: str | None = None,
+    ):
         assert session_id
         assert agent_id == AGENT_COORDINATOR_AGENT_ID
         assert scope.page_id == page_id
+        assert force is False
+        assert tool_call_id is None
         return {
             "run_id": "run-interrupt-1",
             "session_id": session_id,
