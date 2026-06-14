@@ -3903,6 +3903,52 @@ async def test_ai_raw_sse_object_events_should_continue_existing_event_index() -
     assert [payload["event_index"] for payload in event_payloads] == [2, 3]
 
 
+async def test_ai_raw_continue_exception_should_mark_resolved_confirmation_error() -> None:
+    """continue raw SSE 异常时，应按已提交确认清理目标 run 并返回带 run_id 的错误事件。"""
+
+    async def fake_stream_builder() -> SimpleNamespace:
+        raise AppException(status_code=500, code="AI_FAKE_CONTINUE_FAILED", detail="继续执行失败")
+
+    marked_payloads: list[dict[str, object]] = []
+    facade = AgentSessionFacade.__new__(AgentSessionFacade)
+    facade._get_session_run_lock = lambda **_: asyncio.Lock()
+    facade.ensure_session_access = lambda **_: _async_value(SimpleNamespace(metadata={}))
+
+    async def fake_mark_terminal(**kwargs: object) -> None:
+        marked_payloads.append(dict(kwargs))
+
+    facade._mark_run_terminal = fake_mark_terminal
+
+    chunks = [
+        chunk
+        async for chunk in facade._stream_agno_raw_sse(
+            session_id="session-raw-continue-error",
+            agent_id=AGENT_COORDINATOR_AGENT_ID,
+            scope=AgentScopeContext(scope_type="workspace", workspace_id=1, source="editor-agent-sidebar"),
+            fallback_user_message=None,
+            expected_run_id="run-raw-continue-error",
+            resolved_tool_execution={
+                "tool_call_id": "tool-confirm-error",
+                "tool_name": "apply_page_edits",
+                "confirmed": True,
+            },
+            stream_builder=fake_stream_builder,
+        )
+    ]
+
+    event_payloads = [
+        json.loads(line.removeprefix("data: "))
+        for chunk in chunks
+        for line in chunk.decode("utf-8").splitlines()
+        if line.startswith("data: ")
+    ]
+    assert event_payloads[0]["run_id"] == "run-raw-continue-error"
+    assert event_payloads[0]["error_type"] == "AI_FAKE_CONTINUE_FAILED"
+    assert marked_payloads[0]["run_id"] == "run-raw-continue-error"
+    assert marked_payloads[0]["status"] == RunStatus.error
+    assert marked_payloads[0]["resolved_tool_execution"]["tool_call_id"] == "tool-confirm-error"
+
+
 async def test_ai_coordinator_session_messages_should_be_visible(authenticated_client: AsyncClient, monkeypatch) -> None:
     """统一智能体使用 AgentSession 持久化时，历史消息应能被会话接口读取。"""
 
@@ -6064,6 +6110,231 @@ async def test_ai_session_active_run_should_return_paused_requirement(authentica
     assert payload["status"] == "paused"
     assert payload["pending_requirement"]["tool_name"] == "apply_page_edits"
     assert payload["pending_requirement"]["tool_execution"]["tool_call_id"] == "tool-confirm-1"
+
+
+async def test_ai_force_cancel_paused_confirmation_should_release_hitl(authenticated_client: AsyncClient) -> None:
+    """强制释放工具确认 HITL 时，应取消 run 并清理确认 requirement。"""
+
+    workspace_id = await _create_workspace(authenticated_client, "AI Force Confirm 工作空间")
+    session_response = await authenticated_client.post(
+        "/api/ai/sessions",
+        json={
+            "agent_id": COMPONENT_MANAGER_AGENT_ID,
+            "session_name": "Force Confirm 会话",
+            "scope": {
+                "scope_type": "workspace",
+                "workspace_id": workspace_id,
+                "source": "editor-component-library",
+            },
+        },
+    )
+    assert session_response.status_code == 201
+    session_id = session_response.json()["session_id"]
+    confirm_tool = ToolExecution.from_dict(
+        {
+            "tool_call_id": "tool-force-confirm",
+            "tool_name": "delete_component",
+            "tool_args": {"component_id": 1},
+            "requires_confirmation": True,
+        }
+    )
+    await _append_test_run(
+        authenticated_client,
+        session_id=session_id,
+        run=RunOutput(
+            run_id="run-force-confirm",
+            session_id=session_id,
+            agent_id=COMPONENT_MANAGER_AGENT_ID,
+            status=RunStatus.paused,
+            tools=[confirm_tool],
+            requirements=[RunRequirement(tool_execution=confirm_tool)],
+        ),
+    )
+
+    response = await authenticated_client.post(
+        f"/api/ai/sessions/{session_id}/active-run/cancel",
+        params={
+            "workspace_id": workspace_id,
+            "scope_type": "workspace",
+            "source": "editor-component-library",
+            "agent_id": COMPONENT_MANAGER_AGENT_ID,
+        },
+        json={"force": True, "tool_call_id": "tool-force-confirm"},
+    )
+    assert response.status_code == 200, response.text
+
+    active_response = await authenticated_client.get(
+        f"/api/ai/sessions/{session_id}/active-run",
+        params={
+            "workspace_id": workspace_id,
+            "scope_type": "workspace",
+            "source": "editor-component-library",
+            "agent_id": COMPONENT_MANAGER_AGENT_ID,
+        },
+    )
+    assert active_response.status_code == 200
+    assert active_response.json() is None
+
+    app = authenticated_client._transport.app  # type: ignore[attr-defined]
+    session_model = await asyncio.to_thread(app.state.ai_db.get_session, session_id, SessionType.AGENT, "1", True)
+    assert isinstance(session_model, AgentSession)
+    run = session_model.get_run("run-force-confirm")
+    assert run is not None
+    assert run.status == RunStatus.cancelled
+    assert not run.requirements
+    assert run.tools[0].requires_confirmation is False
+    assert run.tools[0].confirmed is False
+
+
+async def test_ai_force_cancel_paused_feedback_should_release_hitl(authenticated_client: AsyncClient) -> None:
+    """强制释放结构化提问 HITL 时，应取消 run 并清理回答 requirement。"""
+
+    workspace_id = await _create_workspace(authenticated_client, "AI Force Feedback 工作空间")
+    session_response = await authenticated_client.post(
+        "/api/ai/sessions",
+        json={
+            "agent_id": COMPONENT_MANAGER_AGENT_ID,
+            "session_name": "Force Feedback 会话",
+            "scope": {
+                "scope_type": "workspace",
+                "workspace_id": workspace_id,
+                "source": "editor-component-library",
+            },
+        },
+    )
+    assert session_response.status_code == 201
+    session_id = session_response.json()["session_id"]
+    ask_user_tool = ToolExecution.from_dict(
+        {
+            "tool_call_id": "tool-force-feedback",
+            "tool_name": "ask_user",
+            "tool_args": {},
+            "requires_user_input": True,
+            "user_feedback_schema": [
+                {
+                    "question": "优先调整哪个区域？",
+                    "header": "范围",
+                    "options": [{"label": "首屏"}, {"label": "全页面"}],
+                    "multi_select": False,
+                }
+            ],
+        }
+    )
+    await _append_test_run(
+        authenticated_client,
+        session_id=session_id,
+        run=RunOutput(
+            run_id="run-force-feedback",
+            session_id=session_id,
+            agent_id=COMPONENT_MANAGER_AGENT_ID,
+            status=RunStatus.paused,
+            tools=[ask_user_tool],
+            requirements=[RunRequirement(tool_execution=ask_user_tool)],
+        ),
+    )
+
+    response = await authenticated_client.post(
+        f"/api/ai/sessions/{session_id}/active-run/cancel",
+        params={
+            "workspace_id": workspace_id,
+            "scope_type": "workspace",
+            "source": "editor-component-library",
+            "agent_id": COMPONENT_MANAGER_AGENT_ID,
+        },
+        json={"force": True, "tool_call_id": "tool-force-feedback"},
+    )
+    assert response.status_code == 200, response.text
+
+    active_response = await authenticated_client.get(
+        f"/api/ai/sessions/{session_id}/active-run",
+        params={
+            "workspace_id": workspace_id,
+            "scope_type": "workspace",
+            "source": "editor-component-library",
+            "agent_id": COMPONENT_MANAGER_AGENT_ID,
+        },
+    )
+    assert active_response.status_code == 200
+    assert active_response.json() is None
+
+    app = authenticated_client._transport.app  # type: ignore[attr-defined]
+    session_model = await asyncio.to_thread(app.state.ai_db.get_session, session_id, SessionType.AGENT, "1", True)
+    assert isinstance(session_model, AgentSession)
+    run = session_model.get_run("run-force-feedback")
+    assert run is not None
+    assert run.status == RunStatus.cancelled
+    assert not run.requirements
+    assert run.tools[0].requires_user_input is False
+    assert run.tools[0].answered is False
+
+
+async def test_ai_force_cancel_paused_requirement_should_reject_stale_tool_call(
+    authenticated_client: AsyncClient,
+) -> None:
+    """强制释放 HITL 时若 tool_call_id 已变化，应拒绝请求并保留原暂停态。"""
+
+    workspace_id = await _create_workspace(authenticated_client, "AI Force Stale 工作空间")
+    session_response = await authenticated_client.post(
+        "/api/ai/sessions",
+        json={
+            "agent_id": COMPONENT_MANAGER_AGENT_ID,
+            "session_name": "Force Stale 会话",
+            "scope": {
+                "scope_type": "workspace",
+                "workspace_id": workspace_id,
+                "source": "editor-component-library",
+            },
+        },
+    )
+    assert session_response.status_code == 201
+    session_id = session_response.json()["session_id"]
+    confirm_tool = ToolExecution.from_dict(
+        {
+            "tool_call_id": "tool-force-current",
+            "tool_name": "delete_component",
+            "tool_args": {"component_id": 1},
+            "requires_confirmation": True,
+        }
+    )
+    await _append_test_run(
+        authenticated_client,
+        session_id=session_id,
+        run=RunOutput(
+            run_id="run-force-stale",
+            session_id=session_id,
+            agent_id=COMPONENT_MANAGER_AGENT_ID,
+            status=RunStatus.paused,
+            tools=[confirm_tool],
+            requirements=[RunRequirement(tool_execution=confirm_tool)],
+        ),
+    )
+
+    response = await authenticated_client.post(
+        f"/api/ai/sessions/{session_id}/active-run/cancel",
+        params={
+            "workspace_id": workspace_id,
+            "scope_type": "workspace",
+            "source": "editor-component-library",
+            "agent_id": COMPONENT_MANAGER_AGENT_ID,
+        },
+        json={"force": True, "tool_call_id": "tool-force-old"},
+    )
+    assert response.status_code == 409
+    assert response.json()["code"] == "AI_RUN_REQUIREMENT_STALE"
+
+    active_response = await authenticated_client.get(
+        f"/api/ai/sessions/{session_id}/active-run",
+        params={
+            "workspace_id": workspace_id,
+            "scope_type": "workspace",
+            "source": "editor-component-library",
+            "agent_id": COMPONENT_MANAGER_AGENT_ID,
+        },
+    )
+    assert active_response.status_code == 200
+    payload = active_response.json()
+    assert payload["status"] == "paused"
+    assert payload["pending_requirement"]["tool_execution"]["tool_call_id"] == "tool-force-current"
 
 
 async def test_ai_session_runtime_should_ignore_binary_images_in_active_run(

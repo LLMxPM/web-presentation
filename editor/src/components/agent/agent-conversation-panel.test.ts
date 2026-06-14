@@ -34,6 +34,7 @@ const messageSuccessMock = vi.fn()
 const messageErrorMock = vi.fn()
 const messageInfoMock = vi.fn()
 const messageWarningMock = vi.fn()
+const createConfirmMock = vi.fn()
 const clipboardWriteTextMock = vi.fn()
 const DEFAULT_AGENT_ID = 'agent-coordinator'
 const DEFAULT_PLACEHOLDER = '描述目标；内容助手会处理页面/项目任务，并按需调用组件或资源助手。'
@@ -89,6 +90,7 @@ vi.mock('@/api/ai', () => ({
 }))
 
 vi.mock('@/utils/message', () => ({
+  createConfirm: (...args: unknown[]) => createConfirmMock(...args),
   Message: {
     success: (...args: unknown[]) => messageSuccessMock(...args),
     error: (...args: unknown[]) => messageErrorMock(...args),
@@ -310,6 +312,7 @@ describe('AgentConversationPanel', () => {
     vi.resetAllMocks()
     localStorage.clear()
     routerPushMock.mockReset()
+    createConfirmMock.mockResolvedValue(true)
     clipboardWriteTextMock.mockResolvedValue(undefined)
     Object.defineProperty(window.navigator, 'clipboard', {
       value: {
@@ -2473,6 +2476,230 @@ describe('AgentConversationPanel', () => {
       tool_execution: { tool_name: 'apply_page_edits', tool_call_id: 'tool-confirm-1', tool_args: {} },
     }))
     expect(continueAgentSessionActiveRunMock.mock.calls[0][2]).not.toHaveProperty('note')
+  })
+
+  it('待确认工具应显示强制释放入口并提交 tool_call_id', async () => {
+    localStorage.setItem('agent-session:agent-coordinator:11', 'session-1')
+    listAgentSessionsMock.mockResolvedValue([
+      {
+        session_id: 'session-1',
+        agent_id: DEFAULT_AGENT_ID,
+        session_name: '待确认会话',
+        created_at: '2026-04-18T10:00:00+08:00',
+        updated_at: '2026-04-18T10:30:00+08:00',
+        metadata: {
+          scope_type: 'page',
+          workspace_id: 11,
+          project_id: 21,
+          page_id: 31,
+          page_title: 'AI 页面',
+          source: 'editor-page-detail',
+        },
+      },
+    ])
+    const pausedRun = {
+      run_id: 'run-paused-force',
+      session_id: 'session-1',
+      agent_id: DEFAULT_AGENT_ID,
+      status: 'paused',
+      pending_requirement: {
+        id: null,
+        kind: 'confirmation',
+        run_id: 'run-paused-force',
+        session_id: 'session-1',
+        tool_name: 'apply_page_edits',
+        tool_execution: { tool_name: 'apply_page_edits', tool_call_id: 'tool-force-confirm', tool_args: {} },
+        suggested_patch: null,
+        user_feedback_schema: [],
+        note: null,
+      },
+      content: null,
+      created_at: '2026-04-18T10:30:00+08:00',
+    }
+    getAgentSessionActiveRunMock.mockResolvedValueOnce(pausedRun)
+    getAgentSessionRuntimeMock
+      .mockResolvedValueOnce(createRuntimeSnapshot({
+        active_run: pausedRun,
+        pending_requirement: pausedRun.pending_requirement,
+        event_index: -1,
+      }))
+      .mockResolvedValue(createRuntimeSnapshot())
+    cancelAgentSessionActiveRunMock.mockResolvedValueOnce({
+      run_id: 'run-paused-force',
+      session_id: 'session-1',
+      cancel_requested: true,
+    })
+
+    render(AgentConversationPanel, createTestingRenderOptions())
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: '强制释放' })).toBeTruthy()
+    })
+    await fireEvent.click(screen.getByRole('button', { name: '强制释放' }))
+
+    await waitFor(() => {
+      expect(cancelAgentSessionActiveRunMock).toHaveBeenCalledWith(
+        'session-1',
+        expect.objectContaining({ page_id: 31 }),
+        expect.objectContaining({
+          agent_id: DEFAULT_AGENT_ID,
+          force: true,
+          tool_call_id: 'tool-force-confirm',
+        }),
+      )
+    })
+    expect(createConfirmMock).toHaveBeenCalledWith(
+      expect.stringContaining('不会执行工具'),
+      '强制释放 HITL',
+    )
+    expect(messageInfoMock).toHaveBeenCalledWith('已释放当前待处理动作。')
+  })
+
+  it('结构化提问应显示强制释放且不提交回答', async () => {
+    localStorage.setItem('agent-session:agent-coordinator:11', 'session-1')
+    listAgentSessionsMock.mockResolvedValueOnce([
+      {
+        session_id: 'session-1',
+        agent_id: DEFAULT_AGENT_ID,
+        session_name: '待回答会话',
+        created_at: '2026-04-18T10:00:00+08:00',
+        updated_at: '2026-04-18T10:30:00+08:00',
+        metadata: {
+          scope_type: 'page',
+          workspace_id: 11,
+          project_id: 21,
+          page_id: 31,
+          page_title: 'AI 页面',
+          source: 'editor-page-detail',
+        },
+      },
+    ])
+    const pausedRun = {
+      run_id: 'run-feedback-force',
+      session_id: 'session-1',
+      agent_id: DEFAULT_AGENT_ID,
+      status: 'paused',
+      pending_requirement: {
+        id: null,
+        kind: 'user_feedback',
+        run_id: 'run-feedback-force',
+        session_id: 'session-1',
+        tool_name: 'ask_user',
+        tool_execution: { tool_name: 'ask_user', tool_call_id: 'tool-force-feedback', tool_args: {} },
+        suggested_patch: null,
+        user_feedback_schema: [
+          {
+            question: '优先调整哪个区域？',
+            header: '范围',
+            options: [{ label: '首屏', description: null }, { label: '全页面', description: null }],
+            multi_select: false,
+            selected_options: null,
+          },
+        ],
+        note: null,
+      },
+      content: null,
+      created_at: '2026-04-18T10:30:00+08:00',
+    }
+    getAgentSessionActiveRunMock.mockResolvedValueOnce(pausedRun)
+    getAgentSessionRuntimeMock
+      .mockResolvedValueOnce(createRuntimeSnapshot({
+        active_run: pausedRun,
+        pending_requirement: pausedRun.pending_requirement,
+        event_index: -1,
+      }))
+      .mockResolvedValue(createRuntimeSnapshot())
+    cancelAgentSessionActiveRunMock.mockResolvedValueOnce({
+      run_id: 'run-feedback-force',
+      session_id: 'session-1',
+      cancel_requested: true,
+    })
+
+    render(AgentConversationPanel, createTestingRenderOptions())
+
+    await waitFor(() => {
+      expect(screen.getByText('优先调整哪个区域？')).toBeTruthy()
+      expect(screen.getByRole('button', { name: '强制释放' })).toBeTruthy()
+    })
+    await fireEvent.click(screen.getByRole('button', { name: '强制释放' }))
+
+    await waitFor(() => {
+      expect(cancelAgentSessionActiveRunMock).toHaveBeenCalledWith(
+        'session-1',
+        expect.objectContaining({ page_id: 31 }),
+        expect.objectContaining({
+          agent_id: DEFAULT_AGENT_ID,
+          force: true,
+          tool_call_id: 'tool-force-feedback',
+        }),
+      )
+    })
+    expect(continueAgentSessionActiveRunMock).not.toHaveBeenCalled()
+  })
+
+  it('强制释放失败时应恢复原 HITL 界面', async () => {
+    localStorage.setItem('agent-session:agent-coordinator:11', 'session-1')
+    listAgentSessionsMock.mockResolvedValue([
+      {
+        session_id: 'session-1',
+        agent_id: DEFAULT_AGENT_ID,
+        session_name: '待确认会话',
+        created_at: '2026-04-18T10:00:00+08:00',
+        updated_at: '2026-04-18T10:30:00+08:00',
+        metadata: {
+          scope_type: 'page',
+          workspace_id: 11,
+          project_id: 21,
+          page_id: 31,
+          page_title: 'AI 页面',
+          source: 'editor-page-detail',
+        },
+      },
+    ])
+    const pausedRun = {
+      run_id: 'run-force-failed',
+      session_id: 'session-1',
+      agent_id: DEFAULT_AGENT_ID,
+      status: 'paused',
+      pending_requirement: {
+        id: null,
+        kind: 'confirmation',
+        run_id: 'run-force-failed',
+        session_id: 'session-1',
+        tool_name: 'apply_page_edits',
+        tool_execution: { tool_name: 'apply_page_edits', tool_call_id: 'tool-force-failed', tool_args: {} },
+        suggested_patch: null,
+        user_feedback_schema: [],
+        note: null,
+      },
+      content: null,
+      created_at: '2026-04-18T10:30:00+08:00',
+    }
+    getAgentSessionActiveRunMock.mockResolvedValueOnce(pausedRun)
+    getAgentSessionRuntimeMock
+      .mockResolvedValueOnce(createRuntimeSnapshot({
+        active_run: pausedRun,
+        pending_requirement: pausedRun.pending_requirement,
+        event_index: -1,
+      }))
+      .mockResolvedValue(createRuntimeSnapshot({
+        active_run: pausedRun,
+        pending_requirement: pausedRun.pending_requirement,
+        event_index: -1,
+      }))
+    cancelAgentSessionActiveRunMock.mockRejectedValueOnce(new Error('force failed'))
+
+    render(AgentConversationPanel, createTestingRenderOptions())
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: '强制释放' })).toBeTruthy()
+    })
+    await fireEvent.click(screen.getByRole('button', { name: '强制释放' }))
+
+    await waitFor(() => {
+      expect(messageErrorMock).toHaveBeenCalledWith(expect.stringContaining('force failed'))
+    })
+    expect(screen.getByText('允许执行 apply_page_edits 吗？')).toBeTruthy()
   })
 
   it('应将工具调用内嵌到助手消息中，并支持查看输入输出详情', async () => {

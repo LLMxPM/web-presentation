@@ -824,11 +824,12 @@ async def cancel_agent_session_active_run(
     )
     descriptor = _get_agent_registry(request).get_descriptor(agent_id)
     _ensure_agent_available(descriptor, scope)
-    _ = payload.force
     return await AgentSessionFacade(app=request.app, current=current, session=session).cancel_active_run(
         session_id=session_id,
         agent_id=agent_id,
         scope=scope,
+        force=payload.force,
+        tool_call_id=payload.tool_call_id,
     )
 
 

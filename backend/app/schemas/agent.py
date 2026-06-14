@@ -315,6 +315,7 @@ class AgentCancelRunRequest(BaseModel):
     """中断一个仍在执行中的 run 的请求体。"""
 
     force: bool = False
+    tool_call_id: str | None = Field(default=None, max_length=255)
 
 
 class AgentCancelRunResponse(SchemaBase):

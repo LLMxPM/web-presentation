@@ -114,6 +114,7 @@
           :pending-requirement="pendingRequirement"
           :hitl-loading="isStreaming"
           :can-apply-suggested-patch="canApplySuggestedPatch"
+          :hitl-force-release-available="hitlForceReleaseAvailable"
           @upload-image="handleUploadImage"
           @remove-image="handleRemoveImage"
           @promote-image="handlePromoteImage"
@@ -121,6 +122,7 @@
           @hitl-reject="handleContinueRun('reject')"
           @hitl-feedback-submit="handleSubmitFeedbackRun"
           @hitl-cancel="handleCancelPausedRun"
+          @hitl-force-release="handleForceReleaseHitl"
           @apply-suggested-patch="applySuggestedPatch"
           @save-draft-patch="saveDraftPatch"
           @context-usage-open="handleContextUsageOpen"
@@ -210,7 +212,7 @@ import type {
 } from '@/types/api'
 import { useAgentSessionStore } from '@/stores/agent-session'
 import { logClientWarning } from '@/utils/client-logger'
-import { Message } from '@/utils/message'
+import { createConfirm, Message } from '@/utils/message'
 
 interface Props {
   workspaceId: number
@@ -387,6 +389,7 @@ const cancellingRunForceAvailable = computed(() => {
   }
   return forceCancelTick.value - new Date(run.cancel_requested_at).getTime() >= 30_000
 })
+const hitlForceReleaseAvailable = computed(() => activeRun.value?.status === 'paused' && pendingRequirement.value !== null)
 
 const agentsQuery = useQuery(
   computed(() => ({
@@ -1501,6 +1504,7 @@ async function handleContinueRun(decision: 'confirm' | 'reject') {
       }
       return
     }
+    await recoverHitlStateAfterFailedAction(sessionId, pausedRun, requirement)
     Message.error(getErrorMessage(error, '继续智能体执行失败。'))
   } finally {
     if (streamAbortController) {
@@ -1546,6 +1550,7 @@ async function handleSubmitFeedbackRun(selections: AgentFeedbackSelection[]) {
       }
       return
     }
+    await recoverHitlStateAfterFailedAction(sessionId, pausedRun, requirement)
     Message.error(getErrorMessage(error, '继续智能体执行失败。'))
   } finally {
     if (streamAbortController) {
@@ -1560,7 +1565,9 @@ async function handleSubmitFeedbackRun(selections: AgentFeedbackSelection[]) {
  */
 async function handleCancelPausedRun() {
   const sessionId = activeSessionId.value
-  if (!sessionId || activeRun.value?.status !== 'paused') {
+  const requirement = pendingRequirement.value
+  const pausedRun = activeRun.value
+  if (!sessionId || !requirement || pausedRun?.status !== 'paused') {
     return
   }
 
@@ -1572,7 +1579,48 @@ async function handleCancelPausedRun() {
     Message.info('已停止。')
     await finalizeRun(response.session_id, { preserveLocalCancelled: true })
   } catch (error) {
+    await recoverHitlStateAfterFailedAction(sessionId, pausedRun, requirement)
     Message.error(getErrorMessage(error, '忽略失败，请稍后再试。'))
+  }
+}
+
+/**
+ * 强制释放卡住的 HITL 暂停态，只清理当前待确认/待回答动作，不提交任何答案。
+ */
+async function handleForceReleaseHitl() {
+  const sessionId = activeSessionId.value
+  const requirement = pendingRequirement.value
+  const pausedRun = activeRun.value
+  if (!sessionId || !requirement || pausedRun?.status !== 'paused') {
+    return
+  }
+
+  const confirmed = await createConfirm(
+    '强制释放只会结束当前待确认/待回答动作，不会执行工具，也不会提交回答。确定继续吗？',
+    '强制释放 HITL',
+  )
+  if (!confirmed) {
+    return
+  }
+
+  try {
+    const response = await cancelAgentSessionActiveRun(sessionId, scope.value, {
+      agent_id: agentId.value,
+      force: true,
+      tool_call_id: resolveRequirementToolCallId(requirement),
+    })
+    pendingRequirement.value = null
+    syncActiveRun(sessionId, {
+      ...pausedRun,
+      status: 'cancelled',
+      pending_requirement: null,
+      updated_at: new Date().toISOString(),
+    })
+    Message.info('已释放当前待处理动作。')
+    await finalizeRun(response.session_id, { preserveLocalCancelled: true })
+  } catch (error) {
+    await recoverHitlStateAfterFailedAction(sessionId, pausedRun, requirement)
+    Message.error(getErrorMessage(error, '强制释放失败，请稍后再试。'))
   }
 }
 
@@ -1663,6 +1711,31 @@ async function refreshAfterStreamInterrupted(sessionId: string) {
   } catch (error) {
     logClientWarning('Failed to refresh after stream interruption', error)
   }
+}
+
+/**
+ * HITL 操作失败后恢复本地暂停态，并尽快用后端快照覆盖到权威状态。
+ */
+async function recoverHitlStateAfterFailedAction(
+  sessionId: string,
+  pausedRun: AgentActiveRunItem,
+  requirement: AgentPendingRequirement,
+) {
+  syncActiveRun(sessionId, pausedRun)
+  agentSessionStore.setPendingRequirement(sessionId, requirement)
+  try {
+    await finalizeRun(sessionId)
+  } catch (error) {
+    logClientWarning('Failed to refresh after HITL action failure', error)
+  }
+}
+
+/**
+ * 从待处理动作中读取稳定 tool_call_id，供强制释放时做后端 stale 校验。
+ */
+function resolveRequirementToolCallId(requirement: AgentPendingRequirement) {
+  const toolCallId = requirement.tool_execution?.tool_call_id
+  return typeof toolCallId === 'string' && toolCallId ? toolCallId : null
 }
 
 /**

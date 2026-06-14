@@ -224,6 +224,7 @@ class _RawSseRunMessageTracker:
     fallback_user_message: str | None = None
     run_id: str | None = None
     cancelled: bool = False
+    terminal_status: RunStatus | None = None
     assistant_parts: list[str] = field(default_factory=list)
     reasoning_parts: list[str] = field(default_factory=list)
 
@@ -232,6 +233,17 @@ class _RawSseRunMessageTracker:
 
         payload = _normalize_raw_event_payload(raw_event)
         event_name = _raw_event_name(raw_event, payload)
+        self.observe_payload(payload, event_name=event_name, fallback_run_id=fallback_run_id)
+
+    def observe_payload(
+        self,
+        payload: dict[str, Any],
+        *,
+        event_name: str,
+        fallback_run_id: str | None = None,
+    ) -> None:
+        """读取已解析的 raw payload，统一识别 run、输出片段和终态。"""
+
         event_run_id = _coerce_str(payload.get("run_id")) or fallback_run_id
         if event_run_id:
             self.run_id = event_run_id
@@ -258,6 +270,7 @@ class _RawSseRunMessageTracker:
             if reasoning_content:
                 self.reasoning_parts.append(reasoning_content)
         elif event_name in {"RunCompleted", "RunCompletedEvent", "TeamRunCompleted"}:
+            self.terminal_status = RunStatus.completed
             content, reasoning_content = _split_reasoning_content(
                 _extract_text_content(payload.get("content")),
                 _resolve_reasoning_content(payload, preserve_stream_boundary=True),
@@ -269,6 +282,11 @@ class _RawSseRunMessageTracker:
                 self.reasoning_parts.append(reasoning_content)
         elif event_name in {"RunCancelled", "RunCancelledEvent", "TeamRunCancelled"}:
             self.cancelled = True
+            self.terminal_status = RunStatus.cancelled
+        elif event_name in {"RunError", "RunErrorEvent", "TeamRunError"}:
+            self.terminal_status = RunStatus.error
+        elif event_name in {"RunPaused", "RunPausedEvent", "TeamRunPaused"}:
+            self.terminal_status = RunStatus.paused
 
     @property
     def assistant_content(self) -> str | None:
@@ -707,6 +725,8 @@ class AgentSessionFacade:
         session_id: str,
         agent_id: str,
         scope: AgentScopeContext,
+        force: bool = False,
+        tool_call_id: str | None = None,
     ) -> AgentCancelRunResponse:
         """取消当前会话中仍未结束的 Agno run。"""
 
@@ -722,12 +742,29 @@ class AgentSessionFacade:
             raise AppException(status_code=409, code="AI_RUN_NOT_ACTIVE", detail="当前运行缺少 run_id，无法取消。")
 
         if _normalize_run_status_value(active_run.status) == "paused":
+            resolved_tool_execution: dict[str, Any] | None = None
+            if force:
+                pending_requirement = _extract_pending_requirement(payload=_active_run_payload(active_run))
+                active_tool_call_id = (
+                    _coerce_str(pending_requirement.tool_execution.get("tool_call_id"))
+                    if pending_requirement is not None
+                    else ""
+                )
+                incoming_tool_call_id = _coerce_str(tool_call_id)
+                if incoming_tool_call_id and active_tool_call_id and incoming_tool_call_id != active_tool_call_id:
+                    raise AppException(
+                        status_code=409,
+                        code="AI_RUN_REQUIREMENT_STALE",
+                        detail="待确认动作已变化，请刷新会话后重试。",
+                    )
+                resolved_tool_execution = pending_requirement.tool_execution if pending_requirement is not None else None
             await self._mark_run_terminal(
                 session_id=session_id,
                 agent_id=agent_id,
                 run_id=run_id,
                 status=RunStatus.cancelled,
                 content="用户取消了待确认动作",
+                resolved_tool_execution=resolved_tool_execution,
             )
         else:
             descriptor = self._registry.get_descriptor(agent_id)
@@ -1119,6 +1156,8 @@ class AgentSessionFacade:
             agent_id=agent_id,
             scope=run_scope,
             fallback_user_message=note,
+            expected_run_id=run_id,
+            resolved_tool_execution=merged_tool_execution,
             stream_builder=self._build_continue_stream(
                 agent_id=agent_id,
                 session_id=session_id,
@@ -1633,13 +1672,17 @@ class AgentSessionFacade:
         stream_builder,
         reserved_lock: asyncio.Lock | None = None,
         fallback_user_message: str | None = None,
+        expected_run_id: str | None = None,
+        resolved_tool_execution: dict[str, Any] | None = None,
     ) -> AsyncGenerator[bytes, None]:
         """执行 Agno background stream，并直接透传 Agno 生成的 SSE 文本。"""
 
         async def generator() -> AsyncGenerator[bytes, None]:
             tracker = _RawSseRunMessageTracker(fallback_user_message=fallback_user_message)
-            active_run_id: str | None = None
+            active_run_id: str | None = expected_run_id
+            tracker.run_id = expected_run_id
             raw_string_seen = False
+            synced_terminal_status: RunStatus | None = None
             lock = reserved_lock or self._get_session_run_lock(session_id=session_id, agent_id=agent_id)
             lock_acquired = reserved_lock is not None
             if not lock_acquired:
@@ -1662,13 +1705,37 @@ class AgentSessionFacade:
                 async for sse_data in active_stream.stream:
                     if isinstance(sse_data, (str, bytes)):
                         raw_string_seen = True
-                        yield _ensure_sse_bytes(sse_data)
+                        raw_bytes = _ensure_sse_bytes(sse_data)
+                        for raw_payload, raw_event_name in _iter_raw_sse_payloads(raw_bytes):
+                            tracker.observe_payload(raw_payload, event_name=raw_event_name, fallback_run_id=active_run_id)
+                            active_run_id = tracker.run_id or active_run_id
+                            synced_terminal_status = await self._sync_raw_terminal_status_if_needed(
+                                session_id=session_id,
+                                agent_id=agent_id,
+                                run_id=active_run_id,
+                                status=tracker.terminal_status,
+                                previous_status=synced_terminal_status,
+                                content=_raw_terminal_content(raw_payload),
+                                resolved_tool_execution=resolved_tool_execution,
+                            )
+                        yield raw_bytes
                     else:
                         from agno.os.utils import format_sse_event_with_index
 
+                        raw_payload = _normalize_raw_event_payload(sse_data)
+                        raw_event_name = _raw_event_name(sse_data, raw_payload)
                         local_event_index += 1
-                        tracker.observe(sse_data, fallback_run_id=active_stream.run_id)
+                        tracker.observe_payload(raw_payload, event_name=raw_event_name, fallback_run_id=active_stream.run_id)
                         active_run_id = tracker.run_id or active_run_id
+                        synced_terminal_status = await self._sync_raw_terminal_status_if_needed(
+                            session_id=session_id,
+                            agent_id=agent_id,
+                            run_id=active_run_id,
+                            status=tracker.terminal_status,
+                            previous_status=synced_terminal_status,
+                            content=_raw_terminal_content(raw_payload),
+                            resolved_tool_execution=resolved_tool_execution,
+                        )
                         yield _ensure_sse_bytes(
                             format_sse_event_with_index(
                                 sse_data,
@@ -1688,15 +1755,35 @@ class AgentSessionFacade:
             except asyncio.CancelledError:
                 raise
             except AppException as exc:
+                error_run_id = tracker.run_id or active_run_id or expected_run_id
+                if error_run_id:
+                    await self._mark_run_terminal(
+                        session_id=session_id,
+                        agent_id=agent_id,
+                        run_id=error_run_id,
+                        status=RunStatus.error,
+                        content=exc.detail,
+                        resolved_tool_execution=resolved_tool_execution,
+                    )
                 yield _format_raw_sse_error(
-                    run_id=None,
+                    run_id=error_run_id,
                     session_id=session_id,
                     message=exc.detail,
                     code=exc.code,
                 )
             except Exception:  # noqa: BLE001
+                error_run_id = tracker.run_id or active_run_id or expected_run_id
+                if error_run_id:
+                    await self._mark_run_terminal(
+                        session_id=session_id,
+                        agent_id=agent_id,
+                        run_id=error_run_id,
+                        status=RunStatus.error,
+                        content="智能体执行失败，请稍后重试。",
+                        resolved_tool_execution=resolved_tool_execution,
+                    )
                 yield _format_raw_sse_error(
-                    run_id=None,
+                    run_id=error_run_id,
                     session_id=session_id,
                     message="智能体执行失败，请稍后重试。",
                     code="AI_RUN_FAILED",
@@ -1706,6 +1793,40 @@ class AgentSessionFacade:
                     lock.release()
 
         return generator()
+
+    async def _sync_raw_terminal_status_if_needed(
+        self,
+        *,
+        session_id: str,
+        agent_id: str,
+        run_id: str | None,
+        status: RunStatus | None,
+        previous_status: RunStatus | None,
+        content: str | None,
+        resolved_tool_execution: dict[str, Any] | None,
+    ) -> RunStatus | None:
+        """raw SSE 看到终态时，把已解决 HITL 的残留状态同步回 Agno session。"""
+
+        if status is None or status == previous_status or not run_id:
+            return previous_status
+        if status == RunStatus.completed and resolved_tool_execution is not None:
+            await self._normalize_agno_completed_run_after_continue(
+                session_id=session_id,
+                agent_id=agent_id,
+                run_id=run_id,
+                content=content,
+                resolved_tool_execution=resolved_tool_execution,
+            )
+        elif status in {RunStatus.cancelled, RunStatus.error} and resolved_tool_execution is not None:
+            await self._mark_run_terminal(
+                session_id=session_id,
+                agent_id=agent_id,
+                run_id=run_id,
+                status=status,
+                content=content or ("运行已停止。" if status == RunStatus.cancelled else "智能体执行失败，请稍后重试。"),
+                resolved_tool_execution=resolved_tool_execution,
+            )
+        return status
 
     async def _build_context_status_event(
         self,
@@ -2431,6 +2552,7 @@ class AgentSessionFacade:
         run_id: str,
         status: RunStatus,
         content: str | None,
+        resolved_tool_execution: dict[str, Any] | None = None,
     ) -> None:
         """更新已存在 run 的状态，保留原始消息与工具信息。"""
 
@@ -2444,7 +2566,11 @@ class AgentSessionFacade:
         run.status = status
         if content is not None:
             run.content = content
-        _normalize_agno_terminal_run_payload(run, status=status)
+        _normalize_agno_terminal_run_payload(
+            run,
+            status=status,
+            resolved_tool_execution=resolved_tool_execution,
+        )
         detail.upsert_run(run)
         await asyncio.to_thread(self._ai_db.upsert_session, detail)
 
@@ -2502,6 +2628,7 @@ class AgentSessionFacade:
         run_id: str,
         status: RunStatus,
         content: str,
+        resolved_tool_execution: dict[str, Any] | None = None,
     ) -> None:
         """在异常或断线时把运行中占位推进到终态，避免后续会话被永久占用。"""
 
@@ -2511,6 +2638,7 @@ class AgentSessionFacade:
             run_id=run_id,
             status=status,
             content=content,
+            resolved_tool_execution=resolved_tool_execution,
         )
 
     async def _ensure_cancelled_session_messages_preserved(
@@ -3128,27 +3256,42 @@ def _normalize_agno_terminal_run_payload(
 ) -> None:
     """终态 run 不再携带未解决 HITL，避免后续刷新把旧动作恢复为 paused。"""
 
-    if status not in {RunStatus.completed, RunStatus.cancelled}:
+    if status not in {RunStatus.completed, RunStatus.cancelled, RunStatus.error}:
+        return
+    clear_all_requirements = status in {RunStatus.completed, RunStatus.cancelled}
+    if status == RunStatus.error and resolved_tool_execution is None:
         return
     tool_call_id = _coerce_str((resolved_tool_execution or {}).get("tool_call_id"))
-    run.requirements = []
+    if clear_all_requirements:
+        run.requirements = []
+    elif tool_call_id:
+        run.requirements = [
+            item
+            for item in list(getattr(run, "requirements", None) or [])
+            if _requirement_tool_call_id(item) != tool_call_id
+        ]
     for item in list(getattr(run, "tools", None) or []):
         item_call_id = _tool_call_id(item)
         is_target_tool = bool(tool_call_id and item_call_id == tool_call_id)
+        should_resolve_tool = clear_all_requirements or is_target_tool
         if is_target_tool and resolved_tool_execution is not None:
             _copy_tool_execution_payload_state(item, resolved_tool_execution)
-        if getattr(item, "requires_confirmation", None):
-            item.requires_confirmation = False
-            if getattr(item, "confirmed", None) is None:
-                item.confirmed = status == RunStatus.completed
-        if getattr(item, "requires_user_input", None):
-            item.requires_user_input = False
-            if getattr(item, "answered", None) is not True:
-                item.answered = status == RunStatus.completed
-        if getattr(item, "external_execution_required", None) and getattr(item, "result", None) is not None:
-            item.external_execution_required = False
-        if is_target_tool and fallback_tool_result is not None and getattr(item, "result", None) is None:
-            item.result = fallback_tool_result
+        if should_resolve_tool and _tool_execution_field(item, "requires_confirmation"):
+            _set_tool_execution_field(item, "requires_confirmation", False)
+            if _tool_execution_field(item, "confirmed") is None:
+                _set_tool_execution_field(item, "confirmed", status == RunStatus.completed)
+        if should_resolve_tool and _tool_execution_field(item, "requires_user_input"):
+            _set_tool_execution_field(item, "requires_user_input", False)
+            if _tool_execution_field(item, "answered") is not True:
+                _set_tool_execution_field(item, "answered", status == RunStatus.completed)
+        if (
+            should_resolve_tool
+            and _tool_execution_field(item, "external_execution_required")
+            and _tool_execution_field(item, "result") is not None
+        ):
+            _set_tool_execution_field(item, "external_execution_required", False)
+        if is_target_tool and fallback_tool_result is not None and _tool_execution_field(item, "result") is None:
+            _set_tool_execution_field(item, "result", fallback_tool_result)
 
 
 def _copy_tool_execution_state(target: Any, source: Any) -> None:
@@ -3167,9 +3310,9 @@ def _copy_tool_execution_state(target: Any, source: Any) -> None:
         "external_execution_silent",
         "result",
     ):
-        value = getattr(source, field_name, None)
+        value = _tool_execution_field(source, field_name)
         if value is not None:
-            setattr(target, field_name, value)
+            _set_tool_execution_field(target, field_name, value)
 
 
 def _copy_tool_execution_payload_state(target: Any, source: dict[str, Any]) -> None:
@@ -3187,12 +3330,19 @@ def _copy_tool_execution_payload_state(target: Any, source: dict[str, Any]) -> N
         "result",
     ):
         if field_name in source and source[field_name] is not None:
+            if field_name in {"user_input_schema", "user_feedback_schema"} and not isinstance(target, dict):
+                continue
+            if isinstance(target, dict):
+                target[field_name] = source[field_name]
+                continue
             setattr(target, field_name, source[field_name])
 
 
 def _requirement_tool_call_id(requirement: Any) -> str:
     """提取 Agno RunRequirement 中的 tool_call_id。"""
 
+    if isinstance(requirement, dict):
+        return _tool_call_id(requirement.get("tool_execution"))
     return _tool_call_id(getattr(requirement, "tool_execution", None))
 
 
@@ -3202,6 +3352,23 @@ def _tool_call_id(tool_execution: Any) -> str:
     if isinstance(tool_execution, dict):
         return _coerce_str(tool_execution.get("tool_call_id"))
     return _coerce_str(getattr(tool_execution, "tool_call_id", None))
+
+
+def _tool_execution_field(tool_execution: Any, field_name: str) -> Any:
+    """兼容对象与 dict，读取 ToolExecution 字段。"""
+
+    if isinstance(tool_execution, dict):
+        return tool_execution.get(field_name)
+    return getattr(tool_execution, field_name, None)
+
+
+def _set_tool_execution_field(tool_execution: Any, field_name: str, value: Any) -> None:
+    """兼容对象与 dict，写入 ToolExecution 字段。"""
+
+    if isinstance(tool_execution, dict):
+        tool_execution[field_name] = value
+        return
+    setattr(tool_execution, field_name, value)
 
 
 def _build_run_requirement_from_tool_execution_payload(tool_execution: dict[str, Any]) -> RunRequirement:
@@ -4151,6 +4318,45 @@ def _ensure_sse_bytes(value: Any) -> bytes:
     if isinstance(value, bytes):
         return value
     return str(value).encode("utf-8")
+
+
+def _iter_raw_sse_payloads(raw_bytes: bytes) -> list[tuple[dict[str, Any], str]]:
+    """从已格式化 SSE 文本中解析 Agno raw payload，供终态兜底使用。"""
+
+    try:
+        raw_text = raw_bytes.decode("utf-8")
+    except UnicodeDecodeError:
+        return []
+    payloads: list[tuple[dict[str, Any], str]] = []
+    for block in re.split(r"\r?\n\r?\n+", raw_text.strip()):
+        if not block:
+            continue
+        event_name = ""
+        data_lines: list[str] = []
+        for line in block.splitlines():
+            if line.startswith("event:"):
+                event_name = line[6:].strip()
+            elif line.startswith("data:"):
+                data_lines.append(line[5:].lstrip())
+        if not data_lines:
+            continue
+        try:
+            payload = json.loads("\n".join(data_lines))
+        except json.JSONDecodeError:
+            continue
+        if isinstance(payload, dict):
+            payloads.append((payload, str(payload.get("event") or event_name)))
+    return payloads
+
+
+def _raw_terminal_content(payload: dict[str, Any]) -> str | None:
+    """读取 raw 终态事件中的可展示内容或错误说明。"""
+
+    for key in ("content", "error", "message"):
+        value = _coerce_str(payload.get(key))
+        if value:
+            return value
+    return None
 
 
 def _format_raw_sse_error(*, run_id: str | None, session_id: str | None, message: str, code: str) -> bytes:
