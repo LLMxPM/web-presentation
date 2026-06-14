@@ -299,6 +299,7 @@ export async function cancelAgentSessionActiveRun(
   payload: {
     agent_id?: string
     force?: boolean
+    tool_call_id?: string | null
   },
 ) {
   logAgentDev('run.cancel.request', { sessionId, scope, payload })
@@ -307,6 +308,7 @@ export async function cancelAgentSessionActiveRun(
     {
       session_id: sessionId,
       force: payload.force ?? false,
+      tool_call_id: payload.tool_call_id ?? null,
     },
     {
       params: buildScopeParams(scope, payload.agent_id ?? 'agent-coordinator'),

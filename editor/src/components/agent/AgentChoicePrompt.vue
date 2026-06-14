@@ -52,6 +52,16 @@
 
     <template #footer-left>
       <BaseButton
+        v-if="forceReleaseAvailable"
+        variant="ghost"
+        size="sm"
+        :disabled="loading"
+        custom-class="rounded-md px-2 py-1 text-xs text-red-600 shadow-none hover:bg-red-50"
+        @click="emit('forceRelease')"
+      >
+        强制释放
+      </BaseButton>
+      <BaseButton
         variant="ghost"
         size="sm"
         :disabled="currentIndex <= 0 || loading"
@@ -88,13 +98,16 @@ interface AnswerState {
 const props = withDefaults(defineProps<{
   requirement: AgentPendingRequirement
   loading?: boolean
+  forceReleaseAvailable?: boolean
 }>(), {
   loading: false,
+  forceReleaseAvailable: false,
 })
 
 const emit = defineEmits<{
   submit: [selections: AgentFeedbackSelection[]]
   ignore: []
+  forceRelease: []
 }>()
 
 const currentIndex = ref(0)

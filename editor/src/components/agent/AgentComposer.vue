@@ -159,8 +159,10 @@
       :requirement="pendingRequirement"
       :loading="hitlLoading"
       :can-apply-suggested-patch="canApplySuggestedPatch"
+      :force-release-available="hitlForceReleaseAvailable"
       @confirm="emit('hitlConfirm')"
       @reject="emit('hitlReject')"
+      @force-release="emit('hitlForceRelease')"
       @apply-suggested-patch="patch => emit('applySuggestedPatch', patch)"
       @save-draft-patch="patch => emit('saveDraftPatch', patch)"
     />
@@ -168,8 +170,10 @@
       v-else
       :requirement="pendingRequirement"
       :loading="hitlLoading"
+      :force-release-available="hitlForceReleaseAvailable"
       @submit="selections => emit('hitlFeedbackSubmit', selections)"
       @ignore="emit('hitlCancel')"
+      @force-release="emit('hitlForceRelease')"
     />
   </section>
 </template>
@@ -199,6 +203,7 @@ interface Props {
   pendingRequirement?: AgentPendingRequirement | null
   hitlLoading?: boolean
   canApplySuggestedPatch?: boolean
+  hitlForceReleaseAvailable?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -215,6 +220,7 @@ const props = withDefaults(defineProps<Props>(), {
   pendingRequirement: null,
   hitlLoading: false,
   canApplySuggestedPatch: false,
+  hitlForceReleaseAvailable: false,
 })
 
 const emit = defineEmits<{
@@ -226,6 +232,7 @@ const emit = defineEmits<{
   hitlConfirm: []
   hitlReject: []
   hitlCancel: []
+  hitlForceRelease: []
   hitlFeedbackSubmit: [selections: AgentFeedbackSelection[]]
   applySuggestedPatch: [patch: AgentSuggestedPatch]
   saveDraftPatch: [patch: AgentSuggestedPatch]

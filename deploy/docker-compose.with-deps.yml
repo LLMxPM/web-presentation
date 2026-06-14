@@ -21,6 +21,10 @@ services:
       POSTGRES_PASSWORD: "change-postgres-password"
     volumes:
       - postgres-data:/var/lib/postgresql/data
+    networks:
+      platform-net:
+        aliases:
+          - postgres
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
       interval: 10s
@@ -35,6 +39,10 @@ services:
       REDIS_PASSWORD: "change-redis-password"
     volumes:
       - redis-data:/data
+    networks:
+      platform-net:
+        aliases:
+          - redis
     healthcheck:
       test: ["CMD-SHELL", "redis-cli -a \"$${REDIS_PASSWORD}\" ping"]
       interval: 10s
@@ -73,9 +81,10 @@ services:
     extra_hosts:
       - "backend:127.0.0.1"
     networks:
-      default:
+      platform-net:
         aliases:
           - backend
+          - platform
     depends_on:
       runtime:
         condition: service_healthy
@@ -104,6 +113,10 @@ services:
       RUNTIME_ACCESS_LOG_ENABLED: "true"
     expose:
       - "7373"
+    networks:
+      platform-net:
+        aliases:
+          - runtime
     healthcheck:
       test:
         - CMD
@@ -118,3 +131,8 @@ volumes:
   backend-data:
   postgres-data:
   redis-data:
+
+networks:
+  platform-net:
+    name: web-presentation-with-deps
+    driver: bridge

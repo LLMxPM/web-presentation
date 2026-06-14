@@ -42,6 +42,19 @@
         </section>
       </div>
     </details>
+
+    <template #footer-left>
+      <BaseButton
+        v-if="forceReleaseAvailable"
+        variant="ghost"
+        size="sm"
+        :disabled="loading"
+        custom-class="rounded-md px-2 py-1 text-xs text-red-600 shadow-none hover:bg-red-50"
+        @click="emit('forceRelease')"
+      >
+        强制释放
+      </BaseButton>
+    </template>
   </AgentHitlShell>
 </template>
 
@@ -56,14 +69,17 @@ const props = withDefaults(defineProps<{
   requirement: AgentPendingRequirement
   loading?: boolean
   canApplySuggestedPatch?: boolean
+  forceReleaseAvailable?: boolean
 }>(), {
   loading: false,
   canApplySuggestedPatch: false,
+  forceReleaseAvailable: false,
 })
 
 const emit = defineEmits<{
   confirm: []
   reject: []
+  forceRelease: []
   applySuggestedPatch: [patch: AgentSuggestedPatch]
   saveDraftPatch: [patch: AgentSuggestedPatch]
 }>()
