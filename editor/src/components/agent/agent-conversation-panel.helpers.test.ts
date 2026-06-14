@@ -82,7 +82,7 @@ describe('agent-conversation-panel timeline helpers', () => {
     ])
   })
 
-  it('ask_user 工具和 requirement 应合并为等待回复卡片', () => {
+  it('当前 pending ask_user 应只在输入区处理，不在时间线重复展示', () => {
     const pendingRequirement: AgentPendingRequirement = {
       id: 'req-ask-1',
       kind: 'user_feedback',
@@ -117,13 +117,7 @@ describe('agent-conversation-panel timeline helpers', () => {
       timelineItem({ id: 'requirement-ask', kind: 'requirement', role: null, order_index: 2, status: 'pending', content: '是否继续整理资源？' }),
     ], { pendingRequirement })
 
-    expect(items.map(item => item.kind)).toEqual(['feedback_request'])
-    const feedbackItem = items[0]
-    expect(feedbackItem.kind).toBe('feedback_request')
-    expect(feedbackItem.kind === 'feedback_request' ? feedbackItem.entries : []).toEqual([
-      { question: '是否继续整理资源？', answerText: null },
-    ])
-    expect(feedbackItem.kind === 'feedback_request' ? feedbackItem.tool?.toolName : '').toBe('ask_user')
+    expect(items).toEqual([])
   })
 
   it('已回答 ask_user 应只提取选择答案', () => {

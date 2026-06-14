@@ -58,6 +58,7 @@ from app.ai.session_facade import (
     _build_run_requirement_from_tool_execution_payload,
     _extract_pending_requirement,
     _extract_tool_error_info,
+    _iter_raw_sse_payloads,
     _prepare_team_run_output_for_agno_continue,
     _resolve_requirement_payload,
 )
@@ -3947,6 +3948,84 @@ async def test_ai_raw_continue_exception_should_mark_resolved_confirmation_error
     assert marked_payloads[0]["run_id"] == "run-raw-continue-error"
     assert marked_payloads[0]["status"] == RunStatus.error
     assert marked_payloads[0]["resolved_tool_execution"]["tool_call_id"] == "tool-confirm-error"
+
+
+async def test_ai_raw_sse_should_stop_and_release_lock_after_pause_event() -> None:
+    """raw SSE 收到暂停事件后应收束本轮流，避免 HITL 提交后保持 loading。"""
+
+    run_id = f"run-raw-pause-{uuid4()}"
+    session_id = f"session-raw-pause-{uuid4()}"
+    facade = AgentSessionFacade.__new__(AgentSessionFacade)
+    facade._current = SimpleNamespace(user=SimpleNamespace(id=1))
+    facade.ensure_session_access = lambda **_: _async_value(AgentSession(session_id=session_id, agent_id=COMPONENT_MANAGER_AGENT_ID, user_id="1"))
+    marked_payloads: list[dict[str, object]] = []
+    preserve_payloads: list[dict[str, object]] = []
+
+    async def fake_set_existing_run_status(**kwargs: object) -> None:
+        marked_payloads.append(dict(kwargs))
+
+    async def fake_preserve_cancelled_raw_run_messages(**kwargs: object) -> None:
+        preserve_payloads.append(dict(kwargs))
+        return None
+
+    async def paused_then_waits():
+        payload = {
+            "event": "RunPaused",
+            "run_id": run_id,
+            "session_id": session_id,
+            "requirements": [
+                {
+                    "id": "req-raw-pause",
+                    "tool_execution": {
+                        "tool_call_id": "tool-raw-pause",
+                        "tool_name": "ask_user",
+                        "requires_user_input": True,
+                        "user_feedback_schema": [
+                            {
+                                "question": "是否继续？",
+                                "header": "继续",
+                                "options": [{"label": "继续"}, {"label": "停止"}],
+                                "multi_select": False,
+                            }
+                        ],
+                    },
+                }
+            ],
+        }
+        yield f"event: RunPaused\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
+        await asyncio.Event().wait()
+
+    async def fake_stream_builder() -> SimpleNamespace:
+        return SimpleNamespace(agent=SimpleNamespace(), stream=paused_then_waits(), run_id=run_id)
+
+    facade._set_existing_run_status = fake_set_existing_run_status
+    facade._preserve_cancelled_raw_run_messages = fake_preserve_cancelled_raw_run_messages
+    lock = facade._get_session_run_lock(session_id=session_id, agent_id=COMPONENT_MANAGER_AGENT_ID)
+
+    chunks = await asyncio.wait_for(
+        _collect_chunks(
+            facade._stream_agno_raw_sse(
+                session_id=session_id,
+                agent_id=COMPONENT_MANAGER_AGENT_ID,
+                scope=AgentScopeContext(scope_type="workspace", workspace_id=1, source="editor-component-library"),
+                stream_builder=fake_stream_builder,
+            )
+        ),
+        timeout=1,
+    )
+    parsed_events = [parsed for chunk in chunks for parsed in _iter_raw_sse_payloads(chunk)]
+
+    assert [(event_name, payload.get("run_id")) for payload, event_name in parsed_events] == [("RunPaused", run_id)]
+    assert marked_payloads[0]["run_id"] == run_id
+    assert marked_payloads[0]["status"] == RunStatus.paused
+    assert preserve_payloads == []
+    assert not lock.locked()
+
+
+async def _collect_chunks(stream) -> list[bytes]:  # type: ignore[no-untyped-def]
+    """收集异步字节流，供 raw SSE 收束测试验证不会卡住。"""
+
+    return [chunk async for chunk in stream]
 
 
 async def test_ai_coordinator_session_messages_should_be_visible(authenticated_client: AsyncClient, monkeypatch) -> None:

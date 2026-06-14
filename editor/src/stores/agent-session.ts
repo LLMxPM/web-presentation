@@ -83,12 +83,13 @@ export const useAgentSessionStore = defineStore('agent-session', {
     setActiveRun(sessionId: string, run: AgentActiveRunItem | null): void {
       if (!sessionId) return
       const state = this.ensureSession(sessionId)
-      state.activeRun = run
+      const normalizedRun = normalizeActiveRun(run)
+      state.activeRun = normalizedRun
       state.stream.runId = run?.run_id ?? state.stream.runId
-      state.stream.streaming = Boolean(run && ['pending', 'running', 'cancelling'].includes(run.status))
-      if (run?.status === 'paused') {
-        state.pendingRequirement = run.pending_requirement
-      } else if (run?.status !== 'pending' && run?.status !== 'running') {
+      state.stream.streaming = Boolean(normalizedRun && ['pending', 'running', 'cancelling'].includes(normalizedRun.status))
+      if (normalizedRun?.status === 'paused') {
+        state.pendingRequirement = normalizedRun.pending_requirement
+      } else {
         state.pendingRequirement = null
       }
       this.syncFlatMaps(sessionId)
@@ -224,4 +225,14 @@ function hasSessionValue<T>(source: Record<string, T>, sessionId: string): boole
  */
 function nextTimelineOrderIndex(state: AgentSessionRuntimeState) {
   return Math.max(-1, ...state.timelineItems.map(item => item.order_index)) + 1
+}
+
+/**
+ * 归一化 active run，确保非 paused 状态不会携带旧 HITL requirement。
+ */
+function normalizeActiveRun(run: AgentActiveRunItem | null): AgentActiveRunItem | null {
+  if (!run || run.status === 'paused' || run.pending_requirement === null) {
+    return run
+  }
+  return { ...run, pending_requirement: null }
 }

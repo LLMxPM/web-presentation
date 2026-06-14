@@ -8,6 +8,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import AgentConversationPanel from '@/components/agent/AgentConversationPanel.vue'
 import { useAgentSessionStore } from '@/stores/agent-session'
+import type { AgentPendingRequirement } from '@/types/api'
 
 const routerPushMock = vi.fn()
 const routeMock = {
@@ -2635,6 +2636,137 @@ describe('AgentConversationPanel', () => {
       )
     })
     expect(continueAgentSessionActiveRunMock).not.toHaveBeenCalled()
+  })
+
+  it('paused 结构化提问不应因残留 streaming 状态禁用提交按钮', async () => {
+    localStorage.setItem('agent-session:agent-coordinator:11', 'session-1')
+    listAgentSessionsMock.mockResolvedValueOnce([
+      {
+        session_id: 'session-1',
+        agent_id: DEFAULT_AGENT_ID,
+        session_name: '待回答会话',
+        created_at: '2026-04-18T10:00:00+08:00',
+        updated_at: '2026-04-18T10:30:00+08:00',
+        metadata: {
+          scope_type: 'page',
+          workspace_id: 11,
+          project_id: 21,
+          page_id: 31,
+          page_title: 'AI 页面',
+          source: 'editor-page-detail',
+        },
+      },
+    ])
+    const pausedRun = {
+      run_id: 'run-feedback-loading',
+      session_id: 'session-1',
+      agent_id: DEFAULT_AGENT_ID,
+      status: 'paused',
+      pending_requirement: {
+        id: null,
+        kind: 'user_feedback',
+        run_id: 'run-feedback-loading',
+        session_id: 'session-1',
+        tool_name: 'ask_user',
+        tool_execution: { tool_name: 'ask_user', tool_call_id: 'tool-feedback-loading', tool_args: {} },
+        suggested_patch: null,
+        user_feedback_schema: [
+          {
+            question: '优先调整哪个区域？',
+            header: '范围',
+            options: [{ label: '首屏', description: null }, { label: '全页面', description: null }],
+            multi_select: false,
+            selected_options: null,
+          },
+        ],
+        note: null,
+      },
+      content: null,
+      created_at: '2026-04-18T10:30:00+08:00',
+    }
+    getAgentSessionRuntimeMock.mockResolvedValueOnce(createRuntimeSnapshot({
+      active_run: pausedRun,
+      pending_requirement: pausedRun.pending_requirement,
+      event_index: -1,
+    }))
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    render(AgentConversationPanel, createTestingRenderOptions({}, pinia))
+
+    await waitFor(() => {
+      expect(screen.getByText('优先调整哪个区域？')).toBeTruthy()
+    })
+    await fireEvent.click(screen.getByText('首屏'))
+    useAgentSessionStore().setStreaming('session-1', true)
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /提交回答/ })).toHaveProperty('disabled', false)
+    })
+  })
+
+  it('running activeRun 不应从残留 pending map 恢复旧 ask_user', async () => {
+    localStorage.setItem('agent-session:agent-coordinator:11', 'session-1')
+    listAgentSessionsMock.mockResolvedValueOnce([
+      {
+        session_id: 'session-1',
+        agent_id: DEFAULT_AGENT_ID,
+        session_name: '运行中会话',
+        created_at: '2026-04-18T10:00:00+08:00',
+        updated_at: '2026-04-18T10:30:00+08:00',
+        metadata: {
+          scope_type: 'page',
+          workspace_id: 11,
+          project_id: 21,
+          page_id: 31,
+          page_title: 'AI 页面',
+          source: 'editor-page-detail',
+        },
+      },
+    ])
+    const staleRequirement: AgentPendingRequirement = {
+      id: 'req-stale-ask',
+      kind: 'user_feedback',
+      run_id: 'run-feedback-stale',
+      session_id: 'session-1',
+      tool_name: 'ask_user',
+      tool_execution: { tool_name: 'ask_user', tool_call_id: 'tool-feedback-stale', tool_args: {} },
+      suggested_patch: null,
+      user_feedback_schema: [
+        {
+          question: '这个问题不应出现',
+          header: '范围',
+          options: [{ label: '首屏', description: null }, { label: '全页面', description: null }],
+          multi_select: false,
+          selected_options: null,
+        },
+      ],
+      note: null,
+    }
+    getAgentSessionRuntimeMock.mockResolvedValueOnce(createRuntimeSnapshot({
+      active_run: {
+        run_id: 'run-feedback-stale',
+        session_id: 'session-1',
+        agent_id: DEFAULT_AGENT_ID,
+        status: 'running',
+        pending_requirement: null,
+        content: null,
+        created_at: '2026-04-18T10:30:00+08:00',
+      },
+      pending_requirement: null,
+      event_index: -1,
+    }))
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    render(AgentConversationPanel, createTestingRenderOptions({}, pinia))
+
+    await waitFor(() => {
+      expect(getAgentSessionRuntimeMock).toHaveBeenCalled()
+    })
+    useAgentSessionStore().setPendingRequirement('session-1', staleRequirement)
+
+    await waitFor(() => {
+      expect(screen.queryByText('这个问题不应出现')).toBeNull()
+    })
   })
 
   it('强制释放失败时应恢复原 HITL 界面', async () => {

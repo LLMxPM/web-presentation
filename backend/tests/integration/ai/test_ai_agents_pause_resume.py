@@ -9,6 +9,7 @@ from tests.integration.ai.ai_agents_cases import (
     test_ai_force_cancel_paused_feedback_should_release_hitl,
     test_ai_force_cancel_paused_requirement_should_reject_stale_tool_call,
     test_ai_raw_continue_exception_should_mark_resolved_confirmation_error,
+    test_ai_raw_sse_should_stop_and_release_lock_after_pause_event,
     test_ai_session_runtime_should_ignore_binary_images_in_active_run,
     test_ai_stream_should_release_session_lock_after_pause_event,
     test_apply_user_feedback_selections_should_write_preset_and_custom_answers,

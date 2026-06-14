@@ -266,9 +266,11 @@ export function applyAgentRuntimeSnapshot(
     state.timelineItems = snapshotItems
   }
   state.memberRuns = [...(payload.memberRuns ?? [])]
-  state.activeRun = payload.activeRun
+  state.activeRun = normalizeActiveRun(payload.activeRun)
   state.lastRun = payload.lastRun
-  state.pendingRequirement = payload.pendingRequirement
+  state.pendingRequirement = state.activeRun?.status === 'paused'
+    ? state.activeRun.pending_requirement
+    : null
   state.pendingImageAttachments = [...payload.pendingImageAttachments]
   state.contextStatus = payload.contextStatus
   state.stream.runId = payload.activeRun?.run_id ?? null
@@ -283,6 +285,16 @@ export function applyAgentRuntimeSnapshot(
       payload.eventIndex,
     )
   }
+}
+
+/**
+ * 归一化 active run，避免 running/pending/cancelling 状态残留旧 HITL requirement。
+ */
+function normalizeActiveRun(run: AgentActiveRunItem | null): AgentActiveRunItem | null {
+  if (!run || run.status === 'paused' || run.pending_requirement === null) {
+    return run
+  }
+  return { ...run, pending_requirement: null }
 }
 
 /**

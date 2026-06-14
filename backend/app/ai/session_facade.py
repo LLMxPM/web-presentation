@@ -1680,6 +1680,7 @@ class AgentSessionFacade:
         async def generator() -> AsyncGenerator[bytes, None]:
             tracker = _RawSseRunMessageTracker(fallback_user_message=fallback_user_message)
             active_run_id: str | None = expected_run_id
+            active_stream: _ActiveAgentStream | None = None
             tracker.run_id = expected_run_id
             raw_string_seen = False
             synced_terminal_status: RunStatus | None = None
@@ -1719,6 +1720,8 @@ class AgentSessionFacade:
                                 resolved_tool_execution=resolved_tool_execution,
                             )
                         yield raw_bytes
+                        if synced_terminal_status == RunStatus.paused:
+                            break
                     else:
                         from agno.os.utils import format_sse_event_with_index
 
@@ -1743,7 +1746,13 @@ class AgentSessionFacade:
                                 run_id=active_stream.run_id,
                             )
                         )
-                if (raw_string_seen or tracker.cancelled) and (tracker.run_id or active_run_id):
+                        if synced_terminal_status == RunStatus.paused:
+                            break
+                if (
+                    synced_terminal_status != RunStatus.paused
+                    and (raw_string_seen or tracker.cancelled)
+                    and (tracker.run_id or active_run_id)
+                ):
                     await self._preserve_cancelled_raw_run_messages(
                         session_id=session_id,
                         agent_id=agent_id,
@@ -1789,6 +1798,11 @@ class AgentSessionFacade:
                     code="AI_RUN_FAILED",
                 )
             finally:
+                if active_stream is not None and synced_terminal_status == RunStatus.paused:
+                    try:
+                        await _close_async_iterator(active_stream.stream)
+                    except Exception:  # noqa: BLE001
+                        pass
                 if lock_acquired and lock.locked():
                     lock.release()
 
@@ -1816,6 +1830,14 @@ class AgentSessionFacade:
                 run_id=run_id,
                 content=content,
                 resolved_tool_execution=resolved_tool_execution,
+            )
+        elif status == RunStatus.paused:
+            await self._set_existing_run_status(
+                session_id=session_id,
+                agent_id=agent_id,
+                run_id=run_id,
+                status=RunStatus.paused,
+                content=content,
             )
         elif status in {RunStatus.cancelled, RunStatus.error} and resolved_tool_execution is not None:
             await self._mark_run_terminal(

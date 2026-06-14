@@ -11,7 +11,7 @@ import {
 } from '@/components/agent/agent-run-state'
 import { resolveAgentUserFeedbackRequirement } from '@/components/agent/agent-user-feedback-state'
 import { useAgentSessionStore } from '@/stores/agent-session'
-import type { AgentRunEvent, AgentTimelineItem } from '@/types/api'
+import type { AgentPendingRequirement, AgentRunEvent, AgentTimelineItem } from '@/types/api'
 
 function event(payload: Partial<AgentRunEvent>): AgentRunEvent {
   return {
@@ -428,6 +428,45 @@ describe('agent-run-state timeline', () => {
     })
 
     expect(store.sessions[sessionId].pendingRequirement).toBeNull()
+  })
+
+  it('store 设置 running activeRun 时应清理旧 pending requirement', () => {
+    setActivePinia(createPinia())
+    const store = useAgentSessionStore()
+    const sessionId = 'session-1'
+    const requirement: AgentPendingRequirement = {
+      id: 'req-1',
+      kind: 'user_feedback',
+      run_id: 'run-1',
+      session_id: sessionId,
+      tool_name: 'ask_user',
+      tool_execution: { tool_name: 'ask_user', tool_call_id: 'tool-ask-1' },
+      suggested_patch: null,
+      user_feedback_schema: [],
+      note: null,
+    }
+
+    store.setActiveRun(sessionId, {
+      run_id: 'run-1',
+      session_id: sessionId,
+      agent_id: 'agent-coordinator',
+      status: 'paused',
+      pending_requirement: requirement,
+      content: null,
+      created_at: null,
+    })
+    store.setActiveRun(sessionId, {
+      run_id: 'run-1',
+      session_id: sessionId,
+      agent_id: 'agent-coordinator',
+      status: 'running',
+      pending_requirement: requirement,
+      content: null,
+      created_at: null,
+    })
+
+    expect(store.activeRunBySession[sessionId]?.pending_requirement).toBeNull()
+    expect(store.pendingRequirementBySession[sessionId]).toBeNull()
   })
 
   it('Agno raw event 应投影成运行中、消息增量和 HITL 暂停状态', () => {

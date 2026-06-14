@@ -112,7 +112,7 @@
           :image-upload-disabled="imageUploadDisabled"
           :image-upload-disabled-reason="imageUploadDisabledReason"
           :pending-requirement="pendingRequirement"
-          :hitl-loading="isStreaming"
+          :hitl-loading="hitlActionInFlight"
           :can-apply-suggested-patch="canApplySuggestedPatch"
           :hitl-force-release-available="hitlForceReleaseAvailable"
           @upload-image="handleUploadImage"
@@ -273,7 +273,6 @@ const agentSessionStore = useAgentSessionStore()
 const {
   timelineItemsBySession,
   memberRunsBySession,
-  pendingRequirementBySession,
   pendingImageAttachmentsBySession,
   activeRunBySession,
   streamingBySession,
@@ -309,6 +308,7 @@ const streamAbortControllersByRun = new Map<string, AbortController>()
 const autoNamingSessionIds = new Set<string>()
 const waitingOutputInferenceTimersBySession = new Map<string, number>()
 const waitingOutputInferenceRevisionsBySession = new Map<string, number>()
+const hitlActionInFlightBySession = ref<Record<string, boolean>>({})
 const forceCancelTick = ref(Date.now())
 let forceCancelTimer: number | null = null
 let componentDisposed = false
@@ -349,9 +349,13 @@ const memberRuns = computed<AgentMemberRunItem[]>(() => (
   readSessionValue(memberRunsBySession.value, activeSessionId.value, [])
 ))
 const pendingRequirement = computed<AgentPendingRequirement | null>({
-  get: () => activeRun.value?.pending_requirement ?? readSessionValue(pendingRequirementBySession.value, activeSessionId.value, null),
+  get: () => {
+    const run = activeRun.value
+    return run?.status === 'paused' ? run.pending_requirement : null
+  },
   set: value => agentSessionStore.setPendingRequirement(activeSessionId.value, value),
 })
+const hitlActionInFlight = computed(() => readSessionValue(hitlActionInFlightBySession.value, activeSessionId.value, false))
 const streamingTimelineItemId = computed<string | null>({
   get: () => readSessionValue(streamingTimelineItemIdBySession.value, activeSessionId.value, null),
   set: value => agentSessionStore.setStreamingTimelineItemId(activeSessionId.value, value),
@@ -925,6 +929,13 @@ function syncActiveRun(sessionId: string, run: AgentActiveRunItem | null) {
 }
 
 /**
+ * 设置当前会话 HITL 操作请求状态，避免与 run streaming 状态相互污染。
+ */
+function setHitlActionInFlight(sessionId: string, value: boolean) {
+  writeSessionValue(hitlActionInFlightBySession.value, sessionId, value)
+}
+
+/**
  * 打开上下文用量浮窗时刷新一次最新统计，避免长 run 中错过事件后读数陈旧。
  */
 function handleContextUsageOpen() {
@@ -1478,6 +1489,7 @@ async function handleContinueRun(decision: 'confirm' | 'reject') {
   const pausedRun = activeRun.value
   if (!sessionId || !requirement || pausedRun?.status !== 'paused') return
 
+  setHitlActionInFlight(sessionId, true)
   pendingRequirement.value = null
   appendLocalAssistantPlaceholder(sessionId, requirement.run_id || pausedRun.run_id || '')
   setSessionStreaming(sessionId, true)
@@ -1510,6 +1522,7 @@ async function handleContinueRun(decision: 'confirm' | 'reject') {
     if (streamAbortController) {
       clearStreamAbortController(runId, streamAbortController)
     }
+    setHitlActionInFlight(sessionId, false)
     setSessionStreaming(sessionId, false)
   }
 }
@@ -1523,6 +1536,7 @@ async function handleSubmitFeedbackRun(selections: AgentFeedbackSelection[]) {
   const pausedRun = activeRun.value
   if (!sessionId || !requirement || pausedRun?.status !== 'paused') return
 
+  setHitlActionInFlight(sessionId, true)
   agentSessionStore.resolveUserFeedbackRequirement(sessionId, requirement, selections)
   appendLocalAssistantPlaceholder(sessionId, requirement.run_id || pausedRun.run_id || '')
   setSessionStreaming(sessionId, true)
@@ -1556,6 +1570,7 @@ async function handleSubmitFeedbackRun(selections: AgentFeedbackSelection[]) {
     if (streamAbortController) {
       clearStreamAbortController(runId, streamAbortController)
     }
+    setHitlActionInFlight(sessionId, false)
     setSessionStreaming(sessionId, false)
   }
 }
@@ -1571,6 +1586,7 @@ async function handleCancelPausedRun() {
     return
   }
 
+  setHitlActionInFlight(sessionId, true)
   try {
     pendingRequirement.value = null
     const response = await cancelAgentSessionActiveRun(sessionId, scope.value, {
@@ -1581,6 +1597,8 @@ async function handleCancelPausedRun() {
   } catch (error) {
     await recoverHitlStateAfterFailedAction(sessionId, pausedRun, requirement)
     Message.error(getErrorMessage(error, '忽略失败，请稍后再试。'))
+  } finally {
+    setHitlActionInFlight(sessionId, false)
   }
 }
 
@@ -1603,6 +1621,7 @@ async function handleForceReleaseHitl() {
     return
   }
 
+  setHitlActionInFlight(sessionId, true)
   try {
     const response = await cancelAgentSessionActiveRun(sessionId, scope.value, {
       agent_id: agentId.value,
@@ -1621,6 +1640,8 @@ async function handleForceReleaseHitl() {
   } catch (error) {
     await recoverHitlStateAfterFailedAction(sessionId, pausedRun, requirement)
     Message.error(getErrorMessage(error, '强制释放失败，请稍后再试。'))
+  } finally {
+    setHitlActionInFlight(sessionId, false)
   }
 }
 

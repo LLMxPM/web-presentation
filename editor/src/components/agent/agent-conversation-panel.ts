@@ -129,6 +129,9 @@ export function buildTimelineDisplayItems(
   }
 
   for (const item of orderedItems) {
+    if (isCurrentPendingAskUserTimelineItem(item, pendingRequirement)) {
+      continue
+    }
     if (skippedRequirementIds.has(item.id)) {
       continue
     }
@@ -370,6 +373,19 @@ function resolveAskUserRequirementForItem(
 
 function isAskUserRequirement(requirement: AgentPendingRequirement) {
   return requirement.kind === 'user_feedback' || requirement.tool_name === 'ask_user'
+}
+
+function isCurrentPendingAskUserTimelineItem(item: AgentTimelineItem, requirement: AgentPendingRequirement | null) {
+  if (!requirement || !isAskUserRequirement(requirement) || !itemMatchesRequirement(item, requirement)) {
+    return false
+  }
+  if (item.kind === 'requirement') {
+    return true
+  }
+  if (isAskUserToolItem(item)) {
+    return item.status !== 'completed' && item.status !== 'cancelled'
+  }
+  return false
 }
 
 function itemMatchesRequirement(item: AgentTimelineItem, requirement: AgentPendingRequirement) {
