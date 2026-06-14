@@ -130,6 +130,8 @@ PR 必跑：
 3. 根仓 `e2e` 冒烟
 4. 平台镜像 build smoke：构建 `web-presentation` 单镜像但不推送
 
+全量流程中，`e2e` 冒烟依赖 Backend、Editor、contracts 和 Runtime 委托校验通过后再启动；平台镜像 build smoke 依赖 `e2e` 冒烟通过后再启动，避免基础测试失败时继续执行重型任务。
+
 Release 发布：
 
 - GitHub Release `published` 后执行完整质量门禁。
