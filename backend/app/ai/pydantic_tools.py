@@ -1,18 +1,22 @@
-"""文件功能：把现有智能体工具规格和 Agno Function 桥接为 Pydantic AI Tool。"""
+"""文件功能：把平台自有智能体工具规格装配为 Pydantic AI Tool。"""
 
 from __future__ import annotations
 
 import inspect
-from dataclasses import dataclass
+from dataclasses import dataclass, fields, is_dataclass
+from datetime import date, datetime
+from enum import Enum
 from types import SimpleNamespace
 from typing import Any, get_type_hints
 
 from pydantic_ai import RunContext
+from pydantic_ai.messages import BinaryContent, ImageUrl
 from pydantic_ai.tools import Tool
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.ai.agent_runtime_config import EffectiveAgentRuntimeConfig, apply_tool_runtime_config
 from app.ai.auth_tokens import build_agent_tool_token
+from app.ai.platform_tools import AgentToolContext
 from app.ai.tool_specs import build_agent_tools_from_group_specs, list_agent_group_specs
 from app.schemas.agent import AgentScopeContext
 from app.services.auth_service import AuthContext
@@ -20,7 +24,7 @@ from app.services.auth_service import AuthContext
 
 @dataclass(slots=True)
 class AgentToolDeps:
-    """Pydantic AI 工具运行依赖，内部再转换为旧工具需要的 dependencies。"""
+    """Pydantic AI 工具运行依赖，内部保存平台工具鉴权上下文。"""
 
     dependencies: dict[str, Any]
 
@@ -51,7 +55,7 @@ def build_pydantic_tools(
         session_id=session_id,
         run_id=run_id,
     )
-    return [_wrap_agno_function(tool_item) for tool_item in raw_tools], AgentToolDeps(dependencies=dependencies)
+    return [_wrap_platform_tool(tool_item) for tool_item in raw_tools], AgentToolDeps(dependencies=dependencies)
 
 
 def _build_dependencies(
@@ -62,7 +66,7 @@ def _build_dependencies(
     session_id: str,
     run_id: str,
 ) -> dict[str, Any]:
-    """生成旧工具上下文校验需要的 dependencies 字典。"""
+    """生成平台工具上下文校验需要的 dependencies 字典。"""
 
     scopes: list[str] = []
     for group in list_agent_group_specs(agent_id):
@@ -98,26 +102,30 @@ def _build_dependencies(
     return dependencies
 
 
-def _wrap_agno_function(tool_item: Any) -> Tool[AgentToolDeps]:
-    """把单个 Agno Function 包装成 Pydantic AI Tool。"""
+def _wrap_platform_tool(tool_item: Any) -> Tool[AgentToolDeps]:
+    """把单个平台工具包装成 Pydantic AI Tool。"""
 
     entrypoint = getattr(tool_item, "entrypoint", None)
     if entrypoint is None:
         raise RuntimeError(f"工具缺少 entrypoint：{getattr(tool_item, 'name', '<unknown>')}")
 
     async def wrapper(ctx: RunContext[AgentToolDeps], **kwargs: Any) -> Any:
-        shim_context = SimpleNamespace(
+        run_id = str(ctx.deps.dependencies.get("run_id") or ctx.run_id)
+        session_id = str(ctx.deps.dependencies.get("session_id") or "")
+        shim_context = AgentToolContext(
+            run_id=run_id,
+            session_id=session_id,
+            user_id=str(ctx.deps.dependencies.get("user_id") or ""),
             dependencies={
                 **ctx.deps.dependencies,
-                "run_id": ctx.deps.dependencies.get("run_id") or ctx.run_id,
+                "run_id": run_id,
+                "session_id": session_id,
             },
-            run_id=ctx.deps.dependencies.get("run_id") or ctx.run_id,
-            session_id=ctx.deps.dependencies.get("session_id"),
         )
         result = entrypoint(shim_context, **kwargs)
         if inspect.isawaitable(result):
-            return await result
-        return result
+            result = await result
+        return _safe_tool_result(result)
 
     wrapper.__name__ = str(getattr(tool_item, "name", "") or entrypoint.__name__)
     wrapper.__doc__ = str(getattr(tool_item, "description", "") or entrypoint.__doc__ or "")
@@ -133,7 +141,7 @@ def _wrap_agno_function(tool_item: Any) -> Tool[AgentToolDeps]:
 
 
 def _wrapper_signature(entrypoint: Any) -> inspect.Signature:
-    """把旧 run_context 参数替换为 Pydantic AI RunContext。"""
+    """把平台工具上下文参数替换为 Pydantic AI RunContext。"""
 
     original = inspect.signature(entrypoint)
     parameters = list(original.parameters.values())
@@ -157,3 +165,73 @@ def _wrapper_annotations(entrypoint: Any) -> dict[str, Any]:
     if parameters:
         annotations[parameters[0]] = RunContext[AgentToolDeps]
     return annotations
+
+
+def _safe_tool_result(value: Any) -> Any:
+    """把平台工具返回值压成 Pydantic AI 可序列化的 JSON 值。"""
+
+    if _looks_like_platform_tool_result(value):
+        media_payload = {
+            key: _safe_tool_result(getattr(value, key, None))
+            for key in ("images", "videos", "audios", "files")
+            if getattr(value, key, None)
+        }
+        content = getattr(value, "content", "")
+        if not media_payload:
+            return content
+        return {"content": content, **media_payload}
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, ImageUrl):
+        return {
+            "kind": "image-url",
+            "url": value.url,
+            "media_type": getattr(value, "media_type", None),
+        }
+    if isinstance(value, BinaryContent):
+        return {
+            "kind": "binary",
+            "media_type": value.media_type,
+            "identifier": getattr(value, "identifier", None),
+            "size": len(value.data),
+        }
+    if isinstance(value, (bytes, bytearray, memoryview)):
+        return {"type": "binary", "size": len(value)}
+    if isinstance(value, (datetime, date)):
+        return value.isoformat()
+    if isinstance(value, Enum):
+        return value.value
+    if isinstance(value, dict):
+        return {str(key): _safe_tool_result(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        return [_safe_tool_result(item) for item in value]
+    if hasattr(value, "model_dump"):
+        try:
+            return _safe_tool_result(value.model_dump(mode="python", exclude_none=True))
+        except TypeError:
+            return _safe_tool_result(value.model_dump())
+    if is_dataclass(value):
+        return {
+            field.name: _safe_tool_result(getattr(value, field.name))
+            for field in fields(value)
+            if not field.name.startswith("_")
+        }
+    if hasattr(value, "to_dict"):
+        return _safe_tool_result(value.to_dict())
+    if isinstance(value, SimpleNamespace) or hasattr(value, "__dict__"):
+        return {
+            str(key): _safe_tool_result(item)
+            for key, item in vars(value).items()
+            if not str(key).startswith("_") and item is not None
+        }
+    return str(value)
+
+
+def _looks_like_platform_tool_result(value: Any) -> bool:
+    """识别平台 ToolResult 形态，避免把纯文本工具结果包装成复杂对象。"""
+
+    return (
+        value is not None
+        and hasattr(value, "content")
+        and all(hasattr(value, key) for key in ("images", "videos", "audios", "files"))
+    )

@@ -5,9 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from agno.run import RunContext
-from agno.tools import tool
-from agno.tools.function import ToolResult
+from app.ai.platform_tools import AgentToolContext, AgentToolResult, agent_tool
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.ai.auth_tokens import PAGE_TOOL_VISUAL_SCOPES, extract_user_id
@@ -20,8 +18,8 @@ from app.services.page_screenshot_job_service import PageScreenshotJobService
 def build_get_page_screenshot_tool(session_factory: async_sessionmaker[AsyncSession]) -> Any:
     """构建页面截图查询工具；Agent 只能传 page_id。"""
 
-    @tool(show_result=False)
-    async def get_page_screenshot(run_context: RunContext, page_id: int) -> ToolResult:
+    @agent_tool(show_result=False)
+    async def get_page_screenshot(run_context: AgentToolContext, page_id: int) -> AgentToolResult:
         """读取指定页面当前版本最新截图，缺失或过期时由后端自动刷新。"""
 
         dependencies, claims = await resolve_tool_context(session_factory,
@@ -59,7 +57,7 @@ def build_get_page_screenshot_tool(session_factory: async_sessionmaker[AsyncSess
                 refreshed=screenshot.refreshed,
                 resolved_image=resolved_image,
             )
-            return ToolResult(
+            return AgentToolResult(
                 content=json.dumps(content, ensure_ascii=False),
                 images=[resolved_image.image],
             )

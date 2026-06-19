@@ -126,7 +126,7 @@ class AgentImageAttachmentService:
         return [by_id[attachment_id] for attachment_id in normalized_ids]
 
     async def build_images_for_run(self, attachments: list[AiAgentImageAttachment]) -> list[ResolvedAgentImage]:
-        """读取附件对象并解析为 Agno 可接收的图片输入。"""
+        """读取附件对象并解析为 Pydantic AI 可接收的图片输入。"""
 
         result: list[ResolvedAgentImage] = []
         for attachment in attachments:

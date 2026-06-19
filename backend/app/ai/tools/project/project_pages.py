@@ -4,8 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from agno.run import RunContext
-from agno.tools import tool
+from app.ai.platform_tools import AgentToolContext, agent_tool
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.ai.auth_tokens import PROJECT_TOOL_WRITE_SCOPES, extract_user_id
@@ -28,9 +27,9 @@ def build_project_page_tools(session_factory: async_sessionmaker[AsyncSession]) 
 def build_create_project_page_tool(session_factory: async_sessionmaker[AsyncSession]) -> Any:
     """构建项目页面创建工具。"""
 
-    @tool(show_result=False)
+    @agent_tool(show_result=False)
     async def create_project_page(
-        run_context: RunContext,
+        run_context: AgentToolContext,
         title: str,
         page_content: str,
         summary: str | None = None,
@@ -87,9 +86,9 @@ def build_create_project_page_tool(session_factory: async_sessionmaker[AsyncSess
 def build_update_page_metadata_tool(session_factory: async_sessionmaker[AsyncSession]) -> Any:
     """构建页面标题与说明维护工具。"""
 
-    @tool(show_result=False)
+    @agent_tool(show_result=False)
     async def update_page_metadata(
-        run_context: RunContext,
+        run_context: AgentToolContext,
         page_id: int,
         title: str | None = None,
         summary: str | None = None,

@@ -4,8 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from agno.run import RunContext
-from agno.tools import tool
+from app.ai.platform_tools import AgentToolContext, agent_tool
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -18,9 +17,9 @@ from app.models.enums import RecordStatus
 def build_list_workspace_resource_tags_tool(session_factory: async_sessionmaker[AsyncSession]) -> Any:
     """构建工作空间资源标签查询工具。"""
 
-    @tool(show_result=False)
+    @agent_tool(show_result=False)
     async def list_workspace_resource_tags(
-        run_context: RunContext,
+        run_context: AgentToolContext,
         keyword: str | None = None,
         limit: int = 100,
     ) -> list[str]:

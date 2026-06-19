@@ -15,7 +15,6 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.exc import SQLAlchemyError
 
-from app.ai.agent_factory import AIAgentFactory
 from app.ai.registry import AgentRegistry
 from app.api.router import api_router
 from app.api.routes import build_artifacts, public_assets, internal_runtime, runtime_configs, well_known, preview
@@ -217,13 +216,7 @@ def _mount_ai_runtime(app: FastAPI) -> None:
     if not settings.ai_enabled:
         return
 
-    registry = AgentRegistry(
-        AIAgentFactory(
-            agno_db=None,
-            session_factory=get_session_factory(),
-        )
-    )
-    app.state.ai_registry = registry
+    app.state.ai_registry = AgentRegistry()
 
 
 def _start_page_screenshot_queue_task() -> asyncio.Task[None]:

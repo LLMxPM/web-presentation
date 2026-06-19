@@ -4,8 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from agno.run import RunContext
-from agno.tools import tool
+from app.ai.platform_tools import AgentToolContext, agent_tool
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.ai.auth_tokens import PAGE_TOOL_WRITE_SCOPES, extract_user_id
@@ -19,9 +18,9 @@ from app.services.page_service import PageService
 def build_apply_page_edits_tool(session_factory: async_sessionmaker[AsyncSession]) -> Any:
     """构建页面结构化 Edits 更新工具，负责直接写回页面并自动生成版本。"""
 
-    @tool(show_result=False)
+    @agent_tool(show_result=False)
     async def apply_page_edits(
-        run_context: RunContext,
+        run_context: AgentToolContext,
         page_id: int,
         edits: list[SourceEditInput],
         base_version_no: int,

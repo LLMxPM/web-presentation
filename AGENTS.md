@@ -50,7 +50,7 @@ Backend 是平台控制面，负责用户、权限、工作空间、项目、页
 
 ### backend/app/ai
 
-AI 目录承载 Pydantic AI 智能体、平台自有会话运行态、工具注册、工具披露、上下文构造和用户级 AI 配置。当前工具实现仍有一层 Agno Function 桥接，作为迁移期复用既有工具规格和权限校验的适配层；新增运行态能力应优先落在平台运行态表和 Pydantic AI runner 上。
+AI 目录承载 Pydantic AI 智能体、平台自有会话运行态、工具注册、工具披露、上下文构造和用户级 AI 配置。工具实现使用平台自有工具对象，再由 Pydantic AI runner 装配为运行时 Tool；新增运行态能力应落在平台运行态表和 Pydantic AI runner 上。
 
 `backend/app/ai/tool_specs.py` 是智能体工具目录、工具组、风险级别、确认要求、上下文要求、调用格式与返回示例的单一事实源。新增、删除或调整智能体工具时必须先更新该规格，再由规格派生：
 

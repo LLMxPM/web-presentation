@@ -32,7 +32,7 @@ class AgentRuntimeContext:
 
 
 def build_scope_context_text(runtime_context: AgentRuntimeContext) -> str:
-    """把泛化业务范围格式化为可追加给 Agno 的上下文说明。"""
+    """把泛化业务范围格式化为可追加给智能体的上下文说明。"""
 
     lines = [
         "当前业务范围如下：",

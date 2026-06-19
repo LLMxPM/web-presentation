@@ -1,4 +1,4 @@
-"""文件功能：合成用户级智能体配置，并把有效配置应用到 Agno Agent 与工具对象。"""
+"""文件功能：合成用户级智能体配置，并把有效配置应用到 Pydantic AI 运行时与平台工具对象。"""
 
 from __future__ import annotations
 
@@ -97,7 +97,7 @@ def build_effective_description(
     catalog: AgentCatalogEntry,
     runtime_config: EffectiveAgentRuntimeConfig | None,
 ) -> str:
-    """合成当前 Agent 在运行时应暴露给 Agno 的描述。"""
+    """合成当前 Agent 在运行时应暴露给模型的描述。"""
 
     description_override = runtime_config.description_override if runtime_config is not None else None
     return description_override or catalog.description
@@ -126,7 +126,7 @@ def apply_tool_runtime_config(
     tools: list[Any],
     runtime_config: EffectiveAgentRuntimeConfig | None,
 ) -> list[Any]:
-    """过滤关闭的工具，并把用户覆盖的工具说明写入 Agno Function 对象。"""
+    """过滤关闭的工具，并把用户覆盖的工具说明写入平台工具对象。"""
 
     result: list[Any] = []
     for tool_item in apply_tool_spec_metadata(agent_id=agent_id, tools=tools):

@@ -5,9 +5,7 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any
 
-from agno.run import RunContext
-from agno.tools import tool
-from agno.tools.function import ToolResult
+from app.ai.platform_tools import AgentToolContext, AgentToolResult, agent_tool
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.ai.auth_tokens import (
@@ -74,9 +72,9 @@ def build_component_manager_tools(session_factory: async_sessionmaker[AsyncSessi
 def build_list_components_tool(session_factory: async_sessionmaker[AsyncSession]) -> Any:
     """构建工作空间组件列表读取工具。"""
 
-    @tool(show_result=False)
+    @agent_tool(show_result=False)
     async def list_components(
-        run_context: RunContext,
+        run_context: AgentToolContext,
         component_type: WorkspaceComponentType | None = None,
         keyword: str | None = None,
         limit: int = 50,
@@ -122,8 +120,8 @@ def build_list_components_tool(session_factory: async_sessionmaker[AsyncSession]
 def build_get_component_detail_tool(session_factory: async_sessionmaker[AsyncSession]) -> Any:
     """构建组件详情读取工具。"""
 
-    @tool(show_result=False)
-    async def get_component_detail(run_context: RunContext, component_id: int) -> ToolResult:
+    @agent_tool(show_result=False)
+    async def get_component_detail(run_context: AgentToolContext, component_id: int) -> AgentToolResult:
         """读取指定组件元数据，并以适合 LLM 精确编辑的文本格式返回源码。"""
 
         dependencies, _ = await resolve_tool_context(session_factory,
@@ -134,7 +132,7 @@ def build_get_component_detail_tool(session_factory: async_sessionmaker[AsyncSes
         async with session_factory() as session:
             component = await WorkspaceComponentService(session).get(int(component_id))
             _ensure_component_workspace(component.workspace_id, int(dependencies["workspace_id"]))
-            return ToolResult(content=build_component_detail_prompt(component))
+            return AgentToolResult(content=build_component_detail_prompt(component))
 
     return get_component_detail
 
@@ -142,8 +140,8 @@ def build_get_component_detail_tool(session_factory: async_sessionmaker[AsyncSes
 def build_list_component_versions_tool(session_factory: async_sessionmaker[AsyncSession]) -> Any:
     """构建组件版本列表读取工具。"""
 
-    @tool(show_result=False)
-    async def list_component_versions(run_context: RunContext, component_id: int) -> list[dict[str, Any]]:
+    @agent_tool(show_result=False)
+    async def list_component_versions(run_context: AgentToolContext, component_id: int) -> list[dict[str, Any]]:
         """读取指定组件的版本历史摘要。"""
 
         dependencies, _ = await resolve_tool_context(session_factory,
@@ -164,8 +162,8 @@ def build_list_component_versions_tool(session_factory: async_sessionmaker[Async
 def build_get_component_dependencies_tool(session_factory: async_sessionmaker[AsyncSession]) -> Any:
     """构建组件当前依赖读取工具。"""
 
-    @tool(show_result=False)
-    async def get_component_dependencies(run_context: RunContext, component_id: int) -> dict[str, Any]:
+    @agent_tool(show_result=False)
+    async def get_component_dependencies(run_context: AgentToolContext, component_id: int) -> dict[str, Any]:
         """读取指定组件当前版本的依赖索引。"""
 
         dependencies, _ = await resolve_tool_context(session_factory,
@@ -186,9 +184,9 @@ def build_get_component_dependencies_tool(session_factory: async_sessionmaker[As
 def build_list_runtime_kit_capabilities_tool(session_factory: async_sessionmaker[AsyncSession]) -> Any:
     """构建 Runtime Kit 公开能力目录查询工具。"""
 
-    @tool(show_result=False)
+    @agent_tool(show_result=False)
     async def list_runtime_kit_capabilities(
-        run_context: RunContext,
+        run_context: AgentToolContext,
         kind: str | None = None,
         base_name: str | None = None,
         version_no: int | None = None,
@@ -238,9 +236,9 @@ def build_list_runtime_kit_capabilities_tool(session_factory: async_sessionmaker
 def build_get_runtime_kit_capability_tool(session_factory: async_sessionmaker[AsyncSession]) -> Any:
     """构建单个 Runtime Kit 公开能力详情查询工具。"""
 
-    @tool(show_result=False)
+    @agent_tool(show_result=False)
     async def get_runtime_kit_capability(
-        run_context: RunContext,
+        run_context: AgentToolContext,
         name: str,
         kind: str | None = None,
     ) -> dict[str, Any]:
@@ -270,9 +268,9 @@ def build_get_runtime_kit_capability_tool(session_factory: async_sessionmaker[As
 def build_create_component_tool(session_factory: async_sessionmaker[AsyncSession]) -> Any:
     """构建组件创建工具。"""
 
-    @tool(show_result=False)
+    @agent_tool(show_result=False)
     async def create_component(
-        run_context: RunContext,
+        run_context: AgentToolContext,
         name: str,
         import_name: str,
         content: str,
@@ -318,9 +316,9 @@ def build_create_component_tool(session_factory: async_sessionmaker[AsyncSession
 def build_apply_component_edits_tool(session_factory: async_sessionmaker[AsyncSession]) -> Any:
     """构建应用组件源码 Edits 的工具。"""
 
-    @tool(show_result=False)
+    @agent_tool(show_result=False)
     async def apply_component_edits(
-        run_context: RunContext,
+        run_context: AgentToolContext,
         component_id: int,
         edits: list[SourceEditInput],
         base_draft_hash: str,
@@ -416,9 +414,9 @@ def _with_apply_validation_metadata(
 def build_update_component_metadata_tool(session_factory: async_sessionmaker[AsyncSession]) -> Any:
     """构建更新组件元数据和预览 schema 的工具。"""
 
-    @tool(show_result=False)
+    @agent_tool(show_result=False)
     async def update_component_metadata(
-        run_context: RunContext,
+        run_context: AgentToolContext,
         component_id: int,
         name: str | None = None,
         import_name: str | None = None,
@@ -471,9 +469,9 @@ def build_update_component_metadata_tool(session_factory: async_sessionmaker[Asy
 def build_publish_component_tool(session_factory: async_sessionmaker[AsyncSession]) -> Any:
     """构建发布组件草稿为正式版本的工具。"""
 
-    @tool(show_result=False)
+    @agent_tool(show_result=False)
     async def publish_component(
-        run_context: RunContext,
+        run_context: AgentToolContext,
         component_id: int,
         release_name: str | None = None,
         change_note: str | None = None,
@@ -516,8 +514,8 @@ def build_publish_component_tool(session_factory: async_sessionmaker[AsyncSessio
 def build_delete_component_tool(session_factory: async_sessionmaker[AsyncSession]) -> Any:
     """构建软删除组件工具。"""
 
-    @tool(show_result=False, requires_confirmation=True)
-    async def delete_component(run_context: RunContext, component_id: int) -> dict[str, Any]:
+    @agent_tool(show_result=False, requires_confirmation=True)
+    async def delete_component(run_context: AgentToolContext, component_id: int) -> dict[str, Any]:
         """软删除指定工作空间组件。"""
 
         dependencies, claims = await resolve_tool_context(session_factory,

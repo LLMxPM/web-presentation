@@ -188,7 +188,7 @@ app:
 
 ## 8. 内容助手（Pydantic AI）
 
-Backend 现已内嵌基于 Pydantic AI 的智能体运行入口。Editor 通过 `/api/ai/*` 调用 Backend BFF，Backend 以平台自有 `ai_agent_*` 表作为会话、运行、事件回放、消息、工具调用与 HITL 状态事实源。当前工具实现仍复用既有 Agno Function 规格做桥接，后续工具实现应逐步收敛到原生 Pydantic AI Tool。
+Backend 内嵌基于 Pydantic AI 的智能体运行入口。Editor 通过 `/api/ai/*` 调用 Backend BFF，Backend 以平台自有 `ai_agent_*` 表作为会话、运行、事件回放、消息、工具调用与 HITL 状态事实源。工具实现使用平台自有工具对象，并在运行时装配为 Pydantic AI Tool。
 
 当前开放的稳定 Agent 包括：
 

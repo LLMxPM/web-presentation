@@ -4,8 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from agno.run import RunContext
-from agno.tools import tool
+from app.ai.platform_tools import AgentToolContext, agent_tool
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.ai.auth_tokens import PROJECT_TOOL_READ_SCOPES, PROJECT_TOOL_WRITE_SCOPES, extract_user_id
@@ -41,8 +40,8 @@ def build_project_tools(session_factory: async_sessionmaker[AsyncSession]) -> li
 def build_list_project_pages_tool(session_factory: async_sessionmaker[AsyncSession]) -> Any:
     """构建项目页面列表读取工具。"""
 
-    @tool(show_result=False)
-    async def list_project_pages(run_context: RunContext, keyword: str | None = None, limit: int = 50) -> dict[str, Any]:
+    @agent_tool(show_result=False)
+    async def list_project_pages(run_context: AgentToolContext, keyword: str | None = None, limit: int = 50) -> dict[str, Any]:
         """读取当前项目下的页面摘要，供路由规划或页面定位使用。"""
 
         dependencies, claims = await resolve_tool_context(session_factory,
@@ -86,8 +85,8 @@ def build_list_project_pages_tool(session_factory: async_sessionmaker[AsyncSessi
 def build_get_project_route_tree_tool(session_factory: async_sessionmaker[AsyncSession]) -> Any:
     """构建项目路由树读取工具。"""
 
-    @tool(show_result=False)
-    async def get_project_route_tree(run_context: RunContext) -> dict[str, Any]:
+    @agent_tool(show_result=False)
+    async def get_project_route_tree(run_context: AgentToolContext) -> dict[str, Any]:
         """读取当前项目完整路由树。"""
 
         dependencies, _ = await resolve_tool_context(session_factory,
@@ -105,8 +104,8 @@ def build_get_project_route_tree_tool(session_factory: async_sessionmaker[AsyncS
 def build_preview_project_route_tree_tool(session_factory: async_sessionmaker[AsyncSession]) -> Any:
     """构建路由树覆盖预览工具，仅校验和返回变更摘要，不写库。"""
 
-    @tool(show_result=False)
-    async def preview_project_route_tree(run_context: RunContext, routes: list[ProjectRouteItemWrite]) -> dict[str, Any]:
+    @agent_tool(show_result=False)
+    async def preview_project_route_tree(run_context: AgentToolContext, routes: list[ProjectRouteItemWrite]) -> dict[str, Any]:
         """校验拟覆盖的项目路由树并返回预览摘要。"""
 
         dependencies, _ = await resolve_tool_context(session_factory,
@@ -133,9 +132,9 @@ def build_preview_project_route_tree_tool(session_factory: async_sessionmaker[As
 def build_apply_project_route_tree_tool(session_factory: async_sessionmaker[AsyncSession]) -> Any:
     """构建高风险路由树整树覆盖工具。"""
 
-    @tool(show_result=False, requires_confirmation=True)
+    @agent_tool(show_result=False, requires_confirmation=True)
     async def apply_project_route_tree(
-        run_context: RunContext,
+        run_context: AgentToolContext,
         routes: list[ProjectRouteItemWrite],
         change_note: str | None = None,
     ) -> dict[str, Any]:
@@ -167,8 +166,8 @@ def build_apply_project_route_tree_tool(session_factory: async_sessionmaker[Asyn
 def build_remove_project_route_node_tool(session_factory: async_sessionmaker[AsyncSession]) -> Any:
     """构建高风险路由节点移除工具。"""
 
-    @tool(show_result=False, requires_confirmation=True)
-    async def remove_project_route_node(run_context: RunContext, route_id: int) -> dict[str, Any]:
+    @agent_tool(show_result=False, requires_confirmation=True)
+    async def remove_project_route_node(run_context: AgentToolContext, route_id: int) -> dict[str, Any]:
         """移除当前项目中的指定路由节点；分组节点会连同子页面节点一起移除。"""
 
         dependencies, claims = await resolve_tool_context(session_factory,

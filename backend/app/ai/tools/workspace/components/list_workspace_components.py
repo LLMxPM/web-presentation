@@ -4,8 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from agno.run import RunContext
-from agno.tools import tool
+from app.ai.platform_tools import AgentToolContext, agent_tool
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.ai.auth_tokens import COMPONENT_TOOL_READ_SCOPES
@@ -20,9 +19,9 @@ from app.services.workspace_component_service import WorkspaceComponentService
 def build_list_workspace_components_tool(session_factory: async_sessionmaker[AsyncSession]) -> Any:
     """构建工作空间组件查询工具。"""
 
-    @tool(show_result=False)
+    @agent_tool(show_result=False)
     async def list_workspace_components(
-        run_context: RunContext,
+        run_context: AgentToolContext,
         component_type: WorkspaceComponentType | None = None,
         keyword: str | None = None,
         scope: str = "suggested",

@@ -182,6 +182,8 @@ class PlatformAgentRuntimeStore:
             updated_at=now,
         )
         self._session.add(run_model)
+        # PostgreSQL 会立即校验消息表 run_id 外键；先刷入父 run，避免同批 flush 时子表先插入。
+        await self._session.flush([run_model])
         await self._append_message(
             session_id=session_id,
             run_id=run_id,
@@ -204,6 +206,7 @@ class PlatformAgentRuntimeStore:
     async def append_event(self, run_model: AiAgentRun, event: AgentRunEvent, *, commit: bool = True) -> AgentRunEvent:
         """为 run 追加平台事件，分配单调 event_index 并通知订阅者。"""
 
+        await self._refresh_run_event_cursor(run_model)
         current_index = run_model.event_index if run_model.event_index is not None else -1
         next_index = int(current_index) + 1
         event.event_index = next_index
@@ -227,6 +230,15 @@ class PlatformAgentRuntimeStore:
             await self._session.commit()
         _notify_subscribers(run_model.run_id, event)
         return event
+
+    async def _refresh_run_event_cursor(self, run_model: AiAgentRun) -> None:
+        """写事件前锁定 run 行并刷新游标，避免停止请求和流式事件并发分配同一序号。"""
+
+        await self._session.refresh(
+            run_model,
+            attribute_names=["event_index"],
+            with_for_update=True,
+        )
 
     async def append_assistant_message(
         self,
@@ -256,6 +268,15 @@ class PlatformAgentRuntimeStore:
         run_model.message_history_json = message_history
         run_model.updated_at = _utc_now()
         await self._session.commit()
+
+    async def refresh_run_control_state(self, run_model: AiAgentRun) -> str:
+        """刷新 run 的控制状态，供流式执行过程感知外部取消请求。"""
+
+        await self._session.refresh(
+            run_model,
+            attribute_names=["status", "cancel_requested_at"],
+        )
+        return run_model.status
 
     async def mark_terminal(
         self,
@@ -333,6 +354,8 @@ class PlatformAgentRuntimeStore:
         run_model = await self.get_active_run_model(session_id=session_id, agent_id=agent_id)
         if run_model is None:
             raise ValueError("AI_RUN_NOT_ACTIVE")
+        if run_model.status == "cancelling" or run_model.cancel_requested_at is not None:
+            return run_model
         run_model.cancel_requested_at = _utc_now()
         run_model.status = "cancelling"
         await self.append_event(
@@ -344,6 +367,18 @@ class PlatformAgentRuntimeStore:
                 data={"message": "正在停止当前运行。"},
             ),
         )
+        return run_model
+
+    async def force_cancel(self, *, session_id: str, agent_id: str) -> AiAgentRun:
+        """强制把当前 active run 标记为 cancelled，用于停止超时后的人工释放。"""
+
+        run_model = await self.get_active_run_model(session_id=session_id, agent_id=agent_id)
+        if run_model is None:
+            raise ValueError("AI_RUN_NOT_ACTIVE")
+        if run_model.status == "cancelled":
+            return run_model
+        run_model.cancel_requested_at = run_model.cancel_requested_at or _utc_now()
+        await self.mark_terminal(run_model, status="cancelled", content="用户强制停止了当前运行。")
         return run_model
 
     async def get_pending_requirement(self, *, run_id: str) -> AiAgentRequirement | None:
@@ -450,128 +485,327 @@ class PlatformAgentRuntimeStore:
     async def build_timeline_items(self, *, session_id: str) -> list[AgentTimelineItem]:
         """基于平台消息、工具调用、requirement 与事件生成会话 timeline。"""
 
-        items: list[AgentTimelineItem] = []
-        order = 0
+        timeline_entries: list[tuple[tuple[int, int, int, str, str], AgentTimelineItem]] = []
+        run_order = await self._run_order_map(session_id=session_id)
+        event_output_run_ids: set[str] = set()
         message_result = await self._session.execute(
             select(AiAgentMessage)
             .where(AiAgentMessage.session_id == session_id)
             .order_by(AiAgentMessage.order_index.asc(), AiAgentMessage.id.asc())
         )
         messages = message_result.scalars().all()
-        assistant_message_run_ids = {item.run_id for item in messages if item.role == "assistant" and item.run_id}
-        for message in messages:
-            if message.role == "assistant" and message.reasoning_content:
-                items.append(
-                    AgentTimelineItem(
-                        id=f"message-{message.id}-reasoning",
-                        session_id=message.session_id,
-                        run_id=message.run_id or "",
-                        kind="reasoning",
-                        role=None,
-                        event_index=None,
-                        order_index=order,
-                        content=message.reasoning_content,
-                        status=None,
-                        tool=None,
-                        source="message",
-                        created_at=_iso(message.created_at),
-                    )
-                )
-                order += 1
-            items.append(
-                AgentTimelineItem(
-                    id=f"message-{message.id}",
-                    session_id=message.session_id,
-                    run_id=message.run_id or "",
-                    kind="message",
-                    role=message.role if message.role in {"user", "assistant"} else None,  # type: ignore[arg-type]
-                    event_index=None,
-                    order_index=order,
-                    content=message.content,
-                    status=None,
-                    tool=None,
-                    source="message",
-                    created_at=_iso(message.created_at),
-                )
-            )
-            order += 1
+        event_result = await self._session.execute(
+            select(AiAgentRunEvent)
+            .where(AiAgentRunEvent.session_id == session_id)
+            .order_by(AiAgentRunEvent.run_id.asc(), AiAgentRunEvent.event_index.asc(), AiAgentRunEvent.id.asc())
+        )
+        for item in self._timeline_items_from_event_rows(event_result.scalars().all()):
+            if item.kind in {"message", "reasoning"}:
+                event_output_run_ids.add(item.run_id)
+            timeline_entries.append((
+                _timeline_sort_key(
+                    run_order,
+                    run_id=item.run_id,
+                    event_index=item.event_index,
+                    phase=0,
+                    created_at=item.created_at,
+                    fallback_id=item.id,
+                ),
+                item,
+            ))
 
-        run_result = await self._session.execute(
+        fallback_run_result = await self._session.execute(
             select(AiAgentRun)
-            .where(AiAgentRun.session_id == session_id, AiAgentRun.run_id.not_in(assistant_message_run_ids))
+            .where(AiAgentRun.session_id == session_id)
             .order_by(AiAgentRun.created_at.asc())
         )
-        for run in run_result.scalars().all():
+        for run in fallback_run_result.scalars().all():
+            if run.run_id in event_output_run_ids:
+                continue
             if run.reasoning_content:
-                items.append(
-                    AgentTimelineItem(
-                        id=f"run-{run.run_id}-reasoning",
-                        session_id=run.session_id,
-                        run_id=run.run_id,
-                        kind="reasoning",
-                        role=None,
-                        event_index=run.event_index,
-                        order_index=order,
-                        content=run.reasoning_content,
-                        status="running" if run.status in ACTIVE_RUN_STATUSES else None,
-                        tool=None,
-                        source="event",
-                        created_at=_iso(run.created_at),
-                    )
-                )
-                order += 1
-            if run.content:
-                items.append(
-                    AgentTimelineItem(
-                        id=f"run-{run.run_id}-message",
-                        session_id=run.session_id,
-                        run_id=run.run_id,
-                        kind="message",
-                        role="assistant",
-                        event_index=run.event_index,
-                        order_index=order,
-                        content=run.content,
-                        status="running" if run.status in ACTIVE_RUN_STATUSES else None,
-                        tool=None,
-                        source="event",
-                        created_at=_iso(run.created_at),
-                    )
-                )
-                order += 1
-
-        tool_result = await self._session.execute(
-            select(AiAgentToolCall)
-            .where(AiAgentToolCall.session_id == session_id, AiAgentToolCall.member_run_id.is_(None))
-            .order_by(AiAgentToolCall.created_at.asc(), AiAgentToolCall.id.asc())
-        )
-        for tool_call in tool_result.scalars().all():
-            items.append(self._tool_timeline_item(tool_call, order_index=order))
-            order += 1
-
-        req_result = await self._session.execute(
-            select(AiAgentRequirement)
-            .where(AiAgentRequirement.session_id == session_id, AiAgentRequirement.status == "pending")
-            .order_by(AiAgentRequirement.created_at.asc())
-        )
-        for requirement in req_result.scalars().all():
-            items.append(
-                AgentTimelineItem(
-                    id=f"requirement-{requirement.requirement_id}",
-                    session_id=requirement.session_id,
-                    run_id=requirement.run_id,
-                    kind="requirement",
+                item = AgentTimelineItem(
+                    id=f"run-{run.run_id}-reasoning",
+                    session_id=run.session_id,
+                    run_id=run.run_id,
+                    kind="reasoning",
                     role=None,
-                    event_index=None,
-                    order_index=order,
-                    content=requirement.payload_json.get("note"),
-                    status="paused",
+                    event_index=run.event_index,
+                    order_index=0,
+                    content=run.reasoning_content,
+                    status="running" if run.status in ACTIVE_RUN_STATUSES else None,
                     tool=None,
                     source="event",
-                    created_at=_iso(requirement.created_at),
+                    created_at=_iso(run.created_at),
                 )
+                timeline_entries.append((
+                    _timeline_sort_key(
+                        run_order,
+                        run_id=item.run_id,
+                        event_index=item.event_index,
+                        phase=1,
+                        created_at=item.created_at,
+                        fallback_id=item.id,
+                    ),
+                    item,
+                ))
+            if run.content:
+                item = AgentTimelineItem(
+                    id=f"run-{run.run_id}-message",
+                    session_id=run.session_id,
+                    run_id=run.run_id,
+                    kind="message",
+                    role="assistant",
+                    event_index=run.event_index,
+                    order_index=0,
+                    content=run.content,
+                    status="running" if run.status in ACTIVE_RUN_STATUSES else None,
+                    tool=None,
+                    source="event",
+                    created_at=_iso(run.created_at),
+                )
+                timeline_entries.append((
+                    _timeline_sort_key(
+                        run_order,
+                        run_id=item.run_id,
+                        event_index=item.event_index,
+                        phase=2,
+                        created_at=item.created_at,
+                        fallback_id=item.id,
+                    ),
+                    item,
+                ))
+
+        for message in messages:
+            if (
+                message.role == "assistant"
+                and message.reasoning_content
+                and (not message.run_id or message.run_id not in event_output_run_ids)
+            ):
+                self._append_message_timeline_entry(
+                    timeline_entries,
+                    run_order=run_order,
+                    message=message,
+                    kind="reasoning",
+                    role=None,
+                    content=message.reasoning_content,
+                    phase=1,
+                )
+            if message.role != "assistant" or not message.run_id or message.run_id not in event_output_run_ids:
+                self._append_message_timeline_entry(
+                    timeline_entries,
+                    run_order=run_order,
+                    message=message,
+                    kind="message",
+                    role=message.role if message.role in {"user", "assistant"} else None,  # type: ignore[arg-type]
+                    content=message.content,
+                    phase=-1 if message.role == "user" else 2,
+                )
+
+        sorted_items = [item for _, item in sorted(timeline_entries, key=lambda entry: entry[0])]
+        for order_index, item in enumerate(sorted_items):
+            item.order_index = order_index
+        return sorted_items
+
+    async def _run_order_map(self, *, session_id: str) -> dict[str, int]:
+        """按 run 创建顺序建立排序索引，event_index 只在单个 run 内有序。"""
+
+        result = await self._session.execute(
+            select(AiAgentRun.run_id)
+            .where(AiAgentRun.session_id == session_id)
+            .order_by(AiAgentRun.created_at.asc(), AiAgentRun.run_id.asc())
+        )
+        return {run_id: index for index, run_id in enumerate(result.scalars().all())}
+
+    def _timeline_items_from_event_rows(self, event_rows: list[AiAgentRunEvent]) -> list[AgentTimelineItem]:
+        """按事件流重建助手文本、推理、工具和待处理项，保持回放顺序与实时 SSE 一致。"""
+
+        items: list[AgentTimelineItem] = []
+        current_text_by_run: dict[str, AgentTimelineItem | None] = {}
+        tool_items: dict[tuple[str, str], AgentTimelineItem] = {}
+        for event_row in event_rows:
+            event = AgentRunEvent.model_validate(event_row.payload_json)
+            event.run_id = event.run_id or event_row.run_id
+            event.session_id = event.session_id or event_row.session_id
+            event.event_index = event.event_index if event.event_index is not None else event_row.event_index
+            run_id = event.run_id or event_row.run_id
+            if event.event in {"message.delta", "reasoning.delta"}:
+                item = self._append_text_event_timeline_item(
+                    items,
+                    current_text_by_run=current_text_by_run,
+                    event_row=event_row,
+                    event=event,
+                    kind="message" if event.event == "message.delta" else "reasoning",
+                )
+                if event.content:
+                    item.content = f"{item.content or ''}{event.content}"
+                continue
+            if event.event in {"tool.started", "tool.completed", "tool.error"}:
+                current_text_by_run[run_id] = None
+                item = self._upsert_tool_event_timeline_item(
+                    items,
+                    tool_items=tool_items,
+                    event_row=event_row,
+                    event=event,
+                    status={
+                        "tool.started": "running",
+                        "tool.completed": "completed",
+                        "tool.error": "error",
+                    }[event.event],
+                )
+                continue
+            if event.event == "run.paused":
+                current_text_by_run[run_id] = None
+                requirement = event.data.get("requirement") if isinstance(event.data, dict) else None
+                if isinstance(requirement, dict):
+                    items.append(
+                        AgentTimelineItem(
+                            id=f"requirement-{requirement.get('id') or event_row.id}",
+                            session_id=event_row.session_id,
+                            run_id=event_row.run_id,
+                            kind="requirement",
+                            role=None,
+                            event_index=event_row.event_index,
+                            order_index=0,
+                            content=requirement.get("note"),
+                            status="paused",
+                            tool=None,
+                            source="event",
+                            created_at=_iso(event_row.created_at),
+                        )
+                    )
+                continue
+            if event.event.startswith("run.") or event.event == "model.request.started":
+                current_text_by_run[run_id] = None
+        return items
+
+    def _append_text_event_timeline_item(
+        self,
+        items: list[AgentTimelineItem],
+        *,
+        current_text_by_run: dict[str, AgentTimelineItem | None],
+        event_row: AiAgentRunEvent,
+        event: AgentRunEvent,
+        kind: str,
+    ) -> AgentTimelineItem:
+        """追加或复用当前 run 的连续文本片段。"""
+
+        run_id = event.run_id or event_row.run_id
+        role = "assistant" if kind == "message" else None
+        current = current_text_by_run.get(run_id)
+        if current is not None and current.kind == kind and current.role == role:
+            return current
+        item = AgentTimelineItem(
+            id=f"event-{event_row.id}-{kind}",
+            session_id=event_row.session_id,
+            run_id=event_row.run_id,
+            kind=kind,  # type: ignore[arg-type]
+            role=role,  # type: ignore[arg-type]
+            event_index=event_row.event_index,
+            order_index=0,
+            content="",
+            status=None,
+            tool=None,
+            source="event",
+            created_at=_iso(event_row.created_at),
+        )
+        items.append(item)
+        current_text_by_run[run_id] = item
+        return item
+
+    def _upsert_tool_event_timeline_item(
+        self,
+        items: list[AgentTimelineItem],
+        *,
+        tool_items: dict[tuple[str, str], AgentTimelineItem],
+        event_row: AiAgentRunEvent,
+        event: AgentRunEvent,
+        status: str,
+    ) -> AgentTimelineItem:
+        """按 tool_call_id 合并工具开始、完成和失败事件。"""
+
+        data = event.data if isinstance(event.data, dict) else {}
+        run_id = event.run_id or event_row.run_id
+        tool_call_id = str(data.get("tool_call_id") or "").strip()
+        tool_name = str(data.get("tool_name") or "工具调用").strip()
+        key = (run_id, tool_call_id or f"event-{event_row.id}")
+        existing = tool_items.get(key)
+        if existing is None:
+            existing = AgentTimelineItem(
+                id=f"tool-{run_id}-{tool_call_id or event_row.id}",
+                session_id=event_row.session_id,
+                run_id=event_row.run_id,
+                kind="tool",
+                role=None,
+                event_index=event_row.event_index,
+                order_index=0,
+                content=None,
+                status=status,
+                tool=AgentTimelineToolItem(
+                    tool_call_id=tool_call_id or None,
+                    tool_name=tool_name,
+                    member_agent_id=_optional_str(data.get("member_agent_id")),
+                    member_agent_name=_optional_str(data.get("member_agent_name")),
+                    member_run_id=_optional_str(data.get("member_run_id")),
+                    status=status if status in {"running", "completed", "error"} else "running",  # type: ignore[arg-type]
+                    input_payload=_first_present(data, ("tool_args", "arguments", "args")),
+                    output_payload=_first_present(data, ("result", "output")),
+                    message=str(data.get("message") or event.content or ""),
+                ),
+                source="event",
+                created_at=_iso(event_row.created_at),
             )
-            order += 1
-        return sorted(items, key=lambda item: (item.order_index, item.created_at or ""))
+            tool_items[key] = existing
+            items.append(existing)
+            return existing
+        existing.status = status
+        if existing.tool is not None:
+            existing.tool.status = status if status in {"running", "completed", "error"} else existing.tool.status  # type: ignore[assignment]
+            input_payload = _first_present(data, ("tool_args", "arguments", "args"))
+            if _is_meaningful_payload(input_payload) and not _is_meaningful_payload(existing.tool.input_payload):
+                existing.tool.input_payload = input_payload
+            existing.tool.output_payload = data.get("result") if "result" in data else data.get("output", existing.tool.output_payload)
+            if data.get("message") or event.content:
+                existing.tool.message = str(data.get("message") or event.content or "")
+        return existing
+
+    def _append_message_timeline_entry(
+        self,
+        timeline_entries: list[tuple[tuple[int, int, int, str, str], AgentTimelineItem]],
+        *,
+        run_order: dict[str, int],
+        message: AiAgentMessage,
+        kind: str,
+        role: str | None,
+        content: str,
+        phase: int,
+    ) -> None:
+        """把消息表记录加入待排序 timeline；主要用于用户消息和事件缺失兜底。"""
+
+        item = AgentTimelineItem(
+            id=f"message-{message.id}" if kind == "message" else f"message-{message.id}-{kind}",
+            session_id=message.session_id,
+            run_id=message.run_id or "",
+            kind=kind,  # type: ignore[arg-type]
+            role=role,  # type: ignore[arg-type]
+            event_index=None,
+            order_index=0,
+            content=content,
+            status=None,
+            tool=None,
+            source="message",
+            created_at=_iso(message.created_at),
+        )
+        timeline_entries.append((
+            _timeline_sort_key(
+                run_order,
+                run_id=item.run_id,
+                event_index=item.event_index,
+                phase=phase,
+                created_at=item.created_at,
+                fallback_id=item.id,
+            ),
+            item,
+        ))
 
     async def build_member_runs(
         self,
@@ -850,6 +1084,9 @@ class PlatformAgentRuntimeStore:
             self._session.add(existing)
             return
         existing.status = status
+        input_payload = event.data.get("tool_args") or event.data.get("args")
+        if _is_meaningful_payload(input_payload) and not _is_meaningful_payload(existing.input_payload_json):
+            existing.input_payload_json = input_payload
         if event.data.get("result") is not None:
             existing.output_payload_json = event.data.get("result")
         if event.data.get("message") is not None:
@@ -905,6 +1142,56 @@ def _scope_metadata(scope: AgentScopeContext) -> dict[str, Any]:
     """把 scope 转成会话 metadata。"""
 
     return scope.model_dump(mode="json")
+
+
+def _timeline_sort_key(
+    run_order: dict[str, int],
+    *,
+    run_id: str,
+    event_index: int | None,
+    phase: int,
+    created_at: str | None,
+    fallback_id: str,
+) -> tuple[int, int, int, str, str]:
+    """生成前端 timeline 的全局排序 key；phase 负责把用户消息放到 run 事件前。"""
+
+    max_event_index = 1_000_000_000
+    run_position = run_order.get(run_id, max_event_index)
+    if event_index is None:
+        event_position = -1 if phase < 0 else max_event_index
+    else:
+        event_position = event_index
+    return (run_position, event_position, phase, created_at or "", fallback_id)
+
+
+def _optional_str(value: Any) -> str | None:
+    """把可选事件字段规整为字符串。"""
+
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+def _first_present(data: dict[str, Any], keys: tuple[str, ...]) -> Any:
+    """按顺序读取第一个存在的 key，保留空 dict、0、False 等合法值。"""
+
+    for key in keys:
+        if key in data:
+            return data[key]
+    return None
+
+
+def _is_meaningful_payload(value: Any) -> bool:
+    """判断工具 payload 是否携带真实参数，避免空串覆盖后续完整参数。"""
+
+    if value is None:
+        return False
+    if isinstance(value, str):
+        return bool(value.strip())
+    if isinstance(value, (list, tuple, set, dict)):
+        return bool(value)
+    return True
 
 
 def _map_run_status(status: str) -> str:

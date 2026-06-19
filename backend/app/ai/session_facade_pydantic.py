@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from collections.abc import AsyncGenerator
 from typing import Any
 
 from fastapi import FastAPI
 from pydantic_ai import DeferredToolResults, ToolDenied
-from pydantic_ai.messages import ModelMessagesTypeAdapter
+from pydantic_ai.messages import ModelMessagesTypeAdapter, ModelRequest, ModelResponse, ToolCallPart, UserContent, UserPromptPart
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.platform_runtime import PlatformAgentRuntimeStore, new_session_id, stream_replay_then_subscribe
@@ -29,6 +30,8 @@ from app.schemas.agent import (
 )
 from app.services.ai_agent_config_service import AiAgentConfigService
 from app.services.ai_llm_service import AiLlmService
+from app.services.agent_image_attachment_service import AgentImageAttachmentService
+from app.services.agent_image_transport_resolver import ResolvedAgentImage
 from app.services.auth_service import AuthContext
 
 
@@ -216,6 +219,18 @@ class AgentSessionFacade:
                 acquired = True
             try:
                 effective_run_id = run_id or f"run-{asyncio.get_running_loop().time():.0f}"
+                descriptor = self._app.state.ai_registry.get_descriptor(agent_id)
+                llm_config = await AiLlmService(
+                    self._session,
+                    user_id=self._current.user.id,
+                    user_role=self._current.user.role,
+                ).get_bound_config_or_raise(descriptor.llm_slot or "")
+                resolved_images = await self._resolve_run_images(
+                    session_id=session_id,
+                    scope=scope,
+                    image_attachment_ids=image_attachment_ids or [],
+                    supports_image_input=bool(llm_config.supports_image_input),
+                )
                 run_start = await self._store.start_run(
                     session_id=session_id,
                     agent_id=agent_id,
@@ -225,12 +240,12 @@ class AgentSessionFacade:
                     image_attachment_ids=image_attachment_ids or [],
                 )
                 run_model = run_start.run_model
-                descriptor = self._app.state.ai_registry.get_descriptor(agent_id)
-                llm_config = await AiLlmService(
-                    self._session,
-                    user_id=self._current.user.id,
-                    user_role=self._current.user.role,
-                ).get_bound_config_or_raise(descriptor.llm_slot or "")
+                await self._mark_images_used(
+                    session_id=session_id,
+                    scope=scope,
+                    image_attachment_ids=image_attachment_ids or [],
+                    run_id=run_start.run_model.run_id,
+                )
                 model = self._model_resolver.resolve_model(llm_config)
                 model_settings = self._model_resolver.resolve_model_settings(llm_config)
                 agent_config = await self._agent_config_service.get_effective_runtime_config(agent_id)
@@ -251,7 +266,7 @@ class AgentSessionFacade:
                     model=model,
                     model_settings=model_settings,
                     runtime_context=runtime_context,
-                    message=message,
+                    message=_build_user_prompt(message, resolved_images),
                     agent_config=agent_config,
                     tools=tools,
                     deps=deps,
@@ -319,10 +334,13 @@ class AgentSessionFacade:
     ) -> AgentCancelRunResponse:
         """标记当前运行为取消中；工具侧会读取平台取消标记。"""
 
-        _ = force, tool_call_id
+        _ = tool_call_id
         await self.ensure_session_access(session_id=session_id, agent_id=agent_id, scope=scope)
         try:
-            run_model = await self._store.request_cancel(session_id=session_id, agent_id=agent_id)
+            if force:
+                run_model = await self._store.force_cancel(session_id=session_id, agent_id=agent_id)
+            else:
+                run_model = await self._store.request_cancel(session_id=session_id, agent_id=agent_id)
         except ValueError as exc:
             raise _map_store_error(exc) from exc
         return AgentCancelRunResponse(run_id=run_model.run_id, session_id=session_id, cancel_requested=True)
@@ -341,7 +359,6 @@ class AgentSessionFacade:
     ) -> AsyncGenerator[bytes, None]:
         """继续 paused run，并提交 Pydantic AI deferred tool 结果。"""
 
-        _ = feedback_selections
         await self.ensure_session_access(session_id=session_id, agent_id=agent_id, scope=scope)
         run_model = await self._store.get_active_run_model(session_id=session_id, agent_id=agent_id)
         if run_model is None or run_model.status != "paused":
@@ -353,6 +370,10 @@ class AgentSessionFacade:
         received_tool_call_id = str((tool_execution or {}).get("tool_call_id") or "")
         if received_tool_call_id and expected_tool_call_id and received_tool_call_id != expected_tool_call_id:
             raise AppException(status_code=409, code="AI_RUN_REQUIREMENT_STALE", detail="待确认动作已变化，请刷新会话后重试。")
+        stored_tool_execution = {}
+        if isinstance(requirement.payload_json, dict) and isinstance(requirement.payload_json.get("tool_execution"), dict):
+            stored_tool_execution = dict(requirement.payload_json["tool_execution"])
+        merged_tool_execution = {**stored_tool_execution, **(tool_execution or {})}
 
         async def generator() -> AsyncGenerator[bytes, None]:
             lock = self._get_lock(session_id=session_id, agent_id=agent_id)
@@ -382,11 +403,17 @@ class AgentSessionFacade:
                     requirement_tool_call_id=expected_tool_call_id,
                     decision=decision,
                     note=note,
-                    tool_execution=tool_execution,
+                    tool_execution=merged_tool_execution,
+                    feedback_selections=feedback_selections or [],
                 )
                 await self._store.resolve_requirement(
                     requirement,
-                    payload={"decision": decision, "note": note, "tool_execution": tool_execution},
+                    payload={
+                        "decision": decision,
+                        "note": note,
+                        "tool_execution": merged_tool_execution,
+                        "feedback_selections": feedback_selections or [],
+                    },
                 )
                 run_model.status = "running"
                 run_model.pending_requirement_json = None
@@ -397,7 +424,12 @@ class AgentSessionFacade:
                 from app.ai.platform_runtime import encode_sse_event
 
                 yield encode_sse_event(continued)
-                message_history = ModelMessagesTypeAdapter.validate_python(run_model.message_history_json or [])
+                message_history = _build_continue_message_history(
+                    run_model_message_history=run_model.message_history_json,
+                    run_input_payload=run_model.input_payload_json,
+                    run_id=run_model.run_id,
+                    tool_execution=merged_tool_execution,
+                )
                 runner = PydanticAgentRunner(self._store)
                 async for chunk in runner.stream_run(
                     run_model=run_model,
@@ -447,6 +479,52 @@ class AgentSessionFacade:
             self._run_locks[key] = asyncio.Lock()
         return self._run_locks[key]
 
+    async def _resolve_run_images(
+        self,
+        *,
+        session_id: str,
+        scope: AgentScopeContext,
+        image_attachment_ids: list[int],
+        supports_image_input: bool,
+    ) -> list[ResolvedAgentImage]:
+        """校验并解析本轮用户图片附件，返回可放入 Pydantic AI prompt 的图片内容。"""
+
+        if not image_attachment_ids:
+            return []
+        if not supports_image_input:
+            raise AppException(
+                status_code=409,
+                code="AI_LLM_IMAGE_INPUT_UNSUPPORTED",
+                detail="当前绑定模型不支持图片输入，不能发送图片附件。",
+            )
+        service = AgentImageAttachmentService(self._session, user_id=self._current.user.id)
+        attachments = await service.validate_attachments_for_run(
+            workspace_id=scope.workspace_id,
+            session_id=session_id,
+            attachment_ids=image_attachment_ids,
+        )
+        return await service.build_images_for_run(attachments)
+
+    async def _mark_images_used(
+        self,
+        *,
+        session_id: str,
+        scope: AgentScopeContext,
+        image_attachment_ids: list[int],
+        run_id: str,
+    ) -> None:
+        """把本轮图片附件标记到 run，供消息历史和待发送列表展示。"""
+
+        if not image_attachment_ids:
+            return
+        service = AgentImageAttachmentService(self._session, user_id=self._current.user.id)
+        attachments = await service.validate_attachments_for_run(
+            workspace_id=scope.workspace_id,
+            session_id=session_id,
+            attachment_ids=image_attachment_ids,
+        )
+        await service.mark_run_id(attachments=attachments, run_id=run_id, operator_id=self._current.user.id)
+
 
 def _map_store_error(exc: ValueError) -> AppException:
     """把运行态 store 错误转换为 API 异常。"""
@@ -482,11 +560,22 @@ def _build_deferred_results(
     decision: str | None,
     note: str | None,
     tool_execution: dict[str, Any],
+    feedback_selections: list[dict[str, Any]],
 ) -> DeferredToolResults:
     """把前端确认结果转换为 Pydantic AI DeferredToolResults。"""
 
     result = DeferredToolResults()
     if not requirement_tool_call_id:
+        return result
+    if _is_user_feedback_tool(tool_execution):
+        if decision == "reject":
+            result.calls[requirement_tool_call_id] = note or "用户未提供回答。"
+        else:
+            result.calls[requirement_tool_call_id] = _format_user_feedback_result(
+                tool_execution=tool_execution,
+                feedback_selections=feedback_selections,
+                note=note,
+            )
         return result
     if decision == "reject":
         result.approvals[requirement_tool_call_id] = ToolDenied(note or "用户拒绝执行该工具。")
@@ -495,3 +584,100 @@ def _build_deferred_results(
     if "external_result" in (tool_execution or {}):
         result.calls[requirement_tool_call_id] = tool_execution["external_result"]
     return result
+
+
+def _build_continue_message_history(
+    *,
+    run_model_message_history: list[dict[str, Any]] | None,
+    run_input_payload: dict[str, Any] | None,
+    run_id: str,
+    tool_execution: dict[str, Any],
+) -> list[Any]:
+    """读取继续运行所需的 Pydantic AI 历史；空历史时重建最小 deferred tool 上下文。"""
+
+    if run_model_message_history:
+        return ModelMessagesTypeAdapter.validate_python(run_model_message_history)
+    tool_name = str(tool_execution.get("tool_name") or "").strip()
+    tool_call_id = str(tool_execution.get("tool_call_id") or "").strip()
+    if not tool_name or not tool_call_id:
+        return []
+    input_payload = run_input_payload if isinstance(run_input_payload, dict) else {}
+    message = str(input_payload.get("message") or "").strip() or "继续当前智能体运行。"
+    tool_args = tool_execution.get("tool_args")
+    return [
+        ModelRequest(parts=[UserPromptPart(content=message)], run_id=run_id),
+        ModelResponse(
+            parts=[
+                ToolCallPart(
+                    tool_name=tool_name,
+                    args=tool_args if isinstance(tool_args, (dict, str)) else None,
+                    tool_call_id=tool_call_id,
+                )
+            ],
+            run_id=run_id,
+        ),
+    ]
+
+
+def _build_user_prompt(message: str, resolved_images: list[ResolvedAgentImage]) -> str | list[UserContent]:
+    """把文本和图片附件组合成 Pydantic AI 用户输入。"""
+
+    if not resolved_images:
+        return message
+    parts: list[UserContent] = []
+    if message.strip():
+        parts.append(message)
+    else:
+        parts.append("用户发送了图片附件，请结合图片内容理解需求。")
+    parts.extend(resolved.image for resolved in resolved_images)
+    return parts
+
+
+def _is_user_feedback_tool(tool_execution: dict[str, Any]) -> bool:
+    """判断当前 deferred tool 是否是平台结构化提问。"""
+
+    return str(tool_execution.get("tool_name") or "").strip() == "ask_user"
+
+
+def _format_user_feedback_result(
+    *,
+    tool_execution: dict[str, Any],
+    feedback_selections: list[dict[str, Any]],
+    note: str | None,
+) -> str:
+    """把用户对 ask_user 的回答整理为模型可读的工具返回文本。"""
+
+    answers: list[dict[str, Any]] = []
+    questions = _feedback_questions(tool_execution)
+    by_question = {
+        str(item.get("question") or "").strip(): item
+        for item in feedback_selections
+        if isinstance(item, dict)
+    }
+    for question in questions:
+        question_text = str(question.get("question") or "").strip()
+        selection = by_question.get(question_text, {})
+        selected_label = str(selection.get("selected_label") or "").strip()
+        custom_text = str(selection.get("custom_text") or "").strip()
+        answer = f"用户补充：{custom_text}" if custom_text else selected_label
+        if question_text and answer:
+            answers.append({"question": question_text, "selected": [answer]})
+    if not answers:
+        fallback = str(note or "").strip()
+        if fallback:
+            answers.append({"question": "用户补充", "selected": [fallback]})
+    if not answers:
+        answers.append({"question": "用户补充", "selected": ["用户已继续，但未提供具体回答。"]})
+    return f"User feedback received: {json.dumps(answers, ensure_ascii=False)}"
+
+
+def _feedback_questions(tool_execution: dict[str, Any]) -> list[dict[str, Any]]:
+    """从工具执行 payload 中读取 ask_user 问题结构。"""
+
+    raw_questions = tool_execution.get("user_feedback_schema") or tool_execution.get("questions")
+    tool_args = tool_execution.get("tool_args")
+    if raw_questions is None and isinstance(tool_args, dict):
+        raw_questions = tool_args.get("questions") or tool_args.get("user_feedback_schema")
+    if not isinstance(raw_questions, list):
+        return []
+    return [item for item in raw_questions if isinstance(item, dict)]

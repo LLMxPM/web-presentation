@@ -2,12 +2,9 @@
 
 from __future__ import annotations
 
-from agno.media import Image
-from agno.models.message import Message
 from httpx import AsyncClient
 
-from app.ai.model_resolver import LlmModelResolver
-from app.ai.providers.mimo import MiMo
+from app.ai.pydantic_model_resolver import PydanticLlmModelResolver
 from app.ai.secret_cipher import LlmSecretCipher
 from app.models.ai_llm import AiLlmConfig
 from app.models.enums import RecordStatus
@@ -307,7 +304,7 @@ def test_llm_model_resolver_should_build_common_provider_models() -> None:
     """模型解析器应能构造常见供应商的 Pydantic AI 模型对象与运行参数。"""
 
     cipher = LlmSecretCipher()
-    resolver = LlmModelResolver()
+    resolver = PydanticLlmModelResolver()
 
     def build_config(*, id: int, provider_key: str, model_id: str, api_key: str = "sk-test", **kwargs) -> AiLlmConfig:
         """构造激活状态的大模型配置，聚焦 provider 差异字段。"""
@@ -528,24 +525,3 @@ def test_llm_model_resolver_should_build_common_provider_models() -> None:
     assert mimo_model.__class__.__name__ == "OpenAIChatModel"
     assert mimo_model.model_name == "mimo-v2.5"
     assert resolver.resolve_model_settings(mimo_config)["extra_body"] == {"thinking": {"type": "enabled"}}
-
-
-def test_mimo_formatter_should_preserve_reasoning_content_and_strip_image_detail() -> None:
-    """MiMo formatter 应回传历史 reasoning_content，并生成无 detail 的 image_url parts。"""
-
-    model = MiMo(id="mimo-v2.5", api_key="sk-mimo-test")
-    formatted = model._format_message(
-        Message(
-            role="assistant",
-            content="先看图",
-            reasoning_content="上一轮思考",
-            images=[Image(content=b"image-bytes", mime_type="image/png", detail="auto")],
-        )
-    )
-
-    assert formatted["reasoning_content"] == "上一轮思考"
-    assert formatted["content"][0] == {"type": "text", "text": "先看图"}
-    image_part = formatted["content"][1]
-    assert image_part["type"] == "image_url"
-    assert image_part["image_url"]["url"].startswith("data:image/png;base64,")
-    assert "detail" not in image_part["image_url"]

@@ -2,17 +2,11 @@
 
 from __future__ import annotations
 
-from types import SimpleNamespace
-
 import pytest
-from agno.media import Image
 from httpx import AsyncClient
 
-from app.ai.agent.runtime_context import AgentRuntimeContext
-from app.ai.session_facade import AgentSessionFacade
 from app.core.config import get_settings
 from app.core.exceptions import AppException
-from app.schemas.agent import AgentScopeContext
 from app.services.agent_image_transport_resolver import AgentImageTransportResolver
 
 
@@ -149,98 +143,6 @@ async def test_run_with_image_attachment_should_require_visual_model(
     assert run_response.json()["code"] == "AI_LLM_IMAGE_INPUT_UNSUPPORTED"
 
 
-async def test_mimo_visual_model_should_pass_resolved_images_to_agent(monkeypatch) -> None:
-    """支持图片输入的 MiMo 配置应允许附件进入 Agent arun images 参数。"""
-
-    class EmptyAsyncIterator:
-        """提供空的 Agno 事件流。"""
-
-        def __aiter__(self) -> "EmptyAsyncIterator":
-            return self
-
-        async def __anext__(self) -> object:
-            raise StopAsyncIteration
-
-    class FakeAgent:
-        """记录 arun 收到的图片参数。"""
-
-        def __init__(self) -> None:
-            self.run_kwargs: dict[str, object] = {}
-            self.additional_input = None
-
-        def arun(self, *_: object, **kwargs: object) -> EmptyAsyncIterator:
-            self.run_kwargs = kwargs
-            return EmptyAsyncIterator()
-
-    class FakeAttachmentService:
-        """模拟图片附件校验与解析，避免触发真实存储。"""
-
-        def __init__(self, *_: object, **__: object) -> None:
-            self.attachments = [SimpleNamespace(id=7)]
-
-        async def validate_attachments_for_run(self, **_: object) -> list[SimpleNamespace]:
-            return self.attachments
-
-        async def build_images_for_run(self, _: list[SimpleNamespace]) -> list[SimpleNamespace]:
-            return [
-                SimpleNamespace(
-                    image=Image(content=b"image-bytes", mime_type="image/png", detail="auto"),
-                    transport="base64",
-                )
-            ]
-
-        async def mark_run_id(self, **_: object) -> None:
-            return None
-
-    fake_agent = FakeAgent()
-    facade = AgentSessionFacade.__new__(AgentSessionFacade)
-    facade._current = SimpleNamespace(user=SimpleNamespace(id=1))
-    facade._session = None
-    facade._registry = SimpleNamespace(
-        get_descriptor=lambda agent_id: SimpleNamespace(id=agent_id, llm_slot="agent_coordinator")
-    )
-    facade._agent_config_service = SimpleNamespace(
-        get_effective_runtime_config=lambda agent_id: _async_value(SimpleNamespace())
-    )
-    facade._llm_service = SimpleNamespace(
-        get_bound_config_or_raise=lambda slot: _async_value(
-            SimpleNamespace(
-                provider_key="mimo",
-                model_id="mimo-v2.5",
-                supports_image_input=True,
-            )
-        )
-    )
-    facade.ensure_session_access = lambda **_: _async_value(
-        SimpleNamespace(metadata={"workspace_id": 1, "source": "test"})
-    )
-    facade._ensure_route_scope_in_session_scope = lambda *_: None
-    facade._resolve_run_session_metadata = lambda **kwargs: dict(kwargs["metadata"])
-    facade._build_agent_for_descriptor = lambda *_args, **_kwargs: _async_value((fake_agent, {}))
-    facade._build_tool_dependencies = lambda **_: {}
-    facade._build_model_history_messages = lambda *_args, **_kwargs: []
-    facade._upsert_run_marker = lambda **_: _async_value(None)
-    monkeypatch.setattr("app.ai.session_facade.AgentImageAttachmentService", FakeAttachmentService)
-
-    builder = facade._build_run_stream(
-        agent_id="agent-coordinator",
-        session_id="mimo-image-session",
-        scope=AgentScopeContext(scope_type="workspace", workspace_id=1, source="test"),
-        message="",
-        runtime_context=AgentRuntimeContext(scope_type="workspace", workspace_id=1, source="test"),
-        image_attachment_ids=[7],
-        run_id="mimo-image-run",
-    )
-
-    active_stream = await builder()
-
-    assert active_stream.agent is fake_agent
-    assert fake_agent.run_kwargs["images"] is not None
-    metadata = fake_agent.run_kwargs["metadata"]
-    assert metadata["image_attachment_ids"] == [7]
-    assert metadata["image_transports"] == ["base64"]
-
-
 async def test_image_transport_resolver_should_use_base64_when_url_unavailable(monkeypatch) -> None:
     """auto 模式下无法生成公网 HTTPS URL 时应回退到 bytes/base64 路径。"""
 
@@ -259,7 +161,7 @@ async def test_image_transport_resolver_should_use_base64_when_url_unavailable(m
     )
 
     assert resolved.transport == "base64"
-    assert resolved.image.content == b"image-bytes"
+    assert resolved.image.data == b"image-bytes"
     get_settings.cache_clear()
 
 
@@ -283,12 +185,3 @@ async def test_image_transport_resolver_url_mode_should_reject_private_url(monke
 
     assert exc_info.value.code == "AI_IMAGE_URL_UNAVAILABLE"
     get_settings.cache_clear()
-
-
-def _async_value(value):
-    """把同步测试值包装为可 await 对象。"""
-
-    async def resolver():
-        return value
-
-    return resolver()

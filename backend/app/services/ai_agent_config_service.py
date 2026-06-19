@@ -524,7 +524,7 @@ class AiAgentConfigService:
 
     @staticmethod
     def _build_runtime_tool_map(agent_id: str) -> dict[str, object]:
-        """构建指定智能体的实际 Agno 工具索引，用于读取参数 schema。"""
+        """构建指定智能体的实际平台工具索引，用于读取参数 schema。"""
 
         session_factory = get_session_factory()
         if agent_id == AGENT_COORDINATOR_AGENT_ID:
@@ -549,7 +549,7 @@ class AiAgentConfigService:
 
     @classmethod
     def _build_call_example(cls, tool_name: str, parameters_schema: dict[str, object] | None) -> dict[str, object]:
-        """根据 Agno 参数 schema 生成最小工具调用示例。"""
+        """根据工具参数 schema 生成最小工具调用示例。"""
 
         properties = parameters_schema.get("properties", {}) if parameters_schema else {}
         arguments = {

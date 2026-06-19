@@ -5,8 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from agno.run import RunContext
-from agno.tools import tool
+from app.ai.platform_tools import AgentToolContext, agent_tool
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -19,9 +18,9 @@ from app.models.enums import AssetType, RecordStatus
 def build_list_workspace_icon_assets_tool(session_factory: async_sessionmaker[AsyncSession]) -> Any:
     """构建图标资源查询工具。"""
 
-    @tool(show_result=False)
+    @agent_tool(show_result=False)
     async def list_workspace_icon_assets(
-        run_context: RunContext,
+        run_context: AgentToolContext,
         keyword: str | None = None,
         description_keyword: str | None = None,
         tags: list[str] | None = None,

@@ -1,4 +1,4 @@
-"""文件功能：根据智能体业务 scope 构建 Agno 运行时上下文。"""
+"""文件功能：根据智能体业务 scope 构建平台运行时上下文。"""
 
 from __future__ import annotations
 

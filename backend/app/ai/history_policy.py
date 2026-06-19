@@ -147,7 +147,7 @@ def _estimate_history_message_tokens(messages: list[Any]) -> list[tuple[Any, int
 
 
 def _estimate_summary_tokens(session_summary: Any | None) -> int:
-    """估算 Agno 会话摘要 token。"""
+    """估算会话摘要 token。"""
 
     if session_summary is None:
         return 0

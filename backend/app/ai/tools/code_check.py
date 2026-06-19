@@ -4,8 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from agno.run import RunContext
-from agno.tools import tool
+from app.ai.platform_tools import AgentToolContext, agent_tool
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.ai.auth_tokens import CODE_CHECK_TOOL_SCOPES, COMPONENT_TOOL_READ_SCOPES, PAGE_TOOL_READ_SCOPES
@@ -23,9 +22,9 @@ from app.services.code_check_service import CodeCheckService
 def build_check_page_code_tool(session_factory: async_sessionmaker[AsyncSession]) -> Any:
     """构建页面源码只读检查工具。"""
 
-    @tool(show_result=False)
+    @agent_tool(show_result=False)
     async def check_page_code(
-        run_context: RunContext,
+        run_context: AgentToolContext,
         page_id: int | None = None,
         content: str | None = None,
         edits: list[SourceEditInput] | None = None,
@@ -57,9 +56,9 @@ def build_check_page_code_tool(session_factory: async_sessionmaker[AsyncSession]
 def build_check_component_code_tool(session_factory: async_sessionmaker[AsyncSession]) -> Any:
     """构建组件源码只读检查工具。"""
 
-    @tool(show_result=False)
+    @agent_tool(show_result=False)
     async def check_component_code(
-        run_context: RunContext,
+        run_context: AgentToolContext,
         component_id: int | None = None,
         content: str | None = None,
         edits: list[SourceEditInput] | None = None,

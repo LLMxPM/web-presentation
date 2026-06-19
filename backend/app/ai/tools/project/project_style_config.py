@@ -4,8 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from agno.run import RunContext
-from agno.tools import tool
+from app.ai.platform_tools import AgentToolContext, agent_tool
 from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -29,8 +28,8 @@ def build_project_style_config_tools(session_factory: async_sessionmaker[AsyncSe
 def build_get_project_style_config_tool(session_factory: async_sessionmaker[AsyncSession]) -> Any:
     """构建项目真实画布、主题摘要与样式规范读取工具。"""
 
-    @tool(show_result=False)
-    async def get_project_style_config(run_context: RunContext) -> dict[str, Any]:
+    @agent_tool(show_result=False)
+    async def get_project_style_config(run_context: AgentToolContext) -> dict[str, Any]:
         """读取当前项目的页面画布、主题摘要和样式规范。"""
 
         dependencies, _ = await resolve_tool_context(session_factory,
@@ -61,9 +60,9 @@ def build_get_project_style_config_tool(session_factory: async_sessionmaker[Asyn
 def build_update_project_style_config_tool(session_factory: async_sessionmaker[AsyncSession]) -> Any:
     """构建需要用户确认的项目 Markdown 样式规范更新工具。"""
 
-    @tool(show_result=False, requires_confirmation=True)
+    @agent_tool(show_result=False, requires_confirmation=True)
     async def update_project_style_config(
-        run_context: RunContext,
+        run_context: AgentToolContext,
         style_spec_markdown: str | None = None,
     ) -> dict[str, Any]:
         """更新当前项目 Markdown 样式规范；该写入会影响后续页面生成约束。"""

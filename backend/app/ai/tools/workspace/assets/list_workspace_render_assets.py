@@ -4,8 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from agno.run import RunContext
-from agno.tools import tool
+from app.ai.platform_tools import AgentToolContext, agent_tool
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.ai.auth_tokens import PAGE_TOOL_READ_SCOPES
@@ -27,9 +26,9 @@ CONTENT_RENDER_TYPES = {
 def build_list_workspace_render_assets_tool(session_factory: async_sessionmaker[AsyncSession]) -> Any:
     """构建页面内容渲染资源查询工具。"""
 
-    @tool(show_result=False)
+    @agent_tool(show_result=False)
     async def list_workspace_render_assets(
-        run_context: RunContext,
+        run_context: AgentToolContext,
         render_type: str | None = None,
         keyword: str | None = None,
         description_keyword: str | None = None,
