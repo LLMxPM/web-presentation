@@ -11,6 +11,13 @@ import type {
   AgentTimelineToolItem,
 } from '@/types/api'
 import { buildRunIssueState, parseStructuredPayload } from '@/components/agent/agent-conversation-panel'
+import {
+  createInlineReasoningStreamState,
+  resetInlineReasoningStreamState,
+  splitInlineReasoningDelta,
+  type InlineReasoningSplitResult,
+  type InlineReasoningStreamState,
+} from '@/components/agent/agent-stream-reasoning'
 
 export interface AgentRunStreamState {
   runId: string | null
@@ -18,6 +25,8 @@ export interface AgentRunStreamState {
   streaming: boolean
   streamingTimelineItemId: string | null
   memberStreamingTimelineItemIdByRun: Record<string, string | null>
+  inlineReasoningByRun: Record<string, InlineReasoningStreamState>
+  memberInlineReasoningByRun: Record<string, InlineReasoningStreamState>
 }
 
 export interface AgentSessionRuntimeState {
@@ -65,6 +74,8 @@ export function createAgentSessionRuntimeState(): AgentSessionRuntimeState {
       streaming: false,
       streamingTimelineItemId: null,
       memberStreamingTimelineItemIdByRun: {},
+      inlineReasoningByRun: {},
+      memberInlineReasoningByRun: {},
     },
   }
 }
@@ -133,6 +144,7 @@ export function applyAgentRunEvent(
       state.pendingRequirement = null
       state.stream.runId = runId
       state.stream.streaming = true
+      resetInlineReasoningStateForRun(state, runId)
       tagTrailingLocalItemsWithRunId(state, runId)
       state.activeRun = buildEventRunState(state, event, options.agentId, 'running')
       state.lastIssue = null
@@ -154,6 +166,7 @@ export function applyAgentRunEvent(
       }
       state.lastIssue = null
       finishCurrentTextSegment(state)
+      resetInlineReasoningStateForRun(state, runId)
       appendRunStatusItem(state, event, MODEL_REQUEST_STATUS, MODEL_REQUEST_STATUS_TEXT)
       return { applied: true, terminal: false }
     case 'model.request.completed':
@@ -162,9 +175,9 @@ export function applyAgentRunEvent(
       return { applied: true, terminal: false }
     case 'message.delta':
       {
-        const splitContent = splitInlineReasoningDelta(event.content ?? '')
-        const reasoning = [resolveEventReasoningContent(event), splitContent.reasoning].filter(Boolean).join('') || null
-        if (reasoning || splitContent.content) {
+        const splitContent = splitInlineReasoningDelta(event.content ?? '', getInlineReasoningState(state, runId))
+        const reasoning = resolveEventReasoningContent(event)
+        if (reasoning || splitContent.segments.length) {
           removeModelRequestStatusItem(state, runId)
         }
         appendReasoningDelta(
@@ -172,7 +185,7 @@ export function applyAgentRunEvent(
           event,
           reasoning,
         )
-        appendAssistantDelta(state, event, splitContent.content)
+        appendSplitInlineReasoningSegments(state, event, splitContent.segments)
       }
       return { applied: true, terminal: false }
     case 'reasoning.delta':
@@ -202,6 +215,7 @@ export function applyAgentRunEvent(
       removeModelRequestStatusItem(state, runId)
       appendRequirementItem(state, event, state.pendingRequirement)
       clearStreamingTextItem(state)
+      resetInlineReasoningStateForRun(state, runId)
       return { applied: true, terminal: true }
     case 'run.cancelled':
       state.pendingRequirement = null
@@ -271,6 +285,8 @@ export function applyAgentRuntimeSnapshot(
   if (!state.stream.streaming) {
     state.stream.streamingTimelineItemId = null
   }
+  state.stream.inlineReasoningByRun = {}
+  state.stream.memberInlineReasoningByRun = {}
   const cursorRun = payload.activeRun ?? payload.lastRun
   if (cursorRun?.run_id) {
     state.stream.lastSequenceByRun[cursorRun.run_id] = Math.max(
@@ -355,6 +371,20 @@ function appendReasoningDelta(state: AgentSessionRuntimeState, event: AgentRunEv
   item.content = `${item.content ?? ''}${reasoning}`
 }
 
+function appendSplitInlineReasoningSegments(
+  state: AgentSessionRuntimeState,
+  event: AgentRunEvent,
+  segments: InlineReasoningSplitResult['segments'],
+): void {
+  for (const segment of segments) {
+    if (segment.kind === 'reasoning') {
+      appendReasoningDelta(state, event, segment.text)
+    } else {
+      appendAssistantDelta(state, event, segment.text)
+    }
+  }
+}
+
 function ensureStreamingTextItem(
   state: AgentSessionRuntimeState,
   event: AgentRunEvent,
@@ -366,6 +396,13 @@ function ensureStreamingTextItem(
     : null
   if (existing && existing.kind === kind && existing.role === role) {
     return existing
+  }
+  if (existing && existing.kind !== 'tool') {
+    if (existing.kind === 'message' && existing.role === 'assistant' && !existing.content) {
+      state.timelineItems = state.timelineItems.filter(item => item.id !== existing.id)
+    } else if (existing.status === 'running') {
+      existing.status = null
+    }
   }
   const item = buildAgentLocalTimelineItem(event.session_id || '', {
     runId: event.run_id || state.stream.runId,
@@ -451,10 +488,12 @@ function applyMemberRunEvent(state: AgentSessionRuntimeState, event: AgentRunEve
     case 'member.run.continued':
       memberRun.status = 'running'
       memberRun.updated_at = new Date().toISOString()
+      resetMemberInlineReasoningStateForRun(state, memberRun.run_id)
       break
     case 'member.model.request.started':
       memberRun.status = 'running'
       finishMemberTextSegment(state, memberRun.run_id)
+      resetMemberInlineReasoningStateForRun(state, memberRun.run_id)
       appendMemberRunStatusItem(memberRun, event, MODEL_REQUEST_STATUS, MODEL_REQUEST_STATUS_TEXT)
       break
     case 'member.model.request.completed':
@@ -462,9 +501,12 @@ function applyMemberRunEvent(state: AgentSessionRuntimeState, event: AgentRunEve
       break
     case 'member.message.delta':
       {
-        const splitContent = splitInlineReasoningDelta(event.content ?? '')
-        const reasoning = [resolveEventReasoningContent(event), splitContent.reasoning].filter(Boolean).join('') || null
-        if (reasoning || splitContent.content) {
+        const splitContent = splitInlineReasoningDelta(
+          event.content ?? '',
+          getMemberInlineReasoningState(state, memberRun.run_id),
+        )
+        const reasoning = resolveEventReasoningContent(event)
+        if (reasoning || splitContent.segments.length) {
           removeMemberModelRequestStatusItem(memberRun)
         }
         appendMemberReasoningDelta(
@@ -473,7 +515,7 @@ function applyMemberRunEvent(state: AgentSessionRuntimeState, event: AgentRunEve
           event,
           reasoning,
         )
-        appendMemberAssistantDelta(state, memberRun, event, splitContent.content)
+        appendMemberSplitInlineReasoningSegments(state, memberRun, event, splitContent.segments)
       }
       break
     case 'member.tool.started':
@@ -580,6 +622,21 @@ function appendMemberReasoningDelta(
   item.content = `${item.content ?? ''}${reasoning}`
 }
 
+function appendMemberSplitInlineReasoningSegments(
+  state: AgentSessionRuntimeState,
+  memberRun: AgentMemberRunItem,
+  event: AgentRunEvent,
+  segments: InlineReasoningSplitResult['segments'],
+): void {
+  for (const segment of segments) {
+    if (segment.kind === 'reasoning') {
+      appendMemberReasoningDelta(state, memberRun, event, segment.text)
+    } else {
+      appendMemberAssistantDelta(state, memberRun, event, segment.text)
+    }
+  }
+}
+
 function ensureMemberStreamingTextItem(
   state: AgentSessionRuntimeState,
   memberRun: AgentMemberRunItem,
@@ -593,6 +650,13 @@ function ensureMemberStreamingTextItem(
     : null
   if (existing && existing.kind === kind && existing.role === role) {
     return existing
+  }
+  if (existing && existing.kind !== 'tool') {
+    if (existing.kind === 'message' && existing.role === 'assistant' && !existing.content) {
+      memberRun.timeline_items = memberRun.timeline_items.filter(item => item.id !== existing.id)
+    } else if (existing.status === 'running') {
+      existing.status = null
+    }
   }
   const item = buildAgentLocalTimelineItem(event.session_id || '', {
     runId: memberRun.run_id,
@@ -708,6 +772,7 @@ function clearMemberStreamState(state: AgentSessionRuntimeState, memberRun: Agen
     }
   }
   state.stream.memberStreamingTimelineItemIdByRun[memberRun.run_id] = null
+  resetMemberInlineReasoningStateForRun(state, memberRun.run_id)
 }
 
 function shouldUseMemberCompletedEventContent(memberRun: AgentMemberRunItem, content: string): boolean {
@@ -924,14 +989,54 @@ function clearStreamingTextItem(state: AgentSessionRuntimeState): void {
 }
 
 function clearStreamState(state: AgentSessionRuntimeState): void {
+  const runId = state.stream.runId
   for (const item of state.timelineItems) {
-    if (item.status === 'running' && item.run_id === state.stream.runId && item.kind !== 'tool') {
+    if (item.status === 'running' && item.run_id === runId && item.kind !== 'tool') {
       item.status = null
     }
+  }
+  if (runId) {
+    resetInlineReasoningStateForRun(state, runId)
   }
   state.stream.runId = null
   state.stream.streaming = false
   state.stream.streamingTimelineItemId = null
+}
+
+function getInlineReasoningState(state: AgentSessionRuntimeState, runId: string): InlineReasoningStreamState {
+  const existing = state.stream.inlineReasoningByRun[runId]
+  if (existing) {
+    return existing
+  }
+  const next = createInlineReasoningStreamState()
+  state.stream.inlineReasoningByRun[runId] = next
+  return next
+}
+
+function resetInlineReasoningStateForRun(state: AgentSessionRuntimeState, runId: string): void {
+  const existing = state.stream.inlineReasoningByRun[runId]
+  if (existing) {
+    resetInlineReasoningStreamState(existing)
+    delete state.stream.inlineReasoningByRun[runId]
+  }
+}
+
+function getMemberInlineReasoningState(state: AgentSessionRuntimeState, memberRunId: string): InlineReasoningStreamState {
+  const existing = state.stream.memberInlineReasoningByRun[memberRunId]
+  if (existing) {
+    return existing
+  }
+  const next = createInlineReasoningStreamState()
+  state.stream.memberInlineReasoningByRun[memberRunId] = next
+  return next
+}
+
+function resetMemberInlineReasoningStateForRun(state: AgentSessionRuntimeState, memberRunId: string): void {
+  const existing = state.stream.memberInlineReasoningByRun[memberRunId]
+  if (existing) {
+    resetInlineReasoningStreamState(existing)
+    delete state.stream.memberInlineReasoningByRun[memberRunId]
+  }
 }
 
 function resolveEventReasoningContent(event: AgentRunEvent): string | null {
@@ -1000,37 +1105,4 @@ function resolveEventString(value: unknown, fallback: string | null): string | n
 function looksLikeStructuredAggregate(content: string): boolean {
   const parsed = parseStructuredPayload(content)
   return typeof parsed !== 'string'
-}
-
-/**
- * 将流式正文里夹带的 think/reasoning 标签拆成独立时间线内容。
- */
-function splitInlineReasoningDelta(content: string) {
-  const reasoningParts: string[] = []
-  let nextContent = content
-  for (const pattern of [
-    /<reasoning>([\s\S]*?)<\/reasoning>/gi,
-    /<think>([\s\S]*?)<\/think>/gi,
-  ]) {
-    nextContent = nextContent.replace(pattern, (_match, reasoning: string) => {
-      if (reasoning) {
-        reasoningParts.push(reasoning)
-      }
-      return ''
-    })
-  }
-  const openTagMatch = nextContent.match(/<(reasoning|think)>/i)
-  if (openTagMatch?.index !== undefined) {
-    const beforeReasoning = nextContent.slice(0, openTagMatch.index)
-    const afterReasoning = nextContent.slice(openTagMatch.index + openTagMatch[0].length)
-    if (afterReasoning) {
-      reasoningParts.push(afterReasoning)
-    }
-    nextContent = beforeReasoning
-  }
-  nextContent = nextContent.replace(/<\/?(reasoning|think)>/gi, '')
-  return {
-    content: nextContent,
-    reasoning: reasoningParts.join(''),
-  }
 }

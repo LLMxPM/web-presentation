@@ -61,4 +61,8 @@ markers = [
 ]
 
 [tool.uv]
-package = false
+package = true
+
+[tool.uv.build-backend]
+module-name = "app"
+module-root = ""

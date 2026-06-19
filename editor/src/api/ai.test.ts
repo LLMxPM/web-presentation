@@ -186,4 +186,79 @@ describe('ai api', () => {
       }),
     ])
   })
+
+  it('SSE 解析应支持跨 chunk 和多 data 行', async () => {
+    const events: unknown[] = []
+    const encoder = new TextEncoder()
+    fetchMock.mockResolvedValueOnce(new Response(new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(encoder.encode('event: message.delta\ndata: {"event":"message.delta",'))
+        controller.enqueue(encoder.encode('\ndata: "run_id":"run-1","session_id":"session-1","content":"多行正文","data":{},"sequence":3}\n\n'))
+        controller.close()
+      },
+    }), { status: 200 }))
+
+    await streamAgentRun('session-1', scope, { run_id: 'run-sse-chunks', message: '开始' }, {
+      onEvent: event => events.push(event),
+    })
+
+    expect(events).toEqual([
+      expect.objectContaining({
+        event: 'message.delta',
+        run_id: 'run-1',
+        content: '多行正文',
+        sequence: 3,
+        event_index: 3,
+      }),
+    ])
+  })
+
+  it('SSE 解析应使用命名 event 补齐 payload event', async () => {
+    const events: unknown[] = []
+    const encoder = new TextEncoder()
+    fetchMock.mockResolvedValueOnce(new Response(new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(encoder.encode('event: reasoning.delta\ndata: {"run_id":"run-1","session_id":"session-1","content":"先思考","data":{},"sequence":4}\n\n'))
+        controller.close()
+      },
+    }), { status: 200 }))
+
+    await streamAgentRun('session-1', scope, { run_id: 'run-sse-named', message: '开始' }, {
+      onEvent: event => events.push(event),
+    })
+
+    expect(events).toEqual([
+      expect.objectContaining({
+        event: 'reasoning.delta',
+        run_id: 'run-1',
+        content: '先思考',
+        sequence: 4,
+      }),
+    ])
+  })
+
+  it('SSE 解析遇到非法 JSON 时应回退为文本事件', async () => {
+    const events: unknown[] = []
+    const encoder = new TextEncoder()
+    fetchMock.mockResolvedValueOnce(new Response(new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(encoder.encode('event: run.error\ndata: 模型连接中断\n\n'))
+        controller.close()
+      },
+    }), { status: 200 }))
+
+    await streamAgentRun('session-1', scope, { run_id: 'run-sse-invalid-json', message: '开始' }, {
+      onEvent: event => events.push(event),
+    })
+
+    expect(events).toEqual([
+      expect.objectContaining({
+        event: 'run.error',
+        content: '模型连接中断',
+        data: {},
+        sequence: null,
+        event_index: null,
+      }),
+    ])
+  })
 })

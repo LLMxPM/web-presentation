@@ -52,6 +52,16 @@ Backend 是平台控制面，负责用户、权限、工作空间、项目、页
 
 AI 目录承载 Pydantic AI 智能体、平台自有会话运行态、工具注册、工具披露、上下文构造和用户级 AI 配置。工具实现使用平台自有工具对象，再由 Pydantic AI runner 装配为运行时 Tool；新增运行态能力应落在平台运行态表和 Pydantic AI runner 上。
 
+AI run 排障优先使用只读诊断 CLI：
+
+```powershell
+uv run --project backend python -m app.scripts.diagnose_ai_run --run-id <run_id> --format summary
+uv run --project backend python -m app.scripts.diagnose_ai_run --run-id <run_id> --format json
+uv run --project backend python -m app.scripts.diagnose_ai_run --session-id <session_id> --format summary --output .tmp/ai-session-diagnostics.txt
+```
+
+该脚本从根仓运行时会自动补读 `backend/.env`，但不会覆盖已存在的环境变量。它只查询 `ai_agent_*` 表，按 run 或 session 输出状态、事件序列、工具调用、pending/resolved requirement、消息摘要和 Pydantic AI `message_history_json` 摘要；不得在脚本中修改 run、requirement、tool call 或 Redis 状态。`run_id/session_id` 不存在时应返回非 0 退出码。需要修复历史坏数据时，应另写限定范围的一次性维护脚本，不要扩展诊断 CLI 做写操作。
+
 `backend/app/ai/tool_specs.py` 是智能体工具目录、工具组、风险级别、确认要求、上下文要求、调用格式与返回示例的单一事实源。新增、删除或调整智能体工具时必须先更新该规格，再由规格派生：
 
 - `agent_catalog.py`

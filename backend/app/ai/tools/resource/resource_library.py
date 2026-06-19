@@ -153,7 +153,7 @@ def build_create_resource_asset_tool(session_factory: async_sessionmaker[AsyncSe
         original_name: str,
         content: str,
         description: str | None = None,
-        tags: list[Any] | str | None = None,
+        tags: list[str] | str | None = None,
     ) -> dict[str, Any]:
         """创建 SVG 图片、SVG 图标、Draw.io、Mermaid、Chart 或 Formula 资源；不支持位图 image、video 和 font 内容生成。"""
 
@@ -234,7 +234,7 @@ def build_update_resource_asset_metadata_tool(session_factory: async_sessionmake
         name: str | None = None,
         original_name: str | None = None,
         description: str | None = None,
-        tags: list[Any] | str | None = None,
+        tags: list[str] | str | None = None,
     ) -> dict[str, Any]:
         """更新资源 name、展示文件名、描述或标签；不修改内容。"""
 
@@ -267,7 +267,7 @@ def build_copy_resource_asset_tool(session_factory: async_sessionmaker[AsyncSess
         name: str | None = None,
         original_name: str | None = None,
         description: str | None = None,
-        tags: list[Any] | str | None = None,
+        tags: list[str] | str | None = None,
         status: RecordStatus = RecordStatus.ACTIVE,
         archive_reason: str | None = None,
     ) -> dict[str, Any]:
@@ -365,7 +365,7 @@ def _build_asset_search_text(asset: Any) -> str:
 _TAG_SPLIT_PATTERN = re.compile(r"[,，、;；\r\n]+")
 
 
-def _normalize_tags_argument(value: list[Any] | str | None) -> list[str] | None:
+def _normalize_tags_argument(value: list[str] | str | None) -> list[str] | None:
     """把资源工具 tags 入参归一化为字符串列表，并兼容 JSON 数组字符串。"""
 
     if value is None:

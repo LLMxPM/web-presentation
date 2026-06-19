@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from httpx import AsyncClient
 
 from app.ai.tool_specs import (
@@ -37,7 +39,11 @@ async def test_agent_config_api_should_manage_prompt_and_tool_overrides(
     question_schema = ask_user_schema["$defs"]["AskUserQuestion"]
     assert "question" in question_schema["required"]
     assert "title" not in question_schema["properties"]
+    assert "value" not in question_schema["properties"]
     assert question_schema["additionalProperties"] is False
+    option_schema = ask_user_schema["$defs"]["AskUserOption"]
+    assert "value" not in option_schema["properties"]
+    assert option_schema["additionalProperties"] is False
     assert ask_user["agent_guide"]["requires_confirmation"] is True
     assert ask_user["agent_guide"]["risk_level"] == "system"
 
@@ -86,6 +92,15 @@ def test_agent_tool_specs_should_match_platform_tools() -> None:
         for tool_name, tool in actual.items():
             assert isinstance(tool.parameters, dict), tool_name
             assert tool.description == specs[tool_name].description
+        if agent_id == RESOURCE_MANAGER_AGENT_ID:
+            for tool_name in (
+                "create_resource_asset",
+                "update_resource_asset_metadata",
+                "copy_resource_asset",
+            ):
+                tags_schema = actual[tool_name].parameters["properties"]["tags"]
+                assert _schema_allows_string_array(tags_schema), tool_name
+                assert not _schema_allows_untyped_array(tags_schema), tool_name
 
 
 def _find_tool(config_item: dict, tool_key: str) -> dict:
@@ -96,3 +111,30 @@ def _find_tool(config_item: dict, tool_key: str) -> dict:
             if tool["key"] == tool_key:
                 return tool
     raise AssertionError(f"tool not found: {tool_key}")
+
+
+def _schema_allows_string_array(schema: dict[str, Any]) -> bool:
+    """判断 JSON Schema 是否允许 string 数组。"""
+
+    if schema.get("type") == "array":
+        return (schema.get("items") or {}).get("type") == "string"
+    return any(_schema_allows_string_array(option) for option in _schema_composition_options(schema))
+
+
+def _schema_allows_untyped_array(schema: dict[str, Any]) -> bool:
+    """判断 JSON Schema 是否仍包含未声明 item 类型的数组。"""
+
+    if schema.get("type") == "array":
+        return (schema.get("items") or {}).get("type") != "string"
+    return any(_schema_allows_untyped_array(option) for option in _schema_composition_options(schema))
+
+
+def _schema_composition_options(schema: dict[str, Any]) -> list[dict[str, Any]]:
+    """取出 JSON Schema 组合分支，便于递归检查 anyOf/oneOf/allOf。"""
+
+    options: list[dict[str, Any]] = []
+    for key in ("anyOf", "oneOf", "allOf"):
+        for item in schema.get(key) or []:
+            if isinstance(item, dict):
+                options.append(item)
+    return options

@@ -170,6 +170,63 @@ describe('agent-run-state timeline', () => {
     expect(state.timelineItems[2].content).toBe('资源检查完成。')
   })
 
+  it('跨 chunk 的 think 标签应拆分为 reasoning 时间线', () => {
+    const state = createAgentSessionRuntimeState()
+    const options = { agentId: 'agent-coordinator', agentDisplayName: '内容助手' }
+
+    applyAgentRunEvent(state, event({ event: 'run.started', sequence: 1 }), options)
+    applyAgentRunEvent(state, event({ event: 'message.delta', content: '开头<th', sequence: 2 }), options)
+    applyAgentRunEvent(state, event({ event: 'message.delta', content: 'ink>内部', sequence: 3 }), options)
+    applyAgentRunEvent(state, event({ event: 'message.delta', content: '思考</think>正文', sequence: 4 }), options)
+
+    expect(state.timelineItems.map(item => [item.kind, item.content, item.status])).toEqual([
+      ['message', '开头', null],
+      ['reasoning', '内部思考', null],
+      ['message', '正文', 'running'],
+    ])
+  })
+
+  it('普通正文夹 reasoning 标签时应分别进入正文和思考时间线', () => {
+    const state = createAgentSessionRuntimeState()
+    const options = { agentId: 'agent-coordinator', agentDisplayName: '内容助手' }
+
+    applyAgentRunEvent(state, event({ event: 'run.started', sequence: 1 }), options)
+    applyAgentRunEvent(state, event({
+      event: 'message.delta',
+      content: '先说明。<reasoning>内部判断</reasoning>再给结论。',
+      sequence: 2,
+    }), options)
+
+    expect(state.timelineItems.map(item => [item.kind, item.content])).toEqual([
+      ['message', '先说明。'],
+      ['reasoning', '内部判断'],
+      ['message', '再给结论。'],
+    ])
+  })
+
+  it('model.request.started 后应重置未闭合 reasoning 状态', () => {
+    const state = createAgentSessionRuntimeState()
+    const options = { agentId: 'agent-coordinator', agentDisplayName: '内容助手' }
+
+    applyAgentRunEvent(state, event({ event: 'run.started', event_index: 0, sequence: null }), options)
+    applyAgentRunEvent(state, event({
+      event: 'message.delta',
+      content: '<think>未闭合思考',
+      event_index: 1,
+      sequence: null,
+    }), options)
+    applyAgentRunEvent(state, event({ event: 'model.request.started', event_index: 2, sequence: null }), options)
+    applyAgentRunEvent(state, event({
+      event: 'message.delta',
+      content: '新正文',
+      event_index: 3,
+      sequence: null,
+    }), options)
+
+    expect(state.timelineItems.filter(item => item.kind === 'reasoning').map(item => item.content)).toEqual(['未闭合思考'])
+    expect(state.timelineItems.filter(item => item.kind === 'message').map(item => item.content)).toEqual(['新正文'])
+  })
+
   it('reasoning.delta 应作为独立思考时间线项', () => {
     const state = createAgentSessionRuntimeState()
     const options = { agentId: 'agent-coordinator', agentDisplayName: '内容助手' }
@@ -587,7 +644,7 @@ describe('agent-run-state timeline', () => {
     }), options)
 
     expect(state.timelineItems.find(item => item.kind === 'reasoning')).toEqual(expect.objectContaining({
-      status: 'running',
+      status: null,
     }))
     expect(state.timelineItems.find(item => item.kind === 'message')).toEqual(expect.objectContaining({
       content: '我先检查现有资源。',
@@ -759,6 +816,65 @@ describe('agent-run-state timeline', () => {
         input_payload: { workspace_id: 11 },
         output_payload: { total: 2 },
       }),
+    ])
+  })
+
+  it('平台 member message.delta 应支持跨 chunk reasoning 标签', () => {
+    const state = createAgentSessionRuntimeState()
+    const options = { agentId: 'agent-coordinator', agentDisplayName: '内容助手' }
+
+    applyAgentRunEvent(state, event({ event: 'run.started', run_id: 'parent-run-1', event_index: 0, sequence: null }), options)
+    applyAgentRunEvent(state, event({
+      event: 'member.run.started',
+      run_id: 'parent-run-1',
+      event_index: 1,
+      sequence: null,
+      data: {
+        member_run_id: 'member-run-1',
+        member_agent_id: 'resource-manager',
+        member_agent_name: '资源助手',
+      },
+    }), options)
+    applyAgentRunEvent(state, event({
+      event: 'member.message.delta',
+      run_id: 'parent-run-1',
+      content: '<reason',
+      event_index: 2,
+      sequence: null,
+      data: {
+        member_run_id: 'member-run-1',
+        member_agent_id: 'resource-manager',
+        member_agent_name: '资源助手',
+      },
+    }), options)
+    applyAgentRunEvent(state, event({
+      event: 'member.message.delta',
+      run_id: 'parent-run-1',
+      content: 'ing>子思考',
+      event_index: 3,
+      sequence: null,
+      data: {
+        member_run_id: 'member-run-1',
+        member_agent_id: 'resource-manager',
+        member_agent_name: '资源助手',
+      },
+    }), options)
+    applyAgentRunEvent(state, event({
+      event: 'member.message.delta',
+      run_id: 'parent-run-1',
+      content: '</reasoning>子结论',
+      event_index: 4,
+      sequence: null,
+      data: {
+        member_run_id: 'member-run-1',
+        member_agent_id: 'resource-manager',
+        member_agent_name: '资源助手',
+      },
+    }), options)
+
+    expect(state.memberRuns[0].timeline_items.map(item => [item.kind, item.content, item.status])).toEqual([
+      ['reasoning', '子思考', null],
+      ['message', '子结论', 'running'],
     ])
   })
 

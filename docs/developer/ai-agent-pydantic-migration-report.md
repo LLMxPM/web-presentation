@@ -1,7 +1,7 @@
 <!-- 文件功能：总结 AI Agent 从 Agno 迁移到 Pydantic AI 后的平台运行态、关键实现、问题修复和后续维护约束。 -->
 # AI Agent 框架迁移总结报告
 
-最后更新：2026-06-19
+最后更新：2026-06-20
 
 ## 1. 结论
 
@@ -36,6 +36,7 @@
 - `backend/app/ai/platform_runtime.py`：平台运行态 store，负责 session/run/message/event/tool/requirement 的持久化与快照重建。
 - `backend/app/ai/pydantic_model_resolver.py`：把用户模型配置解析为 Pydantic AI 模型对象和运行参数。
 - `backend/app/ai/tool_specs.py`：工具目录、风险等级、确认要求、参数示例和工具组的单一事实源。
+- `backend/app/scripts/diagnose_ai_run.py`：只读 AI run 诊断 CLI，按 `run_id` 或 `session_id` 输出事件、工具、HITL 和 message history 摘要。
 
 基本流程：
 
@@ -69,6 +70,32 @@
 | `ai_agent_image_attachments` | 会话图片附件和 run 绑定 |
 
 Redis 仍可用于预览 artifact、截图锁、构建心跳等临时能力，但不再保存 AI run/HITL 事实源。
+
+### AI run 诊断 CLI
+
+排查单次 run 时，优先使用 Backend 只读诊断脚本：
+
+```powershell
+uv run --project backend python -m app.scripts.diagnose_ai_run --run-id <run_id> --format summary
+uv run --project backend python -m app.scripts.diagnose_ai_run --run-id <run_id> --format json
+uv run --project backend python -m app.scripts.diagnose_ai_run --session-id <session_id> --format summary
+uv run --project backend python -m app.scripts.diagnose_ai_run --session-id <session_id> --format json --output .tmp/ai-session-diagnostics.json
+```
+
+输出内容包括：
+
+- run 基本状态、scope、聚合 content/reasoning 和错误信息。
+- `ai_agent_run_events` 事件序列。
+- `ai_agent_tool_calls` 工具调用输入、输出和状态。
+- `ai_agent_requirements` pending/resolved HITL 状态。
+- 可展示消息摘要。
+- Pydantic AI `message_history_json` 的数量、消息类型和 part 类型摘要。
+
+`--session-id` 模式会输出会话基本信息、会话消息和该会话下所有 run 的诊断集合。`--output <path>` 会将结果写入 UTF-8 文件，并自动创建父目录；未指定时输出到 stdout。
+
+从根仓运行 CLI 时会自动补读 `backend/.env`；已存在的环境变量优先，不会被 `.env` 覆盖。
+
+脚本只读查询 `ai_agent_*` 表，不修改 run、requirement、tool call、message 或 Redis 状态。`run_id/session_id` 不存在时返回非 0 退出码。历史坏数据修复必须通过单独的一次性维护脚本完成，并明确限定 `run_id/session_id/user_id` 范围。
 
 ## 4. HITL 和恢复机制
 
@@ -116,6 +143,7 @@ User feedback received: [{"question": "...", "selected": ["..."]}]
 | ask_user 已回答回放异常 | 后端返回项目符号文本，前端只解析 JSON | 后端统一返回 JSON 文本，前端只保留 JSON 契约 |
 | ask_user 显示“缺少可展示的问题” | LLM 输出 `title`，后端只认 `question` | `ask_user` 使用强 Pydantic schema，非法参数 fail fast |
 | 工具详情 input 为空 | 同一工具先收到空 args，后续完整 args 没覆盖 | 工具事件同步和时间线合并时用后到非空 args 补全 |
+| `<think>` / `<reasoning>` 跨分片显示异常 | 前端只用无状态正则解析完整标签 | `agent-stream-reasoning.ts` 为每个 run/member run 维护解析状态，支持跨 delta 标签 |
 
 ## 6. 前端状态管理要点
 
@@ -123,6 +151,7 @@ User feedback received: [{"question": "...", "selected": ["..."]}]
 
 - `editor/src/components/agent/AgentConversationPanel.vue`：会话、SSE、mutation、HITL action 的主容器。
 - `editor/src/components/agent/agent-run-state.ts`：运行态事件归一和 timeline 更新。
+- `editor/src/components/agent/agent-stream-reasoning.ts`：解析模型正文中夹带的 `<think>` / `<reasoning>` 标签，支持跨 chunk 分片。
 - `editor/src/components/agent/agent-conversation-panel.ts`：timeline display items 构造、工具折叠、ask_user 回放解析。
 - `editor/src/components/agent/AgentComposer.vue`：普通输入、停止按钮、HITL 面板切换。
 - `editor/src/components/agent/AgentChoicePrompt.vue`：ask_user 单选提问交互。
@@ -135,6 +164,8 @@ User feedback received: [{"question": "...", "selected": ["..."]}]
 - 已回答 ask_user 在时间线中作为 `feedback_request` 展示问题和答案。
 - 普通工具可以折叠成工具组，ask_user 不作为普通工具名暴露给用户。
 - Timeline 排序以平台事件顺序为准，不按消息类型分组。
+- 流式正文中的 `<think>` / `<reasoning>` 只作为 inline reasoning 兼容入口；后端已投影的 `reasoning.delta` 仍是优先事件。
+- inline reasoning 解析状态必须绑定到具体 run 或 member run，并在 `run.started`、`model.request.started`、暂停和终态时清理，避免未闭合标签污染后续输出。
 - 前端提交 HITL 时必须携带后端 requirement 中的 `tool_execution`，Backend 会以数据库 payload 为准合并。
 
 ## 7. 工具体系维护约束
@@ -145,6 +176,7 @@ User feedback received: [{"question": "...", "selected": ["..."]}]
 
 - `AgentToolSpec` 中的 label、description、instructions、risk_level、requires_confirmation。
 - 工具函数签名和参数类型，优先使用强类型 Pydantic model，不要退回 `dict[str, Any]`。
+- 资源工具 `tags` 入参应保持 `list[str] | str | None`，其中 `str` 只用于兼容模型输出 JSON 数组字符串或逗号分隔文本；JSON Schema 中数组项必须明确为 `string`。
 - `tools/disclosure.py`、`agent_catalog.py`、`/ai/agent-catalog`、`/ai/agent-configs` 的派生展示。
 - Editor 账户 AI 设置页展示的参数 schema、调用示例和返回示例。
 - 防漂移测试，确保实际平台工具 key 与规格 key 一致。
@@ -184,14 +216,32 @@ git diff --check
 
 当前这些 targeted tests 均通过；`git diff --check` 仅出现仓库既有 CRLF warning。
 
+2026-06-20 高优先级第一阶段补充验证：
+
+```powershell
+uv run --project backend pytest -c backend/pyproject.toml backend/tests/unit/test_pydantic_tool_bridge.py backend/tests/integration/test_ai_agent_config.py backend/tests/integration/test_ai_platform_runtime.py backend/tests/integration/test_ai_pydantic_runner_smoke.py -q --tb=short
+uv run --project backend pytest -c backend/pyproject.toml backend/tests/integration/test_ai_run_diagnostics.py -q --tb=short
+pnpm --dir editor test -- ai.test.ts agent-run-state.test.ts agent-conversation-panel.helpers.test.ts agent-hitl-actions.test.ts
+git diff --check
+```
+
+覆盖重点：
+
+- Pydantic AI `FunctionModel` 真实框架事件投影。
+- `ask_user` 暂停、回答、继续、回放和非法参数 fail fast。
+- `DeferredToolResults.calls[tool_call_id]` 恢复 requires-approval 工具结果。
+- AI run 诊断 CLI 核心查询函数。
+- SSE 多 chunk、多 `data:` 行、命名 event 补齐和非法 JSON fallback。
+- 前端 inline reasoning 跨 chunk、正文夹 reasoning、member run reasoning 和 `model.request.started` 状态收敛。
+- 工具 schema 防漂移：`ask_user` 禁止额外字段，资源 `tags` 数组项为 string。
+
 ## 10. 后续建议
 
 优先级较高：
 
-- 为 `ask_user` 增加更完整的端到端 smoke，覆盖暂停、提交回答、继续运行和回放。
-- 给 `ai_agent_run_events` 增加小型诊断脚本，便于按 `run_id` 输出事件、工具、requirement 和 message history。
 - 继续压缩 `AgentConversationPanel.vue` 与 `agent-run-state.ts` 的复杂度，把 SSE、snapshot merge、HITL action 分层拆小。
 - 对所有 LLM 可调用工具逐步使用强类型参数 model，减少 schema 太松导致的运行时坏数据。
+- 后续可增加可选真实 LLM smoke，但应默认关闭并避免进入 CI 必跑路径。
 
 优先级中等：
 
