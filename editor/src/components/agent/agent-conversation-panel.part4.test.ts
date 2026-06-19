@@ -1158,6 +1158,6 @@ describe('AgentConversationPanel', () => {
       expect(screen.getByText('页面写回失败')).toBeTruthy()
       expect(screen.getByText(/请先重新读取当前页面源码/)).toBeTruthy()
     })
-    expect(messageErrorMock).toHaveBeenCalledWith(expect.stringContaining('请先重新读取当前页面源码'))
+    expect(messageWarningMock).toHaveBeenCalledWith('页面写回失败')
   })
 })

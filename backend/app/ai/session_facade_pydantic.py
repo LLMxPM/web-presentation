@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from collections.abc import AsyncGenerator
 from typing import Any
 
@@ -16,6 +17,7 @@ from app.ai.platform_runtime import PlatformAgentRuntimeStore, new_session_id, s
 from app.ai.pydantic_model_resolver import PydanticLlmModelResolver
 from app.ai.pydantic_runner import PydanticAgentRunner
 from app.ai.pydantic_tools import build_pydantic_tools
+from app.ai.run_errors import normalize_agent_run_exception
 from app.core.exceptions import AppException
 from app.db.session import get_session_factory
 from app.schemas.agent import (
@@ -33,6 +35,8 @@ from app.services.ai_llm_service import AiLlmService
 from app.services.agent_image_attachment_service import AgentImageAttachmentService
 from app.services.agent_image_transport_resolver import ResolvedAgentImage
 from app.services.auth_service import AuthContext
+
+logger = logging.getLogger(__name__)
 
 
 class AgentSessionFacade:
@@ -286,18 +290,33 @@ class AgentSessionFacade:
                 else:
                     yield _error_event(session_id=session_id, run_id=run_id, code=exc.code, message=exc.detail)
             except Exception as exc:  # noqa: BLE001
+                failure = normalize_agent_run_exception(
+                    exc,
+                    fallback_code="AI_RUN_SETUP_FAILED",
+                    fallback_message="智能体运行初始化失败，请检查模型配置后重试。",
+                )
+                logger.exception(
+                    "Agent run setup failed",
+                    extra={
+                        "run_id": run_model.run_id if run_model is not None else run_id,
+                        "session_id": session_id,
+                        "agent_id": agent_id,
+                        "error_code": failure.code,
+                        "raw_error_message": failure.raw_message,
+                    },
+                )
                 if run_model is not None:
                     from app.ai.platform_runtime import encode_sse_event
 
                     event = await self._store.mark_terminal(
                         run_model,
                         status="failed",
-                        error_code="AI_RUN_SETUP_FAILED",
-                        error_message=str(exc) or "智能体运行初始化失败。",
+                        error_code=failure.code,
+                        error_message=failure.message,
                     )
                     yield encode_sse_event(event)
                 else:
-                    yield _error_event(session_id=session_id, run_id=run_id, code="AI_RUN_SETUP_FAILED", message=str(exc) or "智能体运行初始化失败。")
+                    yield _error_event(session_id=session_id, run_id=run_id, code=failure.code, message=failure.message)
             finally:
                 if acquired and lock.locked():
                     lock.release()
@@ -458,11 +477,26 @@ class AgentSessionFacade:
             except Exception as exc:  # noqa: BLE001
                 from app.ai.platform_runtime import encode_sse_event
 
+                failure = normalize_agent_run_exception(
+                    exc,
+                    fallback_code="AI_RUN_CONTINUE_FAILED",
+                    fallback_message="智能体继续运行失败，请稍后重试。",
+                )
+                logger.exception(
+                    "Agent run continue failed",
+                    extra={
+                        "run_id": run_model.run_id,
+                        "session_id": session_id,
+                        "agent_id": agent_id,
+                        "error_code": failure.code,
+                        "raw_error_message": failure.raw_message,
+                    },
+                )
                 event = await self._store.mark_terminal(
                     run_model,
                     status="failed",
-                    error_code="AI_RUN_CONTINUE_FAILED",
-                    error_message=str(exc) or "智能体继续运行失败。",
+                    error_code=failure.code,
+                    error_message=failure.message,
                 )
                 yield encode_sse_event(event)
             finally:

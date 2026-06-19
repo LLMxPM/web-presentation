@@ -235,16 +235,74 @@ export function formatToolPayload(payload: unknown, emptyText = '暂无内容。
  * 将运行失败信息归一化为更适合展示的标题和说明。
  */
 export function buildRunIssueState(message: string, agentDisplayName = '内容助手') {
+  const normalizedMessage = message.trim()
   if (message.includes('Unified Diff 无法应用')) {
     return {
       title: '页面写回失败',
       detail: `${message} 请先重新读取当前页面源码，再生成新的结构化 edits。若页面已被手工修改，旧编辑不能直接复用。`,
     }
   }
+  if (isStreamInterruptedMessage(normalizedMessage)) {
+    return {
+      title: '模型连接中断',
+      detail: '模型服务没有完整返回本次输出，前面已经生成的内容会保留。可以直接重试；如果连续出现，建议把任务拆小，或在 AI 设置里降低模型最大输出和思考强度。',
+    }
+  }
+  if (isModelRequestRejectedMessage(normalizedMessage)) {
+    return {
+      title: '模型请求被拒绝',
+      detail: '模型服务拒绝了本次请求。请检查当前绑定模型名称、模型能力和高级参数配置后再试。',
+    }
+  }
+  if (isRateLimitedMessage(normalizedMessage)) {
+    return {
+      title: '模型服务繁忙',
+      detail: '模型服务当前繁忙或触发限流，请稍后重试。',
+    }
+  }
+  if (isTimeoutMessage(normalizedMessage)) {
+    return {
+      title: '模型响应超时',
+      detail: '模型服务响应超时，本次运行已停止。请稍后重试，或把任务拆成更小的步骤。',
+    }
+  }
   return {
     title: `${agentDisplayName}执行失败`,
-    detail: message,
+    detail: normalizedMessage || '智能体运行中断，请稍后重试。',
   }
+}
+
+function isStreamInterruptedMessage(message: string) {
+  const normalized = message.toLowerCase()
+  return [
+    '模型连接中断',
+    'incomplete chunked read',
+    'peer closed connection',
+    'remote protocol error',
+    'server disconnected',
+  ].some(pattern => normalized.includes(pattern.toLowerCase()))
+}
+
+function isModelRequestRejectedMessage(message: string) {
+  const normalized = message.toLowerCase()
+  return normalized.includes('模型服务拒绝')
+    || normalized.includes('status_code: 400')
+    || normalized.includes('invalid_request_error')
+}
+
+function isRateLimitedMessage(message: string) {
+  const normalized = message.toLowerCase()
+  return normalized.includes('模型服务当前繁忙')
+    || normalized.includes('status_code: 429')
+    || normalized.includes('rate limit')
+}
+
+function isTimeoutMessage(message: string) {
+  const normalized = message.toLowerCase()
+  return normalized.includes('模型服务响应超时')
+    || normalized.includes('read timeout')
+    || normalized.includes('timed out')
+    || normalized.includes('timeout')
 }
 
 /**

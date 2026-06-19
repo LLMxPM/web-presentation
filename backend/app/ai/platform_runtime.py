@@ -295,12 +295,22 @@ class PlatformAgentRuntimeStore:
         run_model.finished_at = _utc_now() if status in TERMINAL_RUN_STATUSES else None
         run_model.error_code = error_code
         run_model.error_message = error_message
+        if status == "failed":
+            await self._append_running_tool_error_events(
+                run_model,
+                message=error_message or content or "运行中断，工具调用未完成。",
+            )
         event_name = {
             "completed": "run.completed",
             "cancelled": "run.cancelled",
             "failed": "run.error",
             "paused": "run.paused",
         }[status]
+        event_data: dict[str, Any] = {}
+        if error_code:
+            event_data["code"] = error_code
+        if error_message or content:
+            event_data["message"] = error_message or content
         return await self.append_event(
             run_model,
             AgentRunEvent(
@@ -308,9 +318,39 @@ class PlatformAgentRuntimeStore:
                 run_id=run_model.run_id,
                 session_id=run_model.session_id,
                 content=content,
-                data={"message": error_message or content} if error_message or content else {},
+                data=event_data,
             ),
         )
+
+    async def _append_running_tool_error_events(self, run_model: AiAgentRun, *, message: str) -> None:
+        """运行失败时补齐仍未结束的工具调用，避免 UI 和快照残留进行中状态。"""
+
+        result = await self._session.execute(
+            select(AiAgentToolCall).where(
+                AiAgentToolCall.run_id == run_model.run_id,
+                AiAgentToolCall.status == "running",
+            )
+        )
+        for tool_call in result.scalars().all():
+            tool_call.status = "error"
+            tool_call.message = tool_call.message or message
+            if not tool_call.tool_call_id:
+                continue
+            await self.append_event(
+                run_model,
+                AgentRunEvent(
+                    event="tool.error",
+                    run_id=run_model.run_id,
+                    session_id=run_model.session_id,
+                    data={
+                        "tool_name": tool_call.tool_name,
+                        "tool_call_id": tool_call.tool_call_id,
+                        "message": message,
+                    },
+                ),
+                commit=False,
+            )
+            await self._session.flush()
 
     async def pause_for_requirement(
         self,
@@ -673,6 +713,14 @@ class PlatformAgentRuntimeStore:
                             created_at=_iso(event_row.created_at),
                         )
                     )
+                continue
+            if event.event == "run.error":
+                current_text_by_run[run_id] = None
+                _mark_open_tool_items_failed(
+                    tool_items,
+                    run_id=run_id,
+                    message=str(event.data.get("message") or event.content or "运行中断，工具调用未完成。"),
+                )
                 continue
             if event.event.startswith("run.") or event.event == "model.request.started":
                 current_text_by_run[run_id] = None
@@ -1192,6 +1240,24 @@ def _is_meaningful_payload(value: Any) -> bool:
     if isinstance(value, (list, tuple, set, dict)):
         return bool(value)
     return True
+
+
+def _mark_open_tool_items_failed(
+    tool_items: dict[tuple[str, str], AgentTimelineItem],
+    *,
+    run_id: str,
+    message: str,
+) -> None:
+    """回放到 run.error 时收敛同 run 中仍处于 running 的工具展示项。"""
+
+    for (item_run_id, _), item in tool_items.items():
+        if item_run_id != run_id or item.kind != "tool" or item.tool is None:
+            continue
+        if item.tool.status != "running":
+            continue
+        item.status = "error"
+        item.tool.status = "error"
+        item.tool.message = item.tool.message or message
 
 
 def _map_run_status(status: str) -> str:

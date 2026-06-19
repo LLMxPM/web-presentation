@@ -1074,8 +1074,9 @@ async function handleSend() {
       return
     }
     const detail = getErrorMessage(error, '智能体执行失败。')
-    agentSessionStore.setLastIssue(sessionId, buildRunIssueState(detail, runAgentDisplayName))
-    Message.error(detail)
+    const issue = buildRunIssueState(detail, runAgentDisplayName)
+    agentSessionStore.setLastIssue(sessionId, issue)
+    Message.warning(issue.title)
   } finally {
     if (runId) {
       const controller = getStreamAbortController(runId)
@@ -1241,7 +1242,7 @@ function handleRunEvent(event: AgentRunEvent, fallbackSessionId = activeSessionI
     case 'run.error':
       writeSessionValue(interruptingBySession.value, targetSessionId, false)
       if (isActiveEvent && lastRunIssue.value) {
-        Message.error(lastRunIssue.value.detail)
+        Message.warning(lastRunIssue.value.title)
       }
       break
     case 'run.completed':

@@ -456,6 +456,91 @@ async def test_platform_runtime_cancel_should_be_idempotent(
         assert result.scalars().all() == ["run.started", "run.cancelling"]
 
 
+async def test_platform_runtime_failed_run_should_close_running_tools(
+    authenticated_client: AsyncClient,
+) -> None:
+    """run 失败时应把仍在运行的工具调用收敛为 error，避免快照残留进行中。"""
+
+    workspace_response = await authenticated_client.post(
+        "/api/workspaces",
+        json={"name": "平台运行态失败工具收敛工作空间", "status": "active"},
+    )
+    assert workspace_response.status_code == 200
+    workspace_id = workspace_response.json()["id"]
+    scope = AgentScopeContext(
+        scope_type="workspace",
+        workspace_id=workspace_id,
+        source="editor-component-library",
+    )
+    session_response = await authenticated_client.post(
+        "/api/ai/sessions",
+        json={
+            "agent_id": "component-manager",
+            "session_name": "平台运行态失败工具收敛会话",
+            "scope": scope.model_dump(mode="json"),
+        },
+    )
+    assert session_response.status_code == 201
+    session_id = session_response.json()["session_id"]
+
+    async with get_session_factory()() as db_session:
+        store = PlatformAgentRuntimeStore(db_session, user_id=1)
+        run_start = await store.start_run(
+            session_id=session_id,
+            agent_id="component-manager",
+            scope=scope,
+            run_id="platform-runtime-run-tool-error-on-fail",
+            message="创建页面",
+            image_attachment_ids=[],
+        )
+        run_model = run_start.run_model
+        await store.append_event(
+            run_model,
+            AgentRunEvent(
+                event="tool.started",
+                run_id=run_model.run_id,
+                session_id=session_id,
+                data={
+                    "tool_name": "create_project_page",
+                    "tool_call_id": "tool-create-page-1",
+                    "tool_args": "",
+                },
+            ),
+        )
+        await store.mark_terminal(
+            run_model,
+            status="failed",
+            error_code="AI_MODEL_STREAM_INTERRUPTED",
+            error_message="模型连接中断，本次输出没有完整返回。",
+        )
+        snapshot = await store.get_runtime_snapshot(
+            session_id=session_id,
+            agent_id="component-manager",
+            runtime_context=AgentRuntimeContext(
+                scope_type=scope.scope_type,
+                workspace_id=workspace_id,
+                source=scope.source,
+            ),
+        )
+        tool_status = await db_session.scalar(
+            select(AiAgentToolCall.status).where(
+                AiAgentToolCall.run_id == run_model.run_id,
+                AiAgentToolCall.tool_call_id == "tool-create-page-1",
+            )
+        )
+        result = await db_session.execute(
+            select(AiAgentRunEvent.event)
+            .where(AiAgentRunEvent.run_id == run_model.run_id)
+            .order_by(AiAgentRunEvent.event_index.asc())
+        )
+
+    timeline_tool = next(item.tool for item in snapshot.timeline_items if item.tool and item.tool.tool_call_id == "tool-create-page-1")
+    assert tool_status == "error"
+    assert timeline_tool.status == "error"
+    assert timeline_tool.message == "模型连接中断，本次输出没有完整返回。"
+    assert result.scalars().all() == ["run.started", "tool.started", "tool.error", "run.error"]
+
+
 async def test_pydantic_runner_should_finalize_requested_cancel(
     authenticated_client: AsyncClient,
 ) -> None:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from collections.abc import AsyncGenerator
 from typing import Any
 
@@ -26,9 +27,12 @@ from app.ai.agent_catalog import get_agent_catalog_entry
 from app.ai.agent_runtime_config import EffectiveAgentRuntimeConfig, build_effective_description, build_effective_instructions
 from app.ai.platform_runtime import PlatformAgentRuntimeStore, encode_sse_event
 from app.ai.pydantic_tools import AgentToolDeps
+from app.ai.run_errors import normalize_agent_run_exception
 from app.core.exceptions import AppException
 from app.models.ai_agent_runtime import AiAgentRun
 from app.schemas.agent import AgentPendingRequirement, AgentRunEvent
+
+logger = logging.getLogger(__name__)
 
 
 class PydanticAgentRunner:
@@ -136,11 +140,25 @@ class PydanticAgentRunner:
             )
             yield encode_sse_event(event)
         except Exception as exc:  # noqa: BLE001
+            failure = normalize_agent_run_exception(
+                exc,
+                fallback_code="AI_RUN_FAILED",
+            )
+            logger.exception(
+                "Agent run failed while streaming model events",
+                extra={
+                    "run_id": run_model.run_id,
+                    "session_id": run_model.session_id,
+                    "agent_id": agent_id,
+                    "error_code": failure.code,
+                    "raw_error_message": failure.raw_message,
+                },
+            )
             event = await self._store.mark_terminal(
                 run_model,
                 status="failed",
-                error_code="AI_RUN_FAILED",
-                error_message=str(exc) or "智能体执行失败，请稍后重试。",
+                error_code=failure.code,
+                error_message=failure.message,
             )
             yield encode_sse_event(event)
 

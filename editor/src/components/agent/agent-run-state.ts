@@ -213,12 +213,16 @@ export function applyAgentRunEvent(
       state.lastIssue = null
       return { applied: true, terminal: true }
     case 'run.error':
-      state.activeRun = null
-      state.lastRun = buildEventRunState(state, event, options.agentId, 'failed')
-      removeModelRequestStatusItem(state, runId)
-      appendRunStatusItem(state, event, 'failed', String(event.data.message || event.content || '智能体执行失败。'))
-      clearStreamState(state)
-      state.lastIssue = buildRunIssueState(String(event.data.message || event.content || '智能体执行失败。'), options.agentDisplayName)
+      {
+        const issue = buildRunIssueState(String(event.data.message || event.content || '智能体执行失败。'), options.agentDisplayName)
+        failOpenToolTimelineItems(state, runId, issue.detail)
+        state.activeRun = null
+        state.lastRun = buildEventRunState(state, event, options.agentId, 'failed')
+        removeModelRequestStatusItem(state, runId)
+        appendRunStatusItem(state, event, 'failed', issue.title)
+        clearStreamState(state)
+        state.lastIssue = issue
+      }
       return { applied: true, terminal: true }
     case 'run.completed':
       state.activeRun = null
@@ -418,6 +422,23 @@ function upsertToolTimelineItem(
   state.timelineItems = existingItem
     ? state.timelineItems.map(item => (item.id === existingItem.id ? nextItem : item))
     : [...state.timelineItems, nextItem]
+}
+
+function failOpenToolTimelineItems(state: AgentSessionRuntimeState, runId: string, message: string): void {
+  state.timelineItems = state.timelineItems.map((item) => {
+    if (item.kind !== 'tool' || item.run_id !== runId || item.tool?.status !== 'running') {
+      return item
+    }
+    return {
+      ...item,
+      status: 'error',
+      tool: {
+        ...item.tool,
+        status: 'error',
+        message: item.tool.message || message,
+      },
+    }
+  })
 }
 
 function applyMemberRunEvent(state: AgentSessionRuntimeState, event: AgentRunEvent): void {

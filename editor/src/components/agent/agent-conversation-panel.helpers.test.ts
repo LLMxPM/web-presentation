@@ -236,4 +236,15 @@ describe('agent-conversation-panel timeline helpers', () => {
   it('运行失败标题应使用当前智能体名称', () => {
     expect(buildRunIssueState('模型协议错误', '组件助手').title).toBe('组件助手执行失败')
   })
+
+  it('底层流式连接中断应转成可操作提示', () => {
+    const issue = buildRunIssueState(
+      'peer closed connection without sending complete message body (incomplete chunked read)',
+      '内容助手',
+    )
+
+    expect(issue.title).toBe('模型连接中断')
+    expect(issue.detail).toContain('可以直接重试')
+    expect(issue.detail).not.toContain('incomplete chunked read')
+  })
 })

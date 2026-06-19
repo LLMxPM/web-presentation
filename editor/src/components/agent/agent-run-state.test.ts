@@ -633,6 +633,45 @@ describe('agent-run-state timeline', () => {
     ])
   })
 
+  it('run.error 应使用友好提示并收敛运行中的工具', () => {
+    const state = createAgentSessionRuntimeState()
+    const options = { agentId: 'agent-coordinator', agentDisplayName: '内容助手' }
+
+    applyAgentRunEvent(state, event({ event: 'run.started', event_index: 0, sequence: null }), options)
+    applyAgentRunEvent(state, event({
+      event: 'tool.started',
+      event_index: 1,
+      sequence: null,
+      data: {
+        tool_call_id: 'tool-create-page-1',
+        tool_name: 'create_project_page',
+        tool_args: '',
+      },
+    }), options)
+    applyAgentRunEvent(state, event({
+      event: 'run.error',
+      event_index: 2,
+      sequence: null,
+      data: {
+        message: 'peer closed connection without sending complete message body (incomplete chunked read)',
+      },
+    }), options)
+
+    const toolItem = state.timelineItems.find(item => item.kind === 'tool')
+    expect(toolItem?.tool).toEqual(expect.objectContaining({
+      status: 'error',
+      message: expect.stringContaining('可以直接重试'),
+    }))
+    expect(state.timelineItems.find(item => item.kind === 'run_status')).toEqual(expect.objectContaining({
+      status: 'failed',
+      content: '模型连接中断',
+    }))
+    expect(state.lastIssue).toEqual(expect.objectContaining({
+      title: '模型连接中断',
+      detail: expect.not.stringContaining('incomplete chunked read'),
+    }))
+  })
+
   it('平台 member 事件应进入独立成员运行，不污染父 run 时间线', () => {
     const state = createAgentSessionRuntimeState()
     const options = { agentId: 'agent-coordinator', agentDisplayName: '内容助手' }
