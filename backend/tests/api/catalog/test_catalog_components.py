@@ -1,6 +1,6 @@
 """文件功能：覆盖工作空间组件目录与导入元数据校验测试。"""
 
-from tests.api.catalog.catalog_cases import (
+from tests.api.catalog.catalog_components_cases import (
     test_content_component_should_require_size_control_preview_schema,
     test_component_package_export_should_warn_and_allow_manual_assets,
     test_component_package_import_should_reject_legacy_schema_and_tampered_fingerprint,

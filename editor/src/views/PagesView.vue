@@ -253,15 +253,11 @@ import { useRoute, useRouter } from 'vue-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/vue-query'
 import {
   ArrowLeft,
-  Expand,
   Image,
   Layers,
-  Maximize2,
-  Minimize2,
   Play,
   Plus,
   SlidersHorizontal,
-  Square,
   SquarePen,
 } from '@lucide/vue'
 
@@ -301,7 +297,6 @@ import type {
   PageBatchAction,
   PageBatchScope,
   PageCardSize,
-  PageCardSizeOption,
   RoutedPageEntry,
 } from '@/components/page/page-list-types'
 import ProjectBuildDialog from '@/components/project/ProjectBuildDialog.vue'
@@ -322,7 +317,6 @@ import type {
   ProjectBuildJob,
   ProjectBuildResourceIssueData,
   ProjectMenuMode,
-  ProjectRouteBinding,
   ProjectRouteItemWrite,
   SuggestedComponentItem,
   ProjectSuggestedReferenceAssetItem,
@@ -330,35 +324,28 @@ import type {
 import { Message, createConfirm } from '@/utils/message'
 import { getDefaultEditorTheme } from '@/utils/monaco'
 import { canDownloadProjectBuildArtifact, canOpenProjectBuildArtifact } from '@/utils/project-build'
-import { appendRootPageRoute, mapRouteTreeToWriteItems, normalizeProjectRouteOrders } from '@/utils/project-route'
+import { appendRootPageRoute, mapRouteTreeToWriteItems } from '@/utils/project-route'
 import { buildPageDetailPath, buildWorkspaceHomePath } from '@/utils/workspace-routes'
-
-interface AgentProjectPagesMutationDetail {
-  workspaceId?: number | null
-  projectId?: number | null
-  pageId?: number | null
-  componentId?: number | null
-  toolName?: string
-  result?: unknown
-}
-
-interface ProjectBuildSubmitPayload {
-  base_url: string
-  extra_asset_names: string[]
-}
-
-interface BatchScreenshotDownloadProgress {
-  scope: PageBatchScope
-  text: string
-}
-
-const PAGE_CARD_SIZE_STORAGE_KEY = 'web-presentation:pages-view:preview-card-size'
-const pageCardSizeOptions: PageCardSizeOption[] = [
-  { value: 'compact', label: '紧凑', minWidth: 200, icon: Minimize2 },
-  { value: 'standard', label: '标准', minWidth: 240, icon: Square },
-  { value: 'large', label: '宽大', minWidth: 320, icon: Maximize2 },
-  { value: 'huge', label: '超大', minWidth: 520, icon: Expand },
-]
+import {
+  type AgentProjectPagesMutationDetail,
+  type BatchScreenshotDownloadProgress,
+  buildScreenshotNotReadyMessage,
+  compareNumberTuple,
+  getSavedProjectBuildExtraAssetNames,
+  getRouteBindingOrderKey,
+  getSortedRouteBindings,
+  isDownloadableLatestScreenshotPage,
+  isRefreshableScreenshotPage,
+  isSameStringArray,
+  normalizeProjectBuildExtraAssetNames,
+  normalizeRoutePath,
+  pageCardSizeOptions,
+  persistPageCardSize,
+  type ProjectBuildSubmitPayload,
+  readStoredPageCardSize,
+  removePagesFromProjectRoutes,
+  showBatchResultMessage,
+} from '@/views/pages-view-helpers'
 
 const route = useRoute()
 const router = useRouter()
@@ -585,56 +572,6 @@ const archivePageMutation = useMutation({
 })
 
 /**
- * 按页面路由绑定路径排序，供卡片分组和重复标记共同使用。
- * @param page 页面资源
- */
-function getSortedRouteBindings(page: PageItem): ProjectRouteBinding[] {
-  return [...(page.route_bindings ?? [])].sort((left, right) => {
-    const routeOrderCompare = compareNumberTuple(getRouteBindingOrderKey(left), getRouteBindingOrderKey(right))
-    if (routeOrderCompare !== 0) {
-      return routeOrderCompare
-    }
-    return normalizeRoutePath(left.full_path).localeCompare(normalizeRoutePath(right.full_path), 'zh-CN')
-  })
-}
-
-/**
- * 将路由绑定转换为可比较的树顺序，分组子路由先按父级排序，再按子节点排序。
- * @param binding 页面路由绑定
- */
-function getRouteBindingOrderKey(binding: ProjectRouteBinding): number[] {
-  const fallbackOrder = Number.MAX_SAFE_INTEGER
-  const routeOrder = typeof binding.order === 'number' ? binding.order : fallbackOrder
-  const parentOrder = typeof binding.parent_order === 'number' ? binding.parent_order : routeOrder
-  return [parentOrder, routeOrder, binding.route_id]
-}
-
-/**
- * 比较数字元组，用于保持页面卡片与路由树顺序一致。
- * @param left 左侧顺序元组
- * @param right 右侧顺序元组
- */
-function compareNumberTuple(left: number[], right: number[]): number {
-  const length = Math.max(left.length, right.length)
-  for (let index = 0; index < length; index += 1) {
-    const diff = (left[index] ?? 0) - (right[index] ?? 0)
-    if (diff !== 0) {
-      return diff
-    }
-  }
-  return 0
-}
-
-/**
- * 归一化路由展示路径，避免空路径破坏排序与展示。
- * @param path 后端返回的完整路径
- */
-function normalizeRoutePath(path: string | null | undefined): string {
-  const trimmedPath = String(path ?? '').trim()
-  return trimmedPath || '/'
-}
-
-/**
  * 更新已加入路由分区单页选择状态。
  * @param pageId 页面 ID
  * @param event 勾选框事件
@@ -686,76 +623,6 @@ function clearUnroutedSelection(): void {
  */
 function setPageCardSize(size: PageCardSize): void {
   pageCardSize.value = size
-}
-
-/**
- * 从浏览器缓存读取页面预览卡片尺寸偏好。
- */
-function readStoredPageCardSize(): PageCardSize {
-  if (typeof window === 'undefined') {
-    return 'standard'
-  }
-
-  try {
-    const storedSize = window.localStorage.getItem(PAGE_CARD_SIZE_STORAGE_KEY)
-    return isPageCardSize(storedSize) ? storedSize : 'standard'
-  } catch {
-    return 'standard'
-  }
-}
-
-/**
- * 把页面预览卡片尺寸写入浏览器缓存。
- * @param size 卡片尺寸档位
- */
-function persistPageCardSize(size: PageCardSize): void {
-  if (typeof window === 'undefined') {
-    return
-  }
-
-  try {
-    window.localStorage.setItem(PAGE_CARD_SIZE_STORAGE_KEY, size)
-  } catch {
-    // 浏览器隐私模式或容量限制下忽略缓存失败，不影响页面使用。
-  }
-}
-
-/**
- * 判断缓存值是否为受支持的卡片尺寸档位。
- * @param value 待校验值
- */
-function isPageCardSize(value: string | null): value is PageCardSize {
-  return value === 'compact' || value === 'standard' || value === 'large' || value === 'huge'
-}
-
-/**
- * 判断页面截图是否缺失或已过期，且当前文件类型支持截图。
- * @param page 页面资源
- */
-function isRefreshableScreenshotPage(page: PageItem): boolean {
-  return page.file_type === 'vue' && (!page.screenshot_url || !page.screenshot_is_latest)
-}
-
-/**
- * 判断页面是否已经具备可下载的最新截图。
- * @param page 页面资源
- */
-function isDownloadableLatestScreenshotPage(page: PageItem): boolean {
-  return Boolean(page.screenshot_url && page.screenshot_is_latest)
-}
-
-/**
- * 生成人类可读的截图未就绪原因，避免批量下载混入旧图。
- * @param page 页面资源
- */
-function buildScreenshotNotReadyMessage(page: PageItem): string {
-  if (page.file_type !== 'vue' && !page.screenshot_url) {
-    return `「${page.title}」不是 Vue 页面，无法自动生成截图。`
-  }
-  if (!page.screenshot_url) {
-    return `「${page.title}」暂无可下载截图。`
-  }
-  return `「${page.title}」截图仍不是最新版本。`
 }
 
 /**
@@ -1173,28 +1040,6 @@ async function handleBatchArchivePages(scope: PageBatchScope): Promise<void> {
 }
 
 /**
- * 从路由草稿中移除所有绑定指定页面的节点，并丢弃被清空的分组。
- * @param routeItems 当前路由草稿
- * @param pageIds 待移出路由的页面 ID 集合
- */
-function removePagesFromProjectRoutes(routeItems: ProjectRouteItemWrite[], pageIds: Set<number>): ProjectRouteItemWrite[] {
-  const nextRoutes: ProjectRouteItemWrite[] = []
-  routeItems.forEach((routeItem) => {
-    if (routeItem.route_type === 'group') {
-      const children = (routeItem.children ?? []).filter(child => !pageIds.has(child.page_id))
-      if (children.length > 0) {
-        nextRoutes.push({ ...routeItem, children })
-      }
-      return
-    }
-    if (routeItem.page_id && !pageIds.has(routeItem.page_id)) {
-      nextRoutes.push(routeItem)
-    }
-  })
-  return normalizeProjectRouteOrders(nextRoutes)
-}
-
-/**
  * 按分区清空选择状态。
  * @param scope 页面分区
  */
@@ -1222,20 +1067,6 @@ async function refreshPageListCaches(targetProjectId?: number): Promise<void> {
     )
   }
   await Promise.all(tasks)
-}
-
-/**
- * 统一展示批量操作结果。
- * @param actionLabel 操作名称
- * @param succeededCount 成功数量
- * @param firstErrorMessage 首个失败原因
- */
-function showBatchResultMessage(actionLabel: string, succeededCount: number, firstErrorMessage: string): void {
-  if (firstErrorMessage) {
-    Message.warning(`批量${actionLabel}完成 ${succeededCount} 个，存在失败：${firstErrorMessage}`)
-    return
-  }
-  Message.success(`批量${actionLabel}完成 ${succeededCount} 个页面。`)
 }
 
 /**
@@ -1291,37 +1122,22 @@ function openBuildDialog(): void {
   void projectBuildAssetSummaryQuery.refetch()
 }
 
-/**
- * 打开项目名称与描述编辑弹窗。
- */
 function openProjectIdentityDialog(): void {
   projectIdentityDialogVisible.value = true
 }
 
-/**
- * 打开项目展示配置弹窗。
- */
 function openPresentationConfigDialog(): void {
   presentationConfigDialogVisible.value = true
 }
 
-/**
- * 打开项目建议资源配置弹窗。
- */
 function openSuggestedReferenceAssetsDialog(): void {
   suggestedReferenceAssetsDialogVisible.value = true
 }
 
-/**
- * 打开项目建议组件配置弹窗。
- */
 function openSuggestedComponentsDialog(): void {
   suggestedComponentsDialogVisible.value = true
 }
 
-/**
- * 打开项目路由配置弹窗。
- */
 function openRouteConfigDialog(): void {
   routeConfigDialogVisible.value = true
 }
@@ -1526,7 +1342,10 @@ async function handleProjectBuildSubmit(payload: ProjectBuildSubmitPayload): Pro
     projectBuildResourceIssueCode.value = null
     projectBuildResourceIssue.value = null
     const extraAssetNames = normalizeProjectBuildExtraAssetNames(payload.extra_asset_names)
-    const extraAssetsChanged = !isSameStringArray(extraAssetNames, getSavedProjectBuildExtraAssetNames())
+    const extraAssetsChanged = !isSameStringArray(
+      extraAssetNames,
+      getSavedProjectBuildExtraAssetNames(projectDetails.value?.build_extra_assets_json?.asset_names),
+    )
     if (extraAssetsChanged) {
       await saveProjectBuildExtraAssetsConfig(extraAssetNames)
     }
@@ -1604,46 +1423,6 @@ async function saveProjectBuildExtraAssetsConfig(assetNames: string[]): Promise<
   } finally {
     projectBuildExtraAssetsSaving.value = false
   }
-}
-
-/**
- * 读取项目当前保存的额外构建资源名。
- * @returns 归一化后的资源名列表
- */
-function getSavedProjectBuildExtraAssetNames(): string[] {
-  return normalizeProjectBuildExtraAssetNames(projectDetails.value?.build_extra_assets_json?.asset_names ?? [])
-}
-
-/**
- * 归一化构建额外资源名列表，和弹窗侧保持一致。
- * @param values 原始资源名列表
- * @returns 去空、去重后的资源名
- */
-function normalizeProjectBuildExtraAssetNames(values: string[]): string[] {
-  const result: string[] = []
-  const seen = new Set<string>()
-  for (const value of values) {
-    const normalized = String(value || '').trim().replace(/\\/g, '/').replace(/^\.?\//, '')
-    if (!normalized || /^https?:\/\//i.test(normalized) || seen.has(normalized)) {
-      continue
-    }
-    seen.add(normalized)
-    result.push(normalized)
-  }
-  return result
-}
-
-/**
- * 比较两个字符串数组是否完全一致。
- * @param left 左侧数组
- * @param right 右侧数组
- * @returns 是否长度和顺序均一致
- */
-function isSameStringArray(left: string[], right: string[]): boolean {
-  if (left.length !== right.length) {
-    return false
-  }
-  return left.every((item, index) => item === right[index])
 }
 
 onMounted(() => {

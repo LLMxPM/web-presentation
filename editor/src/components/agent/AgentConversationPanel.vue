@@ -151,18 +151,14 @@ import {
   AgentRequestError,
   AgentStreamInterruptedError,
   cancelAgentSessionActiveRun,
-  continueAgentSessionActiveRun,
   createAgentSession,
-  deleteAgentImageAttachment,
   getAgentSessionContextStatus,
   getAgentSessionRuntime,
   listAgents,
   listAgentSessions,
-  promoteAgentImageAttachment,
   renameAgentSession,
   streamAgentRun,
   streamAgentRunEvents,
-  uploadAgentImageAttachment,
 } from '@/api/ai'
 import { getErrorMessage } from '@/api/http'
 import {
@@ -176,6 +172,11 @@ import {
   compactMutationRefreshEvents,
   buildMutationRefreshEvents,
 } from '@/components/agent/agent-mutation-refresh'
+import { useAgentHitlActions } from '@/components/agent/agent-hitl-actions'
+import { useAgentImageAttachments } from '@/components/agent/agent-image-attachments'
+import { useAgentStreamControllers } from '@/components/agent/agent-stream-controllers'
+import { useAgentForceCancelTicker } from '@/components/agent/agent-force-cancel-ticker'
+import { useAgentSessionNavigation } from '@/components/agent/agent-session-navigation'
 import {
   buildSessionRouteLocation,
   findLatestSessionForScope,
@@ -199,7 +200,6 @@ import type {
   AgentActiveRunItem,
   AgentContextStatusItem,
   AgentDescriptor,
-  AgentFeedbackSelection,
   AgentImageAttachmentItem,
   AgentMemberRunItem,
   AgentPendingRequirement,
@@ -212,7 +212,7 @@ import type {
 } from '@/types/api'
 import { useAgentSessionStore } from '@/stores/agent-session'
 import { logClientWarning } from '@/utils/client-logger'
-import { createConfirm, Message } from '@/utils/message'
+import { Message } from '@/utils/message'
 
 interface Props {
   workspaceId: number
@@ -304,14 +304,21 @@ const memberRunDialogVisible = ref(false)
 const activeToolDetailId = ref<string | null>(null)
 const activeMemberRunIds = ref<string[]>([])
 const sendInFlight = ref(false)
-const streamAbortControllersByRun = new Map<string, AbortController>()
 const autoNamingSessionIds = new Set<string>()
 const hitlActionInFlightBySession = ref<Record<string, boolean>>({})
-const forceCancelTick = ref(Date.now())
-let forceCancelTimer: number | null = null
 let componentDisposed = false
-const IMAGE_ATTACHMENT_MAX_BYTES = 10 * 1024 * 1024
-const ALLOWED_IMAGE_ATTACHMENT_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp'])
+const {
+  abortAllStreamControllers,
+  clearStreamAbortController,
+  createStreamAbortController,
+  getStreamAbortController,
+  hasStreamAbortController,
+} = useAgentStreamControllers()
+const {
+  forceCancelTick,
+  startForceCancelTicker,
+  stopForceCancelTicker,
+} = useAgentForceCancelTicker()
 
 const scope = computed<AgentScopeContext>(() => props.scope ?? {
   scope_type: props.pageId ? 'page' : props.projectId ? 'project' : 'workspace',
@@ -516,7 +523,7 @@ const canOpenActiveSessionRoute = computed(() => {
   if (currentRouteInActiveSessionScope.value || !target) {
     return false
   }
-  return !isCurrentRouteTarget(target)
+  return target !== route.fullPath && target !== route.path
 })
 const composerContextIssue = computed(() => {
   if (!currentRouteInActiveSessionScope.value) {
@@ -565,6 +572,38 @@ const composerActionDisabled = computed(() => (
     : sendInFlight.value || pendingRequirement.value !== null || (!composerText.value.trim() && pendingImageAttachments.value.length === 0) || hasBindingIssue.value || composerInputDisabled.value
 ))
 
+const {
+  closeSessionMenu,
+  handleCreateSession,
+  handleSwitchSession,
+  handleVirtualNewSession,
+  openActiveSessionRoute,
+  selectFirstRunnableSession,
+  shouldAutoSelectRunnableSessionForUnavailableRoute,
+  toggleSessionMenu,
+} = useAgentSessionNavigation({
+  activeSessionId,
+  manuallySelectedSessionId,
+  pendingRouteSessionId,
+  pendingUnavailableSessionSelectionKey,
+  sessionMenuVisible,
+  virtualNewSessionKey,
+  virtualNewSessionSequence,
+  getActiveSessionRouteLocation: () => activeSessionRouteLocation.value,
+  getActiveSessionScope: () => activeSessionScope.value,
+  getAgentId: () => agentId.value,
+  getAgentIssueDetail: () => agentIssueDetail.value,
+  getAutoNavigateTarget: () => props.autoNavigateTarget,
+  getHasBindingIssue: () => hasBindingIssue.value,
+  getRouteAvailable: () => props.routeAvailable,
+  getRouteFullPath: () => route.fullPath,
+  getRoutePath: () => route.path,
+  getRouteUnavailableReason: () => props.routeUnavailableReason,
+  getScope: () => scope.value,
+  getSessions: () => sessionsQuery.data.value ?? [],
+  pushRoute: target => void router.push(target),
+})
+
 /**
  * 从按会话分片的状态中读取当前值。
  */
@@ -590,24 +629,6 @@ function writeSessionValue<T>(source: Record<string, T>, sessionId: string, valu
  */
 function setSessionStreaming(sessionId: string, value: boolean) {
   agentSessionStore.setStreaming(sessionId, value)
-}
-
-/**
- * 为一次会话流创建可中断控制器；同一会话旧控制器会被新请求替换。
- */
-function createStreamAbortController(runId: string) {
-  const controller = new AbortController()
-  streamAbortControllersByRun.set(runId, controller)
-  return controller
-}
-
-/**
- * 清理流控制器，只删除当前请求对应的实例，避免误删后续新请求。
- */
-function clearStreamAbortController(runId: string, controller: AbortController) {
-  if (streamAbortControllersByRun.get(runId) === controller) {
-    streamAbortControllersByRun.delete(runId)
-  }
 }
 
 /**
@@ -652,7 +673,7 @@ function shouldApplyRuntimeSnapshot(runtime: AgentSessionRuntimeSnapshot) {
  * 订阅已存在后台 run 的事件流；用于刷新、切回会话和停止后的状态收敛。
  */
 function ensureRunEventSubscription(sessionId: string, run: AgentActiveRunItem, afterEventIndex = -1) {
-  if (componentDisposed || !sessionId || !run.run_id || streamAbortControllersByRun.has(run.run_id)) {
+  if (componentDisposed || !sessionId || !run.run_id || hasStreamAbortController(run.run_id)) {
     return
   }
   const streamAbortController = createStreamAbortController(run.run_id)
@@ -686,30 +707,6 @@ function ensureRunEventSubscription(sessionId: string, run: AgentActiveRunItem, 
 }
 
 /**
- * 启动强制结束按钮的可用状态刷新计时。
- */
-function startForceCancelTicker() {
-  if (forceCancelTimer !== null) {
-    return
-  }
-  forceCancelTick.value = Date.now()
-  forceCancelTimer = window.setInterval(() => {
-    forceCancelTick.value = Date.now()
-  }, 1000)
-}
-
-/**
- * 停止强制结束状态刷新计时。
- */
-function stopForceCancelTicker() {
-  if (forceCancelTimer === null) {
-    return
-  }
-  window.clearInterval(forceCancelTimer)
-  forceCancelTimer = null
-}
-
-/**
  * 判断指定会话是否仍在流式运行或处于 Agno 非终态运行中。
  */
 function isSessionRunning(sessionId: string) {
@@ -736,6 +733,53 @@ function syncActiveRun(sessionId: string, run: AgentActiveRunItem | null) {
 function setHitlActionInFlight(sessionId: string, value: boolean) {
   writeSessionValue(hitlActionInFlightBySession.value, sessionId, value)
 }
+
+const {
+  handleContinueRun,
+  handleSubmitFeedbackRun,
+  handleCancelPausedRun,
+  handleForceReleaseHitl,
+} = useAgentHitlActions({
+  getActiveSessionId: () => activeSessionId.value,
+  getPendingRequirement: () => pendingRequirement.value,
+  getActiveRun: () => activeRun.value,
+  getScope: () => scope.value,
+  getAgentId: () => agentId.value,
+  isDisposed: () => componentDisposed,
+  setHitlActionInFlight,
+  setSessionStreaming,
+  syncActiveRun,
+  setPendingRequirementForSession: (sessionId, requirement) => {
+    agentSessionStore.setPendingRequirement(sessionId, requirement)
+  },
+  createStreamAbortController,
+  clearStreamAbortController,
+  handleRunEvent,
+  finalizeRun,
+  refreshAfterStreamInterrupted,
+})
+
+const {
+  handlePromoteImage,
+  handleRemoveImage,
+  handleUploadImage,
+} = useAgentImageAttachments({
+  getActiveSessionId: () => activeSessionId.value,
+  getScope: () => scope.value,
+  getAgentId: () => agentId.value,
+  getImageUploadDisabledReason: () => imageUploadDisabledReason.value,
+  ensureActiveSession,
+  getPendingImageAttachments: sessionId => readSessionValue(pendingImageAttachmentsBySession.value, sessionId, []),
+  setPendingImageAttachments: (sessionId, attachments) => {
+    agentSessionStore.setPendingImageAttachments(sessionId, attachments)
+  },
+  setImageUploading: (sessionId, uploading) => {
+    writeSessionValue(imageUploadingBySession.value, sessionId, uploading)
+  },
+  invalidateWorkspaceAssets: async () => {
+    await queryClient.invalidateQueries({ queryKey: ['workspace-assets'] })
+  },
+})
 
 /**
  * 打开上下文用量浮窗时刷新一次最新统计，避免长 run 中错过事件后读数陈旧。
@@ -913,124 +957,9 @@ watch(
 
 onBeforeUnmount(() => {
   componentDisposed = true
-  for (const controller of streamAbortControllersByRun.values()) {
-    if (!controller.signal.aborted) {
-      controller.abort()
-    }
-  }
-  streamAbortControllersByRun.clear()
+  abortAllStreamControllers()
   stopForceCancelTicker()
 })
-
-/**
- * 手动进入虚拟新会话态；真正的后端会话会在第一条消息发送时创建。
- */
-function handleCreateSession() {
-  if (hasBindingIssue.value) {
-    Message.error(agentIssueDetail.value)
-    return
-  }
-  if (!props.routeAvailable) {
-    Message.warning(props.routeUnavailableReason || '当前路由缺少工作空间上下文。')
-    return
-  }
-  virtualNewSessionSequence.value += 1
-  enterVirtualNewSession(`manual:${virtualNewSessionSequence.value}`, null)
-}
-
-/**
- * 响应全局侧栏的助手切换动作：仅进入虚拟新会话态，并在需要时跳转到该助手默认工作台。
- */
-function handleVirtualNewSession(autoCreateKey: string | number) {
-  if (hasBindingIssue.value) {
-    Message.error(agentIssueDetail.value)
-    return
-  }
-  if (!props.routeAvailable) {
-    if (selectFirstRunnableSession()) {
-      return
-    }
-    pendingUnavailableSessionSelectionKey.value = autoCreateKey
-    return
-  }
-  enterVirtualNewSession(autoCreateKey, props.autoNavigateTarget)
-}
-
-/**
- * 判断不可启动路由下是否需要自动回落到首个可运行历史会话。
- */
-function shouldAutoSelectRunnableSessionForUnavailableRoute(): boolean {
-  if (props.routeAvailable || agentId.value !== 'agent-coordinator' || scope.value.project_id) {
-    return false
-  }
-  if (activeSessionId.value && manuallySelectedSessionId.value === activeSessionId.value) {
-    return false
-  }
-  if (pendingUnavailableSessionSelectionKey.value) {
-    return true
-  }
-  if (!activeSessionId.value) {
-    return true
-  }
-  return !activeSessionScope.value?.project_id
-}
-
-/**
- * 当前路由不可启动时，优先选中第一个带项目上下文的会话，但不切换路由。
- */
-function selectFirstRunnableSession(): boolean {
-  const targetSession = (sessionsQuery.data.value ?? []).find((session) => {
-    const sessionScope = resolveSessionScope(session)
-    if (!sessionScope || !buildSessionRouteLocation(session)) {
-      return false
-    }
-    if (agentId.value === 'agent-coordinator' && !sessionScope.project_id) {
-      return false
-    }
-    return true
-  })
-  if (!targetSession) {
-    return false
-  }
-  virtualNewSessionKey.value = null
-  pendingRouteSessionId.value = ''
-  manuallySelectedSessionId.value = ''
-  activeSessionId.value = targetSession.session_id
-  return true
-}
-
-/**
- * 统一设置虚拟新会话态，避免助手切换和手动新会话提前制造空会话。
- */
-function enterVirtualNewSession(virtualKey: string | number, navigateTarget: string | null | undefined) {
-  virtualNewSessionKey.value = virtualKey
-  activeSessionId.value = ''
-  pendingRouteSessionId.value = ''
-  manuallySelectedSessionId.value = ''
-  sessionMenuVisible.value = false
-  if (navigateTarget && navigateTarget !== route.fullPath) {
-    void router.push(navigateTarget)
-  }
-}
-
-/**
- * 打开当前会话绑定的工作页面，让用户回到可继续运行该会话的路由。
- */
-function openActiveSessionRoute() {
-  const targetLocation = activeSessionRouteLocation.value
-  if (!targetLocation || isCurrentRouteTarget(targetLocation)) {
-    return
-  }
-  pendingRouteSessionId.value = activeSessionId.value
-  void router.push(targetLocation)
-}
-
-/**
- * 比较目标工作页和当前路由；目标页不带 query 时允许当前路由携带筛选参数。
- */
-function isCurrentRouteTarget(targetLocation: string): boolean {
-  return targetLocation === route.fullPath || targetLocation === route.path
-}
 
 /**
  * 确保当前存在一个活跃会话；若没有则自动创建。
@@ -1062,127 +991,6 @@ function handleComposerPrimaryAction() {
     return
   }
   void handleSend()
-}
-
-/**
- * 切换会话下拉菜单显示状态。
- */
-function toggleSessionMenu() {
-  if (hasBindingIssue.value) {
-    return
-  }
-  sessionMenuVisible.value = !sessionMenuVisible.value
-}
-
-/**
- * 关闭会话切换菜单。
- */
-function closeSessionMenu() {
-  sessionMenuVisible.value = false
-}
-
-/**
- * 切换到指定会话并关闭菜单。
- */
-function handleSwitchSession(sessionId: string) {
-  closeSessionMenu()
-  virtualNewSessionKey.value = null
-  manuallySelectedSessionId.value = sessionId
-  const session = sessionsQuery.data.value?.find(item => item.session_id === sessionId)
-  if (!session) {
-    activeSessionId.value = sessionId
-    return
-  }
-
-  const sessionScope = resolveSessionScope(session)
-  if (sessionScope) {
-    setSelectedSession(sessionScope, agentId.value, sessionId)
-  }
-
-  const targetLocation = buildSessionRouteLocation(session)
-  activeSessionId.value = sessionId
-  if (targetLocation && targetLocation !== route.fullPath) {
-    pendingRouteSessionId.value = sessionId
-    void router.push(targetLocation)
-    return
-  }
-
-  pendingRouteSessionId.value = ''
-}
-
-/**
- * 上传用户选择的图片附件，并把结果加入当前 Composer 待发送列表。
- */
-async function handleUploadImage(file: File) {
-  if (imageUploadDisabledReason.value) {
-    Message.warning(imageUploadDisabledReason.value)
-    return
-  }
-  if (!isAllowedImageFile(file)) {
-    Message.error('图片附件仅支持 png、jpg、jpeg、webp。')
-    return
-  }
-  if (file.size > IMAGE_ATTACHMENT_MAX_BYTES) {
-    Message.error('单张图片不能超过 10MB。')
-    return
-  }
-
-  let sessionId = ''
-  try {
-    sessionId = await ensureActiveSession()
-  } catch (error) {
-    Message.error(getErrorMessage(error, '初始化智能体会话失败。'))
-    return
-  }
-
-  writeSessionValue(imageUploadingBySession.value, sessionId, true)
-  try {
-    const attachment = await uploadAgentImageAttachment(sessionId, scope.value, file, agentId.value)
-    agentSessionStore.setPendingImageAttachments(sessionId, [
-      ...readSessionValue(pendingImageAttachmentsBySession.value, sessionId, []),
-      attachment,
-    ])
-  } catch (error) {
-    Message.error(getErrorMessage(error, '上传图片失败。'))
-  } finally {
-    writeSessionValue(imageUploadingBySession.value, sessionId, false)
-  }
-}
-
-/**
- * 从当前待发送列表移除图片，并通知后端归档附件记录。
- */
-async function handleRemoveImage(attachmentId: number) {
-  const sessionId = activeSessionId.value
-  if (!sessionId) {
-    return
-  }
-  pendingImageAttachments.value = pendingImageAttachments.value.filter(item => item.id !== attachmentId)
-  try {
-    await deleteAgentImageAttachment(sessionId, scope.value, attachmentId, agentId.value)
-  } catch (error) {
-    Message.error(getErrorMessage(error, '删除图片失败。'))
-  }
-}
-
-/**
- * 将图片附件保存为工作空间资源，并刷新资源相关缓存。
- */
-async function handlePromoteImage(attachmentId: number) {
-  const sessionId = activeSessionId.value
-  if (!sessionId) {
-    return
-  }
-  try {
-    const promoted = await promoteAgentImageAttachment(sessionId, scope.value, attachmentId, {}, agentId.value)
-    pendingImageAttachments.value = pendingImageAttachments.value.map(item => (
-      item.id === promoted.id ? promoted : item
-    ))
-    await queryClient.invalidateQueries({ queryKey: ['workspace-assets'] })
-    Message.success('图片已保存为资源。')
-  } catch (error) {
-    Message.error(getErrorMessage(error, '保存为资源失败。'))
-  }
 }
 
 /**
@@ -1270,174 +1078,13 @@ async function handleSend() {
     Message.error(detail)
   } finally {
     if (runId) {
-      const controller = streamAbortControllersByRun.get(runId)
+      const controller = getStreamAbortController(runId)
       if (controller) {
         clearStreamAbortController(runId, controller)
       }
     }
     sendInFlight.value = false
     setSessionStreaming(sessionId, false)
-  }
-}
-
-/**
- * 继续当前暂停中的 run。
- */
-async function handleContinueRun(decision: 'confirm' | 'reject') {
-  const sessionId = activeSessionId.value
-  const requirement = pendingRequirement.value
-  const pausedRun = activeRun.value
-  if (!sessionId || !requirement || pausedRun?.status !== 'paused') return
-
-  setHitlActionInFlight(sessionId, true)
-  pendingRequirement.value = null
-  setSessionStreaming(sessionId, true)
-  syncActiveRun(sessionId, { ...pausedRun, status: 'running', pending_requirement: null })
-
-  const runId = requirement.run_id || pausedRun.run_id || ''
-  let streamAbortController: AbortController | null = null
-  try {
-    streamAbortController = createStreamAbortController(runId)
-    await continueAgentSessionActiveRun(sessionId, scope.value, {
-      agent_id: agentId.value,
-      decision,
-      tool_execution: requirement.tool_execution,
-    }, {
-      onEvent: event => handleRunEvent(event, sessionId),
-      signal: streamAbortController.signal,
-    })
-    await finalizeRun(sessionId)
-  } catch (error) {
-    if (error instanceof AgentStreamInterruptedError) {
-      if (!componentDisposed) {
-        void refreshAfterStreamInterrupted(sessionId)
-      }
-      return
-    }
-    await recoverHitlStateAfterFailedAction(sessionId, pausedRun, requirement)
-    Message.error(getErrorMessage(error, '继续智能体执行失败。'))
-  } finally {
-    if (streamAbortController) {
-      clearStreamAbortController(runId, streamAbortController)
-    }
-    setHitlActionInFlight(sessionId, false)
-    setSessionStreaming(sessionId, false)
-  }
-}
-
-/**
- * 提交结构化提问的全部答案，并一次性恢复当前 paused run。
- */
-async function handleSubmitFeedbackRun(selections: AgentFeedbackSelection[]) {
-  const sessionId = activeSessionId.value
-  const requirement = pendingRequirement.value
-  const pausedRun = activeRun.value
-  if (!sessionId || !requirement || pausedRun?.status !== 'paused') return
-
-  setHitlActionInFlight(sessionId, true)
-  pendingRequirement.value = null
-  setSessionStreaming(sessionId, true)
-  syncActiveRun(sessionId, { ...pausedRun, status: 'running', pending_requirement: null })
-
-  const runId = requirement.run_id || pausedRun.run_id || ''
-  let streamAbortController: AbortController | null = null
-  try {
-    streamAbortController = createStreamAbortController(runId)
-    await continueAgentSessionActiveRun(sessionId, scope.value, {
-      agent_id: agentId.value,
-      decision: null,
-      tool_execution: requirement.tool_execution,
-      feedback_selections: selections,
-    }, {
-      onEvent: event => handleRunEvent(event, sessionId),
-      signal: streamAbortController.signal,
-    })
-    await finalizeRun(sessionId)
-  } catch (error) {
-    if (error instanceof AgentStreamInterruptedError) {
-      if (!componentDisposed) {
-        void refreshAfterStreamInterrupted(sessionId)
-      }
-      return
-    }
-    await recoverHitlStateAfterFailedAction(sessionId, pausedRun, requirement)
-    Message.error(getErrorMessage(error, '继续智能体执行失败。'))
-  } finally {
-    if (streamAbortController) {
-      clearStreamAbortController(runId, streamAbortController)
-    }
-    setHitlActionInFlight(sessionId, false)
-    setSessionStreaming(sessionId, false)
-  }
-}
-
-/**
- * 忽略结构化提问时取消当前 paused run，不向模型返回空答案。
- */
-async function handleCancelPausedRun() {
-  const sessionId = activeSessionId.value
-  const requirement = pendingRequirement.value
-  const pausedRun = activeRun.value
-  if (!sessionId || !requirement || pausedRun?.status !== 'paused') {
-    return
-  }
-
-  setHitlActionInFlight(sessionId, true)
-  try {
-    pendingRequirement.value = null
-    const response = await cancelAgentSessionActiveRun(sessionId, scope.value, {
-      agent_id: agentId.value,
-    })
-    Message.info('已停止。')
-    await finalizeRun(response.session_id, { preserveLocalCancelled: true })
-  } catch (error) {
-    await recoverHitlStateAfterFailedAction(sessionId, pausedRun, requirement)
-    Message.error(getErrorMessage(error, '忽略失败，请稍后再试。'))
-  } finally {
-    setHitlActionInFlight(sessionId, false)
-  }
-}
-
-/**
- * 强制释放卡住的 HITL 暂停态，只清理当前待确认/待回答动作，不提交任何答案。
- */
-async function handleForceReleaseHitl() {
-  const sessionId = activeSessionId.value
-  const requirement = pendingRequirement.value
-  const pausedRun = activeRun.value
-  if (!sessionId || !requirement || pausedRun?.status !== 'paused') {
-    return
-  }
-
-  const confirmed = await createConfirm(
-    '强制释放只会结束当前待确认/待回答动作，不会执行工具，也不会提交回答。确定继续吗？',
-    '强制释放 HITL',
-  )
-  if (!confirmed) {
-    return
-  }
-
-  setHitlActionInFlight(sessionId, true)
-  try {
-    const response = await cancelAgentSessionActiveRun(sessionId, scope.value, {
-      agent_id: agentId.value,
-      force: true,
-      tool_call_id: resolveRequirementToolCallId(requirement),
-    })
-    pendingRequirement.value = null
-    syncActiveRun(sessionId, {
-      ...pausedRun,
-      status: 'cancelled',
-      pending_requirement: null,
-      updated_at: new Date().toISOString(),
-    })
-    Message.info('已释放当前待处理动作。')
-    await finalizeRun(response.session_id, { preserveLocalCancelled: true })
-  } catch (error) {
-    await recoverHitlStateAfterFailedAction(sessionId, pausedRun, requirement)
-    Message.error(getErrorMessage(error, '强制释放失败，请稍后再试。'))
-  } finally {
-    setHitlActionInFlight(sessionId, false)
   }
 }
 
@@ -1528,31 +1175,6 @@ async function refreshAfterStreamInterrupted(sessionId: string) {
   } catch (error) {
     logClientWarning('Failed to refresh after stream interruption', error)
   }
-}
-
-/**
- * HITL 操作失败后恢复本地暂停态，并尽快用后端快照覆盖到权威状态。
- */
-async function recoverHitlStateAfterFailedAction(
-  sessionId: string,
-  pausedRun: AgentActiveRunItem,
-  requirement: AgentPendingRequirement,
-) {
-  syncActiveRun(sessionId, pausedRun)
-  agentSessionStore.setPendingRequirement(sessionId, requirement)
-  try {
-    await finalizeRun(sessionId)
-  } catch (error) {
-    logClientWarning('Failed to refresh after HITL action failure', error)
-  }
-}
-
-/**
- * 从待处理动作中读取稳定 tool_call_id，供强制释放时做后端 stale 校验。
- */
-function resolveRequirementToolCallId(requirement: AgentPendingRequirement) {
-  const toolCallId = requirement.tool_execution?.tool_call_id
-  return typeof toolCallId === 'string' && toolCallId ? toolCallId : null
 }
 
 /**
@@ -1755,16 +1377,6 @@ function getSessionRunBadge(sessionId: string) {
     }
   }
   return null
-}
-
-/**
- * 校验前端允许上传给 Agent 的图片类型。
- */
-function isAllowedImageFile(file: File) {
-  if (ALLOWED_IMAGE_ATTACHMENT_TYPES.has(file.type)) {
-    return true
-  }
-  return /\.(png|jpe?g|webp)$/i.test(file.name)
 }
 
 /**

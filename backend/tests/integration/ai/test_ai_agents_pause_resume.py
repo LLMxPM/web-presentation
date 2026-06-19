@@ -1,6 +1,6 @@
 """文件功能：覆盖 AI paused run、用户反馈与继续执行链路测试。"""
 
-from tests.integration.ai.ai_agents_cases import (
+from tests.integration.ai.ai_agents_pause_resume_cases import (
     test_ai_paused_session_messages_should_be_visible,
     test_ai_resolve_requirement_payload_should_use_latest_active_requirement,
     test_ai_run_output_with_pending_feedback_should_be_normalized_as_paused,
