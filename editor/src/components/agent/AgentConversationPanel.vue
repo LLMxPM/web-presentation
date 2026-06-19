@@ -188,7 +188,7 @@ import {
   resolveSessionScope,
   setSelectedSession,
 } from '@/components/agent/agent-session-scope'
-import { buildAgentLocalTimelineItem, normalizeAgnoRunEvent } from '@/components/agent/agent-run-state'
+import { normalizeAgnoRunEvent } from '@/components/agent/agent-run-state'
 import AgentComposer from '@/components/agent/AgentComposer.vue'
 import AgentConversationBody from '@/components/agent/AgentConversationBody.vue'
 import AgentConversationDialogs from '@/components/agent/AgentConversationDialogs.vue'
@@ -306,15 +306,12 @@ const activeMemberRunIds = ref<string[]>([])
 const sendInFlight = ref(false)
 const streamAbortControllersByRun = new Map<string, AbortController>()
 const autoNamingSessionIds = new Set<string>()
-const waitingOutputInferenceTimersBySession = new Map<string, number>()
-const waitingOutputInferenceRevisionsBySession = new Map<string, number>()
 const hitlActionInFlightBySession = ref<Record<string, boolean>>({})
 const forceCancelTick = ref(Date.now())
 let forceCancelTimer: number | null = null
 let componentDisposed = false
 const IMAGE_ATTACHMENT_MAX_BYTES = 10 * 1024 * 1024
 const ALLOWED_IMAGE_ATTACHMENT_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp'])
-const WAITING_OUTPUT_INFERENCE_DELAY_MS = 900
 
 const scope = computed<AgentScopeContext>(() => props.scope ?? {
   scope_type: props.pageId ? 'page' : props.projectId ? 'project' : 'workspace',
@@ -589,90 +586,10 @@ function writeSessionValue<T>(source: Record<string, T>, sessionId: string, valu
 }
 
 /**
- * 继续 paused run 时插入一个本地 assistant 占位，后续 SSE delta 会接管内容。
- */
-function appendLocalAssistantPlaceholder(sessionId: string, runId: string | null) {
-  const currentItems = readSessionValue(timelineItemsBySession.value, sessionId, [])
-  const item = {
-    ...buildAgentLocalTimelineItem(sessionId, {
-      runId,
-      kind: 'message',
-      role: 'assistant',
-      content: '',
-      status: 'running',
-    }),
-    order_index: Math.max(-1, ...currentItems.map(entry => entry.order_index)) + 1,
-  }
-  agentSessionStore.appendTimelineItems(sessionId, [item])
-  agentSessionStore.setStreamingTimelineItemId(sessionId, item.id)
-}
-
-/**
- * 本地插入等待智能体输出的临时状态，覆盖后端首个可见事件到达前的空白窗口。
- */
-function appendLocalWaitingOutputPlaceholder(sessionId: string, runId: string | null) {
-  if (!sessionId || !runId || hasVisibleRunProgress(sessionId, runId)) {
-    return
-  }
-  appendLocalWaitingOutputStatus(sessionId, runId)
-}
-
-/**
- * 本地插入等待输出状态；允许在已有 reasoning 后用于静默窗口推断。
- */
-function appendLocalWaitingOutputStatus(sessionId: string, runId: string | null) {
-  if (!sessionId || !runId) {
-    return
-  }
-  const run = readSessionValue(activeRunBySession.value, sessionId, null)
-  if (run?.run_id === runId && run.status !== 'pending' && run.status !== 'running') {
-    return
-  }
-  if (readSessionValue(timelineItemsBySession.value, sessionId, []).some(item => (
-    item.run_id === runId
-    && item.kind === 'run_status'
-    && item.status === 'model_request'
-  ))) {
-    return
-  }
-  agentSessionStore.applyRunEvent(sessionId, {
-    event: 'model.request.started',
-    run_id: runId,
-    session_id: sessionId,
-    content: null,
-    data: { agent_id: agentId.value },
-    sequence: null,
-    event_index: null,
-  }, {
-    agentId: agentId.value,
-    agentDisplayName: agentDisplayName.value,
-  })
-}
-
-/**
- * 判断指定 run 是否已经有助手文本、推理、工具或状态进度，避免重复插入占位。
- */
-function hasVisibleRunProgress(sessionId: string, runId: string) {
-  return readSessionValue(timelineItemsBySession.value, sessionId, []).some(item => (
-    item.run_id === runId
-    && (
-      item.kind === 'tool'
-      || item.kind === 'reasoning'
-      || item.kind === 'requirement'
-      || item.kind === 'run_status'
-      || (item.kind === 'message' && item.role === 'assistant' && Boolean(item.content))
-    )
-  ))
-}
-
-/**
  * 更新当前会话的流式执行标记，用于脱离 task store 后控制按钮状态。
  */
 function setSessionStreaming(sessionId: string, value: boolean) {
   agentSessionStore.setStreaming(sessionId, value)
-  if (!value) {
-    clearWaitingOutputInferenceTimer(sessionId)
-  }
 }
 
 /**
@@ -691,92 +608,6 @@ function clearStreamAbortController(runId: string, controller: AbortController) 
   if (streamAbortControllersByRun.get(runId) === controller) {
     streamAbortControllersByRun.delete(runId)
   }
-}
-
-/**
- * 推进会话流活动版本，并取消上一轮等待输出推断计时。
- */
-function markWaitingOutputInferenceActivity(sessionId: string): number {
-  if (!sessionId) {
-    return 0
-  }
-  clearWaitingOutputInferenceTimer(sessionId)
-  const nextRevision = (waitingOutputInferenceRevisionsBySession.get(sessionId) ?? 0) + 1
-  waitingOutputInferenceRevisionsBySession.set(sessionId, nextRevision)
-  return nextRevision
-}
-
-/**
- * 清除指定会话的等待输出推断计时器。
- */
-function clearWaitingOutputInferenceTimer(sessionId: string) {
-  const timer = waitingOutputInferenceTimersBySession.get(sessionId)
-  if (timer !== undefined) {
-    window.clearTimeout(timer)
-    waitingOutputInferenceTimersBySession.delete(sessionId)
-  }
-}
-
-/**
- * 清理所有等待输出推断计时器，组件卸载时避免异步回写已销毁状态。
- */
-function clearAllWaitingOutputInferenceTimers() {
-  for (const sessionId of waitingOutputInferenceTimersBySession.keys()) {
-    clearWaitingOutputInferenceTimer(sessionId)
-  }
-}
-
-/**
- * 推断模型在文本输出后进入工具参数生成阶段；静默一小段时间后切换为等待输出提示。
- */
-function scheduleWaitingOutputInference(sessionId: string, runId: string | null, revision: number) {
-  if (!sessionId || !runId) {
-    return
-  }
-  const timer = window.setTimeout(() => {
-    waitingOutputInferenceTimersBySession.delete(sessionId)
-    if (componentDisposed) {
-      return
-    }
-    if ((waitingOutputInferenceRevisionsBySession.get(sessionId) ?? 0) !== revision) {
-      return
-    }
-    if (!readSessionValue(streamingBySession.value, sessionId, false)) {
-      return
-    }
-    if (!hasRunningAssistantTextSegment(sessionId, runId)) {
-      return
-    }
-    appendLocalWaitingOutputStatus(sessionId, runId)
-  }, WAITING_OUTPUT_INFERENCE_DELAY_MS)
-  waitingOutputInferenceTimersBySession.set(sessionId, timer)
-}
-
-/**
- * 判断指定 run 是否仍有正在展示的助手文本段。
- */
-function hasRunningAssistantTextSegment(sessionId: string, runId: string): boolean {
-  return readSessionValue(timelineItemsBySession.value, sessionId, []).some(item => (
-    item.run_id === runId
-    && (
-      item.kind === 'reasoning'
-      || (item.kind === 'message' && item.role === 'assistant')
-    )
-    && item.status === 'running'
-  ))
-}
-
-/**
- * 正文或 reasoning delta 后都可能进入工具参数流，Agno 当前不会为参数增量单独下发 run event。
- */
-function shouldInferWaitingOutputAfterEvent(event: AgentRunEvent, sessionId: string, runId: string | null): runId is string {
-  if (!runId || event.event !== 'message.delta') {
-    return false
-  }
-  const reasoning = event.data.reasoning_content
-  const hasReasoning = typeof reasoning === 'string' && reasoning.length > 0
-  const hasContent = typeof event.content === 'string' && event.content.length > 0
-  return (hasReasoning || hasContent) && hasRunningAssistantTextSegment(sessionId, runId)
 }
 
 /**
@@ -803,9 +634,6 @@ function shouldApplyRuntimeSnapshot(runtime: AgentSessionRuntimeSnapshot) {
   if (!isRuntimeSnapshotForCurrentSession(runtime)) {
     return false
   }
-  if (hasLocalActiveRunProgress(runtime)) {
-    return false
-  }
   if (!isStreaming.value) {
     return true
   }
@@ -821,31 +649,6 @@ function shouldApplyRuntimeSnapshot(runtime: AgentSessionRuntimeSnapshot) {
 }
 
 /**
- * 判断本地是否已有同一 active run 的流式片段；有进度时不能用运行中快照覆盖消息。
- */
-function hasLocalActiveRunProgress(runtime: AgentSessionRuntimeSnapshot) {
-  return hasLocalActiveRunProgressForSession(activeSessionId.value, runtime)
-}
-
-/**
- * 判断指定会话本地是否已有同一 active run 的流式片段。
- */
-function hasLocalActiveRunProgressForSession(sessionId: string, runtime: AgentSessionRuntimeSnapshot) {
-  const run = runtime.active_run
-  if (!sessionId || !run || !shouldSubscribeRunEvents(run)) {
-    return false
-  }
-  const localRunId = readSessionValue(currentRunIdBySession.value, sessionId, null)
-    ?? readSessionValue(activeRunBySession.value, sessionId, null)?.run_id
-    ?? null
-  if (localRunId !== run.run_id) {
-    return false
-  }
-  return agentSessionStore.getLastSequence(sessionId, run.run_id) >= 0
-    || readSessionValue(streamingTimelineItemIdBySession.value, sessionId, null) !== null
-}
-
-/**
  * 订阅已存在后台 run 的事件流；用于刷新、切回会话和停止后的状态收敛。
  */
 function ensureRunEventSubscription(sessionId: string, run: AgentActiveRunItem, afterEventIndex = -1) {
@@ -854,7 +657,6 @@ function ensureRunEventSubscription(sessionId: string, run: AgentActiveRunItem, 
   }
   const streamAbortController = createStreamAbortController(run.run_id)
   setSessionStreaming(sessionId, true)
-  appendLocalWaitingOutputPlaceholder(sessionId, run.run_id)
   streamAgentRunEvents(
     sessionId,
     run.run_id,
@@ -1111,7 +913,6 @@ watch(
 
 onBeforeUnmount(() => {
   componentDisposed = true
-  clearAllWaitingOutputInferenceTimers()
   for (const controller of streamAbortControllersByRun.values()) {
     if (!controller.signal.aborted) {
       controller.abort()
@@ -1441,7 +1242,6 @@ async function handleSend() {
       cancel_requested_at: null,
       event_index: -1,
     })
-    appendLocalWaitingOutputPlaceholder(sessionId, runId)
     const streamAbortController = createStreamAbortController(runId)
     await streamAgentRun(sessionId, runScope, {
       run_id: runId,
@@ -1491,14 +1291,12 @@ async function handleContinueRun(decision: 'confirm' | 'reject') {
 
   setHitlActionInFlight(sessionId, true)
   pendingRequirement.value = null
-  appendLocalAssistantPlaceholder(sessionId, requirement.run_id || pausedRun.run_id || '')
   setSessionStreaming(sessionId, true)
   syncActiveRun(sessionId, { ...pausedRun, status: 'running', pending_requirement: null })
 
   const runId = requirement.run_id || pausedRun.run_id || ''
   let streamAbortController: AbortController | null = null
   try {
-    appendLocalWaitingOutputPlaceholder(sessionId, runId)
     streamAbortController = createStreamAbortController(runId)
     await continueAgentSessionActiveRun(sessionId, scope.value, {
       agent_id: agentId.value,
@@ -1537,15 +1335,13 @@ async function handleSubmitFeedbackRun(selections: AgentFeedbackSelection[]) {
   if (!sessionId || !requirement || pausedRun?.status !== 'paused') return
 
   setHitlActionInFlight(sessionId, true)
-  agentSessionStore.resolveUserFeedbackRequirement(sessionId, requirement, selections)
-  appendLocalAssistantPlaceholder(sessionId, requirement.run_id || pausedRun.run_id || '')
+  pendingRequirement.value = null
   setSessionStreaming(sessionId, true)
   syncActiveRun(sessionId, { ...pausedRun, status: 'running', pending_requirement: null })
 
   const runId = requirement.run_id || pausedRun.run_id || ''
   let streamAbortController: AbortController | null = null
   try {
-    appendLocalWaitingOutputPlaceholder(sessionId, runId)
     streamAbortController = createStreamAbortController(runId)
     await continueAgentSessionActiveRun(sessionId, scope.value, {
       agent_id: agentId.value,
@@ -1787,7 +1583,6 @@ function handleRunEvent(event: AgentRunEvent, fallbackSessionId = activeSessionI
   if (!targetSessionId) {
     return
   }
-  const targetRunId = normalizedEvent.run_id || readSessionValue(currentRunIdBySession.value, targetSessionId, null)
   const isActiveEvent = targetSessionId === activeSessionId.value
   const result = agentSessionStore.applyRunEvent(targetSessionId, normalizedEvent, {
     agentId: agentId.value,
@@ -1795,12 +1590,6 @@ function handleRunEvent(event: AgentRunEvent, fallbackSessionId = activeSessionI
   })
   if (!result.applied) {
     return
-  }
-  const inferenceRevision = markWaitingOutputInferenceActivity(targetSessionId)
-  if (shouldInferWaitingOutputAfterEvent(normalizedEvent, targetSessionId, targetRunId)) {
-    scheduleWaitingOutputInference(targetSessionId, targetRunId, inferenceRevision)
-  } else if (normalizedEvent.event === 'model.request.completed' && targetRunId && hasRunningAssistantTextSegment(targetSessionId, targetRunId)) {
-    appendLocalWaitingOutputStatus(targetSessionId, targetRunId)
   }
   switch (normalizedEvent.event) {
     case 'context.status':
@@ -1822,21 +1611,18 @@ function handleRunEvent(event: AgentRunEvent, fallbackSessionId = activeSessionI
     case 'run.paused':
       break
     case 'run.cancelled':
-      clearWaitingOutputInferenceTimer(targetSessionId)
       writeSessionValue(interruptingBySession.value, targetSessionId, false)
       if (isActiveEvent) {
         Message.info('已停止。')
       }
       break
     case 'run.error':
-      clearWaitingOutputInferenceTimer(targetSessionId)
       writeSessionValue(interruptingBySession.value, targetSessionId, false)
       if (isActiveEvent && lastRunIssue.value) {
         Message.error(lastRunIssue.value.detail)
       }
       break
     case 'run.completed':
-      clearWaitingOutputInferenceTimer(targetSessionId)
       writeSessionValue(interruptingBySession.value, targetSessionId, false)
       break
     default:
@@ -1899,7 +1685,6 @@ async function finalizeRun(
   if (!sessionId) {
     return
   }
-  clearWaitingOutputInferenceTimer(sessionId)
   await queryClient.invalidateQueries({ queryKey: ['ai-sessions'] })
   await queryClient.invalidateQueries({ queryKey: ['ai-session-runtime'] })
   const latestSessions = (await sessionsQuery.refetch()).data ?? []
@@ -1907,36 +1692,35 @@ async function finalizeRun(
   const latestRuntime = sessionId === activeSessionId.value
     ? (await runtimeQuery.refetch()).data ?? null
     : await getAgentSessionRuntime(sessionId, runtimeRequest.scope, runtimeRequest.agentId)
-  const preserveLocalActiveRunTimeline = latestRuntime
-    ? hasLocalActiveRunProgressForSession(sessionId, latestRuntime)
-    : false
-  if (latestRuntime) {
-    if (!preserveLocalActiveRunTimeline) {
-      agentSessionStore.applyRuntimeSnapshot(sessionId, latestRuntime)
-    }
-  }
   const latestRun = latestRuntime?.active_run ?? null
-  if (!options.preserveLocalCancelled || !shouldPreserveLocalCancelled(sessionId, latestRun)) {
+  const localRunBeforeSnapshot = readSessionValue(activeRunBySession.value, sessionId, null)
+  const preserveLocalCancelled = Boolean(
+    options.preserveLocalCancelled
+    && localRunBeforeSnapshot?.status === 'cancelled'
+    && shouldPreserveLocalCancelled(localRunBeforeSnapshot, latestRun),
+  )
+  if (latestRuntime) {
+    agentSessionStore.applyRuntimeSnapshot(sessionId, latestRuntime)
+  }
+  if (preserveLocalCancelled && localRunBeforeSnapshot) {
+    syncActiveRun(sessionId, localRunBeforeSnapshot)
+  } else {
     syncActiveRun(sessionId, latestRun)
   }
   const latestContextStatus = latestRuntime?.context_status ?? null
   agentSessionStore.setContextStatus(sessionId, latestContextStatus)
-  if (latestRuntime && !preserveLocalActiveRunTimeline) {
+  if (latestRuntime) {
     await maybeAutonameActiveSession(latestSessions, latestRuntime.timeline_items, sessionId)
   }
   emitMutationRefreshEvents(sessionId)
-  if (!preserveLocalActiveRunTimeline) {
-    agentSessionStore.setStreamingTimelineItemId(sessionId, null)
-  }
+  agentSessionStore.setStreamingTimelineItemId(sessionId, null)
 }
 
 /**
  * 中断后后端可能短暂仍返回 running/pending；此时保留本地 cancelled，等下一轮刷新自然收敛。
  */
-function shouldPreserveLocalCancelled(sessionId: string, latestRun: AgentActiveRunItem | null) {
-  const localRun = readSessionValue(activeRunBySession.value, sessionId, null)
-  return localRun?.status === 'cancelled'
-    && latestRun !== null
+function shouldPreserveLocalCancelled(localRun: AgentActiveRunItem, latestRun: AgentActiveRunItem | null) {
+  return latestRun !== null
     && (!localRun.run_id || localRun.run_id === latestRun.run_id)
     && (latestRun.status === 'pending' || latestRun.status === 'running')
 }

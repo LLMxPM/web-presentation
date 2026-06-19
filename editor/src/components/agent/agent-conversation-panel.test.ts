@@ -618,7 +618,7 @@ describe('AgentConversationPanel', () => {
     expect(screen.queryByText('只有在你确认后，页面代码才会真正写回后端并生成新版本。')).toBeNull()
   })
 
-  it('发送后首个 SSE 可见事件到达前应显示等待智能体输出提示', async () => {
+  it('发送后首个 SSE 可见事件到达前只保留本地用户消息', async () => {
     const streamDeferred = createDeferred<void>()
     streamAgentRunMock.mockImplementationOnce(async (sessionId: string, scope: unknown, payload: { run_id?: string }) => {
       startAgentRunMock(sessionId, scope, payload)
@@ -635,11 +635,12 @@ describe('AgentConversationPanel', () => {
     await fireEvent.update(textarea, '帮我整理页面资源')
     await fireEvent.click(screen.getByRole('button', { name: /发送/ }))
 
-    expect(await screen.findByText('等待智能体输出中')).toBeTruthy()
+    expect(await screen.findByText('帮我整理页面资源')).toBeTruthy()
+    expect(screen.queryByText('等待智能体输出中')).toBeNull()
     streamDeferred.resolve()
   })
 
-  it('reasoning 后工具参数静默阶段应切换为等待智能体输出提示', async () => {
+  it('reasoning 后工具参数静默阶段不应本地推断等待输出提示', async () => {
     const toolStartDeferred = createDeferred<void>()
     const streamDeferred = createDeferred<void>()
     streamAgentRunMock.mockImplementationOnce(async (sessionId: string, scope: unknown, payload: { run_id?: string }, options?: { onEvent?: (event: any) => void }) => {
@@ -685,10 +686,7 @@ describe('AgentConversationPanel', () => {
     await waitFor(() => {
       expect(screen.getByText('思考中')).toBeTruthy()
     })
-    await waitFor(() => {
-      expect(screen.getByText('等待智能体输出中')).toBeTruthy()
-    }, { timeout: 2000 })
-    expect(screen.queryByText('思考中')).toBeNull()
+    expect(screen.queryByText('等待智能体输出中')).toBeNull()
 
     toolStartDeferred.resolve()
     await waitFor(() => {
@@ -698,7 +696,7 @@ describe('AgentConversationPanel', () => {
     streamDeferred.resolve()
   })
 
-  it('正文后工具参数静默阶段应切换为等待智能体输出提示', async () => {
+  it('正文后工具参数静默阶段不应本地推断等待输出提示', async () => {
     const toolStartDeferred = createDeferred<void>()
     const streamDeferred = createDeferred<void>()
     streamAgentRunMock.mockImplementationOnce(async (sessionId: string, scope: unknown, payload: { run_id?: string }, options?: { onEvent?: (event: any) => void }) => {
@@ -743,9 +741,7 @@ describe('AgentConversationPanel', () => {
     await waitFor(() => {
       expect(screen.getByText('我先检查现有资源。')).toBeTruthy()
     })
-    await waitFor(() => {
-      expect(screen.getByText('等待智能体输出中')).toBeTruthy()
-    }, { timeout: 2000 })
+    expect(screen.queryByText('等待智能体输出中')).toBeNull()
 
     toolStartDeferred.resolve()
     await waitFor(() => {
@@ -1169,7 +1165,7 @@ describe('AgentConversationPanel', () => {
     expect(messageInfoMock).not.toHaveBeenCalledWith('当前运行已被用户取消，后台执行句柄已释放。')
   })
 
-  it('取消终态快照暂时为空时不应清空本地流式消息', async () => {
+  it('取消终态快照暂时为空时应以快照清理本地流式消息', async () => {
     startAgentRunMock.mockResolvedValueOnce({
       run_id: 'run-cancel',
       session_id: 'session-1',
@@ -1213,7 +1209,9 @@ describe('AgentConversationPanel', () => {
     await waitFor(() => {
       expect(messageInfoMock).toHaveBeenCalledWith('已停止。')
     })
-    expect(screen.getByText('已流出的局部内容。')).toBeTruthy()
+    await waitFor(() => {
+      expect(screen.queryByText('已流出的局部内容。')).toBeNull()
+    })
   })
 
   it('缺少本地流控制器时应使用后端取消接口兜底', async () => {

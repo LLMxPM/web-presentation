@@ -249,22 +249,7 @@ export function applyAgentRuntimeSnapshot(
     eventIndex: number
   },
 ): void {
-  const snapshotItems = [...payload.timelineItems]
-  const activeStreamingRunId = payload.activeRun && STREAMING_RUN_STATUSES.has(payload.activeRun.status)
-    ? payload.activeRun.run_id
-    : null
-  const cancelledRunId = payload.lastRun?.status === 'cancelled' ? payload.lastRun.run_id : null
-  if (activeStreamingRunId && hasLocalRunProgress(state.timelineItems, activeStreamingRunId)) {
-    state.timelineItems = mergeSnapshotWithLocalRun(snapshotItems, state.timelineItems, activeStreamingRunId)
-  } else if (
-    cancelledRunId
-    && hasLocalRunProgress(state.timelineItems, cancelledRunId)
-    && !hasRuntimeRunProgress(snapshotItems, cancelledRunId)
-  ) {
-    state.timelineItems = mergeSnapshotWithLocalRun(snapshotItems, state.timelineItems, cancelledRunId)
-  } else {
-    state.timelineItems = snapshotItems
-  }
+  state.timelineItems = [...payload.timelineItems]
   state.memberRuns = [...(payload.memberRuns ?? [])]
   state.activeRun = normalizeActiveRun(payload.activeRun)
   state.lastRun = payload.lastRun
@@ -1350,26 +1335,6 @@ function shouldUseCompletedEventContent(state: AgentSessionRuntimeState, content
     && Boolean(item.content)
   ))
   return !hasAssistantContent
-}
-
-function hasLocalRunProgress(items: AgentTimelineItem[], runId: string): boolean {
-  return items.some(item => itemBelongsToRun(item, runId) && item.kind !== 'message')
-}
-
-function hasRuntimeRunProgress(items: AgentTimelineItem[], runId: string): boolean {
-  return items.some(item => item.run_id === runId && item.kind !== 'message')
-}
-
-function mergeSnapshotWithLocalRun(
-  snapshotItems: AgentTimelineItem[],
-  localItems: AgentTimelineItem[],
-  runId: string,
-): AgentTimelineItem[] {
-  const localRunItems = localItems.filter(item => itemBelongsToRun(item, runId))
-  return [
-    ...snapshotItems.filter(item => item.run_id !== runId),
-    ...localRunItems,
-  ].sort((left, right) => left.order_index - right.order_index)
 }
 
 function itemBelongsToRun(item: AgentTimelineItem, runId: string): boolean {

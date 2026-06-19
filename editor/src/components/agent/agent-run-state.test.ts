@@ -9,7 +9,6 @@ import {
   applyAgentRuntimeSnapshot,
   createAgentSessionRuntimeState,
 } from '@/components/agent/agent-run-state'
-import { resolveAgentUserFeedbackRequirement } from '@/components/agent/agent-user-feedback-state'
 import { useAgentSessionStore } from '@/stores/agent-session'
 import type { AgentPendingRequirement, AgentRunEvent, AgentTimelineItem } from '@/types/api'
 
@@ -129,71 +128,6 @@ describe('agent-run-state timeline', () => {
 
     const requirementItem = state.timelineItems.find(item => item.kind === 'requirement')
     expect(requirementItem?.content).toBe('是否继续整理资源？')
-  })
-
-  it('提交 ask_user 回答后应本地完成提问项并移除等待 requirement', () => {
-    const state = createAgentSessionRuntimeState()
-    const options = { agentId: 'agent-coordinator', agentDisplayName: '内容助手' }
-
-    applyAgentRunEvent(state, event({ event: 'run.started', sequence: 1 }), options)
-    applyAgentRunEvent(state, event({
-      event: 'tool.started',
-      data: {
-        tool_name: 'ask_user',
-        tool_call_id: 'tool-ask-1',
-        tool_args: {
-          questions: [
-            {
-              question: '是否继续整理资源？',
-              header: '继续',
-              options: [{ label: '继续', description: '继续整理资源。' }],
-              multi_select: false,
-            },
-          ],
-        },
-      },
-      sequence: 2,
-    }), options)
-    applyAgentRunEvent(state, event({
-      event: 'run.paused',
-      sequence: 3,
-      data: {
-        requirement: {
-          id: 'req-ask-1',
-          kind: 'user_feedback',
-          run_id: 'run-1',
-          session_id: 'session-1',
-          tool_name: 'ask_user',
-          tool_execution: { tool_name: 'ask_user', tool_call_id: 'tool-ask-1', requires_user_input: true },
-          suggested_patch: null,
-          user_feedback_schema: [
-            {
-              question: '是否继续整理资源？',
-              header: '继续',
-              options: [{ label: '继续', description: '继续整理资源。' }],
-              multi_select: false,
-              selected_options: null,
-            },
-          ],
-          note: null,
-        },
-      },
-    }), options)
-
-    const requirement = state.pendingRequirement
-    expect(requirement).not.toBeNull()
-
-    resolveAgentUserFeedbackRequirement(state, requirement!, [
-      { question: '是否继续整理资源？', selected_label: '继续', custom_text: null },
-    ])
-
-    const askUserItems = state.timelineItems.filter(item => item.kind === 'tool' && item.tool?.tool_name === 'ask_user')
-    expect(state.pendingRequirement).toBeNull()
-    expect(state.timelineItems.some(item => item.kind === 'requirement')).toBe(false)
-    expect(askUserItems).toHaveLength(1)
-    expect(askUserItems[0].status).toBe('completed')
-    expect(askUserItems[0].tool?.output_payload).toContain('继续')
-    expect(state.activeRun?.status).toBe('running')
   })
 
   it('cancelled 应清理 activeRun 并写入 run_status', () => {
@@ -358,7 +292,7 @@ describe('agent-run-state timeline', () => {
     expect(state.timelineItems.map(item => item.content)).toEqual(['先分析。', null, '新片段。'])
   })
 
-  it('取消终态快照缺少当前 run 进度时应保留本地 timeline', () => {
+  it('取消终态快照缺少当前 run 进度时应以快照 timeline 为准', () => {
     const state = createAgentSessionRuntimeState()
     state.activeRun = {
       run_id: 'run-1',
@@ -401,7 +335,7 @@ describe('agent-run-state timeline', () => {
       eventIndex: 3,
     })
 
-    expect(state.timelineItems.map(item => item.id)).toEqual(['local-assistant', 'local-tool'])
+    expect(state.timelineItems).toEqual([])
     expect(state.lastRun?.status).toBe('cancelled')
   })
 
