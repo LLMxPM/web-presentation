@@ -1072,7 +1072,7 @@ export interface AgentRunCancelResponse {
 export interface LlmProviderCatalogItem {
   provider_key: string
   label: string
-  agno_class_path: string
+  provider_adapter: string
   docs_url: string
   supports_base_url: boolean
   supports_api_key: boolean

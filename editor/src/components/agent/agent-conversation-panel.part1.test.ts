@@ -646,28 +646,26 @@ describe('AgentConversationPanel', () => {
     streamAgentRunMock.mockImplementationOnce(async (sessionId: string, scope: unknown, payload: { run_id?: string }, options?: { onEvent?: (event: any) => void }) => {
       const runId = payload?.run_id ?? 'run-tool-args-silent'
       startAgentRunMock(sessionId, scope, payload)
-      options?.onEvent?.({ event: 'RunStarted', run_id: runId, session_id: sessionId, content: null, data: {}, event_index: 0 })
+      options?.onEvent?.({ event: 'run.started', run_id: runId, session_id: sessionId, content: null, data: {}, event_index: 0 })
       options?.onEvent?.({
-        event: 'RunContent',
+        event: 'reasoning.delta',
         run_id: runId,
         session_id: sessionId,
-        content: '',
-        reasoning_content: '先判断需要读取资源。',
-        data: {},
+        content: '先判断需要读取资源。',
+        data: { reasoning_content: '先判断需要读取资源。' },
         event_index: 1,
       })
       await toolStartDeferred.promise
       options?.onEvent?.({
-        event: 'ToolCallStarted',
+        event: 'tool.started',
         run_id: runId,
         session_id: sessionId,
         content: null,
-        tool: {
+        data: {
           tool_call_id: 'tool-assets-silent',
           tool_name: 'list_workspace_render_assets',
-          tool_args: { workspace_id: 11 },
+          arguments: { workspace_id: 11 },
         },
-        data: {},
         event_index: 2,
       })
       await streamDeferred.promise
@@ -702,9 +700,9 @@ describe('AgentConversationPanel', () => {
     streamAgentRunMock.mockImplementationOnce(async (sessionId: string, scope: unknown, payload: { run_id?: string }, options?: { onEvent?: (event: any) => void }) => {
       const runId = payload?.run_id ?? 'run-message-tool-args-silent'
       startAgentRunMock(sessionId, scope, payload)
-      options?.onEvent?.({ event: 'RunStarted', run_id: runId, session_id: sessionId, content: null, data: {}, event_index: 0 })
+      options?.onEvent?.({ event: 'run.started', run_id: runId, session_id: sessionId, content: null, data: {}, event_index: 0 })
       options?.onEvent?.({
-        event: 'RunContent',
+        event: 'message.delta',
         run_id: runId,
         session_id: sessionId,
         content: '我先检查现有资源。',
@@ -713,16 +711,15 @@ describe('AgentConversationPanel', () => {
       })
       await toolStartDeferred.promise
       options?.onEvent?.({
-        event: 'ToolCallStarted',
+        event: 'tool.started',
         run_id: runId,
         session_id: sessionId,
         content: null,
-        tool: {
+        data: {
           tool_call_id: 'tool-assets-after-message',
           tool_name: 'list_workspace_render_assets',
-          tool_args: { workspace_id: 11 },
+          arguments: { workspace_id: 11 },
         },
-        data: {},
         event_index: 2,
       })
       await streamDeferred.promise

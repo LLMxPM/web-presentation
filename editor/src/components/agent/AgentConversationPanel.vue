@@ -189,7 +189,7 @@ import {
   resolveSessionScope,
   setSelectedSession,
 } from '@/components/agent/agent-session-scope'
-import { normalizeAgnoRunEvent } from '@/components/agent/agent-run-state'
+import { normalizeAgentRunEvent } from '@/components/agent/agent-run-state'
 import AgentComposer from '@/components/agent/AgentComposer.vue'
 import AgentConversationBody from '@/components/agent/AgentConversationBody.vue'
 import AgentConversationDialogs from '@/components/agent/AgentConversationDialogs.vue'
@@ -707,7 +707,7 @@ function ensureRunEventSubscription(sessionId: string, run: AgentActiveRunItem, 
 }
 
 /**
- * 判断指定会话是否仍在流式运行或处于 Agno 非终态运行中。
+ * 判断指定会话是否仍在流式运行或处于平台非终态运行中。
  */
 function isSessionRunning(sessionId: string) {
   if (!sessionId) {
@@ -1200,7 +1200,7 @@ function isAgentRunActiveError(error: unknown) {
  * 消费后端返回的流式事件，并同步更新消息、内嵌工具状态与待确认状态。
  */
 function handleRunEvent(event: AgentRunEvent, fallbackSessionId = activeSessionId.value) {
-  const normalizedEvent = normalizeAgnoRunEvent(event)
+  const normalizedEvent = normalizeAgentRunEvent(event)
   const targetSessionId = normalizedEvent.session_id || fallbackSessionId
   if (!targetSessionId) {
     return
@@ -1380,7 +1380,7 @@ function getSessionRunBadge(sessionId: string) {
 }
 
 /**
- * 在首轮消息完成后尝试使用 Agno 自动生成会话名，避免会话列表长期停留在通用标题。
+ * 在首轮消息完成后尝试自动生成会话名，避免会话列表长期停留在通用标题。
  */
 async function maybeAutonameActiveSession(
   sessions: AgentSessionItem[],

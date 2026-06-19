@@ -186,9 +186,9 @@ app:
 - 路由 `meta` 不支持 `icon`，导航菜单不再渲染项目路由图标
 - Runtime 预览和发布时，会由 Backend 根据 `page_code` 解析到页面记录，再自动转译为 `@/views/<page.code>.vue`
 
-## 8. 内容助手（Agno）
+## 8. 内容助手（Pydantic AI）
 
-Backend 现已内嵌基于 Agno 的智能体运行时，但不挂载 AgentOS routes，也不使用 AgentOS run API。Editor 通过 `/api/ai/*` 调用 Backend BFF，Backend 直接构建 Agno `Agent` 或 `Team`，并以 Agno session/run/events 作为会话、运行与 HITL 状态事实源。
+Backend 现已内嵌基于 Pydantic AI 的智能体运行入口。Editor 通过 `/api/ai/*` 调用 Backend BFF，Backend 以平台自有 `ai_agent_*` 表作为会话、运行、事件回放、消息、工具调用与 HITL 状态事实源。当前工具实现仍复用既有 Agno Function 规格做桥接，后续工具实现应逐步收敛到原生 Pydantic AI Tool。
 
 当前开放的稳定 Agent 包括：
 
@@ -203,31 +203,31 @@ Backend 现已内嵌基于 Agno 的智能体运行时，但不挂载 AgentOS rou
 - 浏览器继续只持有 `wp_user_session` Cookie
 - Editor 调用 Backend BFF 路由 `/api/ai/*`
 - Editor 以 `session_id` 作为唯一会话主键，主入口为 `POST /api/ai/sessions/{session_id}/runs/stream`
-- 前端生成 `run_id`，Backend 调用 Agno `agent/team.arun(..., stream=True, stream_events=True, background=True, run_id=...)`，SSE 直接透传 Agno 原始事件
-- HITL 继续执行走 `POST /active-run/continue`，Backend 从 Agno 当前 run 的 active requirements 匹配用户决策，再调用 `agent/team.acontinue_run(...)`
-- 客户端断开、切换会话、关闭面板只会关闭当前订阅；重新进入后通过 `runs/{run_id}/events/stream?event_index=N` 从 Agno event buffer 或 Agno DB events 回放
-- Backend 以 Agno `AgentSession.runs` 或 `TeamSession.runs` 作为 active-run 主状态源；`pending/running/paused/cancelling` 视为非终态，`completed/cancelled/failed` 视为终态，同一 session 同时只允许一个非终态 run
-- Editor 停止运行时调用 `POST /active-run/cancel`；running run 调用 Agno `cancel_run()`，paused run 无后台任务时直接把 Agno DB 中对应 run 标记为 `cancelled`
-- Backend 重启后 Agno event buffer 会丢失；paused run 仍可继续，running 且缺少 buffer 的 run 会在懒加载快照时标记为 `cancelled`
-- 历史上下文使用 Agno 内置历史注入，按模型 `context_window_tokens`、`max_output_tokens`、`history_token_ratio` 动态计算 `num_history_messages`，不再固定 `num_history_runs=20`
+- 前端生成 `run_id`，Backend 构建 Pydantic AI `Agent` 并把内部事件转换为平台统一 SSE 事件
+- HITL 继续执行走 `POST /active-run/continue`，Backend 从平台 pending requirement 匹配用户决策，再通过 Pydantic AI deferred tool results 继续运行
+- 客户端断开、切换会话、关闭面板只会关闭当前订阅；重新进入后通过 `runs/{run_id}/events/stream?event_index=N` 从 `ai_agent_run_events` 回放
+- Backend 以 `ai_agent_runs` 作为 active-run 主状态源；`pending/running/paused/cancelling` 视为非终态，`completed/cancelled/failed` 视为终态，同一 session 同时只允许一个非终态 run
+- Editor 停止运行时调用 `POST /active-run/cancel`；Backend 标记 run 为 cancelling，工具侧读取平台取消标记后中断
+- Backend 重启后仍可通过平台事件表恢复会话、时间线、待确认动作和终态
+- 历史上下文由平台持久化 Pydantic AI message history，后续可继续接入平台压缩策略
 - Agent 工具级鉴权使用短期签名 token，承载 `run_id/session_id/agent_id/user_id/workspace/page/scopes/exp`；工具调用只校验 token、scope 和资源归属，不再查询 Redis run 状态
 - 不同 session 可并行执行；当前默认单实例或按 session/run 粘性路由部署，不额外支持跨实例实时续流
 
 当前工具按入口分组装配：
 
 - 所有智能体：内置不可关闭的 `ask_user`，用于一次提出一个或多个结构化单选问题；Editor 在输入区覆盖式展示，支持逐题回答、前后切换、预设选项或自定义回答，不暴露 `get_user_input` 自由字段工具
-- `agent-coordinator`：按用户工具配置直接启用内容读取、项目描述/样式配置读取、组件读取、资源读取、页面写入、页面截图与项目写入工具；组件读取仅包含 `list_components`、`get_component_detail`，资源读取包含 `list_resource_assets`、`get_resource_asset_content`、`list_resource_tags`；项目样式配置写入工具 `update_project_style_config` 会通过 Agno 用户确认暂停执行；组件/资源维护能力通过 Team 成员工具执行，成员工具事件会带 `member_agent_id`、`member_agent_name`、`member_run_id` 供 Editor 展示来源
+- `agent-coordinator`：按用户工具配置直接启用内容读取、项目描述/样式配置读取、组件读取、资源读取、页面写入、页面截图与项目写入工具；组件读取仅包含 `list_components`、`get_component_detail`，资源读取包含 `list_resource_assets`、`get_resource_asset_content`、`list_resource_tags`；项目样式配置写入工具 `update_project_style_config` 会通过用户确认暂停执行；组件/资源维护能力通过成员工具执行，成员工具事件会带 `member_agent_id`、`member_agent_name`、`member_run_id` 供 Editor 展示来源
 - `component-manager`：`list_components`、`get_component_detail`、`list_component_versions`、`get_component_dependencies`、`list_runtime_kit_capabilities`、`get_runtime_kit_capability`、`list_resource_assets`、`get_resource_asset_content`、`list_resource_tags`、`check_component_code`、`create_component`、`apply_component_edits`、`update_component_metadata`、`publish_component`、`delete_component`
 - `resource-manager`：`list_resource_assets`、`get_resource_asset_content`、`list_resource_tags`、`create_resource_asset`、`preview_resource_content_diff`、`apply_resource_content_diff`、`update_resource_asset_metadata`、`copy_resource_asset`、`archive_resource_asset`
 
-其中项目样式配置写入、路由整树覆盖、路由节点移除与组件删除通过 Agno 确认暂停执行；结构化提问同样通过 Agno paused run 恢复；`apply_page_edits` 和 `apply_component_edits` 在写入前强制执行 Runtime validate，校验失败不落库。页面写入调用时必须显式传入目标 `page_id`，并使用 `base_version_no` 做乐观锁；组件写入使用 `base_draft_hash` 与 `base_published_version_no` 锁定当前草稿。
+其中项目样式配置写入、路由整树覆盖、路由节点移除与组件删除通过 HITL 确认暂停执行；结构化提问同样通过 paused run 恢复；`apply_page_edits` 和 `apply_component_edits` 在写入前强制执行 Runtime validate，校验失败不落库。页面写入调用时必须显式传入目标 `page_id`，并使用 `base_version_no` 做乐观锁；组件写入使用 `base_draft_hash` 与 `base_published_version_no` 锁定当前草稿。
 
 用户级智能体配置由内置目录和用户配置合成：
 
 - 智能体入口保持系统内置，不提供用户开关；可用性仍由模型槽位、图片输入能力、用户工具配置和权限判断
 - `ai_agent_user_configs` 保存用户对智能体描述与业务补充提示词的配置；内容助手 Team 成员描述通过对应成员 Agent 的描述配置读取，平台底线提示词不允许编辑
 - `ai_agent_tool_user_configs` 保存单工具开关与工具说明/提示词覆盖；系统引导工具不可关闭，确认策略、工具名、参数 schema 和鉴权 scope 不允许被用户修改
-- 新 run 会读取最新用户配置；正在运行的 Agno run 不被强制中断
+- 新 run 会读取最新用户配置；正在运行的 run 不被强制中断
 
 新增环境变量：
 
@@ -239,14 +239,9 @@ Backend 现已内嵌基于 Agno 的智能体运行时，但不挂载 AgentOS rou
 - `AI_AGENT_TOKEN_TTL_SECONDS`：历史兼容 Agent Token TTL（秒）
 - `AI_TOOL_AUTH_WINDOW_SECONDS`：工具 run 级授权滑动窗口（秒），默认 1800
 - `AI_TOOL_AUTH_MAX_SECONDS`：工具 run 级授权绝对上限（秒），默认 7200
-- `AI_DB_URL`：可选，覆盖 Agno 会话数据库连接
-- `AI_DB_SCHEMA` / `AI_SESSION_TABLE` / `AI_APPROVALS_TABLE`：Agno 会话与审批存储配置
-- `AI_SESSION_RETENTION_DAYS`：Agno 会话保留天数，默认 `15`；按 `updated_at` 判断，缺失时使用 `created_at`
-- `AI_SESSION_CLEANUP_INTERVAL_SECONDS`：Agno 会话历史后台清理间隔，默认 `21600`，设为 `0` 时关闭清理
-- `AI_SESSION_CLEANUP_BATCH_SIZE`：单批扫描和删除的 session 数量上限，默认 `500`
 - `AI_TEST_MODE`：测试模式；当前支持 `disabled`、`mock`，平台 E2E 推荐使用 `mock`
 
-Agno 会话历史清理只删除超过保留期未更新的整条 session，不做消息级裁剪、事件压缩或摘要迁移。PostgreSQL JSONB/TOAST 已产生的表膨胀不会因为普通删除立即释放物理磁盘；如需回收磁盘空间，应由运维窗口手动执行 `VACUUM FULL`、`pg_repack` 等维护操作，Backend 不会自动执行重型 vacuum。
+AI 会话、运行、事件、消息、工具调用和 HITL 状态写入 Backend 主库中的 `ai_agent_*` 表，随常规数据库备份和 Alembic 迁移一起管理。
 
 当前接口：
 

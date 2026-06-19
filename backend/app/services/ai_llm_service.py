@@ -48,7 +48,7 @@ class AiLlmService:
             LlmProviderCatalogItem(
                 provider_key=item.provider_key,
                 label=item.label,
-                agno_class_path=item.agno_class_path,
+                provider_adapter=item.provider_adapter,
                 docs_url=item.docs_url,
                 supports_base_url=item.supports_base_url,
                 supports_api_key=item.supports_api_key,

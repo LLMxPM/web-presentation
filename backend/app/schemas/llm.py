@@ -21,7 +21,7 @@ class LlmProviderCatalogItem(SchemaBase):
 
     provider_key: str
     label: str
-    agno_class_path: str
+    provider_adapter: str
     docs_url: str
     supports_base_url: bool
     supports_api_key: bool

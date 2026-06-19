@@ -103,7 +103,7 @@ export async function getAgentSessionRuntime(sessionId: string, scope: AgentScop
 }
 
 /**
- * 重命名已存在的内容助手会话，或触发 Agno 自动生成名称。
+ * 重命名已存在的内容助手会话，或触发后端自动生成名称。
  */
 export async function renameAgentSession(
   sessionId: string,
@@ -235,7 +235,7 @@ export async function promoteAgentImageAttachment(
 }
 
 /**
- * 查询当前会话最近一次 Agno run 状态。
+ * 查询当前会话最近一次智能体运行状态。
  */
 export async function getAgentSessionActiveRun(sessionId: string, scope: AgentScopeContext, agentId = 'agent-coordinator') {
   const { data } = await http.get<AgentActiveRunItem | null>(`/ai/sessions/${sessionId}/active-run`, {

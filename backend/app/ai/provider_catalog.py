@@ -8,24 +8,24 @@ from typing import Any
 from app.core.exceptions import AppException
 from app.models.enums import AiLlmSlot, AiThinkingMode
 
-OPENAI_DOCS_URL = "https://docs.agno.com/models/providers/native/openai/responses/overview"
-OPENROUTER_DOCS_URL = "https://docs.agno.com/models/providers/gateways/openrouter/overview"
-DASHSCOPE_DOCS_URL = "https://docs.agno.com/models/providers/native/dashscope/overview"
-OPENAI_LIKE_DOCS_URL = "https://docs.agno.com/models/providers/openai-like"
-GOOGLE_DOCS_URL = "https://docs.agno.com/models/providers/native/google/overview"
-DEEPSEEK_DOCS_URL = "https://docs.agno.com/models/providers/native/deepseek/overview"
-OLLAMA_DOCS_URL = "https://docs.agno.com/models/providers/local/ollama/overview"
-NVIDIA_DOCS_URL = "https://docs.agno.com/reference/models/nvidia"
+OPENAI_DOCS_URL = "https://pydantic.dev/docs/ai/models/openai/"
+OPENROUTER_DOCS_URL = "https://pydantic.dev/docs/ai/models/openrouter/"
+DASHSCOPE_DOCS_URL = "https://pydantic.dev/docs/ai/models/openai/"
+OPENAI_LIKE_DOCS_URL = "https://pydantic.dev/docs/ai/models/openai/"
+GOOGLE_DOCS_URL = "https://pydantic.dev/docs/ai/models/google/"
+DEEPSEEK_DOCS_URL = "https://pydantic.dev/docs/ai/models/openai/"
+OLLAMA_DOCS_URL = "https://pydantic.dev/docs/ai/models/ollama/"
+NVIDIA_DOCS_URL = "https://pydantic.dev/docs/ai/models/openai/"
 MIMO_DOCS_URL = "https://platform.xiaomimimo.com/docs/zh-CN/quick-start/first-api-call"
 
 
 @dataclass(slots=True, frozen=True)
 class LlmProviderCatalogEntry:
-    """描述一个可供用户选择的 Agno 模型供应商。"""
+    """描述一个可供用户选择的 Pydantic AI 模型供应商。"""
 
     provider_key: str
     label: str
-    agno_class_path: str
+    provider_adapter: str
     docs_url: str
     supports_base_url: bool
     supports_api_key: bool
@@ -81,7 +81,7 @@ LLM_PROVIDER_CATALOG: dict[str, LlmProviderCatalogEntry] = {
     "openai": LlmProviderCatalogEntry(
         provider_key="openai",
         label="OpenAI",
-        agno_class_path="agno.models.openai.responses.OpenAIResponses",
+        provider_adapter="pydantic_ai.models.openai.OpenAIChatModel",
         docs_url=OPENAI_DOCS_URL,
         supports_base_url=True,
         supports_api_key=True,
@@ -94,12 +94,12 @@ LLM_PROVIDER_CATALOG: dict[str, LlmProviderCatalogEntry] = {
     "openrouter": LlmProviderCatalogEntry(
         provider_key="openrouter",
         label="OpenRouter",
-        agno_class_path="agno.models.openrouter.openrouter.OpenRouter",
+        provider_adapter="pydantic_ai.models.openrouter.OpenRouterModel",
         docs_url=OPENROUTER_DOCS_URL,
         supports_base_url=True,
         supports_api_key=True,
         supports_thinking=True,
-        thinking_mode=AiThinkingMode.OPENAI_REASONING.value,
+        thinking_mode=AiThinkingMode.OPENROUTER_REASONING.value,
         default_base_url="https://openrouter.ai/api/v1",
         default_thinking_effort="medium",
         thinking_effort_options=("low", "medium", "high"),
@@ -107,7 +107,7 @@ LLM_PROVIDER_CATALOG: dict[str, LlmProviderCatalogEntry] = {
     "dashscope": LlmProviderCatalogEntry(
         provider_key="dashscope",
         label="DashScope",
-        agno_class_path="agno.models.dashscope.dashscope.DashScope",
+        provider_adapter="pydantic_ai.providers.alibaba.AlibabaProvider",
         docs_url=DASHSCOPE_DOCS_URL,
         supports_base_url=True,
         supports_api_key=True,
@@ -121,7 +121,7 @@ LLM_PROVIDER_CATALOG: dict[str, LlmProviderCatalogEntry] = {
     "openai_like": LlmProviderCatalogEntry(
         provider_key="openai_like",
         label="OpenAILike",
-        agno_class_path="agno.models.openai.like.OpenAILike",
+        provider_adapter="pydantic_ai.providers.openai.OpenAIProvider",
         docs_url=OPENAI_LIKE_DOCS_URL,
         supports_base_url=True,
         supports_api_key=True,
@@ -133,7 +133,7 @@ LLM_PROVIDER_CATALOG: dict[str, LlmProviderCatalogEntry] = {
     "google": LlmProviderCatalogEntry(
         provider_key="google",
         label="Google",
-        agno_class_path="agno.models.google.gemini.Gemini",
+        provider_adapter="pydantic_ai.models.google.GoogleModel",
         docs_url=GOOGLE_DOCS_URL,
         supports_base_url=False,
         supports_api_key=True,
@@ -146,7 +146,7 @@ LLM_PROVIDER_CATALOG: dict[str, LlmProviderCatalogEntry] = {
     "deepseek": LlmProviderCatalogEntry(
         provider_key="deepseek",
         label="DeepSeek",
-        agno_class_path="agno.models.deepseek.deepseek.DeepSeek",
+        provider_adapter="pydantic_ai.providers.deepseek.DeepSeekProvider",
         docs_url=DEEPSEEK_DOCS_URL,
         supports_base_url=True,
         supports_api_key=True,
@@ -163,7 +163,7 @@ LLM_PROVIDER_CATALOG: dict[str, LlmProviderCatalogEntry] = {
     "ollama": LlmProviderCatalogEntry(
         provider_key="ollama",
         label="Ollama",
-        agno_class_path="agno.models.ollama.Ollama",
+        provider_adapter="pydantic_ai.providers.ollama.OllamaProvider",
         docs_url=OLLAMA_DOCS_URL,
         supports_base_url=True,
         supports_api_key=True,
@@ -177,7 +177,7 @@ LLM_PROVIDER_CATALOG: dict[str, LlmProviderCatalogEntry] = {
     "nvidia": LlmProviderCatalogEntry(
         provider_key="nvidia",
         label="NVIDIA",
-        agno_class_path="agno.models.nvidia.nvidia.Nvidia",
+        provider_adapter="pydantic_ai.providers.openai.OpenAIProvider",
         docs_url=NVIDIA_DOCS_URL,
         supports_base_url=True,
         supports_api_key=True,
@@ -191,7 +191,7 @@ LLM_PROVIDER_CATALOG: dict[str, LlmProviderCatalogEntry] = {
     "mimo": LlmProviderCatalogEntry(
         provider_key="mimo",
         label="MiMo",
-        agno_class_path="app.ai.providers.mimo.MiMo",
+        provider_adapter="pydantic_ai.providers.openai.OpenAIProvider",
         docs_url=MIMO_DOCS_URL,
         supports_base_url=True,
         supports_api_key=True,

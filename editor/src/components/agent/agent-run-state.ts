@@ -107,7 +107,7 @@ export function applyAgentRunEvent(
   event: AgentRunEvent,
   options: ApplyAgentRunEventOptions,
 ): ApplyAgentRunEventResult {
-  event = normalizeAgnoRunEvent(event)
+  event = normalizeAgentRunEvent(event)
   if (event.event === 'context.status') {
     state.contextStatus = event.data
     return { applied: true, terminal: false }
@@ -174,6 +174,10 @@ export function applyAgentRunEvent(
         )
         appendAssistantDelta(state, event, splitContent.content)
       }
+      return { applied: true, terminal: false }
+    case 'reasoning.delta':
+      removeModelRequestStatusItem(state, runId)
+      appendReasoningDelta(state, event, event.content ?? resolveEventReasoningContent(event))
       return { applied: true, terminal: false }
     case 'tool.started':
       removeModelRequestStatusItem(state, runId)
@@ -283,399 +287,17 @@ function normalizeActiveRun(run: AgentActiveRunItem | null): AgentActiveRunItem 
 }
 
 /**
- * 将 Agno raw event 投影成内部 UI 状态机事件；SSE 公共契约仍保留 raw payload。
+ * 归一化平台 Agent 事件，确保 data 与 event_index 字段稳定存在。
  */
-export function normalizeAgnoRunEvent(rawEvent: AgentRunEvent): AgentRunEvent {
+export function normalizeAgentRunEvent(rawEvent: AgentRunEvent): AgentRunEvent {
   if (rawEvent.event.includes('.')) {
     return { ...rawEvent, data: rawEvent.data ?? {}, event_index: rawEvent.event_index ?? rawEvent.sequence ?? null }
   }
-  const eventName = rawEvent.event
-  const runId = resolveRawString(rawEvent.run_id) ?? null
-  const sessionId = resolveRawString(rawEvent.session_id) ?? null
-  const eventIndex = resolveRawNumber(rawEvent.event_index) ?? resolveRawNumber(rawEvent.sequence)
-  const data: Record<string, unknown> = { ...rawEvent }
-  delete data.data
-  const memberEventData = resolveRawMemberEventData(rawEvent, runId)
-
-  if (['RunStarted', 'RunStartedEvent', 'TeamRunStarted'].includes(eventName)) {
-    if (memberEventData) {
-      return {
-        event: 'member.run.started',
-        run_id: memberEventData.parent_run_id,
-        session_id: sessionId,
-        content: null,
-        data: { ...data, ...memberEventData },
-        event_index: eventIndex,
-      }
-    }
-    return {
-      event: 'run.started',
-      run_id: runId,
-      session_id: sessionId,
-      content: null,
-      data: { ...data, agent_id: rawEvent.agent_id ?? rawEvent.team_id },
-      event_index: eventIndex,
-    }
-  }
-  if (['RunContinued', 'RunContinuedEvent', 'TeamRunContinued'].includes(eventName)) {
-    if (memberEventData) {
-      return {
-        event: 'member.run.continued',
-        run_id: memberEventData.parent_run_id,
-        session_id: sessionId,
-        content: null,
-        data: { ...data, ...memberEventData },
-        event_index: eventIndex,
-      }
-    }
-    return { event: 'run.continued', run_id: runId, session_id: sessionId, content: null, data, event_index: eventIndex }
-  }
-  if (['ModelRequestStarted', 'ModelRequestStartedEvent', 'TeamModelRequestStarted'].includes(eventName)) {
-    if (memberEventData) {
-      return {
-        event: 'member.model.request.started',
-        run_id: memberEventData.parent_run_id,
-        session_id: sessionId,
-        content: null,
-        data: { ...data, ...memberEventData },
-        event_index: eventIndex,
-      }
-    }
-    return { event: 'model.request.started', run_id: runId, session_id: sessionId, content: null, data, event_index: eventIndex }
-  }
-  if (['ModelRequestCompleted', 'ModelRequestCompletedEvent', 'TeamModelRequestCompleted'].includes(eventName)) {
-    if (memberEventData) {
-      return {
-        event: 'member.model.request.completed',
-        run_id: memberEventData.parent_run_id,
-        session_id: sessionId,
-        content: null,
-        data: { ...data, ...memberEventData },
-        event_index: eventIndex,
-      }
-    }
-    return { event: 'model.request.completed', run_id: runId, session_id: sessionId, content: null, data, event_index: eventIndex }
-  }
-  if ([
-    'RunContent',
-    'RunContentEvent',
-    'IntermediateRunContent',
-    'IntermediateRunContentEvent',
-    'RunIntermediateContent',
-    'TeamRunContent',
-    'TeamRunIntermediateContent',
-    'ReasoningContentDelta',
-  ].includes(eventName)) {
-    const content = typeof rawEvent.content === 'string' ? rawEvent.content : ''
-    const reasoning = typeof rawEvent.reasoning_content === 'string'
-      ? rawEvent.reasoning_content
-      : typeof rawEvent.redacted_reasoning_content === 'string'
-        ? rawEvent.redacted_reasoning_content
-        : null
-    if (!content && !reasoning && hasRawToolCallArgumentPayload(rawEvent)) {
-      if (memberEventData) {
-        return {
-          event: 'member.model.request.started',
-          run_id: memberEventData.parent_run_id,
-          session_id: sessionId,
-          content: null,
-          data: { ...data, ...memberEventData },
-          event_index: eventIndex,
-        }
-      }
-      return { event: 'model.request.started', run_id: runId, session_id: sessionId, content: null, data, event_index: eventIndex }
-    }
-    if (memberEventData) {
-      return {
-        event: 'member.message.delta',
-        run_id: memberEventData.parent_run_id,
-        session_id: sessionId,
-        content,
-        data: { ...data, ...memberEventData, reasoning_content: reasoning },
-        event_index: eventIndex,
-      }
-    }
-    return {
-      event: 'message.delta',
-      run_id: runId,
-      session_id: sessionId,
-      content,
-      data: { ...data, reasoning_content: reasoning },
-      event_index: eventIndex,
-    }
-  }
-  if (['ToolCallStarted', 'ToolCallStartedEvent', 'TeamToolCallStarted'].includes(eventName)) {
-    const tool = resolveRawObject(rawEvent.tool)
-    if (memberEventData) {
-      return {
-        event: 'member.tool.started',
-        run_id: memberEventData.parent_run_id,
-        session_id: sessionId,
-        content: null,
-        data: {
-          ...data,
-          ...memberEventData,
-          tool_name: tool.tool_name,
-          tool_call_id: tool.tool_call_id,
-          tool_args: tool.tool_args ?? {},
-        },
-        event_index: eventIndex,
-      }
-    }
-    return {
-      event: 'tool.started',
-      run_id: runId,
-      session_id: sessionId,
-      content: null,
-      data: {
-        ...data,
-        tool_name: tool.tool_name,
-        tool_call_id: tool.tool_call_id,
-        tool_args: tool.tool_args ?? {},
-      },
-      event_index: eventIndex,
-    }
-  }
-  if (['ToolCallCompleted', 'ToolCallCompletedEvent', 'TeamToolCallCompleted'].includes(eventName)) {
-    const tool = resolveRawObject(rawEvent.tool)
-    if (memberEventData) {
-      return {
-        event: 'member.tool.completed',
-        run_id: memberEventData.parent_run_id,
-        session_id: sessionId,
-        content: typeof rawEvent.content === 'string' ? rawEvent.content : null,
-        data: {
-          ...data,
-          ...memberEventData,
-          tool_name: tool.tool_name,
-          tool_call_id: tool.tool_call_id,
-          result: tool.result ?? rawEvent.content ?? null,
-          message: rawEvent.content ?? null,
-        },
-        event_index: eventIndex,
-      }
-    }
-    return {
-      event: 'tool.completed',
-      run_id: runId,
-      session_id: sessionId,
-      content: typeof rawEvent.content === 'string' ? rawEvent.content : null,
-      data: {
-        ...data,
-        tool_name: tool.tool_name,
-        tool_call_id: tool.tool_call_id,
-        result: tool.result ?? rawEvent.content ?? null,
-        message: rawEvent.content ?? null,
-      },
-      event_index: eventIndex,
-    }
-  }
-  if (['ToolCallError', 'ToolCallErrorEvent', 'TeamToolCallError'].includes(eventName)) {
-    const tool = resolveRawObject(rawEvent.tool)
-    if (memberEventData) {
-      return {
-        event: 'member.tool.error',
-        run_id: memberEventData.parent_run_id,
-        session_id: sessionId,
-        content: typeof rawEvent.content === 'string' ? rawEvent.content : null,
-        data: {
-          ...data,
-          ...memberEventData,
-          tool_name: tool.tool_name,
-          tool_call_id: tool.tool_call_id,
-          message: rawEvent.content ?? rawEvent.error ?? tool.error ?? null,
-        },
-        event_index: eventIndex,
-      }
-    }
-    return {
-      event: 'tool.error',
-      run_id: runId,
-      session_id: sessionId,
-      content: typeof rawEvent.content === 'string' ? rawEvent.content : null,
-      data: {
-        ...data,
-        tool_name: tool.tool_name,
-        tool_call_id: tool.tool_call_id,
-        message: rawEvent.content ?? rawEvent.error ?? tool.error ?? null,
-      },
-      event_index: eventIndex,
-    }
-  }
-  if (['RunPaused', 'RunPausedEvent', 'TeamRunPaused'].includes(eventName)) {
-    if (memberEventData) {
-      return {
-        event: 'member.run.paused',
-        run_id: memberEventData.parent_run_id,
-        session_id: sessionId,
-        content: null,
-        data: { ...data, ...memberEventData },
-        event_index: eventIndex,
-      }
-    }
-    return {
-      event: 'run.paused',
-      run_id: runId,
-      session_id: sessionId,
-      content: null,
-      data: { ...data, requirement: buildPendingRequirementFromAgno(rawEvent, runId, sessionId) },
-      event_index: eventIndex,
-    }
-  }
-  if (['RunCompleted', 'RunCompletedEvent', 'TeamRunCompleted'].includes(eventName)) {
-    if (memberEventData) {
-      return {
-        event: 'member.run.completed',
-        run_id: memberEventData.parent_run_id,
-        session_id: sessionId,
-        content: typeof rawEvent.content === 'string' ? rawEvent.content : null,
-        data: { ...data, ...memberEventData },
-        event_index: eventIndex,
-      }
-    }
-    return {
-      event: 'run.completed',
-      run_id: runId,
-      session_id: sessionId,
-      content: typeof rawEvent.content === 'string' ? rawEvent.content : null,
-      data,
-      event_index: eventIndex,
-    }
-  }
-  if (['RunCancelled', 'RunCancelledEvent', 'TeamRunCancelled'].includes(eventName)) {
-    if (memberEventData) {
-      return {
-        event: 'member.run.cancelled',
-        run_id: memberEventData.parent_run_id,
-        session_id: sessionId,
-        content: null,
-        data: { ...data, ...memberEventData },
-        event_index: eventIndex,
-      }
-    }
-    return { event: 'run.cancelled', run_id: runId, session_id: sessionId, content: null, data, event_index: eventIndex }
-  }
-  if (['RunError', 'RunErrorEvent', 'TeamRunError'].includes(eventName)) {
-    if (memberEventData) {
-      return {
-        event: 'member.run.error',
-        run_id: memberEventData.parent_run_id,
-        session_id: sessionId,
-        content: typeof rawEvent.content === 'string' ? rawEvent.content : null,
-        data: { ...data, ...memberEventData, message: rawEvent.content ?? rawEvent.error ?? data.message },
-        event_index: eventIndex,
-      }
-    }
-    return {
-      event: 'run.error',
-      run_id: runId,
-      session_id: sessionId,
-      content: typeof rawEvent.content === 'string' ? rawEvent.content : null,
-      data: { ...data, message: rawEvent.content ?? rawEvent.error ?? data.message },
-      event_index: eventIndex,
-    }
-  }
-  return { event: 'trace.event', run_id: runId, session_id: sessionId, content: null, data, event_index: eventIndex }
-}
-
-function buildPendingRequirementFromAgno(
-  rawEvent: AgentRunEvent,
-  runId: string | null,
-  sessionId: string | null,
-): AgentPendingRequirement | null {
-  const requirement = resolveActiveRequirement(rawEvent)
-  if (!requirement || !runId || !sessionId) {
-    return null
-  }
-  const toolExecution = resolveRawObject(requirement.tool_execution)
-  const toolArgs = resolveRawObject(toolExecution.tool_args)
-  const kind = toolExecution.requires_user_input === true ? 'user_feedback' : 'confirmation'
-  const userFeedbackSchema = resolveUserFeedbackSchema(requirement, toolExecution, toolArgs)
   return {
-    id: resolveRawString(requirement.id),
-    kind,
-    run_id: runId,
-    session_id: sessionId,
-    member_agent_id: resolveRawString(requirement.member_agent_id),
-    member_agent_name: resolveRawString(requirement.member_agent_name),
-    member_run_id: resolveRawString(requirement.member_run_id),
-    tool_name: resolveRawString(toolExecution.tool_name),
-    tool_execution: toolExecution,
-    suggested_patch: null,
-    user_feedback_schema: userFeedbackSchema,
-    note: resolveRawString(requirement.note),
+    ...rawEvent,
+    data: rawEvent.data ?? {},
+    event_index: rawEvent.event_index ?? rawEvent.sequence ?? null,
   }
-}
-
-function resolveRawMemberEventData(rawEvent: AgentRunEvent, runId: string | null) {
-  const parentRunId = resolveRawString(rawEvent.parent_run_id)
-  if (!parentRunId || !runId) {
-    return null
-  }
-  return {
-    parent_run_id: parentRunId,
-    member_run_id: runId,
-    member_agent_id: resolveRawString(rawEvent.agent_id) ?? resolveRawString(rawEvent.team_id),
-    member_agent_name: resolveRawString(rawEvent.agent_name) ?? resolveRawString(rawEvent.team_name),
-  }
-}
-
-function resolveActiveRequirement(rawEvent: AgentRunEvent): Record<string, unknown> | null {
-  const requirements = Array.isArray(rawEvent.requirements) ? rawEvent.requirements : []
-  for (const item of [...requirements].reverse()) {
-    const requirement = resolveRawObject(item)
-    const toolExecution = resolveRawObject(requirement.tool_execution)
-    if (isAgnoRequirementActive(requirement, toolExecution)) {
-      return requirement
-    }
-  }
-  const tools = Array.isArray(rawEvent.tools) ? rawEvent.tools : []
-  for (const item of [...tools].reverse()) {
-    const toolExecution = resolveRawObject(item)
-    if (isAgnoToolExecutionActive(toolExecution)) {
-      return { id: null, tool_execution: toolExecution }
-    }
-  }
-  return null
-}
-
-function hasRawToolCallArgumentPayload(rawEvent: AgentRunEvent): boolean {
-  const tools = [
-    ...(Array.isArray(rawEvent.tools) ? rawEvent.tools : []),
-    ...(Array.isArray(rawEvent.tool_calls) ? rawEvent.tool_calls : []),
-  ]
-  return tools.some((item) => {
-    const toolExecution = resolveRawObject(item)
-    if (!Object.keys(toolExecution).length) {
-      return false
-    }
-    const functionPayload = resolveRawObject(toolExecution.function)
-    const toolName = resolveRawString(toolExecution.tool_name)
-      ?? resolveRawString(toolExecution.name)
-      ?? resolveRawString(functionPayload.name)
-    const toolCallId = resolveRawString(toolExecution.tool_call_id) ?? resolveRawString(toolExecution.id)
-    const hasArguments = hasOwnProperty(toolExecution, 'tool_args')
-      || hasOwnProperty(toolExecution, 'arguments')
-      || hasOwnProperty(toolExecution, 'args')
-      || hasOwnProperty(functionPayload, 'arguments')
-    const hasResult = toolExecution.result != null || toolExecution.output != null
-    const hasError = toolExecution.tool_call_error === true || toolExecution.error != null
-    return Boolean((toolName || toolCallId || hasArguments) && !hasResult && !hasError)
-  })
-}
-
-function isAgnoRequirementActive(requirement: Record<string, unknown>, toolExecution: Record<string, unknown>) {
-  if (toolExecution.requires_confirmation === true && requirement.confirmation == null && toolExecution.confirmed == null) return true
-  if (toolExecution.requires_user_input === true && toolExecution.answered !== true) return true
-  if (toolExecution.external_execution_required === true && requirement.external_execution_result == null && toolExecution.result == null) return true
-  return false
-}
-
-function isAgnoToolExecutionActive(toolExecution: Record<string, unknown>) {
-  if (toolExecution.requires_confirmation === true && toolExecution.confirmed == null) return true
-  if (toolExecution.requires_user_input === true && toolExecution.answered !== true) return true
-  if (toolExecution.external_execution_required === true && toolExecution.result == null) return true
-  return false
 }
 
 function shouldApplyEvent(state: AgentSessionRuntimeState, event: AgentRunEvent, runId: string): boolean {
@@ -1160,19 +782,6 @@ function appendRequirementItem(
   })
 }
 
-function resolveUserFeedbackSchema(
-  requirement: Record<string, unknown>,
-  toolExecution: Record<string, unknown>,
-  toolArgs: Record<string, unknown>,
-): AgentPendingRequirement['user_feedback_schema'] {
-  for (const candidate of [requirement.user_feedback_schema, toolExecution.user_feedback_schema, toolArgs.questions]) {
-    if (Array.isArray(candidate)) {
-      return candidate as AgentPendingRequirement['user_feedback_schema']
-    }
-  }
-  return []
-}
-
 function resolveRequirementTimelineContent(requirement: AgentPendingRequirement): string {
   if (requirement.kind === 'user_feedback' || requirement.tool_name === 'ask_user') {
     const firstQuestion = requirement.user_feedback_schema.find(question => question.question)?.question
@@ -1365,22 +974,6 @@ function resolveEventString(value: unknown, fallback: string | null): string | n
     return value
   }
   return fallback
-}
-
-function resolveRawObject(value: unknown): Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : {}
-}
-
-function resolveRawString(value: unknown): string | null {
-  return typeof value === 'string' && value ? value : null
-}
-
-function resolveRawNumber(value: unknown): number | null {
-  return typeof value === 'number' && Number.isFinite(value) ? value : null
-}
-
-function hasOwnProperty(value: Record<string, unknown>, key: string): boolean {
-  return Object.prototype.hasOwnProperty.call(value, key)
 }
 
 function looksLikeStructuredAggregate(content: string): boolean {

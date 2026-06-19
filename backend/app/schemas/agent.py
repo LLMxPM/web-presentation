@@ -179,7 +179,7 @@ AgentActiveRunStatus = Literal["pending", "running", "paused", "cancelling", "co
 
 
 class AgentActiveRunItem(SchemaBase):
-    """当前会话最近一次 Agno run 状态。"""
+    """当前会话最近一次智能体运行状态。"""
 
     run_id: str
     session_id: str

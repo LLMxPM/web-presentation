@@ -7,10 +7,12 @@ from typing import Any
 from agno.run import RunContext
 from agno.agent import _run as agno_agent_run
 from agno.team import _run as agno_team_run
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.ai.auth_tokens import verify_agent_tool_token
 from app.core.exceptions import AppException
+from app.models.ai_agent_runtime import AiAgentRun
 from app.models.page import Page
 from app.repositories.page_repository import PageRepository
 
@@ -46,7 +48,7 @@ async def resolve_tool_context(
         user_id=user_id,
         backend_session_id=backend_session_id,
     )
-    await _raise_if_cancelled(run_id)
+    await _raise_if_cancelled(session_factory, run_id)
     authorized_context = {
         "user_id": user_id,
         "session_id": session_id,
@@ -156,8 +158,13 @@ def _ensure_claim_matches(claims: dict[str, Any], field_name: str, expected: str
         raise AppException(status_code=403, code="AI_TOOL_CONTEXT_MISMATCH", detail="工具调用上下文与授权令牌不一致。")
 
 
-async def _raise_if_cancelled(run_id: str) -> None:
-    """工具副作用执行前检查 Agno 取消意图。"""
+async def _raise_if_cancelled(session_factory: async_sessionmaker[AsyncSession], run_id: str) -> None:
+    """工具副作用执行前检查平台取消标记，并兼容旧 Agno 取消意图。"""
+
+    async with session_factory() as session:
+        run_model = await session.scalar(select(AiAgentRun).where(AiAgentRun.run_id == run_id))
+        if run_model is not None and run_model.cancel_requested_at is not None:
+            raise AppException(status_code=409, code="AI_RUN_CANCELLED", detail="当前智能体运行已被取消。")
 
     try:
         await agno_agent_run.araise_if_cancelled(run_id)

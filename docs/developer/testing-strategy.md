@@ -83,7 +83,7 @@ docker compose -f docker-compose.dev.yml up -d
 
 该 compose 文件只服务本地开发和 CI 测试基础设施，不属于 `deploy/` 下的交付部署模板；移动它时需要同步更新文档和 `.github/workflows/*` 中的引用。
 
-Backend 测试默认把 `REDIS_URL` 设置为 `memory://test`，不依赖本机 Redis。手动联调预览、截图、代码检查或构建时必须启动 compose 中的 Redis；AI run/HITL 状态由 Agno DB 承担，不再依赖 Redis run hash 或 Redis stream。
+Backend 测试默认把 `REDIS_URL` 设置为 `memory://test`，不依赖本机 Redis。手动联调预览、截图、代码检查或构建时必须启动 compose 中的 Redis；AI run/HITL 状态由 Backend 主库中的平台运行态表承担，不再依赖 Redis run hash 或 Redis stream。
 
 AI run 状态切换后无需执行 Redis run 迁移脚本；旧 Redis run key 等待 TTL 自然过期。
 

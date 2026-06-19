@@ -11,7 +11,7 @@ import pytest
 from botocore.exceptions import ClientError
 
 from app.core.exceptions import AppException
-from app.services.asset_service import S3StorageDriver
+from app.services.asset_storage_drivers import S3StorageDriver
 from app.services.object_storage_service import ObjectStorageService
 
 

@@ -693,7 +693,7 @@ const providerOptions = computed<SelectOption[]>(() => (
     description: provider.supports_thinking
       ? `支持 thinking · ${provider.thinking_mode}${provider.default_model_id ? ` · ${provider.default_model_id}` : ''}`
       : '不支持 thinking',
-    keywords: [provider.provider_key, provider.agno_class_path],
+    keywords: [provider.provider_key, provider.provider_adapter],
   })) ?? []
 ))
 

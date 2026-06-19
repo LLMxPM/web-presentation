@@ -170,6 +170,26 @@ describe('agent-run-state timeline', () => {
     expect(state.timelineItems[2].content).toBe('资源检查完成。')
   })
 
+  it('reasoning.delta 应作为独立思考时间线项', () => {
+    const state = createAgentSessionRuntimeState()
+    const options = { agentId: 'agent-coordinator', agentDisplayName: '内容助手' }
+
+    applyAgentRunEvent(state, event({ event: 'run.started', sequence: 1 }), options)
+    applyAgentRunEvent(state, event({
+      event: 'reasoning.delta',
+      content: '先分析需求。',
+      sequence: 2,
+    }), options)
+
+    expect(state.timelineItems).toEqual([
+      expect.objectContaining({
+        kind: 'reasoning',
+        content: '先分析需求。',
+        status: 'running',
+      }),
+    ])
+  })
+
   it('缺少 tool_call_id 时 started 和 completed 应合并为同一工具时间线项', () => {
     const state = createAgentSessionRuntimeState()
     const options = { agentId: 'agent-coordinator', agentDisplayName: '内容助手' }
@@ -403,26 +423,34 @@ describe('agent-run-state timeline', () => {
     expect(store.pendingRequirementBySession[sessionId]).toBeNull()
   })
 
-  it('Agno raw event 应投影成运行中、消息增量和 HITL 暂停状态', () => {
+  it('平台事件应投影成运行中、消息增量和 HITL 暂停状态', () => {
     const state = createAgentSessionRuntimeState()
     const options = { agentId: 'agent-coordinator', agentDisplayName: '内容助手' }
 
-    applyAgentRunEvent(state, event({ event: 'RunStarted', event_index: 0, sequence: null }), options)
-    applyAgentRunEvent(state, event({ event: 'RunContent', content: '半截输出', event_index: 1, sequence: null }), options)
+    applyAgentRunEvent(state, event({ event: 'run.started', event_index: 0, sequence: null }), options)
+    applyAgentRunEvent(state, event({ event: 'message.delta', content: '半截输出', event_index: 1, sequence: null }), options)
     applyAgentRunEvent(state, event({
-      event: 'RunPaused',
+      event: 'run.paused',
       event_index: 2,
       sequence: null,
-      requirements: [{
-        id: 'req-1',
-        tool_execution: {
+      data: {
+        requirement: {
+          id: 'req-1',
+          kind: 'confirmation',
+          run_id: 'run-1',
+          session_id: 'session-1',
           tool_name: 'apply_page_edits',
-          tool_call_id: 'call-1',
-          requires_confirmation: true,
-          confirmed: null,
-          tool_args: { note: '写入页面' },
+          tool_execution: {
+            tool_name: 'apply_page_edits',
+            tool_call_id: 'call-1',
+            requires_confirmation: true,
+            tool_args: { note: '写入页面' },
+          },
+          suggested_patch: null,
+          user_feedback_schema: [],
+          note: null,
         },
-      }],
+      },
     }), options)
 
     expect(state.timelineItems.find(item => item.kind === 'message')?.content).toBe('半截输出')
@@ -434,12 +462,12 @@ describe('agent-run-state timeline', () => {
     }))
   })
 
-  it('Agno ModelRequestStarted 应显示等待智能体输出提示并在工具开始后清理', () => {
+  it('平台 model.request.started 应显示等待智能体输出提示并在工具开始后清理', () => {
     const state = createAgentSessionRuntimeState()
     const options = { agentId: 'agent-coordinator', agentDisplayName: '内容助手' }
 
-    applyAgentRunEvent(state, event({ event: 'RunStarted', event_index: 0, sequence: null }), options)
-    applyAgentRunEvent(state, event({ event: 'ModelRequestStarted', event_index: 1, sequence: null }), options)
+    applyAgentRunEvent(state, event({ event: 'run.started', event_index: 0, sequence: null }), options)
+    applyAgentRunEvent(state, event({ event: 'model.request.started', event_index: 1, sequence: null }), options)
 
     const requestStatus = state.timelineItems.find(item => item.kind === 'run_status')
     expect(requestStatus).toEqual(expect.objectContaining({
@@ -448,14 +476,14 @@ describe('agent-run-state timeline', () => {
     }))
     expect(state.activeRun?.status).toBe('running')
 
-    applyAgentRunEvent(state, event({ event: 'ModelRequestCompleted', event_index: 2, sequence: null }), options)
+    applyAgentRunEvent(state, event({ event: 'model.request.completed', event_index: 2, sequence: null }), options)
     expect(state.timelineItems.some(item => item.status === 'model_request')).toBe(true)
 
     applyAgentRunEvent(state, event({
-      event: 'ToolCallStarted',
+      event: 'tool.started',
       event_index: 3,
       sequence: null,
-      tool: {
+      data: {
         tool_call_id: 'tool-call-1',
         tool_name: 'list_workspace_render_assets',
         tool_args: { workspace_id: 11 },
@@ -473,27 +501,27 @@ describe('agent-run-state timeline', () => {
     }))
   })
 
-  it('Agno ModelRequestStarted 后出现普通文本时应清理等待智能体输出提示', () => {
+  it('平台 model.request.started 后出现普通文本时应清理等待智能体输出提示', () => {
     const state = createAgentSessionRuntimeState()
     const options = { agentId: 'agent-coordinator', agentDisplayName: '内容助手' }
 
-    applyAgentRunEvent(state, event({ event: 'RunStarted', event_index: 0, sequence: null }), options)
-    applyAgentRunEvent(state, event({ event: 'ModelRequestStarted', event_index: 1, sequence: null }), options)
-    applyAgentRunEvent(state, event({ event: 'RunContent', content: '先说明当前处理思路。', event_index: 2, sequence: null }), options)
+    applyAgentRunEvent(state, event({ event: 'run.started', event_index: 0, sequence: null }), options)
+    applyAgentRunEvent(state, event({ event: 'model.request.started', event_index: 1, sequence: null }), options)
+    applyAgentRunEvent(state, event({ event: 'message.delta', content: '先说明当前处理思路。', event_index: 2, sequence: null }), options)
 
     expect(state.timelineItems.some(item => item.status === 'model_request')).toBe(false)
     expect(state.timelineItems.find(item => item.kind === 'message')?.content).toBe('先说明当前处理思路。')
   })
 
-  it('Agno RunContent 仅携带工具参数时应显示等待输出并结束思考中状态', () => {
+  it('平台事件在工具参数阶段应显示等待输出并结束思考中状态', () => {
     const state = createAgentSessionRuntimeState()
     const options = { agentId: 'agent-coordinator', agentDisplayName: '内容助手' }
 
-    applyAgentRunEvent(state, event({ event: 'RunStarted', event_index: 0, sequence: null }), options)
+    applyAgentRunEvent(state, event({ event: 'run.started', event_index: 0, sequence: null }), options)
     applyAgentRunEvent(state, event({
-      event: 'RunContent',
+      event: 'message.delta',
       content: '',
-      reasoning_content: '先判断需要读取资源。',
+      data: { reasoning_content: '先判断需要读取资源。' },
       event_index: 1,
       sequence: null,
     }), options)
@@ -504,15 +532,9 @@ describe('agent-run-state timeline', () => {
     }))
 
     applyAgentRunEvent(state, event({
-      event: 'RunContent',
-      content: null,
+      event: 'model.request.started',
       event_index: 2,
       sequence: null,
-      tools: [{
-        tool_call_id: 'tool-call-args-1',
-        tool_name: 'list_workspace_render_assets',
-        tool_args: { workspace_id: 11 },
-      }],
     }), options)
 
     expect(state.timelineItems.find(item => item.kind === 'reasoning')).toEqual(expect.objectContaining({
@@ -526,10 +548,10 @@ describe('agent-run-state timeline', () => {
     expect(state.timelineItems.some(item => item.kind === 'tool')).toBe(false)
 
     applyAgentRunEvent(state, event({
-      event: 'ToolCallStarted',
+      event: 'tool.started',
       event_index: 3,
       sequence: null,
-      tool: {
+      data: {
         tool_call_id: 'tool-call-args-1',
         tool_name: 'list_workspace_render_assets',
         tool_args: { workspace_id: 11 },
@@ -545,20 +567,20 @@ describe('agent-run-state timeline', () => {
     }))
   })
 
-  it('Agno ModelRequestStarted 应结束同一 run 内已流出的 reasoning 和正文运行态', () => {
+  it('平台 model.request.started 应结束同一 run 内已流出的 reasoning 和正文运行态', () => {
     const state = createAgentSessionRuntimeState()
     const options = { agentId: 'agent-coordinator', agentDisplayName: '内容助手' }
 
-    applyAgentRunEvent(state, event({ event: 'RunStarted', event_index: 0, sequence: null }), options)
+    applyAgentRunEvent(state, event({ event: 'run.started', event_index: 0, sequence: null }), options)
     applyAgentRunEvent(state, event({
-      event: 'RunContent',
+      event: 'message.delta',
       content: '',
-      reasoning_content: '先判断需要读取资源。',
+      data: { reasoning_content: '先判断需要读取资源。' },
       event_index: 1,
       sequence: null,
     }), options)
     applyAgentRunEvent(state, event({
-      event: 'RunContent',
+      event: 'message.delta',
       content: '我先检查现有资源。',
       event_index: 2,
       sequence: null,
@@ -572,7 +594,7 @@ describe('agent-run-state timeline', () => {
       status: 'running',
     }))
 
-    applyAgentRunEvent(state, event({ event: 'ModelRequestStarted', event_index: 3, sequence: null }), options)
+    applyAgentRunEvent(state, event({ event: 'model.request.started', event_index: 3, sequence: null }), options)
 
     expect(state.timelineItems.find(item => item.kind === 'reasoning')).toEqual(expect.objectContaining({
       status: null,
@@ -586,7 +608,7 @@ describe('agent-run-state timeline', () => {
     }))
   })
 
-  it('Agno TeamModelRequestStarted 缺少 session 时应绑定当前 run 并显示等待提示', () => {
+  it('平台 model.request.started 缺少 run/session 时应绑定当前 run 并显示等待提示', () => {
     const state = createAgentSessionRuntimeState()
     const options = { agentId: 'agent-coordinator', agentDisplayName: '内容助手' }
 
@@ -594,7 +616,7 @@ describe('agent-run-state timeline', () => {
     state.stream.streaming = true
 
     applyAgentRunEvent(state, event({
-      event: 'TeamModelRequestStarted',
+      event: 'model.request.started',
       run_id: null,
       session_id: null,
       event_index: 1,
@@ -611,68 +633,72 @@ describe('agent-run-state timeline', () => {
     ])
   })
 
-  it('Agno raw member 事件应进入独立成员运行，不污染父 run 时间线', () => {
+  it('平台 member 事件应进入独立成员运行，不污染父 run 时间线', () => {
     const state = createAgentSessionRuntimeState()
     const options = { agentId: 'agent-coordinator', agentDisplayName: '内容助手' }
 
-    applyAgentRunEvent(state, event({ event: 'TeamRunStarted', run_id: 'parent-run-1', event_index: 0, sequence: null }), options)
+    applyAgentRunEvent(state, event({ event: 'run.started', run_id: 'parent-run-1', event_index: 0, sequence: null }), options)
     applyAgentRunEvent(state, event({
-      event: 'TeamToolCallStarted',
+      event: 'tool.started',
       run_id: 'parent-run-1',
       event_index: 1,
       sequence: null,
-      tool: {
+      data: {
         tool_call_id: 'delegate-call-resource',
         tool_name: 'delegate_task_to_member',
         tool_args: { member_id: 'resource-manager', task: '整理资源' },
       },
     }), options)
     applyAgentRunEvent(state, event({
-      event: 'RunStarted',
-      run_id: 'member-run-1',
-      parent_run_id: 'parent-run-1',
-      agent_id: 'resource-manager',
-      agent_name: '资源助手',
+      event: 'member.run.started',
+      run_id: 'parent-run-1',
       event_index: 2,
       sequence: null,
+      data: {
+        member_run_id: 'member-run-1',
+        member_agent_id: 'resource-manager',
+        member_agent_name: '资源助手',
+      },
     }), options)
     applyAgentRunEvent(state, event({
-      event: 'ToolCallStarted',
-      run_id: 'member-run-1',
-      parent_run_id: 'parent-run-1',
-      agent_id: 'resource-manager',
-      agent_name: '资源助手',
+      event: 'member.tool.started',
+      run_id: 'parent-run-1',
       event_index: 3,
       sequence: null,
-      tool: {
+      data: {
+        member_run_id: 'member-run-1',
+        member_agent_id: 'resource-manager',
+        member_agent_name: '资源助手',
         tool_call_id: 'child-tool-list-assets',
         tool_name: 'list_workspace_render_assets',
         tool_args: { workspace_id: 11 },
       },
     }), options)
     applyAgentRunEvent(state, event({
-      event: 'ToolCallCompleted',
-      run_id: 'member-run-1',
-      parent_run_id: 'parent-run-1',
-      agent_id: 'resource-manager',
-      agent_name: '资源助手',
+      event: 'member.tool.completed',
+      run_id: 'parent-run-1',
       event_index: 4,
       sequence: null,
-      tool: {
+      data: {
+        member_run_id: 'member-run-1',
+        member_agent_id: 'resource-manager',
+        member_agent_name: '资源助手',
         tool_call_id: 'child-tool-list-assets',
         tool_name: 'list_workspace_render_assets',
         result: { total: 2 },
       },
     }), options)
     applyAgentRunEvent(state, event({
-      event: 'RunCompleted',
-      run_id: 'member-run-1',
-      parent_run_id: 'parent-run-1',
-      agent_id: 'resource-manager',
-      agent_name: '资源助手',
+      event: 'member.run.completed',
+      run_id: 'parent-run-1',
       content: '资源整理完成。',
       event_index: 5,
       sequence: null,
+      data: {
+        member_run_id: 'member-run-1',
+        member_agent_id: 'resource-manager',
+        member_agent_name: '资源助手',
+      },
     }), options)
 
     expect(state.timelineItems.filter(item => item.kind === 'tool').map(item => item.tool?.tool_name)).toEqual([
@@ -697,28 +723,32 @@ describe('agent-run-state timeline', () => {
     ])
   })
 
-  it('Agno member ModelRequestStarted 应进入成员运行并在子工具开始后清理', () => {
+  it('平台 member model.request.started 应进入成员运行并在子工具开始后清理', () => {
     const state = createAgentSessionRuntimeState()
     const options = { agentId: 'agent-coordinator', agentDisplayName: '内容助手' }
 
-    applyAgentRunEvent(state, event({ event: 'TeamRunStarted', run_id: 'parent-run-1', event_index: 0, sequence: null }), options)
+    applyAgentRunEvent(state, event({ event: 'run.started', run_id: 'parent-run-1', event_index: 0, sequence: null }), options)
     applyAgentRunEvent(state, event({
-      event: 'RunStarted',
-      run_id: 'member-run-1',
-      parent_run_id: 'parent-run-1',
-      agent_id: 'resource-manager',
-      agent_name: '资源助手',
+      event: 'member.run.started',
+      run_id: 'parent-run-1',
       event_index: 1,
       sequence: null,
+      data: {
+        member_run_id: 'member-run-1',
+        member_agent_id: 'resource-manager',
+        member_agent_name: '资源助手',
+      },
     }), options)
     applyAgentRunEvent(state, event({
-      event: 'ModelRequestStarted',
-      run_id: 'member-run-1',
-      parent_run_id: 'parent-run-1',
-      agent_id: 'resource-manager',
-      agent_name: '资源助手',
+      event: 'member.model.request.started',
+      run_id: 'parent-run-1',
       event_index: 2,
       sequence: null,
+      data: {
+        member_run_id: 'member-run-1',
+        member_agent_id: 'resource-manager',
+        member_agent_name: '资源助手',
+      },
     }), options)
 
     expect(state.memberRuns).toHaveLength(1)
@@ -728,14 +758,14 @@ describe('agent-run-state timeline', () => {
     }))
 
     applyAgentRunEvent(state, event({
-      event: 'ToolCallStarted',
-      run_id: 'member-run-1',
-      parent_run_id: 'parent-run-1',
-      agent_id: 'resource-manager',
-      agent_name: '资源助手',
+      event: 'member.tool.started',
+      run_id: 'parent-run-1',
       event_index: 3,
       sequence: null,
-      tool: {
+      data: {
+        member_run_id: 'member-run-1',
+        member_agent_id: 'resource-manager',
+        member_agent_name: '资源助手',
         tool_call_id: 'child-tool-list-assets',
         tool_name: 'list_workspace_render_assets',
         tool_args: { workspace_id: 11 },

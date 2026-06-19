@@ -186,8 +186,8 @@ describe('AccountAiSettingsView', () => {
       {
         provider_key: 'openai',
         label: 'OpenAI',
-        agno_class_path: 'agno.models.openai.responses.OpenAIResponses',
-        docs_url: 'https://docs.agno.com/models/providers/native/openai/responses/overview',
+        provider_adapter: 'pydantic_ai.models.openai.OpenAIChatModel',
+        docs_url: 'https://pydantic.dev/docs/ai/models/openai/',
         supports_base_url: true,
         supports_api_key: true,
         supports_thinking: true,
@@ -346,8 +346,8 @@ describe('AccountAiSettingsView', () => {
       {
         provider_key: 'openai',
         label: 'OpenAI',
-        agno_class_path: 'agno.models.openai.responses.OpenAIResponses',
-        docs_url: 'https://docs.agno.com/models/providers/native/openai/responses/overview',
+        provider_adapter: 'pydantic_ai.models.openai.OpenAIChatModel',
+        docs_url: 'https://pydantic.dev/docs/ai/models/openai/',
         supports_base_url: true,
         supports_api_key: true,
         supports_thinking: true,
@@ -365,8 +365,8 @@ describe('AccountAiSettingsView', () => {
       {
         provider_key: 'deepseek',
         label: 'DeepSeek',
-        agno_class_path: 'agno.models.deepseek.deepseek.DeepSeek',
-        docs_url: 'https://docs.agno.com/models/providers/native/deepseek/overview',
+        provider_adapter: 'pydantic_ai.providers.deepseek.DeepSeekProvider',
+        docs_url: 'https://pydantic.dev/docs/ai/models/openai/',
         supports_base_url: true,
         supports_api_key: true,
         supports_thinking: true,
@@ -411,7 +411,7 @@ describe('AccountAiSettingsView', () => {
       {
         provider_key: 'mimo',
         label: 'MiMo',
-        agno_class_path: 'app.ai.providers.mimo.MiMo',
+        provider_adapter: 'pydantic_ai.providers.openai.OpenAIProvider',
         docs_url: 'https://platform.xiaomimimo.com/docs/zh-CN/quick-start/first-api-call',
         supports_base_url: true,
         supports_api_key: true,
@@ -458,8 +458,8 @@ describe('AccountAiSettingsView', () => {
       {
         provider_key: 'openrouter',
         label: 'OpenRouter',
-        agno_class_path: 'agno.models.openrouter.openrouter.OpenRouter',
-        docs_url: 'https://docs.agno.com/models/providers/gateways/openrouter/overview',
+        provider_adapter: 'pydantic_ai.models.openrouter.OpenRouterModel',
+        docs_url: 'https://pydantic.dev/docs/ai/models/openrouter/',
         supports_base_url: true,
         supports_api_key: true,
         supports_thinking: true,

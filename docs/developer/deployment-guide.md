@@ -58,9 +58,6 @@ production env 版至少修改：
 | `REDIS_URL` | 已有 Redis 连接串 |
 | `DEFAULT_ADMIN_PASSWORD` | 首次启动创建默认管理员时使用 |
 | `AI_SECRET_ENCRYPTION_KEY` | Fernet 密钥，用于加密用户模型凭证；必须重新生成并长期保存 |
-| `AI_SESSION_RETENTION_DAYS` | AI 会话历史保留天数，默认 `15` |
-| `AI_SESSION_CLEANUP_INTERVAL_SECONDS` | AI 会话历史清理间隔，默认 `21600`；设为 `0` 可关闭清理 |
-| `AI_SESSION_CLEANUP_BATCH_SIZE` | 单批扫描和删除的 Agno session 数量上限，默认 `500` |
 
 可用 Python 标准库生成 `AI_SECRET_ENCRYPTION_KEY`：
 
@@ -70,7 +67,7 @@ python -c "import base64, os; print(base64.urlsafe_b64encode(os.urandom(32)).dec
 
 `AI_SECRET_ENCRYPTION_KEY` 不是 API Key，也不是普通密码。它必须是 32 字节随机值的 URL-safe base64 编码，通常长度为 44 个字符并以 `=` 结尾。部署后不要随意更换；更换该值会导致已保存的用户模型凭证无法解密。
 
-AI 会话历史清理只删除超过保留期未更新的整条 Agno session，不会清理单条消息、审批记录、图片附件或对象存储文件。PostgreSQL JSONB/TOAST 已膨胀时，普通删除不会立刻释放物理磁盘；需要回收磁盘空间时，应在运维窗口手动执行 `VACUUM FULL` 或 `pg_repack`。
+AI 会话、run、事件、消息、工具调用和 HITL 状态写入 Backend 主库中的 `ai_agent_*` 表，随常规数据库备份和 Alembic 迁移一起管理。
 
 简化版默认使用 `http://127.0.0.1:8080` 和 `SESSION_SECURE=false` 的应用默认值。正式 HTTPS 部署时，应把 `BACKEND_PUBLIC_BASE_URL`、`RUNTIME_PUBLIC_BASE_URL`、`CORS_ORIGINS` 改为真实域名，并在 Backend 环境变量中补充 `SESSION_SECURE=true`；production env 版已在 `.env.example` 中默认启用。
 

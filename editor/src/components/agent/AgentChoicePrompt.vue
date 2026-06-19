@@ -217,7 +217,7 @@ function normalizeQuestions(rawQuestions: AgentUserFeedbackQuestion[]): AgentUse
 }
 
 /**
- * 从 Agno 已选择值恢复初始答案，支持刷新后回到 paused 状态。
+ * 从后端已选择值恢复初始答案，支持刷新后回到 paused 状态。
  */
 function buildInitialAnswer(question: AgentUserFeedbackQuestion): AnswerState {
   const selected = question.selected_options?.[0] ?? ''

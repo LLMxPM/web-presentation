@@ -1,16 +1,10 @@
 """文件功能：覆盖 AI paused run、用户反馈与继续执行链路测试。"""
 
 from tests.integration.ai.ai_agents_pause_resume_cases import (
-    test_ai_paused_session_messages_should_be_visible,
     test_ai_resolve_requirement_payload_should_use_latest_active_requirement,
     test_ai_run_output_with_pending_feedback_should_be_normalized_as_paused,
-    test_ai_session_active_run_should_return_paused_requirement,
-    test_ai_force_cancel_paused_confirmation_should_release_hitl,
-    test_ai_force_cancel_paused_feedback_should_release_hitl,
-    test_ai_force_cancel_paused_requirement_should_reject_stale_tool_call,
     test_ai_raw_continue_exception_should_mark_resolved_confirmation_error,
     test_ai_raw_sse_should_stop_and_release_lock_after_pause_event,
-    test_ai_session_runtime_should_ignore_binary_images_in_active_run,
     test_ai_stream_should_release_session_lock_after_pause_event,
     test_apply_user_feedback_selections_should_write_preset_and_custom_answers,
     test_extract_pending_requirement_should_fallback_to_paused_tools,

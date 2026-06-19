@@ -43,7 +43,7 @@
           placeholder="请选择供应商"
           @update:model-value="value => form.provider_key = value as string | null"
         />
-        <p v-if="currentProvider" class="ml-1 text-xs text-slate-400">{{ currentProvider.agno_class_path }}</p>
+        <p v-if="currentProvider" class="ml-1 text-xs text-slate-400">{{ currentProvider.provider_adapter }}</p>
       </div>
 
       <BaseInput
@@ -146,7 +146,7 @@
       <button type="button" class="flex w-full items-center justify-between bg-slate-50 px-4 py-3 text-left" @click="collapsedModel = !collapsedModel">
         <span>
           <span class="text-sm font-bold text-slate-900">高级 JSON 配置</span>
-          <span class="ml-2 text-xs text-slate-400">默认折叠，透传给 Agno provider</span>
+          <span class="ml-2 text-xs text-slate-400">默认折叠，透传给 Pydantic AI provider</span>
         </span>
         <component :is="collapsedModel ? ChevronRight : ChevronDown" class="h-4 w-4 text-slate-400" />
       </button>
@@ -156,7 +156,7 @@
           type="textarea"
           label="高级 JSON 配置"
           :rows="10"
-          placeholder='例如：{"temperature":0.2,"reasoning_effort":"medium"}'
+          placeholder='例如：{"temperature":0.2,"openai_reasoning_effort":"medium"}'
           :error="advancedConfigError"
           :disabled="readOnlyModel"
         />
@@ -258,16 +258,19 @@ const thinkingEffortHint = computed(() => {
   if (props.currentProvider.thinking_mode === 'google_thinking_level') {
     return 'Google Gemini 会映射为 thinking_level。'
   }
+  if (props.currentProvider.thinking_mode === 'openrouter_reasoning') {
+    return 'OpenRouter 会映射为 openrouter_reasoning.effort。'
+  }
   if (props.currentProvider.thinking_mode === 'ollama_think') {
-    return 'Ollama 会映射到 request_params.think。'
+    return 'Ollama 会映射到 extra_body.think。'
   }
   if (props.currentProvider.thinking_mode === 'openai_extra_body_thinking') {
     if (props.currentProvider.provider_key === 'deepseek') {
       return 'DeepSeek 会写入 extra_body.thinking.type；强度仅使用 high / max，历史 low / medium 会兼容为 high，xhigh 会兼容为 max。'
     }
-    return '该供应商会写入 extra_body.thinking.type；MiMo 不使用 reasoning_effort。'
+    return '该供应商会写入 extra_body.thinking.type；MiMo 不使用 openai_reasoning_effort。'
   }
-  return 'OpenAI 兼容供应商会映射为 reasoning_effort。'
+  return 'OpenAI 兼容供应商会映射为 Pydantic AI reasoning settings。'
 })
 
 const imageInputHint = computed(() => {

@@ -80,7 +80,7 @@ async def test_llm_provider_catalog_should_only_include_supported_providers(auth
     for provider_key in providers:
         assert provider_key in providers
         assert providers[provider_key]["label"]
-        assert providers[provider_key]["agno_class_path"]
+        assert providers[provider_key]["provider_adapter"].startswith("pydantic_ai.")
         assert providers[provider_key]["docs_url"].startswith("https://")
     assert providers["ollama"]["supports_thinking"] is True
     assert providers["ollama"]["thinking_mode"] == "ollama_think"
@@ -94,6 +94,7 @@ async def test_llm_provider_catalog_should_only_include_supported_providers(auth
     assert providers["google"]["thinking_effort_options"] == ["low", "high"]
     assert providers["openai"]["default_base_url"] == "https://api.openai.com/v1"
     assert providers["openrouter"]["default_base_url"] == "https://openrouter.ai/api/v1"
+    assert providers["openrouter"]["thinking_mode"] == "openrouter_reasoning"
     assert providers["openrouter"]["advanced_json_hint"] == {}
     assert providers["dashscope"]["default_model_id"] == "qwen-plus"
     assert providers["nvidia"]["default_model_id"] == "meta/llama-3.3-70b-instruct"
@@ -303,260 +304,230 @@ async def test_llm_slot_binding_should_drive_agent_binding_state(authenticated_c
 
 
 def test_llm_model_resolver_should_build_common_provider_models() -> None:
-    """模型解析器应能构造常见供应商的 Agno 模型对象。"""
+    """模型解析器应能构造常见供应商的 Pydantic AI 模型对象与运行参数。"""
 
     cipher = LlmSecretCipher()
     resolver = LlmModelResolver()
 
-    openai_model = resolver.resolve_model(
-        AiLlmConfig(
-            id=1,
-            user_id=1,
-            name="openai",
-            provider_key="openai",
-            model_id="gpt-4.1-mini",
-            base_url="https://api.openai.com/v1",
-            api_key_ciphertext=cipher.encrypt("sk-openai-test"),
-            thinking_enabled=True,
-            advanced_config_json={},
-            status=RecordStatus.ACTIVE.value,
-        )
-    )
-    assert openai_model.__class__.__name__ == "OpenAIResponses"
-    assert getattr(openai_model, "reasoning_effort", None) is None
+    def build_config(*, id: int, provider_key: str, model_id: str, api_key: str = "sk-test", **kwargs) -> AiLlmConfig:
+        """构造激活状态的大模型配置，聚焦 provider 差异字段。"""
 
-    openrouter_model = resolver.resolve_model(
-        AiLlmConfig(
-            id=2,
+        return AiLlmConfig(
+            id=id,
             user_id=1,
-            name="openrouter",
-            provider_key="openrouter",
-            model_id="openai/gpt-4.1-mini",
-            base_url="https://openrouter.ai/api/v1",
-            api_key_ciphertext=cipher.encrypt("sk-openrouter-test"),
-            thinking_enabled=True,
-            thinking_effort="xhigh",
-            advanced_config_json={},
+            name=kwargs.pop("name", provider_key),
+            provider_key=provider_key,
+            model_id=model_id,
+            api_key_ciphertext=cipher.encrypt(api_key),
+            advanced_config_json=kwargs.pop("advanced_config_json", {}),
             status=RecordStatus.ACTIVE.value,
+            **kwargs,
         )
-    )
-    assert openrouter_model.__class__.__name__ == "OpenRouter"
-    assert getattr(openrouter_model, "reasoning_effort", None) == "xhigh"
 
-    dashscope_model = resolver.resolve_model(
-        AiLlmConfig(
-            id=3,
-            user_id=1,
-            name="dashscope",
-            provider_key="dashscope",
-            model_id="qwen-plus",
-            base_url="https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
-            api_key_ciphertext=cipher.encrypt("sk-dashscope-test"),
-            thinking_enabled=True,
-            thinking_effort="medium",
-            advanced_config_json={},
-            status=RecordStatus.ACTIVE.value,
-        )
+    openai_config = build_config(
+        id=1,
+        provider_key="openai",
+        model_id="gpt-4.1-mini",
+        base_url="https://api.openai.com/v1",
+        thinking_enabled=True,
+        thinking_effort="medium",
     )
-    assert dashscope_model.__class__.__name__ == "DashScope"
-    assert getattr(dashscope_model, "enable_thinking", None) is True
-    assert getattr(dashscope_model, "thinking_budget", None) == 5000
+    openai_model = resolver.resolve_model(openai_config)
+    assert openai_model.__class__.__name__ == "OpenAIChatModel"
+    assert openai_model.model_name == "gpt-4.1-mini"
+    assert resolver.resolve_model_settings(openai_config)["openai_reasoning_effort"] == "medium"
 
-    openai_like_model = resolver.resolve_model(
-        AiLlmConfig(
-            id=4,
-            user_id=1,
-            name="openai_like",
-            provider_key="openai_like",
-            model_id="custom-model",
-            base_url="https://api.example.com/v1",
-            api_key_ciphertext=cipher.encrypt("sk-compatible-test"),
-            thinking_enabled=True,
-            thinking_effort="max",
-            advanced_config_json={},
-            status=RecordStatus.ACTIVE.value,
-        )
+    openrouter_config = build_config(
+        id=2,
+        provider_key="openrouter",
+        model_id="openai/gpt-4.1-mini",
+        api_key="sk-openrouter-test",
+        base_url="https://openrouter.ai/api/v1",
+        thinking_enabled=True,
+        thinking_effort="xhigh",
     )
-    assert openai_like_model.__class__.__name__ == "OpenAILike"
-    assert getattr(openai_like_model, "base_url", None) == "https://api.example.com/v1"
-    assert getattr(openai_like_model, "reasoning_effort", None) == "max"
+    openrouter_model = resolver.resolve_model(openrouter_config)
+    assert openrouter_model.__class__.__name__ == "OpenRouterModel"
+    assert openrouter_model.model_name == "openai/gpt-4.1-mini"
+    assert resolver.resolve_model_settings(openrouter_config)["openrouter_reasoning"] == {"effort": "xhigh"}
 
-    deepseek_model = resolver.resolve_model(
-        AiLlmConfig(
-            id=8,
-            user_id=1,
-            name="deepseek",
-            provider_key="deepseek",
-            model_id="deepseek-v4-flash",
-            base_url="https://api.deepseek.com",
-            api_key_ciphertext=cipher.encrypt("sk-deepseek-test"),
-            thinking_enabled=True,
-            thinking_effort="xhigh",
-            advanced_config_json={},
-            status=RecordStatus.ACTIVE.value,
-        )
+    dashscope_config = build_config(
+        id=3,
+        provider_key="dashscope",
+        model_id="qwen-plus",
+        api_key="sk-dashscope-test",
+        base_url="https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+        thinking_enabled=True,
+        thinking_effort="medium",
     )
-    assert deepseek_model.__class__.__name__ == "DeepSeek"
-    assert getattr(deepseek_model, "reasoning_effort", None) == "max"
-    assert getattr(deepseek_model, "extra_body", None) == {"thinking": {"type": "enabled"}}
-    assert getattr(deepseek_model, "timeout", None) is None
-    assert getattr(deepseek_model, "retries", None) == 0
-
-    deepseek_disabled_model = resolver.resolve_model(
-        AiLlmConfig(
-            id=9,
-            user_id=1,
-            name="deepseek-disabled",
-            provider_key="deepseek",
-            model_id="deepseek-v4-flash",
-            base_url="https://api.deepseek.com",
-            api_key_ciphertext=cipher.encrypt("sk-deepseek-test"),
-            thinking_enabled=False,
-            advanced_config_json={},
-            status=RecordStatus.ACTIVE.value,
-        )
-    )
-    assert deepseek_disabled_model.__class__.__name__ == "DeepSeek"
-    assert getattr(deepseek_disabled_model, "reasoning_effort", None) is None
-    assert getattr(deepseek_disabled_model, "extra_body", None) == {"thinking": {"type": "disabled"}}
-    assert getattr(deepseek_disabled_model, "timeout", None) is None
-
-    deepseek_legacy_effort_model = resolver.resolve_model(
-        AiLlmConfig(
-            id=12,
-            user_id=1,
-            name="deepseek-legacy-effort",
-            provider_key="deepseek",
-            model_id="deepseek-v4-pro",
-            base_url="https://api.deepseek.com",
-            api_key_ciphertext=cipher.encrypt("sk-deepseek-test"),
-            thinking_enabled=True,
-            thinking_effort="medium",
-            advanced_config_json={},
-            status=RecordStatus.ACTIVE.value,
-        )
-    )
-    assert getattr(deepseek_legacy_effort_model, "reasoning_effort", None) == "high"
-    assert getattr(deepseek_legacy_effort_model, "extra_body", None) == {"thinking": {"type": "enabled"}}
-
-    deepseek_custom_model = resolver.resolve_model(
-        AiLlmConfig(
-            id=10,
-            user_id=1,
-            name="deepseek-custom",
-            provider_key="deepseek",
-            model_id="deepseek-v4-pro",
-            base_url="https://api.deepseek.com",
-            api_key_ciphertext=cipher.encrypt("sk-deepseek-test"),
-            thinking_enabled=True,
-            thinking_effort="medium",
-            advanced_config_json={
-                "reasoning_effort": "max",
-                "timeout": 60,
-                "retries": 0,
-                "extra_body": {"thinking": {"type": "disabled"}, "custom": "value"},
-            },
-            status=RecordStatus.ACTIVE.value,
-        )
-    )
-    assert getattr(deepseek_custom_model, "reasoning_effort", None) == "max"
-    assert getattr(deepseek_custom_model, "timeout", None) == 60
-    assert getattr(deepseek_custom_model, "retries", None) == 0
-    assert getattr(deepseek_custom_model, "extra_body", None) == {
-        "thinking": {"type": "enabled"},
-        "custom": "value",
+    dashscope_model = resolver.resolve_model(dashscope_config)
+    assert dashscope_model.__class__.__name__ == "OpenAIChatModel"
+    assert dashscope_model.model_name == "qwen-plus"
+    assert resolver.resolve_model_settings(dashscope_config)["extra_body"] == {
+        "enable_thinking": True,
+        "thinking_budget": 5000,
     }
 
-    ollama_model = resolver.resolve_model(
-        AiLlmConfig(
-            id=5,
-            user_id=1,
-            name="ollama",
-            provider_key="ollama",
-            model_id="llama3.1",
-            base_url="http://localhost:11434",
-            api_key_ciphertext=cipher.encrypt(""),
-            thinking_enabled=True,
-            thinking_effort="medium",
-            advanced_config_json={},
-            status=RecordStatus.ACTIVE.value,
-        )
+    openai_like_config = build_config(
+        id=4,
+        provider_key="openai_like",
+        model_id="custom-model",
+        api_key="sk-compatible-test",
+        base_url="https://api.example.com/v1",
+        thinking_enabled=True,
+        thinking_effort="max",
     )
-    assert ollama_model.__class__.__name__ == "Ollama"
-    assert getattr(ollama_model, "host", None) == "http://localhost:11434"
-    assert getattr(ollama_model, "request_params", None) == {"think": "medium"}
+    openai_like_model = resolver.resolve_model(openai_like_config)
+    assert openai_like_model.__class__.__name__ == "OpenAIChatModel"
+    assert openai_like_model.model_name == "custom-model"
+    assert resolver.resolve_model_settings(openai_like_config)["openai_reasoning_effort"] == "max"
 
-    ollama_custom_think_model = resolver.resolve_model(
-        AiLlmConfig(
-            id=7,
-            user_id=1,
-            name="ollama-custom-think",
-            provider_key="ollama",
-            model_id="gpt-oss:20b",
-            base_url="http://localhost:11434",
-            api_key_ciphertext=cipher.encrypt(""),
-            thinking_enabled=True,
-            thinking_effort="low",
-            advanced_config_json={"request_params": {"think": "high"}},
-            status=RecordStatus.ACTIVE.value,
-        )
+    deepseek_config = build_config(
+        id=8,
+        provider_key="deepseek",
+        model_id="deepseek-v4-flash",
+        api_key="sk-deepseek-test",
+        base_url="https://api.deepseek.com",
+        thinking_enabled=True,
+        thinking_effort="xhigh",
     )
-    assert ollama_custom_think_model.__class__.__name__ == "Ollama"
-    assert getattr(ollama_custom_think_model, "request_params", None) == {"think": "high"}
+    deepseek_model = resolver.resolve_model(deepseek_config)
+    assert deepseek_model.__class__.__name__ == "OpenAIChatModel"
+    assert resolver.resolve_model_settings(deepseek_config) == {
+        "openai_reasoning_effort": "max",
+        "extra_body": {"thinking": {"type": "enabled"}},
+    }
 
-    google_model = resolver.resolve_model(
-        AiLlmConfig(
-            id=11,
-            user_id=1,
-            name="google",
-            provider_key="google",
-            model_id="gemini-2.5-pro",
-            api_key_ciphertext=cipher.encrypt("sk-google-test"),
-            thinking_enabled=True,
-            thinking_effort="low",
-            advanced_config_json={},
-            status=RecordStatus.ACTIVE.value,
-        )
+    deepseek_disabled_config = build_config(
+        id=9,
+        name="deepseek-disabled",
+        provider_key="deepseek",
+        model_id="deepseek-v4-flash",
+        api_key="sk-deepseek-test",
+        base_url="https://api.deepseek.com",
+        thinking_enabled=False,
     )
-    assert google_model.__class__.__name__ == "Gemini"
-    assert getattr(google_model, "thinking_level", None) == "low"
+    deepseek_disabled_model = resolver.resolve_model(deepseek_disabled_config)
+    assert deepseek_disabled_model.__class__.__name__ == "OpenAIChatModel"
+    assert resolver.resolve_model_settings(deepseek_disabled_config) == {
+        "extra_body": {"thinking": {"type": "disabled"}},
+    }
 
-    nvidia_model = resolver.resolve_model(
-        AiLlmConfig(
-            id=6,
-            user_id=1,
-            name="nvidia",
-            provider_key="nvidia",
-            model_id="meta/llama-3.3-70b-instruct",
-            base_url="https://integrate.api.nvidia.com/v1",
-            api_key_ciphertext=cipher.encrypt("nvapi-test"),
-            thinking_enabled=True,
-            advanced_config_json={},
-            status=RecordStatus.ACTIVE.value,
-        )
+    deepseek_legacy_effort_config = build_config(
+        id=12,
+        name="deepseek-legacy-effort",
+        provider_key="deepseek",
+        model_id="deepseek-v4-pro",
+        api_key="sk-deepseek-test",
+        base_url="https://api.deepseek.com",
+        thinking_enabled=True,
+        thinking_effort="medium",
     )
-    assert nvidia_model.__class__.__name__ == "Nvidia"
-    assert getattr(nvidia_model, "reasoning_effort", None) is None
+    deepseek_legacy_effort_model = resolver.resolve_model(deepseek_legacy_effort_config)
+    assert deepseek_legacy_effort_model.__class__.__name__ == "OpenAIChatModel"
+    assert resolver.resolve_model_settings(deepseek_legacy_effort_config) == {
+        "openai_reasoning_effort": "high",
+        "extra_body": {"thinking": {"type": "enabled"}},
+    }
 
-    mimo_model = resolver.resolve_model(
-        AiLlmConfig(
-            id=13,
-            user_id=1,
-            name="mimo",
-            provider_key="mimo",
-            model_id="mimo-v2.5",
-            base_url="https://api.xiaomimimo.com/v1",
-            api_key_ciphertext=cipher.encrypt("sk-mimo-test"),
-            thinking_enabled=True,
-            thinking_effort="max",
-            advanced_config_json={},
-            status=RecordStatus.ACTIVE.value,
-        )
+    deepseek_custom_config = build_config(
+        id=10,
+        name="deepseek-custom",
+        provider_key="deepseek",
+        model_id="deepseek-v4-pro",
+        api_key="sk-deepseek-test",
+        base_url="https://api.deepseek.com",
+        thinking_enabled=True,
+        thinking_effort="medium",
+        advanced_config_json={
+            "openai_reasoning_effort": "max",
+            "timeout": 60,
+            "retries": 0,
+            "extra_body": {"thinking": {"type": "disabled"}, "custom": "value"},
+        },
     )
-    assert mimo_model.__class__.__name__ == "MiMo"
-    assert getattr(mimo_model, "base_url", None) == "https://api.xiaomimimo.com/v1"
-    assert getattr(mimo_model, "reasoning_effort", None) is None
-    assert getattr(mimo_model, "extra_body", None) == {"thinking": {"type": "enabled"}}
+    deepseek_custom_model = resolver.resolve_model(deepseek_custom_config)
+    assert deepseek_custom_model.__class__.__name__ == "OpenAIChatModel"
+    assert resolver.resolve_model_settings(deepseek_custom_config) == {
+        "openai_reasoning_effort": "max",
+        "timeout": 60,
+        "retries": 0,
+        "extra_body": {
+            "thinking": {"type": "enabled"},
+            "custom": "value",
+        },
+    }
+
+    ollama_config = build_config(
+        id=5,
+        provider_key="ollama",
+        model_id="llama3.1",
+        api_key="",
+        base_url="http://localhost:11434",
+        thinking_enabled=True,
+        thinking_effort="medium",
+    )
+    ollama_model = resolver.resolve_model(ollama_config)
+    assert ollama_model.__class__.__name__ == "OpenAIChatModel"
+    assert ollama_model.model_name == "llama3.1"
+    assert resolver.resolve_model_settings(ollama_config)["extra_body"] == {"think": "medium"}
+
+    ollama_custom_think_config = build_config(
+        id=7,
+        name="ollama-custom-think",
+        provider_key="ollama",
+        model_id="gpt-oss:20b",
+        api_key="",
+        base_url="http://localhost:11434",
+        thinking_enabled=True,
+        thinking_effort="low",
+        advanced_config_json={"extra_body": {"think": "high"}},
+    )
+    ollama_custom_think_model = resolver.resolve_model(ollama_custom_think_config)
+    assert ollama_custom_think_model.__class__.__name__ == "OpenAIChatModel"
+    assert resolver.resolve_model_settings(ollama_custom_think_config)["extra_body"] == {"think": "low"}
+
+    google_config = build_config(
+        id=11,
+        provider_key="google",
+        model_id="gemini-2.5-pro",
+        api_key="sk-google-test",
+        thinking_enabled=True,
+        thinking_effort="low",
+    )
+    google_model = resolver.resolve_model(google_config)
+    assert google_model.__class__.__name__ == "GoogleModel"
+    assert google_model.model_name == "gemini-2.5-pro"
+    assert resolver.resolve_model_settings(google_config)["google_thinking_config"] == {
+        "thinking_level": "LOW",
+        "include_thoughts": True,
+    }
+
+    nvidia_config = build_config(
+        id=6,
+        provider_key="nvidia",
+        model_id="meta/llama-3.3-70b-instruct",
+        api_key="nvapi-test",
+        base_url="https://integrate.api.nvidia.com/v1",
+        thinking_enabled=True,
+    )
+    nvidia_model = resolver.resolve_model(nvidia_config)
+    assert nvidia_model.__class__.__name__ == "OpenAIChatModel"
+    assert nvidia_model.model_name == "meta/llama-3.3-70b-instruct"
+
+    mimo_config = build_config(
+        id=13,
+        provider_key="mimo",
+        model_id="mimo-v2.5",
+        api_key="sk-mimo-test",
+        base_url="https://api.xiaomimimo.com/v1",
+        thinking_enabled=True,
+        thinking_effort="max",
+    )
+    mimo_model = resolver.resolve_model(mimo_config)
+    assert mimo_model.__class__.__name__ == "OpenAIChatModel"
+    assert mimo_model.model_name == "mimo-v2.5"
+    assert resolver.resolve_model_settings(mimo_config)["extra_body"] == {"thinking": {"type": "enabled"}}
 
 
 def test_mimo_formatter_should_preserve_reasoning_content_and_strip_image_detail() -> None:

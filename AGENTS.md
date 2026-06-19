@@ -46,13 +46,13 @@ Backend 是平台控制面，负责用户、权限、工作空间、项目、页
 - 新增或调整接口契约时，先明确路径、入参、出参、权限和错误语义，再联动 Editor、Runtime 或测试。
 - 涉及资源、组件、页面源码和 previewSchema 的导入能力时，必须经过 Backend 侧边界校验。
 - Backend 默认项目配置模板由 `backend/app/config_templates/` 自身维护；不要在 Backend 运行时代码中直接读取 `runtime/public/config/`。Runtime 自带的 `public/config/*.config.yaml` 仅作为 Runtime 独立运行和本地 fixture 使用，根仓契约测试只约束两侧模板入口和必要结构。
-- 涉及 Agno 新特性或不确定用法时，先查阅 `https://docs.agno.com/introduction` 再确定实现方式。
+- 涉及 Pydantic AI 新特性或不确定用法时，先查阅官方文档再确定实现方式。
 
 ### backend/app/ai
 
-AI 目录承载 Agno 智能体、会话运行态、工具注册、工具披露、上下文构造和用户级 AI 配置。
+AI 目录承载 Pydantic AI 智能体、平台自有会话运行态、工具注册、工具披露、上下文构造和用户级 AI 配置。当前工具实现仍有一层 Agno Function 桥接，作为迁移期复用既有工具规格和权限校验的适配层；新增运行态能力应优先落在平台运行态表和 Pydantic AI runner 上。
 
-`backend/app/ai/tool_specs.py` 是智能体工具目录、工具组、风险级别、确认要求、上下文要求、调用格式与返回示例的单一事实源。新增、删除或调整 Agno 工具时必须先更新该规格，再由规格派生：
+`backend/app/ai/tool_specs.py` 是智能体工具目录、工具组、风险级别、确认要求、上下文要求、调用格式与返回示例的单一事实源。新增、删除或调整智能体工具时必须先更新该规格，再由规格派生：
 
 - `agent_catalog.py`
 - `tools/disclosure.py`
@@ -110,7 +110,7 @@ pnpm run test:e2e
 
 涉及以下范围时应特别补充验证：
 
-- AI 工具规格、披露组或前端工具说明变化：补充防漂移测试，确保工具 key、Agno Function、披露工具组和 `agent_guide` 一致。
+- AI 工具规格、披露组或前端工具说明变化：补充防漂移测试，确保工具 key、运行时 Tool、披露工具组和 `agent_guide` 一致。
 - Runtime Kit manifest 或公开 import path 变化：补充 Backend 契约测试和 Runtime manifest 测试。
 - 预览、截图、构建、资源引用或 Runtime 回源变化：补充相关 integration、contract 或 E2E smoke。
 - 认证、权限、工作空间隔离变化：补充多用户访问或 API 权限测试。

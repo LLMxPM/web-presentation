@@ -1,4 +1,4 @@
-"""文件功能：提供 Editor 内容助手使用的 BFF 路由，负责会话管理、会话命名与 Agno 运行代理。"""
+"""文件功能：提供 Editor 内容助手使用的 BFF 路由，负责会话管理、会话命名与 Pydantic AI 运行代理。"""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.registry import AgentRegistry
 from app.ai.runtime_context_builder import build_agent_runtime_context
-from app.ai.session_facade import AgentSessionFacade
+from app.ai.session_facade_pydantic import AgentSessionFacade
 from app.api.dependencies import get_current_user
 from app.core.exceptions import AppException
 from app.db.session import get_db_session
@@ -541,7 +541,7 @@ async def start_agent_run(
     source: str = "editor-page-detail",
     agent_id: str = "agent-coordinator",
 ) -> AgentRunStartResponse:
-    """旧的两步式启动接口已废弃；新链路必须直接消费 Agno raw SSE。"""
+    """旧的两步式启动接口已废弃；新链路必须直接消费平台 SSE。"""
 
     _ = session_id, payload, workspace_id, request, current, session, project_id, page_id, component_id, scope_type, source, agent_id
     raise AppException(status_code=410, code="AI_RUN_START_DEPRECATED", detail="请使用流式运行接口启动智能体。")
@@ -562,7 +562,7 @@ async def stream_agent_run(
     source: str = "editor-page-detail",
     agent_id: str = "agent-coordinator",
 ) -> StreamingResponse:
-    """向 Agent 发送消息，并直接转发 Agno raw SSE。"""
+    """向 Agent 发送消息，并转发平台标准 SSE。"""
 
     scope = await _resolve_scope_context(
         session=session,
@@ -647,7 +647,7 @@ async def stream_agent_run_events(
     agent_id: str = "agent-coordinator",
     event_index: int = -1,
 ) -> StreamingResponse:
-    """按 Agno event_index 订阅或回放指定 run 的原始事件流。"""
+    """按平台 event_index 订阅或回放指定 run 的事件流。"""
 
     scope = await _resolve_scope_context(
         session=session,
@@ -733,7 +733,7 @@ async def get_agent_session_active_run(
     source: str = "editor-page-detail",
     agent_id: str = "agent-coordinator",
 ) -> AgentActiveRunItem | None:
-    """读取当前会话最近一次 Agno run 状态。"""
+    """读取当前会话最近一次平台 run 状态。"""
 
     scope = await _resolve_scope_context(
         session=session,
@@ -810,7 +810,7 @@ async def cancel_agent_session_active_run(
     source: str = "editor-page-detail",
     agent_id: str = "agent-coordinator",
 ) -> AgentCancelRunResponse:
-    """取消当前会话中未结束的 Agno run。"""
+    """取消当前会话中未结束的平台 run。"""
 
     scope = await _resolve_scope_context(
         session=session,
@@ -848,7 +848,7 @@ async def continue_agent_session_active_run(
     source: str = "editor-page-detail",
     agent_id: str = "agent-coordinator",
 ) -> StreamingResponse:
-    """继续当前会话中暂停等待确认的 Agno run。"""
+    """继续当前会话中暂停等待确认的平台 run。"""
 
     scope = await _resolve_scope_context(
         session=session,

@@ -5,8 +5,8 @@
 
 - `runtime/` 已作为独立项目 `web-runtime-vue` 的 Git 子模块接入，并具备独立运行、测试和 Docker Release 流程。
 - `backend/` 已具备 FastAPI、SQLAlchemy 2.0 async、Alembic、多用户登录、工作空间成员隔离、工作空间/项目/页面 CRUD 基线。
-- Backend 已内嵌基于 Agno 的智能体运行时，注册 `agent-coordinator`、`component-manager` 和 `resource-manager` 三个稳定入口。
-- 智能体会话链路采用 session-first：Editor 围绕 `session_id` 工作，Backend 以 Agno session/run/events 维护 run、HITL、事件回放和历史状态。
+- Backend 已内嵌基于 Pydantic AI 的智能体运行入口，注册 `agent-coordinator`、`component-manager` 和 `resource-manager` 三个稳定入口。
+- 智能体会话链路采用 session-first：Editor 围绕 `session_id` 工作，Backend 以平台自有 `ai_agent_*` 表维护 run、HITL、事件回放和历史状态。
 - 智能体支持工具确认、结构化单选提问、会话恢复、停止/强制结束和图片输入链路。
 - 用户级 AI 设置已支持模型配置、槽位绑定、智能体描述、业务补充提示词、工具说明和工具提示词覆盖。
 - `backend/app/ai/tool_specs.py` 是智能体工具目录、风险级别、确认要求、上下文要求、调用格式和返回示例的单一事实源。
