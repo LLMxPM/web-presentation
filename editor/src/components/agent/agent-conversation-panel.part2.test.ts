@@ -1237,6 +1237,126 @@ describe('AgentConversationPanel', () => {
     expect(routerPushMock).toHaveBeenCalledWith('/workspaces/11/projects/21/pages/31')
   })
 
+  it('项目 run 创建页面后切入页面 scope 仍应保留会话并按项目 scope 收尾', async () => {
+    const projectSession = {
+      session_id: 'project-session',
+      agent_id: DEFAULT_AGENT_ID,
+      session_name: '项目会话',
+      created_at: '2026-04-18T10:00:00+08:00',
+      updated_at: '2026-04-18T10:00:00+08:00',
+      metadata: {
+        scope_type: 'project',
+        workspace_id: 11,
+        project_id: 21,
+        project_name: '演示项目',
+        source: 'editor-agent-sidebar',
+      },
+    }
+    const pausedRun = {
+      run_id: 'run-project',
+      session_id: 'project-session',
+      agent_id: DEFAULT_AGENT_ID,
+      status: 'paused',
+      pending_requirement: {
+        requirement_id: 'requirement-route',
+        run_id: 'run-project',
+        kind: 'tool_confirmation',
+        tool_execution: {
+          tool_call_id: 'tool-route',
+          tool_name: 'apply_project_route_tree',
+          arguments: {},
+        },
+      },
+      content: null,
+      created_at: '2026-04-18T10:00:00+08:00',
+      updated_at: '2026-04-18T10:01:00+08:00',
+      cancel_requested_at: null,
+      event_index: 3,
+    }
+
+    createAgentSessionMock.mockResolvedValueOnce(projectSession)
+    getAgentSessionRuntimeMock
+      .mockResolvedValueOnce(createRuntimeSnapshot({
+        session: projectSession,
+      }))
+      .mockResolvedValue(createRuntimeSnapshot({
+        session: projectSession,
+        active_run: pausedRun,
+        pending_requirement: pausedRun.pending_requirement,
+        event_index: 3,
+      }))
+    streamAgentRunEventsByRunIdMock.mockImplementationOnce(async (_runId: string, _payload: unknown, options?: { onEvent?: (event: any) => void }) => {
+      options?.onEvent?.({ event: 'run.started', run_id: 'run-project', session_id: 'project-session', content: null, data: {}, sequence: 1 })
+      options?.onEvent?.({
+        event: 'tool.completed',
+        run_id: 'run-project',
+        session_id: 'project-session',
+        content: null,
+        sequence: 2,
+        data: {
+          tool_call_id: 'tool-create-page',
+          tool_name: 'create_project_page',
+          result: {
+            success: true,
+            page_id: 53,
+            project_id: 21,
+            title: '新页面',
+          },
+        },
+      })
+      options?.onEvent?.({
+        event: 'run.paused',
+        run_id: 'run-project',
+        session_id: 'project-session',
+        content: null,
+        sequence: 3,
+        data: { requirement: pausedRun.pending_requirement },
+      })
+    })
+
+    let rerenderPanel: ((props: Record<string, unknown>) => Promise<void>) | null = null
+    const projectPagesUpdatedSpy = vi.fn(() => {
+      void rerenderPanel?.({
+        workspaceId: 11,
+        projectId: 21,
+        pageId: 53,
+        pageTitle: '新页面',
+      })
+    })
+    const renderResult = render(AgentConversationPanel, createTestingRenderOptions({
+      pageId: null,
+      pageTitle: '',
+      onProjectPagesUpdated: projectPagesUpdatedSpy,
+    }))
+    rerenderPanel = renderResult.rerender
+
+    await fireEvent.update(screen.getByPlaceholderText(DEFAULT_PLACEHOLDER), '创建项目页')
+    await fireEvent.click(screen.getByRole('button', { name: /发送/ }))
+
+    await waitFor(() => {
+      expect(projectPagesUpdatedSpy).toHaveBeenCalled()
+      expect(getAgentSessionRuntimeMock).toHaveBeenCalledWith(
+        'project-session',
+        expect.objectContaining({
+          scope_type: 'project',
+          project_id: 21,
+          page_id: null,
+          source: 'editor-agent-sidebar',
+        }),
+        DEFAULT_AGENT_ID,
+      )
+    })
+    expect(getAgentSessionRuntimeMock).not.toHaveBeenCalledWith(
+      'project-session',
+      expect.objectContaining({ scope_type: 'page' }),
+      DEFAULT_AGENT_ID,
+    )
+    expect(messageWarningMock).not.toHaveBeenCalled()
+
+    await fireEvent.click(screen.getByRole('button', { name: '切换会话' }))
+    expect(await screen.findByRole('button', { name: /项目会话/ })).toBeTruthy()
+  })
+
   it.each([
     ['component-manager', 'editor-component-library', '/workspaces/11/components'],
     ['resource-manager', 'editor-asset-library', '/workspaces/11/assets'],

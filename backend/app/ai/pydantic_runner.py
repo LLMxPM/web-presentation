@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 import logging
 from collections.abc import AsyncGenerator
+from dataclasses import dataclass
+from time import monotonic
 from typing import Any
 
 from pydantic_ai import Agent, AgentRunResultEvent, DeferredToolRequests, DeferredToolResults
@@ -33,6 +35,11 @@ from app.models.ai_agent_runtime import AiAgentRun
 from app.schemas.agent import AgentPendingRequirement, AgentRunEvent
 
 logger = logging.getLogger(__name__)
+
+_MESSAGE_DELTA_FLUSH_INTERVAL_SECONDS = 0.5
+_REASONING_DELTA_FLUSH_INTERVAL_SECONDS = 1.5
+_MESSAGE_DELTA_FLUSH_BYTES = 4 * 1024
+_REASONING_DELTA_FLUSH_BYTES = 8 * 1024
 
 
 class PydanticAgentRunner:
@@ -79,6 +86,7 @@ class PydanticAgentRunner:
         content_parts: list[str] = []
         reasoning_parts: list[str] = []
         final_messages: list[dict[str, Any]] = []
+        delta_buffer = _DeltaEventBuffer()
         try:
             yield await self._yield_and_store(
                 run_model,
@@ -92,11 +100,14 @@ class PydanticAgentRunner:
                 deferred_tool_results=deferred_tool_results,
                 infer_name=False,
             ):
-                should_stop, cancel_event = await self._cancel_event_if_requested(run_model)
+                should_stop, should_cancel = await self._cancel_event_if_requested(run_model)
                 if should_stop:
-                    if cancel_event is None:
+                    async for sse in self._flush_delta_buffer(run_model, delta_buffer, best_effort=True):
+                        yield sse
+                    if not should_cancel:
                         return
-                    yield cancel_event
+                    event = await self._store.mark_terminal(run_model, status="cancelled", content="用户停止了当前运行。")
+                    yield encode_sse_event(event)
                     return
                 async for sse in self._handle_raw_event(
                     run_model=run_model,
@@ -104,17 +115,25 @@ class PydanticAgentRunner:
                     content_parts=content_parts,
                     reasoning_parts=reasoning_parts,
                     final_messages=final_messages,
+                    delta_buffer=delta_buffer,
                 ):
                     yield sse
             if _has_paused(run_model):
+                async for sse in self._flush_delta_buffer(run_model, delta_buffer):
+                    yield sse
                 await self._store.save_run_message_history(run_model, final_messages)
                 return
-            should_stop, cancel_event = await self._cancel_event_if_requested(run_model)
+            should_stop, should_cancel = await self._cancel_event_if_requested(run_model)
             if should_stop:
-                if cancel_event is None:
+                async for sse in self._flush_delta_buffer(run_model, delta_buffer, best_effort=True):
+                    yield sse
+                if not should_cancel:
                     return
-                yield cancel_event
+                event = await self._store.mark_terminal(run_model, status="cancelled", content="用户停止了当前运行。")
+                yield encode_sse_event(event)
                 return
+            async for sse in self._flush_delta_buffer(run_model, delta_buffer):
+                yield sse
             yield await self._yield_and_store(
                 run_model,
                 AgentRunEvent(event="model.request.completed", run_id=run_model.run_id, session_id=run_model.session_id),
@@ -128,6 +147,8 @@ class PydanticAgentRunner:
             event = await self._store.mark_terminal(run_model, status="completed", content="".join(content_parts) or None)
             yield encode_sse_event(event)
         except AppException as exc:
+            async for sse in self._flush_delta_buffer(run_model, delta_buffer, best_effort=True):
+                yield sse
             if exc.code == "AI_RUN_CANCELLED":
                 event = await self._store.mark_terminal(run_model, status="cancelled", content="用户停止了当前运行。")
                 yield encode_sse_event(event)
@@ -140,6 +161,8 @@ class PydanticAgentRunner:
             )
             yield encode_sse_event(event)
         except Exception as exc:  # noqa: BLE001
+            async for sse in self._flush_delta_buffer(run_model, delta_buffer, best_effort=True):
+                yield sse
             failure = normalize_agent_run_exception(
                 exc,
                 fallback_code="AI_RUN_FAILED",
@@ -170,6 +193,7 @@ class PydanticAgentRunner:
         content_parts: list[str],
         reasoning_parts: list[str],
         final_messages: list[dict[str, Any]],
+        delta_buffer: "_DeltaEventBuffer",
     ) -> AsyncGenerator[bytes, None]:
         """把单个 Pydantic AI 事件转换为零到多个平台 SSE。"""
 
@@ -181,6 +205,8 @@ class PydanticAgentRunner:
                     run_id=run_model.run_id,
                     session_id=run_model.session_id,
                 )
+                async for sse in self._flush_delta_buffer(run_model, delta_buffer):
+                    yield sse
                 event = await self._store.pause_for_requirement(run_model, requirement=requirement)
                 yield encode_sse_event(event)
             final_messages[:] = _safe_messages(raw_event.result)
@@ -189,27 +215,25 @@ class PydanticAgentRunner:
             part = raw_event.part
             if isinstance(part, TextPart) and part.content:
                 content_parts.append(part.content)
-                yield await self._yield_and_store(
+                async for sse in self._append_delta_event(
                     run_model,
-                    AgentRunEvent(
-                        event="message.delta",
-                        run_id=run_model.run_id,
-                        session_id=run_model.session_id,
-                        content=part.content,
-                    ),
-                )
+                    delta_buffer,
+                    event="message.delta",
+                    content=part.content,
+                ):
+                    yield sse
             elif isinstance(part, ThinkingPart) and part.content:
                 reasoning_parts.append(part.content)
-                yield await self._yield_and_store(
+                async for sse in self._append_delta_event(
                     run_model,
-                    AgentRunEvent(
-                        event="reasoning.delta",
-                        run_id=run_model.run_id,
-                        session_id=run_model.session_id,
-                        content=part.content,
-                    ),
-                )
+                    delta_buffer,
+                    event="reasoning.delta",
+                    content=part.content,
+                ):
+                    yield sse
             elif isinstance(part, ToolCallPart):
+                async for sse in self._flush_delta_buffer(run_model, delta_buffer):
+                    yield sse
                 yield await self._yield_and_store(
                     run_model,
                     AgentRunEvent(
@@ -223,27 +247,25 @@ class PydanticAgentRunner:
             delta = raw_event.delta
             if isinstance(delta, TextPartDelta) and delta.content_delta:
                 content_parts.append(delta.content_delta)
-                yield await self._yield_and_store(
+                async for sse in self._append_delta_event(
                     run_model,
-                    AgentRunEvent(
-                        event="message.delta",
-                        run_id=run_model.run_id,
-                        session_id=run_model.session_id,
-                        content=delta.content_delta,
-                    ),
-                )
+                    delta_buffer,
+                    event="message.delta",
+                    content=delta.content_delta,
+                ):
+                    yield sse
             elif isinstance(delta, ThinkingPartDelta) and delta.content_delta:
                 reasoning_parts.append(delta.content_delta)
-                yield await self._yield_and_store(
+                async for sse in self._append_delta_event(
                     run_model,
-                    AgentRunEvent(
-                        event="reasoning.delta",
-                        run_id=run_model.run_id,
-                        session_id=run_model.session_id,
-                        content=delta.content_delta,
-                    ),
-                )
+                    delta_buffer,
+                    event="reasoning.delta",
+                    content=delta.content_delta,
+                ):
+                    yield sse
         elif isinstance(raw_event, FunctionToolCallEvent):
+            async for sse in self._flush_delta_buffer(run_model, delta_buffer):
+                yield sse
             yield await self._yield_and_store(
                 run_model,
                 AgentRunEvent(
@@ -254,6 +276,8 @@ class PydanticAgentRunner:
                 ),
             )
         elif isinstance(raw_event, FunctionToolResultEvent):
+            async for sse in self._flush_delta_buffer(run_model, delta_buffer):
+                yield sse
             result = raw_event.result
             yield await self._yield_and_store(
                 run_model,
@@ -269,22 +293,153 @@ class PydanticAgentRunner:
                 ),
             )
 
+    async def _append_delta_event(
+        self,
+        run_model: AiAgentRun,
+        delta_buffer: "_DeltaEventBuffer",
+        *,
+        event: str,
+        content: str,
+    ) -> AsyncGenerator[bytes, None]:
+        """把原始 delta 放入缓冲，并在达到阈值时落库和发 SSE。"""
+
+        for buffered in delta_buffer.append(event=event, content=content):
+            yield await self._yield_and_store(
+                run_model,
+                AgentRunEvent(
+                    event=buffered.event,
+                    run_id=run_model.run_id,
+                    session_id=run_model.session_id,
+                    content=buffered.content,
+                ),
+            )
+
+    async def _flush_delta_buffer(
+        self,
+        run_model: AiAgentRun,
+        delta_buffer: "_DeltaEventBuffer",
+        *,
+        best_effort: bool = False,
+    ) -> AsyncGenerator[bytes, None]:
+        """强制写出当前 delta 缓冲；取消和异常路径允许失败后继续终态推进。"""
+
+        buffered = delta_buffer.pop()
+        if buffered is None:
+            return
+        try:
+            yield await self._yield_and_store(
+                run_model,
+                AgentRunEvent(
+                    event=buffered.event,
+                    run_id=run_model.run_id,
+                    session_id=run_model.session_id,
+                    content=buffered.content,
+                ),
+            )
+        except Exception:  # noqa: BLE001
+            logger.exception(
+                "Failed to flush buffered agent delta",
+                extra={"run_id": run_model.run_id, "session_id": run_model.session_id, "event": buffered.event},
+            )
+            if not best_effort:
+                raise
+
     async def _yield_and_store(self, run_model: AiAgentRun, event: AgentRunEvent) -> bytes:
         """写入事件表并返回 SSE bytes。"""
 
         stored = await self._store.append_event(run_model, event)
         return encode_sse_event(stored)
 
-    async def _cancel_event_if_requested(self, run_model: AiAgentRun) -> tuple[bool, bytes | None]:
-        """如果外部已结束或请求取消，则返回是否应停止当前 runner 以及可选 SSE。"""
+    async def _cancel_event_if_requested(self, run_model: AiAgentRun) -> tuple[bool, bool]:
+        """如果外部已结束或请求取消，则返回是否停止以及是否需要写取消终态。"""
 
         status = await self._store.refresh_run_control_state(run_model)
         if status in {"completed", "cancelled", "failed"}:
-            return True, None
+            return True, False
         if status == "cancelling" or run_model.cancel_requested_at is not None:
-            event = await self._store.mark_terminal(run_model, status="cancelled", content="用户停止了当前运行。")
-            return True, encode_sse_event(event)
-        return False, None
+            return True, True
+        return False, False
+
+
+@dataclass(slots=True)
+class _BufferedDelta:
+    """描述一次准备落库的合并 delta。"""
+
+    event: str
+    content: str
+
+
+class _DeltaEventBuffer:
+    """按类型、时间和大小合并模型原始 delta。"""
+
+    def __init__(self) -> None:
+        """初始化空缓冲。"""
+
+        self._event: str | None = None
+        self._parts: list[str] = []
+        self._byte_size = 0
+        self._started_at: float | None = None
+
+    def append(self, *, event: str, content: str) -> list[_BufferedDelta]:
+        """追加 delta 内容，返回需要立即落库的缓冲片段。"""
+
+        now = monotonic()
+        flushed: list[_BufferedDelta] = []
+        if self._event is not None and (self._event != event or self._should_flush_before_append(now)):
+            buffered = self.pop()
+            if buffered is not None:
+                flushed.append(buffered)
+        if self._event is None:
+            self._event = event
+            self._started_at = now
+        self._parts.append(content)
+        self._byte_size += len(content.encode("utf-8"))
+        if self._byte_size >= _delta_flush_bytes(event):
+            buffered = self.pop()
+            if buffered is not None:
+                flushed.append(buffered)
+        return flushed
+
+    def pop(self) -> _BufferedDelta | None:
+        """弹出当前缓冲内容。"""
+
+        if self._event is None or not self._parts:
+            self._reset()
+            return None
+        buffered = _BufferedDelta(event=self._event, content="".join(self._parts))
+        self._reset()
+        return buffered
+
+    def _should_flush_before_append(self, now: float) -> bool:
+        """判断当前缓冲是否已经超过对应类型的时间阈值。"""
+
+        if self._event is None or self._started_at is None:
+            return False
+        return now - self._started_at >= _delta_flush_interval_seconds(self._event)
+
+    def _reset(self) -> None:
+        """清空当前缓冲状态。"""
+
+        self._event = None
+        self._parts = []
+        self._byte_size = 0
+        self._started_at = None
+
+
+def _delta_flush_interval_seconds(event: str) -> float:
+    """返回指定 delta 事件的时间 flush 阈值。"""
+
+    if event == "reasoning.delta":
+        return _REASONING_DELTA_FLUSH_INTERVAL_SECONDS
+    return _MESSAGE_DELTA_FLUSH_INTERVAL_SECONDS
+
+
+def _delta_flush_bytes(event: str) -> int:
+    """返回指定 delta 事件的大小 flush 阈值。"""
+
+    if event == "reasoning.delta":
+        return _REASONING_DELTA_FLUSH_BYTES
+    return _MESSAGE_DELTA_FLUSH_BYTES
 
 
 def _tool_payload(part: ToolCallPart) -> dict[str, Any]:

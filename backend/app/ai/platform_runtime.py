@@ -7,6 +7,7 @@ import json
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from time import monotonic
 from typing import Any
 from uuid import uuid4
 
@@ -42,6 +43,9 @@ from app.schemas.agent import (
 
 ACTIVE_RUN_STATUSES = {"pending", "running", "paused", "cancelling"}
 TERMINAL_RUN_STATUSES = {"completed", "cancelled", "failed"}
+STREAM_END_EVENTS = {"run.completed", "run.cancelled", "run.error", "run.paused"}
+_EVENT_POLL_INTERVAL_SECONDS = 1.0
+_SSE_KEEPALIVE_INTERVAL_SECONDS = 30.0
 _SUBSCRIBERS: dict[str, set[asyncio.Queue[AgentRunEvent | None]]] = {}
 
 
@@ -521,6 +525,17 @@ class PlatformAgentRuntimeStore:
             .order_by(AiAgentRunEvent.event_index.asc())
         )
         return [AgentRunEvent.model_validate(row.payload_json) for row in result.scalars().all()]
+
+    async def get_run_status(self, *, run_id: str) -> str | None:
+        """读取当前用户可见 run 的状态，供事件流轮询判断是否结束。"""
+
+        result = await self._session.execute(
+            select(AiAgentRun.status).where(
+                AiAgentRun.run_id == run_id,
+                AiAgentRun.user_id == self._user_id,
+            )
+        )
+        return result.scalar_one_or_none()
 
     async def build_timeline_items(self, *, session_id: str) -> list[AgentTimelineItem]:
         """基于平台消息、工具调用、requirement 与事件生成会话 timeline。"""
@@ -1153,20 +1168,39 @@ async def stream_replay_then_subscribe(
     run_id: str,
     event_index: int,
 ) -> AsyncGenerator[bytes, None]:
-    """先从数据库回放事件，再订阅本进程实时事件。"""
+    """先从数据库回放事件，再订阅本进程实时事件，并用数据库轮询兜底跨进程恢复。"""
 
     last_index = event_index
     for event in await store.replay_events(run_id=run_id, event_index=last_index):
         yield encode_sse_event(event)
         last_index = event.event_index if event.event_index is not None else last_index
+        if event.event in STREAM_END_EVENTS:
+            return
 
     queue = _subscribe(run_id)
+    last_keepalive_at = monotonic()
     try:
         while True:
             try:
-                event = await asyncio.wait_for(queue.get(), timeout=30)
+                event = await asyncio.wait_for(queue.get(), timeout=_EVENT_POLL_INTERVAL_SECONDS)
             except asyncio.TimeoutError:
-                yield b": keepalive\n\n"
+                replayed = False
+                for replayed_event in await store.replay_events(run_id=run_id, event_index=last_index):
+                    replayed = True
+                    yield encode_sse_event(replayed_event)
+                    last_index = replayed_event.event_index if replayed_event.event_index is not None else last_index
+                    if replayed_event.event in STREAM_END_EVENTS:
+                        return
+                if replayed:
+                    last_keepalive_at = monotonic()
+                    continue
+                run_status = await store.get_run_status(run_id=run_id)
+                if run_status in TERMINAL_RUN_STATUSES or run_status == "paused":
+                    return
+                now = monotonic()
+                if now - last_keepalive_at >= _SSE_KEEPALIVE_INTERVAL_SECONDS:
+                    yield b": keepalive\n\n"
+                    last_keepalive_at = now
                 continue
             if event is None:
                 return
@@ -1174,7 +1208,8 @@ async def stream_replay_then_subscribe(
                 continue
             yield encode_sse_event(event)
             last_index = event.event_index if event.event_index is not None else last_index
-            if event.event in {"run.completed", "run.cancelled", "run.error", "run.paused"}:
+            last_keepalive_at = monotonic()
+            if event.event in STREAM_END_EVENTS:
                 return
     finally:
         _unsubscribe(run_id, queue)
@@ -1306,6 +1341,6 @@ def _notify_subscribers(run_id: str, event: AgentRunEvent) -> None:
 
     for queue in list(_SUBSCRIBERS.get(run_id, ())):
         queue.put_nowait(event)
-    if event.event in {"run.completed", "run.cancelled", "run.error", "run.paused"}:
+    if event.event in STREAM_END_EVENTS:
         for queue in list(_SUBSCRIBERS.get(run_id, ())):
             queue.put_nowait(None)

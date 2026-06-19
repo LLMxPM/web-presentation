@@ -12,7 +12,7 @@
 
   <Teleport v-if="props.headerActionsTarget && headerActionsReady" defer :to="props.headerActionsTarget">
     <AgentSessionControls
-      :sessions="sessionsQuery.data.value"
+      :sessions="displayedSessions"
       :active-session-id="activeSessionId"
       :active-session-label="activeSessionLabel"
       :is-fetching="sessionsQuery.isFetching.value"
@@ -31,7 +31,7 @@
   <section :class="panelShellClass">
     <header v-if="!props.headerActionsTarget || !headerActionsReady" class="border-b border-slate-100 px-5 py-4">
       <AgentSessionControls
-        :sessions="sessionsQuery.data.value"
+        :sessions="displayedSessions"
         :active-session-id="activeSessionId"
         :active-session-label="activeSessionLabel"
         :is-fetching="sessionsQuery.isFetching.value"
@@ -289,6 +289,7 @@ const route = useRoute()
 
 const composerText = ref('')
 const activeSessionId = ref('')
+const knownSessionsById = ref<Record<string, AgentSessionItem>>({})
 const pendingRouteSessionId = ref('')
 const pendingUnavailableSessionSelectionKey = ref<string | number | null>(null)
 const manuallySelectedSessionId = ref('')
@@ -409,15 +410,40 @@ const agentsQuery = useQuery(
 
 const sessionsQuery = useQuery(
   computed(() => ({
-    queryKey: ['ai-sessions', agentId.value, scope.value.workspace_id],
+    queryKey: [
+      'ai-sessions',
+      agentId.value,
+      scope.value.scope_type,
+      scope.value.workspace_id,
+      scope.value.project_id,
+      scope.value.page_id,
+      scope.value.component_id,
+      scope.value.source,
+    ],
     queryFn: () => listAgentSessions(scope.value, agentId.value),
     enabled: !!scope.value.workspace_id,
   })),
 )
 
 const activeSession = computed<AgentSessionItem | null>(() => (
-  sessionsQuery.data.value?.find(item => item.session_id === activeSessionId.value) ?? null
+  sessionsQuery.data.value?.find(item => item.session_id === activeSessionId.value)
+    ?? knownSessionsById.value[activeSessionId.value]
+    ?? null
 ))
+const displayedSessions = computed<AgentSessionItem[] | undefined>(() => {
+  const sessions = sessionsQuery.data.value
+  const active = activeSession.value
+  if (!active) {
+    return sessions
+  }
+  if (!sessions) {
+    return [active]
+  }
+  if (sessions.some(item => item.session_id === active.session_id)) {
+    return sessions
+  }
+  return [active, ...sessions]
+})
 const activeSessionScope = computed(() => activeSession.value ? resolveSessionScope(activeSession.value) : null)
 const activeSessionRuntimeScope = computed(() => activeSessionScope.value ?? scope.value)
 const activeSessionRuntimeAgentId = computed(() => activeSession.value?.agent_id ?? agentId.value)
@@ -600,7 +626,7 @@ const {
   getRoutePath: () => route.path,
   getRouteUnavailableReason: () => props.routeUnavailableReason,
   getScope: () => scope.value,
-  getSessions: () => sessionsQuery.data.value ?? [],
+  getSessions: () => displayedSessions.value ?? [],
   pushRoute: target => void router.push(target),
 })
 
@@ -622,6 +648,20 @@ function writeSessionValue<T>(source: Record<string, T>, sessionId: string, valu
     return
   }
   source[sessionId] = value
+}
+
+/**
+ * 记录已经见过的会话；路由 scope 切换后仍可用会话自身 scope 恢复运行态。
+ * @param sessions 从列表、创建结果或 runtime 快照获得的会话项
+ */
+function rememberSessions(sessions: AgentSessionItem[]) {
+  if (!sessions.length) {
+    return
+  }
+  knownSessionsById.value = {
+    ...knownSessionsById.value,
+    ...Object.fromEntries(sessions.map(session => [session.session_id, session])),
+  }
 }
 
 /**
@@ -677,13 +717,14 @@ function ensureRunEventSubscription(sessionId: string, run: AgentActiveRunItem, 
     return
   }
   const streamAbortController = createStreamAbortController(run.run_id)
+  const runtimeRequest = resolveSessionRuntimeRequest(sessionId)
   setSessionStreaming(sessionId, true)
   streamAgentRunEvents(
     sessionId,
     run.run_id,
-    scope.value,
+    runtimeRequest.scope,
     {
-      agent_id: agentId.value,
+      agent_id: runtimeRequest.agentId,
       event_index: Math.max(afterEventIndex, agentSessionStore.getLastSequence(sessionId, run.run_id)),
     },
     { onEvent: event => handleRunEvent(event, sessionId), signal: streamAbortController.signal },
@@ -743,8 +784,8 @@ const {
   getActiveSessionId: () => activeSessionId.value,
   getPendingRequirement: () => pendingRequirement.value,
   getActiveRun: () => activeRun.value,
-  getScope: () => scope.value,
-  getAgentId: () => agentId.value,
+  getScope: () => activeSessionRuntimeScope.value,
+  getAgentId: () => activeSessionRuntimeAgentId.value,
   isDisposed: () => componentDisposed,
   setHitlActionInFlight,
   setSessionStreaming,
@@ -839,9 +880,16 @@ watch(
       return
     }
 
+    if (sessions === undefined) {
+      return
+    }
+    rememberSessions(sessions)
+
     if (!sessions?.length) {
-      activeSessionId.value = ''
-      pendingRouteSessionId.value = ''
+      if (!activeSession.value) {
+        activeSessionId.value = ''
+        pendingRouteSessionId.value = ''
+      }
       return
     }
 
@@ -858,6 +906,9 @@ watch(
       ? sessions.find(item => item.session_id === activeSessionId.value)
       : null
     if (currentSession) {
+      return
+    }
+    if (activeSession.value) {
       return
     }
 
@@ -908,6 +959,7 @@ watch(
       return
     }
     const sessionId = activeSessionId.value
+    rememberSessions([runtime.session])
     if (shouldApplyRuntimeSnapshot(runtime)) {
       agentSessionStore.applyRuntimeSnapshot(sessionId, runtime)
     }
@@ -925,8 +977,11 @@ watch(activeSessionId, () => {
   activeToolDetailId.value = null
   activeMemberRunIds.value = []
   if (activeSessionId.value) {
-    const session = sessionsQuery.data.value?.find(item => item.session_id === activeSessionId.value)
-    if (!session || isSessionTargetCurrentScope(session, scope.value)) {
+    const session = activeSession.value
+    const sessionScope = session ? resolveSessionScope(session) : null
+    if (sessionScope) {
+      setSelectedSession(sessionScope, agentId.value, activeSessionId.value)
+    } else if (!session || isSessionTargetCurrentScope(session, scope.value)) {
       setSelectedSession(scope.value, agentId.value, activeSessionId.value)
     }
   }
@@ -972,6 +1027,7 @@ async function ensureActiveSession() {
     throw new Error(props.routeUnavailableReason || '当前路由缺少工作空间上下文。')
   }
   const created = await createSessionMutation.mutateAsync(`${contextTitle.value} 会话`)
+  rememberSessions([created])
   virtualNewSessionKey.value = null
   activeSessionId.value = created.session_id
   sessionMenuVisible.value = false
@@ -1061,7 +1117,7 @@ async function handleSend() {
       signal: streamAbortController.signal,
     })
     clearStreamAbortController(runId, streamAbortController)
-    await finalizeRun(sessionId)
+    await finalizeRunAfterStream(sessionId)
   } catch (error) {
     if (error instanceof AgentStreamInterruptedError) {
       if (!componentDisposed) {
@@ -1104,13 +1160,14 @@ async function handleInterruptRun() {
     if (!targetRunId) {
       throw new Error('当前运行缺少 run_id，无法停止。')
     }
-    const response = await cancelAgentSessionActiveRun(sessionId, scope.value, {
-      agent_id: agentId.value,
+    const runtimeRequest = resolveSessionRuntimeRequest(sessionId)
+    const response = await cancelAgentSessionActiveRun(sessionId, runtimeRequest.scope, {
+      agent_id: runtimeRequest.agentId,
     })
     syncActiveRun(sessionId, {
       run_id: response.run_id,
       session_id: response.session_id,
-      agent_id: agentId.value,
+      agent_id: runtimeRequest.agentId,
       status: 'cancelling',
       pending_requirement: null,
       content: null,
@@ -1122,7 +1179,7 @@ async function handleInterruptRun() {
     ensureRunEventSubscription(sessionId, {
       run_id: response.run_id,
       session_id: response.session_id,
-      agent_id: agentId.value,
+      agent_id: runtimeRequest.agentId,
       status: 'cancelling',
       pending_requirement: null,
       content: null,
@@ -1149,8 +1206,9 @@ async function handleForceCancelRun() {
     return
   }
   try {
-    const response = await cancelAgentSessionActiveRun(sessionId, scope.value, {
-      agent_id: agentId.value,
+    const runtimeRequest = resolveSessionRuntimeRequest(sessionId)
+    const response = await cancelAgentSessionActiveRun(sessionId, runtimeRequest.scope, {
+      agent_id: runtimeRequest.agentId,
       force: true,
     })
     Message.info('已停止。')
@@ -1323,6 +1381,7 @@ async function finalizeRun(
     && shouldPreserveLocalCancelled(localRunBeforeSnapshot, latestRun),
   )
   if (latestRuntime) {
+    rememberSessions([latestRuntime.session])
     agentSessionStore.applyRuntimeSnapshot(sessionId, latestRuntime)
   }
   if (preserveLocalCancelled && localRunBeforeSnapshot) {
@@ -1337,6 +1396,19 @@ async function finalizeRun(
   }
   emitMutationRefreshEvents(sessionId)
   agentSessionStore.setStreamingTimelineItemId(sessionId, null)
+}
+
+/**
+ * 流式请求已正常结束后的收尾刷新失败只影响 UI 收敛，不应误报为执行失败。
+ * @param sessionId 需要刷新运行态的会话 ID
+ */
+async function finalizeRunAfterStream(sessionId: string) {
+  try {
+    await finalizeRun(sessionId)
+  } catch (error) {
+    logClientWarning('Failed to finalize agent run after stream closed', error)
+    void refreshAfterStreamInterrupted(sessionId)
+  }
 }
 
 /**
@@ -1433,7 +1505,7 @@ function shouldAutonameSession(session: AgentSessionItem | null | undefined, ite
  * 后台 run 可能在用户切路由后才收敛；这时必须用会话自身 scope 读取和命名，避免写入当前路由状态。
  */
 function resolveSessionRuntimeRequest(sessionId: string, sessions: AgentSessionItem[] = sessionsQuery.data.value ?? []) {
-  const session = sessions.find(item => item.session_id === sessionId)
+  const session = sessions.find(item => item.session_id === sessionId) ?? knownSessionsById.value[sessionId] ?? null
   const sessionScope = session ? resolveSessionScope(session) : null
   return {
     scope: sessionScope ?? scope.value,

@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 from httpx import AsyncClient
 from sqlalchemy import select
 
+import app.ai.platform_runtime as platform_runtime
 from app.ai.agent.runtime_context import AgentRuntimeContext
 from app.ai.platform_runtime import PlatformAgentRuntimeStore
 from app.ai.pydantic_runner import PydanticAgentRunner
@@ -225,6 +228,88 @@ async def test_platform_runtime_should_refresh_event_cursor_before_append(
             .order_by(AiAgentRunEvent.event_index.asc())
         )
         assert result.scalars().all() == [0, 1, 2]
+
+
+async def test_platform_runtime_stream_should_poll_database_when_subscriber_misses_event(
+    authenticated_client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """事件流订阅未收到本进程通知时，应通过 PostgreSQL 轮询恢复新事件。"""
+
+    subscribed = asyncio.Event()
+
+    def fake_subscribe(run_id: str) -> asyncio.Queue:
+        """返回未注册队列，模拟跨进程或漏通知的恢复场景。"""
+
+        _ = run_id
+        subscribed.set()
+        return asyncio.Queue()
+
+    monkeypatch.setattr(platform_runtime, "_subscribe", fake_subscribe)
+    monkeypatch.setattr(platform_runtime, "_EVENT_POLL_INTERVAL_SECONDS", 0.01)
+
+    workspace_response = await authenticated_client.post(
+        "/api/workspaces",
+        json={"name": "平台运行态轮询恢复工作空间", "status": "active"},
+    )
+    assert workspace_response.status_code == 200
+    workspace_id = workspace_response.json()["id"]
+    scope = AgentScopeContext(
+        scope_type="workspace",
+        workspace_id=workspace_id,
+        source="editor-component-library",
+    )
+    session_response = await authenticated_client.post(
+        "/api/ai/sessions",
+        json={
+            "agent_id": "component-manager",
+            "session_name": "平台运行态轮询恢复会话",
+            "scope": scope.model_dump(mode="json"),
+        },
+    )
+    assert session_response.status_code == 201
+    session_id = session_response.json()["session_id"]
+
+    async with get_session_factory()() as stream_session:
+        stream_store = PlatformAgentRuntimeStore(stream_session, user_id=1)
+        run_start = await stream_store.start_run(
+            session_id=session_id,
+            agent_id="component-manager",
+            scope=scope,
+            run_id="platform-runtime-run-polling-stream",
+            message="开始后台任务",
+            image_attachment_ids=[],
+        )
+        stream = platform_runtime.stream_replay_then_subscribe(
+            store=stream_store,
+            run_id=run_start.run_model.run_id,
+            event_index=run_start.run_model.event_index,
+        )
+        next_event_task = asyncio.create_task(_read_next_sse_event(stream))
+        await asyncio.wait_for(subscribed.wait(), timeout=1)
+
+        async with get_session_factory()() as writer_session:
+            writer_store = PlatformAgentRuntimeStore(writer_session, user_id=1)
+            writer_run = await writer_store.get_active_run_model(
+                session_id=session_id,
+                agent_id="component-manager",
+            )
+            assert writer_run is not None
+            await writer_store.append_event(
+                writer_run,
+                AgentRunEvent(
+                    event="message.delta",
+                    run_id=writer_run.run_id,
+                    session_id=session_id,
+                    content="后台轮询恢复输出。",
+                ),
+            )
+
+        event = await asyncio.wait_for(next_event_task, timeout=1)
+        await stream.aclose()
+
+    assert event.event == "message.delta"
+    assert event.content == "后台轮询恢复输出。"
 
 
 async def test_platform_runtime_should_fill_tool_input_when_complete_args_arrive_late(
@@ -541,10 +626,10 @@ async def test_platform_runtime_failed_run_should_close_running_tools(
     assert result.scalars().all() == ["run.started", "tool.started", "tool.error", "run.error"]
 
 
-async def test_pydantic_runner_should_finalize_requested_cancel(
+async def test_pydantic_runner_cancel_check_should_report_requested_cancel(
     authenticated_client: AsyncClient,
 ) -> None:
-    """runner 发现外部取消请求时，应追加 run.cancelled 并释放 active run。"""
+    """runner 取消检查发现外部请求时，应返回停止信号并允许调用方写取消终态。"""
 
     workspace_response = await authenticated_client.post(
         "/api/workspaces",
@@ -580,10 +665,11 @@ async def test_pydantic_runner_should_finalize_requested_cancel(
         )
         await store.request_cancel(session_id=session_id, agent_id="component-manager")
 
-        should_stop, cancel_sse = await PydanticAgentRunner(store)._cancel_event_if_requested(run_start.run_model)
+        should_stop, should_cancel = await PydanticAgentRunner(store)._cancel_event_if_requested(run_start.run_model)
 
         assert should_stop is True
-        assert cancel_sse is not None
+        assert should_cancel is True
+        await store.mark_terminal(run_start.run_model, status="cancelled", content="用户停止了当前运行。")
         latest_run = await store.get_latest_run_model(session_id=session_id, agent_id="component-manager")
         assert latest_run is not None
         assert latest_run.status == "cancelled"
@@ -594,3 +680,16 @@ async def test_pydantic_runner_should_finalize_requested_cancel(
             .order_by(AiAgentRunEvent.event_index.asc())
         )
         assert result.scalars().all() == ["run.started", "run.cancelling", "run.cancelled"]
+
+
+async def _read_next_sse_event(stream) -> AgentRunEvent:
+    """读取异步 SSE 流中的下一条 AgentRunEvent。"""
+
+    async for chunk in stream:
+        text = chunk.decode("utf-8")
+        for block in text.strip().split("\n\n"):
+            if not block.startswith("data:"):
+                continue
+            raw_payload = block.removeprefix("data:").strip()
+            return AgentRunEvent.model_validate_json(raw_payload)
+    raise AssertionError("SSE stream ended before yielding an AgentRunEvent")

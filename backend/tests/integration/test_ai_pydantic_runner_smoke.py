@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -265,6 +266,138 @@ async def test_pydantic_runner_should_fail_fast_for_bad_ask_user_payload(
     assert "缺少可展示的问题" in (events[-1].data.get("message") or "")
 
 
+async def test_pydantic_runner_should_buffer_consecutive_delta_chunks(
+    authenticated_client: AsyncClient,
+) -> None:
+    """连续同类文本和思考 delta 应合并为较少的平台事件，但最终内容保持完整。"""
+
+    _, session_id, scope = await _create_workspace_session(
+        authenticated_client,
+        workspace_name="Pydantic Runner delta 缓冲工作空间",
+        session_name="Pydantic Runner delta 缓冲会话",
+    )
+    model = FunctionModel(stream_function=_chunked_delta_stream_function)
+
+    async with get_session_factory()() as db_session:
+        store = PlatformAgentRuntimeStore(db_session, user_id=1)
+        run_start = await store.start_run(
+            session_id=session_id,
+            agent_id="component-manager",
+            scope=scope,
+            run_id="pydantic-runner-buffered-delta",
+            message="请输出分段内容。",
+            image_attachment_ids=[],
+        )
+
+        events = await _collect_runner_events(
+            PydanticAgentRunner(store).stream_run(
+                run_model=run_start.run_model,
+                agent_id="component-manager",
+                model=model,
+                model_settings={},
+                runtime_context=_runtime_context(scope),
+                message="请输出分段内容。",
+            )
+        )
+        completed_run = await store.get_latest_run_model(session_id=session_id, agent_id="component-manager")
+        assert completed_run is not None
+        snapshot = await store.get_runtime_snapshot(
+            session_id=session_id,
+            agent_id="component-manager",
+            runtime_context=_runtime_context(scope),
+        )
+
+    delta_events = [event for event in events if event.event in {"reasoning.delta", "message.delta"}]
+    assert [(event.event, event.content) for event in delta_events] == [
+        ("reasoning.delta", "先确认上下文。"),
+        ("message.delta", "正文第一段，继续输出。"),
+    ]
+    assert completed_run.content == "正文第一段，继续输出。"
+    assert completed_run.reasoning_content == "先确认上下文。"
+    assert [item.content for item in snapshot.timeline_items if item.kind in {"reasoning", "message"}][-2:] == [
+        "先确认上下文。",
+        "正文第一段，继续输出。",
+    ]
+
+
+async def test_pydantic_runner_should_flush_buffer_before_requested_cancel(
+    authenticated_client: AsyncClient,
+) -> None:
+    """外部停止请求到达后，runner 应先写出已缓冲 delta，再写 run.cancelled。"""
+
+    raw_delta_buffered = asyncio.Event()
+    release_model = asyncio.Event()
+
+    async def stream_function(
+        messages: list[Any],
+        info: AgentInfo,
+    ) -> AsyncIterator[str]:
+        """模拟模型先输出一段内容，然后等待测试触发取消。"""
+
+        _ = messages, info
+        yield "已流出的局部内容。"
+        raw_delta_buffered.set()
+        await release_model.wait()
+        yield "这段不应写入。"
+
+    _, session_id, scope = await _create_workspace_session(
+        authenticated_client,
+        workspace_name="Pydantic Runner 取消 flush 工作空间",
+        session_name="Pydantic Runner 取消 flush 会话",
+    )
+    model = FunctionModel(stream_function=stream_function)
+
+    async with get_session_factory()() as db_session:
+        store = PlatformAgentRuntimeStore(db_session, user_id=1)
+        run_start = await store.start_run(
+            session_id=session_id,
+            agent_id="component-manager",
+            scope=scope,
+            run_id="pydantic-runner-cancel-flush",
+            message="开始长任务",
+            image_attachment_ids=[],
+        )
+        collect_task = asyncio.create_task(
+            _collect_runner_events(
+                PydanticAgentRunner(store).stream_run(
+                    run_model=run_start.run_model,
+                    agent_id="component-manager",
+                    model=model,
+                    model_settings={},
+                    runtime_context=_runtime_context(scope),
+                    message="开始长任务",
+                )
+            )
+        )
+        await asyncio.wait_for(raw_delta_buffered.wait(), timeout=3)
+        async with get_session_factory()() as cancel_session:
+            cancel_store = PlatformAgentRuntimeStore(cancel_session, user_id=1)
+            await cancel_store.request_cancel(session_id=session_id, agent_id="component-manager")
+        release_model.set()
+        events = await asyncio.wait_for(collect_task, timeout=3)
+        completed_run = await store.get_latest_run_model(session_id=session_id, agent_id="component-manager")
+        assert completed_run is not None
+        event_rows = (
+            await db_session.execute(
+                select(AiAgentRunEvent.event, AiAgentRunEvent.payload_json)
+                .where(AiAgentRunEvent.run_id == run_start.run_model.run_id)
+                .order_by(AiAgentRunEvent.event_index.asc())
+            )
+        ).all()
+
+    assert [event.event for event in events] == ["model.request.started", "message.delta", "run.cancelled"]
+    assert completed_run.status == "cancelled"
+    assert completed_run.content == "已流出的局部内容。"
+    assert [row[0] for row in event_rows] == [
+        "run.started",
+        "model.request.started",
+        "run.cancelling",
+        "message.delta",
+        "run.cancelled",
+    ]
+    assert event_rows[3][1]["content"] == "已流出的局部内容。"
+
+
 def test_deferred_ask_user_should_accept_dict_and_json_args() -> None:
     """ask_user deferred 请求应同时兼容 Pydantic AI 传入的 dict 和 JSON 字符串参数。"""
 
@@ -502,6 +635,20 @@ async def _bad_ask_user_stream_function(
             tool_call_id="tool-bad-ask",
         )
     }
+
+
+async def _chunked_delta_stream_function(
+    messages: list[Any],
+    info: AgentInfo,
+) -> AsyncIterator[str | dict[int, DeltaThinkingPart]]:
+    """模拟模型连续输出同类 thinking/text chunk。"""
+
+    _ = messages, info
+    yield {0: DeltaThinkingPart(content="先")}
+    yield {0: DeltaThinkingPart(content="确认")}
+    yield {0: DeltaThinkingPart(content="上下文。")}
+    yield "正文第一段，"
+    yield "继续输出。"
 
 
 def _latest_tool_return(messages: list[Any]) -> Any | None:
