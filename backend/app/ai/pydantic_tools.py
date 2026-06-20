@@ -30,6 +30,15 @@ _NON_RECOVERABLE_TOOL_ERROR_CODES = {
     "AI_TOOL_SCOPE_DENIED",
     "AI_TOOL_SCOPE_REQUIRED",
 }
+_RECOVERABLE_TOOL_ERROR_CODES = {
+    "PAGE_SCREENSHOT_ASSET_NOT_READY",
+    "PAGE_SCREENSHOT_BROWSER_MISSING",
+    "PAGE_SCREENSHOT_CAPTURE_FAILED",
+    "PAGE_SCREENSHOT_IN_PROGRESS",
+    "PAGE_SCREENSHOT_JOB_FAILED",
+    "PAGE_SCREENSHOT_JOB_INTERRUPTED",
+    "PAGE_SCREENSHOT_JOB_TIMEOUT",
+}
 _RECOVERABLE_TOOL_ERROR_HINT = "请根据错误信息修正工具参数、改用其他对象；如果缺少必要信息，请询问用户。"
 
 
@@ -301,6 +310,8 @@ def _is_recoverable_tool_exception(exc: AppException) -> bool:
 
     if exc.code in _NON_RECOVERABLE_TOOL_ERROR_CODES:
         return False
+    if exc.code in _RECOVERABLE_TOOL_ERROR_CODES:
+        return True
     if exc.status_code in {401, 403}:
         return False
     return 400 <= exc.status_code < 500

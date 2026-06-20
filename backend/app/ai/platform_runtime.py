@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.image_refs import sanitize_message_history_image_refs
 from app.ai.agent.runtime_context import AgentRuntimeContext
+from app.ai.message_history import trim_unprocessed_tool_call_history
 from app.models.ai_agent_attachment import AiAgentImageAttachment
 from app.models.ai_agent_runtime import (
     AiAgentMemberRun,
@@ -325,6 +326,10 @@ class PlatformAgentRuntimeStore:
 
         if status not in TERMINAL_RUN_STATUSES and status != "paused":
             raise ValueError(f"unsupported terminal status: {status}")
+        if status in TERMINAL_RUN_STATUSES:
+            run_model.message_history_json = trim_unprocessed_tool_call_history(
+                run_model.message_history_json if isinstance(run_model.message_history_json, list) else []
+            )
         run_model.status = status
         run_model.finished_at = _utc_now() if status in TERMINAL_RUN_STATUSES else None
         run_model.error_code = error_code

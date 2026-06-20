@@ -406,6 +406,59 @@ async def test_pydantic_runner_should_continue_after_recoverable_tool_error(
     assert "ASSET_CONTENT_READ_UNSUPPORTED" in tool_call.message
 
 
+async def test_pydantic_runner_should_trim_open_tool_call_when_run_fails(
+    authenticated_client: AsyncClient,
+) -> None:
+    """非可恢复工具异常终止 run 时，不应留下未闭合 tool-call 污染会话。"""
+
+    _, session_id, scope = await _create_workspace_session(
+        authenticated_client,
+        workspace_name="Pydantic Runner 失败历史清理工作空间",
+        session_name="Pydantic Runner 失败历史清理会话",
+    )
+    run_id = "pydantic-runner-trim-open-tool-call"
+    model = FunctionModel(stream_function=_fatal_tool_error_stream_function)
+    tools = [_wrap_platform_tool(fatal_error_tool)]
+
+    async with get_session_factory()() as db_session:
+        store = PlatformAgentRuntimeStore(db_session, user_id=1)
+        run_start = await store.start_run(
+            session_id=session_id,
+            agent_id="component-manager",
+            scope=scope,
+            run_id=run_id,
+            message="调用工具并失败。",
+            image_attachment_ids=[],
+        )
+
+        events = await _collect_runner_events(
+            PydanticAgentRunner(store).stream_run(
+                run_model=run_start.run_model,
+                agent_id="component-manager",
+                model=model,
+                model_settings={},
+                runtime_context=_runtime_context(scope),
+                message="调用工具并失败。",
+                tools=tools,
+                deps=AgentToolDeps(dependencies={"run_id": run_id, "session_id": session_id}),
+            )
+        )
+        failed_run = await store.get_latest_run_model(session_id=session_id, agent_id="component-manager")
+        rebuilt_history = await rebuild_agent_message_history(
+            session=db_session,
+            user_id=1,
+            session_id=session_id,
+            agent_id="component-manager",
+        )
+
+    assert failed_run is not None
+    assert failed_run.status == "failed"
+    assert failed_run.error_code == "TEST_FATAL_TOOL_FAILED"
+    assert events[-1].event == "run.error"
+    assert "tool-fatal-read" not in json.dumps(failed_run.message_history_json, ensure_ascii=False)
+    assert "tool-fatal-read" not in json.dumps(rebuilt_history.message_json, ensure_ascii=False)
+
+
 async def test_pydantic_runner_should_return_member_delegation_result_to_coordinator(
     authenticated_client: AsyncClient,
 ) -> None:
@@ -1388,6 +1441,14 @@ async def recoverable_error_tool(run_context: AgentToolContext) -> dict[str, Any
     raise AppException(status_code=400, code="ASSET_CONTENT_READ_UNSUPPORTED", detail="该资源不支持内容读取。")
 
 
+@agent_tool(show_result=False)
+async def fatal_error_tool(run_context: AgentToolContext) -> dict[str, Any]:
+    """测试用不可恢复工具错误，模拟工具执行阶段抛出系统异常。"""
+
+    _ = run_context
+    raise AppException(status_code=500, code="TEST_FATAL_TOOL_FAILED", detail="工具执行失败。")
+
+
 class _FakeMemberDelegationExecutor:
     """测试用成员委派执行器，只记录入参并返回固定成员结果。"""
 
@@ -1487,6 +1548,22 @@ async def _recoverable_tool_error_stream_function(
             name="recoverable_error_tool",
             json_args="{}",
             tool_call_id="tool-recoverable-read",
+        )
+    }
+
+
+async def _fatal_tool_error_stream_function(
+    messages: list[Any],
+    info: AgentInfo,
+) -> AsyncIterator[dict[int, DeltaToolCall]]:
+    """模拟模型请求一个会抛出不可恢复异常的工具。"""
+
+    _ = messages, info
+    yield {
+        0: DeltaToolCall(
+            name="fatal_error_tool",
+            json_args="{}",
+            tool_call_id="tool-fatal-read",
         )
     }
 

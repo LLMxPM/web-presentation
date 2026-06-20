@@ -328,6 +328,8 @@ async def rebuild_agent_message_history(
         if checkpoint is not None and _is_run_covered_by_checkpoint(run_model, checkpoint):
             continue
         delta = run_model.message_history_json if isinstance(run_model.message_history_json, list) else []
+        if run_model.status in {"completed", "cancelled", "failed"}:
+            delta = trim_unprocessed_tool_call_history(delta)
         if not delta:
             continue
         message_json.extend(_message_dicts(delta))
@@ -406,6 +408,32 @@ def build_context_limit_processor(
         existing_summary=rebuilt_history.summary_json,
         latest_usage=rebuilt_history.latest_usage,
     )
+
+
+def trim_unprocessed_tool_call_history(message_history: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
+    """裁掉尾部未闭合工具调用，避免终态失败 run 污染后续会话。"""
+
+    messages = _message_dicts(message_history or [])
+    pending_tool_calls: dict[str, int] = {}
+    for message_index, message in enumerate(messages):
+        parts = message.get("parts")
+        if not isinstance(parts, list):
+            continue
+        for part_index, part in enumerate(parts):
+            if not isinstance(part, dict):
+                continue
+            part_kind = str(part.get("part_kind") or "")
+            if part_kind == "tool-call":
+                key = _tool_call_history_key(part, fallback=f"__missing__:{message_index}:{part_index}")
+                pending_tool_calls[key] = message_index
+                continue
+            if part_kind in {"tool-return", "retry-prompt"}:
+                key = _tool_call_history_key(part, fallback="")
+                if key:
+                    pending_tool_calls.pop(key, None)
+    if not pending_tool_calls:
+        return messages
+    return messages[:min(pending_tool_calls.values())]
 
 
 def build_context_status_item(
@@ -606,6 +634,13 @@ def _message_dicts(value: list[Any]) -> list[dict[str, Any]]:
     """过滤非 dict 消息，避免坏数据污染重建链路。"""
 
     return [dict(item) for item in value if isinstance(item, dict)]
+
+
+def _tool_call_history_key(part: dict[str, Any], *, fallback: str) -> str:
+    """提取工具调用配对 ID；缺失时使用不可匹配的兜底 key。"""
+
+    value = str(part.get("tool_call_id") or "").strip()
+    return value or fallback
 
 
 def _replace_agent_image_refs_with_placeholders(value: Any) -> Any:

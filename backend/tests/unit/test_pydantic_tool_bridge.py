@@ -161,6 +161,49 @@ async def test_pydantic_tool_bridge_should_return_recoverable_app_exception_to_m
     assert result.output == "ASSET_CONTENT_READ_UNSUPPORTED"
 
 
+@pytest.mark.asyncio
+async def test_pydantic_tool_bridge_should_return_screenshot_failure_to_model() -> None:
+    """页面截图失败应作为可恢复工具错误返回模型，避免直接终止 run。"""
+
+    @agent_tool(show_result=False)
+    def read_page_screenshot(run_context: AgentToolContext) -> dict[str, object]:
+        """模拟截图服务超时。"""
+
+        _ = run_context
+        raise AppException(
+            status_code=502,
+            code="PAGE_SCREENSHOT_CAPTURE_FAILED",
+            detail="页面截图失败：Page.wait_for_function: Timeout 45000ms exceeded.",
+        )
+
+    async def model_func(messages: object, info: AgentInfo) -> ModelResponse:
+        """首次请求截图，收到结构化错误后结束。"""
+
+        _ = info
+        for message in reversed(messages):
+            for part in getattr(message, "parts", []):
+                if getattr(part, "part_kind", None) == "tool-return":
+                    content = part.content
+                    return ModelResponse(
+                        parts=[TextPart(content=content["error"]["code"])],
+                        usage=RequestUsage(input_tokens=1, output_tokens=1),
+                    )
+        return ModelResponse(
+            parts=[ToolCallPart(tool_name="read_page_screenshot", args={}, tool_call_id="tool-shot-1")],
+            usage=RequestUsage(input_tokens=1, output_tokens=1),
+        )
+
+    agent = Agent(
+        FunctionModel(model_func),
+        tools=[_wrap_platform_tool(read_page_screenshot)],
+        deps_type=AgentToolDeps,
+    )
+
+    result = await agent.run("读取页面截图", deps=AgentToolDeps(dependencies={"run_id": "run-1", "session_id": "session-1"}))
+
+    assert result.output == "PAGE_SCREENSHOT_CAPTURE_FAILED"
+
+
 def test_deferred_ask_user_should_build_feedback_requirement() -> None:
     """ask_user 的 deferred call 应转成前端可渲染的用户反馈 requirement。"""
 
