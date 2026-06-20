@@ -59,6 +59,10 @@ const TOOL_START_STATUS = 'tool_start'
 const TOOL_START_STATUS_TEXT = '等待工具调用开始'
 const TOOL_EXECUTION_STATUS = 'tool_execution'
 const TOOL_EXECUTION_STATUS_TEXT = '等待工具调用完成'
+const CONTEXT_COMPRESSION_STATUS = 'context_compression'
+const CONTEXT_COMPRESSION_STARTED_TEXT = '上下文压缩中...'
+const CONTEXT_COMPRESSION_COMPLETED_TEXT = '上下文已压缩。'
+const CONTEXT_COMPRESSION_FAILED_TEXT = '上下文压缩失败。'
 
 /**
  * 创建单个会话的默认运行时状态。
@@ -127,7 +131,7 @@ export function applyAgentRunEvent(
 ): ApplyAgentRunEventResult {
   event = normalizeAgentRunEvent(event)
   if (event.event === 'context.status') {
-    state.contextStatus = event.data
+    syncContextStatusFromEvent(state, event)
     return { applied: true, terminal: false }
   }
 
@@ -220,6 +224,21 @@ export function applyAgentRunEvent(
       upsertToolTimelineItem(state, event, 'error')
       finishCurrentTextSegment(state)
       appendRunStatusItem(state, event, MODEL_REQUEST_STATUS, MODEL_REQUEST_STATUS_TEXT)
+      return { applied: true, terminal: false }
+    case 'context.compression.started':
+      syncContextStatusFromEvent(state, event)
+      finishCurrentTextSegment(state)
+      appendRunStatusItem(state, event, CONTEXT_COMPRESSION_STATUS, CONTEXT_COMPRESSION_STARTED_TEXT)
+      return { applied: true, terminal: false }
+    case 'context.compression.completed':
+      syncContextStatusFromEvent(state, event)
+      finishCurrentTextSegment(state)
+      appendRunStatusItem(state, event, CONTEXT_COMPRESSION_STATUS, CONTEXT_COMPRESSION_COMPLETED_TEXT)
+      return { applied: true, terminal: false }
+    case 'context.compression.failed':
+      syncContextStatusFromEvent(state, event)
+      finishCurrentTextSegment(state)
+      appendRunStatusItem(state, event, CONTEXT_COMPRESSION_STATUS, CONTEXT_COMPRESSION_FAILED_TEXT)
       return { applied: true, terminal: false }
     case 'run.paused':
       state.pendingRequirement = (event.data.requirement as AgentPendingRequirement | null) ?? null
@@ -926,6 +945,13 @@ function appendRunStatusItem(
     source: existing?.source ?? 'event',
     created_at: existing?.created_at ?? new Date().toISOString(),
   })
+}
+
+function syncContextStatusFromEvent(state: AgentSessionRuntimeState, event: AgentRunEvent): void {
+  const nestedStatus = event.data.context_status
+  state.contextStatus = nestedStatus && typeof nestedStatus === 'object'
+    ? nestedStatus
+    : event.data
 }
 
 /**

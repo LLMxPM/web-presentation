@@ -10,11 +10,12 @@ from contextlib import suppress
 from typing import Any
 
 from pydantic_ai import Agent, DeferredToolRequests, DeferredToolResults
-from pydantic_ai.messages import UserContent
+from pydantic_ai.messages import ModelMessagesTypeAdapter, UserContent
 
 from app.ai.agent.runtime_context import AgentRuntimeContext, build_scope_context_text
 from app.ai.agent_catalog import get_agent_catalog_entry
 from app.ai.agent_runtime_config import EffectiveAgentRuntimeConfig, build_effective_description, build_effective_instructions
+from app.ai.history_compression import HistoryCompressionService
 from app.ai.message_history import AgentContextLimitProcessor, AgentHistoryBudget, build_context_status_item
 from app.ai.member_delegation import MemberDelegationPaused
 from app.ai.platform_runtime import PlatformAgentRuntimeStore, encode_sse_event, stream_live_subscribe, subscribe_live_run_events
@@ -145,9 +146,26 @@ class PydanticAgentRunner:
                 *build_effective_instructions(catalog, agent_config),
                 build_scope_context_text(runtime_context),
             ]
+            compression_service = self._build_history_compression_service(
+                run_model=run_model,
+                agent_id=agent_id,
+                model=model,
+                model_settings=model_settings,
+                context_budget=context_budget,
+                context_processor=context_processor,
+            )
             resolved_history_processors = list(history_processors or ())
-            if context_processor is not None and context_processor.process not in resolved_history_processors:
-                resolved_history_processors.append(context_processor.process)
+            if context_processor is not None:
+                async def context_history_processor(messages: list[Any]) -> list[Any]:
+                    """在每次模型请求前执行预算触发的上下文压缩。"""
+
+                    return await context_processor.process(
+                        None,
+                        messages,
+                        compression_service=compression_service,
+                    )
+
+                resolved_history_processors.append(context_history_processor)
             agent = Agent(
                 model,
                 name=agent_id,
@@ -254,6 +272,8 @@ class PydanticAgentRunner:
                 if agent_run.result is None:
                     raise RuntimeError("Pydantic AI run finished without result")
                 final_messages[:] = self._safe_new_messages_with_image_refs(agent_run.result, message_image_refs)
+                if context_processor is not None:
+                    context_processor.record_message_history(final_messages)
                 output = getattr(agent_run.result, "output", None)
                 if isinstance(output, DeferredToolRequests):
                     async for sse in self._flush_projector_buffer(projector):
@@ -277,6 +297,13 @@ class PydanticAgentRunner:
                 content="".join(content_parts),
                 reasoning_content="".join(reasoning_parts) or None,
                 message_history=final_messages,
+            )
+            await self._compress_completed_run_if_required(
+                run_model=run_model,
+                agent_id=agent_id,
+                agent_result=agent_run.result,
+                context_processor=context_processor,
+                compression_service=compression_service,
             )
             event = await self._store.mark_terminal(run_model, status="completed", content="".join(content_parts) or None)
             yield encode_sse_event(event)
@@ -363,6 +390,71 @@ class PydanticAgentRunner:
         if context_processor is not None:
             context_processor.record_message_history(final_messages)
         await self._store.save_run_message_history(run_model, final_messages, commit=False)
+
+    def _build_history_compression_service(
+        self,
+        *,
+        run_model: AiAgentRun,
+        agent_id: str,
+        model: Any,
+        model_settings: dict[str, Any],
+        context_budget: AgentHistoryBudget | None,
+        context_processor: AgentContextLimitProcessor | None,
+    ) -> HistoryCompressionService | None:
+        """按当前 run 和模型构造上下文压缩服务。"""
+
+        if context_budget is None or context_processor is None:
+            return None
+        return HistoryCompressionService(
+            session=context_processor.session,
+            user_id=context_processor.user_id,
+            session_id=context_processor.session_id,
+            agent_id=agent_id,
+            store=self._store,
+            run_model=run_model,
+            budget=context_budget,
+            model=model,
+            model_settings=model_settings,
+            latest_usage=lambda: context_processor.latest_usage,
+            retained_message_count=lambda: context_processor.history_prefix_message_count,
+        )
+
+    async def _compress_completed_run_if_required(
+        self,
+        *,
+        run_model: AiAgentRun,
+        agent_id: str,
+        agent_result: Any,
+        context_processor: AgentContextLimitProcessor | None,
+        compression_service: HistoryCompressionService | None,
+    ) -> None:
+        """最终响应后若仍超预算，则同步压缩稳定历史供下一轮使用。"""
+
+        _ = agent_id
+        if context_processor is None or compression_service is None:
+            return
+        usage = context_processor.latest_usage
+        if usage.context_used_tokens <= 0:
+            return
+        if usage.context_used_tokens < context_processor.budget.context_input_budget_tokens:
+            return
+        raw_messages = _safe_messages(agent_result) if agent_result is not None else []
+        if not raw_messages:
+            return
+        try:
+            messages = list(ModelMessagesTypeAdapter.validate_python(raw_messages))
+        except Exception:  # noqa: BLE001
+            logger.exception(
+                "Failed to validate final messages before history compression",
+                extra={"run_id": run_model.run_id, "session_id": run_model.session_id},
+            )
+            return
+        await context_processor.compress_completed_messages(
+            messages=messages,
+            current_run_id=run_model.run_id,
+            compression_service=compression_service,
+            fail_on_error=False,
+        )
 
     async def _emit_context_status(
         self,

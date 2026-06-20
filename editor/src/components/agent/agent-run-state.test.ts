@@ -73,6 +73,102 @@ describe('agent-run-state timeline', () => {
     expect(state.timelineItems.some(item => item.content === '旧消息')).toBe(false)
   })
 
+  it('上下文压缩事件应更新时间线状态与 contextStatus', () => {
+    const state = createAgentSessionRuntimeState()
+    const options = { agentId: 'agent-coordinator', agentDisplayName: '内容助手' }
+    const compressedStatus = {
+      session_id: 'session-1',
+      agent_id: 'agent-coordinator',
+      compression_enabled: true,
+      compression_required: false,
+      compression_status: 'compressed',
+      compression_method: 'model',
+      compression_error_message: null,
+      summary_available: true,
+      summary: '上下文摘要',
+      topics: [],
+      summary_updated_at: '2026-06-20T12:00:00Z',
+      context_window_tokens: 128000,
+      max_output_tokens: 32000,
+      history_token_ratio: 1,
+      compression_target_ratio: 0.1,
+      safety_margin_tokens: 10240,
+      current_input_tokens: 90000,
+      fixed_context_tokens: 0,
+      history_budget_tokens: 0,
+      compression_target_tokens: 12800,
+      estimated_history_tokens: 0,
+      retained_recent_history_tokens: 0,
+      retained_recent_message_count: 1,
+      context_input_budget_tokens: 85760,
+      context_used_tokens: 90000,
+      context_remaining_tokens: 0,
+      last_input_tokens: 89000,
+      last_output_tokens: 1000,
+      last_total_tokens: 90000,
+      last_reasoning_tokens: 0,
+    }
+
+    applyAgentRunEvent(state, event({ event: 'run.started', event_index: 0, sequence: null }), options)
+    applyAgentRunEvent(state, event({
+      event: 'context.compression.started',
+      event_index: 1,
+      sequence: null,
+      data: {
+        compression_status: 'compressing',
+        compression_method: 'none',
+        context_status: {
+          ...compressedStatus,
+          compression_status: 'compressing',
+          compression_method: 'none',
+          summary_available: false,
+          summary: null,
+        },
+      },
+    }), options)
+    applyAgentRunEvent(state, event({
+      event: 'context.compression.completed',
+      event_index: 2,
+      sequence: null,
+      data: {
+        compression_status: 'compressed',
+        compression_method: 'model',
+        context_status: compressedStatus,
+      },
+    }), options)
+
+    const compressionItems = state.timelineItems.filter(item => item.status === 'context_compression')
+    expect(compressionItems).toHaveLength(1)
+    expect(compressionItems[0].content).toBe('上下文已压缩。')
+    expect(state.contextStatus).toEqual(compressedStatus)
+  })
+
+  it('上下文压缩失败事件应显示失败提示并同步失败状态', () => {
+    const state = createAgentSessionRuntimeState()
+    const options = { agentId: 'agent-coordinator', agentDisplayName: '内容助手' }
+    const failedStatus = {
+      compression_status: 'failed',
+      compression_method: 'none',
+      compression_error_message: '压缩失败',
+    }
+
+    applyAgentRunEvent(state, event({ event: 'run.started', event_index: 0, sequence: null }), options)
+    applyAgentRunEvent(state, event({
+      event: 'context.compression.failed',
+      event_index: 1,
+      sequence: null,
+      data: {
+        ...failedStatus,
+        context_status: failedStatus,
+      },
+    }), options)
+
+    const compressionItems = state.timelineItems.filter(item => item.status === 'context_compression')
+    expect(compressionItems).toHaveLength(1)
+    expect(compressionItems[0].content).toBe('上下文压缩失败。')
+    expect(state.contextStatus).toEqual(failedStatus)
+  })
+
   it('paused 应写入 requirement 时间线并停止 streaming', () => {
     const state = createAgentSessionRuntimeState()
     const options = { agentId: 'agent-coordinator', agentDisplayName: '内容助手' }

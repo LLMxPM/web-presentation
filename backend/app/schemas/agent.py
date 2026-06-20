@@ -122,6 +122,9 @@ class AgentContextStatusItem(SchemaBase):
     agent_id: str
     compression_enabled: bool
     compression_required: bool
+    compression_status: Literal["idle", "compressing", "compressed", "failed"] = "idle"
+    compression_method: Literal["none", "model", "deterministic_fallback"] = "none"
+    compression_error_message: str | None = None
     summary_available: bool
     summary: str | None = None
     topics: list[str] = Field(default_factory=list)

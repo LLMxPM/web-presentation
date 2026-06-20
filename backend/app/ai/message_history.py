@@ -105,6 +105,48 @@ class AgentContextLimitProcessor:
 
         return self._latest_usage
 
+    @property
+    def session(self) -> AsyncSession:
+        """返回压缩处理器绑定的数据库会话。"""
+
+        return self._session
+
+    @property
+    def user_id(self) -> int:
+        """返回压缩处理器绑定的用户 ID。"""
+
+        return self._user_id
+
+    @property
+    def session_id(self) -> str:
+        """返回压缩处理器绑定的智能体会话 ID。"""
+
+        return self._session_id
+
+    @property
+    def agent_id(self) -> str:
+        """返回压缩处理器绑定的智能体 ID。"""
+
+        return self._agent_id
+
+    @property
+    def budget(self) -> AgentHistoryBudget:
+        """返回压缩处理器使用的上下文预算。"""
+
+        return self._budget
+
+    @property
+    def history_prefix_message_count(self) -> int:
+        """返回当前压缩前缀中的模型消息数量。"""
+
+        return self._history_prefix_message_count
+
+    @property
+    def history_prefix_run_ids(self) -> list[str]:
+        """返回当前可写入持久压缩检查点的历史 run ID。"""
+
+        return list(self._history_prefix_run_ids)
+
     def record_message_history(self, message_history: list[dict[str, Any]]) -> AgentContextUsageSnapshot:
         """从最新 run 消息快照中刷新真实 usage 高水位。"""
 
@@ -116,7 +158,13 @@ class AgentContextLimitProcessor:
 
         return await self.process(run_context, messages)
 
-    async def process(self, _run_context: RunContext[Any], messages: list[ModelMessage]) -> list[ModelMessage]:
+    async def process(
+        self,
+        _run_context: RunContext[Any] | None,
+        messages: list[ModelMessage],
+        *,
+        compression_service: Any | None = None,
+    ) -> list[ModelMessage]:
         """按上一轮 input + output 高水位判断是否压缩；不做本地 token 估算。"""
 
         if self._latest_usage.context_used_tokens <= 0:
@@ -128,18 +176,21 @@ class AgentContextLimitProcessor:
         if suffix_start <= 0:
             raise _context_limit_error()
 
-        prefix = messages[:suffix_start]
-        suffix = messages[suffix_start:]
-        summary = _summarize_messages(
-            prefix,
-            existing_summary=self._existing_summary,
-            target_tokens=self._budget.compression_target_tokens,
+        persistent = bool(self._history_prefix_run_ids and suffix_start >= self._history_prefix_message_count)
+        if persistent:
+            # 持久检查点只能覆盖 run 启动前已稳定的历史，当前 run 内容继续作为后缀保留。
+            prefix = messages[: self._history_prefix_message_count]
+            suffix = messages[self._history_prefix_message_count :]
+        else:
+            prefix = messages[:suffix_start]
+            suffix = messages[suffix_start:]
+        checkpoint = await self._compress_prefix(
+            prefix=prefix,
+            persistent=persistent,
+            compression_service=compression_service,
         )
-        checkpoint = (
-            await self._write_summary_checkpoint(summary)
-            if self._history_prefix_run_ids and suffix_start >= self._history_prefix_message_count
-            else _build_in_memory_summary_checkpoint(summary, self._existing_summary)
-        )
+        if checkpoint is None:
+            raise _context_limit_error()
         summary_messages = _summary_messages_from_checkpoint(checkpoint)
         compressed = [*summary_messages, *suffix]
         self._history_prefix_message_count = len(summary_messages)
@@ -148,10 +199,77 @@ class AgentContextLimitProcessor:
         self._latest_usage = AgentContextUsageSnapshot()
         return compressed
 
-    async def _write_summary_checkpoint(self, summary: str) -> dict[str, Any]:
+    async def compress_completed_messages(
+        self,
+        *,
+        messages: list[ModelMessage],
+        current_run_id: str,
+        compression_service: Any | None = None,
+        fail_on_error: bool = True,
+    ) -> dict[str, Any]:
+        """最终响应已稳定后压缩全部可见历史，并把检查点推进到当前 run。"""
+
+        run_ids = [*self._history_prefix_run_ids, current_run_id]
+        checkpoint = await self._compress_prefix(
+            prefix=messages,
+            persistent=True,
+            compression_service=compression_service,
+            checkpoint_run_ids=run_ids,
+            fail_on_error=fail_on_error,
+        )
+        if checkpoint is None:
+            return self._existing_summary or {}
+        self._history_prefix_message_count = len(_summary_messages_from_checkpoint(checkpoint))
+        self._history_prefix_run_ids = []
+        self._existing_summary = checkpoint
+        self._latest_usage = AgentContextUsageSnapshot()
+        return checkpoint
+
+    async def _compress_prefix(
+        self,
+        *,
+        prefix: list[ModelMessage],
+        persistent: bool,
+        compression_service: Any | None,
+        checkpoint_run_ids: list[str] | None = None,
+        fail_on_error: bool = True,
+    ) -> dict[str, Any] | None:
+        """压缩前缀消息；优先委托模型压缩服务，缺失时使用原确定性摘要。"""
+
+        run_ids = list(checkpoint_run_ids if checkpoint_run_ids is not None else self._history_prefix_run_ids)
+        if compression_service is not None:
+            return await compression_service.compress_prefix(
+                prefix=prefix,
+                existing_summary=self._existing_summary,
+                target_tokens=self._budget.compression_target_tokens,
+                persistent=persistent,
+                checkpoint_run_ids=run_ids,
+                fail_on_error=fail_on_error,
+            )
+        summary = _summarize_messages(
+            prefix,
+            existing_summary=self._existing_summary,
+            target_tokens=self._budget.compression_target_tokens,
+        )
+        return (
+            await self._write_summary_checkpoint(summary, checkpoint_run_ids=run_ids, compression_method="deterministic_fallback")
+            if persistent and run_ids
+            else _build_in_memory_summary_checkpoint(summary, self._existing_summary, compression_method="deterministic_fallback")
+        )
+
+    async def _write_summary_checkpoint(
+        self,
+        summary: str,
+        *,
+        checkpoint_run_ids: list[str] | None = None,
+        compression_method: str = "deterministic_fallback",
+    ) -> dict[str, Any]:
         """把压缩摘要写入 session.summary_json，并推进到本次 run 启动前的最后一个历史 run。"""
 
-        last_run_id = self._history_prefix_run_ids[-1]
+        run_ids = list(checkpoint_run_ids if checkpoint_run_ids is not None else self._history_prefix_run_ids)
+        if not run_ids:
+            return _build_in_memory_summary_checkpoint(summary, self._existing_summary, compression_method=compression_method)
+        last_run_id = run_ids[-1]
         run_model = await self._session.get(AiAgentRun, last_run_id)
         covered_created_at = _iso(run_model.created_at) if run_model is not None else None
         checkpoint = {
@@ -160,7 +278,8 @@ class AgentContextLimitProcessor:
             "topics": [],
             "covered_until_run_id": last_run_id,
             "covered_until_created_at": covered_created_at,
-            "source_run_ids": list(self._history_prefix_run_ids),
+            "source_run_ids": run_ids,
+            "compression_method": compression_method,
             "updated_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         }
         session_model = await _require_session(
@@ -297,6 +416,11 @@ def build_context_status_item(
     rebuilt_history: RebuiltAgentMessageHistory | None = None,
     message_json: list[dict[str, Any]] | None = None,
     summary_json: dict[str, Any] | None = None,
+    usage_override: AgentContextUsageSnapshot | None = None,
+    retained_message_count_override: int | None = None,
+    compression_status: str = "idle",
+    compression_method: str | None = None,
+    compression_error_message: str | None = None,
 ) -> AgentContextStatusItem:
     """把真实 usage 和模型配置转换为前端上下文状态。"""
 
@@ -308,13 +432,22 @@ def build_context_status_item(
         usage = usage_snapshot_from_messages(message_json)
         summary = summary_json or {}
         retained_message_count = len(message_json or [])
+    if usage_override is not None:
+        usage = usage_override
+    if retained_message_count_override is not None:
+        retained_message_count = retained_message_count_override
     context_used_tokens = usage.context_used_tokens
+    summary_available = bool(summary.get("summary"))
+    normalized_method = compression_method or _compression_method_from_summary(summary, summary_available)
     return AgentContextStatusItem(
         session_id=session_id,
         agent_id=agent_id,
         compression_enabled=True,
         compression_required=context_used_tokens >= budget.context_input_budget_tokens if context_used_tokens > 0 else False,
-        summary_available=bool(summary.get("summary")),
+        compression_status=_normalize_compression_status(compression_status, summary_available),
+        compression_method=normalized_method,
+        compression_error_message=compression_error_message,
+        summary_available=summary_available,
         summary=str(summary.get("summary") or "") or None,
         topics=[str(item) for item in summary.get("topics", [])] if isinstance(summary.get("topics"), list) else [],
         summary_updated_at=str(summary.get("updated_at") or "") or None,
@@ -358,7 +491,12 @@ def _summary_messages_from_checkpoint(checkpoint: dict[str, Any]) -> list[ModelM
     return _validate_message_json(_summary_message_json_from_checkpoint(checkpoint))
 
 
-def _build_in_memory_summary_checkpoint(summary: str, existing_summary: dict[str, Any] | None) -> dict[str, Any]:
+def _build_in_memory_summary_checkpoint(
+    summary: str,
+    existing_summary: dict[str, Any] | None,
+    *,
+    compression_method: str = "deterministic_fallback",
+) -> dict[str, Any]:
     """构造仅用于当前 run 内压缩的摘要，避免误标记已覆盖的历史 run。"""
 
     existing_topics = existing_summary.get("topics") if isinstance(existing_summary, dict) else []
@@ -369,6 +507,7 @@ def _build_in_memory_summary_checkpoint(summary: str, existing_summary: dict[str
         "covered_until_run_id": None,
         "covered_until_created_at": None,
         "source_run_ids": [],
+        "compression_method": compression_method,
         "updated_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
     }
 
@@ -535,6 +674,23 @@ def _context_limit_error() -> AppException:
         code="AI_CONTEXT_LIMIT_EXCEEDED",
         detail="当前会话上下文超过模型可用窗口，已尝试压缩但仍无法安全提交，请新建会话或减少输入后重试。",
     )
+
+
+def _compression_method_from_summary(summary: dict[str, Any], summary_available: bool) -> str:
+    """从摘要检查点读取压缩方式，兼容旧检查点。"""
+
+    method = str(summary.get("compression_method") or "").strip()
+    if method in {"model", "deterministic_fallback"}:
+        return method
+    return "deterministic_fallback" if summary_available else "none"
+
+
+def _normalize_compression_status(status: str, summary_available: bool) -> str:
+    """归一化上下文压缩状态；普通摘要读取时展示已压缩。"""
+
+    if status in {"compressing", "compressed", "failed"}:
+        return status
+    return "compressed" if summary_available else "idle"
 
 
 def _iso(value: datetime | None) -> str | None:

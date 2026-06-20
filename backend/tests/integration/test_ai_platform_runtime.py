@@ -1110,6 +1110,85 @@ async def test_agent_message_history_checkpoint_should_skip_covered_deltas(
     assert third_run is not None and len(third_run.message_history_json) == 2
 
 
+async def test_context_processor_should_persist_only_stable_history_during_tool_run(
+    authenticated_client: AsyncClient,
+) -> None:
+    """run 内工具调用后请求前压缩时，持久摘要只能覆盖已完成的历史 run。"""
+
+    _, session_id, scope = await _create_history_workspace_session(authenticated_client, "工具 run 稳定边界")
+    current_user_text = "当前 run 用户问题不应进入持久摘要"
+
+    async with get_session_factory()() as db_session:
+        store = PlatformAgentRuntimeStore(db_session, user_id=1)
+        first = await _finish_history_run(
+            store,
+            session_id=session_id,
+            scope=scope,
+            run_id="history-stable-prefix-run-1",
+            user_text="已完成历史问题",
+            assistant_text="已完成历史回答",
+        )
+        rebuilt = await rebuild_agent_message_history(
+            session=db_session,
+            user_id=1,
+            session_id=session_id,
+            agent_id="component-manager",
+        )
+        budget = build_history_budget(
+            SimpleNamespace(context_window_tokens=1200, max_output_tokens=100, compression_target_ratio=0.05),
+            runtime_context=AgentRuntimeContext(scope_type=scope.scope_type, workspace_id=scope.workspace_id, source=scope.source),
+        )
+        processor = build_context_limit_processor(
+            session=db_session,
+            user_id=1,
+            session_id=session_id,
+            agent_id="component-manager",
+            budget=budget,
+            rebuilt_history=rebuilt,
+        )
+        processor.record_message_history([{"kind": "response", "usage": {"input_tokens": 500, "output_tokens": 120}}])
+        tool_response = ModelResponse(
+            parts=[
+                ToolCallPart(
+                    tool_name="read_context",
+                    args={"value": "alpha"},
+                    tool_call_id="tool-stable-prefix",
+                )
+            ]
+        )
+        current_tool_return = ModelRequest(
+            parts=[
+                ToolReturnPart(
+                    tool_name="read_context",
+                    content="当前 run 工具结果不应进入持久摘要",
+                    tool_call_id="tool-stable-prefix",
+                )
+            ]
+        )
+        compressed_messages = await processor(
+            SimpleNamespace(),
+            [
+                *rebuilt.messages,
+                ModelRequest(parts=[UserPromptPart(content=current_user_text)]),
+                tool_response,
+                current_tool_return,
+            ],
+        )
+        session_model = await db_session.get(AiAgentSession, session_id)
+
+    assert session_model is not None and isinstance(session_model.summary_json, dict)
+    assert session_model.summary_json["covered_until_run_id"] == first.run_id
+    assert session_model.summary_json["source_run_ids"] == [first.run_id]
+    assert "已完成历史问题" in session_model.summary_json["summary"]
+    assert current_user_text not in session_model.summary_json["summary"]
+    assert "当前 run 工具结果" not in session_model.summary_json["summary"]
+    assert len(compressed_messages) == 4
+    assert isinstance(compressed_messages[2], ModelResponse)
+    assert compressed_messages[2].parts[0].part_kind == "tool-call"
+    assert isinstance(compressed_messages[3], ModelRequest)
+    assert compressed_messages[3].parts[0].part_kind == "tool-return"
+
+
 async def test_context_processor_should_compress_current_run_prefix_and_keep_tool_pair(
     authenticated_client: AsyncClient,
 ) -> None:

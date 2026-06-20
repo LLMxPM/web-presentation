@@ -922,6 +922,9 @@ export interface AgentContextStatusItem {
   agent_id: string
   compression_enabled: boolean
   compression_required: boolean
+  compression_status: 'idle' | 'compressing' | 'compressed' | 'failed'
+  compression_method: 'none' | 'model' | 'deterministic_fallback'
+  compression_error_message: string | null
   summary_available: boolean
   summary: string | null
   topics: string[]

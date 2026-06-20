@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from collections.abc import AsyncIterator
 from types import SimpleNamespace
 from typing import Any
@@ -27,7 +28,7 @@ from pydantic_ai.usage import RequestUsage
 from sqlalchemy import select
 
 from app.ai.agent.runtime_context import AgentRuntimeContext
-from app.ai.message_history import build_history_budget
+from app.ai.message_history import build_context_limit_processor, build_history_budget, rebuild_agent_message_history
 from app.ai.platform_tools import AgentToolContext, agent_tool
 from app.ai.platform_runtime import PlatformAgentRuntimeStore
 from app.ai.pydantic_event_projection import PydanticEventProjector
@@ -37,7 +38,7 @@ from app.ai.session_facade_pydantic import _build_continue_message_history, _bui
 from app.ai.tools.team_delegation import build_team_delegation_tools
 from app.core.exceptions import AppException
 from app.db.session import get_session_factory
-from app.models.ai_agent_runtime import AiAgentRun, AiAgentRunEvent, AiAgentToolCall
+from app.models.ai_agent_runtime import AiAgentRun, AiAgentRunEvent, AiAgentSession, AiAgentToolCall
 from app.schemas.agent import AgentScopeContext
 
 
@@ -867,6 +868,287 @@ async def test_pydantic_runner_should_emit_context_status_after_each_model_respo
     assert completed_run.status == "completed"
 
 
+async def test_pydantic_runner_should_compress_completed_run_when_budget_exceeded(
+    authenticated_client: AsyncClient,
+) -> None:
+    """最终响应超过上下文预算时，应同步模型压缩并写入会话检查点。"""
+
+    async def model_function(messages: list[Any], info: AgentInfo) -> ModelResponse:
+        """主模型与压缩模型共用同一 FunctionModel。"""
+
+        _ = info
+        if _is_compression_prompt(messages):
+            return ModelResponse(
+                parts=[TextPart(content="模型摘要：用户要求整理上下文，最终回答已经生成。")],
+                usage=RequestUsage(input_tokens=10, output_tokens=8),
+            )
+        return ModelResponse(
+            parts=[TextPart(content="最终回答。")],
+            usage=RequestUsage(input_tokens=700, output_tokens=30),
+        )
+
+    async def stream_function(messages: list[Any], info: AgentInfo) -> AsyncIterator[str]:
+        """主 run 使用流式输出，确保 runner 走真实 stream 分支。"""
+
+        _ = messages, info
+        yield "最终回答。" + ("扩展内容" * 200)
+
+    _, session_id, scope = await _create_workspace_session(
+        authenticated_client,
+        workspace_name="Pydantic Runner 模型压缩工作空间",
+        session_name="Pydantic Runner 模型压缩会话",
+    )
+    model = FunctionModel(function=model_function, stream_function=stream_function)
+    budget = build_history_budget(
+        SimpleNamespace(context_window_tokens=613, max_output_tokens=100, compression_target_ratio=0.1),
+        runtime_context=_runtime_context(scope),
+    )
+
+    async with get_session_factory()() as db_session:
+        store = PlatformAgentRuntimeStore(db_session, user_id=1)
+        rebuilt = await rebuild_agent_message_history(
+            session=db_session,
+            user_id=1,
+            session_id=session_id,
+            agent_id="component-manager",
+        )
+        context_processor = build_context_limit_processor(
+            session=db_session,
+            user_id=1,
+            session_id=session_id,
+            agent_id="component-manager",
+            budget=budget,
+            rebuilt_history=rebuilt,
+        )
+        run_start = await store.start_run(
+            session_id=session_id,
+            agent_id="component-manager",
+            scope=scope,
+            run_id="pydantic-runner-compress-completed",
+            message="请整理上下文。",
+            image_attachment_ids=[],
+        )
+        events = await _collect_runner_events(
+            PydanticAgentRunner(store).stream_run(
+                run_model=run_start.run_model,
+                agent_id="component-manager",
+                model=model,
+                model_settings={},
+                runtime_context=_runtime_context(scope),
+                message="请整理上下文。",
+                context_budget=budget,
+                context_processor=context_processor,
+            )
+        )
+        completed_run = await store.get_latest_run_model(session_id=session_id, agent_id="component-manager")
+        session_model = await db_session.get(AiAgentSession, session_id)
+
+    compression_events = [event for event in events if event.event.startswith("context.compression.")]
+    completed_event = next(event for event in compression_events if event.event == "context.compression.completed")
+
+    assert completed_run is not None and completed_run.status == "completed"
+    assert [event.event for event in compression_events] == [
+        "context.compression.started",
+        "context.compression.completed",
+    ]
+    assert completed_event.data["compression_method"] == "model"
+    assert completed_event.data["context_status"]["compression_status"] == "compressed"
+    assert session_model is not None and isinstance(session_model.summary_json, dict)
+    assert session_model.summary_json["covered_until_run_id"] == "pydantic-runner-compress-completed"
+    assert session_model.summary_json["compression_method"] == "model"
+    assert session_model.summary_json["summary"].startswith("模型摘要")
+
+
+async def test_pydantic_runner_should_fallback_when_model_compression_fails(
+    authenticated_client: AsyncClient,
+) -> None:
+    """模型压缩失败时，应使用确定性摘要兜底并标记 fallback 方法。"""
+
+    async def model_function(messages: list[Any], info: AgentInfo) -> ModelResponse:
+        """压缩提示抛错，主响应正常完成。"""
+
+        _ = info
+        if _is_compression_prompt(messages):
+            raise RuntimeError("summary model unavailable")
+        return ModelResponse(
+            parts=[TextPart(content="最终回答。")],
+            usage=RequestUsage(input_tokens=700, output_tokens=30),
+        )
+
+    async def stream_function(messages: list[Any], info: AgentInfo) -> AsyncIterator[str]:
+        """主 run 使用流式输出，压缩调用由 function 处理。"""
+
+        _ = messages, info
+        yield "最终回答。" + ("扩展内容" * 200)
+
+    _, session_id, scope = await _create_workspace_session(
+        authenticated_client,
+        workspace_name="Pydantic Runner 压缩回退工作空间",
+        session_name="Pydantic Runner 压缩回退会话",
+    )
+    model = FunctionModel(function=model_function, stream_function=stream_function)
+    budget = build_history_budget(
+        SimpleNamespace(context_window_tokens=613, max_output_tokens=100, compression_target_ratio=0.1),
+        runtime_context=_runtime_context(scope),
+    )
+
+    async with get_session_factory()() as db_session:
+        store = PlatformAgentRuntimeStore(db_session, user_id=1)
+        rebuilt = await rebuild_agent_message_history(
+            session=db_session,
+            user_id=1,
+            session_id=session_id,
+            agent_id="component-manager",
+        )
+        context_processor = build_context_limit_processor(
+            session=db_session,
+            user_id=1,
+            session_id=session_id,
+            agent_id="component-manager",
+            budget=budget,
+            rebuilt_history=rebuilt,
+        )
+        run_start = await store.start_run(
+            session_id=session_id,
+            agent_id="component-manager",
+            scope=scope,
+            run_id="pydantic-runner-compress-fallback",
+            message="请整理上下文。",
+            image_attachment_ids=[],
+        )
+        events = await _collect_runner_events(
+            PydanticAgentRunner(store).stream_run(
+                run_model=run_start.run_model,
+                agent_id="component-manager",
+                model=model,
+                model_settings={},
+                runtime_context=_runtime_context(scope),
+                message="请整理上下文。",
+                context_budget=budget,
+                context_processor=context_processor,
+            )
+        )
+        session_model = await db_session.get(AiAgentSession, session_id)
+
+    completed_event = next(event for event in events if event.event == "context.compression.completed")
+
+    assert completed_event.data["compression_method"] == "deterministic_fallback"
+    assert completed_event.data["context_status"]["compression_method"] == "deterministic_fallback"
+    assert session_model is not None and isinstance(session_model.summary_json, dict)
+    assert session_model.summary_json["compression_method"] == "deterministic_fallback"
+    assert "原始历史压缩摘录" in session_model.summary_json["summary"]
+
+
+async def test_pydantic_runner_should_fail_before_next_request_when_compression_fails(
+    authenticated_client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """请求前压缩彻底失败时，应阻断后续模型请求并标记 run 失败。"""
+
+    second_model_calls = 0
+
+    async def model_function(messages: list[Any], info: AgentInfo) -> ModelResponse:
+        """压缩模型调用失败，主 run 流式分支负责工具请求。"""
+
+        _ = info
+        if _is_compression_prompt(messages):
+            raise RuntimeError("summary model unavailable")
+        return ModelResponse(
+            parts=[TextPart(content="非流式主响应不应被使用。")],
+            usage=RequestUsage(input_tokens=1, output_tokens=1),
+        )
+
+    async def stream_function(messages: list[Any], info: AgentInfo) -> AsyncIterator[str | dict[int, DeltaToolCall]]:
+        """首次请求触发工具；压缩失败后不应进入第二次模型输出。"""
+
+        nonlocal second_model_calls
+        _ = info
+        if _latest_tool_return(messages) is not None:
+            second_model_calls += 1
+            yield "不应继续。"
+            return
+        yield {
+            0: DeltaToolCall(
+                name="context_probe",
+                json_args='{"value":"alpha"}',
+                tool_call_id="tool-compression-block",
+            )
+        }
+
+    async def context_probe(value: str) -> str:
+        """测试工具，返回后会触发下一次模型请求。"""
+
+        return f"工具结果：{value}"
+
+    def broken_deterministic_summary(*args: Any, **kwargs: Any) -> str:
+        """模拟确定性回退也失败。"""
+
+        _ = args, kwargs
+        raise RuntimeError("deterministic fallback failed")
+
+    monkeypatch.setattr("app.ai.history_compression.build_deterministic_summary", broken_deterministic_summary)
+    _, session_id, scope = await _create_workspace_session(
+        authenticated_client,
+        workspace_name="Pydantic Runner 压缩失败工作空间",
+        session_name="Pydantic Runner 压缩失败会话",
+    )
+    model = FunctionModel(function=model_function, stream_function=stream_function)
+    budget = build_history_budget(
+        SimpleNamespace(context_window_tokens=613, max_output_tokens=100, compression_target_ratio=0.1),
+        runtime_context=_runtime_context(scope),
+    )
+
+    async with get_session_factory()() as db_session:
+        store = PlatformAgentRuntimeStore(db_session, user_id=1)
+        rebuilt = await rebuild_agent_message_history(
+            session=db_session,
+            user_id=1,
+            session_id=session_id,
+            agent_id="component-manager",
+        )
+        context_processor = build_context_limit_processor(
+            session=db_session,
+            user_id=1,
+            session_id=session_id,
+            agent_id="component-manager",
+            budget=budget,
+            rebuilt_history=rebuilt,
+        )
+        run_start = await store.start_run(
+            session_id=session_id,
+            agent_id="component-manager",
+            scope=scope,
+            run_id="pydantic-runner-compress-failed",
+            message="调用工具后继续。",
+            image_attachment_ids=[],
+        )
+        events = await _collect_runner_events(
+            PydanticAgentRunner(store).stream_run(
+                run_model=run_start.run_model,
+                agent_id="component-manager",
+                model=model,
+                model_settings={},
+                runtime_context=_runtime_context(scope),
+                message="调用工具后继续。",
+                tools=[Tool(context_probe, name="context_probe")],
+                context_budget=budget,
+                context_processor=context_processor,
+            )
+        )
+        failed_run = await store.get_latest_run_model(session_id=session_id, agent_id="component-manager")
+
+    event_names = [event.event for event in events]
+    failed_event = next(event for event in events if event.event == "context.compression.failed")
+
+    assert second_model_calls == 0
+    assert "context.compression.started" in event_names
+    assert "context.compression.failed" in event_names
+    assert failed_event.data["context_status"]["compression_status"] == "failed"
+    assert failed_run is not None
+    assert failed_run.status == "failed"
+    assert failed_run.error_code == "AI_CONTEXT_COMPRESSION_FAILED"
+
+
 def test_deferred_ask_user_should_accept_dict_and_json_args() -> None:
     """ask_user deferred 请求应同时兼容 Pydantic AI 传入的 dict 和 JSON 字符串参数。"""
 
@@ -989,6 +1271,17 @@ async def _create_workspace_session(
     )
     assert session_response.status_code == 201
     return workspace_id, session_response.json()["session_id"], scope
+
+
+def _is_compression_prompt(messages: list[Any]) -> bool:
+    """判断 FunctionModel 当前调用是否来自历史压缩服务。"""
+
+    try:
+        dumped = ModelMessagesTypeAdapter.dump_python(messages, mode="json")
+    except Exception:  # noqa: BLE001
+        dumped = str(messages)
+    text = json.dumps(dumped, ensure_ascii=False, default=str)
+    return "请压缩以下智能体历史" in text
 
 
 async def _create_workspace_scope(
