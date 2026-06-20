@@ -812,6 +812,13 @@ const {
   setPendingRequirementForSession: (sessionId, requirement) => {
     agentSessionStore.setPendingRequirement(sessionId, requirement)
   },
+  markPendingRequirementResolved: (sessionId, requirement, feedbackSelections) => {
+    const previousItems = [...readSessionValue(timelineItemsBySession.value, sessionId, [])]
+    agentSessionStore.markPendingRequirementResolved(sessionId, requirement, feedbackSelections)
+    return () => {
+      agentSessionStore.setTimelineItems(sessionId, previousItems)
+    }
+  },
   createStreamAbortController,
   clearStreamAbortController,
   handleRunEvent,
@@ -1075,10 +1082,10 @@ async function handleSend() {
   lastRunIssue.value = null
   writeSessionValue(mutationRefreshEventsBySession.value, sessionId, [])
 
-  agentSessionStore.beginLocalRun(sessionId, message, attachments)
+  const runId = crypto.randomUUID()
+  agentSessionStore.beginLocalRun(sessionId, message, attachments, runId)
   setSessionStreaming(sessionId, true)
 
-  let runId = crypto.randomUUID()
   try {
     agentSessionStore.setCurrentRunId(sessionId, runId)
     syncActiveRun(sessionId, {

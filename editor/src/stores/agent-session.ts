@@ -6,15 +6,18 @@ import { defineStore } from 'pinia'
 import {
   applyAgentRunEvent,
   applyAgentRuntimeSnapshot,
-  buildAgentLocalTimelineItem,
   createAgentSessionRuntimeState,
   type AgentSessionRuntimeState,
 } from '@/components/agent/agent-run-state'
+import {
+  appendLocalRunTimelineItems,
+  markPendingRequirementResolvedInTimeline,
+} from '@/stores/agent-session-timeline'
 import type {
   AgentActiveRunItem,
+  AgentFeedbackSelection,
   AgentContextStatusItem,
   AgentImageAttachmentItem,
-  AgentMessageAttachmentItem,
   AgentMemberRunItem,
   AgentPendingRequirement,
   AgentRunEvent,
@@ -132,26 +135,28 @@ export const useAgentSessionStore = defineStore('agent-session', {
       if (!sessionId) return -1
       return this.ensureSession(sessionId).stream.lastSequenceByRun[runId] ?? -1
     },
-    beginLocalRun(sessionId: string, message: string, attachments: AgentImageAttachmentItem[]): void {
+    beginLocalRun(sessionId: string, message: string, attachments: AgentImageAttachmentItem[], runId?: string | null): void {
       if (!sessionId) return
       const state = this.ensureSession(sessionId)
       state.pendingImageAttachments = []
       state.pendingRequirement = null
       state.lastIssue = null
-      const content = message || (attachments.length ? '（已发送图片）' : '')
-      state.timelineItems = [
-        ...state.timelineItems,
-        {
-          ...buildAgentLocalTimelineItem(sessionId, {
-            kind: 'message',
-            role: 'user',
-            content,
-            attachments: attachments.map(mapImageAttachmentToMessageAttachment),
-          }),
-          order_index: nextTimelineOrderIndex(state),
-        },
-      ]
+      state.stream.runId = runId ?? state.stream.runId
+      appendLocalRunTimelineItems(state, sessionId, message, attachments, runId)
       state.stream.streamingTimelineItemId = null
+      state.stream.streaming = true
+      this.syncFlatMaps(sessionId)
+    },
+    markPendingRequirementResolved(
+      sessionId: string,
+      requirement: AgentPendingRequirement,
+      feedbackSelections: AgentFeedbackSelection[] = [],
+    ): void {
+      if (!sessionId) return
+      const state = this.ensureSession(sessionId)
+      state.pendingRequirement = null
+      state.stream.runId = requirement.run_id || state.stream.runId
+      markPendingRequirementResolvedInTimeline(state, sessionId, requirement, feedbackSelections)
       state.stream.streaming = true
       this.syncFlatMaps(sessionId)
     },
@@ -212,13 +217,6 @@ function hasSessionValue<T>(source: Record<string, T>, sessionId: string): boole
 }
 
 /**
- * 读取下一条本地时间线排序号。
- */
-function nextTimelineOrderIndex(state: AgentSessionRuntimeState) {
-  return Math.max(-1, ...state.timelineItems.map(item => item.order_index)) + 1
-}
-
-/**
  * 归一化 active run，确保非 paused 状态不会携带旧 HITL requirement。
  */
 function normalizeActiveRun(run: AgentActiveRunItem | null): AgentActiveRunItem | null {
@@ -226,20 +224,4 @@ function normalizeActiveRun(run: AgentActiveRunItem | null): AgentActiveRunItem 
     return run
   }
   return { ...run, pending_requirement: null }
-}
-
-/**
- * 把 Composer 待发送附件转换为消息时间线可展示的附件摘要。
- */
-function mapImageAttachmentToMessageAttachment(attachment: AgentImageAttachmentItem): AgentMessageAttachmentItem {
-  return {
-    id: attachment.id,
-    source_kind: attachment.source_kind,
-    original_name: attachment.original_name,
-    content_type: attachment.content_type,
-    file_size: attachment.file_size,
-    url: attachment.url,
-    preview_available: attachment.preview_available,
-    promoted_asset_id: attachment.promoted_asset_id,
-  }
 }

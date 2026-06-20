@@ -1043,6 +1043,121 @@ describe('AgentConversationPanel', () => {
     expect(continueAgentSessionActiveRunMock).not.toHaveBeenCalled()
   })
 
+  it('结构化提问提交后应隐藏待回答提示并显示已回复状态', async () => {
+    localStorage.setItem('agent-session:agent-coordinator:11', 'session-1')
+    listAgentSessionsMock.mockResolvedValueOnce([
+      {
+        session_id: 'session-1',
+        agent_id: DEFAULT_AGENT_ID,
+        session_name: '待回答会话',
+        created_at: '2026-04-18T10:00:00+08:00',
+        updated_at: '2026-04-18T10:30:00+08:00',
+        metadata: {
+          scope_type: 'page',
+          workspace_id: 11,
+          project_id: 21,
+          page_id: 31,
+          page_title: 'AI 页面',
+          source: 'editor-page-detail',
+        },
+      },
+    ])
+    const requirement: AgentPendingRequirement = {
+      id: null,
+      kind: 'user_feedback',
+      run_id: 'run-feedback-submit',
+      session_id: 'session-1',
+      tool_name: 'ask_user',
+      tool_execution: { tool_name: 'ask_user', tool_call_id: 'tool-feedback-submit', tool_args: {} },
+      suggested_patch: null,
+      user_feedback_schema: [
+        {
+          question: '优先调整哪个区域？',
+          header: '范围',
+          options: [{ label: '首屏', description: null }, { label: '全页面', description: null }],
+          multi_select: false,
+          selected_options: null,
+        },
+      ],
+      note: null,
+    }
+    const pausedRun = {
+      run_id: requirement.run_id,
+      session_id: 'session-1',
+      agent_id: DEFAULT_AGENT_ID,
+      status: 'paused',
+      pending_requirement: requirement,
+      content: null,
+      created_at: '2026-04-18T10:30:00+08:00',
+    }
+    getAgentSessionRuntimeMock.mockResolvedValueOnce(createRuntimeSnapshot({
+      timeline_items: [
+        {
+          id: 'tool-feedback-submit',
+          session_id: 'session-1',
+          run_id: requirement.run_id,
+          kind: 'tool',
+          role: null,
+          event_index: 1,
+          order_index: 0,
+          content: null,
+          status: 'running',
+          tool: {
+            tool_call_id: 'tool-feedback-submit',
+            tool_name: 'ask_user',
+            status: 'running',
+            input_payload: { questions: requirement.user_feedback_schema },
+            output_payload: null,
+            message: '',
+          },
+          attachments: [],
+          source: 'event',
+          created_at: '2026-04-18T10:30:00+08:00',
+        },
+        {
+          id: 'requirement-feedback-submit',
+          session_id: 'session-1',
+          run_id: requirement.run_id,
+          kind: 'requirement',
+          role: null,
+          event_index: 2,
+          order_index: 1,
+          content: '优先调整哪个区域？',
+          status: 'pending',
+          tool: null,
+          attachments: [],
+          source: 'event',
+          created_at: '2026-04-18T10:30:01+08:00',
+        },
+      ],
+      active_run: pausedRun,
+      pending_requirement: requirement,
+      event_index: 2,
+    }))
+    const continueDeferred = createDeferred<void>()
+    continueAgentSessionActiveRunMock.mockImplementationOnce(async () => {
+      await continueDeferred.promise
+    })
+
+    render(AgentConversationPanel, createTestingRenderOptions())
+
+    await waitFor(() => {
+      expect(screen.getByText('优先调整哪个区域？')).toBeTruthy()
+      expect(screen.getByRole('button', { name: /提交回答/ })).toBeTruthy()
+    })
+    await fireEvent.click(screen.getByText('首屏'))
+    await fireEvent.click(screen.getByRole('button', { name: /提交回答/ }))
+
+    await waitFor(() => {
+      expect(continueAgentSessionActiveRunMock).toHaveBeenCalled()
+      expect(screen.queryByRole('button', { name: /提交回答/ })).toBeNull()
+      expect(screen.getByText('等待智能体输出中')).toBeTruthy()
+      expect(screen.getByText('首屏')).toBeTruthy()
+      expect(screen.queryByText('未回复')).toBeNull()
+    })
+    continueDeferred.resolve()
+  })
+
   it('paused 结构化提问不应因残留 streaming 状态禁用提交按钮', async () => {
     localStorage.setItem('agent-session:agent-coordinator:11', 'session-1')
     listAgentSessionsMock.mockResolvedValueOnce([

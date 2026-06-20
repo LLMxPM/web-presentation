@@ -1,10 +1,12 @@
 <!-- 文件功能：渲染智能体 run-first 时间线正文、草稿箱、工具调用与运行状态提示。 -->
 <template>
-  <div
-    ref="scrollContainerRef"
-    class="flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto px-2 py-2"
-    @scroll="handleConversationScroll"
-  >
+  <div class="relative flex min-h-0 flex-1 overflow-hidden">
+    <div
+      ref="scrollContainerRef"
+      class="agent-conversation-body flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto px-2 py-2"
+      :class="{ 'agent-conversation-body--floating-toast': activeRun?.status === 'cancelling' }"
+      @scroll="handleConversationScroll"
+    >
     <section v-if="draftPatches.length" class="space-y-1.5">
       <div class="flex items-center justify-between gap-2">
         <h3 class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">草稿箱</h3>
@@ -71,7 +73,7 @@
                   <MarkdownRender
                     v-else-if="resolveMessageContent(item.message)"
                     :nodes="resolveMessageMarkdownNodes(item.message)"
-                    :max-live-nodes="isMessageStreaming(item.message) ? 0 : 320"
+                    :max-live-nodes="320"
                     batch-rendering
                     :initial-render-batch-size="assistantBatchRendering.initialRenderBatchSize"
                     :render-batch-size="assistantBatchRendering.renderBatchSize"
@@ -132,7 +134,7 @@
                 <div class="reasoning-markdown mt-0.5 max-h-[100px] overflow-auto border-l border-slate-100 pl-1.5">
                   <MarkdownRender
                     :nodes="resolveReasoningMarkdownNodes(item)"
-                    :max-live-nodes="item.streaming ? 0 : 160"
+                    :max-live-nodes="160"
                     batch-rendering
                     :initial-render-batch-size="assistantBatchRendering.initialRenderBatchSize"
                     :render-batch-size="assistantBatchRendering.renderBatchSize"
@@ -270,10 +272,10 @@
 
           <article
             v-else
-            class="conversation-message conversation-message--system flex justify-start px-0.5 py-0"
+            class="conversation-message conversation-message--system flex justify-center px-4 py-1"
           >
             <div
-              class="message-group max-w-[92%] rounded-md border px-2 py-1 text-[11px] leading-5"
+              class="message-group inline-flex max-w-[80%] items-center rounded-full border px-2 py-0.5 text-[10.5px] font-medium leading-4 shadow-[0_1px_0_rgba(15,23,42,0.04)]"
               :class="getRequirementStatusClass(item.status)"
             >
               {{ item.content }}
@@ -288,17 +290,23 @@
       <p class="text-[12px] leading-5 text-amber-700">{{ lastRunIssue.detail }}</p>
     </section>
 
+    </div>
+
     <section
       v-if="activeRun?.status === 'cancelling'"
-      class="flex items-center justify-between gap-3 rounded-3xl border border-amber-200 bg-amber-50/80 p-4"
+      class="pointer-events-none absolute inset-x-2 bottom-2 z-20 flex justify-center"
+      role="status"
+      aria-live="polite"
     >
-      <div class="min-w-0">
-        <p class="text-sm font-semibold text-amber-800">正在停止当前运行</p>
-        <p class="mt-1 text-xs leading-5 text-amber-700">如果长时间没有响应，可以强制释放当前会话占用。</p>
+      <div class="pointer-events-auto flex w-[min(100%,28rem)] items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-left shadow-lg shadow-slate-900/10">
+        <div class="min-w-0">
+          <p class="text-[12.5px] font-semibold leading-5 text-amber-800">正在停止当前运行</p>
+          <p class="text-[11.5px] leading-4 text-amber-700">如果长时间没有响应，可以强制释放当前会话占用。</p>
+        </div>
+        <BaseButton v-if="cancellingRunForceAvailable" variant="secondary" size="sm" @click="$emit('force-cancel-run')">
+          强制结束
+        </BaseButton>
       </div>
-      <BaseButton v-if="cancellingRunForceAvailable" variant="secondary" size="sm" @click="$emit('force-cancel-run')">
-        强制结束
-      </BaseButton>
     </section>
   </div>
 </template>
@@ -552,7 +560,7 @@ function getRunStatusLineClass(status: string | null) {
  * 运行中的模型请求状态用省略号提示用户仍在等待输出。
  */
 function shouldAnimateRunStatus(status: string | null) {
-  return status === 'model_request'
+  return status === 'model_request' || status === 'tool_start' || status === 'tool_execution'
 }
 
 function getRequirementStatusClass(status: string | null) {
@@ -564,6 +572,10 @@ function getRequirementStatusClass(status: string | null) {
 </script>
 
 <style scoped>
+.agent-conversation-body--floating-toast {
+  padding-bottom: 5.5rem;
+}
+
 details[open] .details-chevron {
   transform: rotate(90deg);
 }
@@ -626,6 +638,9 @@ details[open] .details-chevron {
   color: inherit;
   font-size: 0.8125rem;
   line-height: 1.32;
+  --loading-shimmer: rgb(226 232 240 / 0.95);
+  --tooltip-bg: rgb(15 23 42);
+  --tooltip-fg: rgb(248 250 252);
 }
 
 .assistant-markdown :deep(.markstream-vue > :first-child),
@@ -640,6 +655,14 @@ details[open] .details-chevron {
 
 .assistant-markdown :deep(.markstream-vue > * + *) {
   margin-top: 0.2rem;
+}
+
+.assistant-markdown :deep(.markstream-vue .node-placeholder),
+.reasoning-markdown :deep(.markstream-vue .node-placeholder) {
+  min-height: 0.875rem;
+  border: 1px solid rgb(226 232 240 / 0.9);
+  background: linear-gradient(90deg, rgb(248 250 252), rgb(241 245 249), rgb(248 250 252));
+  opacity: 1;
 }
 
 .assistant-markdown :deep(p) {
@@ -692,6 +715,9 @@ details[open] .details-chevron {
   font-size: 0.6875rem;
   line-height: 1.28;
   white-space: pre-wrap;
+  --loading-shimmer: rgb(226 232 240 / 0.9);
+  --tooltip-bg: rgb(15 23 42);
+  --tooltip-fg: rgb(248 250 252);
 }
 
 .reasoning-markdown :deep(.markstream-vue > * + *) {

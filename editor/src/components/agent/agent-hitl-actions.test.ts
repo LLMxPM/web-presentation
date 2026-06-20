@@ -201,6 +201,7 @@ function createHitlFixture(options: { requirement?: AgentPendingRequirement } = 
     setSessionStreaming: vi.fn(),
     syncActiveRun: vi.fn(),
     setPendingRequirementForSession: vi.fn(),
+    markPendingRequirementResolved: vi.fn(),
     createStreamAbortController: vi.fn(() => controller),
     clearStreamAbortController: vi.fn(),
     handleRunEvent: vi.fn(),

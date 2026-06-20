@@ -618,7 +618,7 @@ describe('AgentConversationPanel', () => {
     expect(screen.queryByText('只有在你确认后，页面代码才会真正写回后端并生成新版本。')).toBeNull()
   })
 
-  it('发送后首个 SSE 可见事件到达前只保留本地用户消息', async () => {
+  it('发送后首个 SSE 可见事件到达前应显示等待输出提示', async () => {
     const streamDeferred = createDeferred<void>()
     streamAgentRunMock.mockImplementationOnce(async (sessionId: string, scope: unknown, payload: { run_id?: string }) => {
       startAgentRunMock(sessionId, scope, payload)
@@ -636,7 +636,7 @@ describe('AgentConversationPanel', () => {
     await fireEvent.click(screen.getByRole('button', { name: /发送/ }))
 
     expect(await screen.findByText('帮我整理页面资源')).toBeTruthy()
-    expect(screen.queryByText('等待智能体输出中')).toBeNull()
+    expect(screen.getByText('等待智能体输出中')).toBeTruthy()
     streamDeferred.resolve()
   })
 

@@ -28,6 +28,11 @@ interface HitlActionContext {
   setSessionStreaming: (sessionId: string, value: boolean) => void
   syncActiveRun: (sessionId: string, run: AgentActiveRunItem | null) => void
   setPendingRequirementForSession: (sessionId: string, requirement: AgentPendingRequirement | null) => void
+  markPendingRequirementResolved: (
+    sessionId: string,
+    requirement: AgentPendingRequirement,
+    feedbackSelections: AgentFeedbackSelection[],
+  ) => (() => void) | void
   createStreamAbortController: (runId: string) => AbortController
   clearStreamAbortController: (runId: string, controller: AbortController) => void
   handleRunEvent: (event: AgentRunEvent, fallbackSessionId: string) => void
@@ -144,6 +149,11 @@ export function useAgentHitlActions(context: HitlActionContext) {
     }
 
     context.setHitlActionInFlight(sessionId, true)
+    const rollbackResolvedTimeline = context.markPendingRequirementResolved(
+      sessionId,
+      requirement,
+      payload.feedbackSelections,
+    )
     context.setPendingRequirementForSession(sessionId, null)
     context.setSessionStreaming(sessionId, true)
     context.syncActiveRun(sessionId, { ...pausedRun, status: 'running', pending_requirement: null })
@@ -169,6 +179,7 @@ export function useAgentHitlActions(context: HitlActionContext) {
         }
         return
       }
+      rollbackResolvedTimeline?.()
       await recoverHitlStateAfterFailedAction(sessionId, pausedRun, requirement)
       Message.error(getErrorMessage(error, '继续智能体执行失败。'))
     } finally {
