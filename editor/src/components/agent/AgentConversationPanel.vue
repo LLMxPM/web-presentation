@@ -387,8 +387,8 @@ const contextUsageTokens = computed(() => {
     return { used: null, available: null }
   }
   return {
-    used: Math.max(0, status.estimated_history_tokens),
-    available: Math.max(0, status.history_budget_tokens),
+    used: Math.max(0, status.context_used_tokens ?? 0),
+    available: Math.max(0, status.context_input_budget_tokens ?? 0),
   }
 })
 const cancellingRunForceAvailable = computed(() => {

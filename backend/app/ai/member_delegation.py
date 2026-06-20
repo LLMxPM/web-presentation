@@ -23,9 +23,10 @@ from app.ai.agent.runtime_context import AgentRuntimeContext, build_scope_contex
 from app.ai.agent_catalog import get_agent_catalog_entry
 from app.ai.agent_runtime_config import build_effective_description, build_effective_instructions
 from app.ai.image_history_hydration import hydrate_agent_image_refs
-from app.ai.message_history import build_context_limit_processor, build_history_budget, rebuild_agent_message_history
+from app.ai.image_refs import sanitize_message_history_image_refs
+from app.ai.message_history import AgentContextLimitProcessor, build_context_limit_processor, build_history_budget, rebuild_agent_message_history
 from app.ai.platform_runtime import PlatformAgentRuntimeStore
-from app.ai.pydantic_event_projection import PydanticEventProjector
+from app.ai.pydantic_event_projection import PydanticEventProjector, safe_new_messages
 from app.ai.pydantic_model_resolver import PydanticLlmModelResolver
 from app.ai.pydantic_tools import build_pydantic_tools
 from app.ai.run_errors import normalize_agent_run_exception
@@ -436,7 +437,7 @@ class _MemberAgentRunner:
                 system_prompt=build_effective_description(catalog, agent_config),
                 deps_type=type(deps),
                 tools=tools,
-                history_processors=[context_processor] if context_processor is not None else None,
+                history_processors=[context_processor.process],
             )
             projector = PydanticEventProjector(
                 run_id=self._parent_run.run_id,
@@ -463,28 +464,55 @@ class _MemberAgentRunner:
                 ),
                 on_deferred=self._pause_for_deferred_tools,
             )
-            await self.append_member_event("model.request.started")
-            async for raw_event in agent.run_stream_events(
+            base_message_history = _message_dicts(self._member_run.message_history_json or [])
+            async with agent.iter(
                 message if message else None,
                 model_settings=self._model_resolver.resolve_model_settings(llm_config) or None,
                 deps=deps,
                 message_history=message_history,
                 deferred_tool_results=deferred_tool_results,
                 infer_name=False,
-            ):
-                await self._raise_if_parent_cancelled(projector)
-                await projector.handle_raw_event(raw_event)
+            ) as agent_run:
+                async for node in agent_run:
+                    await self._raise_if_parent_cancelled(projector)
+                    if agent.is_model_request_node(node):
+                        await self.append_member_event("model.request.started")
+                        async with node.stream(agent_run.ctx) as stream:
+                            async for raw_event in stream:
+                                await self._raise_if_parent_cancelled(projector)
+                                await projector.handle_raw_event(raw_event)
+                        await self._raise_if_parent_cancelled(projector)
+                        await projector.flush_delta_buffer()
+                        self._sync_member_message_history(
+                            agent_run=agent_run,
+                            base_message_history=base_message_history,
+                            final_messages=final_messages,
+                            context_processor=context_processor,
+                        )
+                        await self.append_member_event("model.request.completed")
+                        continue
+                    if agent.is_call_tools_node(node):
+                        async with node.stream(agent_run.ctx) as stream:
+                            async for raw_event in stream:
+                                await self._raise_if_parent_cancelled(projector)
+                                await projector.handle_raw_event(raw_event)
+                if agent_run.result is None:
+                    raise RuntimeError("Pydantic AI member run finished without result")
+                final_messages[:] = _safe_new_member_messages(agent_run.result)
+                output = getattr(agent_run.result, "output", None)
+                if isinstance(output, DeferredToolRequests):
+                    await projector.flush_delta_buffer()
+                    await self._pause_for_deferred_tools(
+                        output,
+                        _merge_member_message_history(base_message_history, final_messages),
+                    )
             await self._raise_if_parent_cancelled(projector)
             await projector.flush_delta_buffer()
-            await self.append_member_event("model.request.completed")
             result_text = "".join(content_parts)
             self._member_run.status = "completed"
             self._member_run.content = result_text or self._member_run.content
             self._member_run.reasoning_content = "".join(reasoning_parts) or self._member_run.reasoning_content
-            self._member_run.message_history_json = [
-                *(self._member_run.message_history_json or []),
-                *final_messages,
-            ]
+            self._member_run.message_history_json = _merge_member_message_history(base_message_history, final_messages)
             self._member_run.finished_at = _utc_now()
             self._member_run.updated_at = _utc_now()
             await self.append_member_event("run.completed", content=result_text)
@@ -572,6 +600,22 @@ class _MemberAgentRunner:
         current = getattr(self._member_run, field) or ""
         setattr(self._member_run, field, f"{current}{content}")
 
+    def _sync_member_message_history(
+        self,
+        *,
+        agent_run: Any,
+        base_message_history: list[dict[str, Any]],
+        final_messages: list[dict[str, Any]],
+        context_processor: AgentContextLimitProcessor,
+    ) -> None:
+        """每个成员模型响应后替换消息快照，并刷新真实 usage 高水位。"""
+
+        final_messages[:] = _safe_new_member_messages(agent_run)
+        snapshot = _merge_member_message_history(base_message_history, final_messages)
+        self._member_run.message_history_json = snapshot
+        self._member_run.updated_at = _utc_now()
+        context_processor.record_message_history(snapshot)
+
     async def _pause_for_deferred_tools(
         self,
         requests: DeferredToolRequests,
@@ -579,10 +623,7 @@ class _MemberAgentRunner:
     ) -> AgentRunEvent:
         """成员助手触发 HITL 时暂停成员 run，并把 requirement 抛回父 run。"""
 
-        self._member_run.message_history_json = [
-            *(self._member_run.message_history_json or []),
-            *final_messages,
-        ]
+        self._member_run.message_history_json = final_messages
         requirement = _member_requirement_from_deferred(
             requests,
             parent_run=self._parent_run,
@@ -698,6 +739,25 @@ def _member_requirement_from_deferred(
     )
 
 
+def _safe_new_member_messages(result: Any) -> list[dict[str, Any]]:
+    """安全序列化成员 run 新增消息，并去除不可直接持久化的图片内容。"""
+
+    return sanitize_message_history_image_refs(safe_new_messages(result))
+
+
+def _merge_member_message_history(
+    base_message_history: list[dict[str, Any]],
+    new_messages: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """合并成员暂停前历史和本轮新增快照，避免恢复后重复追加。"""
+
+    base = _message_dicts(base_message_history)
+    latest = _message_dicts(new_messages)
+    if base and latest[: len(base)] == base:
+        return latest
+    return [*base, *latest]
+
+
 async def _member_continue_message_history(
     *,
     session: AsyncSession,
@@ -745,6 +805,7 @@ async def _member_continue_message_history(
             run_id=member_run.member_run_id,
         ),
     ]
+
 
 def _tool_args_as_dict(value: Any) -> dict[str, Any]:
     """把 Pydantic AI 工具参数归一化为 dict，兼容 JSON 字符串。"""

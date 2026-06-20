@@ -351,7 +351,8 @@ class AgentSessionFacade:
                     deps=deps,
                     message_history=rebuilt_history.messages or None,
                     message_image_refs=image_refs_from_resolved_images(resolved_images),
-                    history_processors=[context_processor] if context_processor is not None else None,
+                    context_budget=history_budget,
+                    context_processor=context_processor,
                 ):
                     yield chunk
             except asyncio.CancelledError:
@@ -595,7 +596,8 @@ class AgentSessionFacade:
                     deps=deps,
                     message_history=message_history,
                     deferred_tool_results=deferred_results,
-                    history_processors=[context_processor] if context_processor is not None else None,
+                    context_budget=history_budget,
+                    context_processor=context_processor,
                 ):
                     yield chunk
             except asyncio.CancelledError:
@@ -771,7 +773,8 @@ class AgentSessionFacade:
                     deps=deps,
                     message_history=[*previous_history.messages, *current_run_history],
                     deferred_tool_results=parent_deferred_results,
-                    history_processors=[context_processor] if context_processor is not None else None,
+                    context_budget=history_budget,
+                    context_processor=context_processor,
                 )
             except MemberDelegationPaused as exc:
                 await self._store.pause_for_requirement(run_model, requirement=exc.requirement)

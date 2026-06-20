@@ -938,6 +938,13 @@ export interface AgentContextStatusItem {
   estimated_history_tokens: number
   retained_recent_history_tokens: number
   retained_recent_message_count: number
+  context_input_budget_tokens: number
+  context_used_tokens: number
+  context_remaining_tokens: number
+  last_input_tokens: number
+  last_output_tokens: number
+  last_total_tokens: number
+  last_reasoning_tokens: number
 }
 
 export interface AgentSuggestedPatch {

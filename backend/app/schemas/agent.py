@@ -138,6 +138,13 @@ class AgentContextStatusItem(SchemaBase):
     estimated_history_tokens: int
     retained_recent_history_tokens: int
     retained_recent_message_count: int
+    context_input_budget_tokens: int
+    context_used_tokens: int
+    context_remaining_tokens: int
+    last_input_tokens: int
+    last_output_tokens: int
+    last_total_tokens: int
+    last_reasoning_tokens: int
 
 
 class AgentSuggestedPatch(SchemaBase):

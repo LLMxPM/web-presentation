@@ -283,24 +283,25 @@ class PlatformAgentRuntimeStore:
                 message_json={"message_history": sanitized_history or []},
             )
         if sanitized_history is not None and isinstance(sanitized_history, list):
-            self._append_run_message_history_delta(run_model, sanitized_history)
+            self._replace_run_message_history(run_model, sanitized_history)
 
-    async def save_run_message_history(self, run_model: AiAgentRun, message_history: list[dict[str, Any]]) -> None:
-        """追加保存本 run 新增 Pydantic AI 消息 delta 并提交。"""
+    async def save_run_message_history(self, run_model: AiAgentRun, message_history: list[dict[str, Any]], *, commit: bool = True) -> None:
+        """替换保存本 run 当前 Pydantic AI 消息快照。"""
 
-        self._append_run_message_history_delta(run_model, message_history)
+        self._replace_run_message_history(run_model, message_history)
         run_model.updated_at = _utc_now()
-        await self._session.commit()
+        if commit:
+            await self._session.commit()
 
-    def _append_run_message_history_delta(self, run_model: AiAgentRun, message_history: list[dict[str, Any]]) -> None:
-        """把本次新增消息追加到 run delta，避免跨 run 重复持久化历史前缀。"""
+    def _replace_run_message_history(self, run_model: AiAgentRun, message_history: list[dict[str, Any]]) -> None:
+        """用本 run 当前完整 delta 快照替换旧值，避免多次模型调用重复追加。"""
 
-        current = run_model.message_history_json if isinstance(run_model.message_history_json, list) else []
         sanitized = sanitize_message_history_image_refs(message_history)
-        delta = [dict(item) for item in sanitized if isinstance(item, dict)] if isinstance(sanitized, list) else []
-        if not delta:
-            return
-        run_model.message_history_json = [*current, *delta]
+        run_model.message_history_json = [
+            dict(item)
+            for item in sanitized
+            if isinstance(item, dict)
+        ] if isinstance(sanitized, list) else []
 
     async def refresh_run_control_state(self, run_model: AiAgentRun) -> str:
         """刷新 run 的控制状态，供流式执行过程感知外部取消请求。"""
@@ -1152,9 +1153,9 @@ class PlatformAgentRuntimeStore:
         agent_id: str,
         runtime_context: AgentRuntimeContext,
     ) -> AgentContextStatusItem:
-        """构建轻量上下文预算状态；精确 token 压缩后续由 history policy 接管。"""
+        """构建无模型配置时的上下文状态兜底；真实 usage 缺失按 0 返回。"""
 
-        fixed_context = len(str(runtime_context.page_content or "") + str(runtime_context.component_code or ""))
+        _ = runtime_context
         return AgentContextStatusItem(
             session_id=session_id,
             agent_id=agent_id,
@@ -1170,12 +1171,19 @@ class PlatformAgentRuntimeStore:
             compression_target_ratio=0,
             safety_margin_tokens=0,
             current_input_tokens=0,
-            fixed_context_tokens=fixed_context,
+            fixed_context_tokens=0,
             history_budget_tokens=0,
             compression_target_tokens=0,
             estimated_history_tokens=0,
             retained_recent_history_tokens=0,
             retained_recent_message_count=0,
+            context_input_budget_tokens=0,
+            context_used_tokens=0,
+            context_remaining_tokens=0,
+            last_input_tokens=0,
+            last_output_tokens=0,
+            last_total_tokens=0,
+            last_reasoning_tokens=0,
         )
 
     def _scope_query(self, query: Select[tuple[AiAgentSession]], *, agent_id: str, scope: AgentScopeContext) -> Select[tuple[AiAgentSession]]:

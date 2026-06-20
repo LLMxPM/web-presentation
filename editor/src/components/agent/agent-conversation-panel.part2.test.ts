@@ -258,11 +258,18 @@ function createContextStatus(overrides: Record<string, unknown> = {}) {
     safety_margin_tokens: 10240,
     current_input_tokens: 0,
     fixed_context_tokens: 1000,
-    history_budget_tokens: 64000,
+    history_budget_tokens: 0,
     compression_target_tokens: 12800,
     estimated_history_tokens: 0,
     retained_recent_history_tokens: 0,
     retained_recent_message_count: 0,
+    context_input_budget_tokens: 85760,
+    context_used_tokens: 0,
+    context_remaining_tokens: 85760,
+    last_input_tokens: 0,
+    last_output_tokens: 0,
+    last_total_tokens: 0,
+    last_reasoning_tokens: 0,
     ...overrides,
   }
 }
@@ -373,11 +380,18 @@ describe('AgentConversationPanel', () => {
       safety_margin_tokens: 10240,
       current_input_tokens: 0,
       fixed_context_tokens: 1000,
-      history_budget_tokens: 64000,
+      history_budget_tokens: 0,
       compression_target_tokens: 12800,
       estimated_history_tokens: 0,
       retained_recent_history_tokens: 0,
       retained_recent_message_count: 0,
+      context_input_budget_tokens: 85760,
+      context_used_tokens: 0,
+      context_remaining_tokens: 85760,
+      last_input_tokens: 0,
+      last_output_tokens: 0,
+      last_total_tokens: 0,
+      last_reasoning_tokens: 0,
     })
     getAgentSessionRuntimeMock.mockResolvedValue({
       session: {
@@ -411,11 +425,18 @@ describe('AgentConversationPanel', () => {
         safety_margin_tokens: 10240,
         current_input_tokens: 0,
         fixed_context_tokens: 1000,
-        history_budget_tokens: 64000,
+        history_budget_tokens: 0,
         compression_target_tokens: 12800,
         estimated_history_tokens: 0,
         retained_recent_history_tokens: 0,
         retained_recent_message_count: 0,
+        context_input_budget_tokens: 85760,
+        context_used_tokens: 0,
+        context_remaining_tokens: 85760,
+        last_input_tokens: 0,
+        last_output_tokens: 0,
+        last_total_tokens: 0,
+        last_reasoning_tokens: 0,
       },
       active_run: null,
       last_run: null,
@@ -1090,11 +1111,18 @@ describe('AgentConversationPanel', () => {
       safety_margin_tokens: 10240,
       current_input_tokens: 0,
       fixed_context_tokens: 1000,
-      history_budget_tokens: 64000,
+      history_budget_tokens: 0,
       compression_target_tokens: 12800,
-      estimated_history_tokens: 66000,
+      estimated_history_tokens: 0,
       retained_recent_history_tokens: 10000,
       retained_recent_message_count: 18,
+      context_input_budget_tokens: 85760,
+      context_used_tokens: 92000,
+      context_remaining_tokens: 0,
+      last_input_tokens: 82000,
+      last_output_tokens: 10000,
+      last_total_tokens: 92000,
+      last_reasoning_tokens: 0,
     }
     getAgentSessionContextStatusMock.mockResolvedValueOnce(summarizedContextStatus)
     getAgentSessionRuntimeMock.mockResolvedValueOnce(createRuntimeSnapshot({
@@ -1131,8 +1159,8 @@ describe('AgentConversationPanel', () => {
     expect(screen.getByRole('dialog', { name: '上下文用量详情' })).toBeTruthy()
     expect(screen.getByText('已用上下文')).toBeTruthy()
     expect(screen.getByText('可用上下文')).toBeTruthy()
-    expect(screen.getByText('66 K')).toBeTruthy()
-    expect(screen.getByText('64 K')).toBeTruthy()
+    expect(screen.getByText('92 K')).toBeTruthy()
+    expect(screen.getByText('85 K')).toBeTruthy()
     expect(screen.queryByText('压缩目标')).toBeNull()
     expect(screen.queryByText('最近原文')).toBeNull()
   })

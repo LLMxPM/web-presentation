@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterator
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -25,6 +26,7 @@ from pydantic_ai.usage import RequestUsage
 from sqlalchemy import select
 
 from app.ai.agent.runtime_context import AgentRuntimeContext
+from app.ai.message_history import build_history_budget
 from app.ai.platform_tools import AgentToolContext, agent_tool
 from app.ai.platform_runtime import PlatformAgentRuntimeStore
 from app.ai.pydantic_event_projection import PydanticEventProjector
@@ -84,6 +86,7 @@ async def test_pydantic_runner_should_pause_continue_and_replay_ask_user(
             "reasoning.delta",
             "message.delta",
             "tool.started",
+            "model.request.completed",
             "tool.started",
             "run.paused",
         ]
@@ -190,9 +193,9 @@ async def test_pydantic_runner_should_pause_continue_and_replay_ask_user(
         ).scalars().all()
 
     assert [event.event for event in second_events] == [
-        "model.request.started",
         "tool.started",
         "tool.completed",
+        "model.request.started",
         "reasoning.delta",
         "message.delta",
         "model.request.completed",
@@ -211,12 +214,13 @@ async def test_pydantic_runner_should_pause_continue_and_replay_ask_user(
         "reasoning.delta",
         "message.delta",
         "tool.started",
+        "model.request.completed",
         "tool.started",
         "run.paused",
         "run.continued",
-        "model.request.started",
         "tool.started",
         "tool.completed",
+        "model.request.started",
         "reasoning.delta",
         "message.delta",
         "model.request.completed",
@@ -333,8 +337,8 @@ async def test_pydantic_runner_should_mark_rejected_approval_tool_error(
         tool_call = result.scalar_one()
 
     assert [event.event for event in second_events] == [
-        "model.request.started",
         "tool.error",
+        "model.request.started",
         "message.delta",
         "model.request.completed",
         "run.completed",
@@ -713,6 +717,81 @@ async def test_pydantic_runner_should_flush_buffer_before_requested_cancel(
         "run.cancelled",
     ]
     assert event_rows[3][1]["content"] == "已流出的局部内容。"
+
+
+async def test_pydantic_runner_should_emit_context_status_after_each_model_response(
+    authenticated_client: AsyncClient,
+) -> None:
+    """同一 run 内多次 LLM 调用后，应逐次保存真实 usage 并推送 context.status。"""
+
+    async def stream_function(messages: list[Any], info: AgentInfo) -> AsyncIterator[str | dict[int, DeltaToolCall]]:
+        """首次调用请求工具，收到工具结果后输出最终答案。"""
+
+        _ = info
+        if _latest_tool_return(messages) is not None:
+            yield "已完成整理。"
+            return
+        yield {
+            0: DeltaToolCall(
+                name="context_probe",
+                json_args='{"value":"alpha"}',
+                tool_call_id="tool-context-probe",
+            )
+        }
+
+    async def context_probe(value: str) -> str:
+        """测试用普通工具，用于触发同一 run 内第二次模型调用。"""
+
+        return f"工具结果：{value}"
+
+    _, session_id, scope = await _create_workspace_session(
+        authenticated_client,
+        workspace_name="Pydantic Runner context usage 工作空间",
+        session_name="Pydantic Runner context usage 会话",
+    )
+    model = FunctionModel(stream_function=stream_function)
+    budget = build_history_budget(
+        SimpleNamespace(context_window_tokens=1200, max_output_tokens=100, compression_target_ratio=0.1),
+        runtime_context=_runtime_context(scope),
+    )
+
+    async with get_session_factory()() as db_session:
+        store = PlatformAgentRuntimeStore(db_session, user_id=1)
+        run_start = await store.start_run(
+            session_id=session_id,
+            agent_id="component-manager",
+            scope=scope,
+            run_id="pydantic-runner-context-usage",
+            message="调用工具后继续。",
+            image_attachment_ids=[],
+        )
+        events = await _collect_runner_events(
+            PydanticAgentRunner(store).stream_run(
+                run_model=run_start.run_model,
+                agent_id="component-manager",
+                model=model,
+                model_settings={},
+                runtime_context=_runtime_context(scope),
+                message="调用工具后继续。",
+                tools=[Tool(context_probe, name="context_probe")],
+                context_budget=budget,
+            )
+        )
+        completed_run = await store.get_latest_run_model(session_id=session_id, agent_id="component-manager")
+        assert completed_run is not None
+
+    context_events = [event for event in events if event.event == "context.status"]
+    response_messages = [
+        item for item in completed_run.message_history_json
+        if isinstance(item, dict) and item.get("kind") == "response"
+    ]
+
+    assert len(context_events) == 2
+    assert all(event.data["context_used_tokens"] > 0 for event in context_events)
+    assert context_events[-1].data["last_input_tokens"] > 0
+    assert context_events[-1].data["last_output_tokens"] > 0
+    assert len(response_messages) == 2
+    assert completed_run.status == "completed"
 
 
 def test_deferred_ask_user_should_accept_dict_and_json_args() -> None:

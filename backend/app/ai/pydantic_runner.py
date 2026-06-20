@@ -15,9 +15,10 @@ from pydantic_ai.messages import UserContent
 from app.ai.agent.runtime_context import AgentRuntimeContext, build_scope_context_text
 from app.ai.agent_catalog import get_agent_catalog_entry
 from app.ai.agent_runtime_config import EffectiveAgentRuntimeConfig, build_effective_description, build_effective_instructions
+from app.ai.message_history import AgentContextLimitProcessor, AgentHistoryBudget, build_context_status_item
 from app.ai.member_delegation import MemberDelegationPaused
 from app.ai.platform_runtime import PlatformAgentRuntimeStore, encode_sse_event, stream_live_subscribe, subscribe_live_run_events
-from app.ai.pydantic_event_projection import PydanticEventProjector, safe_messages
+from app.ai.pydantic_event_projection import PydanticEventProjector, safe_messages, safe_new_messages
 from app.ai.pydantic_tools import AgentToolDeps
 from app.ai.run_errors import normalize_agent_run_exception
 from app.core.exceptions import AppException
@@ -50,6 +51,8 @@ class PydanticAgentRunner:
         message_history: list[Any] | None = None,
         deferred_tool_results: DeferredToolResults | None = None,
         history_processors: Sequence[Any] | None = None,
+        context_budget: AgentHistoryBudget | None = None,
+        context_processor: AgentContextLimitProcessor | None = None,
         message_image_refs: list[dict[str, Any]] | None = None,
     ) -> AsyncGenerator[bytes, None]:
         """执行一次 Pydantic AI run 并输出平台 SSE。"""
@@ -69,6 +72,8 @@ class PydanticAgentRunner:
                 message_history=message_history,
                 deferred_tool_results=deferred_tool_results,
                 history_processors=history_processors,
+                context_budget=context_budget,
+                context_processor=context_processor,
                 message_image_refs=message_image_refs,
             )
         )
@@ -116,6 +121,8 @@ class PydanticAgentRunner:
         message_history: list[Any] | None = None,
         deferred_tool_results: DeferredToolResults | None = None,
         history_processors: Sequence[Any] | None = None,
+        context_budget: AgentHistoryBudget | None = None,
+        context_processor: AgentContextLimitProcessor | None = None,
         message_image_refs: list[dict[str, Any]] | None = None,
     ) -> AsyncGenerator[bytes, None]:
         """执行 Pydantic AI run 并写入平台事件；直接产物仅供内部消费。"""
@@ -132,6 +139,9 @@ class PydanticAgentRunner:
                 *build_effective_instructions(catalog, agent_config),
                 build_scope_context_text(runtime_context),
             ]
+            resolved_history_processors = list(history_processors or ())
+            if context_processor is not None and context_processor.process not in resolved_history_processors:
+                resolved_history_processors.append(context_processor.process)
             agent = Agent(
                 model,
                 name=agent_id,
@@ -140,7 +150,7 @@ class PydanticAgentRunner:
                 system_prompt=build_effective_description(catalog, agent_config),
                 deps_type=AgentToolDeps if deps is not None else type(None),
                 tools=tools or (),
-                history_processors=history_processors,
+                history_processors=resolved_history_processors,
             )
             projector = PydanticEventProjector(
                 run_id=run_model.run_id,
@@ -153,34 +163,98 @@ class PydanticAgentRunner:
                 on_reasoning_delta=reasoning_parts.append,
                 on_deferred=lambda requests, _messages: self._pause_for_deferred_tools(run_model, requests),
             )
-            yield await self._yield_and_store(
-                run_model,
-                AgentRunEvent(event="model.request.started", run_id=run_model.run_id, session_id=run_model.session_id),
-            )
-            async for raw_event in agent.run_stream_events(
+            async with agent.iter(
                 message if message else None,
                 model_settings=model_settings or None,
                 deps=deps,
                 message_history=message_history,
                 deferred_tool_results=deferred_tool_results,
                 infer_name=False,
-            ):
-                should_stop, should_cancel = await self._cancel_event_if_requested(run_model)
-                if should_stop:
-                    async for sse in self._flush_projector_buffer(projector, best_effort=True):
-                        yield sse
-                    if not should_cancel:
+            ) as agent_run:
+                async for node in agent_run:
+                    should_stop, should_cancel = await self._cancel_event_if_requested(run_model)
+                    if should_stop:
+                        async for sse in self._flush_projector_buffer(projector, best_effort=True):
+                            yield sse
+                        if not should_cancel:
+                            return
+                        event = await self._store.mark_terminal(run_model, status="cancelled", content="用户停止了当前运行。")
+                        yield encode_sse_event(event)
                         return
-                    event = await self._store.mark_terminal(run_model, status="cancelled", content="用户停止了当前运行。")
+                    if agent.is_model_request_node(node):
+                        yield await self._yield_and_store(
+                            run_model,
+                            AgentRunEvent(event="model.request.started", run_id=run_model.run_id, session_id=run_model.session_id),
+                        )
+                        async with node.stream(agent_run.ctx) as stream:
+                            async for raw_event in stream:
+                                should_stop, should_cancel = await self._cancel_event_if_requested(run_model)
+                                if should_stop:
+                                    async for sse in self._flush_projector_buffer(projector, best_effort=True):
+                                        yield sse
+                                    if not should_cancel:
+                                        return
+                                    event = await self._store.mark_terminal(
+                                        run_model,
+                                        status="cancelled",
+                                        content="用户停止了当前运行。",
+                                    )
+                                    yield encode_sse_event(event)
+                                    return
+                                for event in await projector.handle_raw_event(raw_event):
+                                    yield encode_sse_event(event)
+                        async for sse in self._flush_projector_buffer(projector):
+                            yield sse
+                        await self._sync_run_message_history(
+                            run_model=run_model,
+                            agent_id=agent_id,
+                            final_messages=final_messages,
+                            agent_run=agent_run,
+                            context_budget=context_budget,
+                            context_processor=context_processor,
+                            message_image_refs=message_image_refs,
+                        )
+                        yield await self._yield_and_store(
+                            run_model,
+                            AgentRunEvent(event="model.request.completed", run_id=run_model.run_id, session_id=run_model.session_id),
+                        )
+                        async for sse in self._emit_context_status(
+                            run_model=run_model,
+                            agent_id=agent_id,
+                            context_budget=context_budget,
+                            context_processor=context_processor,
+                            final_messages=final_messages,
+                        ):
+                            yield sse
+                        continue
+                    if agent.is_call_tools_node(node):
+                        async with node.stream(agent_run.ctx) as stream:
+                            async for raw_event in stream:
+                                should_stop, should_cancel = await self._cancel_event_if_requested(run_model)
+                                if should_stop:
+                                    async for sse in self._flush_projector_buffer(projector, best_effort=True):
+                                        yield sse
+                                    if not should_cancel:
+                                        return
+                                    event = await self._store.mark_terminal(
+                                        run_model,
+                                        status="cancelled",
+                                        content="用户停止了当前运行。",
+                                    )
+                                    yield encode_sse_event(event)
+                                    return
+                                for event in await projector.handle_raw_event(raw_event):
+                                    yield encode_sse_event(event)
+                if agent_run.result is None:
+                    raise RuntimeError("Pydantic AI run finished without result")
+                final_messages[:] = self._safe_new_messages_with_image_refs(agent_run.result, message_image_refs)
+                output = getattr(agent_run.result, "output", None)
+                if isinstance(output, DeferredToolRequests):
+                    async for sse in self._flush_projector_buffer(projector):
+                        yield sse
+                    event = await self._pause_for_deferred_tools(run_model, output)
                     yield encode_sse_event(event)
                     return
-                for event in await projector.handle_raw_event(raw_event):
-                    yield encode_sse_event(event)
-            if _has_paused(run_model):
-                async for sse in self._flush_projector_buffer(projector):
-                    yield sse
-                await self._store.save_run_message_history(run_model, final_messages)
-                return
             should_stop, should_cancel = await self._cancel_event_if_requested(run_model)
             if should_stop:
                 async for sse in self._flush_projector_buffer(projector, best_effort=True):
@@ -192,10 +266,6 @@ class PydanticAgentRunner:
                 return
             async for sse in self._flush_projector_buffer(projector):
                 yield sse
-            yield await self._yield_and_store(
-                run_model,
-                AgentRunEvent(event="model.request.completed", run_id=run_model.run_id, session_id=run_model.session_id),
-            )
             await self._store.append_assistant_message(
                 run_model,
                 content="".join(content_parts),
@@ -263,6 +333,71 @@ class PydanticAgentRunner:
                 run_id=run_model.run_id,
                 session_id=run_model.session_id,
             ),
+        )
+
+    async def _sync_run_message_history(
+        self,
+        *,
+        run_model: AiAgentRun,
+        agent_id: str,
+        final_messages: list[dict[str, Any]],
+        agent_run: Any,
+        context_budget: AgentHistoryBudget | None,
+        context_processor: AgentContextLimitProcessor | None,
+        message_image_refs: list[dict[str, Any]] | None,
+    ) -> None:
+        """每次模型响应后替换 run 消息快照，并刷新真实 usage 高水位。"""
+
+        _ = agent_id, context_budget
+        if agent_run.result is not None:
+            messages = self._safe_new_messages_with_image_refs(agent_run.result, message_image_refs)
+        else:
+            messages = self._safe_new_messages_with_image_refs(agent_run, message_image_refs)
+        final_messages[:] = messages
+        if context_processor is not None:
+            context_processor.record_message_history(final_messages)
+        await self._store.save_run_message_history(run_model, final_messages, commit=False)
+
+    async def _emit_context_status(
+        self,
+        *,
+        run_model: AiAgentRun,
+        agent_id: str,
+        context_budget: AgentHistoryBudget | None,
+        context_processor: AgentContextLimitProcessor | None,
+        final_messages: list[dict[str, Any]],
+    ) -> AsyncGenerator[bytes, None]:
+        """写入每次模型响应后的上下文状态事件。"""
+
+        if context_budget is None:
+            return
+        status = build_context_status_item(
+            session_id=run_model.session_id,
+            agent_id=agent_id,
+            budget=context_budget,
+            message_json=final_messages,
+            summary_json=context_processor.summary_json if context_processor is not None else None,
+        )
+        event = await self._store.append_event(
+            run_model,
+            AgentRunEvent(
+                event="context.status",
+                run_id=run_model.run_id,
+                session_id=run_model.session_id,
+                data=status.model_dump(mode="json"),
+            ),
+        )
+        yield encode_sse_event(event)
+
+    @staticmethod
+    def _safe_new_messages_with_image_refs(result: Any, image_refs: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
+        """安全读取当前 run 新消息，并统一脱敏图片引用。"""
+
+        from app.ai.image_refs import sanitize_message_history_image_refs
+
+        return sanitize_message_history_image_refs(
+            safe_new_messages(result),
+            image_refs=image_refs,
         )
 
     async def _flush_projector_buffer(

@@ -1,4 +1,4 @@
-"""文件功能：重建 Agent 多轮消息历史，维护压缩检查点并提供请求前上下文预算守卫。"""
+"""文件功能：重建 Agent 多轮消息历史，并基于真实 usage 高水位维护请求前压缩。"""
 
 from __future__ import annotations
 
@@ -8,25 +8,33 @@ from datetime import datetime, timezone
 from math import ceil
 from typing import Any
 
-from pydantic_ai.messages import ModelMessage, ModelMessagesTypeAdapter, ModelRequest, SystemPromptPart
+from pydantic_ai.messages import (
+    ModelMessage,
+    ModelMessagesTypeAdapter,
+    ModelRequest,
+    ModelResponse,
+    RetryPromptPart,
+    SystemPromptPart,
+    ToolCallPart,
+    ToolReturnPart,
+)
 from pydantic_ai.tools import RunContext
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.agent.runtime_context import AgentRuntimeContext
-from app.ai.history_policy import (
-    DEFAULT_COMPRESSION_TARGET_RATIO,
-    DEFAULT_CONTEXT_WINDOW_TOKENS,
-    DEFAULT_MAX_OUTPUT_TOKENS,
-    MIN_SAFETY_MARGIN_TOKENS,
-    SAFETY_MARGIN_RATIO,
-    estimate_text_tokens,
-)
+from app.ai.context_usage import AgentContextUsageSnapshot, usage_snapshot_from_messages
 from app.ai.image_history_hydration import hydrate_agent_image_refs
 from app.ai.image_refs import normalize_agent_image_ref, sanitize_message_history_image_refs
 from app.core.exceptions import AppException
 from app.models.ai_agent_runtime import AiAgentRun, AiAgentSession
 from app.schemas.agent import AgentContextStatusItem
+
+DEFAULT_CONTEXT_WINDOW_TOKENS = 128_000
+DEFAULT_MAX_OUTPUT_TOKENS = 32_000
+DEFAULT_COMPRESSION_TARGET_RATIO = 0.25
+SAFETY_MARGIN_RATIO = 0.08
+MIN_SAFETY_MARGIN_TOKENS = 512
 
 _SUMMARY_KIND = "agent-message-history-summary.v1"
 _SUMMARY_PROMPT_PREFIX = "以下为较早智能体会话历史摘要，已替代压缩边界之前的原始消息："
@@ -34,14 +42,13 @@ _SUMMARY_PROMPT_PREFIX = "以下为较早智能体会话历史摘要，已替代
 
 @dataclass(slots=True)
 class AgentHistoryBudget:
-    """描述一次模型请求可用于历史消息的粗略预算。"""
+    """描述模型上下文窗口、输出预留和压缩触发线。"""
 
     context_window_tokens: int
     max_output_tokens: int
     compression_target_ratio: float
     safety_margin_tokens: int
-    fixed_context_tokens: int
-    history_budget_tokens: int
+    context_input_budget_tokens: int
     compression_target_tokens: int
 
 
@@ -55,11 +62,11 @@ class RebuiltAgentMessageHistory:
     covered_until_run_id: str | None
     covered_until_created_at: str | None
     summary_json: dict[str, Any] | None
-    estimated_tokens: int
+    latest_usage: AgentContextUsageSnapshot
 
 
 class AgentContextLimitProcessor:
-    """Pydantic AI history processor：每次模型请求前按预算压缩旧历史。"""
+    """Pydantic AI history processor：每次模型请求前按真实 usage 高水位压缩旧历史。"""
 
     def __init__(
         self,
@@ -72,8 +79,9 @@ class AgentContextLimitProcessor:
         history_prefix_message_count: int,
         history_prefix_run_ids: list[str],
         existing_summary: dict[str, Any] | None,
+        latest_usage: AgentContextUsageSnapshot,
     ) -> None:
-        """保存本次 run 启动前的历史边界；运行中只压缩该边界内的旧历史。"""
+        """保存压缩边界和最近一次真实 usage；运行中按高水位触发压缩。"""
 
         self._session = session
         self._user_id = user_id
@@ -83,30 +91,61 @@ class AgentContextLimitProcessor:
         self._history_prefix_message_count = history_prefix_message_count
         self._history_prefix_run_ids = list(history_prefix_run_ids)
         self._existing_summary = existing_summary
+        self._latest_usage = latest_usage
+
+    @property
+    def summary_json(self) -> dict[str, Any] | None:
+        """返回当前已写入或继承的摘要检查点。"""
+
+        return self._existing_summary
+
+    @property
+    def latest_usage(self) -> AgentContextUsageSnapshot:
+        """返回最近一次模型响应的真实 usage。"""
+
+        return self._latest_usage
+
+    def record_message_history(self, message_history: list[dict[str, Any]]) -> AgentContextUsageSnapshot:
+        """从最新 run 消息快照中刷新真实 usage 高水位。"""
+
+        self._latest_usage = usage_snapshot_from_messages(message_history)
+        return self._latest_usage
+
+    async def __call__(self, run_context: RunContext[Any], messages: list[ModelMessage]) -> list[ModelMessage]:
+        """让处理器对象可直接作为 Pydantic AI history processor 使用。"""
+
+        return await self.process(run_context, messages)
 
     async def process(self, _run_context: RunContext[Any], messages: list[ModelMessage]) -> list[ModelMessage]:
-        """检查请求消息体大小；超预算时只压缩 run 启动前的历史前缀。"""
+        """按上一轮 input + output 高水位判断是否压缩；不做本地 token 估算。"""
 
-        if self._estimate_request_tokens(messages) <= self._budget.history_budget_tokens:
+        if self._latest_usage.context_used_tokens <= 0:
             return messages
-        if self._history_prefix_message_count <= 0 or not self._history_prefix_run_ids:
+        if self._latest_usage.context_used_tokens < self._budget.context_input_budget_tokens:
+            return messages
+
+        suffix_start = _preserved_suffix_start(messages)
+        if suffix_start <= 0:
             raise _context_limit_error()
 
-        prefix = messages[: self._history_prefix_message_count]
-        suffix = messages[self._history_prefix_message_count :]
+        prefix = messages[:suffix_start]
+        suffix = messages[suffix_start:]
         summary = _summarize_messages(
             prefix,
             existing_summary=self._existing_summary,
             target_tokens=self._budget.compression_target_tokens,
         )
-        checkpoint = await self._write_summary_checkpoint(summary)
+        checkpoint = (
+            await self._write_summary_checkpoint(summary)
+            if self._history_prefix_run_ids and suffix_start >= self._history_prefix_message_count
+            else _build_in_memory_summary_checkpoint(summary, self._existing_summary)
+        )
         summary_messages = _summary_messages_from_checkpoint(checkpoint)
         compressed = [*summary_messages, *suffix]
         self._history_prefix_message_count = len(summary_messages)
+        self._history_prefix_run_ids = []
         self._existing_summary = checkpoint
-
-        if self._estimate_request_tokens(compressed) > self._budget.history_budget_tokens:
-            raise _context_limit_error()
+        self._latest_usage = AgentContextUsageSnapshot()
         return compressed
 
     async def _write_summary_checkpoint(self, summary: str) -> dict[str, Any]:
@@ -133,11 +172,6 @@ class AgentContextLimitProcessor:
         session_model.summary_json = checkpoint
         await self._session.commit()
         return checkpoint
-
-    def _estimate_request_tokens(self, messages: list[ModelMessage]) -> int:
-        """估算完整请求 token，包含固定运行时上下文预留。"""
-
-        return estimate_message_tokens(messages) + self._budget.fixed_context_tokens
 
 
 async def rebuild_agent_message_history(
@@ -198,13 +232,14 @@ async def rebuild_agent_message_history(
         covered_until_run_id=covered_until_run_id or None,
         covered_until_created_at=covered_until_created_at or None,
         summary_json=checkpoint,
-        estimated_tokens=estimate_message_json_tokens(message_json),
+        latest_usage=usage_snapshot_from_messages(message_json),
     )
 
 
 def build_history_budget(model_config: Any, *, runtime_context: AgentRuntimeContext) -> AgentHistoryBudget:
-    """根据模型配置和固定运行时上下文估算历史可用预算。"""
+    """根据模型配置计算真实 usage 高水位压缩触发线。"""
 
+    _ = runtime_context
     context_window_tokens = _positive_int(getattr(model_config, "context_window_tokens", None), DEFAULT_CONTEXT_WINDOW_TOKENS)
     max_output_tokens = _positive_int(getattr(model_config, "max_output_tokens", None), DEFAULT_MAX_OUTPUT_TOKENS)
     compression_target_ratio = _bounded_float(
@@ -214,30 +249,18 @@ def build_history_budget(model_config: Any, *, runtime_context: AgentRuntimeCont
         upper=0.5,
     )
     safety_margin_tokens = max(MIN_SAFETY_MARGIN_TOKENS, ceil(context_window_tokens * SAFETY_MARGIN_RATIO))
-    fixed_context_tokens = estimate_text_tokens(
-        "\n".join(
-            str(item or "")
-            for item in (
-                runtime_context.page_content,
-                runtime_context.component_code,
-                runtime_context.page_title,
-                runtime_context.component_name,
-            )
-        )
-    )
-    history_budget_tokens = max(0, context_window_tokens - max_output_tokens - safety_margin_tokens - fixed_context_tokens)
+    context_input_budget_tokens = max(0, context_window_tokens - max_output_tokens - safety_margin_tokens)
     compression_target_tokens = (
         0
-        if history_budget_tokens <= 0
-        else max(1, min(ceil(context_window_tokens * compression_target_ratio), history_budget_tokens))
+        if context_input_budget_tokens <= 0
+        else max(1, min(ceil(context_window_tokens * compression_target_ratio), context_input_budget_tokens))
     )
     return AgentHistoryBudget(
         context_window_tokens=context_window_tokens,
         max_output_tokens=max_output_tokens,
         compression_target_ratio=compression_target_ratio,
         safety_margin_tokens=safety_margin_tokens,
-        fixed_context_tokens=fixed_context_tokens,
-        history_budget_tokens=history_budget_tokens,
+        context_input_budget_tokens=context_input_budget_tokens,
         compression_target_tokens=compression_target_tokens,
     )
 
@@ -250,12 +273,10 @@ def build_context_limit_processor(
     agent_id: str,
     budget: AgentHistoryBudget,
     rebuilt_history: RebuiltAgentMessageHistory,
-) -> Any | None:
-    """创建请求前压缩处理器；没有旧历史时不需要处理器。"""
+) -> AgentContextLimitProcessor:
+    """创建请求前压缩处理器；无 usage 时处理器会保持 no-op。"""
 
-    if not rebuilt_history.messages:
-        return None
-    processor = AgentContextLimitProcessor(
+    return AgentContextLimitProcessor(
         session=session,
         user_id=user_id,
         session_id=session_id,
@@ -264,14 +285,8 @@ def build_context_limit_processor(
         history_prefix_message_count=len(rebuilt_history.messages),
         history_prefix_run_ids=rebuilt_history.included_run_ids,
         existing_summary=rebuilt_history.summary_json,
+        latest_usage=rebuilt_history.latest_usage,
     )
-
-    async def process(run_context: RunContext[Any], messages: list[ModelMessage]) -> list[ModelMessage]:
-        """Pydantic AI history processor 包装函数，显式声明 RunContext 参数。"""
-
-        return await processor.process(run_context, messages)
-
-    return process
 
 
 def build_context_status_item(
@@ -279,17 +294,26 @@ def build_context_status_item(
     session_id: str,
     agent_id: str,
     budget: AgentHistoryBudget,
-    rebuilt_history: RebuiltAgentMessageHistory,
+    rebuilt_history: RebuiltAgentMessageHistory | None = None,
+    message_json: list[dict[str, Any]] | None = None,
+    summary_json: dict[str, Any] | None = None,
 ) -> AgentContextStatusItem:
-    """把重建历史和预算转换为前端上下文状态。"""
+    """把真实 usage 和模型配置转换为前端上下文状态。"""
 
-    estimated = rebuilt_history.estimated_tokens + budget.fixed_context_tokens
-    summary = rebuilt_history.summary_json or {}
+    if rebuilt_history is not None:
+        usage = rebuilt_history.latest_usage
+        summary = rebuilt_history.summary_json or {}
+        retained_message_count = len(rebuilt_history.messages)
+    else:
+        usage = usage_snapshot_from_messages(message_json)
+        summary = summary_json or {}
+        retained_message_count = len(message_json or [])
+    context_used_tokens = usage.context_used_tokens
     return AgentContextStatusItem(
         session_id=session_id,
         agent_id=agent_id,
         compression_enabled=True,
-        compression_required=estimated > budget.history_budget_tokens,
+        compression_required=context_used_tokens >= budget.context_input_budget_tokens if context_used_tokens > 0 else False,
         summary_available=bool(summary.get("summary")),
         summary=str(summary.get("summary") or "") or None,
         topics=[str(item) for item in summary.get("topics", [])] if isinstance(summary.get("topics"), list) else [],
@@ -299,30 +323,21 @@ def build_context_status_item(
         history_token_ratio=1.0,
         compression_target_ratio=budget.compression_target_ratio,
         safety_margin_tokens=budget.safety_margin_tokens,
-        current_input_tokens=0,
-        fixed_context_tokens=budget.fixed_context_tokens,
-        history_budget_tokens=budget.history_budget_tokens,
+        current_input_tokens=usage.input_tokens,
+        fixed_context_tokens=0,
+        history_budget_tokens=0,
         compression_target_tokens=budget.compression_target_tokens,
-        estimated_history_tokens=estimated,
-        retained_recent_history_tokens=rebuilt_history.estimated_tokens,
-        retained_recent_message_count=len(rebuilt_history.messages),
+        estimated_history_tokens=0,
+        retained_recent_history_tokens=0,
+        retained_recent_message_count=retained_message_count,
+        context_input_budget_tokens=budget.context_input_budget_tokens,
+        context_used_tokens=context_used_tokens,
+        context_remaining_tokens=max(0, budget.context_input_budget_tokens - context_used_tokens),
+        last_input_tokens=usage.input_tokens,
+        last_output_tokens=usage.output_tokens,
+        last_total_tokens=usage.total_tokens,
+        last_reasoning_tokens=usage.reasoning_tokens,
     )
-
-
-def estimate_message_tokens(messages: list[ModelMessage]) -> int:
-    """估算 Pydantic AI 消息 token 数，用于预算守卫。"""
-
-    dumped = ModelMessagesTypeAdapter.dump_python(messages, mode="json")
-    sanitized = sanitize_message_history_image_refs(dumped if isinstance(dumped, list) else [])
-    return estimate_message_json_tokens(sanitized if isinstance(sanitized, list) else [])
-
-
-def estimate_message_json_tokens(messages: list[dict[str, Any]]) -> int:
-    """估算 JSON 消息 token 数；保留图片和工具结果对预算的影响。"""
-
-    if not messages:
-        return 0
-    return estimate_text_tokens(json.dumps(messages, ensure_ascii=False, default=str))
 
 
 def _summarize_messages(messages: list[ModelMessage], *, existing_summary: dict[str, Any] | None, target_tokens: int) -> str:
@@ -341,6 +356,40 @@ def _summary_messages_from_checkpoint(checkpoint: dict[str, Any]) -> list[ModelM
     """把检查点转换为模型可接收的 system summary 消息。"""
 
     return _validate_message_json(_summary_message_json_from_checkpoint(checkpoint))
+
+
+def _build_in_memory_summary_checkpoint(summary: str, existing_summary: dict[str, Any] | None) -> dict[str, Any]:
+    """构造仅用于当前 run 内压缩的摘要，避免误标记已覆盖的历史 run。"""
+
+    existing_topics = existing_summary.get("topics") if isinstance(existing_summary, dict) else []
+    return {
+        "kind": _SUMMARY_KIND,
+        "summary": summary,
+        "topics": existing_topics if isinstance(existing_topics, list) else [],
+        "covered_until_run_id": None,
+        "covered_until_created_at": None,
+        "source_run_ids": [],
+        "updated_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+    }
+
+
+def _preserved_suffix_start(messages: list[ModelMessage]) -> int:
+    """定位压缩时必须保留的后缀，确保当前请求和工具调用配对不被破坏。"""
+
+    if not messages:
+        return 0
+    last_index = len(messages) - 1
+    last_message = messages[last_index]
+    if not isinstance(last_message, ModelRequest):
+        return last_index
+    suffix_start = last_index
+    if any(isinstance(part, ToolReturnPart | RetryPromptPart) for part in last_message.parts):
+        for index in range(last_index - 1, -1, -1):
+            message = messages[index]
+            if isinstance(message, ModelResponse) and any(isinstance(part, ToolCallPart) for part in message.parts):
+                suffix_start = index
+                break
+    return suffix_start
 
 
 def _summary_message_json_from_checkpoint(checkpoint: dict[str, Any]) -> list[dict[str, Any]]:
@@ -421,7 +470,7 @@ def _message_dicts(value: list[Any]) -> list[dict[str, Any]]:
 
 
 def _replace_agent_image_refs_with_placeholders(value: Any) -> Any:
-    """把图片引用替换为文本占位，供非入模的历史估算路径使用。"""
+    """把图片引用替换为文本占位，供状态读取等非入模路径使用。"""
 
     if isinstance(value, dict):
         ref = normalize_agent_image_ref(value)

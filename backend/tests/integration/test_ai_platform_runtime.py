@@ -8,7 +8,7 @@ from types import SimpleNamespace
 
 import pytest
 from httpx import AsyncClient
-from pydantic_ai.messages import ModelMessagesTypeAdapter, ModelRequest, ModelResponse, TextPart, ToolReturnPart, UserPromptPart
+from pydantic_ai.messages import ModelMessagesTypeAdapter, ModelRequest, ModelResponse, TextPart, ToolCallPart, ToolReturnPart, UserPromptPart
 from sqlalchemy import select
 
 import app.ai.platform_runtime as platform_runtime
@@ -1065,6 +1065,7 @@ async def test_agent_message_history_checkpoint_should_skip_covered_deltas(
             rebuilt_history=rebuilt,
         )
         assert processor is not None
+        processor.record_message_history([{"kind": "response", "usage": {"input_tokens": 500, "output_tokens": 120}}])
         compressed_messages = await processor(
             SimpleNamespace(),
             [*rebuilt.messages, ModelRequest(parts=[UserPromptPart(content="当前问题")])],
@@ -1107,6 +1108,71 @@ async def test_agent_message_history_checkpoint_should_skip_covered_deltas(
     assert first_run is not None and len(first_run.message_history_json) == 2
     assert second_run is not None and len(second_run.message_history_json) == 2
     assert third_run is not None and len(third_run.message_history_json) == 2
+
+
+async def test_context_processor_should_compress_current_run_prefix_and_keep_tool_pair(
+    authenticated_client: AsyncClient,
+) -> None:
+    """首轮 run 内 usage 超线后，应压缩早期前缀但保留工具调用和工具返回配对。"""
+
+    _, session_id, scope = await _create_history_workspace_session(authenticated_client, "当前 run 工具配对")
+
+    async with get_session_factory()() as db_session:
+        rebuilt = await rebuild_agent_message_history(
+            session=db_session,
+            user_id=1,
+            session_id=session_id,
+            agent_id="component-manager",
+        )
+        budget = build_history_budget(
+            SimpleNamespace(context_window_tokens=1200, max_output_tokens=100, compression_target_ratio=0.05),
+            runtime_context=AgentRuntimeContext(scope_type=scope.scope_type, workspace_id=scope.workspace_id, source=scope.source),
+        )
+        processor = build_context_limit_processor(
+            session=db_session,
+            user_id=1,
+            session_id=session_id,
+            agent_id="component-manager",
+            budget=budget,
+            rebuilt_history=rebuilt,
+        )
+        processor.record_message_history([{"kind": "response", "usage": {"input_tokens": 500, "output_tokens": 120}}])
+        tool_response = ModelResponse(
+            parts=[
+                ToolCallPart(
+                    tool_name="read_context",
+                    args={"value": "alpha"},
+                    tool_call_id="tool-read-context",
+                )
+            ]
+        )
+        current_request = ModelRequest(
+            parts=[
+                ToolReturnPart(
+                    tool_name="read_context",
+                    content="工具结果",
+                    tool_call_id="tool-read-context",
+                )
+            ]
+        )
+        compressed_messages = await processor(
+            SimpleNamespace(),
+            [
+                ModelRequest(parts=[UserPromptPart(content="请先读取上下文")]),
+                tool_response,
+                current_request,
+            ],
+        )
+        session_model = await db_session.get(AiAgentSession, session_id)
+
+    assert session_model is not None
+    assert session_model.summary_json in ({}, None)
+    assert len(compressed_messages) == 3
+    assert isinstance(compressed_messages[0], ModelRequest)
+    assert isinstance(compressed_messages[1], ModelResponse)
+    assert compressed_messages[1].parts[0].part_kind == "tool-call"
+    assert isinstance(compressed_messages[2], ModelRequest)
+    assert compressed_messages[2].parts[0].part_kind == "tool-return"
 
 
 async def _read_next_sse_event(stream) -> AgentRunEvent:
