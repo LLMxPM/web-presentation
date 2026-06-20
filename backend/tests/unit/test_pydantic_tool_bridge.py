@@ -81,6 +81,45 @@ async def test_pydantic_tool_bridge_should_pass_platform_tool_context() -> None:
     assert result.output == "demo:run-1:session-1"
 
 
+@pytest.mark.asyncio
+async def test_pydantic_tool_bridge_should_return_recoverable_app_exception_to_model() -> None:
+    """可恢复业务异常应作为工具返回值交给模型，而不是中断整轮运行。"""
+
+    @agent_tool(show_result=False)
+    def read_unsupported_resource(run_context: AgentToolContext) -> dict[str, object]:
+        """模拟读取到不可按文本读取的资源。"""
+
+        _ = run_context
+        raise AppException(status_code=400, code="ASSET_CONTENT_READ_UNSUPPORTED", detail="该资源不支持内容读取。")
+
+    async def model_func(messages: object, info: AgentInfo) -> ModelResponse:
+        """首次请求工具，收到结构化错误后结束。"""
+
+        _ = info
+        for message in reversed(messages):
+            for part in getattr(message, "parts", []):
+                if getattr(part, "part_kind", None) == "tool-return":
+                    content = part.content
+                    return ModelResponse(
+                        parts=[TextPart(content=content["error"]["code"])],
+                        usage=RequestUsage(input_tokens=1, output_tokens=1),
+                    )
+        return ModelResponse(
+            parts=[ToolCallPart(tool_name="read_unsupported_resource", args={}, tool_call_id="tool-1")],
+            usage=RequestUsage(input_tokens=1, output_tokens=1),
+        )
+
+    agent = Agent(
+        FunctionModel(model_func),
+        tools=[_wrap_platform_tool(read_unsupported_resource)],
+        deps_type=AgentToolDeps,
+    )
+
+    result = await agent.run("读取资源", deps=AgentToolDeps(dependencies={"run_id": "run-1", "session_id": "session-1"}))
+
+    assert result.output == "ASSET_CONTENT_READ_UNSUPPORTED"
+
+
 def test_deferred_ask_user_should_build_feedback_requirement() -> None:
     """ask_user 的 deferred call 应转成前端可渲染的用户反馈 requirement。"""
 

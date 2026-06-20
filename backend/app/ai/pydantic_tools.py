@@ -16,10 +16,20 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.ai.agent_runtime_config import EffectiveAgentRuntimeConfig, apply_tool_runtime_config
 from app.ai.auth_tokens import build_agent_tool_token
-from app.ai.platform_tools import AgentToolContext
+from app.ai.platform_tools import AgentToolContext, recoverable_tool_error_result
 from app.ai.tool_specs import build_agent_tools_from_group_specs, list_agent_group_specs
+from app.core.exceptions import AppException
 from app.schemas.agent import AgentScopeContext
 from app.services.auth_service import AuthContext
+
+_NON_RECOVERABLE_TOOL_ERROR_CODES = {
+    "AI_RUN_CANCELLED",
+    "AI_TOOL_CONTEXT_REQUIRED",
+    "AI_TOOL_CONTEXT_MISMATCH",
+    "AI_TOOL_SCOPE_DENIED",
+    "AI_TOOL_SCOPE_REQUIRED",
+}
+_RECOVERABLE_TOOL_ERROR_HINT = "请根据错误信息修正工具参数、改用其他对象；如果缺少必要信息，请询问用户。"
 
 
 @dataclass(slots=True)
@@ -122,10 +132,20 @@ def _wrap_platform_tool(tool_item: Any) -> Tool[AgentToolDeps]:
                 "session_id": session_id,
             },
         )
-        result = entrypoint(shim_context, **kwargs)
-        if inspect.isawaitable(result):
-            result = await result
-        return _safe_tool_result(result)
+        try:
+            result = entrypoint(shim_context, **kwargs)
+            if inspect.isawaitable(result):
+                result = await result
+            return _safe_tool_result(result)
+        except AppException as exc:
+            if not _is_recoverable_tool_exception(exc):
+                raise
+            return recoverable_tool_error_result(
+                code=exc.code,
+                message=exc.detail,
+                status_code=exc.status_code,
+                hint=_RECOVERABLE_TOOL_ERROR_HINT,
+            )
 
     wrapper.__name__ = str(getattr(tool_item, "name", "") or entrypoint.__name__)
     wrapper.__doc__ = str(getattr(tool_item, "description", "") or entrypoint.__doc__ or "")
@@ -235,3 +255,13 @@ def _looks_like_platform_tool_result(value: Any) -> bool:
         and hasattr(value, "content")
         and all(hasattr(value, key) for key in ("images", "videos", "audios", "files"))
     )
+
+
+def _is_recoverable_tool_exception(exc: AppException) -> bool:
+    """区分可反馈给模型修正的业务错误和必须终止 run 的系统/权限错误。"""
+
+    if exc.code in _NON_RECOVERABLE_TOOL_ERROR_CODES:
+        return False
+    if exc.status_code in {401, 403}:
+        return False
+    return 400 <= exc.status_code < 500

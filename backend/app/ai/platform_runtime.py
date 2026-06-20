@@ -8,7 +8,7 @@ from collections.abc import AsyncGenerator
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from time import monotonic
-from typing import Any
+from typing import Any, Literal
 from uuid import uuid4
 
 from sqlalchemy import Select, func, select
@@ -66,11 +66,27 @@ class PlatformAgentRuntimeStore:
         self._session = session
         self._user_id = user_id
 
-    async def list_sessions(self, *, agent_id: str, scope: AgentScopeContext) -> list[AgentSessionItem]:
+    async def list_sessions(
+        self,
+        *,
+        agent_id: str,
+        scope: AgentScopeContext,
+        scope_mode: Literal["exact", "workspace"] = "exact",
+    ) -> list[AgentSessionItem]:
         """按当前用户、Agent 与 scope 返回未删除会话列表。"""
 
+        query = select(AiAgentSession)
+        if scope_mode == "workspace":
+            query = self._workspace_scope_query(
+                query,
+                agent_id=agent_id,
+                workspace_id=scope.workspace_id,
+            )
+        else:
+            query = self._scope_query(query, agent_id=agent_id, scope=scope)
+
         result = await self._session.execute(
-            self._scope_query(select(AiAgentSession), agent_id=agent_id, scope=scope)
+            query
             .where(AiAgentSession.deleted_at.is_(None))
             .order_by(AiAgentSession.updated_at.desc())
         )
@@ -1005,6 +1021,21 @@ class PlatformAgentRuntimeStore:
             AiAgentSession.page_id.is_(scope.page_id) if scope.page_id is None else AiAgentSession.page_id == scope.page_id,
             AiAgentSession.component_id.is_(scope.component_id) if scope.component_id is None else AiAgentSession.component_id == scope.component_id,
             AiAgentSession.source == scope.source,
+        )
+
+    def _workspace_scope_query(
+        self,
+        query: Select[tuple[AiAgentSession]],
+        *,
+        agent_id: str,
+        workspace_id: int,
+    ) -> Select[tuple[AiAgentSession]]:
+        """给会话查询追加当前用户、Agent 与工作空间过滤条件。"""
+
+        return query.where(
+            AiAgentSession.user_id == self._user_id,
+            AiAgentSession.agent_id == agent_id,
+            AiAgentSession.workspace_id == workspace_id,
         )
 
     async def _append_message(

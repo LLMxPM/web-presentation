@@ -16,8 +16,10 @@ from pydantic_ai.usage import RequestUsage
 from sqlalchemy import select
 
 from app.ai.agent.runtime_context import AgentRuntimeContext
+from app.ai.platform_tools import AgentToolContext, agent_tool
 from app.ai.platform_runtime import PlatformAgentRuntimeStore
 from app.ai.pydantic_runner import PydanticAgentRunner, _requirement_from_deferred
+from app.ai.pydantic_tools import AgentToolDeps, _wrap_platform_tool
 from app.ai.session_facade_pydantic import _build_continue_message_history, _build_deferred_results
 from app.core.exceptions import AppException
 from app.db.session import get_session_factory
@@ -330,6 +332,63 @@ async def test_pydantic_runner_should_mark_rejected_approval_tool_error(
     assert completed_run.content == "已跳过写入。"
     assert tool_call.status == "error"
     assert tool_call.message == "用户拒绝执行该工具。"
+
+
+async def test_pydantic_runner_should_continue_after_recoverable_tool_error(
+    authenticated_client: AsyncClient,
+) -> None:
+    """普通业务工具错误应写成 tool.error，并把错误返回模型继续完成 run。"""
+
+    _, session_id, scope = await _create_workspace_session(
+        authenticated_client,
+        workspace_name="Pydantic Runner 可恢复工具错误工作空间",
+        session_name="Pydantic Runner 可恢复工具错误会话",
+    )
+    run_id = "pydantic-runner-recoverable-tool-error"
+    model = FunctionModel(stream_function=_recoverable_tool_error_stream_function)
+    tools = [_wrap_platform_tool(recoverable_error_tool)]
+
+    async with get_session_factory()() as db_session:
+        store = PlatformAgentRuntimeStore(db_session, user_id=1)
+        run_start = await store.start_run(
+            session_id=session_id,
+            agent_id="component-manager",
+            scope=scope,
+            run_id=run_id,
+            message="读取资源并继续。",
+            image_attachment_ids=[],
+        )
+
+        events = await _collect_runner_events(
+            PydanticAgentRunner(store).stream_run(
+                run_model=run_start.run_model,
+                agent_id="component-manager",
+                model=model,
+                model_settings={},
+                runtime_context=_runtime_context(scope),
+                message="读取资源并继续。",
+                tools=tools,
+                deps=AgentToolDeps(dependencies={"run_id": run_id, "session_id": session_id}),
+            )
+        )
+        completed_run = await store.get_latest_run_model(session_id=session_id, agent_id="component-manager")
+        assert completed_run is not None
+        tool_call = await db_session.scalar(
+            select(AiAgentToolCall).where(
+                AiAgentToolCall.run_id == run_id,
+                AiAgentToolCall.tool_call_id == "tool-recoverable-read",
+            )
+        )
+
+    assert completed_run.status == "completed"
+    assert completed_run.content == "已换用其他资源继续。"
+    assert "tool.error" in [event.event for event in events]
+    assert "run.error" not in [event.event for event in events]
+    assert events[-1].event == "run.completed"
+    assert tool_call is not None
+    assert tool_call.status == "error"
+    assert tool_call.output_payload_json["kind"] == "recoverable_tool_error"
+    assert "ASSET_CONTENT_READ_UNSUPPORTED" in tool_call.message
 
 
 async def test_pydantic_runner_should_fail_fast_for_bad_ask_user_payload(
@@ -678,6 +737,14 @@ async def _approval_write_tool(value: str) -> str:
     return f"已写入：{value}"
 
 
+@agent_tool(show_result=False)
+async def recoverable_error_tool(run_context: AgentToolContext) -> dict[str, Any]:
+    """测试用业务错误工具，模拟模型选择了不可读取内容的资源。"""
+
+    _ = run_context
+    raise AppException(status_code=400, code="ASSET_CONTENT_READ_UNSUPPORTED", detail="该资源不支持内容读取。")
+
+
 async def _ask_user_stream_function(
     messages: list[Any],
     info: AgentInfo,
@@ -719,6 +786,25 @@ async def _approval_tool_stream_function(
             name="dangerous_write",
             json_args='{"value":"route-tree"}',
             tool_call_id="tool-write-route",
+        )
+    }
+
+
+async def _recoverable_tool_error_stream_function(
+    messages: list[Any],
+    info: AgentInfo,
+) -> AsyncIterator[str | dict[int, DeltaToolCall]]:
+    """模拟模型收到工具业务错误后改用其他方案继续完成。"""
+
+    _ = info
+    if _latest_tool_return(messages) is not None:
+        yield "已换用其他资源继续。"
+        return
+    yield {
+        0: DeltaToolCall(
+            name="recoverable_error_tool",
+            json_args="{}",
+            tool_call_id="tool-recoverable-read",
         )
     }
 

@@ -89,15 +89,15 @@
           class="flex items-center gap-2 border-t border-amber-100 bg-amber-50/90 px-4 py-3 text-xs leading-5 text-amber-700">
           <span class="min-w-0 flex-1">{{ composerContextIssue }}</span>
           <button
-            v-if="canOpenActiveSessionRoute"
+            v-if="composerContextRouteTarget"
             type="button"
             class="inline-flex h-7 shrink-0 items-center gap-1 rounded-md border border-amber-200 bg-white px-2 text-[11px] font-semibold text-amber-700 shadow-sm transition hover:border-amber-300 hover:bg-amber-100"
-            aria-label="打开此会话工作页面"
-            title="打开此会话工作页面"
-            @click="openActiveSessionRoute"
+            :aria-label="composerContextRouteTitle"
+            :title="composerContextRouteTitle"
+            @click="openComposerContextRoute"
           >
             <ExternalLink class="h-3 w-3" />
-            打开
+            {{ composerContextRouteLabel }}
           </button>
         </section>
 
@@ -182,12 +182,14 @@ import {
   findLatestSessionForScope,
   formatScopeTooltip,
   getSelectedSession,
+  getSelectedWorkspaceSession,
   isRouteScopeInsideSessionScope,
   isSessionTargetCurrentScope,
   resolveScopeSummary,
   resolveSessionDisplayName,
   resolveSessionScope,
   setSelectedSession,
+  setSelectedWorkspaceSession,
 } from '@/components/agent/agent-session-scope'
 import { normalizeAgentRunEvent } from '@/components/agent/agent-run-state'
 import AgentComposer from '@/components/agent/AgentComposer.vue'
@@ -290,8 +292,6 @@ const route = useRoute()
 const composerText = ref('')
 const activeSessionId = ref('')
 const knownSessionsById = ref<Record<string, AgentSessionItem>>({})
-const pendingRouteSessionId = ref('')
-const pendingUnavailableSessionSelectionKey = ref<string | number | null>(null)
 const manuallySelectedSessionId = ref('')
 const lastHandledAutoCreateKey = ref<string | number | null>(null)
 const virtualNewSessionKey = ref<string | number | null>(null)
@@ -413,14 +413,10 @@ const sessionsQuery = useQuery(
     queryKey: [
       'ai-sessions',
       agentId.value,
-      scope.value.scope_type,
       scope.value.workspace_id,
-      scope.value.project_id,
-      scope.value.page_id,
-      scope.value.component_id,
-      scope.value.source,
+      'workspace',
     ],
-    queryFn: () => listAgentSessions(scope.value, agentId.value),
+    queryFn: () => listAgentSessions(scope.value, agentId.value, 'workspace'),
     enabled: !!scope.value.workspace_id,
   })),
 )
@@ -551,6 +547,22 @@ const canOpenActiveSessionRoute = computed(() => {
   }
   return target !== route.fullPath && target !== route.path
 })
+const composerContextRouteTarget = computed(() => {
+  if (canOpenActiveSessionRoute.value) {
+    return activeSessionRouteLocation.value
+  }
+  if (!props.routeAvailable && props.autoNavigateTarget) {
+    const target = props.autoNavigateTarget
+    return target !== route.fullPath && target !== route.path ? target : null
+  }
+  return null
+})
+const composerContextRouteLabel = computed(() => (
+  canOpenActiveSessionRoute.value ? '打开' : '前往'
+))
+const composerContextRouteTitle = computed(() => (
+  canOpenActiveSessionRoute.value ? '打开此会话工作页面' : '前往可运行页面'
+))
 const composerContextIssue = computed(() => {
   if (!currentRouteInActiveSessionScope.value) {
     return '当前页面不在此会话工作范围。'
@@ -604,31 +616,38 @@ const {
   handleSwitchSession,
   handleVirtualNewSession,
   openActiveSessionRoute,
-  selectFirstRunnableSession,
-  shouldAutoSelectRunnableSessionForUnavailableRoute,
   toggleSessionMenu,
 } = useAgentSessionNavigation({
   activeSessionId,
   manuallySelectedSessionId,
-  pendingRouteSessionId,
-  pendingUnavailableSessionSelectionKey,
   sessionMenuVisible,
   virtualNewSessionKey,
   virtualNewSessionSequence,
   getActiveSessionRouteLocation: () => activeSessionRouteLocation.value,
-  getActiveSessionScope: () => activeSessionScope.value,
   getAgentId: () => agentId.value,
   getAgentIssueDetail: () => agentIssueDetail.value,
-  getAutoNavigateTarget: () => props.autoNavigateTarget,
   getHasBindingIssue: () => hasBindingIssue.value,
   getRouteAvailable: () => props.routeAvailable,
   getRouteFullPath: () => route.fullPath,
   getRoutePath: () => route.path,
   getRouteUnavailableReason: () => props.routeUnavailableReason,
-  getScope: () => scope.value,
   getSessions: () => displayedSessions.value ?? [],
   pushRoute: target => void router.push(target),
 })
+
+/**
+ * 打开当前提示对应的工作页面；会话越界时进入会话范围，不可运行时进入助手推荐入口。
+ */
+function openComposerContextRoute(): void {
+  if (canOpenActiveSessionRoute.value) {
+    openActiveSessionRoute()
+    return
+  }
+  const target = composerContextRouteTarget.value
+  if (target) {
+    void router.push(target)
+  }
+}
 
 /**
  * 从按会话分片的状态中读取当前值。
@@ -876,7 +895,6 @@ watch(
   ([sessions]) => {
     if (virtualNewSessionKey.value) {
       activeSessionId.value = ''
-      pendingRouteSessionId.value = ''
       return
     }
 
@@ -888,17 +906,7 @@ watch(
     if (!sessions?.length) {
       if (!activeSession.value) {
         activeSessionId.value = ''
-        pendingRouteSessionId.value = ''
       }
-      return
-    }
-
-    const pendingSession = pendingRouteSessionId.value
-      ? sessions.find(item => item.session_id === pendingRouteSessionId.value)
-      : null
-    if (pendingSession) {
-      activeSessionId.value = pendingSession.session_id
-      pendingRouteSessionId.value = ''
       return
     }
 
@@ -912,42 +920,19 @@ watch(
       return
     }
 
-    const persistedSessionId = getSelectedSession(scope.value, agentId.value, sessions)
-    if (persistedSessionId) {
-      activeSessionId.value = persistedSessionId
+    const workspaceSessionId = getSelectedWorkspaceSession(scope.value, agentId.value, sessions)
+    if (workspaceSessionId) {
+      activeSessionId.value = workspaceSessionId
+      return
+    }
+
+    const exactSessionId = getSelectedSession(scope.value, agentId.value, sessions)
+    if (exactSessionId) {
+      activeSessionId.value = exactSessionId
       return
     }
 
     activeSessionId.value = findLatestSessionForScope(sessions, scope.value)?.session_id ?? ''
-  },
-  { immediate: true },
-)
-
-watch(
-  () => [
-    sessionsQuery.data.value,
-    sessionsQuery.isFetching.value,
-    props.routeAvailable,
-    agentId.value,
-    scope.value.project_id,
-    activeSessionId.value,
-    activeSessionScope.value?.project_id ?? null,
-    pendingUnavailableSessionSelectionKey.value,
-  ] as const,
-  ([, isFetching]) => {
-    if (!shouldAutoSelectRunnableSessionForUnavailableRoute()) {
-      if (props.routeAvailable) {
-        pendingUnavailableSessionSelectionKey.value = null
-      }
-      return
-    }
-    if (selectFirstRunnableSession()) {
-      pendingUnavailableSessionSelectionKey.value = null
-      return
-    }
-    if (!isFetching) {
-      pendingUnavailableSessionSelectionKey.value = null
-    }
   },
   { immediate: true },
 )
@@ -981,8 +966,10 @@ watch(activeSessionId, () => {
     const sessionScope = session ? resolveSessionScope(session) : null
     if (sessionScope) {
       setSelectedSession(sessionScope, agentId.value, activeSessionId.value)
+      setSelectedWorkspaceSession(sessionScope, agentId.value, activeSessionId.value)
     } else if (!session || isSessionTargetCurrentScope(session, scope.value)) {
       setSelectedSession(scope.value, agentId.value, activeSessionId.value)
+      setSelectedWorkspaceSession(scope.value, agentId.value, activeSessionId.value)
     }
   }
 })
@@ -1315,11 +1302,12 @@ function handleRunEvent(event: AgentRunEvent, fallbackSessionId = activeSessionI
  * 记录工具写入带来的领域刷新事件，供工具完成即时派发和 run 结束兜底派发复用。
  */
 function appendMutationRefreshEvents(sessionId: string, event: AgentRunEvent): void {
+  const runtimeRequest = resolveSessionRuntimeRequest(sessionId)
   const nextEvents = buildMutationRefreshEvents(event, {
-    workspaceId: scope.value.workspace_id ?? null,
-    projectId: scope.value.project_id ?? null,
-    pageId: scope.value.page_id ?? null,
-    componentId: scope.value.component_id ?? null,
+    workspaceId: runtimeRequest.scope.workspace_id ?? null,
+    projectId: runtimeRequest.scope.project_id ?? null,
+    pageId: runtimeRequest.scope.page_id ?? null,
+    componentId: runtimeRequest.scope.component_id ?? null,
   })
   if (!nextEvents.length) {
     return

@@ -8,6 +8,8 @@ from typing import Any, Callable, get_type_hints
 
 from pydantic import ConfigDict, create_model
 
+RECOVERABLE_TOOL_ERROR_KIND = "recoverable_tool_error"
+
 
 @dataclass(slots=True)
 class AgentToolContext:
@@ -41,6 +43,49 @@ class PlatformTool:
     instructions: str | None = None
     requires_confirmation: bool = False
     show_result: bool = False
+
+
+def recoverable_tool_error_result(
+    *,
+    code: str,
+    message: str,
+    status_code: int | None = None,
+    hint: str | None = None,
+    data: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """构造可交回模型继续处理的工具业务错误结果。"""
+
+    error: dict[str, Any] = {
+        "code": code,
+        "message": message,
+        "recoverable": True,
+    }
+    if status_code is not None:
+        error["status_code"] = status_code
+    if hint:
+        error["hint"] = hint
+    payload: dict[str, Any] = {
+        "success": False,
+        "kind": RECOVERABLE_TOOL_ERROR_KIND,
+        "error": error,
+    }
+    if data:
+        payload["data"] = data
+    return payload
+
+
+def is_recoverable_tool_error_result(value: Any) -> bool:
+    """判断工具返回值是否是可恢复业务错误结构。"""
+
+    if not isinstance(value, dict):
+        return False
+    error = value.get("error")
+    return (
+        value.get("success") is False
+        and value.get("kind") == RECOVERABLE_TOOL_ERROR_KIND
+        and isinstance(error, dict)
+        and error.get("recoverable") is True
+    )
 
 
 def agent_tool(

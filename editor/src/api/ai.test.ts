@@ -67,6 +67,24 @@ describe('ai api', () => {
         workspace_id: '11',
         source: 'editor-agent-sidebar',
         agent_id: 'agent-coordinator',
+        scope_mode: 'exact',
+        project_id: '21',
+      },
+    })
+  })
+
+  it('会话列表可请求当前工作空间内同智能体全量会话', async () => {
+    getMock.mockResolvedValueOnce({ data: [] })
+
+    await listAgentSessions(scope, 'agent-coordinator', 'workspace')
+
+    expect(getMock).toHaveBeenCalledWith('/ai/sessions', {
+      params: {
+        scope_type: 'project',
+        workspace_id: '11',
+        source: 'editor-agent-sidebar',
+        agent_id: 'agent-coordinator',
+        scope_mode: 'workspace',
         project_id: '21',
       },
     })

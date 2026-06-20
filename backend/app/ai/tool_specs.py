@@ -771,6 +771,11 @@ _COORDINATOR_TOOL_SPECS = (
         'resource_read',
         '资源读取',
         '读取 SVG 图片、SVG 图标、Draw.io、Mermaid、Chart 或 Formula 资源的 UTF-8 文本内容。',
+        default_instructions=(
+            '仅对列表中 content_editable=true 的资源调用本工具。'
+            'content_editable=false 的位图、视频或字体资源只能作为渲染素材引用；如果误读不可读资源，工具会返回可恢复错误，'
+            '应改用资源 name/URL 引用或选择其他可读资源，不要终止任务。'
+        ),
         response_example={'asset': {'id': 8, 'name': 'hero_illustration', 'asset_type': 'image'}, 'content': '<svg />'},
     ),
 
@@ -914,6 +919,11 @@ _COMPONENT_MANAGER_TOOL_SPECS = (
         'component_library',
         '组件库',
         '读取 SVG 图片、SVG 图标、Draw.io、Mermaid、Chart 或 Formula 资源的 UTF-8 文本内容。',
+        default_instructions=(
+            '仅对列表中 content_editable=true 的资源调用本工具。'
+            'content_editable=false 的位图、视频或字体资源只能作为渲染素材引用；如果误读不可读资源，工具会返回可恢复错误，'
+            '应改用资源 name/URL 引用或选择其他可读资源，不要终止任务。'
+        ),
         response_example={'asset': {'id': 8, 'name': 'hero_illustration', 'asset_type': 'image'}, 'content': '<svg />'},
     ),
 
@@ -1122,6 +1132,11 @@ _RESOURCE_MANAGER_TOOL_SPECS = (
         'resource_library',
         '资源库',
         '读取 SVG 图片、SVG 图标、Draw.io、Mermaid、Chart 或 Formula 资源的 UTF-8 文本内容。',
+        default_instructions=(
+            '仅对列表中 content_editable=true 的资源调用本工具。'
+            'content_editable=false 的位图、视频或字体资源只能作为渲染素材引用；如果误读不可读资源，工具会返回可恢复错误，'
+            '应改用资源 name/URL 引用或选择其他可读资源，不要终止任务。'
+        ),
         response_example={'asset': {'id': 8, 'name': 'hero_illustration', 'asset_type': 'image'}, 'content': '<svg />'},
     ),
 

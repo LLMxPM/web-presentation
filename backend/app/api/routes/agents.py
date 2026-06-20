@@ -185,10 +185,11 @@ async def list_agent_sessions(
     page_id: int | None = None,
     component_id: int | None = None,
     scope_type: Literal["workspace", "project", "page", "component"] | None = None,
+    scope_mode: Literal["exact", "workspace"] = "exact",
     source: str = "editor-page-detail",
     agent_id: str = "agent-coordinator",
 ) -> list[AgentSessionItem]:
-    """列出当前页面范围下的 Agent 会话。"""
+    """列出当前页面范围或工作空间范围下的 Agent 会话。"""
 
     scope = await _resolve_scope_context(
         session=session,
@@ -205,6 +206,7 @@ async def list_agent_sessions(
     return await AgentSessionFacade(app=request.app, current=current, session=session).list_sessions(
         agent_id=agent_id,
         scope=scope,
+        scope_mode=scope_mode,
     )
 
 

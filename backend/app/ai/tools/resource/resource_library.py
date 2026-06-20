@@ -6,12 +6,13 @@ import json
 import re
 from typing import Any
 
-from app.ai.platform_tools import AgentToolContext, agent_tool
+from app.ai.platform_tools import AgentToolContext, agent_tool, recoverable_tool_error_result
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.ai.auth_tokens import RESOURCE_TOOL_READ_SCOPES, RESOURCE_TOOL_WRITE_SCOPES
 from app.ai.tools.shared import resolve_tool_context
 from app.core.config import get_settings
+from app.core.exceptions import AppException
 from app.models.enums import AssetType, RecordStatus
 from app.schemas.asset import AssetResponse
 from app.services.asset_service import AssetService
@@ -118,7 +119,21 @@ def build_get_resource_asset_content_tool(session_factory: async_sessionmaker[As
         async with session_factory() as session:
             service = AssetService(session)
             asset = await service._get_asset_or_raise(int(dependencies["workspace_id"]), int(asset_id))
-            content = await service.get_asset_content(int(dependencies["workspace_id"]), int(asset_id))
+            try:
+                content = await service.get_asset_content(int(dependencies["workspace_id"]), int(asset_id))
+            except AppException as exc:
+                if exc.code != "ASSET_CONTENT_READ_UNSUPPORTED":
+                    raise
+                return recoverable_tool_error_result(
+                    code=exc.code,
+                    message=exc.detail,
+                    status_code=exc.status_code,
+                    hint=(
+                        "该资源不能作为 UTF-8 文本读取；可在页面源码中按资源 name 或 URL 作为渲染素材引用。"
+                        "如需读取源码，请选择 content_editable=true 的 SVG、Mermaid、Draw.io、Chart 或 Formula 资源。"
+                    ),
+                    data={"asset": _dump_asset(asset)},
+                )
             return {"asset": _dump_asset(asset), "content": content}
 
     return get_resource_asset_content

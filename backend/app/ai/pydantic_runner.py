@@ -27,6 +27,7 @@ from pydantic_ai.messages import (
 from app.ai.agent.runtime_context import AgentRuntimeContext, build_scope_context_text
 from app.ai.agent_catalog import get_agent_catalog_entry
 from app.ai.agent_runtime_config import EffectiveAgentRuntimeConfig, build_effective_description, build_effective_instructions
+from app.ai.platform_tools import is_recoverable_tool_error_result
 from app.ai.platform_runtime import PlatformAgentRuntimeStore, encode_sse_event
 from app.ai.pydantic_tools import AgentToolDeps
 from app.ai.run_errors import normalize_agent_run_exception
@@ -304,15 +305,12 @@ class PydanticAgentRunner:
                 return
             yield await self._yield_and_store(
                 run_model,
-                AgentRunEvent(
-                    event="tool.completed",
+                _tool_result_event(
                     run_id=run_model.run_id,
                     session_id=run_model.session_id,
-                    data={
-                        "tool_name": getattr(result, "tool_name", None),
-                        "tool_call_id": getattr(result, "tool_call_id", None),
-                        "result": getattr(result, "content", None),
-                    },
+                    tool_name=getattr(result, "tool_name", None),
+                    tool_call_id=getattr(result, "tool_call_id", None),
+                    content=getattr(result, "content", None),
                 ),
             )
 
@@ -509,6 +507,55 @@ def _tool_denied_message(content: Any) -> str:
 
     text = str(content or "").strip()
     return text or "用户拒绝执行该工具。"
+
+
+def _tool_result_event(
+    *,
+    run_id: str,
+    session_id: str,
+    tool_name: Any,
+    tool_call_id: Any,
+    content: Any,
+) -> AgentRunEvent:
+    """把工具返回投影为完成或可恢复错误事件。"""
+
+    if is_recoverable_tool_error_result(content):
+        return AgentRunEvent(
+            event="tool.error",
+            run_id=run_id,
+            session_id=session_id,
+            data={
+                "tool_name": tool_name,
+                "tool_call_id": tool_call_id,
+                "message": _recoverable_tool_error_message(content),
+                "result": content,
+            },
+        )
+    return AgentRunEvent(
+        event="tool.completed",
+        run_id=run_id,
+        session_id=session_id,
+        data={
+            "tool_name": tool_name,
+            "tool_call_id": tool_call_id,
+            "result": content,
+        },
+    )
+
+
+def _recoverable_tool_error_message(content: Any) -> str:
+    """提取可恢复工具错误的展示文案。"""
+
+    if not isinstance(content, dict):
+        return "工具调用失败。"
+    error = content.get("error")
+    if not isinstance(error, dict):
+        return "工具调用失败。"
+    message = str(error.get("message") or "").strip()
+    code = str(error.get("code") or "").strip()
+    if code and message:
+        return f"{code} {message}"
+    return message or code or "工具调用失败。"
 
 
 def _requirement_from_deferred(

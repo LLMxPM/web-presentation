@@ -21,6 +21,8 @@ export interface AgentStreamOptions {
   signal?: AbortSignal
 }
 
+export type AgentSessionScopeMode = 'exact' | 'workspace'
+
 export class AgentStreamInterruptedError extends Error {
   /** 标识用户主动中断了当前流式传输，调用方不应按执行失败展示。 */
   constructor(message = '智能体流式传输已中断。') {
@@ -63,9 +65,16 @@ export async function listAgents(scope: AgentScopeContext, agentId?: string) {
 /**
  * 查询当前页面范围内的智能体会话列表。
  */
-export async function listAgentSessions(scope: AgentScopeContext, agentId = 'agent-coordinator') {
+export async function listAgentSessions(
+  scope: AgentScopeContext,
+  agentId = 'agent-coordinator',
+  scopeMode: AgentSessionScopeMode = 'exact',
+) {
   const { data } = await http.get<AgentSessionItem[]>('/ai/sessions', {
-    params: buildScopeParams(scope, agentId),
+    params: {
+      ...buildScopeParams(scope, agentId),
+      scope_mode: scopeMode,
+    },
   })
   return data
 }

@@ -989,6 +989,24 @@ describe('AgentConversationPanel', () => {
     ],
   ] as const)('组件写入工具 %s 完成后应发出组件刷新事件', async (toolName, result) => {
     const componentUpdatedSpy = vi.fn()
+    const componentSession = {
+      session_id: 'session-1',
+      agent_id: DEFAULT_AGENT_ID,
+      session_name: '销售卡片 会话',
+      created_at: '2026-04-18T10:00:00+08:00',
+      updated_at: '2026-04-18T10:00:00+08:00',
+      metadata: {
+        scope_type: 'component',
+        workspace_id: 11,
+        project_id: null,
+        page_id: null,
+        component_id: 99,
+        component_name: '销售卡片',
+        source: 'editor-component-library',
+      },
+    }
+    createAgentSessionMock.mockResolvedValueOnce(componentSession)
+    getAgentSessionRuntimeMock.mockResolvedValue(createRuntimeSnapshot({ session: componentSession }))
     streamAgentRunEventsByRunIdMock.mockImplementationOnce(async (_runId: string, _payload: unknown, options?: { onEvent?: (event: any) => void }) => {
       options?.onEvent?.({ event: 'run.started', run_id: 'run-component', session_id: 'session-1', content: null, data: {} })
       options?.onEvent?.({

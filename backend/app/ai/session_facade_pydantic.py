@@ -6,7 +6,7 @@ import asyncio
 import json
 import logging
 from collections.abc import AsyncGenerator
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import FastAPI
 from pydantic_ai import DeferredToolResults, ToolDenied
@@ -54,10 +54,16 @@ class AgentSessionFacade:
         self._model_resolver = PydanticLlmModelResolver()
         self._agent_config_service = AiAgentConfigService(session, user_id=current.user.id)
 
-    async def list_sessions(self, *, agent_id: str, scope: AgentScopeContext) -> list[AgentSessionItem]:
-        """列出当前用户在指定 scope 下的智能体会话。"""
+    async def list_sessions(
+        self,
+        *,
+        agent_id: str,
+        scope: AgentScopeContext,
+        scope_mode: Literal["exact", "workspace"] = "exact",
+    ) -> list[AgentSessionItem]:
+        """列出当前用户在指定 scope 或工作空间下的智能体会话。"""
 
-        return await self._store.list_sessions(agent_id=agent_id, scope=scope)
+        return await self._store.list_sessions(agent_id=agent_id, scope=scope, scope_mode=scope_mode)
 
     async def create_session(
         self,
