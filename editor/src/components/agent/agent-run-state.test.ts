@@ -819,6 +819,42 @@ describe('agent-run-state timeline', () => {
     ])
   })
 
+  it('平台 member.run.started 应直接使用事件中的 delegate_tool_call_id', () => {
+    const state = createAgentSessionRuntimeState()
+    const options = { agentId: 'agent-coordinator', agentDisplayName: '内容助手' }
+
+    applyAgentRunEvent(state, event({ event: 'run.started', run_id: 'parent-run-1', event_index: 0, sequence: null }), options)
+    applyAgentRunEvent(state, event({
+      event: 'member.run.started',
+      run_id: 'parent-run-1',
+      event_index: 1,
+      sequence: null,
+      data: {
+        member_run_id: 'member-run-1',
+        member_agent_id: 'resource-manager',
+        member_agent_name: '资源助手',
+        delegate_tool_call_id: 'delegate-call-direct',
+      },
+    }), options)
+    applyAgentRunEvent(state, event({
+      event: 'member.message.delta',
+      run_id: 'parent-run-1',
+      content: '资源检查完成。',
+      event_index: 2,
+      sequence: null,
+      data: {
+        member_run_id: 'member-run-1',
+        member_agent_id: 'resource-manager',
+        member_agent_name: '资源助手',
+        delegate_tool_call_id: 'delegate-call-direct',
+      },
+    }), options)
+
+    expect(state.memberRuns).toHaveLength(1)
+    expect(state.memberRuns[0].delegate_tool_call_id).toBe('delegate-call-direct')
+    expect(state.memberRuns[0].timeline_items.find(item => item.kind === 'message')?.content).toBe('资源检查完成。')
+  })
+
   it('平台 member message.delta 应支持跨 chunk reasoning 标签', () => {
     const state = createAgentSessionRuntimeState()
     const options = { agentId: 'agent-coordinator', agentDisplayName: '内容助手' }

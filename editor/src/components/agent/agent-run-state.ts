@@ -579,10 +579,12 @@ function ensureMemberRunItem(state: AgentSessionRuntimeState, event: AgentRunEve
   if (!parentRunId || !memberRunId) {
     return null
   }
+  const delegateToolCallId = resolveEventString(event.data.delegate_tool_call_id, null)
   const existing = state.memberRuns.find(item => item.run_id === memberRunId)
   if (existing) {
     existing.agent_id = resolveEventString(event.data.member_agent_id, existing.agent_id) || existing.agent_id
     existing.agent_name = resolveEventString(event.data.member_agent_name, existing.agent_name ?? null)
+    existing.delegate_tool_call_id = delegateToolCallId ?? existing.delegate_tool_call_id
     return existing
   }
   const memberRun: AgentMemberRunItem = {
@@ -593,7 +595,7 @@ function ensureMemberRunItem(state: AgentSessionRuntimeState, event: AgentRunEve
     status: 'running',
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
-    delegate_tool_call_id: null,
+    delegate_tool_call_id: delegateToolCallId,
     timeline_items: [],
   }
   state.memberRuns = [...state.memberRuns, memberRun].sort(compareMemberRuns)

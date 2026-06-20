@@ -9,19 +9,11 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
-from pydantic_ai import Agent, AgentRunResultEvent, DeferredToolRequests, DeferredToolResults, ToolDenied
+from pydantic_ai import Agent, DeferredToolRequests, DeferredToolResults
 from pydantic_ai.messages import (
-    FunctionToolCallEvent,
-    FunctionToolResultEvent,
     ModelMessagesTypeAdapter,
     ModelRequest,
     ModelResponse,
-    PartDeltaEvent,
-    PartStartEvent,
-    TextPart,
-    TextPartDelta,
-    ThinkingPart,
-    ThinkingPartDelta,
     ToolCallPart,
     UserPromptPart,
 )
@@ -32,7 +24,7 @@ from app.ai.agent_catalog import get_agent_catalog_entry
 from app.ai.agent_runtime_config import build_effective_description, build_effective_instructions
 from app.ai.message_history import build_context_limit_processor, build_history_budget, rebuild_agent_message_history
 from app.ai.platform_runtime import PlatformAgentRuntimeStore
-from app.ai.platform_tools import is_recoverable_tool_error_result
+from app.ai.pydantic_event_projection import PydanticEventProjector
 from app.ai.pydantic_model_resolver import PydanticLlmModelResolver
 from app.ai.pydantic_tools import build_pydantic_tools
 from app.ai.run_errors import normalize_agent_run_exception
@@ -389,7 +381,7 @@ class _MemberAgentRunner:
         content_parts: list[str] = []
         reasoning_parts: list[str] = []
         final_messages: list[dict[str, Any]] = []
-        denied_tool_call_ids = _denied_tool_call_ids(deferred_tool_results)
+        projector: PydanticEventProjector | None = None
         try:
             catalog = get_agent_catalog_entry(self._member_run.agent_id)
             if catalog is None:
@@ -440,6 +432,31 @@ class _MemberAgentRunner:
                 tools=tools,
                 history_processors=[context_processor] if context_processor is not None else None,
             )
+            projector = PydanticEventProjector(
+                run_id=self._parent_run.run_id,
+                session_id=self._parent_run.session_id,
+                append_event=self._append_projected_member_event,
+                deferred_tool_results=deferred_tool_results,
+                event_prefix="member.",
+                base_event_data=self._member_event_data,
+                map_tool_call_id=lambda raw_tool_call_id: _member_tool_call_id(
+                    self._member_run.member_run_id,
+                    raw_tool_call_id,
+                ),
+                extra_tool_data=lambda raw_tool_call_id: {"raw_tool_call_id": raw_tool_call_id},
+                final_messages=final_messages,
+                on_message_delta=lambda content: self._append_member_delta(
+                    content_parts,
+                    field="content",
+                    content=content,
+                ),
+                on_reasoning_delta=lambda content: self._append_member_delta(
+                    reasoning_parts,
+                    field="reasoning_content",
+                    content=content,
+                ),
+                on_deferred=self._pause_for_deferred_tools,
+            )
             await self.append_member_event("model.request.started")
             async for raw_event in agent.run_stream_events(
                 message if message else None,
@@ -449,15 +466,10 @@ class _MemberAgentRunner:
                 deferred_tool_results=deferred_tool_results,
                 infer_name=False,
             ):
-                await self._raise_if_parent_cancelled()
-                await self._handle_raw_event(
-                    raw_event=raw_event,
-                    content_parts=content_parts,
-                    reasoning_parts=reasoning_parts,
-                    final_messages=final_messages,
-                    denied_tool_call_ids=denied_tool_call_ids,
-                )
-            await self._raise_if_parent_cancelled()
+                await self._raise_if_parent_cancelled(projector)
+                await projector.handle_raw_event(raw_event)
+            await self._raise_if_parent_cancelled(projector)
+            await projector.flush_delta_buffer()
             await self.append_member_event("model.request.completed")
             result_text = "".join(content_parts)
             self._member_run.status = "completed"
@@ -482,8 +494,12 @@ class _MemberAgentRunner:
         except AppException as exc:
             if exc.code == "AI_RUN_CANCELLED":
                 raise
+            if projector is not None:
+                await projector.flush_delta_buffer(best_effort=True)
             return await self._mark_failed_result(code=exc.code, message=exc.detail)
         except Exception as exc:  # noqa: BLE001
+            if projector is not None:
+                await projector.flush_delta_buffer(best_effort=True)
             failure = normalize_agent_run_exception(exc, fallback_code="AI_MEMBER_RUN_FAILED")
             logger.exception(
                 "Member agent run failed",
@@ -526,116 +542,51 @@ class _MemberAgentRunner:
         await self._session.refresh(self._member_run)
         return event
 
-    async def _handle_raw_event(
-        self,
-        *,
-        raw_event: Any,
-        content_parts: list[str],
-        reasoning_parts: list[str],
-        final_messages: list[dict[str, Any]],
-        denied_tool_call_ids: set[str],
-    ) -> None:
-        """把 Pydantic AI 成员事件映射为 member.* 平台事件。"""
+    async def _append_projected_member_event(self, event: AgentRunEvent) -> AgentRunEvent:
+        """写入共享投影器生成的 member.* 事件，并刷新成员运行字段。"""
 
-        if isinstance(raw_event, AgentRunResultEvent):
-            output = getattr(raw_event.result, "output", None)
-            if isinstance(output, DeferredToolRequests):
-                final_messages[:] = _safe_new_messages(raw_event.result)
-                self._member_run.message_history_json = [
-                    *(self._member_run.message_history_json or []),
-                    *final_messages,
-                ]
-                requirement = _member_requirement_from_deferred(
-                    output,
-                    parent_run=self._parent_run,
-                    member_run=self._member_run,
-                )
-                self._member_run.status = "paused"
-                self._member_run.pending_requirement_json = requirement.model_dump(mode="json")
-                self._member_run.updated_at = _utc_now()
-                await self.append_member_event("run.paused", data={"requirement": requirement.model_dump(mode="json")})
-                raise MemberDelegationPaused(requirement)
-            final_messages[:] = _safe_new_messages(raw_event.result)
-            return
-        if isinstance(raw_event, PartStartEvent):
-            part = raw_event.part
-            if isinstance(part, TextPart) and part.content:
-                content_parts.append(part.content)
-                self._member_run.content = f"{self._member_run.content or ''}{part.content}"
-                await self.append_member_event("message.delta", content=part.content)
-            elif isinstance(part, ThinkingPart) and part.content:
-                reasoning_parts.append(part.content)
-                self._member_run.reasoning_content = f"{self._member_run.reasoning_content or ''}{part.content}"
-                await self.append_member_event("reasoning.delta", content=part.content)
-            elif isinstance(part, ToolCallPart) and not _is_denied_tool_call(part, denied_tool_call_ids):
-                await self._append_tool_event("tool.started", part.tool_name, part.tool_call_id, args=part.args)
-        elif isinstance(raw_event, PartDeltaEvent):
-            delta = raw_event.delta
-            if isinstance(delta, TextPartDelta) and delta.content_delta:
-                content_parts.append(delta.content_delta)
-                self._member_run.content = f"{self._member_run.content or ''}{delta.content_delta}"
-                await self.append_member_event("message.delta", content=delta.content_delta)
-            elif isinstance(delta, ThinkingPartDelta) and delta.content_delta:
-                reasoning_parts.append(delta.content_delta)
-                self._member_run.reasoning_content = f"{self._member_run.reasoning_content or ''}{delta.content_delta}"
-                await self.append_member_event("reasoning.delta", content=delta.content_delta)
-        elif isinstance(raw_event, FunctionToolCallEvent):
-            if not _is_denied_tool_call(raw_event.part, denied_tool_call_ids):
-                await self._append_tool_event(
-                    "tool.started",
-                    raw_event.part.tool_name,
-                    raw_event.part.tool_call_id,
-                    args=raw_event.part.args,
-                )
-        elif isinstance(raw_event, FunctionToolResultEvent):
-            result = raw_event.result
-            tool_call_id = str(getattr(result, "tool_call_id", "") or "")
-            tool_name = str(getattr(result, "tool_name", "") or "")
-            if tool_call_id in denied_tool_call_ids:
-                await self._append_tool_event(
-                    "tool.error",
-                    tool_name,
-                    tool_call_id,
-                    message=_tool_denied_message(getattr(result, "content", None)),
-                )
-                return
-            content = getattr(result, "content", None)
-            if is_recoverable_tool_error_result(content):
-                await self._append_tool_event(
-                    "tool.error",
-                    tool_name,
-                    tool_call_id,
-                    result=content,
-                    message=_recoverable_tool_error_message(content),
-                )
-                return
-            await self._append_tool_event("tool.completed", tool_name, tool_call_id, result=content)
+        stored = await self._store.append_event(self._parent_run, event)
+        await self._session.refresh(self._member_run)
+        return stored
 
-    async def _append_tool_event(
-        self,
-        event_suffix: str,
-        tool_name: str,
-        raw_tool_call_id: str | None,
-        *,
-        args: Any | None = None,
-        result: Any | None = None,
-        message: str | None = None,
-    ) -> None:
-        """追加成员工具事件，并将 tool_call_id 规整为父 run 内唯一。"""
+    def _member_event_data(self) -> dict[str, Any]:
+        """生成每条 member.* 事件必须携带的成员身份字段。"""
 
-        normalized_call_id = _member_tool_call_id(self._member_run.member_run_id, raw_tool_call_id)
-        data: dict[str, Any] = {
-            "tool_name": tool_name,
-            "tool_call_id": normalized_call_id,
-            "raw_tool_call_id": raw_tool_call_id,
+        return {
+            "member_run_id": self._member_run.member_run_id,
+            "member_agent_id": self._member_run.agent_id,
+            "member_agent_name": self._member_run.agent_name,
+            "delegate_tool_call_id": self._member_run.delegate_tool_call_id,
         }
-        if args is not None:
-            data["tool_args"] = args
-        if result is not None:
-            data["result"] = result
-        if message:
-            data["message"] = message
-        await self.append_member_event(event_suffix, data=data)
+
+    def _append_member_delta(self, parts: list[str], *, field: str, content: str) -> None:
+        """同步累计成员输出字段；真正落库节奏由共享投影器控制。"""
+
+        parts.append(content)
+        current = getattr(self._member_run, field) or ""
+        setattr(self._member_run, field, f"{current}{content}")
+
+    async def _pause_for_deferred_tools(
+        self,
+        requests: DeferredToolRequests,
+        final_messages: list[dict[str, Any]],
+    ) -> AgentRunEvent:
+        """成员助手触发 HITL 时暂停成员 run，并把 requirement 抛回父 run。"""
+
+        self._member_run.message_history_json = [
+            *(self._member_run.message_history_json or []),
+            *final_messages,
+        ]
+        requirement = _member_requirement_from_deferred(
+            requests,
+            parent_run=self._parent_run,
+            member_run=self._member_run,
+        )
+        self._member_run.status = "paused"
+        self._member_run.pending_requirement_json = requirement.model_dump(mode="json")
+        self._member_run.updated_at = _utc_now()
+        await self.append_member_event("run.paused", data={"requirement": requirement.model_dump(mode="json")})
+        raise MemberDelegationPaused(requirement)
 
     async def _mark_failed_result(self, *, code: str, message: str) -> MemberDelegationResult:
         """把成员运行收敛为失败，并返回可交给内容助手整合的成员结果。"""
@@ -653,12 +604,14 @@ class _MemberAgentRunner:
             result=f"成员助手运行失败：{message}",
         )
 
-    async def _raise_if_parent_cancelled(self) -> None:
+    async def _raise_if_parent_cancelled(self, projector: PydanticEventProjector | None = None) -> None:
         """成员执行期间感知父 run 取消标记，并收敛成员状态。"""
 
         await self._session.refresh(self._parent_run, attribute_names=["status", "cancel_requested_at"])
         if self._parent_run.cancel_requested_at is None and self._parent_run.status != "cancelling":
             return
+        if projector is not None:
+            await projector.flush_delta_buffer(best_effort=True)
         self._member_run.status = "cancelled"
         self._member_run.finished_at = _utc_now()
         self._member_run.updated_at = _utc_now()
@@ -775,39 +728,6 @@ def _member_continue_message_history(member_run: AiAgentMemberRun, requirement_p
         ),
     ]
 
-
-def _safe_new_messages(result: Any) -> list[dict[str, Any]]:
-    """安全序列化本次 Pydantic AI run 新增消息。"""
-
-    try:
-        new_messages = getattr(result, "new_messages", None)
-        if not callable(new_messages):
-            return []
-        dumped = ModelMessagesTypeAdapter.dump_python(new_messages(), mode="json")
-        return dumped if isinstance(dumped, list) else []
-    except Exception:  # noqa: BLE001
-        return []
-
-
-def _denied_tool_call_ids(results: DeferredToolResults | None) -> set[str]:
-    """从 deferred 结果中提取被拒绝的成员工具调用 ID。"""
-
-    if results is None:
-        return set()
-    return {
-        str(tool_call_id)
-        for tool_call_id, approval_result in results.approvals.items()
-        if isinstance(approval_result, ToolDenied) and str(tool_call_id).strip()
-    }
-
-
-def _is_denied_tool_call(part: ToolCallPart, denied_tool_call_ids: set[str]) -> bool:
-    """判断当前工具调用是否是拒绝回灌。"""
-
-    tool_call_id = str(getattr(part, "tool_call_id", "") or "")
-    return bool(tool_call_id and tool_call_id in denied_tool_call_ids)
-
-
 def _tool_args_as_dict(value: Any) -> dict[str, Any]:
     """把 Pydantic AI 工具参数归一化为 dict，兼容 JSON 字符串。"""
 
@@ -842,29 +762,6 @@ def _feedback_schema_from_args(args: dict[str, Any]) -> list[dict[str, Any]]:
         normalized["options"] = options if isinstance(options, list) else []
         result.append(normalized)
     return result
-
-
-def _recoverable_tool_error_message(content: Any) -> str:
-    """提取成员可恢复工具错误的展示文案。"""
-
-    if not isinstance(content, dict):
-        return "工具调用失败。"
-    error = content.get("error")
-    if not isinstance(error, dict):
-        return "工具调用失败。"
-    message = str(error.get("message") or "").strip()
-    code = str(error.get("code") or "").strip()
-    if code and message:
-        return f"{code} {message}"
-    return message or code or "工具调用失败。"
-
-
-def _tool_denied_message(content: Any) -> str:
-    """把成员工具拒绝结果转换为展示文案。"""
-
-    text = str(content or "").strip()
-    return text or "用户拒绝执行该工具。"
-
 
 def _member_tool_call_id(member_run_id: str, raw_tool_call_id: str | None) -> str | None:
     """生成父 run 内唯一的成员工具调用 ID。"""

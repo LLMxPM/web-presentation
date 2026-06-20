@@ -9,7 +9,16 @@ from typing import Any
 import pytest
 from httpx import AsyncClient
 from pydantic_ai import Agent, DeferredToolResults
-from pydantic_ai.messages import ModelMessagesTypeAdapter, ModelResponse, TextPart, ThinkingPart, ToolCallPart
+from pydantic_ai.messages import (
+    FunctionToolCallEvent,
+    ModelMessagesTypeAdapter,
+    ModelResponse,
+    PartDeltaEvent,
+    TextPart,
+    TextPartDelta,
+    ThinkingPart,
+    ToolCallPart,
+)
 from pydantic_ai.models.function import AgentInfo, DeltaThinkingPart, DeltaToolCall, FunctionModel
 from pydantic_ai.tools import DeferredToolRequests, Tool
 from pydantic_ai.usage import RequestUsage
@@ -18,6 +27,7 @@ from sqlalchemy import select
 from app.ai.agent.runtime_context import AgentRuntimeContext
 from app.ai.platform_tools import AgentToolContext, agent_tool
 from app.ai.platform_runtime import PlatformAgentRuntimeStore
+from app.ai.pydantic_event_projection import PydanticEventProjector
 from app.ai.pydantic_runner import PydanticAgentRunner, _requirement_from_deferred
 from app.ai.pydantic_tools import AgentToolDeps, _wrap_platform_tool
 from app.ai.session_facade_pydantic import _build_continue_message_history, _build_deferred_results
@@ -571,6 +581,62 @@ async def test_pydantic_runner_should_buffer_consecutive_delta_chunks(
     ]
 
 
+async def test_pydantic_event_projector_should_buffer_member_delta_chunks() -> None:
+    """成员事件使用共享投影器时，连续小 chunk 应合并为较少的 member.message.delta。"""
+
+    events = await _project_member_events(
+        [
+            PartDeltaEvent(index=0, delta=TextPartDelta(content_delta="资源")),
+            PartDeltaEvent(index=0, delta=TextPartDelta(content_delta="整理")),
+            PartDeltaEvent(index=0, delta=TextPartDelta(content_delta="完成。")),
+        ],
+        flush=True,
+    )
+
+    assert [(event.event, event.content) for event in events] == [
+        ("member.message.delta", "资源整理完成。"),
+    ]
+    assert events[0].data == {
+        "member_run_id": "member-run-1",
+        "member_agent_id": "resource-manager",
+        "member_agent_name": "资源助手",
+        "delegate_tool_call_id": "delegate-call-1",
+    }
+
+
+async def test_pydantic_event_projector_should_flush_member_text_before_tool_start() -> None:
+    """成员工具事件开始前应先写出已缓冲文本，并保留成员 tool_call_id 映射。"""
+
+    events = await _project_member_events(
+        [
+            PartDeltaEvent(index=0, delta=TextPartDelta(content_delta="先检查现有资源。")),
+            FunctionToolCallEvent(
+                ToolCallPart(
+                    tool_name="list_workspace_render_assets",
+                    args={"workspace_id": 11},
+                    tool_call_id="tool-list-assets",
+                )
+            ),
+        ],
+        flush=False,
+    )
+
+    assert [(event.event, event.content) for event in events] == [
+        ("member.message.delta", "先检查现有资源。"),
+        ("member.tool.started", None),
+    ]
+    assert events[1].data == {
+        "member_run_id": "member-run-1",
+        "member_agent_id": "resource-manager",
+        "member_agent_name": "资源助手",
+        "delegate_tool_call_id": "delegate-call-1",
+        "tool_name": "list_workspace_render_assets",
+        "tool_call_id": "member-run-1:tool-list-assets",
+        "tool_args": {"workspace_id": 11},
+        "raw_tool_call_id": "tool-list-assets",
+    }
+
+
 async def test_pydantic_runner_should_flush_buffer_before_requested_cancel(
     authenticated_client: AsyncClient,
 ) -> None:
@@ -822,6 +888,38 @@ async def _collect_runner_events(stream: AsyncIterator[bytes]) -> list[Any]:
 
             events.append(AgentRunEvent.model_validate_json(raw_payload))
     return events
+
+
+async def _project_member_events(raw_events: list[Any], *, flush: bool) -> list[Any]:
+    """用共享投影器把测试原始事件转换为 member.* 平台事件。"""
+
+    stored_events: list[Any] = []
+
+    async def append_event(event: Any) -> Any:
+        """记录投影结果，模拟运行态 store append_event。"""
+
+        stored_events.append(event)
+        return event
+
+    projector = PydanticEventProjector(
+        run_id="parent-run-1",
+        session_id="session-1",
+        append_event=append_event,
+        event_prefix="member.",
+        base_event_data=lambda: {
+            "member_run_id": "member-run-1",
+            "member_agent_id": "resource-manager",
+            "member_agent_name": "资源助手",
+            "delegate_tool_call_id": "delegate-call-1",
+        },
+        map_tool_call_id=lambda raw_tool_call_id: f"member-run-1:{raw_tool_call_id}" if raw_tool_call_id else None,
+        extra_tool_data=lambda raw_tool_call_id: {"raw_tool_call_id": raw_tool_call_id},
+    )
+    for raw_event in raw_events:
+        await projector.handle_raw_event(raw_event)
+    if flush:
+        await projector.flush_delta_buffer()
+    return stored_events
 
 
 async def _ask_user_tool(questions: list[dict[str, Any]]) -> str:
