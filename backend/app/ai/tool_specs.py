@@ -28,6 +28,7 @@ from app.ai.tools.component import build_component_manager_tools
 from app.ai.tools.page import build_apply_page_edits_tool, build_get_page_content_tool, build_get_page_screenshot_tool
 from app.ai.tools.project import build_project_tools
 from app.ai.tools.resource import build_resource_manager_tools
+from app.ai.tools.team_delegation import build_team_delegation_tools
 from app.ai.tools.workspace.components import (
     build_get_workspace_component_usage_tool,
     build_list_workspace_components_tool,
@@ -44,6 +45,7 @@ from app.ai.tool_spec_data import (
     _RESOURCE_LIBRARY_TOOL_KEYS,
     _RUNTIME_KIT_LIST_RESPONSE_EXAMPLE,
     _RUNTIME_KIT_TOOL_KEYS,
+    _TEAM_DELEGATION_TOOL_KEYS,
     _WORKSPACE_COMPONENT_LIST_RESPONSE_EXAMPLE,
     _WORKSPACE_COMPONENT_USAGE_RESPONSE_EXAMPLE,
 )
@@ -340,6 +342,12 @@ def _build_coordinator_runtime_kit_tools(session_factory: async_sessionmaker[Asy
     return _filter_tools(build_component_manager_tools(session_factory), _RUNTIME_KIT_TOOL_KEYS)
 
 
+def _build_team_delegation_runtime_tools(session_factory: async_sessionmaker[AsyncSession]) -> list[Any]:
+    """构建内容助手调用组件助手和资源助手的 Team 委派工具。"""
+
+    return build_team_delegation_tools(session_factory)
+
+
 _COORDINATOR_TOOL_SPECS = (
 
     _tool(
@@ -362,6 +370,48 @@ _COORDINATOR_TOOL_SPECS = (
                                     {'label': '全页面', 'description': '整体统一视觉和内容结构。'}],
                         'multi_select': False}]},
         response_notes='平台会强制按单选处理；用户也可以不选预设项，直接提交自定义回答。',
+    ),
+
+    _tool(
+        'delegate_task_to_member',
+        '委派成员助手',
+        'team_delegation',
+        'Team 委派',
+        '把明确的组件库或资源库任务委派给组件助手或资源助手，并等待成员结果供内容助手继续整合。',
+        default_instructions=(
+            '只在任务确实需要组件库维护、组件发布/删除、组件版本或依赖排查、资源创建、资源内容维护、'
+            '资源复制或资源归档时调用。member_id 只能是 component-manager 或 resource-manager；'
+            'task 必须写清目标对象、期望动作和边界，handoff_context 传递你已读取到的页面、项目、组件或资源事实，'
+            'expected_output 说明成员应返回哪些可用于你继续改写页面或回复用户的信息。成员完成后，你必须判断结果是否可用并继续推进主任务。'
+        ),
+        risk_level='system',
+        response_example={
+            'member_run_id': 'member-run-123',
+            'member_id': 'resource-manager',
+            'status': 'completed',
+            'result': '已创建资源 hero_illustration，可在页面中按资源名引用。',
+        },
+    ),
+
+    _tool(
+        'delegate_task_to_members',
+        '批量委派成员助手',
+        'team_delegation',
+        'Team 委派',
+        '按顺序把多个明确任务委派给组件助手或资源助手，并汇总成员结果。',
+        default_instructions=(
+            '仅在同一用户目标需要连续调用多个成员任务时使用；tasks 按依赖顺序排列，前一项结果会作为后续执行上下文。'
+            '每个任务的 member_id 只能是 component-manager 或 resource-manager。不要把页面源码写入、项目路由维护或普通只读查询委派出去；'
+            '这些仍由内容助手直接处理。'
+        ),
+        risk_level='system',
+        response_example={
+            'status': 'completed',
+            'items': [
+                {'member_run_id': 'member-run-1', 'member_id': 'resource-manager', 'status': 'completed'},
+                {'member_run_id': 'member-run-2', 'member_id': 'component-manager', 'status': 'completed'},
+            ],
+        },
     ),
 
     _tool(
@@ -1276,6 +1326,15 @@ _COORDINATOR_GROUP_SPECS = (
         "在缺少必要业务信息时，向用户提出结构化单选问题。",
         ("ask_user",),
         build_tools=_build_user_feedback_tools,
+        disclosable=True,
+    ),
+    _group(
+        "team_delegation",
+        "Team 委派",
+        "调用组件助手或资源助手处理内容助手不直接负责的组件库与资源库维护任务。",
+        _TEAM_DELEGATION_TOOL_KEYS,
+        required_context_fields=("workspace_id",),
+        build_tools=_build_team_delegation_runtime_tools,
         disclosable=True,
     ),
     _group(

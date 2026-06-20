@@ -17,7 +17,7 @@ from app.ai.message_history import build_context_limit_processor, build_history_
 from app.ai.platform_runtime import PlatformAgentRuntimeStore
 from app.ai.pydantic_runner import PydanticAgentRunner
 from app.db.session import get_session_factory
-from app.models.ai_agent_runtime import AiAgentRun, AiAgentRunEvent, AiAgentSession, AiAgentToolCall
+from app.models.ai_agent_runtime import AiAgentMemberRun, AiAgentRun, AiAgentRunEvent, AiAgentSession, AiAgentToolCall
 from app.schemas.agent import AgentRunEvent, AgentScopeContext
 
 
@@ -156,6 +156,194 @@ async def test_platform_runtime_should_persist_events_messages_and_snapshot(
     assert [item.kind for item in snapshot.timeline_items] == ["message", "reasoning", "message", "tool"]
     assert snapshot.timeline_items[-1].tool is not None
     assert snapshot.timeline_items[-1].tool.output_payload == {"total": 2}
+
+
+async def test_platform_runtime_snapshot_should_rebuild_member_runs_from_member_events(
+    authenticated_client: AsyncClient,
+) -> None:
+    """member.* 事件应能恢复成员消息、成员工具、委派关联和成员终态。"""
+
+    workspace_response = await authenticated_client.post(
+        "/api/workspaces",
+        json={"name": "平台运行态成员快照工作空间", "status": "active"},
+    )
+    assert workspace_response.status_code == 200
+    workspace_id = workspace_response.json()["id"]
+    scope = AgentScopeContext(
+        scope_type="workspace",
+        workspace_id=workspace_id,
+        source="editor-page-detail",
+    )
+    session_id = "session-member-snapshot"
+    run_id = "platform-runtime-member-parent-run"
+    member_run_id = "member-run-snapshot-resource"
+    delegate_tool_call_id = "delegate-call-resource"
+    member_tool_call_id = f"{member_run_id}:tool-list-assets"
+
+    async with get_session_factory()() as db_session:
+        store = PlatformAgentRuntimeStore(db_session, user_id=1)
+        await store.create_session(
+            session_id=session_id,
+            agent_id="agent-coordinator",
+            session_name="成员快照会话",
+            scope=scope,
+        )
+        run_start = await store.start_run(
+            session_id=session_id,
+            agent_id="agent-coordinator",
+            scope=scope,
+            run_id=run_id,
+            message="整理资源并继续页面任务",
+            image_attachment_ids=[],
+        )
+        run_model = run_start.run_model
+        member_run = AiAgentMemberRun(
+            member_run_id=member_run_id,
+            parent_run_id=run_id,
+            session_id=session_id,
+            agent_id="resource-manager",
+            agent_name="资源助手",
+            status="running",
+            delegate_tool_call_id=delegate_tool_call_id,
+            input_payload_json={
+                "task": "整理当前项目资源。",
+                "delegate_tool_name": "delegate_task_to_member",
+                "delegate_tool_call_id": delegate_tool_call_id,
+            },
+            message_history_json=[],
+        )
+        db_session.add(member_run)
+        await db_session.flush([member_run])
+        await db_session.refresh(member_run)
+        member_event_data = {
+            "member_run_id": member_run_id,
+            "member_agent_id": "resource-manager",
+            "member_agent_name": "资源助手",
+            "delegate_tool_call_id": delegate_tool_call_id,
+        }
+        await store.append_event(
+            run_model,
+            AgentRunEvent(
+                event="tool.started",
+                run_id=run_id,
+                session_id=session_id,
+                data={
+                    "tool_name": "delegate_task_to_member",
+                    "tool_call_id": delegate_tool_call_id,
+                    "tool_args": {"member_id": "resource-manager", "task": "整理当前项目资源。"},
+                },
+            ),
+        )
+        await store.append_event(
+            run_model,
+            AgentRunEvent(event="member.run.started", run_id=run_id, session_id=session_id, data=member_event_data),
+        )
+        await store.append_event(
+            run_model,
+            AgentRunEvent(event="member.model.request.started", run_id=run_id, session_id=session_id, data=member_event_data),
+        )
+        await store.append_event(
+            run_model,
+            AgentRunEvent(
+                event="member.message.delta",
+                run_id=run_id,
+                session_id=session_id,
+                content="先读取资源列表。",
+                data=member_event_data,
+            ),
+        )
+        await store.append_event(
+            run_model,
+            AgentRunEvent(
+                event="member.tool.started",
+                run_id=run_id,
+                session_id=session_id,
+                data={
+                    **member_event_data,
+                    "tool_name": "list_resource_assets",
+                    "tool_call_id": member_tool_call_id,
+                    "raw_tool_call_id": "tool-list-assets",
+                    "tool_args": {"workspace_id": workspace_id},
+                },
+            ),
+        )
+        await store.append_event(
+            run_model,
+            AgentRunEvent(
+                event="member.tool.completed",
+                run_id=run_id,
+                session_id=session_id,
+                data={
+                    **member_event_data,
+                    "tool_name": "list_resource_assets",
+                    "tool_call_id": member_tool_call_id,
+                    "raw_tool_call_id": "tool-list-assets",
+                    "result": {"total": 2},
+                },
+            ),
+        )
+        member_run.status = "completed"
+        member_run.content = "资源整理完成。"
+        await store.append_event(
+            run_model,
+            AgentRunEvent(
+                event="member.run.completed",
+                run_id=run_id,
+                session_id=session_id,
+                content="资源整理完成。",
+                data=member_event_data,
+            ),
+        )
+        await store.append_event(
+            run_model,
+            AgentRunEvent(
+                event="tool.completed",
+                run_id=run_id,
+                session_id=session_id,
+                data={
+                    "tool_name": "delegate_task_to_member",
+                    "tool_call_id": delegate_tool_call_id,
+                    "result": {"member_run_id": member_run_id, "status": "completed"},
+                },
+            ),
+        )
+        await store.mark_terminal(run_model, status="completed", content="内容助手已整合资源结果。")
+        snapshot = await store.get_runtime_snapshot(
+            session_id=session_id,
+            agent_id="agent-coordinator",
+            runtime_context=AgentRuntimeContext(
+                scope_type=scope.scope_type,
+                workspace_id=workspace_id,
+                source=scope.source,
+            ),
+        )
+        member_tool_call = await db_session.scalar(
+            select(AiAgentToolCall).where(
+                AiAgentToolCall.run_id == run_id,
+                AiAgentToolCall.tool_call_id == member_tool_call_id,
+            )
+        )
+
+    assert snapshot.last_run is not None
+    assert snapshot.last_run.status == "completed"
+    assert [item.tool.tool_name for item in snapshot.timeline_items if item.tool is not None] == ["delegate_task_to_member"]
+    assert len(snapshot.member_runs) == 1
+    member = snapshot.member_runs[0]
+    assert member.parent_run_id == run_id
+    assert member.run_id == member_run_id
+    assert member.agent_id == "resource-manager"
+    assert member.delegate_tool_call_id == delegate_tool_call_id
+    assert member.status == "completed"
+    assert [item.kind for item in member.timeline_items] == ["message", "tool", "run_status"]
+    assert all(item.status != "model_request" for item in member.timeline_items)
+    assert member.timeline_items[0].content == "先读取资源列表。"
+    member_tool_item = next(item for item in member.timeline_items if item.tool is not None)
+    assert member_tool_item.tool is not None
+    assert member_tool_item.tool.member_run_id == member_run_id
+    assert member_tool_item.tool.output_payload == {"total": 2}
+    assert member_tool_call is not None
+    assert member_tool_call.member_run_id == member_run_id
+    assert member_tool_call.status == "completed"
 
 
 async def test_platform_runtime_should_refresh_event_cursor_before_append(

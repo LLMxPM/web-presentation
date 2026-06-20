@@ -21,6 +21,7 @@ from app.ai.platform_runtime import PlatformAgentRuntimeStore
 from app.ai.pydantic_runner import PydanticAgentRunner, _requirement_from_deferred
 from app.ai.pydantic_tools import AgentToolDeps, _wrap_platform_tool
 from app.ai.session_facade_pydantic import _build_continue_message_history, _build_deferred_results
+from app.ai.tools.team_delegation import build_team_delegation_tools
 from app.core.exceptions import AppException
 from app.db.session import get_session_factory
 from app.models.ai_agent_runtime import AiAgentRun, AiAgentRunEvent, AiAgentToolCall
@@ -391,6 +392,88 @@ async def test_pydantic_runner_should_continue_after_recoverable_tool_error(
     assert "ASSET_CONTENT_READ_UNSUPPORTED" in tool_call.message
 
 
+async def test_pydantic_runner_should_return_member_delegation_result_to_coordinator(
+    authenticated_client: AsyncClient,
+) -> None:
+    """内容助手委派工具应拿到成员结果，并把当前委派 tool_call_id 传给执行器。"""
+
+    _, scope = await _create_workspace_scope(
+        authenticated_client,
+        workspace_name="Pydantic Runner 成员委派工作空间",
+        source="editor-page-detail",
+    )
+    session_id = "session-pydantic-runner-member-delegation"
+    run_id = "pydantic-runner-member-delegation"
+    model = FunctionModel(stream_function=_member_delegation_stream_function)
+    executor = _FakeMemberDelegationExecutor()
+    tools = [
+        _wrap_platform_tool(tool_item)
+        for tool_item in build_team_delegation_tools(get_session_factory())
+    ]
+
+    async with get_session_factory()() as db_session:
+        store = PlatformAgentRuntimeStore(db_session, user_id=1)
+        await store.create_session(
+            session_id=session_id,
+            agent_id="agent-coordinator",
+            session_name="Pydantic Runner 成员委派会话",
+            scope=scope,
+        )
+        run_start = await store.start_run(
+            session_id=session_id,
+            agent_id="agent-coordinator",
+            scope=scope,
+            run_id=run_id,
+            message="请让资源助手整理封面图资源。",
+            image_attachment_ids=[],
+        )
+
+        events = await _collect_runner_events(
+            PydanticAgentRunner(store).stream_run(
+                run_model=run_start.run_model,
+                agent_id="agent-coordinator",
+                model=model,
+                model_settings={},
+                runtime_context=_runtime_context(scope),
+                message="请让资源助手整理封面图资源。",
+                tools=tools,
+                deps=AgentToolDeps(
+                    dependencies={
+                        "run_id": run_id,
+                        "session_id": session_id,
+                        "member_delegation_executor": executor,
+                    }
+                ),
+            )
+        )
+        completed_run = await store.get_latest_run_model(session_id=session_id, agent_id="agent-coordinator")
+        assert completed_run is not None
+        tool_call = await db_session.scalar(
+            select(AiAgentToolCall).where(
+                AiAgentToolCall.run_id == run_id,
+                AiAgentToolCall.tool_call_id == "tool-delegate-resource",
+            )
+        )
+
+    assert completed_run.status == "completed"
+    assert completed_run.content == "已整合资源助手结果。"
+    assert executor.calls == [
+        {
+            "member_id": "resource-manager",
+            "task": "整理封面图资源",
+            "handoff_context": "页面需要封面视觉资源",
+            "expected_output": "返回可引用资源名",
+            "delegate_tool_call_id": "tool-delegate-resource",
+            "delegate_tool_name": "delegate_task_to_member",
+        }
+    ]
+    assert "tool.completed" in [event.event for event in events]
+    assert events[-1].event == "run.completed"
+    assert tool_call is not None
+    assert tool_call.status == "completed"
+    assert tool_call.output_payload_json["member_run_id"] == "member-run-fake-resource"
+
+
 async def test_pydantic_runner_should_fail_fast_for_bad_ask_user_payload(
     authenticated_client: AsyncClient,
 ) -> None:
@@ -668,8 +751,35 @@ async def _create_workspace_session(
     *,
     workspace_name: str,
     session_name: str,
+    agent_id: str = "component-manager",
+    source: str = "editor-component-library",
 ) -> tuple[int, str, AgentScopeContext]:
-    """创建工作空间和 component-manager 会话。"""
+    """创建工作空间和指定智能体会话。"""
+
+    workspace_id, scope = await _create_workspace_scope(
+        authenticated_client,
+        workspace_name=workspace_name,
+        source=source,
+    )
+    session_response = await authenticated_client.post(
+        "/api/ai/sessions",
+        json={
+            "agent_id": agent_id,
+            "session_name": session_name,
+            "scope": scope.model_dump(mode="json"),
+        },
+    )
+    assert session_response.status_code == 201
+    return workspace_id, session_response.json()["session_id"], scope
+
+
+async def _create_workspace_scope(
+    authenticated_client: AsyncClient,
+    *,
+    workspace_name: str,
+    source: str,
+) -> tuple[int, AgentScopeContext]:
+    """创建工作空间并返回测试用 scope。"""
 
     workspace_response = await authenticated_client.post(
         "/api/workspaces",
@@ -677,21 +787,11 @@ async def _create_workspace_session(
     )
     assert workspace_response.status_code == 200
     workspace_id = workspace_response.json()["id"]
-    scope = AgentScopeContext(
+    return workspace_id, AgentScopeContext(
         scope_type="workspace",
         workspace_id=workspace_id,
-        source="editor-component-library",
+        source=source,
     )
-    session_response = await authenticated_client.post(
-        "/api/ai/sessions",
-        json={
-            "agent_id": "component-manager",
-            "session_name": session_name,
-            "scope": scope.model_dump(mode="json"),
-        },
-    )
-    assert session_response.status_code == 201
-    return workspace_id, session_response.json()["session_id"], scope
 
 
 def _runtime_context(scope: AgentScopeContext) -> AgentRuntimeContext:
@@ -743,6 +843,45 @@ async def recoverable_error_tool(run_context: AgentToolContext) -> dict[str, Any
 
     _ = run_context
     raise AppException(status_code=400, code="ASSET_CONTENT_READ_UNSUPPORTED", detail="该资源不支持内容读取。")
+
+
+class _FakeMemberDelegationExecutor:
+    """测试用成员委派执行器，只记录入参并返回固定成员结果。"""
+
+    def __init__(self) -> None:
+        """初始化调用记录。"""
+
+        self.calls: list[dict[str, Any]] = []
+
+    async def delegate_task_to_member(
+        self,
+        *,
+        member_id: str,
+        task: str,
+        handoff_context: str | None,
+        expected_output: str | None,
+        delegate_tool_call_id: str | None,
+        delegate_tool_name: str,
+    ) -> dict[str, Any]:
+        """模拟单成员委派完成，并返回可供内容助手继续推理的结果。"""
+
+        self.calls.append(
+            {
+                "member_id": member_id,
+                "task": task,
+                "handoff_context": handoff_context,
+                "expected_output": expected_output,
+                "delegate_tool_call_id": delegate_tool_call_id,
+                "delegate_tool_name": delegate_tool_name,
+            }
+        )
+        return {
+            "member_run_id": "member-run-fake-resource",
+            "member_id": member_id,
+            "member_name": "资源助手",
+            "status": "completed",
+            "result": "已准备资源 hero_cover。",
+        }
 
 
 async def _ask_user_stream_function(
@@ -805,6 +944,28 @@ async def _recoverable_tool_error_stream_function(
             name="recoverable_error_tool",
             json_args="{}",
             tool_call_id="tool-recoverable-read",
+        )
+    }
+
+
+async def _member_delegation_stream_function(
+    messages: list[Any],
+    info: AgentInfo,
+) -> AsyncIterator[str | dict[int, DeltaToolCall]]:
+    """模拟内容助手先委派资源助手，收到成员结果后继续输出最终回复。"""
+
+    _ = info
+    if _latest_tool_return(messages) is not None:
+        yield "已整合资源助手结果。"
+        return
+    yield {
+        0: DeltaToolCall(
+            name="delegate_task_to_member",
+            json_args=(
+                '{"member_id":"resource-manager","task":"整理封面图资源",'
+                '"handoff_context":"页面需要封面视觉资源","expected_output":"返回可引用资源名"}'
+            ),
+            tool_call_id="tool-delegate-resource",
         )
     }
 

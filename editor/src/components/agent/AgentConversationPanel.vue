@@ -1274,6 +1274,10 @@ function handleRunEvent(event: AgentRunEvent, fallbackSessionId = activeSessionI
       appendMutationRefreshEvents(targetSessionId, normalizedEvent)
       emitMutationRefreshEvents(targetSessionId)
       break
+    case 'member.tool.completed':
+      appendMutationRefreshEvents(targetSessionId, normalizedEvent)
+      emitMutationRefreshEvents(targetSessionId)
+      break
     case 'tool.error':
       break
     case 'run.paused':

@@ -49,6 +49,7 @@ def build_pydantic_tools(
     session_id: str,
     run_id: str,
     supports_image_input: bool,
+    member_delegation_executor: Any | None = None,
 ) -> tuple[list[Tool[AgentToolDeps]], AgentToolDeps]:
     """构建 Pydantic AI 工具和共享 deps。"""
 
@@ -64,6 +65,7 @@ def build_pydantic_tools(
         scope=scope,
         session_id=session_id,
         run_id=run_id,
+        member_delegation_executor=member_delegation_executor,
     )
     return [_wrap_platform_tool(tool_item) for tool_item in raw_tools], AgentToolDeps(dependencies=dependencies)
 
@@ -75,6 +77,7 @@ def _build_dependencies(
     scope: AgentScopeContext,
     session_id: str,
     run_id: str,
+    member_delegation_executor: Any | None = None,
 ) -> dict[str, Any]:
     """生成平台工具上下文校验需要的 dependencies 字典。"""
 
@@ -108,6 +111,8 @@ def _build_dependencies(
         "backend_session_id": current.backend_session_id,
         "member_tool_auth_tokens": {},
     }
+    if member_delegation_executor is not None:
+        dependencies["member_delegation_executor"] = member_delegation_executor
     dependencies["tool_auth_token"] = token
     return dependencies
 
@@ -130,6 +135,8 @@ def _wrap_platform_tool(tool_item: Any) -> Tool[AgentToolDeps]:
                 **ctx.deps.dependencies,
                 "run_id": run_id,
                 "session_id": session_id,
+                "current_tool_call_id": ctx.tool_call_id,
+                "current_tool_name": ctx.tool_name,
             },
         )
         try:

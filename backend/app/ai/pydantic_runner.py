@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from collections.abc import AsyncGenerator, Sequence
+from contextlib import suppress
 from dataclasses import dataclass
 from time import monotonic
 from typing import Any
@@ -27,8 +29,9 @@ from pydantic_ai.messages import (
 from app.ai.agent.runtime_context import AgentRuntimeContext, build_scope_context_text
 from app.ai.agent_catalog import get_agent_catalog_entry
 from app.ai.agent_runtime_config import EffectiveAgentRuntimeConfig, build_effective_description, build_effective_instructions
+from app.ai.member_delegation import MemberDelegationPaused
 from app.ai.platform_tools import is_recoverable_tool_error_result
-from app.ai.platform_runtime import PlatformAgentRuntimeStore, encode_sse_event
+from app.ai.platform_runtime import PlatformAgentRuntimeStore, encode_sse_event, stream_live_subscribe, subscribe_live_run_events
 from app.ai.pydantic_tools import AgentToolDeps
 from app.ai.run_errors import normalize_agent_run_exception
 from app.core.exceptions import AppException
@@ -69,29 +72,93 @@ class PydanticAgentRunner:
     ) -> AsyncGenerator[bytes, None]:
         """执行一次 Pydantic AI run 并输出平台 SSE。"""
 
-        catalog = get_agent_catalog_entry(agent_id)
-        if catalog is None:
-            raise RuntimeError(f"agent catalog is not initialized: {agent_id}")
-        instructions = [
-            *build_effective_instructions(catalog, agent_config),
-            build_scope_context_text(runtime_context),
-        ]
-        agent = Agent(
-            model,
-            name=agent_id,
-            output_type=[str, DeferredToolRequests],
-            instructions=instructions,
-            system_prompt=build_effective_description(catalog, agent_config),
-            deps_type=AgentToolDeps if deps is not None else type(None),
-            tools=tools or (),
-            history_processors=history_processors,
+        live_queue = subscribe_live_run_events(run_id=run_model.run_id)
+        task = asyncio.create_task(
+            self._drain_stream_run_direct(
+                run_model=run_model,
+                agent_id=agent_id,
+                model=model,
+                model_settings=model_settings,
+                runtime_context=runtime_context,
+                message=message,
+                agent_config=agent_config,
+                tools=tools,
+                deps=deps,
+                message_history=message_history,
+                deferred_tool_results=deferred_tool_results,
+                history_processors=history_processors,
+            )
         )
+        try:
+            async for chunk in stream_live_subscribe(run_id=run_model.run_id, queue=live_queue):
+                yield chunk
+            await task
+        except asyncio.CancelledError:
+            task.cancel()
+            with suppress(asyncio.CancelledError):
+                await task
+            raise
+        finally:
+            if not task.done():
+                task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await task
+
+    async def _drain_stream_run_direct(
+        self,
+        **kwargs: Any,
+    ) -> None:
+        """消费内部直接事件流；当前响应统一通过事件表订阅输出。"""
+
+        async for _ in self._stream_run_direct(**kwargs):
+            pass
+
+    async def run_to_store(self, **kwargs: Any) -> None:
+        """仅执行 run 并写入事件表，调用方自行负责 SSE 回放。"""
+
+        await self._drain_stream_run_direct(**kwargs)
+
+    async def _stream_run_direct(
+        self,
+        *,
+        run_model: AiAgentRun,
+        agent_id: str,
+        model: Any,
+        model_settings: dict[str, Any],
+        runtime_context: AgentRuntimeContext,
+        message: str | list[UserContent],
+        agent_config: EffectiveAgentRuntimeConfig | None = None,
+        tools: list[Any] | None = None,
+        deps: AgentToolDeps | None = None,
+        message_history: list[Any] | None = None,
+        deferred_tool_results: DeferredToolResults | None = None,
+        history_processors: Sequence[Any] | None = None,
+    ) -> AsyncGenerator[bytes, None]:
+        """执行 Pydantic AI run 并写入平台事件；直接产物仅供内部消费。"""
+
         content_parts: list[str] = []
         reasoning_parts: list[str] = []
         final_messages: list[dict[str, Any]] = []
         delta_buffer = _DeltaEventBuffer()
         denied_tool_call_ids = _denied_tool_call_ids(deferred_tool_results)
         try:
+            catalog = get_agent_catalog_entry(agent_id)
+            if catalog is None:
+                raise RuntimeError(f"agent catalog is not initialized: {agent_id}")
+            instructions = [
+                *build_effective_instructions(catalog, agent_config),
+                build_scope_context_text(runtime_context),
+            ]
+            agent = Agent(
+                model,
+                name=agent_id,
+                output_type=[str, DeferredToolRequests],
+                instructions=instructions,
+                system_prompt=build_effective_description(catalog, agent_config),
+                deps_type=AgentToolDeps if deps is not None else type(None),
+                tools=tools or (),
+                history_processors=history_processors,
+            )
             yield await self._yield_and_store(
                 run_model,
                 AgentRunEvent(event="model.request.started", run_id=run_model.run_id, session_id=run_model.session_id),
@@ -150,6 +217,12 @@ class PydanticAgentRunner:
                 message_history=final_messages,
             )
             event = await self._store.mark_terminal(run_model, status="completed", content="".join(content_parts) or None)
+            yield encode_sse_event(event)
+        except MemberDelegationPaused as exc:
+            async for sse in self._flush_delta_buffer(run_model, delta_buffer, best_effort=True):
+                yield sse
+            await self._store.save_run_message_history(run_model, final_messages)
+            event = await self._store.pause_for_requirement(run_model, requirement=exc.requirement)
             yield encode_sse_event(event)
         except AppException as exc:
             async for sse in self._flush_delta_buffer(run_model, delta_buffer, best_effort=True):

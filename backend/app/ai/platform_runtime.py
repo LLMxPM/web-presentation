@@ -909,17 +909,15 @@ class PlatformAgentRuntimeStore:
             .where(AiAgentMemberRun.session_id == session_id)
             .order_by(AiAgentMemberRun.created_at.asc())
         )
+        event_result = await self._session.execute(
+            select(AiAgentRunEvent)
+            .where(AiAgentRunEvent.session_id == session_id, AiAgentRunEvent.event.like("member.%"))
+            .order_by(AiAgentRunEvent.event_index.asc(), AiAgentRunEvent.id.asc())
+        )
+        member_event_rows = event_result.scalars().all()
         member_runs: list[AgentMemberRunItem] = []
         for member_run in result.scalars().all():
-            tool_result = await self._session.execute(
-                select(AiAgentToolCall)
-                .where(AiAgentToolCall.member_run_id == member_run.member_run_id)
-                .order_by(AiAgentToolCall.created_at.asc(), AiAgentToolCall.id.asc())
-            )
-            timeline = [
-                self._tool_timeline_item(tool_call, order_index=index)
-                for index, tool_call in enumerate(tool_result.scalars().all())
-            ]
+            timeline = self._member_timeline_items_from_event_rows(member_run, member_event_rows)
             member_runs.append(
                 AgentMemberRunItem(
                     parent_run_id=member_run.parent_run_id,
@@ -934,6 +932,147 @@ class PlatformAgentRuntimeStore:
                 )
             )
         return member_runs
+
+    def _member_timeline_items_from_event_rows(
+        self,
+        member_run: AiAgentMemberRun,
+        event_rows: list[AiAgentRunEvent],
+    ) -> list[AgentTimelineItem]:
+        """按 member.* 事件重建成员运行内部时间线。"""
+
+        items: list[AgentTimelineItem] = []
+        current_text: AgentTimelineItem | None = None
+        model_request_item: AgentTimelineItem | None = None
+        tool_items: dict[str, AgentTimelineItem] = {}
+
+        def clear_model_request_item() -> None:
+            """成员已有实际输出或终态时，移除过期的等待输出提示。"""
+
+            nonlocal model_request_item
+            if model_request_item is not None and model_request_item in items:
+                items.remove(model_request_item)
+            model_request_item = None
+
+        for event_row in event_rows:
+            event = AgentRunEvent.model_validate(event_row.payload_json)
+            data = event.data if isinstance(event.data, dict) else {}
+            if _optional_str(data.get("member_run_id")) != member_run.member_run_id:
+                continue
+            if event.event in {"member.message.delta", "member.reasoning.delta"}:
+                clear_model_request_item()
+                kind = "message" if event.event == "member.message.delta" else "reasoning"
+                role = "assistant" if kind == "message" else None
+                if current_text is None or current_text.kind != kind:
+                    current_text = AgentTimelineItem(
+                        id=f"member-event-{event_row.id}-{kind}",
+                        session_id=event_row.session_id,
+                        run_id=member_run.member_run_id,
+                        kind=kind,  # type: ignore[arg-type]
+                        role=role,  # type: ignore[arg-type]
+                        event_index=event_row.event_index,
+                        order_index=len(items),
+                        content="",
+                        status=None,
+                        tool=None,
+                        source="event",
+                        created_at=_iso(event_row.created_at),
+                    )
+                    items.append(current_text)
+                if event.content:
+                    current_text.content = f"{current_text.content or ''}{event.content}"
+                continue
+            if event.event in {"member.tool.started", "member.tool.completed", "member.tool.error"}:
+                clear_model_request_item()
+                current_text = None
+                status = {
+                    "member.tool.started": "running",
+                    "member.tool.completed": "completed",
+                    "member.tool.error": "error",
+                }[event.event]
+                tool_call_id = _optional_str(data.get("tool_call_id")) or f"member-event-{event_row.id}"
+                existing = tool_items.get(tool_call_id)
+                if existing is None:
+                    existing = AgentTimelineItem(
+                        id=f"member-tool-{member_run.member_run_id}-{tool_call_id}",
+                        session_id=event_row.session_id,
+                        run_id=member_run.member_run_id,
+                        kind="tool",
+                        role=None,
+                        event_index=event_row.event_index,
+                        order_index=len(items),
+                        content=None,
+                        status=status,
+                        tool=AgentTimelineToolItem(
+                            tool_call_id=_optional_str(data.get("tool_call_id")),
+                            tool_name=str(data.get("tool_name") or "工具调用"),
+                            member_agent_id=member_run.agent_id,
+                            member_agent_name=member_run.agent_name,
+                            member_run_id=member_run.member_run_id,
+                            status=status,  # type: ignore[arg-type]
+                            input_payload=_first_present(data, ("tool_args", "arguments", "args")),
+                            output_payload=_first_present(data, ("result", "output")),
+                            message=str(data.get("message") or event.content or ""),
+                        ),
+                        source="event",
+                        created_at=_iso(event_row.created_at),
+                    )
+                    tool_items[tool_call_id] = existing
+                    items.append(existing)
+                elif existing.tool is not None:
+                    existing.status = status
+                    existing.tool.status = status  # type: ignore[assignment]
+                    input_payload = _first_present(data, ("tool_args", "arguments", "args"))
+                    if _is_meaningful_payload(input_payload) and not _is_meaningful_payload(existing.tool.input_payload):
+                        existing.tool.input_payload = input_payload
+                    output_payload = _first_present(data, ("result", "output"))
+                    if output_payload is not None:
+                        existing.tool.output_payload = output_payload
+                    if data.get("message") or event.content:
+                        existing.tool.message = str(data.get("message") or event.content or "")
+                continue
+            if event.event == "member.model.request.completed":
+                clear_model_request_item()
+                current_text = None
+                continue
+            if event.event in {"member.model.request.started", "member.run.paused", "member.run.completed", "member.run.cancelled", "member.run.error"}:
+                if event.event != "member.model.request.started":
+                    clear_model_request_item()
+                current_text = None
+                status = {
+                    "member.model.request.started": "model_request",
+                    "member.run.paused": "paused",
+                    "member.run.completed": "completed",
+                    "member.run.cancelled": "cancelled",
+                    "member.run.error": "failed",
+                }[event.event]
+                content = {
+                    "member.model.request.started": "等待智能体输出中",
+                    "member.run.paused": "等待用户处理。",
+                    "member.run.completed": "运行已完成。",
+                    "member.run.cancelled": "运行已停止。",
+                    "member.run.error": str(data.get("message") or "运行失败。"),
+                }.get(event.event, "")
+                items.append(
+                    AgentTimelineItem(
+                        id=f"member-status-{event_row.id}",
+                        session_id=event_row.session_id,
+                        run_id=member_run.member_run_id,
+                        kind="run_status",
+                        role=None,
+                        event_index=event_row.event_index,
+                        order_index=len(items),
+                        content=content,
+                        status=status,
+                        tool=None,
+                        source="event",
+                        created_at=_iso(event_row.created_at),
+                    )
+                )
+                if event.event == "member.model.request.started":
+                    model_request_item = items[-1]
+        for index, item in enumerate(items):
+            item.order_index = index
+        return items
 
     def map_session_item(self, model: AiAgentSession) -> AgentSessionItem:
         """把会话 ORM 映射为接口模型。"""
@@ -1153,17 +1292,26 @@ class PlatformAgentRuntimeStore:
     async def _sync_tool_event(self, run_model: AiAgentRun, event: AgentRunEvent) -> None:
         """把平台工具事件同步为工具调用详情。"""
 
-        if event.event not in {"tool.started", "tool.completed", "tool.error"}:
+        if event.event not in {
+            "tool.started",
+            "tool.completed",
+            "tool.error",
+            "member.tool.started",
+            "member.tool.completed",
+            "member.tool.error",
+        }:
             return
         tool_name = str(event.data.get("tool_name") or "").strip()
         tool_call_id = str(event.data.get("tool_call_id") or "").strip() or None
         if not tool_name:
             return
+        normalized_event = event.event.removeprefix("member.")
+        member_run_id = _optional_str(event.data.get("member_run_id"))
         status = {
             "tool.started": "running",
             "tool.completed": "completed",
             "tool.error": "error",
-        }[event.event]
+        }[normalized_event]
         existing = None
         if tool_call_id:
             result = await self._session.execute(
@@ -1177,6 +1325,7 @@ class PlatformAgentRuntimeStore:
             existing = AiAgentToolCall(
                 session_id=run_model.session_id,
                 run_id=run_model.run_id,
+                member_run_id=member_run_id,
                 tool_call_id=tool_call_id,
                 tool_name=tool_name,
                 status=status,
@@ -1187,6 +1336,8 @@ class PlatformAgentRuntimeStore:
             self._session.add(existing)
             return
         existing.status = status
+        if member_run_id:
+            existing.member_run_id = member_run_id
         input_payload = event.data.get("tool_args") or event.data.get("args")
         if _is_meaningful_payload(input_payload) and not _is_meaningful_payload(existing.input_payload_json):
             existing.input_payload_json = input_payload
@@ -1253,6 +1404,34 @@ async def stream_replay_then_subscribe(
                 return
     finally:
         _unsubscribe(run_id, queue)
+
+
+def subscribe_live_run_events(*, run_id: str) -> asyncio.Queue[AgentRunEvent | None]:
+    """提前订阅指定 run 的本进程实时事件。"""
+
+    return _subscribe(run_id)
+
+
+async def stream_live_subscribe(
+    *,
+    run_id: str,
+    queue: asyncio.Queue[AgentRunEvent | None] | None = None,
+) -> AsyncGenerator[bytes, None]:
+    """只订阅本进程实时事件；queue 可由调用方提前创建以避免启动竞态。"""
+
+    live_queue = queue or _subscribe(run_id)
+    try:
+        while True:
+            event = await live_queue.get()
+            if event is None:
+                return
+            if event.event == "run.cancelling":
+                continue
+            yield encode_sse_event(event)
+            if event.event in STREAM_END_EVENTS:
+                return
+    finally:
+        _unsubscribe(run_id, live_queue)
 
 
 def new_session_id() -> str:

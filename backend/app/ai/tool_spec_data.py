@@ -160,6 +160,12 @@ _COORDINATOR_CONTENT_PROJECT_TOOL_KEYS = (
 )
 
 
+_TEAM_DELEGATION_TOOL_KEYS = (
+    'delegate_task_to_member',
+    'delegate_task_to_members',
+)
+
+
 _RUNTIME_KIT_TOOL_KEYS = (
     'list_runtime_kit_capabilities',
     'get_runtime_kit_capability',

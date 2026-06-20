@@ -46,6 +46,20 @@ async def test_agent_config_api_should_manage_prompt_and_tool_overrides(
     assert option_schema["additionalProperties"] is False
     assert ask_user["agent_guide"]["requires_confirmation"] is True
     assert ask_user["agent_guide"]["risk_level"] == "system"
+    team_delegation = next(group for group in coordinator["tool_groups"] if group["key"] == "team_delegation")
+    assert [tool["key"] for tool in team_delegation["tools"]] == [
+        "delegate_task_to_member",
+        "delegate_task_to_members",
+    ]
+    delegate_tool = _find_tool(coordinator, "delegate_task_to_member")
+    delegate_schema = delegate_tool["agent_guide"]["parameters_schema"]
+    assert set(_schema_enum_values(delegate_schema["properties"]["member_id"])) == {
+        "component-manager",
+        "resource-manager",
+    }
+    assert "team_delegation" in delegate_tool["agent_guide"]["runtime_disclosure_groups"]
+    batch_delegate_tool = _find_tool(coordinator, "delegate_task_to_members")
+    assert "tasks" in batch_delegate_tool["agent_guide"]["parameters_schema"]["properties"]
 
     update_response = await authenticated_client.patch(
         f"/api/ai/agent-configs/{AGENT_COORDINATOR_AGENT_ID}",
@@ -139,6 +153,18 @@ def _schema_allows_untyped_array(schema: dict[str, Any]) -> bool:
     if schema.get("type") == "array":
         return (schema.get("items") or {}).get("type") != "string"
     return any(_schema_allows_untyped_array(option) for option in _schema_composition_options(schema))
+
+
+def _schema_enum_values(schema: dict[str, Any]) -> list[str]:
+    """递归提取 JSON Schema 中的枚举值，兼容 anyOf/oneOf 包装。"""
+
+    values = schema.get("enum")
+    if isinstance(values, list):
+        return [str(value) for value in values]
+    result: list[str] = []
+    for option in _schema_composition_options(schema):
+        result.extend(_schema_enum_values(option))
+    return result
 
 
 def _schema_composition_options(schema: dict[str, Any]) -> list[dict[str, Any]]:
