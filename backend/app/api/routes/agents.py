@@ -393,6 +393,21 @@ async def upload_agent_image_attachment(
     )
 
 
+@router.get("/attachments/images/{attachment_id}/content")
+async def get_agent_image_attachment_content_by_id(
+    attachment_id: int,
+    current: Annotated[AuthContext, Depends(get_current_user)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> Response:
+    """返回当前用户可访问的图片附件原始内容，用于统一缩略图预览。"""
+
+    attachment, content = await AgentImageAttachmentService(
+        session,
+        user_id=current.user.id,
+    ).read_attachment_content_by_id(attachment_id=attachment_id)
+    return Response(content=content, media_type=attachment.content_type)
+
+
 @router.get("/sessions/{session_id}/attachments/images/{attachment_id}/content")
 async def get_agent_image_attachment_content(
     session_id: str,

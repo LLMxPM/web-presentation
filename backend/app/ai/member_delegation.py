@@ -22,6 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.ai.agent.runtime_context import AgentRuntimeContext, build_scope_context_text
 from app.ai.agent_catalog import get_agent_catalog_entry
 from app.ai.agent_runtime_config import build_effective_description, build_effective_instructions
+from app.ai.image_history_hydration import hydrate_agent_image_refs
 from app.ai.message_history import build_context_limit_processor, build_history_budget, rebuild_agent_message_history
 from app.ai.platform_runtime import PlatformAgentRuntimeStore
 from app.ai.pydantic_event_projection import PydanticEventProjector
@@ -277,7 +278,12 @@ class MemberDelegationExecutor:
             await runner.append_member_event("run.continued")
             return await runner.run(
                 message="",
-                message_history=_member_continue_message_history(member_run, requirement_payload),
+                message_history=await _member_continue_message_history(
+                    session=session,
+                    user_id=self._current.user.id,
+                    member_run=member_run,
+                    requirement_payload=requirement_payload,
+                ),
                 deferred_tool_results=deferred_tool_results,
             )
 
@@ -692,11 +698,23 @@ def _member_requirement_from_deferred(
     )
 
 
-def _member_continue_message_history(member_run: AiAgentMemberRun, requirement_payload: dict[str, Any]) -> list[Any]:
+async def _member_continue_message_history(
+    *,
+    session: AsyncSession,
+    user_id: int,
+    member_run: AiAgentMemberRun,
+    requirement_payload: dict[str, Any],
+) -> list[Any]:
     """读取成员恢复执行所需的 Pydantic AI 历史；缺失时重建最小上下文。"""
 
     if member_run.message_history_json:
-        return ModelMessagesTypeAdapter.validate_python(member_run.message_history_json)
+        hydrated = await hydrate_agent_image_refs(
+            session=session,
+            user_id=user_id,
+            session_id=member_run.session_id,
+            message_json=member_run.message_history_json,
+        )
+        return ModelMessagesTypeAdapter.validate_python(hydrated)
     tool_execution = requirement_payload.get("tool_execution") if isinstance(requirement_payload, dict) else {}
     if not isinstance(tool_execution, dict):
         return []

@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.ai.agent_runtime_config import EffectiveAgentRuntimeConfig, apply_tool_runtime_config
 from app.ai.auth_tokens import build_agent_tool_token
+from app.ai.image_refs import normalize_agent_image_ref
 from app.ai.platform_tools import AgentToolContext, recoverable_tool_error_result
 from app.ai.tool_specs import build_agent_tools_from_group_specs, list_agent_group_specs
 from app.core.exceptions import AppException
@@ -211,11 +212,12 @@ def _safe_tool_result(value: Any) -> Any:
     """把平台工具返回值压成 Pydantic AI 可序列化的 JSON 值。"""
 
     if _looks_like_platform_tool_result(value):
-        media_payload = {
-            key: _safe_tool_result(getattr(value, key, None))
-            for key in ("images", "videos", "audios", "files")
-            if getattr(value, key, None)
-        }
+        media_payload: dict[str, Any] = {}
+        for key in ("images", "videos", "audios", "files"):
+            media = getattr(value, key, None)
+            if not media:
+                continue
+            media_payload[key] = list(media) if key == "images" and isinstance(media, list) else _safe_tool_result(media)
         content = getattr(value, "content", "")
         if not media_payload:
             return content
@@ -223,12 +225,18 @@ def _safe_tool_result(value: Any) -> Any:
     if value is None or isinstance(value, (str, int, float, bool)):
         return value
     if isinstance(value, ImageUrl):
+        ref = _image_ref_from_vendor_metadata(getattr(value, "vendor_metadata", None))
+        if ref is not None:
+            return ref
         return {
             "kind": "image-url",
             "url": value.url,
             "media_type": getattr(value, "media_type", None),
         }
     if isinstance(value, BinaryContent):
+        ref = _image_ref_from_vendor_metadata(getattr(value, "vendor_metadata", None))
+        if ref is not None:
+            return ref
         return {
             "kind": "binary",
             "media_type": value.media_type,
@@ -275,6 +283,14 @@ def _looks_like_platform_tool_result(value: Any) -> bool:
         and hasattr(value, "content")
         and all(hasattr(value, key) for key in ("images", "videos", "audios", "files"))
     )
+
+
+def _image_ref_from_vendor_metadata(value: Any) -> dict[str, Any] | None:
+    """从 Pydantic AI media vendor_metadata 中读取 Agent 图片引用。"""
+
+    if not isinstance(value, dict):
+        return None
+    return normalize_agent_image_ref(value.get("agent_image_ref"))
 
 
 def _is_recoverable_tool_exception(exc: AppException) -> bool:

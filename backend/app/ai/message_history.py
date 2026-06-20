@@ -22,6 +22,8 @@ from app.ai.history_policy import (
     SAFETY_MARGIN_RATIO,
     estimate_text_tokens,
 )
+from app.ai.image_history_hydration import hydrate_agent_image_refs
+from app.ai.image_refs import normalize_agent_image_ref, sanitize_message_history_image_refs
 from app.core.exceptions import AppException
 from app.models.ai_agent_runtime import AiAgentRun, AiAgentSession
 from app.schemas.agent import AgentContextStatusItem
@@ -146,6 +148,7 @@ async def rebuild_agent_message_history(
     agent_id: str,
     include_run_id: str | None = None,
     exclude_run_id: str | None = None,
+    hydrate_images: bool = True,
 ) -> RebuiltAgentMessageHistory:
     """按 session run 顺序拼接 delta；有压缩检查点时跳过已覆盖 run。"""
 
@@ -178,8 +181,18 @@ async def rebuild_agent_message_history(
         included_run_ids.append(run_model.run_id)
     covered_until_run_id = str(checkpoint.get("covered_until_run_id") or "") if checkpoint else ""
     covered_until_created_at = str(checkpoint.get("covered_until_created_at") or "") if checkpoint else ""
+    validated_message_json = (
+        await hydrate_agent_image_refs(
+            session=session,
+            user_id=user_id,
+            session_id=session_id,
+            message_json=message_json,
+        )
+        if hydrate_images
+        else _replace_agent_image_refs_with_placeholders(message_json)
+    )
     return RebuiltAgentMessageHistory(
-        messages=_validate_message_json(message_json),
+        messages=_validate_message_json(validated_message_json),
         message_json=message_json,
         included_run_ids=included_run_ids,
         covered_until_run_id=covered_until_run_id or None,
@@ -300,7 +313,8 @@ def estimate_message_tokens(messages: list[ModelMessage]) -> int:
     """估算 Pydantic AI 消息 token 数，用于预算守卫。"""
 
     dumped = ModelMessagesTypeAdapter.dump_python(messages, mode="json")
-    return estimate_message_json_tokens(dumped if isinstance(dumped, list) else [])
+    sanitized = sanitize_message_history_image_refs(dumped if isinstance(dumped, list) else [])
+    return estimate_message_json_tokens(sanitized if isinstance(sanitized, list) else [])
 
 
 def estimate_message_json_tokens(messages: list[dict[str, Any]]) -> int:
@@ -316,7 +330,8 @@ def _summarize_messages(messages: list[ModelMessage], *, existing_summary: dict[
 
     previous = str((existing_summary or {}).get("summary") or "").strip()
     dumped = ModelMessagesTypeAdapter.dump_python(messages, mode="json")
-    text = json.dumps(dumped, ensure_ascii=False, default=str)
+    sanitized = sanitize_message_history_image_refs(dumped)
+    text = json.dumps(sanitized, ensure_ascii=False, default=str)
     prefix = f"既有摘要：\n{previous}\n\n" if previous else ""
     limit = max(600, target_tokens * 3)
     return (prefix + "原始历史压缩摘录：\n" + text)[:limit]
@@ -403,6 +418,20 @@ def _message_dicts(value: list[Any]) -> list[dict[str, Any]]:
     """过滤非 dict 消息，避免坏数据污染重建链路。"""
 
     return [dict(item) for item in value if isinstance(item, dict)]
+
+
+def _replace_agent_image_refs_with_placeholders(value: Any) -> Any:
+    """把图片引用替换为文本占位，供非入模的历史估算路径使用。"""
+
+    if isinstance(value, dict):
+        ref = normalize_agent_image_ref(value)
+        if ref is not None:
+            name = str(ref.get("original_name") or "图片")
+            return f"[图片引用：{name}]"
+        return {str(key): _replace_agent_image_refs_with_placeholders(child) for key, child in value.items()}
+    if isinstance(value, list):
+        return [_replace_agent_image_refs_with_placeholders(item) for item in value]
+    return value
 
 
 def _parse_datetime(value: Any) -> datetime | None:

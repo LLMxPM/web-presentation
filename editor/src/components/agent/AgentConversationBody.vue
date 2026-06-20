@@ -82,6 +82,31 @@
                 <div v-else>
                   <pre class="whitespace-pre-wrap break-words text-[12.5px] font-sans leading-[17px]">{{ item.message.content || '...' }}</pre>
                 </div>
+                <div
+                  v-if="item.message.attachments?.length"
+                  class="mt-1 flex flex-wrap gap-1"
+                  :class="item.message.role === 'user' ? 'justify-end' : 'justify-start'"
+                >
+                  <a
+                    v-for="attachment in item.message.attachments"
+                    :key="attachment.id"
+                    :href="isAttachmentPreviewAvailable(attachment) ? attachment.url : undefined"
+                    target="_blank"
+                    rel="noreferrer"
+                    class="message-attachment-thumb"
+                    :title="attachment.original_name"
+                    @click.stop
+                  >
+                    <img
+                      v-if="isAttachmentPreviewAvailable(attachment)"
+                      :src="attachment.url"
+                      :alt="attachment.original_name"
+                      class="h-full w-full object-cover"
+                      @error="event => handleAttachmentImageError(event, attachment)"
+                    >
+                    <span v-else class="message-attachment-placeholder">{{ attachmentPlaceholderText(attachment) }}</span>
+                  </a>
+                </div>
               </div>
               <div
                 v-if="item.message.role === 'user' && item.message.created_at"
@@ -142,27 +167,11 @@
           <article v-else-if="item.kind === 'tool_group'" class="conversation-message conversation-message--assistant flex justify-start px-0.5 py-0">
             <div class="message-group w-[92%] min-w-0 px-1 py-0.5">
               <template v-if="item.tools.length === 1">
-                <button
+                <div
                   v-for="tool in item.tools"
                   :key="tool.id"
-                  type="button"
-                  class="tool-call-row flex w-full min-w-0 items-center justify-between gap-2 border border-slate-200/80 bg-slate-50/60 px-1.5 py-0.5 text-left text-[10px] transition hover:bg-slate-100/70"
-                  :class="getToolChipClass(tool.status)"
-                  @click="handleToolRowClick(tool)"
                 >
-                  <span class="min-w-0 truncate">{{ resolveToolDisplayName(tool) }}</span>
-                  <span class="shrink-0 opacity-60" aria-hidden="true">{{ toolStatusLabelMap[tool.status] }}</span>
-                </button>
-              </template>
-              <details v-else class="tool-call-group" :open="shouldExpandToolGroup(item.tools)">
-                <summary class="flex cursor-pointer select-none items-center gap-1.5 border border-slate-200/80 bg-slate-50/60 px-1.5 py-0.5 text-[10px] text-slate-500 transition hover:bg-slate-100/70">
-                  <ChevronRight class="h-2.5 w-2.5 transition details-chevron" />
-                  <span class="min-w-0 flex-1 truncate">{{ formatToolGroupSummary(item.tools) }}</span>
-                </summary>
-                <div class="mt-1 space-y-1">
                   <button
-                    v-for="tool in item.tools"
-                    :key="tool.id"
                     type="button"
                     class="tool-call-row flex w-full min-w-0 items-center justify-between gap-2 border border-slate-200/80 bg-slate-50/60 px-1.5 py-0.5 text-left text-[10px] transition hover:bg-slate-100/70"
                     :class="getToolChipClass(tool.status)"
@@ -171,6 +180,70 @@
                     <span class="min-w-0 truncate">{{ resolveToolDisplayName(tool) }}</span>
                     <span class="shrink-0 opacity-60" aria-hidden="true">{{ toolStatusLabelMap[tool.status] }}</span>
                   </button>
+                  <div v-if="tool.attachments.length" class="mt-1 flex flex-wrap gap-1">
+                    <a
+                      v-for="attachment in tool.attachments"
+                      :key="attachment.id"
+                      :href="isAttachmentPreviewAvailable(attachment) ? attachment.url : undefined"
+                      target="_blank"
+                      rel="noreferrer"
+                      class="message-attachment-thumb"
+                      :title="attachment.original_name"
+                      @click.stop
+                    >
+                      <img
+                        v-if="isAttachmentPreviewAvailable(attachment)"
+                        :src="attachment.url"
+                        :alt="attachment.original_name"
+                        class="h-full w-full object-cover"
+                        @error="event => handleAttachmentImageError(event, attachment)"
+                      >
+                      <span v-else class="message-attachment-placeholder">{{ attachmentPlaceholderText(attachment) }}</span>
+                    </a>
+                  </div>
+                </div>
+              </template>
+              <details v-else class="tool-call-group" :open="shouldExpandToolGroup(item.tools)">
+                <summary class="flex cursor-pointer select-none items-center gap-1.5 border border-slate-200/80 bg-slate-50/60 px-1.5 py-0.5 text-[10px] text-slate-500 transition hover:bg-slate-100/70">
+                  <ChevronRight class="h-2.5 w-2.5 transition details-chevron" />
+                  <span class="min-w-0 flex-1 truncate">{{ formatToolGroupSummary(item.tools) }}</span>
+                </summary>
+                <div class="mt-1 space-y-1">
+                  <div
+                    v-for="tool in item.tools"
+                    :key="tool.id"
+                  >
+                    <button
+                      type="button"
+                      class="tool-call-row flex w-full min-w-0 items-center justify-between gap-2 border border-slate-200/80 bg-slate-50/60 px-1.5 py-0.5 text-left text-[10px] transition hover:bg-slate-100/70"
+                      :class="getToolChipClass(tool.status)"
+                      @click="handleToolRowClick(tool)"
+                    >
+                      <span class="min-w-0 truncate">{{ resolveToolDisplayName(tool) }}</span>
+                      <span class="shrink-0 opacity-60" aria-hidden="true">{{ toolStatusLabelMap[tool.status] }}</span>
+                    </button>
+                    <div v-if="tool.attachments.length" class="mt-1 flex flex-wrap gap-1">
+                      <a
+                        v-for="attachment in tool.attachments"
+                        :key="attachment.id"
+                        :href="isAttachmentPreviewAvailable(attachment) ? attachment.url : undefined"
+                        target="_blank"
+                        rel="noreferrer"
+                        class="message-attachment-thumb"
+                        :title="attachment.original_name"
+                        @click.stop
+                      >
+                        <img
+                          v-if="isAttachmentPreviewAvailable(attachment)"
+                          :src="attachment.url"
+                          :alt="attachment.original_name"
+                          class="h-full w-full object-cover"
+                          @error="event => handleAttachmentImageError(event, attachment)"
+                        >
+                        <span v-else class="message-attachment-placeholder">{{ attachmentPlaceholderText(attachment) }}</span>
+                      </a>
+                    </div>
+                  </div>
                 </div>
               </details>
             </div>
@@ -249,7 +322,7 @@ import {
   toolStatusLabelMap,
 } from '@/components/agent/agent-message-display'
 import type { TimelineDisplayItem, ToolCallDetail } from '@/components/agent/agent-conversation-panel'
-import type { AgentActiveRunItem, AgentMessageItem, AgentSuggestedPatch } from '@/types/api'
+import type { AgentActiveRunItem, AgentMessageAttachmentItem, AgentMessageItem, AgentSuggestedPatch } from '@/types/api'
 
 const props = defineProps<{
   timelineDisplayItems: TimelineDisplayItem[]
@@ -276,6 +349,7 @@ const markdownParser = getMarkdown()
 const markdownNodeCache = new Map<string, ReturnType<typeof buildMessageMarkdownNodes>>()
 const scrollContainerRef = ref<HTMLElement | null>(null)
 const autoScrollEnabled = ref(true)
+const failedAttachmentIds = ref(new Set<number>())
 let scrollAnimationFrame: number | null = null
 const assistantBatchRendering = {
   initialRenderBatchSize: 12,
@@ -352,6 +426,19 @@ function handleToolRowClick(tool: ToolCallDetail) {
     return
   }
   emit('open-tool-detail', tool.id)
+}
+
+function handleAttachmentImageError(event: Event, attachment: AgentMessageAttachmentItem) {
+  void event
+  failedAttachmentIds.value = new Set([...failedAttachmentIds.value, attachment.id])
+}
+
+function isAttachmentPreviewAvailable(attachment: AgentMessageAttachmentItem) {
+  return attachment.preview_available && !failedAttachmentIds.value.has(attachment.id)
+}
+
+function attachmentPlaceholderText(attachment: AgentMessageAttachmentItem) {
+  return attachment.source_kind === 'tool_output' ? '工具图片' : '图片'
 }
 
 /**
@@ -500,6 +587,33 @@ details[open] .details-chevron {
 .tool-call-row,
 .tool-call-group > summary {
   border-radius: 0.25rem;
+}
+
+.message-attachment-thumb {
+  display: inline-flex;
+  height: 3.5rem;
+  width: 3.5rem;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: 0.375rem;
+  border: 1px solid rgb(226 232 240);
+  background: rgb(248 250 252);
+  color: rgb(100 116 139);
+  text-decoration: none;
+}
+
+.message-attachment-placeholder {
+  display: inline-flex;
+  height: 100%;
+  width: 100%;
+  align-items: center;
+  justify-content: center;
+  padding: 0.25rem;
+  text-align: center;
+  font-size: 0.625rem;
+  line-height: 0.875rem;
 }
 
 .assistant-markdown {

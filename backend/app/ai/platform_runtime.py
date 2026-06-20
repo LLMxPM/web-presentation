@@ -14,6 +14,7 @@ from uuid import uuid4
 from sqlalchemy import Select, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.ai.image_refs import sanitize_message_history_image_refs
 from app.ai.agent.runtime_context import AgentRuntimeContext
 from app.models.ai_agent_attachment import AiAgentImageAttachment
 from app.models.ai_agent_runtime import (
@@ -40,6 +41,7 @@ from app.schemas.agent import (
     AgentTimelineItem,
     AgentTimelineToolItem,
 )
+from app.services.agent_image_attachment_service import AgentImageAttachmentService
 
 ACTIVE_RUN_STATUSES = {"pending", "running", "paused", "cancelling"}
 TERMINAL_RUN_STATUSES = {"completed", "cancelled", "failed"}
@@ -270,6 +272,7 @@ class PlatformAgentRuntimeStore:
     ) -> None:
         """保存一次运行完成后的助手消息和本 run 新增 Pydantic AI 消息 delta。"""
 
+        sanitized_history = sanitize_message_history_image_refs(message_history or []) if message_history is not None else None
         if content:
             await self._append_message(
                 session_id=run_model.session_id,
@@ -277,10 +280,10 @@ class PlatformAgentRuntimeStore:
                 role="assistant",
                 content=content,
                 reasoning_content=reasoning_content,
-                message_json={"message_history": message_history or []},
+                message_json={"message_history": sanitized_history or []},
             )
-        if message_history is not None:
-            self._append_run_message_history_delta(run_model, message_history)
+        if sanitized_history is not None and isinstance(sanitized_history, list):
+            self._append_run_message_history_delta(run_model, sanitized_history)
 
     async def save_run_message_history(self, run_model: AiAgentRun, message_history: list[dict[str, Any]]) -> None:
         """追加保存本 run 新增 Pydantic AI 消息 delta 并提交。"""
@@ -293,7 +296,8 @@ class PlatformAgentRuntimeStore:
         """把本次新增消息追加到 run delta，避免跨 run 重复持久化历史前缀。"""
 
         current = run_model.message_history_json if isinstance(run_model.message_history_json, list) else []
-        delta = [dict(item) for item in message_history if isinstance(item, dict)]
+        sanitized = sanitize_message_history_image_refs(message_history)
+        delta = [dict(item) for item in sanitized if isinstance(item, dict)] if isinstance(sanitized, list) else []
         if not delta:
             return
         run_model.message_history_json = [*current, *delta]
@@ -529,6 +533,13 @@ class PlatformAgentRuntimeStore:
         timeline_items = await self.build_timeline_items(session_id=session_id)
         member_runs = await self.build_member_runs(session_id=session_id, parent_timeline_items=timeline_items)
         pending_requirement = active_run.pending_requirement if active_run is not None else None
+        pending_attachments = await AgentImageAttachmentService(
+            self._session,
+            user_id=self._user_id,
+        ).list_pending_attachments(
+            workspace_id=session_model.workspace_id,
+            session_id=session_id,
+        )
         return AgentSessionRuntimeSnapshot(
             session=self.map_session_item(session_model),
             timeline_items=timeline_items,
@@ -538,7 +549,7 @@ class PlatformAgentRuntimeStore:
             last_run=last_run,
             pending_requirement=pending_requirement,
             event_index=active_run.event_index if active_run is not None else (last_run.event_index if last_run else -1),
-            pending_attachments=[],
+            pending_attachments=pending_attachments,
         )
 
     async def replay_events(self, *, run_id: str, event_index: int) -> list[AgentRunEvent]:
@@ -682,8 +693,13 @@ class PlatformAgentRuntimeStore:
                 )
 
         sorted_items = [item for _, item in sorted(timeline_entries, key=lambda entry: entry[0])]
+        tool_attachments = await self._tool_attachment_summaries(session_id=session_id)
         for order_index, item in enumerate(sorted_items):
             item.order_index = order_index
+            if item.kind == "tool" and item.tool is not None:
+                key = (item.run_id, item.tool.tool_call_id or "")
+                fallback_key = (item.run_id, item.tool.tool_name)
+                item.attachments = tool_attachments.get(key) or tool_attachments.get(fallback_key, [])
         return sorted_items
 
     async def _run_order_map(self, *, session_id: str) -> dict[str, int]:
@@ -880,6 +896,11 @@ class PlatformAgentRuntimeStore:
             content=content,
             status=None,
             tool=None,
+            attachments=[
+                AgentMessageAttachmentItem.model_validate(item)
+                for item in (message.attachments_json or [])
+                if isinstance(item, dict)
+            ] if kind == "message" else [],
             source="message",
             created_at=_iso(message.created_at),
         )
@@ -1228,17 +1249,34 @@ class PlatformAgentRuntimeStore:
                 AiAgentImageAttachment.status == RecordStatus.ACTIVE.value,
             )
         )
-        return [
-            {
-                "id": item.id,
-                "original_name": item.original_name,
-                "content_type": item.content_type,
-                "file_size": item.file_size,
-                "url": "",
-                "promoted_asset_id": item.promoted_asset_id,
-            }
-            for item in result.scalars().all()
-        ]
+        service = AgentImageAttachmentService(self._session, user_id=self._user_id)
+        return [service._to_message_item(item).model_dump(mode="json") for item in result.scalars().all()]
+
+    async def _tool_attachment_summaries(self, *, session_id: str) -> dict[tuple[str, str], list[AgentMessageAttachmentItem]]:
+        """按 run/tool_call_id 返回工具输出图片附件摘要，用于 timeline 缩略图展示。"""
+
+        result = await self._session.execute(
+            select(AiAgentImageAttachment)
+            .where(
+                AiAgentImageAttachment.session_id == session_id,
+                AiAgentImageAttachment.user_id == self._user_id,
+                AiAgentImageAttachment.source_kind == "tool_output",
+                AiAgentImageAttachment.run_id.is_not(None),
+                AiAgentImageAttachment.status == RecordStatus.ACTIVE.value,
+            )
+            .order_by(AiAgentImageAttachment.id.asc())
+        )
+        service = AgentImageAttachmentService(self._session, user_id=self._user_id)
+        summaries: dict[tuple[str, str], list[AgentMessageAttachmentItem]] = {}
+        for attachment in result.scalars().all():
+            run_id = str(attachment.run_id or "")
+            if not run_id:
+                continue
+            item = service._to_message_item(attachment)
+            summaries.setdefault((run_id, str(attachment.tool_call_id or "")), []).append(item)
+            if attachment.tool_name:
+                summaries.setdefault((run_id, attachment.tool_name), []).append(item)
+        return summaries
 
     def _tool_timeline_item(self, tool_call: AiAgentToolCall, *, order_index: int) -> AgentTimelineItem:
         """把工具调用映射为 timeline item。"""

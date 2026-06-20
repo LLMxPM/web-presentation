@@ -50,6 +50,7 @@ class PydanticAgentRunner:
         message_history: list[Any] | None = None,
         deferred_tool_results: DeferredToolResults | None = None,
         history_processors: Sequence[Any] | None = None,
+        message_image_refs: list[dict[str, Any]] | None = None,
     ) -> AsyncGenerator[bytes, None]:
         """执行一次 Pydantic AI run 并输出平台 SSE。"""
 
@@ -68,6 +69,7 @@ class PydanticAgentRunner:
                 message_history=message_history,
                 deferred_tool_results=deferred_tool_results,
                 history_processors=history_processors,
+                message_image_refs=message_image_refs,
             )
         )
         try:
@@ -114,6 +116,7 @@ class PydanticAgentRunner:
         message_history: list[Any] | None = None,
         deferred_tool_results: DeferredToolResults | None = None,
         history_processors: Sequence[Any] | None = None,
+        message_image_refs: list[dict[str, Any]] | None = None,
     ) -> AsyncGenerator[bytes, None]:
         """执行 Pydantic AI run 并写入平台事件；直接产物仅供内部消费。"""
 
@@ -145,6 +148,7 @@ class PydanticAgentRunner:
                 append_event=lambda event: self._store.append_event(run_model, event),
                 deferred_tool_results=deferred_tool_results,
                 final_messages=final_messages,
+                final_message_image_refs=message_image_refs,
                 on_message_delta=content_parts.append,
                 on_reasoning_delta=reasoning_parts.append,
                 on_deferred=lambda requests, _messages: self._pause_for_deferred_tools(run_model, requests),

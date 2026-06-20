@@ -894,11 +894,13 @@ export interface AgentMessageToolCallItem {
 export interface AgentImageAttachmentItem {
   id: number
   session_id: string
+  source_kind: 'user_upload' | 'tool_output'
   original_name: string
   content_type: string
   file_size: number
   sha256: string
   url: string
+  preview_available: boolean
   promoted_asset_id: number | null
   status: RecordStatus
   created_at: string | null
@@ -906,10 +908,12 @@ export interface AgentImageAttachmentItem {
 
 export interface AgentMessageAttachmentItem {
   id: number
+  source_kind: 'user_upload' | 'tool_output'
   original_name: string
   content_type: string
   file_size: number
   url: string
+  preview_available: boolean
   promoted_asset_id: number | null
 }
 
@@ -1035,6 +1039,7 @@ export interface AgentTimelineItem {
   content: string | null
   status: string | null
   tool: AgentTimelineToolItem | null
+  attachments?: AgentMessageAttachmentItem[]
   source: 'message' | 'event' | 'synthetic'
   created_at: string | null
 }

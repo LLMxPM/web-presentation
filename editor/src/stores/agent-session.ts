@@ -14,6 +14,7 @@ import type {
   AgentActiveRunItem,
   AgentContextStatusItem,
   AgentImageAttachmentItem,
+  AgentMessageAttachmentItem,
   AgentMemberRunItem,
   AgentPendingRequirement,
   AgentRunEvent,
@@ -145,6 +146,7 @@ export const useAgentSessionStore = defineStore('agent-session', {
             kind: 'message',
             role: 'user',
             content,
+            attachments: attachments.map(mapImageAttachmentToMessageAttachment),
           }),
           order_index: nextTimelineOrderIndex(state),
         },
@@ -224,4 +226,20 @@ function normalizeActiveRun(run: AgentActiveRunItem | null): AgentActiveRunItem 
     return run
   }
   return { ...run, pending_requirement: null }
+}
+
+/**
+ * 把 Composer 待发送附件转换为消息时间线可展示的附件摘要。
+ */
+function mapImageAttachmentToMessageAttachment(attachment: AgentImageAttachmentItem): AgentMessageAttachmentItem {
+  return {
+    id: attachment.id,
+    source_kind: attachment.source_kind,
+    original_name: attachment.original_name,
+    content_type: attachment.content_type,
+    file_size: attachment.file_size,
+    url: attachment.url,
+    preview_available: attachment.preview_available,
+    promoted_asset_id: attachment.promoted_asset_id,
+  }
 }

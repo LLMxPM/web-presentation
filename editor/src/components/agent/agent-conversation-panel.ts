@@ -1,7 +1,14 @@
 /**
  * 文件功能：抽离内容助手面板的 run-first 时间线展示、工具详情与格式化逻辑。
  */
-import type { AgentMemberRunItem, AgentMessageItem, AgentPendingRequirement, AgentTimelineItem, AgentUserFeedbackQuestion } from '@/types/api'
+import type {
+  AgentMemberRunItem,
+  AgentMessageAttachmentItem,
+  AgentMessageItem,
+  AgentPendingRequirement,
+  AgentTimelineItem,
+  AgentUserFeedbackQuestion,
+} from '@/types/api'
 
 export interface ToolCallDetail {
   id: string
@@ -18,6 +25,7 @@ export interface ToolCallDetail {
   source: 'event' | 'message' | 'synthetic'
   createdAt: string | null
   delegatedMemberRuns: AgentMemberRunItem[]
+  attachments: AgentMessageAttachmentItem[]
 }
 
 export interface FeedbackRequestEntry {
@@ -75,6 +83,7 @@ export function toolDetailFromTimelineItem(item: AgentTimelineItem, memberRuns: 
     message: item.tool.message,
     source: item.source,
     createdAt: item.created_at,
+    attachments: item.attachments ?? [],
     delegatedMemberRuns: isDelegateToolName(item.tool.tool_name)
       ? memberRuns.filter(memberRun => (
           memberRun.parent_run_id === item.run_id
@@ -342,7 +351,7 @@ function buildDisplayMessage(item: AgentTimelineItem): AgentMessageItem {
     tool_args: null,
     tool_call_error: null,
     tool_calls: [],
-    attachments: [],
+    attachments: item.attachments ?? [],
   }
 }
 

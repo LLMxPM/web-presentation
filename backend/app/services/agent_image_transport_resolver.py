@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import ipaddress
 from dataclasses import dataclass
+from typing import Any
 from urllib.parse import urlparse
 
 from pydantic_ai.messages import BinaryContent, ImageUrl
@@ -21,6 +22,7 @@ class ResolvedAgentImage:
     image: ImageUrl | BinaryContent
     transport: str
     url: str | None = None
+    model_ref: dict[str, Any] | None = None
 
 
 class AgentImageTransportResolver:

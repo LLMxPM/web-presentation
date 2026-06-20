@@ -967,10 +967,10 @@ async def test_agent_message_history_should_exclude_current_continue_run(
     assert rebuilt_without_exclusion.included_run_ids == ["history-continue-run-1", "history-continue-run-2"]
 
 
-async def test_agent_message_history_should_preserve_large_payload_delta(
+async def test_agent_message_history_should_sanitize_image_payload_and_preserve_large_text_delta(
     authenticated_client: AsyncClient,
 ) -> None:
-    """图片 URL、base64 与大工具结果应原样保留在本 run delta 中，且不写入后续 run。"""
+    """图片 data URL 不写入 run delta，但普通大工具文本仍保留且不写入后续 run。"""
 
     _, session_id, scope = await _create_history_workspace_session(authenticated_client, "大内容保留")
     image_url = "https://cdn.example.test/assets/rendered-image.png"
@@ -1013,9 +1013,11 @@ async def test_agent_message_history_should_preserve_large_payload_delta(
     assert first_run is not None
     assert second_run is not None
     preserved_content = first_run.message_history_json[-1]["parts"][0]["content"]
-    assert preserved_content == large_tool_result
+    assert preserved_content["image_url"] == image_url
+    assert preserved_content["base64"] == "[已移除的图片 data URL]"
+    assert preserved_content["payload"] == large_tool_result["payload"]
     assert image_url in json.dumps(rebuilt.message_json, ensure_ascii=False)
-    assert image_base64 in json.dumps(rebuilt.message_json, ensure_ascii=False)
+    assert image_base64 not in json.dumps(rebuilt.message_json, ensure_ascii=False)
     assert image_base64 not in json.dumps(second_run.message_history_json, ensure_ascii=False)
 
 

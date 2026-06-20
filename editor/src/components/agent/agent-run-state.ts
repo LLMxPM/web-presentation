@@ -4,6 +4,7 @@
 import type {
   AgentActiveRunItem,
   AgentImageAttachmentItem,
+  AgentMessageAttachmentItem,
   AgentMemberRunItem,
   AgentPendingRequirement,
   AgentRunEvent,
@@ -92,6 +93,7 @@ export function buildAgentLocalTimelineItem(
     content?: string | null
     status?: string | null
     tool?: AgentTimelineToolItem | null
+    attachments?: AgentMessageAttachmentItem[]
   },
 ): AgentTimelineItem {
   return {
@@ -105,6 +107,7 @@ export function buildAgentLocalTimelineItem(
     content: payload.content ?? null,
     status: payload.status ?? null,
     tool: payload.tool ?? null,
+    attachments: payload.attachments ?? [],
     source: 'synthetic',
     created_at: new Date().toISOString(),
   }
@@ -453,6 +456,7 @@ function upsertToolTimelineItem(
     content: null,
     status,
     tool,
+    attachments: [],
     source: 'event',
     created_at: existingItem?.created_at ?? new Date().toISOString(),
   }
@@ -708,6 +712,7 @@ function upsertMemberToolTimelineItem(
     content: null,
     status,
     tool,
+    attachments: [],
     source: 'event',
     created_at: existingItem?.created_at ?? new Date().toISOString(),
   }
@@ -759,6 +764,7 @@ function appendMemberRunStatusItem(
     content,
     status,
     tool: null,
+    attachments: [],
     source: 'event',
     created_at: existing?.created_at ?? new Date().toISOString(),
   }
@@ -865,6 +871,7 @@ function appendRequirementItem(
     content: resolveRequirementTimelineContent(requirement),
     status: 'pending',
     tool: null,
+    attachments: [],
     source: 'event',
     created_at: new Date().toISOString(),
   })
@@ -895,6 +902,7 @@ function appendRunStatusItem(
     content,
     status,
     tool: null,
+    attachments: [],
     source: 'event',
     created_at: new Date().toISOString(),
   })

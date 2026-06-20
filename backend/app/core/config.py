@@ -51,6 +51,11 @@ class AppSettings(BaseSettings):
     ai_tool_auth_max_seconds: int = 7200
     ai_image_transport_mode: str = "auto"
     ai_image_attachment_max_bytes: int = 10 * 1024 * 1024
+    ai_image_model_url_reuse_window_seconds: int = 7200
+    ai_image_model_url_ttl_seconds: int = 21600
+    ai_image_model_url_expiry_safety_seconds: int = 300
+    ai_image_history_max_hydrated_images: int = 10
+    ai_image_history_max_hydrated_bytes: int = 30 * 1024 * 1024
     redis_url: str = "redis://127.0.0.1:6379/0"
     redis_key_prefix: str = "web_presentation"
     redis_healthcheck_timeout_seconds: float = 2.0
@@ -295,6 +300,21 @@ class AppSettings(BaseSettings):
 
         if value <= 0:
             raise ValueError("AI 图片附件大小上限必须大于 0。")
+        return value
+
+    @field_validator(
+        "ai_image_model_url_reuse_window_seconds",
+        "ai_image_model_url_ttl_seconds",
+        "ai_image_model_url_expiry_safety_seconds",
+        "ai_image_history_max_hydrated_images",
+        "ai_image_history_max_hydrated_bytes",
+    )
+    @classmethod
+    def validate_ai_image_positive_ints(cls, value: int) -> int:
+        """校验 Agent 图片水合与模型 URL 复用相关配置为正整数。"""
+
+        if value <= 0:
+            raise ValueError("AI 图片水合与模型 URL 复用配置必须大于 0。")
         return value
 
     @field_validator("redis_key_prefix")

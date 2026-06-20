@@ -20,6 +20,8 @@ from app.ai.message_history import (
     build_history_budget,
     rebuild_agent_message_history,
 )
+from app.ai.image_history_hydration import hydrate_agent_image_refs
+from app.ai.image_refs import image_refs_from_resolved_images
 from app.ai.member_delegation import MemberDelegationExecutor, MemberDelegationPaused
 from app.ai.platform_runtime import (
     ACTIVE_RUN_STATUSES,
@@ -215,6 +217,7 @@ class AgentSessionFacade:
                 user_id=self._current.user.id,
                 session_id=session_id,
                 agent_id=agent_id,
+                hydrate_images=False,
             )
             return build_context_status_item(
                 session_id=session_id,
@@ -347,6 +350,7 @@ class AgentSessionFacade:
                     tools=tools,
                     deps=deps,
                     message_history=rebuilt_history.messages or None,
+                    message_image_refs=image_refs_from_resolved_images(resolved_images),
                     history_processors=[context_processor] if context_processor is not None else None,
                 ):
                     yield chunk
@@ -562,8 +566,14 @@ class AgentSessionFacade:
                 from app.ai.platform_runtime import encode_sse_event
 
                 yield encode_sse_event(continued)
+                current_message_history_json = await _hydrate_continue_message_history_json(
+                    session=self._session,
+                    user_id=self._current.user.id,
+                    session_id=session_id,
+                    message_history=run_model.message_history_json,
+                )
                 current_run_history = _build_continue_message_history(
-                    run_model_message_history=run_model.message_history_json,
+                    run_model_message_history=current_message_history_json,
                     run_input_payload=run_model.input_payload_json,
                     run_id=run_model.run_id,
                     tool_execution=merged_tool_execution,
@@ -733,8 +743,14 @@ class AgentSessionFacade:
                     supports_image_input=bool(llm_config.supports_image_input),
                     member_delegation_executor=member_delegation_executor,
                 )
+                current_message_history_json = await _hydrate_continue_message_history_json(
+                    session=self._session,
+                    user_id=self._current.user.id,
+                    session_id=session_id,
+                    message_history=run_model.message_history_json,
+                )
                 current_run_history = _build_continue_message_history(
-                    run_model_message_history=run_model.message_history_json,
+                    run_model_message_history=current_message_history_json,
                     run_input_payload=run_model.input_payload_json,
                     run_id=run_model.run_id,
                     tool_execution={
@@ -1020,6 +1036,25 @@ def _build_continue_message_history(
             run_id=run_id,
         ),
     ]
+
+
+async def _hydrate_continue_message_history_json(
+    *,
+    session: AsyncSession,
+    user_id: int,
+    session_id: str,
+    message_history: list[dict[str, Any]] | None,
+) -> list[dict[str, Any]] | None:
+    """继续 paused run 前把当前 run 已保存的图片引用临时水合。"""
+
+    if not message_history:
+        return message_history
+    return await hydrate_agent_image_refs(
+        session=session,
+        user_id=user_id,
+        session_id=session_id,
+        message_json=message_history,
+    )
 
 
 def _build_user_prompt(message: str, resolved_images: list[ResolvedAgentImage]) -> str | list[UserContent]:

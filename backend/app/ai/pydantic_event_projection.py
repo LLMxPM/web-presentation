@@ -22,6 +22,7 @@ from pydantic_ai.messages import (
     ToolCallPart,
 )
 
+from app.ai.image_refs import sanitize_message_history_image_refs
 from app.ai.platform_tools import is_recoverable_tool_error_result
 from app.schemas.agent import AgentRunEvent
 
@@ -55,6 +56,7 @@ class PydanticEventProjector:
         map_tool_call_id: _ToolCallIdMapper | None = None,
         extra_tool_data: _ToolExtraData | None = None,
         final_messages: list[dict[str, Any]] | None = None,
+        final_message_image_refs: list[dict[str, Any]] | None = None,
         on_message_delta: _DeltaCallback | None = None,
         on_reasoning_delta: _DeltaCallback | None = None,
         on_deferred: _DeferredHandler | None = None,
@@ -69,6 +71,7 @@ class PydanticEventProjector:
         self._map_tool_call_id = map_tool_call_id or (lambda raw_tool_call_id: raw_tool_call_id)
         self._extra_tool_data = extra_tool_data or (lambda raw_tool_call_id: {})
         self._final_messages = final_messages if final_messages is not None else []
+        self._final_message_image_refs = list(final_message_image_refs or [])
         self._on_message_delta = on_message_delta
         self._on_reasoning_delta = on_reasoning_delta
         self._on_deferred = on_deferred
@@ -85,7 +88,10 @@ class PydanticEventProjector:
         """把单个 Pydantic AI 原始事件转换为零到多个平台事件。"""
 
         if isinstance(raw_event, AgentRunResultEvent):
-            self._final_messages[:] = safe_new_messages(raw_event.result)
+            self._final_messages[:] = sanitize_message_history_image_refs(
+                safe_new_messages(raw_event.result),
+                image_refs=self._final_message_image_refs,
+            )
             output = getattr(raw_event.result, "output", None)
             if isinstance(output, DeferredToolRequests):
                 emitted = await self.flush_delta_buffer()
@@ -227,6 +233,7 @@ class PydanticEventProjector:
         """把工具返回转换为 _emit 可直接使用的事件名和 data。"""
 
         raw_call_id = str(raw_tool_call_id or "")
+        sanitized_content = sanitize_message_history_image_refs(content)
         data: dict[str, Any] = {
             "tool_name": tool_name,
             "tool_call_id": self._map_tool_call_id(raw_call_id),
@@ -238,14 +245,14 @@ class PydanticEventProjector:
                 "data": {
                     **data,
                     "message": _recoverable_tool_error_message(content),
-                    "result": content,
+                    "result": sanitized_content,
                 },
             }
         return {
             "event": "tool.completed",
             "data": {
                 **data,
-                "result": content,
+                "result": sanitized_content,
             },
         }
 

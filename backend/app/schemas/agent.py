@@ -81,11 +81,13 @@ class AgentImageAttachmentItem(SchemaBase):
 
     id: int
     session_id: str
+    source_kind: Literal["user_upload", "tool_output"] = "user_upload"
     original_name: str
     content_type: str
     file_size: int
     sha256: str
     url: str
+    preview_available: bool = True
     promoted_asset_id: int | None = None
     status: str
     created_at: str | None = None
@@ -95,10 +97,12 @@ class AgentMessageAttachmentItem(SchemaBase):
     """会话历史消息中展示的图片附件摘要。"""
 
     id: int
+    source_kind: Literal["user_upload", "tool_output"] = "user_upload"
     original_name: str
     content_type: str
     file_size: int
     url: str
+    preview_available: bool = True
     promoted_asset_id: int | None = None
 
 
@@ -229,6 +233,7 @@ class AgentTimelineItem(SchemaBase):
     content: str | None = None
     status: str | None = None
     tool: AgentTimelineToolItem | None = None
+    attachments: list[AgentMessageAttachmentItem] = Field(default_factory=list)
     source: Literal["message", "event", "synthetic"]
     created_at: str | None = None
 
