@@ -35,7 +35,7 @@ from app.ai.pydantic_model_resolver import PydanticLlmModelResolver
 from app.ai.pydantic_runner import PydanticAgentRunner
 from app.ai.pydantic_tools import build_pydantic_tools
 from app.ai.tool_specs import AGENT_COORDINATOR_AGENT_ID
-from app.ai.run_errors import normalize_agent_run_exception
+from app.ai.run_errors import build_agent_error_log_extra, normalize_agent_run_exception
 from app.core.exceptions import AppException
 from app.db.session import get_session_factory
 from app.schemas.agent import (
@@ -363,6 +363,18 @@ class AgentSessionFacade:
                 )
                 raise
             except AppException as exc:
+                logger.warning(
+                    "Agent run setup stopped by application error",
+                    extra=build_agent_error_log_extra(
+                        exc,
+                        event="ai.agent_run.setup_app_error",
+                        run_id=run_model.run_id if run_model is not None else run_id,
+                        session_id=session_id,
+                        agent_id=agent_id,
+                        error_code=exc.code,
+                        user_error_message=exc.detail,
+                    ),
+                )
                 if run_model is not None:
                     from app.ai.platform_runtime import encode_sse_event
 
@@ -383,13 +395,16 @@ class AgentSessionFacade:
                 )
                 logger.exception(
                     "Agent run setup failed",
-                    extra={
-                        "run_id": run_model.run_id if run_model is not None else run_id,
-                        "session_id": session_id,
-                        "agent_id": agent_id,
-                        "error_code": failure.code,
-                        "raw_error_message": failure.raw_message,
-                    },
+                    extra=build_agent_error_log_extra(
+                        exc,
+                        event="ai.agent_run.setup_exception",
+                        run_id=run_model.run_id if run_model is not None else run_id,
+                        session_id=session_id,
+                        agent_id=agent_id,
+                        error_code=failure.code,
+                        user_error_message=failure.message,
+                        raw_error_message=failure.raw_message,
+                    ),
                 )
                 if run_model is not None:
                     from app.ai.platform_runtime import encode_sse_event
@@ -610,6 +625,18 @@ class AgentSessionFacade:
             except AppException as exc:
                 from app.ai.platform_runtime import encode_sse_event
 
+                logger.warning(
+                    "Agent run continue stopped by application error",
+                    extra=build_agent_error_log_extra(
+                        exc,
+                        event="ai.agent_run.continue_app_error",
+                        run_id=run_model.run_id,
+                        session_id=session_id,
+                        agent_id=agent_id,
+                        error_code=exc.code,
+                        user_error_message=exc.detail,
+                    ),
+                )
                 event = await self._store.mark_terminal(
                     run_model,
                     status="failed",
@@ -627,13 +654,16 @@ class AgentSessionFacade:
                 )
                 logger.exception(
                     "Agent run continue failed",
-                    extra={
-                        "run_id": run_model.run_id,
-                        "session_id": session_id,
-                        "agent_id": agent_id,
-                        "error_code": failure.code,
-                        "raw_error_message": failure.raw_message,
-                    },
+                    extra=build_agent_error_log_extra(
+                        exc,
+                        event="ai.agent_run.continue_exception",
+                        run_id=run_model.run_id,
+                        session_id=session_id,
+                        agent_id=agent_id,
+                        error_code=failure.code,
+                        user_error_message=failure.message,
+                        raw_error_message=failure.raw_message,
+                    ),
                 )
                 event = await self._store.mark_terminal(
                     run_model,
@@ -779,6 +809,18 @@ class AgentSessionFacade:
             except MemberDelegationPaused as exc:
                 await self._store.pause_for_requirement(run_model, requirement=exc.requirement)
             except AppException as exc:
+                logger.warning(
+                    "Member delegated run continue stopped by application error",
+                    extra=build_agent_error_log_extra(
+                        exc,
+                        event="ai.member_delegated_run.continue_app_error",
+                        run_id=run_model.run_id,
+                        session_id=session_id,
+                        agent_id=agent_id,
+                        error_code=exc.code,
+                        user_error_message=exc.detail,
+                    ),
+                )
                 await self._store.mark_terminal(
                     run_model,
                     status="failed",
@@ -793,13 +835,16 @@ class AgentSessionFacade:
                 )
                 logger.exception(
                     "Member delegated run continue failed",
-                    extra={
-                        "run_id": run_model.run_id,
-                        "session_id": session_id,
-                        "agent_id": agent_id,
-                        "error_code": failure.code,
-                        "raw_error_message": failure.raw_message,
-                    },
+                    extra=build_agent_error_log_extra(
+                        exc,
+                        event="ai.member_delegated_run.continue_exception",
+                        run_id=run_model.run_id,
+                        session_id=session_id,
+                        agent_id=agent_id,
+                        error_code=failure.code,
+                        user_error_message=failure.message,
+                        raw_error_message=failure.raw_message,
+                    ),
                 )
                 await self._store.mark_terminal(
                     run_model,

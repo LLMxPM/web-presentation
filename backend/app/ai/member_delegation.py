@@ -29,7 +29,7 @@ from app.ai.platform_runtime import PlatformAgentRuntimeStore
 from app.ai.pydantic_event_projection import PydanticEventProjector, safe_new_messages
 from app.ai.pydantic_model_resolver import PydanticLlmModelResolver
 from app.ai.pydantic_tools import build_pydantic_tools
-from app.ai.run_errors import normalize_agent_run_exception
+from app.ai.run_errors import build_agent_error_log_extra, normalize_agent_run_exception
 from app.core.exceptions import AppException
 from app.models.ai_agent_runtime import AiAgentMemberRun, AiAgentRun
 from app.schemas.agent import AgentPendingRequirement, AgentRunEvent, AgentScopeContext
@@ -530,6 +530,19 @@ class _MemberAgentRunner:
                 raise
             if projector is not None:
                 await projector.flush_delta_buffer(best_effort=True)
+            logger.warning(
+                "Member agent run stopped by application error",
+                extra=build_agent_error_log_extra(
+                    exc,
+                    event="ai.member_run.app_error",
+                    parent_run_id=self._parent_run.run_id,
+                    session_id=self._parent_run.session_id,
+                    member_run_id=self._member_run.member_run_id,
+                    member_agent_id=self._member_run.agent_id,
+                    error_code=exc.code,
+                    user_error_message=exc.detail,
+                ),
+            )
             return await self._mark_failed_result(code=exc.code, message=exc.detail)
         except Exception as exc:  # noqa: BLE001
             if projector is not None:
@@ -537,13 +550,17 @@ class _MemberAgentRunner:
             failure = normalize_agent_run_exception(exc, fallback_code="AI_MEMBER_RUN_FAILED")
             logger.exception(
                 "Member agent run failed",
-                extra={
-                    "parent_run_id": self._parent_run.run_id,
-                    "member_run_id": self._member_run.member_run_id,
-                    "member_agent_id": self._member_run.agent_id,
-                    "error_code": failure.code,
-                    "raw_error_message": failure.raw_message,
-                },
+                extra=build_agent_error_log_extra(
+                    exc,
+                    event="ai.member_run.exception",
+                    parent_run_id=self._parent_run.run_id,
+                    session_id=self._parent_run.session_id,
+                    member_run_id=self._member_run.member_run_id,
+                    member_agent_id=self._member_run.agent_id,
+                    error_code=failure.code,
+                    user_error_message=failure.message,
+                    raw_error_message=failure.raw_message,
+                ),
             )
             return await self._mark_failed_result(code=failure.code, message=failure.message)
 
@@ -743,6 +760,12 @@ def _safe_new_member_messages(result: Any) -> list[dict[str, Any]]:
     """安全序列化成员 run 新增消息，并去除不可直接持久化的图片内容。"""
 
     return sanitize_message_history_image_refs(safe_new_messages(result))
+
+
+def _message_dicts(value: list[Any]) -> list[dict[str, Any]]:
+    """过滤成员消息历史中的非对象项，避免坏数据污染恢复链路。"""
+
+    return [dict(item) for item in value if isinstance(item, dict)]
 
 
 def _merge_member_message_history(

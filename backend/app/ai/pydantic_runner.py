@@ -21,7 +21,7 @@ from app.ai.member_delegation import MemberDelegationPaused
 from app.ai.platform_runtime import PlatformAgentRuntimeStore, encode_sse_event, stream_live_subscribe, subscribe_live_run_events
 from app.ai.pydantic_event_projection import PydanticEventProjector, safe_messages, safe_new_messages
 from app.ai.pydantic_tools import AgentToolDeps
-from app.ai.run_errors import normalize_agent_run_exception
+from app.ai.run_errors import build_agent_error_log_extra, normalize_agent_run_exception
 from app.core.exceptions import AppException
 from app.core.config import get_settings
 from app.models.ai_agent_runtime import AiAgentRun
@@ -320,6 +320,18 @@ class PydanticAgentRunner:
                 event = await self._store.mark_terminal(run_model, status="cancelled", content="用户停止了当前运行。")
                 yield encode_sse_event(event)
                 return
+            logger.warning(
+                "Agent run stopped by application error",
+                extra=build_agent_error_log_extra(
+                    exc,
+                    event="ai.agent_run.app_error",
+                    run_id=run_model.run_id,
+                    session_id=run_model.session_id,
+                    agent_id=agent_id,
+                    error_code=exc.code,
+                    user_error_message=exc.detail,
+                ),
+            )
             event = await self._store.mark_terminal(
                 run_model,
                 status="failed",
@@ -336,13 +348,16 @@ class PydanticAgentRunner:
             )
             logger.exception(
                 "Agent run failed while streaming model events",
-                extra={
-                    "run_id": run_model.run_id,
-                    "session_id": run_model.session_id,
-                    "agent_id": agent_id,
-                    "error_code": failure.code,
-                    "raw_error_message": failure.raw_message,
-                },
+                extra=build_agent_error_log_extra(
+                    exc,
+                    event="ai.agent_run.exception",
+                    run_id=run_model.run_id,
+                    session_id=run_model.session_id,
+                    agent_id=agent_id,
+                    error_code=failure.code,
+                    user_error_message=failure.message,
+                    raw_error_message=failure.raw_message,
+                ),
             )
             event = await self._store.mark_terminal(
                 run_model,

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 
 STREAM_INTERRUPTED_MESSAGE = (
@@ -22,6 +23,29 @@ class AgentRunFailure:
     code: str
     message: str
     raw_message: str
+
+
+def build_agent_error_log_extra(
+    error: BaseException,
+    *,
+    event: str,
+    error_code: str,
+    user_error_message: str | None = None,
+    raw_error_message: str | None = None,
+    **context: Any,
+) -> dict[str, Any]:
+    """构建智能体错误日志字段，保留原始异常链并附带业务定位上下文。"""
+
+    return {
+        "event": event,
+        **context,
+        "error_code": error_code,
+        "user_error_message": user_error_message,
+        "raw_error_type": type(error).__name__,
+        "raw_error_module": type(error).__module__,
+        "raw_error_message": raw_error_message if raw_error_message is not None else _raw_error_message(error),
+        "raw_error_chain": _error_chain(error),
+    }
 
 
 def normalize_agent_run_exception(
@@ -61,3 +85,33 @@ def _contains_any(value: str, patterns: tuple[str, ...]) -> bool:
     """判断字符串是否命中任一错误特征。"""
 
     return any(pattern in value for pattern in patterns)
+
+
+def _raw_error_message(error: BaseException) -> str:
+    """提取异常原始消息；空消息时使用异常类名兜底，便于日志检索。"""
+
+    return str(error).strip() or type(error).__name__
+
+
+def _error_chain(error: BaseException) -> list[dict[str, str]]:
+    """展开异常 cause/context 链路，避免只看到最外层兜底异常。"""
+
+    chain: list[dict[str, str]] = []
+    visited: set[int] = set()
+    current: BaseException | None = error
+    while current is not None and id(current) not in visited and len(chain) < 8:
+        visited.add(id(current))
+        chain.append(
+            {
+                "type": type(current).__name__,
+                "module": type(current).__module__,
+                "message": _raw_error_message(current),
+            }
+        )
+        if current.__cause__ is not None:
+            current = current.__cause__
+            continue
+        if current.__suppress_context__:
+            break
+        current = current.__context__
+    return chain
