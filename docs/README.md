@@ -24,6 +24,7 @@
 | [平台架构说明](./developer/platform-architecture.md) | 平台目标、模块职责、目标流程和 Runtime 子模块协作 |
 | [开发与测试指南](./developer/development-guide.md) | 本地依赖、测试入口、测试数据和运行态维护 |
 | [测试治理说明](./developer/testing-strategy.md) | L0-L3 测试分层、目录归属和 CI 策略 |
+| [AI Agent 图片处理机制](./developer/ai-agent-image-handling.md) | 智能体视觉图片的上传、工具输出、对象存储、模型水合、历史持久化和排障约束 |
 | [生产部署指南](./developer/deployment-guide.md) | compose 部署、外部依赖接入、升级、回滚和运维检查 |
 | [CI/CD 与容器部署说明](./developer/deployment-cicd.md) | 平台镜像、Runtime 镜像、Docker Hub 发布和 compose 策略 |
 

@@ -49,6 +49,38 @@ def test_message_history_images_should_be_replaced_by_agent_image_refs() -> None
     assert not contains_forbidden_image_payload(sanitized)
 
 
+def test_raw_tool_result_media_objects_should_be_replaced_by_agent_image_refs() -> None:
+    """工具事件 payload 中的内存图片对象也应被替换，避免 tool.completed 落库失败。"""
+
+    image_ref = {
+        "kind": "agent-image-ref",
+        "attachment_id": 8,
+        "source_kind": "tool_output",
+        "tool_name": "get_page_screenshot",
+        "sha256": "abc",
+        "content_type": "image/png",
+        "original_name": "page.png",
+    }
+    raw_payload = {
+        "content": "截图已返回。",
+        "images": [
+            BinaryContent(
+                data=b"\x89PNG\r\n\x1a\n\xff",
+                media_type="image/png",
+                vendor_metadata={"agent_image_ref": image_ref},
+            )
+        ],
+    }
+
+    sanitized = sanitize_message_history_image_refs(raw_payload)
+    serialized = json.dumps(sanitized, ensure_ascii=False)
+
+    assert sanitized["images"] == [image_ref]
+    assert "agent-image-ref" in serialized
+    assert "iVBOR" not in serialized
+    assert not contains_forbidden_image_payload(sanitized)
+
+
 async def test_s3_model_url_should_reuse_within_idle_window_and_refresh_after_gap() -> None:
     """S3 图片在连续窗口内复用同一个 model_url，超过空闲窗口后刷新。"""
 

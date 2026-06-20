@@ -6,6 +6,8 @@ import re
 from collections.abc import Iterable
 from typing import Any
 
+from pydantic_ai.messages import BinaryContent, ImageUrl
+
 AGENT_IMAGE_REF_KIND = "agent-image-ref"
 AGENT_IMAGE_SOURCE_USER_UPLOAD = "user_upload"
 AGENT_IMAGE_SOURCE_TOOL_OUTPUT = "tool_output"
@@ -93,15 +95,16 @@ def sanitize_message_history_image_refs(
     def visit(item: Any) -> Any:
         """递归清理任意 JSON 形态中的模型图片载荷。"""
 
+        if isinstance(item, (BinaryContent, ImageUrl)):
+            vendor_ref = _image_ref_from_vendor_metadata(getattr(item, "vendor_metadata", None))
+            return vendor_ref or next_ref() or "[图片内容已移除：缺少智能体图片引用]"
         if isinstance(item, dict):
             ref = normalize_agent_image_ref(item)
             if ref is not None:
                 return ref
             if item.get("kind") in _MODEL_IMAGE_KINDS:
                 vendor_metadata = item.get("vendor_metadata")
-                vendor_ref = normalize_agent_image_ref(
-                    vendor_metadata.get("agent_image_ref") if isinstance(vendor_metadata, dict) else None
-                )
+                vendor_ref = _image_ref_from_vendor_metadata(vendor_metadata)
                 return vendor_ref or next_ref() or "[图片内容已移除：缺少智能体图片引用]"
             return {str(key): visit(child) for key, child in item.items()}
         if isinstance(item, list):
@@ -144,6 +147,14 @@ def _looks_sensitive_url(value: Any) -> bool:
 
     text = str(value or "")
     return bool(_SIGNED_URL_PATTERN.search(text) or text.startswith("data:image/"))
+
+
+def _image_ref_from_vendor_metadata(value: Any) -> dict[str, Any] | None:
+    """从 media vendor_metadata 中读取标准图片引用。"""
+
+    if not isinstance(value, dict):
+        return None
+    return normalize_agent_image_ref(value.get("agent_image_ref"))
 
 
 def _optional_str(value: Any) -> str | None:
