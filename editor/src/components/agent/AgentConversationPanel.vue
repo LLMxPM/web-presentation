@@ -216,6 +216,8 @@ import { useAgentSessionStore } from '@/stores/agent-session'
 import { logClientWarning } from '@/utils/client-logger'
 import { Message } from '@/utils/message'
 
+const FORCE_CANCEL_AVAILABLE_DELAY_MS = 10_000
+
 interface Props {
   workspaceId: number
   projectId?: number | null
@@ -396,7 +398,7 @@ const cancellingRunForceAvailable = computed(() => {
   if (run?.status !== 'cancelling' || !run.cancel_requested_at) {
     return false
   }
-  return forceCancelTick.value - new Date(run.cancel_requested_at).getTime() >= 30_000
+  return forceCancelTick.value - new Date(run.cancel_requested_at).getTime() >= FORCE_CANCEL_AVAILABLE_DELAY_MS
 })
 const hitlForceReleaseAvailable = computed(() => activeRun.value?.status === 'paused' && pendingRequirement.value !== null)
 

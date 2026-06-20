@@ -49,6 +49,7 @@ class AppSettings(BaseSettings):
     ai_agent_token_ttl_seconds: int = 600
     ai_tool_auth_window_seconds: int = 1800
     ai_tool_auth_max_seconds: int = 7200
+    ai_agent_stream_idle_timeout_seconds: float = 180.0
     ai_image_transport_mode: str = "auto"
     ai_image_attachment_max_bytes: int = 10 * 1024 * 1024
     ai_image_model_url_reuse_window_seconds: int = 7200
@@ -262,6 +263,15 @@ class AppSettings(BaseSettings):
 
         if value <= 0:
             raise ValueError("AI Token TTL 必须大于 0。")
+        return value
+
+    @field_validator("ai_agent_stream_idle_timeout_seconds")
+    @classmethod
+    def validate_ai_agent_stream_idle_timeout_seconds(cls, value: float) -> float:
+        """校验 Agent 模型/工具流空闲超时，避免运行长期卡在非终态。"""
+
+        if value <= 0:
+            raise ValueError("AI Agent 流空闲超时时间必须大于 0。")
         return value
 
     @field_validator("ai_tool_auth_max_seconds")

@@ -171,9 +171,9 @@ class PydanticEventProjector:
         if isinstance(part, ToolCallPart):
             if _is_denied_tool_call(part, self._denied_tool_call_ids):
                 return []
-            emitted = await self.flush_delta_buffer()
-            emitted.append(await self._emit("tool.started", data=self._tool_payload(part)))
-            return emitted
+            # ToolCallPart 出现在模型响应流里时只代表工具调用片段已成形，
+            # 参数仍可能继续通过 delta 补齐；真正执行工具前会收到 FunctionToolCallEvent。
+            return []
         return []
 
     async def _handle_part_delta(self, delta: Any) -> list[AgentRunEvent]:

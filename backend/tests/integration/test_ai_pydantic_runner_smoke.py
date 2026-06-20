@@ -15,6 +15,7 @@ from pydantic_ai.messages import (
     ModelMessagesTypeAdapter,
     ModelResponse,
     PartDeltaEvent,
+    PartStartEvent,
     TextPart,
     TextPartDelta,
     ThinkingPart,
@@ -85,7 +86,6 @@ async def test_pydantic_runner_should_pause_continue_and_replay_ask_user(
             "model.request.started",
             "reasoning.delta",
             "message.delta",
-            "tool.started",
             "model.request.completed",
             "tool.started",
             "run.paused",
@@ -213,7 +213,6 @@ async def test_pydantic_runner_should_pause_continue_and_replay_ask_user(
         "model.request.started",
         "reasoning.delta",
         "message.delta",
-        "tool.started",
         "model.request.completed",
         "tool.started",
         "run.paused",
@@ -641,6 +640,29 @@ async def test_pydantic_event_projector_should_flush_member_text_before_tool_sta
     }
 
 
+async def test_pydantic_event_projector_should_ignore_tool_part_start_until_function_call() -> None:
+    """模型响应里的工具片段开始不等于工具执行，不能提前创建 running 工具。"""
+
+    events = await _project_member_events(
+        [
+            PartDeltaEvent(index=0, delta=TextPartDelta(content_delta="准备读取资源。")),
+            PartStartEvent(
+                index=1,
+                part=ToolCallPart(
+                    tool_name="list_workspace_render_assets",
+                    args="",
+                    tool_call_id="tool-list-assets",
+                ),
+            ),
+        ],
+        flush=True,
+    )
+
+    assert [(event.event, event.content) for event in events] == [
+        ("member.message.delta", "准备读取资源。"),
+    ]
+
+
 async def test_pydantic_runner_should_flush_buffer_before_requested_cancel(
     authenticated_client: AsyncClient,
 ) -> None:
@@ -717,6 +739,57 @@ async def test_pydantic_runner_should_flush_buffer_before_requested_cancel(
         "run.cancelled",
     ]
     assert event_rows[3][1]["content"] == "已流出的局部内容。"
+
+
+async def test_pydantic_runner_should_fail_idle_model_stream(
+    authenticated_client: AsyncClient,
+) -> None:
+    """模型流长时间没有新事件时，应收敛为失败并写出已缓冲内容。"""
+
+    async def stream_function(messages: list[Any], info: AgentInfo) -> AsyncIterator[str]:
+        """模拟模型输出一段内容后半开卡住。"""
+
+        _ = messages, info
+        yield "已生成但未闭合的内容。"
+        await asyncio.Event().wait()
+
+    _, session_id, scope = await _create_workspace_session(
+        authenticated_client,
+        workspace_name="Pydantic Runner 空闲超时工作空间",
+        session_name="Pydantic Runner 空闲超时会话",
+    )
+    model = FunctionModel(stream_function=stream_function)
+
+    async with get_session_factory()() as db_session:
+        store = PlatformAgentRuntimeStore(db_session, user_id=1)
+        run_start = await store.start_run(
+            session_id=session_id,
+            agent_id="component-manager",
+            scope=scope,
+            run_id="pydantic-runner-idle-timeout",
+            message="开始长任务",
+            image_attachment_ids=[],
+        )
+        events = await asyncio.wait_for(
+            _collect_runner_events(
+                PydanticAgentRunner(store, stream_idle_timeout_seconds=0.05).stream_run(
+                    run_model=run_start.run_model,
+                    agent_id="component-manager",
+                    model=model,
+                    model_settings={},
+                    runtime_context=_runtime_context(scope),
+                    message="开始长任务",
+                )
+            ),
+            timeout=3,
+        )
+        failed_run = await store.get_latest_run_model(session_id=session_id, agent_id="component-manager")
+
+    assert failed_run is not None
+    assert [event.event for event in events] == ["model.request.started", "message.delta", "run.error"]
+    assert failed_run.status == "failed"
+    assert failed_run.content == "已生成但未闭合的内容。"
+    assert failed_run.error_code == "AI_AGENT_STREAM_IDLE_TIMEOUT"
 
 
 async def test_pydantic_runner_should_emit_context_status_after_each_model_response(

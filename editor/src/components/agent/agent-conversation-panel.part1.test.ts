@@ -1309,7 +1309,7 @@ describe('AgentConversationPanel', () => {
     expect(messageInfoMock).not.toHaveBeenCalledWith('已停止。')
   })
 
-  it('停止超时应显示强制结束入口并调用 force cancel', async () => {
+  it('停止未超过 10 秒不显示强制结束入口', async () => {
     localStorage.setItem('agent-session:agent-coordinator:11', 'session-1')
     localStorage.setItem('agent-session:v2:agent-coordinator:page:11:21:31::editor-page-detail', 'session-1')
     listAgentSessionsMock.mockResolvedValueOnce([
@@ -1327,6 +1327,55 @@ describe('AgentConversationPanel', () => {
         },
       },
     ])
+    const cancelRequestedAt = new Date(Date.now() - 1_000).toISOString()
+    const cancellingRun = {
+      run_id: 'run-force-pending',
+      session_id: 'session-1',
+      agent_id: DEFAULT_AGENT_ID,
+      status: 'cancelling',
+      pending_requirement: null,
+      content: null,
+      created_at: '2026-04-18T10:05:00+08:00',
+      updated_at: cancelRequestedAt,
+      cancel_requested_at: cancelRequestedAt,
+      event_index: 2,
+    }
+    getAgentSessionActiveRunMock.mockResolvedValue(cancellingRun)
+    getAgentSessionRuntimeMock.mockResolvedValueOnce(createRuntimeSnapshot({
+      active_run: cancellingRun,
+      event_index: 2,
+    }))
+    streamAgentRunEventsByRunIdMock.mockImplementationOnce(async () => {
+      await new Promise<void>(() => {})
+    })
+
+    render(AgentConversationPanel, createTestingRenderOptions())
+
+    await waitFor(() => {
+      expect(screen.getByText('正在停止当前运行')).toBeTruthy()
+    })
+    expect(screen.queryByRole('button', { name: '强制结束' })).toBeNull()
+  })
+
+  it('停止超过 10 秒应显示强制结束入口并调用 force cancel', async () => {
+    localStorage.setItem('agent-session:agent-coordinator:11', 'session-1')
+    localStorage.setItem('agent-session:v2:agent-coordinator:page:11:21:31::editor-page-detail', 'session-1')
+    listAgentSessionsMock.mockResolvedValueOnce([
+      {
+        session_id: 'session-1',
+        agent_id: DEFAULT_AGENT_ID,
+        session_name: '停止中会话',
+        created_at: '2026-04-18T10:00:00+08:00',
+        updated_at: '2026-04-18T10:05:00+08:00',
+        metadata: {
+          workspace_id: 11,
+          project_id: 21,
+          page_id: 31,
+          source: 'editor-page-detail',
+        },
+      },
+    ])
+    const cancelRequestedAt = new Date(Date.now() - 10_500).toISOString()
     const cancellingRun = {
       run_id: 'run-force',
       session_id: 'session-1',
@@ -1335,8 +1384,8 @@ describe('AgentConversationPanel', () => {
       pending_requirement: null,
       content: null,
       created_at: '2026-04-18T10:05:00+08:00',
-      updated_at: '2026-04-18T10:05:05+08:00',
-      cancel_requested_at: '2026-04-18T10:05:05+08:00',
+      updated_at: cancelRequestedAt,
+      cancel_requested_at: cancelRequestedAt,
       event_index: 2,
     }
     getAgentSessionActiveRunMock.mockResolvedValue(cancellingRun)

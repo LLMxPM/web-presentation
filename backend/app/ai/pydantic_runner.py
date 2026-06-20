@@ -22,6 +22,7 @@ from app.ai.pydantic_event_projection import PydanticEventProjector, safe_messag
 from app.ai.pydantic_tools import AgentToolDeps
 from app.ai.run_errors import normalize_agent_run_exception
 from app.core.exceptions import AppException
+from app.core.config import get_settings
 from app.models.ai_agent_runtime import AiAgentRun
 from app.schemas.agent import AgentPendingRequirement, AgentRunEvent
 
@@ -31,10 +32,15 @@ logger = logging.getLogger(__name__)
 class PydanticAgentRunner:
     """执行 Pydantic AI Agent，并将内部事件投影为平台事件。"""
 
-    def __init__(self, store: PlatformAgentRuntimeStore) -> None:
+    def __init__(self, store: PlatformAgentRuntimeStore, *, stream_idle_timeout_seconds: float | None = None) -> None:
         """保存运行态 store。"""
 
         self._store = store
+        self._stream_idle_timeout_seconds = (
+            float(stream_idle_timeout_seconds)
+            if stream_idle_timeout_seconds is not None
+            else float(get_settings().ai_agent_stream_idle_timeout_seconds)
+        )
 
     async def stream_run(
         self,
@@ -187,7 +193,7 @@ class PydanticAgentRunner:
                             AgentRunEvent(event="model.request.started", run_id=run_model.run_id, session_id=run_model.session_id),
                         )
                         async with node.stream(agent_run.ctx) as stream:
-                            async for raw_event in stream:
+                            async for raw_event in self._iter_stream_events(stream):
                                 should_stop, should_cancel = await self._cancel_event_if_requested(run_model)
                                 if should_stop:
                                     async for sse in self._flush_projector_buffer(projector, best_effort=True):
@@ -229,7 +235,7 @@ class PydanticAgentRunner:
                         continue
                     if agent.is_call_tools_node(node):
                         async with node.stream(agent_run.ctx) as stream:
-                            async for raw_event in stream:
+                            async for raw_event in self._iter_stream_events(stream):
                                 should_stop, should_cancel = await self._cancel_event_if_requested(run_model)
                                 if should_stop:
                                     async for sse in self._flush_projector_buffer(projector, best_effort=True):
@@ -418,6 +424,26 @@ class PydanticAgentRunner:
 
         stored = await self._store.append_event(run_model, event)
         return encode_sse_event(stored)
+
+    async def _iter_stream_events(self, stream: Any) -> AsyncGenerator[Any, None]:
+        """按空闲超时消费 Pydantic AI 节点流，避免半开连接长期占用 run。"""
+
+        iterator = stream.__aiter__()
+        while True:
+            try:
+                raw_event = await asyncio.wait_for(
+                    iterator.__anext__(),
+                    timeout=self._stream_idle_timeout_seconds,
+                )
+            except StopAsyncIteration:
+                return
+            except asyncio.TimeoutError as exc:
+                raise AppException(
+                    status_code=504,
+                    code="AI_AGENT_STREAM_IDLE_TIMEOUT",
+                    detail="模型或工具流长时间没有返回新事件，本次运行已停止。",
+                ) from exc
+            yield raw_event
 
     async def _cancel_event_if_requested(self, run_model: AiAgentRun) -> tuple[bool, bool]:
         """如果外部已结束或请求取消，则返回是否停止以及是否需要写取消终态。"""
