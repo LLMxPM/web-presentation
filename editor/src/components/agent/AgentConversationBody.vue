@@ -4,7 +4,7 @@
     <div
       ref="scrollContainerRef"
       class="agent-conversation-body flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto px-2 py-2"
-      :class="{ 'agent-conversation-body--floating-toast': activeRun?.status === 'cancelling' }"
+      :class="{ 'agent-conversation-body--floating-toast': hasFloatingNotice }"
       @scroll="handleConversationScroll"
     >
     <section v-if="draftPatches.length" class="space-y-1.5">
@@ -285,25 +285,40 @@
       </div>
     </section>
 
-    <section v-if="lastRunIssue" class="space-y-1.5 rounded-xl border border-amber-200 bg-amber-50/80 px-3 py-2.5">
-      <p class="text-[12.5px] font-semibold text-amber-800">{{ lastRunIssue.title }}</p>
-      <p class="text-[12px] leading-5 text-amber-700">{{ lastRunIssue.detail }}</p>
-    </section>
-
     </div>
 
     <section
-      v-if="activeRun?.status === 'cancelling'"
+      v-if="floatingNotice"
       class="pointer-events-none absolute inset-x-2 bottom-2 z-20 flex justify-center"
       role="status"
       aria-live="polite"
     >
-      <div class="pointer-events-auto flex w-[min(100%,28rem)] items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-left shadow-lg shadow-slate-900/10">
+      <div
+        class="pointer-events-auto flex max-h-[45%] w-[min(100%,28rem)] items-start justify-between gap-3 overflow-auto rounded-lg border px-3 py-2 text-left shadow-lg"
+        :class="floatingNotice.tone === 'error'
+          ? 'border-red-200 bg-red-50 shadow-red-900/10'
+          : 'border-amber-200 bg-amber-50 shadow-slate-900/10'"
+      >
         <div class="min-w-0">
-          <p class="text-[12.5px] font-semibold leading-5 text-amber-800">正在停止当前运行</p>
-          <p class="text-[11.5px] leading-4 text-amber-700">如果长时间没有响应，可以强制释放当前会话占用。</p>
+          <p
+            class="break-words text-[12.5px] font-semibold leading-5"
+            :class="floatingNotice.tone === 'error' ? 'text-red-700' : 'text-amber-800'"
+          >
+            {{ floatingNotice.title }}
+          </p>
+          <p
+            class="break-words text-[11.5px] leading-4"
+            :class="floatingNotice.tone === 'error' ? 'text-red-600' : 'text-amber-700'"
+          >
+            {{ floatingNotice.detail }}
+          </p>
         </div>
-        <BaseButton v-if="cancellingRunForceAvailable" variant="secondary" size="sm" @click="$emit('force-cancel-run')">
+        <BaseButton
+          v-if="floatingNotice.action === 'force_cancel' && cancellingRunForceAvailable"
+          variant="secondary"
+          size="sm"
+          @click="$emit('force-cancel-run')"
+        >
           强制结束
         </BaseButton>
       </div>
@@ -315,7 +330,7 @@
 import 'markstream-vue/index.css'
 import MarkdownRender, { getMarkdown, parseMarkdownToStructure } from 'markstream-vue'
 import { ChevronRight } from '@lucide/vue'
-import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import BaseButton from '@/components/ui/BaseButton.vue'
 import {
@@ -365,6 +380,26 @@ const assistantBatchRendering = {
   renderBatchDelay: 8,
   renderBatchBudgetMs: 6,
 }
+const floatingNotice = computed(() => {
+  if (props.activeRun?.status === 'cancelling') {
+    return {
+      title: '正在停止当前运行',
+      detail: '如果长时间没有响应，可以强制释放当前会话占用。',
+      tone: 'warning' as const,
+      action: 'force_cancel' as const,
+    }
+  }
+  if (props.lastRunIssue) {
+    return {
+      title: props.lastRunIssue.title,
+      detail: props.lastRunIssue.detail,
+      tone: 'error' as const,
+      action: null,
+    }
+  }
+  return null
+})
+const hasFloatingNotice = computed(() => Boolean(floatingNotice.value))
 const isMessageStreaming = createMessageStreamingResolver(
   () => props.isStreaming,
   () => props.streamingTimelineItemId,
