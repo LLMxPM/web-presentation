@@ -15,8 +15,10 @@ from pydantic_ai.usage import RequestUsage
 from app.core.exceptions import AppException
 from app.ai.platform_tools import AgentToolContext, AgentToolResult, agent_tool
 from app.ai.pydantic_runner import _requirement_from_deferred, _safe_messages
-from app.ai.pydantic_tools import AgentToolDeps, _safe_tool_result, _wrap_platform_tool
+from app.ai.pydantic_tools import AgentToolDeps, build_pydantic_tools, _safe_tool_result, _wrap_platform_tool
 from app.ai.session_facade_pydantic import _build_continue_message_history, _build_deferred_results
+from app.ai.tool_specs import AGENT_COORDINATOR_AGENT_ID
+from app.schemas.agent import AgentScopeContext
 
 
 def test_pydantic_tool_bridge_should_expose_tool_instructions_in_description() -> None:
@@ -35,6 +37,27 @@ def test_pydantic_tool_bridge_should_expose_tool_instructions_in_description() -
 
     assert wrapped.description == "读取演示数据。\n\n工具使用提示：必须先确认 name 来自工具结果或用户明确输入。"
     assert wrapped.function.__doc__ == wrapped.description
+
+
+def test_build_pydantic_tools_should_pass_image_input_capability_to_tool_deps() -> None:
+    """工具运行依赖应携带模型图片能力，避免视觉工具披露后执行时误判不可用。"""
+
+    current = SimpleNamespace(user=SimpleNamespace(id=1), backend_session_id="backend-session-1")
+    scope = AgentScopeContext(scope_type="page", workspace_id=1, project_id=2, page_id=3)
+
+    tools, deps = build_pydantic_tools(
+        agent_id=AGENT_COORDINATOR_AGENT_ID,
+        session_factory=None,  # type: ignore[arg-type]
+        runtime_config=None,
+        current=current,  # type: ignore[arg-type]
+        scope=scope,
+        session_id="session-1",
+        run_id="run-1",
+        supports_image_input=True,
+    )
+
+    assert "get_page_screenshot" in {tool.name for tool in tools}
+    assert deps.dependencies["model_supports_image_input"] is True
 
 
 @pytest.mark.asyncio

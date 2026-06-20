@@ -10,6 +10,7 @@ from sqlalchemy.orm import selectinload
 
 from app.ai.provider_catalog import (
     LLM_SLOT_DEFINITIONS,
+    MIMO_MAX_COMPLETION_TOKENS,
     PROTECTED_ADVANCED_CONFIG_KEYS,
     get_llm_provider_entry,
     get_llm_slot_definition,
@@ -105,6 +106,7 @@ class AiLlmService:
             provider_key=provider_key,
             base_url=base_url,
             api_key=api_key,
+            max_output_tokens=payload.max_output_tokens,
         )
 
         config = AiLlmConfig(
@@ -156,6 +158,7 @@ class AiLlmService:
             if payload.advanced_config_json is not None
             else self._validate_advanced_config(config.advanced_config_json or {})
         )
+        next_max_output_tokens = payload.max_output_tokens if payload.max_output_tokens is not None else config.max_output_tokens
 
         current_api_key = self._cipher.decrypt(config.api_key_ciphertext)
         next_api_key = current_api_key
@@ -166,6 +169,7 @@ class AiLlmService:
             provider_key=next_provider_key,
             base_url=next_base_url,
             api_key=next_api_key,
+            max_output_tokens=next_max_output_tokens,
         )
         next_thinking_effort = config.thinking_effort
         if payload.thinking_effort is not None:
@@ -189,7 +193,7 @@ class AiLlmService:
         if payload.context_window_tokens is not None:
             config.context_window_tokens = payload.context_window_tokens
         if payload.max_output_tokens is not None:
-            config.max_output_tokens = payload.max_output_tokens
+            config.max_output_tokens = next_max_output_tokens
         if payload.history_token_ratio is not None:
             config.history_token_ratio = payload.history_token_ratio
         if payload.compression_target_ratio is not None:
@@ -476,6 +480,7 @@ class AiLlmService:
         provider_key: str,
         base_url: str | None,
         api_key: str | None,
+        max_output_tokens: int | None = None,
     ):
         """校验供应商公共字段是否满足目录约束。"""
 
@@ -491,6 +496,12 @@ class AiLlmService:
                 status_code=400,
                 code="AI_LLM_API_KEY_UNSUPPORTED",
                 detail="当前供应商不支持自定义 API Key。",
+            )
+        if provider_key == "mimo" and max_output_tokens and max_output_tokens > MIMO_MAX_COMPLETION_TOKENS:
+            raise AppException(
+                status_code=400,
+                code="AI_LLM_MAX_OUTPUT_TOKENS_UNSUPPORTED",
+                detail=f"MiMo 模型最大输出 tokens 不能超过 {MIMO_MAX_COMPLETION_TOKENS}。",
             )
         return entry
 

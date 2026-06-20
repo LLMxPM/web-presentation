@@ -14,6 +14,7 @@ from pydantic_ai.providers.ollama import OllamaProvider
 from pydantic_ai.providers.openai import OpenAIProvider
 from pydantic_ai.providers.openrouter import OpenRouterProvider
 
+from app.ai.provider_catalog import MIMO_MAX_COMPLETION_TOKENS
 from app.ai.secret_cipher import LlmSecretCipher
 from app.core.exceptions import AppException
 from app.models.ai_llm import AiLlmConfig
@@ -70,8 +71,19 @@ class PydanticLlmModelResolver:
             settings.update(advanced_config)
         if config.max_output_tokens:
             settings.setdefault("max_tokens", config.max_output_tokens)
+        self._apply_provider_limits(config, settings)
         self._apply_thinking_settings(config, settings)
         return settings
+
+    def _apply_provider_limits(self, config: AiLlmConfig, settings: dict[str, Any]) -> None:
+        """按供应商硬限制修正运行参数，避免已保存旧配置持续触发模型 400。"""
+
+        if config.provider_key != "mimo":
+            return
+        max_tokens = settings.get("max_tokens")
+        if not isinstance(max_tokens, int) or max_tokens <= MIMO_MAX_COMPLETION_TOKENS:
+            return
+        settings["max_tokens"] = MIMO_MAX_COMPLETION_TOKENS
 
     def _apply_thinking_settings(self, config: AiLlmConfig, settings: dict[str, Any]) -> None:
         """按供应商差异写入 Pydantic AI 支持的 thinking 参数。"""

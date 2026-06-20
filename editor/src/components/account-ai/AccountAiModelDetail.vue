@@ -268,7 +268,7 @@ const thinkingEffortHint = computed(() => {
     if (props.currentProvider.provider_key === 'deepseek') {
       return 'DeepSeek 会写入 extra_body.thinking.type；强度仅使用 high / max，历史 low / medium 会兼容为 high，xhigh 会兼容为 max。'
     }
-    return '该供应商会写入 extra_body.thinking.type；MiMo 不使用 openai_reasoning_effort。'
+    return 'MiMo 会写入 extra_body.thinking.type；思考强度不参与请求参数。'
   }
   return 'OpenAI 兼容供应商会映射为 Pydantic AI reasoning settings。'
 })

@@ -406,24 +406,24 @@ describe('AccountAiSettingsView', () => {
     expect(payload.max_output_tokens).toBe(384000)
   })
 
-  it('新建 MiMo 模型时应只预填 Base URL，不预填模型和图片能力', async () => {
+  it('新建 MiMo 模型时应预填当前官方默认模型和安全 token 上限', async () => {
     listLlmProvidersMock.mockResolvedValue([
       {
         provider_key: 'mimo',
         label: 'MiMo',
         provider_adapter: 'pydantic_ai.providers.openai.OpenAIProvider',
-        docs_url: 'https://platform.xiaomimimo.com/docs/zh-CN/quick-start/first-api-call',
+        docs_url: 'https://mimo.mi.com/docs/zh-CN/api/chat/openai-api',
         supports_base_url: true,
         supports_api_key: true,
         supports_thinking: true,
         thinking_mode: 'openai_extra_body_thinking',
         default_base_url: 'https://api.xiaomimimo.com/v1',
-        default_model_id: null,
-        default_thinking_enabled: false,
+        default_model_id: 'mimo-v2.5',
+        default_thinking_enabled: true,
         default_thinking_effort: null,
-        default_context_window_tokens: null,
-        default_max_output_tokens: null,
-        default_supports_image_input: false,
+        default_context_window_tokens: 1000000,
+        default_max_output_tokens: 32768,
+        default_supports_image_input: true,
         thinking_effort_options: [],
         advanced_json_hint: {},
       },
@@ -437,10 +437,9 @@ describe('AccountAiSettingsView', () => {
     await fireEvent.click(screen.getByRole('button', { name: '模型' }))
     await fireEvent.click(screen.getByRole('button', { name: '新建模型' }))
     const modelIdInput = screen.getByPlaceholderText('例如：gpt-4.1-mini') as HTMLInputElement
-    expect(modelIdInput.value).toBe('')
+    expect(modelIdInput.value).toBe('mimo-v2.5')
 
     await fireEvent.update(screen.getByPlaceholderText('例如：总控默认模型'), 'MiMo 模型')
-    await fireEvent.update(modelIdInput, 'mimo-v2.5')
     await fireEvent.click(screen.getByRole('button', { name: '创建模型' }))
 
     await waitFor(() => {
@@ -449,7 +448,11 @@ describe('AccountAiSettingsView', () => {
     const payload = createLlmConfigMock.mock.calls[0][0] as Record<string, unknown>
     expect(payload.provider_key).toBe('mimo')
     expect(payload.base_url).toBe('https://api.xiaomimimo.com/v1')
-    expect(payload.supports_image_input).toBe(false)
+    expect(payload.model_id).toBe('mimo-v2.5')
+    expect(payload.thinking_enabled).toBe(true)
+    expect(payload.supports_image_input).toBe(true)
+    expect(payload.context_window_tokens).toBe(1000000)
+    expect(payload.max_output_tokens).toBe(32768)
     expect(payload.advanced_config_json).toEqual({})
   })
 

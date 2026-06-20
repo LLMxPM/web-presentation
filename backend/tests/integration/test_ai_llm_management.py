@@ -103,8 +103,11 @@ async def test_llm_provider_catalog_should_only_include_supported_providers(auth
     assert providers["deepseek"]["default_max_output_tokens"] == 384_000
     assert providers["deepseek"]["thinking_effort_options"] == ["high", "max"]
     assert providers["mimo"]["default_base_url"] == "https://api.xiaomimimo.com/v1"
-    assert providers["mimo"]["default_model_id"] is None
-    assert providers["mimo"]["default_supports_image_input"] is False
+    assert providers["mimo"]["default_model_id"] == "mimo-v2.5"
+    assert providers["mimo"]["default_thinking_enabled"] is True
+    assert providers["mimo"]["default_context_window_tokens"] == 1_000_000
+    assert providers["mimo"]["default_max_output_tokens"] == 32_768
+    assert providers["mimo"]["default_supports_image_input"] is True
     assert all(item["advanced_json_hint"] == {} for item in providers.values())
 
 
@@ -196,6 +199,27 @@ async def test_llm_config_should_accept_large_context_model_limits(authenticated
     created_item = response.json()
     assert created_item["context_window_tokens"] == 1_000_000
     assert created_item["max_output_tokens"] == 300_000
+
+
+async def test_llm_config_should_reject_mimo_output_above_provider_limit(authenticated_client: AsyncClient) -> None:
+    """MiMo 配置不应允许保存超过供应商硬限制的输出 token。"""
+
+    response = await authenticated_client.post(
+        "/api/ai/llm-configs",
+        json={
+            "name": "MiMo 超限模型",
+            "provider_key": "mimo",
+            "model_id": "mimo-v2.5",
+            "base_url": "https://api.xiaomimimo.com/v1",
+            "api_key": "sk-mimo-test",
+            "context_window_tokens": 1_000_000,
+            "max_output_tokens": 200_000,
+            "advanced_config_json": {},
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json()["code"] == "AI_LLM_MAX_OUTPUT_TOKENS_UNSUPPORTED"
 
 
 async def test_llm_slot_binding_should_drive_agent_binding_state(authenticated_client: AsyncClient) -> None:
@@ -520,8 +544,12 @@ def test_llm_model_resolver_should_build_common_provider_models() -> None:
         base_url="https://api.xiaomimimo.com/v1",
         thinking_enabled=True,
         thinking_effort="max",
+        max_output_tokens=320_000,
     )
     mimo_model = resolver.resolve_model(mimo_config)
     assert mimo_model.__class__.__name__ == "OpenAIChatModel"
     assert mimo_model.model_name == "mimo-v2.5"
-    assert resolver.resolve_model_settings(mimo_config)["extra_body"] == {"thinking": {"type": "enabled"}}
+    assert resolver.resolve_model_settings(mimo_config) == {
+        "max_tokens": 131_072,
+        "extra_body": {"thinking": {"type": "enabled"}},
+    }

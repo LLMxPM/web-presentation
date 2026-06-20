@@ -66,6 +66,7 @@ def build_pydantic_tools(
         scope=scope,
         session_id=session_id,
         run_id=run_id,
+        supports_image_input=supports_image_input,
         member_delegation_executor=member_delegation_executor,
     )
     return [_wrap_platform_tool(tool_item) for tool_item in raw_tools], AgentToolDeps(dependencies=dependencies)
@@ -78,6 +79,7 @@ def _build_dependencies(
     scope: AgentScopeContext,
     session_id: str,
     run_id: str,
+    supports_image_input: bool,
     member_delegation_executor: Any | None = None,
 ) -> dict[str, Any]:
     """生成平台工具上下文校验需要的 dependencies 字典。"""
@@ -109,6 +111,7 @@ def _build_dependencies(
         "page_id": scope.page_id,
         "component_id": scope.component_id,
         "source": scope.source,
+        "model_supports_image_input": supports_image_input,
         "backend_session_id": current.backend_session_id,
         "member_tool_auth_tokens": {},
     }

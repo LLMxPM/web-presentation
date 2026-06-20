@@ -16,7 +16,10 @@ GOOGLE_DOCS_URL = "https://pydantic.dev/docs/ai/models/google/"
 DEEPSEEK_DOCS_URL = "https://pydantic.dev/docs/ai/models/openai/"
 OLLAMA_DOCS_URL = "https://pydantic.dev/docs/ai/models/ollama/"
 NVIDIA_DOCS_URL = "https://pydantic.dev/docs/ai/models/openai/"
-MIMO_DOCS_URL = "https://platform.xiaomimimo.com/docs/zh-CN/quick-start/first-api-call"
+MIMO_DOCS_URL = "https://mimo.mi.com/docs/zh-CN/api/chat/openai-api"
+MIMO_CONTEXT_WINDOW_TOKENS = 1_000_000
+MIMO_MAX_COMPLETION_TOKENS = 131_072
+MIMO_DEFAULT_MAX_OUTPUT_TOKENS = 32_768
 
 
 @dataclass(slots=True, frozen=True)
@@ -198,6 +201,11 @@ LLM_PROVIDER_CATALOG: dict[str, LlmProviderCatalogEntry] = {
         supports_thinking=True,
         thinking_mode=AiThinkingMode.OPENAI_EXTRA_BODY_THINKING.value,
         default_base_url="https://api.xiaomimimo.com/v1",
+        default_model_id="mimo-v2.5",
+        default_thinking_enabled=True,
+        default_context_window_tokens=MIMO_CONTEXT_WINDOW_TOKENS,
+        default_max_output_tokens=MIMO_DEFAULT_MAX_OUTPUT_TOKENS,
+        default_supports_image_input=True,
     ),
 }
 
