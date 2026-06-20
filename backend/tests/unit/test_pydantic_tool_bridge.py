@@ -19,6 +19,24 @@ from app.ai.pydantic_tools import AgentToolDeps, _safe_tool_result, _wrap_platfo
 from app.ai.session_facade_pydantic import _build_continue_message_history, _build_deferred_results
 
 
+def test_pydantic_tool_bridge_should_expose_tool_instructions_in_description() -> None:
+    """Pydantic Tool 说明应包含平台工具使用提示，确保模型实际可见细则。"""
+
+    @agent_tool(show_result=False)
+    def guided_tool(run_context: AgentToolContext, name: str) -> AgentToolResult:
+        """读取演示数据。"""
+
+        _ = run_context
+        return AgentToolResult(content=name)
+
+    guided_tool.instructions = "必须先确认 name 来自工具结果或用户明确输入。"
+
+    wrapped = _wrap_platform_tool(guided_tool)
+
+    assert wrapped.description == "读取演示数据。\n\n工具使用提示：必须先确认 name 来自工具结果或用户明确输入。"
+    assert wrapped.function.__doc__ == wrapped.description
+
+
 @pytest.mark.asyncio
 async def test_pydantic_tool_bridge_should_serialize_namespace_result() -> None:
     """平台工具返回 SimpleNamespace 时，应转成 JSON 安全结构再交给 Pydantic AI。"""

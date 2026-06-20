@@ -147,17 +147,30 @@ def _wrap_platform_tool(tool_item: Any) -> Tool[AgentToolDeps]:
                 hint=_RECOVERABLE_TOOL_ERROR_HINT,
             )
 
+    tool_description = _pydantic_tool_description(tool_item, entrypoint)
     wrapper.__name__ = str(getattr(tool_item, "name", "") or entrypoint.__name__)
-    wrapper.__doc__ = str(getattr(tool_item, "description", "") or entrypoint.__doc__ or "")
+    wrapper.__doc__ = tool_description
     wrapper.__annotations__ = _wrapper_annotations(entrypoint)
     wrapper.__signature__ = _wrapper_signature(entrypoint)  # type: ignore[attr-defined]
     return Tool(
         wrapper,
         takes_ctx=True,
         name=str(getattr(tool_item, "name", "") or entrypoint.__name__),
-        description=str(getattr(tool_item, "description", "") or ""),
+        description=tool_description,
         requires_approval=bool(getattr(tool_item, "requires_confirmation", False)),
     )
+
+
+def _pydantic_tool_description(tool_item: Any, entrypoint: Any) -> str:
+    """合成模型实际可见的工具说明，避免丢失平台工具使用提示。"""
+
+    description = str(getattr(tool_item, "description", "") or entrypoint.__doc__ or "").strip()
+    instructions = str(getattr(tool_item, "instructions", "") or "").strip()
+    if not instructions:
+        return description
+    if not description:
+        return f"工具使用提示：{instructions}"
+    return f"{description}\n\n工具使用提示：{instructions}"
 
 
 def _wrapper_signature(entrypoint: Any) -> inspect.Signature:

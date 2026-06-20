@@ -103,6 +103,18 @@ def test_agent_tool_specs_should_match_platform_tools() -> None:
                 assert not _schema_allows_untyped_array(tags_schema), tool_name
 
 
+def test_write_and_danger_tool_specs_should_have_runtime_instructions() -> None:
+    """写入和危险工具必须提供模型可见的具体使用提示。"""
+
+    missing: list[str] = []
+    for agent_id in (AGENT_COORDINATOR_AGENT_ID, COMPONENT_MANAGER_AGENT_ID, RESOURCE_MANAGER_AGENT_ID):
+        for spec in list_agent_tool_specs(agent_id):
+            if spec.risk_level in {"write", "danger"} and not (spec.default_instructions or "").strip():
+                missing.append(f"{agent_id}:{spec.key}")
+
+    assert missing == []
+
+
 def _find_tool(config_item: dict, tool_key: str) -> dict:
     """从配置响应中按 key 找到工具项。"""
 

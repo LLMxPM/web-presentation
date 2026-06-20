@@ -1064,6 +1064,11 @@ _COMPONENT_MANAGER_TOOL_SPECS = (
         'component_library',
         '组件库',
         '删除指定工作空间组件；删除后不再作为可复用组件参与后续选择。',
+        default_instructions=(
+            '仅在用户明确要求删除组件时调用；如果用户只是希望页面不再使用某组件，应由内容助手修改页面引用，'
+            '不要删除组件库资产。调用前必须确认 component_id 来自组件读取工具结果，不要用名称、import_name 或猜测 ID。'
+            '删除会使组件不再作为可复用组件参与后续选择，可能影响依赖该组件的后续维护；意图或目标不清时先询问用户。'
+        ),
         requires_confirmation=True,
         risk_level='danger',
         response_example={'success': True, 'message': '组件已删除。', 'component_id': 12, 'component_code': 'cmp_hero_card'},
@@ -1221,6 +1226,12 @@ _RESOURCE_MANAGER_TOOL_SPECS = (
         'resource_library',
         '资源库',
         '更新资源 name、展示文件名、描述或标签；不修改内容。',
+        default_instructions=(
+            '仅修改用户明确要求变更的元数据字段，未要求修改的字段应省略，不要传空字符串或 null 覆盖。'
+            'asset_id 必须来自资源列表或读取结果，不要用资源 name 猜测 ID。name 是页面和组件引用资源时使用的逻辑名；'
+            '只有用户明确要求重命名资源时才修改 name，普通展示名调整优先修改 original_name 或 description。'
+            'tags 必须直接传 JSON 数组/list[str]，不要把数组编码成字符串；新增标签前优先复用 list_resource_tags 返回的已有标签。'
+        ),
         risk_level='write',
         response_example={'success': True, 'message': '资源元数据已更新。', 'asset': {'id': 8, 'name': 'hero_illustration'}},
     ),
@@ -1231,6 +1242,12 @@ _RESOURCE_MANAGER_TOOL_SPECS = (
         'resource_library',
         '资源库',
         '复制资源记录并复用物理文件。',
+        default_instructions=(
+            '用于创建资源副本或从历史副本恢复为新资源；复制只复用物理文件并写入新资源记录，不修改原资源内容。'
+            'asset_id 必须来自资源列表、项目建议资源或读取结果。需要新逻辑名时传 name，并确保语义清晰；'
+            '未提供 name 时由后端生成副本名。tags 必须直接传 JSON 数组/list[str]，不要编码成字符串；'
+            '如果复制后还要改内容，应先复制，再对新资源调用内容预览/写入工具。'
+        ),
         risk_level='write',
         response_example={'success': True, 'message': '资源已复制。', 'asset': {'id': 9, 'name': 'hero_illustration_copy'}},
     ),
@@ -1241,6 +1258,11 @@ _RESOURCE_MANAGER_TOOL_SPECS = (
         'resource_library',
         '资源库',
         '归档资源，不影响已存在引用。',
+        default_instructions=(
+            '仅在用户明确要求归档、隐藏或整理下架资源时调用；当用户要求删除资源时，说明当前能力是归档而不是物理删除。'
+            'asset_id 必须来自资源列表、项目建议资源或读取结果，不要用资源 name 猜测 ID。归档后资源不再出现在默认可见选择中，'
+            '但现有页面、组件、主题或字体引用仍可解析；archive_reason 应用一句话说明归档原因。'
+        ),
         risk_level='write',
         response_example={'success': True, 'message': '资源已归档，现有引用仍可解析。', 'asset': {'id': 8, 'name': 'hero_illustration'}},
     ),
