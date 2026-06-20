@@ -223,6 +223,115 @@ async def test_pydantic_runner_should_pause_continue_and_replay_ask_user(
     assert workspace_id == scope.workspace_id
 
 
+async def test_pydantic_runner_should_mark_rejected_approval_tool_error(
+    authenticated_client: AsyncClient,
+) -> None:
+    """人工拒绝确认工具后，平台工具态应保持 error，不能被拒绝回灌覆盖为 completed。"""
+
+    _, session_id, scope = await _create_workspace_session(
+        authenticated_client,
+        workspace_name="Pydantic Runner 拒绝工具工作空间",
+        session_name="Pydantic Runner 拒绝工具会话",
+    )
+    model = FunctionModel(stream_function=_approval_tool_stream_function)
+    tools = [Tool(_approval_write_tool, name="dangerous_write", requires_approval=True)]
+
+    async with get_session_factory()() as db_session:
+        store = PlatformAgentRuntimeStore(db_session, user_id=1)
+        run_start = await store.start_run(
+            session_id=session_id,
+            agent_id="component-manager",
+            scope=scope,
+            run_id="pydantic-runner-reject-approval",
+            message="需要确认后写入。",
+            image_attachment_ids=[],
+        )
+        runner = PydanticAgentRunner(store)
+        first_events = await _collect_runner_events(
+            runner.stream_run(
+                run_model=run_start.run_model,
+                agent_id="component-manager",
+                model=model,
+                model_settings={},
+                runtime_context=_runtime_context(scope),
+                message="需要确认后写入。",
+                tools=tools,
+            )
+        )
+
+        latest_run = await store.get_latest_run_model(session_id=session_id, agent_id="component-manager")
+        assert latest_run is not None
+        assert latest_run.status == "paused"
+        requirement = await store.get_pending_requirement(run_id=latest_run.run_id)
+        assert requirement is not None
+        assert requirement.kind == "confirmation"
+        assert requirement.tool_call_id == "tool-write-route"
+
+        await store.resolve_requirement(
+            requirement,
+            payload={
+                "decision": "reject",
+                "note": None,
+                "tool_execution": requirement.payload_json["tool_execution"],
+                "feedback_selections": [],
+            },
+        )
+        latest_run.status = "running"
+        latest_run.pending_requirement_json = None
+        await store.append_event(
+            latest_run,
+            first_events[0].model_copy(update={"event": "run.continued", "content": None, "data": {}}),
+        )
+        deferred_results = _build_deferred_results(
+            requirement_tool_call_id="tool-write-route",
+            decision="reject",
+            note=None,
+            tool_execution=requirement.payload_json["tool_execution"],
+            feedback_selections=[],
+        )
+        continue_history = _build_continue_message_history(
+            run_model_message_history=latest_run.message_history_json,
+            run_input_payload=latest_run.input_payload_json,
+            run_id=latest_run.run_id,
+            tool_execution=requirement.payload_json["tool_execution"],
+        )
+
+        second_events = await _collect_runner_events(
+            runner.stream_run(
+                run_model=latest_run,
+                agent_id="component-manager",
+                model=model,
+                model_settings={},
+                runtime_context=_runtime_context(scope),
+                message="",
+                tools=tools,
+                message_history=continue_history,
+                deferred_tool_results=deferred_results,
+            )
+        )
+        completed_run = await store.get_latest_run_model(session_id=session_id, agent_id="component-manager")
+        assert completed_run is not None
+        result = await db_session.execute(
+            select(AiAgentToolCall).where(
+                AiAgentToolCall.run_id == completed_run.run_id,
+                AiAgentToolCall.tool_call_id == "tool-write-route",
+            )
+        )
+        tool_call = result.scalar_one()
+
+    assert [event.event for event in second_events] == [
+        "model.request.started",
+        "tool.error",
+        "message.delta",
+        "model.request.completed",
+        "run.completed",
+    ]
+    assert completed_run.status == "completed"
+    assert completed_run.content == "已跳过写入。"
+    assert tool_call.status == "error"
+    assert tool_call.message == "用户拒绝执行该工具。"
+
+
 async def test_pydantic_runner_should_fail_fast_for_bad_ask_user_payload(
     authenticated_client: AsyncClient,
 ) -> None:
@@ -563,6 +672,12 @@ async def _ask_user_tool(questions: list[dict[str, Any]]) -> str:
     return "工具不应实际执行。"
 
 
+async def _approval_write_tool(value: str) -> str:
+    """测试用高风险写入工具；实际返回不重要，确认前不会执行。"""
+
+    return f"已写入：{value}"
+
+
 async def _ask_user_stream_function(
     messages: list[Any],
     info: AgentInfo,
@@ -585,6 +700,25 @@ async def _ask_user_stream_function(
                 '"options":[{"label":"首屏"},{"label":"全页面"}]}]}'
             ),
             tool_call_id="tool-ask-layout",
+        )
+    }
+
+
+async def _approval_tool_stream_function(
+    messages: list[Any],
+    info: AgentInfo,
+) -> AsyncIterator[str | dict[int, DeltaToolCall]]:
+    """模拟模型先请求确认写入工具，收到拒绝回灌后继续输出总结。"""
+
+    _ = info
+    if _latest_tool_return(messages) is not None:
+        yield "已跳过写入。"
+        return
+    yield {
+        0: DeltaToolCall(
+            name="dangerous_write",
+            json_args='{"value":"route-tree"}',
+            tool_call_id="tool-write-route",
         )
     }
 

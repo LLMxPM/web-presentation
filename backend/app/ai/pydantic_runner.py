@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from time import monotonic
 from typing import Any
 
-from pydantic_ai import Agent, AgentRunResultEvent, DeferredToolRequests, DeferredToolResults
+from pydantic_ai import Agent, AgentRunResultEvent, DeferredToolRequests, DeferredToolResults, ToolDenied
 from pydantic_ai.messages import (
     FunctionToolCallEvent,
     FunctionToolResultEvent,
@@ -87,6 +87,7 @@ class PydanticAgentRunner:
         reasoning_parts: list[str] = []
         final_messages: list[dict[str, Any]] = []
         delta_buffer = _DeltaEventBuffer()
+        denied_tool_call_ids = _denied_tool_call_ids(deferred_tool_results)
         try:
             yield await self._yield_and_store(
                 run_model,
@@ -116,6 +117,7 @@ class PydanticAgentRunner:
                     reasoning_parts=reasoning_parts,
                     final_messages=final_messages,
                     delta_buffer=delta_buffer,
+                    denied_tool_call_ids=denied_tool_call_ids,
                 ):
                     yield sse
             if _has_paused(run_model):
@@ -194,6 +196,7 @@ class PydanticAgentRunner:
         reasoning_parts: list[str],
         final_messages: list[dict[str, Any]],
         delta_buffer: "_DeltaEventBuffer",
+        denied_tool_call_ids: set[str],
     ) -> AsyncGenerator[bytes, None]:
         """把单个 Pydantic AI 事件转换为零到多个平台 SSE。"""
 
@@ -232,6 +235,8 @@ class PydanticAgentRunner:
                 ):
                     yield sse
             elif isinstance(part, ToolCallPart):
+                if _is_denied_tool_call(part, denied_tool_call_ids):
+                    return
                 async for sse in self._flush_delta_buffer(run_model, delta_buffer):
                     yield sse
                 yield await self._yield_and_store(
@@ -264,6 +269,8 @@ class PydanticAgentRunner:
                 ):
                     yield sse
         elif isinstance(raw_event, FunctionToolCallEvent):
+            if _is_denied_tool_call(raw_event.part, denied_tool_call_ids):
+                return
             async for sse in self._flush_delta_buffer(run_model, delta_buffer):
                 yield sse
             yield await self._yield_and_store(
@@ -279,6 +286,22 @@ class PydanticAgentRunner:
             async for sse in self._flush_delta_buffer(run_model, delta_buffer):
                 yield sse
             result = raw_event.result
+            tool_call_id = str(getattr(result, "tool_call_id", "") or "")
+            if tool_call_id in denied_tool_call_ids:
+                yield await self._yield_and_store(
+                    run_model,
+                    AgentRunEvent(
+                        event="tool.error",
+                        run_id=run_model.run_id,
+                        session_id=run_model.session_id,
+                        data={
+                            "tool_name": getattr(result, "tool_name", None),
+                            "tool_call_id": tool_call_id,
+                            "message": _tool_denied_message(getattr(result, "content", None)),
+                        },
+                    ),
+                )
+                return
             yield await self._yield_and_store(
                 run_model,
                 AgentRunEvent(
@@ -460,6 +483,32 @@ def _safe_messages(result: Any) -> list[dict[str, Any]]:
         return dumped if isinstance(dumped, list) else []
     except Exception:  # noqa: BLE001
         return []
+
+
+def _denied_tool_call_ids(results: DeferredToolResults | None) -> set[str]:
+    """从 deferred approval 结果中提取被人工拒绝的 tool_call_id。"""
+
+    if results is None:
+        return set()
+    return {
+        str(tool_call_id)
+        for tool_call_id, approval_result in results.approvals.items()
+        if isinstance(approval_result, ToolDenied) and str(tool_call_id).strip()
+    }
+
+
+def _is_denied_tool_call(part: ToolCallPart, denied_tool_call_ids: set[str]) -> bool:
+    """判断工具调用是否属于拒绝回灌，避免把平台错误态覆盖为运行中。"""
+
+    tool_call_id = str(getattr(part, "tool_call_id", "") or "")
+    return bool(tool_call_id and tool_call_id in denied_tool_call_ids)
+
+
+def _tool_denied_message(content: Any) -> str:
+    """把 Pydantic AI 的拒绝回灌内容转换为前端可展示消息。"""
+
+    text = str(content or "").strip()
+    return text or "用户拒绝执行该工具。"
 
 
 def _requirement_from_deferred(

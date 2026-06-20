@@ -13,7 +13,7 @@ from pydantic_ai import DeferredToolResults, ToolDenied
 from pydantic_ai.messages import ModelMessagesTypeAdapter, ModelRequest, ModelResponse, ToolCallPart, UserContent, UserPromptPart
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.ai.platform_runtime import PlatformAgentRuntimeStore, new_session_id, stream_replay_then_subscribe
+from app.ai.platform_runtime import ACTIVE_RUN_STATUSES, PlatformAgentRuntimeStore, new_session_id, stream_replay_then_subscribe
 from app.ai.pydantic_model_resolver import PydanticLlmModelResolver
 from app.ai.pydantic_runner import PydanticAgentRunner
 from app.ai.pydantic_tools import build_pydantic_tools
@@ -276,6 +276,13 @@ class AgentSessionFacade:
                     deps=deps,
                 ):
                     yield chunk
+            except asyncio.CancelledError:
+                await self._mark_interrupted_run_terminal(
+                    run_model,
+                    fallback_code="AI_RUN_STREAM_INTERRUPTED",
+                    fallback_message="智能体连接中断，运行已停止。",
+                )
+                raise
             except AppException as exc:
                 if run_model is not None:
                     from app.ai.platform_runtime import encode_sse_event
@@ -464,6 +471,13 @@ class AgentSessionFacade:
                     deferred_tool_results=deferred_results,
                 ):
                     yield chunk
+            except asyncio.CancelledError:
+                await self._mark_interrupted_run_terminal(
+                    run_model,
+                    fallback_code="AI_RUN_CONTINUE_INTERRUPTED",
+                    fallback_message="智能体继续运行连接中断，运行已停止。",
+                )
+                raise
             except AppException as exc:
                 from app.ai.platform_runtime import encode_sse_event
 
@@ -504,6 +518,39 @@ class AgentSessionFacade:
                     lock.release()
 
         return generator()
+
+    async def _mark_interrupted_run_terminal(
+        self,
+        run_model: Any | None,
+        *,
+        fallback_code: str,
+        fallback_message: str,
+    ) -> None:
+        """流式响应被取消时收敛后端 run 状态，避免长期残留 running。"""
+
+        if run_model is None:
+            return
+        try:
+            current_status = await self._store.get_run_status(run_id=run_model.run_id)
+            if current_status not in ACTIVE_RUN_STATUSES or current_status == "paused":
+                return
+            if current_status == "cancelling":
+                await self._store.mark_terminal(run_model, status="cancelled", content="用户停止了当前运行。")
+                return
+            await self._store.mark_terminal(
+                run_model,
+                status="failed",
+                error_code=fallback_code,
+                error_message=fallback_message,
+            )
+        except Exception:  # noqa: BLE001
+            logger.exception(
+                "Failed to mark interrupted agent run terminal",
+                extra={
+                    "run_id": getattr(run_model, "run_id", None),
+                    "fallback_code": fallback_code,
+                },
+            )
 
     def _get_lock(self, *, session_id: str, agent_id: str) -> asyncio.Lock:
         """读取或创建 session 级运行锁。"""
