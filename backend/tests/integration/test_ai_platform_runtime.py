@@ -3,17 +3,21 @@
 from __future__ import annotations
 
 import asyncio
+import json
+from types import SimpleNamespace
 
 import pytest
 from httpx import AsyncClient
+from pydantic_ai.messages import ModelMessagesTypeAdapter, ModelRequest, ModelResponse, TextPart, ToolReturnPart, UserPromptPart
 from sqlalchemy import select
 
 import app.ai.platform_runtime as platform_runtime
 from app.ai.agent.runtime_context import AgentRuntimeContext
+from app.ai.message_history import build_context_limit_processor, build_history_budget, rebuild_agent_message_history
 from app.ai.platform_runtime import PlatformAgentRuntimeStore
 from app.ai.pydantic_runner import PydanticAgentRunner
 from app.db.session import get_session_factory
-from app.models.ai_agent_runtime import AiAgentRun, AiAgentRunEvent, AiAgentToolCall
+from app.models.ai_agent_runtime import AiAgentRun, AiAgentRunEvent, AiAgentSession, AiAgentToolCall
 from app.schemas.agent import AgentRunEvent, AgentScopeContext
 
 
@@ -682,6 +686,239 @@ async def test_pydantic_runner_cancel_check_should_report_requested_cancel(
         assert result.scalars().all() == ["run.started", "run.cancelling", "run.cancelled"]
 
 
+async def test_agent_message_history_should_rebuild_from_run_deltas(
+    authenticated_client: AsyncClient,
+) -> None:
+    """多轮历史应按 run delta 拼接，不能把前序历史重复写入后续 run。"""
+
+    workspace_id, session_id, scope = await _create_history_workspace_session(authenticated_client, "delta 拼接")
+
+    async with get_session_factory()() as db_session:
+        store = PlatformAgentRuntimeStore(db_session, user_id=1)
+        first = await _finish_history_run(
+            store,
+            session_id=session_id,
+            scope=scope,
+            run_id="history-delta-run-1",
+            user_text="第一轮问题",
+            assistant_text="第一轮回答",
+        )
+        second = await _finish_history_run(
+            store,
+            session_id=session_id,
+            scope=scope,
+            run_id="history-delta-run-2",
+            user_text="第二轮问题",
+            assistant_text="第二轮回答",
+        )
+
+        rebuilt = await rebuild_agent_message_history(
+            session=db_session,
+            user_id=1,
+            session_id=session_id,
+            agent_id="component-manager",
+        )
+        first_run = await db_session.get(AiAgentRun, first.run_id)
+        second_run = await db_session.get(AiAgentRun, second.run_id)
+
+    assert workspace_id == scope.workspace_id
+    assert [item["kind"] for item in rebuilt.message_json] == ["request", "response", "request", "response"]
+    assert rebuilt.included_run_ids == ["history-delta-run-1", "history-delta-run-2"]
+    assert first_run is not None and len(first_run.message_history_json) == 2
+    assert second_run is not None and len(second_run.message_history_json) == 2
+    assert second_run.message_history_json[0]["parts"][0]["content"] == "第二轮问题"
+
+
+async def test_agent_message_history_should_exclude_current_continue_run(
+    authenticated_client: AsyncClient,
+) -> None:
+    """HITL continue 重建前序历史时，应排除当前 paused run，避免 delta 重复提交。"""
+
+    _, session_id, scope = await _create_history_workspace_session(authenticated_client, "continue 排除")
+
+    async with get_session_factory()() as db_session:
+        store = PlatformAgentRuntimeStore(db_session, user_id=1)
+        await _finish_history_run(
+            store,
+            session_id=session_id,
+            scope=scope,
+            run_id="history-continue-run-1",
+            user_text="前序问题",
+            assistant_text="前序回答",
+        )
+        current = await store.start_run(
+            session_id=session_id,
+            agent_id="component-manager",
+            scope=scope,
+            run_id="history-continue-run-2",
+            message="需要确认的当前问题",
+            image_attachment_ids=[],
+        )
+        await store.save_run_message_history(
+            current.run_model,
+            _history_delta(user_text="需要确认的当前问题", assistant_text="等待用户确认"),
+        )
+        current.run_model.status = "paused"
+        await db_session.commit()
+
+        rebuilt = await rebuild_agent_message_history(
+            session=db_session,
+            user_id=1,
+            session_id=session_id,
+            agent_id="component-manager",
+            exclude_run_id=current.run_model.run_id,
+        )
+        rebuilt_without_exclusion = await rebuild_agent_message_history(
+            session=db_session,
+            user_id=1,
+            session_id=session_id,
+            agent_id="component-manager",
+        )
+
+    assert rebuilt.included_run_ids == ["history-continue-run-1"]
+    assert rebuilt_without_exclusion.included_run_ids == ["history-continue-run-1", "history-continue-run-2"]
+
+
+async def test_agent_message_history_should_preserve_large_payload_delta(
+    authenticated_client: AsyncClient,
+) -> None:
+    """图片 URL、base64 与大工具结果应原样保留在本 run delta 中，且不写入后续 run。"""
+
+    _, session_id, scope = await _create_history_workspace_session(authenticated_client, "大内容保留")
+    image_url = "https://cdn.example.test/assets/rendered-image.png"
+    image_base64 = "data:image/png;base64," + "A" * 2048
+    large_tool_result = {"image_url": image_url, "base64": image_base64, "payload": "工具结果" + "B" * 4096}
+
+    async with get_session_factory()() as db_session:
+        store = PlatformAgentRuntimeStore(db_session, user_id=1)
+        run_start = await store.start_run(
+            session_id=session_id,
+            agent_id="component-manager",
+            scope=scope,
+            run_id="history-large-payload-run-1",
+            message="生成图片并返回大结果",
+            image_attachment_ids=[],
+        )
+        await store.append_assistant_message(
+            run_start.run_model,
+            content="已生成图片。",
+            message_history=_large_payload_delta(tool_result=large_tool_result),
+        )
+        await store.mark_terminal(run_start.run_model, status="completed", content="已生成图片。")
+        second = await _finish_history_run(
+            store,
+            session_id=session_id,
+            scope=scope,
+            run_id="history-large-payload-run-2",
+            user_text="继续下一轮",
+            assistant_text="下一轮回答",
+        )
+        rebuilt = await rebuild_agent_message_history(
+            session=db_session,
+            user_id=1,
+            session_id=session_id,
+            agent_id="component-manager",
+        )
+        first_run = await db_session.get(AiAgentRun, run_start.run_model.run_id)
+        second_run = await db_session.get(AiAgentRun, second.run_id)
+
+    assert first_run is not None
+    assert second_run is not None
+    preserved_content = first_run.message_history_json[-1]["parts"][0]["content"]
+    assert preserved_content == large_tool_result
+    assert image_url in json.dumps(rebuilt.message_json, ensure_ascii=False)
+    assert image_base64 in json.dumps(rebuilt.message_json, ensure_ascii=False)
+    assert image_base64 not in json.dumps(second_run.message_history_json, ensure_ascii=False)
+
+
+async def test_agent_message_history_checkpoint_should_skip_covered_deltas(
+    authenticated_client: AsyncClient,
+) -> None:
+    """压缩检查点写入后，后续重建应跳过已覆盖 delta，但保留原始 run delta。"""
+
+    _, session_id, scope = await _create_history_workspace_session(authenticated_client, "checkpoint 跳过")
+
+    async with get_session_factory()() as db_session:
+        store = PlatformAgentRuntimeStore(db_session, user_id=1)
+        first = await _finish_history_run(
+            store,
+            session_id=session_id,
+            scope=scope,
+            run_id="history-checkpoint-run-1",
+            user_text="第一轮问题 " + "很长" * 300,
+            assistant_text="第一轮回答 " + "很长" * 300,
+        )
+        second = await _finish_history_run(
+            store,
+            session_id=session_id,
+            scope=scope,
+            run_id="history-checkpoint-run-2",
+            user_text="第二轮问题 " + "很长" * 300,
+            assistant_text="第二轮回答 " + "很长" * 300,
+        )
+        rebuilt = await rebuild_agent_message_history(
+            session=db_session,
+            user_id=1,
+            session_id=session_id,
+            agent_id="component-manager",
+        )
+        budget = build_history_budget(
+            SimpleNamespace(context_window_tokens=1200, max_output_tokens=100, compression_target_ratio=0.05),
+            runtime_context=AgentRuntimeContext(scope_type=scope.scope_type, workspace_id=scope.workspace_id, source=scope.source),
+        )
+        processor = build_context_limit_processor(
+            session=db_session,
+            user_id=1,
+            session_id=session_id,
+            agent_id="component-manager",
+            budget=budget,
+            rebuilt_history=rebuilt,
+        )
+        assert processor is not None
+        compressed_messages = await processor(
+            SimpleNamespace(),
+            [*rebuilt.messages, ModelRequest(parts=[UserPromptPart(content="当前问题")])],
+        )
+        session_model = await db_session.get(AiAgentSession, session_id)
+        assert session_model is not None
+        checkpoint = session_model.summary_json
+
+        rebuilt_after_checkpoint = await rebuild_agent_message_history(
+            session=db_session,
+            user_id=1,
+            session_id=session_id,
+            agent_id="component-manager",
+        )
+        third = await _finish_history_run(
+            store,
+            session_id=session_id,
+            scope=scope,
+            run_id="history-checkpoint-run-3",
+            user_text="第三轮问题",
+            assistant_text="第三轮回答",
+        )
+        rebuilt_after_new_delta = await rebuild_agent_message_history(
+            session=db_session,
+            user_id=1,
+            session_id=session_id,
+            agent_id="component-manager",
+        )
+        first_run = await db_session.get(AiAgentRun, first.run_id)
+        second_run = await db_session.get(AiAgentRun, second.run_id)
+        third_run = await db_session.get(AiAgentRun, third.run_id)
+
+    assert len(compressed_messages) == 2
+    assert isinstance(checkpoint, dict)
+    assert checkpoint["covered_until_run_id"] == "history-checkpoint-run-2"
+    assert rebuilt_after_checkpoint.included_run_ids == []
+    assert rebuilt_after_checkpoint.message_json[0]["parts"][0]["part_kind"] == "system-prompt"
+    assert rebuilt_after_new_delta.included_run_ids == ["history-checkpoint-run-3"]
+    assert [item["kind"] for item in rebuilt_after_new_delta.message_json] == ["request", "request", "response"]
+    assert first_run is not None and len(first_run.message_history_json) == 2
+    assert second_run is not None and len(second_run.message_history_json) == 2
+    assert third_run is not None and len(third_run.message_history_json) == 2
+
+
 async def _read_next_sse_event(stream) -> AgentRunEvent:
     """读取异步 SSE 流中的下一条 AgentRunEvent。"""
 
@@ -693,3 +930,97 @@ async def _read_next_sse_event(stream) -> AgentRunEvent:
             raw_payload = block.removeprefix("data:").strip()
             return AgentRunEvent.model_validate_json(raw_payload)
     raise AssertionError("SSE stream ended before yielding an AgentRunEvent")
+
+
+async def _create_history_workspace_session(
+    authenticated_client: AsyncClient,
+    suffix: str,
+) -> tuple[int, str, AgentScopeContext]:
+    """创建历史测试用工作空间和智能体会话。"""
+
+    workspace_response = await authenticated_client.post(
+        "/api/workspaces",
+        json={"name": f"历史上下文工作空间 {suffix}", "status": "active"},
+    )
+    assert workspace_response.status_code == 200
+    workspace_id = workspace_response.json()["id"]
+    scope = AgentScopeContext(
+        scope_type="workspace",
+        workspace_id=workspace_id,
+        source="editor-component-library",
+    )
+    session_response = await authenticated_client.post(
+        "/api/ai/sessions",
+        json={
+            "agent_id": "component-manager",
+            "session_name": f"历史上下文会话 {suffix}",
+            "scope": scope.model_dump(mode="json"),
+        },
+    )
+    assert session_response.status_code == 201
+    return workspace_id, session_response.json()["session_id"], scope
+
+
+async def _finish_history_run(
+    store: PlatformAgentRuntimeStore,
+    *,
+    session_id: str,
+    scope: AgentScopeContext,
+    run_id: str,
+    user_text: str,
+    assistant_text: str,
+) -> AiAgentRun:
+    """创建并完成一个带 Pydantic AI delta 的测试 run。"""
+
+    run_start = await store.start_run(
+        session_id=session_id,
+        agent_id="component-manager",
+        scope=scope,
+        run_id=run_id,
+        message=user_text,
+        image_attachment_ids=[],
+    )
+    await store.append_assistant_message(
+        run_start.run_model,
+        content=assistant_text,
+        message_history=_history_delta(user_text=user_text, assistant_text=assistant_text),
+    )
+    await store.mark_terminal(run_start.run_model, status="completed", content=assistant_text)
+    return run_start.run_model
+
+
+def _history_delta(*, user_text: str, assistant_text: str) -> list[dict[str, object]]:
+    """构造一轮 Pydantic AI 消息 delta。"""
+
+    dumped = ModelMessagesTypeAdapter.dump_python(
+        [
+            ModelRequest(parts=[UserPromptPart(content=user_text)]),
+            ModelResponse(parts=[TextPart(content=assistant_text)]),
+        ],
+        mode="json",
+    )
+    assert isinstance(dumped, list)
+    return dumped
+
+
+def _large_payload_delta(*, tool_result: dict[str, object]) -> list[dict[str, object]]:
+    """构造包含大工具返回的 Pydantic AI 消息 delta。"""
+
+    dumped = ModelMessagesTypeAdapter.dump_python(
+        [
+            ModelRequest(parts=[UserPromptPart(content="生成图片并返回大结果")]),
+            ModelResponse(parts=[TextPart(content="准备调用渲染工具。")]),
+            ModelRequest(
+                parts=[
+                    ToolReturnPart(
+                        tool_name="render_image",
+                        tool_call_id="tool-large-payload",
+                        content=tool_result,
+                    )
+                ]
+            ),
+        ],
+        mode="json",
+    )
+    assert isinstance(dumped, list)
+    return dumped

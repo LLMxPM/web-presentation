@@ -13,6 +13,12 @@ from pydantic_ai import DeferredToolResults, ToolDenied
 from pydantic_ai.messages import ModelMessagesTypeAdapter, ModelRequest, ModelResponse, ToolCallPart, UserContent, UserPromptPart
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.ai.message_history import (
+    build_context_limit_processor,
+    build_context_status_item,
+    build_history_budget,
+    rebuild_agent_message_history,
+)
 from app.ai.platform_runtime import ACTIVE_RUN_STATUSES, PlatformAgentRuntimeStore, new_session_id, stream_replay_then_subscribe
 from app.ai.pydantic_model_resolver import PydanticLlmModelResolver
 from app.ai.pydantic_runner import PydanticAgentRunner
@@ -148,11 +154,18 @@ class AgentSessionFacade:
         """返回平台运行态快照。"""
 
         await self.ensure_session_access(session_id=session_id, agent_id=agent_id, scope=scope)
-        return await self._store.get_runtime_snapshot(
+        snapshot = await self._store.get_runtime_snapshot(
             session_id=session_id,
             agent_id=agent_id,
             runtime_context=runtime_context,
         )
+        snapshot.context_status = await self.get_context_status(
+            session_id=session_id,
+            agent_id=agent_id,
+            scope=scope,
+            runtime_context=runtime_context,
+        )
+        return snapshot
 
     async def get_active_run(
         self,
@@ -180,7 +193,27 @@ class AgentSessionFacade:
         """读取当前会话上下文状态。"""
 
         await self.ensure_session_access(session_id=session_id, agent_id=agent_id, scope=scope)
-        return self._store.build_context_status(session_id=session_id, agent_id=agent_id, runtime_context=runtime_context)
+        try:
+            descriptor = self._app.state.ai_registry.get_descriptor(agent_id)
+            llm_config = await AiLlmService(
+                self._session,
+                user_id=self._current.user.id,
+                user_role=self._current.user.role,
+            ).get_bound_config_or_raise(descriptor.llm_slot or "")
+            rebuilt_history = await rebuild_agent_message_history(
+                session=self._session,
+                user_id=self._current.user.id,
+                session_id=session_id,
+                agent_id=agent_id,
+            )
+            return build_context_status_item(
+                session_id=session_id,
+                agent_id=agent_id,
+                budget=build_history_budget(llm_config, runtime_context=runtime_context),
+                rebuilt_history=rebuilt_history,
+            )
+        except AppException:
+            return self._store.build_context_status(session_id=session_id, agent_id=agent_id, runtime_context=runtime_context)
 
     async def reserve_run_slot(
         self,
@@ -235,6 +268,21 @@ class AgentSessionFacade:
                     user_id=self._current.user.id,
                     user_role=self._current.user.role,
                 ).get_bound_config_or_raise(descriptor.llm_slot or "")
+                rebuilt_history = await rebuild_agent_message_history(
+                    session=self._session,
+                    user_id=self._current.user.id,
+                    session_id=session_id,
+                    agent_id=agent_id,
+                )
+                history_budget = build_history_budget(llm_config, runtime_context=runtime_context)
+                context_processor = build_context_limit_processor(
+                    session=self._session,
+                    user_id=self._current.user.id,
+                    session_id=session_id,
+                    agent_id=agent_id,
+                    budget=history_budget,
+                    rebuilt_history=rebuilt_history,
+                )
                 resolved_images = await self._resolve_run_images(
                     session_id=session_id,
                     scope=scope,
@@ -280,6 +328,8 @@ class AgentSessionFacade:
                     agent_config=agent_config,
                     tools=tools,
                     deps=deps,
+                    message_history=rebuilt_history.messages or None,
+                    history_processors=[context_processor] if context_processor is not None else None,
                 ):
                     yield chunk
             except asyncio.CancelledError:
@@ -420,6 +470,22 @@ class AgentSessionFacade:
                     user_id=self._current.user.id,
                     user_role=self._current.user.role,
                 ).get_bound_config_or_raise(descriptor.llm_slot or "")
+                previous_history = await rebuild_agent_message_history(
+                    session=self._session,
+                    user_id=self._current.user.id,
+                    session_id=session_id,
+                    agent_id=agent_id,
+                    exclude_run_id=run_model.run_id,
+                )
+                history_budget = build_history_budget(llm_config, runtime_context=runtime_context)
+                context_processor = build_context_limit_processor(
+                    session=self._session,
+                    user_id=self._current.user.id,
+                    session_id=session_id,
+                    agent_id=agent_id,
+                    budget=history_budget,
+                    rebuilt_history=previous_history,
+                )
                 agent_config = await self._agent_config_service.get_effective_runtime_config(agent_id)
                 tools, deps = build_pydantic_tools(
                     agent_id=agent_id,
@@ -456,12 +522,16 @@ class AgentSessionFacade:
                 from app.ai.platform_runtime import encode_sse_event
 
                 yield encode_sse_event(continued)
-                message_history = _build_continue_message_history(
+                current_run_history = _build_continue_message_history(
                     run_model_message_history=run_model.message_history_json,
                     run_input_payload=run_model.input_payload_json,
                     run_id=run_model.run_id,
                     tool_execution=merged_tool_execution,
                 )
+                message_history = [
+                    *previous_history.messages,
+                    *current_run_history,
+                ]
                 runner = PydanticAgentRunner(self._store)
                 async for chunk in runner.stream_run(
                     run_model=run_model,
@@ -475,6 +545,7 @@ class AgentSessionFacade:
                     deps=deps,
                     message_history=message_history,
                     deferred_tool_results=deferred_results,
+                    history_processors=[context_processor] if context_processor is not None else None,
                 ):
                     yield chunk
             except asyncio.CancelledError:

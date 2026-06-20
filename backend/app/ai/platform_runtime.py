@@ -268,7 +268,7 @@ class PlatformAgentRuntimeStore:
         reasoning_content: str | None = None,
         message_history: list[dict[str, Any]] | None = None,
     ) -> None:
-        """保存一次运行完成后的助手消息和 Pydantic AI 历史。"""
+        """保存一次运行完成后的助手消息和本 run 新增 Pydantic AI 消息 delta。"""
 
         if content:
             await self._append_message(
@@ -280,14 +280,23 @@ class PlatformAgentRuntimeStore:
                 message_json={"message_history": message_history or []},
             )
         if message_history is not None:
-            run_model.message_history_json = message_history
+            self._append_run_message_history_delta(run_model, message_history)
 
     async def save_run_message_history(self, run_model: AiAgentRun, message_history: list[dict[str, Any]]) -> None:
-        """保存 Pydantic AI 历史消息并提交。"""
+        """追加保存本 run 新增 Pydantic AI 消息 delta 并提交。"""
 
-        run_model.message_history_json = message_history
+        self._append_run_message_history_delta(run_model, message_history)
         run_model.updated_at = _utc_now()
         await self._session.commit()
+
+    def _append_run_message_history_delta(self, run_model: AiAgentRun, message_history: list[dict[str, Any]]) -> None:
+        """把本次新增消息追加到 run delta，避免跨 run 重复持久化历史前缀。"""
+
+        current = run_model.message_history_json if isinstance(run_model.message_history_json, list) else []
+        delta = [dict(item) for item in message_history if isinstance(item, dict)]
+        if not delta:
+            return
+        run_model.message_history_json = [*current, *delta]
 
     async def refresh_run_control_state(self, run_model: AiAgentRun) -> str:
         """刷新 run 的控制状态，供流式执行过程感知外部取消请求。"""

@@ -195,12 +195,14 @@ def format_ai_session_diagnostics_summary(payload: dict[str, Any]) -> str:
 
     session = payload["session"]
     runs = payload["runs"]
+    checkpoint = session.get("summary") if isinstance(session.get("summary"), dict) else None
     lines = [
         f"AI session: {session['session_id']}",
         f"- agent_id: {session['agent_id']}",
         f"- user_id: {session['user_id']}",
         f"- scope: {session['scope_type']} workspace={session['workspace_id']} project={session['project_id'] or '-'} page={session['page_id'] or '-'} component={session['component_id'] or '-'}",
         f"- source: {session['source']}",
+        f"- compression_checkpoint: {_format_summary_checkpoint(checkpoint)}",
         f"- deleted_at: {session['deleted_at'] or '-'}",
         f"- created_at: {session['created_at'] or '-'}",
         "",
@@ -475,6 +477,18 @@ def _summarize_message_history(history: list[dict[str, Any]] | None) -> dict[str
         "kinds": kinds,
         "part_kinds": part_kinds,
     }
+
+
+def _format_summary_checkpoint(checkpoint: dict[str, Any] | None) -> str:
+    """格式化 session.summary_json 压缩检查点边界，便于诊断压缩覆盖范围。"""
+
+    if not checkpoint:
+        return "-"
+    kind = str(checkpoint.get("kind") or "unknown")
+    covered_run_id = str(checkpoint.get("covered_until_run_id") or "-")
+    covered_created_at = str(checkpoint.get("covered_until_created_at") or "-")
+    summary = _preview(checkpoint.get("summary"))
+    return f"{kind} covered_until_run_id={covered_run_id} covered_until_created_at={covered_created_at} summary={summary}"
 
 
 def _preview_event_payload(item: dict[str, Any]) -> str:

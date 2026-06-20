@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Sequence
 from dataclasses import dataclass
 from time import monotonic
 from typing import Any
@@ -65,6 +65,7 @@ class PydanticAgentRunner:
         deps: AgentToolDeps | None = None,
         message_history: list[Any] | None = None,
         deferred_tool_results: DeferredToolResults | None = None,
+        history_processors: Sequence[Any] | None = None,
     ) -> AsyncGenerator[bytes, None]:
         """执行一次 Pydantic AI run 并输出平台 SSE。"""
 
@@ -83,6 +84,7 @@ class PydanticAgentRunner:
             system_prompt=build_effective_description(catalog, agent_config),
             deps_type=AgentToolDeps if deps is not None else type(None),
             tools=tools or (),
+            history_processors=history_processors,
         )
         content_parts: list[str] = []
         reasoning_parts: list[str] = []
@@ -213,7 +215,7 @@ class PydanticAgentRunner:
                     yield sse
                 event = await self._store.pause_for_requirement(run_model, requirement=requirement)
                 yield encode_sse_event(event)
-            final_messages[:] = _safe_messages(raw_event.result)
+            final_messages[:] = _safe_new_messages(raw_event.result)
             return
         if isinstance(raw_event, PartStartEvent):
             part = raw_event.part
@@ -478,6 +480,19 @@ def _safe_messages(result: Any) -> list[dict[str, Any]]:
 
     try:
         dumped = ModelMessagesTypeAdapter.dump_python(result.all_messages(), mode="json")
+        return dumped if isinstance(dumped, list) else []
+    except Exception:  # noqa: BLE001
+        return []
+
+
+def _safe_new_messages(result: Any) -> list[dict[str, Any]]:
+    """安全序列化本次 Pydantic AI run 新增消息，避免跨 run 重复持久化历史。"""
+
+    try:
+        new_messages = getattr(result, "new_messages", None)
+        if not callable(new_messages):
+            return []
+        dumped = ModelMessagesTypeAdapter.dump_python(new_messages(), mode="json")
         return dumped if isinstance(dumped, list) else []
     except Exception:  # noqa: BLE001
         return []

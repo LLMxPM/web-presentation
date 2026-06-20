@@ -10,6 +10,7 @@ from httpx import AsyncClient
 
 from app.ai.platform_runtime import PlatformAgentRuntimeStore
 from app.db.session import get_session_factory
+from app.models.ai_agent_runtime import AiAgentSession
 from app.schemas.agent import AgentPendingRequirement, AgentRunEvent, AgentScopeContext
 from app.scripts.diagnose_ai_run import (
     async_main,
@@ -147,6 +148,17 @@ async def test_ai_run_diagnostics_should_collect_runtime_state(
             ],
         )
         await store.mark_terminal(run_model, status="completed", content="诊断完成。")
+        session_model = await db_session.get(AiAgentSession, session_id)
+        assert session_model is not None
+        session_model.summary_json = {
+            "kind": "agent-message-history-summary.v1",
+            "summary": "诊断会话的压缩摘要。",
+            "covered_until_run_id": run_model.run_id,
+            "covered_until_created_at": run_model.created_at.isoformat(),
+            "source_run_ids": [run_model.run_id],
+        }
+        await db_session.commit()
+        await db_session.refresh(session_model)
 
         payload = await collect_ai_run_diagnostics(db_session, run_model.run_id)
         session_payload = await collect_ai_session_diagnostics(db_session, session_id)
@@ -180,9 +192,11 @@ async def test_ai_run_diagnostics_should_collect_runtime_state(
     assert "Requirements (1):" in summary
     assert session_payload is not None
     assert session_payload["session"]["session_id"] == session_id
+    assert session_payload["session"]["summary"]["covered_until_run_id"] == "diagnostics-run-1"
     assert [item["run"]["run_id"] for item in session_payload["runs"]] == ["diagnostics-run-1"]
     session_summary = format_ai_session_diagnostics_summary(session_payload)
     assert f"AI session: {session_id}" in session_summary
+    assert "compression_checkpoint: agent-message-history-summary.v1 covered_until_run_id=diagnostics-run-1" in session_summary
     assert "Runs (1):" in session_summary
 
     output_path = tmp_path / "diagnostics" / "session.json"
