@@ -795,6 +795,79 @@ async def test_pydantic_runner_should_flush_buffer_before_requested_cancel(
     assert event_rows[3][1]["content"] == "已流出的局部内容。"
 
 
+async def test_pydantic_runner_should_cancel_idle_stream_without_waiting_full_timeout(
+    authenticated_client: AsyncClient,
+) -> None:
+    """模型流半开时，停止请求应尽快收敛为 cancelled，而不是等待完整空闲超时。"""
+
+    raw_delta_buffered = asyncio.Event()
+
+    async def stream_function(messages: list[Any], info: AgentInfo) -> AsyncIterator[str]:
+        """模拟模型先输出局部内容，随后长时间不再产生事件。"""
+
+        _ = messages, info
+        yield "已流出的局部内容。"
+        raw_delta_buffered.set()
+        await asyncio.Event().wait()
+
+    _, session_id, scope = await _create_workspace_session(
+        authenticated_client,
+        workspace_name="Pydantic Runner 半开取消工作空间",
+        session_name="Pydantic Runner 半开取消会话",
+    )
+    model = FunctionModel(stream_function=stream_function)
+
+    async with get_session_factory()() as db_session:
+        store = PlatformAgentRuntimeStore(db_session, user_id=1)
+        run_start = await store.start_run(
+            session_id=session_id,
+            agent_id="component-manager",
+            scope=scope,
+            run_id="pydantic-runner-idle-cancel",
+            message="开始长任务",
+            image_attachment_ids=[],
+        )
+        collect_task = asyncio.create_task(
+            _collect_runner_events(
+                PydanticAgentRunner(store, stream_idle_timeout_seconds=30).stream_run(
+                    run_model=run_start.run_model,
+                    agent_id="component-manager",
+                    model=model,
+                    model_settings={},
+                    runtime_context=_runtime_context(scope),
+                    message="开始长任务",
+                )
+            )
+        )
+        await asyncio.wait_for(raw_delta_buffered.wait(), timeout=3)
+        async with get_session_factory()() as cancel_session:
+            cancel_store = PlatformAgentRuntimeStore(cancel_session, user_id=1)
+            await cancel_store.request_cancel(session_id=session_id, agent_id="component-manager")
+
+        events = await asyncio.wait_for(collect_task, timeout=3)
+        completed_run = await store.get_latest_run_model(session_id=session_id, agent_id="component-manager")
+        event_rows = (
+            await db_session.execute(
+                select(AiAgentRunEvent.event, AiAgentRunEvent.payload_json)
+                .where(AiAgentRunEvent.run_id == run_start.run_model.run_id)
+                .order_by(AiAgentRunEvent.event_index.asc())
+            )
+        ).all()
+
+    assert completed_run is not None
+    assert [event.event for event in events] == ["model.request.started", "message.delta", "run.cancelled"]
+    assert completed_run.status == "cancelled"
+    assert completed_run.content == "已流出的局部内容。"
+    assert [row[0] for row in event_rows] == [
+        "run.started",
+        "model.request.started",
+        "run.cancelling",
+        "message.delta",
+        "run.cancelled",
+    ]
+    assert event_rows[3][1]["content"] == "已流出的局部内容。"
+
+
 async def test_pydantic_runner_should_fail_idle_model_stream(
     authenticated_client: AsyncClient,
 ) -> None:

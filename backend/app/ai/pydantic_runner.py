@@ -7,6 +7,7 @@ import json
 import logging
 from collections.abc import AsyncGenerator, Sequence
 from contextlib import suppress
+from time import monotonic
 from typing import Any
 
 from pydantic_ai import Agent, DeferredToolRequests, DeferredToolResults
@@ -28,6 +29,8 @@ from app.models.ai_agent_runtime import AiAgentRun
 from app.schemas.agent import AgentPendingRequirement, AgentRunEvent
 
 logger = logging.getLogger(__name__)
+
+_STREAM_CONTROL_POLL_INTERVAL_SECONDS = 0.5
 
 
 class PydanticAgentRunner:
@@ -211,7 +214,7 @@ class PydanticAgentRunner:
                             AgentRunEvent(event="model.request.started", run_id=run_model.run_id, session_id=run_model.session_id),
                         )
                         async with node.stream(agent_run.ctx) as stream:
-                            async for raw_event in self._iter_stream_events(stream):
+                            async for raw_event in self._iter_stream_events(stream, run_model=run_model):
                                 should_stop, should_cancel = await self._cancel_event_if_requested(run_model)
                                 if should_stop:
                                     async for sse in self._flush_projector_buffer(projector, best_effort=True):
@@ -253,7 +256,7 @@ class PydanticAgentRunner:
                         continue
                     if agent.is_call_tools_node(node):
                         async with node.stream(agent_run.ctx) as stream:
-                            async for raw_event in self._iter_stream_events(stream):
+                            async for raw_event in self._iter_stream_events(stream, run_model=run_model):
                                 should_stop, should_cancel = await self._cancel_event_if_requested(run_model)
                                 if should_stop:
                                     async for sse in self._flush_projector_buffer(projector, best_effort=True):
@@ -532,25 +535,67 @@ class PydanticAgentRunner:
         stored = await self._store.append_event(run_model, event)
         return encode_sse_event(stored)
 
-    async def _iter_stream_events(self, stream: Any) -> AsyncGenerator[Any, None]:
-        """按空闲超时消费 Pydantic AI 节点流，避免半开连接长期占用 run。"""
+    async def _iter_stream_events(self, stream: Any, *, run_model: AiAgentRun | None = None) -> AsyncGenerator[Any, None]:
+        """按空闲超时消费节点流，并在等待下一条事件期间响应外部停止请求。"""
 
         iterator = stream.__aiter__()
-        while True:
-            try:
-                raw_event = await asyncio.wait_for(
-                    iterator.__anext__(),
-                    timeout=self._stream_idle_timeout_seconds,
+        pending_event_task: asyncio.Task[Any] | None = None
+        wait_started_at = monotonic()
+        try:
+            while True:
+                if pending_event_task is None:
+                    pending_event_task = asyncio.create_task(iterator.__anext__())
+                    wait_started_at = monotonic()
+
+                elapsed = monotonic() - wait_started_at
+                remaining = self._stream_idle_timeout_seconds - elapsed
+                if remaining <= 0:
+                    await self._cancel_pending_stream_task(pending_event_task)
+                    pending_event_task = None
+                    raise AppException(
+                        status_code=504,
+                        code="AI_AGENT_STREAM_IDLE_TIMEOUT",
+                        detail="模型或工具流长时间没有返回新事件，本次运行已停止。",
+                    )
+
+                done, _ = await asyncio.wait(
+                    {pending_event_task},
+                    timeout=min(_STREAM_CONTROL_POLL_INTERVAL_SECONDS, remaining),
                 )
-            except StopAsyncIteration:
-                return
-            except asyncio.TimeoutError as exc:
-                raise AppException(
-                    status_code=504,
-                    code="AI_AGENT_STREAM_IDLE_TIMEOUT",
-                    detail="模型或工具流长时间没有返回新事件，本次运行已停止。",
-                ) from exc
-            yield raw_event
+                if not done:
+                    if run_model is not None:
+                        should_stop, should_cancel = await self._cancel_event_if_requested(run_model)
+                        if should_stop:
+                            await self._cancel_pending_stream_task(pending_event_task)
+                            pending_event_task = None
+                            if should_cancel:
+                                raise AppException(
+                                    status_code=409,
+                                    code="AI_RUN_CANCELLED",
+                                    detail="当前智能体运行已被取消。",
+                                )
+                            return
+                    continue
+
+                completed_task = pending_event_task
+                pending_event_task = None
+                try:
+                    raw_event = completed_task.result()
+                except StopAsyncIteration:
+                    return
+                yield raw_event
+        finally:
+            if pending_event_task is not None:
+                await self._cancel_pending_stream_task(pending_event_task)
+
+    async def _cancel_pending_stream_task(self, task: asyncio.Task[Any]) -> None:
+        """取消正在等待的底层流事件任务，避免停止或超时后残留后台 await。"""
+
+        if task.done():
+            return
+        task.cancel()
+        with suppress(asyncio.CancelledError):
+            await task
 
     async def _cancel_event_if_requested(self, run_model: AiAgentRun) -> tuple[bool, bool]:
         """如果外部已结束或请求取消，则返回是否停止以及是否需要写取消终态。"""
