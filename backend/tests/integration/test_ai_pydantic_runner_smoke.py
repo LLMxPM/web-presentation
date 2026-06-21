@@ -233,7 +233,6 @@ async def test_pydantic_runner_should_pause_continue_and_replay_ask_user(
         "reasoning",
         "message",
         "tool",
-        "requirement",
         "reasoning",
         "message",
     ]

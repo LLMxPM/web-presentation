@@ -18,7 +18,7 @@ from app.ai.platform_runtime import PlatformAgentRuntimeStore
 from app.ai.pydantic_runner import PydanticAgentRunner
 from app.db.session import get_session_factory
 from app.models.ai_agent_runtime import AiAgentMemberRun, AiAgentRun, AiAgentRunEvent, AiAgentSession, AiAgentToolCall
-from app.schemas.agent import AgentRunEvent, AgentScopeContext
+from app.schemas.agent import AgentPendingRequirement, AgentRunEvent, AgentScopeContext
 
 
 async def test_platform_runtime_should_persist_events_messages_and_snapshot(
@@ -156,6 +156,106 @@ async def test_platform_runtime_should_persist_events_messages_and_snapshot(
     assert [item.kind for item in snapshot.timeline_items] == ["message", "reasoning", "message", "tool"]
     assert snapshot.timeline_items[-1].tool is not None
     assert snapshot.timeline_items[-1].tool.output_payload == {"total": 2}
+
+
+async def test_platform_runtime_snapshot_should_drop_resolved_requirement(
+    authenticated_client: AsyncClient,
+) -> None:
+    """已继续或终止的 HITL requirement 不应在刷新快照后继续显示为待处理状态。"""
+
+    workspace_response = await authenticated_client.post(
+        "/api/workspaces",
+        json={"name": "平台运行态清理 HITL 工作空间", "status": "active"},
+    )
+    assert workspace_response.status_code == 200
+    workspace_id = workspace_response.json()["id"]
+    scope = AgentScopeContext(
+        scope_type="workspace",
+        workspace_id=workspace_id,
+        source="editor-component-library",
+    )
+    session_response = await authenticated_client.post(
+        "/api/ai/sessions",
+        json={
+            "agent_id": "component-manager",
+            "session_name": "平台运行态清理 HITL 会话",
+            "scope": scope.model_dump(mode="json"),
+        },
+    )
+    assert session_response.status_code == 201
+    session_id = session_response.json()["session_id"]
+
+    async with get_session_factory()() as db_session:
+        store = PlatformAgentRuntimeStore(db_session, user_id=1)
+        run_start = await store.start_run(
+            session_id=session_id,
+            agent_id="component-manager",
+            scope=scope,
+            run_id="platform-runtime-hitl-resolved",
+            message="需要确认后执行工具",
+            image_attachment_ids=[],
+        )
+        run_model = run_start.run_model
+        await store.pause_for_requirement(
+            run_model,
+            requirement=AgentPendingRequirement(
+                id="requirement-tool-confirm-1",
+                kind="confirmation",
+                run_id=run_model.run_id,
+                session_id=session_id,
+                tool_name="apply_page_edits",
+                tool_execution={
+                    "tool_name": "apply_page_edits",
+                    "tool_call_id": "tool-confirm-1",
+                    "tool_args": {"change_note": "写入页面"},
+                },
+                note="工具 apply_page_edits 需要确认后执行。",
+            ),
+        )
+        paused_snapshot = await store.get_runtime_snapshot(
+            session_id=session_id,
+            agent_id="component-manager",
+            runtime_context=AgentRuntimeContext(
+                scope_type=scope.scope_type,
+                workspace_id=workspace_id,
+                source=scope.source,
+            ),
+        )
+        pending_requirement = await store.get_pending_requirement(run_id=run_model.run_id)
+        assert pending_requirement is not None
+        await store.resolve_requirement(
+            pending_requirement,
+            payload={
+                "decision": "confirm",
+                "tool_execution": pending_requirement.payload_json["tool_execution"],
+                "feedback_selections": [],
+            },
+        )
+        run_model.status = "running"
+        run_model.pending_requirement_json = None
+        await store.append_event(
+            run_model,
+            AgentRunEvent(event="run.continued", run_id=run_model.run_id, session_id=session_id),
+        )
+        await store.mark_terminal(run_model, status="completed", content="确认后运行完成。")
+        snapshot = await store.get_runtime_snapshot(
+            session_id=session_id,
+            agent_id="component-manager",
+            runtime_context=AgentRuntimeContext(
+                scope_type=scope.scope_type,
+                workspace_id=workspace_id,
+                source=scope.source,
+            ),
+        )
+
+    assert paused_snapshot.active_run is not None
+    assert paused_snapshot.active_run.status == "paused"
+    assert paused_snapshot.pending_requirement is not None
+    assert any(item.kind == "requirement" for item in paused_snapshot.timeline_items)
+    assert snapshot.pending_requirement is None
+    assert snapshot.last_run is not None
+    assert snapshot.last_run.status == "completed"
+    assert all(item.kind != "requirement" for item in snapshot.timeline_items)
 
 
 async def test_platform_runtime_snapshot_should_rebuild_member_runs_from_member_events(

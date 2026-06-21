@@ -120,6 +120,48 @@ describe('agent-conversation-panel timeline helpers', () => {
     expect(items).toEqual([])
   })
 
+  it('没有当前 pending 时不应展示历史工具确认 requirement', () => {
+    const items = buildTimelineDisplayItems([
+      timelineItem({
+        id: 'requirement-requirement-tool-1',
+        kind: 'requirement',
+        role: null,
+        order_index: 1,
+        status: 'paused',
+        content: '工具 apply_page_edits 需要确认后执行。',
+      }),
+    ])
+
+    expect(items).toEqual([])
+  })
+
+  it('当前 pending 工具确认仍应展示为待处理状态', () => {
+    const pendingRequirement: AgentPendingRequirement = {
+      id: 'requirement-tool-1',
+      kind: 'confirmation',
+      run_id: 'run-1',
+      session_id: 'session-1',
+      tool_name: 'apply_page_edits',
+      tool_execution: { tool_name: 'apply_page_edits', tool_call_id: 'tool-confirm-1' },
+      suggested_patch: null,
+      user_feedback_schema: [],
+      note: '工具 apply_page_edits 需要确认后执行。',
+    }
+    const items = buildTimelineDisplayItems([
+      timelineItem({
+        id: 'requirement-requirement-tool-1',
+        kind: 'requirement',
+        role: null,
+        order_index: 1,
+        status: 'paused',
+        content: '工具 apply_page_edits 需要确认后执行。',
+      }),
+    ], { pendingRequirement })
+
+    expect(items.map(item => item.kind)).toEqual(['requirement'])
+    expect(items[0].kind === 'requirement' ? items[0].content : '').toBe('工具 apply_page_edits 需要确认后执行。')
+  })
+
   it('已回答 ask_user 应只提取选择答案', () => {
     const items = buildTimelineDisplayItems([
       timelineItem({ id: 'tool-ask', kind: 'tool', role: null, order_index: 1, status: 'completed', tool: {

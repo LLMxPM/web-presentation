@@ -187,6 +187,9 @@ export function buildTimelineDisplayItems(
       continue
     }
     if (item.kind === 'requirement') {
+      if (!isCurrentPendingRequirementTimelineItem(item, pendingRequirement)) {
+        continue
+      }
       const requirement = resolveAskUserRequirementForItem(item, pendingRequirement)
       if (requirement) {
         displayItems.push(buildFeedbackRequestDisplayItem(item, requirement, findMatchingAskUserToolDetail(orderedItems, item, requirement)))
@@ -453,6 +456,23 @@ function isCurrentPendingAskUserTimelineItem(item: AgentTimelineItem, requiremen
     return item.status !== 'completed' && item.status !== 'cancelled'
   }
   return false
+}
+
+function isCurrentPendingRequirementTimelineItem(item: AgentTimelineItem, requirement: AgentPendingRequirement | null) {
+  if (item.kind !== 'requirement' || !requirement || item.run_id !== requirement.run_id) {
+    return false
+  }
+  const requirementId = requirement.id?.trim()
+  if (requirementId) {
+    return item.id === requirementId
+      || item.id === `requirement-${requirementId}`
+      || item.id.endsWith(`:${requirementId}`)
+  }
+  const toolCallId = resolveToolExecutionCallId(requirement.tool_execution)
+  if (toolCallId && (item.id === toolCallId || item.id.endsWith(`:${toolCallId}`))) {
+    return true
+  }
+  return true
 }
 
 function itemMatchesRequirement(item: AgentTimelineItem, requirement: AgentPendingRequirement) {

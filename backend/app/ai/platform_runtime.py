@@ -331,6 +331,7 @@ class PlatformAgentRuntimeStore:
             run_model.message_history_json = trim_unprocessed_tool_call_history(
                 run_model.message_history_json if isinstance(run_model.message_history_json, list) else []
             )
+            run_model.pending_requirement_json = None
         run_model.status = status
         run_model.finished_at = _utc_now() if status in TERMINAL_RUN_STATUSES else None
         run_model.error_code = error_code
@@ -725,6 +726,7 @@ class PlatformAgentRuntimeStore:
         items: list[AgentTimelineItem] = []
         current_text_by_run: dict[str, AgentTimelineItem | None] = {}
         tool_items: dict[tuple[str, str], AgentTimelineItem] = {}
+        requirement_items_by_run: dict[str, list[AgentTimelineItem]] = {}
         for event_row in event_rows:
             event = AgentRunEvent.model_validate(event_row.payload_json)
             event.run_id = event.run_id or event_row.run_id
@@ -760,23 +762,29 @@ class PlatformAgentRuntimeStore:
                 current_text_by_run[run_id] = None
                 requirement = event.data.get("requirement") if isinstance(event.data, dict) else None
                 if isinstance(requirement, dict):
-                    items.append(
-                        AgentTimelineItem(
-                            id=f"requirement-{requirement.get('id') or event_row.id}",
-                            session_id=event_row.session_id,
-                            run_id=event_row.run_id,
-                            kind="requirement",
-                            role=None,
-                            event_index=event_row.event_index,
-                            order_index=0,
-                            content=requirement.get("note"),
-                            status="paused",
-                            tool=None,
-                            source="event",
-                            created_at=_iso(event_row.created_at),
-                        )
+                    requirement_item = AgentTimelineItem(
+                        id=f"requirement-{requirement.get('id') or event_row.id}",
+                        session_id=event_row.session_id,
+                        run_id=event_row.run_id,
+                        kind="requirement",
+                        role=None,
+                        event_index=event_row.event_index,
+                        order_index=0,
+                        content=requirement.get("note"),
+                        status="paused",
+                        tool=None,
+                        source="event",
+                        created_at=_iso(event_row.created_at),
                     )
+                    items.append(requirement_item)
+                    requirement_items_by_run.setdefault(run_id, []).append(requirement_item)
                 continue
+            if event.event in {"run.continued", "run.cancelling", "run.cancelled", "run.completed", "run.error"}:
+                _remove_requirement_timeline_items(
+                    items,
+                    requirement_items_by_run=requirement_items_by_run,
+                    run_id=run_id,
+                )
             if event.event == "run.error":
                 current_text_by_run[run_id] = None
                 _mark_open_tool_items_failed(
@@ -1609,6 +1617,21 @@ def _is_meaningful_payload(value: Any) -> bool:
     if isinstance(value, (list, tuple, set, dict)):
         return bool(value)
     return True
+
+
+def _remove_requirement_timeline_items(
+    items: list[AgentTimelineItem],
+    *,
+    requirement_items_by_run: dict[str, list[AgentTimelineItem]],
+    run_id: str,
+) -> None:
+    """移除已经被继续、取消或终止的 HITL requirement 占位。"""
+
+    stale_items = requirement_items_by_run.pop(run_id, [])
+    if not stale_items:
+        return
+    stale_ids = {item.id for item in stale_items}
+    items[:] = [item for item in items if item.id not in stale_ids]
 
 
 def _mark_open_tool_items_failed(
