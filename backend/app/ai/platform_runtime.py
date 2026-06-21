@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.ai.image_refs import sanitize_message_history_image_refs
 from app.ai.agent.runtime_context import AgentRuntimeContext
 from app.ai.message_history import trim_unprocessed_tool_call_history
+from app.ai.member_prompts import build_member_prompt_from_payload
 from app.models.ai_agent_attachment import AiAgentImageAttachment
 from app.models.ai_agent_runtime import (
     AiAgentMemberRun,
@@ -955,6 +956,8 @@ class PlatformAgentRuntimeStore:
                     created_at=_iso(member_run.created_at),
                     updated_at=_iso(member_run.updated_at),
                     delegate_tool_call_id=member_run.delegate_tool_call_id,
+                    input_prompt=_member_input_prompt(member_run),
+                    output_prompt=_member_output_prompt(member_run),
                     timeline_items=timeline,
                 )
             )
@@ -1527,6 +1530,64 @@ def _optional_str(value: Any) -> str | None:
         return None
     text = str(value).strip()
     return text or None
+
+
+def _member_input_prompt(member_run: AiAgentMemberRun) -> str | None:
+    """读取成员 run 的传入提示词，兼容旧数据中仅保存委派参数的情况。"""
+
+    payload = member_run.input_payload_json if isinstance(member_run.input_payload_json, dict) else {}
+    prompt = build_member_prompt_from_payload(payload)
+    if prompt:
+        return prompt
+    return _message_history_text(
+        member_run.message_history_json,
+        message_kind="request",
+        part_kinds={"user-prompt"},
+    )
+
+
+def _member_output_prompt(member_run: AiAgentMemberRun) -> str | None:
+    """读取成员 run 返回给内容助手整合的输出提示词。"""
+
+    return (
+        _optional_str(member_run.content)
+        or _message_history_text(
+            member_run.message_history_json,
+            message_kind="response",
+            part_kinds={"text"},
+            reverse=True,
+        )
+        or _optional_str(member_run.error_message)
+    )
+
+
+def _message_history_text(
+    history: list[dict[str, Any]] | None,
+    *,
+    message_kind: str,
+    part_kinds: set[str],
+    reverse: bool = False,
+) -> str | None:
+    """从 Pydantic AI 消息历史中提取指定消息和 part 类型的文本。"""
+
+    messages = [item for item in (history or []) if isinstance(item, dict)]
+    iterable = reversed(messages) if reverse else iter(messages)
+    for message in iterable:
+        if message.get("kind") != message_kind:
+            continue
+        parts = message.get("parts")
+        if not isinstance(parts, list):
+            continue
+        texts = [
+            str(part.get("content")).strip()
+            for part in parts
+            if isinstance(part, dict)
+            and part.get("part_kind") in part_kinds
+            and _optional_str(part.get("content"))
+        ]
+        if texts:
+            return "\n\n".join(texts)
+    return None
 
 
 def _first_present(data: dict[str, Any], keys: tuple[str, ...]) -> Any:

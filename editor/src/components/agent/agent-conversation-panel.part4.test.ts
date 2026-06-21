@@ -547,6 +547,8 @@ describe('AgentConversationPanel', () => {
           created_at: '2026-04-18T10:00:01+08:00',
           updated_at: '2026-04-18T10:00:02+08:00',
           delegate_tool_call_id: 'delegate-call-resource',
+          input_prompt: '内容助手委派给你的成员任务如下。\n\n任务：整理资源',
+          output_prompt: '资源整理完成。',
           timeline_items: [
             {
               id: 'member-tool-list-assets',
@@ -587,7 +589,19 @@ describe('AgentConversationPanel', () => {
 
     await waitFor(() => {
       expect(screen.getByText('资源助手运行详情')).toBeTruthy()
+      expect(screen.getByRole('button', { name: '展开成员消息' })).toBeTruthy()
+      expect(screen.queryByText('传入消息')).toBeNull()
+      expect(screen.queryByText('资源整理完成。')).toBeNull()
       expect(screen.getByRole('button', { name: /list_workspace_render_assets/ })).toBeTruthy()
+    })
+
+    await fireEvent.click(screen.getByRole('button', { name: '展开成员消息' }))
+
+    await waitFor(() => {
+      expect(screen.getByText('传入消息')).toBeTruthy()
+      expect(screen.getByText('传出消息')).toBeTruthy()
+      expect(screen.getByText(/任务：整理资源/)).toBeTruthy()
+      expect(screen.getByText('资源整理完成。')).toBeTruthy()
     })
 
     await fireEvent.click(screen.getByRole('button', { name: /list_workspace_render_assets/ }))

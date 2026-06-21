@@ -1063,6 +1063,8 @@ export interface AgentMemberRunItem {
   created_at: string | null
   updated_at: string | null
   delegate_tool_call_id: string | null
+  input_prompt?: string | null
+  output_prompt?: string | null
   timeline_items: AgentTimelineItem[]
 }
 

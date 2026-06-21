@@ -588,6 +588,10 @@ function applyMemberRunEvent(state: AgentSessionRuntimeState, event: AgentRunEve
       break
     case 'member.run.error':
       memberRun.status = 'failed'
+      memberRun.output_prompt = resolveEventString(
+        event.data.output_prompt,
+        resolveEventString(event.data.message, event.content ?? memberRun.output_prompt ?? null),
+      )
       removeMemberRunWaitingStatusItems(memberRun)
       appendMemberRunStatusItem(
         memberRun,
@@ -599,9 +603,15 @@ function applyMemberRunEvent(state: AgentSessionRuntimeState, event: AgentRunEve
       break
     case 'member.run.completed':
       memberRun.status = 'completed'
-      removeMemberRunWaitingStatusItems(memberRun)
-      if (event.content && shouldUseMemberCompletedEventContent(memberRun, event.content)) {
-        appendMemberAssistantDelta(state, memberRun, event, event.content)
+      {
+        const completedOutputPrompt = resolveEventString(event.data.output_prompt, null)
+        removeMemberRunWaitingStatusItems(memberRun)
+        if (event.content && shouldUseMemberCompletedEventContent(memberRun, event.content)) {
+          appendMemberAssistantDelta(state, memberRun, event, event.content)
+        }
+        if (completedOutputPrompt) {
+          memberRun.output_prompt = completedOutputPrompt
+        }
       }
       appendMemberReasoningDelta(state, memberRun, event, resolveEventReasoningContent(event))
       appendMemberRunStatusItem(memberRun, event, 'completed', '运行已完成。')
@@ -626,6 +636,7 @@ function ensureMemberRunItem(state: AgentSessionRuntimeState, event: AgentRunEve
     existing.agent_id = resolveEventString(event.data.member_agent_id, existing.agent_id) || existing.agent_id
     existing.agent_name = resolveEventString(event.data.member_agent_name, existing.agent_name ?? null)
     existing.delegate_tool_call_id = delegateToolCallId ?? existing.delegate_tool_call_id
+    syncMemberRunPrompts(existing, event)
     return existing
   }
   const memberRun: AgentMemberRunItem = {
@@ -637,10 +648,26 @@ function ensureMemberRunItem(state: AgentSessionRuntimeState, event: AgentRunEve
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
     delegate_tool_call_id: delegateToolCallId,
+    input_prompt: resolveEventString(event.data.input_prompt, null),
+    output_prompt: resolveEventString(event.data.output_prompt, null),
     timeline_items: [],
   }
   state.memberRuns = [...state.memberRuns, memberRun].sort(compareMemberRuns)
   return memberRun
+}
+
+/**
+ * 同步成员运行事件中携带的传入/传出提示词，避免流式期间详情弹窗缺字段。
+ */
+function syncMemberRunPrompts(memberRun: AgentMemberRunItem, event: AgentRunEvent): void {
+  const inputPrompt = resolveEventString(event.data.input_prompt, null)
+  if (inputPrompt) {
+    memberRun.input_prompt = inputPrompt
+  }
+  const outputPrompt = resolveEventString(event.data.output_prompt, null)
+  if (outputPrompt) {
+    memberRun.output_prompt = outputPrompt
+  }
 }
 
 function appendMemberAssistantDelta(
@@ -652,6 +679,7 @@ function appendMemberAssistantDelta(
   if (!delta) return
   const item = ensureMemberStreamingTextItem(state, memberRun, event, 'message', 'assistant')
   item.content = `${item.content ?? ''}${delta}`
+  memberRun.output_prompt = `${memberRun.output_prompt ?? ''}${delta}`
 }
 
 function appendMemberReasoningDelta(

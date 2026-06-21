@@ -1027,6 +1027,7 @@ describe('agent-run-state timeline', () => {
         member_agent_id: 'resource-manager',
         member_agent_name: '资源助手',
         delegate_tool_call_id: 'delegate-call-direct',
+        input_prompt: '任务：检查资源',
       },
     }), options)
     applyAgentRunEvent(state, event({
@@ -1045,7 +1046,45 @@ describe('agent-run-state timeline', () => {
 
     expect(state.memberRuns).toHaveLength(1)
     expect(state.memberRuns[0].delegate_tool_call_id).toBe('delegate-call-direct')
+    expect(state.memberRuns[0].input_prompt).toBe('任务：检查资源')
+    expect(state.memberRuns[0].output_prompt).toBe('资源检查完成。')
     expect(state.memberRuns[0].timeline_items.find(item => item.kind === 'message')?.content).toBe('资源检查完成。')
+  })
+
+  it('平台 member.run.completed 应使用事件中的最终传出提示词且不重复追加', () => {
+    const state = createAgentSessionRuntimeState()
+    const options = { agentId: 'agent-coordinator', agentDisplayName: '内容助手' }
+
+    applyAgentRunEvent(state, event({ event: 'run.started', run_id: 'parent-run-1', event_index: 0, sequence: null }), options)
+    applyAgentRunEvent(state, event({
+      event: 'member.run.started',
+      run_id: 'parent-run-1',
+      event_index: 1,
+      sequence: null,
+      data: {
+        member_run_id: 'member-run-1',
+        member_agent_id: 'resource-manager',
+        member_agent_name: '资源助手',
+        input_prompt: '任务：整理资源',
+      },
+    }), options)
+    applyAgentRunEvent(state, event({
+      event: 'member.run.completed',
+      run_id: 'parent-run-1',
+      content: '资源整理完成。',
+      event_index: 2,
+      sequence: null,
+      data: {
+        member_run_id: 'member-run-1',
+        member_agent_id: 'resource-manager',
+        member_agent_name: '资源助手',
+        output_prompt: '资源整理完成。',
+      },
+    }), options)
+
+    expect(state.memberRuns[0].input_prompt).toBe('任务：整理资源')
+    expect(state.memberRuns[0].output_prompt).toBe('资源整理完成。')
+    expect(state.memberRuns[0].timeline_items.find(item => item.kind === 'message')?.content).toBe('资源整理完成。')
   })
 
   it('平台 member message.delta 应支持跨 chunk reasoning 标签', () => {

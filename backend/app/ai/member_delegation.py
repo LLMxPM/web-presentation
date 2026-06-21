@@ -26,6 +26,7 @@ from app.ai.agent_runtime_config import build_effective_description, build_effec
 from app.ai.image_history_hydration import hydrate_agent_image_refs
 from app.ai.image_refs import sanitize_message_history_image_refs
 from app.ai.message_history import AgentContextLimitProcessor, build_context_limit_processor, build_history_budget, rebuild_agent_message_history
+from app.ai.member_prompts import build_member_prompt
 from app.ai.platform_runtime import PlatformAgentRuntimeStore
 from app.ai.pydantic_event_projection import PydanticEventProjector, safe_new_messages
 from app.ai.pydantic_model_resolver import PydanticLlmModelResolver
@@ -216,6 +217,12 @@ class MemberDelegationExecutor:
         task = task.strip()
         if not task:
             raise AppException(status_code=422, code="AI_MEMBER_TASK_REQUIRED", detail="委派任务不能为空。")
+        input_prompt = build_member_prompt(
+            task=task,
+            handoff_context=handoff_context,
+            expected_output=expected_output,
+            completed_results=completed_results,
+        )
         async with self._session_factory() as session:
             parent_run = await self._require_parent_run(session)
             member_run = await self._create_member_run(
@@ -229,6 +236,7 @@ class MemberDelegationExecutor:
                 delegate_tool_name=delegate_tool_name,
                 parent_delegate_tool_args=parent_delegate_tool_args,
                 completed_results=completed_results,
+                input_prompt=input_prompt,
             )
             runner = _MemberAgentRunner(
                 session=session,
@@ -239,14 +247,7 @@ class MemberDelegationExecutor:
                 parent_run=parent_run,
                 member_run=member_run,
             )
-            return await runner.run(
-                message=_build_member_prompt(
-                    task=task,
-                    handoff_context=handoff_context,
-                    expected_output=expected_output,
-                    completed_results=completed_results,
-                )
-            )
+            return await runner.run(message=input_prompt)
 
     async def _continue_member_run(
         self,
@@ -310,6 +311,7 @@ class MemberDelegationExecutor:
         delegate_tool_name: str,
         parent_delegate_tool_args: dict[str, Any],
         completed_results: list[dict[str, Any]],
+        input_prompt: str,
     ) -> AiAgentMemberRun:
         """创建成员运行记录并发送 member.run.started 事件。"""
 
@@ -331,6 +333,7 @@ class MemberDelegationExecutor:
                 "delegate_tool_call_id": delegate_tool_call_id,
                 "parent_delegate_tool_args": parent_delegate_tool_args,
                 "completed_results": completed_results,
+                "input_prompt": input_prompt,
             },
             message_history_json=[],
             started_at=now,
@@ -347,7 +350,7 @@ class MemberDelegationExecutor:
             runtime_context=self._runtime_context,
             parent_run=parent_run,
             member_run=member_run,
-        ).append_member_event("run.started")
+        ).append_member_event("run.started", data={"input_prompt": input_prompt})
         return member_run
 
 
@@ -516,7 +519,8 @@ class _MemberAgentRunner:
             self._member_run.message_history_json = _merge_member_message_history(base_message_history, final_messages)
             self._member_run.finished_at = _utc_now()
             self._member_run.updated_at = _utc_now()
-            await self.append_member_event("run.completed", content=result_text)
+            output_prompt = self._member_run.content or result_text
+            await self.append_member_event("run.completed", content=result_text, data={"output_prompt": output_prompt})
             return MemberDelegationResult(
                 member_run_id=self._member_run.member_run_id,
                 member_id=self._member_run.agent_id,
@@ -661,7 +665,10 @@ class _MemberAgentRunner:
         self._member_run.error_message = message
         self._member_run.finished_at = _utc_now()
         self._member_run.updated_at = _utc_now()
-        await self.append_member_event("run.error", data={"code": code, "message": message})
+        await self.append_member_event(
+            "run.error",
+            data={"code": code, "message": message, "output_prompt": f"成员助手运行失败：{message}"},
+        )
         return MemberDelegationResult(
             member_run_id=self._member_run.member_run_id,
             member_id=self._member_run.agent_id,
@@ -708,29 +715,6 @@ class _MemberAgentRunner:
         self._member_run.updated_at = _utc_now()
         await self.append_member_event("run.cancelled", content="父级运行已停止，成员运行同步取消。")
         raise AppException(status_code=409, code="AI_RUN_CANCELLED", detail="当前智能体运行已被取消。")
-
-
-def _build_member_prompt(
-    *,
-    task: str,
-    handoff_context: str | None,
-    expected_output: str | None,
-    completed_results: list[dict[str, Any]],
-) -> str:
-    """构造成员助手可直接执行的委派任务提示。"""
-
-    parts = [
-        "内容助手委派给你的成员任务如下，请只处理你负责的工作空间组件库或资源库范围。",
-        f"任务：{task}",
-    ]
-    if handoff_context:
-        parts.append(f"上下文：{handoff_context}")
-    if completed_results:
-        parts.append(f"前置成员结果：{json.dumps(completed_results, ensure_ascii=False)}")
-    if expected_output:
-        parts.append(f"期望返回：{expected_output}")
-    parts.append("完成后用中文简要返回已执行动作、关键对象 ID/名称、后续内容助手需要整合的事实。")
-    return "\n\n".join(parts)
 
 
 def _member_requirement_from_deferred(
@@ -844,7 +828,7 @@ async def _member_continue_message_history(
     if not tool_name or not tool_call_id:
         return []
     input_payload = member_run.input_payload_json if isinstance(member_run.input_payload_json, dict) else {}
-    message = _build_member_prompt(
+    message = build_member_prompt(
         task=str(input_payload.get("task") or "继续成员任务。"),
         handoff_context=_optional_text(input_payload.get("handoff_context")),
         expected_output=_optional_text(input_payload.get("expected_output")),

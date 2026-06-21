@@ -259,6 +259,8 @@ class AgentMemberRunItem(SchemaBase):
     created_at: str | None = None
     updated_at: str | None = None
     delegate_tool_call_id: str | None = None
+    input_prompt: str | None = None
+    output_prompt: str | None = None
     timeline_items: list[AgentTimelineItem] = Field(default_factory=list)
 
 

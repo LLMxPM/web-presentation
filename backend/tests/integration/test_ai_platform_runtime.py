@@ -334,6 +334,8 @@ async def test_platform_runtime_snapshot_should_rebuild_member_runs_from_member_
     assert member.agent_id == "resource-manager"
     assert member.delegate_tool_call_id == delegate_tool_call_id
     assert member.status == "completed"
+    assert "任务：整理当前项目资源。" in (member.input_prompt or "")
+    assert member.output_prompt == "资源整理完成。"
     assert [item.kind for item in member.timeline_items] == ["message", "tool", "run_status"]
     assert all(item.status != "model_request" for item in member.timeline_items)
     assert member.timeline_items[0].content == "先读取资源列表。"
