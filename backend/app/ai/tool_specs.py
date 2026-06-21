@@ -11,7 +11,9 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.ai.platform_tools import AgentToolContext, agent_tool
 from app.ai.auth_tokens import (
+    COMPONENT_TOOL_DELETE_SCOPES,
     COMPONENT_TOOL_READ_SCOPES,
+    COMPONENT_TOOL_WRITE_SCOPES,
     PAGE_TOOL_PREVIEW_SCOPES,
     PAGE_TOOL_READ_SCOPES,
     PAGE_TOOL_SNAPSHOT_SCOPES,
@@ -1478,6 +1480,7 @@ _COMPONENT_MANAGER_GROUP_SPECS = (
         "读取组件库、组件详情、版本历史和依赖索引。",
         ("list_components", "get_component_detail", "list_component_versions", "get_component_dependencies"),
         required_context_fields=("workspace_id",),
+        token_scopes=COMPONENT_TOOL_READ_SCOPES,
         build_tools=lambda session_factory: _filter_tools(build_component_manager_tools(session_factory), ("list_components", "get_component_detail", "list_component_versions", "get_component_dependencies")),
     ),
     _group(
@@ -1486,6 +1489,7 @@ _COMPONENT_MANAGER_GROUP_SPECS = (
         "查询开放给 Agent 的 Runtime Kit import 能力目录和单项用法。",
         _RUNTIME_KIT_TOOL_KEYS,
         required_context_fields=("workspace_id",),
+        token_scopes=COMPONENT_TOOL_READ_SCOPES,
         build_tools=lambda session_factory: _filter_tools(build_component_manager_tools(session_factory), _RUNTIME_KIT_TOOL_KEYS),
     ),
     _group(
@@ -1515,6 +1519,7 @@ _COMPONENT_MANAGER_GROUP_SPECS = (
         "创建组件草稿、应用组件 Edits、发布组件，并执行组件元数据写入或删除。",
         ("create_component", "apply_component_edits", "update_component_metadata", "publish_component", "delete_component"),
         required_context_fields=("workspace_id",),
+        token_scopes=(*COMPONENT_TOOL_WRITE_SCOPES, *COMPONENT_TOOL_DELETE_SCOPES),
         build_tools=lambda session_factory: _filter_tools(build_component_manager_tools(session_factory), ("create_component", "apply_component_edits", "update_component_metadata", "publish_component", "delete_component")),
     ),
 )

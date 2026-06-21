@@ -4,7 +4,15 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.ai.auth_tokens import build_agent_tool_token
+from app.ai.auth_tokens import (
+    CODE_CHECK_TOOL_SCOPES,
+    COMPONENT_TOOL_DELETE_SCOPES,
+    COMPONENT_TOOL_READ_SCOPES,
+    COMPONENT_TOOL_WRITE_SCOPES,
+    RESOURCE_TOOL_READ_SCOPES,
+    build_agent_tool_token,
+)
+from app.ai.tool_specs import COMPONENT_MANAGER_AGENT_ID, list_agent_group_specs
 from app.core.config import AppSettings
 from app.core.config import get_settings
 from app.services.token_service import TokenService
@@ -82,6 +90,22 @@ def test_ai_tool_token_should_not_exceed_tool_auth_max(monkeypatch: pytest.Monke
         get_settings.cache_clear()
 
     assert claims["exp"] - claims["iat"] == 7200
+
+
+def test_component_manager_group_scopes_should_cover_runtime_tools() -> None:
+    """组件助手签发 token 的 scope 应覆盖实际暴露的读写检查工具。"""
+
+    scopes = {
+        scope
+        for group in list_agent_group_specs(COMPONENT_MANAGER_AGENT_ID)
+        for scope in group.token_scopes
+    }
+
+    assert set(COMPONENT_TOOL_READ_SCOPES).issubset(scopes)
+    assert set(COMPONENT_TOOL_WRITE_SCOPES).issubset(scopes)
+    assert set(COMPONENT_TOOL_DELETE_SCOPES).issubset(scopes)
+    assert set(CODE_CHECK_TOOL_SCOPES).issubset(scopes)
+    assert set(RESOURCE_TOOL_READ_SCOPES).issubset(scopes)
 
 
 def _build_auth_context() -> SimpleNamespace:

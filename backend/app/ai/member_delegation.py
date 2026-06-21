@@ -17,6 +17,7 @@ from pydantic_ai.messages import (
     ToolCallPart,
     UserPromptPart,
 )
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.ai.agent.runtime_context import AgentRuntimeContext, build_scope_context_text
@@ -31,7 +32,7 @@ from app.ai.pydantic_model_resolver import PydanticLlmModelResolver
 from app.ai.pydantic_tools import build_pydantic_tools
 from app.ai.run_errors import build_agent_error_log_extra, normalize_agent_run_exception
 from app.core.exceptions import AppException
-from app.models.ai_agent_runtime import AiAgentMemberRun, AiAgentRun
+from app.models.ai_agent_runtime import AiAgentMemberRun, AiAgentRun, AiAgentToolCall
 from app.schemas.agent import AgentPendingRequirement, AgentRunEvent, AgentScopeContext
 from app.services.ai_agent_config_service import AiAgentConfigService
 from app.services.ai_llm_service import AiLlmService
@@ -437,7 +438,7 @@ class _MemberAgentRunner:
                 system_prompt=build_effective_description(catalog, agent_config),
                 deps_type=type(deps),
                 tools=tools,
-                history_processors=[context_processor.process],
+                history_processors=_build_member_history_processors(context_processor),
             )
             projector = PydanticEventProjector(
                 run_id=self._parent_run.run_id,
@@ -655,6 +656,7 @@ class _MemberAgentRunner:
     async def _mark_failed_result(self, *, code: str, message: str) -> MemberDelegationResult:
         """把成员运行收敛为失败，并返回可交给内容助手整合的成员结果。"""
 
+        await self._mark_running_member_tools_failed(message=message)
         self._member_run.status = "failed"
         self._member_run.error_message = message
         self._member_run.finished_at = _utc_now()
@@ -668,6 +670,30 @@ class _MemberAgentRunner:
             result=f"成员助手运行失败：{message}",
         )
 
+    async def _mark_running_member_tools_failed(self, *, message: str) -> None:
+        """成员 run 失败时补齐仍在 running 的成员工具，避免运行态快照残留进行中状态。"""
+
+        result = await self._session.execute(
+            select(AiAgentToolCall).where(
+                AiAgentToolCall.run_id == self._parent_run.run_id,
+                AiAgentToolCall.member_run_id == self._member_run.member_run_id,
+                AiAgentToolCall.status == "running",
+            )
+        )
+        for tool_call in result.scalars().all():
+            tool_call.status = "error"
+            tool_call.message = tool_call.message or message
+            if not tool_call.tool_call_id:
+                continue
+            await self.append_member_event(
+                "tool.error",
+                data={
+                    "tool_name": tool_call.tool_name,
+                    "tool_call_id": tool_call.tool_call_id,
+                    "message": message,
+                },
+            )
+
     async def _raise_if_parent_cancelled(self, projector: PydanticEventProjector | None = None) -> None:
         """成员执行期间感知父 run 取消标记，并收敛成员状态。"""
 
@@ -676,6 +702,7 @@ class _MemberAgentRunner:
             return
         if projector is not None:
             await projector.flush_delta_buffer(best_effort=True)
+        await self._mark_running_member_tools_failed(message="父级运行已停止，成员工具调用未完成。")
         self._member_run.status = "cancelled"
         self._member_run.finished_at = _utc_now()
         self._member_run.updated_at = _utc_now()
@@ -779,6 +806,17 @@ def _merge_member_message_history(
     if base and latest[: len(base)] == base:
         return latest
     return [*base, *latest]
+
+
+def _build_member_history_processors(context_processor: AgentContextLimitProcessor) -> list[Any]:
+    """构造成员助手历史处理器，适配 Pydantic AI 仅传 messages 的调用签名。"""
+
+    async def context_history_processor(messages: list[Any]) -> list[Any]:
+        """在成员模型请求前执行上下文预算检查；成员侧暂不注入额外压缩服务。"""
+
+        return await context_processor.process(None, messages)
+
+    return [context_history_processor]
 
 
 async def _member_continue_message_history(
