@@ -1392,6 +1392,7 @@ async def _create_workspace_session(
             "agent_id": agent_id,
             "session_name": session_name,
             "scope": scope.model_dump(mode="json"),
+            "llm_config_id": await _create_smoke_llm_config(authenticated_client),
         },
     )
     assert session_response.status_code == 201
@@ -1428,6 +1429,24 @@ async def _create_workspace_scope(
         workspace_id=workspace_id,
         source=source,
     )
+
+
+async def _create_smoke_llm_config(authenticated_client: AsyncClient) -> int:
+    """创建 Pydantic runner smoke 测试会话使用的显式模型配置。"""
+
+    response = await authenticated_client.post(
+        "/api/ai/llm-configs",
+        json={
+            "name": "Smoke 测试模型",
+            "provider_key": "openai",
+            "model_id": "gpt-4.1-mini",
+            "base_url": "https://api.openai.com/v1",
+            "api_key": "sk-smoke",
+            "advanced_config_json": {},
+        },
+    )
+    assert response.status_code == 201
+    return int(response.json()["id"])
 
 
 def _runtime_context(scope: AgentScopeContext) -> AgentRuntimeContext:

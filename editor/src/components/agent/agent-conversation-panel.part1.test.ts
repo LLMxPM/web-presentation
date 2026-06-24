@@ -17,6 +17,8 @@ const routeMock = {
 }
 const listAgentsMock = vi.fn()
 const listAgentSessionsMock = vi.fn()
+const listLlmConfigsMock = vi.fn()
+const listLlmSlotsMock = vi.fn()
 const createAgentSessionMock = vi.fn()
 const getAgentSessionMessagesMock = vi.fn()
 const getAgentSessionRuntimeMock = vi.fn()
@@ -88,6 +90,11 @@ vi.mock('@/api/ai', () => ({
   continueAgentSessionActiveRun: (...args: unknown[]) => continueAgentSessionActiveRunMock(...args),
   cancelAgentRun: (...args: unknown[]) => cancelAgentRunMock(...args),
   cancelAgentSessionActiveRun: (...args: unknown[]) => cancelAgentSessionActiveRunMock(...args),
+}))
+
+vi.mock('@/api/llm', () => ({
+  listLlmConfigs: (...args: unknown[]) => listLlmConfigsMock(...args),
+  listLlmSlots: (...args: unknown[]) => listLlmSlotsMock(...args),
 }))
 
 vi.mock('@/utils/message', () => ({
@@ -277,6 +284,50 @@ function createContextStatus(overrides: Record<string, unknown> = {}) {
   }
 }
 
+function createLlmConfigItem(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 7,
+    scope: 'global',
+    owner_user_id: null,
+    editable: false,
+    name: '平台模型',
+    provider_key: 'openai',
+    provider_label: 'OpenAI',
+    model_id: 'gpt-4.1-mini',
+    base_url: null,
+    thinking_enabled: false,
+    thinking_effort: null,
+    supports_image_input: false,
+    context_window_tokens: 128000,
+    max_output_tokens: 32000,
+    history_token_ratio: 0.5,
+    compression_target_ratio: 0.1,
+    advanced_config_json: {},
+    status: 'active',
+    has_api_key: true,
+    api_key_masked: 'sk-****',
+    created_at: '2026-04-18T10:00:00+08:00',
+    updated_at: '2026-04-18T10:00:00+08:00',
+    ...overrides,
+  }
+}
+
+function createLlmSlotBindingItem(overrides: Record<string, unknown> = {}) {
+  return {
+    slot: 'agent_coordinator',
+    slot_label: '内容助手',
+    llm_config_id: 7,
+    llm_config_name: '平台模型',
+    provider_key: 'openai',
+    provider_label: 'OpenAI',
+    model_id: 'gpt-4.1-mini',
+    binding_ready: true,
+    supports_image_input: false,
+    inherited_from_global: true,
+    ...overrides,
+  }
+}
+
 /**
  * 模拟内容助手在当前路由只是不允许启动，而不是模型绑定异常。
  */
@@ -352,6 +403,12 @@ describe('AgentConversationPanel', () => {
       },
     ])
     listAgentSessionsMock.mockResolvedValue([])
+    listLlmConfigsMock.mockResolvedValue([
+      createLlmConfigItem({ id: 7, scope: 'global', name: '平台模型', supports_image_input: false }),
+    ])
+    listLlmSlotsMock.mockResolvedValue([
+      createLlmSlotBindingItem({ slot: 'agent_coordinator', llm_config_id: 7, binding_ready: true }),
+    ])
     createAgentSessionMock.mockResolvedValue({
       session_id: 'session-1',
       agent_id: DEFAULT_AGENT_ID,

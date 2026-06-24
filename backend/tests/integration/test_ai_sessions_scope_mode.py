@@ -150,16 +150,36 @@ async def _create_agent_session(
 ) -> str:
     """创建智能体会话并返回 session_id。"""
 
+    llm_config_id = await _create_llm_config(client)
     response = await client.post(
         "/api/ai/sessions",
         json={
             "agent_id": agent_id,
             "session_name": session_name,
             "scope": scope,
+            "llm_config_id": llm_config_id,
         },
     )
     assert response.status_code == 201
     return str(response.json()["session_id"])
+
+
+async def _create_llm_config(client: AsyncClient) -> int:
+    """创建会话列表测试使用的显式模型配置。"""
+
+    response = await client.post(
+        "/api/ai/llm-configs",
+        json={
+            "name": "会话列表测试模型",
+            "provider_key": "openai",
+            "model_id": "gpt-4.1-mini",
+            "base_url": "https://api.openai.com/v1",
+            "api_key": "sk-session-scope",
+            "advanced_config_json": {},
+        },
+    )
+    assert response.status_code == 201
+    return int(response.json()["id"])
 
 
 async def _mark_session_deleted(session_id: str) -> None:

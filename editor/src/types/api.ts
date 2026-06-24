@@ -773,6 +773,17 @@ export interface AgentDescriptor {
   scope: AgentScopeContext
 }
 
+export interface AgentSessionLlmMetadata {
+  selection_kind: 'explicit_config' | 'slot_binding'
+  config_id: number
+  scope: AiLlmConfigScope
+  name: string
+  provider_key: string
+  provider_label: string
+  model_id: string
+  supports_image_input: boolean
+}
+
 export interface AgentToolConfigItem {
   key: string
   label: string
@@ -858,7 +869,7 @@ export interface AgentSessionItem {
   session_name: string | null
   created_at: string | null
   updated_at: string | null
-  metadata: Record<string, unknown>
+  metadata: Record<string, unknown> & { llm?: AgentSessionLlmMetadata }
 }
 
 export interface AgentMessageItem {

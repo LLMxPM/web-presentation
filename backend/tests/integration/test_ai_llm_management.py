@@ -56,6 +56,38 @@ async def _create_page(
     return response.json()["id"]
 
 
+async def _create_llm_config(
+    authenticated_client: AsyncClient,
+    *,
+    name: str,
+    supports_image_input: bool = False,
+) -> dict:
+    """创建一个测试用个人大模型配置。"""
+
+    response = await authenticated_client.post(
+        "/api/ai/llm-configs",
+        json={
+            "name": name,
+            "provider_key": "openai",
+            "model_id": "gpt-4.1-mini",
+            "base_url": "https://api.openai.com/v1",
+            "api_key": "sk-session-model",
+            "supports_image_input": supports_image_input,
+            "advanced_config_json": {},
+        },
+    )
+    assert response.status_code == 201
+    return response.json()
+
+
+async def _create_agent_project_scope(authenticated_client: AsyncClient, name: str) -> tuple[int, int]:
+    """创建内容助手可启动的项目级 scope。"""
+
+    workspace_id = await _create_workspace(authenticated_client, f"{name} 工作空间")
+    project_id = await _create_project(authenticated_client, workspace_id, f"{name} 项目")
+    return workspace_id, project_id
+
+
 async def test_llm_provider_catalog_should_only_include_supported_providers(authenticated_client: AsyncClient) -> None:
     """供应商目录接口应只返回平台保留的 provider 元数据。"""
 
@@ -322,6 +354,119 @@ async def test_llm_slot_binding_should_drive_agent_binding_state(authenticated_c
     assert agents["agent-coordinator"]["scope_type"] == "workspace"
     assert agents["component-manager"]["scope_type"] == "workspace"
     assert agents["resource-manager"]["scope_type"] == "workspace"
+
+
+async def test_agent_session_should_persist_explicit_personal_llm_config(authenticated_client: AsyncClient) -> None:
+    """创建会话时显式选择个人模型，应把具体配置固化到 metadata.llm。"""
+
+    config = await _create_llm_config(
+        authenticated_client,
+        name="会话个人模型",
+        supports_image_input=True,
+    )
+    workspace_id, project_id = await _create_agent_project_scope(authenticated_client, "显式模型会话")
+
+    response = await authenticated_client.post(
+        "/api/ai/sessions",
+        json={
+            "agent_id": "agent-coordinator",
+            "session_name": "显式模型会话",
+            "scope": {
+                "scope_type": "project",
+                "workspace_id": workspace_id,
+                "project_id": project_id,
+                "source": "test-agent-session",
+            },
+            "llm_config_id": config["id"],
+        },
+    )
+
+    assert response.status_code == 201
+    llm_metadata = response.json()["metadata"]["llm"]
+    assert llm_metadata == {
+        "selection_kind": "explicit_config",
+        "config_id": config["id"],
+        "scope": "personal",
+        "name": "会话个人模型",
+        "provider_key": "openai",
+        "provider_label": "OpenAI",
+        "model_id": "gpt-4.1-mini",
+        "supports_image_input": True,
+    }
+
+
+async def test_agent_session_should_reject_unavailable_selected_llm_config(authenticated_client: AsyncClient) -> None:
+    """会话显式模型选择应拒绝归档模型和不存在模型。"""
+
+    config = await _create_llm_config(authenticated_client, name="归档会话模型")
+    archive_response = await authenticated_client.patch(
+        f"/api/ai/llm-configs/{config['id']}",
+        json={"status": "archived"},
+    )
+    assert archive_response.status_code == 200
+    workspace_id, project_id = await _create_agent_project_scope(authenticated_client, "归档模型会话")
+    scope_payload = {
+        "scope_type": "project",
+        "workspace_id": workspace_id,
+        "project_id": project_id,
+        "source": "test-agent-session",
+    }
+
+    archived_response = await authenticated_client.post(
+        "/api/ai/sessions",
+        json={
+            "agent_id": "agent-coordinator",
+            "session_name": "归档模型会话",
+            "scope": scope_payload,
+            "llm_config_id": config["id"],
+        },
+    )
+    assert archived_response.status_code == 409
+    assert archived_response.json()["code"] == "AI_LLM_CONFIG_DISABLED"
+
+    missing_response = await authenticated_client.post(
+        "/api/ai/sessions",
+        json={
+            "agent_id": "agent-coordinator",
+            "session_name": "不存在模型会话",
+            "scope": scope_payload,
+            "llm_config_id": 999_999_999,
+        },
+    )
+    assert missing_response.status_code == 404
+    assert missing_response.json()["code"] == "AI_LLM_CONFIG_NOT_FOUND"
+
+
+async def test_agent_session_without_llm_config_should_fallback_to_slot_binding(authenticated_client: AsyncClient) -> None:
+    """旧客户端未传 llm_config_id 时，应继续按当前智能体槽位绑定创建会话。"""
+
+    config = await _create_llm_config(authenticated_client, name="槽位兼容模型")
+    slot_response = await authenticated_client.put(
+        "/api/ai/llm-slots/agent_coordinator",
+        json={"llm_config_id": config["id"]},
+    )
+    assert slot_response.status_code == 200
+    workspace_id, project_id = await _create_agent_project_scope(authenticated_client, "槽位兼容会话")
+
+    response = await authenticated_client.post(
+        "/api/ai/sessions",
+        json={
+            "agent_id": "agent-coordinator",
+            "session_name": "槽位兼容会话",
+            "scope": {
+                "scope_type": "project",
+                "workspace_id": workspace_id,
+                "project_id": project_id,
+                "source": "test-agent-session",
+            },
+        },
+    )
+
+    assert response.status_code == 201
+    llm_metadata = response.json()["metadata"]["llm"]
+    assert llm_metadata["selection_kind"] == "slot_binding"
+    assert llm_metadata["config_id"] == config["id"]
+    assert llm_metadata["name"] == "槽位兼容模型"
 
 
 def test_llm_model_resolver_should_build_common_provider_models() -> None:

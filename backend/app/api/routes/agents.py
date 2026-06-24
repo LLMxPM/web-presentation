@@ -236,6 +236,7 @@ async def create_agent_session(
         agent_id=payload.agent_id,
         scope=scope,
         session_name=session_name,
+        llm_config_id=payload.llm_config_id,
     )
 
 
@@ -598,8 +599,9 @@ async def stream_agent_run(
     reserved_lock = await facade.reserve_run_slot(session_id=session_id, agent_id=agent_id, scope=scope)
     try:
         await _ensure_stream_image_input_supported(
-            session=session,
-            current=current,
+            facade=facade,
+            session_id=session_id,
+            agent_id=agent_id,
             descriptor=descriptor,
             image_attachment_ids=payload.image_attachment_ids,
         )
@@ -626,25 +628,26 @@ async def stream_agent_run(
 
 async def _ensure_stream_image_input_supported(
     *,
-    session: AsyncSession,
-    current: AuthContext,
+    facade: AgentSessionFacade,
+    session_id: str,
+    agent_id: str,
     descriptor: RegisteredAgentDescriptor,
     image_attachment_ids: list[int] | None,
 ) -> None:
-    """在返回流式响应前校验绑定模型是否支持图片输入。"""
+    """在返回流式响应前校验当前会话模型是否支持图片输入。"""
 
     if not image_attachment_ids:
         return
-    model_config = await AiLlmService(
-        session,
-        user_id=current.user.id,
-        user_role=current.user.role,
-    ).get_bound_config_or_raise(descriptor.llm_slot or "")
+    model_config = await facade.resolve_session_llm_config(
+        session_id=session_id,
+        agent_id=agent_id,
+        slot=descriptor.llm_slot or "",
+    )
     if not bool(model_config.supports_image_input):
         raise AppException(
             status_code=409,
             code="AI_LLM_IMAGE_INPUT_UNSUPPORTED",
-            detail="当前绑定模型不支持图片输入，不能发送图片附件。",
+            detail="当前会话模型不支持图片输入，不能发送图片附件。",
         )
 
 

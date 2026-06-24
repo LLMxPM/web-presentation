@@ -21,6 +21,24 @@ from app.models.ai_agent_runtime import AiAgentMemberRun, AiAgentRun, AiAgentRun
 from app.schemas.agent import AgentPendingRequirement, AgentRunEvent, AgentScopeContext
 
 
+async def _create_runtime_llm_config(authenticated_client: AsyncClient) -> int:
+    """创建运行态测试会话使用的显式模型配置。"""
+
+    response = await authenticated_client.post(
+        "/api/ai/llm-configs",
+        json={
+            "name": "运行态测试模型",
+            "provider_key": "openai",
+            "model_id": "gpt-4.1-mini",
+            "base_url": "https://api.openai.com/v1",
+            "api_key": "sk-runtime-test",
+            "advanced_config_json": {},
+        },
+    )
+    assert response.status_code == 201
+    return response.json()["id"]
+
+
 async def test_platform_runtime_should_persist_events_messages_and_snapshot(
     authenticated_client: AsyncClient,
     monkeypatch: pytest.MonkeyPatch,
@@ -44,6 +62,7 @@ async def test_platform_runtime_should_persist_events_messages_and_snapshot(
             "agent_id": "component-manager",
             "session_name": "平台运行态会话",
             "scope": scope.model_dump(mode="json"),
+            "llm_config_id": await _create_runtime_llm_config(authenticated_client),
         },
     )
     assert session_response.status_code == 201
@@ -180,6 +199,7 @@ async def test_platform_runtime_snapshot_should_drop_resolved_requirement(
             "agent_id": "component-manager",
             "session_name": "平台运行态清理 HITL 会话",
             "scope": scope.model_dump(mode="json"),
+            "llm_config_id": await _create_runtime_llm_config(authenticated_client),
         },
     )
     assert session_response.status_code == 201
@@ -470,6 +490,7 @@ async def test_platform_runtime_should_refresh_event_cursor_before_append(
             "agent_id": "component-manager",
             "session_name": "平台运行态并发游标会话",
             "scope": scope.model_dump(mode="json"),
+            "llm_config_id": await _create_runtime_llm_config(authenticated_client),
         },
     )
     assert session_response.status_code == 201
@@ -559,6 +580,7 @@ async def test_platform_runtime_stream_should_poll_database_when_subscriber_miss
             "agent_id": "component-manager",
             "session_name": "平台运行态轮询恢复会话",
             "scope": scope.model_dump(mode="json"),
+            "llm_config_id": await _create_runtime_llm_config(authenticated_client),
         },
     )
     assert session_response.status_code == 201
@@ -628,6 +650,7 @@ async def test_platform_runtime_should_fill_tool_input_when_complete_args_arrive
             "agent_id": "component-manager",
             "session_name": "平台运行态工具参数补全会话",
             "scope": scope.model_dump(mode="json"),
+            "llm_config_id": await _create_runtime_llm_config(authenticated_client),
         },
     )
     assert session_response.status_code == 201
@@ -706,6 +729,7 @@ async def test_platform_runtime_snapshot_should_keep_event_order_not_type_order(
             "agent_id": "component-manager",
             "session_name": "平台运行态顺序回放会话",
             "scope": scope.model_dump(mode="json"),
+            "llm_config_id": await _create_runtime_llm_config(authenticated_client),
         },
     )
     assert session_response.status_code == 201
@@ -806,6 +830,7 @@ async def test_platform_runtime_cancel_should_be_idempotent(
             "agent_id": "component-manager",
             "session_name": "平台运行态停止幂等会话",
             "scope": scope.model_dump(mode="json"),
+            "llm_config_id": await _create_runtime_llm_config(authenticated_client),
         },
     )
     assert session_response.status_code == 201
@@ -857,6 +882,7 @@ async def test_platform_runtime_failed_run_should_close_running_tools(
             "agent_id": "component-manager",
             "session_name": "平台运行态失败工具收敛会话",
             "scope": scope.model_dump(mode="json"),
+            "llm_config_id": await _create_runtime_llm_config(authenticated_client),
         },
     )
     assert session_response.status_code == 201
@@ -942,6 +968,7 @@ async def test_pydantic_runner_cancel_check_should_report_requested_cancel(
             "agent_id": "component-manager",
             "session_name": "平台运行态取消收敛会话",
             "scope": scope.model_dump(mode="json"),
+            "llm_config_id": await _create_runtime_llm_config(authenticated_client),
         },
     )
     assert session_response.status_code == 201
@@ -1392,6 +1419,7 @@ async def _create_history_workspace_session(
             "agent_id": "component-manager",
             "session_name": f"历史上下文会话 {suffix}",
             "scope": scope.model_dump(mode="json"),
+            "llm_config_id": await _create_runtime_llm_config(authenticated_client),
         },
     )
     assert session_response.status_code == 201
@@ -1438,7 +1466,6 @@ def _history_delta(*, user_text: str, assistant_text: str) -> list[dict[str, obj
     )
     assert isinstance(dumped, list)
     return dumped
-
 
 def _large_payload_delta(*, tool_result: dict[str, object]) -> list[dict[str, object]]:
     """构造包含大工具返回的 Pydantic AI 消息 delta。"""

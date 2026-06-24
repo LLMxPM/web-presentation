@@ -284,6 +284,7 @@ class CreateAgentSessionRequest(BaseModel):
     agent_id: str = "agent-coordinator"
     session_name: str | None = Field(default=None, max_length=128)
     scope: AgentScopeContext
+    llm_config_id: int | None = Field(default=None, ge=1)
 
 
 class RenameAgentSessionRequest(BaseModel):

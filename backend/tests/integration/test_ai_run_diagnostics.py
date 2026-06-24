@@ -25,8 +25,14 @@ from app.scripts.diagnose_ai_run import (
 async def test_ai_run_diagnostics_should_collect_runtime_state(
     authenticated_client: AsyncClient,
     tmp_path: Path,
+    monkeypatch,
 ) -> None:
     """诊断函数应支持 run/session 收集，并能通过 CLI 写入文件。"""
+
+    from app.core.config import get_settings
+
+    monkeypatch.setenv("SESSION_COOKIE_NAME", get_settings().session_cookie_name)
+    monkeypatch.setenv("SESSION_SECURE", str(get_settings().session_secure).lower())
 
     workspace_response = await authenticated_client.post(
         "/api/workspaces",
@@ -39,12 +45,14 @@ async def test_ai_run_diagnostics_should_collect_runtime_state(
         workspace_id=workspace_id,
         source="editor-component-library",
     )
+    llm_config_id = await _create_diagnostics_llm_config(authenticated_client)
     session_response = await authenticated_client.post(
         "/api/ai/sessions",
         json={
             "agent_id": "component-manager",
             "session_name": "AI 诊断会话",
             "scope": scope.model_dump(mode="json"),
+            "llm_config_id": llm_config_id,
         },
     )
     assert session_response.status_code == 201
@@ -212,6 +220,24 @@ async def test_ai_run_diagnostics_should_collect_runtime_state(
     output_payload = json.loads(output_path.read_text(encoding="utf-8"))
     assert output_payload["session"]["session_id"] == session_id
     assert output_payload["runs"][0]["run"]["run_id"] == "diagnostics-run-1"
+
+
+async def _create_diagnostics_llm_config(authenticated_client: AsyncClient) -> int:
+    """创建诊断测试会话使用的显式模型配置。"""
+
+    response = await authenticated_client.post(
+        "/api/ai/llm-configs",
+        json={
+            "name": "诊断测试模型",
+            "provider_key": "openai",
+            "model_id": "gpt-4.1-mini",
+            "base_url": "https://api.openai.com/v1",
+            "api_key": "sk-diagnostics",
+            "advanced_config_json": {},
+        },
+    )
+    assert response.status_code == 201
+    return int(response.json()["id"])
 
 
 async def test_ai_run_diagnostics_should_return_none_when_run_missing(

@@ -36,6 +36,7 @@ async def _create_agent_session(authenticated_client: AsyncClient, workspace_id:
     """创建项目级内容助手会话，并返回会话 ID 与项目 ID。"""
 
     project_id = await _create_project(authenticated_client, workspace_id)
+    llm_config_id = await _create_agent_model(authenticated_client, supports_image_input=False)
 
     response = await authenticated_client.post(
         "/api/ai/sessions",
@@ -48,6 +49,7 @@ async def _create_agent_session(authenticated_client: AsyncClient, workspace_id:
                 "project_id": project_id,
                 "source": "test",
             },
+            "llm_config_id": llm_config_id,
         },
     )
     assert response.status_code == 201
@@ -56,6 +58,18 @@ async def _create_agent_session(authenticated_client: AsyncClient, workspace_id:
 
 async def _bind_agent_model(authenticated_client: AsyncClient, *, supports_image_input: bool) -> int:
     """创建并绑定总控智能体模型。"""
+
+    config_id = await _create_agent_model(authenticated_client, supports_image_input=supports_image_input)
+    bind_response = await authenticated_client.put(
+        "/api/ai/llm-slots/agent_coordinator",
+        json={"llm_config_id": config_id},
+    )
+    assert bind_response.status_code == 200
+    return config_id
+
+
+async def _create_agent_model(authenticated_client: AsyncClient, *, supports_image_input: bool) -> int:
+    """创建图片测试用模型配置并返回配置 ID。"""
 
     create_response = await authenticated_client.post(
         "/api/ai/llm-configs",
@@ -71,13 +85,7 @@ async def _bind_agent_model(authenticated_client: AsyncClient, *, supports_image
         },
     )
     assert create_response.status_code == 201
-    config_id = create_response.json()["id"]
-    bind_response = await authenticated_client.put(
-        "/api/ai/llm-slots/agent_coordinator",
-        json={"llm_config_id": config_id},
-    )
-    assert bind_response.status_code == 200
-    return config_id
+    return create_response.json()["id"]
 
 
 async def test_image_attachment_upload_should_reject_oversized_file(authenticated_client: AsyncClient) -> None:

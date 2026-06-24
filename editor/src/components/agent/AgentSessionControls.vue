@@ -82,6 +82,10 @@
               <p class="mt-1 truncate text-[11px] opacity-70" :title="resolveSessionScopePath(session)">
                 {{ resolveSessionScopePath(session) }}
               </p>
+              <p v-if="resolveSessionModelLabel(session)" class="mt-1 truncate text-[11px] opacity-70"
+                :title="resolveSessionModelLabel(session)">
+                {{ resolveSessionModelLabel(session) }}
+              </p>
             </div>
             <div class="flex shrink-0 flex-col items-end gap-1">
               <span
@@ -113,6 +117,7 @@ import { Check, ChevronDown, Plus, Search, X } from '@lucide/vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import {
   resolveSessionDisplayName,
+  resolveSessionModelLabel,
   resolveSessionScopePath,
   resolveSessionSubtitle,
 } from '@/components/agent/agent-session-scope'

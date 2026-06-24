@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -292,6 +292,38 @@ class AiLlmService:
                 detail="当前智能体槽位绑定的大模型配置不可用，请重新绑定。",
             )
         return binding.llm_config
+
+    async def get_selectable_active_config_or_raise(self, config_id: int) -> AiLlmConfig:
+        """读取当前用户可作为会话模型选择的启用中配置。"""
+
+        config = await self._get_selectable_config_or_raise(config_id)
+        if config.status != RecordStatus.ACTIVE.value:
+            raise AppException(
+                status_code=409,
+                code="AI_LLM_CONFIG_DISABLED",
+                detail="只能选择启用中的大模型配置。",
+            )
+        return config
+
+    def build_session_llm_metadata(
+        self,
+        config: AiLlmConfig,
+        *,
+        selection_kind: Literal["explicit_config", "slot_binding"],
+    ) -> dict[str, Any]:
+        """把运行时模型配置固化为会话 metadata 中的只读快照。"""
+
+        provider_entry = get_llm_provider_entry(config.provider_key)
+        return {
+            "selection_kind": selection_kind,
+            "config_id": config.id,
+            "scope": config.scope,
+            "name": config.name,
+            "provider_key": config.provider_key,
+            "provider_label": provider_entry.label,
+            "model_id": config.model_id,
+            "supports_image_input": bool(config.supports_image_input),
+        }
 
     async def get_slot_binding_lookup(self) -> dict[str, LlmSlotBindingItem]:
         """按槽位返回当前用户全部绑定状态，便于复用到 Agent 列表接口。"""

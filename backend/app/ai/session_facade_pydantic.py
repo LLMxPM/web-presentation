@@ -38,6 +38,7 @@ from app.ai.tool_specs import AGENT_COORDINATOR_AGENT_ID
 from app.ai.run_errors import build_agent_error_log_extra, normalize_agent_run_exception
 from app.core.exceptions import AppException
 from app.db.session import get_session_factory
+from app.models.ai_llm import AiLlmConfig
 from app.schemas.agent import (
     AgentActiveRunItem,
     AgentCancelRunResponse,
@@ -89,14 +90,24 @@ class AgentSessionFacade:
         agent_id: str,
         scope: AgentScopeContext,
         session_name: str | None = None,
+        llm_config_id: int | None = None,
     ) -> AgentSessionItem:
         """创建平台智能体会话。"""
 
+        descriptor = self._app.state.ai_registry.get_descriptor(agent_id)
+        llm_service = self._llm_service()
+        selection_kind: Literal["explicit_config", "slot_binding"] = "explicit_config" if llm_config_id else "slot_binding"
+        llm_config = (
+            await llm_service.get_selectable_active_config_or_raise(llm_config_id)
+            if llm_config_id is not None
+            else await llm_service.get_bound_config_or_raise(descriptor.llm_slot or "")
+        )
         return await self._store.create_session(
             session_id=new_session_id(),
             agent_id=agent_id,
             session_name=session_name,
             scope=scope,
+            llm_metadata=llm_service.build_session_llm_metadata(llm_config, selection_kind=selection_kind),
         )
 
     async def rename_session(
@@ -207,11 +218,11 @@ class AgentSessionFacade:
         await self.ensure_session_access(session_id=session_id, agent_id=agent_id, scope=scope)
         try:
             descriptor = self._app.state.ai_registry.get_descriptor(agent_id)
-            llm_config = await AiLlmService(
-                self._session,
-                user_id=self._current.user.id,
-                user_role=self._current.user.role,
-            ).get_bound_config_or_raise(descriptor.llm_slot or "")
+            llm_config = await self.resolve_session_llm_config(
+                session_id=session_id,
+                agent_id=agent_id,
+                slot=descriptor.llm_slot or "",
+            )
             rebuilt_history = await rebuild_agent_message_history(
                 session=self._session,
                 user_id=self._current.user.id,
@@ -276,11 +287,11 @@ class AgentSessionFacade:
             try:
                 effective_run_id = run_id or f"run-{asyncio.get_running_loop().time():.0f}"
                 descriptor = self._app.state.ai_registry.get_descriptor(agent_id)
-                llm_config = await AiLlmService(
-                    self._session,
-                    user_id=self._current.user.id,
-                    user_role=self._current.user.role,
-                ).get_bound_config_or_raise(descriptor.llm_slot or "")
+                llm_config = await self.resolve_session_llm_config(
+                    session_id=session_id,
+                    agent_id=agent_id,
+                    slot=descriptor.llm_slot or "",
+                )
                 rebuilt_history = await rebuild_agent_message_history(
                     session=self._session,
                     user_id=self._current.user.id,
@@ -517,11 +528,11 @@ class AgentSessionFacade:
             await lock.acquire()
             try:
                 descriptor = self._app.state.ai_registry.get_descriptor(agent_id)
-                llm_config = await AiLlmService(
-                    self._session,
-                    user_id=self._current.user.id,
-                    user_role=self._current.user.role,
-                ).get_bound_config_or_raise(descriptor.llm_slot or "")
+                llm_config = await self.resolve_session_llm_config(
+                    session_id=session_id,
+                    agent_id=agent_id,
+                    slot=descriptor.llm_slot or "",
+                )
                 previous_history = await rebuild_agent_message_history(
                     session=self._session,
                     user_id=self._current.user.id,
@@ -698,11 +709,11 @@ class AgentSessionFacade:
         async def worker() -> None:
             try:
                 descriptor = self._app.state.ai_registry.get_descriptor(agent_id)
-                llm_config = await AiLlmService(
-                    self._session,
-                    user_id=self._current.user.id,
-                    user_role=self._current.user.role,
-                ).get_bound_config_or_raise(descriptor.llm_slot or "")
+                llm_config = await self.resolve_session_llm_config(
+                    session_id=session_id,
+                    agent_id=agent_id,
+                    slot=descriptor.llm_slot or "",
+                )
                 previous_history = await rebuild_agent_message_history(
                     session=self._session,
                     user_id=self._current.user.id,
@@ -882,6 +893,35 @@ class AgentSessionFacade:
                     lock.release()
 
         return generator()
+
+    async def resolve_session_llm_config(
+        self,
+        *,
+        session_id: str,
+        agent_id: str,
+        slot: str,
+    ) -> AiLlmConfig:
+        """解析当前会话运行模型；新会话优先使用 metadata 固化配置，历史会话回退槽位绑定。"""
+
+        try:
+            session_model = await self._store.require_session(session_id=session_id, agent_id=agent_id)
+        except ValueError as exc:
+            raise _map_store_error(exc) from exc
+
+        llm_service = self._llm_service()
+        config_id = _extract_session_llm_config_id(session_model.metadata_json)
+        if config_id is not None:
+            return await llm_service.get_selectable_active_config_or_raise(config_id)
+        return await llm_service.get_bound_config_or_raise(slot)
+
+    def _llm_service(self) -> AiLlmService:
+        """创建带当前用户身份的大模型服务实例。"""
+
+        return AiLlmService(
+            self._session,
+            user_id=self._current.user.id,
+            user_role=self._current.user.role,
+        )
 
     def _build_member_delegation_executor(
         self,
@@ -1117,6 +1157,22 @@ def _build_user_prompt(message: str, resolved_images: list[ResolvedAgentImage]) 
         parts.append("用户发送了图片附件，请结合图片内容理解需求。")
     parts.extend(resolved.image for resolved in resolved_images)
     return parts
+
+
+def _extract_session_llm_config_id(metadata: Any) -> int | None:
+    """从会话 metadata 中读取固化模型 ID；格式异常时视为历史会话。"""
+
+    if not isinstance(metadata, dict):
+        return None
+    llm_metadata = metadata.get("llm")
+    if not isinstance(llm_metadata, dict):
+        return None
+    raw_config_id = llm_metadata.get("config_id")
+    if isinstance(raw_config_id, int):
+        return raw_config_id
+    if isinstance(raw_config_id, str) and raw_config_id.strip().isdigit():
+        return int(raw_config_id.strip())
+    return None
 
 
 def _is_user_feedback_tool(tool_execution: dict[str, Any]) -> bool:

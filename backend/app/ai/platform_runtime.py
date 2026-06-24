@@ -103,10 +103,14 @@ class PlatformAgentRuntimeStore:
         agent_id: str,
         session_name: str | None,
         scope: AgentScopeContext,
+        llm_metadata: dict[str, Any] | None = None,
     ) -> AgentSessionItem:
         """创建平台 Agent 会话。"""
 
         now = _utc_now()
+        metadata = _scope_metadata(scope)
+        if llm_metadata is not None:
+            metadata["llm"] = dict(llm_metadata)
         model = AiAgentSession(
             session_id=session_id,
             agent_id=agent_id,
@@ -118,7 +122,7 @@ class PlatformAgentRuntimeStore:
             page_id=scope.page_id,
             component_id=scope.component_id,
             source=scope.source,
-            metadata_json=_scope_metadata(scope),
+            metadata_json=metadata,
             created_by=self._user_id,
             updated_by=self._user_id,
             created_at=now,

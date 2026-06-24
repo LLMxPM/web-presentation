@@ -86,6 +86,7 @@ export async function createAgentSession(payload: {
   agent_id?: string
   session_name?: string | null
   scope: AgentScopeContext
+  llm_config_id?: number | null
 }) {
   const { data } = await http.post<AgentSessionItem>('/ai/sessions', payload)
   return data

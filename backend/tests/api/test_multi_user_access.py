@@ -56,6 +56,17 @@ async def _create_workspace(client: AsyncClient, name: str) -> int:
     return response.json()["id"]
 
 
+async def _create_project(client: AsyncClient, workspace_id: int, name: str) -> int:
+    """用当前用户创建项目，并返回项目 ID。"""
+
+    response = await client.post(
+        "/api/projects",
+        json={"workspace_id": workspace_id, "name": name, "status": "active"},
+    )
+    assert response.status_code == 200
+    return response.json()["id"]
+
+
 async def test_user_management_should_require_platform_admin_and_protect_last_admin(client: AsyncClient) -> None:
     """普通用户不能管理用户；最后一个启用管理员不能被禁用或降级。"""
 
@@ -126,6 +137,7 @@ async def test_global_and_personal_llm_configs_should_follow_scope_rules(client:
 
     await _login(client, "admin", "Admin123456")
     await _create_user(client, username="carol", display_name="Carol")
+    await _create_user(client, username="dave", display_name="Dave")
 
     global_model_response = await client.post(
         "/api/ai/llm-configs",
@@ -209,4 +221,62 @@ async def test_global_and_personal_llm_configs_should_follow_scope_rules(client:
     assert personal_slot_response.status_code == 200
     assert personal_slot_response.json()["llm_config_id"] == personal_model["id"]
     assert personal_slot_response.json()["inherited_from_global"] is False
+
+    workspace_id = await _create_workspace(client, "Carol 会话空间")
+    project_id = await _create_project(client, workspace_id, "Carol 会话项目")
+    global_session_response = await client.post(
+        "/api/ai/sessions",
+        json={
+            "agent_id": "agent-coordinator",
+            "session_name": "全局模型会话",
+            "scope": {
+                "scope_type": "project",
+                "workspace_id": workspace_id,
+                "project_id": project_id,
+                "source": "test-multi-user",
+            },
+            "llm_config_id": global_model["id"],
+        },
+    )
+    assert global_session_response.status_code == 201
+    global_session_llm = global_session_response.json()["metadata"]["llm"]
+    assert global_session_llm["selection_kind"] == "explicit_config"
+    assert global_session_llm["config_id"] == global_model["id"]
+    assert global_session_llm["scope"] == "global"
+    assert global_session_llm["name"] == "平台默认模型"
+
+    await _logout(client)
+    await _login(client, "dave", "User123456")
+    dave_model_response = await client.post(
+        "/api/ai/llm-configs",
+        json={
+            "name": "Dave 个人模型",
+            "provider_key": "openai",
+            "model_id": "gpt-4.1",
+            "base_url": "https://api.openai.com/v1",
+            "api_key": "sk-dave",
+            "advanced_config_json": {},
+        },
+    )
+    assert dave_model_response.status_code == 201
+    dave_model = dave_model_response.json()
+
+    await _logout(client)
+    await _login(client, "carol", "User123456")
+    other_personal_session_response = await client.post(
+        "/api/ai/sessions",
+        json={
+            "agent_id": "agent-coordinator",
+            "session_name": "越权模型会话",
+            "scope": {
+                "scope_type": "project",
+                "workspace_id": workspace_id,
+                "project_id": project_id,
+                "source": "test-multi-user",
+            },
+            "llm_config_id": dave_model["id"],
+        },
+    )
+    assert other_personal_session_response.status_code == 404
+    assert other_personal_session_response.json()["code"] == "AI_LLM_CONFIG_NOT_FOUND"
 

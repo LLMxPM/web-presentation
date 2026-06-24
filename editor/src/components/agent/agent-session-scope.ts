@@ -183,6 +183,27 @@ export function resolveSessionScopePath(session: AgentSessionItem): string {
 }
 
 /**
+ * 返回会话创建时固化的大模型名称；历史会话没有 metadata 时返回空。
+ */
+export function resolveSessionModelLabel(session: AgentSessionItem): string {
+  const llm = session.metadata?.llm
+  if (!llm || typeof llm !== 'object') {
+    return ''
+  }
+  const llmMetadata = llm as unknown as Record<string, unknown>
+  const name = toTextOrNull(llmMetadata.name)
+  if (!name) {
+    return ''
+  }
+  const scope = toTextOrNull(llmMetadata.scope)
+  const scopeLabel = scope === 'global' ? '全局模型' : scope === 'personal' ? '我的模型' : '模型'
+  const provider = toTextOrNull(llmMetadata.provider_label) || toTextOrNull(llmMetadata.provider_key)
+  const modelId = toTextOrNull(llmMetadata.model_id)
+  const detail = [provider, modelId].filter(Boolean).join(' / ')
+  return detail ? `${scopeLabel} · ${name}（${detail}）` : `${scopeLabel} · ${name}`
+}
+
+/**
  * 将智能体 scope 转换为顶部展示用的类型和名称。
  */
 export function resolveScopeSummary(scopeValue: AgentScopeContext, fallbackTitle: string): ScopeSummary {

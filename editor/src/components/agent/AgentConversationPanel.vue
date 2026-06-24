@@ -57,7 +57,7 @@
         </div>
         <div class="rounded-2xl border border-white/80 bg-white/70 px-4 py-3 text-sm text-slate-600">
           <p>当前 agent：{{ selectedAgent?.name || agentDisplayName }}</p>
-          <p>已绑定模型：{{ selectedAgent?.bound_llm_name || '未绑定' }}</p>
+          <p>当前模型：{{ currentLlmModelLabel || selectedAgent?.bound_llm_name || '未选择' }}</p>
         </div>
         <div class="flex justify-end">
           <BaseButton variant="primary" @click="goToAiSettings">
@@ -126,7 +126,55 @@
           @apply-suggested-patch="applySuggestedPatch"
           @save-draft-patch="saveDraftPatch"
           @context-usage-open="handleContextUsageOpen"
-          @action="handleComposerPrimaryAction" />
+          @action="handleComposerPrimaryAction">
+          <template #action-prefix>
+            <span
+              v-if="isNewSessionDraft || activeSessionLlmLabel"
+              ref="llmModelMenuRef"
+              class="relative inline-flex"
+            >
+              <button
+                type="button"
+                class="inline-flex h-6 max-w-[150px] items-center gap-1 rounded-md border px-1.5 text-[10px] font-medium transition"
+                :class="isNewSessionDraft
+                  ? 'border-slate-200 bg-white text-slate-600 hover:border-sky-200 hover:bg-sky-50 hover:text-sky-700'
+                  : 'cursor-default border-slate-100 bg-slate-50 text-slate-500'"
+                :disabled="!isNewSessionDraft || llmConfigsQuery.isFetching.value || selectableModelCount === 0"
+                :title="llmModelButtonTitle"
+                @click.stop="toggleLlmModelMenu"
+              >
+                <Globe2 v-if="currentLlmScope === 'global'" class="h-3 w-3 shrink-0" />
+                <UserRound v-else class="h-3 w-3 shrink-0" />
+                <span class="min-w-0 truncate">{{ currentLlmCompactName }}</span>
+                <ChevronDown v-if="isNewSessionDraft" class="h-3 w-3 shrink-0 opacity-60" />
+              </button>
+              <div
+                v-if="isNewSessionDraft && llmModelMenuVisible"
+                class="absolute bottom-7 right-0 z-30 w-56 overflow-hidden rounded-lg border border-slate-200 bg-white py-1 shadow-xl shadow-slate-900/10"
+              >
+                <button
+                  v-for="item in llmModelMenuItems"
+                  :key="item.id"
+                  type="button"
+                  class="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-xs transition hover:bg-slate-50"
+                  :class="item.id === selectedNewSessionLlmConfigId ? 'text-sky-700' : 'text-slate-600'"
+                  @click.stop="selectNewSessionLlmConfig(item.id)"
+                >
+                  <Globe2 v-if="item.scope === 'global'" class="h-3.5 w-3.5 shrink-0" />
+                  <UserRound v-else class="h-3.5 w-3.5 shrink-0" />
+                  <span class="min-w-0 flex-1">
+                    <span class="block truncate font-medium">{{ item.name }}</span>
+                    <span class="block truncate text-[10px] text-slate-400">{{ item.providerLabel }} / {{ item.modelId }}</span>
+                  </span>
+                  <Check v-if="item.id === selectedNewSessionLlmConfigId" class="h-3.5 w-3.5 shrink-0" />
+                </button>
+                <div v-if="llmModelMenuItems.length === 0" class="px-3 py-2 text-center text-[11px] text-slate-400">
+                  暂无可用模型
+                </div>
+              </div>
+            </span>
+          </template>
+        </AgentComposer>
       </template>
     </div>
   </section>
@@ -141,11 +189,11 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/vue-query'
 import { storeToRefs } from 'pinia'
 import { useRoute, useRouter } from 'vue-router'
-import { ExternalLink } from '@lucide/vue'
+import { Check, ChevronDown, ExternalLink, Globe2, UserRound } from '@lucide/vue'
 
 import {
   AgentRequestError,
@@ -160,6 +208,7 @@ import {
   streamAgentRun,
   streamAgentRunEvents,
 } from '@/api/ai'
+import { listLlmConfigs, listLlmSlots } from '@/api/llm'
 import { getErrorMessage } from '@/api/http'
 import {
   buildTimelineDisplayItems,
@@ -211,6 +260,8 @@ import type {
   AgentSessionRuntimeSnapshot,
   AgentSuggestedPatch,
   AgentTimelineItem,
+  LlmConfigItem,
+  LlmSlotBindingItem,
 } from '@/types/api'
 import { useAgentSessionStore } from '@/stores/agent-session'
 import { logClientWarning } from '@/utils/client-logger'
@@ -239,6 +290,25 @@ interface Props {
   routeUnavailableReason?: string
   autoCreateKey?: string | number | null
   autoNavigateTarget?: string | null
+}
+
+interface AgentSessionLlmMetadata {
+  selection_kind?: 'explicit_config' | 'slot_binding'
+  config_id?: number | string | null
+  scope?: 'global' | 'personal' | string
+  name?: string | null
+  provider_key?: string | null
+  provider_label?: string | null
+  model_id?: string | null
+  supports_image_input?: boolean | null
+}
+
+interface LlmModelMenuItem {
+  id: number
+  scope: 'global' | 'personal'
+  name: string
+  providerLabel: string
+  modelId: string
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -307,6 +377,9 @@ const memberRunDialogVisible = ref(false)
 const activeToolDetailId = ref<string | null>(null)
 const activeMemberRunIds = ref<string[]>([])
 const sendInFlight = ref(false)
+const selectedNewSessionLlmConfigId = ref<number | null>(null)
+const llmModelMenuVisible = ref(false)
+const llmModelMenuRef = ref<HTMLElement | null>(null)
 const autoNamingSessionIds = new Set<string>()
 const hitlActionInFlightBySession = ref<Record<string, boolean>>({})
 let componentDisposed = false
@@ -423,6 +496,16 @@ const sessionsQuery = useQuery(
   })),
 )
 
+const llmConfigsQuery = useQuery({
+  queryKey: ['llm-configs', 'agent-conversation'],
+  queryFn: listLlmConfigs,
+})
+
+const llmSlotsQuery = useQuery({
+  queryKey: ['llm-slots', 'agent-conversation'],
+  queryFn: listLlmSlots,
+})
+
 const activeSession = computed<AgentSessionItem | null>(() => (
   sessionsQuery.data.value?.find(item => item.session_id === activeSessionId.value)
     ?? knownSessionsById.value[activeSessionId.value]
@@ -445,6 +528,95 @@ const displayedSessions = computed<AgentSessionItem[] | undefined>(() => {
 const activeSessionScope = computed(() => activeSession.value ? resolveSessionScope(activeSession.value) : null)
 const activeSessionRuntimeScope = computed(() => activeSessionScope.value ?? scope.value)
 const activeSessionRuntimeAgentId = computed(() => activeSession.value?.agent_id ?? agentId.value)
+const isNewSessionDraft = computed(() => !activeSessionId.value)
+const activeLlmConfigs = computed<LlmConfigItem[]>(() => (
+  (llmConfigsQuery.data.value ?? []).filter(item => (
+    item.status === 'active' && (item.scope === 'global' || item.scope === 'personal')
+  ))
+))
+const activeGlobalLlmConfigs = computed(() => activeLlmConfigs.value.filter(item => item.scope === 'global'))
+const activePersonalLlmConfigs = computed(() => activeLlmConfigs.value.filter(item => item.scope === 'personal'))
+const llmConfigById = computed(() => new Map(activeLlmConfigs.value.map(item => [item.id, item])))
+const llmModelMenuItems = computed<LlmModelMenuItem[]>(() => (
+  activeLlmConfigs.value.map(item => ({
+    id: item.id,
+    scope: item.scope === 'global' ? 'global' : 'personal',
+    name: item.name,
+    providerLabel: item.provider_label,
+    modelId: item.model_id,
+  }))
+))
+const selectableModelCount = computed(() => activeLlmConfigs.value.length)
+const boundDraftLlmConfigId = computed(() => {
+  const slot = selectedAgent.value?.llm_slot
+  if (!slot) {
+    return null
+  }
+  const binding = (llmSlotsQuery.data.value ?? []).find((item: LlmSlotBindingItem) => item.slot === slot)
+  const configId = binding?.binding_ready ? binding.llm_config_id : null
+  return configId && llmConfigById.value.has(configId) ? configId : null
+})
+const defaultNewSessionLlmConfigId = computed(() => (
+  boundDraftLlmConfigId.value
+  ?? activeGlobalLlmConfigs.value[0]?.id
+  ?? activePersonalLlmConfigs.value[0]?.id
+  ?? null
+))
+const selectedNewSessionLlmConfig = computed(() => (
+  selectedNewSessionLlmConfigId.value ? llmConfigById.value.get(selectedNewSessionLlmConfigId.value) ?? null : null
+))
+const activeSessionLlmMetadata = computed(() => extractSessionLlmMetadata(activeSession.value))
+const activeSessionLlmConfigId = computed(() => normalizeLlmConfigId(activeSessionLlmMetadata.value?.config_id))
+const activeSessionLlmConfig = computed(() => (
+  activeSessionLlmConfigId.value ? llmConfigById.value.get(activeSessionLlmConfigId.value) ?? null : null
+))
+const activeSessionLlmLabel = computed(() => {
+  if (!activeSession.value) {
+    return ''
+  }
+  if (activeSessionLlmConfig.value) {
+    return formatLlmConfigLabel(activeSessionLlmConfig.value)
+  }
+  if (activeSessionLlmMetadata.value) {
+    return formatLlmMetadataLabel(activeSessionLlmMetadata.value)
+  }
+  return selectedAgent.value?.bound_llm_name || ''
+})
+const currentLlmModelLabel = computed(() => (
+  activeSessionId.value
+    ? activeSessionLlmLabel.value
+    : selectedNewSessionLlmConfig.value
+      ? formatLlmConfigLabel(selectedNewSessionLlmConfig.value)
+      : ''
+))
+const currentLlmScope = computed(() => {
+  if (activeSessionId.value) {
+    return activeSessionLlmConfig.value?.scope ?? activeSessionLlmMetadata.value?.scope ?? 'personal'
+  }
+  return selectedNewSessionLlmConfig.value?.scope ?? 'personal'
+})
+const currentLlmCompactName = computed(() => {
+  if (activeSessionId.value) {
+    return activeSessionLlmConfig.value?.name ?? activeSessionLlmMetadata.value?.name ?? '会话模型'
+  }
+  return selectedNewSessionLlmConfig.value?.name ?? '选择模型'
+})
+const llmModelButtonTitle = computed(() => {
+  const label = currentLlmModelLabel.value || currentLlmCompactName.value
+  return activeSessionId.value ? `会话模型：${label}` : `新会话模型：${label}`
+})
+const currentModelSupportsImageInput = computed(() => {
+  if (activeSessionId.value) {
+    if (activeSessionLlmConfig.value) {
+      return Boolean(activeSessionLlmConfig.value.supports_image_input)
+    }
+    if (typeof activeSessionLlmMetadata.value?.supports_image_input === 'boolean') {
+      return activeSessionLlmMetadata.value.supports_image_input
+    }
+    return Boolean(selectedAgent.value?.supports_image_input)
+  }
+  return Boolean(selectedNewSessionLlmConfig.value?.supports_image_input)
+})
 
 const runtimeQuery = useQuery(
   computed(() => ({
@@ -490,26 +662,32 @@ const createSessionMutation = useMutation({
     agent_id: agentId.value,
     scope: scope.value,
     session_name: sessionName ?? selectedAgent.value?.default_session_name ?? `${contextTitle.value} 对话`,
+    llm_config_id: selectedNewSessionLlmConfigId.value,
   }),
 })
 
 const selectedAgent = computed<AgentDescriptor | null>(() => agentsQuery.data.value?.[0] ?? null)
-const selectedAgentSupportsImageInput = computed(() => Boolean(selectedAgent.value?.supports_image_input))
 const hasContextIssue = computed(() => (
   selectedAgent.value !== null
   && selectedAgent.value.available === false
   && props.routeAvailable
 ))
+const isModelSelectionPending = computed(() => isNewSessionDraft.value && llmConfigsQuery.isFetching.value)
+const hasModelSelectionIssue = computed(() => (
+  isNewSessionDraft.value
+  && !llmConfigsQuery.isFetching.value
+  && selectableModelCount.value === 0
+))
 const hasBindingIssue = computed(() => (
-  hasContextIssue.value || (selectedAgent.value !== null && selectedAgent.value.llm_binding_ready === false)
+  hasContextIssue.value || hasModelSelectionIssue.value
 ))
 const agentIssueTitle = computed(() => (
-  hasContextIssue.value ? `${agentDisplayName.value}当前不可用` : `${agentDisplayName.value}尚未绑定模型`
+  hasContextIssue.value ? `${agentDisplayName.value}当前不可用` : '没有可用模型'
 ))
 const agentIssueDetail = computed(() => (
   hasContextIssue.value
     ? selectedAgent.value?.unavailable_reason || '当前路由上下文缺少智能体所需信息。'
-    : `当前智能体模型绑定 ${selectedAgent.value?.llm_slot || '未配置'} 还没有可用模型。先到“AI 设置”中创建模型并完成绑定，下一次执行会立即生效。`
+    : '当前没有可用于发起会话的模型。请到“AI 设置”创建个人模型，或联系管理员提供全局模型。'
 ))
 const activeSessionScopeSummary = computed(() => (
   activeSessionScope.value
@@ -576,8 +754,10 @@ const composerContextIssue = computed(() => {
 })
 const composerInputDisabled = computed(() => Boolean(composerContextIssue.value))
 const imageUploadDisabledReason = computed(() => {
-  if (!selectedAgentSupportsImageInput.value) {
-    return '当前绑定模型不支持图片输入'
+  if (!currentModelSupportsImageInput.value) {
+    return currentLlmModelLabel.value
+      ? '当前会话模型不支持图片输入'
+      : '请选择支持图片输入的模型'
   }
   if (composerContextIssue.value) {
     return composerContextIssue.value
@@ -609,7 +789,7 @@ const timelineDisplayItems = computed(() => buildTimelineDisplayItems(timelineIt
 const composerActionDisabled = computed(() => (
   isStreaming.value
     ? isInterrupting.value
-    : sendInFlight.value || pendingRequirement.value !== null || (!composerText.value.trim() && pendingImageAttachments.value.length === 0) || hasBindingIssue.value || composerInputDisabled.value
+    : sendInFlight.value || pendingRequirement.value !== null || (!composerText.value.trim() && pendingImageAttachments.value.length === 0) || hasBindingIssue.value || isModelSelectionPending.value || composerInputDisabled.value
 ))
 
 const {
@@ -964,8 +1144,24 @@ watch(
   { immediate: true },
 )
 
+watch(
+  () => [defaultNewSessionLlmConfigId.value, selectedNewSessionLlmConfigId.value, activeSessionId.value] as const,
+  () => {
+    if (!isNewSessionDraft.value) {
+      return
+    }
+    const selectedId = selectedNewSessionLlmConfigId.value
+    if (selectedId !== null && llmConfigById.value.has(selectedId)) {
+      return
+    }
+    selectedNewSessionLlmConfigId.value = defaultNewSessionLlmConfigId.value
+  },
+  { immediate: true },
+)
+
 watch(activeSessionId, () => {
   sessionMenuVisible.value = false
+  llmModelMenuVisible.value = false
   toolDetailDialogVisible.value = false
   memberRunDialogVisible.value = false
   activeToolDetailId.value = null
@@ -1006,11 +1202,48 @@ watch(
   { immediate: true },
 )
 
+onMounted(() => {
+  document.addEventListener('click', handleDocumentClick)
+})
+
 onBeforeUnmount(() => {
   componentDisposed = true
   abortAllStreamControllers()
   stopForceCancelTicker()
+  document.removeEventListener('click', handleDocumentClick)
 })
+
+/**
+ * 打开或关闭新会话模型菜单；已有会话仅展示固化模型，不允许切换。
+ */
+function toggleLlmModelMenu() {
+  if (!isNewSessionDraft.value || llmConfigsQuery.isFetching.value || selectableModelCount.value === 0) {
+    return
+  }
+  llmModelMenuVisible.value = !llmModelMenuVisible.value
+}
+
+/**
+ * 选择新会话草稿模型；真正创建会话时会随 payload 固化到后端。
+ */
+function selectNewSessionLlmConfig(configId: number) {
+  selectedNewSessionLlmConfigId.value = configId
+  llmModelMenuVisible.value = false
+}
+
+/**
+ * 点击模型菜单外部时关闭菜单，避免在 Composer 工具条上残留浮层。
+ */
+function handleDocumentClick(event: MouseEvent) {
+  if (!llmModelMenuVisible.value) {
+    return
+  }
+  const target = event.target as Node | null
+  if (target && llmModelMenuRef.value?.contains(target)) {
+    return
+  }
+  llmModelMenuVisible.value = false
+}
 
 /**
  * 确保当前存在一个活跃会话；若没有则自动创建。
@@ -1021,6 +1254,9 @@ async function ensureActiveSession() {
   }
   if (!props.routeAvailable) {
     throw new Error(props.routeUnavailableReason || '当前路由缺少工作空间上下文。')
+  }
+  if (!selectedNewSessionLlmConfigId.value) {
+    throw new Error('请选择用于本次会话的模型。')
   }
   const created = await createSessionMutation.mutateAsync(`${contextTitle.value} 会话`)
   rememberSessions([created])
@@ -1060,8 +1296,8 @@ async function handleSend() {
   const message = composerText.value.trim()
   const attachments = [...pendingImageAttachments.value]
   if ((!message && attachments.length === 0) || isStreaming.value || sendInFlight.value) return
-  if (attachments.length && !selectedAgentSupportsImageInput.value) {
-    Message.error('当前绑定模型不支持图片输入。')
+  if (attachments.length && !currentModelSupportsImageInput.value) {
+    Message.error('当前会话模型不支持图片输入。')
     return
   }
   const runScope = { ...scope.value }
@@ -1515,6 +1751,51 @@ function resolveSessionRuntimeRequest(sessionId: string, sessions: AgentSessionI
 }
 
 /**
+ * 从会话 metadata 中读取固化的大模型信息，历史会话没有该字段时返回空。
+ */
+function extractSessionLlmMetadata(session: AgentSessionItem | null): AgentSessionLlmMetadata | null {
+  const metadata = session?.metadata
+  if (!metadata || typeof metadata !== 'object') {
+    return null
+  }
+  const llm = (metadata as Record<string, unknown>).llm
+  return llm && typeof llm === 'object' ? llm as AgentSessionLlmMetadata : null
+}
+
+/**
+ * 兼容后端可能以字符串形式回传的配置 ID，无法解析时视为无固化模型。
+ */
+function normalizeLlmConfigId(value: AgentSessionLlmMetadata['config_id'] | undefined) {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value
+  }
+  if (typeof value === 'string' && /^\d+$/.test(value.trim())) {
+    return Number(value.trim())
+  }
+  return null
+}
+
+/**
+ * 生成可选模型显示文案，区分管理员全局模型与当前用户个人模型。
+ */
+function formatLlmConfigLabel(config: LlmConfigItem) {
+  const scopeLabel = config.scope === 'global' ? '全局模型' : '我的模型'
+  return `${scopeLabel} · ${config.name}（${config.provider_label} / ${config.model_id}）`
+}
+
+/**
+ * 使用会话内固化的模型快照生成文案，适配模型后来被归档或删除的场景。
+ */
+function formatLlmMetadataLabel(metadata: AgentSessionLlmMetadata) {
+  const scopeLabel = metadata.scope === 'global' ? '全局模型' : metadata.scope === 'personal' ? '我的模型' : '模型'
+  const name = metadata.name || '已选模型'
+  const provider = metadata.provider_label || metadata.provider_key || ''
+  const modelId = metadata.model_id || ''
+  const detail = [provider, modelId].filter(Boolean).join(' / ')
+  return detail ? `${scopeLabel} · ${name}（${detail}）` : `${scopeLabel} · ${name}`
+}
+
+/**
  * 打开工具详情弹窗，查看当前保存的输入输出内容。
  */
 function openToolDetail(toolId: string) {
@@ -1563,7 +1844,7 @@ function removeDraftPatch(patch: AgentSuggestedPatch) {
 }
 
 /**
- * 跳转到 AI 设置页，供用户先完成模型绑定。
+ * 跳转到 AI 设置页，供用户创建或维护个人模型。
  */
 function goToAiSettings() {
   router.push({ name: 'accountAiSettings' })

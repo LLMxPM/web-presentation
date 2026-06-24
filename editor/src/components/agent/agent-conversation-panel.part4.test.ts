@@ -17,6 +17,8 @@ const routeMock = {
 }
 const listAgentsMock = vi.fn()
 const listAgentSessionsMock = vi.fn()
+const listLlmConfigsMock = vi.fn()
+const listLlmSlotsMock = vi.fn()
 const createAgentSessionMock = vi.fn()
 const getAgentSessionMessagesMock = vi.fn()
 const getAgentSessionRuntimeMock = vi.fn()
@@ -88,6 +90,11 @@ vi.mock('@/api/ai', () => ({
   continueAgentSessionActiveRun: (...args: unknown[]) => continueAgentSessionActiveRunMock(...args),
   cancelAgentRun: (...args: unknown[]) => cancelAgentRunMock(...args),
   cancelAgentSessionActiveRun: (...args: unknown[]) => cancelAgentSessionActiveRunMock(...args),
+}))
+
+vi.mock('@/api/llm', () => ({
+  listLlmConfigs: (...args: unknown[]) => listLlmConfigsMock(...args),
+  listLlmSlots: (...args: unknown[]) => listLlmSlotsMock(...args),
 }))
 
 vi.mock('@/utils/message', () => ({
@@ -277,6 +284,50 @@ function createContextStatus(overrides: Record<string, unknown> = {}) {
   }
 }
 
+function createLlmConfigItem(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 7,
+    scope: 'global',
+    owner_user_id: null,
+    editable: false,
+    name: '平台模型',
+    provider_key: 'openai',
+    provider_label: 'OpenAI',
+    model_id: 'gpt-4.1-mini',
+    base_url: null,
+    thinking_enabled: false,
+    thinking_effort: null,
+    supports_image_input: false,
+    context_window_tokens: 128000,
+    max_output_tokens: 32000,
+    history_token_ratio: 0.5,
+    compression_target_ratio: 0.1,
+    advanced_config_json: {},
+    status: 'active',
+    has_api_key: true,
+    api_key_masked: 'sk-****',
+    created_at: '2026-04-18T10:00:00+08:00',
+    updated_at: '2026-04-18T10:00:00+08:00',
+    ...overrides,
+  }
+}
+
+function createLlmSlotBindingItem(overrides: Record<string, unknown> = {}) {
+  return {
+    slot: 'agent_coordinator',
+    slot_label: '内容助手',
+    llm_config_id: 7,
+    llm_config_name: '平台模型',
+    provider_key: 'openai',
+    provider_label: 'OpenAI',
+    model_id: 'gpt-4.1-mini',
+    binding_ready: true,
+    supports_image_input: false,
+    inherited_from_global: true,
+    ...overrides,
+  }
+}
+
 /**
  * 模拟内容助手在当前路由只是不允许启动，而不是模型绑定异常。
  */
@@ -352,6 +403,12 @@ describe('AgentConversationPanel', () => {
       },
     ])
     listAgentSessionsMock.mockResolvedValue([])
+    listLlmConfigsMock.mockResolvedValue([
+      createLlmConfigItem({ id: 7, scope: 'global', name: '平台模型', supports_image_input: false }),
+    ])
+    listLlmSlotsMock.mockResolvedValue([
+      createLlmSlotBindingItem({ slot: 'agent_coordinator', llm_config_id: 7, binding_ready: true }),
+    ])
     createAgentSessionMock.mockResolvedValue({
       session_id: 'session-1',
       agent_id: DEFAULT_AGENT_ID,
@@ -1077,7 +1134,9 @@ describe('AgentConversationPanel', () => {
     })
   })
 
-  it('未绑定模型时应展示空状态并允许跳转到管理页', async () => {
+  it('没有可选模型时应展示空状态并允许跳转到管理页', async () => {
+    listLlmConfigsMock.mockResolvedValueOnce([])
+    listLlmSlotsMock.mockResolvedValueOnce([])
     listAgentsMock.mockResolvedValueOnce([
       {
         id: 'agent-coordinator',
@@ -1102,12 +1161,83 @@ describe('AgentConversationPanel', () => {
     render(AgentConversationPanel, createTestingRenderOptions())
 
     await waitFor(() => {
-      expect(screen.getByText('内容助手尚未绑定模型')).toBeTruthy()
+      expect(screen.getByText('没有可用模型')).toBeTruthy()
     })
 
     expect(screen.getByRole('button', { name: '新会话' })).toHaveProperty('disabled', true)
     await fireEvent.click(screen.getByRole('button', { name: '前往 AI 设置' }))
     expect(routerPushMock).toHaveBeenCalledWith({ name: 'accountAiSettings' })
+  })
+
+  it('槽位未绑定但存在全局模型时允许创建会话', async () => {
+    listAgentsMock.mockResolvedValueOnce([
+      {
+        id: 'agent-coordinator',
+        name: '内容助手',
+        icon: 'content-spark',
+        summary: '帮助你分析页面与生成修改建议。',
+        default_session_name: '内容助手会话',
+        capabilities: ['组件依赖分析'],
+        llm_slot: 'agent_coordinator',
+        llm_binding_ready: false,
+        bound_llm_name: null,
+        bound_provider_label: null,
+        scope: {
+          workspace_id: 11,
+          project_id: 21,
+          page_id: 31,
+          source: 'editor-page-detail',
+        },
+      },
+    ])
+    listLlmConfigsMock.mockResolvedValueOnce([
+      createLlmConfigItem({ id: 9, scope: 'global', name: '管理员模型' }),
+    ])
+    listLlmSlotsMock.mockResolvedValueOnce([
+      createLlmSlotBindingItem({ slot: 'agent_coordinator', llm_config_id: null, binding_ready: false }),
+    ])
+
+    render(AgentConversationPanel, createTestingRenderOptions())
+
+    await waitFor(() => {
+      expect(screen.getByTitle(/新会话模型/)).toBeTruthy()
+    })
+    await fireEvent.update(screen.getByPlaceholderText(DEFAULT_PLACEHOLDER), '开始会话')
+    await fireEvent.click(screen.getByRole('button', { name: /发送/ }))
+
+    await waitFor(() => {
+      expect(createAgentSessionMock).toHaveBeenCalledWith(expect.objectContaining({
+        agent_id: DEFAULT_AGENT_ID,
+        llm_config_id: 9,
+      }))
+    })
+  })
+
+  it('新会话草稿模型不支持图片时禁用图片上传', async () => {
+    render(AgentConversationPanel, createTestingRenderOptions())
+
+    await waitFor(() => {
+      const uploadButton = screen.getByLabelText('上传图片')
+      expect(uploadButton).toHaveProperty('disabled', true)
+      expect(uploadButton).toHaveAttribute('title', '当前会话模型不支持图片输入')
+    })
+  })
+
+  it('新会话草稿模型支持图片时允许图片上传', async () => {
+    listLlmConfigsMock.mockResolvedValueOnce([
+      createLlmConfigItem({ id: 8, scope: 'global', name: '视觉模型', supports_image_input: true }),
+    ])
+    listLlmSlotsMock.mockResolvedValueOnce([
+      createLlmSlotBindingItem({ slot: 'agent_coordinator', llm_config_id: 8, binding_ready: true, supports_image_input: true }),
+    ])
+
+    render(AgentConversationPanel, createTestingRenderOptions())
+
+    await waitFor(() => {
+      const uploadButton = screen.getByLabelText('上传图片')
+      expect(uploadButton).toHaveProperty('disabled', false)
+      expect(uploadButton).toHaveAttribute('title', '上传图片')
+    })
   })
 
   it('页面写回冲突时应展示内联错误说明', async () => {
