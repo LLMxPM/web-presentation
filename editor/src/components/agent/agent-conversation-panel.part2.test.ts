@@ -726,6 +726,67 @@ describe('AgentConversationPanel', () => {
     })
   })
 
+  it('项目级会话在页面路由继续发送时应使用会话自身 scope', async () => {
+    const projectSession = {
+      session_id: 'project-session',
+      agent_id: DEFAULT_AGENT_ID,
+      session_name: '项目统筹会话',
+      created_at: '2026-04-18T10:00:00+08:00',
+      updated_at: '2026-04-18T10:30:00+08:00',
+      metadata: {
+        scope_type: 'project',
+        workspace_id: 11,
+        project_id: 21,
+        project_name: '演示项目',
+        page_id: null,
+        page_title: null,
+        source: 'editor-agent-sidebar',
+      },
+    }
+    localStorage.setItem('agent-session:v3:workspace-active:agent-coordinator:11', 'project-session')
+    listAgentSessionsMock.mockResolvedValueOnce([projectSession])
+    getAgentSessionRuntimeMock.mockResolvedValueOnce(createRuntimeSnapshot({
+      session: projectSession,
+    }))
+
+    render(AgentConversationPanel, createTestingRenderOptions())
+
+    await waitFor(() => {
+      expect(getAgentSessionRuntimeMock).toHaveBeenCalledWith(
+        'project-session',
+        expect.objectContaining({
+          scope_type: 'project',
+          workspace_id: 11,
+          project_id: 21,
+          page_id: null,
+          source: 'editor-agent-sidebar',
+        }),
+        DEFAULT_AGENT_ID,
+      )
+    })
+
+    await fireEvent.update(screen.getByPlaceholderText(DEFAULT_PLACEHOLDER), '继续推进项目结构')
+    await fireEvent.click(screen.getByRole('button', { name: /发送/ }))
+
+    await waitFor(() => {
+      expect(startAgentRunMock).toHaveBeenCalledWith(
+        'project-session',
+        expect.objectContaining({
+          scope_type: 'project',
+          workspace_id: 11,
+          project_id: 21,
+          page_id: null,
+          source: 'editor-agent-sidebar',
+        }),
+        expect.objectContaining({
+          message: '继续推进项目结构',
+          agent_id: DEFAULT_AGENT_ID,
+        }),
+      )
+    })
+    expect(createAgentSessionMock).not.toHaveBeenCalled()
+  })
+
   it('快速重复触发送出动作时只应创建一个会话和一个 run', async () => {
     let resolveCreateSession!: () => void
     createAgentSessionMock.mockImplementationOnce(() => new Promise((resolve) => {

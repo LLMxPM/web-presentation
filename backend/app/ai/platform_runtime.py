@@ -1562,13 +1562,13 @@ def _member_output_prompt(member_run: AiAgentMemberRun) -> str | None:
     """读取成员 run 返回给内容助手整合的输出提示词。"""
 
     return (
-        _optional_str(member_run.content)
-        or _message_history_text(
+        _message_history_text(
             member_run.message_history_json,
             message_kind="response",
             part_kinds={"text"},
             reverse=True,
         )
+        or _optional_str(member_run.content)
         or _optional_str(member_run.error_message)
     )
 

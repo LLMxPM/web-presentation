@@ -403,7 +403,21 @@ async def test_platform_runtime_snapshot_should_rebuild_member_runs_from_member_
             ),
         )
         member_run.status = "completed"
-        member_run.content = "资源整理完成。"
+        member_run.content = "先读取资源列表。资源整理完成。"
+        member_run.message_history_json = [
+            {
+                "kind": "response",
+                "parts": [{"part_kind": "text", "content": "先读取资源列表。"}],
+            },
+            {
+                "kind": "request",
+                "parts": [{"part_kind": "tool-return", "content": {"total": 2}}],
+            },
+            {
+                "kind": "response",
+                "parts": [{"part_kind": "text", "content": "资源整理完成。"}],
+            },
+        ]
         await store.append_event(
             run_model,
             AgentRunEvent(

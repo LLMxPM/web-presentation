@@ -443,6 +443,7 @@ class _MemberAgentRunner:
                 tools=tools,
                 history_processors=_build_member_history_processors(context_processor),
             )
+            base_message_history = _message_dicts(self._member_run.message_history_json or [])
             projector = PydanticEventProjector(
                 run_id=self._parent_run.run_id,
                 session_id=self._parent_run.session_id,
@@ -466,9 +467,11 @@ class _MemberAgentRunner:
                     field="reasoning_content",
                     content=content,
                 ),
-                on_deferred=self._pause_for_deferred_tools,
+                on_deferred=lambda requests, messages: self._pause_for_deferred_tools(
+                    requests,
+                    _merge_member_message_history(base_message_history, messages),
+                ),
             )
-            base_message_history = _message_dicts(self._member_run.message_history_json or [])
             async with agent.iter(
                 message if message else None,
                 model_settings=self._model_resolver.resolve_model_settings(llm_config) or None,
@@ -512,14 +515,15 @@ class _MemberAgentRunner:
                     )
             await self._raise_if_parent_cancelled(projector)
             await projector.flush_delta_buffer()
-            result_text = "".join(content_parts)
+            streamed_text = "".join(content_parts)
+            result_text = _latest_member_response_text(final_messages) or streamed_text
             self._member_run.status = "completed"
-            self._member_run.content = result_text or self._member_run.content
+            self._member_run.content = streamed_text or self._member_run.content
             self._member_run.reasoning_content = "".join(reasoning_parts) or self._member_run.reasoning_content
             self._member_run.message_history_json = _merge_member_message_history(base_message_history, final_messages)
             self._member_run.finished_at = _utc_now()
             self._member_run.updated_at = _utc_now()
-            output_prompt = self._member_run.content or result_text
+            output_prompt = result_text or self._member_run.content
             await self.append_member_event("run.completed", content=result_text, data={"output_prompt": output_prompt})
             return MemberDelegationResult(
                 member_run_id=self._member_run.member_run_id,
@@ -790,6 +794,27 @@ def _merge_member_message_history(
     if base and latest[: len(base)] == base:
         return latest
     return [*base, *latest]
+
+
+def _latest_member_response_text(messages: list[dict[str, Any]]) -> str | None:
+    """从本轮成员消息中反向提取最后一条模型回复文本。"""
+
+    for message in reversed(_message_dicts(messages)):
+        if message.get("kind") != "response":
+            continue
+        parts = message.get("parts")
+        if not isinstance(parts, list):
+            continue
+        texts = [
+            str(part.get("content")).strip()
+            for part in parts
+            if isinstance(part, dict)
+            and part.get("part_kind") == "text"
+            and _optional_text(part.get("content"))
+        ]
+        if texts:
+            return "\n\n".join(texts)
+    return None
 
 
 def _build_member_history_processors(context_processor: AgentContextLimitProcessor) -> list[Any]:

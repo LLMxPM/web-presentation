@@ -57,3 +57,75 @@ def test_trim_unprocessed_tool_call_history_should_drop_open_tail() -> None:
     ]
 
     assert trim_unprocessed_tool_call_history(history) == history[:1]
+
+
+def test_trim_unprocessed_tool_call_history_should_drop_orphan_tool_return() -> None:
+    """历史开头残留孤立 tool-return 时，应移除该请求并保留后续助手文本。"""
+
+    history = [
+        {
+            "kind": "request",
+            "parts": [
+                {
+                    "part_kind": "tool-return",
+                    "tool_name": "apply_project_route_tree",
+                    "content": {"ok": True},
+                    "tool_call_id": "call-route",
+                }
+            ],
+        },
+        {"kind": "response", "parts": [{"part_kind": "text", "content": "路由已更新。"}]},
+    ]
+
+    assert trim_unprocessed_tool_call_history(history) == history[1:]
+
+
+def test_trim_unprocessed_tool_call_history_should_keep_consecutive_tool_returns() -> None:
+    """deferred 恢复会产生连续 tool-return request，应按同一组 tool-call 继续配对。"""
+
+    history = [
+        {"kind": "request", "parts": [{"part_kind": "user-prompt", "content": "更新页面"}]},
+        {
+            "kind": "response",
+            "parts": [
+                {
+                    "part_kind": "tool-call",
+                    "tool_name": "update_page_metadata",
+                    "args": "{}",
+                    "tool_call_id": "call-metadata",
+                },
+                {
+                    "part_kind": "tool-call",
+                    "tool_name": "apply_project_route_tree",
+                    "args": "{}",
+                    "tool_call_id": "call-route",
+                },
+            ],
+        },
+        {
+            "kind": "request",
+            "parts": [
+                {
+                    "part_kind": "tool-return",
+                    "tool_name": "update_page_metadata",
+                    "content": "页面元数据已更新",
+                    "tool_call_id": "call-metadata",
+                }
+            ],
+        },
+        {
+            "kind": "request",
+            "parts": [
+                {
+                    "part_kind": "tool-return",
+                    "tool_name": "apply_project_route_tree",
+                    "content": "路由已更新",
+                    "tool_call_id": "call-route",
+                },
+                {"part_kind": "user-prompt", "content": ""},
+            ],
+        },
+        {"kind": "response", "parts": [{"part_kind": "text", "content": "完成。"}]},
+    ]
+
+    assert trim_unprocessed_tool_call_history(history) == history

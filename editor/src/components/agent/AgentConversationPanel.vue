@@ -1300,8 +1300,6 @@ async function handleSend() {
     Message.error('当前会话模型不支持图片输入。')
     return
   }
-  const runScope = { ...scope.value }
-  const runAgentId = agentId.value
   const runAgentDisplayName = agentDisplayName.value
 
   sendInFlight.value = true
@@ -1313,6 +1311,9 @@ async function handleSend() {
     Message.error(getErrorMessage(error, '初始化智能体会话失败。'))
     return
   }
+  const runtimeRequest = resolveSessionRuntimeRequest(sessionId)
+  const runScope = { ...runtimeRequest.scope }
+  const runAgentId = runtimeRequest.agentId
 
   composerText.value = ''
   pendingImageAttachments.value = []

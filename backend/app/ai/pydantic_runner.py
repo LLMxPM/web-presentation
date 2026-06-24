@@ -140,6 +140,10 @@ class PydanticAgentRunner:
         content_parts: list[str] = []
         reasoning_parts: list[str] = []
         final_messages: list[dict[str, Any]] = []
+        base_run_message_history = _message_dicts(
+            run_model.message_history_json if isinstance(run_model.message_history_json, list) else []
+        )
+        previous_message_history_count = max(0, len(message_history or []) - len(base_run_message_history))
         projector: PydanticEventProjector | None = None
         try:
             catalog = get_agent_catalog_entry(agent_id)
@@ -188,7 +192,6 @@ class PydanticAgentRunner:
                 final_message_image_refs=message_image_refs,
                 on_message_delta=content_parts.append,
                 on_reasoning_delta=reasoning_parts.append,
-                on_deferred=lambda requests, _messages: self._pause_for_deferred_tools(run_model, requests),
             )
             async with agent.iter(
                 message if message else None,
@@ -235,6 +238,8 @@ class PydanticAgentRunner:
                         await self._sync_run_message_history(
                             run_model=run_model,
                             agent_id=agent_id,
+                            base_run_message_history=base_run_message_history,
+                            previous_message_history_count=previous_message_history_count,
                             final_messages=final_messages,
                             agent_run=agent_run,
                             context_budget=context_budget,
@@ -274,14 +279,26 @@ class PydanticAgentRunner:
                                     yield encode_sse_event(event)
                 if agent_run.result is None:
                     raise RuntimeError("Pydantic AI run finished without result")
-                final_messages[:] = self._safe_new_messages_with_image_refs(agent_run.result, message_image_refs)
+                final_messages[:] = _merge_run_message_history(
+                    base_run_message_history,
+                    self._safe_run_messages_with_image_refs(
+                        agent_run.result,
+                        message_image_refs,
+                        previous_message_count=previous_message_history_count,
+                    ),
+                )
                 if context_processor is not None:
                     context_processor.record_message_history(final_messages)
                 output = getattr(agent_run.result, "output", None)
                 if isinstance(output, DeferredToolRequests):
                     async for sse in self._flush_projector_buffer(projector):
                         yield sse
-                    event = await self._pause_for_deferred_tools(run_model, output)
+                    event = await self._pause_for_deferred_tools(
+                        run_model,
+                        output,
+                        final_messages=final_messages,
+                        context_processor=context_processor,
+                    )
                     yield encode_sse_event(event)
                     return
             should_stop, should_cancel = await self._cancel_event_if_requested(run_model)
@@ -313,7 +330,10 @@ class PydanticAgentRunner:
         except MemberDelegationPaused as exc:
             async for sse in self._flush_projector_buffer(projector, best_effort=True):
                 yield sse
-            await self._store.save_run_message_history(run_model, final_messages)
+            await self._store.save_run_message_history(
+                run_model,
+                _merge_run_message_history(base_run_message_history, final_messages),
+            )
             event = await self._store.pause_for_requirement(run_model, requirement=exc.requirement)
             yield encode_sse_event(event)
         except AppException as exc:
@@ -374,9 +394,16 @@ class PydanticAgentRunner:
         self,
         run_model: AiAgentRun,
         requests: DeferredToolRequests,
+        *,
+        final_messages: list[dict[str, Any]] | None = None,
+        context_processor: AgentContextLimitProcessor | None = None,
     ) -> AgentRunEvent:
         """把 Pydantic AI deferred 请求转换为平台暂停事件。"""
 
+        if final_messages is not None:
+            if context_processor is not None:
+                context_processor.record_message_history(final_messages)
+            await self._store.save_run_message_history(run_model, final_messages, commit=False)
         return await self._store.pause_for_requirement(
             run_model,
             requirement=_requirement_from_deferred(
@@ -391,6 +418,8 @@ class PydanticAgentRunner:
         *,
         run_model: AiAgentRun,
         agent_id: str,
+        base_run_message_history: list[dict[str, Any]],
+        previous_message_history_count: int,
         final_messages: list[dict[str, Any]],
         agent_run: Any,
         context_budget: AgentHistoryBudget | None,
@@ -401,9 +430,18 @@ class PydanticAgentRunner:
 
         _ = agent_id, context_budget
         if agent_run.result is not None:
-            messages = self._safe_new_messages_with_image_refs(agent_run.result, message_image_refs)
+            new_messages = self._safe_run_messages_with_image_refs(
+                agent_run.result,
+                message_image_refs,
+                previous_message_count=previous_message_history_count,
+            )
         else:
-            messages = self._safe_new_messages_with_image_refs(agent_run, message_image_refs)
+            new_messages = self._safe_run_messages_with_image_refs(
+                agent_run,
+                message_image_refs,
+                previous_message_count=previous_message_history_count,
+            )
+        messages = _merge_run_message_history(base_run_message_history, new_messages)
         final_messages[:] = messages
         if context_processor is not None:
             context_processor.record_message_history(final_messages)
@@ -516,6 +554,28 @@ class PydanticAgentRunner:
             image_refs=image_refs,
         )
 
+    @staticmethod
+    def _safe_run_messages_with_image_refs(
+        result: Any,
+        image_refs: list[dict[str, Any]] | None,
+        *,
+        previous_message_count: int,
+    ) -> list[dict[str, Any]]:
+        """按传入历史长度截取当前平台 run 快照，兼容 paused run 恢复后的完整保存。"""
+
+        from app.ai.image_refs import sanitize_message_history_image_refs
+
+        all_messages = safe_messages(result)
+        if all_messages and len(all_messages) >= previous_message_count:
+            return sanitize_message_history_image_refs(
+                all_messages[previous_message_count:],
+                image_refs=image_refs,
+            )
+        return sanitize_message_history_image_refs(
+            safe_new_messages(result),
+            image_refs=image_refs,
+        )
+
     async def _flush_projector_buffer(
         self,
         projector: PydanticEventProjector | None,
@@ -611,6 +671,25 @@ def _safe_messages(result: Any) -> list[dict[str, Any]]:
     """安全序列化 Pydantic AI result 历史消息。"""
 
     return safe_messages(result)
+
+
+def _merge_run_message_history(
+    base_message_history: list[dict[str, Any]],
+    new_messages: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """合并 paused run 继续前历史与本次新增消息，避免工具返回覆盖前置工具调用。"""
+
+    base = _message_dicts(base_message_history)
+    latest = _message_dicts(new_messages)
+    if base and latest[: len(base)] == base:
+        return latest
+    return [*base, *latest]
+
+
+def _message_dicts(value: list[Any]) -> list[dict[str, Any]]:
+    """过滤消息历史中的非对象项，避免坏数据污染保存链路。"""
+
+    return [dict(item) for item in value if isinstance(item, dict)]
 
 
 def _requirement_from_deferred(

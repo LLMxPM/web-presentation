@@ -205,6 +205,8 @@ async def test_pydantic_runner_should_pause_continue_and_replay_ask_user(
     assert completed_run.status == "completed"
     assert completed_run.content == "我需要确认页面调整范围。我会优先调整首屏。"
     assert completed_run.reasoning_content == "先确认用户偏好。收到用户反馈。"
+    assert "tool-call" in _history_part_kinds(completed_run.message_history_json)
+    assert _history_tool_call_ids(completed_run.message_history_json).count("tool-ask-layout") == 2
     assert tool_call.status == "completed"
     assert tool_call.output_payload_json == (
         'User feedback received: [{"question": "页面应优先调整哪个区域？", "selected": ["首屏"]}]'
@@ -346,6 +348,132 @@ async def test_pydantic_runner_should_mark_rejected_approval_tool_error(
     assert completed_run.content == "已跳过写入。"
     assert tool_call.status == "error"
     assert tool_call.message == "用户拒绝执行该工具。"
+
+
+async def test_pydantic_runner_should_resume_mixed_completed_and_deferred_tools(
+    authenticated_client: AsyncClient,
+) -> None:
+    """同一响应里普通工具已完成、确认工具暂停时，继续运行应让 Pydantic AI 自动 skip 已完成工具。"""
+
+    async def stream_function(messages: list[Any], info: AgentInfo) -> AsyncIterator[str | dict[int, DeltaToolCall]]:
+        """首次同时请求普通工具和确认工具；确认后输出最终结果。"""
+
+        _ = info
+        if _latest_tool_return(messages) is not None:
+            yield "已完成路由确认。"
+            return
+        yield {
+            0: DeltaToolCall(
+                name="update_page_metadata_probe",
+                json_args='{"value":"rename"}',
+                tool_call_id="tool-update-metadata",
+            ),
+            1: DeltaToolCall(
+                name="apply_route_tree_probe",
+                json_args='{"value":"routes"}',
+                tool_call_id="tool-apply-route",
+            ),
+        }
+
+    async def update_page_metadata_probe(value: str) -> str:
+        """测试普通工具，模拟暂停前已经完成的元数据写入。"""
+
+        return f"metadata updated: {value}"
+
+    async def apply_route_tree_probe(value: str) -> str:
+        """测试确认工具，模拟路由树写入。"""
+
+        return f"route applied: {value}"
+
+    _, session_id, scope = await _create_workspace_session(
+        authenticated_client,
+        workspace_name="Pydantic Runner 混合工具恢复工作空间",
+        session_name="Pydantic Runner 混合工具恢复会话",
+    )
+    model = FunctionModel(stream_function=stream_function)
+    tools = [
+        Tool(update_page_metadata_probe, name="update_page_metadata_probe"),
+        Tool(apply_route_tree_probe, name="apply_route_tree_probe", requires_approval=True),
+    ]
+
+    async with get_session_factory()() as db_session:
+        store = PlatformAgentRuntimeStore(db_session, user_id=1)
+        run_start = await store.start_run(
+            session_id=session_id,
+            agent_id="component-manager",
+            scope=scope,
+            run_id="pydantic-runner-mixed-completed-deferred",
+            message="先改标题，再确认路由。",
+            image_attachment_ids=[],
+        )
+        runner = PydanticAgentRunner(store)
+        first_events = await _collect_runner_events(
+            runner.stream_run(
+                run_model=run_start.run_model,
+                agent_id="component-manager",
+                model=model,
+                model_settings={},
+                runtime_context=_runtime_context(scope),
+                message="先改标题，再确认路由。",
+                tools=tools,
+            )
+        )
+
+        latest_run = await store.get_latest_run_model(session_id=session_id, agent_id="component-manager")
+        assert latest_run is not None
+        requirement = await store.get_pending_requirement(run_id=latest_run.run_id)
+        assert requirement is not None
+        continue_history = _build_continue_message_history(
+            run_model_message_history=latest_run.message_history_json,
+            run_input_payload=latest_run.input_payload_json,
+            run_id=latest_run.run_id,
+            tool_execution=requirement.payload_json["tool_execution"],
+        )
+        deferred_results = _build_deferred_results(
+            requirement_tool_call_id="tool-apply-route",
+            decision="confirm",
+            note=None,
+            tool_execution=requirement.payload_json["tool_execution"],
+            feedback_selections=[],
+        )
+        await store.resolve_requirement(
+            requirement,
+            payload={
+                "decision": "confirm",
+                "note": None,
+                "tool_execution": requirement.payload_json["tool_execution"],
+                "feedback_selections": [],
+            },
+        )
+        latest_run.status = "running"
+        latest_run.pending_requirement_json = None
+        await store.append_event(
+            latest_run,
+            first_events[0].model_copy(update={"event": "run.continued", "content": None, "data": {}}),
+        )
+        second_events = await _collect_runner_events(
+            runner.stream_run(
+                run_model=latest_run,
+                agent_id="component-manager",
+                model=model,
+                model_settings={},
+                runtime_context=_runtime_context(scope),
+                message="",
+                tools=tools,
+                message_history=continue_history,
+                deferred_tool_results=deferred_results,
+            )
+        )
+        completed_run = await store.get_latest_run_model(session_id=session_id, agent_id="component-manager")
+
+    assert latest_run.status == "completed"
+    assert completed_run is not None
+    assert completed_run.content == "已完成路由确认。"
+    assert first_events[-1].event == "run.paused"
+    assert second_events[-1].event == "run.completed"
+    assert "run.error" not in [event.event for event in second_events]
+    assert _history_tool_call_ids(latest_run.message_history_json).count("tool-update-metadata") == 2
+    assert _history_tool_call_ids(latest_run.message_history_json).count("tool-apply-route") == 2
 
 
 async def test_pydantic_runner_should_continue_after_recoverable_tool_error(
@@ -1751,3 +1879,25 @@ def _latest_tool_return(messages: list[Any]) -> Any | None:
             if getattr(part, "part_kind", None) == "tool-return":
                 return getattr(part, "content", None)
     return None
+
+
+def _history_part_kinds(message_history: list[dict[str, Any]]) -> list[str]:
+    """展开消息历史中的 part_kind，便于断言工具链路是否完整保存。"""
+
+    return [
+        str(part.get("part_kind") or "")
+        for message in message_history
+        for part in (message.get("parts") or [])
+        if isinstance(part, dict)
+    ]
+
+
+def _history_tool_call_ids(message_history: list[dict[str, Any]]) -> list[str]:
+    """展开消息历史中的工具调用 ID，验证 tool-call 与 tool-return 成对存在。"""
+
+    return [
+        str(part.get("tool_call_id") or "")
+        for message in message_history
+        for part in (message.get("parts") or [])
+        if isinstance(part, dict) and str(part.get("part_kind") or "") in {"tool-call", "tool-return", "retry-prompt"}
+    ]

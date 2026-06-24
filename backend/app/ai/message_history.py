@@ -411,9 +411,9 @@ def build_context_limit_processor(
 
 
 def trim_unprocessed_tool_call_history(message_history: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
-    """裁掉尾部未闭合工具调用，避免终态失败 run 污染后续会话。"""
+    """清理坏工具链路，避免孤立工具返回或未闭合工具调用污染后续会话。"""
 
-    messages = _message_dicts(message_history or [])
+    messages = _drop_orphan_tool_result_history(_message_dicts(message_history or []))
     pending_tool_calls: dict[str, int] = {}
     for message_index, message in enumerate(messages):
         parts = message.get("parts")
@@ -434,6 +434,54 @@ def trim_unprocessed_tool_call_history(message_history: list[dict[str, Any]] | N
     if not pending_tool_calls:
         return messages
     return messages[:min(pending_tool_calls.values())]
+
+
+def _drop_orphan_tool_result_history(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """移除没有紧邻前置 tool-call 的工具返回，修复历史持久化中的半截工具链路。"""
+
+    repaired: list[dict[str, Any]] = []
+    pending_tool_call_ids: set[str] = set()
+    for message in messages:
+        parts = message.get("parts")
+        if not isinstance(parts, list):
+            repaired.append(message)
+            pending_tool_call_ids = set()
+            continue
+        tool_call_ids = {
+            _tool_call_history_key(part, fallback=f"__missing__:{len(repaired)}:{part_index}")
+            for part_index, part in enumerate(parts)
+            if isinstance(part, dict) and str(part.get("part_kind") or "") == "tool-call"
+        }
+        if tool_call_ids:
+            repaired.append(message)
+            pending_tool_call_ids = tool_call_ids
+            continue
+        has_tool_result = any(
+            isinstance(part, dict) and str(part.get("part_kind") or "") in {"tool-return", "retry-prompt"}
+            for part in parts
+        )
+        if not has_tool_result:
+            repaired.append(message)
+            pending_tool_call_ids = set()
+            continue
+        kept_parts: list[Any] = []
+        matched_tool_call_ids: set[str] = set()
+        for part in parts:
+            if not isinstance(part, dict):
+                kept_parts.append(part)
+                continue
+            part_kind = str(part.get("part_kind") or "")
+            if part_kind not in {"tool-return", "retry-prompt"}:
+                kept_parts.append(part)
+                continue
+            key = _tool_call_history_key(part, fallback="")
+            if key and key in pending_tool_call_ids:
+                kept_parts.append(part)
+                matched_tool_call_ids.add(key)
+        if kept_parts:
+            repaired.append({**message, "parts": kept_parts})
+        pending_tool_call_ids.difference_update(matched_tool_call_ids)
+    return repaired
 
 
 def build_context_status_item(
