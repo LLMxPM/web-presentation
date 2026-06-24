@@ -50,6 +50,9 @@ class AppSettings(BaseSettings):
     ai_tool_auth_window_seconds: int = 1800
     ai_tool_auth_max_seconds: int = 7200
     ai_agent_stream_idle_timeout_seconds: float = 180.0
+    ai_llm_http_trace_enabled: bool = False
+    ai_llm_http_trace_dir: str = ".tmp/llm-http-trace"
+    ai_llm_http_trace_body_max_bytes: int = 200_000
     ai_image_transport_mode: str = "auto"
     ai_image_attachment_max_bytes: int = 10 * 1024 * 1024
     ai_image_model_url_reuse_window_seconds: int = 7200
@@ -274,6 +277,25 @@ class AppSettings(BaseSettings):
             raise ValueError("AI Agent 流空闲超时时间必须大于 0。")
         return value
 
+    @field_validator("ai_llm_http_trace_dir")
+    @classmethod
+    def validate_ai_llm_http_trace_dir(cls, value: str) -> str:
+        """校验 LLM HTTP trace 输出目录非空，避免开启后无明确落盘位置。"""
+
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("AI_LLM_HTTP_TRACE_DIR 不能为空。")
+        return normalized
+
+    @field_validator("ai_llm_http_trace_body_max_bytes")
+    @classmethod
+    def validate_ai_llm_http_trace_body_max_bytes(cls, value: int) -> int:
+        """校验 LLM HTTP trace 请求体记录上限，避免配置为无效大小。"""
+
+        if value <= 0:
+            raise ValueError("AI_LLM_HTTP_TRACE_BODY_MAX_BYTES 必须大于 0。")
+        return value
+
     @field_validator("ai_tool_auth_max_seconds")
     @classmethod
     def validate_ai_tool_auth_max_seconds(cls, value: int) -> int:
@@ -363,6 +385,15 @@ class AppSettings(BaseSettings):
         """返回截图本地存储根目录的绝对路径。"""
 
         configured_path = Path(self.page_screenshot_local_root).expanduser()
+        if configured_path.is_absolute():
+            return configured_path
+        return (Path(__file__).resolve().parents[2] / configured_path).resolve()
+
+    @property
+    def ai_llm_http_trace_dir_path(self) -> Path:
+        """返回 LLM HTTP trace 文件输出目录的绝对路径。"""
+
+        configured_path = Path(self.ai_llm_http_trace_dir).expanduser()
         if configured_path.is_absolute():
             return configured_path
         return (Path(__file__).resolve().parents[2] / configured_path).resolve()

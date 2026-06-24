@@ -139,6 +139,18 @@ uv run --project backend python -m app.scripts.diagnose_ai_run --session-id <ses
 
 从根仓运行 CLI 时会自动补读 `backend/.env`；已存在的环境变量优先，不会被 `.env` 覆盖。运行前仍需确认 Backend 的数据库环境变量指向要诊断的实例。如果要修复历史坏数据，应单独编写限定 `run_id/session_id/user_id` 范围的一次性维护脚本，不要把写操作加入诊断 CLI。
 
+## LLM HTTP trace
+
+开发环境需要查看智能体实际发给模型供应商的 HTTP 请求时，可临时打开 Backend trace：
+
+```env
+AI_LLM_HTTP_TRACE_ENABLED=true
+AI_LLM_HTTP_TRACE_DIR=.tmp/llm-http-trace
+AI_LLM_HTTP_TRACE_BODY_MAX_BYTES=200000
+```
+
+开启后，Backend 会把 Pydantic AI provider 发出的请求和响应摘要写入 `backend/.tmp/llm-http-trace/llm-http-YYYYMMDD.jsonl`。记录包含请求 URL、脱敏 headers、脱敏且按大小上限截断的请求体、响应状态码、响应 headers 和耗时；不会读取或保存流式响应 body，避免影响 Agent 正常消费模型输出。该能力只用于本地开发排障，提交复现材料前应检查 trace 文件中是否包含用户输入、页面源码或其它业务敏感内容。
+
 ## Redis 临时态维护
 
 Redis 保存预览 artifact、截图锁与构建心跳等临时运行态，不保存 AI run/HITL 事实源。

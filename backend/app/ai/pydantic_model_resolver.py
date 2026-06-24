@@ -14,6 +14,7 @@ from pydantic_ai.providers.ollama import OllamaProvider
 from pydantic_ai.providers.openai import OpenAIProvider
 from pydantic_ai.providers.openrouter import OpenRouterProvider
 
+from app.ai.llm_http_trace import build_llm_http_trace_client
 from app.ai.provider_catalog import MIMO_MAX_COMPLETION_TOKENS
 from app.ai.secret_cipher import LlmSecretCipher
 from app.core.exceptions import AppException
@@ -48,18 +49,29 @@ class PydanticLlmModelResolver:
         if not model_id:
             raise AppException(status_code=400, code="AI_LLM_MODEL_ID_REQUIRED", detail="当前大模型配置缺少模型 ID。")
 
+        http_client = build_llm_http_trace_client(config)
+
         if provider_key == "google":
-            return GoogleModel(model_id, provider=GoogleProvider(api_key=api_key or None))
+            return GoogleModel(model_id, provider=GoogleProvider(api_key=api_key or None, http_client=http_client))
         if provider_key == "openrouter":
-            return OpenRouterModel(model_id, provider=OpenRouterProvider(api_key=api_key or None))
+            return OpenRouterModel(model_id, provider=OpenRouterProvider(api_key=api_key or None, http_client=http_client))
         if provider_key == "ollama":
-            return OpenAIChatModel(model_id, provider=OllamaProvider(base_url=base_url or "http://localhost:11434/v1"))
+            return OpenAIChatModel(
+                model_id,
+                provider=OllamaProvider(base_url=base_url or "http://localhost:11434/v1", http_client=http_client),
+            )
         if provider_key == "dashscope":
-            return OpenAIChatModel(model_id, provider=AlibabaProvider(api_key=api_key or None, base_url=base_url))
+            return OpenAIChatModel(
+                model_id,
+                provider=AlibabaProvider(api_key=api_key or None, base_url=base_url, http_client=http_client),
+            )
         if provider_key == "deepseek":
-            return OpenAIChatModel(model_id, provider=DeepSeekProvider(api_key=api_key or None))
+            return OpenAIChatModel(model_id, provider=DeepSeekProvider(api_key=api_key or None, http_client=http_client))
         if provider_key in {"openai", "openai_like", "nvidia", "mimo"}:
-            return OpenAIChatModel(model_id, provider=OpenAIProvider(api_key=api_key or None, base_url=base_url))
+            return OpenAIChatModel(
+                model_id,
+                provider=OpenAIProvider(api_key=api_key or None, base_url=base_url, http_client=http_client),
+            )
         raise AppException(status_code=400, code="AI_LLM_PROVIDER_UNSUPPORTED", detail="当前供应商暂不支持 Pydantic AI。")
 
     def resolve_model_settings(self, config: AiLlmConfig) -> dict[str, Any]:

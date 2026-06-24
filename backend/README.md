@@ -239,6 +239,9 @@ Backend 内嵌基于 Pydantic AI 的智能体运行入口。Editor 通过 `/api/
 - `AI_AGENT_TOKEN_TTL_SECONDS`：历史兼容 Agent Token TTL（秒）
 - `AI_TOOL_AUTH_WINDOW_SECONDS`：工具 run 级授权滑动窗口（秒），默认 1800
 - `AI_TOOL_AUTH_MAX_SECONDS`：工具 run 级授权绝对上限（秒），默认 7200
+- `AI_LLM_HTTP_TRACE_ENABLED`：开发环境 LLM HTTP trace 开关，默认关闭
+- `AI_LLM_HTTP_TRACE_DIR`：LLM HTTP trace JSONL 输出目录，默认 `backend/.tmp/llm-http-trace`
+- `AI_LLM_HTTP_TRACE_BODY_MAX_BYTES`：单次请求体写入 trace 的字节上限，默认 `200000`
 - `AI_TEST_MODE`：测试模式；当前支持 `disabled`、`mock`，平台 E2E 推荐使用 `mock`
 
 AI 会话、运行、事件、消息、工具调用和 HITL 状态写入 Backend 主库中的 `ai_agent_*` 表，随常规数据库备份和 Alembic 迁移一起管理。
