@@ -93,7 +93,10 @@ Editor 默认通过 Vite 代理把同源 `/api` 转发到 `http://127.0.0.1:8000
 pnpm install
 pnpm run test:backend
 pnpm run test:editor
-pnpm run test:runtime:delegated
+pnpm run test:editor:check
+pnpm run test:editor:gate
+pnpm run test:runtime
+pnpm run test:runtime:gate
 pnpm run test:contracts
 pnpm run test:e2e
 ```
@@ -102,9 +105,27 @@ pnpm run test:e2e
 
 - `pnpm run test:backend`：Backend pytest。
 - `pnpm run test:editor`：Editor Vitest。
-- `pnpm run test:contracts`：根仓跨模块契约测试。
-- `pnpm run test:e2e`：平台 Playwright smoke。
-- `pnpm run test:runtime:delegated`：委托执行 Runtime 子项目测试。
+- `pnpm run test:editor:check`：Editor 类型检查，执行 `vue-tsc -b`。
+- `pnpm run test:editor:gate`：Editor 质量门禁，执行 `check + test`。
+- `pnpm run test:runtime` / `pnpm run test:runtime:delegated`：只委托执行 Runtime 子项目 Vitest。
+- `pnpm run test:runtime:gate`：执行 Runtime `check + test + build`。
+- `pnpm run test:contracts`：根仓跨模块契约测试，不等同于 `backend/tests/contracts`。
+- `pnpm run test:e2e:run`：只执行 Playwright。
+- `pnpm run test:e2e`：先重置/播种 smoke 数据并确认服务，再执行 Playwright smoke。
+
+E2E 默认不会主动启动服务；如果需要由测试脚本启动 Backend、Editor、Runtime，在当前命令环境中设置：
+
+```powershell
+$env:TESTING_START_BACKEND='true'
+$env:TESTING_START_EDITOR='true'
+$env:TESTING_START_RUNTIME='true'
+pnpm run test:e2e
+```
+
+E2E 报告与失败产物统一写入 `test-results/e2e/`：
+
+- `test-results/e2e/html-report/`：Playwright HTML 报告。
+- `test-results/e2e/artifacts/`：trace、截图、视频和 `.last-run.json`。
 
 详细测试治理见 [测试治理说明](./testing-strategy.md)。
 
