@@ -746,12 +746,15 @@ _COORDINATOR_TOOL_SPECS = (
         '读取组件用法',
         'component_read',
         '组件读取',
-        '依据组件编码返回当前已发布版本源码、默认导入名、import_path 与完整 import 语句。',
+        '依据组件编码返回当前已发布版本的类型、公开预览契约、默认导入名、import_path 与完整 import 语句。',
         default_instructions=(
             '页面需要引用工作空间组件时调用该工具；生成页面源码必须使用返回的 import_statement 或 import_path，'
-            '不要猜测组件路径、版本号或默认导入名。该工具只面向已发布组件，不用于组件编辑。'
+            '不要猜测组件路径、版本号或默认导入名。preview_schema 是组件公开 props 与尺寸控制契约，'
+            '用于判断页面引用该组件时可传哪些 props、默认值和类型约束；不要把 preview_schema 当作源码或运行时代码。'
+            '该工具只面向已发布组件，不返回组件源码，也不用于组件编辑。'
         ),
         response_example=_WORKSPACE_COMPONENT_USAGE_RESPONSE_EXAMPLE,
+        response_notes='preview_schema 为 JSON 字符串或 null；存在时按 props 下的 type、label、default 等字段理解组件可配置项。',
     ),
 
     _tool(

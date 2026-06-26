@@ -107,6 +107,7 @@ def build_list_workspace_components_tool(session_factory: async_sessionmaker[Asy
                     {
                         "name": item.name,
                         "import_name": item.import_name,
+                        "component_type": item.component_type.value,
                         "description": item.summary,
                         "component_code": item.code,
                         "current_version_no": item.current_version_no,
@@ -153,6 +154,7 @@ def _dump_component_item(item: WorkspaceComponentItem) -> dict[str, str | int | 
     return {
         "name": item.name,
         "import_name": item.import_name,
+        "component_type": item.component_type.value,
         "description": item.summary,
         "component_code": item.code,
         "current_version_no": item.current_version_no,

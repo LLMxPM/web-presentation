@@ -27,6 +27,7 @@ _WORKSPACE_COMPONENT_LIST_RESPONSE_EXAMPLE = {
         {
             "name": "HeroCard",
             "import_name": "HeroCard",
+            "component_type": "内容组件",
             "description": "首页英雄区卡片。",
             "component_code": "cmp_hero_card",
             "current_version_no": 3,
@@ -39,7 +40,9 @@ _WORKSPACE_COMPONENT_USAGE_RESPONSE_EXAMPLE = {
     "name": "HeroCard",
     "import_name": "HeroCard",
     "component_type": "内容组件",
-    "content": "<template>\n  <section>示例</section>\n</template>",
+    "description": "首页英雄区卡片。",
+    "current_version_no": 3,
+    "preview_schema": '{"props":{"height":{"type":"number","label":"高度","default":320}}}',
     "import_path": "@workspace-components/cmp_hero_card/v/3",
     "import_statement": "import HeroCard from '@workspace-components/cmp_hero_card/v/3'",
 }

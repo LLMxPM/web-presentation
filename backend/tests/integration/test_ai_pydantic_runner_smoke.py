@@ -28,6 +28,7 @@ from pydantic_ai.usage import RequestUsage
 from sqlalchemy import select
 
 from app.ai.agent.runtime_context import AgentRuntimeContext
+from app.ai.agent_runtime_config import EffectiveAgentRuntimeConfig
 from app.ai.message_history import build_context_limit_processor, build_history_budget, rebuild_agent_message_history
 from app.ai.platform_tools import AgentToolContext, agent_tool
 from app.ai.platform_runtime import PlatformAgentRuntimeStore
@@ -239,6 +240,71 @@ async def test_pydantic_runner_should_pause_continue_and_replay_ask_user(
         "message",
     ]
     assert workspace_id == scope.workspace_id
+
+
+async def test_pydantic_runner_should_not_inject_agent_description_as_system_prompt(
+    authenticated_client: AsyncClient,
+) -> None:
+    """Agent 目录描述不应作为第二条 system prompt 入模，运行约束统一放在 instructions。"""
+
+    _, session_id, scope = await _create_workspace_session(
+        authenticated_client,
+        workspace_name="Pydantic Runner 单 system 通道工作空间",
+        session_name="Pydantic Runner 单 system 通道会话",
+    )
+    agent_config = EffectiveAgentRuntimeConfig(
+        agent_id="component-manager",
+        description_override="这段目录描述不应作为 system_prompt 入模。",
+        prompt_override="业务补充：优先给出可验证结果。",
+        tool_configs={},
+    )
+
+    async with get_session_factory()() as db_session:
+        store = PlatformAgentRuntimeStore(db_session, user_id=1)
+        run_start = await store.start_run(
+            session_id=session_id,
+            agent_id="component-manager",
+            scope=scope,
+            run_id="pydantic-runner-single-system-channel",
+            message="请回复一句话。",
+            image_attachment_ids=[],
+        )
+
+        await _collect_runner_events(
+            PydanticAgentRunner(store).stream_run(
+                run_model=run_start.run_model,
+                agent_id="component-manager",
+                model=FunctionModel(stream_function=_single_text_stream_function),
+                model_settings={},
+                runtime_context=_runtime_context(scope),
+                message="请回复一句话。",
+                agent_config=agent_config,
+            )
+        )
+
+        completed_run = await store.get_latest_run_model(session_id=session_id, agent_id="component-manager")
+
+    assert completed_run is not None
+    assert completed_run.status == "completed"
+    request_messages = [
+        item for item in completed_run.message_history_json
+        if item.get("kind") == "request"
+    ]
+    assert request_messages
+    first_request = request_messages[0]
+    request_parts = [
+        part for part in first_request.get("parts", [])
+        if isinstance(part, dict)
+    ]
+    instructions = str(first_request.get("instructions") or "")
+    assert all(part.get("part_kind") != "system-prompt" for part in request_parts)
+    assert "这段目录描述不应作为 system_prompt 入模。" not in json.dumps(
+        completed_run.message_history_json,
+        ensure_ascii=False,
+    )
+    assert "你是 Web Presentation 的组件助手" in instructions
+    assert "业务补充：优先给出可验证结果。" in instructions
+    assert "当前业务范围如下：" in instructions
 
 
 async def test_pydantic_runner_should_mark_rejected_approval_tool_error(
@@ -1705,6 +1771,16 @@ class _FakeMemberDelegationExecutor:
             "status": "completed",
             "result": "已准备资源 hero_cover。",
         }
+
+
+async def _single_text_stream_function(
+    messages: list[Any],
+    info: AgentInfo,
+) -> AsyncIterator[str]:
+    """测试用最小流式模型，用于验证 runner 拼装的入模消息。"""
+
+    _ = messages, info
+    yield "已收到。"
 
 
 async def _ask_user_stream_function(

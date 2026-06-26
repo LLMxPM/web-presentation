@@ -15,7 +15,7 @@ from pydantic_ai.messages import ModelMessagesTypeAdapter, UserContent
 
 from app.ai.agent.runtime_context import AgentRuntimeContext, build_scope_context_text
 from app.ai.agent_catalog import get_agent_catalog_entry
-from app.ai.agent_runtime_config import EffectiveAgentRuntimeConfig, build_effective_description, build_effective_instructions
+from app.ai.agent_runtime_config import EffectiveAgentRuntimeConfig, build_effective_instructions
 from app.ai.history_compression import HistoryCompressionService
 from app.ai.message_history import AgentContextLimitProcessor, AgentHistoryBudget, build_context_status_item
 from app.ai.member_delegation import MemberDelegationPaused
@@ -178,7 +178,6 @@ class PydanticAgentRunner:
                 name=agent_id,
                 output_type=[str, DeferredToolRequests],
                 instructions=instructions,
-                system_prompt=build_effective_description(catalog, agent_config),
                 deps_type=AgentToolDeps if deps is not None else type(None),
                 tools=tools or (),
                 history_processors=resolved_history_processors,

@@ -93,16 +93,6 @@ def build_effective_instructions(
     return instructions
 
 
-def build_effective_description(
-    catalog: AgentCatalogEntry,
-    runtime_config: EffectiveAgentRuntimeConfig | None,
-) -> str:
-    """合成当前 Agent 在运行时应暴露给模型的描述。"""
-
-    description_override = runtime_config.description_override if runtime_config is not None else None
-    return description_override or catalog.description
-
-
 def is_tool_enabled(
     *,
     agent_id: str,

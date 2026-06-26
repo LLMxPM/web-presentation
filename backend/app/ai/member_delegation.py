@@ -22,7 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.ai.agent.runtime_context import AgentRuntimeContext, build_scope_context_text
 from app.ai.agent_catalog import get_agent_catalog_entry
-from app.ai.agent_runtime_config import build_effective_description, build_effective_instructions
+from app.ai.agent_runtime_config import build_effective_instructions
 from app.ai.image_history_hydration import hydrate_agent_image_refs
 from app.ai.image_refs import sanitize_message_history_image_refs
 from app.ai.message_history import AgentContextLimitProcessor, build_context_limit_processor, build_history_budget, rebuild_agent_message_history
@@ -438,7 +438,6 @@ class _MemberAgentRunner:
                     *build_effective_instructions(catalog, agent_config),
                     build_scope_context_text(self._runtime_context),
                 ],
-                system_prompt=build_effective_description(catalog, agent_config),
                 deps_type=type(deps),
                 tools=tools,
                 history_processors=_build_member_history_processors(context_processor),
