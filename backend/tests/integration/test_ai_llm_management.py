@@ -233,8 +233,7 @@ async def test_llm_provider_and_config_crud_should_split_secret_from_model(authe
     update_response = await authenticated_client.patch(
         f"/api/ai/llm-configs/{config_id}",
         json={
-            "name": "OpenRouter 归档模型",
-            "status": "archived",
+            "name": "OpenRouter 更新模型",
             "context_window_tokens": 128000,
             "max_output_tokens": 8192,
             "history_token_ratio": 0.35,
@@ -244,13 +243,121 @@ async def test_llm_provider_and_config_crud_should_split_secret_from_model(authe
     )
     assert update_response.status_code == 200
     updated_item = update_response.json()
-    assert updated_item["name"] == "OpenRouter 归档模型"
-    assert updated_item["status"] == "archived"
+    assert updated_item["name"] == "OpenRouter 更新模型"
+    assert updated_item["status"] == "active"
     assert updated_item["context_window_tokens"] == 128000
     assert updated_item["max_output_tokens"] == 8192
     assert updated_item["history_token_ratio"] == 0.35
     assert updated_item["compression_target_ratio"] == 0.2
     assert updated_item["advanced_config_json"] == {"temperature": 0.5}
+
+    model_status_response = await authenticated_client.patch(
+        f"/api/ai/llm-configs/{config_id}",
+        json={"status": "archived"},
+    )
+    assert model_status_response.status_code == 400
+    assert model_status_response.json()["code"] == "AI_LLM_CONFIG_STATUS_UPDATE_UNSUPPORTED"
+
+    provider_status_response = await authenticated_client.patch(
+        f"/api/ai/llm-provider-configs/{provider['id']}",
+        json={"status": "archived"},
+    )
+    assert provider_status_response.status_code == 400
+    assert provider_status_response.json()["code"] == "AI_LLM_PROVIDER_STATUS_UPDATE_UNSUPPORTED"
+
+
+async def test_llm_config_delete_should_hard_delete_unbind_slots_and_block_existing_session_run(
+    authenticated_client: AsyncClient,
+) -> None:
+    """删除模型应移除模型记录和槽位绑定，已固化该模型的会话不能继续发起运行。"""
+
+    config = await _create_llm_config(authenticated_client, name="待删除会话模型")
+    slot_response = await authenticated_client.put(
+        "/api/ai/llm-slots/agent_coordinator",
+        json={"llm_config_id": config["id"]},
+    )
+    assert slot_response.status_code == 200
+    assert slot_response.json()["binding_ready"] is True
+
+    workspace_id, project_id = await _create_agent_project_scope(authenticated_client, "删除模型会话")
+    create_session_response = await authenticated_client.post(
+        "/api/ai/sessions",
+        json={
+            "agent_id": "agent-coordinator",
+            "session_name": "删除模型后会话",
+            "scope": {
+                "scope_type": "project",
+                "workspace_id": workspace_id,
+                "project_id": project_id,
+                "source": "test-agent-session",
+            },
+            "llm_config_id": config["id"],
+        },
+    )
+    assert create_session_response.status_code == 201
+    session_id = create_session_response.json()["session_id"]
+
+    delete_response = await authenticated_client.delete(f"/api/ai/llm-configs/{config['id']}")
+    assert delete_response.status_code == 200
+    assert delete_response.json()["message"] == "模型已删除。"
+
+    detail_response = await authenticated_client.get(f"/api/ai/llm-configs/{config['id']}")
+    assert detail_response.status_code == 404
+    assert detail_response.json()["code"] == "AI_LLM_CONFIG_NOT_FOUND"
+
+    slots_response = await authenticated_client.get("/api/ai/llm-slots")
+    assert slots_response.status_code == 200
+    agent_slot = {item["slot"]: item for item in slots_response.json()}["agent_coordinator"]
+    assert agent_slot["llm_config_id"] is None
+    assert agent_slot["binding_ready"] is False
+
+    run_response = await authenticated_client.post(
+        f"/api/ai/sessions/{session_id}/runs/stream",
+        params={
+            "workspace_id": workspace_id,
+            "project_id": project_id,
+            "scope_type": "project",
+            "agent_id": "agent-coordinator",
+        },
+        json={"message": "继续使用已删除模型的会话"},
+    )
+    assert run_response.status_code == 200
+    assert "AI_LLM_CONFIG_NOT_FOUND" in run_response.text
+
+
+async def test_llm_provider_config_delete_should_require_no_linked_models(authenticated_client: AsyncClient) -> None:
+    """删除供应商前必须先删除所有引用它的模型。"""
+
+    provider = await _create_llm_provider_config(
+        authenticated_client,
+        name="待删除供应商",
+    )
+    create_response = await authenticated_client.post(
+        "/api/ai/llm-configs",
+        json={
+            "name": "引用待删除供应商的模型",
+            "provider_config_id": provider["id"],
+            "model_id": "gpt-4.1-mini",
+            "advanced_config_json": {},
+        },
+    )
+    assert create_response.status_code == 201
+    config = create_response.json()
+
+    blocked_response = await authenticated_client.delete(f"/api/ai/llm-provider-configs/{provider['id']}")
+    assert blocked_response.status_code == 409
+    assert blocked_response.json()["code"] == "AI_LLM_PROVIDER_CONFIG_IN_USE"
+
+    delete_model_response = await authenticated_client.delete(f"/api/ai/llm-configs/{config['id']}")
+    assert delete_model_response.status_code == 200
+
+    delete_provider_response = await authenticated_client.delete(f"/api/ai/llm-provider-configs/{provider['id']}")
+    assert delete_provider_response.status_code == 200
+    assert delete_provider_response.json()["message"] == "供应商已删除。"
+
+    detail_response = await authenticated_client.get(f"/api/ai/llm-provider-configs/{provider['id']}")
+    assert detail_response.status_code == 404
+    assert detail_response.json()["code"] == "AI_LLM_PROVIDER_CONFIG_NOT_FOUND"
 
 
 async def test_llm_config_should_accept_large_context_model_limits(authenticated_client: AsyncClient) -> None:
@@ -453,16 +560,13 @@ async def test_agent_session_should_persist_explicit_personal_llm_config(authent
     }
 
 
-async def test_agent_session_should_reject_unavailable_selected_llm_config(authenticated_client: AsyncClient) -> None:
-    """会话显式模型选择应拒绝归档模型和不存在模型。"""
+async def test_agent_session_should_reject_deleted_selected_llm_config(authenticated_client: AsyncClient) -> None:
+    """会话显式模型选择应拒绝已删除模型和不存在模型。"""
 
-    config = await _create_llm_config(authenticated_client, name="归档会话模型")
-    archive_response = await authenticated_client.patch(
-        f"/api/ai/llm-configs/{config['id']}",
-        json={"status": "archived"},
-    )
-    assert archive_response.status_code == 200
-    workspace_id, project_id = await _create_agent_project_scope(authenticated_client, "归档模型会话")
+    config = await _create_llm_config(authenticated_client, name="删除会话模型")
+    delete_response = await authenticated_client.delete(f"/api/ai/llm-configs/{config['id']}")
+    assert delete_response.status_code == 200
+    workspace_id, project_id = await _create_agent_project_scope(authenticated_client, "删除模型会话")
     scope_payload = {
         "scope_type": "project",
         "workspace_id": workspace_id,
@@ -470,17 +574,17 @@ async def test_agent_session_should_reject_unavailable_selected_llm_config(authe
         "source": "test-agent-session",
     }
 
-    archived_response = await authenticated_client.post(
+    deleted_response = await authenticated_client.post(
         "/api/ai/sessions",
         json={
             "agent_id": "agent-coordinator",
-            "session_name": "归档模型会话",
+            "session_name": "删除模型会话",
             "scope": scope_payload,
             "llm_config_id": config["id"],
         },
     )
-    assert archived_response.status_code == 409
-    assert archived_response.json()["code"] == "AI_LLM_CONFIG_DISABLED"
+    assert deleted_response.status_code == 404
+    assert deleted_response.json()["code"] == "AI_LLM_CONFIG_NOT_FOUND"
 
     missing_response = await authenticated_client.post(
         "/api/ai/sessions",

@@ -8,7 +8,6 @@ import type {
   LlmProviderCatalogItem,
   LlmProviderConfigItem,
   LlmSlotBindingItem,
-  RecordStatus,
 } from '@/types/api'
 
 export interface LlmProviderConfigPayload {
@@ -23,7 +22,6 @@ export interface LlmProviderConfigUpdatePayload {
   name?: string
   base_url?: string | null
   api_key?: string | null
-  status?: RecordStatus
 }
 
 export interface LlmConfigPayload {
@@ -53,7 +51,6 @@ export interface LlmConfigUpdatePayload {
   history_token_ratio?: number
   compression_target_ratio?: number
   advanced_config_json?: Record<string, unknown>
-  status?: RecordStatus
 }
 
 /**
@@ -97,6 +94,14 @@ export async function updateLlmProviderConfig(providerConfigId: number, payload:
 }
 
 /**
+ * 删除指定的供应商配置；后端会校验没有模型仍引用它。
+ */
+export async function deleteLlmProviderConfig(providerConfigId: number) {
+  const { data } = await http.delete<{ message: string }>(`/ai/llm-provider-configs/${providerConfigId}`)
+  return data
+}
+
+/**
  * 读取当前用户的模型列表。
  */
 export async function listLlmConfigs() {
@@ -125,6 +130,14 @@ export async function createLlmConfig(payload: LlmConfigPayload) {
  */
 export async function updateLlmConfig(configId: number, payload: LlmConfigUpdatePayload) {
   const { data } = await http.patch<LlmConfigItem>(`/ai/llm-configs/${configId}`, payload)
+  return data
+}
+
+/**
+ * 删除指定的模型配置；已固化该模型的会话后续无法继续发起运行。
+ */
+export async function deleteLlmConfig(configId: number) {
+  const { data } = await http.delete<{ message: string }>(`/ai/llm-configs/${configId}`)
   return data
 }
 

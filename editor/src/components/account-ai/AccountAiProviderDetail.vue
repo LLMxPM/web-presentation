@@ -12,10 +12,10 @@
       <BaseButton
         v-if="selectedProviderConfig && selectedProviderConfig.editable"
         variant="ghost"
-        :loading="statusUpdatingProviderConfigId === selectedProviderConfig.id"
-        @click="emit('toggleStatus', selectedProviderConfig)"
+        :loading="deletingProviderConfigId === selectedProviderConfig.id"
+        @click="emit('deleteProvider', selectedProviderConfig)"
       >
-        {{ selectedProviderConfig.status === 'active' ? '归档供应商' : '恢复供应商' }}
+        删除供应商
       </BaseButton>
     </div>
 
@@ -111,12 +111,12 @@ const props = defineProps<{
   currentProvider: LlmProviderCatalogItem | null
   providerOptions: SelectOption[]
   savingProviderConfig: boolean
-  statusUpdatingProviderConfigId: number | null
+  deletingProviderConfigId: number | null
   canCreateGlobal: boolean
 }>()
 
 const emit = defineEmits<{
-  toggleStatus: [config: LlmProviderConfigItem]
+  deleteProvider: [config: LlmProviderConfigItem]
   submit: []
 }>()
 

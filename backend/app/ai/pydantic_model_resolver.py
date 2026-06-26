@@ -40,10 +40,10 @@ class PydanticLlmModelResolver:
         """根据用户模型配置生成 Pydantic AI model。"""
 
         if config.status != RecordStatus.ACTIVE.value:
-            raise AppException(status_code=409, code="AI_LLM_CONFIG_DISABLED", detail="当前大模型配置已归档。")
+            raise AppException(status_code=409, code="AI_LLM_CONFIG_DISABLED", detail="当前大模型配置不可用。")
         provider_config = self._get_provider_config(config)
         if provider_config.status != RecordStatus.ACTIVE.value:
-            raise AppException(status_code=409, code="AI_LLM_PROVIDER_CONFIG_DISABLED", detail="当前大模型供应商配置已归档。")
+            raise AppException(status_code=409, code="AI_LLM_PROVIDER_CONFIG_DISABLED", detail="当前大模型供应商配置不可用。")
         provider_key = str(provider_config.provider_key or "").strip()
         model_id = str(config.model_id or "").strip()
         api_key = self._cipher.decrypt(provider_config.api_key_ciphertext)

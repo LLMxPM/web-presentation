@@ -145,7 +145,7 @@
                     class="rounded-full px-2 py-0.5 text-[11px] font-semibold"
                     :class="config.status === 'active' ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'"
                   >
-                    {{ config.status === 'active' ? '启用' : '归档' }}
+                    {{ config.status === 'active' ? '启用' : '不可用' }}
                   </span>
                 </span>
               </div>
@@ -198,7 +198,7 @@
                     class="rounded-full px-2 py-0.5 text-[11px] font-semibold"
                     :class="config.status === 'active' ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'"
                   >
-                    {{ config.status === 'active' ? '启用' : '归档' }}
+                    {{ config.status === 'active' ? '启用' : '不可用' }}
                   </span>
                 </span>
               </div>
@@ -563,9 +563,9 @@
           :current-provider="currentProviderForProviderForm"
           :provider-options="providerOptions"
           :saving-provider-config="savingProviderConfig"
-          :status-updating-provider-config-id="statusUpdatingProviderConfigId"
+          :deleting-provider-config-id="deletingProviderConfigId"
           :can-create-global="canCreateGlobal"
-          @toggle-status="handleToggleProviderStatus"
+          @delete-provider="handleDeleteProviderConfig"
           @submit="handleSubmitProviderConfig"
         />
 
@@ -580,9 +580,9 @@
           :provider-config-options="providerConfigOptions"
           :advanced-config-error="advancedConfigError"
           :saving-config="savingConfig"
-          :status-updating-config-id="statusUpdatingConfigId"
+          :deleting-config-id="deletingConfigId"
           :can-create-global="canCreateGlobal"
-          @toggle-status="handleToggleModelStatus"
+          @delete-model="handleDeleteModel"
           @format-advanced="formatAdvancedConfig"
           @submit="handleSubmitModel"
         />
@@ -599,6 +599,8 @@ import { Bot, ChevronDown, ChevronRight, Lock, Plus } from '@lucide/vue'
 import {
   createLlmConfig,
   createLlmProviderConfig,
+  deleteLlmConfig,
+  deleteLlmProviderConfig,
   listLlmConfigs,
   listLlmProviderConfigs,
   listLlmProviders,
@@ -633,7 +635,7 @@ import type {
   LlmProviderCatalogItem,
   LlmProviderConfigItem,
 } from '@/types/api'
-import { Message } from '@/utils/message'
+import { Message, createConfirm } from '@/utils/message'
 
 type ActiveSection = 'agents' | 'providers' | 'models'
 
@@ -689,7 +691,7 @@ const bindingSlot = ref<string | null>(null)
 
 const selectedProviderConfigId = ref<number | null>(null)
 const savingProviderConfig = ref(false)
-const statusUpdatingProviderConfigId = ref<number | null>(null)
+const deletingProviderConfigId = ref<number | null>(null)
 const applyingExistingProviderConfig = ref(false)
 
 const selectedConfigId = ref<number | null>(null)
@@ -697,7 +699,7 @@ const advancedConfigText = ref('{}')
 const advancedConfigError = ref('')
 const advancedConfigCollapsed = ref(true)
 const savingConfig = ref(false)
-const statusUpdatingConfigId = ref<number | null>(null)
+const deletingConfigId = ref<number | null>(null)
 const applyingExistingModel = ref(false)
 
 const modelForm = reactive<LlmFormState>({
@@ -822,7 +824,7 @@ const providerConfigOptions = computed<SelectOption[]>(() => (
     .map(config => ({
       label: config.name,
       value: config.id,
-      description: `${config.scope === 'global' ? '全局供应商' : '个人供应商'} · ${config.provider_label}${config.status === 'active' ? '' : ' · 已归档'}`,
+      description: `${config.scope === 'global' ? '全局供应商' : '个人供应商'} · ${config.provider_label}${config.status === 'active' ? '' : ' · 不可用'}`,
       keywords: [config.provider_key, config.provider_label, config.base_url ?? ''],
     }))
 ))
@@ -1557,35 +1559,53 @@ async function handleSubmitModel() {
   }
 }
 
-/** 切换供应商启用状态。 */
-async function handleToggleProviderStatus(config: LlmProviderConfigItem) {
-  statusUpdatingProviderConfigId.value = config.id
+/** 删除供应商配置；后端会拒绝仍有关联模型的供应商。 */
+async function handleDeleteProviderConfig(config: LlmProviderConfigItem) {
+  const confirmed = await createConfirm(
+    `确认删除供应商「${config.name}」吗？删除前必须先删除所有关联模型。`,
+    '删除供应商',
+  )
+  if (!confirmed) {
+    return
+  }
+
+  deletingProviderConfigId.value = config.id
   try {
-    await updateLlmProviderConfig(config.id, {
-      status: config.status === 'active' ? 'archived' : 'active',
-    })
-    Message.success(config.status === 'active' ? '供应商已归档。' : '供应商已恢复。')
+    await deleteLlmProviderConfig(config.id)
+    if (selectedProviderConfigId.value === config.id) {
+      resetProviderForm()
+    }
+    Message.success('供应商已删除。')
     await refreshProviderQueries()
   } catch (error) {
-    Message.error(getErrorMessage(error, '更新供应商状态失败。'))
+    Message.error(getErrorMessage(error, '删除供应商失败。'))
   } finally {
-    statusUpdatingProviderConfigId.value = null
+    deletingProviderConfigId.value = null
   }
 }
 
-/** 切换模型启用状态。 */
-async function handleToggleModelStatus(config: LlmConfigItem) {
-  statusUpdatingConfigId.value = config.id
+/** 删除模型配置；引用该模型的槽位会被后端自动解绑。 */
+async function handleDeleteModel(config: LlmConfigItem) {
+  const confirmed = await createConfirm(
+    `确认删除模型「${config.name}」吗？删除后已关联会话无法继续发起运行，相关模型绑定会自动移除。`,
+    '删除模型',
+  )
+  if (!confirmed) {
+    return
+  }
+
+  deletingConfigId.value = config.id
   try {
-    await updateLlmConfig(config.id, {
-      status: config.status === 'active' ? 'archived' : 'active',
-    })
-    Message.success(config.status === 'active' ? '模型已归档。' : '模型已恢复。')
+    await deleteLlmConfig(config.id)
+    if (selectedConfigId.value === config.id) {
+      resetModelForm()
+    }
+    Message.success('模型已删除。')
     await refreshLlmQueries()
   } catch (error) {
-    Message.error(getErrorMessage(error, '更新模型状态失败。'))
+    Message.error(getErrorMessage(error, '删除模型失败。'))
   } finally {
-    statusUpdatingConfigId.value = null
+    deletingConfigId.value = null
   }
 }
 

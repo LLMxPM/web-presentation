@@ -12,10 +12,10 @@
       <BaseButton
         v-if="selectedModel && selectedModel.editable"
         variant="ghost"
-        :loading="statusUpdatingConfigId === selectedModel.id"
-        @click="emit('toggleStatus', selectedModel)"
+        :loading="deletingConfigId === selectedModel.id"
+        @click="emit('deleteModel', selectedModel)"
       >
-        {{ selectedModel.status === 'active' ? '归档模型' : '恢复模型' }}
+        删除模型
       </BaseButton>
     </div>
 
@@ -205,12 +205,12 @@ const props = defineProps<{
   advancedConfigError: string
   advancedConfigCollapsed: boolean
   savingConfig: boolean
-  statusUpdatingConfigId: number | null
+  deletingConfigId: number | null
   canCreateGlobal: boolean
 }>()
 
 const emit = defineEmits<{
-  toggleStatus: [config: LlmConfigItem]
+  deleteModel: [config: LlmConfigItem]
   formatAdvanced: []
   submit: []
   'update:advancedConfigText': [value: string]

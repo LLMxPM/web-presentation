@@ -14,8 +14,10 @@ const listLlmConfigsMock = vi.fn()
 const listLlmSlotsMock = vi.fn()
 const createLlmProviderConfigMock = vi.fn()
 const updateLlmProviderConfigMock = vi.fn()
+const deleteLlmProviderConfigMock = vi.fn()
 const createLlmConfigMock = vi.fn()
 const updateLlmConfigMock = vi.fn()
+const deleteLlmConfigMock = vi.fn()
 const updateLlmSlotBindingMock = vi.fn()
 const listAgentCatalogMock = vi.fn()
 const listAgentConfigsMock = vi.fn()
@@ -23,6 +25,7 @@ const updateAgentConfigMock = vi.fn()
 const updateAgentToolConfigMock = vi.fn()
 const messageSuccessMock = vi.fn()
 const messageErrorMock = vi.fn()
+const createConfirmMock = vi.fn()
 
 vi.mock('@/api/llm', () => ({
   listLlmProviders: () => listLlmProvidersMock(),
@@ -31,8 +34,10 @@ vi.mock('@/api/llm', () => ({
   listLlmSlots: () => listLlmSlotsMock(),
   createLlmProviderConfig: (...args: unknown[]) => createLlmProviderConfigMock(...args),
   updateLlmProviderConfig: (...args: unknown[]) => updateLlmProviderConfigMock(...args),
+  deleteLlmProviderConfig: (...args: unknown[]) => deleteLlmProviderConfigMock(...args),
   createLlmConfig: (...args: unknown[]) => createLlmConfigMock(...args),
   updateLlmConfig: (...args: unknown[]) => updateLlmConfigMock(...args),
+  deleteLlmConfig: (...args: unknown[]) => deleteLlmConfigMock(...args),
   updateLlmSlotBinding: (...args: unknown[]) => updateLlmSlotBindingMock(...args),
 }))
 
@@ -48,6 +53,7 @@ vi.mock('@/utils/message', () => ({
     success: (...args: unknown[]) => messageSuccessMock(...args),
     error: (...args: unknown[]) => messageErrorMock(...args),
   },
+  createConfirm: (...args: unknown[]) => createConfirmMock(...args),
 }))
 
 function createAgentGuide(toolName: string, responseExample: unknown | null = null) {
@@ -269,13 +275,16 @@ describe('AccountAiSettingsView', () => {
     ])
     createLlmProviderConfigMock.mockResolvedValue({ id: 20, name: '新的供应商' })
     updateLlmProviderConfigMock.mockResolvedValue(undefined)
+    deleteLlmProviderConfigMock.mockResolvedValue({ message: '供应商已删除。' })
     listAgentCatalogMock.mockResolvedValue([agentConfig])
     listAgentConfigsMock.mockResolvedValue([agentConfig])
     createLlmConfigMock.mockResolvedValue({ id: 2, name: '新的模型' })
     updateLlmConfigMock.mockResolvedValue(undefined)
+    deleteLlmConfigMock.mockResolvedValue({ message: '模型已删除。' })
     updateLlmSlotBindingMock.mockResolvedValue(undefined)
     updateAgentConfigMock.mockResolvedValue(agentConfig)
     updateAgentToolConfigMock.mockResolvedValue(agentConfig)
+    createConfirmMock.mockResolvedValue(true)
   })
 
   it('应展示统一 AI 设置，并在智能体详情中保存模型绑定、提示词和工具配置', async () => {
@@ -323,7 +332,7 @@ describe('AccountAiSettingsView', () => {
     })
   })
 
-  it('应以卡片管理模型，并支持归档和创建', async () => {
+  it('应以卡片管理模型，并支持删除和创建', async () => {
     render(AccountAiSettingsView, createTestingRenderOptions())
 
     await waitFor(() => {
@@ -336,9 +345,9 @@ describe('AccountAiSettingsView', () => {
     })
 
     await fireEvent.click(screen.getByRole('button', { name: /总控模型/ }))
-    await fireEvent.click(screen.getByRole('button', { name: '归档模型' }))
+    await fireEvent.click(screen.getByRole('button', { name: '删除模型' }))
     await waitFor(() => {
-      expect(updateLlmConfigMock).toHaveBeenCalledWith(1, { status: 'archived' })
+      expect(deleteLlmConfigMock).toHaveBeenCalledWith(1)
     })
 
     expect(screen.getAllByRole('button', { name: '新建模型' })).toHaveLength(1)

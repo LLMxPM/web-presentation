@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -141,6 +141,12 @@ class AiLlmService:
             raise AppException(status_code=403, code="AI_LLM_GLOBAL_READONLY", detail="管理员全局供应商不允许普通用户修改。")
 
         fields_set = payload.model_fields_set
+        if "status" in fields_set:
+            raise AppException(
+                status_code=400,
+                code="AI_LLM_PROVIDER_STATUS_UPDATE_UNSUPPORTED",
+                detail="供应商不再支持归档或恢复；请先删除关联模型，再直接删除供应商。",
+            )
         next_base_url = self._normalize_optional_text(payload.base_url) if "base_url" in fields_set else config.base_url
         current_api_key = self._cipher.decrypt(config.api_key_ciphertext)
         next_api_key = self._normalize_optional_secret(payload.api_key) if "api_key" in fields_set else current_api_key
@@ -154,13 +160,33 @@ class AiLlmService:
             config.name = payload.name.strip()
         config.base_url = next_base_url
         config.api_key_ciphertext = self._cipher.encrypt(next_api_key)
-        if payload.status is not None:
-            config.status = payload.status
         config.updated_by = operator_id
 
         await self.session.commit()
         await self.session.refresh(config)
         return self._to_provider_config_item(config)
+
+    async def delete_provider_config(self, provider_config_id: int) -> None:
+        """硬删除供应商配置；删除前必须确认没有任何模型仍引用它。"""
+
+        config = await self._get_provider_config_or_raise(provider_config_id)
+        if not self._can_edit_provider_config(config):
+            raise AppException(status_code=403, code="AI_LLM_GLOBAL_READONLY", detail="管理员全局供应商不允许普通用户删除。")
+
+        linked_config_id = await self.session.scalar(
+            select(AiLlmConfig.id)
+            .where(AiLlmConfig.provider_config_id == config.id)
+            .limit(1)
+        )
+        if linked_config_id is not None:
+            raise AppException(
+                status_code=409,
+                code="AI_LLM_PROVIDER_CONFIG_IN_USE",
+                detail="当前供应商仍被模型引用，请先删除关联模型。",
+            )
+
+        await self.session.delete(config)
+        await self.session.commit()
 
     async def list_configs(self) -> list[LlmConfigItem]:
         """列出当前用户可管理的全部大模型配置。"""
@@ -244,6 +270,13 @@ class AiLlmService:
         if config.scope == AiLlmConfigScope.GLOBAL.value and not self._is_platform_admin:
             raise AppException(status_code=403, code="AI_LLM_GLOBAL_READONLY", detail="管理员全局模型不允许普通用户修改。")
 
+        if "status" in payload.model_fields_set:
+            raise AppException(
+                status_code=400,
+                code="AI_LLM_CONFIG_STATUS_UPDATE_UNSUPPORTED",
+                detail="大模型不再支持归档或恢复；请直接删除模型。",
+            )
+
         scope = AiLlmConfigScope(config.scope)
         next_provider_config = config.provider_config
         if payload.provider_config_id is not None:
@@ -301,14 +334,23 @@ class AiLlmService:
         if payload.compression_target_ratio is not None:
             config.compression_target_ratio = payload.compression_target_ratio
         config.advanced_config_json = next_advanced_config
-        if payload.status is not None:
-            config.status = payload.status
         config.updated_by = operator_id
 
         await self.session.commit()
         await self.session.refresh(config)
         config.provider_config = next_provider_config
         return self._to_config_item(config)
+
+    async def delete_config(self, config_id: int) -> None:
+        """硬删除大模型配置，并同步移除引用该模型的固定槽位绑定。"""
+
+        config = await self._get_config_or_raise(config_id)
+        if not self._can_edit_config(config):
+            raise AppException(status_code=403, code="AI_LLM_GLOBAL_READONLY", detail="管理员全局模型不允许普通用户删除。")
+
+        await self.session.execute(delete(AiLlmSlotBinding).where(AiLlmSlotBinding.llm_config_id == config.id))
+        await self.session.delete(config)
+        await self.session.commit()
 
     async def list_slot_bindings(self) -> list[LlmSlotBindingItem]:
         """列出当前用户全部固定槽位的绑定状态。"""

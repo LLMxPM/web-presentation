@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import get_current_user
 from app.db.session import get_db_session
+from app.schemas.common import MessageResponse
 from app.schemas.llm import (
     LlmConfigCreateRequest,
     LlmConfigItem,
@@ -89,6 +90,20 @@ async def update_llm_provider_config(
     )
 
 
+@router.delete("/llm-provider-configs/{provider_config_id}", response_model=MessageResponse)
+async def delete_llm_provider_config(
+    provider_config_id: int,
+    current: Annotated[AuthContext, Depends(get_current_user)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> MessageResponse:
+    """硬删除指定的供应商配置。"""
+
+    await AiLlmService(session, user_id=current.user.id, user_role=current.user.role).delete_provider_config(
+        provider_config_id,
+    )
+    return MessageResponse(message="供应商已删除。")
+
+
 @router.get("/llm-configs", response_model=list[LlmConfigItem])
 async def list_llm_configs(
     current: Annotated[AuthContext, Depends(get_current_user)],
@@ -138,6 +153,18 @@ async def update_llm_config(
         payload,
         operator_id=current.user.id,
     )
+
+
+@router.delete("/llm-configs/{config_id}", response_model=MessageResponse)
+async def delete_llm_config(
+    config_id: int,
+    current: Annotated[AuthContext, Depends(get_current_user)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> MessageResponse:
+    """硬删除指定的大模型配置。"""
+
+    await AiLlmService(session, user_id=current.user.id, user_role=current.user.role).delete_config(config_id)
+    return MessageResponse(message="模型已删除。")
 
 
 @router.get("/llm-slots", response_model=list[LlmSlotBindingItem])
