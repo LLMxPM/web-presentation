@@ -874,8 +874,8 @@ function assignMemberRunToDelegate(state: AgentSessionRuntimeState, memberRun: A
       item.kind === 'tool'
       && item.run_id === memberRun.parent_run_id
       && item.tool
-      && (item.tool.tool_name === 'delegate_task_to_member' || item.tool.tool_name === 'delegate_task_to_members')
-      && (!usedDelegateIds.has(item.tool.tool_call_id || item.id) || item.tool.tool_name === 'delegate_task_to_members')
+      && item.tool.tool_name === 'delegate_task_to_member'
+      && !usedDelegateIds.has(item.tool.tool_call_id || item.id)
       && delegateToolMatchesMember(item.tool.input_payload, memberRun.agent_id)
     ))
     .sort((left, right) => left.order_index - right.order_index)

@@ -369,7 +369,7 @@ function isAskUserToolItem(item: AgentTimelineItem) {
  * 判断工具是否为内容助手委派成员助手的入口。
  */
 export function isDelegateToolName(toolName: string | null | undefined) {
-  return toolName === 'delegate_task_to_member' || toolName === 'delegate_task_to_members'
+  return toolName === 'delegate_task_to_member'
 }
 
 function delegateToolMatchesMember(inputPayload: unknown, memberAgentId: string) {

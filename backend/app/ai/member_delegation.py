@@ -42,6 +42,8 @@ from app.services.auth_service import AuthContext
 logger = logging.getLogger(__name__)
 
 _MEMBER_AGENT_IDS = {"component-manager", "resource-manager"}
+_MEMBER_HITL_SKIPPED_CODE = "AI_MEMBER_DELEGATION_HITL_SKIPPED"
+_MEMBER_HITL_SKIPPED_MESSAGE = "成员助手需要用户处理，已终止该委派以保证父任务继续运行。"
 
 
 class MemberDelegationPaused(Exception):
@@ -107,61 +109,28 @@ class MemberDelegationExecutor:
         expected_output: str | None,
         delegate_tool_call_id: str | None,
         delegate_tool_name: str,
-        completed_results: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
-        """创建单个成员 run，执行完成后返回成员结果。"""
+        """创建单个成员 run；成员 HITL 不暂停父 run，而是返回失败结果。"""
 
-        result = await self._delegate_one(
-            member_id=member_id,
-            task=task,
-            handoff_context=handoff_context,
-            expected_output=expected_output,
-            delegate_tool_call_id=delegate_tool_call_id,
-            delegate_tool_name=delegate_tool_name,
-            parent_delegate_tool_args={
-                "member_id": member_id,
-                "task": task,
-                "handoff_context": handoff_context,
-                "expected_output": expected_output,
-            },
-            completed_results=completed_results or [],
-        )
+        try:
+            result = await self._delegate_one(
+                member_id=member_id,
+                task=task,
+                handoff_context=handoff_context,
+                expected_output=expected_output,
+                delegate_tool_call_id=delegate_tool_call_id,
+                delegate_tool_name=delegate_tool_name,
+                parent_delegate_tool_args={
+                    "member_id": member_id,
+                    "task": task,
+                    "handoff_context": handoff_context,
+                    "expected_output": expected_output,
+                },
+                completed_results=[],
+            )
+        except MemberDelegationPaused as exc:
+            result = await self._fail_paused_member_delegation(exc.requirement)
         return result.to_payload()
-
-    async def delegate_task_to_members(
-        self,
-        *,
-        tasks: list[Any],
-        delegate_tool_call_id: str | None,
-        delegate_tool_name: str,
-        completed_results: list[dict[str, Any]] | None = None,
-        start_index: int = 0,
-    ) -> dict[str, Any]:
-        """按顺序执行多个成员任务；任一成员暂停时保留批处理进度。"""
-
-        dumped_tasks = [_dump_task(item) for item in tasks]
-        results = list(completed_results or [])
-        for index, task_item in enumerate(dumped_tasks[start_index:], start=start_index):
-            try:
-                result = await self._delegate_one(
-                    member_id=str(task_item["member_id"]),
-                    task=str(task_item["task"]),
-                    handoff_context=_optional_text(task_item.get("handoff_context")),
-                    expected_output=_optional_text(task_item.get("expected_output")),
-                    delegate_tool_call_id=delegate_tool_call_id,
-                    delegate_tool_name=delegate_tool_name,
-                    parent_delegate_tool_args={"tasks": dumped_tasks},
-                    completed_results=results,
-                )
-            except MemberDelegationPaused as exc:
-                exc.requirement.tool_execution["delegate_batch_state"] = {
-                    "tasks": dumped_tasks,
-                    "current_index": index,
-                    "completed_results": results,
-                }
-                raise
-            results.append(result.to_payload())
-        return {"status": "completed", "items": results}
 
     async def continue_after_member_requirement(
         self,
@@ -169,7 +138,7 @@ class MemberDelegationExecutor:
         requirement_payload: dict[str, Any],
         deferred_tool_results: DeferredToolResults,
     ) -> dict[str, Any]:
-        """恢复暂停的成员 run，并在批量委派时继续执行剩余成员任务。"""
+        """恢复历史上已暂停的单成员 run，并返回成员结果。"""
 
         tool_execution = requirement_payload.get("tool_execution")
         if not isinstance(tool_execution, dict):
@@ -178,24 +147,46 @@ class MemberDelegationExecutor:
             requirement_payload=requirement_payload,
             deferred_tool_results=deferred_tool_results,
         )
-        batch_state = tool_execution.get("delegate_batch_state")
-        if not isinstance(batch_state, dict):
-            return member_result.to_payload()
-        tasks = batch_state.get("tasks")
-        if not isinstance(tasks, list):
-            return member_result.to_payload()
-        completed_results = [
-            item for item in (batch_state.get("completed_results") or [])
-            if isinstance(item, dict)
-        ]
-        completed_results.append(member_result.to_payload())
-        return await self.delegate_task_to_members(
-            tasks=tasks,
-            delegate_tool_call_id=_optional_text(tool_execution.get("parent_delegate_tool_call_id")),
-            delegate_tool_name=_optional_text(tool_execution.get("parent_delegate_tool_name")) or "delegate_task_to_members",
-            completed_results=completed_results,
-            start_index=int(batch_state.get("current_index") or 0) + 1,
+        return member_result.to_payload()
+
+    async def _fail_paused_member_delegation(self, requirement: AgentPendingRequirement) -> MemberDelegationResult:
+        """成员触发 HITL 时收敛为失败结果，避免父 run 暂停。"""
+
+        member_run_id = _optional_text(requirement.member_run_id) or _optional_text(
+            requirement.tool_execution.get("member_run_id") if isinstance(requirement.tool_execution, dict) else None
         )
+        if not member_run_id:
+            return MemberDelegationResult(
+                member_run_id="",
+                member_id=_optional_text(requirement.member_agent_id) or "",
+                member_name=_optional_text(requirement.member_agent_name),
+                status="failed",
+                result=_MEMBER_HITL_SKIPPED_MESSAGE,
+            )
+        async with self._session_factory() as session:
+            parent_run = await self._require_parent_run(session)
+            member_run = await session.get(AiAgentMemberRun, member_run_id)
+            if member_run is None or member_run.parent_run_id != parent_run.run_id:
+                return MemberDelegationResult(
+                    member_run_id=member_run_id,
+                    member_id=_optional_text(requirement.member_agent_id) or "",
+                    member_name=_optional_text(requirement.member_agent_name),
+                    status="failed",
+                    result=_MEMBER_HITL_SKIPPED_MESSAGE,
+                )
+            runner = _MemberAgentRunner(
+                session=session,
+                session_factory=self._session_factory,
+                current=self._current,
+                scope=self._scope,
+                runtime_context=self._runtime_context,
+                parent_run=parent_run,
+                member_run=member_run,
+            )
+            return await runner._mark_failed_result(
+                code=_MEMBER_HITL_SKIPPED_CODE,
+                message=_MEMBER_HITL_SKIPPED_MESSAGE,
+            )
 
     async def _delegate_one(
         self,
@@ -666,6 +657,7 @@ class _MemberAgentRunner:
         await self._mark_running_member_tools_failed(message=message)
         self._member_run.status = "failed"
         self._member_run.error_message = message
+        self._member_run.pending_requirement_json = None
         self._member_run.finished_at = _utc_now()
         self._member_run.updated_at = _utc_now()
         await self.append_member_event(
@@ -911,21 +903,12 @@ def _feedback_schema_from_args(args: dict[str, Any]) -> list[dict[str, Any]]:
         result.append(normalized)
     return result
 
+
 def _member_tool_call_id(member_run_id: str, raw_tool_call_id: str | None) -> str | None:
     """生成父 run 内唯一的成员工具调用 ID。"""
 
     raw = str(raw_tool_call_id or "").strip()
     return f"{member_run_id}:{raw}" if raw else None
-
-
-def _dump_task(item: Any) -> dict[str, Any]:
-    """把 Pydantic task 模型或 dict 规整为普通 JSON 对象。"""
-
-    if hasattr(item, "model_dump"):
-        return item.model_dump(mode="json", exclude_none=True)
-    if isinstance(item, dict):
-        return {str(key): value for key, value in item.items()}
-    return {}
 
 
 def _optional_text(value: Any) -> str | None:

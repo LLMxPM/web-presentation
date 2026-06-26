@@ -76,7 +76,7 @@ export function buildMutationRefreshEvents(
     }]
   }
 
-  if (toolName === 'apply_project_route_tree' || toolName === 'remove_project_route_node') {
+  if (toolName === 'update_project_route_tree') {
     return [{ ...baseEvent, kind: 'project-pages' }]
   }
 

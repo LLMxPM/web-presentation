@@ -103,20 +103,23 @@ def upgrade() -> None:
             count_key = (group_key[0], group_key[1], provider_key)
             provider_name_counts[count_key] = provider_name_counts.get(count_key, 0) + 1
             suffix = "" if provider_name_counts[count_key] == 1 else f" {provider_name_counts[count_key]}"
-            result = connection.execute(
-                provider_configs_table.insert().values(
-                    user_id=row["user_id"],
-                    scope=group_key[0],
-                    name=f"{label} 凭证{suffix}",
-                    provider_key=provider_key,
-                    base_url=base_url or None,
-                    api_key_ciphertext=cipher.encrypt(api_key_plain),
-                    status="active",
-                    created_by=row["created_by"],
-                    updated_by=row["updated_by"],
-                )
+            provider_config_id = int(
+                connection.execute(
+                    provider_configs_table.insert()
+                    .values(
+                        user_id=row["user_id"],
+                        scope=group_key[0],
+                        name=f"{label} 凭证{suffix}",
+                        provider_key=provider_key,
+                        base_url=base_url or None,
+                        api_key_ciphertext=cipher.encrypt(api_key_plain),
+                        status="active",
+                        created_by=row["created_by"],
+                        updated_by=row["updated_by"],
+                    )
+                    .returning(provider_configs_table.c.id)
+                ).scalar_one()
             )
-            provider_config_id = int(result.inserted_primary_key[0])
             provider_ids[group_key] = provider_config_id
 
         connection.execute(

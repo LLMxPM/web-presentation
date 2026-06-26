@@ -4,24 +4,12 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.ai.platform_tools import AgentToolContext, agent_tool
 from app.core.exceptions import AppException
 
 MemberAgentId = Literal["component-manager", "resource-manager"]
-
-
-class DelegateMemberTask(BaseModel):
-    """描述批量委派中的单个成员任务。"""
-
-    model_config = ConfigDict(extra="forbid")
-
-    member_id: MemberAgentId = Field(..., description="目标成员助手 ID，只能是 component-manager 或 resource-manager。")
-    task: str = Field(..., min_length=1, description="交给成员助手执行的具体任务。")
-    handoff_context: str | None = Field(default=None, description="内容助手已掌握、成员执行任务需要继承的上下文。")
-    expected_output: str | None = Field(default=None, description="期望成员返回给内容助手整合的结果格式或重点。")
 
 
 def build_team_delegation_tools(_session_factory: async_sessionmaker[AsyncSession]) -> list[Any]:
@@ -47,21 +35,7 @@ def build_team_delegation_tools(_session_factory: async_sessionmaker[AsyncSessio
             delegate_tool_name="delegate_task_to_member",
         )
 
-    @agent_tool(show_result=True)
-    async def delegate_task_to_members(
-        run_context: AgentToolContext,
-        tasks: list[DelegateMemberTask],
-    ) -> dict[str, Any]:
-        """按顺序把多个明确任务委派给组件助手或资源助手，并汇总成员结果。"""
-
-        executor = _resolve_delegation_executor(run_context)
-        return await executor.delegate_task_to_members(
-            tasks=tasks,
-            delegate_tool_call_id=_current_tool_call_id(run_context),
-            delegate_tool_name="delegate_task_to_members",
-        )
-
-    return [delegate_task_to_member, delegate_task_to_members]
+    return [delegate_task_to_member]
 
 
 def _resolve_delegation_executor(run_context: AgentToolContext) -> Any:

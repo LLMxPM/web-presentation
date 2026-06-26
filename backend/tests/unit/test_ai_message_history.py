@@ -68,7 +68,7 @@ def test_trim_unprocessed_tool_call_history_should_drop_orphan_tool_return() -> 
             "parts": [
                 {
                     "part_kind": "tool-return",
-                    "tool_name": "apply_project_route_tree",
+                    "tool_name": "update_project_route_tree",
                     "content": {"ok": True},
                     "tool_call_id": "call-route",
                 }
@@ -96,7 +96,7 @@ def test_trim_unprocessed_tool_call_history_should_keep_consecutive_tool_returns
                 },
                 {
                     "part_kind": "tool-call",
-                    "tool_name": "apply_project_route_tree",
+                    "tool_name": "update_project_route_tree",
                     "args": "{}",
                     "tool_call_id": "call-route",
                 },
@@ -118,7 +118,7 @@ def test_trim_unprocessed_tool_call_history_should_keep_consecutive_tool_returns
             "parts": [
                 {
                     "part_kind": "tool-return",
-                    "tool_name": "apply_project_route_tree",
+                    "tool_name": "update_project_route_tree",
                     "content": "路由已更新",
                     "tool_call_id": "call-route",
                 },

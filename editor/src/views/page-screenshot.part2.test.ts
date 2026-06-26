@@ -568,7 +568,7 @@ describe('page screenshot views', () => {
       detail: {
         workspaceId: 11,
         projectId: 21,
-        toolName: 'apply_project_route_tree',
+        toolName: 'update_project_route_tree',
         result: { success: true },
       },
     }))

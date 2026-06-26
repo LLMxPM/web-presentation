@@ -39,11 +39,8 @@ from app.ai.tool_spec_data import (
     _COMPONENT_LIBRARY_TOOL_KEYS,
     _COMPONENT_LIST_RESPONSE_EXAMPLE,
     _COORDINATOR_CONTENT_PROJECT_TOOL_KEYS,
-    _PROJECT_ROUTE_APPLY_RESPONSE_EXAMPLE,
-    _PROJECT_ROUTE_GROUP_WRITE_EXAMPLE,
-    _PROJECT_ROUTE_PAGE_WRITE_EXAMPLE,
-    _PROJECT_ROUTE_PREVIEW_RESPONSE_EXAMPLE,
     _PROJECT_ROUTE_TREE_RESPONSE_EXAMPLE,
+    _PROJECT_ROUTE_UPDATE_RESPONSE_EXAMPLE,
     _RESOURCE_LIBRARY_TOOL_KEYS,
     _RUNTIME_KIT_LIST_RESPONSE_EXAMPLE,
     _RUNTIME_KIT_TOOL_KEYS,
@@ -308,7 +305,6 @@ def _build_coordinator_content_read_tools(session_factory: async_sessionmaker[As
                 "get_project_style_config",
                 "list_project_pages",
                 "get_project_route_tree",
-                "preview_project_route_tree",
             ),
         ),
     ]
@@ -386,27 +382,6 @@ _COORDINATOR_TOOL_SPECS = (
             'member_id': 'resource-manager',
             'status': 'completed',
             'result': '已创建资源 hero_illustration，可在页面中按资源名引用。',
-        },
-    ),
-
-    _tool(
-        'delegate_task_to_members',
-        '批量委派成员助手',
-        'team_delegation',
-        'Team 委派',
-        '按顺序把多个明确任务委派给组件助手或资源助手，并汇总成员结果。',
-        default_instructions=(
-            '仅在同一用户目标需要连续调用多个成员任务时使用；tasks 按依赖顺序排列，前一项结果会作为后续执行上下文。'
-            '每个任务的 member_id 只能是 component-manager 或 resource-manager。不要把页面源码写入、项目路由维护或普通只读查询委派出去；'
-            '这些仍由内容助手直接处理。'
-        ),
-        risk_level='system',
-        response_example={
-            'status': 'completed',
-            'items': [
-                {'member_run_id': 'member-run-1', 'member_id': 'resource-manager', 'status': 'completed'},
-                {'member_run_id': 'member-run-2', 'member_id': 'component-manager', 'status': 'completed'},
-            ],
         },
     ),
 
@@ -504,28 +479,7 @@ _COORDINATOR_TOOL_SPECS = (
             '不要用标题、page_code 或猜测 ID。'
         ),
         response_example=_PROJECT_ROUTE_TREE_RESPONSE_EXAMPLE,
-        response_notes='remove_project_route_node 的 route_id 必须取自这里返回的路由节点 id；不要传 page_id 或 route 字符串。',
-    ),
-
-    _tool(
-        'preview_project_route_tree',
-        '预览路由树',
-        'content_project',
-        '内容与项目',
-        '校验拟覆盖的项目路由树并返回预览摘要。',
-        default_instructions=(
-            '用于写入整棵项目路由树前的必经预览步骤。routes 参数是完整路由树覆盖内容，不是局部 patch；'
-            '调用前应基于现有路由树构造完整 next_routes，保留不相关节点，只调整用户要求的页面或分组。'
-            'route 必须是单段相对片段，推荐小写 kebab-case，例如 home、chapter-1；'
-            '不允许 /、/home、home/、a/b、空白或包含空格。page 节点必须传 route_type="page"、'
-            'route、order、page_id，不能传 children 或 group_title；group 节点必须传 route_type="group"、'
-            'route、order、group_title、children，不能传 page_id。page_id 只能来自 list_project_pages；'
-            '不要传 icon 字段；项目路由菜单不再渲染路由图标，路由树接口也不再接收该字段。'
-            'valid=false 或预览结果不符合预期时，'
-            '不要继续调用 apply_project_route_tree。'
-        ),
-        response_example=_PROJECT_ROUTE_PREVIEW_RESPONSE_EXAMPLE,
-        response_notes='routes 是完整树覆盖内容。page 节点和 group 节点字段形状不同，route 只能是单段相对片段。',
+        response_notes='返回的 id 仅用于识别已有节点；update_project_route_tree 写入 routes 时不要携带 id。',
     ),
 
     _tool(
@@ -613,7 +567,7 @@ _COORDINATOR_TOOL_SPECS = (
             '创建页面前先确认当前项目、页面标题、页面说明、演讲者备注、页面编码语义和是否需要加入路由。'
             'page_content 必须是非空、可运行的 Vue SFC；创建前优先调用 check_page_code 检查候选 page_content。'
             'speaker_notes 是演讲模式展示给演讲者的纯文本备注，按普通文本保留换行，不写 HTML。'
-            '本工具只创建页面记录和初始源码，不会自动维护项目路由；如需加入导航，创建后按路由工具流程读取、预览并写入路由树。'
+            '本工具只创建页面记录和初始源码，不会自动维护项目路由；如需加入导航，创建后读取现有路由树并调用 update_project_route_tree 写入完整 routes。'
             '创建后如需视觉精修，应在页面上下文中读取新页面源码并通过结构化 edits 修改。'
         ),
         risk_level='write',
@@ -670,55 +624,24 @@ _COORDINATOR_TOOL_SPECS = (
     ),
 
     _tool(
-        'apply_project_route_tree',
-        '覆盖项目路由树',
+        'update_project_route_tree',
+        '更新项目路由树',
         'content_project',
         '内容与项目',
-        '以整树覆盖方式写入当前项目路由树。',
+        '以整树覆盖方式更新当前项目路由树。',
         default_instructions=(
-            '这是整树覆盖写入工具，会改变项目导航结构；平台会处理工具确认和暂停流程，你不要自行模拟确认机制。调用前必须已经读取项目页面列表、'
-            '读取现有路由树并调用 preview_project_route_tree 校验通过；routes 参数是完整路由树覆盖内容，'
-            '不是局部 patch；只在用户明确要求调整路由且意图清晰时使用，必须保留不相关路由节点。route 必须是单段相对片段，'
-            '推荐小写 kebab-case，例如 home、chapter-1；不允许 /、/home、home/、'
-            'a/b、空白或包含空格。page 节点必须传 route_type="page"、route、order、'
-            'page_id，不能传 children 或 group_title；group 节点必须传 route_type="group"、'
-            'route、order、group_title、children，不能传 page_id。page_id 只能来自 list_project_pages；'
-            '不要传 icon 字段；项目路由菜单不再渲染路由图标，路由树接口也不再接收该字段。'
+            '调用前必须读取项目页面列表和现有路由树；routes 参数是完整路由树覆盖内容，不是局部 patch。'
+            '新增、移动、隐藏或删除节点时，都要基于现有路由树构造完整 routes，保留不相关节点。'
+            '删除节点时，从完整 routes 中移除目标节点；删除分组等价于同时移除其 children。'
+            'route 必须是单段相对片段，推荐小写 kebab-case，例如 home、chapter-1；不允许 /、/home、home/、'
+            'a/b、空白或包含空格。page 节点必须传 route_type="page"、route、order、page_id，'
+            '不能传 children 或 group_title；group 节点必须传 route_type="group"、route、order、group_title、children，'
+            '不能传 page_id。page_id 只能来自 list_project_pages；不要传 id 或 icon 字段。'
+            '只在用户明确要求调整路由且意图清晰时使用；意图不清时先调用 ask_user。'
         ),
-        requires_confirmation=True,
-        risk_level='danger',
-        response_example=_PROJECT_ROUTE_APPLY_RESPONSE_EXAMPLE,
-        response_notes='写入前必须已用相同 routes 调用 preview_project_route_tree 并确认预览符合预期。',
-    ),
-
-    _tool(
-        'remove_project_route_node',
-        '移除路由节点',
-        'content_project',
-        '内容与项目',
-        '移除当前项目中的指定路由节点；分组节点会连同子页面节点一起移除。',
-        default_instructions=(
-            '这是路由移除工具，会改变项目导航结构；平台会处理工具确认和暂停流程，你不要自行模拟确认机制。调用前必须读取项目页面列表和现有路由树，'
-            '确认目标节点、子节点影响和用户移除意图。route_id 必须来自 get_project_route_tree 返回的路由节点 id，'
-            '不是 page_id、page_code 或 route 字符串。分组节点会连同子页面节点一起移除；'
-            '意图不清或可能误删时先调用 ask_user。'
-        ),
-        requires_confirmation=True,
-        risk_level='danger',
-        response_example={'success': True,
-         'message': '路由节点已移除。',
-         'route_count': 2,
-         'routes': [{'id': 11,
-                     'route_type': 'page',
-                     'route': 'cover',
-                     'order': 10,
-                     'hidden': False,
-                     'page_id': 3,
-                     'page_code': 'page_cover',
-                     'page_title': '封面',
-                     'display_title': '封面',
-                     'children': []}]},
-        response_notes='route_id 是路由节点 id；移除分组节点会同时移除其 children。',
+        risk_level='write',
+        response_example=_PROJECT_ROUTE_UPDATE_RESPONSE_EXAMPLE,
+        response_notes='routes 是完整树覆盖内容；写入成功后返回更新后的完整路由树。',
     ),
 
     _tool(
@@ -1340,7 +1263,6 @@ _COORDINATOR_GROUP_SPECS = (
             "get_project_style_config",
             "list_project_pages",
             "get_project_route_tree",
-            "preview_project_route_tree",
         ),
         required_context_fields=("workspace_id",),
         token_scopes=(
@@ -1417,7 +1339,7 @@ _COORDINATOR_GROUP_SPECS = (
     _group(
         "project_write",
         "项目写入",
-        "创建页面、维护页面元数据、更新项目样式配置、覆盖路由树或删除路由节点。",
+        "创建页面、维护页面元数据、更新项目样式配置或更新项目路由树。",
         (
             "get_project_style_config",
             "list_project_pages",
@@ -1425,9 +1347,7 @@ _COORDINATOR_GROUP_SPECS = (
             "update_page_metadata",
             "update_project_style_config",
             "get_project_route_tree",
-            "preview_project_route_tree",
-            "apply_project_route_tree",
-            "remove_project_route_node",
+            "update_project_route_tree",
         ),
         required_context_fields=("project_id",),
         token_scopes=(*PROJECT_TOOL_READ_SCOPES, *PROJECT_TOOL_WRITE_SCOPES),

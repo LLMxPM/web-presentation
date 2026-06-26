@@ -60,7 +60,6 @@ async def test_agent_config_api_should_manage_prompt_and_tool_overrides(
     team_delegation = next(group for group in coordinator["tool_groups"] if group["key"] == "team_delegation")
     assert [tool["key"] for tool in team_delegation["tools"]] == [
         "delegate_task_to_member",
-        "delegate_task_to_members",
     ]
     delegate_tool = _find_tool(coordinator, "delegate_task_to_member")
     delegate_schema = delegate_tool["agent_guide"]["parameters_schema"]
@@ -69,8 +68,10 @@ async def test_agent_config_api_should_manage_prompt_and_tool_overrides(
         "resource-manager",
     }
     assert "team_delegation" in delegate_tool["agent_guide"]["runtime_disclosure_groups"]
-    batch_delegate_tool = _find_tool(coordinator, "delegate_task_to_members")
-    assert "tasks" in batch_delegate_tool["agent_guide"]["parameters_schema"]["properties"]
+    route_tool = _find_tool(coordinator, "update_project_route_tree")
+    assert route_tool["requires_confirmation"] is False
+    assert route_tool["agent_guide"]["requires_confirmation"] is False
+    assert route_tool["agent_guide"]["risk_level"] == "write"
 
     update_response = await authenticated_client.patch(
         f"/api/ai/agent-configs/{AGENT_COORDINATOR_AGENT_ID}",
@@ -114,6 +115,9 @@ def test_agent_tool_specs_should_match_platform_tools() -> None:
         actual = {tool.name: tool for tool in tools}
         assert set(actual) == set(specs)
         assert actual["ask_user"].requires_confirmation is True
+        if agent_id == AGENT_COORDINATOR_AGENT_ID:
+            assert actual["update_project_route_tree"].requires_confirmation is False
+            assert specs["update_project_route_tree"].requires_confirmation is False
         for tool_name, tool in actual.items():
             assert isinstance(tool.parameters, dict), tool_name
             assert tool.description == specs[tool_name].description

@@ -1379,7 +1379,7 @@ describe('AgentConversationPanel', () => {
         kind: 'tool_confirmation',
         tool_execution: {
           tool_call_id: 'tool-route',
-          tool_name: 'apply_project_route_tree',
+          tool_name: 'update_project_style_config',
           arguments: {},
         },
       },

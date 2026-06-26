@@ -62,32 +62,6 @@ _RUNTIME_KIT_LIST_RESPONSE_EXAMPLE = {
     "message": "Runtime Kit 能力仅用于生成页面或组件源码中的公开 import；生成代码时必须按工具返回的版本化 import_path 原样使用。",
 }
 
-_PROJECT_ROUTE_PAGE_WRITE_EXAMPLE = {
-    "route_type": "page",
-    "route": "cover",
-    "order": 10,
-    "hidden": False,
-    "page_id": 3,
-    "children": [],
-}
-
-_PROJECT_ROUTE_GROUP_WRITE_EXAMPLE = {
-    "route_type": "group",
-    "route": "chapter-1",
-    "order": 20,
-    "hidden": False,
-    "group_title": "第一章",
-    "page_id": None,
-    "children": [
-        {
-            "route": "overview",
-            "order": 10,
-            "hidden": False,
-            "page_id": 4,
-        }
-    ],
-}
-
 _PROJECT_ROUTE_TREE_RESPONSE_EXAMPLE = {
     "routes": [
         {
@@ -130,17 +104,10 @@ _PROJECT_ROUTE_TREE_RESPONSE_EXAMPLE = {
     ],
 }
 
-_PROJECT_ROUTE_PREVIEW_RESPONSE_EXAMPLE = {
-    "valid": True,
-    "message": "路由树预览校验通过，尚未写入数据库。",
-    "current_route_count": 2,
-    "next_route_count": 3,
-    "next_routes": [_PROJECT_ROUTE_PAGE_WRITE_EXAMPLE, _PROJECT_ROUTE_GROUP_WRITE_EXAMPLE],
-}
-
-_PROJECT_ROUTE_APPLY_RESPONSE_EXAMPLE = {
+_PROJECT_ROUTE_UPDATE_RESPONSE_EXAMPLE = {
     "success": True,
-    "message": "项目路由树已整树覆盖。",
+    "message": "项目路由树已更新。",
+    "previous_route_count": 2,
     "route_count": 3,
     "routes": _PROJECT_ROUTE_TREE_RESPONSE_EXAMPLE["routes"],
 }
@@ -151,21 +118,18 @@ _COORDINATOR_CONTENT_PROJECT_TOOL_KEYS = (
     'get_project_style_config',
     'list_project_pages',
     'get_project_route_tree',
-    'preview_project_route_tree',
     'check_page_code',
     'apply_page_edits',
     'get_page_screenshot',
     'create_project_page',
     'update_page_metadata',
     'update_project_style_config',
-    'apply_project_route_tree',
-    'remove_project_route_node',
+    'update_project_route_tree',
 )
 
 
 _TEAM_DELEGATION_TOOL_KEYS = (
     'delegate_task_to_member',
-    'delegate_task_to_members',
 )
 
 

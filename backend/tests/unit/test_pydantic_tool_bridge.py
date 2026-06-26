@@ -339,7 +339,7 @@ def test_continue_message_history_should_rebuild_minimal_history_when_empty() ->
         run_input_payload={"message": "请调整路由"},
         run_id="run-1",
         tool_execution={
-            "tool_name": "apply_project_route_tree",
+            "tool_name": "update_project_route_tree",
             "tool_call_id": "tool-1",
             "tool_args": {"routes": []},
         },
@@ -347,7 +347,7 @@ def test_continue_message_history_should_rebuild_minimal_history_when_empty() ->
 
     assert len(history) == 2
     assert history[0].parts[0].content == "请调整路由"
-    assert history[1].parts[0].tool_name == "apply_project_route_tree"
+    assert history[1].parts[0].tool_name == "update_project_route_tree"
     assert history[1].parts[0].tool_call_id == "tool-1"
 
 
