@@ -332,12 +332,6 @@ def _build_coordinator_resource_read_tools(session_factory: async_sessionmaker[A
     )
 
 
-def _build_project_suggested_reference_tools(session_factory: async_sessionmaker[AsyncSession]) -> list[Any]:
-    """构建项目建议引用资源只读查询工具。"""
-
-    return _filter_tools(build_resource_manager_tools(session_factory), ("list_project_suggested_reference_assets",))
-
-
 def _build_coordinator_runtime_kit_tools(session_factory: async_sessionmaker[AsyncSession]) -> list[Any]:
     """构建内容助手可直接使用的 Runtime Kit 只读查询工具。"""
 
@@ -795,23 +789,15 @@ _COORDINATOR_TOOL_SPECS = (
         '读取资源列表',
         'resource_read',
         '资源读取',
-        '读取当前工作空间可见资源摘要；支持按资源类型、标签和关键词过滤。',
-        response_example={'total': 1,
-         'items': [{'id': 8,
-                    'name': 'brand_icon',
-                    'description': '品牌主 Logo',
-                    'asset_type': 'icon',
-                    'tags': ['品牌']}]},
-    ),
-
-    _tool(
-        'list_project_suggested_reference_assets',
-        '读取项目建议资源',
-        'project_suggested_reference_read',
-        '项目建议资源',
-        '读取当前项目建议优先参考的内容资源摘要。',
-        default_instructions='当任务需要使用资源素材时，建议优先考虑这些项目建议引用资源；不合适时可以使用其他资源或询问用户。',
-        response_example={'total': 1,
+        '默认读取当前项目建议优先参考的内容资源摘要，必要时回退当前工作空间可见资源；支持按资源类型、标签和关键词过滤。',
+        default_instructions=(
+            '任务需要使用素材时先调用该工具；默认 scope=suggested，优先返回项目建议引用资源。'
+            '当没有项目上下文、没有建议资源或建议资源筛选为空时，工具会自动回退全工作空间 active 普通资源，'
+            '并通过 source 与 fallback_reason 说明来源；明确需要查全量资源库时传 scope=all。'
+        ),
+        response_example={'source': 'project_suggested',
+         'fallback_reason': None,
+         'total': 1,
          'items': [{'id': 8,
                     'name': 'hero_illustration',
                     'original_name': 'hero.svg',
@@ -959,8 +945,14 @@ _COMPONENT_MANAGER_TOOL_SPECS = (
         '读取资源列表',
         'component_library',
         '组件库',
-        '读取当前工作空间可见资源摘要；支持按资源类型、标签和关键词过滤。',
-        response_example={'total': 1,
+        '默认读取当前项目建议优先参考的内容资源摘要，必要时回退当前工作空间可见资源；支持按资源类型、标签和关键词过滤。',
+        default_instructions=(
+            '默认 scope=suggested，优先返回项目建议引用资源；没有项目上下文、没有建议资源或筛选为空时会自动回退全工作空间资源。'
+            '组件或 preview_schema 明确需要浏览资源库素材时传 scope=all。'
+        ),
+        response_example={'source': 'workspace_all',
+         'fallback_reason': 'no_project_context',
+         'total': 1,
          'items': [{'id': 8,
                     'name': 'brand_icon',
                     'description': '品牌主 Logo',
@@ -1161,23 +1153,14 @@ _RESOURCE_MANAGER_TOOL_SPECS = (
         '读取资源列表',
         'resource_library',
         '资源库',
-        '读取当前工作空间可见资源摘要；支持按资源类型、标签和关键词过滤。',
-        response_example={'total': 1,
-         'items': [{'id': 8,
-                    'name': 'brand_icon',
-                    'description': '品牌主 Logo',
-                    'asset_type': 'icon',
-                    'tags': ['品牌']}]},
-    ),
-
-    _tool(
-        'list_project_suggested_reference_assets',
-        '读取项目建议资源',
-        'resource_library',
-        '资源库',
-        '读取当前项目建议优先参考的内容资源摘要。',
-        default_instructions='当任务需要使用资源素材时，建议优先考虑这些项目建议引用资源；不合适时可以使用其他资源或询问用户。',
-        response_example={'total': 1,
+        '默认读取当前项目建议优先参考的内容资源摘要，必要时回退当前工作空间可见资源；支持按资源类型、标签和关键词过滤。',
+        default_instructions=(
+            '默认 scope=suggested，优先返回项目建议引用资源；没有项目上下文、没有建议资源或筛选为空时会自动回退全工作空间资源。'
+            '明确要盘点或维护资源库时传 scope=all。'
+        ),
+        response_example={'source': 'project_suggested',
+         'fallback_reason': None,
+         'total': 1,
          'items': [{'id': 8,
                     'name': 'hero_illustration',
                     'original_name': 'hero.svg',
@@ -1390,21 +1373,11 @@ _COORDINATOR_GROUP_SPECS = (
     _group(
         "resource_read",
         "资源读取",
-        "查询当前工作空间可直接用于页面生成或改写的资源列表、资源内容和资源标签；不负责资源写入或归档。",
+        "默认优先查询当前项目建议引用资源，并可回退全工作空间资源；同时提供资源内容和资源标签读取，不负责资源写入或归档。",
         ("list_resource_assets", "get_resource_asset_content", "list_resource_tags"),
         required_context_fields=("workspace_id",),
         token_scopes=RESOURCE_TOOL_READ_SCOPES,
         build_tools=_build_coordinator_resource_read_tools,
-        disclosable=True,
-    ),
-    _group(
-        "project_suggested_reference_read",
-        "项目建议资源",
-        "读取当前项目建议优先参考的内容资源摘要。",
-        ("list_project_suggested_reference_assets",),
-        required_context_fields=("workspace_id", "project_id"),
-        token_scopes=RESOURCE_TOOL_READ_SCOPES,
-        build_tools=_build_project_suggested_reference_tools,
         disclosable=True,
     ),
     _group(
@@ -1498,7 +1471,7 @@ _COMPONENT_MANAGER_GROUP_SPECS = (
     _group(
         "resource_read",
         "资源读取",
-        "读取当前工作空间可见资源列表、标签和可编辑内容，供组件源码和 preview_schema 选择资源引用。",
+        "默认优先读取当前项目建议引用资源，并可回退全工作空间资源；同时提供标签和可编辑内容，供组件源码和 preview_schema 选择资源引用。",
         ("list_resource_assets", "get_resource_asset_content", "list_resource_tags"),
         required_context_fields=("workspace_id",),
         token_scopes=RESOURCE_TOOL_READ_SCOPES,
@@ -1538,13 +1511,13 @@ _RESOURCE_MANAGER_GROUP_SPECS = (
     _group(
         "resource_library",
         "资源库",
-        "面向资源助手展示的合并工具组，覆盖资源读取、项目建议资源、内容写入、元数据维护、复制和归档。",
+        "面向资源助手展示的合并工具组，覆盖建议优先资源读取、内容写入、元数据维护、复制和归档。",
         _RESOURCE_LIBRARY_TOOL_KEYS,
     ),
     _group(
         "resource_read",
         "资源读取",
-        "读取当前工作空间可见资源列表、标签和可编辑内容。",
+        "默认优先读取当前项目建议引用资源，并可回退全工作空间资源；同时提供标签和可编辑内容读取。",
         ("list_resource_assets", "get_resource_asset_content", "list_resource_tags"),
         required_context_fields=("workspace_id",),
         token_scopes=RESOURCE_TOOL_READ_SCOPES,
@@ -1552,15 +1525,6 @@ _RESOURCE_MANAGER_GROUP_SPECS = (
             build_resource_manager_tools(session_factory),
             ("list_resource_assets", "get_resource_asset_content", "list_resource_tags"),
         ),
-    ),
-    _group(
-        "project_suggested_reference_read",
-        "项目建议资源",
-        "读取当前项目建议优先参考的内容资源摘要。",
-        ("list_project_suggested_reference_assets",),
-        required_context_fields=("workspace_id", "project_id"),
-        token_scopes=RESOURCE_TOOL_READ_SCOPES,
-        build_tools=_build_project_suggested_reference_tools,
     ),
     _group(
         "resource_write",

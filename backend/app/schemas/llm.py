@@ -1,4 +1,4 @@
-"""文件功能：定义大模型供应商目录、用户模型配置与槽位绑定的接口模型。"""
+"""文件功能：定义大模型供应商目录、供应商配置、用户模型配置与槽位绑定的接口模型。"""
 
 from __future__ import annotations
 
@@ -46,10 +46,11 @@ class LlmConfigItem(SchemaBase):
     owner_user_id: int | None = None
     editable: bool
     name: str
+    provider_config_id: int
+    provider_config_name: str
     provider_key: str
     provider_label: str
     model_id: str
-    base_url: str | None = None
     thinking_enabled: bool
     thinking_effort: str | None = None
     supports_image_input: bool
@@ -58,6 +59,22 @@ class LlmConfigItem(SchemaBase):
     history_token_ratio: float
     compression_target_ratio: float
     advanced_config_json: dict[str, Any] = Field(default_factory=dict)
+    status: str
+    created_at: str | None = None
+    updated_at: str | None = None
+
+
+class LlmProviderConfigItem(SchemaBase):
+    """用户可复用的大模型供应商配置详情。"""
+
+    id: int
+    scope: AiLlmConfigScope
+    owner_user_id: int | None = None
+    editable: bool
+    name: str
+    provider_key: str
+    provider_label: str
+    base_url: str | None = None
     status: str
     has_api_key: bool
     api_key_masked: str | None = None
@@ -72,6 +89,8 @@ class LlmSlotBindingItem(SchemaBase):
     slot_label: str
     llm_config_id: int | None = None
     llm_config_name: str | None = None
+    provider_config_id: int | None = None
+    provider_config_name: str | None = None
     provider_key: str | None = None
     provider_label: str | None = None
     model_id: str | None = None
@@ -85,10 +104,8 @@ class LlmConfigCreateRequest(BaseModel):
 
     name: str = Field(min_length=1, max_length=128)
     scope: AiLlmConfigScope = AiLlmConfigScope.PERSONAL
-    provider_key: str = Field(min_length=1, max_length=64)
+    provider_config_id: int = Field(ge=1)
     model_id: str = Field(min_length=1, max_length=255)
-    base_url: str | None = Field(default=None, max_length=1024)
-    api_key: str | None = Field(default=None, max_length=4096)
     thinking_enabled: bool = False
     thinking_effort: str | None = Field(default=None, max_length=64)
     supports_image_input: bool = False
@@ -112,10 +129,8 @@ class LlmConfigUpdateRequest(BaseModel):
     """更新大模型配置的请求体。"""
 
     name: str | None = Field(default=None, min_length=1, max_length=128)
-    provider_key: str | None = Field(default=None, min_length=1, max_length=64)
+    provider_config_id: int | None = Field(default=None, ge=1)
     model_id: str | None = Field(default=None, min_length=1, max_length=255)
-    base_url: str | None = Field(default=None, max_length=1024)
-    api_key: str | None = Field(default=None, max_length=4096)
     thinking_enabled: bool | None = None
     thinking_effort: str | None = Field(default=None, max_length=64)
     supports_image_input: bool | None = None
@@ -143,3 +158,22 @@ class LlmSlotBindingUpdateRequest(BaseModel):
 
     llm_config_id: int | None = Field(default=None, ge=1)
     scope: AiLlmConfigScope = AiLlmConfigScope.PERSONAL
+
+
+class LlmProviderConfigCreateRequest(BaseModel):
+    """创建供应商配置的请求体。"""
+
+    name: str = Field(min_length=1, max_length=128)
+    scope: AiLlmConfigScope = AiLlmConfigScope.PERSONAL
+    provider_key: str = Field(min_length=1, max_length=64)
+    base_url: str | None = Field(default=None, max_length=1024)
+    api_key: str | None = Field(default=None, max_length=4096)
+
+
+class LlmProviderConfigUpdateRequest(BaseModel):
+    """更新供应商配置的请求体；provider 与 scope 创建后不可变。"""
+
+    name: str | None = Field(default=None, min_length=1, max_length=128)
+    base_url: str | None = Field(default=None, max_length=1024)
+    api_key: str | None = Field(default=None, max_length=4096)
+    status: str | None = Field(default=None, pattern="^(active|archived)$")

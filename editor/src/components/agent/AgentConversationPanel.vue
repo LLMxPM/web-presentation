@@ -297,6 +297,8 @@ interface AgentSessionLlmMetadata {
   config_id?: number | string | null
   scope?: 'global' | 'personal' | string
   name?: string | null
+  provider_config_id?: number | string | null
+  provider_config_name?: string | null
   provider_key?: string | null
   provider_label?: string | null
   model_id?: string | null
@@ -1781,7 +1783,7 @@ function normalizeLlmConfigId(value: AgentSessionLlmMetadata['config_id'] | unde
  */
 function formatLlmConfigLabel(config: LlmConfigItem) {
   const scopeLabel = config.scope === 'global' ? '全局模型' : '我的模型'
-  return `${scopeLabel} · ${config.name}（${config.provider_label} / ${config.model_id}）`
+  return `${scopeLabel} · ${config.name}（${config.provider_config_name || config.provider_label} / ${config.model_id}）`
 }
 
 /**
@@ -1790,7 +1792,7 @@ function formatLlmConfigLabel(config: LlmConfigItem) {
 function formatLlmMetadataLabel(metadata: AgentSessionLlmMetadata) {
   const scopeLabel = metadata.scope === 'global' ? '全局模型' : metadata.scope === 'personal' ? '我的模型' : '模型'
   const name = metadata.name || '已选模型'
-  const provider = metadata.provider_label || metadata.provider_key || ''
+  const provider = metadata.provider_config_name || metadata.provider_label || metadata.provider_key || ''
   const modelId = metadata.model_id || ''
   const detail = [provider, modelId].filter(Boolean).join(' / ')
   return detail ? `${scopeLabel} · ${name}（${detail}）` : `${scopeLabel} · ${name}`

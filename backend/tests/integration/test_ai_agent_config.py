@@ -29,8 +29,19 @@ async def test_agent_config_api_should_manage_prompt_and_tool_overrides(
         COMPONENT_MANAGER_AGENT_ID,
         RESOURCE_MANAGER_AGENT_ID,
     }
+    for catalog_item in catalog_items.values():
+        tool_keys = {
+            tool["key"]
+            for group in catalog_item["tool_groups"]
+            for tool in group["tools"]
+        }
+        group_keys = {group["key"] for group in catalog_item["tool_groups"]}
+        assert "list_project_suggested_reference_assets" not in tool_keys
+        assert "project_suggested_reference_read" not in group_keys
 
     coordinator = catalog_items[AGENT_COORDINATOR_AGENT_ID]
+    resource_list_tool = _find_tool(coordinator, "list_resource_assets")
+    assert "scope" in resource_list_tool["agent_guide"]["parameters_schema"]["properties"]
     ask_user = _find_tool(coordinator, "ask_user")
     assert ask_user["configurable"] is False
     assert ask_user["requires_confirmation"] is True

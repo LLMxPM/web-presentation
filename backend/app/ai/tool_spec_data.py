@@ -195,7 +195,6 @@ _COMPONENT_LIBRARY_TOOL_KEYS = (
 
 _RESOURCE_LIBRARY_TOOL_KEYS = (
     'list_resource_assets',
-    'list_project_suggested_reference_assets',
     'get_resource_asset_content',
     'list_resource_tags',
     'create_resource_asset',

@@ -2,14 +2,19 @@
 
 from __future__ import annotations
 
+import pytest
 from httpx import AsyncClient
 
 from app.ai.agent import RESOURCE_MANAGER_AGENT_ID
 from app.ai.auth_tokens import RESOURCE_TOOL_READ_SCOPES, build_agent_tool_token
 from app.ai.platform_tools import AgentToolContext
-from app.ai.tools.resource.resource_library import build_get_resource_asset_content_tool
+from app.ai.tools.resource.resource_library import (
+    build_get_resource_asset_content_tool,
+    build_list_resource_assets_tool,
+)
+from app.core.exceptions import AppException
 from app.db.session import get_session_factory
-from app.models.enums import UserRole
+from app.models.enums import AssetType, UserRole
 from app.models.user import User
 from app.services.auth_service import AuthContext
 
@@ -39,6 +44,113 @@ async def test_get_resource_asset_content_tool_should_return_recoverable_error_f
     assert result["data"]["asset"]["content_editable"] is False
 
 
+async def test_list_resource_assets_tool_should_prefer_project_suggested_assets(
+    authenticated_client: AsyncClient,
+) -> None:
+    """资源列表默认应优先返回当前项目建议引用资源，并保留精简字段。"""
+
+    workspace_id = await _create_workspace(authenticated_client, "AI 建议资源工作空间")
+    project_id = await _create_project(authenticated_client, workspace_id, "AI 建议资源项目")
+    hero_asset = await _create_text_asset(authenticated_client, workspace_id, "hero_image", tags=["主视觉"])
+    flow_asset = await _create_text_asset(authenticated_client, workspace_id, "process_flow", tags=["流程"])
+    await _replace_project_suggested_assets(authenticated_client, project_id, [flow_asset["id"], hero_asset["id"]])
+
+    tool = build_list_resource_assets_tool(get_session_factory())
+    run_context = _build_tool_run_context(workspace_id=workspace_id, project_id=project_id)
+
+    result = await tool.entrypoint(run_context)
+
+    assert result["source"] == "project_suggested"
+    assert result["fallback_reason"] is None
+    assert [item["id"] for item in result["items"]] == [flow_asset["id"], hero_asset["id"]]
+    assert set(result["items"][0]) == {"id", "name", "original_name", "description", "asset_type", "content_editable"}
+
+
+async def test_list_resource_assets_tool_should_fallback_without_project_context(
+    authenticated_client: AsyncClient,
+) -> None:
+    """缺少 project_id 时默认 scope 应回退全工作空间资源。"""
+
+    workspace_id = await _create_workspace(authenticated_client, "AI 无项目资源工作空间")
+    asset = await _create_text_asset(authenticated_client, workspace_id, "workspace_asset", tags=["通用"])
+    tool = build_list_resource_assets_tool(get_session_factory())
+    run_context = _build_tool_run_context(workspace_id=workspace_id)
+
+    result = await tool.entrypoint(run_context)
+
+    assert result["source"] == "workspace_all"
+    assert result["fallback_reason"] == "no_project_context"
+    assert [item["id"] for item in result["items"]] == [asset["id"]]
+    assert result["items"][0]["tags"] == ["通用"]
+
+
+async def test_list_resource_assets_tool_should_fallback_when_suggested_empty_or_filtered(
+    authenticated_client: AsyncClient,
+) -> None:
+    """建议资源为空或筛选为空时，应使用同样筛选条件回退全量资源。"""
+
+    workspace_id = await _create_workspace(authenticated_client, "AI 建议回退资源工作空间")
+    empty_project_id = await _create_project(authenticated_client, workspace_id, "空建议资源项目")
+    filtered_project_id = await _create_project(authenticated_client, workspace_id, "筛选回退资源项目")
+    hero_asset = await _create_text_asset(authenticated_client, workspace_id, "hero_image", tags=["主视觉"])
+    diagram_asset = await _create_text_asset(authenticated_client, workspace_id, "library_only_diagram", tags=["图表"])
+    await _replace_project_suggested_assets(authenticated_client, filtered_project_id, [hero_asset["id"]])
+
+    tool = build_list_resource_assets_tool(get_session_factory())
+    empty_result = await tool.entrypoint(
+        _build_tool_run_context(workspace_id=workspace_id, project_id=empty_project_id),
+    )
+    filtered_result = await tool.entrypoint(
+        _build_tool_run_context(workspace_id=workspace_id, project_id=filtered_project_id),
+        keyword="library_only",
+    )
+
+    assert empty_result["source"] == "workspace_all"
+    assert empty_result["fallback_reason"] == "no_project_suggested_assets"
+    assert {item["id"] for item in empty_result["items"]} == {hero_asset["id"], diagram_asset["id"]}
+    assert filtered_result["source"] == "workspace_all"
+    assert filtered_result["fallback_reason"] == "suggested_filter_empty"
+    assert [item["id"] for item in filtered_result["items"]] == [diagram_asset["id"]]
+
+
+async def test_list_resource_assets_tool_scope_all_should_query_workspace_assets(
+    authenticated_client: AsyncClient,
+) -> None:
+    """scope=all 应跳过项目建议资源，直接查询工作空间资源库。"""
+
+    workspace_id = await _create_workspace(authenticated_client, "AI 全量资源工作空间")
+    project_id = await _create_project(authenticated_client, workspace_id, "AI 全量资源项目")
+    suggested_asset = await _create_text_asset(authenticated_client, workspace_id, "suggested_asset", tags=["建议"])
+    library_asset = await _create_text_asset(authenticated_client, workspace_id, "library_only_asset", tags=["素材库"])
+    await _replace_project_suggested_assets(authenticated_client, project_id, [suggested_asset["id"]])
+
+    tool = build_list_resource_assets_tool(get_session_factory())
+    result = await tool.entrypoint(
+        _build_tool_run_context(workspace_id=workspace_id, project_id=project_id),
+        keyword="library_only",
+        scope="all",
+    )
+
+    assert result["source"] == "workspace_all"
+    assert result["fallback_reason"] is None
+    assert [item["id"] for item in result["items"]] == [library_asset["id"]]
+
+
+async def test_list_resource_assets_tool_should_reject_invalid_scope(
+    authenticated_client: AsyncClient,
+) -> None:
+    """scope 只能使用 suggested 或 all。"""
+
+    workspace_id = await _create_workspace(authenticated_client, "AI 非法 scope 资源工作空间")
+    tool = build_list_resource_assets_tool(get_session_factory())
+    run_context = _build_tool_run_context(workspace_id=workspace_id)
+
+    with pytest.raises(AppException) as exc_info:
+        await tool.entrypoint(run_context, scope="project")
+
+    assert exc_info.value.code == "AI_TOOL_ARGUMENT_INVALID"
+
+
 async def _create_workspace(authenticated_client: AsyncClient, name: str) -> int:
     """创建测试工作空间并返回 ID。"""
 
@@ -47,7 +159,56 @@ async def _create_workspace(authenticated_client: AsyncClient, name: str) -> int
     return int(response.json()["id"])
 
 
-def _build_tool_run_context(*, workspace_id: int) -> AgentToolContext:
+async def _create_project(authenticated_client: AsyncClient, workspace_id: int, name: str) -> int:
+    """创建测试项目并返回 ID。"""
+
+    response = await authenticated_client.post(
+        "/api/projects",
+        json={"workspace_id": workspace_id, "name": name, "status": "active"},
+    )
+    assert response.status_code == 200
+    return int(response.json()["id"])
+
+
+async def _create_text_asset(
+    authenticated_client: AsyncClient,
+    workspace_id: int,
+    name: str,
+    *,
+    tags: list[str] | None = None,
+) -> dict:
+    """创建文本型图片资源并返回接口载荷。"""
+
+    response = await authenticated_client.post(
+        f"/api/workspaces/{workspace_id}/assets/content",
+        json={
+            "asset_type": AssetType.IMAGE.value,
+            "name": name,
+            "original_name": f"{name}.svg",
+            "description": f"{name} 描述",
+            "content": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 16 16\"><rect width=\"16\" height=\"16\"/></svg>",
+            "tags": tags or [],
+        },
+    )
+    assert response.status_code == 200
+    return response.json()
+
+
+async def _replace_project_suggested_assets(
+    authenticated_client: AsyncClient,
+    project_id: int,
+    asset_ids: list[int],
+) -> None:
+    """覆盖保存项目建议引用资源。"""
+
+    response = await authenticated_client.put(
+        f"/api/projects/{project_id}/suggested-reference-assets",
+        json={"asset_ids": asset_ids},
+    )
+    assert response.status_code == 200
+
+
+def _build_tool_run_context(*, workspace_id: int, project_id: int | None = None) -> AgentToolContext:
     """构造资源读取工具需要的运行上下文和签名 token。"""
 
     current = _build_auth_context()
@@ -59,7 +220,7 @@ def _build_tool_run_context(*, workspace_id: int) -> AgentToolContext:
         "run_id": run_id,
         "session_id": session_id,
         "workspace_id": workspace_id,
-        "project_id": None,
+        "project_id": project_id,
         "page_id": None,
         "component_id": None,
         "source": "test",
@@ -71,7 +232,7 @@ def _build_tool_run_context(*, workspace_id: int) -> AgentToolContext:
         session_id=session_id,
         agent_id=RESOURCE_MANAGER_AGENT_ID,
         workspace_id=workspace_id,
-        project_id=None,
+        project_id=project_id,
         page_id=None,
         component_id=None,
         source="test",

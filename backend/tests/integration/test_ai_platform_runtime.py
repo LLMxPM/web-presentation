@@ -24,14 +24,24 @@ from app.schemas.agent import AgentPendingRequirement, AgentRunEvent, AgentScope
 async def _create_runtime_llm_config(authenticated_client: AsyncClient) -> int:
     """创建运行态测试会话使用的显式模型配置。"""
 
+    provider_response = await authenticated_client.post(
+        "/api/ai/llm-provider-configs",
+        json={
+            "name": "运行态测试供应商",
+            "provider_key": "openai",
+            "base_url": "https://api.openai.com/v1",
+            "api_key": "sk-runtime-test",
+        },
+    )
+    assert provider_response.status_code == 201
+    provider_id = provider_response.json()["id"]
+
     response = await authenticated_client.post(
         "/api/ai/llm-configs",
         json={
             "name": "运行态测试模型",
-            "provider_key": "openai",
+            "provider_config_id": provider_id,
             "model_id": "gpt-4.1-mini",
-            "base_url": "https://api.openai.com/v1",
-            "api_key": "sk-runtime-test",
             "advanced_config_json": {},
         },
     )
@@ -1155,7 +1165,7 @@ async def test_agent_message_history_should_sanitize_image_payload_and_preserve_
 
     assert first_run is not None
     assert second_run is not None
-    preserved_content = first_run.message_history_json[-1]["parts"][0]["content"]
+    preserved_content = _tool_return_content(first_run.message_history_json[-1]["parts"][0]["content"])
     assert preserved_content["image_url"] == image_url
     assert preserved_content["base64"] == "[已移除的图片 data URL]"
     assert preserved_content["payload"] == large_tool_result["payload"]
@@ -1487,7 +1497,16 @@ def _large_payload_delta(*, tool_result: dict[str, object]) -> list[dict[str, ob
     dumped = ModelMessagesTypeAdapter.dump_python(
         [
             ModelRequest(parts=[UserPromptPart(content="生成图片并返回大结果")]),
-            ModelResponse(parts=[TextPart(content="准备调用渲染工具。")]),
+            ModelResponse(
+                parts=[
+                    TextPart(content="准备调用渲染工具。"),
+                    ToolCallPart(
+                        tool_name="render_image",
+                        args={"format": "png"},
+                        tool_call_id="tool-large-payload",
+                    ),
+                ]
+            ),
             ModelRequest(
                 parts=[
                     ToolReturnPart(
@@ -1502,3 +1521,15 @@ def _large_payload_delta(*, tool_result: dict[str, object]) -> list[dict[str, ob
     )
     assert isinstance(dumped, list)
     return dumped
+
+
+def _tool_return_content(value: object) -> dict[str, object]:
+    """把不同 Pydantic AI 版本的工具返回内容序列化结果规整为字典。"""
+
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, str):
+        decoded = json.loads(value)
+        assert isinstance(decoded, dict)
+        return decoded
+    raise AssertionError(f"不支持的工具返回内容类型：{type(value)!r}")

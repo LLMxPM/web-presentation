@@ -24,7 +24,6 @@ def build_resource_manager_tools(session_factory: async_sessionmaker[AsyncSessio
 
     return [
         build_list_resource_assets_tool(session_factory),
-        build_list_project_suggested_reference_assets_tool(session_factory),
         build_get_resource_asset_content_tool(session_factory),
         build_list_resource_tags_tool(session_factory),
         build_create_resource_asset_tool(session_factory),
@@ -45,63 +44,88 @@ def build_list_resource_assets_tool(session_factory: async_sessionmaker[AsyncSes
         asset_type: AssetType | None = None,
         tag: str | None = None,
         keyword: str | None = None,
+        scope: str = "suggested",
         limit: int = 50,
     ) -> dict[str, Any]:
-        """读取当前工作空间 active 普通资源摘要，可按类型、标签和关键词过滤。"""
+        """读取当前项目建议资源或工作空间 active 普通资源摘要，可按类型、标签和关键词过滤。"""
 
         dependencies, _ = await resolve_tool_context(session_factory,
             run_context,
             required_scopes=RESOURCE_TOOL_READ_SCOPES,
             required_dependency_fields=("workspace_id",),
         )
+        workspace_id = int(dependencies["workspace_id"])
         bounded_limit = max(1, min(int(limit), 100))
-        normalized_keyword = str(keyword or "").strip().lower()
-        normalized_tag = str(tag or "").strip().lower()
+        normalized_asset_type = _normalize_asset_type_filter(asset_type)
+        normalized_scope = str(scope or "suggested").strip().lower()
+        if normalized_scope not in {"suggested", "all"}:
+            raise AppException(status_code=400, code="AI_TOOL_ARGUMENT_INVALID", detail="scope 只能是 suggested 或 all。")
+
         async with session_factory() as session:
-            assets, _ = await AssetService(session).list_assets(
-                int(dependencies["workspace_id"]),
-                asset_type=asset_type,
-                status=RecordStatus.ACTIVE,
-                include_history=False,
-                keyword=keyword,
-                page=1,
-                page_size=100,
+            if normalized_scope == "all":
+                return await _list_all_resource_assets(
+                    session,
+                    workspace_id=workspace_id,
+                    asset_type=normalized_asset_type,
+                    tag=tag,
+                    keyword=keyword,
+                    limit=bounded_limit,
+                )
+
+            project_id = dependencies.get("project_id")
+            if project_id is None:
+                return await _list_all_resource_assets(
+                    session,
+                    workspace_id=workspace_id,
+                    asset_type=normalized_asset_type,
+                    tag=tag,
+                    keyword=keyword,
+                    limit=bounded_limit,
+                    fallback_reason="no_project_context",
+                )
+
+            suggested_assets = await ProjectSuggestedReferenceAssetService(session).list_assets(
+                int(project_id),
+                workspace_id=workspace_id,
             )
-            items = []
-            for asset in assets:
-                if normalized_tag and normalized_tag not in {str(item).strip().lower() for item in asset.tags or []}:
-                    continue
-                if normalized_keyword and normalized_keyword not in _build_asset_search_text(asset):
-                    continue
-                items.append(_dump_asset_list_item(asset))
-                if len(items) >= bounded_limit:
-                    break
-            return {"total": len(items), "items": items}
+            if not suggested_assets:
+                return await _list_all_resource_assets(
+                    session,
+                    workspace_id=workspace_id,
+                    asset_type=normalized_asset_type,
+                    tag=tag,
+                    keyword=keyword,
+                    limit=bounded_limit,
+                    fallback_reason="no_project_suggested_assets",
+                )
+
+            filtered_assets = _filter_asset_models(
+                suggested_assets,
+                asset_type=normalized_asset_type,
+                tag=tag,
+                keyword=keyword,
+            )
+            if not filtered_assets:
+                return await _list_all_resource_assets(
+                    session,
+                    workspace_id=workspace_id,
+                    asset_type=normalized_asset_type,
+                    tag=tag,
+                    keyword=keyword,
+                    limit=bounded_limit,
+                    fallback_reason="suggested_filter_empty",
+                )
+            return {
+                "source": "project_suggested",
+                "fallback_reason": None,
+                "total": len(filtered_assets),
+                "items": [
+                    ProjectSuggestedReferenceAssetService.dump_asset_item(asset).model_dump(mode="json")
+                    for asset in filtered_assets[:bounded_limit]
+                ],
+            }
 
     return list_resource_assets
-
-
-def build_list_project_suggested_reference_assets_tool(session_factory: async_sessionmaker[AsyncSession]) -> Any:
-    """构建项目建议引用资源列表工具。"""
-
-    @agent_tool(show_result=False)
-    async def list_project_suggested_reference_assets(run_context: AgentToolContext) -> dict[str, Any]:
-        """读取当前项目建议优先参考的内容资源摘要。"""
-
-        dependencies, _ = await resolve_tool_context(
-            session_factory,
-            run_context,
-            required_scopes=RESOURCE_TOOL_READ_SCOPES,
-            required_dependency_fields=("workspace_id", "project_id"),
-        )
-        async with session_factory() as session:
-            items = await ProjectSuggestedReferenceAssetService(session).list_asset_items(
-                int(dependencies["project_id"]),
-                workspace_id=int(dependencies["workspace_id"]),
-            )
-            return {"total": len(items), "items": [item.model_dump(mode="json") for item in items]}
-
-    return list_project_suggested_reference_assets
 
 
 def build_get_resource_asset_content_tool(session_factory: async_sessionmaker[AsyncSession]) -> Any:
@@ -336,6 +360,41 @@ def build_archive_resource_asset_tool(session_factory: async_sessionmaker[AsyncS
     return archive_resource_asset
 
 
+async def _list_all_resource_assets(
+    session: AsyncSession,
+    *,
+    workspace_id: int,
+    asset_type: AssetType | None,
+    tag: str | None,
+    keyword: str | None,
+    limit: int,
+    fallback_reason: str | None = None,
+) -> dict[str, Any]:
+    """查询全工作空间 active 普通资源，并按统一工具结构返回。"""
+
+    assets, _ = await AssetService(session).list_assets(
+        workspace_id,
+        asset_type=asset_type,
+        status=RecordStatus.ACTIVE,
+        include_history=False,
+        keyword=keyword,
+        page=1,
+        page_size=100,
+    )
+    filtered_assets = _filter_asset_models(
+        assets,
+        asset_type=asset_type,
+        tag=tag,
+        keyword=keyword,
+    )
+    return {
+        "source": "workspace_all",
+        "fallback_reason": fallback_reason,
+        "total": len(filtered_assets),
+        "items": [_dump_asset_list_item(asset) for asset in filtered_assets[:limit]],
+    }
+
+
 def _dump_asset(asset: Any) -> dict[str, Any]:
     """转换资源为工具响应中的稳定 JSON 结构。"""
 
@@ -361,6 +420,44 @@ def _dump_asset_list_item(asset: Any) -> dict[str, Any]:
         "content_editable": payload["content_editable"],
         "updated_at": payload["updated_at"],
     }
+
+
+def _filter_asset_models(
+    assets: list[Any],
+    *,
+    asset_type: AssetType | None,
+    tag: str | None,
+    keyword: str | None,
+) -> list[Any]:
+    """按资源类型、标签和关键词过滤资源模型，供建议资源与全量资源共用。"""
+
+    normalized_asset_type = asset_type.value if isinstance(asset_type, AssetType) else None
+    normalized_tag = str(tag or "").strip().lower()
+    normalized_keyword = str(keyword or "").strip().lower()
+    filtered_assets = []
+    for asset in assets:
+        if normalized_asset_type and str(asset.asset_type or "") != normalized_asset_type:
+            continue
+        if normalized_tag and normalized_tag not in {str(item).strip().lower() for item in asset.tags or []}:
+            continue
+        if normalized_keyword and normalized_keyword not in _build_asset_search_text(asset):
+            continue
+        filtered_assets.append(asset)
+    return filtered_assets
+
+
+def _normalize_asset_type_filter(asset_type: AssetType | str | None) -> AssetType | None:
+    """把工具入参中的资源类型规整为枚举，兼容运行时传入的 JSON 字符串。"""
+
+    if asset_type is None or isinstance(asset_type, AssetType):
+        return asset_type
+    normalized_value = str(asset_type or "").strip()
+    if not normalized_value:
+        return None
+    try:
+        return AssetType(normalized_value)
+    except ValueError as exc:
+        raise AppException(status_code=400, code="AI_TOOL_ARGUMENT_INVALID", detail="asset_type 不合法。") from exc
 
 
 def _build_asset_search_text(asset: Any) -> str:

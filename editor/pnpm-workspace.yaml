@@ -1,0 +1,12 @@
+packages:
+  - .
+
+allowBuilds:
+  vue-demi: true
+
+overrides:
+  dompurify: ^3.4.5
+  js-cookie: ^3.0.7
+
+onlyBuiltDependencies:
+  - vue-demi

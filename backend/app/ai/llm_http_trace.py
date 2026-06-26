@@ -78,11 +78,14 @@ def build_llm_http_trace_client(config: AiLlmConfig) -> httpx.AsyncClient | None
         return None
 
     trace_dir = str(settings.ai_llm_http_trace_dir_path)
+    provider_key = str(config.provider_config.provider_key or "")
+    provider_config_id = config.provider_config.id
     client = _cached_trace_client(
         trace_dir=trace_dir,
         body_max_bytes=settings.ai_llm_http_trace_body_max_bytes,
         config_id=config.id,
-        provider_key=str(config.provider_key or ""),
+        provider_config_id=provider_config_id,
+        provider_key=provider_key,
         model_id=str(config.model_id or ""),
     )
     if client.is_closed:
@@ -91,7 +94,8 @@ def build_llm_http_trace_client(config: AiLlmConfig) -> httpx.AsyncClient | None
             trace_dir=trace_dir,
             body_max_bytes=settings.ai_llm_http_trace_body_max_bytes,
             config_id=config.id,
-            provider_key=str(config.provider_key or ""),
+            provider_config_id=provider_config_id,
+            provider_key=provider_key,
             model_id=str(config.model_id or ""),
         )
     return client
@@ -174,6 +178,7 @@ def _cached_trace_client(
     trace_dir: str,
     body_max_bytes: int,
     config_id: int | None,
+    provider_config_id: int | None,
     provider_key: str,
     model_id: str,
 ) -> httpx.AsyncClient:
@@ -181,6 +186,7 @@ def _cached_trace_client(
 
     metadata = {
         "llm_config_id": config_id,
+        "llm_provider_config_id": provider_config_id,
         "provider_key": provider_key,
         "model_id": model_id,
     }

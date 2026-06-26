@@ -1,4 +1,4 @@
-"""文件功能：封装用户级大模型配置、供应商目录与固定槽位绑定的业务逻辑。"""
+"""文件功能：封装用户级大模型供应商配置、模型配置与固定槽位绑定的业务逻辑。"""
 
 from __future__ import annotations
 
@@ -18,8 +18,8 @@ from app.ai.provider_catalog import (
 )
 from app.ai.secret_cipher import LlmSecretCipher
 from app.core.exceptions import AppException
+from app.models.ai_llm import AiLlmConfig, AiLlmProviderConfig, AiLlmSlotBinding
 from app.models.enums import AiLlmConfigScope, RecordStatus, UserRole
-from app.models.ai_llm import AiLlmConfig, AiLlmSlotBinding
 from app.schemas.llm import (
     LLM_CONTEXT_WINDOW_TOKEN_DEFAULT,
     LLM_COMPRESSION_TARGET_RATIO_DEFAULT,
@@ -28,13 +28,16 @@ from app.schemas.llm import (
     LlmConfigItem,
     LlmConfigUpdateRequest,
     LlmProviderCatalogItem,
+    LlmProviderConfigCreateRequest,
+    LlmProviderConfigItem,
+    LlmProviderConfigUpdateRequest,
     LlmSlotBindingItem,
     LlmSlotBindingUpdateRequest,
 )
 
 
 class AiLlmService:
-    """统一管理用户级大模型配置、固定槽位绑定与供应商目录。"""
+    """统一管理用户级大模型供应商配置、模型参数配置和固定槽位绑定。"""
 
     def __init__(self, session: AsyncSession, *, user_id: int, user_role: str = UserRole.WORKSPACE_USER.value) -> None:
         self.session = session
@@ -68,6 +71,97 @@ class AiLlmService:
             for item in list_llm_provider_entries()
         ]
 
+    async def list_provider_configs(self) -> list[LlmProviderConfigItem]:
+        """列出当前用户可见的供应商凭证配置。"""
+
+        statement = (
+            select(AiLlmProviderConfig)
+            .where(
+                (AiLlmProviderConfig.scope == AiLlmConfigScope.GLOBAL.value)
+                | (
+                    (AiLlmProviderConfig.scope == AiLlmConfigScope.PERSONAL.value)
+                    & (AiLlmProviderConfig.user_id == self.user_id)
+                )
+            )
+            .order_by(AiLlmProviderConfig.scope.asc(), AiLlmProviderConfig.updated_at.desc(), AiLlmProviderConfig.id.desc())
+        )
+        items = (await self.session.scalars(statement)).all()
+        return [self._to_provider_config_item(item) for item in items]
+
+    async def get_provider_config(self, provider_config_id: int) -> LlmProviderConfigItem:
+        """读取单条供应商配置详情。"""
+
+        config = await self._get_provider_config_or_raise(provider_config_id)
+        return self._to_provider_config_item(config)
+
+    async def create_provider_config(
+        self,
+        payload: LlmProviderConfigCreateRequest,
+        *,
+        operator_id: int,
+    ) -> LlmProviderConfigItem:
+        """创建当前用户可复用的供应商凭证配置。"""
+
+        requested_scope = payload.scope
+        if requested_scope == AiLlmConfigScope.GLOBAL and not self._is_platform_admin:
+            raise AppException(status_code=403, code="AI_LLM_GLOBAL_ADMIN_REQUIRED", detail="只有平台管理员可以维护全局供应商。")
+
+        provider_key = self._normalize_provider_key(payload.provider_key)
+        base_url = self._normalize_optional_text(payload.base_url)
+        api_key = self._normalize_optional_secret(payload.api_key)
+        self._validate_provider_constraints(provider_key=provider_key, base_url=base_url, api_key=api_key)
+
+        config = AiLlmProviderConfig(
+            user_id=None if requested_scope == AiLlmConfigScope.GLOBAL else self.user_id,
+            scope=requested_scope.value,
+            name=payload.name.strip(),
+            provider_key=provider_key,
+            base_url=base_url,
+            api_key_ciphertext=self._cipher.encrypt(api_key),
+            status=RecordStatus.ACTIVE.value,
+            created_by=operator_id,
+            updated_by=operator_id,
+        )
+        self.session.add(config)
+        await self.session.commit()
+        await self.session.refresh(config)
+        return self._to_provider_config_item(config)
+
+    async def update_provider_config(
+        self,
+        provider_config_id: int,
+        payload: LlmProviderConfigUpdateRequest,
+        *,
+        operator_id: int,
+    ) -> LlmProviderConfigItem:
+        """更新当前用户可编辑的供应商凭证配置。"""
+
+        config = await self._get_provider_config_or_raise(provider_config_id)
+        if config.scope == AiLlmConfigScope.GLOBAL.value and not self._is_platform_admin:
+            raise AppException(status_code=403, code="AI_LLM_GLOBAL_READONLY", detail="管理员全局供应商不允许普通用户修改。")
+
+        fields_set = payload.model_fields_set
+        next_base_url = self._normalize_optional_text(payload.base_url) if "base_url" in fields_set else config.base_url
+        current_api_key = self._cipher.decrypt(config.api_key_ciphertext)
+        next_api_key = self._normalize_optional_secret(payload.api_key) if "api_key" in fields_set else current_api_key
+        self._validate_provider_constraints(
+            provider_key=config.provider_key,
+            base_url=next_base_url,
+            api_key=next_api_key,
+        )
+
+        if payload.name is not None:
+            config.name = payload.name.strip()
+        config.base_url = next_base_url
+        config.api_key_ciphertext = self._cipher.encrypt(next_api_key)
+        if payload.status is not None:
+            config.status = payload.status
+        config.updated_by = operator_id
+
+        await self.session.commit()
+        await self.session.refresh(config)
+        return self._to_provider_config_item(config)
+
     async def list_configs(self) -> list[LlmConfigItem]:
         """列出当前用户可管理的全部大模型配置。"""
 
@@ -80,6 +174,7 @@ class AiLlmService:
                     & (AiLlmConfig.user_id == self.user_id)
                 )
             )
+            .options(selectinload(AiLlmConfig.provider_config))
             .order_by(AiLlmConfig.scope.asc(), AiLlmConfig.updated_at.desc(), AiLlmConfig.id.desc())
         )
         items = (await self.session.scalars(statement)).all()
@@ -92,31 +187,32 @@ class AiLlmService:
         return self._to_config_item(config)
 
     async def create_config(self, payload: LlmConfigCreateRequest, *, operator_id: int) -> LlmConfigItem:
-        """创建当前用户的大模型配置。"""
+        """创建当前用户的大模型参数配置。"""
 
         requested_scope = payload.scope
         if requested_scope == AiLlmConfigScope.GLOBAL and not self._is_platform_admin:
             raise AppException(status_code=403, code="AI_LLM_GLOBAL_ADMIN_REQUIRED", detail="只有平台管理员可以维护全局模型。")
 
-        provider_key = self._normalize_provider_key(payload.provider_key)
-        base_url = self._normalize_optional_text(payload.base_url)
-        api_key = self._normalize_optional_secret(payload.api_key)
-        advanced_config = self._validate_advanced_config(payload.advanced_config_json)
+        provider_config = await self._get_selectable_provider_config_or_raise(
+            payload.provider_config_id,
+            scope=requested_scope,
+            require_active=True,
+        )
         provider_entry = self._validate_provider_constraints(
-            provider_key=provider_key,
-            base_url=base_url,
-            api_key=api_key,
+            provider_key=provider_config.provider_key,
+            base_url=provider_config.base_url,
+            api_key=self._cipher.decrypt(provider_config.api_key_ciphertext),
             max_output_tokens=payload.max_output_tokens,
         )
+        advanced_config = self._validate_advanced_config(payload.advanced_config_json)
 
         config = AiLlmConfig(
             user_id=None if requested_scope == AiLlmConfigScope.GLOBAL else self.user_id,
             scope=requested_scope.value,
             name=payload.name.strip(),
-            provider_key=provider_key,
+            provider_config_id=provider_config.id,
+            provider_config=provider_config,
             model_id=payload.model_id.strip(),
-            base_url=base_url,
-            api_key_ciphertext=self._cipher.encrypt(api_key),
             thinking_enabled=bool(payload.thinking_enabled and provider_entry.supports_thinking),
             thinking_effort=self._normalize_thinking_effort(provider_entry, payload.thinking_effort),
             supports_image_input=bool(payload.supports_image_input),
@@ -132,6 +228,7 @@ class AiLlmService:
         self.session.add(config)
         await self.session.commit()
         await self.session.refresh(config)
+        config.provider_config = provider_config
         return self._to_config_item(config)
 
     async def update_config(
@@ -141,18 +238,29 @@ class AiLlmService:
         *,
         operator_id: int,
     ) -> LlmConfigItem:
-        """更新当前用户的大模型配置。"""
+        """更新当前用户的大模型参数配置。"""
 
         config = await self._get_config_or_raise(config_id)
         if config.scope == AiLlmConfigScope.GLOBAL.value and not self._is_platform_admin:
             raise AppException(status_code=403, code="AI_LLM_GLOBAL_READONLY", detail="管理员全局模型不允许普通用户修改。")
 
-        next_provider_key = self._normalize_provider_key(payload.provider_key or config.provider_key)
+        scope = AiLlmConfigScope(config.scope)
+        next_provider_config = config.provider_config
+        if payload.provider_config_id is not None:
+            next_provider_config = await self._get_selectable_provider_config_or_raise(
+                payload.provider_config_id,
+                scope=scope,
+                require_active=True,
+            )
+        elif next_provider_config.status != RecordStatus.ACTIVE.value and payload.status != RecordStatus.ARCHIVED.value:
+            raise AppException(
+                status_code=409,
+                code="AI_LLM_PROVIDER_CONFIG_DISABLED",
+                detail="当前模型引用的供应商配置不可用，请先更换供应商配置。",
+            )
+
         next_name = payload.name.strip() if payload.name is not None else config.name
         next_model_id = payload.model_id.strip() if payload.model_id is not None else config.model_id
-        next_base_url = (
-            self._normalize_optional_text(payload.base_url) if payload.base_url is not None else config.base_url
-        )
         next_advanced_config = (
             self._validate_advanced_config(payload.advanced_config_json)
             if payload.advanced_config_json is not None
@@ -160,28 +268,22 @@ class AiLlmService:
         )
         next_max_output_tokens = payload.max_output_tokens if payload.max_output_tokens is not None else config.max_output_tokens
 
-        current_api_key = self._cipher.decrypt(config.api_key_ciphertext)
-        next_api_key = current_api_key
-        if payload.api_key is not None:
-            next_api_key = self._normalize_optional_secret(payload.api_key)
-
         provider_entry = self._validate_provider_constraints(
-            provider_key=next_provider_key,
-            base_url=next_base_url,
-            api_key=next_api_key,
+            provider_key=next_provider_config.provider_key,
+            base_url=next_provider_config.base_url,
+            api_key=self._cipher.decrypt(next_provider_config.api_key_ciphertext),
             max_output_tokens=next_max_output_tokens,
         )
         next_thinking_effort = config.thinking_effort
         if payload.thinking_effort is not None:
             next_thinking_effort = self._normalize_thinking_effort(provider_entry, payload.thinking_effort)
-        elif next_provider_key != config.provider_key:
+        elif next_provider_config.id != config.provider_config_id:
             next_thinking_effort = self._normalize_thinking_effort(provider_entry, config.thinking_effort)
 
         config.name = next_name
-        config.provider_key = next_provider_key
+        config.provider_config_id = next_provider_config.id
+        config.provider_config = next_provider_config
         config.model_id = next_model_id
-        config.base_url = next_base_url
-        config.api_key_ciphertext = self._cipher.encrypt(next_api_key)
         config.thinking_enabled = (
             bool(payload.thinking_enabled and provider_entry.supports_thinking)
             if payload.thinking_enabled is not None
@@ -205,6 +307,7 @@ class AiLlmService:
 
         await self.session.commit()
         await self.session.refresh(config)
+        config.provider_config = next_provider_config
         return self._to_config_item(config)
 
     async def list_slot_bindings(self) -> list[LlmSlotBindingItem]:
@@ -255,6 +358,8 @@ class AiLlmService:
             raise AppException(status_code=409, code="AI_LLM_GLOBAL_SLOT_REQUIRES_GLOBAL_CONFIG", detail="全局默认槽位只能绑定管理员全局模型。")
         if config.status != RecordStatus.ACTIVE.value:
             raise AppException(status_code=409, code="AI_LLM_CONFIG_DISABLED", detail="只能绑定启用中的大模型配置。")
+        if config.provider_config.status != RecordStatus.ACTIVE.value:
+            raise AppException(status_code=409, code="AI_LLM_PROVIDER_CONFIG_DISABLED", detail="只能绑定供应商可用的大模型配置。")
 
         if binding is None:
             binding = AiLlmSlotBinding(
@@ -291,6 +396,12 @@ class AiLlmService:
                 code="AI_LLM_SLOT_UNBOUND",
                 detail="当前智能体槽位绑定的大模型配置不可用，请重新绑定。",
             )
+        if binding.llm_config.provider_config.status != RecordStatus.ACTIVE.value:
+            raise AppException(
+                status_code=409,
+                code="AI_LLM_SLOT_UNBOUND",
+                detail="当前智能体槽位绑定的供应商配置不可用，请重新绑定。",
+            )
         return binding.llm_config
 
     async def get_selectable_active_config_or_raise(self, config_id: int) -> AiLlmConfig:
@@ -303,6 +414,12 @@ class AiLlmService:
                 code="AI_LLM_CONFIG_DISABLED",
                 detail="只能选择启用中的大模型配置。",
             )
+        if config.provider_config.status != RecordStatus.ACTIVE.value:
+            raise AppException(
+                status_code=409,
+                code="AI_LLM_PROVIDER_CONFIG_DISABLED",
+                detail="只能选择供应商可用的大模型配置。",
+            )
         return config
 
     def build_session_llm_metadata(
@@ -313,13 +430,16 @@ class AiLlmService:
     ) -> dict[str, Any]:
         """把运行时模型配置固化为会话 metadata 中的只读快照。"""
 
-        provider_entry = get_llm_provider_entry(config.provider_key)
+        provider_config = config.provider_config
+        provider_entry = get_llm_provider_entry(provider_config.provider_key)
         return {
             "selection_kind": selection_kind,
             "config_id": config.id,
             "scope": config.scope,
             "name": config.name,
-            "provider_key": config.provider_key,
+            "provider_config_id": provider_config.id,
+            "provider_config_name": provider_config.name,
+            "provider_key": provider_config.provider_key,
             "provider_label": provider_entry.label,
             "model_id": config.model_id,
             "supports_image_input": bool(config.supports_image_input),
@@ -334,7 +454,7 @@ class AiLlmService:
                 AiLlmSlotBinding.scope == AiLlmConfigScope.PERSONAL.value,
                 AiLlmSlotBinding.user_id == self.user_id,
             )
-            .options(selectinload(AiLlmSlotBinding.llm_config))
+            .options(selectinload(AiLlmSlotBinding.llm_config).selectinload(AiLlmConfig.provider_config))
         )).all()
         global_bindings = (await self.session.scalars(
             select(AiLlmSlotBinding)
@@ -342,7 +462,7 @@ class AiLlmService:
                 AiLlmSlotBinding.scope == AiLlmConfigScope.GLOBAL.value,
                 AiLlmSlotBinding.user_id.is_(None),
             )
-            .options(selectinload(AiLlmSlotBinding.llm_config))
+            .options(selectinload(AiLlmSlotBinding.llm_config).selectinload(AiLlmConfig.provider_config))
         )).all()
         result: dict[str, LlmSlotBindingItem] = {}
 
@@ -372,24 +492,70 @@ class AiLlmService:
         if definition is None:
             return
         config = binding.llm_config
-        provider_entry = get_llm_provider_entry(config.provider_key) if config is not None else None
+        provider_config = config.provider_config if config is not None else None
+        provider_entry = get_llm_provider_entry(provider_config.provider_key) if provider_config is not None else None
+        binding_ready = bool(
+            config is not None
+            and config.status == RecordStatus.ACTIVE.value
+            and provider_config is not None
+            and provider_config.status == RecordStatus.ACTIVE.value
+        )
         result[binding.slot] = LlmSlotBindingItem(
             slot=binding.slot,
             slot_label=definition.label,
             llm_config_id=config.id if config is not None else None,
             llm_config_name=config.name if config is not None else None,
-            provider_key=config.provider_key if config is not None else None,
+            provider_config_id=provider_config.id if provider_config is not None else None,
+            provider_config_name=provider_config.name if provider_config is not None else None,
+            provider_key=provider_config.provider_key if provider_config is not None else None,
             provider_label=provider_entry.label if provider_entry is not None else None,
             model_id=config.model_id if config is not None else None,
-            binding_ready=bool(config is not None and config.status == RecordStatus.ACTIVE.value),
-            supports_image_input=bool(config.supports_image_input) if config is not None else False,
+            binding_ready=binding_ready,
+            supports_image_input=bool(config.supports_image_input) if binding_ready and config is not None else False,
             inherited_from_global=inherited_from_global,
         )
+
+    async def _get_provider_config_or_raise(self, provider_config_id: int) -> AiLlmProviderConfig:
+        """按主键读取当前用户可见的供应商配置。"""
+
+        statement = select(AiLlmProviderConfig).where(AiLlmProviderConfig.id == provider_config_id)
+        config = await self.session.scalar(statement)
+        if config is None or not self._can_read_provider_config(config):
+            raise AppException(status_code=404, code="AI_LLM_PROVIDER_CONFIG_NOT_FOUND", detail="供应商配置不存在。")
+        return config
+
+    async def _get_selectable_provider_config_or_raise(
+        self,
+        provider_config_id: int,
+        *,
+        scope: AiLlmConfigScope,
+        require_active: bool,
+    ) -> AiLlmProviderConfig:
+        """读取当前模型可引用的供应商配置，并校验 scope 与状态。"""
+
+        config = await self._get_provider_config_or_raise(provider_config_id)
+        if config.scope != scope.value:
+            raise AppException(
+                status_code=409,
+                code="AI_LLM_PROVIDER_SCOPE_MISMATCH",
+                detail="模型只能引用同范围的供应商配置。",
+            )
+        if require_active and config.status != RecordStatus.ACTIVE.value:
+            raise AppException(
+                status_code=409,
+                code="AI_LLM_PROVIDER_CONFIG_DISABLED",
+                detail="只能引用启用中的供应商配置。",
+            )
+        return config
 
     async def _get_config_or_raise(self, config_id: int) -> AiLlmConfig:
         """按主键读取当前用户可管理的大模型配置。"""
 
-        statement = select(AiLlmConfig).where(AiLlmConfig.id == config_id)
+        statement = (
+            select(AiLlmConfig)
+            .where(AiLlmConfig.id == config_id)
+            .options(selectinload(AiLlmConfig.provider_config))
+        )
         config = await self.session.scalar(statement)
         if config is None or not self._can_read_config(config):
             raise AppException(status_code=404, code="AI_LLM_CONFIG_NOT_FOUND", detail="大模型配置不存在。")
@@ -419,15 +585,15 @@ class AiLlmService:
                 AiLlmSlotBinding.user_id.is_(None) if user_id is None else AiLlmSlotBinding.user_id == user_id,
                 AiLlmSlotBinding.slot == slot,
             )
-            .options(selectinload(AiLlmSlotBinding.llm_config))
+            .options(selectinload(AiLlmSlotBinding.llm_config).selectinload(AiLlmConfig.provider_config))
         )
         return await self.session.scalar(statement)
 
     def _to_config_item(self, config: AiLlmConfig) -> LlmConfigItem:
-        """把 ORM 模型转换为前端可消费的配置详情。"""
+        """把 ORM 模型转换为前端可消费的模型详情。"""
 
-        provider_entry = get_llm_provider_entry(config.provider_key)
-        raw_api_key = self._cipher.decrypt(config.api_key_ciphertext)
+        provider_config = config.provider_config
+        provider_entry = get_llm_provider_entry(provider_config.provider_key)
         editable = self._can_edit_config(config)
         return LlmConfigItem(
             id=config.id,
@@ -435,10 +601,11 @@ class AiLlmService:
             owner_user_id=config.user_id,
             editable=editable,
             name=config.name,
-            provider_key=config.provider_key,
+            provider_config_id=provider_config.id,
+            provider_config_name=provider_config.name,
+            provider_key=provider_config.provider_key,
             provider_label=provider_entry.label,
             model_id=config.model_id,
-            base_url=config.base_url,
             thinking_enabled=bool(config.thinking_enabled and provider_entry.supports_thinking),
             thinking_effort=config.thinking_effort,
             supports_image_input=bool(config.supports_image_input),
@@ -451,6 +618,26 @@ class AiLlmService:
                 else LLM_COMPRESSION_TARGET_RATIO_DEFAULT
             ),
             advanced_config_json=self._validate_advanced_config(config.advanced_config_json or {}),
+            status=config.status,
+            created_at=config.created_at.isoformat() if config.created_at is not None else None,
+            updated_at=config.updated_at.isoformat() if config.updated_at is not None else None,
+        )
+
+    def _to_provider_config_item(self, config: AiLlmProviderConfig) -> LlmProviderConfigItem:
+        """把供应商配置 ORM 模型转换为前端可消费的详情。"""
+
+        provider_entry = get_llm_provider_entry(config.provider_key)
+        raw_api_key = self._cipher.decrypt(config.api_key_ciphertext)
+        editable = self._can_edit_provider_config(config)
+        return LlmProviderConfigItem(
+            id=config.id,
+            scope=AiLlmConfigScope(config.scope),
+            owner_user_id=config.user_id,
+            editable=editable,
+            name=config.name,
+            provider_key=config.provider_key,
+            provider_label=provider_entry.label,
+            base_url=config.base_url,
             status=config.status,
             has_api_key=bool(raw_api_key),
             api_key_masked=self._cipher.mask(raw_api_key) if editable or config.scope == AiLlmConfigScope.GLOBAL.value else None,
@@ -473,6 +660,20 @@ class AiLlmService:
 
     def _can_edit_config(self, config: AiLlmConfig) -> bool:
         """判断当前用户是否可编辑模型配置。"""
+
+        if config.scope == AiLlmConfigScope.GLOBAL.value:
+            return self._is_platform_admin
+        return config.user_id == self.user_id
+
+    def _can_read_provider_config(self, config: AiLlmProviderConfig) -> bool:
+        """判断当前用户是否可读取供应商配置。"""
+
+        if config.scope == AiLlmConfigScope.GLOBAL.value:
+            return True
+        return config.user_id == self.user_id
+
+    def _can_edit_provider_config(self, config: AiLlmProviderConfig) -> bool:
+        """判断当前用户是否可编辑供应商配置。"""
 
         if config.scope == AiLlmConfigScope.GLOBAL.value:
             return self._is_platform_admin

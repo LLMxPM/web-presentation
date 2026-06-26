@@ -36,7 +36,7 @@
     <section class="grid gap-5 xl:grid-cols-[420px_minmax(0,1fr)]">
       <aside class="min-h-[720px] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
         <div class="border-b border-slate-200 p-3">
-          <div class="grid grid-cols-2 rounded-xl bg-slate-100 p-1">
+          <div class="grid grid-cols-3 rounded-xl bg-slate-100 p-1">
             <button
               type="button"
               class="h-9 rounded-lg text-xs font-bold transition"
@@ -44,6 +44,14 @@
               @click="activeSection = 'agents'"
             >
               智能体配置
+            </button>
+            <button
+              type="button"
+              class="h-9 rounded-lg text-xs font-bold transition"
+              :class="activeSection === 'providers' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'"
+              @click="activeSection = 'providers'"
+            >
+              供应商
             </button>
             <button
               type="button"
@@ -101,6 +109,59 @@
           </div>
         </div>
 
+        <div v-else-if="activeSection === 'providers'" class="max-h-[calc(100vh-230px)] overflow-y-auto p-3">
+          <div class="mb-3 flex items-center justify-between gap-3">
+            <p class="text-sm font-semibold text-slate-900">供应商</p>
+            <BaseButton variant="primary" size="sm" @click="resetProviderForm">
+              <Plus class="h-3.5 w-3.5" />
+              新建供应商
+            </BaseButton>
+          </div>
+          <div v-if="providerConfigsQuery.isFetching.value && !(providerConfigsQuery.data.value?.length)" class="rounded-xl border border-dashed border-slate-200 px-4 py-10 text-center text-sm text-slate-400">
+            正在读取供应商...
+          </div>
+          <div v-else-if="providerConfigsQuery.data.value?.length" class="space-y-2">
+            <button
+              v-for="config in providerConfigsQuery.data.value"
+              :key="config.id"
+              type="button"
+              class="w-full rounded-xl border p-3 text-left transition"
+              :class="selectedProviderConfigId === config.id ? 'border-indigo-200 bg-indigo-50/70' : 'border-slate-200 bg-white hover:bg-slate-50'"
+              @click="handleEditProviderConfig(config)"
+            >
+              <div class="flex items-start justify-between gap-3">
+                <div class="min-w-0">
+                  <p class="truncate text-sm font-bold text-slate-900">{{ config.name }}</p>
+                  <p class="mt-1 truncate text-xs text-slate-500">{{ config.provider_label }} · {{ config.base_url || '默认地址' }}</p>
+                </div>
+                <span class="flex shrink-0 flex-col items-end gap-1">
+                  <span
+                    class="rounded-full px-2 py-0.5 text-[11px] font-semibold"
+                    :class="config.scope === 'global' ? 'bg-indigo-50 text-indigo-700' : 'bg-slate-100 text-slate-600'"
+                  >
+                    {{ config.scope === 'global' ? '全局' : '个人' }}
+                  </span>
+                  <span
+                    class="rounded-full px-2 py-0.5 text-[11px] font-semibold"
+                    :class="config.status === 'active' ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'"
+                  >
+                    {{ config.status === 'active' ? '启用' : '归档' }}
+                  </span>
+                </span>
+              </div>
+              <div class="mt-3 flex min-w-0 items-center justify-between gap-2">
+                <code class="min-w-0 truncate rounded bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-600">{{ config.provider_key }}</code>
+                <span class="shrink-0 text-[11px] font-semibold" :class="config.has_api_key ? 'text-slate-500' : 'text-amber-600'">
+                  {{ config.has_api_key ? config.api_key_masked : '未保存 API Key' }}
+                </span>
+              </div>
+            </button>
+          </div>
+          <div v-else class="rounded-xl border border-dashed border-slate-200 px-4 py-10 text-center text-sm text-slate-400">
+            还没有供应商。
+          </div>
+        </div>
+
         <div v-else class="max-h-[calc(100vh-230px)] overflow-y-auto p-3">
           <div class="mb-3 flex items-center justify-between gap-3">
             <p class="text-sm font-semibold text-slate-900">模型</p>
@@ -124,7 +185,7 @@
               <div class="flex items-start justify-between gap-3">
                 <div class="min-w-0">
                   <p class="truncate text-sm font-bold text-slate-900">{{ config.name }}</p>
-                  <p class="mt-1 truncate text-xs text-slate-500">{{ config.provider_label }} / {{ config.model_id }}</p>
+                  <p class="mt-1 truncate text-xs text-slate-500">{{ config.provider_config_name }} / {{ config.model_id }}</p>
                 </div>
                 <span class="flex shrink-0 flex-col items-end gap-1">
                   <span
@@ -143,8 +204,8 @@
               </div>
               <div class="mt-3 flex min-w-0 items-center justify-between gap-2">
                 <code class="min-w-0 truncate rounded bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-600">{{ config.model_id }}</code>
-                <span class="shrink-0 text-[11px] font-semibold" :class="config.has_api_key ? 'text-slate-500' : 'text-amber-600'">
-                  {{ config.has_api_key ? config.api_key_masked : '未保存 API Key' }}
+                <span class="shrink-0 text-[11px] font-semibold text-slate-500">
+                  {{ config.provider_label }}
                 </span>
               </div>
             </button>
@@ -494,6 +555,20 @@
           暂无可配置智能体。
         </section>
 
+        <AccountAiProviderDetail
+          v-else-if="activeSection === 'providers'"
+          :form="providerForm"
+          :selected-provider-config-id="selectedProviderConfigId"
+          :selected-provider-config="selectedProviderConfig"
+          :current-provider="currentProviderForProviderForm"
+          :provider-options="providerOptions"
+          :saving-provider-config="savingProviderConfig"
+          :status-updating-provider-config-id="statusUpdatingProviderConfigId"
+          :can-create-global="canCreateGlobal"
+          @toggle-status="handleToggleProviderStatus"
+          @submit="handleSubmitProviderConfig"
+        />
+
         <AccountAiModelDetail
           v-else
           v-model:advanced-config-text="advancedConfigText"
@@ -502,7 +577,7 @@
           :selected-config-id="selectedConfigId"
           :selected-model="selectedModel"
           :current-provider="currentProvider"
-          :provider-options="providerOptions"
+          :provider-config-options="providerConfigOptions"
           :advanced-config-error="advancedConfigError"
           :saving-config="savingConfig"
           :status-updating-config-id="statusUpdatingConfigId"
@@ -523,13 +598,16 @@ import { Bot, ChevronDown, ChevronRight, Lock, Plus } from '@lucide/vue'
 
 import {
   createLlmConfig,
+  createLlmProviderConfig,
   listLlmConfigs,
+  listLlmProviderConfigs,
   listLlmProviders,
   listLlmSlots,
   updateLlmConfig,
+  updateLlmProviderConfig,
   updateLlmSlotBinding,
 } from '@/api/llm'
-import type { LlmConfigUpdatePayload } from '@/api/llm'
+import type { LlmConfigUpdatePayload, LlmProviderConfigUpdatePayload } from '@/api/llm'
 import {
   listAgentCatalog,
   listAgentConfigs,
@@ -538,6 +616,7 @@ import {
 } from '@/api/agent-config'
 import { getErrorMessage } from '@/api/http'
 import AccountAiModelDetail from '@/components/account-ai/AccountAiModelDetail.vue'
+import AccountAiProviderDetail from '@/components/account-ai/AccountAiProviderDetail.vue'
 import { getAgentIconShellClass, resolveAgentIconComponent } from '@/components/agent/agent-icon'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseInput from '@/components/ui/BaseInput.vue'
@@ -552,10 +631,11 @@ import type {
   AgentToolGroupConfigItem,
   LlmConfigItem,
   LlmProviderCatalogItem,
+  LlmProviderConfigItem,
 } from '@/types/api'
 import { Message } from '@/utils/message'
 
-type ActiveSection = 'agents' | 'models'
+type ActiveSection = 'agents' | 'providers' | 'models'
 
 const DEFAULT_CONTEXT_WINDOW_TOKENS = 128000
 const DEFAULT_MAX_OUTPUT_TOKENS = 32000
@@ -565,10 +645,8 @@ const DEFAULT_NEW_MODEL_PROVIDER_KEY = 'deepseek'
 interface LlmFormState {
   scope: AiLlmConfigScope
   name: string
-  provider_key: string | null
+  provider_config_id: number | null
   model_id: string
-  base_url: string
-  api_key: string
   thinking_enabled: boolean
   thinking_effort: string | null
   supports_image_input: boolean
@@ -576,6 +654,14 @@ interface LlmFormState {
   max_output_tokens: number
   history_token_ratio: number
   compression_target_ratio: number
+}
+
+interface LlmProviderFormState {
+  scope: AiLlmConfigScope
+  name: string
+  provider_key: string | null
+  base_url: string
+  api_key: string
 }
 
 interface ToolDraft {
@@ -601,6 +687,11 @@ const expandedGroupKeys = reactive<Record<string, boolean>>({})
 const slotDrafts = reactive<Record<string, number | null>>({})
 const bindingSlot = ref<string | null>(null)
 
+const selectedProviderConfigId = ref<number | null>(null)
+const savingProviderConfig = ref(false)
+const statusUpdatingProviderConfigId = ref<number | null>(null)
+const applyingExistingProviderConfig = ref(false)
+
 const selectedConfigId = ref<number | null>(null)
 const advancedConfigText = ref('{}')
 const advancedConfigError = ref('')
@@ -612,10 +703,8 @@ const applyingExistingModel = ref(false)
 const modelForm = reactive<LlmFormState>({
   scope: 'personal',
   name: '',
-  provider_key: null,
+  provider_config_id: null,
   model_id: '',
-  base_url: '',
-  api_key: '',
   thinking_enabled: false,
   thinking_effort: null,
   supports_image_input: false,
@@ -623,6 +712,14 @@ const modelForm = reactive<LlmFormState>({
   max_output_tokens: DEFAULT_MAX_OUTPUT_TOKENS,
   history_token_ratio: 0.5,
   compression_target_ratio: DEFAULT_COMPRESSION_TARGET_RATIO,
+})
+
+const providerForm = reactive<LlmProviderFormState>({
+  scope: 'personal',
+  name: '',
+  provider_key: null,
+  base_url: '',
+  api_key: '',
 })
 
 const providersQuery = useQuery({
@@ -633,6 +730,11 @@ const providersQuery = useQuery({
 const configsQuery = useQuery({
   queryKey: ['llm-configs'],
   queryFn: listLlmConfigs,
+})
+
+const providerConfigsQuery = useQuery({
+  queryKey: ['llm-provider-configs'],
+  queryFn: listLlmProviderConfigs,
 })
 
 const slotsQuery = useQuery({
@@ -669,6 +771,14 @@ const selectedModel = computed<LlmConfigItem | null>(() => (
   configsQuery.data.value?.find(item => item.id === selectedConfigId.value) ?? null
 ))
 
+const selectedProviderConfig = computed<LlmProviderConfigItem | null>(() => (
+  providerConfigsQuery.data.value?.find(item => item.id === selectedProviderConfigId.value) ?? null
+))
+
+const selectedModelProviderConfig = computed<LlmProviderConfigItem | null>(() => (
+  providerConfigsQuery.data.value?.find(item => item.id === modelForm.provider_config_id) ?? null
+))
+
 const selectedAgentSlot = computed(() => {
   const slotKey = selectedAgentConfig.value?.llm_slot
   if (!slotKey) {
@@ -698,7 +808,23 @@ const providerOptions = computed<SelectOption[]>(() => (
 ))
 
 const currentProvider = computed<LlmProviderCatalogItem | null>(() => (
-  providersQuery.data.value?.find(provider => provider.provider_key === modelForm.provider_key) ?? null
+  providersQuery.data.value?.find(provider => provider.provider_key === selectedModelProviderConfig.value?.provider_key) ?? null
+))
+
+const currentProviderForProviderForm = computed<LlmProviderCatalogItem | null>(() => (
+  providersQuery.data.value?.find(provider => provider.provider_key === providerForm.provider_key) ?? null
+))
+
+const providerConfigOptions = computed<SelectOption[]>(() => (
+  (providerConfigsQuery.data.value ?? [])
+    .filter(config => config.scope === modelForm.scope)
+    .filter(config => config.status === 'active' || config.id === modelForm.provider_config_id)
+    .map(config => ({
+      label: config.name,
+      value: config.id,
+      description: `${config.scope === 'global' ? '全局供应商' : '个人供应商'} · ${config.provider_label}${config.status === 'active' ? '' : ' · 已归档'}`,
+      keywords: [config.provider_key, config.provider_label, config.base_url ?? ''],
+    }))
 ))
 
 const configOptions = computed<SelectOption[]>(() => (
@@ -707,8 +833,8 @@ const configOptions = computed<SelectOption[]>(() => (
     .map(config => ({
       label: config.name,
       value: config.id,
-      description: `${config.scope === 'global' ? '全局模型' : '个人模型'} · ${config.provider_label} / ${config.model_id}`,
-      keywords: [config.provider_key, config.model_id, config.provider_label],
+      description: `${config.scope === 'global' ? '全局模型' : '个人模型'} · ${config.provider_config_name} / ${config.model_id}`,
+      keywords: [config.provider_key, config.model_id, config.provider_label, config.provider_config_name],
     }))
 ))
 
@@ -752,34 +878,78 @@ watch(
 watch(
   () => providersQuery.data.value,
   (providers) => {
-    if (!modelForm.provider_key && providers?.length) {
+    if (!providerForm.provider_key && providers?.length) {
       const provider = findDefaultNewModelProvider(providers)
-      modelForm.provider_key = provider.provider_key
-      prefillModelFormFromProvider(provider)
+      providerForm.provider_key = provider.provider_key
+      prefillProviderFormFromProvider(provider)
     }
   },
   { immediate: true },
 )
 
 watch(
-  () => modelForm.provider_key,
+  () => [providerConfigsQuery.data.value, modelForm.scope] as const,
+  () => {
+    if (selectedConfigId.value || modelForm.provider_config_id) {
+      return
+    }
+    const option = providerConfigOptions.value.find(item => !item.disabled)
+    const providerConfig = typeof option?.value === 'number'
+      ? providerConfigsQuery.data.value?.find(item => item.id === option.value) ?? null
+      : null
+    modelForm.provider_config_id = providerConfig?.id ?? null
+    prefillModelFormFromProvider(findProviderForConfig(providerConfig))
+  },
+  { immediate: true },
+)
+
+watch(
+  () => modelForm.scope,
+  (scope, previousScope) => {
+    if (selectedConfigId.value || scope === previousScope) {
+      return
+    }
+    const providerConfig = findDefaultProviderConfigForScope(scope)
+    modelForm.provider_config_id = providerConfig?.id ?? null
+    prefillModelFormFromProvider(findProviderForConfig(providerConfig))
+  },
+)
+
+watch(
+  () => providerForm.provider_key,
   (providerKey, previousProviderKey) => {
     const provider = providersQuery.data.value?.find(item => item.provider_key === providerKey) ?? null
+    if (!provider || applyingExistingProviderConfig.value) {
+      return
+    }
+    if (providerKey !== previousProviderKey && (!providerForm.base_url || providerForm.base_url === findProviderDefaultBaseUrl(previousProviderKey))) {
+      providerForm.base_url = provider.supports_base_url ? provider.default_base_url ?? '' : ''
+    }
+    if (!provider.supports_api_key) {
+      providerForm.api_key = ''
+    }
+  },
+)
+
+watch(
+  () => modelForm.provider_config_id,
+  (providerConfigId, previousProviderConfigId) => {
+    const providerConfig = providerConfigsQuery.data.value?.find(item => item.id === providerConfigId) ?? null
+    const previousProviderConfig = providerConfigsQuery.data.value?.find(item => item.id === previousProviderConfigId) ?? null
+    const provider = providersQuery.data.value?.find(item => item.provider_key === providerConfig?.provider_key) ?? null
+    const previousProviderKey = previousProviderConfig?.provider_key
     if (!provider || applyingExistingModel.value) {
       return
     }
-    if (providerKey !== previousProviderKey && (!modelForm.model_id || modelForm.model_id === findProviderDefaultModelId(previousProviderKey))) {
+    if (providerConfigId !== previousProviderConfigId && (!modelForm.model_id || modelForm.model_id === findProviderDefaultModelId(previousProviderKey))) {
       modelForm.model_id = provider.default_model_id ?? ''
-    }
-    if (providerKey !== previousProviderKey && (!modelForm.base_url || modelForm.base_url === findProviderDefaultBaseUrl(previousProviderKey))) {
-      modelForm.base_url = provider.default_base_url ?? ''
     }
     if (!provider.supports_thinking) {
       modelForm.thinking_enabled = false
       modelForm.thinking_effort = null
     } else {
       if (
-        providerKey !== previousProviderKey
+        providerConfigId !== previousProviderConfigId
         && modelForm.thinking_enabled === findProviderDefaultThinkingEnabled(previousProviderKey)
       ) {
         modelForm.thinking_enabled = provider.default_thinking_enabled
@@ -789,28 +959,22 @@ watch(
       }
     }
     if (
-      providerKey !== previousProviderKey
+      providerConfigId !== previousProviderConfigId
       && modelForm.supports_image_input === findProviderDefaultSupportsImageInput(previousProviderKey)
     ) {
       modelForm.supports_image_input = provider.default_supports_image_input
     }
     if (
-      providerKey !== previousProviderKey
+      providerConfigId !== previousProviderConfigId
       && shouldReplaceTokenDefault(modelForm.context_window_tokens, previousProviderKey, 'context')
     ) {
       modelForm.context_window_tokens = provider.default_context_window_tokens ?? DEFAULT_CONTEXT_WINDOW_TOKENS
     }
     if (
-      providerKey !== previousProviderKey
+      providerConfigId !== previousProviderConfigId
       && shouldReplaceTokenDefault(modelForm.max_output_tokens, previousProviderKey, 'output')
     ) {
       modelForm.max_output_tokens = provider.default_max_output_tokens ?? DEFAULT_MAX_OUTPUT_TOKENS
-    }
-    if (!provider.supports_base_url) {
-      modelForm.base_url = ''
-    }
-    if (!provider.supports_api_key) {
-      modelForm.api_key = ''
     }
     if (advancedConfigText.value.trim() === '{}' && Object.keys(provider.advanced_json_hint ?? {}).length > 0) {
       advancedConfigText.value = JSON.stringify(provider.advanced_json_hint, null, 2)
@@ -826,12 +990,19 @@ function findDefaultNewModelProvider(providers: LlmProviderCatalogItem[]) {
 /** 使用供应商目录默认值预填新建表单，不影响已有模型装载。 */
 function prefillModelFormFromProvider(provider: LlmProviderCatalogItem | null) {
   modelForm.model_id = provider?.default_model_id ?? ''
-  modelForm.base_url = provider?.supports_base_url ? provider.default_base_url ?? '' : ''
   modelForm.thinking_enabled = Boolean(provider?.supports_thinking && provider.default_thinking_enabled)
   modelForm.thinking_effort = provider?.supports_thinking ? provider.default_thinking_effort ?? null : null
   modelForm.supports_image_input = Boolean(provider?.default_supports_image_input)
   modelForm.context_window_tokens = provider?.default_context_window_tokens ?? DEFAULT_CONTEXT_WINDOW_TOKENS
   modelForm.max_output_tokens = provider?.default_max_output_tokens ?? DEFAULT_MAX_OUTPUT_TOKENS
+}
+
+/** 使用供应商目录默认值预填供应商配置表单。 */
+function prefillProviderFormFromProvider(provider: LlmProviderCatalogItem | null) {
+  providerForm.base_url = provider?.supports_base_url ? provider.default_base_url ?? '' : ''
+  if (!provider?.supports_api_key) {
+    providerForm.api_key = ''
+  }
 }
 
 /** 选中左侧智能体卡片并切换到智能体详情。 */
@@ -1146,18 +1317,55 @@ function hasGuideResponseExample(tool: AgentToolConfigItem) {
   return tool.agent_guide.response_example !== null && tool.agent_guide.response_example !== undefined
 }
 
+/** 按范围选择默认供应商配置，优先使用 DeepSeek。 */
+function findDefaultProviderConfigForScope(scope: AiLlmConfigScope) {
+  const candidates = (providerConfigsQuery.data.value ?? []).filter(config => config.scope === scope && config.status === 'active')
+  return candidates.find(config => config.provider_key === DEFAULT_NEW_MODEL_PROVIDER_KEY) ?? candidates[0] ?? null
+}
+
+/** 根据供应商配置找到静态目录项。 */
+function findProviderForConfig(config: LlmProviderConfigItem | null) {
+  return providersQuery.data.value?.find(provider => provider.provider_key === config?.provider_key) ?? null
+}
+
+/** 重置供应商表单并切换到新建状态。 */
+function resetProviderForm() {
+  activeSection.value = 'providers'
+  selectedProviderConfigId.value = null
+  providerForm.scope = 'personal'
+  providerForm.name = ''
+  const provider = providersQuery.data.value?.length
+    ? findDefaultNewModelProvider(providersQuery.data.value)
+    : null
+  providerForm.provider_key = provider?.provider_key ?? null
+  providerForm.api_key = ''
+  prefillProviderFormFromProvider(provider)
+}
+
+/** 把已有供应商配置装载到右侧表单。 */
+async function handleEditProviderConfig(config: LlmProviderConfigItem) {
+  activeSection.value = 'providers'
+  applyingExistingProviderConfig.value = true
+  selectedProviderConfigId.value = config.id
+  providerForm.scope = config.scope
+  providerForm.name = config.name
+  providerForm.provider_key = config.provider_key
+  providerForm.base_url = config.base_url ?? ''
+  providerForm.api_key = ''
+  await nextTick()
+  applyingExistingProviderConfig.value = false
+}
+
 /** 重置模型表单并切换到新建状态。 */
 function resetModelForm() {
   activeSection.value = 'models'
   selectedConfigId.value = null
   modelForm.scope = 'personal'
   modelForm.name = ''
-  const provider = providersQuery.data.value?.length
-    ? findDefaultNewModelProvider(providersQuery.data.value)
-    : null
-  modelForm.provider_key = provider?.provider_key ?? null
+  const providerConfig = findDefaultProviderConfigForScope(modelForm.scope)
+  modelForm.provider_config_id = providerConfig?.id ?? null
+  const provider = findProviderForConfig(providerConfig)
   prefillModelFormFromProvider(provider)
-  modelForm.api_key = ''
   modelForm.history_token_ratio = 0.5
   modelForm.compression_target_ratio = DEFAULT_COMPRESSION_TARGET_RATIO
   advancedConfigText.value = '{}'
@@ -1172,10 +1380,8 @@ async function handleEditModel(config: LlmConfigItem) {
   selectedConfigId.value = config.id
   modelForm.scope = config.scope
   modelForm.name = config.name
-  modelForm.provider_key = config.provider_key
+  modelForm.provider_config_id = config.provider_config_id
   modelForm.model_id = config.model_id
-  modelForm.base_url = config.base_url ?? ''
-  modelForm.api_key = ''
   modelForm.thinking_enabled = config.thinking_enabled
   modelForm.thinking_effort = config.thinking_effort
   modelForm.supports_image_input = config.supports_image_input
@@ -1240,15 +1446,62 @@ function normalizeCompressionTargetRatio(value: number) {
   return Math.min(0.5, Math.max(0.02, normalized))
 }
 
+/** 创建或更新供应商配置。 */
+async function handleSubmitProviderConfig() {
+  if (selectedProviderConfig.value && !selectedProviderConfig.value.editable) {
+    Message.error('管理员全局供应商只读，不能由当前用户修改。')
+    return
+  }
+  const providerKey = providerForm.provider_key
+  if (!providerForm.name.trim() || !providerKey) {
+    Message.error('请先填写供应商配置名称和供应商。')
+    return
+  }
+
+  const provider = currentProviderForProviderForm.value
+  const baseUrl = provider?.supports_base_url ? providerForm.base_url.trim() || null : null
+  const apiKey = provider?.supports_api_key ? providerForm.api_key.trim() || null : null
+
+  savingProviderConfig.value = true
+  try {
+    if (selectedProviderConfigId.value) {
+      const updatePayload: LlmProviderConfigUpdatePayload = {
+        name: providerForm.name.trim(),
+        base_url: baseUrl,
+      }
+      if (apiKey) {
+        updatePayload.api_key = apiKey
+      }
+      await updateLlmProviderConfig(selectedProviderConfigId.value, updatePayload)
+      Message.success('供应商已更新。')
+    } else {
+      await createLlmProviderConfig({
+        name: providerForm.name.trim(),
+        scope: providerForm.scope,
+        provider_key: providerKey,
+        base_url: baseUrl,
+        api_key: apiKey,
+      })
+      Message.success('供应商已创建。')
+      resetProviderForm()
+    }
+    await refreshProviderQueries()
+  } catch (error) {
+    Message.error(getErrorMessage(error, '保存供应商失败。'))
+  } finally {
+    savingProviderConfig.value = false
+  }
+}
+
 /** 创建或更新模型。 */
 async function handleSubmitModel() {
   if (selectedModel.value && !selectedModel.value.editable) {
     Message.error('管理员全局模型只读，不能由当前用户修改。')
     return
   }
-  const providerKey = modelForm.provider_key
-  if (!modelForm.name.trim() || !providerKey || !modelForm.model_id.trim()) {
-    Message.error('请先填写模型名称、供应商和模型 ID。')
+  const providerConfigId = modelForm.provider_config_id
+  if (!modelForm.name.trim() || !providerConfigId || !modelForm.model_id.trim()) {
+    Message.error('请先填写模型名称、供应商配置和模型 ID。')
     return
   }
 
@@ -1265,9 +1518,8 @@ async function handleSubmitModel() {
     if (selectedConfigId.value) {
       const updatePayload: LlmConfigUpdatePayload = {
         name: modelForm.name.trim(),
-        provider_key: providerKey,
+        provider_config_id: providerConfigId,
         model_id: modelForm.model_id.trim(),
-        base_url: modelForm.base_url.trim() || null,
         thinking_enabled: modelForm.thinking_enabled,
         thinking_effort: modelForm.thinking_effort,
         supports_image_input: modelForm.supports_image_input,
@@ -1277,20 +1529,14 @@ async function handleSubmitModel() {
         compression_target_ratio: normalizeCompressionTargetRatio(modelForm.compression_target_ratio),
         advanced_config_json: advancedConfig,
       }
-      const nextApiKey = modelForm.api_key.trim()
-      if (nextApiKey) {
-        updatePayload.api_key = nextApiKey
-      }
       await updateLlmConfig(selectedConfigId.value, updatePayload)
       Message.success('模型已更新。')
     } else {
       await createLlmConfig({
         name: modelForm.name.trim(),
         scope: modelForm.scope,
-        provider_key: providerKey,
+        provider_config_id: providerConfigId,
         model_id: modelForm.model_id.trim(),
-        base_url: modelForm.base_url.trim() || null,
-        api_key: modelForm.api_key.trim() || null,
         thinking_enabled: modelForm.thinking_enabled,
         thinking_effort: modelForm.thinking_effort,
         supports_image_input: modelForm.supports_image_input,
@@ -1308,6 +1554,22 @@ async function handleSubmitModel() {
     Message.error(getErrorMessage(error, '保存模型失败。'))
   } finally {
     savingConfig.value = false
+  }
+}
+
+/** 切换供应商启用状态。 */
+async function handleToggleProviderStatus(config: LlmProviderConfigItem) {
+  statusUpdatingProviderConfigId.value = config.id
+  try {
+    await updateLlmProviderConfig(config.id, {
+      status: config.status === 'active' ? 'archived' : 'active',
+    })
+    Message.success(config.status === 'active' ? '供应商已归档。' : '供应商已恢复。')
+    await refreshProviderQueries()
+  } catch (error) {
+    Message.error(getErrorMessage(error, '更新供应商状态失败。'))
+  } finally {
+    statusUpdatingProviderConfigId.value = null
   }
 }
 
@@ -1330,6 +1592,17 @@ async function handleToggleModelStatus(config: LlmConfigItem) {
 /** 刷新模型、模型绑定与运行入口相关缓存。 */
 async function refreshLlmQueries() {
   await Promise.all([
+    queryClient.invalidateQueries({ queryKey: ['llm-configs'] }),
+    queryClient.invalidateQueries({ queryKey: ['llm-provider-configs'] }),
+    queryClient.invalidateQueries({ queryKey: ['llm-slots'] }),
+    queryClient.invalidateQueries({ queryKey: ['ai-agents'] }),
+  ])
+}
+
+/** 刷新供应商、模型绑定与运行入口相关缓存。 */
+async function refreshProviderQueries() {
+  await Promise.all([
+    queryClient.invalidateQueries({ queryKey: ['llm-provider-configs'] }),
     queryClient.invalidateQueries({ queryKey: ['llm-configs'] }),
     queryClient.invalidateQueries({ queryKey: ['llm-slots'] }),
     queryClient.invalidateQueries({ queryKey: ['ai-agents'] }),

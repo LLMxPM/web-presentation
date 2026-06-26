@@ -41,10 +41,13 @@ class PydanticLlmModelResolver:
 
         if config.status != RecordStatus.ACTIVE.value:
             raise AppException(status_code=409, code="AI_LLM_CONFIG_DISABLED", detail="当前大模型配置已归档。")
-        provider_key = str(config.provider_key or "").strip()
+        provider_config = self._get_provider_config(config)
+        if provider_config.status != RecordStatus.ACTIVE.value:
+            raise AppException(status_code=409, code="AI_LLM_PROVIDER_CONFIG_DISABLED", detail="当前大模型供应商配置已归档。")
+        provider_key = str(provider_config.provider_key or "").strip()
         model_id = str(config.model_id or "").strip()
-        api_key = self._cipher.decrypt(config.api_key_ciphertext)
-        base_url = str(config.base_url or "").strip() or None
+        api_key = self._cipher.decrypt(provider_config.api_key_ciphertext)
+        base_url = str(provider_config.base_url or "").strip() or None
 
         if not model_id:
             raise AppException(status_code=400, code="AI_LLM_MODEL_ID_REQUIRED", detail="当前大模型配置缺少模型 ID。")
@@ -90,7 +93,7 @@ class PydanticLlmModelResolver:
     def _apply_provider_limits(self, config: AiLlmConfig, settings: dict[str, Any]) -> None:
         """按供应商硬限制修正运行参数，避免已保存旧配置持续触发模型 400。"""
 
-        if config.provider_key != "mimo":
+        if self._resolve_provider_key(config) != "mimo":
             return
         max_tokens = settings.get("max_tokens")
         if not isinstance(max_tokens, int) or max_tokens <= MIMO_MAX_COMPLETION_TOKENS:
@@ -100,7 +103,8 @@ class PydanticLlmModelResolver:
     def _apply_thinking_settings(self, config: AiLlmConfig, settings: dict[str, Any]) -> None:
         """按供应商差异写入 Pydantic AI 支持的 thinking 参数。"""
 
-        mode = self._resolve_thinking_mode(config.provider_key)
+        provider_key = self._resolve_provider_key(config)
+        mode = self._resolve_thinking_mode(provider_key)
         if mode == AiThinkingMode.NONE.value:
             return
 
@@ -131,8 +135,22 @@ class PydanticLlmModelResolver:
         if mode == AiThinkingMode.OPENAI_EXTRA_BODY_THINKING.value:
             body = {"thinking": {"type": "enabled" if enabled else "disabled"}}
             self._merge_extra_body(settings, body)
-            if enabled and config.provider_key == "deepseek" and effort:
+            if enabled and provider_key == "deepseek" and effort:
                 settings.setdefault("openai_reasoning_effort", self._normalize_deepseek_effort(effort))
+
+    @staticmethod
+    def _get_provider_config(config: AiLlmConfig):
+        """读取模型关联的供应商配置，避免运行时误用未加载关系。"""
+
+        provider_config = getattr(config, "provider_config", None)
+        if provider_config is None:
+            raise AppException(status_code=500, code="AI_LLM_PROVIDER_CONFIG_MISSING", detail="大模型配置缺少供应商配置。")
+        return provider_config
+
+    def _resolve_provider_key(self, config: AiLlmConfig) -> str:
+        """读取模型关联供应商键值。"""
+
+        return str(self._get_provider_config(config).provider_key or "").strip()
 
     @staticmethod
     def _merge_extra_body(settings: dict[str, Any], patch: dict[str, Any]) -> None:

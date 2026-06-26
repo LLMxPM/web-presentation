@@ -15,7 +15,7 @@ from app.ai.llm_http_trace import (
 )
 from app.ai.pydantic_model_resolver import PydanticLlmModelResolver
 from app.core.config import AppSettings, get_settings
-from app.models.ai_llm import AiLlmConfig
+from app.models.ai_llm import AiLlmConfig, AiLlmProviderConfig
 from app.models.enums import RecordStatus
 
 
@@ -94,14 +94,24 @@ async def test_model_resolver_should_inject_trace_client_when_enabled(
     get_settings.cache_clear()
     clear_llm_http_trace_client_cache()
 
+    provider_config = AiLlmProviderConfig(
+        id=199,
+        user_id=1,
+        scope="personal",
+        name="trace-openai-provider",
+        provider_key="openai",
+        base_url="https://api.example.com/v1",
+        api_key_ciphertext=None,
+        status=RecordStatus.ACTIVE.value,
+    )
     config = AiLlmConfig(
         id=99,
         user_id=1,
+        scope="personal",
         name="trace-openai",
-        provider_key="openai",
+        provider_config_id=provider_config.id,
+        provider_config=provider_config,
         model_id="gpt-test",
-        base_url="https://api.example.com/v1",
-        api_key_ciphertext=None,
         advanced_config_json={},
         status=RecordStatus.ACTIVE.value,
     )

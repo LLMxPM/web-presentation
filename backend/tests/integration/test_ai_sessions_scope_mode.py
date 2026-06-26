@@ -167,14 +167,24 @@ async def _create_agent_session(
 async def _create_llm_config(client: AsyncClient) -> int:
     """创建会话列表测试使用的显式模型配置。"""
 
+    provider_response = await client.post(
+        "/api/ai/llm-provider-configs",
+        json={
+            "name": "会话列表测试供应商",
+            "provider_key": "openai",
+            "base_url": "https://api.openai.com/v1",
+            "api_key": "sk-session-scope",
+        },
+    )
+    assert provider_response.status_code == 201
+    provider_id = provider_response.json()["id"]
+
     response = await client.post(
         "/api/ai/llm-configs",
         json={
             "name": "会话列表测试模型",
-            "provider_key": "openai",
+            "provider_config_id": provider_id,
             "model_id": "gpt-4.1-mini",
-            "base_url": "https://api.openai.com/v1",
-            "api_key": "sk-session-scope",
             "advanced_config_json": {},
         },
     )

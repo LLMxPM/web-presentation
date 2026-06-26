@@ -778,6 +778,8 @@ export interface AgentSessionLlmMetadata {
   config_id: number
   scope: AiLlmConfigScope
   name: string
+  provider_config_id?: number | null
+  provider_config_name?: string | null
   provider_key: string
   provider_label: string
   model_id: string
@@ -1123,10 +1125,11 @@ export interface LlmConfigItem {
   owner_user_id: number | null
   editable: boolean
   name: string
+  provider_config_id: number
+  provider_config_name: string
   provider_key: string
   provider_label: string
   model_id: string
-  base_url: string | null
   thinking_enabled: boolean
   thinking_effort: string | null
   supports_image_input: boolean
@@ -1135,6 +1138,20 @@ export interface LlmConfigItem {
   history_token_ratio: number
   compression_target_ratio: number
   advanced_config_json: Record<string, unknown>
+  status: RecordStatus
+  created_at: string | null
+  updated_at: string | null
+}
+
+export interface LlmProviderConfigItem {
+  id: number
+  scope: AiLlmConfigScope
+  owner_user_id: number | null
+  editable: boolean
+  name: string
+  provider_key: string
+  provider_label: string
+  base_url: string | null
   status: RecordStatus
   has_api_key: boolean
   api_key_masked: string | null
@@ -1147,6 +1164,8 @@ export interface LlmSlotBindingItem {
   slot_label: string
   llm_config_id: number | null
   llm_config_name: string | null
+  provider_config_id: number | null
+  provider_config_name: string | null
   provider_key: string | null
   provider_label: string | null
   model_id: string | null

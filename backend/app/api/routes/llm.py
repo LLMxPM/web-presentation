@@ -14,6 +14,9 @@ from app.schemas.llm import (
     LlmConfigItem,
     LlmConfigUpdateRequest,
     LlmProviderCatalogItem,
+    LlmProviderConfigCreateRequest,
+    LlmProviderConfigItem,
+    LlmProviderConfigUpdateRequest,
     LlmSlotBindingItem,
     LlmSlotBindingUpdateRequest,
 )
@@ -31,6 +34,59 @@ async def list_llm_providers(
     """返回当前后端支持的供应商目录。"""
 
     return await AiLlmService(session, user_id=current.user.id, user_role=current.user.role).list_provider_catalog()
+
+
+@router.get("/llm-provider-configs", response_model=list[LlmProviderConfigItem])
+async def list_llm_provider_configs(
+    current: Annotated[AuthContext, Depends(get_current_user)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> list[LlmProviderConfigItem]:
+    """列出当前用户可见的供应商配置。"""
+
+    return await AiLlmService(session, user_id=current.user.id, user_role=current.user.role).list_provider_configs()
+
+
+@router.post("/llm-provider-configs", response_model=LlmProviderConfigItem, status_code=201)
+async def create_llm_provider_config(
+    payload: LlmProviderConfigCreateRequest,
+    current: Annotated[AuthContext, Depends(get_current_user)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> LlmProviderConfigItem:
+    """创建新的供应商配置。"""
+
+    return await AiLlmService(session, user_id=current.user.id, user_role=current.user.role).create_provider_config(
+        payload,
+        operator_id=current.user.id,
+    )
+
+
+@router.get("/llm-provider-configs/{provider_config_id}", response_model=LlmProviderConfigItem)
+async def get_llm_provider_config(
+    provider_config_id: int,
+    current: Annotated[AuthContext, Depends(get_current_user)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> LlmProviderConfigItem:
+    """读取单条供应商配置详情。"""
+
+    return await AiLlmService(session, user_id=current.user.id, user_role=current.user.role).get_provider_config(
+        provider_config_id,
+    )
+
+
+@router.patch("/llm-provider-configs/{provider_config_id}", response_model=LlmProviderConfigItem)
+async def update_llm_provider_config(
+    provider_config_id: int,
+    payload: LlmProviderConfigUpdateRequest,
+    current: Annotated[AuthContext, Depends(get_current_user)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> LlmProviderConfigItem:
+    """更新指定的供应商配置。"""
+
+    return await AiLlmService(session, user_id=current.user.id, user_role=current.user.role).update_provider_config(
+        provider_config_id,
+        payload,
+        operator_id=current.user.id,
+    )
 
 
 @router.get("/llm-configs", response_model=list[LlmConfigItem])

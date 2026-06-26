@@ -5,7 +5,7 @@
       <div>
         <h2 class="text-lg font-bold text-slate-900">{{ selectedConfigId ? (readOnlyModel ? '查看模型' : '编辑模型') : '新建模型' }}</h2>
         <p class="mt-1 text-sm text-slate-500">
-          {{ selectedConfigId ? '编辑时 API Key 留空表示保持原值；如需更换请输入新 Key。' : '保存后可在智能体详情中绑定为模型。' }}
+          {{ selectedConfigId ? '模型复用供应商配置中的 Base URL 与 API Key。' : '保存后可在智能体详情中绑定为模型。' }}
         </p>
         <p v-if="readOnlyModel" class="mt-2 text-xs font-semibold text-amber-600">管理员全局模型只读，可选择绑定但不能修改。</p>
       </div>
@@ -36,12 +36,12 @@
       />
 
       <div class="space-y-1.5">
-        <label class="ml-1 text-sm font-semibold text-slate-700">供应商</label>
+        <label class="ml-1 text-sm font-semibold text-slate-700">供应商配置</label>
         <SearchableSelect
-          :model-value="form.provider_key"
-          :options="providerOptions"
-          placeholder="请选择供应商"
-          @update:model-value="value => form.provider_key = value as string | null"
+          :model-value="form.provider_config_id"
+          :options="providerConfigOptions"
+          placeholder="请选择供应商配置"
+          @update:model-value="value => form.provider_config_id = value === null ? null : Number(value)"
         />
         <p v-if="currentProvider" class="ml-1 text-xs text-slate-400">{{ currentProvider.provider_adapter }}</p>
       </div>
@@ -81,22 +81,6 @@
         placeholder="0.1"
         @update:model-value="value => form.compression_target_ratio = Number(value)"
       />
-      <BaseInput
-        :model-value="form.base_url"
-        label="Base URL"
-        placeholder="例如：https://openrouter.ai/api/v1"
-        :disabled="currentProvider ? !currentProvider.supports_base_url : false"
-        @update:model-value="value => form.base_url = String(value)"
-      />
-      <BaseInput
-        :model-value="form.api_key"
-        label="API Key"
-        placeholder="请输入 API Key；编辑时留空表示保持原值"
-        type="password"
-        :disabled="currentProvider ? !currentProvider.supports_api_key : false"
-        @update:model-value="value => form.api_key = String(value)"
-      />
-
       <label class="flex items-start gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
         <input
           :checked="form.thinking_enabled"
@@ -200,10 +184,8 @@ import type { AiLlmConfigScope, LlmConfigItem, LlmProviderCatalogItem } from '@/
 interface LlmFormState {
   scope: AiLlmConfigScope
   name: string
-  provider_key: string | null
+  provider_config_id: number | null
   model_id: string
-  base_url: string
-  api_key: string
   thinking_enabled: boolean
   thinking_effort: string | null
   supports_image_input: boolean
@@ -218,7 +200,7 @@ const props = defineProps<{
   selectedConfigId: number | null
   selectedModel: LlmConfigItem | null
   currentProvider: LlmProviderCatalogItem | null
-  providerOptions: SelectOption[]
+  providerConfigOptions: SelectOption[]
   advancedConfigText: string
   advancedConfigError: string
   advancedConfigCollapsed: boolean

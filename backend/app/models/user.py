@@ -26,6 +26,7 @@ class User(TimestampMixin, Base):
     preview_size_presets: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
 
     sessions: Mapped[list["UserSession"]] = relationship(back_populates="user")
+    llm_provider_configs: Mapped[list["AiLlmProviderConfig"]] = relationship(back_populates="user")
     llm_configs: Mapped[list["AiLlmConfig"]] = relationship(back_populates="user")
     llm_slot_bindings: Mapped[list["AiLlmSlotBinding"]] = relationship(back_populates="user")
     agent_configs: Mapped[list["AiAgentUserConfig"]] = relationship(back_populates="user")

@@ -9,8 +9,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import AccountAiSettingsView from '@/views/AccountAiSettingsView.vue'
 
 const listLlmProvidersMock = vi.fn()
+const listLlmProviderConfigsMock = vi.fn()
 const listLlmConfigsMock = vi.fn()
 const listLlmSlotsMock = vi.fn()
+const createLlmProviderConfigMock = vi.fn()
+const updateLlmProviderConfigMock = vi.fn()
 const createLlmConfigMock = vi.fn()
 const updateLlmConfigMock = vi.fn()
 const updateLlmSlotBindingMock = vi.fn()
@@ -23,8 +26,11 @@ const messageErrorMock = vi.fn()
 
 vi.mock('@/api/llm', () => ({
   listLlmProviders: () => listLlmProvidersMock(),
+  listLlmProviderConfigs: () => listLlmProviderConfigsMock(),
   listLlmConfigs: () => listLlmConfigsMock(),
   listLlmSlots: () => listLlmSlotsMock(),
+  createLlmProviderConfig: (...args: unknown[]) => createLlmProviderConfigMock(...args),
+  updateLlmProviderConfig: (...args: unknown[]) => updateLlmProviderConfigMock(...args),
   createLlmConfig: (...args: unknown[]) => createLlmConfigMock(...args),
   updateLlmConfig: (...args: unknown[]) => updateLlmConfigMock(...args),
   updateLlmSlotBinding: (...args: unknown[]) => updateLlmSlotBindingMock(...args),
@@ -203,6 +209,23 @@ describe('AccountAiSettingsView', () => {
         advanced_json_hint: {},
       },
     ])
+    listLlmProviderConfigsMock.mockResolvedValue([
+      {
+        id: 10,
+        scope: 'personal',
+        owner_user_id: 1,
+        editable: true,
+        name: 'OpenAI 工作账号',
+        provider_key: 'openai',
+        provider_label: 'OpenAI',
+        base_url: 'https://api.openai.com/v1',
+        status: 'active',
+        has_api_key: true,
+        api_key_masked: 'sk-t****test',
+        created_at: '2026-04-18T10:00:00+08:00',
+        updated_at: '2026-04-18T10:00:00+08:00',
+      },
+    ])
     listLlmConfigsMock.mockResolvedValue([
       {
         id: 1,
@@ -210,10 +233,11 @@ describe('AccountAiSettingsView', () => {
         owner_user_id: 1,
         editable: true,
         name: '总控模型',
+        provider_config_id: 10,
+        provider_config_name: 'OpenAI 工作账号',
         provider_key: 'openai',
         provider_label: 'OpenAI',
         model_id: 'gpt-4.1-mini',
-        base_url: 'https://api.openai.com/v1',
         thinking_enabled: true,
         thinking_effort: 'medium',
         supports_image_input: true,
@@ -223,8 +247,6 @@ describe('AccountAiSettingsView', () => {
         compression_target_ratio: 0.1,
         advanced_config_json: {},
         status: 'active',
-        has_api_key: true,
-        api_key_masked: 'sk-t****test',
         created_at: '2026-04-18T10:00:00+08:00',
         updated_at: '2026-04-18T10:00:00+08:00',
       },
@@ -235,6 +257,8 @@ describe('AccountAiSettingsView', () => {
         slot_label: '总控智能体',
         llm_config_id: 1,
         llm_config_name: '总控模型',
+        provider_config_id: 10,
+        provider_config_name: 'OpenAI 工作账号',
         provider_key: 'openai',
         provider_label: 'OpenAI',
         model_id: 'gpt-4.1-mini',
@@ -243,6 +267,8 @@ describe('AccountAiSettingsView', () => {
         inherited_from_global: false,
       },
     ])
+    createLlmProviderConfigMock.mockResolvedValue({ id: 20, name: '新的供应商' })
+    updateLlmProviderConfigMock.mockResolvedValue(undefined)
     listAgentCatalogMock.mockResolvedValue([agentConfig])
     listAgentConfigsMock.mockResolvedValue([agentConfig])
     createLlmConfigMock.mockResolvedValue({ id: 2, name: '新的模型' })
@@ -325,10 +351,8 @@ describe('AccountAiSettingsView', () => {
       expect(createLlmConfigMock).toHaveBeenCalledWith({
         name: '新的模型',
         scope: 'personal',
-        provider_key: 'openai',
+        provider_config_id: 10,
         model_id: 'gpt-4.1',
-        base_url: 'https://api.openai.com/v1',
-        api_key: null,
         thinking_enabled: false,
         thinking_effort: 'medium',
         supports_image_input: false,
@@ -382,6 +406,23 @@ describe('AccountAiSettingsView', () => {
         advanced_json_hint: {},
       },
     ])
+    listLlmProviderConfigsMock.mockResolvedValue([
+      {
+        id: 11,
+        scope: 'personal',
+        owner_user_id: 1,
+        editable: true,
+        name: 'DeepSeek 工作账号',
+        provider_key: 'deepseek',
+        provider_label: 'DeepSeek',
+        base_url: 'https://api.deepseek.com',
+        status: 'active',
+        has_api_key: true,
+        api_key_masked: 'sk-d****test',
+        created_at: '2026-04-18T10:00:00+08:00',
+        updated_at: '2026-04-18T10:00:00+08:00',
+      },
+    ])
     render(AccountAiSettingsView, createTestingRenderOptions())
 
     await waitFor(() => {
@@ -397,9 +438,8 @@ describe('AccountAiSettingsView', () => {
       expect(createLlmConfigMock).toHaveBeenCalled()
     })
     const payload = createLlmConfigMock.mock.calls[0][0] as Record<string, unknown>
-    expect(payload.provider_key).toBe('deepseek')
+    expect(payload.provider_config_id).toBe(11)
     expect(payload.model_id).toBe('deepseek-v4-pro')
-    expect(payload.base_url).toBe('https://api.deepseek.com')
     expect(payload.thinking_enabled).toBe(true)
     expect(payload.thinking_effort).toBe('high')
     expect(payload.context_window_tokens).toBe(1000000)
@@ -428,6 +468,23 @@ describe('AccountAiSettingsView', () => {
         advanced_json_hint: {},
       },
     ])
+    listLlmProviderConfigsMock.mockResolvedValue([
+      {
+        id: 12,
+        scope: 'personal',
+        owner_user_id: 1,
+        editable: true,
+        name: 'MiMo 工作账号',
+        provider_key: 'mimo',
+        provider_label: 'MiMo',
+        base_url: 'https://api.xiaomimimo.com/v1',
+        status: 'active',
+        has_api_key: true,
+        api_key_masked: 'sk-m****test',
+        created_at: '2026-04-18T10:00:00+08:00',
+        updated_at: '2026-04-18T10:00:00+08:00',
+      },
+    ])
     render(AccountAiSettingsView, createTestingRenderOptions())
 
     await waitFor(() => {
@@ -446,8 +503,7 @@ describe('AccountAiSettingsView', () => {
       expect(createLlmConfigMock).toHaveBeenCalled()
     })
     const payload = createLlmConfigMock.mock.calls[0][0] as Record<string, unknown>
-    expect(payload.provider_key).toBe('mimo')
-    expect(payload.base_url).toBe('https://api.xiaomimimo.com/v1')
+    expect(payload.provider_config_id).toBe(12)
     expect(payload.model_id).toBe('mimo-v2.5')
     expect(payload.thinking_enabled).toBe(true)
     expect(payload.supports_image_input).toBe(true)
@@ -478,6 +534,23 @@ describe('AccountAiSettingsView', () => {
         advanced_json_hint: {},
       },
     ])
+    listLlmProviderConfigsMock.mockResolvedValue([
+      {
+        id: 13,
+        scope: 'personal',
+        owner_user_id: 1,
+        editable: true,
+        name: 'OpenRouter 工作账号',
+        provider_key: 'openrouter',
+        provider_label: 'OpenRouter',
+        base_url: 'https://openrouter.ai/api/v1',
+        status: 'active',
+        has_api_key: true,
+        api_key_masked: 'sk-o****test',
+        created_at: '2026-04-18T10:00:00+08:00',
+        updated_at: '2026-04-18T10:00:00+08:00',
+      },
+    ])
     render(AccountAiSettingsView, createTestingRenderOptions())
 
     await waitFor(() => {
@@ -494,12 +567,11 @@ describe('AccountAiSettingsView', () => {
       expect(createLlmConfigMock).toHaveBeenCalled()
     })
     const payload = createLlmConfigMock.mock.calls[0][0] as Record<string, unknown>
-    expect(payload.provider_key).toBe('openrouter')
-    expect(payload.base_url).toBe('https://openrouter.ai/api/v1')
+    expect(payload.provider_config_id).toBe(13)
     expect(payload.advanced_config_json).toEqual({})
   })
 
-  it('编辑模型时 API Key 留空应保留原值', async () => {
+  it('编辑模型时不应提交供应商凭证字段', async () => {
     render(AccountAiSettingsView, createTestingRenderOptions())
 
     await waitFor(() => {
@@ -515,6 +587,8 @@ describe('AccountAiSettingsView', () => {
     })
     const payload = updateLlmConfigMock.mock.calls[0][1] as Record<string, unknown>
     expect(payload).not.toHaveProperty('api_key')
+    expect(payload).not.toHaveProperty('provider_key')
+    expect(payload).not.toHaveProperty('base_url')
     expect(payload.name).toBe('总控模型')
   })
 

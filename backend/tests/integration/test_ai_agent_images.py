@@ -71,14 +71,24 @@ async def _bind_agent_model(authenticated_client: AsyncClient, *, supports_image
 async def _create_agent_model(authenticated_client: AsyncClient, *, supports_image_input: bool) -> int:
     """创建图片测试用模型配置并返回配置 ID。"""
 
+    provider_response = await authenticated_client.post(
+        "/api/ai/llm-provider-configs",
+        json={
+            "name": "图片测试供应商",
+            "provider_key": "openai",
+            "base_url": "https://api.openai.com/v1",
+            "api_key": "sk-test",
+        },
+    )
+    assert provider_response.status_code == 201
+    provider_id = provider_response.json()["id"]
+
     create_response = await authenticated_client.post(
         "/api/ai/llm-configs",
         json={
             "name": "图片测试模型",
-            "provider_key": "openai",
+            "provider_config_id": provider_id,
             "model_id": "gpt-4.1-mini",
-            "base_url": "https://api.openai.com/v1",
-            "api_key": "sk-test",
             "thinking_enabled": False,
             "supports_image_input": supports_image_input,
             "advanced_config_json": {},

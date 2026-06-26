@@ -6,7 +6,7 @@ from httpx import AsyncClient
 
 from app.ai.pydantic_model_resolver import PydanticLlmModelResolver
 from app.ai.secret_cipher import LlmSecretCipher
-from app.models.ai_llm import AiLlmConfig
+from app.models.ai_llm import AiLlmConfig, AiLlmProviderConfig
 from app.models.enums import RecordStatus
 
 
@@ -56,6 +56,29 @@ async def _create_page(
     return response.json()["id"]
 
 
+async def _create_llm_provider_config(
+    authenticated_client: AsyncClient,
+    *,
+    name: str,
+    provider_key: str = "openai",
+    base_url: str | None = "https://api.openai.com/v1",
+    api_key: str | None = "sk-session-provider",
+) -> dict:
+    """创建一个测试用供应商配置。"""
+
+    response = await authenticated_client.post(
+        "/api/ai/llm-provider-configs",
+        json={
+            "name": name,
+            "provider_key": provider_key,
+            "base_url": base_url,
+            "api_key": api_key,
+        },
+    )
+    assert response.status_code == 201
+    return response.json()
+
+
 async def _create_llm_config(
     authenticated_client: AsyncClient,
     *,
@@ -64,14 +87,16 @@ async def _create_llm_config(
 ) -> dict:
     """创建一个测试用个人大模型配置。"""
 
+    provider = await _create_llm_provider_config(
+        authenticated_client,
+        name=f"{name} 供应商",
+    )
     response = await authenticated_client.post(
         "/api/ai/llm-configs",
         json={
             "name": name,
-            "provider_key": "openai",
+            "provider_config_id": provider["id"],
             "model_id": "gpt-4.1-mini",
-            "base_url": "https://api.openai.com/v1",
-            "api_key": "sk-session-model",
             "supports_image_input": supports_image_input,
             "advanced_config_json": {},
         },
@@ -143,17 +168,30 @@ async def test_llm_provider_catalog_should_only_include_supported_providers(auth
     assert all(item["advanced_json_hint"] == {} for item in providers.values())
 
 
-async def test_llm_config_crud_should_encrypt_and_mask_api_key(authenticated_client: AsyncClient) -> None:
-    """创建和更新大模型配置时，应加密保存 API Key 并只向前端返回脱敏值。"""
+async def test_llm_provider_and_config_crud_should_split_secret_from_model(authenticated_client: AsyncClient) -> None:
+    """供应商配置负责密钥脱敏，模型配置只引用供应商并维护模型参数。"""
+
+    provider_response = await authenticated_client.post(
+        "/api/ai/llm-provider-configs",
+        json={
+            "name": "OpenRouter 工作账号",
+            "provider_key": "openrouter",
+            "base_url": "https://openrouter.ai/api/v1",
+            "api_key": "sk-or-v1-test-secret",
+        },
+    )
+    assert provider_response.status_code == 201
+    provider = provider_response.json()
+    assert provider["has_api_key"] is True
+    assert provider["api_key_masked"] != "sk-or-v1-test-secret"
+    assert provider["provider_label"] == "OpenRouter"
 
     create_response = await authenticated_client.post(
         "/api/ai/llm-configs",
         json={
             "name": "OpenRouter 主模型",
-            "provider_key": "openrouter",
+            "provider_config_id": provider["id"],
             "model_id": "openai/gpt-4.1-mini",
-            "base_url": "https://openrouter.ai/api/v1",
-            "api_key": "sk-or-v1-test-secret",
             "thinking_enabled": True,
             "thinking_effort": "xhigh",
             "advanced_config_json": {"temperature": 0.2},
@@ -161,8 +199,8 @@ async def test_llm_config_crud_should_encrypt_and_mask_api_key(authenticated_cli
     )
     assert create_response.status_code == 201
     created_item = create_response.json()
-    assert created_item["has_api_key"] is True
-    assert created_item["api_key_masked"] != "sk-or-v1-test-secret"
+    assert created_item["provider_config_id"] == provider["id"]
+    assert created_item["provider_config_name"] == "OpenRouter 工作账号"
     assert created_item["provider_label"] == "OpenRouter"
     assert created_item["context_window_tokens"] == 128000
     assert created_item["max_output_tokens"] == 32000
@@ -184,11 +222,18 @@ async def test_llm_config_crud_should_encrypt_and_mask_api_key(authenticated_cli
     assert protected_key_response.status_code == 400
     assert protected_key_response.json()["code"] == "AI_LLM_ADVANCED_CONFIG_CONFLICT"
 
+    clear_secret_response = await authenticated_client.patch(
+        f"/api/ai/llm-provider-configs/{provider['id']}",
+        json={"api_key": ""},
+    )
+    assert clear_secret_response.status_code == 200
+    assert clear_secret_response.json()["has_api_key"] is False
+    assert clear_secret_response.json()["api_key_masked"] is None
+
     update_response = await authenticated_client.patch(
         f"/api/ai/llm-configs/{config_id}",
         json={
             "name": "OpenRouter 归档模型",
-            "api_key": "",
             "status": "archived",
             "context_window_tokens": 128000,
             "max_output_tokens": 8192,
@@ -201,8 +246,6 @@ async def test_llm_config_crud_should_encrypt_and_mask_api_key(authenticated_cli
     updated_item = update_response.json()
     assert updated_item["name"] == "OpenRouter 归档模型"
     assert updated_item["status"] == "archived"
-    assert updated_item["has_api_key"] is False
-    assert updated_item["api_key_masked"] is None
     assert updated_item["context_window_tokens"] == 128000
     assert updated_item["max_output_tokens"] == 8192
     assert updated_item["history_token_ratio"] == 0.35
@@ -213,14 +256,19 @@ async def test_llm_config_crud_should_encrypt_and_mask_api_key(authenticated_cli
 async def test_llm_config_should_accept_large_context_model_limits(authenticated_client: AsyncClient) -> None:
     """大模型配置应允许百万级上下文与超过旧 20 万限制的输出 token。"""
 
+    provider = await _create_llm_provider_config(
+        authenticated_client,
+        name="OpenRouter 长上下文供应商",
+        provider_key="openrouter",
+        base_url="https://openrouter.ai/api/v1",
+        api_key="sk-or-v1-large-context",
+    )
     response = await authenticated_client.post(
         "/api/ai/llm-configs",
         json={
             "name": "百万上下文模型",
-            "provider_key": "openrouter",
+            "provider_config_id": provider["id"],
             "model_id": "openai/gpt-4.1-long-context",
-            "base_url": "https://openrouter.ai/api/v1",
-            "api_key": "sk-or-v1-large-context",
             "context_window_tokens": 1_000_000,
             "max_output_tokens": 300_000,
             "advanced_config_json": {},
@@ -236,14 +284,19 @@ async def test_llm_config_should_accept_large_context_model_limits(authenticated
 async def test_llm_config_should_reject_mimo_output_above_provider_limit(authenticated_client: AsyncClient) -> None:
     """MiMo 配置不应允许保存超过供应商硬限制的输出 token。"""
 
+    provider = await _create_llm_provider_config(
+        authenticated_client,
+        name="MiMo 供应商",
+        provider_key="mimo",
+        base_url="https://api.xiaomimimo.com/v1",
+        api_key="sk-mimo-test",
+    )
     response = await authenticated_client.post(
         "/api/ai/llm-configs",
         json={
             "name": "MiMo 超限模型",
-            "provider_key": "mimo",
+            "provider_config_id": provider["id"],
             "model_id": "mimo-v2.5",
-            "base_url": "https://api.xiaomimimo.com/v1",
-            "api_key": "sk-mimo-test",
             "context_window_tokens": 1_000_000,
             "max_output_tokens": 200_000,
             "advanced_config_json": {},
@@ -257,14 +310,17 @@ async def test_llm_config_should_reject_mimo_output_above_provider_limit(authent
 async def test_llm_slot_binding_should_drive_agent_binding_state(authenticated_client: AsyncClient) -> None:
     """当前固定槽位绑定后，Agent 列表应返回已绑定的大模型信息。"""
 
+    provider = await _create_llm_provider_config(
+        authenticated_client,
+        name="OpenAI 槽位供应商",
+        api_key="sk-test-openai",
+    )
     config_response = await authenticated_client.post(
         "/api/ai/llm-configs",
         json={
             "name": "总控模型",
-            "provider_key": "openai",
+            "provider_config_id": provider["id"],
             "model_id": "gpt-4.1-mini",
-            "base_url": "https://api.openai.com/v1",
-            "api_key": "sk-test-openai",
             "thinking_enabled": True,
             "thinking_effort": "low",
             "advanced_config_json": {},
@@ -388,6 +444,8 @@ async def test_agent_session_should_persist_explicit_personal_llm_config(authent
         "config_id": config["id"],
         "scope": "personal",
         "name": "会话个人模型",
+        "provider_config_id": config["provider_config_id"],
+        "provider_config_name": config["provider_config_name"],
         "provider_key": "openai",
         "provider_label": "OpenAI",
         "model_id": "gpt-4.1-mini",
@@ -478,13 +536,25 @@ def test_llm_model_resolver_should_build_common_provider_models() -> None:
     def build_config(*, id: int, provider_key: str, model_id: str, api_key: str = "sk-test", **kwargs) -> AiLlmConfig:
         """构造激活状态的大模型配置，聚焦 provider 差异字段。"""
 
+        base_url = kwargs.pop("base_url", None)
+        provider_config = AiLlmProviderConfig(
+            id=id + 100,
+            user_id=1,
+            scope="personal",
+            name=f"{provider_key} 供应商",
+            provider_key=provider_key,
+            base_url=base_url,
+            api_key_ciphertext=cipher.encrypt(api_key),
+            status=RecordStatus.ACTIVE.value,
+        )
         return AiLlmConfig(
             id=id,
             user_id=1,
+            scope="personal",
             name=kwargs.pop("name", provider_key),
-            provider_key=provider_key,
+            provider_config_id=provider_config.id,
+            provider_config=provider_config,
             model_id=model_id,
-            api_key_ciphertext=cipher.encrypt(api_key),
             advanced_config_json=kwargs.pop("advanced_config_json", {}),
             status=RecordStatus.ACTIVE.value,
             **kwargs,

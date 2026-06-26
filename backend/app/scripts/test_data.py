@@ -9,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.engine import make_url
 
 import app.models  # noqa: F401
-from app.schemas.llm import LlmConfigCreateRequest, LlmSlotBindingUpdateRequest
+from app.schemas.llm import LlmConfigCreateRequest, LlmProviderConfigCreateRequest, LlmSlotBindingUpdateRequest
 from app.schemas.page import PageCreateRequest
 from app.schemas.project import ProjectCreateRequest
 from app.schemas.project_route import ProjectRouteItemWrite, ProjectRouteTreeWriteRequest
@@ -209,12 +209,22 @@ async def _ensure_mock_llm_binding(*, session, user_id: int, operator_id: int) -
     existing_configs = await service.list_configs()
     target_config = next((item for item in existing_configs if item.name == SMOKE_DATA.llm_config_name), None)
     if target_config is None:
+        provider_configs = await service.list_provider_configs()
+        target_provider = next((item for item in provider_configs if item.name == "OpenAI Mock 凭证"), None)
+        if target_provider is None:
+            target_provider = await service.create_provider_config(
+                LlmProviderConfigCreateRequest(
+                    name="OpenAI Mock 凭证",
+                    provider_key="openai",
+                    api_key=None,
+                ),
+                operator_id=operator_id,
+            )
         target_config = await service.create_config(
             LlmConfigCreateRequest(
                 name=SMOKE_DATA.llm_config_name,
-                provider_key="openai",
+                provider_config_id=target_provider.id,
                 model_id="gpt-5-mini",
-                api_key=None,
                 thinking_enabled=True,
                 thinking_effort="low",
                 supports_image_input=True,

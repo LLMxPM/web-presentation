@@ -225,14 +225,24 @@ async def test_ai_run_diagnostics_should_collect_runtime_state(
 async def _create_diagnostics_llm_config(authenticated_client: AsyncClient) -> int:
     """创建诊断测试会话使用的显式模型配置。"""
 
+    provider_response = await authenticated_client.post(
+        "/api/ai/llm-provider-configs",
+        json={
+            "name": "诊断测试供应商",
+            "provider_key": "openai",
+            "base_url": "https://api.openai.com/v1",
+            "api_key": "sk-diagnostics",
+        },
+    )
+    assert provider_response.status_code == 201
+    provider_id = provider_response.json()["id"]
+
     response = await authenticated_client.post(
         "/api/ai/llm-configs",
         json={
             "name": "诊断测试模型",
-            "provider_key": "openai",
+            "provider_config_id": provider_id,
             "model_id": "gpt-4.1-mini",
-            "base_url": "https://api.openai.com/v1",
-            "api_key": "sk-diagnostics",
             "advanced_config_json": {},
         },
     )

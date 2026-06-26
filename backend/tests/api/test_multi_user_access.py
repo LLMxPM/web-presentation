@@ -139,15 +139,27 @@ async def test_global_and_personal_llm_configs_should_follow_scope_rules(client:
     await _create_user(client, username="carol", display_name="Carol")
     await _create_user(client, username="dave", display_name="Dave")
 
+    global_provider_response = await client.post(
+        "/api/ai/llm-provider-configs",
+        json={
+            "scope": "global",
+            "name": "平台默认供应商",
+            "provider_key": "openai",
+            "base_url": "https://api.openai.com/v1",
+            "api_key": "sk-global",
+        },
+    )
+    assert global_provider_response.status_code == 201
+    global_provider = global_provider_response.json()
+    assert global_provider["scope"] == "global"
+
     global_model_response = await client.post(
         "/api/ai/llm-configs",
         json={
             "scope": "global",
             "name": "平台默认模型",
-            "provider_key": "openai",
+            "provider_config_id": global_provider["id"],
             "model_id": "gpt-4.1-mini",
-            "base_url": "https://api.openai.com/v1",
-            "api_key": "sk-global",
             "advanced_config_json": {},
         },
     )
@@ -171,6 +183,11 @@ async def test_global_and_personal_llm_configs_should_follow_scope_rules(client:
     visible_models = {item["id"]: item for item in list_response.json()}
     assert visible_models[global_model["id"]]["scope"] == "global"
     assert visible_models[global_model["id"]]["editable"] is False
+    provider_list_response = await client.get("/api/ai/llm-provider-configs")
+    assert provider_list_response.status_code == 200
+    visible_providers = {item["id"]: item for item in provider_list_response.json()}
+    assert visible_providers[global_provider["id"]]["scope"] == "global"
+    assert visible_providers[global_provider["id"]]["editable"] is False
 
     update_global_response = await client.patch(
         f"/api/ai/llm-configs/{global_model['id']}",
@@ -184,7 +201,7 @@ async def test_global_and_personal_llm_configs_should_follow_scope_rules(client:
         json={
             "scope": "global",
             "name": "越权全局模型",
-            "provider_key": "openai",
+            "provider_config_id": global_provider["id"],
             "model_id": "gpt-4.1-mini",
             "advanced_config_json": {},
         },
@@ -198,14 +215,24 @@ async def test_global_and_personal_llm_configs_should_follow_scope_rules(client:
     assert inherited_slot["llm_config_id"] == global_model["id"]
     assert inherited_slot["inherited_from_global"] is True
 
+    personal_provider_response = await client.post(
+        "/api/ai/llm-provider-configs",
+        json={
+            "name": "Carol 个人供应商",
+            "provider_key": "openai",
+            "base_url": "https://api.openai.com/v1",
+            "api_key": "sk-personal",
+        },
+    )
+    assert personal_provider_response.status_code == 201
+    personal_provider = personal_provider_response.json()
+
     personal_model_response = await client.post(
         "/api/ai/llm-configs",
         json={
             "name": "Carol 个人模型",
-            "provider_key": "openai",
+            "provider_config_id": personal_provider["id"],
             "model_id": "gpt-4.1",
-            "base_url": "https://api.openai.com/v1",
-            "api_key": "sk-personal",
             "advanced_config_json": {},
         },
     )
@@ -244,17 +271,27 @@ async def test_global_and_personal_llm_configs_should_follow_scope_rules(client:
     assert global_session_llm["config_id"] == global_model["id"]
     assert global_session_llm["scope"] == "global"
     assert global_session_llm["name"] == "平台默认模型"
+    assert global_session_llm["provider_config_id"] == global_provider["id"]
 
     await _logout(client)
     await _login(client, "dave", "User123456")
+    dave_provider_response = await client.post(
+        "/api/ai/llm-provider-configs",
+        json={
+            "name": "Dave 个人供应商",
+            "provider_key": "openai",
+            "base_url": "https://api.openai.com/v1",
+            "api_key": "sk-dave",
+        },
+    )
+    assert dave_provider_response.status_code == 201
+    dave_provider = dave_provider_response.json()
     dave_model_response = await client.post(
         "/api/ai/llm-configs",
         json={
             "name": "Dave 个人模型",
-            "provider_key": "openai",
+            "provider_config_id": dave_provider["id"],
             "model_id": "gpt-4.1",
-            "base_url": "https://api.openai.com/v1",
-            "api_key": "sk-dave",
             "advanced_config_json": {},
         },
     )
