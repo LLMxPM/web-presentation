@@ -192,6 +192,40 @@ def test_base_font_size_guidance_should_use_tailwind_default_ratio() -> None:
     assert "base_font_size / 16px" in coordinator_specs["get_project_style_config"].default_instructions
 
 
+def test_runtime_asset_guidance_should_prefer_sfc_composables() -> None:
+    """智能体提示应明确 SFC 资源解析优先使用响应式组合式能力。"""
+
+    coordinator = get_agent_catalog_entry(AGENT_COORDINATOR_AGENT_ID)
+    component_manager = get_agent_catalog_entry(COMPONENT_MANAGER_AGENT_ID)
+    resource_manager = get_agent_catalog_entry(RESOURCE_MANAGER_AGENT_ID)
+    assert coordinator is not None
+    assert component_manager is not None
+    assert resource_manager is not None
+
+    for catalog in (coordinator, component_manager):
+        prompt = "\n".join(catalog.system_instructions)
+        assert "普通资源 URL 默认用 useAssetSrc" in prompt
+        assert "背景层默认用 useAssetBackground" in prompt
+        assert "resolveResourcePath 只用于非响应式工具代码" in prompt
+        assert "不要在 SFC 中直接写 resolveResourcePath(props.xxx)" in prompt
+        assert "只有在自定义背景图、非响应式代码或确实需要自行组织 DOM/CSS 的场景" not in prompt
+
+    resource_prompt = "\n".join(resource_manager.system_instructions)
+    assert "普通资源 URL 默认用 useAssetSrc" in resource_prompt
+    assert "项目资源背景优先用 useAssetBackground" in resource_prompt
+    assert "不要传初始化时的 props.xxx 字符串" in resource_prompt
+    assert "resolveResourcePath 只用于非响应式工具代码" in resource_prompt
+
+    for agent_id in (AGENT_COORDINATOR_AGENT_ID, COMPONENT_MANAGER_AGENT_ID):
+        specs = {spec.key: spec for spec in list_agent_tool_specs(agent_id)}
+        for tool_key in ("list_runtime_kit_capabilities", "get_runtime_kit_capability"):
+            instructions = specs[tool_key].default_instructions
+            assert instructions is not None
+            assert "普通资源 URL 默认用 useAssetSrc" in instructions
+            assert "背景层默认用 useAssetBackground" in instructions
+            assert "resolveResourcePath 只用于非响应式工具代码" in instructions
+
+
 def _find_tool(config_item: dict, tool_key: str) -> dict:
     """从配置响应中按 key 找到工具项。"""
 
