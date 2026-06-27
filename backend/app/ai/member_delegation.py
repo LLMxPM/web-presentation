@@ -425,10 +425,11 @@ class _MemberAgentRunner:
                 self._model_resolver.resolve_model(llm_config),
                 name=self._member_run.agent_id,
                 output_type=[str, DeferredToolRequests],
-                instructions=[
-                    *build_effective_instructions(catalog, agent_config),
+                instructions=build_effective_instructions(
+                    catalog,
+                    agent_config,
                     build_scope_context_text(self._runtime_context),
-                ],
+                ),
                 deps_type=type(deps),
                 tools=tools,
                 history_processors=_build_member_history_processors(context_processor),

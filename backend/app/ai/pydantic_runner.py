@@ -149,10 +149,11 @@ class PydanticAgentRunner:
             catalog = get_agent_catalog_entry(agent_id)
             if catalog is None:
                 raise RuntimeError(f"agent catalog is not initialized: {agent_id}")
-            instructions = [
-                *build_effective_instructions(catalog, agent_config),
+            instructions = build_effective_instructions(
+                catalog,
+                agent_config,
                 build_scope_context_text(runtime_context),
-            ]
+            )
             compression_service = self._build_history_compression_service(
                 run_model=run_model,
                 agent_id=agent_id,

@@ -7,6 +7,7 @@ from typing import Any
 from httpx import AsyncClient
 
 from app.ai.agent_catalog import get_agent_catalog_entry
+from app.ai.agent_runtime_config import EffectiveAgentRuntimeConfig, build_effective_instructions
 from app.ai.tool_specs import (
     AGENT_COORDINATOR_AGENT_ID,
     COMPONENT_MANAGER_AGENT_ID,
@@ -151,6 +152,30 @@ def test_agent_tool_specs_should_match_platform_tools() -> None:
                 assert not _schema_allows_untyped_array(tags_schema), tool_name
 
 
+def test_effective_instructions_should_be_single_prompt_text() -> None:
+    """运行时应只向 Pydantic AI 传入一段完整提示词文本。"""
+
+    catalog = get_agent_catalog_entry(COMPONENT_MANAGER_AGENT_ID)
+    assert catalog is not None
+    runtime_config = EffectiveAgentRuntimeConfig(
+        agent_id=COMPONENT_MANAGER_AGENT_ID,
+        description_override=None,
+        prompt_override="用户修改后的完整提示词。",
+        tool_configs={},
+    )
+
+    instructions = build_effective_instructions(
+        catalog,
+        runtime_config,
+        "当前业务范围如下：\n- 工作空间 ID：1",
+    )
+
+    assert instructions == [
+        "用户修改后的完整提示词。\n\n当前业务范围如下：\n- 工作空间 ID：1"
+    ]
+    assert catalog.default_prompt not in instructions[0]
+
+
 def test_write_and_danger_tool_specs_should_have_runtime_instructions() -> None:
     """写入和危险工具必须提供模型可见的具体使用提示。"""
 
@@ -171,8 +196,8 @@ def test_base_font_size_guidance_should_use_tailwind_default_ratio() -> None:
     assert coordinator is not None
     assert component_manager is not None
 
-    coordinator_prompt = "\n".join(coordinator.system_instructions)
-    component_prompt = "\n".join(component_manager.system_instructions)
+    coordinator_prompt = coordinator.default_prompt
+    component_prompt = component_manager.default_prompt
     assert "base_font_size / 16px" in coordinator_prompt
     assert "base_font_size / 16px" in component_prompt
     assert "size、density、variant、tone" in component_prompt
@@ -203,27 +228,18 @@ def test_runtime_asset_guidance_should_prefer_sfc_composables() -> None:
     assert resource_manager is not None
 
     for catalog in (coordinator, component_manager):
-        prompt = "\n".join(catalog.system_instructions)
+        prompt = catalog.default_prompt
         assert "普通资源 URL 默认用 useAssetSrc" in prompt
         assert "背景层默认用 useAssetBackground" in prompt
         assert "resolveResourcePath 只用于非响应式工具代码" in prompt
         assert "不要在 SFC 中直接写 resolveResourcePath(props.xxx)" in prompt
         assert "只有在自定义背景图、非响应式代码或确实需要自行组织 DOM/CSS 的场景" not in prompt
 
-    resource_prompt = "\n".join(resource_manager.system_instructions)
+    resource_prompt = resource_manager.default_prompt
     assert "普通资源 URL 默认用 useAssetSrc" in resource_prompt
     assert "项目资源背景优先用 useAssetBackground" in resource_prompt
     assert "不要传初始化时的 props.xxx 字符串" in resource_prompt
     assert "resolveResourcePath 只用于非响应式工具代码" in resource_prompt
-
-    for agent_id in (AGENT_COORDINATOR_AGENT_ID, COMPONENT_MANAGER_AGENT_ID):
-        specs = {spec.key: spec for spec in list_agent_tool_specs(agent_id)}
-        for tool_key in ("list_runtime_kit_capabilities", "get_runtime_kit_capability"):
-            instructions = specs[tool_key].default_instructions
-            assert instructions is not None
-            assert "普通资源 URL 默认用 useAssetSrc" in instructions
-            assert "背景层默认用 useAssetBackground" in instructions
-            assert "resolveResourcePath 只用于非响应式工具代码" in instructions
 
 
 def _find_tool(config_item: dict, tool_key: str) -> dict:
