@@ -331,34 +331,25 @@
             </div>
           </section>
 
-          <section v-else-if="activeAgentPanel === 'prompts'" class="grid gap-4 2xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+          <section v-else-if="activeAgentPanel === 'prompts'" class="space-y-3">
             <BaseInput
-              :model-value="selectedAgentConfig.system_prompt"
+              v-model="promptDraft"
               type="textarea"
-              label="平台底线提示词"
-              :rows="10"
-              disabled
+              label="智能体提示词"
+              :rows="18"
+              placeholder="输入当前账号下的智能体提示词"
             />
-            <div class="space-y-3">
-              <BaseInput
-                v-model="promptDraft"
-                type="textarea"
-                label="业务补充提示词"
-                :rows="10"
-                placeholder="输入当前账号下的业务补充提示词"
-              />
-              <div class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-                <p class="text-xs font-semibold" :class="promptDirty ? 'text-amber-600' : 'text-slate-500'">
-                  {{ promptDirty ? '当前有未保存修改。' : (selectedAgentConfig.prompt_customized ? '当前使用账号自定义提示词。' : '当前使用系统默认提示词。') }}
-                </p>
-                <div class="flex justify-end gap-2">
-                  <BaseButton variant="ghost" :loading="savingPrompt" @click="handleRestorePrompt">
-                    恢复默认
-                  </BaseButton>
-                  <BaseButton variant="primary" :loading="savingPrompt" :disabled="!promptDirty" @click="handleSavePrompt">
-                    保存提示词
-                  </BaseButton>
-                </div>
+            <div class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+              <p class="text-xs font-semibold" :class="promptDirty ? 'text-amber-600' : 'text-slate-500'">
+                {{ promptDirty ? '当前有未保存修改。' : (selectedAgentConfig.prompt_customized ? '当前使用账号自定义提示词。' : '当前使用系统默认提示词。') }}
+              </p>
+              <div class="flex justify-end gap-2">
+                <BaseButton variant="ghost" :loading="savingPrompt" @click="handleRestorePrompt">
+                  恢复默认
+                </BaseButton>
+                <BaseButton variant="primary" :loading="savingPrompt" :disabled="!promptDirty" @click="handleSavePrompt">
+                  保存提示词
+                </BaseButton>
               </div>
             </div>
           </section>
@@ -900,7 +891,7 @@ const agentPanelTabs = computed(() => [
   {
     key: 'prompts' as const,
     label: '提示词',
-    meta: selectedAgentConfig.value?.prompt_customized ? '已覆盖业务提示词' : '使用默认提示词',
+    meta: selectedAgentConfig.value?.prompt_customized ? '已覆盖提示词' : '使用默认提示词',
     badge: promptDirty.value ? '未保存' : '',
     badgeClass: 'bg-amber-50 text-amber-700',
   },
@@ -1323,16 +1314,14 @@ async function handleSaveSelectedAgentSlot(scope: AiLlmConfigScope = 'personal')
   }
 }
 
-/** 保存当前智能体的业务补充提示词。 */
+/** 保存当前智能体的完整提示词。 */
 async function handleSavePrompt() {
   if (!selectedAgentConfig.value) return
   savingPrompt.value = true
   try {
     const normalizedPrompt = promptDraft.value.trim()
-    await updateAgentConfig(selectedAgentConfig.value.id, normalizedPrompt ? {
-      prompt_override: normalizedPrompt,
-    } : {
-      restore_default: true,
+    await updateAgentConfig(selectedAgentConfig.value.id, {
+      prompt_override: normalizedPrompt || null,
     })
     await refreshAgentQueries()
     Message.success('智能体提示词已保存。')
@@ -1343,12 +1332,12 @@ async function handleSavePrompt() {
   }
 }
 
-/** 恢复当前智能体默认业务补充提示词。 */
+/** 恢复当前智能体默认完整提示词。 */
 async function handleRestorePrompt() {
   if (!selectedAgentConfig.value) return
   savingPrompt.value = true
   try {
-    await updateAgentConfig(selectedAgentConfig.value.id, { restore_default: true })
+    await updateAgentConfig(selectedAgentConfig.value.id, { prompt_override: null })
     await refreshAgentQueries()
     Message.success('智能体提示词已恢复默认。')
   } catch (error) {

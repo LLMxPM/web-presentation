@@ -102,10 +102,10 @@ function createAgentConfig() {
     description_override: null,
     description_customized: false,
     role: '理解用户目标。',
-    system_prompt: '系统底线提示词',
-    default_prompt: '',
+    system_prompt: '平台默认提示词',
+    default_prompt: '平台默认提示词',
     prompt_override: null,
-    effective_prompt: '',
+    effective_prompt: '平台默认提示词',
     prompt_customized: false,
     enabled_tool_count: 1,
     disabled_tool_count: 0,
@@ -338,11 +338,11 @@ describe('AccountAiSettingsView', () => {
     })
 
     await fireEvent.click(screen.getByRole('button', { name: '提示词' }))
-    await fireEvent.update(screen.getByPlaceholderText('输入当前账号下的业务补充提示词'), '新的业务提示词')
+    await fireEvent.update(screen.getByPlaceholderText('输入当前账号下的智能体提示词'), '新的智能体提示词')
     await fireEvent.click(screen.getByRole('button', { name: '保存提示词' }))
     await waitFor(() => {
       expect(updateAgentConfigMock).toHaveBeenCalledWith('agent-coordinator', {
-        prompt_override: '新的业务提示词',
+        prompt_override: '新的智能体提示词',
       })
     })
 

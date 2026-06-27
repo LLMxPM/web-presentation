@@ -34,7 +34,7 @@ export async function listAgentConfigs() {
 }
 
 /**
- * 更新指定智能体的业务补充提示词。
+ * 更新指定智能体的完整提示词。
  */
 export async function updateAgentConfig(agentId: string, payload: AgentConfigUpdatePayload) {
   const { data } = await http.patch<AgentConfigItem>(`/ai/agent-configs/${agentId}`, payload)

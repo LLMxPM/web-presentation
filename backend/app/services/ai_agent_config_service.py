@@ -1,4 +1,4 @@
-"""文件功能：封装用户级智能体提示词、工具开关与工具提示词配置逻辑。"""
+"""文件功能：封装用户级智能体完整提示词、工具开关与工具提示词配置逻辑。"""
 
 from __future__ import annotations
 
@@ -15,7 +15,11 @@ from app.ai.agent_catalog import (
     get_agent_tool_catalog_entry,
     list_agent_catalog_entries,
 )
-from app.ai.agent_runtime_config import EffectiveAgentRuntimeConfig, EffectiveToolRuntimeConfig
+from app.ai.agent_runtime_config import (
+    EffectiveAgentRuntimeConfig,
+    EffectiveToolRuntimeConfig,
+    resolve_effective_prompt,
+)
 from app.ai.tool_specs import (
     AGENT_COORDINATOR_AGENT_ID,
     COMPONENT_MANAGER_AGENT_ID,
@@ -53,7 +57,7 @@ class AgentConfigSummary:
 
 
 class AiAgentConfigService:
-    """统一管理当前用户的智能体提示词和工具覆盖配置。"""
+    """统一管理当前用户的智能体完整提示词和工具覆盖配置。"""
 
     def __init__(self, session: AsyncSession, *, user_id: int) -> None:
         self.session = session
@@ -126,23 +130,26 @@ class AiAgentConfigService:
         *,
         operator_id: int,
     ) -> AgentConfigItem:
-        """更新某个 Agent 的用户描述或业务补充提示词。"""
+        """更新某个 Agent 的用户描述或完整提示词。"""
 
-        self._get_catalog_or_raise(agent_id)
+        catalog = self._get_catalog_or_raise(agent_id)
         config = await self._get_agent_config_model(agent_id)
-        if payload.restore_default:
-            if config is not None:
-                await self.session.delete(config)
-                await self.session.commit()
-            return await self.get_config(agent_id)
-
-        if "prompt_override" not in payload.model_fields_set and "description_override" not in payload.model_fields_set:
+        if (
+            not payload.restore_default
+            and "prompt_override" not in payload.model_fields_set
+            and "description_override" not in payload.model_fields_set
+        ):
             return await self.get_config(agent_id)
 
         next_prompt = config.prompt_override if config is not None else None
         next_description = config.description_override if config is not None else None
-        if "prompt_override" in payload.model_fields_set:
+
+        if payload.restore_default:
+            next_prompt = None
+        elif "prompt_override" in payload.model_fields_set:
             next_prompt = self._normalize_optional_text(payload.prompt_override)
+            if next_prompt == catalog.default_prompt:
+                next_prompt = None
         if "description_override" in payload.model_fields_set:
             next_description = self._normalize_optional_text(payload.description_override)
 
@@ -249,7 +256,7 @@ class AiAgentConfigService:
         await self.session.commit()
 
     async def _get_agent_config_model(self, agent_id: str) -> AiAgentUserConfig | None:
-        """读取当前用户某个 Agent 的描述与业务补充提示词模型。"""
+        """读取当前用户某个 Agent 的描述与完整提示词覆盖模型。"""
 
         statement = select(AiAgentUserConfig).where(
             AiAgentUserConfig.user_id == self.user_id,
@@ -351,7 +358,7 @@ class AiAgentConfigService:
             system_prompt=catalog.system_prompt,
             default_prompt=catalog.default_prompt,
             prompt_override=runtime_config.prompt_override,
-            effective_prompt=runtime_config.prompt_override or catalog.default_prompt,
+            effective_prompt=resolve_effective_prompt(catalog, runtime_config),
             prompt_customized=runtime_config.prompt_customized,
             enabled_tool_count=enabled_count,
             disabled_tool_count=disabled_count,

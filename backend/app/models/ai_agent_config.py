@@ -1,4 +1,4 @@
-"""文件功能：定义用户级智能体补充提示词与工具配置覆盖模型。"""
+"""文件功能：定义用户级智能体提示词与工具配置覆盖模型。"""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from app.models.mixins import AuditMixin, TimestampMixin
 
 
 class AiAgentUserConfig(TimestampMixin, AuditMixin, Base):
-    """保存某个用户对内置 Agent 描述与业务补充提示词的配置。"""
+    """保存某个用户对内置 Agent 描述与完整提示词的配置。"""
 
     __tablename__ = "ai_agent_user_configs"
     __table_args__ = (

@@ -148,7 +148,7 @@ async def update_agent_config(
     current: Annotated[AuthContext, Depends(get_current_user)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> AgentConfigItem:
-    """更新当前用户的智能体业务补充提示词，或恢复默认。"""
+    """更新当前用户的智能体完整提示词，或恢复默认。"""
 
     return await AiAgentConfigService(session, user_id=current.user.id).update_agent_config(
         agent_id,

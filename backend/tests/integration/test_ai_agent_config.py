@@ -40,6 +40,14 @@ async def test_agent_config_api_should_manage_prompt_and_tool_overrides(
         assert "project_suggested_reference_read" not in group_keys
 
     coordinator = catalog_items[AGENT_COORDINATOR_AGENT_ID]
+    assert coordinator["default_prompt"]
+    assert coordinator["system_prompt"] == coordinator["default_prompt"]
+    assert "## 1. 身份、权限与安全边界" in coordinator["default_prompt"]
+    assert "## 7. 写入校验与异常处理" in coordinator["default_prompt"]
+    assert "## 1. 身份、权限与安全边界" in catalog_items[COMPONENT_MANAGER_AGENT_ID]["default_prompt"]
+    assert "## 6. 组件质量、写入校验与归属" in catalog_items[COMPONENT_MANAGER_AGENT_ID]["default_prompt"]
+    assert "## 1. 身份、权限与动作边界" in catalog_items[RESOURCE_MANAGER_AGENT_ID]["default_prompt"]
+    assert "## 5. 归档与删除边界" in catalog_items[RESOURCE_MANAGER_AGENT_ID]["default_prompt"]
     resource_list_tool = _find_tool(coordinator, "list_resource_assets")
     assert "scope" in resource_list_tool["agent_guide"]["parameters_schema"]["properties"]
     ask_user = _find_tool(coordinator, "ask_user")
@@ -85,6 +93,16 @@ async def test_agent_config_api_should_manage_prompt_and_tool_overrides(
     assert updated["description"] == "专注页面布局调整的内容助手"
     assert updated["prompt_customized"] is True
     assert updated["effective_prompt"] == "优先解释将要修改的布局区域。"
+
+    restored_prompt_response = await authenticated_client.patch(
+        f"/api/ai/agent-configs/{AGENT_COORDINATOR_AGENT_ID}",
+        json={"prompt_override": None},
+    )
+    assert restored_prompt_response.status_code == 200
+    restored_prompt = restored_prompt_response.json()
+    assert restored_prompt["description"] == "专注页面布局调整的内容助手"
+    assert restored_prompt["prompt_customized"] is False
+    assert restored_prompt["effective_prompt"] == coordinator["default_prompt"]
 
     tool_response = await authenticated_client.patch(
         f"/api/ai/agent-configs/{AGENT_COORDINATOR_AGENT_ID}/tools/get_page_content",

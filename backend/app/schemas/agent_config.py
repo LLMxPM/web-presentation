@@ -69,7 +69,7 @@ class AgentTeamMemberConfigItem(SchemaBase):
 
 
 class AgentCatalogItem(SchemaBase):
-    """内置智能体目录项，包含默认提示词与工具目录。"""
+    """内置智能体目录项，包含默认完整提示词与工具目录。"""
 
     id: str
     name: str
@@ -102,7 +102,7 @@ class AgentConfigItem(AgentCatalogItem):
 
 
 class AgentConfigUpdateRequest(BaseModel):
-    """更新智能体描述或业务补充提示词的请求。"""
+    """更新智能体描述或完整提示词的请求。"""
 
     description_override: str | None = Field(default=None, max_length=4000)
     prompt_override: str | None = Field(default=None, max_length=20000)

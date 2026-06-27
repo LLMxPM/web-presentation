@@ -24,8 +24,16 @@ class AgentToolCatalogEntry:
 
 
 @dataclass(slots=True, frozen=True)
+class AgentPromptSection:
+    """描述默认提示词中的一个章节。"""
+
+    title: str
+    instructions: tuple[str, ...]
+
+
+@dataclass(slots=True, frozen=True)
 class AgentCatalogEntry:
-    """描述一个系统内置智能体及其默认提示词。"""
+    """描述一个系统内置智能体及其默认完整提示词。"""
 
     id: str
     name: str
@@ -41,18 +49,57 @@ class AgentCatalogEntry:
     system_instructions: tuple[str, ...]
     default_business_instructions: tuple[str, ...]
     tools: tuple[AgentToolCatalogEntry, ...]
+    prompt_sections: tuple[AgentPromptSection, ...] = ()
 
     @property
     def default_prompt(self) -> str:
-        """返回默认业务补充提示词文本。"""
+        """返回平台默认完整提示词文本。"""
 
-        return "\n".join(self.default_business_instructions)
+        if self.prompt_sections:
+            return _format_prompt_sections(self.prompt_sections, self.default_business_instructions)
+        return _join_instruction_groups(self.system_instructions, self.default_business_instructions)
 
     @property
     def system_prompt(self) -> str:
-        """返回不可被用户编辑的平台底线提示词文本。"""
+        """返回兼容旧接口的默认完整提示词文本。"""
 
-        return "\n".join(self.system_instructions)
+        return self.default_prompt
+
+
+def _join_instruction_groups(*groups: tuple[str, ...]) -> str:
+    """合并多组默认指令，形成用户可整体覆盖的单个提示词。"""
+
+    return "\n".join(instruction for group in groups for instruction in group if instruction)
+
+
+def _format_prompt_sections(
+    sections: tuple[AgentPromptSection, ...],
+    default_business_instructions: tuple[str, ...],
+) -> str:
+    """按章节格式化默认提示词，并兼容未来的默认业务指令。"""
+
+    chunks: list[str] = []
+    for section in sections:
+        if not section.instructions:
+            continue
+        if chunks:
+            chunks.append("")
+        chunks.append(f"## {section.title}")
+        chunks.extend(section.instructions)
+
+    if default_business_instructions:
+        if chunks:
+            chunks.append("")
+        chunks.append("## 默认业务指令")
+        chunks.extend(default_business_instructions)
+
+    return "\n".join(chunks)
+
+
+def _section(title: str, instructions: tuple[str, ...]) -> AgentPromptSection:
+    """构造提示词章节，保持目录定义处的章节声明简洁。"""
+
+    return AgentPromptSection(title=title, instructions=instructions)
 
 
 def list_agent_catalog_entries() -> tuple[AgentCatalogEntry, ...]:
@@ -232,6 +279,33 @@ _RESOURCE_SYSTEM_INSTRUCTIONS = (
     "你不暴露删除工具；当用户要求删除资源时，说明当前只能归档资源，不能执行删除。",
 )
 
+_COORDINATOR_PROMPT_SECTIONS = (
+    _section("1. 身份、权限与安全边界", _COORDINATOR_SYSTEM_INSTRUCTIONS[:4]),
+    _section("2. 任务判断与工具执行", _COORDINATOR_SYSTEM_INSTRUCTIONS[4:13]),
+    _section("3. Runtime、页面与工作空间模型", _COORDINATOR_SYSTEM_INSTRUCTIONS[13:19]),
+    _section("4. 画布、版式与组件复用规则", _COORDINATOR_SYSTEM_INSTRUCTIONS[19:31]),
+    _section("5. 主题、字体与视觉语义", _COORDINATOR_SYSTEM_INSTRUCTIONS[31:37]),
+    _section("6. 资源渲染与背景处理", _COORDINATOR_SYSTEM_INSTRUCTIONS[37:45]),
+    _section("7. 写入校验与异常处理", _COORDINATOR_SYSTEM_INSTRUCTIONS[45:]),
+)
+
+_COMPONENT_PROMPT_SECTIONS = (
+    _section("1. 身份、权限与安全边界", _COMPONENT_SYSTEM_INSTRUCTIONS[:6]),
+    _section("2. Runtime 与组件库工作流", _COMPONENT_SYSTEM_INSTRUCTIONS[6:19]),
+    _section("3. 画布、版式与复用规则", _COMPONENT_SYSTEM_INSTRUCTIONS[19:30]),
+    _section("4. 组件类型与 API 设计", _COMPONENT_SYSTEM_INSTRUCTIONS[30:35]),
+    _section("5. 主题、资源与背景处理", _COMPONENT_SYSTEM_INSTRUCTIONS[35:49]),
+    _section("6. 组件质量、写入校验与归属", _COMPONENT_SYSTEM_INSTRUCTIONS[49:]),
+)
+
+_RESOURCE_PROMPT_SECTIONS = (
+    _section("1. 身份、权限与动作边界", _RESOURCE_SYSTEM_INSTRUCTIONS[:9]),
+    _section("2. 资源处理流程与元数据", _RESOURCE_SYSTEM_INSTRUCTIONS[9:14]),
+    _section("3. 背景资源与视觉层用法", _RESOURCE_SYSTEM_INSTRUCTIONS[14:17]),
+    _section("4. 内容格式约束", _RESOURCE_SYSTEM_INSTRUCTIONS[17:22]),
+    _section("5. 归档与删除边界", _RESOURCE_SYSTEM_INSTRUCTIONS[22:]),
+)
+
 AGENT_COORDINATOR_CATALOG = AgentCatalogEntry(
     id="agent-coordinator",
     name="内容助手",
@@ -247,6 +321,7 @@ AGENT_COORDINATOR_CATALOG = AgentCatalogEntry(
     system_instructions=_COORDINATOR_SYSTEM_INSTRUCTIONS,
     default_business_instructions=(),
     tools=tuple(_catalog_tool(tool_spec) for tool_spec in list_agent_tool_specs("agent-coordinator")),
+    prompt_sections=_COORDINATOR_PROMPT_SECTIONS,
 )
 
 COMPONENT_MANAGER_CATALOG = AgentCatalogEntry(
@@ -264,6 +339,7 @@ COMPONENT_MANAGER_CATALOG = AgentCatalogEntry(
     system_instructions=_COMPONENT_SYSTEM_INSTRUCTIONS,
     default_business_instructions=(),
     tools=tuple(_catalog_tool(tool_spec) for tool_spec in list_agent_tool_specs("component-manager")),
+    prompt_sections=_COMPONENT_PROMPT_SECTIONS,
 )
 
 RESOURCE_MANAGER_CATALOG = AgentCatalogEntry(
@@ -281,6 +357,7 @@ RESOURCE_MANAGER_CATALOG = AgentCatalogEntry(
     system_instructions=_RESOURCE_SYSTEM_INSTRUCTIONS,
     default_business_instructions=(),
     tools=tuple(_catalog_tool(tool_spec) for tool_spec in list_agent_tool_specs("resource-manager")),
+    prompt_sections=_RESOURCE_PROMPT_SECTIONS,
 )
 
 _AGENT_CATALOG_BY_ID = {entry.id: entry for entry in list_agent_catalog_entries()}

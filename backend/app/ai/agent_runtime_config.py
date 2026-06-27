@@ -37,7 +37,7 @@ class EffectiveAgentRuntimeConfig:
 
     @property
     def prompt_customized(self) -> bool:
-        """判断当前 Agent 是否使用了用户业务补充提示词。"""
+        """判断当前 Agent 是否使用了用户完整提示词覆盖。"""
 
         return bool(self.prompt_override)
 
@@ -84,13 +84,20 @@ def build_effective_instructions(
     catalog: AgentCatalogEntry,
     runtime_config: EffectiveAgentRuntimeConfig | None,
 ) -> list[str]:
-    """合成平台底线提示词与用户补充业务提示词。"""
+    """返回当前 Agent 入模的单个完整提示词。"""
+
+    effective_prompt = resolve_effective_prompt(catalog, runtime_config)
+    return [effective_prompt] if effective_prompt else []
+
+
+def resolve_effective_prompt(
+    catalog: AgentCatalogEntry,
+    runtime_config: EffectiveAgentRuntimeConfig | None,
+) -> str:
+    """合成当前 Agent 的有效完整提示词；用户覆盖存在时直接替换默认值。"""
 
     prompt_override = runtime_config.prompt_override if runtime_config is not None else None
-    instructions = list(catalog.system_instructions)
-    if prompt_override:
-        instructions.append(prompt_override)
-    return instructions
+    return prompt_override or catalog.default_prompt
 
 
 def is_tool_enabled(

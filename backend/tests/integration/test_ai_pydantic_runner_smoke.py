@@ -256,7 +256,7 @@ async def test_pydantic_runner_should_not_inject_agent_description_as_system_pro
     agent_config = EffectiveAgentRuntimeConfig(
         agent_id="component-manager",
         description_override="这段目录描述不应作为 system_prompt 入模。",
-        prompt_override="业务补充：优先给出可验证结果。",
+        prompt_override="自定义完整提示词：优先给出可验证结果。",
         tool_configs={},
     )
 
@@ -303,8 +303,8 @@ async def test_pydantic_runner_should_not_inject_agent_description_as_system_pro
         completed_run.message_history_json,
         ensure_ascii=False,
     )
-    assert "你是 Web Presentation 的组件助手" in instructions
-    assert "业务补充：优先给出可验证结果。" in instructions
+    assert "你是 Web Presentation 的组件助手" not in instructions
+    assert "自定义完整提示词：优先给出可验证结果。" in instructions
     assert "当前业务范围如下：" in instructions
 
 
