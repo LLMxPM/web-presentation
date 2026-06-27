@@ -45,11 +45,11 @@ async def test_agent_config_api_should_manage_prompt_and_tool_overrides(
     assert coordinator["default_prompt"]
     assert coordinator["system_prompt"] == coordinator["default_prompt"]
     assert "## 1. 身份、权限与安全边界" in coordinator["default_prompt"]
-    assert "## 7. 写入校验与异常处理" in coordinator["default_prompt"]
+    assert "## 8. 写入校验与异常处理" in coordinator["default_prompt"]
     assert "## 1. 身份、权限与安全边界" in catalog_items[COMPONENT_MANAGER_AGENT_ID]["default_prompt"]
-    assert "## 6. 组件质量、写入校验与归属" in catalog_items[COMPONENT_MANAGER_AGENT_ID]["default_prompt"]
+    assert "## 7. 组件质量、写入校验与归属" in catalog_items[COMPONENT_MANAGER_AGENT_ID]["default_prompt"]
     assert "## 1. 身份、权限与动作边界" in catalog_items[RESOURCE_MANAGER_AGENT_ID]["default_prompt"]
-    assert "## 5. 归档与删除边界" in catalog_items[RESOURCE_MANAGER_AGENT_ID]["default_prompt"]
+    assert "## 6. 归档与删除边界" in catalog_items[RESOURCE_MANAGER_AGENT_ID]["default_prompt"]
     resource_list_tool = _find_tool(coordinator, "list_resource_assets")
     assert "scope" in resource_list_tool["agent_guide"]["parameters_schema"]["properties"]
     ask_user = _find_tool(coordinator, "ask_user")
@@ -215,6 +215,46 @@ def test_base_font_size_guidance_should_use_tailwind_default_ratio() -> None:
     coordinator_specs = {spec.key: spec for spec in list_agent_tool_specs(AGENT_COORDINATOR_AGENT_ID)}
     assert "1.25 倍" in str(coordinator_specs["get_page_content"].response_example)
     assert "base_font_size / 16px" in coordinator_specs["get_project_style_config"].default_instructions
+
+
+def test_page_design_guidance_should_use_wireframe_as_internal_method() -> None:
+    """页面设计类默认提示词应把文本线框图限定为内部布局方法。"""
+
+    coordinator = get_agent_catalog_entry(AGENT_COORDINATOR_AGENT_ID)
+    component_manager = get_agent_catalog_entry(COMPONENT_MANAGER_AGENT_ID)
+    assert coordinator is not None
+    assert component_manager is not None
+
+    coordinator_prompt = coordinator.default_prompt
+    component_prompt = component_manager.default_prompt
+
+    assert "先在内部使用文本线框图或区域清单梳理布局，再写 Vue SFC 代码" in coordinator_prompt
+    assert "不作为默认回复内容输出" in coordinator_prompt
+    assert "不要为了展示线框图而暂停等待用户确认" in coordinator_prompt
+    assert "先在内部使用文本线框图或区域清单梳理布局，再写 Vue SFC 代码" in component_prompt
+    assert "文本线框图是组件布局思考方法" in component_prompt
+    assert "不要为了展示线框图而暂停等待用户确认" in component_prompt
+
+
+def test_agent_default_prompts_should_include_key_task_workflow() -> None:
+    """所有内置智能体默认提示词应包含重点任务建议工作流程。"""
+
+    coordinator = get_agent_catalog_entry(AGENT_COORDINATOR_AGENT_ID)
+    component_manager = get_agent_catalog_entry(COMPONENT_MANAGER_AGENT_ID)
+    resource_manager = get_agent_catalog_entry(RESOURCE_MANAGER_AGENT_ID)
+    assert coordinator is not None
+    assert component_manager is not None
+    assert resource_manager is not None
+
+    workflow_expectations = {
+        coordinator: ("## 3. 重点任务建议工作流程", "页面或项目重点任务", "组件/资源维护任务再决定是否委派"),
+        component_manager: ("## 2. 重点任务建议工作流程", "组件重点任务", "组件 API 与预览约束"),
+        resource_manager: ("## 2. 重点任务建议工作流程", "资源重点任务", "Diff 预览或引用检查"),
+    }
+    for catalog, expected_phrases in workflow_expectations.items():
+        prompt = catalog.default_prompt
+        for phrase in expected_phrases:
+            assert phrase in prompt
 
 
 def test_runtime_asset_guidance_should_prefer_sfc_composables() -> None:
