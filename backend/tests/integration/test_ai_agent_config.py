@@ -44,10 +44,24 @@ async def test_agent_config_api_should_manage_prompt_and_tool_overrides(
     coordinator = catalog_items[AGENT_COORDINATOR_AGENT_ID]
     assert coordinator["default_prompt"]
     assert coordinator["system_prompt"] == coordinator["default_prompt"]
-    assert "## 1. 身份、权限与安全边界" in coordinator["default_prompt"]
-    assert "## 8. 写入校验与异常处理" in coordinator["default_prompt"]
+    assert "## 1. 身份与硬边界" in coordinator["default_prompt"]
+    assert "工作空间 workspace 是资源库和已发布组件库的资产边界" in coordinator["default_prompt"]
+    assert "项目 project 是一组页面、路由树、项目样式配置、主题/画布配置和预览/构建入口" in coordinator["default_prompt"]
+    assert "页面 page 是项目中的一个可渲染页面记录" in coordinator["default_prompt"]
+    assert "## 3. 事实来源与上下文优先级" in coordinator["default_prompt"]
+    assert "## 4. 对象边界与成员委派" in coordinator["default_prompt"]
+    assert "## 6. Runtime 渲染机制与代码边界" in coordinator["default_prompt"]
+    assert "## 7. 固定画布、主题、组件与资源使用" in coordinator["default_prompt"]
+    assert "## 8. 写入校验与回复契约" in coordinator["default_prompt"]
+    assert "成员委派只能通过 delegate_task_to_member 工具发生" in coordinator["default_prompt"]
     assert "组件助手负责工作空间组件库专长任务" in coordinator["default_prompt"]
     assert "资源助手负责工作空间资源库专长任务" in coordinator["default_prompt"]
+    assert "可用颜色键包括 primary、secondary、invert、background" in coordinator["default_prompt"]
+    assert "--tw-color-text-primary" in coordinator["default_prompt"]
+    assert "主题 Logo 渲染优先使用 Runtime Kit 的 ThemeLogo 组件" in coordinator["default_prompt"]
+    assert "不是单纯任务分发者" not in coordinator["default_prompt"]
+    assert "内容 Team 的入口" not in coordinator["default_prompt"]
+    assert "处理页面与项目任务" not in coordinator["default_prompt"]
     assert "team_members" not in coordinator
     assert "## 1. 身份、权限与安全边界" in catalog_items[COMPONENT_MANAGER_AGENT_ID]["default_prompt"]
     assert "## 7. 组件质量、写入校验与归属" in catalog_items[COMPONENT_MANAGER_AGENT_ID]["default_prompt"]
@@ -55,6 +69,9 @@ async def test_agent_config_api_should_manage_prompt_and_tool_overrides(
     assert "## 6. 归档与删除边界" in catalog_items[RESOURCE_MANAGER_AGENT_ID]["default_prompt"]
     resource_list_tool = _find_tool(coordinator, "list_resource_assets")
     assert "scope" in resource_list_tool["agent_guide"]["parameters_schema"]["properties"]
+    font_asset_tool = _find_tool(coordinator, "list_workspace_font_assets")
+    assert "tags" in font_asset_tool["agent_guide"]["parameters_schema"]["properties"]
+    assert "resource_read" in font_asset_tool["agent_guide"]["runtime_disclosure_groups"]
     ask_user = _find_tool(coordinator, "ask_user")
     assert ask_user["configurable"] is False
     assert ask_user["requires_confirmation"] is True
@@ -250,7 +267,7 @@ def test_agent_default_prompts_should_include_key_task_workflow() -> None:
     assert resource_manager is not None
 
     workflow_expectations = {
-        coordinator: ("## 3. 重点任务建议工作流程", "页面或项目重点任务", "组件/资源维护任务再决定是否委派"),
+        coordinator: ("## 5. 重点任务建议工作流程", "会创建或改动 page_content、页面元数据、路由树或项目样式配置", "组件/资源维护任务再决定是否委派"),
         component_manager: ("## 2. 重点任务建议工作流程", "组件重点任务", "组件 API 与预览约束"),
         resource_manager: ("## 2. 重点任务建议工作流程", "资源重点任务", "Diff 预览或引用检查"),
     }
@@ -258,6 +275,28 @@ def test_agent_default_prompts_should_include_key_task_workflow() -> None:
         prompt = catalog.default_prompt
         for phrase in expected_phrases:
             assert phrase in prompt
+
+
+def test_content_agent_prompt_should_describe_page_rendering_workflow() -> None:
+    """内容助手默认提示词应说明 page_content 的 Runtime 渲染方式与固定画布流程。"""
+
+    coordinator = get_agent_catalog_entry(AGENT_COORDINATOR_AGENT_ID)
+    assert coordinator is not None
+
+    prompt = coordinator.default_prompt
+    expected_phrases = (
+        "page_content 要写成完整、可运行的 Vue SFC 文件源码",
+        "物化为 src/views/<page.code>.vue 逻辑模块",
+        "由 Runtime 通过 Vue 3/Vite 动态导入并渲染",
+        "依据页面类型优先选择合适的已发布页面组件",
+        "找不到合适页面组件或页面容器时再使用 Runtime Kit 的 DefaultContainer",
+        "选择需要渲染的真实资源，包括图片、图表、Mermaid、Draw.io、公式、视频等",
+        "选择合适的内容组件、原子组件、Runtime Kit 组件或能力",
+        "页面是固定画布大小，不是流式网页",
+        "特别注意高度上下文",
+    )
+    for phrase in expected_phrases:
+        assert phrase in prompt
 
 
 def test_runtime_asset_guidance_should_prefer_sfc_composables() -> None:

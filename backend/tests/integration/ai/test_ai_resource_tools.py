@@ -12,6 +12,7 @@ from app.ai.tools.resource.resource_library import (
     build_get_resource_asset_content_tool,
     build_list_resource_assets_tool,
 )
+from app.ai.tools.workspace.assets import build_list_workspace_font_assets_tool
 from app.core.exceptions import AppException
 from app.db.session import get_session_factory
 from app.models.enums import AssetType, UserRole
@@ -149,6 +150,59 @@ async def test_list_resource_assets_tool_should_reject_invalid_scope(
         await tool.entrypoint(run_context, scope="project")
 
     assert exc_info.value.code == "AI_TOOL_ARGUMENT_INVALID"
+
+
+async def test_list_workspace_font_assets_tool_should_return_registered_fonts(
+    authenticated_client: AsyncClient,
+) -> None:
+    """字体资源工具应使用资源读取权限返回已注册字体声明摘要。"""
+
+    workspace_id = await _create_workspace(authenticated_client, "AI 字体资源工作空间")
+    upload_response = await authenticated_client.post(
+        f"/api/workspaces/{workspace_id}/assets/upload",
+        files={"file": ("BrandSerif.woff2", b"font-content", "font/woff2")},
+        data={
+            "asset_type": "font",
+            "name": "BrandSerif",
+            "description": "品牌标题字体",
+            "tags": "[\"品牌\"]",
+        },
+    )
+    assert upload_response.status_code == 200, upload_response.text
+    asset = upload_response.json()
+    create_font_response = await authenticated_client.post(
+        f"/api/workspaces/{workspace_id}/fonts",
+        json={
+            "asset_id": asset["id"],
+            "font_family": "Brand Serif",
+            "font_weight": "500",
+            "font_style": "normal",
+            "font_display": "swap",
+            "status": "active",
+        },
+    )
+    assert create_font_response.status_code == 200, create_font_response.text
+    tool = build_list_workspace_font_assets_tool(get_session_factory())
+
+    result = await tool.entrypoint(
+        _build_tool_run_context(workspace_id=workspace_id),
+        keyword="brand",
+        tags=["品牌"],
+    )
+
+    assert result == [
+        {
+            "name": "BrandSerif",
+            "asset_name": "BrandSerif",
+            "font_family": "Brand Serif",
+            "font_weight": "500",
+            "font_style": "normal",
+            "font_display": "swap",
+            "extension": "woff2",
+            "type": "font",
+            "description": "品牌标题字体",
+        }
+    ]
 
 
 async def _create_workspace(authenticated_client: AsyncClient, name: str) -> int:

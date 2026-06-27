@@ -31,6 +31,7 @@ from app.ai.tools.page import build_apply_page_edits_tool, build_get_page_conten
 from app.ai.tools.project import build_project_tools
 from app.ai.tools.resource import build_resource_manager_tools
 from app.ai.tools.team_delegation import build_team_delegation_tools
+from app.ai.tools.workspace.assets import build_list_workspace_font_assets_tool
 from app.ai.tools.workspace.components import (
     build_get_workspace_component_usage_tool,
     build_list_workspace_components_tool,
@@ -322,10 +323,13 @@ def _build_coordinator_component_read_tools(session_factory: async_sessionmaker[
 def _build_coordinator_resource_read_tools(session_factory: async_sessionmaker[AsyncSession]) -> list[Any]:
     """构建内容助手可直接使用的资源只读查询工具。"""
 
-    return _filter_tools(
-        build_resource_manager_tools(session_factory),
-        ("list_resource_assets", "get_resource_asset_content", "list_resource_tags"),
-    )
+    return [
+        *_filter_tools(
+            build_resource_manager_tools(session_factory),
+            ("list_resource_assets", "get_resource_asset_content", "list_resource_tags"),
+        ),
+        build_list_workspace_font_assets_tool(session_factory),
+    ]
 
 
 def _build_coordinator_runtime_kit_tools(session_factory: async_sessionmaker[AsyncSession]) -> list[Any]:
@@ -750,6 +754,32 @@ _COORDINATOR_TOOL_SPECS = (
         '资源读取',
         '列出当前工作空间资源库中出现过的标签。',
         response_example=['品牌', '图标'],
+    ),
+
+    _tool(
+        'list_workspace_font_assets',
+        '读取字体资源',
+        'resource_read',
+        '资源读取',
+        '查询当前工作空间内已注册并可用于页面源码的字体资源。',
+        default_instructions=(
+            '页面需要使用非主题字体时先调用该工具；返回的 asset_name 是 Runtime Kit useAssetFontFamily 的静态资源逻辑名，'
+            'font_family、font_weight、font_style 和 font_display 是对应 @font-face 声明摘要。'
+            '只使用工具返回的已注册 active 字体资源，不要猜测字体文件路径或手写 @font-face。'
+        ),
+        response_example=[
+            {
+                'name': 'BrandSerif',
+                'asset_name': 'BrandSerif',
+                'font_family': 'Brand Serif',
+                'font_weight': '400',
+                'font_style': 'normal',
+                'font_display': 'swap',
+                'extension': 'woff2',
+                'type': 'font',
+                'description': '品牌标题字体',
+            }
+        ],
     ),
 
 )
@@ -1295,8 +1325,8 @@ _COORDINATOR_GROUP_SPECS = (
     _group(
         "resource_read",
         "资源读取",
-        "默认优先查询当前项目建议引用资源，并可回退全工作空间资源；同时提供资源内容和资源标签读取，不负责资源写入或归档。",
-        ("list_resource_assets", "get_resource_asset_content", "list_resource_tags"),
+        "默认优先查询当前项目建议引用资源，并可回退全工作空间资源；同时提供资源内容、资源标签和已注册字体资源读取，不负责资源写入或归档。",
+        ("list_resource_assets", "get_resource_asset_content", "list_resource_tags", "list_workspace_font_assets"),
         required_context_fields=("workspace_id",),
         token_scopes=RESOURCE_TOOL_READ_SCOPES,
         build_tools=_build_coordinator_resource_read_tools,
