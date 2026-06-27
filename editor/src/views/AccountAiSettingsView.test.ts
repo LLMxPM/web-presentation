@@ -169,6 +169,52 @@ function createAgentConfig() {
   }
 }
 
+function createLlmConfigItem(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 1,
+    scope: 'personal',
+    owner_user_id: 1,
+    editable: true,
+    name: '总控模型',
+    provider_config_id: 10,
+    provider_config_name: 'OpenAI 工作账号',
+    provider_key: 'openai',
+    provider_label: 'OpenAI',
+    model_id: 'gpt-4.1-mini',
+    thinking_enabled: true,
+    thinking_effort: 'medium',
+    supports_image_input: true,
+    context_window_tokens: 128000,
+    max_output_tokens: 32000,
+    history_token_ratio: 0.5,
+    compression_target_ratio: 0.1,
+    advanced_config_json: {},
+    status: 'active',
+    created_at: '2026-04-18T10:00:00+08:00',
+    updated_at: '2026-04-18T10:00:00+08:00',
+    ...overrides,
+  }
+}
+
+function createProviderConfigItem(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 10,
+    scope: 'personal',
+    owner_user_id: 1,
+    editable: true,
+    name: 'OpenAI 工作账号',
+    provider_key: 'openai',
+    provider_label: 'OpenAI',
+    base_url: 'https://api.openai.com/v1',
+    status: 'active',
+    has_api_key: true,
+    api_key_masked: 'sk-t****test',
+    created_at: '2026-04-18T10:00:00+08:00',
+    updated_at: '2026-04-18T10:00:00+08:00',
+    ...overrides,
+  }
+}
+
 function createTestingRenderOptions() {
   const queryClient = new QueryClient({
     defaultOptions: {
@@ -188,6 +234,12 @@ function createTestingRenderOptions() {
       },
     },
   }
+}
+
+async function waitForSettingsReady() {
+  await waitFor(() => {
+    expect(screen.getByRole('button', { name: '保存模型绑定' })).toBeTruthy()
+  })
 }
 
 describe('AccountAiSettingsView', () => {
@@ -215,48 +267,8 @@ describe('AccountAiSettingsView', () => {
         advanced_json_hint: {},
       },
     ])
-    listLlmProviderConfigsMock.mockResolvedValue([
-      {
-        id: 10,
-        scope: 'personal',
-        owner_user_id: 1,
-        editable: true,
-        name: 'OpenAI 工作账号',
-        provider_key: 'openai',
-        provider_label: 'OpenAI',
-        base_url: 'https://api.openai.com/v1',
-        status: 'active',
-        has_api_key: true,
-        api_key_masked: 'sk-t****test',
-        created_at: '2026-04-18T10:00:00+08:00',
-        updated_at: '2026-04-18T10:00:00+08:00',
-      },
-    ])
-    listLlmConfigsMock.mockResolvedValue([
-      {
-        id: 1,
-        scope: 'personal',
-        owner_user_id: 1,
-        editable: true,
-        name: '总控模型',
-        provider_config_id: 10,
-        provider_config_name: 'OpenAI 工作账号',
-        provider_key: 'openai',
-        provider_label: 'OpenAI',
-        model_id: 'gpt-4.1-mini',
-        thinking_enabled: true,
-        thinking_effort: 'medium',
-        supports_image_input: true,
-        context_window_tokens: 128000,
-        max_output_tokens: 32000,
-        history_token_ratio: 0.5,
-        compression_target_ratio: 0.1,
-        advanced_config_json: {},
-        status: 'active',
-        created_at: '2026-04-18T10:00:00+08:00',
-        updated_at: '2026-04-18T10:00:00+08:00',
-      },
-    ])
+    listLlmProviderConfigsMock.mockResolvedValue([createProviderConfigItem()])
+    listLlmConfigsMock.mockResolvedValue([createLlmConfigItem()])
     listLlmSlotsMock.mockResolvedValue([
       {
         slot: 'agent_coordinator',
@@ -273,13 +285,36 @@ describe('AccountAiSettingsView', () => {
         inherited_from_global: false,
       },
     ])
-    createLlmProviderConfigMock.mockResolvedValue({ id: 20, name: '新的供应商' })
-    updateLlmProviderConfigMock.mockResolvedValue(undefined)
+    createLlmProviderConfigMock.mockImplementation(async (payload: Record<string, unknown>) => createProviderConfigItem({
+      id: 20,
+      owner_user_id: payload.scope === 'global' ? null : 1,
+      ...payload,
+      provider_label: payload.provider_key === 'openai' ? 'OpenAI' : String(payload.provider_key ?? ''),
+      has_api_key: Boolean(payload.api_key),
+      api_key_masked: payload.api_key ? 'sk-n****new' : null,
+      status: 'active',
+    }))
+    updateLlmProviderConfigMock.mockImplementation(async (id: number, payload: Record<string, unknown>) => createProviderConfigItem({
+      id,
+      ...payload,
+      has_api_key: true,
+    }))
     deleteLlmProviderConfigMock.mockResolvedValue({ message: '供应商已删除。' })
     listAgentCatalogMock.mockResolvedValue([agentConfig])
     listAgentConfigsMock.mockResolvedValue([agentConfig])
-    createLlmConfigMock.mockResolvedValue({ id: 2, name: '新的模型' })
-    updateLlmConfigMock.mockResolvedValue(undefined)
+    createLlmConfigMock.mockImplementation(async (payload: Record<string, unknown>) => createLlmConfigItem({
+      id: 2,
+      owner_user_id: payload.scope === 'global' ? null : 1,
+      ...payload,
+      provider_config_name: 'OpenAI 工作账号',
+      provider_key: 'openai',
+      provider_label: 'OpenAI',
+      status: 'active',
+    }))
+    updateLlmConfigMock.mockImplementation(async (id: number, payload: Record<string, unknown>) => createLlmConfigItem({
+      id,
+      ...payload,
+    }))
     deleteLlmConfigMock.mockResolvedValue({ message: '模型已删除。' })
     updateLlmSlotBindingMock.mockResolvedValue(undefined)
     updateAgentConfigMock.mockResolvedValue(agentConfig)
@@ -302,6 +337,7 @@ describe('AccountAiSettingsView', () => {
       expect(updateLlmSlotBindingMock).toHaveBeenCalledWith('agent_coordinator', 1, 'personal')
     })
 
+    await fireEvent.click(screen.getByRole('button', { name: '提示词' }))
     await fireEvent.update(screen.getByPlaceholderText('输入当前账号下的业务补充提示词'), '新的业务提示词')
     await fireEvent.click(screen.getByRole('button', { name: '保存提示词' }))
     await waitFor(() => {
@@ -310,6 +346,7 @@ describe('AccountAiSettingsView', () => {
       })
     })
 
+    await fireEvent.click(screen.getByRole('button', { name: 'Team 成员' }))
     await fireEvent.update(screen.getByPlaceholderText('管理工作空间组件库。'), '新的组件助手成员描述')
     await fireEvent.click(screen.getByRole('button', { name: '保存描述' }))
     await waitFor(() => {
@@ -318,7 +355,10 @@ describe('AccountAiSettingsView', () => {
       })
     })
 
+    await fireEvent.click(screen.getByRole('button', { name: '工具配置' }))
     await fireEvent.click(screen.getByText('页面写入'))
+    expect(screen.queryByRole('button', { name: '全部开启' })).toBeNull()
+    expect(screen.queryByRole('button', { name: '全部关闭' })).toBeNull()
     await fireEvent.click(screen.getByRole('checkbox'))
     await fireEvent.click(screen.getByRole('button', { name: '保存' }))
 
@@ -335,16 +375,20 @@ describe('AccountAiSettingsView', () => {
   it('应以卡片管理模型，并支持删除和创建', async () => {
     render(AccountAiSettingsView, createTestingRenderOptions())
 
-    await waitFor(() => {
-      expect(screen.getByText('页面写入')).toBeTruthy()
-    })
+    await waitForSettingsReady()
 
     await fireEvent.click(screen.getByRole('button', { name: '模型' }))
     await waitFor(() => {
-      expect(screen.getByText('gpt-4.1-mini')).toBeTruthy()
+      expect(screen.getAllByText('gpt-4.1-mini').length).toBeGreaterThan(0)
+      expect(screen.getAllByText('模型身份').length).toBeGreaterThan(0)
     })
+    expect(screen.queryByRole('button', { name: '创建模型' })).toBeNull()
 
     await fireEvent.click(screen.getByRole('button', { name: /总控模型/ }))
+    expect(screen.getByText('运行预算')).toBeTruthy()
+    expect(screen.getByText('能力声明')).toBeTruthy()
+    expect(screen.getByRole('button', { name: '编辑模型' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: '保存模型' })).toBeNull()
     await fireEvent.click(screen.getByRole('button', { name: '删除模型' }))
     await waitFor(() => {
       expect(deleteLlmConfigMock).toHaveBeenCalledWith(1)
@@ -372,6 +416,33 @@ describe('AccountAiSettingsView', () => {
         advanced_config_json: {},
       })
     })
+  })
+
+  it('供应商列表点击应先进入详情，再进入编辑态', async () => {
+    render(AccountAiSettingsView, createTestingRenderOptions())
+
+    await waitForSettingsReady()
+
+    await fireEvent.click(screen.getByRole('button', { name: '供应商' }))
+    await waitFor(() => {
+      expect(screen.getAllByText('OpenAI 工作账号').length).toBeGreaterThan(0)
+      expect(screen.getAllByText('供应商身份').length).toBeGreaterThan(0)
+    })
+    expect(screen.queryByRole('button', { name: '创建供应商' })).toBeNull()
+
+    await fireEvent.click(screen.getByRole('button', { name: /OpenAI 工作账号/ }))
+    expect(screen.getAllByText('连接凭证').length).toBeGreaterThan(0)
+    expect(screen.getByText('目录能力')).toBeTruthy()
+    expect(screen.getByRole('button', { name: '编辑供应商' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: '保存供应商' })).toBeNull()
+
+    await fireEvent.click(screen.getByRole('button', { name: '编辑供应商' }))
+    expect(screen.getByText('编辑供应商')).toBeTruthy()
+    expect(screen.getByRole('button', { name: '保存供应商' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: '取消' })).toBeTruthy()
+    await fireEvent.click(screen.getByRole('button', { name: '取消' }))
+    expect(screen.getAllByText('连接凭证').length).toBeGreaterThan(0)
+    expect(screen.queryByRole('button', { name: '保存供应商' })).toBeNull()
   })
 
   it('新建模型应优先默认选择 DeepSeek 供应商', async () => {
@@ -434,9 +505,7 @@ describe('AccountAiSettingsView', () => {
     ])
     render(AccountAiSettingsView, createTestingRenderOptions())
 
-    await waitFor(() => {
-      expect(screen.getByText('页面写入')).toBeTruthy()
-    })
+    await waitForSettingsReady()
 
     await fireEvent.click(screen.getByRole('button', { name: '模型' }))
     await fireEvent.click(screen.getByRole('button', { name: '新建模型' }))
@@ -496,9 +565,7 @@ describe('AccountAiSettingsView', () => {
     ])
     render(AccountAiSettingsView, createTestingRenderOptions())
 
-    await waitFor(() => {
-      expect(screen.getByText('页面写入')).toBeTruthy()
-    })
+    await waitForSettingsReady()
 
     await fireEvent.click(screen.getByRole('button', { name: '模型' }))
     await fireEvent.click(screen.getByRole('button', { name: '新建模型' }))
@@ -562,9 +629,7 @@ describe('AccountAiSettingsView', () => {
     ])
     render(AccountAiSettingsView, createTestingRenderOptions())
 
-    await waitFor(() => {
-      expect(screen.getByText('页面写入')).toBeTruthy()
-    })
+    await waitForSettingsReady()
 
     await fireEvent.click(screen.getByRole('button', { name: '模型' }))
     await fireEvent.click(screen.getByRole('button', { name: '新建模型' }))
@@ -583,12 +648,11 @@ describe('AccountAiSettingsView', () => {
   it('编辑模型时不应提交供应商凭证字段', async () => {
     render(AccountAiSettingsView, createTestingRenderOptions())
 
-    await waitFor(() => {
-      expect(screen.getByText('页面写入')).toBeTruthy()
-    })
+    await waitForSettingsReady()
 
     await fireEvent.click(screen.getByRole('button', { name: '模型' }))
     await fireEvent.click(screen.getByRole('button', { name: /总控模型/ }))
+    await fireEvent.click(screen.getByRole('button', { name: '编辑模型' }))
     await fireEvent.click(screen.getByRole('button', { name: '保存模型' }))
 
     await waitFor(() => {
@@ -604,12 +668,11 @@ describe('AccountAiSettingsView', () => {
   it('模型思考强度应允许输入供应商扩展值', async () => {
     render(AccountAiSettingsView, createTestingRenderOptions())
 
-    await waitFor(() => {
-      expect(screen.getByText('页面写入')).toBeTruthy()
-    })
+    await waitForSettingsReady()
 
     await fireEvent.click(screen.getByRole('button', { name: '模型' }))
     await fireEvent.click(screen.getByRole('button', { name: /总控模型/ }))
+    await fireEvent.click(screen.getByRole('button', { name: '编辑模型' }))
     await fireEvent.update(screen.getByPlaceholderText('例如：medium、high、xhigh、max'), 'xhigh')
     await fireEvent.click(screen.getByRole('button', { name: '保存模型' }))
 
@@ -623,10 +686,9 @@ describe('AccountAiSettingsView', () => {
   it('应在工具详情中展示面向 Agent 的完整只读说明', async () => {
     render(AccountAiSettingsView, createTestingRenderOptions())
 
-    await waitFor(() => {
-      expect(screen.getByText('页面写入')).toBeTruthy()
-    })
+    await waitForSettingsReady()
 
+    await fireEvent.click(screen.getByRole('button', { name: '工具配置' }))
     await fireEvent.click(screen.getByText('页面写入'))
     await fireEvent.click(screen.getByRole('button', { name: '编辑' }))
 

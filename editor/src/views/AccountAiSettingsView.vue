@@ -2,20 +2,21 @@
 <template>
   <div class="space-y-5 pb-10">
     <header class="rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
-      <div class="flex flex-wrap items-center justify-between gap-4">
-        <div>
+      <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <div class="min-w-0">
           <div class="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
             <Bot class="h-4 w-4" />
             <span>账户 AI 设置</span>
           </div>
           <h1 class="mt-2 text-2xl font-bold tracking-tight text-slate-900">AI 设置</h1>
+
         </div>
-        <dl class="grid min-w-[520px] grid-cols-4 overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 text-center">
-          <div class="border-r border-slate-200 px-4 py-3">
+        <dl class="grid w-full grid-cols-2 overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 text-center sm:grid-cols-4 lg:w-auto lg:min-w-[560px]">
+          <div class="border-b border-r border-slate-200 px-4 py-3 sm:border-b-0">
             <dt class="text-[11px] font-semibold text-slate-400">智能体</dt>
             <dd class="mt-1 text-lg font-bold text-slate-900">{{ agentCount }}</dd>
           </div>
-          <div class="border-r border-slate-200 px-4 py-3">
+          <div class="border-b border-slate-200 px-4 py-3 sm:border-b-0 sm:border-r">
             <dt class="text-[11px] font-semibold text-slate-400">可用模型</dt>
             <dd class="mt-1 text-lg font-bold text-slate-900">{{ activeModelCount }}</dd>
           </div>
@@ -33,39 +34,36 @@
       </div>
     </header>
 
-    <section class="grid gap-5 xl:grid-cols-[420px_minmax(0,1fr)]">
+    <section class="grid gap-5 xl:grid-cols-[380px_minmax(0,1fr)]">
       <aside class="min-h-[720px] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
         <div class="border-b border-slate-200 p-3">
           <div class="grid grid-cols-3 rounded-xl bg-slate-100 p-1">
             <button
+              v-for="tab in sectionTabs"
+              :key="tab.key"
               type="button"
-              class="h-9 rounded-lg text-xs font-bold transition"
-              :class="activeSection === 'agents' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'"
-              @click="activeSection = 'agents'"
+              :aria-label="tab.label"
+              class="flex min-h-12 min-w-0 flex-col items-center justify-center rounded-lg px-2 py-1 text-xs font-bold transition"
+              :class="activeSection === tab.key ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'"
+              @click="setActiveSection(tab.key)"
             >
-              智能体配置
-            </button>
-            <button
-              type="button"
-              class="h-9 rounded-lg text-xs font-bold transition"
-              :class="activeSection === 'providers' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'"
-              @click="activeSection = 'providers'"
-            >
-              供应商
-            </button>
-            <button
-              type="button"
-              class="h-9 rounded-lg text-xs font-bold transition"
-              :class="activeSection === 'models' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'"
-              @click="activeSection = 'models'"
-            >
-              模型
+              <span class="flex items-center gap-1.5">
+                <component :is="tab.icon" class="h-3.5 w-3.5" />
+                <span>{{ tab.label }}</span>
+              </span>
+              <span class="mt-0.5 text-[11px] font-semibold opacity-70">{{ tab.meta }}</span>
             </button>
           </div>
         </div>
 
-        <div v-if="activeSection === 'agents'" class="max-h-[calc(100vh-230px)] overflow-y-auto p-3">
-          <div v-if="configsQuery.isFetching.value && !(agentConfigsQuery.data.value?.length)" class="rounded-xl border border-dashed border-slate-200 px-4 py-10 text-center text-sm text-slate-400">
+        <div v-if="activeSection === 'agents'" class="max-h-[calc(100vh-250px)] overflow-y-auto p-3">
+          <div class="mb-3 flex items-center justify-between gap-3">
+            <div>
+              <p class="text-sm font-semibold text-slate-900">智能体配置</p>
+              <p class="mt-0.5 text-xs text-slate-500">{{ agentCount }} 个智能体 · {{ unreadySlotCount }} 个需处理</p>
+            </div>
+          </div>
+          <div v-if="agentConfigsQuery.isFetching.value && !(agentConfigsQuery.data.value?.length)" class="rounded-xl border border-dashed border-slate-200 px-4 py-10 text-center text-sm text-slate-400">
             正在读取智能体配置...
           </div>
           <div v-else-if="agentConfigsQuery.data.value?.length" class="space-y-2">
@@ -111,7 +109,10 @@
 
         <div v-else-if="activeSection === 'providers'" class="max-h-[calc(100vh-230px)] overflow-y-auto p-3">
           <div class="mb-3 flex items-center justify-between gap-3">
-            <p class="text-sm font-semibold text-slate-900">供应商</p>
+            <div>
+              <p class="text-sm font-semibold text-slate-900">供应商</p>
+              <p class="mt-0.5 text-xs text-slate-500">{{ providerCount }} 个配置 · {{ providerMissingKeyCount }} 个缺少密钥</p>
+            </div>
             <BaseButton variant="primary" size="sm" @click="resetProviderForm">
               <Plus class="h-3.5 w-3.5" />
               新建供应商
@@ -164,7 +165,10 @@
 
         <div v-else class="max-h-[calc(100vh-230px)] overflow-y-auto p-3">
           <div class="mb-3 flex items-center justify-between gap-3">
-            <p class="text-sm font-semibold text-slate-900">模型</p>
+            <div>
+              <p class="text-sm font-semibold text-slate-900">模型</p>
+              <p class="mt-0.5 text-xs text-slate-500">{{ modelCount }} 个模型 · {{ activeModelCount }} 个启用</p>
+            </div>
             <BaseButton variant="primary" size="sm" @click="resetModelForm">
               <Plus class="h-3.5 w-3.5" />
               新建模型
@@ -228,14 +232,42 @@
                 <p class="mt-1 max-w-4xl text-sm leading-6 text-slate-500">{{ selectedAgentConfig.description }}</p>
               </div>
             </div>
-            <div class="flex flex-wrap gap-2">
+            <div class="flex flex-wrap justify-end gap-2">
               <span class="rounded-full px-3 py-1 text-xs font-semibold" :class="getAgentSlotClass(selectedAgentConfig)">
                 {{ getAgentSlotLabel(selectedAgentConfig) }}
+              </span>
+              <span class="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-500">
+                {{ selectedAgentConfig.enabled_tool_count }} / {{ totalToolCount }} 工具启用
               </span>
             </div>
           </div>
 
-          <article class="rounded-xl border border-slate-200 bg-slate-50 p-4">
+          <nav class="grid gap-2 rounded-2xl border border-slate-200 bg-slate-50 p-2 md:grid-cols-4" aria-label="智能体配置分区">
+            <button
+              v-for="tab in agentPanelTabs"
+              :key="tab.key"
+              type="button"
+              :aria-label="tab.label"
+              class="flex min-h-14 items-center justify-between gap-3 rounded-xl px-3 py-2 text-left text-sm transition"
+              :class="activeAgentPanel === tab.key ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-600 hover:bg-white/70 hover:text-slate-900'"
+              @click="activeAgentPanel = tab.key"
+            >
+              <span class="min-w-0">
+                <span class="block truncate font-bold">{{ tab.label }}</span>
+                <span class="mt-0.5 block truncate text-[11px] font-semibold opacity-70">{{ tab.meta }}</span>
+              </span>
+              <span
+                v-if="tab.badge"
+                class="shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold"
+                :class="tab.badgeClass"
+              >
+                {{ tab.badge }}
+              </span>
+            </button>
+          </nav>
+
+          <section v-if="activeAgentPanel === 'binding'" class="space-y-4">
+            <article class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
             <div class="flex flex-wrap items-start justify-between gap-4">
               <div>
                 <h3 class="text-sm font-bold text-slate-900">模型绑定</h3>
@@ -248,7 +280,7 @@
                   当前智能体未绑定模型，请选择一个启用中的模型。
                 </p>
               </div>
-              <div class="flex min-w-[420px] items-center gap-2">
+              <div class="grid min-w-0 gap-2 sm:grid-cols-[minmax(0,1fr)_auto] 2xl:w-[560px]">
                 <SearchableSelect
                   v-if="selectedAgentConfig.llm_slot"
                   v-model="slotDrafts[selectedAgentConfig.llm_slot]"
@@ -257,30 +289,49 @@
                   size="compact"
                   placeholder="选择模型"
                 />
-                <BaseButton
-                  variant="primary"
-                  size="sm"
-                  :disabled="!selectedAgentConfig.llm_slot"
-                  :loading="bindingSlot === selectedAgentConfig.llm_slot"
-                  @click="handleSaveSelectedAgentSlot()"
-                >
-                  保存模型绑定
-                </BaseButton>
-                <BaseButton
-                  v-if="canCreateGlobal"
-                  variant="ghost"
-                  size="sm"
-                  :disabled="!selectedAgentConfig.llm_slot"
-                  :loading="bindingSlot === `global:${selectedAgentConfig.llm_slot}`"
-                  @click="handleSaveSelectedAgentSlot('global')"
-                >
-                  设为全局默认
-                </BaseButton>
+                <div class="flex flex-wrap gap-2 sm:justify-end">
+                  <BaseButton
+                    variant="primary"
+                    size="sm"
+                    :disabled="!selectedAgentConfig.llm_slot"
+                    :loading="bindingSlot === selectedAgentConfig.llm_slot"
+                    @click="handleSaveSelectedAgentSlot()"
+                  >
+                    保存模型绑定
+                  </BaseButton>
+                  <BaseButton
+                    v-if="canCreateGlobal"
+                    variant="ghost"
+                    size="sm"
+                    :disabled="!selectedAgentConfig.llm_slot"
+                    :loading="bindingSlot === `global:${selectedAgentConfig.llm_slot}`"
+                    @click="handleSaveSelectedAgentSlot('global')"
+                  >
+                    设为全局默认
+                  </BaseButton>
+                </div>
               </div>
             </div>
-          </article>
+            </article>
+            <div class="grid gap-3 md:grid-cols-3">
+              <div class="rounded-xl border border-slate-200 bg-white px-4 py-3">
+                <p class="text-[11px] font-semibold text-slate-400">供应商</p>
+                <p class="mt-1 truncate text-sm font-bold text-slate-800">{{ selectedAgentSlot?.provider_label || '未配置' }}</p>
+              </div>
+              <div class="rounded-xl border border-slate-200 bg-white px-4 py-3">
+                <p class="text-[11px] font-semibold text-slate-400">模型 ID</p>
+                <p class="mt-1 truncate text-sm font-bold text-slate-800">{{ selectedAgentSlot?.model_id || '未配置' }}</p>
+              </div>
+              <div class="rounded-xl border border-slate-200 bg-white px-4 py-3">
+                <p class="text-[11px] font-semibold text-slate-400">图片输入</p>
+                <p class="mt-1 text-sm font-bold" :class="selectedAgentSlot?.supports_image_input ? 'text-emerald-700' : 'text-slate-500'">
+                  {{ selectedAgentSlot?.supports_image_input ? '可用' : '未启用' }}
+                </p>
+              </div>
+            </div>
+          </section>
 
-          <section class="grid gap-4 2xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+          <section v-else-if="activeAgentPanel === 'prompts'" class="grid gap-4 2xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
             <BaseInput
               :model-value="selectedAgentConfig.system_prompt"
               type="textarea"
@@ -296,18 +347,23 @@
                 :rows="10"
                 placeholder="输入当前账号下的业务补充提示词"
               />
-              <div class="flex justify-end gap-2">
-                <BaseButton variant="ghost" :loading="savingPrompt" @click="handleRestorePrompt">
-                  恢复默认
-                </BaseButton>
-                <BaseButton variant="primary" :loading="savingPrompt" :disabled="!promptDirty" @click="handleSavePrompt">
-                  保存提示词
-                </BaseButton>
+              <div class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                <p class="text-xs font-semibold" :class="promptDirty ? 'text-amber-600' : 'text-slate-500'">
+                  {{ promptDirty ? '当前有未保存修改。' : (selectedAgentConfig.prompt_customized ? '当前使用账号自定义提示词。' : '当前使用系统默认提示词。') }}
+                </p>
+                <div class="flex justify-end gap-2">
+                  <BaseButton variant="ghost" :loading="savingPrompt" @click="handleRestorePrompt">
+                    恢复默认
+                  </BaseButton>
+                  <BaseButton variant="primary" :loading="savingPrompt" :disabled="!promptDirty" @click="handleSavePrompt">
+                    保存提示词
+                  </BaseButton>
+                </div>
               </div>
             </div>
           </section>
 
-          <section v-if="selectedAgentConfig.team_members.length" class="space-y-3">
+          <section v-else-if="activeAgentPanel === 'team'" class="space-y-3">
             <div>
               <h3 class="text-sm font-bold text-slate-900">Team 成员描述</h3>
               <p class="mt-1 text-xs text-slate-500">描述会进入内容助手 Team 的成员上下文，影响主助手何时调度对应成员。</p>
@@ -357,13 +413,16 @@
                 :placeholder="member.default_description"
               />
             </article>
+            <div v-if="!selectedAgentConfig.team_members.length" class="rounded-xl border border-dashed border-slate-200 px-4 py-10 text-center text-sm text-slate-400">
+              当前智能体没有可配置 Team 成员。
+            </div>
           </section>
 
-          <section class="space-y-3">
+          <section v-else class="space-y-3">
             <div class="flex items-center justify-between gap-3">
               <div>
                 <h3 class="text-sm font-bold text-slate-900">工具配置</h3>
-                <p class="mt-1 text-xs text-slate-500">工具组默认折叠，展开后可批量启停或编辑单个工具说明。</p>
+                <p class="mt-1 text-xs text-slate-500">按工具组管理启停、说明覆盖和面向 Agent 的只读工具契约。</p>
               </div>
               <span class="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-500">
                 {{ selectedAgentConfig.enabled_tool_count }} / {{ totalToolCount }} 可用
@@ -377,175 +436,154 @@
             >
               <button
                 type="button"
-                class="flex w-full items-center justify-between gap-3 bg-slate-50 px-4 py-3 text-left transition hover:bg-slate-100"
+                class="flex w-full flex-col gap-3 bg-slate-50 px-4 py-3 text-left transition hover:bg-slate-100 md:flex-row md:items-center md:justify-between"
                 @click="toggleToolGroup(group.key)"
               >
                 <span class="min-w-0">
                   <span class="flex items-center gap-2">
                     <component :is="isToolGroupExpanded(group.key) ? ChevronDown : ChevronRight" class="h-4 w-4 text-slate-400" />
                     <span class="text-sm font-bold text-slate-900">{{ group.label }}</span>
-                    <span class="text-xs text-slate-400">{{ group.tools.length }} 个工具</span>
+                    <span class="text-xs text-slate-400">{{ getToolGroupEnabledCount(group) }} / {{ group.tools.length }} 启用</span>
                   </span>
                   <span class="ml-6 mt-1 block truncate text-xs text-slate-500">{{ group.description }}</span>
                 </span>
-                <span v-if="group.tools.some(tool => tool.configurable)" class="flex shrink-0 gap-2" @click.stop>
-                  <BaseButton variant="ghost" size="sm" :loading="savingGroupKey === group.key" @click="handleSetGroupEnabled(group, true)">
-                    全部开启
-                  </BaseButton>
-                  <BaseButton variant="ghost" size="sm" :loading="savingGroupKey === group.key" @click="handleSetGroupEnabled(group, false)">
-                    全部关闭
-                  </BaseButton>
-                </span>
               </button>
 
-              <div v-show="isToolGroupExpanded(group.key)" class="overflow-x-auto">
-                <table class="min-w-full table-fixed text-left text-xs">
-                  <thead class="border-t border-slate-200 bg-white text-[11px] font-semibold text-slate-400">
-                    <tr>
-                      <th class="w-[34%] px-4 py-2">工具</th>
-                      <th class="w-[14%] px-4 py-2">风险</th>
-                      <th class="w-[14%] px-4 py-2">状态</th>
-                      <th class="w-[16%] px-4 py-2">定制</th>
-                      <th class="w-[22%] px-4 py-2 text-right">操作</th>
-                    </tr>
-                  </thead>
-                  <tbody class="divide-y divide-slate-100">
-                    <template v-for="tool in group.tools" :key="tool.key">
-                      <tr class="bg-white">
-                        <td class="px-4 py-3">
-                          <p class="font-semibold text-slate-900">{{ tool.label }}</p>
-                          <code class="mt-1 block truncate text-[11px] text-slate-400">{{ tool.key }}</code>
-                        </td>
-                        <td class="px-4 py-3">
-                          <span class="rounded-full px-2 py-0.5 text-[11px] font-semibold" :class="getRiskClass(tool.risk_level)">
+              <div v-show="isToolGroupExpanded(group.key)" class="space-y-3 border-t border-slate-100 bg-slate-50 p-3">
+                <article
+                  v-for="tool in group.tools"
+                  :key="tool.key"
+                  class="rounded-xl border border-slate-200 bg-white p-4"
+                >
+                  <div class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                    <div class="min-w-0">
+                      <div class="flex flex-wrap items-center gap-2">
+                        <p class="text-sm font-bold text-slate-900">{{ tool.label }}</p>
+                        <span class="rounded-full px-2 py-0.5 text-[11px] font-semibold" :class="getRiskClass(tool.risk_level)">
+                          {{ getRiskLabel(tool) }}
+                        </span>
+                        <span class="rounded-full px-2 py-0.5 text-[11px] font-semibold" :class="isToolCustomized(tool) ? 'bg-indigo-50 text-indigo-700' : 'bg-slate-100 text-slate-500'">
+                          {{ isToolCustomized(tool) ? '已覆盖' : '默认说明' }}
+                        </span>
+                      </div>
+                      <code class="mt-1 block truncate text-[11px] text-slate-400">{{ tool.key }}</code>
+                      <p class="mt-2 line-clamp-2 text-xs leading-5 text-slate-500">{{ tool.description }}</p>
+                    </div>
+                    <div class="flex shrink-0 flex-wrap items-center gap-2 lg:justify-end">
+                      <label v-if="tool.configurable && toolDrafts[tool.key]" class="inline-flex h-8 items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 text-xs font-semibold">
+                        <input
+                          v-model="toolDrafts[tool.key].enabled"
+                          type="checkbox"
+                          class="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                        >
+                        <span :class="toolDrafts[tool.key].enabled ? 'text-emerald-700' : 'text-slate-400'">
+                          {{ toolDrafts[tool.key].enabled ? '启用' : '关闭' }}
+                        </span>
+                      </label>
+                      <span v-else class="inline-flex h-8 items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 px-3 text-xs font-semibold text-slate-400">
+                        <Lock class="h-3.5 w-3.5" />
+                        系统只读
+                      </span>
+                      <BaseButton variant="ghost" size="sm" @click="toggleToolEditor(tool.key)">
+                        {{ editingToolKey === tool.key ? '收起' : (tool.configurable ? '编辑' : '说明') }}
+                      </BaseButton>
+                      <BaseButton
+                        v-if="tool.configurable"
+                        variant="ghost"
+                        size="sm"
+                        :loading="savingToolKey === tool.key"
+                        :disabled="!isToolDirty(tool)"
+                        @click="handleSaveTool(tool)"
+                      >
+                        保存
+                      </BaseButton>
+                    </div>
+                  </div>
+
+                  <div v-if="editingToolKey === tool.key" class="mt-4 border-t border-slate-100 pt-4">
+                    <div v-if="tool.configurable && toolDrafts[tool.key]" class="grid gap-3 lg:grid-cols-2">
+                      <BaseInput
+                        v-model="toolDrafts[tool.key].descriptionOverride"
+                        type="textarea"
+                        label="工具说明覆盖"
+                        :rows="4"
+                        :placeholder="tool.default_description"
+                      />
+                      <BaseInput
+                        v-model="toolDrafts[tool.key].instructionsOverride"
+                        type="textarea"
+                        label="工具提示词覆盖"
+                        :rows="4"
+                        placeholder="补充该工具的使用约束；留空表示使用默认说明"
+                      />
+                    </div>
+
+                    <section class="mt-4 space-y-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+                      <div class="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <h4 class="text-sm font-bold text-slate-900">Agent 完整说明</h4>
+                          <p class="mt-1 text-xs leading-5 text-slate-500">{{ tool.agent_guide.effective_description }}</p>
+                        </div>
+                        <div class="flex flex-wrap gap-2">
+                          <code class="rounded bg-white px-2 py-1 text-[11px] font-semibold text-slate-600">{{ tool.agent_guide.tool_name }}</code>
+                          <span class="rounded-full px-2 py-1 text-[11px] font-semibold" :class="getRiskClass(tool.agent_guide.risk_level)">
                             {{ getRiskLabel(tool) }}
                           </span>
-                        </td>
-                        <td class="px-4 py-3">
-                          <label v-if="tool.configurable && toolDrafts[tool.key]" class="inline-flex items-center gap-2">
-                            <input
-                              v-model="toolDrafts[tool.key].enabled"
-                              type="checkbox"
-                              class="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
-                            >
-                            <span class="font-semibold" :class="toolDrafts[tool.key].enabled ? 'text-emerald-700' : 'text-slate-400'">
-                              {{ toolDrafts[tool.key].enabled ? '启用' : '关闭' }}
-                            </span>
-                          </label>
-                          <span v-else class="inline-flex items-center gap-1 text-slate-400">
-                            <Lock class="h-3.5 w-3.5" />
-                            系统只读
-                          </span>
-                        </td>
-                        <td class="px-4 py-3 text-slate-500">
-                          {{ isToolCustomized(tool) ? '已覆盖' : '默认' }}
-                        </td>
-                        <td class="px-4 py-3">
-                          <div class="flex justify-end gap-2">
-                            <BaseButton variant="ghost" size="sm" @click="toggleToolEditor(tool.key)">
-                              {{ editingToolKey === tool.key ? '收起' : (tool.configurable ? '编辑' : '说明') }}
-                            </BaseButton>
-                            <BaseButton
-                              v-if="tool.configurable"
-                              variant="ghost"
-                              size="sm"
-                              :loading="savingToolKey === tool.key"
-                              :disabled="!isToolDirty(tool)"
-                              @click="handleSaveTool(tool)"
-                            >
-                              保存
-                            </BaseButton>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr v-if="editingToolKey === tool.key" class="bg-slate-50">
-                        <td colspan="5" class="px-4 py-4">
-                          <div v-if="tool.configurable && toolDrafts[tool.key]" class="grid gap-3 lg:grid-cols-2">
-                            <BaseInput
-                              v-model="toolDrafts[tool.key].descriptionOverride"
-                              type="textarea"
-                              label="工具说明覆盖"
-                              :rows="4"
-                              :placeholder="tool.default_description"
-                            />
-                            <BaseInput
-                              v-model="toolDrafts[tool.key].instructionsOverride"
-                              type="textarea"
-                              label="工具提示词覆盖"
-                              :rows="4"
-                              placeholder="补充该工具的使用约束；留空表示使用默认说明"
-                            />
-                          </div>
+                        </div>
+                      </div>
 
-                          <section class="mt-4 space-y-4 rounded-xl border border-slate-200 bg-white p-4">
-                            <div class="flex flex-wrap items-start justify-between gap-3">
-                              <div>
-                                <h4 class="text-sm font-bold text-slate-900">Agent 完整说明</h4>
-                                <p class="mt-1 text-xs leading-5 text-slate-500">{{ tool.agent_guide.effective_description }}</p>
-                              </div>
-                              <div class="flex flex-wrap gap-2">
-                                <code class="rounded bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-600">{{ tool.agent_guide.tool_name }}</code>
-                                <span class="rounded-full px-2 py-1 text-[11px] font-semibold" :class="getRiskClass(tool.agent_guide.risk_level)">
-                                  {{ getRiskLabel(tool) }}
-                                </span>
-                              </div>
-                            </div>
+                      <dl class="grid gap-3 text-xs md:grid-cols-2">
+                        <div class="rounded-lg bg-white p-3">
+                          <dt class="font-semibold text-slate-400">系统默认说明</dt>
+                          <dd class="mt-1 leading-5 text-slate-700">{{ tool.agent_guide.system_description }}</dd>
+                        </div>
+                        <div class="rounded-lg bg-white p-3">
+                          <dt class="font-semibold text-slate-400">上下文要求</dt>
+                          <dd class="mt-1 leading-5 text-slate-700">
+                            {{ formatGuideList(tool.agent_guide.required_context_fields, '无额外上下文字段') }}
+                          </dd>
+                        </div>
+                        <div class="rounded-lg bg-white p-3">
+                          <dt class="font-semibold text-slate-400">运行时披露组</dt>
+                          <dd class="mt-1 leading-5 text-slate-700">
+                            {{ formatGuideList(tool.agent_guide.runtime_disclosure_groups, '不通过业务工具组披露') }}
+                          </dd>
+                        </div>
+                        <div class="rounded-lg bg-white p-3">
+                          <dt class="font-semibold text-slate-400">工具提示词</dt>
+                          <dd class="mt-1 whitespace-pre-wrap leading-5 text-slate-700">{{ tool.agent_guide.instructions || '无额外工具提示词' }}</dd>
+                        </div>
+                      </dl>
 
-                            <dl class="grid gap-3 text-xs md:grid-cols-2">
-                              <div class="rounded-lg bg-slate-50 p-3">
-                                <dt class="font-semibold text-slate-400">系统默认说明</dt>
-                                <dd class="mt-1 leading-5 text-slate-700">{{ tool.agent_guide.system_description }}</dd>
-                              </div>
-                              <div class="rounded-lg bg-slate-50 p-3">
-                                <dt class="font-semibold text-slate-400">上下文要求</dt>
-                                <dd class="mt-1 leading-5 text-slate-700">
-                                  {{ formatGuideList(tool.agent_guide.required_context_fields, '无额外上下文字段') }}
-                                </dd>
-                              </div>
-                              <div class="rounded-lg bg-slate-50 p-3">
-                                <dt class="font-semibold text-slate-400">运行时披露组</dt>
-                                <dd class="mt-1 leading-5 text-slate-700">
-                                  {{ formatGuideList(tool.agent_guide.runtime_disclosure_groups, '不通过业务工具组披露') }}
-                                </dd>
-                              </div>
-                              <div class="rounded-lg bg-slate-50 p-3">
-                                <dt class="font-semibold text-slate-400">工具提示词</dt>
-                                <dd class="mt-1 whitespace-pre-wrap leading-5 text-slate-700">{{ tool.agent_guide.instructions || '无额外工具提示词' }}</dd>
-                              </div>
-                            </dl>
+                      <div class="grid gap-3 xl:grid-cols-2">
+                        <div>
+                          <p class="mb-2 text-xs font-semibold text-slate-500">参数 JSON Schema</p>
+                          <pre class="max-h-72 overflow-auto rounded-lg bg-slate-950 p-3 text-[11px] leading-5 text-slate-100">{{ formatGuideJson(tool.agent_guide.parameters_schema ?? {}) }}</pre>
+                        </div>
+                        <div>
+                          <p class="mb-2 text-xs font-semibold text-slate-500">调用示例</p>
+                          <pre class="max-h-72 overflow-auto rounded-lg bg-slate-950 p-3 text-[11px] leading-5 text-slate-100">{{ formatGuideJson(tool.agent_guide.call_example ?? { tool_name: tool.agent_guide.tool_name, arguments: {} }) }}</pre>
+                        </div>
+                      </div>
 
-                            <div class="grid gap-3 xl:grid-cols-2">
-                              <div>
-                                <p class="mb-2 text-xs font-semibold text-slate-500">参数 JSON Schema</p>
-                                <pre class="max-h-72 overflow-auto rounded-lg bg-slate-950 p-3 text-[11px] leading-5 text-slate-100">{{ formatGuideJson(tool.agent_guide.parameters_schema ?? {}) }}</pre>
-                              </div>
-                              <div>
-                                <p class="mb-2 text-xs font-semibold text-slate-500">调用示例</p>
-                                <pre class="max-h-72 overflow-auto rounded-lg bg-slate-950 p-3 text-[11px] leading-5 text-slate-100">{{ formatGuideJson(tool.agent_guide.call_example ?? { tool_name: tool.agent_guide.tool_name, arguments: {} }) }}</pre>
-                              </div>
-                            </div>
+                      <div>
+                        <p class="mb-2 text-xs font-semibold text-slate-500">返回示例</p>
+                        <pre v-if="hasGuideResponseExample(tool)" class="max-h-72 overflow-auto rounded-lg bg-slate-950 p-3 text-[11px] leading-5 text-slate-100">{{ formatGuideJson(tool.agent_guide.response_example) }}</pre>
+                        <p v-else class="rounded-lg border border-dashed border-slate-200 bg-white px-3 py-4 text-xs text-slate-400">暂无返回示例</p>
+                        <p v-if="tool.agent_guide.response_notes" class="mt-2 text-xs leading-5 text-slate-500">{{ tool.agent_guide.response_notes }}</p>
+                      </div>
+                    </section>
 
-                            <div>
-                              <p class="mb-2 text-xs font-semibold text-slate-500">返回示例</p>
-                              <pre v-if="hasGuideResponseExample(tool)" class="max-h-72 overflow-auto rounded-lg bg-slate-950 p-3 text-[11px] leading-5 text-slate-100">{{ formatGuideJson(tool.agent_guide.response_example) }}</pre>
-                              <p v-else class="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-xs text-slate-400">暂无返回示例</p>
-                              <p v-if="tool.agent_guide.response_notes" class="mt-2 text-xs leading-5 text-slate-500">{{ tool.agent_guide.response_notes }}</p>
-                            </div>
-                          </section>
-
-                          <div v-if="tool.configurable" class="mt-3 flex justify-end gap-2">
-                            <BaseButton variant="ghost" size="sm" :loading="savingToolKey === tool.key" @click="handleRestoreTool(tool)">
-                              恢复默认
-                            </BaseButton>
-                            <BaseButton variant="primary" size="sm" :loading="savingToolKey === tool.key" :disabled="!isToolDirty(tool)" @click="handleSaveTool(tool)">
-                              保存工具
-                            </BaseButton>
-                          </div>
-                        </td>
-                      </tr>
-                    </template>
-                  </tbody>
-                </table>
+                    <div v-if="tool.configurable" class="mt-3 flex justify-end gap-2">
+                      <BaseButton variant="ghost" size="sm" :loading="savingToolKey === tool.key" @click="handleRestoreTool(tool)">
+                        恢复默认
+                      </BaseButton>
+                      <BaseButton variant="primary" size="sm" :loading="savingToolKey === tool.key" :disabled="!isToolDirty(tool)" @click="handleSaveTool(tool)">
+                        保存工具
+                      </BaseButton>
+                    </div>
+                  </div>
+                </article>
               </div>
             </article>
           </section>
@@ -560,12 +598,15 @@
           :form="providerForm"
           :selected-provider-config-id="selectedProviderConfigId"
           :selected-provider-config="selectedProviderConfig"
+          :mode="providerPanelMode"
           :current-provider="currentProviderForProviderForm"
           :provider-options="providerOptions"
           :saving-provider-config="savingProviderConfig"
           :deleting-provider-config-id="deletingProviderConfigId"
           :can-create-global="canCreateGlobal"
           @delete-provider="handleDeleteProviderConfig"
+          @cancel="handleCancelProviderEdit"
+          @edit="handleStartEditProviderConfig"
           @submit="handleSubmitProviderConfig"
         />
 
@@ -576,6 +617,7 @@
           :form="modelForm"
           :selected-config-id="selectedConfigId"
           :selected-model="selectedModel"
+          :mode="modelPanelMode"
           :current-provider="currentProvider"
           :provider-config-options="providerConfigOptions"
           :advanced-config-error="advancedConfigError"
@@ -583,6 +625,8 @@
           :deleting-config-id="deletingConfigId"
           :can-create-global="canCreateGlobal"
           @delete-model="handleDeleteModel"
+          @cancel="handleCancelModelEdit"
+          @edit="handleStartEditModel"
           @format-advanced="formatAdvancedConfig"
           @submit="handleSubmitModel"
         />
@@ -594,7 +638,7 @@
 <script setup lang="ts">
 import { computed, nextTick, reactive, ref, watch } from 'vue'
 import { useQuery, useQueryClient } from '@tanstack/vue-query'
-import { Bot, ChevronDown, ChevronRight, Lock, Plus } from '@lucide/vue'
+import { Bot, ChevronDown, ChevronRight, Cpu, Lock, Plus, Server } from '@lucide/vue'
 
 import {
   createLlmConfig,
@@ -638,6 +682,8 @@ import type {
 import { Message, createConfirm } from '@/utils/message'
 
 type ActiveSection = 'agents' | 'providers' | 'models'
+type ActiveAgentPanel = 'binding' | 'prompts' | 'team' | 'tools'
+type ConfigPanelMode = 'create' | 'detail' | 'edit'
 
 const DEFAULT_CONTEXT_WINDOW_TOKENS = 128000
 const DEFAULT_MAX_OUTPUT_TOKENS = 32000
@@ -675,13 +721,13 @@ interface ToolDraft {
 const queryClient = useQueryClient()
 const authStore = useAuthStore()
 const activeSection = ref<ActiveSection>('agents')
+const activeAgentPanel = ref<ActiveAgentPanel>('binding')
 
 const selectedAgentId = ref('')
 const promptDraft = ref('')
 const savingPrompt = ref(false)
 const savingTeamMemberId = ref<string | null>(null)
 const savingToolKey = ref<string | null>(null)
-const savingGroupKey = ref<string | null>(null)
 const editingToolKey = ref<string | null>(null)
 const toolDrafts = reactive<Record<string, ToolDraft>>({})
 const teamMemberDrafts = reactive<Record<string, string>>({})
@@ -690,11 +736,15 @@ const slotDrafts = reactive<Record<string, number | null>>({})
 const bindingSlot = ref<string | null>(null)
 
 const selectedProviderConfigId = ref<number | null>(null)
+const providerPanelMode = ref<ConfigPanelMode>('create')
+const providerCreateRequested = ref(false)
 const savingProviderConfig = ref(false)
 const deletingProviderConfigId = ref<number | null>(null)
 const applyingExistingProviderConfig = ref(false)
 
 const selectedConfigId = ref<number | null>(null)
+const modelPanelMode = ref<ConfigPanelMode>('create')
+const modelCreateRequested = ref(false)
 const advancedConfigText = ref('{}')
 const advancedConfigError = ref('')
 const advancedConfigCollapsed = ref(true)
@@ -755,13 +805,37 @@ const agentConfigsQuery = useQuery({
 })
 
 const agentCount = computed(() => agentConfigsQuery.data.value?.length ?? catalogQuery.data.value?.length ?? 0)
+const modelCount = computed(() => configsQuery.data.value?.length ?? 0)
+const providerCount = computed(() => providerConfigsQuery.data.value?.length ?? 0)
 const activeModelCount = computed(() => (configsQuery.data.value ?? []).filter(config => config.status === 'active').length)
+const providerMissingKeyCount = computed(() => (providerConfigsQuery.data.value ?? []).filter(config => !config.has_api_key).length)
 const unreadySlotCount = computed(() => (slotsQuery.data.value ?? []).filter(slot => !slot.binding_ready).length)
 const allToolCount = computed(() => (
   (agentConfigsQuery.data.value ?? catalogQuery.data.value ?? [])
     .reduce((total, agent) => total + agent.tool_groups.reduce((groupTotal, group) => groupTotal + group.tools.length, 0), 0)
 ))
 const canCreateGlobal = computed(() => authStore.user?.role === 'platform_admin')
+
+const sectionTabs = computed(() => [
+  {
+    key: 'agents' as const,
+    label: '智能体',
+    meta: `${agentCount.value} 个配置`,
+    icon: Bot,
+  },
+  {
+    key: 'providers' as const,
+    label: '供应商',
+    meta: `${providerCount.value} 个配置`,
+    icon: Server,
+  },
+  {
+    key: 'models' as const,
+    label: '模型',
+    meta: `${activeModelCount.value}/${modelCount.value} 启用`,
+    icon: Cpu,
+  },
+])
 
 const selectedAgentConfig = computed<AgentConfigItem | null>(() => (
   agentConfigsQuery.data.value?.find(item => item.id === selectedAgentId.value)
@@ -797,6 +871,54 @@ const promptDirty = computed(() => {
   if (!selectedAgentConfig.value) return false
   return promptDraft.value.trim() !== selectedAgentConfig.value.effective_prompt.trim()
 })
+
+const selectedSlotDirty = computed(() => {
+  const slot = selectedAgentConfig.value?.llm_slot
+  if (!slot) return false
+  return (slotDrafts[slot] ?? null) !== (selectedAgentSlot.value?.llm_config_id ?? null)
+})
+
+const dirtyTeamMemberCount = computed(() => (
+  selectedAgentConfig.value?.team_members.filter(member => isTeamMemberDirty(member)).length ?? 0
+))
+
+const dirtyToolCount = computed(() => (
+  selectedAgentConfig.value?.tool_groups.reduce(
+    (total, group) => total + group.tools.filter(tool => isToolDirty(tool)).length,
+    0,
+  ) ?? 0
+))
+
+const agentPanelTabs = computed(() => [
+  {
+    key: 'binding' as const,
+    label: '模型绑定',
+    meta: selectedAgentSlot.value?.binding_ready ? '运行入口已就绪' : '需要选择模型',
+    badge: selectedSlotDirty.value ? '未保存' : '',
+    badgeClass: 'bg-amber-50 text-amber-700',
+  },
+  {
+    key: 'prompts' as const,
+    label: '提示词',
+    meta: selectedAgentConfig.value?.prompt_customized ? '已覆盖业务提示词' : '使用默认提示词',
+    badge: promptDirty.value ? '未保存' : '',
+    badgeClass: 'bg-amber-50 text-amber-700',
+  },
+  {
+    key: 'team' as const,
+    label: 'Team 成员',
+    meta: `${selectedAgentConfig.value?.team_members.length ?? 0} 个成员`,
+    badge: dirtyTeamMemberCount.value ? `${dirtyTeamMemberCount.value} 处` : '',
+    badgeClass: 'bg-amber-50 text-amber-700',
+  },
+  {
+    key: 'tools' as const,
+    label: '工具配置',
+    meta: `${selectedAgentConfig.value?.enabled_tool_count ?? 0}/${totalToolCount.value} 启用`,
+    badge: dirtyToolCount.value ? `${dirtyToolCount.value} 处` : '',
+    badgeClass: 'bg-amber-50 text-amber-700',
+  },
+])
 
 const providerOptions = computed<SelectOption[]>(() => (
   providersQuery.data.value?.map(provider => ({
@@ -860,6 +982,7 @@ watch(
     if (!config) return
     promptDraft.value = config.effective_prompt
     editingToolKey.value = null
+    activeAgentPanel.value = 'binding'
     resetTeamMemberDrafts(config)
     resetToolDrafts(config)
     resetGroupExpansion(config)
@@ -884,6 +1007,26 @@ watch(
       const provider = findDefaultNewModelProvider(providers)
       providerForm.provider_key = provider.provider_key
       prefillProviderFormFromProvider(provider)
+    }
+  },
+  { immediate: true },
+)
+
+watch(
+  () => configsQuery.data.value,
+  () => {
+    if (activeSection.value === 'models') {
+      openDefaultModelDetail()
+    }
+  },
+  { immediate: true },
+)
+
+watch(
+  () => providerConfigsQuery.data.value,
+  () => {
+    if (activeSection.value === 'providers') {
+      openDefaultProviderDetail()
     }
   },
   { immediate: true },
@@ -1007,6 +1150,41 @@ function prefillProviderFormFromProvider(provider: LlmProviderCatalogItem | null
   }
 }
 
+/** 切换账号 AI 设置的一级分区，保留各分区当前表单草稿。 */
+function setActiveSection(section: ActiveSection) {
+  activeSection.value = section
+  if (section === 'providers') {
+    openDefaultProviderDetail()
+  }
+  if (section === 'models') {
+    openDefaultModelDetail()
+  }
+}
+
+/** 进入供应商分区时优先展示已有供应商详情，避免把新建表单作为默认落点。 */
+function openDefaultProviderDetail() {
+  if (selectedProviderConfigId.value || providerCreateRequested.value) {
+    return
+  }
+  const firstProviderConfig = providerConfigsQuery.data.value?.[0]
+  if (!firstProviderConfig) {
+    return
+  }
+  void handleEditProviderConfig(firstProviderConfig)
+}
+
+/** 进入模型分区时优先展示已有模型详情，避免把新建表单作为默认落点。 */
+function openDefaultModelDetail() {
+  if (selectedConfigId.value || modelCreateRequested.value) {
+    return
+  }
+  const firstModel = configsQuery.data.value?.[0]
+  if (!firstModel) {
+    return
+  }
+  void handleEditModel(firstModel)
+}
+
 /** 选中左侧智能体卡片并切换到智能体详情。 */
 function selectAgent(agentId: string) {
   selectedAgentId.value = agentId
@@ -1096,6 +1274,11 @@ function resetGroupExpansion(config: AgentConfigItem) {
   for (const group of config.tool_groups) {
     expandedGroupKeys[group.key] = false
   }
+}
+
+/** 统计工具组内当前草稿启用的工具数量。 */
+function getToolGroupEnabledCount(group: AgentToolGroupConfigItem) {
+  return group.tools.filter(tool => toolDrafts[tool.key]?.enabled ?? tool.enabled).length
 }
 
 /** 切换工具组展开状态。 */
@@ -1247,28 +1430,6 @@ async function handleRestoreTool(tool: AgentToolConfigItem) {
   }
 }
 
-/** 批量切换工具组内所有可配置工具。 */
-async function handleSetGroupEnabled(group: AgentToolGroupConfigItem, enabled: boolean) {
-  if (!selectedAgentConfig.value) return
-  savingGroupKey.value = group.key
-  try {
-    for (const tool of group.tools.filter(item => item.configurable)) {
-      const draft = toolDrafts[tool.key]
-      await updateAgentToolConfig(selectedAgentConfig.value.id, tool.key, {
-        enabled,
-        description_override: draft?.descriptionOverride.trim() || tool.description_override,
-        instructions_override: draft?.instructionsOverride.trim() || tool.instructions_override,
-      })
-    }
-    await refreshAgentQueries()
-    Message.success(enabled ? '工具组已开启。' : '工具组已关闭。')
-  } catch (error) {
-    Message.error(getErrorMessage(error, '批量更新工具组失败。'))
-  } finally {
-    savingGroupKey.value = null
-  }
-}
-
 /** 判断工具草稿是否发生变化。 */
 function isToolDirty(tool: AgentToolConfigItem) {
   const draft = toolDrafts[tool.key]
@@ -1333,6 +1494,8 @@ function findProviderForConfig(config: LlmProviderConfigItem | null) {
 /** 重置供应商表单并切换到新建状态。 */
 function resetProviderForm() {
   activeSection.value = 'providers'
+  providerPanelMode.value = 'create'
+  providerCreateRequested.value = true
   selectedProviderConfigId.value = null
   providerForm.scope = 'personal'
   providerForm.name = ''
@@ -1347,6 +1510,8 @@ function resetProviderForm() {
 /** 把已有供应商配置装载到右侧表单。 */
 async function handleEditProviderConfig(config: LlmProviderConfigItem) {
   activeSection.value = 'providers'
+  providerPanelMode.value = 'detail'
+  providerCreateRequested.value = false
   applyingExistingProviderConfig.value = true
   selectedProviderConfigId.value = config.id
   providerForm.scope = config.scope
@@ -1358,9 +1523,30 @@ async function handleEditProviderConfig(config: LlmProviderConfigItem) {
   applyingExistingProviderConfig.value = false
 }
 
+/** 从供应商详情进入编辑态。 */
+function handleStartEditProviderConfig() {
+  if (!selectedProviderConfig.value?.editable) {
+    Message.error('管理员全局供应商只读，不能由当前用户修改。')
+    return
+  }
+  providerPanelMode.value = 'edit'
+}
+
+/** 取消供应商编辑，重新装载详情数据以丢弃草稿。 */
+function handleCancelProviderEdit() {
+  const config = selectedProviderConfig.value
+  if (!config) {
+    resetProviderForm()
+    return
+  }
+  void handleEditProviderConfig(config)
+}
+
 /** 重置模型表单并切换到新建状态。 */
 function resetModelForm() {
   activeSection.value = 'models'
+  modelPanelMode.value = 'create'
+  modelCreateRequested.value = true
   selectedConfigId.value = null
   modelForm.scope = 'personal'
   modelForm.name = ''
@@ -1378,6 +1564,8 @@ function resetModelForm() {
 /** 把已有模型装载到右侧表单。 */
 async function handleEditModel(config: LlmConfigItem) {
   activeSection.value = 'models'
+  modelPanelMode.value = 'detail'
+  modelCreateRequested.value = false
   applyingExistingModel.value = true
   selectedConfigId.value = config.id
   modelForm.scope = config.scope
@@ -1396,6 +1584,25 @@ async function handleEditModel(config: LlmConfigItem) {
   advancedConfigCollapsed.value = true
   await nextTick()
   applyingExistingModel.value = false
+}
+
+/** 从模型详情进入编辑态。 */
+function handleStartEditModel() {
+  if (!selectedModel.value?.editable) {
+    Message.error('管理员全局模型只读，不能由当前用户修改。')
+    return
+  }
+  modelPanelMode.value = 'edit'
+}
+
+/** 取消模型编辑，重新装载详情数据以丢弃草稿。 */
+function handleCancelModelEdit() {
+  const config = selectedModel.value
+  if (!config) {
+    resetModelForm()
+    return
+  }
+  void handleEditModel(config)
 }
 
 /** 解析高级 JSON 配置并同步错误提示。 */
@@ -1474,18 +1681,26 @@ async function handleSubmitProviderConfig() {
       if (apiKey) {
         updatePayload.api_key = apiKey
       }
-      await updateLlmProviderConfig(selectedProviderConfigId.value, updatePayload)
+      const updatedProviderConfig = await updateLlmProviderConfig(selectedProviderConfigId.value, updatePayload)
+      queryClient.setQueryData<LlmProviderConfigItem[]>(['llm-provider-configs'], currentItems => (
+        currentItems?.map(item => item.id === updatedProviderConfig.id ? updatedProviderConfig : item) ?? [updatedProviderConfig]
+      ))
+      await handleEditProviderConfig(updatedProviderConfig)
       Message.success('供应商已更新。')
     } else {
-      await createLlmProviderConfig({
+      const createdProviderConfig = await createLlmProviderConfig({
         name: providerForm.name.trim(),
         scope: providerForm.scope,
         provider_key: providerKey,
         base_url: baseUrl,
         api_key: apiKey,
       })
+      queryClient.setQueryData<LlmProviderConfigItem[]>(['llm-provider-configs'], currentItems => [
+        createdProviderConfig,
+        ...(currentItems ?? []).filter(item => item.id !== createdProviderConfig.id),
+      ])
+      await handleEditProviderConfig(createdProviderConfig)
       Message.success('供应商已创建。')
-      resetProviderForm()
     }
     await refreshProviderQueries()
   } catch (error) {
@@ -1531,10 +1746,14 @@ async function handleSubmitModel() {
         compression_target_ratio: normalizeCompressionTargetRatio(modelForm.compression_target_ratio),
         advanced_config_json: advancedConfig,
       }
-      await updateLlmConfig(selectedConfigId.value, updatePayload)
+      const updatedConfig = await updateLlmConfig(selectedConfigId.value, updatePayload)
+      queryClient.setQueryData<LlmConfigItem[]>(['llm-configs'], currentItems => (
+        currentItems?.map(item => item.id === updatedConfig.id ? updatedConfig : item) ?? [updatedConfig]
+      ))
+      await handleEditModel(updatedConfig)
       Message.success('模型已更新。')
     } else {
-      await createLlmConfig({
+      const createdConfig = await createLlmConfig({
         name: modelForm.name.trim(),
         scope: modelForm.scope,
         provider_config_id: providerConfigId,
@@ -1548,8 +1767,12 @@ async function handleSubmitModel() {
         compression_target_ratio: normalizeCompressionTargetRatio(modelForm.compression_target_ratio),
         advanced_config_json: advancedConfig,
       })
+      queryClient.setQueryData<LlmConfigItem[]>(['llm-configs'], currentItems => [
+        createdConfig,
+        ...(currentItems ?? []).filter(item => item.id !== createdConfig.id),
+      ])
+      await handleEditModel(createdConfig)
       Message.success('模型已创建。')
-      resetModelForm()
     }
     await refreshLlmQueries()
   } catch (error) {
@@ -1572,8 +1795,17 @@ async function handleDeleteProviderConfig(config: LlmProviderConfigItem) {
   deletingProviderConfigId.value = config.id
   try {
     await deleteLlmProviderConfig(config.id)
+    const remainingProviderConfigs = (providerConfigsQuery.data.value ?? []).filter(item => item.id !== config.id)
+    queryClient.setQueryData<LlmProviderConfigItem[]>(['llm-provider-configs'], remainingProviderConfigs)
     if (selectedProviderConfigId.value === config.id) {
-      resetProviderForm()
+      selectedProviderConfigId.value = null
+      providerCreateRequested.value = false
+      const nextProviderConfig = remainingProviderConfigs[0]
+      if (nextProviderConfig) {
+        await handleEditProviderConfig(nextProviderConfig)
+      } else {
+        resetProviderForm()
+      }
     }
     Message.success('供应商已删除。')
     await refreshProviderQueries()
@@ -1597,8 +1829,17 @@ async function handleDeleteModel(config: LlmConfigItem) {
   deletingConfigId.value = config.id
   try {
     await deleteLlmConfig(config.id)
+    const remainingConfigs = (configsQuery.data.value ?? []).filter(item => item.id !== config.id)
+    queryClient.setQueryData<LlmConfigItem[]>(['llm-configs'], remainingConfigs)
     if (selectedConfigId.value === config.id) {
-      resetModelForm()
+      selectedConfigId.value = null
+      modelCreateRequested.value = false
+      const nextModel = remainingConfigs[0]
+      if (nextModel) {
+        await handleEditModel(nextModel)
+      } else {
+        resetModelForm()
+      }
     }
     Message.success('模型已删除。')
     await refreshLlmQueries()
