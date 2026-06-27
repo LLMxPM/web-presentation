@@ -826,16 +826,6 @@ export interface AgentToolGroupConfigItem {
   tools: AgentToolConfigItem[]
 }
 
-export interface AgentTeamMemberConfigItem {
-  id: string
-  name: string
-  icon: string
-  default_description: string
-  description: string
-  description_override: string | null
-  description_customized: boolean
-}
-
 export interface AgentCatalogItem {
   id: string
   name: string
@@ -853,7 +843,6 @@ export interface AgentCatalogItem {
   role: string
   system_prompt: string
   default_prompt: string
-  team_members: AgentTeamMemberConfigItem[]
   tool_groups: AgentToolGroupConfigItem[]
 }
 

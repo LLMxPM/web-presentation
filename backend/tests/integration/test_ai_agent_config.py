@@ -46,6 +46,9 @@ async def test_agent_config_api_should_manage_prompt_and_tool_overrides(
     assert coordinator["system_prompt"] == coordinator["default_prompt"]
     assert "## 1. 身份、权限与安全边界" in coordinator["default_prompt"]
     assert "## 8. 写入校验与异常处理" in coordinator["default_prompt"]
+    assert "组件助手负责工作空间组件库专长任务" in coordinator["default_prompt"]
+    assert "资源助手负责工作空间资源库专长任务" in coordinator["default_prompt"]
+    assert "team_members" not in coordinator
     assert "## 1. 身份、权限与安全边界" in catalog_items[COMPONENT_MANAGER_AGENT_ID]["default_prompt"]
     assert "## 7. 组件质量、写入校验与归属" in catalog_items[COMPONENT_MANAGER_AGENT_ID]["default_prompt"]
     assert "## 1. 身份、权限与动作边界" in catalog_items[RESOURCE_MANAGER_AGENT_ID]["default_prompt"]

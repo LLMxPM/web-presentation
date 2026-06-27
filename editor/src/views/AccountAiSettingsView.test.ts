@@ -109,17 +109,6 @@ function createAgentConfig() {
     prompt_customized: false,
     enabled_tool_count: 1,
     disabled_tool_count: 0,
-    team_members: [
-      {
-        id: 'component-manager',
-        name: '组件助手',
-        icon: 'component-blocks',
-        default_description: '管理工作空间组件库。',
-        description: '管理工作空间组件库。',
-        description_override: null,
-        description_customized: false,
-      },
-    ],
     tool_groups: [
       {
         key: 'page_write',
@@ -346,14 +335,7 @@ describe('AccountAiSettingsView', () => {
       })
     })
 
-    await fireEvent.click(screen.getByRole('button', { name: 'Team 成员' }))
-    await fireEvent.update(screen.getByPlaceholderText('管理工作空间组件库。'), '新的组件助手成员描述')
-    await fireEvent.click(screen.getByRole('button', { name: '保存描述' }))
-    await waitFor(() => {
-      expect(updateAgentConfigMock).toHaveBeenCalledWith('component-manager', {
-        description_override: '新的组件助手成员描述',
-      })
-    })
+    expect(screen.queryByRole('button', { name: 'Team 成员' })).toBeNull()
 
     await fireEvent.click(screen.getByRole('button', { name: '工具配置' }))
     await fireEvent.click(screen.getByText('页面写入'))

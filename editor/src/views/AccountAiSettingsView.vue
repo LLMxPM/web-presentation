@@ -242,7 +242,7 @@
             </div>
           </div>
 
-          <nav class="grid gap-2 rounded-2xl border border-slate-200 bg-slate-50 p-2 md:grid-cols-4" aria-label="智能体配置分区">
+          <nav class="grid gap-2 rounded-2xl border border-slate-200 bg-slate-50 p-2 md:grid-cols-3" aria-label="智能体配置分区">
             <button
               v-for="tab in agentPanelTabs"
               :key="tab.key"
@@ -351,61 +351,6 @@
                   保存提示词
                 </BaseButton>
               </div>
-            </div>
-          </section>
-
-          <section v-else-if="activeAgentPanel === 'team'" class="space-y-3">
-            <div>
-              <h3 class="text-sm font-bold text-slate-900">Team 成员描述</h3>
-              <p class="mt-1 text-xs text-slate-500">描述会进入内容助手 Team 的成员上下文，影响主助手何时调度对应成员。</p>
-            </div>
-            <article
-              v-for="member in selectedAgentConfig.team_members"
-              :key="member.id"
-              class="rounded-xl border border-slate-200 bg-slate-50 p-4"
-            >
-              <div class="flex flex-wrap items-start justify-between gap-3">
-                <div class="flex min-w-0 items-start gap-3">
-                  <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ring-1" :class="getAgentIconShellClass(member.icon, false)">
-                    <component :is="resolveAgentIconComponent(member.icon)" class="h-4 w-4" />
-                  </span>
-                  <div class="min-w-0">
-                    <p class="text-sm font-bold text-slate-900">{{ member.name }}</p>
-                    <p class="mt-1 text-xs text-slate-500">{{ member.description_customized ? '描述已覆盖' : '默认描述' }}</p>
-                  </div>
-                </div>
-                <div class="flex shrink-0 gap-2">
-                  <BaseButton
-                    variant="ghost"
-                    size="sm"
-                    :loading="savingTeamMemberId === member.id"
-                    @click="handleRestoreTeamMember(member)"
-                  >
-                    恢复默认
-                  </BaseButton>
-                  <BaseButton
-                    variant="primary"
-                    size="sm"
-                    :loading="savingTeamMemberId === member.id"
-                    :disabled="!isTeamMemberDirty(member)"
-                    @click="handleSaveTeamMember(member)"
-                  >
-                    保存描述
-                  </BaseButton>
-                </div>
-              </div>
-              <BaseInput
-                v-if="teamMemberDrafts[member.id] !== undefined"
-                v-model="teamMemberDrafts[member.id]"
-                class="mt-3"
-                type="textarea"
-                label="成员描述"
-                :rows="3"
-                :placeholder="member.default_description"
-              />
-            </article>
-            <div v-if="!selectedAgentConfig.team_members.length" class="rounded-xl border border-dashed border-slate-200 px-4 py-10 text-center text-sm text-slate-400">
-              当前智能体没有可配置 Team 成员。
             </div>
           </section>
 
@@ -663,7 +608,6 @@ import { useAuthStore } from '@/stores/auth'
 import type {
   AiLlmConfigScope,
   AgentConfigItem,
-  AgentTeamMemberConfigItem,
   AgentToolConfigItem,
   AgentToolGroupConfigItem,
   LlmConfigItem,
@@ -673,7 +617,7 @@ import type {
 import { Message, createConfirm } from '@/utils/message'
 
 type ActiveSection = 'agents' | 'providers' | 'models'
-type ActiveAgentPanel = 'binding' | 'prompts' | 'team' | 'tools'
+type ActiveAgentPanel = 'binding' | 'prompts' | 'tools'
 type ConfigPanelMode = 'create' | 'detail' | 'edit'
 
 const DEFAULT_CONTEXT_WINDOW_TOKENS = 128000
@@ -717,11 +661,9 @@ const activeAgentPanel = ref<ActiveAgentPanel>('binding')
 const selectedAgentId = ref('')
 const promptDraft = ref('')
 const savingPrompt = ref(false)
-const savingTeamMemberId = ref<string | null>(null)
 const savingToolKey = ref<string | null>(null)
 const editingToolKey = ref<string | null>(null)
 const toolDrafts = reactive<Record<string, ToolDraft>>({})
-const teamMemberDrafts = reactive<Record<string, string>>({})
 const expandedGroupKeys = reactive<Record<string, boolean>>({})
 const slotDrafts = reactive<Record<string, number | null>>({})
 const bindingSlot = ref<string | null>(null)
@@ -869,10 +811,6 @@ const selectedSlotDirty = computed(() => {
   return (slotDrafts[slot] ?? null) !== (selectedAgentSlot.value?.llm_config_id ?? null)
 })
 
-const dirtyTeamMemberCount = computed(() => (
-  selectedAgentConfig.value?.team_members.filter(member => isTeamMemberDirty(member)).length ?? 0
-))
-
 const dirtyToolCount = computed(() => (
   selectedAgentConfig.value?.tool_groups.reduce(
     (total, group) => total + group.tools.filter(tool => isToolDirty(tool)).length,
@@ -893,13 +831,6 @@ const agentPanelTabs = computed(() => [
     label: '提示词',
     meta: selectedAgentConfig.value?.prompt_customized ? '已覆盖提示词' : '使用默认提示词',
     badge: promptDirty.value ? '未保存' : '',
-    badgeClass: 'bg-amber-50 text-amber-700',
-  },
-  {
-    key: 'team' as const,
-    label: 'Team 成员',
-    meta: `${selectedAgentConfig.value?.team_members.length ?? 0} 个成员`,
-    badge: dirtyTeamMemberCount.value ? `${dirtyTeamMemberCount.value} 处` : '',
     badgeClass: 'bg-amber-50 text-amber-700',
   },
   {
@@ -974,7 +905,6 @@ watch(
     promptDraft.value = config.effective_prompt
     editingToolKey.value = null
     activeAgentPanel.value = 'binding'
-    resetTeamMemberDrafts(config)
     resetToolDrafts(config)
     resetGroupExpansion(config)
   },
@@ -1231,16 +1161,6 @@ function getAgentSlotClass(agent: AgentConfigItem) {
   return 'bg-amber-50 text-amber-700'
 }
 
-/** 用服务端配置重置 Team 成员描述草稿。 */
-function resetTeamMemberDrafts(config: AgentConfigItem) {
-  for (const key of Object.keys(teamMemberDrafts)) {
-    delete teamMemberDrafts[key]
-  }
-  for (const member of config.team_members) {
-    teamMemberDrafts[member.id] = member.description
-  }
-}
-
 /** 用服务端配置重置工具草稿。 */
 function resetToolDrafts(config: AgentConfigItem) {
   for (const key of Object.keys(toolDrafts)) {
@@ -1347,43 +1267,6 @@ async function handleRestorePrompt() {
   }
 }
 
-/** 保存 Team 成员描述覆盖。 */
-async function handleSaveTeamMember(member: AgentTeamMemberConfigItem) {
-  const draft = teamMemberDrafts[member.id]
-  if (draft === undefined) return
-  savingTeamMemberId.value = member.id
-  try {
-    const normalizedDescription = draft.trim()
-    await updateAgentConfig(member.id, {
-      description_override: normalizedDescription && normalizedDescription !== member.default_description
-        ? normalizedDescription
-        : null,
-    })
-    await refreshAgentQueries()
-    Message.success('成员描述已保存。')
-  } catch (error) {
-    Message.error(getErrorMessage(error, '保存成员描述失败。'))
-  } finally {
-    savingTeamMemberId.value = null
-  }
-}
-
-/** 恢复 Team 成员默认描述。 */
-async function handleRestoreTeamMember(member: AgentTeamMemberConfigItem) {
-  savingTeamMemberId.value = member.id
-  try {
-    await updateAgentConfig(member.id, {
-      description_override: null,
-    })
-    await refreshAgentQueries()
-    Message.success('成员描述已恢复默认。')
-  } catch (error) {
-    Message.error(getErrorMessage(error, '恢复成员描述失败。'))
-  } finally {
-    savingTeamMemberId.value = null
-  }
-}
-
 /** 保存单个工具的启停状态与说明覆盖。 */
 async function handleSaveTool(tool: AgentToolConfigItem) {
   if (!selectedAgentConfig.value || !toolDrafts[tool.key]) return
@@ -1426,11 +1309,6 @@ function isToolDirty(tool: AgentToolConfigItem) {
   return draft.enabled !== tool.enabled
     || draft.descriptionOverride.trim() !== (tool.description_override ?? '')
     || draft.instructionsOverride.trim() !== (tool.instructions_override ?? '')
-}
-
-/** 判断 Team 成员描述草稿是否发生变化。 */
-function isTeamMemberDirty(member: AgentTeamMemberConfigItem) {
-  return (teamMemberDrafts[member.id] ?? '').trim() !== member.description
 }
 
 /** 判断工具说明或提示词是否已经被覆盖。 */

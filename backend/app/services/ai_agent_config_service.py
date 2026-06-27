@@ -39,7 +39,6 @@ from app.schemas.agent_config import (
     AgentCatalogItem,
     AgentConfigItem,
     AgentConfigUpdateRequest,
-    AgentTeamMemberConfigItem,
     AgentToolConfigItem,
     AgentToolConfigUpdateRequest,
     AgentToolGuideItem,
@@ -84,8 +83,7 @@ class AiAgentConfigService:
 
         catalog = self._get_catalog_or_raise(agent_id)
         runtime_config = await self.get_effective_runtime_config(agent_id)
-        team_members = await self._build_team_members_for_config(catalog)
-        return self._build_config_item(catalog, runtime_config, team_members=team_members)
+        return self._build_config_item(catalog, runtime_config)
 
     async def get_config_summary(self, agent_id: str) -> AgentConfigSummary:
         """读取 Agent 列表接口所需的轻量配置摘要。"""
@@ -319,7 +317,6 @@ class AiAgentConfigService:
             role=catalog.role,
             system_prompt=catalog.system_prompt,
             default_prompt=catalog.default_prompt,
-            team_members=self._build_default_team_members(catalog),
             tool_groups=self._build_tool_groups(
                 catalog,
                 runtime_config,
@@ -331,8 +328,6 @@ class AiAgentConfigService:
         self,
         catalog: AgentCatalogEntry,
         runtime_config: EffectiveAgentRuntimeConfig,
-        *,
-        team_members: list[AgentTeamMemberConfigItem],
     ) -> AgentConfigItem:
         """把有效配置转换成响应模型。"""
 
@@ -362,67 +357,11 @@ class AiAgentConfigService:
             prompt_customized=runtime_config.prompt_customized,
             enabled_tool_count=enabled_count,
             disabled_tool_count=disabled_count,
-            team_members=team_members,
             tool_groups=self._build_tool_groups(
                 catalog,
                 runtime_config,
                 runtime_tool_map=runtime_tool_map,
             ),
-        )
-
-    async def _build_team_members_for_config(self, catalog: AgentCatalogEntry) -> list[AgentTeamMemberConfigItem]:
-        """为内容助手配置生成 Team 成员描述配置。"""
-
-        if catalog.id != AGENT_COORDINATOR_AGENT_ID:
-            return []
-
-        result: list[AgentTeamMemberConfigItem] = []
-        for member_agent_id in (COMPONENT_MANAGER_AGENT_ID, RESOURCE_MANAGER_AGENT_ID):
-            member_catalog = self._get_catalog_or_raise(member_agent_id)
-            member_runtime_config = await self.get_effective_runtime_config(member_agent_id)
-            result.append(self._build_team_member_item(member_catalog, member_runtime_config))
-        return result
-
-    @staticmethod
-    def _build_default_team_members(catalog: AgentCatalogEntry) -> list[AgentTeamMemberConfigItem]:
-        """为内置目录生成未叠加用户覆盖的 Team 成员描述。"""
-
-        if catalog.id != AGENT_COORDINATOR_AGENT_ID:
-            return []
-        result: list[AgentTeamMemberConfigItem] = []
-        for member_agent_id in (COMPONENT_MANAGER_AGENT_ID, RESOURCE_MANAGER_AGENT_ID):
-            member_catalog = get_agent_catalog_entry(member_agent_id)
-            if member_catalog is None:
-                continue
-            result.append(
-                AgentTeamMemberConfigItem(
-                    id=member_catalog.id,
-                    name=member_catalog.name,
-                    icon=member_catalog.icon,
-                    default_description=member_catalog.description,
-                    description=member_catalog.description,
-                    description_override=None,
-                    description_customized=False,
-                )
-            )
-        return result
-
-    @staticmethod
-    def _build_team_member_item(
-        catalog: AgentCatalogEntry,
-        runtime_config: EffectiveAgentRuntimeConfig,
-    ) -> AgentTeamMemberConfigItem:
-        """把成员 Agent 目录与用户描述覆盖折叠为 Team 成员配置项。"""
-
-        description = runtime_config.description_override or catalog.description
-        return AgentTeamMemberConfigItem(
-            id=catalog.id,
-            name=catalog.name,
-            icon=catalog.icon,
-            default_description=catalog.description,
-            description=description,
-            description_override=runtime_config.description_override,
-            description_customized=runtime_config.description_customized,
         )
 
     def _build_tool_groups(
