@@ -168,6 +168,8 @@ app:
     iconDefaultStrokeWidth: 2
 ```
 
+其中 `baseFontSize` 是页面内容作用域的 Tailwind 默认 `16px` 基准替换值；页面与组件源码中的 `text-*`、`p-*`、`m-*`、`gap-*`、`space-*` 等语义尺度会按 `baseFontSize / 16px` 的倍率渲染，直接写入的 `px/rem` 或 Tailwind arbitrary values 不参与该倍率。
+
 主题配置需要特别注意：
 
 - 工作空间级主题主数据由“主题库”维护，项目与组件预览默认配置优先保存 `theme_key`

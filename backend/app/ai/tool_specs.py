@@ -398,9 +398,9 @@ _COORDINATOR_TOOL_SPECS = (
          '页面编码：page_demo\n'
          '页面标题：示例页\n'
          '当前页面画布尺寸（page_width / page_height）：1920 x 1080 px\n'
-         '当前项目基础字号（base_font_size）：20px\n'
-         'base_font_size 作用：text-base 等于该值，text-* 字号、p-/m-/gap-/space-* 等 spacing 按 Runtime Tailwind 预设比例派生；page_width/page_height 不参与该换算。\n'
-         '固定尺度说明：直接写 px、rem 或 Tailwind arbitrary values 不会随 base_font_size 自动变化；需要跟随基础字号时使用 Tailwind 语义尺度，或以 base_font_size 为基准计算。\n'
+         '当前项目基础字号（base_font_size）：20px，相当于 Tailwind 默认 16px 基准的 1.25 倍；'
+         'text-*、p-*、m-*、gap-*、space-* 等语义尺度会按该倍率渲染；'
+         '直接写 px、rem 或 Tailwind arbitrary values 不参与该倍率。\n'
          '\n'
          '源码：\n'
          '```text\n'
@@ -419,8 +419,8 @@ _COORDINATOR_TOOL_SPECS = (
         '读取当前项目真实页面画布尺寸、基础字号、当前主题颜色/字体摘要与 Markdown 样式规范。',
         default_instructions=(
             '在生成或调整项目级页面视觉方案前，优先读取真实页面画布、基础字号、当前主题颜色/字体摘要和 Markdown 样式规范；'
-            'base_font_size 是页面 Tailwind 字号和间距的基础尺度，text-* 字号与 p-/m-/gap-/space-* 等 spacing 按 Runtime Tailwind 预设比例派生；'
-            '直接写 px、rem 或 Tailwind arbitrary values 属于固定 CSS 尺度，不会随 base_font_size 自动变化；'
+            'base_font_size 替代 Tailwind 默认 16px 基准，可按 base_font_size / 16px 理解 text-*、p-*、m-*、gap-*、space-* 等语义尺度的整体倍率；'
+            '直接写 px、rem 或 Tailwind arbitrary values 不参与该倍率；'
             '返回的 style_spec_markdown 是用户维护的项目级页面视觉和内容排版约束。不要根据页面源码或截图反推项目级样式配置。'
         ),
         response_example={'page_width': 1920,

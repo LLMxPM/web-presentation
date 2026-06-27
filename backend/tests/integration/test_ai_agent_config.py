@@ -6,6 +6,7 @@ from typing import Any
 
 from httpx import AsyncClient
 
+from app.ai.agent_catalog import get_agent_catalog_entry
 from app.ai.tool_specs import (
     AGENT_COORDINATOR_AGENT_ID,
     COMPONENT_MANAGER_AGENT_ID,
@@ -160,6 +161,35 @@ def test_write_and_danger_tool_specs_should_have_runtime_instructions() -> None:
                 missing.append(f"{agent_id}:{spec.key}")
 
     assert missing == []
+
+
+def test_base_font_size_guidance_should_use_tailwind_default_ratio() -> None:
+    """智能体提示和工具规格应使用 Tailwind 默认 16px 倍率口径。"""
+
+    coordinator = get_agent_catalog_entry(AGENT_COORDINATOR_AGENT_ID)
+    component_manager = get_agent_catalog_entry(COMPONENT_MANAGER_AGENT_ID)
+    assert coordinator is not None
+    assert component_manager is not None
+
+    coordinator_prompt = "\n".join(coordinator.system_instructions)
+    component_prompt = "\n".join(component_manager.system_instructions)
+    assert "base_font_size / 16px" in coordinator_prompt
+    assert "base_font_size / 16px" in component_prompt
+    assert "size、density、variant、tone" in component_prompt
+    assert "裸 fontSize/padding 数值 props" in component_prompt
+
+    forbidden_phrases = (
+        "text-base 等于该值",
+        "按 Runtime Tailwind 预设比例派生",
+        "以 base_font_size 为基准计算",
+    )
+    for phrase in forbidden_phrases:
+        assert phrase not in coordinator_prompt
+        assert phrase not in component_prompt
+
+    coordinator_specs = {spec.key: spec for spec in list_agent_tool_specs(AGENT_COORDINATOR_AGENT_ID)}
+    assert "1.25 倍" in str(coordinator_specs["get_page_content"].response_example)
+    assert "base_font_size / 16px" in coordinator_specs["get_project_style_config"].default_instructions
 
 
 def _find_tool(config_item: dict, tool_key: str) -> dict:
