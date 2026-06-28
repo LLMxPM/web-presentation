@@ -511,21 +511,20 @@ _COORDINATOR_TOOL_SPECS = (
             '该工具不落库；success=false 时根据 diagnostics 修正语法、'
             'import、资源引用或 Runtime 编译问题，遇到动态资源名诊断时，将资源名改为字符串字面量，'
             '或改为同一 Vue 文件顶层 const 数组对象字面量中可静态枚举的字段；不要用 computed、'
-            '函数返回、imported data、拼接或条件表达式生成 Icon/Asset* 的 name。不要在未处理错误的情况下继续写入页面。'
+            '函数返回、imported data、拼接或条件表达式生成 Icon/Asset* 的 name。'
+            'success=true 时也可能返回 severity=warning 的布局诊断；遇到 PAGE_RENDER_BOTTOM_OVERFLOW 时应继续压缩内容、'
+            '调整容器高度或拆页，避免底部内容被固定画布裁切。不要在未处理错误的情况下继续写入页面。'
         ),
-        response_example={'success': False,
-         'status': 'failed',
+        response_example={'success': True,
+         'status': 'passed',
          'artifact_id': '123',
-         'summary': '发现 1 个错误。',
+         'summary': '代码检查通过，发现 1 个布局警告。',
          'patch_repaired': False,
          'canonical_diff': None,
-         'diagnostics': [{'severity': 'error',
-                          'source': 'vite',
-                          'code': 'RUNTIME_VITE_COMPILE_FAILED',
-                          'message': 'Failed to resolve import ...',
-                          'file_path': 'src/views/PAGE001.vue',
-                          'line': 12,
-                          'column': 24}]},
+         'diagnostics': [{'severity': 'warning',
+                          'source': 'runtime-render',
+                          'code': 'PAGE_RENDER_BOTTOM_OVERFLOW',
+                          'message': '页面内容底部超出画布 42px，预览或导出时可能被裁切。'}]},
     ),
 
     _tool(
@@ -542,15 +541,22 @@ _COORDINATOR_TOOL_SPECS = (
             'old_text 和 anchor_text 必须来自 get_page_content 返回的源码区块，并在当前源码中唯一命中。涉及 Runtime Kit、工作空间组件或资源 import 时，'
             '必须使用工具返回的 import_path，不要猜测路径。该工具会在保存前强制执行 Runtime validate；'
             'validate 失败时不会保存页面版本，并返回 diagnostics、canonical_diff 和 edits_applied。根据 diagnostics 修正后重新调用本工具。'
+            'validate 通过但返回 severity=warning 时会继续保存页面版本，并在成功响应中返回 diagnostics 和 code_check_summary；'
+            '遇到 PAGE_RENDER_BOTTOM_OVERFLOW 时应继续调用本工具修正布局。'
         ),
         risk_level='write',
         response_example={'success': True,
-         'message': '页面代码已更新并生成新版本。',
+         'message': '页面代码已更新并生成新版本，但发现布局警告。',
          'page_id': 3,
          'page_code': 'page_demo',
          'version_no': 4,
          'edits_applied': 1,
-         'canonical_diff': '--- current\n+++ proposed\n@@ ...'},
+         'canonical_diff': '--- current\n+++ proposed\n@@ ...',
+         'diagnostics': [{'severity': 'warning',
+                          'source': 'runtime-render',
+                          'code': 'PAGE_RENDER_BOTTOM_OVERFLOW',
+                          'message': '页面内容底部超出画布 42px。'}],
+         'code_check_summary': '代码检查通过，发现 1 个布局警告。'},
     ),
 
     _tool(
@@ -578,20 +584,27 @@ _COORDINATOR_TOOL_SPECS = (
         '在当前项目创建页面；page_content 必填，可同时写入演讲者备注。',
         default_instructions=(
             '创建页面前先确认当前项目、页面标题、页面说明、演讲者备注、页面编码语义和是否需要加入路由。'
-            'page_content 必须是非空、可运行的 Vue SFC；创建前优先调用 check_page_code 检查候选 page_content。'
+            'page_content 必须是非空、可运行的 Vue SFC；本工具会在创建前强制执行未落库代码检查。'
+            '校验失败时不会创建页面；校验通过但返回 severity=warning 时会创建页面，并在成功响应中返回 diagnostics 和 code_check_summary。'
             'speaker_notes 是演讲模式展示给演讲者的纯文本备注，按普通文本保留换行，不写 HTML。'
             '本工具只创建页面记录和初始源码，不会自动维护项目路由；如需加入导航，创建后读取现有路由树并调用 update_project_route_tree 写入完整 routes。'
-            '创建后如需视觉精修，应在页面上下文中读取新页面源码并通过结构化 edits 修改。'
+            '创建后如需视觉精修或处理 PAGE_RENDER_BOTTOM_OVERFLOW，应在页面上下文中读取新页面源码并通过结构化 edits 修改。'
         ),
         risk_level='write',
         response_example={
             'success': True,
+            'message': '页面已创建，但发现布局警告。',
             'page_id': 4,
             'page_code': 'page_new',
             'title': '新页面',
             'summary': '页面说明。',
             'speaker_notes': '开场先介绍议程。',
             'version_no': 1,
+            'diagnostics': [{'severity': 'warning',
+                             'source': 'runtime-render',
+                             'code': 'PAGE_RENDER_BOTTOM_OVERFLOW',
+                             'message': '页面内容底部超出画布 42px。'}],
+            'code_check_summary': '代码检查通过，发现 1 个布局警告。',
         },
     ),
 

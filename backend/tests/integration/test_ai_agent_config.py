@@ -315,6 +315,8 @@ def test_base_font_size_guidance_should_use_tailwind_default_ratio() -> None:
     assert "不要为了重复获取 style_spec_markdown 全文而调用本工具" in coordinator_specs["get_project_style_config"].default_instructions
     assert "style_spec_markdown_in_runtime_context" in coordinator_specs["get_project_style_config"].response_example
     assert "style_spec_markdown" not in coordinator_specs["get_project_style_config"].response_example
+    assert "PAGE_RENDER_BOTTOM_OVERFLOW" in coordinator_specs["check_page_code"].default_instructions
+    assert "code_check_summary" in str(coordinator_specs["create_project_page"].response_example)
 
 
 def test_page_design_guidance_should_use_wireframe_as_internal_method() -> None:
@@ -374,6 +376,7 @@ def test_content_agent_prompt_should_describe_page_rendering_workflow() -> None:
         "选择合适的内容组件、原子组件、Runtime Kit 组件或能力",
         "页面是固定画布大小，不是流式网页",
         "特别注意高度上下文",
+        "PAGE_RENDER_BOTTOM_OVERFLOW",
     )
     for phrase in expected_phrases:
         assert phrase in prompt

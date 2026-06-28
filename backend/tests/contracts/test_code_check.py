@@ -14,8 +14,9 @@ CONTENT_COMPONENT_SIZE_PREVIEW_SCHEMA = '{"props":{"height":{"type":"number","la
 class FakeRuntimeDiagnosticsClient:
     """测试用 Runtime 诊断客户端，记录调用并返回固定结果。"""
 
-    def __init__(self) -> None:
+    def __init__(self, result: dict[str, object] | None = None) -> None:
         self.calls: list[dict[str, object]] = []
+        self.result = result
 
     async def dispatch_artifact_diagnostics(
         self,
@@ -33,6 +34,11 @@ class FakeRuntimeDiagnosticsClient:
                 "label": label,
             }
         )
+        if self.result is not None:
+            return {
+                "artifact_id": artifact_id,
+                **self.result,
+            }
         return {
             "success": True,
             "status": "passed",
@@ -40,6 +46,20 @@ class FakeRuntimeDiagnosticsClient:
             "summary": "代码检查通过。",
             "diagnostics": [],
         }
+
+
+class FakePageRenderDiagnosticsService:
+    """测试用页面渲染诊断服务，记录调用并返回固定 warning。"""
+
+    def __init__(self, diagnostics: list[dict[str, object]] | None = None) -> None:
+        self.calls: list[dict[str, object]] = []
+        self.diagnostics = diagnostics or []
+
+    async def diagnose_preview(self, preview_url: str, viewport: object) -> list[dict[str, object]]:
+        """记录渲染诊断调用并返回预置结果。"""
+
+        self.calls.append({"preview_url": preview_url, "viewport": viewport})
+        return list(self.diagnostics)
 
 
 async def _create_workspace(authenticated_client: AsyncClient, name: str) -> int:
@@ -90,9 +110,14 @@ async def test_code_check_should_reject_invalid_edits_before_runtime(authenticat
     )
     assert page_response.status_code == 200
     fake_runtime = FakeRuntimeDiagnosticsClient()
+    fake_render = FakePageRenderDiagnosticsService()
 
     async with get_session_factory()() as session:
-        result = await CodeCheckService(session, runtime_client=fake_runtime).check_page_code(
+        result = await CodeCheckService(
+            session,
+            runtime_client=fake_runtime,
+            render_diagnostics_service=fake_render,
+        ).check_page_code(
             page_id=page_response.json()["id"],
             workspace_id=workspace_id,
             user_id=1,
@@ -102,6 +127,7 @@ async def test_code_check_should_reject_invalid_edits_before_runtime(authenticat
     assert result["success"] is False
     assert result["diagnostics"][0]["code"] == "AI_SOURCE_EDIT_NO_MATCH"
     assert fake_runtime.calls == []
+    assert fake_render.calls == []
 
 
 def test_runtime_diagnostics_token_should_embed_artifact_scope() -> None:
@@ -163,9 +189,14 @@ import CheckCard from '@workspace-components/{component["code"]}/v/1'
 </script>
     """.strip()
     fake_runtime = FakeRuntimeDiagnosticsClient()
+    fake_render = FakePageRenderDiagnosticsService()
 
     async with get_session_factory()() as session:
-        result = await CodeCheckService(session, runtime_client=fake_runtime).check_page_code(
+        result = await CodeCheckService(
+            session,
+            runtime_client=fake_runtime,
+            render_diagnostics_service=fake_render,
+        ).check_page_code(
             page_id=page_response.json()["id"],
             workspace_id=workspace_id,
             user_id=1,
@@ -173,6 +204,7 @@ import CheckCard from '@workspace-components/{component["code"]}/v/1'
         )
 
     assert result["success"] is True
+    assert fake_render.calls
     artifact_id = result["artifact_id"]
     manifest_response = await authenticated_client.get(
         f"/internal/runtime/preview-artifacts/{artifact_id}/manifest",
@@ -191,9 +223,14 @@ async def test_page_code_check_should_accept_unsaved_project_page_content(
     workspace_id = await _create_workspace(authenticated_client, "代码检查新增页面工作空间")
     project_id = await _create_project(authenticated_client, workspace_id, "代码检查新增页面项目")
     fake_runtime = FakeRuntimeDiagnosticsClient()
+    fake_render = FakePageRenderDiagnosticsService()
 
     async with get_session_factory()() as session:
-        result = await CodeCheckService(session, runtime_client=fake_runtime).check_page_code(
+        result = await CodeCheckService(
+            session,
+            runtime_client=fake_runtime,
+            render_diagnostics_service=fake_render,
+        ).check_page_code(
             project_id=project_id,
             workspace_id=workspace_id,
             user_id=1,
@@ -202,6 +239,7 @@ async def test_page_code_check_should_accept_unsaved_project_page_content(
 
     assert result["success"] is True
     assert fake_runtime.calls[0]["label"] == f"page:draft:{project_id}"
+    assert fake_render.calls
     artifact_id = result["artifact_id"]
     module_response = await authenticated_client.get(
         f"/internal/runtime/preview-artifacts/{artifact_id}/modules",
@@ -210,6 +248,113 @@ async def test_page_code_check_should_accept_unsaved_project_page_content(
     )
     assert module_response.status_code == 200
     assert module_response.text == "<template><main>新增页面</main></template>"
+
+
+async def test_page_code_check_should_append_render_warning_after_runtime_passed(
+    authenticated_client: AsyncClient,
+) -> None:
+    """Runtime 检查通过后，应追加页面渲染底部溢出 warning 且保持通过状态。"""
+
+    workspace_id = await _create_workspace(authenticated_client, "代码检查渲染 warning 工作空间")
+    project_id = await _create_project(authenticated_client, workspace_id, "代码检查渲染 warning 项目")
+    page_response = await authenticated_client.post(
+        "/api/pages",
+        json={
+            "workspace_id": workspace_id,
+            "project_id": project_id,
+            "title": "渲染 warning 页面",
+            "page_content": "<template><main>原页面</main></template>",
+            "file_type": "vue",
+            "status": "active",
+        },
+    )
+    assert page_response.status_code == 200
+    fake_runtime = FakeRuntimeDiagnosticsClient()
+    fake_render = FakePageRenderDiagnosticsService([
+        {
+            "severity": "warning",
+            "source": "runtime-render",
+            "code": "PAGE_RENDER_BOTTOM_OVERFLOW",
+            "message": "页面内容底部超出画布 42px。",
+        }
+    ])
+
+    async with get_session_factory()() as session:
+        result = await CodeCheckService(
+            session,
+            runtime_client=fake_runtime,
+            render_diagnostics_service=fake_render,
+        ).check_page_code(
+            page_id=page_response.json()["id"],
+            workspace_id=workspace_id,
+            user_id=1,
+            content="<template><main>新页面</main></template>",
+        )
+
+    assert result["success"] is True
+    assert result["status"] == "passed"
+    assert result["summary"] == "代码检查通过，发现 1 个布局警告。"
+    assert result["diagnostics"][0]["severity"] == "warning"
+    assert result["diagnostics"][0]["code"] == "PAGE_RENDER_BOTTOM_OVERFLOW"
+    assert fake_render.calls
+
+
+async def test_page_code_check_should_skip_render_warning_when_runtime_failed(
+    authenticated_client: AsyncClient,
+) -> None:
+    """Runtime 编译失败时不应继续执行页面渲染诊断。"""
+
+    workspace_id = await _create_workspace(authenticated_client, "代码检查跳过渲染工作空间")
+    project_id = await _create_project(authenticated_client, workspace_id, "代码检查跳过渲染项目")
+    page_response = await authenticated_client.post(
+        "/api/pages",
+        json={
+            "workspace_id": workspace_id,
+            "project_id": project_id,
+            "title": "跳过渲染页面",
+            "page_content": "<template><main>原页面</main></template>",
+            "file_type": "vue",
+            "status": "active",
+        },
+    )
+    assert page_response.status_code == 200
+    fake_runtime = FakeRuntimeDiagnosticsClient({
+        "success": False,
+        "status": "failed",
+        "summary": "发现 1 个错误。",
+        "diagnostics": [
+            {
+                "severity": "error",
+                "source": "vite",
+                "code": "RUNTIME_VITE_COMPILE_FAILED",
+                "message": "编译失败。",
+            }
+        ],
+    })
+    fake_render = FakePageRenderDiagnosticsService([
+        {
+            "severity": "warning",
+            "source": "runtime-render",
+            "code": "PAGE_RENDER_BOTTOM_OVERFLOW",
+            "message": "不应出现。",
+        }
+    ])
+
+    async with get_session_factory()() as session:
+        result = await CodeCheckService(
+            session,
+            runtime_client=fake_runtime,
+            render_diagnostics_service=fake_render,
+        ).check_page_code(
+            page_id=page_response.json()["id"],
+            workspace_id=workspace_id,
+            user_id=1,
+            content="<template><main>新页面</main></template>",
+        )
+
+    assert result["success"] is False
+    assert result["diagnostics"][0]["code"] == "RUNTIME_VITE_COMPILE_FAILED"
+    assert fake_render.calls == []
 
 
 async def test_component_code_check_should_return_edits_metadata(authenticated_client: AsyncClient) -> None:

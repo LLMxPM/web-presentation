@@ -12,6 +12,7 @@ from app.ai.tools.shared import resolve_tool_context
 from app.core.exceptions import AppException
 from app.models.enums import PageFileType, RecordStatus
 from app.schemas.page import PageCreateRequest, PageUpdateRequest
+from app.services.code_check_service import CodeCheckService
 from app.services.page_service import PageService
 
 
@@ -55,6 +56,16 @@ def build_create_project_page_tool(session_factory: async_sessionmaker[AsyncSess
         )
         operator_id = extract_user_id(str(claims.get("sub")))
         async with session_factory() as session:
+            validation_result = await CodeCheckService(session).check_page_code(
+                page_id=None,
+                project_id=int(dependencies["project_id"]),
+                workspace_id=int(dependencies["workspace_id"]),
+                user_id=operator_id,
+                content=normalized_page_content,
+            )
+            if not _is_validation_passed(validation_result):
+                return _with_create_validation_failure_message(validation_result)
+
             created = await PageService(session).create(
                 PageCreateRequest(
                     workspace_id=int(dependencies["workspace_id"]),
@@ -68,7 +79,7 @@ def build_create_project_page_tool(session_factory: async_sessionmaker[AsyncSess
                 ),
                 operator_id,
             )
-            return {
+            response = {
                 "success": True,
                 "message": "页面已创建。",
                 "page_id": created.id,
@@ -78,7 +89,12 @@ def build_create_project_page_tool(session_factory: async_sessionmaker[AsyncSess
                 "speaker_notes": created.speaker_notes,
                 "project_id": created.project_id,
                 "version_no": created.current_version_no,
+                "diagnostics": _extract_diagnostics(validation_result),
+                "code_check_summary": validation_result.get("summary"),
             }
+            if _has_warning_diagnostics(response):
+                response["message"] = "页面已创建，但发现布局警告。"
+            return response
 
     return create_project_page
 
@@ -166,3 +182,35 @@ def _ensure_page_scope(
             code="AI_PAGE_SCOPE_DENIED",
             detail="页面不属于当前项目，拒绝修改页面元数据。",
         )
+
+
+def _is_validation_passed(result: dict[str, Any]) -> bool:
+    """判断创建前页面代码检查是否通过。"""
+
+    return bool(result.get("success") is True or result.get("status") == "passed")
+
+
+def _with_create_validation_failure_message(result: dict[str, Any]) -> dict[str, Any]:
+    """为创建前校验失败结果补充不会落库的提示。"""
+
+    enriched = dict(result)
+    enriched["success"] = False
+    enriched["status"] = "failed"
+    enriched["message"] = "页面代码校验失败，未创建页面。"
+    return enriched
+
+
+def _extract_diagnostics(result: dict[str, Any]) -> list[Any]:
+    """从代码检查结果中读取诊断列表。"""
+
+    diagnostics = result.get("diagnostics")
+    return list(diagnostics) if isinstance(diagnostics, list) else []
+
+
+def _has_warning_diagnostics(result: dict[str, Any]) -> bool:
+    """判断工具响应中是否存在 warning 级别诊断。"""
+
+    return any(
+        isinstance(item, dict) and item.get("severity") == "warning"
+        for item in _extract_diagnostics(result)
+    )
