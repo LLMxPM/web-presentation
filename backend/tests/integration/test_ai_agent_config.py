@@ -125,6 +125,17 @@ async def test_agent_config_api_should_manage_prompt_and_tool_overrides(
     assert "useAssetSrc" not in resource_prompt
     assert "AssetImage" not in resource_prompt
     assert "style_spec_markdown" not in resource_prompt
+    resource_manager_list_tool = _find_tool(catalog_items[RESOURCE_MANAGER_AGENT_ID], "list_resource_assets")
+    assert "读取当前工作空间资源库摘要" in resource_manager_list_tool["description"]
+    assert "项目建议优先" not in resource_manager_list_tool["description"]
+    assert "资源助手按工作空间资源库维护资产" in resource_manager_list_tool["agent_guide"]["instructions"]
+    assert "默认 scope=suggested，优先返回项目建议引用资源" not in resource_manager_list_tool["agent_guide"]["instructions"]
+    for config_item in catalog_items.values():
+        resource_content_tool = _find_tool(config_item, "get_resource_asset_content")
+        assert "读取 content_editable=true 资源的 UTF-8 文本内容" in resource_content_tool["description"]
+        assert "仅对资源列表中 content_editable=true 的资源调用" in resource_content_tool["agent_guide"]["instructions"]
+        assert "复制/归档" not in resource_content_tool["agent_guide"]["instructions"]
+        assert "渲染素材" not in resource_content_tool["agent_guide"]["instructions"]
     resource_list_tool = _find_tool(coordinator, "list_resource_assets")
     assert "scope" in resource_list_tool["agent_guide"]["parameters_schema"]["properties"]
     font_asset_tool = _find_tool(coordinator, "list_workspace_font_assets")

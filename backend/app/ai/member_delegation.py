@@ -96,8 +96,8 @@ class MemberDelegationExecutor:
 
         self._session_factory = session_factory
         self._current = current
-        self._scope = scope
-        self._runtime_context = runtime_context
+        self._scope = _workspace_member_scope(scope)
+        self._runtime_context = _workspace_member_runtime_context(runtime_context)
         self._parent_session_id = parent_session_id
         self._parent_run_id = parent_run_id
         self._allowed_member_ids = frozenset(allowed_member_ids)
@@ -934,6 +934,27 @@ def _optional_text(value: Any) -> str | None:
         return None
     text = str(value).strip()
     return text or None
+
+
+def _workspace_member_scope(scope: AgentScopeContext) -> AgentScopeContext:
+    """把成员助手运行范围收窄为工作空间，避免继承项目或页面 scope。"""
+
+    return AgentScopeContext(
+        scope_type="workspace",
+        workspace_id=scope.workspace_id,
+        workspace_name=scope.workspace_name,
+        source=scope.source,
+    )
+
+
+def _workspace_member_runtime_context(runtime_context: AgentRuntimeContext) -> AgentRuntimeContext:
+    """构建成员助手可见的工作空间级上下文，不注入项目、页面或样式信息。"""
+
+    return AgentRuntimeContext(
+        scope_type="workspace",
+        workspace_id=runtime_context.workspace_id,
+        source=runtime_context.source,
+    )
 
 
 def _utc_now() -> datetime:

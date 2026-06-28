@@ -747,11 +747,10 @@ _COORDINATOR_TOOL_SPECS = (
         '读取资源内容',
         'resource_read',
         '资源读取',
-        '读取 SVG 图片、SVG 图标、Draw.io、Mermaid、Chart 或 Formula 资源的 UTF-8 文本内容。',
+        '读取 content_editable=true 资源的 UTF-8 文本内容。',
         default_instructions=(
-            '仅对列表中 content_editable=true 的资源调用本工具。'
-            'content_editable=false 的位图、视频或字体资源只能作为渲染素材引用；如果误读不可读资源，工具会返回可恢复错误，'
-            '应改用资源 name/URL 引用或选择其他可读资源，不要终止任务。'
+            '仅对资源列表中 content_editable=true 的资源调用。'
+            'content_editable=false 的资源不会返回文本内容。'
         ),
         response_example={'asset': {'id': 8, 'name': 'hero_illustration', 'asset_type': 'image'}, 'content': '<svg />'},
     ),
@@ -949,11 +948,10 @@ _COMPONENT_MANAGER_TOOL_SPECS = (
         '读取资源内容',
         'component_library',
         '组件库',
-        '读取 SVG 图片、SVG 图标、Draw.io、Mermaid、Chart 或 Formula 资源的 UTF-8 文本内容。',
+        '读取 content_editable=true 资源的 UTF-8 文本内容。',
         default_instructions=(
-            '仅对列表中 content_editable=true 的资源调用本工具。'
-            'content_editable=false 的位图、视频或字体资源只能作为渲染素材引用；如果误读不可读资源，工具会返回可恢复错误，'
-            '应改用资源 name/URL 引用或选择其他可读资源，不要终止任务。'
+            '仅对资源列表中 content_editable=true 的资源调用。'
+            'content_editable=false 的资源不会返回文本内容。'
         ),
         response_example={'asset': {'id': 8, 'name': 'hero_illustration', 'asset_type': 'image'}, 'content': '<svg />'},
     ),
@@ -1140,12 +1138,12 @@ _RESOURCE_MANAGER_TOOL_SPECS = (
         '读取资源列表',
         'resource_library',
         '资源库',
-        '默认读取当前项目建议优先参考的内容资源摘要，必要时回退当前工作空间可见资源；支持按资源类型、标签和关键词过滤。',
+        '读取当前工作空间资源库摘要，支持按资源类型、标签和关键词过滤。',
         default_instructions=(
-            '默认 scope=suggested，优先返回项目建议引用资源；没有项目上下文、没有建议资源或筛选为空时会自动回退全工作空间资源。'
-            '明确要盘点或维护资源库时传 scope=all。'
+            '资源助手按工作空间资源库维护资产；需要盘点、筛选或维护资源库时传 scope=all。'
+            '如果收到 suggested 返回并带 fallback_reason，按工具返回来源理解，不要假设存在项目建议资源。'
         ),
-        response_example={'source': 'project_suggested',
+        response_example={'source': 'workspace_all',
          'fallback_reason': None,
          'total': 1,
          'items': [{'id': 8,
@@ -1161,11 +1159,10 @@ _RESOURCE_MANAGER_TOOL_SPECS = (
         '读取资源内容',
         'resource_library',
         '资源库',
-        '读取 SVG 图片、SVG 图标、Draw.io、Mermaid、Chart 或 Formula 资源的 UTF-8 文本内容。',
+        '读取 content_editable=true 资源的 UTF-8 文本内容。',
         default_instructions=(
-            '仅对列表中 content_editable=true 的资源调用本工具。'
-            'content_editable=false 的位图、视频或字体资源只能作为渲染素材引用；如果误读不可读资源，工具会返回可恢复错误，'
-            '应改用资源 name/URL 引用或选择其他可读资源，不要终止任务。'
+            '仅对资源列表中 content_editable=true 的资源调用。'
+            'content_editable=false 的资源不会返回文本内容。'
         ),
         response_example={'asset': {'id': 8, 'name': 'hero_illustration', 'asset_type': 'image'}, 'content': '<svg />'},
     ),
@@ -1504,13 +1501,13 @@ _RESOURCE_MANAGER_GROUP_SPECS = (
     _group(
         "resource_library",
         "资源库",
-        "面向资源助手展示的合并工具组，覆盖建议优先资源读取、内容写入、元数据维护、复制和归档。",
+        "面向资源助手展示的合并工具组，覆盖工作空间资源读取、内容写入、元数据维护、复制和归档。",
         _RESOURCE_LIBRARY_TOOL_KEYS,
     ),
     _group(
         "resource_read",
         "资源读取",
-        "默认优先读取当前项目建议引用资源，并可回退全工作空间资源；同时提供标签和可编辑内容读取。",
+        "读取当前工作空间资源库资产、标签和可编辑内容；资源助手不依赖项目或页面建议资源。",
         ("list_resource_assets", "get_resource_asset_content", "list_resource_tags"),
         required_context_fields=("workspace_id",),
         token_scopes=RESOURCE_TOOL_READ_SCOPES,
