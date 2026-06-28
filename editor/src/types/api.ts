@@ -47,6 +47,9 @@ export interface ProjectSuggestedReferenceAssetItem {
   description: string | null
   asset_type: AssetType
   content_editable: boolean
+  approx_aspect_ratio?: string | null
+  approx_aspect_ratio_value?: number | null
+  aspect_ratio_source?: 'auto' | 'manual' | 'agent' | string | null
 }
 
 export interface ProjectSuggestedReferenceAssetsResponse {
@@ -773,6 +776,19 @@ export interface AgentDescriptor {
   scope: AgentScopeContext
 }
 
+export interface AgentSessionLlmMetadata {
+  selection_kind: 'explicit_config' | 'slot_binding'
+  config_id: number
+  scope: AiLlmConfigScope
+  name: string
+  provider_config_id?: number | null
+  provider_config_name?: string | null
+  provider_key: string
+  provider_label: string
+  model_id: string
+  supports_image_input: boolean
+}
+
 export interface AgentToolConfigItem {
   key: string
   label: string
@@ -813,16 +829,6 @@ export interface AgentToolGroupConfigItem {
   tools: AgentToolConfigItem[]
 }
 
-export interface AgentTeamMemberConfigItem {
-  id: string
-  name: string
-  icon: string
-  default_description: string
-  description: string
-  description_override: string | null
-  description_customized: boolean
-}
-
 export interface AgentCatalogItem {
   id: string
   name: string
@@ -840,7 +846,6 @@ export interface AgentCatalogItem {
   role: string
   system_prompt: string
   default_prompt: string
-  team_members: AgentTeamMemberConfigItem[]
   tool_groups: AgentToolGroupConfigItem[]
 }
 
@@ -858,7 +863,7 @@ export interface AgentSessionItem {
   session_name: string | null
   created_at: string | null
   updated_at: string | null
-  metadata: Record<string, unknown>
+  metadata: Record<string, unknown> & { llm?: AgentSessionLlmMetadata }
 }
 
 export interface AgentMessageItem {
@@ -894,11 +899,13 @@ export interface AgentMessageToolCallItem {
 export interface AgentImageAttachmentItem {
   id: number
   session_id: string
+  source_kind: 'user_upload' | 'tool_output'
   original_name: string
   content_type: string
   file_size: number
   sha256: string
   url: string
+  preview_available: boolean
   promoted_asset_id: number | null
   status: RecordStatus
   created_at: string | null
@@ -906,10 +913,12 @@ export interface AgentImageAttachmentItem {
 
 export interface AgentMessageAttachmentItem {
   id: number
+  source_kind: 'user_upload' | 'tool_output'
   original_name: string
   content_type: string
   file_size: number
   url: string
+  preview_available: boolean
   promoted_asset_id: number | null
 }
 
@@ -918,6 +927,9 @@ export interface AgentContextStatusItem {
   agent_id: string
   compression_enabled: boolean
   compression_required: boolean
+  compression_status: 'idle' | 'compressing' | 'compressed' | 'failed'
+  compression_method: 'none' | 'model' | 'deterministic_fallback'
+  compression_error_message: string | null
   summary_available: boolean
   summary: string | null
   topics: string[]
@@ -934,6 +946,13 @@ export interface AgentContextStatusItem {
   estimated_history_tokens: number
   retained_recent_history_tokens: number
   retained_recent_message_count: number
+  context_input_budget_tokens: number
+  context_used_tokens: number
+  context_remaining_tokens: number
+  last_input_tokens: number
+  last_output_tokens: number
+  last_total_tokens: number
+  last_reasoning_tokens: number
 }
 
 export interface AgentSuggestedPatch {
@@ -1035,6 +1054,7 @@ export interface AgentTimelineItem {
   content: string | null
   status: string | null
   tool: AgentTimelineToolItem | null
+  attachments?: AgentMessageAttachmentItem[]
   source: 'message' | 'event' | 'synthetic'
   created_at: string | null
 }
@@ -1048,6 +1068,8 @@ export interface AgentMemberRunItem {
   created_at: string | null
   updated_at: string | null
   delegate_tool_call_id: string | null
+  input_prompt?: string | null
+  output_prompt?: string | null
   timeline_items: AgentTimelineItem[]
 }
 
@@ -1072,7 +1094,7 @@ export interface AgentRunCancelResponse {
 export interface LlmProviderCatalogItem {
   provider_key: string
   label: string
-  agno_class_path: string
+  provider_adapter: string
   docs_url: string
   supports_base_url: boolean
   supports_api_key: boolean
@@ -1095,10 +1117,11 @@ export interface LlmConfigItem {
   owner_user_id: number | null
   editable: boolean
   name: string
+  provider_config_id: number
+  provider_config_name: string
   provider_key: string
   provider_label: string
   model_id: string
-  base_url: string | null
   thinking_enabled: boolean
   thinking_effort: string | null
   supports_image_input: boolean
@@ -1107,6 +1130,20 @@ export interface LlmConfigItem {
   history_token_ratio: number
   compression_target_ratio: number
   advanced_config_json: Record<string, unknown>
+  status: RecordStatus
+  created_at: string | null
+  updated_at: string | null
+}
+
+export interface LlmProviderConfigItem {
+  id: number
+  scope: AiLlmConfigScope
+  owner_user_id: number | null
+  editable: boolean
+  name: string
+  provider_key: string
+  provider_label: string
+  base_url: string | null
   status: RecordStatus
   has_api_key: boolean
   api_key_masked: string | null
@@ -1119,6 +1156,8 @@ export interface LlmSlotBindingItem {
   slot_label: string
   llm_config_id: number | null
   llm_config_name: string | null
+  provider_config_id: number | null
+  provider_config_name: string | null
   provider_key: string | null
   provider_label: string | null
   model_id: string | null
@@ -1239,6 +1278,14 @@ export interface AssetAnalysisMetadata {
   icon: AssetIconAnalysisPayload
 }
 
+export interface AssetRenderHintMetadata {
+  schema_version: number
+  kind: 'asset_render_hint'
+  aspect_ratio: string
+  aspect_ratio_value: number
+  aspect_ratio_source: 'auto' | 'manual' | 'agent' | string
+}
+
 export interface WorkspaceThemeItem {
   id: number
   workspace_id: number
@@ -1284,7 +1331,10 @@ export interface AssetResponse {
   render_type: AssetType
   tags: string[]
   analysis_metadata: AssetAnalysisMetadata | null
-  render_metadata: Record<string, unknown> | null
+  render_metadata: AssetRenderHintMetadata | Record<string, unknown> | null
+  approx_aspect_ratio?: string | null
+  approx_aspect_ratio_value?: number | null
+  aspect_ratio_source?: 'auto' | 'manual' | 'agent' | string | null
   status: RecordStatus
   archived_at: string | null
   archive_reason: string | null

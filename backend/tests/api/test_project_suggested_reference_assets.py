@@ -85,7 +85,23 @@ async def test_project_suggested_reference_assets_should_save_content_assets_in_
     assert save_response.status_code == 200
     items = save_response.json()["items"]
     assert [item["id"] for item in items] == [flow_asset["id"], hero_asset["id"]]
-    assert set(items[0]) == {"id", "name", "original_name", "description", "asset_type", "content_editable"}
+    assert set(items[0]) == {
+        "id",
+        "name",
+        "original_name",
+        "description",
+        "asset_type",
+        "content_editable",
+        "approx_aspect_ratio",
+        "approx_aspect_ratio_value",
+        "aspect_ratio_source",
+    }
+    assert items[0]["approx_aspect_ratio"] is None
+    assert items[0]["approx_aspect_ratio_value"] is None
+    assert items[0]["aspect_ratio_source"] is None
+    assert items[1]["approx_aspect_ratio"] == "1:1"
+    assert items[1]["approx_aspect_ratio_value"] == 1.0
+    assert items[1]["aspect_ratio_source"] == "auto"
     assert "url" not in items[0]
     assert "tags" not in items[0]
 

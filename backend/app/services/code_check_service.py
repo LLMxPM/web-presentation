@@ -13,8 +13,10 @@ from app.core.text_normalizer import normalize_text_to_lf
 from app.models.enums import PageFileType, RecordStatus
 from app.models.page import Page
 from app.schemas.release import PreviewEntryDescriptor
+from app.services.capture_viewport_resolver import CaptureViewport
 from app.services.component_preview_service import ComponentPreviewService
 from app.services.page_service import PageService
+from app.services.page_render_diagnostics_service import PageRenderDiagnosticsService
 from app.services.preview_service import PreviewService
 from app.services.project_artifact_builder import ProjectPageModuleOverride
 from app.services.runtime_diagnostics_client import RuntimeDiagnosticsClient
@@ -62,9 +64,15 @@ def build_code_check_failed_result(
 class CodeCheckService:
     """页面/组件代码检查服务。"""
 
-    def __init__(self, session: AsyncSession, runtime_client: RuntimeDiagnosticsClient | None = None) -> None:
+    def __init__(
+        self,
+        session: AsyncSession,
+        runtime_client: RuntimeDiagnosticsClient | None = None,
+        render_diagnostics_service: PageRenderDiagnosticsService | None = None,
+    ) -> None:
         self.session = session
         self.runtime_client = runtime_client or RuntimeDiagnosticsClient()
+        self.render_diagnostics_service = render_diagnostics_service or PageRenderDiagnosticsService()
 
     async def check_page_code(
         self,
@@ -128,6 +136,8 @@ class CodeCheckService:
             label=f"page:{page.id}",
             patch_repaired=candidate.patch_repaired,
             canonical_diff=candidate.canonical_diff,
+            render_preview_url=preview.preview_url,
+            render_viewport=CaptureViewport(width=preview.viewport_width, height=preview.viewport_height),
         )
 
     async def _check_transient_page_code(
@@ -203,6 +213,8 @@ class CodeCheckService:
             label=f"page:draft:{project.id}",
             patch_repaired=candidate.patch_repaired,
             canonical_diff=candidate.canonical_diff,
+            render_preview_url=preview.preview_url,
+            render_viewport=CaptureViewport(width=preview.viewport_width, height=preview.viewport_height),
         )
 
     async def check_component_code(
@@ -274,6 +286,8 @@ class CodeCheckService:
         label: str,
         patch_repaired: bool,
         canonical_diff: str | None,
+        render_preview_url: str | None = None,
+        render_viewport: CaptureViewport | None = None,
     ) -> dict[str, object]:
         """调用 Runtime 诊断接口，并补齐候选源码变更元数据。"""
 
@@ -287,10 +301,38 @@ class CodeCheckService:
             diagnostics_token=diagnostics_token,
             label=label,
         )
-        return {
+        enriched_result = {
             **result,
             "patch_repaired": patch_repaired,
             "canonical_diff": canonical_diff,
+        }
+        if render_preview_url and render_viewport and self._is_runtime_diagnostics_passed(enriched_result):
+            return await self._append_page_render_diagnostics(
+                enriched_result,
+                preview_url=render_preview_url,
+                viewport=render_viewport,
+            )
+        return enriched_result
+
+    async def _append_page_render_diagnostics(
+        self,
+        result: dict[str, object],
+        *,
+        preview_url: str,
+        viewport: CaptureViewport,
+    ) -> dict[str, object]:
+        """在页面 Runtime 检查通过后追加真实渲染布局 warning。"""
+
+        render_diagnostics = await self.render_diagnostics_service.diagnose_preview(preview_url, viewport)
+        if not render_diagnostics:
+            return result
+
+        diagnostics = list(result.get("diagnostics") if isinstance(result.get("diagnostics"), list) else [])
+        diagnostics.extend(render_diagnostics)
+        return {
+            **result,
+            "diagnostics": diagnostics,
+            "summary": f"代码检查通过，发现 {len(render_diagnostics)} 个布局警告。",
         }
 
     def _resolve_candidate_source(
@@ -329,3 +371,9 @@ class CodeCheckService:
         """构造统一失败响应。"""
 
         return build_code_check_failed_result(code=code, message=message, source=source)
+
+    @staticmethod
+    def _is_runtime_diagnostics_passed(result: dict[str, object]) -> bool:
+        """判断 Runtime 编译诊断是否通过，只有通过后才追加渲染 warning。"""
+
+        return bool(result.get("success") is True or result.get("status") == "passed")

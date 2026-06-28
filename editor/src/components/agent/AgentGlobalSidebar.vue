@@ -65,7 +65,7 @@
         </div>
         <AgentAssistantPanel
           v-else
-          :key="agentId"
+          :key="agentPanelKey"
           embedded
           :workspace-id="workspaceId"
           :project-id="scope.project_id ?? null"
@@ -164,6 +164,7 @@ const pageId = computed(() => props.pageId ?? null)
 const workspaceName = computed(() => normalizeContextName(props.workspaceName))
 const projectName = computed(() => normalizeContextName(props.projectName))
 const pageTitle = computed(() => normalizeContextName(props.pageTitle))
+const agentPanelKey = computed(() => `${workspaceId.value ?? 'none'}:${agentId.value}`)
 const agentTarget = computed(() => resolveAgentTarget(agentId.value))
 const scope = computed(() => agentTarget.value.scope)
 const routeScope = computed(() => resolveCurrentRouteScope())
@@ -537,7 +538,16 @@ watch(
 )
 
 watch(
-  () => [props.agentId, route.name, workspaceId.value] as const,
+  () => workspaceId.value,
+  () => {
+    const routeAgentId = props.agentId || 'agent-coordinator'
+    activeAgentId.value = routeAgentId
+    autoCreateKey.value = null
+  },
+)
+
+watch(
+  () => [props.agentId, route.name] as const,
   ([nextAgentId]) => {
     const routeAgentId = nextAgentId || 'agent-coordinator'
     if (!canOpenAgent(activeAgentId.value)) {

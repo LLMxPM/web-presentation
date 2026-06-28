@@ -186,6 +186,8 @@ async def create_workspace_asset_content(
         content=request.content,
         tags=request.tags,
         description=request.description,
+        approx_aspect_ratio=request.approx_aspect_ratio,
+        aspect_ratio_source="manual",
     )
     return await _build_asset_response(session, workspace_id, asset)
 
@@ -263,7 +265,7 @@ async def update_workspace_asset(
     _: Annotated[AuthContext, Depends(get_current_user)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> AssetResponse:
-    """更新资源元数据（逻辑名、展示文件名、描述或标签）。"""
+    """更新资源元数据（逻辑名、展示文件名、描述、标签或近似比例）。"""
 
     asset = await AssetService(session).update_asset_metadata(
         workspace_id,
@@ -272,6 +274,9 @@ async def update_workspace_asset(
         request.original_name,
         request.tags,
         request.description,
+        approx_aspect_ratio=request.approx_aspect_ratio,
+        approx_aspect_ratio_provided="approx_aspect_ratio" in request.model_fields_set,
+        aspect_ratio_source="manual",
     )
     return await _build_asset_response(session, workspace_id, asset)
 

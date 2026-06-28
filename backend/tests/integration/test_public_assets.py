@@ -61,7 +61,7 @@ async def test_public_asset_should_proxy_svg_icon_with_s3_driver(
         return svg_content
 
     monkeypatch.setattr(
-        "app.services.asset_service.S3StorageDriver.generate_download_url",
+        "app.services.asset_storage_drivers.S3StorageDriver.generate_download_url",
         fake_generate_download_url,
     )
     monkeypatch.setattr(ObjectStorageService, "_read_s3_object", fake_read_s3_object)
@@ -112,11 +112,11 @@ async def test_public_asset_should_keep_s3_redirect_for_non_svg_resource(
         return b"unexpected"
 
     monkeypatch.setattr(
-        "app.services.asset_service.S3StorageDriver.generate_download_url",
+        "app.services.asset_storage_drivers.S3StorageDriver.generate_download_url",
         fake_generate_download_url,
     )
     monkeypatch.setattr(
-        "app.services.asset_service.S3StorageDriver.read_content",
+        "app.services.asset_storage_drivers.S3StorageDriver.read_content",
         fake_read_content,
     )
 
@@ -234,7 +234,7 @@ async def test_public_asset_should_proxy_text_render_asset_with_s3_driver(
     monkeypatch.setenv("ASSET_STORAGE_DRIVER", "s3")
     get_settings.cache_clear()
     monkeypatch.setattr(
-        "app.services.asset_service.S3StorageDriver.generate_download_url",
+        "app.services.asset_storage_drivers.S3StorageDriver.generate_download_url",
         fake_generate_download_url,
     )
     monkeypatch.setattr(ObjectStorageService, "_read_s3_object", fake_read_s3_object)
@@ -289,11 +289,11 @@ async def test_public_asset_should_keep_s3_redirect_for_svg_image_resource(
         return b"unexpected"
 
     monkeypatch.setattr(
-        "app.services.asset_service.S3StorageDriver.generate_download_url",
+        "app.services.asset_storage_drivers.S3StorageDriver.generate_download_url",
         fake_generate_download_url,
     )
     monkeypatch.setattr(
-        "app.services.asset_service.S3StorageDriver.read_content",
+        "app.services.asset_storage_drivers.S3StorageDriver.read_content",
         fake_read_content,
     )
 

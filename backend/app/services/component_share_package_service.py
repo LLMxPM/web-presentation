@@ -8,7 +8,6 @@ import posixpath
 import re
 import zipfile
 import hashlib
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -47,6 +46,19 @@ from app.schemas.component import (
     ComponentSharePackageFontSummary,
 )
 from app.services.asset_service import AssetService
+from app.services.asset_render_metadata_service import AssetRenderMetadataService
+from app.services.component_share_package_helpers import ComponentSharePackageHelperMixin
+from app.services.component_share_package_models import (
+    COMPONENT_IMPORT_PATTERN,
+    PACKAGE_SCHEMA_VERSION,
+    ExportAssetCollection,
+    ExportComponentSnapshot,
+    ExportPackagePlan,
+    PackageAsset,
+    PackageComponent,
+    PackageComponentImportAction,
+    ParsedPackage,
+)
 from app.services.component_fingerprint_service import (
     FINGERPRINT_SCHEMA_VERSION,
     ComponentFingerprintResult,
@@ -58,96 +70,8 @@ from app.services.workspace_component_service import CODE_PREFIX_COMPONENT, Work
 from app.services.workspace_component_version_service import WorkspaceComponentVersionService
 from app.services.workspace_font_service import WorkspaceFontService
 
-PACKAGE_SCHEMA_VERSION = 2
-COMPONENT_IMPORT_PATTERN = re.compile(
-    r"@workspace-components/(?P<component_code>[A-Za-z0-9_-]+)/v/(?P<version_no>\d+)(?:\.vue)?"
-)
 
-
-@dataclass(slots=True)
-class ExportComponentSnapshot:
-    """分享包导出过程中使用的组件发布版本快照。"""
-
-    component: WorkspaceComponent
-    version: WorkspaceComponentVersion
-    dependencies: list[tuple[str, int]]
-    asset_names: list[str]
-    font_asset_names: list[str]
-    missing_static_asset_names: list[str]
-    dynamic_resource_component_names: list[str]
-
-
-@dataclass(slots=True)
-class ExportAssetCollection:
-    """组件导出资源收集结果，区分自动、手动和 warning。"""
-
-    assets: list[WorkspaceAsset]
-    automatic_asset_names: list[str]
-    manual_asset_names: list[str]
-    missing_static_asset_names: list[str]
-    missing_manual_asset_names: list[str]
-    dynamic_resource_components: list[str]
-    warnings: list[str]
-
-
-@dataclass(slots=True)
-class ExportPackagePlan:
-    """组件分享包导出前的完整准备结果。"""
-
-    root_components: list[WorkspaceComponent]
-    snapshots: list[ExportComponentSnapshot]
-    asset_collection: ExportAssetCollection
-    font_configs: list[WorkspaceFontConfig]
-
-
-@dataclass(slots=True)
-class PackageComponent:
-    """从分享包读取出的组件内容和元数据。"""
-
-    source_component_code: str
-    source_version_no: int
-    metadata: dict[str, Any]
-    content: str
-    preview_schema: str | None
-    dependencies: list[tuple[str, int]]
-    asset_names: list[str]
-    font_asset_names: list[str]
-    content_hash: str | None = None
-    preview_schema_hash: str | None = None
-    component_fingerprint: str | None = None
-    fingerprint_schema_version: int | None = None
-
-
-@dataclass(slots=True)
-class PackageAsset:
-    """从分享包读取出的资源内容和元数据。"""
-
-    metadata: dict[str, Any]
-    content: bytes
-
-
-@dataclass(slots=True)
-class ParsedPackage:
-    """已解析的组件分享包。"""
-
-    manifest: dict[str, Any]
-    components: list[PackageComponent]
-    assets: list[PackageAsset]
-    font_configs: list[dict[str, Any]]
-
-
-@dataclass(slots=True)
-class PackageComponentImportAction:
-    """组件分享包预检和导入时的组件处理动作。"""
-
-    package_component: PackageComponent
-    action: str
-    component_fingerprint: str | None
-    matched_component: WorkspaceComponent | None
-    match_reason: str | None
-
-
-class ComponentSharePackageService:
+class ComponentSharePackageService(ComponentSharePackageHelperMixin):
     """组件离线分享包服务，负责导出、预检和导入。"""
 
     def __init__(self, session: AsyncSession) -> None:
@@ -757,6 +681,17 @@ class ComponentSharePackageService:
                 content,
                 str(metadata.get("content_type") or "") or None,
             )
+            analysis_metadata = metadata.get("analysis_metadata") or AssetService._build_analysis_metadata(
+                asset_type,
+                original_name,
+                metadata.get("content_type"),
+                content,
+            )
+            render_metadata = (
+                metadata.get("render_metadata")
+                if AssetRenderMetadataService.is_render_hint(metadata.get("render_metadata"))
+                else AssetRenderMetadataService.build_auto_metadata(asset_type, original_name, metadata.get("content_type"), content)
+            )
             self.session.add(
                 WorkspaceAsset(
                     workspace_id=workspace_id,
@@ -769,8 +704,8 @@ class ComponentSharePackageService:
                     content_type=metadata.get("content_type"),
                     asset_type=asset_type.value,
                     tags=list(metadata.get("tags") or []),
-                    analysis_metadata=metadata.get("render_metadata"),
-                    render_metadata=metadata.get("render_metadata"),
+                    analysis_metadata=analysis_metadata,
+                    render_metadata=render_metadata,
                     status=RecordStatus.ACTIVE.value,
                 )
             )
@@ -1534,101 +1469,3 @@ class ComponentSharePackageService:
             "component_fingerprint": component_fingerprint,
             "fingerprint_schema_version": fingerprint_schema_version,
         }
-
-    @staticmethod
-    def _build_asset_payload(asset: WorkspaceAsset) -> dict[str, Any]:
-        """构建 asset.json 内容。"""
-
-        return {
-            "name": asset.name,
-            "original_name": asset.original_name,
-            "asset_type": asset.asset_type,
-            "content_type": asset.content_type,
-            "file_size": asset.file_size,
-            "file_hash": asset.file_hash,
-            "description": asset.description,
-            "tags": asset.tags or [],
-            "render_metadata": asset.render_metadata,
-        }
-
-    @staticmethod
-    def _build_asset_manifest_entry(asset: WorkspaceAsset) -> dict[str, Any]:
-        """构建 manifest.assets 中的资源摘要。"""
-
-        return {
-            "name": asset.name,
-            "original_name": asset.original_name,
-            "asset_type": asset.asset_type,
-            "file_hash": asset.file_hash,
-        }
-
-    @staticmethod
-    def _build_font_config_payload(font_config: WorkspaceFontConfig) -> dict[str, Any]:
-        """构建字体配置分享包载荷。"""
-
-        return {
-            "asset_name": font_config.asset_name,
-            "font_family": font_config.font_family,
-            "font_format": font_config.font_format,
-            "font_weight": font_config.font_weight,
-            "font_style": font_config.font_style,
-            "font_display": font_config.font_display,
-            "status": font_config.status,
-        }
-
-    @staticmethod
-    def _font_config_matches(existing: WorkspaceFontConfig, payload: dict[str, Any]) -> bool:
-        """判断目标工作空间已有字体配置是否与分享包一致。"""
-
-        return all(
-            str(getattr(existing, field) or "").strip() == str(payload.get(field) or "").strip()
-            for field in ["asset_name", "font_family", "font_format", "font_weight", "font_style", "font_display", "status"]
-        )
-
-    @staticmethod
-    def _assert_unique_asset_hash_metadata(assets: list[WorkspaceAsset]) -> None:
-        """避免同一 hash 对应多个逻辑资源时无法按 v1 包格式表达。"""
-
-        by_hash: dict[str, str] = {}
-        for asset in assets:
-            existing_name = by_hash.get(asset.file_hash)
-            if existing_name is not None and existing_name != asset.name:
-                raise AppException(
-                    status_code=409,
-                    code="COMPONENT_SHARE_ASSET_HASH_CONFLICT",
-                    detail=(
-                        f"资源 {existing_name} 与 {asset.name} 使用同一文件 hash，"
-                        "初版分享包无法表达一份文件对应多个资源名，请先调整资源。"
-                    ),
-                )
-            by_hash[asset.file_hash] = asset.name
-
-    @staticmethod
-    def _safe_archive_filename(name: str) -> str:
-        """把资源展示文件名规整为 Zip 内单文件名。"""
-
-        filename = Path(str(name or "asset.bin").replace("\\", "/")).name
-        return filename or "asset.bin"
-
-    @staticmethod
-    def _dump_json(value: Any) -> str:
-        """按项目约定输出 UTF-8 友好的格式化 JSON。"""
-
-        return json.dumps(value, ensure_ascii=False, indent=2)
-
-    @staticmethod
-    def _coerce_int(value: Any) -> int | None:
-        """把输入值转为整数，失败时返回空。"""
-
-        try:
-            return int(value)
-        except (TypeError, ValueError):
-            return None
-
-    @staticmethod
-    def _build_export_filename(root_components: list[WorkspaceComponent]) -> str:
-        """生成分享包下载文件名。"""
-
-        first_code = root_components[0].code if root_components else "components"
-        suffix = f"-and-{len(root_components) - 1}" if len(root_components) > 1 else ""
-        return f"workspace-components-{first_code}{suffix}.zip"

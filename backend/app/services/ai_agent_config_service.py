@@ -1,4 +1,4 @@
-"""文件功能：封装用户级智能体提示词、工具开关与工具提示词配置逻辑。"""
+"""文件功能：封装用户级智能体完整提示词、工具开关与工具提示词配置逻辑。"""
 
 from __future__ import annotations
 
@@ -15,7 +15,11 @@ from app.ai.agent_catalog import (
     get_agent_tool_catalog_entry,
     list_agent_catalog_entries,
 )
-from app.ai.agent_runtime_config import EffectiveAgentRuntimeConfig, EffectiveToolRuntimeConfig
+from app.ai.agent_runtime_config import (
+    EffectiveAgentRuntimeConfig,
+    EffectiveToolRuntimeConfig,
+    resolve_effective_prompt,
+)
 from app.ai.tool_specs import (
     AGENT_COORDINATOR_AGENT_ID,
     COMPONENT_MANAGER_AGENT_ID,
@@ -35,7 +39,6 @@ from app.schemas.agent_config import (
     AgentCatalogItem,
     AgentConfigItem,
     AgentConfigUpdateRequest,
-    AgentTeamMemberConfigItem,
     AgentToolConfigItem,
     AgentToolConfigUpdateRequest,
     AgentToolGuideItem,
@@ -53,7 +56,7 @@ class AgentConfigSummary:
 
 
 class AiAgentConfigService:
-    """统一管理当前用户的智能体提示词和工具覆盖配置。"""
+    """统一管理当前用户的智能体完整提示词和工具覆盖配置。"""
 
     def __init__(self, session: AsyncSession, *, user_id: int) -> None:
         self.session = session
@@ -80,8 +83,7 @@ class AiAgentConfigService:
 
         catalog = self._get_catalog_or_raise(agent_id)
         runtime_config = await self.get_effective_runtime_config(agent_id)
-        team_members = await self._build_team_members_for_config(catalog)
-        return self._build_config_item(catalog, runtime_config, team_members=team_members)
+        return self._build_config_item(catalog, runtime_config)
 
     async def get_config_summary(self, agent_id: str) -> AgentConfigSummary:
         """读取 Agent 列表接口所需的轻量配置摘要。"""
@@ -126,23 +128,26 @@ class AiAgentConfigService:
         *,
         operator_id: int,
     ) -> AgentConfigItem:
-        """更新某个 Agent 的用户描述或业务补充提示词。"""
+        """更新某个 Agent 的用户描述或完整提示词。"""
 
-        self._get_catalog_or_raise(agent_id)
+        catalog = self._get_catalog_or_raise(agent_id)
         config = await self._get_agent_config_model(agent_id)
-        if payload.restore_default:
-            if config is not None:
-                await self.session.delete(config)
-                await self.session.commit()
-            return await self.get_config(agent_id)
-
-        if "prompt_override" not in payload.model_fields_set and "description_override" not in payload.model_fields_set:
+        if (
+            not payload.restore_default
+            and "prompt_override" not in payload.model_fields_set
+            and "description_override" not in payload.model_fields_set
+        ):
             return await self.get_config(agent_id)
 
         next_prompt = config.prompt_override if config is not None else None
         next_description = config.description_override if config is not None else None
-        if "prompt_override" in payload.model_fields_set:
+
+        if payload.restore_default:
+            next_prompt = None
+        elif "prompt_override" in payload.model_fields_set:
             next_prompt = self._normalize_optional_text(payload.prompt_override)
+            if next_prompt == catalog.default_prompt:
+                next_prompt = None
         if "description_override" in payload.model_fields_set:
             next_description = self._normalize_optional_text(payload.description_override)
 
@@ -249,7 +254,7 @@ class AiAgentConfigService:
         await self.session.commit()
 
     async def _get_agent_config_model(self, agent_id: str) -> AiAgentUserConfig | None:
-        """读取当前用户某个 Agent 的描述与业务补充提示词模型。"""
+        """读取当前用户某个 Agent 的描述与完整提示词覆盖模型。"""
 
         statement = select(AiAgentUserConfig).where(
             AiAgentUserConfig.user_id == self.user_id,
@@ -312,7 +317,6 @@ class AiAgentConfigService:
             role=catalog.role,
             system_prompt=catalog.system_prompt,
             default_prompt=catalog.default_prompt,
-            team_members=self._build_default_team_members(catalog),
             tool_groups=self._build_tool_groups(
                 catalog,
                 runtime_config,
@@ -324,8 +328,6 @@ class AiAgentConfigService:
         self,
         catalog: AgentCatalogEntry,
         runtime_config: EffectiveAgentRuntimeConfig,
-        *,
-        team_members: list[AgentTeamMemberConfigItem],
     ) -> AgentConfigItem:
         """把有效配置转换成响应模型。"""
 
@@ -351,71 +353,15 @@ class AiAgentConfigService:
             system_prompt=catalog.system_prompt,
             default_prompt=catalog.default_prompt,
             prompt_override=runtime_config.prompt_override,
-            effective_prompt=runtime_config.prompt_override or catalog.default_prompt,
+            effective_prompt=resolve_effective_prompt(catalog, runtime_config),
             prompt_customized=runtime_config.prompt_customized,
             enabled_tool_count=enabled_count,
             disabled_tool_count=disabled_count,
-            team_members=team_members,
             tool_groups=self._build_tool_groups(
                 catalog,
                 runtime_config,
                 runtime_tool_map=runtime_tool_map,
             ),
-        )
-
-    async def _build_team_members_for_config(self, catalog: AgentCatalogEntry) -> list[AgentTeamMemberConfigItem]:
-        """为内容助手配置生成 Team 成员描述配置。"""
-
-        if catalog.id != AGENT_COORDINATOR_AGENT_ID:
-            return []
-
-        result: list[AgentTeamMemberConfigItem] = []
-        for member_agent_id in (COMPONENT_MANAGER_AGENT_ID, RESOURCE_MANAGER_AGENT_ID):
-            member_catalog = self._get_catalog_or_raise(member_agent_id)
-            member_runtime_config = await self.get_effective_runtime_config(member_agent_id)
-            result.append(self._build_team_member_item(member_catalog, member_runtime_config))
-        return result
-
-    @staticmethod
-    def _build_default_team_members(catalog: AgentCatalogEntry) -> list[AgentTeamMemberConfigItem]:
-        """为内置目录生成未叠加用户覆盖的 Team 成员描述。"""
-
-        if catalog.id != AGENT_COORDINATOR_AGENT_ID:
-            return []
-        result: list[AgentTeamMemberConfigItem] = []
-        for member_agent_id in (COMPONENT_MANAGER_AGENT_ID, RESOURCE_MANAGER_AGENT_ID):
-            member_catalog = get_agent_catalog_entry(member_agent_id)
-            if member_catalog is None:
-                continue
-            result.append(
-                AgentTeamMemberConfigItem(
-                    id=member_catalog.id,
-                    name=member_catalog.name,
-                    icon=member_catalog.icon,
-                    default_description=member_catalog.description,
-                    description=member_catalog.description,
-                    description_override=None,
-                    description_customized=False,
-                )
-            )
-        return result
-
-    @staticmethod
-    def _build_team_member_item(
-        catalog: AgentCatalogEntry,
-        runtime_config: EffectiveAgentRuntimeConfig,
-    ) -> AgentTeamMemberConfigItem:
-        """把成员 Agent 目录与用户描述覆盖折叠为 Team 成员配置项。"""
-
-        description = runtime_config.description_override or catalog.description
-        return AgentTeamMemberConfigItem(
-            id=catalog.id,
-            name=catalog.name,
-            icon=catalog.icon,
-            default_description=catalog.description,
-            description=description,
-            description_override=runtime_config.description_override,
-            description_customized=runtime_config.description_customized,
         )
 
     def _build_tool_groups(
@@ -524,7 +470,7 @@ class AiAgentConfigService:
 
     @staticmethod
     def _build_runtime_tool_map(agent_id: str) -> dict[str, object]:
-        """构建指定智能体的实际 Agno 工具索引，用于读取参数 schema。"""
+        """构建指定智能体的实际平台工具索引，用于读取参数 schema。"""
 
         session_factory = get_session_factory()
         if agent_id == AGENT_COORDINATOR_AGENT_ID:
@@ -549,7 +495,7 @@ class AiAgentConfigService:
 
     @classmethod
     def _build_call_example(cls, tool_name: str, parameters_schema: dict[str, object] | None) -> dict[str, object]:
-        """根据 Agno 参数 schema 生成最小工具调用示例。"""
+        """根据工具参数 schema 生成最小工具调用示例。"""
 
         properties = parameters_schema.get("properties", {}) if parameters_schema else {}
         arguments = {

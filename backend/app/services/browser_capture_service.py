@@ -12,6 +12,7 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from app.core.config import get_settings
 from app.core.exceptions import AppException
 from app.services.capture_viewport_resolver import CaptureViewport
+from app.services.playwright_task_queue import PlaywrightTaskQueue, get_playwright_task_queue
 
 logger = logging.getLogger(__name__)
 
@@ -38,8 +39,9 @@ class BrowserCaptureJobResult:
 class BrowserCaptureService:
     """无头浏览器截图服务，负责等待预览就绪后产出 PNG。"""
 
-    def __init__(self) -> None:
+    def __init__(self, playwright_task_queue: PlaywrightTaskQueue | None = None) -> None:
         self.settings = get_settings()
+        self.playwright_task_queue = playwright_task_queue or get_playwright_task_queue()
 
     async def capture_preview(
         self,
@@ -50,7 +52,13 @@ class BrowserCaptureService:
     ) -> bytes:
         """打开预览地址并按给定视口生成截图内容。"""
 
-        return await asyncio.to_thread(self._capture_preview_sync, preview_url, viewport, extra_http_headers)
+        return await self.playwright_task_queue.run_sync(
+            "page-screenshot",
+            self._capture_preview_sync,
+            preview_url,
+            viewport,
+            extra_http_headers,
+        )
 
     async def capture_preview_batch(
         self,

@@ -6,6 +6,7 @@ from typing import Literal, Optional
 from pydantic import BaseModel, ConfigDict, Field, computed_field, model_validator
 
 from app.models.enums import AssetRole, AssetType, RecordStatus
+from app.services.asset_render_metadata_service import AssetRenderMetadataService
 
 
 FOUNDATION_ASSET_TYPES = {AssetType.ICON, AssetType.FONT}
@@ -74,6 +75,9 @@ class AssetResponse(BaseModel):
     tags: list[str] = Field(default_factory=list)
     analysis_metadata: AssetAnalysisMetadata | None = None
     render_metadata: dict | None = None
+    approx_aspect_ratio: str | None = None
+    approx_aspect_ratio_value: float | None = None
+    aspect_ratio_source: str | None = None
     status: RecordStatus = RecordStatus.ACTIVE
     archived_at: datetime | None = None
     archive_reason: str | None = None
@@ -91,12 +95,14 @@ class AssetResponse(BaseModel):
 
     @model_validator(mode="after")
     def fill_derived_asset_fields(self) -> "AssetResponse":
-        """补齐由 asset_type 派生的角色、渲染类型与默认渲染元数据。"""
+        """补齐由 asset_type 派生的角色、渲染类型与近似比例摘要。"""
 
         self.asset_role = resolve_asset_role(self.asset_type)
         self.render_type = self.asset_type
-        if self.render_metadata is None and self.analysis_metadata is not None:
-            self.render_metadata = self.analysis_metadata.model_dump()
+        ratio_summary = AssetRenderMetadataService.summarize_metadata(self.render_metadata)
+        self.approx_aspect_ratio = ratio_summary["approx_aspect_ratio"]
+        self.approx_aspect_ratio_value = ratio_summary["approx_aspect_ratio_value"]
+        self.aspect_ratio_source = ratio_summary["aspect_ratio_source"]
         self.content_editable = resolve_asset_content_editable(
             self.asset_type,
             self.original_name,
@@ -112,6 +118,7 @@ class AssetUpdateRequest(BaseModel):
     original_name: Optional[str] = None
     description: Optional[str] = None
     tags: Optional[list[str]] = None
+    approx_aspect_ratio: Optional[str] = None
 
 
 def resolve_asset_content_editable(
@@ -140,6 +147,7 @@ class AssetContentCreateRequest(BaseModel):
     content: str = Field(min_length=1)
     description: str | None = None
     tags: list[str] = Field(default_factory=list)
+    approx_aspect_ratio: str | None = None
 
 
 class AssetContentUpdateRequest(BaseModel):

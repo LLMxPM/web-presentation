@@ -1,6 +1,6 @@
 """文件功能：覆盖组件预览 schema、依赖合法性和瞬时循环校验测试。"""
 
-from tests.integration.component_preview.component_preview_cases import (
+from tests.integration.component_preview.component_preview_dependency_validation_cases import (
     test_component_references_should_query_and_upgrade_direct_page_and_component_refs,
     test_component_preview_schema_should_validate_slot_component_runtime_paths,
     test_component_save_should_reject_invalid_preview_schema_json,

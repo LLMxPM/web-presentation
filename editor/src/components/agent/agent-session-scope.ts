@@ -81,6 +81,26 @@ export function setSelectedSession(scopeValue: AgentScopeContext, agentIdValue: 
 }
 
 /**
+ * 读取当前工作空间和智能体最近活跃的会话。
+ */
+export function getSelectedWorkspaceSession(scopeValue: AgentScopeContext, agentIdValue: string, sessions: AgentSessionItem[]) {
+  const persistedSessionId = localStorage.getItem(buildWorkspaceSelectedSessionStorageKey(scopeValue, agentIdValue)) ?? ''
+  const persistedSession = sessions.find(item => item.session_id === persistedSessionId)
+  if (!persistedSession) {
+    return ''
+  }
+  const sessionScope = resolveSessionScope(persistedSession)
+  return sessionScope?.workspace_id === scopeValue.workspace_id ? persistedSessionId : ''
+}
+
+/**
+ * 记录当前工作空间和智能体最近活跃的会话。
+ */
+export function setSelectedWorkspaceSession(scopeValue: AgentScopeContext, agentIdValue: string, sessionId: string) {
+  localStorage.setItem(buildWorkspaceSelectedSessionStorageKey(scopeValue, agentIdValue), sessionId)
+}
+
+/**
  * 从 session metadata 中恢复工作范围，兼容旧会话缺少 scope_type 的数据。
  */
 export function resolveSessionScope(session: AgentSessionItem): AgentScopeContext | null {
@@ -112,7 +132,7 @@ export function resolveSessionScope(session: AgentSessionItem): AgentScopeContex
     project_name: toTextOrNull(metadata.project_name),
     page_title: toTextOrNull(metadata.page_title),
     component_name: toTextOrNull(metadata.component_name),
-    source: toTextOrNull(metadata.source) || 'editor-agent-sidebar',
+    source: toTextOrNull(metadata.source) || resolveDefaultSessionSource(session.agent_id),
   }
 }
 
@@ -160,6 +180,27 @@ export function resolveSessionScopePath(session: AgentSessionItem): string {
     return '未知范围'
   }
   return buildScopePathParts(sessionScope).join(' / ')
+}
+
+/**
+ * 返回会话创建时固化的大模型名称；历史会话没有 metadata 时返回空。
+ */
+export function resolveSessionModelLabel(session: AgentSessionItem): string {
+  const llm = session.metadata?.llm
+  if (!llm || typeof llm !== 'object') {
+    return ''
+  }
+  const llmMetadata = llm as unknown as Record<string, unknown>
+  const name = toTextOrNull(llmMetadata.name)
+  if (!name) {
+    return ''
+  }
+  const scope = toTextOrNull(llmMetadata.scope)
+  const scopeLabel = scope === 'global' ? '全局模型' : scope === 'personal' ? '我的模型' : '模型'
+  const provider = toTextOrNull(llmMetadata.provider_label) || toTextOrNull(llmMetadata.provider_key)
+  const modelId = toTextOrNull(llmMetadata.model_id)
+  const detail = [provider, modelId].filter(Boolean).join(' / ')
+  return detail ? `${scopeLabel} · ${name}（${detail}）` : `${scopeLabel} · ${name}`
 }
 
 /**
@@ -288,6 +329,32 @@ function buildLegacySelectedSessionStorageKey(scopeValue: AgentScopeContext, age
     agentIdValue,
     scopeValue.workspace_id,
   ].map(normalizeSessionStoragePart).join(':')
+}
+
+/**
+ * 生成工作空间级最近活跃会话 key，不随页面或项目路由变化。
+ */
+function buildWorkspaceSelectedSessionStorageKey(scopeValue: AgentScopeContext, agentIdValue: string) {
+  return [
+    'agent-session',
+    'v3',
+    'workspace-active',
+    agentIdValue,
+    scopeValue.workspace_id,
+  ].map(normalizeSessionStoragePart).join(':')
+}
+
+/**
+ * 兼容旧会话缺少 source 的数据，库助手按自身默认工作区入口恢复范围。
+ */
+function resolveDefaultSessionSource(agentId: string): string {
+  if (agentId === 'component-manager') {
+    return 'editor-component-library'
+  }
+  if (agentId === 'resource-manager') {
+    return 'editor-asset-library'
+  }
+  return 'editor-agent-sidebar'
 }
 
 /**

@@ -6,15 +6,17 @@ import { defineStore } from 'pinia'
 import {
   applyAgentRunEvent,
   applyAgentRuntimeSnapshot,
-  buildAgentLocalTimelineItem,
   createAgentSessionRuntimeState,
   type AgentSessionRuntimeState,
 } from '@/components/agent/agent-run-state'
-import { resolveAgentUserFeedbackRequirement } from '@/components/agent/agent-user-feedback-state'
+import {
+  appendLocalRunTimelineItems,
+  markPendingRequirementResolvedInTimeline,
+} from '@/stores/agent-session-timeline'
 import type {
   AgentActiveRunItem,
-  AgentContextStatusItem,
   AgentFeedbackSelection,
+  AgentContextStatusItem,
   AgentImageAttachmentItem,
   AgentMemberRunItem,
   AgentPendingRequirement,
@@ -83,12 +85,13 @@ export const useAgentSessionStore = defineStore('agent-session', {
     setActiveRun(sessionId: string, run: AgentActiveRunItem | null): void {
       if (!sessionId) return
       const state = this.ensureSession(sessionId)
-      state.activeRun = run
+      const normalizedRun = normalizeActiveRun(run)
+      state.activeRun = normalizedRun
       state.stream.runId = run?.run_id ?? state.stream.runId
-      state.stream.streaming = Boolean(run && ['pending', 'running', 'cancelling'].includes(run.status))
-      if (run?.status === 'paused') {
-        state.pendingRequirement = run.pending_requirement
-      } else if (run?.status !== 'pending' && run?.status !== 'running') {
+      state.stream.streaming = Boolean(normalizedRun && ['pending', 'running', 'cancelling'].includes(normalizedRun.status))
+      if (normalizedRun?.status === 'paused') {
+        state.pendingRequirement = normalizedRun.pending_requirement
+      } else {
         state.pendingRequirement = null
       }
       this.syncFlatMaps(sessionId)
@@ -96,15 +99,6 @@ export const useAgentSessionStore = defineStore('agent-session', {
     setPendingRequirement(sessionId: string, requirement: AgentPendingRequirement | null): void {
       if (!sessionId) return
       this.ensureSession(sessionId).pendingRequirement = requirement
-      this.syncFlatMaps(sessionId)
-    },
-    resolveUserFeedbackRequirement(
-      sessionId: string,
-      requirement: AgentPendingRequirement,
-      selections: AgentFeedbackSelection[],
-    ): void {
-      if (!sessionId) return
-      resolveAgentUserFeedbackRequirement(this.ensureSession(sessionId), requirement, selections)
       this.syncFlatMaps(sessionId)
     },
     setPendingImageAttachments(sessionId: string, attachments: AgentImageAttachmentItem[]): void {
@@ -141,25 +135,28 @@ export const useAgentSessionStore = defineStore('agent-session', {
       if (!sessionId) return -1
       return this.ensureSession(sessionId).stream.lastSequenceByRun[runId] ?? -1
     },
-    beginLocalRun(sessionId: string, message: string, attachments: AgentImageAttachmentItem[]): void {
+    beginLocalRun(sessionId: string, message: string, attachments: AgentImageAttachmentItem[], runId?: string | null): void {
       if (!sessionId) return
       const state = this.ensureSession(sessionId)
       state.pendingImageAttachments = []
       state.pendingRequirement = null
       state.lastIssue = null
-      const content = message || (attachments.length ? '（已发送图片）' : '')
-      state.timelineItems = [
-        ...state.timelineItems,
-        {
-          ...buildAgentLocalTimelineItem(sessionId, {
-            kind: 'message',
-            role: 'user',
-            content,
-          }),
-          order_index: nextTimelineOrderIndex(state),
-        },
-      ]
+      state.stream.runId = runId ?? state.stream.runId
+      appendLocalRunTimelineItems(state, sessionId, message, attachments, runId)
       state.stream.streamingTimelineItemId = null
+      state.stream.streaming = true
+      this.syncFlatMaps(sessionId)
+    },
+    markPendingRequirementResolved(
+      sessionId: string,
+      requirement: AgentPendingRequirement,
+      feedbackSelections: AgentFeedbackSelection[] = [],
+    ): void {
+      if (!sessionId) return
+      const state = this.ensureSession(sessionId)
+      state.pendingRequirement = null
+      state.stream.runId = requirement.run_id || state.stream.runId
+      markPendingRequirementResolvedInTimeline(state, sessionId, requirement, feedbackSelections)
       state.stream.streaming = true
       this.syncFlatMaps(sessionId)
     },
@@ -220,8 +217,11 @@ function hasSessionValue<T>(source: Record<string, T>, sessionId: string): boole
 }
 
 /**
- * 读取下一条本地时间线排序号。
+ * 归一化 active run，确保非 paused 状态不会携带旧 HITL requirement。
  */
-function nextTimelineOrderIndex(state: AgentSessionRuntimeState) {
-  return Math.max(-1, ...state.timelineItems.map(item => item.order_index)) + 1
+function normalizeActiveRun(run: AgentActiveRunItem | null): AgentActiveRunItem | null {
+  if (!run || run.status === 'paused' || run.pending_requirement === null) {
+    return run
+  }
+  return { ...run, pending_requirement: null }
 }

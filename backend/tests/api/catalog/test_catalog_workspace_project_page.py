@@ -1,6 +1,6 @@
 """文件功能：覆盖工作空间、项目与页面基础 CRUD 及通用配置校验测试。"""
 
-from tests.api.catalog.catalog_cases import (
+from tests.api.catalog.catalog_workspace_project_page_cases import (
     test_auto_generated_codes_are_unique,
     test_page_content_accepts_long_text,
     test_page_speaker_notes_update_should_create_page_version,

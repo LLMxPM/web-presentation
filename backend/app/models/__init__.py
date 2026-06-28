@@ -2,7 +2,16 @@
 
 from app.models.ai_agent_config import AiAgentToolUserConfig, AiAgentUserConfig
 from app.models.ai_agent_attachment import AiAgentImageAttachment
-from app.models.ai_llm import AiLlmConfig, AiLlmSlotBinding
+from app.models.ai_agent_runtime import (
+    AiAgentMemberRun,
+    AiAgentMessage,
+    AiAgentRequirement,
+    AiAgentRun,
+    AiAgentRunEvent,
+    AiAgentSession,
+    AiAgentToolCall,
+)
+from app.models.ai_llm import AiLlmConfig, AiLlmProviderConfig, AiLlmSlotBinding
 from app.models.user import UserSession, User
 from app.models.asset import WorkspaceAsset
 from app.models.component_component_dependency import ComponentVersionComponentDependency
@@ -28,8 +37,16 @@ from app.models.workspace import Project, Workspace, WorkspaceMember
 
 __all__ = [
     "AiLlmConfig",
+    "AiLlmProviderConfig",
     "AiLlmSlotBinding",
     "AiAgentImageAttachment",
+    "AiAgentSession",
+    "AiAgentRun",
+    "AiAgentRunEvent",
+    "AiAgentMessage",
+    "AiAgentToolCall",
+    "AiAgentRequirement",
+    "AiAgentMemberRun",
     "AiAgentUserConfig",
     "AiAgentToolUserConfig",
     "UserSession",

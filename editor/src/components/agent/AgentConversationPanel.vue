@@ -12,7 +12,7 @@
 
   <Teleport v-if="props.headerActionsTarget && headerActionsReady" defer :to="props.headerActionsTarget">
     <AgentSessionControls
-      :sessions="sessionsQuery.data.value"
+      :sessions="displayedSessions"
       :active-session-id="activeSessionId"
       :active-session-label="activeSessionLabel"
       :is-fetching="sessionsQuery.isFetching.value"
@@ -31,7 +31,7 @@
   <section :class="panelShellClass">
     <header v-if="!props.headerActionsTarget || !headerActionsReady" class="border-b border-slate-100 px-5 py-4">
       <AgentSessionControls
-        :sessions="sessionsQuery.data.value"
+        :sessions="displayedSessions"
         :active-session-id="activeSessionId"
         :active-session-label="activeSessionLabel"
         :is-fetching="sessionsQuery.isFetching.value"
@@ -57,7 +57,7 @@
         </div>
         <div class="rounded-2xl border border-white/80 bg-white/70 px-4 py-3 text-sm text-slate-600">
           <p>当前 agent：{{ selectedAgent?.name || agentDisplayName }}</p>
-          <p>已绑定模型：{{ selectedAgent?.bound_llm_name || '未绑定' }}</p>
+          <p>当前模型：{{ currentLlmModelLabel || selectedAgent?.bound_llm_name || '未选择' }}</p>
         </div>
         <div class="flex justify-end">
           <BaseButton variant="primary" @click="goToAiSettings">
@@ -89,15 +89,15 @@
           class="flex items-center gap-2 border-t border-amber-100 bg-amber-50/90 px-4 py-3 text-xs leading-5 text-amber-700">
           <span class="min-w-0 flex-1">{{ composerContextIssue }}</span>
           <button
-            v-if="canOpenActiveSessionRoute"
+            v-if="composerContextRouteTarget"
             type="button"
             class="inline-flex h-7 shrink-0 items-center gap-1 rounded-md border border-amber-200 bg-white px-2 text-[11px] font-semibold text-amber-700 shadow-sm transition hover:border-amber-300 hover:bg-amber-100"
-            aria-label="打开此会话工作页面"
-            title="打开此会话工作页面"
-            @click="openActiveSessionRoute"
+            :aria-label="composerContextRouteTitle"
+            :title="composerContextRouteTitle"
+            @click="openComposerContextRoute"
           >
             <ExternalLink class="h-3 w-3" />
-            打开
+            {{ composerContextRouteLabel }}
           </button>
         </section>
 
@@ -112,7 +112,7 @@
           :image-upload-disabled="imageUploadDisabled"
           :image-upload-disabled-reason="imageUploadDisabledReason"
           :pending-requirement="pendingRequirement"
-          :hitl-loading="isStreaming"
+          :hitl-loading="hitlActionInFlight"
           :can-apply-suggested-patch="canApplySuggestedPatch"
           :hitl-force-release-available="hitlForceReleaseAvailable"
           @upload-image="handleUploadImage"
@@ -126,7 +126,55 @@
           @apply-suggested-patch="applySuggestedPatch"
           @save-draft-patch="saveDraftPatch"
           @context-usage-open="handleContextUsageOpen"
-          @action="handleComposerPrimaryAction" />
+          @action="handleComposerPrimaryAction">
+          <template #action-prefix>
+            <span
+              v-if="isNewSessionDraft || activeSessionLlmLabel"
+              ref="llmModelMenuRef"
+              class="relative inline-flex"
+            >
+              <button
+                type="button"
+                class="inline-flex h-6 max-w-[150px] items-center gap-1 rounded-md border px-1.5 text-[10px] font-medium transition"
+                :class="isNewSessionDraft
+                  ? 'border-slate-200 bg-white text-slate-600 hover:border-sky-200 hover:bg-sky-50 hover:text-sky-700'
+                  : 'cursor-default border-slate-100 bg-slate-50 text-slate-500'"
+                :disabled="!isNewSessionDraft || llmConfigsQuery.isFetching.value || selectableModelCount === 0"
+                :title="llmModelButtonTitle"
+                @click.stop="toggleLlmModelMenu"
+              >
+                <Globe2 v-if="currentLlmScope === 'global'" class="h-3 w-3 shrink-0" />
+                <UserRound v-else class="h-3 w-3 shrink-0" />
+                <span class="min-w-0 truncate">{{ currentLlmCompactName }}</span>
+                <ChevronDown v-if="isNewSessionDraft" class="h-3 w-3 shrink-0 opacity-60" />
+              </button>
+              <div
+                v-if="isNewSessionDraft && llmModelMenuVisible"
+                class="absolute bottom-7 right-0 z-30 w-56 overflow-hidden rounded-lg border border-slate-200 bg-white py-1 shadow-xl shadow-slate-900/10"
+              >
+                <button
+                  v-for="item in llmModelMenuItems"
+                  :key="item.id"
+                  type="button"
+                  class="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-xs transition hover:bg-slate-50"
+                  :class="item.id === selectedNewSessionLlmConfigId ? 'text-sky-700' : 'text-slate-600'"
+                  @click.stop="selectNewSessionLlmConfig(item.id)"
+                >
+                  <Globe2 v-if="item.scope === 'global'" class="h-3.5 w-3.5 shrink-0" />
+                  <UserRound v-else class="h-3.5 w-3.5 shrink-0" />
+                  <span class="min-w-0 flex-1">
+                    <span class="block truncate font-medium">{{ item.name }}</span>
+                    <span class="block truncate text-[10px] text-slate-400">{{ item.providerLabel }} / {{ item.modelId }}</span>
+                  </span>
+                  <Check v-if="item.id === selectedNewSessionLlmConfigId" class="h-3.5 w-3.5 shrink-0" />
+                </button>
+                <div v-if="llmModelMenuItems.length === 0" class="px-3 py-2 text-center text-[11px] text-slate-400">
+                  暂无可用模型
+                </div>
+              </div>
+            </span>
+          </template>
+        </AgentComposer>
       </template>
     </div>
   </section>
@@ -141,29 +189,26 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/vue-query'
 import { storeToRefs } from 'pinia'
 import { useRoute, useRouter } from 'vue-router'
-import { ExternalLink } from '@lucide/vue'
+import { Check, ChevronDown, ExternalLink, Globe2, UserRound } from '@lucide/vue'
 
 import {
   AgentRequestError,
   AgentStreamInterruptedError,
   cancelAgentSessionActiveRun,
-  continueAgentSessionActiveRun,
   createAgentSession,
-  deleteAgentImageAttachment,
   getAgentSessionContextStatus,
   getAgentSessionRuntime,
   listAgents,
   listAgentSessions,
-  promoteAgentImageAttachment,
   renameAgentSession,
   streamAgentRun,
   streamAgentRunEvents,
-  uploadAgentImageAttachment,
 } from '@/api/ai'
+import { listLlmConfigs, listLlmSlots } from '@/api/llm'
 import { getErrorMessage } from '@/api/http'
 import {
   buildTimelineDisplayItems,
@@ -176,19 +221,26 @@ import {
   compactMutationRefreshEvents,
   buildMutationRefreshEvents,
 } from '@/components/agent/agent-mutation-refresh'
+import { useAgentHitlActions } from '@/components/agent/agent-hitl-actions'
+import { useAgentImageAttachments } from '@/components/agent/agent-image-attachments'
+import { useAgentStreamControllers } from '@/components/agent/agent-stream-controllers'
+import { useAgentForceCancelTicker } from '@/components/agent/agent-force-cancel-ticker'
+import { useAgentSessionNavigation } from '@/components/agent/agent-session-navigation'
 import {
   buildSessionRouteLocation,
   findLatestSessionForScope,
   formatScopeTooltip,
   getSelectedSession,
+  getSelectedWorkspaceSession,
   isRouteScopeInsideSessionScope,
   isSessionTargetCurrentScope,
   resolveScopeSummary,
   resolveSessionDisplayName,
   resolveSessionScope,
   setSelectedSession,
+  setSelectedWorkspaceSession,
 } from '@/components/agent/agent-session-scope'
-import { buildAgentLocalTimelineItem, normalizeAgnoRunEvent } from '@/components/agent/agent-run-state'
+import { normalizeAgentRunEvent } from '@/components/agent/agent-run-state'
 import AgentComposer from '@/components/agent/AgentComposer.vue'
 import AgentConversationBody from '@/components/agent/AgentConversationBody.vue'
 import AgentConversationDialogs from '@/components/agent/AgentConversationDialogs.vue'
@@ -199,7 +251,6 @@ import type {
   AgentActiveRunItem,
   AgentContextStatusItem,
   AgentDescriptor,
-  AgentFeedbackSelection,
   AgentImageAttachmentItem,
   AgentMemberRunItem,
   AgentPendingRequirement,
@@ -209,10 +260,14 @@ import type {
   AgentSessionRuntimeSnapshot,
   AgentSuggestedPatch,
   AgentTimelineItem,
+  LlmConfigItem,
+  LlmSlotBindingItem,
 } from '@/types/api'
 import { useAgentSessionStore } from '@/stores/agent-session'
 import { logClientWarning } from '@/utils/client-logger'
-import { createConfirm, Message } from '@/utils/message'
+import { Message } from '@/utils/message'
+
+const FORCE_CANCEL_AVAILABLE_DELAY_MS = 10_000
 
 interface Props {
   workspaceId: number
@@ -235,6 +290,27 @@ interface Props {
   routeUnavailableReason?: string
   autoCreateKey?: string | number | null
   autoNavigateTarget?: string | null
+}
+
+interface AgentSessionLlmMetadata {
+  selection_kind?: 'explicit_config' | 'slot_binding'
+  config_id?: number | string | null
+  scope?: 'global' | 'personal' | string
+  name?: string | null
+  provider_config_id?: number | string | null
+  provider_config_name?: string | null
+  provider_key?: string | null
+  provider_label?: string | null
+  model_id?: string | null
+  supports_image_input?: boolean | null
+}
+
+interface LlmModelMenuItem {
+  id: number
+  scope: 'global' | 'personal'
+  name: string
+  providerLabel: string
+  modelId: string
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -273,7 +349,6 @@ const agentSessionStore = useAgentSessionStore()
 const {
   timelineItemsBySession,
   memberRunsBySession,
-  pendingRequirementBySession,
   pendingImageAttachmentsBySession,
   activeRunBySession,
   streamingBySession,
@@ -290,8 +365,7 @@ const route = useRoute()
 
 const composerText = ref('')
 const activeSessionId = ref('')
-const pendingRouteSessionId = ref('')
-const pendingUnavailableSessionSelectionKey = ref<string | number | null>(null)
+const knownSessionsById = ref<Record<string, AgentSessionItem>>({})
 const manuallySelectedSessionId = ref('')
 const lastHandledAutoCreateKey = ref<string | number | null>(null)
 const virtualNewSessionKey = ref<string | number | null>(null)
@@ -305,16 +379,24 @@ const memberRunDialogVisible = ref(false)
 const activeToolDetailId = ref<string | null>(null)
 const activeMemberRunIds = ref<string[]>([])
 const sendInFlight = ref(false)
-const streamAbortControllersByRun = new Map<string, AbortController>()
+const selectedNewSessionLlmConfigId = ref<number | null>(null)
+const llmModelMenuVisible = ref(false)
+const llmModelMenuRef = ref<HTMLElement | null>(null)
 const autoNamingSessionIds = new Set<string>()
-const waitingOutputInferenceTimersBySession = new Map<string, number>()
-const waitingOutputInferenceRevisionsBySession = new Map<string, number>()
-const forceCancelTick = ref(Date.now())
-let forceCancelTimer: number | null = null
+const hitlActionInFlightBySession = ref<Record<string, boolean>>({})
 let componentDisposed = false
-const IMAGE_ATTACHMENT_MAX_BYTES = 10 * 1024 * 1024
-const ALLOWED_IMAGE_ATTACHMENT_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp'])
-const WAITING_OUTPUT_INFERENCE_DELAY_MS = 900
+const {
+  abortAllStreamControllers,
+  clearStreamAbortController,
+  createStreamAbortController,
+  getStreamAbortController,
+  hasStreamAbortController,
+} = useAgentStreamControllers()
+const {
+  forceCancelTick,
+  startForceCancelTicker,
+  stopForceCancelTicker,
+} = useAgentForceCancelTicker()
 
 const scope = computed<AgentScopeContext>(() => props.scope ?? {
   scope_type: props.pageId ? 'page' : props.projectId ? 'project' : 'workspace',
@@ -349,9 +431,13 @@ const memberRuns = computed<AgentMemberRunItem[]>(() => (
   readSessionValue(memberRunsBySession.value, activeSessionId.value, [])
 ))
 const pendingRequirement = computed<AgentPendingRequirement | null>({
-  get: () => activeRun.value?.pending_requirement ?? readSessionValue(pendingRequirementBySession.value, activeSessionId.value, null),
+  get: () => {
+    const run = activeRun.value
+    return run?.status === 'paused' ? run.pending_requirement : null
+  },
   set: value => agentSessionStore.setPendingRequirement(activeSessionId.value, value),
 })
+const hitlActionInFlight = computed(() => readSessionValue(hitlActionInFlightBySession.value, activeSessionId.value, false))
 const streamingTimelineItemId = computed<string | null>({
   get: () => readSessionValue(streamingTimelineItemIdBySession.value, activeSessionId.value, null),
   set: value => agentSessionStore.setStreamingTimelineItemId(activeSessionId.value, value),
@@ -378,8 +464,8 @@ const contextUsageTokens = computed(() => {
     return { used: null, available: null }
   }
   return {
-    used: Math.max(0, status.estimated_history_tokens),
-    available: Math.max(0, status.history_budget_tokens),
+    used: Math.max(0, status.context_used_tokens ?? 0),
+    available: Math.max(0, status.context_input_budget_tokens ?? 0),
   }
 })
 const cancellingRunForceAvailable = computed(() => {
@@ -387,7 +473,7 @@ const cancellingRunForceAvailable = computed(() => {
   if (run?.status !== 'cancelling' || !run.cancel_requested_at) {
     return false
   }
-  return forceCancelTick.value - new Date(run.cancel_requested_at).getTime() >= 30_000
+  return forceCancelTick.value - new Date(run.cancel_requested_at).getTime() >= FORCE_CANCEL_AVAILABLE_DELAY_MS
 })
 const hitlForceReleaseAvailable = computed(() => activeRun.value?.status === 'paused' && pendingRequirement.value !== null)
 
@@ -401,18 +487,138 @@ const agentsQuery = useQuery(
 
 const sessionsQuery = useQuery(
   computed(() => ({
-    queryKey: ['ai-sessions', agentId.value, scope.value.workspace_id],
-    queryFn: () => listAgentSessions(scope.value, agentId.value),
+    queryKey: [
+      'ai-sessions',
+      agentId.value,
+      scope.value.workspace_id,
+      'workspace',
+    ],
+    queryFn: () => listAgentSessions(scope.value, agentId.value, 'workspace'),
     enabled: !!scope.value.workspace_id,
   })),
 )
 
+const llmConfigsQuery = useQuery({
+  queryKey: ['llm-configs', 'agent-conversation'],
+  queryFn: listLlmConfigs,
+})
+
+const llmSlotsQuery = useQuery({
+  queryKey: ['llm-slots', 'agent-conversation'],
+  queryFn: listLlmSlots,
+})
+
 const activeSession = computed<AgentSessionItem | null>(() => (
-  sessionsQuery.data.value?.find(item => item.session_id === activeSessionId.value) ?? null
+  sessionsQuery.data.value?.find(item => item.session_id === activeSessionId.value)
+    ?? knownSessionsById.value[activeSessionId.value]
+    ?? null
 ))
+const displayedSessions = computed<AgentSessionItem[] | undefined>(() => {
+  const sessions = sessionsQuery.data.value
+  const active = activeSession.value
+  if (!active) {
+    return sessions
+  }
+  if (!sessions) {
+    return [active]
+  }
+  if (sessions.some(item => item.session_id === active.session_id)) {
+    return sessions
+  }
+  return [active, ...sessions]
+})
 const activeSessionScope = computed(() => activeSession.value ? resolveSessionScope(activeSession.value) : null)
 const activeSessionRuntimeScope = computed(() => activeSessionScope.value ?? scope.value)
 const activeSessionRuntimeAgentId = computed(() => activeSession.value?.agent_id ?? agentId.value)
+const isNewSessionDraft = computed(() => !activeSessionId.value)
+const activeLlmConfigs = computed<LlmConfigItem[]>(() => (
+  (llmConfigsQuery.data.value ?? []).filter(item => (
+    item.status === 'active' && (item.scope === 'global' || item.scope === 'personal')
+  ))
+))
+const activeGlobalLlmConfigs = computed(() => activeLlmConfigs.value.filter(item => item.scope === 'global'))
+const activePersonalLlmConfigs = computed(() => activeLlmConfigs.value.filter(item => item.scope === 'personal'))
+const llmConfigById = computed(() => new Map(activeLlmConfigs.value.map(item => [item.id, item])))
+const llmModelMenuItems = computed<LlmModelMenuItem[]>(() => (
+  activeLlmConfigs.value.map(item => ({
+    id: item.id,
+    scope: item.scope === 'global' ? 'global' : 'personal',
+    name: item.name,
+    providerLabel: item.provider_label,
+    modelId: item.model_id,
+  }))
+))
+const selectableModelCount = computed(() => activeLlmConfigs.value.length)
+const boundDraftLlmConfigId = computed(() => {
+  const slot = selectedAgent.value?.llm_slot
+  if (!slot) {
+    return null
+  }
+  const binding = (llmSlotsQuery.data.value ?? []).find((item: LlmSlotBindingItem) => item.slot === slot)
+  const configId = binding?.binding_ready ? binding.llm_config_id : null
+  return configId && llmConfigById.value.has(configId) ? configId : null
+})
+const defaultNewSessionLlmConfigId = computed(() => (
+  boundDraftLlmConfigId.value
+  ?? activeGlobalLlmConfigs.value[0]?.id
+  ?? activePersonalLlmConfigs.value[0]?.id
+  ?? null
+))
+const selectedNewSessionLlmConfig = computed(() => (
+  selectedNewSessionLlmConfigId.value ? llmConfigById.value.get(selectedNewSessionLlmConfigId.value) ?? null : null
+))
+const activeSessionLlmMetadata = computed(() => extractSessionLlmMetadata(activeSession.value))
+const activeSessionLlmConfigId = computed(() => normalizeLlmConfigId(activeSessionLlmMetadata.value?.config_id))
+const activeSessionLlmConfig = computed(() => (
+  activeSessionLlmConfigId.value ? llmConfigById.value.get(activeSessionLlmConfigId.value) ?? null : null
+))
+const activeSessionLlmLabel = computed(() => {
+  if (!activeSession.value) {
+    return ''
+  }
+  if (activeSessionLlmConfig.value) {
+    return formatLlmConfigLabel(activeSessionLlmConfig.value)
+  }
+  if (activeSessionLlmMetadata.value) {
+    return formatLlmMetadataLabel(activeSessionLlmMetadata.value)
+  }
+  return selectedAgent.value?.bound_llm_name || ''
+})
+const currentLlmModelLabel = computed(() => (
+  activeSessionId.value
+    ? activeSessionLlmLabel.value
+    : selectedNewSessionLlmConfig.value
+      ? formatLlmConfigLabel(selectedNewSessionLlmConfig.value)
+      : ''
+))
+const currentLlmScope = computed(() => {
+  if (activeSessionId.value) {
+    return activeSessionLlmConfig.value?.scope ?? activeSessionLlmMetadata.value?.scope ?? 'personal'
+  }
+  return selectedNewSessionLlmConfig.value?.scope ?? 'personal'
+})
+const currentLlmCompactName = computed(() => {
+  if (activeSessionId.value) {
+    return activeSessionLlmConfig.value?.name ?? activeSessionLlmMetadata.value?.name ?? '会话模型'
+  }
+  return selectedNewSessionLlmConfig.value?.name ?? '选择模型'
+})
+const llmModelButtonTitle = computed(() => {
+  const label = currentLlmModelLabel.value || currentLlmCompactName.value
+  return activeSessionId.value ? `会话模型：${label}` : `新会话模型：${label}`
+})
+const currentModelSupportsImageInput = computed(() => {
+  if (activeSessionId.value) {
+    if (activeSessionLlmConfig.value) {
+      return Boolean(activeSessionLlmConfig.value.supports_image_input)
+    }
+    if (typeof activeSessionLlmMetadata.value?.supports_image_input === 'boolean') {
+      return activeSessionLlmMetadata.value.supports_image_input
+    }
+    return Boolean(selectedAgent.value?.supports_image_input)
+  }
+  return Boolean(selectedNewSessionLlmConfig.value?.supports_image_input)
+})
 
 const runtimeQuery = useQuery(
   computed(() => ({
@@ -458,26 +664,32 @@ const createSessionMutation = useMutation({
     agent_id: agentId.value,
     scope: scope.value,
     session_name: sessionName ?? selectedAgent.value?.default_session_name ?? `${contextTitle.value} 对话`,
+    llm_config_id: selectedNewSessionLlmConfigId.value,
   }),
 })
 
 const selectedAgent = computed<AgentDescriptor | null>(() => agentsQuery.data.value?.[0] ?? null)
-const selectedAgentSupportsImageInput = computed(() => Boolean(selectedAgent.value?.supports_image_input))
 const hasContextIssue = computed(() => (
   selectedAgent.value !== null
   && selectedAgent.value.available === false
   && props.routeAvailable
 ))
+const isModelSelectionPending = computed(() => isNewSessionDraft.value && llmConfigsQuery.isFetching.value)
+const hasModelSelectionIssue = computed(() => (
+  isNewSessionDraft.value
+  && !llmConfigsQuery.isFetching.value
+  && selectableModelCount.value === 0
+))
 const hasBindingIssue = computed(() => (
-  hasContextIssue.value || (selectedAgent.value !== null && selectedAgent.value.llm_binding_ready === false)
+  hasContextIssue.value || hasModelSelectionIssue.value
 ))
 const agentIssueTitle = computed(() => (
-  hasContextIssue.value ? `${agentDisplayName.value}当前不可用` : `${agentDisplayName.value}尚未绑定模型`
+  hasContextIssue.value ? `${agentDisplayName.value}当前不可用` : '没有可用模型'
 ))
 const agentIssueDetail = computed(() => (
   hasContextIssue.value
     ? selectedAgent.value?.unavailable_reason || '当前路由上下文缺少智能体所需信息。'
-    : `当前智能体模型绑定 ${selectedAgent.value?.llm_slot || '未配置'} 还没有可用模型。先到“AI 设置”中创建模型并完成绑定，下一次执行会立即生效。`
+    : '当前没有可用于发起会话的模型。请到“AI 设置”创建个人模型，或联系管理员提供全局模型。'
 ))
 const activeSessionScopeSummary = computed(() => (
   activeSessionScope.value
@@ -515,8 +727,24 @@ const canOpenActiveSessionRoute = computed(() => {
   if (currentRouteInActiveSessionScope.value || !target) {
     return false
   }
-  return !isCurrentRouteTarget(target)
+  return target !== route.fullPath && target !== route.path
 })
+const composerContextRouteTarget = computed(() => {
+  if (canOpenActiveSessionRoute.value) {
+    return activeSessionRouteLocation.value
+  }
+  if (!props.routeAvailable && props.autoNavigateTarget) {
+    const target = props.autoNavigateTarget
+    return target !== route.fullPath && target !== route.path ? target : null
+  }
+  return null
+})
+const composerContextRouteLabel = computed(() => (
+  canOpenActiveSessionRoute.value ? '打开' : '前往'
+))
+const composerContextRouteTitle = computed(() => (
+  canOpenActiveSessionRoute.value ? '打开此会话工作页面' : '前往可运行页面'
+))
 const composerContextIssue = computed(() => {
   if (!currentRouteInActiveSessionScope.value) {
     return '当前页面不在此会话工作范围。'
@@ -528,8 +756,10 @@ const composerContextIssue = computed(() => {
 })
 const composerInputDisabled = computed(() => Boolean(composerContextIssue.value))
 const imageUploadDisabledReason = computed(() => {
-  if (!selectedAgentSupportsImageInput.value) {
-    return '当前绑定模型不支持图片输入'
+  if (!currentModelSupportsImageInput.value) {
+    return currentLlmModelLabel.value
+      ? '当前会话模型不支持图片输入'
+      : '请选择支持图片输入的模型'
   }
   if (composerContextIssue.value) {
     return composerContextIssue.value
@@ -561,8 +791,47 @@ const timelineDisplayItems = computed(() => buildTimelineDisplayItems(timelineIt
 const composerActionDisabled = computed(() => (
   isStreaming.value
     ? isInterrupting.value
-    : sendInFlight.value || pendingRequirement.value !== null || (!composerText.value.trim() && pendingImageAttachments.value.length === 0) || hasBindingIssue.value || composerInputDisabled.value
+    : sendInFlight.value || pendingRequirement.value !== null || (!composerText.value.trim() && pendingImageAttachments.value.length === 0) || hasBindingIssue.value || isModelSelectionPending.value || composerInputDisabled.value
 ))
+
+const {
+  closeSessionMenu,
+  handleCreateSession,
+  handleSwitchSession,
+  handleVirtualNewSession,
+  openActiveSessionRoute,
+  toggleSessionMenu,
+} = useAgentSessionNavigation({
+  activeSessionId,
+  manuallySelectedSessionId,
+  sessionMenuVisible,
+  virtualNewSessionKey,
+  virtualNewSessionSequence,
+  getActiveSessionRouteLocation: () => activeSessionRouteLocation.value,
+  getAgentId: () => agentId.value,
+  getAgentIssueDetail: () => agentIssueDetail.value,
+  getHasBindingIssue: () => hasBindingIssue.value,
+  getRouteAvailable: () => props.routeAvailable,
+  getRouteFullPath: () => route.fullPath,
+  getRoutePath: () => route.path,
+  getRouteUnavailableReason: () => props.routeUnavailableReason,
+  getSessions: () => displayedSessions.value ?? [],
+  pushRoute: target => void router.push(target),
+})
+
+/**
+ * 打开当前提示对应的工作页面；会话越界时进入会话范围，不可运行时进入助手推荐入口。
+ */
+function openComposerContextRoute(): void {
+  if (canOpenActiveSessionRoute.value) {
+    openActiveSessionRoute()
+    return
+  }
+  const target = composerContextRouteTarget.value
+  if (target) {
+    void router.push(target)
+  }
+}
 
 /**
  * 从按会话分片的状态中读取当前值。
@@ -585,80 +854,17 @@ function writeSessionValue<T>(source: Record<string, T>, sessionId: string, valu
 }
 
 /**
- * 继续 paused run 时插入一个本地 assistant 占位，后续 SSE delta 会接管内容。
+ * 记录已经见过的会话；路由 scope 切换后仍可用会话自身 scope 恢复运行态。
+ * @param sessions 从列表、创建结果或 runtime 快照获得的会话项
  */
-function appendLocalAssistantPlaceholder(sessionId: string, runId: string | null) {
-  const currentItems = readSessionValue(timelineItemsBySession.value, sessionId, [])
-  const item = {
-    ...buildAgentLocalTimelineItem(sessionId, {
-      runId,
-      kind: 'message',
-      role: 'assistant',
-      content: '',
-      status: 'running',
-    }),
-    order_index: Math.max(-1, ...currentItems.map(entry => entry.order_index)) + 1,
-  }
-  agentSessionStore.appendTimelineItems(sessionId, [item])
-  agentSessionStore.setStreamingTimelineItemId(sessionId, item.id)
-}
-
-/**
- * 本地插入等待智能体输出的临时状态，覆盖后端首个可见事件到达前的空白窗口。
- */
-function appendLocalWaitingOutputPlaceholder(sessionId: string, runId: string | null) {
-  if (!sessionId || !runId || hasVisibleRunProgress(sessionId, runId)) {
+function rememberSessions(sessions: AgentSessionItem[]) {
+  if (!sessions.length) {
     return
   }
-  appendLocalWaitingOutputStatus(sessionId, runId)
-}
-
-/**
- * 本地插入等待输出状态；允许在已有 reasoning 后用于静默窗口推断。
- */
-function appendLocalWaitingOutputStatus(sessionId: string, runId: string | null) {
-  if (!sessionId || !runId) {
-    return
+  knownSessionsById.value = {
+    ...knownSessionsById.value,
+    ...Object.fromEntries(sessions.map(session => [session.session_id, session])),
   }
-  const run = readSessionValue(activeRunBySession.value, sessionId, null)
-  if (run?.run_id === runId && run.status !== 'pending' && run.status !== 'running') {
-    return
-  }
-  if (readSessionValue(timelineItemsBySession.value, sessionId, []).some(item => (
-    item.run_id === runId
-    && item.kind === 'run_status'
-    && item.status === 'model_request'
-  ))) {
-    return
-  }
-  agentSessionStore.applyRunEvent(sessionId, {
-    event: 'model.request.started',
-    run_id: runId,
-    session_id: sessionId,
-    content: null,
-    data: { agent_id: agentId.value },
-    sequence: null,
-    event_index: null,
-  }, {
-    agentId: agentId.value,
-    agentDisplayName: agentDisplayName.value,
-  })
-}
-
-/**
- * 判断指定 run 是否已经有助手文本、推理、工具或状态进度，避免重复插入占位。
- */
-function hasVisibleRunProgress(sessionId: string, runId: string) {
-  return readSessionValue(timelineItemsBySession.value, sessionId, []).some(item => (
-    item.run_id === runId
-    && (
-      item.kind === 'tool'
-      || item.kind === 'reasoning'
-      || item.kind === 'requirement'
-      || item.kind === 'run_status'
-      || (item.kind === 'message' && item.role === 'assistant' && Boolean(item.content))
-    )
-  ))
 }
 
 /**
@@ -666,113 +872,6 @@ function hasVisibleRunProgress(sessionId: string, runId: string) {
  */
 function setSessionStreaming(sessionId: string, value: boolean) {
   agentSessionStore.setStreaming(sessionId, value)
-  if (!value) {
-    clearWaitingOutputInferenceTimer(sessionId)
-  }
-}
-
-/**
- * 为一次会话流创建可中断控制器；同一会话旧控制器会被新请求替换。
- */
-function createStreamAbortController(runId: string) {
-  const controller = new AbortController()
-  streamAbortControllersByRun.set(runId, controller)
-  return controller
-}
-
-/**
- * 清理流控制器，只删除当前请求对应的实例，避免误删后续新请求。
- */
-function clearStreamAbortController(runId: string, controller: AbortController) {
-  if (streamAbortControllersByRun.get(runId) === controller) {
-    streamAbortControllersByRun.delete(runId)
-  }
-}
-
-/**
- * 推进会话流活动版本，并取消上一轮等待输出推断计时。
- */
-function markWaitingOutputInferenceActivity(sessionId: string): number {
-  if (!sessionId) {
-    return 0
-  }
-  clearWaitingOutputInferenceTimer(sessionId)
-  const nextRevision = (waitingOutputInferenceRevisionsBySession.get(sessionId) ?? 0) + 1
-  waitingOutputInferenceRevisionsBySession.set(sessionId, nextRevision)
-  return nextRevision
-}
-
-/**
- * 清除指定会话的等待输出推断计时器。
- */
-function clearWaitingOutputInferenceTimer(sessionId: string) {
-  const timer = waitingOutputInferenceTimersBySession.get(sessionId)
-  if (timer !== undefined) {
-    window.clearTimeout(timer)
-    waitingOutputInferenceTimersBySession.delete(sessionId)
-  }
-}
-
-/**
- * 清理所有等待输出推断计时器，组件卸载时避免异步回写已销毁状态。
- */
-function clearAllWaitingOutputInferenceTimers() {
-  for (const sessionId of waitingOutputInferenceTimersBySession.keys()) {
-    clearWaitingOutputInferenceTimer(sessionId)
-  }
-}
-
-/**
- * 推断模型在文本输出后进入工具参数生成阶段；静默一小段时间后切换为等待输出提示。
- */
-function scheduleWaitingOutputInference(sessionId: string, runId: string | null, revision: number) {
-  if (!sessionId || !runId) {
-    return
-  }
-  const timer = window.setTimeout(() => {
-    waitingOutputInferenceTimersBySession.delete(sessionId)
-    if (componentDisposed) {
-      return
-    }
-    if ((waitingOutputInferenceRevisionsBySession.get(sessionId) ?? 0) !== revision) {
-      return
-    }
-    if (!readSessionValue(streamingBySession.value, sessionId, false)) {
-      return
-    }
-    if (!hasRunningAssistantTextSegment(sessionId, runId)) {
-      return
-    }
-    appendLocalWaitingOutputStatus(sessionId, runId)
-  }, WAITING_OUTPUT_INFERENCE_DELAY_MS)
-  waitingOutputInferenceTimersBySession.set(sessionId, timer)
-}
-
-/**
- * 判断指定 run 是否仍有正在展示的助手文本段。
- */
-function hasRunningAssistantTextSegment(sessionId: string, runId: string): boolean {
-  return readSessionValue(timelineItemsBySession.value, sessionId, []).some(item => (
-    item.run_id === runId
-    && (
-      item.kind === 'reasoning'
-      || (item.kind === 'message' && item.role === 'assistant')
-    )
-    && item.status === 'running'
-  ))
-}
-
-/**
- * 正文或 reasoning delta 后都可能进入工具参数流，Agno 当前不会为参数增量单独下发 run event。
- */
-function shouldInferWaitingOutputAfterEvent(event: AgentRunEvent, sessionId: string, runId: string | null): runId is string {
-  if (!runId || event.event !== 'message.delta') {
-    return false
-  }
-  const reasoning = event.data.reasoning_content
-  const hasReasoning = typeof reasoning === 'string' && reasoning.length > 0
-  const hasContent = typeof event.content === 'string' && event.content.length > 0
-  return (hasReasoning || hasContent) && hasRunningAssistantTextSegment(sessionId, runId)
 }
 
 /**
@@ -799,9 +898,6 @@ function shouldApplyRuntimeSnapshot(runtime: AgentSessionRuntimeSnapshot) {
   if (!isRuntimeSnapshotForCurrentSession(runtime)) {
     return false
   }
-  if (hasLocalActiveRunProgress(runtime)) {
-    return false
-  }
   if (!isStreaming.value) {
     return true
   }
@@ -817,46 +913,21 @@ function shouldApplyRuntimeSnapshot(runtime: AgentSessionRuntimeSnapshot) {
 }
 
 /**
- * 判断本地是否已有同一 active run 的流式片段；有进度时不能用运行中快照覆盖消息。
- */
-function hasLocalActiveRunProgress(runtime: AgentSessionRuntimeSnapshot) {
-  return hasLocalActiveRunProgressForSession(activeSessionId.value, runtime)
-}
-
-/**
- * 判断指定会话本地是否已有同一 active run 的流式片段。
- */
-function hasLocalActiveRunProgressForSession(sessionId: string, runtime: AgentSessionRuntimeSnapshot) {
-  const run = runtime.active_run
-  if (!sessionId || !run || !shouldSubscribeRunEvents(run)) {
-    return false
-  }
-  const localRunId = readSessionValue(currentRunIdBySession.value, sessionId, null)
-    ?? readSessionValue(activeRunBySession.value, sessionId, null)?.run_id
-    ?? null
-  if (localRunId !== run.run_id) {
-    return false
-  }
-  return agentSessionStore.getLastSequence(sessionId, run.run_id) >= 0
-    || readSessionValue(streamingTimelineItemIdBySession.value, sessionId, null) !== null
-}
-
-/**
  * 订阅已存在后台 run 的事件流；用于刷新、切回会话和停止后的状态收敛。
  */
 function ensureRunEventSubscription(sessionId: string, run: AgentActiveRunItem, afterEventIndex = -1) {
-  if (componentDisposed || !sessionId || !run.run_id || streamAbortControllersByRun.has(run.run_id)) {
+  if (componentDisposed || !sessionId || !run.run_id || hasStreamAbortController(run.run_id)) {
     return
   }
   const streamAbortController = createStreamAbortController(run.run_id)
+  const runtimeRequest = resolveSessionRuntimeRequest(sessionId)
   setSessionStreaming(sessionId, true)
-  appendLocalWaitingOutputPlaceholder(sessionId, run.run_id)
   streamAgentRunEvents(
     sessionId,
     run.run_id,
-    scope.value,
+    runtimeRequest.scope,
     {
-      agent_id: agentId.value,
+      agent_id: runtimeRequest.agentId,
       event_index: Math.max(afterEventIndex, agentSessionStore.getLastSequence(sessionId, run.run_id)),
     },
     { onEvent: event => handleRunEvent(event, sessionId), signal: streamAbortController.signal },
@@ -880,31 +951,7 @@ function ensureRunEventSubscription(sessionId: string, run: AgentActiveRunItem, 
 }
 
 /**
- * 启动强制结束按钮的可用状态刷新计时。
- */
-function startForceCancelTicker() {
-  if (forceCancelTimer !== null) {
-    return
-  }
-  forceCancelTick.value = Date.now()
-  forceCancelTimer = window.setInterval(() => {
-    forceCancelTick.value = Date.now()
-  }, 1000)
-}
-
-/**
- * 停止强制结束状态刷新计时。
- */
-function stopForceCancelTicker() {
-  if (forceCancelTimer === null) {
-    return
-  }
-  window.clearInterval(forceCancelTimer)
-  forceCancelTimer = null
-}
-
-/**
- * 判断指定会话是否仍在流式运行或处于 Agno 非终态运行中。
+ * 判断指定会话是否仍在流式运行或处于平台非终态运行中。
  */
 function isSessionRunning(sessionId: string) {
   if (!sessionId) {
@@ -923,6 +970,67 @@ function isSessionRunning(sessionId: string) {
 function syncActiveRun(sessionId: string, run: AgentActiveRunItem | null) {
   agentSessionStore.setActiveRun(sessionId, run)
 }
+
+/**
+ * 设置当前会话 HITL 操作请求状态，避免与 run streaming 状态相互污染。
+ */
+function setHitlActionInFlight(sessionId: string, value: boolean) {
+  writeSessionValue(hitlActionInFlightBySession.value, sessionId, value)
+}
+
+const {
+  handleContinueRun,
+  handleSubmitFeedbackRun,
+  handleCancelPausedRun,
+  handleForceReleaseHitl,
+} = useAgentHitlActions({
+  getActiveSessionId: () => activeSessionId.value,
+  getPendingRequirement: () => pendingRequirement.value,
+  getActiveRun: () => activeRun.value,
+  getScope: () => activeSessionRuntimeScope.value,
+  getAgentId: () => activeSessionRuntimeAgentId.value,
+  isDisposed: () => componentDisposed,
+  setHitlActionInFlight,
+  setSessionStreaming,
+  syncActiveRun,
+  setPendingRequirementForSession: (sessionId, requirement) => {
+    agentSessionStore.setPendingRequirement(sessionId, requirement)
+  },
+  markPendingRequirementResolved: (sessionId, requirement, feedbackSelections) => {
+    const previousItems = [...readSessionValue(timelineItemsBySession.value, sessionId, [])]
+    agentSessionStore.markPendingRequirementResolved(sessionId, requirement, feedbackSelections)
+    return () => {
+      agentSessionStore.setTimelineItems(sessionId, previousItems)
+    }
+  },
+  createStreamAbortController,
+  clearStreamAbortController,
+  handleRunEvent,
+  finalizeRun,
+  refreshAfterStreamInterrupted,
+})
+
+const {
+  handlePromoteImage,
+  handleRemoveImage,
+  handleUploadImage,
+} = useAgentImageAttachments({
+  getActiveSessionId: () => activeSessionId.value,
+  getScope: () => scope.value,
+  getAgentId: () => agentId.value,
+  getImageUploadDisabledReason: () => imageUploadDisabledReason.value,
+  ensureActiveSession,
+  getPendingImageAttachments: sessionId => readSessionValue(pendingImageAttachmentsBySession.value, sessionId, []),
+  setPendingImageAttachments: (sessionId, attachments) => {
+    agentSessionStore.setPendingImageAttachments(sessionId, attachments)
+  },
+  setImageUploading: (sessionId, uploading) => {
+    writeSessionValue(imageUploadingBySession.value, sessionId, uploading)
+  },
+  invalidateWorkspaceAssets: async () => {
+    await queryClient.invalidateQueries({ queryKey: ['workspace-assets'] })
+  },
+})
 
 /**
  * 打开上下文用量浮窗时刷新一次最新统计，避免长 run 中错过事件后读数陈旧。
@@ -978,22 +1086,18 @@ watch(
   ([sessions]) => {
     if (virtualNewSessionKey.value) {
       activeSessionId.value = ''
-      pendingRouteSessionId.value = ''
       return
     }
+
+    if (sessions === undefined) {
+      return
+    }
+    rememberSessions(sessions)
 
     if (!sessions?.length) {
-      activeSessionId.value = ''
-      pendingRouteSessionId.value = ''
-      return
-    }
-
-    const pendingSession = pendingRouteSessionId.value
-      ? sessions.find(item => item.session_id === pendingRouteSessionId.value)
-      : null
-    if (pendingSession) {
-      activeSessionId.value = pendingSession.session_id
-      pendingRouteSessionId.value = ''
+      if (!activeSession.value) {
+        activeSessionId.value = ''
+      }
       return
     }
 
@@ -1003,43 +1107,23 @@ watch(
     if (currentSession) {
       return
     }
+    if (activeSession.value) {
+      return
+    }
 
-    const persistedSessionId = getSelectedSession(scope.value, agentId.value, sessions)
-    if (persistedSessionId) {
-      activeSessionId.value = persistedSessionId
+    const workspaceSessionId = getSelectedWorkspaceSession(scope.value, agentId.value, sessions)
+    if (workspaceSessionId) {
+      activeSessionId.value = workspaceSessionId
+      return
+    }
+
+    const exactSessionId = getSelectedSession(scope.value, agentId.value, sessions)
+    if (exactSessionId) {
+      activeSessionId.value = exactSessionId
       return
     }
 
     activeSessionId.value = findLatestSessionForScope(sessions, scope.value)?.session_id ?? ''
-  },
-  { immediate: true },
-)
-
-watch(
-  () => [
-    sessionsQuery.data.value,
-    sessionsQuery.isFetching.value,
-    props.routeAvailable,
-    agentId.value,
-    scope.value.project_id,
-    activeSessionId.value,
-    activeSessionScope.value?.project_id ?? null,
-    pendingUnavailableSessionSelectionKey.value,
-  ] as const,
-  ([, isFetching]) => {
-    if (!shouldAutoSelectRunnableSessionForUnavailableRoute()) {
-      if (props.routeAvailable) {
-        pendingUnavailableSessionSelectionKey.value = null
-      }
-      return
-    }
-    if (selectFirstRunnableSession()) {
-      pendingUnavailableSessionSelectionKey.value = null
-      return
-    }
-    if (!isFetching) {
-      pendingUnavailableSessionSelectionKey.value = null
-    }
   },
   { immediate: true },
 )
@@ -1051,6 +1135,7 @@ watch(
       return
     }
     const sessionId = activeSessionId.value
+    rememberSessions([runtime.session])
     if (shouldApplyRuntimeSnapshot(runtime)) {
       agentSessionStore.applyRuntimeSnapshot(sessionId, runtime)
     }
@@ -1061,16 +1146,37 @@ watch(
   { immediate: true },
 )
 
+watch(
+  () => [defaultNewSessionLlmConfigId.value, selectedNewSessionLlmConfigId.value, activeSessionId.value] as const,
+  () => {
+    if (!isNewSessionDraft.value) {
+      return
+    }
+    const selectedId = selectedNewSessionLlmConfigId.value
+    if (selectedId !== null && llmConfigById.value.has(selectedId)) {
+      return
+    }
+    selectedNewSessionLlmConfigId.value = defaultNewSessionLlmConfigId.value
+  },
+  { immediate: true },
+)
+
 watch(activeSessionId, () => {
   sessionMenuVisible.value = false
+  llmModelMenuVisible.value = false
   toolDetailDialogVisible.value = false
   memberRunDialogVisible.value = false
   activeToolDetailId.value = null
   activeMemberRunIds.value = []
   if (activeSessionId.value) {
-    const session = sessionsQuery.data.value?.find(item => item.session_id === activeSessionId.value)
-    if (!session || isSessionTargetCurrentScope(session, scope.value)) {
+    const session = activeSession.value
+    const sessionScope = session ? resolveSessionScope(session) : null
+    if (sessionScope) {
+      setSelectedSession(sessionScope, agentId.value, activeSessionId.value)
+      setSelectedWorkspaceSession(sessionScope, agentId.value, activeSessionId.value)
+    } else if (!session || isSessionTargetCurrentScope(session, scope.value)) {
       setSelectedSession(scope.value, agentId.value, activeSessionId.value)
+      setSelectedWorkspaceSession(scope.value, agentId.value, activeSessionId.value)
     }
   }
 })
@@ -1098,126 +1204,47 @@ watch(
   { immediate: true },
 )
 
+onMounted(() => {
+  document.addEventListener('click', handleDocumentClick)
+})
+
 onBeforeUnmount(() => {
   componentDisposed = true
-  clearAllWaitingOutputInferenceTimers()
-  for (const controller of streamAbortControllersByRun.values()) {
-    if (!controller.signal.aborted) {
-      controller.abort()
-    }
-  }
-  streamAbortControllersByRun.clear()
+  abortAllStreamControllers()
   stopForceCancelTicker()
+  document.removeEventListener('click', handleDocumentClick)
 })
 
 /**
- * 手动进入虚拟新会话态；真正的后端会话会在第一条消息发送时创建。
+ * 打开或关闭新会话模型菜单；已有会话仅展示固化模型，不允许切换。
  */
-function handleCreateSession() {
-  if (hasBindingIssue.value) {
-    Message.error(agentIssueDetail.value)
+function toggleLlmModelMenu() {
+  if (!isNewSessionDraft.value || llmConfigsQuery.isFetching.value || selectableModelCount.value === 0) {
     return
   }
-  if (!props.routeAvailable) {
-    Message.warning(props.routeUnavailableReason || '当前路由缺少工作空间上下文。')
+  llmModelMenuVisible.value = !llmModelMenuVisible.value
+}
+
+/**
+ * 选择新会话草稿模型；真正创建会话时会随 payload 固化到后端。
+ */
+function selectNewSessionLlmConfig(configId: number) {
+  selectedNewSessionLlmConfigId.value = configId
+  llmModelMenuVisible.value = false
+}
+
+/**
+ * 点击模型菜单外部时关闭菜单，避免在 Composer 工具条上残留浮层。
+ */
+function handleDocumentClick(event: MouseEvent) {
+  if (!llmModelMenuVisible.value) {
     return
   }
-  virtualNewSessionSequence.value += 1
-  enterVirtualNewSession(`manual:${virtualNewSessionSequence.value}`, null)
-}
-
-/**
- * 响应全局侧栏的助手切换动作：仅进入虚拟新会话态，并在需要时跳转到该助手默认工作台。
- */
-function handleVirtualNewSession(autoCreateKey: string | number) {
-  if (hasBindingIssue.value) {
-    Message.error(agentIssueDetail.value)
+  const target = event.target as Node | null
+  if (target && llmModelMenuRef.value?.contains(target)) {
     return
   }
-  if (!props.routeAvailable) {
-    if (selectFirstRunnableSession()) {
-      return
-    }
-    pendingUnavailableSessionSelectionKey.value = autoCreateKey
-    return
-  }
-  enterVirtualNewSession(autoCreateKey, props.autoNavigateTarget)
-}
-
-/**
- * 判断不可启动路由下是否需要自动回落到首个可运行历史会话。
- */
-function shouldAutoSelectRunnableSessionForUnavailableRoute(): boolean {
-  if (props.routeAvailable || agentId.value !== 'agent-coordinator' || scope.value.project_id) {
-    return false
-  }
-  if (activeSessionId.value && manuallySelectedSessionId.value === activeSessionId.value) {
-    return false
-  }
-  if (pendingUnavailableSessionSelectionKey.value) {
-    return true
-  }
-  if (!activeSessionId.value) {
-    return true
-  }
-  return !activeSessionScope.value?.project_id
-}
-
-/**
- * 当前路由不可启动时，优先选中第一个带项目上下文的会话，但不切换路由。
- */
-function selectFirstRunnableSession(): boolean {
-  const targetSession = (sessionsQuery.data.value ?? []).find((session) => {
-    const sessionScope = resolveSessionScope(session)
-    if (!sessionScope || !buildSessionRouteLocation(session)) {
-      return false
-    }
-    if (agentId.value === 'agent-coordinator' && !sessionScope.project_id) {
-      return false
-    }
-    return true
-  })
-  if (!targetSession) {
-    return false
-  }
-  virtualNewSessionKey.value = null
-  pendingRouteSessionId.value = ''
-  manuallySelectedSessionId.value = ''
-  activeSessionId.value = targetSession.session_id
-  return true
-}
-
-/**
- * 统一设置虚拟新会话态，避免助手切换和手动新会话提前制造空会话。
- */
-function enterVirtualNewSession(virtualKey: string | number, navigateTarget: string | null | undefined) {
-  virtualNewSessionKey.value = virtualKey
-  activeSessionId.value = ''
-  pendingRouteSessionId.value = ''
-  manuallySelectedSessionId.value = ''
-  sessionMenuVisible.value = false
-  if (navigateTarget && navigateTarget !== route.fullPath) {
-    void router.push(navigateTarget)
-  }
-}
-
-/**
- * 打开当前会话绑定的工作页面，让用户回到可继续运行该会话的路由。
- */
-function openActiveSessionRoute() {
-  const targetLocation = activeSessionRouteLocation.value
-  if (!targetLocation || isCurrentRouteTarget(targetLocation)) {
-    return
-  }
-  pendingRouteSessionId.value = activeSessionId.value
-  void router.push(targetLocation)
-}
-
-/**
- * 比较目标工作页和当前路由；目标页不带 query 时允许当前路由携带筛选参数。
- */
-function isCurrentRouteTarget(targetLocation: string): boolean {
-  return targetLocation === route.fullPath || targetLocation === route.path
+  llmModelMenuVisible.value = false
 }
 
 /**
@@ -1230,7 +1257,11 @@ async function ensureActiveSession() {
   if (!props.routeAvailable) {
     throw new Error(props.routeUnavailableReason || '当前路由缺少工作空间上下文。')
   }
+  if (!selectedNewSessionLlmConfigId.value) {
+    throw new Error('请选择用于本次会话的模型。')
+  }
   const created = await createSessionMutation.mutateAsync(`${contextTitle.value} 会话`)
+  rememberSessions([created])
   virtualNewSessionKey.value = null
   activeSessionId.value = created.session_id
   sessionMenuVisible.value = false
@@ -1253,127 +1284,6 @@ function handleComposerPrimaryAction() {
 }
 
 /**
- * 切换会话下拉菜单显示状态。
- */
-function toggleSessionMenu() {
-  if (hasBindingIssue.value) {
-    return
-  }
-  sessionMenuVisible.value = !sessionMenuVisible.value
-}
-
-/**
- * 关闭会话切换菜单。
- */
-function closeSessionMenu() {
-  sessionMenuVisible.value = false
-}
-
-/**
- * 切换到指定会话并关闭菜单。
- */
-function handleSwitchSession(sessionId: string) {
-  closeSessionMenu()
-  virtualNewSessionKey.value = null
-  manuallySelectedSessionId.value = sessionId
-  const session = sessionsQuery.data.value?.find(item => item.session_id === sessionId)
-  if (!session) {
-    activeSessionId.value = sessionId
-    return
-  }
-
-  const sessionScope = resolveSessionScope(session)
-  if (sessionScope) {
-    setSelectedSession(sessionScope, agentId.value, sessionId)
-  }
-
-  const targetLocation = buildSessionRouteLocation(session)
-  activeSessionId.value = sessionId
-  if (targetLocation && targetLocation !== route.fullPath) {
-    pendingRouteSessionId.value = sessionId
-    void router.push(targetLocation)
-    return
-  }
-
-  pendingRouteSessionId.value = ''
-}
-
-/**
- * 上传用户选择的图片附件，并把结果加入当前 Composer 待发送列表。
- */
-async function handleUploadImage(file: File) {
-  if (imageUploadDisabledReason.value) {
-    Message.warning(imageUploadDisabledReason.value)
-    return
-  }
-  if (!isAllowedImageFile(file)) {
-    Message.error('图片附件仅支持 png、jpg、jpeg、webp。')
-    return
-  }
-  if (file.size > IMAGE_ATTACHMENT_MAX_BYTES) {
-    Message.error('单张图片不能超过 10MB。')
-    return
-  }
-
-  let sessionId = ''
-  try {
-    sessionId = await ensureActiveSession()
-  } catch (error) {
-    Message.error(getErrorMessage(error, '初始化智能体会话失败。'))
-    return
-  }
-
-  writeSessionValue(imageUploadingBySession.value, sessionId, true)
-  try {
-    const attachment = await uploadAgentImageAttachment(sessionId, scope.value, file, agentId.value)
-    agentSessionStore.setPendingImageAttachments(sessionId, [
-      ...readSessionValue(pendingImageAttachmentsBySession.value, sessionId, []),
-      attachment,
-    ])
-  } catch (error) {
-    Message.error(getErrorMessage(error, '上传图片失败。'))
-  } finally {
-    writeSessionValue(imageUploadingBySession.value, sessionId, false)
-  }
-}
-
-/**
- * 从当前待发送列表移除图片，并通知后端归档附件记录。
- */
-async function handleRemoveImage(attachmentId: number) {
-  const sessionId = activeSessionId.value
-  if (!sessionId) {
-    return
-  }
-  pendingImageAttachments.value = pendingImageAttachments.value.filter(item => item.id !== attachmentId)
-  try {
-    await deleteAgentImageAttachment(sessionId, scope.value, attachmentId, agentId.value)
-  } catch (error) {
-    Message.error(getErrorMessage(error, '删除图片失败。'))
-  }
-}
-
-/**
- * 将图片附件保存为工作空间资源，并刷新资源相关缓存。
- */
-async function handlePromoteImage(attachmentId: number) {
-  const sessionId = activeSessionId.value
-  if (!sessionId) {
-    return
-  }
-  try {
-    const promoted = await promoteAgentImageAttachment(sessionId, scope.value, attachmentId, {}, agentId.value)
-    pendingImageAttachments.value = pendingImageAttachments.value.map(item => (
-      item.id === promoted.id ? promoted : item
-    ))
-    await queryClient.invalidateQueries({ queryKey: ['workspace-assets'] })
-    Message.success('图片已保存为资源。')
-  } catch (error) {
-    Message.error(getErrorMessage(error, '保存为资源失败。'))
-  }
-}
-
-/**
  * 发送一条用户消息并启动新的智能体 run。
  */
 async function handleSend() {
@@ -1388,12 +1298,10 @@ async function handleSend() {
   const message = composerText.value.trim()
   const attachments = [...pendingImageAttachments.value]
   if ((!message && attachments.length === 0) || isStreaming.value || sendInFlight.value) return
-  if (attachments.length && !selectedAgentSupportsImageInput.value) {
-    Message.error('当前绑定模型不支持图片输入。')
+  if (attachments.length && !currentModelSupportsImageInput.value) {
+    Message.error('当前会话模型不支持图片输入。')
     return
   }
-  const runScope = { ...scope.value }
-  const runAgentId = agentId.value
   const runAgentDisplayName = agentDisplayName.value
 
   sendInFlight.value = true
@@ -1405,6 +1313,9 @@ async function handleSend() {
     Message.error(getErrorMessage(error, '初始化智能体会话失败。'))
     return
   }
+  const runtimeRequest = resolveSessionRuntimeRequest(sessionId)
+  const runScope = { ...runtimeRequest.scope }
+  const runAgentId = runtimeRequest.agentId
 
   composerText.value = ''
   pendingImageAttachments.value = []
@@ -1412,10 +1323,10 @@ async function handleSend() {
   lastRunIssue.value = null
   writeSessionValue(mutationRefreshEventsBySession.value, sessionId, [])
 
-  agentSessionStore.beginLocalRun(sessionId, message, attachments)
+  const runId = crypto.randomUUID()
+  agentSessionStore.beginLocalRun(sessionId, message, attachments, runId)
   setSessionStreaming(sessionId, true)
 
-  let runId = crypto.randomUUID()
   try {
     agentSessionStore.setCurrentRunId(sessionId, runId)
     syncActiveRun(sessionId, {
@@ -1430,7 +1341,6 @@ async function handleSend() {
       cancel_requested_at: null,
       event_index: -1,
     })
-    appendLocalWaitingOutputPlaceholder(sessionId, runId)
     const streamAbortController = createStreamAbortController(runId)
     await streamAgentRun(sessionId, runScope, {
       run_id: runId,
@@ -1442,7 +1352,7 @@ async function handleSend() {
       signal: streamAbortController.signal,
     })
     clearStreamAbortController(runId, streamAbortController)
-    await finalizeRun(sessionId)
+    await finalizeRunAfterStream(sessionId)
   } catch (error) {
     if (error instanceof AgentStreamInterruptedError) {
       if (!componentDisposed) {
@@ -1455,172 +1365,18 @@ async function handleSend() {
       return
     }
     const detail = getErrorMessage(error, '智能体执行失败。')
-    agentSessionStore.setLastIssue(sessionId, buildRunIssueState(detail, runAgentDisplayName))
-    Message.error(detail)
+    const issue = buildRunIssueState(detail, runAgentDisplayName)
+    agentSessionStore.setLastIssue(sessionId, issue)
+    Message.warning(issue.title)
   } finally {
     if (runId) {
-      const controller = streamAbortControllersByRun.get(runId)
+      const controller = getStreamAbortController(runId)
       if (controller) {
         clearStreamAbortController(runId, controller)
       }
     }
     sendInFlight.value = false
     setSessionStreaming(sessionId, false)
-  }
-}
-
-/**
- * 继续当前暂停中的 run。
- */
-async function handleContinueRun(decision: 'confirm' | 'reject') {
-  const sessionId = activeSessionId.value
-  const requirement = pendingRequirement.value
-  const pausedRun = activeRun.value
-  if (!sessionId || !requirement || pausedRun?.status !== 'paused') return
-
-  pendingRequirement.value = null
-  appendLocalAssistantPlaceholder(sessionId, requirement.run_id || pausedRun.run_id || '')
-  setSessionStreaming(sessionId, true)
-  syncActiveRun(sessionId, { ...pausedRun, status: 'running', pending_requirement: null })
-
-  const runId = requirement.run_id || pausedRun.run_id || ''
-  let streamAbortController: AbortController | null = null
-  try {
-    appendLocalWaitingOutputPlaceholder(sessionId, runId)
-    streamAbortController = createStreamAbortController(runId)
-    await continueAgentSessionActiveRun(sessionId, scope.value, {
-      agent_id: agentId.value,
-      decision,
-      tool_execution: requirement.tool_execution,
-    }, {
-      onEvent: event => handleRunEvent(event, sessionId),
-      signal: streamAbortController.signal,
-    })
-    await finalizeRun(sessionId)
-  } catch (error) {
-    if (error instanceof AgentStreamInterruptedError) {
-      if (!componentDisposed) {
-        void refreshAfterStreamInterrupted(sessionId)
-      }
-      return
-    }
-    await recoverHitlStateAfterFailedAction(sessionId, pausedRun, requirement)
-    Message.error(getErrorMessage(error, '继续智能体执行失败。'))
-  } finally {
-    if (streamAbortController) {
-      clearStreamAbortController(runId, streamAbortController)
-    }
-    setSessionStreaming(sessionId, false)
-  }
-}
-
-/**
- * 提交结构化提问的全部答案，并一次性恢复当前 paused run。
- */
-async function handleSubmitFeedbackRun(selections: AgentFeedbackSelection[]) {
-  const sessionId = activeSessionId.value
-  const requirement = pendingRequirement.value
-  const pausedRun = activeRun.value
-  if (!sessionId || !requirement || pausedRun?.status !== 'paused') return
-
-  agentSessionStore.resolveUserFeedbackRequirement(sessionId, requirement, selections)
-  appendLocalAssistantPlaceholder(sessionId, requirement.run_id || pausedRun.run_id || '')
-  setSessionStreaming(sessionId, true)
-  syncActiveRun(sessionId, { ...pausedRun, status: 'running', pending_requirement: null })
-
-  const runId = requirement.run_id || pausedRun.run_id || ''
-  let streamAbortController: AbortController | null = null
-  try {
-    appendLocalWaitingOutputPlaceholder(sessionId, runId)
-    streamAbortController = createStreamAbortController(runId)
-    await continueAgentSessionActiveRun(sessionId, scope.value, {
-      agent_id: agentId.value,
-      decision: null,
-      tool_execution: requirement.tool_execution,
-      feedback_selections: selections,
-    }, {
-      onEvent: event => handleRunEvent(event, sessionId),
-      signal: streamAbortController.signal,
-    })
-    await finalizeRun(sessionId)
-  } catch (error) {
-    if (error instanceof AgentStreamInterruptedError) {
-      if (!componentDisposed) {
-        void refreshAfterStreamInterrupted(sessionId)
-      }
-      return
-    }
-    await recoverHitlStateAfterFailedAction(sessionId, pausedRun, requirement)
-    Message.error(getErrorMessage(error, '继续智能体执行失败。'))
-  } finally {
-    if (streamAbortController) {
-      clearStreamAbortController(runId, streamAbortController)
-    }
-    setSessionStreaming(sessionId, false)
-  }
-}
-
-/**
- * 忽略结构化提问时取消当前 paused run，不向模型返回空答案。
- */
-async function handleCancelPausedRun() {
-  const sessionId = activeSessionId.value
-  const requirement = pendingRequirement.value
-  const pausedRun = activeRun.value
-  if (!sessionId || !requirement || pausedRun?.status !== 'paused') {
-    return
-  }
-
-  try {
-    pendingRequirement.value = null
-    const response = await cancelAgentSessionActiveRun(sessionId, scope.value, {
-      agent_id: agentId.value,
-    })
-    Message.info('已停止。')
-    await finalizeRun(response.session_id, { preserveLocalCancelled: true })
-  } catch (error) {
-    await recoverHitlStateAfterFailedAction(sessionId, pausedRun, requirement)
-    Message.error(getErrorMessage(error, '忽略失败，请稍后再试。'))
-  }
-}
-
-/**
- * 强制释放卡住的 HITL 暂停态，只清理当前待确认/待回答动作，不提交任何答案。
- */
-async function handleForceReleaseHitl() {
-  const sessionId = activeSessionId.value
-  const requirement = pendingRequirement.value
-  const pausedRun = activeRun.value
-  if (!sessionId || !requirement || pausedRun?.status !== 'paused') {
-    return
-  }
-
-  const confirmed = await createConfirm(
-    '强制释放只会结束当前待确认/待回答动作，不会执行工具，也不会提交回答。确定继续吗？',
-    '强制释放 HITL',
-  )
-  if (!confirmed) {
-    return
-  }
-
-  try {
-    const response = await cancelAgentSessionActiveRun(sessionId, scope.value, {
-      agent_id: agentId.value,
-      force: true,
-      tool_call_id: resolveRequirementToolCallId(requirement),
-    })
-    pendingRequirement.value = null
-    syncActiveRun(sessionId, {
-      ...pausedRun,
-      status: 'cancelled',
-      pending_requirement: null,
-      updated_at: new Date().toISOString(),
-    })
-    Message.info('已释放当前待处理动作。')
-    await finalizeRun(response.session_id, { preserveLocalCancelled: true })
-  } catch (error) {
-    await recoverHitlStateAfterFailedAction(sessionId, pausedRun, requirement)
-    Message.error(getErrorMessage(error, '强制释放失败，请稍后再试。'))
   }
 }
 
@@ -1639,13 +1395,14 @@ async function handleInterruptRun() {
     if (!targetRunId) {
       throw new Error('当前运行缺少 run_id，无法停止。')
     }
-    const response = await cancelAgentSessionActiveRun(sessionId, scope.value, {
-      agent_id: agentId.value,
+    const runtimeRequest = resolveSessionRuntimeRequest(sessionId)
+    const response = await cancelAgentSessionActiveRun(sessionId, runtimeRequest.scope, {
+      agent_id: runtimeRequest.agentId,
     })
     syncActiveRun(sessionId, {
       run_id: response.run_id,
       session_id: response.session_id,
-      agent_id: agentId.value,
+      agent_id: runtimeRequest.agentId,
       status: 'cancelling',
       pending_requirement: null,
       content: null,
@@ -1657,7 +1414,7 @@ async function handleInterruptRun() {
     ensureRunEventSubscription(sessionId, {
       run_id: response.run_id,
       session_id: response.session_id,
-      agent_id: agentId.value,
+      agent_id: runtimeRequest.agentId,
       status: 'cancelling',
       pending_requirement: null,
       content: null,
@@ -1684,8 +1441,9 @@ async function handleForceCancelRun() {
     return
   }
   try {
-    const response = await cancelAgentSessionActiveRun(sessionId, scope.value, {
-      agent_id: agentId.value,
+    const runtimeRequest = resolveSessionRuntimeRequest(sessionId)
+    const response = await cancelAgentSessionActiveRun(sessionId, runtimeRequest.scope, {
+      agent_id: runtimeRequest.agentId,
       force: true,
     })
     Message.info('已停止。')
@@ -1714,31 +1472,6 @@ async function refreshAfterStreamInterrupted(sessionId: string) {
 }
 
 /**
- * HITL 操作失败后恢复本地暂停态，并尽快用后端快照覆盖到权威状态。
- */
-async function recoverHitlStateAfterFailedAction(
-  sessionId: string,
-  pausedRun: AgentActiveRunItem,
-  requirement: AgentPendingRequirement,
-) {
-  syncActiveRun(sessionId, pausedRun)
-  agentSessionStore.setPendingRequirement(sessionId, requirement)
-  try {
-    await finalizeRun(sessionId)
-  } catch (error) {
-    logClientWarning('Failed to refresh after HITL action failure', error)
-  }
-}
-
-/**
- * 从待处理动作中读取稳定 tool_call_id，供强制释放时做后端 stale 校验。
- */
-function resolveRequirementToolCallId(requirement: AgentPendingRequirement) {
-  const toolCallId = requirement.tool_execution?.tool_call_id
-  return typeof toolCallId === 'string' && toolCallId ? toolCallId : null
-}
-
-/**
  * 发送新消息遇到后端 active-run 冲突时，刷新状态并恢复事件订阅。
  */
 async function recoverActiveRunAfterConflict(sessionId: string) {
@@ -1761,12 +1494,11 @@ function isAgentRunActiveError(error: unknown) {
  * 消费后端返回的流式事件，并同步更新消息、内嵌工具状态与待确认状态。
  */
 function handleRunEvent(event: AgentRunEvent, fallbackSessionId = activeSessionId.value) {
-  const normalizedEvent = normalizeAgnoRunEvent(event)
+  const normalizedEvent = normalizeAgentRunEvent(event)
   const targetSessionId = normalizedEvent.session_id || fallbackSessionId
   if (!targetSessionId) {
     return
   }
-  const targetRunId = normalizedEvent.run_id || readSessionValue(currentRunIdBySession.value, targetSessionId, null)
   const isActiveEvent = targetSessionId === activeSessionId.value
   const result = agentSessionStore.applyRunEvent(targetSessionId, normalizedEvent, {
     agentId: agentId.value,
@@ -1774,12 +1506,6 @@ function handleRunEvent(event: AgentRunEvent, fallbackSessionId = activeSessionI
   })
   if (!result.applied) {
     return
-  }
-  const inferenceRevision = markWaitingOutputInferenceActivity(targetSessionId)
-  if (shouldInferWaitingOutputAfterEvent(normalizedEvent, targetSessionId, targetRunId)) {
-    scheduleWaitingOutputInference(targetSessionId, targetRunId, inferenceRevision)
-  } else if (normalizedEvent.event === 'model.request.completed' && targetRunId && hasRunningAssistantTextSegment(targetSessionId, targetRunId)) {
-    appendLocalWaitingOutputStatus(targetSessionId, targetRunId)
   }
   switch (normalizedEvent.event) {
     case 'context.status':
@@ -1796,26 +1522,27 @@ function handleRunEvent(event: AgentRunEvent, fallbackSessionId = activeSessionI
       appendMutationRefreshEvents(targetSessionId, normalizedEvent)
       emitMutationRefreshEvents(targetSessionId)
       break
+    case 'member.tool.completed':
+      appendMutationRefreshEvents(targetSessionId, normalizedEvent)
+      emitMutationRefreshEvents(targetSessionId)
+      break
     case 'tool.error':
       break
     case 'run.paused':
       break
     case 'run.cancelled':
-      clearWaitingOutputInferenceTimer(targetSessionId)
       writeSessionValue(interruptingBySession.value, targetSessionId, false)
       if (isActiveEvent) {
         Message.info('已停止。')
       }
       break
     case 'run.error':
-      clearWaitingOutputInferenceTimer(targetSessionId)
       writeSessionValue(interruptingBySession.value, targetSessionId, false)
       if (isActiveEvent && lastRunIssue.value) {
-        Message.error(lastRunIssue.value.detail)
+        Message.warning(lastRunIssue.value.title)
       }
       break
     case 'run.completed':
-      clearWaitingOutputInferenceTimer(targetSessionId)
       writeSessionValue(interruptingBySession.value, targetSessionId, false)
       break
     default:
@@ -1827,11 +1554,12 @@ function handleRunEvent(event: AgentRunEvent, fallbackSessionId = activeSessionI
  * 记录工具写入带来的领域刷新事件，供工具完成即时派发和 run 结束兜底派发复用。
  */
 function appendMutationRefreshEvents(sessionId: string, event: AgentRunEvent): void {
+  const runtimeRequest = resolveSessionRuntimeRequest(sessionId)
   const nextEvents = buildMutationRefreshEvents(event, {
-    workspaceId: scope.value.workspace_id ?? null,
-    projectId: scope.value.project_id ?? null,
-    pageId: scope.value.page_id ?? null,
-    componentId: scope.value.component_id ?? null,
+    workspaceId: runtimeRequest.scope.workspace_id ?? null,
+    projectId: runtimeRequest.scope.project_id ?? null,
+    pageId: runtimeRequest.scope.page_id ?? null,
+    componentId: runtimeRequest.scope.component_id ?? null,
   })
   if (!nextEvents.length) {
     return
@@ -1878,7 +1606,6 @@ async function finalizeRun(
   if (!sessionId) {
     return
   }
-  clearWaitingOutputInferenceTimer(sessionId)
   await queryClient.invalidateQueries({ queryKey: ['ai-sessions'] })
   await queryClient.invalidateQueries({ queryKey: ['ai-session-runtime'] })
   const latestSessions = (await sessionsQuery.refetch()).data ?? []
@@ -1886,36 +1613,49 @@ async function finalizeRun(
   const latestRuntime = sessionId === activeSessionId.value
     ? (await runtimeQuery.refetch()).data ?? null
     : await getAgentSessionRuntime(sessionId, runtimeRequest.scope, runtimeRequest.agentId)
-  const preserveLocalActiveRunTimeline = latestRuntime
-    ? hasLocalActiveRunProgressForSession(sessionId, latestRuntime)
-    : false
-  if (latestRuntime) {
-    if (!preserveLocalActiveRunTimeline) {
-      agentSessionStore.applyRuntimeSnapshot(sessionId, latestRuntime)
-    }
-  }
   const latestRun = latestRuntime?.active_run ?? null
-  if (!options.preserveLocalCancelled || !shouldPreserveLocalCancelled(sessionId, latestRun)) {
+  const localRunBeforeSnapshot = readSessionValue(activeRunBySession.value, sessionId, null)
+  const preserveLocalCancelled = Boolean(
+    options.preserveLocalCancelled
+    && localRunBeforeSnapshot?.status === 'cancelled'
+    && shouldPreserveLocalCancelled(localRunBeforeSnapshot, latestRun),
+  )
+  if (latestRuntime) {
+    rememberSessions([latestRuntime.session])
+    agentSessionStore.applyRuntimeSnapshot(sessionId, latestRuntime)
+  }
+  if (preserveLocalCancelled && localRunBeforeSnapshot) {
+    syncActiveRun(sessionId, localRunBeforeSnapshot)
+  } else {
     syncActiveRun(sessionId, latestRun)
   }
   const latestContextStatus = latestRuntime?.context_status ?? null
   agentSessionStore.setContextStatus(sessionId, latestContextStatus)
-  if (latestRuntime && !preserveLocalActiveRunTimeline) {
+  if (latestRuntime) {
     await maybeAutonameActiveSession(latestSessions, latestRuntime.timeline_items, sessionId)
   }
   emitMutationRefreshEvents(sessionId)
-  if (!preserveLocalActiveRunTimeline) {
-    agentSessionStore.setStreamingTimelineItemId(sessionId, null)
+  agentSessionStore.setStreamingTimelineItemId(sessionId, null)
+}
+
+/**
+ * 流式请求已正常结束后的收尾刷新失败只影响 UI 收敛，不应误报为执行失败。
+ * @param sessionId 需要刷新运行态的会话 ID
+ */
+async function finalizeRunAfterStream(sessionId: string) {
+  try {
+    await finalizeRun(sessionId)
+  } catch (error) {
+    logClientWarning('Failed to finalize agent run after stream closed', error)
+    void refreshAfterStreamInterrupted(sessionId)
   }
 }
 
 /**
  * 中断后后端可能短暂仍返回 running/pending；此时保留本地 cancelled，等下一轮刷新自然收敛。
  */
-function shouldPreserveLocalCancelled(sessionId: string, latestRun: AgentActiveRunItem | null) {
-  const localRun = readSessionValue(activeRunBySession.value, sessionId, null)
-  return localRun?.status === 'cancelled'
-    && latestRun !== null
+function shouldPreserveLocalCancelled(localRun: AgentActiveRunItem, latestRun: AgentActiveRunItem | null) {
+  return latestRun !== null
     && (!localRun.run_id || localRun.run_id === latestRun.run_id)
     && (latestRun.status === 'pending' || latestRun.status === 'running')
 }
@@ -1953,17 +1693,7 @@ function getSessionRunBadge(sessionId: string) {
 }
 
 /**
- * 校验前端允许上传给 Agent 的图片类型。
- */
-function isAllowedImageFile(file: File) {
-  if (ALLOWED_IMAGE_ATTACHMENT_TYPES.has(file.type)) {
-    return true
-  }
-  return /\.(png|jpe?g|webp)$/i.test(file.name)
-}
-
-/**
- * 在首轮消息完成后尝试使用 Agno 自动生成会话名，避免会话列表长期停留在通用标题。
+ * 在首轮消息完成后尝试自动生成会话名，避免会话列表长期停留在通用标题。
  */
 async function maybeAutonameActiveSession(
   sessions: AgentSessionItem[],
@@ -2015,12 +1745,57 @@ function shouldAutonameSession(session: AgentSessionItem | null | undefined, ite
  * 后台 run 可能在用户切路由后才收敛；这时必须用会话自身 scope 读取和命名，避免写入当前路由状态。
  */
 function resolveSessionRuntimeRequest(sessionId: string, sessions: AgentSessionItem[] = sessionsQuery.data.value ?? []) {
-  const session = sessions.find(item => item.session_id === sessionId)
+  const session = sessions.find(item => item.session_id === sessionId) ?? knownSessionsById.value[sessionId] ?? null
   const sessionScope = session ? resolveSessionScope(session) : null
   return {
     scope: sessionScope ?? scope.value,
     agentId: session?.agent_id ?? agentId.value,
   }
+}
+
+/**
+ * 从会话 metadata 中读取固化的大模型信息，历史会话没有该字段时返回空。
+ */
+function extractSessionLlmMetadata(session: AgentSessionItem | null): AgentSessionLlmMetadata | null {
+  const metadata = session?.metadata
+  if (!metadata || typeof metadata !== 'object') {
+    return null
+  }
+  const llm = (metadata as Record<string, unknown>).llm
+  return llm && typeof llm === 'object' ? llm as AgentSessionLlmMetadata : null
+}
+
+/**
+ * 兼容后端可能以字符串形式回传的配置 ID，无法解析时视为无固化模型。
+ */
+function normalizeLlmConfigId(value: AgentSessionLlmMetadata['config_id'] | undefined) {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value
+  }
+  if (typeof value === 'string' && /^\d+$/.test(value.trim())) {
+    return Number(value.trim())
+  }
+  return null
+}
+
+/**
+ * 生成可选模型显示文案，区分管理员全局模型与当前用户个人模型。
+ */
+function formatLlmConfigLabel(config: LlmConfigItem) {
+  const scopeLabel = config.scope === 'global' ? '全局模型' : '我的模型'
+  return `${scopeLabel} · ${config.name}（${config.provider_config_name || config.provider_label} / ${config.model_id}）`
+}
+
+/**
+ * 使用会话内固化的模型快照生成文案，适配模型后来被归档或删除的场景。
+ */
+function formatLlmMetadataLabel(metadata: AgentSessionLlmMetadata) {
+  const scopeLabel = metadata.scope === 'global' ? '全局模型' : metadata.scope === 'personal' ? '我的模型' : '模型'
+  const name = metadata.name || '已选模型'
+  const provider = metadata.provider_config_name || metadata.provider_label || metadata.provider_key || ''
+  const modelId = metadata.model_id || ''
+  const detail = [provider, modelId].filter(Boolean).join(' / ')
+  return detail ? `${scopeLabel} · ${name}（${detail}）` : `${scopeLabel} · ${name}`
 }
 
 /**
@@ -2072,7 +1847,7 @@ function removeDraftPatch(patch: AgentSuggestedPatch) {
 }
 
 /**
- * 跳转到 AI 设置页，供用户先完成模型绑定。
+ * 跳转到 AI 设置页，供用户创建或维护个人模型。
  */
 function goToAiSettings() {
   router.push({ name: 'accountAiSettings' })

@@ -6,17 +6,29 @@ import type {
   AiLlmConfigScope,
   LlmConfigItem,
   LlmProviderCatalogItem,
+  LlmProviderConfigItem,
   LlmSlotBindingItem,
-  RecordStatus,
 } from '@/types/api'
+
+export interface LlmProviderConfigPayload {
+  name: string
+  scope?: AiLlmConfigScope
+  provider_key: string
+  base_url?: string | null
+  api_key?: string | null
+}
+
+export interface LlmProviderConfigUpdatePayload {
+  name?: string
+  base_url?: string | null
+  api_key?: string | null
+}
 
 export interface LlmConfigPayload {
   name: string
   scope?: AiLlmConfigScope
-  provider_key: string
+  provider_config_id: number
   model_id: string
-  base_url?: string | null
-  api_key?: string | null
   thinking_enabled: boolean
   thinking_effort?: string | null
   supports_image_input: boolean
@@ -29,10 +41,8 @@ export interface LlmConfigPayload {
 
 export interface LlmConfigUpdatePayload {
   name?: string
-  provider_key?: string
+  provider_config_id?: number
   model_id?: string
-  base_url?: string | null
-  api_key?: string | null
   thinking_enabled?: boolean
   thinking_effort?: string | null
   supports_image_input?: boolean
@@ -41,7 +51,6 @@ export interface LlmConfigUpdatePayload {
   history_token_ratio?: number
   compression_target_ratio?: number
   advanced_config_json?: Record<string, unknown>
-  status?: RecordStatus
 }
 
 /**
@@ -49,6 +58,46 @@ export interface LlmConfigUpdatePayload {
  */
 export async function listLlmProviders() {
   const { data } = await http.get<LlmProviderCatalogItem[]>('/ai/llm-providers')
+  return data
+}
+
+/**
+ * 读取当前用户可见的供应商配置。
+ */
+export async function listLlmProviderConfigs() {
+  const { data } = await http.get<LlmProviderConfigItem[]>('/ai/llm-provider-configs')
+  return data
+}
+
+/**
+ * 读取单条供应商配置详情。
+ */
+export async function getLlmProviderConfig(providerConfigId: number) {
+  const { data } = await http.get<LlmProviderConfigItem>(`/ai/llm-provider-configs/${providerConfigId}`)
+  return data
+}
+
+/**
+ * 创建新的供应商配置。
+ */
+export async function createLlmProviderConfig(payload: LlmProviderConfigPayload) {
+  const { data } = await http.post<LlmProviderConfigItem>('/ai/llm-provider-configs', payload)
+  return data
+}
+
+/**
+ * 更新指定的供应商配置。
+ */
+export async function updateLlmProviderConfig(providerConfigId: number, payload: LlmProviderConfigUpdatePayload) {
+  const { data } = await http.patch<LlmProviderConfigItem>(`/ai/llm-provider-configs/${providerConfigId}`, payload)
+  return data
+}
+
+/**
+ * 删除指定的供应商配置；后端会校验没有模型仍引用它。
+ */
+export async function deleteLlmProviderConfig(providerConfigId: number) {
+  const { data } = await http.delete<{ message: string }>(`/ai/llm-provider-configs/${providerConfigId}`)
   return data
 }
 
@@ -81,6 +130,14 @@ export async function createLlmConfig(payload: LlmConfigPayload) {
  */
 export async function updateLlmConfig(configId: number, payload: LlmConfigUpdatePayload) {
   const { data } = await http.patch<LlmConfigItem>(`/ai/llm-configs/${configId}`, payload)
+  return data
+}
+
+/**
+ * 删除指定的模型配置；已固化该模型的会话后续无法继续发起运行。
+ */
+export async function deleteLlmConfig(configId: number) {
+  const { data } = await http.delete<{ message: string }>(`/ai/llm-configs/${configId}`)
   return data
 }
 

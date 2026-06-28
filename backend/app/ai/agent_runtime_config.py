@@ -1,4 +1,4 @@
-"""文件功能：合成用户级智能体配置，并把有效配置应用到 Agno Agent 与工具对象。"""
+"""文件功能：合成用户级智能体配置，并把有效配置应用到 Pydantic AI 运行时与平台工具对象。"""
 
 from __future__ import annotations
 
@@ -37,7 +37,7 @@ class EffectiveAgentRuntimeConfig:
 
     @property
     def prompt_customized(self) -> bool:
-        """判断当前 Agent 是否使用了用户业务补充提示词。"""
+        """判断当前 Agent 是否使用了用户完整提示词覆盖。"""
 
         return bool(self.prompt_override)
 
@@ -83,24 +83,26 @@ def build_default_runtime_config(agent_id: str) -> EffectiveAgentRuntimeConfig:
 def build_effective_instructions(
     catalog: AgentCatalogEntry,
     runtime_config: EffectiveAgentRuntimeConfig | None,
+    *runtime_context_sections: str,
 ) -> list[str]:
-    """合成平台底线提示词与用户补充业务提示词。"""
+    """返回当前 Agent 入模的单个完整提示词，可追加本次运行动态上下文。"""
 
-    prompt_override = runtime_config.prompt_override if runtime_config is not None else None
-    instructions = list(catalog.system_instructions)
-    if prompt_override:
-        instructions.append(prompt_override)
-    return instructions
+    prompt_chunks = [
+        resolve_effective_prompt(catalog, runtime_config),
+        *runtime_context_sections,
+    ]
+    effective_prompt = "\n\n".join(chunk.strip() for chunk in prompt_chunks if chunk and chunk.strip())
+    return [effective_prompt] if effective_prompt else []
 
 
-def build_effective_description(
+def resolve_effective_prompt(
     catalog: AgentCatalogEntry,
     runtime_config: EffectiveAgentRuntimeConfig | None,
 ) -> str:
-    """合成当前 Agent 在运行时应暴露给 Agno 的描述。"""
+    """返回当前 Agent 的有效完整提示词；用户覆盖存在时直接替换默认值。"""
 
-    description_override = runtime_config.description_override if runtime_config is not None else None
-    return description_override or catalog.description
+    prompt_override = runtime_config.prompt_override if runtime_config is not None else None
+    return prompt_override or catalog.default_prompt
 
 
 def is_tool_enabled(
@@ -126,7 +128,7 @@ def apply_tool_runtime_config(
     tools: list[Any],
     runtime_config: EffectiveAgentRuntimeConfig | None,
 ) -> list[Any]:
-    """过滤关闭的工具，并把用户覆盖的工具说明写入 Agno Function 对象。"""
+    """过滤关闭的工具，并把用户覆盖的工具说明写入平台工具对象。"""
 
     result: list[Any] = []
     for tool_item in apply_tool_spec_metadata(agent_id=agent_id, tools=tools):

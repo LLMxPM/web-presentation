@@ -42,6 +42,7 @@ class AppSettings(BaseSettings):
     runtime_service_token_audience: str = "runtime-backend"
     runtime_request_timeout_seconds: float = 10.0
     backend_public_base_url: str = "http://127.0.0.1:8000"
+    playwright_task_concurrency: int = 1
     ai_enabled: bool = True
     ai_test_mode: str = "disabled"
     ai_secret_encryption_key: str = "vmgRweOsDpMtYVW7SSpceINYcXlUHFNndAby6vRv0iA="
@@ -49,15 +50,17 @@ class AppSettings(BaseSettings):
     ai_agent_token_ttl_seconds: int = 600
     ai_tool_auth_window_seconds: int = 1800
     ai_tool_auth_max_seconds: int = 7200
-    ai_db_url: str | None = None
-    ai_db_schema: str = "agno"
-    ai_session_table: str = "agno_sessions"
-    ai_approvals_table: str = "agno_approvals"
-    ai_session_retention_days: int = 15
-    ai_session_cleanup_interval_seconds: int = 21600
-    ai_session_cleanup_batch_size: int = 500
+    ai_agent_stream_idle_timeout_seconds: float = 180.0
+    ai_llm_http_trace_enabled: bool = False
+    ai_llm_http_trace_dir: str = ".tmp/llm-http-trace"
+    ai_llm_http_trace_body_max_bytes: int = 200_000
     ai_image_transport_mode: str = "auto"
     ai_image_attachment_max_bytes: int = 10 * 1024 * 1024
+    ai_image_model_url_reuse_window_seconds: int = 7200
+    ai_image_model_url_ttl_seconds: int = 21600
+    ai_image_model_url_expiry_safety_seconds: int = 300
+    ai_image_history_max_hydrated_images: int = 10
+    ai_image_history_max_hydrated_bytes: int = 30 * 1024 * 1024
     redis_url: str = "redis://127.0.0.1:6379/0"
     redis_key_prefix: str = "web_presentation"
     redis_healthcheck_timeout_seconds: float = 2.0
@@ -161,16 +164,17 @@ class AppSettings(BaseSettings):
         "page_screenshot_default_viewport_height",
         "page_screenshot_max_viewport_width",
         "page_screenshot_max_viewport_height",
+        "playwright_task_concurrency",
         "page_screenshot_batch_concurrency",
         "page_screenshot_queue_concurrency",
         "page_screenshot_job_lease_seconds",
     )
     @classmethod
     def validate_positive_int(cls, value: int) -> int:
-        """校验截图相关整数配置均为正数。"""
+        """校验截图与 Playwright 相关整数配置均为正数。"""
 
         if value <= 0:
-            raise ValueError("截图尺寸配置必须为正整数。")
+            raise ValueError("截图与 Playwright 整数配置必须为正整数。")
         return value
 
     @field_validator(
@@ -266,6 +270,34 @@ class AppSettings(BaseSettings):
             raise ValueError("AI Token TTL 必须大于 0。")
         return value
 
+    @field_validator("ai_agent_stream_idle_timeout_seconds")
+    @classmethod
+    def validate_ai_agent_stream_idle_timeout_seconds(cls, value: float) -> float:
+        """校验 Agent 模型/工具流空闲超时，避免运行长期卡在非终态。"""
+
+        if value <= 0:
+            raise ValueError("AI Agent 流空闲超时时间必须大于 0。")
+        return value
+
+    @field_validator("ai_llm_http_trace_dir")
+    @classmethod
+    def validate_ai_llm_http_trace_dir(cls, value: str) -> str:
+        """校验 LLM HTTP trace 输出目录非空，避免开启后无明确落盘位置。"""
+
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("AI_LLM_HTTP_TRACE_DIR 不能为空。")
+        return normalized
+
+    @field_validator("ai_llm_http_trace_body_max_bytes")
+    @classmethod
+    def validate_ai_llm_http_trace_body_max_bytes(cls, value: int) -> int:
+        """校验 LLM HTTP trace 请求体记录上限，避免配置为无效大小。"""
+
+        if value <= 0:
+            raise ValueError("AI_LLM_HTTP_TRACE_BODY_MAX_BYTES 必须大于 0。")
+        return value
+
     @field_validator("ai_tool_auth_max_seconds")
     @classmethod
     def validate_ai_tool_auth_max_seconds(cls, value: int) -> int:
@@ -273,24 +305,6 @@ class AppSettings(BaseSettings):
 
         if value < 1800:
             raise ValueError("AI 工具授权绝对上限不能小于默认滑动窗口 1800 秒。")
-        return value
-
-    @field_validator("ai_session_retention_days", "ai_session_cleanup_batch_size")
-    @classmethod
-    def validate_ai_session_positive_int(cls, value: int) -> int:
-        """校验 AI 会话清理保留天数与批大小为正整数。"""
-
-        if value <= 0:
-            raise ValueError("AI 会话清理配置必须大于 0。")
-        return value
-
-    @field_validator("ai_session_cleanup_interval_seconds")
-    @classmethod
-    def validate_ai_session_cleanup_interval_seconds(cls, value: int) -> int:
-        """校验 AI 会话清理间隔，允许 0 表示关闭后台清理。"""
-
-        if value < 0:
-            raise ValueError("AI 会话清理间隔不能小于 0。")
         return value
 
     @field_validator("ai_test_mode")
@@ -320,6 +334,21 @@ class AppSettings(BaseSettings):
 
         if value <= 0:
             raise ValueError("AI 图片附件大小上限必须大于 0。")
+        return value
+
+    @field_validator(
+        "ai_image_model_url_reuse_window_seconds",
+        "ai_image_model_url_ttl_seconds",
+        "ai_image_model_url_expiry_safety_seconds",
+        "ai_image_history_max_hydrated_images",
+        "ai_image_history_max_hydrated_bytes",
+    )
+    @classmethod
+    def validate_ai_image_positive_ints(cls, value: int) -> int:
+        """校验 Agent 图片水合与模型 URL 复用相关配置为正整数。"""
+
+        if value <= 0:
+            raise ValueError("AI 图片水合与模型 URL 复用配置必须大于 0。")
         return value
 
     @field_validator("redis_key_prefix")
@@ -358,6 +387,15 @@ class AppSettings(BaseSettings):
         """返回截图本地存储根目录的绝对路径。"""
 
         configured_path = Path(self.page_screenshot_local_root).expanduser()
+        if configured_path.is_absolute():
+            return configured_path
+        return (Path(__file__).resolve().parents[2] / configured_path).resolve()
+
+    @property
+    def ai_llm_http_trace_dir_path(self) -> Path:
+        """返回 LLM HTTP trace 文件输出目录的绝对路径。"""
+
+        configured_path = Path(self.ai_llm_http_trace_dir).expanduser()
         if configured_path.is_absolute():
             return configured_path
         return (Path(__file__).resolve().parents[2] / configured_path).resolve()

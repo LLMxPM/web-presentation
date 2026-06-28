@@ -1,4 +1,4 @@
-"""文件功能：定义用户级大模型配置与固定槽位绑定的数据模型。"""
+"""文件功能：定义用户级大模型供应商配置、模型配置与固定槽位绑定的数据模型。"""
 
 from __future__ import annotations
 
@@ -10,8 +10,26 @@ from app.models.enums import AiLlmConfigScope, AiLlmSlot, RecordStatus
 from app.models.mixins import AuditMixin, TimestampMixin
 
 
+class AiLlmProviderConfig(TimestampMixin, AuditMixin, Base):
+    """用户可复用的大模型供应商凭证配置。"""
+
+    __tablename__ = "ai_llm_provider_configs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
+    scope: Mapped[str] = mapped_column(String(32), nullable=False, default=AiLlmConfigScope.PERSONAL.value, index=True)
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    provider_key: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    base_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    api_key_ciphertext: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default=RecordStatus.ACTIVE.value, index=True)
+
+    user = relationship("User", back_populates="llm_provider_configs")
+    llm_configs: Mapped[list["AiLlmConfig"]] = relationship(back_populates="provider_config")
+
+
 class AiLlmConfig(TimestampMixin, AuditMixin, Base):
-    """用户可管理的单个大模型配置。"""
+    """用户可管理的单个大模型参数配置。"""
 
     __tablename__ = "ai_llm_configs"
 
@@ -19,10 +37,8 @@ class AiLlmConfig(TimestampMixin, AuditMixin, Base):
     user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
     scope: Mapped[str] = mapped_column(String(32), nullable=False, default=AiLlmConfigScope.PERSONAL.value, index=True)
     name: Mapped[str] = mapped_column(String(128), nullable=False)
-    provider_key: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    provider_config_id: Mapped[int] = mapped_column(ForeignKey("ai_llm_provider_configs.id"), nullable=False, index=True)
     model_id: Mapped[str] = mapped_column(String(255), nullable=False)
-    base_url: Mapped[str | None] = mapped_column(Text, nullable=True)
-    api_key_ciphertext: Mapped[str | None] = mapped_column(Text, nullable=True)
     thinking_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     thinking_effort: Mapped[str | None] = mapped_column(String(64), nullable=True)
     supports_image_input: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
@@ -34,6 +50,7 @@ class AiLlmConfig(TimestampMixin, AuditMixin, Base):
     status: Mapped[str] = mapped_column(String(32), nullable=False, default=RecordStatus.ACTIVE.value, index=True)
 
     user = relationship("User", back_populates="llm_configs")
+    provider_config: Mapped[AiLlmProviderConfig] = relationship(back_populates="llm_configs")
     slot_bindings: Mapped[list["AiLlmSlotBinding"]] = relationship(back_populates="llm_config")
 
 

@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from app.ai.base_font_scale import build_base_font_scale_note
+
 
 @dataclass(slots=True, frozen=True)
 class AgentRuntimeContext:
@@ -28,11 +30,12 @@ class AgentRuntimeContext:
     file_type: str | None = None
     component_code: str | None = None
     component_name: str | None = None
+    suggested_components: tuple[dict[str, Any], ...] = ()
     suggested_reference_assets: tuple[dict[str, Any], ...] = ()
 
 
 def build_scope_context_text(runtime_context: AgentRuntimeContext) -> str:
-    """把泛化业务范围格式化为可追加给 Agno 的上下文说明。"""
+    """把泛化业务范围格式化为可追加给智能体的上下文说明。"""
 
     lines = [
         "当前业务范围如下：",
@@ -47,9 +50,7 @@ def build_scope_context_text(runtime_context: AgentRuntimeContext) -> str:
         lines.extend(
             [
                 f"- 当前页面画布尺寸（page_width / page_height）：{runtime_context.page_width} x {runtime_context.page_height} px",
-                f"- 当前项目基础字号（base_font_size）：{runtime_context.base_font_size or '（未知）'}",
-                "- base_font_size 是页面 Tailwind 字号和间距的基础尺度：text-base 等于该值，text-* 字号、p-/m-/gap-/space-* 等 spacing 按 Runtime Tailwind 预设比例派生；page_width/page_height 不参与该换算。",
-                "- 直接写 px、rem 或 Tailwind arbitrary values 属于固定 CSS 尺度，不会随 base_font_size 自动变化；需要跟随基础字号时使用 Tailwind 语义尺度，或以 base_font_size 为基准计算。",
+                f"- {build_base_font_scale_note(runtime_context.base_font_size)}",
                 "- 页面和整页组件应按真实画布编写 Vue 与 Tailwind；可使用 Tailwind 语义类，也可在需要精确版式时使用 px、rem 或 Tailwind arbitrary values。",
             ]
         )
@@ -62,6 +63,24 @@ def build_scope_context_text(runtime_context: AgentRuntimeContext) -> str:
                 "```",
             ]
         )
+    if runtime_context.suggested_components:
+        lines.extend(
+            [
+                "- 项目建议组件：",
+                "以下为项目建议组件摘要；当任务需要选择页面组件、内容组件或原子组件时，建议优先考虑这些组件，不合适时可以查询其他工作空间组件。",
+                "组件摘要不能替代使用契约；生成 import、确认 props/slots/preview_schema 或组件版本前，必须调用组件读取工具获取精确信息。",
+            ]
+        )
+        for component in runtime_context.suggested_components:
+            lines.append(
+                "  - "
+                f"component_code={component.get('code')}，"
+                f"name={component.get('name')}，"
+                f"import_name={component.get('import_name')}，"
+                f"component_type={component.get('component_type')}，"
+                f"description={component.get('summary') or '（未填写）'}，"
+                f"current_version_no={component.get('current_version_no')}"
+            )
     if runtime_context.suggested_reference_assets:
         lines.extend(
             [

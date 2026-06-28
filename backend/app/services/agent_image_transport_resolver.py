@@ -5,9 +5,10 @@ from __future__ import annotations
 import base64
 import ipaddress
 from dataclasses import dataclass
+from typing import Any
 from urllib.parse import urlparse
 
-from agno.media import Image
+from pydantic_ai.messages import BinaryContent, ImageUrl
 
 from app.core.config import get_settings
 from app.core.exceptions import AppException
@@ -16,11 +17,12 @@ from app.services.object_storage_service import ObjectStorageService
 
 @dataclass(slots=True)
 class ResolvedAgentImage:
-    """描述已经可传给 Agno 的图片对象与实际传输方式。"""
+    """描述已经可传给 Pydantic AI 的图片对象与实际传输方式。"""
 
-    image: Image
+    image: ImageUrl | BinaryContent
     transport: str
     url: str | None = None
+    model_ref: dict[str, Any] | None = None
 
 
 class AgentImageTransportResolver:
@@ -39,9 +41,9 @@ class AgentImageTransportResolver:
         original_name: str | None = None,
         prefer_data_url: bool = False,
     ) -> ResolvedAgentImage:
-        """根据配置把对象存储图片解析为 Agno Image。
+        """根据配置把对象存储图片解析为 Pydantic AI 多模态内容。
 
-        输入为对象 key、图片 bytes 与 MIME；输出包含 Agno Image 和本次实际使用的 transport。
+        输入为对象 key、图片 bytes 与 MIME；输出包含模型输入对象和本次实际使用的 transport。
         `url` 模式不可生成公网 HTTPS URL 时会显式失败，避免把内网或 Cookie 鉴权地址传给模型。
         """
 
@@ -54,7 +56,7 @@ class AgentImageTransportResolver:
             )
             if self._is_model_accessible_url(presigned_url):
                 return ResolvedAgentImage(
-                    image=Image(url=presigned_url, mime_type=mime_type, detail="auto"),
+                    image=ImageUrl(url=presigned_url, media_type=mime_type, vendor_metadata={"detail": "auto"}),
                     transport="url",
                     url=presigned_url,
                 )
@@ -69,11 +71,11 @@ class AgentImageTransportResolver:
             payload = base64.b64encode(content).decode("ascii")
             data_url = f"data:{mime_type};base64,{payload}"
             return ResolvedAgentImage(
-                image=Image(url=data_url, mime_type=mime_type, detail="auto"),
+                image=ImageUrl(url=data_url, media_type=mime_type, vendor_metadata={"detail": "auto"}),
                 transport="base64-data-url",
             )
         return ResolvedAgentImage(
-            image=Image(content=content, mime_type=mime_type, detail="auto"),
+            image=BinaryContent(data=content, media_type=mime_type, vendor_metadata={"detail": "auto"}),
             transport="base64",
         )
 

@@ -1,10 +1,12 @@
 <!-- 文件功能：渲染智能体 run-first 时间线正文、草稿箱、工具调用与运行状态提示。 -->
 <template>
-  <div
-    ref="scrollContainerRef"
-    class="flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto px-2 py-2"
-    @scroll="handleConversationScroll"
-  >
+  <div class="relative flex min-h-0 flex-1 overflow-hidden">
+    <div
+      ref="scrollContainerRef"
+      class="agent-conversation-body flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto px-2 py-2"
+      :class="{ 'agent-conversation-body--floating-toast': hasFloatingNotice }"
+      @scroll="handleConversationScroll"
+    >
     <section v-if="draftPatches.length" class="space-y-1.5">
       <div class="flex items-center justify-between gap-2">
         <h3 class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">草稿箱</h3>
@@ -71,7 +73,7 @@
                   <MarkdownRender
                     v-else-if="resolveMessageContent(item.message)"
                     :nodes="resolveMessageMarkdownNodes(item.message)"
-                    :max-live-nodes="isMessageStreaming(item.message) ? 0 : 320"
+                    :max-live-nodes="320"
                     batch-rendering
                     :initial-render-batch-size="assistantBatchRendering.initialRenderBatchSize"
                     :render-batch-size="assistantBatchRendering.renderBatchSize"
@@ -81,6 +83,31 @@
                 </div>
                 <div v-else>
                   <pre class="whitespace-pre-wrap break-words text-[12.5px] font-sans leading-[17px]">{{ item.message.content || '...' }}</pre>
+                </div>
+                <div
+                  v-if="item.message.attachments?.length"
+                  class="mt-1 flex flex-wrap gap-1"
+                  :class="item.message.role === 'user' ? 'justify-end' : 'justify-start'"
+                >
+                  <a
+                    v-for="attachment in item.message.attachments"
+                    :key="attachment.id"
+                    :href="isAttachmentPreviewAvailable(attachment) ? attachment.url : undefined"
+                    target="_blank"
+                    rel="noreferrer"
+                    class="message-attachment-thumb"
+                    :title="attachment.original_name"
+                    @click.stop
+                  >
+                    <img
+                      v-if="isAttachmentPreviewAvailable(attachment)"
+                      :src="attachment.url"
+                      :alt="attachment.original_name"
+                      class="h-full w-full object-cover"
+                      @error="event => handleAttachmentImageError(event, attachment)"
+                    >
+                    <span v-else class="message-attachment-placeholder">{{ attachmentPlaceholderText(attachment) }}</span>
+                  </a>
                 </div>
               </div>
               <div
@@ -107,7 +134,7 @@
                 <div class="reasoning-markdown mt-0.5 max-h-[100px] overflow-auto border-l border-slate-100 pl-1.5">
                   <MarkdownRender
                     :nodes="resolveReasoningMarkdownNodes(item)"
-                    :max-live-nodes="item.streaming ? 0 : 160"
+                    :max-live-nodes="160"
                     batch-rendering
                     :initial-render-batch-size="assistantBatchRendering.initialRenderBatchSize"
                     :render-batch-size="assistantBatchRendering.renderBatchSize"
@@ -142,27 +169,11 @@
           <article v-else-if="item.kind === 'tool_group'" class="conversation-message conversation-message--assistant flex justify-start px-0.5 py-0">
             <div class="message-group w-[92%] min-w-0 px-1 py-0.5">
               <template v-if="item.tools.length === 1">
-                <button
+                <div
                   v-for="tool in item.tools"
                   :key="tool.id"
-                  type="button"
-                  class="tool-call-row flex w-full min-w-0 items-center justify-between gap-2 border border-slate-200/80 bg-slate-50/60 px-1.5 py-0.5 text-left text-[10px] transition hover:bg-slate-100/70"
-                  :class="getToolChipClass(tool.status)"
-                  @click="handleToolRowClick(tool)"
                 >
-                  <span class="min-w-0 truncate">{{ resolveToolDisplayName(tool) }}</span>
-                  <span class="shrink-0 opacity-60" aria-hidden="true">{{ toolStatusLabelMap[tool.status] }}</span>
-                </button>
-              </template>
-              <details v-else class="tool-call-group" :open="shouldExpandToolGroup(item.tools)">
-                <summary class="flex cursor-pointer select-none items-center gap-1.5 border border-slate-200/80 bg-slate-50/60 px-1.5 py-0.5 text-[10px] text-slate-500 transition hover:bg-slate-100/70">
-                  <ChevronRight class="h-2.5 w-2.5 transition details-chevron" />
-                  <span class="min-w-0 flex-1 truncate">{{ formatToolGroupSummary(item.tools) }}</span>
-                </summary>
-                <div class="mt-1 space-y-1">
                   <button
-                    v-for="tool in item.tools"
-                    :key="tool.id"
                     type="button"
                     class="tool-call-row flex w-full min-w-0 items-center justify-between gap-2 border border-slate-200/80 bg-slate-50/60 px-1.5 py-0.5 text-left text-[10px] transition hover:bg-slate-100/70"
                     :class="getToolChipClass(tool.status)"
@@ -171,6 +182,70 @@
                     <span class="min-w-0 truncate">{{ resolveToolDisplayName(tool) }}</span>
                     <span class="shrink-0 opacity-60" aria-hidden="true">{{ toolStatusLabelMap[tool.status] }}</span>
                   </button>
+                  <div v-if="tool.attachments.length" class="mt-1 flex flex-wrap gap-1">
+                    <a
+                      v-for="attachment in tool.attachments"
+                      :key="attachment.id"
+                      :href="isAttachmentPreviewAvailable(attachment) ? attachment.url : undefined"
+                      target="_blank"
+                      rel="noreferrer"
+                      class="message-attachment-thumb"
+                      :title="attachment.original_name"
+                      @click.stop
+                    >
+                      <img
+                        v-if="isAttachmentPreviewAvailable(attachment)"
+                        :src="attachment.url"
+                        :alt="attachment.original_name"
+                        class="h-full w-full object-cover"
+                        @error="event => handleAttachmentImageError(event, attachment)"
+                      >
+                      <span v-else class="message-attachment-placeholder">{{ attachmentPlaceholderText(attachment) }}</span>
+                    </a>
+                  </div>
+                </div>
+              </template>
+              <details v-else class="tool-call-group" :open="shouldExpandToolGroup(item.tools)">
+                <summary class="flex cursor-pointer select-none items-center gap-1.5 border border-slate-200/80 bg-slate-50/60 px-1.5 py-0.5 text-[10px] text-slate-500 transition hover:bg-slate-100/70">
+                  <ChevronRight class="h-2.5 w-2.5 transition details-chevron" />
+                  <span class="min-w-0 flex-1 truncate">{{ formatToolGroupSummary(item.tools) }}</span>
+                </summary>
+                <div class="mt-1 space-y-1">
+                  <div
+                    v-for="tool in item.tools"
+                    :key="tool.id"
+                  >
+                    <button
+                      type="button"
+                      class="tool-call-row flex w-full min-w-0 items-center justify-between gap-2 border border-slate-200/80 bg-slate-50/60 px-1.5 py-0.5 text-left text-[10px] transition hover:bg-slate-100/70"
+                      :class="getToolChipClass(tool.status)"
+                      @click="handleToolRowClick(tool)"
+                    >
+                      <span class="min-w-0 truncate">{{ resolveToolDisplayName(tool) }}</span>
+                      <span class="shrink-0 opacity-60" aria-hidden="true">{{ toolStatusLabelMap[tool.status] }}</span>
+                    </button>
+                    <div v-if="tool.attachments.length" class="mt-1 flex flex-wrap gap-1">
+                      <a
+                        v-for="attachment in tool.attachments"
+                        :key="attachment.id"
+                        :href="isAttachmentPreviewAvailable(attachment) ? attachment.url : undefined"
+                        target="_blank"
+                        rel="noreferrer"
+                        class="message-attachment-thumb"
+                        :title="attachment.original_name"
+                        @click.stop
+                      >
+                        <img
+                          v-if="isAttachmentPreviewAvailable(attachment)"
+                          :src="attachment.url"
+                          :alt="attachment.original_name"
+                          class="h-full w-full object-cover"
+                          @error="event => handleAttachmentImageError(event, attachment)"
+                        >
+                        <span v-else class="message-attachment-placeholder">{{ attachmentPlaceholderText(attachment) }}</span>
+                      </a>
+                    </div>
+                  </div>
                 </div>
               </details>
             </div>
@@ -197,10 +272,10 @@
 
           <article
             v-else
-            class="conversation-message conversation-message--system flex justify-start px-0.5 py-0"
+            class="conversation-message conversation-message--system flex justify-center px-4 py-1"
           >
             <div
-              class="message-group max-w-[92%] rounded-md border px-2 py-1 text-[11px] leading-5"
+              class="message-group inline-flex max-w-[80%] items-center rounded-full border px-2 py-0.5 text-[10.5px] font-medium leading-4 shadow-[0_1px_0_rgba(15,23,42,0.04)]"
               :class="getRequirementStatusClass(item.status)"
             >
               {{ item.content }}
@@ -210,22 +285,43 @@
       </div>
     </section>
 
-    <section v-if="lastRunIssue" class="space-y-2 rounded-3xl border border-red-200 bg-red-50/80 p-4">
-      <p class="text-sm font-semibold text-red-800">{{ lastRunIssue.title }}</p>
-      <p class="text-sm leading-6 text-red-700">{{ lastRunIssue.detail }}</p>
-    </section>
+    </div>
 
     <section
-      v-if="activeRun?.status === 'cancelling'"
-      class="flex items-center justify-between gap-3 rounded-3xl border border-amber-200 bg-amber-50/80 p-4"
+      v-if="floatingNotice"
+      class="pointer-events-none absolute inset-x-2 bottom-2 z-20 flex justify-center"
+      role="status"
+      aria-live="polite"
     >
-      <div class="min-w-0">
-        <p class="text-sm font-semibold text-amber-800">正在停止当前运行</p>
-        <p class="mt-1 text-xs leading-5 text-amber-700">如果长时间没有响应，可以强制释放当前会话占用。</p>
+      <div
+        class="pointer-events-auto flex max-h-[45%] w-[min(100%,28rem)] items-start justify-between gap-3 overflow-auto rounded-lg border px-3 py-2 text-left shadow-lg"
+        :class="floatingNotice.tone === 'error'
+          ? 'border-red-200 bg-red-50 shadow-red-900/10'
+          : 'border-amber-200 bg-amber-50 shadow-slate-900/10'"
+      >
+        <div class="min-w-0">
+          <p
+            class="break-words text-[12.5px] font-semibold leading-5"
+            :class="floatingNotice.tone === 'error' ? 'text-red-700' : 'text-amber-800'"
+          >
+            {{ floatingNotice.title }}
+          </p>
+          <p
+            class="break-words text-[11.5px] leading-4"
+            :class="floatingNotice.tone === 'error' ? 'text-red-600' : 'text-amber-700'"
+          >
+            {{ floatingNotice.detail }}
+          </p>
+        </div>
+        <BaseButton
+          v-if="floatingNotice.action === 'force_cancel' && cancellingRunForceAvailable"
+          variant="secondary"
+          size="sm"
+          @click="$emit('force-cancel-run')"
+        >
+          强制结束
+        </BaseButton>
       </div>
-      <BaseButton v-if="cancellingRunForceAvailable" variant="secondary" size="sm" @click="$emit('force-cancel-run')">
-        强制结束
-      </BaseButton>
     </section>
   </div>
 </template>
@@ -234,7 +330,7 @@
 import 'markstream-vue/index.css'
 import MarkdownRender, { getMarkdown, parseMarkdownToStructure } from 'markstream-vue'
 import { ChevronRight } from '@lucide/vue'
-import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import BaseButton from '@/components/ui/BaseButton.vue'
 import {
@@ -249,7 +345,7 @@ import {
   toolStatusLabelMap,
 } from '@/components/agent/agent-message-display'
 import type { TimelineDisplayItem, ToolCallDetail } from '@/components/agent/agent-conversation-panel'
-import type { AgentActiveRunItem, AgentMessageItem, AgentSuggestedPatch } from '@/types/api'
+import type { AgentActiveRunItem, AgentMessageAttachmentItem, AgentMessageItem, AgentSuggestedPatch } from '@/types/api'
 
 const props = defineProps<{
   timelineDisplayItems: TimelineDisplayItem[]
@@ -276,6 +372,7 @@ const markdownParser = getMarkdown()
 const markdownNodeCache = new Map<string, ReturnType<typeof buildMessageMarkdownNodes>>()
 const scrollContainerRef = ref<HTMLElement | null>(null)
 const autoScrollEnabled = ref(true)
+const failedAttachmentIds = ref(new Set<number>())
 let scrollAnimationFrame: number | null = null
 const assistantBatchRendering = {
   initialRenderBatchSize: 12,
@@ -283,6 +380,26 @@ const assistantBatchRendering = {
   renderBatchDelay: 8,
   renderBatchBudgetMs: 6,
 }
+const floatingNotice = computed(() => {
+  if (props.activeRun?.status === 'cancelling') {
+    return {
+      title: '正在停止当前运行',
+      detail: '如果长时间没有响应，可以强制释放当前会话占用。',
+      tone: 'warning' as const,
+      action: 'force_cancel' as const,
+    }
+  }
+  if (props.lastRunIssue) {
+    return {
+      title: props.lastRunIssue.title,
+      detail: props.lastRunIssue.detail,
+      tone: 'error' as const,
+      action: null,
+    }
+  }
+  return null
+})
+const hasFloatingNotice = computed(() => Boolean(floatingNotice.value))
 const isMessageStreaming = createMessageStreamingResolver(
   () => props.isStreaming,
   () => props.streamingTimelineItemId,
@@ -352,6 +469,19 @@ function handleToolRowClick(tool: ToolCallDetail) {
     return
   }
   emit('open-tool-detail', tool.id)
+}
+
+function handleAttachmentImageError(event: Event, attachment: AgentMessageAttachmentItem) {
+  void event
+  failedAttachmentIds.value = new Set([...failedAttachmentIds.value, attachment.id])
+}
+
+function isAttachmentPreviewAvailable(attachment: AgentMessageAttachmentItem) {
+  return attachment.preview_available && !failedAttachmentIds.value.has(attachment.id)
+}
+
+function attachmentPlaceholderText(attachment: AgentMessageAttachmentItem) {
+  return attachment.source_kind === 'tool_output' ? '工具图片' : '图片'
 }
 
 /**
@@ -465,7 +595,7 @@ function getRunStatusLineClass(status: string | null) {
  * 运行中的模型请求状态用省略号提示用户仍在等待输出。
  */
 function shouldAnimateRunStatus(status: string | null) {
-  return status === 'model_request'
+  return status === 'model_request' || status === 'tool_start' || status === 'tool_execution'
 }
 
 function getRequirementStatusClass(status: string | null) {
@@ -477,6 +607,10 @@ function getRequirementStatusClass(status: string | null) {
 </script>
 
 <style scoped>
+.agent-conversation-body--floating-toast {
+  padding-bottom: 5.5rem;
+}
+
 details[open] .details-chevron {
   transform: rotate(90deg);
 }
@@ -502,6 +636,33 @@ details[open] .details-chevron {
   border-radius: 0.25rem;
 }
 
+.message-attachment-thumb {
+  display: inline-flex;
+  height: 3.5rem;
+  width: 3.5rem;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: 0.375rem;
+  border: 1px solid rgb(226 232 240);
+  background: rgb(248 250 252);
+  color: rgb(100 116 139);
+  text-decoration: none;
+}
+
+.message-attachment-placeholder {
+  display: inline-flex;
+  height: 100%;
+  width: 100%;
+  align-items: center;
+  justify-content: center;
+  padding: 0.25rem;
+  text-align: center;
+  font-size: 0.625rem;
+  line-height: 0.875rem;
+}
+
 .assistant-markdown {
   font-size: 0.8125rem;
   line-height: 1.32;
@@ -512,6 +673,9 @@ details[open] .details-chevron {
   color: inherit;
   font-size: 0.8125rem;
   line-height: 1.32;
+  --loading-shimmer: rgb(226 232 240 / 0.95);
+  --tooltip-bg: rgb(15 23 42);
+  --tooltip-fg: rgb(248 250 252);
 }
 
 .assistant-markdown :deep(.markstream-vue > :first-child),
@@ -526,6 +690,14 @@ details[open] .details-chevron {
 
 .assistant-markdown :deep(.markstream-vue > * + *) {
   margin-top: 0.2rem;
+}
+
+.assistant-markdown :deep(.markstream-vue .node-placeholder),
+.reasoning-markdown :deep(.markstream-vue .node-placeholder) {
+  min-height: 0.875rem;
+  border: 1px solid rgb(226 232 240 / 0.9);
+  background: linear-gradient(90deg, rgb(248 250 252), rgb(241 245 249), rgb(248 250 252));
+  opacity: 1;
 }
 
 .assistant-markdown :deep(p) {
@@ -578,6 +750,9 @@ details[open] .details-chevron {
   font-size: 0.6875rem;
   line-height: 1.28;
   white-space: pre-wrap;
+  --loading-shimmer: rgb(226 232 240 / 0.9);
+  --tooltip-bg: rgb(15 23 42);
+  --tooltip-fg: rgb(248 250 252);
 }
 
 .reasoning-markdown :deep(.markstream-vue > * + *) {

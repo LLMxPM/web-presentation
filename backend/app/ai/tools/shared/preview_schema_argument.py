@@ -15,7 +15,7 @@ def normalize_preview_schema_argument(preview_schema: str | dict[str, Any] | Non
 
 
 def allow_preview_schema_object_parameter(tool_item: Any) -> None:
-    """修正 Agno 自动生成的 schema，使 preview_schema 可表达任意 JSON 对象。"""
+    """修正工具 schema，使 preview_schema 可表达任意 JSON 对象。"""
 
     parameters = getattr(tool_item, "parameters", None)
     if not isinstance(parameters, dict):

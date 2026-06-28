@@ -7,10 +7,9 @@ import hashlib
 import json
 import re
 import xml.etree.ElementTree as ET
-from collections.abc import AsyncIterator, Iterable
-from contextlib import AbstractAsyncContextManager, asynccontextmanager
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any
 
 import yaml
 from fastapi import UploadFile
@@ -18,7 +17,6 @@ from sqlalchemy import String, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import get_settings
 from app.core.exceptions import AppException
 from app.core.time_utils import format_in_app_timezone, utc_now
 from app.models.asset import WorkspaceAsset
@@ -31,214 +29,12 @@ from app.models.workspace_component import WorkspaceComponent
 from app.models.workspace_component_version import WorkspaceComponentVersion
 from app.models.workspace_theme import WorkspaceTheme
 from app.schemas.asset import AssetReferenceSummary, resolve_asset_content_editable, resolve_asset_role
+from app.services.asset_storage_drivers import BaseStorageDriver, get_driver
 from app.services.icon_analysis_service import IconAnalysisService
-from app.services.object_storage_service import ObjectStorageService
 from app.repositories.component_resource_index_repository import ComponentResourceIndexRepository
+from app.services.asset_render_metadata_service import AssetRenderMetadataService, AspectRatioSource
 from app.services.component_resource_index_service import ComponentResourceIndexService
 from app.services.workspace_font_service import WorkspaceFontService
-
-
-class BaseStorageDriver(Protocol):
-    async def upload(self, workspace_id: int, file_hash: str, ext: str, content: bytes, content_type: str | None = None) -> str:
-        """上传内容并返回保存的文件名。"""
-        ...
-
-    async def delete(self, workspace_id: int, file_name: str) -> None:
-        """删除物理文件。"""
-        ...
-
-    async def get_physical_path(self, workspace_id: int, file_name: str) -> Path | None:
-        """获取物理路径（若是本地存储）。"""
-        ...
-
-    async def generate_download_url(
-        self,
-        workspace_id: int,
-        file_name: str,
-        original_name: str,
-        download: bool = False,
-    ) -> str | None:
-        """生成远程直接下载/查看链接。"""
-        ...
-
-    async def read_content(self, workspace_id: int, file_name: str) -> bytes:
-        """读取已存储资源的原始内容。"""
-        ...
-
-    def open_for_read(
-        self,
-        workspace_id: int,
-        file_name: str,
-        *,
-        expected_sha256: str | None = None,
-        expected_size: int | None = None,
-    ) -> AbstractAsyncContextManager[Path]:
-        """打开资源对象的本地可读路径。"""
-        ...
-
-
-class LocalStorageDriver:
-    """本地磁盘存储驱动。"""
-
-    def __init__(self) -> None:
-        self.object_storage = ObjectStorageService()
-
-    def _get_workspace_asset_dir(self, workspace_id: int) -> Path:
-        dir_path = self.object_storage.resolve_local_path(f"assets/{workspace_id}")
-        dir_path.mkdir(parents=True, exist_ok=True)
-        return dir_path
-
-    async def upload(self, workspace_id: int, file_hash: str, ext: str, content: bytes, content_type: str | None = None) -> str:
-        save_name = f"{file_hash}{ext}"
-        await self.object_storage.put_object(f"assets/{workspace_id}/{save_name}", content, content_type)
-        return save_name
-
-    async def delete(self, workspace_id: int, file_name: str) -> None:
-        await self.object_storage.delete_object(f"assets/{workspace_id}/{file_name}")
-
-    async def get_physical_path(self, workspace_id: int, file_name: str) -> Path | None:
-        file_path = self._get_workspace_asset_dir(workspace_id) / file_name
-        if file_path.exists():
-            return file_path
-        return None
-
-    async def generate_download_url(
-        self,
-        workspace_id: int,
-        file_name: str,
-        original_name: str,
-        download: bool = False,
-    ) -> str | None:
-        return None
-
-    async def read_content(self, workspace_id: int, file_name: str) -> bytes:
-        return await self.object_storage.read_object(f"assets/{workspace_id}/{file_name}")
-
-    @asynccontextmanager
-    async def open_for_read(
-        self,
-        workspace_id: int,
-        file_name: str,
-        *,
-        expected_sha256: str | None = None,
-        expected_size: int | None = None,
-    ) -> AsyncIterator[Path]:
-        """打开本地资源文件路径，供需要 FileResponse 的入口复用。"""
-
-        async with self.object_storage.open_object_for_read(
-            f"assets/{workspace_id}/{file_name}",
-            expected_sha256=expected_sha256,
-            expected_size=expected_size,
-        ) as file_path:
-            yield file_path
-
-
-class S3StorageDriver:
-    """S3 兼容的对象存储驱动。"""
-
-    PUBLIC_FONT_SUFFIXES = (".woff2", ".woff", ".ttf", ".otf")
-
-    def __init__(self) -> None:
-        self.object_storage = ObjectStorageService()
-
-    def _get_s3_key(self, workspace_id: int, file_name: str) -> str:
-        return f"assets/{workspace_id}/{file_name}"
-
-    def _resolve_bucket_name(self, file_name: str) -> str | None:
-        """根据文件类型选择私有 bucket 或公开字体 bucket。"""
-
-        settings = self.object_storage.settings
-        public_bucket = str(settings.s3_public_bucket or "").strip()
-        if public_bucket and self._is_public_font_file(file_name):
-            return public_bucket
-        return str(settings.s3_bucket or "").strip() or None
-
-    def _build_public_font_url(self, workspace_id: int, file_name: str) -> str | None:
-        """为公开字体 bucket 构造稳定访问 URL。"""
-
-        if not self._is_public_font_file(file_name):
-            return None
-        public_base_url = str(self.object_storage.settings.s3_public_base_url or "").strip().rstrip("/")
-        if not public_base_url:
-            return None
-        return f"{public_base_url}/{self._get_s3_key(workspace_id, file_name)}"
-
-    @classmethod
-    def _is_public_font_file(cls, file_name: str) -> bool:
-        """判断文件名是否应进入公开字体资源链路。"""
-
-        normalized_name = str(file_name or "").strip().lower()
-        return normalized_name.endswith(cls.PUBLIC_FONT_SUFFIXES)
-
-    async def upload(self, workspace_id: int, file_hash: str, ext: str, content: bytes, content_type: str | None = None) -> str:
-        save_name = f"{file_hash}{ext}"
-        await self.object_storage.put_object(
-            self._get_s3_key(workspace_id, save_name),
-            content,
-            content_type,
-            bucket_name=self._resolve_bucket_name(save_name),
-        )
-        return save_name
-
-    async def delete(self, workspace_id: int, file_name: str) -> None:
-        await self.object_storage.delete_object(
-            self._get_s3_key(workspace_id, file_name),
-            bucket_name=self._resolve_bucket_name(file_name),
-        )
-
-    async def get_physical_path(self, workspace_id: int, file_name: str) -> Path | None:
-        return None
-
-    async def generate_download_url(
-        self,
-        workspace_id: int,
-        file_name: str,
-        original_name: str,
-        download: bool = False,
-    ) -> str | None:
-        public_url = None if download else self._build_public_font_url(workspace_id, file_name)
-        if public_url:
-            return public_url
-        return await self.object_storage.generate_presigned_url(
-            self._get_s3_key(workspace_id, file_name),
-            original_name=original_name,
-            download=download,
-            bucket_name=self._resolve_bucket_name(file_name),
-        )
-
-    async def read_content(self, workspace_id: int, file_name: str) -> bytes:
-        return await self.object_storage.read_object(
-            self._get_s3_key(workspace_id, file_name),
-            bucket_name=self._resolve_bucket_name(file_name),
-        )
-
-    @asynccontextmanager
-    async def open_for_read(
-        self,
-        workspace_id: int,
-        file_name: str,
-        *,
-        expected_sha256: str | None = None,
-        expected_size: int | None = None,
-    ) -> AsyncIterator[Path]:
-        """打开 S3 资源的本地缓存路径，并沿用字体公开 bucket 分流规则。"""
-
-        async with self.object_storage.open_object_for_read(
-            self._get_s3_key(workspace_id, file_name),
-            expected_sha256=expected_sha256,
-            expected_size=expected_size,
-            bucket_name=self._resolve_bucket_name(file_name),
-        ) as file_path:
-            yield file_path
-
-
-def get_driver() -> BaseStorageDriver:
-    """根据配置选择资产存储驱动。"""
-
-    settings = get_settings()
-    if settings.asset_storage_driver == "s3":
-        return S3StorageDriver()
-    return LocalStorageDriver()
 
 
 class AssetService:
@@ -432,6 +228,7 @@ class AssetService:
             )
 
         analysis_metadata = self._build_analysis_metadata(asset_type, original_name, content_type, content)
+        render_metadata = AssetRenderMetadataService.build_auto_metadata(asset_type, original_name, content_type, content)
         asset = WorkspaceAsset(
             workspace_id=workspace_id,
             name=asset_name,
@@ -444,7 +241,7 @@ class AssetService:
             asset_type=asset_type.value,
             tags=resolved_tags,
             analysis_metadata=analysis_metadata,
-            render_metadata=analysis_metadata,
+            render_metadata=render_metadata,
             status=RecordStatus.ACTIVE.value,
         )
         self.session.add(asset)
@@ -462,6 +259,8 @@ class AssetService:
         content: str,
         tags: list[str] | None = None,
         description: str | None = None,
+        approx_aspect_ratio: str | None = None,
+        aspect_ratio_source: AspectRatioSource = "manual",
     ) -> WorkspaceAsset:
         """通过文本内容创建 SVG 图标、SVG 图片、Draw.io、Mermaid、Chart 或 Formula 资源。"""
 
@@ -477,6 +276,14 @@ class AssetService:
         await self._ensure_asset_name_available(workspace_id, asset_name)
         save_name = await self.driver.upload(workspace_id, file_hash, ext, content_bytes, content_type)
         analysis_metadata = self._build_analysis_metadata(asset_type, original_name, content_type, content_bytes)
+        render_metadata = AssetRenderMetadataService.build_manual_or_auto_metadata(
+            value=approx_aspect_ratio,
+            source=aspect_ratio_source,
+            asset_type=asset_type,
+            original_name=original_name,
+            content_type=content_type,
+            content=content_bytes,
+        )
         asset = WorkspaceAsset(
             workspace_id=workspace_id,
             name=asset_name,
@@ -489,7 +296,7 @@ class AssetService:
             asset_type=asset_type.value,
             tags=tags or [],
             analysis_metadata=analysis_metadata,
-            render_metadata=analysis_metadata,
+            render_metadata=render_metadata,
             status=RecordStatus.ACTIVE.value,
         )
         self.session.add(asset)
@@ -708,6 +515,9 @@ class AssetService:
         original_name: str | None = None,
         tags: list[str] | None = None,
         description: str | None = None,
+        approx_aspect_ratio: str | None = None,
+        approx_aspect_ratio_provided: bool = False,
+        aspect_ratio_source: AspectRatioSource = "manual",
     ) -> WorkspaceAsset:
         """更新资源元数据；不改变物理文件指针，也不生成历史副本。"""
 
@@ -715,12 +525,13 @@ class AssetService:
         normalized_name = self._normalize_asset_name(name) if name is not None else asset.name
         normalized_original_name = self._normalize_original_name(original_name) if original_name is not None else asset.original_name
         normalized_description = self._normalize_description(description) if description is not None else asset.description
+        original_name_changed = normalized_original_name != asset.original_name
 
         if normalized_name != asset.name:
             await self._ensure_asset_name_available(workspace_id, normalized_name, exclude_asset_id=asset.id)
             asset.name = normalized_name
 
-        if normalized_original_name != asset.original_name:
+        if original_name_changed:
             self._validate_asset_file_type(AssetType(asset.asset_type), normalized_original_name, asset.content_type)
             asset.original_name = normalized_original_name
 
@@ -729,6 +540,25 @@ class AssetService:
 
         if tags is not None:
             asset.tags = tags
+
+        if approx_aspect_ratio_provided:
+            content = await self.driver.read_content(workspace_id, asset.file_name)
+            asset.render_metadata = AssetRenderMetadataService.build_manual_or_auto_metadata(
+                value=approx_aspect_ratio,
+                source=aspect_ratio_source,
+                asset_type=AssetType(asset.asset_type),
+                original_name=asset.original_name,
+                content_type=asset.content_type,
+                content=content,
+            )
+        elif original_name_changed and not AssetRenderMetadataService.is_manual_metadata(asset.render_metadata):
+            content = await self.driver.read_content(workspace_id, asset.file_name)
+            asset.render_metadata = AssetRenderMetadataService.build_auto_metadata(
+                AssetType(asset.asset_type),
+                asset.original_name,
+                asset.content_type,
+                content,
+            )
 
         await WorkspaceFontService(self.session).sync_asset_reference_name(asset)
         await self.session.commit()
@@ -919,6 +749,13 @@ class AssetService:
             await self._create_history_snapshot(asset, reason=history_reason)
 
         analysis_metadata = self._build_analysis_metadata(asset_type, original_name, content_type, content)
+        render_metadata = AssetRenderMetadataService.preserve_manual_or_build_auto(
+            asset_type=asset_type,
+            original_name=original_name,
+            content_type=content_type,
+            content=content,
+            existing_metadata=asset.render_metadata,
+        )
         asset.file_name = file_name
         asset.original_name = original_name
         asset.file_size = file_size
@@ -926,7 +763,7 @@ class AssetService:
         asset.content_type = content_type
         asset.asset_type = asset_type.value
         asset.analysis_metadata = analysis_metadata
-        asset.render_metadata = analysis_metadata
+        asset.render_metadata = render_metadata
         if description is not None:
             asset.description = description
 

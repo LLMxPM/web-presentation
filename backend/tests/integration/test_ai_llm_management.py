@@ -2,14 +2,11 @@
 
 from __future__ import annotations
 
-from agno.media import Image
-from agno.models.message import Message
 from httpx import AsyncClient
 
-from app.ai.model_resolver import LlmModelResolver
-from app.ai.providers.mimo import MiMo
+from app.ai.pydantic_model_resolver import PydanticLlmModelResolver
 from app.ai.secret_cipher import LlmSecretCipher
-from app.models.ai_llm import AiLlmConfig
+from app.models.ai_llm import AiLlmConfig, AiLlmProviderConfig
 from app.models.enums import RecordStatus
 
 
@@ -59,6 +56,63 @@ async def _create_page(
     return response.json()["id"]
 
 
+async def _create_llm_provider_config(
+    authenticated_client: AsyncClient,
+    *,
+    name: str,
+    provider_key: str = "openai",
+    base_url: str | None = "https://api.openai.com/v1",
+    api_key: str | None = "sk-session-provider",
+) -> dict:
+    """创建一个测试用供应商配置。"""
+
+    response = await authenticated_client.post(
+        "/api/ai/llm-provider-configs",
+        json={
+            "name": name,
+            "provider_key": provider_key,
+            "base_url": base_url,
+            "api_key": api_key,
+        },
+    )
+    assert response.status_code == 201
+    return response.json()
+
+
+async def _create_llm_config(
+    authenticated_client: AsyncClient,
+    *,
+    name: str,
+    supports_image_input: bool = False,
+) -> dict:
+    """创建一个测试用个人大模型配置。"""
+
+    provider = await _create_llm_provider_config(
+        authenticated_client,
+        name=f"{name} 供应商",
+    )
+    response = await authenticated_client.post(
+        "/api/ai/llm-configs",
+        json={
+            "name": name,
+            "provider_config_id": provider["id"],
+            "model_id": "gpt-4.1-mini",
+            "supports_image_input": supports_image_input,
+            "advanced_config_json": {},
+        },
+    )
+    assert response.status_code == 201
+    return response.json()
+
+
+async def _create_agent_project_scope(authenticated_client: AsyncClient, name: str) -> tuple[int, int]:
+    """创建内容助手可启动的项目级 scope。"""
+
+    workspace_id = await _create_workspace(authenticated_client, f"{name} 工作空间")
+    project_id = await _create_project(authenticated_client, workspace_id, f"{name} 项目")
+    return workspace_id, project_id
+
+
 async def test_llm_provider_catalog_should_only_include_supported_providers(authenticated_client: AsyncClient) -> None:
     """供应商目录接口应只返回平台保留的 provider 元数据。"""
 
@@ -80,7 +134,7 @@ async def test_llm_provider_catalog_should_only_include_supported_providers(auth
     for provider_key in providers:
         assert provider_key in providers
         assert providers[provider_key]["label"]
-        assert providers[provider_key]["agno_class_path"]
+        assert providers[provider_key]["provider_adapter"].startswith("pydantic_ai.")
         assert providers[provider_key]["docs_url"].startswith("https://")
     assert providers["ollama"]["supports_thinking"] is True
     assert providers["ollama"]["thinking_mode"] == "ollama_think"
@@ -94,6 +148,7 @@ async def test_llm_provider_catalog_should_only_include_supported_providers(auth
     assert providers["google"]["thinking_effort_options"] == ["low", "high"]
     assert providers["openai"]["default_base_url"] == "https://api.openai.com/v1"
     assert providers["openrouter"]["default_base_url"] == "https://openrouter.ai/api/v1"
+    assert providers["openrouter"]["thinking_mode"] == "openrouter_reasoning"
     assert providers["openrouter"]["advanced_json_hint"] == {}
     assert providers["dashscope"]["default_model_id"] == "qwen-plus"
     assert providers["nvidia"]["default_model_id"] == "meta/llama-3.3-70b-instruct"
@@ -105,22 +160,38 @@ async def test_llm_provider_catalog_should_only_include_supported_providers(auth
     assert providers["deepseek"]["default_max_output_tokens"] == 384_000
     assert providers["deepseek"]["thinking_effort_options"] == ["high", "max"]
     assert providers["mimo"]["default_base_url"] == "https://api.xiaomimimo.com/v1"
-    assert providers["mimo"]["default_model_id"] is None
-    assert providers["mimo"]["default_supports_image_input"] is False
+    assert providers["mimo"]["default_model_id"] == "mimo-v2.5"
+    assert providers["mimo"]["default_thinking_enabled"] is True
+    assert providers["mimo"]["default_context_window_tokens"] == 1_000_000
+    assert providers["mimo"]["default_max_output_tokens"] == 32_768
+    assert providers["mimo"]["default_supports_image_input"] is True
     assert all(item["advanced_json_hint"] == {} for item in providers.values())
 
 
-async def test_llm_config_crud_should_encrypt_and_mask_api_key(authenticated_client: AsyncClient) -> None:
-    """创建和更新大模型配置时，应加密保存 API Key 并只向前端返回脱敏值。"""
+async def test_llm_provider_and_config_crud_should_split_secret_from_model(authenticated_client: AsyncClient) -> None:
+    """供应商配置负责密钥脱敏，模型配置只引用供应商并维护模型参数。"""
+
+    provider_response = await authenticated_client.post(
+        "/api/ai/llm-provider-configs",
+        json={
+            "name": "OpenRouter 工作账号",
+            "provider_key": "openrouter",
+            "base_url": "https://openrouter.ai/api/v1",
+            "api_key": "sk-or-v1-test-secret",
+        },
+    )
+    assert provider_response.status_code == 201
+    provider = provider_response.json()
+    assert provider["has_api_key"] is True
+    assert provider["api_key_masked"] != "sk-or-v1-test-secret"
+    assert provider["provider_label"] == "OpenRouter"
 
     create_response = await authenticated_client.post(
         "/api/ai/llm-configs",
         json={
             "name": "OpenRouter 主模型",
-            "provider_key": "openrouter",
+            "provider_config_id": provider["id"],
             "model_id": "openai/gpt-4.1-mini",
-            "base_url": "https://openrouter.ai/api/v1",
-            "api_key": "sk-or-v1-test-secret",
             "thinking_enabled": True,
             "thinking_effort": "xhigh",
             "advanced_config_json": {"temperature": 0.2},
@@ -128,8 +199,8 @@ async def test_llm_config_crud_should_encrypt_and_mask_api_key(authenticated_cli
     )
     assert create_response.status_code == 201
     created_item = create_response.json()
-    assert created_item["has_api_key"] is True
-    assert created_item["api_key_masked"] != "sk-or-v1-test-secret"
+    assert created_item["provider_config_id"] == provider["id"]
+    assert created_item["provider_config_name"] == "OpenRouter 工作账号"
     assert created_item["provider_label"] == "OpenRouter"
     assert created_item["context_window_tokens"] == 128000
     assert created_item["max_output_tokens"] == 32000
@@ -151,12 +222,18 @@ async def test_llm_config_crud_should_encrypt_and_mask_api_key(authenticated_cli
     assert protected_key_response.status_code == 400
     assert protected_key_response.json()["code"] == "AI_LLM_ADVANCED_CONFIG_CONFLICT"
 
+    clear_secret_response = await authenticated_client.patch(
+        f"/api/ai/llm-provider-configs/{provider['id']}",
+        json={"api_key": ""},
+    )
+    assert clear_secret_response.status_code == 200
+    assert clear_secret_response.json()["has_api_key"] is False
+    assert clear_secret_response.json()["api_key_masked"] is None
+
     update_response = await authenticated_client.patch(
         f"/api/ai/llm-configs/{config_id}",
         json={
-            "name": "OpenRouter 归档模型",
-            "api_key": "",
-            "status": "archived",
+            "name": "OpenRouter 更新模型",
             "context_window_tokens": 128000,
             "max_output_tokens": 8192,
             "history_token_ratio": 0.35,
@@ -166,28 +243,139 @@ async def test_llm_config_crud_should_encrypt_and_mask_api_key(authenticated_cli
     )
     assert update_response.status_code == 200
     updated_item = update_response.json()
-    assert updated_item["name"] == "OpenRouter 归档模型"
-    assert updated_item["status"] == "archived"
-    assert updated_item["has_api_key"] is False
-    assert updated_item["api_key_masked"] is None
+    assert updated_item["name"] == "OpenRouter 更新模型"
+    assert updated_item["status"] == "active"
     assert updated_item["context_window_tokens"] == 128000
     assert updated_item["max_output_tokens"] == 8192
     assert updated_item["history_token_ratio"] == 0.35
     assert updated_item["compression_target_ratio"] == 0.2
     assert updated_item["advanced_config_json"] == {"temperature": 0.5}
 
+    model_status_response = await authenticated_client.patch(
+        f"/api/ai/llm-configs/{config_id}",
+        json={"status": "archived"},
+    )
+    assert model_status_response.status_code == 400
+    assert model_status_response.json()["code"] == "AI_LLM_CONFIG_STATUS_UPDATE_UNSUPPORTED"
+
+    provider_status_response = await authenticated_client.patch(
+        f"/api/ai/llm-provider-configs/{provider['id']}",
+        json={"status": "archived"},
+    )
+    assert provider_status_response.status_code == 400
+    assert provider_status_response.json()["code"] == "AI_LLM_PROVIDER_STATUS_UPDATE_UNSUPPORTED"
+
+
+async def test_llm_config_delete_should_hard_delete_unbind_slots_and_block_existing_session_run(
+    authenticated_client: AsyncClient,
+) -> None:
+    """删除模型应移除模型记录和槽位绑定，已固化该模型的会话不能继续发起运行。"""
+
+    config = await _create_llm_config(authenticated_client, name="待删除会话模型")
+    slot_response = await authenticated_client.put(
+        "/api/ai/llm-slots/agent_coordinator",
+        json={"llm_config_id": config["id"]},
+    )
+    assert slot_response.status_code == 200
+    assert slot_response.json()["binding_ready"] is True
+
+    workspace_id, project_id = await _create_agent_project_scope(authenticated_client, "删除模型会话")
+    create_session_response = await authenticated_client.post(
+        "/api/ai/sessions",
+        json={
+            "agent_id": "agent-coordinator",
+            "session_name": "删除模型后会话",
+            "scope": {
+                "scope_type": "project",
+                "workspace_id": workspace_id,
+                "project_id": project_id,
+                "source": "test-agent-session",
+            },
+            "llm_config_id": config["id"],
+        },
+    )
+    assert create_session_response.status_code == 201
+    session_id = create_session_response.json()["session_id"]
+
+    delete_response = await authenticated_client.delete(f"/api/ai/llm-configs/{config['id']}")
+    assert delete_response.status_code == 200
+    assert delete_response.json()["message"] == "模型已删除。"
+
+    detail_response = await authenticated_client.get(f"/api/ai/llm-configs/{config['id']}")
+    assert detail_response.status_code == 404
+    assert detail_response.json()["code"] == "AI_LLM_CONFIG_NOT_FOUND"
+
+    slots_response = await authenticated_client.get("/api/ai/llm-slots")
+    assert slots_response.status_code == 200
+    agent_slot = {item["slot"]: item for item in slots_response.json()}["agent_coordinator"]
+    assert agent_slot["llm_config_id"] is None
+    assert agent_slot["binding_ready"] is False
+
+    run_response = await authenticated_client.post(
+        f"/api/ai/sessions/{session_id}/runs/stream",
+        params={
+            "workspace_id": workspace_id,
+            "project_id": project_id,
+            "scope_type": "project",
+            "agent_id": "agent-coordinator",
+        },
+        json={"message": "继续使用已删除模型的会话"},
+    )
+    assert run_response.status_code == 200
+    assert "AI_LLM_CONFIG_NOT_FOUND" in run_response.text
+
+
+async def test_llm_provider_config_delete_should_require_no_linked_models(authenticated_client: AsyncClient) -> None:
+    """删除供应商前必须先删除所有引用它的模型。"""
+
+    provider = await _create_llm_provider_config(
+        authenticated_client,
+        name="待删除供应商",
+    )
+    create_response = await authenticated_client.post(
+        "/api/ai/llm-configs",
+        json={
+            "name": "引用待删除供应商的模型",
+            "provider_config_id": provider["id"],
+            "model_id": "gpt-4.1-mini",
+            "advanced_config_json": {},
+        },
+    )
+    assert create_response.status_code == 201
+    config = create_response.json()
+
+    blocked_response = await authenticated_client.delete(f"/api/ai/llm-provider-configs/{provider['id']}")
+    assert blocked_response.status_code == 409
+    assert blocked_response.json()["code"] == "AI_LLM_PROVIDER_CONFIG_IN_USE"
+
+    delete_model_response = await authenticated_client.delete(f"/api/ai/llm-configs/{config['id']}")
+    assert delete_model_response.status_code == 200
+
+    delete_provider_response = await authenticated_client.delete(f"/api/ai/llm-provider-configs/{provider['id']}")
+    assert delete_provider_response.status_code == 200
+    assert delete_provider_response.json()["message"] == "供应商已删除。"
+
+    detail_response = await authenticated_client.get(f"/api/ai/llm-provider-configs/{provider['id']}")
+    assert detail_response.status_code == 404
+    assert detail_response.json()["code"] == "AI_LLM_PROVIDER_CONFIG_NOT_FOUND"
+
 
 async def test_llm_config_should_accept_large_context_model_limits(authenticated_client: AsyncClient) -> None:
     """大模型配置应允许百万级上下文与超过旧 20 万限制的输出 token。"""
 
+    provider = await _create_llm_provider_config(
+        authenticated_client,
+        name="OpenRouter 长上下文供应商",
+        provider_key="openrouter",
+        base_url="https://openrouter.ai/api/v1",
+        api_key="sk-or-v1-large-context",
+    )
     response = await authenticated_client.post(
         "/api/ai/llm-configs",
         json={
             "name": "百万上下文模型",
-            "provider_key": "openrouter",
+            "provider_config_id": provider["id"],
             "model_id": "openai/gpt-4.1-long-context",
-            "base_url": "https://openrouter.ai/api/v1",
-            "api_key": "sk-or-v1-large-context",
             "context_window_tokens": 1_000_000,
             "max_output_tokens": 300_000,
             "advanced_config_json": {},
@@ -200,17 +388,46 @@ async def test_llm_config_should_accept_large_context_model_limits(authenticated
     assert created_item["max_output_tokens"] == 300_000
 
 
+async def test_llm_config_should_reject_mimo_output_above_provider_limit(authenticated_client: AsyncClient) -> None:
+    """MiMo 配置不应允许保存超过供应商硬限制的输出 token。"""
+
+    provider = await _create_llm_provider_config(
+        authenticated_client,
+        name="MiMo 供应商",
+        provider_key="mimo",
+        base_url="https://api.xiaomimimo.com/v1",
+        api_key="sk-mimo-test",
+    )
+    response = await authenticated_client.post(
+        "/api/ai/llm-configs",
+        json={
+            "name": "MiMo 超限模型",
+            "provider_config_id": provider["id"],
+            "model_id": "mimo-v2.5",
+            "context_window_tokens": 1_000_000,
+            "max_output_tokens": 200_000,
+            "advanced_config_json": {},
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json()["code"] == "AI_LLM_MAX_OUTPUT_TOKENS_UNSUPPORTED"
+
+
 async def test_llm_slot_binding_should_drive_agent_binding_state(authenticated_client: AsyncClient) -> None:
     """当前固定槽位绑定后，Agent 列表应返回已绑定的大模型信息。"""
 
+    provider = await _create_llm_provider_config(
+        authenticated_client,
+        name="OpenAI 槽位供应商",
+        api_key="sk-test-openai",
+    )
     config_response = await authenticated_client.post(
         "/api/ai/llm-configs",
         json={
             "name": "总控模型",
-            "provider_key": "openai",
+            "provider_config_id": provider["id"],
             "model_id": "gpt-4.1-mini",
-            "base_url": "https://api.openai.com/v1",
-            "api_key": "sk-test-openai",
             "thinking_enabled": True,
             "thinking_effort": "low",
             "advanced_config_json": {},
@@ -302,279 +519,356 @@ async def test_llm_slot_binding_should_drive_agent_binding_state(authenticated_c
     assert agents["resource-manager"]["scope_type"] == "workspace"
 
 
-def test_llm_model_resolver_should_build_common_provider_models() -> None:
-    """模型解析器应能构造常见供应商的 Agno 模型对象。"""
+async def test_agent_session_should_persist_explicit_personal_llm_config(authenticated_client: AsyncClient) -> None:
+    """创建会话时显式选择个人模型，应把具体配置固化到 metadata.llm。"""
 
-    cipher = LlmSecretCipher()
-    resolver = LlmModelResolver()
-
-    openai_model = resolver.resolve_model(
-        AiLlmConfig(
-            id=1,
-            user_id=1,
-            name="openai",
-            provider_key="openai",
-            model_id="gpt-4.1-mini",
-            base_url="https://api.openai.com/v1",
-            api_key_ciphertext=cipher.encrypt("sk-openai-test"),
-            thinking_enabled=True,
-            advanced_config_json={},
-            status=RecordStatus.ACTIVE.value,
-        )
+    config = await _create_llm_config(
+        authenticated_client,
+        name="会话个人模型",
+        supports_image_input=True,
     )
-    assert openai_model.__class__.__name__ == "OpenAIResponses"
-    assert getattr(openai_model, "reasoning_effort", None) is None
+    workspace_id, project_id = await _create_agent_project_scope(authenticated_client, "显式模型会话")
 
-    openrouter_model = resolver.resolve_model(
-        AiLlmConfig(
-            id=2,
-            user_id=1,
-            name="openrouter",
-            provider_key="openrouter",
-            model_id="openai/gpt-4.1-mini",
-            base_url="https://openrouter.ai/api/v1",
-            api_key_ciphertext=cipher.encrypt("sk-openrouter-test"),
-            thinking_enabled=True,
-            thinking_effort="xhigh",
-            advanced_config_json={},
-            status=RecordStatus.ACTIVE.value,
-        )
-    )
-    assert openrouter_model.__class__.__name__ == "OpenRouter"
-    assert getattr(openrouter_model, "reasoning_effort", None) == "xhigh"
-
-    dashscope_model = resolver.resolve_model(
-        AiLlmConfig(
-            id=3,
-            user_id=1,
-            name="dashscope",
-            provider_key="dashscope",
-            model_id="qwen-plus",
-            base_url="https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
-            api_key_ciphertext=cipher.encrypt("sk-dashscope-test"),
-            thinking_enabled=True,
-            thinking_effort="medium",
-            advanced_config_json={},
-            status=RecordStatus.ACTIVE.value,
-        )
-    )
-    assert dashscope_model.__class__.__name__ == "DashScope"
-    assert getattr(dashscope_model, "enable_thinking", None) is True
-    assert getattr(dashscope_model, "thinking_budget", None) == 5000
-
-    openai_like_model = resolver.resolve_model(
-        AiLlmConfig(
-            id=4,
-            user_id=1,
-            name="openai_like",
-            provider_key="openai_like",
-            model_id="custom-model",
-            base_url="https://api.example.com/v1",
-            api_key_ciphertext=cipher.encrypt("sk-compatible-test"),
-            thinking_enabled=True,
-            thinking_effort="max",
-            advanced_config_json={},
-            status=RecordStatus.ACTIVE.value,
-        )
-    )
-    assert openai_like_model.__class__.__name__ == "OpenAILike"
-    assert getattr(openai_like_model, "base_url", None) == "https://api.example.com/v1"
-    assert getattr(openai_like_model, "reasoning_effort", None) == "max"
-
-    deepseek_model = resolver.resolve_model(
-        AiLlmConfig(
-            id=8,
-            user_id=1,
-            name="deepseek",
-            provider_key="deepseek",
-            model_id="deepseek-v4-flash",
-            base_url="https://api.deepseek.com",
-            api_key_ciphertext=cipher.encrypt("sk-deepseek-test"),
-            thinking_enabled=True,
-            thinking_effort="xhigh",
-            advanced_config_json={},
-            status=RecordStatus.ACTIVE.value,
-        )
-    )
-    assert deepseek_model.__class__.__name__ == "DeepSeek"
-    assert getattr(deepseek_model, "reasoning_effort", None) == "max"
-    assert getattr(deepseek_model, "extra_body", None) == {"thinking": {"type": "enabled"}}
-    assert getattr(deepseek_model, "timeout", None) is None
-    assert getattr(deepseek_model, "retries", None) == 0
-
-    deepseek_disabled_model = resolver.resolve_model(
-        AiLlmConfig(
-            id=9,
-            user_id=1,
-            name="deepseek-disabled",
-            provider_key="deepseek",
-            model_id="deepseek-v4-flash",
-            base_url="https://api.deepseek.com",
-            api_key_ciphertext=cipher.encrypt("sk-deepseek-test"),
-            thinking_enabled=False,
-            advanced_config_json={},
-            status=RecordStatus.ACTIVE.value,
-        )
-    )
-    assert deepseek_disabled_model.__class__.__name__ == "DeepSeek"
-    assert getattr(deepseek_disabled_model, "reasoning_effort", None) is None
-    assert getattr(deepseek_disabled_model, "extra_body", None) == {"thinking": {"type": "disabled"}}
-    assert getattr(deepseek_disabled_model, "timeout", None) is None
-
-    deepseek_legacy_effort_model = resolver.resolve_model(
-        AiLlmConfig(
-            id=12,
-            user_id=1,
-            name="deepseek-legacy-effort",
-            provider_key="deepseek",
-            model_id="deepseek-v4-pro",
-            base_url="https://api.deepseek.com",
-            api_key_ciphertext=cipher.encrypt("sk-deepseek-test"),
-            thinking_enabled=True,
-            thinking_effort="medium",
-            advanced_config_json={},
-            status=RecordStatus.ACTIVE.value,
-        )
-    )
-    assert getattr(deepseek_legacy_effort_model, "reasoning_effort", None) == "high"
-    assert getattr(deepseek_legacy_effort_model, "extra_body", None) == {"thinking": {"type": "enabled"}}
-
-    deepseek_custom_model = resolver.resolve_model(
-        AiLlmConfig(
-            id=10,
-            user_id=1,
-            name="deepseek-custom",
-            provider_key="deepseek",
-            model_id="deepseek-v4-pro",
-            base_url="https://api.deepseek.com",
-            api_key_ciphertext=cipher.encrypt("sk-deepseek-test"),
-            thinking_enabled=True,
-            thinking_effort="medium",
-            advanced_config_json={
-                "reasoning_effort": "max",
-                "timeout": 60,
-                "retries": 0,
-                "extra_body": {"thinking": {"type": "disabled"}, "custom": "value"},
+    response = await authenticated_client.post(
+        "/api/ai/sessions",
+        json={
+            "agent_id": "agent-coordinator",
+            "session_name": "显式模型会话",
+            "scope": {
+                "scope_type": "project",
+                "workspace_id": workspace_id,
+                "project_id": project_id,
+                "source": "test-agent-session",
             },
-            status=RecordStatus.ACTIVE.value,
-        )
+            "llm_config_id": config["id"],
+        },
     )
-    assert getattr(deepseek_custom_model, "reasoning_effort", None) == "max"
-    assert getattr(deepseek_custom_model, "timeout", None) == 60
-    assert getattr(deepseek_custom_model, "retries", None) == 0
-    assert getattr(deepseek_custom_model, "extra_body", None) == {
-        "thinking": {"type": "enabled"},
-        "custom": "value",
+
+    assert response.status_code == 201
+    llm_metadata = response.json()["metadata"]["llm"]
+    assert llm_metadata == {
+        "selection_kind": "explicit_config",
+        "config_id": config["id"],
+        "scope": "personal",
+        "name": "会话个人模型",
+        "provider_config_id": config["provider_config_id"],
+        "provider_config_name": config["provider_config_name"],
+        "provider_key": "openai",
+        "provider_label": "OpenAI",
+        "model_id": "gpt-4.1-mini",
+        "supports_image_input": True,
     }
 
-    ollama_model = resolver.resolve_model(
-        AiLlmConfig(
-            id=5,
+
+async def test_agent_session_should_reject_deleted_selected_llm_config(authenticated_client: AsyncClient) -> None:
+    """会话显式模型选择应拒绝已删除模型和不存在模型。"""
+
+    config = await _create_llm_config(authenticated_client, name="删除会话模型")
+    delete_response = await authenticated_client.delete(f"/api/ai/llm-configs/{config['id']}")
+    assert delete_response.status_code == 200
+    workspace_id, project_id = await _create_agent_project_scope(authenticated_client, "删除模型会话")
+    scope_payload = {
+        "scope_type": "project",
+        "workspace_id": workspace_id,
+        "project_id": project_id,
+        "source": "test-agent-session",
+    }
+
+    deleted_response = await authenticated_client.post(
+        "/api/ai/sessions",
+        json={
+            "agent_id": "agent-coordinator",
+            "session_name": "删除模型会话",
+            "scope": scope_payload,
+            "llm_config_id": config["id"],
+        },
+    )
+    assert deleted_response.status_code == 404
+    assert deleted_response.json()["code"] == "AI_LLM_CONFIG_NOT_FOUND"
+
+    missing_response = await authenticated_client.post(
+        "/api/ai/sessions",
+        json={
+            "agent_id": "agent-coordinator",
+            "session_name": "不存在模型会话",
+            "scope": scope_payload,
+            "llm_config_id": 999_999_999,
+        },
+    )
+    assert missing_response.status_code == 404
+    assert missing_response.json()["code"] == "AI_LLM_CONFIG_NOT_FOUND"
+
+
+async def test_agent_session_without_llm_config_should_fallback_to_slot_binding(authenticated_client: AsyncClient) -> None:
+    """旧客户端未传 llm_config_id 时，应继续按当前智能体槽位绑定创建会话。"""
+
+    config = await _create_llm_config(authenticated_client, name="槽位兼容模型")
+    slot_response = await authenticated_client.put(
+        "/api/ai/llm-slots/agent_coordinator",
+        json={"llm_config_id": config["id"]},
+    )
+    assert slot_response.status_code == 200
+    workspace_id, project_id = await _create_agent_project_scope(authenticated_client, "槽位兼容会话")
+
+    response = await authenticated_client.post(
+        "/api/ai/sessions",
+        json={
+            "agent_id": "agent-coordinator",
+            "session_name": "槽位兼容会话",
+            "scope": {
+                "scope_type": "project",
+                "workspace_id": workspace_id,
+                "project_id": project_id,
+                "source": "test-agent-session",
+            },
+        },
+    )
+
+    assert response.status_code == 201
+    llm_metadata = response.json()["metadata"]["llm"]
+    assert llm_metadata["selection_kind"] == "slot_binding"
+    assert llm_metadata["config_id"] == config["id"]
+    assert llm_metadata["name"] == "槽位兼容模型"
+
+
+def test_llm_model_resolver_should_build_common_provider_models() -> None:
+    """模型解析器应能构造常见供应商的 Pydantic AI 模型对象与运行参数。"""
+
+    cipher = LlmSecretCipher()
+    resolver = PydanticLlmModelResolver()
+
+    def build_config(*, id: int, provider_key: str, model_id: str, api_key: str = "sk-test", **kwargs) -> AiLlmConfig:
+        """构造激活状态的大模型配置，聚焦 provider 差异字段。"""
+
+        base_url = kwargs.pop("base_url", None)
+        provider_config = AiLlmProviderConfig(
+            id=id + 100,
             user_id=1,
-            name="ollama",
-            provider_key="ollama",
-            model_id="llama3.1",
-            base_url="http://localhost:11434",
-            api_key_ciphertext=cipher.encrypt(""),
-            thinking_enabled=True,
-            thinking_effort="medium",
-            advanced_config_json={},
+            scope="personal",
+            name=f"{provider_key} 供应商",
+            provider_key=provider_key,
+            base_url=base_url,
+            api_key_ciphertext=cipher.encrypt(api_key),
             status=RecordStatus.ACTIVE.value,
         )
-    )
-    assert ollama_model.__class__.__name__ == "Ollama"
-    assert getattr(ollama_model, "host", None) == "http://localhost:11434"
-    assert getattr(ollama_model, "request_params", None) == {"think": "medium"}
-
-    ollama_custom_think_model = resolver.resolve_model(
-        AiLlmConfig(
-            id=7,
+        return AiLlmConfig(
+            id=id,
             user_id=1,
-            name="ollama-custom-think",
-            provider_key="ollama",
-            model_id="gpt-oss:20b",
-            base_url="http://localhost:11434",
-            api_key_ciphertext=cipher.encrypt(""),
-            thinking_enabled=True,
-            thinking_effort="low",
-            advanced_config_json={"request_params": {"think": "high"}},
+            scope="personal",
+            name=kwargs.pop("name", provider_key),
+            provider_config_id=provider_config.id,
+            provider_config=provider_config,
+            model_id=model_id,
+            advanced_config_json=kwargs.pop("advanced_config_json", {}),
             status=RecordStatus.ACTIVE.value,
+            **kwargs,
         )
+
+    openai_config = build_config(
+        id=1,
+        provider_key="openai",
+        model_id="gpt-4.1-mini",
+        base_url="https://api.openai.com/v1",
+        thinking_enabled=True,
+        thinking_effort="medium",
     )
-    assert ollama_custom_think_model.__class__.__name__ == "Ollama"
-    assert getattr(ollama_custom_think_model, "request_params", None) == {"think": "high"}
+    openai_model = resolver.resolve_model(openai_config)
+    assert openai_model.__class__.__name__ == "OpenAIChatModel"
+    assert openai_model.model_name == "gpt-4.1-mini"
+    assert resolver.resolve_model_settings(openai_config)["openai_reasoning_effort"] == "medium"
 
-    google_model = resolver.resolve_model(
-        AiLlmConfig(
-            id=11,
-            user_id=1,
-            name="google",
-            provider_key="google",
-            model_id="gemini-2.5-pro",
-            api_key_ciphertext=cipher.encrypt("sk-google-test"),
-            thinking_enabled=True,
-            thinking_effort="low",
-            advanced_config_json={},
-            status=RecordStatus.ACTIVE.value,
-        )
+    openrouter_config = build_config(
+        id=2,
+        provider_key="openrouter",
+        model_id="openai/gpt-4.1-mini",
+        api_key="sk-openrouter-test",
+        base_url="https://openrouter.ai/api/v1",
+        thinking_enabled=True,
+        thinking_effort="xhigh",
     )
-    assert google_model.__class__.__name__ == "Gemini"
-    assert getattr(google_model, "thinking_level", None) == "low"
+    openrouter_model = resolver.resolve_model(openrouter_config)
+    assert openrouter_model.__class__.__name__ == "OpenRouterModel"
+    assert openrouter_model.model_name == "openai/gpt-4.1-mini"
+    assert resolver.resolve_model_settings(openrouter_config)["openrouter_reasoning"] == {"effort": "xhigh"}
 
-    nvidia_model = resolver.resolve_model(
-        AiLlmConfig(
-            id=6,
-            user_id=1,
-            name="nvidia",
-            provider_key="nvidia",
-            model_id="meta/llama-3.3-70b-instruct",
-            base_url="https://integrate.api.nvidia.com/v1",
-            api_key_ciphertext=cipher.encrypt("nvapi-test"),
-            thinking_enabled=True,
-            advanced_config_json={},
-            status=RecordStatus.ACTIVE.value,
-        )
+    dashscope_config = build_config(
+        id=3,
+        provider_key="dashscope",
+        model_id="qwen-plus",
+        api_key="sk-dashscope-test",
+        base_url="https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+        thinking_enabled=True,
+        thinking_effort="medium",
     )
-    assert nvidia_model.__class__.__name__ == "Nvidia"
-    assert getattr(nvidia_model, "reasoning_effort", None) is None
+    dashscope_model = resolver.resolve_model(dashscope_config)
+    assert dashscope_model.__class__.__name__ == "OpenAIChatModel"
+    assert dashscope_model.model_name == "qwen-plus"
+    assert resolver.resolve_model_settings(dashscope_config)["extra_body"] == {
+        "enable_thinking": True,
+        "thinking_budget": 5000,
+    }
 
-    mimo_model = resolver.resolve_model(
-        AiLlmConfig(
-            id=13,
-            user_id=1,
-            name="mimo",
-            provider_key="mimo",
-            model_id="mimo-v2.5",
-            base_url="https://api.xiaomimimo.com/v1",
-            api_key_ciphertext=cipher.encrypt("sk-mimo-test"),
-            thinking_enabled=True,
-            thinking_effort="max",
-            advanced_config_json={},
-            status=RecordStatus.ACTIVE.value,
-        )
+    openai_like_config = build_config(
+        id=4,
+        provider_key="openai_like",
+        model_id="custom-model",
+        api_key="sk-compatible-test",
+        base_url="https://api.example.com/v1",
+        thinking_enabled=True,
+        thinking_effort="max",
     )
-    assert mimo_model.__class__.__name__ == "MiMo"
-    assert getattr(mimo_model, "base_url", None) == "https://api.xiaomimimo.com/v1"
-    assert getattr(mimo_model, "reasoning_effort", None) is None
-    assert getattr(mimo_model, "extra_body", None) == {"thinking": {"type": "enabled"}}
+    openai_like_model = resolver.resolve_model(openai_like_config)
+    assert openai_like_model.__class__.__name__ == "OpenAIChatModel"
+    assert openai_like_model.model_name == "custom-model"
+    assert resolver.resolve_model_settings(openai_like_config)["openai_reasoning_effort"] == "max"
 
-
-def test_mimo_formatter_should_preserve_reasoning_content_and_strip_image_detail() -> None:
-    """MiMo formatter 应回传历史 reasoning_content，并生成无 detail 的 image_url parts。"""
-
-    model = MiMo(id="mimo-v2.5", api_key="sk-mimo-test")
-    formatted = model._format_message(
-        Message(
-            role="assistant",
-            content="先看图",
-            reasoning_content="上一轮思考",
-            images=[Image(content=b"image-bytes", mime_type="image/png", detail="auto")],
-        )
+    deepseek_config = build_config(
+        id=8,
+        provider_key="deepseek",
+        model_id="deepseek-v4-flash",
+        api_key="sk-deepseek-test",
+        base_url="https://api.deepseek.com",
+        thinking_enabled=True,
+        thinking_effort="xhigh",
     )
+    deepseek_model = resolver.resolve_model(deepseek_config)
+    assert deepseek_model.__class__.__name__ == "OpenAIChatModel"
+    assert resolver.resolve_model_settings(deepseek_config) == {
+        "openai_reasoning_effort": "max",
+        "extra_body": {"thinking": {"type": "enabled"}},
+    }
 
-    assert formatted["reasoning_content"] == "上一轮思考"
-    assert formatted["content"][0] == {"type": "text", "text": "先看图"}
-    image_part = formatted["content"][1]
-    assert image_part["type"] == "image_url"
-    assert image_part["image_url"]["url"].startswith("data:image/png;base64,")
-    assert "detail" not in image_part["image_url"]
+    deepseek_disabled_config = build_config(
+        id=9,
+        name="deepseek-disabled",
+        provider_key="deepseek",
+        model_id="deepseek-v4-flash",
+        api_key="sk-deepseek-test",
+        base_url="https://api.deepseek.com",
+        thinking_enabled=False,
+    )
+    deepseek_disabled_model = resolver.resolve_model(deepseek_disabled_config)
+    assert deepseek_disabled_model.__class__.__name__ == "OpenAIChatModel"
+    assert resolver.resolve_model_settings(deepseek_disabled_config) == {
+        "extra_body": {"thinking": {"type": "disabled"}},
+    }
+
+    deepseek_legacy_effort_config = build_config(
+        id=12,
+        name="deepseek-legacy-effort",
+        provider_key="deepseek",
+        model_id="deepseek-v4-pro",
+        api_key="sk-deepseek-test",
+        base_url="https://api.deepseek.com",
+        thinking_enabled=True,
+        thinking_effort="medium",
+    )
+    deepseek_legacy_effort_model = resolver.resolve_model(deepseek_legacy_effort_config)
+    assert deepseek_legacy_effort_model.__class__.__name__ == "OpenAIChatModel"
+    assert resolver.resolve_model_settings(deepseek_legacy_effort_config) == {
+        "openai_reasoning_effort": "high",
+        "extra_body": {"thinking": {"type": "enabled"}},
+    }
+
+    deepseek_custom_config = build_config(
+        id=10,
+        name="deepseek-custom",
+        provider_key="deepseek",
+        model_id="deepseek-v4-pro",
+        api_key="sk-deepseek-test",
+        base_url="https://api.deepseek.com",
+        thinking_enabled=True,
+        thinking_effort="medium",
+        advanced_config_json={
+            "openai_reasoning_effort": "max",
+            "timeout": 60,
+            "retries": 0,
+            "extra_body": {"thinking": {"type": "disabled"}, "custom": "value"},
+        },
+    )
+    deepseek_custom_model = resolver.resolve_model(deepseek_custom_config)
+    assert deepseek_custom_model.__class__.__name__ == "OpenAIChatModel"
+    assert resolver.resolve_model_settings(deepseek_custom_config) == {
+        "openai_reasoning_effort": "max",
+        "timeout": 60,
+        "retries": 0,
+        "extra_body": {
+            "thinking": {"type": "enabled"},
+            "custom": "value",
+        },
+    }
+
+    ollama_config = build_config(
+        id=5,
+        provider_key="ollama",
+        model_id="llama3.1",
+        api_key="",
+        base_url="http://localhost:11434",
+        thinking_enabled=True,
+        thinking_effort="medium",
+    )
+    ollama_model = resolver.resolve_model(ollama_config)
+    assert ollama_model.__class__.__name__ == "OpenAIChatModel"
+    assert ollama_model.model_name == "llama3.1"
+    assert resolver.resolve_model_settings(ollama_config)["extra_body"] == {"think": "medium"}
+
+    ollama_custom_think_config = build_config(
+        id=7,
+        name="ollama-custom-think",
+        provider_key="ollama",
+        model_id="gpt-oss:20b",
+        api_key="",
+        base_url="http://localhost:11434",
+        thinking_enabled=True,
+        thinking_effort="low",
+        advanced_config_json={"extra_body": {"think": "high"}},
+    )
+    ollama_custom_think_model = resolver.resolve_model(ollama_custom_think_config)
+    assert ollama_custom_think_model.__class__.__name__ == "OpenAIChatModel"
+    assert resolver.resolve_model_settings(ollama_custom_think_config)["extra_body"] == {"think": "low"}
+
+    google_config = build_config(
+        id=11,
+        provider_key="google",
+        model_id="gemini-2.5-pro",
+        api_key="sk-google-test",
+        thinking_enabled=True,
+        thinking_effort="low",
+    )
+    google_model = resolver.resolve_model(google_config)
+    assert google_model.__class__.__name__ == "GoogleModel"
+    assert google_model.model_name == "gemini-2.5-pro"
+    assert resolver.resolve_model_settings(google_config)["google_thinking_config"] == {
+        "thinking_level": "LOW",
+        "include_thoughts": True,
+    }
+
+    nvidia_config = build_config(
+        id=6,
+        provider_key="nvidia",
+        model_id="meta/llama-3.3-70b-instruct",
+        api_key="nvapi-test",
+        base_url="https://integrate.api.nvidia.com/v1",
+        thinking_enabled=True,
+    )
+    nvidia_model = resolver.resolve_model(nvidia_config)
+    assert nvidia_model.__class__.__name__ == "OpenAIChatModel"
+    assert nvidia_model.model_name == "meta/llama-3.3-70b-instruct"
+
+    mimo_config = build_config(
+        id=13,
+        provider_key="mimo",
+        model_id="mimo-v2.5",
+        api_key="sk-mimo-test",
+        base_url="https://api.xiaomimimo.com/v1",
+        thinking_enabled=True,
+        thinking_effort="max",
+        max_output_tokens=320_000,
+    )
+    mimo_model = resolver.resolve_model(mimo_config)
+    assert mimo_model.__class__.__name__ == "OpenAIChatModel"
+    assert mimo_model.model_name == "mimo-v2.5"
+    assert resolver.resolve_model_settings(mimo_config) == {
+        "max_tokens": 131_072,
+        "extra_body": {"thinking": {"type": "enabled"}},
+    }

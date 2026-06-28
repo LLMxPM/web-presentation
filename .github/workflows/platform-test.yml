@@ -76,7 +76,7 @@ jobs:
           cache: pnpm
           cache-dependency-path: editor/pnpm-lock.yaml
       - run: pnpm --dir editor install --frozen-lockfile
-      - run: pnpm run test:editor
+      - run: pnpm run test:editor:gate
 
   contracts:
     runs-on: ubuntu-latest
@@ -113,9 +113,7 @@ jobs:
           cache: pnpm
           cache-dependency-path: runtime/pnpm-lock.yaml
       - run: pnpm --dir runtime install --frozen-lockfile
-      - run: pnpm --dir runtime check
-      - run: pnpm --dir runtime test
-      - run: pnpm --dir runtime build
+      - run: pnpm run test:runtime:gate
 
   e2e-smoke:
     runs-on: ubuntu-latest
@@ -144,26 +142,17 @@ jobs:
       - run: docker compose -f docker-compose.dev.yml up -d
       - run: uv sync --project backend --group dev
       - run: pnpm exec playwright install --with-deps chromium
-      - run: pnpm run test:reset:data
-        env:
-          AI_TEST_MODE: mock
-      - run: pnpm run test:seed:smoke
-        env:
-          AI_TEST_MODE: mock
-      - run: node ./scripts/testing/ensure-services.mjs
+      - run: pnpm run test:e2e
         env:
           TESTING_START_BACKEND: 'true'
           TESTING_START_EDITOR: 'true'
           TESTING_START_RUNTIME: 'true'
           AI_TEST_MODE: mock
-      - run: pnpm run test:e2e
       - if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-artifacts
-          path: |
-            playwright-report
-            test-results
+          name: test-results-e2e
+          path: test-results
 
   platform-image-build-smoke:
     runs-on: ubuntu-latest

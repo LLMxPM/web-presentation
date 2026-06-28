@@ -5,9 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Literal
 
-from agno.run import RunContext
-from agno.tools import tool
-from agno.tools.function import ToolResult
+from app.ai.base_font_scale import build_base_font_scale_note
+from app.ai.platform_tools import AgentToolContext, AgentToolResult, agent_tool
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.ai.auth_tokens import PAGE_TOOL_READ_SCOPES
@@ -31,8 +30,8 @@ class PageContentSourceInfo:
 def build_get_page_content_tool(session_factory: async_sessionmaker[AsyncSession]) -> Any:
     """构建页面源码读取工具，支持显式 page_id 或从上下文自动推断。"""
 
-    @tool(show_result=False)
-    async def get_page_content(run_context: RunContext, page_id: int | None = None) -> ToolResult:
+    @agent_tool(show_result=False)
+    async def get_page_content(run_context: AgentToolContext, page_id: int | None = None) -> AgentToolResult:
         """读取页面源码；page_id 为空时读取当前上下文页面。"""
 
         dependencies, _ = await resolve_tool_context(session_factory,
@@ -45,7 +44,7 @@ def build_get_page_content_tool(session_factory: async_sessionmaker[AsyncSession
         async with session_factory() as session:
             page_item = await PageService(session).get(target_page_id)
             _ensure_page_in_context(page_item, dependencies)
-            return ToolResult(
+            return AgentToolResult(
                 content=build_page_content_prompt(
                     page_item,
                     page_width=_coerce_optional_int(dependencies.get("page_width")),
@@ -82,9 +81,7 @@ def build_page_content_prompt(
     if page_width is not None and page_height is not None:
         page_canvas_lines = [
             f"当前页面画布尺寸（page_width / page_height）：{page_width} x {page_height} px",
-            f"当前项目基础字号（base_font_size）：{base_font_size or '（未知）'}",
-            "base_font_size 作用：text-base 等于该值，text-* 字号、p-/m-/gap-/space-* 等 spacing 按 Runtime Tailwind 预设比例派生；page_width/page_height 不参与该换算。",
-            "固定尺度说明：直接写 px、rem 或 Tailwind arbitrary values 不会随 base_font_size 自动变化；需要跟随基础字号时使用 Tailwind 语义尺度，或以 base_font_size 为基准计算。",
+            build_base_font_scale_note(base_font_size),
             "页面排版约束：按真实画布编写；可使用 Tailwind 语义类，也可在需要精确版式时使用 px、rem 或 Tailwind arbitrary values。",
         ]
 

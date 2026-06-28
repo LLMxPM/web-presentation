@@ -1,11 +1,10 @@
-"""文件功能：定义工作空间组件源码与导入用法查询工具。"""
+"""文件功能：定义工作空间组件导入用法与公开契约查询工具。"""
 
 from __future__ import annotations
 
 from typing import Any
 
-from agno.run import RunContext
-from agno.tools import tool
+from app.ai.platform_tools import AgentToolContext, agent_tool
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.ai.auth_tokens import COMPONENT_TOOL_READ_SCOPES
@@ -18,9 +17,9 @@ from app.services.workspace_component_service import WorkspaceComponentService
 def build_get_workspace_component_usage_tool(session_factory: async_sessionmaker[AsyncSession]) -> Any:
     """构建工作空间组件用法查询工具。"""
 
-    @tool(show_result=False)
-    async def get_workspace_component_usage(run_context: RunContext, component_code: str) -> dict[str, Any]:
-        """依据组件编码返回当前版本源码与导入方式。"""
+    @agent_tool(show_result=False)
+    async def get_workspace_component_usage(run_context: AgentToolContext, component_code: str) -> dict[str, Any]:
+        """依据组件编码返回当前发布版本的导入方式和公开使用契约。"""
 
         normalized_component_code = str(component_code or "").strip()
         if not normalized_component_code:
@@ -56,8 +55,10 @@ def build_get_workspace_component_usage_tool(session_factory: async_sessionmaker
                 "component_code": component.code,
                 "name": component.name,
                 "import_name": component.import_name,
-                "component_type": component.component_type,
-                "content": published_version.content,
+                "component_type": component.component_type.value,
+                "description": component.summary,
+                "current_version_no": component.current_version_no,
+                "preview_schema": published_version.preview_schema,
                 "import_statement": import_usage["import_statement"],
                 "import_path": import_usage["import_path"],
             }

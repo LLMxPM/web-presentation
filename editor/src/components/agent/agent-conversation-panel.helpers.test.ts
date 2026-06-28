@@ -82,7 +82,7 @@ describe('agent-conversation-panel timeline helpers', () => {
     ])
   })
 
-  it('ask_user 工具和 requirement 应合并为等待回复卡片', () => {
+  it('当前 pending ask_user 应只在输入区处理，不在时间线重复展示', () => {
     const pendingRequirement: AgentPendingRequirement = {
       id: 'req-ask-1',
       kind: 'user_feedback',
@@ -117,13 +117,49 @@ describe('agent-conversation-panel timeline helpers', () => {
       timelineItem({ id: 'requirement-ask', kind: 'requirement', role: null, order_index: 2, status: 'pending', content: '是否继续整理资源？' }),
     ], { pendingRequirement })
 
-    expect(items.map(item => item.kind)).toEqual(['feedback_request'])
-    const feedbackItem = items[0]
-    expect(feedbackItem.kind).toBe('feedback_request')
-    expect(feedbackItem.kind === 'feedback_request' ? feedbackItem.entries : []).toEqual([
-      { question: '是否继续整理资源？', answerText: null },
+    expect(items).toEqual([])
+  })
+
+  it('没有当前 pending 时不应展示历史工具确认 requirement', () => {
+    const items = buildTimelineDisplayItems([
+      timelineItem({
+        id: 'requirement-requirement-tool-1',
+        kind: 'requirement',
+        role: null,
+        order_index: 1,
+        status: 'paused',
+        content: '工具 apply_page_edits 需要确认后执行。',
+      }),
     ])
-    expect(feedbackItem.kind === 'feedback_request' ? feedbackItem.tool?.toolName : '').toBe('ask_user')
+
+    expect(items).toEqual([])
+  })
+
+  it('当前 pending 工具确认仍应展示为待处理状态', () => {
+    const pendingRequirement: AgentPendingRequirement = {
+      id: 'requirement-tool-1',
+      kind: 'confirmation',
+      run_id: 'run-1',
+      session_id: 'session-1',
+      tool_name: 'apply_page_edits',
+      tool_execution: { tool_name: 'apply_page_edits', tool_call_id: 'tool-confirm-1' },
+      suggested_patch: null,
+      user_feedback_schema: [],
+      note: '工具 apply_page_edits 需要确认后执行。',
+    }
+    const items = buildTimelineDisplayItems([
+      timelineItem({
+        id: 'requirement-requirement-tool-1',
+        kind: 'requirement',
+        role: null,
+        order_index: 1,
+        status: 'paused',
+        content: '工具 apply_page_edits 需要确认后执行。',
+      }),
+    ], { pendingRequirement })
+
+    expect(items.map(item => item.kind)).toEqual(['requirement'])
+    expect(items[0].kind === 'requirement' ? items[0].content : '').toBe('工具 apply_page_edits 需要确认后执行。')
   })
 
   it('已回答 ask_user 应只提取选择答案', () => {
@@ -241,5 +277,16 @@ describe('agent-conversation-panel timeline helpers', () => {
 
   it('运行失败标题应使用当前智能体名称', () => {
     expect(buildRunIssueState('模型协议错误', '组件助手').title).toBe('组件助手执行失败')
+  })
+
+  it('底层流式连接中断应转成可操作提示', () => {
+    const issue = buildRunIssueState(
+      'peer closed connection without sending complete message body (incomplete chunked read)',
+      '内容助手',
+    )
+
+    expect(issue.title).toBe('模型连接中断')
+    expect(issue.detail).toContain('可以直接重试')
+    expect(issue.detail).not.toContain('incomplete chunked read')
   })
 })

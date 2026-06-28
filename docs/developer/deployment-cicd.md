@@ -58,7 +58,7 @@ docker compose -f docker-compose.with-deps.yml up -d
 
 正式部署前必须替换数据库密码、默认管理员密码和 `AI_SECRET_ENCRYPTION_KEY`。`AI_SECRET_ENCRYPTION_KEY` 必须是 Fernet 密钥，即 32 字节随机值的 URL-safe base64 编码，通常长度为 44 个字符并以 `=` 结尾；可用 `python -c "import base64, os; print(base64.urlsafe_b64encode(os.urandom(32)).decode())"` 生成。部署后应长期保存，随意更换会导致已有用户模型凭证密文无法解密。
 
-AI 会话历史清理相关变量也应随部署模板保留：`AI_SESSION_RETENTION_DAYS=15`、`AI_SESSION_CLEANUP_INTERVAL_SECONDS=21600`、`AI_SESSION_CLEANUP_BATCH_SIZE=500`。该清理只删除超过保留期未更新的整条 Agno session；如 PostgreSQL JSONB/TOAST 已膨胀，普通删除后仍需运维窗口手动执行 `VACUUM FULL` 或 `pg_repack` 才能回收物理磁盘。
+AI 会话、run、事件、消息、工具调用和 HITL 状态写入 Backend 主库中的 `ai_agent_*` 表，随常规数据库备份和 Alembic 迁移一起管理。
 
 两个简化版中，同一个平台镜像只启动一个长期运行的 `platform` 容器。该容器入口脚本会先执行 `alembic upgrade head`，再同时启动：
 

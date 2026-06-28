@@ -1,7 +1,14 @@
 /**
  * 文件功能：抽离内容助手面板的 run-first 时间线展示、工具详情与格式化逻辑。
  */
-import type { AgentMemberRunItem, AgentMessageItem, AgentPendingRequirement, AgentTimelineItem, AgentUserFeedbackQuestion } from '@/types/api'
+import type {
+  AgentMemberRunItem,
+  AgentMessageAttachmentItem,
+  AgentMessageItem,
+  AgentPendingRequirement,
+  AgentTimelineItem,
+  AgentUserFeedbackQuestion,
+} from '@/types/api'
 
 export interface ToolCallDetail {
   id: string
@@ -18,6 +25,7 @@ export interface ToolCallDetail {
   source: 'event' | 'message' | 'synthetic'
   createdAt: string | null
   delegatedMemberRuns: AgentMemberRunItem[]
+  attachments: AgentMessageAttachmentItem[]
 }
 
 export interface FeedbackRequestEntry {
@@ -75,6 +83,7 @@ export function toolDetailFromTimelineItem(item: AgentTimelineItem, memberRuns: 
     message: item.tool.message,
     source: item.source,
     createdAt: item.created_at,
+    attachments: item.attachments ?? [],
     delegatedMemberRuns: isDelegateToolName(item.tool.tool_name)
       ? memberRuns.filter(memberRun => (
           memberRun.parent_run_id === item.run_id
@@ -129,6 +138,9 @@ export function buildTimelineDisplayItems(
   }
 
   for (const item of orderedItems) {
+    if (isCurrentPendingAskUserTimelineItem(item, pendingRequirement)) {
+      continue
+    }
     if (skippedRequirementIds.has(item.id)) {
       continue
     }
@@ -175,6 +187,9 @@ export function buildTimelineDisplayItems(
       continue
     }
     if (item.kind === 'requirement') {
+      if (!isCurrentPendingRequirementTimelineItem(item, pendingRequirement)) {
+        continue
+      }
       const requirement = resolveAskUserRequirementForItem(item, pendingRequirement)
       if (requirement) {
         displayItems.push(buildFeedbackRequestDisplayItem(item, requirement, findMatchingAskUserToolDetail(orderedItems, item, requirement)))
@@ -232,16 +247,74 @@ export function formatToolPayload(payload: unknown, emptyText = '暂无内容。
  * 将运行失败信息归一化为更适合展示的标题和说明。
  */
 export function buildRunIssueState(message: string, agentDisplayName = '内容助手') {
+  const normalizedMessage = message.trim()
   if (message.includes('Unified Diff 无法应用')) {
     return {
       title: '页面写回失败',
       detail: `${message} 请先重新读取当前页面源码，再生成新的结构化 edits。若页面已被手工修改，旧编辑不能直接复用。`,
     }
   }
+  if (isStreamInterruptedMessage(normalizedMessage)) {
+    return {
+      title: '模型连接中断',
+      detail: '模型服务没有完整返回本次输出，前面已经生成的内容会保留。可以直接重试；如果连续出现，建议把任务拆小，或在 AI 设置里降低模型最大输出和思考强度。',
+    }
+  }
+  if (isModelRequestRejectedMessage(normalizedMessage)) {
+    return {
+      title: '模型请求被拒绝',
+      detail: '模型服务拒绝了本次请求。请检查当前绑定模型名称、模型能力和高级参数配置后再试。',
+    }
+  }
+  if (isRateLimitedMessage(normalizedMessage)) {
+    return {
+      title: '模型服务繁忙',
+      detail: '模型服务当前繁忙或触发限流，请稍后重试。',
+    }
+  }
+  if (isTimeoutMessage(normalizedMessage)) {
+    return {
+      title: '模型响应超时',
+      detail: '模型服务响应超时，本次运行已停止。请稍后重试，或把任务拆成更小的步骤。',
+    }
+  }
   return {
     title: `${agentDisplayName}执行失败`,
-    detail: message,
+    detail: normalizedMessage || '智能体运行中断，请稍后重试。',
   }
+}
+
+function isStreamInterruptedMessage(message: string) {
+  const normalized = message.toLowerCase()
+  return [
+    '模型连接中断',
+    'incomplete chunked read',
+    'peer closed connection',
+    'remote protocol error',
+    'server disconnected',
+  ].some(pattern => normalized.includes(pattern.toLowerCase()))
+}
+
+function isModelRequestRejectedMessage(message: string) {
+  const normalized = message.toLowerCase()
+  return normalized.includes('模型服务拒绝')
+    || normalized.includes('status_code: 400')
+    || normalized.includes('invalid_request_error')
+}
+
+function isRateLimitedMessage(message: string) {
+  const normalized = message.toLowerCase()
+  return normalized.includes('模型服务当前繁忙')
+    || normalized.includes('status_code: 429')
+    || normalized.includes('rate limit')
+}
+
+function isTimeoutMessage(message: string) {
+  const normalized = message.toLowerCase()
+  return normalized.includes('模型服务响应超时')
+    || normalized.includes('read timeout')
+    || normalized.includes('timed out')
+    || normalized.includes('timeout')
 }
 
 /**
@@ -281,7 +354,7 @@ function buildDisplayMessage(item: AgentTimelineItem): AgentMessageItem {
     tool_args: null,
     tool_call_error: null,
     tool_calls: [],
-    attachments: [],
+    attachments: item.attachments ?? [],
   }
 }
 
@@ -296,7 +369,7 @@ function isAskUserToolItem(item: AgentTimelineItem) {
  * 判断工具是否为内容助手委派成员助手的入口。
  */
 export function isDelegateToolName(toolName: string | null | undefined) {
-  return toolName === 'delegate_task_to_member' || toolName === 'delegate_task_to_members'
+  return toolName === 'delegate_task_to_member'
 }
 
 function delegateToolMatchesMember(inputPayload: unknown, memberAgentId: string) {
@@ -370,6 +443,36 @@ function resolveAskUserRequirementForItem(
 
 function isAskUserRequirement(requirement: AgentPendingRequirement) {
   return requirement.kind === 'user_feedback' || requirement.tool_name === 'ask_user'
+}
+
+function isCurrentPendingAskUserTimelineItem(item: AgentTimelineItem, requirement: AgentPendingRequirement | null) {
+  if (!requirement || !isAskUserRequirement(requirement) || !itemMatchesRequirement(item, requirement)) {
+    return false
+  }
+  if (item.kind === 'requirement') {
+    return true
+  }
+  if (isAskUserToolItem(item)) {
+    return item.status !== 'completed' && item.status !== 'cancelled'
+  }
+  return false
+}
+
+function isCurrentPendingRequirementTimelineItem(item: AgentTimelineItem, requirement: AgentPendingRequirement | null) {
+  if (item.kind !== 'requirement' || !requirement || item.run_id !== requirement.run_id) {
+    return false
+  }
+  const requirementId = requirement.id?.trim()
+  if (requirementId) {
+    return item.id === requirementId
+      || item.id === `requirement-${requirementId}`
+      || item.id.endsWith(`:${requirementId}`)
+  }
+  const toolCallId = resolveToolExecutionCallId(requirement.tool_execution)
+  if (toolCallId && (item.id === toolCallId || item.id.endsWith(`:${toolCallId}`))) {
+    return true
+  }
+  return true
 }
 
 function itemMatchesRequirement(item: AgentTimelineItem, requirement: AgentPendingRequirement) {

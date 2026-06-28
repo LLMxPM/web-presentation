@@ -4,8 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from agno.run import RunContext
-from agno.tools import tool
+from app.ai.platform_tools import AgentToolContext, agent_tool
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.ai.auth_tokens import PAGE_TOOL_WRITE_SCOPES, extract_user_id
@@ -19,9 +18,9 @@ from app.services.page_service import PageService
 def build_apply_page_edits_tool(session_factory: async_sessionmaker[AsyncSession]) -> Any:
     """构建页面结构化 Edits 更新工具，负责直接写回页面并自动生成版本。"""
 
-    @tool(show_result=False)
+    @agent_tool(show_result=False)
     async def apply_page_edits(
-        run_context: RunContext,
+        run_context: AgentToolContext,
         page_id: int,
         edits: list[SourceEditInput],
         base_version_no: int,
@@ -69,7 +68,7 @@ def build_apply_page_edits_tool(session_factory: async_sessionmaker[AsyncSession
                 ),
                 operator_id,
             )
-            return {
+            response = {
                 "success": True,
                 "message": "页面代码已更新并生成新版本。",
                 "page_id": updated_page.id,
@@ -77,7 +76,12 @@ def build_apply_page_edits_tool(session_factory: async_sessionmaker[AsyncSession
                 "version_no": updated_page.current_version_no,
                 "edits_applied": edit_result.applied_edit_count,
                 "canonical_diff": edit_result.canonical_diff,
+                "diagnostics": _extract_diagnostics(validation_result),
+                "code_check_summary": validation_result.get("summary"),
             }
+            if _has_warning_diagnostics(response):
+                response["message"] = "页面代码已更新并生成新版本，但发现布局警告。"
+            return response
 
     return apply_page_edits
 
@@ -105,6 +109,22 @@ def _with_apply_validation_metadata(
         enriched["status"] = "failed"
         enriched["message"] = message
     return enriched
+
+
+def _extract_diagnostics(result: dict[str, Any]) -> list[Any]:
+    """从代码检查结果中读取诊断列表。"""
+
+    diagnostics = result.get("diagnostics")
+    return list(diagnostics) if isinstance(diagnostics, list) else []
+
+
+def _has_warning_diagnostics(result: dict[str, Any]) -> bool:
+    """判断工具响应中是否存在 warning 级别诊断。"""
+
+    return any(
+        isinstance(item, dict) and item.get("severity") == "warning"
+        for item in _extract_diagnostics(result)
+    )
 
 
 def _ensure_page_in_context(page_item: PageItem, dependencies: dict[str, Any]) -> None:

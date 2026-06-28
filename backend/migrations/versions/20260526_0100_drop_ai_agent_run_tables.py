@@ -19,7 +19,7 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    """删除旧平台 run 状态表，运行事实源改由 Agno session/run/events 承担。"""
+    """删除旧平台 run 状态表；后续版本会重建平台运行态表。"""
 
     op.drop_table("ai_agent_run_events")
     op.drop_table("ai_agent_run_tasks")

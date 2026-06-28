@@ -4,8 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from agno.run import RunContext
-from agno.tools import tool
+from app.ai.platform_tools import AgentToolContext, agent_tool
 from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -29,9 +28,12 @@ def build_project_style_config_tools(session_factory: async_sessionmaker[AsyncSe
 def build_get_project_style_config_tool(session_factory: async_sessionmaker[AsyncSession]) -> Any:
     """构建项目真实画布、主题摘要与样式规范读取工具。"""
 
-    @tool(show_result=False)
-    async def get_project_style_config(run_context: RunContext) -> dict[str, Any]:
-        """读取当前项目的页面画布、主题摘要和样式规范。"""
+    @agent_tool(show_result=False)
+    async def get_project_style_config(
+        run_context: AgentToolContext,
+        include_style_spec_markdown: bool = False,
+    ) -> dict[str, Any]:
+        """读取当前项目的页面画布、主题摘要，并按需返回样式规范全文。"""
 
         dependencies, _ = await resolve_tool_context(session_factory,
             run_context,
@@ -47,13 +49,18 @@ def build_get_project_style_config_tool(session_factory: async_sessionmaker[Asyn
                 raise AppException(status_code=404, code="PROJECT_NOT_FOUND", detail="项目不存在。")
             _ensure_project_workspace(project_workspace_id=project.workspace_id, expected_workspace_id=workspace_id)
             effective_theme_config = await config_service.resolve_runtime_theme_config(project)
-            return {
+            style_spec_markdown = str(project.style_spec_markdown or "")
+            result: dict[str, Any] = {
                 "page_width": project.page_width,
                 "page_height": project.page_height,
                 "base_font_size": project.base_font_size,
                 "theme": _extract_theme_summary(effective_theme_config),
-                "style_spec_markdown": project.style_spec_markdown,
+                "style_spec_markdown_in_runtime_context": bool(style_spec_markdown.strip()),
+                "style_spec_markdown_length": len(style_spec_markdown),
             }
+            if include_style_spec_markdown:
+                result["style_spec_markdown"] = style_spec_markdown
+            return result
 
     return get_project_style_config
 
@@ -61,9 +68,9 @@ def build_get_project_style_config_tool(session_factory: async_sessionmaker[Asyn
 def build_update_project_style_config_tool(session_factory: async_sessionmaker[AsyncSession]) -> Any:
     """构建需要用户确认的项目 Markdown 样式规范更新工具。"""
 
-    @tool(show_result=False, requires_confirmation=True)
+    @agent_tool(show_result=False, requires_confirmation=True)
     async def update_project_style_config(
-        run_context: RunContext,
+        run_context: AgentToolContext,
         style_spec_markdown: str | None = None,
     ) -> dict[str, Any]:
         """更新当前项目 Markdown 样式规范；该写入会影响后续页面生成约束。"""

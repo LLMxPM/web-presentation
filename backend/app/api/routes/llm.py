@@ -9,11 +9,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import get_current_user
 from app.db.session import get_db_session
+from app.schemas.common import MessageResponse
 from app.schemas.llm import (
     LlmConfigCreateRequest,
     LlmConfigItem,
     LlmConfigUpdateRequest,
     LlmProviderCatalogItem,
+    LlmProviderConfigCreateRequest,
+    LlmProviderConfigItem,
+    LlmProviderConfigUpdateRequest,
     LlmSlotBindingItem,
     LlmSlotBindingUpdateRequest,
 )
@@ -31,6 +35,73 @@ async def list_llm_providers(
     """返回当前后端支持的供应商目录。"""
 
     return await AiLlmService(session, user_id=current.user.id, user_role=current.user.role).list_provider_catalog()
+
+
+@router.get("/llm-provider-configs", response_model=list[LlmProviderConfigItem])
+async def list_llm_provider_configs(
+    current: Annotated[AuthContext, Depends(get_current_user)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> list[LlmProviderConfigItem]:
+    """列出当前用户可见的供应商配置。"""
+
+    return await AiLlmService(session, user_id=current.user.id, user_role=current.user.role).list_provider_configs()
+
+
+@router.post("/llm-provider-configs", response_model=LlmProviderConfigItem, status_code=201)
+async def create_llm_provider_config(
+    payload: LlmProviderConfigCreateRequest,
+    current: Annotated[AuthContext, Depends(get_current_user)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> LlmProviderConfigItem:
+    """创建新的供应商配置。"""
+
+    return await AiLlmService(session, user_id=current.user.id, user_role=current.user.role).create_provider_config(
+        payload,
+        operator_id=current.user.id,
+    )
+
+
+@router.get("/llm-provider-configs/{provider_config_id}", response_model=LlmProviderConfigItem)
+async def get_llm_provider_config(
+    provider_config_id: int,
+    current: Annotated[AuthContext, Depends(get_current_user)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> LlmProviderConfigItem:
+    """读取单条供应商配置详情。"""
+
+    return await AiLlmService(session, user_id=current.user.id, user_role=current.user.role).get_provider_config(
+        provider_config_id,
+    )
+
+
+@router.patch("/llm-provider-configs/{provider_config_id}", response_model=LlmProviderConfigItem)
+async def update_llm_provider_config(
+    provider_config_id: int,
+    payload: LlmProviderConfigUpdateRequest,
+    current: Annotated[AuthContext, Depends(get_current_user)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> LlmProviderConfigItem:
+    """更新指定的供应商配置。"""
+
+    return await AiLlmService(session, user_id=current.user.id, user_role=current.user.role).update_provider_config(
+        provider_config_id,
+        payload,
+        operator_id=current.user.id,
+    )
+
+
+@router.delete("/llm-provider-configs/{provider_config_id}", response_model=MessageResponse)
+async def delete_llm_provider_config(
+    provider_config_id: int,
+    current: Annotated[AuthContext, Depends(get_current_user)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> MessageResponse:
+    """硬删除指定的供应商配置。"""
+
+    await AiLlmService(session, user_id=current.user.id, user_role=current.user.role).delete_provider_config(
+        provider_config_id,
+    )
+    return MessageResponse(message="供应商已删除。")
 
 
 @router.get("/llm-configs", response_model=list[LlmConfigItem])
@@ -82,6 +153,18 @@ async def update_llm_config(
         payload,
         operator_id=current.user.id,
     )
+
+
+@router.delete("/llm-configs/{config_id}", response_model=MessageResponse)
+async def delete_llm_config(
+    config_id: int,
+    current: Annotated[AuthContext, Depends(get_current_user)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> MessageResponse:
+    """硬删除指定的大模型配置。"""
+
+    await AiLlmService(session, user_id=current.user.id, user_role=current.user.role).delete_config(config_id)
+    return MessageResponse(message="模型已删除。")
 
 
 @router.get("/llm-slots", response_model=list[LlmSlotBindingItem])

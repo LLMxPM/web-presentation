@@ -81,11 +81,13 @@ class AgentImageAttachmentItem(SchemaBase):
 
     id: int
     session_id: str
+    source_kind: Literal["user_upload", "tool_output"] = "user_upload"
     original_name: str
     content_type: str
     file_size: int
     sha256: str
     url: str
+    preview_available: bool = True
     promoted_asset_id: int | None = None
     status: str
     created_at: str | None = None
@@ -95,10 +97,12 @@ class AgentMessageAttachmentItem(SchemaBase):
     """会话历史消息中展示的图片附件摘要。"""
 
     id: int
+    source_kind: Literal["user_upload", "tool_output"] = "user_upload"
     original_name: str
     content_type: str
     file_size: int
     url: str
+    preview_available: bool = True
     promoted_asset_id: int | None = None
 
 
@@ -118,6 +122,9 @@ class AgentContextStatusItem(SchemaBase):
     agent_id: str
     compression_enabled: bool
     compression_required: bool
+    compression_status: Literal["idle", "compressing", "compressed", "failed"] = "idle"
+    compression_method: Literal["none", "model", "deterministic_fallback"] = "none"
+    compression_error_message: str | None = None
     summary_available: bool
     summary: str | None = None
     topics: list[str] = Field(default_factory=list)
@@ -134,6 +141,13 @@ class AgentContextStatusItem(SchemaBase):
     estimated_history_tokens: int
     retained_recent_history_tokens: int
     retained_recent_message_count: int
+    context_input_budget_tokens: int
+    context_used_tokens: int
+    context_remaining_tokens: int
+    last_input_tokens: int
+    last_output_tokens: int
+    last_total_tokens: int
+    last_reasoning_tokens: int
 
 
 class AgentSuggestedPatch(SchemaBase):
@@ -179,7 +193,7 @@ AgentActiveRunStatus = Literal["pending", "running", "paused", "cancelling", "co
 
 
 class AgentActiveRunItem(SchemaBase):
-    """当前会话最近一次 Agno run 状态。"""
+    """当前会话最近一次智能体运行状态。"""
 
     run_id: str
     session_id: str
@@ -229,6 +243,7 @@ class AgentTimelineItem(SchemaBase):
     content: str | None = None
     status: str | None = None
     tool: AgentTimelineToolItem | None = None
+    attachments: list[AgentMessageAttachmentItem] = Field(default_factory=list)
     source: Literal["message", "event", "synthetic"]
     created_at: str | None = None
 
@@ -244,6 +259,8 @@ class AgentMemberRunItem(SchemaBase):
     created_at: str | None = None
     updated_at: str | None = None
     delegate_tool_call_id: str | None = None
+    input_prompt: str | None = None
+    output_prompt: str | None = None
     timeline_items: list[AgentTimelineItem] = Field(default_factory=list)
 
 
@@ -267,6 +284,7 @@ class CreateAgentSessionRequest(BaseModel):
     agent_id: str = "agent-coordinator"
     session_name: str | None = Field(default=None, max_length=128)
     scope: AgentScopeContext
+    llm_config_id: int | None = Field(default=None, ge=1)
 
 
 class RenameAgentSessionRequest(BaseModel):

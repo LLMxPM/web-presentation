@@ -56,20 +56,8 @@ class AgentToolGroupConfigItem(SchemaBase):
     tools: list[AgentToolConfigItem] = Field(default_factory=list)
 
 
-class AgentTeamMemberConfigItem(SchemaBase):
-    """内容助手 Team 成员配置项，供 Editor 展示和编辑成员描述。"""
-
-    id: str
-    name: str
-    icon: str
-    default_description: str
-    description: str
-    description_override: str | None = None
-    description_customized: bool = False
-
-
 class AgentCatalogItem(SchemaBase):
-    """内置智能体目录项，包含默认提示词与工具目录。"""
+    """内置智能体目录项，包含默认完整提示词与工具目录。"""
 
     id: str
     name: str
@@ -87,7 +75,6 @@ class AgentCatalogItem(SchemaBase):
     role: str
     system_prompt: str
     default_prompt: str
-    team_members: list[AgentTeamMemberConfigItem] = Field(default_factory=list)
     tool_groups: list[AgentToolGroupConfigItem] = Field(default_factory=list)
 
 
@@ -102,7 +89,7 @@ class AgentConfigItem(AgentCatalogItem):
 
 
 class AgentConfigUpdateRequest(BaseModel):
-    """更新智能体描述或业务补充提示词的请求。"""
+    """更新智能体描述或完整提示词的请求。"""
 
     description_override: str | None = Field(default=None, max_length=4000)
     prompt_override: str | None = Field(default=None, max_length=20000)

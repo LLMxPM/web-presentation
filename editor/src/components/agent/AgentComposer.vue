@@ -140,18 +140,20 @@
             </div>
           </span>
         </div>
-        <BaseButton
-          :variant="primaryActionVariant"
-          size="sm"
-          :loading="composerState === 'interrupting'"
-          :disabled="primaryActionDisabled"
-          custom-class="rounded-md px-2 py-0.5 text-[11px] shadow-none"
-          @click="emitPrimaryAction"
-        >
-          <Square v-if="isRunningState" class="h-2.5 w-2.5" />
-          <SendHorizonal v-else class="h-2.5 w-2.5" />
-          {{ primaryActionLabel }}
-        </BaseButton>
+        <div class="flex shrink-0 items-center gap-1">
+          <slot name="action-prefix" />
+          <BaseButton
+            :variant="primaryActionVariant"
+            :loading="composerState === 'interrupting'"
+            :disabled="primaryActionDisabled"
+            custom-class="h-6 rounded-md px-2 py-0 text-[11px] shadow-none"
+            @click="emitPrimaryAction"
+          >
+            <Square v-if="isRunningState" class="h-2.5 w-2.5" />
+            <SendHorizonal v-else class="h-2.5 w-2.5" />
+            {{ primaryActionLabel }}
+          </BaseButton>
+        </div>
       </div>
     </div>
     <AgentToolConfirmPrompt

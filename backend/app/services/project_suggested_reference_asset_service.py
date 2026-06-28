@@ -13,6 +13,7 @@ from app.models.workspace import Project
 from app.repositories.project_repository import ProjectRepository
 from app.schemas.asset import resolve_asset_content_editable, resolve_asset_role
 from app.schemas.project import ProjectSuggestedReferenceAssetItem
+from app.services.asset_render_metadata_service import AssetRenderMetadataService
 
 PROJECT_SUGGESTED_REFERENCE_ASSET_TYPES = (
     AssetType.IMAGE,
@@ -162,6 +163,7 @@ class ProjectSuggestedReferenceAssetService:
     def dump_asset_item(asset: WorkspaceAsset) -> ProjectSuggestedReferenceAssetItem:
         """转换资源为不会暴露 URL 与标签的稳定摘要。"""
 
+        ratio_summary = AssetRenderMetadataService.summarize_metadata(asset.render_metadata)
         return ProjectSuggestedReferenceAssetItem(
             id=asset.id,
             name=asset.name,
@@ -169,4 +171,7 @@ class ProjectSuggestedReferenceAssetService:
             description=asset.description,
             asset_type=AssetType(asset.asset_type),
             content_editable=resolve_asset_content_editable(asset.asset_type, asset.original_name, asset.content_type),
+            approx_aspect_ratio=ratio_summary["approx_aspect_ratio"],
+            approx_aspect_ratio_value=ratio_summary["approx_aspect_ratio_value"],
+            aspect_ratio_source=ratio_summary["aspect_ratio_source"],
         )

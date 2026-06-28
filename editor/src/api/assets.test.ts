@@ -66,6 +66,20 @@ describe('assets api', () => {
     })
   })
 
+  it('更新资源时传入近似比例，应写入 approx_aspect_ratio', async () => {
+    putMock.mockResolvedValueOnce({ data: { id: 1 } })
+
+    await updateWorkspaceAsset(5, 9, 'hero', 'hero.png', ['封面'], '首页头图', '16:9')
+
+    expect(putMock).toHaveBeenCalledWith('/workspaces/5/assets/9', {
+      name: 'hero',
+      original_name: 'hero.png',
+      tags: ['封面'],
+      description: '首页头图',
+      approx_aspect_ratio: '16:9',
+    })
+  })
+
   it('替换资源文件时，应按资源 ID 上传 multipart form data', async () => {
     postMock.mockResolvedValueOnce({ data: { id: 9 } })
 

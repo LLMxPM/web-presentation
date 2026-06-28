@@ -5,12 +5,11 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from agno.run import RunContext
-from agno.tools import tool
+from app.ai.platform_tools import AgentToolContext, agent_tool
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.ai.auth_tokens import PAGE_TOOL_READ_SCOPES
+from app.ai.auth_tokens import RESOURCE_TOOL_READ_SCOPES
 from app.ai.tools.shared import resolve_tool_context
 from app.models.asset import WorkspaceAsset
 from app.models.enums import RecordStatus
@@ -20,9 +19,9 @@ from app.models.font import WorkspaceFontConfig
 def build_list_workspace_font_assets_tool(session_factory: async_sessionmaker[AsyncSession]) -> Any:
     """构建已注册字体资源查询工具。"""
 
-    @tool(show_result=False)
+    @agent_tool(show_result=False)
     async def list_workspace_font_assets(
-        run_context: RunContext,
+        run_context: AgentToolContext,
         keyword: str | None = None,
         description_keyword: str | None = None,
         tags: list[str] | None = None,
@@ -30,7 +29,12 @@ def build_list_workspace_font_assets_tool(session_factory: async_sessionmaker[As
     ) -> list[dict[str, str | None]]:
         """查询当前工作空间内已注册并可用的字体资源。"""
 
-        dependencies, _ = await resolve_tool_context(session_factory, run_context, required_scopes=PAGE_TOOL_READ_SCOPES)
+        dependencies, _ = await resolve_tool_context(
+            session_factory,
+            run_context,
+            required_scopes=RESOURCE_TOOL_READ_SCOPES,
+            required_dependency_fields=("workspace_id",),
+        )
         workspace_id = int(dependencies["workspace_id"])
 
         async with session_factory() as session:

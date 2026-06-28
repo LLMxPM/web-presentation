@@ -4,20 +4,20 @@ from __future__ import annotations
 
 from typing import Any
 
-from agno.run import RunContext
-from agno.agent import _run as agno_agent_run
-from agno.team import _run as agno_team_run
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.ai.auth_tokens import verify_agent_tool_token
+from app.ai.platform_tools import AgentToolContext
 from app.core.exceptions import AppException
+from app.models.ai_agent_runtime import AiAgentRun
 from app.models.page import Page
 from app.repositories.page_repository import PageRepository
 
 
 async def resolve_tool_context(
     session_factory: async_sessionmaker[AsyncSession],
-    run_context: RunContext,
+    run_context: AgentToolContext,
     *,
     required_scopes: tuple[str, ...],
     required_dependency_fields: tuple[str, ...] = ("page_id",),
@@ -46,7 +46,7 @@ async def resolve_tool_context(
         user_id=user_id,
         backend_session_id=backend_session_id,
     )
-    await _raise_if_cancelled(run_id)
+    await _raise_if_cancelled(session_factory, run_id)
     authorized_context = {
         "user_id": user_id,
         "session_id": session_id,
@@ -150,24 +150,23 @@ def _claims_include_scopes(claims: dict[str, Any], required_scopes: tuple[str, .
 
 
 def _ensure_claim_matches(claims: dict[str, Any], field_name: str, expected: str) -> None:
-    """校验工具令牌 claims 与 Agno dependencies 一致。"""
+    """校验工具令牌 claims 与平台工具上下文一致。"""
 
     if str(claims.get(field_name) or "") != expected:
         raise AppException(status_code=403, code="AI_TOOL_CONTEXT_MISMATCH", detail="工具调用上下文与授权令牌不一致。")
 
 
-async def _raise_if_cancelled(run_id: str) -> None:
-    """工具副作用执行前检查 Agno 取消意图。"""
+async def _raise_if_cancelled(session_factory: async_sessionmaker[AsyncSession], run_id: str) -> None:
+    """工具副作用执行前检查平台取消标记。"""
 
-    try:
-        await agno_agent_run.araise_if_cancelled(run_id)
-        await agno_team_run.araise_if_cancelled(run_id)
-    except Exception as exc:  # noqa: BLE001
-        raise AppException(status_code=409, code="AI_RUN_CANCELLED", detail="当前智能体运行已被取消。") from exc
+    async with session_factory() as session:
+        run_model = await session.scalar(select(AiAgentRun).where(AiAgentRun.run_id == run_id))
+        if run_model is not None and run_model.cancel_requested_at is not None:
+            raise AppException(status_code=409, code="AI_RUN_CANCELLED", detail="当前智能体运行已被取消。")
 
 
 def _coerce_int(value: Any, field_name: str) -> int | None:
-    """把 Agno dependencies 中的整数字段规整为 int。"""
+    """把平台工具 dependencies 中的整数字段规整为 int。"""
 
     if value is None:
         return None

@@ -57,6 +57,9 @@ test-results/
 # Backend artifacts
 backend/build_artifacts/
 backend/data/
+backend/output.txt
+backend/test_output.txt
+backend/test_result.txt
 
 # Temporary files
 tmp/

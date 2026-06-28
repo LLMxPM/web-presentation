@@ -21,6 +21,8 @@ export interface AgentStreamOptions {
   signal?: AbortSignal
 }
 
+export type AgentSessionScopeMode = 'exact' | 'workspace'
+
 export class AgentStreamInterruptedError extends Error {
   /** 标识用户主动中断了当前流式传输，调用方不应按执行失败展示。 */
   constructor(message = '智能体流式传输已中断。') {
@@ -63,9 +65,16 @@ export async function listAgents(scope: AgentScopeContext, agentId?: string) {
 /**
  * 查询当前页面范围内的智能体会话列表。
  */
-export async function listAgentSessions(scope: AgentScopeContext, agentId = 'agent-coordinator') {
+export async function listAgentSessions(
+  scope: AgentScopeContext,
+  agentId = 'agent-coordinator',
+  scopeMode: AgentSessionScopeMode = 'exact',
+) {
   const { data } = await http.get<AgentSessionItem[]>('/ai/sessions', {
-    params: buildScopeParams(scope, agentId),
+    params: {
+      ...buildScopeParams(scope, agentId),
+      scope_mode: scopeMode,
+    },
   })
   return data
 }
@@ -77,6 +86,7 @@ export async function createAgentSession(payload: {
   agent_id?: string
   session_name?: string | null
   scope: AgentScopeContext
+  llm_config_id?: number | null
 }) {
   const { data } = await http.post<AgentSessionItem>('/ai/sessions', payload)
   return data
@@ -103,7 +113,7 @@ export async function getAgentSessionRuntime(sessionId: string, scope: AgentScop
 }
 
 /**
- * 重命名已存在的内容助手会话，或触发 Agno 自动生成名称。
+ * 重命名已存在的内容助手会话，或触发后端自动生成名称。
  */
 export async function renameAgentSession(
   sessionId: string,
@@ -235,7 +245,7 @@ export async function promoteAgentImageAttachment(
 }
 
 /**
- * 查询当前会话最近一次 Agno run 状态。
+ * 查询当前会话最近一次智能体运行状态。
  */
 export async function getAgentSessionActiveRun(sessionId: string, scope: AgentScopeContext, agentId = 'agent-coordinator') {
   const { data } = await http.get<AgentActiveRunItem | null>(`/ai/sessions/${sessionId}/active-run`, {

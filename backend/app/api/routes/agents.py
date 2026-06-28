@@ -1,4 +1,4 @@
-"""文件功能：提供 Editor 内容助手使用的 BFF 路由，负责会话管理、会话命名与 Agno 运行代理。"""
+"""文件功能：提供 Editor 内容助手使用的 BFF 路由，负责会话管理、会话命名与 Pydantic AI 运行代理。"""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.registry import AgentRegistry
 from app.ai.runtime_context_builder import build_agent_runtime_context
-from app.ai.session_facade import AgentSessionFacade
+from app.ai.session_facade_pydantic import AgentSessionFacade
 from app.api.dependencies import get_current_user
 from app.core.exceptions import AppException
 from app.db.session import get_db_session
@@ -148,7 +148,7 @@ async def update_agent_config(
     current: Annotated[AuthContext, Depends(get_current_user)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> AgentConfigItem:
-    """更新当前用户的智能体业务补充提示词，或恢复默认。"""
+    """更新当前用户的智能体完整提示词，或恢复默认。"""
 
     return await AiAgentConfigService(session, user_id=current.user.id).update_agent_config(
         agent_id,
@@ -185,10 +185,11 @@ async def list_agent_sessions(
     page_id: int | None = None,
     component_id: int | None = None,
     scope_type: Literal["workspace", "project", "page", "component"] | None = None,
+    scope_mode: Literal["exact", "workspace"] = "exact",
     source: str = "editor-page-detail",
     agent_id: str = "agent-coordinator",
 ) -> list[AgentSessionItem]:
-    """列出当前页面范围下的 Agent 会话。"""
+    """列出当前页面范围或工作空间范围下的 Agent 会话。"""
 
     scope = await _resolve_scope_context(
         session=session,
@@ -205,6 +206,7 @@ async def list_agent_sessions(
     return await AgentSessionFacade(app=request.app, current=current, session=session).list_sessions(
         agent_id=agent_id,
         scope=scope,
+        scope_mode=scope_mode,
     )
 
 
@@ -234,6 +236,7 @@ async def create_agent_session(
         agent_id=payload.agent_id,
         scope=scope,
         session_name=session_name,
+        llm_config_id=payload.llm_config_id,
     )
 
 
@@ -391,6 +394,21 @@ async def upload_agent_image_attachment(
     )
 
 
+@router.get("/attachments/images/{attachment_id}/content")
+async def get_agent_image_attachment_content_by_id(
+    attachment_id: int,
+    current: Annotated[AuthContext, Depends(get_current_user)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> Response:
+    """返回当前用户可访问的图片附件原始内容，用于统一缩略图预览。"""
+
+    attachment, content = await AgentImageAttachmentService(
+        session,
+        user_id=current.user.id,
+    ).read_attachment_content_by_id(attachment_id=attachment_id)
+    return Response(content=content, media_type=attachment.content_type)
+
+
 @router.get("/sessions/{session_id}/attachments/images/{attachment_id}/content")
 async def get_agent_image_attachment_content(
     session_id: str,
@@ -541,7 +559,7 @@ async def start_agent_run(
     source: str = "editor-page-detail",
     agent_id: str = "agent-coordinator",
 ) -> AgentRunStartResponse:
-    """旧的两步式启动接口已废弃；新链路必须直接消费 Agno raw SSE。"""
+    """旧的两步式启动接口已废弃；新链路必须直接消费平台 SSE。"""
 
     _ = session_id, payload, workspace_id, request, current, session, project_id, page_id, component_id, scope_type, source, agent_id
     raise AppException(status_code=410, code="AI_RUN_START_DEPRECATED", detail="请使用流式运行接口启动智能体。")
@@ -562,7 +580,7 @@ async def stream_agent_run(
     source: str = "editor-page-detail",
     agent_id: str = "agent-coordinator",
 ) -> StreamingResponse:
-    """向 Agent 发送消息，并直接转发 Agno raw SSE。"""
+    """向 Agent 发送消息，并转发平台标准 SSE。"""
 
     scope = await _resolve_scope_context(
         session=session,
@@ -581,8 +599,9 @@ async def stream_agent_run(
     reserved_lock = await facade.reserve_run_slot(session_id=session_id, agent_id=agent_id, scope=scope)
     try:
         await _ensure_stream_image_input_supported(
-            session=session,
-            current=current,
+            facade=facade,
+            session_id=session_id,
+            agent_id=agent_id,
             descriptor=descriptor,
             image_attachment_ids=payload.image_attachment_ids,
         )
@@ -609,25 +628,26 @@ async def stream_agent_run(
 
 async def _ensure_stream_image_input_supported(
     *,
-    session: AsyncSession,
-    current: AuthContext,
+    facade: AgentSessionFacade,
+    session_id: str,
+    agent_id: str,
     descriptor: RegisteredAgentDescriptor,
     image_attachment_ids: list[int] | None,
 ) -> None:
-    """在返回流式响应前校验绑定模型是否支持图片输入。"""
+    """在返回流式响应前校验当前会话模型是否支持图片输入。"""
 
     if not image_attachment_ids:
         return
-    model_config = await AiLlmService(
-        session,
-        user_id=current.user.id,
-        user_role=current.user.role,
-    ).get_bound_config_or_raise(descriptor.llm_slot or "")
+    model_config = await facade.resolve_session_llm_config(
+        session_id=session_id,
+        agent_id=agent_id,
+        slot=descriptor.llm_slot or "",
+    )
     if not bool(model_config.supports_image_input):
         raise AppException(
             status_code=409,
             code="AI_LLM_IMAGE_INPUT_UNSUPPORTED",
-            detail="当前绑定模型不支持图片输入，不能发送图片附件。",
+            detail="当前会话模型不支持图片输入，不能发送图片附件。",
         )
 
 
@@ -647,7 +667,7 @@ async def stream_agent_run_events(
     agent_id: str = "agent-coordinator",
     event_index: int = -1,
 ) -> StreamingResponse:
-    """按 Agno event_index 订阅或回放指定 run 的原始事件流。"""
+    """按平台 event_index 订阅或回放指定 run 的事件流。"""
 
     scope = await _resolve_scope_context(
         session=session,
@@ -733,7 +753,7 @@ async def get_agent_session_active_run(
     source: str = "editor-page-detail",
     agent_id: str = "agent-coordinator",
 ) -> AgentActiveRunItem | None:
-    """读取当前会话最近一次 Agno run 状态。"""
+    """读取当前会话最近一次平台 run 状态。"""
 
     scope = await _resolve_scope_context(
         session=session,
@@ -810,7 +830,7 @@ async def cancel_agent_session_active_run(
     source: str = "editor-page-detail",
     agent_id: str = "agent-coordinator",
 ) -> AgentCancelRunResponse:
-    """取消当前会话中未结束的 Agno run。"""
+    """取消当前会话中未结束的平台 run。"""
 
     scope = await _resolve_scope_context(
         session=session,
@@ -848,7 +868,7 @@ async def continue_agent_session_active_run(
     source: str = "editor-page-detail",
     agent_id: str = "agent-coordinator",
 ) -> StreamingResponse:
-    """继续当前会话中暂停等待确认的 Agno run。"""
+    """继续当前会话中暂停等待确认的平台 run。"""
 
     scope = await _resolve_scope_context(
         session=session,
