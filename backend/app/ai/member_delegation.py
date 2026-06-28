@@ -90,6 +90,7 @@ class MemberDelegationExecutor:
         runtime_context: AgentRuntimeContext,
         parent_session_id: str,
         parent_run_id: str,
+        allowed_member_ids: tuple[str, ...] = tuple(sorted(_MEMBER_AGENT_IDS)),
     ) -> None:
         """保存父 run 与当前用户上下文，供委派工具运行时使用。"""
 
@@ -99,6 +100,7 @@ class MemberDelegationExecutor:
         self._runtime_context = runtime_context
         self._parent_session_id = parent_session_id
         self._parent_run_id = parent_run_id
+        self._allowed_member_ids = frozenset(allowed_member_ids)
 
     async def delegate_task_to_member(
         self,
@@ -203,8 +205,9 @@ class MemberDelegationExecutor:
         """执行一个具体成员任务，并把成员运行事件写入父 run。"""
 
         member_id = member_id.strip()
-        if member_id not in _MEMBER_AGENT_IDS:
-            raise AppException(status_code=422, code="AI_MEMBER_AGENT_UNSUPPORTED", detail="只能委派组件助手或资源助手。")
+        if member_id not in self._allowed_member_ids:
+            allowed_names = "、".join(sorted(self._allowed_member_ids)) or "无"
+            raise AppException(status_code=422, code="AI_MEMBER_AGENT_UNSUPPORTED", detail=f"当前助手只能委派：{allowed_names}。")
         task = task.strip()
         if not task:
             raise AppException(status_code=422, code="AI_MEMBER_TASK_REQUIRED", detail="委派任务不能为空。")
@@ -411,6 +414,17 @@ class _MemberAgentRunner:
                 budget=history_budget,
                 rebuilt_history=rebuilt_history,
             )
+            member_delegation_executor = None
+            if self._member_run.agent_id == "component-manager":
+                member_delegation_executor = MemberDelegationExecutor(
+                    session_factory=self._session_factory,
+                    current=self._current,
+                    scope=self._scope,
+                    runtime_context=self._runtime_context,
+                    parent_session_id=self._parent_run.session_id,
+                    parent_run_id=self._parent_run.run_id,
+                    allowed_member_ids=("resource-manager",),
+                )
             tools, deps = build_pydantic_tools(
                 agent_id=self._member_run.agent_id,
                 session_factory=self._session_factory,
@@ -420,6 +434,7 @@ class _MemberAgentRunner:
                 session_id=self._parent_run.session_id,
                 run_id=self._parent_run.run_id,
                 supports_image_input=bool(llm_config.supports_image_input),
+                member_delegation_executor=member_delegation_executor,
             )
             agent = Agent(
                 self._model_resolver.resolve_model(llm_config),

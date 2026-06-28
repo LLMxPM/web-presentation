@@ -34,7 +34,7 @@ from app.ai.platform_runtime import (
 from app.ai.pydantic_model_resolver import PydanticLlmModelResolver
 from app.ai.pydantic_runner import PydanticAgentRunner
 from app.ai.pydantic_tools import build_pydantic_tools
-from app.ai.tool_specs import AGENT_COORDINATOR_AGENT_ID
+from app.ai.tool_specs import AGENT_COORDINATOR_AGENT_ID, COMPONENT_MANAGER_AGENT_ID, RESOURCE_MANAGER_AGENT_ID
 from app.ai.run_errors import build_agent_error_log_extra, normalize_agent_run_exception
 from app.core.exceptions import AppException
 from app.db.session import get_session_factory
@@ -932,9 +932,13 @@ class AgentSessionFacade:
         session_id: str,
         run_id: str,
     ) -> MemberDelegationExecutor | None:
-        """仅为内容助手构建成员委派执行器。"""
+        """为允许委派的助手构建成员委派执行器。"""
 
-        if agent_id != AGENT_COORDINATOR_AGENT_ID:
+        if agent_id == AGENT_COORDINATOR_AGENT_ID:
+            allowed_member_ids = (COMPONENT_MANAGER_AGENT_ID, RESOURCE_MANAGER_AGENT_ID)
+        elif agent_id == COMPONENT_MANAGER_AGENT_ID:
+            allowed_member_ids = (RESOURCE_MANAGER_AGENT_ID,)
+        else:
             return None
         return MemberDelegationExecutor(
             session_factory=get_session_factory(),
@@ -943,6 +947,7 @@ class AgentSessionFacade:
             runtime_context=runtime_context,
             parent_session_id=session_id,
             parent_run_id=run_id,
+            allowed_member_ids=allowed_member_ids,
         )
 
     async def _mark_interrupted_run_terminal(

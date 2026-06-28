@@ -30,7 +30,7 @@ from app.ai.tools.component import build_component_manager_tools
 from app.ai.tools.page import build_apply_page_edits_tool, build_get_page_content_tool, build_get_page_screenshot_tool
 from app.ai.tools.project import build_project_tools
 from app.ai.tools.resource import build_resource_manager_tools
-from app.ai.tools.team_delegation import build_team_delegation_tools
+from app.ai.tools.team_delegation import build_resource_delegation_tools, build_team_delegation_tools
 from app.ai.tools.workspace.assets import build_list_workspace_font_assets_tool
 from app.ai.tools.workspace.components import (
     build_get_workspace_component_usage_tool,
@@ -342,6 +342,12 @@ def _build_team_delegation_runtime_tools(session_factory: async_sessionmaker[Asy
     """构建内容助手调用组件助手和资源助手的 Team 委派工具。"""
 
     return build_team_delegation_tools(session_factory)
+
+
+def _build_resource_delegation_runtime_tools(session_factory: async_sessionmaker[AsyncSession]) -> list[Any]:
+    """构建组件助手调用资源助手的 Team 委派工具。"""
+
+    return build_resource_delegation_tools(session_factory)
 
 
 _COORDINATOR_TOOL_SPECS = (
@@ -813,6 +819,28 @@ _COMPONENT_MANAGER_TOOL_SPECS = (
     ),
 
     _tool(
+        'delegate_task_to_member',
+        '委派资源助手',
+        'team_delegation',
+        'Team 委派',
+        '把明确的资源库维护任务委派给资源助手，并等待成员结果供组件助手继续整合。',
+        default_instructions=(
+            '只在组件任务确实需要资源创建、资源内容维护、资源元数据更新、资源复制或资源归档时调用。'
+            'member_id 只能是 resource-manager；不要把组件源码、组件 API、组件发布或组件删除任务委派给资源助手。'
+            'task 必须写清目标资源、期望动作和边界，handoff_context 传递你已读取到的组件、资源或 Runtime Kit 事实，'
+            'expected_output 说明资源助手应返回哪些可用于你继续修改组件源码、preview_schema 或回复用户的信息。'
+            '资源助手完成后，你必须判断结果是否可用，并继续推进组件任务。'
+        ),
+        risk_level='system',
+        response_example={
+            'member_run_id': 'member-run-123',
+            'member_id': 'resource-manager',
+            'status': 'completed',
+            'result': '已创建 SVG 图片资源 hero_illustration，可在组件中按资源名引用。',
+        },
+    ),
+
+    _tool(
         'list_components',
         '读取组件列表',
         'component_library',
@@ -973,7 +1001,10 @@ _COMPONENT_MANAGER_TOOL_SPECS = (
         default_instructions=(
             '创建组件前先确认组件名称、PascalCase import_name、component_type、组件说明、源码内容和是否需要 preview_schema；'
             'component_type 未明确指定时默认使用内容组件；'
-            '页面组件用于封面、目录、页面骨架或整页视觉；内容组件用于卡片、图表、指标组、表格、资源展示块等固定布局槽位，'
+            '页面组件用于封面、目录、页面骨架或整页视觉，必须具备整页画布承载能力；'
+            '可以直接基于 Runtime Kit 的 DefaultContainer 封装，也可以基于已发布页面组件复用其画布承载能力。'
+            '直接使用 DefaultContainer 前应通过 Runtime Kit 工具读取它的公开 import_path。'
+            '内容组件用于卡片、图表、指标组、表格、资源展示块等固定布局槽位，'
             '必须在 props 或 preview_schema 中声明 width、height、minHeight、aspectRatio、fit 等尺寸控制参数；'
             '原子组件用于页码、角标、图标、主题 Logo、小标签等小型单元，不强制 width/height，但应提供 size、fontSize、padding、variant 等轻量尺寸参数。'
             'content 必须是非空、可运行的 Vue SFC；创建前优先调用 check_component_code 检查完整候选源码和 preview_schema。'
@@ -1396,6 +1427,15 @@ _COMPONENT_MANAGER_GROUP_SPECS = (
         "在缺少必要业务信息时，向用户提出结构化单选问题。",
         ("ask_user",),
         build_tools=_build_user_feedback_tools,
+    ),
+    _group(
+        "team_delegation",
+        "Team 委派",
+        "调用资源助手处理组件助手不直接负责的资源库维护任务。",
+        _TEAM_DELEGATION_TOOL_KEYS,
+        required_context_fields=("workspace_id",),
+        build_tools=_build_resource_delegation_runtime_tools,
+        disclosable=True,
     ),
     _group(
         "component_library",

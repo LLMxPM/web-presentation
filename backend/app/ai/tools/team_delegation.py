@@ -10,6 +10,7 @@ from app.ai.platform_tools import AgentToolContext, agent_tool
 from app.core.exceptions import AppException
 
 MemberAgentId = Literal["component-manager", "resource-manager"]
+ResourceMemberAgentId = Literal["resource-manager"]
 
 
 def build_team_delegation_tools(_session_factory: async_sessionmaker[AsyncSession]) -> list[Any]:
@@ -24,6 +25,32 @@ def build_team_delegation_tools(_session_factory: async_sessionmaker[AsyncSessio
         expected_output: str | None = None,
     ) -> dict[str, Any]:
         """把明确的组件库或资源库任务委派给单个成员助手，并等待成员结果。"""
+
+        executor = _resolve_delegation_executor(run_context)
+        return await executor.delegate_task_to_member(
+            member_id=member_id,
+            task=task,
+            handoff_context=handoff_context,
+            expected_output=expected_output,
+            delegate_tool_call_id=_current_tool_call_id(run_context),
+            delegate_tool_name="delegate_task_to_member",
+        )
+
+    return [delegate_task_to_member]
+
+
+def build_resource_delegation_tools(_session_factory: async_sessionmaker[AsyncSession]) -> list[Any]:
+    """构建组件助手调用资源助手的委派工具。"""
+
+    @agent_tool(show_result=True)
+    async def delegate_task_to_member(
+        run_context: AgentToolContext,
+        member_id: ResourceMemberAgentId,
+        task: str,
+        handoff_context: str | None = None,
+        expected_output: str | None = None,
+    ) -> dict[str, Any]:
+        """把明确的资源库维护任务委派给资源助手，并等待成员结果。"""
 
         executor = _resolve_delegation_executor(run_context)
         return await executor.delegate_task_to_member(

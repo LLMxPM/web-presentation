@@ -78,10 +78,53 @@ async def test_agent_config_api_should_manage_prompt_and_tool_overrides(
     assert "优先直接使用页面、项目、组件读取、资源读取和检查工具" in coordinator["role"]
     assert "仅在需要组件或资源维护时调用 delegate_task_to_member" in coordinator["role"]
     assert "team_members" not in coordinator
-    assert "## 1. 身份、权限与安全边界" in catalog_items[COMPONENT_MANAGER_AGENT_ID]["default_prompt"]
-    assert "## 7. 组件质量、写入校验与归属" in catalog_items[COMPONENT_MANAGER_AGENT_ID]["default_prompt"]
-    assert "## 1. 身份、权限与动作边界" in catalog_items[RESOURCE_MANAGER_AGENT_ID]["default_prompt"]
-    assert "## 6. 归档与删除边界" in catalog_items[RESOURCE_MANAGER_AGENT_ID]["default_prompt"]
+    component_prompt = catalog_items[COMPONENT_MANAGER_AGENT_ID]["default_prompt"]
+    assert "## 1. 身份与硬边界" in component_prompt
+    assert "## 2. 任务分类与执行原则" in component_prompt
+    assert "## 3. 事实来源与上下文优先级" in component_prompt
+    assert "## 4. 对象边界与协作职责" in component_prompt
+    assert "## 9. 写入校验与回复契约" in component_prompt
+    assert "组件助手不负责直接维护 page_content、页面元数据、项目页面列表、路由树、项目样式配置" in component_prompt
+    assert "资源名、组件 import 和 Runtime Kit import 都必须来自工具结果" in component_prompt
+    assert "组件助手只能委派资源助手" in component_prompt
+    assert "delegate_task_to_member" in component_prompt
+    assert "页面组件必须具备整页画布承载能力" in component_prompt
+    assert "也可以基于已发布页面组件复用其真实画布、定位上下文和裁剪" in component_prompt
+    assert "不要改用已发布衍生容器组件替代 DefaultContainer" not in component_prompt
+    assert "style_spec_markdown" not in component_prompt
+    assert "资源助手委派" in catalog_items[COMPONENT_MANAGER_AGENT_ID]["capabilities"]
+    assert "按需委派资源助手" in catalog_items[COMPONENT_MANAGER_AGENT_ID]["description"]
+    component_team_delegation = next(
+        group for group in catalog_items[COMPONENT_MANAGER_AGENT_ID]["tool_groups"] if group["key"] == "team_delegation"
+    )
+    assert [tool["key"] for tool in component_team_delegation["tools"]] == [
+        "delegate_task_to_member",
+    ]
+    component_delegate_tool = _find_tool(catalog_items[COMPONENT_MANAGER_AGENT_ID], "delegate_task_to_member")
+    component_delegate_schema = component_delegate_tool["agent_guide"]["parameters_schema"]
+    assert set(_schema_enum_values(component_delegate_schema["properties"]["member_id"])) == {
+        "resource-manager",
+    }
+    assert "team_delegation" in component_delegate_tool["agent_guide"]["runtime_disclosure_groups"]
+    create_component_tool = _find_tool(catalog_items[COMPONENT_MANAGER_AGENT_ID], "create_component")
+    assert "必须具备整页画布承载能力" in create_component_tool["agent_guide"]["instructions"]
+    assert "也可以基于已发布页面组件复用其画布承载能力" in create_component_tool["agent_guide"]["instructions"]
+    resource_prompt = catalog_items[RESOURCE_MANAGER_AGENT_ID]["default_prompt"]
+    assert "## 1. 身份与硬边界" in resource_prompt
+    assert "## 2. 任务分类与执行原则" in resource_prompt
+    assert "## 3. 事实来源与对象边界" in resource_prompt
+    assert "## 4. 可维护资源类型" in resource_prompt
+    assert "## 7. 写入校验与回复契约" in resource_prompt
+    assert "如果用户目标实际是页面布局、组件 API、组件源码、项目路由、项目样式或页面源码写入" in resource_prompt
+    assert "资源归档是安全整理动作，不等同于删除；你不暴露删除工具" in resource_prompt
+    assert "当前只能归档资源，不能执行删除" in resource_prompt
+    assert "资源助手不负责说明资源在页面或组件中如何渲染" in resource_prompt
+    assert "Draw.io 内容必须是 diagrams.net/draw.io XML" in resource_prompt
+    assert "SVG 内容必须是以 <svg> 为根节点的可解析 XML" in resource_prompt
+    assert "Runtime Kit" not in resource_prompt
+    assert "useAssetSrc" not in resource_prompt
+    assert "AssetImage" not in resource_prompt
+    assert "style_spec_markdown" not in resource_prompt
     resource_list_tool = _find_tool(coordinator, "list_resource_assets")
     assert "scope" in resource_list_tool["agent_guide"]["parameters_schema"]["properties"]
     font_asset_tool = _find_tool(coordinator, "list_workspace_font_assets")
@@ -237,7 +280,7 @@ def test_base_font_size_guidance_should_use_tailwind_default_ratio() -> None:
     coordinator_prompt = coordinator.default_prompt
     component_prompt = component_manager.default_prompt
     assert "base_font_size / 16px" in coordinator_prompt
-    assert "base_font_size / 16px" in component_prompt
+    assert "组件助手默认不知道当前项目基础字号" in component_prompt
     assert "size、density、variant、tone" in component_prompt
     assert "裸 fontSize/padding 数值 props" in component_prompt
 
@@ -270,7 +313,7 @@ def test_page_design_guidance_should_use_wireframe_as_internal_method() -> None:
     component_prompt = component_manager.default_prompt
 
     assert "先在内部使用文本线框图或区域清单梳理布局，再写 Vue SFC 代码" in coordinator_prompt
-    assert "不作为默认回复内容输出" in coordinator_prompt
+    assert "文本线框图是布局思考方法" in coordinator_prompt
     assert "不要为了展示线框图而暂停等待用户确认" in coordinator_prompt
     assert "先在内部使用文本线框图或区域清单梳理布局，再写 Vue SFC 代码" in component_prompt
     assert "文本线框图是组件布局思考方法" in component_prompt
@@ -289,8 +332,8 @@ def test_agent_default_prompts_should_include_key_task_workflow() -> None:
 
     workflow_expectations = {
         coordinator: ("## 5. 重点任务建议工作流程", "会创建或改动 page_content、页面元数据、路由树或项目样式配置", "可以委派资源助手创建资源", "按委派边界调用成员并整合可用结果"),
-        component_manager: ("## 2. 重点任务建议工作流程", "组件重点任务", "组件 API 与预览约束"),
-        resource_manager: ("## 2. 重点任务建议工作流程", "资源重点任务", "Diff 预览或引用检查"),
+        component_manager: ("## 5. 重点任务建议工作流程", "会创建、修改、发布或删除工作空间组件", "组件 API 与预览约束"),
+        resource_manager: ("## 5. 重点任务工作流程", "处理创建、修改、复制或归档资源", "内容格式"),
     }
     for catalog, expected_phrases in workflow_expectations.items():
         prompt = catalog.default_prompt
@@ -339,10 +382,11 @@ def test_runtime_asset_guidance_should_prefer_sfc_composables() -> None:
         assert "只有在自定义背景图、非响应式代码或确实需要自行组织 DOM/CSS 的场景" not in prompt
 
     resource_prompt = resource_manager.default_prompt
-    assert "普通资源 URL 默认用 useAssetSrc" in resource_prompt
-    assert "项目资源背景优先用 useAssetBackground" in resource_prompt
-    assert "不要传初始化时的 props.xxx 字符串" in resource_prompt
-    assert "resolveResourcePath 只用于非响应式工具代码" in resource_prompt
+    assert "普通资源 URL 默认用 useAssetSrc" not in resource_prompt
+    assert "项目资源背景优先用 useAssetBackground" not in resource_prompt
+    assert "不要传初始化时的 props.xxx 字符串" not in resource_prompt
+    assert "resolveResourcePath 只用于非响应式工具代码" not in resource_prompt
+    assert "资源助手不负责说明资源在页面或组件中如何渲染" in resource_prompt
 
 
 def _find_tool(config_item: dict, tool_key: str) -> dict:
@@ -377,6 +421,8 @@ def _schema_enum_values(schema: dict[str, Any]) -> list[str]:
     values = schema.get("enum")
     if isinstance(values, list):
         return [str(value) for value in values]
+    if "const" in schema:
+        return [str(schema["const"])]
     result: list[str] = []
     for option in _schema_composition_options(schema):
         result.extend(_schema_enum_values(option))
