@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import re
 import time
@@ -13,6 +12,7 @@ from urllib.parse import parse_qs, parse_qsl, urlencode, urlsplit, urlunsplit
 from app.core.config import get_settings
 from app.core.exceptions import AppException
 from app.services.capture_viewport_resolver import CaptureViewport
+from app.services.playwright_task_queue import PlaywrightTaskQueue, get_playwright_task_queue
 from app.services.runtime_build_client import RUNTIME_SERVICE_TOKEN_HEADER
 from app.services.token_service import TokenService
 
@@ -37,8 +37,9 @@ class PageRenderDiagnosticsTarget:
 class PageRenderDiagnosticsService:
     """页面渲染诊断服务，负责返回不会阻塞写入的布局 warning。"""
 
-    def __init__(self) -> None:
+    def __init__(self, playwright_task_queue: PlaywrightTaskQueue | None = None) -> None:
         self.settings = get_settings()
+        self.playwright_task_queue = playwright_task_queue or get_playwright_task_queue()
 
     async def diagnose_preview(
         self,
@@ -48,7 +49,12 @@ class PageRenderDiagnosticsService:
         """打开页面预览并检查固定画布底部是否存在可见内容溢出。"""
 
         try:
-            return await asyncio.to_thread(self._diagnose_preview_sync, preview_url, viewport)
+            return await self.playwright_task_queue.run_sync(
+                "page-render-diagnostics",
+                self._diagnose_preview_sync,
+                preview_url,
+                viewport,
+            )
         except Exception as error:  # noqa: BLE001
             logger.warning(
                 "页面渲染布局诊断不可用：preview_url=%s viewport=%sx%s",

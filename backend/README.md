@@ -271,6 +271,7 @@ Backend 现已支持基于 Runtime 预览页生成页面截图，并将结果保
 
 相关环境变量：
 
+- `PLAYWRIGHT_TASK_CONCURRENCY`：Backend 进程内 Playwright 任务统一并发上限，覆盖页面截图和真实渲染诊断，默认 `1`
 - `PAGE_SCREENSHOT_DEFAULT_VIEWPORT_WIDTH`：默认截图宽度，默认 `1920`
 - `PAGE_SCREENSHOT_DEFAULT_VIEWPORT_HEIGHT`：默认截图高度，默认 `1080`
 - `PAGE_SCREENSHOT_MAX_VIEWPORT_WIDTH`：允许的最大截图宽度，默认 `4096`

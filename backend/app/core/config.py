@@ -42,6 +42,7 @@ class AppSettings(BaseSettings):
     runtime_service_token_audience: str = "runtime-backend"
     runtime_request_timeout_seconds: float = 10.0
     backend_public_base_url: str = "http://127.0.0.1:8000"
+    playwright_task_concurrency: int = 1
     ai_enabled: bool = True
     ai_test_mode: str = "disabled"
     ai_secret_encryption_key: str = "vmgRweOsDpMtYVW7SSpceINYcXlUHFNndAby6vRv0iA="
@@ -163,16 +164,17 @@ class AppSettings(BaseSettings):
         "page_screenshot_default_viewport_height",
         "page_screenshot_max_viewport_width",
         "page_screenshot_max_viewport_height",
+        "playwright_task_concurrency",
         "page_screenshot_batch_concurrency",
         "page_screenshot_queue_concurrency",
         "page_screenshot_job_lease_seconds",
     )
     @classmethod
     def validate_positive_int(cls, value: int) -> int:
-        """校验截图相关整数配置均为正数。"""
+        """校验截图与 Playwright 相关整数配置均为正数。"""
 
         if value <= 0:
-            raise ValueError("截图尺寸配置必须为正整数。")
+            raise ValueError("截图与 Playwright 整数配置必须为正整数。")
         return value
 
     @field_validator(
