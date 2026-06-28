@@ -10,7 +10,7 @@ WORKDIR /app/editor
 
 RUN corepack enable && corepack prepare pnpm@10.30.3 --activate
 
-COPY editor/package.json editor/pnpm-lock.yaml ./
+COPY editor/package.json editor/pnpm-lock.yaml editor/pnpm-workspace.yaml ./
 RUN pnpm install --frozen-lockfile
 
 COPY editor/ ./
