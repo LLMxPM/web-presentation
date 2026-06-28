@@ -54,14 +54,29 @@ async def test_agent_config_api_should_manage_prompt_and_tool_overrides(
     assert "## 7. 固定画布、主题、组件与资源使用" in coordinator["default_prompt"]
     assert "## 8. 写入校验与回复契约" in coordinator["default_prompt"]
     assert "成员委派只能通过 delegate_task_to_member 工具发生" in coordinator["default_prompt"]
-    assert "组件助手负责工作空间组件库专长任务" in coordinator["default_prompt"]
-    assert "资源助手负责工作空间资源库专长任务" in coordinator["default_prompt"]
+    assert "组件列表/用法查询、资源列表/内容读取或 Runtime Kit 查询" in coordinator["default_prompt"]
+    assert "只有需要新增、修改、发布、删除组件，或创建、修改、复制、归档资源时，才进入成员委派流程" in coordinator["default_prompt"]
+    assert "组件列表查询、已发布组件用法查询、组件筛选和页面内组件引用决策由你直接完成" in coordinator["default_prompt"]
+    assert "资源列表查询、资源内容读取、资源筛选和页面内资源引用决策由你直接完成" in coordinator["default_prompt"]
     assert "可用颜色键包括 primary、secondary、invert、background" in coordinator["default_prompt"]
     assert "--tw-color-text-primary" in coordinator["default_prompt"]
     assert "主题 Logo 渲染优先使用 Runtime Kit 的 ThemeLogo 组件" in coordinator["default_prompt"]
+    assert "主题颜色/字体摘要默认不完整注入" in coordinator["default_prompt"]
+    assert "不要为了重复获取已注入的 style_spec_markdown 而调用它" in coordinator["default_prompt"]
+    assert "include_style_spec_markdown=true" in coordinator["default_prompt"]
+    assert "项目建议组件摘要和项目建议资源摘要可以作为本轮初始事实使用" in coordinator["default_prompt"]
+    assert "组件摘要只能用于筛选" in coordinator["default_prompt"]
+    assert "组件库或资源库专长任务才进入成员委派流程" not in coordinator["default_prompt"]
+    assert "组件助手负责工作空间组件库专长任务" not in coordinator["default_prompt"]
+    assert "资源助手负责工作空间资源库专长任务" not in coordinator["default_prompt"]
+    assert "应委委派" not in coordinator["default_prompt"]
     assert "不是单纯任务分发者" not in coordinator["default_prompt"]
     assert "内容 Team 的入口" not in coordinator["default_prompt"]
     assert "处理页面与项目任务" not in coordinator["default_prompt"]
+    assert "直接查询并使用已发布组件、资源和 Runtime Kit 能力" in coordinator["description"]
+    assert "仅在需要新增、修改或归档组件/资源时通过工具委派成员" in coordinator["description"]
+    assert "优先直接使用页面、项目、组件读取、资源读取和检查工具" in coordinator["role"]
+    assert "仅在需要组件或资源维护时调用 delegate_task_to_member" in coordinator["role"]
     assert "team_members" not in coordinator
     assert "## 1. 身份、权限与安全边界" in catalog_items[COMPONENT_MANAGER_AGENT_ID]["default_prompt"]
     assert "## 7. 组件质量、写入校验与归属" in catalog_items[COMPONENT_MANAGER_AGENT_ID]["default_prompt"]
@@ -102,6 +117,9 @@ async def test_agent_config_api_should_manage_prompt_and_tool_overrides(
     assert route_tool["requires_confirmation"] is False
     assert route_tool["agent_guide"]["requires_confirmation"] is False
     assert route_tool["agent_guide"]["risk_level"] == "write"
+    style_tool = _find_tool(coordinator, "get_project_style_config")
+    assert "include_style_spec_markdown" in style_tool["agent_guide"]["parameters_schema"]["properties"]
+    assert "不要为了重复获取 style_spec_markdown 全文而调用本工具" in style_tool["agent_guide"]["instructions"]
 
     update_response = await authenticated_client.patch(
         f"/api/ai/agent-configs/{AGENT_COORDINATOR_AGENT_ID}",
@@ -235,6 +253,9 @@ def test_base_font_size_guidance_should_use_tailwind_default_ratio() -> None:
     coordinator_specs = {spec.key: spec for spec in list_agent_tool_specs(AGENT_COORDINATOR_AGENT_ID)}
     assert "1.25 倍" in str(coordinator_specs["get_page_content"].response_example)
     assert "base_font_size / 16px" in coordinator_specs["get_project_style_config"].default_instructions
+    assert "不要为了重复获取 style_spec_markdown 全文而调用本工具" in coordinator_specs["get_project_style_config"].default_instructions
+    assert "style_spec_markdown_in_runtime_context" in coordinator_specs["get_project_style_config"].response_example
+    assert "style_spec_markdown" not in coordinator_specs["get_project_style_config"].response_example
 
 
 def test_page_design_guidance_should_use_wireframe_as_internal_method() -> None:
@@ -267,7 +288,7 @@ def test_agent_default_prompts_should_include_key_task_workflow() -> None:
     assert resource_manager is not None
 
     workflow_expectations = {
-        coordinator: ("## 5. 重点任务建议工作流程", "会创建或改动 page_content、页面元数据、路由树或项目样式配置", "组件/资源维护任务再决定是否委派"),
+        coordinator: ("## 5. 重点任务建议工作流程", "会创建或改动 page_content、页面元数据、路由树或项目样式配置", "可以委派资源助手创建资源", "按委派边界调用成员并整合可用结果"),
         component_manager: ("## 2. 重点任务建议工作流程", "组件重点任务", "组件 API 与预览约束"),
         resource_manager: ("## 2. 重点任务建议工作流程", "资源重点任务", "Diff 预览或引用检查"),
     }
@@ -288,8 +309,8 @@ def test_content_agent_prompt_should_describe_page_rendering_workflow() -> None:
         "page_content 要写成完整、可运行的 Vue SFC 文件源码",
         "物化为 src/views/<page.code>.vue 逻辑模块",
         "由 Runtime 通过 Vue 3/Vite 动态导入并渲染",
-        "依据页面类型优先选择合适的已发布页面组件",
-        "找不到合适页面组件或页面容器时再使用 Runtime Kit 的 DefaultContainer",
+        "依据页面类型优先从项目建议组件中选择合适的已发布页面组件",
+        "找不到合适页面组件时再使用 Runtime Kit 的 DefaultContainer",
         "选择需要渲染的真实资源，包括图片、图表、Mermaid、Draw.io、公式、视频等",
         "选择合适的内容组件、原子组件、Runtime Kit 组件或能力",
         "页面是固定画布大小，不是流式网页",

@@ -30,6 +30,7 @@ class AgentRuntimeContext:
     file_type: str | None = None
     component_code: str | None = None
     component_name: str | None = None
+    suggested_components: tuple[dict[str, Any], ...] = ()
     suggested_reference_assets: tuple[dict[str, Any], ...] = ()
 
 
@@ -62,6 +63,24 @@ def build_scope_context_text(runtime_context: AgentRuntimeContext) -> str:
                 "```",
             ]
         )
+    if runtime_context.suggested_components:
+        lines.extend(
+            [
+                "- 项目建议组件：",
+                "以下为项目建议组件摘要；当任务需要选择页面组件、内容组件或原子组件时，建议优先考虑这些组件，不合适时可以查询其他工作空间组件。",
+                "组件摘要不能替代使用契约；生成 import、确认 props/slots/preview_schema 或组件版本前，必须调用组件读取工具获取精确信息。",
+            ]
+        )
+        for component in runtime_context.suggested_components:
+            lines.append(
+                "  - "
+                f"component_code={component.get('code')}，"
+                f"name={component.get('name')}，"
+                f"import_name={component.get('import_name')}，"
+                f"component_type={component.get('component_type')}，"
+                f"description={component.get('summary') or '（未填写）'}，"
+                f"current_version_no={component.get('current_version_no')}"
+            )
     if runtime_context.suggested_reference_assets:
         lines.extend(
             [

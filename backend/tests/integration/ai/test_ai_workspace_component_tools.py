@@ -7,8 +7,10 @@ import json
 from httpx import AsyncClient
 
 from app.ai.agent import AGENT_COORDINATOR_AGENT_ID
+from app.ai.agent.runtime_context import build_scope_context_text
 from app.ai.auth_tokens import COMPONENT_TOOL_READ_SCOPES, build_agent_tool_token
 from app.ai.platform_tools import AgentToolContext
+from app.ai.runtime_context_builder import build_agent_runtime_context
 from app.ai.tools.workspace.components import (
     build_get_workspace_component_usage_tool,
     build_list_workspace_components_tool,
@@ -16,6 +18,7 @@ from app.ai.tools.workspace.components import (
 from app.db.session import get_session_factory
 from app.models.enums import UserRole
 from app.models.user import User
+from app.schemas.agent import AgentScopeContext
 from app.services.auth_service import AuthContext
 
 CONTENT_COMPONENT_SIZE_PREVIEW_SCHEMA = '{"props":{"height":{"type":"number","label":"高度","default":320}}}'
@@ -51,6 +54,40 @@ async def test_workspace_component_tools_should_return_public_usage_contract(
         f"@workspace-components/{component['code']}/v/{component['current_version_no']}"
     )
     assert "content" not in usage_result
+
+
+async def test_runtime_context_should_include_project_suggested_components(
+    authenticated_client: AsyncClient,
+) -> None:
+    """运行时上下文应注入项目建议组件摘要，供内容助手初始筛选。"""
+
+    workspace_id = await _create_workspace(authenticated_client, "AI 建议组件上下文空间")
+    project_id = await _create_project(authenticated_client, workspace_id, "AI 建议组件上下文项目")
+    component = await _create_published_component(authenticated_client, workspace_id)
+    await _save_project_suggested_components(authenticated_client, project_id, [component["id"]])
+
+    session_factory = get_session_factory()
+    async with session_factory() as session:
+        runtime_context = await build_agent_runtime_context(
+            session=session,
+            scope=AgentScopeContext(
+                scope_type="project",
+                workspace_id=workspace_id,
+                project_id=project_id,
+                source="test",
+            ),
+        )
+
+    assert len(runtime_context.suggested_components) == 1
+    suggested_component = runtime_context.suggested_components[0]
+    assert suggested_component["code"] == component["code"]
+    assert suggested_component["import_name"] == component["import_name"]
+    assert "content" not in suggested_component
+
+    context_text = build_scope_context_text(runtime_context)
+    assert "项目建议组件" in context_text
+    assert f"component_code={component['code']}" in context_text
+    assert "组件摘要不能替代使用契约" in context_text
 
 
 async def _create_workspace(authenticated_client: AsyncClient, name: str) -> int:

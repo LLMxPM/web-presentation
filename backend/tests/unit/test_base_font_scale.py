@@ -46,3 +46,33 @@ def test_scope_context_should_use_compact_base_font_scale_note() -> None:
     assert "Tailwind 默认 16px 基准的 1.25 倍" in context_text
     assert "text-base 等于该值" not in context_text
     assert "按 Runtime Tailwind 预设比例派生" not in context_text
+
+
+def test_scope_context_should_include_project_suggested_component_summaries() -> None:
+    """运行时上下文应注入项目建议组件摘要，并提示需再读取使用契约。"""
+
+    context_text = build_scope_context_text(
+        AgentRuntimeContext(
+            scope_type="page",
+            workspace_id=1,
+            project_id=2,
+            page_id=3,
+            source="test",
+            suggested_components=(
+                {
+                    "code": "hero-cover",
+                    "name": "封面页组件",
+                    "import_name": "HeroCover",
+                    "component_type": "页面组件",
+                    "summary": "适合品牌封面页。",
+                    "current_version_no": 2,
+                },
+            ),
+        )
+    )
+
+    assert "项目建议组件" in context_text
+    assert "component_code=hero-cover" in context_text
+    assert "import_name=HeroCover" in context_text
+    assert "component_type=页面组件" in context_text
+    assert "组件摘要不能替代使用契约" in context_text

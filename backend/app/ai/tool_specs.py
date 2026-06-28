@@ -420,19 +420,22 @@ _COORDINATOR_TOOL_SPECS = (
         '读取项目样式配置',
         'content_project',
         '内容与项目',
-        '读取当前项目真实页面画布尺寸、基础字号、当前主题颜色/字体摘要与 Markdown 样式规范。',
+        '读取当前项目真实页面画布尺寸、基础字号、当前主题颜色/字体摘要，并可按需返回 Markdown 样式规范全文。',
         default_instructions=(
-            '在生成或调整项目级页面视觉方案前，优先读取真实页面画布、基础字号、当前主题颜色/字体摘要和 Markdown 样式规范；'
+            '当前运行上下文通常已经注入 style_spec_markdown；常规生成或调整页面视觉方案时，优先用本工具读取真实页面画布、基础字号和当前主题颜色/字体摘要，'
+            '不要为了重复获取 style_spec_markdown 全文而调用本工具；'
+            '只有需要确认最新样式规范全文、准备更新项目样式规范，或运行上下文缺少样式规范时，才传 include_style_spec_markdown=true；'
             'base_font_size 替代 Tailwind 默认 16px 基准，可按 base_font_size / 16px 理解 text-*、p-*、m-*、gap-*、space-* 等语义尺度的整体倍率；'
             '直接写 px、rem 或 Tailwind arbitrary values 不参与该倍率；'
-            '返回的 style_spec_markdown 是用户维护的项目级页面视觉和内容排版约束。不要根据页面源码或截图反推项目级样式配置。'
+            'style_spec_markdown 是用户维护的项目级页面视觉和内容排版约束。不要根据页面源码或截图反推项目级样式配置。'
         ),
         response_example={'page_width': 1920,
          'page_height': 1080,
          'base_font_size': '20px',
          'theme': {'palette': {'text': {'primary': '#0D286A'}},
                    'typography': {'headingfont': 'system-ui', 'bodyfont': 'system-ui', 'codefont': 'monospace'}},
-         'style_spec_markdown': '## 版式\n- 标题保持简洁。'},
+         'style_spec_markdown_in_runtime_context': True,
+         'style_spec_markdown_length': 18},
     ),
 
     _tool(

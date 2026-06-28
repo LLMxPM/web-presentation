@@ -29,8 +29,11 @@ def build_get_project_style_config_tool(session_factory: async_sessionmaker[Asyn
     """构建项目真实画布、主题摘要与样式规范读取工具。"""
 
     @agent_tool(show_result=False)
-    async def get_project_style_config(run_context: AgentToolContext) -> dict[str, Any]:
-        """读取当前项目的页面画布、主题摘要和样式规范。"""
+    async def get_project_style_config(
+        run_context: AgentToolContext,
+        include_style_spec_markdown: bool = False,
+    ) -> dict[str, Any]:
+        """读取当前项目的页面画布、主题摘要，并按需返回样式规范全文。"""
 
         dependencies, _ = await resolve_tool_context(session_factory,
             run_context,
@@ -46,13 +49,18 @@ def build_get_project_style_config_tool(session_factory: async_sessionmaker[Asyn
                 raise AppException(status_code=404, code="PROJECT_NOT_FOUND", detail="项目不存在。")
             _ensure_project_workspace(project_workspace_id=project.workspace_id, expected_workspace_id=workspace_id)
             effective_theme_config = await config_service.resolve_runtime_theme_config(project)
-            return {
+            style_spec_markdown = str(project.style_spec_markdown or "")
+            result: dict[str, Any] = {
                 "page_width": project.page_width,
                 "page_height": project.page_height,
                 "base_font_size": project.base_font_size,
                 "theme": _extract_theme_summary(effective_theme_config),
-                "style_spec_markdown": project.style_spec_markdown,
+                "style_spec_markdown_in_runtime_context": bool(style_spec_markdown.strip()),
+                "style_spec_markdown_length": len(style_spec_markdown),
             }
+            if include_style_spec_markdown:
+                result["style_spec_markdown"] = style_spec_markdown
+            return result
 
     return get_project_style_config
 
