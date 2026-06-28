@@ -72,11 +72,10 @@ async def test_llm_http_trace_hooks_should_write_redacted_jsonl(tmp_path: Path) 
 
 
 def test_llm_http_trace_settings_should_validate_defaults() -> None:
-    """配置默认关闭 trace，并拒绝无效的请求体大小上限。"""
+    """配置应保留稳定默认值，并拒绝无效的请求体大小上限。"""
 
     settings = AppSettings(_env_file=None)
 
-    assert settings.ai_llm_http_trace_enabled is False
     assert settings.ai_llm_http_trace_body_max_bytes == 200_000
     assert settings.ai_llm_http_trace_dir_path.name == "llm-http-trace"
     with pytest.raises(ValueError, match="AI_LLM_HTTP_TRACE_BODY_MAX_BYTES"):

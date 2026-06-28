@@ -41,7 +41,7 @@ async def test_get_resource_asset_content_tool_should_return_recoverable_error_f
     assert upload_response.status_code == 200, upload_response.text
     asset = upload_response.json()
     tool = build_get_resource_asset_content_tool(get_session_factory())
-    run_context = _build_tool_run_context(workspace_id=workspace_id, scopes=RESOURCE_TOOL_WRITE_SCOPES)
+    run_context = _build_tool_run_context(workspace_id=workspace_id, scopes=RESOURCE_TOOL_READ_SCOPES)
 
     result = await tool.entrypoint(run_context, asset_id=asset["id"])
 
