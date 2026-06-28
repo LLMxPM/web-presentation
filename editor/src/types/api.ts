@@ -47,6 +47,9 @@ export interface ProjectSuggestedReferenceAssetItem {
   description: string | null
   asset_type: AssetType
   content_editable: boolean
+  approx_aspect_ratio?: string | null
+  approx_aspect_ratio_value?: number | null
+  aspect_ratio_source?: 'auto' | 'manual' | 'agent' | string | null
 }
 
 export interface ProjectSuggestedReferenceAssetsResponse {
@@ -1275,6 +1278,14 @@ export interface AssetAnalysisMetadata {
   icon: AssetIconAnalysisPayload
 }
 
+export interface AssetRenderHintMetadata {
+  schema_version: number
+  kind: 'asset_render_hint'
+  aspect_ratio: string
+  aspect_ratio_value: number
+  aspect_ratio_source: 'auto' | 'manual' | 'agent' | string
+}
+
 export interface WorkspaceThemeItem {
   id: number
   workspace_id: number
@@ -1320,7 +1331,10 @@ export interface AssetResponse {
   render_type: AssetType
   tags: string[]
   analysis_metadata: AssetAnalysisMetadata | null
-  render_metadata: Record<string, unknown> | null
+  render_metadata: AssetRenderHintMetadata | Record<string, unknown> | null
+  approx_aspect_ratio?: string | null
+  approx_aspect_ratio_value?: number | null
+  aspect_ratio_source?: 'auto' | 'manual' | 'agent' | string | null
   status: RecordStatus
   archived_at: string | null
   archive_reason: string | null

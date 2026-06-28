@@ -168,6 +168,7 @@ export async function createWorkspaceAssetContent(
     content: string
     description?: string | null
     tags?: string[]
+    approx_aspect_ratio?: string | null
   },
 ): Promise<AssetResponse> {
   const { data } = await http.post<AssetResponse>(`/workspaces/${workspaceId}/assets/content`, payload)
@@ -213,12 +214,14 @@ export async function updateWorkspaceAsset(
   originalName?: string,
   tags?: string[],
   description?: string | null,
+  approxAspectRatio?: string | null,
 ): Promise<AssetResponse> {
   const payload: any = {}
   if (name !== undefined) payload.name = name
   if (originalName !== undefined) payload.original_name = originalName
   if (tags !== undefined) payload.tags = tags
   if (description !== undefined) payload.description = description
+  if (approxAspectRatio !== undefined) payload.approx_aspect_ratio = approxAspectRatio
 
   const { data } = await http.put<AssetResponse>(`/workspaces/${workspaceId}/assets/${assetId}`, payload)
   return data

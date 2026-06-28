@@ -206,6 +206,9 @@ class ProjectSuggestedReferenceAssetItem(BaseModel):
     description: str | None = None
     asset_type: AssetType
     content_editable: bool = False
+    approx_aspect_ratio: str | None = None
+    approx_aspect_ratio_value: float | None = None
+    aspect_ratio_source: str | None = None
 
 
 class ProjectSuggestedReferenceAssetsResponse(BaseModel):

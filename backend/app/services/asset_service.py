@@ -32,6 +32,7 @@ from app.schemas.asset import AssetReferenceSummary, resolve_asset_content_edita
 from app.services.asset_storage_drivers import BaseStorageDriver, get_driver
 from app.services.icon_analysis_service import IconAnalysisService
 from app.repositories.component_resource_index_repository import ComponentResourceIndexRepository
+from app.services.asset_render_metadata_service import AssetRenderMetadataService, AspectRatioSource
 from app.services.component_resource_index_service import ComponentResourceIndexService
 from app.services.workspace_font_service import WorkspaceFontService
 
@@ -227,6 +228,7 @@ class AssetService:
             )
 
         analysis_metadata = self._build_analysis_metadata(asset_type, original_name, content_type, content)
+        render_metadata = AssetRenderMetadataService.build_auto_metadata(asset_type, original_name, content_type, content)
         asset = WorkspaceAsset(
             workspace_id=workspace_id,
             name=asset_name,
@@ -239,7 +241,7 @@ class AssetService:
             asset_type=asset_type.value,
             tags=resolved_tags,
             analysis_metadata=analysis_metadata,
-            render_metadata=analysis_metadata,
+            render_metadata=render_metadata,
             status=RecordStatus.ACTIVE.value,
         )
         self.session.add(asset)
@@ -257,6 +259,8 @@ class AssetService:
         content: str,
         tags: list[str] | None = None,
         description: str | None = None,
+        approx_aspect_ratio: str | None = None,
+        aspect_ratio_source: AspectRatioSource = "manual",
     ) -> WorkspaceAsset:
         """通过文本内容创建 SVG 图标、SVG 图片、Draw.io、Mermaid、Chart 或 Formula 资源。"""
 
@@ -272,6 +276,14 @@ class AssetService:
         await self._ensure_asset_name_available(workspace_id, asset_name)
         save_name = await self.driver.upload(workspace_id, file_hash, ext, content_bytes, content_type)
         analysis_metadata = self._build_analysis_metadata(asset_type, original_name, content_type, content_bytes)
+        render_metadata = AssetRenderMetadataService.build_manual_or_auto_metadata(
+            value=approx_aspect_ratio,
+            source=aspect_ratio_source,
+            asset_type=asset_type,
+            original_name=original_name,
+            content_type=content_type,
+            content=content_bytes,
+        )
         asset = WorkspaceAsset(
             workspace_id=workspace_id,
             name=asset_name,
@@ -284,7 +296,7 @@ class AssetService:
             asset_type=asset_type.value,
             tags=tags or [],
             analysis_metadata=analysis_metadata,
-            render_metadata=analysis_metadata,
+            render_metadata=render_metadata,
             status=RecordStatus.ACTIVE.value,
         )
         self.session.add(asset)
@@ -503,6 +515,9 @@ class AssetService:
         original_name: str | None = None,
         tags: list[str] | None = None,
         description: str | None = None,
+        approx_aspect_ratio: str | None = None,
+        approx_aspect_ratio_provided: bool = False,
+        aspect_ratio_source: AspectRatioSource = "manual",
     ) -> WorkspaceAsset:
         """更新资源元数据；不改变物理文件指针，也不生成历史副本。"""
 
@@ -510,12 +525,13 @@ class AssetService:
         normalized_name = self._normalize_asset_name(name) if name is not None else asset.name
         normalized_original_name = self._normalize_original_name(original_name) if original_name is not None else asset.original_name
         normalized_description = self._normalize_description(description) if description is not None else asset.description
+        original_name_changed = normalized_original_name != asset.original_name
 
         if normalized_name != asset.name:
             await self._ensure_asset_name_available(workspace_id, normalized_name, exclude_asset_id=asset.id)
             asset.name = normalized_name
 
-        if normalized_original_name != asset.original_name:
+        if original_name_changed:
             self._validate_asset_file_type(AssetType(asset.asset_type), normalized_original_name, asset.content_type)
             asset.original_name = normalized_original_name
 
@@ -524,6 +540,25 @@ class AssetService:
 
         if tags is not None:
             asset.tags = tags
+
+        if approx_aspect_ratio_provided:
+            content = await self.driver.read_content(workspace_id, asset.file_name)
+            asset.render_metadata = AssetRenderMetadataService.build_manual_or_auto_metadata(
+                value=approx_aspect_ratio,
+                source=aspect_ratio_source,
+                asset_type=AssetType(asset.asset_type),
+                original_name=asset.original_name,
+                content_type=asset.content_type,
+                content=content,
+            )
+        elif original_name_changed and not AssetRenderMetadataService.is_manual_metadata(asset.render_metadata):
+            content = await self.driver.read_content(workspace_id, asset.file_name)
+            asset.render_metadata = AssetRenderMetadataService.build_auto_metadata(
+                AssetType(asset.asset_type),
+                asset.original_name,
+                asset.content_type,
+                content,
+            )
 
         await WorkspaceFontService(self.session).sync_asset_reference_name(asset)
         await self.session.commit()
@@ -714,6 +749,13 @@ class AssetService:
             await self._create_history_snapshot(asset, reason=history_reason)
 
         analysis_metadata = self._build_analysis_metadata(asset_type, original_name, content_type, content)
+        render_metadata = AssetRenderMetadataService.preserve_manual_or_build_auto(
+            asset_type=asset_type,
+            original_name=original_name,
+            content_type=content_type,
+            content=content,
+            existing_metadata=asset.render_metadata,
+        )
         asset.file_name = file_name
         asset.original_name = original_name
         asset.file_size = file_size
@@ -721,7 +763,7 @@ class AssetService:
         asset.content_type = content_type
         asset.asset_type = asset_type.value
         asset.analysis_metadata = analysis_metadata
-        asset.render_metadata = analysis_metadata
+        asset.render_metadata = render_metadata
         if description is not None:
             asset.description = description
 

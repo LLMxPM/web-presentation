@@ -15,6 +15,7 @@ const listWorkspaceAssetTagsMock = vi.fn()
 const getWorkspaceAssetContentMock = vi.fn()
 const previewWorkspaceAssetReferencesMock = vi.fn()
 const uploadWorkspaceAssetMock = vi.fn()
+const updateWorkspaceAssetMock = vi.fn()
 const batchArchiveWorkspaceAssetsMock = vi.fn()
 const batchDeleteWorkspaceAssetsMock = vi.fn()
 const exportWorkspaceAssetPackageMock = vi.fn()
@@ -56,7 +57,7 @@ vi.mock('@/api/assets', () => ({
   previewWorkspaceAssetReferences: (...args: unknown[]) => previewWorkspaceAssetReferencesMock(...args),
   replaceWorkspaceAssetFile: vi.fn(),
   restoreWorkspaceAsset: vi.fn(),
-  updateWorkspaceAsset: vi.fn(),
+  updateWorkspaceAsset: (...args: unknown[]) => updateWorkspaceAssetMock(...args),
   updateWorkspaceAssetContent: vi.fn(),
   uploadWorkspaceAsset: (...args: unknown[]) => uploadWorkspaceAssetMock(...args),
 }))
@@ -125,6 +126,22 @@ describe('AssetsView', () => {
       content_editable: false,
       file_hash: 'hash-uploaded-cover',
     }))
+    updateWorkspaceAssetMock.mockImplementation((
+      _workspaceId: number,
+      _assetId: number,
+      name: string,
+      originalName: string,
+      tags: string[],
+      description: string | null,
+      approxAspectRatio?: string | null,
+    ) => Promise.resolve(createImageAsset({
+      name,
+      original_name: originalName,
+      tags,
+      description,
+      approx_aspect_ratio: approxAspectRatio === undefined ? '16:9' : approxAspectRatio,
+      aspect_ratio_source: approxAspectRatio === undefined ? 'auto' : 'manual',
+    })))
     batchArchiveWorkspaceAssetsMock.mockResolvedValue({
       requested_count: 2,
       succeeded_count: 2,
@@ -272,6 +289,29 @@ describe('AssetsView', () => {
         expect.any(File),
         'image',
         ['封面', '营销'],
+      )
+    })
+  })
+
+  it('资源详情应支持维护近似比例', async () => {
+    renderAssetsView()
+
+    await waitFor(() => {
+      expect(screen.getAllByText('hero_illustration').length).toBeGreaterThan(0)
+    })
+    await fireEvent.click(screen.getAllByText('hero_illustration')[0])
+    await fireEvent.update(screen.getByPlaceholderText('16:9'), '4:3')
+    await fireEvent.click(screen.getByText('保存信息'))
+
+    await waitFor(() => {
+      expect(updateWorkspaceAssetMock).toHaveBeenCalledWith(
+        7,
+        1,
+        'hero_illustration',
+        'hero_illustration.svg',
+        [],
+        null,
+        '4:3',
       )
     })
   })

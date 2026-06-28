@@ -2,6 +2,7 @@
 
 import io
 import json
+import struct
 import zipfile
 
 from httpx import AsyncClient
@@ -10,6 +11,12 @@ from app.core.time_utils import utc_now
 from app.db.session import get_session_factory
 from app.models.workspace_theme import WorkspaceTheme
 from app.services.project_artifact_builder import ProjectArtifactBuilder
+
+
+def _build_png_header(width: int, height: int) -> bytes:
+    """构造带尺寸信息的最小 PNG 头，供资源比例解析测试使用。"""
+
+    return b"\x89PNG\r\n\x1a\n" + b"\x00" * 8 + struct.pack(">II", width, height)
 
 
 async def _create_workspace(authenticated_client: AsyncClient, name: str) -> int:
@@ -484,11 +491,13 @@ async def test_asset_replace_file_should_target_current_asset_by_id(
 
     first_response = await authenticated_client.post(
         f"/api/workspaces/{workspace_id}/assets/upload",
-        files={"file": ("cover.png", b"old-png", "image/png")},
+        files={"file": ("cover.png", _build_png_header(800, 600), "image/png")},
         data={"asset_type": "image", "tags": '["封面"]', "description": "首页封面"},
     )
     assert first_response.status_code == 200
     first_payload = first_response.json()
+    assert first_payload["approx_aspect_ratio"] == "4:3"
+    assert first_payload["aspect_ratio_source"] == "auto"
 
     other_response = await authenticated_client.post(
         f"/api/workspaces/{workspace_id}/assets/upload",
@@ -499,17 +508,36 @@ async def test_asset_replace_file_should_target_current_asset_by_id(
 
     replace_response = await authenticated_client.post(
         f"/api/workspaces/{workspace_id}/assets/{first_payload['id']}/replace",
-        files={"file": ("cover-v2.webp", b"new-webp", "image/webp")},
+        files={"file": ("cover-v2.png", _build_png_header(1600, 900), "image/png")},
     )
     assert replace_response.status_code == 200
     replace_payload = replace_response.json()
     assert replace_payload["id"] == first_payload["id"]
     assert replace_payload["name"] == "cover"
-    assert replace_payload["original_name"] == "cover-v2.webp"
+    assert replace_payload["original_name"] == "cover-v2.png"
     assert replace_payload["file_hash"] != first_payload["file_hash"]
-    assert replace_payload["file_size"] == len(b"new-webp")
+    assert replace_payload["file_size"] == len(_build_png_header(1600, 900))
     assert replace_payload["tags"] == ["封面"]
     assert replace_payload["description"] == "首页封面"
+    assert replace_payload["approx_aspect_ratio"] == "16:9"
+    assert replace_payload["aspect_ratio_source"] == "auto"
+
+    manual_response = await authenticated_client.put(
+        f"/api/workspaces/{workspace_id}/assets/{first_payload['id']}",
+        json={"approx_aspect_ratio": "1:1"},
+    )
+    assert manual_response.status_code == 200, manual_response.text
+    assert manual_response.json()["approx_aspect_ratio"] == "1:1"
+    assert manual_response.json()["aspect_ratio_source"] == "manual"
+
+    manual_replace_response = await authenticated_client.post(
+        f"/api/workspaces/{workspace_id}/assets/{first_payload['id']}/replace",
+        files={"file": ("cover-v3.png", _build_png_header(400, 300), "image/png")},
+    )
+    assert manual_replace_response.status_code == 200, manual_replace_response.text
+    assert manual_replace_response.json()["original_name"] == "cover-v3.png"
+    assert manual_replace_response.json()["approx_aspect_ratio"] == "1:1"
+    assert manual_replace_response.json()["aspect_ratio_source"] == "manual"
 
     list_response = await authenticated_client.get(
         f"/api/workspaces/{workspace_id}/assets",
@@ -618,6 +646,16 @@ async def test_svg_image_content_should_be_editable_and_keep_image_render_type(
     assert created_payload["content_type"] == "image/svg+xml"
     assert created_payload["content_editable"] is True
     assert created_payload["analysis_metadata"] is None
+    assert created_payload["render_metadata"] == {
+        "schema_version": 1,
+        "kind": "asset_render_hint",
+        "aspect_ratio": "16:9",
+        "aspect_ratio_value": 1.7778,
+        "aspect_ratio_source": "auto",
+    }
+    assert created_payload["approx_aspect_ratio"] == "16:9"
+    assert created_payload["approx_aspect_ratio_value"] == 1.7778
+    assert created_payload["aspect_ratio_source"] == "auto"
 
     content_response = await authenticated_client.get(
         f"/api/workspaces/{workspace_id}/assets/{asset_id}/content",
@@ -652,6 +690,90 @@ async def test_svg_image_content_should_be_editable_and_keep_image_render_type(
     assert len(history_items) == 1
     assert history_items[0]["asset_type"] == "image"
     assert history_items[0]["render_type"] == "image"
+
+
+async def test_asset_manual_aspect_ratio_should_be_set_preserved_and_cleared(
+    authenticated_client: AsyncClient,
+) -> None:
+    """人工近似比例可维护；内容变化时优先保留，清除后回退自动推断。"""
+
+    workspace_id = await _create_workspace(authenticated_client, "资源比例维护空间")
+    create_response = await authenticated_client.post(
+        f"/api/workspaces/{workspace_id}/assets/content",
+        json={
+            "asset_type": "image",
+            "name": "manual_ratio_illustration",
+            "original_name": "manual_ratio_illustration.svg",
+            "content": '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900"></svg>',
+            "approx_aspect_ratio": "4:3",
+        },
+    )
+    assert create_response.status_code == 200, create_response.text
+    asset = create_response.json()
+    assert asset["approx_aspect_ratio"] == "4:3"
+    assert asset["aspect_ratio_source"] == "manual"
+
+    update_content_response = await authenticated_client.put(
+        f"/api/workspaces/{workspace_id}/assets/{asset['id']}/content",
+        json={
+            "content": '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900"><rect width="1600" height="900"/></svg>',
+        },
+    )
+    assert update_content_response.status_code == 200, update_content_response.text
+    assert update_content_response.json()["approx_aspect_ratio"] == "4:3"
+    assert update_content_response.json()["aspect_ratio_source"] == "manual"
+
+    clear_response = await authenticated_client.put(
+        f"/api/workspaces/{workspace_id}/assets/{asset['id']}",
+        json={"approx_aspect_ratio": None},
+    )
+    assert clear_response.status_code == 200, clear_response.text
+    assert clear_response.json()["approx_aspect_ratio"] == "16:9"
+    assert clear_response.json()["aspect_ratio_source"] == "auto"
+
+
+async def test_mermaid_aspect_ratio_should_be_manual_only(
+    authenticated_client: AsyncClient,
+) -> None:
+    """Mermaid 不自动推断比例，但允许人工设置和清除。"""
+
+    workspace_id = await _create_workspace(authenticated_client, "Mermaid 比例维护空间")
+    create_response = await authenticated_client.post(
+        f"/api/workspaces/{workspace_id}/assets/content",
+        json={
+            "asset_type": "mermaid",
+            "name": "flow_chart",
+            "original_name": "flow.mmd",
+            "content": "flowchart TD\n  A --> B",
+        },
+    )
+    assert create_response.status_code == 200, create_response.text
+    asset = create_response.json()
+    assert asset["render_metadata"] is None
+    assert asset["approx_aspect_ratio"] is None
+
+    update_response = await authenticated_client.put(
+        f"/api/workspaces/{workspace_id}/assets/{asset['id']}",
+        json={"approx_aspect_ratio": "16:9"},
+    )
+    assert update_response.status_code == 200, update_response.text
+    assert update_response.json()["approx_aspect_ratio"] == "16:9"
+    assert update_response.json()["aspect_ratio_source"] == "manual"
+
+    list_response = await authenticated_client.get(
+        f"/api/workspaces/{workspace_id}/assets",
+        params={"asset_type": "mermaid"},
+    )
+    assert list_response.status_code == 200
+    assert list_response.json()["items"][0]["approx_aspect_ratio"] == "16:9"
+
+    clear_response = await authenticated_client.put(
+        f"/api/workspaces/{workspace_id}/assets/{asset['id']}",
+        json={"approx_aspect_ratio": None},
+    )
+    assert clear_response.status_code == 200, clear_response.text
+    assert clear_response.json()["render_metadata"] is None
+    assert clear_response.json()["approx_aspect_ratio"] is None
 
 
 async def test_asset_preview_artifact_should_expose_runtime_asset_config(
@@ -943,6 +1065,13 @@ async def test_asset_package_export_and_import_should_preserve_metadata(
     )
     assert create_response.status_code == 200
     source_asset = create_response.json()
+    assert source_asset["render_metadata"] == {
+        "schema_version": 1,
+        "kind": "asset_render_hint",
+        "aspect_ratio": "1:1",
+        "aspect_ratio_value": 1.0,
+        "aspect_ratio_source": "auto",
+    }
 
     export_response = await authenticated_client.post(
         f"/api/workspaces/{source_workspace_id}/assets/export-package",
@@ -961,6 +1090,7 @@ async def test_asset_package_export_and_import_should_preserve_metadata(
         assert exported_asset["tags"] == ["封面", "可复用"]
         asset_json = json.loads(archive.read(f"assets/{exported_asset['entry_key']}/asset.json").decode("utf-8"))
         assert asset_json["asset_type"] == "image"
+        assert asset_json["render_metadata"] == source_asset["render_metadata"]
 
     import_response = await authenticated_client.post(
         f"/api/workspaces/{target_workspace_id}/assets/import-package",
@@ -982,6 +1112,8 @@ async def test_asset_package_export_and_import_should_preserve_metadata(
     assert imported_asset["description"] == "资源包封面图"
     assert imported_asset["tags"] == ["封面", "可复用"]
     assert imported_asset["file_hash"] == source_asset["file_hash"]
+    assert imported_asset["render_metadata"] == source_asset["render_metadata"]
+    assert imported_asset["approx_aspect_ratio"] == "1:1"
 
 
 async def test_asset_content_validation_should_reject_unsafe_svg(authenticated_client: AsyncClient) -> None:

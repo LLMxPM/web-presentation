@@ -28,6 +28,7 @@ class ComponentSharePackageHelperMixin:
             "file_hash": asset.file_hash,
             "description": asset.description,
             "tags": asset.tags or [],
+            "analysis_metadata": asset.analysis_metadata,
             "render_metadata": asset.render_metadata,
         }
 

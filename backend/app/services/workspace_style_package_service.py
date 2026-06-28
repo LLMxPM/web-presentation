@@ -40,6 +40,7 @@ from app.schemas.workspace_style import (
     WorkspaceStylePackageThemeSummary,
 )
 from app.services.asset_service import AssetService
+from app.services.asset_render_metadata_service import AssetRenderMetadataService
 from app.services.component_share_package_service import ComponentSharePackageService, PackageComponent
 from app.services.workspace_style_package_components import WorkspaceStylePackageComponentService
 from app.services.workspace_style_package_format import (
@@ -774,6 +775,17 @@ class WorkspaceStylePackageService:
                 content,
                 str(metadata.get("content_type") or "") or None,
             )
+            analysis_metadata = metadata.get("analysis_metadata") or AssetService._build_analysis_metadata(
+                asset_type,
+                original_name,
+                metadata.get("content_type"),
+                content,
+            )
+            render_metadata = (
+                metadata.get("render_metadata")
+                if AssetRenderMetadataService.is_render_hint(metadata.get("render_metadata"))
+                else AssetRenderMetadataService.build_auto_metadata(asset_type, original_name, metadata.get("content_type"), content)
+            )
             self.session.add(
                 WorkspaceAsset(
                     workspace_id=workspace_id,
@@ -786,8 +798,8 @@ class WorkspaceStylePackageService:
                     content_type=metadata.get("content_type"),
                     asset_type=asset_type.value,
                     tags=list(metadata.get("tags") or []),
-                    analysis_metadata=metadata.get("analysis_metadata"),
-                    render_metadata=metadata.get("render_metadata"),
+                    analysis_metadata=analysis_metadata,
+                    render_metadata=render_metadata,
                     status=RecordStatus.ACTIVE.value,
                 )
             )

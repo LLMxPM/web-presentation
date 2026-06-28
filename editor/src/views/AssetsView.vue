@@ -419,6 +419,8 @@
                       <div><dt class="text-slate-500">大小</dt><dd class="mt-1 font-bold text-slate-800">{{ formatBytes(detailAsset.file_size) }}</dd></div>
                       <div><dt class="text-slate-500">Content-Type</dt><dd class="mt-1 truncate font-mono text-slate-700">{{ detailAsset.content_type || '-' }}</dd></div>
                       <div><dt class="text-slate-500">引用数</dt><dd class="mt-1 font-bold text-slate-800">{{ referenceCountText }}</dd></div>
+                      <div><dt class="text-slate-500">近似比例</dt><dd class="mt-1 font-bold text-slate-800">{{ formatAssetAspectRatio(detailAsset) }}</dd></div>
+                      <div><dt class="text-slate-500">比例来源</dt><dd class="mt-1 font-bold text-slate-800">{{ formatAspectRatioSource(detailAsset.aspect_ratio_source) }}</dd></div>
                     </dl>
                   </section>
                   <div>
@@ -436,6 +438,10 @@
                   <div>
                     <label class="mb-1 block text-xs font-bold text-slate-500">标签，逗号分隔</label>
                     <input v-model="editTagsText" class="h-10 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm outline-none focus:border-indigo-400 focus:bg-white" />
+                  </div>
+                  <div v-if="canEditAssetAspectRatio(detailAsset)">
+                    <label class="mb-1 block text-xs font-bold text-slate-500">近似比例</label>
+                    <input v-model="editForm.approx_aspect_ratio" class="h-10 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm outline-none focus:border-indigo-400 focus:bg-white" placeholder="16:9" />
                   </div>
                 </div>
 
@@ -612,8 +618,10 @@ const editForm = reactive({
   name: '',
   original_name: '',
   description: '',
+  approx_aspect_ratio: '',
 })
 const editTagsText = ref('')
+const originalApproxAspectRatioText = ref('')
 
 const viewTabs = [
   { value: 'active', label: '启用' },
@@ -933,6 +941,8 @@ function syncEditForm(asset: AssetResponse): void {
   editForm.name = asset.name
   editForm.original_name = asset.original_name
   editForm.description = asset.description ?? ''
+  editForm.approx_aspect_ratio = asset.approx_aspect_ratio ?? ''
+  originalApproxAspectRatioText.value = editForm.approx_aspect_ratio
   editTagsText.value = asset.tags.join(', ')
 }
 
@@ -1091,6 +1101,7 @@ async function saveAssetMetadata(): Promise<void> {
   }
   saving.value = true
   try {
+    const approxAspectRatio = buildAspectRatioUpdateValue()
     const updated = await updateWorkspaceAsset(
       workspaceId.value,
       detailAsset.value.id,
@@ -1098,10 +1109,12 @@ async function saveAssetMetadata(): Promise<void> {
       editForm.original_name.trim(),
       normalizeTags(editTagsText.value),
       editForm.description.trim() || null,
+      approxAspectRatio,
     )
     Message.success('资源信息已保存')
     detailAsset.value = updated
     selectedAsset.value = updated
+    syncEditForm(updated)
     await Promise.all([refreshAssets(), loadTags()])
   } catch (error) {
     Message.error(getErrorMessage(error, '保存资源信息失败'))
@@ -1414,6 +1427,32 @@ function goToReference(item: AssetReferenceItem): void {
 
 function normalizeTags(value: string): string[] {
   return value.split(/[,，]/).map(item => item.trim()).filter(Boolean)
+}
+
+function normalizeAspectRatioText(value: string): string {
+  return value.trim()
+}
+
+function buildAspectRatioUpdateValue(): string | null | undefined {
+  const nextValue = normalizeAspectRatioText(editForm.approx_aspect_ratio)
+  const previousValue = normalizeAspectRatioText(originalApproxAspectRatioText.value)
+  if (nextValue === previousValue) return undefined
+  return nextValue || null
+}
+
+function canEditAssetAspectRatio(asset: AssetResponse): boolean {
+  return ['image', 'icon', 'drawio', 'mermaid'].includes(asset.asset_type)
+}
+
+function formatAssetAspectRatio(asset: AssetResponse): string {
+  return asset.approx_aspect_ratio || '-'
+}
+
+function formatAspectRatioSource(source: string | null | undefined): string {
+  if (source === 'auto') return '自动'
+  if (source === 'manual') return '人工'
+  if (source === 'agent') return '资源助手'
+  return '-'
 }
 
 function formatBytes(size: number): string {

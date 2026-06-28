@@ -13,6 +13,7 @@ from app.ai.auth_tokens import PAGE_TOOL_READ_SCOPES
 from app.ai.tools.shared import resolve_tool_context
 from app.models.asset import WorkspaceAsset
 from app.models.enums import AssetType, RecordStatus
+from app.services.asset_render_metadata_service import AssetRenderMetadataService
 
 
 def build_list_workspace_icon_assets_tool(session_factory: async_sessionmaker[AsyncSession]) -> Any:
@@ -25,7 +26,7 @@ def build_list_workspace_icon_assets_tool(session_factory: async_sessionmaker[As
         description_keyword: str | None = None,
         tags: list[str] | None = None,
         limit: int = 20,
-    ) -> list[dict[str, str | None]]:
+    ) -> list[dict[str, str | float | None]]:
         """查询当前工作空间内可用的图标资源。"""
 
         dependencies, _ = await resolve_tool_context(session_factory, run_context, required_scopes=PAGE_TOOL_READ_SCOPES)
@@ -67,7 +68,7 @@ def _filter_and_dump_assets(
     description_keyword: str | None,
     tags: list[str] | None,
     limit: int,
-) -> list[dict[str, str | None]]:
+) -> list[dict[str, str | float | None]]:
     """根据关键词、描述与标签过滤资产并输出精简结果。"""
 
     normalized_keyword = str(keyword or "").strip().lower()
@@ -85,14 +86,16 @@ def _filter_and_dump_assets(
         asset_tags = [str(item).strip().lower() for item in asset.tags or [] if str(item).strip()]
         if normalized_tags and not all(tag in asset_tags for tag in normalized_tags):
             continue
-        filtered_assets.append(
-            {
-                "name": asset.name,
-                "extension": _extract_extension(asset.original_name),
-                "type": expected_type,
-                "description": asset.description,
-            }
-        )
+        ratio_summary = AssetRenderMetadataService.summarize_metadata(asset.render_metadata)
+        filtered_assets.append({
+            "name": asset.name,
+            "extension": _extract_extension(asset.original_name),
+            "type": expected_type,
+            "description": asset.description,
+            "approx_aspect_ratio": ratio_summary["approx_aspect_ratio"],
+            "approx_aspect_ratio_value": ratio_summary["approx_aspect_ratio_value"],
+            "aspect_ratio_source": ratio_summary["aspect_ratio_source"],
+        })
         if len(filtered_assets) >= bounded_limit:
             break
     return filtered_assets

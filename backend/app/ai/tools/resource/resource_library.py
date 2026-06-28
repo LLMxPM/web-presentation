@@ -193,6 +193,7 @@ def build_create_resource_asset_tool(session_factory: async_sessionmaker[AsyncSe
         content: str,
         description: str | None = None,
         tags: list[str] | str | None = None,
+        approx_aspect_ratio: str | None = None,
     ) -> dict[str, Any]:
         """创建 SVG 图片、SVG 图标、Draw.io、Mermaid、Chart 或 Formula 资源；不支持位图 image、video 和 font 内容生成。"""
 
@@ -210,6 +211,8 @@ def build_create_resource_asset_tool(session_factory: async_sessionmaker[AsyncSe
                 content=content,
                 description=description,
                 tags=_normalize_tags_argument(tags) or [],
+                approx_aspect_ratio=approx_aspect_ratio,
+                aspect_ratio_source="agent",
             )
             return {"success": True, "message": "资源已创建。", "asset": _dump_asset(asset)}
 
@@ -274,8 +277,10 @@ def build_update_resource_asset_metadata_tool(session_factory: async_sessionmake
         original_name: str | None = None,
         description: str | None = None,
         tags: list[str] | str | None = None,
+        approx_aspect_ratio: str | None = None,
+        clear_approx_aspect_ratio: bool = False,
     ) -> dict[str, Any]:
-        """更新资源 name、展示文件名、描述或标签；不修改内容。"""
+        """更新资源 name、展示文件名、描述、标签或近似比例；不修改内容。"""
 
         dependencies, _ = await resolve_tool_context(session_factory,
             run_context,
@@ -290,6 +295,9 @@ def build_update_resource_asset_metadata_tool(session_factory: async_sessionmake
                 original_name=original_name,
                 description=description,
                 tags=_normalize_tags_argument(tags) if tags is not None else None,
+                approx_aspect_ratio=None if clear_approx_aspect_ratio else approx_aspect_ratio,
+                approx_aspect_ratio_provided=clear_approx_aspect_ratio or approx_aspect_ratio is not None,
+                aspect_ratio_source="agent",
             )
             return {"success": True, "message": "资源元数据已更新。", "asset": _dump_asset(asset)}
 
@@ -418,6 +426,9 @@ def _dump_asset_list_item(asset: Any) -> dict[str, Any]:
         "render_type": payload["render_type"],
         "tags": payload.get("tags") or [],
         "content_editable": payload["content_editable"],
+        "approx_aspect_ratio": payload.get("approx_aspect_ratio"),
+        "approx_aspect_ratio_value": payload.get("approx_aspect_ratio_value"),
+        "aspect_ratio_source": payload.get("aspect_ratio_source"),
         "updated_at": payload["updated_at"],
     }
 

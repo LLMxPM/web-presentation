@@ -61,7 +61,9 @@ async def test_agent_config_api_should_manage_prompt_and_tool_overrides(
     assert "可用颜色键包括 primary、secondary、invert、background" in coordinator["default_prompt"]
     assert "--tw-color-text-primary" in coordinator["default_prompt"]
     assert "主题 Logo 渲染优先使用 Runtime Kit 的 ThemeLogo 组件" in coordinator["default_prompt"]
-    assert "使用 DataTable 的公开 import_path 搭建；不要使用 HTML <table>/<tr>/<td> 表格" in coordinator["default_prompt"]
+    assert "建议先通过 Runtime Kit 工具查询并使用 DataTable 的公开 import_path 搭建" in coordinator["default_prompt"]
+    assert "组件库中基于DataTable 封装的表格组件" in coordinator["default_prompt"]
+    assert "尽量不要使用 HTML <table>/<tr>/<td> 表格" in coordinator["default_prompt"]
     assert "主题颜色/字体摘要默认不完整注入" in coordinator["default_prompt"]
     assert "不要为了重复获取已注入的 style_spec_markdown 而调用它" in coordinator["default_prompt"]
     assert "include_style_spec_markdown=true" in coordinator["default_prompt"]
@@ -89,7 +91,8 @@ async def test_agent_config_api_should_manage_prompt_and_tool_overrides(
     assert "资源名、组件 import 和 Runtime Kit import 都必须来自工具结果" in component_prompt
     assert "组件助手只能委派资源助手" in component_prompt
     assert "delegate_task_to_member" in component_prompt
-    assert "使用 DataTable 的公开 import_path 搭建；不要使用 HTML <table>/<tr>/<td> 表格" in component_prompt
+    assert "建议先通过 Runtime Kit 工具查询并使用 DataTable 的公开 import_path 搭建" in component_prompt
+    assert "尽量不要使用 HTML <table>/<tr>/<td> 表格" in component_prompt
     assert "页面组件必须具备整页画布承载能力" in component_prompt
     assert "也可以基于已发布页面组件复用其真实画布、定位上下文和裁剪" in component_prompt
     assert "不要改用已发布衍生容器组件替代 DefaultContainer" not in component_prompt

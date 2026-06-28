@@ -6,13 +6,20 @@ import pytest
 from httpx import AsyncClient
 
 from app.ai.agent import RESOURCE_MANAGER_AGENT_ID
-from app.ai.auth_tokens import RESOURCE_TOOL_READ_SCOPES, build_agent_tool_token
+from app.ai.auth_tokens import (
+    PAGE_TOOL_READ_SCOPES,
+    RESOURCE_TOOL_READ_SCOPES,
+    RESOURCE_TOOL_WRITE_SCOPES,
+    build_agent_tool_token,
+)
 from app.ai.platform_tools import AgentToolContext
 from app.ai.tools.resource.resource_library import (
+    build_create_resource_asset_tool,
     build_get_resource_asset_content_tool,
     build_list_resource_assets_tool,
+    build_update_resource_asset_metadata_tool,
 )
-from app.ai.tools.workspace.assets import build_list_workspace_font_assets_tool
+from app.ai.tools.workspace.assets import build_list_workspace_font_assets_tool, build_list_workspace_render_assets_tool
 from app.core.exceptions import AppException
 from app.db.session import get_session_factory
 from app.models.enums import AssetType, UserRole
@@ -34,7 +41,7 @@ async def test_get_resource_asset_content_tool_should_return_recoverable_error_f
     assert upload_response.status_code == 200, upload_response.text
     asset = upload_response.json()
     tool = build_get_resource_asset_content_tool(get_session_factory())
-    run_context = _build_tool_run_context(workspace_id=workspace_id)
+    run_context = _build_tool_run_context(workspace_id=workspace_id, scopes=RESOURCE_TOOL_WRITE_SCOPES)
 
     result = await tool.entrypoint(run_context, asset_id=asset["id"])
 
@@ -64,7 +71,18 @@ async def test_list_resource_assets_tool_should_prefer_project_suggested_assets(
     assert result["source"] == "project_suggested"
     assert result["fallback_reason"] is None
     assert [item["id"] for item in result["items"]] == [flow_asset["id"], hero_asset["id"]]
-    assert set(result["items"][0]) == {"id", "name", "original_name", "description", "asset_type", "content_editable"}
+    assert set(result["items"][0]) == {
+        "id",
+        "name",
+        "original_name",
+        "description",
+        "asset_type",
+        "content_editable",
+        "approx_aspect_ratio",
+        "approx_aspect_ratio_value",
+        "aspect_ratio_source",
+    }
+    assert result["items"][0]["approx_aspect_ratio"] == "1:1"
 
 
 async def test_list_resource_assets_tool_should_fallback_without_project_context(
@@ -152,6 +170,62 @@ async def test_list_resource_assets_tool_should_reject_invalid_scope(
     assert exc_info.value.code == "AI_TOOL_ARGUMENT_INVALID"
 
 
+async def test_workspace_render_assets_tool_should_return_aspect_ratio_summary(
+    authenticated_client: AsyncClient,
+) -> None:
+    """页面渲染资源查询工具应返回近似比例摘要，不暴露宽高尺寸。"""
+
+    workspace_id = await _create_workspace(authenticated_client, "AI 渲染资源比例工作空间")
+    project_id = await _create_project(authenticated_client, workspace_id, "AI 渲染资源比例项目")
+    page_id = await _create_page(authenticated_client, workspace_id, project_id, "AI 渲染资源比例页面")
+    await _create_text_asset(authenticated_client, workspace_id, "wide_hero", tags=["封面"])
+    tool = build_list_workspace_render_assets_tool(get_session_factory())
+
+    result = await tool.entrypoint(
+        _build_tool_run_context(
+            workspace_id=workspace_id,
+            project_id=project_id,
+            page_id=page_id,
+            scopes=PAGE_TOOL_READ_SCOPES,
+        ),
+        render_type="image",
+    )
+
+    assert result[0]["name"] == "wide_hero"
+    assert result[0]["approx_aspect_ratio"] == "1:1"
+    assert result[0]["aspect_ratio_source"] == "auto"
+    assert "width" not in result[0]
+    assert "height" not in result[0]
+
+
+async def test_resource_manager_should_create_and_update_manual_aspect_ratio(
+    authenticated_client: AsyncClient,
+) -> None:
+    """资源助手创建和维护 Mermaid 资源时可设置近似比例。"""
+
+    workspace_id = await _create_workspace(authenticated_client, "AI 资源助手比例工作空间")
+    run_context = _build_tool_run_context(workspace_id=workspace_id, scopes=RESOURCE_TOOL_WRITE_SCOPES)
+    create_tool = build_create_resource_asset_tool(get_session_factory())
+    update_tool = build_update_resource_asset_metadata_tool(get_session_factory())
+
+    created = await create_tool.entrypoint(
+        run_context,
+        asset_type=AssetType.MERMAID,
+        name="agent_flow",
+        original_name="agent_flow.mmd",
+        content="flowchart TD\n  A --> B",
+        approx_aspect_ratio="16:9",
+    )
+    asset_id = created["asset"]["id"]
+    assert created["asset"]["approx_aspect_ratio"] == "16:9"
+    assert created["asset"]["aspect_ratio_source"] == "agent"
+
+    updated = await update_tool.entrypoint(run_context, asset_id=asset_id, approx_aspect_ratio="4:3")
+
+    assert updated["asset"]["approx_aspect_ratio"] == "4:3"
+    assert updated["asset"]["aspect_ratio_source"] == "agent"
+
+
 async def test_list_workspace_font_assets_tool_should_return_registered_fonts(
     authenticated_client: AsyncClient,
 ) -> None:
@@ -224,6 +298,24 @@ async def _create_project(authenticated_client: AsyncClient, workspace_id: int, 
     return int(response.json()["id"])
 
 
+async def _create_page(authenticated_client: AsyncClient, workspace_id: int, project_id: int, title: str) -> int:
+    """创建测试页面并返回 ID。"""
+
+    response = await authenticated_client.post(
+        "/api/pages",
+        json={
+            "workspace_id": workspace_id,
+            "project_id": project_id,
+            "title": title,
+            "page_content": "<template><div>测试页面</div></template>",
+            "file_type": "vue",
+            "status": "active",
+        },
+    )
+    assert response.status_code == 200
+    return int(response.json()["id"])
+
+
 async def _create_text_asset(
     authenticated_client: AsyncClient,
     workspace_id: int,
@@ -262,7 +354,13 @@ async def _replace_project_suggested_assets(
     assert response.status_code == 200
 
 
-def _build_tool_run_context(*, workspace_id: int, project_id: int | None = None) -> AgentToolContext:
+def _build_tool_run_context(
+    *,
+    workspace_id: int,
+    project_id: int | None = None,
+    page_id: int | None = None,
+    scopes: tuple[str, ...] = RESOURCE_TOOL_READ_SCOPES,
+) -> AgentToolContext:
     """构造资源读取工具需要的运行上下文和签名 token。"""
 
     current = _build_auth_context()
@@ -275,7 +373,7 @@ def _build_tool_run_context(*, workspace_id: int, project_id: int | None = None)
         "session_id": session_id,
         "workspace_id": workspace_id,
         "project_id": project_id,
-        "page_id": None,
+        "page_id": page_id,
         "component_id": None,
         "source": "test",
         "backend_session_id": current.backend_session_id,
@@ -287,10 +385,10 @@ def _build_tool_run_context(*, workspace_id: int, project_id: int | None = None)
         agent_id=RESOURCE_MANAGER_AGENT_ID,
         workspace_id=workspace_id,
         project_id=project_id,
-        page_id=None,
+        page_id=page_id,
         component_id=None,
         source="test",
-        scopes=RESOURCE_TOOL_READ_SCOPES,
+        scopes=scopes,
     )
     return AgentToolContext(
         run_id=run_id,

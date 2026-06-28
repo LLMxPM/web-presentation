@@ -739,6 +739,9 @@ _COORDINATOR_TOOL_SPECS = (
                     'original_name': 'hero.svg',
                     'description': '首页主视觉插图',
                     'asset_type': 'image',
+                    'approx_aspect_ratio': '16:9',
+                    'approx_aspect_ratio_value': 1.7778,
+                    'aspect_ratio_source': 'auto',
                     'content_editable': True}]},
     ),
 
@@ -1151,6 +1154,9 @@ _RESOURCE_MANAGER_TOOL_SPECS = (
                     'original_name': 'hero.svg',
                     'description': '首页主视觉插图',
                     'asset_type': 'image',
+                    'approx_aspect_ratio': '16:9',
+                    'approx_aspect_ratio_value': 1.7778,
+                    'aspect_ratio_source': 'auto',
                     'content_editable': True}]},
     ),
 
@@ -1201,6 +1207,8 @@ _RESOURCE_MANAGER_TOOL_SPECS = (
             'Formula 内容必须是 MathJax 可渲染的 LaTeX 公式源码，建议使用 .tex 文件名；'
             '可以使用 $...$、$$...$$、\\(...\\)、\\[...\\] 或 equation/align/gather/multline 环境，'
             '不要写成 MathML、KaTeX HTML 或 SVG。'
+            'Mermaid 或 Draw.io 缺少可自动推断比例时，可传 approx_aspect_ratio，例如 "16:9" 或 "4/3"，'
+            '平台只记录近似比例，不记录宽高尺寸。'
         ),
         risk_level='write',
         response_example={'success': True,
@@ -1247,12 +1255,14 @@ _RESOURCE_MANAGER_TOOL_SPECS = (
         '更新资源元数据',
         'resource_library',
         '资源库',
-        '更新资源 name、展示文件名、描述或标签；不修改内容。',
+        '更新资源 name、展示文件名、描述、标签或近似比例；不修改内容。',
         default_instructions=(
             '仅修改用户明确要求变更的元数据字段，未要求修改的字段应省略，不要传空字符串或 null 覆盖。'
             'asset_id 必须来自资源列表或读取结果，不要用资源 name 猜测 ID。name 是页面和组件引用资源时使用的逻辑名；'
             '只有用户明确要求重命名资源时才修改 name，普通展示名调整优先修改 original_name 或 description。'
             'tags 必须直接传 JSON 数组/list[str]，不要把数组编码成字符串；新增标签前优先复用 list_resource_tags 返回的已有标签。'
+            '需要人工维护 Mermaid、Draw.io 或图片近似比例时传 approx_aspect_ratio，例如 "16:9"、"4/3" 或 "1.7778"；'
+            '需要清除人工比例并回退自动推断时传 clear_approx_aspect_ratio=true。'
         ),
         risk_level='write',
         response_example={'success': True, 'message': '资源元数据已更新。', 'asset': {'id': 8, 'name': 'hero_illustration'}},

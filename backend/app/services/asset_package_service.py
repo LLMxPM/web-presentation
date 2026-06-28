@@ -19,6 +19,7 @@ from app.core.time_utils import utc_now
 from app.models.asset import WorkspaceAsset
 from app.models.enums import AssetType, RecordStatus
 from app.schemas.asset import AssetPackageImportItem, AssetPackageImportResult
+from app.services.asset_render_metadata_service import AssetRenderMetadataService
 from app.services.asset_service import AssetService
 
 ASSET_PACKAGE_SCHEMA_VERSION = 1
@@ -166,10 +167,13 @@ class AssetPackageService:
 
         existing = await self.asset_service._get_asset_by_name(workspace_id, name)
         if existing is not None:
-            return await self._sync_existing_asset_metadata(existing, metadata, original_name, asset_type, file_hash, content_type)
+            return await self._sync_existing_asset_metadata(existing, metadata, original_name, asset_type, file_hash, content_type, content)
 
         ext = "".join(Path(original_name).suffixes)
         save_name = await self.asset_service.driver.upload(workspace_id, file_hash, ext, content, content_type)
+        analysis_metadata = self._resolve_metadata_dict(metadata.get("analysis_metadata")) \
+            or AssetService._build_analysis_metadata(asset_type, original_name, content_type, content)
+        render_metadata = self._resolve_render_metadata(metadata, asset_type, original_name, content_type, content)
         asset = WorkspaceAsset(
             workspace_id=workspace_id,
             name=name,
@@ -181,10 +185,8 @@ class AssetPackageService:
             content_type=content_type,
             asset_type=asset_type.value,
             tags=self._normalize_tags(metadata.get("tags")),
-            analysis_metadata=self._resolve_metadata_dict(metadata.get("analysis_metadata"))
-            or AssetService._build_analysis_metadata(asset_type, original_name, content_type, content),
-            render_metadata=self._resolve_metadata_dict(metadata.get("render_metadata"))
-            or AssetService._build_analysis_metadata(asset_type, original_name, content_type, content),
+            analysis_metadata=analysis_metadata,
+            render_metadata=render_metadata,
             status=self._resolve_import_status(metadata),
             archived_at=utc_now() if self._resolve_import_status(metadata) == RecordStatus.ARCHIVED.value else None,
             archive_reason=AssetService._normalize_description(metadata.get("archive_reason")),
@@ -208,6 +210,7 @@ class AssetPackageService:
         asset_type: AssetType,
         file_hash: str,
         content_type: str | None,
+        content: bytes,
     ) -> AssetPackageImportItem:
         """同名资源已存在时，在文件一致的前提下同步描述、标签等元数据。"""
 
@@ -222,7 +225,14 @@ class AssetPackageService:
         next_description = AssetService._normalize_description(metadata.get("description"))
         next_tags = self._normalize_tags(metadata.get("tags"))
         next_analysis_metadata = self._resolve_metadata_dict(metadata.get("analysis_metadata"))
-        next_render_metadata = self._resolve_metadata_dict(metadata.get("render_metadata"))
+        next_render_metadata = self._resolve_render_metadata(
+            metadata,
+            asset_type,
+            original_name,
+            content_type,
+            content,
+            existing_metadata=existing.render_metadata,
+        )
         if existing.original_name != original_name:
             AssetService._validate_asset_file_type(asset_type, original_name, content_type)
             existing.original_name = original_name
@@ -322,6 +332,27 @@ class AssetPackageService:
         """仅接受 JSON 对象形式的分析或渲染元数据。"""
 
         return value if isinstance(value, dict) else None
+
+    @classmethod
+    def _resolve_render_metadata(
+        cls,
+        metadata: dict[str, Any],
+        asset_type: AssetType,
+        original_name: str,
+        content_type: str | None,
+        package_content: bytes | None,
+        existing_metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any] | None:
+        """读取包内比例提示；缺失或旧格式时尽量按资源内容自动补齐。"""
+
+        stored_metadata = cls._resolve_metadata_dict(metadata.get("render_metadata"))
+        if AssetRenderMetadataService.is_render_hint(stored_metadata):
+            return stored_metadata
+        if AssetRenderMetadataService.is_manual_metadata(existing_metadata):
+            return existing_metadata
+        if package_content is None:
+            return None
+        return AssetRenderMetadataService.build_auto_metadata(asset_type, original_name, content_type, package_content)
 
     @staticmethod
     def _build_export_filename(assets: list[WorkspaceAsset]) -> str:

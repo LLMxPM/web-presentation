@@ -34,7 +34,7 @@ def build_list_workspace_render_assets_tool(session_factory: async_sessionmaker[
         description_keyword: str | None = None,
         tags: list[str] | None = None,
         limit: int = 20,
-    ) -> list[dict[str, str | None]]:
+    ) -> list[dict[str, str | float | None]]:
         """查询当前工作空间内可渲染在页面区域中的资源。"""
 
         dependencies, _ = await resolve_tool_context(session_factory, run_context, required_scopes=PAGE_TOOL_READ_SCOPES)
