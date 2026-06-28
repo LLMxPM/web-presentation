@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -13,6 +13,16 @@ class PageScreenshotJob(TimestampMixin, Base):
     """页面截图任务记录。"""
 
     __tablename__ = "page_screenshot_jobs"
+    __table_args__ = (
+        Index(
+            "ix_page_screenshot_jobs_dedupe_active",
+            "page_id",
+            "config_hash",
+            "viewport_width",
+            "viewport_height",
+            "status",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     job_group_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)

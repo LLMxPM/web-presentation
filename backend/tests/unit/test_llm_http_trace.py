@@ -71,9 +71,11 @@ async def test_llm_http_trace_hooks_should_write_redacted_jsonl(tmp_path: Path) 
     assert response_record["duration_ms"] is not None
 
 
-def test_llm_http_trace_settings_should_validate_defaults() -> None:
+def test_llm_http_trace_settings_should_validate_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     """配置应保留稳定默认值，并拒绝无效的请求体大小上限。"""
 
+    monkeypatch.delenv("AI_LLM_HTTP_TRACE_BODY_MAX_BYTES", raising=False)
+    monkeypatch.delenv("AI_LLM_HTTP_TRACE_DIR", raising=False)
     settings = AppSettings(_env_file=None)
 
     assert settings.ai_llm_http_trace_body_max_bytes == 200_000
