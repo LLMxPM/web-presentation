@@ -25,7 +25,7 @@ ENV UV_LINK_MODE=copy
 WORKDIR /app
 
 COPY backend/pyproject.toml backend/uv.lock backend/README.md ./backend/
-RUN uv sync --project backend --frozen --no-dev --no-cache
+RUN uv sync --project backend --frozen --no-dev --no-cache --no-install-project
 
 
 FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim AS platform-runtime
