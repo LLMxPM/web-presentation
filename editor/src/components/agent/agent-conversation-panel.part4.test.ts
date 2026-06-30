@@ -671,6 +671,62 @@ describe('AgentConversationPanel', () => {
     })
   })
 
+  it('用户消息应支持复制和折叠展开', async () => {
+    localStorage.setItem('agent-session:agent-coordinator:11', 'session-1')
+    listAgentSessionsMock.mockResolvedValueOnce([
+      {
+        session_id: 'session-1',
+        agent_id: DEFAULT_AGENT_ID,
+        session_name: '用户消息历史',
+        created_at: '2026-04-18T10:00:00+08:00',
+        updated_at: '2026-04-18T10:20:00+08:00',
+        metadata: {
+          scope_type: 'page',
+          workspace_id: 11,
+          project_id: 21,
+          page_id: 31,
+          page_title: 'AI 页面',
+          source: 'editor-page-detail',
+        },
+      },
+    ])
+    const userContent = '请把页面改成紧凑的运营简报风格，并保留现有图表、关键指标、风险提示、负责人、时间线和交付口径。\n第二段用于验证完整内容在折叠后会被隐藏。'
+    getAgentSessionRuntimeMock.mockResolvedValueOnce(createRuntimeSnapshot({
+      messages: [
+        {
+          id: 'message-user-long',
+          role: 'user',
+          content: userContent,
+          created_at: '2026-04-18T10:00:00+08:00',
+          tool_name: null,
+        },
+      ],
+    }))
+
+    render(AgentConversationPanel, createTestingRenderOptions())
+
+    await waitFor(() => {
+      expect(screen.getByText(/第二段用于验证完整内容/)).toBeTruthy()
+    })
+
+    await fireEvent.click(screen.getByRole('button', { name: '复制用户消息' }))
+    expect(clipboardWriteTextMock).toHaveBeenCalledWith(userContent)
+    expect(messageSuccessMock).toHaveBeenCalledWith('用户消息已复制。')
+
+    await fireEvent.click(screen.getByRole('button', { name: '折叠用户消息' }))
+
+    await waitFor(() => {
+      expect(screen.queryByText(/第二段用于验证完整内容/)).toBeNull()
+      expect(screen.getByText(/请把页面改成紧凑的运营简报风格/)).toBeTruthy()
+    })
+
+    await fireEvent.click(screen.getAllByRole('button', { name: '展开用户消息' })[0])
+
+    await waitFor(() => {
+      expect(screen.getByText(/第二段用于验证完整内容/)).toBeTruthy()
+    })
+  })
+
   it('连续工具调用应默认折叠为弱化摘要并可展开查看详情', async () => {
     getAgentSessionMessagesMock
       .mockResolvedValueOnce([])
