@@ -19,7 +19,7 @@ async def test_runtime_kit_component_capability_list_should_expose_enabled_compo
 ) -> None:
     """Runtime Kit 能力目录应支持 kind/previewable 筛选并包含 doc-only 能力。"""
 
-    asset_image_class = "w-full h-64 min-h-40 rounded-lg border border-border p-0 bg-transparent overflow-hidden"
+    asset_image_class = "w-full h-64 rounded-lg border border-border p-0 bg-transparent overflow-hidden"
     hidden_surface_props = {
         "width",
         "height",
@@ -62,9 +62,15 @@ async def test_runtime_kit_component_capability_list_should_expose_enabled_compo
     assert asset_image_item["preview_schema"]["props"]["fallback"]["agent_visible"] is False
     assert asset_image_item["preview_schema"]["props"]["class"]["default"] == asset_image_class
     assert "外层图片框" in asset_image_item["preview_schema"]["props"]["class"]["description"]
+    assert "避免用 min-h" in asset_image_item["preview_schema"]["props"]["class"]["description"]
     assert "边框框体内" in asset_image_item["preview_schema"]["props"]["fit"]["description"]
     assert "object-position" in asset_image_item["preview_schema"]["props"]["position"]["description"]
+    assert any("明确宽度和高度" in line for line in asset_image_item["usage"])
+    assert any("w-full h-64" in line for line in asset_image_item["return_example"])
+    assert not any("min-h-" in line for line in asset_image_item["usage"])
+    assert not any("min-h-" in line for line in asset_image_item["return_example"])
     assert any("fit 控制 object-fit" in item for item in asset_image_item["constraints"])
+    assert any("明确 width 和 height" in item for item in asset_image_item["constraints"])
     assert not hidden_surface_props.intersection(asset_image_item["preview_schema"]["props"])
     assert "showFallbackPlaceholder" not in asset_image_item["preview_schema"]["props"]
     assert asset_image_item["preview_schema"]["presets"][0]["key"] == "contain-preview"
@@ -79,6 +85,17 @@ async def test_runtime_kit_component_capability_list_should_expose_enabled_compo
     assert "height" not in theme_logo_item["preview_schema"]["props"]
     assert "fit" not in theme_logo_item["preview_schema"]["props"]
     assert "fallbackSrc" not in theme_logo_item["preview_schema"]["props"]
+
+    asset_formula_item = next(item for item in previewable_items if item["name"] == "AssetFormula.v1")
+    assert any("明确宽度和高度" in line for line in asset_formula_item["usage"])
+    assert any("w-full h-20" in line for line in asset_formula_item["return_example"])
+    assert asset_formula_item["preview_schema"]["props"]["class"]["default"] == (
+        "w-full h-20 rounded-lg border border-border p-0 bg-transparent text-primary overflow-hidden"
+    )
+
+    use_asset_src_item = next(item for item in payload["items"] if item["name"] == "useAssetSrc.v1")
+    assert any("明确宽度和高度" in line for line in use_asset_src_item["usage"])
+    assert any("width 和 height" in item for item in use_asset_src_item["constraints"])
 
     doc_only_response = await authenticated_client.get(
         "/api/runtime-kit/components",
@@ -188,7 +205,7 @@ async def test_runtime_kit_asset_component_preview_should_include_manifest_schem
     assert component_preview["schema"]["props"]["fallback"]["default"] == "图片资源无法渲染，请检查资源名称或资源内容。"
     assert component_preview["schema"]["props"]["fallback"]["agent_visible"] is False
     assert component_preview["schema"]["props"]["class"]["default"] == (
-        "w-full h-64 min-h-40 rounded-lg border border-border p-0 bg-transparent overflow-hidden"
+        "w-full h-64 rounded-lg border border-border p-0 bg-transparent overflow-hidden"
     )
     assert component_preview["schema"]["props"]["fit"]["default"] == "contain"
     assert "width" not in component_preview["schema"]["props"]
