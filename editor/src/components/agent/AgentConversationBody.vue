@@ -82,10 +82,21 @@
                   />
                 </div>
                 <div v-else>
-                  <pre class="whitespace-pre-wrap break-words text-[12.5px] font-sans leading-[17px]">{{ item.message.content || '...' }}</pre>
+                  <button
+                    v-if="isUserMessageCollapsed(item.message)"
+                    type="button"
+                    class="inline-flex max-w-full items-center gap-1 rounded px-1 py-0.5 text-left text-[12px] leading-4 text-slate-500 transition hover:bg-slate-200/70 hover:text-slate-700"
+                    title="展开用户消息"
+                    aria-label="展开用户消息"
+                    @click="toggleUserMessageCollapsed(item.message)"
+                  >
+                    <ChevronRight class="h-3 w-3 shrink-0" />
+                    <span class="min-w-0 truncate">{{ formatCollapsedUserMessageSummary(item.message) }}</span>
+                  </button>
+                  <pre v-else class="whitespace-pre-wrap break-words text-[12.5px] font-sans leading-[17px]">{{ item.message.content || '...' }}</pre>
                 </div>
                 <div
-                  v-if="item.message.attachments?.length"
+                  v-if="item.message.attachments?.length && !isUserMessageCollapsed(item.message)"
                   class="mt-1 flex flex-wrap gap-1"
                   :class="item.message.role === 'user' ? 'justify-end' : 'justify-start'"
                 >
@@ -111,10 +122,34 @@
                 </div>
               </div>
               <div
-                v-if="item.message.role === 'user' && item.message.created_at"
-                class="message-time mt-0.5 px-1 text-right text-[10px] font-medium text-slate-400"
+                v-if="item.message.role === 'user'"
+                class="message-actions mt-0.5 flex items-center justify-end gap-1 px-1"
               >
-                {{ formatMessageTime(item.message.created_at) }}
+                <span
+                  v-if="item.message.created_at"
+                  class="message-time mr-0.5 text-[10px] font-medium text-slate-400"
+                >
+                  {{ formatMessageTime(item.message.created_at) }}
+                </span>
+                <button
+                  type="button"
+                  class="message-action-button"
+                  title="复制用户消息"
+                  aria-label="复制用户消息"
+                  @click="copyUserMessage(item.message)"
+                >
+                  <Copy class="h-3 w-3" />
+                </button>
+                <button
+                  type="button"
+                  class="message-action-button"
+                  :title="isUserMessageCollapsed(item.message) ? '展开用户消息' : '折叠用户消息'"
+                  :aria-label="isUserMessageCollapsed(item.message) ? '展开用户消息' : '折叠用户消息'"
+                  @click="toggleUserMessageCollapsed(item.message)"
+                >
+                  <ChevronRight v-if="isUserMessageCollapsed(item.message)" class="h-3 w-3" />
+                  <ChevronDown v-else class="h-3 w-3" />
+                </button>
               </div>
             </div>
           </article>
@@ -329,7 +364,7 @@
 <script setup lang="ts">
 import 'markstream-vue/index.css'
 import MarkdownRender, { getMarkdown, parseMarkdownToStructure } from 'markstream-vue'
-import { ChevronRight } from '@lucide/vue'
+import { ChevronDown, ChevronRight, Copy } from '@lucide/vue'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import BaseButton from '@/components/ui/BaseButton.vue'
@@ -346,6 +381,7 @@ import {
 } from '@/components/agent/agent-message-display'
 import type { TimelineDisplayItem, ToolCallDetail } from '@/components/agent/agent-conversation-panel'
 import type { AgentActiveRunItem, AgentMessageAttachmentItem, AgentMessageItem, AgentSuggestedPatch } from '@/types/api'
+import { Message } from '@/utils/message'
 
 const props = defineProps<{
   timelineDisplayItems: TimelineDisplayItem[]
@@ -373,6 +409,7 @@ const markdownNodeCache = new Map<string, ReturnType<typeof buildMessageMarkdown
 const scrollContainerRef = ref<HTMLElement | null>(null)
 const autoScrollEnabled = ref(true)
 const failedAttachmentIds = ref(new Set<number>())
+const collapsedUserMessageIds = ref(new Set<string>())
 let scrollAnimationFrame: number | null = null
 const assistantBatchRendering = {
   initialRenderBatchSize: 12,
@@ -469,6 +506,64 @@ function handleToolRowClick(tool: ToolCallDetail) {
     return
   }
   emit('open-tool-detail', tool.id)
+}
+
+/**
+ * 判断用户消息是否处于折叠态；折叠状态只影响当前面板本地展示。
+ */
+function isUserMessageCollapsed(message: AgentMessageItem) {
+  return collapsedUserMessageIds.value.has(message.id)
+}
+
+/**
+ * 切换用户消息折叠状态；替换 Set 引用以确保 Vue 响应式更新。
+ */
+function toggleUserMessageCollapsed(message: AgentMessageItem) {
+  const nextIds = new Set(collapsedUserMessageIds.value)
+  if (nextIds.has(message.id)) {
+    nextIds.delete(message.id)
+  } else {
+    nextIds.add(message.id)
+  }
+  collapsedUserMessageIds.value = nextIds
+}
+
+/**
+ * 复制用户原始消息文本；附件不写入剪贴板，避免生成不可用的伪路径。
+ */
+async function copyUserMessage(message: AgentMessageItem) {
+  const content = message.content ?? ''
+  if (!content.trim()) {
+    Message.warning('用户消息为空，无法复制。')
+    return
+  }
+  try {
+    await navigator.clipboard.writeText(content)
+    Message.success('用户消息已复制。')
+  } catch {
+    Message.error('复制用户消息失败，请检查浏览器剪贴板权限。')
+  }
+}
+
+/**
+ * 折叠态保留短摘要和附件数量，让长提示词不挤占消息流空间。
+ */
+function formatCollapsedUserMessageSummary(message: AgentMessageItem) {
+  const normalizedContent = (message.content ?? '').replace(/\s+/g, ' ').trim()
+  const attachmentCount = message.attachments?.length ?? 0
+  const contentSummary = normalizedContent
+    ? truncateText(normalizedContent, 52)
+    : '空消息'
+  return attachmentCount > 0
+    ? `${contentSummary} · ${attachmentCount} 张图片`
+    : contentSummary
+}
+
+/**
+ * 截断折叠摘要，避免超长提示词撑开窄侧栏。
+ */
+function truncateText(value: string, maxLength: number) {
+  return value.length > maxLength ? `${value.slice(0, maxLength)}...` : value
 }
 
 function handleAttachmentImageError(event: Event, attachment: AgentMessageAttachmentItem) {
@@ -634,6 +729,24 @@ details[open] .details-chevron {
 .tool-call-row,
 .tool-call-group > summary {
   border-radius: 0.25rem;
+}
+
+.message-action-button {
+  display: inline-flex;
+  height: 1.25rem;
+  width: 1.25rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.25rem;
+  color: rgb(148 163 184);
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease;
+}
+
+.message-action-button:hover {
+  background: rgb(226 232 240 / 0.7);
+  color: rgb(71 85 105);
 }
 
 .message-attachment-thumb {
