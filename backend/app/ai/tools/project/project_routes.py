@@ -11,6 +11,7 @@ from app.ai.auth_tokens import PROJECT_TOOL_READ_SCOPES, PROJECT_TOOL_WRITE_SCOP
 from app.ai.tools.shared import resolve_tool_context
 from app.ai.tools.project.project_pages import build_project_page_tools
 from app.ai.tools.project.project_style_config import build_project_style_config_tools
+from app.models.enums import RecordStatus
 from app.schemas.page import PageListQuery
 from app.schemas.project_route import (
     ProjectRouteItemWrite,
@@ -38,7 +39,7 @@ def build_list_project_pages_tool(session_factory: async_sessionmaker[AsyncSessi
 
     @agent_tool(show_result=False)
     async def list_project_pages(run_context: AgentToolContext, keyword: str | None = None, limit: int = 50) -> dict[str, Any]:
-        """读取当前项目下的页面摘要，供路由规划或页面定位使用。"""
+        """读取当前项目下的启用页面摘要，供路由规划或页面定位使用。"""
 
         dependencies, claims = await resolve_tool_context(session_factory,
             run_context,
@@ -55,6 +56,7 @@ def build_list_project_pages_tool(session_factory: async_sessionmaker[AsyncSessi
                     workspace_id=int(dependencies["workspace_id"]),
                     project_id=int(dependencies["project_id"]),
                     keyword=str(keyword or "").strip() or None,
+                    status=RecordStatus.ACTIVE,
                 ),
                 user_id=user_id,
             )
