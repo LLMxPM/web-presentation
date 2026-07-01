@@ -1,4 +1,4 @@
-"""文件功能：处理工作空间资源的上传、内容写入、归档、复制和删除管理。"""
+"""文件功能：处理工作空间资源的上传、内容写入、归档、恢复、复制和删除管理。"""
 
 import json
 import urllib.parse
@@ -18,6 +18,7 @@ from app.schemas.asset import (
     AssetBatchArchiveRequest,
     AssetBatchDeleteRequest,
     AssetBatchOperationResponse,
+    AssetBatchRestoreRequest,
     AssetContentCreateRequest,
     AssetContentPreviewRequest,
     AssetContentPreviewResponse,
@@ -397,6 +398,23 @@ async def restore_workspace_asset(
 
     asset = await AssetService(session).restore_asset(workspace_id, asset_id, restore_reason=request.restore_reason)
     return await _build_asset_response(session, workspace_id, asset)
+
+
+@router.post("/workspaces/{workspace_id}/assets/batch-restore", response_model=AssetBatchOperationResponse)
+async def batch_restore_workspace_assets(
+    workspace_id: int,
+    request: AssetBatchRestoreRequest,
+    _: Annotated[AuthContext, Depends(get_current_user)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> AssetBatchOperationResponse:
+    """批量恢复普通归档资源，并返回逐项失败原因。"""
+
+    result = await AssetService(session).batch_restore_assets(
+        workspace_id,
+        request.asset_ids,
+        restore_reason=request.restore_reason,
+    )
+    return AssetBatchOperationResponse.model_validate(result)
 
 
 @router.get("/workspaces/{workspace_id}/assets/{asset_id}/references", response_model=AssetReferenceSummary)

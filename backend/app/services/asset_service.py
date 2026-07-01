@@ -491,6 +491,27 @@ class AssetService:
         await self.session.refresh(asset)
         return asset
 
+    async def batch_restore_assets(
+        self,
+        workspace_id: int,
+        asset_ids: list[int],
+        *,
+        restore_reason: str | None = None,
+    ) -> dict[str, object]:
+        """批量恢复普通归档资源，逐项返回成功 ID 与失败原因。"""
+
+        succeeded_ids: list[int] = []
+        failures: list[dict[str, object]] = []
+        for asset_id in self._normalize_batch_asset_ids(asset_ids):
+            try:
+                await self.restore_asset(workspace_id, asset_id, restore_reason=restore_reason)
+                succeeded_ids.append(asset_id)
+            except AppException as error:
+                await self.session.rollback()
+                failures.append({"asset_id": asset_id, "code": error.code, "detail": error.detail})
+
+        return self._build_batch_operation_payload(succeeded_ids, failures)
+
     async def batch_delete_assets(self, workspace_id: int, asset_ids: list[int]) -> dict[str, object]:
         """批量删除 archived 或历史资源，逐项返回成功 ID 与失败原因。"""
 

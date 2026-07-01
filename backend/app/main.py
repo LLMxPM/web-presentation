@@ -29,6 +29,10 @@ from app.db.errors import (
 from app.db.session import get_session_factory
 from app.services.bootstrap_service import BootstrapService
 from app.services.object_storage_service import ObjectStorageService
+from app.services.asset_render_hint_backfill_job_service import (
+    recover_interrupted_asset_render_hint_backfill_jobs_on_startup,
+    run_asset_render_hint_backfill_queue_loop,
+)
 from app.services.page_screenshot_job_service import (
     recover_interrupted_screenshot_jobs_on_startup,
     run_page_screenshot_queue_loop,
@@ -46,13 +50,16 @@ async def lifespan(app: FastAPI):
     """应用启动时校验数据库、Redis 运行态并初始化默认管理员。"""
 
     page_screenshot_queue_task: asyncio.Task[None] | None = None
+    asset_render_hint_backfill_queue_task: asyncio.Task[None] | None = None
     try:
         session_factory = get_session_factory()
         await BootstrapService(session_factory).ensure_default_admin()
         ensure_redis_runtime_available()
         await recover_interrupted_build_jobs_on_startup(session_factory)
         await recover_interrupted_screenshot_jobs_on_startup(session_factory)
+        await recover_interrupted_asset_render_hint_backfill_jobs_on_startup(session_factory)
         page_screenshot_queue_task = _start_page_screenshot_queue_task()
+        asset_render_hint_backfill_queue_task = _start_asset_render_hint_backfill_queue_task()
     except SQLAlchemyError as exc:
         if is_database_connectivity_error(exc):
             _raise_database_connectivity_error(exc, phase="Backend 启动时")
@@ -62,6 +69,8 @@ async def lifespan(app: FastAPI):
     finally:
         if page_screenshot_queue_task is not None:
             await _stop_background_task(page_screenshot_queue_task)
+        if asset_render_hint_backfill_queue_task is not None:
+            await _stop_background_task(asset_render_hint_backfill_queue_task)
 
 
 def create_app() -> FastAPI:
@@ -225,6 +234,15 @@ def _start_page_screenshot_queue_task() -> asyncio.Task[None]:
     return asyncio.create_task(
         run_page_screenshot_queue_loop(get_session_factory()),
         name="page-screenshot-queue",
+    )
+
+
+def _start_asset_render_hint_backfill_queue_task() -> asyncio.Task[None]:
+    """启动资源比例回填队列后台任务。"""
+
+    return asyncio.create_task(
+        run_asset_render_hint_backfill_queue_loop(get_session_factory()),
+        name="asset-render-hint-backfill-queue",
     )
 
 

@@ -6,7 +6,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/vue'
 import { QueryClient, VueQueryPlugin } from '@tanstack/vue-query'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import type { AssetReferenceSummary, AssetResponse } from '@/types/api'
+import type { AssetReferenceSummary, AssetRenderHintBackfillJobGroup, AssetResponse } from '@/types/api'
 import AssetsView from '@/views/AssetsView.vue'
 
 const getWorkspaceMock = vi.fn()
@@ -18,8 +18,11 @@ const uploadWorkspaceAssetMock = vi.fn()
 const updateWorkspaceAssetMock = vi.fn()
 const batchArchiveWorkspaceAssetsMock = vi.fn()
 const batchDeleteWorkspaceAssetsMock = vi.fn()
+const batchRestoreWorkspaceAssetsMock = vi.fn()
+const createAssetRenderHintBackfillJobsMock = vi.fn()
 const exportWorkspaceAssetPackageMock = vi.fn()
 const importWorkspaceAssetPackageMock = vi.fn()
+const waitForAssetRenderHintBackfillJobGroupMock = vi.fn()
 const createConfirmMock = vi.fn()
 const routerPushMock = vi.fn()
 const createObjectURLMock = vi.fn()
@@ -46,7 +49,9 @@ vi.mock('@/api/assets', () => ({
   archiveWorkspaceAsset: vi.fn(),
   batchArchiveWorkspaceAssets: (...args: unknown[]) => batchArchiveWorkspaceAssetsMock(...args),
   batchDeleteWorkspaceAssets: (...args: unknown[]) => batchDeleteWorkspaceAssetsMock(...args),
+  batchRestoreWorkspaceAssets: (...args: unknown[]) => batchRestoreWorkspaceAssetsMock(...args),
   copyWorkspaceAsset: vi.fn(),
+  createAssetRenderHintBackfillJobs: (...args: unknown[]) => createAssetRenderHintBackfillJobsMock(...args),
   createWorkspaceAssetContent: vi.fn(),
   deleteWorkspaceAsset: vi.fn(),
   exportWorkspaceAssetPackage: (...args: unknown[]) => exportWorkspaceAssetPackageMock(...args),
@@ -60,6 +65,7 @@ vi.mock('@/api/assets', () => ({
   updateWorkspaceAsset: (...args: unknown[]) => updateWorkspaceAssetMock(...args),
   updateWorkspaceAssetContent: vi.fn(),
   uploadWorkspaceAsset: (...args: unknown[]) => uploadWorkspaceAssetMock(...args),
+  waitForAssetRenderHintBackfillJobGroup: (...args: unknown[]) => waitForAssetRenderHintBackfillJobGroupMock(...args),
 }))
 
 vi.mock('@/utils/message', () => ({
@@ -156,10 +162,25 @@ describe('AssetsView', () => {
       asset_ids: [1],
       failures: [],
     })
+    batchRestoreWorkspaceAssetsMock.mockResolvedValue({
+      requested_count: 1,
+      succeeded_count: 1,
+      failed_count: 0,
+      asset_ids: [1],
+      failures: [],
+    })
     exportWorkspaceAssetPackageMock.mockResolvedValue({
       blob: new Blob(['zip']),
       filename: 'workspace-assets.zip',
     })
+    createAssetRenderHintBackfillJobsMock.mockResolvedValue(createBackfillGroup({
+      status: 'succeeded',
+      requested_count: 0,
+    }))
+    waitForAssetRenderHintBackfillJobGroupMock.mockResolvedValue(createBackfillGroup({
+      status: 'succeeded',
+      requested_count: 0,
+    }))
     importWorkspaceAssetPackageMock.mockResolvedValue({
       imported_count: 1,
       updated_count: 0,
@@ -316,6 +337,214 @@ describe('AssetsView', () => {
     })
   })
 
+  it('资源多选操作应提供比例重算入口', async () => {
+    const formulaAsset = createImageAsset({
+      id: 10,
+      name: 'formula_ratio',
+      original_name: 'formula_ratio.tex',
+      content_type: 'text/plain',
+      asset_type: 'formula',
+      render_type: 'formula',
+      content_editable: true,
+    })
+    listWorkspaceAssetsMock.mockResolvedValue({
+      items: [formulaAsset],
+      total: 1,
+      page: 1,
+      page_size: 24,
+    })
+
+    renderAssetsView()
+
+    await waitFor(() => {
+      expect(screen.getByText('formula_ratio')).toBeInTheDocument()
+    })
+    expect(screen.queryByText('重新计算比例')).toBeNull()
+    await fireEvent.click(screen.getByLabelText('选择资源 formula_ratio'))
+    await fireEvent.click(screen.getByText('重新计算比例'))
+
+    expect(screen.getByText('重新计算选中资源比例')).toBeInTheDocument()
+    expect(screen.getByText('预览结果')).toBeInTheDocument()
+    expect(screen.getByText('仅处理当前已勾选的 Image、Video、Draw.io、Formula、Mermaid 资源，其他类型会自动忽略。')).toBeInTheDocument()
+  })
+
+  it('图片资源多选后应支持重新计算比例', async () => {
+    const imageAsset = createImageAsset({
+      id: 13,
+      name: 'poster_image',
+      original_name: 'poster_image.png',
+      content_type: 'image/png',
+      asset_type: 'image',
+      render_type: 'image',
+      content_editable: false,
+    })
+    listWorkspaceAssetsMock.mockResolvedValue({
+      items: [imageAsset],
+      total: 1,
+      page: 1,
+      page_size: 24,
+    })
+    createAssetRenderHintBackfillJobsMock.mockResolvedValue(createBackfillGroup({
+      status: 'succeeded',
+      requested_count: 1,
+      succeeded_count: 1,
+    }))
+
+    renderAssetsView()
+
+    await waitFor(() => {
+      expect(screen.getByText('poster_image')).toBeInTheDocument()
+    })
+    await fireEvent.click(screen.getByLabelText('选择资源 poster_image'))
+    await fireEvent.click(screen.getByText('重新计算比例'))
+    await fireEvent.click(screen.getByText('开始预览'))
+
+    await waitFor(() => {
+      expect(createAssetRenderHintBackfillJobsMock).toHaveBeenCalledWith(7, expect.objectContaining({
+        asset_ids: [13],
+        asset_types: ['image'],
+        mode: 'preview',
+      }))
+    })
+  })
+
+  it('预览比例回填后应支持应用可更新项', async () => {
+    const formulaAsset = createImageAsset({
+      id: 11,
+      name: 'formula_ratio',
+      original_name: 'formula_ratio.tex',
+      content_type: 'text/plain',
+      asset_type: 'formula',
+      render_type: 'formula',
+      content_editable: true,
+    })
+    listWorkspaceAssetsMock.mockResolvedValue({
+      items: [formulaAsset],
+      total: 1,
+      page: 1,
+      page_size: 24,
+    })
+    createAssetRenderHintBackfillJobsMock
+      .mockResolvedValueOnce(createBackfillGroup({
+        job_group_id: 'preview-group',
+        status: 'pending',
+        requested_count: 1,
+        pending_count: 1,
+      }))
+      .mockResolvedValueOnce(createBackfillGroup({
+        job_group_id: 'apply-group',
+        status: 'pending',
+        requested_count: 1,
+        pending_count: 1,
+      }))
+    waitForAssetRenderHintBackfillJobGroupMock
+      .mockResolvedValueOnce(createBackfillGroup({
+        job_group_id: 'preview-group',
+        status: 'succeeded',
+        requested_count: 1,
+        succeeded_count: 1,
+        jobs: [{
+          id: 1,
+          job_group_id: 'preview-group',
+          workspace_id: 7,
+          asset_id: 11,
+          asset_name: 'formula_ratio',
+          asset_type: 'formula',
+          source: 'manual',
+          mode: 'preview',
+          overwrite_manual: false,
+          status: 'succeeded',
+          attempt_count: 1,
+          current_render_metadata: null,
+          next_render_metadata: { aspect_ratio: '2:1' },
+          current_approx_aspect_ratio: null,
+          next_approx_aspect_ratio: '2:1',
+          error_code: null,
+          error_message: null,
+          created_by: 1,
+          created_at: '2026-07-01T10:00:00+08:00',
+          updated_at: '2026-07-01T10:00:00+08:00',
+          started_at: '2026-07-01T10:00:00+08:00',
+          finished_at: '2026-07-01T10:00:01+08:00',
+        }],
+      }))
+      .mockResolvedValueOnce(createBackfillGroup({
+        job_group_id: 'apply-group',
+        status: 'succeeded',
+        requested_count: 1,
+        succeeded_count: 1,
+      }))
+
+    renderAssetsView()
+
+    await waitFor(() => {
+      expect(screen.getByText('formula_ratio')).toBeInTheDocument()
+    })
+    await fireEvent.click(screen.getByLabelText('选择资源 formula_ratio'))
+    await fireEvent.click(screen.getByText('重新计算比例'))
+    await fireEvent.click(screen.getByText('开始预览'))
+
+    await waitFor(() => {
+      expect(createAssetRenderHintBackfillJobsMock).toHaveBeenCalledWith(7, expect.objectContaining({
+        asset_ids: [11],
+        asset_types: ['formula'],
+        mode: 'preview',
+      }))
+    })
+    await waitFor(() => {
+      expect(screen.getByText('应用可更新项')).toBeInTheDocument()
+    })
+    await fireEvent.click(screen.getByText('应用可更新项'))
+
+    await waitFor(() => {
+      expect(createAssetRenderHintBackfillJobsMock).toHaveBeenLastCalledWith(7, expect.objectContaining({
+        asset_ids: [11],
+        mode: 'apply',
+      }))
+    })
+  })
+
+  it('Formula 资源详情应支持重新计算比例', async () => {
+    const formulaAsset = createImageAsset({
+      id: 12,
+      name: 'detail_formula',
+      original_name: 'detail_formula.tex',
+      content_type: 'text/plain',
+      asset_type: 'formula',
+      render_type: 'formula',
+      content_editable: true,
+      approx_aspect_ratio: null,
+      aspect_ratio_source: null,
+    })
+    listWorkspaceAssetsMock.mockResolvedValue({
+      items: [formulaAsset],
+      total: 1,
+      page: 1,
+      page_size: 24,
+    })
+    createAssetRenderHintBackfillJobsMock.mockResolvedValue(createBackfillGroup({
+      status: 'succeeded',
+      requested_count: 1,
+      succeeded_count: 1,
+    }))
+
+    renderAssetsView()
+
+    await waitFor(() => {
+      expect(screen.getByText('detail_formula')).toBeInTheDocument()
+    })
+    await fireEvent.click(screen.getByText('detail_formula'))
+    await fireEvent.click(screen.getByText('重新计算比例'))
+
+    await waitFor(() => {
+      expect(createAssetRenderHintBackfillJobsMock).toHaveBeenCalledWith(7, expect.objectContaining({
+        asset_ids: [12],
+        asset_types: ['formula'],
+        mode: 'apply',
+      }))
+    })
+  })
+
   it('替换资源文件时应按当前资源类型限制可选扩展名', async () => {
     const { container } = renderAssetsView()
 
@@ -376,6 +605,46 @@ describe('AssetsView', () => {
     await waitFor(() => {
       expect(importWorkspaceAssetPackageMock).toHaveBeenCalledWith(7, expect.any(File))
       expect(listWorkspaceAssetsMock).toHaveBeenCalled()
+    })
+  })
+
+  it('归档资源应支持多选后批量恢复', async () => {
+    listWorkspaceAssetsMock.mockImplementation((_workspaceId: number, options: { status?: string }) => {
+      if (options.status === 'archived') {
+        return Promise.resolve({
+          items: [
+            createImageAsset({
+              id: 5,
+              name: 'archived_restore_cover',
+              status: 'archived',
+              archived_at: '2026-05-01T11:00:00+08:00',
+            }),
+          ],
+          total: 1,
+          page: 1,
+          page_size: 24,
+        })
+      }
+      return Promise.resolve({ items: [], total: 0, page: 1, page_size: 24 })
+    })
+    batchRestoreWorkspaceAssetsMock.mockResolvedValue({
+      requested_count: 1,
+      succeeded_count: 1,
+      failed_count: 0,
+      asset_ids: [5],
+      failures: [],
+    })
+    renderAssetsView()
+
+    await fireEvent.click(screen.getByText('已归档'))
+    await waitFor(() => {
+      expect(screen.getByText('archived_restore_cover')).toBeInTheDocument()
+    })
+    await fireEvent.click(screen.getByLabelText('选择资源 archived_restore_cover'))
+    await fireEvent.click(screen.getByText('批量恢复'))
+
+    await waitFor(() => {
+      expect(batchRestoreWorkspaceAssetsMock).toHaveBeenCalledWith(7, [5])
     })
   })
 
@@ -503,6 +772,23 @@ function createImageAsset(overrides: Partial<AssetResponse>): AssetResponse {
     archive_warning_reasons: [],
     created_at: '2026-05-01T10:00:00+08:00',
     updated_at: '2026-05-01T10:00:00+08:00',
+    ...overrides,
+  }
+}
+
+function createBackfillGroup(overrides: Partial<AssetRenderHintBackfillJobGroup>): AssetRenderHintBackfillJobGroup {
+  return {
+    job_group_id: 'group-1',
+    status: 'succeeded',
+    requested_count: 0,
+    pending_count: 0,
+    running_count: 0,
+    succeeded_count: 0,
+    failed_count: 0,
+    skipped_count: 0,
+    asset_ids: [],
+    jobs: [],
+    failures: [],
     ...overrides,
   }
 }

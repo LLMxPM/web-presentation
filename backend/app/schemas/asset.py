@@ -6,6 +6,7 @@ from typing import Literal, Optional
 from pydantic import BaseModel, ConfigDict, Field, computed_field, model_validator
 
 from app.models.enums import AssetRole, AssetType, RecordStatus
+from app.schemas.common import SchemaBase
 from app.services.asset_render_metadata_service import AssetRenderMetadataService
 
 
@@ -209,6 +210,13 @@ class AssetBatchArchiveRequest(BaseModel):
     archive_reason: str | None = Field(default=None, max_length=1000)
 
 
+class AssetBatchRestoreRequest(BaseModel):
+    """批量恢复归档资源的请求体。"""
+
+    asset_ids: list[int] = Field(min_length=1, max_length=100)
+    restore_reason: str | None = Field(default=None, max_length=1000)
+
+
 class AssetBatchDeleteRequest(BaseModel):
     """批量删除资源的请求体。"""
 
@@ -293,3 +301,69 @@ class AssetReferenceSummary(BaseModel):
                 self.component_version_count,
             ]
         )
+
+
+AssetRenderHintBackfillMode = Literal["preview", "apply"]
+AssetRenderHintBackfillJobStatus = Literal["pending", "running", "succeeded", "failed", "skipped"]
+AssetRenderHintBackfillJobGroupStatus = Literal["pending", "running", "succeeded", "failed", "partial"]
+
+
+class AssetRenderHintBackfillJobCreateRequest(BaseModel):
+    """创建资源渲染提示回填任务组请求。"""
+
+    asset_types: list[Literal["image", "video", "drawio", "mermaid", "formula"]] | None = None
+    asset_ids: list[int] | None = Field(default=None, max_length=500)
+    mode: AssetRenderHintBackfillMode = "preview"
+    overwrite_manual: bool = False
+
+
+class AssetRenderHintBackfillFailure(BaseModel):
+    """资源渲染提示回填失败明细。"""
+
+    asset_id: int
+    asset_name: str | None = None
+    code: str
+    detail: str
+
+
+class AssetRenderHintBackfillJobResponse(SchemaBase):
+    """资源渲染提示回填任务响应。"""
+
+    id: int
+    job_group_id: str | None
+    workspace_id: int
+    asset_id: int
+    asset_name: str | None = None
+    asset_type: AssetType
+    source: str
+    mode: AssetRenderHintBackfillMode
+    overwrite_manual: bool
+    status: AssetRenderHintBackfillJobStatus
+    attempt_count: int
+    current_render_metadata: dict | None = None
+    next_render_metadata: dict | None = None
+    current_approx_aspect_ratio: str | None = None
+    next_approx_aspect_ratio: str | None = None
+    error_code: str | None = None
+    error_message: str | None = None
+    created_by: int | None
+    created_at: datetime
+    updated_at: datetime
+    started_at: datetime | None
+    finished_at: datetime | None
+
+
+class AssetRenderHintBackfillJobGroupResponse(BaseModel):
+    """资源渲染提示回填任务组聚合响应。"""
+
+    job_group_id: str
+    status: AssetRenderHintBackfillJobGroupStatus
+    requested_count: int
+    pending_count: int
+    running_count: int
+    succeeded_count: int
+    failed_count: int
+    skipped_count: int
+    asset_ids: list[int] = Field(default_factory=list)
+    jobs: list[AssetRenderHintBackfillJobResponse] = Field(default_factory=list)
+    failures: list[AssetRenderHintBackfillFailure] = Field(default_factory=list)

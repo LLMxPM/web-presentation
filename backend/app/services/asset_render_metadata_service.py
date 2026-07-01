@@ -26,6 +26,7 @@ class AssetRenderMetadataService:
     _LENGTH_RE = re.compile(r"^\s*([-+]?(?:\d+(?:\.\d*)?|\.\d+))(?:px|pt|pc|mm|cm|in)?\s*$", re.IGNORECASE)
     _DRAWIO_CELL_TAG = "mxCell"
     _DRAWIO_GEOMETRY_TAG = "mxGeometry"
+    _MP4_CONTAINER_BOXES = {b"moov", b"trak"}
 
     @classmethod
     def build_auto_metadata(
@@ -82,6 +83,12 @@ class AssetRenderMetadataService:
         return cls._build_metadata_from_ratio(ratio, source=source)
 
     @classmethod
+    def build_metadata_from_ratio(cls, ratio: float, *, source: AspectRatioSource) -> dict[str, Any]:
+        """按已测量比例值生成渲染提示元数据。"""
+
+        return cls._build_metadata_from_ratio(ratio, source=source)
+
+    @classmethod
     def summarize_metadata(cls, metadata: dict[str, Any] | None) -> dict[str, Any]:
         """提取 AI 工具和列表接口使用的近似比例摘要字段。"""
 
@@ -125,6 +132,8 @@ class AssetRenderMetadataService:
             if cls._is_svg_asset(original_name, content_type):
                 return cls._extract_svg_ratio(content)
             return cls._extract_raster_ratio(content)
+        if asset_type == AssetType.VIDEO:
+            return cls._extract_video_ratio(content)
         return None
 
     @classmethod
@@ -246,6 +255,74 @@ class AssetRenderMetadataService:
             or cls._extract_jpeg_ratio(content)
             or cls._extract_webp_ratio(content)
         )
+
+    @classmethod
+    def _extract_video_ratio(cls, content: bytes) -> float | None:
+        """从常见视频容器头读取比例。"""
+
+        return cls._extract_mp4_ratio(content)
+
+    @classmethod
+    def _extract_mp4_ratio(cls, content: bytes) -> float | None:
+        """从 MP4/MOV tkhd box 的 16.16 定点宽高读取比例。"""
+
+        return cls._extract_mp4_ratio_from_range(content, 0, len(content), depth=0)
+
+    @classmethod
+    def _extract_mp4_ratio_from_range(cls, content: bytes, start: int, end: int, *, depth: int) -> float | None:
+        """在 MP4 box 范围内递归查找视频轨道尺寸。"""
+
+        if depth > 4:
+            return None
+        for box_type, payload_start, payload_end in cls._iter_mp4_boxes(content, start, end):
+            if box_type == b"tkhd":
+                ratio = cls._ratio_from_tkhd_payload(content[payload_start:payload_end])
+                if ratio is not None:
+                    return ratio
+            if box_type in cls._MP4_CONTAINER_BOXES:
+                ratio = cls._extract_mp4_ratio_from_range(content, payload_start, payload_end, depth=depth + 1)
+                if ratio is not None:
+                    return ratio
+        return None
+
+    @staticmethod
+    def _iter_mp4_boxes(content: bytes, start: int, end: int):
+        """遍历 MP4 box，返回 box 类型和 payload 范围。"""
+
+        offset = max(0, start)
+        bounded_end = min(len(content), max(start, end))
+        while offset + 8 <= bounded_end:
+            size = int.from_bytes(content[offset:offset + 4], "big")
+            box_type = content[offset + 4:offset + 8]
+            header_size = 8
+            if size == 1:
+                if offset + 16 > bounded_end:
+                    break
+                size = int.from_bytes(content[offset + 8:offset + 16], "big")
+                header_size = 16
+            elif size == 0:
+                size = bounded_end - offset
+            if size < header_size:
+                break
+            box_end = offset + size
+            if box_end > bounded_end:
+                break
+            yield box_type, offset + header_size, box_end
+            offset = box_end
+
+    @classmethod
+    def _ratio_from_tkhd_payload(cls, payload: bytes) -> float | None:
+        """解析 tkhd payload 中的宽高字段。"""
+
+        if len(payload) < 88:
+            return None
+        version = payload[0]
+        width_offset = 88 if version == 1 else 80
+        if width_offset + 8 > len(payload):
+            return None
+        width = int.from_bytes(payload[width_offset:width_offset + 4], "big") / 65536
+        height = int.from_bytes(payload[width_offset + 4:width_offset + 8], "big") / 65536
+        return cls._ratio_from_pair(width, height)
 
     @staticmethod
     def _extract_png_ratio(content: bytes) -> float | None:

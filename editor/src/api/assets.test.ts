@@ -20,7 +20,10 @@ vi.mock('@/api/http', () => ({
 import {
   batchArchiveWorkspaceAssets,
   batchDeleteWorkspaceAssets,
+  batchRestoreWorkspaceAssets,
+  createAssetRenderHintBackfillJobs,
   exportWorkspaceAssetPackage,
+  getAssetRenderHintBackfillJobGroup,
   importWorkspaceAssetPackage,
   listWorkspaceAssets,
   listWorkspaceAssetTags,
@@ -28,6 +31,7 @@ import {
   replaceWorkspaceAssetFile,
   updateWorkspaceAsset,
   uploadWorkspaceAsset,
+  waitForAssetRenderHintBackfillJobGroup,
 } from '@/api/assets'
 
 describe('assets api', () => {
@@ -123,15 +127,20 @@ describe('assets api', () => {
     })
   })
 
-  it('批量归档和删除资源时应传递资源 ID 列表', async () => {
+  it('批量归档、恢复和删除资源时应传递资源 ID 列表', async () => {
     postMock.mockResolvedValue({ data: { requested_count: 2, succeeded_count: 2, failed_count: 0, asset_ids: [1, 2], failures: [] } })
 
     await batchArchiveWorkspaceAssets(5, [1, 2], '批量整理')
+    await batchRestoreWorkspaceAssets(5, [1, 2], '批量恢复')
     await batchDeleteWorkspaceAssets(5, [1, 2])
 
     expect(postMock).toHaveBeenCalledWith('/workspaces/5/assets/batch-archive', {
       asset_ids: [1, 2],
       archive_reason: '批量整理',
+    })
+    expect(postMock).toHaveBeenCalledWith('/workspaces/5/assets/batch-restore', {
+      asset_ids: [1, 2],
+      restore_reason: '批量恢复',
     })
     expect(postMock).toHaveBeenCalledWith('/workspaces/5/assets/batch-delete', {
       asset_ids: [1, 2],
@@ -186,5 +195,101 @@ describe('assets api', () => {
         sort_order: undefined,
       },
     })
+  })
+
+  it('创建资源比例回填任务组时应使用工作空间级接口', async () => {
+    postMock.mockResolvedValueOnce({
+      data: {
+        job_group_id: 'group-1',
+        status: 'pending',
+        requested_count: 1,
+        pending_count: 1,
+        running_count: 0,
+        succeeded_count: 0,
+        failed_count: 0,
+        skipped_count: 0,
+        asset_ids: [],
+        jobs: [],
+        failures: [],
+      },
+    })
+
+    const result = await createAssetRenderHintBackfillJobs(5, {
+      asset_types: ['image', 'video', 'drawio', 'formula', 'mermaid'],
+      asset_ids: [9],
+      mode: 'preview',
+    })
+
+    expect(postMock).toHaveBeenCalledWith('/workspaces/5/assets/render-hint-backfill-jobs', {
+      asset_types: ['image', 'video', 'drawio', 'formula', 'mermaid'],
+      asset_ids: [9],
+      mode: 'preview',
+    })
+    expect(result.job_group_id).toBe('group-1')
+  })
+
+  it('查询资源比例回填任务组时应使用顶层任务组接口', async () => {
+    getMock.mockResolvedValueOnce({
+      data: {
+        job_group_id: 'group-1',
+        status: 'succeeded',
+        requested_count: 0,
+        pending_count: 0,
+        running_count: 0,
+        succeeded_count: 0,
+        failed_count: 0,
+        skipped_count: 0,
+        asset_ids: [],
+        jobs: [],
+        failures: [],
+      },
+    })
+
+    await getAssetRenderHintBackfillJobGroup('group-1')
+
+    expect(getMock).toHaveBeenCalledWith('/asset-render-hint-backfill-job-groups/group-1')
+  })
+
+  it('等待资源比例回填任务组时应轮询到终态并上报进度', async () => {
+    const onProgress = vi.fn()
+    getMock
+      .mockResolvedValueOnce({
+        data: {
+          job_group_id: 'group-1',
+          status: 'running',
+          requested_count: 1,
+          pending_count: 0,
+          running_count: 1,
+          succeeded_count: 0,
+          failed_count: 0,
+          skipped_count: 0,
+          asset_ids: [],
+          jobs: [],
+          failures: [],
+        },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          job_group_id: 'group-1',
+          status: 'succeeded',
+          requested_count: 1,
+          pending_count: 0,
+          running_count: 0,
+          succeeded_count: 1,
+          failed_count: 0,
+          skipped_count: 0,
+          asset_ids: [9],
+          jobs: [],
+          failures: [],
+        },
+      })
+
+    const result = await waitForAssetRenderHintBackfillJobGroup('group-1', {
+      intervalMs: 0,
+      onProgress,
+    })
+
+    expect(result.status).toBe('succeeded')
+    expect(onProgress).toHaveBeenCalledTimes(2)
   })
 })

@@ -1363,6 +1363,56 @@ export interface AssetContentPreviewResponse {
   unified_diff: string
 }
 
+export type AssetRenderHintBackfillMode = 'preview' | 'apply'
+export type AssetRenderHintBackfillJobStatus = 'pending' | 'running' | 'succeeded' | 'failed' | 'skipped'
+export type AssetRenderHintBackfillJobGroupStatus = 'pending' | 'running' | 'succeeded' | 'failed' | 'partial'
+
+export interface AssetRenderHintBackfillJob {
+  id: number
+  job_group_id: string | null
+  workspace_id: number
+  asset_id: number
+  asset_name: string | null
+  asset_type: AssetType
+  source: string
+  mode: AssetRenderHintBackfillMode
+  overwrite_manual: boolean
+  status: AssetRenderHintBackfillJobStatus
+  attempt_count: number
+  current_render_metadata: AssetRenderHintMetadata | Record<string, unknown> | null
+  next_render_metadata: AssetRenderHintMetadata | Record<string, unknown> | null
+  current_approx_aspect_ratio: string | null
+  next_approx_aspect_ratio: string | null
+  error_code: string | null
+  error_message: string | null
+  created_by: number | null
+  created_at: string
+  updated_at: string
+  started_at: string | null
+  finished_at: string | null
+}
+
+export interface AssetRenderHintBackfillFailure {
+  asset_id: number
+  asset_name: string | null
+  code: string
+  detail: string
+}
+
+export interface AssetRenderHintBackfillJobGroup {
+  job_group_id: string
+  status: AssetRenderHintBackfillJobGroupStatus
+  requested_count: number
+  pending_count: number
+  running_count: number
+  succeeded_count: number
+  failed_count: number
+  skipped_count: number
+  asset_ids: number[]
+  jobs: AssetRenderHintBackfillJob[]
+  failures: AssetRenderHintBackfillFailure[]
+}
+
 export interface AssetReferenceSummary {
   theme_count: number
   font_count: number

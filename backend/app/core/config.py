@@ -77,6 +77,9 @@ class AppSettings(BaseSettings):
     page_screenshot_queue_poll_interval_seconds: float = 1.0
     page_screenshot_job_lease_seconds: int = 180
     page_screenshot_ai_wait_timeout_seconds: float = 90.0
+    asset_render_hint_backfill_queue_concurrency: int = 1
+    asset_render_hint_backfill_queue_poll_interval_seconds: float = 1.0
+    asset_render_hint_backfill_job_lease_seconds: int = 180
     page_screenshot_local_root: str = "data"
     page_screenshot_browser_executable_path: str | None = None
     page_screenshot_backend_base_url: str | None = None
@@ -168,6 +171,8 @@ class AppSettings(BaseSettings):
         "page_screenshot_batch_concurrency",
         "page_screenshot_queue_concurrency",
         "page_screenshot_job_lease_seconds",
+        "asset_render_hint_backfill_queue_concurrency",
+        "asset_render_hint_backfill_job_lease_seconds",
     )
     @classmethod
     def validate_positive_int(cls, value: int) -> int:
@@ -182,6 +187,7 @@ class AppSettings(BaseSettings):
         "page_screenshot_visual_ready_timeout_seconds",
         "page_screenshot_queue_poll_interval_seconds",
         "page_screenshot_ai_wait_timeout_seconds",
+        "asset_render_hint_backfill_queue_poll_interval_seconds",
     )
     @classmethod
     def validate_positive_timeout(cls, value: float) -> float:

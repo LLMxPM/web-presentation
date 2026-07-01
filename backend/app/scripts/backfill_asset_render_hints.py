@@ -11,21 +11,36 @@ from sqlalchemy import select
 
 from app.db.session import get_session_factory
 from app.models.asset import WorkspaceAsset
-from app.models.enums import AssetType
+from app.models.enums import AssetType, RecordStatus
+from app.services.asset_render_hint_backfill_job_service import AssetRenderHintBackfillJobService
 from app.scripts.diagnose_ai_run import load_backend_env_for_cli
+from app.services.asset_render_hint_measurement_service import AssetRenderHintMeasurementService
 from app.services.asset_render_metadata_service import AssetRenderMetadataService
 from app.services.asset_service import AssetService
 
 
-async def backfill_asset_render_hints(*, workspace_id: int | None, apply: bool) -> dict[str, Any]:
+async def backfill_asset_render_hints(*, workspace_id: int | None, asset_types: set[AssetType] | None, apply: bool) -> dict[str, Any]:
     """扫描资源并回填自动比例；默认 dry-run 不写入数据库。"""
 
     async with get_session_factory()() as session:
         service = AssetService(session)
-        statement = select(WorkspaceAsset).order_by(WorkspaceAsset.workspace_id.asc(), WorkspaceAsset.id.asc())
+        measurement_service = AssetRenderHintMeasurementService()
+        statement = (
+            select(WorkspaceAsset)
+            .where(
+                WorkspaceAsset.status == RecordStatus.ACTIVE.value,
+                WorkspaceAsset.history_kind.is_(None),
+            )
+            .order_by(WorkspaceAsset.workspace_id.asc(), WorkspaceAsset.id.asc())
+        )
         if workspace_id is not None:
             statement = statement.where(WorkspaceAsset.workspace_id == workspace_id)
-        assets = list((await session.execute(statement)).scalars().all())
+        if asset_types:
+            statement = statement.where(WorkspaceAsset.asset_type.in_([item.value for item in asset_types]))
+        assets = [
+            asset for asset in (await session.execute(statement)).scalars().all()
+            if AssetRenderHintBackfillJobService._is_asset_backfill_readable(asset)
+        ]
         candidates: list[dict[str, Any]] = []
         skipped_manual = 0
         for asset in assets:
@@ -34,12 +49,7 @@ async def backfill_asset_render_hints(*, workspace_id: int | None, apply: bool) 
                 continue
             try:
                 content = await service.driver.read_content(asset.workspace_id, asset.file_name)
-                next_metadata = AssetRenderMetadataService.build_auto_metadata(
-                    AssetType(asset.asset_type),
-                    asset.original_name,
-                    asset.content_type,
-                    content,
-                )
+                next_metadata = await measurement_service.measure_metadata(asset=asset, content=content)
             except Exception as error:  # noqa: BLE001
                 candidates.append(_dump_candidate(asset, error=str(error)))
                 continue
@@ -53,6 +63,7 @@ async def backfill_asset_render_hints(*, workspace_id: int | None, apply: bool) 
         return {
             "apply": apply,
             "workspace_id": workspace_id,
+            "asset_types": sorted(item.value for item in asset_types) if asset_types else None,
             "scanned_count": len(assets),
             "skipped_manual_count": skipped_manual,
             "candidate_count": len(candidates),
@@ -65,6 +76,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     parser = argparse.ArgumentParser(description="回填资源近似比例 render_metadata，默认只输出 dry-run 结果。")
     parser.add_argument("--workspace-id", type=int, help="只扫描指定工作空间。")
+    parser.add_argument("--types", help="逗号分隔的资源类型，例如 image,video,drawio,formula,mermaid；不传时扫描所有资源类型。")
     parser.add_argument("--apply", action="store_true", help="实际写入数据库；不传时只预览。")
     return parser
 
@@ -74,9 +86,28 @@ async def async_main(argv: list[str] | None = None) -> int:
 
     args = build_parser().parse_args(argv)
     load_backend_env_for_cli()
-    payload = await backfill_asset_render_hints(workspace_id=args.workspace_id, apply=args.apply)
+    payload = await backfill_asset_render_hints(
+        workspace_id=args.workspace_id,
+        asset_types=_parse_asset_types(args.types),
+        apply=args.apply,
+    )
     print(json.dumps(payload, ensure_ascii=False, indent=2, default=str))
     return 0
+
+
+def _parse_asset_types(value: str | None) -> set[AssetType] | None:
+    """解析逗号分隔资源类型参数；未传时返回 None 表示不限制类型。"""
+
+    normalized = str(value or "").strip()
+    if not normalized:
+        return None
+    result: set[AssetType] = set()
+    for item in normalized.split(","):
+        name = item.strip()
+        if not name:
+            continue
+        result.add(AssetType(name))
+    return result
 
 
 def _dump_candidate(

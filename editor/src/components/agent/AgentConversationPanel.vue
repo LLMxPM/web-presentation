@@ -378,7 +378,7 @@ const toolDetailDialogVisible = ref(false)
 const memberRunDialogVisible = ref(false)
 const activeToolDetailId = ref<string | null>(null)
 const activeMemberRunIds = ref<string[]>([])
-const sendInFlight = ref(false)
+const sendInFlightBySession = ref<Record<string, boolean>>({})
 const selectedNewSessionLlmConfigId = ref<number | null>(null)
 const llmModelMenuVisible = ref(false)
 const llmModelMenuRef = ref<HTMLElement | null>(null)
@@ -423,6 +423,7 @@ const routeScopeSummary = computed(() => resolveScopeSummary(currentRouteScope.v
 const activeRun = computed(() => readSessionValue(activeRunBySession.value, activeSessionId.value, null))
 const isStreaming = computed(() => isSessionRunning(activeSessionId.value))
 const isInterrupting = computed(() => readSessionValue(interruptingBySession.value, activeSessionId.value, false))
+const isSendInFlight = computed(() => isSessionSendInFlight(activeSessionId.value))
 const timelineItems = computed<AgentTimelineItem[]>({
   get: () => readSessionValue(timelineItemsBySession.value, activeSessionId.value, []),
   set: value => agentSessionStore.setTimelineItems(activeSessionId.value, value),
@@ -791,7 +792,7 @@ const timelineDisplayItems = computed(() => buildTimelineDisplayItems(timelineIt
 const composerActionDisabled = computed(() => (
   isStreaming.value
     ? isInterrupting.value
-    : sendInFlight.value || pendingRequirement.value !== null || (!composerText.value.trim() && pendingImageAttachments.value.length === 0) || hasBindingIssue.value || isModelSelectionPending.value || composerInputDisabled.value
+    : isSendInFlight.value || pendingRequirement.value !== null || (!composerText.value.trim() && pendingImageAttachments.value.length === 0) || hasBindingIssue.value || isModelSelectionPending.value || composerInputDisabled.value
 ))
 
 const {
@@ -851,6 +852,25 @@ function writeSessionValue<T>(source: Record<string, T>, sessionId: string, valu
     return
   }
   source[sessionId] = value
+}
+
+/**
+ * 读取指定会话的发送中状态；新会话草稿使用固定分片，避免创建会话前重复点击。
+ */
+function isSessionSendInFlight(sessionId: string) {
+  return readSessionValue(sendInFlightBySession.value, sessionId || 'draft', false)
+}
+
+/**
+ * 写入指定会话的发送中状态；完成后移除分片，避免长期积累无效会话键。
+ */
+function setSessionSendInFlight(sessionId: string, inFlight: boolean) {
+  const key = sessionId || 'draft'
+  if (inFlight) {
+    sendInFlightBySession.value[key] = true
+    return
+  }
+  delete sendInFlightBySession.value[key]
 }
 
 /**
@@ -1277,7 +1297,7 @@ function handleComposerPrimaryAction() {
     void handleInterruptRun()
     return
   }
-  if (sendInFlight.value) {
+  if (isSendInFlight.value) {
     return
   }
   void handleSend()
@@ -1297,21 +1317,26 @@ async function handleSend() {
   }
   const message = composerText.value.trim()
   const attachments = [...pendingImageAttachments.value]
-  if ((!message && attachments.length === 0) || isStreaming.value || sendInFlight.value) return
+  const draftSessionId = activeSessionId.value
+  if ((!message && attachments.length === 0) || isStreaming.value || isSessionSendInFlight(draftSessionId)) return
   if (attachments.length && !currentModelSupportsImageInput.value) {
     Message.error('当前会话模型不支持图片输入。')
     return
   }
   const runAgentDisplayName = agentDisplayName.value
 
-  sendInFlight.value = true
+  setSessionSendInFlight(draftSessionId, true)
   let sessionId = ''
   try {
     sessionId = await ensureActiveSession()
   } catch (error) {
-    sendInFlight.value = false
+    setSessionSendInFlight(draftSessionId, false)
     Message.error(getErrorMessage(error, '初始化智能体会话失败。'))
     return
+  }
+  if (sessionId !== draftSessionId) {
+    setSessionSendInFlight(draftSessionId, false)
+    setSessionSendInFlight(sessionId, true)
   }
   const runtimeRequest = resolveSessionRuntimeRequest(sessionId)
   const runScope = { ...runtimeRequest.scope }
@@ -1375,7 +1400,7 @@ async function handleSend() {
         clearStreamAbortController(runId, controller)
       }
     }
-    sendInFlight.value = false
+    setSessionSendInFlight(sessionId, false)
     setSessionStreaming(sessionId, false)
   }
 }
