@@ -76,3 +76,36 @@ def test_scope_context_should_include_project_suggested_component_summaries() ->
     assert "import_name=HeroCover" in context_text
     assert "component_type=页面组件" in context_text
     assert "组件摘要不能替代使用契约" in context_text
+
+
+def test_scope_context_should_include_project_suggested_reference_asset_ratio() -> None:
+    """运行时上下文应注入项目建议引用资源的近似比例，供智能体匹配展示槽位。"""
+
+    context_text = build_scope_context_text(
+        AgentRuntimeContext(
+            scope_type="page",
+            workspace_id=1,
+            project_id=2,
+            page_id=3,
+            source="test",
+            suggested_reference_assets=(
+                {
+                    "id": 8,
+                    "name": "hero_illustration",
+                    "original_name": "hero.svg",
+                    "asset_type": "image",
+                    "description": "首页主视觉插图",
+                    "content_editable": True,
+                    "approx_aspect_ratio": "16:9",
+                    "approx_aspect_ratio_value": 1.7778,
+                    "aspect_ratio_source": "auto",
+                },
+            ),
+        )
+    )
+
+    assert "项目建议引用资源" in context_text
+    assert "name=hero_illustration" in context_text
+    assert "approx_aspect_ratio=16:9" in context_text
+    assert "approx_aspect_ratio_value=1.7778" in context_text
+    assert "aspect_ratio_source=auto" in context_text

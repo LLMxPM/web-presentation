@@ -743,6 +743,7 @@ _COORDINATOR_TOOL_SPECS = (
             '任务需要使用素材时先调用该工具；默认 scope=suggested，优先返回项目建议引用资源。'
             '当没有项目上下文、没有建议资源或建议资源筛选为空时，工具会自动回退全工作空间 active 普通资源，'
             '并通过 source 与 fallback_reason 说明来源；明确需要查全量资源库时传 scope=all。'
+            '使用返回资源生成页面时，必须优先按 approx_aspect_ratio / approx_aspect_ratio_value 匹配展示槽位宽高比。'
         ),
         response_example={'source': 'project_suggested',
          'fallback_reason': None,
@@ -948,6 +949,7 @@ _COMPONENT_MANAGER_TOOL_SPECS = (
         default_instructions=(
             '默认 scope=suggested，优先返回项目建议引用资源；没有项目上下文、没有建议资源或筛选为空时会自动回退全工作空间资源。'
             '组件或 preview_schema 明确需要浏览资源库素材时传 scope=all。'
+            '使用返回资源生成组件或 preview_schema 时，必须优先按 approx_aspect_ratio / approx_aspect_ratio_value 匹配展示槽位宽高比。'
         ),
         response_example={'source': 'workspace_all',
          'fallback_reason': 'no_project_context',
