@@ -1,8 +1,9 @@
-"""文件功能：用 Redis 保存 Runtime 临时预览 artifact 与构建运行态。"""
+"""文件功能：用 Redis 保存 Runtime 临时预览 artifact、模板预览资源与构建运行态。"""
 
 from __future__ import annotations
 
 import asyncio
+import base64
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import uuid4
@@ -91,6 +92,61 @@ class RuntimeArtifactStore:
         value = await asyncio.to_thread(self.runtime.client.hget, self._modules_key(artifact_id), logical_path)
         return str(value) if value is not None else None
 
+    async def put_asset_blobs(
+        self,
+        *,
+        artifact_id: str,
+        assets: dict[str, dict[str, Any]],
+        ttl_seconds: int | None = None,
+    ) -> None:
+        """写入模板包预览使用的短生命周期资源内容。
+
+        assets 的 key 是 file_hash，value 至少包含 content bytes，可选 content_type 和 original_name。
+        """
+
+        if not assets:
+            return
+        ttl = ttl_seconds or get_settings().runtime_preview_artifact_ttl_seconds
+        mapping: dict[str, str] = {}
+        for file_hash, item in assets.items():
+            content = item.get("content")
+            if not isinstance(content, bytes):
+                continue
+            mapping[str(file_hash)] = self.runtime.dumps(
+                {
+                    "content_base64": base64.b64encode(content).decode("ascii"),
+                    "content_type": str(item.get("content_type") or ""),
+                    "original_name": str(item.get("original_name") or ""),
+                }
+            )
+        if not mapping:
+            return
+
+        def write() -> None:
+            pipe = self.runtime.client.pipeline()
+            pipe.hset(self._assets_key(artifact_id), mapping=mapping)
+            pipe.expire(self._assets_key(artifact_id), ttl)
+            pipe.execute()
+
+        await asyncio.to_thread(write)
+
+    async def get_asset_blob(self, artifact_id: str, file_hash: str) -> dict[str, Any] | None:
+        """读取模板包预览资源内容，缺失时返回 None。"""
+
+        raw = await asyncio.to_thread(self.runtime.client.hget, self._assets_key(artifact_id), file_hash)
+        payload = self.runtime.loads(raw, default=None)
+        if not isinstance(payload, dict):
+            return None
+        try:
+            content = base64.b64decode(str(payload.get("content_base64") or ""))
+        except ValueError:
+            return None
+        return {
+            "content": content,
+            "content_type": str(payload.get("content_type") or ""),
+            "original_name": str(payload.get("original_name") or ""),
+        }
+
     async def put_build_state(self, *, job_id: int, mapping: dict[str, Any], ttl_seconds: int | None = None) -> None:
         """写入或更新构建任务的 Redis 运行态。"""
 
@@ -118,6 +174,9 @@ class RuntimeArtifactStore:
 
     def _modules_key(self, artifact_id: str) -> str:
         return self.runtime.key(f"runtime:artifact:{artifact_id}:modules")
+
+    def _assets_key(self, artifact_id: str) -> str:
+        return self.runtime.key(f"runtime:artifact:{artifact_id}:assets")
 
     def _meta_key(self, artifact_id: str) -> str:
         return self.runtime.key(f"runtime:artifact:{artifact_id}:meta")

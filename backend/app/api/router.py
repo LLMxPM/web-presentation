@@ -18,6 +18,7 @@ from app.api.routes import (
     projects,
     runtime_kit,
     styles,
+    template_packages,
     themes,
     users,
     workspaces,
@@ -40,5 +41,6 @@ api_router.include_router(asset_render_hint_backfill_jobs.router, tags=["asset-r
 api_router.include_router(fonts.router, tags=["fonts"])
 api_router.include_router(themes.router, tags=["themes"])
 api_router.include_router(styles.router, tags=["styles"])
+api_router.include_router(template_packages.router, tags=["template-packages"])
 api_router.include_router(preview.router_admin, prefix="/projects", tags=["preview"])
 api_router.include_router(build_jobs.router, tags=["build-jobs"])

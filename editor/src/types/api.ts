@@ -681,6 +681,102 @@ export interface ComponentShareImportResult {
   warnings: string[]
 }
 
+export interface ProjectTemplateMetadataPayload {
+  slug?: string | null
+  name?: string | null
+  summary?: string | null
+  description?: string | null
+}
+
+export interface ProjectTemplateExportRequest {
+  metadata?: ProjectTemplateMetadataPayload
+  cover_page_id?: number | null
+  manual_asset_names?: string[]
+  refresh_screenshots?: boolean
+}
+
+export interface ProjectTemplatePackageProjectSummary {
+  source_project_code: string
+  name: string
+  description: string | null
+  page_width: number
+  page_height: number
+  base_font_size: string
+  icon_default_stroke_width: number
+  show_pdf_export_button: boolean
+  menu_mode: ProjectMenuMode
+  theme_key: string | null
+  style_spec_markdown: string
+}
+
+export interface ProjectTemplatePackagePageSummary {
+  source_page_code: string
+  title: string
+  summary: string | null
+  file_type: PageFileType
+  action: 'create' | string
+}
+
+export interface ProjectTemplateScreenshotItem {
+  path: string
+  width: number
+  height: number
+  source_page_code?: string | null
+  title?: string | null
+  order?: number | null
+}
+
+export interface ProjectTemplateScreenshotSummary {
+  cover: ProjectTemplateScreenshotItem | null
+  pages: ProjectTemplateScreenshotItem[]
+}
+
+export interface ProjectTemplateExportValidationResult {
+  can_export: boolean
+  project: ProjectTemplatePackageProjectSummary
+  pages: ProjectTemplatePackagePageSummary[]
+  components: ComponentShareExportComponentSummary[]
+  automatic_assets: ComponentShareExportAssetSummary[]
+  manual_assets: ComponentShareExportAssetSummary[]
+  themes: WorkspaceStylePackageThemeSummary[]
+  fonts: ComponentSharePackageFontSummary[]
+  screenshots: ProjectTemplateScreenshotSummary
+  warnings: string[]
+  errors: string[]
+  missing_static_asset_names: string[]
+  missing_manual_asset_names: string[]
+  dynamic_resource_modules: string[]
+}
+
+export interface ProjectTemplateImportValidationResult {
+  valid: boolean
+  schema_version: number | null
+  runtime_kit_manifest_version: string | null
+  template: Record<string, unknown>
+  project: ProjectTemplatePackageProjectSummary | null
+  pages: ProjectTemplatePackagePageSummary[]
+  components: ComponentSharePackageComponentSummary[]
+  assets: ComponentSharePackageAssetSummary[]
+  themes: WorkspaceStylePackageThemeSummary[]
+  fonts: ComponentSharePackageFontSummary[]
+  screenshots: ProjectTemplateScreenshotSummary
+  errors: string[]
+  warnings: string[]
+}
+
+export interface ProjectTemplateImportResult {
+  project_id: number
+  project_code: string
+  project_name: string
+  page_ids: number[]
+  pages: ProjectTemplatePackagePageSummary[]
+  components: ComponentSharePackageComponentSummary[]
+  assets: ComponentSharePackageAssetSummary[]
+  themes: WorkspaceStylePackageThemeSummary[]
+  fonts: ComponentSharePackageFontSummary[]
+  warnings: string[]
+}
+
 export type PreviewKind = 'project' | 'page' | 'component' | 'asset'
 export type PreviewEntryType = 'route' | 'module' | 'component_host' | 'asset_host'
 export type ComponentPreviewMode = 'saved' | 'draft'

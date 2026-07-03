@@ -1,4 +1,4 @@
-"""文件功能：公开的无鉴权资源访问网关。"""
+"""文件功能：公开的无鉴权资源与模板包临时预览资源访问网关。"""
 
 import mimetypes
 import re
@@ -16,6 +16,7 @@ from app.models.page import Page
 from app.models.asset import WorkspaceAsset
 from app.services.asset_service import AssetService, BaseStorageDriver
 from app.services.object_storage_service import ObjectStorageService
+from app.services.runtime_artifact_store import RuntimeArtifactStore
 
 router = APIRouter()
 CACHE_CONTROL_IMMUTABLE = "public, max-age=31536000, immutable"
@@ -92,6 +93,25 @@ async def get_public_cached_asset(
             media_type=media_type or "application/octet-stream",
             headers=headers,
         )
+
+
+@router.get("/template-package-assets/{artifact_id}/{file_hash}")
+async def get_public_template_package_asset(artifact_id: str, file_hash: str) -> Response:
+    """公开读取模板包预览 artifact 中的短生命周期资源。"""
+
+    item = await RuntimeArtifactStore().get_asset_blob(artifact_id, file_hash)
+    if item is None:
+        raise AppException(status_code=404, code="TEMPLATE_PACKAGE_ASSET_NOT_FOUND", detail="项目预览资源不存在或已过期。")
+    media_type, _ = mimetypes.guess_type(str(item.get("original_name") or "asset.bin"))
+    headers = {
+        "Cache-Control": "private, max-age=300",
+        "Access-Control-Allow-Origin": "*",
+    }
+    return Response(
+        content=item["content"],
+        media_type=str(item.get("content_type") or "") or media_type or "application/octet-stream",
+        headers=headers,
+    )
 
 
 @router.get("/page-screenshots/{page_id}")
