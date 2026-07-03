@@ -29,6 +29,19 @@ def test_normalize_agent_run_exception_should_map_invalid_request() -> None:
     assert "模型服务拒绝" in failure.message
 
 
+def test_normalize_agent_run_exception_should_map_payment_required() -> None:
+    """供应商 402 错误应提示检查余额或额度。"""
+
+    failure = normalize_agent_run_exception(
+        RuntimeError("Error code: 402 - {'error': {'message': 'Payment Required'}}"),
+        fallback_code="AI_RUN_FAILED",
+    )
+
+    assert failure.code == "AI_MODEL_PAYMENT_REQUIRED"
+    assert "余额或额度不足" in failure.message
+    assert "Payment Required" in failure.raw_message
+
+
 def test_build_agent_error_log_extra_should_include_error_chain() -> None:
     """错误日志字段应包含原始异常类型、消息和 cause 链路。"""
 

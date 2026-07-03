@@ -14,6 +14,7 @@ from uuid import uuid4
 from sqlalchemy import Select, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import get_settings
 from app.ai.image_refs import sanitize_message_history_image_refs
 from app.ai.agent.runtime_context import AgentRuntimeContext
 from app.ai.message_history import trim_unprocessed_tool_call_history
@@ -48,6 +49,8 @@ from app.services.agent_image_attachment_service import AgentImageAttachmentServ
 ACTIVE_RUN_STATUSES = {"pending", "running", "paused", "cancelling"}
 TERMINAL_RUN_STATUSES = {"completed", "cancelled", "failed"}
 STREAM_END_EVENTS = {"run.completed", "run.cancelled", "run.error", "run.paused"}
+STALE_ACTIVE_RUN_ERROR_CODE = "AI_AGENT_STREAM_IDLE_TIMEOUT"
+STALE_ACTIVE_RUN_ERROR_MESSAGE = "模型或工具流长时间没有返回新事件，本次运行已停止。"
 _EVENT_POLL_INTERVAL_SECONDS = 1.0
 _SSE_KEEPALIVE_INTERVAL_SECONDS = 30.0
 _SUBSCRIBERS: dict[str, set[asyncio.Queue[AgentRunEvent | None]]] = {}
@@ -170,6 +173,9 @@ class PlatformAgentRuntimeStore:
 
         active_run = await self.get_active_run_model(session_id=session_id, agent_id=agent_id)
         if active_run is not None:
+            recovered_event = await self.recover_stale_active_run(run_model=active_run)
+            if recovered_event is not None:
+                return
             raise ValueError("AI_SESSION_RUN_ACTIVE")
 
     async def start_run(
@@ -502,7 +508,13 @@ class PlatformAgentRuntimeStore:
             )
             .order_by(AiAgentRun.created_at.desc())
         )
-        return result.scalars().first()
+        active_run = result.scalars().first()
+        if active_run is None:
+            return None
+        recovered_event = await self.recover_stale_active_run(run_model=active_run)
+        if recovered_event is not None:
+            return None
+        return active_run
 
     async def get_latest_run_model(self, *, session_id: str, agent_id: str) -> AiAgentRun | None:
         """读取最近一次 run。"""
@@ -540,6 +552,10 @@ class PlatformAgentRuntimeStore:
 
         session_model = await self.require_session(session_id=session_id, agent_id=agent_id)
         latest_run = await self.get_latest_run_model(session_id=session_id, agent_id=agent_id)
+        if latest_run is not None and latest_run.status in ACTIVE_RUN_STATUSES:
+            recovered_event = await self.recover_stale_active_run(run_model=latest_run)
+            if recovered_event is not None:
+                latest_run = await self.get_latest_run_model(session_id=session_id, agent_id=agent_id)
         active_run = self.map_active_run(latest_run) if latest_run is not None and latest_run.status in ACTIVE_RUN_STATUSES else None
         last_run = self.map_active_run(latest_run) if latest_run is not None and latest_run.status not in ACTIVE_RUN_STATUSES else None
         timeline_items = await self.build_timeline_items(session_id=session_id)
@@ -582,6 +598,62 @@ class PlatformAgentRuntimeStore:
                 AiAgentRun.run_id == run_id,
                 AiAgentRun.user_id == self._user_id,
             )
+        )
+        return result.scalar_one_or_none()
+
+    async def recover_stale_active_run(
+        self,
+        *,
+        run_model: AiAgentRun | None = None,
+        run_id: str | None = None,
+        idle_timeout_seconds: float | None = None,
+    ) -> AgentRunEvent | None:
+        """发现 active run 长时间没有事件时写入终态，避免会话永久残留 running。"""
+
+        target = run_model
+        if target is None:
+            normalized_run_id = str(run_id or "").strip()
+            if not normalized_run_id:
+                return None
+            result = await self._session.execute(
+                select(AiAgentRun).where(
+                    AiAgentRun.run_id == normalized_run_id,
+                    AiAgentRun.user_id == self._user_id,
+                    AiAgentRun.status.in_(ACTIVE_RUN_STATUSES),
+                )
+            )
+            target = result.scalar_one_or_none()
+        if target is None:
+            return None
+        if target.user_id != self._user_id or target.status not in ACTIVE_RUN_STATUSES or target.status == "paused":
+            return None
+
+        timeout_seconds = (
+            float(idle_timeout_seconds)
+            if idle_timeout_seconds is not None
+            else float(get_settings().ai_agent_stream_idle_timeout_seconds)
+        )
+        if timeout_seconds <= 0:
+            return None
+        last_event_at = await self._last_run_event_created_at(target.run_id)
+        anchor = _as_utc(last_event_at or target.updated_at or target.started_at or target.created_at)
+        if (_utc_now() - anchor).total_seconds() < timeout_seconds:
+            return None
+
+        if target.status == "cancelling" or target.cancel_requested_at is not None:
+            return await self.mark_terminal(target, status="cancelled", content="用户停止了当前运行。")
+        return await self.mark_terminal(
+            target,
+            status="failed",
+            error_code=STALE_ACTIVE_RUN_ERROR_CODE,
+            error_message=STALE_ACTIVE_RUN_ERROR_MESSAGE,
+        )
+
+    async def _last_run_event_created_at(self, run_id: str) -> datetime | None:
+        """读取 run 最近事件时间，用于判断运行态是否已经空闲过久。"""
+
+        result = await self._session.execute(
+            select(func.max(AiAgentRunEvent.created_at)).where(AiAgentRunEvent.run_id == run_id)
         )
         return result.scalar_one_or_none()
 
@@ -1427,6 +1499,7 @@ async def stream_replay_then_subscribe(
     store: PlatformAgentRuntimeStore,
     run_id: str,
     event_index: int,
+    idle_timeout_seconds: float | None = None,
 ) -> AsyncGenerator[bytes, None]:
     """先从数据库回放事件，再订阅本进程实时事件，并用数据库轮询兜底跨进程恢复。"""
 
@@ -1456,6 +1529,13 @@ async def stream_replay_then_subscribe(
                     continue
                 run_status = await store.get_run_status(run_id=run_id)
                 if run_status in TERMINAL_RUN_STATUSES or run_status == "paused":
+                    return
+                recovered_event = await store.recover_stale_active_run(
+                    run_id=run_id,
+                    idle_timeout_seconds=idle_timeout_seconds,
+                )
+                if recovered_event is not None:
+                    yield encode_sse_event(recovered_event)
                     return
                 now = monotonic()
                 if now - last_keepalive_at >= _SSE_KEEPALIVE_INTERVAL_SECONDS:
@@ -1670,6 +1750,14 @@ def _utc_now() -> datetime:
     """返回 UTC 当前时间。"""
 
     return datetime.now(tz=UTC)
+
+
+def _as_utc(value: datetime) -> datetime:
+    """把数据库时间统一为 UTC aware datetime，兼容测试库返回的 naive 时间。"""
+
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
 
 
 def _iso(value: datetime | None) -> str | None:
