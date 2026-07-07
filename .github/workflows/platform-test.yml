@@ -44,6 +44,7 @@ jobs:
         with:
           filters: |
             runtime_changed:
+              - 'runtime'
               - 'runtime/**'
               - '.gitmodules'
 
@@ -175,5 +176,13 @@ jobs:
           file: Dockerfile
           push: false
           tags: web-presentation:ci-smoke
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=platform
+          cache-to: type=gha,mode=max,scope=platform
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: Dockerfile.lite
+          push: false
+          tags: web-presentation:sqlite-lite-ci-smoke
+          cache-from: type=gha,scope=platform-lite
+          cache-to: type=gha,mode=max,scope=platform-lite

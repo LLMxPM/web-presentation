@@ -102,6 +102,7 @@ services:
     restart: unless-stopped
     environment:
       RUNTIME_PREVIEW_JWKS_URL: "http://backend:8000/.well-known/jwks.json"
+      RUNTIME_SERVICE_TOKEN_AUDIENCE: "runtime-backend"
       RUNTIME_BACKEND_API_BASE_URL: "http://backend:8000"
       # Runtime Vite 资源挂载路径，应等于 RUNTIME_PUBLIC_BASE_URL 的 path；独立 Runtime 根域名部署时改为 "/"。
       RUNTIME_SERVER_BASE_PATH: "/runtime/"

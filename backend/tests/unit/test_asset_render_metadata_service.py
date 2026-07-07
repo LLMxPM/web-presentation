@@ -23,6 +23,24 @@ def _build_webp_vp8x(width: int, height: int) -> bytes:
     return b"RIFF" + (len(chunk) + 4).to_bytes(4, "little") + b"WEBP" + chunk
 
 
+def _mp4_box(box_type: bytes, payload: bytes) -> bytes:
+    """构造一个普通 32 位长度 MP4 box。"""
+
+    return (len(payload) + 8).to_bytes(4, "big") + box_type + payload
+
+
+def _build_mp4_tkhd(width: int, height: int) -> bytes:
+    """构造包含 tkhd 宽高字段的最小 MP4 box 树。"""
+
+    tkhd_payload = (
+        b"\x00\x00\x00\x07"
+        + b"\x00" * 76
+        + (width << 16).to_bytes(4, "big")
+        + (height << 16).to_bytes(4, "big")
+    )
+    return _mp4_box(b"ftyp", b"isom\x00\x00\x02\x00") + _mp4_box(b"moov", _mp4_box(b"trak", _mp4_box(b"tkhd", tkhd_payload)))
+
+
 def test_svg_viewbox_should_generate_auto_aspect_ratio() -> None:
     """SVG viewBox 应生成自动近似比例，且不包含宽高尺寸字段。"""
 
@@ -83,6 +101,21 @@ def test_raster_headers_should_generate_auto_aspect_ratio(content: bytes, expect
 
     assert metadata is not None
     assert metadata["aspect_ratio"] == expected_ratio
+    assert metadata["aspect_ratio_source"] == "auto"
+
+
+def test_mp4_tkhd_should_generate_video_aspect_ratio() -> None:
+    """MP4/MOV 的 tkhd 宽高字段应能解析出视频近似比例。"""
+
+    metadata = AssetRenderMetadataService.build_auto_metadata(
+        AssetType.VIDEO,
+        "demo.mp4",
+        "video/mp4",
+        _build_mp4_tkhd(1920, 1080),
+    )
+
+    assert metadata is not None
+    assert metadata["aspect_ratio"] == "16:9"
     assert metadata["aspect_ratio_source"] == "auto"
 
 

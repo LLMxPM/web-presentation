@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.models.asset import WorkspaceAsset
-from app.schemas.asset import resolve_asset_content_editable, resolve_asset_role
+from app.schemas.asset import resolve_asset_content_editable
 from app.schemas.project_app_config import (
     DEFAULT_PROJECT_ICON,
     DEFAULT_PROJECT_MENU_MODE,
@@ -19,6 +19,7 @@ from app.schemas.project_app_config import (
 )
 from app.schemas.release import PreviewArtifactResponse, PreviewEntryDescriptor
 from app.services.asset_service import AssetService
+from app.services.asset_manifest_metadata_service import build_asset_manifest_metadata
 from app.services.component_preview_service import ComponentPreviewService
 from app.services.preview_service import PreviewService
 from app.services.project_config_service import ProjectConfigService
@@ -149,7 +150,7 @@ class AssetPreviewService:
     @staticmethod
     def _append_asset_manifest_entry(
         asset_mapping: dict[str, str],
-        asset_metadata: dict[str, dict[str, str]],
+        asset_metadata: dict[str, dict[str, object]],
         asset: WorkspaceAsset,
     ) -> None:
         """确保当前资源即使是历史副本，也能在 manifest 中按 name 解析。"""
@@ -159,13 +160,7 @@ class AssetPreviewService:
         if not asset_name or not file_hash:
             return
         asset_mapping[asset_name] = file_hash
-        asset_metadata[asset_name] = {
-            "file_hash": file_hash,
-            "original_name": str(asset.original_name or "").strip(),
-            "asset_role": resolve_asset_role(asset.asset_type).value,
-            "render_type": str(asset.asset_type or "").strip(),
-            "content_type": str(asset.content_type or "").strip(),
-        }
+        asset_metadata[asset_name] = build_asset_manifest_metadata(asset)
 
     @staticmethod
     def _build_asset_preview_payload(asset: WorkspaceAsset, asset_base_url: str) -> dict[str, object]:

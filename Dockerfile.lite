@@ -1,0 +1,103 @@
+# syntax=docker/dockerfile:1.7
+# 文件功能：构建 SQLite 轻量单容器镜像，镜像内同时包含 Backend、Editor、Runtime 与 Nginx Gateway。
+
+FROM node:22-bookworm-slim AS editor-build
+
+ENV PNPM_HOME="/pnpm"
+ENV PATH="${PNPM_HOME}:${PATH}"
+
+WORKDIR /app/editor
+
+RUN corepack enable && corepack prepare pnpm@10.30.3 --activate
+
+COPY editor/package.json editor/pnpm-lock.yaml editor/pnpm-workspace.yaml ./
+RUN pnpm install --frozen-lockfile
+
+COPY editor/ ./
+RUN pnpm build
+
+
+FROM node:22-bookworm-slim AS runtime-deps
+
+ENV PNPM_HOME="/pnpm"
+ENV PATH="${PNPM_HOME}:${PATH}"
+
+WORKDIR /app/runtime
+
+RUN corepack enable && corepack prepare pnpm@10.0.0 --activate
+
+COPY runtime/package.json runtime/pnpm-lock.yaml ./
+RUN pnpm install --frozen-lockfile
+
+COPY runtime/ ./
+
+
+FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim AS backend-deps
+
+ENV UV_COMPILE_BYTECODE=1
+ENV UV_LINK_MODE=copy
+
+WORKDIR /app
+
+COPY backend/pyproject.toml backend/uv.lock backend/README.md ./backend/
+RUN uv sync --project backend --frozen --no-dev --no-cache --no-install-project
+
+
+FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim AS lite-runtime
+
+LABEL org.opencontainers.image.title="web-presentation-sqlite-lite"
+LABEL org.opencontainers.image.description="web-presentation SQLite lite image with Backend, Editor, Runtime and Gateway"
+
+ENV APP_RELOAD=false
+ENV PATH="/app/backend/.venv/bin:${PATH}"
+ENV PLAYWRIGHT_BROWSERS_PATH="/ms-playwright"
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+ENV VIRTUAL_ENV="/app/backend/.venv"
+ENV DATABASE_URL="sqlite+aiosqlite:////app/backend/data/web_presentation.db"
+ENV REDIS_URL="memory://lite"
+ENV REDIS_KEY_PREFIX="web_presentation_lite"
+ENV BACKEND_PUBLIC_BASE_URL="http://127.0.0.1:8080"
+ENV RUNTIME_BASE_URL="http://127.0.0.1:7373"
+ENV RUNTIME_PUBLIC_BASE_URL="http://127.0.0.1:8080/runtime"
+ENV RUNTIME_PREVIEW_JWKS_URL="http://127.0.0.1:8000/.well-known/jwks.json"
+ENV RUNTIME_BACKEND_API_BASE_URL="http://127.0.0.1:8000"
+ENV RUNTIME_SERVER_HOST="0.0.0.0"
+ENV RUNTIME_SERVER_PORT="7373"
+ENV RUNTIME_SERVER_BASE_PATH="/runtime/"
+ENV RUNTIME_SERVICE_TOKEN_AUDIENCE="runtime-backend"
+ENV RUNTIME_PREVIEW_TOKEN_AUDIENCE="runtime-preview"
+ENV RUNTIME_BUILD_TOKEN_AUDIENCE="runtime-build"
+ENV RUNTIME_DIAGNOSTICS_TOKEN_AUDIENCE="runtime-diagnostics"
+ENV RUNTIME_LOG_LEVEL="info"
+ENV RUNTIME_LOG_FORMAT="json"
+ENV RUNTIME_ACCESS_LOG_ENABLED="true"
+ENV RUNTIME_STANDALONE_PREVIEW_ENABLED="false"
+ENV ASSET_STORAGE_DRIVER="local"
+
+RUN sed -i 's|http://deb.debian.org|https://deb.debian.org|g' /etc/apt/sources.list.d/debian.sources \
+    && apt-get -o Acquire::Retries=3 update \
+    && apt-get -o Acquire::Retries=3 install -y --no-install-recommends ca-certificates curl nginx \
+    && rm -f /etc/nginx/sites-enabled/default /etc/nginx/sites-available/default \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=runtime-deps /usr/local/bin/node /usr/local/bin/node
+
+WORKDIR /app/backend
+
+COPY --from=backend-deps /app/backend/.venv /app/backend/.venv
+RUN playwright install --with-deps chromium \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY backend/ /app/backend/
+COPY --from=runtime-deps /app/runtime /app/runtime
+COPY --from=editor-build /app/editor/dist/ /usr/share/nginx/html/
+COPY docker/nginx/web-presentation.conf /etc/nginx/conf.d/default.conf
+
+RUN mkdir -p /app/backend/data /run/nginx /var/cache/nginx /var/log/nginx \
+    && chmod +x /app/backend/scripts/start_lite_container.sh \
+    && node --version
+
+EXPOSE 80 8000 7373
+
+CMD ["sh", "/app/backend/scripts/start_lite_container.sh"]

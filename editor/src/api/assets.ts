@@ -10,6 +10,8 @@ import type {
   AssetContentResponse,
   AssetPackageImportResult,
   AssetReferenceSummary,
+  AssetRenderHintBackfillJobGroup,
+  AssetRenderHintBackfillMode,
   AssetResponse,
   AssetRole,
   AssetType,
@@ -41,6 +43,13 @@ export interface ListWorkspaceAssetTagsOptions {
   status?: RecordStatus | null
   includeHistory?: boolean
   historyOnly?: boolean
+}
+
+export interface CreateAssetRenderHintBackfillJobsPayload {
+  asset_types?: Array<'image' | 'video' | 'drawio' | 'mermaid' | 'formula'>
+  asset_ids?: number[]
+  mode?: AssetRenderHintBackfillMode
+  overwrite_manual?: boolean
 }
 
 /**
@@ -227,6 +236,57 @@ export async function updateWorkspaceAsset(
   return data
 }
 
+/** 创建资源比例回填任务组。 */
+export async function createAssetRenderHintBackfillJobs(
+  workspaceId: number,
+  payload: CreateAssetRenderHintBackfillJobsPayload,
+): Promise<AssetRenderHintBackfillJobGroup> {
+  const { data } = await http.post<AssetRenderHintBackfillJobGroup>(
+    `/workspaces/${workspaceId}/assets/render-hint-backfill-jobs`,
+    payload,
+  )
+  return data
+}
+
+/** 查询资源比例回填任务组聚合进度。 */
+export async function getAssetRenderHintBackfillJobGroup(groupId: string): Promise<AssetRenderHintBackfillJobGroup> {
+  const { data } = await http.get<AssetRenderHintBackfillJobGroup>(`/asset-render-hint-backfill-job-groups/${groupId}`)
+  return data
+}
+
+/** 等待资源比例回填任务组进入终态。 */
+export async function waitForAssetRenderHintBackfillJobGroup(
+  groupId: string,
+  options: {
+    timeoutMs?: number
+    intervalMs?: number
+    onProgress?: (group: AssetRenderHintBackfillJobGroup) => void
+  } = {},
+): Promise<AssetRenderHintBackfillJobGroup> {
+  const timeoutMs = options.timeoutMs ?? 180000
+  const intervalMs = options.intervalMs ?? 1000
+  const deadlineAt = Date.now() + timeoutMs
+  while (Date.now() <= deadlineAt) {
+    const group = await getAssetRenderHintBackfillJobGroup(groupId)
+    options.onProgress?.(group)
+    if (!isAssetRenderHintBackfillJobGroupActive(group.status)) {
+      return group
+    }
+    await sleep(intervalMs)
+  }
+  throw new Error('资源比例回填任务组等待超时。')
+}
+
+/** 判断资源比例回填任务组是否仍在执行链路中。 */
+function isAssetRenderHintBackfillJobGroupActive(status: AssetRenderHintBackfillJobGroup['status']): boolean {
+  return status === 'pending' || status === 'running'
+}
+
+/** 延迟指定毫秒。 */
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => window.setTimeout(resolve, Math.max(0, ms)))
+}
+
 /**
  * 使用新文件替换指定资源的物理内容，保留后端资源记录和逻辑引用。
  * @param workspaceId 工作空间 ID
@@ -295,6 +355,18 @@ export async function restoreWorkspaceAsset(
   restoreReason?: string | null,
 ): Promise<AssetResponse> {
   const { data } = await http.post<AssetResponse>(`/workspaces/${workspaceId}/assets/${assetId}/restore`, {
+    restore_reason: restoreReason ?? null,
+  })
+  return data
+}
+
+export async function batchRestoreWorkspaceAssets(
+  workspaceId: number,
+  assetIds: number[],
+  restoreReason?: string | null,
+): Promise<AssetBatchOperationResponse> {
+  const { data } = await http.post<AssetBatchOperationResponse>(`/workspaces/${workspaceId}/assets/batch-restore`, {
+    asset_ids: assetIds,
     restore_reason: restoreReason ?? null,
   })
   return data

@@ -6,7 +6,6 @@ import asyncio
 import json
 import logging
 from collections.abc import AsyncGenerator, Sequence
-from contextlib import suppress
 from time import monotonic
 from typing import Any
 
@@ -31,12 +30,19 @@ from app.schemas.agent import AgentPendingRequirement, AgentRunEvent
 logger = logging.getLogger(__name__)
 
 _STREAM_CONTROL_POLL_INTERVAL_SECONDS = 0.5
+_STREAM_TASK_CANCEL_GRACE_SECONDS = 1.0
 
 
 class PydanticAgentRunner:
     """执行 Pydantic AI Agent，并将内部事件投影为平台事件。"""
 
-    def __init__(self, store: PlatformAgentRuntimeStore, *, stream_idle_timeout_seconds: float | None = None) -> None:
+    def __init__(
+        self,
+        store: PlatformAgentRuntimeStore,
+        *,
+        stream_idle_timeout_seconds: float | None = None,
+        stream_cancel_grace_seconds: float | None = None,
+    ) -> None:
         """保存运行态 store。"""
 
         self._store = store
@@ -44,6 +50,11 @@ class PydanticAgentRunner:
             float(stream_idle_timeout_seconds)
             if stream_idle_timeout_seconds is not None
             else float(get_settings().ai_agent_stream_idle_timeout_seconds)
+        )
+        self._stream_cancel_grace_seconds = (
+            max(0.01, float(stream_cancel_grace_seconds))
+            if stream_cancel_grace_seconds is not None
+            else _STREAM_TASK_CANCEL_GRACE_SECONDS
         )
 
     async def stream_run(
@@ -92,15 +103,11 @@ class PydanticAgentRunner:
                 yield chunk
             await task
         except asyncio.CancelledError:
-            task.cancel()
-            with suppress(asyncio.CancelledError):
-                await task
+            await self._cancel_pending_stream_task(task)
             raise
         finally:
             if not task.done():
-                task.cancel()
-                with suppress(asyncio.CancelledError):
-                    await task
+                await self._cancel_pending_stream_task(task)
 
     async def _drain_stream_run_direct(
         self,
@@ -649,13 +656,23 @@ class PydanticAgentRunner:
                 await self._cancel_pending_stream_task(pending_event_task)
 
     async def _cancel_pending_stream_task(self, task: asyncio.Task[Any]) -> None:
-        """取消正在等待的底层流事件任务，避免停止或超时后残留后台 await。"""
+        """取消底层流或后台运行任务，且不让不响应取消的任务阻塞终态写入。"""
 
         if task.done():
             return
         task.cancel()
-        with suppress(asyncio.CancelledError):
-            await task
+        try:
+            await asyncio.wait_for(asyncio.shield(task), timeout=self._stream_cancel_grace_seconds)
+        except asyncio.TimeoutError:
+            logger.warning(
+                "Agent stream event task did not stop after cancellation grace period",
+                extra={"event": "ai.agent_stream.cancel_timeout"},
+            )
+            task.add_done_callback(_consume_detached_task_result)
+        except asyncio.CancelledError:
+            if task.done():
+                return
+            raise
 
     async def _cancel_event_if_requested(self, run_model: AiAgentRun) -> tuple[bool, bool]:
         """如果外部已结束或请求取消，则返回是否停止以及是否需要写取消终态。"""
@@ -667,10 +684,22 @@ class PydanticAgentRunner:
             return True, True
         return False, False
 
+
 def _safe_messages(result: Any) -> list[dict[str, Any]]:
     """安全序列化 Pydantic AI result 历史消息。"""
 
     return safe_messages(result)
+
+
+def _consume_detached_task_result(task: asyncio.Task[Any]) -> None:
+    """回收已脱离等待链的底层流任务结果，避免异步任务异常无人读取。"""
+
+    try:
+        task.result()
+    except asyncio.CancelledError:
+        return
+    except Exception:  # noqa: BLE001
+        logger.debug("Detached agent stream task finished with an exception", exc_info=True)
 
 
 def _merge_run_message_history(

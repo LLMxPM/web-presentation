@@ -96,6 +96,9 @@ def build_scope_context_text(runtime_context: AgentRuntimeContext) -> str:
                 f"original_name={asset.get('original_name')}，"
                 f"asset_type={asset.get('asset_type')}，"
                 f"description={asset.get('description') or '（未填写）'}，"
+                f"approx_aspect_ratio={asset.get('approx_aspect_ratio') or '（未知）'}，"
+                f"approx_aspect_ratio_value={asset.get('approx_aspect_ratio_value') or '（未知）'}，"
+                f"aspect_ratio_source={asset.get('aspect_ratio_source') or '（未知）'}，"
                 f"content_editable={asset.get('content_editable')}"
             )
     if runtime_context.page_id is not None:

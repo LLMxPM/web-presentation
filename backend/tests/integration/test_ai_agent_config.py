@@ -143,6 +143,9 @@ async def test_agent_config_api_should_manage_prompt_and_tool_overrides(
         assert "渲染素材" not in resource_content_tool["agent_guide"]["instructions"]
     resource_list_tool = _find_tool(coordinator, "list_resource_assets")
     assert "scope" in resource_list_tool["agent_guide"]["parameters_schema"]["properties"]
+    assert "匹配展示槽位宽高比" in resource_list_tool["agent_guide"]["instructions"]
+    component_resource_list_tool = _find_tool(catalog_items[COMPONENT_MANAGER_AGENT_ID], "list_resource_assets")
+    assert "匹配展示槽位宽高比" in component_resource_list_tool["agent_guide"]["instructions"]
     font_asset_tool = _find_tool(coordinator, "list_workspace_font_assets")
     assert "tags" in font_asset_tool["agent_guide"]["parameters_schema"]["properties"]
     assert "resource_read" in font_asset_tool["agent_guide"]["runtime_disclosure_groups"]
@@ -330,7 +333,7 @@ def test_page_design_guidance_should_use_wireframe_as_internal_method() -> None:
     coordinator_prompt = coordinator.default_prompt
     component_prompt = component_manager.default_prompt
 
-    assert "先在内部使用文本线框图或区域清单梳理布局，再写 Vue SFC 代码" in coordinator_prompt
+    assert "必须先在内部思考中使用文本线框图或区域清单梳理布局、容量和溢出风险，再写 Vue SFC 代码" in coordinator_prompt
     assert "文本线框图是布局思考方法" in coordinator_prompt
     assert "不要为了展示线框图而暂停等待用户确认" in coordinator_prompt
     assert "先在内部使用文本线框图或区域清单梳理布局，再写 Vue SFC 代码" in component_prompt
@@ -406,6 +409,33 @@ def test_runtime_asset_guidance_should_prefer_sfc_composables() -> None:
     assert "不要传初始化时的 props.xxx 字符串" not in resource_prompt
     assert "resolveResourcePath 只用于非响应式工具代码" not in resource_prompt
     assert "资源助手不负责说明资源在页面或组件中如何渲染" in resource_prompt
+
+
+def test_asset_image_guidance_should_prevent_tall_image_clipping() -> None:
+    """智能体提示应避免用 AssetImage 外层裁剪代替图片框缩放。"""
+
+    coordinator = get_agent_catalog_entry(AGENT_COORDINATOR_AGENT_ID)
+    component_manager = get_agent_catalog_entry(COMPONENT_MANAGER_AGENT_ID)
+    resource_manager = get_agent_catalog_entry(RESOURCE_MANAGER_AGENT_ID)
+    assert coordinator is not None
+    assert component_manager is not None
+    assert resource_manager is not None
+
+    expected_phrases = (
+        "不要给 AssetImage/Asset* 传 style",
+        "AssetImage 的 class 不是 img class",
+        "object-contain/object-cover 应改用 fit=\"contain\"/\"cover\"",
+        "纵向长图需要完整展示时，必须在 AssetImage 自身 class 上提供确定高度",
+        "不要只用 max-h-* 或 style=\"max-height:...\"",
+        "必须优先读取或使用工具返回的 approx_aspect_ratio / approx_aspect_ratio_value",
+        "资源展示槽位必须匹配素材近似宽高比",
+    )
+    for catalog in (coordinator, component_manager):
+        prompt = catalog.default_prompt
+        for phrase in expected_phrases:
+            assert phrase in prompt
+
+    assert "AssetImage 的 class 不是 img class" not in resource_manager.default_prompt
 
 
 def _find_tool(config_item: dict, tool_key: str) -> dict:

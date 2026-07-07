@@ -26,10 +26,10 @@ from app.repositories.module_dependency_repository import (
 )
 from app.repositories.workspace_component_repository import WorkspaceComponentRepository
 from app.repositories.workspace_component_version_repository import WorkspaceComponentVersionRepository
-from app.schemas.asset import resolve_asset_role
 from app.schemas.project_app_config import ProjectAppPageConfig
 from app.schemas.project import normalize_project_build_extra_assets_config
 from app.schemas.release import PreviewEntryDescriptor
+from app.services.asset_manifest_metadata_service import build_asset_manifest_metadata
 from app.services.component_dependency_service import ComponentDependencyService
 from app.services.project_config_service import ProjectConfigService
 from app.services.resource_reference_parser import ResourceReferenceParser
@@ -52,7 +52,7 @@ class ProjectArtifactSnapshot:
     config_bundle: dict[str, object]
     asset_base_url: str
     asset_mapping: dict[str, str]
-    asset_metadata: dict[str, dict[str, str]]
+    asset_metadata: dict[str, dict[str, object]]
     modules_metadata: dict[str, dict[str, str]]
     modules_data: list[dict[str, str]]
 
@@ -309,7 +309,7 @@ class ProjectArtifactBuilder:
         workspace_id: int,
         *,
         required_asset_names: Iterable[str] | None = None,
-    ) -> tuple[dict[str, str], dict[str, dict[str, str]]]:
+    ) -> tuple[dict[str, str], dict[str, dict[str, object]]]:
         """构建 manifest 资源映射与构建期资源元信息。"""
 
         normalized_required_names = self.normalize_asset_names(required_asset_names or [])
@@ -327,24 +327,14 @@ class ProjectArtifactBuilder:
         workspace_assets = (await self.session.execute(stmt)).scalars().all()
 
         asset_mapping: dict[str, str] = {}
-        asset_metadata: dict[str, dict[str, str]] = {}
+        asset_metadata: dict[str, dict[str, object]] = {}
         for asset in workspace_assets:
             asset_name = str(asset.name or "").strip()
             file_hash = str(asset.file_hash or "").strip()
-            original_name = str(asset.original_name or "").strip()
             if not asset_name or not file_hash:
                 continue
             asset_mapping.setdefault(asset_name, file_hash)
-            asset_metadata.setdefault(
-                asset_name,
-                {
-                    "file_hash": file_hash,
-                    "original_name": original_name,
-                    "asset_role": resolve_asset_role(asset.asset_type).value,
-                    "render_type": str(asset.asset_type or "").strip(),
-                    "content_type": str(asset.content_type or "").strip(),
-                },
-            )
+            asset_metadata.setdefault(asset_name, build_asset_manifest_metadata(asset))
 
         if required_asset_names is not None:
             missing_names = [name for name in normalized_required_names if name not in asset_mapping]

@@ -12,6 +12,7 @@ STREAM_INTERRUPTED_MESSAGE = (
 )
 REQUEST_REJECTED_MESSAGE = "模型服务拒绝了本次请求，请检查当前模型名称、模型能力和高级参数配置。"
 RATE_LIMITED_MESSAGE = "模型服务当前繁忙或触发限流，请稍后重试。"
+PAYMENT_REQUIRED_MESSAGE = "模型服务余额或额度不足，请检查当前供应商账号的计费状态、余额或用量额度。"
 TIMEOUT_MESSAGE = "模型服务响应超时，本次运行已停止。请稍后重试，或把任务拆成更小的步骤。"
 GENERIC_RUN_FAILED_MESSAGE = "智能体运行中断，请稍后重试。若多次出现，请检查当前模型配置和网络连接。"
 
@@ -68,6 +69,12 @@ def normalize_agent_run_exception(
         return AgentRunFailure(code="AI_MODEL_TIMEOUT", message=TIMEOUT_MESSAGE, raw_message=raw_message)
     if "status_code: 429" in normalized or "rate limit" in normalized:
         return AgentRunFailure(code="AI_MODEL_RATE_LIMITED", message=RATE_LIMITED_MESSAGE, raw_message=raw_message)
+    if _contains_any(normalized, ("status_code: 402", "error code: 402", "payment required", "insufficient balance")):
+        return AgentRunFailure(
+            code="AI_MODEL_PAYMENT_REQUIRED",
+            message=PAYMENT_REQUIRED_MESSAGE,
+            raw_message=raw_message,
+        )
     if "status_code: 400" in normalized or "invalid_request_error" in normalized:
         return AgentRunFailure(
             code="AI_MODEL_REQUEST_REJECTED",

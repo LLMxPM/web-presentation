@@ -1,32 +1,38 @@
 # 文档中心
 
-`docs/` 按阅读对象拆分为用户文档和开发文档，图片、示意图和截图占位资源统一放在 `docs/assets/`。
+`docs/` 按阅读对象和维护职责拆分为用户文档、开发文档和图片资源。
 
 ## 用户文档
 
 | 文档 | 内容 |
 | :--- | :--- |
-| [平台介绍](./user/platform-overview.md) | 面向使用者说明产品定位、核心概念、典型场景和平台组成 |
-| [演示文稿创作路径对比](./user/platform-comparison.md) | 对比演示创作产品、PPT skills、OOXML/HTML/图片生成工具与平台化资产沉淀路径 |
-| [平台宣传 PPT 大纲](./user/platform-pitch-deck-outline.md) | 面向宣传介绍场景，规划平台介绍 deck 的页面叙事、布局和配图建议 |
+| [用户文档入口](./user/README.md) | 推荐阅读路径、常用工作流、参考资料和部署入口 |
+| [平台介绍](./user/platform-overview.md) | 产品定位、核心概念、典型场景和平台组成 |
+| [核心概念](./user/concepts.md) | 工作空间、项目、页面、资源、组件、主题、样式和 Runtime |
+| [快速上手](./user/getting-started.md) | 从登录到创建项目、编辑页面、预览和构建的基础流程 |
 | [Demo 使用指南](./user/demo-guide.md) | 公开 Demo 地址、体验账号、推荐流程和 AI 设置注意事项 |
-| [用户快速上手](./user/getting-started.md) | 从登录到创建项目、编辑页面、预览和构建的基础流程 |
-| [AI 协作创作指南](./user/ai-assisted-creation/README.md) | 说明 AI 侧边栏、工具确认、上下文注入和协作建议 |
-| [主题、字体与样式管理体系](./user/design-system-management.md) | 说明主题库、字体注册、样式库、离线包和项目应用边界 |
-| [组件管理体系](./user/component-management.md) | 说明组件草稿、发布版本、引用升级、离线包和 AI 协作方式 |
-| [资源管理体系](./user/resource-management.md) | 说明资源类型、可编辑内容、替换归档删除、引用检查和字体资源 |
-| [当前状态与路线](./user/project-status.md) | 已落地能力、建设中事项和后续方向 |
+| [AI 协作创作](./user/ai/README.md) | AI 侧边栏、工具确认、上下文注入和协作建议 |
+| [项目与页面](./user/workflows/project-and-page.md) | 项目创建、页面组织、源码编辑、版本和构建入口 |
+| [资源管理](./user/workflows/resources.md) | 资源类型、可编辑内容、替换归档删除和引用关系 |
+| [组件管理](./user/workflows/components.md) | 组件草稿、发布版本、previewSchema、离线包和 AI 协作 |
+| [主题、字体与样式](./user/workflows/design-system.md) | 主题库、字体注册、样式库、离线包和项目应用边界 |
+| [预览、截图与构建](./user/workflows/preview-build-export.md) | Runtime 预览、截图、构建任务和产物访问 |
+| [当前限制](./user/reference/limits.md) | 已落地能力、建设中事项和使用边界 |
 
 ## 开发文档
 
 | 文档 | 内容 |
 | :--- | :--- |
-| [平台架构说明](./developer/platform-architecture.md) | 平台目标、模块职责、目标流程和 Runtime 子模块协作 |
-| [开发与测试指南](./developer/development-guide.md) | 本地依赖、测试入口、测试数据和运行态维护 |
-| [测试治理说明](./developer/testing-strategy.md) | L0-L3 测试分层、目录归属和 CI 策略 |
-| [AI Agent 图片处理机制](./developer/ai-agent-image-handling.md) | 智能体视觉图片的上传、工具输出、对象存储、模型水合、历史持久化和排障约束 |
-| [生产部署指南](./developer/deployment-guide.md) | compose 部署、外部依赖接入、升级、回滚和运维检查 |
-| [CI/CD 与容器部署说明](./developer/deployment-cicd.md) | 平台镜像、Runtime 镜像、Docker Hub 发布和 compose 策略 |
+| [开发文档入口](./developer/README.md) | 架构、Backend、Editor、Runtime 接入、测试、部署和参考资料 |
+| [本地开发指南](./developer/getting-started.md) | 本地依赖、启动方式、测试数据和运行态维护 |
+| [平台架构总览](./developer/architecture/overview.md) | 平台目标、模块职责、目标流程和 Runtime 子模块协作 |
+| [模块边界](./developer/architecture/module-boundaries.md) | Backend、Editor、Runtime 和 Infra 修改边界 |
+| [Backend 开发文档](./developer/backend/README.md) | API、AI Agent、工具规格、预览 artifact 和排障 |
+| [Editor 开发文档](./developer/editor/README.md) | 前端结构、AI 侧边栏和 Editor 测试 |
+| [Runtime 接入文档](./developer/runtime-integration/README.md) | 子模块、Runtime Kit、previewSchema、构建产物和配置模板 |
+| [测试文档](./developer/testing/README.md) | 测试分层、命令、契约测试和 E2E smoke |
+| [生产部署指南](./developer/deployment/README.md) | compose 部署、环境变量、CI/CD、备份恢复、升级回滚和排障 |
+| [参考资料](./developer/reference/conventions.md) | 开发约定、接口契约、环境变量、术语和模板包 |
 
 ## 图片资源
 

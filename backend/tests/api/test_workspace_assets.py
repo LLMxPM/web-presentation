@@ -657,6 +657,17 @@ async def test_svg_image_content_should_be_editable_and_keep_image_render_type(
     assert created_payload["approx_aspect_ratio_value"] == 1.7778
     assert created_payload["aspect_ratio_source"] == "auto"
 
+    async with get_session_factory()() as session:
+        asset_mapping, asset_metadata = await ProjectArtifactBuilder(session).build_workspace_asset_snapshot(workspace_id)
+    assert asset_mapping["hero_illustration"] == created_payload["file_hash"]
+    manifest_metadata = asset_metadata["hero_illustration"]
+    assert manifest_metadata["approx_aspect_ratio"] == "16:9"
+    assert manifest_metadata["approx_aspect_ratio_value"] == 1.7778
+    assert manifest_metadata["aspect_ratio_source"] == "auto"
+    assert "render_metadata" not in manifest_metadata
+    assert "width" not in manifest_metadata
+    assert "height" not in manifest_metadata
+
     content_response = await authenticated_client.get(
         f"/api/workspaces/{workspace_id}/assets/{asset_id}/content",
     )
@@ -909,6 +920,7 @@ async def test_asset_batch_archive_and_delete_should_follow_status_rules(authent
     workspace_id = await _create_workspace(authenticated_client, "资源批量管理空间")
     first_asset = await _create_svg_asset(authenticated_client, workspace_id, "batch_icon_first")
     second_asset = await _create_svg_asset(authenticated_client, workspace_id, "batch_icon_second")
+    restore_asset = await _create_svg_asset(authenticated_client, workspace_id, "batch_icon_restore")
     history_source = await _create_svg_asset(authenticated_client, workspace_id, "batch_icon_history")
 
     archive_response = await authenticated_client.post(
@@ -928,6 +940,25 @@ async def test_asset_batch_archive_and_delete_should_follow_status_rules(authent
     assert archive_again_response.status_code == 200
     assert archive_again_response.json()["succeeded_count"] == 0
     assert archive_again_response.json()["failures"][0]["code"] == "ASSET_ARCHIVE_REQUIRES_ACTIVE"
+
+    archive_restore_response = await authenticated_client.post(
+        f"/api/workspaces/{workspace_id}/assets/batch-archive",
+        json={"asset_ids": [restore_asset["id"]], "archive_reason": "准备恢复"},
+    )
+    assert archive_restore_response.status_code == 200
+    restore_response = await authenticated_client.post(
+        f"/api/workspaces/{workspace_id}/assets/batch-restore",
+        json={"asset_ids": [restore_asset["id"]], "restore_reason": "批量恢复"},
+    )
+    assert restore_response.status_code == 200
+    assert restore_response.json()["succeeded_count"] == 1
+    assert restore_response.json()["asset_ids"] == [restore_asset["id"]]
+    restored_list_response = await authenticated_client.get(
+        f"/api/workspaces/{workspace_id}/assets",
+        params={"status": "active", "keyword": "batch_icon_restore"},
+    )
+    assert restored_list_response.status_code == 200
+    assert restored_list_response.json()["total"] == 1
 
     active_delete_response = await authenticated_client.post(
         f"/api/workspaces/{workspace_id}/assets/batch-delete",

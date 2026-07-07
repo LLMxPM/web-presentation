@@ -449,12 +449,12 @@ _COORDINATOR_TOOL_SPECS = (
         '读取项目页面',
         'content_project',
         '内容与项目',
-        '读取当前项目下的页面摘要，供路由规划或页面定位使用。',
+        '读取当前项目下的启用页面摘要，供路由规划或页面定位使用；已归档页面不会返回。',
         default_instructions=(
             '维护项目路由前必须先读取现有路由树，并结合 list_project_pages 判断目标页面是否存在、'
             '是否已在路由中。路由写入只接受单段 route 片段，例如 home、chapter-1 或 PAGE_01；'
             '不要使用 /、/home、home/、a/b、空白或包含空格的 route。list_project_pages 返回的 page_id 是路由 page 节点唯一可用的页面引用来源，'
-            '不要用标题、page_code 或猜测 ID。'
+            '不要用标题、page_code 或猜测 ID；归档页面不能作为路由绑定候选。'
         ),
         response_example={'total': 2,
          'items': [{'page_id': 3,
@@ -476,7 +476,7 @@ _COORDINATOR_TOOL_SPECS = (
                     'status': 'active',
                     'is_in_project_route': False,
                     'route_bindings': []}]},
-        response_notes='维护路由时只能使用这里返回的 page_id 绑定页面；不要用 page_code、标题或猜测值作为 page_id。',
+        response_notes='维护路由时只能使用这里返回的启用页面 page_id 绑定页面；不要用 page_code、标题或猜测值作为 page_id。',
     ),
 
     _tool(
@@ -743,6 +743,7 @@ _COORDINATOR_TOOL_SPECS = (
             '任务需要使用素材时先调用该工具；默认 scope=suggested，优先返回项目建议引用资源。'
             '当没有项目上下文、没有建议资源或建议资源筛选为空时，工具会自动回退全工作空间 active 普通资源，'
             '并通过 source 与 fallback_reason 说明来源；明确需要查全量资源库时传 scope=all。'
+            '使用返回资源生成页面时，必须优先按 approx_aspect_ratio / approx_aspect_ratio_value 匹配展示槽位宽高比。'
         ),
         response_example={'source': 'project_suggested',
          'fallback_reason': None,
@@ -948,6 +949,7 @@ _COMPONENT_MANAGER_TOOL_SPECS = (
         default_instructions=(
             '默认 scope=suggested，优先返回项目建议引用资源；没有项目上下文、没有建议资源或筛选为空时会自动回退全工作空间资源。'
             '组件或 preview_schema 明确需要浏览资源库素材时传 scope=all。'
+            '使用返回资源生成组件或 preview_schema 时，必须优先按 approx_aspect_ratio / approx_aspect_ratio_value 匹配展示槽位宽高比。'
         ),
         response_example={'source': 'workspace_all',
          'fallback_reason': 'no_project_context',

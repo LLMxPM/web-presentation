@@ -1,4 +1,4 @@
-<!-- 文件功能：提供工作空间级资源库页面，承载资源筛选、视觉预览、详情编辑、引用检查与归档删除。 -->
+<!-- 文件功能：提供工作空间级资源库页面，承载资源筛选、视觉预览、详情编辑、比例重算、引用检查与归档恢复删除。 -->
 <template>
   <div data-testid="assets-view" class="flex h-full min-h-0 flex-col gap-2">
     <PageTitleBar class="shrink-0" :title="workspaceTitle">
@@ -86,6 +86,17 @@
           </div>
           <div class="flex shrink-0 items-center gap-2">
             <BaseButton
+              v-if="activeView === 'active' && hasBatchSelection"
+              variant="ghost"
+              size="sm"
+              :disabled="!hasBackfillableBatchSelection || batchOperating || backfillRunning"
+              :title="hasBackfillableBatchSelection ? '重新计算选中资源比例' : '选中资源中没有可计算比例的资源'"
+              @click="openSelectedBackfillDialog"
+            >
+              <Ruler class="h-3.5 w-3.5" />
+              {{ backfillRunning ? '计算中' : '重新计算比例' }}
+            </BaseButton>
+            <BaseButton
               variant="ghost"
               size="sm"
               :disabled="!hasBatchSelection || batchOperating"
@@ -105,7 +116,17 @@
               批量归档
             </BaseButton>
             <BaseButton
-              v-else
+              v-if="activeView === 'archived'"
+              variant="ghost"
+              size="sm"
+              :disabled="!hasBatchSelection || batchOperating"
+              @click="restoreSelectedAssets"
+            >
+              <RotateCcw class="h-3.5 w-3.5" />
+              批量恢复
+            </BaseButton>
+            <BaseButton
+              v-if="activeView !== 'active'"
               variant="ghost"
               size="sm"
               :disabled="!hasBatchSelection || batchOperating"
@@ -304,6 +325,117 @@
     </BaseDialog>
 
     <BaseDialog
+      :model-value="backfillDialogVisible"
+      title="重新计算选中资源比例"
+      description="通过静态解析或 Runtime 渲染测量选中资源，计算可供 AI 布局参考的近似比例。"
+      size="wide"
+      body-preset="auto"
+      :z-index="215"
+      @update:model-value="value => { if (!value) closeBackfillDialog() }"
+    >
+      <div class="grid gap-4 lg:grid-cols-[260px_minmax(0,1fr)]">
+        <section class="space-y-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+          <div>
+            <h3 class="mb-2 text-xs font-black uppercase tracking-widest text-slate-400">资源类型</h3>
+            <label class="mb-2 flex items-center gap-2 text-sm font-bold text-slate-700">
+              <input v-model="backfillForm.image" type="checkbox" class="h-4 w-4 rounded border-slate-300 text-indigo-600" />
+              Image
+            </label>
+            <label class="mb-2 flex items-center gap-2 text-sm font-bold text-slate-700">
+              <input v-model="backfillForm.video" type="checkbox" class="h-4 w-4 rounded border-slate-300 text-indigo-600" />
+              Video
+            </label>
+            <label class="mb-2 flex items-center gap-2 text-sm font-bold text-slate-700">
+              <input v-model="backfillForm.drawio" type="checkbox" class="h-4 w-4 rounded border-slate-300 text-indigo-600" />
+              Draw.io
+            </label>
+            <label class="mb-2 flex items-center gap-2 text-sm font-bold text-slate-700">
+              <input v-model="backfillForm.formula" type="checkbox" class="h-4 w-4 rounded border-slate-300 text-indigo-600" />
+              Formula
+            </label>
+            <label class="flex items-center gap-2 text-sm font-bold text-slate-700">
+              <input v-model="backfillForm.mermaid" type="checkbox" class="h-4 w-4 rounded border-slate-300 text-indigo-600" />
+              Mermaid
+            </label>
+          </div>
+          <div>
+            <h3 class="mb-2 text-xs font-black uppercase tracking-widest text-slate-400">范围</h3>
+            <p class="rounded-lg bg-white p-3 text-xs leading-5 text-slate-500">
+              仅处理当前已勾选的 Image、Video、Draw.io、Formula、Mermaid 资源，其他类型会自动忽略。
+            </p>
+          </div>
+          <div>
+            <h3 class="mb-2 text-xs font-black uppercase tracking-widest text-slate-400">模式</h3>
+            <label class="mb-2 flex items-center gap-2 text-sm font-bold text-slate-700">
+              <input v-model="backfillForm.mode" type="radio" class="h-4 w-4 border-slate-300 text-indigo-600" value="preview" />
+              预览结果
+            </label>
+            <label class="flex items-center gap-2 text-sm font-bold text-slate-700">
+              <input v-model="backfillForm.mode" type="radio" class="h-4 w-4 border-slate-300 text-indigo-600" value="apply" />
+              直接写回
+            </label>
+          </div>
+          <p class="rounded-lg bg-white p-3 text-xs leading-5 text-slate-500">默认不会覆盖人工或资源助手维护的比例。预览模式只计算候选结果，不写入资源。</p>
+        </section>
+
+        <section class="min-h-[320px] rounded-xl border border-slate-200 bg-white p-4">
+          <div v-if="!backfillResult" class="flex h-full min-h-[260px] items-center justify-center text-center text-sm font-semibold text-slate-400">
+            运行后会在这里显示可更新、已跳过和失败资源。
+          </div>
+          <div v-else class="space-y-4">
+            <div class="grid grid-cols-4 gap-2">
+              <div class="rounded-lg bg-indigo-50 p-3"><p class="text-[10px] font-black uppercase text-indigo-400">可更新</p><p class="mt-1 text-lg font-black text-indigo-700">{{ backfillResult.succeeded_count }}</p></div>
+              <div class="rounded-lg bg-slate-50 p-3"><p class="text-[10px] font-black uppercase text-slate-400">已跳过</p><p class="mt-1 text-lg font-black text-slate-700">{{ backfillResult.skipped_count }}</p></div>
+              <div class="rounded-lg bg-rose-50 p-3"><p class="text-[10px] font-black uppercase text-rose-400">失败</p><p class="mt-1 text-lg font-black text-rose-700">{{ backfillResult.failed_count }}</p></div>
+              <div class="rounded-lg bg-emerald-50 p-3"><p class="text-[10px] font-black uppercase text-emerald-400">总数</p><p class="mt-1 text-lg font-black text-emerald-700">{{ backfillResult.requested_count }}</p></div>
+            </div>
+            <div class="max-h-[360px] overflow-y-auto rounded-lg border border-slate-100">
+              <table class="w-full text-left text-xs">
+                <thead class="sticky top-0 bg-slate-50 text-slate-500">
+                  <tr>
+                    <th class="px-3 py-2 font-black">资源</th>
+                    <th class="px-3 py-2 font-black">类型</th>
+                    <th class="px-3 py-2 font-black">当前</th>
+                    <th class="px-3 py-2 font-black">计算后</th>
+                    <th class="px-3 py-2 font-black">状态</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="job in backfillResult.jobs" :key="job.id" class="border-t border-slate-100">
+                    <td class="max-w-[180px] truncate px-3 py-2 font-bold text-slate-700">{{ job.asset_name || `#${job.asset_id}` }}</td>
+                    <td class="px-3 py-2 font-mono text-slate-500">{{ job.asset_type }}</td>
+                    <td class="px-3 py-2 text-slate-500">{{ job.current_approx_aspect_ratio || '-' }}</td>
+                    <td class="px-3 py-2 font-bold text-slate-700">{{ job.next_approx_aspect_ratio || '-' }}</td>
+                    <td class="px-3 py-2" :title="job.error_message || ''">
+                      <span class="font-bold text-slate-600">{{ formatBackfillJobStatus(job.status) }}</span>
+                      <p v-if="job.error_message" class="mt-1 max-w-[220px] truncate text-[11px] text-slate-400">{{ job.error_message }}</p>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <template #footer>
+        <BaseButton variant="ghost" :disabled="backfillRunning" @click="closeBackfillDialog">关闭</BaseButton>
+        <BaseButton
+          v-if="canApplyBackfillPreview"
+          variant="ghost"
+          :disabled="backfillRunning"
+          @click="applyBackfillPreview"
+        >
+          应用可更新项
+        </BaseButton>
+        <BaseButton :disabled="backfillRunning || !hasBackfillTypeSelection" @click="runBackfillFromDialog">
+          <Ruler class="h-3.5 w-3.5" />
+          {{ backfillRunning ? '计算中...' : backfillForm.mode === 'apply' ? '开始写回' : '开始预览' }}
+        </BaseButton>
+      </template>
+    </BaseDialog>
+
+    <BaseDialog
       :model-value="!!detailAsset"
       size="workbench"
       body-preset="immersive"
@@ -422,6 +554,17 @@
                       <div><dt class="text-slate-500">近似比例</dt><dd class="mt-1 font-bold text-slate-800">{{ formatAssetAspectRatio(detailAsset) }}</dd></div>
                       <div><dt class="text-slate-500">比例来源</dt><dd class="mt-1 font-bold text-slate-800">{{ formatAspectRatioSource(detailAsset.aspect_ratio_source) }}</dd></div>
                     </dl>
+                    <BaseButton
+                      v-if="canRecalculateDetailAspectRatio"
+                      class="mt-4"
+                      variant="ghost"
+                      size="sm"
+                      :disabled="backfillRunning"
+                      @click="recalculateDetailAssetAspectRatio"
+                    >
+                      <RefreshCw class="h-3.5 w-3.5" />
+                      重新计算比例
+                    </BaseButton>
                   </section>
                   <div>
                     <label class="mb-1 block text-xs font-bold text-slate-500">资源 name</label>
@@ -523,6 +666,7 @@ import {
   RefreshCw,
   Replace,
   RotateCcw,
+  Ruler,
   Save,
   Search,
   Sigma,
@@ -538,7 +682,9 @@ import {
   archiveWorkspaceAsset,
   batchArchiveWorkspaceAssets,
   batchDeleteWorkspaceAssets,
+  batchRestoreWorkspaceAssets,
   copyWorkspaceAsset,
+  createAssetRenderHintBackfillJobs,
   createWorkspaceAssetContent,
   deleteWorkspaceAsset,
   exportWorkspaceAssetPackage,
@@ -552,6 +698,7 @@ import {
   updateWorkspaceAsset,
   updateWorkspaceAssetContent,
   uploadWorkspaceAsset,
+  waitForAssetRenderHintBackfillJobGroup,
 } from '@/api/assets'
 import { getWorkspace } from '@/api/catalog'
 import { getErrorCode, getErrorMessage } from '@/api/http'
@@ -565,13 +712,16 @@ import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseDialog from '@/components/ui/BaseDialog.vue'
 import BaseCloseButton from '@/components/ui/BaseCloseButton.vue'
 import PaginationControl from '@/components/ui/PaginationControl.vue'
-import type { AssetBatchOperationResponse, AssetReferenceSummary, AssetResponse, AssetType, RecordStatus } from '@/types/api'
+import type { AssetBatchOperationResponse, AssetReferenceSummary, AssetRenderHintBackfillJobGroup, AssetRenderHintBackfillMode, AssetResponse, AssetType, RecordStatus } from '@/types/api'
 import { createConfirm, Message } from '@/utils/message'
 import { buildWorkspaceComponentsPath } from '@/utils/workspace-routes'
 import { downloadBlob } from '@/utils/zip-download'
 
 type AssetView = 'active' | 'archived' | 'history'
 type DetailTab = 'basic' | 'content' | 'references'
+type BackfillableAssetType = 'image' | 'video' | 'drawio' | 'mermaid' | 'formula'
+
+const BACKFILLABLE_ASSET_TYPES: BackfillableAssetType[] = ['image', 'video', 'drawio', 'mermaid', 'formula']
 
 interface AssetReferenceItem {
   kind: string
@@ -594,9 +744,11 @@ const uploading = ref(false)
 const packageImporting = ref(false)
 const batchOperating = ref(false)
 const batchExporting = ref(false)
+const backfillRunning = ref(false)
 const referencesLoading = ref(false)
 const createMode = ref(false)
 const uploadMode = ref(false)
+const backfillDialogVisible = ref(false)
 const assets = ref<AssetResponse[]>([])
 const total = ref(0)
 const page = ref(1)
@@ -657,6 +809,15 @@ const uploadForm = reactive({
   asset_type: 'image' as AssetType,
 })
 const uploadTagsText = ref('')
+const backfillForm = reactive({
+  image: true,
+  video: true,
+  drawio: true,
+  formula: true,
+  mermaid: true,
+  mode: 'preview' as AssetRenderHintBackfillMode,
+})
+const backfillResult = ref<AssetRenderHintBackfillJobGroup | null>(null)
 
 const workspaceId = computed(() => Number.parseInt(route.params.workspaceId as string, 10))
 const workspaceQuery = useQuery(
@@ -742,11 +903,54 @@ const activeReplaceAccept = computed(() => {
 })
 const selectedCount = computed(() => selectedAssetIds.value.size)
 const hasBatchSelection = computed(() => selectedCount.value > 0)
+const selectedBackfillableAssets = computed(() => assets.value.filter(asset => (
+  selectedAssetIds.value.has(asset.id)
+  && asset.status === 'active'
+  && !asset.history_kind
+  && isBackfillableAssetType(asset.asset_type)
+)))
+const hasBackfillableBatchSelection = computed(() => selectedBackfillableAssets.value.length > 0)
 const currentPageAssetIds = computed(() => assets.value.map(asset => asset.id))
 const allCurrentPageSelected = computed(() => (
   currentPageAssetIds.value.length > 0
   && currentPageAssetIds.value.every(assetId => selectedAssetIds.value.has(assetId))
 ))
+const hasBackfillTypeSelection = computed(() => (
+  backfillForm.image
+  || backfillForm.video
+  || backfillForm.drawio
+  || backfillForm.formula
+  || backfillForm.mermaid
+))
+const selectedBackfillAssetTypes = computed<BackfillableAssetType[]>(() => {
+  const types: BackfillableAssetType[] = []
+  if (backfillForm.image) types.push('image')
+  if (backfillForm.video) types.push('video')
+  if (backfillForm.drawio) types.push('drawio')
+  if (backfillForm.formula) types.push('formula')
+  if (backfillForm.mermaid) types.push('mermaid')
+  return types
+})
+const backfillPreviewUpdatableAssetIds = computed(() => (
+  backfillResult.value?.jobs
+    .filter(job => job.status === 'succeeded' && Boolean(job.next_render_metadata))
+    .map(job => job.asset_id) || []
+))
+const canApplyBackfillPreview = computed(() => (
+  backfillForm.mode === 'preview'
+  && backfillPreviewUpdatableAssetIds.value.length > 0
+  && Boolean(backfillResult.value)
+))
+const canRecalculateDetailAspectRatio = computed(() => {
+  const asset = detailAsset.value
+  return Boolean(
+    asset
+    && asset.status === 'active'
+    && !asset.history_kind
+    && isBackfillableAssetType(asset.asset_type)
+    && (!asset.approx_aspect_ratio || asset.aspect_ratio_source === 'auto')
+  )
+})
 
 watch(
   [workspaceId, activeView, assetTypeFilter, activeTag, searchKeyword, sortValue, page, pageSize],
@@ -1093,6 +1297,151 @@ async function createAsset(): Promise<void> {
   }
 }
 
+function openSelectedBackfillDialog(): void {
+  if (!Number.isFinite(workspaceId.value) || activeView.value !== 'active') return
+  const selectedAssets = selectedBackfillableAssets.value
+  if (selectedAssets.length === 0) {
+    Message.info('选中资源中没有可重新计算比例的资源。')
+    return
+  }
+  backfillDialogVisible.value = true
+  backfillResult.value = null
+  backfillForm.image = selectedAssets.some(asset => asset.asset_type === 'image')
+  backfillForm.video = selectedAssets.some(asset => asset.asset_type === 'video')
+  backfillForm.drawio = selectedAssets.some(asset => asset.asset_type === 'drawio')
+  backfillForm.formula = selectedAssets.some(asset => asset.asset_type === 'formula')
+  backfillForm.mermaid = selectedAssets.some(asset => asset.asset_type === 'mermaid')
+  backfillForm.mode = 'preview'
+}
+
+function closeBackfillDialog(): void {
+  if (backfillRunning.value) return
+  backfillDialogVisible.value = false
+}
+
+async function runBackfillFromDialog(): Promise<void> {
+  if (!Number.isFinite(workspaceId.value) || !hasBackfillTypeSelection.value) return
+  try {
+    const assetIds = resolveSelectedBackfillAssetIds()
+    if (assetIds.length === 0) {
+      Message.info('选中资源中没有可重新计算比例的资源。')
+      return
+    }
+    const completed = await executeBackfill({
+      mode: backfillForm.mode,
+      assetIds,
+      assetTypes: selectedBackfillAssetTypes.value,
+    })
+    backfillResult.value = completed
+    showBackfillResultMessage(completed, backfillForm.mode)
+  } catch (error) {
+    Message.error(getErrorMessage(error, '资源比例回填失败。'))
+  }
+}
+
+async function applyBackfillPreview(): Promise<void> {
+  const assetIds = backfillPreviewUpdatableAssetIds.value
+  if (assetIds.length === 0) return
+  try {
+    const completed = await executeBackfill({
+      mode: 'apply',
+      assetIds,
+      assetTypes: selectedBackfillAssetTypes.value,
+    })
+    backfillResult.value = completed
+    showBackfillResultMessage(completed, 'apply')
+  } catch (error) {
+    Message.error(getErrorMessage(error, '应用资源比例回填结果失败。'))
+  }
+}
+
+async function recalculateDetailAssetAspectRatio(): Promise<void> {
+  const asset = detailAsset.value
+  if (!Number.isFinite(workspaceId.value) || !asset || !isBackfillableAssetType(asset.asset_type)) return
+  try {
+    const completed = await executeBackfill({
+      mode: 'apply',
+      assetIds: [asset.id],
+      assetTypes: [asset.asset_type],
+    })
+    showBackfillResultMessage(completed, 'apply')
+  } catch (error) {
+    Message.error(getErrorMessage(error, '重新计算资源比例失败。'))
+  }
+}
+
+async function executeBackfill(options: {
+  mode: AssetRenderHintBackfillMode
+  assetIds?: number[]
+  assetTypes: BackfillableAssetType[]
+}): Promise<AssetRenderHintBackfillJobGroup> {
+  backfillRunning.value = true
+  try {
+    let group = await createAssetRenderHintBackfillJobs(workspaceId.value, {
+      asset_types: options.assetTypes,
+      asset_ids: options.assetIds,
+      mode: options.mode,
+      overwrite_manual: false,
+    })
+    backfillResult.value = group
+    if (group.requested_count > 0 && isBackfillGroupActive(group.status)) {
+      group = await waitForAssetRenderHintBackfillJobGroup(group.job_group_id, {
+        onProgress: nextGroup => {
+          backfillResult.value = nextGroup
+        },
+      })
+    }
+    if (options.mode === 'apply') {
+      await refreshAssets()
+      syncDetailAssetAfterBackfill()
+    }
+    return group
+  } finally {
+    backfillRunning.value = false
+  }
+}
+
+function resolveSelectedBackfillAssetIds(): number[] {
+  return selectedBackfillableAssets.value
+    .filter(asset => isBackfillAssetTypeSelected(asset.asset_type))
+    .map(asset => asset.id)
+}
+
+function isBackfillAssetTypeSelected(assetType: AssetType): boolean {
+  return isBackfillableAssetType(assetType) && selectedBackfillAssetTypes.value.includes(assetType)
+}
+
+function isBackfillableAssetType(assetType: AssetType | string): assetType is BackfillableAssetType {
+  return BACKFILLABLE_ASSET_TYPES.includes(assetType as BackfillableAssetType)
+}
+
+function isBackfillGroupActive(status: AssetRenderHintBackfillJobGroup['status']): boolean {
+  return status === 'pending' || status === 'running'
+}
+
+function showBackfillResultMessage(group: AssetRenderHintBackfillJobGroup, mode: AssetRenderHintBackfillMode): void {
+  if (group.requested_count === 0) {
+    Message.info('选中资源中没有需要重新计算比例的资源。')
+    return
+  }
+  const actionText = mode === 'apply' ? '写回' : '计算'
+  if (group.failed_count === 0) {
+    Message.success(`资源比例${actionText}完成：可更新 ${group.succeeded_count} 个，跳过 ${group.skipped_count} 个。`)
+    return
+  }
+  Message.warning(`资源比例${actionText}部分完成：失败 ${group.failed_count} 个，${group.failures[0]?.detail || '请查看结果列表。'}`)
+}
+
+function syncDetailAssetAfterBackfill(): void {
+  if (!detailAsset.value) return
+  const refreshed = assets.value.find(asset => asset.id === detailAsset.value?.id)
+  if (refreshed) {
+    detailAsset.value = refreshed
+    selectedAsset.value = refreshed
+    syncEditForm(refreshed)
+  }
+}
+
 async function saveAssetMetadata(): Promise<void> {
   if (!Number.isFinite(workspaceId.value) || !detailAsset.value) return
   if (!editForm.name.trim() || !editForm.original_name.trim()) {
@@ -1226,6 +1575,30 @@ async function archiveSelectedAssets(): Promise<void> {
     await refreshAssetsWithPageFallback()
   } catch (error) {
     Message.error(getErrorMessage(error, '批量归档资源失败'))
+  } finally {
+    batchOperating.value = false
+  }
+}
+
+async function restoreSelectedAssets(): Promise<void> {
+  const assetIds = [...selectedAssetIds.value]
+  if (!Number.isFinite(workspaceId.value) || assetIds.length === 0) return
+  if (activeView.value !== 'archived') {
+    Message.warning('仅归档资源支持批量恢复')
+    return
+  }
+  const confirmed = await createConfirm(`确认恢复选中的 ${assetIds.length} 个归档资源吗？`, '批量恢复资源')
+  if (!confirmed) return
+
+  batchOperating.value = true
+  try {
+    const result = await batchRestoreWorkspaceAssets(workspaceId.value, assetIds)
+    showBatchOperationResult(result, '恢复')
+    closeDetailIfSelected(assetIds)
+    clearBatchSelection()
+    await refreshAssetsWithPageFallback()
+  } catch (error) {
+    Message.error(getErrorMessage(error, '批量恢复资源失败'))
   } finally {
     batchOperating.value = false
   }
@@ -1441,7 +1814,7 @@ function buildAspectRatioUpdateValue(): string | null | undefined {
 }
 
 function canEditAssetAspectRatio(asset: AssetResponse): boolean {
-  return ['image', 'icon', 'drawio', 'mermaid'].includes(asset.asset_type)
+  return ['image', 'icon', 'video', 'drawio', 'mermaid', 'formula'].includes(asset.asset_type)
 }
 
 function formatAssetAspectRatio(asset: AssetResponse): string {
@@ -1453,6 +1826,15 @@ function formatAspectRatioSource(source: string | null | undefined): string {
   if (source === 'manual') return '人工'
   if (source === 'agent') return '资源助手'
   return '-'
+}
+
+function formatBackfillJobStatus(status: string): string {
+  if (status === 'pending') return '等待中'
+  if (status === 'running') return '计算中'
+  if (status === 'succeeded') return '可更新'
+  if (status === 'skipped') return '已跳过'
+  if (status === 'failed') return '失败'
+  return status || '-'
 }
 
 function formatBytes(size: number): string {

@@ -14,6 +14,7 @@ from app.models.ai_agent_runtime import (
 from app.models.ai_llm import AiLlmConfig, AiLlmProviderConfig, AiLlmSlotBinding
 from app.models.user import UserSession, User
 from app.models.asset import WorkspaceAsset
+from app.models.asset_render_hint_backfill_job import AssetRenderHintBackfillJob
 from app.models.component_component_dependency import ComponentVersionComponentDependency
 from app.models.component_resource import ComponentVersionComponentResource
 from app.models.font import WorkspaceFontConfig
@@ -69,6 +70,7 @@ __all__ = [
     "ComponentVersionComponentDependency",
     "ComponentVersionComponentResource",
     "WorkspaceAsset",
+    "AssetRenderHintBackfillJob",
     "WorkspaceFontConfig",
     "WorkspaceStyle",
     "WorkspaceStyleSuggestedComponent",

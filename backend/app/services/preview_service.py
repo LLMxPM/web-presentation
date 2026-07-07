@@ -117,7 +117,7 @@ class PreviewService:
     async def _build_workspace_asset_mapping(
         self,
         workspace_id: int,
-    ) -> tuple[dict[str, str], dict[str, dict[str, str]]]:
+    ) -> tuple[dict[str, str], dict[str, dict[str, object]]]:
         """构建 preview manifest 的资源映射与资源渲染元数据。"""
 
         return await self.artifact_builder.build_workspace_asset_snapshot(workspace_id)

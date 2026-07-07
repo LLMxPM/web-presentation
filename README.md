@@ -18,7 +18,7 @@
 - **快速可视反馈**：Runtime 基于 Vue 与 Vite 加载页面、组件和配置包，为 Editor 提供 iframe 预览、截图预览、组件预览和构建能力。
 - **上下文隔离与注入**：Backend 为 AI 构造当前项目、页面、组件和资源的必要上下文，让 AI 聚焦具体创作，不需要关心 Runtime 内部实现。
 - **平台化管理**：支持多用户、工作空间、项目、页面、组件、资源、主题、样式、AI 设置和构建产物的集中管理。
-- **私有化交付**：平台镜像、Runtime 镜像和 compose 模板支持在自有环境中部署，便于团队控制数据、模型凭证和发布流程。
+- **私有化交付**：轻量单容器、平台镜像、Runtime 镜像和 compose 模板支持在自有环境中部署，便于团队控制数据、模型凭证和发布流程。
 
 ## 产品定位
 
@@ -44,7 +44,7 @@
 | Runtime | 预览与构建引擎 | 基于 Vue/Vite 渲染页面和组件，承接预览、截图、诊断和发布构建 |
 | Infra | 部署与运行环境 | 提供 Docker 镜像、compose 模板、发布流程和运行时依赖约束 |
 
-详细架构、模块边界和目标业务流程见 [平台架构说明](./docs/developer/platform-architecture.md)。
+详细架构、模块边界和目标业务流程见 [平台架构总览](./docs/developer/architecture/overview.md)。
 
 ## 成果展示
 
@@ -60,38 +60,34 @@
 
 ## 快速部署
 
-试部署推荐使用内置依赖的单机编排。它会拉起平台镜像、Runtime 镜像、PostgreSQL 和 Redis，适合在一台机器上快速验证完整链路。
+个人或小团队快速部署推荐使用 SQLite 轻量单容器编排。它会在一个容器内启动 Backend、Runtime 和 Gateway，主数据写入 SQLite 文件，运行态使用进程内 memory runtime，不需要额外准备 PostgreSQL 和 Redis。
 
 1. 准备 Docker Engine 与 Docker Compose v2。
-2. 打开 `deploy/docker-compose.with-deps.yml`，修改文件顶部注释列出的密码、访问地址和 `AI_SECRET_ENCRYPTION_KEY`。
+2. 打开 `deploy/docker-compose.sqlite.yml`，修改文件顶部注释列出的访问地址、默认管理员密码和 `AI_SECRET_ENCRYPTION_KEY`。
 3. 在 `deploy/` 目录启动服务：
 
 ```bash
-docker compose -f docker-compose.with-deps.yml pull
-docker compose -f docker-compose.with-deps.yml up -d
+docker compose -f docker-compose.sqlite.yml config
+docker compose -f docker-compose.sqlite.yml pull
+docker compose -f docker-compose.sqlite.yml up -d
 ```
 
-默认启动后访问 `http://127.0.0.1:8080`。外部 PostgreSQL/Redis、production env 版、HTTPS、升级和回滚见 [生产部署指南](./docs/developer/deployment-guide.md)。
+默认启动后访问 `http://127.0.0.1:8080`。内置 PostgreSQL/Redis、外部依赖、production env 版、HTTPS、升级和回滚见 [生产部署指南](./docs/developer/deployment/README.md)。
 
 ## 文档导航
 
 | 文档 | 内容 |
 | :--- | :--- |
 | [文档中心](./docs/README.md) | 用户文档、开发文档和图片资源目录 |
+| [用户文档](./docs/user/README.md) | 平台介绍、快速上手、AI 协作、资产管理和部署入口 |
 | [平台介绍](./docs/user/platform-overview.md) | 产品定位、核心概念、典型场景和平台组成 |
-| [演示文稿创作路径对比](./docs/user/platform-comparison.md) | 对比演示创作产品、PPT skills、OOXML/HTML/图片生成工具与平台化资产沉淀路径 |
-| [Demo 使用指南](./docs/user/demo-guide.md) | 公开 Demo 地址、体验账号、推荐流程和 AI 设置注意事项 |
-| [用户快速上手](./docs/user/getting-started.md) | 登录、工作空间、项目页面、AI、预览和构建流程 |
-| [AI 协作创作指南](./docs/user/ai-assisted-creation/README.md) | AI 侧边栏、工具确认、上下文注入和协作建议 |
-| [主题、字体与样式管理体系](./docs/user/design-system-management.md) | 主题库、字体注册、样式库、离线包和项目应用边界 |
-| [组件管理体系](./docs/user/component-management.md) | 组件草稿、发布版本、引用升级、离线包和 AI 协作方式 |
-| [资源管理体系](./docs/user/resource-management.md) | 资源类型、可编辑内容、替换归档删除、引用检查和字体资源 |
-| [当前状态与路线](./docs/user/project-status.md) | 已落地能力、建设中事项和后续方向 |
-| [平台架构说明](./docs/developer/platform-architecture.md) | 平台目标、模块职责、目标流程和 Runtime 子模块协作 |
-| [开发与测试指南](./docs/developer/development-guide.md) | 本地依赖、测试入口、测试数据和运行态维护 |
-| [测试治理说明](./docs/developer/testing-strategy.md) | L0-L3 测试分层、目录归属和 CI 策略 |
-| [生产部署指南](./docs/developer/deployment-guide.md) | 外部依赖简化版、内置依赖简化版、production env 版 compose 部署与运维 |
-| [CI/CD 与容器部署说明](./docs/developer/deployment-cicd.md) | 平台镜像、Runtime 镜像、Docker Hub 发布和 compose 策略 |
+| [快速上手](./docs/user/getting-started.md) | 登录、工作空间、项目页面、AI、预览和构建流程 |
+| [AI 协作创作](./docs/user/ai/README.md) | AI 侧边栏、工具确认、上下文注入和协作建议 |
+| [开发文档](./docs/developer/README.md) | 架构、Backend、Editor、Runtime 接入、测试、部署和参考资料 |
+| [平台架构总览](./docs/developer/architecture/overview.md) | 平台目标、模块职责、目标流程和 Runtime 子模块协作 |
+| [本地开发指南](./docs/developer/getting-started.md) | 本地依赖、启动流程、测试数据和运行态维护 |
+| [测试文档](./docs/developer/testing/README.md) | 测试分层、命令、契约测试和 E2E smoke |
+| [生产部署指南](./docs/developer/deployment/README.md) | compose 部署、环境变量、备份恢复、升级回滚和排障 |
 | [Runtime 项目说明](./runtime/README.md) | `web-runtime-vue` 子项目自身的能力、运行方式和对接文档 |
 
 ## 仓库结构
@@ -103,8 +99,9 @@ web-presentation/
 ├── runtime/                 # web-runtime-vue Git 子模块
 ├── tests/                   # 根仓契约测试与 E2E smoke
 ├── docs/                    # 用户文档、开发文档和文档图片资源
-├── deploy/                  # 外部依赖简化版、内置依赖简化版和 production env 版 compose 模板
+├── deploy/                  # SQLite 轻量版、外部依赖版、内置依赖版和 production env 版 compose 模板
 ├── Dockerfile               # 平台单镜像构建入口
+├── Dockerfile.lite          # SQLite 轻量单容器镜像构建入口
 └── docker-compose.dev.yml   # 本地开发/测试 PostgreSQL 与 Redis 入口，非部署模板
 ```
 

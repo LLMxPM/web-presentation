@@ -6,7 +6,7 @@ import asyncio
 import json
 from collections.abc import AsyncIterator
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from httpx import AsyncClient
@@ -1280,6 +1280,88 @@ async def test_pydantic_runner_should_fail_idle_model_stream(
     assert [event.event for event in events] == ["model.request.started", "message.delta", "run.error"]
     assert failed_run.status == "failed"
     assert failed_run.content == "已生成但未闭合的内容。"
+    assert failed_run.error_code == "AI_AGENT_STREAM_IDLE_TIMEOUT"
+
+
+async def test_pydantic_runner_should_fail_idle_stream_when_iterator_ignores_cancel() -> None:
+    """底层流任务不响应取消时，也应按空闲超时返回错误而不是永久挂起。"""
+
+    class CancellationResistantStream:
+        """模拟 HTTP 流关闭异常后仍不响应 task.cancel 的异步迭代器。"""
+
+        def __init__(self) -> None:
+            """初始化取消观测与释放信号。"""
+
+            self.cancel_seen = asyncio.Event()
+            self.release = asyncio.Event()
+
+        def __aiter__(self) -> "CancellationResistantStream":
+            """返回自身作为异步迭代器。"""
+
+            return self
+
+        async def __anext__(self) -> Any:
+            """吞掉第一次取消，直到测试释放后才真正结束。"""
+
+            while not self.release.is_set():
+                try:
+                    await self.release.wait()
+                except asyncio.CancelledError:
+                    self.cancel_seen.set()
+            raise StopAsyncIteration
+
+    stream = CancellationResistantStream()
+    runner = PydanticAgentRunner(
+        cast(PlatformAgentRuntimeStore, object()),
+        stream_idle_timeout_seconds=0.01,
+        stream_cancel_grace_seconds=0.01,
+    )
+
+    try:
+        with pytest.raises(AppException) as exc_info:
+            async for _ in runner._iter_stream_events(stream):
+                pass
+    finally:
+        stream.release.set()
+        await asyncio.sleep(0)
+
+    assert exc_info.value.code == "AI_AGENT_STREAM_IDLE_TIMEOUT"
+    assert stream.cancel_seen.is_set()
+
+
+async def test_platform_runtime_should_recover_stale_active_run(
+    authenticated_client: AsyncClient,
+) -> None:
+    """读取运行态时应能把长时间无事件的 active run 收敛为失败终态。"""
+
+    _, session_id, scope = await _create_workspace_session(
+        authenticated_client,
+        workspace_name="Pydantic Runner stale active 工作空间",
+        session_name="Pydantic Runner stale active 会话",
+    )
+
+    async with get_session_factory()() as db_session:
+        store = PlatformAgentRuntimeStore(db_session, user_id=1)
+        run_start = await store.start_run(
+            session_id=session_id,
+            agent_id="component-manager",
+            scope=scope,
+            run_id="pydantic-runner-stale-active",
+            message="开始长任务",
+            image_attachment_ids=[],
+        )
+        await asyncio.sleep(0.02)
+
+        recovered_event = await store.recover_stale_active_run(
+            run_model=run_start.run_model,
+            idle_timeout_seconds=0.01,
+        )
+        failed_run = await store.get_latest_run_model(session_id=session_id, agent_id="component-manager")
+
+    assert recovered_event is not None
+    assert recovered_event.event == "run.error"
+    assert failed_run is not None
+    assert failed_run.status == "failed"
     assert failed_run.error_code == "AI_AGENT_STREAM_IDLE_TIMEOUT"
 
 

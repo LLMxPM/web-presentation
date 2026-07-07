@@ -1,0 +1,61 @@
+# 文件功能：提供 SQLite + memory runtime 的轻量单容器部署编排模板，适合个人或小团队快速部署。
+
+# 使用前请至少修改：
+# - DEFAULT_ADMIN_PASSWORD、AI_SECRET_ENCRYPTION_KEY：正式部署前必须替换。
+# - BACKEND_PUBLIC_BASE_URL、RUNTIME_PUBLIC_BASE_URL、CORS_ORIGINS：部署到真实域名或 IP 时改为实际访问入口。
+# - AI_SECRET_ENCRYPTION_KEY 必须是 Fernet 密钥：32 字节随机值的 URL-safe base64 编码，
+#   通常长度为 44 个字符并以 = 结尾；可用命令生成：
+#   python -c "import base64, os; print(base64.urlsafe_b64encode(os.urandom(32)).decode())"
+# - 该模板不启动 PostgreSQL/Redis；SQLite 数据库、本地资源、截图和构建产物都保存在 lite-data volume。
+# - 默认拉取 Docker Hub 发布镜像。需要从源码验证镜像时，先初始化 runtime 子模块，再在仓库根目录执行：
+#   git submodule update --init --recursive runtime
+#   docker build -f Dockerfile.lite -t llmxpm/web-presentation:sqlite-lite .
+
+services:
+  platform-lite:
+    image: llmxpm/web-presentation:sqlite-lite
+    restart: unless-stopped
+    working_dir: /app/backend
+    environment:
+      DATABASE_URL: "sqlite+aiosqlite:////app/backend/data/web_presentation.db"
+      REDIS_URL: "memory://lite"
+      REDIS_KEY_PREFIX: "web_presentation_lite"
+      BACKEND_PUBLIC_BASE_URL: "http://127.0.0.1:8080"
+      RUNTIME_BASE_URL: "http://127.0.0.1:7373"
+      RUNTIME_PUBLIC_BASE_URL: "http://127.0.0.1:8080/runtime"
+      RUNTIME_PREVIEW_JWKS_URL: "http://127.0.0.1:8000/.well-known/jwks.json"
+      RUNTIME_BACKEND_API_BASE_URL: "http://127.0.0.1:8000"
+      RUNTIME_SERVER_HOST: "0.0.0.0"
+      RUNTIME_SERVER_PORT: "7373"
+      RUNTIME_SERVER_BASE_PATH: "/runtime/"
+      RUNTIME_SERVICE_TOKEN_AUDIENCE: "runtime-backend"
+      RUNTIME_PREVIEW_TOKEN_AUDIENCE: "runtime-preview"
+      RUNTIME_BUILD_TOKEN_AUDIENCE: "runtime-build"
+      RUNTIME_DIAGNOSTICS_TOKEN_AUDIENCE: "runtime-diagnostics"
+      RUNTIME_LOG_LEVEL: "info"
+      RUNTIME_LOG_FORMAT: "json"
+      RUNTIME_ACCESS_LOG_ENABLED: "true"
+      RUNTIME_STANDALONE_PREVIEW_ENABLED: "false"
+      CORS_ORIGINS: '["http://127.0.0.1:8080"]'
+      DEFAULT_ADMIN_PASSWORD: "change-admin-password"
+      AI_SECRET_ENCRYPTION_KEY: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+      LOG_LEVEL: "INFO"
+      LOG_FORMAT: "json"
+      ACCESS_LOG_ENABLED: "true"
+      CLIENT_ERROR_LOG_ENABLED: "true"
+      CLIENT_ERROR_LOG_MAX_BYTES: "16384"
+      ASSET_STORAGE_DRIVER: "local"
+    volumes:
+      - lite-data:/app/backend/data
+    ports:
+      - "8080:80"
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - curl -fsS http://127.0.0.1/healthz >/dev/null && curl -fsS http://127.0.0.1:8000/healthz >/dev/null && curl -fsS http://127.0.0.1:7373/__runtime_healthz >/dev/null
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  lite-data:
