@@ -1,6 +1,6 @@
 # 部署环境变量
 
-production env 版通过 `deploy/.env` 管理环境变量，模板来自 `deploy/.env.example`。两个简化版 compose 不读取该文件，而是在 compose 文件内直接写变量。
+production env 版通过 `deploy/.env` 管理环境变量，模板来自 `deploy/.env.example`。SQLite 轻量单容器版和两个简化版 compose 不读取该文件，而是在 compose 文件内直接写变量。
 
 ## 对外访问
 
@@ -16,9 +16,11 @@ production env 版通过 `deploy/.env` 管理环境变量，模板来自 `deploy
 
 | 变量 | 说明 |
 | :--- | :--- |
-| `DATABASE_URL` | PostgreSQL 连接串 |
-| `REDIS_URL` | Redis 连接串 |
-| `REDIS_KEY_PREFIX` | Redis key 前缀，建议同一 Redis 多环境隔离 |
+| `DATABASE_URL` | 主数据库连接串；常规部署使用 PostgreSQL，SQLite 轻量模式使用 `sqlite+aiosqlite:////app/backend/data/web_presentation.db` |
+| `REDIS_URL` | 运行态存储连接串；常规部署使用 Redis，SQLite 轻量模式使用 `memory://lite` |
+| `REDIS_KEY_PREFIX` | Redis 或 memory runtime key 前缀，建议同一运行态多环境隔离 |
+
+SQLite 轻量模式不依赖外部 PostgreSQL/Redis。`memory://` 运行态只保存在当前 Backend 进程内，容器重启后短生命周期预览 artifact、锁和构建运行态会失效；主数据仍保存在 SQLite 文件中。
 
 ## 默认管理员
 

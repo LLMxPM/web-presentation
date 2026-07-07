@@ -18,7 +18,7 @@
 - **快速可视反馈**：Runtime 基于 Vue 与 Vite 加载页面、组件和配置包，为 Editor 提供 iframe 预览、截图预览、组件预览和构建能力。
 - **上下文隔离与注入**：Backend 为 AI 构造当前项目、页面、组件和资源的必要上下文，让 AI 聚焦具体创作，不需要关心 Runtime 内部实现。
 - **平台化管理**：支持多用户、工作空间、项目、页面、组件、资源、主题、样式、AI 设置和构建产物的集中管理。
-- **私有化交付**：平台镜像、Runtime 镜像和 compose 模板支持在自有环境中部署，便于团队控制数据、模型凭证和发布流程。
+- **私有化交付**：轻量单容器、平台镜像、Runtime 镜像和 compose 模板支持在自有环境中部署，便于团队控制数据、模型凭证和发布流程。
 
 ## 产品定位
 
@@ -60,18 +60,19 @@
 
 ## 快速部署
 
-试部署推荐使用内置依赖的单机编排。它会拉起平台镜像、Runtime 镜像、PostgreSQL 和 Redis，适合在一台机器上快速验证完整链路。
+个人或小团队快速部署推荐使用 SQLite 轻量单容器编排。它会在一个容器内启动 Backend、Runtime 和 Gateway，主数据写入 SQLite 文件，运行态使用进程内 memory runtime，不需要额外准备 PostgreSQL 和 Redis。
 
 1. 准备 Docker Engine 与 Docker Compose v2。
-2. 打开 `deploy/docker-compose.with-deps.yml`，修改文件顶部注释列出的密码、访问地址和 `AI_SECRET_ENCRYPTION_KEY`。
+2. 打开 `deploy/docker-compose.sqlite.yml`，修改文件顶部注释列出的访问地址、默认管理员密码和 `AI_SECRET_ENCRYPTION_KEY`。
 3. 在 `deploy/` 目录启动服务：
 
 ```bash
-docker compose -f docker-compose.with-deps.yml pull
-docker compose -f docker-compose.with-deps.yml up -d
+docker compose -f docker-compose.sqlite.yml config
+docker compose -f docker-compose.sqlite.yml pull
+docker compose -f docker-compose.sqlite.yml up -d
 ```
 
-默认启动后访问 `http://127.0.0.1:8080`。外部 PostgreSQL/Redis、production env 版、HTTPS、升级和回滚见 [生产部署指南](./docs/developer/deployment/README.md)。
+默认启动后访问 `http://127.0.0.1:8080`。内置 PostgreSQL/Redis、外部依赖、production env 版、HTTPS、升级和回滚见 [生产部署指南](./docs/developer/deployment/README.md)。
 
 ## 文档导航
 
@@ -98,8 +99,9 @@ web-presentation/
 ├── runtime/                 # web-runtime-vue Git 子模块
 ├── tests/                   # 根仓契约测试与 E2E smoke
 ├── docs/                    # 用户文档、开发文档和文档图片资源
-├── deploy/                  # 外部依赖简化版、内置依赖简化版和 production env 版 compose 模板
+├── deploy/                  # SQLite 轻量版、外部依赖版、内置依赖版和 production env 版 compose 模板
 ├── Dockerfile               # 平台单镜像构建入口
+├── Dockerfile.lite          # SQLite 轻量单容器镜像构建入口
 └── docker-compose.dev.yml   # 本地开发/测试 PostgreSQL 与 Redis 入口，非部署模板
 ```
 

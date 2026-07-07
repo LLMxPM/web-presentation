@@ -1,4 +1,4 @@
-# 文件功能：限制平台容器构建上下文，避免把本地依赖、缓存、日志和 Runtime 私有源码打进镜像。
+# 文件功能：限制平台容器构建上下文，避免把本地依赖、缓存、日志和运行产物打进镜像。
 
 .agents/
 .codex/
@@ -42,11 +42,4 @@ backend/.env.*
 backend/build_artifacts/
 backend/data/
 
-runtime/*
-!runtime/src/
-runtime/src/*
-!runtime/src/runtime-kit/
-runtime/src/runtime-kit/*
-!runtime/src/runtime-kit/manifest/
-runtime/src/runtime-kit/manifest/*
-!runtime/src/runtime-kit/manifest/runtime-kit.manifest.json
+# Dockerfile.lite 需要 Runtime 源码与 lockfile；依赖和构建产物由上方全局规则排除。

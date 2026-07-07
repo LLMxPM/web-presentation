@@ -210,5 +210,52 @@ jobs:
           annotations: ${{ steps.meta.outputs.annotations }}
           provenance: true
           sbom: true
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=platform
+          cache-to: type=gha,mode=max,scope=platform
+
+  build-and-push-lite:
+    runs-on: ubuntu-latest
+    needs:
+      - release-meta
+      - backend-tests
+      - editor-tests
+      - contracts
+      - e2e-smoke
+      - validate-runtime-image
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: docker/login-action@v4
+        with:
+          username: ${{ vars.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+      - uses: docker/setup-buildx-action@v4
+      - id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: docker.io/llmxpm/web-presentation
+          tags: |
+            type=raw,value=sqlite-lite-${{ needs.release-meta.outputs.release_tag }}
+            type=raw,value=sqlite-lite,enable=${{ needs.release-meta.outputs.push_latest == 'true' }}
+          labels: |
+            org.opencontainers.image.title=web-presentation-sqlite-lite
+            org.opencontainers.image.description=web-presentation SQLite + memory runtime single-container image
+            org.opencontainers.image.version=sqlite-lite-${{ needs.release-meta.outputs.release_tag }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            com.web-presentation.image.variant=sqlite-lite
+            com.web-presentation.runtime.embedded=true
+            com.web-presentation.runtime.sha=${{ needs.validate-runtime-image.outputs.runtime_sha }}
+            com.web-presentation.runtime.image=${{ needs.validate-runtime-image.outputs.runtime_image }}
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: Dockerfile.lite
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          annotations: ${{ steps.meta.outputs.annotations }}
+          provenance: true
+          sbom: true
+          cache-from: type=gha,scope=platform-lite
+          cache-to: type=gha,mode=max,scope=platform-lite
