@@ -333,7 +333,7 @@ def test_page_design_guidance_should_use_wireframe_as_internal_method() -> None:
     coordinator_prompt = coordinator.default_prompt
     component_prompt = component_manager.default_prompt
 
-    assert "先在内部使用文本线框图或区域清单梳理布局，再写 Vue SFC 代码" in coordinator_prompt
+    assert "必须先在内部思考中使用文本线框图或区域清单梳理布局、容量和溢出风险，再写 Vue SFC 代码" in coordinator_prompt
     assert "文本线框图是布局思考方法" in coordinator_prompt
     assert "不要为了展示线框图而暂停等待用户确认" in coordinator_prompt
     assert "先在内部使用文本线框图或区域清单梳理布局，再写 Vue SFC 代码" in component_prompt

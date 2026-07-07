@@ -927,6 +927,8 @@ class AssetService:
         file_names = {item.file_name for item in [asset, *history_assets] if item.file_name}
         for history_asset in history_assets:
             await self.session.delete(history_asset)
+        # 历史记录通过 source_asset_id 自引用当前资产，必须先刷新删除，避免同表批量删除时主记录排在前面。
+        await self.session.flush()
         await self.session.delete(asset)
         await self.session.commit()
 
