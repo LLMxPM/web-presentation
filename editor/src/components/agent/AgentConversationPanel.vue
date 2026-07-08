@@ -265,6 +265,7 @@ import type {
 } from '@/types/api'
 import { useAgentSessionStore } from '@/stores/agent-session'
 import { logClientWarning } from '@/utils/client-logger'
+import { createClientUuid } from '@/utils/id'
 import { Message } from '@/utils/message'
 
 const FORCE_CANCEL_AVAILABLE_DELAY_MS = 10_000
@@ -1348,7 +1349,7 @@ async function handleSend() {
   lastRunIssue.value = null
   writeSessionValue(mutationRefreshEventsBySession.value, sessionId, [])
 
-  const runId = crypto.randomUUID()
+  const runId = createClientUuid()
   agentSessionStore.beginLocalRun(sessionId, message, attachments, runId)
   setSessionStreaming(sessionId, true)
 
