@@ -49,6 +49,7 @@ LABEL org.opencontainers.image.title="web-presentation-sqlite-lite"
 LABEL org.opencontainers.image.description="web-presentation SQLite lite image with Backend, Editor, Runtime and Gateway"
 
 ENV APP_RELOAD=false
+ENV ACCESS_LOG_ENABLED=false
 ENV PATH="/app/backend/.venv/bin:${PATH}"
 ENV PLAYWRIGHT_BROWSERS_PATH="/ms-playwright"
 ENV PYTHONDONTWRITEBYTECODE=1
@@ -71,7 +72,7 @@ ENV RUNTIME_BUILD_TOKEN_AUDIENCE="runtime-build"
 ENV RUNTIME_DIAGNOSTICS_TOKEN_AUDIENCE="runtime-diagnostics"
 ENV RUNTIME_LOG_LEVEL="info"
 ENV RUNTIME_LOG_FORMAT="json"
-ENV RUNTIME_ACCESS_LOG_ENABLED="true"
+ENV RUNTIME_ACCESS_LOG_ENABLED="false"
 ENV RUNTIME_STANDALONE_PREVIEW_ENABLED="false"
 ENV ASSET_STORAGE_DRIVER="local"
 
@@ -86,7 +87,7 @@ COPY --from=runtime-deps /usr/local/bin/node /usr/local/bin/node
 WORKDIR /app/backend
 
 COPY --from=backend-deps /app/backend/.venv /app/backend/.venv
-RUN playwright install --with-deps chromium \
+RUN playwright install --with-deps --only-shell chromium \
     && rm -rf /var/lib/apt/lists/*
 
 COPY backend/ /app/backend/

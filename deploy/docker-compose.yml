@@ -28,7 +28,7 @@ services:
       AI_SECRET_ENCRYPTION_KEY: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
       LOG_LEVEL: "INFO"
       LOG_FORMAT: "json"
-      ACCESS_LOG_ENABLED: "true"
+      ACCESS_LOG_ENABLED: "false"
       CLIENT_ERROR_LOG_ENABLED: "true"
       CLIENT_ERROR_LOG_MAX_BYTES: "16384"
       ASSET_STORAGE_DRIVER: "local"
@@ -66,7 +66,7 @@ services:
       RUNTIME_SERVER_BASE_PATH: "/runtime/"
       RUNTIME_LOG_LEVEL: "info"
       RUNTIME_LOG_FORMAT: "json"
-      RUNTIME_ACCESS_LOG_ENABLED: "true"
+      RUNTIME_ACCESS_LOG_ENABLED: "false"
     expose:
       - "7373"
     healthcheck:

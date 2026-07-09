@@ -6,11 +6,14 @@
 
 | 文档 | 内容 |
 | :--- | :--- |
-| [用户文档入口](./user/README.md) | 推荐阅读路径、常用工作流、参考资料和部署入口 |
+| [项目网站](https://llmxpm.github.io/web-presentation-site/) | 产品介绍、截图、演示入口和面向使用者的说明 |
+| [用户文档入口](./user/README.md) | 推荐阅读路径、平台特性、常用工作流、参考资料和部署入口 |
 | [平台介绍](./user/platform-overview.md) | 产品定位、核心概念、典型场景和平台组成 |
 | [核心概念](./user/concepts.md) | 工作空间、项目、页面、资源、组件、主题、样式和 Runtime |
 | [快速上手](./user/getting-started.md) | 从登录到创建项目、编辑页面、预览和构建的基础流程 |
 | [Demo 使用指南](./user/demo-guide.md) | 公开 Demo 地址、体验账号、推荐流程和 AI 设置注意事项 |
+| [自托管部署](./user/deployment.md) | 开源用户部署选型、SQLite 轻量部署、数据保存和升级建议 |
+| [平台特性](./user/features/README.md) | 创作者视角理解 AI 创作、资产复用、预览构建和交付 |
 | [AI 协作创作](./user/ai/README.md) | AI 侧边栏、工具确认、上下文注入和协作建议 |
 | [项目与页面](./user/workflows/project-and-page.md) | 项目创建、页面组织、源码编辑、版本和构建入口 |
 | [资源管理](./user/workflows/resources.md) | 资源类型、可编辑内容、替换归档删除和引用关系 |

@@ -171,6 +171,8 @@ llmxpm/web-runtime-vue:latest
 
 `docker-compose.with-deps.yml` 还会拉取 `postgres:16` 与 `redis:7`。该文件中的 `POSTGRES_PASSWORD`、`REDIS_PASSWORD` 以及 `platform.environment` 中的 `DATABASE_URL`、`REDIS_URL` 要保持一致；如密码包含 `@`、`/`、`:` 等 URL 特殊字符，需要先进行 URL 编码，或改用只包含字母、数字、短横线和下划线的密码。
 
+内置 Redis 默认关闭 AOF，以降低小规模部署的磁盘写入成本。Redis 只保存短生命周期预览 artifact、构建状态和锁；主数据仍由 PostgreSQL 或 SQLite 管理。
+
 `latest` 与 `sqlite-lite` 只适合跟随稳定 Release 自动升级。如果某次部署需要严格锁定版本或准备可精确回滚，可以把 compose 中的 image 手动改成发布标签，例如常规部署使用 `llmxpm/web-presentation:v1.0.0` 和 `llmxpm/web-runtime-vue:sha-xxxxxxxxxxxx`，SQLite 轻量单容器版使用 `llmxpm/web-presentation:sqlite-lite-v1.0.0`。
 
 SQLite 轻量单容器版由 `platform-lite` 容器入口脚本在启动时执行一次 `alembic upgrade head`，随后同时启动 Backend、Runtime 与 Nginx。两个简化版由 `platform` 容器入口脚本在启动时执行一次 `alembic upgrade head`，随后同时启动 Backend 与 Nginx。production env 版由 `backend-migrate` 容器在 `backend` 启动前执行迁移。
@@ -225,22 +227,22 @@ production env 版使用：
 docker compose -f docker-compose.production.yml logs -f backend runtime gateway
 ```
 
-应用侧日志默认使用 JSON Lines 输出到容器标准输出，便于 `docker compose logs` 之后接入 Loki、ELK 或云日志采集。`gateway` 负责生成或透传 `X-Request-ID`，`backend` 会在响应头返回同一个请求 ID，并在访问日志中只记录 path，不记录 query。`runtime` 长期运行 Vite dev server，平台预览、构建和诊断相关日志由 Runtime 插件输出。
+应用侧业务日志默认使用 JSON Lines 输出到容器标准输出，便于 `docker compose logs` 之后接入 Loki、ELK 或云日志采集。部署模板默认关闭 Gateway、Backend 和 Runtime 的访问日志，以降低高频预览、静态资源与 Runtime 代理请求带来的 IO 成本；错误日志、业务日志和浏览器错误上报仍保留。`gateway` 仍负责生成或透传 `X-Request-ID`，`backend` 会在响应头返回同一个请求 ID。
 
 常用日志环境变量：
 
 ```text
 LOG_LEVEL=INFO
 LOG_FORMAT=json
-ACCESS_LOG_ENABLED=true
+ACCESS_LOG_ENABLED=false
 CLIENT_ERROR_LOG_ENABLED=true
 CLIENT_ERROR_LOG_MAX_BYTES=16384
 RUNTIME_LOG_LEVEL=info
 RUNTIME_LOG_FORMAT=json
-RUNTIME_ACCESS_LOG_ENABLED=true
+RUNTIME_ACCESS_LOG_ENABLED=false
 ```
 
-PostgreSQL 与 Redis 保持官方镜像原生日志格式；它们作为依赖服务查看，不纳入应用 JSON 日志契约。`/healthz` 健康检查默认不输出 Gateway 访问日志。
+PostgreSQL 与 Redis 保持官方镜像原生日志格式；它们作为依赖服务查看，不纳入应用 JSON 日志契约。需要临时排查访问链路时，可把 `ACCESS_LOG_ENABLED` 或 `RUNTIME_ACCESS_LOG_ENABLED` 改为 `true` 后重建对应容器；Gateway 访问日志默认在镜像 Nginx 配置中关闭。
 
 浏览器访问 compose 中配置的 `BACKEND_PUBLIC_BASE_URL` 对应平台入口后，使用默认管理员账号登录。
 

@@ -2,6 +2,8 @@
 
 `web-presentation` 是一个面向 AI 的演示文稿创作平台，用于创作 PPT、图文卡片、专题报告页、数据解读页等视觉化内容。平台把页面内容代码化，把资源、组件、主题和样式沉淀为可复用资产，再通过 Vue、Vite 和 Runtime 预览链路提供快速反馈，让 AI 更适合参与内容生成、结构调整、样式改写和多场景复用。
 
+项目网站：[https://llmxpm.github.io/web-presentation-site/](https://llmxpm.github.io/web-presentation-site/)
+
 ![平台产品总览图](./docs/assets/平台总览.png)
 
 ## 产品特点
@@ -56,7 +58,7 @@
 
 ## 在线 Demo
 
-可以直接访问公开 Demo 体验平台主流程，访问地址、账号密码、推荐体验步骤和 AI 设置说明见 [Demo 使用指南](./docs/user/demo-guide.md)。
+可以先访问 [项目网站](https://llmxpm.github.io/web-presentation-site/) 浏览产品介绍和截图，也可以直接访问公开 Demo 体验平台主流程。Demo 地址、账号密码、推荐体验步骤和 AI 设置说明见 [Demo 使用指南](./docs/user/demo-guide.md)。
 
 ## 快速部署
 
@@ -72,16 +74,20 @@ docker compose -f docker-compose.sqlite.yml pull
 docker compose -f docker-compose.sqlite.yml up -d
 ```
 
-默认启动后访问 `http://127.0.0.1:8080`。内置 PostgreSQL/Redis、外部依赖、production env 版、HTTPS、升级和回滚见 [生产部署指南](./docs/developer/deployment/README.md)。
+默认启动后访问 `http://127.0.0.1:8080`。面向开源用户的部署选型、数据保存和升级建议见 [自托管部署](./docs/user/deployment.md)；内置 PostgreSQL/Redis、外部依赖、production env 版、HTTPS、升级和回滚见 [生产部署指南](./docs/developer/deployment/README.md)。
 
 ## 文档导航
 
 | 文档 | 内容 |
 | :--- | :--- |
+| [项目网站](https://llmxpm.github.io/web-presentation-site/) | 产品介绍、截图、演示入口和面向使用者的说明 |
 | [文档中心](./docs/README.md) | 用户文档、开发文档和图片资源目录 |
-| [用户文档](./docs/user/README.md) | 平台介绍、快速上手、AI 协作、资产管理和部署入口 |
+| [用户文档](./docs/user/README.md) | 平台介绍、快速上手、平台特性、AI 协作、资产管理和部署入口 |
 | [平台介绍](./docs/user/platform-overview.md) | 产品定位、核心概念、典型场景和平台组成 |
 | [快速上手](./docs/user/getting-started.md) | 登录、工作空间、项目页面、AI、预览和构建流程 |
+| [自托管部署](./docs/user/deployment.md) | 面向开源用户的 SQLite 轻量部署、方案选择、数据保存和升级建议 |
+| [平台特性](./docs/user/features/README.md) | 创作者视角理解 AI 创作、资产复用、预览构建和交付 |
+| [Demo 使用指南](./docs/user/demo-guide.md) | 公开 Demo 地址、体验账号、推荐流程和 AI 设置注意事项 |
 | [AI 协作创作](./docs/user/ai/README.md) | AI 侧边栏、工具确认、上下文注入和协作建议 |
 | [开发文档](./docs/developer/README.md) | 架构、Backend、Editor、Runtime 接入、测试、部署和参考资料 |
 | [平台架构总览](./docs/developer/architecture/overview.md) | 平台目标、模块职责、目标流程和 Runtime 子模块协作 |
