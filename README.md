@@ -2,7 +2,7 @@
 
 `web-presentation` 是一个面向 AI 的演示文稿创作平台，用于创作 PPT、图文卡片、专题报告页、数据解读页等视觉化内容。平台把页面内容代码化，把资源、组件、主题和样式沉淀为可复用资产，再通过 Vue、Vite 和 Runtime 预览链路提供快速反馈，让 AI 更适合参与内容生成、结构调整、样式改写和多场景复用。
 
-项目网站：[https://llmxpm.github.io/web-presentation-site/](https://llmxpm.github.io/web-presentation-site/)
+项目网站：[https://presentation.inputloom.com/](https://presentation.inputloom.com/)
 
 ![平台产品总览图](./docs/assets/平台总览.png)
 
@@ -48,13 +48,13 @@
 
 详细架构、模块边界和目标业务流程见 [平台架构总览](./docs/developer/architecture/overview.md)。
 
-## 成果展示
+## 案例展示
 
-![成果展示](./docs/assets/成果展示.png)
+![案例展示](./docs/assets/案例.png)
 
-预览链接：[https://demo.926655.xyz/build-artifacts/4/1/](https://demo.926655.xyz/build-artifacts/4/1/)
+预览链接：[案例展示](https://presentation.inputloom.com/showcases.html)
 
-这是一轮对话直接跑出来的成果，未做细化调整；使用模型为 `mimo-v2.5-pro`，费用约 **0.48** 元人民币。
+案例基本是用Deepseek-v4-pro / mimo-v2.5-pro 跑出来的，成本均不高于1元。
 
 ## 在线 Demo
 

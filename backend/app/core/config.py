@@ -51,6 +51,7 @@ class AppSettings(BaseSettings):
     ai_tool_auth_window_seconds: int = 1800
     ai_tool_auth_max_seconds: int = 7200
     ai_agent_stream_idle_timeout_seconds: float = 180.0
+    ai_agent_tool_stream_idle_timeout_seconds: float = 600.0
     ai_llm_http_trace_enabled: bool = False
     ai_llm_http_trace_dir: str = ".tmp/llm-http-trace"
     ai_llm_http_trace_body_max_bytes: int = 200_000
@@ -276,10 +277,10 @@ class AppSettings(BaseSettings):
             raise ValueError("AI Token TTL 必须大于 0。")
         return value
 
-    @field_validator("ai_agent_stream_idle_timeout_seconds")
+    @field_validator("ai_agent_stream_idle_timeout_seconds", "ai_agent_tool_stream_idle_timeout_seconds")
     @classmethod
     def validate_ai_agent_stream_idle_timeout_seconds(cls, value: float) -> float:
-        """校验 Agent 模型/工具流空闲超时，避免运行长期卡在非终态。"""
+        """校验 Agent 模型流与工具流空闲超时，避免运行长期卡在非终态。"""
 
         if value <= 0:
             raise ValueError("AI Agent 流空闲超时时间必须大于 0。")

@@ -10,8 +10,10 @@ from datetime import UTC, datetime
 from time import monotonic
 from typing import Any, Literal
 from uuid import uuid4
+from weakref import WeakValueDictionary
 
 from sqlalchemy import Select, func, select
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
@@ -19,6 +21,7 @@ from app.ai.image_refs import sanitize_message_history_image_refs
 from app.ai.agent.runtime_context import AgentRuntimeContext
 from app.ai.message_history import trim_unprocessed_tool_call_history
 from app.ai.member_prompts import build_member_prompt_from_payload
+from app.ai.run_event_writer import allocate_run_event_index, is_sqlite_lock_error
 from app.models.ai_agent_attachment import AiAgentImageAttachment
 from app.models.ai_agent_runtime import (
     AiAgentMemberRun,
@@ -53,7 +56,11 @@ STALE_ACTIVE_RUN_ERROR_CODE = "AI_AGENT_STREAM_IDLE_TIMEOUT"
 STALE_ACTIVE_RUN_ERROR_MESSAGE = "模型或工具流长时间没有返回新事件，本次运行已停止。"
 _EVENT_POLL_INTERVAL_SECONDS = 1.0
 _SSE_KEEPALIVE_INTERVAL_SECONDS = 30.0
+_SQLITE_EVENT_WRITE_MAX_ATTEMPTS = 4
+_SQLITE_EVENT_WRITE_RETRY_BASE_SECONDS = 0.025
 _SUBSCRIBERS: dict[str, set[asyncio.Queue[AgentRunEvent | None]]] = {}
+_RUN_EVENT_LOCKS: WeakValueDictionary[str, asyncio.Lock] = WeakValueDictionary()
+_LIVE_RUN_ACTIVITY_VERSIONS: dict[str, int] = {}
 
 
 @dataclass(slots=True)
@@ -240,9 +247,62 @@ class PlatformAgentRuntimeStore:
     async def append_event(self, run_model: AiAgentRun, event: AgentRunEvent, *, commit: bool = True) -> AgentRunEvent:
         """为 run 追加平台事件，分配单调 event_index 并通知订阅者。"""
 
-        await self._refresh_run_event_cursor(run_model)
-        current_index = run_model.event_index if run_model.event_index is not None else -1
-        next_index = int(current_index) + 1
+        run_id = run_model.run_id
+        has_sqlite_write_transaction = await self._has_sqlite_write_transaction()
+        retry_after_rollback = (
+            commit
+            and not has_sqlite_write_transaction
+            and not self._session_has_pending_changes()
+        )
+        if has_sqlite_write_transaction:
+            return await self._append_event_once(run_model, event, commit=commit)
+        async with _get_run_event_lock(run_id):
+            if retry_after_rollback:
+                return await self._append_event_with_retry(run_model, event)
+            return await self._append_event_once(run_model, event, commit=commit)
+
+    async def _append_event_with_retry(
+        self,
+        run_model: AiAgentRun,
+        event: AgentRunEvent,
+    ) -> AgentRunEvent:
+        """为无额外 pending 状态的纯追加执行 SQLite rollback 与有限退避重试。"""
+
+        run_id = run_model.run_id
+        for attempt in range(_SQLITE_EVENT_WRITE_MAX_ATTEMPTS):
+            try:
+                return await self._append_event_once(run_model, event, commit=True)
+            except OperationalError as exc:
+                can_retry = is_sqlite_lock_error(self._session, exc)
+                if not can_retry:
+                    raise
+                await self._session.rollback()
+                if attempt + 1 >= _SQLITE_EVENT_WRITE_MAX_ATTEMPTS:
+                    raise
+                refreshed_run = await self._session.get(AiAgentRun, run_id, populate_existing=True)
+                if refreshed_run is None:
+                    raise ValueError("AI_RUN_NOT_FOUND") from exc
+                run_model = refreshed_run
+                await asyncio.sleep(_SQLITE_EVENT_WRITE_RETRY_BASE_SECONDS * (2**attempt))
+        raise RuntimeError("unreachable event append state")
+
+    async def _append_event_once(
+        self,
+        run_model: AiAgentRun,
+        event: AgentRunEvent,
+        *,
+        commit: bool,
+    ) -> AgentRunEvent:
+        """在当前事务内原子分配游标、保存事件并同步运行态投影。"""
+
+        now = _utc_now()
+        next_index = await allocate_run_event_index(
+            self._session,
+            run_id=run_model.run_id,
+            updated_at=now,
+            require_active=event.event.startswith("member."),
+        )
+        await self._refresh_event_projection_source(run_model, event)
         event.event_index = next_index
         event.sequence = next_index
         event.run_id = event.run_id or run_model.run_id
@@ -257,22 +317,43 @@ class PlatformAgentRuntimeStore:
         )
         self._session.add(row)
         run_model.event_index = next_index
-        run_model.updated_at = _utc_now()
+        run_model.updated_at = now
         self._apply_event_to_run(run_model, event)
         await self._sync_tool_event(run_model, event)
         if commit:
             await self._session.commit()
+        _update_live_run_activity(run_model.run_id, event)
         _notify_subscribers(run_model.run_id, event)
         return event
 
-    async def _refresh_run_event_cursor(self, run_model: AiAgentRun) -> None:
-        """写事件前锁定 run 行并刷新游标，避免停止请求和流式事件并发分配同一序号。"""
+    async def _refresh_event_projection_source(self, run_model: AiAgentRun, event: AgentRunEvent) -> None:
+        """持有原子游标写锁后刷新增量聚合字段，避免并发 delta 覆盖已提交内容。"""
 
-        await self._session.refresh(
-            run_model,
-            attribute_names=["event_index"],
-            with_for_update=True,
+        attribute_name = {
+            "message.delta": "content",
+            "reasoning.delta": "reasoning_content",
+        }.get(event.event)
+        if attribute_name is not None:
+            await self._session.refresh(run_model, attribute_names=[attribute_name])
+
+    def _session_has_pending_changes(self) -> bool:
+        """判断当前事务是否含调用方尚未提交的状态，防止锁重试 rollback 丢失业务变更。"""
+
+        if self._session.new or self._session.deleted:
+            return True
+        return any(
+            self._session.is_modified(model, include_collections=False)
+            for model in self._session.dirty
         )
+
+    async def _has_sqlite_write_transaction(self) -> bool:
+        """判断 SQLite 连接是否已执行未提交 DML，避免进程锁与数据库写锁发生锁序反转。"""
+
+        if self._session.get_bind().dialect.name != "sqlite":
+            return False
+        connection = await self._session.connection()
+        driver_connection = connection.sync_connection.connection.driver_connection
+        return bool(getattr(driver_connection, "in_transaction", False))
 
     async def append_assistant_message(
         self,
@@ -1492,6 +1573,31 @@ def encode_sse_event(event: AgentRunEvent) -> bytes:
     """把平台事件编码为 SSE 数据块。"""
 
     return f"data: {json.dumps(event.model_dump(mode='json'), ensure_ascii=False)}\n\n".encode("utf-8")
+
+
+def _get_run_event_lock(run_id: str) -> asyncio.Lock:
+    """获取进程内按 run 复用的事件写锁，串行尚未持有 SQLite 写锁的追加操作。"""
+
+    lock = _RUN_EVENT_LOCKS.get(run_id)
+    if lock is None:
+        lock = asyncio.Lock()
+        _RUN_EVENT_LOCKS[run_id] = lock
+    return lock
+
+
+def get_live_run_activity_version(run_id: str) -> int:
+    """返回当前进程内 run 的活动版本，供模型或工具等待逻辑识别成员事件心跳。"""
+
+    return _LIVE_RUN_ACTIVITY_VERSIONS.get(run_id, 0)
+
+
+def _update_live_run_activity(run_id: str, event: AgentRunEvent) -> None:
+    """成功追加事件后推进活动版本；流结束时清理，避免长期持有已结束 run。"""
+
+    if event.event in STREAM_END_EVENTS:
+        _LIVE_RUN_ACTIVITY_VERSIONS.pop(run_id, None)
+        return
+    _LIVE_RUN_ACTIVITY_VERSIONS[run_id] = _LIVE_RUN_ACTIVITY_VERSIONS.get(run_id, 0) + 1
 
 
 async def stream_replay_then_subscribe(

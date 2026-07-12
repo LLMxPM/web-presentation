@@ -18,7 +18,13 @@ from app.ai.agent_runtime_config import EffectiveAgentRuntimeConfig, build_effec
 from app.ai.history_compression import HistoryCompressionService
 from app.ai.message_history import AgentContextLimitProcessor, AgentHistoryBudget, build_context_status_item
 from app.ai.member_delegation import MemberDelegationPaused
-from app.ai.platform_runtime import PlatformAgentRuntimeStore, encode_sse_event, stream_live_subscribe, subscribe_live_run_events
+from app.ai.platform_runtime import (
+    PlatformAgentRuntimeStore,
+    encode_sse_event,
+    get_live_run_activity_version,
+    stream_live_subscribe,
+    subscribe_live_run_events,
+)
 from app.ai.pydantic_event_projection import PydanticEventProjector, safe_messages, safe_new_messages
 from app.ai.pydantic_tools import AgentToolDeps
 from app.ai.run_errors import build_agent_error_log_extra, normalize_agent_run_exception
@@ -41,15 +47,21 @@ class PydanticAgentRunner:
         store: PlatformAgentRuntimeStore,
         *,
         stream_idle_timeout_seconds: float | None = None,
+        tool_stream_idle_timeout_seconds: float | None = None,
         stream_cancel_grace_seconds: float | None = None,
     ) -> None:
-        """保存运行态 store。"""
+        """保存运行态 store，并分别解析模型流与工具流空闲超时。"""
 
         self._store = store
         self._stream_idle_timeout_seconds = (
             float(stream_idle_timeout_seconds)
             if stream_idle_timeout_seconds is not None
             else float(get_settings().ai_agent_stream_idle_timeout_seconds)
+        )
+        self._tool_stream_idle_timeout_seconds = (
+            float(tool_stream_idle_timeout_seconds)
+            if tool_stream_idle_timeout_seconds is not None
+            else float(get_settings().ai_agent_tool_stream_idle_timeout_seconds)
         )
         self._stream_cancel_grace_seconds = (
             max(0.01, float(stream_cancel_grace_seconds))
@@ -268,7 +280,12 @@ class PydanticAgentRunner:
                         continue
                     if agent.is_call_tools_node(node):
                         async with node.stream(agent_run.ctx) as stream:
-                            async for raw_event in self._iter_stream_events(stream, run_model=run_model):
+                            async for raw_event in self._iter_stream_events(
+                                stream,
+                                run_model=run_model,
+                                idle_timeout_seconds=self._tool_stream_idle_timeout_seconds,
+                                refresh_timeout_on_run_activity=True,
+                            ):
                                 should_stop, should_cancel = await self._cancel_event_if_requested(run_model)
                                 if should_stop:
                                     async for sse in self._flush_projector_buffer(projector, best_effort=True):
@@ -602,20 +619,42 @@ class PydanticAgentRunner:
         stored = await self._store.append_event(run_model, event)
         return encode_sse_event(stored)
 
-    async def _iter_stream_events(self, stream: Any, *, run_model: AiAgentRun | None = None) -> AsyncGenerator[Any, None]:
-        """按空闲超时消费节点流，并在等待下一条事件期间响应外部停止请求。"""
+    async def _iter_stream_events(
+        self,
+        stream: Any,
+        *,
+        run_model: AiAgentRun | None = None,
+        idle_timeout_seconds: float | None = None,
+        refresh_timeout_on_run_activity: bool = False,
+    ) -> AsyncGenerator[Any, None]:
+        """按指定空闲超时消费节点流；工具等待可把成员事件视为活动心跳。"""
 
         iterator = stream.__aiter__()
         pending_event_task: asyncio.Task[Any] | None = None
         wait_started_at = monotonic()
+        activity_version = (
+            get_live_run_activity_version(run_model.run_id)
+            if run_model is not None and refresh_timeout_on_run_activity
+            else 0
+        )
+        timeout_seconds = (
+            float(idle_timeout_seconds)
+            if idle_timeout_seconds is not None
+            else self._stream_idle_timeout_seconds
+        )
         try:
             while True:
+                if run_model is not None and refresh_timeout_on_run_activity:
+                    current_activity_version = get_live_run_activity_version(run_model.run_id)
+                    if current_activity_version != activity_version:
+                        activity_version = current_activity_version
+                        wait_started_at = monotonic()
                 if pending_event_task is None:
                     pending_event_task = asyncio.create_task(iterator.__anext__())
                     wait_started_at = monotonic()
 
                 elapsed = monotonic() - wait_started_at
-                remaining = self._stream_idle_timeout_seconds - elapsed
+                remaining = timeout_seconds - elapsed
                 if remaining <= 0:
                     await self._cancel_pending_stream_task(pending_event_task)
                     pending_event_task = None
