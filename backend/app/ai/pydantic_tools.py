@@ -150,6 +150,7 @@ def _wrap_platform_tool(tool_item: Any) -> Tool[AgentToolDeps]:
                 "session_id": session_id,
                 "current_tool_call_id": ctx.tool_call_id,
                 "current_tool_name": ctx.tool_name,
+                "current_run_step": ctx.run_step,
             },
         )
         try:
@@ -178,6 +179,7 @@ def _wrap_platform_tool(tool_item: Any) -> Tool[AgentToolDeps]:
         name=str(getattr(tool_item, "name", "") or entrypoint.__name__),
         description=tool_description,
         requires_approval=bool(getattr(tool_item, "requires_confirmation", False)),
+        sequential=bool(getattr(tool_item, "sequential", False)),
     )
 
 

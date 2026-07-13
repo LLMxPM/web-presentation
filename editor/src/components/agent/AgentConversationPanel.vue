@@ -899,7 +899,7 @@ function setSessionStreaming(sessionId: string, value: boolean) {
  * 判断 active-run 是否需要继续订阅后台事件。
  */
 function shouldSubscribeRunEvents(run: AgentActiveRunItem) {
-  return Boolean(run.run_id && (run.status === 'pending' || run.status === 'running' || run.status === 'cancelling'))
+  return Boolean(run.run_id && (run.status === 'pending' || run.status === 'running' || run.status === 'waiting_external' || run.status === 'cancelling'))
 }
 
 /**
@@ -929,6 +929,7 @@ function shouldApplyRuntimeSnapshot(runtime: AgentSessionRuntimeSnapshot) {
     return false
   }
   return runtime.active_run?.status === 'paused'
+    || runtime.active_run?.status === 'waiting_external'
     || runtime.active_run?.status === 'cancelling'
     || runtime.active_run === null
 }
@@ -982,7 +983,7 @@ function isSessionRunning(sessionId: string) {
     return true
   }
   const run = readSessionValue(activeRunBySession.value, sessionId, null)
-  return run?.status === 'pending' || run?.status === 'running' || run?.status === 'cancelling'
+  return run?.status === 'pending' || run?.status === 'running' || run?.status === 'waiting_external' || run?.status === 'cancelling'
 }
 
 /**
@@ -1540,6 +1541,8 @@ function handleRunEvent(event: AgentRunEvent, fallbackSessionId = activeSessionI
       break
     case 'run.continued':
       break
+    case 'run.waiting':
+      break
     case 'message.delta':
       break
     case 'tool.started':
@@ -1671,6 +1674,10 @@ async function finalizeRun(
 async function finalizeRunAfterStream(sessionId: string) {
   try {
     await finalizeRun(sessionId)
+    const run = readSessionValue(activeRunBySession.value, sessionId, null)
+    if (run && shouldSubscribeRunEvents(run)) {
+      ensureRunEventSubscription(sessionId, run, run.event_index ?? -1)
+    }
   } catch (error) {
     logClientWarning('Failed to finalize agent run after stream closed', error)
     void refreshAfterStreamInterrupted(sessionId)

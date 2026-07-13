@@ -22,6 +22,8 @@ from app.ai.agent.runtime_context import AgentRuntimeContext
 from app.ai.message_history import trim_unprocessed_tool_call_history
 from app.ai.member_prompts import build_member_prompt_from_payload
 from app.ai.run_event_writer import allocate_run_event_index, is_sqlite_lock_error
+from app.ai.run_write_fence import PageMutationContinuationWriteFence
+from app.ai.tool_arguments import parse_tool_arguments
 from app.models.ai_agent_attachment import AiAgentImageAttachment
 from app.models.ai_agent_runtime import (
     AiAgentMemberRun,
@@ -49,8 +51,10 @@ from app.schemas.agent import (
 )
 from app.services.agent_image_attachment_service import AgentImageAttachmentService
 
-ACTIVE_RUN_STATUSES = {"pending", "running", "paused", "cancelling"}
+ACTIVE_RUN_STATUSES = {"pending", "running", "paused", "waiting_external", "cancelling"}
 TERMINAL_RUN_STATUSES = {"completed", "cancelled", "failed"}
+# 外部页面任务会在完成后追加 run.continued 或终态事件，因此 waiting_external
+# 不能被视为 SSE 结束，订阅需持续等待自动续跑结果。
 STREAM_END_EVENTS = {"run.completed", "run.cancelled", "run.error", "run.paused"}
 STALE_ACTIVE_RUN_ERROR_CODE = "AI_AGENT_STREAM_IDLE_TIMEOUT"
 STALE_ACTIVE_RUN_ERROR_MESSAGE = "模型或工具流长时间没有返回新事件，本次运行已停止。"
@@ -74,11 +78,18 @@ class PlatformRunStart:
 class PlatformAgentRuntimeStore:
     """封装平台自有 AI 运行态表的读写和事件协议。"""
 
-    def __init__(self, session: AsyncSession, *, user_id: int) -> None:
-        """保存数据库会话与当前用户，用于后续权限过滤。"""
+    def __init__(
+        self,
+        session: AsyncSession,
+        *,
+        user_id: int,
+        write_fence: PageMutationContinuationWriteFence | None = None,
+    ) -> None:
+        """保存数据库会话、用户和可选后台续跑写入围栏。"""
 
         self._session = session
         self._user_id = user_id
+        self._write_fence = write_fence
 
     async def list_sessions(
         self,
@@ -295,12 +306,14 @@ class PlatformAgentRuntimeStore:
     ) -> AgentRunEvent:
         """在当前事务内原子分配游标、保存事件并同步运行态投影。"""
 
+        _normalize_tool_event_arguments(event)
         now = _utc_now()
         next_index = await allocate_run_event_index(
             self._session,
             run_id=run_model.run_id,
             updated_at=now,
             require_active=event.event.startswith("member."),
+            write_fence=self._write_fence,
         )
         await self._refresh_event_projection_source(run_model, event)
         event.event_index = next_index
@@ -384,7 +397,15 @@ class PlatformAgentRuntimeStore:
         self._replace_run_message_history(run_model, message_history)
         run_model.updated_at = _utc_now()
         if commit:
+            await self.ensure_write_fence()
             await self._session.commit()
+
+    async def ensure_write_fence(self) -> None:
+        """在非事件型提交前验证后台续跑租约，普通交互式 run 不附加任何开销。"""
+
+        if self._write_fence is None:
+            return
+        await self._write_fence.ensure_owned(self._session, now=_utc_now())
 
     def _replace_run_message_history(self, run_model: AiAgentRun, message_history: list[dict[str, Any]]) -> None:
         """用本 run 当前完整 delta 快照替换旧值，避免多次模型调用重复追加。"""
@@ -428,9 +449,24 @@ class PlatformAgentRuntimeStore:
         run_model.error_code = error_code
         run_model.error_message = error_message
         if status == "failed":
+            await self._close_pending_requirements(
+                run_model,
+                status="failed",
+                message=error_message or content or "运行失败，待处理动作已终止。",
+            )
             await self._append_running_tool_error_events(
                 run_model,
                 message=error_message or content or "运行中断，工具调用未完成。",
+            )
+        elif status == "cancelled":
+            await self._close_pending_requirements(
+                run_model,
+                status="cancelled",
+                message=content or "运行已取消，待处理动作已终止。",
+            )
+            await self._append_running_tool_error_events(
+                run_model,
+                message=content or "运行已取消，工具调用未完成。",
             )
         event_name = {
             "completed": "run.completed",
@@ -484,16 +520,39 @@ class PlatformAgentRuntimeStore:
             )
             await self._session.flush()
 
+    async def _close_pending_requirements(
+        self,
+        run_model: AiAgentRun,
+        *,
+        status: str,
+        message: str,
+    ) -> None:
+        """终止 run 时同步收敛尚未处理的 requirement，避免前端残留可提交动作。"""
+
+        result = await self._session.execute(
+            select(AiAgentRequirement).where(
+                AiAgentRequirement.run_id == run_model.run_id,
+                AiAgentRequirement.status == "pending",
+            )
+        )
+        now = _utc_now()
+        for requirement in result.scalars().all():
+            requirement.status = status
+            requirement.resolved_at = now
+            requirement.resolved_payload_json = {"reason": message, "terminal_status": status}
+        await self._session.flush()
+
     async def pause_for_requirement(
         self,
         run_model: AiAgentRun,
         *,
         requirement: AgentPendingRequirement,
     ) -> AgentRunEvent:
-        """保存 pending requirement 并发送 run.paused。"""
+        """保存 pending requirement；外部任务进入等待态，其余动作进入用户暂停态。"""
 
         payload = requirement.model_dump(mode="json")
-        run_model.status = "paused"
+        is_external_job = requirement.kind == "external_job"
+        run_model.status = "waiting_external" if is_external_job else "paused"
         run_model.pending_requirement_json = payload
         self._session.add(
             AiAgentRequirement(
@@ -513,7 +572,7 @@ class PlatformAgentRuntimeStore:
         return await self.append_event(
             run_model,
             AgentRunEvent(
-                event="run.paused",
+                event="run.waiting" if is_external_job else "run.paused",
                 run_id=run_model.run_id,
                 session_id=run_model.session_id,
                 data={"requirement": payload},
@@ -706,7 +765,7 @@ class PlatformAgentRuntimeStore:
             target = result.scalar_one_or_none()
         if target is None:
             return None
-        if target.user_id != self._user_id or target.status not in ACTIVE_RUN_STATUSES or target.status == "paused":
+        if target.user_id != self._user_id or target.status not in ACTIVE_RUN_STATUSES or target.status in {"paused", "waiting_external"}:
             return None
 
         timeout_seconds = (
@@ -915,7 +974,7 @@ class PlatformAgentRuntimeStore:
                     }[event.event],
                 )
                 continue
-            if event.event == "run.paused":
+            if event.event in {"run.paused", "run.waiting"}:
                 current_text_by_run[run_id] = None
                 requirement = event.data.get("requirement") if isinstance(event.data, dict) else None
                 if isinstance(requirement, dict):
@@ -928,7 +987,7 @@ class PlatformAgentRuntimeStore:
                         event_index=event_row.event_index,
                         order_index=0,
                         content=requirement.get("note"),
-                        status="paused",
+                        status="waiting_external" if event.event == "run.waiting" else "paused",
                         tool=None,
                         source="event",
                         created_at=_iso(event_row.created_at),
@@ -1304,7 +1363,7 @@ class PlatformAgentRuntimeStore:
         if model is None:
             return None
         pending_requirement = None
-        if model.status == "paused" and isinstance(model.pending_requirement_json, dict):
+        if model.status in {"paused", "waiting_external"} and isinstance(model.pending_requirement_json, dict):
             pending_requirement = AgentPendingRequirement.model_validate(model.pending_requirement_json)
         return AgentActiveRunItem(
             run_id=model.run_id,
@@ -1499,6 +1558,10 @@ class PlatformAgentRuntimeStore:
             run_model.status = "paused"
             requirement = event.data.get("requirement") if isinstance(event.data, dict) else None
             run_model.pending_requirement_json = requirement if isinstance(requirement, dict) else None
+        elif event.event == "run.waiting":
+            run_model.status = "waiting_external"
+            requirement = event.data.get("requirement") if isinstance(event.data, dict) else None
+            run_model.pending_requirement_json = requirement if isinstance(requirement, dict) else None
         elif event.event == "run.completed":
             run_model.status = "completed"
             run_model.finished_at = _utc_now()
@@ -1534,6 +1597,12 @@ class PlatformAgentRuntimeStore:
             "tool.completed": "completed",
             "tool.error": "error",
         }[normalized_event]
+        raw_input_payload = (
+            event.data.get("tool_args")
+            if "tool_args" in event.data
+            else event.data.get("args")
+        )
+        input_payload = parse_tool_arguments(raw_input_payload)
         existing = None
         if tool_call_id:
             result = await self._session.execute(
@@ -1551,7 +1620,7 @@ class PlatformAgentRuntimeStore:
                 tool_call_id=tool_call_id,
                 tool_name=tool_name,
                 status=status,
-                input_payload_json=event.data.get("tool_args") or event.data.get("args"),
+                input_payload_json=input_payload,
                 output_payload_json=event.data.get("result"),
                 message=str(event.data.get("message") or ""),
             )
@@ -1560,7 +1629,6 @@ class PlatformAgentRuntimeStore:
         existing.status = status
         if member_run_id:
             existing.member_run_id = member_run_id
-        input_payload = event.data.get("tool_args") or event.data.get("args")
         if _is_meaningful_payload(input_payload) and not _is_meaningful_payload(existing.input_payload_json):
             existing.input_payload_json = input_payload
         if event.data.get("result") is not None:
@@ -1809,6 +1877,27 @@ def _is_meaningful_payload(value: Any) -> bool:
     return True
 
 
+def _normalize_tool_event_arguments(event: AgentRunEvent) -> None:
+    """将工具事件中的 JSON 字符串参数原地归一化为对象，统一事件与工具调用投影格式。"""
+
+    if event.event not in {
+        "tool.started",
+        "tool.completed",
+        "tool.error",
+        "member.tool.started",
+        "member.tool.completed",
+        "member.tool.error",
+    }:
+        return
+    for key in ("tool_args", "arguments", "args"):
+        if key not in event.data:
+            continue
+        parsed = parse_tool_arguments(event.data.get(key))
+        if parsed is not None:
+            event.data[key] = parsed
+        return
+
+
 def _remove_requirement_timeline_items(
     items: list[AgentTimelineItem],
     *,
@@ -1847,7 +1936,7 @@ def _map_run_status(status: str) -> str:
 
     if status == "failed":
         return "failed"
-    if status in {"pending", "running", "paused", "cancelling", "completed", "cancelled"}:
+    if status in {"pending", "running", "paused", "waiting_external", "cancelling", "completed", "cancelled"}:
         return status
     return "failed"
 

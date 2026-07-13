@@ -88,7 +88,7 @@ export const useAgentSessionStore = defineStore('agent-session', {
       const normalizedRun = normalizeActiveRun(run)
       state.activeRun = normalizedRun
       state.stream.runId = run?.run_id ?? state.stream.runId
-      state.stream.streaming = Boolean(normalizedRun && ['pending', 'running', 'cancelling'].includes(normalizedRun.status))
+      state.stream.streaming = Boolean(normalizedRun && ['pending', 'running', 'waiting_external', 'cancelling'].includes(normalizedRun.status))
       if (normalizedRun?.status === 'paused') {
         state.pendingRequirement = normalizedRun.pending_requirement
       } else {

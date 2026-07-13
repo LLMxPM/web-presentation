@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import Any
 
@@ -20,8 +21,12 @@ from app.services.page_render_diagnostics_service import PageRenderDiagnosticsSe
 from app.services.preview_service import PreviewService
 from app.services.project_artifact_builder import ProjectPageModuleOverride
 from app.services.runtime_diagnostics_client import RuntimeDiagnosticsClient
+from app.services.runtime_artifact_store import RuntimeArtifactStore
 from app.services.token_service import TokenService
 from app.services.workspace_component_service import WorkspaceComponentService
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -129,6 +134,7 @@ class CodeCheckService:
             )
         except AppException as exc:
             return self._failed_result(code=exc.code, message=exc.detail)
+        await self._release_session_before_diagnostics()
         return await self._dispatch_diagnostics(
             artifact_id=preview.artifact_id,
             workspace_id=preview.workspace_id or page.workspace_id,
@@ -206,6 +212,7 @@ class CodeCheckService:
             )
         except AppException as exc:
             return self._failed_result(code=exc.code, message=exc.detail)
+        await self._release_session_before_diagnostics()
         return await self._dispatch_diagnostics(
             artifact_id=preview.artifact_id,
             workspace_id=preview.workspace_id or project.workspace_id,
@@ -268,6 +275,7 @@ class CodeCheckService:
             )
         except AppException as exc:
             return self._failed_result(code=exc.code, message=exc.detail)
+        await self._release_session_before_diagnostics()
         return await self._dispatch_diagnostics(
             artifact_id=preview.artifact_id,
             workspace_id=workspace_id,
@@ -291,28 +299,44 @@ class CodeCheckService:
     ) -> dict[str, object]:
         """调用 Runtime 诊断接口，并补齐候选源码变更元数据。"""
 
-        diagnostics_token = TokenService.generate_runtime_diagnostics_command_token(
-            artifact_id=artifact_id,
-            workspace_id=workspace_id,
-            project_id=project_id,
-        )
-        result = await self.runtime_client.dispatch_artifact_diagnostics(
-            artifact_id=artifact_id,
-            diagnostics_token=diagnostics_token,
-            label=label,
-        )
-        enriched_result = {
-            **result,
-            "patch_repaired": patch_repaired,
-            "canonical_diff": canonical_diff,
-        }
-        if render_preview_url and render_viewport and self._is_runtime_diagnostics_passed(enriched_result):
-            return await self._append_page_render_diagnostics(
-                enriched_result,
-                preview_url=render_preview_url,
-                viewport=render_viewport,
+        try:
+            diagnostics_token = TokenService.generate_runtime_diagnostics_command_token(
+                artifact_id=artifact_id,
+                workspace_id=workspace_id,
+                project_id=project_id,
             )
-        return enriched_result
+            result = await self.runtime_client.dispatch_artifact_diagnostics(
+                artifact_id=artifact_id,
+                diagnostics_token=diagnostics_token,
+                label=label,
+            )
+            enriched_result = {
+                **result,
+                "patch_repaired": patch_repaired,
+                "canonical_diff": canonical_diff,
+            }
+            if render_preview_url and render_viewport and self._is_runtime_diagnostics_passed(enriched_result):
+                return await self._append_page_render_diagnostics(
+                    enriched_result,
+                    preview_url=render_preview_url,
+                    viewport=render_viewport,
+                )
+            return enriched_result
+        finally:
+            try:
+                await RuntimeArtifactStore().delete_artifact(artifact_id)
+            except Exception:  # noqa: BLE001
+                logger.warning(
+                    "Runtime 诊断 artifact 主动清理失败，将由 TTL 清扫兜底。",
+                    extra={"event": "runtime.artifact.cleanup.failed", "artifact_id": artifact_id},
+                    exc_info=True,
+                )
+
+    async def _release_session_before_diagnostics(self) -> None:
+        """结束 artifact 准备阶段的只读事务，避免等待 Runtime/Chromium 时占用 SQLite 锁。"""
+
+        if self.session.in_transaction():
+            await self.session.commit()
 
     async def _append_page_render_diagnostics(
         self,

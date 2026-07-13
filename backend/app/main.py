@@ -16,6 +16,10 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.ai.registry import AgentRegistry
+from app.ai.page_mutation_queue import (
+    recover_interrupted_ai_page_mutation_jobs_on_startup,
+    run_ai_page_mutation_queue_loop,
+)
 from app.api.router import api_router
 from app.api.routes import build_artifacts, public_assets, internal_runtime, runtime_configs, well_known, preview
 from app.core.config import AppSettings, get_settings
@@ -37,8 +41,11 @@ from app.services.page_screenshot_job_service import (
     recover_interrupted_screenshot_jobs_on_startup,
     run_page_screenshot_queue_loop,
 )
+from app.services.page_screenshot_queue_worker import drain_page_screenshot_jobs
 from app.services.project_build_service import recover_interrupted_build_jobs_on_startup
+from app.services.playwright_browser_pool import get_playwright_browser_pool
 from app.services.redis_runtime_client import ensure_redis_runtime_available
+from app.services.runtime_artifact_store import run_runtime_artifact_sweeper
 
 
 logger = logging.getLogger(__name__)
@@ -51,6 +58,9 @@ async def lifespan(app: FastAPI):
 
     page_screenshot_queue_task: asyncio.Task[None] | None = None
     asset_render_hint_backfill_queue_task: asyncio.Task[None] | None = None
+    runtime_artifact_sweeper_task: asyncio.Task[None] | None = None
+    ai_page_mutation_queue_task: asyncio.Task[None] | None = None
+    playwright_browser_pool = get_playwright_browser_pool()
     try:
         session_factory = get_session_factory()
         await BootstrapService(session_factory).ensure_default_admin()
@@ -58,8 +68,22 @@ async def lifespan(app: FastAPI):
         await recover_interrupted_build_jobs_on_startup(session_factory)
         await recover_interrupted_screenshot_jobs_on_startup(session_factory)
         await recover_interrupted_asset_render_hint_backfill_jobs_on_startup(session_factory)
+        if get_settings().ai_enabled:
+            await recover_interrupted_ai_page_mutation_jobs_on_startup(session_factory)
+        # 进程内的测试或热重启可能复用全局池对象；只有明确的新应用生命周期
+        # 才允许重新开放已由上一轮 shutdown 关闭的 Chromium 池。
+        await playwright_browser_pool.start(allow_reopen=True)
         page_screenshot_queue_task = _start_page_screenshot_queue_task()
         asset_render_hint_backfill_queue_task = _start_asset_render_hint_backfill_queue_task()
+        runtime_artifact_sweeper_task = asyncio.create_task(
+            run_runtime_artifact_sweeper(),
+            name="runtime-artifact-sweeper",
+        )
+        if get_settings().ai_enabled:
+            ai_page_mutation_queue_task = asyncio.create_task(
+                run_ai_page_mutation_queue_loop(session_factory, app=app),
+                name="ai-page-mutation-queue",
+            )
     except SQLAlchemyError as exc:
         if is_database_connectivity_error(exc):
             _raise_database_connectivity_error(exc, phase="Backend 启动时")
@@ -69,8 +93,16 @@ async def lifespan(app: FastAPI):
     finally:
         if page_screenshot_queue_task is not None:
             await _stop_background_task(page_screenshot_queue_task)
+        # 请求内“提交并等待”的兼容路径也会登记真实执行任务；必须在关闭浏览器池前
+        # 等待其 Context 关闭和任务终态写入，避免留下有效租约的 running Job。
+        await drain_page_screenshot_jobs()
         if asset_render_hint_backfill_queue_task is not None:
             await _stop_background_task(asset_render_hint_backfill_queue_task)
+        if runtime_artifact_sweeper_task is not None:
+            await _stop_background_task(runtime_artifact_sweeper_task)
+        if ai_page_mutation_queue_task is not None:
+            await _stop_background_task(ai_page_mutation_queue_task)
+        await playwright_browser_pool.stop()
 
 
 def create_app() -> FastAPI:

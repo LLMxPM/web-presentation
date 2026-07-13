@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -17,10 +17,13 @@ class PageScreenshotJob(TimestampMixin, Base):
         Index(
             "ix_page_screenshot_jobs_dedupe_active",
             "page_id",
+            "target_page_version_no",
             "config_hash",
             "viewport_width",
             "viewport_height",
-            "status",
+            unique=True,
+            sqlite_where=text("status IN ('pending', 'running')"),
+            postgresql_where=text("status IN ('pending', 'running')"),
         ),
     )
 
@@ -32,9 +35,15 @@ class PageScreenshotJob(TimestampMixin, Base):
     project_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
     viewport_width: Mapped[int] = mapped_column(Integer, nullable=False)
     viewport_height: Mapped[int] = mapped_column(Integer, nullable=False)
+    # 入队时固定的页面版本，避免旧任务在页面编辑后覆盖新版本截图。
+    target_page_version_no: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
     config_hash: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     status: Mapped[str] = mapped_column(String(32), nullable=False, index=True, default="pending")
     attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    worker_id: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    cancel_requested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_by: Mapped[int | None] = mapped_column(Integer, nullable=True)

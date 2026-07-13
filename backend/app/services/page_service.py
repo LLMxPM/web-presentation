@@ -35,6 +35,7 @@ from app.schemas.page import (
     PageVersionRestoreRequest,
 )
 from app.services.component_dependency_service import ComponentDependencyService
+from app.services.capture_viewport_resolver import CaptureViewportResolver
 from app.services.page_version_service import PageVersionService
 from app.services.page_component_index_service import PageComponentIndexService
 from app.services.project_route_service import ProjectRouteService
@@ -56,6 +57,7 @@ class PageService:
         self.component_index_service = PageComponentIndexService(session)
         self.dependency_service = ComponentDependencyService(session)
         self.screenshot_fingerprint_service = PageScreenshotFingerprintService(session)
+        self.capture_viewport_resolver = CaptureViewportResolver()
         self.project_service = ProjectService(session)
         self.workspace_service = WorkspaceService(session)
         self.settings = get_settings()
@@ -73,7 +75,7 @@ class PageService:
         route_bindings_map: dict[int, list] = {}
         if query.project_id is not None:
             route_bindings_map = await ProjectRouteService(self.session).build_page_bindings_map(query.project_id)
-        screenshot_config_hash_cache: dict[int, str | None] = {}
+        screenshot_config_hash_cache: dict[int, tuple[str, int, int] | None] = {}
         page_items = [
             await self._to_item(
                 item,
@@ -100,8 +102,8 @@ class PageService:
             route_bindings = (await ProjectRouteService(self.session).build_page_bindings_map(page_model.project_id)).get(page_model.id)
         return await self._to_item(page_model, route_bindings=route_bindings)
 
-    async def create(self, payload: PageCreateRequest, operator_id: int) -> PageItem:
-        """创建页面资源，code 由系统自动生成。"""
+    async def create(self, payload: PageCreateRequest, operator_id: int, *, commit: bool = True) -> PageItem:
+        """创建页面资源；可由上层接管提交，以便和持久化任务状态保持原子性。"""
 
         normalized_page_content = normalize_text_to_lf(payload.page_content)
         if payload.workspace_id is None:
@@ -138,7 +140,10 @@ class PageService:
             Page,
             CODE_PREFIX_PAGE,
             write_page,
+            commit=commit,
         )
+        if not commit:
+            await self.session.flush()
         await self.session.refresh(page_model)
         return await self._to_item(page_model)
 
@@ -200,8 +205,15 @@ class PageService:
         await self.session.refresh(page_model)
         return await self.get(page_model.id)
 
-    async def update(self, page_id: int, payload: PageUpdateRequest, operator_id: int) -> PageItem:
-        """更新页面资源元数据，编码不可修改。"""
+    async def update(
+        self,
+        page_id: int,
+        payload: PageUpdateRequest,
+        operator_id: int,
+        *,
+        commit: bool = True,
+    ) -> PageItem:
+        """更新页面资源；可由上层接管提交，以便和持久化任务状态保持原子性。"""
 
         page_model = await self._get_page_or_raise(page_id)
         await self._ensure_page_access(page_model, user_id=operator_id)
@@ -250,7 +262,10 @@ class PageService:
             page_model.project_id = payload.project_id
 
         page_model.updated_by = operator_id
-        await self.session.commit()
+        if commit:
+            await self.session.commit()
+        else:
+            await self.session.flush()
         await self.session.refresh(page_model)
         return await self._to_item(page_model)
 
@@ -511,7 +526,7 @@ class PageService:
         page_model: Page,
         *,
         route_bindings: list | None = None,
-        screenshot_config_hash_cache: dict[int, str | None] | None = None,
+        screenshot_config_hash_cache: dict[int, tuple[str, int, int] | None] | None = None,
     ) -> PageItem:
         """统一补齐页面截图公开地址后再输出响应。"""
 
@@ -528,6 +543,8 @@ class PageService:
                 "screenshot_url": screenshot_url,
                 "screenshot_version_no": page_model.screenshot_version_no,
                 "screenshot_config_hash": page_model.screenshot_config_hash,
+                "screenshot_viewport_width": page_model.screenshot_viewport_width,
+                "screenshot_viewport_height": page_model.screenshot_viewport_height,
                 "screenshot_is_latest": screenshot_is_latest,
                 "screenshot_updated_at": page_model.screenshot_updated_at,
                 "is_in_project_route": None if page_model.project_id is None else bool(resolved_route_bindings),
@@ -540,7 +557,7 @@ class PageService:
         page_model: Page,
         *,
         screenshot_url: str | None,
-        screenshot_config_hash_cache: dict[int, str | None] | None = None,
+        screenshot_config_hash_cache: dict[int, tuple[str, int, int] | None] | None = None,
     ) -> bool:
         """判断页面截图是否同时匹配当前页面版本和项目展示配置。"""
 
@@ -552,32 +569,42 @@ class PageService:
         ):
             return False
 
-        current_config_hash = await self._resolve_page_screenshot_config_hash(
+        current_snapshot = await self._resolve_page_screenshot_snapshot(
             page_model,
             screenshot_config_hash_cache=screenshot_config_hash_cache,
         )
-        return current_config_hash is not None and page_model.screenshot_config_hash == current_config_hash
+        return bool(
+            current_snapshot is not None
+            and page_model.screenshot_config_hash == current_snapshot[0]
+            and page_model.screenshot_viewport_width == current_snapshot[1]
+            and page_model.screenshot_viewport_height == current_snapshot[2]
+        )
 
-    async def _resolve_page_screenshot_config_hash(
+    async def _resolve_page_screenshot_snapshot(
         self,
         page_model: Page,
         *,
-        screenshot_config_hash_cache: dict[int, str | None] | None = None,
-    ) -> str | None:
-        """解析当前截图配置指纹；配置异常时让列表保守标记为旧截图。"""
+        screenshot_config_hash_cache: dict[int, tuple[str, int, int] | None] | None = None,
+    ) -> tuple[str, int, int] | None:
+        """解析当前截图指纹和默认视口；旧尺寸缓存会被保守标记为非最新。"""
 
         cache_key = int(page_model.project_id or 0)
         if screenshot_config_hash_cache is not None and cache_key in screenshot_config_hash_cache:
             return screenshot_config_hash_cache[cache_key]
 
         try:
-            config_hash = (await self.screenshot_fingerprint_service.build_page_snapshot(page_model)).config_hash
+            config_snapshot = await self.screenshot_fingerprint_service.build_page_snapshot(page_model)
+            viewport = self.capture_viewport_resolver.resolve(
+                page_model,
+                project_page_config=config_snapshot.page_config,
+            )
+            resolved = (config_snapshot.config_hash, viewport.width, viewport.height)
         except AppException:
-            config_hash = None
+            resolved = None
 
         if screenshot_config_hash_cache is not None:
-            screenshot_config_hash_cache[cache_key] = config_hash
-        return config_hash
+            screenshot_config_hash_cache[cache_key] = resolved
+        return resolved
 
     def _build_versioned_screenshot_url(self, page_model: Page) -> str | None:
         """生成截图公开地址，并用截图更新时间作为浏览器缓存刷新版本。"""

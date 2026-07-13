@@ -43,6 +43,7 @@ class PlatformTool:
     instructions: str | None = None
     requires_confirmation: bool = False
     show_result: bool = False
+    sequential: bool = False
 
 
 def recoverable_tool_error_result(
@@ -92,6 +93,7 @@ def agent_tool(
     *,
     show_result: bool = False,
     requires_confirmation: bool = False,
+    sequential: bool = False,
     **_: Any,
 ) -> Callable[[Callable[..., Any]], PlatformTool]:
     """把普通 Python 函数声明为平台工具，忽略第三方框架专有参数。"""
@@ -104,6 +106,7 @@ def agent_tool(
             parameters=build_parameters_schema(func),
             requires_confirmation=requires_confirmation,
             show_result=show_result,
+            sequential=sequential,
         )
 
     return decorator

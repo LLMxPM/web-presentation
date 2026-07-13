@@ -43,6 +43,48 @@ function timelineItem(overrides: Partial<AgentTimelineItem>): AgentTimelineItem 
 }
 
 describe('agent-run-state timeline', () => {
+  it('external 页面任务等待与进度事件应保持可中断运行态且不显示 HITL 表单', () => {
+    const state = createAgentSessionRuntimeState()
+    const options = { agentId: 'agent-coordinator', agentDisplayName: '内容助手' }
+
+    applyAgentRunEvent(state, event({ event: 'run.started', sequence: 1 }), options)
+    applyAgentRunEvent(state, event({
+      event: 'run.waiting',
+      sequence: 2,
+      data: {
+        requirement: {
+          id: 'requirement-page-batch',
+          kind: 'external_job',
+          run_id: 'run-1',
+          session_id: 'session-1',
+          tool_name: 'create_project_page',
+          tool_execution: { tool_call_id: 'tool-page-1' },
+          suggested_patch: null,
+          user_feedback_schema: [],
+          note: '正在后台处理 2 个页面变更任务。',
+        },
+      },
+    }), options)
+    applyAgentRunEvent(state, event({
+      event: 'tool.progress',
+      sequence: 3,
+      data: {
+        tool_call_id: 'tool-page-1',
+        tool_name: 'create_project_page',
+        phase: 'validating',
+      },
+    }), options)
+
+    expect(state.activeRun?.status).toBe('waiting_external')
+    expect(state.stream.streaming).toBe(true)
+    expect(state.pendingRequirement).toBeNull()
+    expect(state.timelineItems.find(item => item.kind === 'tool')?.tool).toEqual(expect.objectContaining({
+      tool_call_id: 'tool-page-1',
+      status: 'running',
+    }))
+    expect(state.timelineItems.find(item => item.status === 'tool_execution')?.content).toBe('页面源码与运行时正在校验。')
+  })
+
   it('重复 sequence 不应重复追加 delta', () => {
     const state = createAgentSessionRuntimeState()
     const options = { agentId: 'agent-coordinator', agentDisplayName: '内容助手' }

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 from collections.abc import AsyncGenerator, Sequence
 from time import monotonic
@@ -28,6 +27,8 @@ from app.ai.platform_runtime import (
 from app.ai.pydantic_event_projection import PydanticEventProjector, safe_messages, safe_new_messages
 from app.ai.pydantic_tools import AgentToolDeps
 from app.ai.run_errors import build_agent_error_log_extra, normalize_agent_run_exception
+from app.ai.run_write_fence import AgentRunWriteFenceLost
+from app.ai.tool_arguments import parse_tool_arguments
 from app.core.exceptions import AppException
 from app.core.config import get_settings
 from app.models.ai_agent_runtime import AiAgentRun
@@ -351,6 +352,13 @@ class PydanticAgentRunner:
             )
             event = await self._store.mark_terminal(run_model, status="completed", content="".join(content_parts) or None)
             yield encode_sse_event(event)
+        except AgentRunWriteFenceLost:
+            # 租约拥有者已经变更；旧协调器不能把异常转成 run.failed，更不能再写事件。
+            logger.warning(
+                "后台 AI 页面变更续跑失去写入围栏，停止旧模型结果回写。",
+                extra={"event": "ai.page_mutation.continuation.fence_lost", "run_id": run_model.run_id},
+            )
+            raise
         except MemberDelegationPaused as exc:
             async for sse in self._flush_projector_buffer(projector, best_effort=True):
                 yield sse
@@ -768,6 +776,44 @@ def _requirement_from_deferred(
 ) -> AgentPendingRequirement:
     """把 Pydantic AI deferred requests 转换为平台 pending requirement。"""
 
+    external_calls = _external_page_mutation_calls(requests)
+    if external_calls:
+        first_call = external_calls[0]
+        first_tool_call_id = str(getattr(first_call, "tool_call_id", "") or "")
+        tool_calls = [
+            {
+                "tool_call_id": str(getattr(item, "tool_call_id", "") or ""),
+                "tool_name": str(getattr(item, "tool_name", "") or ""),
+                "tool_args": _tool_args_as_dict(getattr(item, "args", None)),
+                "metadata": _deferred_call_metadata(requests, str(getattr(item, "tool_call_id", "") or "")),
+            }
+            for item in external_calls
+        ]
+        batch_ids = list(
+            dict.fromkeys(
+                str(item["metadata"].get("batch_id") or "")
+                for item in tool_calls
+                if isinstance(item.get("metadata"), dict) and str(item["metadata"].get("batch_id") or "")
+            )
+        )
+        return AgentPendingRequirement(
+            id=f"requirement-{batch_ids[0] if batch_ids else first_tool_call_id or run_id}",
+            kind="external_job",
+            run_id=run_id,
+            session_id=session_id,
+            tool_name=str(getattr(first_call, "tool_name", "") or "") or None,
+            tool_execution={
+                "tool_call_id": first_tool_call_id,
+                "tool_name": str(getattr(first_call, "tool_name", "") or ""),
+                "tool_args": _tool_args_as_dict(getattr(first_call, "args", None)),
+                "tool_calls": tool_calls,
+                "batch_ids": batch_ids,
+                "requires_user_input": False,
+                "deferred_metadata": requests.metadata,
+            },
+            note=f"正在后台处理 {len(tool_calls)} 个页面变更任务。",
+        )
+
     call = (requests.approvals or requests.calls)[0] if (requests.approvals or requests.calls) else None
     tool_name = getattr(call, "tool_name", None) if call is not None else None
     tool_call_id = getattr(call, "tool_call_id", None) if call is not None else None
@@ -798,6 +844,36 @@ def _requirement_from_deferred(
     )
 
 
+def _external_page_mutation_calls(requests: DeferredToolRequests) -> list[Any]:
+    """识别全部由持久化页面变更工具产生的 external deferred calls。"""
+
+    calls = list(requests.calls or [])
+    if not calls:
+        return []
+    page_mutation_calls = []
+    for call in calls:
+        tool_call_id = str(getattr(call, "tool_call_id", "") or "")
+        if _deferred_call_metadata(requests, tool_call_id).get("kind") == "page_mutation":
+            page_mutation_calls.append(call)
+    if not page_mutation_calls:
+        return []
+    if len(page_mutation_calls) != len(calls) or requests.approvals:
+        raise AppException(
+            status_code=422,
+            code="AI_PAGE_MUTATION_MIXED_DEFERRED_CALLS",
+            detail="页面创建或修改不能与用户确认类 deferred 工具混合调用，请分两轮执行。",
+        )
+    return page_mutation_calls
+
+
+def _deferred_call_metadata(requests: DeferredToolRequests, tool_call_id: str) -> dict[str, Any]:
+    """按 call id 读取 deferred metadata，兼容无 metadata 的旧工具。"""
+
+    metadata = requests.metadata if isinstance(requests.metadata, dict) else {}
+    value = metadata.get(tool_call_id)
+    return dict(value) if isinstance(value, dict) else {}
+
+
 def _has_paused(run_model: AiAgentRun) -> bool:
     """判断当前 run 是否已进入暂停状态。"""
 
@@ -807,15 +883,7 @@ def _has_paused(run_model: AiAgentRun) -> bool:
 def _tool_args_as_dict(value: Any) -> dict[str, Any]:
     """把 Pydantic AI 工具参数归一化为 dict，兼容字符串 JSON。"""
 
-    if isinstance(value, dict):
-        return value
-    if isinstance(value, str):
-        try:
-            parsed = json.loads(value)
-        except json.JSONDecodeError:
-            return {}
-        return parsed if isinstance(parsed, dict) else {}
-    return {}
+    return parse_tool_arguments(value) or {}
 
 
 def _feedback_schema_from_args(args: dict[str, Any]) -> list[dict[str, Any]]:

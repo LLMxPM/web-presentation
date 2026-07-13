@@ -245,6 +245,8 @@ class HistoryCompressionService:
         }
         session_model = await self._require_session()
         session_model.summary_json = checkpoint
+        # 自动续跑携带写入围栏时，摘要检查点也不能绕过当前 Batch 租约。
+        await self._store.ensure_write_fence()
         await self._session.commit()
         return checkpoint
 

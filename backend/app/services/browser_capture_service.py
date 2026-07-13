@@ -12,6 +12,7 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from app.core.config import get_settings
 from app.core.exceptions import AppException
 from app.services.capture_viewport_resolver import CaptureViewport
+from app.services.playwright_browser_worker import PlaywrightBrowserMissingError
 from app.services.playwright_task_queue import PlaywrightTaskQueue, get_playwright_task_queue
 
 logger = logging.getLogger(__name__)
@@ -52,13 +53,35 @@ class BrowserCaptureService:
     ) -> bytes:
         """打开预览地址并按给定视口生成截图内容。"""
 
-        return await self.playwright_task_queue.run_sync(
-            "page-screenshot",
-            self._capture_preview_sync,
-            preview_url,
-            viewport,
-            extra_http_headers,
-        )
+        timeout_ms = int(self.settings.page_screenshot_timeout_seconds * 1000)
+        visual_ready_timeout_ms = int(self.settings.page_screenshot_visual_ready_timeout_seconds * 1000)
+        try:
+            return await self.playwright_task_queue.run_with_browser(
+                "page-screenshot",
+                self._capture_preview_with_browser,
+                preview_url,
+                viewport,
+                extra_http_headers=extra_http_headers,
+                timeout_ms=timeout_ms,
+                visual_ready_timeout_ms=visual_ready_timeout_ms,
+                priority="background",
+            )
+        except AppException:
+            raise
+        except PlaywrightBrowserMissingError as error:
+            raise AppException(
+                status_code=500,
+                code="PAGE_SCREENSHOT_BROWSER_MISSING",
+                detail="未安装 Playwright 或 Chromium，请先完成浏览器依赖安装。",
+            ) from error
+        except Exception as error:
+            logger.exception(
+                "页面截图失败：preview_url=%s viewport=%sx%s",
+                self._sanitize_url(preview_url),
+                viewport.width,
+                viewport.height,
+            )
+            raise self._build_capture_failed_exception(error) from error
 
     async def capture_preview_batch(
         self,
@@ -97,66 +120,6 @@ class BrowserCaptureService:
 
         return await asyncio.gather(*[run_job(job) for job in jobs])
 
-    def _capture_preview_sync(
-        self,
-        preview_url: str,
-        viewport: CaptureViewport,
-        extra_http_headers: Mapping[str, str] | None = None,
-    ) -> bytes:
-        """在线程池内使用同步 Playwright 截图，规避 Windows 异步子进程限制。"""
-
-        try:
-            from playwright.sync_api import Error as PlaywrightError, sync_playwright
-        except ImportError as error:  # pragma: no cover - 依赖缺失属于部署问题
-            raise AppException(
-                status_code=500,
-                code="PAGE_SCREENSHOT_BROWSER_MISSING",
-                detail="未安装 Playwright，请先完成依赖与浏览器安装。",
-            ) from error
-
-        timeout_ms = int(self.settings.page_screenshot_timeout_seconds * 1000)
-        visual_ready_timeout_ms = int(self.settings.page_screenshot_visual_ready_timeout_seconds * 1000)
-        executable_path = self.settings.page_screenshot_browser_executable_path or None
-
-        try:
-            with sync_playwright() as playwright:
-                browser = playwright.chromium.launch(
-                    headless=True,
-                    executable_path=executable_path,
-                )
-                try:
-                    return self._capture_preview_with_browser(
-                        browser,
-                        preview_url,
-                        viewport,
-                        extra_http_headers=extra_http_headers,
-                        timeout_ms=timeout_ms,
-                        visual_ready_timeout_ms=visual_ready_timeout_ms,
-                    )
-                finally:
-                    try:
-                        browser.close()
-                    except Exception:  # noqa: BLE001
-                        logger.warning("页面截图浏览器关闭失败。", exc_info=True)
-        except AppException:
-            raise
-        except PlaywrightError as error:
-            logger.exception(
-                "页面截图失败：preview_url=%s viewport=%sx%s",
-                self._sanitize_url(preview_url),
-                viewport.width,
-                viewport.height,
-            )
-            raise self._build_capture_failed_exception(error) from error
-        except Exception as error:
-            logger.exception(
-                "页面截图出现未预期异常：preview_url=%s viewport=%sx%s",
-                self._sanitize_url(preview_url),
-                viewport.width,
-                viewport.height,
-            )
-            raise self._build_capture_failed_exception(error) from error
-
     def _capture_preview_with_browser(
         self,
         browser: object,
@@ -169,12 +132,15 @@ class BrowserCaptureService:
     ) -> bytes:
         """使用已启动的浏览器实例打开独立页面并截图。"""
 
-        page_options = {
+        context_options = {
             "viewport": {"width": viewport.width, "height": viewport.height},
             "device_scale_factor": 1,
         }
-        page = browser.new_page(**page_options)
+        context = browser.new_context(**context_options)
         try:
+            # new_page 本身也可能因浏览器断连失败；必须纳入 finally，避免长期池
+            # 留下无法自动回收的 BrowserContext。
+            page = context.new_page()
             self._install_initial_preview_header_route(page, preview_url, extra_http_headers)
             page.on(
                 "pageerror",
@@ -227,9 +193,9 @@ class BrowserCaptureService:
             return page.screenshot(type="png")
         finally:
             try:
-                page.close()
+                context.close()
             except Exception:  # noqa: BLE001
-                logger.warning("页面截图标签页关闭失败。", exc_info=True)
+                logger.warning("页面截图 BrowserContext 关闭失败。", exc_info=True)
 
     def _install_initial_preview_header_route(
         self,

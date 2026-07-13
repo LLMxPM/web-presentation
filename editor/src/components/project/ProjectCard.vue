@@ -10,18 +10,18 @@
     @keydown.space.prevent="emit('open', project.id)"
   >
     <div class="flex min-h-full flex-col p-4 sm:p-5">
-      <div class="flex items-start gap-3">
-        <div class="flex min-w-0 flex-1 items-start gap-3">
+      <div class="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3">
+        <div class="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-start gap-3">
           <div class="project-card-avatar" aria-hidden="true">{{ projectInitial }}</div>
           <div class="min-w-0 flex-1 pt-0.5">
-            <div class="flex min-w-0 flex-wrap items-center gap-2">
+            <div class="grid min-w-0 grid-cols-[minmax(0,1fr)_minmax(3rem,40%)] items-center gap-2">
               <h3
-                class="min-w-0 flex-1 truncate text-lg font-black leading-tight text-slate-900 transition-colors group-hover:text-indigo-700"
+                class="min-w-0 truncate text-lg font-black leading-tight text-slate-900 transition-colors group-hover:text-indigo-700"
                 :title="project.name"
               >
                 {{ project.name }}
               </h3>
-              <span class="project-card-code">{{ project.code }}</span>
+              <span class="project-card-code" :title="project.code">{{ project.code }}</span>
             </div>
             <p class="mt-1.5 line-clamp-2 min-h-[2.5rem] text-sm font-medium leading-5 text-slate-500">
               {{ project.description || '此项目尚未添加具体功能说明。' }}
@@ -190,9 +190,8 @@ const baseFontSizeLabel = computed(() => props.project.base_font_size || '-')
 
 .project-card-code {
   display: inline-flex;
-  max-width: 9rem;
+  width: 100%;
   min-height: 1.25rem;
-  flex: 0 1 auto;
   align-items: center;
   overflow: hidden;
   border-radius: 9999px;

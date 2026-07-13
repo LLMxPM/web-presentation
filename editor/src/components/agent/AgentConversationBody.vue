@@ -696,7 +696,7 @@ function shouldAnimateRunStatus(status: string | null) {
 function getRequirementStatusClass(status: string | null) {
   if (status === 'failed') return 'border-red-100 bg-red-50/70 text-red-600'
   if (status === 'cancelled' || status === 'cancelling') return 'border-amber-100 bg-amber-50/70 text-amber-700'
-  if (status === 'paused' || status === 'pending') return 'border-sky-100 bg-sky-50/70 text-sky-700'
+  if (status === 'paused' || status === 'pending' || status === 'waiting_external') return 'border-sky-100 bg-sky-50/70 text-sky-700'
   return 'border-slate-100 bg-slate-50/70 text-slate-500'
 }
 </script>

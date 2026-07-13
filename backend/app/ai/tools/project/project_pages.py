@@ -4,10 +4,13 @@ from __future__ import annotations
 
 from typing import Any
 
+from pydantic_ai import CallDeferred
+
 from app.ai.platform_tools import AgentToolContext, agent_tool
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.ai.auth_tokens import PROJECT_TOOL_WRITE_SCOPES, extract_user_id
+from app.ai.page_mutation_enqueue import enqueue_page_mutation
 from app.ai.tools.shared import resolve_tool_context
 from app.core.exceptions import AppException
 from app.models.enums import PageFileType, RecordStatus
@@ -28,7 +31,7 @@ def build_project_page_tools(session_factory: async_sessionmaker[AsyncSession]) 
 def build_create_project_page_tool(session_factory: async_sessionmaker[AsyncSession]) -> Any:
     """构建项目页面创建工具。"""
 
-    @agent_tool(show_result=False)
+    @agent_tool(show_result=False, sequential=True)
     async def create_project_page(
         run_context: AgentToolContext,
         title: str,
@@ -55,6 +58,19 @@ def build_create_project_page_tool(session_factory: async_sessionmaker[AsyncSess
             required_dependency_fields=("workspace_id", "project_id"),
         )
         operator_id = extract_user_id(str(claims.get("sub")))
+        tool_call_id = str(dependencies.get("current_tool_call_id") or "").strip()
+        if tool_call_id:
+            enqueued = await enqueue_page_mutation(
+                session_factory,
+                run_id=run_context.run_id,
+                session_id=run_context.session_id,
+                run_step=int(dependencies.get("current_run_step") or 0),
+                tool_call_id=tool_call_id,
+                operation="create_page",
+                workspace_id=int(dependencies["workspace_id"]),
+                project_id=int(dependencies["project_id"]),
+            )
+            raise CallDeferred(metadata=enqueued.as_metadata())
         async with session_factory() as session:
             validation_result = await CodeCheckService(session).check_page_code(
                 page_id=None,

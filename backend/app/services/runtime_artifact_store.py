@@ -147,6 +147,23 @@ class RuntimeArtifactStore:
             "original_name": str(payload.get("original_name") or ""),
         }
 
+    async def delete_artifact(self, artifact_id: str) -> int:
+        """显式删除完整 Runtime artifact，供诊断链路在 finally 中及时释放内存。"""
+
+        keys = (
+            self._manifest_key(artifact_id),
+            self._config_key(artifact_id),
+            self._modules_key(artifact_id),
+            self._assets_key(artifact_id),
+            self._meta_key(artifact_id),
+        )
+        return int(await asyncio.to_thread(self.runtime.client.delete, *keys))
+
+    async def sweep_expired(self) -> int:
+        """触发内存运行态的全局 TTL 清理；真实 Redis 调用会直接返回零。"""
+
+        return int(await asyncio.to_thread(self.runtime.sweep_expired))
+
     async def put_build_state(self, *, job_id: int, mapping: dict[str, Any], ttl_seconds: int | None = None) -> None:
         """写入或更新构建任务的 Redis 运行态。"""
 
@@ -183,3 +200,14 @@ class RuntimeArtifactStore:
 
     def _build_key(self, job_id: int) -> str:
         return self.runtime.key(f"runtime:build:{job_id}")
+
+
+async def run_runtime_artifact_sweeper() -> None:
+    """按配置周期清理内存运行态过期键，防止 lite 部署长期积累。"""
+
+    settings = get_settings()
+    interval = max(1.0, float(settings.runtime_artifact_sweep_interval_seconds))
+    store = RuntimeArtifactStore()
+    while True:
+        await asyncio.sleep(interval)
+        await store.sweep_expired()

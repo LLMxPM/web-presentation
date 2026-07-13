@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import io
 import logging
 import re
@@ -11,13 +10,12 @@ import zipfile
 from dataclasses import dataclass
 from urllib.parse import parse_qs, urlsplit
 
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.exceptions import AppException
 from app.core.time_utils import normalize_utc, utc_now
-from app.models.enums import PageFileType, RecordStatus
+from app.models.enums import PageFileType
 from app.models.page import Page
 from app.schemas.page import (
     PageItem,
@@ -25,15 +23,13 @@ from app.schemas.page import (
     PageScreenshotBatchRefreshResponse,
 )
 from app.services.auth_service import AuthContext
-from app.services.browser_capture_service import BrowserCaptureJob, BrowserCaptureService
-from app.services.capture_viewport_resolver import CaptureViewportResolver
+from app.services.browser_capture_service import BrowserCaptureService
+from app.services.capture_viewport_resolver import CaptureViewport, CaptureViewportResolver
 from app.services.object_storage_service import ObjectStorageService
 from app.services.page_preview_service import PagePreviewResult, PagePreviewService
 from app.services.page_service import PageService
 from app.services.project_config_service import ProjectConfigService
-from app.services.project_service import ProjectService
 from app.services.page_screenshot_fingerprint_service import PageScreenshotFingerprintService
-from app.services.redis_runtime_client import get_redis_runtime_client
 from app.services.token_service import TokenService
 
 RUNTIME_SERVICE_TOKEN_HEADER = "x-runtime-service-token"
@@ -62,6 +58,17 @@ class PageScreenshotCaptureTarget:
     extra_http_headers: dict[str, str] | None = None
 
 
+@dataclass(slots=True, frozen=True)
+class PageScreenshotCaptureArtifact:
+    """一次截图捕获产物，使用任务快照生成不可变对象键，尚未发布到页面元数据。"""
+
+    storage_key: str
+    page_version_no: int
+    config_hash: str
+    viewport_width: int
+    viewport_height: int
+
+
 class PageScreenshotService:
     """页面截图服务，统一处理截图参数解析、内容生成与覆盖保存。"""
 
@@ -77,6 +84,7 @@ class PageScreenshotService:
         screenshot_fingerprint_service: PageScreenshotFingerprintService | None = None,
     ) -> None:
         self.session = session
+        self.settings = get_settings()
         self.page_service = page_service or PageService(session)
         self.preview_service = preview_service or PagePreviewService(session)
         self.viewport_resolver = viewport_resolver or CaptureViewportResolver()
@@ -95,18 +103,33 @@ class PageScreenshotService:
         viewport_width: int | None = None,
         viewport_height: int | None = None,
     ) -> PageItem:
-        """为指定页面生成并保存截图，成功后返回最新页面详情。"""
+        """兼容旧同步接口：提交截图 Job 并等待终态，不直接绕过持久化队列。"""
 
-        page = await self.page_service._get_page_or_raise(page_id)
-        await self.page_service._ensure_page_access(page, user_id=current.user.id)
-        self._validate_page_screenshot_supported(page)
-        page = await self._capture_and_store_page_screenshot(
-            page,
-            operator_id=current.user.id,
+        # 延迟导入避免截图 Job 服务与本服务在模块加载阶段互相引用。
+        from app.services.page_screenshot_job_service import PageScreenshotJobService
+
+        user_id = current.user.id
+        job = await PageScreenshotJobService(self.session).create_page_screenshot_job(
+            page_id=page_id,
+            current=current,
             viewport_width=viewport_width,
             viewport_height=viewport_height,
         )
-        return await self.page_service._to_item(page)
+        terminal = await PageScreenshotJobService.wait_for_job_terminal_detached(
+            job.id,
+            timeout_seconds=self.settings.page_screenshot_ai_wait_timeout_seconds,
+        )
+        PageScreenshotJobService._raise_if_job_stale(terminal)
+        if terminal.status == "cancelled":
+            raise AppException(status_code=409, code="PAGE_SCREENSHOT_JOB_CANCELLED", detail="页面截图任务已取消。")
+        if terminal.status == "failed":
+            raise AppException(
+                status_code=502,
+                code=terminal.error_code or "PAGE_SCREENSHOT_JOB_FAILED",
+                detail=terminal.error_message or "页面截图任务执行失败。",
+        )
+        self.session.expire_all()
+        return await self.page_service.get(page_id, user_id=user_id)
 
     async def batch_refresh_project_screenshots(
         self,
@@ -114,93 +137,45 @@ class PageScreenshotService:
         project_id: int,
         current: AuthContext,
     ) -> PageScreenshotBatchRefreshResponse:
-        """批量刷新项目中缺失或已过期的页面截图。"""
+        """兼容旧批量接口：创建任务组并等待终态，避免直接并发启动 Chromium。"""
 
-        project = await self.project_config_service.get_active_project_or_raise(project_id)
-        await ProjectService(self.session).get(project_id, user_id=current.user.id)
-        config_snapshot = await self.screenshot_fingerprint_service.build_project_snapshot(project)
-        pages = await self._list_project_pages_for_batch_screenshot_refresh(project_id)
-        outdated_pages = [
-            page for page in pages
-            if not self._is_page_screenshot_current_for_hash(page, config_snapshot.config_hash)
-        ]
-        failures: list[PageScreenshotBatchFailure] = []
-        capture_jobs: list[BrowserCaptureJob] = []
-        page_by_id: dict[int, Page] = {}
-        lock_key_by_page_id: dict[int, str] = {}
+        # 延迟导入避免本服务和任务服务形成模块循环。
+        from app.services.page_screenshot_job_service import PageScreenshotJobService
 
-        for page in outdated_pages:
-            try:
-                viewport = self.viewport_resolver.resolve(page, project_page_config=config_snapshot.page_config)
-                lock_key = self._build_screenshot_lock_key(
-                    page_id=page.id,
-                    config_hash=config_snapshot.config_hash,
-                    viewport_hash=f"{viewport.width}x{viewport.height}",
-                )
-                if not await self._acquire_screenshot_lock(lock_key):
-                    raise AppException(status_code=409, code="PAGE_SCREENSHOT_IN_PROGRESS", detail="页面截图正在生成中，请稍后重试。")
-                lock_key_by_page_id[page.id] = lock_key
-                preview = await self.preview_service.create_page_preview(
-                    page,
-                    current.user.id,
-                    asset_delivery_mode="backend_cache",
-                    asset_base_url_override=self._resolve_browser_backend_base_url(),
-                )
-                capture_target = self._build_browser_capture_target(preview)
-                capture_jobs.append(
-                    BrowserCaptureJob(
-                        key=page.id,
-                        preview_url=capture_target.preview_url,
-                        viewport=viewport,
-                        extra_http_headers=capture_target.extra_http_headers,
-                    )
-                )
-                page_by_id[page.id] = page
-            except Exception as error:  # noqa: BLE001
-                lock_key = lock_key_by_page_id.pop(page.id, None)
-                if lock_key is not None:
-                    await self._release_screenshot_lock(lock_key)
-                failures.append(self._build_batch_failure(page, error))
-
-        if capture_jobs:
-            await self._release_session_before_browser_capture()
-        succeeded_ids: list[int] = []
-        handled_capture_keys: set[int] = set()
-        try:
-            capture_results = await self.browser_capture_service.capture_preview_batch(
-                capture_jobs,
-                max_concurrency=get_settings().page_screenshot_batch_concurrency,
+        job_service = PageScreenshotJobService(self.session)
+        group = await job_service.create_batch_refresh_screenshot_jobs(
+            project_id=project_id,
+            current=current,
+        )
+        job_ids = [job.id for job in group.jobs]
+        if not job_ids:
+            return PageScreenshotBatchRefreshResponse(
+                requested_count=0,
+                succeeded_count=0,
+                failed_count=0,
             )
-            for result in capture_results:
-                handled_capture_keys.add(result.key)
-                page = page_by_id.get(result.key)
-                if page is None:
-                    continue
-                if result.error is not None or result.content is None:
-                    failures.append(self._build_batch_failure(page, result.error or RuntimeError("页面截图内容为空。")))
-                    continue
 
-                try:
-                    await self._store_page_screenshot_content(
-                        page=page,
-                        content=result.content,
-                        operator_id=current.user.id,
-                        config_hash=config_snapshot.config_hash,
-                    )
-                    succeeded_ids.append(page.id)
-                except Exception as error:  # noqa: BLE001
-                    await self.session.rollback()
-                    failures.append(self._build_batch_failure(page, error))
-
-            for job in capture_jobs:
-                if job.key not in handled_capture_keys:
-                    failures.append(self._build_batch_failure(page_by_id[job.key], RuntimeError("页面截图任务未返回结果。")))
-        finally:
-            for lock_key in lock_key_by_page_id.values():
-                await self._release_screenshot_lock(lock_key)
-
+        terminal_jobs = await PageScreenshotJobService.wait_for_jobs_terminal_detached(
+            job_ids,
+            timeout_seconds=self.settings.page_screenshot_ai_wait_timeout_seconds,
+        )
+        stale_code = "PAGE_SCREENSHOT_JOB_STALE"
+        succeeded_ids = [
+            job.page_id
+            for job in terminal_jobs
+            if job.status in {"succeeded", "skipped"} and job.error_code != stale_code
+        ]
+        failures = [
+            PageScreenshotBatchFailure(
+                page_id=job.page_id,
+                code=job.error_code or "PAGE_SCREENSHOT_JOB_CANCELLED",
+                detail=job.error_message or "页面截图任务已取消。",
+            )
+            for job in terminal_jobs
+            if job.status in {"failed", "cancelled"} or job.error_code == stale_code
+        ]
         return PageScreenshotBatchRefreshResponse(
-            requested_count=len(outdated_pages),
+            requested_count=len(terminal_jobs),
             succeeded_count=len(succeeded_ids),
             failed_count=len(failures),
             page_ids=succeeded_ids,
@@ -248,23 +223,18 @@ class PageScreenshotService:
         workspace_id: int,
         project_id: int | None = None,
     ) -> PageScreenshotResult:
-        """返回指定页面当前版本最新截图，缺失、过期或对象丢失时自动重截。"""
+        """返回最新截图；缺失时只提交持久化任务，绝不在调用方直接启动 Chromium。"""
 
-        page = await self.page_service._get_page_or_raise(page_id)
-        self._validate_page_screenshot_supported(page)
-        self._ensure_page_within_scope(page, workspace_id=workspace_id, project_id=project_id)
+        # 保留旧服务入口，避免 AI 工具或扩展绕开截图持久化队列。延迟导入也可避免
+        # Job 服务与本服务在模块初始化阶段形成循环依赖。
+        from app.services.page_screenshot_job_service import PageScreenshotJobService
 
-        if await self._is_page_screenshot_current(page):
-            try:
-                content = await self.object_storage_service.read_object(str(page.screenshot_storage_key))
-                return await self._build_result(page=page, content=content, refreshed=False)
-            except AppException as exc:
-                if exc.status_code != 404:
-                    raise
-
-        page = await self._capture_and_store_page_screenshot(page, operator_id=user_id)
-        content = await self.object_storage_service.read_object(str(page.screenshot_storage_key))
-        return await self._build_result(page=page, content=content, refreshed=True)
+        return await PageScreenshotJobService(self.session).ensure_latest_page_screenshot_via_queue(
+            page_id=page_id,
+            user_id=user_id,
+            workspace_id=workspace_id,
+            project_id=project_id,
+        )
 
     async def _capture_and_store_page_screenshot(
         self,
@@ -273,8 +243,9 @@ class PageScreenshotService:
         operator_id: int,
         viewport_width: int | None = None,
         viewport_height: int | None = None,
+        commit: bool = True,
     ) -> Page:
-        """生成页面预览截图并写回页面截图缓存字段。"""
+        """生成并写回截图；队列可延迟提交以便与任务终态保持同一事务。"""
 
         config_snapshot = await self.screenshot_fingerprint_service.build_page_snapshot(page)
         viewport = self.viewport_resolver.resolve(
@@ -283,13 +254,31 @@ class PageScreenshotService:
             viewport_width=viewport_width,
             viewport_height=viewport_height,
         )
-        lock_key = self._build_screenshot_lock_key(
-            page_id=page.id,
+        artifact = await self.capture_page_screenshot_artifact(
+            page=page,
+            operator_id=operator_id,
+            target_page_version_no=page.current_version_no,
             config_hash=config_snapshot.config_hash,
-            viewport_hash=f"{viewport.width}x{viewport.height}",
+            viewport=viewport,
         )
-        if not await self._acquire_screenshot_lock(lock_key):
-            return await self._wait_for_concurrent_screenshot(page=page, config_hash=config_snapshot.config_hash)
+        await self.persist_page_screenshot_artifact(
+            page=page,
+            artifact=artifact,
+            operator_id=operator_id,
+            commit=commit,
+        )
+        return page
+
+    async def capture_page_screenshot_artifact(
+        self,
+        *,
+        page: Page,
+        operator_id: int,
+        target_page_version_no: int,
+        config_hash: str,
+        viewport: CaptureViewport,
+    ) -> PageScreenshotCaptureArtifact:
+        """捕获并写入不可变对象，但不修改页面元数据或任务状态。"""
 
         try:
             logger.info(
@@ -315,23 +304,33 @@ class PageScreenshotService:
                 viewport,
                 extra_http_headers=capture_target.extra_http_headers,
             )
-            await self._store_page_screenshot_content(
-                page=page,
+            storage_key = await self.object_storage_service.put_object(
+                self.build_page_screenshot_storage_key(
+                    page_id=page.id,
+                    page_version_no=target_page_version_no,
+                    config_hash=config_hash,
+                    viewport=viewport,
+                ),
                 content=screenshot_content,
-                operator_id=operator_id,
-                config_hash=config_snapshot.config_hash,
+                content_type="image/png",
             )
             logger.info(
-                "页面截图保存完成。",
+                "页面截图对象已保存，等待任务终态提交。",
                 extra={
-                    "event": "page.screenshot.capture.done",
+                    "event": "page.screenshot.capture.artifact_saved",
                     "page_id": page.id,
                     "project_id": page.project_id,
                     "workspace_id": page.workspace_id,
                     "size_bytes": len(screenshot_content),
                 },
             )
-            return page
+            return PageScreenshotCaptureArtifact(
+                storage_key=storage_key,
+                page_version_no=target_page_version_no,
+                config_hash=config_hash,
+                viewport_width=viewport.width,
+                viewport_height=viewport.height,
+            )
         except Exception:
             logger.exception(
                 "页面截图生成失败。",
@@ -343,43 +342,35 @@ class PageScreenshotService:
                 },
             )
             raise
-        finally:
-            await self._release_screenshot_lock(lock_key)
+
+    async def persist_page_screenshot_artifact(
+        self,
+        *,
+        page: Page,
+        artifact: PageScreenshotCaptureArtifact,
+        operator_id: int,
+        commit: bool = True,
+    ) -> None:
+        """把已捕获对象发布为页面截图；调用方负责先确认页面版本仍匹配。"""
+
+        page.screenshot_storage_key = artifact.storage_key
+        page.screenshot_version_no = artifact.page_version_no
+        page.screenshot_config_hash = artifact.config_hash
+        page.screenshot_viewport_width = artifact.viewport_width
+        page.screenshot_viewport_height = artifact.viewport_height
+        page.screenshot_updated_at = utc_now()
+        page.updated_by = operator_id
+        if commit:
+            await self.session.commit()
+            await self.session.refresh(page)
+        else:
+            await self.session.flush()
 
     async def _release_session_before_browser_capture(self) -> None:
         """截图前结束当前空闲事务，避免回环请求等待同一进程内的数据库连接。"""
 
         if self.session.in_transaction():
             await self.session.commit()
-
-    async def _acquire_screenshot_lock(self, lock_key: str) -> bool:
-        """抢占 Redis 截图锁，避免同一页面同一配置重复生成。"""
-
-        runtime = get_redis_runtime_client()
-        acquired = await asyncio.to_thread(runtime.client.set, lock_key, "1", ex=120, nx=True)
-        return bool(acquired)
-
-    async def _release_screenshot_lock(self, lock_key: str) -> None:
-        """释放 Redis 截图锁；TTL 仍是异常兜底。"""
-
-        runtime = get_redis_runtime_client()
-        await asyncio.to_thread(runtime.client.delete, lock_key)
-
-    async def _wait_for_concurrent_screenshot(self, *, page: Page, config_hash: str) -> Page:
-        """短轮询等待并发截图落库，超时后返回明确的运行态错误。"""
-
-        for _ in range(10):
-            await asyncio.sleep(0.5)
-            await self.session.refresh(page)
-            if self._is_page_screenshot_current_for_hash(page, config_hash):
-                return page
-        raise AppException(status_code=409, code="PAGE_SCREENSHOT_IN_PROGRESS", detail="页面截图正在生成中，请稍后重试。")
-
-    @staticmethod
-    def _build_screenshot_lock_key(*, page_id: int, config_hash: str, viewport_hash: str) -> str:
-        """构造截图去重锁 key。"""
-
-        return get_redis_runtime_client().key(f"runtime:screenshot-lock:{page_id}:{config_hash}:{viewport_hash}")
 
     def _build_browser_capture_target(self, preview: PagePreviewResult) -> PageScreenshotCaptureTarget:
         """把公开预览地址转换为截图专用 Runtime 直连目标。"""
@@ -463,42 +454,20 @@ class PageScreenshotService:
             preview_exp = now
         return max(60, preview_exp - now)
 
-    async def _store_page_screenshot_content(
-        self,
+    @staticmethod
+    def build_page_screenshot_storage_key(
         *,
-        page: Page,
-        content: bytes,
-        operator_id: int,
+        page_id: int,
+        page_version_no: int,
         config_hash: str,
-    ) -> None:
-        """保存截图对象并更新页面截图缓存元数据。"""
+        viewport: CaptureViewport,
+    ) -> str:
+        """根据页面版本、展示配置和视口构造可安全重试的不可变对象键。"""
 
-        storage_key = await self.object_storage_service.put_object(
-            f"page-screenshots/{page.code}.png",
-            content,
-            "image/png",
+        return (
+            f"page-screenshots/{int(page_id)}/v{int(page_version_no)}/"
+            f"{str(config_hash).strip()}/{int(viewport.width)}x{int(viewport.height)}.png"
         )
-
-        page.screenshot_storage_key = storage_key
-        page.screenshot_version_no = page.current_version_no
-        page.screenshot_config_hash = config_hash
-        page.screenshot_updated_at = utc_now()
-        page.updated_by = operator_id
-        await self.session.commit()
-        await self.session.refresh(page)
-
-    async def _list_project_pages_for_batch_screenshot_refresh(self, project_id: int) -> list[Page]:
-        """读取项目中可批量刷新截图的启用 Vue 页面。"""
-
-        result = await self.session.scalars(
-            select(Page)
-            .where(Page.project_id == project_id)
-            .where(Page.status == RecordStatus.ACTIVE.value)
-            .where(Page.file_type == PageFileType.VUE.value)
-            .where(Page.deleted_at.is_(None))
-            .order_by(Page.updated_at.desc(), Page.id.desc())
-        )
-        return list(result.all())
 
     @staticmethod
     def _validate_page_screenshot_supported(page: Page) -> None:
@@ -524,18 +493,34 @@ class PageScreenshotService:
         """判断页面截图缓存是否指向当前页面版本。"""
 
         config_snapshot = await self.screenshot_fingerprint_service.build_page_snapshot(page)
-        return self._is_page_screenshot_current_for_hash(page, config_snapshot.config_hash)
+        viewport = self.viewport_resolver.resolve(page, project_page_config=config_snapshot.page_config)
+        return self._is_page_screenshot_current_for_hash(
+            page,
+            config_snapshot.config_hash,
+            viewport=viewport,
+        )
 
     @staticmethod
-    def _is_page_screenshot_current_for_hash(page: Page, config_hash: str) -> bool:
-        """按已解析配置指纹判断截图是否仍然最新。"""
+    def _is_page_screenshot_current_for_hash(
+        page: Page,
+        config_hash: str,
+        *,
+        viewport: CaptureViewport | None = None,
+    ) -> bool:
+        """按已解析配置和可选视口判断截图是否仍然最新。"""
 
-        return bool(
+        base_current = bool(
             page.screenshot_storage_key
             and page.screenshot_version_no is not None
             and int(page.screenshot_version_no) == int(page.current_version_no)
             and page.screenshot_config_hash
             and str(page.screenshot_config_hash) == config_hash
+        )
+        if not base_current or viewport is None:
+            return base_current
+        return (
+            int(page.screenshot_viewport_width or 0) == int(viewport.width)
+            and int(page.screenshot_viewport_height or 0) == int(viewport.height)
         )
 
     async def _build_result(self, *, page: Page, content: bytes, refreshed: bool) -> PageScreenshotResult:
@@ -555,16 +540,6 @@ class PageScreenshotService:
             refreshed=refreshed,
             public_url=public_url,
         )
-
-    @staticmethod
-    def _build_batch_failure(page: Page, error: Exception) -> PageScreenshotBatchFailure:
-        """把单页异常转换为批量刷新失败明细。"""
-
-        if isinstance(error, AppException):
-            detail = error.detail
-        else:
-            detail = str(error) or "截图刷新失败。"
-        return PageScreenshotBatchFailure(page_id=page.id, code=page.code, detail=detail)
 
     @classmethod
     def _build_zip_archive(cls, screenshots: list[tuple[Page, bytes]]) -> bytes:

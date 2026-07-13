@@ -174,7 +174,7 @@ AI_LLM_HTTP_TRACE_BODY_MAX_BYTES=200000
 
 ## Redis 临时态维护
 
-Redis 保存预览 artifact、截图锁与构建心跳等临时运行态，不保存 AI run/HITL 事实源。
+Redis 保存预览 artifact 与构建心跳等临时运行态，不保存 AI run/HITL 事实源。截图去重、认领和恢复由主数据库中的持久化任务租约负责。
 
 AI run 状态已经切到平台自有 `ai_agent_*` 表；旧 Redis run key 不需要维护脚本清理，按已有 TTL 自然过期。
 

@@ -17,7 +17,14 @@ from app.ai.message_history import build_context_limit_processor, build_history_
 from app.ai.platform_runtime import PlatformAgentRuntimeStore
 from app.ai.pydantic_runner import PydanticAgentRunner
 from app.db.session import get_session_factory
-from app.models.ai_agent_runtime import AiAgentMemberRun, AiAgentRun, AiAgentRunEvent, AiAgentSession, AiAgentToolCall
+from app.models.ai_agent_runtime import (
+    AiAgentMemberRun,
+    AiAgentRequirement,
+    AiAgentRun,
+    AiAgentRunEvent,
+    AiAgentSession,
+    AiAgentToolCall,
+)
 from app.schemas.agent import AgentPendingRequirement, AgentRunEvent, AgentScopeContext
 
 
@@ -707,7 +714,11 @@ async def test_platform_runtime_should_fill_tool_input_when_complete_args_arrive
                 event="tool.started",
                 run_id=run_model.run_id,
                 session_id=session_id,
-                data={"tool_name": "ask_user", "tool_call_id": "tool-ask-1", "tool_args": full_args},
+                data={
+                    "tool_name": "ask_user",
+                    "tool_call_id": "tool-ask-1",
+                    "tool_args": json.dumps(full_args, ensure_ascii=False),
+                },
             ),
         )
         snapshot = await store.get_runtime_snapshot(
@@ -1025,6 +1036,75 @@ async def test_pydantic_runner_cancel_check_should_report_requested_cancel(
             .order_by(AiAgentRunEvent.event_index.asc())
         )
         assert result.scalars().all() == ["run.started", "run.cancelling", "run.cancelled"]
+
+
+async def test_cancelled_external_run_should_close_pending_requirement_and_tool(
+    authenticated_client: AsyncClient,
+) -> None:
+    """取消等待外部任务的 run 时，requirement 和工具调用不得残留 pending/running。"""
+
+    workspace_response = await authenticated_client.post(
+        "/api/workspaces",
+        json={"name": "外部任务取消收敛工作空间", "status": "active"},
+    )
+    assert workspace_response.status_code == 200
+    scope = AgentScopeContext(
+        scope_type="workspace",
+        workspace_id=workspace_response.json()["id"],
+        source="editor-component-library",
+    )
+    session_response = await authenticated_client.post(
+        "/api/ai/sessions",
+        json={
+            "agent_id": "component-manager",
+            "session_name": "外部任务取消收敛会话",
+            "scope": scope.model_dump(mode="json"),
+            "llm_config_id": await _create_runtime_llm_config(authenticated_client),
+        },
+    )
+    assert session_response.status_code == 201
+
+    async with get_session_factory()() as db_session:
+        store = PlatformAgentRuntimeStore(db_session, user_id=1)
+        run_start = await store.start_run(
+            session_id=session_response.json()["session_id"],
+            agent_id="component-manager",
+            scope=scope,
+            run_id="platform-runtime-run-external-cancel",
+            message="创建页面",
+            image_attachment_ids=[],
+        )
+        await store.append_event(
+            run_start.run_model,
+            AgentRunEvent(
+                event="tool.started",
+                run_id=run_start.run_model.run_id,
+                session_id=run_start.run_model.session_id,
+                data={"tool_call_id": "tool-external-cancel", "tool_name": "create_project_page", "tool_args": {}},
+            ),
+        )
+        await store.pause_for_requirement(
+            run_start.run_model,
+            requirement=AgentPendingRequirement(
+                id="requirement-external-cancel",
+                kind="external_job",
+                run_id=run_start.run_model.run_id,
+                session_id=run_start.run_model.session_id,
+                tool_name="create_project_page",
+                tool_execution={"tool_call_id": "tool-external-cancel", "tool_name": "create_project_page"},
+                note="页面变更正在后台执行。",
+            ),
+        )
+
+        await store.mark_terminal(run_start.run_model, status="cancelled", content="用户停止了当前运行。")
+        requirement = await db_session.scalar(
+            select(AiAgentRequirement).where(AiAgentRequirement.requirement_id == "requirement-external-cancel")
+        )
+        tool_call = await db_session.scalar(
+            select(AiAgentToolCall).where(AiAgentToolCall.tool_call_id == "tool-external-cancel")
+        )
+        assert requirement is not None and requirement.status == "cancelled"
+        assert tool_call is not None and tool_call.status == "error"
 
 
 async def test_agent_message_history_should_rebuild_from_run_deltas(

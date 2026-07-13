@@ -93,7 +93,7 @@ class RuntimeBuildClient:
         """发送 JSON 请求到 Runtime，并统一映射错误。"""
 
         runtime_base_url = self.settings.runtime_base_url.rstrip("/")
-        timeout = httpx.Timeout(self.settings.runtime_request_timeout_seconds * 12)
+        timeout = httpx.Timeout(self.settings.runtime_build_request_timeout_seconds)
 
         async with httpx.AsyncClient(base_url=runtime_base_url, timeout=timeout) as client:
             response = await client.request(method, path, content=content, headers=headers or {})

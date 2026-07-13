@@ -29,4 +29,7 @@ class Page(TimestampMixin, AuditMixin, SoftDeleteMixin, Base):
     screenshot_storage_key: Mapped[str | None] = mapped_column(String(255), nullable=True)
     screenshot_version_no: Mapped[int | None] = mapped_column(Integer, nullable=True)
     screenshot_config_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # 单页面公开截图指针当前绑定的视口；避免把不同尺寸误判为同一缓存版本。
+    screenshot_viewport_width: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    screenshot_viewport_height: Mapped[int | None] = mapped_column(Integer, nullable=True)
     screenshot_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

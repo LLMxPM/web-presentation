@@ -70,7 +70,7 @@ from app.services.component_share_package_models import (
     PackageComponent,
 )
 from app.services.object_storage_service import ObjectStorageService
-from app.services.page_screenshot_service import PageScreenshotService
+from app.services.page_screenshot_job_service import PageScreenshotJobService
 from app.services.page_version_service import PageVersionService
 from app.services.project_artifact_builder import ProjectArtifactBuilder
 from app.services.project_config_service import ProjectConfigService
@@ -848,9 +848,11 @@ class ProjectTemplatePackageService:
             user = await self.session.scalar(select(User).where(User.id == user_id))
             if user is None:
                 return
-            await PageScreenshotService(self.session).batch_refresh_project_screenshots(
+            # 模板导出只补投截图任务，不在导出请求中直接启动 Chromium。
+            await PageScreenshotJobService(self.session).create_batch_refresh_screenshot_jobs(
                 project_id=project_id,
                 current=AuthContext(user=user, session_token="", backend_session_id="template-export"),
+                source="template_export",
             )
         except Exception:  # noqa: BLE001
             await self.session.rollback()

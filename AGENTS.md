@@ -73,6 +73,8 @@ uv run --project backend python -m app.scripts.diagnose_ai_run --session-id <ses
 
 不要在其它文件复制第二份工具清单、工具分组或返回示例。调整工具参数、确认要求、风险级别、上下文要求或返回结构时，应同步更新防漂移测试。
 
+页面创建与结构化编辑属于重资源写工具：必须通过 `ai_page_mutation_jobs` 持久化队列执行，不能在 Pydantic tool 调用中直接并发运行 Runtime/Chromium。页面工具的 deferred result 由后台 Batch 协调器自动恢复；修改该流程时必须同时检查租约、取消、页面版本复核、SSE `waiting_external` 状态和自动续跑测试。截图任务与页面渲染诊断共享 Chromium 池，任何新增浏览器调用都必须接入该池，不能自行启动无上限的浏览器实例。
+
 ### editor/
 
 Editor 是创作工作台，负责登录、工作空间、项目、页面、组件、资源、主题、样式、AI 侧边栏、账户 AI 设置、预览 iframe 和构建入口。

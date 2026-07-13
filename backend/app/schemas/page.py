@@ -73,6 +73,8 @@ class PageItem(SchemaBase):
     screenshot_url: str | None = None
     screenshot_version_no: int | None = None
     screenshot_config_hash: str | None = None
+    screenshot_viewport_width: int | None = None
+    screenshot_viewport_height: int | None = None
     screenshot_is_latest: bool = False
     screenshot_updated_at: datetime | None = None
     is_in_project_route: bool | None = None
@@ -172,8 +174,8 @@ class PageScreenshotBatchRefreshResponse(BaseModel):
     failures: list[PageScreenshotBatchFailure] = Field(default_factory=list)
 
 
-PageScreenshotJobStatus = Literal["pending", "running", "succeeded", "failed", "skipped"]
-PageScreenshotJobGroupStatus = Literal["pending", "running", "succeeded", "failed", "partial"]
+PageScreenshotJobStatus = Literal["pending", "running", "succeeded", "failed", "skipped", "cancelled"]
+PageScreenshotJobGroupStatus = Literal["pending", "running", "succeeded", "failed", "partial", "cancelled"]
 
 
 class PageScreenshotJobRequest(BaseModel):
@@ -194,6 +196,7 @@ class PageScreenshotJobResponse(SchemaBase):
     project_id: int | None
     viewport_width: int
     viewport_height: int
+    target_page_version_no: int
     config_hash: str
     status: PageScreenshotJobStatus
     attempt_count: int
@@ -204,6 +207,7 @@ class PageScreenshotJobResponse(SchemaBase):
     updated_at: datetime
     started_at: datetime | None
     finished_at: datetime | None
+    cancel_requested_at: datetime | None
 
 
 class PageScreenshotJobGroupResponse(BaseModel):
@@ -217,6 +221,7 @@ class PageScreenshotJobGroupResponse(BaseModel):
     succeeded_count: int
     failed_count: int
     skipped_count: int
+    cancelled_count: int
     page_ids: list[int] = Field(default_factory=list)
     jobs: list[PageScreenshotJobResponse] = Field(default_factory=list)
     failures: list[PageScreenshotBatchFailure] = Field(default_factory=list)

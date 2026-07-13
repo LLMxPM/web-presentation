@@ -234,6 +234,77 @@ def test_deferred_ask_user_should_build_feedback_requirement() -> None:
     assert requirement.tool_execution["deferred_metadata"] == {"tool-feedback-1": {"source": "unit-test"}}
 
 
+def test_deferred_page_mutations_should_build_one_external_batch_requirement() -> None:
+    """同一模型步骤的多个页面写 call 应聚合为无需用户确认的 external_job。"""
+
+    requests = DeferredToolRequests(
+        calls=[
+            ToolCallPart(
+                tool_name="create_project_page",
+                args='{"title":"封面","page_content":"<template />"}',
+                tool_call_id="tool-page-1",
+            ),
+            ToolCallPart(
+                tool_name="apply_page_edits",
+                args={"page_id": 2, "base_version_no": 1, "edits": []},
+                tool_call_id="tool-page-2",
+            ),
+        ],
+        metadata={
+            "tool-page-1": {"kind": "page_mutation", "batch_id": "batch-1", "job_id": "job-1"},
+            "tool-page-2": {"kind": "page_mutation", "batch_id": "batch-1", "job_id": "job-2"},
+        },
+    )
+
+    requirement = _requirement_from_deferred(requests, run_id="run-1", session_id="session-1")
+
+    assert requirement.kind == "external_job"
+    assert requirement.note == "正在后台处理 2 个页面变更任务。"
+    assert requirement.tool_execution["batch_ids"] == ["batch-1"]
+    assert [item["tool_call_id"] for item in requirement.tool_execution["tool_calls"]] == ["tool-page-1", "tool-page-2"]
+    assert requirement.tool_execution["tool_calls"][0]["tool_args"]["title"] == "封面"
+
+
+def test_mixed_deferred_page_mutation_should_fail_fast() -> None:
+    """页面写入与用户确认 deferred 混用时应直接失败，避免 Job 永远等不到 waiting_external。"""
+
+    requests = DeferredToolRequests(
+        calls=[
+            ToolCallPart(
+                tool_name="create_project_page",
+                args={"title": "封面", "page_content": "<template />"},
+                tool_call_id="tool-page-1",
+            ),
+            ToolCallPart(
+                tool_name="ask_user",
+                args={"questions": []},
+                tool_call_id="tool-feedback-1",
+            ),
+        ],
+        metadata={"tool-page-1": {"kind": "page_mutation", "batch_id": "batch-1", "job_id": "job-1"}},
+    )
+
+    with pytest.raises(AppException) as exc_info:
+        _requirement_from_deferred(requests, run_id="run-1", session_id="session-1")
+
+    assert exc_info.value.code == "AI_PAGE_MUTATION_MIXED_DEFERRED_CALLS"
+
+
+def test_pydantic_page_mutation_tool_should_be_sequential() -> None:
+    """重资源页面写工具必须把 sequential 透传给 Pydantic AI。"""
+
+    @agent_tool(show_result=False, sequential=True)
+    def write_page(run_context: AgentToolContext) -> dict[str, bool]:
+        """模拟页面写入工具。"""
+
+        _ = run_context
+        return {"ok": True}
+
+    wrapped = _wrap_platform_tool(write_page)
+
+    assert wrapped.sequential is True
+
+
 def test_deferred_ask_user_without_question_should_fail_fast() -> None:
     """ask_user 参数没有 question 字段时不应进入前端无法提交的暂停态。"""
 
