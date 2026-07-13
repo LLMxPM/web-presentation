@@ -136,6 +136,7 @@ class PageScreenshotService:
         *,
         project_id: int,
         current: AuthContext,
+        source: str = "batch_refresh",
     ) -> PageScreenshotBatchRefreshResponse:
         """兼容旧批量接口：创建任务组并等待终态，避免直接并发启动 Chromium。"""
 
@@ -146,6 +147,7 @@ class PageScreenshotService:
         group = await job_service.create_batch_refresh_screenshot_jobs(
             project_id=project_id,
             current=current,
+            source=source,
         )
         job_ids = [job.id for job in group.jobs]
         if not job_ids:

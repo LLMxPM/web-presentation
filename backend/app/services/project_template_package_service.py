@@ -70,7 +70,7 @@ from app.services.component_share_package_models import (
     PackageComponent,
 )
 from app.services.object_storage_service import ObjectStorageService
-from app.services.page_screenshot_job_service import PageScreenshotJobService
+from app.services.page_screenshot_service import PageScreenshotService
 from app.services.page_version_service import PageVersionService
 from app.services.project_artifact_builder import ProjectArtifactBuilder
 from app.services.project_config_service import ProjectConfigService
@@ -147,7 +147,7 @@ class ProjectTemplatePackageService:
         """导出项目模板包，返回 ZIP 内容和下载文件名。"""
 
         if payload.refresh_screenshots:
-            await self._refresh_project_screenshots_best_effort(project_id, current_user_id)
+            await self._refresh_project_screenshots(project_id, current_user_id)
         plan = await self._prepare_export_plan(project_id=project_id, payload=payload)
         validation = await self._build_export_validation(plan, payload)
         if not validation.can_export:
@@ -838,24 +838,29 @@ class ProjectTemplatePackageService:
                 pass
         return self._build_placeholder_png(project.page_width, project.page_height)
 
-    async def _refresh_project_screenshots_best_effort(self, project_id: int, user_id: int) -> None:
-        """尽力刷新项目截图，失败不阻断模板包导出。"""
+    async def _refresh_project_screenshots(self, project_id: int, user_id: int) -> None:
+        """通过持久化队列刷新项目截图，并在全部成功后继续导出。"""
 
-        try:
-            from app.services.auth_service import AuthContext
-            from app.models.user import User
+        from app.models.user import User
+        from app.services.auth_service import AuthContext
 
-            user = await self.session.scalar(select(User).where(User.id == user_id))
-            if user is None:
-                return
-            # 模板导出只补投截图任务，不在导出请求中直接启动 Chromium。
-            await PageScreenshotJobService(self.session).create_batch_refresh_screenshot_jobs(
-                project_id=project_id,
-                current=AuthContext(user=user, session_token="", backend_session_id="template-export"),
-                source="template_export",
+        user = await self.session.scalar(select(User).where(User.id == user_id))
+        if user is None:
+            raise AppException(status_code=401, code="USER_NOT_FOUND", detail="当前用户不存在。")
+        result = await PageScreenshotService(self.session).batch_refresh_project_screenshots(
+            project_id=project_id,
+            current=AuthContext(user=user, session_token="", backend_session_id="template-export"),
+            source="template_export",
+        )
+        if result.failures:
+            failure = result.failures[0]
+            raise AppException(
+                status_code=502,
+                code="PROJECT_TEMPLATE_SCREENSHOT_REFRESH_FAILED",
+                detail=f"项目截图刷新失败（{result.failed_count} 个页面）：{failure.detail}",
             )
-        except Exception:  # noqa: BLE001
-            await self.session.rollback()
+        # 截图任务使用独立 Session 写回页面，打包前必须丢弃当前会话中的旧页面快照。
+        self.session.expire_all()
 
     @staticmethod
     def _build_placeholder_png(width: int, height: int) -> bytes:
