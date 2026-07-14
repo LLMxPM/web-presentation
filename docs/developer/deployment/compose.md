@@ -2,6 +2,8 @@
 
 `deploy/` 提供四类部署模板，覆盖 SQLite 轻量单容器、快速试部署、外部依赖部署和 production env 版部署。
 
+官方发布的 Platform、SQLite Lite 和 Runtime 镜像同时支持 `linux/amd64` 与 `linux/arm64`。Compose 文件不固定 `platform`，Docker 会按宿主机架构自动选择镜像；需要在本机交叉构建 ARM64 镜像时，应使用已启用 QEMU 的 Buildx 环境。
+
 ## 模板
 
 | 文件 | 场景 | 特点 |
@@ -27,6 +29,12 @@ docker compose -f docker-compose.sqlite.yml up -d
 ```bash
 git submodule update --init --recursive runtime
 docker build -f Dockerfile.lite -t llmxpm/web-presentation:sqlite-lite .
+```
+
+交叉构建 ARM64 轻量镜像时，可执行：
+
+```bash
+docker buildx build --platform linux/arm64 -f Dockerfile.lite -t llmxpm/web-presentation:sqlite-lite-arm64 --load .
 ```
 
 轻量模式只支持单容器、单 Backend worker、单 Runtime server，不适合多副本或高并发写入。容器重启后短生命周期预览链接、内存锁和内存构建状态会失效，但用户、工作空间、项目、页面、资源和 AI 会话等主数据会保留在 SQLite 文件中。

@@ -6,6 +6,7 @@ from httpx import AsyncClient
 
 from app.db.session import get_session_factory
 from app.services.code_check_service import CodeCheckService
+from app.services.runtime_artifact_store import RuntimeArtifactStore
 from app.services.token_service import TokenService
 
 CONTENT_COMPONENT_SIZE_PREVIEW_SCHEMA = '{"props":{"height":{"type":"number","label":"高度","default":320}}}'
@@ -14,9 +15,16 @@ CONTENT_COMPONENT_SIZE_PREVIEW_SCHEMA = '{"props":{"height":{"type":"number","la
 class FakeRuntimeDiagnosticsClient:
     """测试用 Runtime 诊断客户端，记录调用并返回固定结果。"""
 
-    def __init__(self, result: dict[str, object] | None = None) -> None:
+    def __init__(
+        self,
+        result: dict[str, object] | None = None,
+        *,
+        module_paths: list[str] | None = None,
+    ) -> None:
         self.calls: list[dict[str, object]] = []
         self.result = result
+        self.module_paths = module_paths or []
+        self.artifact_snapshots: dict[str, dict[str, object]] = {}
 
     async def dispatch_artifact_diagnostics(
         self,
@@ -25,7 +33,7 @@ class FakeRuntimeDiagnosticsClient:
         diagnostics_token: str,
         label: str | None = None,
     ) -> dict[str, object]:
-        """记录诊断调用并返回通过结果。"""
+        """记录诊断调用，并在主动清理前保存 Runtime 实际可读取的 artifact。"""
 
         self.calls.append(
             {
@@ -34,6 +42,18 @@ class FakeRuntimeDiagnosticsClient:
                 "label": label,
             }
         )
+        artifact_store = RuntimeArtifactStore()
+        manifest = await artifact_store.get_manifest(artifact_id)
+        modules: dict[str, str | None] = {}
+        if manifest is not None:
+            manifest_module_paths = manifest.get("modules", [])
+            for logical_path in [*manifest_module_paths, *self.module_paths]:
+                if isinstance(logical_path, str):
+                    modules[logical_path] = await artifact_store.get_module(artifact_id, logical_path)
+        self.artifact_snapshots[artifact_id] = {
+            "manifest": manifest,
+            "modules": modules,
+        }
         if self.result is not None:
             return {
                 "artifact_id": artifact_id,
@@ -148,7 +168,6 @@ def test_runtime_diagnostics_token_should_embed_artifact_scope() -> None:
 
 async def test_page_code_check_should_build_transient_dependency_graph(
     authenticated_client: AsyncClient,
-    runtime_service_headers: dict[str, str],
 ) -> None:
     """页面候选源码新增组件 import 时，临时 artifact 应包含新依赖组件版本。"""
 
@@ -206,23 +225,21 @@ import CheckCard from '@workspace-components/{component["code"]}/v/1'
     assert result["success"] is True
     assert fake_render.calls
     artifact_id = result["artifact_id"]
-    manifest_response = await authenticated_client.get(
-        f"/internal/runtime/preview-artifacts/{artifact_id}/manifest",
-        headers=runtime_service_headers,
-    )
-    assert manifest_response.status_code == 200
-    assert f"src/workspace-components/{component['code']}/v/1.vue" in manifest_response.json()["modules"]
+    snapshot = fake_runtime.artifact_snapshots[str(artifact_id)]
+    manifest = snapshot["manifest"]
+    assert isinstance(manifest, dict)
+    assert f"src/workspace-components/{component['code']}/v/1.vue" in manifest["modules"]
+    assert await RuntimeArtifactStore().get_manifest(str(artifact_id)) is None
 
 
 async def test_page_code_check_should_accept_unsaved_project_page_content(
     authenticated_client: AsyncClient,
-    runtime_service_headers: dict[str, str],
 ) -> None:
     """新增页面尚无 page_id 时，应允许用项目上下文检查完整候选源码。"""
 
     workspace_id = await _create_workspace(authenticated_client, "代码检查新增页面工作空间")
     project_id = await _create_project(authenticated_client, workspace_id, "代码检查新增页面项目")
-    fake_runtime = FakeRuntimeDiagnosticsClient()
+    fake_runtime = FakeRuntimeDiagnosticsClient(module_paths=["src/views/__ai_page_draft__.vue"])
     fake_render = FakePageRenderDiagnosticsService()
 
     async with get_session_factory()() as session:
@@ -241,13 +258,12 @@ async def test_page_code_check_should_accept_unsaved_project_page_content(
     assert fake_runtime.calls[0]["label"] == f"page:draft:{project_id}"
     assert fake_render.calls
     artifact_id = result["artifact_id"]
-    module_response = await authenticated_client.get(
-        f"/internal/runtime/preview-artifacts/{artifact_id}/modules",
-        headers=runtime_service_headers,
-        params={"path": "src/views/__ai_page_draft__.vue"},
-    )
-    assert module_response.status_code == 200
-    assert module_response.text == "<template><main>新增页面</main></template>"
+    snapshot = fake_runtime.artifact_snapshots[str(artifact_id)]
+    modules = snapshot["modules"]
+    assert isinstance(modules, dict)
+    assert "src/views/__ai_page_draft__.vue" in modules, snapshot
+    assert modules["src/views/__ai_page_draft__.vue"] == "<template><main>新增页面</main></template>"
+    assert await RuntimeArtifactStore().get_module(str(artifact_id), "src/views/__ai_page_draft__.vue") is None
 
 
 async def test_page_code_check_should_append_render_warning_after_runtime_passed(
