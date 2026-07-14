@@ -11,6 +11,7 @@ from app.models.ai_agent_runtime import (
     AiAgentSession,
     AiAgentToolCall,
 )
+from app.models.ai_page_mutation import AiPageMutationBatch, AiPageMutationJob
 from app.models.ai_llm import AiLlmConfig, AiLlmProviderConfig, AiLlmSlotBinding
 from app.models.user import UserSession, User
 from app.models.asset import WorkspaceAsset
@@ -23,6 +24,7 @@ from app.models.page_component_dependency import PageVersionComponentDependency
 from app.models.page_component_resource import PageVersionComponentResource
 from app.models.page_component_usage import PageVersionComponentUsage
 from app.models.page_screenshot_job import PageScreenshotJob
+from app.models.page_screenshot_job_group import PageScreenshotJobGroup, PageScreenshotJobGroupItem
 from app.models.page_version import PageVersion
 from app.models.project_build_job import ProjectBuildJob
 from app.models.project_route import ProjectRoute
@@ -50,6 +52,8 @@ __all__ = [
     "AiAgentMemberRun",
     "AiAgentUserConfig",
     "AiAgentToolUserConfig",
+    "AiPageMutationBatch",
+    "AiPageMutationJob",
     "UserSession",
     "User",
     "Workspace",
@@ -62,6 +66,8 @@ __all__ = [
     "PageVersionComponentUsage",
     "PageVersionComponentResource",
     "PageScreenshotJob",
+    "PageScreenshotJobGroup",
+    "PageScreenshotJobGroupItem",
     "ProjectBuildJob",
     "ProjectSuggestedReferenceAsset",
     "ProjectSuggestedComponent",

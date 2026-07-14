@@ -6,7 +6,7 @@
 
 ## Redis 连接失败
 
-Redis 保存预览 artifact、截图锁和构建心跳等临时运行态。AI run/HITL 不依赖 Redis。排查时检查 `REDIS_URL`、密码、网络和 `REDIS_KEY_PREFIX`。
+Redis 保存预览 artifact 和构建心跳等临时运行态。AI run/HITL 与截图任务租约都不依赖 Redis；截图重复、卡住或恢复问题应优先检查 `page_screenshot_jobs` 的状态、`worker_id`、`lease_expires_at` 和心跳。排查 Redis 时仍需检查 `REDIS_URL`、密码、网络和 `REDIS_KEY_PREFIX`。
 
 ## Runtime 调用失败
 

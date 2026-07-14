@@ -50,6 +50,8 @@ export function createPageItem(overrides: Partial<PageItem> = {}): PageItem {
     screenshot_url: null,
     screenshot_version_no: null,
     screenshot_config_hash: null,
+    screenshot_viewport_width: null,
+    screenshot_viewport_height: null,
     screenshot_is_latest: false,
     screenshot_updated_at: null,
     is_in_project_route: true,

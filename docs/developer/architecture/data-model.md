@@ -23,7 +23,7 @@
 
 ## AI 运行态
 
-AI 会话、run、事件、消息、工具调用和 HITL requirement 的事实源在 Backend 主库 `ai_agent_*` 表中。Redis 不保存 AI run/HITL 事实源，只保存预览、截图、构建等临时运行态。
+AI 会话、run、事件、消息、工具调用和 HITL requirement 的事实源在 Backend 主库 `ai_agent_*` 表中。Redis 不保存 AI run/HITL 事实源，只保存预览和构建等临时运行态；截图任务的去重、认领和恢复由主数据库的持久化租约完成。
 
 ## 预览与构建对象
 

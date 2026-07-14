@@ -296,6 +296,8 @@ export interface PageItem {
   screenshot_url: string | null
   screenshot_version_no: number | null
   screenshot_config_hash: string | null
+  screenshot_viewport_width?: number | null
+  screenshot_viewport_height?: number | null
   screenshot_is_latest: boolean
   screenshot_updated_at: string | null
   is_in_project_route: boolean | null
@@ -1081,7 +1083,7 @@ export interface AgentFeedbackSelection {
 
 export interface AgentPendingRequirement {
   id: string | null
-  kind: 'confirmation' | 'user_feedback'
+  kind: 'confirmation' | 'user_feedback' | 'external_job'
   run_id: string
   session_id: string
   member_agent_id?: string | null
@@ -1105,7 +1107,7 @@ export interface AgentRunEvent {
   [key: string]: unknown
 }
 
-export type AgentActiveRunStatus = 'pending' | 'running' | 'paused' | 'cancelling' | 'completed' | 'cancelled' | 'failed'
+export type AgentActiveRunStatus = 'pending' | 'running' | 'paused' | 'waiting_external' | 'cancelling' | 'completed' | 'cancelled' | 'failed'
 
 export interface AgentActiveRunItem {
   run_id: string

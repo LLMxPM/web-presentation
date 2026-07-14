@@ -4,10 +4,13 @@ from __future__ import annotations
 
 from typing import Any
 
+from pydantic_ai import CallDeferred
+
 from app.ai.platform_tools import AgentToolContext, agent_tool
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.ai.auth_tokens import PAGE_TOOL_WRITE_SCOPES, extract_user_id
+from app.ai.page_mutation_enqueue import enqueue_page_mutation
 from app.ai.tools.shared import SourceEditInput, apply_source_edits, resolve_tool_context
 from app.core.exceptions import AppException
 from app.schemas.page import PageItem, PageUpdateRequest
@@ -18,7 +21,7 @@ from app.services.page_service import PageService
 def build_apply_page_edits_tool(session_factory: async_sessionmaker[AsyncSession]) -> Any:
     """构建页面结构化 Edits 更新工具，负责直接写回页面并自动生成版本。"""
 
-    @agent_tool(show_result=False)
+    @agent_tool(show_result=False, sequential=True)
     async def apply_page_edits(
         run_context: AgentToolContext,
         page_id: int,
@@ -36,6 +39,22 @@ def build_apply_page_edits_tool(session_factory: async_sessionmaker[AsyncSession
         )
         target_page_id = int(page_id)
         operator_id = extract_user_id(str(claims.get("sub")))
+
+        tool_call_id = str(dependencies.get("current_tool_call_id") or "").strip()
+        if tool_call_id:
+            enqueued = await enqueue_page_mutation(
+                session_factory,
+                run_id=run_context.run_id,
+                session_id=run_context.session_id,
+                run_step=int(dependencies.get("current_run_step") or 0),
+                tool_call_id=tool_call_id,
+                operation="apply_page_edits",
+                workspace_id=int(dependencies["workspace_id"]),
+                project_id=_coerce_optional_int(dependencies.get("project_id")),
+                page_id=target_page_id,
+                base_version_no=int(base_version_no),
+            )
+            raise CallDeferred(metadata=enqueued.as_metadata())
 
         async with session_factory() as session:
             page_service = PageService(session)

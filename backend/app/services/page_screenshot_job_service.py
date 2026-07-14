@@ -6,50 +6,67 @@ import asyncio
 import logging
 import time
 import uuid
-from collections import Counter
 from collections.abc import Iterable
 
-from sqlalchemy import select
+from sqlalchemy import select, update
+from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.config import get_settings
 from app.core.exceptions import AppException
 from app.core.time_utils import utc_now
-from app.db.session import get_session_factory
 from app.models.enums import PageFileType, RecordStatus
 from app.models.page import Page
 from app.models.page_screenshot_job import PageScreenshotJob
 from app.schemas.page import (
-    PageScreenshotBatchFailure,
     PageScreenshotJobGroupResponse,
     PageScreenshotJobResponse,
 )
 from app.services.auth_service import AuthContext
 from app.services.capture_viewport_resolver import CaptureViewport
+from app.services.durable_job_lease_service import (
+    DurableJobRecoverySummary,
+    build_durable_worker_id,
+    claim_pending_jobs as claim_durable_jobs,
+    is_sqlite_lock_error,
+    recover_expired_running_jobs,
+    renew_running_job_lease,
+    request_job_cancellation,
+    transition_owned_running_job,
+)
 from app.services.object_storage_service import ObjectStorageService
-from app.services.page_screenshot_service import PageScreenshotResult, PageScreenshotService
+from app.services.page_screenshot_job_group_service import PageScreenshotJobGroupService
+from app.services.page_screenshot_service import (
+    PageScreenshotCaptureArtifact,
+    PageScreenshotResult,
+    PageScreenshotService,
+)
 from app.services.page_service import PageService
 from app.services.project_config_service import ProjectConfigService
 from app.services.project_service import ProjectService
-from app.services.redis_runtime_client import get_redis_runtime_client
 
 ACTIVE_SCREENSHOT_JOB_STATUSES = ("pending", "running")
-TERMINAL_SCREENSHOT_JOB_STATUSES = {"succeeded", "failed", "skipped"}
-MAX_SCREENSHOT_JOB_ATTEMPTS = 2
-SCREENSHOT_JOB_LOCK_PREFIX = "runtime:screenshot-job-lock"
+TERMINAL_SCREENSHOT_JOB_STATUSES = {"succeeded", "failed", "skipped", "cancelled"}
+MAX_SCREENSHOT_JOB_ATTEMPTS = 3
+SQLITE_LOCK_RETRY_ATTEMPTS = 3
+PAGE_SCREENSHOT_JOB_STALE_CODE = "PAGE_SCREENSHOT_JOB_STALE"
 logger = logging.getLogger(__name__)
 
 
 class PageScreenshotJobService:
     """页面截图任务服务，负责创建、查询和等待队列任务。"""
 
-    def __init__(self, session: AsyncSession) -> None:
+    def __init__(self, session: AsyncSession, *, worker_id: str | None = None) -> None:
+        """绑定短生命周期数据库会话，并为领取任务生成唯一执行者标识。"""
+
         self.session = session
         self.settings = get_settings()
+        self.worker_id = worker_id or build_durable_worker_id()
         self.page_service = PageService(session)
         self.screenshot_service = PageScreenshotService(session, page_service=self.page_service)
         self.project_config_service = ProjectConfigService(session)
         self.object_storage_service = ObjectStorageService()
+        self.job_group_service = PageScreenshotJobGroupService(session)
 
     async def create_page_screenshot_job(
         self,
@@ -76,13 +93,17 @@ class PageScreenshotJobService:
             page=page,
             source=source,
             created_by=current.user.id,
+            target_page_version_no=page.current_version_no,
             config_hash=snapshot.config_hash,
             viewport=viewport,
             job_group_id=None,
         )
         await self.session.commit()
         await self.session.refresh(job)
-        return PageScreenshotJobResponse.model_validate(job)
+        response = PageScreenshotJobResponse.model_validate(job)
+        # refresh 会打开新的只读事务；同步等待前立即结束它，避免 SQLite 读事务滞留。
+        await self.session.rollback()
+        return response
 
     async def create_batch_refresh_screenshot_jobs(
         self,
@@ -99,9 +120,23 @@ class PageScreenshotJobService:
         pages = await self._list_project_pages_for_batch_screenshot_refresh(project_id)
         target_pages = [
             page for page in pages
-            if not self.screenshot_service._is_page_screenshot_current_for_hash(page, snapshot.config_hash)
+            if not self.screenshot_service._is_page_screenshot_current_for_hash(
+                page,
+                snapshot.config_hash,
+                viewport=self.screenshot_service.viewport_resolver.resolve(
+                    page,
+                    project_page_config=snapshot.page_config,
+                ),
+            )
         ]
         group_id = uuid.uuid4().hex
+        await self.job_group_service.create_group(
+            group_id=group_id,
+            source=source,
+            workspace_id=project.workspace_id,
+            project_id=project.id,
+            created_by=current.user.id,
+        )
         jobs: list[PageScreenshotJob] = []
 
         for page in target_pages:
@@ -110,6 +145,7 @@ class PageScreenshotJobService:
                 page=page,
                 source=source,
                 created_by=current.user.id,
+                target_page_version_no=page.current_version_no,
                 config_hash=snapshot.config_hash,
                 viewport=viewport,
                 job_group_id=group_id,
@@ -117,7 +153,10 @@ class PageScreenshotJobService:
 
         await self.session.commit()
         refreshed_jobs = await self._list_jobs_by_ids([job.id for job in jobs])
-        return self._build_group_response(group_id=group_id, jobs=refreshed_jobs)
+        response = self.job_group_service.build_response(group_id=group_id, jobs=refreshed_jobs)
+        # 任务已持久化，响应构造后释放读取会话，后台 Worker 可立即写入状态。
+        await self.session.rollback()
+        return response
 
     async def get_job_response(self, *, job_id: int, current: AuthContext) -> PageScreenshotJobResponse:
         """读取单个截图任务，并校验当前用户有页面访问权。"""
@@ -129,12 +168,20 @@ class PageScreenshotJobService:
     async def get_group_response(self, *, group_id: str, current: AuthContext) -> PageScreenshotJobGroupResponse:
         """读取截图任务组聚合进度，并校验当前用户有页面访问权。"""
 
-        jobs = await self._list_jobs_by_group_id(group_id)
-        if not jobs:
-            raise AppException(status_code=404, code="PAGE_SCREENSHOT_JOB_GROUP_NOT_FOUND", detail="截图任务组不存在。")
-        for job in jobs:
-            await self.page_service.get(job.page_id, user_id=current.user.id)
-        return self._build_group_response(group_id=group_id, jobs=jobs)
+        group = await self.job_group_service.get_group_by_id(group_id)
+        if group.project_id is not None:
+            await ProjectService(self.session).get(group.project_id, user_id=current.user.id)
+        jobs = await self.job_group_service.list_jobs(group_id)
+        return self.job_group_service.build_response(group_id=group_id, jobs=jobs)
+
+    async def cancel_job(self, *, job_id: int, current: AuthContext) -> PageScreenshotJobResponse:
+        """请求取消截图任务；运行中任务会在写入页面前确认取消。"""
+
+        job = await self.get_job_by_id(job_id)
+        await self.page_service.get(job.page_id, user_id=current.user.id)
+        await request_job_cancellation(self.session, PageScreenshotJob, job_id=job_id)
+        self.session.expire_all()
+        return PageScreenshotJobResponse.model_validate(await self.get_job_by_id(job_id))
 
     async def get_job_by_id(self, job_id: int) -> PageScreenshotJob:
         """按 ID 读取截图任务。"""
@@ -168,124 +215,372 @@ class PageScreenshotJobService:
             page=page,
             source="ai",
             created_by=user_id,
+            target_page_version_no=page.current_version_no,
             config_hash=snapshot.config_hash,
             viewport=viewport,
             job_group_id=None,
         )
         await self.session.commit()
-        await self.wait_for_job_terminal(
+        terminal = await self.wait_for_job_terminal_detached(
             job.id,
             timeout_seconds=self.settings.page_screenshot_ai_wait_timeout_seconds,
         )
+        self._raise_if_job_stale(terminal)
 
+        self.session.expire_all()
         refreshed_page = await self.page_service._get_page_or_raise(page_id)
         content = await self.object_storage_service.read_object(str(refreshed_page.screenshot_storage_key))
         return await self.screenshot_service._build_result(page=refreshed_page, content=content, refreshed=True)
 
     async def wait_for_job_terminal(self, job_id: int, *, timeout_seconds: float) -> PageScreenshotJob:
-        """轮询等待截图任务进入终态；失败或超时抛出业务异常。"""
+        """兼容旧调用：等待过程使用短 Session，终态才在当前会话读取一次。"""
 
+        terminal = await self.wait_for_job_terminal_detached(job_id, timeout_seconds=timeout_seconds)
+        self._raise_if_job_stale(terminal)
+        if terminal.status in {"succeeded", "skipped"}:
+            self.session.expire_all()
+            return await self.get_job_by_id(job_id)
+        if terminal.status == "cancelled":
+            raise AppException(status_code=409, code="PAGE_SCREENSHOT_JOB_CANCELLED", detail="页面截图任务已取消。")
+        raise AppException(
+            status_code=502,
+            code=terminal.error_code or "PAGE_SCREENSHOT_JOB_FAILED",
+            detail=terminal.error_message or "页面截图任务执行失败。",
+        )
+
+    @classmethod
+    async def wait_for_job_terminal_detached(
+        cls,
+        job_id: int,
+        *,
+        timeout_seconds: float,
+        session_factory: async_sessionmaker[AsyncSession] | None = None,
+    ) -> PageScreenshotJobResponse:
+        """使用短 Session 等待任务；无后台 Worker 时以内联租约执行，旧同步接口也不会绕过队列。"""
+
+        jobs = await cls.wait_for_jobs_terminal_detached(
+            [job_id],
+            timeout_seconds=timeout_seconds,
+            session_factory=session_factory,
+        )
+        return jobs[0]
+
+    @classmethod
+    async def wait_for_jobs_terminal_detached(
+        cls,
+        job_ids: Iterable[int],
+        *,
+        timeout_seconds: float,
+        session_factory: async_sessionmaker[AsyncSession] | None = None,
+    ) -> list[PageScreenshotJobResponse]:
+        """用短 Session 等待一组任务；每轮最多内联领取一个任务以限制 SQLite 写入压力。"""
+
+        from app.db.session import get_session_factory
+        from app.services.page_screenshot_queue_worker import start_page_screenshot_job_task
+
+        ordered_ids = list(dict.fromkeys(job_ids))
+        if not ordered_ids:
+            return []
+        factory = session_factory or get_session_factory()
+        worker_id = build_durable_worker_id()
         deadline = time.monotonic() + max(0.1, timeout_seconds)
         while time.monotonic() <= deadline:
-            job = await self.get_job_by_id(job_id)
-            if job.status in TERMINAL_SCREENSHOT_JOB_STATUSES:
-                if job.status in {"succeeded", "skipped"}:
-                    return job
-                raise AppException(
-                    status_code=502,
-                    code=job.error_code or "PAGE_SCREENSHOT_JOB_FAILED",
-                    detail=job.error_message or "页面截图任务执行失败。",
+            async with factory() as session:
+                service = cls(session, worker_id=worker_id)
+                jobs = await service._list_jobs_by_ids(ordered_ids)
+                jobs_by_id = {job.id: job for job in jobs}
+                if len(jobs_by_id) != len(ordered_ids):
+                    raise AppException(status_code=404, code="PAGE_SCREENSHOT_JOB_NOT_FOUND", detail="截图任务不存在。")
+                if all(job.status in TERMINAL_SCREENSHOT_JOB_STATUSES for job in jobs):
+                    return [PageScreenshotJobResponse.model_validate(jobs_by_id[job_id]) for job_id in ordered_ids]
+                pending_job_id = next((job_id for job_id in ordered_ids if jobs_by_id[job_id].status == "pending"), None)
+                claimed = (
+                    await service._claim_specific_pending_job(pending_job_id)
+                    if pending_job_id is not None
+                    else False
                 )
-            await asyncio.sleep(0.5)
-            self.session.expire_all()
-
+            if claimed:
+                execution_task = start_page_screenshot_job_task(
+                    pending_job_id,
+                    worker_id=worker_id,
+                    session_factory=factory,
+                )
+                try:
+                    # 浏览器断开或 HTTP 请求取消不能中断已经认领的任务；后台任务会
+                    # 继续持有浏览器槽位和租约，直到安全提交终态。
+                    await asyncio.shield(execution_task)
+                except asyncio.CancelledError:
+                    raise
+                continue
+            await asyncio.sleep(0.25)
         raise AppException(status_code=504, code="PAGE_SCREENSHOT_JOB_TIMEOUT", detail="页面截图任务等待超时。")
 
     async def claim_pending_jobs(self, *, limit: int) -> list[PageScreenshotJob]:
-        """领取待执行截图任务，并写入 running 状态。"""
+        """通过数据库条件更新原子领取待执行任务，并写入可续期租约。"""
 
-        stmt = (
-            select(PageScreenshotJob)
-            .where(PageScreenshotJob.status == "pending")
-            .order_by(PageScreenshotJob.created_at.asc(), PageScreenshotJob.id.asc())
-            .limit(max(1, limit))
+        job_ids = await claim_durable_jobs(
+            self.session,
+            PageScreenshotJob,
+            worker_id=self.worker_id,
+            limit=limit,
+            lease_seconds=self._lease_seconds,
         )
-        candidates = list((await self.session.execute(stmt)).scalars().all())
-        claimed: list[PageScreenshotJob] = []
+        return await self._list_jobs_by_ids(job_ids)
 
-        for job in candidates:
-            if not await self._acquire_job_lock(job.id):
-                continue
-            job.status = "running"
-            job.attempt_count += 1
-            job.error_code = None
-            job.error_message = None
-            job.started_at = utc_now()
-            job.finished_at = None
-            claimed.append(job)
+    async def _claim_specific_pending_job(self, job_id: int) -> bool:
+        """以同一数据库租约协议领取指定 pending Job，供兼容同步接口安全等待。"""
 
-        if claimed:
-            await self.session.commit()
-            for job in claimed:
-                await self.session.refresh(job)
-        return claimed
+        job_ids = await claim_durable_jobs(
+            self.session,
+            PageScreenshotJob,
+            worker_id=self.worker_id,
+            limit=1,
+            lease_seconds=self._lease_seconds,
+            candidate_query=(
+                select(PageScreenshotJob.id)
+                .where(PageScreenshotJob.id == job_id, PageScreenshotJob.status == "pending")
+            ),
+        )
+        return bool(job_ids)
 
-    async def run_claimed_job(self, job_id: int) -> None:
-        """执行一个已领取的截图任务，并持久化终态。"""
+    async def run_claimed_job(
+        self,
+        job_id: int,
+        *,
+        worker_id: str | None = None,
+        lease_lost: asyncio.Event | None = None,
+    ) -> None:
+        """执行已领取任务；捕获仅执行一次，SQLite 重试只覆盖最终数据库提交。"""
 
         job = await self.get_job_by_id(job_id)
-        if job.status != "running":
+        owner = worker_id or job.worker_id
+        if job.status != "running" or not owner or job.worker_id != owner or self._is_lease_lost(lease_lost):
+            return
+        page_id = job.page_id
+        execution_started_at = time.monotonic()
+        if job.cancel_requested_at is not None:
+            await self._acknowledge_cancelled_job(job_id=job_id, worker_id=owner)
             return
 
         try:
             page = await self.page_service._get_page_or_raise(job.page_id)
             self.screenshot_service._validate_page_screenshot_supported(page)
-            await self.screenshot_service._capture_and_store_page_screenshot(
-                page,
+            if not await self._is_job_snapshot_current(page=page, job=job):
+                await self._mark_job_stale(job_id=job_id, worker_id=owner)
+                return
+            artifact = await self.screenshot_service.capture_page_screenshot_artifact(
+                page=page,
                 operator_id=job.created_by or 0,
-                viewport_width=job.viewport_width,
-                viewport_height=job.viewport_height,
-            )
-            job.status = "succeeded"
-            job.error_code = None
-            job.error_message = None
-            job.finished_at = utc_now()
-            await self.session.commit()
-            logger.info(
-                "页面截图任务执行成功。",
-                extra={"event": "page.screenshot.job.succeeded", "job_id": job.id, "page_id": job.page_id},
+                target_page_version_no=job.target_page_version_no,
+                config_hash=job.config_hash,
+                viewport=CaptureViewport(width=job.viewport_width, height=job.viewport_height),
             )
         except Exception as error:  # noqa: BLE001
-            await self._mark_job_failed(job, error)
+            await self.session.rollback()
+            await self._mark_job_failed_or_retry(job_id=job_id, worker_id=owner, error=error)
             logger.exception(
-                "页面截图任务执行失败。",
-                extra={"event": "page.screenshot.job.failed", "job_id": job.id, "page_id": job.page_id},
+                "页面截图任务捕获失败。",
+                extra={"event": "page.screenshot.job.failed", "job_id": job_id, "page_id": page_id},
             )
-        finally:
-            await self._release_job_lock(job_id)
+            return
+
+        if self._is_lease_lost(lease_lost):
+            await self.session.rollback()
+            return
+
+        try:
+            await self._finalize_captured_job(
+                job=job,
+                worker_id=owner,
+                artifact=artifact,
+                lease_lost=lease_lost,
+                execution_started_at=execution_started_at,
+            )
+        except Exception as error:  # noqa: BLE001
+            await self.session.rollback()
+            await self._mark_job_failed_or_retry(job_id=job_id, worker_id=owner, error=error)
+            logger.exception(
+                "页面截图任务最终写入失败。",
+                extra={"event": "page.screenshot.job.failed", "job_id": job_id, "page_id": page_id},
+            )
+
+    async def _is_job_snapshot_current(self, *, page: Page, job: PageScreenshotJob) -> bool:
+        """校验页面版本和展示配置仍与入队任务快照一致，避免捕获过期内容。"""
+
+        if int(page.current_version_no) != int(job.target_page_version_no):
+            return False
+        snapshot = await self.screenshot_service.screenshot_fingerprint_service.build_page_snapshot(page)
+        return snapshot.config_hash == job.config_hash
+
+    async def _finalize_captured_job(
+        self,
+        *,
+        job: PageScreenshotJob,
+        worker_id: str,
+        artifact: PageScreenshotCaptureArtifact,
+        lease_lost: asyncio.Event | None,
+        execution_started_at: float,
+    ) -> None:
+        """以短事务发布已捕获对象；SQLite 锁只重试本阶段，绝不再次启动 Chromium。"""
+
+        job_id = int(job.id)
+        page_id = int(job.page_id)
+        operator_id = int(job.created_by or 0)
+        for attempt in range(SQLITE_LOCK_RETRY_ATTEMPTS):
+            if self._is_lease_lost(lease_lost):
+                return
+            try:
+                if not await self._is_artifact_snapshot_current(page_id=page_id, artifact=artifact):
+                    await self.session.rollback()
+                    await self._mark_job_stale(job_id=job_id, worker_id=worker_id)
+                    return
+                published_at = utc_now()
+                page_updated = await self.session.execute(
+                    update(Page)
+                    .where(
+                        Page.id == page_id,
+                        Page.current_version_no == artifact.page_version_no,
+                    )
+                    .values(
+                        screenshot_storage_key=artifact.storage_key,
+                        screenshot_version_no=artifact.page_version_no,
+                        screenshot_config_hash=artifact.config_hash,
+                        screenshot_viewport_width=artifact.viewport_width,
+                        screenshot_viewport_height=artifact.viewport_height,
+                        screenshot_updated_at=published_at,
+                        updated_by=operator_id,
+                    )
+                    .execution_options(synchronize_session=False)
+                )
+                if (page_updated.rowcount or 0) != 1:
+                    await self.session.rollback()
+                    await self._mark_job_stale(job_id=job_id, worker_id=worker_id)
+                    return
+                if self._is_lease_lost(lease_lost):
+                    await self.session.rollback()
+                    return
+                completed = await transition_owned_running_job(
+                    self.session,
+                    PageScreenshotJob,
+                    job_id=job_id,
+                    worker_id=worker_id,
+                    require_not_cancelled=True,
+                    require_active_lease=True,
+                    commit=False,
+                    values={
+                        "status": "succeeded",
+                        "error_code": None,
+                        "error_message": None,
+                        "lease_expires_at": None,
+                        "heartbeat_at": None,
+                        "finished_at": published_at,
+                    },
+                )
+                if not completed:
+                    await self.session.rollback()
+                    return
+                await self.session.commit()
+                logger.info(
+                    "页面截图任务执行成功。",
+                    extra={
+                        "event": "page.screenshot.job.succeeded",
+                        "job_id": job_id,
+                        "page_id": page_id,
+                        "attempt_count": job.attempt_count,
+                        "duration_ms": round((time.monotonic() - execution_started_at) * 1000, 2),
+                    },
+                )
+                return
+            except OperationalError as error:
+                await self.session.rollback()
+                if not is_sqlite_lock_error(self.session, error) or attempt + 1 >= SQLITE_LOCK_RETRY_ATTEMPTS:
+                    raise
+                delay_seconds = 0.05 * (2**attempt)
+                logger.warning(
+                    "页面截图任务最终写入遇到 SQLite 锁，正在短退避重试。",
+                    extra={
+                        "event": "page.screenshot.job.sqlite_lock_retry",
+                        "job_id": job_id,
+                        "attempt": attempt + 1,
+                        "delay_seconds": delay_seconds,
+                    },
+                )
+                await asyncio.sleep(delay_seconds)
+
+    async def _is_artifact_snapshot_current(
+        self,
+        *,
+        page_id: int,
+        artifact: PageScreenshotCaptureArtifact,
+    ) -> bool:
+        """在最终发布前重新读取页面和展示配置，避免捕获期变更覆盖当前截图指针。"""
+
+        # 捕获阶段已经提交并释放事务；这里强制丢弃旧 Identity Map，确保读取到最终提交时的快照。
+        self.session.expire_all()
+        page = (
+            await self.session.execute(
+                select(Page)
+                .where(Page.id == page_id)
+                .execution_options(populate_existing=True)
+            )
+        ).scalar_one_or_none()
+        if page is None or int(page.current_version_no) != artifact.page_version_no:
+            return False
+        snapshot = await self.screenshot_service.screenshot_fingerprint_service.build_page_snapshot(page)
+        return snapshot.config_hash == artifact.config_hash
+
+    async def _mark_job_stale(self, *, job_id: int, worker_id: str) -> None:
+        """将仍由当前执行者持有但页面快照已过期的任务收敛为 skipped。"""
+
+        skipped = await transition_owned_running_job(
+            self.session,
+            PageScreenshotJob,
+            job_id=job_id,
+            worker_id=worker_id,
+            require_not_cancelled=True,
+            require_active_lease=True,
+            values={
+                "status": "skipped",
+                "lease_expires_at": None,
+                "heartbeat_at": None,
+                "error_code": PAGE_SCREENSHOT_JOB_STALE_CODE,
+                "error_message": "页面版本或展示配置已变化，截图任务不再发布旧快照。",
+                "finished_at": utc_now(),
+            },
+        )
+        if not skipped:
+            await self.session.rollback()
+            await self._acknowledge_cancelled_job(job_id=job_id, worker_id=worker_id)
+
+    @staticmethod
+    def _is_lease_lost(lease_lost: asyncio.Event | None) -> bool:
+        """统一判断心跳是否已经确认当前执行者丢失租约。"""
+
+        return lease_lost is not None and lease_lost.is_set()
+
+    async def renew_job_lease(self, *, job_id: int, worker_id: str) -> bool:
+        """为当前 Worker 正在执行的截图任务续租。"""
+
+        return await renew_running_job_lease(
+            self.session,
+            PageScreenshotJob,
+            job_id=job_id,
+            worker_id=worker_id,
+            lease_seconds=self._lease_seconds,
+        )
 
     async def recover_interrupted_jobs(self) -> int:
-        """恢复启动前遗留的 running 截图任务。"""
+        """仅恢复租约已过期的 running 任务，保留其他实例的有效执行权。"""
 
-        stmt = select(PageScreenshotJob).where(PageScreenshotJob.status == "running")
-        jobs = list((await self.session.execute(stmt)).scalars().all())
-        for job in jobs:
-            if job.attempt_count < MAX_SCREENSHOT_JOB_ATTEMPTS:
-                job.status = "pending"
-                job.error_code = None
-                job.error_message = None
-                job.started_at = None
-                job.finished_at = None
-                await self._release_job_lock(job.id)
-                continue
-            job.status = "failed"
-            job.error_code = "PAGE_SCREENSHOT_JOB_INTERRUPTED"
-            job.error_message = "页面截图任务因服务重启中断。"
-            job.finished_at = utc_now()
-            await self._release_job_lock(job.id)
-        if jobs:
-            await self.session.commit()
-        return len(jobs)
+        summary = await recover_expired_running_jobs(
+            self.session,
+            PageScreenshotJob,
+            max_attempts=MAX_SCREENSHOT_JOB_ATTEMPTS,
+            interrupted_error_code="PAGE_SCREENSHOT_JOB_INTERRUPTED",
+            interrupted_error_message="页面截图任务的执行租约已过期。",
+        )
+        self._log_recovery_summary(summary)
+        return summary.total_count
 
     async def _get_or_create_job(
         self,
@@ -293,6 +588,7 @@ class PageScreenshotJobService:
         page: Page,
         source: str,
         created_by: int | None,
+        target_page_version_no: int,
         config_hash: str,
         viewport: CaptureViewport,
         job_group_id: str | None,
@@ -301,35 +597,53 @@ class PageScreenshotJobService:
 
         existing = await self._get_active_job(
             page_id=page.id,
+            target_page_version_no=target_page_version_no,
             config_hash=config_hash,
             viewport=viewport,
         )
         if existing is not None:
             if job_group_id and not existing.job_group_id:
                 existing.job_group_id = job_group_id
+            if job_group_id:
+                await self.job_group_service.attach_job(group_id=job_group_id, job_id=existing.id)
             return existing
 
-        job = PageScreenshotJob(
-            job_group_id=job_group_id,
-            source=source,
-            page_id=page.id,
-            workspace_id=page.workspace_id,
-            project_id=page.project_id,
-            viewport_width=viewport.width,
-            viewport_height=viewport.height,
-            config_hash=config_hash,
-            status="pending",
-            attempt_count=0,
-            created_by=created_by,
-        )
-        self.session.add(job)
-        await self.session.flush()
+        try:
+            async with self.session.begin_nested():
+                job = PageScreenshotJob(
+                    job_group_id=job_group_id,
+                    source=source,
+                    page_id=page.id,
+                    workspace_id=page.workspace_id,
+                    project_id=page.project_id,
+                    viewport_width=viewport.width,
+                    viewport_height=viewport.height,
+                    target_page_version_no=target_page_version_no,
+                    config_hash=config_hash,
+                    status="pending",
+                    attempt_count=0,
+                    created_by=created_by,
+                )
+                self.session.add(job)
+                await self.session.flush()
+        except IntegrityError:
+            job = await self._get_active_job(
+                page_id=page.id,
+                target_page_version_no=target_page_version_no,
+                config_hash=config_hash,
+                viewport=viewport,
+            )
+            if job is None:
+                raise
+        if job_group_id:
+            await self.job_group_service.attach_job(group_id=job_group_id, job_id=job.id)
         return job
 
     async def _get_active_job(
         self,
         *,
         page_id: int,
+        target_page_version_no: int,
         config_hash: str,
         viewport: CaptureViewport,
     ) -> PageScreenshotJob | None:
@@ -339,6 +653,7 @@ class PageScreenshotJobService:
             select(PageScreenshotJob)
             .where(
                 PageScreenshotJob.page_id == page_id,
+                PageScreenshotJob.target_page_version_no == target_page_version_no,
                 PageScreenshotJob.config_hash == config_hash,
                 PageScreenshotJob.viewport_width == viewport.width,
                 PageScreenshotJob.viewport_height == viewport.height,
@@ -384,145 +699,142 @@ class PageScreenshotJobService:
         stmt = select(PageScreenshotJob).where(PageScreenshotJob.id.in_(ids)).order_by(PageScreenshotJob.id.asc())
         return list((await self.session.execute(stmt)).scalars().all())
 
-    async def _list_jobs_by_group_id(self, group_id: str) -> list[PageScreenshotJob]:
-        """按任务组 ID 读取截图任务。"""
+    async def _mark_job_failed_or_retry(self, *, job_id: int, worker_id: str, error: Exception) -> None:
+        """按错误性质与尝试次数决定重排或失败，并始终校验任务拥有者。"""
 
-        stmt = (
-            select(PageScreenshotJob)
-            .where(PageScreenshotJob.job_group_id == group_id)
-            .order_by(PageScreenshotJob.created_at.asc(), PageScreenshotJob.id.asc())
-        )
-        return list((await self.session.execute(stmt)).scalars().all())
-
-    def _build_group_response(self, *, group_id: str, jobs: list[PageScreenshotJob]) -> PageScreenshotJobGroupResponse:
-        """把一组任务聚合为前端可轮询的进度响应。"""
-
-        counter = Counter(job.status for job in jobs)
-        pending_count = counter.get("pending", 0)
-        running_count = counter.get("running", 0)
-        succeeded_count = counter.get("succeeded", 0)
-        failed_count = counter.get("failed", 0)
-        skipped_count = counter.get("skipped", 0)
-        requested_count = len(jobs)
-        if pending_count > 0:
-            status = "pending"
-        elif running_count > 0:
-            status = "running"
-        elif failed_count > 0 and succeeded_count + skipped_count > 0:
-            status = "partial"
-        elif failed_count > 0:
-            status = "failed"
-        else:
-            status = "succeeded"
-
-        return PageScreenshotJobGroupResponse(
-            job_group_id=group_id,
-            status=status,
-            requested_count=requested_count,
-            pending_count=pending_count,
-            running_count=running_count,
-            succeeded_count=succeeded_count,
-            failed_count=failed_count,
-            skipped_count=skipped_count,
-            page_ids=[job.page_id for job in jobs if job.status in {"succeeded", "skipped"}],
-            jobs=[PageScreenshotJobResponse.model_validate(job) for job in jobs],
-            failures=[
-                PageScreenshotBatchFailure(
-                    page_id=job.page_id,
-                    code=str(job.page_id),
-                    detail=job.error_message or "页面截图任务执行失败。",
-                )
-                for job in jobs
-                if job.status == "failed"
-            ],
-        )
-
-    async def _mark_job_failed(self, job: PageScreenshotJob, error: Exception) -> None:
-        """把异常压缩为截图任务失败状态。"""
+        self.session.expire_all()
+        job = await self.get_job_by_id(job_id)
+        if job.status != "running" or job.worker_id != worker_id:
+            return
+        if job.cancel_requested_at is not None:
+            await self._acknowledge_cancelled_job(job_id=job_id, worker_id=worker_id)
+            return
 
         if isinstance(error, AppException):
-            job.error_code = error.code
-            job.error_message = error.detail
+            error_code = error.code
+            error_message = error.detail
+            retryable = error.status_code >= 500
         else:
-            job.error_code = "PAGE_SCREENSHOT_JOB_FAILED"
-            job.error_message = str(error) or "页面截图任务执行失败。"
-        job.status = "failed"
-        job.finished_at = utc_now()
-        await self.session.commit()
+            error_code = "PAGE_SCREENSHOT_JOB_FAILED"
+            error_message = str(error) or "页面截图任务执行失败。"
+            retryable = True
 
-    async def _acquire_job_lock(self, job_id: int) -> bool:
-        """抢占截图任务执行锁，避免多进程重复执行同一任务。"""
-
-        runtime = get_redis_runtime_client()
-        acquired = await asyncio.to_thread(
-            runtime.client.set,
-            _build_job_lock_key(job_id),
-            "1",
-            ex=self.settings.page_screenshot_job_lease_seconds,
-            nx=True,
+        if retryable and job.attempt_count < MAX_SCREENSHOT_JOB_ATTEMPTS:
+            values = {
+                "status": "pending",
+                "worker_id": None,
+                "lease_expires_at": None,
+                "heartbeat_at": None,
+                "error_code": error_code,
+                "error_message": error_message,
+                "started_at": None,
+                "finished_at": None,
+            }
+        else:
+            values = {
+                "status": "failed",
+                "lease_expires_at": None,
+                "error_code": error_code,
+                "error_message": error_message,
+                "finished_at": utc_now(),
+            }
+        await transition_owned_running_job(
+            self.session,
+            PageScreenshotJob,
+            job_id=job_id,
+            worker_id=worker_id,
+            require_active_lease=True,
+            values=values,
         )
-        return bool(acquired)
 
-    async def _release_job_lock(self, job_id: int) -> None:
-        """释放截图任务执行锁；TTL 仍作为进程异常兜底。"""
+    async def _acknowledge_cancelled_job(self, *, job_id: int, worker_id: str) -> None:
+        """由当前拥有者把已请求取消的运行任务收敛为 cancelled。"""
 
-        await asyncio.to_thread(get_redis_runtime_client().client.delete, _build_job_lock_key(job_id))
+        await transition_owned_running_job(
+            self.session,
+            PageScreenshotJob,
+            job_id=job_id,
+            worker_id=worker_id,
+            require_active_lease=True,
+            values={
+                "status": "cancelled",
+                "lease_expires_at": None,
+                "heartbeat_at": None,
+                "finished_at": utc_now(),
+            },
+        )
+
+    @staticmethod
+    def _raise_if_job_stale(job: PageScreenshotJobResponse) -> None:
+        """阻止同步调用把已跳过的旧快照误当作当前截图读取。"""
+
+        if job.status == "skipped" and job.error_code == PAGE_SCREENSHOT_JOB_STALE_CODE:
+            raise AppException(
+                status_code=409,
+                code=PAGE_SCREENSHOT_JOB_STALE_CODE,
+                detail=job.error_message or "页面截图任务快照已过期，请重新请求截图。",
+            )
+
+    @property
+    def _lease_seconds(self) -> int:
+        """优先读取通用租约配置，并兼容升级前的截图专用配置。"""
+
+        return max(
+            1,
+            int(
+                getattr(
+                    self.settings,
+                    "durable_job_lease_seconds",
+                    self.settings.page_screenshot_job_lease_seconds,
+                )
+            ),
+        )
+
+    @staticmethod
+    def _log_recovery_summary(summary: DurableJobRecoverySummary) -> None:
+        """记录过期租约恢复指标，供日志采集侧聚合队列运行情况。"""
+
+        if not summary.total_count:
+            return
+        logger.warning(
+            "页面截图任务过期租约已恢复。",
+            extra={
+                "event": "page.screenshot.jobs.lease_recovered",
+                "requeued_count": summary.requeued_count,
+                "failed_count": summary.failed_count,
+                "cancelled_count": summary.cancelled_count,
+            },
+        )
 
 
 async def run_page_screenshot_queue_loop(
     session_factory: async_sessionmaker[AsyncSession] | None = None,
 ) -> None:
-    """按配置持续领取并执行页面截图队列任务。"""
+    """兼容旧导入路径，委托独立 Worker 模块运行截图队列。"""
 
-    settings = get_settings()
-    factory = session_factory or get_session_factory()
-    poll_interval = max(0.1, settings.page_screenshot_queue_poll_interval_seconds)
-    concurrency = max(1, settings.page_screenshot_queue_concurrency)
-    logger.info(
-        "页面截图队列后台任务已启动。",
-        extra={"event": "page.screenshot.queue.started", "concurrency": concurrency},
-    )
-    while True:
-        try:
-            async with factory() as session:
-                claimed = await PageScreenshotJobService(session).claim_pending_jobs(limit=concurrency)
-            if not claimed:
-                await asyncio.sleep(poll_interval)
-                continue
-            await asyncio.gather(*[run_page_screenshot_job(job.id, session_factory=factory) for job in claimed])
-        except asyncio.CancelledError:
-            raise
-        except Exception:  # noqa: BLE001
-            logger.exception("页面截图队列循环异常。", extra={"event": "page.screenshot.queue.failed"})
-            await asyncio.sleep(poll_interval)
+    from app.services.page_screenshot_queue_worker import run_page_screenshot_queue_loop as run_loop
+
+    await run_loop(session_factory)
 
 
 async def run_page_screenshot_job(
     job_id: int,
     *,
+    worker_id: str | None = None,
     session_factory: async_sessionmaker[AsyncSession] | None = None,
 ) -> None:
-    """使用独立数据库会话执行单个截图任务。"""
+    """兼容旧导入路径，委托独立 Worker 模块执行单个任务。"""
 
-    factory = session_factory or get_session_factory()
-    async with factory() as session:
-        await PageScreenshotJobService(session).run_claimed_job(job_id)
+    from app.services.page_screenshot_queue_worker import run_page_screenshot_job as run_job
 
-
-async def recover_interrupted_screenshot_jobs_on_startup(session_factory) -> int:
-    """应用启动时收敛仍标记 running 的截图任务。"""
-
-    async with session_factory() as session:
-        recovered_count = await PageScreenshotJobService(session).recover_interrupted_jobs()
-    if recovered_count:
-        logger.warning(
-            "已恢复中断的页面截图任务。",
-            extra={"event": "page.screenshot.jobs.recovered", "count": recovered_count},
-        )
-    return recovered_count
+    await run_job(job_id, worker_id=worker_id, session_factory=session_factory)
 
 
-def _build_job_lock_key(job_id: int) -> str:
-    """构造截图任务执行锁 key。"""
+async def recover_interrupted_screenshot_jobs_on_startup(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> int:
+    """兼容旧导入路径，委托 Worker 模块恢复过期任务。"""
 
-    return get_redis_runtime_client().key(f"{SCREENSHOT_JOB_LOCK_PREFIX}:{job_id}")
+    from app.services.page_screenshot_queue_worker import recover_interrupted_screenshot_jobs_on_startup as recover
+
+    return await recover(session_factory)

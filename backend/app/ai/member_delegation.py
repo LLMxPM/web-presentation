@@ -44,6 +44,8 @@ logger = logging.getLogger(__name__)
 _MEMBER_AGENT_IDS = {"component-manager", "resource-manager"}
 _MEMBER_HITL_SKIPPED_CODE = "AI_MEMBER_DELEGATION_HITL_SKIPPED"
 _MEMBER_HITL_SKIPPED_MESSAGE = "成员助手需要用户处理，已终止该委派以保证父任务继续运行。"
+_PARENT_MEMBER_STOP_STATUSES = {"failed", "cancelled", "completed", "cancelling"}
+_PARENT_TERMINAL_STATUSES = {"failed", "cancelled", "completed"}
 
 
 class MemberDelegationPaused(Exception):
@@ -219,6 +221,8 @@ class MemberDelegationExecutor:
         )
         async with self._session_factory() as session:
             parent_run = await self._require_parent_run(session)
+            if _parent_run_should_stop_member(parent_run):
+                raise AppException(status_code=409, code="AI_RUN_CANCELLED", detail="当前智能体运行已被取消。")
             member_run = await self._create_member_run(
                 session,
                 parent_run=parent_run,
@@ -259,10 +263,6 @@ class MemberDelegationExecutor:
             member_run = await session.get(AiAgentMemberRun, member_run_id)
             if member_run is None or member_run.parent_run_id != parent_run.run_id:
                 raise AppException(status_code=404, code="AI_MEMBER_RUN_NOT_FOUND", detail="成员运行不存在。")
-            member_run.status = "running"
-            member_run.pending_requirement_json = None
-            member_run.updated_at = _utc_now()
-            await session.flush()
             runner = _MemberAgentRunner(
                 session=session,
                 session_factory=self._session_factory,
@@ -272,6 +272,11 @@ class MemberDelegationExecutor:
                 parent_run=parent_run,
                 member_run=member_run,
             )
+            await runner._raise_if_parent_cancelled()
+            member_run.status = "running"
+            member_run.pending_requirement_json = None
+            member_run.updated_at = _utc_now()
+            await session.flush()
             await runner.append_member_event("run.continued")
             return await runner.run(
                 message="",
@@ -371,6 +376,10 @@ class _MemberAgentRunner:
         self._runtime_context = runtime_context
         self._parent_run = parent_run
         self._member_run = member_run
+        self._parent_run_id = parent_run.run_id
+        self._parent_session_id = parent_run.session_id
+        self._member_run_id = member_run.member_run_id
+        self._member_agent_id = member_run.agent_id
         self._store = PlatformAgentRuntimeStore(session, user_id=current.user.id)
         self._model_resolver = PydanticLlmModelResolver()
 
@@ -388,6 +397,7 @@ class _MemberAgentRunner:
         final_messages: list[dict[str, Any]] = []
         projector: PydanticEventProjector | None = None
         try:
+            await self._raise_if_parent_cancelled()
             catalog = get_agent_catalog_entry(self._member_run.agent_id)
             if catalog is None:
                 raise AppException(status_code=404, code="AI_AGENT_NOT_FOUND", detail="成员助手不存在。")
@@ -487,14 +497,14 @@ class _MemberAgentRunner:
                 infer_name=False,
             ) as agent_run:
                 async for node in agent_run:
-                    await self._raise_if_parent_cancelled(projector)
+                    await self._raise_if_parent_cancelled()
                     if agent.is_model_request_node(node):
                         await self.append_member_event("model.request.started")
                         async with node.stream(agent_run.ctx) as stream:
                             async for raw_event in stream:
-                                await self._raise_if_parent_cancelled(projector)
+                                await self._raise_if_parent_cancelled()
                                 await projector.handle_raw_event(raw_event)
-                        await self._raise_if_parent_cancelled(projector)
+                        await self._raise_if_parent_cancelled()
                         await projector.flush_delta_buffer()
                         self._sync_member_message_history(
                             agent_run=agent_run,
@@ -507,7 +517,7 @@ class _MemberAgentRunner:
                     if agent.is_call_tools_node(node):
                         async with node.stream(agent_run.ctx) as stream:
                             async for raw_event in stream:
-                                await self._raise_if_parent_cancelled(projector)
+                                await self._raise_if_parent_cancelled()
                                 await projector.handle_raw_event(raw_event)
                 if agent_run.result is None:
                     raise RuntimeError("Pydantic AI member run finished without result")
@@ -519,7 +529,7 @@ class _MemberAgentRunner:
                         output,
                         _merge_member_message_history(base_message_history, final_messages),
                     )
-            await self._raise_if_parent_cancelled(projector)
+            await self._raise_if_parent_cancelled()
             await projector.flush_delta_buffer()
             streamed_text = "".join(content_parts)
             result_text = _latest_member_response_text(final_messages) or streamed_text
@@ -543,41 +553,68 @@ class _MemberAgentRunner:
         except AppException as exc:
             if exc.code == "AI_RUN_CANCELLED":
                 raise
-            if projector is not None:
-                await projector.flush_delta_buffer(best_effort=True)
             logger.warning(
                 "Member agent run stopped by application error",
                 extra=build_agent_error_log_extra(
                     exc,
                     event="ai.member_run.app_error",
-                    parent_run_id=self._parent_run.run_id,
-                    session_id=self._parent_run.session_id,
-                    member_run_id=self._member_run.member_run_id,
-                    member_agent_id=self._member_run.agent_id,
+                    parent_run_id=self._parent_run_id,
+                    session_id=self._parent_session_id,
+                    member_run_id=self._member_run_id,
+                    member_agent_id=self._member_agent_id,
                     error_code=exc.code,
                     user_error_message=exc.detail,
                 ),
             )
+            await self._prepare_failure_recovery(projector)
             return await self._mark_failed_result(code=exc.code, message=exc.detail)
         except Exception as exc:  # noqa: BLE001
-            if projector is not None:
-                await projector.flush_delta_buffer(best_effort=True)
             failure = normalize_agent_run_exception(exc, fallback_code="AI_MEMBER_RUN_FAILED")
             logger.exception(
                 "Member agent run failed",
                 extra=build_agent_error_log_extra(
                     exc,
                     event="ai.member_run.exception",
-                    parent_run_id=self._parent_run.run_id,
-                    session_id=self._parent_run.session_id,
-                    member_run_id=self._member_run.member_run_id,
-                    member_agent_id=self._member_run.agent_id,
+                    parent_run_id=self._parent_run_id,
+                    session_id=self._parent_session_id,
+                    member_run_id=self._member_run_id,
+                    member_agent_id=self._member_agent_id,
                     error_code=failure.code,
                     user_error_message=failure.message,
                     raw_error_message=failure.raw_message,
                 ),
             )
+            await self._prepare_failure_recovery(projector)
             return await self._mark_failed_result(code=failure.code, message=failure.message)
+
+    async def _prepare_failure_recovery(self, projector: PydanticEventProjector | None) -> None:
+        """失败收敛前恢复事务；缓冲事件尝试写入后再次恢复，确保后续失败事件可落库。"""
+
+        await self._rollback_and_reload_runs()
+        await self._raise_if_parent_cancelled()
+        if projector is None:
+            return
+        await projector.flush_delta_buffer(best_effort=True)
+        # 尽力 flush 也可能让事务再次进入 failed 状态，失败投影前必须再次清理。
+        await self._rollback_and_reload_runs()
+        await self._raise_if_parent_cancelled()
+
+    async def _rollback_and_reload_runs(self, *, require_member: bool = True) -> bool:
+        """回滚当前事务并重新加载父/成员 ORM，避免在 PendingRollback 状态继续写事件。"""
+
+        await self._session.rollback()
+        parent_run = await self._session.get(AiAgentRun, self._parent_run_id, populate_existing=True)
+        if parent_run is None:
+            raise RuntimeError(f"Parent agent run no longer exists: {self._parent_run_id}")
+        member_run = await self._session.get(AiAgentMemberRun, self._member_run_id, populate_existing=True)
+        self._parent_run = parent_run
+        self._store = PlatformAgentRuntimeStore(self._session, user_id=self._current.user.id)
+        if member_run is None:
+            if require_member:
+                raise RuntimeError(f"Member agent run no longer exists: {self._member_run_id}")
+            return False
+        self._member_run = member_run
+        return True
 
     async def append_member_event(
         self,
@@ -670,6 +707,7 @@ class _MemberAgentRunner:
     async def _mark_failed_result(self, *, code: str, message: str) -> MemberDelegationResult:
         """把成员运行收敛为失败，并返回可交给内容助手整合的成员结果。"""
 
+        await self._raise_if_parent_cancelled()
         await self._mark_running_member_tools_failed(message=message)
         self._member_run.status = "failed"
         self._member_run.error_message = message
@@ -688,7 +726,12 @@ class _MemberAgentRunner:
             result=f"成员助手运行失败：{message}",
         )
 
-    async def _mark_running_member_tools_failed(self, *, message: str) -> None:
+    async def _mark_running_member_tools_failed(
+        self,
+        *,
+        message: str,
+        emit_events: bool = True,
+    ) -> None:
         """成员 run 失败时补齐仍在 running 的成员工具，避免运行态快照残留进行中状态。"""
 
         result = await self._session.execute(
@@ -701,7 +744,7 @@ class _MemberAgentRunner:
         for tool_call in result.scalars().all():
             tool_call.status = "error"
             tool_call.message = tool_call.message or message
-            if not tool_call.tool_call_id:
+            if not emit_events or not tool_call.tool_call_id:
                 continue
             await self.append_member_event(
                 "tool.error",
@@ -712,19 +755,38 @@ class _MemberAgentRunner:
                 },
             )
 
-    async def _raise_if_parent_cancelled(self, projector: PydanticEventProjector | None = None) -> None:
-        """成员执行期间感知父 run 取消标记，并收敛成员状态。"""
+    async def _raise_if_parent_cancelled(self) -> None:
+        """成员执行期间感知父 run 的取消或终态，并收敛成员状态。"""
 
         await self._session.refresh(self._parent_run, attribute_names=["status", "cancel_requested_at"])
-        if self._parent_run.cancel_requested_at is None and self._parent_run.status != "cancelling":
+        if not _parent_run_should_stop_member(self._parent_run):
             return
-        if projector is not None:
-            await projector.flush_delta_buffer(best_effort=True)
-        await self._mark_running_member_tools_failed(message="父级运行已停止，成员工具调用未完成。")
+        # 父级停止后不再 flush 成员 delta，避免在父终态事件之后继续追加 member.*。
+        member_exists = await self._rollback_and_reload_runs(require_member=False)
+        if not member_exists:
+            raise AppException(status_code=409, code="AI_RUN_CANCELLED", detail="当前智能体运行已被取消。")
+        parent_is_terminal = self._parent_run.status in _PARENT_TERMINAL_STATUSES
+        if self._member_run.status in {"completed", "cancelled", "failed"}:
+            raise AppException(status_code=409, code="AI_RUN_CANCELLED", detail="当前智能体运行已被取消。")
+        await self._mark_running_member_tools_failed(
+            message="父级运行已停止，成员工具调用未完成。",
+            emit_events=not parent_is_terminal,
+        )
         self._member_run.status = "cancelled"
+        self._member_run.pending_requirement_json = None
         self._member_run.finished_at = _utc_now()
         self._member_run.updated_at = _utc_now()
-        await self.append_member_event("run.cancelled", content="父级运行已停止，成员运行同步取消。")
+        if parent_is_terminal:
+            await self._session.commit()
+        else:
+            await self._session.refresh(self._parent_run, attribute_names=["status", "cancel_requested_at"])
+            if self._parent_run.status in _PARENT_TERMINAL_STATUSES:
+                await self._session.commit()
+            else:
+                await self.append_member_event(
+                    "run.cancelled",
+                    content="父级运行已停止，成员运行同步取消。",
+                )
         raise AppException(status_code=409, code="AI_RUN_CANCELLED", detail="当前智能体运行已被取消。")
 
 
@@ -934,6 +996,12 @@ def _optional_text(value: Any) -> str | None:
         return None
     text = str(value).strip()
     return text or None
+
+
+def _parent_run_should_stop_member(parent_run: AiAgentRun) -> bool:
+    """判断父运行是否已请求停止或进入不应继续接收成员事件的状态。"""
+
+    return parent_run.cancel_requested_at is not None or parent_run.status in _PARENT_MEMBER_STOP_STATUSES
 
 
 def _workspace_member_scope(scope: AgentScopeContext) -> AgentScopeContext:

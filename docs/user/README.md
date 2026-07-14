@@ -1,6 +1,8 @@
 # 用户文档
 
-用户文档面向平台使用者、内容创作者和团队管理员，说明如何理解平台、完成创作流程、管理可复用资产，并在需要时跳转到部署与运维文档。
+用户文档面向平台使用者、内容创作者和团队管理员，说明如何理解平台、完成创作流程、管理可复用资产，并在需要时完成开源自托管部署。
+
+项目网站：[https://llmxpm.github.io/web-presentation-site/](https://llmxpm.github.io/web-presentation-site/)
 
 ## 推荐阅读路径
 
@@ -10,7 +12,17 @@
 | 2 | [核心概念](./concepts.md) | 理解工作空间、项目、页面、资源、组件、主题和样式的关系 |
 | 3 | [快速上手](./getting-started.md) | 从登录到创建页面、预览和构建的完整流程 |
 | 4 | [Demo 使用指南](./demo-guide.md) | 体验公开 Demo 或准备演示流程 |
-| 5 | [AI 协作创作](./ai/README.md) | 使用 AI 侧边栏、工具确认和上下文注入 |
+| 5 | [平台特性](./features/README.md) | 从创作者视角理解 AI 创作、资产复用和构建交付 |
+| 6 | [AI 协作创作](./ai/README.md) | 使用 AI 侧边栏、工具确认和上下文注入 |
+| 7 | [自托管部署](./deployment.md) | 在自己的机器或团队服务器上部署平台 |
+
+## 平台特性
+
+| 文档 | 内容 |
+| :--- | :--- |
+| [AI 原生创作](./features/ai-native-creation.md) | AI 如何理解项目上下文、调用工具并通过确认机制参与创作 |
+| [资产复用](./features/asset-reuse.md) | 资源、组件、主题、字体和样式如何沉淀为团队资产 |
+| [预览、构建与交付](./features/preview-build-delivery.md) | Runtime 如何支撑实时预览、截图、构建产物和交付链接 |
 
 ## 常用工作流
 
@@ -28,10 +40,11 @@
 | 文档 | 内容 |
 | :--- | :--- |
 | [演示文稿创作路径对比](./platform-comparison.md) | 对比传统 PPT、AI PPT、PPT skills 和平台化创作路径 |
+| [自托管部署](./deployment.md) | 开源用户部署选型、SQLite 轻量部署、数据保存和升级建议 |
 | [当前限制](./reference/limits.md) | 已落地能力、建设中事项和使用边界 |
 | [常见问题](./reference/faq.md) | 登录、AI 设置、预览、构建、部署入口等常见问题 |
 | [术语表](./reference/glossary.md) | 平台核心术语解释 |
 
 ## 部署入口
 
-如果你需要自己部署平台，直接阅读 [部署文档入口](../developer/deployment/README.md)。试用单机部署优先看 [Compose 部署说明](../developer/deployment/compose.md)，生产环境上线前需要同时确认 [部署环境变量](../developer/deployment/env-vars.md)、[备份与恢复](../developer/deployment/backup-restore.md) 和 [升级与回滚](../developer/deployment/upgrade-rollback.md)。
+如果你需要自己部署平台，先阅读 [自托管部署](./deployment.md)。它覆盖开源用户最常见的 SQLite 轻量单容器部署和方案选择；生产环境上线前，再确认 [生产部署指南](../developer/deployment/README.md)、[部署环境变量](../developer/deployment/env-vars.md)、[备份与恢复](../developer/deployment/backup-restore.md) 和 [升级与回滚](../developer/deployment/upgrade-rollback.md)。

@@ -12,9 +12,10 @@ from httpx import AsyncClient
 from app.core.config import get_settings
 from app.core.exceptions import AppException
 from app.schemas.project_app_config import ProjectAppPageConfig
-from app.services.browser_capture_service import BrowserCaptureJob, BrowserCaptureJobResult, BrowserCaptureService
+from app.services.browser_capture_service import BrowserCaptureJob, BrowserCaptureService
 from app.services.capture_viewport_resolver import CaptureViewport, CaptureViewportResolver
 from app.services.page_screenshot_job_service import PageScreenshotJobService, run_page_screenshot_job
+from app.services.page_screenshot_service import PageScreenshotService
 from app.services.page_preview_service import PagePreviewResult
 from app.services.token_service import TokenService
 
@@ -107,7 +108,9 @@ async def test_page_screenshot_should_save_and_expose_public_url(
     assert captured["asset_base_url_override"] == "http://127.0.0.1:8000"
     assert captured["preview_url"] == "http://runtime.local/__preview?ticket=demo"
     assert captured["viewport"] == (1920, 1080)
-    assert captured["storage_key"] == f"page-screenshots/{page_data['code']}.png"
+    storage_key = str(captured["storage_key"])
+    assert storage_key.startswith(f"page-screenshots/{page_data['id']}/v1/")
+    assert storage_key.endswith("/1920x1080.png")
     assert captured["content"] == b"fake-png"
     assert captured["content_type"] == "image/png"
     expected_screenshot_url_prefix = f"http://127.0.0.1:8000/public/page-screenshots/{page_data['id']}?v="
@@ -116,6 +119,7 @@ async def test_page_screenshot_should_save_and_expose_public_url(
     assert screenshot_data["screenshot_version_no"] == screenshot_data["current_version_no"]
     assert isinstance(screenshot_data["screenshot_config_hash"], str)
     assert len(screenshot_data["screenshot_config_hash"]) == 64
+    assert f"/{screenshot_data['screenshot_config_hash']}/" in storage_key
     assert screenshot_data["screenshot_is_latest"] is True
     assert screenshot_data["screenshot_updated_at"] is not None
 
@@ -135,7 +139,7 @@ async def test_page_screenshot_should_save_and_expose_public_url(
     assert listed_page["screenshot_is_latest"] is True
 
     async def fake_read_object(self, storage_key: str) -> bytes:  # noqa: ARG001
-        assert storage_key == f"page-screenshots/{page_data['code']}.png"
+        assert storage_key == captured["storage_key"]
         return b"fake-png"
 
     monkeypatch.setattr("app.api.routes.public_assets.ObjectStorageService.read_object", fake_read_object)
@@ -751,6 +755,9 @@ async def test_batch_refresh_page_screenshots_should_refresh_missing_and_outdate
             preview_url=f"http://runtime.local/__preview?ticket={page.id}",
         )
 
+    capture_phase = "initial"
+    captured_batch_page_ids: list[int] = []
+
     async def fake_capture_preview(  # noqa: ARG001
         self,
         preview_url: str,
@@ -758,6 +765,12 @@ async def test_batch_refresh_page_screenshots_should_refresh_missing_and_outdate
         *,
         extra_http_headers=None,  # noqa: ANN001
     ) -> bytes:
+        if capture_phase == "batch":
+            matched_page_id = next(page_id for page_id in page_ids if f"ticket={page_id}" in preview_url)
+            captured_batch_page_ids.append(matched_page_id)
+            if matched_page_id == page_ids[1]:
+                raise AppException(status_code=502, code="PAGE_SCREENSHOT_CAPTURE_FAILED", detail="模拟截图失败。")
+            return b"batch-png"
         return b"initial-png"
 
     async def fake_put_object(self, storage_key: str, content: bytes, content_type: str | None = None) -> str:  # noqa: ARG001
@@ -778,22 +791,7 @@ async def test_batch_refresh_page_screenshots_should_refresh_missing_and_outdate
     )
     assert update_project_response.status_code == 200
 
-    captured_batch: dict[str, object] = {}
-
-    async def fake_capture_preview_batch(self, jobs, *, max_concurrency=None):  # noqa: ANN001, ARG001
-        captured_batch["job_count"] = len(jobs)
-        captured_batch["max_concurrency"] = max_concurrency
-        return [
-            BrowserCaptureJobResult(
-                key=job.key,
-                error=AppException(status_code=502, code="PAGE_SCREENSHOT_CAPTURE_FAILED", detail="模拟截图失败。"),
-            )
-            if job.key == page_ids[1]
-            else BrowserCaptureJobResult(key=job.key, content=b"batch-png")
-            for job in jobs
-        ]
-
-    monkeypatch.setattr("app.services.page_screenshot_service.BrowserCaptureService.capture_preview_batch", fake_capture_preview_batch)
+    capture_phase = "batch"
 
     batch_response = await authenticated_client.post(
         "/api/pages/batch-refresh-screenshots",
@@ -801,8 +799,7 @@ async def test_batch_refresh_page_screenshots_should_refresh_missing_and_outdate
     )
     assert batch_response.status_code == 200
     batch_data = batch_response.json()
-    assert captured_batch["job_count"] == 3
-    assert captured_batch["max_concurrency"] == 2
+    assert sorted(set(captured_batch_page_ids)) == sorted(page_ids)
     assert batch_data["requested_count"] == 3
     assert batch_data["succeeded_count"] == 2
     assert batch_data["failed_count"] == 1
@@ -902,3 +899,31 @@ def test_capture_viewport_resolver_should_read_project_page_size() -> None:
 
     assert viewport.width == 1366
     assert viewport.height == 768
+
+
+def test_page_screenshot_currentness_should_include_viewport_snapshot() -> None:
+    """同一页面版本和配置但视口不同，不能错误复用公开截图指针。"""
+
+    page = type(
+        "ScreenshotPage",
+        (),
+        {
+            "screenshot_storage_key": "page-screenshots/1/v1/hash/1920x1080.png",
+            "screenshot_version_no": 1,
+            "current_version_no": 1,
+            "screenshot_config_hash": "hash",
+            "screenshot_viewport_width": 1920,
+            "screenshot_viewport_height": 1080,
+        },
+    )()
+
+    assert PageScreenshotService._is_page_screenshot_current_for_hash(
+        page,
+        "hash",
+        viewport=CaptureViewport(width=1920, height=1080),
+    )
+    assert not PageScreenshotService._is_page_screenshot_current_for_hash(
+        page,
+        "hash",
+        viewport=CaptureViewport(width=1280, height=720),
+    )

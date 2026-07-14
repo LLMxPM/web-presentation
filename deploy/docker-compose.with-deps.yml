@@ -34,7 +34,7 @@ services:
   redis:
     image: redis:7
     restart: unless-stopped
-    command: ["sh", "-c", "redis-server --appendonly yes --requirepass \"$${REDIS_PASSWORD}\""]
+    command: ["sh", "-c", "redis-server --appendonly no --requirepass \"$${REDIS_PASSWORD}\""]
     environment:
       REDIS_PASSWORD: "change-redis-password"
     volumes:
@@ -65,9 +65,19 @@ services:
       AI_SECRET_ENCRYPTION_KEY: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
       LOG_LEVEL: "INFO"
       LOG_FORMAT: "json"
-      ACCESS_LOG_ENABLED: "true"
+      ACCESS_LOG_ENABLED: "false"
       CLIENT_ERROR_LOG_ENABLED: "true"
       CLIENT_ERROR_LOG_MAX_BYTES: "16384"
+      PLAYWRIGHT_BROWSER_POOL_SIZE: "2"
+      PLAYWRIGHT_TASK_QUEUE_SIZE: "16"
+      PLAYWRIGHT_BROWSER_REUSE_ENABLED: "true"
+      AI_PAGE_MUTATION_CONCURRENCY: "2"
+      AI_PAGE_MUTATION_MAX_ACTIVE_JOBS: "64"
+      AI_PAGE_MUTATION_MAX_BATCH_SIZE: "16"
+      DURABLE_JOB_LEASE_SECONDS: "300"
+      DURABLE_JOB_HEARTBEAT_SECONDS: "30"
+      RUNTIME_DIAGNOSTICS_REQUEST_TIMEOUT_SECONDS: "180"
+      RUNTIME_BUILD_REQUEST_TIMEOUT_SECONDS: "900"
       ASSET_STORAGE_DRIVER: "local"
     volumes:
       - backend-data:/app/backend/data
@@ -108,7 +118,18 @@ services:
       RUNTIME_SERVER_BASE_PATH: "/runtime/"
       RUNTIME_LOG_LEVEL: "info"
       RUNTIME_LOG_FORMAT: "json"
-      RUNTIME_ACCESS_LOG_ENABLED: "true"
+      RUNTIME_ACCESS_LOG_ENABLED: "false"
+      RUNTIME_VITE_TASK_CONCURRENCY: "2"
+      RUNTIME_VITE_TASK_QUEUE_SIZE: "16"
+      RUNTIME_VITE_TASK_QUEUE_WAIT_TIMEOUT_MS: "30000"
+      RUNTIME_VITE_DIAGNOSTICS_WEIGHT: "3"
+      RUNTIME_BUILD_WORKER_MAX_OLD_SPACE_MB: "2048"
+      RUNTIME_BUILD_WORKER_TIMEOUT_MS: "600000"
+      RUNTIME_DIAGNOSTICS_WORKER_TIMEOUT_MS: "120000"
+      RUNTIME_DIAGNOSTICS_WORKER_REUSE_ENABLED: "true"
+      RUNTIME_DIAGNOSTICS_WORKER_MAX_TASKS: "25"
+      RUNTIME_DIAGNOSTICS_WORKER_MAX_AGE_MS: "1800000"
+      RUNTIME_DIAGNOSTICS_WORKER_RSS_RECYCLE_RATIO: "0.75"
     expose:
       - "7373"
     networks:

@@ -12,6 +12,7 @@ from typing import Any, Literal
 from fastapi import FastAPI
 from pydantic_ai import DeferredToolResults, ToolDenied
 from pydantic_ai.messages import ModelMessagesTypeAdapter, ModelRequest, ModelResponse, ToolCallPart, UserContent, UserPromptPart
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.message_history import (
@@ -34,10 +35,13 @@ from app.ai.platform_runtime import (
 from app.ai.pydantic_model_resolver import PydanticLlmModelResolver
 from app.ai.pydantic_runner import PydanticAgentRunner
 from app.ai.pydantic_tools import build_pydantic_tools
+from app.ai.run_write_fence import PageMutationContinuationWriteFence
+from app.ai.runtime_context_builder import build_agent_runtime_context
 from app.ai.tool_specs import AGENT_COORDINATOR_AGENT_ID, COMPONENT_MANAGER_AGENT_ID, RESOURCE_MANAGER_AGENT_ID
 from app.ai.run_errors import build_agent_error_log_extra, normalize_agent_run_exception
 from app.core.exceptions import AppException
 from app.db.session import get_session_factory
+from app.models.ai_agent_runtime import AiAgentRequirement, AiAgentRun
 from app.models.ai_llm import AiLlmConfig
 from app.schemas.agent import (
     AgentActiveRunItem,
@@ -689,6 +693,131 @@ class AgentSessionFacade:
 
         return generator()
 
+    async def continue_external_page_mutations_to_store(
+        self,
+        *,
+        run_id: str,
+        deferred_results: DeferredToolResults,
+        continuation_fence: PageMutationContinuationWriteFence | None = None,
+    ) -> str:
+        """由后台协调器恢复 external_job run，并在可用时把每次写入绑定到 Batch 租约。"""
+
+        store = PlatformAgentRuntimeStore(
+            self._session,
+            user_id=self._current.user.id,
+            write_fence=continuation_fence,
+        )
+
+        run_model = await self._session.get(AiAgentRun, run_id)
+        if run_model is None or run_model.user_id != self._current.user.id:
+            raise AppException(status_code=404, code="AI_RUN_NOT_FOUND", detail="待恢复的智能体运行不存在。")
+        if run_model.status != "waiting_external" or run_model.cancel_requested_at is not None:
+            raise AppException(status_code=409, code="AI_RUN_NOT_WAITING_EXTERNAL", detail="智能体运行已不再等待外部页面任务。")
+        requirement = await self._session.scalar(
+            select(AiAgentRequirement)
+            .where(
+                AiAgentRequirement.run_id == run_model.run_id,
+                AiAgentRequirement.kind == "external_job",
+                AiAgentRequirement.status.in_(("pending", "resolved")),
+            )
+            .order_by(AiAgentRequirement.created_at.desc())
+        )
+        if requirement is None:
+            raise AppException(status_code=409, code="AI_EXTERNAL_REQUIREMENT_MISSING", detail="外部页面任务缺少待恢复 requirement。")
+
+        scope = AgentScopeContext(
+            scope_type=run_model.scope_type,  # type: ignore[arg-type]
+            workspace_id=run_model.workspace_id,
+            project_id=run_model.project_id,
+            page_id=run_model.page_id,
+            component_id=run_model.component_id,
+            source=run_model.source,
+        )
+        runtime_context = await build_agent_runtime_context(session=self._session, scope=scope)
+        descriptor = self._app.state.ai_registry.get_descriptor(run_model.agent_id)
+        llm_config = await self.resolve_session_llm_config(
+            session_id=run_model.session_id,
+            agent_id=run_model.agent_id,
+            slot=descriptor.llm_slot or "",
+        )
+        previous_history = await rebuild_agent_message_history(
+            session=self._session,
+            user_id=self._current.user.id,
+            session_id=run_model.session_id,
+            agent_id=run_model.agent_id,
+            exclude_run_id=run_model.run_id,
+        )
+        history_budget = build_history_budget(llm_config, runtime_context=runtime_context)
+        context_processor = build_context_limit_processor(
+            session=self._session,
+            user_id=self._current.user.id,
+            session_id=run_model.session_id,
+            agent_id=run_model.agent_id,
+            budget=history_budget,
+            rebuilt_history=previous_history,
+        )
+        agent_config = await self._agent_config_service.get_effective_runtime_config(run_model.agent_id)
+        # 自动续跑持有 Batch 围栏。成员委派会在其它 Session 中写父运行态，当前
+        # 无法把同一围栏原子传播过去，因此本轮不暴露委派工具，避免旁路租约。
+        member_delegation_executor = None
+        tools, deps = build_pydantic_tools(
+            agent_id=run_model.agent_id,
+            session_factory=get_session_factory(),
+            runtime_config=agent_config,
+            current=self._current,
+            scope=scope,
+            session_id=run_model.session_id,
+            run_id=run_model.run_id,
+            supports_image_input=bool(llm_config.supports_image_input),
+            member_delegation_executor=member_delegation_executor,
+        )
+        await store.ensure_write_fence()
+        if requirement.status == "pending":
+            await store.resolve_requirement(
+                requirement,
+                payload={"source": "ai_page_mutation_queue", "tool_call_ids": sorted(deferred_results.calls)},
+            )
+        run_model.status = "running"
+        run_model.pending_requirement_json = None
+        await store.append_event(
+            run_model,
+            AgentRunEvent(event="run.continued", run_id=run_model.run_id, session_id=run_model.session_id),
+        )
+        current_message_history_json = await _hydrate_continue_message_history_json(
+            session=self._session,
+            user_id=self._current.user.id,
+            session_id=run_model.session_id,
+            message_history=run_model.message_history_json,
+        )
+        tool_execution = (
+            dict(requirement.payload_json.get("tool_execution") or {})
+            if isinstance(requirement.payload_json, dict)
+            else {}
+        )
+        current_run_history = _build_continue_message_history(
+            run_model_message_history=current_message_history_json,
+            run_input_payload=run_model.input_payload_json,
+            run_id=run_model.run_id,
+            tool_execution=tool_execution,
+        )
+        await PydanticAgentRunner(store).run_to_store(
+            run_model=run_model,
+            agent_id=run_model.agent_id,
+            model=self._model_resolver.resolve_model(llm_config),
+            model_settings=self._model_resolver.resolve_model_settings(llm_config),
+            runtime_context=runtime_context,
+            message="",
+            agent_config=agent_config,
+            tools=tools,
+            deps=deps,
+            message_history=[*previous_history.messages, *current_run_history],
+            deferred_tool_results=deferred_results,
+            context_budget=history_budget,
+            context_processor=context_processor,
+        )
+        await self._session.refresh(run_model, attribute_names=["status"])
+        return run_model.status
+
     def _continue_member_active_raw_sse(
         self,
         *,
@@ -963,7 +1092,8 @@ class AgentSessionFacade:
             return
         try:
             current_status = await self._store.get_run_status(run_id=run_model.run_id)
-            if current_status not in ACTIVE_RUN_STATUSES or current_status == "paused":
+            # external_job 已由持久化队列持有租约；浏览器断开 SSE 不能取消其页面写入。
+            if current_status not in ACTIVE_RUN_STATUSES or current_status in {"paused", "waiting_external"}:
                 return
             if current_status == "cancelling":
                 await self._store.mark_terminal(run_model, status="cancelled", content="用户停止了当前运行。")
@@ -1109,25 +1239,29 @@ def _build_continue_message_history(
 
     if run_model_message_history:
         return ModelMessagesTypeAdapter.validate_python(run_model_message_history)
-    tool_name = str(tool_execution.get("tool_name") or "").strip()
-    tool_call_id = str(tool_execution.get("tool_call_id") or "").strip()
-    if not tool_name or not tool_call_id:
+    raw_calls = tool_execution.get("tool_calls")
+    call_payloads = [item for item in raw_calls if isinstance(item, dict)] if isinstance(raw_calls, list) else [tool_execution]
+    tool_parts = []
+    for item in call_payloads:
+        tool_name = str(item.get("tool_name") or "").strip()
+        tool_call_id = str(item.get("tool_call_id") or "").strip()
+        if not tool_name or not tool_call_id:
+            continue
+        tool_args = item.get("tool_args")
+        tool_parts.append(
+            ToolCallPart(
+                tool_name=tool_name,
+                args=tool_args if isinstance(tool_args, (dict, str)) else None,
+                tool_call_id=tool_call_id,
+            )
+        )
+    if not tool_parts:
         return []
     input_payload = run_input_payload if isinstance(run_input_payload, dict) else {}
     message = str(input_payload.get("message") or "").strip() or "继续当前智能体运行。"
-    tool_args = tool_execution.get("tool_args")
     return [
         ModelRequest(parts=[UserPromptPart(content=message)], run_id=run_id),
-        ModelResponse(
-            parts=[
-                ToolCallPart(
-                    tool_name=tool_name,
-                    args=tool_args if isinstance(tool_args, (dict, str)) else None,
-                    tool_call_id=tool_call_id,
-                )
-            ],
-            run_id=run_id,
-        ),
+        ModelResponse(parts=tool_parts, run_id=run_id),
     ]
 
 

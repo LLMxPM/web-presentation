@@ -89,6 +89,7 @@ class AgentToolSpec:
     default_instructions: str | None = None
     configurable: bool = True
     requires_confirmation: bool = False
+    sequential: bool = False
     risk_level: Literal["system", "read", "write", "danger"] = "read"
     response_example: Any | None = None
     response_notes: str | None = None
@@ -213,6 +214,7 @@ def apply_tool_spec_metadata(*, agent_id: str, tools: list[Any]) -> list[Any]:
         setattr(tool_item, "description", spec.description)
         setattr(tool_item, "instructions", spec.default_instructions)
         setattr(tool_item, "requires_confirmation", spec.requires_confirmation)
+        setattr(tool_item, "sequential", spec.sequential)
     return tools
 
 
@@ -226,6 +228,7 @@ def _tool(
     default_instructions: str | None = None,
     configurable: bool = True,
     requires_confirmation: bool = False,
+    sequential: bool = False,
     risk_level: Literal["system", "read", "write", "danger"] = "read",
     response_example: Any | None = None,
     response_notes: str | None = None,
@@ -241,6 +244,7 @@ def _tool(
         default_instructions=default_instructions,
         configurable=configurable,
         requires_confirmation=requires_confirmation,
+        sequential=sequential,
         risk_level=risk_level,
         response_example=response_example,
         response_notes=response_notes,
@@ -545,6 +549,7 @@ _COORDINATOR_TOOL_SPECS = (
             '遇到 PAGE_RENDER_BOTTOM_OVERFLOW 时应继续调用本工具修正布局。'
         ),
         risk_level='write',
+        sequential=True,
         response_example={'success': True,
          'message': '页面代码已更新并生成新版本，但发现布局警告。',
          'page_id': 3,
@@ -591,6 +596,7 @@ _COORDINATOR_TOOL_SPECS = (
             '创建后如需视觉精修或处理 PAGE_RENDER_BOTTOM_OVERFLOW，应在页面上下文中读取新页面源码并通过结构化 edits 修改。'
         ),
         risk_level='write',
+        sequential=True,
         response_example={
             'success': True,
             'message': '页面已创建，但发现布局警告。',

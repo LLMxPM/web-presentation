@@ -161,10 +161,10 @@ class AgentSuggestedPatch(SchemaBase):
 
 
 class AgentPendingRequirement(SchemaBase):
-    """表示当前 run 暂停后等待用户决策的 HITL 动作。"""
+    """表示当前 run 等待用户决策或后台外部任务的动作。"""
 
     id: str | None = None
-    kind: Literal["confirmation", "user_feedback"] = "confirmation"
+    kind: Literal["confirmation", "user_feedback", "external_job"] = "confirmation"
     run_id: str
     session_id: str
     member_agent_id: str | None = None
@@ -189,7 +189,9 @@ class AgentRunEvent(SchemaBase):
     event_index: int | None = None
 
 
-AgentActiveRunStatus = Literal["pending", "running", "paused", "cancelling", "completed", "cancelled", "failed"]
+AgentActiveRunStatus = Literal[
+    "pending", "running", "paused", "waiting_external", "cancelling", "completed", "cancelled", "failed"
+]
 
 
 class AgentActiveRunItem(SchemaBase):

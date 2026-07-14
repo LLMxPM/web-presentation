@@ -68,6 +68,14 @@ class RedisRuntimeClient:
         except Exception as exc:  # noqa: BLE001
             raise RedisRuntimeError(_format_redis_runtime_error(exc)) from exc
 
+    def sweep_expired(self) -> int:
+        """主动清扫内存实现中的过期键；真实 Redis 自行管理 TTL。"""
+
+        sweeper = getattr(self.client, "purge_expired", None)
+        if sweeper is None:
+            return 0
+        return int(sweeper())
+
 
 @lru_cache
 def get_redis_runtime_client() -> RedisRuntimeClient:
@@ -289,6 +297,16 @@ class InMemoryRedis:
         for key in sorted(keys):
             if match is None or fnmatch.fnmatch(key, match):
                 yield key
+
+    def purge_expired(self) -> int:
+        """扫描全部 TTL 并主动释放过期值，避免只访问热点 key 时内存累积。"""
+
+        with self._condition:
+            before = len(self._values) + len(self._hashes) + len(self._streams)
+            for key in list(self._expires):
+                self._purge_expired(key)
+            after = len(self._values) + len(self._hashes) + len(self._streams)
+            return max(0, before - after)
 
     def publish(self, channel: str, message: str) -> int:
         """模拟发布消息；测试内存实现不维护订阅者。"""

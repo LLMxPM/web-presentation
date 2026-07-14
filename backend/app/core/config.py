@@ -41,7 +41,16 @@ class AppSettings(BaseSettings):
     runtime_shared_secret: str = "change-me"
     runtime_service_token_audience: str = "runtime-backend"
     runtime_request_timeout_seconds: float = 10.0
+    runtime_diagnostics_request_timeout_seconds: float = 180.0
+    runtime_build_request_timeout_seconds: float = 900.0
     backend_public_base_url: str = "http://127.0.0.1:8000"
+    playwright_browser_pool_size: int = 1
+    playwright_task_queue_size: int = 16
+    playwright_task_queue_wait_timeout_seconds: float = 60.0
+    playwright_browser_reuse_enabled: bool = True
+    playwright_browser_recycle_task_count: int = 50
+    playwright_browser_recycle_age_seconds: float = 1800.0
+    # 兼容旧部署变量；新代码优先读取 PLAYWRIGHT_BROWSER_POOL_SIZE。
     playwright_task_concurrency: int = 1
     ai_enabled: bool = True
     ai_test_mode: str = "disabled"
@@ -51,6 +60,7 @@ class AppSettings(BaseSettings):
     ai_tool_auth_window_seconds: int = 1800
     ai_tool_auth_max_seconds: int = 7200
     ai_agent_stream_idle_timeout_seconds: float = 180.0
+    ai_agent_tool_stream_idle_timeout_seconds: float = 600.0
     ai_llm_http_trace_enabled: bool = False
     ai_llm_http_trace_dir: str = ".tmp/llm-http-trace"
     ai_llm_http_trace_body_max_bytes: int = 200_000
@@ -61,11 +71,18 @@ class AppSettings(BaseSettings):
     ai_image_model_url_expiry_safety_seconds: int = 300
     ai_image_history_max_hydrated_images: int = 10
     ai_image_history_max_hydrated_bytes: int = 30 * 1024 * 1024
+    ai_page_mutation_concurrency: int = 1
+    ai_page_mutation_max_active_jobs: int = 16
+    ai_page_mutation_max_batch_size: int = 16
+    ai_page_mutation_poll_interval_seconds: float = 0.5
     redis_url: str = "redis://127.0.0.1:6379/0"
     redis_key_prefix: str = "web_presentation"
     redis_healthcheck_timeout_seconds: float = 2.0
     runtime_preview_artifact_ttl_seconds: int = 3600
+    runtime_artifact_sweep_interval_seconds: float = 30.0
     runtime_build_state_ttl_seconds: int = 604800
+    durable_job_lease_seconds: int = 300
+    durable_job_heartbeat_seconds: int = 30
     page_screenshot_default_viewport_width: int = 1920
     page_screenshot_default_viewport_height: int = 1080
     page_screenshot_max_viewport_width: int = 4096
@@ -167,7 +184,15 @@ class AppSettings(BaseSettings):
         "page_screenshot_default_viewport_height",
         "page_screenshot_max_viewport_width",
         "page_screenshot_max_viewport_height",
+        "playwright_browser_pool_size",
+        "playwright_task_queue_size",
+        "playwright_browser_recycle_task_count",
         "playwright_task_concurrency",
+        "ai_page_mutation_concurrency",
+        "ai_page_mutation_max_active_jobs",
+        "ai_page_mutation_max_batch_size",
+        "durable_job_lease_seconds",
+        "durable_job_heartbeat_seconds",
         "page_screenshot_batch_concurrency",
         "page_screenshot_queue_concurrency",
         "page_screenshot_job_lease_seconds",
@@ -185,6 +210,12 @@ class AppSettings(BaseSettings):
     @field_validator(
         "page_screenshot_timeout_seconds",
         "page_screenshot_visual_ready_timeout_seconds",
+        "playwright_task_queue_wait_timeout_seconds",
+        "playwright_browser_recycle_age_seconds",
+        "ai_page_mutation_poll_interval_seconds",
+        "runtime_artifact_sweep_interval_seconds",
+        "runtime_diagnostics_request_timeout_seconds",
+        "runtime_build_request_timeout_seconds",
         "page_screenshot_queue_poll_interval_seconds",
         "page_screenshot_ai_wait_timeout_seconds",
         "asset_render_hint_backfill_queue_poll_interval_seconds",
@@ -276,10 +307,10 @@ class AppSettings(BaseSettings):
             raise ValueError("AI Token TTL 必须大于 0。")
         return value
 
-    @field_validator("ai_agent_stream_idle_timeout_seconds")
+    @field_validator("ai_agent_stream_idle_timeout_seconds", "ai_agent_tool_stream_idle_timeout_seconds")
     @classmethod
     def validate_ai_agent_stream_idle_timeout_seconds(cls, value: float) -> float:
-        """校验 Agent 模型/工具流空闲超时，避免运行长期卡在非终态。"""
+        """校验 Agent 模型流与工具流空闲超时，避免运行长期卡在非终态。"""
 
         if value <= 0:
             raise ValueError("AI Agent 流空闲超时时间必须大于 0。")

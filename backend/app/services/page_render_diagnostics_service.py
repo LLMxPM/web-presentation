@@ -49,11 +49,15 @@ class PageRenderDiagnosticsService:
         """打开页面预览并检查固定画布底部是否存在可见内容溢出。"""
 
         try:
-            return await self.playwright_task_queue.run_sync(
+            target = self._build_browser_target(preview_url)
+            return await self.playwright_task_queue.run_with_browser(
                 "page-render-diagnostics",
-                self._diagnose_preview_sync,
-                preview_url,
+                self._diagnose_preview_with_browser,
+                target,
                 viewport,
+                timeout_ms=int(self.settings.page_screenshot_timeout_seconds * 1000),
+                visual_ready_timeout_ms=int(self.settings.page_screenshot_visual_ready_timeout_seconds * 1000),
+                priority="interactive",
             )
         except Exception as error:  # noqa: BLE001
             logger.warning(
@@ -69,52 +73,37 @@ class PageRenderDiagnosticsService:
                 )
             ]
 
-    def _diagnose_preview_sync(self, preview_url: str, viewport: CaptureViewport) -> list[dict[str, object]]:
-        """在线程池内使用同步 Playwright 执行页面布局测量。"""
+    def _diagnose_preview_with_browser(
+        self,
+        browser: object,
+        target: PageRenderDiagnosticsTarget,
+        viewport: CaptureViewport,
+        *,
+        timeout_ms: int,
+        visual_ready_timeout_ms: int,
+    ) -> list[dict[str, object]]:
+        """使用池内长期浏览器和任务独立 Context 执行页面布局测量。"""
 
+        context = browser.new_context(
+            viewport={"width": viewport.width, "height": viewport.height},
+            device_scale_factor=1,
+        )
         try:
-            from playwright.sync_api import sync_playwright
-        except ImportError as error:  # pragma: no cover - 部署环境缺浏览器依赖
-            raise AppException(
-                status_code=500,
-                code="PAGE_RENDER_BROWSER_MISSING",
-                detail="未安装 Playwright，无法执行页面渲染布局诊断。",
-            ) from error
-
-        target = self._build_browser_target(preview_url)
-        timeout_ms = int(self.settings.page_screenshot_timeout_seconds * 1000)
-        visual_ready_timeout_ms = int(self.settings.page_screenshot_visual_ready_timeout_seconds * 1000)
-        executable_path = self.settings.page_screenshot_browser_executable_path or None
-
-        with sync_playwright() as playwright:
-            browser = playwright.chromium.launch(
-                headless=True,
-                executable_path=executable_path,
+            # BrowserContext 创建成功后，即使 new_page 失败也要在本槽位线程中关闭它。
+            page = context.new_page()
+            self._install_initial_preview_header_route(
+                page,
+                target.preview_url,
+                target.extra_http_headers,
             )
+            self._wait_for_preview_ready(page, target.preview_url, timeout_ms, visual_ready_timeout_ms)
+            result = page.evaluate(self._build_bottom_overflow_script())
+            return self._normalize_diagnostics_result(result)
+        finally:
             try:
-                page = browser.new_page(
-                    viewport={"width": viewport.width, "height": viewport.height},
-                    device_scale_factor=1,
-                )
-                try:
-                    self._install_initial_preview_header_route(
-                        page,
-                        target.preview_url,
-                        target.extra_http_headers,
-                    )
-                    self._wait_for_preview_ready(page, target.preview_url, timeout_ms, visual_ready_timeout_ms)
-                    result = page.evaluate(self._build_bottom_overflow_script())
-                    return self._normalize_diagnostics_result(result)
-                finally:
-                    try:
-                        page.close()
-                    except Exception:  # noqa: BLE001
-                        logger.warning("页面渲染诊断标签页关闭失败。", exc_info=True)
-            finally:
-                try:
-                    browser.close()
-                except Exception:  # noqa: BLE001
-                    logger.warning("页面渲染诊断浏览器关闭失败。", exc_info=True)
+                context.close()
+            except Exception:  # noqa: BLE001
+                logger.warning("页面渲染诊断 BrowserContext 关闭失败。", exc_info=True)
 
     def _build_browser_target(self, preview_url: str) -> PageRenderDiagnosticsTarget:
         """把公开预览地址转换为 Runtime 直连诊断目标。"""

@@ -52,7 +52,7 @@ export interface ApplyAgentRunEventResult {
   terminal: boolean
 }
 
-const STREAMING_RUN_STATUSES = new Set(['pending', 'running', 'cancelling'])
+const STREAMING_RUN_STATUSES = new Set(['pending', 'running', 'waiting_external', 'cancelling'])
 export const MODEL_REQUEST_STATUS = 'model_request'
 export const MODEL_REQUEST_STATUS_TEXT = '等待智能体输出中'
 const TOOL_START_STATUS = 'tool_start'
@@ -213,6 +213,15 @@ export function applyAgentRunEvent(
       finishCurrentTextSegment(state)
       appendRunStatusItem(state, event, TOOL_EXECUTION_STATUS, TOOL_EXECUTION_STATUS_TEXT)
       return { applied: true, terminal: false }
+    case 'tool.progress':
+      upsertToolTimelineItem(state, event, 'running')
+      appendRunStatusItem(
+        state,
+        event,
+        TOOL_EXECUTION_STATUS,
+        resolveToolProgressText(event),
+      )
+      return { applied: true, terminal: false }
     case 'tool.completed':
       removeToolExecutionStatusItem(state, runId)
       upsertToolTimelineItem(state, event, 'completed')
@@ -250,6 +259,16 @@ export function applyAgentRunEvent(
       clearStreamingTextItem(state)
       resetInlineReasoningStateForRun(state, runId)
       return { applied: true, terminal: true }
+    case 'run.waiting':
+      // external_job 无需用户输入；保持运行态以便用户可随时点击停止。
+      state.pendingRequirement = null
+      state.stream.runId = runId
+      state.stream.streaming = true
+      state.activeRun = buildEventRunState(state, event, options.agentId, 'waiting_external')
+      state.lastIssue = null
+      finishCurrentTextSegment(state)
+      appendRunStatusItem(state, event, 'waiting_external', '页面变更正在后台排队或校验。')
+      return { applied: true, terminal: false }
     case 'run.cancelled':
       state.pendingRequirement = null
       state.activeRun = null
@@ -338,6 +357,18 @@ function normalizeActiveRun(run: AgentActiveRunItem | null): AgentActiveRunItem 
     return run
   }
   return { ...run, pending_requirement: null }
+}
+
+/**
+ * 将后台页面变更的低频阶段映射为用户可读状态，未知阶段保留通用文案。
+ */
+function resolveToolProgressText(event: AgentRunEvent): string {
+  const phase = String(event.data.phase || '').trim()
+  if (phase === 'queued') return '页面变更正在排队。'
+  if (phase === 'validating') return '页面源码与运行时正在校验。'
+  if (phase === 'rendering') return '页面渲染检查中。'
+  if (phase === 'saving') return '正在保存页面变更。'
+  return String(event.data.message || event.content || '页面变更正在后台处理。')
 }
 
 /**

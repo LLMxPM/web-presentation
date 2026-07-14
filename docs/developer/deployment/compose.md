@@ -41,6 +41,8 @@ docker compose -f docker-compose.with-deps.yml up -d
 
 默认访问 `http://127.0.0.1:8080`。上线前必须修改 compose 顶部注释要求的密码、访问地址和 `AI_SECRET_ENCRYPTION_KEY`。
 
+内置 Redis 默认关闭 AOF，减少低配单机上的持续磁盘写入。该 Redis 只承载短生命周期运行态，不保存平台主数据。
+
 ## production env 版
 
 ```bash

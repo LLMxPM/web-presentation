@@ -25,6 +25,17 @@ async def get_page_screenshot_job(
     return await PageScreenshotJobService(session).get_job_response(job_id=job_id, current=current)
 
 
+@router.post("/page-screenshot-jobs/{job_id}/cancel", response_model=PageScreenshotJobResponse)
+async def cancel_page_screenshot_job(
+    job_id: int,
+    current: Annotated[AuthContext, Depends(get_current_user)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> PageScreenshotJobResponse:
+    """请求取消待执行或正在执行的页面截图任务。"""
+
+    return await PageScreenshotJobService(session).cancel_job(job_id=job_id, current=current)
+
+
 @router.get("/page-screenshot-job-groups/{group_id}", response_model=PageScreenshotJobGroupResponse)
 async def get_page_screenshot_job_group(
     group_id: str,

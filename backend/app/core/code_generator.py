@@ -51,22 +51,30 @@ async def create_with_generated_code(
     write_operation: Callable[[str], Awaitable[T]],
     *,
     retry_limit: int = DEFAULT_CODE_RETRY_LIMIT,
+    commit: bool = True,
 ) -> T:
     """生成业务编码并执行写入，遇到 code 唯一冲突时回滚后重试。
 
     write_operation 每次都会收到新的 code，并应完成对象构建、flush 以及同事务内的附属写入。
-    本函数负责提交事务；只重试当前模型 code 唯一约束冲突，避免掩盖其他数据一致性问题。
+    commit=True 时由本函数提交事务；commit=False 时只 flush，供上层把任务状态与业务写入原子提交。
+    只重试当前模型 code 唯一约束冲突，避免掩盖其他数据一致性问题。
     """
 
     last_error: IntegrityError | None = None
     for _ in range(max(retry_limit, 1)):
         code = await generate_code(session, model_class, prefix)
         try:
+            if not commit:
+                async with session.begin_nested():
+                    result = await write_operation(code)
+                    await session.flush()
+                return result
             result = await write_operation(code)
             await session.commit()
             return result
         except IntegrityError as error:
-            await session.rollback()
+            if commit:
+                await session.rollback()
             if not is_code_unique_integrity_error(error, model_class):
                 raise
             last_error = error

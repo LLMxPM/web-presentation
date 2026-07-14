@@ -54,7 +54,7 @@ configure_lite_defaults() {
     : "${RUNTIME_DIAGNOSTICS_TOKEN_AUDIENCE:=runtime-diagnostics}"
     : "${RUNTIME_LOG_LEVEL:=info}"
     : "${RUNTIME_LOG_FORMAT:=json}"
-    : "${RUNTIME_ACCESS_LOG_ENABLED:=true}"
+    : "${RUNTIME_ACCESS_LOG_ENABLED:=false}"
     : "${RUNTIME_STANDALONE_PREVIEW_ENABLED:=false}"
     : "${ASSET_STORAGE_DRIVER:=local}"
 

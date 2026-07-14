@@ -10,8 +10,10 @@ from datetime import UTC, datetime
 from time import monotonic
 from typing import Any, Literal
 from uuid import uuid4
+from weakref import WeakValueDictionary
 
 from sqlalchemy import Select, func, select
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
@@ -19,6 +21,9 @@ from app.ai.image_refs import sanitize_message_history_image_refs
 from app.ai.agent.runtime_context import AgentRuntimeContext
 from app.ai.message_history import trim_unprocessed_tool_call_history
 from app.ai.member_prompts import build_member_prompt_from_payload
+from app.ai.run_event_writer import allocate_run_event_index, is_sqlite_lock_error
+from app.ai.run_write_fence import PageMutationContinuationWriteFence
+from app.ai.tool_arguments import parse_tool_arguments
 from app.models.ai_agent_attachment import AiAgentImageAttachment
 from app.models.ai_agent_runtime import (
     AiAgentMemberRun,
@@ -46,14 +51,20 @@ from app.schemas.agent import (
 )
 from app.services.agent_image_attachment_service import AgentImageAttachmentService
 
-ACTIVE_RUN_STATUSES = {"pending", "running", "paused", "cancelling"}
+ACTIVE_RUN_STATUSES = {"pending", "running", "paused", "waiting_external", "cancelling"}
 TERMINAL_RUN_STATUSES = {"completed", "cancelled", "failed"}
+# 外部页面任务会在完成后追加 run.continued 或终态事件，因此 waiting_external
+# 不能被视为 SSE 结束，订阅需持续等待自动续跑结果。
 STREAM_END_EVENTS = {"run.completed", "run.cancelled", "run.error", "run.paused"}
 STALE_ACTIVE_RUN_ERROR_CODE = "AI_AGENT_STREAM_IDLE_TIMEOUT"
 STALE_ACTIVE_RUN_ERROR_MESSAGE = "模型或工具流长时间没有返回新事件，本次运行已停止。"
 _EVENT_POLL_INTERVAL_SECONDS = 1.0
 _SSE_KEEPALIVE_INTERVAL_SECONDS = 30.0
+_SQLITE_EVENT_WRITE_MAX_ATTEMPTS = 4
+_SQLITE_EVENT_WRITE_RETRY_BASE_SECONDS = 0.025
 _SUBSCRIBERS: dict[str, set[asyncio.Queue[AgentRunEvent | None]]] = {}
+_RUN_EVENT_LOCKS: WeakValueDictionary[str, asyncio.Lock] = WeakValueDictionary()
+_LIVE_RUN_ACTIVITY_VERSIONS: dict[str, int] = {}
 
 
 @dataclass(slots=True)
@@ -67,11 +78,18 @@ class PlatformRunStart:
 class PlatformAgentRuntimeStore:
     """封装平台自有 AI 运行态表的读写和事件协议。"""
 
-    def __init__(self, session: AsyncSession, *, user_id: int) -> None:
-        """保存数据库会话与当前用户，用于后续权限过滤。"""
+    def __init__(
+        self,
+        session: AsyncSession,
+        *,
+        user_id: int,
+        write_fence: PageMutationContinuationWriteFence | None = None,
+    ) -> None:
+        """保存数据库会话、用户和可选后台续跑写入围栏。"""
 
         self._session = session
         self._user_id = user_id
+        self._write_fence = write_fence
 
     async def list_sessions(
         self,
@@ -240,9 +258,64 @@ class PlatformAgentRuntimeStore:
     async def append_event(self, run_model: AiAgentRun, event: AgentRunEvent, *, commit: bool = True) -> AgentRunEvent:
         """为 run 追加平台事件，分配单调 event_index 并通知订阅者。"""
 
-        await self._refresh_run_event_cursor(run_model)
-        current_index = run_model.event_index if run_model.event_index is not None else -1
-        next_index = int(current_index) + 1
+        run_id = run_model.run_id
+        has_sqlite_write_transaction = await self._has_sqlite_write_transaction()
+        retry_after_rollback = (
+            commit
+            and not has_sqlite_write_transaction
+            and not self._session_has_pending_changes()
+        )
+        if has_sqlite_write_transaction:
+            return await self._append_event_once(run_model, event, commit=commit)
+        async with _get_run_event_lock(run_id):
+            if retry_after_rollback:
+                return await self._append_event_with_retry(run_model, event)
+            return await self._append_event_once(run_model, event, commit=commit)
+
+    async def _append_event_with_retry(
+        self,
+        run_model: AiAgentRun,
+        event: AgentRunEvent,
+    ) -> AgentRunEvent:
+        """为无额外 pending 状态的纯追加执行 SQLite rollback 与有限退避重试。"""
+
+        run_id = run_model.run_id
+        for attempt in range(_SQLITE_EVENT_WRITE_MAX_ATTEMPTS):
+            try:
+                return await self._append_event_once(run_model, event, commit=True)
+            except OperationalError as exc:
+                can_retry = is_sqlite_lock_error(self._session, exc)
+                if not can_retry:
+                    raise
+                await self._session.rollback()
+                if attempt + 1 >= _SQLITE_EVENT_WRITE_MAX_ATTEMPTS:
+                    raise
+                refreshed_run = await self._session.get(AiAgentRun, run_id, populate_existing=True)
+                if refreshed_run is None:
+                    raise ValueError("AI_RUN_NOT_FOUND") from exc
+                run_model = refreshed_run
+                await asyncio.sleep(_SQLITE_EVENT_WRITE_RETRY_BASE_SECONDS * (2**attempt))
+        raise RuntimeError("unreachable event append state")
+
+    async def _append_event_once(
+        self,
+        run_model: AiAgentRun,
+        event: AgentRunEvent,
+        *,
+        commit: bool,
+    ) -> AgentRunEvent:
+        """在当前事务内原子分配游标、保存事件并同步运行态投影。"""
+
+        _normalize_tool_event_arguments(event)
+        now = _utc_now()
+        next_index = await allocate_run_event_index(
+            self._session,
+            run_id=run_model.run_id,
+            updated_at=now,
+            require_active=event.event.startswith("member."),
+            write_fence=self._write_fence,
+        )
+        await self._refresh_event_projection_source(run_model, event)
         event.event_index = next_index
         event.sequence = next_index
         event.run_id = event.run_id or run_model.run_id
@@ -257,22 +330,43 @@ class PlatformAgentRuntimeStore:
         )
         self._session.add(row)
         run_model.event_index = next_index
-        run_model.updated_at = _utc_now()
+        run_model.updated_at = now
         self._apply_event_to_run(run_model, event)
         await self._sync_tool_event(run_model, event)
         if commit:
             await self._session.commit()
+        _update_live_run_activity(run_model.run_id, event)
         _notify_subscribers(run_model.run_id, event)
         return event
 
-    async def _refresh_run_event_cursor(self, run_model: AiAgentRun) -> None:
-        """写事件前锁定 run 行并刷新游标，避免停止请求和流式事件并发分配同一序号。"""
+    async def _refresh_event_projection_source(self, run_model: AiAgentRun, event: AgentRunEvent) -> None:
+        """持有原子游标写锁后刷新增量聚合字段，避免并发 delta 覆盖已提交内容。"""
 
-        await self._session.refresh(
-            run_model,
-            attribute_names=["event_index"],
-            with_for_update=True,
+        attribute_name = {
+            "message.delta": "content",
+            "reasoning.delta": "reasoning_content",
+        }.get(event.event)
+        if attribute_name is not None:
+            await self._session.refresh(run_model, attribute_names=[attribute_name])
+
+    def _session_has_pending_changes(self) -> bool:
+        """判断当前事务是否含调用方尚未提交的状态，防止锁重试 rollback 丢失业务变更。"""
+
+        if self._session.new or self._session.deleted:
+            return True
+        return any(
+            self._session.is_modified(model, include_collections=False)
+            for model in self._session.dirty
         )
+
+    async def _has_sqlite_write_transaction(self) -> bool:
+        """判断 SQLite 连接是否已执行未提交 DML，避免进程锁与数据库写锁发生锁序反转。"""
+
+        if self._session.get_bind().dialect.name != "sqlite":
+            return False
+        connection = await self._session.connection()
+        driver_connection = connection.sync_connection.connection.driver_connection
+        return bool(getattr(driver_connection, "in_transaction", False))
 
     async def append_assistant_message(
         self,
@@ -303,7 +397,15 @@ class PlatformAgentRuntimeStore:
         self._replace_run_message_history(run_model, message_history)
         run_model.updated_at = _utc_now()
         if commit:
+            await self.ensure_write_fence()
             await self._session.commit()
+
+    async def ensure_write_fence(self) -> None:
+        """在非事件型提交前验证后台续跑租约，普通交互式 run 不附加任何开销。"""
+
+        if self._write_fence is None:
+            return
+        await self._write_fence.ensure_owned(self._session, now=_utc_now())
 
     def _replace_run_message_history(self, run_model: AiAgentRun, message_history: list[dict[str, Any]]) -> None:
         """用本 run 当前完整 delta 快照替换旧值，避免多次模型调用重复追加。"""
@@ -347,9 +449,24 @@ class PlatformAgentRuntimeStore:
         run_model.error_code = error_code
         run_model.error_message = error_message
         if status == "failed":
+            await self._close_pending_requirements(
+                run_model,
+                status="failed",
+                message=error_message or content or "运行失败，待处理动作已终止。",
+            )
             await self._append_running_tool_error_events(
                 run_model,
                 message=error_message or content or "运行中断，工具调用未完成。",
+            )
+        elif status == "cancelled":
+            await self._close_pending_requirements(
+                run_model,
+                status="cancelled",
+                message=content or "运行已取消，待处理动作已终止。",
+            )
+            await self._append_running_tool_error_events(
+                run_model,
+                message=content or "运行已取消，工具调用未完成。",
             )
         event_name = {
             "completed": "run.completed",
@@ -403,16 +520,39 @@ class PlatformAgentRuntimeStore:
             )
             await self._session.flush()
 
+    async def _close_pending_requirements(
+        self,
+        run_model: AiAgentRun,
+        *,
+        status: str,
+        message: str,
+    ) -> None:
+        """终止 run 时同步收敛尚未处理的 requirement，避免前端残留可提交动作。"""
+
+        result = await self._session.execute(
+            select(AiAgentRequirement).where(
+                AiAgentRequirement.run_id == run_model.run_id,
+                AiAgentRequirement.status == "pending",
+            )
+        )
+        now = _utc_now()
+        for requirement in result.scalars().all():
+            requirement.status = status
+            requirement.resolved_at = now
+            requirement.resolved_payload_json = {"reason": message, "terminal_status": status}
+        await self._session.flush()
+
     async def pause_for_requirement(
         self,
         run_model: AiAgentRun,
         *,
         requirement: AgentPendingRequirement,
     ) -> AgentRunEvent:
-        """保存 pending requirement 并发送 run.paused。"""
+        """保存 pending requirement；外部任务进入等待态，其余动作进入用户暂停态。"""
 
         payload = requirement.model_dump(mode="json")
-        run_model.status = "paused"
+        is_external_job = requirement.kind == "external_job"
+        run_model.status = "waiting_external" if is_external_job else "paused"
         run_model.pending_requirement_json = payload
         self._session.add(
             AiAgentRequirement(
@@ -432,7 +572,7 @@ class PlatformAgentRuntimeStore:
         return await self.append_event(
             run_model,
             AgentRunEvent(
-                event="run.paused",
+                event="run.waiting" if is_external_job else "run.paused",
                 run_id=run_model.run_id,
                 session_id=run_model.session_id,
                 data={"requirement": payload},
@@ -625,7 +765,7 @@ class PlatformAgentRuntimeStore:
             target = result.scalar_one_or_none()
         if target is None:
             return None
-        if target.user_id != self._user_id or target.status not in ACTIVE_RUN_STATUSES or target.status == "paused":
+        if target.user_id != self._user_id or target.status not in ACTIVE_RUN_STATUSES or target.status in {"paused", "waiting_external"}:
             return None
 
         timeout_seconds = (
@@ -834,7 +974,7 @@ class PlatformAgentRuntimeStore:
                     }[event.event],
                 )
                 continue
-            if event.event == "run.paused":
+            if event.event in {"run.paused", "run.waiting"}:
                 current_text_by_run[run_id] = None
                 requirement = event.data.get("requirement") if isinstance(event.data, dict) else None
                 if isinstance(requirement, dict):
@@ -847,7 +987,7 @@ class PlatformAgentRuntimeStore:
                         event_index=event_row.event_index,
                         order_index=0,
                         content=requirement.get("note"),
-                        status="paused",
+                        status="waiting_external" if event.event == "run.waiting" else "paused",
                         tool=None,
                         source="event",
                         created_at=_iso(event_row.created_at),
@@ -1223,7 +1363,7 @@ class PlatformAgentRuntimeStore:
         if model is None:
             return None
         pending_requirement = None
-        if model.status == "paused" and isinstance(model.pending_requirement_json, dict):
+        if model.status in {"paused", "waiting_external"} and isinstance(model.pending_requirement_json, dict):
             pending_requirement = AgentPendingRequirement.model_validate(model.pending_requirement_json)
         return AgentActiveRunItem(
             run_id=model.run_id,
@@ -1418,6 +1558,10 @@ class PlatformAgentRuntimeStore:
             run_model.status = "paused"
             requirement = event.data.get("requirement") if isinstance(event.data, dict) else None
             run_model.pending_requirement_json = requirement if isinstance(requirement, dict) else None
+        elif event.event == "run.waiting":
+            run_model.status = "waiting_external"
+            requirement = event.data.get("requirement") if isinstance(event.data, dict) else None
+            run_model.pending_requirement_json = requirement if isinstance(requirement, dict) else None
         elif event.event == "run.completed":
             run_model.status = "completed"
             run_model.finished_at = _utc_now()
@@ -1453,6 +1597,12 @@ class PlatformAgentRuntimeStore:
             "tool.completed": "completed",
             "tool.error": "error",
         }[normalized_event]
+        raw_input_payload = (
+            event.data.get("tool_args")
+            if "tool_args" in event.data
+            else event.data.get("args")
+        )
+        input_payload = parse_tool_arguments(raw_input_payload)
         existing = None
         if tool_call_id:
             result = await self._session.execute(
@@ -1470,7 +1620,7 @@ class PlatformAgentRuntimeStore:
                 tool_call_id=tool_call_id,
                 tool_name=tool_name,
                 status=status,
-                input_payload_json=event.data.get("tool_args") or event.data.get("args"),
+                input_payload_json=input_payload,
                 output_payload_json=event.data.get("result"),
                 message=str(event.data.get("message") or ""),
             )
@@ -1479,7 +1629,6 @@ class PlatformAgentRuntimeStore:
         existing.status = status
         if member_run_id:
             existing.member_run_id = member_run_id
-        input_payload = event.data.get("tool_args") or event.data.get("args")
         if _is_meaningful_payload(input_payload) and not _is_meaningful_payload(existing.input_payload_json):
             existing.input_payload_json = input_payload
         if event.data.get("result") is not None:
@@ -1492,6 +1641,31 @@ def encode_sse_event(event: AgentRunEvent) -> bytes:
     """把平台事件编码为 SSE 数据块。"""
 
     return f"data: {json.dumps(event.model_dump(mode='json'), ensure_ascii=False)}\n\n".encode("utf-8")
+
+
+def _get_run_event_lock(run_id: str) -> asyncio.Lock:
+    """获取进程内按 run 复用的事件写锁，串行尚未持有 SQLite 写锁的追加操作。"""
+
+    lock = _RUN_EVENT_LOCKS.get(run_id)
+    if lock is None:
+        lock = asyncio.Lock()
+        _RUN_EVENT_LOCKS[run_id] = lock
+    return lock
+
+
+def get_live_run_activity_version(run_id: str) -> int:
+    """返回当前进程内 run 的活动版本，供模型或工具等待逻辑识别成员事件心跳。"""
+
+    return _LIVE_RUN_ACTIVITY_VERSIONS.get(run_id, 0)
+
+
+def _update_live_run_activity(run_id: str, event: AgentRunEvent) -> None:
+    """成功追加事件后推进活动版本；流结束时清理，避免长期持有已结束 run。"""
+
+    if event.event in STREAM_END_EVENTS:
+        _LIVE_RUN_ACTIVITY_VERSIONS.pop(run_id, None)
+        return
+    _LIVE_RUN_ACTIVITY_VERSIONS[run_id] = _LIVE_RUN_ACTIVITY_VERSIONS.get(run_id, 0) + 1
 
 
 async def stream_replay_then_subscribe(
@@ -1703,6 +1877,27 @@ def _is_meaningful_payload(value: Any) -> bool:
     return True
 
 
+def _normalize_tool_event_arguments(event: AgentRunEvent) -> None:
+    """将工具事件中的 JSON 字符串参数原地归一化为对象，统一事件与工具调用投影格式。"""
+
+    if event.event not in {
+        "tool.started",
+        "tool.completed",
+        "tool.error",
+        "member.tool.started",
+        "member.tool.completed",
+        "member.tool.error",
+    }:
+        return
+    for key in ("tool_args", "arguments", "args"):
+        if key not in event.data:
+            continue
+        parsed = parse_tool_arguments(event.data.get(key))
+        if parsed is not None:
+            event.data[key] = parsed
+        return
+
+
 def _remove_requirement_timeline_items(
     items: list[AgentTimelineItem],
     *,
@@ -1741,7 +1936,7 @@ def _map_run_status(status: str) -> str:
 
     if status == "failed":
         return "failed"
-    if status in {"pending", "running", "paused", "cancelling", "completed", "cancelled"}:
+    if status in {"pending", "running", "paused", "waiting_external", "cancelling", "completed", "cancelled"}:
         return status
     return "failed"
 
