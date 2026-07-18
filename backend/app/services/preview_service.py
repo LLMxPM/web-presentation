@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import uuid
 import logging
+from typing import Literal
 from urllib.parse import urlencode
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -17,6 +18,8 @@ from app.services.token_service import TokenService
 
 
 logger = logging.getLogger(__name__)
+
+PreviewArtifactKind = Literal["preview_artifact", "page_visual_edit_preview"]
 
 
 class PreviewService:
@@ -36,8 +39,14 @@ class PreviewService:
         transient_pages: list[Page] | None = None,
         asset_delivery_mode: AssetDeliveryMode = "public",
         asset_base_url_override: str | None = None,
+        artifact_kind: PreviewArtifactKind = "preview_artifact",
+        manifest_extensions: dict[str, object] | None = None,
     ) -> PreviewArtifactResponse:
-        """基于项目当前状态创建无状态预览 artifact，并返回带签名的预览入口。"""
+        """基于项目当前状态创建无状态预览 artifact，并返回带签名的预览入口。
+
+        ``manifest_extensions`` 仅供 Backend 内部的专用预览能力附加版本化元数据，
+        不允许覆盖标准 manifest 字段。
+        """
 
         settings = get_settings()
         snapshot = await self.artifact_builder.build_snapshot(
@@ -50,8 +59,8 @@ class PreviewService:
         )
         entry_descriptor_payload = snapshot.entry_descriptor.model_dump(mode="python", exclude_none=True)
 
-        manifest = {
-            "artifact_kind": "preview_artifact",
+        manifest: dict[str, object] = {
+            "artifact_kind": artifact_kind,
             "tenant_id": tenant_id,
             "preview_kind": snapshot.preview_kind,
             "owner_scope": {
@@ -65,11 +74,12 @@ class PreviewService:
             "assets": snapshot.asset_mapping,
             "asset_metadata": snapshot.asset_metadata,
         }
+        self._append_manifest_extensions(manifest, manifest_extensions)
         artifact_id = await RuntimeArtifactStore().put_artifact(
             tenant_id=tenant_id,
             workspace_id=snapshot.project.workspace_id,
             project_id=project_id,
-            artifact_kind="preview_artifact",
+            artifact_kind=artifact_kind,
             manifest=manifest,
             config_bundle=snapshot.config_bundle,
             modules_data=snapshot.modules_data,
@@ -113,6 +123,25 @@ class PreviewService:
             project_id=project_id,
             workspace_id=snapshot.project.workspace_id,
         )
+
+    @staticmethod
+    def _append_manifest_extensions(
+        manifest: dict[str, object],
+        extensions: dict[str, object] | None,
+    ) -> None:
+        """把专用预览元数据合并到 manifest，并拒绝覆盖标准字段。
+
+        Args:
+            manifest: 已包含标准字段的预览 manifest。
+            extensions: 由 Backend 内部服务构造的附加字段。
+        """
+
+        if not extensions:
+            return
+        conflicting_keys = sorted(set(manifest).intersection(extensions))
+        if conflicting_keys:
+            raise ValueError(f"preview manifest 扩展不能覆盖标准字段：{', '.join(conflicting_keys)}")
+        manifest.update(extensions)
 
     async def _build_workspace_asset_mapping(
         self,

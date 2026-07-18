@@ -59,6 +59,8 @@ const defaultProjectConfigs = {
 }
 
 vi.mock('vue-router', () => ({
+  onBeforeRouteLeave: vi.fn(),
+  onBeforeRouteUpdate: vi.fn(),
   useRoute: () => routeState,
   useRouter: () => ({
     push: pushMock,
