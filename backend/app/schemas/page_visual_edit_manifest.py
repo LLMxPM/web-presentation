@@ -10,11 +10,14 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
+    JsonValue,
     StringConstraints,
     field_validator,
     model_validator,
 )
 from pydantic.alias_generators import to_camel
+
+from app.schemas.page_visual_edit_json import validate_page_visual_edit_json
 
 
 PAGE_VISUAL_EDIT_PROTOCOL_VERSION = 1
@@ -38,10 +41,17 @@ PageVisualEditReadonlyReason: TypeAlias = Literal[
     "MEMBER_NOT_FOUND",
     "MEMBER_VALUE_DYNAMIC",
     "ATTRIBUTE_VALUE_MISSING",
+    "RICH_TEXT_DYNAMIC_CONTENT",
+    "RICH_TEXT_UNSUPPORTED_STRUCTURE",
+    "STRUCTURE_ROOT_UNSUPPORTED",
+    "STRUCTURE_CONTROL_FLOW_UNSUPPORTED",
+    "STRUCTURE_LOOP_INSTANCE_REQUIRED",
 ]
-PageVisualEditBindingKind: TypeAlias = Literal["text", "class", "prop"]
+PageVisualEditBindingKind: TypeAlias = Literal[
+    "text", "rich_text", "class", "prop", "json"
+]
 PageVisualEditValueType: TypeAlias = Literal[
-    "string", "number", "boolean", "null", "unknown"
+    "string", "number", "boolean", "null", "json", "unknown"
 ]
 PageVisualEditNodeKind: TypeAlias = Literal["root", "element", "component"]
 PageVisualEditScriptCollectionKind: TypeAlias = Literal[
@@ -102,14 +112,14 @@ class PageVisualEditSourceRange(PageVisualEditStrictModel):
     """描述节点或绑定在 Vue SFC 中的 UTF-16 半开偏移区间。"""
 
     start: int = Field(ge=0)
-    end: int = Field(gt=0)
+    end: int = Field(ge=0)
 
     @model_validator(mode="after")
     def validate_range(self) -> Self:
         """确保结束偏移严格位于开始偏移之后。"""
 
-        if self.end <= self.start:
-            raise ValueError("源码区间 end 必须大于 start。")
+        if self.end < self.start:
+            raise ValueError("源码区间 end 必须大于或等于 start。")
         return self
 
 
@@ -144,8 +154,24 @@ class PageVisualEditTemplateBindingSource(PageVisualEditStrictModel):
     kind: Literal["template-literal"]
 
 
+class PageVisualEditTemplateRichTextBindingSource(PageVisualEditStrictModel):
+    """标识绑定覆盖模板元素内部的受限富文本片段。"""
+
+    kind: Literal["template-rich-text"]
+
+
+class PageVisualEditJsonBindingSource(PageVisualEditStrictModel):
+    """标识 binding 引用 Manifest 中去重的整块 JSON 源。"""
+
+    kind: Literal["json-source"]
+    source_id: VisualEditIdentifier
+
+
 PageVisualEditBindingSource = Annotated[
-    PageVisualEditScriptArrayBindingSource | PageVisualEditTemplateBindingSource,
+    PageVisualEditScriptArrayBindingSource
+    | PageVisualEditTemplateBindingSource
+    | PageVisualEditTemplateRichTextBindingSource
+    | PageVisualEditJsonBindingSource,
     Field(discriminator="kind"),
 ]
 
@@ -163,7 +189,7 @@ class PageVisualEditBinding(PageVisualEditStrictModel):
         | None
     ) = None
     value_type: PageVisualEditValueType
-    value: PageVisualEditLiteral = None
+    value: JsonValue = None
     expression: (
         Annotated[
             str,
@@ -198,6 +224,33 @@ class PageVisualEditLoopContext(PageVisualEditStrictModel):
     readonly_reason: PageVisualEditReadonlyReason | None = None
 
 
+class PageVisualEditLoopItemLocation(PageVisualEditStrictModel):
+    """描述可由稳定 key 定位的循环数组项。"""
+
+    index: int = Field(ge=0)
+    key: PageVisualEditInstanceKey
+
+
+class PageVisualEditTemplateActions(PageVisualEditStrictModel):
+    """描述节点模板级复制、删除能力。"""
+
+    can_duplicate: bool
+    can_delete: bool
+    readonly_reason: PageVisualEditReadonlyReason | None = None
+
+
+class PageVisualEditLoopItemActions(PageVisualEditStrictModel):
+    """描述节点所在循环的数据项级复制、删除能力。"""
+
+    can_duplicate: bool
+    can_delete: bool
+    loop_node_id: VisualEditIdentifier
+    collection_name: VisualEditMemberName
+    key_member: VisualEditMemberName
+    instances: list[PageVisualEditLoopItemLocation] = Field(max_length=10_000)
+    readonly_reason: PageVisualEditReadonlyReason | None = None
+
+
 class PageVisualEditNode(PageVisualEditStrictModel):
     """描述保留 Vue 模板容器和组件语义的节点树。"""
 
@@ -208,6 +261,8 @@ class PageVisualEditNode(PageVisualEditStrictModel):
     ]
     source_range: PageVisualEditSourceRange
     loop_context: PageVisualEditLoopContext | None = None
+    template_actions: PageVisualEditTemplateActions
+    loop_item_actions: PageVisualEditLoopItemActions | None = None
     bindings: list[PageVisualEditBinding] = Field(default_factory=list, max_length=256)
     children: list[PageVisualEditNode] = Field(default_factory=list, max_length=1_000)
 
@@ -310,6 +365,7 @@ class PageVisualEditManifest(PageVisualEditStrictModel):
         default_factory=list, max_length=1_000
     )
     tailwind_catalog: PageVisualEditTailwindCatalog
+    json_sources: list["PageVisualEditJsonSource"] = Field(max_length=10_000)
 
     @field_validator("module_path")
     @classmethod
@@ -331,6 +387,7 @@ class PageVisualEditManifest(PageVisualEditStrictModel):
 
         node_ids: set[str] = set()
         binding_ids: set[str] = set()
+        referenced_json_source_ids: set[str] = set()
         pending = [self.root]
         node_count = 0
         binding_count = 0
@@ -351,8 +408,34 @@ class PageVisualEditManifest(PageVisualEditStrictModel):
                         f"Manifest binding_id 重复：{binding.binding_id}。"
                     )
                 binding_ids.add(binding.binding_id)
+                if isinstance(binding.source, PageVisualEditJsonBindingSource):
+                    referenced_json_source_ids.add(binding.source.source_id)
             pending.extend(node.children)
+        source_ids = [item.source_id for item in self.json_sources]
+        if len(source_ids) != len(set(source_ids)):
+            raise ValueError("Manifest JSON source_id 不能重复。")
+        missing_source_ids = referenced_json_source_ids.difference(source_ids)
+        if missing_source_ids:
+            raise ValueError("JSON binding 引用了不存在的 source_id。")
         return self
+
+
+class PageVisualEditJsonSource(PageVisualEditStrictModel):
+    """描述可由 set_json 原子替换的静态 JSON 字面量。"""
+
+    source_id: VisualEditIdentifier
+    kind: Literal["const", "ref", "reactive", "template-expression"]
+    name: VisualEditMemberName | None = None
+    value: JsonValue
+    source_range: PageVisualEditSourceRange
+    editable: Literal[True]
+
+    @field_validator("value")
+    @classmethod
+    def validate_json_value(cls, value: JsonValue) -> JsonValue:
+        """限制 Manifest JSON 值的递归规模。"""
+
+        return validate_page_visual_edit_json(value)
 
 
 def build_page_visual_edit_source_hash(source: str) -> str:

@@ -131,6 +131,11 @@ def _build_analysis(
             kind="root",
             tag="#document",
             source_range=PageVisualEditSourceRange(start=0, end=len(request.source)),
+            template_actions={
+                "can_duplicate": False,
+                "can_delete": False,
+                "readonly_reason": "STRUCTURE_ROOT_UNSUPPORTED",
+            },
         ),
         diagnostics=[
             PageVisualEditDiagnostic(
@@ -139,6 +144,7 @@ def _build_analysis(
                 message="动态表达式保持只读。",
             )
         ],
+        json_sources=[],
         tailwind_catalog={"version": 1, "groups": []},
     )
     return RuntimePageVisualEditAnalyzeResponse(

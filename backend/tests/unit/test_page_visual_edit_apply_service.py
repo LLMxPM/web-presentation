@@ -11,6 +11,7 @@ from sqlalchemy.exc import IntegrityError
 from app.core.exceptions import AppException
 from app.schemas.page_visual_edit import (
     PageVisualEditApplyRequest,
+    PageVisualEditDuplicateNodeOperation,
     PageVisualEditSetTailwindTokensOperation,
     PageVisualEditSetValueOperation,
     PageVisualEditTailwindTokenChange,
@@ -46,7 +47,25 @@ def _build_manifest() -> PageVisualEditManifest:
             kind="root",
             tag="#document",
             source_range=PageVisualEditSourceRange(start=0, end=len(SOURCE)),
+            template_actions={
+                "can_duplicate": False,
+                "can_delete": False,
+                "readonly_reason": "STRUCTURE_ROOT_UNSUPPORTED",
+            },
+            children=[
+                PageVisualEditNode(
+                    node_id="node_main",
+                    kind="element",
+                    tag="main",
+                    source_range=PageVisualEditSourceRange(
+                        start=SOURCE.index("<main>"),
+                        end=SOURCE.index("</main>") + len("</main>"),
+                    ),
+                    template_actions={"can_duplicate": True, "can_delete": True},
+                )
+            ],
         ),
+        json_sources=[],
         tailwind_catalog={
             "version": 1,
             "groups": [
@@ -480,3 +499,60 @@ async def test_apply_should_allow_tailwind_group_removal_from_catalog() -> None:
     page_service.update.assert_awaited_once()
     session.commit.assert_awaited_once()
     assert response.operations_applied == 1
+
+
+@pytest.mark.asyncio
+async def test_apply_should_reject_structural_operation_not_declared_by_manifest() -> (
+    None
+):
+    """Backend 必须在调用 Runtime 前拒绝 Manifest 未开放的结构操作。"""
+
+    service, _, _, _, runtime_client, _ = _build_service()
+    payload = PageVisualEditApplyRequest(
+        protocol_version=1,
+        artifact_id=ARTIFACT_ID,
+        base_version_no=3,
+        source_hash=build_page_visual_edit_source_hash(SOURCE),
+        operations=[
+            PageVisualEditDuplicateNodeOperation(
+                type="duplicate_node",
+                node_id="node_root",
+                instance_path=[],
+            )
+        ],
+    )
+
+    with pytest.raises(AppException) as exc_info:
+        await service.apply(page_id=12, payload=payload, user_id=9)
+
+    assert exc_info.value.code == "PAGE_VISUAL_EDIT_TARGET_READONLY"
+    runtime_client.apply.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_apply_should_forward_structural_operation_declared_by_manifest() -> None:
+    """Backend 复核通过后应把 Manifest 已开放的结构操作整批交给 Runtime。"""
+
+    service, _, session, page_service, runtime_client, _ = _build_service()
+    payload = PageVisualEditApplyRequest(
+        protocol_version=1,
+        artifact_id=ARTIFACT_ID,
+        base_version_no=3,
+        source_hash=build_page_visual_edit_source_hash(SOURCE),
+        operations=[
+            PageVisualEditDuplicateNodeOperation(
+                type="duplicate_node",
+                node_id="node_main",
+                instance_path=[],
+            )
+        ],
+    )
+
+    response = await service.apply(page_id=12, payload=payload, user_id=9)
+
+    assert (
+        runtime_client.apply.await_args.args[0].operations[0].type == "duplicate_node"
+    )
+    page_service.update.assert_awaited_once()
+    session.commit.assert_awaited_once()
+    assert response.current_version_no == 4

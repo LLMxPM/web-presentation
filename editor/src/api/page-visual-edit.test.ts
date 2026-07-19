@@ -37,7 +37,7 @@ describe('page visual edit api', () => {
     expect(result).toBe(response)
   })
 
-  it('应批量序列化值和 Tailwind 操作为 Backend snake_case 协议', async () => {
+  it('应批量序列化绑定与结构操作为 Backend snake_case 协议', async () => {
     const response = { page_id: 42, current_version_no: 8 }
     postMock.mockResolvedValueOnce({ data: response })
     const operations = [
@@ -49,6 +49,13 @@ describe('page visual edit api', () => {
         value: '新标题',
       },
       {
+        type: 'set_rich_text' as const,
+        nodeId: 'node-paragraph',
+        bindingId: 'binding-rich',
+        instancePath: [],
+        html: '正文<br><strong>重点</strong>',
+      },
+      {
         type: 'set_tailwind_tokens' as const,
         nodeId: 'node-card',
         bindingId: 'binding-class',
@@ -58,6 +65,16 @@ describe('page visual edit api', () => {
           { group: 'padding', className: 'p-8' },
           { group: 'background' },
         ],
+      },
+      {
+        type: 'duplicate_node' as const,
+        nodeId: 'node-card',
+        instancePath: [{ loopNodeId: 'loop-items', key: 'b', index: 1 }],
+      },
+      {
+        type: 'delete_node' as const,
+        nodeId: 'node-section',
+        instancePath: [],
       },
     ]
 
@@ -83,6 +100,13 @@ describe('page visual edit api', () => {
           value: '新标题',
         },
         {
+          type: 'set_rich_text',
+          node_id: 'node-paragraph',
+          binding_id: 'binding-rich',
+          instance_path: [],
+          html: '正文<br><strong>重点</strong>',
+        },
+        {
           type: 'set_tailwind_tokens',
           node_id: 'node-card',
           binding_id: 'binding-class',
@@ -93,11 +117,21 @@ describe('page visual edit api', () => {
             { group: 'background', class_name: null },
           ],
         },
+        {
+          type: 'duplicate_node',
+          node_id: 'node-card',
+          instance_path: [{ loop_node_id: 'loop-items', key: 'b', index: 1 }],
+        },
+        {
+          type: 'delete_node',
+          node_id: 'node-section',
+          instance_path: [],
+        },
       ],
       change_note: '可视化编辑',
     })
     expect(result).toBe(response)
-    expect(operations[1]?.changes).toEqual([
+    expect(operations[2]?.changes).toEqual([
       { group: 'radius', className: 'rounded-lg' },
       { group: 'padding', className: 'p-8' },
       { group: 'background' },
@@ -124,5 +158,23 @@ describe('page visual edit api', () => {
     expect(postMock.mock.calls[0]?.[1].operations[0].instance_path).toEqual([
       { loop_node_id: 'loop-items', index: 2 },
     ])
+  })
+
+  it('应把 set_json 的 sourceId 转成 Backend snake_case 并保留结构化值', async () => {
+    postMock.mockResolvedValueOnce({ data: {} })
+
+    await applyPageVisualEditOperations(9, {
+      artifact_id: 'artifact-json',
+      base_version_no: 3,
+      source_hash: 'a'.repeat(64),
+      operations: [{ type: 'set_json', sourceId: 'source_benefits', value: ['甲', { label: '乙' }] }],
+      change_note: '编辑数据',
+    })
+
+    expect(postMock.mock.calls[0]?.[1].operations).toEqual([{
+      type: 'set_json',
+      source_id: 'source_benefits',
+      value: ['甲', { label: '乙' }],
+    }])
   })
 })

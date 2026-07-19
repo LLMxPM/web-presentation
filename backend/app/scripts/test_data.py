@@ -48,11 +48,18 @@ DEFAULT_SMOKE_PAGE_CONTENT = """<template>
   <main class="smoke-page">
     <h1>{{ title }}</h1>
     <p>platform smoke preview</p>
+    <ul>
+      <li v-for="item in items" :key="item.id">{{ item.label }}</li>
+    </ul>
   </main>
 </template>
 
 <script setup lang="ts">
 const title = 'Smoke Page'
+const items = [
+  { id: 'smoke-1', label: 'first item' },
+  { id: 'smoke-2', label: 'second item' },
+]
 </script>
 
 <style scoped>

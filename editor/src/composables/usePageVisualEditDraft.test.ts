@@ -44,6 +44,22 @@ describe('usePageVisualEditDraft', () => {
     expect(draft.getOperation(target)).toBeNull()
   })
 
+  it('富文本应按目标去重，并在恢复规范化基准时移除操作', () => {
+    const draft = usePageVisualEditDraft()
+    const target = { nodeId: 'node-paragraph', bindingId: 'binding-rich', instancePath: [] }
+
+    draft.setRichText(target, '<strong>新内容</strong>', '原标题')
+    draft.setRichText(target, '<em>最终内容</em>', '原标题')
+    expect(draft.pendingOperations.value).toEqual([{
+      type: 'set_rich_text',
+      ...target,
+      html: '<em>最终内容</em>',
+    }])
+
+    draft.setRichText(target, '原标题', '原标题')
+    expect(draft.pendingOperations.value).toEqual([])
+  })
+
   it('Tailwind changes 应按 group 去重合并，并在各组恢复基准后移除操作', () => {
     const draft = usePageVisualEditDraft()
     const target = createTarget('b', 1, 'binding-class')
@@ -149,6 +165,38 @@ describe('usePageVisualEditDraft', () => {
 
     expect(draft.pendingCount.value).toBe(0)
     expect(draft.hasPendingChanges.value).toBe(false)
+  })
+
+  it('同一节点实例的复制和删除应互相覆盖并支持撤销', () => {
+    const draft = usePageVisualEditDraft()
+    const target = {
+      nodeId: 'node-card',
+      instancePath: [{ loopNodeId: 'loop-items', key: 'b', index: 1 }],
+    }
+
+    draft.setStructuralOperation('duplicate_node', target)
+    draft.setStructuralOperation('delete_node', target)
+
+    expect(draft.pendingOperations.value).toEqual([{ type: 'delete_node', ...target }])
+    expect(draft.removeStructuralOperation(target)).toBe(true)
+    expect(draft.pendingOperations.value).toEqual([])
+  })
+
+  it('整块 JSON 应按 sourceId 去重、深拷贝并在恢复基准时移除', () => {
+    const draft = usePageVisualEditDraft()
+    const baseline = ['第一项', { label: '第二项' }]
+    const next = ['新值', { label: '第二项' }]
+
+    draft.setJson('source_benefits', next, baseline)
+    ;(next[1] as { label: string }).label = '外部改写'
+    expect(draft.pendingOperations.value).toEqual([{
+      type: 'set_json',
+      sourceId: 'source_benefits',
+      value: ['新值', { label: '第二项' }],
+    }])
+
+    draft.setJson('source_benefits', baseline, baseline)
+    expect(draft.pendingOperations.value).toEqual([])
   })
 })
 

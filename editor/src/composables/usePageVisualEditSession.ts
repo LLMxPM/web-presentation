@@ -2,7 +2,7 @@
  * 文件功能：管理页面可视化编辑 artifact、受信任 Runtime 选区、待提交草稿与批量保存刷新流程。
  */
 
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, shallowRef } from 'vue'
 
 import {
   applyPageVisualEditOperations,
@@ -12,12 +12,14 @@ import { getErrorMessage } from '@/api/http'
 import { usePageVisualEditDraft } from '@/composables/usePageVisualEditDraft'
 import {
   PAGE_VISUAL_EDIT_PROTOCOL_VERSION,
+  PAGE_VISUAL_EDIT_SELECT_NODE_EVENT,
   PAGE_VISUAL_EDIT_SELECTION_EVENT,
   type PageVisualEditApplyResponse,
   type PageVisualEditInstancePathSegment,
   type PageVisualEditNode,
   type PageVisualEditPreviewArtifactResponse,
   type PageVisualEditSelectionMessage,
+  type PageVisualEditSelectNodeMessage,
 } from '@/types/page-visual-edit'
 
 /**
@@ -25,7 +27,7 @@ import {
  */
 export function usePageVisualEditSession() {
   const draft = usePageVisualEditDraft()
-  const artifact = ref<PageVisualEditPreviewArtifactResponse | null>(null)
+  const artifact = shallowRef<PageVisualEditPreviewArtifactResponse | null>(null)
   const previewFrameRef = ref<HTMLIFrameElement | null>(null)
   const selectedNodeId = ref('')
   const selectedBindingId = ref('')
@@ -135,6 +137,24 @@ export function usePageVisualEditSession() {
     selectedInstancePath.value = cloneInstancePath(instancePath)
   }
 
+  /** 向当前受信 Runtime iframe 下发节点定位，不携带任何属性覆盖。 */
+  function syncPreviewSelection(): void {
+    const frameWindow = previewFrameRef.value?.contentWindow
+    const currentArtifact = artifact.value
+    const targetOrigin = previewOrigin.value
+    if (!frameWindow || !currentArtifact || !targetOrigin || !selectedNodeId.value) return
+    const message: PageVisualEditSelectNodeMessage = {
+      type: PAGE_VISUAL_EDIT_SELECT_NODE_EVENT,
+      payload: {
+        protocolVersion: PAGE_VISUAL_EDIT_PROTOCOL_VERSION,
+        artifactId: currentArtifact.artifact_id,
+        nodeId: selectedNodeId.value,
+        instancePath: cloneInstancePath(selectedInstancePath.value),
+      },
+    }
+    frameWindow.postMessage(message, targetOrigin)
+  }
+
   /** 将当前会话标记为过期，阻止旧节点 ID 被继续保存。 */
   function markStale(): void {
     stale.value = true
@@ -208,6 +228,7 @@ export function usePageVisualEditSession() {
     analyze,
     save,
     selectNode,
+    syncPreviewSelection,
     markStale,
     discardChanges,
     reset,
@@ -250,7 +271,7 @@ function isInstancePathSegment(value: unknown): value is PageVisualEditInstanceP
   const hasKey = Object.prototype.hasOwnProperty.call(value, 'key')
   const hasIndex = Object.prototype.hasOwnProperty.call(value, 'index')
   const validKey = typeof value.key === 'string'
-    || (typeof value.key === 'number' && Number.isFinite(value.key) && Number.isInteger(value.key))
+    || (typeof value.key === 'number' && Number.isSafeInteger(value.key))
   const validIndex = Number.isInteger(value.index) && Number(value.index) >= 0
   if (hasKey && !validKey) return false
   if (hasIndex && !validIndex) return false

@@ -206,6 +206,10 @@ class PageVisualEditService:
             artifact_binding,
             payload.operations,
         )
+        PageVisualEditArtifactValidator.validate_structural_operations(
+            artifact_binding,
+            payload.operations,
+        )
         canonical_source = page.page_content
         page_version_id = page_version.id
         await self.session.rollback()

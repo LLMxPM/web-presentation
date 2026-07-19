@@ -11,6 +11,8 @@ from app.schemas.page_visual_edit import (
     PageVisualEditInstancePathSegment,
     PageVisualEditPreviewArtifactCreateRequest,
     PageVisualEditPreviewContext,
+    PageVisualEditSetRichTextOperation,
+    PageVisualEditSetJsonOperation,
     PageVisualEditSetTailwindTokensOperation,
     PageVisualEditSetValueOperation,
     PageVisualEditTailwindTokenChange,
@@ -57,6 +59,7 @@ def _build_manifest(
         kind="element",
         tag="main",
         source_range=PageVisualEditSourceRange(start=10, end=32),
+        template_actions={"can_duplicate": True, "can_delete": True},
         bindings=[_build_binding()],
     )
     return PageVisualEditManifest(
@@ -68,8 +71,14 @@ def _build_manifest(
             kind="root",
             tag="#document",
             source_range=PageVisualEditSourceRange(start=0, end=len(source)),
+            template_actions={
+                "can_duplicate": False,
+                "can_delete": False,
+                "readonly_reason": "STRUCTURE_ROOT_UNSUPPORTED",
+            },
             children=[child],
         ),
+        json_sources=[],
         tailwind_catalog={"version": 1, "groups": []},
     )
 
@@ -118,6 +127,11 @@ def test_runtime_manifest_canonical_payload_should_validate_without_field_drift(
                 "kind": "root",
                 "tag": "#document",
                 "sourceRange": {"start": 0, "end": 27},
+                "templateActions": {
+                    "canDuplicate": False,
+                    "canDelete": False,
+                    "readonlyReason": "STRUCTURE_ROOT_UNSUPPORTED",
+                },
                 "bindings": [],
                 "children": [
                     {
@@ -125,6 +139,15 @@ def test_runtime_manifest_canonical_payload_should_validate_without_field_drift(
                         "kind": "element",
                         "tag": "li",
                         "sourceRange": {"start": 10, "end": 16},
+                        "templateActions": {"canDuplicate": False, "canDelete": True},
+                        "loopItemActions": {
+                            "canDuplicate": True,
+                            "canDelete": True,
+                            "loopNodeId": "node_item",
+                            "collectionName": "items",
+                            "keyMember": "id",
+                            "instances": [{"index": 1, "key": "b"}],
+                        },
                         "loopContext": {
                             "loopNodeId": "node_item",
                             "sourceExpression": "items",
@@ -185,6 +208,7 @@ def test_runtime_manifest_canonical_payload_should_validate_without_field_drift(
                     }
                 ],
             },
+            "jsonSources": [],
         }
     )
 
@@ -282,6 +306,7 @@ def test_manifest_should_reject_duplicate_binding_identity() -> None:
         kind="element",
         tag="section",
         source_range=PageVisualEditSourceRange(start=1, end=2),
+        template_actions={"can_duplicate": True, "can_delete": True},
         bindings=[_build_binding(binding_id="same_binding", node_id="node_a")],
     )
     second = PageVisualEditNode(
@@ -289,6 +314,7 @@ def test_manifest_should_reject_duplicate_binding_identity() -> None:
         kind="element",
         tag="section",
         source_range=PageVisualEditSourceRange(start=2, end=3),
+        template_actions={"can_duplicate": True, "can_delete": True},
         bindings=[_build_binding(binding_id="same_binding", node_id="node_b")],
     )
 
@@ -302,8 +328,14 @@ def test_manifest_should_reject_duplicate_binding_identity() -> None:
                 kind="root",
                 tag="#document",
                 source_range=PageVisualEditSourceRange(start=0, end=len(source)),
+                template_actions={
+                    "can_duplicate": False,
+                    "can_delete": False,
+                    "readonly_reason": "STRUCTURE_ROOT_UNSUPPORTED",
+                },
                 children=[first, second],
             ),
+            json_sources=[],
             tailwind_catalog={"version": 1, "groups": []},
         )
 
@@ -325,6 +357,58 @@ def test_tailwind_operation_should_reject_duplicate_groups_and_multiple_classes(
                 PageVisualEditTailwindTokenChange(group="padding", class_name="p-6"),
             ],
         )
+
+
+def test_rich_text_operation_should_enforce_semantic_html_boundary() -> None:
+    """富文本允许由 Runtime 锁定的复杂标签，并拒绝坏语法、Vue 文本表达式与超长内容。"""
+
+    operation = PageVisualEditSetRichTextOperation(
+        type="set_rich_text",
+        node_id="node_paragraph",
+        binding_id="binding_rich",
+        html='正文<br><span class="text-red-500"><strong class="font-bold">重点</strong></span><em>补充</em>',
+    )
+    assert operation.html.endswith("</em>")
+
+    complex_operation = PageVisualEditSetRichTextOperation(
+        type="set_rich_text",
+        node_id="node_paragraph",
+        binding_id="binding_rich",
+        html='<a href="/docs" :class="tone"><Badge style="color:red">链接文本</Badge></a>',
+    )
+    assert complex_operation.html.startswith("<a ")
+
+    for invalid_html in [
+        "<strong>未闭合",
+        "{{ user.name }}",
+        "<!-- comment -->",
+        "x" * 20_001,
+    ]:
+        with pytest.raises(ValidationError):
+            PageVisualEditSetRichTextOperation(
+                type="set_rich_text",
+                node_id="node_paragraph",
+                binding_id="binding_rich",
+                html=invalid_html,
+            )
+
+
+def test_rich_text_binding_should_allow_empty_insertion_range() -> None:
+    """空文本容器需要以 start=end 的插入点参与富文本编辑。"""
+
+    binding = PageVisualEditBinding.model_validate(
+        {
+            "bindingId": "binding_rich",
+            "nodeId": "node_paragraph",
+            "kind": "rich_text",
+            "valueType": "string",
+            "value": "",
+            "sourceRange": {"start": 20, "end": 20},
+            "editable": True,
+            "source": {"kind": "template-rich-text"},
+        }
+    )
+    assert binding.source_range.start == binding.source_range.end
 
 
 @pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
@@ -430,3 +514,29 @@ def test_manifest_helper_should_build_valid_protocol_v1_tree() -> None:
     assert manifest.protocol_version == 1
     assert manifest.root.children[0].bindings[0].binding_id == "binding_title"
     assert len(manifest.source_hash) == 64
+
+    payload = manifest.model_dump()
+    payload.pop("json_sources")
+    with pytest.raises(ValidationError, match="jsonSources|json_sources"):
+        PageVisualEditManifest.model_validate(payload)
+
+
+def test_set_json_should_accept_nested_json_and_reject_depth_overflow() -> None:
+    """整块 JSON 操作应接受结构化值，并在 Backend 拒绝超深输入。"""
+
+    operation = PageVisualEditSetJsonOperation(
+        type="set_json",
+        source_id="source_benefits",
+        value=["第一项", {"label": "第二项", "enabled": True}],
+    )
+    assert operation.value[1]["label"] == "第二项"
+
+    value: object = "leaf"
+    for _ in range(33):
+        value = [value]
+    with pytest.raises(ValidationError, match="嵌套深度"):
+        PageVisualEditSetJsonOperation(
+            type="set_json",
+            source_id="source_benefits",
+            value=value,
+        )

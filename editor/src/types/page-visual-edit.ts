@@ -4,13 +4,15 @@
 
 import type { PreviewArtifactResponse } from '@/types/api'
 
-/** 页面可视化编辑首版协议号，未知版本必须由调用方拒绝。 */
+/** 页面可视化编辑当前协议号，未知版本必须由调用方拒绝。 */
 export const PAGE_VISUAL_EDIT_PROTOCOL_VERSION = 1 as const
 export const PAGE_VISUAL_EDIT_SELECTION_EVENT = 'page-visual-edit:selection' as const
+export const PAGE_VISUAL_EDIT_SELECT_NODE_EVENT = 'page-visual-edit:select-node' as const
 
 export type PageVisualEditProtocolVersion = typeof PAGE_VISUAL_EDIT_PROTOCOL_VERSION
-export type PageVisualEditOperationType = 'set_value' | 'set_tailwind_tokens'
+export type PageVisualEditOperationType = 'set_value' | 'set_json' | 'set_rich_text' | 'set_tailwind_tokens' | 'duplicate_node' | 'delete_node'
 export type PageVisualEditValue = string | number | boolean | null
+export type PageVisualEditJsonValue = PageVisualEditValue | PageVisualEditJsonValue[] | { [key: string]: PageVisualEditJsonValue }
 export type PageVisualEditInstanceKey = string | number
 export type PageVisualEditReadonlyReason =
   | 'SFC_PARSE_ERROR'
@@ -24,8 +26,13 @@ export type PageVisualEditReadonlyReason =
   | 'MEMBER_NOT_FOUND'
   | 'MEMBER_VALUE_DYNAMIC'
   | 'ATTRIBUTE_VALUE_MISSING'
-export type PageVisualEditBindingKind = 'text' | 'class' | 'prop'
-export type PageVisualEditValueType = 'string' | 'number' | 'boolean' | 'null' | 'unknown'
+  | 'RICH_TEXT_DYNAMIC_CONTENT'
+  | 'RICH_TEXT_UNSUPPORTED_STRUCTURE'
+  | 'STRUCTURE_ROOT_UNSUPPORTED'
+  | 'STRUCTURE_CONTROL_FLOW_UNSUPPORTED'
+  | 'STRUCTURE_LOOP_INSTANCE_REQUIRED'
+export type PageVisualEditBindingKind = 'text' | 'rich_text' | 'class' | 'prop' | 'json'
+export type PageVisualEditValueType = 'string' | 'number' | 'boolean' | 'null' | 'json' | 'unknown'
 export type PageVisualEditNodeKind = 'root' | 'element' | 'component'
 export type PageVisualEditScriptCollectionKind = 'const-array' | 'ref-array' | 'reactive-array'
 
@@ -49,6 +56,12 @@ export interface PageVisualEditTarget {
   instancePath: PageVisualEditInstancePathSegment[]
 }
 
+/** 标识规范源码中的模板节点或循环实例。 */
+export interface PageVisualEditNodeTarget {
+  nodeId: string
+  instancePath: PageVisualEditInstancePathSegment[]
+}
+
 /** Runtime iframe 向 Editor 上报的节点选择消息。 */
 export interface PageVisualEditSelectionMessage {
   type: typeof PAGE_VISUAL_EDIT_SELECTION_EVENT
@@ -61,14 +74,37 @@ export interface PageVisualEditSelectionMessage {
   }
 }
 
-interface PageVisualEditOperationBase extends PageVisualEditTarget {
-  type: PageVisualEditOperationType
+/** Editor 向 Runtime iframe 下发的节点定位消息。 */
+export interface PageVisualEditSelectNodeMessage {
+  type: typeof PAGE_VISUAL_EDIT_SELECT_NODE_EVENT
+  payload: {
+    protocolVersion: PageVisualEditProtocolVersion
+    artifactId: string
+    nodeId: string
+    instancePath: PageVisualEditInstancePathSegment[]
+  }
+}
+
+interface PageVisualEditBindingOperationBase extends PageVisualEditTarget {
+  type: 'set_value' | 'set_rich_text' | 'set_tailwind_tokens'
 }
 
 /** 设置文本、数字、布尔或空值字面量。 */
-export interface PageVisualEditSetValueOperation extends PageVisualEditOperationBase {
+export interface PageVisualEditSetValueOperation extends PageVisualEditBindingOperationBase {
   type: 'set_value'
   value: PageVisualEditValue
+}
+
+export interface PageVisualEditSetJsonOperation {
+  type: 'set_json'
+  sourceId: string
+  value: PageVisualEditJsonValue
+}
+
+/** 设置文本容器内部的规范化受限 HTML 片段。 */
+export interface PageVisualEditSetRichTextOperation extends PageVisualEditBindingOperationBase {
+  type: 'set_rich_text'
+  html: string
 }
 
 /** 描述一个 Tailwind 冲突组的目标 class；null 表示移除该组当前 class。 */
@@ -78,14 +114,26 @@ export interface PageVisualEditTailwindTokenChange {
 }
 
 /** 按冲突组设置受限 Tailwind class；复杂和未知类由 Backend/Runtime 保留并校验。 */
-export interface PageVisualEditSetTailwindTokensOperation extends PageVisualEditOperationBase {
+export interface PageVisualEditSetTailwindTokensOperation extends PageVisualEditBindingOperationBase {
   type: 'set_tailwind_tokens'
   changes: PageVisualEditTailwindTokenChange[]
 }
 
+export interface PageVisualEditDuplicateNodeOperation extends PageVisualEditNodeTarget {
+  type: 'duplicate_node'
+}
+
+export interface PageVisualEditDeleteNodeOperation extends PageVisualEditNodeTarget {
+  type: 'delete_node'
+}
+
 export type PageVisualEditOperation =
   | PageVisualEditSetValueOperation
+  | PageVisualEditSetJsonOperation
+  | PageVisualEditSetRichTextOperation
   | PageVisualEditSetTailwindTokensOperation
+  | PageVisualEditDuplicateNodeOperation
+  | PageVisualEditDeleteNodeOperation
 
 /** Vue SFC 中以 UTF-16 offset 表示的半开源码区间。 */
 export interface PageVisualEditSourceRange {
@@ -119,9 +167,21 @@ export interface PageVisualEditTemplateBindingSource {
   kind: 'template-literal'
 }
 
+/** 标识 binding 覆盖模板元素的内部受限富文本。 */
+export interface PageVisualEditTemplateRichTextBindingSource {
+  kind: 'template-rich-text'
+}
+
+export interface PageVisualEditJsonBindingSource {
+  kind: 'json-source'
+  source_id: string
+}
+
 export type PageVisualEditBindingSource =
   | PageVisualEditScriptArrayBindingSource
   | PageVisualEditTemplateBindingSource
+  | PageVisualEditTemplateRichTextBindingSource
+  | PageVisualEditJsonBindingSource
 
 /** 属性检查器可展示的文本、class 或组件 prop 绑定。 */
 export interface PageVisualEditBinding {
@@ -130,7 +190,7 @@ export interface PageVisualEditBinding {
   kind: PageVisualEditBindingKind
   name?: string | null
   value_type: PageVisualEditValueType
-  value?: PageVisualEditValue
+  value?: PageVisualEditJsonValue
   expression?: string | null
   source_range: PageVisualEditSourceRange
   editable: boolean
@@ -151,6 +211,27 @@ export interface PageVisualEditLoopContext {
   readonly_reason?: PageVisualEditReadonlyReason | null
 }
 
+export interface PageVisualEditLoopItemLocation {
+  index: number
+  key: PageVisualEditInstanceKey
+}
+
+export interface PageVisualEditTemplateActions {
+  can_duplicate: boolean
+  can_delete: boolean
+  readonly_reason?: PageVisualEditReadonlyReason | null
+}
+
+export interface PageVisualEditLoopItemActions {
+  can_duplicate: boolean
+  can_delete: boolean
+  loop_node_id: string
+  collection_name: string
+  key_member: string
+  instances: PageVisualEditLoopItemLocation[]
+  readonly_reason?: PageVisualEditReadonlyReason | null
+}
+
 /** 保留 Vue 模板容器和组件边界的递归节点。 */
 export interface PageVisualEditNode {
   node_id: string
@@ -158,6 +239,8 @@ export interface PageVisualEditNode {
   tag: string
   source_range: PageVisualEditSourceRange
   loop_context?: PageVisualEditLoopContext | null
+  template_actions: PageVisualEditTemplateActions
+  loop_item_actions?: PageVisualEditLoopItemActions | null
   bindings: PageVisualEditBinding[]
   children: PageVisualEditNode[]
 }
@@ -177,7 +260,7 @@ export interface PageVisualEditTailwindCatalogGroup {
 
 /** 由 Runtime safelist 派生的版本化 Tailwind 控件目录。 */
 export interface PageVisualEditTailwindCatalog {
-  version: PageVisualEditProtocolVersion
+  version: 1
   groups: PageVisualEditTailwindCatalogGroup[]
 }
 
@@ -189,6 +272,16 @@ export interface PageVisualEditManifest {
   root: PageVisualEditNode
   diagnostics: PageVisualEditManifestDiagnostic[]
   tailwind_catalog: PageVisualEditTailwindCatalog
+  json_sources: PageVisualEditJsonSource[]
+}
+
+export interface PageVisualEditJsonSource {
+  source_id: string
+  kind: 'const' | 'ref' | 'reactive' | 'template-expression'
+  name?: string | null
+  value: PageVisualEditJsonValue
+  source_range: PageVisualEditSourceRange
+  editable: true
 }
 
 export type PageVisualEditComponentPropControl =
@@ -299,10 +392,17 @@ export interface PageVisualEditPanelState {
   hasPendingChanges: boolean
   stale: boolean
   saving: boolean
+  hasValidationErrors: boolean
 }
 
 /** 草稿批量写入项：携带目标值及其规范源码基准值，用于恢复基准时自动移除操作。 */
 export type PageVisualEditDraftChange =
+  | {
+    type: 'set_json'
+    sourceId: string
+    value: PageVisualEditJsonValue
+    baselineValue: PageVisualEditJsonValue
+  }
   | {
     type: 'set_value'
     target: PageVisualEditTarget
@@ -314,4 +414,10 @@ export type PageVisualEditDraftChange =
     target: PageVisualEditTarget
     changes: PageVisualEditTailwindTokenChange[]
     baselineChanges: PageVisualEditTailwindTokenChange[]
+  }
+  | {
+    type: 'set_rich_text'
+    target: PageVisualEditTarget
+    html: string
+    baselineHtml: string
   }

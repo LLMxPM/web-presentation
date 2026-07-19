@@ -51,7 +51,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { Box, ChevronDown, ChevronRight, Component, LockKeyhole } from '@lucide/vue'
 
 import type { PageVisualEditNode } from '@/types/page-visual-edit'
@@ -72,5 +72,17 @@ const expanded = ref(true)
 const nodeLabel = computed(() => (
   props.node.kind === 'root' ? 'Page' : props.node.tag
 ))
-</script>
 
+watch(
+  () => props.selectedNodeId,
+  (selectedNodeId) => {
+    if (selectedNodeId && containsNode(props.node, selectedNodeId)) expanded.value = true
+  },
+  { immediate: true },
+)
+
+/** 判断当前子树是否包含画布选中的节点，用于自动展开祖先。 */
+function containsNode(node: PageVisualEditNode, nodeId: string): boolean {
+  return node.node_id === nodeId || node.children.some(child => containsNode(child, nodeId))
+}
+</script>

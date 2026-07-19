@@ -5,7 +5,7 @@
       <h3 class="text-sm font-bold text-slate-800">页面层级</h3>
       <p class="mt-1 text-xs text-slate-500">代码解析结果，不是实际 DOM</p>
     </header>
-    <div class="min-h-0 flex-1 overflow-auto p-2">
+    <div ref="treeScroller" class="min-h-0 flex-1 overflow-auto p-2">
       <ul v-if="props.root" class="space-y-1" role="tree" aria-label="页面容器层级">
         <PageVisualEditLayerNode
           :node="props.root"
@@ -19,6 +19,7 @@
 </template>
 
 <script setup lang="ts">
+import { nextTick, ref, watch } from 'vue'
 import PageVisualEditLayerNode from '@/components/page-detail/visual-edit/PageVisualEditLayerNode.vue'
 import type { PageVisualEditNode } from '@/types/page-visual-edit'
 
@@ -30,5 +31,15 @@ const props = defineProps<{
 const emit = defineEmits<{
   select: [node: PageVisualEditNode]
 }>()
-</script>
 
+const treeScroller = ref<HTMLElement | null>(null)
+
+watch(
+  () => props.selectedNodeId,
+  async () => {
+    await nextTick()
+    treeScroller.value?.querySelector<HTMLElement>('[aria-current="true"]')
+      ?.scrollIntoView?.({ block: 'nearest' })
+  },
+)
+</script>

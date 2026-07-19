@@ -9,6 +9,8 @@ from pydantic import ValidationError
 from app.core.exceptions import AppException
 from app.schemas.page_visual_edit import (
     PageVisualEditArtifactBinding,
+    PageVisualEditDeleteNodeOperation,
+    PageVisualEditDuplicateNodeOperation,
     PageVisualEditOperation,
     PageVisualEditSetTailwindTokensOperation,
 )
@@ -84,6 +86,89 @@ class PageVisualEditArtifactValidator:
                         code="PAGE_VISUAL_EDIT_TAILWIND_TOKEN_UNSUPPORTED",
                         detail=f"Tailwind class 不在可视化编辑白名单中：{change.class_name}。",
                     )
+
+    @staticmethod
+    def validate_structural_operations(
+        binding: PageVisualEditArtifactBinding,
+        operations: list[PageVisualEditOperation],
+    ) -> None:
+        """依据 artifact Manifest 校验结构能力和循环实例，拒绝伪造目标。"""
+
+        resolved_targets: set[tuple[object, ...]] = set()
+        for operation in operations:
+            if not isinstance(
+                operation,
+                (PageVisualEditDuplicateNodeOperation, PageVisualEditDeleteNodeOperation),
+            ):
+                continue
+            node = PageVisualEditArtifactValidator._find_node(
+                binding.manifest.root, operation.node_id
+            )
+            if node is None:
+                raise AppException(
+                    status_code=422,
+                    code="PAGE_VISUAL_EDIT_TARGET_NOT_FOUND",
+                    detail="结构操作目标不存在。",
+                )
+            if not operation.instance_path:
+                allowed = (
+                    node.template_actions.can_duplicate
+                    if isinstance(operation, PageVisualEditDuplicateNodeOperation)
+                    else node.template_actions.can_delete
+                )
+                target_key: tuple[object, ...] = ("template", node.node_id)
+            else:
+                actions = node.loop_item_actions
+                allowed = bool(
+                    actions
+                    and (
+                        actions.can_duplicate
+                        if isinstance(operation, PageVisualEditDuplicateNodeOperation)
+                        else actions.can_delete
+                    )
+                    and len(operation.instance_path) == 1
+                )
+                segment = operation.instance_path[0]
+                matched = bool(
+                    actions
+                    and segment.loop_node_id == actions.loop_node_id
+                    and any(
+                        item.key == segment.key
+                        and (segment.index is None or item.index == segment.index)
+                        for item in actions.instances
+                    )
+                )
+                allowed = allowed and matched
+                target_key = (
+                    "loop-item",
+                    actions.loop_node_id if actions else "",
+                    segment.key,
+                )
+            if not allowed:
+                raise AppException(
+                    status_code=422,
+                    code="PAGE_VISUAL_EDIT_TARGET_READONLY",
+                    detail="当前目标不允许该结构操作。",
+                )
+            if target_key in resolved_targets:
+                raise AppException(
+                    status_code=422,
+                    code="PAGE_VISUAL_EDIT_STRUCTURE_CONFLICT",
+                    detail="同一批次不能重复操作同一个结构目标。",
+                )
+            resolved_targets.add(target_key)
+
+    @staticmethod
+    def _find_node(node, node_id: str):
+        """在递归 Manifest 中查找节点。"""
+
+        if node.node_id == node_id:
+            return node
+        for child in node.children:
+            found = PageVisualEditArtifactValidator._find_node(child, node_id)
+            if found is not None:
+                return found
+        return None
 
     @staticmethod
     def _validate_artifact_identity(

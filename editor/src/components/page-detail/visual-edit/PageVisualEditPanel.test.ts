@@ -7,8 +7,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { PageVisualEditPreviewArtifactResponse } from '@/types/page-visual-edit'
 
-const { applyMock, createMock } = vi.hoisted(() => ({
+const { applyMock, confirmMock, createMock } = vi.hoisted(() => ({
   applyMock: vi.fn(),
+  confirmMock: vi.fn().mockResolvedValue(true),
   createMock: vi.fn(),
 }))
 
@@ -18,7 +19,7 @@ vi.mock('@/api/page-visual-edit', () => ({
 }))
 
 vi.mock('@/utils/message', () => ({
-  createConfirm: vi.fn().mockResolvedValue(true),
+  createConfirm: (...args: unknown[]) => confirmMock(...args),
   Message: {
     info: vi.fn(),
     success: vi.fn(),
@@ -75,6 +76,30 @@ describe('PageVisualEditPanel', () => {
     await Promise.resolve()
     expect(createMock).toHaveBeenCalledTimes(2)
   })
+
+  it('删除结构应二次确认、清理内部草稿、禁用属性编辑并允许撤销', async () => {
+    createMock.mockResolvedValue(createArtifact('artifact-delete', 1, '原标题'))
+    render(PageVisualEditPanel, {
+      props: { pageId: 31, baseVersionNo: 1, pageTitle: '测试页面' },
+    })
+
+    await screen.findByTitle('测试页面 可视化编辑画布')
+    await fireEvent.click(screen.getByRole('button', { name: /Card/ }))
+    const textarea = await screen.findByRole('textbox')
+    await fireEvent.update(textarea, '待删除修改')
+    await fireEvent.click(screen.getByRole('button', { name: '删除组件' }))
+
+    await waitFor(() => expect(confirmMock).toHaveBeenCalledWith(
+      '删除组件，并放弃其中 1 项待保存修改，是否继续？',
+      '删除组件',
+    ))
+    expect(screen.getByText('1 项待保存')).toBeInTheDocument()
+    expect(screen.queryByRole('textbox')).toBeNull()
+
+    await fireEvent.click(screen.getByRole('button', { name: '撤销' }))
+    expect(screen.queryByText('1 项待保存')).toBeNull()
+    expect(screen.getByRole('textbox')).toBeInTheDocument()
+  })
 })
 
 /** 创建面板测试用可视化 artifact。 */
@@ -106,12 +131,14 @@ function createArtifact(artifactId: string, versionNo: number, title: string): P
           kind: 'root',
           tag: 'template',
           source_range: { start: 0, end: 100 },
+          template_actions: { can_duplicate: false, can_delete: false, readonly_reason: 'STRUCTURE_ROOT_UNSUPPORTED' },
           bindings: [],
           children: [{
             node_id: 'node-card',
             kind: 'component',
             tag: 'Card',
             source_range: { start: 10, end: 90 },
+            template_actions: { can_duplicate: true, can_delete: true },
             bindings: [{
               binding_id: 'binding-title',
               node_id: 'node-card',

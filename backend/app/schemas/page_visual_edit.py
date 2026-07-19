@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from html.parser import HTMLParser
 from typing import Annotated, Literal, Self
 
 from pydantic import (
@@ -29,9 +30,87 @@ from app.schemas.page_visual_edit_manifest import (
     VisualEditSourceHash,
     build_page_visual_edit_source_hash,
 )
+from app.schemas.page_visual_edit_json import validate_page_visual_edit_json
 
 
 PAGE_VISUAL_EDIT_MAX_OPERATIONS = 100
+PAGE_VISUAL_EDIT_MAX_RICH_TEXT_LENGTH = 20_000
+
+
+class _PageVisualEditRichTextParser(HTMLParser):
+    """校验富文本片段基础语法；标签外壳是否可写由 Runtime 结合基准源码复核。"""
+
+    void_tags = {
+        "area",
+        "base",
+        "br",
+        "col",
+        "embed",
+        "hr",
+        "img",
+        "input",
+        "link",
+        "meta",
+        "param",
+        "source",
+        "track",
+        "wbr",
+    }
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=False)
+        self.stack: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        """接受需要由 Runtime 原样锁定的标签与属性，并跟踪非 void 标签闭合。"""
+
+        if tag not in self.void_tags:
+            self.stack.append(tag)
+
+    def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        """允许组件和 HTML void 元素使用自闭合写法。"""
+
+    def handle_endtag(self, tag: str) -> None:
+        """要求普通或组件标签严格按顺序闭合。"""
+
+        if not self.stack or self.stack.pop() != tag:
+            raise ValueError("富文本标签嵌套不合法。")
+
+    def handle_comment(self, data: str) -> None:
+        """禁止通过富文本写入 HTML 注释。"""
+
+        raise ValueError("富文本不允许 HTML 注释。")
+
+    def handle_decl(self, decl: str) -> None:
+        """禁止富文本声明节点。"""
+
+        raise ValueError("富文本不允许 HTML 声明。")
+
+    def unknown_decl(self, data: str) -> None:
+        """禁止未知声明节点。"""
+
+        raise ValueError("富文本不允许未知声明。")
+
+    def handle_pi(self, data: str) -> None:
+        """禁止处理指令等非文本节点。"""
+
+        raise ValueError("富文本不允许处理指令。")
+
+
+def validate_page_visual_edit_rich_text(value: str) -> str:
+    """验证富文本长度、Vue 语法与受限 HTML 结构并返回原值。"""
+
+    if len(value) > PAGE_VISUAL_EDIT_MAX_RICH_TEXT_LENGTH:
+        raise ValueError("富文本内容超过 20000 字符限制。")
+    if "{{" in value or "}}" in value or "\x00" in value:
+        raise ValueError("富文本不允许 Vue 插值或空字符。")
+    parser = _PageVisualEditRichTextParser()
+    parser.feed(value)
+    parser.close()
+    if parser.stack:
+        raise ValueError("富文本标签未闭合。")
+    return value
+
 
 PageVisualEditComponentLocalName = Annotated[
     str,
@@ -156,21 +235,55 @@ class PageVisualEditInstancePathSegment(PageVisualEditStrictModel):
         return self
 
 
-class PageVisualEditOperationBase(PageVisualEditStrictModel):
-    """定义所有页面可视化编辑操作共享的 Manifest 目标。"""
+class PageVisualEditNodeOperationBase(PageVisualEditStrictModel):
+    """定义所有页面可视化编辑操作共享的节点目标。"""
 
     node_id: VisualEditIdentifier
-    binding_id: VisualEditIdentifier
     instance_path: list[PageVisualEditInstancePathSegment] = Field(
         default_factory=list, max_length=8
     )
 
 
-class PageVisualEditSetValueOperation(PageVisualEditOperationBase):
+class PageVisualEditBindingOperationBase(PageVisualEditNodeOperationBase):
+    """定义绑定值操作共享的 binding 目标。"""
+
+    binding_id: VisualEditIdentifier
+
+
+class PageVisualEditSetValueOperation(PageVisualEditBindingOperationBase):
     """设置静态文本、简单组件参数或静态数组成员的字面量。"""
 
     type: Literal["set_value"]
     value: PageVisualEditLiteral
+
+
+class PageVisualEditSetJsonOperation(PageVisualEditStrictModel):
+    """原子替换 Manifest 中一个去重的静态 JSON 源。"""
+
+    type: Literal["set_json"]
+    source_id: VisualEditIdentifier
+    value: JsonValue
+
+    @field_validator("value")
+    @classmethod
+    def validate_json_value(cls, value: JsonValue) -> JsonValue:
+        """限制整块 JSON 的字节、深度、节点数和有限数值。"""
+
+        return validate_page_visual_edit_json(value)
+
+
+class PageVisualEditSetRichTextOperation(PageVisualEditBindingOperationBase):
+    """设置文本容器内部的受限语义化 HTML。"""
+
+    type: Literal["set_rich_text"]
+    html: str
+
+    @field_validator("html")
+    @classmethod
+    def validate_html(cls, value: str) -> str:
+        """在进入 Runtime 前执行 Backend 富文本边界校验。"""
+
+        return validate_page_visual_edit_rich_text(value)
 
 
 class PageVisualEditTailwindTokenChange(PageVisualEditStrictModel):
@@ -202,7 +315,7 @@ class PageVisualEditTailwindTokenChange(PageVisualEditStrictModel):
         return value
 
 
-class PageVisualEditSetTailwindTokensOperation(PageVisualEditOperationBase):
+class PageVisualEditSetTailwindTokensOperation(PageVisualEditBindingOperationBase):
     """通过受控样式组批量更新一个 class 绑定。"""
 
     type: Literal["set_tailwind_tokens"]
@@ -220,8 +333,25 @@ class PageVisualEditSetTailwindTokensOperation(PageVisualEditOperationBase):
         return self
 
 
+class PageVisualEditDuplicateNodeOperation(PageVisualEditNodeOperationBase):
+    """复制普通模板节点或携带实例路径的循环数组项。"""
+
+    type: Literal["duplicate_node"]
+
+
+class PageVisualEditDeleteNodeOperation(PageVisualEditNodeOperationBase):
+    """删除模板节点、循环模板或携带实例路径的循环数组项。"""
+
+    type: Literal["delete_node"]
+
+
 PageVisualEditOperation = Annotated[
-    PageVisualEditSetValueOperation | PageVisualEditSetTailwindTokensOperation,
+    PageVisualEditSetValueOperation
+    | PageVisualEditSetJsonOperation
+    | PageVisualEditSetRichTextOperation
+    | PageVisualEditSetTailwindTokensOperation
+    | PageVisualEditDuplicateNodeOperation
+    | PageVisualEditDeleteNodeOperation,
     Field(discriminator="type"),
 ]
 
@@ -231,9 +361,16 @@ def build_page_visual_edit_operation_target_key(
 ) -> tuple[object, ...]:
     """生成操作目标稳定比较键，用于拒绝同一批次的重复写入。"""
 
+    if isinstance(operation, PageVisualEditSetJsonOperation):
+        return "json", operation.source_id
     instance_key = tuple(
         (item.loop_node_id, item.key, item.index) for item in operation.instance_path
     )
+    if isinstance(
+        operation,
+        (PageVisualEditDuplicateNodeOperation, PageVisualEditDeleteNodeOperation),
+    ):
+        return operation.type, operation.node_id, instance_key
     return operation.node_id, operation.binding_id, instance_key
 
 
@@ -425,6 +562,7 @@ class PageVisualEditApplyResponse(PageVisualEditStrictModel):
 
 __all__ = [
     "PAGE_VISUAL_EDIT_MAX_OPERATIONS",
+    "PAGE_VISUAL_EDIT_MAX_RICH_TEXT_LENGTH",
     "PAGE_VISUAL_EDIT_PROTOCOL_VERSION",
     "PageVisualEditApplyDiagnostic",
     "PageVisualEditApplyRequest",
@@ -439,8 +577,10 @@ __all__ = [
     "PageVisualEditPreviewArtifactResponse",
     "PageVisualEditPreviewContext",
     "PageVisualEditSetTailwindTokensOperation",
+    "PageVisualEditSetRichTextOperation",
     "PageVisualEditSetValueOperation",
     "PageVisualEditTailwindTokenChange",
     "build_page_visual_edit_source_hash",
     "validate_page_visual_edit_operation_targets",
+    "validate_page_visual_edit_rich_text",
 ]

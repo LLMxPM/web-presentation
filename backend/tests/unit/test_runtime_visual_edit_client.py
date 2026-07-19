@@ -57,6 +57,7 @@ def _build_manifest() -> PageVisualEditManifest:
         kind="element",
         tag="main",
         source_range=PageVisualEditSourceRange(start=10, end=31),
+        template_actions={"can_duplicate": True, "can_delete": True},
         bindings=[
             PageVisualEditBinding(
                 binding_id="binding_title",
@@ -78,8 +79,14 @@ def _build_manifest() -> PageVisualEditManifest:
             kind="root",
             tag="#document",
             source_range=PageVisualEditSourceRange(start=0, end=len(SOURCE)),
+            template_actions={
+                "can_duplicate": False,
+                "can_delete": False,
+                "readonly_reason": "STRUCTURE_ROOT_UNSUPPORTED",
+            },
             children=[child],
         ),
+        json_sources=[],
         tailwind_catalog={"version": 1, "groups": []},
     )
 

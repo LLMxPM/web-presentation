@@ -84,8 +84,14 @@ def _patch_analyze(monkeypatch: pytest.MonkeyPatch) -> None:
                     source_range=PageVisualEditSourceRange(
                         start=0, end=len(request.source)
                     ),
+                    template_actions={
+                        "can_duplicate": False,
+                        "can_delete": False,
+                        "readonly_reason": "STRUCTURE_ROOT_UNSUPPORTED",
+                    },
                 ),
                 diagnostics=[],
+                json_sources=[],
                 tailwind_catalog={"version": 1, "groups": []},
             ),
             instrumented_source=f"{request.source}\n<!-- instrumented-only -->",
@@ -205,6 +211,41 @@ async def test_apply_should_save_one_version_for_complete_batch(
     assert page_response.json()["current_version_no"] == 2
     versions = await authenticated_client.get(f"/api/pages/{page['id']}/versions")
     assert [item["version_no"] for item in versions.json()] == [2, 1]
+
+
+@pytest.mark.asyncio
+async def test_apply_should_accept_structured_set_json_operation(
+    authenticated_client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """公开 apply API 应严格解析 set_json，并把结构化值原样交给 Runtime。"""
+
+    page = await _create_page(authenticated_client)
+    artifact = await _create_artifact(authenticated_client, page, monkeypatch)
+
+    def inspect_request(request: RuntimePageVisualEditApplyRequest) -> None:
+        """确认 Backend 内部协议保留 source_id 和递归 JSON。"""
+
+        operation = request.operations[0]
+        assert operation.type == "set_json"
+        assert operation.source_id == "source_benefits"
+        assert operation.value == ["甲", {"label": "乙"}]
+
+    _patch_apply(monkeypatch, inspect_request=inspect_request)
+    payload = _build_apply_payload(artifact)
+    payload["operations"] = [
+        {
+            "type": "set_json",
+            "source_id": "source_benefits",
+            "value": ["甲", {"label": "乙"}],
+        }
+    ]
+    response = await authenticated_client.post(
+        f"/api/pages/{page['id']}/visual-edit/apply", json=payload
+    )
+
+    assert response.status_code == 200
+    assert response.json()["operations_applied"] == 1
 
 
 @pytest.mark.asyncio

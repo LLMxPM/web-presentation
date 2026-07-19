@@ -127,6 +127,34 @@ describe('usePageVisualEditSession', () => {
       operations: [expect.objectContaining({ type: 'set_value', value: '新标题' })],
     }))
   })
+
+  it('图层选择应向受信 iframe 下发 v1 节点定位消息', async () => {
+    createMock.mockResolvedValue(createArtifact('artifact-1', 3))
+    let session: ReturnType<typeof usePageVisualEditSession> | undefined
+    render(defineComponent({
+      setup() {
+        session = usePageVisualEditSession()
+        return () => h('iframe', { ref: session.previewFrameRef, title: 'visual-frame' })
+      },
+    }))
+    await session!.analyze(9, 3)
+    await nextTick()
+    const frameWindow = session!.previewFrameRef.value!.contentWindow!
+    const postMessage = vi.spyOn(frameWindow, 'postMessage').mockImplementation(() => undefined)
+
+    session!.selectNode('node-card')
+    session!.syncPreviewSelection()
+
+    expect(postMessage).toHaveBeenCalledWith({
+      type: 'page-visual-edit:select-node',
+      payload: {
+        protocolVersion: 1,
+        artifactId: 'artifact-1',
+        nodeId: 'node-card',
+        instancePath: [],
+      },
+    }, 'http://runtime.local')
+  })
 })
 
 /** 创建包含静态文本与循环节点的严格 Manifest fixture。 */

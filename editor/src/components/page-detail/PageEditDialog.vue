@@ -123,7 +123,7 @@
               variant="primary"
               size="sm"
               :loading="visualState.saving"
-              :disabled="props.busy || !visualState.hasPendingChanges || visualState.stale"
+              :disabled="props.busy || !visualState.hasPendingChanges || visualState.stale || visualState.hasValidationErrors"
               @click="visualEditPanelRef?.saveChanges()"
             >
               <Save class="h-3.5 w-3.5" />
@@ -240,6 +240,7 @@ const visualState = ref<PageVisualEditPanelState>({
   hasPendingChanges: false,
   stale: false,
   saving: false,
+  hasValidationErrors: false,
 })
 
 /** 将 BaseDialog 的任意关闭入口转为父层可拦截的安全关闭请求。 */

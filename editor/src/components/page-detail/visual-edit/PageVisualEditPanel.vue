@@ -36,7 +36,7 @@
           variant="primary"
           size="sm"
           :loading="session.saving.value"
-          :disabled="busy || !session.hasPendingChanges.value || session.stale.value"
+          :disabled="busy || !session.hasPendingChanges.value || session.stale.value || hasJsonValidationErrors"
           @click="saveChanges"
         >
           <Save class="h-3.5 w-3.5" />
@@ -86,6 +86,7 @@
             :src="session.artifact.value.preview_url"
             :title="`${props.pageTitle} 可视化编辑画布`"
             class="h-full w-full border-0 bg-white"
+            @load="session.syncPreviewSelection"
           />
         </div>
         <div v-else class="flex h-full items-center justify-center rounded-lg border border-dashed border-slate-300 bg-white text-sm text-slate-400">
@@ -98,16 +99,24 @@
       </main>
 
       <PageVisualEditPropertyInspector
+        :key="inspectorRevision"
         :node="session.selectedNode.value"
         :selected-binding-id="session.selectedBindingId.value"
         :selected-instance-path="session.selectedInstancePath.value"
         :loop-node-id="selectedLoopNodeId"
         :catalog="session.manifest.value?.tailwind_catalog ?? null"
         :component-schemas="session.artifact.value?.visual_edit.component_schemas ?? {}"
+        :json-sources="session.manifest.value?.json_sources ?? []"
         :pending-operations="session.pendingOperations.value"
         @select-binding="handleBindingSelect"
-        @set-value="session.setValue($event.target, $event.value, $event.baselineValue)"
-        @set-tailwind="session.setTailwindTokens($event.target, $event.changes, $event.baselineChanges)"
+        @set-value="handleSetValue"
+        @set-json="handleSetJson"
+        @json-validation="handleJsonValidation"
+        @set-rich-text="handleSetRichText"
+        @set-tailwind="handleSetTailwind"
+        @set-structure="handleStructureOperation"
+        @remove-structure="session.removeStructuralOperation($event)"
+        @select-instance="handleInstanceSelect"
       />
     </div>
   </section>
@@ -124,7 +133,13 @@ import { usePageVisualEditSession } from '@/composables/usePageVisualEditSession
 import type {
   PageVisualEditApplyResponse,
   PageVisualEditNode,
+  PageVisualEditNodeTarget,
+  PageVisualEditJsonValue,
+  PageVisualEditOperation,
   PageVisualEditPanelState,
+  PageVisualEditTailwindTokenChange,
+  PageVisualEditTarget,
+  PageVisualEditValue,
 } from '@/types/page-visual-edit'
 import { createConfirm, Message } from '@/utils/message'
 
@@ -146,6 +161,9 @@ const emit = defineEmits<{
 
 const session = usePageVisualEditSession()
 const previewFrame = ref<HTMLIFrameElement | null>(null)
+const invalidJsonSourceIds = ref<Set<string>>(new Set())
+const inspectorRevision = ref(0)
+const hasJsonValidationErrors = computed(() => invalidJsonSourceIds.value.size > 0)
 const busy = computed(() => session.loading.value || session.saving.value)
 const diagnostics = computed(() => {
   const items = [
@@ -167,18 +185,65 @@ const selectedLoopNodeId = computed(() => {
 })
 
 watch(previewFrame, frame => { session.previewFrameRef.value = frame })
+watch(() => session.artifact.value?.artifact_id, (next, previous) => {
+  if (next === previous) return
+  invalidJsonSourceIds.value = new Set()
+  inspectorRevision.value += 1
+})
 watch(session.hasPendingChanges, dirty => emit('dirty-change', dirty), { immediate: true })
 watch(busy, pending => emit('busy-change', pending), { immediate: true })
 watch(
-  [session.pendingCount, session.hasPendingChanges, session.stale, session.saving],
-  ([pendingCount, hasPendingChanges, stale, saving]) => emit('state-change', {
+  [session.pendingCount, session.hasPendingChanges, session.stale, session.saving, hasJsonValidationErrors],
+  ([pendingCount, hasPendingChanges, stale, saving, hasValidationErrors]) => emit('state-change', {
     pendingCount,
     hasPendingChanges,
     stale,
     saving,
+    hasValidationErrors,
   }),
   { immediate: true },
 )
+
+/** 记录所有 Monaco JSON 草稿的有效性，任一非法时禁用整批保存。 */
+function handleJsonValidation(payload: { sourceId: string; invalid: boolean }): void {
+  const next = new Set(invalidJsonSourceIds.value)
+  if (payload.invalid) next.add(payload.sourceId)
+  else next.delete(payload.sourceId)
+  invalidJsonSourceIds.value = next
+}
+
+/** 暂存整块 JSON；若已有落在其源码范围内的字段或结构草稿则明确拒绝。 */
+function handleSetJson(payload: { sourceId: string; value: PageVisualEditJsonValue; baselineValue: PageVisualEditJsonValue }): void {
+  const source = session.manifest.value?.json_sources.find(item => item.source_id === payload.sourceId)
+  if (!source) return
+  const conflict = session.pendingOperations.value.find(operation => (
+    operation.type !== 'set_json' && operationConflictsJsonSource(operation, source)
+  ))
+  if (conflict) {
+    Message.warning('该数据范围内已有字段或结构草稿，请先撤销后再编辑整块 JSON。')
+    return
+  }
+  session.setJson(payload.sourceId, payload.value, payload.baselineValue)
+}
+
+function handleSetValue(payload: { target: PageVisualEditTarget; value: PageVisualEditValue; baselineValue: PageVisualEditValue | undefined }): void {
+  if (bindingTargetConflictsJson(payload.target)) return
+  session.setValue(payload.target, payload.value, payload.baselineValue)
+}
+
+function handleSetRichText(payload: { target: PageVisualEditTarget; html: string; baselineHtml: string }): void {
+  if (bindingTargetConflictsJson(payload.target)) return
+  session.setRichText(payload.target, payload.html, payload.baselineHtml)
+}
+
+function handleSetTailwind(payload: {
+  target: PageVisualEditTarget
+  changes: PageVisualEditTailwindTokenChange[]
+  baselineChanges: PageVisualEditTailwindTokenChange[]
+}): void {
+  if (bindingTargetConflictsJson(payload.target)) return
+  session.setTailwindTokens(payload.target, payload.changes, payload.baselineChanges)
+}
 
 watch(
   () => [props.pageId, props.baseVersionNo] as const,
@@ -204,6 +269,7 @@ onMounted(() => {
 /** 从图层树选择节点，模板级选择默认不携带运行实例。 */
 function handleLayerSelect(node: PageVisualEditNode): void {
   session.selectNode(node.node_id)
+  session.syncPreviewSelection()
 }
 
 /** 在当前节点内切换属性，同时保留来自 Runtime 的循环实例上下文。 */
@@ -213,9 +279,134 @@ function handleBindingSelect(bindingId: string): void {
   session.selectNode(nodeId, bindingId, session.selectedInstancePath.value)
 }
 
+/** 切换循环实例并同步 Runtime 画布高亮。 */
+function handleInstanceSelect(instancePath: PageVisualEditNodeTarget['instancePath']): void {
+  const nodeId = session.selectedNodeId.value
+  if (!nodeId || JSON.stringify(instancePath) === JSON.stringify(session.selectedInstancePath.value)) return
+  session.selectNode(nodeId, session.selectedBindingId.value, instancePath)
+  session.syncPreviewSelection()
+}
+
+/** 暂存复制或删除；删除前清理目标范围内会与源码替换重叠的草稿。 */
+async function handleStructureOperation(payload: {
+  type: 'duplicate_node' | 'delete_node'
+  target: PageVisualEditNodeTarget
+  label: string
+}): Promise<void> {
+  const targetNode = session.manifest.value ? findNodeById(session.manifest.value.root, payload.target.nodeId) : null
+  if (targetNode && (
+    pendingJsonRangeOverlaps(targetNode.source_range)
+    || pendingJsonCollectionMatches(targetNode.loop_item_actions?.collection_name)
+  )) {
+    Message.warning('该结构位于待保存的整块 JSON 数据范围内，请先撤销 JSON 草稿。')
+    return
+  }
+  if (payload.type === 'delete_node') {
+    const conflicts = session.pendingOperations.value.filter(operation => isDeleteConflict(operation, payload.target))
+    const suffix = conflicts.length ? `，并放弃其中 ${conflicts.length} 项待保存修改` : ''
+    const confirmed = await createConfirm(`${payload.label}${suffix}，是否继续？`, payload.label)
+    if (!confirmed) return
+    session.removeOperationsWhere(operation => isDeleteConflict(operation, payload.target))
+  }
+  session.setStructuralOperation(payload.type, payload.target)
+  Message.info(`${payload.label}已加入待保存草稿。`)
+}
+
+/** 阻止字段级操作与同一源码范围内的整块 JSON 操作并存。 */
+function bindingTargetConflictsJson(target: PageVisualEditTarget): boolean {
+  const node = session.manifest.value ? findNodeById(session.manifest.value.root, target.nodeId) : null
+  const binding = node?.bindings.find(item => item.binding_id === target.bindingId)
+  if (!binding || !pendingJsonRangeOverlaps(binding.source_range)) return false
+  Message.warning('该字段位于待保存的整块 JSON 数据范围内，请先撤销 JSON 草稿。')
+  return true
+}
+
+function pendingJsonRangeOverlaps(range: { start: number; end: number }): boolean {
+  return session.pendingOperations.value.some((operation) => {
+    if (operation.type !== 'set_json') return false
+    const source = session.manifest.value?.json_sources.find(item => item.source_id === operation.sourceId)
+    return Boolean(source && rangesOverlap(source.source_range, range))
+  })
+}
+
+function operationOverlapsRange(operation: PageVisualEditOperation, range: { start: number; end: number }): boolean {
+  if (operation.type === 'set_json') return false
+  const node = session.manifest.value ? findNodeById(session.manifest.value.root, operation.nodeId) : null
+  if (!node) return false
+  const targetRange = operation.type === 'duplicate_node' || operation.type === 'delete_node'
+    ? node.source_range
+    : node.bindings.find(item => item.binding_id === operation.bindingId)?.source_range
+  return Boolean(targetRange && rangesOverlap(targetRange, range))
+}
+
+function operationConflictsJsonSource(
+  operation: PageVisualEditOperation,
+  source: { name?: string | null; source_range: { start: number; end: number } },
+): boolean {
+  if (operation.type === 'set_json') return false
+  const node = session.manifest.value ? findNodeById(session.manifest.value.root, operation.nodeId) : null
+  return operationOverlapsRange(operation, source.source_range)
+    || Boolean(source.name && node?.loop_item_actions?.collection_name === source.name)
+}
+
+function pendingJsonCollectionMatches(collectionName: string | null | undefined): boolean {
+  if (!collectionName) return false
+  return session.pendingOperations.value.some((operation) => {
+    if (operation.type !== 'set_json') return false
+    return session.manifest.value?.json_sources.find(item => item.source_id === operation.sourceId)?.name === collectionName
+  })
+}
+
+function rangesOverlap(left: { start: number; end: number }, right: { start: number; end: number }): boolean {
+  return left.start < right.end && right.start < left.end
+}
+
+function findNodeById(root: PageVisualEditNode, nodeId: string): PageVisualEditNode | null {
+  if (root.node_id === nodeId) return root
+  for (const child of root.children) {
+    const found = findNodeById(child, nodeId)
+    if (found) return found
+  }
+  return null
+}
+
+/** 判断已有草稿是否落在待删除模板子树或循环数据项内。 */
+function isDeleteConflict(operation: PageVisualEditOperation, target: PageVisualEditNodeTarget): boolean {
+  if (operation.type === 'set_json') return false
+  if (operation.type === 'delete_node' || operation.type === 'duplicate_node') {
+    if (target.instancePath.length > 0) {
+      return operation.nodeId !== target.nodeId && sameLoopInstance(operation.instancePath, target.instancePath)
+    }
+    const node = session.selectedNode.value
+    return Boolean(node && operation.nodeId !== target.nodeId && collectNodeIds(node).has(operation.nodeId))
+  }
+  if (target.instancePath.length > 0) {
+    return sameLoopInstance(operation.instancePath, target.instancePath)
+  }
+  const node = session.selectedNode.value
+  if (!node) return false
+  return collectNodeIds(node).has(operation.nodeId)
+}
+
+/** 比较循环实例，稳定 key 优先。 */
+function sameLoopInstance(
+  left: PageVisualEditNodeTarget['instancePath'],
+  right: PageVisualEditNodeTarget['instancePath'],
+): boolean {
+  if (left.length !== 1 || right.length !== 1) return false
+  return left[0].loopNodeId === right[0].loopNodeId && left[0].key === right[0].key
+}
+
+/** 收集节点子树 ID。 */
+function collectNodeIds(node: PageVisualEditNode): Set<string> {
+  return new Set([node.node_id, ...node.children.flatMap(child => [...collectNodeIds(child)])])
+}
+
 /** 放弃全部本地操作；此动作不会重新生成 artifact。 */
 function discardChanges(): void {
   session.discardChanges()
+  invalidJsonSourceIds.value = new Set()
+  inspectorRevision.value += 1
   Message.info('已放弃可视化编辑草稿。')
 }
 
@@ -231,6 +422,10 @@ async function reanalyze(): Promise<void> {
 
 /** 批量提交草稿；apply 失败保留草稿，成功后通知页面详情刷新规范版本。 */
 async function saveChanges(): Promise<void> {
+  if (hasJsonValidationErrors.value) {
+    Message.warning('请先修正 JSON 格式错误再保存。')
+    return
+  }
   const result = await session.save(props.pageId)
   if (!result) return
   emit('saved', result)

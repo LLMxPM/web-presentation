@@ -7,7 +7,11 @@ import { computed, shallowRef } from 'vue'
 import type {
   PageVisualEditDraftChange,
   PageVisualEditInstancePathSegment,
+  PageVisualEditJsonValue,
+  PageVisualEditNodeTarget,
   PageVisualEditOperation,
+  PageVisualEditSetRichTextOperation,
+  PageVisualEditSetJsonOperation,
   PageVisualEditSetTailwindTokensOperation,
   PageVisualEditSetValueOperation,
   PageVisualEditTailwindTokenChange,
@@ -54,6 +58,21 @@ export function usePageVisualEditDraft() {
     stageChanges([{ type: 'set_value', target, value, baselineValue }])
   }
 
+  /** 暂存一个整块 JSON source；恢复基准结构时自动移除操作。 */
+  function setJson(sourceId: string, value: PageVisualEditJsonValue, baselineValue: PageVisualEditJsonValue): void {
+    stageChanges([{ type: 'set_json', sourceId, value, baselineValue }])
+  }
+
+  /**
+   * 写入一个规范化受限富文本片段。
+   * @param target 富文本绑定目标
+   * @param html 新的规范化 HTML
+   * @param baselineHtml 当前 artifact 的规范化基准 HTML
+   */
+  function setRichText(target: PageVisualEditTarget, html: string, baselineHtml: string): void {
+    stageChanges([{ type: 'set_rich_text', target, html, baselineHtml }])
+  }
+
   /**
    * 按 Tailwind 冲突组增量写入 class 变更。
    * @param target 可编辑 class 绑定目标
@@ -88,6 +107,52 @@ export function usePageVisualEditDraft() {
     return true
   }
 
+  /** 移除指定整块 JSON source 的待提交操作。 */
+  function removeJsonOperation(sourceId: string): boolean {
+    const key = buildJsonTargetKey(sourceId)
+    if (!operationMap.value.has(key)) return false
+    const nextMap = new Map(operationMap.value)
+    nextMap.delete(key)
+    operationMap.value = nextMap
+    return true
+  }
+
+  /** 暂存节点复制或删除；同一节点实例的新结构操作覆盖旧操作。 */
+  function setStructuralOperation(
+    type: 'duplicate_node' | 'delete_node',
+    target: PageVisualEditNodeTarget,
+  ): void {
+    const nextMap = new Map(operationMap.value)
+    nextMap.set(buildStructuralTargetKey(target), {
+      type,
+      ...cloneNodeTarget(target),
+    })
+    operationMap.value = nextMap
+  }
+
+  /** 移除指定节点实例的待保存结构操作。 */
+  function removeStructuralOperation(target: PageVisualEditNodeTarget): boolean {
+    const key = buildStructuralTargetKey(target)
+    if (!operationMap.value.has(key)) return false
+    const nextMap = new Map(operationMap.value)
+    nextMap.delete(key)
+    operationMap.value = nextMap
+    return true
+  }
+
+  /** 按调用方给出的作用域规则批量移除冲突草稿。 */
+  function removeOperationsWhere(predicate: (operation: PageVisualEditOperation) => boolean): number {
+    const nextMap = new Map(operationMap.value)
+    let removed = 0
+    for (const [key, operation] of nextMap) {
+      if (!predicate(operation)) continue
+      nextMap.delete(key)
+      removed += 1
+    }
+    if (removed > 0) operationMap.value = nextMap
+    return removed
+  }
+
   /** 清空全部待提交操作。 */
   function clearOperations(): void {
     if (operationMap.value.size === 0) return
@@ -104,16 +169,29 @@ export function usePageVisualEditDraft() {
     return operation ? cloneOperation(operation) : null
   }
 
+  /** 读取指定 JSON source 的当前草稿。 */
+  function getJsonOperation(sourceId: string): PageVisualEditSetJsonOperation | null {
+    const operation = operationMap.value.get(buildJsonTargetKey(sourceId))
+    return operation?.type === 'set_json' ? cloneOperation(operation) as PageVisualEditSetJsonOperation : null
+  }
+
   return {
     pendingOperations,
     pendingCount,
     hasPendingChanges,
     stageChanges,
     setValue,
+    setJson,
+    setRichText,
     setTailwindTokens,
     removeOperation,
+    removeJsonOperation,
+    setStructuralOperation,
+    removeStructuralOperation,
+    removeOperationsWhere,
     clearOperations,
     getOperation,
+    getJsonOperation,
   }
 }
 
@@ -126,6 +204,15 @@ function applyDraftChange(
   operationMap: Map<string, PageVisualEditOperation>,
   change: PageVisualEditDraftChange,
 ): void {
+  if (change.type === 'set_json') {
+    const targetKey = buildJsonTargetKey(change.sourceId)
+    if (jsonValuesEqual(change.value, change.baselineValue)) {
+      operationMap.delete(targetKey)
+      return
+    }
+    operationMap.set(targetKey, createSetJsonOperation(change.sourceId, change.value))
+    return
+  }
   const targetKey = buildTargetKey(change.target)
 
   if (change.type === 'set_value') {
@@ -134,6 +221,16 @@ function applyDraftChange(
       return
     }
     operationMap.set(targetKey, createSetValueOperation(change.target, change.value))
+    return
+  }
+
+
+  if (change.type === 'set_rich_text') {
+    if (change.html === change.baselineHtml) {
+      operationMap.delete(targetKey)
+      return
+    }
+    operationMap.set(targetKey, createSetRichTextOperation(change.target, change.html))
     return
   }
 
@@ -166,6 +263,11 @@ function applyDraftChange(
   )
 }
 
+/** 创建整块 JSON 写入操作并深拷贝值，隔离 Monaco 草稿对象引用。 */
+function createSetJsonOperation(sourceId: string, value: PageVisualEditJsonValue): PageVisualEditSetJsonOperation {
+  return { type: 'set_json', sourceId, value: cloneJsonValue(value) }
+}
+
 /**
  * 创建值写入操作，并复制目标以隔离调用方后续修改。
  * @param target 可编辑绑定目标
@@ -180,6 +282,18 @@ function createSetValueOperation(
     type: 'set_value',
     ...cloneTarget(target),
     value,
+  }
+}
+
+/** 创建富文本写入操作，并复制目标以隔离调用方修改。 */
+function createSetRichTextOperation(
+  target: PageVisualEditTarget,
+  html: string,
+): PageVisualEditSetRichTextOperation {
+  return {
+    type: 'set_rich_text',
+    ...cloneTarget(target),
+    html,
   }
 }
 
@@ -244,6 +358,12 @@ function normalizeTailwindChanges(
  * @returns 独立操作副本
  */
 function cloneOperation(operation: PageVisualEditOperation): PageVisualEditOperation {
+  if (operation.type === 'set_json') {
+    return { type: operation.type, sourceId: operation.sourceId, value: cloneJsonValue(operation.value) }
+  }
+  if (operation.type === 'duplicate_node' || operation.type === 'delete_node') {
+    return { type: operation.type, ...cloneNodeTarget(operation) }
+  }
   if (operation.type === 'set_value') {
     return {
       type: operation.type,
@@ -251,10 +371,45 @@ function cloneOperation(operation: PageVisualEditOperation): PageVisualEditOpera
       value: operation.value,
     }
   }
+  if (operation.type === 'set_rich_text') {
+    return {
+      type: operation.type,
+      ...cloneTarget(operation),
+      html: operation.html,
+    }
+  }
   return {
     type: operation.type,
     ...cloneTarget(operation),
     changes: operation.changes.map(change => ({ ...change })),
+  }
+}
+
+/** 为整块 JSON source 生成与节点 binding 无关的草稿键。 */
+function buildJsonTargetKey(sourceId: string): string {
+  return JSON.stringify(['json', sourceId])
+}
+
+/** 通过规范 JSON 序列化比较结构值。 */
+function jsonValuesEqual(left: PageVisualEditJsonValue, right: PageVisualEditJsonValue): boolean {
+  return JSON.stringify(left) === JSON.stringify(right)
+}
+
+/** 深拷贝结构化 JSON，避免调用方改写草稿。 */
+function cloneJsonValue(value: PageVisualEditJsonValue): PageVisualEditJsonValue {
+  return JSON.parse(JSON.stringify(value)) as PageVisualEditJsonValue
+}
+
+/** 为结构操作生成忽略动作类型的稳定目标键。 */
+function buildStructuralTargetKey(target: PageVisualEditNodeTarget): string {
+  return JSON.stringify(['structure', target.nodeId, target.instancePath.map(cloneInstancePathSegment)])
+}
+
+/** 复制节点结构目标。 */
+function cloneNodeTarget(target: PageVisualEditNodeTarget): PageVisualEditNodeTarget {
+  return {
+    nodeId: target.nodeId,
+    instancePath: target.instancePath.map(cloneInstancePathSegment),
   }
 }
 

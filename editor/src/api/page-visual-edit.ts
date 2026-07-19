@@ -9,6 +9,8 @@ import {
   type CreatePageVisualEditPreviewArtifactPayload,
   type PageVisualEditApplyResponse,
   type PageVisualEditOperation,
+  type PageVisualEditJsonValue,
+  type PageVisualEditInstancePathSegment,
   type PageVisualEditPreviewArtifactResponse,
   type PageVisualEditTailwindTokenChange,
 } from '@/types/page-visual-edit'
@@ -21,11 +23,23 @@ interface PageVisualEditWireInstancePathSegment {
 
 type PageVisualEditWireOperation =
   | {
+    type: 'set_json'
+    source_id: string
+    value: PageVisualEditJsonValue
+  }
+  | {
     type: 'set_value'
     node_id: string
     binding_id: string
     instance_path: PageVisualEditWireInstancePathSegment[]
     value: string | number | boolean | null
+  }
+  | {
+    type: 'set_rich_text'
+    node_id: string
+    binding_id: string
+    instance_path: PageVisualEditWireInstancePathSegment[]
+    html: string
   }
   | {
     type: 'set_tailwind_tokens'
@@ -36,6 +50,11 @@ type PageVisualEditWireOperation =
       group: string
       class_name: string | null
     }>
+  }
+  | {
+    type: 'duplicate_node' | 'delete_node'
+    node_id: string
+    instance_path: PageVisualEditWireInstancePathSegment[]
   }
 
 /**
@@ -85,6 +104,20 @@ export async function applyPageVisualEditOperations(
  * @returns Backend 可直接校验的 wire operation
  */
 function serializePageVisualEditOperation(operation: PageVisualEditOperation): PageVisualEditWireOperation {
+  if (operation.type === 'set_json') {
+    return {
+      type: operation.type,
+      source_id: operation.sourceId,
+      value: operation.value,
+    }
+  }
+  if (operation.type === 'duplicate_node' || operation.type === 'delete_node') {
+    return {
+      type: operation.type,
+      node_id: operation.nodeId,
+      instance_path: operation.instancePath.map(serializeInstancePathSegment),
+    }
+  }
   const target = {
     node_id: operation.nodeId,
     binding_id: operation.bindingId,
@@ -96,6 +129,14 @@ function serializePageVisualEditOperation(operation: PageVisualEditOperation): P
       type: operation.type,
       ...target,
       value: operation.value,
+    }
+  }
+
+  if (operation.type === 'set_rich_text') {
+    return {
+      type: operation.type,
+      ...target,
+      html: operation.html,
     }
   }
 
@@ -127,7 +168,7 @@ function serializeTailwindTokenChange(change: PageVisualEditTailwindTokenChange)
  * @returns Backend 请求中的实例路径段
  */
 function serializeInstancePathSegment(
-  segment: PageVisualEditOperation['instancePath'][number],
+  segment: PageVisualEditInstancePathSegment,
 ): PageVisualEditWireInstancePathSegment {
   return {
     loop_node_id: segment.loopNodeId,

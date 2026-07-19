@@ -42,6 +42,11 @@ def _build_manifest() -> PageVisualEditManifest:
             kind="root",
             tag="#document",
             source_range=PageVisualEditSourceRange(start=0, end=len(SOURCE)),
+            template_actions={
+                "can_duplicate": False,
+                "can_delete": False,
+                "readonly_reason": "STRUCTURE_ROOT_UNSUPPORTED",
+            },
         ),
         diagnostics=[
             PageVisualEditDiagnostic(
@@ -55,6 +60,7 @@ def _build_manifest() -> PageVisualEditManifest:
                 message="示例错误。",
             ),
         ],
+        json_sources=[],
         tailwind_catalog={"version": 1, "groups": []},
     )
 
