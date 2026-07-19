@@ -37,6 +37,20 @@ _DYNAMIC_IMPORT_PATTERN = re.compile(r"\bimport\s*\(", flags=re.MULTILINE)
 _REMOTE_COMPONENT_IMPORT_PATTERN = re.compile(
     r"^@workspace-components/(?P<component_code>[A-Za-z0-9_-]+)/v/(?P<version_no>\d+)(?:\.vue)?$"
 )
+_STATIC_DEFAULT_IMPORT_BINDING_PATTERN = re.compile(
+    r"(?:^|\n)[ \t]*import[ \t]+(?!type\b)"
+    r"(?P<local_name>[A-Za-z_$][A-Za-z0-9_$]*)[ \t\r\n]+from[ \t\r\n]+"
+    r"[\"'](?P<import_path>[^\"']+)[\"']",
+    flags=re.MULTILINE,
+)
+
+
+@dataclass(frozen=True)
+class ParsedDefaultImportBinding:
+    """描述源码中无歧义的规范默认导入本地名与来源路径。"""
+
+    local_name: str
+    import_path: str
 
 
 @dataclass(frozen=True)
@@ -245,6 +259,31 @@ class ComponentDependencyService:
             component_imports=tuple(self._deduplicate_pairs(component_imports)),
             runtime_local_imports=tuple(self._deduplicate_runtime_kit_dependencies(runtime_local_imports)),
             page_module_imports=tuple(self._deduplicate_strings(page_module_imports)),
+        )
+
+    def parse_default_import_bindings(
+        self,
+        source_text: str,
+    ) -> tuple[ParsedDefaultImportBinding, ...]:
+        """提取规范默认导入；同一本地名重复声明时整组忽略，禁止猜测组件身份。"""
+
+        script_content = self._extract_script_content(source_text)
+        if not script_content:
+            return tuple()
+
+        candidates = [
+            ParsedDefaultImportBinding(
+                local_name=match.group("local_name"),
+                import_path=str(match.group("import_path") or "").strip(),
+            )
+            for match in _STATIC_DEFAULT_IMPORT_BINDING_PATTERN.finditer(script_content)
+            if str(match.group("import_path") or "").strip()
+        ]
+        local_name_counts: dict[str, int] = {}
+        for item in candidates:
+            local_name_counts[item.local_name] = local_name_counts.get(item.local_name, 0) + 1
+        return tuple(
+            item for item in candidates if local_name_counts[item.local_name] == 1
         )
 
     async def get_page_dependencies(self, page_version_id: int) -> list[dict[str, object]]:

@@ -13,6 +13,7 @@
         :title="pageDetails.title"
         :code="pageDetails.code"
         :meta-items="pageTitleMetaItems"
+        title-class="max-w-[32rem]"
       >
         <template #title-leading>
           <button
@@ -68,22 +69,23 @@
                 <button
                   type="button"
                   class="inline-flex h-7 items-center gap-1.5 rounded-md px-2.5 text-xs font-semibold transition"
-                  :class="activeDetailPane === 'editor' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'"
-                  @click="activeDetailPane = 'editor'"
-                >
-                  <Code2 class="h-4 w-4" />
-                  编辑器
-                </button>
-                <button
-                  type="button"
-                  class="inline-flex h-7 items-center gap-1.5 rounded-md px-2.5 text-xs font-semibold transition"
                   :class="activeDetailPane === 'notes' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'"
+                  :disabled="isSaveActionPending"
                   @click="activeDetailPane = 'notes'"
                 >
                   <FileText class="h-4 w-4" />
                   备注
                 </button>
               </div>
+              <BaseButton
+                variant="primary"
+                size="sm"
+                :disabled="isSaveActionPending"
+                @click="openPageEditDialog"
+              >
+                <Code2 class="h-3.5 w-3.5" />
+                编辑
+              </BaseButton>
             </div>
 
             <div class="flex flex-wrap items-center justify-end gap-1">
@@ -130,17 +132,6 @@
                 <Copy class="h-3.5 w-3.5" />
                 复制
               </BaseButton>
-              <BaseButton
-                v-if="activeDetailPane === 'editor'"
-                variant="primary"
-                size="sm"
-                :disabled="isSaveActionPending"
-                :loading="isSaveActionPending"
-                @click="requestSave('manual', undefined, { refreshPreview: false, showNoopMessage: true })"
-              >
-                <Save class="h-3.5 w-3.5" />
-                保存
-              </BaseButton>
             </div>
           </div>
         </template>
@@ -158,7 +149,7 @@
         />
 
         <PageSpeakerNotesPanel
-          v-else-if="activeDetailPane === 'notes'"
+          v-else
           v-model="speakerNotesDraft"
           :page-title="pageDetails.title"
           :dirty="isSpeakerNotesDirty"
@@ -167,25 +158,37 @@
           @save="handleSpeakerNotesSave"
         />
 
-        <PageDetailWorkbenchPanel
-          v-else
-          v-model="editorCode"
-          v-model:active-pane="activeWorkbenchPane"
-          v-model:editor-theme="editorTheme"
-          v-model:auto-save-delay="autoSaveDelay"
-          :workspace-id="workspaceId"
-          :project-id="projectId"
-          :page-id="pageId"
-          :page-title="pageDetails.title"
-          :editor-language="editorLanguage"
-          :auto-save-options="autoSaveOptions"
-          :editor-height="editorHeight"
-          @save="handleEditorSave"
-          @ready="handleEditorReady"
-          @dirty-change="handleDirtyChange"
-          @copy-code="copyCode"
-        />
       </div>
+
+      <PageEditDialog
+        :model-value="isPageEditDialogOpen"
+        ref="pageEditDialogRef"
+        :mode="pageEditMode"
+        :visual-enabled="pageDetails.file_type === 'vue'"
+        :busy="isSaveActionPending"
+        :page-id="pageId"
+        :base-version-no="pageDetails.current_version_no"
+        :page-title="pageDetails.title"
+        :source-value="editorCode"
+        :editor-language="editorLanguage"
+        :editor-theme="editorTheme"
+        :auto-save-delay="autoSaveDelay"
+        :auto-save-options="autoSaveOptions"
+        @update:source-value="editorCode = $event"
+        @update:editor-theme="editorTheme = $event"
+        @update:auto-save-delay="autoSaveDelay = $event"
+        @request-mode-change="handleEditModeChange"
+        @request-close="handlePageEditDialogClose"
+        @open-history="isHistoryModalOpen = true"
+        @open-usage="isUsageDialogOpen = true"
+        @source-save="handleEditorSave"
+        @source-ready="handleEditorReady"
+        @source-dirty-change="handleDirtyChange"
+        @copy-code="copyCode"
+        @visual-dirty-change="isVisualEditDirty = $event"
+        @visual-busy-change="isVisualEditBusy = $event"
+        @visual-saved="handleVisualEditSaved"
+      />
 
       <PageScreenshotDialog
         v-model="isScreenshotDialogOpen"
@@ -269,9 +272,9 @@
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/vue-query'
-import { ArrowLeft, Camera, ChevronLeft, ChevronRight, Code2, Copy, FileText, Frown, History, Layers, Monitor, RefreshCw, Save, SquarePen } from '@lucide/vue'
+import { ArrowLeft, Camera, ChevronLeft, ChevronRight, Code2, Copy, FileText, Frown, History, Layers, Monitor, RefreshCw, SquarePen } from '@lucide/vue'
 
 import { getErrorMessage } from '@/api/http'
 import {
@@ -290,8 +293,8 @@ import { createPageVersionPreviewArtifact, createProjectPreviewArtifact } from '
 import PageTitleBar from '@/components/layout/PageTitleBar.vue'
 import PageCopyToProjectDialog from '@/components/page/PageCopyToProjectDialog.vue'
 import PageIdentityDialog from '@/components/page/PageIdentityDialog.vue'
+import PageEditDialog from '@/components/page-detail/PageEditDialog.vue'
 import PageDetailPreviewPanel from '@/components/page-detail/PageDetailPreviewPanel.vue'
-import PageDetailWorkbenchPanel from '@/components/page-detail/PageDetailWorkbenchPanel.vue'
 import PageScreenshotDialog from '@/components/page-detail/PageScreenshotDialog.vue'
 import PageSnapshotDialog from '@/components/page-detail/PageSnapshotDialog.vue'
 import PageSpeakerNotesPanel from '@/components/page-detail/PageSpeakerNotesPanel.vue'
@@ -305,6 +308,7 @@ import type {
   MonacoEditorReadyPayload,
   EditorThemeMode,
 } from '@/types/monaco'
+import type { PageEditMode } from '@/types/page-edit'
 import type {
   PageCurrentComponentIndex,
   PageCopyToProjectPayload,
@@ -314,13 +318,19 @@ import type {
   PageVersionListItem,
   PreviewArtifactResponse,
 } from '@/types/api'
+import type { PageVisualEditApplyResponse } from '@/types/page-visual-edit'
 import { createConfirm, Message } from '@/utils/message'
 import { resolvePageDetailNavigation } from '@/utils/page-detail-navigation'
 import { buildPageDetailPath, buildProjectPagesPath } from '@/utils/workspace-routes'
 
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error'
-type PageWorkbenchPane = 'editor' | 'assistant'
-type PageDetailPane = 'preview' | 'editor' | 'notes'
+type PageDetailPane = 'preview' | 'notes'
+
+interface PageEditDialogExpose {
+  discardChanges: () => void
+  reanalyze: () => Promise<void>
+  markStale: () => void
+}
 
 interface SaveRequestOptions {
   refreshPreview?: boolean
@@ -354,12 +364,16 @@ const editorCode = ref('')
 const fileType = ref<PageFileType>('vue')
 const saveStatus = ref<SaveStatus>('idle')
 const activeDetailPane = ref<PageDetailPane>('preview')
-const activeWorkbenchPane = ref<PageWorkbenchPane>('assistant')
+const isPageEditDialogOpen = ref(false)
+const pageEditMode = ref<PageEditMode>('visual')
 const isEditorDirty = ref(false)
 const editorExposeRef = ref<MonacoEditorExpose | null>(null)
 const pendingSaveRequest = ref<{ reason: EditorSaveReason; options: SaveRequestOptions } | null>(null)
 const lastLoadedPageId = ref<number | null>(null)
 const previewInitializedPageId = ref<number | null>(null)
+const pageEditDialogRef = ref<PageEditDialogExpose | null>(null)
+const isVisualEditDirty = ref(false)
+const isVisualEditBusy = ref(false)
 
 const isHistoryModalOpen = ref(false)
 const isScreenshotDialogOpen = ref(false)
@@ -396,8 +410,12 @@ const autoSaveOptions = [
   { label: '5 分钟', value: 300000 },
 ]
 
-const editorHeight = '100%'
-const isSaveActionPending = computed(() => saveMutation.isPending.value || isPreviewPending.value || isSpeakerNotesSaving.value)
+const isSaveActionPending = computed(() => (
+  saveMutation.isPending.value
+  || isPreviewPending.value
+  || isSpeakerNotesSaving.value
+  || isVisualEditBusy.value
+))
 const isScreenshotPending = computed(() => screenshotMutation.isPending.value)
 const previewDisplayFileName = computed(() => {
   const path = previewFilePath.value.trim()
@@ -555,7 +573,8 @@ const isSpeakerNotesDirty = computed(() => {
 /**
  * 返回当前页面所属项目的页面列表。
  */
-function goToProjectPages(): void {
+async function goToProjectPages(): Promise<void> {
+  if (!await confirmDiscardVisualEdit()) return
   void router.push(buildProjectPagesPath(workspaceId.value, projectId.value))
 }
 
@@ -590,10 +609,11 @@ async function listAllProjectActivePages(targetProjectId: number): Promise<PageI
  * 跳转到详情页预览模式的相邻页面。
  * @param targetPageId 目标页面 ID
  */
-function goToAdjacentPage(targetPageId: number | null): void {
+async function goToAdjacentPage(targetPageId: number | null): Promise<void> {
   if (!targetPageId || targetPageId === pageId.value) {
     return
   }
+  if (!await confirmDiscardVisualEdit()) return
   void router.push(buildPageDetailPath(workspaceId.value, projectId.value, targetPageId))
 }
 
@@ -771,6 +791,7 @@ watch(
   [pageDetails, isPreviewEnabled],
   ([page, enabled]) => {
     if (!page || !enabled) return
+    if (isPageEditDialogOpen.value && pageEditMode.value === 'visual') return
     if (previewInitializedPageId.value === page.id) return
     if (hasPendingChanges.value || isSaveActionPending.value) return
 
@@ -817,6 +838,107 @@ function handleEditorSave(payload: { reason: EditorSaveReason; value: string }) 
   void requestSave(payload.reason, payload.value, { refreshPreview: false, showNoopMessage: payload.reason === 'manual' })
 }
 
+/** 打开页面编辑弹窗；Vue 页面默认进入可视化编辑，其他文件回退到源码编辑。 */
+async function openPageEditDialog(): Promise<void> {
+  const currentPage = pageDetails.value
+  if (!currentPage || isSaveActionPending.value || isPageEditDialogOpen.value) return
+
+  const defaultMode: PageEditMode = currentPage.file_type === 'vue' ? 'visual' : 'source'
+  if (defaultMode === 'visual') {
+    if (activeDetailPane.value === 'notes' && isSpeakerNotesDirty.value) {
+      const notesSaved = await handleSpeakerNotesSave()
+      if (!notesSaved) return
+    }
+
+    const sourceSaved = await requestSave('manual', editorCode.value, {
+      refreshPreview: false,
+      showNoopMessage: false,
+    })
+    if (!sourceSaved) return
+  }
+
+  pageEditMode.value = defaultMode
+  isPageEditDialogOpen.value = true
+}
+
+/**
+ * 切换弹窗内的编辑方式，并在进入可视化前保存源码、离开可视化前保护草稿。
+ * @param targetMode 目标编辑方式
+ */
+async function handleEditModeChange(targetMode: PageEditMode): Promise<void> {
+  if (!pageDetails.value || isSaveActionPending.value || pageEditMode.value === targetMode) return
+
+  if (pageEditMode.value === 'visual') {
+    if (!await confirmDiscardVisualEdit()) return
+    pageEditMode.value = targetMode
+    return
+  }
+
+  if (targetMode === 'visual') {
+    if (activeDetailPane.value === 'notes' && isSpeakerNotesDirty.value) {
+      const notesSaved = await handleSpeakerNotesSave()
+      if (!notesSaved) return
+    }
+    const sourceSaved = await requestSave('manual', editorCode.value, {
+      refreshPreview: false,
+      showNoopMessage: false,
+    })
+    if (!sourceSaved) return
+  }
+
+  pageEditMode.value = targetMode
+}
+
+/**
+ * 离开可视化面板或切换页面前确认放弃未保存的结构化草稿。
+ * @returns 可以继续离开时为 true
+ */
+async function confirmDiscardVisualEdit(): Promise<boolean> {
+  if (!isPageEditDialogOpen.value || pageEditMode.value !== 'visual') return true
+  if (isVisualEditBusy.value) {
+    Message.warning('可视化编辑正在分析或保存，请等待当前操作完成后再离开。')
+    return false
+  }
+  if (!isVisualEditDirty.value) return true
+  const confirmed = await createConfirm(
+    '离开会放弃当前可视化编辑草稿，且这些修改尚未写入页面源码。是否继续？',
+    '放弃可视化编辑',
+  )
+  if (!confirmed) return false
+  pageEditDialogRef.value?.discardChanges()
+  isVisualEditDirty.value = false
+  return true
+}
+
+/**
+ * 安全关闭编辑弹窗：源码保存并刷新预览，可视化草稿确认后刷新预览。
+ */
+async function handlePageEditDialogClose(): Promise<void> {
+  const currentPage = pageDetails.value
+  if (!currentPage || !isPageEditDialogOpen.value) return
+  if (isHistoryModalOpen.value || isUsageDialogOpen.value || isSnapshotDialogOpen.value) return
+
+  if (pageEditMode.value === 'source') {
+    const saved = await requestSave('manual', editorCode.value, {
+      refreshPreview: true,
+      showNoopMessage: false,
+      showPreviewSuccessMessage: false,
+    })
+    if (!saved) return
+    previewInitializedPageId.value = currentPage.id
+    isPageEditDialogOpen.value = false
+    return
+  }
+
+  if (!await confirmDiscardVisualEdit()) return
+  const previewPage = pageQuery.data.value ?? currentPage
+  const previewSynced = await syncRuntimePreview(previewPage, { showSuccessMessage: false })
+  if (!previewSynced) return
+
+  previewInitializedPageId.value = previewPage.id
+  isPageEditDialogOpen.value = false
+}
+
 /**
  * 从编辑器切换到预览时先保存当前缓冲区，再刷新 Runtime 预览。
  */
@@ -824,6 +946,7 @@ async function handlePreviewPaneSelect(): Promise<void> {
   const currentPage = pageDetails.value
   if (!currentPage || isSaveActionPending.value) return
   if (activeDetailPane.value === 'preview') return
+  if (!await confirmDiscardVisualEdit()) return
 
   if (activeDetailPane.value === 'notes' && isSpeakerNotesDirty.value) {
     const notesSaved = await handleSpeakerNotesSave()
@@ -848,12 +971,32 @@ async function handlePreviewPaneSelect(): Promise<void> {
   previewInitializedPageId.value = previewPage.id
   activeDetailPane.value = 'preview'
 }
+
+/**
+ * 可视化 apply 成功后刷新页面版本与组件索引，并让 Monaco 跟随规范源码。
+ * 普通预览被标记为未初始化，避免继续展示保存前 artifact。
+ */
+async function handleVisualEditSaved(_response: PageVisualEditApplyResponse): Promise<void> {
+  const latestPage = (await pageQuery.refetch()).data ?? pageDetails.value
+  await Promise.all([
+    queryClient.invalidateQueries({ queryKey: ['pages-by-project', projectId.value] }),
+    queryClient.invalidateQueries({ queryKey: ['page-versions', pageId.value] }),
+    queryClient.invalidateQueries({ queryKey: ['page-component-index', pageId.value] }),
+  ])
+  if (latestPage) syncPageIntoEditor(latestPage)
+  isVisualEditDirty.value = false
+  previewUrl.value = ''
+  previewFilePath.value = ''
+  previewViewport.value = { ...DEFAULT_PREVIEW_VIEWPORT }
+  previewInitializedPageId.value = null
+}
 /**
  * 接收智能体建议并写入当前编辑器缓冲区，但不直接持久化到后端。
  */
-function handleAgentApplySuggestedContent(content: string) {
-  activeDetailPane.value = 'editor'
-  activeWorkbenchPane.value = 'editor'
+async function handleAgentApplySuggestedContent(content: string): Promise<void> {
+  if (!await confirmDiscardVisualEdit()) return
+  pageEditMode.value = 'source'
+  isPageEditDialogOpen.value = true
   editorCode.value = content
   isEditorDirty.value = true
   saveStatus.value = 'idle'
@@ -869,6 +1012,11 @@ async function handleAgentPageUpdated(detail?: AgentMutationEventDetail) {
     return
   }
   const shouldRefreshPreview = detail?.toolName !== 'get_page_screenshot'
+  const visualEditWasActive = isPageEditDialogOpen.value && pageEditMode.value === 'visual'
+  if (visualEditWasActive) {
+    pageEditDialogRef.value?.markStale()
+    Message.warning('页面已在其他位置更新。当前可视化 artifact 已过期，请放弃草稿后重新分析。')
+  }
 
   const latestPage = (await pageQuery.refetch()).data ?? pageDetails.value
   await Promise.all([
@@ -888,6 +1036,11 @@ async function handleAgentPageUpdated(detail?: AgentMutationEventDetail) {
   }
 
   if (!shouldRefreshPreview) {
+    return
+  }
+
+  if (visualEditWasActive) {
+    previewInitializedPageId.value = null
     return
   }
 
@@ -928,7 +1081,7 @@ async function handleAgentProjectPagesUpdated(detail?: AgentMutationEventDetail)
 function handleGlobalAgentApplySuggestedContent(event: Event) {
   const detail = (event as CustomEvent<{ pageId?: number | null; content?: string }>).detail
   if (!detail?.content || detail.pageId !== pageId.value) return
-  handleAgentApplySuggestedContent(detail.content)
+  void handleAgentApplySuggestedContent(detail.content)
 }
 
 /**
@@ -1114,12 +1267,23 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
+/** 浏览器关闭或刷新前保留可视化草稿丢失提示。 */
+function handleBeforeUnload(event: BeforeUnloadEvent): void {
+  if (!isPageEditDialogOpen.value || pageEditMode.value !== 'visual' || !isVisualEditDirty.value) return
+  event.preventDefault()
+  event.returnValue = ''
+}
+
+onBeforeRouteLeave(async () => await confirmDiscardVisualEdit())
+onBeforeRouteUpdate(async () => await confirmDiscardVisualEdit())
+
 onMounted(() => {
   window.addEventListener('agent:apply-suggested-content', handleGlobalAgentApplySuggestedContent)
   window.addEventListener('agent:page-updated', handleGlobalAgentPageUpdated)
   window.addEventListener('agent:project-pages-updated', handleGlobalAgentProjectPagesUpdated)
   window.addEventListener('agent:component-updated', handleGlobalAgentComponentUpdated)
   window.addEventListener('agent:asset-updated', handleGlobalAgentAssetUpdated)
+  window.addEventListener('beforeunload', handleBeforeUnload)
 })
 
 onUnmounted(() => {
@@ -1128,6 +1292,7 @@ onUnmounted(() => {
   window.removeEventListener('agent:project-pages-updated', handleGlobalAgentProjectPagesUpdated)
   window.removeEventListener('agent:component-updated', handleGlobalAgentComponentUpdated)
   window.removeEventListener('agent:asset-updated', handleGlobalAgentAssetUpdated)
+  window.removeEventListener('beforeunload', handleBeforeUnload)
 })
 
 /**

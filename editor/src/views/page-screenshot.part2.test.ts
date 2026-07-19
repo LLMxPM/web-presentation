@@ -40,10 +40,13 @@ const batchRefreshPageScreenshotJobsMock = vi.fn()
 const waitForPageScreenshotJobGroupMock = vi.fn()
 const downloadPageScreenshotsArchiveMock = vi.fn()
 const createProjectPreviewArtifactMock = vi.fn()
+const createPageVisualEditPreviewArtifactMock = vi.fn()
+const applyPageVisualEditOperationsMock = vi.fn()
 const messageSuccessMock = vi.fn()
 const messageErrorMock = vi.fn()
 const messageInfoMock = vi.fn()
 const messageWarningMock = vi.fn()
+const createConfirmMock = vi.fn().mockResolvedValue(true)
 const anchorClickMock = vi.fn()
 
 const defaultProjectConfigs = {
@@ -59,6 +62,8 @@ const defaultProjectConfigs = {
 }
 
 vi.mock('vue-router', () => ({
+  onBeforeRouteLeave: vi.fn(),
+  onBeforeRouteUpdate: vi.fn(),
   useRoute: () => routeState,
   useRouter: () => ({
     push: pushMock,
@@ -107,6 +112,11 @@ vi.mock('@/api/preview', () => ({
   createPageVersionPreviewArtifact: vi.fn(),
 }))
 
+vi.mock('@/api/page-visual-edit', () => ({
+  createPageVisualEditPreviewArtifact: (...args: unknown[]) => createPageVisualEditPreviewArtifactMock(...args),
+  applyPageVisualEditOperations: (...args: unknown[]) => applyPageVisualEditOperationsMock(...args),
+}))
+
 vi.mock('@/utils/message', () => ({
   Message: {
     success: (...args: unknown[]) => messageSuccessMock(...args),
@@ -114,7 +124,7 @@ vi.mock('@/utils/message', () => ({
     info: (...args: unknown[]) => messageInfoMock(...args),
     warning: (...args: unknown[]) => messageWarningMock(...args),
   },
-  createConfirm: vi.fn().mockResolvedValue(true),
+  createConfirm: (...args: unknown[]) => createConfirmMock(...args),
 }))
 
 vi.mock('@/components/editor/MonacoCodeEditor.vue', () => ({
@@ -241,6 +251,59 @@ function createPageListPayload(overrides: Record<string, unknown> = {}) {
     screenshot_config_hash: null,
     ...overrides,
   })
+}
+
+/** 创建 PageDetailView 可视化入口测试用 artifact。 */
+function createVisualEditArtifact(versionNo: number) {
+  const sourceHash = 'a'.repeat(64)
+  return {
+    preview_url: 'http://runtime.local/__preview?ticket=visual',
+    artifact_id: `visual-artifact-${versionNo}`,
+    preview_kind: 'page',
+    entry_descriptor: { entry_type: 'module', module_path: 'src/views/PG202604020001.vue' },
+    viewport_width: 1600,
+    viewport_height: 900,
+    visual_edit: {
+      protocol_version: 1,
+      page_id: 31,
+      base_version_no: versionNo,
+      source_hash: sourceHash,
+      module_path: 'src/views/PG202604020001.vue',
+      component_schemas: {},
+      warnings: [],
+      manifest: {
+        protocol_version: 1,
+        module_path: 'src/views/PG202604020001.vue',
+        source_hash: sourceHash,
+        diagnostics: [],
+        tailwind_catalog: { version: 1, groups: [] },
+        root: {
+          node_id: 'root',
+          kind: 'root',
+          tag: 'template',
+          source_range: { start: 0, end: 100 },
+          bindings: [],
+          children: [{
+            node_id: 'node-card',
+            kind: 'component',
+            tag: 'Card',
+            source_range: { start: 10, end: 90 },
+            bindings: [{
+              binding_id: 'binding-title',
+              node_id: 'node-card',
+              kind: 'text',
+              value_type: 'string',
+              value: '原标题',
+              source_range: { start: 20, end: 30 },
+              editable: true,
+              source: { kind: 'template-literal' },
+            }],
+            children: [],
+          }],
+        },
+      },
+    },
+  }
 }
 
 describe('page screenshot views', () => {
@@ -375,6 +438,7 @@ describe('page screenshot views', () => {
       viewport_width: 1600,
       viewport_height: 900,
     })
+    createPageVisualEditPreviewArtifactMock.mockResolvedValue(createVisualEditArtifact(1))
   })
 
   it('PagesView 收到智能体创建页面事件后应刷新列表并跳转新页面', async () => {
@@ -623,7 +687,7 @@ describe('page screenshot views', () => {
     expect(createProjectPreviewArtifactMock).not.toHaveBeenCalled()
   })
 
-  it('PageDetailView 预览与编辑器模式应展示不同页头操作并隐藏状态元信息', async () => {
+  it('PageDetailView 应只保留预览与备注主面板，并通过编辑按钮打开统一编辑弹窗', async () => {
     getPageMock.mockResolvedValue(createPageDetailPayload())
 
     render(PageDetailView, createTestingRenderOptions())
@@ -642,20 +706,101 @@ describe('page screenshot views', () => {
     expect(screen.getByRole('button', { name: '截图' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '资源' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '复制' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '编辑' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '编辑器' })).toBeNull()
+    expect(screen.queryByRole('button', { name: '可视化' })).toBeNull()
     expect(screen.queryByRole('button', { name: '保存' })).toBeNull()
     expect(screen.queryByRole('button', { name: '刷新' })).toBeNull()
 
-    await fireEvent.click(screen.getByRole('button', { name: '编辑器' }))
+    await fireEvent.click(screen.getByRole('button', { name: '编辑' }))
 
-    expect(screen.getByRole('button', { name: '版本' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '资源' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: '编辑页面 · 页面详情' })).toBeInTheDocument()
+    expect(screen.getByTitle('页面详情 可视化编辑画布')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '源码编辑' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '可视化编辑' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '关闭页面编辑' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '编辑器' })).toBeNull()
+    expect(screen.queryByRole('button', { name: '可视化' })).toBeNull()
+    expect(screen.queryByRole('button', { name: '保存' })).toBeNull()
+
+    await fireEvent.click(screen.getByRole('button', { name: '源码编辑' }))
+
+    expect(await screen.findByRole('button', { name: 'monaco-mark-dirty' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '保存' })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: '上一页' })).toBeNull()
-    expect(screen.queryByRole('button', { name: '下一页' })).toBeNull()
-    expect(screen.queryByRole('button', { name: '刷新预览' })).toBeNull()
-    expect(screen.queryByRole('button', { name: '截图' })).toBeNull()
-    expect(screen.queryByRole('button', { name: '复制' })).toBeNull()
-    expect(screen.queryByRole('button', { name: '刷新' })).toBeNull()
+  })
+
+  it('PageDetailView 与编辑弹窗应限制超长页面标题并保留完整悬浮提示', async () => {
+    const longTitle = '这是一个用于验证页面详情和编辑弹窗标题超长后省略显示的特别长页面名称'.repeat(3)
+    getPageMock.mockResolvedValue(createPageDetailPayload({ title: longTitle }))
+
+    render(PageDetailView, createTestingRenderOptions())
+
+    const detailTitle = await screen.findByRole('heading', { name: longTitle })
+    expect(detailTitle).toHaveClass('truncate', 'max-w-[32rem]')
+    expect(detailTitle).toHaveAttribute('title', longTitle)
+
+    await fireEvent.click(screen.getByRole('button', { name: '编辑' }))
+    const dialogTitle = await screen.findByRole('heading', { name: `编辑页面 · ${longTitle}` })
+    expect(dialogTitle).toHaveClass('truncate')
+    expect(dialogTitle.parentElement).toHaveClass('max-w-[24rem]')
+    expect(dialogTitle).toHaveAttribute('title', `编辑页面 · ${longTitle}`)
+  })
+
+  it('PageDetailView 非 Vue 页面应直接打开源码编辑且隐藏可视化入口', async () => {
+    getPageMock.mockResolvedValue(createPageDetailPayload({
+      file_type: 'md',
+      page_content: '# 文档页面',
+    }))
+
+    render(PageDetailView, createTestingRenderOptions())
+
+    expect(await screen.findByText('页面详情')).toBeInTheDocument()
+    await fireEvent.click(screen.getByRole('button', { name: '编辑' }))
+
+    expect(await screen.findByRole('button', { name: 'monaco-mark-dirty' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '源码编辑' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '可视化编辑' })).toBeNull()
+    expect(createPageVisualEditPreviewArtifactMock).not.toHaveBeenCalled()
+  })
+
+  it('PageDetailView 编辑弹窗应提供版本与资源入口', async () => {
+    getPageMock.mockResolvedValue(createPageDetailPayload())
+
+    render(PageDetailView, createTestingRenderOptions())
+
+    expect(await screen.findByText('页面详情')).toBeInTheDocument()
+    await fireEvent.click(screen.getByRole('button', { name: '编辑' }))
+    await screen.findByTitle('页面详情 可视化编辑画布')
+
+    const versionButtons = screen.getAllByRole('button', { name: '版本' })
+    const usageButtons = screen.getAllByRole('button', { name: '资源' })
+    expect(versionButtons).toHaveLength(2)
+    expect(usageButtons).toHaveLength(2)
+
+    await fireEvent.click(versionButtons[versionButtons.length - 1]!)
+    expect(await screen.findByRole('heading', { name: '版本历史' })).toBeInTheDocument()
+    const closeVersionButtons = screen.getAllByRole('button', { name: '关闭版本历史' })
+    await fireEvent.click(closeVersionButtons[closeVersionButtons.length - 1]!)
+
+    await fireEvent.click(usageButtons[usageButtons.length - 1]!)
+    expect(await screen.findByRole('heading', { name: '组件与资源' })).toBeInTheDocument()
+  })
+
+  it('PageDetailView 源码保存失败时应保留编辑弹窗', async () => {
+    getPageMock.mockResolvedValue(createPageDetailPayload())
+    updatePageMock.mockRejectedValue(new Error('保存失败'))
+
+    render(PageDetailView, createTestingRenderOptions())
+
+    expect(await screen.findByText('页面详情')).toBeInTheDocument()
+    await fireEvent.click(screen.getByRole('button', { name: '编辑' }))
+    await screen.findByTitle('页面详情 可视化编辑画布')
+    await fireEvent.click(screen.getByRole('button', { name: '源码编辑' }))
+    await fireEvent.click(screen.getByRole('button', { name: 'monaco-mark-dirty' }))
+    await fireEvent.click(screen.getByRole('button', { name: '关闭页面编辑' }))
+
+    await waitFor(() => expect(messageErrorMock).toHaveBeenCalled())
+    expect(screen.getByRole('button', { name: '关闭页面编辑' })).toBeInTheDocument()
   })
 
   it('PageDetailView 预览模式应支持手动刷新当前 iframe', async () => {
@@ -738,7 +883,7 @@ describe('page screenshot views', () => {
     })
   })
 
-  it('PageDetailView 从编辑器切换到预览时应先保存再刷新预览', async () => {
+  it('PageDetailView 从源码模式关闭编辑弹窗时应先保存再刷新预览', async () => {
     getPageMock.mockResolvedValue(createPageDetailPayload())
     updatePageMock.mockResolvedValue(createPageDetailPayload({
       page_content: '<template><SalesCard /><Icon name="home" /></template><section>dirty</section>',
@@ -754,9 +899,11 @@ describe('page screenshot views', () => {
     })
     createProjectPreviewArtifactMock.mockClear()
 
-    await fireEvent.click(screen.getByRole('button', { name: '编辑器' }))
+    await fireEvent.click(screen.getByRole('button', { name: '编辑' }))
+    await screen.findByTitle('页面详情 可视化编辑画布')
+    await fireEvent.click(screen.getByRole('button', { name: '源码编辑' }))
     await fireEvent.click(screen.getByRole('button', { name: 'monaco-mark-dirty' }))
-    await fireEvent.click(screen.getByRole('button', { name: '预览' }))
+    await fireEvent.click(screen.getByRole('button', { name: '关闭页面编辑' }))
 
     await waitFor(() => {
       expect(updatePageMock).toHaveBeenCalledWith(31, {
@@ -766,7 +913,83 @@ describe('page screenshot views', () => {
       expect(createProjectPreviewArtifactMock).toHaveBeenCalledWith(21, 'src/views/PG202604020001.vue')
     })
     expect(updatePageMock.mock.invocationCallOrder[0]).toBeLessThan(createProjectPreviewArtifactMock.mock.invocationCallOrder[0])
+    await waitFor(() => expect(screen.queryByRole('button', { name: '关闭页面编辑' })).toBeNull())
     expect(await screen.findByTitle('runtime-preview')).toHaveAttribute('src', expect.stringContaining('http://runtime.local/__preview?ticket=current&t='))
+  })
+
+  it('PageDetailView 进入可视化面板前应先保存 Monaco 草稿并使用新版本分析', async () => {
+    getPageMock.mockResolvedValue(createPageDetailPayload())
+    updatePageMock.mockResolvedValue(createPageDetailPayload({
+      page_content: '<template><SalesCard /><Icon name="home" /></template><section>dirty</section>',
+      current_version_no: 2,
+      updated_at: '2026-04-02T10:10:00Z',
+    }))
+    createPageVisualEditPreviewArtifactMock.mockResolvedValue(createVisualEditArtifact(2))
+
+    render(PageDetailView, createTestingRenderOptions())
+
+    expect(await screen.findByText('页面详情')).toBeInTheDocument()
+    await waitFor(() => expect(createProjectPreviewArtifactMock).toHaveBeenCalled())
+    await fireEvent.click(screen.getByRole('button', { name: '编辑' }))
+    await screen.findByTitle('页面详情 可视化编辑画布')
+    await fireEvent.click(screen.getByRole('button', { name: '源码编辑' }))
+    await fireEvent.click(screen.getByRole('button', { name: 'monaco-mark-dirty' }))
+    createPageVisualEditPreviewArtifactMock.mockClear()
+    await fireEvent.click(screen.getByRole('button', { name: '可视化编辑' }))
+
+    await waitFor(() => {
+      expect(updatePageMock).toHaveBeenCalledWith(31, {
+        page_content: '<template><SalesCard /><Icon name="home" /></template><section>dirty</section>',
+        file_type: 'vue',
+      })
+      expect(createPageVisualEditPreviewArtifactMock).toHaveBeenCalledWith(31, { base_version_no: 2 })
+    })
+    expect(updatePageMock.mock.invocationCallOrder[0]).toBeLessThan(
+      createPageVisualEditPreviewArtifactMock.mock.invocationCallOrder[0],
+    )
+    expect(screen.getByTitle('页面详情 可视化编辑画布')).toBeInTheDocument()
+  })
+
+  it('PageDetailView 离开可视化面板前应确认放弃未保存结构化草稿', async () => {
+    getPageMock.mockResolvedValue(createPageDetailPayload())
+    render(PageDetailView, createTestingRenderOptions())
+
+    expect(await screen.findByText('页面详情')).toBeInTheDocument()
+    await waitFor(() => expect(createProjectPreviewArtifactMock).toHaveBeenCalled())
+    await fireEvent.click(screen.getByRole('button', { name: '编辑' }))
+    await screen.findByTitle('页面详情 可视化编辑画布')
+    await fireEvent.click(screen.getByRole('button', { name: /Card/ }))
+    await fireEvent.update(await screen.findByRole('textbox'), '未保存标题')
+    expect(screen.getByText('1 项待保存')).toBeInTheDocument()
+
+    await fireEvent.click(screen.getByRole('button', { name: '源码编辑' }))
+
+    expect(createConfirmMock).toHaveBeenCalledWith(
+      expect.stringContaining('放弃当前可视化编辑草稿'),
+      '放弃可视化编辑',
+    )
+    expect(await screen.findByRole('button', { name: 'monaco-mark-dirty' })).toBeInTheDocument()
+  })
+
+  it('PageDetailView 收到 Agent 源码建议时不得绕过可视化脏草稿确认', async () => {
+    getPageMock.mockResolvedValue(createPageDetailPayload())
+    render(PageDetailView, createTestingRenderOptions())
+
+    expect(await screen.findByText('页面详情')).toBeInTheDocument()
+    await waitFor(() => expect(createProjectPreviewArtifactMock).toHaveBeenCalled())
+    await fireEvent.click(screen.getByRole('button', { name: '编辑' }))
+    await screen.findByTitle('页面详情 可视化编辑画布')
+    await fireEvent.click(screen.getByRole('button', { name: /Card/ }))
+    await fireEvent.update(await screen.findByRole('textbox'), '未保存标题')
+    createConfirmMock.mockResolvedValueOnce(false)
+
+    window.dispatchEvent(new CustomEvent('agent:apply-suggested-content', {
+      detail: { pageId: 31, content: '<template><div>Agent 建议</div></template>' },
+    }))
+
+    await waitFor(() => expect(createConfirmMock).toHaveBeenCalled())
+    expect(screen.getByTitle('页面详情 可视化编辑画布')).toBeInTheDocument()
+    expect(screen.getByText('1 项待保存')).toBeInTheDocument()
   })
 
   it('PageDetailView 已加入路由页面应按路由顺序翻页', async () => {
@@ -1131,13 +1354,16 @@ describe('page screenshot views', () => {
       expect(createProjectPreviewArtifactMock).toHaveBeenCalled()
     })
 
-    await fireEvent.click(screen.getByRole('button', { name: '编辑器' }))
+    await fireEvent.click(screen.getByRole('button', { name: '编辑' }))
+    await screen.findByTitle('页面详情 可视化编辑画布')
+    await fireEvent.click(screen.getByRole('button', { name: '源码编辑' }))
     await fireEvent.click(screen.getByRole('button', { name: 'monaco-mark-dirty' }))
-    await fireEvent.click(screen.getByRole('button', { name: '预览' }))
+    await fireEvent.click(screen.getByRole('button', { name: '关闭页面编辑' }))
     await waitFor(() => {
       expect(updatePageMock).toHaveBeenCalledTimes(1)
-      expect(screen.getByRole('button', { name: '截图' })).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: '关闭页面编辑' })).toBeNull()
     })
+    expect(screen.getByRole('button', { name: '截图' })).toBeInTheDocument()
     await fireEvent.click(screen.getByRole('button', { name: '截图' }))
     await fireEvent.click(screen.getByRole('button', { name: /重新截图/ }))
 

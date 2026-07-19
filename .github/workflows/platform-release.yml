@@ -166,7 +166,15 @@ jobs:
           username: ${{ vars.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
       - uses: docker/setup-buildx-action@v4
-      - run: docker buildx imagetools inspect "${{ steps.runtime.outputs.runtime_image }}"
+      - name: Validate runtime image platforms
+        env:
+          RUNTIME_IMAGE: ${{ steps.runtime.outputs.runtime_image }}
+        run: |
+          manifest_json="$(docker buildx imagetools inspect "${RUNTIME_IMAGE}" --format '{{json .Manifest}}')"
+          echo "${manifest_json}" | jq -e '
+            [.manifests[].platform | select(.os == "linux") | .architecture]
+            | (index("amd64") != null and index("arm64") != null)
+          '
 
   build-and-push:
     runs-on: ubuntu-latest
@@ -185,6 +193,7 @@ jobs:
         with:
           username: ${{ vars.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
+      - uses: docker/setup-qemu-action@v4
       - uses: docker/setup-buildx-action@v4
       - id: meta
         uses: docker/metadata-action@v6
@@ -204,6 +213,7 @@ jobs:
         with:
           context: .
           file: Dockerfile
+          platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
@@ -230,6 +240,7 @@ jobs:
         with:
           username: ${{ vars.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
+      - uses: docker/setup-qemu-action@v4
       - uses: docker/setup-buildx-action@v4
       - id: meta
         uses: docker/metadata-action@v6
@@ -251,6 +262,7 @@ jobs:
         with:
           context: .
           file: Dockerfile.lite
+          platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
