@@ -44,10 +44,25 @@ async function main() {
     start: () =>
       spawnPersistentBackground('pnpm', ['--dir', 'runtime', 'dev', '--host', '127.0.0.1', '--port', '7373'], {
         cwd: process.cwd(),
-        env: process.env,
+        env: buildE2eRuntimeEnv(urls),
       }),
   })
   console.log('[testing] backend/editor/runtime are ready')
+}
+
+/**
+ * 构造 Runtime 的 E2E 环境，确保预览令牌验签和内部回源始终指向同一套测试 Backend。
+ * @param {{ backend: string, runtime: string }} urls 测试服务的公开地址
+ * @returns {NodeJS.ProcessEnv} 供 Runtime 子进程使用的环境变量
+ */
+function buildE2eRuntimeEnv(urls) {
+  const backendUrl = urls.backend.replace(/\/$/, '')
+  return {
+    ...process.env,
+    RUNTIME_PREVIEW_JWKS_URL: `${backendUrl}/.well-known/jwks.json`,
+    RUNTIME_BACKEND_API_BASE_URL: backendUrl,
+    RUNTIME_PUBLIC_BASE_URL: urls.runtime.replace(/\/$/, ''),
+  }
 }
 
 async function ensureServiceReady({ label, url, shouldStart, allowReuse = true, start }) {
