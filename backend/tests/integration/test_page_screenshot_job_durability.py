@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import sqlite3
 
 from httpx import AsyncClient
@@ -95,6 +96,7 @@ async def _claim_job(job_id: int) -> str:
 async def test_screenshot_job_final_sqlite_retry_should_not_recapture(
     authenticated_client: AsyncClient,
     monkeypatch,
+    caplog,
 ) -> None:
     """最终页面写入临时 BUSY 时只能重试短事务，不能重复执行 Chromium 捕获。"""
 
@@ -127,13 +129,15 @@ async def test_screenshot_job_final_sqlite_retry_should_not_recapture(
         return await original_execute(self, statement, *args, **kwargs)
 
     monkeypatch.setattr(AsyncSession, "execute", flaky_execute)
-    await run_page_screenshot_job(job_id, worker_id=worker_id, session_factory=get_session_factory())
+    with caplog.at_level(logging.ERROR, logger="app.services.page_screenshot_job_service"):
+        await run_page_screenshot_job(job_id, worker_id=worker_id, session_factory=get_session_factory())
 
     status_response = await authenticated_client.get(f"/api/page-screenshot-jobs/{job_id}")
     assert status_response.status_code == 200
     assert status_response.json()["status"] == "succeeded"
     assert injected is True
     assert capture_count == 1
+    assert not any(record.message == "页面截图任务最终写入失败。" for record in caplog.records)
 
 
 async def test_screenshot_job_should_skip_stale_page_version_before_capture(

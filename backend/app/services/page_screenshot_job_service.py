@@ -426,6 +426,8 @@ class PageScreenshotJobService:
         job_id = int(job.id)
         page_id = int(job.page_id)
         operator_id = int(job.created_by or 0)
+        # 后续快照校验会 expire_all()，日志不能再读取可能触发异步懒加载的 ORM 属性。
+        attempt_count = int(job.attempt_count)
         for attempt in range(SQLITE_LOCK_RETRY_ATTEMPTS):
             if self._is_lease_lost(lease_lost):
                 return
@@ -486,7 +488,7 @@ class PageScreenshotJobService:
                         "event": "page.screenshot.job.succeeded",
                         "job_id": job_id,
                         "page_id": page_id,
-                        "attempt_count": job.attempt_count,
+                        "attempt_count": attempt_count,
                         "duration_ms": round((time.monotonic() - execution_started_at) * 1000, 2),
                     },
                 )
