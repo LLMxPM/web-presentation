@@ -446,6 +446,7 @@ class ProjectTemplatePackageService:
         template_payload = self._build_template_metadata(plan, payload, runtime_manifest_version, author_display_name)
         screenshots_payload, screenshot_files = await self._build_screenshot_payload_and_files(plan, payload.cover_page_id)
         project_payload = await self._build_project_payload(plan.project)
+        self._align_suggested_component_versions(project_payload, plan.component_snapshots)
         routes_payload = self._build_routes_payload(plan.routes, plan.pages)
         asset_entries = [self._build_asset_payload(asset) for asset in plan.assets]
         font_entries = [self._build_font_payload(item) for item in plan.font_configs]
@@ -504,7 +505,10 @@ class ProjectTemplatePackageService:
                 archive.writestr(f"pages/{page.code}/page.json", ProjectTemplatePackageFormat.dump_json(self._build_page_payload(page)))
                 archive.writestr(f"pages/{page.code}/index.vue", normalize_text_to_lf(page.page_content))
             for snapshot in plan.component_snapshots:
-                base_path = f"components/{snapshot.component.code}"
+                base_path = ProjectTemplatePackageFormat.component_archive_path(
+                    snapshot.component.code,
+                    snapshot.version.version_no,
+                )
                 fingerprint = component_fingerprints.get((snapshot.component.code, snapshot.version.version_no))
                 archive.writestr(
                     f"{base_path}/component.json",
@@ -544,8 +548,10 @@ class ProjectTemplatePackageService:
         runtime_version = str(parsed.manifest.get("runtime_kit_manifest_version") or "").strip()
         if parsed.manifest.get("package_type") != PROJECT_TEMPLATE_PACKAGE_TYPE:
             errors.append("导入文件 package_type 不受支持。")
-        if schema_version != PROJECT_TEMPLATE_PACKAGE_SCHEMA_VERSION:
-            errors.append(f"导入文件 schema_version 必须是 {PROJECT_TEMPLATE_PACKAGE_SCHEMA_VERSION}。")
+        if schema_version not in {1, PROJECT_TEMPLATE_PACKAGE_SCHEMA_VERSION}:
+            errors.append(
+                f"导入文件 schema_version 必须是 1 或 {PROJECT_TEMPLATE_PACKAGE_SCHEMA_VERSION}。"
+            )
         if await self.workspace_repository.get_by_id(workspace_id) is None:
             errors.append("目标工作空间不存在。")
 
@@ -672,10 +678,18 @@ class ProjectTemplatePackageService:
     ) -> list[ExportComponentSnapshot]:
         """按页面源码和项目建议组件收集组件发布版本闭包。"""
 
-        root_refs: list[tuple[str, int]] = []
+        page_root_refs: list[tuple[str, int]] = []
         for page in pages:
-            root_refs.extend(self._collect_component_refs_from_text(page.page_content))
-        root_refs.extend(await self._collect_project_suggested_component_refs(project_id))
+            page_root_refs.extend(self._collect_component_refs_from_text(page.page_content))
+        # 页面源码中的版本是可执行依赖，优先级高于建议组件的“当前发布版本”。
+        # 否则组件升级后，建议项会把页面固定引用的历史版本覆盖进同一个导出包。
+        page_component_codes = {component_code for component_code, _ in page_root_refs}
+        suggested_root_refs = [
+            ref
+            for ref in await self._collect_project_suggested_component_refs(project_id)
+            if ref[0] not in page_component_codes
+        ]
+        root_refs = [*page_root_refs, *suggested_root_refs]
 
         snapshots: list[ExportComponentSnapshot] = []
         visited: set[tuple[str, int]] = set()
@@ -740,6 +754,28 @@ class ProjectTemplatePackageService:
             "suggested_reference_asset_names": suggested_assets,
             "suggested_components": suggested_components,
         }
+
+    @staticmethod
+    def _align_suggested_component_versions(
+        project_payload: dict[str, Any],
+        component_snapshots: list[ExportComponentSnapshot],
+    ) -> None:
+        """把建议组件指向包内实际携带的版本，避免导入时找不到映射。"""
+
+        snapshot_version_by_code = {
+            snapshot.component.code: snapshot.version.version_no
+            for snapshot in component_snapshots
+        }
+        suggested_components = project_payload.get("suggested_components")
+        if not isinstance(suggested_components, list):
+            return
+        for item in suggested_components:
+            if not isinstance(item, dict):
+                continue
+            component_code = str(item.get("source_component_code") or "").strip()
+            version_no = snapshot_version_by_code.get(component_code)
+            if version_no is not None:
+                item["source_version_no"] = version_no
 
     @staticmethod
     def _build_page_payload(page: Page) -> dict[str, Any]:

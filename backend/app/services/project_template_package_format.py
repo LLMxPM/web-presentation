@@ -64,8 +64,8 @@ class ProjectTemplatePackageFormat:
 
             pages = [cls.read_package_page(archive, page_code) for page_code in cls.resolve_page_codes(manifest, names)]
             components = [
-                cls.read_package_component(archive, component_code)
-                for component_code in cls.resolve_component_codes(manifest, names)
+                cls.read_package_component(archive, component_code, version_no)
+                for component_code, version_no in cls.resolve_component_refs(manifest, names)
             ]
             themes = [
                 PackageTheme(cls.read_object_json(archive, f"themes/{theme_key}.json"))
@@ -108,10 +108,19 @@ class ProjectTemplatePackageFormat:
         )
 
     @classmethod
-    def read_package_component(cls, archive: zipfile.ZipFile, component_code: str) -> PackageComponent:
-        """读取模板包内单个组件。"""
+    def read_package_component(
+        cls,
+        archive: zipfile.ZipFile,
+        component_code: str,
+        version_no: int,
+    ) -> PackageComponent:
+        """读取模板包内指定来源版本的组件，并兼容 v1 目录结构。"""
 
-        base_path = f"components/{component_code}"
+        base_path = cls.component_archive_path(component_code, version_no)
+        names = {cls.normalize_zip_name(item.filename) for item in archive.infolist() if not item.is_dir()}
+        if f"{base_path}/component.json" not in names:
+            # schema v1 中同一组件只能存放一个版本，目录未包含版本号。
+            base_path = f"components/{component_code}"
         metadata = cls.read_object_json(archive, f"{base_path}/component.json")
         content = cls.read_text(archive, f"{base_path}/index.vue")
         preview_schema = cls.read_text(archive, f"{base_path}/preview.schema.json")
@@ -257,21 +266,33 @@ class ProjectTemplatePackageFormat:
         return [item for item in dict.fromkeys(codes) if item]
 
     @staticmethod
-    def resolve_component_codes(manifest: dict[str, Any], names: set[str]) -> list[str]:
-        """从 manifest 或目录结构解析包内组件编码。"""
+    def resolve_component_refs(manifest: dict[str, Any], names: set[str]) -> list[tuple[str, int]]:
+        """解析组件编码与来源版本，避免同编码的不同版本在包内互相覆盖。"""
 
-        codes = [
-            str(item.get("source_component_code") or item.get("component_code") or "").strip()
+        refs = [
+            (
+                str(item.get("source_component_code") or item.get("component_code") or "").strip(),
+                ProjectTemplatePackageFormat.coerce_int(item.get("source_version_no")) or 1,
+            )
             for item in manifest.get("components", [])
             if isinstance(item, dict)
         ]
-        if not codes:
-            codes = sorted({
-                parts[1]
-                for name in names
-                if (parts := name.split("/")) and len(parts) >= 3 and parts[0] == "components"
-            })
-        return [item for item in dict.fromkeys(codes) if item]
+        if not refs:
+            refs = []
+            for name in names:
+                parts = name.split("/")
+                if len(parts) >= 5 and parts[0] == "components" and parts[2] == "v" and parts[3].isdigit():
+                    refs.append((parts[1], int(parts[3])))
+                elif len(parts) >= 3 and parts[0] == "components":
+                    # schema v1 中每个组件编码最多只有一个快照。
+                    refs.append((parts[1], 1))
+        return [(code, version_no) for code, version_no in dict.fromkeys(refs) if code and version_no > 0]
+
+    @staticmethod
+    def component_archive_path(component_code: str, version_no: int) -> str:
+        """生成组件版本在模板包内唯一的目录路径。"""
+
+        return f"components/{component_code}/v/{version_no}"
 
     @staticmethod
     def resolve_keys(manifest: dict[str, Any], names: set[str], section: str, key_field: str) -> list[str]:

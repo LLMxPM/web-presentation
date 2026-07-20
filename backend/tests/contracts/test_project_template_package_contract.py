@@ -62,6 +62,54 @@ def test_project_template_package_should_reject_zip_path_traversal() -> None:
     assert error.value.code == "PROJECT_TEMPLATE_PACKAGE_PATH_INVALID"
 
 
+def test_project_template_package_should_preserve_multiple_versions_of_same_component() -> None:
+    """同一组件的不同来源版本必须使用不同 ZIP 路径，并能被完整解析。"""
+
+    manifest = {
+        "package_type": PROJECT_TEMPLATE_PACKAGE_TYPE,
+        "schema_version": PROJECT_TEMPLATE_PACKAGE_SCHEMA_VERSION,
+        "components": [
+            {"source_component_code": "CMP_CARD", "source_version_no": 1},
+            {"source_component_code": "CMP_CARD", "source_version_no": 2},
+        ],
+        "pages": [],
+        "assets": [],
+        "themes": [],
+        "fonts": [],
+    }
+    component_metadata = {
+        "source_component_code": "CMP_CARD",
+        "file_type": "vue",
+        "name": "卡片",
+        "import_name": "Card",
+        "component_type": "content_component",
+        "dependencies": [],
+    }
+    files = {
+        "manifest.json": json.dumps(manifest),
+        "metadata/template.json": "{}",
+        "metadata/screenshots.json": "{}",
+        "project/project.json": "{}",
+        "project/routes.json": "{}",
+    }
+    for version_no in (1, 2):
+        base_path = f"components/CMP_CARD/v/{version_no}"
+        files[f"{base_path}/component.json"] = json.dumps({**component_metadata, "source_version_no": version_no})
+        files[f"{base_path}/index.vue"] = f"<template><main>v{version_no}</main></template>"
+        files[f"{base_path}/preview.schema.json"] = "{}"
+
+    parsed = ProjectTemplatePackageFormat.parse_package(_build_zip(files))
+
+    assert [(item.source_component_code, item.source_version_no) for item in parsed.components] == [
+        ("CMP_CARD", 1),
+        ("CMP_CARD", 2),
+    ]
+    assert [item.content for item in parsed.components] == [
+        "<template><main>v1</main></template>",
+        "<template><main>v2</main></template>",
+    ]
+
+
 def _build_minimal_template_package() -> bytes:
     """构造最小可解析的项目模板包。"""
 

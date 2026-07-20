@@ -1,4 +1,4 @@
-<!-- 文件功能：展示当前工作空间下的已归档项目列表，支持按名称搜索并恢复项目。 -->
+<!-- 文件功能：展示当前工作空间下的已归档项目列表，支持按名称搜索、恢复和删除项目。 -->
 <template>
   <BaseDialog :model-value="modelValue" title="已归档项目" size="standard" @update:modelValue="handleDialogVisibleChange">
     <div class="flex flex-col gap-4">
@@ -43,13 +43,24 @@
               </div>
             </div>
 
-            <BaseButton
-              variant="secondary"
-              :loading="restoringProjectId === project.id"
-              @click="handleRestoreProject(project.id)"
-            >
-              恢复
-            </BaseButton>
+            <div class="flex shrink-0 items-center gap-2">
+              <BaseButton
+                variant="secondary"
+                :disabled="deletingProjectId === project.id"
+                :loading="restoringProjectId === project.id"
+                @click="handleRestoreProject(project.id)"
+              >
+                恢复
+              </BaseButton>
+              <BaseButton
+                variant="danger"
+                :disabled="restoringProjectId === project.id"
+                :loading="deletingProjectId === project.id"
+                @click="handleDeleteProject(project)"
+              >
+                删除
+              </BaseButton>
+            </div>
           </div>
         </div>
       </div>
@@ -61,10 +72,10 @@
 import { computed, ref, watch } from 'vue'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/vue-query'
 
-import { listProjects, updateProject } from '@/api/catalog'
+import { deleteProject, listProjects, updateProject } from '@/api/catalog'
 import { getErrorMessage } from '@/api/http'
 import type { ProjectItem } from '@/types/api'
-import { Message } from '@/utils/message'
+import { createConfirm, Message } from '@/utils/message'
 import { formatDateTime } from '@/utils/format'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseDialog from '@/components/ui/BaseDialog.vue'
@@ -82,6 +93,7 @@ const emit = defineEmits<{
 const queryClient = useQueryClient()
 const keyword = ref('')
 const restoringProjectId = ref<number | null>(null)
+const deletingProjectId = ref<number | null>(null)
 
 const query = useQuery(
   computed(() => ({
@@ -106,12 +118,17 @@ const restoreMutation = useMutation({
   mutationFn: (projectId: number) => updateProject(projectId, { status: 'active' }),
 })
 
+const deleteMutation = useMutation({
+  mutationFn: (projectId: number) => deleteProject(projectId),
+})
+
 watch(
   () => props.modelValue,
   (visible) => {
     if (!visible) {
       keyword.value = ''
       restoringProjectId.value = null
+      deletingProjectId.value = null
     }
   },
 )
@@ -136,6 +153,31 @@ async function handleRestoreProject(projectId: number) {
     Message.error(getErrorMessage(error, '恢复项目失败。'))
   } finally {
     restoringProjectId.value = null
+  }
+}
+
+/**
+ * 二次确认后删除归档项目，并同步刷新启用与归档项目列表。
+ * @param project 当前待删除的归档项目
+ */
+async function handleDeleteProject(project: ProjectItem) {
+  const confirmed = await createConfirm(
+    `删除后「${project.name}」将不再出现在项目列表中，确定删除吗？`,
+    '删除归档项目',
+  )
+  if (!confirmed) {
+    return
+  }
+
+  deletingProjectId.value = project.id
+  try {
+    await deleteMutation.mutateAsync(project.id)
+    await queryClient.invalidateQueries({ queryKey: ['projects-by-ws', props.workspaceId] })
+    Message.success('项目已删除。')
+  } catch (error) {
+    Message.error(getErrorMessage(error, '删除项目失败。'))
+  } finally {
+    deletingProjectId.value = null
   }
 }
 </script>

@@ -20,7 +20,7 @@ from app.schemas.project import ProjectBuildExtraAssetsConfig, ProjectMenuMode
 from app.schemas.workspace_style import WorkspaceStylePackageThemeSummary
 
 
-PROJECT_TEMPLATE_PACKAGE_SCHEMA_VERSION = 1
+PROJECT_TEMPLATE_PACKAGE_SCHEMA_VERSION = 2
 PROJECT_TEMPLATE_PACKAGE_TYPE = "web-presentation-project-template"
 
 
