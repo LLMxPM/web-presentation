@@ -6,7 +6,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
-from app.models.enums import AiLlmConfigScope
+from app.models.enums import AiLlmConfigScope, AiModelType
 from app.schemas.common import SchemaBase
 
 LLM_CONTEXT_WINDOW_TOKEN_MAX = 2_000_000
@@ -21,9 +21,11 @@ class LlmProviderCatalogItem(SchemaBase):
 
     provider_key: str
     label: str
+    provider_type: AiModelType
     provider_adapter: str
     docs_url: str
     supports_base_url: bool
+    requires_base_url: bool = False
     supports_api_key: bool
     supports_thinking: bool
     thinking_mode: str
@@ -34,8 +36,12 @@ class LlmProviderCatalogItem(SchemaBase):
     default_context_window_tokens: int | None = None
     default_max_output_tokens: int | None = None
     default_supports_image_input: bool = False
+    supported_model_types: list[AiModelType] = Field(default_factory=lambda: [AiModelType.CHAT])
+    default_image_generation_model_id: str | None = None
+    base_url_hint: str | None = None
     thinking_effort_options: list[str] = Field(default_factory=list)
     advanced_json_hint: dict[str, Any] = Field(default_factory=dict)
+    image_generation_models: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class LlmConfigItem(SchemaBase):
@@ -51,6 +57,7 @@ class LlmConfigItem(SchemaBase):
     provider_key: str
     provider_label: str
     model_id: str
+    model_type: AiModelType = AiModelType.CHAT
     thinking_enabled: bool
     thinking_effort: str | None = None
     supports_image_input: bool
@@ -74,6 +81,7 @@ class LlmProviderConfigItem(SchemaBase):
     name: str
     provider_key: str
     provider_label: str
+    provider_type: AiModelType
     base_url: str | None = None
     status: str
     has_api_key: bool
@@ -94,6 +102,7 @@ class LlmSlotBindingItem(SchemaBase):
     provider_key: str | None = None
     provider_label: str | None = None
     model_id: str | None = None
+    model_type: AiModelType | None = None
     binding_ready: bool
     supports_image_input: bool = False
     inherited_from_global: bool = False
@@ -106,6 +115,7 @@ class LlmConfigCreateRequest(BaseModel):
     scope: AiLlmConfigScope = AiLlmConfigScope.PERSONAL
     provider_config_id: int = Field(ge=1)
     model_id: str = Field(min_length=1, max_length=255)
+    model_type: AiModelType = AiModelType.CHAT
     thinking_enabled: bool = False
     thinking_effort: str | None = Field(default=None, max_length=64)
     supports_image_input: bool = False
@@ -131,6 +141,7 @@ class LlmConfigUpdateRequest(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=128)
     provider_config_id: int | None = Field(default=None, ge=1)
     model_id: str | None = Field(default=None, min_length=1, max_length=255)
+    model_type: AiModelType | None = None
     thinking_enabled: bool | None = None
     thinking_effort: str | None = Field(default=None, max_length=64)
     supports_image_input: bool | None = None

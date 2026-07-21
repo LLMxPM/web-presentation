@@ -19,7 +19,7 @@ from app.ai.provider_catalog import (
 from app.ai.secret_cipher import LlmSecretCipher
 from app.core.exceptions import AppException
 from app.models.ai_llm import AiLlmConfig, AiLlmProviderConfig, AiLlmSlotBinding
-from app.models.enums import AiLlmConfigScope, RecordStatus, UserRole
+from app.models.enums import AiLlmConfigScope, AiLlmSlot, AiModelType, RecordStatus, UserRole
 from app.schemas.llm import (
     LLM_CONTEXT_WINDOW_TOKEN_DEFAULT,
     LLM_COMPRESSION_TARGET_RATIO_DEFAULT,
@@ -33,6 +33,11 @@ from app.schemas.llm import (
     LlmProviderConfigUpdateRequest,
     LlmSlotBindingItem,
     LlmSlotBindingUpdateRequest,
+)
+from app.services.image_generation.contracts import validate_advanced_options
+from app.services.image_generation.registry import (
+    get_image_model_spec,
+    validate_image_provider_connection,
 )
 
 
@@ -52,9 +57,11 @@ class AiLlmService:
             LlmProviderCatalogItem(
                 provider_key=item.provider_key,
                 label=item.label,
+                provider_type=AiModelType(item.provider_type),
                 provider_adapter=item.provider_adapter,
                 docs_url=item.docs_url,
                 supports_base_url=item.supports_base_url,
+                requires_base_url=item.requires_base_url,
                 supports_api_key=item.supports_api_key,
                 supports_thinking=item.supports_thinking,
                 thinking_mode=item.thinking_mode,
@@ -65,8 +72,12 @@ class AiLlmService:
                 default_context_window_tokens=item.default_context_window_tokens,
                 default_max_output_tokens=item.default_max_output_tokens,
                 default_supports_image_input=item.default_supports_image_input,
+                supported_model_types=list(item.supported_model_types),
+                default_image_generation_model_id=item.default_image_generation_model_id,
+                base_url_hint=item.base_url_hint,
                 thinking_effort_options=list(item.thinking_effort_options),
                 advanced_json_hint=item.advanced_json_hint or {},
+                image_generation_models=list(item.image_generation_models),
             )
             for item in list_llm_provider_entries()
         ]
@@ -230,7 +241,14 @@ class AiLlmService:
             api_key=self._cipher.decrypt(provider_config.api_key_ciphertext),
             max_output_tokens=payload.max_output_tokens,
         )
-        advanced_config = self._validate_advanced_config(payload.advanced_config_json)
+        self._validate_provider_model_type(provider_entry, payload.model_type.value)
+        advanced_config = self._validate_model_advanced_config(
+            provider_key=provider_config.provider_key,
+            model_id=payload.model_id.strip(),
+            model_type=payload.model_type.value,
+            value=payload.advanced_config_json,
+        )
+        is_chat_model = payload.model_type == AiModelType.CHAT
 
         config = AiLlmConfig(
             user_id=None if requested_scope == AiLlmConfigScope.GLOBAL else self.user_id,
@@ -239,9 +257,10 @@ class AiLlmService:
             provider_config_id=provider_config.id,
             provider_config=provider_config,
             model_id=payload.model_id.strip(),
-            thinking_enabled=bool(payload.thinking_enabled and provider_entry.supports_thinking),
-            thinking_effort=self._normalize_thinking_effort(provider_entry, payload.thinking_effort),
-            supports_image_input=bool(payload.supports_image_input),
+            model_type=payload.model_type.value,
+            thinking_enabled=bool(is_chat_model and payload.thinking_enabled and provider_entry.supports_thinking),
+            thinking_effort=(self._normalize_thinking_effort(provider_entry, payload.thinking_effort) if is_chat_model else None),
+            supports_image_input=bool(payload.supports_image_input and is_chat_model),
             context_window_tokens=payload.context_window_tokens,
             max_output_tokens=payload.max_output_tokens,
             history_token_ratio=payload.history_token_ratio,
@@ -278,6 +297,16 @@ class AiLlmService:
             )
 
         scope = AiLlmConfigScope(config.scope)
+        if (
+            payload.model_type is not None
+            and payload.model_type.value != config.model_type
+            and payload.provider_config_id is None
+        ):
+            raise AppException(
+                status_code=400,
+                code="AI_LLM_PROVIDER_MODEL_TYPE_MISMATCH",
+                detail="修改模型类型时必须同时选择匹配类型的供应商配置。",
+            )
         next_provider_config = config.provider_config
         if payload.provider_config_id is not None:
             next_provider_config = await self._get_selectable_provider_config_or_raise(
@@ -294,11 +323,7 @@ class AiLlmService:
 
         next_name = payload.name.strip() if payload.name is not None else config.name
         next_model_id = payload.model_id.strip() if payload.model_id is not None else config.model_id
-        next_advanced_config = (
-            self._validate_advanced_config(payload.advanced_config_json)
-            if payload.advanced_config_json is not None
-            else self._validate_advanced_config(config.advanced_config_json or {})
-        )
+        next_model_type = payload.model_type.value if payload.model_type is not None else config.model_type
         next_max_output_tokens = payload.max_output_tokens if payload.max_output_tokens is not None else config.max_output_tokens
 
         provider_entry = self._validate_provider_constraints(
@@ -306,6 +331,22 @@ class AiLlmService:
             base_url=next_provider_config.base_url,
             api_key=self._cipher.decrypt(next_provider_config.api_key_ciphertext),
             max_output_tokens=next_max_output_tokens,
+        )
+        self._validate_provider_model_type(provider_entry, next_model_type)
+        next_advanced_config = (
+            self._validate_model_advanced_config(
+                provider_key=next_provider_config.provider_key,
+                model_id=next_model_id,
+                model_type=next_model_type,
+                value=payload.advanced_config_json,
+            )
+            if payload.advanced_config_json is not None
+            else self._validate_model_advanced_config(
+                provider_key=next_provider_config.provider_key,
+                model_id=next_model_id,
+                model_type=next_model_type,
+                value=config.advanced_config_json or {},
+            )
         )
         next_thinking_effort = config.thinking_effort
         if payload.thinking_effort is not None:
@@ -317,14 +358,18 @@ class AiLlmService:
         config.provider_config_id = next_provider_config.id
         config.provider_config = next_provider_config
         config.model_id = next_model_id
-        config.thinking_enabled = (
-            bool(payload.thinking_enabled and provider_entry.supports_thinking)
-            if payload.thinking_enabled is not None
-            else bool(config.thinking_enabled and provider_entry.supports_thinking)
+        config.model_type = next_model_type
+        is_chat_model = next_model_type == AiModelType.CHAT.value
+        config.thinking_enabled = bool(
+            is_chat_model
+            and provider_entry.supports_thinking
+            and (payload.thinking_enabled if payload.thinking_enabled is not None else config.thinking_enabled)
         )
-        config.thinking_effort = next_thinking_effort if provider_entry.supports_thinking else None
+        config.thinking_effort = next_thinking_effort if is_chat_model and provider_entry.supports_thinking else None
         if payload.supports_image_input is not None:
-            config.supports_image_input = bool(payload.supports_image_input)
+            config.supports_image_input = bool(payload.supports_image_input and next_model_type == AiModelType.CHAT.value)
+        elif next_model_type != AiModelType.CHAT.value:
+            config.supports_image_input = False
         if payload.context_window_tokens is not None:
             config.context_window_tokens = payload.context_window_tokens
         if payload.max_output_tokens is not None:
@@ -402,6 +447,7 @@ class AiLlmService:
             raise AppException(status_code=409, code="AI_LLM_CONFIG_DISABLED", detail="只能绑定启用中的大模型配置。")
         if config.provider_config.status != RecordStatus.ACTIVE.value:
             raise AppException(status_code=409, code="AI_LLM_PROVIDER_CONFIG_DISABLED", detail="只能绑定供应商可用的大模型配置。")
+        self._validate_slot_model_type(slot, config)
 
         if binding is None:
             binding = AiLlmSlotBinding(
@@ -444,6 +490,7 @@ class AiLlmService:
                 code="AI_LLM_SLOT_UNBOUND",
                 detail="当前智能体槽位绑定的供应商配置不可用，请重新绑定。",
             )
+        self._validate_slot_model_type(slot, binding.llm_config)
         return binding.llm_config
 
     async def get_selectable_active_config_or_raise(self, config_id: int) -> AiLlmConfig:
@@ -484,6 +531,7 @@ class AiLlmService:
             "provider_key": provider_config.provider_key,
             "provider_label": provider_entry.label,
             "model_id": config.model_id,
+            "model_type": config.model_type,
             "supports_image_input": bool(config.supports_image_input),
         }
 
@@ -542,6 +590,11 @@ class AiLlmService:
             and provider_config is not None
             and provider_config.status == RecordStatus.ACTIVE.value
         )
+        if binding_ready:
+            try:
+                self._validate_slot_model_type(binding.slot, config)
+            except AppException:
+                binding_ready = False
         result[binding.slot] = LlmSlotBindingItem(
             slot=binding.slot,
             slot_label=definition.label,
@@ -552,6 +605,7 @@ class AiLlmService:
             provider_key=provider_config.provider_key if provider_config is not None else None,
             provider_label=provider_entry.label if provider_entry is not None else None,
             model_id=config.model_id if config is not None else None,
+            model_type=AiModelType(config.model_type) if config is not None else None,
             binding_ready=binding_ready,
             supports_image_input=bool(config.supports_image_input) if binding_ready and config is not None else False,
             inherited_from_global=inherited_from_global,
@@ -648,6 +702,7 @@ class AiLlmService:
             provider_key=provider_config.provider_key,
             provider_label=provider_entry.label,
             model_id=config.model_id,
+            model_type=AiModelType(config.model_type),
             thinking_enabled=bool(config.thinking_enabled and provider_entry.supports_thinking),
             thinking_effort=config.thinking_effort,
             supports_image_input=bool(config.supports_image_input),
@@ -665,6 +720,21 @@ class AiLlmService:
             updated_at=config.updated_at.isoformat() if config.updated_at is not None else None,
         )
 
+    @staticmethod
+    def _validate_slot_model_type(slot: str, config: AiLlmConfig) -> None:
+        """校验视觉槽位与模型协议能力，普通智能体槽位只能使用聊天模型。"""
+
+        if slot == AiLlmSlot.IMAGE_UNDERSTANDING.value:
+            if config.model_type != AiModelType.CHAT.value or not bool(config.supports_image_input):
+                raise AppException(status_code=409, code="AI_LLM_SLOT_MODEL_INCOMPATIBLE", detail="图片理解槽位必须绑定支持图片输入的聊天模型。")
+            return
+        if slot == AiLlmSlot.IMAGE_GENERATION.value:
+            if config.model_type != AiModelType.IMAGE_GENERATION.value:
+                raise AppException(status_code=409, code="AI_LLM_SLOT_MODEL_INCOMPATIBLE", detail="图片生成槽位必须绑定图片生成模型。")
+            return
+        if config.model_type != AiModelType.CHAT.value:
+            raise AppException(status_code=409, code="AI_LLM_SLOT_MODEL_INCOMPATIBLE", detail="智能体槽位只能绑定聊天模型。")
+
     def _to_provider_config_item(self, config: AiLlmProviderConfig) -> LlmProviderConfigItem:
         """把供应商配置 ORM 模型转换为前端可消费的详情。"""
 
@@ -679,6 +749,7 @@ class AiLlmService:
             name=config.name,
             provider_key=config.provider_key,
             provider_label=provider_entry.label,
+            provider_type=AiModelType(provider_entry.provider_type),
             base_url=config.base_url,
             status=config.status,
             has_api_key=bool(raw_api_key),
@@ -760,6 +831,14 @@ class AiLlmService:
         """校验供应商公共字段是否满足目录约束。"""
 
         entry = get_llm_provider_entry(provider_key)
+        if entry.requires_base_url and not base_url:
+            raise AppException(
+                status_code=400,
+                code="AI_LLM_BASE_URL_REQUIRED",
+                detail="当前供应商必须配置 Base URL。",
+            )
+        if entry.provider_type == AiModelType.IMAGE_GENERATION.value:
+            validate_image_provider_connection(provider_key, base_url)
         if base_url and not entry.supports_base_url:
             raise AppException(
                 status_code=400,
@@ -781,6 +860,17 @@ class AiLlmService:
         return entry
 
     @staticmethod
+    def _validate_provider_model_type(provider_entry, model_type: str) -> None:
+        """校验供应商目录是否声明支持目标模型类型。"""
+
+        if model_type != str(provider_entry.provider_type):
+            raise AppException(
+                status_code=400,
+                code="AI_LLM_PROVIDER_MODEL_TYPE_MISMATCH",
+                detail="当前供应商类型与所选模型类型不匹配。",
+            )
+
+    @staticmethod
     def _validate_advanced_config(value: dict[str, Any]) -> dict[str, Any]:
         """限制高级配置必须是对象且不能覆盖受管字段。"""
 
@@ -794,3 +884,20 @@ class AiLlmService:
                 detail=f"高级配置禁止覆盖受管字段：{', '.join(conflicted_keys)}。",
             )
         return dict(value)
+
+    @classmethod
+    def _validate_model_advanced_config(
+        cls,
+        *,
+        provider_key: str,
+        model_id: str,
+        model_type: str,
+        value: dict[str, Any],
+    ) -> dict[str, Any]:
+        """聊天模型沿用公共保护规则，生图模型按注册能力白名单校验。"""
+
+        normalized = cls._validate_advanced_config(value)
+        if model_type != AiModelType.IMAGE_GENERATION.value:
+            return normalized
+        model = get_image_model_spec(provider_key, model_id)
+        return validate_advanced_options(model, normalized)

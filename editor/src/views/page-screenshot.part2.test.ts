@@ -667,8 +667,8 @@ describe('page screenshot views', () => {
         workspaceId: 11,
         projectId: 21,
         pageId: 31,
-        toolName: 'get_page_screenshot',
-        result: { success: true, page_id: 31, screenshot_refreshed: true },
+        toolName: 'analyze_visuals',
+        result: { items: [{ source: { source_type: 'page_screenshot', page_id: 31, screenshot_refreshed: true } }] },
       },
     }))
     window.dispatchEvent(new CustomEvent('agent:project-pages-updated', {
@@ -676,8 +676,8 @@ describe('page screenshot views', () => {
         workspaceId: 11,
         projectId: 21,
         pageId: 31,
-        toolName: 'get_page_screenshot',
-        result: { success: true, page_id: 31, screenshot_refreshed: true },
+        toolName: 'analyze_visuals',
+        result: { items: [{ source: { source_type: 'page_screenshot', page_id: 31, screenshot_refreshed: true } }] },
       },
     }))
 

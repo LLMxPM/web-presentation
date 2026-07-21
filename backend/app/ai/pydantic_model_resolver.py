@@ -45,6 +45,12 @@ class PydanticLlmModelResolver:
         if provider_config.status != RecordStatus.ACTIVE.value:
             raise AppException(status_code=409, code="AI_LLM_PROVIDER_CONFIG_DISABLED", detail="当前大模型供应商配置不可用。")
         provider_key = str(provider_config.provider_key or "").strip()
+        if provider_key in {"openai_image", "dashscope_image"}:
+            raise AppException(
+                status_code=400,
+                code="AI_LLM_PROVIDER_MODEL_TYPE_MISMATCH",
+                detail="图片生成供应商不能作为 Chat 模型运行。",
+            )
         model_id = str(config.model_id or "").strip()
         api_key = self._cipher.decrypt(provider_config.api_key_ciphertext)
         base_url = str(provider_config.base_url or "").strip() or None

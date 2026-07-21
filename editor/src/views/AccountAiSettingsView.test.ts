@@ -388,6 +388,7 @@ describe('AccountAiSettingsView', () => {
         scope: 'personal',
         provider_config_id: 10,
         model_id: 'gpt-4.1',
+        model_type: 'chat',
         thinking_enabled: false,
         thinking_effort: 'medium',
         supports_image_input: false,
@@ -504,6 +505,94 @@ describe('AccountAiSettingsView', () => {
     expect(payload.thinking_effort).toBe('high')
     expect(payload.context_window_tokens).toBe(1000000)
     expect(payload.max_output_tokens).toBe(384000)
+  })
+
+  it('切换为图片生成模型时应清空 Chat 供应商并选择独立生图供应商', async () => {
+    listLlmProvidersMock.mockResolvedValue([
+      {
+        provider_key: 'openai',
+        provider_type: 'chat',
+        supported_model_types: ['chat'],
+        label: 'OpenAI',
+        provider_adapter: 'pydantic_ai.models.openai.OpenAIChatModel',
+        docs_url: 'https://platform.openai.com/docs/',
+        supports_base_url: true,
+        supports_api_key: true,
+        supports_thinking: true,
+        default_base_url: 'https://api.openai.com/v1',
+        default_model_id: 'gpt-4.1-mini',
+        default_image_generation_model_id: null,
+        default_thinking_enabled: false,
+        default_thinking_effort: 'medium',
+        default_supports_image_input: false,
+        thinking_effort_options: ['low', 'medium', 'high'],
+        advanced_json_hint: {},
+      },
+      {
+        provider_key: 'openai_image',
+        provider_type: 'image_generation',
+        supported_model_types: ['image_generation'],
+        label: 'OpenAI 图片生成',
+        provider_adapter: 'app.services.image_generation_adapters.OpenAiImageGenerationAdapter',
+        docs_url: 'https://platform.openai.com/docs/guides/image-generation',
+        supports_base_url: true,
+        supports_api_key: true,
+        supports_thinking: false,
+        default_base_url: 'https://api.openai.com/v1',
+        default_model_id: null,
+        default_image_generation_model_id: 'gpt-image-2',
+        default_thinking_enabled: false,
+        default_thinking_effort: null,
+        default_supports_image_input: false,
+        thinking_effort_options: [],
+        advanced_json_hint: { background: 'auto', output_format: 'png', moderation: 'auto' },
+        image_generation_models: [{
+          model_id: 'gpt-image-2',
+          label: 'GPT Image 2',
+          operations: ['generate', 'edit'],
+          aspect_ratios: ['auto', '1:1', '3:2', '2:3'],
+          resolution_tiers: ['auto', 'standard'],
+          quality_options: ['auto', 'low', 'medium', 'high'],
+          max_reference_images: 4,
+          max_output_count: 4,
+          supports_mask: true,
+          advanced_schema: { properties: { background: {}, output_format: {}, moderation: {} } },
+          advanced_defaults: { background: 'auto', output_format: 'png', moderation: 'auto' },
+          allow_custom_model_id: true,
+        }],
+      },
+    ])
+    listLlmProviderConfigsMock.mockResolvedValue([
+      createProviderConfigItem({ provider_type: 'chat' }),
+      createProviderConfigItem({
+        id: 21,
+        name: 'OpenAI 生图账号',
+        provider_key: 'openai_image',
+        provider_label: 'OpenAI 图片生成',
+        provider_type: 'image_generation',
+      }),
+    ])
+    render(AccountAiSettingsView, createTestingRenderOptions())
+
+    await waitForSettingsReady()
+    await fireEvent.click(screen.getByRole('button', { name: '模型' }))
+    await fireEvent.click(screen.getByRole('button', { name: '新建模型' }))
+    await fireEvent.update(screen.getByLabelText('模型类型'), 'image_generation')
+
+    await waitFor(() => {
+      expect((screen.getByPlaceholderText('选择已知模型或填写兼容模型 ID') as HTMLInputElement).value).toBe('gpt-image-2')
+    })
+    expect(screen.getByText(/已知模型：GPT Image 2/)).toBeInTheDocument()
+    expect(screen.getByText(/参考图 \/ 输出上限/)).toBeInTheDocument()
+    await fireEvent.update(screen.getByPlaceholderText('例如：总控默认模型'), '独立生图模型')
+    await fireEvent.click(screen.getByRole('button', { name: '创建模型' }))
+
+    await waitFor(() => expect(createLlmConfigMock).toHaveBeenCalled())
+    const payload = createLlmConfigMock.mock.calls[0][0] as Record<string, unknown>
+    expect(payload.model_type).toBe('image_generation')
+    expect(payload.provider_config_id).toBe(21)
+    expect(payload.model_id).toBe('gpt-image-2')
+    expect(payload.advanced_config_json).toEqual({ background: 'auto', output_format: 'png', moderation: 'auto' })
   })
 
   it('新建 MiMo 模型时应预填当前官方默认模型和安全 token 上限', async () => {

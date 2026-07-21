@@ -48,7 +48,7 @@ def test_trim_unprocessed_tool_call_history_should_drop_open_tail() -> None:
                 {"part_kind": "text", "content": "我先看截图。"},
                 {
                     "part_kind": "tool-call",
-                    "tool_name": "get_page_screenshot",
+                    "tool_name": "analyze_visuals",
                     "args": '{"page_id": 22}',
                     "tool_call_id": "call-shot",
                 },

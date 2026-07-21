@@ -506,6 +506,16 @@ function upsertToolTimelineItem(
     input_payload: event.data.arguments ?? event.data.args ?? event.data.tool_args ?? previousTool?.input_payload ?? null,
     output_payload: event.data.result ?? event.data.output ?? previousTool?.output_payload ?? null,
     message: String(event.data.message || event.content || previousTool?.message || ''),
+    progress: event.event === 'tool.progress'
+      ? {
+          phase: typeof event.data.phase === 'string' ? event.data.phase : undefined,
+          message: typeof event.data.message === 'string' ? event.data.message : undefined,
+          current: typeof event.data.current === 'number' ? event.data.current : undefined,
+          total: typeof event.data.total === 'number' ? event.data.total : undefined,
+        }
+      : previousTool?.progress ?? null,
+    input_attachments: readEventAttachments(event.data.input_attachments, previousTool?.input_attachments),
+    output_attachments: readEventAttachments(event.data.output_attachments, previousTool?.output_attachments),
   }
   const nextItem: AgentTimelineItem = {
     id: itemId,
@@ -525,6 +535,11 @@ function upsertToolTimelineItem(
   state.timelineItems = existingItem
     ? state.timelineItems.map(item => (item.id === existingItem.id ? nextItem : item))
     : [...state.timelineItems, nextItem]
+}
+
+/** 读取后端为视觉工具 SSE 补齐的附件摘要，缺失时保留上一事件状态。 */
+function readEventAttachments(value: unknown, fallback: AgentMessageAttachmentItem[] | undefined): AgentMessageAttachmentItem[] {
+  return Array.isArray(value) ? value as AgentMessageAttachmentItem[] : fallback ?? []
 }
 
 function failOpenToolTimelineItems(state: AgentSessionRuntimeState, runId: string, message: string): void {
@@ -796,6 +811,14 @@ function upsertMemberToolTimelineItem(
     input_payload: event.data.arguments ?? event.data.args ?? event.data.tool_args ?? previousTool?.input_payload ?? null,
     output_payload: event.data.result ?? event.data.output ?? previousTool?.output_payload ?? null,
     message: String(event.data.message || event.content || previousTool?.message || ''),
+    progress: event.event === 'member.tool.progress'
+      ? {
+          phase: typeof event.data.phase === 'string' ? event.data.phase : undefined,
+          message: typeof event.data.message === 'string' ? event.data.message : undefined,
+        }
+      : previousTool?.progress ?? null,
+    input_attachments: previousTool?.input_attachments ?? [],
+    output_attachments: previousTool?.output_attachments ?? [],
   }
   const nextItem: AgentTimelineItem = {
     id: itemId,

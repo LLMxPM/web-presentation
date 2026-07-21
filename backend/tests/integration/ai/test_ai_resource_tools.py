@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import base64
+
 import pytest
 from httpx import AsyncClient
+from sqlalchemy import func, select
 
 from app.ai.agent import RESOURCE_MANAGER_AGENT_ID
 from app.ai.auth_tokens import (
@@ -17,11 +20,14 @@ from app.ai.tools.resource.resource_library import (
     build_create_resource_asset_tool,
     build_get_resource_asset_content_tool,
     build_list_resource_assets_tool,
+    build_save_uploaded_image_as_resource_tool,
     build_update_resource_asset_metadata_tool,
 )
 from app.ai.tools.workspace.assets import build_list_workspace_font_assets_tool, build_list_workspace_render_assets_tool
 from app.core.exceptions import AppException
 from app.db.session import get_session_factory
+from app.models.ai_agent_attachment import AiAgentImageAttachment
+from app.models.asset import WorkspaceAsset
 from app.models.enums import AssetType, UserRole
 from app.models.user import User
 from app.services.auth_service import AuthContext
@@ -226,6 +232,84 @@ async def test_resource_manager_should_create_and_update_manual_aspect_ratio(
     assert updated["asset"]["aspect_ratio_source"] == "agent"
 
 
+async def test_save_uploaded_image_as_resource_tool_should_be_idempotent(
+    authenticated_client: AsyncClient,
+    monkeypatch,
+) -> None:
+    """同一上传附件重复保存时应复用已有资源，不重复创建记录。"""
+
+    workspace_id = await _create_workspace(authenticated_client, "AI 上传图片保存工作空间")
+    session_id = "resource-upload-session"
+    image_content = base64.b64decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgAAAAAgAB4iG8MwAAAABJRU5ErkJggg=="
+    )
+    session_factory = get_session_factory()
+    async with session_factory() as session:
+        attachment = AiAgentImageAttachment(
+            user_id=1,
+            workspace_id=workspace_id,
+            session_id=session_id,
+            source_kind="user_upload",
+            storage_key="tests/agent-upload.png",
+            original_name="hero.png",
+            content_type="image/png",
+            file_size=len(image_content),
+            sha256="a" * 64,
+            width=1,
+            height=1,
+            owned_object=True,
+            status="active",
+            created_by=1,
+            updated_by=1,
+        )
+        session.add(attachment)
+        await session.commit()
+        await session.refresh(attachment)
+        attachment_id = attachment.id
+
+    async def fake_read_object(self, storage_key: str) -> bytes:  # noqa: ANN001
+        """返回测试图片字节，避免依赖对象存储。"""
+
+        assert storage_key == "tests/agent-upload.png"
+        return image_content
+
+    monkeypatch.setattr(
+        "app.services.agent_image_attachment_service.ObjectStorageService.read_object",
+        fake_read_object,
+    )
+    tool = build_save_uploaded_image_as_resource_tool(session_factory)
+    run_context = _build_tool_run_context(
+        workspace_id=workspace_id,
+        session_id=session_id,
+        scopes=RESOURCE_TOOL_WRITE_SCOPES,
+    )
+
+    created = await tool.entrypoint(
+        run_context,
+        attachment_id=attachment_id,
+        name="uploaded_hero",
+        tags=["主视觉"],
+    )
+    reused = await tool.entrypoint(
+        run_context,
+        attachment_id=attachment_id,
+        name="ignored_new_name",
+    )
+
+    assert created["created"] is True
+    assert reused["created"] is False
+    assert reused["asset"]["id"] == created["asset"]["id"]
+    assert reused["asset"]["name"] == "uploaded_hero"
+    async with session_factory() as session:
+        asset_count = await session.scalar(
+            select(func.count(WorkspaceAsset.id)).where(
+                WorkspaceAsset.workspace_id == workspace_id,
+                WorkspaceAsset.asset_type == AssetType.IMAGE.value,
+            )
+        )
+    assert asset_count == 1
+
+
 async def test_list_workspace_font_assets_tool_should_return_registered_fonts(
     authenticated_client: AsyncClient,
 ) -> None:
@@ -359,13 +443,13 @@ def _build_tool_run_context(
     workspace_id: int,
     project_id: int | None = None,
     page_id: int | None = None,
+    session_id: str = "resource-tool-session",
     scopes: tuple[str, ...] = RESOURCE_TOOL_READ_SCOPES,
 ) -> AgentToolContext:
     """构造资源读取工具需要的运行上下文和签名 token。"""
 
     current = _build_auth_context()
     run_id = "resource-tool-run"
-    session_id = "resource-tool-session"
     dependencies = {
         "user_id": current.user.id,
         "agent_id": RESOURCE_MANAGER_AGENT_ID,

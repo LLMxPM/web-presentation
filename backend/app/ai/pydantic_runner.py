@@ -635,10 +635,12 @@ class PydanticAgentRunner:
         idle_timeout_seconds: float | None = None,
         refresh_timeout_on_run_activity: bool = False,
     ) -> AsyncGenerator[Any, None]:
-        """按指定空闲超时消费节点流；工具等待可把成员事件视为活动心跳。"""
+        """在单一任务上下文中消费节点流；工具等待可把成员事件视为活动心跳。"""
 
         iterator = stream.__aiter__()
-        pending_event_task: asyncio.Task[Any] | None = None
+        event_queue: asyncio.Queue[Any] = asyncio.Queue()
+        pump_task = asyncio.create_task(self._pump_stream_events(iterator, event_queue))
+        pump_cleanup_attempted = False
         wait_started_at = monotonic()
         activity_version = (
             get_live_run_activity_version(run_model.run_id)
@@ -657,31 +659,35 @@ class PydanticAgentRunner:
                     if current_activity_version != activity_version:
                         activity_version = current_activity_version
                         wait_started_at = monotonic()
-                if pending_event_task is None:
-                    pending_event_task = asyncio.create_task(iterator.__anext__())
+
+                if not event_queue.empty():
                     wait_started_at = monotonic()
+                    yield event_queue.get_nowait()
+                    continue
+                if pump_task.done():
+                    await pump_task
+                    return
 
                 elapsed = monotonic() - wait_started_at
                 remaining = timeout_seconds - elapsed
                 if remaining <= 0:
-                    await self._cancel_pending_stream_task(pending_event_task)
-                    pending_event_task = None
+                    pump_cleanup_attempted = True
+                    await self._cancel_pending_stream_task(pump_task)
                     raise AppException(
                         status_code=504,
                         code="AI_AGENT_STREAM_IDLE_TIMEOUT",
                         detail="模型或工具流长时间没有返回新事件，本次运行已停止。",
                     )
 
-                done, _ = await asyncio.wait(
-                    {pending_event_task},
-                    timeout=min(_STREAM_CONTROL_POLL_INTERVAL_SECONDS, remaining),
-                )
-                if not done:
+                try:
+                    async with asyncio.timeout(min(_STREAM_CONTROL_POLL_INTERVAL_SECONDS, remaining)):
+                        raw_event = await event_queue.get()
+                except TimeoutError:
                     if run_model is not None:
                         should_stop, should_cancel = await self._cancel_event_if_requested(run_model)
                         if should_stop:
-                            await self._cancel_pending_stream_task(pending_event_task)
-                            pending_event_task = None
+                            pump_cleanup_attempted = True
+                            await self._cancel_pending_stream_task(pump_task)
                             if should_cancel:
                                 raise AppException(
                                     status_code=409,
@@ -691,16 +697,21 @@ class PydanticAgentRunner:
                             return
                     continue
 
-                completed_task = pending_event_task
-                pending_event_task = None
-                try:
-                    raw_event = completed_task.result()
-                except StopAsyncIteration:
-                    return
+                wait_started_at = monotonic()
                 yield raw_event
         finally:
-            if pending_event_task is not None:
-                await self._cancel_pending_stream_task(pending_event_task)
+            if not pump_cleanup_attempted and not pump_task.done():
+                await self._cancel_pending_stream_task(pump_task)
+
+    async def _pump_stream_events(
+        self,
+        iterator: Any,
+        event_queue: asyncio.Queue[Any],
+    ) -> None:
+        """在同一个 asyncio Task 内完整推进迭代器，避免追踪 ContextVar 跨任务关闭。"""
+
+        async for raw_event in iterator:
+            await event_queue.put(raw_event)
 
     async def _cancel_pending_stream_task(self, task: asyncio.Task[Any]) -> None:
         """取消底层流或后台运行任务，且不让不响应取消的任务阻塞终态写入。"""
@@ -776,7 +787,7 @@ def _requirement_from_deferred(
 ) -> AgentPendingRequirement:
     """把 Pydantic AI deferred requests 转换为平台 pending requirement。"""
 
-    external_calls = _external_page_mutation_calls(requests)
+    external_calls = _external_job_calls(requests)
     if external_calls:
         first_call = external_calls[0]
         first_tool_call_id = str(getattr(first_call, "tool_call_id", "") or "")
@@ -796,6 +807,20 @@ def _requirement_from_deferred(
                 if isinstance(item.get("metadata"), dict) and str(item["metadata"].get("batch_id") or "")
             )
         )
+        job_ids = list(
+            dict.fromkeys(
+                str(item["metadata"].get("job_id") or "")
+                for item in tool_calls
+                if isinstance(item.get("metadata"), dict) and str(item["metadata"].get("job_id") or "")
+            )
+        )
+        kinds = list(
+            dict.fromkeys(
+                str(item["metadata"].get("kind") or "")
+                for item in tool_calls
+                if isinstance(item.get("metadata"), dict)
+            )
+        )
         return AgentPendingRequirement(
             id=f"requirement-{batch_ids[0] if batch_ids else first_tool_call_id or run_id}",
             kind="external_job",
@@ -808,10 +833,16 @@ def _requirement_from_deferred(
                 "tool_args": _tool_args_as_dict(getattr(first_call, "args", None)),
                 "tool_calls": tool_calls,
                 "batch_ids": batch_ids,
+                "job_ids": job_ids,
+                "external_job_kinds": kinds,
                 "requires_user_input": False,
                 "deferred_metadata": requests.metadata,
             },
-            note=f"正在后台处理 {len(tool_calls)} 个页面变更任务。",
+            note=(
+                f"正在后台处理 {len(tool_calls)} 个页面变更任务。"
+                if kinds == ["page_mutation"]
+                else f"正在后台处理 {len(tool_calls)} 个外部任务。"
+            ),
         )
 
     call = (requests.approvals or requests.calls)[0] if (requests.approvals or requests.calls) else None
@@ -844,26 +875,35 @@ def _requirement_from_deferred(
     )
 
 
-def _external_page_mutation_calls(requests: DeferredToolRequests) -> list[Any]:
-    """识别全部由持久化页面变更工具产生的 external deferred calls。"""
+def _external_job_calls(requests: DeferredToolRequests) -> list[Any]:
+    """识别页面变更或图片生成产生的持久化 external deferred calls。"""
 
     calls = list(requests.calls or [])
     if not calls:
         return []
-    page_mutation_calls = []
+    external_calls = []
     for call in calls:
         tool_call_id = str(getattr(call, "tool_call_id", "") or "")
-        if _deferred_call_metadata(requests, tool_call_id).get("kind") == "page_mutation":
-            page_mutation_calls.append(call)
-    if not page_mutation_calls:
+        if _deferred_call_metadata(requests, tool_call_id).get("kind") in {"page_mutation", "image_generation"}:
+            external_calls.append(call)
+    if not external_calls:
         return []
-    if len(page_mutation_calls) != len(calls) or requests.approvals:
+    if len(external_calls) != len(calls) or requests.approvals:
+        kinds = {
+            str(_deferred_call_metadata(requests, str(getattr(call, "tool_call_id", "") or "")).get("kind") or "")
+            for call in external_calls
+        }
+        page_only = kinds == {"page_mutation"}
         raise AppException(
             status_code=422,
-            code="AI_PAGE_MUTATION_MIXED_DEFERRED_CALLS",
-            detail="页面创建或修改不能与用户确认类 deferred 工具混合调用，请分两轮执行。",
+            code="AI_PAGE_MUTATION_MIXED_DEFERRED_CALLS" if page_only else "AI_EXTERNAL_JOB_MIXED_DEFERRED_CALLS",
+            detail=(
+                "页面创建或修改不能与用户确认类 deferred 工具混合调用，请分两轮执行。"
+                if page_only
+                else "持久化外部任务不能与用户确认类 deferred 工具混合调用，请分两轮执行。"
+            ),
         )
-    return page_mutation_calls
+    return external_calls
 
 
 def _deferred_call_metadata(requests: DeferredToolRequests, tool_call_id: str) -> dict[str, Any]:

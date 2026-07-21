@@ -52,6 +52,8 @@ Backend 是平台控制面，负责用户、权限、工作空间、项目、页
 
 AI 目录承载 Pydantic AI 智能体、平台自有会话运行态、工具注册、工具披露、上下文构造和用户级 AI 配置。工具实现使用平台自有工具对象，再由 Pydantic AI runner 装配为运行时 Tool；新增运行态能力应落在平台运行态表和 Pydantic AI runner 上。
 
+AI 供应商的 `provider_key` 与调用协议必须一一对应，不得增加运行时可配置的 adapter 覆盖。Chat 与图片生成供应商独立创建、独立保存 API Key 和 Base URL；Chat 模型只能引用 Chat 供应商，图片生成模型只能引用图片生成供应商。
+
 AI run 排障优先使用只读诊断 CLI：
 
 ```powershell

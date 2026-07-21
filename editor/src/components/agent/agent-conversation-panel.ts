@@ -22,10 +22,13 @@ export interface ToolCallDetail {
   inputPayload: unknown
   outputPayload: unknown
   message: string
+  progress: { phase?: string, message?: string, current?: number, total?: number } | null
   source: 'event' | 'message' | 'synthetic'
   createdAt: string | null
   delegatedMemberRuns: AgentMemberRunItem[]
   attachments: AgentMessageAttachmentItem[]
+  inputAttachments: AgentMessageAttachmentItem[]
+  outputAttachments: AgentMessageAttachmentItem[]
 }
 
 export interface FeedbackRequestEntry {
@@ -81,9 +84,12 @@ export function toolDetailFromTimelineItem(item: AgentTimelineItem, memberRuns: 
     inputPayload: item.tool.input_payload,
     outputPayload: item.tool.output_payload,
     message: item.tool.message,
+    progress: item.tool.progress ?? null,
     source: item.source,
     createdAt: item.created_at,
     attachments: item.attachments ?? [],
+    inputAttachments: item.tool.input_attachments ?? [],
+    outputAttachments: item.tool.output_attachments ?? item.attachments ?? [],
     delegatedMemberRuns: isDelegateToolName(item.tool.tool_name)
       ? memberRuns.filter(memberRun => (
           memberRun.parent_run_id === item.run_id

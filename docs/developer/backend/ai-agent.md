@@ -4,7 +4,7 @@ AI Agent 由 Backend 统一承载，负责会话、run、消息、事件、工�
 
 ## 运行链路
 
-1. Editor 通过 `session_facade_pydantic.py` 发起会话 run、继续 paused run、取消 run 或发送图片输入。
+1. Editor 通过 `session_facade_pydantic.py` 发起会话 run、继续 paused run、取消 run 或发送图片附件引用；内容模型不直接接收图片像素。
 2. Backend 写入 `ai_agent_runs`、用户消息和 `run.started` 事件。
 3. `pydantic_runner.py` 创建 Pydantic AI `Agent`，装配模型、instructions、平台工具和 deps。
 4. `pydantic_tools.py` 把平台工具对象包装为 Pydantic AI Tool，并负责上下文注入和返回值序列化。
@@ -25,6 +25,7 @@ AI 会话、run、事件、消息、工具调用和 HITL 状态写入 Backend �
 | `ai_agent_requirements` | pending/resolved HITL 动作 |
 | `ai_agent_member_runs` | 成员助手运行记录 |
 | `ai_agent_image_attachments` | 会话图片附件和 run 绑定 |
+| `ai_image_generation_jobs` | 图片生成/编辑持久化任务、租约、进度、取消和输出关联 |
 
 ## 工具确认
 

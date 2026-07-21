@@ -90,6 +90,8 @@ async def list_agents(
     for descriptor in descriptors:
         agent_config = await config_service.get_config_summary(descriptor.id)
         binding = slot_lookup.get(descriptor.llm_slot) if descriptor.llm_slot else None
+        image_analysis_binding = slot_lookup.get("image_understanding")
+        image_generation_binding = slot_lookup.get("image_generation")
         required_llm_slots = _resolve_required_llm_slots(registry, descriptor)
         llm_binding_ready = bool(required_llm_slots) and all(
             bool((slot_lookup.get(slot) if slot else None) and slot_lookup[slot].binding_ready)
@@ -112,6 +114,30 @@ async def list_agents(
                 bound_llm_name=binding.llm_config_name if binding else None,
                 bound_provider_label=binding.provider_label if binding else None,
                 supports_image_input=binding.supports_image_input if binding else False,
+                image_analysis_available=bool(
+                    descriptor.id in {"agent-coordinator", "resource-manager"}
+                    and image_analysis_binding
+                    and image_analysis_binding.binding_ready
+                ),
+                image_analysis_unavailable_reason=(
+                    None
+                    if descriptor.id in {"agent-coordinator", "resource-manager"}
+                    and image_analysis_binding
+                    and image_analysis_binding.binding_ready
+                    else "请前往 AI 设置配置图片理解模型。"
+                ),
+                image_generation_available=bool(
+                    descriptor.id in {"agent-coordinator", "resource-manager"}
+                    and image_generation_binding
+                    and image_generation_binding.binding_ready
+                ),
+                image_generation_unavailable_reason=(
+                    None
+                    if descriptor.id in {"agent-coordinator", "resource-manager"}
+                    and image_generation_binding
+                    and image_generation_binding.binding_ready
+                    else "请前往 AI 设置配置图片生成模型。"
+                ),
                 prompt_customized=agent_config.prompt_customized,
                 enabled_tool_count=agent_config.enabled_tool_count,
                 disabled_tool_count=agent_config.disabled_tool_count,
@@ -597,18 +623,6 @@ async def stream_agent_run(
     runtime_context = await _build_runtime_context(session=session, scope=scope)
     facade = AgentSessionFacade(app=request.app, current=current, session=session)
     reserved_lock = await facade.reserve_run_slot(session_id=session_id, agent_id=agent_id, scope=scope)
-    try:
-        await _ensure_stream_image_input_supported(
-            facade=facade,
-            session_id=session_id,
-            agent_id=agent_id,
-            descriptor=descriptor,
-            image_attachment_ids=payload.image_attachment_ids,
-        )
-    except Exception:
-        if reserved_lock.locked():
-            reserved_lock.release()
-        raise
     run_id = payload.run_id or str(uuid4())
     return StreamingResponse(
         facade.run_raw_sse(
@@ -624,31 +638,6 @@ async def stream_agent_run(
         media_type="text/event-stream",
         headers={"X-Agent-Run-Id": run_id},
     )
-
-
-async def _ensure_stream_image_input_supported(
-    *,
-    facade: AgentSessionFacade,
-    session_id: str,
-    agent_id: str,
-    descriptor: RegisteredAgentDescriptor,
-    image_attachment_ids: list[int] | None,
-) -> None:
-    """在返回流式响应前校验当前会话模型是否支持图片输入。"""
-
-    if not image_attachment_ids:
-        return
-    model_config = await facade.resolve_session_llm_config(
-        session_id=session_id,
-        agent_id=agent_id,
-        slot=descriptor.llm_slot or "",
-    )
-    if not bool(model_config.supports_image_input):
-        raise AppException(
-            status_code=409,
-            code="AI_LLM_IMAGE_INPUT_UNSUPPORTED",
-            detail="当前会话模型不支持图片输入，不能发送图片附件。",
-        )
 
 
 @router.get("/sessions/{session_id}/runs/{run_id}/events/stream")

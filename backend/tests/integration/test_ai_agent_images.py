@@ -130,11 +130,11 @@ async def test_image_attachment_upload_should_reject_non_image(authenticated_cli
     assert response.json()["code"] == "AI_IMAGE_ATTACHMENT_TYPE_UNSUPPORTED"
 
 
-async def test_run_with_image_attachment_should_require_visual_model(
+async def test_run_with_image_attachment_should_not_require_content_model_vision(
     authenticated_client: AsyncClient,
     monkeypatch,
 ) -> None:
-    """不支持图片输入的绑定模型不能发送图片附件。"""
+    """内容模型不支持图片输入时仍可发送附件 ID，像素应由视觉工具按需读取。"""
 
     await _bind_agent_model(authenticated_client, supports_image_input=False)
     workspace_id = await _create_workspace(authenticated_client)
@@ -144,6 +144,24 @@ async def test_run_with_image_attachment_should_require_visual_model(
         return storage_key
 
     monkeypatch.setattr("app.services.agent_image_attachment_service.ObjectStorageService.put_object", fake_put_object)
+    captured_attachment_ids: list[int] = []
+
+    def fake_run_raw_sse(self, **kwargs):  # noqa: ANN001, ANN003
+        """截获流式运行参数，避免集成测试访问真实模型服务。"""
+
+        captured_attachment_ids.extend(kwargs.get("image_attachment_ids") or [])
+
+        async def events():
+            try:
+                yield b"event: run.completed\ndata: {}\n\n"
+            finally:
+                reserved_lock = kwargs.get("reserved_lock")
+                if reserved_lock is not None and reserved_lock.locked():
+                    reserved_lock.release()
+
+        return events()
+
+    monkeypatch.setattr("app.api.routes.agents.AgentSessionFacade.run_raw_sse", fake_run_raw_sse)
     upload_response = await authenticated_client.post(
         f"/api/ai/sessions/{session_id}/attachments/images",
         params={"workspace_id": workspace_id, "project_id": project_id, "scope_type": "project", "agent_id": "agent-coordinator"},
@@ -157,8 +175,8 @@ async def test_run_with_image_attachment_should_require_visual_model(
         json={"message": "", "image_attachment_ids": [upload_response.json()["id"]]},
     )
 
-    assert run_response.status_code == 409
-    assert run_response.json()["code"] == "AI_LLM_IMAGE_INPUT_UNSUPPORTED"
+    assert run_response.status_code == 200
+    assert captured_attachment_ids == [upload_response.json()["id"]]
 
 
 async def test_image_transport_resolver_should_use_base64_when_url_unavailable(monkeypatch) -> None:

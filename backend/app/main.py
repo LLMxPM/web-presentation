@@ -20,6 +20,10 @@ from app.ai.page_mutation_queue import (
     recover_interrupted_ai_page_mutation_jobs_on_startup,
     run_ai_page_mutation_queue_loop,
 )
+from app.ai.image_generation_queue import (
+    recover_interrupted_image_generation_jobs_on_startup,
+    run_ai_image_generation_queue_loop,
+)
 from app.api.router import api_router
 from app.api.routes import build_artifacts, public_assets, internal_runtime, runtime_configs, well_known, preview
 from app.core.config import AppSettings, get_settings
@@ -60,6 +64,7 @@ async def lifespan(app: FastAPI):
     asset_render_hint_backfill_queue_task: asyncio.Task[None] | None = None
     runtime_artifact_sweeper_task: asyncio.Task[None] | None = None
     ai_page_mutation_queue_task: asyncio.Task[None] | None = None
+    ai_image_generation_queue_task: asyncio.Task[None] | None = None
     playwright_browser_pool = get_playwright_browser_pool()
     try:
         session_factory = get_session_factory()
@@ -70,6 +75,7 @@ async def lifespan(app: FastAPI):
         await recover_interrupted_asset_render_hint_backfill_jobs_on_startup(session_factory)
         if get_settings().ai_enabled:
             await recover_interrupted_ai_page_mutation_jobs_on_startup(session_factory)
+            await recover_interrupted_image_generation_jobs_on_startup(session_factory)
         # 进程内的测试或热重启可能复用全局池对象；只有明确的新应用生命周期
         # 才允许重新开放已由上一轮 shutdown 关闭的 Chromium 池。
         await playwright_browser_pool.start(allow_reopen=True)
@@ -83,6 +89,10 @@ async def lifespan(app: FastAPI):
             ai_page_mutation_queue_task = asyncio.create_task(
                 run_ai_page_mutation_queue_loop(session_factory, app=app),
                 name="ai-page-mutation-queue",
+            )
+            ai_image_generation_queue_task = asyncio.create_task(
+                run_ai_image_generation_queue_loop(session_factory, app=app),
+                name="ai-image-generation-queue",
             )
     except SQLAlchemyError as exc:
         if is_database_connectivity_error(exc):
@@ -102,6 +112,8 @@ async def lifespan(app: FastAPI):
             await _stop_background_task(runtime_artifact_sweeper_task)
         if ai_page_mutation_queue_task is not None:
             await _stop_background_task(ai_page_mutation_queue_task)
+        if ai_image_generation_queue_task is not None:
+            await _stop_background_task(ai_image_generation_queue_task)
         await playwright_browser_pool.stop()
 
 

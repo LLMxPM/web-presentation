@@ -32,6 +32,7 @@ from app.ai.tool_specs import (
     resolve_required_context_fields,
 )
 from app.ai.tools.disclosure import get_tool_group_definitions
+from app.ai.visual_analysis_tool_schema import project_visual_analysis_schema
 from app.core.exceptions import AppException
 from app.db.session import get_session_factory
 from app.models.ai_agent_config import AiAgentToolUserConfig, AiAgentUserConfig
@@ -445,6 +446,11 @@ class AiAgentConfigService:
         runtime_tool = runtime_tool_map.get(tool.key)
         parameters_schema = getattr(runtime_tool, "parameters", None) if runtime_tool is not None else None
         parameters_schema = parameters_schema if isinstance(parameters_schema, dict) else None
+        if tool.key == "analyze_visuals" and parameters_schema is not None:
+            parameters_schema = project_visual_analysis_schema(
+                parameters_schema,
+                allow_page_screenshot=agent_id == AGENT_COORDINATOR_AGENT_ID,
+            )
         spec = get_agent_tool_spec(agent_id, tool.key)
         return AgentToolGuideItem(
             tool_name=tool.key,

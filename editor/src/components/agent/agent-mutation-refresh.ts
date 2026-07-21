@@ -40,15 +40,11 @@ export function buildMutationRefreshEvents(
     ]
   }
 
-  if (toolName === 'get_page_screenshot') {
-    if (resultRecord?.screenshot_refreshed !== true) {
-      return []
-    }
-    const pageId = resolveNumberField(resultRecord, ['page_id']) ?? baseEvent.pageId
-    return [
-      { ...baseEvent, kind: 'page', pageId },
-      { ...baseEvent, kind: 'project-pages', pageId },
-    ]
+  if (toolName === 'analyze_visuals') {
+    return resolveRefreshedScreenshotPageIds(resultRecord).flatMap(pageId => [
+      { ...baseEvent, kind: 'page' as const, pageId },
+      { ...baseEvent, kind: 'project-pages' as const, pageId },
+    ])
   }
 
   if (toolName === 'update_project_style_config') {
@@ -95,7 +91,8 @@ export function buildMutationRefreshEvents(
   }
 
   if (
-    toolName === 'create_resource_asset'
+    toolName === 'save_uploaded_image_as_resource'
+    || toolName === 'create_resource_asset'
     || toolName === 'apply_resource_content_diff'
     || toolName === 'update_resource_asset_metadata'
     || toolName === 'copy_resource_asset'
@@ -109,6 +106,23 @@ export function buildMutationRefreshEvents(
   }
 
   return []
+}
+
+/**
+ * 从统一视觉分析结果中提取本次实际刷新的页面截图 ID。
+ */
+function resolveRefreshedScreenshotPageIds(resultRecord: Record<string, unknown> | null): number[] {
+  if (!resultRecord || !Array.isArray(resultRecord.items)) {
+    return []
+  }
+  const pageIds = resultRecord.items.flatMap((item) => {
+    if (!isRecord(item) || !isRecord(item.source) || item.source.source_type !== 'page_screenshot') {
+      return []
+    }
+    const pageId = resolveNumberField(item.source, ['page_id'])
+    return item.source.screenshot_refreshed === true && pageId !== null ? [pageId] : []
+  })
+  return [...new Set(pageIds)]
 }
 
 /**

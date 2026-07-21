@@ -56,7 +56,7 @@ def test_raw_tool_result_media_objects_should_be_replaced_by_agent_image_refs() 
         "kind": "agent-image-ref",
         "attachment_id": 8,
         "source_kind": "tool_output",
-        "tool_name": "get_page_screenshot",
+        "tool_name": "analyze_visuals",
         "sha256": "abc",
         "content_type": "image/png",
         "original_name": "page.png",

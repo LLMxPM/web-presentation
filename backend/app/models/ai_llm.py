@@ -6,7 +6,7 @@ from sqlalchemy import Boolean, Float, ForeignKey, Index, Integer, JSON, String,
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
-from app.models.enums import AiLlmConfigScope, AiLlmSlot, RecordStatus
+from app.models.enums import AiLlmConfigScope, AiLlmSlot, AiModelType, RecordStatus
 from app.models.mixins import AuditMixin, TimestampMixin
 
 
@@ -39,6 +39,7 @@ class AiLlmConfig(TimestampMixin, AuditMixin, Base):
     name: Mapped[str] = mapped_column(String(128), nullable=False)
     provider_config_id: Mapped[int] = mapped_column(ForeignKey("ai_llm_provider_configs.id"), nullable=False, index=True)
     model_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    model_type: Mapped[str] = mapped_column(String(32), nullable=False, default=AiModelType.CHAT.value, index=True)
     thinking_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     thinking_effort: Mapped[str | None] = mapped_column(String(64), nullable=True)
     supports_image_input: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)

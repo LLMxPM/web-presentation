@@ -4,6 +4,7 @@
 export type RecordStatus = 'active' | 'archived'
 export type UserRole = 'platform_admin' | 'workspace_user'
 export type AiLlmConfigScope = 'global' | 'personal'
+export type AiModelType = 'chat' | 'image_generation'
 export type PageFileType = 'vue' | 'ts' | 'js' | 'json' | 'md' | 'txt' | 'yaml'
 export type PageVersionStorageType = 'snapshot' | 'diff'
 export type AssetType = 'icon' | 'font' | 'image' | 'video' | 'drawio' | 'mermaid' | 'chart' | 'formula'
@@ -868,6 +869,10 @@ export interface AgentDescriptor {
   bound_llm_name: string | null
   bound_provider_label: string | null
   supports_image_input: boolean
+  image_analysis_available?: boolean
+  image_analysis_unavailable_reason?: string | null
+  image_generation_available?: boolean
+  image_generation_unavailable_reason?: string | null
   prompt_customized: boolean
   enabled_tool_count: number
   disabled_tool_count: number
@@ -1001,6 +1006,8 @@ export interface AgentImageAttachmentItem {
   original_name: string
   content_type: string
   file_size: number
+  width?: number | null
+  height?: number | null
   sha256: string
   url: string
   preview_available: boolean
@@ -1015,6 +1022,8 @@ export interface AgentMessageAttachmentItem {
   original_name: string
   content_type: string
   file_size: number
+  width?: number | null
+  height?: number | null
   url: string
   preview_available: boolean
   promoted_asset_id: number | null
@@ -1139,6 +1148,9 @@ export interface AgentTimelineToolItem {
   input_payload: unknown
   output_payload: unknown
   message: string
+  progress?: { phase?: string, message?: string, current?: number, total?: number } | null
+  input_attachments?: AgentMessageAttachmentItem[]
+  output_attachments?: AgentMessageAttachmentItem[]
 }
 
 export interface AgentTimelineItem {
@@ -1192,9 +1204,11 @@ export interface AgentRunCancelResponse {
 export interface LlmProviderCatalogItem {
   provider_key: string
   label: string
+  provider_type?: AiModelType
   provider_adapter: string
   docs_url: string
   supports_base_url: boolean
+  requires_base_url?: boolean
   supports_api_key: boolean
   supports_thinking: boolean
   thinking_mode: string
@@ -1205,8 +1219,27 @@ export interface LlmProviderCatalogItem {
   default_context_window_tokens: number | null
   default_max_output_tokens: number | null
   default_supports_image_input: boolean
+  supported_model_types?: AiModelType[]
+  default_image_generation_model_id?: string | null
+  base_url_hint?: string | null
   thinking_effort_options: string[]
   advanced_json_hint: Record<string, unknown>
+  image_generation_models?: ImageGenerationModelCatalogItem[]
+}
+
+export interface ImageGenerationModelCatalogItem {
+  model_id: string
+  label: string
+  operations: Array<'generate' | 'edit'>
+  aspect_ratios: string[]
+  resolution_tiers: string[]
+  quality_options: string[]
+  max_reference_images: number
+  max_output_count: number
+  supports_mask: boolean
+  advanced_schema: Record<string, unknown>
+  advanced_defaults: Record<string, unknown>
+  allow_custom_model_id: boolean
 }
 
 export interface LlmConfigItem {
@@ -1220,6 +1253,7 @@ export interface LlmConfigItem {
   provider_key: string
   provider_label: string
   model_id: string
+  model_type?: AiModelType
   thinking_enabled: boolean
   thinking_effort: string | null
   supports_image_input: boolean
@@ -1241,6 +1275,7 @@ export interface LlmProviderConfigItem {
   name: string
   provider_key: string
   provider_label: string
+  provider_type?: AiModelType
   base_url: string | null
   status: RecordStatus
   has_api_key: boolean
@@ -1259,6 +1294,7 @@ export interface LlmSlotBindingItem {
   provider_key: string | null
   provider_label: string | null
   model_id: string | null
+  model_type?: AiModelType | null
   binding_ready: boolean
   supports_image_input: boolean
   inherited_from_global: boolean

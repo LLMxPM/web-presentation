@@ -84,6 +84,15 @@ class AiLlmSlot(str, Enum):
     AGENT_COORDINATOR = "agent_coordinator"
     COMPONENT_MANAGER = "component_manager"
     RESOURCE_MANAGER = "resource_manager"
+    IMAGE_UNDERSTANDING = "image_understanding"
+    IMAGE_GENERATION = "image_generation"
+
+
+class AiModelType(str, Enum):
+    """模型配置的运行协议类型。"""
+
+    CHAT = "chat"
+    IMAGE_GENERATION = "image_generation"
 
 
 class AiLlmConfigScope(str, Enum):

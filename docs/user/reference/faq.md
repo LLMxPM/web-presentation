@@ -30,7 +30,7 @@ SQLite 轻量单容器版的数据保存在 `lite-data` volume 中，包括 SQLi
 
 ## AI 设置保存后不生效怎么办？
 
-先确认账户 AI 设置中模型供应商、模型名、API Key 和 Base URL 是否完整，再确认 Backend 的加密密钥没有变化。生产排障见 [部署排障](../../developer/deployment/troubleshooting.md)。
+先确认账户 AI 设置中模型供应商、模型名、API Key 和 Base URL 是否完整，并确认模型类型与供应商类型一致。Chat 与图片生成供应商需要分别创建，已有 `openai`/`dashscope` 配置不会自动供 `openai_image`/`dashscope_image` 使用；百炼生图 Base URL 还必须是 HTTPS `/api/v1` 根地址。再确认 Backend 的加密密钥没有变化。生产排障见 [部署排障](../../developer/deployment/troubleshooting.md)。
 
 ## 页面预览空白怎么办？
 

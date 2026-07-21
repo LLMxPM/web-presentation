@@ -22,10 +22,12 @@ from app.ai.image_refs import (
 from app.core.config import get_settings
 from app.core.exceptions import AppException
 from app.models.ai_agent_attachment import AiAgentImageAttachment
+from app.models.asset import WorkspaceAsset
 from app.models.enums import AssetType, RecordStatus
 from app.schemas.agent import AgentImageAttachmentItem, AgentMessageAttachmentItem
 from app.services.agent_image_transport_resolver import AgentImageTransportResolver, ResolvedAgentImage
 from app.services.asset_service import AssetService
+from app.services.image_metadata import read_image_dimensions
 from app.services.object_storage_service import ObjectStorageService
 
 _ALLOWED_IMAGE_CONTENT_TYPES = {
@@ -80,6 +82,7 @@ class AgentImageAttachmentService:
             raise AppException(status_code=400, code="AI_IMAGE_ATTACHMENT_EMPTY", detail="图片附件不能为空。")
 
         sha256 = hashlib.sha256(content).hexdigest()
+        width, height = read_image_dimensions(content, content_type)
         suffix = Path(original_name).suffix.lower() or _ALLOWED_IMAGE_CONTENT_TYPES[content_type]
         storage_key = await self.object_storage_service.put_object(
             f"ai-agent-attachments/{self.user_id}/{session_id}/{sha256}{suffix}",
@@ -96,6 +99,8 @@ class AgentImageAttachmentService:
             content_type=content_type,
             file_size=len(content),
             sha256=sha256,
+            width=width,
+            height=height,
             owned_object=True,
             status=_ATTACHMENT_STATUS_ACTIVE,
             created_by=operator_id,
@@ -127,6 +132,7 @@ class AgentImageAttachmentService:
         if not content:
             raise AppException(status_code=400, code="AI_TOOL_IMAGE_EMPTY", detail="工具图片内容不能为空。")
         sha256 = hashlib.sha256(content).hexdigest()
+        width, height = read_image_dimensions(content, normalized_type)
         suffix = Path(normalized_name).suffix.lower() or _ALLOWED_IMAGE_CONTENT_TYPES[normalized_type]
         storage_key = await self.object_storage_service.put_object(
             f"{_TOOL_IMAGE_PREFIX}/{self.user_id}/{session_id}/{run_id}/{sha256}{suffix}",
@@ -147,6 +153,8 @@ class AgentImageAttachmentService:
             content_type=normalized_type,
             file_size=len(content),
             sha256=sha256,
+            width=width,
+            height=height,
             owned_object=True,
             status=_ATTACHMENT_STATUS_ACTIVE,
             created_by=operator_id,
@@ -362,11 +370,54 @@ class AgentImageAttachmentService:
     ) -> AgentImageAttachmentItem:
         """把图片附件保存为工作空间 image 资源，并回填 promoted_asset_id。"""
 
+        item, _, _ = await self.promote_attachment_to_asset_with_result(
+            workspace_id=workspace_id,
+            session_id=session_id,
+            attachment_id=attachment_id,
+            name=name,
+            description=description,
+            tags=tags,
+            overwrite=overwrite,
+            operator_id=operator_id,
+        )
+        return item
+
+    async def promote_attachment_to_asset_with_result(
+        self,
+        *,
+        workspace_id: int,
+        session_id: str,
+        attachment_id: int,
+        name: str | None,
+        description: str | None,
+        tags: list[str],
+        overwrite: bool,
+        operator_id: int,
+        require_user_upload: bool = False,
+    ) -> tuple[AgentImageAttachmentItem, WorkspaceAsset, bool]:
+        """幂等保存图片附件，并返回附件、资源和本次是否新建。"""
+
         attachment = await self._get_attachment_or_raise(
             workspace_id=workspace_id,
             session_id=session_id,
             attachment_id=attachment_id,
         )
+        if require_user_upload and attachment.source_kind != AGENT_IMAGE_SOURCE_USER_UPLOAD:
+            raise AppException(
+                status_code=400,
+                code="AI_IMAGE_ATTACHMENT_SOURCE_UNSUPPORTED",
+                detail="当前工具只支持把用户上传图片保存为工作空间资源。",
+            )
+        if attachment.promoted_asset_id is not None:
+            promoted_asset = await self.session.get(WorkspaceAsset, attachment.promoted_asset_id)
+            if promoted_asset is None or promoted_asset.workspace_id != workspace_id:
+                raise AppException(
+                    status_code=409,
+                    code="AI_IMAGE_ATTACHMENT_PROMOTION_INCONSISTENT",
+                    detail="图片附件关联的工作空间资源不存在或边界不一致。",
+                )
+            return self._to_item(attachment), promoted_asset, False
+
         content = await self.object_storage_service.read_object(attachment.storage_key)
         upload_file = UploadFile(
             BytesIO(content),
@@ -387,7 +438,7 @@ class AgentImageAttachmentService:
         attachment.updated_by = operator_id
         await self.session.commit()
         await self.session.refresh(attachment)
-        return self._to_item(attachment)
+        return self._to_item(attachment), asset, True
 
     async def _get_attachment_or_raise(
         self,
@@ -577,6 +628,8 @@ class AgentImageAttachmentService:
             original_name=attachment.original_name,
             content_type=attachment.content_type,
             file_size=attachment.file_size,
+            width=attachment.width,
+            height=attachment.height,
             sha256=attachment.sha256,
             url=self._build_attachment_url(attachment),
             preview_available=attachment.status == _ATTACHMENT_STATUS_ACTIVE,
@@ -594,6 +647,8 @@ class AgentImageAttachmentService:
             original_name=attachment.original_name,
             content_type=attachment.content_type,
             file_size=attachment.file_size,
+            width=attachment.width,
+            height=attachment.height,
             url=self._build_attachment_url(attachment),
             preview_available=attachment.status == _ATTACHMENT_STATUS_ACTIVE,
             promoted_asset_id=attachment.promoted_asset_id,

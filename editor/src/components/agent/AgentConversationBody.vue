@@ -208,6 +208,12 @@
                   v-for="tool in item.tools"
                   :key="tool.id"
                 >
+                  <AgentVisualToolCard
+                    v-if="isVisualTool(tool)"
+                    :tool="tool"
+                    @open-detail="handleToolRowClick(tool)"
+                  />
+                  <template v-else>
                   <button
                     type="button"
                     class="tool-call-row flex w-full min-w-0 items-center justify-between gap-2 border border-slate-200/80 bg-slate-50/60 px-1.5 py-0.5 text-left text-[10px] transition hover:bg-slate-100/70"
@@ -238,6 +244,7 @@
                       <span v-else class="message-attachment-placeholder">{{ attachmentPlaceholderText(attachment) }}</span>
                     </a>
                   </div>
+                  </template>
                 </div>
               </template>
               <details v-else class="tool-call-group" :open="shouldExpandToolGroup(item.tools)">
@@ -250,6 +257,12 @@
                     v-for="tool in item.tools"
                     :key="tool.id"
                   >
+                    <AgentVisualToolCard
+                      v-if="isVisualTool(tool)"
+                      :tool="tool"
+                      @open-detail="handleToolRowClick(tool)"
+                    />
+                    <template v-else>
                     <button
                       type="button"
                       class="tool-call-row flex w-full min-w-0 items-center justify-between gap-2 border border-slate-200/80 bg-slate-50/60 px-1.5 py-0.5 text-left text-[10px] transition hover:bg-slate-100/70"
@@ -280,6 +293,7 @@
                         <span v-else class="message-attachment-placeholder">{{ attachmentPlaceholderText(attachment) }}</span>
                       </a>
                     </div>
+                    </template>
                   </div>
                 </div>
               </details>
@@ -368,6 +382,7 @@ import { ChevronDown, ChevronRight, Copy } from '@lucide/vue'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import BaseButton from '@/components/ui/BaseButton.vue'
+import AgentVisualToolCard from '@/components/agent/AgentVisualToolCard.vue'
 import {
   createMessageStreamingResolver,
   formatMessageTime,
@@ -506,6 +521,10 @@ function handleToolRowClick(tool: ToolCallDetail) {
     return
   }
   emit('open-tool-detail', tool.id)
+}
+
+function isVisualTool(tool: ToolCallDetail) {
+  return tool.toolName === 'analyze_visuals' || tool.toolName === 'generate_image'
 }
 
 /**

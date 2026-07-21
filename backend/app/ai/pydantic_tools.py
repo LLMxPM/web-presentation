@@ -7,7 +7,7 @@ from dataclasses import dataclass, fields, is_dataclass
 from datetime import date, datetime
 from enum import Enum
 from types import SimpleNamespace
-from typing import Any, get_type_hints
+from typing import AbstractSet, Any, get_type_hints
 
 from pydantic_ai import RunContext
 from pydantic_ai.messages import BinaryContent, ImageUrl
@@ -16,12 +16,20 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.ai.agent_runtime_config import EffectiveAgentRuntimeConfig, apply_tool_runtime_config
 from app.ai.auth_tokens import build_agent_tool_token
+from app.ai.image_generation_tool_schema import project_generate_image_schema
 from app.ai.image_refs import normalize_agent_image_ref
 from app.ai.platform_tools import AgentToolContext, recoverable_tool_error_result
-from app.ai.tool_specs import build_agent_tools_from_group_specs, list_agent_group_specs
+from app.ai.tool_specs import (
+    AGENT_COORDINATOR_AGENT_ID,
+    RESOURCE_MANAGER_AGENT_ID,
+    build_agent_tools_from_group_specs,
+    list_agent_group_specs,
+)
+from app.ai.visual_analysis_tool_schema import project_visual_analysis_schema
 from app.core.exceptions import AppException
 from app.schemas.agent import AgentScopeContext
 from app.services.auth_service import AuthContext
+from app.services.image_generation.contracts import ImageModelSpec
 
 _NON_RECOVERABLE_TOOL_ERROR_CODES = {
     "AI_RUN_CANCELLED",
@@ -38,8 +46,17 @@ _RECOVERABLE_TOOL_ERROR_CODES = {
     "PAGE_SCREENSHOT_JOB_FAILED",
     "PAGE_SCREENSHOT_JOB_INTERRUPTED",
     "PAGE_SCREENSHOT_JOB_TIMEOUT",
+    "AI_IMAGE_ANALYSIS_MODEL_FAILED",
+    "AI_LLM_SLOT_UNBOUND",
+    "AI_LLM_SLOT_MODEL_INCOMPATIBLE",
 }
 _RECOVERABLE_TOOL_ERROR_HINT = "请根据错误信息修正工具参数、改用其他对象；如果缺少必要信息，请询问用户。"
+_RECOVERABLE_TOOL_ERROR_HINTS = {
+    "AI_IMAGE_ANALYSIS_MODEL_FAILED": (
+        "不要使用相同参数立即重试。页面任务可继续依据页面源码、组件契约和代码检查结果分析，"
+        "但必须明确说明尚未完成图片像素验证；若任务必须看图，请提示用户检查图片理解模型配置后重试。"
+    ),
+}
 
 
 @dataclass(slots=True)
@@ -59,7 +76,11 @@ def build_pydantic_tools(
     session_id: str,
     run_id: str,
     supports_image_input: bool,
+    unavailable_group_keys: AbstractSet[str] | None = None,
     member_delegation_executor: Any | None = None,
+    image_generation_model: ImageModelSpec | None = None,
+    image_generation_config_id: int | None = None,
+    member_run_id: str | None = None,
 ) -> tuple[list[Tool[AgentToolDeps]], AgentToolDeps]:
     """构建 Pydantic AI 工具和共享 deps。"""
 
@@ -67,6 +88,7 @@ def build_pydantic_tools(
         agent_id=agent_id,
         session_factory=session_factory,
         supports_image_input=supports_image_input,
+        unavailable_group_keys=unavailable_group_keys,
     )
     raw_tools = apply_tool_runtime_config(agent_id=agent_id, tools=raw_tools, runtime_config=runtime_config)
     dependencies = _build_dependencies(
@@ -76,9 +98,19 @@ def build_pydantic_tools(
         session_id=session_id,
         run_id=run_id,
         supports_image_input=supports_image_input,
+        unavailable_group_keys=unavailable_group_keys,
         member_delegation_executor=member_delegation_executor,
+        image_generation_config_id=image_generation_config_id,
+        member_run_id=member_run_id,
     )
-    return [_wrap_platform_tool(tool_item) for tool_item in raw_tools], AgentToolDeps(dependencies=dependencies)
+    return [
+        _wrap_platform_tool(
+            tool_item,
+            image_generation_model=image_generation_model if getattr(tool_item, "name", None) == "generate_image" else None,
+            allow_page_screenshot=agent_id == AGENT_COORDINATOR_AGENT_ID,
+        )
+        for tool_item in raw_tools
+    ], AgentToolDeps(dependencies=dependencies)
 
 
 def _build_dependencies(
@@ -89,12 +121,17 @@ def _build_dependencies(
     session_id: str,
     run_id: str,
     supports_image_input: bool,
+    unavailable_group_keys: AbstractSet[str] | None = None,
     member_delegation_executor: Any | None = None,
+    image_generation_config_id: int | None = None,
+    member_run_id: str | None = None,
 ) -> dict[str, Any]:
     """生成平台工具上下文校验需要的 dependencies 字典。"""
 
     scopes: list[str] = []
     for group in list_agent_group_specs(agent_id):
+        if unavailable_group_keys and group.key in unavailable_group_keys:
+            continue
         for scope_key in group.token_scopes:
             if scope_key not in scopes:
                 scopes.append(scope_key)
@@ -123,14 +160,30 @@ def _build_dependencies(
         "model_supports_image_input": supports_image_input,
         "backend_session_id": current.backend_session_id,
         "member_tool_auth_tokens": {},
+        "allowed_visual_input_types": (
+            ["attachment", "asset", "page_screenshot"]
+            if agent_id == AGENT_COORDINATOR_AGENT_ID
+            else ["attachment", "asset"]
+            if agent_id == RESOURCE_MANAGER_AGENT_ID
+            else []
+        ),
     }
+    if image_generation_config_id is not None:
+        dependencies["image_generation_config_id"] = image_generation_config_id
+    if member_run_id:
+        dependencies["member_run_id"] = member_run_id
     if member_delegation_executor is not None:
         dependencies["member_delegation_executor"] = member_delegation_executor
     dependencies["tool_auth_token"] = token
     return dependencies
 
 
-def _wrap_platform_tool(tool_item: Any) -> Tool[AgentToolDeps]:
+def _wrap_platform_tool(
+    tool_item: Any,
+    *,
+    image_generation_model: ImageModelSpec | None = None,
+    allow_page_screenshot: bool = False,
+) -> Tool[AgentToolDeps]:
     """把单个平台工具包装成 Pydantic AI Tool。"""
 
     entrypoint = getattr(tool_item, "entrypoint", None)
@@ -165,7 +218,8 @@ def _wrap_platform_tool(tool_item: Any) -> Tool[AgentToolDeps]:
                 code=exc.code,
                 message=exc.detail,
                 status_code=exc.status_code,
-                hint=_RECOVERABLE_TOOL_ERROR_HINT,
+                hint=_recoverable_tool_error_hint(exc.code),
+                data=exc.data,
             )
 
     tool_description = _pydantic_tool_description(tool_item, entrypoint)
@@ -173,7 +227,7 @@ def _wrap_platform_tool(tool_item: Any) -> Tool[AgentToolDeps]:
     wrapper.__doc__ = tool_description
     wrapper.__annotations__ = _wrapper_annotations(entrypoint)
     wrapper.__signature__ = _wrapper_signature(entrypoint)  # type: ignore[attr-defined]
-    return Tool(
+    tool = Tool(
         wrapper,
         takes_ctx=True,
         name=str(getattr(tool_item, "name", "") or entrypoint.__name__),
@@ -181,6 +235,23 @@ def _wrap_platform_tool(tool_item: Any) -> Tool[AgentToolDeps]:
         requires_approval=bool(getattr(tool_item, "requires_confirmation", False)),
         sequential=bool(getattr(tool_item, "sequential", False)),
     )
+    if image_generation_model is not None:
+        tool.function_schema.json_schema = project_generate_image_schema(
+            tool.function_schema.json_schema,
+            image_generation_model,
+        )
+    if tool.name == "analyze_visuals":
+        tool.function_schema.json_schema = project_visual_analysis_schema(
+            tool.function_schema.json_schema,
+            allow_page_screenshot=allow_page_screenshot,
+        )
+    return tool
+
+
+def _recoverable_tool_error_hint(code: str) -> str:
+    """按错误码返回 Agent 可执行的恢复提示，避免无效原样重试。"""
+
+    return _RECOVERABLE_TOOL_ERROR_HINTS.get(code, _RECOVERABLE_TOOL_ERROR_HINT)
 
 
 def _pydantic_tool_description(tool_item: Any, entrypoint: Any) -> str:

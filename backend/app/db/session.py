@@ -1,5 +1,7 @@
 """文件功能：创建异步数据库引擎与会话工厂，并对外提供依赖注入接口。"""
 
+import asyncio
+import logging
 from collections.abc import AsyncGenerator
 
 from sqlalchemy import event
@@ -13,6 +15,8 @@ from sqlalchemy.ext.asyncio import (
 )
 
 from app.core.config import get_settings
+
+logger = logging.getLogger(__name__)
 
 _engine: AsyncEngine | None = None
 _session_factory: async_sessionmaker[AsyncSession] | None = None
@@ -61,10 +65,29 @@ async def reset_database_state() -> None:
 
 
 async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
-    """为 FastAPI 路由提供数据库会话，并在请求结束后自动关闭。"""
+    """为 FastAPI 路由提供会话，并在请求取消时用独立任务完整关闭事务。"""
 
-    async with get_session_factory()() as session:
+    session = get_session_factory()()
+    try:
         yield session
+    finally:
+        close_task = asyncio.create_task(session.close())
+        try:
+            await asyncio.shield(close_task)
+        except asyncio.CancelledError:
+            close_task.add_done_callback(_consume_detached_session_close_result)
+            raise
+
+
+def _consume_detached_session_close_result(task: asyncio.Task[None]) -> None:
+    """消费二次取消后仍在后台完成的会话关闭结果。"""
+
+    try:
+        task.result()
+    except asyncio.CancelledError:
+        return
+    except Exception:  # noqa: BLE001
+        logger.exception("Detached database session close failed")
 
 
 def _build_connect_args(database_url: str, timeout_seconds: float) -> dict[str, object]:

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, replace
-from typing import Any
+from typing import AbstractSet, Any
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -40,13 +40,15 @@ def build_unified_agent_tools(
     session_factory: async_sessionmaker[AsyncSession],
     agent_config: EffectiveAgentRuntimeConfig | None = None,
     supports_image_input: bool | None = None,
+    unavailable_group_keys: AbstractSet[str] | None = None,
 ) -> list[Any]:
-    """构建内容助手本轮可见的全部配置工具，仅按用户配置和图片输入能力过滤。"""
+    """构建内容助手本轮可见工具，并按模型能力、槽位状态与用户配置过滤。"""
 
     tools = build_agent_tools_from_group_specs(
         agent_id=UNIFIED_AGENT_ID,
         session_factory=session_factory,
         supports_image_input=supports_image_input,
+        unavailable_group_keys=unavailable_group_keys,
     )
     return apply_tool_runtime_config(
         agent_id=UNIFIED_AGENT_ID,
@@ -60,6 +62,7 @@ def get_tool_group_definitions(
     session_factory: async_sessionmaker[AsyncSession],
     agent_config: EffectiveAgentRuntimeConfig | None = None,
     supports_image_input: bool | None = None,
+    unavailable_group_keys: AbstractSet[str] | None = None,
 ) -> dict[str, ToolGroupDefinition]:
     """返回内容助手工具集合定义；这些集合不再参与 scope 裁剪。"""
 
@@ -79,6 +82,7 @@ def get_tool_group_definitions(
             ),
         )
         for group in list_disclosable_agent_group_specs(UNIFIED_AGENT_ID)
+        if not unavailable_group_keys or group.key not in unavailable_group_keys
         if supports_image_input is None or not group.requires_image_input or supports_image_input
     }
     if agent_config is None:

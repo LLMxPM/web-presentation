@@ -101,6 +101,44 @@
           </button>
         </section>
 
+        <section
+          v-if="showVisualCapabilityStatus"
+          aria-label="视觉工具状态"
+          class="flex shrink-0 items-center gap-1.5 border-t border-slate-100 bg-slate-50/80 px-3 py-1.5 text-[10px]"
+        >
+          <span
+            class="inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 font-medium"
+            :class="imageAnalysisAvailable
+              ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+              : 'border-slate-200 bg-white text-slate-400'"
+            :title="imageAnalysisCapabilityTitle"
+          >
+            <Eye class="h-3 w-3" />
+            看图
+            <span>{{ imageAnalysisAvailable ? '可用' : '未配置' }}</span>
+          </span>
+          <span
+            class="inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 font-medium"
+            :class="imageGenerationAvailable
+              ? 'border-violet-200 bg-violet-50 text-violet-700'
+              : 'border-slate-200 bg-white text-slate-400'"
+            :title="imageGenerationCapabilityTitle"
+          >
+            <WandSparkles class="h-3 w-3" />
+            生成图片
+            <span>{{ imageGenerationAvailable ? '可用' : '未配置' }}</span>
+          </span>
+          <button
+            v-if="visualCapabilityConfigurationRequired"
+            type="button"
+            class="ml-auto shrink-0 font-medium text-sky-600 transition hover:text-sky-700"
+            title="前往 AI 设置配置视觉模型"
+            @click="goToAiSettings"
+          >
+            配置
+          </button>
+        </section>
+
         <AgentComposer v-model="composerText" :streaming="isStreaming"
           :interrupting="isInterrupting" :action-disabled="composerActionDisabled"
           :disabled="composerInputDisabled"
@@ -193,7 +231,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/vue-query'
 import { storeToRefs } from 'pinia'
 import { useRoute, useRouter } from 'vue-router'
-import { Check, ChevronDown, ExternalLink, Globe2, UserRound } from '@lucide/vue'
+import { Check, ChevronDown, ExternalLink, Eye, Globe2, UserRound, WandSparkles } from '@lucide/vue'
 
 import {
   AgentRequestError,
@@ -535,7 +573,9 @@ const activeSessionRuntimeAgentId = computed(() => activeSession.value?.agent_id
 const isNewSessionDraft = computed(() => !activeSessionId.value)
 const activeLlmConfigs = computed<LlmConfigItem[]>(() => (
   (llmConfigsQuery.data.value ?? []).filter(item => (
-    item.status === 'active' && (item.scope === 'global' || item.scope === 'personal')
+    item.status === 'active'
+    && (item.model_type ?? 'chat') === 'chat'
+    && (item.scope === 'global' || item.scope === 'personal')
   ))
 ))
 const activeGlobalLlmConfigs = computed(() => activeLlmConfigs.value.filter(item => item.scope === 'global'))
@@ -609,18 +649,30 @@ const llmModelButtonTitle = computed(() => {
   const label = currentLlmModelLabel.value || currentLlmCompactName.value
   return activeSessionId.value ? `会话模型：${label}` : `新会话模型：${label}`
 })
-const currentModelSupportsImageInput = computed(() => {
-  if (activeSessionId.value) {
-    if (activeSessionLlmConfig.value) {
-      return Boolean(activeSessionLlmConfig.value.supports_image_input)
-    }
-    if (typeof activeSessionLlmMetadata.value?.supports_image_input === 'boolean') {
-      return activeSessionLlmMetadata.value.supports_image_input
-    }
-    return Boolean(selectedAgent.value?.supports_image_input)
-  }
-  return Boolean(selectedNewSessionLlmConfig.value?.supports_image_input)
-})
+const showVisualCapabilityStatus = computed(() => (
+  ['agent-coordinator', 'resource-manager'].includes(agentId.value)
+  && selectedAgent.value !== null
+))
+const imageAnalysisAvailable = computed(() => Boolean(selectedAgent.value?.image_analysis_available))
+const imageGenerationAvailable = computed(() => Boolean(selectedAgent.value?.image_generation_available))
+const visualAttachmentCapabilityAvailable = computed(() => (
+  imageAnalysisAvailable.value || imageGenerationAvailable.value
+))
+const visualCapabilityConfigurationRequired = computed(() => (
+  !imageAnalysisAvailable.value || !imageGenerationAvailable.value
+))
+const imageAnalysisCapabilityTitle = computed(() => (
+  imageAnalysisAvailable.value
+    ? agentId.value === 'resource-manager'
+      ? 'analyze_visuals 已配置，可分析附件或工作空间图片资源'
+      : 'analyze_visuals 已配置，可按需分析附件或页面截图'
+    : selectedAgent.value?.image_analysis_unavailable_reason || 'analyze_visuals 未配置图片理解模型'
+))
+const imageGenerationCapabilityTitle = computed(() => (
+  imageGenerationAvailable.value
+    ? 'generate_image 已配置，可生成或编辑图片并保存到资源库'
+    : selectedAgent.value?.image_generation_unavailable_reason || 'generate_image 未配置图片生成模型'
+))
 
 const runtimeQuery = useQuery(
   computed(() => ({
@@ -758,10 +810,8 @@ const composerContextIssue = computed(() => {
 })
 const composerInputDisabled = computed(() => Boolean(composerContextIssue.value))
 const imageUploadDisabledReason = computed(() => {
-  if (!currentModelSupportsImageInput.value) {
-    return currentLlmModelLabel.value
-      ? '当前会话模型不支持图片输入'
-      : '请选择支持图片输入的模型'
+  if (!visualAttachmentCapabilityAvailable.value) {
+    return '请前往 AI 设置配置图片理解或图片生成模型'
   }
   if (composerContextIssue.value) {
     return composerContextIssue.value
@@ -1321,8 +1371,8 @@ async function handleSend() {
   const attachments = [...pendingImageAttachments.value]
   const draftSessionId = activeSessionId.value
   if ((!message && attachments.length === 0) || isStreaming.value || isSessionSendInFlight(draftSessionId)) return
-  if (attachments.length && !currentModelSupportsImageInput.value) {
-    Message.error('当前会话模型不支持图片输入。')
+  if (attachments.length && !visualAttachmentCapabilityAvailable.value) {
+    Message.error('请先在 AI 设置中配置图片理解或图片生成模型。')
     return
   }
   const runAgentDisplayName = agentDisplayName.value

@@ -124,6 +124,9 @@ async def test_agent_config_api_should_manage_prompt_and_tool_overrides(
     assert "资源归档是安全整理动作，不等同于删除；你不暴露删除工具" in resource_prompt
     assert "当前只能归档资源，不能执行删除" in resource_prompt
     assert "资源助手不负责说明资源在页面或组件中如何渲染" in resource_prompt
+    assert "资源助手不得分析页面截图" in resource_prompt
+    assert "调用 analyze_visuals" in resource_prompt
+    assert "调用 generate_image" in resource_prompt
     assert "Draw.io 内容必须是 diagrams.net/draw.io XML" in resource_prompt
     assert "SVG 内容必须是以 <svg> 为根节点的可解析 XML" in resource_prompt
     assert "Runtime Kit" not in resource_prompt
@@ -134,6 +137,11 @@ async def test_agent_config_api_should_manage_prompt_and_tool_overrides(
     assert "读取当前工作空间资源库摘要" in resource_manager_list_tool["description"]
     assert "项目建议优先" not in resource_manager_list_tool["description"]
     assert "资源助手按工作空间资源库维护资产" in resource_manager_list_tool["agent_guide"]["instructions"]
+    resource_analyze_tool = _find_tool(catalog_items[RESOURCE_MANAGER_AGENT_ID], "analyze_visuals")
+    resource_generate_tool = _find_tool(catalog_items[RESOURCE_MANAGER_AGENT_ID], "generate_image")
+    assert "PageScreenshotVisualInput" not in str(resource_analyze_tool["agent_guide"]["parameters_schema"])
+    assert "image_analysis" in resource_analyze_tool["agent_guide"]["runtime_disclosure_groups"]
+    assert "image_generation" in resource_generate_tool["agent_guide"]["runtime_disclosure_groups"]
     assert "默认 scope=suggested，优先返回项目建议引用资源" not in resource_manager_list_tool["agent_guide"]["instructions"]
     for config_item in catalog_items.values():
         resource_content_tool = _find_tool(config_item, "get_resource_asset_content")
@@ -244,12 +252,15 @@ def test_agent_tool_specs_should_match_platform_tools() -> None:
         if agent_id == RESOURCE_MANAGER_AGENT_ID:
             for tool_name in (
                 "create_resource_asset",
+                "save_uploaded_image_as_resource",
                 "update_resource_asset_metadata",
                 "copy_resource_asset",
             ):
                 tags_schema = actual[tool_name].parameters["properties"]["tags"]
                 assert _schema_allows_string_array(tags_schema), tool_name
                 assert not _schema_allows_untyped_array(tags_schema), tool_name
+            assert actual["save_uploaded_image_as_resource"].sequential is True
+            assert specs["save_uploaded_image_as_resource"].risk_level == "write"
 
 
 def test_effective_instructions_should_be_single_prompt_text() -> None:

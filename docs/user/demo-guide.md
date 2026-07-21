@@ -28,7 +28,7 @@ Demo 环境系统预置了部分模型，用于直接体验 AI 创作能力。�
 ![AI 设置入口](../assets/ai设置入口.png)
 
 1. 打开账户或个人中心中的 AI 设置页面。
-2. 新增或编辑模型配置，填写模型名称、服务地址、API Key 等必要信息。
+2. 先创建供应商配置，再创建并绑定模型。Chat 与图片生成供应商独立：OpenAI 分别选择 `openai`、`openai_image`，百炼分别选择 `dashscope`、`dashscope_image`，API Key 与 Base URL 不会互相复用。
 3. 保存后回到项目页面或 AI 侧边栏，选择可用配置继续使用。
 
 平台会对保存的 API Key 做加密存储，避免在数据库中直接保存明文密钥。但 Demo 环境仍然是公开体验环境，API Key 安全需要自行注意：

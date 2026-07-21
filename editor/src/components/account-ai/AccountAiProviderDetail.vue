@@ -130,7 +130,9 @@
           </div>
           <div class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
             <dt class="text-xs font-semibold text-slate-400">默认模型</dt>
-            <dd class="mt-1 truncate font-semibold text-slate-700">{{ currentProvider.default_model_id || '未设置' }}</dd>
+            <dd class="mt-1 truncate font-semibold text-slate-700">
+              {{ currentProvider.provider_type === 'image_generation' ? currentProvider.default_image_generation_model_id || '未设置' : currentProvider.default_model_id || '未设置' }}
+            </dd>
           </div>
         </dl>
       </section>
@@ -175,7 +177,9 @@
               :disabled="Boolean(selectedProviderConfigId)"
               @update:model-value="value => form.provider_key = value as string | null"
             />
-            <p v-if="currentProvider" class="ml-1 text-xs text-slate-400">{{ currentProvider.provider_adapter }}</p>
+            <p v-if="currentProvider" class="ml-1 text-xs text-slate-400">
+              {{ currentProvider.provider_type === 'image_generation' ? '图片生成供应商' : 'Chat 供应商' }} · 协议由供应商类型固定
+            </p>
           </div>
         </div>
       </section>
@@ -192,10 +196,13 @@
           <BaseInput
             :model-value="form.base_url"
             label="Base URL"
-            placeholder="例如：https://openrouter.ai/api/v1"
+            :placeholder="currentProvider?.base_url_hint || '例如：https://openrouter.ai/api/v1'"
             :disabled="currentProvider ? !currentProvider.supports_base_url : false"
             @update:model-value="value => form.base_url = String(value)"
           />
+          <p v-if="currentProvider?.requires_base_url" class="-mt-2 ml-1 text-xs text-amber-600">
+            当前供应商必须配置独立 Base URL。
+          </p>
 
           <BaseInput
             :model-value="form.api_key"
@@ -278,7 +285,11 @@ const emit = defineEmits<{
 }>()
 
 const readOnlyProvider = computed(() => Boolean(props.selectedProviderConfig && !props.selectedProviderConfig.editable))
-const canSubmitProvider = computed(() => Boolean(props.form.name.trim() && props.form.provider_key))
+const canSubmitProvider = computed(() => Boolean(
+  props.form.name.trim()
+  && props.form.provider_key
+  && (!props.currentProvider?.requires_base_url || props.form.base_url.trim()),
+))
 const panelTitle = computed(() => {
   if (props.mode === 'create') return '新建供应商'
   if (props.mode === 'detail') return props.selectedProviderConfig?.name ?? '供应商详情'

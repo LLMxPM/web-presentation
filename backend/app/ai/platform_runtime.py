@@ -307,6 +307,7 @@ class PlatformAgentRuntimeStore:
         """在当前事务内原子分配游标、保存事件并同步运行态投影。"""
 
         _normalize_tool_event_arguments(event)
+        await self._enrich_visual_tool_event_attachments(run_model, event)
         now = _utc_now()
         next_index = await allocate_run_event_index(
             self._session,
@@ -338,6 +339,31 @@ class PlatformAgentRuntimeStore:
         _update_live_run_activity(run_model.run_id, event)
         _notify_subscribers(run_model.run_id, event)
         return event
+
+    async def _enrich_visual_tool_event_attachments(self, run_model: AiAgentRun, event: AgentRunEvent) -> None:
+        """为视觉工具实时事件补齐认证附件摘要，使 SSE 与刷新快照呈现一致。"""
+
+        if event.event not in {"tool.started", "tool.completed", "tool.error"}:
+            return
+        tool_name = str(event.data.get("tool_name") or "").strip()
+        if tool_name not in {"analyze_visuals", "generate_image"}:
+            return
+        raw_input = event.data.get("tool_args") if "tool_args" in event.data else event.data.get("args")
+        input_payload = parse_tool_arguments(raw_input)
+        input_ids = _tool_input_attachment_ids(input_payload)
+        if input_ids:
+            event.data["input_attachments"] = await self._attachment_summaries(
+                session_id=run_model.session_id,
+                attachment_ids=input_ids,
+            )
+        if event.event != "tool.completed":
+            return
+        tool_call_id = str(event.data.get("tool_call_id") or "").strip()
+        summaries = await self._tool_attachment_summaries(session_id=run_model.session_id)
+        event.data["output_attachments"] = [
+            item.model_dump(mode="json")
+            for item in summaries.get((run_model.run_id, tool_call_id), summaries.get((run_model.run_id, tool_name), []))
+        ]
 
     async def _refresh_event_projection_source(self, run_model: AiAgentRun, event: AgentRunEvent) -> None:
         """持有原子游标写锁后刷新增量聚合字段，避免并发 delta 覆盖已提交内容。"""
@@ -918,12 +944,21 @@ class PlatformAgentRuntimeStore:
 
         sorted_items = [item for _, item in sorted(timeline_entries, key=lambda entry: entry[0])]
         tool_attachments = await self._tool_attachment_summaries(session_id=session_id)
+        attachment_lookup = await self._attachment_summary_lookup(session_id=session_id)
         for order_index, item in enumerate(sorted_items):
             item.order_index = order_index
             if item.kind == "tool" and item.tool is not None:
                 key = (item.run_id, item.tool.tool_call_id or "")
                 fallback_key = (item.run_id, item.tool.tool_name)
-                item.attachments = tool_attachments.get(key) or tool_attachments.get(fallback_key, [])
+                output_attachments = tool_attachments.get(key) or tool_attachments.get(fallback_key, [])
+                input_attachments = [
+                    attachment_lookup[attachment_id]
+                    for attachment_id in _tool_input_attachment_ids(item.tool.input_payload)
+                    if attachment_id in attachment_lookup
+                ]
+                item.tool.input_attachments = input_attachments
+                item.tool.output_attachments = output_attachments
+                item.attachments = output_attachments
         return sorted_items
 
     async def _run_order_map(self, *, session_id: str) -> dict[str, int]:
@@ -960,7 +995,7 @@ class PlatformAgentRuntimeStore:
                 if event.content:
                     item.content = f"{item.content or ''}{event.content}"
                 continue
-            if event.event in {"tool.started", "tool.completed", "tool.error"}:
+            if event.event in {"tool.started", "tool.progress", "tool.completed", "tool.error"}:
                 current_text_by_run[run_id] = None
                 item = self._upsert_tool_event_timeline_item(
                     items,
@@ -969,10 +1004,20 @@ class PlatformAgentRuntimeStore:
                     event=event,
                     status={
                         "tool.started": "running",
+                        "tool.progress": "running",
                         "tool.completed": "completed",
                         "tool.error": "error",
                     }[event.event],
                 )
+                if event.event == "tool.progress" and item.tool is not None:
+                    data = event.data if isinstance(event.data, dict) else {}
+                    item.tool.progress = {
+                        key: data[key]
+                        for key in ("phase", "message", "current", "total")
+                        if key in data
+                    }
+                    if data.get("message"):
+                        item.tool.message = str(data["message"])
                 continue
             if event.event in {"run.paused", "run.waiting"}:
                 current_text_by_run[run_id] = None
@@ -1521,6 +1566,19 @@ class PlatformAgentRuntimeStore:
                 summaries.setdefault((run_id, attachment.tool_name), []).append(item)
         return summaries
 
+    async def _attachment_summary_lookup(self, *, session_id: str) -> dict[int, AgentMessageAttachmentItem]:
+        """返回会话 active 图片附件摘要映射，供工具输入缩略图恢复。"""
+
+        result = await self._session.execute(
+            select(AiAgentImageAttachment).where(
+                AiAgentImageAttachment.session_id == session_id,
+                AiAgentImageAttachment.user_id == self._user_id,
+                AiAgentImageAttachment.status == RecordStatus.ACTIVE.value,
+            )
+        )
+        service = AgentImageAttachmentService(self._session, user_id=self._user_id)
+        return {item.id: service._to_message_item(item) for item in result.scalars().all()}
+
     def _tool_timeline_item(self, tool_call: AiAgentToolCall, *, order_index: int) -> AgentTimelineItem:
         """把工具调用映射为 timeline item。"""
 
@@ -1787,6 +1845,36 @@ def _timeline_sort_key(
     else:
         event_position = event_index
     return (run_position, event_position, phase, created_at or "", fallback_id)
+
+
+def _tool_input_attachment_ids(input_payload: Any) -> list[int]:
+    """从视觉工具输入中提取真实附件 ID，并保持首次出现顺序。"""
+
+    if not isinstance(input_payload, dict):
+        return []
+    raw_values: list[Any] = []
+    for key in ("image_attachment_ids", "reference_attachment_ids"):
+        value = input_payload.get(key)
+        if isinstance(value, list):
+            raw_values.extend(value)
+    if input_payload.get("mask_attachment_id") is not None:
+        raw_values.append(input_payload["mask_attachment_id"])
+    inputs = input_payload.get("inputs")
+    if isinstance(inputs, list):
+        raw_values.extend(
+            item.get("attachment_id")
+            for item in inputs
+            if isinstance(item, dict) and item.get("source_type") == "attachment"
+        )
+    result: list[int] = []
+    for value in raw_values:
+        try:
+            attachment_id = int(value)
+        except (TypeError, ValueError):
+            continue
+        if attachment_id > 0 and attachment_id not in result:
+            result.append(attachment_id)
+    return result
 
 
 def _optional_str(value: Any) -> str | None:

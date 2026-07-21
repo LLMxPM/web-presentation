@@ -1011,7 +1011,7 @@ async function handleAgentPageUpdated(detail?: AgentMutationEventDetail) {
   if (currentPageId !== pageId.value) {
     return
   }
-  const shouldRefreshPreview = detail?.toolName !== 'get_page_screenshot'
+  const shouldRefreshPreview = detail?.toolName !== 'analyze_visuals'
   const visualEditWasActive = isPageEditDialogOpen.value && pageEditMode.value === 'visual'
   if (visualEditWasActive) {
     pageEditDialogRef.value?.markStale()
@@ -1059,7 +1059,7 @@ async function handleAgentProjectPagesUpdated(detail?: AgentMutationEventDetail)
   if (
     detail?.toolName === 'apply_page_edits'
     || detail?.toolName === 'update_page_metadata'
-    || detail?.toolName === 'get_page_screenshot'
+    || detail?.toolName === 'analyze_visuals'
   ) {
     return
   }

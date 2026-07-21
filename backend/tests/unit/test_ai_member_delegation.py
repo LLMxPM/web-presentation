@@ -9,8 +9,11 @@ import pytest
 from app.ai.member_delegation import (
     _MemberAgentRunner,
     _build_member_history_processors,
+    _member_requirement_from_deferred,
     _merge_member_message_history,
 )
+from pydantic_ai import DeferredToolRequests
+from pydantic_ai.messages import ToolCallPart
 from app.core.exceptions import AppException
 from app.models.ai_agent_runtime import AiAgentMemberRun, AiAgentRun
 
@@ -30,6 +33,49 @@ class _FakeContextProcessor:
         self.seen_run_context = run_context
         self.seen_messages = messages
         return messages
+
+
+def test_member_image_generation_builds_external_job_requirement() -> None:
+    """资源助手生成图片时应让父运行等待外部任务，而不是等待用户确认。"""
+
+    parent_run = SimpleNamespace(run_id="run-parent", session_id="session-1")
+    member_run = SimpleNamespace(
+        member_run_id="member-run-1",
+        agent_id="resource-manager",
+        agent_name="资源助手",
+        input_payload_json={
+            "delegate_tool_call_id": "delegate-1",
+            "delegate_tool_name": "delegate_task_to_member",
+            "parent_delegate_tool_args": {"member_id": "resource-manager"},
+        },
+    )
+    requests = DeferredToolRequests(
+        calls=[
+            ToolCallPart(
+                tool_name="generate_image",
+                args={"operation": "generate", "prompt": "hero"},
+                tool_call_id="raw-image-call",
+            )
+        ],
+        metadata={
+            "raw-image-call": {
+                "kind": "image_generation",
+                "job_id": "ai-image-job-1",
+            }
+        },
+    )
+
+    requirement = _member_requirement_from_deferred(
+        requests,
+        parent_run=parent_run,
+        member_run=member_run,
+    )
+
+    assert requirement.kind == "external_job"
+    assert requirement.member_run_id == "member-run-1"
+    assert requirement.tool_execution["job_ids"] == ["ai-image-job-1"]
+    assert requirement.tool_execution["parent_delegate_tool_call_id"] == "delegate-1"
+    assert requirement.tool_execution["requires_user_input"] is False
 
 
 class _FailureRecoverySession:

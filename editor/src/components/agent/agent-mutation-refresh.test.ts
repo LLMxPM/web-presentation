@@ -37,14 +37,12 @@ describe('agent-mutation-refresh', () => {
     ])
   })
 
-  it('get_page_screenshot 仅在截图被刷新时触发页面和列表刷新', () => {
-    const refreshedEvents = buildMutationRefreshEvents(buildToolCompletedEvent('get_page_screenshot', {
-      page_id: 31,
-      screenshot_refreshed: true,
+  it('analyze_visuals 仅为实际刷新的页面截图触发页面和列表刷新', () => {
+    const refreshedEvents = buildMutationRefreshEvents(buildToolCompletedEvent('analyze_visuals', {
+      items: [{ source: { source_type: 'page_screenshot', page_id: 31, screenshot_refreshed: true } }],
     }), base)
-    const cachedEvents = buildMutationRefreshEvents(buildToolCompletedEvent('get_page_screenshot', {
-      page_id: 31,
-      screenshot_refreshed: false,
+    const cachedEvents = buildMutationRefreshEvents(buildToolCompletedEvent('analyze_visuals', {
+      items: [{ source: { source_type: 'page_screenshot', page_id: 31, screenshot_refreshed: false } }],
     }), base)
 
     expect(refreshedEvents.map(event => event.kind)).toEqual(['page', 'project-pages'])
@@ -58,6 +56,23 @@ describe('agent-mutation-refresh', () => {
     }), base)
 
     expect(events).toEqual([])
+  })
+
+  it('save_uploaded_image_as_resource 应触发资源刷新并提取资源 ID', () => {
+    const events = buildMutationRefreshEvents(buildToolCompletedEvent('save_uploaded_image_as_resource', {
+      success: true,
+      created: true,
+      attachment_id: 25,
+      asset: { id: 91, name: 'uploaded_hero' },
+    }), base)
+
+    expect(events).toEqual([
+      expect.objectContaining({
+        kind: 'asset',
+        assetId: 91,
+        toolName: 'save_uploaded_image_as_resource',
+      }),
+    ])
   })
 })
 

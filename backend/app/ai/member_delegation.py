@@ -31,6 +31,7 @@ from app.ai.platform_runtime import PlatformAgentRuntimeStore
 from app.ai.pydantic_event_projection import PydanticEventProjector, safe_new_messages
 from app.ai.pydantic_model_resolver import PydanticLlmModelResolver
 from app.ai.pydantic_tools import build_pydantic_tools
+from app.ai.visual_tool_runtime import resolve_visual_tool_runtime
 from app.ai.run_errors import build_agent_error_log_extra, normalize_agent_run_exception
 from app.core.exceptions import AppException
 from app.models.ai_agent_runtime import AiAgentMemberRun, AiAgentRun, AiAgentToolCall
@@ -287,6 +288,16 @@ class MemberDelegationExecutor:
                     requirement_payload=requirement_payload,
                 ),
                 deferred_tool_results=deferred_tool_results,
+                retained_tool_names=frozenset({
+                    str(
+                        (
+                            requirement_payload.get("tool_execution")
+                            if isinstance(requirement_payload.get("tool_execution"), dict)
+                            else {}
+                        ).get("member_tool_name")
+                        or ""
+                    )
+                }),
             )
 
     async def _require_parent_run(self, session: AsyncSession) -> AiAgentRun:
@@ -389,6 +400,7 @@ class _MemberAgentRunner:
         message: str,
         message_history: list[Any] | None = None,
         deferred_tool_results: DeferredToolResults | None = None,
+        retained_tool_names: frozenset[str] = frozenset(),
     ) -> MemberDelegationResult:
         """执行成员 run，返回完成结果；暂停时抛出 MemberDelegationPaused。"""
 
@@ -401,11 +413,12 @@ class _MemberAgentRunner:
             catalog = get_agent_catalog_entry(self._member_run.agent_id)
             if catalog is None:
                 raise AppException(status_code=404, code="AI_AGENT_NOT_FOUND", detail="成员助手不存在。")
-            llm_config = await AiLlmService(
+            llm_service = AiLlmService(
                 self._session,
                 user_id=self._current.user.id,
                 user_role=self._current.user.role,
-            ).get_bound_config_or_raise(catalog.llm_slot)
+            )
+            llm_config = await llm_service.get_bound_config_or_raise(catalog.llm_slot)
             agent_config = await AiAgentConfigService(self._session, user_id=self._current.user.id).get_effective_runtime_config(
                 self._member_run.agent_id
             )
@@ -414,6 +427,7 @@ class _MemberAgentRunner:
                 user_id=self._current.user.id,
                 session_id=self._parent_run.session_id,
                 agent_id=self._parent_run.agent_id,
+                hydrate_images=False,
             )
             history_budget = build_history_budget(llm_config, runtime_context=self._runtime_context)
             context_processor = build_context_limit_processor(
@@ -435,6 +449,13 @@ class _MemberAgentRunner:
                     parent_run_id=self._parent_run.run_id,
                     allowed_member_ids=("resource-manager",),
                 )
+            visual_unavailable, image_generation_model, image_generation_config_id = (
+                await resolve_visual_tool_runtime(
+                    llm_service=llm_service,
+                    agent_id=self._member_run.agent_id,
+                    retained_tool_names=retained_tool_names,
+                )
+            )
             tools, deps = build_pydantic_tools(
                 agent_id=self._member_run.agent_id,
                 session_factory=self._session_factory,
@@ -444,7 +465,11 @@ class _MemberAgentRunner:
                 session_id=self._parent_run.session_id,
                 run_id=self._parent_run.run_id,
                 supports_image_input=bool(llm_config.supports_image_input),
+                unavailable_group_keys=visual_unavailable,
                 member_delegation_executor=member_delegation_executor,
+                image_generation_model=image_generation_model,
+                image_generation_config_id=image_generation_config_id,
+                member_run_id=self._member_run.member_run_id,
             )
             agent = Agent(
                 self._model_resolver.resolve_model(llm_config),
@@ -802,6 +827,48 @@ def _member_requirement_from_deferred(
     tool_name = getattr(call, "tool_name", None) if call is not None else None
     tool_call_id = str(getattr(call, "tool_call_id", "") or "") if call is not None else ""
     args = _tool_args_as_dict(getattr(call, "args", None) if call is not None else None)
+    metadata = _member_deferred_metadata(requests, tool_call_id)
+    if metadata.get("kind") in {"page_mutation", "image_generation"}:
+        if requests.approvals or len(requests.calls or []) != 1:
+            raise AppException(
+                status_code=422,
+                code="AI_EXTERNAL_JOB_MIXED_DEFERRED_CALLS",
+                detail="成员持久化外部任务不能与用户确认类 deferred 工具混合调用，请分两轮执行。",
+            )
+        parent_input = member_run.input_payload_json if isinstance(member_run.input_payload_json, dict) else {}
+        job_id = str(metadata.get("job_id") or "")
+        return AgentPendingRequirement(
+            id=f"requirement-{job_id or member_run.member_run_id}",
+            kind="external_job",
+            run_id=parent_run.run_id,
+            session_id=parent_run.session_id,
+            member_agent_id=member_run.agent_id,
+            member_agent_name=member_run.agent_name,
+            member_run_id=member_run.member_run_id,
+            tool_name=str(tool_name or "") or None,
+            tool_execution={
+                "tool_call_id": tool_call_id,
+                "tool_name": tool_name,
+                "tool_args": args,
+                "tool_calls": [{
+                    "tool_call_id": tool_call_id,
+                    "tool_name": tool_name,
+                    "tool_args": args,
+                    "metadata": metadata,
+                }],
+                "job_ids": [job_id] if job_id else [],
+                "external_job_kinds": [str(metadata.get("kind") or "")],
+                "requires_user_input": False,
+                "member_tool_call_id": tool_call_id,
+                "member_tool_name": tool_name,
+                "member_run_id": member_run.member_run_id,
+                "parent_delegate_tool_call_id": parent_input.get("delegate_tool_call_id"),
+                "parent_delegate_tool_name": parent_input.get("delegate_tool_name"),
+                "parent_delegate_tool_args": parent_input.get("parent_delegate_tool_args") or {},
+                "deferred_metadata": requests.metadata,
+            },
+            note="资源助手正在后台处理图片任务。",
+        )
     feedback_schema = _feedback_schema_from_args(args) if tool_name == "ask_user" else []
     kind = "user_feedback" if tool_name == "ask_user" else "confirmation"
     if kind == "user_feedback" and not feedback_schema:
@@ -838,6 +905,14 @@ def _member_requirement_from_deferred(
         user_feedback_schema=feedback_schema,
         note="需要用户回答后继续。" if kind == "user_feedback" else f"成员工具 {tool_name or 'unknown'} 需要确认后执行。",
     )
+
+
+def _member_deferred_metadata(requests: DeferredToolRequests, tool_call_id: str) -> dict[str, Any]:
+    """读取成员 deferred metadata，供外部任务识别和自动恢复使用。"""
+
+    metadata = requests.metadata if isinstance(requests.metadata, dict) else {}
+    value = metadata.get(tool_call_id)
+    return dict(value) if isinstance(value, dict) else {}
 
 
 def _safe_new_member_messages(result: Any) -> list[dict[str, Any]]:

@@ -1,7 +1,7 @@
 /**
  * 文件功能：验证内容助手面板的流式消息渲染、工具详情与页面写回联动。
  */
-import { render, fireEvent, screen, waitFor } from '@testing-library/vue'
+import { render, fireEvent, screen, waitFor, within } from '@testing-library/vue'
 import { QueryClient, VueQueryPlugin } from '@tanstack/vue-query'
 import { createPinia, setActivePinia, type Pinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -671,6 +671,76 @@ describe('AgentConversationPanel', () => {
     })
   })
 
+  it('刷新会话后应从 runtime snapshot 恢复图片生成专用卡片', async () => {
+    localStorage.setItem('agent-session:agent-coordinator:11', 'session-1')
+    listAgentSessionsMock.mockResolvedValueOnce([
+      {
+        session_id: 'session-1',
+        agent_id: DEFAULT_AGENT_ID,
+        session_name: '视觉工具历史',
+        created_at: '2026-04-18T10:00:00+08:00',
+        updated_at: '2026-04-18T10:20:00+08:00',
+        metadata: {
+          scope_type: 'page',
+          workspace_id: 11,
+          project_id: 21,
+          page_id: 31,
+          source: 'editor-page-detail',
+        },
+      },
+    ])
+    const outputAttachment = {
+      id: 25,
+      source_kind: 'tool_output',
+      original_name: 'hero.png',
+      content_type: 'image/png',
+      file_size: 128,
+      url: '/api/ai/attachments/images/25/content',
+      preview_available: true,
+      promoted_asset_id: 91,
+    }
+    getAgentSessionRuntimeMock.mockResolvedValueOnce(createRuntimeSnapshot({
+      timeline_items: [
+        {
+          id: 'visual-tool',
+          session_id: 'session-1',
+          run_id: 'run-visual-1',
+          kind: 'tool',
+          role: null,
+          event_index: 3,
+          order_index: 0,
+          content: null,
+          status: 'completed',
+          tool: {
+            tool_call_id: 'visual-call-1',
+            tool_name: 'generate_image',
+            status: 'completed',
+            input_payload: { operation: 'generate', prompt: '生成蓝色主视觉' },
+            output_payload: {
+              job_id: 'ai-image-job-1',
+              assets: [{ id: 91, name: 'hero_visual', original_name: 'hero.png' }],
+            },
+            message: '图片已生成并保存到资源库。',
+            progress: { phase: 'completed', message: '图片已生成并保存到资源库。' },
+            input_attachments: [],
+            output_attachments: [outputAttachment],
+          },
+          attachments: [outputAttachment],
+          source: 'event',
+          created_at: '2026-04-18T10:00:02+08:00',
+        },
+      ],
+    }))
+
+    render(AgentConversationPanel, createTestingRenderOptions())
+
+    await waitFor(() => {
+      expect(screen.getByText('图片生成')).toBeTruthy()
+      expect(screen.getByText('hero_visual')).toBeTruthy()
+      expect(screen.getByText('已生成 1 张图片，并创建工作空间资源。')).toBeTruthy()
+    })
+  })
+
   it('用户消息应支持复制和折叠展开', async () => {
     localStorage.setItem('agent-session:agent-coordinator:11', 'session-1')
     listAgentSessionsMock.mockResolvedValueOnce([
@@ -1269,22 +1339,110 @@ describe('AgentConversationPanel', () => {
     })
   })
 
-  it('新会话草稿模型不支持图片时禁用图片上传', async () => {
+  it('视觉槽位都不可用时禁用图片上传并引导配置', async () => {
     render(AgentConversationPanel, createTestingRenderOptions())
 
     await waitFor(() => {
       const uploadButton = screen.getByLabelText('上传图片')
       expect(uploadButton).toHaveProperty('disabled', true)
-      expect(uploadButton).toHaveAttribute('title', '当前会话模型不支持图片输入')
+      expect(uploadButton).toHaveAttribute('title', '请前往 AI 设置配置图片理解或图片生成模型')
+      const visualStatus = screen.getByRole('region', { name: '视觉工具状态' })
+      expect(within(visualStatus).getByTitle('analyze_visuals 未配置图片理解模型')).toHaveTextContent(/看图\s*未配置/)
+      expect(within(visualStatus).getByTitle('generate_image 未配置图片生成模型')).toHaveTextContent(/生成图片\s*未配置/)
     })
   })
 
-  it('新会话草稿模型支持图片时允许图片上传', async () => {
-    listLlmConfigsMock.mockResolvedValueOnce([
-      createLlmConfigItem({ id: 8, scope: 'global', name: '视觉模型', supports_image_input: true }),
+  it('对话输入区独立展示图片生成工具可用状态', async () => {
+    listAgentsMock.mockResolvedValueOnce([
+      {
+        id: DEFAULT_AGENT_ID,
+        name: '内容助手',
+        icon: 'content-spark',
+        summary: '按当前上下文申请并使用可用工具。',
+        default_session_name: '内容助手会话',
+        capabilities: ['组件依赖分析'],
+        llm_slot: 'agent_coordinator',
+        llm_binding_ready: true,
+        bound_llm_name: '页面编辑模型',
+        bound_provider_label: 'OpenAI',
+        image_analysis_available: false,
+        image_analysis_unavailable_reason: '图片理解槽位未绑定模型。',
+        image_generation_available: true,
+        scope: {
+          workspace_id: 11,
+          project_id: 21,
+          page_id: 31,
+          source: 'editor-page-detail',
+        },
+      },
     ])
-    listLlmSlotsMock.mockResolvedValueOnce([
-      createLlmSlotBindingItem({ slot: 'agent_coordinator', llm_config_id: 8, binding_ready: true, supports_image_input: true }),
+
+    render(AgentConversationPanel, createTestingRenderOptions())
+
+    await waitFor(() => {
+      const visualStatus = screen.getByRole('region', { name: '视觉工具状态' })
+      expect(within(visualStatus).getByTitle('图片理解槽位未绑定模型。')).toHaveTextContent(/看图\s*未配置/)
+      expect(within(visualStatus).getByTitle('generate_image 已配置，可生成或编辑图片并保存到资源库')).toHaveTextContent(/生成图片\s*可用/)
+    })
+  })
+
+  it('资源助手展示图片理解和图片生成状态', async () => {
+    listAgentsMock.mockResolvedValueOnce([
+      {
+        id: 'resource-manager',
+        name: '资源助手',
+        icon: 'resource-images',
+        summary: '维护资源库并处理视觉素材。',
+        default_session_name: '资源助手会话',
+        capabilities: ['图片理解', '图片生成编辑'],
+        llm_slot: 'resource_manager',
+        llm_binding_ready: true,
+        image_analysis_available: true,
+        image_generation_available: true,
+        scope: {
+          workspace_id: 11,
+          source: 'editor-assets',
+        },
+      },
+    ])
+
+    render(AgentConversationPanel, createTestingRenderOptions({
+      agentId: 'resource-manager',
+      projectId: undefined,
+      pageId: undefined,
+      source: 'editor-assets',
+    }))
+
+    await waitFor(() => {
+      const visualStatus = screen.getByRole('region', { name: '视觉工具状态' })
+      expect(within(visualStatus).getByTitle('analyze_visuals 已配置，可分析附件或工作空间图片资源')).toHaveTextContent(/看图\s*可用/)
+      expect(within(visualStatus).getByTitle('generate_image 已配置，可生成或编辑图片并保存到资源库')).toHaveTextContent(/生成图片\s*可用/)
+      expect(screen.getByLabelText('上传图片')).toHaveProperty('disabled', false)
+    })
+  })
+
+  it('任一视觉能力可用时允许图片上传且不依赖内容模型视觉能力', async () => {
+    listAgentsMock.mockResolvedValueOnce([
+      {
+        id: DEFAULT_AGENT_ID,
+        name: '内容助手',
+        icon: 'content-spark',
+        summary: '按当前上下文申请并使用可用工具。',
+        default_session_name: '内容助手会话',
+        capabilities: ['组件依赖分析'],
+        llm_slot: 'agent_coordinator',
+        llm_binding_ready: true,
+        bound_llm_name: '页面编辑模型',
+        bound_provider_label: 'OpenAI',
+        image_analysis_available: true,
+        image_generation_available: false,
+        scope: {
+          workspace_id: 11,
+          project_id: 21,
+          page_id: 31,
+          source: 'editor-page-detail',
+        },
+      },
     ])
 
     render(AgentConversationPanel, createTestingRenderOptions())

@@ -42,6 +42,10 @@ class AgentDescriptor(SchemaBase):
     bound_llm_name: str | None = None
     bound_provider_label: str | None = None
     supports_image_input: bool = False
+    image_analysis_available: bool = False
+    image_analysis_unavailable_reason: str | None = None
+    image_generation_available: bool = False
+    image_generation_unavailable_reason: str | None = None
     prompt_customized: bool = False
     enabled_tool_count: int = 0
     disabled_tool_count: int = 0
@@ -85,6 +89,8 @@ class AgentImageAttachmentItem(SchemaBase):
     original_name: str
     content_type: str
     file_size: int
+    width: int | None = None
+    height: int | None = None
     sha256: str
     url: str
     preview_available: bool = True
@@ -101,6 +107,8 @@ class AgentMessageAttachmentItem(SchemaBase):
     original_name: str
     content_type: str
     file_size: int
+    width: int | None = None
+    height: int | None = None
     url: str
     preview_available: bool = True
     promoted_asset_id: int | None = None
@@ -230,6 +238,9 @@ class AgentTimelineToolItem(SchemaBase):
     input_payload: Any | None = None
     output_payload: Any | None = None
     message: str = ""
+    progress: dict[str, Any] | None = None
+    input_attachments: list[AgentMessageAttachmentItem] = Field(default_factory=list)
+    output_attachments: list[AgentMessageAttachmentItem] = Field(default_factory=list)
 
 
 class AgentTimelineItem(SchemaBase):

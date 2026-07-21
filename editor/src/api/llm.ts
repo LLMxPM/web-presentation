@@ -4,6 +4,7 @@
 import { http } from '@/api/http'
 import type {
   AiLlmConfigScope,
+  AiModelType,
   LlmConfigItem,
   LlmProviderCatalogItem,
   LlmProviderConfigItem,
@@ -29,6 +30,7 @@ export interface LlmConfigPayload {
   scope?: AiLlmConfigScope
   provider_config_id: number
   model_id: string
+  model_type: AiModelType
   thinking_enabled: boolean
   thinking_effort?: string | null
   supports_image_input: boolean
@@ -43,6 +45,7 @@ export interface LlmConfigUpdatePayload {
   name?: string
   provider_config_id?: number
   model_id?: string
+  model_type?: AiModelType
   thinking_enabled?: boolean
   thinking_effort?: string | null
   supports_image_input?: boolean

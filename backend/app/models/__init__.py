@@ -12,6 +12,7 @@ from app.models.ai_agent_runtime import (
     AiAgentToolCall,
 )
 from app.models.ai_page_mutation import AiPageMutationBatch, AiPageMutationJob
+from app.models.ai_image_generation import AiImageGenerationJob
 from app.models.ai_llm import AiLlmConfig, AiLlmProviderConfig, AiLlmSlotBinding
 from app.models.user import UserSession, User
 from app.models.asset import WorkspaceAsset
@@ -54,6 +55,7 @@ __all__ = [
     "AiAgentToolUserConfig",
     "AiPageMutationBatch",
     "AiPageMutationJob",
+    "AiImageGenerationJob",
     "UserSession",
     "User",
     "Workspace",

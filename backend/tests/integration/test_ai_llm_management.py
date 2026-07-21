@@ -122,19 +122,21 @@ async def test_llm_provider_catalog_should_only_include_supported_providers(auth
     providers = {item["provider_key"]: item for item in response.json()}
     assert set(providers) == {
         "dashscope",
+        "dashscope_image",
         "deepseek",
         "google",
         "mimo",
         "nvidia",
         "ollama",
         "openai",
+        "openai_image",
         "openai_like",
         "openrouter",
     }
     for provider_key in providers:
         assert provider_key in providers
         assert providers[provider_key]["label"]
-        assert providers[provider_key]["provider_adapter"].startswith("pydantic_ai.")
+        assert providers[provider_key]["provider_adapter"]
         assert providers[provider_key]["docs_url"].startswith("https://")
     assert providers["ollama"]["supports_thinking"] is True
     assert providers["ollama"]["thinking_mode"] == "ollama_think"
@@ -147,6 +149,23 @@ async def test_llm_provider_catalog_should_only_include_supported_providers(auth
     assert providers["google"]["default_model_id"] == "gemini-flash-latest"
     assert providers["google"]["thinking_effort_options"] == ["low", "high"]
     assert providers["openai"]["default_base_url"] == "https://api.openai.com/v1"
+    assert providers["openai"]["provider_type"] == "chat"
+    assert providers["openai"]["supported_model_types"] == ["chat"]
+    assert providers["openai_image"]["provider_type"] == "image_generation"
+    assert providers["openai_image"]["supported_model_types"] == ["image_generation"]
+    assert providers["openai_image"]["default_image_generation_model_id"] == "gpt-image-2"
+    assert providers["openai_image"]["image_generation_models"][0]["supports_mask"] is True
+    assert providers["dashscope_image"]["provider_type"] == "image_generation"
+    assert providers["dashscope_image"]["requires_base_url"] is True
+    assert {item["model_id"] for item in providers["dashscope_image"]["image_generation_models"]} == {
+        "wan2.7-image",
+        "wan2.7-image-pro",
+    }
+    assert all(
+        item["supported_model_types"] == ["chat"]
+        for key, item in providers.items()
+        if item["provider_type"] == "chat"
+    )
     assert providers["openrouter"]["default_base_url"] == "https://openrouter.ai/api/v1"
     assert providers["openrouter"]["thinking_mode"] == "openrouter_reasoning"
     assert providers["openrouter"]["advanced_json_hint"] == {}
@@ -165,7 +184,161 @@ async def test_llm_provider_catalog_should_only_include_supported_providers(auth
     assert providers["mimo"]["default_context_window_tokens"] == 1_000_000
     assert providers["mimo"]["default_max_output_tokens"] == 32_768
     assert providers["mimo"]["default_supports_image_input"] is True
-    assert all(item["advanced_json_hint"] == {} for item in providers.values())
+    assert all(item["advanced_json_hint"] == {} for item in providers.values() if item["provider_type"] == "chat")
+    assert providers["dashscope_image"]["advanced_json_hint"]["execution_mode"] == "async"
+
+
+async def test_llm_provider_type_should_isolate_chat_and_image_models(authenticated_client: AsyncClient) -> None:
+    """模型只能引用同类型供应商，修改类型时必须同时切换兼容供应商。"""
+
+    chat_provider = await _create_llm_provider_config(authenticated_client, name="Chat 独立供应商")
+    image_provider = await _create_llm_provider_config(
+        authenticated_client,
+        name="生图独立供应商",
+        provider_key="openai_image",
+    )
+    assert chat_provider["provider_type"] == "chat"
+    assert image_provider["provider_type"] == "image_generation"
+
+    invalid_image = await authenticated_client.post(
+        "/api/ai/llm-configs",
+        json={
+            "name": "错误生图模型",
+            "provider_config_id": chat_provider["id"],
+            "model_type": "image_generation",
+            "model_id": "gpt-image-2",
+        },
+    )
+    assert invalid_image.status_code == 400
+    assert invalid_image.json()["code"] == "AI_LLM_PROVIDER_MODEL_TYPE_MISMATCH"
+
+    invalid_chat = await authenticated_client.post(
+        "/api/ai/llm-configs",
+        json={
+            "name": "错误 Chat 模型",
+            "provider_config_id": image_provider["id"],
+            "model_type": "chat",
+            "model_id": "gpt-4.1-mini",
+        },
+    )
+    assert invalid_chat.status_code == 400
+    assert invalid_chat.json()["code"] == "AI_LLM_PROVIDER_MODEL_TYPE_MISMATCH"
+
+    chat_model = await authenticated_client.post(
+        "/api/ai/llm-configs",
+        json={
+            "name": "可更新 Chat 模型",
+            "provider_config_id": chat_provider["id"],
+            "model_id": "gpt-4.1-mini",
+        },
+    )
+    assert chat_model.status_code == 201
+    invalid_update = await authenticated_client.patch(
+        f"/api/ai/llm-configs/{chat_model.json()['id']}",
+        json={"model_type": "image_generation"},
+    )
+    assert invalid_update.status_code == 400
+    assert invalid_update.json()["code"] == "AI_LLM_PROVIDER_MODEL_TYPE_MISMATCH"
+
+    valid_update = await authenticated_client.patch(
+        f"/api/ai/llm-configs/{chat_model.json()['id']}",
+        json={
+            "model_type": "image_generation",
+            "provider_config_id": image_provider["id"],
+            "model_id": "gpt-image-2",
+        },
+    )
+    assert valid_update.status_code == 200
+    assert valid_update.json()["provider_key"] == "openai_image"
+    assert valid_update.json()["model_type"] == "image_generation"
+
+
+async def test_dashscope_image_provider_should_require_https_base_url(authenticated_client: AsyncClient) -> None:
+    """百炼生图供应商必须显式配置 HTTPS 根地址。"""
+
+    invalid_cases = (
+        (None, "AI_LLM_BASE_URL_REQUIRED"),
+        ("http://dashscope.aliyuncs.com/api/v1", "AI_LLM_BASE_URL_INVALID"),
+        ("https://dashscope.aliyuncs.com/compatible-mode/v1", "AI_LLM_BASE_URL_INVALID"),
+    )
+    for base_url, expected_code in invalid_cases:
+        response = await authenticated_client.post(
+            "/api/ai/llm-provider-configs",
+            json={
+                "name": "无效百炼生图供应商",
+                "provider_key": "dashscope_image",
+                "base_url": base_url,
+                "api_key": "sk-dashscope-image",
+            },
+        )
+        assert response.status_code == 400
+        assert response.json()["code"] == expected_code
+
+    # 测试各种有效的 Base URL 格式
+    valid_urls = [
+        "https://dashscope.aliyuncs.com/api/v1",
+        "https://workspace.cn-beijing.maas.aliyuncs.com/api/v1",
+    ]
+    for base_url in valid_urls:
+        valid = await authenticated_client.post(
+            "/api/ai/llm-provider-configs",
+            json={
+                "name": f"有效百炼生图供应商 {base_url}",
+                "provider_key": "dashscope_image",
+                "base_url": base_url,
+                "api_key": "sk-dashscope-image",
+            },
+        )
+        assert valid.status_code == 201
+    assert valid.json()["provider_type"] == "image_generation"
+
+
+async def test_image_model_catalog_should_validate_model_and_advanced_options(authenticated_client: AsyncClient) -> None:
+    """模型创建应复用目录能力，并拒绝未知模型或未声明的供应商参数。"""
+
+    provider = await _create_llm_provider_config(
+        authenticated_client,
+        name="百炼模型能力供应商",
+        provider_key="dashscope_image",
+        base_url="https://workspace.cn-beijing.maas.aliyuncs.com/api/v1",
+    )
+    unknown_model = await authenticated_client.post(
+        "/api/ai/llm-configs",
+        json={
+            "name": "未知百炼模型",
+            "provider_config_id": provider["id"],
+            "model_type": "image_generation",
+            "model_id": "wan-unknown",
+        },
+    )
+    assert unknown_model.status_code == 400
+    assert unknown_model.json()["code"] == "AI_IMAGE_GENERATION_MODEL_UNSUPPORTED"
+
+    invalid_options = await authenticated_client.post(
+        "/api/ai/llm-configs",
+        json={
+            "name": "错误百炼参数",
+            "provider_config_id": provider["id"],
+            "model_type": "image_generation",
+            "model_id": "wan2.7-image-pro",
+            "advanced_config_json": {"callback_url": "https://unsafe.example/callback"},
+        },
+    )
+    assert invalid_options.status_code == 422
+    assert invalid_options.json()["code"] == "AI_IMAGE_ADVANCED_CONFIG_UNSUPPORTED"
+
+    valid = await authenticated_client.post(
+        "/api/ai/llm-configs",
+        json={
+            "name": "同步百炼模型",
+            "provider_config_id": provider["id"],
+            "model_type": "image_generation",
+            "model_id": "wan2.7-image-pro",
+            "advanced_config_json": {"execution_mode": "sync", "watermark": True},
+        },
+    )
+    assert valid.status_code == 201
+    assert valid.json()["advanced_config_json"] == {"execution_mode": "sync", "watermark": True}
 
 
 async def test_llm_provider_and_config_crud_should_split_secret_from_model(authenticated_client: AsyncClient) -> None:
@@ -463,13 +636,21 @@ async def test_llm_slot_binding_should_drive_agent_binding_state(authenticated_c
     slots_response = await authenticated_client.get("/api/ai/llm-slots")
     assert slots_response.status_code == 200
     slots = {item["slot"]: item for item in slots_response.json()}
-    assert set(slots) == {"agent_coordinator", "component_manager", "resource_manager"}
+    assert set(slots) == {
+        "agent_coordinator",
+        "component_manager",
+        "resource_manager",
+        "image_understanding",
+        "image_generation",
+    }
     assert slots["agent_coordinator"]["binding_ready"] is True
     assert slots["agent_coordinator"]["provider_label"] == "OpenAI"
     assert slots["component_manager"]["binding_ready"] is True
     assert slots["component_manager"]["provider_label"] == "OpenAI"
     assert slots["resource_manager"]["binding_ready"] is True
     assert slots["resource_manager"]["provider_label"] == "OpenAI"
+    assert slots["image_understanding"]["binding_ready"] is False
+    assert slots["image_generation"]["binding_ready"] is False
 
     removed_slot_response = await authenticated_client.put(
         "/api/ai/llm-slots/page_editor",
@@ -513,10 +694,92 @@ async def test_llm_slot_binding_should_drive_agent_binding_state(authenticated_c
     assert resource_agent["llm_binding_ready"] is True
     assert resource_agent["bound_llm_name"] == "总控模型"
     assert resource_agent["bound_provider_label"] == "OpenAI"
+    assert resource_agent["image_analysis_available"] is False
+    assert resource_agent["image_generation_available"] is False
+    assert resource_agent["image_analysis_unavailable_reason"] == "请前往 AI 设置配置图片理解模型。"
+    assert resource_agent["image_generation_unavailable_reason"] == "请前往 AI 设置配置图片生成模型。"
     assert agents["agent-coordinator"]["entry_kind"] == "team"
     assert agents["agent-coordinator"]["scope_type"] == "workspace"
     assert agents["component-manager"]["scope_type"] == "workspace"
     assert agents["resource-manager"]["scope_type"] == "workspace"
+
+
+async def test_visual_slots_should_validate_model_type_and_image_input(authenticated_client: AsyncClient) -> None:
+    """两个视觉槽位应分别约束聊天视觉能力和图片生成模型类型。"""
+
+    provider = await _create_llm_provider_config(authenticated_client, name="视觉槽位供应商")
+    image_provider = await _create_llm_provider_config(
+        authenticated_client,
+        name="视觉槽位图片供应商",
+        provider_key="openai_image",
+    )
+    plain_chat = await authenticated_client.post(
+        "/api/ai/llm-configs",
+        json={
+            "name": "纯文本模型",
+            "provider_config_id": provider["id"],
+            "model_id": "gpt-4.1-mini",
+            "supports_image_input": False,
+            "advanced_config_json": {},
+        },
+    )
+    assert plain_chat.status_code == 201
+    image_chat = await authenticated_client.post(
+        "/api/ai/llm-configs",
+        json={
+            "name": "图片理解模型",
+            "provider_config_id": provider["id"],
+            "model_id": "gpt-4.1-mini",
+            "supports_image_input": True,
+            "advanced_config_json": {},
+        },
+    )
+    assert image_chat.status_code == 201
+    image_generation = await authenticated_client.post(
+        "/api/ai/llm-configs",
+        json={
+            "name": "图片生成模型",
+            "provider_config_id": image_provider["id"],
+            "model_type": "image_generation",
+            "model_id": "gpt-image-2",
+            "thinking_enabled": True,
+            "thinking_effort": "high",
+            "supports_image_input": True,
+            "advanced_config_json": {},
+        },
+    )
+    assert image_generation.status_code == 201
+    assert image_generation.json()["model_type"] == "image_generation"
+    assert image_generation.json()["thinking_enabled"] is False
+    assert image_generation.json()["thinking_effort"] is None
+    assert image_generation.json()["supports_image_input"] is False
+
+    invalid_understanding = await authenticated_client.put(
+        "/api/ai/llm-slots/image_understanding",
+        json={"llm_config_id": plain_chat.json()["id"]},
+    )
+    assert invalid_understanding.status_code == 409
+    assert invalid_understanding.json()["code"] == "AI_LLM_SLOT_MODEL_INCOMPATIBLE"
+
+    understanding = await authenticated_client.put(
+        "/api/ai/llm-slots/image_understanding",
+        json={"llm_config_id": image_chat.json()["id"]},
+    )
+    generation = await authenticated_client.put(
+        "/api/ai/llm-slots/image_generation",
+        json={"llm_config_id": image_generation.json()["id"]},
+    )
+    assert understanding.status_code == 200
+    assert understanding.json()["binding_ready"] is True
+    assert generation.status_code == 200
+    assert generation.json()["binding_ready"] is True
+
+    invalid_agent_binding = await authenticated_client.put(
+        "/api/ai/llm-slots/agent_coordinator",
+        json={"llm_config_id": image_generation.json()["id"]},
+    )
+    assert invalid_agent_binding.status_code == 409
+    assert invalid_agent_binding.json()["code"] == "AI_LLM_SLOT_MODEL_INCOMPATIBLE"
 
 
 async def test_agent_session_should_persist_explicit_personal_llm_config(authenticated_client: AsyncClient) -> None:
@@ -556,6 +819,7 @@ async def test_agent_session_should_persist_explicit_personal_llm_config(authent
         "provider_key": "openai",
         "provider_label": "OpenAI",
         "model_id": "gpt-4.1-mini",
+        "model_type": "chat",
         "supports_image_input": True,
     }
 

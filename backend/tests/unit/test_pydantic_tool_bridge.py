@@ -5,7 +5,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import pytest
-from pydantic_ai import Agent
+from pydantic_ai import Agent, CallDeferred
 from pydantic_ai.messages import ModelResponse, TextPart, ToolCallPart
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 from pydantic_ai.models.test import TestModel
@@ -15,10 +15,18 @@ from pydantic_ai.usage import RequestUsage
 from app.core.exceptions import AppException
 from app.ai.platform_tools import AgentToolContext, AgentToolResult, agent_tool
 from app.ai.pydantic_runner import _requirement_from_deferred, _safe_messages
-from app.ai.pydantic_tools import AgentToolDeps, build_pydantic_tools, _safe_tool_result, _wrap_platform_tool
+from app.ai.pydantic_tools import (
+    AgentToolDeps,
+    _recoverable_tool_error_hint,
+    _safe_tool_result,
+    _wrap_platform_tool,
+    build_pydantic_tools,
+)
 from app.ai.session_facade_pydantic import _build_continue_message_history, _build_deferred_results
-from app.ai.tool_specs import AGENT_COORDINATOR_AGENT_ID
+from app.ai.tool_specs import AGENT_COORDINATOR_AGENT_ID, RESOURCE_MANAGER_AGENT_ID
+from app.ai.tools.visual.generate_image import build_generate_image_tool
 from app.schemas.agent import AgentScopeContext
+from app.services.image_generation.registry import get_image_model_spec
 
 
 def test_pydantic_tool_bridge_should_expose_tool_instructions_in_description() -> None:
@@ -39,8 +47,8 @@ def test_pydantic_tool_bridge_should_expose_tool_instructions_in_description() -
     assert wrapped.function.__doc__ == wrapped.description
 
 
-def test_build_pydantic_tools_should_pass_image_input_capability_to_tool_deps() -> None:
-    """工具运行依赖应携带模型图片能力，避免视觉工具披露后执行时误判不可用。"""
+def test_unified_visual_tool_should_not_require_content_model_image_input() -> None:
+    """统一视觉工具应由独立图片理解模型处理像素，不依赖内容模型图片能力。"""
 
     current = SimpleNamespace(user=SimpleNamespace(id=1), backend_session_id="backend-session-1")
     scope = AgentScopeContext(scope_type="page", workspace_id=1, project_id=2, page_id=3)
@@ -53,11 +61,134 @@ def test_build_pydantic_tools_should_pass_image_input_capability_to_tool_deps() 
         scope=scope,
         session_id="session-1",
         run_id="run-1",
-        supports_image_input=True,
+        supports_image_input=False,
     )
 
-    assert "get_page_screenshot" in {tool.name for tool in tools}
-    assert deps.dependencies["model_supports_image_input"] is True
+    assert "analyze_visuals" in {tool.name for tool in tools}
+    assert deps.dependencies["model_supports_image_input"] is False
+
+
+def test_resource_visual_schema_should_exclude_page_screenshot() -> None:
+    """资源助手图片理解 Schema 只能披露附件和资源图片。"""
+
+    current = SimpleNamespace(user=SimpleNamespace(id=1), backend_session_id="backend-session-1")
+    scope = AgentScopeContext(scope_type="workspace", workspace_id=1)
+    tools, deps = build_pydantic_tools(
+        agent_id=RESOURCE_MANAGER_AGENT_ID,
+        session_factory=None,  # type: ignore[arg-type]
+        runtime_config=None,
+        current=current,  # type: ignore[arg-type]
+        scope=scope,
+        session_id="session-1",
+        run_id="run-1",
+        supports_image_input=False,
+    )
+
+    analyze = next(tool for tool in tools if tool.name == "analyze_visuals")
+    schema_text = str(analyze.function_schema.json_schema)
+    assert "AttachmentVisualInput" in schema_text
+    assert "AssetVisualInput" in schema_text
+    assert "PageScreenshotVisualInput" not in schema_text
+    assert deps.dependencies["allowed_visual_input_types"] == ["attachment", "asset"]
+
+
+def test_generate_image_schema_should_follow_bound_model_capabilities() -> None:
+    """生图工具 Schema 应按绑定模型收窄，避免把其它供应商参数暴露给模型。"""
+
+    current = SimpleNamespace(user=SimpleNamespace(id=1), backend_session_id="backend-session-1")
+    scope = AgentScopeContext(scope_type="page", workspace_id=1, project_id=2, page_id=3)
+    dashscope_model = get_image_model_spec("dashscope_image", "wan2.7-image-pro")
+
+    tools, deps = build_pydantic_tools(
+        agent_id=AGENT_COORDINATOR_AGENT_ID,
+        session_factory=None,  # type: ignore[arg-type]
+        runtime_config=None,
+        current=current,  # type: ignore[arg-type]
+        scope=scope,
+        session_id="session-1",
+        run_id="run-1",
+        supports_image_input=False,
+        image_generation_model=dashscope_model,
+        image_generation_config_id=17,
+    )
+
+    generate_image = next(tool for tool in tools if tool.name == "generate_image")
+    properties = generate_image.function_schema.json_schema["properties"]
+
+    assert "quality" not in properties
+    assert "mask_attachment_id" not in properties
+    assert properties["resolution_tier"]["enum"] == ["auto", "standard", "high", "ultra"]
+    assert deps.dependencies["image_generation_config_id"] == 17
+
+
+def test_generate_image_schema_should_keep_openai_quality_and_mask() -> None:
+    """OpenAI 图片模型应继续披露其质量档位和蒙版编辑参数。"""
+
+    current = SimpleNamespace(user=SimpleNamespace(id=1), backend_session_id="backend-session-1")
+    scope = AgentScopeContext(scope_type="page", workspace_id=1, project_id=2, page_id=3)
+    openai_model = get_image_model_spec("openai_image", "gpt-image-2")
+
+    tools, _ = build_pydantic_tools(
+        agent_id=AGENT_COORDINATOR_AGENT_ID,
+        session_factory=None,  # type: ignore[arg-type]
+        runtime_config=None,
+        current=current,  # type: ignore[arg-type]
+        scope=scope,
+        session_id="session-1",
+        run_id="run-1",
+        supports_image_input=False,
+        image_generation_model=openai_model,
+    )
+
+    generate_image = next(tool for tool in tools if tool.name == "generate_image")
+    properties = generate_image.function_schema.json_schema["properties"]
+
+    assert properties["quality"]["enum"] == ["auto", "low", "medium", "high"]
+    assert "mask_attachment_id" in properties
+    assert properties["resolution_tier"]["enum"] == ["auto", "standard"]
+
+
+@pytest.mark.asyncio
+async def test_member_generate_image_should_separate_display_and_deferred_call_ids(monkeypatch) -> None:
+    """成员图片任务应使用映射 ID 展示，并保留原始 ID 供 Pydantic 恢复。"""
+
+    captured: dict[str, object] = {}
+
+    async def fake_enqueue(*args, **kwargs):  # noqa: ANN002, ANN003
+        captured.update(kwargs)
+        return SimpleNamespace(as_metadata=lambda: {"kind": "image_generation", "job_id": "job-1"})
+
+    monkeypatch.setattr("app.ai.tools.visual.generate_image.enqueue_image_generation", fake_enqueue)
+    tool = build_generate_image_tool(None)  # type: ignore[arg-type]
+
+    with pytest.raises(CallDeferred):
+        await tool.entrypoint(
+            AgentToolContext(
+                run_id="run-parent",
+                session_id="session-1",
+                dependencies={
+                    "current_tool_call_id": "raw-call-1",
+                    "member_run_id": "member-run-1",
+                    "user_id": 1,
+                    "workspace_id": 2,
+                },
+            ),
+            operation="generate",
+            prompt="hero",
+        )
+
+    assert captured["tool_call_id"] == "member-run-1:raw-call-1"
+    assert captured["deferred_tool_call_id"] == "raw-call-1"
+    assert captured["member_run_id"] == "member-run-1"
+
+
+def test_visual_model_failure_hint_should_prevent_identical_retry() -> None:
+    """视觉模型失败提示应引导 Agent 降级分析，而不是原样重复调用。"""
+
+    hint = _recoverable_tool_error_hint("AI_IMAGE_ANALYSIS_MODEL_FAILED")
+
+    assert "不要使用相同参数立即重试" in hint
+    assert "尚未完成图片像素验证" in hint
 
 
 @pytest.mark.asyncio
@@ -131,7 +262,12 @@ async def test_pydantic_tool_bridge_should_return_recoverable_app_exception_to_m
         """模拟读取到不可按文本读取的资源。"""
 
         _ = run_context
-        raise AppException(status_code=400, code="ASSET_CONTENT_READ_UNSUPPORTED", detail="该资源不支持内容读取。")
+        raise AppException(
+            status_code=400,
+            code="ASSET_CONTENT_READ_UNSUPPORTED",
+            detail="该资源不支持内容读取。",
+            data={"field": "asset_id"},
+        )
 
     async def model_func(messages: object, info: AgentInfo) -> ModelResponse:
         """首次请求工具，收到结构化错误后结束。"""
@@ -142,7 +278,7 @@ async def test_pydantic_tool_bridge_should_return_recoverable_app_exception_to_m
                 if getattr(part, "part_kind", None) == "tool-return":
                     content = part.content
                     return ModelResponse(
-                        parts=[TextPart(content=content["error"]["code"])],
+                        parts=[TextPart(content=f"{content['error']['code']}:{content['data']['field']}")],
                         usage=RequestUsage(input_tokens=1, output_tokens=1),
                     )
         return ModelResponse(
@@ -158,7 +294,7 @@ async def test_pydantic_tool_bridge_should_return_recoverable_app_exception_to_m
 
     result = await agent.run("读取资源", deps=AgentToolDeps(dependencies={"run_id": "run-1", "session_id": "session-1"}))
 
-    assert result.output == "ASSET_CONTENT_READ_UNSUPPORTED"
+    assert result.output == "ASSET_CONTENT_READ_UNSUPPORTED:asset_id"
 
 
 @pytest.mark.asyncio

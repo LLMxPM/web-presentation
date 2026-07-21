@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import json
 from collections.abc import AsyncIterator
 from types import SimpleNamespace
@@ -36,7 +37,7 @@ from app.ai.platform_runtime import PlatformAgentRuntimeStore
 from app.ai.pydantic_event_projection import PydanticEventProjector
 from app.ai.pydantic_runner import PydanticAgentRunner, _requirement_from_deferred
 from app.ai.pydantic_tools import AgentToolDeps, _wrap_platform_tool
-from app.ai.session_facade_pydantic import _build_continue_message_history, _build_deferred_results
+from app.ai.session_facade_pydantic import AgentSessionFacade, _build_continue_message_history, _build_deferred_results
 from app.ai.tools.team_delegation import build_team_delegation_tools
 from app.core.exceptions import AppException
 from app.db.session import get_session_factory
@@ -1327,6 +1328,89 @@ async def test_pydantic_runner_should_fail_idle_stream_when_iterator_ignores_can
 
     assert exc_info.value.code == "AI_AGENT_STREAM_IDLE_TIMEOUT"
     assert stream.cancel_seen.is_set()
+
+
+async def test_pydantic_runner_should_keep_stream_iterator_in_one_context() -> None:
+    """异步流跨多个事件推进时应始终在创建追踪 token 的同一 Context 中关闭。"""
+
+    current_context: contextvars.ContextVar[str] = contextvars.ContextVar("test_current_context", default="")
+
+    class ContextBoundStream:
+        """模拟进入流时 attach、退出流时 detach 的追踪实现。"""
+
+        def __init__(self) -> None:
+            """初始化事件游标和待重置 token。"""
+
+            self.index = 0
+            self.token: contextvars.Token[str] | None = None
+
+        def __aiter__(self) -> "ContextBoundStream":
+            """返回自身作为异步迭代器。"""
+
+            return self
+
+        async def __anext__(self) -> str:
+            """首次迭代创建 token，结束时必须在同一 Context 中重置。"""
+
+            if self.index == 0:
+                self.token = current_context.set("attached")
+            if self.index < 2:
+                self.index += 1
+                return f"event-{self.index}"
+            assert self.token is not None
+            current_context.reset(self.token)
+            raise StopAsyncIteration
+
+    runner = PydanticAgentRunner(cast(PlatformAgentRuntimeStore, object()))
+    events = [event async for event in runner._iter_stream_events(ContextBoundStream())]
+
+    assert events == ["event-1", "event-2"]
+    assert current_context.get() == ""
+
+
+async def test_interrupted_run_cleanup_should_use_new_session(
+    authenticated_client: AsyncClient,
+) -> None:
+    """断流终态写入应绕开原请求会话，并立即持久化真实中断错误。"""
+
+    _, session_id, scope = await _create_workspace_session(
+        authenticated_client,
+        workspace_name="Pydantic Runner interrupted 工作空间",
+        session_name="Pydantic Runner interrupted 会话",
+    )
+    async with get_session_factory()() as db_session:
+        store = PlatformAgentRuntimeStore(db_session, user_id=1)
+        run_start = await store.start_run(
+            session_id=session_id,
+            agent_id="component-manager",
+            scope=scope,
+            run_id="pydantic-runner-interrupted",
+            message="开始后断开连接",
+            image_attachment_ids=[],
+        )
+        detached_run = run_start.run_model
+
+    facade = AgentSessionFacade.__new__(AgentSessionFacade)
+    facade._current = SimpleNamespace(user=SimpleNamespace(id=1))
+    facade._store = cast(PlatformAgentRuntimeStore, object())
+    await facade._mark_interrupted_run_terminal(
+        detached_run,
+        fallback_code="AI_RUN_STREAM_INTERRUPTED",
+        fallback_message="智能体连接中断，运行已停止。",
+    )
+
+    async with get_session_factory()() as verify_session:
+        failed_run = await verify_session.get(AiAgentRun, detached_run.run_id)
+        events_result = await verify_session.execute(
+            select(AiAgentRunEvent)
+            .where(AiAgentRunEvent.run_id == detached_run.run_id)
+            .order_by(AiAgentRunEvent.event_index.asc())
+        )
+
+    assert failed_run is not None
+    assert failed_run.status == "failed"
+    assert failed_run.error_code == "AI_RUN_STREAM_INTERRUPTED"
+    assert [event.event for event in events_result.scalars().all()][-1] == "run.error"
 
 
 async def test_platform_runtime_should_recover_stale_active_run(

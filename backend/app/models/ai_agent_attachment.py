@@ -31,6 +31,8 @@ class AiAgentImageAttachment(TimestampMixin, AuditMixin, Base):
     original_name: Mapped[str] = mapped_column(String(255), nullable=False)
     content_type: Mapped[str] = mapped_column(String(128), nullable=False)
     file_size: Mapped[int] = mapped_column(Integer, nullable=False)
+    width: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    height: Mapped[int | None] = mapped_column(Integer, nullable=True)
     sha256: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     model_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     model_url_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

@@ -329,6 +329,40 @@
                 </p>
               </div>
             </div>
+            <article v-if="selectedAgentConfig.id === 'agent-coordinator'" class="rounded-2xl border border-violet-200 bg-violet-50/40 p-4">
+              <div>
+                <h3 class="text-sm font-bold text-slate-900">视觉能力</h3>
+                <p class="mt-1 text-xs leading-5 text-slate-500">视觉模型独立于内容模型；图片理解同步单次调用，图片生成通过持久化任务执行。</p>
+              </div>
+              <div class="mt-3 grid gap-3 xl:grid-cols-2">
+                <div v-for="slot in visualSlots" :key="slot.slot" class="rounded-xl border border-violet-100 bg-white p-3">
+                  <div class="mb-2 flex items-start justify-between gap-2">
+                    <div>
+                      <p class="text-sm font-bold text-slate-800">{{ slot.slot_label }}</p>
+                      <p class="mt-0.5 text-[11px] text-slate-500">
+                        {{ slot.binding_ready ? `${slot.provider_label} · ${slot.model_id}` : '尚未配置可用模型' }}
+                        <span v-if="slot.inherited_from_global">（继承全局）</span>
+                      </p>
+                    </div>
+                    <span class="rounded-full px-2 py-0.5 text-[11px] font-semibold" :class="slot.binding_ready ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'">
+                      {{ slot.binding_ready ? '可用' : '未配置' }}
+                    </span>
+                  </div>
+                  <div class="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+                    <SearchableSelect
+                      v-model="slotDrafts[slot.slot]"
+                      :options="getSlotConfigOptions(slot.slot)"
+                      clearable
+                      size="compact"
+                      placeholder="选择视觉模型"
+                    />
+                    <BaseButton size="sm" variant="primary" :loading="bindingSlot === slot.slot" @click="handleSaveSlot(slot.slot)">
+                      保存
+                    </BaseButton>
+                  </div>
+                </div>
+              </div>
+            </article>
           </section>
 
           <section v-else-if="activeAgentPanel === 'prompts'" class="space-y-3">
@@ -607,6 +641,7 @@ import type { SelectOption } from '@/components/ui/select'
 import { useAuthStore } from '@/stores/auth'
 import type {
   AiLlmConfigScope,
+  AiModelType,
   AgentConfigItem,
   AgentToolConfigItem,
   AgentToolGroupConfigItem,
@@ -630,6 +665,7 @@ interface LlmFormState {
   name: string
   provider_config_id: number | null
   model_id: string
+  model_type: AiModelType
   thinking_enabled: boolean
   thinking_effort: string | null
   supports_image_input: boolean
@@ -690,6 +726,7 @@ const modelForm = reactive<LlmFormState>({
   name: '',
   provider_config_id: null,
   model_id: '',
+  model_type: 'chat',
   thinking_enabled: false,
   thinking_effort: null,
   supports_image_input: false,
@@ -844,9 +881,11 @@ const agentPanelTabs = computed(() => [
 
 const providerOptions = computed<SelectOption[]>(() => (
   providersQuery.data.value?.map(provider => ({
-    label: provider.label,
+    label: `${getCatalogProviderType(provider) === 'image_generation' ? '图片生成' : 'Chat'} · ${provider.label}`,
     value: provider.provider_key,
-    description: provider.supports_thinking
+    description: getCatalogProviderType(provider) === 'image_generation'
+      ? `图片生成供应商${provider.default_image_generation_model_id ? ` · ${provider.default_image_generation_model_id}` : ''}`
+      : provider.supports_thinking
       ? `支持 thinking · ${provider.thinking_mode}${provider.default_model_id ? ` · ${provider.default_model_id}` : ''}`
       : '不支持 thinking',
     keywords: [provider.provider_key, provider.provider_adapter],
@@ -857,6 +896,27 @@ const currentProvider = computed<LlmProviderCatalogItem | null>(() => (
   providersQuery.data.value?.find(provider => provider.provider_key === selectedModelProviderConfig.value?.provider_key) ?? null
 ))
 
+watch(
+  () => modelForm.model_type,
+  (modelType, previousType) => {
+    if (modelType === previousType) return
+    const selectedConfig = selectedModelProviderConfig.value
+    if (selectedConfig && getProviderConfigType(selectedConfig) !== modelType) {
+      const nextConfig = findDefaultProviderConfigForScope(modelForm.scope, modelType)
+      modelForm.provider_config_id = nextConfig?.id ?? null
+    }
+    const provider = findProviderForConfig(selectedModelProviderConfig.value)
+    modelForm.model_id = modelType === 'image_generation'
+      ? provider?.default_image_generation_model_id ?? ''
+      : provider?.default_model_id ?? ''
+    if (modelType === 'image_generation') {
+      modelForm.thinking_enabled = false
+      modelForm.thinking_effort = null
+      modelForm.supports_image_input = false
+    }
+  },
+)
+
 const currentProviderForProviderForm = computed<LlmProviderCatalogItem | null>(() => (
   providersQuery.data.value?.find(provider => provider.provider_key === providerForm.provider_key) ?? null
 ))
@@ -864,6 +924,7 @@ const currentProviderForProviderForm = computed<LlmProviderCatalogItem | null>((
 const providerConfigOptions = computed<SelectOption[]>(() => (
   (providerConfigsQuery.data.value ?? [])
     .filter(config => config.scope === modelForm.scope)
+    .filter(config => getProviderConfigType(config) === modelForm.model_type)
     .filter(config => config.status === 'active' || config.id === modelForm.provider_config_id)
     .map(config => ({
       label: config.name,
@@ -876,6 +937,7 @@ const providerConfigOptions = computed<SelectOption[]>(() => (
 const configOptions = computed<SelectOption[]>(() => (
   (configsQuery.data.value ?? [])
     .filter(config => config.status === 'active')
+    .filter(config => (config.model_type ?? 'chat') === 'chat')
     .map(config => ({
       label: config.name,
       value: config.id,
@@ -883,6 +945,27 @@ const configOptions = computed<SelectOption[]>(() => (
       keywords: [config.provider_key, config.model_id, config.provider_label, config.provider_config_name],
     }))
 ))
+
+const visualSlots = computed(() => (
+  (slotsQuery.data.value ?? []).filter(slot => ['image_understanding', 'image_generation'].includes(slot.slot))
+))
+
+/** 按槽位协议筛选可绑定模型，避免把图片生成模型绑定到聊天槽位。 */
+function getSlotConfigOptions(slot: string): SelectOption[] {
+  return (configsQuery.data.value ?? [])
+    .filter(config => config.status === 'active')
+    .filter(config => {
+      if (slot === 'image_generation') return config.model_type === 'image_generation'
+      if (slot === 'image_understanding') return (config.model_type ?? 'chat') === 'chat' && config.supports_image_input
+      return (config.model_type ?? 'chat') === 'chat'
+    })
+    .map(config => ({
+      label: config.name,
+      value: config.id,
+      description: `${config.scope === 'global' ? '全局模型' : '个人模型'} · ${config.provider_config_name} / ${config.model_id}`,
+      keywords: [config.provider_key, config.model_id, config.provider_label],
+    }))
+}
 
 watch(
   () => agentConfigsQuery.data.value,
@@ -1008,7 +1091,9 @@ watch(
       return
     }
     if (providerConfigId !== previousProviderConfigId && (!modelForm.model_id || modelForm.model_id === findProviderDefaultModelId(previousProviderKey))) {
-      modelForm.model_id = provider.default_model_id ?? ''
+      modelForm.model_id = modelForm.model_type === 'image_generation'
+        ? provider.default_image_generation_model_id ?? ''
+        : provider.default_model_id ?? ''
     }
     if (!provider.supports_thinking) {
       modelForm.thinking_enabled = false
@@ -1055,7 +1140,9 @@ function findDefaultNewModelProvider(providers: LlmProviderCatalogItem[]) {
 
 /** 使用供应商目录默认值预填新建表单，不影响已有模型装载。 */
 function prefillModelFormFromProvider(provider: LlmProviderCatalogItem | null) {
-  modelForm.model_id = provider?.default_model_id ?? ''
+  modelForm.model_id = modelForm.model_type === 'image_generation'
+    ? provider?.default_image_generation_model_id ?? ''
+    : provider?.default_model_id ?? ''
   modelForm.thinking_enabled = Boolean(provider?.supports_thinking && provider.default_thinking_enabled)
   modelForm.thinking_effort = provider?.supports_thinking ? provider.default_thinking_effort ?? null : null
   modelForm.supports_image_input = Boolean(provider?.default_supports_image_input)
@@ -1234,6 +1321,20 @@ async function handleSaveSelectedAgentSlot(scope: AiLlmConfigScope = 'personal')
   }
 }
 
+/** 保存任意固定槽位，供视觉能力区域复用。 */
+async function handleSaveSlot(slot: string) {
+  bindingSlot.value = slot
+  try {
+    await updateLlmSlotBinding(slot, slotDrafts[slot] ?? null, 'personal')
+    await refreshLlmQueries()
+    Message.success('视觉模型绑定已保存。')
+  } catch (error) {
+    Message.error(getErrorMessage(error, '保存视觉模型绑定失败。'))
+  } finally {
+    bindingSlot.value = null
+  }
+}
+
 /** 保存当前智能体的完整提示词。 */
 async function handleSavePrompt() {
   if (!selectedAgentConfig.value) return
@@ -1348,14 +1449,31 @@ function hasGuideResponseExample(tool: AgentToolConfigItem) {
 }
 
 /** 按范围选择默认供应商配置，优先使用 DeepSeek。 */
-function findDefaultProviderConfigForScope(scope: AiLlmConfigScope) {
-  const candidates = (providerConfigsQuery.data.value ?? []).filter(config => config.scope === scope && config.status === 'active')
+function findDefaultProviderConfigForScope(scope: AiLlmConfigScope, modelType: AiModelType = modelForm.model_type) {
+  const candidates = (providerConfigsQuery.data.value ?? []).filter(config => (
+    config.scope === scope
+    && config.status === 'active'
+    && getProviderConfigType(config) === modelType
+  ))
   return candidates.find(config => config.provider_key === DEFAULT_NEW_MODEL_PROVIDER_KEY) ?? candidates[0] ?? null
 }
 
 /** 根据供应商配置找到静态目录项。 */
 function findProviderForConfig(config: LlmProviderConfigItem | null) {
   return providersQuery.data.value?.find(provider => provider.provider_key === config?.provider_key) ?? null
+}
+
+/** 兼容旧响应并返回目录声明的单一供应商类型。 */
+function getCatalogProviderType(provider: LlmProviderCatalogItem | null | undefined): AiModelType {
+  if (provider?.provider_type) return provider.provider_type
+  return provider?.supported_model_types?.length === 1 && provider.supported_model_types[0] === 'image_generation'
+    ? 'image_generation'
+    : 'chat'
+}
+
+/** 从供应商配置或静态目录解析供应商类型。 */
+function getProviderConfigType(config: LlmProviderConfigItem): AiModelType {
+  return config.provider_type ?? getCatalogProviderType(findProviderForConfig(config))
 }
 
 /** 重置供应商表单并切换到新建状态。 */
@@ -1416,6 +1534,7 @@ function resetModelForm() {
   modelCreateRequested.value = true
   selectedConfigId.value = null
   modelForm.scope = 'personal'
+  modelForm.model_type = 'chat'
   modelForm.name = ''
   const providerConfig = findDefaultProviderConfigForScope(modelForm.scope)
   modelForm.provider_config_id = providerConfig?.id ?? null
@@ -1438,6 +1557,7 @@ async function handleEditModel(config: LlmConfigItem) {
   modelForm.scope = config.scope
   modelForm.name = config.name
   modelForm.provider_config_id = config.provider_config_id
+  modelForm.model_type = config.model_type ?? 'chat'
   modelForm.model_id = config.model_id
   modelForm.thinking_enabled = config.thinking_enabled
   modelForm.thinking_effort = config.thinking_effort
@@ -1537,6 +1657,10 @@ async function handleSubmitProviderConfig() {
   const provider = currentProviderForProviderForm.value
   const baseUrl = provider?.supports_base_url ? providerForm.base_url.trim() || null : null
   const apiKey = provider?.supports_api_key ? providerForm.api_key.trim() || null : null
+  if (provider?.requires_base_url && !baseUrl) {
+    Message.error('当前供应商必须填写 Base URL。')
+    return
+  }
 
   savingProviderConfig.value = true
   try {
@@ -1604,6 +1728,7 @@ async function handleSubmitModel() {
         name: modelForm.name.trim(),
         provider_config_id: providerConfigId,
         model_id: modelForm.model_id.trim(),
+        model_type: modelForm.model_type,
         thinking_enabled: modelForm.thinking_enabled,
         thinking_effort: modelForm.thinking_effort,
         supports_image_input: modelForm.supports_image_input,
@@ -1625,6 +1750,7 @@ async function handleSubmitModel() {
         scope: modelForm.scope,
         provider_config_id: providerConfigId,
         model_id: modelForm.model_id.trim(),
+        model_type: modelForm.model_type,
         thinking_enabled: modelForm.thinking_enabled,
         thinking_effort: modelForm.thinking_effort,
         supports_image_input: modelForm.supports_image_input,

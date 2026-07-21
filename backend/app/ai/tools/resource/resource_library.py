@@ -15,6 +15,7 @@ from app.core.config import get_settings
 from app.core.exceptions import AppException
 from app.models.enums import AssetType, RecordStatus
 from app.schemas.asset import AssetResponse
+from app.services.agent_image_attachment_service import AgentImageAttachmentService
 from app.services.asset_service import AssetService
 from app.services.project_suggested_reference_asset_service import ProjectSuggestedReferenceAssetService
 
@@ -26,6 +27,7 @@ def build_resource_manager_tools(session_factory: async_sessionmaker[AsyncSessio
         build_list_resource_assets_tool(session_factory),
         build_get_resource_asset_content_tool(session_factory),
         build_list_resource_tags_tool(session_factory),
+        build_save_uploaded_image_as_resource_tool(session_factory),
         build_create_resource_asset_tool(session_factory),
         build_preview_resource_content_diff_tool(session_factory),
         build_apply_resource_content_diff_tool(session_factory),
@@ -179,6 +181,51 @@ def build_list_resource_tags_tool(session_factory: async_sessionmaker[AsyncSessi
             return await AssetService(session).list_tags(int(dependencies["workspace_id"]))
 
     return list_resource_tags
+
+
+def build_save_uploaded_image_as_resource_tool(session_factory: async_sessionmaker[AsyncSession]) -> Any:
+    """构建把当前会话上传图片保存为工作空间资源的工具。"""
+
+    @agent_tool(show_result=False, sequential=True)
+    async def save_uploaded_image_as_resource(
+        run_context: AgentToolContext,
+        attachment_id: int,
+        name: str | None = None,
+        description: str | None = None,
+        tags: list[str] | str | None = None,
+    ) -> dict[str, Any]:
+        """按可信附件 ID 幂等创建图片资源，不接受 URL、路径或 base64。"""
+
+        dependencies, _ = await resolve_tool_context(
+            session_factory,
+            run_context,
+            required_scopes=RESOURCE_TOOL_WRITE_SCOPES,
+            required_dependency_fields=("workspace_id",),
+        )
+        async with session_factory() as session:
+            _, asset, created = await AgentImageAttachmentService(
+                session,
+                user_id=int(dependencies["user_id"]),
+            ).promote_attachment_to_asset_with_result(
+                workspace_id=int(dependencies["workspace_id"]),
+                session_id=str(dependencies["session_id"]),
+                attachment_id=int(attachment_id),
+                name=name,
+                description=description,
+                tags=_normalize_tags_argument(tags) or [],
+                overwrite=False,
+                operator_id=int(dependencies["user_id"]),
+                require_user_upload=True,
+            )
+            return {
+                "success": True,
+                "created": created,
+                "message": "上传图片已保存为工作空间资源。" if created else "上传图片此前已保存为工作空间资源。",
+                "attachment_id": int(attachment_id),
+                "asset": _dump_asset(asset),
+            }
+
+    return save_uploaded_image_as_resource
 
 
 def build_create_resource_asset_tool(session_factory: async_sessionmaker[AsyncSession]) -> Any:

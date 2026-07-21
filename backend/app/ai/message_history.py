@@ -344,7 +344,7 @@ async def rebuild_agent_message_history(
             message_json=message_json,
         )
         if hydrate_images
-        else _replace_agent_image_refs_with_placeholders(message_json)
+        else replace_agent_image_refs_with_placeholders(message_json)
     )
     return RebuiltAgentMessageHistory(
         messages=_validate_message_json(validated_message_json),
@@ -691,7 +691,7 @@ def _tool_call_history_key(part: dict[str, Any], *, fallback: str) -> str:
     return value or fallback
 
 
-def _replace_agent_image_refs_with_placeholders(value: Any) -> Any:
+def replace_agent_image_refs_with_placeholders(value: Any) -> Any:
     """把图片引用替换为文本占位，供状态读取等非入模路径使用。"""
 
     if isinstance(value, dict):
@@ -699,9 +699,9 @@ def _replace_agent_image_refs_with_placeholders(value: Any) -> Any:
         if ref is not None:
             name = str(ref.get("original_name") or "图片")
             return f"[图片引用：{name}]"
-        return {str(key): _replace_agent_image_refs_with_placeholders(child) for key, child in value.items()}
+        return {str(key): replace_agent_image_refs_with_placeholders(child) for key, child in value.items()}
     if isinstance(value, list):
-        return [_replace_agent_image_refs_with_placeholders(item) for item in value]
+        return [replace_agent_image_refs_with_placeholders(item) for item in value]
     return value
 
 

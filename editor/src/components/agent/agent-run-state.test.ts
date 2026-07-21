@@ -719,6 +719,54 @@ describe('agent-run-state timeline', () => {
     expect(state.timelineItems.find(item => item.kind === 'message')?.content).toBe('先说明当前处理思路。')
   })
 
+  it('视觉工具 SSE 应保留输入附件并在完成事件补齐输出附件', () => {
+    const state = createAgentSessionRuntimeState()
+    const options = { agentId: 'agent-coordinator', agentDisplayName: '内容助手' }
+    const inputAttachment = {
+      id: 11,
+      source_kind: 'user_upload',
+      original_name: 'input.png',
+      content_type: 'image/png',
+      file_size: 100,
+      url: '/input.png',
+      preview_available: true,
+      promoted_asset_id: null,
+    }
+    const outputAttachment = {
+      ...inputAttachment,
+      id: 12,
+      source_kind: 'tool_output',
+      original_name: 'output.png',
+      url: '/output.png',
+      promoted_asset_id: 99,
+    }
+
+    applyAgentRunEvent(state, event({
+      event: 'tool.started',
+      sequence: 1,
+      data: {
+        tool_call_id: 'visual-1',
+        tool_name: 'generate_image',
+        tool_args: { operation: 'edit', reference_attachment_ids: [11] },
+        input_attachments: [inputAttachment],
+      },
+    }), options)
+    applyAgentRunEvent(state, event({
+      event: 'tool.completed',
+      sequence: 2,
+      data: {
+        tool_call_id: 'visual-1',
+        tool_name: 'generate_image',
+        result: { status: 'completed' },
+        output_attachments: [outputAttachment],
+      },
+    }), options)
+
+    const tool = state.timelineItems.find(item => item.kind === 'tool')?.tool
+    expect(tool?.input_attachments?.map(item => item.id)).toEqual([11])
+    expect(tool?.output_attachments?.map(item => item.id)).toEqual([12])
+  })
+
   it('工具执行和完成后的空档应切换等待状态', () => {
     const state = createAgentSessionRuntimeState()
     const options = { agentId: 'agent-coordinator', agentDisplayName: '内容助手' }

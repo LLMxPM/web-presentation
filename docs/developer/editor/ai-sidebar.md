@@ -16,4 +16,6 @@ AI 侧边栏负责承接用户输入、展示会话消息、展示工具调用�
 
 ## 图片附件
 
-图片附件需要展示上传状态、预览和失败原因。涉及模型可访问 URL 时，应遵循 Backend 图片处理和水合策略。
+图片附件需要展示上传状态、预览和失败原因。上传可用性由图片理解或图片生成任一视觉槽位决定，不再依赖内容会话模型的 `supports_image_input`。
+
+`analyze_visuals` 与 `generate_image` 使用专用工具卡：前者合并展示用户附件、工作空间资源图片与页面截图缩略图、分析类型、状态和短摘要；后者展示 `queued/running/saving/completed/error` 进度、输出画廊与资源库标记。SSE、runtime snapshot 和历史回放必须使用同一 `progress/input_attachments/output_attachments` 协议。普通工具继续使用通用卡片。

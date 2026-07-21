@@ -1,7 +1,9 @@
 """文件功能：验证 SQLite 数据库连接参数和轻量部署所需 PRAGMA 初始化。"""
 
+import asyncio
 from pathlib import Path
 
+import pytest
 from sqlalchemy import text
 
 
@@ -30,3 +32,37 @@ async def test_sqlite_engine_should_enable_foreign_keys_busy_timeout_and_wal(tmp
     finally:
         await reset_database_state()
         get_settings.cache_clear()
+
+
+async def test_db_session_should_finish_close_after_request_cleanup_is_cancelled(monkeypatch) -> None:  # noqa: ANN001
+    """请求清理被取消时，会话关闭应在独立任务中继续完成。"""
+
+    from app.db import session as session_module
+
+    close_started = asyncio.Event()
+    allow_close = asyncio.Event()
+    close_finished = asyncio.Event()
+
+    class FakeSession:
+        """模拟需要等待才能完成关闭的异步会话。"""
+
+        async def close(self) -> None:
+            """等待测试放行后记录会话已经完整关闭。"""
+
+            close_started.set()
+            await allow_close.wait()
+            close_finished.set()
+
+    fake_session = FakeSession()
+    monkeypatch.setattr(session_module, "get_session_factory", lambda: lambda: fake_session)
+    dependency = session_module.get_db_session()
+    assert await anext(dependency) is fake_session
+
+    cleanup_task = asyncio.create_task(dependency.aclose())
+    await close_started.wait()
+    cleanup_task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await cleanup_task
+
+    allow_close.set()
+    await asyncio.wait_for(close_finished.wait(), timeout=1)
