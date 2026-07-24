@@ -5,10 +5,12 @@
       <div class="flex min-w-max items-center gap-2">
         <span class="text-xs font-bold text-slate-700">预览参数</span>
         <div v-if="panelTabs.length" class="flex flex-wrap gap-1.5">
-          <button
+          <UiButton
             v-for="tab in panelTabs"
             :key="tab.key"
             type="button"
+            variant="ghost"
+            size="xs"
             class="rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-colors"
             :class="currentPanel === tab.key
               ? 'border-indigo-300 bg-indigo-50 text-indigo-700'
@@ -17,9 +19,9 @@
           >
             {{ tab.label }}
             <span class="ml-0.5 text-[10px] text-slate-400">{{ tab.count }}</span>
-          </button>
+          </UiButton>
         </div>
-        <BaseButton
+        <UiButton
           v-if="schema"
           variant="ghost"
           size="sm"
@@ -27,7 +29,7 @@
           @click="resetState"
         >
           重置
-        </BaseButton>
+        </UiButton>
       </div>
 
       <div v-if="loading" class="flex min-w-[220px] items-center rounded-xl border border-slate-200 bg-white px-4 text-xs font-semibold text-slate-400">
@@ -71,26 +73,19 @@
             </div>
 
             <div v-if="propField.type === 'boolean'" class="flex h-9 items-center gap-3">
-              <input
-                :id="`preview-prop-horizontal-${propKey}`"
-                :checked="Boolean(localState.props[propKey])"
-                type="checkbox"
-                class="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
-                @change="updateBooleanProp(propKey, $event)"
-              >
+              <UiCheckbox
+                :model-value="Boolean(localState.props[propKey])"
+                @update:model-value="updateBooleanProp(propKey, $event === true)"
+              />
               <label :for="`preview-prop-horizontal-${propKey}`" class="text-sm text-slate-700">启用</label>
             </div>
 
-            <select
+            <UiSelect
               v-else-if="propField.type === 'select'"
-              class="h-9 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-indigo-500"
-              :value="getSelectOptionIndex(propField.options, localState.props[propKey])"
-              @change="updateSelectProp(propKey, propField.options, $event)"
-            >
-              <option v-for="(option, optionIndex) in propField.options || []" :key="`${propKey}-${optionIndex}`" :value="optionIndex">
-                {{ option.label }}
-              </option>
-            </select>
+              :model-value="getSelectOptionIndex(propField.options, localState.props[propKey])"
+              :options="getSelectOptions(propField.options)"
+              @update:model-value="updateSelectProp(propKey, propField.options, $event)"
+            />
 
             <div v-else-if="propField.type === 'json'" class="space-y-2">
               <MonacoCodeEditor
@@ -106,7 +101,7 @@
               </p>
             </div>
 
-            <BaseInput
+            <UiInput
               v-else
               :model-value="resolveScalarFieldValue(localState.props[propKey])"
               :type="propField.type === 'textarea' ? 'textarea' : propField.type === 'number' ? 'number' : 'text'"
@@ -182,7 +177,7 @@
             {{ componentMeta.code }}<template v-if="componentMeta.versionNo"> · v{{ componentMeta.versionNo }}</template>
           </span>
         </div>
-        <BaseButton
+        <UiButton
           v-if="schema"
           variant="ghost"
           size="sm"
@@ -190,14 +185,16 @@
           @click="resetState"
         >
           重置
-        </BaseButton>
+        </UiButton>
       </div>
 
       <div v-if="panelTabs.length" class="mt-2 flex flex-wrap gap-1.5">
-        <button
+        <UiButton
           v-for="tab in panelTabs"
           :key="tab.key"
           type="button"
+          variant="ghost"
+          size="xs"
           class="rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-colors"
           :class="currentPanel === tab.key
             ? 'border-indigo-300 bg-indigo-50 text-indigo-700'
@@ -206,7 +203,7 @@
         >
           {{ tab.label }}
           <span class="ml-0.5 text-[10px] text-slate-400">{{ tab.count }}</span>
-        </button>
+        </UiButton>
       </div>
       <p class="mt-2 text-[11px] leading-5 text-slate-400">
         {{ headerText }}
@@ -216,10 +213,12 @@
       <div :class="compactBody ? '' : embedded ? 'space-y-3 p-3' : 'px-3 py-2'">
       <div v-if="embedded && schema && !compactBody" class="flex items-start justify-between gap-3">
         <div v-if="panelTabs.length" class="flex min-w-0 flex-1 flex-wrap gap-1.5">
-          <button
+          <UiButton
             v-for="tab in panelTabs"
             :key="tab.key"
             type="button"
+            variant="ghost"
+            size="xs"
             class="rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-colors"
             :class="currentPanel === tab.key
               ? 'border-indigo-300 bg-indigo-50 text-indigo-700'
@@ -228,16 +227,16 @@
           >
             {{ tab.label }}
             <span class="ml-0.5 text-[10px] text-slate-400">{{ tab.count }}</span>
-          </button>
+          </UiButton>
         </div>
-        <BaseButton
+        <UiButton
           variant="ghost"
           size="sm"
           custom-class="!px-2 !py-0.5 !text-xs"
           @click="resetState"
         >
           重置
-        </BaseButton>
+        </UiButton>
       </div>
 
       <div v-if="loading" class="flex min-h-[160px] items-center justify-center text-xs font-semibold text-slate-400">
@@ -281,26 +280,19 @@
               </div>
 
               <div v-if="propField.type === 'boolean'" class="flex items-center gap-3">
-                <input
-                  :id="`preview-prop-${propKey}`"
-                  :checked="Boolean(localState.props[propKey])"
-                  type="checkbox"
-                  class="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
-                  @change="updateBooleanProp(propKey, $event)"
-                >
+                <UiCheckbox
+                  :model-value="Boolean(localState.props[propKey])"
+                  @update:model-value="updateBooleanProp(propKey, $event === true)"
+                />
                 <label :for="`preview-prop-${propKey}`" class="text-sm text-slate-700">启用</label>
               </div>
 
               <div v-else-if="propField.type === 'select'" class="space-y-2">
-                <select
-                  class="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 outline-none transition focus:border-indigo-500"
-                  :value="getSelectOptionIndex(propField.options, localState.props[propKey])"
-                  @change="updateSelectProp(propKey, propField.options, $event)"
-                >
-                  <option v-for="(option, optionIndex) in propField.options || []" :key="`${propKey}-${optionIndex}`" :value="optionIndex">
-                    {{ option.label }}
-                  </option>
-                </select>
+                <UiSelect
+                  :model-value="getSelectOptionIndex(propField.options, localState.props[propKey])"
+                  :options="getSelectOptions(propField.options)"
+                  @update:model-value="updateSelectProp(propKey, propField.options, $event)"
+                />
               </div>
 
               <div v-else-if="propField.type === 'json'" class="space-y-2">
@@ -317,7 +309,7 @@
                 </p>
               </div>
 
-              <BaseInput
+              <UiInput
                 v-else
                 :model-value="resolveScalarFieldValue(localState.props[propKey])"
                 :type="propField.type === 'textarea' ? 'textarea' : propField.type === 'number' ? 'number' : 'text'"
@@ -392,8 +384,11 @@
 import { computed, reactive, ref, watch } from 'vue'
 
 import MonacoCodeEditor from '@/components/editor/MonacoCodeEditor.vue'
-import BaseButton from '@/components/ui/BaseButton.vue'
-import BaseInput from '@/components/ui/BaseInput.vue'
+import UiButton from '@/components/ui/button/UiButton.vue'
+import UiCheckbox from '@/components/ui/checkbox/UiCheckbox.vue'
+import UiInput from '@/components/ui/input/UiInput.vue'
+import UiSelect from '@/components/ui/select/UiSelect.vue'
+import type { SelectModelValue, SelectOption } from '@/components/ui/select'
 import {
   buildInitialComponentPreviewState,
   cloneComponentPreviewState,
@@ -552,8 +547,8 @@ function updateScalarProp(propKey: string, fieldType: string, value: string | nu
  * @param propKey props 键名
  * @param event change 事件
  */
-function updateBooleanProp(propKey: string, event: Event) {
-  localState.props[propKey] = (event.target as HTMLInputElement).checked
+function updateBooleanProp(propKey: string, value: boolean) {
+  localState.props[propKey] = value
   localState.activePresetKey = null
   emitState()
 }
@@ -564,11 +559,16 @@ function updateBooleanProp(propKey: string, event: Event) {
  * @param options 选项集合
  * @param event select change 事件
  */
-function updateSelectProp(propKey: string, options: Array<{ label: string; value: string | number | boolean }> | undefined, event: Event) {
-  const optionIndex = Number((event.target as HTMLSelectElement).value)
+function updateSelectProp(propKey: string, options: Array<{ label: string; value: string | number | boolean }> | undefined, value: SelectModelValue) {
+  const optionIndex = Number(value)
   localState.props[propKey] = options?.[optionIndex]?.value
   localState.activePresetKey = null
   emitState()
+}
+
+/** 将预览 schema 选项映射为 UiSelect 所需的稳定索引选项。 */
+function getSelectOptions(options: Array<{ label: string; value: string | number | boolean }> | undefined): SelectOption[] {
+  return (options || []).map((option, index) => ({ label: option.label, value: index }))
 }
 
 /**

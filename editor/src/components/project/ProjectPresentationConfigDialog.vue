@@ -1,12 +1,12 @@
 <!-- 文件功能：项目展示配置弹窗，统一编辑主题、页面尺寸、菜单模式与导出按钮。 -->
 <template>
-  <BaseDialog
-    :model-value="modelValue"
+  <UiDialog
+    :open="modelValue"
     title="项目展示配置"
     size="canvas"
     width="1480px"
     body-preset="dense"
-    @update:model-value="handleVisibleChange"
+    @update:open="handleVisibleChange"
   >
     <div v-if="project && modelValue" class="project-config-layout">
       <section class="project-config-panel">
@@ -48,40 +48,24 @@
                 @apply="applyPageSizePreset"
               />
               <div class="mt-3 grid grid-cols-2 gap-3">
-                <BaseInput v-model="draft.pageWidth" label="宽度(px)" placeholder="1920" />
-                <BaseInput v-model="draft.pageHeight" label="高度(px)" placeholder="1080" />
+                <UiInput v-model="draft.pageWidth" placeholder="1920" />
+                <UiInput v-model="draft.pageHeight" placeholder="1080" />
               </div>
               <div class="mt-3 grid grid-cols-2 gap-3">
-                <BaseInput v-model="draft.baseFontSize" label="基础字号" placeholder="20px" />
-                <BaseInput v-model="draft.iconDefaultStrokeWidth" label="图标描边" placeholder="2" />
+                <UiInput v-model="draft.baseFontSize" placeholder="20px" />
+                <UiInput v-model="draft.iconDefaultStrokeWidth" placeholder="2" />
               </div>
             </div>
 
             <div class="grid content-start gap-4 border-t border-slate-200 pt-3 sm:grid-cols-2 2xl:block 2xl:border-l 2xl:border-t-0 2xl:pl-4 2xl:pt-0">
               <div>
                 <label class="ml-1 text-sm font-semibold text-slate-700">菜单模式</label>
-                <div class="mt-2 grid grid-cols-3 gap-1.5 rounded-lg bg-slate-100 p-1.5">
-                  <button v-for="option in menuModeOptions" :key="option.value" type="button"
-                    class="flex min-h-11 flex-col items-center justify-center gap-1 rounded-md px-2 py-2 text-xs font-bold leading-none transition-all"
-                    :class="draft.menuMode === option.value ? 'bg-white text-indigo-600 shadow-sm ring-1 ring-indigo-100' : 'text-slate-500 hover:bg-white/60 hover:text-slate-700'"
-                    @click="draft.menuMode = option.value">
-                    <component :is="option.icon" class="h-3.5 w-3.5 shrink-0" />
-                    <span>{{ option.label }}</span>
-                  </button>
-                </div>
+                <UiSegmentedControl v-model="draft.menuMode" aria-label="菜单模式" :options="menuModeOptions" />
               </div>
 
               <div>
                 <label class="ml-1 block text-sm font-semibold text-slate-700 2xl:mt-3">导出按钮</label>
-                <div class="mt-2 grid grid-cols-2 gap-1.5 rounded-lg bg-slate-100 p-1.5">
-                  <button v-for="option in pdfButtonOptions" :key="String(option.value)" type="button"
-                    class="flex min-h-11 items-center justify-center gap-1.5 whitespace-nowrap rounded-md px-3 py-2 text-xs font-bold transition-all"
-                    :class="draft.showPdfExportButton === option.value ? 'bg-white text-indigo-600 shadow-sm ring-1 ring-indigo-100' : 'text-slate-500 hover:bg-white/60 hover:text-slate-700'"
-                    @click="draft.showPdfExportButton = option.value">
-                    <component :is="option.icon" class="h-3.5 w-3.5 shrink-0" />
-                    <span>{{ option.label }}</span>
-                  </button>
-                </div>
+                <UiSegmentedControl v-model="pdfExportButtonSegment" aria-label="导出按钮" :options="pdfButtonOptions" />
               </div>
             </div>
           </div>
@@ -89,14 +73,11 @@
       </section>
 
       <section class="project-config-card project-config-spec-card bg-white">
-        <BaseInput
-          v-model="draft.styleSpecMarkdown"
-          type="textarea"
-          label="样式规范 Markdown"
-          placeholder="记录内容助手生成页面时应遵循的版式、排版和视觉约束"
-          :rows="16"
-          class="project-config-spec-textarea resize-none"
-        />
+        <UiFormField label="样式规范 Markdown">
+          <template #default="field">
+            <UiInput v-model="draft.styleSpecMarkdown" type="textarea" placeholder="记录内容助手生成页面时应遵循的版式、排版和视觉约束" :rows="16" class="project-config-spec-textarea resize-none" :input-id="field.inputId" :described-by="field.describedBy" />
+          </template>
+        </UiFormField>
       </section>
     </div>
 
@@ -106,17 +87,17 @@
 
     <template #footer>
       <div class="flex w-full flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <BaseButton variant="ghost" @click="handleVisibleChange(false)">取消</BaseButton>
+        <UiButton variant="ghost" @click="handleVisibleChange(false)">取消</UiButton>
         <div class="flex flex-wrap justify-end gap-2">
-          <BaseButton variant="ghost" :disabled="!project" @click="resetDraft">恢复当前值</BaseButton>
-          <BaseButton variant="ghost" :disabled="!project || !workspaceId" @click="openSaveAsStyleDialog">另存为样式</BaseButton>
-          <BaseButton variant="primary" :loading="loading" :disabled="!project" @click="handleSave">
+          <UiButton variant="ghost" :disabled="!project" @click="resetDraft">恢复当前值</UiButton>
+          <UiButton variant="ghost" :disabled="!project || !workspaceId" @click="openSaveAsStyleDialog">另存为样式</UiButton>
+          <UiButton variant="primary" :loading="loading" :disabled="!project" @click="handleSave">
             保存配置
-          </BaseButton>
+          </UiButton>
         </div>
       </div>
     </template>
-  </BaseDialog>
+  </UiDialog>
 
   <WorkspaceStyleEditorDialog
     v-model="saveAsStyleDialogVisible"
@@ -130,14 +111,11 @@
 
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
-import { Eye, EyeOff, PanelBottom, PanelLeft, Type } from '@lucide/vue'
 
 import { createWorkspaceStyle, updateWorkspaceStyleSuggestedComponents, type WorkspaceStylePayload } from '@/api/styles'
 import ThemeSelectorField from '@/components/theme/ThemeSelectorField.vue'
 import PreviewSizePresetSelect from '@/components/preview-size/PreviewSizePresetSelect.vue'
-import BaseButton from '@/components/ui/BaseButton.vue'
-import BaseDialog from '@/components/ui/BaseDialog.vue'
-import BaseInput from '@/components/ui/BaseInput.vue'
+import { UiButton, UiDialog, UiFormField, UiInput, UiSegmentedControl } from '@/components/ui'
 import type { PreviewSizePreset, ProjectItem, ProjectMenuMode, WorkspaceStyleItem } from '@/types/api'
 import { Message } from '@/utils/message'
 import { getErrorMessage } from '@/api/http'
@@ -190,20 +168,26 @@ const saveAsStyleSaving = ref(false)
 const appliedWorkspaceStyleId = ref<number | null>(null)
 
 const menuModeOptions = [
-  { label: '侧边缩略图', value: 'preview' as const, icon: PanelLeft },
-  { label: '底部缩略图', value: 'bottom-preview' as const, icon: PanelBottom },
-  { label: '文本', value: 'text' as const, icon: Type },
+  { label: '侧边缩略图', value: 'preview' as const },
+  { label: '底部缩略图', value: 'bottom-preview' as const },
+  { label: '文本', value: 'text' as const },
 ]
 
 const pdfButtonOptions = [
-  { label: '显示', value: true, icon: Eye },
-  { label: '隐藏', value: false, icon: EyeOff },
+  { label: '显示', value: 'visible' },
+  { label: '隐藏', value: 'hidden' },
 ]
 
 const normalizedPageWidth = computed(() => normalizeDimension(draft.pageWidth, DEFAULT_PROJECT_PAGE_WIDTH))
 const normalizedPageHeight = computed(() => normalizeDimension(draft.pageHeight, DEFAULT_PROJECT_PAGE_HEIGHT))
 const normalizedBaseFontSize = computed(() => normalizeBaseFontSize(draft.baseFontSize, DEFAULT_PROJECT_BASE_FONT_SIZE))
 const normalizedIconDefaultStrokeWidth = computed(() => normalizeIntegerWithinRange(draft.iconDefaultStrokeWidth, 2, 1, 64))
+const pdfExportButtonSegment = computed({
+  get: () => draft.showPdfExportButton ? 'visible' : 'hidden',
+  set: value => {
+    draft.showPdfExportButton = value === 'visible'
+  },
+})
 const saveAsStyleInitialValue = computed<Partial<WorkspaceStylePayload>>(() => ({
   key: buildStyleKey(props.project?.name ?? 'project-style'),
   name: `${props.project?.name ?? '项目'}样式`,

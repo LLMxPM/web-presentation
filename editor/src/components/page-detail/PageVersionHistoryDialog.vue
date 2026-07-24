@@ -1,7 +1,7 @@
 <!-- 文件功能：承载页面版本历史弹窗，负责展示版本列表、源码差异和历史 Runtime 预览。 -->
 <template>
-  <BaseDialog :model-value="props.modelValue" title="版本历史" size="canvas" body-preset="split"
-    @update:model-value="emit('update:modelValue', $event)">
+  <UiDialog :open="props.modelValue" title="版本历史" size="canvas" body-preset="split"
+    @update:open="emit('update:modelValue', $event)">
     <div class="h-full overflow-hidden">
       <div v-if="props.loading && !props.versions.length" class="px-6 py-10 text-sm text-slate-400">
         版本历史加载中...
@@ -34,27 +34,27 @@
               </div>
 
               <div class="flex items-center gap-1 flex-wrap justify-end">
-                <BaseButton variant="ghost" size="sm"
+                <UiButton variant="ghost" size="sm"
                   :loading="props.previewingRuntimeVersionNo === version.version_no"
                   @click="emit('preview-version', version.version_no)">
                   {{ props.historyPanel?.mode === 'preview' && props.historyPanel.versionNo === version.version_no ? '收起' : '预览' }}
-                </BaseButton>
-                <BaseButton variant="ghost" size="sm"
+                </UiButton>
+                <UiButton variant="ghost" size="sm"
                   :loading="props.previewVersionPending && props.previewVersionNo === version.version_no"
                   @click="emit('diff-version', version.version_no)">
                   {{ props.historyPanel?.mode === 'diff' && props.historyPanel.versionNo === version.version_no ? '收起' : '差异' }}
-                </BaseButton>
-                <BaseButton v-if="!version.is_important" variant="ghost" size="sm"
+                </UiButton>
+                <UiButton v-if="!version.is_important" variant="ghost" size="sm"
                   :loading="props.snapshotPending && props.pendingSnapshotVersionNo === version.version_no"
                   @click="emit('open-snapshot', version.version_no)">
                   快照
-                </BaseButton>
-                <BaseButton v-if="!version.is_current" variant="ghost" size="sm"
+                </UiButton>
+                <UiButton v-if="!version.is_current" variant="ghost" size="sm"
                   :loading="props.restorePending && props.restoringVersionNo === version.version_no"
                   @click="emit('restore-version', version.version_no)">
                   <RotateCcw class="w-3.5 h-3.5" />
                   恢复
-                </BaseButton>
+                </UiButton>
               </div>
             </div>
           </article>
@@ -105,7 +105,7 @@
         当前页面还没有可展示的版本历史。
       </div>
     </div>
-  </BaseDialog>
+  </UiDialog>
 </template>
 
 <script setup lang="ts">
@@ -114,8 +114,7 @@ import { RotateCcw } from '@lucide/vue'
 
 import MonacoDiffViewer from '@/components/editor/MonacoDiffViewer.vue'
 import RuntimePreviewFrame from '@/components/runtime-preview/RuntimePreviewFrame.vue'
-import BaseButton from '@/components/ui/BaseButton.vue'
-import BaseDialog from '@/components/ui/BaseDialog.vue'
+import { UiButton, UiDialog } from '@/components/ui'
 import type { EditorLanguage, EditorThemeMode } from '@/types/monaco'
 import type { PageVersionContent, PageVersionListItem } from '@/types/api'
 import { formatDateTime } from '@/utils/format'

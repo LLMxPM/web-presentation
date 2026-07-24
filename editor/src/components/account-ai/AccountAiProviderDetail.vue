@@ -30,19 +30,19 @@
         <p v-if="readOnlyProvider" class="mt-2 text-xs font-semibold text-amber-600">管理员全局供应商只读，可随全局模型被使用但不能修改。</p>
       </div>
       <div v-if="mode === 'detail' && selectedProviderConfig?.editable" class="flex flex-wrap justify-end gap-2">
-        <BaseButton
+        <UiButton
           variant="primary"
           @click="emit('edit')"
         >
           编辑供应商
-        </BaseButton>
-        <BaseButton
+        </UiButton>
+        <UiButton
           variant="danger"
           :loading="deletingProviderConfigId === selectedProviderConfig.id"
           @click="emit('deleteProvider', selectedProviderConfig)"
         >
           删除供应商
-        </BaseButton>
+        </UiButton>
       </div>
     </div>
 
@@ -152,21 +152,18 @@
           </div>
         </div>
         <div class="grid gap-4 xl:grid-cols-2">
-          <label v-if="!selectedProviderConfigId && canCreateGlobal" class="space-y-1.5 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700">
-            <span>供应商范围</span>
-            <select v-model="form.scope" class="w-full rounded-md border border-slate-300 bg-white px-3 py-2">
-              <option value="personal">个人供应商</option>
-              <option value="global">管理员全局供应商</option>
-            </select>
-          </label>
+          <UiFormField v-if="!selectedProviderConfigId && canCreateGlobal" label="供应商范围" class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700">
+            <UiSelect v-model="form.scope" :options="scopeOptions" />
+          </UiFormField>
 
-          <BaseInput
-            :model-value="form.name"
-            label="供应商配置名称"
-            placeholder="例如：OpenAI 工作账号"
-            required
-            @update:model-value="value => form.name = String(value)"
-          />
+          <UiFormField label="供应商配置名称" required>
+            <UiInput
+              :model-value="form.name"
+              placeholder="例如：OpenAI 工作账号"
+              required
+              @update:model-value="value => form.name = String(value)"
+            />
+          </UiFormField>
 
           <div class="space-y-1.5 xl:col-span-2">
             <label class="ml-1 text-sm font-semibold text-slate-700">供应商</label>
@@ -193,37 +190,47 @@
           </div>
         </div>
         <div class="grid gap-4 xl:grid-cols-2">
-          <BaseInput
-            :model-value="form.base_url"
-            label="Base URL"
-            :placeholder="currentProvider?.base_url_hint || '例如：https://openrouter.ai/api/v1'"
-            :disabled="currentProvider ? !currentProvider.supports_base_url : false"
-            @update:model-value="value => form.base_url = String(value)"
-          />
+          <UiFormField label="Base URL">
+            <UiInput
+              :model-value="form.base_url"
+              :placeholder="currentProvider?.base_url_hint || '例如：https://openrouter.ai/api/v1'"
+              :disabled="currentProvider ? !currentProvider.supports_base_url : false"
+              @update:model-value="value => form.base_url = String(value)"
+            />
+          </UiFormField>
           <p v-if="currentProvider?.requires_base_url" class="-mt-2 ml-1 text-xs text-amber-600">
             当前供应商必须配置独立 Base URL。
           </p>
 
-          <BaseInput
-            :model-value="form.api_key"
-            label="API Key"
-            placeholder="请输入 API Key；编辑时留空表示保持原值"
-            type="password"
-            :disabled="currentProvider ? !currentProvider.supports_api_key : false"
-            @update:model-value="value => form.api_key = String(value)"
-          />
+          <UiFormField label="API Key">
+            <UiInput
+              :model-value="form.api_key"
+              placeholder="请输入 API Key；编辑时留空表示保持原值"
+              type="password"
+              password-toggle
+              :disabled="currentProvider ? !currentProvider.supports_api_key : false"
+              @update:model-value="value => form.api_key = String(value)"
+            />
+          </UiFormField>
+          <PropertyRow
+            label="密钥安全"
+            description="密钥不会在界面回显；编辑时留空会保持已保存的值。"
+            class="xl:col-span-2"
+          >
+            <span class="text-xs font-medium text-[rgb(var(--ui-text-secondary))]">仅在提交时发送到后端安全存储。</span>
+          </PropertyRow>
         </div>
       </section>
     </div>
 
-    <article v-if="mode !== 'detail' || selectedProviderConfig" class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs leading-6 text-slate-500" :class="readOnlyProvider ? 'opacity-70' : ''">
-      <div class="mb-2 flex items-start gap-3">
-        <span class="mt-1 h-5 w-1 rounded-full bg-slate-400"></span>
-        <div>
-          <h3 class="text-base font-bold leading-5 text-slate-900">配置说明</h3>
-          <p class="mt-1 text-xs leading-5 text-slate-500">{{ helperText }}</p>
-        </div>
-      </div>
+    <InspectorSection
+      v-if="mode !== 'detail' || selectedProviderConfig"
+      title="配置说明"
+      :description="helperText"
+      :collapsible="false"
+      class="rounded-xl border border-slate-200 bg-slate-50 text-xs leading-6 text-slate-500"
+      :class="readOnlyProvider ? 'opacity-70' : ''"
+    >
       <a
         v-if="currentProvider?.docs_url"
         :href="currentProvider.docs_url"
@@ -233,15 +240,15 @@
       >
         {{ currentProvider.label }} 文档
       </a>
-    </article>
+    </InspectorSection>
 
     <div v-if="mode !== 'detail'" class="flex justify-end gap-2">
-      <BaseButton v-if="mode === 'edit'" variant="ghost" :disabled="savingProviderConfig" @click="emit('cancel')">
+      <UiButton v-if="mode === 'edit'" variant="ghost" :disabled="savingProviderConfig" @click="emit('cancel')">
         取消
-      </BaseButton>
-      <BaseButton variant="primary" :loading="savingProviderConfig" :disabled="readOnlyProvider || !canSubmitProvider" @click="emit('submit')">
+      </UiButton>
+      <UiButton variant="primary" :loading="savingProviderConfig" :disabled="readOnlyProvider || !canSubmitProvider" @click="emit('submit')">
         {{ mode === 'edit' ? '保存供应商' : '创建供应商' }}
-      </BaseButton>
+      </UiButton>
     </div>
   </section>
 </template>
@@ -249,8 +256,9 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 
-import BaseButton from '@/components/ui/BaseButton.vue'
-import BaseInput from '@/components/ui/BaseInput.vue'
+import { UiButton, UiFormField, UiInput, UiSelect } from '@/components/ui'
+import PropertyRow from '@/components/patterns/PropertyRow.vue'
+import InspectorSection from '@/components/patterns/InspectorSection.vue'
 import SearchableSelect from '@/components/ui/SearchableSelect.vue'
 import type { SelectOption } from '@/components/ui/select'
 import type { AiLlmConfigScope, LlmProviderCatalogItem, LlmProviderConfigItem } from '@/types/api'
@@ -305,4 +313,8 @@ const helperText = computed(() => {
   if (props.mode === 'edit') return '当前供应商配置只保存连接凭证和密钥。模型 ID、上下文窗口、thinking 与高级 JSON 在模型配置中维护。'
   return '新建供应商需要至少填写配置名称和供应商；如果供应商要求密钥，请在创建时填写 API Key。'
 })
+const scopeOptions = [
+  { value: 'personal', label: '个人供应商' },
+  { value: 'global', label: '管理员全局供应商' },
+]
 </script>

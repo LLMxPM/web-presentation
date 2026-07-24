@@ -76,4 +76,16 @@ describe('AgentSessionControls', () => {
     expect(screen.getByText('品牌策略复盘')).toBeInTheDocument()
     expect(screen.queryByText('会话 1')).not.toBeInTheDocument()
   })
+
+  it('空会话列表加载时应展示统一加载状态', () => {
+    renderControls([], { isFetching: true })
+
+    expect(screen.getByText('正在加载')).toBeInTheDocument()
+  })
+
+  it('空会话列表应展示统一空状态说明', () => {
+    renderControls([])
+
+    expect(screen.getByText('当前范围还没有智能体会话，发送第一条消息后会自动创建。')).toBeInTheDocument()
+  })
 })

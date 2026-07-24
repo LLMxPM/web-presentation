@@ -12,14 +12,14 @@
       </p>
 
       <div class="mt-8 flex flex-wrap justify-center gap-3">
-        <BaseButton v-if="workspaceHomePath" variant="primary" @click="goToWorkspaceHome">
+        <UiButton v-if="workspaceHomePath" variant="primary" @click="goToWorkspaceHome">
           <Home class="h-4 w-4" />
           返回空间首页
-        </BaseButton>
-        <BaseButton variant="ghost" @click="goToEntry">
+        </UiButton>
+        <UiButton variant="ghost" @click="goToEntry">
           <Compass class="h-4 w-4" />
           回到入口
-        </BaseButton>
+        </UiButton>
       </div>
     </div>
   </section>
@@ -30,7 +30,7 @@ import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Compass, Home, RouteOff } from '@lucide/vue'
 
-import BaseButton from '@/components/ui/BaseButton.vue'
+import { UiButton } from '@/components/ui'
 import { buildWorkspaceHomePath } from '@/utils/workspace-routes'
 
 const route = useRoute()

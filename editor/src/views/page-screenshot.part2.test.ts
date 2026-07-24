@@ -774,8 +774,9 @@ describe('page screenshot views', () => {
 
     const versionButtons = screen.getAllByRole('button', { name: '版本' })
     const usageButtons = screen.getAllByRole('button', { name: '资源' })
-    expect(versionButtons).toHaveLength(2)
-    expect(usageButtons).toHaveLength(2)
+    // 编辑弹窗使用可访问模态层后，背景中的页面工具栏会被正确地标为不可访问。
+    expect(versionButtons).toHaveLength(1)
+    expect(usageButtons).toHaveLength(1)
 
     await fireEvent.click(versionButtons[versionButtons.length - 1]!)
     expect(await screen.findByRole('heading', { name: '版本历史' })).toBeInTheDocument()

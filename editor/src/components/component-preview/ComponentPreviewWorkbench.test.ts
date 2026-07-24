@@ -2,7 +2,7 @@
  * 文件功能：验证组件预览工作台会按来源调用工作空间组件或 Runtime Kit 的预览 API。
  */
 import { defineComponent, h, nextTick } from 'vue'
-import { fireEvent, render, waitFor } from '@testing-library/vue'
+import { fireEvent, render, waitFor, within } from '@testing-library/vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import ComponentPreviewWorkbench from '@/components/component-preview/ComponentPreviewWorkbench.vue'
@@ -255,7 +255,9 @@ describe('ComponentPreviewWorkbench', () => {
     await fireEvent.click(getByTitle('弹窗预览'))
 
     await waitFor(() => {
-      expect(getAllByRole('button', { name: '编辑组件' })).toHaveLength(2)
+      const dialog = document.body.querySelector('[role="dialog"]')
+      expect(dialog).toBeTruthy()
+      expect(within(dialog as HTMLElement).getByRole('button', { name: '编辑组件' })).toBeInTheDocument()
     })
   })
 })

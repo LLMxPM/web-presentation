@@ -1,7 +1,7 @@
 /**
- * 文件功能：验证代表性业务弹窗已经收口到统一的 BaseDialog 规格。
+ * 文件功能：验证代表性业务弹窗已经收口到统一的 UiDialog 规格。
  */
-import { render, screen } from '@testing-library/vue'
+import { cleanup, render, screen } from '@testing-library/vue'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import ComponentPreviewDialog from '@/components/component-preview/ComponentPreviewDialog.vue'
@@ -11,7 +11,7 @@ import SuggestedComponentsDialog from '@/components/project/SuggestedComponentsD
 import FontEditorDialog from '@/components/theme/FontEditorDialog.vue'
 
 afterEach(() => {
-  document.body.innerHTML = ''
+  cleanup()
 })
 
 describe('dialog presets', () => {

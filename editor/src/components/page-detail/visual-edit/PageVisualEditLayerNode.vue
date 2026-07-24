@@ -2,21 +2,25 @@
 <template>
   <li class="space-y-1">
     <div class="flex items-center gap-1" :style="{ paddingLeft: `${props.depth * 12}px` }">
-      <button
+      <UiIconButton
         v-if="props.node.children.length"
         type="button"
-        class="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+        :label="expanded ? '收起子节点' : '展开子节点'"
+        size="xs"
+        class="h-6 w-6 shrink-0 rounded text-slate-400 hover:bg-slate-100 hover:text-slate-700"
         :aria-label="expanded ? '收起子节点' : '展开子节点'"
         @click="expanded = !expanded"
       >
         <ChevronDown v-if="expanded" class="h-3.5 w-3.5" />
         <ChevronRight v-else class="h-3.5 w-3.5" />
-      </button>
+      </UiIconButton>
       <span v-else class="h-6 w-6 shrink-0" />
 
-      <button
+      <UiButton
         type="button"
-        class="flex min-w-0 flex-1 items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs transition"
+        variant="ghost"
+        size="xs"
+        class="h-auto flex min-w-0 flex-1 items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs transition"
         :class="props.selectedNodeId === props.node.node_id
           ? 'bg-indigo-50 font-semibold text-indigo-700 ring-1 ring-indigo-200'
           : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'"
@@ -34,7 +38,7 @@
           class="h-3 w-3 shrink-0 text-amber-500"
           aria-label="循环只读"
         />
-      </button>
+      </UiButton>
     </div>
 
     <ul v-if="expanded && props.node.children.length" class="space-y-1">
@@ -54,6 +58,7 @@
 import { computed, ref, watch } from 'vue'
 import { Box, ChevronDown, ChevronRight, Component, LockKeyhole } from '@lucide/vue'
 
+import { UiButton, UiIconButton } from '@/components/ui'
 import type { PageVisualEditNode } from '@/types/page-visual-edit'
 
 const props = withDefaults(defineProps<{

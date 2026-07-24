@@ -106,6 +106,27 @@ describe('AssetManagerPanel', () => {
     expect(screen.getByDisplayValue('image.svg')).toBeInTheDocument()
   })
 
+  it('文本创建弹窗应响应 Esc 关闭并将焦点交还触发按钮', async () => {
+    renderPanel()
+
+    await waitFor(() => {
+      expect(screen.getByText('brand_icon')).toBeInTheDocument()
+    })
+    await fireEvent.click(screen.getByText('内容资源'))
+    await fireEvent.click(screen.getByText('图片'))
+    const trigger = screen.getByTitle('文本创建资源')
+    trigger.focus()
+    await fireEvent.click(trigger)
+
+    expect(screen.getByText('新建图片资源')).toBeInTheDocument()
+    await fireEvent.keyDown(window, { key: 'Escape' })
+
+    await waitFor(() => {
+      expect(screen.queryByText('新建图片资源')).toBeNull()
+      expect(trigger).toHaveFocus()
+    })
+  })
+
   it('收到智能体资源写入事件后应刷新资源列表和标签', async () => {
     renderPanel()
 

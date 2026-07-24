@@ -2,6 +2,7 @@
  * 文件功能：验证图标选择器的搜索过滤、预览确认与返回值模式行为。
  */
 import { fireEvent, render, screen } from '@testing-library/vue'
+import { nextTick } from 'vue'
 import { describe, expect, it, vi } from 'vitest'
 
 import type { AssetResponse } from '@/types/api'
@@ -178,5 +179,25 @@ describe('IconPicker', () => {
 
     expect(getEmittedEvents(view)['update:modelValue']?.[0]?.[0]).toBe(1)
     expect(getEmittedEvents(view)['select']?.[0]?.[0]).toMatchObject({ id: 1, name: 'home' })
+  })
+
+  it('关闭选择弹窗后应恢复触发按钮焦点', async () => {
+    render(IconPicker, {
+      props: {
+        modelValue: null,
+        assets: [...iconAssets],
+      },
+    })
+
+    const trigger = screen.getByRole('button', { name: '选择' })
+    trigger.focus()
+    await fireEvent.click(trigger)
+    await nextTick()
+
+    await fireEvent.click(screen.getByRole('button', { name: '关闭选择图标' }))
+    await nextTick()
+    await new Promise(resolve => setTimeout(resolve, 0))
+
+    expect(trigger).toHaveFocus()
   })
 })

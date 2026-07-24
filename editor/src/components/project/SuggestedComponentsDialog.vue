@@ -1,11 +1,11 @@
 <!-- 文件功能：提供样式与项目共用的建议组件选择弹窗，维护有序已发布组件列表。 -->
 <template>
-  <BaseDialog
-    :model-value="modelValue"
+  <UiDialog
+    :open="modelValue"
     :title="title"
     size="wide"
     body-preset="dense"
-    @update:model-value="handleVisibleChange"
+    @update:open="handleVisibleChange"
   >
     <SuggestedComponentsSelectorPanel
       v-if="workspaceId && targetId"
@@ -21,13 +21,13 @@
     </div>
 
     <template #footer>
-      <BaseButton variant="ghost" @click="handleVisibleChange(false)">取消</BaseButton>
-      <BaseButton variant="ghost" :disabled="loading || saving || !targetId" @click="loadDialogData">恢复当前值</BaseButton>
-      <BaseButton variant="primary" :loading="saving" :disabled="!workspaceId || !targetId" @click="saveSelection">
+      <UiButton variant="ghost" @click="handleVisibleChange(false)">取消</UiButton>
+      <UiButton variant="ghost" :disabled="loading || saving || !targetId" @click="loadDialogData">恢复当前值</UiButton>
+      <UiButton variant="primary" :loading="saving" :disabled="!workspaceId || !targetId" @click="saveSelection">
         保存组件
-      </BaseButton>
+      </UiButton>
     </template>
-  </BaseDialog>
+  </UiDialog>
 </template>
 
 <script setup lang="ts">
@@ -35,8 +35,7 @@ import { ref, watch } from 'vue'
 
 import { getErrorMessage } from '@/api/http'
 import SuggestedComponentsSelectorPanel from '@/components/project/SuggestedComponentsSelectorPanel.vue'
-import BaseButton from '@/components/ui/BaseButton.vue'
-import BaseDialog from '@/components/ui/BaseDialog.vue'
+import { UiButton, UiDialog } from '@/components/ui'
 import type {
   SuggestedComponentItem,
   SuggestedComponentsResponse,

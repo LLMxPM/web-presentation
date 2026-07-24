@@ -1,38 +1,34 @@
 <!-- 文件功能：提供工作空间级资源库页面，承载资源筛选、视觉预览、详情编辑、比例重算、引用检查与归档恢复删除。 -->
 <template>
   <div data-testid="assets-view" class="flex h-full min-h-0 flex-col gap-2">
-    <PageTitleBar class="shrink-0" :title="workspaceTitle">
+    <PageHeader class="shrink-0" :title="workspaceTitle" description="集中管理工作空间资源，支持筛选、批量维护与引用检查。">
       <template #actions>
-        <BaseButton variant="ghost" :disabled="!workspaceId || uploading" @click="openUploadForm">
+        <UiButton variant="secondary" :disabled="!workspaceId || uploading" @click="openUploadForm">
           <Upload class="h-3.5 w-3.5" />
           {{ uploading ? '上传中' : '上传资源' }}
-        </BaseButton>
-        <BaseButton variant="ghost" :disabled="!workspaceId || packageImporting" @click="triggerPackageImport">
+        </UiButton>
+        <UiButton variant="secondary" :disabled="!workspaceId || packageImporting" @click="triggerPackageImport">
           <Upload class="h-3.5 w-3.5" />
           {{ packageImporting ? '导入中' : '导入资源包' }}
-        </BaseButton>
-        <BaseButton :disabled="!workspaceId" @click="openCreateForm">
+        </UiButton>
+        <UiButton :disabled="!workspaceId" @click="openCreateForm">
           <FilePlus2 class="h-3.5 w-3.5" />
           新建内容资源
-        </BaseButton>
+        </UiButton>
       </template>
-    </PageTitleBar>
+    </PageHeader>
 
     <div class="grid min-h-0 flex-1 grid-cols-[240px_minmax(0,1fr)] gap-2 overflow-hidden">
-      <aside class="flex min-h-0 flex-col overflow-hidden rounded-xl border border-slate-200 bg-slate-50/80 shadow-sm">
-        <div class="border-b border-slate-200 bg-white p-3">
-          <div class="relative">
-            <Search class="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-            <input
-              v-model="searchKeyword"
-              type="text"
-              class="h-9 w-full rounded-lg border border-slate-200 bg-slate-50 pl-9 pr-3 text-sm outline-none transition-colors focus:border-indigo-400 focus:bg-white"
-              placeholder="搜索资源..."
-            />
-          </div>
-        </div>
-
-        <div class="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
+      <ToolPanel class="min-h-0" title="筛选资源" description="按状态、类型和标签缩小范围。">
+        <template #toolbar>
+          <SimpleSearchBar
+            v-model="searchKeyword"
+            placeholder="搜索资源..."
+            aria-label="搜索资源"
+            @submit="refreshAssets"
+          />
+        </template>
+        <div class="space-y-3">
           <section class="rounded-xl border border-slate-200 bg-white p-3">
             <h3 class="mb-2 text-[11px] font-black uppercase tracking-widest text-slate-400">状态</h3>
             <LibrarySegmentedControl
@@ -46,16 +42,18 @@
           <section class="rounded-xl border border-slate-200 bg-white p-3">
             <h3 class="mb-2 text-[11px] font-black uppercase tracking-widest text-slate-400">资源类型</h3>
             <div class="grid grid-cols-2 gap-2">
-              <button
+              <UiButton
                 v-for="option in assetTypeSegmentOptions"
                 :key="option.value || 'all'"
                 type="button"
+                variant="ghost"
+                size="sm"
                 class="h-8 rounded-lg border px-2 text-xs font-bold transition-colors"
                 :class="assetTypeFilter === option.value ? 'border-indigo-200 bg-indigo-50 text-indigo-600 shadow-sm' : 'border-slate-200 bg-slate-50 text-slate-500 hover:border-slate-300 hover:bg-white'"
                 @click="handleSelectAssetType(option.value)"
               >
                 {{ option.label }}
-              </button>
+              </UiButton>
             </div>
           </section>
 
@@ -66,28 +64,18 @@
 
           <section class="rounded-xl border border-slate-200 bg-white p-3">
             <h3 class="mb-2 text-[11px] font-black uppercase tracking-widest text-slate-400">排序</h3>
-            <select
-              v-model="sortValue"
-              class="h-9 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm font-semibold text-slate-600 outline-none transition-colors hover:bg-white focus:border-indigo-400 focus:bg-white"
-            >
-              <option value="updated_at:desc">最近更新</option>
-              <option value="created_at:desc">最近创建</option>
-              <option value="name:asc">名称升序</option>
-              <option value="file_size:desc">文件较大优先</option>
-            </select>
+            <UiSelect v-model="sortValue" :options="assetSortOptions" />
           </section>
         </div>
-      </aside>
+      </ToolPanel>
 
-      <main class="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-        <header class="flex shrink-0 items-center justify-between gap-4 border-b border-slate-100 px-5 py-4">
-          <div>
-            <h2 class="text-base font-bold text-slate-800">资源预览</h2>
-          </div>
-          <div class="flex shrink-0 items-center gap-2">
-            <BaseButton
+      <ToolPanel class="min-h-0 min-w-0" title="资源预览" description="选择资源后可执行批量操作。">
+        <template #toolbar>
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <div class="flex min-w-0 flex-wrap items-center gap-2">
+              <UiButton
               v-if="activeView === 'active' && hasBatchSelection"
-              variant="ghost"
+              variant="secondary"
               size="sm"
               :disabled="!hasBackfillableBatchSelection || batchOperating || backfillRunning"
               :title="hasBackfillableBatchSelection ? '重新计算选中资源比例' : '选中资源中没有可计算比例的资源'"
@@ -95,8 +83,8 @@
             >
               <Ruler class="h-3.5 w-3.5" />
               {{ backfillRunning ? '计算中' : '重新计算比例' }}
-            </BaseButton>
-            <BaseButton
+              </UiButton>
+              <UiButton
               variant="ghost"
               size="sm"
               :disabled="!hasBatchSelection || batchOperating"
@@ -104,8 +92,8 @@
             >
               <Download class="h-3.5 w-3.5" />
               {{ batchExporting ? '导出中' : '导出选中' }}
-            </BaseButton>
-            <BaseButton
+              </UiButton>
+              <UiButton
               v-if="activeView === 'active'"
               variant="ghost"
               size="sm"
@@ -114,8 +102,8 @@
             >
               <Archive class="h-3.5 w-3.5" />
               批量归档
-            </BaseButton>
-            <BaseButton
+              </UiButton>
+              <UiButton
               v-if="activeView === 'archived'"
               variant="ghost"
               size="sm"
@@ -124,41 +112,30 @@
             >
               <RotateCcw class="h-3.5 w-3.5" />
               批量恢复
-            </BaseButton>
-            <BaseButton
+              </UiButton>
+              <UiButton
               v-if="activeView !== 'active'"
-              variant="ghost"
+              variant="danger"
               size="sm"
               :disabled="!hasBatchSelection || batchOperating"
               @click="deleteSelectedAssets"
             >
               <Trash2 class="h-3.5 w-3.5" />
               批量删除
-            </BaseButton>
-            <button
-              type="button"
-              class="rounded-lg p-2 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"
-              title="刷新资源"
-              @click="refreshAssets"
-            >
-              <RefreshCw class="h-4 w-4" />
-            </button>
+              </UiButton>
+            </div>
+            <UiIconButton label="刷新资源" size="sm" @click="refreshAssets"><RefreshCw /></UiIconButton>
           </div>
-        </header>
+        </template>
 
-        <div v-if="assets.length > 0" class="flex shrink-0 items-center justify-between gap-3 border-b border-slate-100 bg-slate-50/70 px-5 py-2.5">
+        <div v-if="assets.length > 0 && !assetsLoadError" class="mb-3 flex shrink-0 items-center justify-between gap-3 rounded-[var(--ui-radius-md)] border border-[rgb(var(--ui-border))] bg-[rgb(var(--ui-surface-muted))] px-3 py-2">
           <label class="inline-flex items-center gap-2 text-xs font-bold text-slate-600">
-            <input
-              type="checkbox"
-              class="h-4 w-4 rounded border-slate-300 text-indigo-600"
-              :checked="allCurrentPageSelected"
-              @change="toggleCurrentPageSelection"
-            />
+            <UiCheckbox :model-value="allCurrentPageSelected" @update:model-value="toggleCurrentPageSelection()" />
             本页全选
           </label>
           <div class="flex min-w-0 items-center gap-3 text-xs font-semibold text-slate-500">
             <span>已选 {{ selectedCount }} 个</span>
-            <button
+            <UiButton
               v-if="hasBatchSelection"
               type="button"
               class="inline-flex h-7 items-center gap-1 rounded-lg px-2 text-slate-500 transition-colors hover:bg-white hover:text-slate-800"
@@ -166,25 +143,17 @@
             >
               <X class="h-3.5 w-3.5" />
               清空
-            </button>
+            </UiButton>
           </div>
         </div>
 
-        <div v-if="loading" class="flex flex-1 flex-col items-center justify-center gap-3">
-          <div class="h-8 w-8 animate-spin rounded-full border-4 border-indigo-600 border-t-transparent"></div>
-          <span class="text-sm font-bold text-slate-400">正在加载资源...</span>
-        </div>
-
-        <div v-else class="min-h-0 flex-1 overflow-y-auto bg-slate-50/60 p-4">
-          <div
-            v-if="assets.length === 0"
-            class="flex h-full min-h-[360px] flex-col items-center justify-center rounded-2xl border-2 border-dashed border-slate-200 bg-white text-center"
-          >
-            <FolderArchive class="mb-3 h-10 w-10 text-slate-300" />
-            <p class="text-sm font-semibold text-slate-500">{{ emptyAssetText }}</p>
-          </div>
-
-          <div v-else class="grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-3">
+        <DataState
+          :state="assetDataState"
+          :title="assetDataState === 'empty' ? emptyAssetText : undefined"
+          :description="assetDataState === 'empty' ? '调整筛选条件，或上传第一项资源。' : undefined"
+          @retry="refreshAssets"
+        >
+          <div class="grid grid-cols-[repeat(auto-fit,minmax(260px,1fr))] gap-3">
             <article
               v-for="asset in assets"
               :key="asset.id"
@@ -194,12 +163,10 @@
             >
               <div class="relative aspect-[16/10] bg-slate-50">
                 <label class="absolute left-2 top-2 z-10 inline-flex h-7 w-7 items-center justify-center rounded-md border border-white/80 bg-white/95 shadow-sm" @click.stop>
-                  <input
-                    type="checkbox"
-                    class="h-4 w-4 rounded border-slate-300 text-indigo-600"
-                    :checked="isAssetSelected(asset.id)"
+                  <UiCheckbox
+                    :model-value="isAssetSelected(asset.id)"
                     :aria-label="`选择资源 ${asset.name}`"
-                    @change.stop="toggleAssetSelection(asset.id)"
+                    @update:model-value="toggleAssetSelection(asset.id)"
                   />
                 </label>
                 <img
@@ -217,12 +184,24 @@
                 <FileText v-else class="absolute left-1/2 top-1/2 h-8 w-8 -translate-x-1/2 -translate-y-1/2 text-slate-400" />
 
                 <div class="absolute inset-0 flex items-center justify-center gap-2 bg-slate-900/0 opacity-0 transition-all group-hover:bg-slate-900/20 group-hover:opacity-100">
-                  <button type="button" class="rounded-full bg-white/95 p-2 text-slate-700 shadow-sm" title="打开详情" @click.stop="openAssetDetail(asset)">
-                    <ZoomIn class="h-4 w-4" />
-                  </button>
-                  <button type="button" class="rounded-full bg-white/95 p-2 text-slate-700 shadow-sm" title="复制资源 name" @click.stop="copyAssetName(asset)">
-                    <Copy class="h-4 w-4" />
-                  </button>
+                  <UiIconButton
+                    label="打开详情"
+                    size="sm"
+                    variant="secondary"
+                    class="rounded-full shadow-sm"
+                    @click.stop="openAssetDetail(asset)"
+                  >
+                    <ZoomIn class="h-3.5 w-3.5" />
+                  </UiIconButton>
+                  <UiIconButton
+                    label="复制资源 name"
+                    size="sm"
+                    variant="secondary"
+                    class="rounded-full shadow-sm"
+                    @click.stop="copyAssetName(asset)"
+                  >
+                    <Copy class="h-3.5 w-3.5" />
+                  </UiIconButton>
                 </div>
               </div>
               <div class="space-y-1.5 p-2.5">
@@ -237,17 +216,19 @@
               </div>
             </article>
           </div>
-        </div>
+        </DataState>
 
-        <PaginationControl
-          :page="page"
-          :page-size="pageSize"
-          :total="total"
-          :page-size-options="[12, 24, 48, 96]"
-          @update:page="handlePageChange"
-          @update:page-size="handlePageSizeChange"
-        />
-      </main>
+        <template #footer>
+          <PaginationControl
+            :page="page"
+            :page-size="pageSize"
+            :total="total"
+            :page-size-options="[12, 24, 48, 96]"
+            @update:page="handlePageChange"
+            @update:page-size="handlePageSizeChange"
+          />
+        </template>
+      </ToolPanel>
 
     </div>
 
@@ -262,99 +243,96 @@
     />
     <input ref="packageFileInput" type="file" class="hidden" accept=".zip,application/zip" @change="handlePackageFileChange" />
 
-    <BaseDialog
-      :model-value="uploadMode"
+    <UiDialog
+      :open="uploadMode"
       title="上传资源"
       description="选择资源类型后上传文件；同名资源会询问是否覆盖。"
       size="compact"
       body-preset="auto"
       :z-index="205"
-      @update:model-value="value => { if (!value) closeUploadForm() }"
+      @update:open="value => { if (!value) closeUploadForm() }"
     >
       <div class="space-y-4">
         <div>
           <label class="mb-1 block text-xs font-bold text-slate-500">资源类型</label>
-          <select v-model="uploadForm.asset_type" class="h-10 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm font-semibold text-slate-700 outline-none focus:border-indigo-400">
-            <option v-for="item in assetTypeOptions" :key="item.value" :value="item.value">{{ item.label }}</option>
-          </select>
+          <UiSelect v-model="uploadForm.asset_type" :options="assetTypeOptions" />
         </div>
         <div>
           <label class="mb-1 block text-xs font-bold text-slate-500">标签，逗号分隔</label>
-          <input v-model="uploadTagsText" class="h-10 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm outline-none focus:border-indigo-400" placeholder="可留空" />
+          <UiInput v-model="uploadTagsText" placeholder="可留空" />
         </div>
       </div>
 
       <template #footer>
-        <BaseButton variant="ghost" :disabled="uploading" @click="closeUploadForm">取消</BaseButton>
-        <BaseButton :disabled="uploading" @click="triggerUploadSelect">
+        <UiButton variant="ghost" :disabled="uploading" @click="closeUploadForm">取消</UiButton>
+        <UiButton :disabled="uploading" @click="triggerUploadSelect">
           <Upload class="h-3.5 w-3.5" />
           {{ uploading ? '上传中...' : '选择文件上传' }}
-        </BaseButton>
+        </UiButton>
       </template>
-    </BaseDialog>
+    </UiDialog>
 
-    <BaseDialog
-      :model-value="createMode"
+    <UiDialog
+      :open="createMode"
       title="新建内容资源"
       description="支持 SVG 图片、SVG 图标、Draw.io、Mermaid、Chart 和 Formula。"
       size="wide"
       body-preset="editor"
       :z-index="210"
-      @update:model-value="value => { if (!value) closeCreateForm() }"
+      @update:open="value => { if (!value) closeCreateForm() }"
     >
       <div class="flex h-full min-h-0 flex-col gap-2">
         <div class="grid gap-3 lg:grid-cols-[160px_minmax(0,1fr)_minmax(0,1fr)]">
-          <select v-model="createForm.asset_type" class="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700">
-            <option v-for="item in creatableTypes" :key="item.value" :value="item.value">{{ item.label }}</option>
-          </select>
-          <input v-model.trim="createForm.name" class="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm" placeholder="资源 name，如 brand_icon" />
-          <input v-model.trim="createForm.original_name" class="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm" placeholder="展示文件名，如 brand_icon.svg" />
+          <UiSelect v-model="createForm.asset_type" :options="creatableTypes" />
+          <UiInput v-model.trim="createForm.name" placeholder="资源 name，如 brand_icon" />
+          <UiInput v-model.trim="createForm.original_name" placeholder="展示文件名，如 brand_icon.svg" />
         </div>
-        <textarea
+        <UiInput
           v-model="createForm.content"
-          class="min-h-[320px] min-w-0 flex-1 rounded-xl border border-slate-200 bg-slate-50 p-4 font-mono text-xs leading-5 text-slate-800 outline-none focus:border-indigo-400"
+          type="textarea"
+          class="min-h-[320px] min-w-0 flex-1 font-mono text-xs leading-5"
           placeholder="输入 SVG 图片 / SVG 图标 / Draw.io XML / Mermaid / Chart JSON/YAML / Formula 内容"
         />
       </div>
 
       <template #footer>
         <p class="mr-auto text-xs text-slate-500">SVG 会拒绝脚本、事件属性、foreignObject 与远程引用。</p>
-        <BaseButton variant="ghost" size="sm" @click="closeCreateForm">取消</BaseButton>
-        <BaseButton :disabled="saving" @click="createAsset">创建资源</BaseButton>
+        <UiButton variant="ghost" size="sm" @click="closeCreateForm">取消</UiButton>
+        <UiButton :disabled="saving" @click="createAsset">创建资源</UiButton>
       </template>
-    </BaseDialog>
+    </UiDialog>
 
-    <BaseDialog
-      :model-value="backfillDialogVisible"
+    <UiDialog
+      :open="backfillDialogVisible"
       title="重新计算选中资源比例"
       description="通过静态解析或 Runtime 渲染测量选中资源，计算可供 AI 布局参考的近似比例。"
       size="wide"
       body-preset="auto"
       :z-index="215"
-      @update:model-value="value => { if (!value) closeBackfillDialog() }"
+      @update:open="value => { if (!value) closeBackfillDialog() }"
     >
       <div class="grid gap-4 lg:grid-cols-[260px_minmax(0,1fr)]">
         <section class="space-y-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
           <div>
             <h3 class="mb-2 text-xs font-black uppercase tracking-widest text-slate-400">资源类型</h3>
             <label class="mb-2 flex items-center gap-2 text-sm font-bold text-slate-700">
-              <input v-model="backfillForm.image" type="checkbox" class="h-4 w-4 rounded border-slate-300 text-indigo-600" />
+              <UiCheckbox v-model="backfillForm.image" />
               Image
             </label>
             <label class="mb-2 flex items-center gap-2 text-sm font-bold text-slate-700">
-              <input v-model="backfillForm.video" type="checkbox" class="h-4 w-4 rounded border-slate-300 text-indigo-600" />
+              <UiCheckbox v-model="backfillForm.video" />
               Video
             </label>
             <label class="mb-2 flex items-center gap-2 text-sm font-bold text-slate-700">
-              <input v-model="backfillForm.drawio" type="checkbox" class="h-4 w-4 rounded border-slate-300 text-indigo-600" />
+              <UiCheckbox v-model="backfillForm.drawio" />
               Draw.io
             </label>
             <label class="mb-2 flex items-center gap-2 text-sm font-bold text-slate-700">
-              <input v-model="backfillForm.formula" type="checkbox" class="h-4 w-4 rounded border-slate-300 text-indigo-600" />
+              <UiCheckbox v-model="backfillForm.formula" />
               Formula
             </label>
             <label class="flex items-center gap-2 text-sm font-bold text-slate-700">
-              <input v-model="backfillForm.mermaid" type="checkbox" class="h-4 w-4 rounded border-slate-300 text-indigo-600" />
+              <UiCheckbox v-model="backfillForm.mermaid" />
               Mermaid
             </label>
           </div>
@@ -366,14 +344,11 @@
           </div>
           <div>
             <h3 class="mb-2 text-xs font-black uppercase tracking-widest text-slate-400">模式</h3>
-            <label class="mb-2 flex items-center gap-2 text-sm font-bold text-slate-700">
-              <input v-model="backfillForm.mode" type="radio" class="h-4 w-4 border-slate-300 text-indigo-600" value="preview" />
-              预览结果
-            </label>
-            <label class="flex items-center gap-2 text-sm font-bold text-slate-700">
-              <input v-model="backfillForm.mode" type="radio" class="h-4 w-4 border-slate-300 text-indigo-600" value="apply" />
-              直接写回
-            </label>
+            <UiRadioGroup
+              v-model="backfillForm.mode"
+              aria-label="比例回填模式"
+              :options="backfillModeOptions"
+            />
           </div>
           <p class="rounded-lg bg-white p-3 text-xs leading-5 text-slate-500">默认不会覆盖人工或资源助手维护的比例。预览模式只计算候选结果，不写入资源。</p>
         </section>
@@ -419,30 +394,30 @@
       </div>
 
       <template #footer>
-        <BaseButton variant="ghost" :disabled="backfillRunning" @click="closeBackfillDialog">关闭</BaseButton>
-        <BaseButton
+        <UiButton variant="ghost" :disabled="backfillRunning" @click="closeBackfillDialog">关闭</UiButton>
+        <UiButton
           v-if="canApplyBackfillPreview"
           variant="ghost"
           :disabled="backfillRunning"
           @click="applyBackfillPreview"
         >
           应用可更新项
-        </BaseButton>
-        <BaseButton :disabled="backfillRunning || !hasBackfillTypeSelection" @click="runBackfillFromDialog">
+        </UiButton>
+        <UiButton :disabled="backfillRunning || !hasBackfillTypeSelection" @click="runBackfillFromDialog">
           <Ruler class="h-3.5 w-3.5" />
           {{ backfillRunning ? '计算中...' : backfillForm.mode === 'apply' ? '开始写回' : '开始预览' }}
-        </BaseButton>
+        </UiButton>
       </template>
-    </BaseDialog>
+    </UiDialog>
 
-    <BaseDialog
-      :model-value="!!detailAsset"
+    <UiDialog
+      :open="!!detailAsset"
       size="workbench"
       body-preset="immersive"
       :show-header="false"
       overlay-class="bg-slate-950/70 backdrop-blur-sm"
       :z-index="220"
-      @update:model-value="handleDetailDialogVisibleChange"
+      @update:open="handleDetailDialogVisibleChange"
     >
       <div v-if="detailAsset" class="grid h-full min-h-0 grid-rows-[minmax(280px,0.95fr)_minmax(0,1.05fr)] overflow-hidden xl:grid-cols-[minmax(0,1.35fr)_460px] xl:grid-rows-1">
         <section class="flex min-h-0 flex-col bg-slate-50">
@@ -467,69 +442,76 @@
               <div class="shrink-0 border-b border-slate-100 bg-white">
                 <div class="px-5 pb-3 pt-4">
                   <div class="grid grid-cols-3 rounded-xl bg-slate-100 p-1">
-                    <button
+                    <UiButton
                       v-for="tab in detailTabs"
                       :key="tab.value"
                       type="button"
+                      variant="ghost"
+                      size="sm"
                       class="h-8 rounded-lg px-3 text-xs font-bold transition-colors"
                       :class="detailTab === tab.value ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'"
                       @click="detailTab = tab.value"
                     >
                       {{ tab.label }}
-                    </button>
+                    </UiButton>
                   </div>
                 </div>
                 <div class="flex items-center justify-between gap-3 border-t border-slate-100 bg-slate-50/80 px-5 py-3">
                   <span class="shrink-0 text-xs font-black uppercase tracking-widest text-slate-400">资源操作</span>
                   <div class="flex min-w-0 flex-wrap justify-end gap-2">
-                    <button
+                    <UiButton
                       type="button"
-                      class="inline-flex h-8 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-bold text-slate-600 transition-colors hover:border-indigo-200 hover:text-indigo-600"
+                      variant="secondary"
+                      size="sm"
                       title="替换文件"
                       @click="triggerReplace(detailAsset)"
                     >
                       <Replace class="h-3.5 w-3.5" />
                       替换
-                    </button>
-                    <button
+                    </UiButton>
+                    <UiButton
                       type="button"
-                      class="inline-flex h-8 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-bold text-slate-600 transition-colors hover:border-indigo-200 hover:text-indigo-600"
+                      variant="secondary"
+                      size="sm"
                       title="复制资源"
                       @click="copySelected"
                     >
                       <Copy class="h-3.5 w-3.5" />
                       复制
-                    </button>
-                    <button
+                    </UiButton>
+                    <UiButton
                       v-if="detailAsset.status === 'active'"
                       type="button"
-                      class="inline-flex h-8 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-bold text-slate-600 transition-colors hover:border-amber-200 hover:text-amber-700"
+                      variant="secondary"
+                      size="sm"
                       title="归档资源"
                       @click="archiveSelected"
                     >
                       <Archive class="h-3.5 w-3.5" />
                       归档
-                    </button>
-                    <button
+                    </UiButton>
+                    <UiButton
                       v-if="detailAsset.status === 'archived' && !detailAsset.history_kind"
                       type="button"
-                      class="inline-flex h-8 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-bold text-slate-600 transition-colors hover:border-indigo-200 hover:text-indigo-600"
+                      variant="secondary"
+                      size="sm"
                       title="恢复资源"
                       @click="restoreSelected"
                     >
                       <RotateCcw class="h-3.5 w-3.5" />
                       恢复
-                    </button>
-                    <button
+                    </UiButton>
+                    <UiButton
                       v-if="detailAsset.status === 'archived'"
                       type="button"
-                      class="inline-flex h-8 items-center gap-1.5 rounded-lg border border-rose-100 bg-white px-2.5 text-xs font-bold text-rose-600 transition-colors hover:border-rose-200 hover:bg-rose-50"
+                      variant="danger"
+                      size="sm"
                       title="删除资源"
                       @click="deleteSelected"
                     >
                       <Trash2 class="h-3.5 w-3.5" />
                       删除
-                    </button>
+                    </UiButton>
                   </div>
                 </div>
               </div>
@@ -554,7 +536,7 @@
                       <div><dt class="text-slate-500">近似比例</dt><dd class="mt-1 font-bold text-slate-800">{{ formatAssetAspectRatio(detailAsset) }}</dd></div>
                       <div><dt class="text-slate-500">比例来源</dt><dd class="mt-1 font-bold text-slate-800">{{ formatAspectRatioSource(detailAsset.aspect_ratio_source) }}</dd></div>
                     </dl>
-                    <BaseButton
+                    <UiButton
                       v-if="canRecalculateDetailAspectRatio"
                       class="mt-4"
                       variant="ghost"
@@ -564,27 +546,27 @@
                     >
                       <RefreshCw class="h-3.5 w-3.5" />
                       重新计算比例
-                    </BaseButton>
+                    </UiButton>
                   </section>
                   <div>
                     <label class="mb-1 block text-xs font-bold text-slate-500">资源 name</label>
-                    <input v-model="editForm.name" class="h-10 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm outline-none focus:border-indigo-400 focus:bg-white" />
+                    <UiInput v-model="editForm.name" />
                   </div>
                   <div>
                     <label class="mb-1 block text-xs font-bold text-slate-500">展示文件名</label>
-                    <input v-model="editForm.original_name" class="h-10 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm outline-none focus:border-indigo-400 focus:bg-white" />
+                    <UiInput v-model="editForm.original_name" />
                   </div>
                   <div>
                     <label class="mb-1 block text-xs font-bold text-slate-500">描述</label>
-                    <textarea v-model="editForm.description" rows="4" class="w-full resize-y rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none focus:border-indigo-400 focus:bg-white"></textarea>
+                    <UiInput v-model="editForm.description" type="textarea" :rows="4" />
                   </div>
                   <div>
                     <label class="mb-1 block text-xs font-bold text-slate-500">标签，逗号分隔</label>
-                    <input v-model="editTagsText" class="h-10 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm outline-none focus:border-indigo-400 focus:bg-white" />
+                    <UiInput v-model="editTagsText" />
                   </div>
                   <div v-if="canEditAssetAspectRatio(detailAsset)">
                     <label class="mb-1 block text-xs font-bold text-slate-500">近似比例</label>
-                    <input v-model="editForm.approx_aspect_ratio" class="h-10 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm outline-none focus:border-indigo-400 focus:bg-white" placeholder="16:9" />
+                    <UiInput v-model="editForm.approx_aspect_ratio" placeholder="16:9" />
                   </div>
                 </div>
 
@@ -597,7 +579,7 @@
                     </div>
                   </div>
                   <template v-else>
-                    <textarea v-model="contentDraft" class="min-h-0 flex-1 resize-none rounded-xl border border-slate-200 bg-slate-50 p-4 font-mono text-xs leading-5 text-slate-800 outline-none focus:border-indigo-400" />
+                    <UiInput v-model="contentDraft" type="textarea" class="min-h-0 flex-1 resize-none font-mono text-xs leading-5" />
                     <p class="mt-3 text-xs text-slate-500">写入内容会自动保留写入前副本。</p>
                   </template>
                 </div>
@@ -605,7 +587,7 @@
                 <div v-else-if="detailTab === 'references'" class="space-y-4">
                   <div class="flex items-center justify-between">
                     <h3 class="text-sm font-bold text-slate-700">引用明细</h3>
-                    <button type="button" class="text-xs font-bold text-indigo-600" @click="loadReferences">刷新</button>
+                    <UiButton type="button" variant="ghost" size="xs" @click="loadReferences">刷新</UiButton>
                   </div>
                   <div v-if="referencesLoading" class="text-sm text-slate-500">正在检查引用...</div>
                   <div v-else-if="!referenceSummary?.has_references" class="rounded-xl bg-emerald-50 p-4 text-sm font-bold text-emerald-700">未发现引用阻断。</div>
@@ -619,7 +601,7 @@
                         <span class="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-bold text-slate-500">{{ group.items.length }}</span>
                       </div>
                       <div class="space-y-2">
-                        <button
+                        <UiButton
                           v-for="item in group.items"
                           :key="`${item.kind}-${item.id}-${item.version_no || ''}`"
                           type="button"
@@ -628,7 +610,7 @@
                         >
                           <span class="min-w-0 truncate font-semibold text-slate-700">{{ formatReferenceName(item) }}</span>
                           <ArrowUpRight v-if="canOpenReference(item)" class="h-3.5 w-3.5 shrink-0 text-slate-400" />
-                        </button>
+                        </UiButton>
                       </div>
                     </section>
                   </div>
@@ -636,16 +618,16 @@
               </div>
 
               <footer class="flex shrink-0 items-center justify-end gap-2 border-t border-slate-100 bg-slate-50 px-5 py-4">
-                <BaseButton variant="ghost" size="sm" @click="closeAssetDetail">关闭</BaseButton>
-                <BaseButton v-if="detailTab === 'basic'" size="sm" :disabled="saving" @click="saveAssetMetadata">保存信息</BaseButton>
-                <BaseButton v-if="detailTab === 'content' && detailAsset.content_editable" size="sm" :disabled="saving || !canSaveContent" @click="saveContent">
+                <UiButton variant="ghost" size="sm" @click="closeAssetDetail">关闭</UiButton>
+                <UiButton v-if="detailTab === 'basic'" size="sm" :disabled="saving" @click="saveAssetMetadata">保存信息</UiButton>
+                <UiButton v-if="detailTab === 'content' && detailAsset.content_editable" size="sm" :disabled="saving || !canSaveContent" @click="saveContent">
                   <Save class="h-3.5 w-3.5" />
                   写入内容
-                </BaseButton>
+                </UiButton>
               </footer>
             </aside>
       </div>
-    </BaseDialog>
+    </UiDialog>
   </div>
 </template>
 
@@ -661,14 +643,12 @@ import {
   Download,
   FilePlus2,
   FileText,
-  FolderArchive,
   PenTool,
   RefreshCw,
   Replace,
   RotateCcw,
   Ruler,
   Save,
-  Search,
   Sigma,
   Trash2,
   Upload,
@@ -702,14 +682,16 @@ import {
 } from '@/api/assets'
 import { getWorkspace } from '@/api/catalog'
 import { getErrorCode, getErrorMessage } from '@/api/http'
-import PageTitleBar from '@/components/layout/PageTitleBar.vue'
+import DataState from '@/components/patterns/DataState.vue'
+import PageHeader from '@/components/patterns/PageHeader.vue'
+import SimpleSearchBar from '@/components/patterns/SimpleSearchBar.vue'
+import ToolPanel from '@/components/patterns/ToolPanel.vue'
 import AssetPreviewFrame from '@/components/project/AssetPreviewFrame.vue'
 import { ASSET_UPLOAD_ACCEPT, getAcceptedAssetExtensionText, isAcceptedAssetFile } from '@/components/project/asset-manager'
 import type { AgentMutationRefreshEvent } from '@/components/agent/agent-conversation-panel'
 import LibraryChipFilter from '@/components/project/LibraryChipFilter.vue'
 import LibrarySegmentedControl from '@/components/project/LibrarySegmentedControl.vue'
-import BaseButton from '@/components/ui/BaseButton.vue'
-import BaseDialog from '@/components/ui/BaseDialog.vue'
+import { UiButton, UiCheckbox, UiDialog, UiIconButton, UiInput, UiRadioGroup, UiSelect } from '@/components/ui'
 import BaseCloseButton from '@/components/ui/BaseCloseButton.vue'
 import PaginationControl from '@/components/ui/PaginationControl.vue'
 import type { AssetBatchOperationResponse, AssetReferenceSummary, AssetRenderHintBackfillJobGroup, AssetRenderHintBackfillMode, AssetResponse, AssetType, RecordStatus } from '@/types/api'
@@ -739,6 +721,7 @@ const activeTag = ref<string | null>(null)
 const searchKeyword = ref('')
 const sortValue = ref('updated_at:desc')
 const loading = ref(false)
+const assetsLoadError = ref(false)
 const saving = ref(false)
 const uploading = ref(false)
 const packageImporting = ref(false)
@@ -794,6 +777,12 @@ const assetTypeOptions: Array<{ value: AssetType; label: string }> = [
   { value: 'chart', label: 'Chart' },
   { value: 'formula', label: 'Formula' },
 ]
+const assetSortOptions = [
+  { value: 'updated_at:desc', label: '最近更新' },
+  { value: 'created_at:desc', label: '最近创建' },
+  { value: 'name:asc', label: '名称升序' },
+  { value: 'file_size:desc', label: '文件较大优先' },
+]
 const assetTypeSegmentOptions: Array<{ value: AssetType | ''; label: string }> = [
   { value: '', label: '全部' },
   ...assetTypeOptions,
@@ -817,6 +806,10 @@ const backfillForm = reactive({
   mermaid: true,
   mode: 'preview' as AssetRenderHintBackfillMode,
 })
+const backfillModeOptions = [
+  { label: '预览结果', value: 'preview' },
+  { label: '直接写回', value: 'apply' },
+]
 const backfillResult = ref<AssetRenderHintBackfillJobGroup | null>(null)
 
 const workspaceId = computed(() => Number.parseInt(route.params.workspaceId as string, 10))
@@ -931,6 +924,11 @@ const selectedBackfillAssetTypes = computed<BackfillableAssetType[]>(() => {
   if (backfillForm.mermaid) types.push('mermaid')
   return types
 })
+const assetDataState = computed<'loading' | 'empty' | 'error' | 'ready'>(() => {
+  if (loading.value) return 'loading'
+  if (assetsLoadError.value) return 'error'
+  return assets.value.length > 0 ? 'ready' : 'empty'
+})
 const backfillPreviewUpdatableAssetIds = computed(() => (
   backfillResult.value?.jobs
     .filter(job => job.status === 'succeeded' && Boolean(job.next_render_metadata))
@@ -985,6 +983,7 @@ watch(sortValue, resetPage)
 async function refreshAssets(): Promise<void> {
   if (!Number.isFinite(workspaceId.value)) return
   loading.value = true
+  assetsLoadError.value = false
   try {
     const statusScope = resolveAssetStatusScope()
     const response = await listWorkspaceAssets(workspaceId.value, {
@@ -1004,6 +1003,7 @@ async function refreshAssets(): Promise<void> {
     syncSelectionAfterListLoad()
     openQueryAssetIfNeeded()
   } catch (error) {
+    assetsLoadError.value = true
     Message.error(getErrorMessage(error, '读取资源列表失败'))
   } finally {
     loading.value = false

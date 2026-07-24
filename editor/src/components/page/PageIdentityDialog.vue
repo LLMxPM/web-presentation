@@ -1,34 +1,26 @@
 <!-- 文件功能：页面名称与描述独立编辑弹窗，用于维护页面基础信息。 -->
 <template>
-  <BaseDialog :model-value="modelValue" :title="page ? `编辑页面 · ${page.title}` : '编辑页面'" size="compact" @update:modelValue="handleVisibleChange">
+  <UiDialog :open="modelValue" :title="page ? `编辑页面 · ${page.title}` : '编辑页面'" size="compact" @update:open="handleVisibleChange">
     <div class="space-y-4">
-      <BaseInput v-model="form.title" label="页面名称" placeholder="请输入页面名称" required :error="errors.title" />
-      <BaseInput
-        v-model="form.summary"
-        type="textarea"
-        label="页面描述"
-        placeholder="补充页面用途、关键内容或使用约束"
-        :rows="4"
-      />
+      <UiFormField label="页面名称" required :error="errors.title"><template #default="field"><UiInput v-model="form.title" placeholder="请输入页面名称" required :input-id="field.inputId" :described-by="field.describedBy" :invalid="field.invalid" /></template></UiFormField>
+      <UiFormField label="页面描述"><template #default="field"><UiInput v-model="form.summary" type="textarea" placeholder="补充页面用途、关键内容或使用约束" :rows="4" :input-id="field.inputId" :described-by="field.describedBy" /></template></UiFormField>
       <p v-if="page" class="text-xs leading-5 text-slate-400">
         页面编码：<span class="font-mono font-semibold uppercase">{{ page.code }}</span>
       </p>
     </div>
 
     <template #footer>
-      <BaseButton variant="ghost" @click="handleVisibleChange(false)">取消</BaseButton>
-      <BaseButton variant="primary" :loading="loading" @click="handleSubmit">保存</BaseButton>
+      <UiButton variant="ghost" @click="handleVisibleChange(false)">取消</UiButton>
+      <UiButton variant="primary" :loading="loading" @click="handleSubmit">保存</UiButton>
     </template>
-  </BaseDialog>
+  </UiDialog>
 </template>
 
 <script setup lang="ts">
 import { reactive, watch } from 'vue'
 
 import type { PageItem } from '@/types/api'
-import BaseButton from '@/components/ui/BaseButton.vue'
-import BaseDialog from '@/components/ui/BaseDialog.vue'
-import BaseInput from '@/components/ui/BaseInput.vue'
+import { UiButton, UiDialog, UiFormField, UiInput } from '@/components/ui'
 
 const props = defineProps<{
   modelValue: boolean

@@ -17,43 +17,42 @@
       {{ requirement.note }}
     </div>
 
-    <details class="mt-2 rounded-md border border-slate-200 bg-slate-50">
-      <summary class="cursor-pointer px-2.5 py-2 text-xs font-semibold text-slate-600">查看工具详情</summary>
-      <div class="space-y-2 border-t border-slate-200 p-2.5">
+    <InspectorSection title="工具详情" class="mt-2 rounded-md border border-slate-200 bg-slate-50">
+      <div class="space-y-2">
         <section v-if="requirement.suggested_patch" class="space-y-2">
           <div class="flex flex-wrap items-center justify-between gap-2">
             <p class="text-xs font-semibold text-slate-700">
               {{ requirement.suggested_patch.change_note || '页面改写建议' }}
             </p>
             <div v-if="canApplySuggestedPatch" class="flex items-center gap-1.5">
-              <BaseButton variant="ghost" size="sm" custom-class="rounded-md px-2 py-1 text-xs shadow-none" @click="emit('applySuggestedPatch', requirement.suggested_patch)">
+              <UiButton variant="ghost" size="sm" @click="emit('applySuggestedPatch', requirement.suggested_patch)">
                 应用到编辑器
-              </BaseButton>
-              <BaseButton variant="ghost" size="sm" custom-class="rounded-md px-2 py-1 text-xs shadow-none" @click="emit('saveDraftPatch', requirement.suggested_patch)">
+              </UiButton>
+              <UiButton variant="ghost" size="sm" @click="emit('saveDraftPatch', requirement.suggested_patch)">
                 加入草稿箱
-              </BaseButton>
+              </UiButton>
             </div>
           </div>
-          <pre class="max-h-40 overflow-auto rounded-md bg-slate-950 p-2 text-[11px] leading-5 text-slate-100">{{ requirement.suggested_patch.unified_diff || requirement.suggested_patch.proposed_content }}</pre>
+          <pre class="max-h-40 overflow-auto overscroll-contain rounded-md bg-slate-950 p-2 text-[11px] leading-5 text-slate-100">{{ requirement.suggested_patch.unified_diff || requirement.suggested_patch.proposed_content }}</pre>
         </section>
         <section class="space-y-1">
           <p class="text-xs font-semibold text-slate-700">工具参数</p>
-          <pre class="max-h-36 overflow-auto rounded-md bg-slate-950 p-2 text-[11px] leading-5 text-slate-100">{{ formattedToolArgs }}</pre>
+          <pre class="max-h-36 overflow-auto overscroll-contain rounded-md bg-slate-950 p-2 text-[11px] leading-5 text-slate-100">{{ formattedToolArgs }}</pre>
         </section>
       </div>
-    </details>
+    </InspectorSection>
 
     <template #footer-left>
-      <BaseButton
+      <UiButton
         v-if="forceReleaseAvailable"
         variant="ghost"
         size="sm"
         :disabled="loading"
-        custom-class="rounded-md px-2 py-1 text-xs text-red-600 shadow-none hover:bg-red-50"
+        class="rounded-md px-2 py-1 text-xs text-red-600 hover:bg-red-50"
         @click="emit('forceRelease')"
       >
         强制释放
-      </BaseButton>
+      </UiButton>
     </template>
   </AgentHitlShell>
 </template>
@@ -62,7 +61,8 @@
 import { computed } from 'vue'
 
 import AgentHitlShell from '@/components/agent/AgentHitlShell.vue'
-import BaseButton from '@/components/ui/BaseButton.vue'
+import InspectorSection from '@/components/patterns/InspectorSection.vue'
+import { UiButton } from '@/components/ui'
 import type { AgentPendingRequirement, AgentSuggestedPatch } from '@/types/api'
 
 const props = withDefaults(defineProps<{

@@ -1,5 +1,5 @@
 /**
- * 文件功能：防止 Editor 重新引入绕过 BaseDialog 的自绘模态实现。
+ * 文件功能：防止 Editor 重新引入绕过 UiDialog 的自绘模态实现。
  */
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join, relative, resolve } from 'node:path'
@@ -7,9 +7,7 @@ import { join, relative, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 const sourceRoot = resolve(process.cwd(), 'src')
-const allowedModalFiles = new Set([
-  'components/ui/BaseDialog.vue',
-])
+const allowedModalFiles = new Set(['components/ui/dialog/UiDialog.vue'])
 
 /**
  * 递归收集目录下的全部 Vue 文件。
@@ -33,7 +31,7 @@ function collectVueFiles(currentDir: string): string[] {
 }
 
 describe('dialog modal guard', () => {
-  it('仅允许 BaseDialog 持有全屏模态 Teleport 壳层', () => {
+  it('仅允许 UI 弹窗层持有全屏模态 Teleport 壳层', () => {
     const offenders = collectVueFiles(sourceRoot)
       .map(filePath => ({
         relativePath: relative(sourceRoot, filePath).replace(/\\/g, '/'),

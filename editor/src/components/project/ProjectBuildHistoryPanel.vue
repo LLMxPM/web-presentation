@@ -9,12 +9,12 @@
           {{ history.length }}
         </span>
       </div>
-      <BaseButton variant="ghost" size="sm" :loading="historyLoading" @click="emit('refresh')">
+      <UiButton variant="ghost" size="sm" :loading="historyLoading" @click="emit('refresh')">
         <template #icon>
           <RefreshCw class="h-4 w-4" />
         </template>
         刷新最新状态
-      </BaseButton>
+      </UiButton>
     </div>
 
     <div v-if="historyLoading" class="flex min-h-0 flex-1 items-center justify-center">
@@ -72,30 +72,30 @@
               <span>完成 <span class="text-slate-700">{{ formatDateTime(job.finished_at) }}</span></span>
             </div>
             <div v-if="canOpenProjectBuildArtifact(job) || canDownloadProjectBuildArtifact(job)" class="flex shrink-0 items-center gap-1.5">
-              <BaseButton
+              <UiButton
                 v-if="canOpenProjectBuildArtifact(job)"
                 variant="secondary"
                 size="sm"
-                custom-class="h-8 whitespace-nowrap px-2"
+                class="h-8 whitespace-nowrap px-2"
                 @click="emit('open', job)"
               >
                 <template #icon>
                   <ExternalLink class="h-3.5 w-3.5" />
                 </template>
                 打开
-              </BaseButton>
-              <BaseButton
+              </UiButton>
+              <UiButton
                 v-if="canDownloadProjectBuildArtifact(job)"
                 variant="secondary"
                 size="sm"
-                custom-class="h-8 whitespace-nowrap px-2"
+                class="h-8 whitespace-nowrap px-2"
                 @click="emit('download', job)"
               >
                 <template #icon>
                   <Download class="h-3.5 w-3.5" />
                 </template>
                 ZIP
-              </BaseButton>
+              </UiButton>
             </div>
           </div>
 
@@ -114,7 +114,7 @@
 <script setup lang="ts">
 import { Download, ExternalLink, History, RefreshCw } from '@lucide/vue'
 
-import BaseButton from '@/components/ui/BaseButton.vue'
+import { UiButton } from '@/components/ui'
 import type { ProjectBuildJob, ProjectBuildStatus } from '@/types/api'
 import { formatDateTime } from '@/utils/format'
 import {

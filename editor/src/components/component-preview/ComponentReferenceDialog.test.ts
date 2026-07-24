@@ -42,25 +42,25 @@ function renderDialog() {
     global: {
       stubs: {
         teleport: true,
-        BaseDialog: createBaseDialogStub(),
-        BaseButton: createBaseButtonStub(),
+        UiDialog: createUiDialogStub(),
+        UiButton: createUiButtonStub(),
       },
     },
   })
 }
 
-function createBaseDialogStub() {
+function createUiDialogStub() {
   return defineComponent({
-    name: 'BaseDialog',
+    name: 'UiDialog',
     props: {
-      modelValue: {
+      open: {
         type: Boolean,
         default: false,
       },
     },
-    emits: ['update:modelValue'],
+    emits: ['update:open'],
     setup(props, { slots }) {
-      return () => props.modelValue
+      return () => props.open
         ? h('section', [
           slots.default?.(),
           h('footer', slots.footer?.()),
@@ -70,9 +70,10 @@ function createBaseDialogStub() {
   })
 }
 
-function createBaseButtonStub() {
+/** 提供可断言禁用态的按钮替身，隔离按钮原语自身样式实现。 */
+function createUiButtonStub() {
   return defineComponent({
-    name: 'BaseButton',
+    name: 'UiButton',
     props: {
       disabled: {
         type: Boolean,

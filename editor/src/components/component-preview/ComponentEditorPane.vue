@@ -16,17 +16,17 @@
       </div>
 
       <div class="flex shrink-0 flex-wrap items-center justify-end gap-2">
-        <BaseButton v-if="canViewHistory" variant="ghost" size="sm" @click="emit('open-version-history')">
+        <UiButton v-if="canViewHistory" variant="ghost" size="sm" @click="emit('open-version-history')">
           <History class="h-3.5 w-3.5" />
           版本
-        </BaseButton>
-        <BaseButton variant="secondary" size="sm" :loading="previewLoading" @click="emit('preview-draft')">
+        </UiButton>
+        <UiButton variant="secondary" size="sm" :loading="previewLoading" @click="emit('preview-draft')">
           <Eye class="h-3.5 w-3.5" />
           保存并预览
-        </BaseButton>
-        <BaseButton variant="primary" size="sm" :loading="saving" @click="emit('save-draft')">
+        </UiButton>
+        <UiButton variant="primary" size="sm" :loading="saving" @click="emit('save-draft')">
           {{ mode === 'create' ? '创建草稿' : '保存草稿' }}
-        </BaseButton>
+        </UiButton>
 
         <BaseCloseButton label="关闭组件编辑" @click="emit('cancel-edit')" />
       </div>
@@ -37,23 +37,23 @@
         <div class="space-y-4">
           <section class="space-y-3">
             <h4 class="text-[11px] font-black uppercase tracking-[0.18em] text-slate-400">基本信息</h4>
-            <BaseInput
-              :model-value="form.name"
-              label="组件名称"
-              placeholder="如：数据统计卡片"
-              required
-              :error="errors.name"
-              @update:model-value="updateField('name', String($event))"
-            />
+            <UiFormField label="组件名称" required :error="errors.name">
+              <UiInput
+                :model-value="form.name"
+                placeholder="如：数据统计卡片"
+                required
+                @update:model-value="updateField('name', String($event))"
+              />
+            </UiFormField>
 
-            <BaseInput
-              :model-value="form.import_name"
-              label="源码引用名"
-              placeholder="如：SalesMetricCard"
-              required
-              :error="errors.import_name"
-              @update:model-value="updateField('import_name', String($event))"
-            />
+            <UiFormField label="源码引用名" required :error="errors.import_name">
+              <UiInput
+                :model-value="form.import_name"
+                placeholder="如：SalesMetricCard"
+                required
+                @update:model-value="updateField('import_name', String($event))"
+              />
+            </UiFormField>
 
             <div class="flex w-full flex-col gap-1.5">
               <label class="ml-1 text-sm font-semibold text-slate-700">
@@ -73,27 +73,29 @@
               </p>
             </div>
 
-            <BaseInput
-              :model-value="form.summary"
-              type="textarea"
-              label="组件摘要"
-              placeholder="简述组件用途及使用限制..."
-              :rows="3"
-              @update:model-value="updateField('summary', String($event))"
-            />
+            <UiFormField label="组件摘要">
+              <UiInput
+                :model-value="form.summary"
+                type="textarea"
+                placeholder="简述组件用途及使用限制..."
+                :rows="3"
+                @update:model-value="updateField('summary', String($event))"
+              />
+            </UiFormField>
           </section>
 
           <section class="space-y-3 border-t border-slate-200/70 pt-4">
             <div class="flex items-center justify-between gap-3">
               <h4 class="text-[11px] font-black uppercase tracking-[0.18em] text-slate-400">预览配置 Schema</h4>
-              <button
-                type="button"
+              <UiButton
+                variant="ghost"
+                size="xs"
                 class="inline-flex items-center gap-1 text-[10px] font-bold text-indigo-500 transition-colors hover:text-indigo-600"
                 @click="emit('open-schema-help')"
               >
                 <HelpCircle class="h-3.5 w-3.5" />
                 配置说明
-              </button>
+              </UiButton>
             </div>
 
             <div class="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm focus-within:border-indigo-500/50 focus-within:ring-2 focus-within:ring-indigo-500/20">
@@ -120,16 +122,18 @@
             <span class="text-[11px] font-black uppercase tracking-wider text-slate-600">组件源码 (.vue)</span>
           </div>
           <div class="flex rounded-lg bg-slate-200/60 p-0.5">
-            <button
+            <UiButton
               v-for="theme in themeOptions"
               :key="theme"
               type="button"
+              variant="ghost"
+              size="xs"
               class="rounded-md px-2.5 py-1 text-[10px] font-bold transition-all"
               :class="editorTheme === theme ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'"
               @click="emit('update:editorTheme', theme)"
             >
               {{ theme === 'light' ? '明亮' : '暗黑' }}
-            </button>
+            </UiButton>
           </div>
         </div>
 
@@ -159,9 +163,10 @@
 import { Code2, Eye, HelpCircle, History } from '@lucide/vue'
 
 import MonacoCodeEditor from '@/components/editor/MonacoCodeEditor.vue'
-import BaseButton from '@/components/ui/BaseButton.vue'
+import UiButton from '@/components/ui/button/UiButton.vue'
 import BaseCloseButton from '@/components/ui/BaseCloseButton.vue'
-import BaseInput from '@/components/ui/BaseInput.vue'
+import UiFormField from '@/components/ui/form-field/UiFormField.vue'
+import UiInput from '@/components/ui/input/UiInput.vue'
 import SearchableSelect from '@/components/ui/SearchableSelect.vue'
 import type { SelectModelValue, SelectOption } from '@/components/ui/select'
 import {

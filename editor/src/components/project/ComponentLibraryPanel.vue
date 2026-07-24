@@ -14,59 +14,64 @@
     </template>
 
     <template #actions>
-      <button
+      <UiButton
         v-if="readOnly && workspaceId"
         type="button"
-        class="flex items-center gap-1 rounded-lg p-1.5 text-xs font-bold text-indigo-600 transition-colors hover:bg-indigo-50"
+        variant="ghost"
+        size="sm"
         title="打开完整组件库页面"
         @click="openComponentLibraryPage"
       >
         <ArrowUpRight class="h-4 w-4" />
         <span class="hidden lg:inline">组件管理</span>
-      </button>
-      <button
+      </UiButton>
+      <UiButton
         v-if="!readOnly && componentPanelTab === 'workspace' && batchSelectedComponentIds.length > 0"
         type="button"
-        class="flex items-center gap-1 rounded-lg p-1.5 text-xs font-bold text-indigo-600 transition-colors hover:bg-indigo-50"
+        variant="ghost"
+        size="sm"
         :disabled="exportPackagePending"
         title="导出已勾选组件"
         @click="emitExportRequest"
       >
         <Download class="h-4 w-4" />
         <span class="hidden lg:inline">导出组件</span>
-      </button>
-      <button
+      </UiButton>
+      <UiButton
         v-if="!readOnly && componentPanelTab === 'workspace' && batchSelectedComponentIds.length === 0"
         type="button"
-        class="flex items-center gap-1 rounded-lg p-1.5 text-xs font-bold text-indigo-600 transition-colors hover:bg-indigo-50"
+        variant="ghost"
+        size="sm"
         :disabled="loading"
         title="刷新组件列表"
         @click="emitRefreshRequest"
       >
         <RefreshCw class="h-4 w-4" :class="{ 'animate-spin': loading }" />
         <span class="hidden lg:inline">刷新</span>
-      </button>
-      <button
+      </UiButton>
+      <UiButton
         v-if="showCreateImportActions && !readOnly && componentPanelTab === 'workspace'"
         type="button"
-        class="flex items-center gap-1 rounded-lg p-1.5 text-xs font-bold text-indigo-600 transition-colors hover:bg-indigo-50"
+        variant="ghost"
+        size="sm"
         :disabled="importPackagePending"
         title="导入组件离线包"
         @click="emitImportRequest"
       >
         <Upload class="h-4 w-4" />
         <span class="hidden lg:inline">导入组件</span>
-      </button>
-      <button
+      </UiButton>
+      <UiButton
         v-if="showCreateImportActions && !readOnly && componentPanelTab === 'workspace'"
         type="button"
-        class="flex items-center gap-1 rounded-lg p-1.5 text-xs font-bold text-indigo-600 transition-colors hover:bg-indigo-50"
+        variant="ghost"
+        size="sm"
         title="新增组件"
         @click="emitCreateRequest"
       >
         <Plus class="h-4 w-4" />
         <span class="hidden lg:inline">新建</span>
-      </button>
+      </UiButton>
     </template>
 
     <div class="shrink-0 border-b border-slate-50 bg-slate-50/50 px-3 pb-2">
@@ -79,22 +84,24 @@
       <div v-if="!readOnly && componentPanelTab === 'workspace'" class="mt-1.5 flex items-center justify-between gap-2 text-[11px]">
         <span class="font-bold text-slate-400">已选择 {{ batchSelectedComponentIds.length }} 个可导出组件</span>
         <div class="flex items-center gap-2">
-          <button
+          <UiButton
             type="button"
-            class="font-bold text-indigo-600 hover:text-indigo-700 disabled:text-slate-300"
+            variant="ghost"
+            size="xs"
             :disabled="filteredExportableComponentIds.length === 0"
             @click="selectAllFilteredPublished"
           >
             全选已发布
-          </button>
-          <button
+          </UiButton>
+          <UiButton
             type="button"
-            class="font-bold text-slate-500 hover:text-slate-700 disabled:text-slate-300"
+            variant="ghost"
+            size="xs"
             :disabled="batchSelectedComponentIds.length === 0"
             @click="clearBatchSelection"
           >
             清空
-          </button>
+          </UiButton>
         </div>
       </div>
     </div>
@@ -138,12 +145,10 @@
               :title="canBatchSelectComponent(component) ? '选择导出组件' : '组件发布后才能导出'"
               @click.stop
             >
-              <input
-                type="checkbox"
-                class="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-40"
-                :checked="isBatchSelected(component.id)"
+              <UiCheckbox
+                :model-value="isBatchSelected(component.id)"
                 :disabled="!canBatchSelectComponent(component)"
-                @change="toggleBatchComponent(component)"
+                @update:model-value="toggleBatchComponent(component)"
               />
             </label>
             <div class="min-w-0 flex-1">
@@ -175,24 +180,23 @@
               </div>
             </div>
             <div class="flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-              <button
+              <UiIconButton
                 type="button"
                 :disabled="!canCopyWorkspaceComponentImport(component)"
-                class="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-indigo-50 hover:text-indigo-600 disabled:cursor-not-allowed disabled:text-slate-300 disabled:hover:bg-transparent"
-                :title="canCopyWorkspaceComponentImport(component) ? '复制 import 语句' : '发布后可复制 import 语句'"
+                :label="canCopyWorkspaceComponentImport(component) ? '复制 import 语句' : '发布后可复制 import 语句'"
                 @click.stop="copyComponentImportStatement(component)"
               >
                 <Copy class="h-3.5 w-3.5" />
-              </button>
-              <button
+              </UiIconButton>
+              <UiIconButton
                 v-if="!readOnly"
                 type="button"
-                class="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-rose-50 hover:text-rose-600"
-                title="删除组件"
+                variant="danger"
+                label="删除组件"
                 @click.stop="handleDelete(component)"
               >
                 <Trash2 class="h-3.5 w-3.5" />
-              </button>
+              </UiIconButton>
             </div>
           </div>
 
@@ -227,6 +231,7 @@ import { buildWorkspaceComponentImportUsage } from '@/utils/component-import'
 import { formatDateTime } from '@/utils/format'
 import { createConfirm, Message } from '@/utils/message'
 import { buildWorkspaceComponentsPath } from '@/utils/workspace-routes'
+import { UiButton, UiCheckbox, UiIconButton } from '@/components/ui'
 
 type ComponentPanelTab = 'workspace' | 'runtime-kit'
 

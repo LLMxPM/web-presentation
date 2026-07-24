@@ -1,10 +1,10 @@
 <!-- 文件功能：提供页面复制到同工作空间其他项目的弹窗表单。 -->
 <template>
-  <BaseDialog
-    :model-value="modelValue"
+  <UiDialog
+    :open="modelValue"
     title="复制到项目"
     size="standard"
-    @update:model-value="handleDialogVisibleUpdate"
+    @update:open="handleDialogVisibleUpdate"
   >
     <div class="space-y-5">
       <div class="space-y-1.5">
@@ -22,32 +22,26 @@
       </div>
 
       <div class="grid gap-4 md:grid-cols-2">
-        <BaseInput v-model="titleDraft" label="新页面标题" placeholder="请输入标题" required />
-        <BaseInput v-model="routeDraft" label="路由片段" placeholder="留空时使用新页面编码" />
+        <UiFormField label="新页面标题" required><template #default="field"><UiInput v-model="titleDraft" placeholder="请输入标题" required :input-id="field.inputId" :described-by="field.describedBy" /></template></UiFormField>
+        <UiFormField label="路由片段"><template #default="field"><UiInput v-model="routeDraft" placeholder="留空时使用新页面编码" :input-id="field.inputId" :described-by="field.describedBy" /></template></UiFormField>
       </div>
 
-      <BaseInput
-        v-model="summaryDraft"
-        type="textarea"
-        label="摘要说明"
-        placeholder="可为空"
-        :rows="3"
-      />
+      <UiFormField label="摘要说明"><template #default="field"><UiInput v-model="summaryDraft" type="textarea" placeholder="可为空" :rows="3" :input-id="field.inputId" :described-by="field.describedBy" /></template></UiFormField>
 
       <label class="flex items-center gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700">
-        <input
-          v-model="joinRoute"
-          type="checkbox"
-          class="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+        <UiCheckbox
+          :model-value="joinRoute"
           :disabled="loading"
-        >
+          @update:model-value="joinRoute = $event === true"
+        />
         复制后加入目标项目路由
       </label>
 
       <div v-if="joinRoute" class="space-y-4 rounded-lg border border-slate-200 bg-white p-4">
         <div class="grid grid-cols-2 gap-2">
-          <button
+          <UiButton
             type="button"
+            variant="ghost"
             class="inline-flex h-10 items-center justify-center rounded-lg border text-sm font-semibold transition"
             :class="routePlacement === 'root'
               ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
@@ -55,9 +49,10 @@
             @click="routePlacement = 'root'"
           >
             顶层路由
-          </button>
-          <button
+          </UiButton>
+          <UiButton
             type="button"
+            variant="ghost"
             class="inline-flex h-10 items-center justify-center rounded-lg border text-sm font-semibold transition"
             :class="routePlacement === 'group'
               ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
@@ -65,7 +60,7 @@
             @click="routePlacement = 'group'"
           >
             目标分组
-          </button>
+          </UiButton>
         </div>
 
         <div v-if="routePlacement === 'group'" class="space-y-1.5">
@@ -85,12 +80,12 @@
     </div>
 
     <template #footer>
-      <BaseButton variant="ghost" :disabled="loading" @click="closeDialog">取消</BaseButton>
-      <BaseButton variant="primary" :loading="loading" :disabled="submitDisabled" @click="handleSubmit">
+      <UiButton variant="ghost" :disabled="loading" @click="closeDialog">取消</UiButton>
+      <UiButton variant="primary" :loading="loading" :disabled="submitDisabled" @click="handleSubmit">
         复制页面
-      </BaseButton>
+      </UiButton>
     </template>
-  </BaseDialog>
+  </UiDialog>
 </template>
 
 <script setup lang="ts">
@@ -98,9 +93,7 @@ import { computed, ref, watch } from 'vue'
 
 import { getProjectRoutes, listProjects } from '@/api/catalog'
 import { getErrorMessage } from '@/api/http'
-import BaseButton from '@/components/ui/BaseButton.vue'
-import BaseDialog from '@/components/ui/BaseDialog.vue'
-import BaseInput from '@/components/ui/BaseInput.vue'
+import { UiButton, UiCheckbox, UiDialog, UiFormField, UiInput } from '@/components/ui'
 import SearchableSelect from '@/components/ui/SearchableSelect.vue'
 import type { SelectOption } from '@/components/ui/select'
 import type {
@@ -275,7 +268,7 @@ async function loadRouteGroups(projectId: number): Promise<void> {
 }
 
 /**
- * 将 BaseDialog 可见性事件转发给父组件。
+ * 将 UiDialog 可见性事件转发给父组件。
  * @param visible 是否显示弹窗
  */
 function handleDialogVisibleUpdate(visible: boolean): void {

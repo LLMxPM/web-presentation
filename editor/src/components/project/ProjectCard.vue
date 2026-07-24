@@ -29,30 +29,31 @@
           </div>
         </div>
 
-        <div class="project-card-actions">
-          <button
-            type="button"
-            class="project-card-action project-card-action-primary"
+        <div class="flex shrink-0 items-center gap-1">
+          <UiIconButton
+            label="导出项目"
+            size="sm"
+            variant="ghost"
             :disabled="exportPending || exportDisabled"
-            :class="exportPending ? 'project-card-action-busy' : ''"
-            :aria-label="exportPending ? '项目导出预检中' : '导出项目'"
+            :loading="exportPending"
             :title="exportPending ? '项目导出预检中' : '导出项目'"
             @click.stop="emit('export-template', project)"
             @keydown.stop
           >
             <Download class="h-3.5 w-3.5" />
-          </button>
-          <button
-            type="button"
-            class="project-card-action project-card-action-warning"
+          </UiIconButton>
+          <UiIconButton
+            label="归档项目"
+            size="sm"
+            variant="ghost"
             :disabled="archivePending"
-            :aria-label="archivePending ? '项目归档中' : '归档项目'"
+            :loading="archivePending"
             :title="archivePending ? '项目归档中' : '归档项目'"
             @click.stop="emit('archive', project)"
             @keydown.stop
           >
             <Archive class="h-3.5 w-3.5" />
-          </button>
+          </UiIconButton>
         </div>
       </div>
 
@@ -89,6 +90,7 @@
 import { computed } from 'vue'
 import { Archive, Calendar, ChevronRight, Download } from '@lucide/vue'
 
+import { UiIconButton } from '@/components/ui'
 import type { ProjectItem } from '@/types/api'
 import { formatDateTime } from '@/utils/format'
 
@@ -207,63 +209,6 @@ const baseFontSizeLabel = computed(() => props.project.base_font_size || '-')
   white-space: nowrap;
 }
 
-.project-card-actions {
-  display: inline-flex;
-  flex: 0 0 auto;
-  flex-wrap: nowrap;
-  align-items: center;
-  gap: 0.375rem;
-}
-
-.project-card-action {
-  display: inline-flex;
-  width: 2rem;
-  height: 2rem;
-  flex: 0 0 2rem;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid rgb(226 232 240);
-  border-radius: 0.625rem;
-  background: rgb(255 255 255);
-  color: rgb(100 116 139);
-  box-shadow: 0 1px 2px rgb(15 23 42 / 0.05);
-  transition:
-    background-color 0.18s ease,
-    border-color 0.18s ease,
-    color 0.18s ease,
-    transform 0.18s ease;
-}
-
-.project-card-action:hover {
-  transform: translateY(-1px);
-}
-
-.project-card-action:disabled {
-  cursor: not-allowed;
-  opacity: 0.48;
-  transform: none;
-}
-
-.project-card-action-primary:hover {
-  border-color: rgb(199 210 254);
-  background: rgb(238 242 255);
-  color: rgb(67 56 202);
-}
-
-.project-card-action-warning:hover {
-  border-color: rgb(252 211 77);
-  background: rgb(255 251 235);
-  color: rgb(180 83 9);
-}
-
-.project-card-action-busy {
-  color: rgb(79 70 229);
-}
-
-.project-card-action-busy svg {
-  animation: project-action-pulse 1s ease-in-out infinite;
-}
-
 .project-card-meta {
   min-width: 0;
   border: 1px solid rgb(241 245 249);
@@ -299,16 +244,5 @@ const baseFontSizeLabel = computed(() => props.project.base_font_size || '-')
   font-size: 0.75rem;
   font-weight: 800;
   white-space: nowrap;
-}
-
-@keyframes project-action-pulse {
-  0%,
-  100% {
-    opacity: 1;
-  }
-
-  50% {
-    opacity: 0.45;
-  }
 }
 </style>

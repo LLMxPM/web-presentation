@@ -1,17 +1,18 @@
 <!-- 文件功能：提供工作空间级主题与字体管理页面，统一维护主题库、主题详情和字体注册。 -->
 <template>
   <div data-testid="themes-view" class="flex h-full min-h-0 flex-col gap-2">
-    <PageTitleBar
+    <PageHeader
       class="shrink-0"
       :title="workspaceTitle"
+      description="集中维护工作空间主题、字体注册与字体文件。"
     >
       <template #actions>
-        <BaseButton variant="ghost" :disabled="loadingThemes || loadingFonts || loadingFontAssets" @click="reloadAll">
+        <UiButton variant="secondary" :disabled="loadingThemes || loadingFonts || loadingFontAssets" @click="reloadAll">
           <RefreshCw class="h-3.5 w-3.5" />
           刷新
-        </BaseButton>
+        </UiButton>
       </template>
-    </PageTitleBar>
+    </PageHeader>
 
     <div class="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_380px] gap-2 overflow-hidden">
       <section class="flex min-h-0 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
@@ -24,36 +25,27 @@
               </span>
             </div>
           </div>
-          <BaseButton size="sm" @click="openCreateTheme">
+          <UiButton size="sm" @click="openCreateTheme">
             <Plus class="h-3.5 w-3.5" />
             新建主题
-          </BaseButton>
+          </UiButton>
         </header>
 
-        <div class="shrink-0 border-b border-slate-100 bg-slate-50/70 px-5 py-3">
-          <label class="flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-500 focus-within:border-indigo-400">
-            <Search class="h-4 w-4 text-slate-400" />
-            <input
-              v-model="themeKeyword"
-              class="min-w-0 flex-1 bg-transparent text-sm text-slate-700 outline-none placeholder:text-slate-400"
-              placeholder="搜索主题名称、key"
-            />
-          </label>
+        <div class="shrink-0 border-b border-slate-100 px-5 py-3">
+          <SimpleSearchBar
+            v-model="themeKeyword"
+            placeholder="搜索主题名称、key"
+            aria-label="搜索主题名称、key"
+            @submit="loadThemes"
+          />
         </div>
 
-        <div v-if="loadingThemes" class="flex flex-1 items-center justify-center text-sm font-semibold text-slate-400">
-          正在加载主题...
-        </div>
-        <div v-else class="min-h-0 flex-1 overflow-y-auto p-3">
-          <div
-            v-if="themes.length === 0"
-            class="flex min-h-[140px] flex-col items-center justify-center rounded-xl border-2 border-dashed border-slate-100 bg-slate-50 text-center"
+        <div class="min-h-0 flex-1 overflow-y-auto p-3">
+          <DataState
+            :state="themeDataState"
+            :title="themeDataState === 'empty' ? (themeKeyword ? '未找到相关主题' : '暂无主题') : undefined"
           >
-            <SwatchBook class="mb-3 h-10 w-10 text-slate-300" />
-            <p class="text-sm font-semibold text-slate-500">{{ themeKeyword ? '未找到相关主题' : '暂无主题' }}</p>
-          </div>
-
-          <div v-else class="grid gap-3 2xl:grid-cols-2">
+          <div class="grid gap-3 2xl:grid-cols-2">
             <article
               v-for="theme in themes"
               :key="theme.id"
@@ -77,25 +69,39 @@
                 </div>
 
                 <div class="flex shrink-0 items-center gap-1 opacity-70 transition-opacity group-hover:opacity-100">
-                  <button
+                  <UiIconButton
                     v-if="!isDefaultTheme(theme)"
-                    type="button"
-                    class="theme-icon-button"
-                    title="设为默认"
-                    :style="getThemeActionStyle(theme)"
+                    label="设为默认"
+                    size="sm"
+                    variant="ghost"
                     @click.stop="setDefaultTheme(theme)"
                   >
-                    <Pin class="h-4 w-4" />
-                  </button>
-                  <button type="button" class="theme-icon-button" title="编辑" :style="getThemeActionStyle(theme)" @click.stop="openEditTheme(theme)">
-                    <Pencil class="h-4 w-4" />
-                  </button>
-                  <button type="button" class="theme-icon-button" title="复制" :style="getThemeActionStyle(theme)" @click.stop="copyTheme(theme)">
-                    <Copy class="h-4 w-4" />
-                  </button>
-                  <button type="button" class="theme-icon-button-danger" title="删除" :style="getThemeActionStyle(theme)" @click.stop="deleteTheme(theme)">
-                    <Trash2 class="h-4 w-4" />
-                  </button>
+                    <Pin class="h-3.5 w-3.5" />
+                  </UiIconButton>
+                  <UiIconButton
+                    label="编辑"
+                    size="sm"
+                    variant="ghost"
+                    @click.stop="openEditTheme(theme)"
+                  >
+                    <Pencil class="h-3.5 w-3.5" />
+                  </UiIconButton>
+                  <UiIconButton
+                    label="复制"
+                    size="sm"
+                    variant="ghost"
+                    @click.stop="copyTheme(theme)"
+                  >
+                    <Copy class="h-3.5 w-3.5" />
+                  </UiIconButton>
+                  <UiIconButton
+                    label="删除"
+                    size="sm"
+                    variant="danger"
+                    @click.stop="deleteTheme(theme)"
+                  >
+                    <Trash2 class="h-3.5 w-3.5" />
+                  </UiIconButton>
                 </div>
               </div>
 
@@ -143,6 +149,7 @@
               </div>
             </article>
           </div>
+          </DataState>
         </div>
 
         <PaginationControl
@@ -167,14 +174,14 @@
               </div>
             </div>
             <div class="flex shrink-0 items-center gap-1">
-              <BaseButton size="sm" variant="ghost" :disabled="!workspaceId || uploadingFontAsset" @click="triggerFontUpload">
+              <UiButton size="sm" variant="ghost" :disabled="!workspaceId || uploadingFontAsset" @click="triggerFontUpload">
                 <Upload class="h-3.5 w-3.5" />
                 {{ uploadingFontAsset ? '上传中' : '上传' }}
-              </BaseButton>
-              <BaseButton size="sm" @click="openCreateFont">
+              </UiButton>
+              <UiButton size="sm" @click="openCreateFont">
                 <Plus class="h-3.5 w-3.5" />
                 注册
-              </BaseButton>
+              </UiButton>
               <input
                 ref="fontFileInput"
                 type="file"
@@ -196,22 +203,26 @@
 
         <div class="shrink-0 border-b border-slate-100 bg-slate-50/70 px-4 py-3">
           <div class="grid grid-cols-2 gap-1 rounded-xl bg-slate-100 p-1">
-            <button
+            <UiButton
               type="button"
+              variant="ghost"
+              size="sm"
               class="rounded-lg py-2 text-xs font-black transition-all"
               :class="fontPanelTab === 'registrations' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'"
               @click="fontPanelTab = 'registrations'"
             >
               字体注册
-            </button>
-            <button
+            </UiButton>
+            <UiButton
               type="button"
+              variant="ghost"
+              size="sm"
               class="rounded-lg py-2 text-xs font-black transition-all"
               :class="fontPanelTab === 'files' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'"
               @click="fontPanelTab = 'files'"
             >
               字体文件
-            </button>
+            </UiButton>
           </div>
         </div>
 
@@ -219,44 +230,16 @@
           v-if="fontPanelTab === 'registrations'"
           class="grid shrink-0 grid-cols-[minmax(0,1fr)_96px] gap-2 border-b border-slate-100 bg-slate-50/70 px-4 py-3"
         >
-          <label class="flex h-9 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-500 focus-within:border-indigo-400">
-            <Search class="h-3.5 w-3.5 text-slate-400" />
-            <input
-              v-model="fontKeyword"
-              class="min-w-0 flex-1 bg-transparent text-xs text-slate-700 outline-none placeholder:text-slate-400"
-              placeholder="搜索字体注册"
-            />
-          </label>
-          <select
-            v-model="fontStatus"
-            class="h-9 rounded-xl border border-slate-200 bg-white px-2 text-xs font-bold text-slate-600 outline-none focus:border-indigo-400"
-          >
-            <option value="">全部</option>
-            <option value="active">启用</option>
-            <option value="archived">归档</option>
-          </select>
+          <SimpleSearchBar v-model="fontKeyword" placeholder="搜索字体注册" />
+          <UiSelect :model-value="fontStatus || allStatusValue" :options="statusOptions" @update:model-value="updateFontStatus" />
         </div>
 
         <div
           v-else
           class="grid shrink-0 grid-cols-[minmax(0,1fr)_96px] gap-2 border-b border-slate-100 bg-slate-50/70 px-4 py-3"
         >
-          <label class="flex h-9 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-500 focus-within:border-indigo-400">
-            <Search class="h-3.5 w-3.5 text-slate-400" />
-            <input
-              v-model="fontAssetKeyword"
-              class="min-w-0 flex-1 bg-transparent text-xs text-slate-700 outline-none placeholder:text-slate-400"
-              placeholder="搜索字体文件"
-            />
-          </label>
-          <select
-            v-model="fontAssetStatus"
-            class="h-9 rounded-xl border border-slate-200 bg-white px-2 text-xs font-bold text-slate-600 outline-none focus:border-indigo-400"
-          >
-            <option value="">全部</option>
-            <option value="active">启用</option>
-            <option value="archived">归档</option>
-          </select>
+          <SimpleSearchBar v-model="fontAssetKeyword" placeholder="搜索字体文件" />
+          <UiSelect :model-value="fontAssetStatus || allStatusValue" :options="statusOptions" @update:model-value="updateFontAssetStatus" />
         </div>
 
         <template v-if="fontPanelTab === 'registrations'">
@@ -301,12 +284,22 @@
                     {{ font.font_format }} / {{ font.font_weight }} / {{ font.font_style }}
                   </span>
                   <div class="flex gap-1">
-                    <button type="button" class="theme-icon-button" title="编辑" @click="openEditFont(font)">
-                      <Pencil class="h-4 w-4" />
-                    </button>
-                    <button type="button" class="theme-icon-button-danger" title="删除注册和字体文件" @click="deleteFont(font)">
-                      <Trash2 class="h-4 w-4" />
-                    </button>
+                    <UiIconButton
+                      label="编辑"
+                      size="sm"
+                      variant="ghost"
+                      @click="openEditFont(font)"
+                    >
+                      <Pencil class="h-3.5 w-3.5" />
+                    </UiIconButton>
+                    <UiIconButton
+                      label="删除注册和字体文件"
+                      size="sm"
+                      variant="danger"
+                      @click="deleteFont(font)"
+                    >
+                      <Trash2 class="h-3.5 w-3.5" />
+                    </UiIconButton>
                   </div>
                 </div>
               </article>
@@ -372,69 +365,70 @@
                 </div>
 
                 <div class="mt-3 flex items-center justify-end gap-1">
-                  <button
+                  <UiIconButton
                     v-if="asset.font_config"
-                    type="button"
-                    class="theme-icon-button"
-                    title="编辑字体注册"
+                    label="编辑字体注册"
+                    size="sm"
+                    variant="ghost"
                     @click="openEditFontFromAsset(asset)"
                   >
-                    <Pencil class="h-4 w-4" />
-                  </button>
-                  <button
+                    <Pencil class="h-3.5 w-3.5" />
+                  </UiIconButton>
+                  <UiIconButton
                     v-else-if="asset.status === 'active'"
-                    type="button"
-                    class="theme-icon-button"
-                    title="注册字体"
+                    label="注册字体"
+                    size="sm"
+                    variant="ghost"
                     @click="openCreateFontForAsset(asset)"
                   >
-                    <Plus class="h-4 w-4" />
-                  </button>
-                  <button
+                    <Plus class="h-3.5 w-3.5" />
+                  </UiIconButton>
+                  <UiIconButton
                     v-if="asset.status === 'active'"
-                    type="button"
-                    class="theme-icon-button"
-                    title="替换字体文件"
+                    label="替换字体文件"
+                    size="sm"
+                    variant="ghost"
                     @click="triggerReplaceFontAsset(asset)"
                   >
-                    <RefreshCw class="h-4 w-4" />
-                  </button>
-                  <button
+                    <RefreshCw class="h-3.5 w-3.5" />
+                  </UiIconButton>
+                  <UiIconButton
                     v-if="!asset.font_config && asset.status === 'active'"
-                    type="button"
-                    class="theme-icon-button-danger"
-                    title="删除字体文件"
+                    label="删除字体文件"
+                    size="sm"
+                    variant="danger"
                     @click="deleteFontAsset(asset)"
                   >
-                    <Trash2 class="h-4 w-4" />
-                  </button>
-                  <button
+                    <Trash2 class="h-3.5 w-3.5" />
+                  </UiIconButton>
+                  <UiIconButton
                     v-if="!asset.font_config && asset.status === 'archived'"
-                    type="button"
-                    class="theme-icon-button"
-                    title="恢复字体文件"
+                    label="恢复字体文件"
+                    size="sm"
+                    variant="ghost"
                     @click="restoreFontAsset(asset)"
                   >
-                    <RotateCcw class="h-4 w-4" />
-                  </button>
-                  <button
+                    <RotateCcw class="h-3.5 w-3.5" />
+                  </UiIconButton>
+                  <UiIconButton
                     v-if="!asset.font_config && asset.status === 'archived'"
-                    type="button"
-                    class="theme-icon-button-danger"
-                    title="删除字体文件"
+                    label="删除字体文件"
+                    size="sm"
+                    variant="danger"
                     @click="deleteFontAsset(asset)"
                   >
-                    <Trash2 class="h-4 w-4" />
-                  </button>
-                  <button
+                    <Trash2 class="h-3.5 w-3.5" />
+                  </UiIconButton>
+                  <UiIconButton
                     v-if="asset.font_config"
-                    type="button"
-                    class="theme-icon-button-danger opacity-50"
-                    title="已注册字体文件需要先删除字体注册"
+                    label="已注册字体文件需要先删除字体注册"
+                    size="sm"
+                    variant="danger"
+                    class="opacity-50"
                     disabled
                   >
-                    <Trash2 class="h-4 w-4" />
-                  </button>
+                    <Trash2 class="h-3.5 w-3.5" />
+                  </UiIconButton>
                 </div>
               </article>
             </div>
@@ -491,8 +485,6 @@ import {
   Plus,
   RefreshCw,
   RotateCcw,
-  Search,
-  SwatchBook,
   Trash2,
   Type,
   Upload,
@@ -513,12 +505,14 @@ import { getWorkspace, updateWorkspace } from '@/api/catalog'
 import { getErrorCode, getErrorMessage } from '@/api/http'
 import { copyWorkspaceTheme, createWorkspaceTheme, deleteWorkspaceTheme, listWorkspaceThemes, updateWorkspaceTheme } from '@/api/themes'
 import type { WorkspaceThemePayload } from '@/api/themes'
-import PageTitleBar from '@/components/layout/PageTitleBar.vue'
+import DataState from '@/components/patterns/DataState.vue'
+import PageHeader from '@/components/patterns/PageHeader.vue'
+import SimpleSearchBar from '@/components/patterns/SimpleSearchBar.vue'
 import { ASSET_UPLOAD_ACCEPT, getAcceptedAssetExtensionText, isAcceptedAssetFile } from '@/components/project/asset-manager'
 import FontEditorDialog from '@/components/theme/FontEditorDialog.vue'
 import ThemeDetailDialog from '@/components/theme/ThemeDetailDialog.vue'
 import ThemeEditorDialog from '@/components/theme/ThemeEditorDialog.vue'
-import BaseButton from '@/components/ui/BaseButton.vue'
+import { UiButton, UiIconButton, UiSelect } from '@/components/ui'
 import PaginationControl from '@/components/ui/PaginationControl.vue'
 import type { AssetResponse, RecordStatus, WorkspaceFontConfigItem, WorkspaceItem, WorkspaceThemeItem } from '@/types/api'
 import { createConfirm, Message } from '@/utils/message'
@@ -540,10 +534,34 @@ const fontPageSize = ref(10)
 const fontAssetPage = ref(1)
 const fontAssetPageSize = ref(10)
 const themeKeyword = ref('')
+const themeDataState = computed<'loading' | 'empty' | 'ready'>(() => (
+  loadingThemes.value ? 'loading' : themes.value.length ? 'ready' : 'empty'
+))
 const fontKeyword = ref('')
 const fontStatus = ref<RecordStatus | ''>('')
 const fontAssetKeyword = ref('')
 const fontAssetStatus = ref<RecordStatus | ''>('')
+const allStatusValue = '__all__'
+const statusOptions = [
+  { value: allStatusValue, label: '全部' },
+  { value: 'active', label: '启用' },
+  { value: 'archived', label: '归档' },
+]
+
+/** 将统一选择器的“全部”哨兵值还原为 API 使用的空筛选。 */
+function resolveStatusFilter(value: unknown): RecordStatus | '' {
+  return value === 'active' || value === 'archived' ? value : ''
+}
+
+/** 更新字体注册状态筛选。 */
+function updateFontStatus(value: unknown): void {
+  fontStatus.value = resolveStatusFilter(value)
+}
+
+/** 更新字体文件状态筛选。 */
+function updateFontAssetStatus(value: unknown): void {
+  fontAssetStatus.value = resolveStatusFilter(value)
+}
 const loadingThemes = ref(false)
 const loadingFonts = ref(false)
 const loadingFontAssets = ref(false)
@@ -1073,12 +1091,6 @@ function getThemeMetaBlockStyle(theme: WorkspaceThemeItem): CSSProperties {
   }
 }
 
-function getThemeActionStyle(theme: WorkspaceThemeItem): CSSProperties {
-  return {
-    color: theme.palette.text.secondary,
-  }
-}
-
 function getThemeAccentColors(theme: WorkspaceThemeItem): string[] {
   const accents = theme.palette?.accent
   if (!Array.isArray(accents) || accents.length === 0) {
@@ -1117,37 +1129,5 @@ function withAlpha(color: string | undefined, alpha: number): string {
 .fade-enter-from,
 .fade-leave-to {
   opacity: 0;
-}
-
-.theme-icon-button {
-  display: inline-flex;
-  height: 30px;
-  width: 30px;
-  align-items: center;
-  justify-content: center;
-  border-radius: 8px;
-  color: #94a3b8;
-  transition: all 0.16s ease;
-}
-
-.theme-icon-button:hover {
-  background: #f1f5f9;
-  color: #334155;
-}
-
-.theme-icon-button-danger {
-  display: inline-flex;
-  height: 30px;
-  width: 30px;
-  align-items: center;
-  justify-content: center;
-  border-radius: 8px;
-  color: #94a3b8;
-  transition: all 0.16s ease;
-}
-
-.theme-icon-button-danger:hover {
-  background: #fff1f2;
-  color: #e11d48;
 }
 </style>

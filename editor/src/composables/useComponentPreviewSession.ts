@@ -350,6 +350,7 @@ export function useComponentPreviewSession() {
     previewViewportRef,
     workspacePreviewDefaultConfig,
     handlePreviewStateChange,
+    observeViewport,
     preparePreviewConfig,
     refreshPreviewFrame,
     resetPendingPageConfig,

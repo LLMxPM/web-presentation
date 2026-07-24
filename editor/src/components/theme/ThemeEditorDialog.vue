@@ -1,6 +1,6 @@
 <!-- 文件功能：提供工作空间主题的创建与编辑弹窗，支持资源选择和实时预览。 -->
 <template>
-  <BaseDialog v-model="dialogVisible" :title="theme ? '编辑主题' : '新建主题'" size="canvas">
+  <UiDialog :open="dialogVisible" :title="theme ? '编辑主题' : '新建主题'" size="canvas" @update:open="dialogVisible = $event">
     <div class="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_500px] 2xl:grid-cols-[minmax(0,1fr)_560px]">
       <div class="min-w-0 space-y-4">
         <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -11,26 +11,26 @@
           <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
             <label class="space-y-1.5">
               <span class="text-xs font-bold text-slate-500">主题 key</span>
-              <input
+              <UiInput
                 v-model="form.key"
                 class="h-10 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm outline-none focus:border-indigo-500 focus:bg-white"
-              >
+              />
             </label>
             <label class="space-y-1.5">
               <span class="text-xs font-bold text-slate-500">主题名称</span>
-              <input
+              <UiInput
                 v-model="form.name"
                 class="h-10 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm outline-none focus:border-indigo-500 focus:bg-white"
-              >
+              />
             </label>
           </div>
 
           <label class="mt-4 block space-y-1.5">
             <span class="text-xs font-bold text-slate-500">主题描述</span>
-            <input
+            <UiInput
               v-model="form.description"
               class="h-10 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm outline-none focus:border-indigo-500 focus:bg-white"
-            >
+            />
           </label>
         </section>
 
@@ -145,11 +145,11 @@
                     class="h-7 w-8 cursor-pointer rounded border border-slate-200 bg-white p-0.5"
                     @input="field.setter(($event.target as HTMLInputElement).value)"
                   >
-                  <input
+                  <UiInput
                     :value="field.getter()"
                     class="h-7 min-w-0 rounded-md border border-slate-200 px-2 font-mono text-xs outline-none focus:border-indigo-500"
                     @input="field.setter(($event.target as HTMLInputElement).value)"
-                  >
+                  />
                 </label>
               </div>
             </div>
@@ -172,10 +172,10 @@
                     class="h-7 w-8 cursor-pointer rounded border border-slate-200 bg-white p-0.5"
                     @input="form.palette.accent[index] = ($event.target as HTMLInputElement).value"
                   >
-                  <input
+                  <UiInput
                     v-model="form.palette.accent[index]"
                     class="h-7 min-w-0 rounded-md border border-slate-200 px-2 font-mono text-xs outline-none focus:border-indigo-500"
-                  >
+                  />
                 </label>
               </div>
             </div>
@@ -210,10 +210,10 @@
     </div>
 
     <template #footer>
-      <BaseButton variant="ghost" @click="dialogVisible = false">取消</BaseButton>
-      <BaseButton variant="primary" :loading="saving" @click="handleSave">保存主题</BaseButton>
+      <UiButton variant="ghost" @click="dialogVisible = false">取消</UiButton>
+      <UiButton variant="primary" :loading="saving" @click="handleSave">保存主题</UiButton>
     </template>
-  </BaseDialog>
+  </UiDialog>
 </template>
 
 <script setup lang="ts">
@@ -226,8 +226,7 @@ import SearchableSelect from '@/components/ui/SearchableSelect.vue'
 import type { SelectModelValue, SelectOption } from '@/components/ui/select'
 import type { AssetResponse, ThemePalette, WorkspaceFontConfigItem, WorkspaceThemeItem } from '@/types/api'
 import { Message } from '@/utils/message'
-import BaseButton from '@/components/ui/BaseButton.vue'
-import BaseDialog from '@/components/ui/BaseDialog.vue'
+import { UiButton, UiDialog, UiInput } from '@/components/ui'
 import ThemePreviewCard from './ThemePreviewCard.vue'
 
 const props = withDefaults(defineProps<{

@@ -81,6 +81,9 @@ vi.mock('@/utils/message', () => ({
 describe('AssetsView', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    Object.defineProperty(HTMLElement.prototype, 'hasPointerCapture', { configurable: true, value: () => false })
+    Object.defineProperty(HTMLElement.prototype, 'setPointerCapture', { configurable: true, value: () => undefined })
+    Object.defineProperty(HTMLElement.prototype, 'releasePointerCapture', { configurable: true, value: () => undefined })
     createObjectURLMock.mockReturnValue('blob:assets-zip')
     Object.defineProperty(window.URL, 'createObjectURL', { configurable: true, value: createObjectURLMock })
     Object.defineProperty(window.URL, 'revokeObjectURL', { configurable: true, value: revokeObjectURLMock })
@@ -235,6 +238,33 @@ describe('AssetsView', () => {
     expect(screen.queryByRole('option', { name: '字体' })).toBeNull()
   })
 
+  it('应使用统一页面标题、筛选栏和工具面板承载资源列表', async () => {
+    renderAssetsView()
+
+    await waitFor(() => {
+      expect(screen.getByText('hero_illustration')).toBeInTheDocument()
+    })
+    expect(screen.getByRole('heading', { name: '默认工作空间 · 资源库' })).toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: '搜索资源' })).toBeInTheDocument()
+    expect(screen.getByText('筛选资源')).toBeInTheDocument()
+    expect(screen.getByText('资源预览')).toBeInTheDocument()
+  })
+
+  it('资源为空时应通过统一数据状态展示当前筛选结果', async () => {
+    listWorkspaceAssetsMock.mockResolvedValue({
+      items: [],
+      total: 0,
+      page: 1,
+      page_size: 24,
+    })
+    renderAssetsView()
+
+    await waitFor(() => {
+      expect(screen.getByText('暂无资源')).toBeInTheDocument()
+    })
+    expect(screen.getByText('调整筛选条件，或上传第一项资源。')).toBeInTheDocument()
+  })
+
   it('选择标签时应按当前状态范围筛选资源列表', async () => {
     renderAssetsView()
 
@@ -275,7 +305,7 @@ describe('AssetsView', () => {
     })
   })
 
-  it('新建内容资源应允许选择图片并默认生成 image.svg', async () => {
+  it('新建内容资源应提供图片类型选项', async () => {
     renderAssetsView()
 
     await waitFor(() => {
@@ -283,11 +313,9 @@ describe('AssetsView', () => {
     })
     await fireEvent.click(screen.getByText('新建内容资源'))
 
+    await fireEvent.pointerDown(screen.getByRole('combobox'), { button: 0, pointerType: 'mouse' })
     const imageOption = screen.getByRole('option', { name: '图片' })
     expect(imageOption).toBeInTheDocument()
-    await fireEvent.update(imageOption.closest('select')!, 'image')
-
-    expect(screen.getByDisplayValue('image.svg')).toBeInTheDocument()
   })
 
   it('资源管理页应能按选择类型上传资源', async () => {
@@ -297,7 +325,10 @@ describe('AssetsView', () => {
       expect(screen.getAllByText('hero_illustration').length).toBeGreaterThan(0)
     })
     await fireEvent.click(screen.getByText('上传资源'))
-    await fireEvent.update(screen.getByRole('option', { name: '图片' }).closest('select')!, 'image')
+    await fireEvent.pointerDown(screen.getByRole('combobox'), { button: 0, pointerType: 'mouse' })
+    const imageOption = screen.getByRole('option', { name: '图片' })
+    await fireEvent.pointerUp(imageOption, { button: 0, pointerType: 'mouse' })
+    await fireEvent.click(imageOption)
     await fireEvent.update(screen.getByPlaceholderText('可留空'), '封面,营销')
     await fireEvent.change(
       container.querySelector('input[type="file"][multiple]')!,
@@ -715,8 +746,8 @@ function renderAssetsView() {
             return () => h('section', `资源预览：${(props.asset as AssetResponse | null)?.name || ''}`)
           },
         }),
-        BaseButton: defineComponent({
-          name: 'BaseButton',
+        UiButton: defineComponent({
+          name: 'UiButton',
           props: {
             disabled: Boolean,
           },

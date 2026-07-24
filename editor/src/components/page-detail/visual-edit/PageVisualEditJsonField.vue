@@ -5,8 +5,8 @@
       <div class="flex items-center justify-between gap-3">
         <p class="min-w-0 flex-1 text-xs font-bold text-slate-700">{{ props.label }}</p>
         <div class="flex shrink-0 gap-1 whitespace-nowrap">
-          <button type="button" class="whitespace-nowrap rounded px-2 py-1 text-[11px] font-semibold text-slate-600 hover:bg-slate-100" @click="formatDraft">格式化</button>
-          <button type="button" class="whitespace-nowrap rounded px-2 py-1 text-[11px] font-semibold text-slate-600 hover:bg-slate-100" @click="restoreBaseline">恢复</button>
+          <UiButton variant="ghost" size="xs" class="whitespace-nowrap text-slate-600" @click="formatDraft">格式化</UiButton>
+          <UiButton variant="ghost" size="xs" class="whitespace-nowrap text-slate-600" @click="restoreBaseline">恢复</UiButton>
         </div>
       </div>
       <p v-if="props.componentProp" class="mt-1 text-[11px] text-amber-700">仅校验 JSON 格式，组件可能有额外运行约束。</p>
@@ -28,6 +28,7 @@
 import { ref, watch } from 'vue'
 
 import MonacoCodeEditor from '@/components/editor/MonacoCodeEditor.vue'
+import { UiButton } from '@/components/ui'
 import type { PageVisualEditJsonSource, PageVisualEditJsonValue } from '@/types/page-visual-edit'
 
 const MAX_JSON_BYTES = 200_000

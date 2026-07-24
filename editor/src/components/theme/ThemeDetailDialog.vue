@@ -1,11 +1,11 @@
 <!-- 文件功能：展示工作空间主题详情弹窗，集中查看主题预览、颜色 token，以及合并后的字体与品牌资源摘要。 -->
 <template>
-  <BaseDialog
-    :model-value="modelValue"
+  <UiDialog
+    :open="modelValue"
     :title="theme ? `${theme.name} · 主题详情` : '主题详情'"
     size="canvas"
     body-preset="auto"
-    @update:model-value="handleVisibleChange"
+    @update:open="handleVisibleChange"
   >
     <div v-if="loading" class="flex min-h-[320px] items-center justify-center rounded-2xl bg-slate-50/80 text-sm font-bold text-slate-400">
       正在加载主题详情...
@@ -24,7 +24,7 @@
           <div>
             <h3 class="text-sm font-black text-slate-900">快速预览</h3>
           </div>
-          <BaseButton
+          <UiButton
             v-if="!isDefaultTheme"
             size="sm"
             variant="ghost"
@@ -32,7 +32,7 @@
           >
             <Pin class="h-3.5 w-3.5" />
             设为默认
-          </BaseButton>
+          </UiButton>
         </div>
         <ThemePreviewCard
           class="w-full rounded-xl shadow-none"
@@ -132,7 +132,7 @@
         </aside>
       </div>
     </div>
-  </BaseDialog>
+  </UiDialog>
 </template>
 
 <script setup lang="ts">
@@ -140,8 +140,7 @@ import { computed, defineComponent, h, ref, watch } from 'vue'
 import { Pin, SwatchBook } from '@lucide/vue'
 
 import { getWorkspaceTheme } from '@/api/themes'
-import BaseButton from '@/components/ui/BaseButton.vue'
-import BaseDialog from '@/components/ui/BaseDialog.vue'
+import { UiButton, UiDialog } from '@/components/ui'
 import type { WorkspaceFontConfigItem, WorkspaceThemeItem } from '@/types/api'
 import ThemePreviewCard from './ThemePreviewCard.vue'
 
@@ -231,7 +230,7 @@ async function loadThemeDetail(): Promise<void> {
 }
 
 /**
- * 同步详情弹窗可见状态，供 BaseDialog 的关闭行为复用。
+ * 同步详情弹窗可见状态，供 UiDialog 的关闭行为复用。
  * @param value 弹窗目标可见状态
  */
 function handleVisibleChange(value: boolean): void {

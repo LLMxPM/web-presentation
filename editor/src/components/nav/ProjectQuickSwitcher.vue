@@ -1,8 +1,8 @@
 <!-- 文件功能：提供工作空间内的项目快速切换入口，便于在顶部导航中直接进入项目页面列表。 -->
 <template>
   <div class="project-switcher relative shrink-0" v-click-outside="closeDropdown" data-testid="project-quick-switcher">
-    <button
-      type="button"
+    <UiButton
+      variant="secondary"
       data-testid="project-quick-switcher-trigger"
       class="flex max-w-[220px] items-center gap-2 rounded-xl border border-slate-200/70 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm transition-all hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
       :class="{ 'border-indigo-200 bg-indigo-50 text-indigo-700': dropdownVisible }"
@@ -16,7 +16,7 @@
         class="h-4 w-4 shrink-0 text-slate-400 transition-transform duration-200"
         :class="{ 'rotate-180': dropdownVisible }"
       />
-    </button>
+    </UiButton>
 
     <Transition name="fade-scale">
       <div
@@ -26,8 +26,9 @@
         <div class="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-2">
           <span class="text-[11px] font-bold uppercase tracking-widest text-slate-400">快速切换项目</span>
           <div class="flex shrink-0 items-center gap-2">
-            <button
-              type="button"
+            <UiButton
+              variant="ghost"
+              size="xs"
               data-testid="project-quick-switcher-home"
               class="overview-header-action"
               :class="!currentProjectId ? 'overview-header-action-active' : 'overview-header-action-idle'"
@@ -35,15 +36,16 @@
             >
               <span>项目列表</span>
               <span class="overview-header-count">{{ projects.length }}</span>
-            </button>
+            </UiButton>
           </div>
         </div>
 
         <div class="max-h-72 overflow-y-auto px-1.5 py-1">
-          <button
+          <UiButton
             v-for="project in projects"
             :key="project.id"
-            type="button"
+            variant="ghost"
+            size="sm"
             data-testid="project-quick-switcher-item"
             class="project-item"
             :class="project.id === currentProjectId ? 'project-item-active' : 'project-item-idle'"
@@ -52,7 +54,7 @@
             <FolderKanban class="h-4 w-4 shrink-0" />
             <span class="min-w-0 flex-1 truncate text-left">{{ project.name }}</span>
             <Check v-if="project.id === currentProjectId" class="h-4 w-4 shrink-0" />
-          </button>
+          </UiButton>
 
           <div v-if="projectsLoading" class="px-4 py-5 text-center text-xs font-medium text-slate-400">
             正在加载项目...
@@ -73,6 +75,7 @@ import { useQuery } from '@tanstack/vue-query'
 import { Check, ChevronDown, FolderKanban } from '@lucide/vue'
 
 import { listProjects } from '@/api/catalog'
+import { UiButton } from '@/components/ui'
 import { buildProjectPagesPath, buildWorkspaceHomePath } from '@/utils/workspace-routes'
 
 const props = defineProps<{

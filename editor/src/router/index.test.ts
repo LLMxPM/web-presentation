@@ -17,6 +17,7 @@ vi.mock('@/views/WorkspaceStylesView.vue', () => ({ default: { template: '<div /
 vi.mock('@/views/AccountAiSettingsView.vue', () => ({ default: { template: '<div />' } }))
 vi.mock('@/views/UsersView.vue', () => ({ default: { template: '<div />' } }))
 vi.mock('@/views/NotFoundView.vue', () => ({ default: { template: '<div />' } }))
+vi.mock('@/views/UiLabView.vue', () => ({ default: { template: '<div />' } }))
 
 import { router } from '@/router'
 import { useAuthStore } from '@/stores/auth'
@@ -150,6 +151,13 @@ describe('router guard', () => {
     await router.push('/workspaces/1/projects/2/pages/3')
     expect(router.currentRoute.value.meta.workspaceNav).toBe('projects')
     expect(router.currentRoute.value.meta.fullHeight).toBe(true)
+  })
+
+  it('开发环境应注册独立且不受鉴权影响的 UI Lab 路由', () => {
+    const uiLabRoute = router.getRoutes().find(route => route.name === 'uiLab')
+
+    expect(uiLabRoute?.path).toBe('/ui-lab')
+    expect(uiLabRoute?.meta.requiresAuth).toBeUndefined()
   })
 
   it('已登录时应允许进入空间首页，并把旧项目列表路径重定向到空间首页', async () => {

@@ -1,13 +1,15 @@
 <!-- 文件功能：渲染未加入路由的页面分区，包括归档入口、批量工具条、页面卡片和新增页面卡片。 -->
 <template>
   <section class="space-y-4">
-    <div class="flex flex-wrap items-center justify-between gap-4">
-      <div class="flex flex-wrap items-center gap-3">
-        <h2 class="text-lg font-bold text-slate-900">未加入路由</h2>
-        <span class="text-xs font-semibold text-slate-400">{{ pages.length }} 个页面</span>
-      </div>
-      <div class="flex min-w-0 flex-wrap items-center justify-end gap-2">
-        <BaseButton
+    <CommandBar label="未加入路由页面操作">
+      <template #leading>
+        <div class="flex min-w-0 items-center gap-3">
+          <h2 class="truncate text-base font-semibold text-[rgb(var(--ui-text))]">未加入路由</h2>
+          <span class="text-xs text-[rgb(var(--ui-text-muted))]">{{ pages.length }} 个页面</span>
+        </div>
+      </template>
+      <template #actions>
+        <UiButton
           v-if="selectedCount === 0"
           data-testid="batch-refresh-unrouted-page-screenshots"
           variant="ghost"
@@ -21,8 +23,8 @@
           </template>
           刷新截图
           <span v-if="refreshableScreenshotCount > 0">({{ refreshableScreenshotCount }})</span>
-        </BaseButton>
-        <BaseButton
+        </UiButton>
+        <UiButton
           v-if="selectedCount === 0"
           variant="ghost"
           size="sm"
@@ -33,7 +35,7 @@
             <Archive class="h-3.5 w-3.5" />
           </template>
           归档页面
-        </BaseButton>
+        </UiButton>
         <PageBatchToolbar
           scope="unrouted"
           :batchable-count="pages.length"
@@ -48,9 +50,21 @@
           @batch-archive-pages="emit('batch-archive-pages')"
           @clear-selection="emit('clear-selection')"
         />
-      </div>
-    </div>
+      </template>
+    </CommandBar>
 
+    <DataState
+      :state="pages.length === 0 ? 'empty' : 'ready'"
+      title="当前没有未加入路由的页面"
+      description="可新增页面，或从路由配置中调整现有页面。"
+      :retryable="false"
+    >
+    <template #empty>
+      <UiButton class="mt-2" @click="emit('open-create')">
+        <Plus class="h-4 w-4" />
+        新增页面
+      </UiButton>
+    </template>
     <div class="grid gap-4" :style="pageCardGridStyle">
       <PageCard
         v-for="page in pages"
@@ -72,8 +86,8 @@
         @archive-page="emit('archive-page', $event)"
       />
 
-      <button
-        type="button"
+      <UiButton
+        variant="ghost"
         class="flex min-h-[220px] flex-col items-center justify-center rounded-lg border-2 border-dashed border-slate-200 bg-slate-50/50 p-6 text-slate-500 transition-all duration-300 hover:border-indigo-400 hover:bg-indigo-50 hover:text-indigo-600"
         :style="pageCreateCardStyle"
         @click="emit('open-create')"
@@ -82,8 +96,9 @@
           <Plus class="h-6 w-6" />
         </div>
         <span class="text-base font-bold">新增页面</span>
-      </button>
+      </UiButton>
     </div>
+    </DataState>
   </section>
 </template>
 
@@ -92,7 +107,9 @@ import type { CSSProperties } from 'vue'
 import { Archive, Plus, RefreshCw } from '@lucide/vue'
 
 import type { PageItem } from '@/types/api'
-import BaseButton from '@/components/ui/BaseButton.vue'
+import CommandBar from '@/components/patterns/CommandBar.vue'
+import DataState from '@/components/patterns/DataState.vue'
+import { UiButton } from '@/components/ui'
 import PageBatchToolbar from './PageBatchToolbar.vue'
 import PageCard from './PageCard.vue'
 import type { PageBatchAction, PageBatchScope } from './page-list-types'

@@ -1,7 +1,7 @@
 <!-- 文件功能：项目路由配置弹窗，负责加载并编辑项目的结构化路由树。 -->
 <template>
-  <BaseDialog :model-value="modelValue" :title="project ? `路由配置 · ${project.name}` : '路由配置'" size="canvas" body-preset="editor"
-    @update:model-value="handleVisibleChange">
+  <UiDialog :open="modelValue" :title="project ? `路由配置 · ${project.name}` : '路由配置'" size="canvas" body-preset="editor"
+    @update:open="handleVisibleChange">
     <div v-if="project" class="h-full min-h-0">
 
       <ProjectRouteEditor v-model="draftRoutes" :pages="routePages" :loading="routeEditorLoading" />
@@ -12,12 +12,12 @@
     </div>
 
     <template #footer>
-      <BaseButton variant="ghost" @click="handleVisibleChange(false)">取消</BaseButton>
-      <BaseButton variant="primary" :loading="loading" :disabled="!project" @click="handleSave">
+      <UiButton variant="ghost" @click="handleVisibleChange(false)">取消</UiButton>
+      <UiButton variant="primary" :loading="loading" :disabled="!project" @click="handleSave">
         保存路由
-      </BaseButton>
+      </UiButton>
     </template>
-  </BaseDialog>
+  </UiDialog>
 </template>
 
 <script setup lang="ts">
@@ -26,8 +26,7 @@ import { ref, watch } from 'vue'
 import { getProjectRoutes, listPages } from '@/api/catalog'
 import { getErrorMessage } from '@/api/http'
 import ProjectRouteEditor from '@/components/project/ProjectRouteEditor.vue'
-import BaseButton from '@/components/ui/BaseButton.vue'
-import BaseDialog from '@/components/ui/BaseDialog.vue'
+import { UiButton, UiDialog } from '@/components/ui'
 import type { PageItem, ProjectItem, ProjectRouteItemWrite } from '@/types/api'
 import { mapRouteTreeToWriteItems, validateProjectRoutes } from '@/utils/project-route'
 import { Message } from '@/utils/message'

@@ -23,64 +23,60 @@
         v-if="dropdownVisible"
         class="absolute right-0 mt-2 w-48 bg-white border border-slate-200 rounded-2xl shadow-xl z-50 py-1.5 overflow-hidden"
       >
-        <button 
+        <UiButton variant="ghost" size="sm"
           @click="handleCommand('password')"
           class="w-full flex items-center gap-3 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition-colors"
         >
           <KeyRound class="w-4 h-4 text-slate-400" />
           修改密码
-        </button>
-        <button 
+        </UiButton>
+        <UiButton variant="ghost" size="sm"
           @click="handleCommand('ai-settings')"
           class="w-full flex items-center gap-3 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition-colors"
         >
           <Bot class="w-4 h-4 text-slate-400" />
           AI 设置
-        </button>
-        <button
+        </UiButton>
+        <UiButton
+          variant="ghost"
+          size="sm"
           v-if="user?.role === 'platform_admin'"
           @click="handleCommand('users')"
           class="w-full flex items-center gap-3 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition-colors"
         >
           <UserCog class="w-4 h-4 text-slate-400" />
           用户管理
-        </button>
+        </UiButton>
         <div class="my-1.5 border-t border-slate-100"></div>
-        <button 
+        <UiButton variant="ghost" size="sm"
           @click="handleCommand('logout')"
           class="w-full flex items-center gap-3 px-4 py-2 text-sm font-semibold text-red-600 hover:bg-red-50 transition-colors"
         >
           <LogOut class="w-4 h-4 text-red-400" />
           退出登录
-        </button>
+        </UiButton>
       </div>
     </Transition>
 
     <!-- Password Dialog -->
-    <BaseDialog v-model="passwordVisible" title="安全设置 - 修改密码" size="compact">
+    <UiDialog :open="passwordVisible" title="安全设置 - 修改密码" size="compact" @update:open="passwordVisible = $event">
       <div class="space-y-5">
-        <BaseInput 
-          v-model="form.old_password" 
-          type="password" 
-          label="当前密码" 
-          placeholder="请输入原有的访问密码"
-          required
-          :error="errors.old_password"
-        />
-        <BaseInput 
-          v-model="form.new_password" 
-          type="password" 
-          label="新密码" 
-          placeholder="请输入 8 到 128 位的新密码"
-          required
-          :error="errors.new_password"
-        />
+        <UiFormField label="当前密码" required :error="errors.old_password">
+          <template #default="field">
+            <UiInput v-model="form.old_password" type="password" placeholder="请输入原有的访问密码" required :input-id="field.inputId" :described-by="field.describedBy" :invalid="field.invalid" password-toggle />
+          </template>
+        </UiFormField>
+        <UiFormField label="新密码" required :error="errors.new_password">
+          <template #default="field">
+            <UiInput v-model="form.new_password" type="password" placeholder="请输入 8 到 128 位的新密码" required :input-id="field.inputId" :described-by="field.describedBy" :invalid="field.invalid" password-toggle />
+          </template>
+        </UiFormField>
       </div>
       <template #footer>
-        <BaseButton variant="ghost" @click="passwordVisible = false">取消</BaseButton>
-        <BaseButton variant="primary" :loading="saving" @click="handleUpdatePassword">确认更新</BaseButton>
+        <UiButton variant="ghost" @click="passwordVisible = false">取消</UiButton>
+        <UiButton variant="primary" :loading="saving" @click="handleUpdatePassword">确认更新</UiButton>
       </template>
-    </BaseDialog>
+    </UiDialog>
   </div>
 </template>
 
@@ -93,9 +89,7 @@ import { changePassword } from '@/api/auth'
 import { getErrorMessage } from '@/api/http'
 import { useAuthStore } from '@/stores/auth'
 import { Message } from '@/utils/message'
-import BaseButton from '@/components/ui/BaseButton.vue'
-import BaseInput from '@/components/ui/BaseInput.vue'
-import BaseDialog from '@/components/ui/BaseDialog.vue'
+import { UiButton, UiDialog, UiFormField, UiInput } from '@/components/ui'
 
 const router = useRouter()
 const authStore = useAuthStore()

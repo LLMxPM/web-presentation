@@ -13,37 +13,40 @@
     </template>
 
     <template #actions>
-      <button
+      <UiButton
         v-if="workspaceId"
         type="button"
-        class="flex items-center gap-1 rounded-lg p-1.5 text-xs font-bold text-indigo-600 transition-colors hover:bg-indigo-50"
+        variant="ghost"
+        size="sm"
         title="打开完整资源库页面"
         @click="openAssetLibraryPage()"
       >
         <ArrowUpRight class="h-4 w-4" />
         <span class="hidden lg:inline">资源管理</span>
-      </button>
-      <button
+      </UiButton>
+      <UiButton
         v-if="canCreateTextAsset"
         type="button"
-        class="flex items-center gap-1 rounded-lg p-1.5 text-xs font-bold text-emerald-600 transition-colors hover:bg-emerald-50 disabled:opacity-50"
+        variant="secondary"
+        size="sm"
         title="文本创建资源"
         :disabled="uploading"
         @click="openTextCreateModal"
       >
         <FilePlus2 class="h-4 w-4" />
         <span class="hidden lg:inline">新建</span>
-      </button>
-      <button
+      </UiButton>
+      <UiButton
         type="button"
-        class="flex items-center gap-1 rounded-lg p-1.5 text-xs font-bold text-indigo-600 transition-colors hover:bg-indigo-50 disabled:opacity-50"
+        variant="ghost"
+        size="sm"
         title="上传资源"
         :disabled="uploading"
         @click="triggerUpload"
       >
         <Upload class="h-4 w-4" />
         <span class="hidden lg:inline">{{ uploading ? '上传中' : '上传' }}</span>
-      </button>
+      </UiButton>
       <input
         ref="fileInput"
         type="file"
@@ -76,21 +79,9 @@
       </div>
     </div>
 
-    <div v-if="loading" class="flex flex-1 flex-col items-center justify-center gap-3 p-6">
-      <div class="h-8 w-8 animate-spin rounded-full border-4 border-indigo-600 border-t-transparent"></div>
-      <span class="text-sm font-bold text-slate-400">正在加载资源...</span>
-    </div>
-
-    <div v-else class="asset-list-scroll min-h-0 flex-1 overflow-y-auto p-3">
-      <div
-        v-if="assets.length === 0"
-        class="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-slate-100 bg-slate-50 px-4 py-12 text-center"
-      >
-        <FolderArchive class="mb-3 h-10 w-10 text-slate-300" />
-        <p class="text-sm font-semibold text-slate-500">{{ emptyAssetText }}</p>
-      </div>
-
-      <div v-else class="space-y-2">
+    <div class="asset-list-scroll min-h-0 flex-1 overflow-y-auto p-3">
+      <DataState :state="assetDataState" :title="assetDataState === 'empty' ? emptyAssetText : undefined">
+      <div class="space-y-2">
         <article
           v-for="asset in assets"
           :key="asset.id"
@@ -139,33 +130,31 @@
           </div>
 
           <div class="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-            <button
+            <UiIconButton
               type="button"
-              class="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-white hover:text-indigo-600"
-              title="预览资源"
+              label="预览资源"
               @click.stop="openPreview(asset)"
             >
               <ZoomIn class="h-3.5 w-3.5" />
-            </button>
-            <button
+            </UiIconButton>
+            <UiIconButton
               type="button"
-              class="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-white hover:text-indigo-600"
-              title="复制资源 name"
+              label="复制资源 name"
               @click.stop="copyAssetName(asset)"
             >
               <Copy class="h-3.5 w-3.5" />
-            </button>
-            <button
+            </UiIconButton>
+            <UiIconButton
               type="button"
-              class="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-white hover:text-indigo-600"
-              title="在完整资源库中管理"
+              label="在完整资源库中管理"
               @click.stop="openAssetLibraryPage(asset)"
             >
               <ArrowUpRight class="h-3.5 w-3.5" />
-            </button>
+            </UiIconButton>
           </div>
         </article>
       </div>
+      </DataState>
     </div>
 
     <PaginationControl
@@ -179,48 +168,48 @@
     />
   </LibrarySidebarPanel>
 
-  <BaseDialog
-    :model-value="textCreating"
+  <UiDialog
+    :open="textCreating"
     :title="`新建${activeTypeLabel}资源`"
     size="compact"
     body-preset="auto"
     :z-index="210"
-    @update:model-value="value => { if (!value) closeTextCreateModal() }"
+    @update:open="value => { if (!value) closeTextCreateModal() }"
   >
     <div class="space-y-4">
       <div class="grid gap-3 sm:grid-cols-2">
         <div>
           <label class="mb-1 block text-xs font-bold text-slate-500">资源 name</label>
-          <input v-model="textCreateForm.name" type="text" class="h-9 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm outline-none focus:border-indigo-500 focus:bg-white" />
+          <UiInput v-model="textCreateForm.name" />
         </div>
         <div>
           <label class="mb-1 block text-xs font-bold text-slate-500">文件名</label>
-          <input v-model="textCreateForm.file_name" type="text" class="h-9 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm outline-none focus:border-indigo-500 focus:bg-white" />
+          <UiInput v-model="textCreateForm.file_name" />
         </div>
       </div>
       <div>
         <label class="mb-1 block text-xs font-bold text-slate-500">文本内容</label>
-        <textarea v-model="textCreateForm.content" rows="12" class="w-full resize-y rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 font-mono text-xs leading-5 outline-none focus:border-indigo-500 focus:bg-white"></textarea>
+        <UiInput v-model="textCreateForm.content" type="textarea" :rows="12" class="font-mono text-xs leading-5" />
       </div>
     </div>
 
     <template #footer>
-      <button type="button" class="rounded-xl bg-slate-100 px-4 py-2 text-sm font-bold text-slate-600 transition-all hover:bg-slate-200" @click="closeTextCreateModal">取消</button>
-      <button type="button" class="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-bold text-white shadow-sm transition-all hover:bg-indigo-700 disabled:opacity-50" :disabled="uploading" @click="saveTextAsset">
+      <UiButton variant="ghost" @click="closeTextCreateModal">取消</UiButton>
+      <UiButton :loading="uploading" @click="saveTextAsset">
         {{ uploading ? '创建中...' : '创建资源' }}
-      </button>
+      </UiButton>
     </template>
-  </BaseDialog>
+  </UiDialog>
 
-  <BaseDialog
-    :model-value="!!runtimePreviewAsset"
+  <UiDialog
+    :open="!!runtimePreviewAsset"
     :title="runtimePreviewAsset?.name || '资源预览'"
     :description="runtimePreviewAsset?.original_name || ''"
     size="workbench"
     body-preset="immersive"
     overlay-class="bg-slate-900/90 backdrop-blur-md"
     :z-index="300"
-    @update:model-value="handleRuntimePreviewVisibleChange"
+    @update:open="handleRuntimePreviewVisibleChange"
   >
     <div v-if="runtimePreviewAsset" class="h-full min-h-0 bg-slate-50 p-4">
       <AssetPreviewFrame
@@ -230,10 +219,10 @@
         :asset="runtimePreviewAsset"
       />
     </div>
-  </BaseDialog>
+  </UiDialog>
 
-  <BaseDialog
-    :model-value="!!previewAsset"
+  <UiDialog
+    :open="!!previewAsset"
     size="workbench"
     body-preset="immersive"
     :show-header="false"
@@ -244,7 +233,7 @@
     panel-class="!pointer-events-none !border-0 !bg-transparent !shadow-none"
     overlay-class="bg-slate-900/90 backdrop-blur-md"
     :z-index="300"
-    @update:model-value="handleQuickPreviewDialogVisibleChange"
+    @update:open="handleQuickPreviewDialogVisibleChange"
   >
     <div v-if="previewAsset" class="pointer-events-none relative flex h-full min-h-0 items-center justify-center p-4 sm:p-6">
       <img
@@ -273,7 +262,7 @@
         {{ previewAsset.original_name }}
       </div>
     </div>
-  </BaseDialog>
+  </UiDialog>
 </template>
 
 <script setup lang="ts">
@@ -286,7 +275,6 @@ import {
   Download,
   FilePlus2,
   FileText,
-  FolderArchive,
   Image,
   PenTool,
   Sigma,
@@ -310,10 +298,11 @@ import { ASSET_GROUPS, ASSET_UPLOAD_ACCEPT, TEXT_CREATABLE_ASSET_TYPES, getTextA
 import AssetPreviewFrame from '@/components/project/AssetPreviewFrame.vue'
 import LibraryChipFilter from '@/components/project/LibraryChipFilter.vue'
 import LibrarySegmentedControl from '@/components/project/LibrarySegmentedControl.vue'
+import DataState from '@/components/patterns/DataState.vue'
 import LibrarySidebarPanel from '@/components/project/LibrarySidebarPanel.vue'
-import BaseDialog from '@/components/ui/BaseDialog.vue'
 import BaseCloseButton from '@/components/ui/BaseCloseButton.vue'
 import PaginationControl from '@/components/ui/PaginationControl.vue'
+import { UiButton, UiDialog, UiIconButton, UiInput } from '@/components/ui'
 
 const props = defineProps<{
   modelValue: boolean
@@ -336,6 +325,9 @@ const activeGroupKey = ref(assetGroups[0]?.key || 'foundation')
 const activeType = ref<AssetType>('icon')
 const activeTag = ref<string | null>(null)
 const loading = ref(false)
+const assetDataState = computed<'loading' | 'empty' | 'ready'>(() => (
+  loading.value ? 'loading' : assets.value.length ? 'ready' : 'empty'
+))
 const uploading = ref(false)
 const assets = ref<AssetResponse[]>([])
 const total = ref(0)

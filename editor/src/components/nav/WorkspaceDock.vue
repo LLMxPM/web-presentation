@@ -5,38 +5,38 @@
     class="flex h-full w-14 shrink-0 flex-col items-center border-l border-slate-200 bg-white px-1 py-3 shadow-sm"
   >
     <div class="flex min-h-0 flex-1 flex-col items-center gap-1.5">
-      <button
+      <UiButton
         v-for="item in navigationItems"
         :key="item.key"
-        type="button"
+        variant="ghost"
         :data-testid="`workspace-dock-${item.key}`"
         :title="item.title"
         :aria-label="item.title"
-        class="dock-button"
+        class="dock-button [&>span]:flex-col [&>span]:gap-0"
         :class="item.key === activeKey ? 'dock-button-active' : 'dock-button-idle'"
         @click="emit('navigate', item.path)"
       >
         <component :is="item.icon" class="h-5 w-5" />
         <span class="mt-1 text-[10px] font-bold leading-none">{{ item.label }}</span>
-      </button>
+      </UiButton>
 
       <div class="mt-2 h-px w-8 bg-slate-200" />
       <span class="text-[10px] font-bold leading-none text-slate-300" aria-hidden="true">侧栏</span>
 
-      <button
+      <UiButton
         v-for="item in panelItems"
         :key="item.key"
-        type="button"
+        variant="ghost"
         :data-testid="`workspace-dock-panel-${item.key}`"
         :title="item.title"
         :aria-label="item.title"
-        class="dock-button"
+        class="dock-button [&>span]:flex-col [&>span]:gap-0"
         :class="item.key === activePanel ? 'dock-button-panel-active' : 'dock-button-idle'"
         @click="emit('toggle-panel', item.key)"
       >
         <component :is="item.icon" class="h-5 w-5" />
         <span class="mt-1 text-[10px] font-bold leading-none">{{ item.label }}</span>
-      </button>
+      </UiButton>
     </div>
   </aside>
 </template>
@@ -45,6 +45,7 @@
 import { computed } from 'vue'
 import { Image, Layers, LayoutDashboard, Palette, SwatchBook } from '@lucide/vue'
 
+import { UiButton } from '@/components/ui'
 import {
   buildWorkspaceAssetsPath,
   buildWorkspaceComponentsPath,

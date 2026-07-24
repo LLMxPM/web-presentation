@@ -31,40 +31,39 @@
           <slot name="component-actions" :close-full-preview="closeFullPreviewDialog" :inside-full-preview="false" />
         </div>
         <div class="flex items-center justify-end gap-1.5">
-          <button
+          <UiIconButton
             v-if="simplified"
-            type="button"
-            class="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 transition-colors hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-600 disabled:cursor-not-allowed disabled:border-slate-100 disabled:bg-slate-50 disabled:text-slate-300"
+            variant="secondary"
+            size="sm"
             :disabled="!source"
-            title="弹窗预览"
-            aria-label="弹窗预览"
+            label="弹窗预览"
             @click="openFullPreviewDialog"
           >
-            <Maximize2 class="h-4 w-4" />
-          </button>
-          <button
-            type="button"
-            class="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 transition-colors hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-600 disabled:cursor-not-allowed disabled:border-slate-100 disabled:bg-slate-50 disabled:text-slate-300"
+            <Maximize2 />
+          </UiIconButton>
+          <UiIconButton
+            variant="secondary"
+            size="sm"
             :loading="previewLoading"
             :disabled="!source"
-            title="刷新预览"
-            aria-label="刷新预览"
+            label="刷新预览"
             @click="refreshCurrentPreview"
           >
-            <RefreshCw class="h-4 w-4" :class="previewLoading ? 'animate-spin' : ''" />
-          </button>
+            <RefreshCw />
+          </UiIconButton>
           <slot name="actions" />
         </div>
       </div>
     </header>
 
-    <div v-if="!source" class="flex min-h-0 flex-1 items-center justify-center p-8">
-      <div class="max-w-sm rounded-xl border border-dashed border-slate-200 bg-white px-7 py-8 text-center">
-        <PackageOpen class="mx-auto mb-3 h-10 w-10 text-slate-300" />
-        <p class="text-sm font-bold text-slate-600">请选择左侧组件</p>
-        <p class="mt-2 text-xs leading-6 text-slate-400">工作空间组件会默认进入预览，Runtime Kit 可预览能力也会显示在这里。</p>
-      </div>
-    </div>
+    <DataState
+      v-if="!source"
+      class="min-h-0 flex-1 p-8"
+      state="empty"
+      title="请选择左侧组件"
+      description="工作空间组件会默认进入预览，Runtime Kit 可预览能力也会显示在这里。"
+      :retryable="false"
+    />
 
     <main v-else class="flex min-h-0 flex-1 flex-col overflow-hidden">
       <div class="shrink-0 border-b border-slate-200 bg-white">
@@ -108,40 +107,47 @@
       </div>
 
       <div class="min-h-0 flex-1 overflow-hidden">
-        <div
-          :ref="bindPreviewViewportRef"
-          class="relative flex h-full items-center justify-center"
-          :class="simplified ? 'p-2' : 'p-4'"
-        >
-          <div class="relative shrink-0" :style="previewFrameStageStyle">
-            <div
-              class="absolute left-0 top-0 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm shadow-slate-200/70"
-              :style="previewFrameContainerStyle"
-            >
-              <iframe
-                v-if="previewFrameUrl"
-                :ref="bindPreviewFrameRef"
-                :src="previewFrameUrl"
-                :title="iframeTitle"
-                class="block h-full w-full bg-slate-50"
-                referrerpolicy="same-origin"
-              />
+        <div class="relative h-full">
+          <DataState
+            v-if="!previewFrameUrl"
+            class="h-full"
+            :state="previewDataState"
+            :title="previewStateTitle"
+            :description="previewStateDescription"
+            @retry="refreshCurrentPreview"
+          >
+            <template #empty>
+              <UiButton size="sm" @click="refreshCurrentPreview">生成预览</UiButton>
+            </template>
+          </DataState>
+          <div
+            v-else
+            :ref="bindPreviewViewportRef"
+            class="relative flex h-full items-center justify-center p-4"
+          >
+            <div class="relative shrink-0" :style="previewFrameStageStyle">
               <div
-                v-else
-                class="flex h-full items-center justify-center px-6 text-center text-sm leading-7 text-slate-400"
+                class="absolute left-0 top-0 overflow-hidden rounded-[var(--ui-radius-lg)] border border-[rgb(var(--ui-border))] bg-[rgb(var(--ui-surface))] shadow-sm shadow-slate-200/70"
+                :style="previewFrameContainerStyle"
               >
-                {{ previewPlaceholderText }}
+                <iframe
+                  :ref="bindPreviewFrameRef"
+                  :src="previewFrameUrl"
+                  :title="iframeTitle"
+                  class="block h-full w-full bg-[rgb(var(--ui-surface-muted))]"
+                  referrerpolicy="same-origin"
+                />
               </div>
             </div>
+            <button
+              v-if="simplified"
+              type="button"
+              class="absolute inset-0 z-10 h-full w-full cursor-zoom-in border-0 bg-transparent p-0 opacity-0"
+              title="打开完整预览"
+              aria-label="打开完整预览"
+              @click="openFullPreviewDialog"
+            />
           </div>
-          <button
-            v-if="simplified && previewFrameUrl"
-            type="button"
-            class="absolute inset-0 z-10 cursor-zoom-in bg-transparent"
-            title="打开完整预览"
-            aria-label="打开完整预览"
-            @click="openFullPreviewDialog"
-          />
         </div>
       </div>
     </main>
@@ -158,7 +164,7 @@
           <slot name="component-actions" :close-full-preview="closeFullPreviewDialog" :inside-full-preview="true" />
         </template>
         <template #actions>
-          <BaseCloseButton label="关闭组件预览" @click="closeFullPreviewDialog" />
+          <UiIconButton label="关闭组件预览" @click="closeFullPreviewDialog"><X /></UiIconButton>
         </template>
       </ComponentPreviewWorkbench>
     </ComponentPreviewDialog>
@@ -166,9 +172,9 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onUnmounted, ref, watch } from 'vue'
 import type { ComponentPublicInstance } from 'vue'
-import { Maximize2, PackageOpen, RefreshCw } from '@lucide/vue'
+import { Maximize2, RefreshCw, X } from '@lucide/vue'
 
 import { getErrorMessage } from '@/api/http'
 import { createComponentPreviewArtifactFromSource } from '@/api/preview'
@@ -177,7 +183,8 @@ import ComponentPreviewParameterDock from '@/components/component-preview/Compon
 import ComponentPreviewDialog from '@/components/component-preview/ComponentPreviewDialog.vue'
 import ComponentPreviewPlacementToolbar from '@/components/component-preview/ComponentPreviewPlacementToolbar.vue'
 import ComponentPreviewReleaseToolbar from '@/components/component-preview/ComponentPreviewReleaseToolbar.vue'
-import BaseCloseButton from '@/components/ui/BaseCloseButton.vue'
+import { DataState } from '@/components/patterns'
+import { UiButton, UiIconButton } from '@/components/ui'
 import { useComponentPreviewSession } from '@/composables/useComponentPreviewSession'
 import { usesZeroPaddingComponentPreview } from '@/composables/useWorkspaceComponentDraft'
 import type { ComponentPreviewWorkbenchSource } from '@/components/component-preview/component-preview-workbench'
@@ -255,9 +262,21 @@ const resolvedSubtitle = computed(() => {
 const titleBarComponentCode = computed(() => previewComponentMeta.value?.code || '')
 const isDraftPreview = computed(() => props.source?.kind === 'workspace-draft' && props.source.isDraftPreview)
 const iframeTitle = computed(() => props.source?.kind === 'runtime-kit' ? 'runtime-kit-component-preview' : 'component-preview')
-const previewPlaceholderText = computed(() => (
-  previewLoading.value ? '正在生成组件预览...' : '当前尚未生成预览，请点击“刷新预览”。'
-))
+const previewDataState = computed<'loading' | 'empty' | 'error' | 'ready'>(() => {
+  if (previewLoading.value) return 'loading'
+  if (previewErrorMessage.value) return 'error'
+  return previewFrameUrl.value ? 'ready' : 'empty'
+})
+const previewStateTitle = computed(() => {
+  if (previewDataState.value === 'loading') return '正在生成组件预览'
+  if (previewDataState.value === 'error') return '组件预览生成失败'
+  return '当前尚未生成预览'
+})
+const previewStateDescription = computed(() => {
+  if (previewDataState.value === 'loading') return '正在准备页面尺寸、主题与组件参数。'
+  if (previewDataState.value === 'error') return previewErrorMessage.value
+  return '可以重新生成预览，或检查组件源码和 previewSchema。'
+})
 
 watch(
   () => [sourceIdentity.value, props.refreshKey],
@@ -271,6 +290,15 @@ watch(
   },
   { immediate: true },
 )
+
+watch(previewFrameUrl, async (frameUrl) => {
+  if (!frameUrl) {
+    return
+  }
+  // iframe 地址异步写入后，缩放视口才会由 v-if 挂载；待 DOM 提交后重新量取右侧工作台可用区域。
+  await nextTick()
+  session.observeViewport()
+})
 
 onUnmounted(() => {
   clearAutomaticPageRefresh()
@@ -422,6 +450,7 @@ function normalizeWorkspacePreviewSchema(rawValue: string | null): string | null
  */
 function bindPreviewViewportRef(element: Element | ComponentPublicInstance | null): void {
   previewViewportRef.value = element instanceof HTMLElement ? element : null
+  session.observeViewport()
 }
 
 /**

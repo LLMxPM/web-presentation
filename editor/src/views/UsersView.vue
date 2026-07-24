@@ -5,12 +5,9 @@
       <div>
         <h1 class="text-2xl font-bold text-slate-900">用户管理</h1>
       </div>
-      <button
-        class="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
-        @click="openCreate"
-      >
+      <UiButton variant="primary" @click="openCreate">
         新建用户
-      </button>
+      </UiButton>
     </div>
 
     <div class="overflow-hidden rounded-lg border border-slate-200 bg-white">
@@ -38,47 +35,75 @@
               </span>
             </td>
             <td class="space-x-2 px-4 py-3 text-right">
-              <button class="text-sm font-semibold text-slate-700 hover:text-slate-950" @click="openEdit(user)">编辑</button>
-              <button class="text-sm font-semibold text-slate-700 hover:text-slate-950" @click="openReset(user)">重置密码</button>
+              <UiButton variant="ghost" size="sm" @click="openEdit(user)">编辑</UiButton>
+              <UiButton variant="ghost" size="sm" @click="openReset(user)">重置密码</UiButton>
             </td>
           </tr>
         </tbody>
       </table>
     </div>
 
-    <BaseDialog v-model="editorVisible" :title="editingUser ? '编辑用户' : '新建用户'" size="compact">
+    <UiDialog :open="editorVisible" :title="editingUser ? '编辑用户' : '新建用户'" size="compact" @update:open="editorVisible = $event">
       <div class="space-y-4">
-        <BaseInput v-if="!editingUser" v-model="form.username" label="用户名" required />
-        <BaseInput v-model="form.display_name" label="显示名" required />
-        <BaseInput v-if="!editingUser" v-model="form.password" type="password" label="初始密码" required />
-        <label class="block space-y-1 text-sm font-semibold text-slate-700">
-          <span>角色</span>
-          <select v-model="form.role" class="w-full rounded-md border border-slate-300 px-3 py-2">
-            <option value="workspace_user">普通用户</option>
-            <option value="platform_admin">平台管理员</option>
-          </select>
-        </label>
-        <label class="block space-y-1 text-sm font-semibold text-slate-700">
-          <span>状态</span>
-          <select v-model="form.status" class="w-full rounded-md border border-slate-300 px-3 py-2">
-            <option value="active">启用</option>
-            <option value="archived">停用</option>
-          </select>
-        </label>
+        <UiFormField v-if="!editingUser" label="用户名" required v-slot="field">
+          <UiInput
+            v-model="form.username"
+            :input-id="field.inputId"
+            :described-by="field.describedBy"
+            :invalid="field.invalid"
+            required
+          />
+        </UiFormField>
+        <UiFormField label="显示名" required v-slot="field">
+          <UiInput
+            v-model="form.display_name"
+            :input-id="field.inputId"
+            :described-by="field.describedBy"
+            :invalid="field.invalid"
+            required
+          />
+        </UiFormField>
+        <UiFormField v-if="!editingUser" label="初始密码" required v-slot="field">
+          <UiInput
+            v-model="form.password"
+            type="password"
+            password-toggle
+            :input-id="field.inputId"
+            :described-by="field.describedBy"
+            :invalid="field.invalid"
+            required
+          />
+        </UiFormField>
+        <UiFormField label="角色">
+          <UiSelect v-model="form.role" :options="roleOptions" />
+        </UiFormField>
+        <UiFormField label="状态">
+          <UiSelect v-model="form.status" :options="statusOptions" />
+        </UiFormField>
       </div>
       <template #footer>
-        <BaseButton variant="ghost" @click="editorVisible = false">取消</BaseButton>
-        <BaseButton variant="primary" :loading="saving" @click="saveUser">保存</BaseButton>
+        <UiButton variant="ghost" @click="editorVisible = false">取消</UiButton>
+        <UiButton variant="primary" :loading="saving" @click="saveUser">保存</UiButton>
       </template>
-    </BaseDialog>
+    </UiDialog>
 
-    <BaseDialog v-model="resetVisible" title="重置密码" size="compact">
-      <BaseInput v-model="resetPassword" type="password" label="新密码" required />
+    <UiDialog :open="resetVisible" title="重置密码" size="compact" @update:open="resetVisible = $event">
+      <UiFormField label="新密码" required v-slot="field">
+        <UiInput
+          v-model="resetPassword"
+          type="password"
+          password-toggle
+          :input-id="field.inputId"
+          :described-by="field.describedBy"
+          :invalid="field.invalid"
+          required
+        />
+      </UiFormField>
       <template #footer>
-        <BaseButton variant="ghost" @click="resetVisible = false">取消</BaseButton>
-        <BaseButton variant="primary" :loading="saving" @click="savePassword">保存</BaseButton>
+        <UiButton variant="ghost" @click="resetVisible = false">取消</UiButton>
+        <UiButton variant="primary" :loading="saving" @click="savePassword">保存</UiButton>
       </template>
-    </BaseDialog>
+    </UiDialog>
   </section>
 </template>
 
@@ -88,9 +113,8 @@ import { useQuery, useQueryClient } from '@tanstack/vue-query'
 
 import { createUser, listUsers, resetUserPassword, updateUser } from '@/api/users'
 import { getErrorMessage } from '@/api/http'
-import BaseButton from '@/components/ui/BaseButton.vue'
-import BaseDialog from '@/components/ui/BaseDialog.vue'
-import BaseInput from '@/components/ui/BaseInput.vue'
+import { UiButton, UiDialog, UiFormField, UiInput, UiSelect } from '@/components/ui'
+import type { SelectOption } from '@/components/ui/select'
 import { Message } from '@/utils/message'
 import type { UserItem, UserRole } from '@/types/api'
 
@@ -109,6 +133,14 @@ const form = reactive({
   role: 'workspace_user' as UserRole,
   status: 'active' as 'active' | 'archived',
 })
+const roleOptions: SelectOption[] = [
+  { label: '普通用户', value: 'workspace_user' },
+  { label: '平台管理员', value: 'platform_admin' },
+]
+const statusOptions: SelectOption[] = [
+  { label: '启用', value: 'active' },
+  { label: '停用', value: 'archived' },
+]
 
 function roleLabel(role: UserRole) {
   return role === 'platform_admin' ? '平台管理员' : '普通用户'

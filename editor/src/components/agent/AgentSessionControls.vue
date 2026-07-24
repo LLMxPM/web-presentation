@@ -2,73 +2,62 @@
 <template>
   <div class="relative flex items-center gap-2" v-click-outside="() => $emit('close')">
     <div class="inline-flex h-8 overflow-hidden rounded-xl border border-slate-200 bg-slate-50/80 shadow-sm">
-      <BaseButton
+      <UiButton
         variant="ghost"
         size="sm"
-        custom-class="h-8 rounded-none border-0 px-3 py-0 text-xs font-semibold shadow-none"
+        class="h-8 rounded-none border-0 px-3 py-0 text-xs font-semibold"
         :disabled="createDisabled"
         @click="$emit('create')"
       >
         <Plus class="h-3.5 w-3.5" />
         新会话
-      </BaseButton>
-      <button
-        type="button"
-        class="inline-flex w-9 items-center justify-center border-l border-slate-200 text-slate-500 transition hover:bg-white hover:text-slate-700"
+      </UiButton>
+      <UiIconButton
+        class="w-9 rounded-none border-y-0 border-r-0"
         :disabled="switchDisabled"
-        aria-label="切换会话"
+        label="切换会话"
         title="切换会话"
         @click.stop="$emit('toggle')"
       >
         <ChevronDown class="h-4 w-4 transition-transform duration-200" :class="{ 'rotate-180': menuVisible }" />
-      </button>
+      </UiIconButton>
     </div>
 
     <Transition name="fade-scale">
-      <div
+      <ToolPanel
         v-if="menuVisible"
-        class="absolute top-full z-30 mt-2 w-[320px] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl"
+        title="会话切换"
+        :scroll-body="false"
+        class="absolute top-full z-30 mt-2 w-[320px] overflow-hidden rounded-[var(--ui-radius-lg)] shadow-2xl"
         :class="align === 'right' ? 'right-0' : 'left-0'"
       >
-        <div class="border-b border-slate-100 px-4 py-3">
+        <template #header>
           <div class="flex items-center justify-between gap-3">
-            <p class="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">会话切换</p>
-            <span class="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-500">
-              {{ sessionCountText }}
-            </span>
+            <h2 class="text-title-sm font-semibold text-[rgb(var(--ui-text))]">会话切换</h2>
+            <UiBadge>{{ sessionCountText }}</UiBadge>
           </div>
-          <label v-if="totalSessionCount > 0" class="relative mt-3 block">
-            <Search class="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
-            <input
+          <div v-if="totalSessionCount > 0" class="mt-3">
+            <UiInput
               v-model="searchKeyword"
-              type="search"
+              type="text"
               aria-label="搜索会话标题"
               placeholder="搜索会话标题"
-              class="h-8 w-full rounded-lg border border-slate-200 bg-slate-50 pl-8 pr-8 text-xs font-medium text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-sky-300 focus:bg-white focus:ring-2 focus:ring-sky-100"
+              clearable
               @click.stop
             >
-            <button
-              v-if="normalizedSearchKeyword"
-              type="button"
-              class="absolute right-1.5 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-md text-slate-400 transition hover:bg-slate-200 hover:text-slate-600"
-              aria-label="清空会话搜索"
-              title="清空会话搜索"
-              @click.stop="clearSearch"
-            >
-              <X class="h-3.5 w-3.5" />
-            </button>
-          </label>
-        </div>
+              <template #prefix><Search class="h-3.5 w-3.5" /></template>
+            </UiInput>
+          </div>
+        </template>
 
-        <div v-if="isFetching && !totalSessionCount" class="px-4 py-6 text-center text-sm text-slate-400">
-          正在读取智能体会话...
-        </div>
-        <div v-else-if="visibleSessions.length" class="max-h-[360px] overflow-y-auto p-2">
-          <button
+        <DataState :state="sessionDataState" :title="sessionDataState === 'empty' ? sessionDataStateTitle : undefined">
+        <div v-if="visibleSessions.length" class="max-h-[360px] overflow-y-auto">
+          <UiButton
             v-for="session in visibleSessions"
             :key="session.session_id"
             type="button"
-            class="mb-1.5 flex w-full items-start justify-between gap-3 rounded-xl border px-3 py-3 text-left transition last:mb-0"
+            variant="ghost"
+            class="mb-1.5 h-auto flex w-full items-start justify-between gap-3 rounded-xl border px-3 py-3 text-left transition last:mb-0"
             :class="session.session_id === activeSessionId
               ? 'border-sky-200 bg-sky-50 text-sky-700'
               : 'border-transparent text-slate-600 hover:border-slate-200 hover:bg-slate-50 hover:text-slate-800'"
@@ -88,33 +77,30 @@
               </p>
             </div>
             <div class="flex shrink-0 flex-col items-end gap-1">
-              <span
+              <UiBadge
                 v-if="getSessionRunBadge(session.session_id)"
-                class="rounded-full border px-2 py-0.5 text-[10px] font-semibold"
+                class="rounded-full"
                 :class="getSessionRunBadge(session.session_id)?.className"
               >
                 {{ getSessionRunBadge(session.session_id)?.label }}
-              </span>
+              </UiBadge>
               <Check v-if="session.session_id === activeSessionId" class="mt-0.5 h-4 w-4" />
             </div>
-          </button>
+          </UiButton>
         </div>
-        <div v-else-if="normalizedSearchKeyword" class="px-4 py-6 text-center text-sm text-slate-400">
-          没有匹配的会话标题。
-        </div>
-        <div v-else class="px-4 py-6 text-center text-sm text-slate-400">
-          当前范围还没有智能体会话，发送第一条消息后会自动创建。
-        </div>
-      </div>
+        </DataState>
+      </ToolPanel>
     </Transition>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { Check, ChevronDown, Plus, Search, X } from '@lucide/vue'
+import { Check, ChevronDown, Plus, Search } from '@lucide/vue'
 
-import BaseButton from '@/components/ui/BaseButton.vue'
+import DataState from '@/components/patterns/DataState.vue'
+import ToolPanel from '@/components/patterns/ToolPanel.vue'
+import { UiBadge, UiButton, UiIconButton, UiInput } from '@/components/ui'
 import {
   resolveSessionDisplayName,
   resolveSessionModelLabel,
@@ -170,6 +156,14 @@ const sessionCountText = computed(() => {
   }
   return `共 ${total} 个`
 })
+const sessionDataState = computed<'loading' | 'empty' | 'ready'>(() => {
+  if (props.isFetching && !totalSessionCount.value) return 'loading'
+  return visibleSessions.value.length ? 'ready' : 'empty'
+})
+const sessionDataStateTitle = computed(() => {
+  if (normalizedSearchKeyword.value) return '没有匹配的会话标题。'
+  return '当前范围还没有智能体会话，发送第一条消息后会自动创建。'
+})
 
 watch(
   () => props.menuVisible,
@@ -179,13 +173,6 @@ watch(
     }
   },
 )
-
-/**
- * 清空本地标题搜索关键字。
- */
-function clearSearch() {
-  searchKeyword.value = ''
-}
 
 /**
  * 会话列表按最近更新时间降序展示，缺失时间的会话自然排到后面。

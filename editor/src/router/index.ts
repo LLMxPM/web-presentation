@@ -17,7 +17,19 @@ function redirectToWorkspaceHome(to: RouteLocation): string {
   return buildWorkspaceHomePath(workspaceId ?? '')
 }
 
+/** 仅在本地开发时注册，避免 UI Lab 成为生产环境的可发现入口。 */
+const developmentRoutes = import.meta.env.DEV
+  ? [
+      {
+        path: '/ui-lab',
+        name: 'uiLab',
+        component: () => import('@/views/UiLabView.vue'),
+      },
+    ]
+  : []
+
 const routes = [
+  ...developmentRoutes,
   {
     path: '/login',
     name: 'login',

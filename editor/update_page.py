@@ -7,13 +7,13 @@ with open(file_path, 'r', encoding='utf-8') as f:
 
 # 1. Add History Button to Toolbar
 toolbar_btn_target = """<div class="flex items-center gap-2">
-            <BaseButton variant="ghost" size="sm" :class="themeClasses.button" @click="copyCode">"""
+            <UiButton variant="ghost" size="sm" :class="themeClasses.button" @click="copyCode">"""
 toolbar_btn_repl = """<div class="flex items-center gap-2">
-            <BaseButton variant="ghost" size="sm" :class="themeClasses.button" @click="isHistoryModalOpen = true">
+            <UiButton variant="ghost" size="sm" :class="themeClasses.button" @click="isHistoryModalOpen = true">
               <History class="w-3.5 h-3.5" />
               版本历史
-            </BaseButton>
-            <BaseButton variant="ghost" size="sm" :class="themeClasses.button" @click="copyCode">"""
+            </UiButton>
+            <UiButton variant="ghost" size="sm" :class="themeClasses.button" @click="copyCode">"""
 content = content.replace(toolbar_btn_target, toolbar_btn_repl)
 
 # 2. Add Flex Wrapper around Editor 
@@ -37,16 +37,16 @@ iframe_repl = """<iframe :src="previewFrameUrl" title="runtime-preview" class="b
             referrerpolicy="same-origin" />"""
 content = content.replace(iframe_target, iframe_repl)
 
-# 4. Extract History Section and place it inside BaseDialog
+# 4. Extract History Section and place it inside UiDialog
 pattern = re.compile(r'(<section class="rounded-3xl border border-slate-200 bg-white/95 shadow-sm backdrop-blur">.*?</section>)', re.DOTALL)
 match = pattern.search(content)
 
 if match:
     history_html = match.group(1)
     
-    # modify history_html to BaseDialog
-    history_html = history_html.replace('<section class="rounded-3xl border border-slate-200 bg-white/95 shadow-sm backdrop-blur">', '<BaseDialog v-model="isHistoryModalOpen" title="版本历史" width="1000px">')
-    history_html = history_html.replace('</section>', '</BaseDialog>')
+    # modify history_html to UiDialog
+    history_html = history_html.replace('<section class="rounded-3xl border border-slate-200 bg-white/95 shadow-sm backdrop-blur">', '<UiDialog :open="isHistoryModalOpen" title="版本历史" width="1000px" @update:open="isHistoryModalOpen = $event">')
+    history_html = history_html.replace('</section>', '</UiDialog>')
     
     # remove padding from history header since dialog has padding
     history_html = history_html.replace('<div class="flex items-center justify-between gap-4 px-6 py-5 border-b border-slate-100 flex-wrap">', '<div class="flex items-center justify-between gap-4 py-3 border-b border-slate-100 flex-wrap">')

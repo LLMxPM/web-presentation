@@ -1,11 +1,11 @@
 <!-- 文件功能：承载 Runtime Kit doc-only 能力说明弹窗，展示用法、返回值、约束与面向对象。 -->
 <template>
-  <BaseDialog
-    :model-value="modelValue"
+  <UiDialog
+    :open="modelValue"
     title="能力说明"
     size="wide"
     body-preset="auto"
-    @update:model-value="emit('update:modelValue', $event)"
+    @update:open="emit('update:modelValue', $event)"
   >
     <div v-if="item" class="space-y-5">
         <header class="space-y-2">
@@ -78,11 +78,11 @@
           </div>
         </section>
     </div>
-  </BaseDialog>
+  </UiDialog>
 </template>
 
 <script setup lang="ts">
-import BaseDialog from '@/components/ui/BaseDialog.vue'
+import { UiDialog } from '@/components/ui'
 import type { RuntimeKitComponentCapabilityItem } from '@/types/api'
 
 defineProps<{

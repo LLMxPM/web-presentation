@@ -2,12 +2,13 @@
 <template>
   <aside class="flex h-full shrink-0 bg-white">
     <div v-if="!expanded" class="flex w-14 flex-col items-center gap-2 border-r border-slate-100 py-4">
-      <button
+      <UiIconButton
         v-for="agent in agentButtons"
         :key="agent.id"
         type="button"
         :data-testid="agent.id === 'agent-coordinator' ? 'agent-sidebar-toggle' : undefined"
-        class="flex h-10 w-10 items-center justify-center rounded-lg border text-slate-500 transition"
+        :label="resolveAgentButtonTitle(agent.id, agent.name)"
+        class="h-10 w-10 rounded-lg border text-slate-500 transition"
         :class="getAgentRailButtonClass(agent.id, agent.icon)"
         :title="resolveAgentButtonTitle(agent.id, agent.name)"
         :disabled="!canOpenAgent(agent.id)"
@@ -16,7 +17,7 @@
         <span class="flex h-7 w-7 items-center justify-center rounded-lg ring-1 transition" :class="getAgentIconShellClass(agent.icon, agent.id === agentId)">
           <component :is="resolveAgentIconComponent(agent.icon)" class="h-4 w-4" />
         </span>
-      </button>
+      </UiIconButton>
     </div>
 
     <Transition name="agent-panel">
@@ -25,11 +26,13 @@
           <div class="grid h-8 grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
             <div class="min-w-0 flex-1 overflow-hidden">
               <div class="inline-flex h-8 max-w-full rounded-xl border border-slate-200 bg-slate-100 p-0.5 shadow-inner" role="tablist" aria-label="智能体切换">
-                <button
+                <UiButton
                   v-for="agent in agentButtons"
                   :key="agent.id"
                   type="button"
                   role="tab"
+                  variant="ghost"
+                  size="sm"
                   class="inline-flex h-7 min-w-0 items-center gap-1.5 rounded-lg border px-3 text-xs font-semibold transition"
                   :class="getAgentTabClass(agent.id, agent.icon)"
                   :aria-selected="agent.id === agentId"
@@ -41,17 +44,17 @@
                     <component :is="resolveAgentIconComponent(agent.icon)" class="h-3.5 w-3.5" />
                   </span>
                   <span class="truncate">{{ agent.name }}</span>
-                </button>
+                </UiButton>
               </div>
             </div>
-            <button
-              type="button"
-              class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-transparent text-slate-500 transition hover:border-slate-200 hover:bg-slate-50 hover:text-slate-800"
-              title="收起"
+            <UiIconButton
+              label="收起"
+              size="sm"
+              class="shrink-0 border-transparent text-slate-500 hover:border-slate-200 hover:bg-slate-50 hover:text-slate-800"
               @click="expanded = false"
             >
               <PanelLeftClose class="h-4 w-4" />
-            </button>
+            </UiIconButton>
           </div>
 
           <div class="mt-2 grid h-8 grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
@@ -105,6 +108,7 @@ import { PanelLeftClose } from '@lucide/vue'
 
 import { listAgents } from '@/api/ai'
 import { getAgentIconShellClass, resolveAgentIconComponent } from '@/components/agent/agent-icon'
+import { UiButton, UiIconButton } from '@/components/ui'
 import {
   buildPageDetailPath,
   buildProjectPagesPath,

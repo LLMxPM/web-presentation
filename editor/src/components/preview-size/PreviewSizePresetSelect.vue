@@ -2,25 +2,26 @@
 <template>
   <div ref="rootRef" class="relative w-full" :class="embedded ? 'h-full' : ''">
     <label v-if="label" class="mb-1.5 ml-1 block text-base font-semibold text-slate-700">{{ label }}</label>
-    <button
-      ref="triggerRef"
-      type="button"
-      class="flex w-full items-center justify-between gap-2 text-left transition"
-      :class="[
-        compact ? 'h-9 px-3 text-xs' : 'h-10 px-3 text-sm',
-        embedded
-          ? 'h-full rounded-none border-0 bg-transparent hover:bg-slate-50'
-          : 'rounded-xl border border-slate-200 bg-white hover:border-slate-300',
-      ]"
-      :disabled="disabled"
-      @click="toggleDropdown"
-    >
-      <span class="min-w-0">
-        <span class="block truncate font-semibold text-slate-700">{{ selectedLabel }}</span>
-        <span v-if="!compact" class="block truncate text-[11px] text-slate-400">{{ currentWidth }} × {{ currentHeight }}</span>
-      </span>
-      <ChevronDown class="h-4 w-4 shrink-0 text-slate-400 transition" :class="open ? 'rotate-180' : ''" />
-    </button>
+    <span ref="triggerRef" class="block w-full">
+      <UiButton
+        variant="secondary"
+        class="flex w-full items-center justify-between gap-2 text-left transition"
+        :class="[
+          compact ? 'h-9 px-3 text-xs' : 'h-10 px-3 text-sm',
+          embedded
+            ? 'h-full rounded-none border-0 bg-transparent hover:bg-slate-50'
+            : 'rounded-xl border border-slate-200 bg-white hover:border-slate-300',
+        ]"
+        :disabled="disabled"
+        @click="toggleDropdown"
+      >
+        <span class="min-w-0">
+          <span class="block truncate font-semibold text-slate-700">{{ selectedLabel }}</span>
+          <span v-if="!compact" class="block truncate text-[11px] text-slate-400">{{ currentWidth }} × {{ currentHeight }}</span>
+        </span>
+        <ChevronDown class="h-4 w-4 shrink-0 text-slate-400 transition" :class="open ? 'rotate-180' : ''" />
+      </UiButton>
+    </span>
 
     <Teleport to="body">
       <Transition name="preset-fade">
@@ -34,14 +35,15 @@
             <div>
               <div class="text-sm font-bold text-slate-800">我的尺寸模板</div>
             </div>
-            <button
-              type="button"
+            <UiButton
+              variant="ghost"
+              size="sm"
               class="inline-flex h-8 items-center gap-1.5 rounded-lg px-2 text-xs font-semibold text-indigo-600 transition hover:bg-indigo-50"
               @click="startCreatePreset"
             >
               <Plus class="h-3.5 w-3.5" />
               新增
-            </button>
+            </UiButton>
           </div>
 
           <div class="max-h-[240px] overflow-y-auto py-1">
@@ -55,93 +57,91 @@
               class="group flex items-center gap-2 px-3 py-2 transition hover:bg-slate-50"
               :class="isPresetSelected(preset) ? 'bg-indigo-50' : ''"
             >
-              <button type="button" class="min-w-0 flex-1 text-left" @click="applyPreset(preset)">
+              <UiButton variant="ghost" size="sm" class="min-w-0 flex-1 justify-start text-left" @click="applyPreset(preset)">
                 <span class="block truncate text-sm font-semibold" :class="isPresetSelected(preset) ? 'text-indigo-700' : 'text-slate-700'">
                   {{ preset.name }}
                 </span>
                 <span class="block text-[11px]" :class="isPresetSelected(preset) ? 'text-indigo-500' : 'text-slate-400'">
                   {{ resolvePresetSummary(preset) }}
                 </span>
-              </button>
-              <button
-                type="button"
+              </UiButton>
+              <UiIconButton
+                label="编辑"
+                size="xs"
                 class="rounded-lg p-1.5 text-slate-400 transition hover:bg-white hover:text-indigo-600"
                 title="编辑"
                 @click="startEditPreset(index)"
               >
                 <Pencil class="h-3.5 w-3.5" />
-              </button>
-              <button
-                type="button"
+              </UiIconButton>
+              <UiIconButton
+                label="删除"
+                size="xs"
                 class="rounded-lg p-1.5 text-slate-400 transition hover:bg-white hover:text-rose-600"
                 title="删除"
                 @click="deleteDraftPreset(index)"
               >
                 <Trash2 class="h-3.5 w-3.5" />
-              </button>
+              </UiIconButton>
             </div>
           </div>
 
           <div v-if="formVisible" class="border-t border-slate-100 bg-slate-50/70 p-3">
             <div class="grid grid-cols-[minmax(0,1.2fr)_84px_84px] gap-2">
-              <input
+              <UiInput
                 v-model="presetForm.name"
-                type="text"
                 placeholder="名称"
                 class="h-9 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-indigo-500"
-              >
-              <input
+              />
+              <UiInput
                 v-model="presetForm.width"
-                type="text"
                 inputmode="numeric"
                 placeholder="宽"
                 class="h-9 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-indigo-500"
-              >
-              <input
+              />
+              <UiInput
                 v-model="presetForm.height"
-                type="text"
                 inputmode="numeric"
                 placeholder="高"
                 class="h-9 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-indigo-500"
-              >
+              />
             </div>
             <div class="mt-2 grid grid-cols-2 gap-2">
-              <input
+              <UiInput
                 v-model="presetForm.baseFontSize"
-                type="text"
                 placeholder="字号"
                 class="h-9 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-indigo-500"
-              >
-              <input
+              />
+              <UiInput
                 v-model="presetForm.iconDefaultStrokeWidth"
-                type="text"
                 inputmode="numeric"
                 placeholder="描边"
                 class="h-9 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-indigo-500"
-              >
+              />
             </div>
             <div class="mt-2 flex justify-end gap-2">
-              <button type="button" class="rounded-lg px-2.5 py-1.5 text-xs font-semibold text-slate-500 hover:bg-white" @click="cancelPresetForm">
+              <UiButton variant="ghost" size="xs" @click="cancelPresetForm">
                 取消
-              </button>
-              <button type="button" class="rounded-lg bg-indigo-600 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700" @click="upsertDraftPreset">
+              </UiButton>
+              <UiButton variant="primary" size="xs" @click="upsertDraftPreset">
                 {{ editingIndex === null ? '添加' : '更新' }}
-              </button>
+              </UiButton>
             </div>
           </div>
 
           <div class="flex items-center justify-between gap-3 border-t border-slate-100 px-3 py-3">
-            <button type="button" class="rounded-lg px-2.5 py-1.5 text-xs font-semibold text-slate-500 hover:bg-slate-100" @click="resetDraftPresets">
+            <UiButton variant="ghost" size="xs" @click="resetDraftPresets">
               重置
-            </button>
-            <button
-              type="button"
+            </UiButton>
+            <UiButton
+              variant="primary"
+              size="xs"
               class="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
               :disabled="saving"
               @click="saveDraftPresets"
             >
               {{ saving ? '保存中...' : '保存预设' }}
-            </button>
+            </UiButton>
           </div>
         </div>
       </Transition>
@@ -156,6 +156,7 @@ import { ChevronDown, Pencil, Plus, Trash2 } from '@lucide/vue'
 import { updatePreviewSizePresets } from '@/api/auth'
 import { getErrorMessage } from '@/api/http'
 import { useAuthStore } from '@/stores/auth'
+import { UiButton, UiIconButton, UiInput } from '@/components/ui'
 import type { PreviewSizePreset } from '@/types/api'
 import { Message } from '@/utils/message'
 import {

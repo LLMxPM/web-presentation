@@ -1,12 +1,8 @@
 <!-- 文件功能：展示已归档工作空间列表，支持按名称搜索并将工作空间恢复为启用状态。 -->
 <template>
-  <BaseDialog :model-value="modelValue" title="已归档工作空间" size="standard" @update:modelValue="handleDialogVisibleChange">
+  <UiDialog :open="modelValue" title="已归档工作空间" size="standard" @update:open="handleDialogVisibleChange">
     <div class="flex flex-col gap-4">
-      <BaseInput
-        v-model="keyword"
-        placeholder="按工作空间名称或编码搜索"
-        type="text"
-      />
+      <SimpleSearchBar v-model="keyword" placeholder="按工作空间名称或编码搜索" />
 
       <div class="rounded-2xl border border-slate-200 bg-slate-50/50 overflow-hidden">
         <div class="flex items-center justify-between px-4 py-3 border-b border-slate-200 text-xs font-semibold text-slate-500">
@@ -49,18 +45,18 @@
               </div>
             </div>
 
-            <BaseButton
+            <UiButton
               variant="secondary"
               :loading="restoringWorkspaceId === workspace.id"
               @click="handleRestoreWorkspace(workspace.id)"
             >
               恢复
-            </BaseButton>
+            </UiButton>
           </div>
         </div>
       </div>
     </div>
-  </BaseDialog>
+  </UiDialog>
 </template>
 
 <script setup lang="ts">
@@ -68,12 +64,11 @@ import { ref, watch } from 'vue'
 
 import { listWorkspaces, updateWorkspace } from '@/api/catalog'
 import { getErrorMessage } from '@/api/http'
+import SimpleSearchBar from '@/components/patterns/SimpleSearchBar.vue'
 import type { WorkspaceItem } from '@/types/api'
 import { formatDateTime } from '@/utils/format'
 import { Message } from '@/utils/message'
-import BaseButton from '@/components/ui/BaseButton.vue'
-import BaseDialog from '@/components/ui/BaseDialog.vue'
-import BaseInput from '@/components/ui/BaseInput.vue'
+import { UiButton, UiDialog } from '@/components/ui'
 
 const props = withDefaults(defineProps<{
   modelValue: boolean

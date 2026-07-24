@@ -22,10 +22,10 @@
         class="absolute left-0 mt-2 w-64 origin-top-left bg-white border border-slate-200 rounded-2xl shadow-xl z-50 py-2">
         <div class="px-4 py-2 border-b border-slate-50 mb-1 flex items-center justify-between gap-3">
           <span class="text-[11px] font-bold text-slate-400 uppercase tracking-widest">所属工作空间</span>
-          <button type="button" class="text-[11px] font-medium text-slate-400 transition-colors hover:text-slate-600"
+          <UiButton variant="ghost" size="xs" class="text-slate-400 hover:text-slate-600"
             @click.stop="openArchivedDialog">
             查看已归档
-          </button>
+          </UiButton>
         </div>
 
         <div class="max-h-60 overflow-y-auto px-1.5 py-1">
@@ -38,11 +38,13 @@
               <span class="line-clamp-1">{{ ws.name }}</span>
             </div>
             <div class="flex items-center gap-1.5 shrink-0">
-              <button type="button"
-                class="p-1.5 rounded-lg bg-white/0 hover:bg-white shadow-none hover:shadow-sm opacity-0 group-hover:opacity-100 transition-all text-slate-400 hover:text-amber-600 border border-transparent hover:border-slate-100"
+              <UiIconButton
+                size="xs"
+                label="归档工作空间"
+                class="bg-white/0 opacity-0 shadow-none hover:border-slate-100 hover:bg-white hover:text-amber-600 hover:shadow-sm group-hover:opacity-100"
                 :disabled="archivingWorkspaceId === ws.id" title="归档工作空间" @click.stop="handleArchiveWorkspace(ws)">
                 <Archive class="w-3.5 h-3.5" />
-              </button>
+              </UiIconButton>
               <Check v-if="ws.id === currentWorkspaceId" class="w-4 h-4 text-indigo-500" />
             </div>
           </div>
@@ -53,28 +55,25 @@
         </div>
 
         <div class="mt-2 pt-1.5 border-t border-slate-100 px-1.5">
-          <button @click="openCreate"
-            class="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-semibold text-indigo-600 hover:bg-indigo-50 transition-colors">
+          <UiButton variant="ghost" size="sm" class="w-full justify-start text-indigo-600 hover:bg-indigo-50" @click="openCreate">
             <Plus class="w-4 h-4" />
             新建工作空间
-          </button>
+          </UiButton>
         </div>
       </div>
     </Transition>
 
     <!-- Workspace Dialog (Refactored) -->
-    <BaseDialog v-model="dialogVisible" title="创建工作空间" size="compact">
+    <UiDialog :open="dialogVisible" title="创建工作空间" size="compact" @update:open="dialogVisible = $event">
       <div class="space-y-5">
-        <BaseInput v-model="form.name" label="空间名称" placeholder="给工作空间起个响亮的名字" required :error="errors.name" />
-
-        <BaseInput v-model="form.description" type="textarea" label="详细描述" placeholder="（可选）描述此工作空间的用途或归口部门"
-          :rows="4" />
+        <UiFormField label="空间名称" required :error="errors.name"><template #default="field"><UiInput v-model="form.name" placeholder="给工作空间起个响亮的名字" required :input-id="field.inputId" :described-by="field.describedBy" :invalid="field.invalid" /></template></UiFormField>
+        <UiFormField label="详细描述"><template #default="field"><UiInput v-model="form.description" type="textarea" placeholder="（可选）描述此工作空间的用途或归口部门" :rows="4" :input-id="field.inputId" :described-by="field.describedBy" /></template></UiFormField>
       </div>
       <template #footer>
-        <BaseButton variant="ghost" @click="dialogVisible = false">取消</BaseButton>
-        <BaseButton variant="primary" :loading="saving" @click="handleSubmit">保存空间</BaseButton>
+        <UiButton variant="ghost" @click="dialogVisible = false">取消</UiButton>
+        <UiButton variant="primary" :loading="saving" @click="handleSubmit">保存空间</UiButton>
       </template>
-    </BaseDialog>
+    </UiDialog>
     <ArchivedWorkspacesDialog v-model="archivedDialogVisible" :current-workspace-id="currentWorkspaceId"
       @restored="handleWorkspaceListUpdated" />
   </div>
@@ -91,9 +90,7 @@ import type { WorkspaceItem } from '@/types/api'
 import { createConfirm, Message } from '@/utils/message'
 import { reportClientError } from '@/utils/client-logger'
 import ArchivedWorkspacesDialog from '@/components/nav/ArchivedWorkspacesDialog.vue'
-import BaseButton from '@/components/ui/BaseButton.vue'
-import BaseInput from '@/components/ui/BaseInput.vue'
-import BaseDialog from '@/components/ui/BaseDialog.vue'
+import { UiButton, UiDialog, UiFormField, UiIconButton, UiInput } from '@/components/ui'
 import { buildWorkspaceHomePath } from '@/utils/workspace-routes'
 
 const route = useRoute()

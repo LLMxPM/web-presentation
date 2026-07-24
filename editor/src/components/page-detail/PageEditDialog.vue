@@ -1,16 +1,17 @@
 <!-- 文件功能：统一承载页面源码编辑与可视化编辑，并转发保存、切换和安全关闭请求。 -->
 <template>
-  <BaseDialog
-    :model-value="props.modelValue"
+  <UiDialog
+    :open="props.modelValue"
     size="workbench"
     body-preset="immersive"
     :show-header="false"
     :show-close-button="false"
     panel-class="bg-white shadow-xl"
-    @update:model-value="handleVisibleChange"
+    @update:open="handleVisibleChange"
   >
-    <div class="flex h-full min-h-0 flex-col bg-slate-100">
-      <header class="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-3">
+    <div class="flex h-full min-h-0 flex-col bg-[rgb(var(--ui-canvas))]">
+      <CommandBar class="shrink-0 rounded-none border-x-0 border-t-0 px-4 py-3" label="页面编辑操作">
+        <template #leading>
         <div class="flex min-w-0 flex-wrap items-center gap-3">
           <div class="min-w-0 max-w-[24rem]">
             <h2 class="truncate text-sm font-bold text-slate-900" :title="dialogTitle">{{ dialogTitle }}</h2>
@@ -18,27 +19,27 @@
 
           <div class="flex shrink-0 items-center rounded-lg border border-slate-200 bg-slate-50 p-0.5">
             
-            <button
+            <UiButton
               v-if="props.visualEnabled"
-              type="button"
-              class="inline-flex h-8 items-center gap-1.5 rounded-md px-3 text-xs font-semibold transition"
-              :class="props.mode === 'visual' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'"
+              variant="ghost"
+              size="sm"
+              :class="props.mode === 'visual' ? 'bg-[rgb(var(--ui-surface))] text-[rgb(var(--ui-accent))] shadow-sm' : ''"
               :disabled="props.busy"
               @click="requestModeChange('visual')"
             >
               <SlidersHorizontal class="h-4 w-4" />
               可视化编辑
-            </button>
-            <button
-              type="button"
-              class="inline-flex h-8 items-center gap-1.5 rounded-md px-3 text-xs font-semibold transition"
-              :class="props.mode === 'source' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'"
+            </UiButton>
+            <UiButton
+              variant="ghost"
+              size="sm"
+              :class="props.mode === 'source' ? 'bg-[rgb(var(--ui-surface))] text-[rgb(var(--ui-accent))] shadow-sm' : ''"
               :disabled="props.busy"
               @click="requestModeChange('source')"
             >
               <Code2 class="h-4 w-4" />
               源码编辑
-            </button>
+            </UiButton>
           </div>
 
           <template v-if="props.mode === 'visual'">
@@ -53,47 +54,44 @@
             </span>
           </template>
         </div>
+        </template>
 
+        <template #actions>
         <div class="flex shrink-0 flex-wrap items-center justify-end gap-2">
           <template v-if="props.mode === 'source'">
-            <BaseButton variant="ghost" size="sm" @click="emit('copy-code')">
+            <UiButton variant="ghost" size="sm" @click="emit('copy-code')">
               <Copy class="h-3.5 w-3.5" />
               复制代码
-            </BaseButton>
-            <div class="flex items-center rounded-lg bg-slate-100 p-0.5">
-              <button
-                type="button"
-                title="明亮模式"
-                class="flex h-7 w-7 items-center justify-center rounded-md transition"
-                :class="props.editorTheme === 'light' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400 hover:text-slate-700'"
+            </UiButton>
+            <div class="flex items-center rounded-[var(--ui-radius-md)] bg-[rgb(var(--ui-surface-muted))] p-0.5">
+              <UiIconButton
+                label="明亮模式"
+                size="xs"
+                :class="props.editorTheme === 'light' ? 'bg-[rgb(var(--ui-surface))] text-[rgb(var(--ui-accent))] shadow-sm' : ''"
                 @click="emit('update:editorTheme', 'light')"
               >
                 <Sun class="h-3.5 w-3.5" />
-              </button>
-              <button
-                type="button"
-                title="暗黑模式"
-                class="flex h-7 w-7 items-center justify-center rounded-md transition"
-                :class="props.editorTheme === 'dark' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400 hover:text-slate-700'"
+              </UiIconButton>
+              <UiIconButton
+                label="暗黑模式"
+                size="xs"
+                :class="props.editorTheme === 'dark' ? 'bg-[rgb(var(--ui-surface))] text-[rgb(var(--ui-accent))] shadow-sm' : ''"
                 @click="emit('update:editorTheme', 'dark')"
               >
                 <Moon class="h-3.5 w-3.5" />
-              </button>
+              </UiIconButton>
             </div>
             <label class="flex items-center gap-1.5 text-xs font-semibold text-slate-500">
               自动保存
-              <select
+              <UiSelect
                 aria-label="自动保存"
-                class="h-8 rounded-lg border border-slate-200 bg-white px-2 text-xs font-semibold text-slate-700 outline-none focus:border-indigo-300"
-                :value="props.autoSaveDelay"
-                @change="handleAutoSaveChange"
-              >
-                <option v-for="option in props.autoSaveOptions" :key="option.value" :value="option.value">
-                  {{ option.label }}
-                </option>
-              </select>
+                :model-value="props.autoSaveDelay"
+                :options="props.autoSaveOptions"
+                trigger-class="w-28 text-xs font-semibold"
+                @update:model-value="handleAutoSaveChange"
+              />
             </label>
-            <BaseButton
+            <UiButton
               variant="primary"
               size="sm"
               :disabled="props.busy"
@@ -102,11 +100,11 @@
             >
               <Save class="h-3.5 w-3.5" />
               保存
-            </BaseButton>
+            </UiButton>
           </template>
 
           <template v-else>
-            <BaseButton
+            <UiButton
               variant="ghost"
               size="sm"
               :disabled="props.busy || !visualState.hasPendingChanges"
@@ -114,12 +112,12 @@
             >
               <Undo2 class="h-3.5 w-3.5" />
               放弃修改
-            </BaseButton>
-            <BaseButton variant="ghost" size="sm" :disabled="props.busy" @click="visualEditPanelRef?.reanalyze()">
+            </UiButton>
+            <UiButton variant="ghost" size="sm" :disabled="props.busy" @click="visualEditPanelRef?.reanalyze()">
               <RefreshCw class="h-3.5 w-3.5" />
               重新分析
-            </BaseButton>
-            <BaseButton
+            </UiButton>
+            <UiButton
               variant="primary"
               size="sm"
               :loading="visualState.saving"
@@ -128,21 +126,22 @@
             >
               <Save class="h-3.5 w-3.5" />
               保存并刷新
-            </BaseButton>
+            </UiButton>
           </template>
 
           <div class="mx-0.5 h-5 w-px bg-slate-200"></div>
-          <BaseButton variant="ghost" size="sm" @click="emit('open-history')">
+          <UiButton variant="ghost" size="sm" @click="emit('open-history')">
             <History class="h-3.5 w-3.5" />
             版本
-          </BaseButton>
-          <BaseButton variant="ghost" size="sm" @click="emit('open-usage')">
+          </UiButton>
+          <UiButton variant="ghost" size="sm" @click="emit('open-usage')">
             <Layers class="h-3.5 w-3.5" />
             资源
-          </BaseButton>
-          <BaseCloseButton label="关闭页面编辑" @click="emit('request-close')" />
+          </UiButton>
+          <UiIconButton label="关闭页面编辑" @click="emit('request-close')"><X class="h-4 w-4" /></UiIconButton>
         </div>
-      </header>
+        </template>
+      </CommandBar>
 
       <div class="min-h-0 flex-1 overflow-hidden p-3">
         <PageDetailWorkbenchPanel
@@ -173,18 +172,17 @@
         />
       </div>
     </div>
-  </BaseDialog>
+  </UiDialog>
 </template>
 
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { Code2, Copy, History, Layers, Moon, RefreshCw, Save, SlidersHorizontal, Sun, Undo2 } from '@lucide/vue'
+import { Code2, Copy, History, Layers, Moon, RefreshCw, Save, SlidersHorizontal, Sun, Undo2, X } from '@lucide/vue'
 
 import PageDetailWorkbenchPanel from '@/components/page-detail/PageDetailWorkbenchPanel.vue'
 import PageVisualEditPanel from '@/components/page-detail/visual-edit/PageVisualEditPanel.vue'
-import BaseButton from '@/components/ui/BaseButton.vue'
-import BaseCloseButton from '@/components/ui/BaseCloseButton.vue'
-import BaseDialog from '@/components/ui/BaseDialog.vue'
+import CommandBar from '@/components/patterns/CommandBar.vue'
+import { UiButton, UiDialog, UiIconButton, UiSelect } from '@/components/ui'
 import type { EditorLanguage, EditorSaveReason, EditorThemeMode, MonacoEditorReadyPayload } from '@/types/monaco'
 import type { PageEditMode } from '@/types/page-edit'
 import type { PageVisualEditApplyResponse, PageVisualEditPanelState } from '@/types/page-visual-edit'
@@ -243,7 +241,7 @@ const visualState = ref<PageVisualEditPanelState>({
   hasValidationErrors: false,
 })
 
-/** 将 BaseDialog 的任意关闭入口转为父层可拦截的安全关闭请求。 */
+/** 将 UiDialog 的任意关闭入口转为父层可拦截的安全关闭请求。 */
 function handleVisibleChange(visible: boolean): void {
   if (!visible) emit('request-close')
 }
@@ -258,9 +256,10 @@ function requestSourceSave(): void {
   emit('source-save', { reason: 'manual', value: props.sourceValue })
 }
 
-/** 将原生选择框值转换为毫秒数后同步给页面详情。 */
-function handleAutoSaveChange(event: Event): void {
-  emit('update:autoSaveDelay', Number((event.target as HTMLSelectElement).value))
+/** 将选择器值转换为毫秒数后同步给页面详情。 */
+function handleAutoSaveChange(value: string | number | boolean | (string | number | boolean)[] | null): void {
+  if (value === null || Array.isArray(value)) return
+  emit('update:autoSaveDelay', Number(value))
 }
 
 defineExpose({

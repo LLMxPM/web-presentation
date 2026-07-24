@@ -1,12 +1,8 @@
 <!-- 文件功能：展示当前工作空间下的已归档项目列表，支持按名称搜索、恢复和删除项目。 -->
 <template>
-  <BaseDialog :model-value="modelValue" title="已归档项目" size="standard" @update:modelValue="handleDialogVisibleChange">
+  <UiDialog :open="modelValue" title="已归档项目" size="standard" @update:open="handleDialogVisibleChange">
     <div class="flex flex-col gap-4">
-      <BaseInput
-        v-model="keyword"
-        placeholder="按项目名称或编码搜索"
-        type="text"
-      />
+      <SimpleSearchBar v-model="keyword" placeholder="按项目名称或编码搜索" />
 
       <div class="rounded-2xl border border-slate-200 bg-slate-50/50 overflow-hidden">
         <div class="flex items-center justify-between px-4 py-3 border-b border-slate-200 text-xs font-semibold text-slate-500">
@@ -44,28 +40,28 @@
             </div>
 
             <div class="flex shrink-0 items-center gap-2">
-              <BaseButton
+              <UiButton
                 variant="secondary"
                 :disabled="deletingProjectId === project.id"
                 :loading="restoringProjectId === project.id"
                 @click="handleRestoreProject(project.id)"
               >
                 恢复
-              </BaseButton>
-              <BaseButton
+              </UiButton>
+              <UiButton
                 variant="danger"
                 :disabled="restoringProjectId === project.id"
                 :loading="deletingProjectId === project.id"
                 @click="handleDeleteProject(project)"
               >
                 删除
-              </BaseButton>
+              </UiButton>
             </div>
           </div>
         </div>
       </div>
     </div>
-  </BaseDialog>
+  </UiDialog>
 </template>
 
 <script setup lang="ts">
@@ -77,9 +73,8 @@ import { getErrorMessage } from '@/api/http'
 import type { ProjectItem } from '@/types/api'
 import { createConfirm, Message } from '@/utils/message'
 import { formatDateTime } from '@/utils/format'
-import BaseButton from '@/components/ui/BaseButton.vue'
-import BaseDialog from '@/components/ui/BaseDialog.vue'
-import BaseInput from '@/components/ui/BaseInput.vue'
+import SimpleSearchBar from '@/components/patterns/SimpleSearchBar.vue'
+import { UiButton, UiDialog } from '@/components/ui'
 
 const props = defineProps<{
   modelValue: boolean

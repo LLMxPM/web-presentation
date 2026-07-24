@@ -8,48 +8,23 @@
         v-if="presetOptions.length"
         class="component-preview-scrollbar-hidden overflow-x-auto whitespace-nowrap"
         :class="simplified ? 'min-w-0 flex-1 basis-[220px]' : 'min-w-[280px] flex-[1_1_560px]'"
-        role="radiogroup"
-        aria-label="预览参数预设"
       >
-        <div class="inline-flex items-center gap-1.5">
-          <label
-            v-if="!simplified"
-            class="inline-flex cursor-pointer items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold transition-colors"
-            :class="resolvePresetRadioClass(!activePresetKey)"
-          >
-            <input
-              class="sr-only"
-              type="radio"
-              :name="presetRadioName"
-              :checked="!activePresetKey"
-              @change="selectCustomPreset"
-            >
-            自定义
-          </label>
-
-          <label
-            v-for="preset in presetOptions"
-            :key="preset.key"
-            class="inline-flex cursor-pointer items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold transition-colors"
-            :class="resolvePresetRadioClass(activePresetKey === preset.key)"
-          >
-            <input
-              class="sr-only"
-              type="radio"
-              :name="presetRadioName"
-              :checked="activePresetKey === preset.key"
-              @change="selectPreset(preset)"
-            >
-            {{ preset.label }}
-          </label>
-        </div>
+        <UiRadioGroup
+          :model-value="activePresetSelection"
+          :options="presetRadioOptions"
+          orientation="horizontal"
+          aria-label="预览参数预设"
+          @update:model-value="handlePresetSelection"
+        />
       </div>
 
       <div v-if="!simplified && panelTabs.length" class="flex shrink-0 items-center gap-1.5">
-        <button
+        <UiButton
           v-for="tab in panelTabs"
           :key="tab.key"
           type="button"
+          variant="ghost"
+          size="xs"
           class="rounded-full border px-2 py-0.5 text-[11px] font-semibold transition-colors"
           :class="activePanel === tab.key
             ? 'border-indigo-300 bg-indigo-50 text-indigo-700'
@@ -58,7 +33,7 @@
         >
           {{ tab.label }}
           <span class="ml-0.5 text-[10px] text-slate-400">{{ tab.count }}</span>
-        </button>
+        </UiButton>
       </div>
 
       <p
@@ -72,7 +47,7 @@
         {{ statusText }}
       </p>
 
-      <BaseButton
+      <UiButton
         v-if="schema && !simplified"
         variant="ghost"
         size="sm"
@@ -80,11 +55,12 @@
         @click="resetState"
       >
         重置
-      </BaseButton>
+      </UiButton>
 
-      <button
+      <UiIconButton
         v-if="!simplified"
-        type="button"
+        label="展开预览参数"
+        size="sm"
         class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-white hover:text-slate-700 disabled:cursor-not-allowed disabled:text-slate-300 disabled:hover:bg-transparent"
         :disabled="!canOpenDrawer"
         :aria-expanded="drawerOpen"
@@ -92,7 +68,7 @@
         @click="toggleDrawer"
       >
         <component :is="drawerOpen ? ChevronUp : ChevronDown" class="h-4 w-4" />
-      </button>
+      </UiIconButton>
     </div>
 
     <div
@@ -121,7 +97,9 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { ChevronDown, ChevronUp } from '@lucide/vue'
 
 import ComponentPreviewPanel from '@/components/component-preview/ComponentPreviewPanel.vue'
-import BaseButton from '@/components/ui/BaseButton.vue'
+import UiButton from '@/components/ui/button/UiButton.vue'
+import UiIconButton from '@/components/ui/button/UiIconButton.vue'
+import UiRadioGroup from '@/components/ui/radio/UiRadioGroup.vue'
 import {
   buildInitialComponentPreviewState,
   cloneComponentPreviewState,
@@ -153,7 +131,7 @@ const emit = defineEmits<{
   'update:state': [state: ComponentPreviewState]
 }>()
 
-const presetRadioName = `component-preview-preset-${Math.random().toString(36).slice(2)}`
+const CUSTOM_PRESET_VALUE = '__custom__'
 const dockRootRef = ref<HTMLElement | null>(null)
 const drawerOpen = ref(false)
 const activePanel = ref<ComponentPreviewPanelKey>('props')
@@ -163,6 +141,11 @@ const slotCount = computed(() => Object.keys(props.schema?.slots || {}).length)
 const mockCount = computed(() => Object.keys(props.schema?.mocks || {}).length)
 const presetOptions = computed(() => props.schema?.presets || [])
 const activePresetKey = computed(() => props.state.activePresetKey || '')
+const activePresetSelection = computed(() => activePresetKey.value || CUSTOM_PRESET_VALUE)
+const presetRadioOptions = computed(() => [
+  ...(!props.simplified ? [{ label: '自定义', value: CUSTOM_PRESET_VALUE }] : []),
+  ...presetOptions.value.map(preset => ({ label: preset.label, value: preset.key })),
+])
 const panelTabs = computed(() => {
   const tabs: Array<{ key: ComponentPreviewPanelKey; label: string; count: number }> = []
   if (propCount.value) {
@@ -295,6 +278,21 @@ function selectCustomPreset(): void {
 }
 
 /**
+ * 根据单选组值应用预设或切回自定义状态。
+ * @param value 单选组回传的预设 key 或自定义标识
+ */
+function handlePresetSelection(value: string): void {
+  if (value === CUSTOM_PRESET_VALUE) {
+    selectCustomPreset()
+    return
+  }
+  const preset = presetOptions.value.find(item => item.key === value)
+  if (preset) {
+    selectPreset(preset)
+  }
+}
+
+/**
  * 将参数恢复到 schema 默认值。
  */
 function resetState(): void {
@@ -315,17 +313,6 @@ function emitState(nextState: ComponentPreviewState): void {
  */
 function resolveFirstAvailablePanel(): ComponentPreviewPanelKey {
   return panelTabs.value[0]?.key || 'props'
-}
-
-/**
- * 计算 preset radio pill 样式。
- * @param active 当前 radio 是否选中
- * @returns Tailwind 样式类名
- */
-function resolvePresetRadioClass(active: boolean): string {
-  return active
-    ? 'border-indigo-300 bg-indigo-50 text-indigo-700'
-    : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900'
 }
 
 onMounted(() => {

@@ -1,13 +1,15 @@
 <!-- 文件功能：渲染已加入路由的页面分区，包括分区操作、批量工具条和路由页面卡片列表。 -->
 <template>
   <section class="space-y-4">
-    <div class="flex flex-wrap items-center justify-between gap-4">
-      <div class="flex flex-wrap items-center gap-3">
-        <h2 class="text-lg font-bold text-slate-900">已加入路由</h2>
-        <span class="text-xs font-semibold text-slate-400">{{ entries.length }} 条路由绑定</span>
-      </div>
-      <div class="flex min-w-0 flex-wrap items-center justify-end gap-2">
-        <BaseButton
+    <CommandBar label="已加入路由页面操作">
+      <template #leading>
+        <div class="flex min-w-0 items-center gap-3">
+          <h2 class="truncate text-base font-semibold text-[rgb(var(--ui-text))]">已加入路由</h2>
+          <span class="text-xs text-[rgb(var(--ui-text-muted))]">{{ entries.length }} 条路由绑定</span>
+        </div>
+      </template>
+      <template #actions>
+        <UiButton
           v-if="selectedCount === 0"
           data-testid="batch-refresh-routed-page-screenshots"
           variant="ghost"
@@ -21,8 +23,8 @@
           </template>
           刷新截图
           <span v-if="refreshableScreenshotCount > 0">({{ refreshableScreenshotCount }})</span>
-        </BaseButton>
-        <BaseButton
+        </UiButton>
+        <UiButton
           v-if="selectedCount === 0"
           variant="ghost"
           size="sm"
@@ -33,8 +35,8 @@
             <RouteIcon class="h-3.5 w-3.5" />
           </template>
           路由
-        </BaseButton>
-        <BaseButton
+        </UiButton>
+        <UiButton
           v-if="selectedCount === 0"
           data-testid="project-build-open"
           variant="primary"
@@ -47,7 +49,7 @@
             <Hammer class="h-3.5 w-3.5" />
           </template>
           构建
-        </BaseButton>
+        </UiButton>
         <PageBatchToolbar
           scope="routed"
           :batchable-count="batchableCount"
@@ -62,17 +64,16 @@
           @batch-archive-pages="emit('batch-archive-pages')"
           @clear-selection="emit('clear-selection')"
         />
-      </div>
-    </div>
+      </template>
+    </CommandBar>
 
-    <div
-      v-if="entries.length === 0"
-      class="rounded-lg border border-dashed border-slate-200 bg-white px-4 py-10 text-center text-sm text-slate-400"
+    <DataState
+      :state="entries.length === 0 ? 'empty' : 'ready'"
+      title="当前没有页面加入项目路由"
+      description="可在下方页面中加入顶层路由，或通过路由配置统一编排。"
+      :retryable="false"
     >
-      当前没有页面加入项目路由。
-    </div>
-
-    <div v-else class="grid gap-4" :style="pageCardGridStyle">
+    <div class="grid gap-4" :style="pageCardGridStyle">
       <PageCard
         v-for="entry in entries"
         :key="entry.key"
@@ -96,6 +97,7 @@
         @archive-page="emit('archive-page', $event)"
       />
     </div>
+    </DataState>
   </section>
 </template>
 
@@ -104,7 +106,9 @@ import type { CSSProperties } from 'vue'
 import { Hammer, RefreshCw, Route as RouteIcon } from '@lucide/vue'
 
 import type { PageItem } from '@/types/api'
-import BaseButton from '@/components/ui/BaseButton.vue'
+import CommandBar from '@/components/patterns/CommandBar.vue'
+import DataState from '@/components/patterns/DataState.vue'
+import { UiButton } from '@/components/ui'
 import PageBatchToolbar from './PageBatchToolbar.vue'
 import PageCard from './PageCard.vue'
 import type { PageBatchAction, PageBatchScope, RoutedPageEntry } from './page-list-types'

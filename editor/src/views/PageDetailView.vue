@@ -1,11 +1,13 @@
 <!-- 文件功能：提供页面详情查看与 page_content 编辑能力，支持 Monaco 编辑、快捷保存与自动保存配置。 -->
 <template>
   <div data-testid="page-detail-view" class="page-detail-view flex h-full min-h-0 flex-col overflow-hidden">
-    <div v-if="pageQuery.isFetching.value && !pageDetails"
-      class="flex min-h-0 flex-1 flex-col items-center justify-center gap-6">
-      <div class="w-16 h-16 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
-      <span class="text-slate-400 font-extrabold text-lg animate-pulse tracking-wide">页面代码加载中...</span>
-    </div>
+    <DataState
+      v-if="pageQuery.isFetching.value && !pageDetails"
+      class="m-auto w-full max-w-xl"
+      state="loading"
+      title="正在加载页面"
+      description="正在读取页面代码、版本与预览信息。"
+    />
 
     <div v-else-if="pageDetails" class="flex min-h-0 flex-1 flex-col gap-3 animate-in fade-in slide-in-from-bottom-4 duration-700">
       <PageTitleBar
@@ -13,84 +15,48 @@
         :title="pageDetails.title"
         :code="pageDetails.code"
         :meta-items="pageTitleMetaItems"
-        title-class="max-w-[32rem]"
+        title-class="max-w-[36rem]"
       >
         <template #title-leading>
-          <button
-            type="button"
-            class="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 text-slate-500 transition-all hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-50"
-            title="返回项目页面"
-            aria-label="返回项目页面"
+          <UiIconButton
+            label="返回项目页面"
+            variant="ghost"
+            size="xs"
             :disabled="!workspaceId || !projectId"
             @click="goToProjectPages"
           >
             <ArrowLeft class="h-4 w-4" />
-          </button>
+          </UiIconButton>
         </template>
 
         <template #title-actions>
-          <button
-            type="button"
-            class="page-detail-identity-action"
-            title="编辑页面名称和描述"
-            aria-label="编辑页面名称和描述"
+          <UiIconButton
+            label="编辑页面名称和描述"
+            variant="ghost"
+            size="xs"
             :disabled="isPageIdentitySaving"
             @click="isPageIdentityDialogOpen = true"
           >
-            <SquarePen class="h-3.5 w-3.5" />
-          </button>
+            <SquarePen class="h-4 w-4" />
+          </UiIconButton>
         </template>
 
         <template #actions>
-          <div class="page-detail-title-actions flex flex-col items-end gap-1">
-            <div class="flex items-center gap-1">
-              <BaseButton
-                v-if="activeDetailPane === 'preview'"
-                variant="ghost"
-                size="sm"
-                title="刷新预览"
-                :disabled="isSaveActionPending || !previewFrameUrl"
-                @click="refreshPreviewFrame"
-              >
-                <RefreshCw class="h-3.5 w-3.5" />
-                刷新预览
-              </BaseButton>
-              <div class="flex items-center rounded-lg border border-slate-200 bg-slate-50 p-0.5">
-                <button
-                  type="button"
-                  class="inline-flex h-7 items-center gap-1.5 rounded-md px-2.5 text-xs font-semibold transition"
-                  :class="activeDetailPane === 'preview' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'"
+          <CommandBar class="page-detail-command-bar w-full" label="页面详情操作">
+            <template #actions>
+              <div class="flex items-center gap-1">
+                <UiButton
+                  variant="primary"
+                  size="sm"
                   :disabled="isSaveActionPending"
-                  @click="handlePreviewPaneSelect"
+                  @click="openPageEditDialog"
                 >
-                  <Monitor class="h-4 w-4" />
-                  预览
-                </button>
-                <button
-                  type="button"
-                  class="inline-flex h-7 items-center gap-1.5 rounded-md px-2.5 text-xs font-semibold transition"
-                  :class="activeDetailPane === 'notes' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'"
-                  :disabled="isSaveActionPending"
-                  @click="activeDetailPane = 'notes'"
-                >
-                  <FileText class="h-4 w-4" />
-                  备注
-                </button>
-              </div>
-              <BaseButton
-                variant="primary"
-                size="sm"
-                :disabled="isSaveActionPending"
-                @click="openPageEditDialog"
-              >
-                <Code2 class="h-3.5 w-3.5" />
-                编辑
-              </BaseButton>
-            </div>
-
-            <div class="flex flex-wrap items-center justify-end gap-1">
-              <template v-if="activeDetailPane === 'preview'">
-                <BaseButton
+                  <Code2 class="h-3.5 w-3.5" />
+                  编辑
+                </UiButton>
+                
+                <div class="mx-0.5 h-5 w-px bg-slate-200"></div>
+                <UiButton
                   variant="ghost"
                   size="sm"
                   :disabled="isSaveActionPending || !previousPageId"
@@ -98,8 +64,8 @@
                 >
                   <ChevronLeft class="h-3.5 w-3.5" />
                   上一页
-                </BaseButton>
-                <BaseButton
+                </UiButton>
+                <UiButton
                   variant="ghost"
                   size="sm"
                   :disabled="isSaveActionPending || !nextPageId"
@@ -107,57 +73,67 @@
                 >
                   <ChevronRight class="h-3.5 w-3.5" />
                   下一页
-                </BaseButton>
-              </template>
+                </UiButton>
 
-              <BaseButton variant="ghost" size="sm" @click="isHistoryModalOpen = true">
-                <History class="h-3.5 w-3.5" />
-                版本
-              </BaseButton>
-              <BaseButton v-if="activeDetailPane === 'preview'" variant="ghost" size="sm" @click="isScreenshotDialogOpen = true">
-                <Camera class="h-3.5 w-3.5" />
-                截图
-              </BaseButton>
-              <BaseButton variant="ghost" size="sm" @click="isUsageDialogOpen = true">
-                <Layers class="h-3.5 w-3.5" />
-                资源
-              </BaseButton>
-              <BaseButton
-                v-if="activeDetailPane === 'preview'"
-                variant="ghost"
-                size="sm"
-                :disabled="isSaveActionPending"
-                @click="isCopyDialogOpen = true"
-              >
-                <Copy class="h-3.5 w-3.5" />
-                复制
-              </BaseButton>
-            </div>
-          </div>
+                <div class="mx-0.5 h-5 w-px bg-slate-200"></div>
+
+                <UiButton variant="ghost" size="sm" @click="isHistoryModalOpen = true">
+                  <History class="h-3.5 w-3.5" />
+                  版本
+                </UiButton>
+                <UiButton variant="ghost" size="sm" @click="isScreenshotDialogOpen = true">
+                  <Camera class="h-3.5 w-3.5" />
+                  截图
+                </UiButton>
+                <UiButton variant="ghost" size="sm" @click="isUsageDialogOpen = true">
+                  <Layers class="h-3.5 w-3.5" />
+                  资源
+                </UiButton>
+              </div>
+            </template>
+          </CommandBar>
         </template>
       </PageTitleBar>
 
       <div class="min-h-0 flex-1 overflow-hidden">
-        <PageDetailPreviewPanel
-          v-if="activeDetailPane === 'preview'"
-          :preview-enabled="isPreviewEnabled"
-          :preview-display-file-name="previewDisplayFileName"
-          :preview-url="previewUrl"
-          :preview-frame-url="previewFrameUrl"
-          :preview-viewport="previewViewport"
-          :page-title="pageDetails.title"
-        />
+        <div class="flex h-full min-h-0 gap-0">
+          <div class="min-h-0 flex-1 overflow-hidden">
+            <PageDetailPreviewPanel
+              :preview-enabled="isPreviewEnabled"
+              :preview-display-file-name="previewDisplayFileName"
+              :preview-url="previewUrl"
+              :preview-frame-url="previewFrameUrl"
+              :preview-viewport="previewViewport"
+              :page-title="pageDetails.title"
+              :speaker-notes-panel-open="isSpeakerNotesPanelOpen"
+              @refresh="refreshPreviewFrame"
+              @toggle-speaker-notes="isSpeakerNotesPanelOpen = !isSpeakerNotesPanelOpen"
+            />
+          </div>
 
-        <PageSpeakerNotesPanel
-          v-else
-          v-model="speakerNotesDraft"
-          :page-title="pageDetails.title"
-          :dirty="isSpeakerNotesDirty"
-          :loading="isSpeakerNotesSaving"
-          :disabled="isSaveActionPending"
-          @save="handleSpeakerNotesSave"
-        />
-
+          <transition
+            enter-active-class="transition-all duration-300 ease-out"
+            leave-active-class="transition-all duration-300 ease-in"
+            enter-from-class="w-0 opacity-0"
+            enter-to-class="w-[400px] opacity-100"
+            leave-from-class="w-[400px] opacity-100"
+            leave-to-class="w-0 opacity-0"
+          >
+            <div
+              v-if="isSpeakerNotesPanelOpen"
+              class="flex h-full min-h-0 w-[400px] flex-col border-l border-[rgb(var(--ui-border))] bg-[rgb(var(--ui-surface))]"
+            >
+              <PageSpeakerNotesPanel
+                v-model="speakerNotesDraft"
+                :page-title="pageDetails.title"
+                :dirty="isSpeakerNotesDirty"
+                :loading="isSpeakerNotesSaving"
+                :disabled="isSaveActionPending"
+                @save="handleSpeakerNotesSave"
+              />
+            </div>
+          </transition>
+        </div>
       </div>
 
       <PageEditDialog
@@ -216,15 +192,6 @@
         @submit="handlePageIdentityUpdate"
       />
 
-      <PageCopyToProjectDialog
-        v-model="isCopyDialogOpen"
-        :page="pageDetails ?? null"
-        :workspace-id="workspaceId"
-        :current-project-id="projectId"
-        :loading="isCopyPending"
-        @submit="handleCopyPageToProject"
-      />
-
       <PageVersionHistoryDialog
         v-model="isHistoryModalOpen"
         :loading="versionsQuery.isFetching.value"
@@ -265,7 +232,7 @@
         <h3 class="text-2xl font-extrabold text-slate-400">页面路由丢失</h3>
         <p class="text-slate-300 font-bold">找不到此页面的生命周期定义或数据溯源。</p>
       </div>
-      <BaseButton variant="secondary" @click="router.back()">返回上一级</BaseButton>
+      <UiButton variant="secondary" @click="router.back()">返回上一级</UiButton>
     </div>
   </div>
 </template>
@@ -274,11 +241,10 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/vue-query'
-import { ArrowLeft, Camera, ChevronLeft, ChevronRight, Code2, Copy, FileText, Frown, History, Layers, Monitor, RefreshCw, SquarePen } from '@lucide/vue'
+import { ArrowLeft, Camera, ChevronLeft, ChevronRight, Code2, Frown, History, Layers, SquarePen } from '@lucide/vue'
 
 import { getErrorMessage } from '@/api/http'
 import {
-  copyPageToProject,
   createPageSnapshot,
   getPage,
   getPageCurrentComponentIndex,
@@ -291,7 +257,6 @@ import {
 } from '@/api/catalog'
 import { createPageVersionPreviewArtifact, createProjectPreviewArtifact } from '@/api/preview'
 import PageTitleBar from '@/components/layout/PageTitleBar.vue'
-import PageCopyToProjectDialog from '@/components/page/PageCopyToProjectDialog.vue'
 import PageIdentityDialog from '@/components/page/PageIdentityDialog.vue'
 import PageEditDialog from '@/components/page-detail/PageEditDialog.vue'
 import PageDetailPreviewPanel from '@/components/page-detail/PageDetailPreviewPanel.vue'
@@ -300,7 +265,9 @@ import PageSnapshotDialog from '@/components/page-detail/PageSnapshotDialog.vue'
 import PageSpeakerNotesPanel from '@/components/page-detail/PageSpeakerNotesPanel.vue'
 import PageUsageDialog from '@/components/page-detail/PageUsageDialog.vue'
 import PageVersionHistoryDialog from '@/components/page-detail/PageVersionHistoryDialog.vue'
-import BaseButton from '@/components/ui/BaseButton.vue'
+import { UiButton, UiIconButton } from '@/components/ui'
+import CommandBar from '@/components/patterns/CommandBar.vue'
+import DataState from '@/components/patterns/DataState.vue'
 import type {
   EditorLanguage,
   EditorSaveReason,
@@ -311,7 +278,6 @@ import type {
 import type { PageEditMode } from '@/types/page-edit'
 import type {
   PageCurrentComponentIndex,
-  PageCopyToProjectPayload,
   PageFileType,
   PageItem,
   PageVersionContent,
@@ -324,7 +290,6 @@ import { resolvePageDetailNavigation } from '@/utils/page-detail-navigation'
 import { buildPageDetailPath, buildProjectPagesPath } from '@/utils/workspace-routes'
 
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error'
-type PageDetailPane = 'preview' | 'notes'
 
 interface PageEditDialogExpose {
   discardChanges: () => void
@@ -363,7 +328,7 @@ const autoSaveDelay = ref<number>(0)
 const editorCode = ref('')
 const fileType = ref<PageFileType>('vue')
 const saveStatus = ref<SaveStatus>('idle')
-const activeDetailPane = ref<PageDetailPane>('preview')
+const isSpeakerNotesPanelOpen = ref(false)
 const isPageEditDialogOpen = ref(false)
 const pageEditMode = ref<PageEditMode>('visual')
 const isEditorDirty = ref(false)
@@ -381,8 +346,6 @@ const isUsageDialogOpen = ref(false)
 const isPageIdentityDialogOpen = ref(false)
 const isPageIdentitySaving = ref(false)
 const isSpeakerNotesSaving = ref(false)
-const isCopyDialogOpen = ref(false)
-const isCopyPending = ref(false)
 const isPreviewEnabled = ref(true)
 const isPreviewPending = ref(false)
 const previewUrl = ref('')
@@ -618,34 +581,6 @@ async function goToAdjacentPage(targetPageId: number | null): Promise<void> {
 }
 
 /**
- * 将当前已保存页面复制到同工作空间的另一个项目，并跳转到新页面。
- * @param payload 页面复制配置
- */
-async function handleCopyPageToProject(payload: PageCopyToProjectPayload): Promise<void> {
-  if (!pageDetails.value || isCopyPending.value) {
-    return
-  }
-
-  isCopyPending.value = true
-  try {
-    const copiedPage = await copyPageToProject(pageId.value, payload)
-    const nextProjectId = copiedPage.project_id ?? payload.target_project_id
-    await Promise.all([
-      queryClient.invalidateQueries({ queryKey: ['pages-by-project', projectId.value] }),
-      queryClient.invalidateQueries({ queryKey: ['pages-by-project', nextProjectId] }),
-      queryClient.invalidateQueries({ queryKey: ['project', nextProjectId] }),
-    ])
-    isCopyDialogOpen.value = false
-    Message.success('页面已复制到目标项目。')
-    void router.push(buildPageDetailPath(workspaceId.value, nextProjectId, copiedPage.id))
-  } catch (error) {
-    Message.error(getErrorMessage(error, '复制页面失败。'))
-  } finally {
-    isCopyPending.value = false
-  }
-}
-
-/**
  * 保存页面名称与描述，并同步当前详情和列表缓存。
  * @param payload 页面基础信息
  */
@@ -784,9 +719,6 @@ watch(pageDetails, (page) => {
   }
 }, { immediate: true })
 
-/**
- * 页面首次进入且默认开启预览时，自动拉起一次 Runtime 预览。
- */
 watch(
   [pageDetails, isPreviewEnabled],
   ([page, enabled]) => {
@@ -845,7 +777,7 @@ async function openPageEditDialog(): Promise<void> {
 
   const defaultMode: PageEditMode = currentPage.file_type === 'vue' ? 'visual' : 'source'
   if (defaultMode === 'visual') {
-    if (activeDetailPane.value === 'notes' && isSpeakerNotesDirty.value) {
+    if (isSpeakerNotesDirty.value) {
       const notesSaved = await handleSpeakerNotesSave()
       if (!notesSaved) return
     }
@@ -875,7 +807,7 @@ async function handleEditModeChange(targetMode: PageEditMode): Promise<void> {
   }
 
   if (targetMode === 'visual') {
-    if (activeDetailPane.value === 'notes' && isSpeakerNotesDirty.value) {
+    if (isSpeakerNotesDirty.value) {
       const notesSaved = await handleSpeakerNotesSave()
       if (!notesSaved) return
     }
@@ -937,39 +869,6 @@ async function handlePageEditDialogClose(): Promise<void> {
 
   previewInitializedPageId.value = previewPage.id
   isPageEditDialogOpen.value = false
-}
-
-/**
- * 从编辑器切换到预览时先保存当前缓冲区，再刷新 Runtime 预览。
- */
-async function handlePreviewPaneSelect(): Promise<void> {
-  const currentPage = pageDetails.value
-  if (!currentPage || isSaveActionPending.value) return
-  if (activeDetailPane.value === 'preview') return
-  if (!await confirmDiscardVisualEdit()) return
-
-  if (activeDetailPane.value === 'notes' && isSpeakerNotesDirty.value) {
-    const notesSaved = await handleSpeakerNotesSave()
-    if (!notesSaved) {
-      return
-    }
-  }
-
-  const saved = await requestSave('manual', editorCode.value, {
-    refreshPreview: false,
-    showNoopMessage: false,
-  })
-  if (!saved) {
-    return
-  }
-
-  const previewPage = pageQuery.data.value ?? currentPage
-  const previewSynced = await syncRuntimePreview(previewPage, { showSuccessMessage: false })
-  if (!previewSynced) {
-    return
-  }
-  previewInitializedPageId.value = previewPage.id
-  activeDetailPane.value = 'preview'
 }
 
 /**
@@ -1046,7 +945,6 @@ async function handleAgentPageUpdated(detail?: AgentMutationEventDetail) {
 
   const previewSynced = await syncRuntimePreview(latestPage, { showSuccessMessage: false })
   if (previewSynced) {
-    activeDetailPane.value = 'preview'
     previewInitializedPageId.value = latestPage.id
   }
 }
@@ -1618,40 +1516,3 @@ async function syncRuntimePreview(
   }
 }
 </script>
-
-<style scoped>
-.page-detail-title-actions :deep(.btn) {
-  min-height: 1.75rem;
-  border-radius: 0.5rem;
-  padding: 0.25rem 0.5rem;
-  font-size: 0.75rem;
-}
-
-.page-detail-title-actions :deep(.btn > span:last-child) {
-  gap: 0.375rem;
-}
-
-.page-detail-identity-action {
-  display: inline-flex;
-  height: 1.625rem;
-  width: 1.625rem;
-  align-items: center;
-  justify-content: center;
-  border-radius: 0.5rem;
-  border: 1px solid rgb(226 232 240);
-  background: rgb(248 250 252);
-  color: rgb(100 116 139);
-  transition: all 0.2s ease;
-}
-
-.page-detail-identity-action:hover {
-  border-color: rgb(199 210 254);
-  background: rgb(238 242 255);
-  color: rgb(79 70 229);
-}
-
-.page-detail-identity-action:disabled {
-  cursor: not-allowed;
-  opacity: 0.5;
-}
-</style>

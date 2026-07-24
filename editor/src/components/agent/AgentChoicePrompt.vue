@@ -13,11 +13,12 @@
   >
     <div v-if="currentQuestion" class="space-y-2">
       <div class="space-y-1">
-        <button
+        <UiButton
           v-for="option in currentQuestion.options"
           :key="option.label"
           type="button"
-          class="flex w-full items-start gap-2 rounded-md border px-2.5 py-2 text-left transition"
+          variant="ghost"
+          class="h-auto flex w-full items-start gap-2 rounded-md border px-2.5 py-2 text-left transition"
           :class="currentAnswer.selectedLabel === option.label
             ? 'border-sky-300 bg-sky-50 text-sky-900'
             : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50'"
@@ -31,16 +32,16 @@
             <span class="block text-xs font-semibold leading-5">{{ option.label }}</span>
             <span v-if="option.description" class="block text-[11px] leading-5 text-slate-500">{{ option.description }}</span>
           </span>
-        </button>
+        </UiButton>
       </div>
 
-      <input
-        :value="currentAnswer.customText"
-        type="text"
-        class="w-full rounded-md border border-slate-200 bg-white px-2.5 py-2 text-xs text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-sky-300"
-        placeholder="或直接输入自定义回答"
-        @input="handleCustomInput"
-      >
+      <PropertyRow label="自定义回答">
+        <UiInput
+          :model-value="currentAnswer.customText"
+          placeholder="或直接输入自定义回答"
+          @update:model-value="handleCustomValueChange"
+        />
+      </PropertyRow>
 
       <p v-if="showCurrentAnswerWarning" class="text-[11px] leading-5 text-amber-600">
         请先选择一个选项，或填写自定义回答。
@@ -51,34 +52,34 @@
     </p>
 
     <template #footer-left>
-      <BaseButton
+      <UiButton
         v-if="forceReleaseAvailable"
         variant="ghost"
         size="sm"
         :disabled="loading"
-        custom-class="rounded-md px-2 py-1 text-xs text-red-600 shadow-none hover:bg-red-50"
+        class="rounded-md px-2 py-1 text-xs text-red-600 hover:bg-red-50"
         @click="emit('forceRelease')"
       >
         强制释放
-      </BaseButton>
-      <BaseButton
+      </UiButton>
+      <UiButton
         variant="ghost"
         size="sm"
         :disabled="currentIndex <= 0 || loading"
-        custom-class="rounded-md px-2 py-1 text-xs shadow-none"
+        class="rounded-md px-2 py-1 text-xs"
         @click="goPrevious"
       >
         上一题
-      </BaseButton>
-      <BaseButton
+      </UiButton>
+      <UiButton
         variant="ghost"
         size="sm"
         :disabled="!canGoNext || loading"
-        custom-class="rounded-md px-2 py-1 text-xs shadow-none"
+        class="rounded-md px-2 py-1 text-xs"
         @click="goNext"
       >
         下一题
-      </BaseButton>
+      </UiButton>
     </template>
   </AgentHitlShell>
 </template>
@@ -87,7 +88,8 @@
 import { computed, ref, watch } from 'vue'
 
 import AgentHitlShell from '@/components/agent/AgentHitlShell.vue'
-import BaseButton from '@/components/ui/BaseButton.vue'
+import PropertyRow from '@/components/patterns/PropertyRow.vue'
+import { UiButton, UiInput } from '@/components/ui'
 import type { AgentFeedbackSelection, AgentPendingRequirement, AgentUserFeedbackQuestion } from '@/types/api'
 
 interface AnswerState {
@@ -149,11 +151,8 @@ function selectOption(label: string) {
   }
 }
 
-/**
- * 写入自定义回答；有内容时清空预设选项，避免同题产生两个答案。
- */
-function handleCustomInput(event: Event) {
-  const value = (event.target as HTMLInputElement).value
+/** 将统一输入组件的字符串值同步为当前题的自定义回答。 */
+function handleCustomValueChange(value: string) {
   answers.value[currentIndex.value] = {
     selectedLabel: value.trim() ? null : currentAnswer.value.selectedLabel,
     customText: value,

@@ -60,9 +60,9 @@
           <p>当前模型：{{ currentLlmModelLabel || selectedAgent?.bound_llm_name || '未选择' }}</p>
         </div>
         <div class="flex justify-end">
-          <BaseButton variant="primary" @click="goToAiSettings">
+          <UiButton variant="primary" @click="goToAiSettings">
             前往 AI 设置
-          </BaseButton>
+          </UiButton>
         </div>
       </section>
 
@@ -88,9 +88,10 @@
         <section v-if="composerContextIssue"
           class="flex items-center gap-2 border-t border-amber-100 bg-amber-50/90 px-4 py-3 text-xs leading-5 text-amber-700">
           <span class="min-w-0 flex-1">{{ composerContextIssue }}</span>
-          <button
+          <UiButton
             v-if="composerContextRouteTarget"
-            type="button"
+            variant="secondary"
+            size="xs"
             class="inline-flex h-7 shrink-0 items-center gap-1 rounded-md border border-amber-200 bg-white px-2 text-[11px] font-semibold text-amber-700 shadow-sm transition hover:border-amber-300 hover:bg-amber-100"
             :aria-label="composerContextRouteTitle"
             :title="composerContextRouteTitle"
@@ -98,7 +99,7 @@
           >
             <ExternalLink class="h-3 w-3" />
             {{ composerContextRouteLabel }}
-          </button>
+          </UiButton>
         </section>
 
         <section
@@ -128,15 +129,16 @@
             生成图片
             <span>{{ imageGenerationAvailable ? '可用' : '未配置' }}</span>
           </span>
-          <button
+          <UiButton
             v-if="visualCapabilityConfigurationRequired"
-            type="button"
+            variant="ghost"
+            size="xs"
             class="ml-auto shrink-0 font-medium text-sky-600 transition hover:text-sky-700"
             title="前往 AI 设置配置视觉模型"
             @click="goToAiSettings"
           >
             配置
-          </button>
+          </UiButton>
         </section>
 
         <AgentComposer v-model="composerText" :streaming="isStreaming"
@@ -171,8 +173,10 @@
               ref="llmModelMenuRef"
               class="relative inline-flex"
             >
-              <button
+              <UiButton
                 type="button"
+                variant="ghost"
+                size="xs"
                 class="inline-flex h-6 max-w-[150px] items-center gap-1 rounded-md border px-1.5 text-[10px] font-medium transition"
                 :class="isNewSessionDraft
                   ? 'border-slate-200 bg-white text-slate-600 hover:border-sky-200 hover:bg-sky-50 hover:text-sky-700'
@@ -185,16 +189,18 @@
                 <UserRound v-else class="h-3 w-3 shrink-0" />
                 <span class="min-w-0 truncate">{{ currentLlmCompactName }}</span>
                 <ChevronDown v-if="isNewSessionDraft" class="h-3 w-3 shrink-0 opacity-60" />
-              </button>
+              </UiButton>
               <div
                 v-if="isNewSessionDraft && llmModelMenuVisible"
                 class="absolute bottom-7 right-0 z-30 w-56 overflow-hidden rounded-lg border border-slate-200 bg-white py-1 shadow-xl shadow-slate-900/10"
               >
-                <button
+                <UiButton
                   v-for="item in llmModelMenuItems"
                   :key="item.id"
                   type="button"
-                  class="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-xs transition hover:bg-slate-50"
+                  variant="ghost"
+                  size="sm"
+                  class="h-auto flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-xs transition hover:bg-slate-50"
                   :class="item.id === selectedNewSessionLlmConfigId ? 'text-sky-700' : 'text-slate-600'"
                   @click.stop="selectNewSessionLlmConfig(item.id)"
                 >
@@ -205,7 +211,7 @@
                     <span class="block truncate text-[10px] text-slate-400">{{ item.providerLabel }} / {{ item.modelId }}</span>
                   </span>
                   <Check v-if="item.id === selectedNewSessionLlmConfigId" class="h-3.5 w-3.5 shrink-0" />
-                </button>
+                </UiButton>
                 <div v-if="llmModelMenuItems.length === 0" class="px-3 py-2 text-center text-[11px] text-slate-400">
                   暂无可用模型
                 </div>
@@ -284,7 +290,7 @@ import AgentConversationBody from '@/components/agent/AgentConversationBody.vue'
 import AgentConversationDialogs from '@/components/agent/AgentConversationDialogs.vue'
 import AgentScopeStatus from '@/components/agent/AgentScopeStatus.vue'
 import AgentSessionControls from '@/components/agent/AgentSessionControls.vue'
-import BaseButton from '@/components/ui/BaseButton.vue'
+import { UiButton } from '@/components/ui'
 import type {
   AgentActiveRunItem,
   AgentContextStatusItem,

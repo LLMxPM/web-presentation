@@ -15,15 +15,17 @@
             @input="updatePlacementNumberField('width_value', ($event.target as HTMLInputElement).value)"
             @blur="normalizePlacementNumberField('width_value')"
           >
-          <button
+          <UiButton
             type="button"
-            class="inline-flex h-full w-[58px] items-center justify-center gap-1 border-l border-slate-100 bg-slate-50/70 px-2 text-xs font-bold text-slate-600 transition hover:bg-slate-100 hover:text-slate-800"
+            variant="ghost"
+            size="sm"
+            class="h-full w-[58px] rounded-none border-y-0 border-r-0 border-l border-slate-100 bg-slate-50/70 px-2 text-xs font-bold text-slate-600 hover:bg-slate-100 hover:text-slate-800"
             title="宽度单位"
             @click.stop="openSizeModeDropdown('width_mode', $event)"
           >
             <span>{{ resolveSizeModeLabel(modelValue.placement.width_mode) }}</span>
             <ChevronDown class="h-3 w-3 text-slate-400" />
-          </button>
+          </UiButton>
         </div>
       </div>
 
@@ -40,26 +42,30 @@
             @input="updatePlacementNumberField('height_value', ($event.target as HTMLInputElement).value)"
             @blur="normalizePlacementNumberField('height_value')"
           >
-          <button
+          <UiButton
             type="button"
-            class="inline-flex h-full w-[58px] items-center justify-center gap-1 border-l border-slate-100 bg-slate-50/70 px-2 text-xs font-bold text-slate-600 transition hover:bg-slate-100 hover:text-slate-800"
+            variant="ghost"
+            size="sm"
+            class="h-full w-[58px] rounded-none border-y-0 border-r-0 border-l border-slate-100 bg-slate-50/70 px-2 text-xs font-bold text-slate-600 hover:bg-slate-100 hover:text-slate-800"
             title="高度单位"
             @click.stop="openSizeModeDropdown('height_mode', $event)"
           >
             <span>{{ resolveSizeModeLabel(modelValue.placement.height_mode) }}</span>
             <ChevronDown class="h-3 w-3 text-slate-400" />
-          </button>
+          </UiButton>
         </div>
       </div>
 
       <div class="space-y-1">
         <span class="block text-[11px] font-semibold text-slate-500">水平</span>
         <div class="inline-flex h-9 overflow-hidden rounded-xl border border-slate-200 bg-white p-0.5">
-          <button
+          <UiIconButton
             v-for="option in horizontalAlignOptions"
             :key="option.value"
             type="button"
-            class="flex h-8 w-8 items-center justify-center rounded-lg transition-colors"
+            :label="option.label"
+            size="sm"
+            class="h-8 w-8 rounded-lg"
             :class="modelValue.placement.horizontal_align === option.value
               ? 'bg-indigo-50 text-indigo-600'
               : 'text-slate-400 hover:bg-slate-50 hover:text-slate-700'"
@@ -68,18 +74,20 @@
             @click="updatePlacementField('horizontal_align', option.value)"
           >
             <component :is="option.icon" class="h-4 w-4" />
-          </button>
+          </UiIconButton>
         </div>
       </div>
 
       <div class="space-y-1">
         <span class="block text-[11px] font-semibold text-slate-500">垂直</span>
         <div class="inline-flex h-9 overflow-hidden rounded-xl border border-slate-200 bg-white p-0.5">
-          <button
+          <UiIconButton
             v-for="option in verticalAlignOptions"
             :key="option.value"
             type="button"
-            class="flex h-8 w-8 items-center justify-center rounded-lg transition-colors"
+            :label="option.label"
+            size="sm"
+            class="h-8 w-8 rounded-lg"
             :class="modelValue.placement.vertical_align === option.value
               ? 'bg-indigo-50 text-indigo-600'
               : 'text-slate-400 hover:bg-slate-50 hover:text-slate-700'"
@@ -88,7 +96,7 @@
             @click="updatePlacementField('vertical_align', option.value)"
           >
             <component :is="option.icon" class="h-4 w-4" />
-          </button>
+          </UiIconButton>
         </div>
       </div>
 
@@ -107,14 +115,14 @@
         </label>
       </div>
 
-      <BaseButton
+      <UiButton
         variant="ghost"
         size="sm"
         custom-class="!h-9 !px-2.5 !text-xs !text-slate-500"
         @click="emit('reset-defaults')"
       >
         默认
-      </BaseButton>
+      </UiButton>
     </div>
 
     <Teleport to="body">
@@ -125,11 +133,13 @@
           :style="sizeModeDropdownStyle"
           @mousedown.stop
         >
-          <button
+          <UiButton
             v-for="option in sizeModeOptions"
             :key="`mode-dropdown-${option.value}`"
             type="button"
-            class="flex h-8 w-full items-center justify-between rounded-lg px-3 text-left text-xs font-bold transition-colors"
+            variant="ghost"
+            size="sm"
+            class="h-8 w-full justify-between rounded-lg px-3 text-left text-xs font-bold"
             :class="isSizeModeOptionActive(option.value)
               ? 'bg-indigo-50 text-indigo-600'
               : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'"
@@ -140,7 +150,7 @@
               v-if="isSizeModeOptionActive(option.value)"
               class="h-1.5 w-1.5 rounded-full bg-indigo-500"
             />
-          </button>
+          </UiButton>
         </div>
       </Transition>
     </Teleport>
@@ -148,28 +158,20 @@
     <div v-if="!inline" class="space-y-4">
       <div class="flex items-center justify-between gap-2">
         <h4 v-if="!embedded" class="text-sm font-bold text-slate-800">组件占位</h4>
-        <BaseButton
+        <UiButton
           variant="ghost"
           size="sm"
           :custom-class="embedded ? '!h-8 !justify-start !px-0 !text-xs' : ''"
           @click="emit('reset-defaults')"
         >
           恢复默认
-        </BaseButton>
+        </UiButton>
       </div>
 
       <div class="grid grid-cols-2 gap-2">
         <label class="space-y-1.5">
           <span class="text-[11px] font-semibold text-slate-500">宽度模式</span>
-          <select
-            :value="modelValue.placement.width_mode"
-            class="h-9 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm font-medium text-slate-700 outline-none transition focus:border-indigo-500 focus:bg-white"
-            @change="updatePlacementField('width_mode', ($event.target as HTMLSelectElement).value)"
-          >
-            <option value="percent">百分比</option>
-            <option value="fixed">固定像素</option>
-            <option value="auto">自适应</option>
-          </select>
+          <UiSelect :model-value="modelValue.placement.width_mode" :options="sizeModeSelectOptions" @update:model-value="value => updatePlacementField('width_mode', String(value))" />
         </label>
 
         <label class="space-y-1.5">
@@ -187,15 +189,7 @@
 
         <label class="space-y-1.5">
           <span class="text-[11px] font-semibold text-slate-500">高度模式</span>
-          <select
-            :value="modelValue.placement.height_mode"
-            class="h-9 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm font-medium text-slate-700 outline-none transition focus:border-indigo-500 focus:bg-white"
-            @change="updatePlacementField('height_mode', ($event.target as HTMLSelectElement).value)"
-          >
-            <option value="auto">自适应</option>
-            <option value="percent">百分比</option>
-            <option value="fixed">固定像素</option>
-          </select>
+          <UiSelect :model-value="modelValue.placement.height_mode" :options="sizeModeSelectOptions" @update:model-value="value => updatePlacementField('height_mode', String(value))" />
         </label>
 
         <label class="space-y-1.5">
@@ -213,28 +207,12 @@
 
         <label class="space-y-1.5">
           <span class="text-[11px] font-semibold text-slate-500">水平对齐</span>
-          <select
-            :value="modelValue.placement.horizontal_align"
-            class="h-9 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm font-medium text-slate-700 outline-none transition focus:border-indigo-500 focus:bg-white"
-            @change="updatePlacementField('horizontal_align', ($event.target as HTMLSelectElement).value)"
-          >
-            <option value="start">左侧</option>
-            <option value="center">居中</option>
-            <option value="end">右侧</option>
-          </select>
+          <UiSelect :model-value="modelValue.placement.horizontal_align" :options="alignmentSelectOptions" @update:model-value="value => updatePlacementField('horizontal_align', String(value))" />
         </label>
 
         <label class="space-y-1.5">
           <span class="text-[11px] font-semibold text-slate-500">垂直对齐</span>
-          <select
-            :value="modelValue.placement.vertical_align"
-            class="h-9 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm font-medium text-slate-700 outline-none transition focus:border-indigo-500 focus:bg-white"
-            @change="updatePlacementField('vertical_align', ($event.target as HTMLSelectElement).value)"
-          >
-            <option value="start">顶部</option>
-            <option value="center">居中</option>
-            <option value="end">底部</option>
-          </select>
+          <UiSelect :model-value="modelValue.placement.vertical_align" :options="verticalAlignmentSelectOptions" @update:model-value="value => updatePlacementField('vertical_align', String(value))" />
         </label>
 
         <label class="col-span-2 space-y-1.5">
@@ -265,7 +243,7 @@ import {
   ChevronDown,
 } from '@lucide/vue'
 
-import BaseButton from '@/components/ui/BaseButton.vue'
+import { UiButton, UiIconButton, UiSelect } from '@/components/ui'
 import type { ComponentPreviewAlignment, ComponentPreviewOptions, ComponentPreviewSizeMode } from '@/types/api'
 import {
   cloneComponentPreviewOptions,
@@ -295,6 +273,21 @@ const sizeModeOptions: Array<{
   { value: 'percent', label: '%' },
   { value: 'fixed', label: 'px' },
   { value: 'auto', label: 'auto' },
+]
+const sizeModeSelectOptions = [
+  { value: 'percent', label: '百分比' },
+  { value: 'fixed', label: '固定像素' },
+  { value: 'auto', label: '自适应' },
+]
+const alignmentSelectOptions = [
+  { value: 'start', label: '左侧' },
+  { value: 'center', label: '居中' },
+  { value: 'end', label: '右侧' },
+]
+const verticalAlignmentSelectOptions = [
+  { value: 'start', label: '顶部' },
+  { value: 'center', label: '居中' },
+  { value: 'end', label: '底部' },
 ]
 const sizeModeDropdownVisible = ref(false)
 const sizeModeDropdownField = ref<SizeModeField | null>(null)

@@ -11,39 +11,19 @@
       </div>
       <div class="flex shrink-0 items-center gap-1">
         <slot name="actions" />
-        <button
+        <UiIconButton
           v-if="showClose"
           type="button"
-          class="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
-          title="关闭侧栏"
+          label="关闭侧栏"
           @click="closePanel"
         >
           <X class="h-4 w-4" />
-        </button>
+        </UiIconButton>
       </div>
     </div>
 
     <div v-if="showSearch" class="shrink-0 border-b border-slate-50 bg-slate-50/50 px-3 py-2">
-      <div class="group relative">
-        <Search
-          class="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400 transition-colors group-focus-within:text-indigo-500"
-        />
-        <input
-          v-model="searchText"
-          type="text"
-          :placeholder="searchPlaceholder"
-          class="h-8 w-full rounded-lg border border-slate-200 bg-white pl-9 pr-9 text-xs transition-all focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-        />
-        <button
-          v-if="searchText"
-          type="button"
-          class="absolute right-2 top-1/2 -translate-y-1/2 rounded-full p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
-          title="清空搜索"
-          @click="clearSearch"
-        >
-          <X class="h-3.5 w-3.5" />
-        </button>
-      </div>
+      <SimpleSearchBar v-model="searchText" :placeholder="searchPlaceholder" />
     </div>
 
     <slot />
@@ -52,7 +32,9 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import { Search, X } from '@lucide/vue'
+import { X } from '@lucide/vue'
+import SimpleSearchBar from '@/components/patterns/SimpleSearchBar.vue'
+import { UiIconButton } from '@/components/ui'
 
 const props = withDefaults(defineProps<{
   modelValue: boolean
@@ -85,10 +67,4 @@ function closePanel() {
   emit('update:modelValue', false)
 }
 
-/**
- * 清空搜索关键字，恢复当前库侧栏的完整列表。
- */
-function clearSearch() {
-  searchText.value = ''
-}
 </script>

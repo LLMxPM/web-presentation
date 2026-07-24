@@ -1,22 +1,27 @@
 <!-- 文件功能：提供工作空间级组件库页面，左侧浏览组件库，右侧承载组件预览、编辑与 Runtime Kit 预览工作台。 -->
 <template>
   <div data-testid="components-view" class="flex h-full min-h-0 flex-col gap-2">
-    <PageTitleBar class="shrink-0" :title="workspaceTitle">
+    <PageHeader class="shrink-0" :title="workspaceTitle" description="集中管理工作空间组件、Runtime Kit 预览与组件分享。">
       <template #actions>
-        <BaseButton
-          variant="ghost"
+        <UiButton
+          variant="secondary"
+          size="md"
           :disabled="!workspaceId || importValidatePending || importPackagePending"
           @click="openImportFilePicker"
         >
-          <Upload class="h-3.5 w-3.5" />
+          <template #icon>
+            <Upload class="h-3.5 w-3.5" />
+          </template>
           导入组件
-        </BaseButton>
-        <BaseButton :disabled="!workspaceId" @click="handleCreateWorkspaceComponent">
-          <Plus class="h-3.5 w-3.5" />
+        </UiButton>
+        <UiButton size="md" :disabled="!workspaceId" @click="handleCreateWorkspaceComponent">
+          <template #icon>
+            <Plus class="h-3.5 w-3.5" />
+          </template>
           新增组件
-        </BaseButton>
+        </UiButton>
       </template>
-    </PageTitleBar>
+    </PageHeader>
     <input
       ref="importFileInputRef"
       class="hidden"
@@ -46,13 +51,14 @@
         @refresh-requested="refreshComponentList"
       />
 
-      <main class="min-w-0 overflow-hidden border-l border-slate-200 bg-slate-50/70">
+      <main class="h-full min-h-0 min-w-0 overflow-hidden border-l border-slate-200 bg-slate-50/70">
         <WorkspaceComponentWorkbench
           v-if="activeWorkbench === 'workspace'"
           :workspace-id="workspaceId"
           :component="selectedComponent"
           :create-token="createComponentToken"
           simplified-preview
+          class="h-full min-h-0"
           @component-saved="handleWorkspaceComponentSaved"
           @component-published="handleWorkspaceComponentSaved"
           @request-list-refresh="refreshComponentList"
@@ -65,7 +71,7 @@
           :title="selectedRuntimeKitItem?.display_name || 'Runtime Kit 组件预览'"
           :subtitle="selectedRuntimeKitItem?.import_path || ''"
           simplified
-          class="h-full"
+          class="h-full min-h-0"
         />
 
         <section v-else class="flex h-full items-center justify-center bg-white px-6 text-center">
@@ -107,7 +113,7 @@
       @confirm="handleConfirmExportPackage"
     />
 
-    <BaseDialog v-model="importDialogVisible" title="导入组件" size="standard">
+    <UiDialog :open="importDialogVisible" title="导入组件" size="standard" @update:open="importDialogVisible = $event">
       <div class="space-y-4">
         <div class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
           <p class="text-sm font-bold text-slate-700">{{ importFile?.name || '未选择文件' }}</p>
@@ -170,17 +176,18 @@
       </div>
 
       <template #footer>
-        <BaseButton variant="ghost" @click="closeImportDialog">取消</BaseButton>
-        <BaseButton
+        <UiButton variant="ghost" @click="closeImportDialog">取消</UiButton>
+        <UiButton
           variant="primary"
+          size="sm"
           :disabled="!importValidation?.valid || !importFile"
           :loading="importPackagePending"
           @click="handleConfirmImportPackage"
         >
           确认导入
-        </BaseButton>
+        </UiButton>
       </template>
-    </BaseDialog>
+    </UiDialog>
   </div>
 </template>
 
@@ -204,11 +211,10 @@ import ComponentPreviewWorkbench from '@/components/component-preview/ComponentP
 import type { ComponentPreviewWorkbenchSource } from '@/components/component-preview/component-preview-workbench'
 import RuntimeKitCapabilityDocDialog from '@/components/component-preview/RuntimeKitCapabilityDocDialog.vue'
 import WorkspaceComponentWorkbench from '@/components/component-preview/WorkspaceComponentWorkbench.vue'
-import PageTitleBar from '@/components/layout/PageTitleBar.vue'
+import PageHeader from '@/components/patterns/PageHeader.vue'
 import ComponentLibraryPanel from '@/components/project/ComponentLibraryPanel.vue'
 import ExportPackageAssetsDialog from '@/components/project/ExportPackageAssetsDialog.vue'
-import BaseButton from '@/components/ui/BaseButton.vue'
-import BaseDialog from '@/components/ui/BaseDialog.vue'
+import { UiButton, UiDialog } from '@/components/ui'
 import { componentAgentContextKey } from '@/composables/component-agent-context'
 import type {
   AssetResponse,

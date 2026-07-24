@@ -30,25 +30,23 @@
             class="h-full w-full object-cover"
           >
           <div class="absolute inset-x-1 top-1 flex justify-between gap-1 opacity-0 transition group-hover:opacity-100">
-            <button
-              type="button"
-              class="flex h-4 w-4 items-center justify-center rounded bg-white/90 text-slate-500 shadow-sm hover:text-slate-800"
+            <UiIconButton
+              class="h-4 w-4 rounded bg-white/90 text-slate-500 shadow-sm hover:text-slate-800 [&_svg]:h-2.5 [&_svg]:w-2.5"
+              label="保存为资源"
               aria-label="保存为资源"
-              title="保存为资源"
               :disabled="Boolean(attachment.promoted_asset_id)"
               @click="emit('promoteImage', attachment.id)"
             >
-              <Archive class="h-2.5 w-2.5" />
-            </button>
-            <button
-              type="button"
-              class="flex h-4 w-4 items-center justify-center rounded bg-white/90 text-slate-500 shadow-sm hover:text-red-600"
+              <Archive />
+            </UiIconButton>
+            <UiIconButton
+              class="h-4 w-4 rounded bg-white/90 text-slate-500 shadow-sm hover:text-red-600 [&_svg]:h-2.5 [&_svg]:w-2.5"
+              label="移除图片"
               aria-label="移除图片"
-              title="移除图片"
               @click="emit('removeImage', attachment.id)"
             >
-              <X class="h-2.5 w-2.5" />
-            </button>
+              <X />
+            </UiIconButton>
           </div>
         </article>
       </div>
@@ -63,32 +61,33 @@
             multiple
             @change="handleImageInputChange"
           >
-          <button
-            type="button"
-            class="flex h-6 w-6 shrink-0 items-center justify-center rounded transition"
-            :class="uploadButtonDisabled ? 'cursor-not-allowed text-slate-300' : 'text-slate-400 hover:bg-slate-100 hover:text-slate-700'"
+          <UiIconButton
+            size="xs"
+            :class="uploadButtonDisabled ? 'text-slate-300' : 'text-slate-400'"
+            label="上传图片"
             aria-label="上传图片"
             :title="imageUploadDisabledReason || '上传图片'"
             :disabled="uploadButtonDisabled"
             @click="openImagePicker"
           >
-            <ImagePlus class="h-3 w-3" />
-          </button>
-          <button
-            type="button"
-            class="flex h-6 w-6 shrink-0 items-center justify-center rounded text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+            <ImagePlus />
+          </UiIconButton>
+          <UiIconButton
+            size="xs"
+            :label="sizeMode === 'expanded' ? '折叠输入框' : '展开输入框'"
             :aria-label="sizeMode === 'expanded' ? '折叠输入框' : '展开输入框'"
             :aria-pressed="sizeMode === 'expanded'"
             :title="sizeMode === 'expanded' ? '折叠输入框' : '展开输入框'"
             @click="toggleSizeMode"
           >
-            <Minimize2 v-if="sizeMode === 'expanded'" class="h-2.5 w-2.5" />
-            <Maximize2 v-else class="h-2.5 w-2.5" />
-          </button>
+            <Minimize2 v-if="sizeMode === 'expanded'" />
+            <Maximize2 v-else />
+          </UiIconButton>
           <span v-if="contextUsageVisible" ref="contextUsageRef" class="relative inline-flex shrink-0">
-            <button
-              type="button"
-              class="group flex h-6 w-6 items-center justify-center rounded text-slate-500 transition hover:bg-slate-50 hover:text-slate-700"
+            <UiIconButton
+              size="xs"
+              class="group h-6 w-6 rounded text-slate-500 hover:bg-slate-50 hover:text-slate-700"
+              label="上下文用量"
               :aria-label="contextUsageAriaLabel"
               :aria-expanded="contextUsagePopoverVisible"
               aria-haspopup="dialog"
@@ -115,7 +114,7 @@
                   stroke-dashoffset="0"
                 />
               </svg>
-            </button>
+            </UiIconButton>
             <div
               v-if="contextUsagePopoverVisible"
               class="absolute bottom-8 left-0 z-20 w-44 rounded-md border border-slate-200 bg-white p-3 text-xs shadow-lg shadow-slate-900/10"
@@ -142,17 +141,17 @@
         </div>
         <div class="flex shrink-0 items-center gap-1">
           <slot name="action-prefix" />
-          <BaseButton
+          <UiButton
             :variant="primaryActionVariant"
             :loading="composerState === 'interrupting'"
             :disabled="primaryActionDisabled"
-            custom-class="h-6 rounded-md px-2 py-0 text-[11px] shadow-none"
+            class="h-6 rounded-md px-2 py-0 text-[11px]"
             @click="emitPrimaryAction"
           >
             <Square v-if="isRunningState" class="h-2.5 w-2.5" />
             <SendHorizonal v-else class="h-2.5 w-2.5" />
             {{ primaryActionLabel }}
-          </BaseButton>
+          </UiButton>
         </div>
       </div>
     </div>
@@ -186,7 +185,7 @@ import { Archive, ImagePlus, Maximize2, Minimize2, SendHorizonal, Square, X } fr
 
 import AgentChoicePrompt from '@/components/agent/AgentChoicePrompt.vue'
 import AgentToolConfirmPrompt from '@/components/agent/AgentToolConfirmPrompt.vue'
-import BaseButton from '@/components/ui/BaseButton.vue'
+import { UiButton, UiIconButton } from '@/components/ui'
 import type { AgentFeedbackSelection, AgentImageAttachmentItem, AgentPendingRequirement, AgentSuggestedPatch } from '@/types/api'
 
 interface Props {

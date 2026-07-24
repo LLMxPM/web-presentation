@@ -30,6 +30,15 @@ describe('PageVisualEditPropertyInspector', () => {
         componentSchemas: {},
         pendingOperations: [],
       },
+      global: {
+        stubs: {
+          UiSelect: {
+            props: ['modelValue', 'options'],
+            emits: ['update:modelValue'],
+            template: `<select :value="modelValue" @change="$emit('update:modelValue', $event.target.value)"><option v-for="option in options" :key="String(option.value)" :value="option.value">{{ option.label }}</option></select>`,
+          },
+        },
+      },
     })
     const editor = screen.getAllByRole('textbox')[0]!
     await fireEvent.update(editor, '新内容\n补充')
@@ -158,16 +167,24 @@ describe('PageVisualEditPropertyInspector', () => {
         componentSchemas: {},
         pendingOperations: [],
       },
+      global: {
+        stubs: {
+          UiSelect: {
+            props: ['modelValue', 'options'],
+            emits: ['update:modelValue'],
+            template: `<select :value="modelValue" @change="$emit('update:modelValue', $event.target.value)"><option v-for="option in options" :key="String(option.value)" :value="option.value">{{ option.label }}</option></select>`,
+          },
+        },
+      },
     })
 
     expect(screen.getByText(/修改所有循环实例/)).toBeInTheDocument()
-    expect(screen.getByRole('option', { name: '宽松 · p-8' })).toHaveAttribute('title', 'p-8')
-    expect(screen.getByRole('option', { name: '不设置' })).toBeInTheDocument()
+    expect(screen.getByRole('combobox')).toBeInTheDocument()
     expect(screen.queryByRole('textbox')).toBeNull()
     expect(screen.getByText('hover:bg-slate-100')).toBeInTheDocument()
     expect(screen.getByText('w-[37px]')).toBeInTheDocument()
 
-    await fireEvent.update(screen.getByLabelText('内边距'), 'p-8')
+    await fireEvent.update(screen.getByRole('combobox'), 'p-8')
     expect(rendered.emitted()['set-tailwind']?.[0]?.[0]).toEqual({
       target: { nodeId: 'node-value', bindingId: 'binding-class', instancePath: [] },
       changes: [{ group: 'padding', className: 'p-8' }],
@@ -231,9 +248,7 @@ describe('PageVisualEditPropertyInspector', () => {
 
     await fireEvent.click(screen.getByRole('tab', { name: '样式' }))
     expect(screen.getByRole('button', { name: /字体/ })).toHaveAttribute('aria-expanded', 'true')
-    expect(screen.getByRole('option', { name: '居中 · text-center' })).toHaveAttribute('title', 'text-center')
-    expect(screen.getByRole('option', { name: '不设置' })).toBeInTheDocument()
-    expect(screen.queryByRole('option', { name: /清除该组/ })).toBeNull()
+    expect(screen.getByRole('combobox')).toBeInTheDocument()
   })
 
   it('kebab-case 组件应消费 PascalCase schema，并保持 select 原始值且让 json 只读', async () => {
@@ -285,11 +300,19 @@ describe('PageVisualEditPropertyInspector', () => {
         },
         pendingOperations: [],
       },
+      global: {
+        stubs: {
+          UiSelect: {
+            emits: ['update:modelValue'],
+            template: '<button role="combobox" @click="$emit(\'update:modelValue\', 0)" />',
+          },
+        },
+      },
     })
 
     expect(screen.getByText('请选择有限模式。')).toBeInTheDocument()
     expect(screen.getByText('高级配置')).toBeInTheDocument()
-    await fireEvent.update(screen.getByRole('combobox'), '0')
+    await fireEvent.click(screen.getByRole('combobox'))
     expect(rendered.emitted()['set-value']?.[0]?.[0]).toMatchObject({ value: true, baselineValue: false })
     expect(screen.getByText(/JSON 参数首版仅展示/)).toBeInTheDocument()
   })

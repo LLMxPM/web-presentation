@@ -1,6 +1,6 @@
 <!-- 文件功能：项目名称与描述独立编辑弹窗，用于在页面列表页快速修改项目基础标识信息。 -->
 <template>
-  <BaseDialog :model-value="modelValue" title="修改项目基础信息" size="standard" @update:model-value="handleVisibleChange">
+  <UiDialog :open="modelValue" title="修改项目基础信息" size="standard" @update:open="handleVisibleChange">
     <div v-if="project" class="space-y-5">
       <div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
         <p class="text-sm font-semibold text-slate-700">{{ project.code }}</p>
@@ -9,9 +9,9 @@
         </p>
       </div>
 
-      <BaseInput v-model="form.name" label="项目名称" placeholder="起一个具有辨识度的名称" required :error="errors.name" />
+      <UiFormField label="项目名称" required :error="errors.name"><template #default="field"><UiInput v-model="form.name" placeholder="起一个具有辨识度的名称" required :input-id="field.inputId" :described-by="field.describedBy" :invalid="field.invalid" /></template></UiFormField>
 
-      <BaseInput v-model="form.description" type="textarea" label="项目描述" placeholder="概括此项目要阐述的内容" :rows="4" />
+      <UiFormField label="项目描述"><template #default="field"><UiInput v-model="form.description" type="textarea" placeholder="概括此项目要阐述的内容" :rows="4" :input-id="field.inputId" :described-by="field.describedBy" /></template></UiFormField>
     </div>
 
     <div v-else class="py-10 text-center text-sm text-slate-400">
@@ -19,20 +19,18 @@
     </div>
 
     <template #footer>
-      <BaseButton variant="ghost" @click="handleVisibleChange(false)">取消</BaseButton>
-      <BaseButton variant="primary" :loading="loading" :disabled="!project" @click="handleSubmit">
+      <UiButton variant="ghost" @click="handleVisibleChange(false)">取消</UiButton>
+      <UiButton variant="primary" :loading="loading" :disabled="!project" @click="handleSubmit">
         保存修改
-      </BaseButton>
+      </UiButton>
     </template>
-  </BaseDialog>
+  </UiDialog>
 </template>
 
 <script setup lang="ts">
 import { reactive, watch } from 'vue'
 
-import BaseButton from '@/components/ui/BaseButton.vue'
-import BaseDialog from '@/components/ui/BaseDialog.vue'
-import BaseInput from '@/components/ui/BaseInput.vue'
+import { UiButton, UiDialog, UiFormField, UiInput } from '@/components/ui'
 import type { ProjectItem } from '@/types/api'
 
 const props = withDefaults(defineProps<{

@@ -1,11 +1,11 @@
 <!-- 文件功能：项目建议引用内容资源弹窗，支持选择一组项目级 AI 参考素材。 -->
 <template>
-  <BaseDialog
-    :model-value="modelValue"
+  <UiDialog
+    :open="modelValue"
     title="项目建议资源"
     size="wide"
     body-preset="dense"
-    @update:model-value="handleVisibleChange"
+    @update:open="handleVisibleChange"
   >
     <div v-if="projectId && workspaceId" class="grid h-full min-h-0 grid-rows-[minmax(220px,0.95fr)_minmax(0,1.05fr)] gap-2 overflow-hidden lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.2fr)] lg:grid-rows-1">
       <section class="flex h-full min-h-0 flex-col rounded-lg border border-indigo-100 bg-indigo-50/40 p-3">
@@ -37,24 +37,22 @@
               <span class="rounded-full bg-indigo-50 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-600">
                 {{ resolveAssetTypeLabel(asset.asset_type) }}
               </span>
-              <button
-                type="button"
-                class="rounded-md p-1 text-indigo-500 transition hover:bg-indigo-50 hover:text-indigo-700"
-                :aria-label="`预览资源 ${asset.name}`"
+              <UiIconButton
+                size="xs"
+                :label="`预览资源 ${asset.name}`"
                 :title="`预览 ${asset.name}`"
                 @click="openAssetPreview(asset)"
               >
                 <ZoomIn class="h-3.5 w-3.5" />
-              </button>
-              <button
-                type="button"
-                class="rounded-md p-1 text-indigo-500 transition hover:bg-indigo-50 hover:text-indigo-700"
-                :aria-label="`移除资源 ${asset.name}`"
+              </UiIconButton>
+              <UiIconButton
+                size="xs"
+                :label="`移除资源 ${asset.name}`"
                 :title="`移除 ${asset.name}`"
                 @click="removeAsset(asset.id)"
               >
                 <X class="h-3.5 w-3.5" />
-              </button>
+              </UiIconButton>
             </span>
           </article>
         </div>
@@ -63,41 +61,41 @@
 
       <section class="flex h-full min-h-0 flex-col rounded-lg border border-slate-200 bg-white p-3">
         <div class="grid shrink-0 grid-cols-[minmax(0,1fr)_auto_auto_auto] gap-2">
-          <BaseInput
+          <SimpleSearchBar
             :model-value="assetKeyword"
             placeholder="按资源 name 搜索"
             @update:model-value="assetKeyword = String($event)"
-            @keyup.enter="loadAvailableAssets"
+            @submit="loadAvailableAssets"
           />
-          <BaseButton
+          <UiButton
             variant="secondary"
             :loading="assetOptionsLoading"
-            custom-class="h-11 min-w-[80px] whitespace-nowrap"
+            class="h-8 min-w-[80px] whitespace-nowrap"
             @click="loadAvailableAssets"
           >
             <template #icon>
               <Search class="h-4 w-4" />
             </template>
             搜索
-          </BaseButton>
-          <BaseButton
+          </UiButton>
+          <UiButton
             variant="ghost"
             size="sm"
             :loading="assetOptionsLoading"
-            custom-class="h-11 min-w-[64px] whitespace-nowrap"
+            class="h-8 min-w-[64px] whitespace-nowrap"
             @click="loadAvailableAssets"
           >
             <template #icon>
               <RefreshCw class="h-4 w-4" />
             </template>
             刷新
-          </BaseButton>
-          <BaseButton
+          </UiButton>
+          <UiButton
             variant="secondary"
             size="sm"
             :loading="uploading"
             :disabled="!projectId || !workspaceId || loading || saving"
-            custom-class="h-11 min-w-[108px] whitespace-nowrap"
+            class="h-11 min-w-[108px] whitespace-nowrap"
             :title="uploadButtonTitle"
             @click="triggerUpload"
           >
@@ -105,7 +103,7 @@
               <Upload class="h-4 w-4" />
             </template>
             {{ uploadButtonText }}
-          </BaseButton>
+          </UiButton>
           <input
             :ref="setUploadFileInput"
             type="file"
@@ -117,11 +115,11 @@
         </div>
 
         <div class="mt-3 flex shrink-0 flex-wrap gap-1.5">
-          <button
+          <UiButton
             v-for="tab in assetTypeTabs"
             :key="tab.key"
-            type="button"
-            class="inline-flex h-7 items-center gap-1 rounded-md px-2 text-xs font-semibold transition"
+            variant="ghost"
+            size="xs"
             :class="activeAssetTypeTab === tab.key ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'"
             @click="activeAssetTypeTab = tab.key"
           >
@@ -129,7 +127,7 @@
             <span class="rounded-full px-1 text-[10px]" :class="activeAssetTypeTab === tab.key ? 'bg-white/20 text-white' : 'bg-white text-slate-500'">
               {{ tab.count }}
             </span>
-          </button>
+          </UiButton>
         </div>
 
         <div v-if="assetOptionsLoading" class="mt-3 flex min-h-0 flex-1 items-center justify-center text-sm font-semibold text-slate-400">
@@ -143,9 +141,9 @@
             class="flex min-h-16 min-w-0 items-stretch justify-between gap-1 rounded-md border text-left transition"
             :class="assetOptionClass(asset.id)"
           >
-            <button
-              type="button"
-              class="flex min-w-0 flex-1 items-center justify-between gap-2 px-3 py-2 text-left"
+            <UiButton
+              variant="ghost"
+              class="h-auto min-w-0 flex-1 justify-between px-3 py-2 text-left"
               @click="toggleAsset(asset.id)"
             >
               <span class="min-w-0 text-left">
@@ -155,16 +153,17 @@
               </span>
               <Check v-if="isSelected(asset.id)" class="h-4 w-4 shrink-0" />
               <Plus v-else class="h-4 w-4 shrink-0" />
-            </button>
-            <button
-              type="button"
-              class="flex w-9 shrink-0 items-center justify-center rounded-r-md border-l border-current/10 opacity-80 transition hover:bg-white/60 hover:opacity-100"
-              :aria-label="`预览资源 ${asset.name}`"
+            </UiButton>
+            <UiIconButton
+              variant="ghost"
+              size="sm"
+              class="rounded-l-none border-l border-current/10"
+              :label="`预览资源 ${asset.name}`"
               :title="`预览 ${asset.name}`"
               @click="openAssetPreview(asset)"
             >
               <ZoomIn class="h-4 w-4" />
-            </button>
+            </UiIconButton>
           </article>
         </div>
         <p v-else class="mt-3 flex min-h-0 flex-1 items-center justify-center text-xs text-slate-400">没有匹配的内容资源</p>
@@ -176,24 +175,24 @@
     </div>
 
     <template #footer>
-      <BaseButton variant="ghost" @click="handleVisibleChange(false)">取消</BaseButton>
-      <BaseButton variant="ghost" :disabled="loading || saving || uploading || !projectId" @click="loadDialogData">恢复当前值</BaseButton>
-      <BaseButton variant="primary" :loading="saving" :disabled="!projectId || !workspaceId || uploading" @click="saveSelection">
+      <UiButton variant="ghost" @click="handleVisibleChange(false)">取消</UiButton>
+      <UiButton variant="ghost" :disabled="loading || saving || uploading || !projectId" @click="loadDialogData">恢复当前值</UiButton>
+      <UiButton variant="primary" :loading="saving" :disabled="!projectId || !workspaceId || uploading" @click="saveSelection">
         保存资源
-      </BaseButton>
+      </UiButton>
     </template>
-  </BaseDialog>
+  </UiDialog>
 
-  <BaseDialog
-    :model-value="!!previewAsset"
+  <UiDialog
+    :open="!!previewAsset"
     :title="previewDialogTitle"
     size="wide"
     body-preset="split"
     :z-index="1110"
-    @update:model-value="handlePreviewVisibleChange"
+    @update:open="handlePreviewVisibleChange"
   >
     <AssetPreviewFrame class="h-full" :workspace-id="workspaceId" :asset="previewAsset" />
-  </BaseDialog>
+  </UiDialog>
 </template>
 
 <script setup lang="ts">
@@ -206,9 +205,8 @@ import {
   updateProjectSuggestedReferenceAssets,
 } from '@/api/catalog'
 import { getErrorMessage } from '@/api/http'
-import BaseButton from '@/components/ui/BaseButton.vue'
-import BaseDialog from '@/components/ui/BaseDialog.vue'
-import BaseInput from '@/components/ui/BaseInput.vue'
+import SimpleSearchBar from '@/components/patterns/SimpleSearchBar.vue'
+import { UiButton, UiDialog, UiIconButton } from '@/components/ui'
 import AssetPreviewFrame from '@/components/project/AssetPreviewFrame.vue'
 import type { AssetResponse, AssetType, ProjectSuggestedReferenceAssetItem } from '@/types/api'
 import { Message } from '@/utils/message'

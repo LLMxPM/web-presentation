@@ -66,15 +66,16 @@
               </div>
             </div>
             <div class="mt-0.5 flex shrink-0 items-center gap-1">
-              <button
+              <UiIconButton
                 v-if="item.kind === 'component'"
-                type="button"
+                label="复制 import 语句"
+                size="xs"
                 class="rounded-lg p-1 text-slate-400 opacity-0 transition-colors hover:bg-indigo-50 hover:text-indigo-600 group-hover:opacity-100"
                 title="复制 import 语句"
                 @click.stop="copyRuntimeKitComponentImportStatement(item)"
               >
                 <Copy class="h-3.5 w-3.5" />
-              </button>
+              </UiIconButton>
               <Eye v-if="item.previewable" class="h-4 w-4 text-slate-300 group-hover:text-indigo-500" />
               <FileText v-else class="h-4 w-4 text-slate-300 group-hover:text-indigo-500" />
             </div>
@@ -103,6 +104,7 @@ import { Copy, Eye, FileText, PackageOpen } from '@lucide/vue'
 
 import { getErrorMessage } from '@/api/http'
 import { listRuntimeKitComponents } from '@/api/runtime-kit'
+import { UiIconButton } from '@/components/ui'
 import LibraryChipFilter from '@/components/project/LibraryChipFilter.vue'
 import LibrarySegmentedControl from '@/components/project/LibrarySegmentedControl.vue'
 import type { RuntimeKitCapabilityKind, RuntimeKitComponentCapabilityItem } from '@/types/api'

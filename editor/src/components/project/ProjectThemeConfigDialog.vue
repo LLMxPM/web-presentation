@@ -1,10 +1,10 @@
 <!-- 文件功能：项目主题配置弹窗，负责选择项目引用的工作空间主题。 -->
 <template>
-  <BaseDialog
-    :model-value="modelValue"
+  <UiDialog
+    :open="modelValue"
     title="主题配置"
     size="standard"
-    @update:model-value="handleVisibleChange"
+    @update:open="handleVisibleChange"
   >
     <div v-if="project" class="space-y-4">
       <div class="flex items-start justify-between gap-4 flex-wrap">
@@ -36,20 +36,19 @@
     </div>
 
     <template #footer>
-      <BaseButton variant="ghost" @click="handleVisibleChange(false)">取消</BaseButton>
-      <BaseButton variant="primary" :loading="loading" :disabled="!project" @click="handleSave">
+      <UiButton variant="ghost" @click="handleVisibleChange(false)">取消</UiButton>
+      <UiButton variant="primary" :loading="loading" :disabled="!project" @click="handleSave">
         保存主题
-      </BaseButton>
+      </UiButton>
     </template>
-  </BaseDialog>
+  </UiDialog>
 </template>
 
 <script setup lang="ts">
 import { ref, watch } from 'vue'
 
 import ThemeSelectorField from '@/components/theme/ThemeSelectorField.vue'
-import BaseButton from '@/components/ui/BaseButton.vue'
-import BaseDialog from '@/components/ui/BaseDialog.vue'
+import { UiButton, UiDialog } from '@/components/ui'
 import type { ProjectItem } from '@/types/api'
 
 const props = withDefaults(defineProps<{

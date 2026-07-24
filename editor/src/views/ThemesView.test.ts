@@ -117,7 +117,8 @@ describe('ThemesView', () => {
 
     await fireEvent.click(screen.getByRole('button', { name: /^注册$/ }))
 
-    expect(screen.getByRole('option', { name: 'SourceHanSans / SourceHanSans.woff2' })).toBeInTheDocument()
+    expect(screen.getAllByRole('combobox')).toHaveLength(4)
+    expect(screen.getAllByRole('combobox')[0]).toHaveTextContent('SourceHanSans / SourceHanSans.woff2')
     expect(screen.getByDisplayValue('SourceHanSans')).toBeInTheDocument()
   })
 
@@ -206,8 +207,8 @@ function renderThemesView() {
   return render(ThemesView, {
     global: {
       stubs: {
-        BaseButton: defineComponent({
-          name: 'BaseButton',
+        UiButton: defineComponent({
+          name: 'UiButton',
           props: {
             disabled: Boolean,
           },

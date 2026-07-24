@@ -5,88 +5,89 @@
       <PageTitleBar
         v-if="projectDetails"
         :title="projectDetails.name"
-        :title-class="projectTitleClass"
         :code="projectTitleCode"
         :description="projectDetails.description"
       >
         <template #title-leading>
-          <button
-            type="button"
-            class="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 text-slate-500 transition-all hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-50"
-            title="返回空间首页"
-            aria-label="返回空间首页"
-            :disabled="!workspaceId"
+          <UiIconButton 
+            label="返回空间首页" 
+            variant="ghost"
+            size="xs" 
+            :disabled="!workspaceId" 
             @click="goToWorkspaceHome"
           >
             <ArrowLeft class="h-4 w-4" />
-          </button>
+          </UiIconButton>
         </template>
-
         <template #title-actions>
-          <button type="button" class="project-identity-action" title="修改项目基础信息" aria-label="修改项目基础信息"
-            @click="openProjectIdentityDialog">
-            <SquarePen class="h-3.5 w-3.5" />
-          </button>
+          <UiIconButton 
+            label="修改项目基础信息" 
+            variant="ghost"
+            size="xs" 
+            :disabled="!projectDetails" 
+            @click="openProjectIdentityDialog"
+          >
+            <SquarePen class="h-4 w-4" />
+          </UiIconButton>
         </template>
-
         <template #actions>
-          <div class="page-card-size-control" role="group" aria-label="预览卡片大小">
-            <button
-              v-for="option in pageCardSizeOptions"
-              :key="option.value"
-              type="button"
-              class="page-card-size-button"
-              :class="pageCardSize === option.value ? 'page-card-size-button-active' : ''"
-              :title="`卡片${option.label}`"
-              :aria-label="`卡片${option.label}`"
-              :aria-pressed="pageCardSize === option.value"
-              @click="setPageCardSize(option.value)"
-            >
-              <component :is="option.icon" class="h-3.5 w-3.5" />
-            </button>
-          </div>
-          <BaseButton variant="primary" :loading="previewLoading" :disabled="!projectDetails"
-            @click="handlePreviewProject">
-            <template #icon>
-              <Play class="h-4 w-4" />
+          <CommandBar class="pages-command-bar w-full" label="项目页面操作">
+            <template #actions>
+              <div class="flex items-center gap-1">
+                <UiIconSegmented
+                  :model-value="pageCardSize"
+                  :options="pageCardSizeOptions"
+                  size="xs"
+                  aria-label="预览卡片大小"
+                  @update:model-value="setPageCardSize"
+                />
+                <div class="mx-0.5 h-5 w-px bg-slate-200"></div>
+                <UiButton
+                  variant="primary"
+                  size="sm"
+                  :loading="previewLoading"
+                  :disabled="!projectDetails"
+                  @click="handlePreviewProject"
+                >
+                  <template #icon>
+                    <Play class="h-4 w-4" />
+                  </template>
+                  预览
+                </UiButton>
+                <UiButton variant="ghost" size="sm" :disabled="!projectDetails" @click="openPresentationConfigDialog">
+                  <template #icon>
+                    <SlidersHorizontal class="h-4 w-4" />
+                  </template>
+                  样式
+                </UiButton>
+                <UiButton variant="ghost" size="sm" :disabled="!projectDetails" @click="openSuggestedReferenceAssetsDialog">
+                  <template #icon>
+                    <Image class="h-4 w-4" />
+                  </template>
+                  资源
+                </UiButton>
+                <UiButton variant="ghost" size="sm" :disabled="!projectDetails" @click="openSuggestedComponentsDialog">
+                  <template #icon>
+                    <Layers class="h-4 w-4" />
+                  </template>
+                  组件
+                </UiButton>
+              </div>
             </template>
-            预览
-          </BaseButton>
-          <BaseButton variant="ghost" :disabled="!projectDetails" @click="openPresentationConfigDialog">
-            <template #icon>
-              <SlidersHorizontal class="h-4 w-4" />
-            </template>
-            样式
-          </BaseButton>
-          <BaseButton variant="ghost" :disabled="!projectDetails" @click="openSuggestedReferenceAssetsDialog">
-            <template #icon>
-              <Image class="h-4 w-4" />
-            </template>
-            资源
-          </BaseButton>
-          <BaseButton variant="ghost" :disabled="!projectDetails" @click="openSuggestedComponentsDialog">
-            <template #icon>
-              <Layers class="h-4 w-4" />
-            </template>
-            组件
-          </BaseButton>
-
-          <BaseButton variant="primary" :disabled="!projectDetails" @click="openCreateDialog">
-            <template #icon>
-              <Plus class="h-4 w-4" />
-            </template>
-            新增
-          </BaseButton>
+          </CommandBar>
         </template>
       </PageTitleBar>
     </header>
 
-    <div v-if="query.isFetching.value" class="flex min-h-0 flex-1 flex-col items-center justify-center gap-4">
-      <div class="h-12 w-12 animate-spin rounded-full border-4 border-indigo-600 border-t-transparent"></div>
-      <span class="animate-pulse font-bold text-slate-400">资源库同步中...</span>
-    </div>
+    <SimpleSearchBar class="shrink-0" v-model="pageKeyword" placeholder="按页面标题或代码搜索" aria-label="搜索页面" />
 
-    <div v-else class="min-h-0 flex-1 space-y-10 overflow-y-auto pb-12 pr-1">
+    <DataState
+      :state="pageDataState"
+      title="页面列表暂不可用"
+      :description="query.isError.value ? '无法读取当前项目的页面，请重试。' : undefined"
+      @retry="query.refetch()"
+    >
+    <div class="min-h-0 h-full space-y-5 overflow-y-auto pb-8 pr-1">
       <RoutedPageSection
         :entries="routedPageEntries"
         :project-ready="!!projectDetails"
@@ -153,12 +154,32 @@
         @open-create="openCreateDialog"
       />
     </div>
+    </DataState>
 
-    <BaseDialog v-model="dialogVisible" title="新增页面" size="wide">
+    <UiDialog :open="dialogVisible" title="新增页面" size="wide" @update:open="dialogVisible = $event">
       <div class="space-y-6">
-        <BaseInput v-model="form.title" label="标题" placeholder="请输入页面标题" required :error="errors.title" />
+        <UiFormField label="标题" required :error="errors.title" v-slot="field">
+          <UiInput
+            v-model="form.title"
+            :input-id="field.inputId"
+            :described-by="field.describedBy"
+            :invalid="field.invalid"
+            placeholder="请输入页面标题"
+            required
+          />
+        </UiFormField>
 
-        <BaseInput v-model="form.summary" type="textarea" label="摘要说明" placeholder="简要概括此页面的核心职责" :rows="2" />
+        <UiFormField label="摘要说明" v-slot="field">
+          <UiInput
+            v-model="form.summary"
+            type="textarea"
+            :input-id="field.inputId"
+            :described-by="field.describedBy"
+            :invalid="field.invalid"
+            placeholder="简要概括此页面的核心职责"
+            :rows="2"
+          />
+        </UiFormField>
 
         <div class="space-y-1.5 border-t border-slate-100 pt-2">
           <div class="flex flex-wrap items-center justify-between gap-3">
@@ -168,13 +189,11 @@
             </label>
             <div class="flex items-center gap-2">
               <span class="text-[11px] font-bold uppercase tracking-widest text-slate-400">编辑器主题</span>
-              <button v-for="option in themeOptions" :key="option.value" type="button"
-                class="rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors" :class="createEditorTheme === option.value
-                  ? 'border-fuchsia-400 bg-fuchsia-500 text-white'
-                  : 'border-slate-200 bg-white text-slate-600 hover:border-slate-400'"
-                @click="createEditorTheme = option.value">
-                {{ option.label }}
-              </button>
+              <UiSegmentedControl
+                v-model="createEditorTheme"
+                aria-label="编辑器主题"
+                :options="themeOptions"
+              />
             </div>
           </div>
           <MonacoCodeEditor v-model="form.page_content" language="vue" :theme="createEditorTheme" :auto-save-delay="0"
@@ -183,10 +202,10 @@
         </div>
       </div>
       <template #footer>
-        <BaseButton variant="ghost" @click="dialogVisible = false">取消</BaseButton>
-        <BaseButton variant="primary" :loading="saving" @click="handleCreate">确 认 注入</BaseButton>
+        <UiButton variant="ghost" @click="dialogVisible = false">取消</UiButton>
+        <UiButton variant="primary" :loading="saving" @click="handleCreate">确 认 注入</UiButton>
       </template>
-    </BaseDialog>
+    </UiDialog>
 
     <PageCopyToProjectDialog
       v-model="pageCopyDialogVisible"
@@ -256,7 +275,6 @@ import {
   Image,
   Layers,
   Play,
-  Plus,
   SlidersHorizontal,
   SquarePen,
 } from '@lucide/vue'
@@ -287,7 +305,10 @@ import {
 import { createProjectPreviewArtifact } from '@/api/preview'
 import { getErrorCode, getErrorData, getErrorMessage } from '@/api/http'
 import MonacoCodeEditor from '@/components/editor/MonacoCodeEditor.vue'
+import CommandBar from '@/components/patterns/CommandBar.vue'
+import DataState from '@/components/patterns/DataState.vue'
 import PageTitleBar from '@/components/layout/PageTitleBar.vue'
+import SimpleSearchBar from '@/components/patterns/SimpleSearchBar.vue'
 import ArchivedPagesDialog from '@/components/page/ArchivedPagesDialog.vue'
 import PageBatchCopyToProjectDialog from '@/components/page/PageBatchCopyToProjectDialog.vue'
 import PageCopyToProjectDialog from '@/components/page/PageCopyToProjectDialog.vue'
@@ -305,9 +326,7 @@ import ProjectPresentationConfigDialog from '@/components/project/ProjectPresent
 import ProjectRouteConfigDialog from '@/components/project/ProjectRouteConfigDialog.vue'
 import ProjectSuggestedComponentsDialog from '@/components/project/ProjectSuggestedComponentsDialog.vue'
 import ProjectSuggestedReferenceAssetsDialog from '@/components/project/ProjectSuggestedReferenceAssetsDialog.vue'
-import BaseButton from '@/components/ui/BaseButton.vue'
-import BaseDialog from '@/components/ui/BaseDialog.vue'
-import BaseInput from '@/components/ui/BaseInput.vue'
+import { UiButton, UiDialog, UiFormField, UiIconButton, UiIconSegmented, UiInput, UiSegmentedControl } from '@/components/ui'
 import { useAgentSidebarExpanded } from '@/composables/agent-sidebar-state'
 import type { EditorThemeMode } from '@/types/monaco'
 import type {
@@ -381,7 +400,6 @@ const workspaceQuery = useQuery(
 
 const projectDetails = computed(() => projectQuery.data.value ?? null)
 const projectTitleCode = computed(() => (agentSidebarExpanded.value ? null : projectDetails.value?.code ?? null))
-const projectTitleClass = computed(() => (agentSidebarExpanded.value ? 'max-w-[10rem]' : ''))
 const projectScreenshotAspectRatio = computed(() => {
   const width = Number(projectDetails.value?.page_width ?? 0)
   const height = Number(projectDetails.value?.page_height ?? 0)
@@ -392,12 +410,25 @@ const currentPageCardSizeOption = computed(() => {
   return pageCardSizeOptions.find(option => option.value === pageCardSize.value) ?? pageCardSizeOptions[1]
 })
 const pageCardGridStyle = computed(() => ({
-  gridTemplateColumns: `repeat(auto-fill, minmax(${currentPageCardSizeOption.value.minWidth}px, 1fr))`,
+  gridTemplateColumns: `repeat(auto-fit, minmax(${currentPageCardSizeOption.value.minWidth}px, 1fr))`,
 }))
 const pageCreateCardStyle = computed(() => ({
   minHeight: `${Math.round(currentPageCardSizeOption.value.minWidth * 0.82)}px`,
 }))
-const pages = computed<PageItem[]>(() => query.data.value?.items ?? [])
+const pageKeyword = ref('')
+const allPages = computed<PageItem[]>(() => query.data.value?.items ?? [])
+const pages = computed<PageItem[]>(() => {
+  const keyword = pageKeyword.value.trim().toLocaleLowerCase()
+  if (!keyword) return allPages.value
+  return allPages.value.filter(page => [page.title, page.code, page.summary]
+    .filter((value): value is string => Boolean(value))
+    .some(value => value.toLocaleLowerCase().includes(keyword)))
+})
+const pageDataState = computed<'loading' | 'empty' | 'error' | 'ready'>(() => {
+  if (query.isPending.value || projectQuery.isPending.value) return 'loading'
+  if (query.isError.value || projectQuery.isError.value) return 'error'
+  return 'ready'
+})
 const routedPageEntries = computed<RoutedPageEntry[]>(() => {
   return pages.value
     .flatMap((page) => {
@@ -1437,39 +1468,6 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-.page-card-size-control {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.125rem;
-  border-radius: 0.625rem;
-  border: 1px solid rgb(226 232 240);
-  background: rgb(248 250 252);
-  padding: 0.125rem;
-}
-
-.page-card-size-button {
-  display: inline-flex;
-  height: 1.875rem;
-  width: 1.875rem;
-  align-items: center;
-  justify-content: center;
-  border-radius: 0.5rem;
-  color: rgb(100 116 139);
-  transition: all 0.18s ease;
-}
-
-.page-card-size-button:hover,
-.page-card-size-button-active {
-  background: white;
-  color: rgb(79 70 229);
-  box-shadow: 0 1px 2px rgb(15 23 42 / 0.08);
-}
-
-.page-card-size-button:focus-visible {
-  outline: 2px solid rgb(129 140 248);
-  outline-offset: 2px;
-}
-
 .project-identity-action {
   display: inline-flex;
   height: 1.625rem;

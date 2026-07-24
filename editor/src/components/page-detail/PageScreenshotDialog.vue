@@ -1,7 +1,7 @@
 <!-- 文件功能：展示页面截图信息、大图与下载入口，并提供重新截图操作。 -->
 <template>
-  <BaseDialog :model-value="props.modelValue" :title="`${props.pageTitle} · 页面截图`" size="wide" body-preset="editor"
-    @update:model-value="emit('update:modelValue', $event)">
+  <UiDialog :open="props.modelValue" :title="`${props.pageTitle} · 页面截图`" size="wide" body-preset="editor"
+    @update:open="emit('update:modelValue', $event)">
     <div class="flex h-full min-h-0 flex-col gap-2">
       <div class="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
         <div class="min-w-0">
@@ -13,7 +13,7 @@
             class="rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-700">
             当前截图不是最新版本
           </span>
-          <BaseButton
+          <UiButton
             v-if="props.screenshotUrl"
             variant="ghost"
             size="sm"
@@ -21,8 +21,8 @@
           >
             <Download class="h-3.5 w-3.5" />
             下载截图
-          </BaseButton>
-          <BaseButton
+          </UiButton>
+          <UiButton
             variant="primary"
             size="sm"
             :disabled="props.screenshotDisabled"
@@ -31,7 +31,7 @@
           >
             <Camera class="h-3.5 w-3.5" />
             重新截图
-          </BaseButton>
+          </UiButton>
         </div>
       </div>
 
@@ -47,15 +47,14 @@
         </div>
       </div>
     </div>
-  </BaseDialog>
+  </UiDialog>
 </template>
 
 <script setup lang="ts">
 import { computed } from 'vue'
 import { Camera, Download } from '@lucide/vue'
 
-import BaseButton from '@/components/ui/BaseButton.vue'
-import BaseDialog from '@/components/ui/BaseDialog.vue'
+import { UiButton, UiDialog } from '@/components/ui'
 import { formatDateTime } from '@/utils/format'
 import { downloadPageScreenshot } from '@/utils/page-screenshot-download'
 

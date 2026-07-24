@@ -1,7 +1,8 @@
 <!-- 文件功能：组织页面可视化编辑三栏工作区，管理 artifact 分析、非实时草稿、保存刷新与诊断展示。 -->
 <template>
-  <section class="flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-slate-200 bg-slate-100">
-    <header v-if="props.showHeader" class="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-2.5">
+  <section class="flex h-full min-h-0 flex-col overflow-hidden rounded-[var(--ui-radius-lg)] border border-[rgb(var(--ui-border))] bg-[rgb(var(--ui-surface-muted))]">
+    <CommandBar v-if="props.showHeader" class="shrink-0 rounded-none border-x-0 border-t-0 px-4 py-2.5" label="可视化编辑操作">
+      <template #leading>
       <div class="min-w-0">
         <div class="flex items-center gap-2">
           <h2 class="truncate text-sm font-bold text-slate-800">可视化编辑 · {{ props.pageTitle }}</h2>
@@ -18,8 +19,10 @@
         <p class="mt-0.5 text-xs text-slate-500">编辑期间画布保持当前 artifact；保存成功后重新分析并刷新。</p>
       </div>
 
+      </template>
+      <template #actions>
       <div class="flex items-center gap-2">
-        <BaseButton
+        <UiButton
           variant="ghost"
           size="sm"
           :disabled="busy || !session.hasPendingChanges.value"
@@ -27,12 +30,12 @@
         >
           <Undo2 class="h-3.5 w-3.5" />
           放弃修改
-        </BaseButton>
-        <BaseButton variant="ghost" size="sm" :disabled="busy" @click="reanalyze">
+        </UiButton>
+        <UiButton variant="ghost" size="sm" :disabled="busy" @click="reanalyze">
           <RefreshCw class="h-3.5 w-3.5" />
           重新分析
-        </BaseButton>
-        <BaseButton
+        </UiButton>
+        <UiButton
           variant="primary"
           size="sm"
           :loading="session.saving.value"
@@ -41,9 +44,10 @@
         >
           <Save class="h-3.5 w-3.5" />
           保存并刷新
-        </BaseButton>
+        </UiButton>
       </div>
-    </header>
+      </template>
+    </CommandBar>
 
     <div
       v-if="session.errorMessage.value"
@@ -128,7 +132,8 @@ import { LoaderCircle, RefreshCw, Save, Undo2 } from '@lucide/vue'
 
 import PageVisualEditLayerTree from '@/components/page-detail/visual-edit/PageVisualEditLayerTree.vue'
 import PageVisualEditPropertyInspector from '@/components/page-detail/visual-edit/PageVisualEditPropertyInspector.vue'
-import BaseButton from '@/components/ui/BaseButton.vue'
+import CommandBar from '@/components/patterns/CommandBar.vue'
+import { UiButton } from '@/components/ui'
 import { usePageVisualEditSession } from '@/composables/usePageVisualEditSession'
 import type {
   PageVisualEditApplyResponse,

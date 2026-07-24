@@ -46,13 +46,12 @@
             aria-label="选择页面"
             @click.stop
           >
-            <input
+            <UiCheckbox
               :data-testid="selectionTestId"
-              type="checkbox"
+              :model-value="selected"
               class="sr-only"
-              :checked="selected"
-              @change="handleSelectChange"
-            >
+              @update:model-value="handleSelectChange"
+            />
             <span class="page-card-select-box">
               <Check v-if="selected" class="h-3 w-3" />
             </span>
@@ -60,62 +59,60 @@
         </div>
       </div>
 
-      <div
-        class="pointer-events-none absolute inset-x-2 bottom-2 z-20 flex translate-y-1 justify-end gap-1 opacity-0 transition-all group-hover/card:pointer-events-auto group-hover/card:translate-y-0 group-hover/card:opacity-100"
-      >
-        <button
+      <CardActionBar>
+        <UiIconButton
           v-if="mode === 'routed'"
-          type="button"
-          class="page-card-action"
+          label="管理路由"
+          size="sm"
+          variant="secondary"
           title="管理路由"
-          aria-label="管理路由"
           @click.stop="emit('open-route-config')"
         >
           <RouteIcon class="h-3.5 w-3.5" />
-        </button>
-        <button
+        </UiIconButton>
+        <UiIconButton
           v-else
-          type="button"
-          class="page-card-action"
+          label="加入顶层路由"
+          size="sm"
+          variant="secondary"
           title="加入顶层路由"
-          aria-label="加入顶层路由"
           :disabled="routePending"
           @click.stop="emit('add-route', page)"
         >
           <RouteIcon class="h-3.5 w-3.5" />
-        </button>
-        <button
-          type="button"
-          class="page-card-action"
+        </UiIconButton>
+        <UiIconButton
+          label="复制到其他项目"
+          size="sm"
+          variant="secondary"
           title="复制到其他项目"
-          aria-label="复制到其他项目"
           @click.stop="emit('copy-page', page)"
         >
           <Copy class="h-3.5 w-3.5" />
-        </button>
-        <button
-          type="button"
+        </UiIconButton>
+        <UiIconButton
+          label="更新截图"
           data-testid="page-card-screenshot"
-          class="page-card-action"
+          size="sm"
+          variant="secondary"
           title="更新截图"
-          aria-label="更新截图"
           :disabled="screenshotDisabled"
           @click.stop="emit('save-screenshot', page)"
         >
           <LoaderCircle v-if="screenshotPending" class="h-3.5 w-3.5 animate-spin" />
           <Camera v-else class="h-3.5 w-3.5" />
-        </button>
-        <button
-          type="button"
-          class="page-card-action text-amber-600 hover:bg-amber-50"
+        </UiIconButton>
+        <UiIconButton
+          label="归档页面"
+          size="sm"
+          variant="secondary"
           title="归档页面"
-          aria-label="归档页面"
           :disabled="archivePending"
           @click.stop="emit('archive-page', page)"
         >
           <Archive class="h-3.5 w-3.5" />
-        </button>
-      </div>
+        </UiIconButton>
+      </CardActionBar>
     </div>
 
     <div class="p-3">
@@ -138,6 +135,8 @@
 import { computed } from 'vue'
 import { Archive, Camera, Check, Copy, Layout, LoaderCircle, Route as RouteIcon } from '@lucide/vue'
 
+import CardActionBar from '@/components/patterns/CardActionBar.vue'
+import { UiCheckbox, UiIconButton } from '@/components/ui'
 import type { PageItem } from '@/types/api'
 
 const props = withDefaults(defineProps<{
@@ -177,39 +176,14 @@ const showStaleBadge = computed(() => Boolean(props.page.screenshot_url && !prop
 
 /**
  * 将页面选择变更上抛给列表视图，保留原有的批量选择状态来源。
- * @param event 复选框变更事件
+ * @param checked 当前复选框值
  */
-function handleSelectChange(event: Event): void {
-  emit('select-change', props.page.id, event)
+function handleSelectChange(checked: boolean | 'indeterminate'): void {
+  emit('select-change', props.page.id, { target: { checked: checked === true } } as unknown as Event)
 }
 </script>
 
 <style scoped>
-.page-card-action {
-  display: inline-flex;
-  height: 1.875rem;
-  width: 1.875rem;
-  align-items: center;
-  justify-content: center;
-  border-radius: 0.5rem;
-  border: 1px solid rgb(226 232 240);
-  background: rgb(255 255 255 / 0.95);
-  color: rgb(71 85 105);
-  box-shadow: 0 1px 2px rgb(15 23 42 / 0.08);
-  transition: all 0.2s ease;
-}
-
-.page-card-action:hover {
-  border-color: rgb(199 210 254);
-  background: rgb(238 242 255);
-  color: rgb(79 70 229);
-}
-
-.page-card-action:disabled {
-  cursor: not-allowed;
-  opacity: 0.5;
-}
-
 .page-card-select {
   display: inline-flex;
   height: 1.5rem;

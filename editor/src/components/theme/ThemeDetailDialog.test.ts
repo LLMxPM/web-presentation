@@ -65,8 +65,8 @@ function renderDialog(options: { defaultThemeKey?: string } = {}) {
     },
     global: {
       stubs: {
-        BaseButton: defineComponent({
-          name: 'BaseButton',
+        UiButton: defineComponent({
+          name: 'UiButton',
           props: {
             disabled: Boolean,
           },
@@ -74,13 +74,13 @@ function renderDialog(options: { defaultThemeKey?: string } = {}) {
             return () => h('button', { ...attrs, disabled: props.disabled }, slots.default?.())
           },
         }),
-        BaseDialog: defineComponent({
-          name: 'BaseDialog',
+        UiDialog: defineComponent({
+          name: 'UiDialog',
           props: {
-            modelValue: Boolean,
+            open: Boolean,
           },
           setup(props, { slots }) {
-            return () => props.modelValue ? h('section', slots.default?.()) : null
+            return () => props.open ? h('section', slots.default?.()) : null
           },
         }),
         ThemePreviewCard: defineComponent({

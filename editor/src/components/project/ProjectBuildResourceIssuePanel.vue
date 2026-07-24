@@ -37,34 +37,34 @@
         </div>
 
         <div v-if="candidateAssetNames.length" class="mt-3 flex flex-wrap gap-2">
-          <button
+          <UiButton
             v-for="assetName in candidateAssetNames"
             :key="assetName"
-            type="button"
-            class="inline-flex items-center gap-1 rounded-md border px-2.5 py-1 text-xs font-semibold transition"
-            :class="isSelected(assetName) ? 'border-amber-300 bg-white text-amber-900' : 'border-amber-200 bg-amber-100 text-amber-800 hover:border-amber-300'"
+            variant="secondary"
+            size="xs"
+            :class="isSelected(assetName) ? 'border-amber-300 bg-white text-amber-900' : 'border-amber-200 bg-amber-100 text-amber-800'"
             @click="emit('addAsset', assetName)"
           >
             <Check v-if="isSelected(assetName)" class="h-3.5 w-3.5" />
             <Plus v-else class="h-3.5 w-3.5" />
             加入 {{ assetName }}
-          </button>
+          </UiButton>
         </div>
 
         <div class="mt-3 flex flex-wrap gap-2">
-          <BaseButton
+          <UiButton
             v-if="canSaveExtraAssets"
             variant="secondary"
             size="sm"
             :loading="extraAssetsSaving"
-            custom-class="whitespace-nowrap"
+            class="whitespace-nowrap"
             @click="emit('saveExtraAssets')"
           >
             保存额外资源
-          </BaseButton>
-          <BaseButton variant="primary" size="sm" :loading="loading" custom-class="whitespace-nowrap" @click="emit('submit')">
+          </UiButton>
+          <UiButton variant="primary" size="sm" :loading="loading" class="whitespace-nowrap" @click="emit('submit')">
             重新构建
-          </BaseButton>
+          </UiButton>
         </div>
       </div>
     </div>
@@ -74,7 +74,7 @@
 <script setup lang="ts">
 import { AlertTriangle, Check, Plus } from '@lucide/vue'
 
-import BaseButton from '@/components/ui/BaseButton.vue'
+import { UiButton } from '@/components/ui'
 
 const props = defineProps<{
   title: string

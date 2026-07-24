@@ -55,13 +55,13 @@ const baseComponent: WorkspaceComponentItem = {
   updated_by: 1,
 }
 
-const BaseDialogStub = defineComponent({
-  name: 'BaseDialogStub',
+const UiDialogStub = defineComponent({
+  name: 'UiDialogStub',
   props: {
-    modelValue: { type: Boolean, default: false },
+    open: { type: Boolean, default: false },
   },
   setup(props, { slots }) {
-    return () => (props.modelValue ? h('section', slots.default?.()) : null)
+    return () => (props.open ? h('section', slots.default?.()) : null)
   },
 })
 
@@ -124,8 +124,8 @@ describe('WorkspaceComponentWorkbench', () => {
           ComponentReferenceDialog: true,
           ComponentReleaseDialog: true,
           StatusTag: true,
-          BaseButton: true,
-          BaseDialog: BaseDialogStub,
+          UiButton: true,
+          UiDialog: UiDialogStub,
         },
       },
     })
@@ -182,14 +182,14 @@ describe('WorkspaceComponentWorkbench', () => {
           ComponentReferenceDialog: true,
           ComponentReleaseDialog: true,
           StatusTag: true,
-          BaseButton: defineComponent({
-            name: 'BaseButton',
+          UiButton: defineComponent({
+            name: 'UiButton',
             emits: ['click'],
             setup(_, { emit, slots }) {
               return () => h('button', { type: 'button', onClick: () => emit('click') }, slots.default?.())
             },
           }),
-          BaseDialog: BaseDialogStub,
+          UiDialog: UiDialogStub,
         },
       },
     })
@@ -243,14 +243,14 @@ describe('WorkspaceComponentWorkbench', () => {
           ComponentReferenceDialog: true,
           ComponentReleaseDialog: true,
           StatusTag: true,
-          BaseButton: defineComponent({
-            name: 'BaseButton',
+          UiButton: defineComponent({
+            name: 'UiButton',
             emits: ['click'],
             setup(_, { emit, slots }) {
               return () => h('button', { type: 'button', onClick: () => emit('click') }, slots.default?.())
             },
           }),
-          BaseDialog: BaseDialogStub,
+          UiDialog: UiDialogStub,
         },
       },
     })
@@ -310,14 +310,14 @@ describe('WorkspaceComponentWorkbench', () => {
           ComponentReferenceDialog: true,
           ComponentReleaseDialog: true,
           StatusTag: true,
-          BaseButton: defineComponent({
-            name: 'BaseButton',
+          UiButton: defineComponent({
+            name: 'UiButton',
             emits: ['click'],
             setup(_, { emit, slots }) {
               return () => h('button', { type: 'button', onClick: () => emit('click') }, slots.default?.())
             },
           }),
-          BaseDialog: BaseDialogStub,
+          UiDialog: UiDialogStub,
         },
       },
     })
@@ -380,8 +380,8 @@ describe('WorkspaceComponentWorkbench', () => {
           ComponentReferenceDialog: true,
           ComponentReleaseDialog: true,
           StatusTag: true,
-          BaseButton: true,
-          BaseDialog: BaseDialogStub,
+          UiButton: true,
+          UiDialog: UiDialogStub,
         },
       },
     })
@@ -446,8 +446,8 @@ describe('WorkspaceComponentWorkbench', () => {
           ComponentReferenceDialog: true,
           ComponentReleaseDialog: true,
           StatusTag: true,
-          BaseButton: true,
-          BaseDialog: BaseDialogStub,
+          UiButton: true,
+          UiDialog: UiDialogStub,
         },
       },
     })

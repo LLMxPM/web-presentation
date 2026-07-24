@@ -335,8 +335,8 @@ function renderComponentsView() {
           },
         }),
         RuntimeKitCapabilityDocDialog: true,
-        BaseButton: defineComponent({
-          name: 'BaseButton',
+        UiButton: defineComponent({
+          name: 'UiButton',
           props: {
             disabled: { type: Boolean, default: false },
             loading: { type: Boolean, default: false },

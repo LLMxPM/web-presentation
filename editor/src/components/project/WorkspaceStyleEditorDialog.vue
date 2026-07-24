@@ -1,26 +1,26 @@
 <!-- 文件功能：工作空间样式创建与编辑弹窗，维护展示配置、主题引用和 Markdown 样式规范。 -->
 <template>
-  <BaseDialog
-    :model-value="modelValue"
+  <UiDialog
+    :open="modelValue"
     :title="style ? '编辑样式' : '新建样式'"
     size="canvas"
     body-preset="editor"
-    @update:model-value="handleVisibleChange"
+    @update:open="handleVisibleChange"
   >
     <div class="flex h-full min-h-0 flex-col gap-2">
       <div class="shrink-0 rounded-lg bg-slate-100 p-1">
         <div class="grid grid-cols-2 gap-1">
-          <button
-            type="button"
-            class="flex h-10 items-center justify-center rounded-md px-4 text-sm font-bold transition"
+          <UiButton
+            variant="ghost"
+            class="h-10"
             :class="activeTab === 'style' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'"
             @click="activeTab = 'style'"
           >
             样式配置
-          </button>
-          <button
-            type="button"
-            class="flex h-10 items-center justify-center gap-2 rounded-md px-4 text-sm font-bold transition"
+          </UiButton>
+          <UiButton
+            variant="ghost"
+            class="h-10 gap-2"
             :class="activeTab === 'components' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'"
             @click="activeTab = 'components'"
           >
@@ -28,18 +28,18 @@
             <span class="rounded-full px-2 py-0.5 text-xs" :class="activeTab === 'components' ? 'bg-indigo-50 text-indigo-600' : 'bg-white text-slate-500'">
               {{ suggestedComponentsDraft.length }}
             </span>
-          </button>
+          </UiButton>
         </div>
       </div>
 
       <div v-if="activeTab === 'style'" class="style-config-grid min-h-0 flex-1">
-        <section class="style-editor-scroll min-h-0 space-y-4 overflow-y-auto pr-1">
+        <ToolPanel class="style-editor-scroll min-h-0" title="基础配置">
           <div class="rounded-lg border border-slate-200 bg-white p-4">
             <div class="grid grid-cols-2 gap-3">
-              <BaseInput v-model="draft.key" label="样式 key" placeholder="NEW_STYLE_KEY" required :error="errors.key" />
-              <BaseInput v-model="draft.name" label="样式名称" placeholder="样式名称" required :error="errors.name" />
+              <UiFormField label="样式 key" required :error="errors.key"><template #default="field"><UiInput v-model="draft.key" placeholder="NEW_STYLE_KEY" required :input-id="field.inputId" :described-by="field.describedBy" :invalid="field.invalid" /></template></UiFormField>
+              <UiFormField label="样式名称" required :error="errors.name"><template #default="field"><UiInput v-model="draft.name" placeholder="样式名称" required :input-id="field.inputId" :described-by="field.describedBy" :invalid="field.invalid" /></template></UiFormField>
             </div>
-            <BaseInput v-model="draft.description" class="mt-3" label="样式描述" placeholder="说明适用场景" />
+            <UiFormField label="样式描述" class="mt-3"><template #default="field"><UiInput v-model="draft.description" placeholder="说明适用场景" :input-id="field.inputId" :described-by="field.describedBy" /></template></UiFormField>
           </div>
 
           <div class="rounded-lg border border-slate-200 bg-white p-4">
@@ -57,12 +57,12 @@
 
           <div class="rounded-lg border border-slate-200 bg-white p-4">
             <div class="grid grid-cols-2 gap-3">
-              <BaseInput v-model="draft.pageWidth" label="页面宽度(px)" placeholder="1920" />
-              <BaseInput v-model="draft.pageHeight" label="页面高度(px)" placeholder="1080" />
+              <UiFormField label="页面宽度(px)"><template #default="field"><UiInput v-model="draft.pageWidth" placeholder="1920" :input-id="field.inputId" :described-by="field.describedBy" /></template></UiFormField>
+              <UiFormField label="页面高度(px)"><template #default="field"><UiInput v-model="draft.pageHeight" placeholder="1080" :input-id="field.inputId" :described-by="field.describedBy" /></template></UiFormField>
             </div>
             <div class="mt-3 grid grid-cols-2 gap-3">
-              <BaseInput v-model="draft.baseFontSize" label="基础字号" placeholder="20px" />
-              <BaseInput v-model="draft.iconDefaultStrokeWidth" label="图标描边" placeholder="2" />
+              <UiFormField label="基础字号"><template #default="field"><UiInput v-model="draft.baseFontSize" placeholder="20px" :input-id="field.inputId" :described-by="field.describedBy" /></template></UiFormField>
+              <UiFormField label="图标描边"><template #default="field"><UiInput v-model="draft.iconDefaultStrokeWidth" placeholder="2" :input-id="field.inputId" :described-by="field.describedBy" /></template></UiFormField>
             </div>
           </div>
 
@@ -70,46 +70,45 @@
             <div class="rounded-lg border border-slate-200 bg-white p-4">
               <label class="ml-1 text-sm font-semibold text-slate-700">菜单模式</label>
               <div class="mt-3 grid grid-cols-3 gap-2 rounded-lg bg-slate-100 p-1">
-                <button
+                <UiButton
                   v-for="option in menuModeOptions"
                   :key="option.value"
-                  type="button"
-                  class="flex min-h-11 items-center justify-center rounded-lg px-2 py-2.5 text-xs font-bold transition-all"
+                  variant="ghost"
+                  class="min-h-11"
                   :class="draft.menuMode === option.value ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'"
                   @click="draft.menuMode = option.value"
                 >
                   {{ option.label }}
-                </button>
+                </UiButton>
               </div>
             </div>
 
             <div class="rounded-lg border border-slate-200 bg-white p-4">
               <label class="ml-1 text-sm font-semibold text-slate-700">导出按钮</label>
               <div class="mt-3 grid grid-cols-2 gap-2 rounded-lg bg-slate-100 p-1">
-                <button
+                <UiButton
                   v-for="option in pdfButtonOptions"
                   :key="String(option.value)"
-                  type="button"
-                  class="flex min-h-11 items-center justify-center rounded-lg px-3 py-2.5 text-xs font-bold transition-all"
+                  variant="ghost"
+                  class="min-h-11"
                   :class="draft.showPdfExportButton === option.value ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'"
                   @click="draft.showPdfExportButton = option.value"
                 >
                   {{ option.label }}
-                </button>
+                </UiButton>
               </div>
             </div>
           </div>
-        </section>
+        </ToolPanel>
 
-        <section class="min-h-0 rounded-lg border border-slate-200 bg-white p-4">
-          <BaseInput
+        <ToolPanel class="min-h-0" title="样式规范 Markdown">
+          <UiInput
             v-model="draft.styleSpecMarkdown"
             type="textarea"
-            label="样式规范 Markdown"
             placeholder="用 Markdown 记录版式、排版、色彩和组件使用约束"
             :rows="22"
           />
-        </section>
+        </ToolPanel>
       </div>
 
       <div v-else class="min-h-0 flex-1">
@@ -125,12 +124,12 @@
     </div>
 
     <template #footer>
-      <BaseButton variant="ghost" @click="handleVisibleChange(false)">取消</BaseButton>
-      <BaseButton variant="primary" :loading="loading" :disabled="suggestedComponentsLoading" @click="handleSave">
+      <UiButton variant="ghost" @click="handleVisibleChange(false)">取消</UiButton>
+      <UiButton variant="primary" :loading="loading" :disabled="suggestedComponentsLoading" @click="handleSave">
         {{ style ? '保存样式' : '创建样式' }}
-      </BaseButton>
+      </UiButton>
     </template>
-  </BaseDialog>
+  </UiDialog>
 </template>
 
 <script setup lang="ts">
@@ -140,9 +139,8 @@ import { getErrorMessage } from '@/api/http'
 import { getWorkspaceStyleSuggestedComponents, type WorkspaceStylePayload } from '@/api/styles'
 import SuggestedComponentsSelectorPanel from '@/components/project/SuggestedComponentsSelectorPanel.vue'
 import ThemeSelectorField from '@/components/theme/ThemeSelectorField.vue'
-import BaseButton from '@/components/ui/BaseButton.vue'
-import BaseDialog from '@/components/ui/BaseDialog.vue'
-import BaseInput from '@/components/ui/BaseInput.vue'
+import ToolPanel from '@/components/patterns/ToolPanel.vue'
+import { UiButton, UiDialog, UiFormField, UiInput } from '@/components/ui'
 import { DEFAULT_PROJECT_STYLE_SPEC_MARKDOWN } from '@/constants/project-style'
 import type { ProjectMenuMode, SuggestedComponentItem, WorkspaceStyleItem } from '@/types/api'
 import { Message } from '@/utils/message'

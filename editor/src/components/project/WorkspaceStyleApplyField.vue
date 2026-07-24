@@ -6,15 +6,15 @@
         <label class="text-sm font-semibold text-slate-700">{{ label }}</label>
         <p v-if="hint" class="mt-1 text-xs text-slate-400">{{ hint }}</p>
       </div>
-      <button
-        type="button"
-        class="inline-flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-2.5 text-xs font-semibold text-slate-500 transition hover:bg-slate-50 hover:text-slate-700"
+      <UiButton
+        variant="ghost"
+        size="sm"
         :disabled="loading || !workspaceId"
         @click="loadStyles"
       >
         <RefreshCw class="h-3.5 w-3.5" />
         刷新
-      </button>
+      </UiButton>
     </div>
 
     <div class="mt-3 grid gap-2 sm:grid-cols-[minmax(0,1fr)_92px]">
@@ -27,14 +27,13 @@
         clearable
         @update:model-value="handleSelectedStyleChange"
       />
-      <button
-        type="button"
-        class="inline-flex h-10 items-center justify-center rounded-xl bg-slate-900 px-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+      <UiButton
+        variant="primary"
         :disabled="!selectedStyle || loading"
         @click="applySelectedStyle"
       >
         应用
-      </button>
+      </UiButton>
     </div>
   </div>
 </template>
@@ -46,6 +45,7 @@ import { RefreshCw } from '@lucide/vue'
 import { getErrorMessage } from '@/api/http'
 import { listWorkspaceStyles } from '@/api/styles'
 import SearchableSelect from '@/components/ui/SearchableSelect.vue'
+import { UiButton } from '@/components/ui'
 import type { SelectModelValue, SelectOption } from '@/components/ui/select'
 import type { WorkspaceStyleItem } from '@/types/api'
 import { Message } from '@/utils/message'

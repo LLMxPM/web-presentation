@@ -24,12 +24,12 @@
               <p class="mt-0.5 text-[11px] text-amber-700">来自 {{ draft.tool_name }}</p>
             </div>
             <div class="flex items-center gap-1.5">
-              <BaseButton variant="ghost" size="sm" @click="$emit('apply-suggested-patch', draft)">
+              <UiButton variant="ghost" size="sm" @click="$emit('apply-suggested-patch', draft)">
                 应用
-              </BaseButton>
-              <BaseButton variant="ghost" size="sm" @click="$emit('remove-draft-patch', draft)">
+              </UiButton>
+              <UiButton variant="ghost" size="sm" @click="$emit('remove-draft-patch', draft)">
                 移除
-              </BaseButton>
+              </UiButton>
             </div>
           </div>
         </article>
@@ -37,24 +37,11 @@
     </section>
 
     <section class="flex min-h-[140px] flex-1 flex-col">
-      <div class="flex flex-1 flex-col gap-1 py-0.5">
-        <div
-          v-if="loading"
-          class="flex min-h-[140px] flex-col items-center justify-center gap-2 text-center text-[12px] leading-5 text-slate-400"
-          role="status"
-          aria-live="polite"
-        >
-          <span class="h-5 w-5 animate-spin rounded-full border-2 border-sky-200 border-t-sky-500" aria-hidden="true" />
-          <span>{{ loadingText }}</span>
-        </div>
-
-        <div
-          v-else-if="timelineDisplayItems.length === 0"
-          class="flex min-h-[140px] items-center justify-center text-center text-[12px] leading-5 text-slate-400"
-        >
-          {{ emptyConversationText }}
-        </div>
-
+      <DataState
+        :state="conversationDataState"
+        :title="conversationDataState === 'loading' ? loadingText : emptyConversationText"
+        :description="conversationDataState === 'empty' ? '发送消息后，助手会在当前会话中持续反馈进度。' : undefined"
+      >
         <template v-for="item in timelineDisplayItems" :key="item.id">
           <article
             v-if="item.kind === 'message'"
@@ -82,9 +69,10 @@
                   />
                 </div>
                 <div v-else>
-                  <button
+                  <UiButton
                     v-if="isUserMessageCollapsed(item.message)"
-                    type="button"
+                    variant="ghost"
+                    size="xs"
                     class="inline-flex max-w-full items-center gap-1 rounded px-1 py-0.5 text-left text-[12px] leading-4 text-slate-500 transition hover:bg-slate-200/70 hover:text-slate-700"
                     title="展开用户消息"
                     aria-label="展开用户消息"
@@ -92,7 +80,7 @@
                   >
                     <ChevronRight class="h-3 w-3 shrink-0" />
                     <span class="min-w-0 truncate">{{ formatCollapsedUserMessageSummary(item.message) }}</span>
-                  </button>
+                  </UiButton>
                   <pre v-else class="whitespace-pre-wrap break-words text-[12.5px] font-sans leading-[17px]">{{ item.message.content || '...' }}</pre>
                 </div>
                 <div
@@ -131,17 +119,19 @@
                 >
                   {{ formatMessageTime(item.message.created_at) }}
                 </span>
-                <button
-                  type="button"
+                <UiIconButton
+                  label="复制用户消息"
+                  size="xs"
                   class="message-action-button"
                   title="复制用户消息"
                   aria-label="复制用户消息"
                   @click="copyUserMessage(item.message)"
                 >
                   <Copy class="h-3 w-3" />
-                </button>
-                <button
-                  type="button"
+                </UiIconButton>
+                <UiIconButton
+                  :label="isUserMessageCollapsed(item.message) ? '展开用户消息' : '折叠用户消息'"
+                  size="xs"
                   class="message-action-button"
                   :title="isUserMessageCollapsed(item.message) ? '展开用户消息' : '折叠用户消息'"
                   :aria-label="isUserMessageCollapsed(item.message) ? '展开用户消息' : '折叠用户消息'"
@@ -149,7 +139,7 @@
                 >
                   <ChevronRight v-if="isUserMessageCollapsed(item.message)" class="h-3 w-3" />
                   <ChevronDown v-else class="h-3 w-3" />
-                </button>
+                </UiIconButton>
               </div>
             </div>
           </article>
@@ -214,15 +204,16 @@
                     @open-detail="handleToolRowClick(tool)"
                   />
                   <template v-else>
-                  <button
-                    type="button"
+                  <UiButton
+                    variant="ghost"
+                    size="xs"
                     class="tool-call-row flex w-full min-w-0 items-center justify-between gap-2 border border-slate-200/80 bg-slate-50/60 px-1.5 py-0.5 text-left text-[10px] transition hover:bg-slate-100/70"
                     :class="getToolChipClass(tool.status)"
                     @click="handleToolRowClick(tool)"
                   >
                     <span class="min-w-0 truncate">{{ resolveToolDisplayName(tool) }}</span>
                     <span class="shrink-0 opacity-60" aria-hidden="true">{{ toolStatusLabelMap[tool.status] }}</span>
-                  </button>
+                  </UiButton>
                   <div v-if="tool.attachments.length" class="mt-1 flex flex-wrap gap-1">
                     <a
                       v-for="attachment in tool.attachments"
@@ -263,15 +254,16 @@
                       @open-detail="handleToolRowClick(tool)"
                     />
                     <template v-else>
-                    <button
-                      type="button"
+                    <UiButton
+                      variant="ghost"
+                      size="xs"
                       class="tool-call-row flex w-full min-w-0 items-center justify-between gap-2 border border-slate-200/80 bg-slate-50/60 px-1.5 py-0.5 text-left text-[10px] transition hover:bg-slate-100/70"
                       :class="getToolChipClass(tool.status)"
                       @click="handleToolRowClick(tool)"
                     >
                       <span class="min-w-0 truncate">{{ resolveToolDisplayName(tool) }}</span>
                       <span class="shrink-0 opacity-60" aria-hidden="true">{{ toolStatusLabelMap[tool.status] }}</span>
-                    </button>
+                    </UiButton>
                     <div v-if="tool.attachments.length" class="mt-1 flex flex-wrap gap-1">
                       <a
                         v-for="attachment in tool.attachments"
@@ -331,7 +323,7 @@
             </div>
           </article>
         </template>
-      </div>
+      </DataState>
     </section>
 
     </div>
@@ -362,14 +354,14 @@
             {{ floatingNotice.detail }}
           </p>
         </div>
-        <BaseButton
+        <UiButton
           v-if="floatingNotice.action === 'force_cancel' && cancellingRunForceAvailable"
           variant="secondary"
           size="sm"
           @click="$emit('force-cancel-run')"
         >
           强制结束
-        </BaseButton>
+        </UiButton>
       </div>
     </section>
   </div>
@@ -381,7 +373,8 @@ import MarkdownRender, { getMarkdown, parseMarkdownToStructure } from 'markstrea
 import { ChevronDown, ChevronRight, Copy } from '@lucide/vue'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
-import BaseButton from '@/components/ui/BaseButton.vue'
+import DataState from '@/components/patterns/DataState.vue'
+import { UiButton, UiIconButton } from '@/components/ui'
 import AgentVisualToolCard from '@/components/agent/AgentVisualToolCard.vue'
 import {
   createMessageStreamingResolver,
@@ -452,6 +445,10 @@ const floatingNotice = computed(() => {
   return null
 })
 const hasFloatingNotice = computed(() => Boolean(floatingNotice.value))
+const conversationDataState = computed<'loading' | 'empty' | 'ready'>(() => {
+  if (props.loading) return 'loading'
+  return props.timelineDisplayItems.length ? 'ready' : 'empty'
+})
 const isMessageStreaming = createMessageStreamingResolver(
   () => props.isStreaming,
   () => props.streamingTimelineItemId,
@@ -854,6 +851,8 @@ details[open] .details-chevron {
 
 .assistant-markdown :deep(pre) {
   margin: 0.25rem 0 0;
+  max-width: 100%;
+  overscroll-behavior-inline: contain;
   overflow-x: auto;
   border-radius: 0.25rem;
 }
@@ -909,6 +908,8 @@ details[open] .details-chevron {
 
 .reasoning-markdown :deep(pre) {
   margin: 0.2rem 0 0;
+  max-width: 100%;
+  overscroll-behavior-inline: contain;
   overflow-x: auto;
   border-radius: 0.25rem;
   font-size: 0.6875rem;

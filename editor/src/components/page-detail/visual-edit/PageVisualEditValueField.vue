@@ -40,54 +40,43 @@
       </p>
     </div>
     <template v-else-if="props.editable">
-      <select
+      <UiSelect
         v-if="props.controlType === 'select'"
-        :id="props.controlId"
-        class="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-indigo-400"
-        :value="props.optionIndex"
-        @change="handleSelectChange"
-      >
-        <option v-if="props.optionIndex < 0" value="-1" disabled>请选择有限选项</option>
-        <option v-for="(option, index) in props.options" :key="index" :value="index">
-          {{ option.label }}
-        </option>
-      </select>
+        :model-value="props.optionIndex"
+        :options="selectOptions"
+        placeholder="请选择有限选项"
+        @update:model-value="handleSelectValueChange"
+      />
       <label v-else-if="props.controlType === 'boolean'" class="flex items-center gap-2 text-sm text-slate-700">
-        <input
-          :id="props.controlId"
-          type="checkbox"
-          class="h-4 w-4 rounded border-slate-300 text-indigo-600"
-          :checked="Boolean(props.effectiveValue)"
-          @change="emit('set-value', ($event.target as HTMLInputElement).checked)"
+        <UiCheckbox
+          :model-value="Boolean(props.effectiveValue)"
+          @update:model-value="emit('set-value', $event === true)"
         />
         {{ Boolean(props.effectiveValue) ? '开启' : '关闭' }}
       </label>
-      <input
+      <UiInput
         v-else-if="props.controlType === 'number'"
-        :id="props.controlId"
+        :input-id="props.controlId"
         type="number"
-        class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-indigo-400"
-        :value="String(props.effectiveValue ?? '')"
+        :model-value="String(props.effectiveValue ?? '')"
         :placeholder="props.placeholder ?? undefined"
-        @input="handleNumberInput"
+        @update:model-value="handleNumberInput"
       />
-      <textarea
+      <UiInput
         v-else-if="props.controlType === 'textarea'"
-        :id="props.controlId"
+        type="textarea"
+        :input-id="props.controlId"
         :rows="props.rows"
-        class="w-full resize-y rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-indigo-400"
-        :value="String(props.effectiveValue ?? '')"
+        :model-value="String(props.effectiveValue ?? '')"
         :placeholder="props.placeholder ?? undefined"
-        @input="emit('set-value', ($event.target as HTMLTextAreaElement).value)"
+        @update:model-value="emit('set-value', $event)"
       />
-      <input
+      <UiInput
         v-else
-        :id="props.controlId"
-        type="text"
-        class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-indigo-400"
-        :value="String(props.effectiveValue ?? '')"
+        :input-id="props.controlId"
+        :model-value="String(props.effectiveValue ?? '')"
         :placeholder="props.placeholder ?? undefined"
-        @input="emit('set-value', ($event.target as HTMLInputElement).value)"
+        @update:model-value="emit('set-value', $event)"
       />
     </template>
     <p v-else class="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600">
@@ -101,6 +90,9 @@
 
 <script setup lang="ts">
 import PageVisualEditRichTextEditor from '@/components/page-detail/visual-edit/PageVisualEditRichTextEditor.vue'
+import { UiCheckbox, UiInput, UiSelect } from '@/components/ui'
+import type { SelectModelValue, SelectOption } from '@/components/ui/select'
+import { computed } from 'vue'
 import type {
   PageVisualEditBindingKind,
   PageVisualEditComponentSelectOption,
@@ -140,17 +132,21 @@ const emit = defineEmits<{
   'set-value': [value: PageVisualEditValue]
 }>()
 
+const selectOptions = computed<SelectOption[]>(() => props.options.map((option, index) => ({
+  label: option.label,
+  value: index,
+})))
+
 /** 写入有效数字值，空值或非法数字不生成字段事件。 */
-function handleNumberInput(event: Event): void {
-  const rawValue = (event.target as HTMLInputElement).value
+function handleNumberInput(rawValue: string): void {
   if (!rawValue.trim()) return
   const value = Number(rawValue)
   if (Number.isFinite(value)) emit('set-value', value)
 }
 
 /** 按有限选项原始值发出字段事件，避免 DOM 字符串化破坏数字或布尔类型。 */
-function handleSelectChange(event: Event): void {
-  const optionIndex = Number((event.target as HTMLSelectElement).value)
+function handleSelectValueChange(value: SelectModelValue): void {
+  const optionIndex = Number(value)
   const option = props.options[optionIndex]
   if (option) emit('set-value', option.value)
 }

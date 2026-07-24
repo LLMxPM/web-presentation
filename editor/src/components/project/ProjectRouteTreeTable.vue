@@ -10,16 +10,14 @@
           <SearchableSelect :model-value="rootSelection" :options="pageOptions" placeholder="选择顶层页面" empty-text="暂无可选页面"
             @update:model-value="updateRootSelection" />
         </div>
-        <button type="button"
-          class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700 transition hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-600"
+        <UiButton variant="secondary" size="sm"
           @click="handleAddRootPage">
           添加页面
-        </button>
-        <button type="button"
-          class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700 transition hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-600"
+        </UiButton>
+        <UiButton variant="secondary" size="sm"
           @click="handleAddGroup">
           新增分组
-        </button>
+        </UiButton>
       </div>
     </div>
 
@@ -60,11 +58,9 @@
                 @dragover.prevent="handleRootDragOver(routeIndex)" @drop.prevent="handleRootDrop(routeIndex)"
                 @dragend="clearDragState">
                 <td class="px-3 py-2">
-                  <button type="button"
-                    class="inline-flex h-9 w-9 cursor-grab items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-400 transition hover:border-slate-300 hover:text-slate-600 active:cursor-grabbing"
-                    title="拖动排序">
+                  <UiIconButton label="拖动排序" title="拖动排序" variant="secondary" class="cursor-grab active:cursor-grabbing">
                     <GripVertical class="h-4 w-4" />
-                  </button>
+                  </UiIconButton>
                 </td>
                 <td class="px-3 py-2">
                   <div class="flex h-9 items-center gap-1.5 font-semibold text-slate-900">
@@ -75,9 +71,8 @@
                 </td>
                 <td class="px-2 py-2">
                   <div v-if="routeItem.route_type === 'group'" class="min-w-0">
-                    <input :value="routeItem.group_title ?? ''" type="text"
-                      class="h-9 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-indigo-400"
-                      placeholder="分组标题" @input="updateRootGroupTitle(routeIndex, $event)">
+                    <UiInput :model-value="routeItem.group_title ?? ''" placeholder="分组标题"
+                      @update:model-value="updateRootField(routeIndex, 'group_title', String($event))" />
                   </div>
                   <div v-else class="min-w-0">
                     <SearchableSelect :model-value="routeItem.page_id ?? null" :options="pageOptions" placeholder="选择页面"
@@ -85,24 +80,21 @@
                   </div>
                 </td>
                 <td class="px-2 py-2">
-                  <input :value="routeItem.route" type="text"
-                    class="h-9 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-indigo-400"
-                    placeholder="route" @input="updateRootField(routeIndex, 'route', readInputValue($event))">
+                  <UiInput :model-value="routeItem.route" placeholder="route"
+                    @update:model-value="updateRootField(routeIndex, 'route', String($event))" />
                 </td>
                 <td class="px-3 py-2 text-center">
                   <label class="inline-flex h-9 items-center justify-center">
-                    <input :checked="!routeItem.hidden" type="checkbox"
-                      class="h-4 w-4 rounded border-slate-300 text-indigo-600"
-                      @change="updateRootField(routeIndex, 'hidden', !readInputChecked($event))">
+                    <UiCheckbox :model-value="!routeItem.hidden"
+                      @update:model-value="updateRootField(routeIndex, 'hidden', !$event)" />
                   </label>
                 </td>
                 <td class="px-3 py-2">
                   <div class="flex h-9 items-center justify-start">
-                    <button type="button"
-                      class="inline-flex h-9 w-[72px] items-center justify-center whitespace-nowrap rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-semibold text-slate-600 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600"
+                    <UiButton variant="danger" size="sm"
                       @click="removeRoot(routeIndex)">
                       删除
-                    </button>
+                    </UiButton>
                   </div>
                 </td>
               </tr>
@@ -116,11 +108,9 @@
                   @dragover.prevent="handleChildDragOver(routeIndex, childIndex)"
                   @drop.prevent="handleChildDrop(routeIndex, childIndex)" @dragend="clearDragState">
                   <td class="px-3 py-2">
-                    <button type="button"
-                      class="ml-4 inline-flex h-9 w-9 cursor-grab items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-400 transition hover:border-slate-300 hover:text-slate-600 active:cursor-grabbing"
-                      title="拖动排序">
+                    <UiIconButton label="拖动排序" title="拖动排序" variant="secondary" class="ml-4 cursor-grab active:cursor-grabbing">
                       <GripVertical class="h-4 w-4" />
-                    </button>
+                    </UiIconButton>
                   </td>
                   <td class="px-3 py-2">
                     <div class="flex h-9 items-center gap-1.5 pl-1 font-medium text-slate-700">
@@ -135,25 +125,21 @@
                     </div>
                   </td>
                   <td class="px-2 py-2">
-                    <input :value="childRoute.route" type="text"
-                      class="h-9 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-indigo-400"
-                      placeholder="route"
-                      @input="updateChildField(routeIndex, childIndex, 'route', readInputValue($event))">
+                    <UiInput :model-value="childRoute.route" placeholder="route"
+                      @update:model-value="updateChildField(routeIndex, childIndex, 'route', String($event))" />
                   </td>
                   <td class="px-3 py-2 text-center">
                     <label class="inline-flex h-9 items-center justify-center">
-                      <input :checked="!childRoute.hidden" type="checkbox"
-                        class="h-4 w-4 rounded border-slate-300 text-indigo-600"
-                        @change="updateChildField(routeIndex, childIndex, 'hidden', !readInputChecked($event))">
+                    <UiCheckbox :model-value="!childRoute.hidden"
+                      @update:model-value="updateChildField(routeIndex, childIndex, 'hidden', !$event)" />
                     </label>
                   </td>
                   <td class="px-3 py-2">
                     <div class="flex h-9 items-center justify-start">
-                      <button type="button"
-                        class="inline-flex h-9 w-[72px] items-center justify-center whitespace-nowrap rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-semibold text-slate-600 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600"
+                      <UiButton variant="danger" size="sm"
                         @click="removeChild(routeIndex, childIndex)">
                         删除
-                      </button>
+                      </UiButton>
                     </div>
                   </td>
                 </tr>
@@ -182,11 +168,10 @@
                   </td>
                   <td class="px-3 py-2">
                     <div class="flex h-9 items-center justify-start">
-                      <button type="button"
-                        class="inline-flex h-9 w-[72px] items-center justify-center whitespace-nowrap rounded-lg border border-slate-900 bg-slate-900 px-2.5 text-xs font-semibold text-white transition hover:bg-slate-700 hover:border-slate-700"
+                      <UiButton size="sm"
                         @click="handleAddChild(routeIndex)">
                         添加
-                      </button>
+                      </UiButton>
                     </div>
                   </td>
                 </tr>
@@ -204,6 +189,7 @@ import { computed, reactive, ref } from 'vue'
 import { CornerDownRight, FileText, FolderTree, GripVertical, Plus } from '@lucide/vue'
 
 import SearchableSelect from '@/components/ui/SearchableSelect.vue'
+import { UiButton, UiCheckbox, UiIconButton, UiInput } from '@/components/ui'
 import type { SelectOption, SelectPrimitive } from '@/components/ui/select'
 import type { PageItem, ProjectRouteChildWrite, ProjectRouteItemWrite } from '@/types/api'
 import {
@@ -381,15 +367,6 @@ function replaceRootPage(routeIndex: number, value: SelectPrimitive | SelectPrim
     return
   }
   updateRootField(routeIndex, 'page_id', pageId)
-}
-
-/**
- * 更新分组标题。
- * @param routeIndex 顶层分组索引
- * @param event 输入事件
- */
-function updateRootGroupTitle(routeIndex: number, event: Event): void {
-  updateRootField(routeIndex, 'group_title', readInputValue(event))
 }
 
 /**
@@ -583,22 +560,6 @@ function normalizeSelectionValue(value: SelectPrimitive | null): number | null {
   }
   const pageId = typeof value === 'number' ? value : Number(value)
   return Number.isFinite(pageId) ? pageId : null
-}
-
-/**
- * 读取输入框文本值。
- * @param event 输入事件
- */
-function readInputValue(event: Event): string {
-  return (event.target as HTMLInputElement).value
-}
-
-/**
- * 读取复选框布尔值。
- * @param event 变更事件
- */
-function readInputChecked(event: Event): boolean {
-  return Boolean((event.target as HTMLInputElement).checked)
 }
 
 </script>

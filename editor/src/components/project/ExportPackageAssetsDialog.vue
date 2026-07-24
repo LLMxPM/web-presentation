@@ -1,12 +1,12 @@
 <!-- 文件功能：导出组件/样式离线包前的资源确认弹窗，支持查看 warning 与手动补充本次导出资源。 -->
 <template>
-  <BaseDialog
-    :model-value="modelValue"
+  <UiDialog
+    :open="modelValue"
     :title="title"
     :description="description"
     size="wide"
     body-preset="dense"
-    @update:model-value="emit('update:modelValue', $event)"
+    @update:open="emit('update:modelValue', $event)"
   >
     <div class="flex h-full min-h-0 flex-col gap-3">
       <section
@@ -23,38 +23,38 @@
       </section>
 
       <div class="grid shrink-0 grid-cols-[minmax(0,1fr)_auto_auto] gap-2">
-        <BaseInput
+        <SimpleSearchBar
           :model-value="assetKeyword"
           class="min-w-0"
           placeholder="按资源 name 搜索"
           @update:model-value="emit('update:assetKeyword', String($event))"
-          @keyup.enter="emit('loadAssets')"
+          @submit="emit('loadAssets')"
         />
-        <BaseButton
+        <UiButton
           variant="secondary"
           :loading="assetOptionsLoading"
           :disabled="!workspaceId"
-          custom-class="h-11 min-w-[80px] whitespace-nowrap"
+          class="h-8 min-w-[80px] whitespace-nowrap"
           @click="emit('loadAssets')"
         >
           <template #icon>
             <Search class="h-4 w-4" />
           </template>
           搜索
-        </BaseButton>
-        <BaseButton
+        </UiButton>
+        <UiButton
           variant="ghost"
           size="sm"
           :loading="assetOptionsLoading"
           :disabled="!workspaceId"
-          custom-class="h-11 min-w-[64px] whitespace-nowrap"
+          class="h-8 min-w-[64px] whitespace-nowrap"
           @click="emit('loadAssets')"
         >
           <template #icon>
             <RefreshCw class="h-4 w-4" />
           </template>
           刷新
-        </BaseButton>
+        </UiButton>
       </div>
 
       <div class="grid min-h-0 flex-1 gap-2 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,0.9fr)_minmax(0,1.55fr)]">
@@ -64,7 +64,7 @@
             <span class="rounded-full bg-white px-1.5 py-0.5 text-[10px]">{{ automaticIncludedAssets.length }}</span>
           </div>
           <div v-if="automaticIncludedAssets.length" class="resource-column-scroll mt-2 min-h-0 flex-1 space-y-1.5 overflow-y-auto pr-1">
-            <button
+            <UiButton
               v-for="asset in automaticIncludedAssets"
               :key="asset.name"
               type="button"
@@ -76,7 +76,7 @@
               <span class="shrink-0 rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-500">
                 {{ asset.typeLabel }}
               </span>
-            </button>
+            </UiButton>
           </div>
           <p v-else class="mt-2 flex min-h-0 flex-1 items-center justify-center text-xs text-slate-400">暂无自动资源</p>
         </div>
@@ -87,7 +87,7 @@
             <span class="rounded-full bg-white px-1.5 py-0.5 text-[10px]">{{ manualIncludedAssets.length }}</span>
           </div>
           <div v-if="manualIncludedAssets.length" class="resource-column-scroll mt-2 min-h-0 flex-1 space-y-1.5 overflow-y-auto pr-1">
-            <button
+            <UiButton
               v-for="asset in manualIncludedAssets"
               :key="asset.name"
               type="button"
@@ -102,7 +102,7 @@
                 </span>
                 <X class="h-3 w-3" />
               </span>
-            </button>
+            </UiButton>
           </div>
           <p v-else class="mt-2 flex min-h-0 flex-1 items-center justify-center text-xs text-slate-400">未选择手动资源</p>
         </div>
@@ -118,21 +118,23 @@
           </div>
           <div v-else-if="assetTypeTabs.length" class="mt-2 flex min-h-0 flex-1 flex-col">
             <div class="grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-1">
-              <button
+              <UiIconButton
                 type="button"
-                class="flex h-7 w-6 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-500 transition hover:bg-slate-100 hover:text-slate-700"
-                aria-label="向左查看更多资源类型"
+                size="xs"
+                variant="secondary"
+                class="h-7 w-6"
+                label="向左查看更多资源类型"
                 title="向左查看更多类型"
                 @click="scrollAssetTypeTabs(-1)"
               >
                 <ChevronLeft class="h-3.5 w-3.5" />
-              </button>
+              </UiIconButton>
               <div
                 ref="assetTypeTabScroller"
                 class="asset-type-tab-scroll flex min-w-0 flex-nowrap items-center gap-1 overflow-x-auto overflow-y-hidden rounded-md border border-slate-200 bg-slate-50 p-0.5"
                 @wheel="handleAssetTypeTabWheel"
               >
-                <button
+                <UiButton
                   v-for="tab in assetTypeTabs"
                   :key="tab.key"
                   type="button"
@@ -148,20 +150,22 @@
                   >
                     {{ tab.count }}
                   </span>
-                </button>
+                </UiButton>
               </div>
-              <button
+              <UiIconButton
                 type="button"
-                class="flex h-7 w-6 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-500 transition hover:bg-slate-100 hover:text-slate-700"
-                aria-label="向右查看更多资源类型"
+                size="xs"
+                variant="secondary"
+                class="h-7 w-6"
+                label="向右查看更多资源类型"
                 title="向右查看更多类型"
                 @click="scrollAssetTypeTabs(1)"
               >
                 <ChevronRight class="h-3.5 w-3.5" />
-              </button>
+              </UiIconButton>
             </div>
             <div class="resource-column-scroll mt-2 grid min-h-0 flex-1 gap-1.5 overflow-y-auto pr-1 sm:grid-cols-2">
-              <button
+              <UiButton
                 v-for="asset in activeTabAssets"
                 :key="asset.id"
                 type="button"
@@ -176,7 +180,7 @@
                 </span>
                 <Check v-else-if="isSelected(asset.name)" class="h-3.5 w-3.5 shrink-0" />
                 <Plus v-else class="h-3.5 w-3.5 shrink-0" />
-              </button>
+              </UiButton>
             </div>
           </div>
           <p v-else class="mt-2 flex min-h-0 flex-1 items-center justify-center text-xs text-slate-400">
@@ -187,25 +191,24 @@
     </div>
 
     <template #footer>
-      <BaseButton variant="ghost" @click="emit('update:modelValue', false)">取消</BaseButton>
-      <BaseButton
+      <UiButton variant="ghost" @click="emit('update:modelValue', false)">取消</UiButton>
+      <UiButton
         variant="primary"
         :loading="exportPending"
         @click="emit('confirm')"
       >
         继续导出
-      </BaseButton>
+      </UiButton>
     </template>
-  </BaseDialog>
+  </UiDialog>
 </template>
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { AlertTriangle, Check, ChevronLeft, ChevronRight, Plus, RefreshCw, Search, X } from '@lucide/vue'
 
-import BaseButton from '@/components/ui/BaseButton.vue'
-import BaseDialog from '@/components/ui/BaseDialog.vue'
-import BaseInput from '@/components/ui/BaseInput.vue'
+import SimpleSearchBar from '@/components/patterns/SimpleSearchBar.vue'
+import { UiButton, UiDialog, UiIconButton } from '@/components/ui'
 import type { AssetResponse, AssetType } from '@/types/api'
 
 interface ExportAssetSummary {

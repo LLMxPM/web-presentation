@@ -13,9 +13,10 @@
         :key="section.key"
         class="overflow-hidden rounded-lg border border-slate-200 bg-white"
       >
-        <button
+        <UiButton
           type="button"
-          class="flex w-full items-center justify-between gap-3 bg-slate-50 px-3 py-2 text-left transition hover:bg-slate-100"
+          variant="ghost"
+          class="h-auto flex w-full items-center justify-between gap-3 bg-slate-50 px-3 py-2 text-left transition hover:bg-slate-100"
           :aria-expanded="isSectionExpanded(section.key)"
           @click.stop="toggleSection(section.key)"
         >
@@ -38,7 +39,7 @@
               不设置
             </span>
           </span>
-        </button>
+        </UiButton>
         <div v-show="isSectionExpanded(section.key)" class="space-y-3 border-t border-slate-100 p-3">
           <div
             v-for="group in section.groups"
@@ -53,22 +54,11 @@
                 {{ group.selectedClass || '不设置' }}
               </code>
             </div>
-            <select
-              :id="tailwindSelectId(group.key)"
-              class="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-indigo-400"
-              :value="group.selectedClass"
-              @change="emit('change', { group: group.key, className: ($event.target as HTMLSelectElement).value })"
-            >
-              <option value="">不设置</option>
-              <option
-                v-for="option in group.options"
-                :key="option.class_name"
-                :value="option.class_name"
-                :title="option.class_name"
-              >
-                {{ option.label }} · {{ option.class_name }}
-              </option>
-            </select>
+            <UiSelect
+              :model-value="group.selectedClass || emptyTailwindClassValue"
+              :options="tailwindOptions(group)"
+              @update:model-value="value => emit('change', { group: group.key, className: value === emptyTailwindClassValue ? '' : String(value ?? '') })"
+            />
           </div>
         </div>
       </section>
@@ -98,6 +88,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { ChevronDown, ChevronRight } from '@lucide/vue'
+import { UiButton, UiSelect } from '@/components/ui'
 
 interface TailwindOptionView {
   class_name: string
@@ -135,6 +126,7 @@ const emit = defineEmits<{
 }>()
 
 const expandedSectionKeys = ref<Set<string>>(new Set())
+const emptyTailwindClassValue = '__tailwind-none__'
 const sectionDefinitions = [
   {
     key: 'layout',
@@ -231,6 +223,14 @@ function isSectionExpanded(sectionKey: string): boolean {
 /** 生成 Tailwind 组选择器的稳定 DOM id。 */
 function tailwindSelectId(groupKey: string): string {
   return `tailwind-${safeDomId(props.bindingId)}-${safeDomId(groupKey)}`
+}
+
+/** 将 Tailwind 分组值映射为统一选择器选项，并保留“不设置”入口。 */
+function tailwindOptions(group: TailwindGroupView): Array<{ value: string; label: string }> {
+  return [
+    { value: emptyTailwindClassValue, label: '不设置' },
+    ...group.options.map(option => ({ value: option.class_name, label: `${option.label} · ${option.class_name}` })),
+  ]
 }
 
 /** DOM id 只保留安全字符，避免绑定 id 中的分隔符影响 label 关联。 */

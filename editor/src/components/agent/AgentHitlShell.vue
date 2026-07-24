@@ -11,9 +11,9 @@
         <p class="text-[13px] font-semibold leading-5 text-slate-900">{{ title }}</p>
         <p v-if="subtitle" class="mt-0.5 text-xs leading-5 text-slate-500">{{ subtitle }}</p>
       </div>
-      <span v-if="badge" class="shrink-0 rounded-full border border-slate-200 px-2 py-0.5 text-[11px] font-medium text-slate-500">
+      <UiBadge v-if="badge" class="shrink-0 rounded-full">
         {{ badge }}
-      </span>
+      </UiBadge>
     </div>
 
     <div class="mt-2">
@@ -25,26 +25,28 @@
         <slot name="footer-left" />
       </div>
       <div class="flex shrink-0 items-center gap-2">
-        <button
+        <UiButton
           type="button"
-          class="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-slate-400 transition hover:bg-slate-50 hover:text-slate-600"
+          variant="ghost"
+          size="sm"
+          class="gap-1 px-2 py-1 text-xs"
           :disabled="loading"
           @click="emitIgnore"
         >
           {{ ignoreLabel }}
           <kbd class="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-500">ESC</kbd>
-        </button>
-        <BaseButton
+        </UiButton>
+        <UiButton
           variant="primary"
           size="sm"
           :loading="loading"
           :disabled="!canSubmit"
-          custom-class="rounded-md px-2.5 py-1 text-xs shadow-none"
+          class="rounded-md px-2.5 py-1 text-xs"
           @click="emitSubmit"
         >
           {{ submitLabel }}
           <CornerDownLeft class="h-3 w-3" />
-        </BaseButton>
+        </UiButton>
       </div>
     </div>
   </section>
@@ -53,7 +55,7 @@
 <script setup lang="ts">
 import { CornerDownLeft } from '@lucide/vue'
 
-import BaseButton from '@/components/ui/BaseButton.vue'
+import { UiBadge, UiButton } from '@/components/ui'
 
 const props = withDefaults(defineProps<{
   title: string

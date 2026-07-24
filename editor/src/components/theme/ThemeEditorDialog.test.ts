@@ -107,20 +107,20 @@ function renderDialog(theme: ReturnType<typeof createThemeItem> | null = createT
     },
     global: {
       stubs: {
-        BaseDialog: defineComponent({
-          name: 'BaseDialog',
+        UiDialog: defineComponent({
+          name: 'UiDialog',
           props: {
-            modelValue: Boolean,
+            open: Boolean,
             title: String,
           },
           setup(props, { slots }) {
-            return () => props.modelValue
+            return () => props.open
               ? h('section', [h('h2', props.title), slots.default?.(), h('footer', slots.footer?.())])
               : null
           },
         }),
-        BaseButton: defineComponent({
-          name: 'BaseButton',
+        UiButton: defineComponent({
+          name: 'UiButton',
           props: {
             disabled: Boolean,
           },

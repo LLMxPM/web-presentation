@@ -2,24 +2,26 @@
 <template>
   <div class="overflow-hidden rounded-lg border border-slate-200 bg-white">
     <div v-if="!props.disabled" class="flex items-center gap-1 border-b border-slate-200 bg-slate-50 px-2 py-1.5">
-      <button
-        type="button"
+      <UiButton
+        variant="ghost"
+        size="xs"
         class="rounded px-2 py-1 text-xs font-bold text-slate-600 hover:bg-white hover:text-indigo-700 disabled:cursor-not-allowed disabled:opacity-40"
         :disabled="!canWrapSelection('strong')"
         aria-label="加粗所选文本"
         @mousedown.prevent="applySemanticTag('strong')"
       >
         B
-      </button>
-      <button
-        type="button"
+      </UiButton>
+      <UiButton
+        variant="ghost"
+        size="xs"
         class="rounded px-2 py-1 text-xs italic text-slate-600 hover:bg-white hover:text-indigo-700 disabled:cursor-not-allowed disabled:opacity-40"
         :disabled="!canWrapSelection('em')"
         aria-label="斜体所选文本"
         @mousedown.prevent="applySemanticTag('em')"
       >
         I
-      </button>
+      </UiButton>
       <span class="ml-auto text-[10px] text-slate-400">选中文字添加语义 · Enter 换行</span>
     </div>
 
@@ -47,6 +49,7 @@
 import { ref, watch } from 'vue'
 
 import PageVisualEditRichTextNodeEditor from '@/components/page-detail/visual-edit/PageVisualEditRichTextNodeEditor.vue'
+import { UiButton } from '@/components/ui'
 import {
   isPageVisualEditRichTextLockedStructurePruning,
   normalizePageVisualEditRichText,

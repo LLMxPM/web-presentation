@@ -32,10 +32,10 @@
       </div>
 
       <div class="flex items-center justify-between gap-2 border-t border-violet-100 pt-2">
-        <button type="button" class="text-[11px] font-semibold text-violet-700 hover:text-violet-900" @click="$emit('openDetail')">查看工具详情</button>
-        <button v-if="!isAnalysis && tool.outputAttachments.length" type="button" class="text-[11px] font-semibold text-emerald-700 hover:text-emerald-900" @click="openAssetLibrary">
+        <UiButton variant="ghost" size="xs" class="text-violet-700 hover:text-violet-900" @click="$emit('openDetail')">查看工具详情</UiButton>
+        <UiButton v-if="!isAnalysis && tool.outputAttachments.length" variant="ghost" size="xs" class="text-emerald-700 hover:text-emerald-900" @click="openAssetLibrary">
           已保存到资源库 →
-        </button>
+        </UiButton>
       </div>
     </div>
   </article>
@@ -46,6 +46,7 @@ import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import type { ToolCallDetail } from '@/components/agent/agent-conversation-panel'
+import { UiButton } from '@/components/ui'
 
 const props = defineProps<{ tool: ToolCallDetail }>()
 defineEmits<{ openDetail: [] }>()

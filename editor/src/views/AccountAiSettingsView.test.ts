@@ -220,6 +220,11 @@ function createTestingRenderOptions() {
       ],
       stubs: {
         teleport: true,
+        UiSelect: {
+          props: ['modelValue', 'options'],
+          emits: ['update:modelValue'],
+          template: `<select :value="modelValue" @change="$emit('update:modelValue', $event.target.value)"><option v-for="option in options" :key="String(option.value)" :value="option.value">{{ option.label }}</option></select>`,
+        },
       },
     },
   }
@@ -577,7 +582,7 @@ describe('AccountAiSettingsView', () => {
     await waitForSettingsReady()
     await fireEvent.click(screen.getByRole('button', { name: '模型' }))
     await fireEvent.click(screen.getByRole('button', { name: '新建模型' }))
-    await fireEvent.update(screen.getByLabelText('模型类型'), 'image_generation')
+    await fireEvent.update(screen.getByRole('combobox'), 'image_generation')
 
     await waitFor(() => {
       expect((screen.getByPlaceholderText('选择已知模型或填写兼容模型 ID') as HTMLInputElement).value).toBe('gpt-image-2')

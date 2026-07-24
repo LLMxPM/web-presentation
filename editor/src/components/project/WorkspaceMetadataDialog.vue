@@ -1,25 +1,45 @@
 <!-- 文件功能：提供工作空间基础信息编辑弹窗，统一承载名称与描述的修改表单。 -->
 <template>
-  <BaseDialog :model-value="modelValue" title="编辑工作空间" size="compact" @update:model-value="handleVisibleChange">
+  <UiDialog :open="modelValue" title="编辑工作空间" size="compact" @update:open="handleVisibleChange">
     <div class="space-y-5">
-      <BaseInput v-model="form.name" label="工作空间名称" placeholder="给工作空间起个清晰的名字" required :error="errors.name" />
+      <UiFormField label="工作空间名称" required :error="errors.name">
+        <template #default="field">
+          <UiInput
+            v-model="form.name"
+            :input-id="field.inputId"
+            :described-by="field.describedBy"
+            :invalid="field.invalid"
+            placeholder="给工作空间起个清晰的名字"
+            required
+          />
+        </template>
+      </UiFormField>
 
-      <BaseInput v-model="form.description" type="textarea" label="工作空间描述" placeholder="补充此工作空间的用途、归属或范围" :rows="4" />
+      <UiFormField label="工作空间描述">
+        <template #default="field">
+          <UiInput
+            v-model="form.description"
+            type="textarea"
+            :input-id="field.inputId"
+            :described-by="field.describedBy"
+            placeholder="补充此工作空间的用途、归属或范围"
+            :rows="4"
+          />
+        </template>
+      </UiFormField>
     </div>
 
     <template #footer>
-      <BaseButton variant="ghost" @click="handleVisibleChange(false)">取消</BaseButton>
-      <BaseButton variant="primary" :loading="loading" @click="handleSubmit">保存</BaseButton>
+      <UiButton variant="ghost" @click="handleVisibleChange(false)">取消</UiButton>
+      <UiButton variant="primary" :loading="loading" @click="handleSubmit">保存</UiButton>
     </template>
-  </BaseDialog>
+  </UiDialog>
 </template>
 
 <script setup lang="ts">
 import { reactive, watch } from 'vue'
 
-import BaseButton from '@/components/ui/BaseButton.vue'
-import BaseDialog from '@/components/ui/BaseDialog.vue'
-import BaseInput from '@/components/ui/BaseInput.vue'
+import { UiButton, UiDialog, UiFormField, UiInput } from '@/components/ui'
 import type { WorkspaceItem } from '@/types/api'
 
 const props = withDefaults(defineProps<{

@@ -119,12 +119,28 @@ describe('AdminLayout', () => {
   })
 
   it('工作空间页面应展示右侧 Dock，并在项目路由上高亮项目入口', () => {
-    renderLayout()
+    const { container } = renderLayout()
 
     expect(screen.getByTestId('agent-sidebar')).toBeTruthy()
     expect(screen.getByTestId('workspace-dock')).toHaveClass('w-14')
     expect(screen.getByTestId('project-quick-switcher')).toBeTruthy()
     expect(screen.getByTestId('workspace-dock-projects')).toHaveClass('dock-button-active')
+    expect(screen.getByTestId('admin-layout')).toHaveClass('min-w-0', 'overflow-hidden', 'bg-canvas')
+    expect(screen.getByTestId('admin-layout-main')).toHaveClass('min-w-0', 'flex-1')
+    expect(container.querySelector('.admin-layout-agent')).toBeTruthy()
+  })
+
+  it('窄窗口受限模式应保留明确提示，辅助面板使用独立覆盖层容器', async () => {
+    renderLayout()
+
+    expect(screen.getByTestId('admin-layout-restricted-notice')).toHaveAttribute('role', 'status')
+    expect(screen.getByTestId('admin-layout-restricted-notice').textContent).toContain('至少 960px')
+
+    await fireEvent.click(screen.getByTestId('workspace-dock-panel-assets'))
+
+    const supplementPanel = await screen.findByTestId('workspace-supplement-panel')
+    expect(supplementPanel).toHaveClass('admin-layout-supplement-panel')
+    expect(screen.getByTestId('asset-panel')).toBeTruthy()
   })
 
   it('应在后台框架底栏展示仓库、许可证与 Runtime 子模块信息', () => {

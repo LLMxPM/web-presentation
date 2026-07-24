@@ -13,52 +13,42 @@
     </template>
 
     <template #actions>
-      <button
+      <UiButton
         v-if="workspaceId"
         type="button"
-        class="flex items-center gap-1 rounded-lg p-1.5 text-xs font-bold text-indigo-600 transition-colors hover:bg-indigo-50"
+        variant="ghost"
+        size="sm"
         title="打开主题与字体管理页"
         @click="openThemeFontPage"
       >
         <ArrowUpRight class="h-4 w-4" />
         <span class="hidden lg:inline">管理</span>
-      </button>
+      </UiButton>
     </template>
 
     <div class="shrink-0 border-b border-slate-100 bg-slate-50/80 px-4 py-3">
       <div class="grid grid-cols-2 rounded-xl bg-slate-100 p-1">
-        <button
-          type="button"
-          class="h-8 rounded-lg px-3 text-xs font-bold transition-colors"
+        <UiButton
+          variant="ghost"
+          size="sm"
           :class="activeTab === 'themes' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'"
           @click="activeTab = 'themes'"
         >
           主题
-        </button>
-        <button
-          type="button"
-          class="h-8 rounded-lg px-3 text-xs font-bold transition-colors"
+        </UiButton>
+        <UiButton
+          variant="ghost"
+          size="sm"
           :class="activeTab === 'fonts' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'"
           @click="activeTab = 'fonts'"
         >
           字体
-        </button>
+        </UiButton>
       </div>
     </div>
 
-    <div v-if="loading" class="flex flex-1 items-center justify-center text-sm text-slate-400">
-      正在加载主题与字体...
-    </div>
-
-    <div v-else-if="activeTab === 'themes'" class="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
-      <div
-        v-if="filteredThemes.length === 0"
-        class="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-slate-100 bg-slate-50 px-4 py-12 text-center"
-      >
-        <SwatchBook class="mb-3 h-10 w-10 text-slate-300" />
-        <p class="text-sm font-semibold text-slate-500">{{ searchKeyword ? '未找到相关主题' : '暂无主题' }}</p>
-      </div>
-
+    <div v-if="activeTab === 'themes'" class="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
+      <DataState :state="themeDataState" :title="themeDataState === 'empty' ? (searchKeyword ? '未找到相关主题' : '暂无主题') : undefined">
       <ThemePreviewCard
         v-for="theme in filteredThemes"
         :key="theme.id"
@@ -87,17 +77,11 @@
           </span>
         </template>
       </ThemePreviewCard>
+      </DataState>
     </div>
 
     <div v-else class="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
-      <div
-        v-if="filteredFonts.length === 0"
-        class="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-slate-100 bg-slate-50 px-4 py-12 text-center"
-      >
-        <Type class="mb-3 h-10 w-10 text-slate-300" />
-        <p class="text-sm font-semibold text-slate-500">{{ searchKeyword ? '未找到相关字体' : '暂无字体注册' }}</p>
-      </div>
-
+      <DataState :state="fontDataState" :title="fontDataState === 'empty' ? (searchKeyword ? '未找到相关字体' : '暂无字体注册') : undefined">
       <article
         v-for="font in filteredFonts"
         :key="font.id"
@@ -122,56 +106,60 @@
         </div>
 
         <div class="mt-3 flex items-center justify-end gap-2">
-          <button
+          <UiButton
             type="button"
-            class="inline-flex h-8 items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 text-xs font-bold text-slate-600 transition-colors hover:border-indigo-200 hover:text-indigo-600"
+            variant="secondary"
+            size="sm"
             title="预览字体"
             @click="previewFont = font"
           >
             <Eye class="h-3.5 w-3.5" />
             预览
-          </button>
-          <button
+          </UiButton>
+          <UiButton
             type="button"
-            class="inline-flex h-8 items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 text-xs font-bold text-slate-600 transition-colors hover:border-indigo-200 hover:text-indigo-600"
+            variant="secondary"
+            size="sm"
             title="复制 font-family"
             @click="copyFontFamily(font)"
           >
             <Copy class="h-3.5 w-3.5" />
             复制名称
-          </button>
+          </UiButton>
         </div>
       </article>
+      </DataState>
     </div>
   </LibrarySidebarPanel>
 
-  <BaseDialog
-    :model-value="!!previewFont"
+  <UiDialog
+    :open="!!previewFont"
     :title="previewFont?.font_family || '字体预览'"
     :description="previewFont?.asset_name || ''"
     size="standard"
     body-preset="auto"
     :z-index="240"
-    @update:model-value="handlePreviewDialogVisibleChange"
+    @update:open="handlePreviewDialogVisibleChange"
   >
     <div v-if="previewFont" class="space-y-4" :style="{ fontFamily: `'theme-sidebar-font-${previewFont.id}'` }">
       <p class="text-5xl leading-tight text-slate-900">AaBbCc 012345</p>
       <p class="text-3xl leading-relaxed text-slate-800">字体效果预览：主题标题、正文与数字展示</p>
       <p class="text-lg leading-8 text-slate-600">Web Presentation 主题字体预览，用于快速确认字体注册后的视觉效果。</p>
     </div>
-  </BaseDialog>
+  </UiDialog>
 </template>
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { ArrowUpRight, Copy, Eye, SwatchBook, Type } from '@lucide/vue'
+import { ArrowUpRight, Copy, Eye, SwatchBook } from '@lucide/vue'
 
 import { listWorkspaceFonts } from '@/api/assets'
 import { getWorkspace } from '@/api/catalog'
 import { getErrorMessage } from '@/api/http'
 import { listWorkspaceThemes } from '@/api/themes'
-import BaseDialog from '@/components/ui/BaseDialog.vue'
+import { UiButton, UiDialog } from '@/components/ui'
+import DataState from '@/components/patterns/DataState.vue'
 import type { WorkspaceFontConfigItem, WorkspaceItem, WorkspaceThemeItem } from '@/types/api'
 import { Message } from '@/utils/message'
 import { buildWorkspaceThemesPath } from '@/utils/workspace-routes'
@@ -191,6 +179,12 @@ const emit = defineEmits<{
 
 const router = useRouter()
 const loading = ref(false)
+const themeDataState = computed<'loading' | 'empty' | 'ready'>(() => (
+  loading.value ? 'loading' : filteredThemes.value.length ? 'ready' : 'empty'
+))
+const fontDataState = computed<'loading' | 'empty' | 'ready'>(() => (
+  loading.value ? 'loading' : filteredFonts.value.length ? 'ready' : 'empty'
+))
 const themes = ref<WorkspaceThemeItem[]>([])
 const fonts = ref<WorkspaceFontConfigItem[]>([])
 const searchKeyword = ref('')

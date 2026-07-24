@@ -1,6 +1,6 @@
 <!-- 文件功能：承载工作空间组件右侧工作台，负责预览/编辑/新建状态切换、草稿保存、发布和版本历史。 -->
 <template>
-  <section class="h-full min-h-0 overflow-hidden bg-white">
+  <section class="flex h-full min-h-0 flex-col overflow-hidden bg-white">
     <div v-if="activeMode === 'empty' || activeMode === 'create'" class="flex h-full items-center justify-center bg-slate-50/70 p-6">
       <div class="max-w-sm rounded-xl border border-dashed border-slate-200 bg-white px-7 py-8 text-center">
         <Layers class="mx-auto mb-3 h-10 w-10 text-slate-300" />
@@ -17,6 +17,7 @@
       :refresh-key="previewRefreshKey"
       :title="previewTitle"
       :simplified="simplifiedPreview"
+      class="min-h-0 flex-1"
       @preview-refreshed="previewLoading = false"
     >
       <template #title>
@@ -32,11 +33,11 @@
       </template>
 
       <template #component-actions="slotProps">
-        <BaseButton v-if="currentComponent" variant="ghost" size="sm" @click="openVersionHistoryFromPreview(slotProps?.closeFullPreview)">
+        <UiButton v-if="currentComponent" variant="ghost" size="sm" @click="openVersionHistoryFromPreview(slotProps?.closeFullPreview)">
           <History class="h-3.5 w-3.5" />
           版本
-        </BaseButton>
-        <BaseButton
+        </UiButton>
+        <UiButton
           v-if="currentComponent && !slotProps?.insideFullPreview"
           variant="ghost"
           size="sm"
@@ -46,11 +47,11 @@
         >
           <Link2 class="h-3.5 w-3.5" />
           引用
-        </BaseButton>
-        <BaseButton variant="secondary" size="sm" @click="switchToEditModeFromPreview(slotProps?.closeFullPreview)">
+        </UiButton>
+        <UiButton variant="secondary" size="sm" @click="switchToEditModeFromPreview(slotProps?.closeFullPreview)">
           编辑
-        </BaseButton>
-        <BaseButton
+        </UiButton>
+        <UiButton
           v-if="currentComponent"
           variant="primary"
           size="sm"
@@ -59,7 +60,7 @@
         >
           <Rocket class="h-3.5 w-3.5" />
           发布
-        </BaseButton>
+        </UiButton>
       </template>
     </ComponentPreviewWorkbench>
 
@@ -127,7 +128,12 @@
       @submit="submitReleaseDialog"
     />
 
-    <BaseDialog v-model="showSchemaHelp" title="Preview Schema 配置指南" size="standard">
+    <UiDialog
+      :open="showSchemaHelp"
+      title="Preview Schema 配置指南"
+      size="standard"
+      @update:open="showSchemaHelp = $event"
+    >
       <div class="space-y-4 text-sm leading-7 text-slate-600">
         <p>
           <code class="font-bold text-indigo-600">previewSchema</code>
@@ -142,7 +148,7 @@
   ]
 }</code></pre>
       </div>
-    </BaseDialog>
+    </UiDialog>
   </section>
 </template>
 
@@ -167,8 +173,8 @@ import ComponentReferenceDialog from '@/components/component-preview/ComponentRe
 import type { ComponentPreviewWorkbenchSource } from '@/components/component-preview/component-preview-workbench'
 import ComponentReleaseDialog from '@/components/component-preview/ComponentReleaseDialog.vue'
 import ComponentVersionHistoryDialog from '@/components/component-preview/ComponentVersionHistoryDialog.vue'
-import BaseButton from '@/components/ui/BaseButton.vue'
-import BaseDialog from '@/components/ui/BaseDialog.vue'
+import { UiDialog } from '@/components/ui'
+import UiButton from '@/components/ui/button/UiButton.vue'
 import { useWorkspaceComponentDraft } from '@/composables/useWorkspaceComponentDraft'
 import type {
   PreviewArtifactResponse,

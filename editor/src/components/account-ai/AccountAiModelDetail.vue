@@ -30,19 +30,19 @@
         <p v-if="readOnlyModel" class="mt-2 text-xs font-semibold text-amber-600">管理员全局模型只读，可选择绑定但不能修改。</p>
       </div>
       <div v-if="mode === 'detail' && selectedModel?.editable" class="flex flex-wrap justify-end gap-2">
-        <BaseButton
+        <UiButton
           variant="primary"
           @click="emit('edit')"
         >
           编辑模型
-        </BaseButton>
-        <BaseButton
+        </UiButton>
+        <UiButton
           variant="danger"
           :loading="deletingConfigId === selectedModel.id"
           @click="emit('deleteModel', selectedModel)"
         >
           删除模型
-        </BaseButton>
+        </UiButton>
       </div>
     </div>
 
@@ -167,27 +167,20 @@
           </div>
         </div>
         <div class="grid gap-4 xl:grid-cols-2">
-          <label class="space-y-1.5 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700">
-            <span>模型类型</span>
-            <select v-model="form.model_type" class="w-full rounded-md border border-slate-300 bg-white px-3 py-2">
-              <option value="chat">聊天 / 图片理解模型</option>
-              <option value="image_generation">图片生成模型</option>
-            </select>
-          </label>
-          <label v-if="!selectedConfigId && canCreateGlobal" class="space-y-1.5 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700">
-            <span>模型范围</span>
-            <select v-model="form.scope" class="w-full rounded-md border border-slate-300 bg-white px-3 py-2">
-              <option value="personal">个人模型</option>
-              <option value="global">管理员全局模型</option>
-            </select>
-          </label>
-          <BaseInput
-            :model-value="form.name"
-            label="模型名称"
-            placeholder="例如：总控默认模型"
-            required
-            @update:model-value="value => form.name = String(value)"
-          />
+          <UiFormField label="模型类型" class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700">
+            <UiSelect v-model="form.model_type" :options="modelTypeOptions" />
+          </UiFormField>
+          <UiFormField v-if="!selectedConfigId && canCreateGlobal" label="模型范围" class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700">
+            <UiSelect v-model="form.scope" :options="scopeOptions" />
+          </UiFormField>
+          <UiFormField label="模型名称" required>
+            <UiInput
+              :model-value="form.name"
+              placeholder="例如：总控默认模型"
+              required
+              @update:model-value="value => form.name = String(value)"
+            />
+          </UiFormField>
 
           <div class="space-y-1.5">
             <label class="ml-1 text-sm font-semibold text-slate-700">供应商配置</label>
@@ -200,14 +193,15 @@
             <p v-if="currentProvider" class="ml-1 text-xs text-slate-400">{{ currentProvider.provider_adapter }}</p>
           </div>
 
-          <BaseInput
-            :model-value="form.model_id"
-            label="模型 ID"
-            :placeholder="form.model_type === 'image_generation' ? '选择已知模型或填写兼容模型 ID' : '例如：gpt-4.1-mini'"
-            :list="form.model_type === 'image_generation' ? 'image-generation-model-options' : undefined"
-            required
-            @update:model-value="handleModelIdUpdate"
-          />
+          <UiFormField label="模型 ID" required>
+            <UiInput
+              :model-value="form.model_id"
+              :placeholder="form.model_type === 'image_generation' ? '选择已知模型或填写兼容模型 ID' : '例如：gpt-4.1-mini'"
+              :list="form.model_type === 'image_generation' ? 'image-generation-model-options' : undefined"
+              required
+              @update:model-value="handleModelIdUpdate"
+            />
+          </UiFormField>
           <datalist v-if="form.model_type === 'image_generation'" id="image-generation-model-options">
             <option v-for="model in imageModelOptions" :key="model.model_id" :value="model.model_id">{{ model.label }}</option>
           </datalist>
@@ -233,44 +227,48 @@
           </div>
         </div>
         <div class="grid gap-4 xl:grid-cols-2">
-          <BaseInput
-            :model-value="form.context_window_tokens"
-            label="上下文窗口 tokens"
-            type="number"
-            min="1"
-            inputmode="numeric"
-            placeholder="例如：128000"
-            @update:model-value="value => form.context_window_tokens = Number(value) || 128000"
-          />
-          <BaseInput
-            :model-value="form.max_output_tokens"
-            label="最大输出 tokens"
-            type="number"
-            min="1"
-            inputmode="numeric"
-            placeholder="例如：32000"
-            @update:model-value="value => form.max_output_tokens = Number(value) || 32000"
-          />
-          <BaseInput
-            :model-value="form.history_token_ratio"
-            label="历史上下文比例"
-            type="number"
-            min="0"
-            max="0.9"
-            step="0.05"
-            placeholder="0.5"
-            @update:model-value="value => form.history_token_ratio = Number(value)"
-          />
-          <BaseInput
-            :model-value="form.compression_target_ratio"
-            label="压缩目标比例"
-            type="number"
-            min="0.02"
-            max="0.5"
-            step="0.01"
-            placeholder="0.1"
-            @update:model-value="value => form.compression_target_ratio = Number(value)"
-          />
+          <UiFormField label="上下文窗口 tokens">
+            <UiInput
+              :model-value="form.context_window_tokens"
+              type="number"
+              min="1"
+              inputmode="numeric"
+              placeholder="例如：128000"
+              @update:model-value="value => form.context_window_tokens = Number(value) || 128000"
+            />
+          </UiFormField>
+          <UiFormField label="最大输出 tokens">
+            <UiInput
+              :model-value="form.max_output_tokens"
+              type="number"
+              min="1"
+              inputmode="numeric"
+              placeholder="例如：32000"
+              @update:model-value="value => form.max_output_tokens = Number(value) || 32000"
+            />
+          </UiFormField>
+          <UiFormField label="历史上下文比例">
+            <UiInput
+              :model-value="form.history_token_ratio"
+              type="number"
+              min="0"
+              max="0.9"
+              step="0.05"
+              placeholder="0.5"
+              @update:model-value="value => form.history_token_ratio = Number(value)"
+            />
+          </UiFormField>
+          <UiFormField label="压缩目标比例">
+            <UiInput
+              :model-value="form.compression_target_ratio"
+              type="number"
+              min="0.02"
+              max="0.5"
+              step="0.01"
+              placeholder="0.1"
+              @update:model-value="value => form.compression_target_ratio = Number(value)"
+            />
+          </UiFormField>
         </div>
       </section>
 
@@ -283,45 +281,44 @@
           </div>
         </div>
         <div class="grid gap-4 xl:grid-cols-2">
-          <label class="flex items-start gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
-            <input
-              :checked="form.thinking_enabled"
-              type="checkbox"
-              class="mt-0.5 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+          <div class="flex items-start gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+            <UiCheckbox
+              :model-value="form.thinking_enabled"
+              aria-label="启用思考 / reasoning"
               :disabled="currentProvider ? !currentProvider.supports_thinking : false"
-              @change="event => form.thinking_enabled = (event.target as HTMLInputElement).checked"
-            >
+              @update:model-value="value => form.thinking_enabled = value === true"
+            />
             <span>
               <span class="block font-semibold">启用思考 / reasoning</span>
               <span class="mt-1 block text-xs text-slate-500">
                 {{ currentProvider?.supports_thinking ? `当前供应商会按 ${currentProvider.thinking_mode} 规则映射。` : '当前供应商不支持 thinking，保存时会自动忽略。' }}
               </span>
             </span>
-          </label>
+          </div>
 
-          <label class="flex items-start gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
-            <input
-              :checked="form.supports_image_input"
-              type="checkbox"
-              class="mt-0.5 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
-              @change="event => form.supports_image_input = (event.target as HTMLInputElement).checked"
-            >
+          <div class="flex items-start gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+            <UiCheckbox
+              :model-value="form.supports_image_input"
+              aria-label="支持图片输入"
+              @update:model-value="value => form.supports_image_input = value === true"
+            />
             <span>
               <span class="block font-semibold">支持图片输入</span>
               <span class="mt-1 block text-xs text-slate-500">
                 {{ imageInputHint }}
               </span>
             </span>
-          </label>
+          </div>
 
           <div class="space-y-1.5 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 xl:col-span-2">
-            <BaseInput
-              :model-value="form.thinking_effort ?? ''"
-              label="思考强度"
-              placeholder="例如：medium、high、xhigh、max"
-              :disabled="!form.thinking_enabled || (currentProvider ? !currentProvider.supports_thinking : false)"
-              @update:model-value="value => form.thinking_effort = String(value).trim() || null"
-            />
+            <UiFormField label="思考强度">
+              <UiInput
+                :model-value="form.thinking_effort ?? ''"
+                placeholder="例如：medium、high、xhigh、max"
+                :disabled="!form.thinking_enabled || (currentProvider ? !currentProvider.supports_thinking : false)"
+                @update:model-value="value => form.thinking_effort = String(value).trim() || null"
+              />
+            </UiFormField>
             <p class="ml-1 text-xs leading-5 text-slate-500">
               {{ thinkingEffortHint }}
             </p>
@@ -360,31 +357,24 @@
       </section>
     </div>
 
-    <article
+    <InspectorSection
       v-if="mode !== 'detail' || selectedModel"
-      class="overflow-hidden rounded-xl border border-slate-200"
+      title="高级参数"
+      :description="advancedParameterSubtitle"
+      :open="!collapsedModel"
       :class="readOnlyModel ? 'opacity-70' : ''"
+      @update:open="value => collapsedModel = !value"
     >
-      <button type="button" class="flex w-full items-center justify-between bg-slate-50 px-4 py-3 text-left" @click="collapsedModel = !collapsedModel">
-        <span class="flex items-start gap-3">
-          <span class="mt-1 h-5 w-1 rounded-full bg-slate-400"></span>
-          <span>
-            <span class="block text-base font-bold text-slate-900">高级参数</span>
-            <span class="mt-1 block text-xs text-slate-400">{{ advancedParameterSubtitle }}</span>
-          </span>
-        </span>
-        <component :is="collapsedModel ? ChevronRight : ChevronDown" class="h-4 w-4 text-slate-400" />
-      </button>
-      <div v-show="!collapsedModel" class="space-y-3 border-t border-slate-100 p-4">
-        <BaseInput
-          v-model="advancedTextModel"
-          type="textarea"
-          label="JSON 配置"
-          :rows="10"
-          :placeholder="advancedParameterPlaceholder"
-          :error="advancedConfigError"
-          :disabled="isFormLocked"
-        />
+      <div class="space-y-3">
+        <UiFormField label="JSON 配置" :error="advancedConfigError">
+          <UiInput
+            v-model="advancedTextModel"
+            type="textarea"
+            :rows="10"
+            :placeholder="advancedParameterPlaceholder"
+            :disabled="isFormLocked"
+          />
+        </UiFormField>
         <div class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs leading-6 text-slate-500">
           {{ advancedParameterHint }}
           <a
@@ -398,28 +388,27 @@
           </a>
         </div>
       </div>
-    </article>
+    </InspectorSection>
 
     <div v-if="mode !== 'detail'" class="flex justify-end gap-2">
-      <BaseButton v-if="mode === 'edit'" variant="ghost" :disabled="savingConfig" @click="emit('cancel')">
+      <UiButton v-if="mode === 'edit'" variant="ghost" :disabled="savingConfig" @click="emit('cancel')">
         取消
-      </BaseButton>
-      <BaseButton variant="ghost" :disabled="readOnlyModel" @click="emit('formatAdvanced')">
+      </UiButton>
+      <UiButton variant="ghost" :disabled="readOnlyModel" @click="emit('formatAdvanced')">
         格式化 JSON
-      </BaseButton>
-      <BaseButton variant="primary" :loading="savingConfig" :disabled="readOnlyModel || !canSubmitModel" @click="emit('submit')">
+      </UiButton>
+      <UiButton variant="primary" :loading="savingConfig" :disabled="readOnlyModel || !canSubmitModel" @click="emit('submit')">
         {{ mode === 'edit' ? '保存模型' : '创建模型' }}
-      </BaseButton>
+      </UiButton>
     </div>
   </section>
 </template>
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import { ChevronDown, ChevronRight } from '@lucide/vue'
 
-import BaseButton from '@/components/ui/BaseButton.vue'
-import BaseInput from '@/components/ui/BaseInput.vue'
+import { UiButton, UiCheckbox, UiFormField, UiInput, UiSelect } from '@/components/ui'
+import InspectorSection from '@/components/patterns/InspectorSection.vue'
 import SearchableSelect from '@/components/ui/SearchableSelect.vue'
 import type { SelectOption } from '@/components/ui/select'
 import type { AiLlmConfigScope, AiModelType, ImageGenerationModelCatalogItem, LlmConfigItem, LlmProviderCatalogItem } from '@/types/api'
@@ -512,6 +501,14 @@ const imageInputHint = computed(() => {
 })
 
 const imageModelOptions = computed(() => props.currentProvider?.image_generation_models ?? [])
+const modelTypeOptions = [
+  { value: 'chat', label: '聊天 / 图片理解模型' },
+  { value: 'image_generation', label: '图片生成模型' },
+]
+const scopeOptions = [
+  { value: 'personal', label: '个人模型' },
+  { value: 'global', label: '管理员全局模型' },
+]
 const supportsCustomImageModel = computed(() => imageModelOptions.value.some(model => model.allow_custom_model_id))
 const currentImageModel = computed<ImageGenerationModelCatalogItem | null>(() => {
   if (props.form.model_type !== 'image_generation') return null

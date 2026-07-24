@@ -1,6 +1,6 @@
 <!-- 文件功能：提供项目构建中心弹窗，编排构建设置、额外资源、资源问题与构建历史。 -->
 <template>
-  <BaseDialog v-model="visible" title="项目构建中心" size="canvas" body-preset="editor">
+  <UiDialog :open="visible" title="项目构建中心" size="canvas" body-preset="editor" @update:open="visible = $event">
     <div
       data-testid="project-build-dialog"
       class="grid h-full min-w-0 min-h-0 grid-rows-[minmax(0,1.15fr)_minmax(220px,0.85fr)] gap-2 overflow-hidden lg:grid-cols-[minmax(0,1.25fr)_minmax(360px,0.85fr)] lg:grid-rows-1"
@@ -59,7 +59,7 @@
         @download="job => emit('download', job)"
       />
     </div>
-  </BaseDialog>
+  </UiDialog>
 </template>
 
 <script setup lang="ts">
@@ -71,7 +71,7 @@ import ProjectBuildExtraAssetsPanel from '@/components/project/ProjectBuildExtra
 import ProjectBuildHistoryPanel from '@/components/project/ProjectBuildHistoryPanel.vue'
 import ProjectBuildResourceIssuePanel from '@/components/project/ProjectBuildResourceIssuePanel.vue'
 import ProjectBuildSettingsPanel from '@/components/project/ProjectBuildSettingsPanel.vue'
-import BaseDialog from '@/components/ui/BaseDialog.vue'
+import { UiDialog } from '@/components/ui'
 import type { AssetResponse, ProjectBuildExtraAssetsJson, ProjectBuildJob, ProjectBuildResourceIssueData } from '@/types/api'
 import { Message } from '@/utils/message'
 import { isProjectBuildJobActive, normalizeProjectBuildBaseUrl } from '@/utils/project-build'

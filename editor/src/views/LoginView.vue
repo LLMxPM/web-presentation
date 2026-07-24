@@ -64,26 +64,35 @@
             </div>
 
             <form @submit.prevent="handleSubmit" class="mt-10 space-y-6">
-              <BaseInput
-                v-model="form.username"
-                data-testid="login-username"
-                label="用户名"
-                placeholder="请输入用户名"
-                required
-                @keydown.enter.prevent="focusPassword"
-              />
-              <BaseInput
-                ref="passwordRef"
-                v-model="form.password"
-                data-testid="login-password"
-                label="密码"
-                type="password"
-                placeholder="请输入访问密码"
-                required
-              />
+              <UiFormField label="用户名" required v-slot="field">
+                <UiInput
+                  v-model="form.username"
+                  data-testid="login-username"
+                  :input-id="field.inputId"
+                  :described-by="field.describedBy"
+                  :invalid="field.invalid"
+                  placeholder="请输入用户名"
+                  required
+                  @keydown.enter.prevent="focusPassword"
+                />
+              </UiFormField>
+              <UiFormField label="密码" required v-slot="field">
+                <UiInput
+                  ref="passwordRef"
+                  v-model="form.password"
+                  data-testid="login-password"
+                  :input-id="field.inputId"
+                  :described-by="field.describedBy"
+                  :invalid="field.invalid"
+                  type="password"
+                  password-toggle
+                  placeholder="请输入访问密码"
+                  required
+                />
+              </UiFormField>
 
               <div class="pt-4">
-                <BaseButton
+                <UiButton
                   data-testid="login-submit"
                   type="submit"
                   variant="primary"
@@ -94,7 +103,7 @@
                     <LogIn class="h-4 w-4" aria-hidden="true" />
                   </template>
                   登录
-                </BaseButton>
+                </UiButton>
               </div>
             </form>
 
@@ -124,8 +133,7 @@ import { Boxes, Layers3, LogIn, Palette, ShieldCheck, Sparkles } from '@lucide/v
 import { getErrorMessage } from '@/api/http'
 import { useAuthStore } from '@/stores/auth'
 import { Message } from '@/utils/message'
-import BaseButton from '@/components/ui/BaseButton.vue'
-import BaseInput from '@/components/ui/BaseInput.vue'
+import { UiButton, UiFormField, UiInput } from '@/components/ui'
 import heroImage from '@/assets/hero.png'
 
 const router = useRouter()

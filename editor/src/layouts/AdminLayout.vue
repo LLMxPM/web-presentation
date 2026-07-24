@@ -1,35 +1,36 @@
 <!-- 文件功能：后台主布局，统一承载顶部栏、左侧 AI 助手、主工作区与右侧工作空间 Dock。 -->
 <template>
-  <div class="flex h-screen bg-slate-50 overflow-hidden">
-    <AgentGlobalSidebar
-      v-if="sidebarsVisible"
-      :agent-id="activeAgentId"
-      :workspace-id="workspaceId"
-      :project-id="projectId"
-      :page-id="pageId"
-      :component-id="activeAgentComponentId"
-      :workspace-name="workspaceQuery.data.value?.name"
-      :project-name="projectQuery.data.value?.name"
-      :page-title="pageQuery.data.value?.title"
-      :component-name="activeAgentComponentName"
-      :source="activeAgentSource"
-      @update:expanded="agentSidebarExpanded = $event"
-    />
+  <div data-testid="admin-layout" class="admin-layout flex h-screen min-w-0 overflow-hidden bg-canvas text-text">
+    <aside v-if="sidebarsVisible" class="admin-layout-agent">
+      <AgentGlobalSidebar
+        :agent-id="activeAgentId"
+        :workspace-id="workspaceId"
+        :project-id="projectId"
+        :page-id="pageId"
+        :component-id="activeAgentComponentId"
+        :workspace-name="workspaceQuery.data.value?.name"
+        :project-name="projectQuery.data.value?.name"
+        :page-title="pageQuery.data.value?.title"
+        :component-name="activeAgentComponentName"
+        :source="activeAgentSource"
+        @update:expanded="agentSidebarExpanded = $event"
+      />
+    </aside>
 
     <div class="flex min-w-0 flex-1 flex-col overflow-hidden">
       <!-- Header Area -->
-      <header class="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-6 z-10 shrink-0">
+      <header class="admin-layout-header flex h-14 shrink-0 items-center justify-between border-b border-border bg-surface px-3">
         <div
-          class="flex items-center transition-[width,opacity] duration-150"
+          class="admin-layout-brand flex transition-[width,opacity] duration-150"
           :class="agentSidebarExpanded ? 'w-0 overflow-hidden opacity-0' : 'w-48 opacity-100'"
         >
-          <div v-if="!agentSidebarExpanded" data-testid="app-brand-title" class="text-xl font-extrabold text-slate-800 tracking-tight select-none">Web-Presentation</div>
+          <div v-if="!agentSidebarExpanded" data-testid="app-brand-title" class="select-none text-lg font-extrabold tracking-tight text-text">Web-Presentation</div>
         </div>
 
-        <div class="flex min-w-0 flex-1 items-center justify-start gap-2 px-4">
+        <div class="admin-layout-context flex min-w-0 flex-1 items-center justify-start gap-2 px-2">
           <div
             v-if="showWorkspaceSelectionHint"
-            class="flex shrink-0 items-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50 px-3.5 py-2 text-sm font-bold text-indigo-700 shadow-sm"
+            class="admin-layout-workspace-hint flex shrink-0 items-center gap-2 rounded-ui-md border border-accent/30 bg-accent-muted px-3 py-1.5 text-sm font-bold text-accent"
           >
             <MapPin class="h-4 w-4" />
             <span>选择对应工作空间，返回创作</span>
@@ -45,30 +46,31 @@
           <nav
             v-if="headerBreadcrumbs.length > 0"
             aria-label="当前位置"
-            class="ml-1 flex min-w-0 items-center gap-2 border-l border-slate-200 pl-3 text-sm font-semibold text-slate-500"
+            class="admin-layout-breadcrumb ml-1 flex min-w-0 items-center gap-2 border-l border-border pl-3 text-sm font-semibold text-text-muted"
           >
             <template v-for="(item, index) in headerBreadcrumbs" :key="`${item.label}-${index}`">
               <ChevronRight v-if="index > 0" class="h-4 w-4 shrink-0 text-slate-300" />
               <RouterLink
                 v-if="item.to"
                 :to="item.to"
-                class="max-w-[180px] truncate transition-colors hover:text-slate-800"
+                class="admin-layout-breadcrumb-item truncate transition-colors hover:text-text"
               >
                 {{ item.label }}
               </RouterLink>
-              <span v-else class="max-w-[180px] truncate text-slate-700">{{ item.label }}</span>
+              <span v-else class="admin-layout-breadcrumb-item truncate text-text-secondary">{{ item.label }}</span>
             </template>
           </nav>
         </div>
 
-        <div class="flex items-center justify-end min-w-[180px] gap-4">
+        <div class="admin-layout-user-menu flex shrink-0 items-center justify-end gap-2">
           <UserMenu />
         </div>
       </header>
 
       <!-- Main Content Area -->
-      <div class="flex-1 flex overflow-hidden">
+      <div class="relative flex min-h-0 flex-1 overflow-hidden">
         <main
+          data-testid="admin-layout-main"
           class="min-h-0 min-w-0 flex-1 p-3"
           :class="fullHeightPage ? 'overflow-hidden' : 'overflow-y-auto scroll-smooth'"
         >
@@ -84,17 +86,23 @@
           </div>
         </main>
 
-        <AssetManagerPanel
-          v-if="workspaceDockVisible && assetPanelVisible"
-          v-model="assetPanelVisible"
-          :workspace-id="workspaceId"
-        />
-        <ComponentManagerPanel
-          v-if="workspaceDockVisible && componentPanelVisible"
-          v-model="componentPanelVisible"
-          read-only
-          :workspace-id="workspaceId"
-        />
+        <section
+          v-if="workspaceDockVisible && activeSupplementPanel"
+          data-testid="workspace-supplement-panel"
+          class="admin-layout-supplement-panel"
+        >
+          <AssetManagerPanel
+            v-if="assetPanelVisible"
+            v-model="assetPanelVisible"
+            :workspace-id="workspaceId"
+          />
+          <ComponentManagerPanel
+            v-if="componentPanelVisible"
+            v-model="componentPanelVisible"
+            read-only
+            :workspace-id="workspaceId"
+          />
+        </section>
         <WorkspaceDock
           v-if="workspaceDockVisible && workspaceId"
           :workspace-id="workspaceId"
@@ -106,6 +114,10 @@
       </div>
 
       <OpenSourceFooter />
+    </div>
+
+    <div data-testid="admin-layout-restricted-notice" class="admin-layout-restricted-notice" role="status">
+      当前窗口宽度较小，已隐藏辅助面板。建议使用至少 960px 宽的桌面窗口进行完整创作。
     </div>
   </div>
 </template>
@@ -368,6 +380,142 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+/* 文件功能：定义后台工作台的响应式骨架、面板覆盖规则与受限窗口提示。 */
+:global(body) {
+  min-width: 0;
+}
+
+.admin-layout-agent {
+  z-index: var(--ui-z-dock);
+}
+
+.admin-layout-header {
+  z-index: var(--ui-z-sticky);
+}
+
+.admin-layout-breadcrumb-item {
+  max-width: 11.25rem;
+}
+
+.admin-layout-supplement-panel {
+  z-index: var(--ui-z-dock);
+  display: flex;
+  width: 25rem;
+  min-width: 20rem;
+  max-width: min(32vw, 25rem);
+  overflow: hidden;
+  border-left: 1px solid rgb(var(--ui-border));
+  background: rgb(var(--ui-surface));
+}
+
+.admin-layout-restricted-notice {
+  display: none;
+}
+
+@media (min-width: 1440px) {
+  .admin-layout-header {
+    padding-right: 1.5rem;
+    padding-left: 1.5rem;
+  }
+}
+
+@media (min-width: 1180px) and (max-width: 1439px) {
+  .admin-layout-brand {
+    width: 9rem !important;
+  }
+
+  .admin-layout-breadcrumb-item {
+    max-width: 8rem;
+  }
+
+  .admin-layout-supplement-panel {
+    width: 20rem;
+    min-width: 18rem;
+  }
+
+  .admin-layout-supplement-panel :deep(.relative.flex.h-full) {
+    width: 100%;
+  }
+}
+
+@media (min-width: 960px) and (max-width: 1179px) {
+  .admin-layout-brand {
+    width: 0 !important;
+    overflow: hidden;
+    opacity: 0;
+  }
+
+  .admin-layout-breadcrumb-item {
+    max-width: 6rem;
+  }
+
+  .admin-layout-supplement-panel {
+    position: absolute;
+    top: 0;
+    right: 3.5rem;
+    bottom: 0;
+    width: min(25rem, calc(100% - 7rem));
+    max-width: none;
+    box-shadow: var(--ui-shadow-popover);
+  }
+
+  .admin-layout-supplement-panel :deep(.relative.flex.h-full) {
+    width: 100%;
+  }
+}
+
+@media (max-width: 959px) {
+  .admin-layout-agent,
+  .admin-layout-supplement-panel,
+  .admin-layout-breadcrumb,
+  :deep(.admin-layout-context > [data-testid='project-quick-switcher']) {
+    display: none;
+  }
+
+  .admin-layout {
+    padding-bottom: 2.5rem;
+  }
+
+  .admin-layout-header {
+    height: 3.25rem;
+  }
+
+  .admin-layout-brand {
+    width: 0 !important;
+    overflow: hidden;
+    opacity: 0;
+  }
+
+  .admin-layout-context {
+    padding-left: 0;
+  }
+
+  .admin-layout-workspace-hint {
+    max-width: 12rem;
+    overflow: hidden;
+    white-space: nowrap;
+  }
+
+  .admin-layout-restricted-notice {
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    z-index: var(--ui-z-sticky);
+    display: block;
+    overflow: hidden;
+    border-top: 1px solid rgb(var(--ui-border));
+    background: rgb(var(--ui-surface-muted));
+    padding: 0.5rem 0.75rem;
+    color: rgb(var(--ui-text-secondary));
+    font-size: 0.75rem;
+    line-height: 1rem;
+    text-align: center;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
 .page-enter-active,
 .page-leave-active {
   transition: all 0.2s ease;

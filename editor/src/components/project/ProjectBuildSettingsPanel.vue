@@ -13,26 +13,20 @@
     <div class="mt-4 flex items-start gap-3">
       <label class="flex h-10 shrink-0 items-center text-sm font-semibold text-slate-700">部署基路径</label>
       <div class="flex min-w-0 flex-1 items-start gap-3">
-        <BaseInput
-          :model-value="baseUrl"
-          class="min-w-0 flex-1"
-          placeholder="./ 或 /demo/"
-          :error="baseUrlError"
-          @update:model-value="emit('update:baseUrl', String($event))"
-        />
-        <BaseButton
+        <UiFormField class="min-w-0 flex-1" :error="baseUrlError"><template #default="field"><UiInput :model-value="baseUrl" placeholder="./ 或 /demo/" :input-id="field.inputId" :described-by="field.describedBy" :invalid="field.invalid" @update:model-value="emit('update:baseUrl', String($event))" /></template></UiFormField>
+        <UiButton
           variant="primary"
           :loading="loading"
           :disabled="buildLocked"
           :title="buildLocked ? `任务 #${latestJob?.id} ${latestJobStatusMeta.label}，完成后才能再次构建。` : '发起构建'"
-          custom-class="h-10 min-w-[92px] shrink-0 px-3 text-sm whitespace-nowrap"
+          class="h-10 min-w-[92px] shrink-0 px-3 text-sm whitespace-nowrap"
           @click="emit('submit')"
         >
           <template #icon>
             <Package class="h-3.5 w-3.5" />
           </template>
           {{ buildLocked ? latestJobStatusMeta.label : '发起构建' }}
-        </BaseButton>
+        </UiButton>
       </div>
     </div>
   </section>
@@ -42,8 +36,7 @@
 import { computed } from 'vue'
 import { Package, Rocket } from '@lucide/vue'
 
-import BaseButton from '@/components/ui/BaseButton.vue'
-import BaseInput from '@/components/ui/BaseInput.vue'
+import { UiButton, UiFormField, UiInput } from '@/components/ui'
 import type { ProjectBuildJob } from '@/types/api'
 import { getProjectBuildStatusMeta, isProjectBuildJobActive } from '@/utils/project-build'
 

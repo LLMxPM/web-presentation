@@ -25,34 +25,37 @@
           <span class="rounded bg-white px-1.5 py-0.5 text-[11px] font-bold text-slate-600 shadow-sm">
             {{ tagLabel(node.tag) }}
           </span>
-          <button
+          <UiButton
             v-if="node.locked"
-            type="button"
+            variant="ghost"
+            size="xs"
             class="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800 hover:bg-amber-200"
             :aria-expanded="expandedNodeIds.has(node.id)"
             :aria-label="`${expandedNodeIds.has(node.id) ? '隐藏' : '查看'}样式锁定详情 ${node.tag}`"
             @click="toggleDetails(node.id)"
           >
             样式锁定
-          </button>
-          <button
+          </UiButton>
+          <UiButton
             v-if="node.locked && !props.disabled"
-            type="button"
+            variant="ghost"
+            size="xs"
             class="ml-auto shrink-0 rounded px-2 py-1 text-[11px] font-semibold text-rose-600 hover:bg-rose-50"
             :aria-label="`删除锁定样式 ${node.tag}`"
             @click="emit('remove-lock', node.id)"
           >
             删除锁定样式
-          </button>
-          <button
+          </UiButton>
+          <UiButton
             v-else-if="node.tag !== 'span' && !props.disabled"
-            type="button"
+            variant="ghost"
+            size="xs"
             class="ml-auto shrink-0 rounded px-2 py-1 text-[11px] font-semibold text-slate-500 hover:bg-white hover:text-indigo-700"
             :aria-label="`取消${tagLabel(node.tag)}`"
             @click="emit('unwrap-node', node.id)"
           >
             取消标签
-          </button>
+          </UiButton>
         </header>
 
         <code
@@ -77,6 +80,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 
+import { UiButton } from '@/components/ui'
 import type { PageVisualEditRichTextNode } from '@/utils/page-visual-edit-rich-text'
 
 interface PageVisualEditRichTextSelection {

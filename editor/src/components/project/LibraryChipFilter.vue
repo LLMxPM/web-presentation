@@ -1,34 +1,33 @@
 <!-- 文件功能：提供库侧栏通用胶囊筛选控件，用于统一标签与二级分类筛选样式。 -->
 <template>
   <div class="flex max-h-[5.5rem] min-w-0 flex-1 flex-wrap content-start gap-2 overflow-y-auto pr-1">
-    <button
+    <UiButton
       type="button"
-      class="max-w-full truncate rounded-full px-2.5 py-1 text-[11px] font-bold transition-colors"
+      size="xs"
+      :variant="modelValue === allValue ? 'primary' : 'secondary'"
+      class="max-w-full truncate rounded-full"
       :title="allLabel"
-      :class="modelValue === allValue
-        ? 'bg-indigo-600 text-white'
-        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'"
       @click="selectOption(allValue)"
     >
       {{ allLabel }}
-    </button>
-    <button
+    </UiButton>
+    <UiButton
       v-for="option in options"
       :key="option.value"
       type="button"
-      class="max-w-full truncate rounded-full px-2.5 py-1 text-[11px] font-bold transition-colors"
+      size="xs"
+      :variant="modelValue === option.value ? 'primary' : 'secondary'"
+      class="max-w-full truncate rounded-full"
       :title="option.label"
-      :class="modelValue === option.value
-        ? 'bg-indigo-600 text-white'
-        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'"
       @click="selectOption(option.value)"
     >
       {{ option.label }}
-    </button>
+    </UiButton>
   </div>
 </template>
 
 <script setup lang="ts">
+import { UiButton } from '@/components/ui'
 export interface LibraryChipOption {
   label: string
   value: string

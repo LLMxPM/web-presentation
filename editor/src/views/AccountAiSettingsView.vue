@@ -1,16 +1,11 @@
 <!-- 文件功能：整合账号级 AI 设置，集中管理智能体模型绑定、提示词、工具配置与模型。 -->
 <template>
   <div class="space-y-5 pb-10">
-    <header class="rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
-      <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-        <div class="min-w-0">
-          <div class="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
-            <Bot class="h-4 w-4" />
-            <span>账户 AI 设置</span>
-          </div>
-          <h1 class="mt-2 text-2xl font-bold tracking-tight text-slate-900">AI 设置</h1>
-
-        </div>
+    <PageHeader title="AI 设置" description="集中管理智能体模型绑定、提示词、工具配置与模型。">
+      <template #eyebrow>
+        <span class="inline-flex items-center gap-2"><Bot class="h-4 w-4" />账户 AI 设置</span>
+      </template>
+      <template #actions>
         <dl class="grid w-full grid-cols-2 overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 text-center sm:grid-cols-4 lg:w-auto lg:min-w-[560px]">
           <div class="border-b border-r border-slate-200 px-4 py-3 sm:border-b-0">
             <dt class="text-[11px] font-semibold text-slate-400">智能体</dt>
@@ -31,18 +26,19 @@
             <dd class="mt-1 text-lg font-bold text-slate-900">{{ allToolCount }}</dd>
           </div>
         </dl>
-      </div>
-    </header>
+      </template>
+    </PageHeader>
 
     <section class="grid gap-5 xl:grid-cols-[380px_minmax(0,1fr)]">
-      <aside class="min-h-[720px] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <ToolPanel class="min-h-[720px]" :scroll-body="false">
         <div class="border-b border-slate-200 p-3">
           <div class="grid grid-cols-3 rounded-xl bg-slate-100 p-1">
-            <button
+            <UiButton
               v-for="tab in sectionTabs"
               :key="tab.key"
               type="button"
               :aria-label="tab.label"
+              variant="ghost"
               class="flex min-h-12 min-w-0 flex-col items-center justify-center rounded-lg px-2 py-1 text-xs font-bold transition"
               :class="activeSection === tab.key ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'"
               @click="setActiveSection(tab.key)"
@@ -52,7 +48,7 @@
                 <span>{{ tab.label }}</span>
               </span>
               <span class="mt-0.5 text-[11px] font-semibold opacity-70">{{ tab.meta }}</span>
-            </button>
+            </UiButton>
           </div>
         </div>
 
@@ -67,11 +63,12 @@
             正在读取智能体配置...
           </div>
           <div v-else-if="agentConfigsQuery.data.value?.length" class="space-y-2">
-            <button
+            <UiButton
               v-for="agent in agentConfigsQuery.data.value"
               :key="agent.id"
               type="button"
-              class="w-full rounded-xl border p-3 text-left transition"
+              variant="ghost"
+              class="h-auto w-full rounded-xl border p-3 text-left transition"
               :class="selectedAgentConfig?.id === agent.id ? 'border-indigo-200 bg-indigo-50/70' : 'border-slate-200 bg-white hover:bg-slate-50'"
               @click="selectAgent(agent.id)"
             >
@@ -100,7 +97,7 @@
                   {{ agent.disabled_tool_count }} 关闭
                 </span>
               </div>
-            </button>
+            </UiButton>
           </div>
           <div v-else class="rounded-xl border border-dashed border-slate-200 px-4 py-10 text-center text-sm text-slate-400">
             暂无可配置智能体。
@@ -113,20 +110,21 @@
               <p class="text-sm font-semibold text-slate-900">供应商</p>
               <p class="mt-0.5 text-xs text-slate-500">{{ providerCount }} 个配置 · {{ providerMissingKeyCount }} 个缺少密钥</p>
             </div>
-            <BaseButton variant="primary" size="sm" @click="resetProviderForm">
+            <UiButton variant="primary" size="sm" @click="resetProviderForm">
               <Plus class="h-3.5 w-3.5" />
               新建供应商
-            </BaseButton>
+            </UiButton>
           </div>
           <div v-if="providerConfigsQuery.isFetching.value && !(providerConfigsQuery.data.value?.length)" class="rounded-xl border border-dashed border-slate-200 px-4 py-10 text-center text-sm text-slate-400">
             正在读取供应商...
           </div>
           <div v-else-if="providerConfigsQuery.data.value?.length" class="space-y-2">
-            <button
+            <UiButton
               v-for="config in providerConfigsQuery.data.value"
               :key="config.id"
               type="button"
-              class="w-full rounded-xl border p-3 text-left transition"
+              variant="ghost"
+              class="h-auto w-full rounded-xl border p-3 text-left transition"
               :class="selectedProviderConfigId === config.id ? 'border-indigo-200 bg-indigo-50/70' : 'border-slate-200 bg-white hover:bg-slate-50'"
               @click="handleEditProviderConfig(config)"
             >
@@ -156,7 +154,7 @@
                   {{ config.has_api_key ? config.api_key_masked : '未保存 API Key' }}
                 </span>
               </div>
-            </button>
+            </UiButton>
           </div>
           <div v-else class="rounded-xl border border-dashed border-slate-200 px-4 py-10 text-center text-sm text-slate-400">
             还没有供应商。
@@ -169,20 +167,21 @@
               <p class="text-sm font-semibold text-slate-900">模型</p>
               <p class="mt-0.5 text-xs text-slate-500">{{ modelCount }} 个模型 · {{ activeModelCount }} 个启用</p>
             </div>
-            <BaseButton variant="primary" size="sm" @click="resetModelForm">
+            <UiButton variant="primary" size="sm" @click="resetModelForm">
               <Plus class="h-3.5 w-3.5" />
               新建模型
-            </BaseButton>
+            </UiButton>
           </div>
           <div v-if="configsQuery.isFetching.value && !(configsQuery.data.value?.length)" class="rounded-xl border border-dashed border-slate-200 px-4 py-10 text-center text-sm text-slate-400">
             正在读取模型...
           </div>
           <div v-else-if="configsQuery.data.value?.length" class="space-y-2">
-            <button
+            <UiButton
               v-for="config in configsQuery.data.value"
               :key="config.id"
               type="button"
-              class="w-full rounded-xl border p-3 text-left transition"
+              variant="ghost"
+              class="h-auto w-full rounded-xl border p-3 text-left transition"
               :class="selectedConfigId === config.id ? 'border-indigo-200 bg-indigo-50/70' : 'border-slate-200 bg-white hover:bg-slate-50'"
               @click="handleEditModel(config)"
             >
@@ -212,15 +211,15 @@
                   {{ config.provider_label }}
                 </span>
               </div>
-            </button>
+            </UiButton>
           </div>
           <div v-else class="rounded-xl border border-dashed border-slate-200 px-4 py-10 text-center text-sm text-slate-400">
             还没有模型。
           </div>
         </div>
-      </aside>
+      </ToolPanel>
 
-      <main class="min-h-[720px] rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <ToolPanel class="min-h-[720px]" :scroll-body="false">
         <section v-if="activeSection === 'agents' && selectedAgentConfig" class="space-y-5 p-5">
           <div class="flex flex-wrap items-start justify-between gap-4 border-b border-slate-100 pb-4">
             <div class="flex min-w-0 items-start gap-3">
@@ -243,12 +242,13 @@
           </div>
 
           <nav class="grid gap-2 rounded-2xl border border-slate-200 bg-slate-50 p-2 md:grid-cols-3" aria-label="智能体配置分区">
-            <button
+            <UiButton
               v-for="tab in agentPanelTabs"
               :key="tab.key"
               type="button"
               :aria-label="tab.label"
-              class="flex min-h-14 items-center justify-between gap-3 rounded-xl px-3 py-2 text-left text-sm transition"
+              variant="ghost"
+              class="h-auto flex min-h-14 items-center justify-between gap-3 rounded-xl px-3 py-2 text-left text-sm transition"
               :class="activeAgentPanel === tab.key ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-600 hover:bg-white/70 hover:text-slate-900'"
               @click="activeAgentPanel = tab.key"
             >
@@ -263,7 +263,7 @@
               >
                 {{ tab.badge }}
               </span>
-            </button>
+            </UiButton>
           </nav>
 
           <section v-if="activeAgentPanel === 'binding'" class="space-y-4">
@@ -290,7 +290,7 @@
                   placeholder="选择模型"
                 />
                 <div class="flex flex-wrap gap-2 sm:justify-end">
-                  <BaseButton
+                  <UiButton
                     variant="primary"
                     size="sm"
                     :disabled="!selectedAgentConfig.llm_slot"
@@ -298,8 +298,8 @@
                     @click="handleSaveSelectedAgentSlot()"
                   >
                     保存模型绑定
-                  </BaseButton>
-                  <BaseButton
+                  </UiButton>
+                  <UiButton
                     v-if="canCreateGlobal"
                     variant="ghost"
                     size="sm"
@@ -308,7 +308,7 @@
                     @click="handleSaveSelectedAgentSlot('global')"
                   >
                     设为全局默认
-                  </BaseButton>
+                  </UiButton>
                 </div>
               </div>
             </div>
@@ -356,9 +356,9 @@
                       size="compact"
                       placeholder="选择视觉模型"
                     />
-                    <BaseButton size="sm" variant="primary" :loading="bindingSlot === slot.slot" @click="handleSaveSlot(slot.slot)">
+                    <UiButton size="sm" variant="primary" :loading="bindingSlot === slot.slot" @click="handleSaveSlot(slot.slot)">
                       保存
-                    </BaseButton>
+                    </UiButton>
                   </div>
                 </div>
               </div>
@@ -366,24 +366,28 @@
           </section>
 
           <section v-else-if="activeAgentPanel === 'prompts'" class="space-y-3">
-            <BaseInput
-              v-model="promptDraft"
-              type="textarea"
-              label="智能体提示词"
-              :rows="18"
-              placeholder="输入当前账号下的智能体提示词"
-            />
+            <UiFormField label="智能体提示词" v-slot="field">
+              <UiInput
+                v-model="promptDraft"
+                type="textarea"
+                :input-id="field.inputId"
+                :described-by="field.describedBy"
+                :invalid="field.invalid"
+                :rows="18"
+                placeholder="输入当前账号下的智能体提示词"
+              />
+            </UiFormField>
             <div class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
               <p class="text-xs font-semibold" :class="promptDirty ? 'text-amber-600' : 'text-slate-500'">
                 {{ promptDirty ? '当前有未保存修改。' : (selectedAgentConfig.prompt_customized ? '当前使用账号自定义提示词。' : '当前使用系统默认提示词。') }}
               </p>
               <div class="flex justify-end gap-2">
-                <BaseButton variant="ghost" :loading="savingPrompt" @click="handleRestorePrompt">
+                <UiButton variant="ghost" :loading="savingPrompt" @click="handleRestorePrompt">
                   恢复默认
-                </BaseButton>
-                <BaseButton variant="primary" :loading="savingPrompt" :disabled="!promptDirty" @click="handleSavePrompt">
+                </UiButton>
+                <UiButton variant="primary" :loading="savingPrompt" :disabled="!promptDirty" @click="handleSavePrompt">
                   保存提示词
-                </BaseButton>
+                </UiButton>
               </div>
             </div>
           </section>
@@ -404,8 +408,8 @@
               :key="group.key"
               class="overflow-hidden rounded-xl border border-slate-200"
             >
-              <button
-                type="button"
+              <UiButton
+                variant="ghost"
                 class="flex w-full flex-col gap-3 bg-slate-50 px-4 py-3 text-left transition hover:bg-slate-100 md:flex-row md:items-center md:justify-between"
                 @click="toggleToolGroup(group.key)"
               >
@@ -417,7 +421,7 @@
                   </span>
                   <span class="ml-6 mt-1 block truncate text-xs text-slate-500">{{ group.description }}</span>
                 </span>
-              </button>
+              </UiButton>
 
               <div v-show="isToolGroupExpanded(group.key)" class="space-y-3 border-t border-slate-100 bg-slate-50 p-3">
                 <article
@@ -441,11 +445,10 @@
                     </div>
                     <div class="flex shrink-0 flex-wrap items-center gap-2 lg:justify-end">
                       <label v-if="tool.configurable && toolDrafts[tool.key]" class="inline-flex h-8 items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 text-xs font-semibold">
-                        <input
-                          v-model="toolDrafts[tool.key].enabled"
-                          type="checkbox"
-                          class="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
-                        >
+                        <UiCheckbox
+                          :model-value="toolDrafts[tool.key].enabled"
+                          @update:model-value="toolDrafts[tool.key].enabled = $event === true"
+                        />
                         <span :class="toolDrafts[tool.key].enabled ? 'text-emerald-700' : 'text-slate-400'">
                           {{ toolDrafts[tool.key].enabled ? '启用' : '关闭' }}
                         </span>
@@ -454,10 +457,10 @@
                         <Lock class="h-3.5 w-3.5" />
                         系统只读
                       </span>
-                      <BaseButton variant="ghost" size="sm" @click="toggleToolEditor(tool.key)">
+                      <UiButton variant="ghost" size="sm" @click="toggleToolEditor(tool.key)">
                         {{ editingToolKey === tool.key ? '收起' : (tool.configurable ? '编辑' : '说明') }}
-                      </BaseButton>
-                      <BaseButton
+                      </UiButton>
+                      <UiButton
                         v-if="tool.configurable"
                         variant="ghost"
                         size="sm"
@@ -466,26 +469,34 @@
                         @click="handleSaveTool(tool)"
                       >
                         保存
-                      </BaseButton>
+                      </UiButton>
                     </div>
                   </div>
 
                   <div v-if="editingToolKey === tool.key" class="mt-4 border-t border-slate-100 pt-4">
                     <div v-if="tool.configurable && toolDrafts[tool.key]" class="grid gap-3 lg:grid-cols-2">
-                      <BaseInput
-                        v-model="toolDrafts[tool.key].descriptionOverride"
-                        type="textarea"
-                        label="工具说明覆盖"
-                        :rows="4"
-                        :placeholder="tool.default_description"
-                      />
-                      <BaseInput
-                        v-model="toolDrafts[tool.key].instructionsOverride"
-                        type="textarea"
-                        label="工具提示词覆盖"
-                        :rows="4"
-                        placeholder="补充该工具的使用约束；留空表示使用默认说明"
-                      />
+                      <UiFormField label="工具说明覆盖" v-slot="field">
+                        <UiInput
+                          v-model="toolDrafts[tool.key].descriptionOverride"
+                          type="textarea"
+                          :input-id="field.inputId"
+                          :described-by="field.describedBy"
+                          :invalid="field.invalid"
+                          :rows="4"
+                          :placeholder="tool.default_description"
+                        />
+                      </UiFormField>
+                      <UiFormField label="工具提示词覆盖" v-slot="field">
+                        <UiInput
+                          v-model="toolDrafts[tool.key].instructionsOverride"
+                          type="textarea"
+                          :input-id="field.inputId"
+                          :described-by="field.describedBy"
+                          :invalid="field.invalid"
+                          :rows="4"
+                          placeholder="补充该工具的使用约束；留空表示使用默认说明"
+                        />
+                      </UiFormField>
                     </div>
 
                     <section class="mt-4 space-y-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
@@ -545,12 +556,12 @@
                     </section>
 
                     <div v-if="tool.configurable" class="mt-3 flex justify-end gap-2">
-                      <BaseButton variant="ghost" size="sm" :loading="savingToolKey === tool.key" @click="handleRestoreTool(tool)">
+                      <UiButton variant="ghost" size="sm" :loading="savingToolKey === tool.key" @click="handleRestoreTool(tool)">
                         恢复默认
-                      </BaseButton>
-                      <BaseButton variant="primary" size="sm" :loading="savingToolKey === tool.key" :disabled="!isToolDirty(tool)" @click="handleSaveTool(tool)">
+                      </UiButton>
+                      <UiButton variant="primary" size="sm" :loading="savingToolKey === tool.key" :disabled="!isToolDirty(tool)" @click="handleSaveTool(tool)">
                         保存工具
-                      </BaseButton>
+                      </UiButton>
                     </div>
                   </div>
                 </article>
@@ -600,7 +611,7 @@
           @format-advanced="formatAdvancedConfig"
           @submit="handleSubmitModel"
         />
-      </main>
+      </ToolPanel>
     </section>
   </div>
 </template>
@@ -634,8 +645,9 @@ import { getErrorMessage } from '@/api/http'
 import AccountAiModelDetail from '@/components/account-ai/AccountAiModelDetail.vue'
 import AccountAiProviderDetail from '@/components/account-ai/AccountAiProviderDetail.vue'
 import { getAgentIconShellClass, resolveAgentIconComponent } from '@/components/agent/agent-icon'
-import BaseButton from '@/components/ui/BaseButton.vue'
-import BaseInput from '@/components/ui/BaseInput.vue'
+import PageHeader from '@/components/patterns/PageHeader.vue'
+import ToolPanel from '@/components/patterns/ToolPanel.vue'
+import { UiButton, UiCheckbox, UiFormField, UiInput } from '@/components/ui'
 import SearchableSelect from '@/components/ui/SearchableSelect.vue'
 import type { SelectOption } from '@/components/ui/select'
 import { useAuthStore } from '@/stores/auth'

@@ -1,10 +1,10 @@
 <!-- 文件功能：展示工作空间样式详情弹窗，集中呈现展示配置字段与 Markdown 样式规范。 -->
 <template>
-  <BaseDialog
-    :model-value="modelValue"
+  <UiDialog
+    :open="modelValue"
     :title="style ? `${style.name} · 样式详情` : '样式详情'"
     size="standard"
-    @update:model-value="handleVisibleChange"
+    @update:open="handleVisibleChange"
   >
     <div v-if="style" class="space-y-5">
       <section class="rounded-lg border border-slate-200 bg-white p-4">
@@ -13,16 +13,17 @@
             <h3 class="truncate text-lg font-black text-slate-900">{{ style.name }}</h3>
             <p class="mt-1 font-mono text-xs text-slate-400">{{ style.key }}</p>
           </div>
-          <button
+          <UiButton
             v-if="style.theme_key"
             type="button"
-            class="rounded-full bg-indigo-50 px-3 py-1 text-left text-xs font-black text-indigo-600 ring-1 ring-indigo-100 transition-colors hover:bg-indigo-100"
+            variant="ghost"
+            size="xs"
             :disabled="!matchedTheme"
             :title="matchedTheme ? '查看主题详情' : '未找到主题详情'"
             @click="openThemeDetail"
           >
             {{ themeBadgeText }}
-          </button>
+          </UiButton>
           <span v-else class="rounded-full bg-slate-100 px-3 py-1 text-xs font-black text-slate-500">
             不覆盖主题
           </span>
@@ -60,10 +61,10 @@
     </div>
 
     <template #footer>
-      <BaseButton variant="ghost" @click="handleVisibleChange(false)">关闭</BaseButton>
-      <BaseButton variant="primary" :disabled="!style" @click="handleEditStyle">编辑样式</BaseButton>
+      <UiButton variant="ghost" @click="handleVisibleChange(false)">关闭</UiButton>
+      <UiButton variant="primary" :disabled="!style" @click="handleEditStyle">编辑样式</UiButton>
     </template>
-  </BaseDialog>
+  </UiDialog>
 
   <ThemeDetailDialog
     v-model="themeDetailVisible"
@@ -81,8 +82,7 @@ import MarkdownRender, { getMarkdown, parseMarkdownToStructure } from 'markstrea
 
 import { listWorkspaceThemes } from '@/api/themes'
 import ThemeDetailDialog from '@/components/theme/ThemeDetailDialog.vue'
-import BaseButton from '@/components/ui/BaseButton.vue'
-import BaseDialog from '@/components/ui/BaseDialog.vue'
+import { UiButton, UiDialog } from '@/components/ui'
 import type { ProjectMenuMode, WorkspaceStyleItem, WorkspaceThemeItem } from '@/types/api'
 
 const props = defineProps<{

@@ -1,8 +1,8 @@
 <!-- 文件功能：展示当前项目下的归档页面列表，支持搜索、查看截图并恢复页面。 -->
 <template>
-  <BaseDialog :model-value="modelValue" title="归档页面" size="standard" @update:modelValue="handleDialogVisibleChange">
+  <UiDialog :open="modelValue" title="归档页面" size="standard" @update:open="handleDialogVisibleChange">
     <div class="flex flex-col gap-4">
-      <BaseInput v-model="keyword" placeholder="按页面名称、编码或源码搜索" type="text" />
+      <SimpleSearchBar v-model="keyword" placeholder="按页面名称、编码或源码搜索" />
 
       <div class="overflow-hidden rounded-2xl border border-slate-200 bg-slate-50/50">
         <div
@@ -42,14 +42,14 @@
               </div>
             </div>
 
-            <BaseButton variant="secondary" :loading="restoringPageId === page.id" @click="handleRestorePage(page.id)">
+            <UiButton variant="secondary" :loading="restoringPageId === page.id" @click="handleRestorePage(page.id)">
               恢复
-            </BaseButton>
+            </UiButton>
           </div>
         </div>
       </div>
     </div>
-  </BaseDialog>
+  </UiDialog>
 </template>
 
 <script setup lang="ts">
@@ -61,9 +61,8 @@ import { listPages, updatePage } from '@/api/catalog'
 import { getErrorMessage } from '@/api/http'
 import type { PageItem } from '@/types/api'
 import { Message } from '@/utils/message'
-import BaseButton from '@/components/ui/BaseButton.vue'
-import BaseDialog from '@/components/ui/BaseDialog.vue'
-import BaseInput from '@/components/ui/BaseInput.vue'
+import SimpleSearchBar from '@/components/patterns/SimpleSearchBar.vue'
+import { UiButton, UiDialog } from '@/components/ui'
 
 const props = withDefaults(defineProps<{
   modelValue: boolean

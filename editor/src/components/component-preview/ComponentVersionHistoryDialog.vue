@@ -1,11 +1,11 @@
 <!-- 文件功能：承载组件发布历史弹窗，展示发布版本列表、与当前草稿的源码差异和历史版本预览。 -->
 <template>
-  <BaseDialog
-    :model-value="modelValue"
+  <UiDialog
+    :open="modelValue"
     title="发布历史"
     size="canvas"
     body-preset="split"
-    @update:model-value="emit('update:modelValue', $event)"
+    @update:open="emit('update:modelValue', $event)"
   >
     <div class="h-full overflow-hidden">
       <div v-if="loading && !versions.length" class="px-6 py-10 text-sm text-slate-400">
@@ -40,30 +40,30 @@
               </div>
 
               <div class="flex shrink-0 flex-wrap justify-end gap-1">
-                <BaseButton
+                <UiButton
                   variant="ghost"
                   size="sm"
                   :loading="previewingVersionNo === version.version_no"
                   @click="emit('preview-version', version.version_no)"
                 >
                   {{ panel?.mode === 'preview' && panel.versionNo === version.version_no ? '收起' : '预览' }}
-                </BaseButton>
-                <BaseButton
+                </UiButton>
+                <UiButton
                   variant="ghost"
                   size="sm"
                   :loading="loadingContentVersionNo === version.version_no"
                   @click="emit('diff-version', version.version_no)"
                 >
                   {{ panel?.mode === 'diff' && panel.versionNo === version.version_no ? '收起' : '差异' }}
-                </BaseButton>
-                <BaseButton
+                </UiButton>
+                <UiButton
                   variant="ghost"
                   size="sm"
                   :loading="restoringVersionNo === version.version_no"
                   @click="emit('restore-version', version.version_no)"
                 >
                   恢复到草稿
-                </BaseButton>
+                </UiButton>
               </div>
             </div>
           </article>
@@ -111,7 +111,7 @@
         当前组件还没有正式发布版本。
       </div>
     </div>
-  </BaseDialog>
+  </UiDialog>
 </template>
 
 <script setup lang="ts">
@@ -119,8 +119,8 @@ import { computed } from 'vue'
 
 import MonacoDiffViewer from '@/components/editor/MonacoDiffViewer.vue'
 import RuntimePreviewFrame from '@/components/runtime-preview/RuntimePreviewFrame.vue'
-import BaseButton from '@/components/ui/BaseButton.vue'
-import BaseDialog from '@/components/ui/BaseDialog.vue'
+import { UiDialog } from '@/components/ui'
+import UiButton from '@/components/ui/button/UiButton.vue'
 import type { WorkspaceComponentVersionContent, WorkspaceComponentVersionListItem } from '@/types/api'
 import type { EditorThemeMode } from '@/types/monaco'
 import { formatDateTime } from '@/utils/format'

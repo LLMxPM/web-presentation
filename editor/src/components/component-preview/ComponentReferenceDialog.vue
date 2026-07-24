@@ -1,11 +1,11 @@
 <!-- 文件功能：展示工作空间组件的直接引用页面与引用组件，并提供选中项批量升级入口。 -->
 <template>
-  <BaseDialog
-    :model-value="modelValue"
+  <UiDialog
+    :open="modelValue"
     title="引用关系"
     size="canvas"
     body-preset="split"
-    @update:model-value="emit('update:modelValue', $event)"
+    @update:open="emit('update:modelValue', $event)"
   >
     <div class="flex h-full min-h-0 flex-col">
       <section class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
@@ -15,10 +15,10 @@
             {{ component ? `${component.code} · 当前发布 v${component.current_version_no}` : '请选择一个已发布组件。' }}
           </p>
         </div>
-        <BaseButton variant="ghost" size="sm" :disabled="loading || !component" @click="emit('refresh')">
+        <UiButton variant="ghost" size="sm" :disabled="loading || !component" @click="emit('refresh')">
           <RefreshCw class="h-3.5 w-3.5" :class="{ 'animate-spin': loading }" />
           刷新
-        </BaseButton>
+        </UiButton>
       </section>
 
       <div v-if="loading" class="mt-4 flex min-h-0 flex-1 items-center justify-center rounded-xl border border-dashed border-slate-200 bg-white px-4 py-10 text-center text-sm font-semibold text-slate-400">
@@ -51,12 +51,11 @@
               class="flex cursor-pointer gap-3 px-4 py-3 transition-colors hover:bg-slate-50"
               :class="{ 'cursor-not-allowed opacity-70': !item.can_upgrade }"
             >
-              <input
-                v-model="selectedPageIds"
-                type="checkbox"
-                class="mt-1 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
-                :value="item.page_id"
+              <UiCheckbox
+                class="mt-1"
+                :model-value="selectedPageIds.includes(item.page_id)"
                 :disabled="!item.can_upgrade"
+                @update:model-value="togglePageSelection(item.page_id, $event === true)"
               />
               <div class="min-w-0 flex-1">
                 <div class="flex items-center justify-between gap-2">
@@ -93,12 +92,11 @@
               class="flex cursor-pointer gap-3 px-4 py-3 transition-colors hover:bg-slate-50"
               :class="{ 'cursor-not-allowed opacity-70': !item.can_upgrade }"
             >
-              <input
-                v-model="selectedComponentIds"
-                type="checkbox"
-                class="mt-1 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
-                :value="item.component_id"
+              <UiCheckbox
+                class="mt-1"
+                :model-value="selectedComponentIds.includes(item.component_id)"
                 :disabled="!item.can_upgrade"
+                @update:model-value="toggleComponentSelection(item.component_id, $event === true)"
               />
               <div class="min-w-0 flex-1">
                 <div class="flex items-center justify-between gap-2">
@@ -123,13 +121,13 @@
       <div class="mr-auto text-xs font-semibold text-slate-400">
         已选 {{ selectedCount }} 项
       </div>
-      <BaseButton variant="ghost" :disabled="!references || loading || upgrading" @click="selectUpgradeable">
+      <UiButton variant="ghost" :disabled="!references || loading || upgrading" @click="selectUpgradeable">
         全选待升级
-      </BaseButton>
-      <BaseButton variant="ghost" :disabled="selectedCount === 0 || upgrading" @click="clearSelection">
+      </UiButton>
+      <UiButton variant="ghost" :disabled="selectedCount === 0 || upgrading" @click="clearSelection">
         清空选择
-      </BaseButton>
-      <BaseButton
+      </UiButton>
+      <UiButton
         variant="primary"
         :disabled="selectedCount === 0 || loading"
         :loading="upgrading"
@@ -137,17 +135,17 @@
       >
         <ArrowUpCircle class="h-3.5 w-3.5" />
         更新选中引用
-      </BaseButton>
+      </UiButton>
     </template>
-  </BaseDialog>
+  </UiDialog>
 </template>
 
 <script setup lang="ts">
 import { computed, defineComponent, h, ref, watch } from 'vue'
 import { ArrowUpCircle, RefreshCw } from '@lucide/vue'
 
-import BaseButton from '@/components/ui/BaseButton.vue'
-import BaseDialog from '@/components/ui/BaseDialog.vue'
+import UiButton from '@/components/ui/button/UiButton.vue'
+import { UiCheckbox, UiDialog } from '@/components/ui'
 import type {
   WorkspaceComponentItem,
   WorkspaceComponentReferenceUpgradePayload,
@@ -200,6 +198,23 @@ function selectUpgradeable(): void {
 function clearSelection(): void {
   selectedPageIds.value = []
   selectedComponentIds.value = []
+}
+
+/** 更新页面引用的单项选择，避免业务层直接保留裸 checkbox。 */
+function togglePageSelection(pageId: number, checked: boolean): void {
+  selectedPageIds.value = toggleId(selectedPageIds.value, pageId, checked)
+}
+
+/** 更新组件引用的单项选择，保持两类引用的状态相互独立。 */
+function toggleComponentSelection(componentId: number, checked: boolean): void {
+  selectedComponentIds.value = toggleId(selectedComponentIds.value, componentId, checked)
+}
+
+/** 将单个 ID 加入或移出当前选择，始终返回新的数组供响应式状态更新。 */
+function toggleId(currentIds: number[], id: number, checked: boolean): number[] {
+  return checked
+    ? currentIds.includes(id) ? currentIds : [...currentIds, id]
+    : currentIds.filter(currentId => currentId !== id)
 }
 
 /**

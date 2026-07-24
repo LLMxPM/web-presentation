@@ -85,11 +85,14 @@ describe('AgentComposer', () => {
 
     const usage = screen.getByRole('button', { name: '上下文用量' })
     expect(usage).toBeTruthy()
-    expect(usage).not.toHaveAttribute('title')
+    expect(usage).toHaveAttribute('title', '上下文用量')
+    expect(usage).toHaveAttribute('aria-haspopup', 'dialog')
+    expect(usage).toHaveAttribute('aria-expanded', 'false')
 
     await fireEvent.click(usage)
 
     expect(openSpy).toHaveBeenCalledTimes(1)
+    expect(usage).toHaveAttribute('aria-expanded', 'true')
     expect(screen.getByRole('dialog', { name: '上下文用量详情' })).toBeTruthy()
     expect(screen.getByText('已用上下文')).toBeTruthy()
     expect(screen.getByText('可用上下文')).toBeTruthy()

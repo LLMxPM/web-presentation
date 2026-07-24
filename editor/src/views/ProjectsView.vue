@@ -1,20 +1,21 @@
 <!-- 文件功能：展示当前工作空间下的启用项目入口，并提供项目创建、归档与归档列表查看能力。 -->
 <template>
-  <div data-testid="workspace-project-list" class="projects-view pb-12">
-    <header class="mb-6 animate-in fade-in slide-in-from-top-4 duration-700">
-      <PageTitleBar
+  <div data-testid="workspace-project-list" class="projects-view space-y-3 pb-12">
+    <header class="animate-in fade-in slide-in-from-top-4 duration-700">
+      <PageHeader
         :title="workspaceQuery.data.value?.name ?? '正在加载工作空间...'"
+        description="管理当前工作空间的项目、模板导入和归档内容。"
       >
         <template #actions>
-
-          <BaseButton variant="ghost" :disabled="!workspaceDetails" @click="openWorkspaceEditDialog">
+          <UiButton variant="ghost" size="md" :disabled="!workspaceDetails" @click="openWorkspaceEditDialog">
             <template #icon>
               <Settings2 class="w-4 h-4" />
             </template>
-            编辑工作空间
-          </BaseButton>
-          <BaseButton
-            variant="ghost"
+            编辑空间
+          </UiButton>
+          <UiButton
+            variant="secondary"
+            size="md"
             :disabled="!workspaceDetails || importValidatePending || importPackagePending"
             @click="openTemplateImportPicker"
           >
@@ -22,17 +23,14 @@
               <Upload class="w-4 h-4" />
             </template>
             导入项目
-          </BaseButton>
-          <button
-            type="button"
-            class="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-slate-200 bg-white text-sm font-semibold text-slate-600 shadow-sm transition-all hover:border-indigo-300 hover:text-indigo-600 hover:bg-indigo-50"
-            @click="archivedDialogVisible = true"
-          >
-            <Archive class="w-4 h-4" />
-            <span>已归档项目</span>
-          </button>
+          </UiButton>
+
+          <UiButton size="md" :disabled="!workspaceDetails" @click="openCreateDialog">
+          <template #icon><Plus class="h-4 w-4" /></template>
+          新增项目
+        </UiButton>
         </template>
-      </PageTitleBar>
+      </PageHeader>
       <input
         ref="templateImportInputRef"
         class="hidden"
@@ -42,39 +40,61 @@
       />
     </header>
 
-    <!-- 数据加载态 -->
-    <div v-if="query.isFetching.value" class="flex flex-col items-center justify-center h-64 gap-4">
-      <div class="w-12 h-12 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
-      <span class="text-slate-400 font-bold animate-pulse">正在获取项目数据...</span>
-    </div>
+    <CommandBar label="项目列表操作">
+      <span class="text-xs text-[rgb(var(--ui-text-secondary))]">共 {{ filteredProjects.length }} / {{ projects.length }} 个启用项目</span>
+      <template #actions>
+          <UiButton
+            variant="secondary"
+            size="md"
+            @click="archivedDialogVisible = true"
+          >
+            <Archive class="w-4 h-4" />
+            <span>已归档项目</span>
+          </UiButton>
+      </template>
+    </CommandBar>
 
-    <!-- 卡片栅格区 -->
-    <div v-else class="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-      <ProjectCard
-        v-for="proj in projects"
-        :key="proj.id"
-        :project="proj"
-        :export-pending="exportValidateProjectId === proj.id"
-        :export-disabled="exportPackagePending"
-        :archive-pending="archivingProjectId === proj.id"
-        :theme-name="resolveProjectThemeName(proj)"
-        :theme-loading="themeQuery.isFetching.value"
-        @open="goToProject"
-        @export-template="handleValidateExportTemplate"
-        @archive="handleArchiveProject"
-      />
+    <SimpleSearchBar v-model="projectKeyword" placeholder="按项目名称或编码搜索" aria-label="搜索项目" />
 
-      <!-- 新增项目卡片 -->
-      <button @click="openCreateDialog"
-        class="group flex min-h-[13.75rem] flex-col items-center justify-center rounded-2xl border-2 border-dashed border-slate-300 bg-slate-50/60 p-6 text-center transition-all duration-200 hover:-translate-y-1 hover:border-indigo-400 hover:bg-indigo-50/70">
-        <div
-          class="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-400 shadow-sm transition-all group-hover:border-indigo-200 group-hover:bg-indigo-600 group-hover:text-white">
-          <Plus class="h-7 w-7" />
-        </div>
-        <span class="text-base font-black text-slate-800 transition-colors group-hover:text-indigo-700">新增项目</span>
-        <span class="mt-1 text-sm font-medium text-slate-400">创建新的演示内容集合</span>
-      </button>
-    </div>
+    <DataState
+      :state="projectDataState"
+      :title="query.isError.value ? '项目列表暂不可用' : projects.length === 0 ? '当前工作空间暂无项目' : '未找到匹配项目'"
+      :description="query.isError.value ? '无法读取当前工作空间的项目，请重试。' : '可调整筛选条件，或创建一个项目开始。'"
+      @retry="query.refetch()"
+    >
+      <template #empty>
+        <UiButton class="mt-2" :disabled="!workspaceDetails" @click="openCreateDialog">
+          <template #icon><Plus class="h-4 w-4" /></template>
+          新增项目
+        </UiButton>
+      </template>
+      <div class="grid grid-cols-[repeat(auto-fill,minmax(min(100%,20rem),22rem))] justify-start gap-4">
+        <ProjectCard
+          v-for="proj in filteredProjects"
+          :key="proj.id"
+          :project="proj"
+          :export-pending="exportValidateProjectId === proj.id"
+          :export-disabled="exportPackagePending"
+          :archive-pending="archivingProjectId === proj.id"
+          :theme-name="resolveProjectThemeName(proj)"
+          :theme-loading="themeQuery.isFetching.value"
+          @open="goToProject"
+          @export-template="handleValidateExportTemplate"
+          @archive="handleArchiveProject"
+        />
+
+        <UiButton
+          class="group flex min-h-[13.75rem] flex-col items-center justify-center rounded-[var(--ui-radius-lg)] border-2 border-dashed border-[rgb(var(--ui-border-strong))] bg-[rgb(var(--ui-surface-muted))] p-6 text-center transition-colors hover:border-[rgb(var(--ui-accent))] hover:bg-[rgb(var(--ui-accent-muted))]"
+          @click="openCreateDialog"
+        >
+          <div class="mb-4 flex h-14 w-14 items-center justify-center rounded-[var(--ui-radius-lg)] border border-[rgb(var(--ui-border))] bg-[rgb(var(--ui-surface))] text-[rgb(var(--ui-text-muted))] shadow-sm transition-colors group-hover:bg-[rgb(var(--ui-accent))] group-hover:text-[rgb(var(--ui-text-inverse))]">
+            <Plus class="h-7 w-7" />
+          </div>
+          <span class="text-base font-semibold text-[rgb(var(--ui-text))]">新增项目</span>
+          <span class="mt-1 text-sm text-[rgb(var(--ui-text-secondary))]">创建新的演示内容集合</span>
+        </UiButton>
+      </div>
+    </DataState>
 
     <ProjectMetadataDialog
       v-model="dialogVisible"
@@ -93,7 +113,7 @@
       :loading="workspaceSaving"
       @submit="handleWorkspaceUpdate"
     />
-    <BaseDialog v-model="exportTemplateDialogVisible" title="导出项目" size="wide">
+    <UiDialog :open="exportTemplateDialogVisible" title="导出项目" size="wide" @update:open="exportTemplateDialogVisible = $event">
       <div class="space-y-4">
         <div class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
           <div class="flex flex-wrap items-center justify-between gap-3">
@@ -201,19 +221,19 @@
       </div>
 
       <template #footer>
-        <BaseButton variant="ghost" :disabled="exportPackagePending" @click="exportTemplateDialogVisible = false">取消</BaseButton>
-        <BaseButton
+        <UiButton variant="ghost" :disabled="exportPackagePending" @click="exportTemplateDialogVisible = false">取消</UiButton>
+        <UiButton
           variant="primary"
           :disabled="!exportValidation?.can_export || !selectedExportProject"
           :loading="exportPackagePending"
           @click="handleConfirmExportTemplate"
         >
           下载项目
-        </BaseButton>
+        </UiButton>
       </template>
-    </BaseDialog>
+    </UiDialog>
 
-    <BaseDialog v-model="importTemplateDialogVisible" title="导入项目" size="canvas">
+    <UiDialog :open="importTemplateDialogVisible" title="导入项目" size="canvas" @update:open="importTemplateDialogVisible = $event">
       <div class="space-y-4">
         <div class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
           <div class="flex flex-wrap items-center justify-between gap-3">
@@ -339,8 +359,8 @@
       </div>
 
       <template #footer>
-        <BaseButton variant="ghost" @click="closeImportTemplateDialog">取消</BaseButton>
-        <BaseButton
+        <UiButton variant="ghost" @click="closeImportTemplateDialog">取消</UiButton>
+        <UiButton
           variant="secondary"
           :disabled="!importValidation?.valid || !importTemplateFile"
           :loading="importPreviewPending"
@@ -350,17 +370,17 @@
             <Eye class="h-4 w-4" />
           </template>
           临时预览
-        </BaseButton>
-        <BaseButton
+        </UiButton>
+        <UiButton
           variant="primary"
           :disabled="!importValidation?.valid || !importTemplateFile"
           :loading="importPackagePending"
           @click="handleConfirmImportTemplate"
         >
           确认导入
-        </BaseButton>
+        </UiButton>
       </template>
-    </BaseDialog>
+    </UiDialog>
   </div>
 </template>
 
@@ -380,15 +400,17 @@ import {
   validateProjectTemplatePackageImport,
 } from '@/api/templates'
 import { listWorkspaceThemes } from '@/api/themes'
-import PageTitleBar from '@/components/layout/PageTitleBar.vue'
+import CommandBar from '@/components/patterns/CommandBar.vue'
+import DataState from '@/components/patterns/DataState.vue'
+import PageHeader from '@/components/patterns/PageHeader.vue'
+import SimpleSearchBar from '@/components/patterns/SimpleSearchBar.vue'
 import ArchivedProjectsDialog from '@/components/project/ArchivedProjectsDialog.vue'
 import ProjectCard from '@/components/project/ProjectCard.vue'
 import ProjectMetadataDialog from '@/components/project/ProjectMetadataDialog.vue'
 import WorkspaceMetadataDialog from '@/components/project/WorkspaceMetadataDialog.vue'
 import RuntimePreviewFrame from '@/components/runtime-preview/RuntimePreviewFrame.vue'
-import BaseDialog from '@/components/ui/BaseDialog.vue'
+import { UiButton, UiDialog } from '@/components/ui'
 import { createConfirm, Message } from '@/utils/message'
-import BaseButton from '@/components/ui/BaseButton.vue'
 import { downloadBlob } from '@/utils/zip-download'
 import type {
   PreviewArtifactResponse,
@@ -432,6 +454,19 @@ const themeQuery = useQuery(
 
 const workspaceDetails = computed(() => workspaceQuery.data.value ?? null)
 const projects = computed(() => query.data.value?.items ?? [])
+const projectKeyword = ref('')
+const filteredProjects = computed(() => {
+  const keyword = projectKeyword.value.trim().toLocaleLowerCase()
+  if (!keyword) return projects.value
+  return projects.value.filter(project => [project.name, project.code, project.description]
+    .filter((value): value is string => Boolean(value))
+    .some(value => value.toLocaleLowerCase().includes(keyword)))
+})
+const projectDataState = computed<'loading' | 'empty' | 'error' | 'ready'>(() => {
+  if (query.isPending.value) return 'loading'
+  if (query.isError.value) return 'error'
+  return filteredProjects.value.length === 0 ? 'empty' : 'ready'
+})
 const themeNameByKey = computed(() => new Map(
   (themeQuery.data.value?.items ?? []).map(theme => [theme.key, theme.name]),
 ))

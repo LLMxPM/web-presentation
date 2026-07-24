@@ -65,7 +65,7 @@
     </p>
   </div>
 
-  <BaseDialog v-model="dialogVisible" :title="title" size="wide">
+  <UiDialog :open="dialogVisible" :title="title" size="wide" @update:open="dialogVisible = $event">
     <div class="grid gap-4 lg:grid-cols-[300px_minmax(0,1fr)]">
       <aside class="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
         <div class="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">图标预览</div>
@@ -167,11 +167,11 @@
     </div>
 
     <template #footer>
-      <BaseButton variant="ghost" @click="dialogVisible = false">取消</BaseButton>
-      <BaseButton variant="ghost" :disabled="!pendingAsset" @click="clearSelectionAndClose">清空</BaseButton>
-      <BaseButton variant="primary" :disabled="!pendingAsset" @click="confirmSelection">确认选择</BaseButton>
+      <UiButton variant="ghost" @click="dialogVisible = false">取消</UiButton>
+      <UiButton variant="ghost" :disabled="!pendingAsset" @click="clearSelectionAndClose">清空</UiButton>
+      <UiButton variant="primary" :disabled="!pendingAsset" @click="confirmSelection">确认选择</UiButton>
     </template>
-  </BaseDialog>
+  </UiDialog>
 </template>
 
 <script setup lang="ts">
@@ -188,8 +188,8 @@ import {
   getRenderModeLabel,
 } from '@/utils/assetAnalysis'
 import { Message } from '@/utils/message'
-import BaseButton from './BaseButton.vue'
-import BaseDialog from './BaseDialog.vue'
+import UiButton from './button/UiButton.vue'
+import UiDialog from './dialog/UiDialog.vue'
 
 type IconPickerValue = string | number | null
 

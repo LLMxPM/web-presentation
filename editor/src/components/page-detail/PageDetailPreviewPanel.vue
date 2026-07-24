@@ -1,16 +1,30 @@
 <!-- 文件功能：渲染页面详情的 Runtime 预览画布，保持主区域聚焦在实际页面效果。 -->
 <template>
-  <section class="group relative h-full min-h-0 overflow-hidden rounded-2xl border border-slate-200 bg-slate-100">
-    <button
-      type="button"
-      title="放大查看"
-      aria-label="放大查看"
-      class="absolute right-4 top-4 z-10 inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white/80 text-slate-500 opacity-0 shadow-sm backdrop-blur transition hover:border-slate-300 hover:bg-white hover:text-slate-800 group-hover:opacity-100 focus-visible:opacity-100 disabled:cursor-not-allowed disabled:opacity-0"
-      :disabled="!props.previewFrameUrl"
-      @click="openPreviewDialog"
-    >
-      <Maximize2 class="h-4 w-4" />
-    </button>
+  <ToolPanel class="group relative h-full min-h-0 bg-[rgb(var(--ui-surface-muted))]" :scroll-body="false">
+    <div class="absolute right-5 top-5 z-10 flex items-center gap-2 opacity-0 shadow-popover backdrop-blur transition-opacity duration-200 group-hover:opacity-100 focus-within:opacity-100">
+      <UiIconButton
+        label="刷新预览"
+        :disabled="!props.previewFrameUrl"
+        @click="emit('refresh')"
+      >
+        <RefreshCw class="h-4 w-4" />
+      </UiIconButton>
+
+      <UiIconButton
+        label="放大查看"
+        :disabled="!props.previewFrameUrl"
+        @click="openPreviewDialog"
+      >
+        <Maximize2 class="h-4 w-4" />
+      </UiIconButton>
+
+      <UiIconButton
+        :label="props.speakerNotesPanelOpen ? '关闭备注' : '打开备注'"
+        @click="emit('toggleSpeakerNotes')"
+      >
+        <FileText class="h-4 w-4" />
+      </UiIconButton>
+    </div>
 
     <RuntimePreviewFrame
       :frame-url="activePreviewFrameUrl"
@@ -22,12 +36,13 @@
       :empty-description="currentPreviewEmptyDescription"
     />
 
-    <BaseDialog
-      v-model="isPreviewDialogOpen"
+    <UiDialog
+      :open="isPreviewDialogOpen"
       :title="previewDialogTitle"
       size="workbench"
       body-preset="immersive"
       overlay-class="bg-slate-950/70 backdrop-blur-sm"
+      @update:open="isPreviewDialogOpen = $event"
     >
       <div class="h-full min-h-0 bg-slate-100 p-3">
         <RuntimePreviewFrame
@@ -39,16 +54,17 @@
           container-class="h-full overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm"
         />
       </div>
-    </BaseDialog>
-  </section>
+    </UiDialog>
+  </ToolPanel>
 </template>
 
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { Maximize2 } from '@lucide/vue'
+import { FileText, Maximize2, RefreshCw } from '@lucide/vue'
 
 import RuntimePreviewFrame from '@/components/runtime-preview/RuntimePreviewFrame.vue'
-import BaseDialog from '@/components/ui/BaseDialog.vue'
+import ToolPanel from '@/components/patterns/ToolPanel.vue'
+import { UiDialog, UiIconButton } from '@/components/ui'
 
 interface Props {
   previewEnabled: boolean
@@ -60,9 +76,16 @@ interface Props {
   }
   pageTitle: string
   previewDisplayFileName: string
+  speakerNotesPanelOpen: boolean
 }
 
 const props = defineProps<Props>()
+
+const emit = defineEmits<{
+  refresh: []
+  toggleSpeakerNotes: []
+}>()
+
 const isPreviewDialogOpen = ref(false)
 
 const previewDialogTitle = computed(() => (
