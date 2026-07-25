@@ -1,10 +1,16 @@
 <!-- 文件功能：提供一级页面标题、说明、上下文与主要操作的一致布局。 -->
 <template>
   <header class="rounded-lg border border-slate-200 bg-white/95 px-3.5 py-2 shadow-sm">
-    <div class="flex min-w-0 items-start gap-3 ">
+    <div class="flex min-w-0 items-center gap-3">
       <div class="min-w-0 flex-1 space-y-1">
         <div v-if="$slots.eyebrow" class="text-xs text-[rgb(var(--ui-text-muted))]"><slot name="eyebrow" /></div>
         <div class="flex min-w-0 items-center gap-2">
+          <component
+            :is="icon"
+            v-if="icon"
+            aria-hidden="true"
+            class="size-5 shrink-0 text-[rgb(var(--ui-primary))]"
+          />
           <h1 class="truncate text-title-md font-semibold text-[rgb(var(--ui-text))]">{{ title }}</h1>
           <UiPopover v-if="description" v-model:open="isDescriptionOpen">
             <template #trigger>
@@ -27,13 +33,15 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, type Component } from 'vue'
 import { Info } from '@lucide/vue'
 import { UiPopover } from '@/components/ui'
 
 defineProps<{
   /** 页面主标题，用于建立稳定的信息层级。 */
   title: string
+  /** 页面标题左侧的语义图标。 */
+  icon?: Component
   /** 标题下的简短范围说明；点击信息图标可在浮层中查看。 */
   description?: string
 }>()

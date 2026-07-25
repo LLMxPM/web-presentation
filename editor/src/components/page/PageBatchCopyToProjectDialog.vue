@@ -16,7 +16,7 @@
           目标项目
           <span class="text-red-500">*</span>
         </label>
-        <SearchableSelect
+        <UiCombobox
           v-model="targetProjectId"
           :options="projectOptions"
           :disabled="loading || projectsLoading || projectOptions.length === 0"
@@ -65,7 +65,7 @@
             路由分组
             <span class="text-red-500">*</span>
           </label>
-          <SearchableSelect
+          <UiCombobox
             v-model="parentRouteId"
             :options="groupOptions"
             :disabled="loading || routeOptionsLoading || !targetProjectId || groupOptions.length === 0"
@@ -90,8 +90,7 @@ import { computed, ref, watch } from 'vue'
 
 import { getProjectRoutes, listProjects } from '@/api/catalog'
 import { getErrorMessage } from '@/api/http'
-import { UiButton, UiCheckbox, UiDialog } from '@/components/ui'
-import SearchableSelect from '@/components/ui/SearchableSelect.vue'
+import { UiButton, UiCheckbox, UiCombobox, UiDialog } from '@/components/ui'
 import type { SelectOption } from '@/components/ui/select'
 import type {
   PageCopyRoutePlacement,

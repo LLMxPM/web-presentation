@@ -797,6 +797,55 @@ describe('AgentConversationPanel', () => {
     })
   })
 
+  it('超长用户消息应默认折叠，并允许手动展开全文', async () => {
+    localStorage.setItem('agent-session:agent-coordinator:11', 'session-1')
+    listAgentSessionsMock.mockResolvedValueOnce([
+      {
+        session_id: 'session-1',
+        agent_id: DEFAULT_AGENT_ID,
+        session_name: '长提示词历史',
+        created_at: '2026-04-18T10:00:00+08:00',
+        updated_at: '2026-04-18T10:20:00+08:00',
+        metadata: {
+          scope_type: 'page',
+          workspace_id: 11,
+          project_id: 21,
+          page_id: 31,
+          page_title: 'AI 页面',
+          source: 'editor-page-detail',
+        },
+      },
+    ])
+    const longUserContent = Array.from(
+      { length: 12 },
+      (_, index) => `第 ${index + 1} 段：请保留页面结构、关键指标、图表、风险提示和交付口径。`,
+    ).join('\n')
+    getAgentSessionRuntimeMock.mockResolvedValueOnce(createRuntimeSnapshot({
+      messages: [
+        {
+          id: 'message-user-auto-collapse',
+          role: 'user',
+          content: longUserContent,
+          created_at: '2026-04-18T10:00:00+08:00',
+          tool_name: null,
+        },
+      ],
+    }))
+
+    render(AgentConversationPanel, createTestingRenderOptions())
+
+    await waitFor(() => {
+      expect(screen.getAllByRole('button', { name: '展开用户消息' }).length).toBeGreaterThan(0)
+      expect(screen.queryByText(longUserContent)).toBeNull()
+    })
+
+    await fireEvent.click(screen.getAllByRole('button', { name: '展开用户消息' })[0])
+
+    await waitFor(() => {
+      expect(screen.getByText(/第 12 段：请保留页面结构/)).toBeTruthy()
+    })
+  })
+
   it('连续工具调用应默认折叠为弱化摘要并可展开查看详情', async () => {
     getAgentSessionMessagesMock
       .mockResolvedValueOnce([])

@@ -2,7 +2,7 @@
 <template>
   <UiDialog :open="modelValue" :title="project ? `路由配置 · ${project.name}` : '路由配置'" size="canvas" body-preset="editor"
     @update:open="handleVisibleChange">
-    <div v-if="project" class="h-full min-h-0">
+    <div v-if="project" class="flex h-full min-h-0 flex-col">
 
       <ProjectRouteEditor v-model="draftRoutes" :pages="routePages" :loading="routeEditorLoading" />
     </div>

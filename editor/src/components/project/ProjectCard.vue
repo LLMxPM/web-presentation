@@ -9,7 +9,7 @@
     @keydown.enter="emit('open', project.id)"
     @keydown.space.prevent="emit('open', project.id)"
   >
-    <div class="flex min-h-full flex-col p-4 sm:p-5">
+    <div class="flex min-h-full w-full flex-col p-4 sm:p-5">
       <div class="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3">
         <div class="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-start gap-3">
           <div class="project-card-avatar" aria-hidden="true">{{ projectInitial }}</div>

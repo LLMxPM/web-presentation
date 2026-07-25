@@ -173,10 +173,25 @@
       </div>
     </div>
   </UiDialog>
+
+  <UiDialog
+    :open="confirmVisible"
+    :title="confirmTitle"
+    size="compact"
+    z-index="var(--ui-z-confirm-overlay)"
+    :panel-style="{ height: 'auto' }"
+    @update:open="handleConfirmVisibleChange"
+  >
+    <p class="text-sm leading-6 text-[rgb(var(--ui-text-secondary))]">{{ confirmMessage }}</p>
+    <template #footer>
+      <UiButton variant="ghost" @click="resolvePageEditConfirm(false)">取消</UiButton>
+      <UiButton :variant="confirmDangerous ? 'danger' : 'primary'" @click="resolvePageEditConfirm(true)">确定</UiButton>
+    </template>
+  </UiDialog>
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onBeforeUnmount, ref } from 'vue'
 import { Code2, Copy, History, Layers, Moon, RefreshCw, Save, SlidersHorizontal, Sun, Undo2, X } from '@lucide/vue'
 
 import PageDetailWorkbenchPanel from '@/components/page-detail/PageDetailWorkbenchPanel.vue'
@@ -232,6 +247,11 @@ const emit = defineEmits<{
 }>()
 
 const visualEditPanelRef = ref<PageVisualEditPanelExpose | null>(null)
+const confirmVisible = ref(false)
+const confirmTitle = ref('')
+const confirmMessage = ref('')
+const confirmDangerous = ref(false)
+let confirmResolver: ((confirmed: boolean) => void) | null = null
 const dialogTitle = computed(() => `编辑页面 · ${props.pageTitle}`)
 const visualState = ref<PageVisualEditPanelState>({
   pendingCount: 0,
@@ -262,7 +282,35 @@ function handleAutoSaveChange(value: string | number | boolean | (string | numbe
   emit('update:autoSaveDelay', Number(value))
 }
 
+/** 在页面编辑 workbench 内打开嵌套确认框，避免外层模态焦点陷阱拦截交互。 */
+function confirmAction(message: string, title: string, dangerous = false): Promise<boolean> {
+  resolvePageEditConfirm(false)
+  confirmMessage.value = message
+  confirmTitle.value = title
+  confirmDangerous.value = dangerous
+  confirmVisible.value = true
+  return new Promise(resolve => {
+    confirmResolver = resolve
+  })
+}
+
+/** 结算编辑器内确认操作，并确保遮罩、Escape 与按钮只触发一次。 */
+function resolvePageEditConfirm(confirmed: boolean): void {
+  confirmVisible.value = false
+  const resolver = confirmResolver
+  confirmResolver = null
+  resolver?.(confirmed)
+}
+
+/** 忽略 UiDialog 的 open 回写，只在关闭时取消当前确认。 */
+function handleConfirmVisibleChange(visible: boolean): void {
+  if (!visible) resolvePageEditConfirm(false)
+}
+
+onBeforeUnmount(() => resolvePageEditConfirm(false))
+
 defineExpose({
+  confirmAction,
   discardChanges: () => visualEditPanelRef.value?.discardChanges(),
   reanalyze: async () => await visualEditPanelRef.value?.reanalyze(),
   markStale: () => visualEditPanelRef.value?.markStale(),

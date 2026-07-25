@@ -3,17 +3,52 @@
 from __future__ import annotations
 
 import os
+import shutil
 from pathlib import Path
 
 import pytest
 from httpx import ASGITransport, AsyncClient
 
 
+@pytest.fixture(scope="session")
+def database_template(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """创建一次空的 SQLite schema 模板，供各测试复制以避免重复建表。"""
+
+    from sqlalchemy import create_engine
+
+    from app.db.base import Base
+    from app.core.security import hash_password
+    from app.models.enums import UserRole
+    from app.models.user import User
+    from app.schemas.preview_size_preset import build_default_preview_size_presets
+
+    import app.models  # noqa: F401
+
+    template_path = tmp_path_factory.getbasetemp() / "backend-schema-template.db"
+    engine = create_engine(f"sqlite:///{template_path.as_posix()}")
+    try:
+        Base.metadata.create_all(engine)
+        with engine.begin() as connection:
+            connection.execute(
+                User.__table__.insert().values(
+                    username="admin",
+                    password_hash=hash_password("Admin123456"),
+                    display_name="平台系统管理员",
+                    role=UserRole.PLATFORM_ADMIN.value,
+                    preview_size_presets=build_default_preview_size_presets(),
+                )
+            )
+    finally:
+        engine.dispose()
+    return template_path
+
+
 @pytest.fixture
-async def client(tmp_path: Path) -> AsyncClient:
-    """为每个测试创建独立 SQLite 数据库和带 Cookie 的测试客户端。"""
+async def client(tmp_path: Path, database_template: Path) -> AsyncClient:
+    """复制独立 SQLite 数据库并创建带 Cookie 的测试客户端。"""
 
     database_path = tmp_path / "test.db"
+    shutil.copyfile(database_template, database_path)
     os.environ["DATABASE_URL"] = f"sqlite+aiosqlite:///{database_path.as_posix()}"
     os.environ["DEFAULT_ADMIN_USERNAME"] = "admin"
     os.environ["DEFAULT_ADMIN_PASSWORD"] = "Admin123456"
@@ -22,22 +57,14 @@ async def client(tmp_path: Path) -> AsyncClient:
     os.environ["REDIS_KEY_PREFIX"] = f"test_{database_path.stem}"
 
     from app.core.config import get_settings
-    from app.db.base import Base
-    from app.db.session import get_engine, get_session_factory, reset_database_state
+    from app.db.session import reset_database_state
     from app.main import create_app
-    from app.services.bootstrap_service import BootstrapService
     from app.services.redis_runtime_client import reset_redis_runtime_client
     import app.models  # noqa: F401
 
     get_settings.cache_clear()
     reset_redis_runtime_client()
     await reset_database_state()
-    engine = get_engine()
-    async with engine.begin() as connection:
-        await connection.run_sync(Base.metadata.create_all)
-
-    await BootstrapService(get_session_factory()).ensure_default_admin()
-
     app = create_app()
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as async_client:
         yield async_client

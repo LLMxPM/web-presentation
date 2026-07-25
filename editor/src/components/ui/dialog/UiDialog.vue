@@ -2,7 +2,7 @@
 <template>
   <DialogRoot :open="open" modal @update:open="emit('update:open', $event)">
     <Teleport to="body">
-      <div v-if="open" class="dialog-shell fixed inset-0 z-[1000] flex items-center justify-center" :data-dialog-size="resolvedSize" :data-dialog-body-preset="resolvedBodyPreset ?? 'legacy'" :style="{ zIndex }">
+      <div v-if="open" class="dialog-shell fixed inset-0 z-dialog flex items-center justify-center" :data-dialog-size="resolvedSize" :data-dialog-body-preset="resolvedBodyPreset ?? 'legacy'" :style="{ zIndex }">
       <DialogOverlay as-child><button type="button" class="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" :class="overlayClass" :aria-label="title ? `关闭${title}` : '关闭弹窗'" @click="emit('update:open', false)" /></DialogOverlay>
       <DialogContent
         class="dialog-panel fixed z-[1001] flex min-h-0 w-full flex-col overflow-hidden border border-slate-200 bg-white shadow-2xl outline-none"
@@ -50,7 +50,7 @@ const props = withDefaults(defineProps<{
   overlayClass?: string
   showHeader?: boolean
   showCloseButton?: boolean
-  zIndex?: number
+  zIndex?: string | number
 }>(), { size: 'compact', showHeader: true, showCloseButton: true, zIndex: 1000 })
 
 const emit = defineEmits<{

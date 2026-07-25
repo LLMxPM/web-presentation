@@ -12,64 +12,46 @@
 
       <div class="grid gap-4 xl:grid-cols-[minmax(360px,0.9fr)_minmax(520px,1.1fr)]">
         <div class="space-y-3">
-          <section class="rounded-lg border border-slate-200 bg-slate-50/70 p-3">
-            <div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_260px]">
-              <WorkspaceStyleApplyField
-                v-if="workspaceId"
+          <section class="rounded-lg border border-slate-200 bg-slate-50/70 p-4">
+            <WorkspaceStyleApplyField
+              v-if="workspaceId"
+              :workspace-id="workspaceId"
+              embedded
+              label="样式模板"
+              hint="从模板快速填充项目展示配置。"
+              @apply="applyWorkspaceStyle"
+            />
+            <div v-else>
+              <label class="text-sm font-semibold text-slate-700">应用样式</label>
+              <p class="mt-1 text-xs text-slate-400">缺少工作空间上下文，暂时不能从样式库填充项目草稿。</p>
+            </div>
+
+            <div class="mt-4 border-t border-slate-200 pt-4">
+              <ThemeSelectorField
                 :workspace-id="workspaceId"
-                embedded
-                label="样式模板"
-                hint="从模板快速填充项目样式。"
-                @apply="applyWorkspaceStyle"
+                :model-value="form.theme_key"
+                :preferred-key="defaultThemeKey"
+                label="项目主题"
+                :show-preview="false"
+                @update:model-value="handleThemeChange"
               />
-              <div v-else>
-                <label class="text-sm font-semibold text-slate-700">应用样式</label>
-                <p class="mt-1 text-xs text-slate-400">缺少工作空间上下文，暂时不能从样式库填充项目草稿。</p>
-              </div>
-              <div class="border-t border-slate-200 pt-4 lg:border-l lg:border-t-0 lg:pl-4 lg:pt-0">
-                <ThemeSelectorField
-                  :workspace-id="workspaceId"
-                  :model-value="form.theme_key"
-                  :preferred-key="defaultThemeKey"
-                  label="项目主题"
-                  hint="样式可填充，也可手动覆盖。"
-                  :show-preview="false"
-                  @update:model-value="handleThemeChange"
-                />
-                <p v-if="errors.theme" class="mt-2 text-xs font-semibold text-rose-500">{{ errors.theme }}</p>
-              </div>
+              <p v-if="errors.theme" class="mt-2 text-xs font-semibold text-rose-500">{{ errors.theme }}</p>
             </div>
           </section>
 
-          <section class="rounded-lg border border-slate-200 bg-white p-3">
-            <div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_300px]">
-              <div>
-                <PreviewSizePresetSelect :current-width="normalizedPageWidth" :current-height="normalizedPageHeight"
-                  :current-base-font-size="normalizedBaseFontSize"
-                  :current-icon-default-stroke-width="normalizedIconDefaultStrokeWidth"
-                  label="尺寸模板" @apply="applyPageSizePreset" />
-                <div class="mt-2 grid grid-cols-2 gap-3">
-                  <UiFormField label="页面宽度(px)"><template #default="field"><UiInput v-model="form.page_width" type="number" placeholder="1920" :input-id="field.inputId" :described-by="field.describedBy" /></template></UiFormField>
-                  <UiFormField label="页面高度(px)"><template #default="field"><UiInput v-model="form.page_height" type="number" placeholder="1080" :input-id="field.inputId" :described-by="field.describedBy" /></template></UiFormField>
-                </div>
-                <div class="mt-2 grid grid-cols-2 gap-3">
-                  <UiFormField label="基础字号"><template #default="field"><UiInput v-model="form.base_font_size" placeholder="20px" :input-id="field.inputId" :described-by="field.describedBy" /></template></UiFormField>
-                  <UiFormField label="图标描边"><template #default="field"><UiInput v-model="form.icon_default_stroke_width" type="number" placeholder="2" :input-id="field.inputId" :described-by="field.describedBy" /></template></UiFormField>
-                </div>
-              </div>
-
-              <div class="border-t border-slate-200 pt-3 lg:border-l lg:border-t-0 lg:pl-4 lg:pt-0">
-                <label class="ml-1 text-sm font-semibold text-slate-700">菜单模式</label>
-                <UiSegmentedControl v-model="form.menu_mode" aria-label="菜单模式" :options="menuModeOptions" />
-
-                <label class="ml-1 mt-3 block text-sm font-semibold text-slate-700">导出按钮</label>
-                <UiSegmentedControl v-model="pdfExportButtonSegment" aria-label="导出按钮" :options="pdfButtonOptions" />
-              </div>
-            </div>
+          <section class="rounded-lg border border-slate-200 bg-white p-4">
+            <ProjectPresentationFields
+              v-model:page-width="form.page_width"
+              v-model:page-height="form.page_height"
+              v-model:base-font-size="form.base_font_size"
+              v-model:icon-default-stroke-width="form.icon_default_stroke_width"
+              v-model:show-pdf-export-button="form.show_pdf_export_button"
+              v-model:menu-mode="form.menu_mode"
+            />
           </section>
         </div>
 
-        <section class="rounded-lg border border-slate-200 bg-white p-3">
+        <section class="rounded-lg border border-slate-200 bg-white p-4">
           <UiFormField label="样式规范 Markdown"><template #default="field"><UiInput v-model="form.style_spec_markdown" type="textarea" placeholder="可记录版式、排版、色彩和内容生成约束" :rows="22" class="min-h-[520px]" :input-id="field.inputId" :described-by="field.describedBy" /></template></UiFormField>
         </section>
       </div>
@@ -87,16 +69,20 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
 
-import { UiButton, UiDialog, UiFormField, UiInput, UiSegmentedControl } from '@/components/ui'
-import PreviewSizePresetSelect from '@/components/preview-size/PreviewSizePresetSelect.vue'
+import { UiButton, UiDialog, UiFormField, UiInput } from '@/components/ui'
 import ThemeSelectorField from '@/components/theme/ThemeSelectorField.vue'
 import { DEFAULT_PROJECT_STYLE_SPEC_MARKDOWN } from '@/constants/project-style'
 import WorkspaceStyleApplyField from './WorkspaceStyleApplyField.vue'
-import type { PreviewSizePreset, ProjectItem, ProjectMenuMode, RecordStatus, WorkspaceStyleItem } from '@/types/api'
-
-const DEFAULT_PROJECT_PAGE_WIDTH = 1920
-const DEFAULT_PROJECT_PAGE_HEIGHT = 1080
-const DEFAULT_PROJECT_BASE_FONT_SIZE = '20px'
+import ProjectPresentationFields from './ProjectPresentationFields.vue'
+import type { ProjectItem, ProjectMenuMode, RecordStatus, WorkspaceStyleItem } from '@/types/api'
+import {
+  DEFAULT_PROJECT_BASE_FONT_SIZE,
+  DEFAULT_PROJECT_PAGE_HEIGHT,
+  DEFAULT_PROJECT_PAGE_WIDTH,
+  normalizeProjectBaseFontSize as normalizeBaseFontSize,
+  normalizeProjectDimension as normalizeDimension,
+  normalizeProjectInteger as normalizeIntegerWithinRange,
+} from './project-presentation-values'
 
 const props = withDefaults(defineProps<{
   modelValue: boolean
@@ -149,28 +135,11 @@ const errors = reactive({
 })
 const appliedWorkspaceStyleId = ref<number | null>(null)
 
-const menuModeOptions = [
-  { label: '侧边', value: 'preview' as const },
-  { label: '底部', value: 'bottom-preview' as const },
-  { label: '文本', value: 'text' as const },
-]
-
-const pdfButtonOptions = [
-  { label: '显示', value: 'visible' },
-  { label: '隐藏', value: 'hidden' },
-]
-
 const isEditMode = computed(() => !!props.project)
 const normalizedPageWidth = computed(() => normalizeDimension(form.page_width, DEFAULT_PROJECT_PAGE_WIDTH))
 const normalizedPageHeight = computed(() => normalizeDimension(form.page_height, DEFAULT_PROJECT_PAGE_HEIGHT))
 const normalizedBaseFontSize = computed(() => normalizeBaseFontSize(form.base_font_size, DEFAULT_PROJECT_BASE_FONT_SIZE))
 const normalizedIconDefaultStrokeWidth = computed(() => normalizeIntegerWithinRange(form.icon_default_stroke_width, 2, 1, 64))
-const pdfExportButtonSegment = computed({
-  get: () => form.show_pdf_export_button ? 'visible' : 'hidden',
-  set: value => {
-    form.show_pdf_export_button = value === 'visible'
-  },
-})
 
 /**
  * 根据当前项目同步弹窗草稿，确保新建与编辑场景共享同一套表单。
@@ -197,17 +166,6 @@ function syncFormFromProject(project: ProjectItem | null): void {
  */
 function handleVisibleChange(value: boolean): void {
   emit('update:modelValue', value)
-}
-
-/**
- * 将用户预设尺寸应用到项目基础信息表单。
- * @param preset 预设尺寸
- */
-function applyPageSizePreset(preset: PreviewSizePreset): void {
-  form.page_width = String(normalizeDimension(String(preset.width), DEFAULT_PROJECT_PAGE_WIDTH))
-  form.page_height = String(normalizeDimension(String(preset.height), DEFAULT_PROJECT_PAGE_HEIGHT))
-  form.base_font_size = normalizeBaseFontSize(preset.base_font_size || DEFAULT_PROJECT_BASE_FONT_SIZE, DEFAULT_PROJECT_BASE_FONT_SIZE)
-  form.icon_default_stroke_width = String(normalizeIntegerWithinRange(String(preset.icon_default_stroke_width ?? 2), 2, 1, 64))
 }
 
 /**
@@ -284,52 +242,6 @@ function handleSubmit(): void {
     payload.suggested_component_source_style_id = appliedWorkspaceStyleId.value
   }
   emit('submit', payload)
-}
-
-/**
- * 归一化页面尺寸输入。
- * @param value 原始输入
- * @param fallback 默认尺寸
- */
-function normalizeDimension(value: string, fallback: number): number {
-  const parsed = Number(value)
-  if (!Number.isFinite(parsed) || parsed <= 0) {
-    return fallback
-  }
-  return Math.min(8192, Math.max(1, Math.round(parsed)))
-}
-
-/**
- * 归一化基础字号输入。
- * @param value 原始字号
- * @param fallback 回退字号
- */
-function normalizeBaseFontSize(value: string, fallback: string): string {
-  const normalized = String(value || '').trim().toLowerCase()
-  const match = normalized.match(/^(\d+)(px)?$/)
-  if (!match) {
-    return fallback
-  }
-  const parsedValue = Number.parseInt(match[1], 10)
-  if (!Number.isFinite(parsedValue) || parsedValue < 1 || parsedValue > 200) {
-    return fallback
-  }
-  return `${parsedValue}px`
-}
-
-/**
- * 归一化项目页面规格整数。
- * @param value 原始输入
- * @param fallback 回退值
- * @param min 最小值
- * @param max 最大值
- */
-function normalizeIntegerWithinRange(value: string, fallback: number, min: number, max: number): number {
-  const parsedValue = Number(value)
-  if (!Number.isFinite(parsedValue)) {
-    return fallback
-  }
-  return Math.min(max, Math.max(min, Math.round(parsedValue)))
 }
 
 watch(

@@ -2,7 +2,7 @@
  * 文件功能：约束 Editor UI 设计系统的公开边界、生产路由和最低可访问性要求。
  */
 import { render, screen } from '@testing-library/vue'
-import { afterEach, describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vitest'
 
 import * as patterns from '@/components/patterns'
 import * as primitives from '@/components/ui'
@@ -20,15 +20,11 @@ import {
 /** 迁移完成后的精确统计；新增或删除豁免均需显式评审。 */
 const UI_MIGRATION_BASELINE: UiMigrationBaseline = {
   legacyClassReferences: 0,
-  nakedButtons: 1,
-  nakedInputs: 27,
+  nakedButtons: 8,
+  nakedInputs: 25,
   nakedTextareas: 2,
   nakedSelects: 0,
 }
-
-afterEach(() => {
-  document.body.innerHTML = ''
-})
 
 describe('UI 架构边界', () => {
   it('Reka UI 只能由 components/ui 直接依赖', () => {
@@ -72,7 +68,18 @@ describe('UI 架构边界', () => {
     const styleSource = readEditorFile('src/style.css')
     const tailwindSource = readEditorFile('tailwind.config.js')
 
-    for (const token of ['--ui-canvas', '--ui-surface', '--ui-text', '--ui-border', '--ui-accent', '--ui-control-h-md', '--ui-radius-md']) {
+    for (const token of [
+      '--ui-canvas',
+      '--ui-surface',
+      '--ui-text',
+      '--ui-border',
+      '--ui-accent',
+      '--ui-control-h-md',
+      '--ui-radius-md',
+      '--ui-z-dialog',
+      '--ui-z-confirm-overlay',
+      '--ui-z-toast',
+    ]) {
       expect(styleSource).toContain(token)
     }
     expect(tailwindSource).toContain("canvas: 'rgb(var(--ui-canvas) / <alpha-value>)'")

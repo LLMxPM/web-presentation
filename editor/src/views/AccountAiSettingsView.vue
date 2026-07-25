@@ -1,29 +1,37 @@
 <!-- 文件功能：整合账号级 AI 设置，集中管理智能体模型绑定、提示词、工具配置与模型。 -->
 <template>
   <div class="space-y-5 pb-10">
-    <PageHeader title="AI 设置" description="集中管理智能体模型绑定、提示词、工具配置与模型。">
-      <template #eyebrow>
-        <span class="inline-flex items-center gap-2"><Bot class="h-4 w-4" />账户 AI 设置</span>
-      </template>
+    <PageHeader :icon="Bot" title="AI 设置" description="集中管理智能体模型绑定、提示词、工具配置与模型。">
+
       <template #actions>
         <dl class="grid w-full grid-cols-2 overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 text-center sm:grid-cols-4 lg:w-auto lg:min-w-[560px]">
-          <div class="border-b border-r border-slate-200 px-4 py-3 sm:border-b-0">
-            <dt class="text-[11px] font-semibold text-slate-400">智能体</dt>
-            <dd class="mt-1 text-lg font-bold text-slate-900">{{ agentCount }}</dd>
-          </div>
-          <div class="border-b border-slate-200 px-4 py-3 sm:border-b-0 sm:border-r">
-            <dt class="text-[11px] font-semibold text-slate-400">可用模型</dt>
-            <dd class="mt-1 text-lg font-bold text-slate-900">{{ activeModelCount }}</dd>
-          </div>
-          <div class="border-r border-slate-200 px-4 py-3">
-            <dt class="text-[11px] font-semibold text-slate-400">未就绪智能体</dt>
-            <dd class="mt-1 text-lg font-bold" :class="unreadySlotCount ? 'text-amber-600' : 'text-emerald-600'">
-              {{ unreadySlotCount }}
+          <div class="border-b border-r border-slate-200 px-3 py-2 sm:border-b-0">
+            <dt class="sr-only">智能体</dt>
+            <dd class="inline-flex items-center justify-center gap-2 text-sm font-semibold text-slate-900">
+              <span class="text-slate-400">智能体</span>
+              <span class="text-base font-bold text-slate-900">{{ agentCount }}</span>
             </dd>
           </div>
-          <div class="px-4 py-3">
-            <dt class="text-[11px] font-semibold text-slate-400">工具</dt>
-            <dd class="mt-1 text-lg font-bold text-slate-900">{{ allToolCount }}</dd>
+          <div class="border-b border-slate-200 px-3 py-2 sm:border-b-0 sm:border-r">
+            <dt class="sr-only">可用模型</dt>
+            <dd class="inline-flex items-center justify-center gap-2 text-sm font-semibold text-slate-900">
+              <span class="text-slate-400">可用模型</span>
+              <span class="text-base font-bold text-slate-900">{{ activeModelCount }}</span>
+            </dd>
+          </div>
+          <div class="border-r border-slate-200 px-3 py-2">
+            <dt class="sr-only">未就绪智能体</dt>
+            <dd class="inline-flex items-center justify-center gap-2 text-sm font-semibold leading-6" :class="unreadySlotCount ? 'text-amber-600' : 'text-emerald-600'">
+              <span class="text-slate-400">未就绪智能体</span>
+              <span class="text-base font-bold">{{ unreadySlotCount }}</span>
+            </dd>
+          </div>
+          <div class="px-3 py-2">
+            <dt class="sr-only">工具</dt>
+            <dd class="inline-flex items-center justify-center gap-2 text-sm font-semibold text-slate-900">
+              <span class="text-slate-400">工具</span>
+              <span class="text-base font-bold text-slate-900">{{ allToolCount }}</span>
+            </dd>
           </div>
         </dl>
       </template>
@@ -39,7 +47,7 @@
               type="button"
               :aria-label="tab.label"
               variant="ghost"
-              class="flex min-h-12 min-w-0 flex-col items-center justify-center rounded-lg px-2 py-1 text-xs font-bold transition"
+              class="flex min-h-12 min-w-0 flex-col items-center justify-center rounded-lg px-2 py-1 text-xs font-bold transition [&>span]:!flex-col [&>span]:gap-0"
               :class="activeSection === tab.key ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'"
               @click="setActiveSection(tab.key)"
             >
@@ -68,8 +76,9 @@
               :key="agent.id"
               type="button"
               variant="ghost"
-              class="h-auto w-full rounded-xl border p-3 text-left transition"
-              :class="selectedAgentConfig?.id === agent.id ? 'border-indigo-200 bg-indigo-50/70' : 'border-slate-200 bg-white hover:bg-slate-50'"
+              :aria-pressed="selectedAgentConfig?.id === agent.id"
+              class="h-auto w-full rounded-xl border p-3 text-left transition [&>span]:!block [&>span]:min-w-0 [&>span]:w-full [&>span]:text-left"
+              :class="selectedAgentConfig?.id === agent.id ? '!border-indigo-400 !bg-indigo-50 ring-2 ring-indigo-200' : '!border-slate-200 !bg-white hover:!border-slate-300 hover:!bg-slate-50'"
               @click="selectAgent(agent.id)"
             >
               <div class="flex items-start justify-between gap-3">
@@ -82,8 +91,11 @@
                     <p class="mt-1 line-clamp-2 text-xs leading-5 text-slate-500">{{ agent.summary }}</p>
                   </div>
                 </div>
-                <span class="shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold" :class="getAgentSlotClass(agent)">
-                  {{ getAgentSlotLabel(agent) }}
+                <span class="flex shrink-0 flex-col items-end gap-1">
+   
+                  <span class="rounded-full px-2 py-0.5 text-[11px] font-semibold" :class="getAgentSlotClass(agent)">
+                    {{ getAgentSlotLabel(agent) }}
+                  </span>
                 </span>
               </div>
               <div class="mt-3 grid grid-cols-3 gap-2 text-[11px] font-semibold">
@@ -124,8 +136,9 @@
               :key="config.id"
               type="button"
               variant="ghost"
-              class="h-auto w-full rounded-xl border p-3 text-left transition"
-              :class="selectedProviderConfigId === config.id ? 'border-indigo-200 bg-indigo-50/70' : 'border-slate-200 bg-white hover:bg-slate-50'"
+              :aria-pressed="selectedProviderConfigId === config.id"
+              class="h-auto w-full rounded-xl border p-3 text-left transition [&>span]:!block [&>span]:min-w-0 [&>span]:w-full [&>span]:text-left"
+              :class="selectedProviderConfigId === config.id ? '!border-indigo-400 !bg-indigo-50 ring-2 ring-indigo-200' : '!border-slate-200 !bg-white hover:!border-slate-300 hover:!bg-slate-50'"
               @click="handleEditProviderConfig(config)"
             >
               <div class="flex items-start justify-between gap-3">
@@ -134,6 +147,7 @@
                   <p class="mt-1 truncate text-xs text-slate-500">{{ config.provider_label }} · {{ config.base_url || '默认地址' }}</p>
                 </div>
                 <span class="flex shrink-0 flex-col items-end gap-1">
+
                   <span
                     class="rounded-full px-2 py-0.5 text-[11px] font-semibold"
                     :class="config.scope === 'global' ? 'bg-indigo-50 text-indigo-700' : 'bg-slate-100 text-slate-600'"
@@ -181,8 +195,9 @@
               :key="config.id"
               type="button"
               variant="ghost"
-              class="h-auto w-full rounded-xl border p-3 text-left transition"
-              :class="selectedConfigId === config.id ? 'border-indigo-200 bg-indigo-50/70' : 'border-slate-200 bg-white hover:bg-slate-50'"
+              :aria-pressed="selectedConfigId === config.id"
+              class="h-auto w-full rounded-xl border p-3 text-left transition [&>span]:!block [&>span]:min-w-0 [&>span]:w-full [&>span]:text-left"
+              :class="selectedConfigId === config.id ? '!border-indigo-400 !bg-indigo-50 ring-2 ring-indigo-200' : '!border-slate-200 !bg-white hover:!border-slate-300 hover:!bg-slate-50'"
               @click="handleEditModel(config)"
             >
               <div class="flex items-start justify-between gap-3">
@@ -191,6 +206,7 @@
                   <p class="mt-1 truncate text-xs text-slate-500">{{ config.provider_config_name }} / {{ config.model_id }}</p>
                 </div>
                 <span class="flex shrink-0 flex-col items-end gap-1">
+
                   <span
                     class="rounded-full px-2 py-0.5 text-[11px] font-semibold"
                     :class="config.scope === 'global' ? 'bg-indigo-50 text-indigo-700' : 'bg-slate-100 text-slate-600'"
@@ -248,7 +264,7 @@
               type="button"
               :aria-label="tab.label"
               variant="ghost"
-              class="h-auto flex min-h-14 items-center justify-between gap-3 rounded-xl px-3 py-2 text-left text-sm transition"
+              class="h-auto flex min-h-14 items-center justify-between gap-3 rounded-xl px-3 py-2 text-left text-sm transition [&>span]:min-w-0 [&>span]:w-full [&>span]:justify-between [&>span]:text-left"
               :class="activeAgentPanel === tab.key ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-600 hover:bg-white/70 hover:text-slate-900'"
               @click="activeAgentPanel = tab.key"
             >
@@ -281,7 +297,7 @@
                 </p>
               </div>
               <div class="grid min-w-0 gap-2 sm:grid-cols-[minmax(0,1fr)_auto] 2xl:w-[560px]">
-                <SearchableSelect
+                <UiCombobox
                   v-if="selectedAgentConfig.llm_slot"
                   v-model="slotDrafts[selectedAgentConfig.llm_slot]"
                   :options="configOptions"
@@ -349,7 +365,7 @@
                     </span>
                   </div>
                   <div class="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
-                    <SearchableSelect
+                    <UiCombobox
                       v-model="slotDrafts[slot.slot]"
                       :options="getSlotConfigOptions(slot.slot)"
                       clearable
@@ -410,20 +426,21 @@
             >
               <UiButton
                 variant="ghost"
-                class="flex w-full flex-col gap-3 bg-slate-50 px-4 py-3 text-left transition hover:bg-slate-100 md:flex-row md:items-center md:justify-between"
+                content-align="start"
+                class="h-auto min-h-[var(--ui-control-h-md)] w-full whitespace-normal bg-slate-50 px-4 py-3 text-left transition hover:bg-slate-100"
                 @click="toggleToolGroup(group.key)"
               >
-                <span class="min-w-0">
-                  <span class="flex items-center gap-2">
+                <span class="block min-w-0">
+                  <span class="flex min-w-0 items-center gap-2">
                     <component :is="isToolGroupExpanded(group.key) ? ChevronDown : ChevronRight" class="h-4 w-4 text-slate-400" />
                     <span class="text-sm font-bold text-slate-900">{{ group.label }}</span>
                     <span class="text-xs text-slate-400">{{ getToolGroupEnabledCount(group) }} / {{ group.tools.length }} 启用</span>
                   </span>
-                  <span class="ml-6 mt-1 block truncate text-xs text-slate-500">{{ group.description }}</span>
+                  <span class="ml-6 mt-1 block truncate text-xs leading-5 text-slate-500" :title="group.description">{{ group.description }}</span>
                 </span>
               </UiButton>
 
-              <div v-show="isToolGroupExpanded(group.key)" class="space-y-3 border-t border-slate-100 bg-slate-50 p-3">
+              <div v-show="isToolGroupExpanded(group.key)" class="space-y-3 border-t border-slate-200 bg-white p-3">
                 <article
                   v-for="tool in group.tools"
                   :key="tool.key"
@@ -619,7 +636,7 @@
 <script setup lang="ts">
 import { computed, nextTick, reactive, ref, watch } from 'vue'
 import { useQuery, useQueryClient } from '@tanstack/vue-query'
-import { Bot, ChevronDown, ChevronRight, Cpu, Lock, Plus, Server } from '@lucide/vue'
+import { Bot,ChevronDown, ChevronRight, Cpu, Lock, Plus, Server } from '@lucide/vue'
 
 import {
   createLlmConfig,
@@ -647,8 +664,7 @@ import AccountAiProviderDetail from '@/components/account-ai/AccountAiProviderDe
 import { getAgentIconShellClass, resolveAgentIconComponent } from '@/components/agent/agent-icon'
 import PageHeader from '@/components/patterns/PageHeader.vue'
 import ToolPanel from '@/components/patterns/ToolPanel.vue'
-import { UiButton, UiCheckbox, UiFormField, UiInput } from '@/components/ui'
-import SearchableSelect from '@/components/ui/SearchableSelect.vue'
+import { UiButton, UiCheckbox, UiCombobox, UiFormField, UiInput } from '@/components/ui'
 import type { SelectOption } from '@/components/ui/select'
 import { useAuthStore } from '@/stores/auth'
 import type {

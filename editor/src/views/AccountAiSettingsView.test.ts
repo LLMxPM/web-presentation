@@ -225,6 +225,11 @@ function createTestingRenderOptions() {
           emits: ['update:modelValue'],
           template: `<select :value="modelValue" @change="$emit('update:modelValue', $event.target.value)"><option v-for="option in options" :key="String(option.value)" :value="option.value">{{ option.label }}</option></select>`,
         },
+        UiCombobox: {
+          props: ['modelValue', 'options', 'placeholder', 'clearable', 'size', 'disabled'],
+          emits: ['update:modelValue'],
+          template: `<div data-testid="combobox-stub"><span>{{ modelValue != null ? (options.find(o => o.value === modelValue)?.label ?? modelValue) : (placeholder || '请选择') }}</span></div>`,
+        },
       },
     },
   }
@@ -356,6 +361,24 @@ describe('AccountAiSettingsView', () => {
         instructions_override: null,
       })
       expect(messageSuccessMock).toHaveBeenCalled()
+    })
+  })
+
+  it('应明确标识智能体、供应商和模型列表中的选中项', async () => {
+    render(AccountAiSettingsView, createTestingRenderOptions())
+
+    await waitForSettingsReady()
+
+    expect(screen.getByRole('button', { name: /内容助手/ })).toHaveAttribute('aria-pressed', 'true')
+
+    await fireEvent.click(screen.getByRole('button', { name: '供应商' }))
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /OpenAI 工作账号/ })).toHaveAttribute('aria-pressed', 'true')
+    })
+
+    await fireEvent.click(screen.getByRole('button', { name: '模型' }))
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /总控模型/ })).toHaveAttribute('aria-pressed', 'true')
     })
   })
 

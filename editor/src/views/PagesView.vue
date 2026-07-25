@@ -79,8 +79,6 @@
       </PageTitleBar>
     </header>
 
-    <SimpleSearchBar class="shrink-0" v-model="pageKeyword" placeholder="按页面标题或代码搜索" aria-label="搜索页面" />
-
     <DataState
       :state="pageDataState"
       title="页面列表暂不可用"
@@ -308,7 +306,6 @@ import MonacoCodeEditor from '@/components/editor/MonacoCodeEditor.vue'
 import CommandBar from '@/components/patterns/CommandBar.vue'
 import DataState from '@/components/patterns/DataState.vue'
 import PageTitleBar from '@/components/layout/PageTitleBar.vue'
-import SimpleSearchBar from '@/components/patterns/SimpleSearchBar.vue'
 import ArchivedPagesDialog from '@/components/page/ArchivedPagesDialog.vue'
 import PageBatchCopyToProjectDialog from '@/components/page/PageBatchCopyToProjectDialog.vue'
 import PageCopyToProjectDialog from '@/components/page/PageCopyToProjectDialog.vue'
@@ -415,15 +412,8 @@ const pageCardGridStyle = computed(() => ({
 const pageCreateCardStyle = computed(() => ({
   minHeight: `${Math.round(currentPageCardSizeOption.value.minWidth * 0.82)}px`,
 }))
-const pageKeyword = ref('')
 const allPages = computed<PageItem[]>(() => query.data.value?.items ?? [])
-const pages = computed<PageItem[]>(() => {
-  const keyword = pageKeyword.value.trim().toLocaleLowerCase()
-  if (!keyword) return allPages.value
-  return allPages.value.filter(page => [page.title, page.code, page.summary]
-    .filter((value): value is string => Boolean(value))
-    .some(value => value.toLocaleLowerCase().includes(keyword)))
-})
+const pages = computed<PageItem[]>(() => allPages.value)
 const pageDataState = computed<'loading' | 'empty' | 'error' | 'ready'>(() => {
   if (query.isPending.value || projectQuery.isPending.value) return 'loading'
   if (query.isError.value || projectQuery.isError.value) return 'error'

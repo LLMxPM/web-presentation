@@ -8,13 +8,12 @@
       <span class="shrink-0 font-semibold">共 {{ total }} 条</span>
       <template v-if="!compact">
         <span class="text-slate-300">/</span>
-        <select
-          :value="pageSize"
-          class="h-8 rounded-lg border border-slate-200 bg-white px-2 text-xs font-semibold text-slate-600 outline-none transition-colors hover:border-slate-300 focus:border-indigo-400"
-          @change="handlePageSizeChange"
-        >
-          <option v-for="size in pageSizeOptions" :key="size" :value="size">{{ size }} 条/页</option>
-        </select>
+        <UiSelect
+          :model-value="pageSize"
+          :options="pageSizeSelectOptions"
+          trigger-class="!h-8 !w-auto !min-w-[5.5rem] !text-xs !font-semibold"
+          @update:model-value="handlePageSizeChange"
+        />
       </template>
     </div>
 
@@ -59,6 +58,8 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
+import UiSelect from './select/UiSelect.vue'
+import type { SelectOption } from './select'
 
 const props = withDefaults(defineProps<{
   page: number
@@ -78,6 +79,10 @@ const emit = defineEmits<{
 
 const pageCount = computed(() => Math.max(1, Math.ceil(props.total / props.pageSize)))
 
+const pageSizeSelectOptions = computed<SelectOption[]>(() =>
+  props.pageSizeOptions.map(size => ({ label: `${size} 条/页`, value: size })),
+)
+
 const pageItems = computed(() => {
   const pages = new Set<number>([1, pageCount.value, props.page - 1, props.page, props.page + 1])
   const orderedPages = Array.from(pages)
@@ -96,11 +101,11 @@ const pageItems = computed(() => {
 
 /**
  * 处理页容量变化，外层负责把页码重置为第一页。
- * @param event 下拉框变更事件
+ * @param value 选中的页容量数值
  */
-function handlePageSizeChange(event: Event): void {
-  const value = Number((event.target as HTMLSelectElement).value)
-  emit('update:pageSize', Number.isFinite(value) ? value : props.pageSize)
+function handlePageSizeChange(value: string | number | (string | number)[] | null): void {
+  const numericValue = Number(value)
+  emit('update:pageSize', Number.isFinite(numericValue) ? numericValue : props.pageSize)
 }
 </script>
 

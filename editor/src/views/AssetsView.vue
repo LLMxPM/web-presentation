@@ -1,7 +1,7 @@
 <!-- 文件功能：提供工作空间级资源库页面，承载资源筛选、视觉预览、详情编辑、比例重算、引用检查与归档恢复删除。 -->
 <template>
   <div data-testid="assets-view" class="flex h-full min-h-0 flex-col gap-2">
-    <PageHeader class="shrink-0" :title="workspaceTitle" description="集中管理工作空间资源，支持筛选、批量维护与引用检查。">
+    <PageHeader class="shrink-0" :icon="Image" :title="workspaceTitle" description="集中管理工作空间资源，支持筛选、批量维护与引用检查。">
       <template #actions>
         <UiButton variant="secondary" :disabled="!workspaceId || uploading" @click="openUploadForm">
           <Upload class="h-3.5 w-3.5" />
@@ -69,9 +69,13 @@
         </div>
       </ToolPanel>
 
-      <ToolPanel class="min-h-0 min-w-0" title="资源预览" description="选择资源后可执行批量操作。">
-        <template #toolbar>
+      <ToolPanel class="min-h-0 min-w-0">
+        <template #header>
           <div class="flex flex-wrap items-center justify-between gap-2">
+            <div class="min-w-0">
+              <h2 class="text-title-sm font-semibold text-[rgb(var(--ui-text))]">资源预览</h2>
+              <p class="mt-0.5 text-xs text-[rgb(var(--ui-text-muted))]">选择资源后可执行批量操作。</p>
+            </div>
             <div class="flex min-w-0 flex-wrap items-center gap-2">
               <UiButton
               v-if="activeView === 'active' && hasBatchSelection"
@@ -124,7 +128,6 @@
               批量删除
               </UiButton>
             </div>
-            <UiIconButton label="刷新资源" size="sm" @click="refreshAssets"><RefreshCw /></UiIconButton>
           </div>
         </template>
 
@@ -135,10 +138,11 @@
           </label>
           <div class="flex min-w-0 items-center gap-3 text-xs font-semibold text-slate-500">
             <span>已选 {{ selectedCount }} 个</span>
+            <UiIconButton label="刷新资源" size="sm" @click="refreshAssets"><RefreshCw /></UiIconButton>
             <UiButton
               v-if="hasBatchSelection"
-              type="button"
-              class="inline-flex h-7 items-center gap-1 rounded-lg px-2 text-slate-500 transition-colors hover:bg-white hover:text-slate-800"
+              variant="ghost"
+              size="sm"
               @click="clearBatchSelection"
             >
               <X class="h-3.5 w-3.5" />
@@ -579,7 +583,7 @@
                     </div>
                   </div>
                   <template v-else>
-                    <UiInput v-model="contentDraft" type="textarea" class="min-h-0 flex-1 resize-none font-mono text-xs leading-5" />
+                    <UiInput v-model="contentDraft" type="textarea" textarea-mode="fill" class="font-mono text-xs leading-5" />
                     <p class="mt-3 text-xs text-slate-500">写入内容会自动保留写入前副本。</p>
                   </template>
                 </div>
@@ -643,6 +647,7 @@ import {
   Download,
   FilePlus2,
   FileText,
+  Image,
   PenTool,
   RefreshCw,
   Replace,
@@ -698,7 +703,6 @@ import type { AssetBatchOperationResponse, AssetReferenceSummary, AssetRenderHin
 import { createConfirm, Message } from '@/utils/message'
 import { buildWorkspaceComponentsPath } from '@/utils/workspace-routes'
 import { downloadBlob } from '@/utils/zip-download'
-
 type AssetView = 'active' | 'archived' | 'history'
 type DetailTab = 'basic' | 'content' | 'references'
 type BackfillableAssetType = 'image' | 'video' | 'drawio' | 'mermaid' | 'formula'

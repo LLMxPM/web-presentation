@@ -1,7 +1,7 @@
 <!-- 文件功能：提供项目路由的可视化编排界面，支持页面池、分组管理与结构化路由树编辑。 -->
 <template>
-  <div class="grid items-stretch gap-3 xl:grid-cols-[300px_minmax(0,1fr)]">
-    <section class="flex flex-col rounded-2xl border border-slate-200 bg-slate-50/70 p-3.5 xl:h-[620px] xl:min-h-0">
+  <div class="grid flex-1 min-h-0 items-stretch gap-3 xl:grid-cols-[300px_minmax(0,1fr)]">
+    <section class="flex flex-col rounded-2xl border border-slate-200 bg-slate-50/70 p-3.5 xl:min-h-0">
       <div class="flex items-center justify-between gap-3">
         <div>
           <h5 class="text-sm font-bold text-slate-900">页面池</h5>
@@ -31,10 +31,10 @@
               <div class="mt-1 text-[11px] font-mono text-slate-400">{{ page.code }}</div>
             </div>
             <span
-              class="rounded-full px-2 py-1 text-[11px] font-semibold"
+              class="rounded-lg px-2 py-1 text-[11px] font-semibold"
               :class="getPageUsageCount(page.id) > 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'"
             >
-              {{ getPageUsageCount(page.id) > 0 ? `已加入路由 × ${getPageUsageCount(page.id)}` : '未加入路由' }}
+              {{ getPageUsageCount(page.id) > 0 ? ` ${getPageUsageCount(page.id)}` : '未加入' }}
             </span>
           </div>
 

@@ -14,7 +14,7 @@
       <span v-if="loading" class="text-[11px] text-slate-400">正在加载主题...</span>
     </div>
 
-    <SearchableSelect
+    <UiCombobox
       :model-value="modelValue"
       :options="themeOptions"
       :disabled="loading || !workspaceId"
@@ -54,7 +54,7 @@ import { computed, ref, watch } from 'vue'
 
 import { getErrorMessage } from '@/api/http'
 import { listWorkspaceThemes } from '@/api/themes'
-import SearchableSelect from '@/components/ui/SearchableSelect.vue'
+import { UiCombobox } from '@/components/ui'
 import type { SelectModelValue, SelectOption } from '@/components/ui/select'
 import type { WorkspaceThemeItem } from '@/types/api'
 import { Message } from '@/utils/message'

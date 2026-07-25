@@ -132,9 +132,6 @@ function createTestingRenderOptions(props?: Record<string, unknown>, pinia: Pini
         pinia,
         [VueQueryPlugin, { queryClient }] as [typeof VueQueryPlugin, { queryClient: QueryClient }],
       ],
-      stubs: {
-        teleport: true,
-      },
     },
   }
 }

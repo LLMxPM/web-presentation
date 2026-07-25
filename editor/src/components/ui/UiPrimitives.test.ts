@@ -6,6 +6,7 @@ import UiButton from './button/UiButton.vue'
 import UiIconButton from './button/UiIconButton.vue'
 import UiFormField from './form-field/UiFormField.vue'
 import UiInput from './input/UiInput.vue'
+import UiUnitInput from './input/UiUnitInput.vue'
 
 afterEach(() => {
   document.body.innerHTML = ''
@@ -27,6 +28,15 @@ describe('UiButton', () => {
     })
 
     expect(screen.getByRole('button', { name: '图标提交' })).toHaveClass('custom-button')
+  })
+
+  it('应通过 API 支持占满宽度的内容对齐', () => {
+    render(UiButton, {
+      props: { contentAlign: 'between' },
+      slots: { default: '<span>左侧</span><span>右侧</span>' },
+    })
+
+    expect(screen.getByRole('button', { name: '左侧右侧' }).firstElementChild).toHaveClass('w-full', 'justify-between')
   })
 })
 
@@ -73,5 +83,46 @@ describe('UiFormField 与 UiInput', () => {
     expect(textarea).toHaveAttribute('rows', '5')
     await fireEvent.update(textarea, '新的说明')
     expect(onUpdate).toHaveBeenCalledWith('新的说明')
+  })
+
+  it('填充模式应让多行输入占满可用高度并内部滚动', () => {
+    render(UiInput, {
+      props: { type: 'textarea', textareaMode: 'fill' },
+      attrs: { 'aria-label': '正文' },
+    })
+
+    const textarea = screen.getByLabelText('正文')
+    expect(textarea).toHaveClass('h-full', 'min-h-0', 'flex-1', 'overflow-y-auto', 'resize-none')
+    expect(textarea.parentElement).toHaveClass('flex', 'min-h-0', 'flex-1', 'flex-col')
+  })
+})
+
+describe('UiUnitInput', () => {
+  it('应分离展示固定单位并维持带单位字符串契约', async () => {
+    const onUpdate = vi.fn()
+    render(UiUnitInput, {
+      props: {
+        modelValue: '20px',
+        unit: 'px',
+        min: 1,
+        max: 200,
+        integer: true,
+        fallback: 20,
+        'onUpdate:modelValue': onUpdate,
+      },
+      attrs: { 'aria-label': '基础字号' },
+    })
+
+    const input = screen.getByLabelText('基础字号')
+    expect(input).toHaveValue('20')
+    expect(screen.getByText('px')).toBeInTheDocument()
+
+    await fireEvent.update(input, '28')
+    expect(onUpdate).toHaveBeenLastCalledWith('28px')
+
+    await fireEvent.update(input, '300')
+    await fireEvent.blur(input)
+    expect(input).toHaveValue('200')
+    expect(onUpdate).toHaveBeenLastCalledWith('200px')
   })
 })

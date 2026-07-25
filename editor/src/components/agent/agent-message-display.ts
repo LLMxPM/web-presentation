@@ -92,6 +92,32 @@ export function formatMessageTime(value: string | null | undefined) {
   return `${targetDate.month}/${targetDate.day} ${timeText}`
 }
 
+const USER_MESSAGE_AUTO_COLLAPSE_LENGTH = 360
+const USER_MESSAGE_AUTO_COLLAPSE_LINES = 8
+
+/**
+ * 长提示词或多行输入默认折叠，避免单条用户消息占满整个侧栏。
+ */
+export function shouldAutoCollapseUserMessage(message: AgentMessageItem) {
+  const content = message.content ?? ''
+  return content.length > USER_MESSAGE_AUTO_COLLAPSE_LENGTH
+    || content.split(/\r?\n/).length > USER_MESSAGE_AUTO_COLLAPSE_LINES
+}
+
+/**
+ * 折叠态保留短摘要和附件数量，让长提示词仍可被快速辨认。
+ */
+export function formatCollapsedUserMessageSummary(message: AgentMessageItem) {
+  const normalizedContent = (message.content ?? '').replace(/\s+/g, ' ').trim()
+  const attachmentCount = message.attachments?.length ?? 0
+  const contentSummary = normalizedContent
+    ? truncateText(normalizedContent, 52)
+    : '空消息'
+  return attachmentCount > 0
+    ? `${contentSummary} · ${attachmentCount} 张图片`
+    : contentSummary
+}
+
 /**
  * 只有空 assistant 占位才显示省略号；已有思考过程或工具调用时不再额外占位。
  */
@@ -210,6 +236,10 @@ function normalizeReasoningForDisplay(value: string | null | undefined, preserve
     return ''
   }
   return preserveBoundary ? value : value.trim()
+}
+
+function truncateText(value: string, maxLength: number) {
+  return value.length > maxLength ? `${value.slice(0, maxLength)}...` : value
 }
 
 /**

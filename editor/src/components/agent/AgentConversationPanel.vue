@@ -170,52 +170,34 @@
           <template #action-prefix>
             <span
               v-if="isNewSessionDraft || activeSessionLlmLabel"
-              ref="llmModelMenuRef"
               class="relative inline-flex"
             >
-              <UiButton
-                type="button"
-                variant="ghost"
-                size="xs"
-                class="inline-flex h-6 max-w-[150px] items-center gap-1 rounded-md border px-1.5 text-[10px] font-medium transition"
-                :class="isNewSessionDraft
-                  ? 'border-slate-200 bg-white text-slate-600 hover:border-sky-200 hover:bg-sky-50 hover:text-sky-700'
-                  : 'cursor-default border-slate-100 bg-slate-50 text-slate-500'"
-                :disabled="!isNewSessionDraft || llmConfigsQuery.isFetching.value || selectableModelCount === 0"
-                :title="llmModelButtonTitle"
-                @click.stop="toggleLlmModelMenu"
+              <UiDropdownMenu
+                :items="llmModelDropdownItems"
+                side="top"
+                align="end"
+                content-class="w-56"
+                @select="handleLlmModelSelect"
               >
-                <Globe2 v-if="currentLlmScope === 'global'" class="h-3 w-3 shrink-0" />
-                <UserRound v-else class="h-3 w-3 shrink-0" />
-                <span class="min-w-0 truncate">{{ currentLlmCompactName }}</span>
-                <ChevronDown v-if="isNewSessionDraft" class="h-3 w-3 shrink-0 opacity-60" />
-              </UiButton>
-              <div
-                v-if="isNewSessionDraft && llmModelMenuVisible"
-                class="absolute bottom-7 right-0 z-30 w-56 overflow-hidden rounded-lg border border-slate-200 bg-white py-1 shadow-xl shadow-slate-900/10"
-              >
-                <UiButton
-                  v-for="item in llmModelMenuItems"
-                  :key="item.id"
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  class="h-auto flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-xs transition hover:bg-slate-50"
-                  :class="item.id === selectedNewSessionLlmConfigId ? 'text-sky-700' : 'text-slate-600'"
-                  @click.stop="selectNewSessionLlmConfig(item.id)"
-                >
-                  <Globe2 v-if="item.scope === 'global'" class="h-3.5 w-3.5 shrink-0" />
-                  <UserRound v-else class="h-3.5 w-3.5 shrink-0" />
-                  <span class="min-w-0 flex-1">
-                    <span class="block truncate font-medium">{{ item.name }}</span>
-                    <span class="block truncate text-[10px] text-slate-400">{{ item.providerLabel }} / {{ item.modelId }}</span>
-                  </span>
-                  <Check v-if="item.id === selectedNewSessionLlmConfigId" class="h-3.5 w-3.5 shrink-0" />
-                </UiButton>
-                <div v-if="llmModelMenuItems.length === 0" class="px-3 py-2 text-center text-[11px] text-slate-400">
-                  暂无可用模型
-                </div>
-              </div>
+                <template #trigger>
+                  <UiButton
+                    type="button"
+                    variant="ghost"
+                    size="xs"
+                    class="inline-flex h-6 max-w-[150px] items-center gap-1 rounded-md border px-1.5 text-[10px] font-medium transition"
+                    :class="isNewSessionDraft
+                      ? 'border-slate-200 bg-white text-slate-600 hover:border-sky-200 hover:bg-sky-50 hover:text-sky-700'
+                      : 'cursor-default border-slate-100 bg-slate-50 text-slate-500'"
+                    :disabled="!isNewSessionDraft || llmConfigsQuery.isFetching.value || selectableModelCount === 0"
+                    :title="llmModelButtonTitle"
+                  >
+                    <Globe2 v-if="currentLlmScope === 'global'" class="h-3 w-3 shrink-0" />
+                    <UserRound v-else class="h-3 w-3 shrink-0" />
+                    <span class="min-w-0 truncate">{{ currentLlmCompactName }}</span>
+                    <ChevronDown v-if="isNewSessionDraft" class="h-3 w-3 shrink-0 opacity-60" />
+                  </UiButton>
+                </template>
+              </UiDropdownMenu>
             </span>
           </template>
         </AgentComposer>
@@ -233,11 +215,11 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/vue-query'
 import { storeToRefs } from 'pinia'
 import { useRoute, useRouter } from 'vue-router'
-import { Check, ChevronDown, ExternalLink, Eye, Globe2, UserRound, WandSparkles } from '@lucide/vue'
+import { ChevronDown, ExternalLink, Eye, Globe2, UserRound, WandSparkles } from '@lucide/vue'
 
 import {
   AgentRequestError,
@@ -290,7 +272,8 @@ import AgentConversationBody from '@/components/agent/AgentConversationBody.vue'
 import AgentConversationDialogs from '@/components/agent/AgentConversationDialogs.vue'
 import AgentScopeStatus from '@/components/agent/AgentScopeStatus.vue'
 import AgentSessionControls from '@/components/agent/AgentSessionControls.vue'
-import { UiButton } from '@/components/ui'
+import { UiButton, UiDropdownMenu } from '@/components/ui'
+import type { DropdownMenuEntry } from '@/components/ui'
 import type {
   AgentActiveRunItem,
   AgentContextStatusItem,
@@ -350,13 +333,6 @@ interface AgentSessionLlmMetadata {
   supports_image_input?: boolean | null
 }
 
-interface LlmModelMenuItem {
-  id: number
-  scope: 'global' | 'personal'
-  name: string
-  providerLabel: string
-  modelId: string
-}
 
 const props = withDefaults(defineProps<Props>(), {
   projectId: null,
@@ -425,8 +401,6 @@ const activeToolDetailId = ref<string | null>(null)
 const activeMemberRunIds = ref<string[]>([])
 const sendInFlightBySession = ref<Record<string, boolean>>({})
 const selectedNewSessionLlmConfigId = ref<number | null>(null)
-const llmModelMenuVisible = ref(false)
-const llmModelMenuRef = ref<HTMLElement | null>(null)
 const autoNamingSessionIds = new Set<string>()
 const hitlActionInFlightBySession = ref<Record<string, boolean>>({})
 let componentDisposed = false
@@ -587,15 +561,18 @@ const activeLlmConfigs = computed<LlmConfigItem[]>(() => (
 const activeGlobalLlmConfigs = computed(() => activeLlmConfigs.value.filter(item => item.scope === 'global'))
 const activePersonalLlmConfigs = computed(() => activeLlmConfigs.value.filter(item => item.scope === 'personal'))
 const llmConfigById = computed(() => new Map(activeLlmConfigs.value.map(item => [item.id, item])))
-const llmModelMenuItems = computed<LlmModelMenuItem[]>(() => (
+/**
+ * 模型菜单下拉项，带图标、描述和选中指示。
+ */
+const llmModelDropdownItems = computed<DropdownMenuEntry[]>(() =>
   activeLlmConfigs.value.map(item => ({
-    id: item.id,
-    scope: item.scope === 'global' ? 'global' : 'personal',
-    name: item.name,
-    providerLabel: item.provider_label,
-    modelId: item.model_id,
-  }))
-))
+    label: item.name,
+    value: String(item.id),
+    description: `${item.provider_label} / ${item.model_id}`,
+    icon: item.scope === 'global' ? Globe2 : UserRound,
+    active: item.id === selectedNewSessionLlmConfigId.value,
+  })),
+)
 const selectableModelCount = computed(() => activeLlmConfigs.value.length)
 const boundDraftLlmConfigId = computed(() => {
   const slot = selectedAgent.value?.llm_slot
@@ -1241,7 +1218,6 @@ watch(
 
 watch(activeSessionId, () => {
   sessionMenuVisible.value = false
-  llmModelMenuVisible.value = false
   toolDetailDialogVisible.value = false
   memberRunDialogVisible.value = false
   activeToolDetailId.value = null
@@ -1282,47 +1258,20 @@ watch(
   { immediate: true },
 )
 
-onMounted(() => {
-  document.addEventListener('click', handleDocumentClick)
-})
-
 onBeforeUnmount(() => {
   componentDisposed = true
   abortAllStreamControllers()
   stopForceCancelTicker()
-  document.removeEventListener('click', handleDocumentClick)
 })
-
-/**
- * 打开或关闭新会话模型菜单；已有会话仅展示固化模型，不允许切换。
- */
-function toggleLlmModelMenu() {
-  if (!isNewSessionDraft.value || llmConfigsQuery.isFetching.value || selectableModelCount.value === 0) {
-    return
-  }
-  llmModelMenuVisible.value = !llmModelMenuVisible.value
-}
 
 /**
  * 选择新会话草稿模型；真正创建会话时会随 payload 固化到后端。
  */
-function selectNewSessionLlmConfig(configId: number) {
-  selectedNewSessionLlmConfigId.value = configId
-  llmModelMenuVisible.value = false
-}
-
-/**
- * 点击模型菜单外部时关闭菜单，避免在 Composer 工具条上残留浮层。
- */
-function handleDocumentClick(event: MouseEvent) {
-  if (!llmModelMenuVisible.value) {
-    return
+function handleLlmModelSelect(value: string) {
+  const configId = Number(value)
+  if (Number.isFinite(configId)) {
+    selectedNewSessionLlmConfigId.value = configId
   }
-  const target = event.target as Node | null
-  if (target && llmModelMenuRef.value?.contains(target)) {
-    return
-  }
-  llmModelMenuVisible.value = false
 }
 
 /**
@@ -1757,25 +1706,25 @@ function getSessionRunBadge(sessionId: string) {
   if (run?.status === 'paused') {
     return {
       label: '待确认',
-      className: 'border-amber-200 bg-amber-50 text-amber-700',
+      tone: 'warning' as const,
     }
   }
   if (run?.status === 'cancelling') {
     return {
       label: '停止中',
-      className: 'border-amber-200 bg-amber-50 text-amber-700',
+      tone: 'warning' as const,
     }
   }
   if (isSessionRunning(sessionId)) {
     return {
       label: readSessionValue(interruptingBySession.value, sessionId, false) ? '停止中' : '运行中',
-      className: 'border-sky-200 bg-sky-50 text-sky-700',
+      tone: 'info' as const,
     }
   }
   if (run?.status === 'failed') {
     return {
       label: '失败',
-      className: 'border-red-200 bg-red-50 text-red-700',
+      tone: 'danger' as const,
     }
   }
   return null

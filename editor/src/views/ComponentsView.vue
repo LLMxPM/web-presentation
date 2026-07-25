@@ -1,7 +1,7 @@
 <!-- 文件功能：提供工作空间级组件库页面，左侧浏览组件库，右侧承载组件预览、编辑与 Runtime Kit 预览工作台。 -->
 <template>
   <div data-testid="components-view" class="flex h-full min-h-0 flex-col gap-2">
-    <PageHeader class="shrink-0" :title="workspaceTitle" description="集中管理工作空间组件、Runtime Kit 预览与组件分享。">
+    <PageHeader class="shrink-0" :icon="Component" :title="workspaceTitle" description="集中管理工作空间组件、Runtime Kit 预览与组件分享。">
       <template #actions>
         <UiButton
           variant="secondary"
@@ -195,7 +195,7 @@
 import { computed, inject, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useQuery } from '@tanstack/vue-query'
-import { Plus, Upload } from '@lucide/vue'
+import { Component, Plus, Upload } from '@lucide/vue'
 
 import {
   exportComponentPackage,

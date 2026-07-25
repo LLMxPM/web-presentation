@@ -3,25 +3,25 @@
   <div class="relative flex min-h-0 flex-1 overflow-hidden">
     <div
       ref="scrollContainerRef"
-      class="agent-conversation-body flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto px-2 py-2"
+      class="agent-conversation-body flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto px-3 py-2.5"
       :class="{ 'agent-conversation-body--floating-toast': hasFloatingNotice }"
       @scroll="handleConversationScroll"
     >
     <section v-if="draftPatches.length" class="space-y-1.5">
       <div class="flex items-center justify-between gap-2">
-        <h3 class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">草稿箱</h3>
-        <span class="text-[10px] text-slate-400">{{ draftPatches.length }} 条</span>
+        <h3 class="text-xs font-semibold text-text-secondary">草稿</h3>
+        <span class="text-xs text-text-muted">{{ draftPatches.length }} 条</span>
       </div>
       <div class="space-y-1.5">
         <article
           v-for="draft in draftPatches"
           :key="`${draft.tool_name}-${draft.unified_diff}`"
-          class="rounded-lg border border-amber-200 bg-amber-50/80 p-2"
+          class="rounded-ui-md border border-warning/20 bg-warning-muted p-2.5"
         >
           <div class="flex items-start justify-between gap-2">
             <div class="min-w-0">
-              <p class="text-[13px] font-semibold text-amber-800">{{ draft.change_note || '页面改写草稿' }}</p>
-              <p class="mt-0.5 text-[11px] text-amber-700">来自 {{ draft.tool_name }}</p>
+              <p class="text-sm font-semibold text-warning">{{ draft.change_note || '页面改写草稿' }}</p>
+              <p class="mt-0.5 text-xs text-text-muted">来自 {{ draft.tool_name }}</p>
             </div>
             <div class="flex items-center gap-1.5">
               <UiButton variant="ghost" size="sm" @click="$emit('apply-suggested-patch', draft)">
@@ -42,21 +42,22 @@
         :title="conversationDataState === 'loading' ? loadingText : emptyConversationText"
         :description="conversationDataState === 'empty' ? '发送消息后，助手会在当前会话中持续反馈进度。' : undefined"
       >
+        <div class="flex flex-col gap-2">
         <template v-for="item in timelineDisplayItems" :key="item.id">
           <article
             v-if="item.kind === 'message'"
             class="conversation-message flex px-0.5 py-0"
             :class="item.message.role === 'user' ? 'conversation-message--user justify-end' : 'conversation-message--assistant justify-start'"
           >
-            <div class="message-group min-w-0" :class="item.message.role === 'user' ? 'max-w-[92%]' : 'w-[92%]'">
+            <div class="message-group min-w-0" :class="item.message.role === 'user' ? 'max-w-[88%]' : 'w-full'">
               <div
                 class="message-shell min-w-0"
                 :class="item.message.role === 'user'
-                  ? 'rounded-md border border-slate-200 bg-slate-100 px-2.5 py-1 text-slate-700'
-                  : 'px-1 py-0.5 text-slate-700'"
+                  ? 'rounded-ui-md border border-border bg-surface-muted px-3 py-2 text-text-secondary'
+                  : 'px-0.5 py-1 text-text-secondary'"
               >
                 <div v-if="item.message.role === 'assistant'" class="assistant-markdown">
-                  <p v-if="shouldShowAssistantPlaceholder(item)" class="text-[13px] leading-[18px] text-slate-400">...</p>
+                  <p v-if="shouldShowAssistantPlaceholder(item)" class="text-sm leading-5 text-text-muted">...</p>
                   <MarkdownRender
                     v-else-if="resolveMessageContent(item.message)"
                     :nodes="resolveMessageMarkdownNodes(item.message)"
@@ -73,7 +74,8 @@
                     v-if="isUserMessageCollapsed(item.message)"
                     variant="ghost"
                     size="xs"
-                    class="inline-flex max-w-full items-center gap-1 rounded px-1 py-0.5 text-left text-[12px] leading-4 text-slate-500 transition hover:bg-slate-200/70 hover:text-slate-700"
+                    content-align="start"
+                    class="max-w-full text-left text-text-muted"
                     title="展开用户消息"
                     aria-label="展开用户消息"
                     @click="toggleUserMessageCollapsed(item.message)"
@@ -81,7 +83,7 @@
                     <ChevronRight class="h-3 w-3 shrink-0" />
                     <span class="min-w-0 truncate">{{ formatCollapsedUserMessageSummary(item.message) }}</span>
                   </UiButton>
-                  <pre v-else class="whitespace-pre-wrap break-words text-[12.5px] font-sans leading-[17px]">{{ item.message.content || '...' }}</pre>
+                  <pre v-else class="whitespace-pre-wrap break-words font-sans text-[13px] leading-5">{{ item.message.content || '...' }}</pre>
                 </div>
                 <div
                   v-if="item.message.attachments?.length && !isUserMessageCollapsed(item.message)"
@@ -115,7 +117,7 @@
               >
                 <span
                   v-if="item.message.created_at"
-                  class="message-time mr-0.5 text-[10px] font-medium text-slate-400"
+                  class="message-time mr-0.5 text-xs text-text-muted"
                 >
                   {{ formatMessageTime(item.message.created_at) }}
                 </span>
@@ -144,11 +146,11 @@
             </div>
           </article>
 
-          <article v-else-if="item.kind === 'reasoning'" class="conversation-message conversation-message--assistant flex justify-start px-0.5 py-0">
-            <div class="message-group w-[92%] min-w-0 px-1 py-0.5">
-              <details class="reasoning-details text-slate-500" :open="item.streaming">
-                <summary class="inline-flex cursor-pointer select-none items-center gap-0.5 rounded px-1 py-0 font-medium text-slate-400 transition hover:bg-slate-50 hover:text-slate-600">
-                  <ChevronRight class="h-2.5 w-2.5 transition details-chevron" />
+          <article v-else-if="item.kind === 'reasoning'" class="conversation-message conversation-message--trace px-0.5 py-0">
+            <div class="message-group w-full min-w-0">
+              <details class="reasoning-details rounded-ui-md border border-border bg-surface-hover text-text-muted" :open="item.streaming">
+                <summary class="flex min-h-control-xs cursor-pointer select-none items-center gap-1.5 px-2 text-xs font-medium transition-colors hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus">
+                  <ChevronRight class="h-3 w-3 transition details-chevron" />
                   <span>{{ item.streaming ? '思考中' : '思考过程' }}</span>
                   <span v-if="item.streaming" class="thinking-dots" aria-hidden="true">
                     <span />
@@ -156,7 +158,7 @@
                     <span />
                   </span>
                 </summary>
-                <div class="reasoning-markdown mt-0.5 max-h-[100px] overflow-auto border-l border-slate-100 pl-1.5">
+                <div class="reasoning-markdown max-h-40 overflow-auto border-t border-border px-2 py-1.5">
                   <MarkdownRender
                     :nodes="resolveReasoningMarkdownNodes(item)"
                     :max-live-nodes="160"
@@ -171,28 +173,34 @@
             </div>
           </article>
 
-          <article v-else-if="item.kind === 'feedback_request'" class="conversation-message conversation-message--assistant flex justify-start px-0.5 py-0">
-            <div class="message-group w-[92%] min-w-0 px-1 py-0.5">
-              <div class="rounded-md border border-sky-100 border-l-[3px] border-l-sky-400 bg-sky-50/65 px-2.5 py-1.5 text-slate-700 shadow-[0_1px_0_rgba(14,165,233,0.06)]">
-                <div
-                  v-for="(entry, entryIndex) in item.entries"
-                  :key="`${entry.question}-${entryIndex}`"
-                  class="border-t border-sky-100/70 pt-1.5 first:border-t-0 first:pt-0"
-                >
-                  <p class="break-words text-[12.5px] font-medium leading-[18px] text-slate-700">{{ entry.question }}</p>
-                  <p
-                    class="mt-1 inline-flex max-w-full break-words rounded bg-white/70 px-1.5 py-0.5 text-[11.5px] leading-4"
-                    :class="entry.answerText ? 'text-slate-700' : 'text-sky-500'"
+          <article v-else-if="item.kind === 'feedback_request'" class="conversation-message conversation-message--action flex justify-start px-0.5 py-0">
+            <div class="message-group w-full min-w-0">
+              <details class="feedback-details rounded-ui-md border border-border bg-surface-hover" :open="item.pending">
+                <summary class="flex min-h-control-sm cursor-pointer select-none items-center gap-1.5 px-2 text-xs font-medium text-text-muted transition-colors hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus">
+                  <ChevronRight class="h-3 w-3 shrink-0 transition details-chevron" />
+                  <span class="min-w-0 flex-1 truncate">{{ formatFeedbackRequestSummary(item) }}</span>
+                  <UiBadge :tone="item.pending ? 'info' : 'neutral'" size="sm">
+                    {{ item.pending ? '待回答' : '已回答' }}
+                  </UiBadge>
+                </summary>
+                <div class="space-y-2 border-t border-border px-2 py-1.5">
+                  <div
+                    v-for="(entry, entryIndex) in item.entries"
+                    :key="`${entry.question}-${entryIndex}`"
+                    class="grid gap-0.5"
                   >
-                    {{ entry.answerText || '未回复' }}
-                  </p>
+                    <p class="break-words text-xs font-medium leading-5 text-text-secondary">{{ entry.question }}</p>
+                    <p class="break-words text-xs leading-5" :class="entry.answerText ? 'text-text' : 'text-info'">
+                      {{ entry.answerText || '未回复' }}
+                    </p>
+                  </div>
                 </div>
-              </div>
+              </details>
             </div>
           </article>
 
-          <article v-else-if="item.kind === 'tool_group'" class="conversation-message conversation-message--assistant flex justify-start px-0.5 py-0">
-            <div class="message-group w-[92%] min-w-0 px-1 py-0.5">
+          <article v-else-if="item.kind === 'tool_group'" class="conversation-message conversation-message--trace flex justify-start px-0.5 py-0">
+            <div class="message-group w-full min-w-0">
               <template v-if="item.tools.length === 1">
                 <div
                   v-for="tool in item.tools"
@@ -205,14 +213,15 @@
                   />
                   <template v-else>
                   <UiButton
-                    variant="ghost"
+                    variant="secondary"
                     size="xs"
-                    class="tool-call-row flex w-full min-w-0 items-center justify-between gap-2 border border-slate-200/80 bg-slate-50/60 px-1.5 py-0.5 text-left text-[10px] transition hover:bg-slate-100/70"
-                    :class="getToolChipClass(tool.status)"
+                    content-align="between"
+                    class="tool-call-row w-full min-w-0 text-left"
+                    :aria-label="resolveToolDisplayName(tool)"
                     @click="handleToolRowClick(tool)"
                   >
-                    <span class="min-w-0 truncate">{{ resolveToolDisplayName(tool) }}</span>
-                    <span class="shrink-0 opacity-60" aria-hidden="true">{{ toolStatusLabelMap[tool.status] }}</span>
+                    <span class="min-w-0 truncate text-text-secondary">{{ resolveToolDisplayName(tool) }}</span>
+                    <UiBadge :tone="getToolStatusTone(tool.status)" size="sm">{{ toolStatusLabelMap[tool.status] }}</UiBadge>
                   </UiButton>
                   <div v-if="tool.attachments.length" class="mt-1 flex flex-wrap gap-1">
                     <a
@@ -238,12 +247,12 @@
                   </template>
                 </div>
               </template>
-              <details v-else class="tool-call-group" :open="shouldExpandToolGroup(item.tools)">
-                <summary class="flex cursor-pointer select-none items-center gap-1.5 border border-slate-200/80 bg-slate-50/60 px-1.5 py-0.5 text-[10px] text-slate-500 transition hover:bg-slate-100/70">
-                  <ChevronRight class="h-2.5 w-2.5 transition details-chevron" />
+              <details v-else class="tool-call-group rounded-ui-md border border-border bg-surface-hover" :open="shouldExpandToolGroup(item.tools)">
+                <summary class="flex min-h-control-sm cursor-pointer select-none items-center gap-1.5 px-2 text-xs font-medium text-text-muted transition-colors hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus">
+                  <ChevronRight class="h-3 w-3 transition details-chevron" />
                   <span class="min-w-0 flex-1 truncate">{{ formatToolGroupSummary(item.tools) }}</span>
                 </summary>
-                <div class="mt-1 space-y-1">
+                <div class="space-y-1 border-t border-border p-1.5">
                   <div
                     v-for="tool in item.tools"
                     :key="tool.id"
@@ -255,14 +264,15 @@
                     />
                     <template v-else>
                     <UiButton
-                      variant="ghost"
+                      variant="secondary"
                       size="xs"
-                      class="tool-call-row flex w-full min-w-0 items-center justify-between gap-2 border border-slate-200/80 bg-slate-50/60 px-1.5 py-0.5 text-left text-[10px] transition hover:bg-slate-100/70"
-                      :class="getToolChipClass(tool.status)"
+                      content-align="between"
+                      class="tool-call-row w-full min-w-0 text-left"
+                      :aria-label="resolveToolDisplayName(tool)"
                       @click="handleToolRowClick(tool)"
                     >
-                      <span class="min-w-0 truncate">{{ resolveToolDisplayName(tool) }}</span>
-                      <span class="shrink-0 opacity-60" aria-hidden="true">{{ toolStatusLabelMap[tool.status] }}</span>
+                      <span class="min-w-0 truncate text-text-secondary">{{ resolveToolDisplayName(tool) }}</span>
+                      <UiBadge :tone="getToolStatusTone(tool.status)" size="sm">{{ toolStatusLabelMap[tool.status] }}</UiBadge>
                     </UiButton>
                     <div v-if="tool.attachments.length" class="mt-1 flex flex-wrap gap-1">
                       <a
@@ -292,37 +302,31 @@
             </div>
           </article>
 
-          <article v-else-if="item.kind === 'run_status'" class="conversation-message conversation-message--run-status px-4 py-1">
-            <div class="flex w-full items-center gap-2">
-              <span class="h-px flex-1" :class="getRunStatusLineClass(item.status)" />
-              <span
-                class="inline-flex max-w-[80%] shrink-0 items-center gap-1.5 rounded-full px-2 py-0.5 text-[10.5px] font-medium leading-4"
-                :class="getRunStatusBadgeClass(item.status)"
-              >
-                <span class="h-1.5 w-1.5 shrink-0 rounded-full" :class="getRunStatusDotClass(item.status)" />
-                <span class="min-w-0 truncate">{{ item.content }}</span>
-                <span v-if="shouldAnimateRunStatus(item.status)" class="thinking-dots shrink-0" aria-hidden="true">
-                  <span />
-                  <span />
-                  <span />
-                </span>
+          <article v-else-if="item.kind === 'run_status'" class="conversation-message conversation-message--trace px-0.5 py-0">
+            <div class="flex min-h-control-xs w-full items-center gap-2 rounded-ui-md px-2 text-xs" :class="getRunStatusContainerClass(item.status)">
+              <span class="h-1.5 w-1.5 shrink-0 rounded-full" :class="getRunStatusDotClass(item.status)" />
+              <span class="min-w-0 flex-1 truncate">{{ item.content }}</span>
+              <span v-if="shouldAnimateRunStatus(item.status)" class="thinking-dots shrink-0" aria-hidden="true">
+                <span />
+                <span />
+                <span />
               </span>
-              <span class="h-px flex-1" :class="getRunStatusLineClass(item.status)" />
             </div>
           </article>
 
           <article
             v-else
-            class="conversation-message conversation-message--system flex justify-center px-4 py-1"
+            class="conversation-message conversation-message--action flex px-0.5 py-0"
           >
             <div
-              class="message-group inline-flex max-w-[80%] items-center rounded-full border px-2 py-0.5 text-[10.5px] font-medium leading-4 shadow-[0_1px_0_rgba(15,23,42,0.04)]"
+              class="message-group flex min-h-control-sm w-full items-center rounded-ui-md border px-3 text-xs font-medium leading-5"
               :class="getRequirementStatusClass(item.status)"
             >
               {{ item.content }}
             </div>
           </article>
         </template>
+        </div>
       </DataState>
     </section>
 
@@ -335,21 +339,21 @@
       aria-live="polite"
     >
       <div
-        class="pointer-events-auto flex max-h-[45%] w-[min(100%,28rem)] items-start justify-between gap-3 overflow-auto rounded-lg border px-3 py-2 text-left shadow-lg"
+        class="pointer-events-auto flex max-h-[45%] w-[min(100%,28rem)] items-start justify-between gap-3 overflow-auto rounded-ui-lg border px-3 py-2 text-left shadow-popover"
         :class="floatingNotice.tone === 'error'
-          ? 'border-red-200 bg-red-50 shadow-red-900/10'
-          : 'border-amber-200 bg-amber-50 shadow-slate-900/10'"
+          ? 'border-danger/20 bg-danger-muted'
+          : 'border-warning/20 bg-warning-muted'"
       >
         <div class="min-w-0">
           <p
-            class="break-words text-[12.5px] font-semibold leading-5"
-            :class="floatingNotice.tone === 'error' ? 'text-red-700' : 'text-amber-800'"
+            class="break-words text-[13px] font-semibold leading-5"
+            :class="floatingNotice.tone === 'error' ? 'text-danger' : 'text-warning'"
           >
             {{ floatingNotice.title }}
           </p>
           <p
-            class="break-words text-[11.5px] leading-4"
-            :class="floatingNotice.tone === 'error' ? 'text-red-600' : 'text-amber-700'"
+            class="break-words text-xs leading-5"
+            :class="floatingNotice.tone === 'error' ? 'text-danger' : 'text-warning'"
           >
             {{ floatingNotice.detail }}
           </p>
@@ -374,16 +378,17 @@ import { ChevronDown, ChevronRight, Copy } from '@lucide/vue'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import DataState from '@/components/patterns/DataState.vue'
-import { UiButton, UiIconButton } from '@/components/ui'
+import { UiBadge, UiButton, UiIconButton } from '@/components/ui'
 import AgentVisualToolCard from '@/components/agent/AgentVisualToolCard.vue'
 import {
   createMessageStreamingResolver,
+  formatCollapsedUserMessageSummary,
   formatMessageTime,
   formatToolGroupSummary,
-  getToolChipClass,
   resolveMessageContent,
   resolveMessageMarkdownNodes as buildMessageMarkdownNodes,
   shouldExpandToolGroup,
+  shouldAutoCollapseUserMessage,
   shouldShowAssistantPlaceholder as shouldDisplayAssistantPlaceholder,
   toolStatusLabelMap,
 } from '@/components/agent/agent-message-display'
@@ -417,7 +422,7 @@ const markdownNodeCache = new Map<string, ReturnType<typeof buildMessageMarkdown
 const scrollContainerRef = ref<HTMLElement | null>(null)
 const autoScrollEnabled = ref(true)
 const failedAttachmentIds = ref(new Set<number>())
-const collapsedUserMessageIds = ref(new Set<string>())
+const userMessageCollapseOverrides = ref(new Map<string, boolean>())
 let scrollAnimationFrame: number | null = null
 const assistantBatchRendering = {
   initialRenderBatchSize: 12,
@@ -525,23 +530,19 @@ function isVisualTool(tool: ToolCallDetail) {
 }
 
 /**
- * 判断用户消息是否处于折叠态；折叠状态只影响当前面板本地展示。
+ * 判断用户消息是否处于折叠态；长文本默认收起，用户手动操作优先于默认规则。
  */
 function isUserMessageCollapsed(message: AgentMessageItem) {
-  return collapsedUserMessageIds.value.has(message.id)
+  return userMessageCollapseOverrides.value.get(message.id) ?? shouldAutoCollapseUserMessage(message)
 }
 
 /**
- * 切换用户消息折叠状态；替换 Set 引用以确保 Vue 响应式更新。
+ * 切换用户消息折叠状态；替换 Map 引用以确保 Vue 响应式更新。
  */
 function toggleUserMessageCollapsed(message: AgentMessageItem) {
-  const nextIds = new Set(collapsedUserMessageIds.value)
-  if (nextIds.has(message.id)) {
-    nextIds.delete(message.id)
-  } else {
-    nextIds.add(message.id)
-  }
-  collapsedUserMessageIds.value = nextIds
+  const nextOverrides = new Map(userMessageCollapseOverrides.value)
+  nextOverrides.set(message.id, !isUserMessageCollapsed(message))
+  userMessageCollapseOverrides.value = nextOverrides
 }
 
 /**
@@ -562,24 +563,20 @@ async function copyUserMessage(message: AgentMessageItem) {
 }
 
 /**
- * 折叠态保留短摘要和附件数量，让长提示词不挤占消息流空间。
+ * 将工具运行状态映射到统一 Badge 语义，工具类别不再使用独立颜色。
  */
-function formatCollapsedUserMessageSummary(message: AgentMessageItem) {
-  const normalizedContent = (message.content ?? '').replace(/\s+/g, ' ').trim()
-  const attachmentCount = message.attachments?.length ?? 0
-  const contentSummary = normalizedContent
-    ? truncateText(normalizedContent, 52)
-    : '空消息'
-  return attachmentCount > 0
-    ? `${contentSummary} · ${attachmentCount} 张图片`
-    : contentSummary
+function getToolStatusTone(status: ToolCallDetail['status']) {
+  if (status === 'error') return 'danger' as const
+  if (status === 'running') return 'info' as const
+  return 'success' as const
 }
 
 /**
- * 截断折叠摘要，避免超长提示词撑开窄侧栏。
+ * 已完成的用户回答在主时间线只显示问题摘要，详情按需展开。
  */
-function truncateText(value: string, maxLength: number) {
-  return value.length > maxLength ? `${value.slice(0, maxLength)}...` : value
+function formatFeedbackRequestSummary(item: Extract<TimelineDisplayItem, { kind: 'feedback_request' }>) {
+  const firstQuestion = item.entries[0]?.question?.trim() || '用户回答'
+  return item.entries.length > 1 ? `${firstQuestion} · 共 ${item.entries.length} 题` : firstQuestion
 }
 
 function handleAttachmentImageError(event: Event, attachment: AgentMessageAttachmentItem) {
@@ -681,25 +678,18 @@ function trimMarkdownCache() {
   }
 }
 
-function getRunStatusBadgeClass(status: string | null) {
-  if (status === 'failed') return 'bg-red-50 text-red-600 ring-1 ring-red-100'
-  if (status === 'cancelled' || status === 'cancelling') return 'bg-amber-50 text-amber-600 ring-1 ring-amber-100'
-  if (status === 'completed') return 'bg-slate-50 text-slate-400 ring-1 ring-slate-100'
-  return 'bg-sky-50 text-sky-600 ring-1 ring-sky-100'
+function getRunStatusContainerClass(status: string | null) {
+  if (status === 'failed') return 'bg-danger-muted text-danger'
+  if (status === 'cancelled' || status === 'cancelling') return 'bg-warning-muted text-warning'
+  if (status === 'completed') return 'bg-surface-hover text-text-muted'
+  return 'bg-info-muted text-info'
 }
 
 function getRunStatusDotClass(status: string | null) {
-  if (status === 'failed') return 'bg-red-400'
-  if (status === 'cancelled' || status === 'cancelling') return 'bg-amber-400'
-  if (status === 'completed') return 'bg-slate-300'
-  return 'bg-sky-400'
-}
-
-function getRunStatusLineClass(status: string | null) {
-  if (status === 'failed') return 'bg-red-100'
-  if (status === 'cancelled' || status === 'cancelling') return 'bg-amber-100'
-  if (status === 'completed') return 'bg-slate-100'
-  return 'bg-sky-100'
+  if (status === 'failed') return 'bg-danger'
+  if (status === 'cancelled' || status === 'cancelling') return 'bg-warning'
+  if (status === 'completed') return 'bg-text-disabled'
+  return 'bg-info'
 }
 
 /**
@@ -710,10 +700,10 @@ function shouldAnimateRunStatus(status: string | null) {
 }
 
 function getRequirementStatusClass(status: string | null) {
-  if (status === 'failed') return 'border-red-100 bg-red-50/70 text-red-600'
-  if (status === 'cancelled' || status === 'cancelling') return 'border-amber-100 bg-amber-50/70 text-amber-700'
-  if (status === 'paused' || status === 'pending' || status === 'waiting_external') return 'border-sky-100 bg-sky-50/70 text-sky-700'
-  return 'border-slate-100 bg-slate-50/70 text-slate-500'
+  if (status === 'failed') return 'border-danger/20 bg-danger-muted text-danger'
+  if (status === 'cancelled' || status === 'cancelling') return 'border-warning/20 bg-warning-muted text-warning'
+  if (status === 'paused' || status === 'pending' || status === 'waiting_external') return 'border-info/20 bg-info-muted text-info'
+  return 'border-border bg-surface-hover text-text-muted'
 }
 </script>
 
@@ -730,11 +720,13 @@ details[open] .details-chevron {
   list-style: none;
 }
 
-.reasoning-details > summary::-webkit-details-marker {
+.reasoning-details > summary::-webkit-details-marker,
+.feedback-details > summary::-webkit-details-marker {
   display: none;
 }
 
-.tool-call-group > summary {
+.tool-call-group > summary,
+.feedback-details > summary {
   list-style: none;
 }
 
@@ -754,15 +746,15 @@ details[open] .details-chevron {
   align-items: center;
   justify-content: center;
   border-radius: 0.25rem;
-  color: rgb(148 163 184);
+  color: rgb(var(--ui-text-muted));
   transition:
     background-color 0.15s ease,
     color 0.15s ease;
 }
 
 .message-action-button:hover {
-  background: rgb(226 232 240 / 0.7);
-  color: rgb(71 85 105);
+  background: rgb(var(--ui-surface-hover));
+  color: rgb(var(--ui-text-secondary));
 }
 
 .message-attachment-thumb {
@@ -774,9 +766,9 @@ details[open] .details-chevron {
   justify-content: center;
   overflow: hidden;
   border-radius: 0.375rem;
-  border: 1px solid rgb(226 232 240);
-  background: rgb(248 250 252);
-  color: rgb(100 116 139);
+  border: 1px solid rgb(var(--ui-border));
+  background: rgb(var(--ui-surface-hover));
+  color: rgb(var(--ui-text-muted));
   text-decoration: none;
 }
 
@@ -794,7 +786,7 @@ details[open] .details-chevron {
 
 .assistant-markdown {
   font-size: 0.8125rem;
-  line-height: 1.32;
+  line-height: 1.5;
 }
 
 .assistant-markdown :deep(.markstream-vue) {
@@ -802,9 +794,9 @@ details[open] .details-chevron {
   color: inherit;
   font-size: 0.8125rem;
   line-height: 1.32;
-  --loading-shimmer: rgb(226 232 240 / 0.95);
-  --tooltip-bg: rgb(15 23 42);
-  --tooltip-fg: rgb(248 250 252);
+  --loading-shimmer: rgb(var(--ui-border) / 0.95);
+  --tooltip-bg: rgb(var(--ui-text));
+  --tooltip-fg: rgb(var(--ui-text-inverse));
 }
 
 .assistant-markdown :deep(.markstream-vue > :first-child),
@@ -832,7 +824,7 @@ details[open] .details-chevron {
 .assistant-markdown :deep(p) {
   margin: 0;
   font-size: 0.8125rem;
-  line-height: 1.32;
+  line-height: 1.5;
 }
 
 .assistant-markdown :deep(ul),
@@ -841,12 +833,12 @@ details[open] .details-chevron {
   margin-bottom: 0.2rem;
   padding-left: 1.1rem;
   font-size: 0.8125rem;
-  line-height: 1.32;
+  line-height: 1.5;
 }
 
 .assistant-markdown :deep(li) {
   font-size: 0.8125rem;
-  line-height: 1.32;
+  line-height: 1.5;
 }
 
 .assistant-markdown :deep(pre) {
@@ -859,13 +851,13 @@ details[open] .details-chevron {
 
 .assistant-markdown :deep(code:not(pre code)) {
   border-radius: 0.25rem;
-  background: rgb(226 232 240 / 0.8);
+  background: rgb(var(--ui-surface-muted));
   padding: 0.0625rem 0.25rem;
   font-size: 0.75rem;
 }
 
 .assistant-markdown :deep(a) {
-  color: rgb(2 132 199);
+  color: rgb(var(--ui-info));
   text-decoration: underline;
   text-underline-offset: 0.2em;
 }
@@ -877,13 +869,13 @@ details[open] .details-chevron {
 
 .reasoning-markdown :deep(.markstream-vue) {
   background: transparent;
-  color: rgb(100 116 139);
+  color: rgb(var(--ui-text-muted));
   font-size: 0.6875rem;
   line-height: 1.28;
   white-space: pre-wrap;
-  --loading-shimmer: rgb(226 232 240 / 0.9);
-  --tooltip-bg: rgb(15 23 42);
-  --tooltip-fg: rgb(248 250 252);
+  --loading-shimmer: rgb(var(--ui-border) / 0.9);
+  --tooltip-bg: rgb(var(--ui-text));
+  --tooltip-fg: rgb(var(--ui-text-inverse));
 }
 
 .reasoning-markdown :deep(.markstream-vue > * + *) {
@@ -918,7 +910,7 @@ details[open] .details-chevron {
 
 .reasoning-markdown :deep(code:not(pre code)) {
   border-radius: 0.25rem;
-  background: rgb(226 232 240 / 0.55);
+  background: rgb(var(--ui-surface-muted) / 0.75);
   padding: 0.0625rem 0.25rem;
   font-size: 0.6875rem;
 }

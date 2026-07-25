@@ -60,11 +60,10 @@
                 组件类型
                 <span class="text-red-500">*</span>
               </label>
-              <SearchableSelect
+              <UiSelect
                 :model-value="form.component_type"
                 :options="componentTypeOptions"
                 placeholder="请选择组件类型"
-                search-placeholder="搜索组件类型"
                 empty-text="暂无匹配分类。"
                 @update:model-value="handleComponentTypeChange"
               />
@@ -167,7 +166,7 @@ import UiButton from '@/components/ui/button/UiButton.vue'
 import BaseCloseButton from '@/components/ui/BaseCloseButton.vue'
 import UiFormField from '@/components/ui/form-field/UiFormField.vue'
 import UiInput from '@/components/ui/input/UiInput.vue'
-import SearchableSelect from '@/components/ui/SearchableSelect.vue'
+import { UiSelect } from '@/components/ui'
 import type { SelectModelValue, SelectOption } from '@/components/ui/select'
 import {
   normalizeComponentType,

@@ -50,10 +50,11 @@
   --ui-duration-normal: 180ms;
   --ui-z-sticky: 10;
   --ui-z-dock: 20;
-  --ui-z-dropdown: 30;
-  --ui-z-popover: 40;
-  --ui-z-dialog: 50;
-  --ui-z-toast: 60;
+  --ui-z-dialog: 1000;
+  --ui-z-dropdown: 1100;
+  --ui-z-popover: 1100;
+  --ui-z-confirm-overlay: 1150;
+  --ui-z-toast: 1200;
   --ui-font-sans: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
   --ui-font-mono: "Cascadia Code", "SFMono-Regular", Consolas, monospace;
   font-family: var(--ui-font-sans);

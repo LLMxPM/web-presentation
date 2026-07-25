@@ -55,7 +55,7 @@ describe('ComponentEditorPane', () => {
               })
             },
           }),
-          SearchableSelect: true,
+          UiCombobox: true,
         },
       },
     })
@@ -91,7 +91,7 @@ describe('ComponentEditorPane', () => {
       global: {
         stubs: {
           MonacoCodeEditor: true,
-          SearchableSelect: true,
+          UiCombobox: true,
         },
       },
     })

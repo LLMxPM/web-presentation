@@ -29,8 +29,9 @@
     <div class="flex h-full min-h-0 flex-col gap-3">
       <UiInput
         type="textarea"
+        textarea-mode="fill"
         :model-value="modelValue"
-        class="min-h-0 flex-1 [&>textarea]:h-full [&>textarea]:min-h-0 [&>textarea]:resize-none [&>textarea]:leading-6"
+        class="leading-6"
         placeholder="记录演讲时只给自己看的提示、转场话术或需要强调的数据。备注会在 Runtime 演讲模式控制台展示，不会出现在观众窗口。"
         :disabled="disabled"
         @update:model-value="emit('update:modelValue', $event)"

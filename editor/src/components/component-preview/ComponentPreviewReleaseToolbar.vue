@@ -84,15 +84,18 @@
     <div v-if="inline && !simplified" class="w-[236px] space-y-1">
       <span class="block text-[11px] font-semibold text-slate-500">字号与描边</span>
       <div class="grid h-9 grid-cols-2 overflow-hidden rounded-xl border border-slate-200 bg-white">
-        <input
-          :value="modelValue.page.base_font_size"
-          type="text"
-          inputmode="numeric"
-          class="h-full min-w-0 bg-transparent px-1 text-center text-xs font-semibold text-slate-700 outline-none transition focus:bg-slate-50"
+        <UiUnitInput
+          :model-value="modelValue.page.base_font_size"
+          unit="px"
+          :min="1"
+          :max="200"
+          :fallback="20"
+          integer
+          appearance="bare"
+          aria-label="基础字号"
           title="基础字号"
-          @input="updateBaseFontSize(($event.target as HTMLInputElement).value)"
-          @blur="normalizeBaseFontSizeField"
-        >
+          @update:model-value="updateBaseFontSize"
+        />
         <input
           :value="String(modelValue.page.icon_default_stroke_width)"
           type="text"
@@ -108,15 +111,18 @@
     <div v-else-if="!simplified" class="grid grid-cols-[48px_164px] items-center gap-x-3 gap-y-1">
       <span class="text-[11px] font-semibold text-slate-500">页面规格</span>
       <div class="col-start-2 grid h-9 grid-cols-2 overflow-hidden rounded-xl border border-slate-200 bg-white">
-        <input
-          :value="modelValue.page.base_font_size"
-          type="text"
-          inputmode="numeric"
-          class="h-full min-w-0 bg-transparent px-1 text-center text-xs font-semibold text-slate-700 outline-none transition focus:bg-slate-50"
+        <UiUnitInput
+          :model-value="modelValue.page.base_font_size"
+          unit="px"
+          :min="1"
+          :max="200"
+          :fallback="20"
+          integer
+          appearance="bare"
+          aria-label="基础字号"
           title="基础字号"
-          @input="updateBaseFontSize(($event.target as HTMLInputElement).value)"
-          @blur="normalizeBaseFontSizeField"
-        >
+          @update:model-value="updateBaseFontSize"
+        />
         <input
           :value="String(modelValue.page.icon_default_stroke_width)"
           type="text"
@@ -150,6 +156,7 @@
 
 import ThemeSelectorField from '@/components/theme/ThemeSelectorField.vue'
 import PreviewSizePresetSelect from '@/components/preview-size/PreviewSizePresetSelect.vue'
+import { UiUnitInput } from '@/components/ui'
 import type { ComponentPreviewOptions, PreviewSizePreset } from '@/types/api'
 import {
   cloneComponentPreviewOptions,
@@ -230,25 +237,12 @@ function normalizePageDimensionField(field: 'width' | 'height') {
 }
 
 /**
- * 更新基础字号字段，输入过程中只接受可归一化值。
- * @param value 原始输入值
+ * 更新基础字号字段；单位输入组件已保证输出为合法的 px 字符串。
+ * @param value 带 px 单位的字号
  */
 function updateBaseFontSize(value: string) {
-  const normalizedValue = String(value || '').trim()
-  if (!normalizedValue || !/^(\d+)(px)?$/i.test(normalizedValue)) {
-    return
-  }
   const nextOptions = cloneComponentPreviewOptions(props.modelValue)
-  nextOptions.page.base_font_size = normalizeBaseFontSize(normalizedValue, nextOptions.page.base_font_size)
-  emit('update:modelValue', nextOptions)
-}
-
-/**
- * 在失焦时归一化基础字号。
- */
-function normalizeBaseFontSizeField() {
-  const nextOptions = cloneComponentPreviewOptions(props.modelValue)
-  nextOptions.page.base_font_size = normalizeBaseFontSize(nextOptions.page.base_font_size, '20px')
+  nextOptions.page.base_font_size = value
   emit('update:modelValue', nextOptions)
 }
 

@@ -1,6 +1,6 @@
 /** 文件功能：验证通用页面、面板、筛选、选择、分割与数据状态模式的公共契约。 */
 import { fireEvent, render, screen } from '@testing-library/vue'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import CommandBar from './CommandBar.vue'
 import DataState from './DataState.vue'
@@ -12,19 +12,16 @@ import SelectionToolbar from './SelectionToolbar.vue'
 import SplitPane from './SplitPane.vue'
 import ToolPanel from './ToolPanel.vue'
 
-afterEach(() => {
-  document.body.innerHTML = ''
-})
-
 describe('PageHeader 与 CommandBar', () => {
-  it('应建立页面标题、说明和主要操作的稳定层级', () => {
+  it('应建立页面标题、说明和主要操作的稳定层级', async () => {
     render(PageHeader, {
       props: { title: '组件库', description: '管理工作空间组件' },
       slots: { meta: '<span>12 项</span>', actions: '<button>新建组件</button>' },
     })
 
     expect(screen.getByRole('heading', { level: 1, name: '组件库' })).toBeVisible()
-    expect(screen.getByText('管理工作空间组件')).toBeVisible()
+    await fireEvent.click(screen.getByRole('button', { name: '' }))
+    expect(await screen.findByText('管理工作空间组件')).toBeVisible()
     expect(screen.getByRole('button', { name: '新建组件' })).toBeVisible()
   })
 

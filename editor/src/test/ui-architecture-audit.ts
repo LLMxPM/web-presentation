@@ -59,14 +59,20 @@ const NATIVE_CONTROL_EXEMPTIONS: NativeControlExemption[] = [
   { relativePath: 'views/WorkspaceStylesView.vue', tag: 'input', expectedCount: 1, reason: '样式包导入', attributePattern: /\btype\s*=\s*["']file["']/i },
   { relativePath: 'views/ThemesView.vue', tag: 'input', expectedCount: 2, reason: '字体文件选择', attributePattern: /\btype\s*=\s*["']file["']/i },
   { relativePath: 'views/ProjectsView.vue', tag: 'input', expectedCount: 1, reason: '模板包导入', attributePattern: /\btype\s*=\s*["']file["']/i },
-  { relativePath: 'components/project/AssetManagerPanel.vue', tag: 'input', expectedCount: 1, reason: '资源文件选择', attributePattern: /\btype\s*=\s*["']file["']/i },
   { relativePath: 'components/project/ProjectSuggestedReferenceAssetsDialog.vue', tag: 'input', expectedCount: 1, reason: '参考资源选择', attributePattern: /\btype\s*=\s*["']file["']/i },
   { relativePath: 'components/theme/ThemeEditorDialog.vue', tag: 'input', expectedCount: 2, reason: '原生颜色选择器', attributePattern: /\btype\s*=\s*["']color["']/i },
   { relativePath: 'components/component-preview/ComponentPreviewPlacementToolbar.vue', tag: 'input', expectedCount: 6, reason: '内联即时数值编辑', attributePattern: /\binputmode\s*=\s*["']numeric["']/i },
-  { relativePath: 'components/component-preview/ComponentPreviewReleaseToolbar.vue', tag: 'input', expectedCount: 8, reason: '内联即时数值编辑', attributePattern: /\binputmode\s*=\s*["']numeric["']/i },
+  { relativePath: 'components/component-preview/ComponentPreviewReleaseToolbar.vue', tag: 'input', expectedCount: 6, reason: '内联即时数值编辑', attributePattern: /\binputmode\s*=\s*["']numeric["']/i },
   { relativePath: 'components/agent/AgentComposer.vue', tag: 'textarea', expectedCount: 1, reason: '自动高度与 Enter 提交' },
   { relativePath: 'components/page-detail/visual-edit/PageVisualEditRichTextNodeEditor.vue', tag: 'textarea', expectedCount: 1, reason: '原生选区追踪' },
   { relativePath: 'components/theme/ThemePreviewCard.vue', tag: 'button', expectedCount: 1, reason: '主题按钮样式示意' },
+  { relativePath: 'components/component-preview/ComponentPreviewWorkbench.vue', tag: 'button', expectedCount: 1, reason: '简化模式透明缩放触发区' },
+  { relativePath: 'components/patterns/PageHeader.vue', tag: 'button', expectedCount: 1, reason: 'Popover 描述触发按钮' },
+  { relativePath: 'components/patterns/SimpleSearchBar.vue', tag: 'input', expectedCount: 1, reason: '搜索栏输入框' },
+  { relativePath: 'components/patterns/SimpleSearchBar.vue', tag: 'button', expectedCount: 1, reason: '搜索栏清空按钮' },
+  { relativePath: 'components/agent/AgentSessionControls.vue', tag: 'button', expectedCount: 1, reason: '会话列表项切换按钮' },
+  { relativePath: 'components/agent/AgentVisualToolCard.vue', tag: 'button', expectedCount: 2, reason: '图片预览触发按钮' },
+  { relativePath: 'components/project/SuggestedComponentsSelectorPanel.vue', tag: 'button', expectedCount: 1, reason: '建议组件选择触发按钮' },
 ]
 
 /**

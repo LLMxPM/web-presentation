@@ -1,6 +1,11 @@
-<!-- 文件功能：封装工作空间资源的 Runtime iframe 预览创建、加载态与错误态展示。 -->
+<!-- 文件功能：封装工作空间资源的 Runtime iframe 预览、背景切换、加载态与错误态展示。 -->
 <template>
-  <section class="flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white">
+  <section class="relative flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white">
+    <AssetPreviewBackgroundControl
+      v-if="asset"
+      v-model="previewBackground"
+      class="absolute right-3 top-3 z-10 w-[148px] shadow-sm"
+    />
     <div v-if="loading" class="flex min-h-0 flex-1 items-center justify-center text-sm font-semibold text-slate-400">
       正在创建资源预览...
     </div>
@@ -29,6 +34,8 @@ import { computed, ref, watch } from 'vue'
 
 import { createAssetPreviewArtifact } from '@/api/preview'
 import RuntimePreviewFrame from '@/components/runtime-preview/RuntimePreviewFrame.vue'
+import AssetPreviewBackgroundControl from '@/components/ui/AssetPreviewBackgroundControl.vue'
+import type { AssetPreviewBackground } from '@/components/ui/asset-preview-background'
 import type { AssetResponse } from '@/types/api'
 import { getErrorMessage } from '@/api/http'
 
@@ -43,6 +50,7 @@ const loading = ref(false)
 const errorMessage = ref('')
 const previewUrl = ref('')
 const previewRefreshToken = ref(0)
+const previewBackground = ref<AssetPreviewBackground>('checker')
 
 const previewTitle = computed(() => props.asset ? `资源预览：${props.asset.name}` : '资源预览')
 const previewFrameUrl = computed(() => {
@@ -50,6 +58,7 @@ const previewFrameUrl = computed(() => {
   try {
     const url = new URL(previewUrl.value)
     url.searchParams.set('t', String(previewRefreshToken.value))
+    url.searchParams.set('preview_background', previewBackground.value)
     return url.toString()
   } catch {
     return ''

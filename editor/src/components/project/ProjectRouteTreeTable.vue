@@ -1,13 +1,13 @@
 <!-- 文件功能：以树表格形式展示并编辑项目路由节点，支持拖动排序、页面替换与顶层/子级页面维护。 -->
 <template>
-  <section class="flex flex-col rounded-2xl border border-slate-200 bg-white p-3 xl:h-[620px] xl:min-h-0">
+  <section class="flex flex-col rounded-2xl border border-slate-200 bg-white p-3 xl:min-h-0">
     <div class="flex items-center justify-between gap-3 flex-wrap">
       <div>
         <h5 class="text-sm font-bold text-slate-900">路由编排</h5>
       </div>
       <div class="flex items-center gap-2">
         <div class="w-72">
-          <SearchableSelect :model-value="rootSelection" :options="pageOptions" placeholder="选择顶层页面" empty-text="暂无可选页面"
+          <UiCombobox :model-value="rootSelection" :options="pageOptions" placeholder="选择顶层页面" empty-text="暂无可选页面"
             @update:model-value="updateRootSelection" />
         </div>
         <UiButton variant="secondary" size="sm"
@@ -75,7 +75,7 @@
                       @update:model-value="updateRootField(routeIndex, 'group_title', String($event))" />
                   </div>
                   <div v-else class="min-w-0">
-                    <SearchableSelect :model-value="routeItem.page_id ?? null" :options="pageOptions" placeholder="选择页面"
+                    <UiCombobox :model-value="routeItem.page_id ?? null" :options="pageOptions" placeholder="选择页面"
                       empty-text="暂无可选页面" size="compact" @update:model-value="replaceRootPage(routeIndex, $event)" />
                   </div>
                 </td>
@@ -120,7 +120,7 @@
                   </td>
                   <td class="px-2 py-2">
                     <div class="min-w-0">
-                      <SearchableSelect :model-value="childRoute.page_id" :options="pageOptions" placeholder="选择页面"
+                      <UiCombobox :model-value="childRoute.page_id" :options="pageOptions" placeholder="选择页面"
                         empty-text="暂无可选页面" size="compact" @update:model-value="replaceChildPage(routeIndex, childIndex, $event)" />
                     </div>
                   </td>
@@ -155,7 +155,7 @@
                   </td>
                   <td class="px-2 py-2">
                     <div class="min-w-0">
-                      <SearchableSelect :model-value="groupSelectionMap[routeIndex] ?? null" :options="pageOptions"
+                      <UiCombobox :model-value="groupSelectionMap[routeIndex] ?? null" :options="pageOptions"
                         placeholder="选择页面" empty-text="暂无可选页面" size="compact"
                         @update:model-value="updateGroupSelection(routeIndex, $event)" />
                     </div>
@@ -188,8 +188,7 @@
 import { computed, reactive, ref } from 'vue'
 import { CornerDownRight, FileText, FolderTree, GripVertical, Plus } from '@lucide/vue'
 
-import SearchableSelect from '@/components/ui/SearchableSelect.vue'
-import { UiButton, UiCheckbox, UiIconButton, UiInput } from '@/components/ui'
+import { UiButton, UiCheckbox, UiCombobox, UiIconButton, UiInput } from '@/components/ui'
 import type { SelectOption, SelectPrimitive } from '@/components/ui/select'
 import type { PageItem, ProjectRouteChildWrite, ProjectRouteItemWrite } from '@/types/api'
 import {

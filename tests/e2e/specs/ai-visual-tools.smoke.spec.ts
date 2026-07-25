@@ -29,16 +29,11 @@ test('local 图片应经视觉工具卡回显并在刷新后保持一致', async
   await page.locator('[data-testid="agent-sidebar-panel"]').getByRole('button', { name: /发送/ }).click()
 
   const panel = page.locator('[data-testid="agent-sidebar-panel"]')
-  await expect(panel.getByText('图片理解')).toBeVisible()
-  await expect(panel.getByText('图片生成')).toBeVisible()
-  await expect(panel.getByText('hero_visual')).toBeVisible()
-  await expect(panel.getByRole('button', { name: /已保存到资源库/ })).toBeVisible()
+  await expectVisualToolResult(panel)
 
   await page.reload()
   await openAgentSidebar(page)
-  await expect(panel.getByText('图片理解')).toBeVisible()
-  await expect(panel.getByText('图片生成')).toBeVisible()
-  await expect(panel.getByText('hero_visual')).toBeVisible()
+  await expectVisualToolResult(panel)
 })
 
 test('资源助手应展示图片理解与图片生成能力并允许上传参考图', async ({ page }) => {
@@ -50,6 +45,10 @@ test('资源助手应展示图片理解与图片生成能力并允许上传参�
   await openAgentSidebar(page)
 
   const panel = page.locator('[data-testid="agent-sidebar-panel"]')
+  const resourceAgentTab = panel.getByRole('tab', { name: '资源助手', exact: true })
+  await resourceAgentTab.click()
+  await expect(resourceAgentTab).toHaveAttribute('aria-selected', 'true')
+
   const visualStatus = panel.getByRole('region', { name: '视觉工具状态' })
   await expect(visualStatus.getByTitle('analyze_visuals 已配置，可分析附件或工作空间图片资源')).toBeVisible()
   await expect(visualStatus.getByTitle('generate_image 已配置，可生成或编辑图片并保存到资源库')).toBeVisible()
@@ -63,6 +62,20 @@ async function openAgentSidebar(page: Page) {
     await page.locator('[data-testid="agent-sidebar-toggle"]').click()
   }
   await expect(panel).toBeVisible()
+}
+
+/** 展开已完成的工具组与图片生成卡片，并验证视觉工具产物。 */
+async function expectVisualToolResult(panel: ReturnType<Page['locator']>) {
+  const toolGroup = panel.locator('details.tool-call-group')
+  await expect(toolGroup).toBeVisible()
+  await toolGroup.locator(':scope > summary').click()
+
+  const generationCard = panel.locator('details.visual-tool-details').filter({ hasText: '图片生成' })
+  await expect(panel.getByText('图片理解', { exact: true })).toBeVisible()
+  await expect(generationCard).toBeVisible()
+  await generationCard.locator(':scope > summary').click()
+  await expect(generationCard.getByText('hero_visual', { exact: true })).toBeVisible()
+  await expect(generationCard.getByRole('button', { name: /已保存到资源库/ })).toBeVisible()
 }
 
 /** 安装只覆盖 AI 接口的确定性桩，页面、项目与认证仍使用真实 smoke 环境。 */

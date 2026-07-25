@@ -1,62 +1,22 @@
 <!-- 文件功能：顶部状态栏的用户个人菜单，包含修改密码及退出登录（TailwindCSS & Lucide 版）。 -->
 <template>
-  <div class="user-menu relative" v-click-outside="closeDropdown">
-    <!-- Trigger -->
-    <div 
-      @click="dropdownVisible = !dropdownVisible"
-      class="flex items-center gap-3 p-1.5 rounded-xl hover:bg-slate-100 transition-all cursor-pointer select-none"
-      :class="{ 'bg-slate-100': dropdownVisible }"
-    >
-      <div class="w-9 h-9 flex items-center justify-center rounded-full bg-indigo-600 text-white font-bold text-sm shadow-sm ring-2 ring-white">
-        {{ initials }}
-      </div>
-      <div class="hidden sm:flex flex-col">
-        <span class="text-sm font-bold text-slate-800 leading-tight">{{ user?.display_name || '-' }}</span>
-        <span class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">{{ user?.role === 'platform_admin' ? '平台管理员' : '工作空间用户' }}</span>
-      </div>
-      <ChevronDown class="w-4 h-4 text-slate-400 transition-transform duration-200" :class="{ 'rotate-180': dropdownVisible }" />
-    </div>
-
-    <!-- Dropdown Menu -->
-    <Transition name="fade-scale">
-      <div 
-        v-if="dropdownVisible"
-        class="absolute right-0 mt-2 w-48 bg-white border border-slate-200 rounded-2xl shadow-xl z-50 py-1.5 overflow-hidden"
-      >
-        <UiButton variant="ghost" size="sm"
-          @click="handleCommand('password')"
-          class="w-full flex items-center gap-3 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition-colors"
+  <div class="user-menu relative">
+    <UiDropdownMenu :items="menuItems" side="bottom" align="end" @select="handleCommand">
+      <template #trigger>
+        <div
+          class="flex items-center gap-3 p-1.5 rounded-xl hover:bg-slate-100 transition-all cursor-pointer select-none"
         >
-          <KeyRound class="w-4 h-4 text-slate-400" />
-          修改密码
-        </UiButton>
-        <UiButton variant="ghost" size="sm"
-          @click="handleCommand('ai-settings')"
-          class="w-full flex items-center gap-3 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition-colors"
-        >
-          <Bot class="w-4 h-4 text-slate-400" />
-          AI 设置
-        </UiButton>
-        <UiButton
-          variant="ghost"
-          size="sm"
-          v-if="user?.role === 'platform_admin'"
-          @click="handleCommand('users')"
-          class="w-full flex items-center gap-3 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition-colors"
-        >
-          <UserCog class="w-4 h-4 text-slate-400" />
-          用户管理
-        </UiButton>
-        <div class="my-1.5 border-t border-slate-100"></div>
-        <UiButton variant="ghost" size="sm"
-          @click="handleCommand('logout')"
-          class="w-full flex items-center gap-3 px-4 py-2 text-sm font-semibold text-red-600 hover:bg-red-50 transition-colors"
-        >
-          <LogOut class="w-4 h-4 text-red-400" />
-          退出登录
-        </UiButton>
-      </div>
-    </Transition>
+          <div class="w-9 h-9 flex items-center justify-center rounded-full bg-indigo-600 text-white font-bold text-sm shadow-sm ring-2 ring-white">
+            {{ initials }}
+          </div>
+          <div class="hidden sm:flex flex-col">
+            <span class="text-sm font-bold text-slate-800 leading-tight">{{ user?.display_name || '-' }}</span>
+            <span class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">{{ user?.role === 'platform_admin' ? '平台管理员' : '工作空间用户' }}</span>
+          </div>
+          <ChevronDown class="w-4 h-4 text-slate-400" />
+        </div>
+      </template>
+    </UiDropdownMenu>
 
     <!-- Password Dialog -->
     <UiDialog :open="passwordVisible" title="安全设置 - 修改密码" size="compact" @update:open="passwordVisible = $event">
@@ -83,13 +43,14 @@
 <script setup lang="ts">
 import { computed, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { Bot, ChevronDown, LogOut, KeyRound, UserCog } from '@lucide/vue'
+import { Bot, ChevronDown, KeyRound, LogOut, UserCog } from '@lucide/vue'
 
 import { changePassword } from '@/api/auth'
 import { getErrorMessage } from '@/api/http'
 import { useAuthStore } from '@/stores/auth'
 import { Message } from '@/utils/message'
-import { UiButton, UiDialog, UiFormField, UiInput } from '@/components/ui'
+import { UiButton, UiDialog, UiDropdownMenu, UiFormField, UiInput } from '@/components/ui'
+import type { DropdownMenuEntry } from '@/components/ui'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -97,7 +58,6 @@ const authStore = useAuthStore()
 const user = computed(() => authStore.user)
 const initials = computed(() => user.value?.display_name?.charAt(0)?.toUpperCase() || 'A')
 
-const dropdownVisible = ref(false)
 const passwordVisible = ref(false)
 const saving = ref(false)
 
@@ -111,27 +71,27 @@ const errors = reactive({
   new_password: '',
 })
 
-function closeDropdown() {
-  dropdownVisible.value = false
-}
+/**
+ * 菜单项列表，根据用户角色动态生成。
+ */
+const menuItems = computed<DropdownMenuEntry[]>(() => {
+  const items: DropdownMenuEntry[] = [
+    { label: '修改密码', value: 'password', icon: KeyRound },
+    { label: 'AI 设置', value: 'ai-settings', icon: Bot },
+  ]
+  if (user.value?.role === 'platform_admin') {
+    items.push({ label: '用户管理', value: 'users', icon: UserCog })
+  }
+  items.push({ separator: true })
+  items.push({ label: '退出登录', value: 'logout', icon: LogOut, danger: true })
+  return items
+})
 
-// 指令实现：点击外部关闭下拉框
-const vClickOutside = {
-  mounted(el: any, binding: any) {
-    el.clickOutsideEvent = (event: Event) => {
-      if (!(el === event.target || el.contains(event.target))) {
-        binding.value()
-      }
-    }
-    document.body.addEventListener('click', el.clickOutsideEvent)
-  },
-  unmounted(el: any) {
-    document.body.removeEventListener('click', el.clickOutsideEvent)
-  },
-}
-
+/**
+ * 处理菜单项选中事件。
+ * @param command 菜单项标识
+ */
 async function handleCommand(command: string) {
-  closeDropdown()
   if (command === 'logout') {
     await authStore.signOut()
     Message.success('已安全退出登录。')
@@ -149,8 +109,10 @@ async function handleCommand(command: string) {
   }
 }
 
+/**
+ * 提交修改密码表单。
+ */
 async function handleUpdatePassword() {
-  // 简易校验
   let hasError = false
   if (!form.old_password) {
     errors.old_password = '请输入当前密码'
@@ -185,14 +147,3 @@ async function handleUpdatePassword() {
   }
 }
 </script>
-
-<style scoped>
-.fade-scale-enter-active, .fade-scale-leave-active {
-  transition: all 0.2s ease-out;
-}
-.fade-scale-enter-from, .fade-scale-leave-to {
-  opacity: 0;
-  transform: scale(0.95) translateY(-10px);
-}
-</style>
-

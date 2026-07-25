@@ -1,25 +1,26 @@
 <!-- 文件功能：头部导航条的工作空间下拉选择组件，支持切换启用空间、归档/恢复工作空间以及新建空间。 -->
 <template>
-  <div class="workspace-switcher relative shrink-0" v-click-outside="closeDropdown">
-    <!-- Trigger -->
-    <div @click="dropdownVisible = !dropdownVisible"
-      class="flex items-center gap-3 px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 transition-all cursor-pointer select-none border border-slate-200/50 shadow-sm"
-      :class="triggerClass">
-      <div class="flex items-center gap-2">
-        <LayoutGrid class="w-4 h-4 text-indigo-600" />
-        <div class="flex items-baseline gap-1.5">
-          <span class="text-sm font-bold text-slate-800 line-clamp-1 max-w-[140px]">{{ currentWorkspace?.name || '请选择空间'
-            }}</span>
+  <div class="workspace-switcher relative shrink-0">
+    <UiPopover :open="dropdownVisible" side="bottom" align="start" :side-offset="8" content-class="!p-0 w-64 rounded-2xl shadow-xl" @update:open="dropdownVisible = $event">
+      <template #trigger>
+        <!-- Trigger -->
+        <div
+          class="flex items-center gap-3 px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 transition-all cursor-pointer select-none border border-slate-200/50 shadow-sm"
+          :class="triggerClass"
+        >
+          <div class="flex items-center gap-2">
+            <LayoutGrid class="w-4 h-4 text-indigo-600" />
+            <div class="flex items-baseline gap-1.5">
+              <span class="text-sm font-bold text-slate-800 line-clamp-1 max-w-[140px]">{{ currentWorkspace?.name || '请选择空间' }}</span>
+            </div>
+          </div>
+          <ChevronDown class="w-4 h-4 text-slate-400 transition-transform duration-200"
+            :class="{ 'rotate-180': dropdownVisible }" />
         </div>
-      </div>
-      <ChevronDown class="w-4 h-4 text-slate-400 transition-transform duration-200"
-        :class="{ 'rotate-180': dropdownVisible }" />
-    </div>
+      </template>
 
-    <!-- Dropdown Menu -->
-    <Transition name="fade-scale">
-      <div v-if="dropdownVisible"
-        class="absolute left-0 mt-2 w-64 origin-top-left bg-white border border-slate-200 rounded-2xl shadow-xl z-50 py-2">
+      <!-- Dropdown Content -->
+      <div class="py-2">
         <div class="px-4 py-2 border-b border-slate-50 mb-1 flex items-center justify-between gap-3">
           <span class="text-[11px] font-bold text-slate-400 uppercase tracking-widest">所属工作空间</span>
           <UiButton variant="ghost" size="xs" class="text-slate-400 hover:text-slate-600"
@@ -61,7 +62,7 @@
           </UiButton>
         </div>
       </div>
-    </Transition>
+    </UiPopover>
 
     <!-- Workspace Dialog (Refactored) -->
     <UiDialog :open="dialogVisible" title="创建工作空间" size="compact" @update:open="dialogVisible = $event">
@@ -90,7 +91,7 @@ import type { WorkspaceItem } from '@/types/api'
 import { createConfirm, Message } from '@/utils/message'
 import { reportClientError } from '@/utils/client-logger'
 import ArchivedWorkspacesDialog from '@/components/nav/ArchivedWorkspacesDialog.vue'
-import { UiButton, UiDialog, UiFormField, UiIconButton, UiInput } from '@/components/ui'
+import { UiButton, UiDialog, UiFormField, UiIconButton, UiInput, UiPopover } from '@/components/ui'
 import { buildWorkspaceHomePath } from '@/utils/workspace-routes'
 
 const route = useRoute()
@@ -162,21 +163,6 @@ onUnmounted(() => {
  */
 function closeDropdown() {
   dropdownVisible.value = false
-}
-
-// 指令实现：点击外部关闭下拉框
-const vClickOutside = {
-  mounted(el: any, binding: any) {
-    el.clickOutsideEvent = (event: Event) => {
-      if (!(el === event.target || el.contains(event.target))) {
-        binding.value()
-      }
-    }
-    document.body.addEventListener('click', el.clickOutsideEvent)
-  },
-  unmounted(el: any) {
-    document.body.removeEventListener('click', el.clickOutsideEvent)
-  },
 }
 
 /**
@@ -265,18 +251,5 @@ async function handleArchiveWorkspace(workspace: WorkspaceItem) {
 async function handleWorkspaceListUpdated() {
   await fetchWorkspaces()
 }
+
 </script>
-
-<style scoped>
-.fade-scale-enter-active,
-.fade-scale-leave-active {
-  transition: all 0.2s ease-out;
-}
-
-.fade-scale-enter-from,
-.fade-scale-leave-to {
-  opacity: 0;
-  transform: translateY(-10px) scale(0.95);
-}
-</style>
-

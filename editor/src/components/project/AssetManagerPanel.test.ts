@@ -89,44 +89,6 @@ describe('AssetManagerPanel', () => {
     expect(screen.queryByText('图标')).toBeNull()
   })
 
-  it('图片分类应允许通过文本入口新建 SVG 图片资源', async () => {
-    renderPanel()
-
-    await waitFor(() => {
-      expect(screen.getByText('brand_icon')).toBeInTheDocument()
-    })
-    await fireEvent.click(screen.getByText('内容资源'))
-    await fireEvent.click(screen.getByText('图片'))
-    await waitFor(() => {
-      expect(listWorkspaceAssetTagsMock).toHaveBeenCalledWith(7, { assetType: 'image' })
-    })
-    await fireEvent.click(screen.getByTitle('文本创建资源'))
-
-    expect(screen.getByText('新建图片资源')).toBeInTheDocument()
-    expect(screen.getByDisplayValue('image.svg')).toBeInTheDocument()
-  })
-
-  it('文本创建弹窗应响应 Esc 关闭并将焦点交还触发按钮', async () => {
-    renderPanel()
-
-    await waitFor(() => {
-      expect(screen.getByText('brand_icon')).toBeInTheDocument()
-    })
-    await fireEvent.click(screen.getByText('内容资源'))
-    await fireEvent.click(screen.getByText('图片'))
-    const trigger = screen.getByTitle('文本创建资源')
-    trigger.focus()
-    await fireEvent.click(trigger)
-
-    expect(screen.getByText('新建图片资源')).toBeInTheDocument()
-    await fireEvent.keyDown(window, { key: 'Escape' })
-
-    await waitFor(() => {
-      expect(screen.queryByText('新建图片资源')).toBeNull()
-      expect(trigger).toHaveFocus()
-    })
-  })
-
   it('收到智能体资源写入事件后应刷新资源列表和标签', async () => {
     renderPanel()
 
@@ -151,7 +113,7 @@ describe('AssetManagerPanel', () => {
     })
   })
 
-  it('图片快速预览弹窗的透明区域应穿透到遮罩关闭层', async () => {
+  it('图片快速预览应提供可切换的背景画布', async () => {
     listWorkspaceAssetsMock.mockResolvedValue({
       items: [createRasterAsset()],
       total: 1,
@@ -170,6 +132,10 @@ describe('AssetManagerPanel', () => {
     const panel = document.body.querySelector('.dialog-panel')
     expect(panel).toHaveStyle({ background: 'transparent' })
     expect(panel).toHaveClass('!pointer-events-none', '!border-0', '!bg-transparent', '!shadow-none')
+    expect(document.querySelector('[data-preview-background]')).toHaveAttribute('data-preview-background', 'checker')
+
+    await fireEvent.click(screen.getByRole('radio', { name: '深色' }))
+    expect(document.querySelector('[data-preview-background]')).toHaveAttribute('data-preview-background', 'dark')
     expect(screen.getByLabelText('关闭资源预览')).toBeInTheDocument()
   })
 })

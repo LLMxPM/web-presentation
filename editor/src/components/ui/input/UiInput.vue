@@ -1,6 +1,9 @@
 <!-- 文件功能：提供单行、多行、密码输入及前后缀、清除和错误状态。 -->
 <template>
-  <div class="relative w-full">
+  <div
+    class="relative w-full"
+    :class="textareaMode === 'fill' && type === 'textarea' ? 'flex min-h-0 flex-1 flex-col' : undefined"
+  >
     <span v-if="$slots.prefix" class="pointer-events-none absolute inset-y-0 left-2 flex items-center text-[rgb(var(--ui-text-muted))]">
       <slot name="prefix" />
     </span>
@@ -65,6 +68,8 @@ const props = withDefaults(defineProps<{
   modelValue?: string | number
   /** 原生输入类型，textarea 用于兼容迁移期多行输入。 */
   type?: string
+  /** 多行输入布局；fill 会填满父级剩余高度，并在内容超出时内部滚动。 */
+  textareaMode?: 'fixed' | 'fill'
   rows?: number
   disabled?: boolean
   required?: boolean
@@ -77,6 +82,7 @@ const props = withDefaults(defineProps<{
 }>(), {
   modelValue: '',
   type: 'text',
+  textareaMode: 'fixed',
   rows: 3,
   disabled: false,
   required: false,
@@ -98,7 +104,11 @@ const hasSuffix = computed(() => Boolean(slots.suffix))
 const controlClass = computed(() => [
   'block w-full rounded-[var(--ui-radius-md)] border bg-[rgb(var(--ui-surface))] px-2.5 text-sm text-[rgb(var(--ui-text))] outline-none transition-colors duration-150',
   'placeholder:text-[rgb(var(--ui-text-muted))] hover:border-[rgb(var(--ui-border-strong))] focus:border-[rgb(var(--ui-border-focus))] focus:ring-2 focus:ring-[rgb(var(--ui-border-focus))]/25 disabled:cursor-not-allowed disabled:bg-[rgb(var(--ui-surface-muted))] disabled:text-[rgb(var(--ui-text-disabled))]',
-  props.type === 'textarea' ? 'min-h-20 py-2 resize-y' : 'h-[var(--ui-control-h-md)]',
+  props.type === 'textarea'
+    ? props.textareaMode === 'fill'
+      ? 'h-full min-h-0 flex-1 overflow-y-auto py-2 resize-none'
+      : 'min-h-20 py-2 resize-y'
+    : 'h-[var(--ui-control-h-md)]',
   {
     'border-[rgb(var(--ui-danger))] focus:border-[rgb(var(--ui-danger))] focus:ring-[rgb(var(--ui-danger))]/20': props.invalid,
     'pl-8': hasPrefix.value,

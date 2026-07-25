@@ -24,7 +24,7 @@ const MessageContainer = {
   setup() {
     return () => h(
       'div',
-      { class: 'fixed top-6 left-1/2 -translate-x-1/2 flex flex-col gap-3 z-[2000] pointer-events-none' },
+{ class: 'fixed top-6 left-1/2 -translate-x-1/2 flex flex-col gap-3 z-toast pointer-events-none' },
       messages.value.map(msg => h(
         'div',
         {
@@ -102,7 +102,10 @@ export function createConfirm(message: string, title = '操作确认') {
           }, 300)
         }
         
-        return () => h('div', { class: ['fixed inset-0 z-[1100] flex items-center justify-center p-4 transition-opacity duration-300', visible.value ? 'opacity-100' : 'opacity-0'] }, [
+return () => h('div', {
+          class: ['fixed inset-0 flex items-center justify-center p-4 transition-opacity duration-300', visible.value ? 'opacity-100' : 'opacity-0'],
+          style: { zIndex: 'var(--ui-z-confirm-overlay)' },
+        }, [
           h('div', { class: 'absolute inset-0 bg-slate-900/40 backdrop-blur-sm', onClick: handleCancel }),
           h('div', { class: ['relative w-full max-w-[400px] bg-white rounded-2xl shadow-xl overflow-hidden transform transition-all duration-300', visible.value ? 'scale-100' : 'scale-90 opacity-0'] }, [
             h('div', { class: 'px-6 py-5' }, [

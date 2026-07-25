@@ -22,9 +22,12 @@
       <header class="admin-layout-header flex h-14 shrink-0 items-center justify-between border-b border-border bg-surface px-3">
         <div
           class="admin-layout-brand flex transition-[width,opacity] duration-150"
-          :class="agentSidebarExpanded ? 'w-0 overflow-hidden opacity-0' : 'w-48 opacity-100'"
+          :class="[
+            agentSidebarExpanded ? 'w-0 overflow-hidden opacity-0' : 'w-48 overflow-hidden opacity-100',
+            { 'admin-layout-brand-expanded': agentSidebarExpanded },
+          ]"
         >
-          <div v-if="!agentSidebarExpanded" data-testid="app-brand-title" class="select-none text-lg font-extrabold tracking-tight text-text">Web-Presentation</div>
+          <div v-if="!agentSidebarExpanded" data-testid="app-brand-title" class="select-none whitespace-nowrap text-lg font-extrabold tracking-tight text-text">Web-Presentation</div>
         </div>
 
         <div class="admin-layout-context flex min-w-0 flex-1 items-center justify-start gap-2 px-2">
@@ -413,6 +416,9 @@ onUnmounted(() => {
 }
 
 @media (min-width: 1440px) {
+  .admin-layout-brand:not(.admin-layout-brand-expanded) {
+    width: 10rem !important;
+  }
   .admin-layout-header {
     padding-right: 1.5rem;
     padding-left: 1.5rem;
@@ -420,8 +426,8 @@ onUnmounted(() => {
 }
 
 @media (min-width: 1180px) and (max-width: 1439px) {
-  .admin-layout-brand {
-    width: 9rem !important;
+  .admin-layout-brand:not(.admin-layout-brand-expanded) {
+    width: 10rem !important;
   }
 
   .admin-layout-breadcrumb-item {

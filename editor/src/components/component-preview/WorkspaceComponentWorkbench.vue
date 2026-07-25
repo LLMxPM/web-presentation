@@ -336,6 +336,7 @@ watch(
     activeMode.value = 'create'
     editorDialogVisible.value = true
   },
+  { immediate: true },
 )
 
 /**

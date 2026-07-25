@@ -68,7 +68,7 @@
         <UiButton
           variant="secondary"
           :loading="componentOptionsLoading"
-          class="h-8 min-w-[80px] whitespace-nowrap"
+          class="min-w-[80px]"
           @click="loadAvailableComponents"
         >
           <template #icon>
@@ -78,9 +78,8 @@
         </UiButton>
         <UiButton
           variant="ghost"
-          size="sm"
           :loading="componentOptionsLoading"
-          class="h-8 min-w-[64px] whitespace-nowrap"
+          class="min-w-[64px]"
           @click="loadAvailableComponents"
         >
           <template #icon>
@@ -90,21 +89,11 @@
         </UiButton>
       </div>
 
-      <div class="mt-3 flex shrink-0 flex-wrap gap-1.5">
-        <UiButton
-          v-for="tab in componentTypeTabs"
-          :key="tab.key"
-          variant="ghost"
-          size="xs"
-          :class="activeComponentTypeTab === tab.key ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'"
-          @click="activeComponentTypeTab = tab.key"
-        >
-          <span>{{ tab.label }}</span>
-          <span class="rounded-full px-1 text-[10px]" :class="activeComponentTypeTab === tab.key ? 'bg-white/20 text-white' : 'bg-white text-slate-500'">
-            {{ tab.count }}
-          </span>
-        </UiButton>
-      </div>
+      <UiSegmentedControl
+        v-model="activeComponentTypeTab"
+        class="mt-3 shrink-0"
+        :options="componentTypeOptions"
+      />
 
       <div v-if="componentOptionsLoading" class="mt-3 flex min-h-0 flex-1 items-center justify-center text-sm font-semibold text-slate-400">
         <RefreshCw class="mr-2 h-4 w-4 animate-spin" />
@@ -117,9 +106,9 @@
           class="flex min-h-16 min-w-0 items-stretch justify-between gap-1 rounded-md border text-left transition"
           :class="componentOptionClass(component.id)"
         >
-          <UiButton
-            variant="ghost"
-            class="h-auto min-w-0 flex-1 justify-between px-3 py-2 text-left"
+          <button
+            type="button"
+            class="flex min-w-0 flex-1 items-center justify-between gap-2 rounded-l-[var(--ui-radius-md)] px-3 py-2 text-left outline-none transition-colors hover:bg-[rgb(var(--ui-surface-hover))] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[rgb(var(--ui-border-focus))]"
             @click="toggleComponent(component)"
           >
             <span class="min-w-0 text-left">
@@ -129,7 +118,7 @@
             </span>
             <Check v-if="isSelected(component.id)" class="h-4 w-4 shrink-0" />
             <Plus v-else class="h-4 w-4 shrink-0" />
-          </UiButton>
+          </button>
           <UiIconButton
             size="sm"
             class="mr-2 self-center"
@@ -174,7 +163,7 @@ import ComponentPreviewDialog from '@/components/component-preview/ComponentPrev
 import ComponentPreviewWorkbench from '@/components/component-preview/ComponentPreviewWorkbench.vue'
 import type { ComponentPreviewWorkbenchSource } from '@/components/component-preview/component-preview-workbench'
 import SimpleSearchBar from '@/components/patterns/SimpleSearchBar.vue'
-import { UiButton, UiIconButton } from '@/components/ui'
+import { UiButton, UiIconButton, UiSegmentedControl } from '@/components/ui'
 import BaseCloseButton from '@/components/ui/BaseCloseButton.vue'
 import { workspaceComponentTypeValues } from '@/composables/useWorkspaceComponentDraft'
 import type {
@@ -250,6 +239,10 @@ const componentTypeTabs = computed(() => [
     count: group.items.length,
   })),
 ])
+const componentTypeOptions = computed(() => componentTypeTabs.value.map(tab => ({
+  value: tab.key,
+  label: `${tab.label} ${tab.count}`,
+})))
 const activeTabComponents = computed(() => {
   if (activeComponentTypeTab.value === 'all') {
     return componentOptions.value

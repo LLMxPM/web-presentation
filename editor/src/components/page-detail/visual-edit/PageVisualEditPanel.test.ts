@@ -7,9 +7,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { PageVisualEditPreviewArtifactResponse } from '@/types/page-visual-edit'
 
-const { applyMock, confirmMock, createMock } = vi.hoisted(() => ({
+const { applyMock, createMock } = vi.hoisted(() => ({
   applyMock: vi.fn(),
-  confirmMock: vi.fn().mockResolvedValue(true),
   createMock: vi.fn(),
 }))
 
@@ -19,7 +18,6 @@ vi.mock('@/api/page-visual-edit', () => ({
 }))
 
 vi.mock('@/utils/message', () => ({
-  createConfirm: (...args: unknown[]) => confirmMock(...args),
   Message: {
     info: vi.fn(),
     success: vi.fn(),
@@ -89,12 +87,12 @@ describe('PageVisualEditPanel', () => {
     await fireEvent.update(textarea, '待删除修改')
     await fireEvent.click(screen.getByRole('button', { name: '删除组件' }))
 
-    await waitFor(() => expect(confirmMock).toHaveBeenCalledWith(
-      '删除组件，并放弃其中 1 项待保存修改，是否继续？',
-      '删除组件',
-    ))
+    expect(await screen.findByText('删除组件，并放弃其中 1 项待保存修改，是否继续？')).toBeInTheDocument()
+    expect(screen.getByRole('dialog', { name: '删除组件' })).toHaveStyle({ height: 'auto' })
+    await fireEvent.click(screen.getByRole('button', { name: '确定' }))
+
     expect(screen.getByText('1 项待保存')).toBeInTheDocument()
-    expect(screen.queryByRole('textbox')).toBeNull()
+    await waitFor(() => expect(screen.queryByRole('textbox')).toBeNull())
 
     await fireEvent.click(screen.getByRole('button', { name: '撤销' }))
     expect(screen.queryByText('1 项待保存')).toBeNull()

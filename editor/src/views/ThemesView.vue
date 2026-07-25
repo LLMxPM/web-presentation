@@ -3,6 +3,7 @@
   <div data-testid="themes-view" class="flex h-full min-h-0 flex-col gap-2">
     <PageHeader
       class="shrink-0"
+      :icon="SwatchBook"
       :title="workspaceTitle"
       description="集中维护工作空间主题、字体注册与字体文件。"
     >
@@ -485,6 +486,7 @@ import {
   Plus,
   RefreshCw,
   RotateCcw,
+  SwatchBook,
   Trash2,
   Type,
   Upload,

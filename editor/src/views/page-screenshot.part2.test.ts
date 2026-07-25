@@ -705,7 +705,6 @@ describe('page screenshot views', () => {
     expect(screen.getByRole('button', { name: '刷新预览' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '截图' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '资源' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '复制' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '编辑' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '编辑器' })).toBeNull()
     expect(screen.queryByRole('button', { name: '可视化' })).toBeNull()
@@ -736,7 +735,7 @@ describe('page screenshot views', () => {
     render(PageDetailView, createTestingRenderOptions())
 
     const detailTitle = await screen.findByRole('heading', { name: longTitle })
-    expect(detailTitle).toHaveClass('truncate', 'max-w-[32rem]')
+    expect(detailTitle).toHaveClass('truncate', 'max-w-[36rem]')
     expect(detailTitle).toHaveAttribute('title', longTitle)
 
     await fireEvent.click(screen.getByRole('button', { name: '编辑' }))
@@ -868,7 +867,7 @@ describe('page screenshot views', () => {
     render(PageDetailView, createTestingRenderOptions())
 
     expect(await screen.findByText('页面详情')).toBeInTheDocument()
-    await fireEvent.click(screen.getByRole('button', { name: '备注' }))
+    await fireEvent.click(screen.getByRole('button', { name: '打开备注' }))
     const textarea = screen.getByPlaceholderText(/记录演讲时只给自己看的提示/) as HTMLTextAreaElement
     expect(textarea.value).toBe('旧备注')
 
@@ -965,10 +964,9 @@ describe('page screenshot views', () => {
 
     await fireEvent.click(screen.getByRole('button', { name: '源码编辑' }))
 
-    expect(createConfirmMock).toHaveBeenCalledWith(
-      expect.stringContaining('放弃当前可视化编辑草稿'),
-      '放弃可视化编辑',
-    )
+    expect(await screen.findByText('离开会放弃当前可视化编辑草稿，且这些修改尚未写入页面源码。是否继续？')).toBeInTheDocument()
+    expect(screen.getByRole('dialog', { name: '放弃可视化编辑' })).toHaveStyle({ height: 'auto' })
+    await fireEvent.click(screen.getByRole('button', { name: '确定' }))
     expect(await screen.findByRole('button', { name: 'monaco-mark-dirty' })).toBeInTheDocument()
   })
 
@@ -982,13 +980,12 @@ describe('page screenshot views', () => {
     await screen.findByTitle('页面详情 可视化编辑画布')
     await fireEvent.click(screen.getByRole('button', { name: /Card/ }))
     await fireEvent.update(await screen.findByRole('textbox'), '未保存标题')
-    createConfirmMock.mockResolvedValueOnce(false)
-
     window.dispatchEvent(new CustomEvent('agent:apply-suggested-content', {
       detail: { pageId: 31, content: '<template><div>Agent 建议</div></template>' },
     }))
 
-    await waitFor(() => expect(createConfirmMock).toHaveBeenCalled())
+    expect(await screen.findByRole('dialog', { name: '放弃可视化编辑' })).toBeInTheDocument()
+    await fireEvent.click(screen.getByRole('button', { name: '取消' }))
     expect(screen.getByTitle('页面详情 可视化编辑画布')).toBeInTheDocument()
     expect(screen.getByText('1 项待保存')).toBeInTheDocument()
   })
@@ -1211,66 +1208,6 @@ describe('page screenshot views', () => {
 
     await waitFor(() => {
       expect(createProjectPreviewArtifactMock).toHaveBeenCalledWith(21, 'src/views/PG202604020001.vue')
-    })
-  })
-
-  it('PageDetailView 复制页面成功后应跳转到目标项目新页面', async () => {
-    getPageMock.mockResolvedValue(createPageDetailPayload())
-    listProjectsMock.mockResolvedValue({
-      items: [
-        {
-          id: 21,
-          name: '项目 A',
-          code: 'PRJ202604020001',
-          status: 'active',
-          description: null,
-          workspace_id: 11,
-          workspace_name: '工作空间 A',
-          ...defaultProjectConfigs,
-          created_at: '2026-04-02T10:00:00Z',
-          updated_at: '2026-04-02T10:00:00Z',
-          created_by: 1,
-          updated_by: 1,
-        },
-        {
-          id: 22,
-          name: '项目 B',
-          code: 'PRJ202604020002',
-          status: 'active',
-          description: null,
-          workspace_id: 11,
-          workspace_name: '工作空间 A',
-          ...defaultProjectConfigs,
-          created_at: '2026-04-02T10:00:00Z',
-          updated_at: '2026-04-02T10:00:00Z',
-          created_by: 1,
-          updated_by: 1,
-        },
-      ],
-      total: 2,
-      page: 1,
-      page_size: 100,
-    })
-
-    render(PageDetailView, createTestingRenderOptions())
-
-    expect(await screen.findByText('页面详情')).toBeInTheDocument()
-    await fireEvent.click(screen.getByRole('button', { name: '复制' }))
-    await screen.findByText('项目 B')
-    await fireEvent.click(screen.getByRole('button', { name: '复制页面' }))
-
-    await waitFor(() => {
-      expect(copyPageToProjectMock).toHaveBeenCalledWith(31, {
-        target_project_id: 22,
-        title: '页面详情',
-        summary: '摘要',
-        route_placement: 'none',
-        parent_route_id: null,
-        route: null,
-      })
-    })
-    await waitFor(() => {
-      expect(pushMock).toHaveBeenCalledWith('/workspaces/11/projects/22/pages/41')
     })
   })
 

@@ -286,7 +286,7 @@ describe('WorkspaceStylesView', () => {
 
     expect(await screen.findByText('路演样式')).toBeInTheDocument()
 
-    await fireEvent.click(screen.getByRole('button', { name: '查看 路演样式 详情' }))
+    await fireEvent.click(screen.getByRole('button', { name: '查看详情' }))
 
     expect(await screen.findByText('路演样式 · 样式详情')).toBeInTheDocument()
     expect(screen.getByText('展示配置')).toBeInTheDocument()
@@ -307,7 +307,7 @@ describe('WorkspaceStylesView', () => {
 
     expect(await screen.findByText('路演样式')).toBeInTheDocument()
 
-    await fireEvent.click(screen.getByRole('button', { name: '管理 路演样式 建议组件' }))
+    await fireEvent.click(screen.getByRole('button', { name: '管理建议组件' }))
 
     expect(screen.getByTestId('style-suggested-components-dialog')).toHaveTextContent('路演样式')
   })

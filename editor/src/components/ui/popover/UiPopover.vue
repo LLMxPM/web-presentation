@@ -2,7 +2,7 @@
 <template>
   <PopoverRoot :open="open" @update:open="emit('update:open', $event)">
     <PopoverTrigger as-child><slot name="trigger" /></PopoverTrigger>
-    <PopoverPortal><PopoverContent :side="side" :align="align" :side-offset="sideOffset" class="z-[900] rounded-lg border border-slate-200 bg-white p-3 shadow-lg outline-none" :class="contentClass"><slot /></PopoverContent></PopoverPortal>
+    <PopoverPortal><PopoverContent :side="side" :align="align" :side-offset="sideOffset" class="z-popover rounded-lg border border-slate-200 bg-white p-3 shadow-lg outline-none" :class="contentClass"><slot /></PopoverContent></PopoverPortal>
   </PopoverRoot>
 </template>
 <script setup lang="ts">

@@ -3,6 +3,7 @@
  */
 import { fireEvent, render, screen } from '@testing-library/vue'
 import { describe, expect, it, vi } from 'vitest'
+import { nextTick } from 'vue'
 
 import AgentSessionControls from '@/components/agent/AgentSessionControls.vue'
 import type { AgentSessionItem } from '@/types/api'
@@ -28,8 +29,8 @@ function createSession(index: number, overrides: Partial<AgentSessionItem> = {})
   }
 }
 
-function renderControls(sessions: AgentSessionItem[], props: Record<string, unknown> = {}) {
-  return render(AgentSessionControls, {
+async function renderControls(sessions: AgentSessionItem[], props: Record<string, unknown> = {}) {
+  const result = render(AgentSessionControls, {
     props: {
       sessions,
       activeSessionId: sessions[0]?.session_id ?? '',
@@ -43,19 +44,34 @@ function renderControls(sessions: AgentSessionItem[], props: Record<string, unkn
       ...props,
     },
   })
+  // UiPopover 内容经 Reka UI Teleport 挂载到 body，需等待异步挂载完成后才能被 screen 查询到。
+  await nextTick()
+  return result
 }
 
 describe('AgentSessionControls', () => {
-  it('下拉头部应隐藏当前会话标题，并把会话数量放到右侧', () => {
-    renderControls([createSession(1), createSession(2)])
+  it('下拉头部应隐藏当前会话标题，并把会话数量放到右侧', async () => {
+    await renderControls([createSession(1), createSession(2)])
 
     expect(screen.getByText('会话切换')).toBeInTheDocument()
     expect(screen.getByText('共 2 个')).toBeInTheDocument()
     expect(screen.queryByText('当前会话标题不应出现在下拉头部')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /会话 1/ })).toHaveAttribute('aria-current', 'true')
   })
 
-  it('无搜索时最多只渲染最近 50 条会话', () => {
-    renderControls(Array.from({ length: 60 }, (_, index) => createSession(index + 1)))
+  it('会话项应使用可换行的专用列表按钮，避免继承 UiButton 的单行内容层', async () => {
+    const { emitted } = await renderControls([createSession(1), createSession(2)])
+    const sessionButton = screen.getByRole('button', { name: /会话 2/ })
+
+    expect(sessionButton).not.toHaveClass('whitespace-nowrap')
+    expect(sessionButton.querySelector(':scope > span')).toBeNull()
+
+    await fireEvent.click(sessionButton)
+    expect(emitted()['switch-session']).toEqual([['session-2']])
+  })
+
+  it('无搜索时最多只渲染最近 50 条会话', async () => {
+    await renderControls(Array.from({ length: 60 }, (_, index) => createSession(index + 1)))
 
     expect(screen.getByText('最近 50 / 共 60')).toBeInTheDocument()
     expect(screen.getByText('会话 1')).toBeInTheDocument()
@@ -68,7 +84,7 @@ describe('AgentSessionControls', () => {
       ...Array.from({ length: 60 }, (_, index) => createSession(index + 1)),
       createSession(61, { session_name: '品牌策略复盘' }),
     ]
-    renderControls(sessions)
+    await renderControls(sessions)
 
     await fireEvent.update(screen.getByLabelText('搜索会话标题'), '品牌')
 
@@ -77,14 +93,14 @@ describe('AgentSessionControls', () => {
     expect(screen.queryByText('会话 1')).not.toBeInTheDocument()
   })
 
-  it('空会话列表加载时应展示统一加载状态', () => {
-    renderControls([], { isFetching: true })
+  it('空会话列表加载时应展示统一加载状态', async () => {
+    await renderControls([], { isFetching: true })
 
     expect(screen.getByText('正在加载')).toBeInTheDocument()
   })
 
-  it('空会话列表应展示统一空状态说明', () => {
-    renderControls([])
+  it('空会话列表应展示统一空状态说明', async () => {
+    await renderControls([])
 
     expect(screen.getByText('当前范围还没有智能体会话，发送第一条消息后会自动创建。')).toBeInTheDocument()
   })

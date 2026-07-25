@@ -91,12 +91,11 @@
       <template v-if="hasRenderableBindings">
         <template v-if="showComponentPropForm">
           <InspectorSection v-if="componentPropBindings.length" title="组件参数">
-            <div class="flex items-center justify-between gap-3">
-              <h4 class="text-xs font-bold text-slate-700">组件参数</h4>
-              <span class="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-500">
+            <template #actions>
+              <span class="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-500">
                 {{ componentPropBindings.length }} 项
               </span>
-            </div>
+            </template>
             <PageVisualEditValueField
               v-for="binding in componentPropBindings"
               :key="binding.binding_id"
@@ -124,12 +123,11 @@
           </InspectorSection>
 
           <InspectorSection v-if="styleBindings.length" title="组件样式">
-            <div class="flex items-center justify-between gap-3">
-              <h4 class="text-xs font-bold text-slate-700">组件样式</h4>
-              <span class="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-500">
+            <template #actions>
+              <span class="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-500">
                 {{ styleBindings.length }} 项
               </span>
-            </div>
+            </template>
             <PageVisualEditTailwindStyleEditor
               v-for="binding in styleBindings"
               :key="binding.binding_id"

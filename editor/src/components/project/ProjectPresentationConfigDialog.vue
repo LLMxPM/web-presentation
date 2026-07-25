@@ -37,38 +37,14 @@
         </section>
 
         <section class="project-config-card project-config-card--fill bg-white">
-          <div class="grid h-full min-h-0 gap-4 2xl:grid-cols-[minmax(0,0.92fr)_minmax(280px,0.78fr)]">
-            <div class="min-w-0">
-              <PreviewSizePresetSelect
-                :current-width="normalizedPageWidth"
-                :current-height="normalizedPageHeight"
-                :current-base-font-size="normalizedBaseFontSize"
-                :current-icon-default-stroke-width="normalizedIconDefaultStrokeWidth"
-                label="尺寸模板"
-                @apply="applyPageSizePreset"
-              />
-              <div class="mt-3 grid grid-cols-2 gap-3">
-                <UiInput v-model="draft.pageWidth" placeholder="1920" />
-                <UiInput v-model="draft.pageHeight" placeholder="1080" />
-              </div>
-              <div class="mt-3 grid grid-cols-2 gap-3">
-                <UiInput v-model="draft.baseFontSize" placeholder="20px" />
-                <UiInput v-model="draft.iconDefaultStrokeWidth" placeholder="2" />
-              </div>
-            </div>
-
-            <div class="grid content-start gap-4 border-t border-slate-200 pt-3 sm:grid-cols-2 2xl:block 2xl:border-l 2xl:border-t-0 2xl:pl-4 2xl:pt-0">
-              <div>
-                <label class="ml-1 text-sm font-semibold text-slate-700">菜单模式</label>
-                <UiSegmentedControl v-model="draft.menuMode" aria-label="菜单模式" :options="menuModeOptions" />
-              </div>
-
-              <div>
-                <label class="ml-1 block text-sm font-semibold text-slate-700 2xl:mt-3">导出按钮</label>
-                <UiSegmentedControl v-model="pdfExportButtonSegment" aria-label="导出按钮" :options="pdfButtonOptions" />
-              </div>
-            </div>
-          </div>
+          <ProjectPresentationFields
+            v-model:page-width="draft.pageWidth"
+            v-model:page-height="draft.pageHeight"
+            v-model:base-font-size="draft.baseFontSize"
+            v-model:icon-default-stroke-width="draft.iconDefaultStrokeWidth"
+            v-model:show-pdf-export-button="draft.showPdfExportButton"
+            v-model:menu-mode="draft.menuMode"
+          />
         </section>
       </section>
 
@@ -114,17 +90,21 @@ import { computed, reactive, ref, watch } from 'vue'
 
 import { createWorkspaceStyle, updateWorkspaceStyleSuggestedComponents, type WorkspaceStylePayload } from '@/api/styles'
 import ThemeSelectorField from '@/components/theme/ThemeSelectorField.vue'
-import PreviewSizePresetSelect from '@/components/preview-size/PreviewSizePresetSelect.vue'
-import { UiButton, UiDialog, UiFormField, UiInput, UiSegmentedControl } from '@/components/ui'
-import type { PreviewSizePreset, ProjectItem, ProjectMenuMode, WorkspaceStyleItem } from '@/types/api'
+import { UiButton, UiDialog, UiFormField, UiInput } from '@/components/ui'
+import type { ProjectItem, ProjectMenuMode, WorkspaceStyleItem } from '@/types/api'
 import { Message } from '@/utils/message'
 import { getErrorMessage } from '@/api/http'
 import WorkspaceStyleApplyField from './WorkspaceStyleApplyField.vue'
 import WorkspaceStyleEditorDialog from './WorkspaceStyleEditorDialog.vue'
-
-const DEFAULT_PROJECT_PAGE_WIDTH = 1920
-const DEFAULT_PROJECT_PAGE_HEIGHT = 1080
-const DEFAULT_PROJECT_BASE_FONT_SIZE = '20px'
+import ProjectPresentationFields from './ProjectPresentationFields.vue'
+import {
+  DEFAULT_PROJECT_BASE_FONT_SIZE,
+  DEFAULT_PROJECT_PAGE_HEIGHT,
+  DEFAULT_PROJECT_PAGE_WIDTH,
+  normalizeProjectBaseFontSize as normalizeBaseFontSize,
+  normalizeProjectDimension as normalizeDimension,
+  normalizeProjectInteger as normalizeIntegerWithinRange,
+} from './project-presentation-values'
 
 const props = withDefaults(defineProps<{
   modelValue: boolean
@@ -167,27 +147,10 @@ const saveAsStyleDialogVisible = ref(false)
 const saveAsStyleSaving = ref(false)
 const appliedWorkspaceStyleId = ref<number | null>(null)
 
-const menuModeOptions = [
-  { label: '侧边缩略图', value: 'preview' as const },
-  { label: '底部缩略图', value: 'bottom-preview' as const },
-  { label: '文本', value: 'text' as const },
-]
-
-const pdfButtonOptions = [
-  { label: '显示', value: 'visible' },
-  { label: '隐藏', value: 'hidden' },
-]
-
 const normalizedPageWidth = computed(() => normalizeDimension(draft.pageWidth, DEFAULT_PROJECT_PAGE_WIDTH))
 const normalizedPageHeight = computed(() => normalizeDimension(draft.pageHeight, DEFAULT_PROJECT_PAGE_HEIGHT))
 const normalizedBaseFontSize = computed(() => normalizeBaseFontSize(draft.baseFontSize, DEFAULT_PROJECT_BASE_FONT_SIZE))
 const normalizedIconDefaultStrokeWidth = computed(() => normalizeIntegerWithinRange(draft.iconDefaultStrokeWidth, 2, 1, 64))
-const pdfExportButtonSegment = computed({
-  get: () => draft.showPdfExportButton ? 'visible' : 'hidden',
-  set: value => {
-    draft.showPdfExportButton = value === 'visible'
-  },
-})
 const saveAsStyleInitialValue = computed<Partial<WorkspaceStylePayload>>(() => ({
   key: buildStyleKey(props.project?.name ?? 'project-style'),
   name: `${props.project?.name ?? '项目'}样式`,
@@ -233,17 +196,6 @@ function handleVisibleChange(value: boolean): void {
  */
 function updateThemeKey(value: string | null): void {
   draft.themeKey = value
-}
-
-/**
- * 将用户预设尺寸应用到项目页面尺寸草稿。
- * @param preset 预设尺寸
- */
-function applyPageSizePreset(preset: PreviewSizePreset): void {
-  draft.pageWidth = String(normalizeDimension(String(preset.width), DEFAULT_PROJECT_PAGE_WIDTH))
-  draft.pageHeight = String(normalizeDimension(String(preset.height), DEFAULT_PROJECT_PAGE_HEIGHT))
-  draft.baseFontSize = normalizeBaseFontSize(preset.base_font_size || DEFAULT_PROJECT_BASE_FONT_SIZE, DEFAULT_PROJECT_BASE_FONT_SIZE)
-  draft.iconDefaultStrokeWidth = String(normalizeIntegerWithinRange(String(preset.icon_default_stroke_width ?? 2), 2, 1, 64))
 }
 
 /**
@@ -333,52 +285,6 @@ async function handleSaveAsStyle(payload: WorkspaceStyleEditorSavePayload): Prom
 }
 
 /**
- * 归一化页面尺寸，避免输入空值或非法字符时破坏预览。
- * @param value 原始输入值
- * @param fallback 默认尺寸
- */
-function normalizeDimension(value: string, fallback: number): number {
-  const parsed = Number(value)
-  if (!Number.isFinite(parsed) || parsed <= 0) {
-    return fallback
-  }
-  return Math.min(8192, Math.max(1, Math.round(parsed)))
-}
-
-/**
- * 归一化项目基础字号。
- * @param value 原始字号
- * @param fallback 回退字号
- */
-function normalizeBaseFontSize(value: string, fallback: string): string {
-  const normalized = String(value || '').trim().toLowerCase()
-  const match = normalized.match(/^(\d+)(px)?$/)
-  if (!match) {
-    return fallback
-  }
-  const parsedValue = Number.parseInt(match[1], 10)
-  if (!Number.isFinite(parsedValue) || parsedValue < 1 || parsedValue > 200) {
-    return fallback
-  }
-  return `${parsedValue}px`
-}
-
-/**
- * 归一化项目页面规格整数。
- * @param value 原始输入
- * @param fallback 回退值
- * @param min 最小值
- * @param max 最大值
- */
-function normalizeIntegerWithinRange(value: string, fallback: number, min: number, max: number): number {
-  const parsedValue = Number(value)
-  if (!Number.isFinite(parsedValue)) {
-    return fallback
-  }
-  return Math.min(max, Math.max(min, Math.round(parsedValue)))
-}
-
-/**
  * 基于项目名称生成样式 key 候选值。
  * @param value 项目名称
  */
@@ -458,14 +364,23 @@ watch(
 
 @media (max-width: 1280px) {
   .project-config-layout {
-    grid-template-columns: 1fr;
+    display: block;
     overflow-y: auto;
     padding-right: 0.25rem;
   }
 
   .project-config-panel {
+    min-height: auto;
     overflow: visible;
     padding-right: 0;
+  }
+
+  .project-config-card--fill {
+    flex: none;
+  }
+
+  .project-config-spec-card {
+    margin-top: 0.75rem;
   }
 
   .project-config-spec-textarea {

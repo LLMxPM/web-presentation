@@ -2,19 +2,19 @@
 <template>
   <UiDialog
     :open="modelValue"
-    :title="style ? `${style.name} · 样式详情` : '样式详情'"
+    :title="styleItem ? `${styleItem.name} · 样式详情` : '样式详情'"
     size="standard"
     @update:open="handleVisibleChange"
   >
-    <div v-if="style" class="space-y-5">
+    <div v-if="styleItem" class="space-y-5">
       <section class="rounded-lg border border-slate-200 bg-white p-4">
         <div class="flex flex-wrap items-start justify-between gap-3">
           <div class="min-w-0">
-            <h3 class="truncate text-lg font-black text-slate-900">{{ style.name }}</h3>
-            <p class="mt-1 font-mono text-xs text-slate-400">{{ style.key }}</p>
+            <h3 class="truncate text-lg font-black text-slate-900">{{ styleItem.name }}</h3>
+            <p class="mt-1 font-mono text-xs text-slate-400">{{ styleItem.key }}</p>
           </div>
           <UiButton
-            v-if="style.theme_key"
+            v-if="styleItem.theme_key"
             type="button"
             variant="ghost"
             size="xs"
@@ -28,7 +28,7 @@
             不覆盖主题
           </span>
         </div>
-        <p class="mt-3 text-sm leading-6 text-slate-500">{{ style.description || '未填写样式说明。' }}</p>
+        <p class="mt-3 text-sm leading-6 text-slate-500">{{ styleItem.description || '未填写样式说明。' }}</p>
       </section>
 
       <section class="rounded-lg border border-slate-200 bg-white p-4">
@@ -62,7 +62,7 @@
 
     <template #footer>
       <UiButton variant="ghost" @click="handleVisibleChange(false)">关闭</UiButton>
-      <UiButton variant="primary" :disabled="!style" @click="handleEditStyle">编辑样式</UiButton>
+      <UiButton variant="primary" :disabled="!styleItem" @click="handleEditStyle">编辑样式</UiButton>
     </template>
   </UiDialog>
 
@@ -88,7 +88,7 @@ import type { ProjectMenuMode, WorkspaceStyleItem, WorkspaceThemeItem } from '@/
 const props = defineProps<{
   modelValue: boolean
   workspaceId: number | null
-  style: WorkspaceStyleItem | null
+  styleItem: WorkspaceStyleItem | null
   defaultThemeKey?: string | null
 }>()
 
@@ -103,19 +103,19 @@ const themeLoading = ref(false)
 const themeDetailVisible = ref(false)
 const themeLoadToken = ref(0)
 
-const selectedStyleSpecMarkdown = computed(() => props.style?.style_spec_markdown?.trim() || '')
+const selectedStyleSpecMarkdown = computed(() => props.styleItem?.style_spec_markdown?.trim() || '')
 const selectedStyleSpecNodes = computed(() => parseMarkdownToStructure(selectedStyleSpecMarkdown.value, markdownParser, {
   final: true,
 }))
 const themeBadgeText = computed(() => {
-  const themeKey = props.style?.theme_key
+  const themeKey = props.styleItem?.theme_key
   if (!themeKey) return '不覆盖主题'
   if (themeLoading.value) return `${themeKey} / 加载中`
   if (matchedTheme.value) return `${matchedTheme.value.name} / ${matchedTheme.value.key}`
   return `${themeKey} / 未找到主题`
 })
 const detailItems = computed(() => {
-  const style = props.style
+  const style = props.styleItem
   if (!style) {
     return []
   }
@@ -130,7 +130,7 @@ const detailItems = computed(() => {
 })
 
 watch(
-  () => [props.modelValue, props.workspaceId, props.style?.theme_key] as const,
+  () => [props.modelValue, props.workspaceId, props.styleItem?.theme_key] as const,
   ([visible]) => {
     if (!visible) {
       themeDetailVisible.value = false
@@ -145,7 +145,7 @@ watch(
  * 根据样式中的主题 key 加载主题摘要，用于顶部主题入口展示名称并打开详情。
  */
 async function loadMatchedTheme(): Promise<void> {
-  const themeKey = props.style?.theme_key?.trim()
+  const themeKey = props.styleItem?.theme_key?.trim()
   if (!props.workspaceId || !themeKey) {
     matchedTheme.value = null
     return
@@ -191,10 +191,10 @@ function handleVisibleChange(value: boolean): void {
  * 从详情弹窗进入当前样式编辑。
  */
 function handleEditStyle(): void {
-  if (!props.style) {
+  if (!props.styleItem) {
     return
   }
-  emit('edit', props.style)
+  emit('edit', props.styleItem)
   handleVisibleChange(false)
 }
 

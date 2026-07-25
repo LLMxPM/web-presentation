@@ -10,6 +10,7 @@
     >
     <PageHeader
       class="shrink-0"
+      :icon="Palette"
       :title="workspaceTitle"
       description="集中维护可复用的项目展示配置、主题引用和内容助手样式规范。"
     >
@@ -122,7 +123,7 @@
                       variant="ghost"
                       @click.stop="openSuggestedComponentsDialog(style)"
                     >
-                      <Layers class="h-3.5 w-3.5" />
+                      <Component class="h-3.5 w-3.5" />
                     </UiIconButton>
                     <UiIconButton
                       label="编辑"
@@ -176,7 +177,7 @@
     <WorkspaceStyleDetailDialog
       v-model="styleDetailVisible"
       :workspace-id="workspaceId"
-      :style="selectedStyle ?? null"
+      :style-item="selectedStyle ?? null"
       :default-theme-key="workspaceDetails?.default_theme_key"
       @edit="openEditStyle"
     />
@@ -402,7 +403,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { Copy, Download, Info, Layers, Pencil, Plus, RefreshCw, Trash2, Upload } from '@lucide/vue'
+import { Copy, Download,Component, Info, Palette, Pencil, Plus, RefreshCw, Trash2, Upload } from '@lucide/vue'
 
 import { getWorkspace } from '@/api/catalog'
 import { listWorkspaceAssets } from '@/api/assets'

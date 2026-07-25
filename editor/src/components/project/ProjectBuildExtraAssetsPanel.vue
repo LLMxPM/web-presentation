@@ -47,7 +47,7 @@
         variant="secondary"
         :loading="assetOptionsLoading"
         :disabled="!workspaceId"
-        class="h-8 min-w-[80px] whitespace-nowrap"
+        class="min-w-[80px]"
         @click="emit('loadAssets')"
       >
         <template #icon>
@@ -57,10 +57,9 @@
       </UiButton>
       <UiButton
         variant="ghost"
-        size="sm"
         :loading="assetOptionsLoading"
         :disabled="!workspaceId"
-        class="h-8 min-w-[64px] whitespace-nowrap"
+        class="min-w-[64px]"
         @click="emit('loadAssets')"
       >
         <template #icon>
@@ -81,7 +80,10 @@
             v-for="asset in automaticIncludedAssets"
             :key="asset.name"
             type="button"
-            class="flex w-full min-w-0 cursor-not-allowed items-center justify-between gap-1 rounded-md border border-slate-200 bg-white px-2 py-1.5 text-left text-xs font-semibold text-slate-500"
+            variant="secondary"
+            size="sm"
+            content-align="between"
+            class="w-full min-w-0"
             :title="`${asset.name} 已由当前构建自动包含`"
             disabled
           >
@@ -104,7 +106,10 @@
             v-for="asset in extraIncludedAssets"
             :key="asset.name"
             type="button"
-            class="flex w-full min-w-0 items-center justify-between gap-1 rounded-md border border-indigo-200 bg-white px-2 py-1.5 text-left text-xs font-semibold text-indigo-700"
+            variant="secondary"
+            size="sm"
+            content-align="between"
+            class="w-full min-w-0"
             :title="`移除 ${asset.name}`"
             @click="emit('removeAsset', asset.name)"
           >
@@ -135,7 +140,6 @@
               type="button"
               size="xs"
               variant="secondary"
-              class="h-7 w-6"
               label="向左查看更多资源类型"
               title="向左查看更多类型"
               @click="scrollAssetTypeTabs(-1)"
@@ -151,25 +155,19 @@
                 v-for="tab in assetTypeTabs"
                 :key="tab.key"
                 type="button"
-                class="inline-flex h-6 shrink-0 items-center justify-center gap-1 rounded px-1.5 text-[10px] font-semibold leading-none transition"
-                :class="isActiveTab(tab.key) ? 'bg-indigo-600 text-white shadow-sm' : 'bg-white text-slate-600 ring-1 ring-slate-200 hover:bg-slate-100 hover:text-slate-800'"
+                size="xs"
+                :variant="isActiveTab(tab.key) ? 'primary' : 'secondary'"
                 :title="`${tab.label} ${tab.count}`"
                 @click="activeAssetTypeTab = tab.key"
               >
                 <span>{{ tab.label }}</span>
-                <span
-                  class="shrink-0 rounded-full px-1 text-[9px] leading-4"
-                  :class="isActiveTab(tab.key) ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500'"
-                >
-                  {{ tab.count }}
-                </span>
+                <span class="shrink-0 text-[10px] opacity-70">{{ tab.count }}</span>
               </UiButton>
             </div>
             <UiIconButton
               type="button"
               size="xs"
               variant="secondary"
-              class="h-7 w-6"
               label="向右查看更多资源类型"
               title="向右查看更多类型"
               @click="scrollAssetTypeTabs(1)"
@@ -182,8 +180,10 @@
               v-for="asset in activeTabAssets"
               :key="asset.id"
               type="button"
-              class="flex min-w-0 items-center justify-between gap-2 rounded-md border px-2 py-1.5 text-left text-xs font-semibold transition disabled:cursor-not-allowed"
-              :class="assetOptionClass(asset.name)"
+              size="sm"
+              content-align="between"
+              class="w-full min-w-0"
+              :variant="isSelected(asset.name) ? 'primary' : 'secondary'"
               :disabled="isAutomatic(asset.name)"
               @click="emit('toggleAsset', asset.name)"
             >
@@ -357,19 +357,6 @@ function handleAssetTypeTabWheel(event: WheelEvent): void {
   scroller.scrollLeft += event.deltaX || event.deltaY
 }
 
-/**
- * 生成资源项样式，区分自动包含、额外选中和未选择。
- * @param assetName 资源名
- */
-function assetOptionClass(assetName: string): string {
-  if (isAutomatic(assetName)) {
-    return 'border-slate-200 bg-slate-50 text-slate-500'
-  }
-  if (isSelected(assetName)) {
-    return 'border-indigo-200 bg-indigo-50 text-indigo-700'
-  }
-  return 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
-}
 </script>
 
 <style scoped>

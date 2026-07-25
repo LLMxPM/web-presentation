@@ -7,11 +7,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import ThemeEditorDialog from './ThemeEditorDialog.vue'
 
-const listWorkspaceAssetsMock = vi.fn()
 const listWorkspaceFontsMock = vi.fn()
 
 vi.mock('@/api/assets', () => ({
-  listWorkspaceAssets: (...args: unknown[]) => listWorkspaceAssetsMock(...args),
   listWorkspaceFonts: (...args: unknown[]) => listWorkspaceFontsMock(...args),
 }))
 
@@ -25,7 +23,6 @@ vi.mock('@/utils/message', () => ({
 describe('ThemeEditorDialog', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    listWorkspaceAssetsMock.mockResolvedValue({ items: [], total: 0, page: 1, page_size: 100 })
     listWorkspaceFontsMock.mockResolvedValue({
       items: [createFontItem(2, '思源黑体'), createFontItem(3, 'Monaco'), createFontItem(4, 'SourceCodePro')],
       total: 3,
@@ -95,6 +92,18 @@ describe('ThemeEditorDialog', () => {
     expect(savePayload).not.toHaveProperty('icon_default_size')
     expect(savePayload).not.toHaveProperty('icon_default_stroke_width')
   })
+
+  it('品牌 Logo 应仅选择图片资源，项目图标应仅选择图标资源', async () => {
+    renderDialog()
+
+    await waitFor(() => {
+      expect(screen.getByDisplayValue('Default_Theme')).toBeInTheDocument()
+    })
+
+    const pickers = screen.getAllByTestId('asset-picker')
+    expect(pickers).toHaveLength(3)
+    expect(pickers.map(item => item.getAttribute('data-asset-type'))).toEqual(['image', 'image', 'icon'])
+  })
 })
 
 function renderDialog(theme: ReturnType<typeof createThemeItem> | null = createThemeItem()) {
@@ -128,8 +137,8 @@ function renderDialog(theme: ReturnType<typeof createThemeItem> | null = createT
             return () => h('button', { ...attrs, disabled: props.disabled }, slots.default?.())
           },
         }),
-        SearchableSelect: defineComponent({
-          name: 'SearchableSelect',
+        UiCombobox: defineComponent({
+          name: 'UiCombobox',
           props: {
             modelValue: [String, Number],
           },
@@ -137,10 +146,16 @@ function renderDialog(theme: ReturnType<typeof createThemeItem> | null = createT
             return () => h('div', { 'data-testid': 'searchable-select' }, String(props.modelValue ?? ''))
           },
         }),
-        IconPicker: defineComponent({
-          name: 'IconPicker',
-          setup() {
-            return () => h('div', { 'data-testid': 'icon-picker' }, '图标选择器')
+        AssetPicker: defineComponent({
+          name: 'AssetPicker',
+          props: {
+            assetType: String,
+          },
+          setup(props) {
+            return () => h('div', {
+              'data-testid': 'asset-picker',
+              'data-asset-type': props.assetType,
+            }, '资源选择器')
           },
         }),
         ThemePreviewCard: defineComponent({

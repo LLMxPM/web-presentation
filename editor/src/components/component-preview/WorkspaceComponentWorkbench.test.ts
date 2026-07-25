@@ -100,6 +100,34 @@ describe('WorkspaceComponentWorkbench', () => {
     }))
   })
 
+  it('首次挂载时已有新建令牌应立即打开创建弹窗', async () => {
+    render(WorkspaceComponentWorkbench, {
+      props: {
+        workspaceId: 11,
+        component: null,
+        createToken: 1,
+      },
+      global: {
+        stubs: {
+          ComponentPreviewWorkbench: true,
+          ComponentEditorPane: defineComponent({
+            name: 'ComponentEditorPane',
+            setup() {
+              return () => h('div', '组件创建表单')
+            },
+          }),
+          ComponentVersionHistoryDialog: true,
+          ComponentReferenceDialog: true,
+          ComponentReleaseDialog: true,
+          UiButton: true,
+          UiDialog: UiDialogStub,
+        },
+      },
+    })
+
+    expect(await screen.findByText('组件创建表单')).toBeInTheDocument()
+  })
+
   it('同 ID 组件状态变化后应重新载入草稿并刷新预览', async () => {
     const { rerender } = render(WorkspaceComponentWorkbench, {
       props: {

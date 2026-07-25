@@ -184,7 +184,7 @@
 
           <div class="space-y-1.5">
             <label class="ml-1 text-sm font-semibold text-slate-700">供应商配置</label>
-            <SearchableSelect
+            <UiCombobox
               :model-value="form.provider_config_id"
               :options="providerConfigOptions"
               placeholder="请选择供应商配置"
@@ -407,9 +407,8 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 
-import { UiButton, UiCheckbox, UiFormField, UiInput, UiSelect } from '@/components/ui'
+import { UiButton, UiCheckbox, UiCombobox, UiFormField, UiInput, UiSelect } from '@/components/ui'
 import InspectorSection from '@/components/patterns/InspectorSection.vue'
-import SearchableSelect from '@/components/ui/SearchableSelect.vue'
 import type { SelectOption } from '@/components/ui/select'
 import type { AiLlmConfigScope, AiModelType, ImageGenerationModelCatalogItem, LlmConfigItem, LlmProviderCatalogItem } from '@/types/api'
 

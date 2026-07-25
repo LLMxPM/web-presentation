@@ -1,7 +1,7 @@
 /**
  * 文件功能：验证视觉工具专用卡片的分析摘要、生成进度与资源回显。
  */
-import { render, screen } from '@testing-library/vue'
+import { fireEvent, render, screen } from '@testing-library/vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import AgentVisualToolCard from '@/components/agent/AgentVisualToolCard.vue'
@@ -17,7 +17,7 @@ vi.mock('vue-router', () => ({
 describe('AgentVisualToolCard', () => {
   beforeEach(() => routerPush.mockReset())
 
-  it('展示图片理解的附件、页面截图和短摘要', () => {
+  it('展示限制高度的图片理解缩略图，并在当前页面打开统一预览', async () => {
     render(AgentVisualToolCard, {
       props: {
         tool: createTool({
@@ -31,10 +31,17 @@ describe('AgentVisualToolCard', () => {
     })
 
     expect(screen.getByText('图片理解')).toBeTruthy()
-    expect(screen.getByText('comparison')).toBeTruthy()
+    expect(screen.getByText('图片对比')).toBeTruthy()
+    expect(screen.queryByText('comparison')).toBeNull()
     expect(screen.getByText('第二张图片的信息层级更清晰。')).toBeTruthy()
-    expect(screen.getByAltText('input.png')).toBeTruthy()
+    const inputImage = screen.getByAltText('input.png')
+    expect(inputImage.closest('button')).toHaveClass('h-16')
     expect(screen.getByAltText('page.png')).toBeTruthy()
+
+    await fireEvent.click(screen.getByRole('button', { name: '预览图片 input.png' }))
+    expect(screen.getByRole('button', { name: '关闭图片预览' })).toBeTruthy()
+    expect(screen.getAllByAltText('input.png')).toHaveLength(2)
+    expect(document.querySelector('a[target="_blank"]')).toBeNull()
   })
 
   it('展示图片生成结果和资源库标记', async () => {
@@ -51,6 +58,7 @@ describe('AgentVisualToolCard', () => {
     expect(screen.getByText('图片生成')).toBeTruthy()
     expect(screen.getByText('已生成 1 张图片，并创建工作空间资源。')).toBeTruthy()
     expect(screen.getByText('hero')).toBeTruthy()
+    expect(screen.getByAltText('hero.png')).toHaveClass('h-32', 'max-h-32')
     await screen.getByRole('button', { name: /已保存到资源库/ }).click()
     expect(routerPush).toHaveBeenCalledWith({ name: 'assets', params: { workspaceId: 7 } })
   })

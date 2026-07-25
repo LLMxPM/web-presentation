@@ -1,17 +1,17 @@
 <!-- 文件功能：提供智能体 HITL 覆盖输入区的统一外壳，封装标题、键盘忽略和提交按钮样式。 -->
 <template>
   <section
-    class="rounded-md border border-slate-200 bg-white px-3 py-2 shadow-sm outline-none"
+    class="rounded-ui-md border border-border bg-surface px-3 py-2.5 outline-none focus-visible:ring-2 focus-visible:ring-border-focus"
     tabindex="0"
     @keydown.esc.stop.prevent="emitIgnore"
     @keydown.enter.exact.stop.prevent="emitSubmit"
   >
     <div class="flex items-start justify-between gap-3">
       <div class="min-w-0">
-        <p class="text-[13px] font-semibold leading-5 text-slate-900">{{ title }}</p>
-        <p v-if="subtitle" class="mt-0.5 text-xs leading-5 text-slate-500">{{ subtitle }}</p>
+        <p class="text-sm font-semibold leading-5 text-text">{{ title }}</p>
+        <p v-if="subtitle" class="mt-0.5 text-xs leading-5 text-text-muted">{{ subtitle }}</p>
       </div>
-      <UiBadge v-if="badge" class="shrink-0 rounded-full">
+      <UiBadge v-if="badge" tone="info" class="shrink-0">
         {{ badge }}
       </UiBadge>
     </div>
@@ -29,19 +29,17 @@
           type="button"
           variant="ghost"
           size="sm"
-          class="gap-1 px-2 py-1 text-xs"
           :disabled="loading"
           @click="emitIgnore"
         >
           {{ ignoreLabel }}
-          <kbd class="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-500">ESC</kbd>
+          <kbd class="rounded-ui-sm bg-surface-muted px-1.5 py-0.5 text-xs font-medium text-text-muted">ESC</kbd>
         </UiButton>
         <UiButton
           variant="primary"
           size="sm"
           :loading="loading"
           :disabled="!canSubmit"
-          class="rounded-md px-2.5 py-1 text-xs"
           @click="emitSubmit"
         >
           {{ submitLabel }}

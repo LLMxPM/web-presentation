@@ -168,10 +168,12 @@ describe('AdminLayout', () => {
     renderLayout()
 
     expect(screen.getByTestId('app-brand-title')).toBeTruthy()
+    expect(screen.getByTestId('app-brand-title').parentElement).not.toHaveClass('admin-layout-brand-expanded')
 
     await fireEvent.click(screen.getByTestId('agent-expand-state'))
 
     expect(screen.queryByTestId('app-brand-title')).toBeNull()
+    expect(screen.getByTestId('admin-layout').querySelector('.admin-layout-brand')).toHaveClass('admin-layout-brand-expanded')
   })
 
   it.each([

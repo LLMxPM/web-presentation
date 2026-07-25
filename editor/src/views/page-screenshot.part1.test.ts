@@ -438,13 +438,13 @@ describe('page screenshot views', () => {
     render(PagesView, createTestingRenderOptions())
 
     expect(await screen.findByText('页面详情')).toBeInTheDocument()
-    const standardButton = screen.getByRole('button', { name: '卡片标准' })
+    const standardButton = screen.getByRole('button', { name: '标准' })
     expect(standardButton).toHaveAttribute('aria-pressed', 'true')
 
-    await fireEvent.click(screen.getByRole('button', { name: '卡片超大' }))
+    await fireEvent.click(screen.getByRole('button', { name: '超大' }))
 
     expect(localStorage.getItem('web-presentation:pages-view:preview-card-size')).toBe('huge')
-    expect(screen.getByRole('button', { name: '卡片超大' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: '超大' })).toHaveAttribute('aria-pressed', 'true')
   })
 
   it('PagesView 智能体对话面板打开时应隐藏项目编码', async () => {
@@ -457,7 +457,7 @@ describe('page screenshot views', () => {
     render(PagesView, createTestingRenderOptions(true))
 
     expect(await screen.findByText('项目 A')).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: '项目 A' })).toHaveClass('max-w-[10rem]')
+    expect(screen.getByRole('heading', { name: '项目 A' })).not.toHaveTextContent('PRJ202604020001')
     expect(screen.queryByText('PRJ202604020001')).toBeNull()
   })
 
@@ -582,92 +582,6 @@ describe('page screenshot views', () => {
     })
     await waitFor(() => {
       expect(messageSuccessMock).toHaveBeenCalledWith('已将 2 个页面移出项目路由。')
-    })
-  })
-
-  it('PagesView 应支持批量复制选中页面到其他项目', async () => {
-    listPagesMock.mockResolvedValue({
-      items: [
-        createPageListPayload({
-          id: 31,
-          code: 'PG202604020001',
-          title: '复制 A',
-          is_in_project_route: false,
-          route_bindings: [],
-        }),
-        createPageListPayload({
-          id: 32,
-          code: 'PG202604020002',
-          title: '复制 B',
-          is_in_project_route: false,
-          route_bindings: [],
-        }),
-      ],
-      total: 2,
-      page: 1,
-      page_size: 100,
-    })
-    listProjectsMock.mockResolvedValue({
-      items: [
-        {
-          id: 21,
-          name: '项目 A',
-          code: 'PRJ202604020001',
-          status: 'active',
-          description: null,
-          workspace_id: 11,
-          workspace_name: '工作空间 A',
-          ...defaultProjectConfigs,
-          created_at: '2026-04-02T10:00:00Z',
-          updated_at: '2026-04-02T10:00:00Z',
-          created_by: 1,
-          updated_by: 1,
-        },
-        {
-          id: 22,
-          name: '项目 B',
-          code: 'PRJ202604020002',
-          status: 'active',
-          description: null,
-          workspace_id: 11,
-          workspace_name: '工作空间 A',
-          ...defaultProjectConfigs,
-          created_at: '2026-04-02T10:00:00Z',
-          updated_at: '2026-04-02T10:00:00Z',
-          created_by: 1,
-          updated_by: 1,
-        },
-      ],
-      total: 2,
-      page: 1,
-      page_size: 100,
-    })
-
-    render(PagesView, createTestingRenderOptions())
-
-    expect(await screen.findByText('复制 A')).toBeInTheDocument()
-    await fireEvent.click(screen.getByTestId('batch-unrouted-select-all'))
-    await fireEvent.click(screen.getByTestId('batch-unrouted-copy'))
-    await screen.findByText('项目 B')
-    await fireEvent.click(screen.getByRole('button', { name: '批量复制' }))
-
-    await waitFor(() => {
-      expect(copyPageToProjectMock).toHaveBeenCalledTimes(2)
-    })
-    expect(copyPageToProjectMock).toHaveBeenNthCalledWith(1, 31, {
-      target_project_id: 22,
-      route_placement: 'none',
-      parent_route_id: null,
-      route: null,
-    })
-    expect(copyPageToProjectMock).toHaveBeenNthCalledWith(2, 32, {
-      target_project_id: 22,
-      route_placement: 'none',
-      parent_route_id: null,
-      route: null,
-    })
-    await waitFor(() => {
-      expect(messageSuccessMock).toHaveBeenCalledWith('批量复制完成 2 个页面。')
     })
   })
 

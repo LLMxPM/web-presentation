@@ -12,28 +12,12 @@
     @submit="submitAnswers"
   >
     <div v-if="currentQuestion" class="space-y-2">
-      <div class="space-y-1">
-        <UiButton
-          v-for="option in currentQuestion.options"
-          :key="option.label"
-          type="button"
-          variant="ghost"
-          class="h-auto flex w-full items-start gap-2 rounded-md border px-2.5 py-2 text-left transition"
-          :class="currentAnswer.selectedLabel === option.label
-            ? 'border-sky-300 bg-sky-50 text-sky-900'
-            : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50'"
-          @click="selectOption(option.label)"
-        >
-          <span class="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border text-[10px]"
-            :class="currentAnswer.selectedLabel === option.label ? 'border-sky-500 bg-sky-500 text-white' : 'border-slate-300 text-transparent'">
-            ●
-          </span>
-          <span class="min-w-0">
-            <span class="block text-xs font-semibold leading-5">{{ option.label }}</span>
-            <span v-if="option.description" class="block text-[11px] leading-5 text-slate-500">{{ option.description }}</span>
-          </span>
-        </UiButton>
-      </div>
+      <UiRadioGroup
+        :model-value="currentAnswer.selectedLabel || ''"
+        :options="currentQuestionOptions"
+        :disabled="loading"
+        @update:model-value="selectOption"
+      />
 
       <PropertyRow label="自定义回答">
         <UiInput
@@ -43,21 +27,20 @@
         />
       </PropertyRow>
 
-      <p v-if="showCurrentAnswerWarning" class="text-[11px] leading-5 text-amber-600">
+      <p v-if="showCurrentAnswerWarning" class="text-xs leading-5 text-warning">
         请先选择一个选项，或填写自定义回答。
       </p>
     </div>
-    <p v-else class="rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2 text-xs leading-5 text-amber-800">
+    <p v-else class="rounded-ui-md border border-warning/20 bg-warning-muted px-2.5 py-2 text-xs leading-5 text-warning">
       当前提问缺少可展示的问题，请忽略后重新发起。
     </p>
 
     <template #footer-left>
       <UiButton
         v-if="forceReleaseAvailable"
-        variant="ghost"
+        variant="danger"
         size="sm"
         :disabled="loading"
-        class="rounded-md px-2 py-1 text-xs text-red-600 hover:bg-red-50"
         @click="emit('forceRelease')"
       >
         强制释放
@@ -66,7 +49,6 @@
         variant="ghost"
         size="sm"
         :disabled="currentIndex <= 0 || loading"
-        class="rounded-md px-2 py-1 text-xs"
         @click="goPrevious"
       >
         上一题
@@ -75,7 +57,6 @@
         variant="ghost"
         size="sm"
         :disabled="!canGoNext || loading"
-        class="rounded-md px-2 py-1 text-xs"
         @click="goNext"
       >
         下一题
@@ -89,7 +70,7 @@ import { computed, ref, watch } from 'vue'
 
 import AgentHitlShell from '@/components/agent/AgentHitlShell.vue'
 import PropertyRow from '@/components/patterns/PropertyRow.vue'
-import { UiButton, UiInput } from '@/components/ui'
+import { UiButton, UiInput, UiRadioGroup } from '@/components/ui'
 import type { AgentFeedbackSelection, AgentPendingRequirement, AgentUserFeedbackQuestion } from '@/types/api'
 
 interface AnswerState {
@@ -119,6 +100,11 @@ const attemptedSubmit = ref(false)
 const questions = computed(() => normalizeQuestions(props.requirement.user_feedback_schema))
 const currentQuestion = computed(() => questions.value[currentIndex.value] ?? null)
 const currentAnswer = computed(() => answers.value[currentIndex.value] ?? { selectedLabel: null, customText: '' })
+const currentQuestionOptions = computed(() => (currentQuestion.value?.options ?? []).map(option => ({
+  label: option.label,
+  value: option.label,
+  description: option.description ?? undefined,
+})))
 const currentQuestionTitle = computed(() => currentQuestion.value?.question || '需要补充信息')
 const memberSourceLabel = computed(() => props.requirement.member_agent_name ? `来自 ${props.requirement.member_agent_name}` : '')
 const questionProgressLabel = computed(() => (

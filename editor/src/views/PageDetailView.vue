@@ -292,6 +292,7 @@ import { buildPageDetailPath, buildProjectPagesPath } from '@/utils/workspace-ro
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error'
 
 interface PageEditDialogExpose {
+  confirmAction: (message: string, title: string, dangerous?: boolean) => Promise<boolean>
   discardChanges: () => void
   reanalyze: () => Promise<void>
   markStale: () => void
@@ -832,9 +833,10 @@ async function confirmDiscardVisualEdit(): Promise<boolean> {
     return false
   }
   if (!isVisualEditDirty.value) return true
-  const confirmed = await createConfirm(
+  const confirmed = await pageEditDialogRef.value?.confirmAction(
     '离开会放弃当前可视化编辑草稿，且这些修改尚未写入页面源码。是否继续？',
     '放弃可视化编辑',
+    true,
   )
   if (!confirmed) return false
   pageEditDialogRef.value?.discardChanges()

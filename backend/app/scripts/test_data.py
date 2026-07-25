@@ -18,6 +18,7 @@ from app.ai.provider_catalog import LLM_SLOT_DEFINITIONS
 from app.core.config import get_settings
 from app.db.base import Base
 from app.db.session import get_engine, get_session_factory
+from app.models.enums import AiLlmSlot, AiModelType
 from app.models.user import User
 from app.models.page import Page
 from app.models.workspace import Project, Workspace
@@ -40,6 +41,7 @@ class SmokeDataNames:
     project_name: str = "Smoke Project"
     page_title: str = "Smoke Page"
     llm_config_name: str = "Smoke Mock LLM"
+    image_llm_config_name: str = "Smoke Mock Image LLM"
     page_summary: str = "平台级 smoke 场景默认页面。"
 
 
@@ -208,38 +210,38 @@ async def _ensure_project_routes(*, session, project_id: int, page_id: int, oper
 
 
 async def _ensure_mock_llm_binding(*, session, user_id: int, operator_id: int) -> None:
-    settings = get_settings()
-    if settings.ai_test_mode != "mock":
+    if get_settings().ai_test_mode != "mock":
         return
 
     service = AiLlmService(session, user_id=user_id)
     existing_configs = await service.list_configs()
-    target_config = next((item for item in existing_configs if item.name == SMOKE_DATA.llm_config_name), None)
-    if target_config is None:
-        provider_configs = await service.list_provider_configs()
-        target_provider = next((item for item in provider_configs if item.name == "OpenAI Mock 凭证"), None)
-        if target_provider is None:
-            target_provider = await service.create_provider_config(
-                LlmProviderConfigCreateRequest(
-                    name="OpenAI Mock 凭证",
-                    provider_key="openai",
-                    api_key=None,
-                ),
-                operator_id=operator_id,
-            )
-        target_config = await service.create_config(
-            LlmConfigCreateRequest(
-                name=SMOKE_DATA.llm_config_name,
-                provider_config_id=target_provider.id,
-                model_id="gpt-5-mini",
-                thinking_enabled=True,
-                thinking_effort="low",
-                supports_image_input=True,
-            ),
-            operator_id=operator_id,
-        )
+    provider_configs = await service.list_provider_configs()
+    chat_config = await _ensure_mock_llm_config(
+        service=service,
+        configs=existing_configs,
+        provider_configs=provider_configs,
+        config_name=SMOKE_DATA.llm_config_name,
+        provider_name="OpenAI Mock 凭证",
+        provider_key="openai",
+        model_id="gpt-5-mini",
+        model_type=AiModelType.CHAT,
+        operator_id=operator_id,
+        supports_image_input=True,
+    )
+    image_config = await _ensure_mock_llm_config(
+        service=service,
+        configs=existing_configs,
+        provider_configs=provider_configs,
+        config_name=SMOKE_DATA.image_llm_config_name,
+        provider_name="OpenAI Mock 图片凭证",
+        provider_key="openai_image",
+        model_id="gpt-image-2",
+        model_type=AiModelType.IMAGE_GENERATION,
+        operator_id=operator_id,
+    )
 
     for slot in LLM_SLOT_DEFINITIONS:
+        target_config = image_config if slot == AiLlmSlot.IMAGE_GENERATION.value else chat_config
         binding = await service.get_slot_binding(slot)
         if binding.llm_config_id == target_config.id and binding.binding_ready:
             continue
@@ -248,6 +250,48 @@ async def _ensure_mock_llm_binding(*, session, user_id: int, operator_id: int) -
             LlmSlotBindingUpdateRequest(llm_config_id=target_config.id),
             operator_id=operator_id,
         )
+
+
+async def _ensure_mock_llm_config(
+    *,
+    service: AiLlmService,
+    configs: list,
+    provider_configs: list,
+    config_name: str,
+    provider_name: str,
+    provider_key: str,
+    model_id: str,
+    model_type: AiModelType,
+    operator_id: int,
+    supports_image_input: bool = False,
+):
+    """确保 smoke 场景拥有与目标协议匹配的 mock 模型配置。"""
+
+    config = next((item for item in configs if item.name == config_name and item.model_type == model_type), None)
+    if config is not None:
+        return config
+
+    provider = next(
+        (item for item in provider_configs if item.name == provider_name and item.provider_key == provider_key),
+        None,
+    )
+    if provider is None:
+        provider = await service.create_provider_config(
+            LlmProviderConfigCreateRequest(name=provider_name, provider_key=provider_key, api_key=None),
+            operator_id=operator_id,
+        )
+    return await service.create_config(
+        LlmConfigCreateRequest(
+            name=config_name,
+            provider_config_id=provider.id,
+            model_id=model_id,
+            model_type=model_type,
+            thinking_enabled=model_type == AiModelType.CHAT,
+            thinking_effort="low" if model_type == AiModelType.CHAT else None,
+            supports_image_input=supports_image_input,
+        ),
+        operator_id=operator_id,
+    )
 
 
 def require_e2e_database_url() -> None:

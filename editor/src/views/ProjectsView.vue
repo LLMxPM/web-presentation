@@ -3,8 +3,9 @@
   <div data-testid="workspace-project-list" class="projects-view space-y-3 pb-12">
     <header class="animate-in fade-in slide-in-from-top-4 duration-700">
       <PageHeader
+        :icon="FolderKanban"
         :title="workspaceQuery.data.value?.name ?? '正在加载工作空间...'"
-        description="管理当前工作空间的项目、模板导入和归档内容。"
+        :description="workspaceDetails?.description || '暂无工作空间描述。'"
       >
         <template #actions>
           <UiButton variant="ghost" size="md" :disabled="!workspaceDetails" @click="openWorkspaceEditDialog">
@@ -41,20 +42,24 @@
     </header>
 
     <CommandBar label="项目列表操作">
-      <span class="text-xs text-[rgb(var(--ui-text-secondary))]">共 {{ filteredProjects.length }} / {{ projects.length }} 个启用项目</span>
+      <SimpleSearchBar
+        v-model="projectKeyword"
+        class="w-full min-w-64 max-w-md"
+        placeholder="按项目名称或编码搜索"
+        aria-label="搜索项目"
+      />
+      <span class="shrink-0 text-xs text-[rgb(var(--ui-text-secondary))]">共 {{ projects.length }} 个项目</span>
       <template #actions>
-          <UiButton
-            variant="secondary"
-            size="md"
-            @click="archivedDialogVisible = true"
-          >
-            <Archive class="w-4 h-4" />
-            <span>已归档项目</span>
-          </UiButton>
+        <UiButton
+          variant="secondary"
+          size="md"
+          @click="archivedDialogVisible = true"
+        >
+          <Archive class="w-4 h-4" />
+          <span>已归档项目</span>
+        </UiButton>
       </template>
     </CommandBar>
-
-    <SimpleSearchBar v-model="projectKeyword" placeholder="按项目名称或编码搜索" aria-label="搜索项目" />
 
     <DataState
       :state="projectDataState"
@@ -68,7 +73,7 @@
           新增项目
         </UiButton>
       </template>
-      <div class="grid grid-cols-[repeat(auto-fill,minmax(min(100%,20rem),22rem))] justify-start gap-4">
+      <div class="grid grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
         <ProjectCard
           v-for="proj in filteredProjects"
           :key="proj.id"
@@ -388,7 +393,7 @@
 import { computed, onBeforeUnmount, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/vue-query'
-import { Archive, Eye, Plus, Settings2, Upload } from '@lucide/vue'
+import { Archive, Eye, FolderKanban, Plus, Settings2, Upload } from '@lucide/vue'
 
 import { createProject, getWorkspace, listProjects, updateProject, updateWorkspace } from '@/api/catalog'
 import { getErrorMessage } from '@/api/http'

@@ -43,38 +43,47 @@
             <div>
               <h4 class="text-xs font-black text-slate-700">品牌资源</h4>
               <div class="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-3">
-                <label class="space-y-1.5">
+                <div class="space-y-1.5">
                   <span class="text-xs font-bold text-slate-500">主题 Logo</span>
-                  <SearchableSelect
+                  <AssetPicker
                     :model-value="form.logo_asset_id"
-                    :options="logoAssetOptions"
-                    clearable
+                    :workspace-id="workspaceId"
+                    asset-type="image"
+                    :selected-asset="selectedLogoAsset"
+                    value-mode="id"
+                    title="选择主题 Logo"
                     placeholder="不设置"
-                    search-placeholder="搜索 Logo 资源"
                     @update:model-value="updateNullableNumberField('logo_asset_id', $event)"
+                    @select="selectedLogoAsset = $event"
                   />
-                </label>
-                <label class="space-y-1.5">
+                </div>
+                <div class="space-y-1.5">
                   <span class="text-xs font-bold text-slate-500">反色 Logo</span>
-                  <SearchableSelect
+                  <AssetPicker
                     :model-value="form.invert_logo_asset_id"
-                    :options="logoAssetOptions"
-                    clearable
+                    :workspace-id="workspaceId"
+                    asset-type="image"
+                    :selected-asset="selectedInvertLogoAsset"
+                    value-mode="id"
+                    title="选择反色 Logo"
                     placeholder="不设置"
-                    search-placeholder="搜索反色 Logo 资源"
                     @update:model-value="updateNullableNumberField('invert_logo_asset_id', $event)"
+                    @select="selectedInvertLogoAsset = $event"
                   />
-                </label>
-                <label class="space-y-1.5">
+                </div>
+                <div class="space-y-1.5">
                   <span class="text-xs font-bold text-slate-500">项目图标</span>
-                  <IconPicker
+                  <AssetPicker
                     :model-value="form.project_icon_asset_id"
-                    :assets="projectIconAssets"
+                    :workspace-id="workspaceId"
+                    asset-type="icon"
+                    :selected-asset="selectedProjectIconAsset"
                     value-mode="id"
                     placeholder="不设置"
                     @update:model-value="updateNullableNumberField('project_icon_asset_id', $event)"
+                    @select="selectedProjectIconAsset = $event"
                   />
-                </label>
+                </div>
               </div>
             </div>
 
@@ -83,7 +92,7 @@
               <div class="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3">
                 <label class="space-y-1.5">
                   <span class="text-xs font-bold text-slate-500">标题字体</span>
-                  <SearchableSelect
+                  <UiCombobox
                     :model-value="form.heading_font_id"
                     :options="fontOptions"
                     clearable
@@ -94,7 +103,7 @@
                 </label>
                 <label class="space-y-1.5">
                   <span class="text-xs font-bold text-slate-500">正文字体</span>
-                  <SearchableSelect
+                  <UiCombobox
                     :model-value="form.body_font_id"
                     :options="fontOptions"
                     clearable
@@ -105,7 +114,7 @@
                 </label>
                 <label class="space-y-1.5">
                   <span class="text-xs font-bold text-slate-500">代码字体</span>
-                  <SearchableSelect
+                  <UiCombobox
                     :model-value="form.code_font_id"
                     :options="fontOptions"
                     clearable
@@ -219,14 +228,13 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
 
-import { listWorkspaceAssets, listWorkspaceFonts } from '@/api/assets'
+import { listWorkspaceFonts } from '@/api/assets'
 import { getErrorMessage } from '@/api/http'
-import IconPicker from '@/components/ui/IconPicker.vue'
-import SearchableSelect from '@/components/ui/SearchableSelect.vue'
+import AssetPicker from '@/components/ui/AssetPicker.vue'
+import { UiButton, UiCombobox, UiDialog, UiInput } from '@/components/ui'
 import type { SelectModelValue, SelectOption } from '@/components/ui/select'
-import type { AssetResponse, ThemePalette, WorkspaceFontConfigItem, WorkspaceThemeItem } from '@/types/api'
+import type { AssetResponse, ThemeAssetSummary, ThemePalette, WorkspaceFontConfigItem, WorkspaceThemeItem } from '@/types/api'
 import { Message } from '@/utils/message'
-import { UiButton, UiDialog, UiInput } from '@/components/ui'
 import ThemePreviewCard from './ThemePreviewCard.vue'
 
 const props = withDefaults(defineProps<{
@@ -259,9 +267,10 @@ const dialogVisible = computed({
   set: (value: boolean) => emit('update:modelValue', value),
 })
 
-const logoAssets = ref<AssetResponse[]>([])
-const projectIconAssets = ref<AssetResponse[]>([])
 const fonts = ref<WorkspaceFontConfigItem[]>([])
+const selectedLogoAsset = ref<AssetResponse | ThemeAssetSummary | null>(null)
+const selectedInvertLogoAsset = ref<AssetResponse | ThemeAssetSummary | null>(null)
+const selectedProjectIconAsset = ref<AssetResponse | ThemeAssetSummary | null>(null)
 const DEFAULT_HEADING_FONT_FAMILY = 'system-ui'
 const DEFAULT_BODY_FONT_FAMILY = 'system-ui'
 const DEFAULT_CODE_FONT_FAMILY = 'monospace'
@@ -317,18 +326,9 @@ const colorGroups = [
   },
 ]
 
-const selectedLogoAsset = computed(() => logoAssets.value.find(item => item.id === form.logo_asset_id) || null)
-const selectedInvertLogoAsset = computed(() => logoAssets.value.find(item => item.id === form.invert_logo_asset_id) || null)
-const selectedProjectIconAsset = computed(() => projectIconAssets.value.find(item => item.id === form.project_icon_asset_id) || null)
 const selectedHeadingFont = computed(() => fonts.value.find(item => item.id === form.heading_font_id) || null)
 const selectedBodyFont = computed(() => fonts.value.find(item => item.id === form.body_font_id) || null)
 const selectedCodeFont = computed(() => fonts.value.find(item => item.id === form.code_font_id) || null)
-const logoAssetOptions = computed<SelectOption[]>(() => logoAssets.value.map(asset => ({
-  label: asset.name,
-  value: asset.id,
-  description: `${asset.asset_type === 'icon' ? '图标资源' : '图片资源'} / 原文件名：${asset.original_name}`,
-  keywords: [asset.name, asset.original_name, asset.asset_type, ...(asset.tags ?? [])],
-})))
 const fontOptions = computed<SelectOption[]>(() => fonts.value.map(font => ({
   label: font.font_family,
   value: font.id,
@@ -354,13 +354,7 @@ async function loadOptions() {
   }
 
   try {
-    const [iconResponse, imageResponse, fontResponse] = await Promise.all([
-      listWorkspaceAssets(props.workspaceId, { assetType: 'icon', page: 1, page_size: 100 }),
-      listWorkspaceAssets(props.workspaceId, { assetType: 'image', page: 1, page_size: 100 }),
-      listWorkspaceFonts(props.workspaceId, { page: 1, page_size: 100 }),
-    ])
-    projectIconAssets.value = iconResponse.items
-    logoAssets.value = [...iconResponse.items, ...imageResponse.items]
+    const fontResponse = await listWorkspaceFonts(props.workspaceId, { page: 1, page_size: 100 })
     fonts.value = fontResponse.items
   } catch (error) {
     Message.error(getErrorMessage(error, '加载主题编辑依赖失败。'))
@@ -374,6 +368,9 @@ function syncForm(theme: WorkspaceThemeItem | null) {
   form.logo_asset_id = theme?.logo_asset_id || null
   form.invert_logo_asset_id = theme?.invert_logo_asset_id || null
   form.project_icon_asset_id = theme?.project_icon_asset_id || null
+  selectedLogoAsset.value = theme?.logo_asset || null
+  selectedInvertLogoAsset.value = theme?.invert_logo_asset || null
+  selectedProjectIconAsset.value = theme?.project_icon_asset || null
   form.project_icon_name = theme?.project_icon_name || 'slider'
   form.heading_font_id = theme?.heading_font_id || null
   form.body_font_id = theme?.body_font_id || null

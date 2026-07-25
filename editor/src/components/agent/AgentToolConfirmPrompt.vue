@@ -8,20 +8,20 @@
     @ignore="emit('reject')"
     @submit="emit('confirm')"
   >
-    <div class="rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2">
-      <p class="text-xs font-semibold leading-5 text-amber-900">1. 是，允许执行</p>
-      <p class="text-[11px] leading-5 text-amber-700">提交后工具会继续执行并写入后端。</p>
+    <div class="rounded-ui-md border border-warning/20 bg-warning-muted px-2.5 py-2">
+      <p class="text-sm font-semibold leading-5 text-warning">允许后继续执行</p>
+      <p class="text-xs leading-5 text-text-secondary">确认后工具会继续执行，并可能写入后端数据。</p>
     </div>
 
-    <div v-if="requirement.note" class="mt-2 rounded-md border border-amber-100 bg-white px-2.5 py-2 text-xs leading-5 text-amber-800">
+    <div v-if="requirement.note" class="mt-2 rounded-ui-md border border-border bg-surface-hover px-2.5 py-2 text-xs leading-5 text-text-secondary">
       {{ requirement.note }}
     </div>
 
-    <InspectorSection title="工具详情" class="mt-2 rounded-md border border-slate-200 bg-slate-50">
+    <InspectorSection title="工具详情" class="mt-2 rounded-ui-md border border-border bg-surface-hover">
       <div class="space-y-2">
         <section v-if="requirement.suggested_patch" class="space-y-2">
           <div class="flex flex-wrap items-center justify-between gap-2">
-            <p class="text-xs font-semibold text-slate-700">
+            <p class="text-xs font-semibold text-text-secondary">
               {{ requirement.suggested_patch.change_note || '页面改写建议' }}
             </p>
             <div v-if="canApplySuggestedPatch" class="flex items-center gap-1.5">
@@ -33,11 +33,11 @@
               </UiButton>
             </div>
           </div>
-          <pre class="max-h-40 overflow-auto overscroll-contain rounded-md bg-slate-950 p-2 text-[11px] leading-5 text-slate-100">{{ requirement.suggested_patch.unified_diff || requirement.suggested_patch.proposed_content }}</pre>
+          <pre class="max-h-40 overflow-auto overscroll-contain rounded-ui-md bg-text p-2 font-mono text-xs leading-5 text-text-inverse">{{ requirement.suggested_patch.unified_diff || requirement.suggested_patch.proposed_content }}</pre>
         </section>
         <section class="space-y-1">
-          <p class="text-xs font-semibold text-slate-700">工具参数</p>
-          <pre class="max-h-36 overflow-auto overscroll-contain rounded-md bg-slate-950 p-2 text-[11px] leading-5 text-slate-100">{{ formattedToolArgs }}</pre>
+          <p class="text-xs font-semibold text-text-secondary">工具参数</p>
+          <pre class="max-h-36 overflow-auto overscroll-contain rounded-ui-md bg-text p-2 font-mono text-xs leading-5 text-text-inverse">{{ formattedToolArgs }}</pre>
         </section>
       </div>
     </InspectorSection>
@@ -45,10 +45,9 @@
     <template #footer-left>
       <UiButton
         v-if="forceReleaseAvailable"
-        variant="ghost"
+        variant="danger"
         size="sm"
         :disabled="loading"
-        class="rounded-md px-2 py-1 text-xs text-red-600 hover:bg-red-50"
         @click="emit('forceRelease')"
       >
         强制释放

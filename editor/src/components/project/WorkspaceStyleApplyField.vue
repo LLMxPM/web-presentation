@@ -18,7 +18,7 @@
     </div>
 
     <div class="mt-3 grid gap-2 sm:grid-cols-[minmax(0,1fr)_92px]">
-      <SearchableSelect
+      <UiCombobox
         :model-value="selectedStyleId"
         :options="styleOptions"
         :disabled="loading || !workspaceId"
@@ -44,8 +44,7 @@ import { RefreshCw } from '@lucide/vue'
 
 import { getErrorMessage } from '@/api/http'
 import { listWorkspaceStyles } from '@/api/styles'
-import SearchableSelect from '@/components/ui/SearchableSelect.vue'
-import { UiButton } from '@/components/ui'
+import { UiButton, UiCombobox } from '@/components/ui'
 import type { SelectModelValue, SelectOption } from '@/components/ui/select'
 import type { WorkspaceStyleItem } from '@/types/api'
 import { Message } from '@/utils/message'

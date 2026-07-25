@@ -1,24 +1,26 @@
 <!-- 文件功能：提供属性检查器中可折叠的稳定属性分组。 -->
 <template>
-  <section class="border-b border-[rgb(var(--ui-border))] last:border-b-0">
-    <div class="flex min-h-[var(--ui-control-h-md)] items-center gap-2 px-3 py-2">
+  <section class="overflow-hidden rounded-[var(--ui-radius-lg)] border border-[rgb(var(--ui-border))] bg-[rgb(var(--ui-surface))]">
+    <div class="flex min-h-[var(--ui-control-h-md)] items-center gap-2 bg-[rgb(var(--ui-surface-muted))] px-3 py-2">
       <UiButton
         v-if="collapsible"
         :id="headingId"
         type="button"
         variant="ghost"
-        class="h-auto flex min-w-0 flex-1 items-center gap-2 p-0 text-left text-sm font-semibold text-[rgb(var(--ui-text))]"
+        content-align="start"
+        class="h-auto min-w-0 flex-1 p-0 text-left text-sm font-semibold text-[rgb(var(--ui-text))]"
         :aria-controls="contentId"
         :aria-expanded="resolvedOpen"
         @click="toggle"
       >
-        <span aria-hidden="true">{{ resolvedOpen ? '⌄' : '›' }}</span>
-        <span class="truncate">{{ title }}</span>
+        <ChevronDown v-if="resolvedOpen" aria-hidden="true" class="h-4 w-4 shrink-0 text-[rgb(var(--ui-text-muted))]" />
+        <ChevronRight v-else aria-hidden="true" class="h-4 w-4 shrink-0 text-[rgb(var(--ui-text-muted))]" />
+        <span class="min-w-0 truncate">{{ title }}</span>
       </UiButton>
       <h3 v-else :id="headingId" class="min-w-0 flex-1 truncate text-sm font-semibold text-[rgb(var(--ui-text))]">{{ title }}</h3>
       <slot name="actions" />
     </div>
-    <div v-show="resolvedOpen" :id="contentId" class="space-y-2 px-3 pb-3" role="region" :aria-labelledby="headingId">
+    <div v-show="resolvedOpen" :id="contentId" class="space-y-2 border-t border-[rgb(var(--ui-border))] bg-[rgb(var(--ui-surface))] px-3 pb-3 pt-3" role="region" :aria-labelledby="headingId">
       <p v-if="description" class="text-xs text-[rgb(var(--ui-text-muted))]">{{ description }}</p>
       <slot />
     </div>
@@ -27,6 +29,7 @@
 
 <script setup lang="ts">
 import { computed, ref, useId, watch } from 'vue'
+import { ChevronDown, ChevronRight } from '@lucide/vue'
 import { UiButton } from '@/components/ui'
 
 const props = withDefaults(defineProps<{

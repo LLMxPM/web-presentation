@@ -1,75 +1,76 @@
 <!-- 文件功能：提供用户级预设尺寸的下拉选择与维护入口，可在各类页面尺寸配置位置复用。 -->
 <template>
-  <div ref="rootRef" class="relative w-full" :class="embedded ? 'h-full' : ''">
-    <label v-if="label" class="mb-1.5 ml-1 block text-base font-semibold text-slate-700">{{ label }}</label>
-    <span ref="triggerRef" class="block w-full">
-      <UiButton
-        variant="secondary"
-        class="flex w-full items-center justify-between gap-2 text-left transition"
-        :class="[
-          compact ? 'h-9 px-3 text-xs' : 'h-10 px-3 text-sm',
-          embedded
-            ? 'h-full rounded-none border-0 bg-transparent hover:bg-slate-50'
-            : 'rounded-xl border border-slate-200 bg-white hover:border-slate-300',
-        ]"
-        :disabled="disabled"
-        @click="toggleDropdown"
-      >
-        <span class="min-w-0">
-          <span class="block truncate font-semibold text-slate-700">{{ selectedLabel }}</span>
-          <span v-if="!compact" class="block truncate text-[11px] text-slate-400">{{ currentWidth }} × {{ currentHeight }}</span>
-        </span>
-        <ChevronDown class="h-4 w-4 shrink-0 text-slate-400 transition" :class="open ? 'rotate-180' : ''" />
-      </UiButton>
-    </span>
-
-    <Teleport to="body">
-      <Transition name="preset-fade">
-        <div
-          v-if="open"
-          ref="dropdownRef"
-          class="fixed z-[1700] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl"
-          :style="dropdownStyle"
+  <div class="relative w-full" :class="embedded ? 'h-full' : ''">
+    <label v-if="label" class="mb-1.5 block text-sm font-medium text-text">{{ label }}</label>
+    <UiPopover
+      :open="open"
+      side="bottom"
+      align="start"
+      :side-offset="8"
+      content-class="w-[360px] max-w-[calc(100vw-24px)] max-h-[456px] !overflow-hidden !border-border !bg-surface !p-0 shadow-popover"
+      @update:open="open = $event"
+    >
+      <template #trigger>
+        <UiButton
+          :variant="embedded ? 'ghost' : 'secondary'"
+          :size="embedded || !compact ? 'lg' : 'md'"
+          content-align="between"
+          class="w-full text-left"
+          :disabled="disabled"
+          :aria-expanded="open"
+          aria-haspopup="dialog"
         >
-          <div class="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-3">
-            <div>
-              <div class="text-sm font-bold text-slate-800">我的尺寸模板</div>
-            </div>
-            <UiButton
-              variant="ghost"
-              size="sm"
-              class="inline-flex h-8 items-center gap-1.5 rounded-lg px-2 text-xs font-semibold text-indigo-600 transition hover:bg-indigo-50"
-              @click="startCreatePreset"
-            >
-              <Plus class="h-3.5 w-3.5" />
-              新增
-            </UiButton>
-          </div>
+          <span class="min-w-0 flex-1">
+            <span class="block truncate font-medium">{{ selectedLabel }}</span>
+            <span v-if="!compact" class="block truncate text-xs leading-tight text-text-muted">{{ currentWidth }} × {{ currentHeight }}</span>
+          </span>
+          <ChevronDown class="h-4 w-4 shrink-0 text-text-muted transition-transform" :class="open ? 'rotate-180' : ''" />
+        </UiButton>
+      </template>
+
+      <div>
+        <div class="flex items-center justify-between gap-3 border-b border-border px-3 py-2.5">
+          <div class="text-sm font-semibold text-text">我的尺寸模板</div>
+          <UiButton
+            variant="ghost"
+            size="sm"
+            @click="startCreatePreset"
+          >
+            <Plus class="h-3.5 w-3.5" />
+            新增
+          </UiButton>
+        </div>
 
           <div class="max-h-[240px] overflow-y-auto py-1">
-            <div v-if="draftPresets.length === 0" class="px-4 py-8 text-center text-sm text-slate-400">
+            <div v-if="draftPresets.length === 0" class="px-4 py-8 text-center text-sm text-text-muted">
               暂无预设，可新增后保存。
             </div>
 
             <div
               v-for="(preset, index) in draftPresets"
               :key="buildPreviewSizePresetKey(preset, index)"
-              class="group flex items-center gap-2 px-3 py-2 transition hover:bg-slate-50"
-              :class="isPresetSelected(preset) ? 'bg-indigo-50' : ''"
+              class="group flex items-center gap-1 px-2 py-1 transition-colors hover:bg-surface-hover"
+              :class="isPresetSelected(preset) ? 'bg-accent-muted' : ''"
             >
-              <UiButton variant="ghost" size="sm" class="min-w-0 flex-1 justify-start text-left" @click="applyPreset(preset)">
-                <span class="block truncate text-sm font-semibold" :class="isPresetSelected(preset) ? 'text-indigo-700' : 'text-slate-700'">
-                  {{ preset.name }}
+              <UiButton
+                variant="ghost"
+                size="lg"
+                content-align="start"
+                class="min-w-0 flex-1 text-left"
+                :aria-pressed="isPresetSelected(preset)"
+                @click="applyPreset(preset)"
+              >
+                <span class="flex h-4 w-4 shrink-0 items-center justify-center text-accent" aria-hidden="true">
+                  <Check v-if="isPresetSelected(preset)" class="h-3.5 w-3.5" />
                 </span>
-                <span class="block text-[11px]" :class="isPresetSelected(preset) ? 'text-indigo-500' : 'text-slate-400'">
-                  {{ resolvePresetSummary(preset) }}
+                <span class="min-w-0 flex-1">
+                  <span class="block truncate text-sm font-medium text-text">{{ preset.name }}</span>
+                  <span class="block truncate text-xs text-text-muted">{{ resolvePresetSummary(preset) }}</span>
                 </span>
               </UiButton>
               <UiIconButton
                 label="编辑"
                 size="xs"
-                class="rounded-lg p-1.5 text-slate-400 transition hover:bg-white hover:text-indigo-600"
-                title="编辑"
                 @click="startEditPreset(index)"
               >
                 <Pencil class="h-3.5 w-3.5" />
@@ -77,8 +78,6 @@
               <UiIconButton
                 label="删除"
                 size="xs"
-                class="rounded-lg p-1.5 text-slate-400 transition hover:bg-white hover:text-rose-600"
-                title="删除"
                 @click="deleteDraftPreset(index)"
               >
                 <Trash2 class="h-3.5 w-3.5" />
@@ -86,37 +85,37 @@
             </div>
           </div>
 
-          <div v-if="formVisible" class="border-t border-slate-100 bg-slate-50/70 p-3">
+          <div v-if="formVisible" class="border-t border-border bg-surface-muted p-3">
             <div class="grid grid-cols-[minmax(0,1.2fr)_84px_84px] gap-2">
               <UiInput
                 v-model="presetForm.name"
                 placeholder="名称"
-                class="h-9 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-indigo-500"
+                aria-label="预设名称"
               />
               <UiInput
                 v-model="presetForm.width"
                 inputmode="numeric"
                 placeholder="宽"
-                class="h-9 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-indigo-500"
+                aria-label="预设宽度"
               />
               <UiInput
                 v-model="presetForm.height"
                 inputmode="numeric"
                 placeholder="高"
-                class="h-9 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-indigo-500"
+                aria-label="预设高度"
               />
             </div>
             <div class="mt-2 grid grid-cols-2 gap-2">
               <UiInput
                 v-model="presetForm.baseFontSize"
                 placeholder="字号"
-                class="h-9 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-indigo-500"
+                aria-label="基础字号"
               />
               <UiInput
                 v-model="presetForm.iconDefaultStrokeWidth"
                 inputmode="numeric"
                 placeholder="描边"
-                class="h-9 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-indigo-500"
+                aria-label="图标描边"
               />
             </div>
             <div class="mt-2 flex justify-end gap-2">
@@ -129,34 +128,32 @@
             </div>
           </div>
 
-          <div class="flex items-center justify-between gap-3 border-t border-slate-100 px-3 py-3">
+          <div class="flex items-center justify-between gap-3 border-t border-border px-3 py-2.5">
             <UiButton variant="ghost" size="xs" @click="resetDraftPresets">
               重置
             </UiButton>
             <UiButton
               variant="primary"
               size="xs"
-              class="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
               :disabled="saving"
               @click="saveDraftPresets"
             >
               {{ saving ? '保存中...' : '保存预设' }}
             </UiButton>
           </div>
-        </div>
-      </Transition>
-    </Teleport>
+      </div>
+    </UiPopover>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
-import { ChevronDown, Pencil, Plus, Trash2 } from '@lucide/vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { Check, ChevronDown, Pencil, Plus, Trash2 } from '@lucide/vue'
 
 import { updatePreviewSizePresets } from '@/api/auth'
 import { getErrorMessage } from '@/api/http'
 import { useAuthStore } from '@/stores/auth'
-import { UiButton, UiIconButton, UiInput } from '@/components/ui'
+import { UiButton, UiIconButton, UiInput, UiPopover } from '@/components/ui'
 import type { PreviewSizePreset } from '@/types/api'
 import { Message } from '@/utils/message'
 import {
@@ -190,14 +187,10 @@ const emit = defineEmits<{
 }>()
 
 const authStore = useAuthStore()
-const rootRef = ref<HTMLElement | null>(null)
-const triggerRef = ref<HTMLElement | null>(null)
-const dropdownRef = ref<HTMLElement | null>(null)
 const open = ref(false)
 const saving = ref(false)
 const formVisible = ref(false)
 const editingIndex = ref<number | null>(null)
-const dropdownStyle = ref<Record<string, string>>({})
 const draftPresets = ref<PreviewSizePreset[]>([])
 const presetForm = reactive({
   name: '',
@@ -225,34 +218,14 @@ watch(open, async (visible) => {
     return
   }
   syncDraftPresets()
-  await nextTick()
-  syncDropdownPosition()
 })
 
 onMounted(() => {
   if (!authStore.user) {
     void authStore.ensureLoaded()
   }
-  document.addEventListener('mousedown', handleDocumentPointerDown)
-  window.addEventListener('resize', syncDropdownPosition)
-  document.addEventListener('scroll', syncDropdownPosition, true)
 })
 
-onUnmounted(() => {
-  document.removeEventListener('mousedown', handleDocumentPointerDown)
-  window.removeEventListener('resize', syncDropdownPosition)
-  document.removeEventListener('scroll', syncDropdownPosition, true)
-})
-
-/**
- * 展开或收起预设下拉面板。
- */
-function toggleDropdown() {
-  if (props.disabled) {
-    return
-  }
-  open.value = !open.value
-}
 
 /**
  * 将用户已保存预设复制到本地下拉草稿中。
@@ -400,49 +373,6 @@ async function saveDraftPresets() {
   }
 }
 
-/**
- * 同步浮层位置，避免被弹窗滚动容器裁切。
- */
-function syncDropdownPosition() {
-  if (!open.value || !triggerRef.value) {
-    return
-  }
-  const rect = triggerRef.value.getBoundingClientRect()
-  const margin = 12
-  const panelWidth = Math.max(rect.width, 360)
-  const panelHeight = 456
-  const spaceBelow = window.innerHeight - rect.bottom - margin
-  const spaceAbove = rect.top - margin
-  const shouldOpenAbove = spaceBelow < panelHeight && spaceAbove > spaceBelow
-  const top = shouldOpenAbove
-    ? Math.max(margin, rect.top - panelHeight - 8)
-    : Math.min(window.innerHeight - margin - panelHeight, rect.bottom + 8)
-  const left = Math.min(rect.left, window.innerWidth - panelWidth - margin)
-  dropdownStyle.value = {
-    top: `${Math.max(margin, top)}px`,
-    left: `${Math.max(margin, left)}px`,
-    width: `${panelWidth}px`,
-    maxHeight: `${Math.min(panelHeight, window.innerHeight - margin * 2)}px`,
-  }
-}
-
-/**
- * 点击浮层外部时关闭下拉。
- * @param event 鼠标事件
- */
-function handleDocumentPointerDown(event: MouseEvent) {
-  if (!open.value) {
-    return
-  }
-  const target = event.target as Node | null
-  if (!target) {
-    return
-  }
-  if (rootRef.value?.contains(target) || dropdownRef.value?.contains(target)) {
-    return
-  }
-  open.value = false
-}
 
 /**
  * 生成人可读的预设规格摘要。
@@ -455,15 +385,3 @@ function resolvePresetSummary(preset: PreviewSizePreset) {
 }
 </script>
 
-<style scoped>
-.preset-fade-enter-active,
-.preset-fade-leave-active {
-  transition: opacity 0.15s ease, transform 0.15s ease;
-}
-
-.preset-fade-enter-from,
-.preset-fade-leave-to {
-  opacity: 0;
-  transform: translateY(-4px);
-}
-</style>

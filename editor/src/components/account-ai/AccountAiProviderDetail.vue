@@ -167,7 +167,7 @@
 
           <div class="space-y-1.5 xl:col-span-2">
             <label class="ml-1 text-sm font-semibold text-slate-700">供应商</label>
-            <SearchableSelect
+            <UiCombobox
               :model-value="form.provider_key"
               :options="providerOptions"
               placeholder="请选择供应商"
@@ -256,10 +256,9 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 
-import { UiButton, UiFormField, UiInput, UiSelect } from '@/components/ui'
+import { UiButton, UiCombobox, UiFormField, UiInput, UiSelect } from '@/components/ui'
 import PropertyRow from '@/components/patterns/PropertyRow.vue'
 import InspectorSection from '@/components/patterns/InspectorSection.vue'
-import SearchableSelect from '@/components/ui/SearchableSelect.vue'
 import type { SelectOption } from '@/components/ui/select'
 import type { AiLlmConfigScope, LlmProviderCatalogItem, LlmProviderConfigItem } from '@/types/api'
 

@@ -124,16 +124,31 @@
       />
     </div>
   </section>
+
+  <UiDialog
+    :open="confirmVisible"
+    :title="confirmTitle"
+    size="compact"
+    z-index="var(--ui-z-confirm-overlay)"
+    :panel-style="{ height: 'auto' }"
+    @update:open="handleConfirmVisibleChange"
+  >
+    <p class="text-sm leading-6 text-[rgb(var(--ui-text-secondary))]">{{ confirmMessage }}</p>
+    <template #footer>
+      <UiButton variant="ghost" @click="resolveVisualEditConfirm(false)">取消</UiButton>
+      <UiButton :variant="confirmDangerous ? 'danger' : 'primary'" @click="resolveVisualEditConfirm(true)">确定</UiButton>
+    </template>
+  </UiDialog>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { LoaderCircle, RefreshCw, Save, Undo2 } from '@lucide/vue'
 
 import PageVisualEditLayerTree from '@/components/page-detail/visual-edit/PageVisualEditLayerTree.vue'
 import PageVisualEditPropertyInspector from '@/components/page-detail/visual-edit/PageVisualEditPropertyInspector.vue'
 import CommandBar from '@/components/patterns/CommandBar.vue'
-import { UiButton } from '@/components/ui'
+import { UiButton, UiDialog } from '@/components/ui'
 import { usePageVisualEditSession } from '@/composables/usePageVisualEditSession'
 import type {
   PageVisualEditApplyResponse,
@@ -146,7 +161,7 @@ import type {
   PageVisualEditTarget,
   PageVisualEditValue,
 } from '@/types/page-visual-edit'
-import { createConfirm, Message } from '@/utils/message'
+import { Message } from '@/utils/message'
 
 const props = withDefaults(defineProps<{
   pageId: number
@@ -168,6 +183,11 @@ const session = usePageVisualEditSession()
 const previewFrame = ref<HTMLIFrameElement | null>(null)
 const invalidJsonSourceIds = ref<Set<string>>(new Set())
 const inspectorRevision = ref(0)
+const confirmVisible = ref(false)
+const confirmTitle = ref('')
+const confirmMessage = ref('')
+const confirmDangerous = ref(false)
+let confirmResolver: ((confirmed: boolean) => void) | null = null
 const hasJsonValidationErrors = computed(() => invalidJsonSourceIds.value.size > 0)
 const busy = computed(() => session.loading.value || session.saving.value)
 const diagnostics = computed(() => {
@@ -309,7 +329,7 @@ async function handleStructureOperation(payload: {
   if (payload.type === 'delete_node') {
     const conflicts = session.pendingOperations.value.filter(operation => isDeleteConflict(operation, payload.target))
     const suffix = conflicts.length ? `，并放弃其中 ${conflicts.length} 项待保存修改` : ''
-    const confirmed = await createConfirm(`${payload.label}${suffix}，是否继续？`, payload.label)
+    const confirmed = await requestVisualEditConfirm(`${payload.label}${suffix}，是否继续？`, payload.label, true)
     if (!confirmed) return
     session.removeOperationsWhere(operation => isDeleteConflict(operation, payload.target))
   }
@@ -418,7 +438,7 @@ function discardChanges(): void {
 /** 重新分析最新版本；存在草稿时先明确确认放弃。 */
 async function reanalyze(): Promise<void> {
   if (session.hasPendingChanges.value) {
-    const confirmed = await createConfirm('重新分析会放弃当前可视化编辑草稿，是否继续？', '重新分析页面')
+    const confirmed = await requestVisualEditConfirm('重新分析会放弃当前可视化编辑草稿，是否继续？', '重新分析页面')
     if (!confirmed) return
   }
   session.reset()
@@ -451,6 +471,33 @@ function findNearestLoopNodeId(root: PageVisualEditNode, targetNodeId: string, i
   }
   return ''
 }
+
+/** 在页面编辑弹窗内部打开嵌套确认框，让 Reka 正确暂停外层 workbench 的焦点陷阱。 */
+function requestVisualEditConfirm(message: string, title: string, dangerous = false): Promise<boolean> {
+  resolveVisualEditConfirm(false)
+  confirmMessage.value = message
+  confirmTitle.value = title
+  confirmDangerous.value = dangerous
+  confirmVisible.value = true
+  return new Promise(resolve => {
+    confirmResolver = resolve
+  })
+}
+
+/** 统一处理按钮、遮罩和 Escape 关闭，并保证等待中的确认 Promise 只结算一次。 */
+function resolveVisualEditConfirm(confirmed: boolean): void {
+  confirmVisible.value = false
+  const resolver = confirmResolver
+  confirmResolver = null
+  resolver?.(confirmed)
+}
+
+/** UiDialog 的受控关闭只处理关闭事件，避免 open 回写重复结算。 */
+function handleConfirmVisibleChange(visible: boolean): void {
+  if (!visible) resolveVisualEditConfirm(false)
+}
+
+onBeforeUnmount(() => resolveVisualEditConfirm(false))
 
 defineExpose({
   discardChanges,

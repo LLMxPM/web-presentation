@@ -15,17 +15,20 @@
             @input="updatePlacementNumberField('width_value', ($event.target as HTMLInputElement).value)"
             @blur="normalizePlacementNumberField('width_value')"
           >
-          <UiButton
-            type="button"
-            variant="ghost"
-            size="sm"
-            class="h-full w-[58px] rounded-none border-y-0 border-r-0 border-l border-slate-100 bg-slate-50/70 px-2 text-xs font-bold text-slate-600 hover:bg-slate-100 hover:text-slate-800"
-            title="宽度单位"
-            @click.stop="openSizeModeDropdown('width_mode', $event)"
-          >
-            <span>{{ resolveSizeModeLabel(modelValue.placement.width_mode) }}</span>
-            <ChevronDown class="h-3 w-3 text-slate-400" />
-          </UiButton>
+          <UiDropdownMenu :items="widthModeMenuItems" side="bottom" align="start" @select="value => updatePlacementField('width_mode', value)">
+            <template #trigger>
+              <UiButton
+                type="button"
+                variant="ghost"
+                size="sm"
+                class="h-full w-[58px] rounded-none border-y-0 border-r-0 border-l border-slate-100 bg-slate-50/70 px-2 text-xs font-bold text-slate-600 hover:bg-slate-100 hover:text-slate-800"
+                title="宽度单位"
+              >
+                <span>{{ resolveSizeModeLabel(modelValue.placement.width_mode) }}</span>
+                <ChevronDown class="h-3 w-3 text-slate-400" />
+              </UiButton>
+            </template>
+          </UiDropdownMenu>
         </div>
       </div>
 
@@ -42,17 +45,20 @@
             @input="updatePlacementNumberField('height_value', ($event.target as HTMLInputElement).value)"
             @blur="normalizePlacementNumberField('height_value')"
           >
-          <UiButton
-            type="button"
-            variant="ghost"
-            size="sm"
-            class="h-full w-[58px] rounded-none border-y-0 border-r-0 border-l border-slate-100 bg-slate-50/70 px-2 text-xs font-bold text-slate-600 hover:bg-slate-100 hover:text-slate-800"
-            title="高度单位"
-            @click.stop="openSizeModeDropdown('height_mode', $event)"
-          >
-            <span>{{ resolveSizeModeLabel(modelValue.placement.height_mode) }}</span>
-            <ChevronDown class="h-3 w-3 text-slate-400" />
-          </UiButton>
+          <UiDropdownMenu :items="heightModeMenuItems" side="bottom" align="start" @select="value => updatePlacementField('height_mode', value)">
+            <template #trigger>
+              <UiButton
+                type="button"
+                variant="ghost"
+                size="sm"
+                class="h-full w-[58px] rounded-none border-y-0 border-r-0 border-l border-slate-100 bg-slate-50/70 px-2 text-xs font-bold text-slate-600 hover:bg-slate-100 hover:text-slate-800"
+                title="高度单位"
+              >
+                <span>{{ resolveSizeModeLabel(modelValue.placement.height_mode) }}</span>
+                <ChevronDown class="h-3 w-3 text-slate-400" />
+              </UiButton>
+            </template>
+          </UiDropdownMenu>
         </div>
       </div>
 
@@ -125,35 +131,7 @@
       </UiButton>
     </div>
 
-    <Teleport to="body">
-      <Transition name="size-mode-fade">
-        <div
-          v-if="sizeModeDropdownVisible"
-          class="fixed z-[1800] overflow-hidden rounded-xl border border-slate-200 bg-white p-1 shadow-xl shadow-slate-900/10"
-          :style="sizeModeDropdownStyle"
-          @mousedown.stop
-        >
-          <UiButton
-            v-for="option in sizeModeOptions"
-            :key="`mode-dropdown-${option.value}`"
-            type="button"
-            variant="ghost"
-            size="sm"
-            class="h-8 w-full justify-between rounded-lg px-3 text-left text-xs font-bold"
-            :class="isSizeModeOptionActive(option.value)
-              ? 'bg-indigo-50 text-indigo-600'
-              : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'"
-            @click="selectSizeModeOption(option.value)"
-          >
-            <span>{{ option.label }}</span>
-            <span
-              v-if="isSizeModeOptionActive(option.value)"
-              class="h-1.5 w-1.5 rounded-full bg-indigo-500"
-            />
-          </UiButton>
-        </div>
-      </Transition>
-    </Teleport>
+
 
     <div v-if="!inline" class="space-y-4">
       <div class="flex items-center justify-between gap-2">
@@ -232,7 +210,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from 'vue'
+import { computed } from 'vue'
 import {
   AlignHorizontalJustifyCenter,
   AlignHorizontalJustifyEnd,
@@ -243,7 +221,8 @@ import {
   ChevronDown,
 } from '@lucide/vue'
 
-import { UiButton, UiIconButton, UiSelect } from '@/components/ui'
+import { UiButton, UiDropdownMenu, UiIconButton, UiSelect } from '@/components/ui'
+import type { DropdownMenuEntry } from '@/components/ui'
 import type { ComponentPreviewAlignment, ComponentPreviewOptions, ComponentPreviewSizeMode } from '@/types/api'
 import {
   cloneComponentPreviewOptions,
@@ -264,7 +243,6 @@ const emit = defineEmits<{
   'reset-defaults': []
 }>()
 
-type SizeModeField = 'width_mode' | 'height_mode'
 
 const sizeModeOptions: Array<{
   value: ComponentPreviewSizeMode
@@ -289,9 +267,27 @@ const verticalAlignmentSelectOptions = [
   { value: 'center', label: '居中' },
   { value: 'end', label: '底部' },
 ]
-const sizeModeDropdownVisible = ref(false)
-const sizeModeDropdownField = ref<SizeModeField | null>(null)
-const sizeModeDropdownStyle = ref<Record<string, string>>({})
+/**
+ * 宽度模式菜单项，带选中指示。
+ */
+const widthModeMenuItems = computed<DropdownMenuEntry[]>(() =>
+  sizeModeOptions.map(opt => ({
+    label: opt.label,
+    value: opt.value,
+    active: props.modelValue.placement.width_mode === opt.value,
+  })),
+)
+
+/**
+ * 高度模式菜单项，带选中指示。
+ */
+const heightModeMenuItems = computed<DropdownMenuEntry[]>(() =>
+  sizeModeOptions.map(opt => ({
+    label: opt.label,
+    value: opt.value,
+    active: props.modelValue.placement.height_mode === opt.value,
+  })),
+)
 
 const horizontalAlignOptions: Array<{
   value: ComponentPreviewAlignment
@@ -313,17 +309,6 @@ const verticalAlignOptions: Array<{
   { value: 'end', label: '底部对齐', icon: AlignVerticalJustifyEnd },
 ]
 
-onMounted(() => {
-  document.addEventListener('mousedown', closeSizeModeDropdown)
-  window.addEventListener('resize', closeSizeModeDropdown)
-  document.addEventListener('scroll', closeSizeModeDropdown, true)
-})
-
-onUnmounted(() => {
-  document.removeEventListener('mousedown', closeSizeModeDropdown)
-  window.removeEventListener('resize', closeSizeModeDropdown)
-  document.removeEventListener('scroll', closeSizeModeDropdown, true)
-})
 
 /**
  * 更新占位枚举字段，并重新归一化占位值。
@@ -336,68 +321,7 @@ function updatePlacementField(field: keyof ComponentPreviewOptions['placement'],
   emit('update:modelValue', normalizeComponentPreviewOptions(nextOptions))
 }
 
-/**
- * 打开尺寸单位下拉，并根据触发按钮计算浮层位置。
- * @param field 当前编辑的尺寸模式字段
- * @param event 点击事件
- */
-function openSizeModeDropdown(field: SizeModeField, event: MouseEvent) {
-  const trigger = event.currentTarget as HTMLElement | null
-  if (!trigger) {
-    return
-  }
-  if (sizeModeDropdownVisible.value && sizeModeDropdownField.value === field) {
-    closeSizeModeDropdown()
-    return
-  }
 
-  const rect = trigger.getBoundingClientRect()
-  const margin = 8
-  const panelWidth = Math.max(rect.width + 22, 84)
-  const left = Math.min(rect.left, window.innerWidth - panelWidth - margin)
-  sizeModeDropdownField.value = field
-  sizeModeDropdownStyle.value = {
-    top: `${rect.bottom + 6}px`,
-    left: `${Math.max(margin, left)}px`,
-    width: `${panelWidth}px`,
-  }
-  sizeModeDropdownVisible.value = true
-}
-
-/**
- * 关闭当前展开的尺寸单位下拉。
- */
-function closeSizeModeDropdown() {
-  sizeModeDropdownVisible.value = false
-  sizeModeDropdownField.value = null
-}
-
-/**
- * 选择尺寸单位，并同步到预览占位配置。
- * @param value 尺寸模式
- */
-function selectSizeModeOption(value: ComponentPreviewSizeMode) {
-  if (!sizeModeDropdownField.value) {
-    return
-  }
-  updatePlacementField(sizeModeDropdownField.value, value)
-  closeSizeModeDropdown()
-}
-
-/**
- * 判断浮层中的尺寸模式是否为当前字段选中项。
- * @param value 尺寸模式
- * @returns 是否选中
- */
-function isSizeModeOptionActive(value: ComponentPreviewSizeMode) {
-  if (sizeModeDropdownField.value === 'width_mode') {
-    return props.modelValue.placement.width_mode === value
-  }
-  if (sizeModeDropdownField.value === 'height_mode') {
-    return props.modelValue.placement.height_mode === value
-  }
-  return false
-}
 
 /**
  * 更新占位数值字段，空值仅保留当前状态，避免输入中途跳动。
@@ -454,15 +378,4 @@ function resolveSizeModeLabel(mode: ComponentPreviewSizeMode) {
 
 </script>
 
-<style scoped>
-.size-mode-fade-enter-active,
-.size-mode-fade-leave-active {
-  transition: opacity 0.12s ease, transform 0.12s ease;
-}
 
-.size-mode-fade-enter-from,
-.size-mode-fade-leave-to {
-  opacity: 0;
-  transform: translateY(-3px);
-}
-</style>

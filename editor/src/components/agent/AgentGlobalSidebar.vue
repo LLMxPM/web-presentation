@@ -495,27 +495,29 @@ function getAgentRailButtonClass(targetAgentId: string, icon: string | null | un
 
 /**
  * 根据智能体图标色系返回选中态样式，避免所有智能体都显示为同一种蓝色。
+ * 使用 ! 前缀确保选中态样式不被 UiButton/UiIconButton ghost variant 的
+ * border-transparent / bg-transparent 覆盖。
  */
 function resolveAgentActiveClass(icon: string | null | undefined, mode: 'tab' | 'rail'): string {
   const normalizedIcon = String(icon || '').trim()
   if (normalizedIcon === 'component-blocks') {
     return mode === 'tab'
-      ? 'border-violet-500 bg-violet-600 text-white shadow-md shadow-violet-100'
-      : 'border-violet-200 bg-violet-50 text-violet-700 shadow-sm ring-2 ring-violet-100'
+      ? '!border-violet-500 !bg-violet-600 !text-white shadow-md shadow-violet-100'
+      : '!border-violet-200 !bg-violet-50 !text-violet-700 shadow-sm ring-2 ring-violet-100'
   }
   if (normalizedIcon === 'resource-images') {
     return mode === 'tab'
-      ? 'border-emerald-500 bg-emerald-600 text-white shadow-md shadow-emerald-100'
-      : 'border-emerald-200 bg-emerald-50 text-emerald-700 shadow-sm ring-2 ring-emerald-100'
+      ? '!border-emerald-500 !bg-emerald-600 !text-white shadow-md shadow-emerald-100'
+      : '!border-emerald-200 !bg-emerald-50 !text-emerald-700 shadow-sm ring-2 ring-emerald-100'
   }
   if (normalizedIcon === 'content-spark') {
     return mode === 'tab'
-      ? 'border-sky-500 bg-sky-600 text-white shadow-md shadow-sky-100'
-      : 'border-sky-200 bg-sky-50 text-sky-700 shadow-sm ring-2 ring-sky-100'
+      ? '!border-sky-500 !bg-sky-600 !text-white shadow-md shadow-sky-100'
+      : '!border-sky-200 !bg-sky-50 !text-sky-700 shadow-sm ring-2 ring-sky-100'
   }
   return mode === 'tab'
-    ? 'border-slate-700 bg-slate-800 text-white shadow-md shadow-slate-100'
-    : 'border-slate-200 bg-slate-100 text-slate-800 shadow-sm ring-2 ring-slate-100'
+    ? '!border-slate-700 !bg-slate-800 !text-white shadow-md shadow-slate-100'
+    : '!border-slate-200 !bg-slate-100 !text-slate-800 shadow-sm ring-2 ring-slate-100'
 }
 
 function openAgent(targetAgentId: string): void {

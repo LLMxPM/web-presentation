@@ -1,4 +1,4 @@
-<!-- 文件功能：提供轻量资源侧边栏，用于快速浏览、预览、上传与跳转完整资源库。 -->
+<!-- 文件功能：提供轻量资源侧边栏，用于快速浏览、预览与跳转完整资源库。 -->
 <template>
   <LibrarySidebarPanel
     :model-value="modelValue"
@@ -24,37 +24,6 @@
         <ArrowUpRight class="h-4 w-4" />
         <span class="hidden lg:inline">资源管理</span>
       </UiButton>
-      <UiButton
-        v-if="canCreateTextAsset"
-        type="button"
-        variant="secondary"
-        size="sm"
-        title="文本创建资源"
-        :disabled="uploading"
-        @click="openTextCreateModal"
-      >
-        <FilePlus2 class="h-4 w-4" />
-        <span class="hidden lg:inline">新建</span>
-      </UiButton>
-      <UiButton
-        type="button"
-        variant="ghost"
-        size="sm"
-        title="上传资源"
-        :disabled="uploading"
-        @click="triggerUpload"
-      >
-        <Upload class="h-4 w-4" />
-        <span class="hidden lg:inline">{{ uploading ? '上传中' : '上传' }}</span>
-      </UiButton>
-      <input
-        ref="fileInput"
-        type="file"
-        class="hidden"
-        :accept="activeUploadAccept"
-        multiple
-        @change="handleFileChange"
-      />
     </template>
 
     <div class="flex shrink-0 flex-col border-b border-slate-100 bg-slate-50/80">
@@ -169,39 +138,6 @@
   </LibrarySidebarPanel>
 
   <UiDialog
-    :open="textCreating"
-    :title="`新建${activeTypeLabel}资源`"
-    size="compact"
-    body-preset="auto"
-    :z-index="210"
-    @update:open="value => { if (!value) closeTextCreateModal() }"
-  >
-    <div class="space-y-4">
-      <div class="grid gap-3 sm:grid-cols-2">
-        <div>
-          <label class="mb-1 block text-xs font-bold text-slate-500">资源 name</label>
-          <UiInput v-model="textCreateForm.name" />
-        </div>
-        <div>
-          <label class="mb-1 block text-xs font-bold text-slate-500">文件名</label>
-          <UiInput v-model="textCreateForm.file_name" />
-        </div>
-      </div>
-      <div>
-        <label class="mb-1 block text-xs font-bold text-slate-500">文本内容</label>
-        <UiInput v-model="textCreateForm.content" type="textarea" :rows="12" class="font-mono text-xs leading-5" />
-      </div>
-    </div>
-
-    <template #footer>
-      <UiButton variant="ghost" @click="closeTextCreateModal">取消</UiButton>
-      <UiButton :loading="uploading" @click="saveTextAsset">
-        {{ uploading ? '创建中...' : '创建资源' }}
-      </UiButton>
-    </template>
-  </UiDialog>
-
-  <UiDialog
     :open="!!runtimePreviewAsset"
     :title="runtimePreviewAsset?.name || '资源预览'"
     :description="runtimePreviewAsset?.original_name || ''"
@@ -236,11 +172,21 @@
     @update:open="handleQuickPreviewDialogVisibleChange"
   >
     <div v-if="previewAsset" class="pointer-events-none relative flex h-full min-h-0 items-center justify-center p-4 sm:p-6">
-      <img
+      <AssetPreviewSurface
         v-if="previewAsset.asset_type !== 'font' && isImage(previewAsset.original_name)"
-        :src="previewAsset.url!"
-        class="pointer-events-auto relative max-h-full max-w-full rounded-lg object-contain shadow-2xl drop-shadow-2xl"
-      />
+        :background="quickPreviewBackground"
+        class="pointer-events-auto relative flex h-full min-h-0 w-full items-center justify-center overflow-hidden rounded-2xl border border-white/20 shadow-2xl"
+      >
+        <AssetPreviewBackgroundControl
+          v-model="quickPreviewBackground"
+          class="absolute left-3 top-3 z-10 w-[148px] shadow-sm sm:left-4 sm:top-4"
+        />
+        <img
+          :src="previewAsset.url!"
+          :alt="previewAsset.name"
+          class="max-h-full max-w-full object-contain"
+        >
+      </AssetPreviewSurface>
       <div
         v-else
         class="pointer-events-auto relative flex w-full max-w-4xl flex-col items-center justify-center gap-6 rounded-2xl bg-white p-6 shadow-2xl sm:p-10"
@@ -273,36 +219,35 @@ import {
   BarChart3,
   Copy,
   Download,
-  FilePlus2,
   FileText,
   Image,
   PenTool,
   Sigma,
-  Upload,
   Video,
   Workflow,
   ZoomIn,
 } from '@lucide/vue'
 
 import {
-  createWorkspaceAssetContent,
   listWorkspaceAssetTags,
   listWorkspaceAssets,
-  uploadWorkspaceAsset,
 } from '@/api/assets'
-import { getErrorCode, getErrorMessage } from '@/api/http'
+import { getErrorMessage } from '@/api/http'
 import type { AssetResponse, AssetType } from '@/types/api'
-import { Message, createConfirm } from '@/utils/message'
+import { Message } from '@/utils/message'
 import { buildWorkspaceAssetsPath } from '@/utils/workspace-routes'
-import { ASSET_GROUPS, ASSET_UPLOAD_ACCEPT, TEXT_CREATABLE_ASSET_TYPES, getTextAssetDefaults } from './asset-manager'
+import { ASSET_GROUPS } from './asset-manager'
 import AssetPreviewFrame from '@/components/project/AssetPreviewFrame.vue'
 import LibraryChipFilter from '@/components/project/LibraryChipFilter.vue'
 import LibrarySegmentedControl from '@/components/project/LibrarySegmentedControl.vue'
 import DataState from '@/components/patterns/DataState.vue'
 import LibrarySidebarPanel from '@/components/project/LibrarySidebarPanel.vue'
 import BaseCloseButton from '@/components/ui/BaseCloseButton.vue'
+import AssetPreviewBackgroundControl from '@/components/ui/AssetPreviewBackgroundControl.vue'
+import AssetPreviewSurface from '@/components/ui/AssetPreviewSurface.vue'
+import type { AssetPreviewBackground } from '@/components/ui/asset-preview-background'
 import PaginationControl from '@/components/ui/PaginationControl.vue'
-import { UiButton, UiDialog, UiIconButton, UiInput } from '@/components/ui'
+import { UiButton, UiDialog, UiIconButton } from '@/components/ui'
 
 const props = defineProps<{
   modelValue: boolean
@@ -328,18 +273,15 @@ const loading = ref(false)
 const assetDataState = computed<'loading' | 'empty' | 'ready'>(() => (
   loading.value ? 'loading' : assets.value.length ? 'ready' : 'empty'
 ))
-const uploading = ref(false)
 const assets = ref<AssetResponse[]>([])
 const total = ref(0)
 const page = ref(1)
 const pageSize = 24
 const searchKeyword = ref('')
 const availableTags = ref<string[]>([])
-const fileInput = ref<HTMLInputElement | null>(null)
 const previewAsset = ref<AssetResponse | null>(null)
 const runtimePreviewAsset = ref<AssetResponse | null>(null)
-const textCreating = ref(false)
-const textCreateForm = ref({ name: '', file_name: '', content: '' })
+const quickPreviewBackground = ref<AssetPreviewBackground>('checker')
 
 watch(assets, (newAssets) => {
   if (activeType.value !== 'font') return
@@ -379,8 +321,7 @@ const assetGroupOptions = computed(() => assetGroups.map(group => ({ label: grou
 const currentAssetGroup = computed(() => assetGroups.find(group => group.key === activeGroupKey.value) || assetGroups[0])
 const currentAssetTypes = computed(() => currentAssetGroup.value?.types || [])
 const hasMultipleCurrentAssetTypes = computed(() => currentAssetTypes.value.length > 1)
-const activeUploadAccept = computed(() => ASSET_UPLOAD_ACCEPT[activeType.value])
-const canCreateTextAsset = computed(() => TEXT_CREATABLE_ASSET_TYPES.includes(activeType.value))
+
 const availableTagOptions = computed(() => availableTags.value.map(tag => ({ label: tag, value: tag })))
 const activeTagFilter = computed({
   get: () => activeTag.value || '',
@@ -388,13 +329,6 @@ const activeTagFilter = computed({
     activeTag.value = value || null
     page.value = 1
   },
-})
-const activeTypeLabel = computed(() => {
-  for (const group of assetGroups) {
-    const matchedType = group.types.find(item => item.value === activeType.value)
-    if (matchedType) return matchedType.label
-  }
-  return ''
 })
 const emptyAssetText = computed(() => {
   if (searchKeyword.value.trim()) return '未找到相关资源'
@@ -483,114 +417,6 @@ function handleGlobalAgentAssetUpdated(event: Event): void {
     fetchAssets(props.workspaceId),
     fetchTags(props.workspaceId),
   ])
-}
-
-function triggerUpload(): void {
-  if (!props.workspaceId) return
-  fileInput.value?.click()
-}
-
-async function handleFileChange(event: Event): Promise<void> {
-  const target = event.target as HTMLInputElement
-  if (!target.files || target.files.length === 0 || !props.workspaceId) return
-
-  const files = Array.from(target.files)
-  uploading.value = true
-  let successCount = 0
-  let firstError = ''
-  try {
-    const currentTags = activeTag.value ? [activeTag.value] : []
-    for (const file of files) {
-      try {
-        const uploaded = await uploadAssetWithOverwriteConfirm(file, currentTags)
-        if (uploaded) successCount += 1
-      } catch (err) {
-        firstError ||= getErrorMessage(err, '上传资源失败')
-      }
-    }
-    if (successCount > 0) {
-      Message.success(files.length === 1 ? '上传成功' : `已上传 ${successCount} 个资源`)
-      await fetchTags(props.workspaceId)
-    }
-    if (firstError) {
-      Message.error(successCount > 0 ? `部分资源上传失败：${firstError}` : firstError)
-    }
-    await fetchAssets(props.workspaceId)
-  } finally {
-    uploading.value = false
-    target.value = ''
-  }
-}
-
-/**
- * 上传前处理同名覆盖确认。
- * @param file 待上传文件
- * @param tags 上传标签
- * @returns 是否完成上传
- */
-async function uploadAssetWithOverwriteConfirm(file: File, tags: string[]): Promise<boolean> {
-  try {
-    await uploadWorkspaceAsset(props.workspaceId!, file, activeType.value, tags)
-    return true
-  } catch (err) {
-    if (getErrorCode(err) !== 'ASSET_NAME_CONFLICT') {
-      throw err
-    }
-
-    const conflictMessage = getErrorMessage(err, `文件 "${file.name}" 已存在，请确认是否覆盖。`)
-    const confirmed = await createConfirm(
-      `${conflictMessage} 覆盖后现有页面、路由、主题和预览引用会指向新文件，确认覆盖吗？`,
-      '覆盖同名资源',
-    )
-    if (!confirmed) return false
-
-    await uploadWorkspaceAsset(props.workspaceId!, file, activeType.value, tags, undefined, undefined, true)
-    return true
-  }
-}
-
-function openTextCreateModal(): void {
-  if (!canCreateTextAsset.value) return
-  const defaults = getTextAssetDefaults(activeType.value)
-  textCreateForm.value = {
-    name: defaults.fileName.replace(/\.[^.]+$/, ''),
-    file_name: defaults.fileName,
-    content: defaults.content,
-  }
-  textCreating.value = true
-}
-
-function closeTextCreateModal(): void {
-  textCreating.value = false
-}
-
-async function saveTextAsset(): Promise<void> {
-  if (!props.workspaceId) return
-  const fileName = textCreateForm.value.file_name.trim()
-  const assetName = textCreateForm.value.name.trim()
-  if (!fileName || !assetName) {
-    Message.error('资源 name 和文件名不能为空')
-    return
-  }
-
-  uploading.value = true
-  try {
-    const currentTags = activeTag.value ? [activeTag.value] : []
-    await createWorkspaceAssetContent(props.workspaceId, {
-      asset_type: activeType.value,
-      name: assetName,
-      original_name: fileName,
-      content: textCreateForm.value.content,
-      tags: currentTags,
-    })
-    Message.success('资源已创建')
-    closeTextCreateModal()
-    await Promise.all([fetchAssets(props.workspaceId), fetchTags(props.workspaceId)])
-  } catch (err) {
-    Message.error(getErrorMessage(err, '创建资源失败'))
-  } finally {
-    uploading.value = false
-  }
 }
 
 async function copyAssetName(asset: AssetResponse): Promise<void> {

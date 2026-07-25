@@ -3,6 +3,7 @@
  */
 import { fireEvent, render, screen, waitFor } from '@testing-library/vue'
 import { describe, expect, it, vi, beforeEach } from 'vitest'
+import { defineComponent, h, ref } from 'vue'
 
 import PageCopyToProjectDialog from './PageCopyToProjectDialog.vue'
 import type { PageItem, ProjectItem, RecordStatus } from '@/types/api'
@@ -84,6 +85,25 @@ function createProject(id: number, name: string, workspaceId = 11, status: Recor
 }
 
 function renderDialog() {
+  const UiComboboxStub = defineComponent({
+    name: 'UiCombobox',
+    props: { modelValue: { type: [String, Number, Array], default: null }, options: { type: Array, default: () => [] }, disabled: Boolean, placeholder: String, emptyText: String, clearable: Boolean, size: String },
+    emits: ['update:modelValue'],
+    setup(props, { emit }) {
+      const open = ref(false)
+      return () => {
+        const children = [h('button', { type: 'button', onClick: () => { open.value = !open.value } }, props.modelValue != null
+          ? String((props.options as Array<{ label: string; value: unknown }>).find(o => o.value === props.modelValue)?.label ?? props.modelValue)
+          : props.placeholder ?? '请选择')]
+        if (open.value) {
+          children.push(...(props.options as Array<{ label: string; value: unknown }>).map(opt =>
+            h('button', { type: 'button', onClick: () => { emit('update:modelValue', opt.value); open.value = false } }, opt.label),
+          ))
+        }
+        return h('div', { 'data-testid': 'combobox-stub' }, children)
+      }
+    },
+  })
   return render(PageCopyToProjectDialog, {
     props: {
       modelValue: true,
@@ -95,6 +115,7 @@ function renderDialog() {
     global: {
       stubs: {
         teleport: true,
+        UiCombobox: UiComboboxStub,
       },
     },
   })

@@ -89,9 +89,10 @@ export default {
       zIndex: {
         sticky: 'var(--ui-z-sticky)',
         dock: 'var(--ui-z-dock)',
+        dialog: 'var(--ui-z-dialog)',
         dropdown: 'var(--ui-z-dropdown)',
         popover: 'var(--ui-z-popover)',
-        dialog: 'var(--ui-z-dialog)',
+        'confirm-overlay': 'var(--ui-z-confirm-overlay)',
         toast: 'var(--ui-z-toast)',
       },
     },
