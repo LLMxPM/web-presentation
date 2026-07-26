@@ -77,7 +77,7 @@ docker compose -f docker-compose.sqlite.yml pull
 docker compose -f docker-compose.sqlite.yml up -d
 ```
 
-默认启动后访问 `http://127.0.0.1:8080`。面向开源用户的部署选型、数据保存和升级建议见 [自托管部署](./docs/user/deployment.md)；内置 PostgreSQL/Redis、外部依赖、production env 版、HTTPS、升级和回滚见 [生产部署指南](./docs/developer/deployment/README.md)。
+默认启动后访问 `http://127.0.0.1:8080`。面向开源用户的快速部署方式见 [快速部署](./docs/user/quick-deployment/README.md)；内置 PostgreSQL/Redis、外部依赖、production env 版、HTTPS、升级和回滚见 [生产部署指南](./docs/developer/deployment/README.md)。
 
 ## 文档导航
 
@@ -88,7 +88,7 @@ docker compose -f docker-compose.sqlite.yml up -d
 | [用户文档](./docs/user/README.md) | 平台介绍、快速上手、平台特性、AI 协作、资产管理和部署入口 |
 | [平台介绍](./docs/user/platform-overview.md) | 产品定位、核心概念、典型场景和平台组成 |
 | [快速上手](./docs/user/getting-started.md) | 登录、工作空间、项目页面、AI、预览和构建流程 |
-| [自托管部署](./docs/user/deployment.md) | 面向开源用户的 SQLite 轻量部署、方案选择、数据保存和升级建议 |
+| [快速部署](./docs/user/quick-deployment/README.md) | 使用 Docker、飞牛 fnOS 或群晖 Container Manager 快速部署 SQLite 单体版 |
 | [平台特性](./docs/user/features/README.md) | 创作者视角理解 AI 创作、资产复用、预览构建和交付 |
 | [Demo 使用指南](./docs/user/demo-guide.md) | 公开 Demo 地址、体验账号、推荐流程和 AI 设置注意事项 |
 | [AI 协作创作](./docs/user/ai/README.md) | AI 侧边栏、工具确认、上下文注入和协作建议 |

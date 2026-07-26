@@ -1,22 +1,30 @@
 # 用户文档
 
-用户文档面向平台使用者、内容创作者和团队管理员，说明如何理解平台、完成创作流程、管理可复用资产，并在需要时完成开源自托管部署。
+用户文档面向平台使用者、内容创作者和团队管理员。建议先按“我现在要做什么”选择入口，不必按目录顺序通读。
 
 项目网站：[https://llmxpm.github.io/web-presentation-site/](https://llmxpm.github.io/web-presentation-site/)
 
-## 推荐阅读路径
+## 从这里开始
 
-| 顺序 | 文档 | 适合场景 |
+| 目标 | 首选入口 | 之后可以阅读 |
 | :--- | :--- | :--- |
-| 1 | [平台介绍](./platform-overview.md) | 先理解 `web-presentation` 解决什么问题 |
-| 2 | [核心概念](./concepts.md) | 理解工作空间、项目、页面、资源、组件、主题和样式的关系 |
-| 3 | [快速上手](./getting-started.md) | 从登录到创建页面、预览和构建的完整流程 |
-| 4 | [Demo 使用指南](./demo-guide.md) | 体验公开 Demo 或准备演示流程 |
-| 5 | [平台特性](./features/README.md) | 从创作者视角理解 AI 创作、资产复用和构建交付 |
-| 6 | [AI 协作创作](./ai/README.md) | 使用 AI 侧边栏、工具确认和上下文注入 |
-| 7 | [自托管部署](./deployment.md) | 在自己的机器或团队服务器上部署平台 |
+| 先了解平台 | [平台介绍](./platform-overview.md) | [用户快速上手](./getting-started.md) |
+| 第一次实际使用 | [用户快速上手](./getting-started.md) | [常用工作流](./workflows/README.md) |
+| 直接体验公开环境 | [Demo 使用指南](./demo-guide.md) | [AI 协作创作](./ai/README.md) |
+| 部署到自己的环境 | [快速部署](./quick-deployment/README.md) | [生产部署指南](../developer/deployment/README.md) |
+| 遇到问题 | [常见问题](./reference/faq.md) | [当前限制](./reference/limits.md) |
 
-## 平台特性
+## 文档怎么分工
+
+用户文档分为五组，各组关注点不同：
+
+- **平台介绍与概念**：解释平台是什么，以及工作空间、项目、页面和资产之间的关系；不展开具体操作步骤。
+- **常用工作流**：按“要完成的任务”给出操作顺序，是日常使用的主线文档。
+- **平台特性**：解释 AI 创作、资产复用、预览和交付的价值与能力边界；具体操作以工作流文档为准。
+- **AI 协作**：集中说明提示词、上下文、工具确认、会话恢复和不同助手的能力边界。
+- **参考资料与部署**：用于查 FAQ、术语、限制和自托管部署，不属于首次创作的必读内容。
+
+## 平台特性（理解能力）
 
 | 文档 | 内容 |
 | :--- | :--- |
@@ -35,16 +43,23 @@
 | [AI 协作创作](./workflows/ai-assisted-creation.md) | 把创作任务拆给 AI，并理解确认、上下文和边界 |
 | [预览、截图与构建](./workflows/preview-build-export.md) | 使用 Runtime 预览、截图、构建和访问发布产物 |
 
-## 参考资料
+推荐的实际创作顺序是：
+
+`项目与页面` → `资源管理` → `主题、字体与样式` → `组件管理` → `AI 协作创作` → `预览、截图与构建`
+
+## 部署
 
 | 文档 | 内容 |
 | :--- | :--- |
-| [演示文稿创作路径对比](./platform-comparison.md) | 对比传统 PPT、AI PPT、PPT skills 和平台化创作路径 |
-| [自托管部署](./deployment.md) | 开源用户部署选型、SQLite 轻量部署、数据保存和升级建议 |
+| [快速部署](./quick-deployment/README.md) | Docker、飞牛 fnOS、群晖 Container Manager 的 SQLite 单体快速部署 |
+| [生产部署指南](../developer/deployment/README.md) | HTTPS、外部依赖、备份、升级和生产环境配置 |
+
+## 参考资料
+
 | [当前限制](./reference/limits.md) | 已落地能力、建设中事项和使用边界 |
 | [常见问题](./reference/faq.md) | 登录、AI 设置、预览、构建、部署入口等常见问题 |
 | [术语表](./reference/glossary.md) | 平台核心术语解释 |
 
 ## 部署入口
 
-如果你需要自己部署平台，先阅读 [自托管部署](./deployment.md)。它覆盖开源用户最常见的 SQLite 轻量单容器部署和方案选择；生产环境上线前，再确认 [生产部署指南](../developer/deployment/README.md)、[部署环境变量](../developer/deployment/env-vars.md)、[备份与恢复](../developer/deployment/backup-restore.md) 和 [升级与回滚](../developer/deployment/upgrade-rollback.md)。
+如果你只是体验或小规模自托管，请阅读 [快速部署](./quick-deployment/README.md)。如果要正式上线，再转到 [生产部署指南](../developer/deployment/README.md)，其中包含环境变量、备份恢复和升级回滚文档入口。

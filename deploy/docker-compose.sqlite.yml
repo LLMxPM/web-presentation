@@ -2,7 +2,9 @@
 
 # 使用前请至少修改：
 # - DEFAULT_ADMIN_PASSWORD、AI_SECRET_ENCRYPTION_KEY：正式部署前必须替换。
-# - BACKEND_PUBLIC_BASE_URL、RUNTIME_PUBLIC_BASE_URL、CORS_ORIGINS：部署到真实域名或 IP 时改为实际访问入口。
+# - BACKEND_PUBLIC_BASE_URL、RUNTIME_PUBLIC_BASE_URL、CORS_ORIGINS：部署到真实域名或 IP 时改为浏览器实际访问入口。
+# - RUNTIME_BASE_URL、RUNTIME_PREVIEW_JWKS_URL、RUNTIME_BACKEND_API_BASE_URL：SQLite 单体版是容器内
+#   Backend 与 Runtime 的回源地址，保持 127.0.0.1:7373/8000，不要改成宿主机公网地址。
 # - AI_SECRET_ENCRYPTION_KEY 必须是 Fernet 密钥：32 字节随机值的 URL-safe base64 编码，
 #   通常长度为 44 个字符并以 = 结尾；可用命令生成：
 #   python -c "import base64, os; print(base64.urlsafe_b64encode(os.urandom(32)).decode())"
