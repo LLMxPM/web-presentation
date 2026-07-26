@@ -3,7 +3,12 @@
 
 ## 发布边界
 
-根仓只发布到一个 Docker Hub 仓库：`llmxpm/web-presentation`。该仓库包含两个镜像变体：
+根仓由同一次 Buildx 多架构构建同时发布到 Docker Hub 和阿里云 ACR 个人版。两个仓库使用相同的镜像标签与内容摘要；Docker Hub 作为默认公共仓库，ACR 作为中国大陆网络环境下的拉取副本。当前平台镜像仓库为：
+
+- Docker Hub：`docker.io/llmxpm/web-presentation`
+- 阿里云 ACR：`${ACR_REGISTRY}/${ACR_NAMESPACE}/web-presentation`
+
+该仓库包含两个镜像变体：
 
 - 常规平台镜像：由 `Dockerfile` 构建，包含 Backend 代码、Editor 静态资源、Nginx 配置和 Backend 运行所需的 Runtime Kit manifest。
 - SQLite 轻量单容器镜像：由 `Dockerfile.lite` 构建，额外内置 Runtime Vite server 运行依赖，面向 SQLite + memory runtime 单容器部署。该变体直接复制当前 `runtime/` 子模块源码，不拉取 `web-runtime-vue` 镜像作为基础层。
@@ -12,9 +17,10 @@
 
 ```bash
 docker buildx imagetools inspect docker.io/llmxpm/web-runtime-vue:sha-<runtime_sha_short>
+docker buildx imagetools inspect ${ACR_REGISTRY}/${ACR_NAMESPACE}/web-runtime-vue:sha-<runtime_sha_short>
 ```
 
-`web-runtime-vue` 子仓库自己的 Docker Release 会发布 `<release_tag>`、`sha-<runtime_sha_short>`，稳定 Release 还会发布 `latest`。平台仓库更新 `runtime` 子模块指针前，应先让对应 Runtime 提交完成子仓库 Release。
+`web-runtime-vue` 子仓库自己的 Docker Release 会将 `<release_tag>`、`sha-<runtime_sha_short>` 和稳定 Release 的 `latest` 同时发布到 Docker Hub 与阿里云 ACR。平台仓库更新 `runtime` 子模块指针前，应先让对应 Runtime 提交完成子仓库 Release；根仓 Release 会同时校验 Docker Hub 与 ACR 的 Runtime `sha-<runtime_sha_short>` 镜像。
 
 根仓 workflow 的 checkout 均使用 `submodules: recursive`。因此 `Dockerfile.lite` 构建时会使用当前根仓记录的 Runtime 子模块 SHA；本地源码构建前也必须执行 `git submodule update --init --recursive runtime`。
 
@@ -22,10 +28,15 @@ docker buildx imagetools inspect docker.io/llmxpm/web-runtime-vue:sha-<runtime_s
 
 - PR：`.github/workflows/platform-test.yml` 执行快速质量门禁，包括 Backend unit/api、Editor、根仓 contracts；当 `runtime` 子模块或 `.gitmodules` 变化时，额外执行 Runtime 委托校验。
 - 全量测试：`.github/workflows/platform-test.yml` 仅在 `main` push、每周一 03:00（Asia/Shanghai）定时任务或手动触发且 `full_tests=true` 时执行；全量会在快速门禁基础上补充 Backend integration、Runtime 委托校验、e2e smoke、常规平台镜像 build smoke 和 SQLite 轻量镜像 build smoke。镜像 build smoke 只构建，不推送。
-- Release：`.github/workflows/platform-release.yml` 在 GitHub Release `published` 后执行完整质量门禁；Backend、Editor 和 contracts 通过后再执行 e2e smoke 与 Runtime 镜像存在性校验，最后推送常规平台镜像和 SQLite 轻量镜像到 Docker Hub。
+- Release：`.github/workflows/platform-release.yml` 在 GitHub Release `published` 后执行完整质量门禁；Backend、Editor 和 contracts 通过后再执行 e2e smoke 与 Runtime 镜像存在性校验，最后将常规平台镜像和 SQLite 轻量镜像同时推送到 Docker Hub 与阿里云 ACR。
 - Docker Hub 配置：
   - `vars.DOCKER_USERNAME`
   - `secrets.DOCKER_PASSWORD`
+- 阿里云 ACR 配置：
+  - `vars.ACR_REGISTRY`：个人版实例访问域名，例如 `crpi-xxxx.cn-hangzhou.personal.cr.aliyuncs.com`，不要填写 `https://`。
+  - `vars.ACR_NAMESPACE`：阿里云 ACR 命名空间。
+  - `vars.ACR_USERNAME`：ACR 访问凭证中的登录名。
+  - `secrets.ACR_PASSWORD`：ACR 访问凭证密码，不是阿里云控制台登录密码。
 
 稳定 Release 会推送：
 
@@ -34,17 +45,24 @@ docker.io/llmxpm/web-presentation:<release_tag>
 docker.io/llmxpm/web-presentation:latest
 docker.io/llmxpm/web-presentation:sqlite-lite-<release_tag>
 docker.io/llmxpm/web-presentation:sqlite-lite
+${ACR_REGISTRY}/${ACR_NAMESPACE}/web-presentation:<release_tag>
+${ACR_REGISTRY}/${ACR_NAMESPACE}/web-presentation:latest
+${ACR_REGISTRY}/${ACR_NAMESPACE}/web-presentation:sqlite-lite-<release_tag>
+${ACR_REGISTRY}/${ACR_NAMESPACE}/web-presentation:sqlite-lite
 ```
 
 Pre-release 只推送固定版本标签，不移动 `latest` 与 `sqlite-lite`。
 
 ## 生产 Compose
 
-生产部署不在目标机器构建镜像，只拉取 CI/CD 已发布的业务镜像。镜像仓库固定为：
+生产部署不在目标机器构建镜像，只拉取 CI/CD 已发布的业务镜像。默认使用 Docker Hub；中国大陆网络环境可以将 Compose 中的平台镜像替换为 ACR 地址。当前平台镜像仓库为：
 
 - `llmxpm/web-presentation:latest`
 - `llmxpm/web-presentation:sqlite-lite`
+- `${ACR_REGISTRY}/${ACR_NAMESPACE}/web-presentation:latest`
+- `${ACR_REGISTRY}/${ACR_NAMESPACE}/web-presentation:sqlite-lite`
 - `llmxpm/web-runtime-vue:latest`
+- `${ACR_REGISTRY}/${ACR_NAMESPACE}/web-runtime-vue:latest`
 
 部署模板集中在 `deploy/` 目录：
 

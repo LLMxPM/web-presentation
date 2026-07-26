@@ -148,6 +148,7 @@ jobs:
       runtime_sha: ${{ steps.runtime.outputs.runtime_sha }}
       runtime_short_sha: ${{ steps.runtime.outputs.runtime_short_sha }}
       runtime_image: ${{ steps.runtime.outputs.runtime_image }}
+      runtime_acr_image: ${{ steps.runtime.outputs.runtime_acr_image }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -157,24 +158,38 @@ jobs:
           runtime_sha="$(git -C runtime rev-parse HEAD)"
           runtime_short_sha="${runtime_sha:0:12}"
           runtime_image="docker.io/llmxpm/web-runtime-vue:sha-${runtime_short_sha}"
+          runtime_acr_image="${ACR_REGISTRY}/${ACR_NAMESPACE}/web-runtime-vue:sha-${runtime_short_sha}"
 
           echo "runtime_sha=${runtime_sha}" >> "${GITHUB_OUTPUT}"
           echo "runtime_short_sha=${runtime_short_sha}" >> "${GITHUB_OUTPUT}"
           echo "runtime_image=${runtime_image}" >> "${GITHUB_OUTPUT}"
+          echo "runtime_acr_image=${runtime_acr_image}" >> "${GITHUB_OUTPUT}"
+        env:
+          ACR_REGISTRY: ${{ vars.ACR_REGISTRY }}
+          ACR_NAMESPACE: ${{ vars.ACR_NAMESPACE }}
       - uses: docker/login-action@v4
         with:
           username: ${{ vars.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
+      - uses: docker/login-action@v4
+        with:
+          registry: ${{ vars.ACR_REGISTRY }}
+          username: ${{ vars.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
       - uses: docker/setup-buildx-action@v4
       - name: Validate runtime image platforms
         env:
           RUNTIME_IMAGE: ${{ steps.runtime.outputs.runtime_image }}
+          RUNTIME_ACR_IMAGE: ${{ steps.runtime.outputs.runtime_acr_image }}
         run: |
-          manifest_json="$(docker buildx imagetools inspect "${RUNTIME_IMAGE}" --format '{{json .Manifest}}')"
-          echo "${manifest_json}" | jq -e '
-            [.manifests[].platform | select(.os == "linux") | .architecture]
-            | (index("amd64") != null and index("arm64") != null)
-          '
+          for image in "${RUNTIME_IMAGE}" "${RUNTIME_ACR_IMAGE}"; do
+            echo "检查 Runtime 镜像：${image}"
+            manifest_json="$(docker buildx imagetools inspect "${image}" --format '{{json .Manifest}}')"
+            echo "${manifest_json}" | jq -e '
+              [.manifests[].platform | select(.os == "linux") | .architecture]
+              | (index("amd64") != null and index("arm64") != null)
+            '
+          done
 
   build-and-push:
     runs-on: ubuntu-latest
@@ -193,12 +208,19 @@ jobs:
         with:
           username: ${{ vars.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
+      - uses: docker/login-action@v4
+        with:
+          registry: ${{ vars.ACR_REGISTRY }}
+          username: ${{ vars.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
       - uses: docker/setup-qemu-action@v4
       - uses: docker/setup-buildx-action@v4
       - id: meta
         uses: docker/metadata-action@v6
         with:
-          images: docker.io/llmxpm/web-presentation
+          images: |
+            docker.io/llmxpm/web-presentation
+            ${{ vars.ACR_REGISTRY }}/${{ vars.ACR_NAMESPACE }}/web-presentation
           tags: |
             type=raw,value=${{ needs.release-meta.outputs.release_tag }}
             type=raw,value=latest,enable=${{ needs.release-meta.outputs.push_latest == 'true' }}
@@ -240,12 +262,19 @@ jobs:
         with:
           username: ${{ vars.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
+      - uses: docker/login-action@v4
+        with:
+          registry: ${{ vars.ACR_REGISTRY }}
+          username: ${{ vars.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
       - uses: docker/setup-qemu-action@v4
       - uses: docker/setup-buildx-action@v4
       - id: meta
         uses: docker/metadata-action@v6
         with:
-          images: docker.io/llmxpm/web-presentation
+          images: |
+            docker.io/llmxpm/web-presentation
+            ${{ vars.ACR_REGISTRY }}/${{ vars.ACR_NAMESPACE }}/web-presentation
           tags: |
             type=raw,value=sqlite-lite-${{ needs.release-meta.outputs.release_tag }}
             type=raw,value=sqlite-lite,enable=${{ needs.release-meta.outputs.push_latest == 'true' }}
