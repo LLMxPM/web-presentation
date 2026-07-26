@@ -1,11 +1,11 @@
 <!-- 文件功能：项目构建弹窗的额外资源选择区域，支持搜索资源、选择资源和保存草稿。 -->
 <template>
-  <section class="flex min-h-0 flex-col rounded-lg border border-slate-200 bg-white p-3">
+  <section class="flex min-h-0 flex-col rounded-lg border border-border bg-surface p-3">
     <div class="flex shrink-0 items-center justify-between gap-3">
       <div class="flex items-center gap-2">
-        <Package class="h-4 w-4 text-indigo-500" />
-        <h4 class="text-base font-semibold text-slate-900">构建资源</h4>
-        <span class="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-500">
+        <Package class="h-4 w-4 text-accent-emphasis" />
+        <h4 class="text-base font-semibold text-text-strong">构建资源</h4>
+        <span class="rounded-full bg-surface-muted px-2 py-0.5 text-xs font-semibold text-text-muted">
           额外 {{ extraAssetNames.length }}
         </span>
       </div>
@@ -70,10 +70,10 @@
     </div>
 
     <div class="mt-3 grid min-h-0 flex-1 gap-2 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,0.9fr)_minmax(0,1.55fr)]">
-      <div class="flex min-h-0 min-w-0 flex-col rounded-lg border border-slate-200 bg-slate-50/80 p-2.5">
-        <div class="flex shrink-0 items-center justify-between gap-2 text-[11px] font-semibold text-slate-500">
+      <div class="flex min-h-0 min-w-0 flex-col rounded-lg border border-border bg-canvas/80 p-2.5">
+        <div class="flex shrink-0 items-center justify-between gap-2 text-[11px] font-semibold text-text-muted">
           <span>自动包含</span>
-          <span class="rounded-full bg-white px-1.5 py-0.5 text-[10px]">{{ automaticIncludedAssets.length }}</span>
+          <span class="rounded-full bg-surface px-1.5 py-0.5 text-[10px]">{{ automaticIncludedAssets.length }}</span>
         </div>
         <div v-if="automaticIncludedAssets.length" class="resource-column-scroll mt-2 min-h-0 flex-1 space-y-1.5 overflow-y-auto pr-1">
           <UiButton
@@ -88,18 +88,18 @@
             disabled
           >
             <span class="min-w-0 truncate">{{ asset.name }}</span>
-            <span class="shrink-0 rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-500">
+            <span class="shrink-0 rounded-full bg-surface-muted px-1.5 py-0.5 text-[10px] text-text-muted">
               {{ asset.typeLabel }}
             </span>
           </UiButton>
         </div>
-        <p v-else class="mt-2 flex min-h-0 flex-1 items-center justify-center text-xs text-slate-400">暂无自动资源</p>
+        <p v-else class="mt-2 flex min-h-0 flex-1 items-center justify-center text-xs text-text-disabled">暂无自动资源</p>
       </div>
 
-      <div class="flex min-h-0 min-w-0 flex-col rounded-lg border border-indigo-100 bg-indigo-50/40 p-2.5">
-        <div class="flex shrink-0 items-center justify-between gap-2 text-[11px] font-semibold text-indigo-600">
+      <div class="flex min-h-0 min-w-0 flex-col rounded-lg border border-accent-muted bg-surface-selected/40 p-2.5">
+        <div class="flex shrink-0 items-center justify-between gap-2 text-[11px] font-semibold text-accent">
           <span>额外资源</span>
-          <span class="rounded-full bg-white px-1.5 py-0.5 text-[10px]">{{ extraIncludedAssets.length }}</span>
+          <span class="rounded-full bg-surface px-1.5 py-0.5 text-[10px]">{{ extraIncludedAssets.length }}</span>
         </div>
         <div v-if="extraIncludedAssets.length" class="resource-column-scroll mt-2 min-h-0 flex-1 space-y-1.5 overflow-y-auto pr-1">
           <UiButton
@@ -115,22 +115,22 @@
           >
             <span class="min-w-0 truncate">{{ asset.name }}</span>
             <span class="inline-flex shrink-0 items-center gap-1">
-              <span class="rounded-full bg-indigo-50 px-1.5 py-0.5 text-[10px] text-indigo-500">
+              <span class="rounded-full bg-surface-selected px-1.5 py-0.5 text-[10px] text-accent-emphasis">
                 {{ asset.typeLabel }}
               </span>
               <X class="h-3 w-3" />
             </span>
           </UiButton>
         </div>
-        <p v-else class="mt-2 flex min-h-0 flex-1 items-center justify-center text-xs text-slate-400">未选择额外资源</p>
+        <p v-else class="mt-2 flex min-h-0 flex-1 items-center justify-center text-xs text-text-disabled">未选择额外资源</p>
       </div>
 
-      <div class="flex min-h-0 min-w-0 flex-col rounded-lg border border-slate-200 bg-white p-2.5">
-        <div class="flex shrink-0 items-center justify-between gap-2 text-[11px] font-semibold text-slate-500">
+      <div class="flex min-h-0 min-w-0 flex-col rounded-lg border border-border bg-surface p-2.5">
+        <div class="flex shrink-0 items-center justify-between gap-2 text-[11px] font-semibold text-text-muted">
           <span>待选资源</span>
-          <span class="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px]">{{ activeTabAssets.length }}</span>
+          <span class="rounded-full bg-surface-muted px-1.5 py-0.5 text-[10px]">{{ activeTabAssets.length }}</span>
         </div>
-        <div v-if="assetOptionsLoading" class="mt-2 flex min-h-0 flex-1 items-center justify-center text-sm font-semibold text-slate-400">
+        <div v-if="assetOptionsLoading" class="mt-2 flex min-h-0 flex-1 items-center justify-center text-sm font-semibold text-text-disabled">
           <RefreshCw class="mr-2 h-4 w-4 animate-spin" />
           正在加载资源
         </div>
@@ -148,7 +148,7 @@
             </UiIconButton>
             <div
               ref="assetTypeTabScroller"
-              class="asset-type-tab-scroll flex min-w-0 flex-nowrap items-center gap-1 overflow-x-auto overflow-y-hidden rounded-md border border-slate-200 bg-slate-50 p-0.5"
+              class="asset-type-tab-scroll flex min-w-0 flex-nowrap items-center gap-1 overflow-x-auto overflow-y-hidden rounded-md border border-border bg-canvas p-0.5"
               @wheel="handleAssetTypeTabWheel"
             >
               <UiButton
@@ -188,7 +188,7 @@
               @click="emit('toggleAsset', asset.name)"
             >
               <span class="truncate">{{ asset.name }}</span>
-              <span v-if="isAutomatic(asset.name)" class="shrink-0 rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-500">
+              <span v-if="isAutomatic(asset.name)" class="shrink-0 rounded-full bg-surface-muted px-1.5 py-0.5 text-[10px] text-text-muted">
                 自动
               </span>
               <Check v-else-if="isSelected(asset.name)" class="h-3.5 w-3.5 shrink-0" />
@@ -196,7 +196,7 @@
             </UiButton>
           </div>
         </div>
-        <p v-else class="mt-2 flex min-h-0 flex-1 items-center justify-center text-xs text-slate-400">
+        <p v-else class="mt-2 flex min-h-0 flex-1 items-center justify-center text-xs text-text-disabled">
           {{ workspaceId ? '没有匹配的资源' : '暂无工作空间资源' }}
         </p>
       </div>
@@ -360,25 +360,6 @@ function handleAssetTypeTabWheel(event: WheelEvent): void {
 </script>
 
 <style scoped>
-.resource-column-scroll {
-  scrollbar-width: thin;
-  scrollbar-color: rgb(203 213 225) transparent;
-}
-
-.resource-column-scroll::-webkit-scrollbar {
-  height: 6px;
-  width: 6px;
-}
-
-.resource-column-scroll::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.resource-column-scroll::-webkit-scrollbar-thumb {
-  border-radius: 999px;
-  background: rgb(203 213 225);
-}
-
 .asset-type-tab-scroll {
   scrollbar-width: none;
   -ms-overflow-style: none;

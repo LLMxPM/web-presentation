@@ -55,7 +55,7 @@
                   编辑
                 </UiButton>
                 
-                <div class="mx-0.5 h-5 w-px bg-slate-200"></div>
+                <div class="mx-0.5 h-5 w-px bg-border"></div>
                 <UiButton
                   variant="ghost"
                   size="sm"
@@ -75,7 +75,7 @@
                   下一页
                 </UiButton>
 
-                <div class="mx-0.5 h-5 w-px bg-slate-200"></div>
+                <div class="mx-0.5 h-5 w-px bg-border"></div>
 
                 <UiButton variant="ghost" size="sm" @click="isHistoryModalOpen = true">
                   <History class="h-3.5 w-3.5" />
@@ -145,13 +145,12 @@
         :page-id="pageId"
         :base-version-no="pageDetails.current_version_no"
         :page-title="pageDetails.title"
+        :workspace-id="Number.isFinite(workspaceId) ? workspaceId : null"
         :source-value="editorCode"
         :editor-language="editorLanguage"
-        :editor-theme="editorTheme"
         :auto-save-delay="autoSaveDelay"
         :auto-save-options="autoSaveOptions"
         @update:source-value="editorCode = $event"
-        @update:editor-theme="editorTheme = $event"
         @update:auto-save-delay="autoSaveDelay = $event"
         @request-mode-change="handleEditModeChange"
         @request-close="handlePageEditDialogClose"
@@ -203,7 +202,6 @@
         :version-content-map="versionContentMap"
         :history-panel-preview-frame-url="historyPanelPreviewFrameUrl"
         :editor-language="editorLanguage"
-        :editor-theme="editorTheme"
         :previewing-runtime-version-no="previewingRuntimeVersionNo"
         :preview-version-pending="previewVersionMutation.isPending.value"
         :preview-version-no="previewVersionNo"
@@ -227,10 +225,10 @@
     </div>
 
     <div v-else class="flex min-h-0 flex-1 flex-col items-center justify-center gap-8">
-      <Frown class="w-24 h-24 text-slate-100" />
+      <Frown class="w-24 h-24 text-text-faint" />
       <div class="text-center space-y-2">
-        <h3 class="text-2xl font-extrabold text-slate-400">页面路由丢失</h3>
-        <p class="text-slate-300 font-bold">找不到此页面的生命周期定义或数据溯源。</p>
+        <h3 class="text-2xl font-extrabold text-text-disabled">页面路由丢失</h3>
+        <p class="text-text-faint font-bold">找不到此页面的生命周期定义或数据溯源。</p>
       </div>
       <UiButton variant="secondary" @click="router.back()">返回上一级</UiButton>
     </div>
@@ -273,7 +271,6 @@ import type {
   EditorSaveReason,
   MonacoEditorExpose,
   MonacoEditorReadyPayload,
-  EditorThemeMode,
 } from '@/types/monaco'
 import type { PageEditMode } from '@/types/page-edit'
 import type {
@@ -292,7 +289,6 @@ import { buildPageDetailPath, buildProjectPagesPath } from '@/utils/workspace-ro
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error'
 
 interface PageEditDialogExpose {
-  confirmAction: (message: string, title: string, dangerous?: boolean) => Promise<boolean>
   discardChanges: () => void
   reanalyze: () => Promise<void>
   markStale: () => void
@@ -324,7 +320,6 @@ const workspaceId = computed(() => parseInt(route.params.workspaceId as string, 
 const projectId = computed(() => parseInt(route.params.projectId as string, 10))
 const pageId = computed(() => parseInt(route.params.pageId as string, 10))
 
-const editorTheme = ref<EditorThemeMode>('light')
 const autoSaveDelay = ref<number>(0)
 const editorCode = ref('')
 const fileType = ref<PageFileType>('vue')
@@ -833,10 +828,10 @@ async function confirmDiscardVisualEdit(): Promise<boolean> {
     return false
   }
   if (!isVisualEditDirty.value) return true
-  const confirmed = await pageEditDialogRef.value?.confirmAction(
+  const confirmed = await createConfirm(
     '离开会放弃当前可视化编辑草稿，且这些修改尚未写入页面源码。是否继续？',
     '放弃可视化编辑',
-    true,
+    { dangerous: true },
   )
   if (!confirmed) return false
   pageEditDialogRef.value?.discardChanges()

@@ -110,7 +110,7 @@ describe('ProjectSuggestedReferenceAssetsDialog', () => {
     renderDialog()
 
     await screen.findAllByText('hero_image')
-    await fireEvent.click(screen.getByText('图片'))
+    await fireEvent.click(screen.getByRole('radio', { name: '图片 1' }))
     expect((document.body.querySelector('input[type="file"][multiple]') as HTMLInputElement).accept).toContain('.png')
     await fireEvent.change(
       document.body.querySelector('input[type="file"][multiple]')!,
@@ -133,7 +133,7 @@ describe('ProjectSuggestedReferenceAssetsDialog', () => {
     renderDialog()
 
     await screen.findAllByText('hero_image')
-    await fireEvent.click(screen.getByText('Mermaid'))
+    await fireEvent.click(screen.getByRole('radio', { name: 'Mermaid 0' }))
     await fireEvent.change(
       document.body.querySelector('input[type="file"][multiple]')!,
       { target: { files: [new File(['flowchart TD'], 'flow_reference.txt', { type: 'text/plain' })] } },

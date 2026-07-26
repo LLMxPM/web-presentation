@@ -73,13 +73,14 @@ async def test_platform_runtime_should_persist_events_messages_and_snapshot(
         workspace_id=workspace_id,
         source="editor-component-library",
     )
+    llm_config_id = await _create_runtime_llm_config(authenticated_client)
     session_response = await authenticated_client.post(
         "/api/ai/sessions",
         json={
             "agent_id": "component-manager",
             "session_name": "平台运行态会话",
             "scope": scope.model_dump(mode="json"),
-            "llm_config_id": await _create_runtime_llm_config(authenticated_client),
+            "llm_config_id": llm_config_id,
         },
     )
     assert session_response.status_code == 201
@@ -104,8 +105,28 @@ async def test_platform_runtime_should_persist_events_messages_and_snapshot(
             run_id="platform-runtime-run-1",
             message="整理组件库",
             image_attachment_ids=[],
+            llm_config_id=llm_config_id,
+            llm_metadata={
+                "selection_kind": "run_override",
+                "config_id": llm_config_id,
+                "name": "运行态测试模型",
+                "provider_key": "openai",
+                "provider_label": "OpenAI",
+                "model_id": "gpt-4.1-mini",
+            },
+            session_llm_metadata={
+                "selection_kind": "run_override",
+                "config_id": llm_config_id,
+                "name": "运行态测试模型",
+                "provider_key": "openai",
+                "provider_label": "OpenAI",
+                "model_id": "gpt-4.1-mini",
+            },
         )
         run_model = run_start.run_model
+        assert run_model.llm_config_id == llm_config_id
+        assert run_model.llm_config_snapshot_json["selection_kind"] == "run_override"
+        assert run_start.session_model.metadata_json["llm"]["config_id"] == llm_config_id
         assert flush_calls[0] is not None
         assert isinstance(flush_calls[0][0], AiAgentRun)
         await store.append_event(
@@ -1198,6 +1219,57 @@ async def test_agent_message_history_should_exclude_current_continue_run(
 
     assert rebuilt.included_run_ids == ["history-continue-run-1"]
     assert rebuilt_without_exclusion.included_run_ids == ["history-continue-run-1", "history-continue-run-2"]
+
+
+async def test_agent_message_history_should_include_active_run_when_requested(
+    authenticated_client: AsyncClient,
+) -> None:
+    """运行中 run 默认被跳过，但显式 include_run_id 时应纳入其已落盘历史，避免上下文读数回退。"""
+
+    _, session_id, scope = await _create_history_workspace_session(authenticated_client, "运行中纳入")
+
+    async with get_session_factory()() as db_session:
+        store = PlatformAgentRuntimeStore(db_session, user_id=1)
+        await _finish_history_run(
+            store,
+            session_id=session_id,
+            scope=scope,
+            run_id="history-active-run-1",
+            user_text="历史问题",
+            assistant_text="历史回答",
+        )
+        active = await store.start_run(
+            session_id=session_id,
+            agent_id="component-manager",
+            scope=scope,
+            run_id="history-active-run-2",
+            message="运行中的当前问题",
+            image_attachment_ids=[],
+        )
+        await store.save_run_message_history(
+            active.run_model,
+            _history_delta(user_text="运行中的当前问题", assistant_text="运行中的部分回答"),
+        )
+        active.run_model.status = "running"
+        await db_session.commit()
+
+        rebuilt_default = await rebuild_agent_message_history(
+            session=db_session,
+            user_id=1,
+            session_id=session_id,
+            agent_id="component-manager",
+        )
+        rebuilt_with_active = await rebuild_agent_message_history(
+            session=db_session,
+            user_id=1,
+            session_id=session_id,
+            agent_id="component-manager",
+            include_run_id=active.run_model.run_id,
+        )
+
+    assert rebuilt_default.included_run_ids == ["history-active-run-1"]
+    assert rebuilt_with_active.included_run_ids == ["history-active-run-1", "history-active-run-2"]
+    assert rebuilt_with_active.message_json[-2]["parts"][0]["content"] == "运行中的当前问题"
 
 
 async def test_agent_message_history_should_sanitize_image_payload_and_preserve_large_text_delta(

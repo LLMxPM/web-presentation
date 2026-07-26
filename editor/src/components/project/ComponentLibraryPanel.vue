@@ -10,7 +10,7 @@
     @update:model-value="emit('update:modelValue', $event)"
   >
     <template #icon>
-      <Layers class="h-5 w-5 text-indigo-600" />
+      <Layers class="h-5 w-5 text-accent" />
     </template>
 
     <template #actions>
@@ -26,19 +26,19 @@
         <span class="hidden lg:inline">组件管理</span>
       </UiButton>
       <UiButton
-        v-if="!readOnly && componentPanelTab === 'workspace' && batchSelectedComponentIds.length > 0"
+        v-if="!readOnly && componentPanelTab === 'workspace'"
         type="button"
         variant="ghost"
         size="sm"
-        :disabled="exportPackagePending"
-        title="导出已勾选组件"
-        @click="emitExportRequest"
+        :disabled="!selectionMode && visibleComponents.length === 0"
+        :title="selectionMode ? '退出导出选择模式' : '进入选择模式后勾选要导出的组件'"
+        @click="toggleSelectionMode"
       >
         <Download class="h-4 w-4" />
-        <span class="hidden lg:inline">导出组件</span>
+        <span class="hidden lg:inline">{{ selectionMode ? '退出选择' : '导出组件' }}</span>
       </UiButton>
       <UiButton
-        v-if="!readOnly && componentPanelTab === 'workspace' && batchSelectedComponentIds.length === 0"
+        v-if="!readOnly && componentPanelTab === 'workspace'"
         type="button"
         variant="ghost"
         size="sm"
@@ -74,36 +74,41 @@
       </UiButton>
     </template>
 
-    <div class="shrink-0 border-b border-slate-50 bg-slate-50/50 px-3 pb-2">
+    <div class="shrink-0 border-b border-canvas bg-canvas/50 px-3 pb-2">
       <LibrarySegmentedControl
         :model-value="componentPanelTab"
         :options="componentPanelOptions"
         :columns="2"
         @update:model-value="handleSelectComponentPanelTab"
       />
-      <div v-if="!readOnly && componentPanelTab === 'workspace'" class="mt-1.5 flex items-center justify-between gap-2 text-[11px]">
-        <span class="font-bold text-slate-400">已选择 {{ batchSelectedComponentIds.length }} 个可导出组件</span>
-        <div class="flex items-center gap-2">
-          <UiButton
-            type="button"
-            variant="ghost"
-            size="xs"
-            :disabled="filteredExportableComponentIds.length === 0"
-            @click="selectAllFilteredPublished"
-          >
-            全选已发布
-          </UiButton>
-          <UiButton
-            type="button"
-            variant="ghost"
-            size="xs"
-            :disabled="batchSelectedComponentIds.length === 0"
-            @click="clearBatchSelection"
-          >
-            清空
-          </UiButton>
-        </div>
-      </div>
+      <SelectionToolbar
+        v-if="!readOnly && componentPanelTab === 'workspace' && selectionMode"
+        class="mt-1.5"
+        :count="batchSelectedComponentIds.length"
+        label="组件导出批量操作"
+        @clear="clearBatchSelection"
+      >
+        <UiButton
+          type="button"
+          variant="ghost"
+          size="sm"
+          :disabled="filteredExportableComponentIds.length === 0"
+          @click="selectAllFilteredPublished"
+        >
+          全选已发布
+        </UiButton>
+        <UiButton
+          type="button"
+          variant="primary"
+          size="sm"
+          :disabled="batchSelectedComponentIds.length === 0"
+          :loading="exportPackagePending"
+          @click="emitExportRequest"
+        >
+          <Download class="h-3.5 w-3.5" />
+          导出所选
+        </UiButton>
+      </SelectionToolbar>
     </div>
 
     <RuntimeKitCapabilityList
@@ -117,30 +122,30 @@
     />
 
     <div v-else-if="loading" class="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 p-6">
-      <div class="h-8 w-8 animate-spin rounded-full border-4 border-indigo-600 border-t-transparent"></div>
-      <span class="text-sm font-bold text-slate-400">正在加载组件...</span>
+      <div class="h-8 w-8 animate-spin rounded-full border-4 border-accent border-t-transparent"></div>
+      <span class="text-sm font-bold text-text-disabled">正在加载组件...</span>
     </div>
 
     <div v-else class="relative min-h-0 flex-1 overflow-y-auto p-3 pb-20">
       <div
         v-if="filteredComponents.length === 0"
-        class="flex flex-col items-center justify-center rounded-lg border border-dashed border-slate-100 bg-slate-50 px-4 py-10 text-center"
+        class="flex flex-col items-center justify-center rounded-lg border border-dashed border-border-muted bg-canvas px-4 py-10 text-center"
       >
-        <Box class="mb-3 h-10 w-10 text-slate-300" />
-        <p class="text-sm font-semibold text-slate-500">{{ resolveEmptyWorkspaceComponentText() }}</p>
+        <Box class="mb-3 h-10 w-10 text-text-faint" />
+        <p class="text-sm font-semibold text-text-muted">{{ resolveEmptyWorkspaceComponentText() }}</p>
       </div>
 
       <div v-else class="space-y-2.5">
         <article
           v-for="component in filteredComponents"
           :key="component.id"
-          class="group relative flex cursor-pointer flex-col rounded-lg border bg-white p-3 transition-all hover:border-indigo-300 hover:shadow-sm"
+          class="group relative flex cursor-pointer flex-col rounded-lg border bg-surface p-3 transition-all hover:border-accent-border hover:shadow-sm"
           :class="resolveComponentCardClass(component)"
           @click="selectWorkspaceComponent(component)"
         >
           <div class="mb-2 flex items-start justify-between gap-2">
             <label
-              v-if="!readOnly"
+              v-if="!readOnly && selectionMode"
               class="mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center"
               :title="canBatchSelectComponent(component) ? '选择导出组件' : '组件发布后才能导出'"
               @click.stop
@@ -153,11 +158,11 @@
             </label>
             <div class="min-w-0 flex-1">
               <div class="mb-1 flex flex-wrap items-center gap-1.5">
-                <h3 class="truncate text-sm font-bold text-slate-800 transition-colors group-hover:text-indigo-600">
+                <h3 class="truncate text-sm font-bold text-text transition-colors group-hover:text-accent">
                   {{ component.name }}
                 </h3>
                 <div class="flex items-center gap-1.5">
-                  <span class="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-black uppercase tracking-tight text-slate-500">
+                  <span class="rounded bg-surface-muted px-1.5 py-0.5 text-[10px] font-black uppercase tracking-tight text-text-muted">
                     {{ component.component_type }}
                   </span>
                   <span
@@ -168,13 +173,13 @@
                   </span>
                 </div>
               </div>
-              <div class="inline-flex max-w-full rounded border border-slate-100 bg-slate-50 px-1.5 py-0.5">
-                <span class="truncate font-mono text-[10px] font-bold uppercase tracking-wider text-slate-400">
+              <div class="inline-flex max-w-full rounded border border-border-muted bg-canvas px-1.5 py-0.5">
+                <span class="truncate font-mono text-[10px] font-bold uppercase tracking-wider text-text-disabled">
                   {{ component.code }}
                 </span>
               </div>
-              <div class="mt-1 inline-flex max-w-full rounded border border-indigo-100 bg-indigo-50 px-1.5 py-0.5">
-                <span class="truncate font-mono text-[10px] font-bold text-indigo-500">
+              <div class="mt-1 inline-flex max-w-full rounded border border-accent-muted bg-surface-selected px-1.5 py-0.5">
+                <span class="truncate font-mono text-[10px] font-bold text-accent-emphasis">
                   {{ component.import_name }}
                 </span>
               </div>
@@ -200,13 +205,13 @@
             </div>
           </div>
 
-          <p v-if="component.summary" class="mb-2 line-clamp-2 text-[11px] leading-relaxed text-slate-500">
+          <p v-if="component.summary" class="mb-2 line-clamp-2 text-[11px] leading-relaxed text-text-muted">
             {{ component.summary }}
           </p>
 
-          <div class="mt-auto flex items-center justify-between border-t border-slate-50 pt-2 text-[10px] font-bold text-slate-400">
+          <div class="mt-auto flex items-center justify-between border-t border-canvas pt-2 text-[10px] font-bold text-text-disabled">
             <div class="flex items-center gap-1.5">
-              <Calendar class="h-3 w-3 text-slate-300" />
+              <Calendar class="h-3 w-3 text-text-faint" />
               <span>已更新于 {{ formatDateTime(component.updated_at) }}</span>
             </div>
           </div>
@@ -224,6 +229,7 @@ import { ArrowUpRight, Box, Calendar, Copy, Download, Layers, Plus, RefreshCw, T
 import { deleteComponent, listComponents } from '@/api/catalog'
 import { getErrorMessage } from '@/api/http'
 import RuntimeKitCapabilityList from '@/components/component-preview/RuntimeKitCapabilityList.vue'
+import SelectionToolbar from '@/components/patterns/SelectionToolbar.vue'
 import LibrarySegmentedControl from '@/components/project/LibrarySegmentedControl.vue'
 import LibrarySidebarPanel from '@/components/project/LibrarySidebarPanel.vue'
 import type { RuntimeKitComponentCapabilityItem, WorkspaceComponentItem } from '@/types/api'
@@ -279,6 +285,7 @@ const router = useRouter()
 const loading = ref(false)
 const components = ref<WorkspaceComponentItem[]>([])
 const searchKeyword = ref('')
+const selectionMode = ref(false)
 const componentPanelTab = ref<ComponentPanelTab>('workspace')
 const componentPanelOptions = [
   { label: '工作空间组件', value: 'workspace' },
@@ -344,6 +351,31 @@ async function fetchComponents(workspaceId: number): Promise<void> {
  */
 function handleSelectComponentPanelTab(value: string): void {
   componentPanelTab.value = value === 'runtime-kit' ? 'runtime-kit' : 'workspace'
+  if (componentPanelTab.value === 'runtime-kit') {
+    exitSelectionMode()
+  }
+}
+
+/**
+ * 切换导出选择模式；退出时清空已勾选组件。
+ */
+function toggleSelectionMode(): void {
+  if (selectionMode.value) {
+    exitSelectionMode()
+    return
+  }
+  selectionMode.value = true
+}
+
+/**
+ * 退出选择模式并清空勾选。
+ */
+function exitSelectionMode(): void {
+  if (!selectionMode.value) {
+    return
+  }
+  selectionMode.value = false
+  clearBatchSelection()
 }
 
 /**
@@ -379,10 +411,14 @@ function emitImportRequest(): void {
 }
 
 /**
- * 选择工作空间组件并交给右侧工作台打开预览。
+ * 卡片点击：选择模式下切换勾选，否则交给右侧工作台打开预览。
  * @param component 当前组件
  */
 function selectWorkspaceComponent(component: WorkspaceComponentItem): void {
+  if (selectionMode.value) {
+    toggleBatchComponent(component)
+    return
+  }
   emit('workspace-component-selected', component)
 }
 
@@ -524,21 +560,21 @@ function resolveComponentVersionBadgeText(component: WorkspaceComponentItem): st
 
 function resolveComponentVersionBadgeClass(component: WorkspaceComponentItem): string {
   if (component.current_version_no <= 0) {
-    return 'bg-slate-100 text-slate-500'
+    return 'bg-surface-muted text-text-muted'
   }
   return component.has_unpublished_changes
-    ? 'bg-amber-50 text-amber-600'
-    : 'bg-indigo-50 text-indigo-600'
+    ? 'bg-warning-muted text-warning'
+    : 'bg-surface-selected text-accent'
 }
 
 function resolveComponentCardClass(component: WorkspaceComponentItem): string {
+  if (selectionMode.value && isBatchSelected(component.id)) {
+    return 'border-accent-ring bg-surface-selected/40'
+  }
   if (props.selectedComponentId === component.id) {
-    return 'border-indigo-400 ring-1 ring-indigo-200'
+    return 'border-accent-border ring-1 ring-accent-ring'
   }
-  if (isBatchSelected(component.id)) {
-    return 'border-emerald-300 ring-1 ring-emerald-100'
-  }
-  return 'border-slate-200'
+  return 'border-border'
 }
 
 /**

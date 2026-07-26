@@ -1388,6 +1388,57 @@ describe('AgentConversationPanel', () => {
     })
   })
 
+  it('已有会话空闲时允许提交下一次运行模型', async () => {
+    const existingSession = {
+      session_id: 'session-existing',
+      agent_id: DEFAULT_AGENT_ID,
+      session_name: '已有会话',
+      created_at: '2026-07-28T10:00:00+08:00',
+      updated_at: '2026-07-28T10:00:00+08:00',
+      metadata: {
+        scope_type: 'page',
+        workspace_id: 11,
+        project_id: 21,
+        page_id: 31,
+        source: 'editor-page-detail',
+        llm: {
+          selection_kind: 'explicit_config',
+          config_id: 7,
+          scope: 'global',
+          name: '平台模型',
+          provider_key: 'openai',
+          provider_label: 'OpenAI',
+          model_id: 'gpt-4.1-mini',
+          supports_image_input: false,
+        },
+      },
+    }
+    listAgentSessionsMock.mockResolvedValueOnce([existingSession])
+    listLlmConfigsMock.mockResolvedValueOnce([
+      createLlmConfigItem({ id: 7, scope: 'global', name: '平台模型' }),
+      createLlmConfigItem({ id: 9, scope: 'personal', name: '备用模型' }),
+    ])
+    getAgentSessionRuntimeMock.mockResolvedValueOnce(createRuntimeSnapshot({
+      session: existingSession,
+    }))
+
+    render(AgentConversationPanel, createTestingRenderOptions())
+
+    const modelButton = await screen.findByTitle(/下次运行模型/)
+    expect(modelButton).not.toHaveProperty('disabled', true)
+    await fireEvent.update(screen.getByPlaceholderText(DEFAULT_PLACEHOLDER), '继续完善内容')
+    await fireEvent.click(screen.getByRole('button', { name: /发送/ }))
+
+    await waitFor(() => {
+      expect(streamAgentRunMock).toHaveBeenCalledWith(
+        'session-existing',
+        expect.any(Object),
+        expect.objectContaining({ llm_config_id: 7 }),
+        expect.any(Object),
+      )
+    })
+  })
+
   it('视觉槽位都不可用时禁用图片上传并引导配置', async () => {
     render(AgentConversationPanel, createTestingRenderOptions())
 

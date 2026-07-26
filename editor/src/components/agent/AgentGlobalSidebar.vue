@@ -1,14 +1,14 @@
 <!-- 文件功能：提供后台左侧全局智能体入口，按当前路由上下文切换助手并校验可用性。 -->
 <template>
-  <aside class="flex h-full shrink-0 bg-white">
-    <div v-if="!expanded" class="flex w-14 flex-col items-center gap-2 border-r border-slate-100 py-4">
+  <aside class="flex h-full shrink-0 bg-surface">
+    <div v-if="!expanded" class="flex w-14 flex-col items-center gap-2 border-r border-border-muted py-4">
       <UiIconButton
         v-for="agent in agentButtons"
         :key="agent.id"
         type="button"
         :data-testid="agent.id === 'agent-coordinator' ? 'agent-sidebar-toggle' : undefined"
         :label="resolveAgentButtonTitle(agent.id, agent.name)"
-        class="h-10 w-10 rounded-lg border text-slate-500 transition"
+        class="h-10 w-10 rounded-lg border text-text-muted transition"
         :class="getAgentRailButtonClass(agent.id, agent.icon)"
         :title="resolveAgentButtonTitle(agent.id, agent.name)"
         :disabled="!canOpenAgent(agent.id)"
@@ -21,27 +21,27 @@
     </div>
 
     <Transition name="agent-panel">
-      <section v-if="expanded" data-testid="agent-sidebar-panel" class="agent-sidebar-panel flex h-full flex-col overflow-hidden border border-slate-200 bg-slate-50">
-        <header class="border-b border-slate-200 bg-white p-3">
+      <section v-if="expanded" data-testid="agent-sidebar-panel" class="agent-sidebar-panel flex h-full flex-col overflow-hidden border border-border bg-canvas">
+        <header class="border-b border-border bg-surface p-3">
           <div class="grid h-8 grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
             <div class="min-w-0 flex-1 overflow-hidden">
-              <div class="inline-flex h-8 max-w-full rounded-xl border border-slate-200 bg-slate-100 p-0.5 shadow-inner" role="tablist" aria-label="智能体切换">
+              <div class="inline-flex max-w-full items-center rounded-ui-xl border border-border bg-surface-muted p-0.5 shadow-inner" role="tablist" aria-label="智能体切换">
                 <UiButton
                   v-for="agent in agentButtons"
                   :key="agent.id"
                   type="button"
                   role="tab"
                   variant="ghost"
-                  size="sm"
-                  class="inline-flex h-7 min-w-0 items-center gap-1.5 rounded-lg border px-3 text-xs font-semibold transition"
+                  size="xs"
+                  class="inline-flex h-6 min-w-0 items-center gap-1.5 rounded-ui-lg border text-xs font-semibold transition"
                   :class="getAgentTabClass(agent.id, agent.icon)"
                   :aria-selected="agent.id === agentId"
                   :disabled="!canOpenAgent(agent.id)"
                   :title="resolveAgentButtonTitle(agent.id, agent.name)"
                   @click="openAgent(agent.id)"
                 >
-                  <span class="flex h-5 w-5 shrink-0 items-center justify-center rounded-md ring-1" :class="getAgentIconShellClass(agent.icon, agent.id === agentId)">
-                    <component :is="resolveAgentIconComponent(agent.icon)" class="h-3.5 w-3.5" />
+                  <span class="flex h-4 w-4 shrink-0 items-center justify-center rounded-ui-sm ring-1" :class="getAgentIconShellClass(agent.icon, agent.id === agentId)">
+                    <component :is="resolveAgentIconComponent(agent.icon)" class="h-3 w-3" />
                   </span>
                   <span class="truncate">{{ agent.name }}</span>
                 </UiButton>
@@ -50,7 +50,7 @@
             <UiIconButton
               label="收起"
               size="sm"
-              class="shrink-0 border-transparent text-slate-500 hover:border-slate-200 hover:bg-slate-50 hover:text-slate-800"
+              class="shrink-0 border-transparent text-text-muted hover:border-border hover:bg-surface-hover hover:text-text"
               @click="expanded = false"
             >
               <PanelLeftClose class="h-4 w-4" />
@@ -63,7 +63,7 @@
           </div>
         </header>
 
-        <div v-if="!workspaceId" class="p-4 text-sm leading-6 text-slate-500">
+        <div v-if="!workspaceId" class="p-4 text-sm leading-6 text-text-muted">
           当前路由缺少工作空间上下文，智能体入口暂不可用。
         </div>
         <AgentAssistantPanel
@@ -468,14 +468,14 @@ function resolveAgentButtonTitle(targetAgentId: string, name: string): string {
 }
 
 /**
- * 返回展开态 tab 的状态样式，让当前智能体在背景、边框和阴影上都明显区别于未选中项。
+ * 返回展开态 tab 的状态样式，让当前智能体在背景和边框上明显区别于未选中项。
  */
 function getAgentTabClass(targetAgentId: string, icon: string | null | undefined): string {
   if (!canOpenAgent(targetAgentId)) {
-    return 'cursor-not-allowed border-transparent text-slate-300'
+    return 'cursor-not-allowed border-transparent text-text-faint'
   }
   if (targetAgentId !== agentId.value) {
-    return 'border-transparent text-slate-500 hover:border-slate-200 hover:bg-white hover:text-slate-800'
+    return 'border-transparent text-text-muted hover:border-border hover:bg-surface hover:text-text'
   }
   return resolveAgentActiveClass(icon, 'tab')
 }
@@ -485,10 +485,10 @@ function getAgentTabClass(targetAgentId: string, icon: string | null | undefined
  */
 function getAgentRailButtonClass(targetAgentId: string, icon: string | null | undefined): string {
   if (!canOpenAgent(targetAgentId)) {
-    return 'cursor-not-allowed border-transparent opacity-40 hover:bg-transparent hover:text-slate-500'
+    return 'cursor-not-allowed border-transparent opacity-40 hover:bg-transparent hover:text-text-muted'
   }
   if (targetAgentId !== agentId.value) {
-    return 'border-transparent hover:border-slate-200 hover:bg-slate-100 hover:text-slate-800'
+    return 'border-transparent hover:border-border hover:bg-surface-muted hover:text-text'
   }
   return resolveAgentActiveClass(icon, 'rail')
 }
@@ -502,22 +502,22 @@ function resolveAgentActiveClass(icon: string | null | undefined, mode: 'tab' | 
   const normalizedIcon = String(icon || '').trim()
   if (normalizedIcon === 'component-blocks') {
     return mode === 'tab'
-      ? '!border-violet-500 !bg-violet-600 !text-white shadow-md shadow-violet-100'
-      : '!border-violet-200 !bg-violet-50 !text-violet-700 shadow-sm ring-2 ring-violet-100'
+      ? '!border-ai !bg-ai !text-text-inverse'
+      : '!border-ai-border !bg-ai-muted !text-ai-strong shadow-sm ring-2 ring-ai-border'
   }
   if (normalizedIcon === 'resource-images') {
     return mode === 'tab'
-      ? '!border-emerald-500 !bg-emerald-600 !text-white shadow-md shadow-emerald-100'
-      : '!border-emerald-200 !bg-emerald-50 !text-emerald-700 shadow-sm ring-2 ring-emerald-100'
+      ? '!border-success !bg-success !text-text-inverse'
+      : '!border-success-border !bg-success-muted !text-success-strong shadow-sm ring-2 ring-success-border'
   }
   if (normalizedIcon === 'content-spark') {
     return mode === 'tab'
-      ? '!border-sky-500 !bg-sky-600 !text-white shadow-md shadow-sky-100'
-      : '!border-sky-200 !bg-sky-50 !text-sky-700 shadow-sm ring-2 ring-sky-100'
+      ? '!border-info !bg-info !text-text-inverse'
+      : '!border-info-border !bg-info-muted !text-info-strong shadow-sm ring-2 ring-info-border'
   }
   return mode === 'tab'
-    ? '!border-slate-700 !bg-slate-800 !text-white shadow-md shadow-slate-100'
-    : '!border-slate-200 !bg-slate-100 !text-slate-800 shadow-sm ring-2 ring-slate-100'
+    ? '!border-surface-inverse-raised !bg-surface-inverse-raised !text-text-on-inverse'
+    : '!border-border !bg-surface-muted !text-text shadow-sm ring-2 ring-border-muted'
 }
 
 function openAgent(targetAgentId: string): void {

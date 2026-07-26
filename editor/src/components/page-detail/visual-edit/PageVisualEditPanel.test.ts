@@ -54,14 +54,20 @@ describe('PageVisualEditPanel', () => {
 
     const iframe = await screen.findByTitle('测试页面 可视化编辑画布')
     expect(createMock).toHaveBeenCalledTimes(1)
-    await fireEvent.click(screen.getByRole('button', { name: /Card/ }))
+    expect(screen.getByText('点击画布中的文字、区块或组件进行编辑')).toBeInTheDocument()
+    expect(screen.queryByRole('tree', { name: '页面结构' })).toBeNull()
+
+    await fireEvent.click(screen.getByRole('button', { name: '页面结构（高级）' }))
+    expect(screen.getByRole('tree', { name: '页面结构' })).toBeInTheDocument()
+    await fireEvent.click(screen.getByRole('button', { name: /组件：Card/ }))
     const textarea = await screen.findByRole('textbox')
+    expect(screen.queryByText('点击画布中的文字、区块或组件进行编辑')).toBeNull()
     expect(iframe).toHaveAttribute('src', 'http://runtime.local/artifact-1')
 
     await fireEvent.update(textarea, '新标题')
     expect(screen.getByText('1 项待保存')).toBeInTheDocument()
     expect(iframe).toHaveAttribute('src', 'http://runtime.local/artifact-1')
-    await fireEvent.click(screen.getByRole('button', { name: '保存并刷新' }))
+    await fireEvent.click(screen.getByRole('button', { name: '保存' }))
 
     await waitFor(() => expect(createMock).toHaveBeenCalledTimes(2))
     expect(applyMock).toHaveBeenCalledWith(31, expect.objectContaining({
@@ -69,6 +75,7 @@ describe('PageVisualEditPanel', () => {
       operations: [expect.objectContaining({ value: '新标题' })],
     }))
     expect(screen.getByTitle('测试页面 可视化编辑画布')).toHaveAttribute('src', 'http://runtime.local/artifact-2')
+    await waitFor(() => expect(screen.getByRole('textbox')).toHaveValue('新标题'))
 
     await rendered.rerender({ pageId: 31, baseVersionNo: 2, pageTitle: '测试页面' })
     await Promise.resolve()
@@ -82,7 +89,8 @@ describe('PageVisualEditPanel', () => {
     })
 
     await screen.findByTitle('测试页面 可视化编辑画布')
-    await fireEvent.click(screen.getByRole('button', { name: /Card/ }))
+    await fireEvent.click(screen.getByRole('button', { name: '页面结构（高级）' }))
+    await fireEvent.click(screen.getByRole('button', { name: /组件：Card/ }))
     const textarea = await screen.findByRole('textbox')
     await fireEvent.update(textarea, '待删除修改')
     await fireEvent.click(screen.getByRole('button', { name: '删除组件' }))

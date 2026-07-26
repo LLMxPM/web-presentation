@@ -19,6 +19,7 @@ import type {
   PagedResponse,
   RecordStatus,
   WorkspaceFontConfigItem,
+  WorkspaceFontFamilyItem,
 } from '@/types/api'
 
 export interface ListWorkspaceAssetsOptions {
@@ -435,7 +436,7 @@ export async function createWorkspaceFont(
   workspaceId: number,
   payload: {
     asset_id: number
-    font_family: string
+    family_name: string
     font_format?: string | null
     font_weight: string
     font_style: string
@@ -451,7 +452,7 @@ export async function updateWorkspaceFont(
   workspaceId: number,
   fontId: number,
   payload: Partial<{
-    font_family: string
+    family_name: string
     font_format: string
     font_weight: string
     font_style: string
@@ -461,6 +462,33 @@ export async function updateWorkspaceFont(
 ): Promise<WorkspaceFontConfigItem> {
   const { data } = await http.patch<WorkspaceFontConfigItem>(`/workspaces/${workspaceId}/fonts/${fontId}`, payload)
   return data
+}
+
+export async function listWorkspaceFontFamilies(
+  workspaceId: number,
+  params: ListParams = { page: 1, page_size: 100 },
+): Promise<PagedResponse<WorkspaceFontFamilyItem>> {
+  const { data } = await http.get<PagedResponse<WorkspaceFontFamilyItem>>(
+    `/workspaces/${workspaceId}/font-families`,
+    { params: buildListParams(params) },
+  )
+  return data
+}
+
+export async function renameWorkspaceFontFamily(
+  workspaceId: number,
+  familyId: number,
+  name: string,
+): Promise<WorkspaceFontFamilyItem> {
+  const { data } = await http.patch<WorkspaceFontFamilyItem>(
+    `/workspaces/${workspaceId}/font-families/${familyId}`,
+    { name },
+  )
+  return data
+}
+
+export async function deleteWorkspaceFontFamily(workspaceId: number, familyId: number): Promise<void> {
+  await http.delete(`/workspaces/${workspaceId}/font-families/${familyId}`)
 }
 
 export async function deleteWorkspaceFont(

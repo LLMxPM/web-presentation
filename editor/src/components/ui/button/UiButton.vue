@@ -23,6 +23,9 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 
+// 根元素已显式 v-bind="$attrs"，关闭自动继承，避免 class 与事件监听器被绑定两次。
+defineOptions({ inheritAttrs: false })
+
 /** 按钮可用的视觉层级。 */
 type UiButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger'
 

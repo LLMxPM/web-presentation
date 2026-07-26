@@ -57,6 +57,7 @@ _RECOVERABLE_TOOL_ERROR_HINTS = {
         "但必须明确说明尚未完成图片像素验证；若任务必须看图，请提示用户检查图片理解模型配置后重试。"
     ),
 }
+_IMAGE_GENERATION_TOOL_RETRIES = 3
 
 
 @dataclass(slots=True)
@@ -232,6 +233,11 @@ def _wrap_platform_tool(
         takes_ctx=True,
         name=str(getattr(tool_item, "name", "") or entrypoint.__name__),
         description=tool_description,
+        max_retries=(
+            _IMAGE_GENERATION_TOOL_RETRIES
+            if str(getattr(tool_item, "name", "") or entrypoint.__name__) == "generate_image"
+            else None
+        ),
         requires_approval=bool(getattr(tool_item, "requires_confirmation", False)),
         sequential=bool(getattr(tool_item, "sequential", False)),
     )

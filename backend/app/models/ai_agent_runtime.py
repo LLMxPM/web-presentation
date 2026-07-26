@@ -48,6 +48,8 @@ class AiAgentRun(TimestampMixin, Base):
     page_id: Mapped[int | None] = mapped_column(ForeignKey("pages.id"), nullable=True, index=True)
     component_id: Mapped[int | None] = mapped_column(ForeignKey("workspace_components.id"), nullable=True, index=True)
     source: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    llm_config_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    llm_config_snapshot_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     input_payload_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
     message_history_json: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False, default=list)
     content: Mapped[str | None] = mapped_column(Text, nullable=True)

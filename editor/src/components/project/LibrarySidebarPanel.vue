@@ -2,12 +2,12 @@
 <template>
   <div
     v-show="modelValue"
-    class="relative flex h-full min-h-0 w-[400px] shrink-0 flex-col overflow-hidden border-l border-slate-200 bg-white transition-all duration-300"
+    class="relative flex h-full min-h-0 w-[400px] shrink-0 flex-col overflow-hidden border-l border-border bg-surface transition-all duration-300"
   >
-    <div class="flex shrink-0 items-center justify-between border-b border-slate-100 px-4 py-2.5">
+    <div class="flex shrink-0 items-center justify-between border-b border-border-muted px-4 py-2.5">
       <div class="flex min-w-0 items-center gap-2">
         <slot name="icon" />
-        <h2 class="truncate text-base font-bold text-slate-800">{{ title }}</h2>
+        <h2 class="truncate text-base font-bold text-text">{{ title }}</h2>
       </div>
       <div class="flex shrink-0 items-center gap-1">
         <slot name="actions" />
@@ -22,7 +22,7 @@
       </div>
     </div>
 
-    <div v-if="showSearch" class="shrink-0 border-b border-slate-50 bg-slate-50/50 px-3 py-2">
+    <div v-if="showSearch" class="shrink-0 border-b border-canvas bg-canvas/50 px-3 py-2">
       <SimpleSearchBar v-model="searchText" :placeholder="searchPlaceholder" />
     </div>
 

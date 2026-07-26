@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -345,19 +344,54 @@ class CodeCheckService:
         preview_url: str,
         viewport: CaptureViewport,
     ) -> dict[str, object]:
-        """在页面 Runtime 检查通过后追加真实渲染布局 warning。"""
+        """在页面 Runtime 检查通过后追加真实渲染诊断和布局事实。"""
 
-        render_diagnostics = await self.render_diagnostics_service.diagnose_preview(preview_url, viewport)
-        if not render_diagnostics:
-            return result
+        render_result = await self.render_diagnostics_service.diagnose_preview(preview_url, viewport)
+        if isinstance(render_result, list):
+            render_diagnostics = render_result
+        elif isinstance(render_result, dict) and isinstance(render_result.get("diagnostics"), list):
+            render_diagnostics = render_result["diagnostics"]
+        else:
+            render_diagnostics = []
+        layout_analysis = (
+            render_result.get("layout_analysis")
+            if isinstance(render_result, dict) and isinstance(render_result.get("layout_analysis"), dict)
+            else {
+                "schema_version": 2,
+                "summary": {
+                    "attention": "none",
+                    "message": "未发现需要关注的视觉检测结果。",
+                    "totals": {
+                        "text_layouts": 0,
+                        "item_groups": 0,
+                        "overflows": 0,
+                        "spatial_relations": 0,
+                    },
+                    "returned": {
+                        "text_layouts": 0,
+                        "item_groups": 0,
+                        "overflows": 0,
+                        "spatial_relations": 0,
+                    },
+                    "truncated": False,
+                },
+                "text_layouts": [],
+                "item_groups": [],
+                "overflows": [],
+                "spatial_relations": [],
+            }
+        )
 
         diagnostics = list(result.get("diagnostics") if isinstance(result.get("diagnostics"), list) else [])
         diagnostics.extend(render_diagnostics)
-        return {
+        enriched_result = {
             **result,
             "diagnostics": diagnostics,
-            "summary": f"代码检查通过，发现 {len(render_diagnostics)} 个布局警告。",
+            "layout_analysis": layout_analysis,
         }
+        if render_diagnostics:
+            enriched_result["summary"] = f"代码检查通过，发现 {len(render_diagnostics)} 个布局警告。"
+        return enriched_result
 
     def _resolve_candidate_source(
         self,

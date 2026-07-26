@@ -29,8 +29,8 @@
           />
         </template>
         <div class="space-y-3">
-          <section class="rounded-xl border border-slate-200 bg-white p-3">
-            <h3 class="mb-2 text-[11px] font-black uppercase tracking-widest text-slate-400">状态</h3>
+          <section class="rounded-xl border border-border bg-surface p-3">
+            <h3 class="mb-2 text-[11px] font-black uppercase tracking-widest text-text-disabled">状态</h3>
             <LibrarySegmentedControl
               :model-value="activeView"
               :options="viewTabs"
@@ -39,31 +39,24 @@
             />
           </section>
 
-          <section class="rounded-xl border border-slate-200 bg-white p-3">
-            <h3 class="mb-2 text-[11px] font-black uppercase tracking-widest text-slate-400">资源类型</h3>
-            <div class="grid grid-cols-2 gap-2">
-              <UiButton
-                v-for="option in assetTypeSegmentOptions"
-                :key="option.value || 'all'"
-                type="button"
-                variant="ghost"
-                size="sm"
-                class="h-8 rounded-lg border px-2 text-xs font-bold transition-colors"
-                :class="assetTypeFilter === option.value ? 'border-indigo-200 bg-indigo-50 text-indigo-600 shadow-sm' : 'border-slate-200 bg-slate-50 text-slate-500 hover:border-slate-300 hover:bg-white'"
-                @click="handleSelectAssetType(option.value)"
-              >
-                {{ option.label }}
-              </UiButton>
-            </div>
+          <section class="rounded-xl border border-border bg-surface p-3">
+            <h3 class="mb-2 text-[11px] font-black uppercase tracking-widest text-text-disabled">资源类型</h3>
+            <LibrarySegmentedControl
+              :model-value="assetTypeFilter"
+              :options="assetTypeSegmentOptions"
+              :columns="2"
+              aria-label="资源类型筛选"
+              @update:model-value="handleSelectAssetType"
+            />
           </section>
 
-          <section class="rounded-xl border border-slate-200 bg-white p-3">
-            <h3 class="mb-2 text-[11px] font-black uppercase tracking-widest text-slate-400">标签</h3>
+          <section class="rounded-xl border border-border bg-surface p-3">
+            <h3 class="mb-2 text-[11px] font-black uppercase tracking-widest text-text-disabled">标签</h3>
             <LibraryChipFilter v-model="activeTagFilter" :options="availableTagOptions" />
           </section>
 
-          <section class="rounded-xl border border-slate-200 bg-white p-3">
-            <h3 class="mb-2 text-[11px] font-black uppercase tracking-widest text-slate-400">排序</h3>
+          <section class="rounded-xl border border-border bg-surface p-3">
+            <h3 class="mb-2 text-[11px] font-black uppercase tracking-widest text-text-disabled">排序</h3>
             <UiSelect v-model="sortValue" :options="assetSortOptions" />
           </section>
         </div>
@@ -78,78 +71,89 @@
             </div>
             <div class="flex min-w-0 flex-wrap items-center gap-2">
               <UiButton
-              v-if="activeView === 'active' && hasBatchSelection"
-              variant="secondary"
-              size="sm"
-              :disabled="!hasBackfillableBatchSelection || batchOperating || backfillRunning"
-              :title="hasBackfillableBatchSelection ? '重新计算选中资源比例' : '选中资源中没有可计算比例的资源'"
-              @click="openSelectedBackfillDialog"
-            >
-              <Ruler class="h-3.5 w-3.5" />
-              {{ backfillRunning ? '计算中' : '重新计算比例' }}
+                variant="secondary"
+                size="sm"
+                :disabled="!selectionMode && assets.length === 0"
+                :title="selectionMode ? '退出批量操作选择模式' : '进入选择模式后勾选要批量处理的资源'"
+                @click="toggleSelectionMode"
+              >
+                <ListChecks class="h-3.5 w-3.5" />
+                {{ selectionMode ? '退出选择' : '批量操作' }}
               </UiButton>
-              <UiButton
-              variant="ghost"
-              size="sm"
-              :disabled="!hasBatchSelection || batchOperating"
-              @click="exportSelectedAssets"
-            >
-              <Download class="h-3.5 w-3.5" />
-              {{ batchExporting ? '导出中' : '导出选中' }}
-              </UiButton>
-              <UiButton
-              v-if="activeView === 'active'"
-              variant="ghost"
-              size="sm"
-              :disabled="!hasBatchSelection || batchOperating"
-              @click="archiveSelectedAssets"
-            >
-              <Archive class="h-3.5 w-3.5" />
-              批量归档
-              </UiButton>
-              <UiButton
-              v-if="activeView === 'archived'"
-              variant="ghost"
-              size="sm"
-              :disabled="!hasBatchSelection || batchOperating"
-              @click="restoreSelectedAssets"
-            >
-              <RotateCcw class="h-3.5 w-3.5" />
-              批量恢复
-              </UiButton>
-              <UiButton
-              v-if="activeView !== 'active'"
-              variant="danger"
-              size="sm"
-              :disabled="!hasBatchSelection || batchOperating"
-              @click="deleteSelectedAssets"
-            >
-              <Trash2 class="h-3.5 w-3.5" />
-              批量删除
-              </UiButton>
+              <UiIconButton label="刷新资源" size="sm" @click="refreshAssets"><RefreshCw /></UiIconButton>
             </div>
           </div>
         </template>
 
-        <div v-if="assets.length > 0 && !assetsLoadError" class="mb-3 flex shrink-0 items-center justify-between gap-3 rounded-[var(--ui-radius-md)] border border-[rgb(var(--ui-border))] bg-[rgb(var(--ui-surface-muted))] px-3 py-2">
-          <label class="inline-flex items-center gap-2 text-xs font-bold text-slate-600">
-            <UiCheckbox :model-value="allCurrentPageSelected" @update:model-value="toggleCurrentPageSelection()" />
-            本页全选
-          </label>
-          <div class="flex min-w-0 items-center gap-3 text-xs font-semibold text-slate-500">
-            <span>已选 {{ selectedCount }} 个</span>
-            <UiIconButton label="刷新资源" size="sm" @click="refreshAssets"><RefreshCw /></UiIconButton>
-            <UiButton
-              v-if="hasBatchSelection"
-              variant="ghost"
-              size="sm"
-              @click="clearBatchSelection"
-            >
-              <X class="h-3.5 w-3.5" />
-              清空
-            </UiButton>
-          </div>
-        </div>
+        <SelectionToolbar
+          v-if="selectionMode"
+          class="mb-3 shrink-0"
+          :count="selectedCount"
+          label="资源批量操作"
+          @clear="clearBatchSelection"
+        >
+          <UiButton
+            variant="ghost"
+            size="sm"
+            :disabled="assets.length === 0"
+            @click="toggleCurrentPageSelection()"
+          >
+            {{ allCurrentPageSelected ? '取消本页全选' : '本页全选' }}
+          </UiButton>
+          <UiButton
+            v-if="activeView === 'active'"
+            variant="secondary"
+            size="sm"
+            :disabled="!hasBackfillableBatchSelection || batchOperating || backfillRunning"
+            :title="hasBackfillableBatchSelection ? '重新计算选中资源比例' : '选中资源中没有可计算比例的资源'"
+            @click="openSelectedBackfillDialog"
+          >
+            <Ruler class="h-3.5 w-3.5" />
+            {{ backfillRunning ? '计算中' : '重新计算比例' }}
+          </UiButton>
+          <UiButton
+            variant="ghost"
+            size="sm"
+            :disabled="!hasBatchSelection || batchOperating"
+            @click="exportSelectedAssets"
+          >
+            <Download class="h-3.5 w-3.5" />
+            {{ batchExporting ? '导出中' : '导出选中' }}
+          </UiButton>
+          <UiButton
+            v-if="activeView === 'active'"
+            variant="ghost"
+            size="sm"
+            :disabled="!hasBatchSelection || batchOperating"
+            @click="archiveSelectedAssets"
+          >
+            <Archive class="h-3.5 w-3.5" />
+            批量归档
+          </UiButton>
+          <UiButton
+            v-if="activeView === 'archived'"
+            variant="ghost"
+            size="sm"
+            :disabled="!hasBatchSelection || batchOperating"
+            @click="restoreSelectedAssets"
+          >
+            <RotateCcw class="h-3.5 w-3.5" />
+            批量恢复
+          </UiButton>
+          <UiButton
+            v-if="activeView !== 'active'"
+            variant="danger"
+            size="sm"
+            :disabled="!hasBatchSelection || batchOperating"
+            @click="deleteSelectedAssets"
+          >
+            <Trash2 class="h-3.5 w-3.5" />
+            批量删除
+          </UiButton>
+          <UiButton variant="ghost" size="xs" class="ml-auto" @click="exitSelectionMode">
+            退出选择
+          </UiButton>
+        </SelectionToolbar>
 
         <DataState
           :state="assetDataState"
@@ -161,12 +165,16 @@
             <article
               v-for="asset in assets"
               :key="asset.id"
-              class="group cursor-pointer overflow-hidden rounded-lg border bg-white transition-all hover:-translate-y-0.5 hover:border-indigo-300 hover:shadow-md"
+              class="group cursor-pointer overflow-hidden rounded-lg border bg-surface transition-all hover:-translate-y-0.5 hover:border-accent-border hover:shadow-md"
               :class="resolveAssetCardClass(asset)"
-              @click="openAssetDetail(asset)"
+              @click="handleAssetCardClick(asset)"
             >
-              <div class="relative aspect-[16/10] bg-slate-50">
-                <label class="absolute left-2 top-2 z-10 inline-flex h-7 w-7 items-center justify-center rounded-md border border-white/80 bg-white/95 shadow-sm" @click.stop>
+              <div class="relative aspect-[16/10] bg-canvas">
+                <label
+                  v-if="selectionMode"
+                  class="absolute left-2 top-2 z-10 inline-flex h-7 w-7 items-center justify-center rounded-md border border-surface/80 bg-surface/95 shadow-sm"
+                  @click.stop
+                >
                   <UiCheckbox
                     :model-value="isAssetSelected(asset.id)"
                     :aria-label="`选择资源 ${asset.name}`"
@@ -180,14 +188,14 @@
                   :class="asset.asset_type === 'icon' ? 'p-8' : 'p-2.5'"
                   loading="lazy"
                 />
-                <PenTool v-else-if="asset.asset_type === 'drawio'" class="absolute left-1/2 top-1/2 h-8 w-8 -translate-x-1/2 -translate-y-1/2 text-orange-400" />
+                <PenTool v-else-if="asset.asset_type === 'drawio'" class="absolute left-1/2 top-1/2 h-8 w-8 -translate-x-1/2 -translate-y-1/2 text-warning" />
                 <Workflow v-else-if="asset.asset_type === 'mermaid'" class="absolute left-1/2 top-1/2 h-8 w-8 -translate-x-1/2 -translate-y-1/2 text-cyan-500" />
-                <BarChart3 v-else-if="asset.asset_type === 'chart'" class="absolute left-1/2 top-1/2 h-8 w-8 -translate-x-1/2 -translate-y-1/2 text-emerald-500" />
-                <Sigma v-else-if="asset.asset_type === 'formula'" class="absolute left-1/2 top-1/2 h-8 w-8 -translate-x-1/2 -translate-y-1/2 text-violet-500" />
-                <Video v-else-if="asset.asset_type === 'video'" class="absolute left-1/2 top-1/2 h-8 w-8 -translate-x-1/2 -translate-y-1/2 text-rose-500" />
-                <FileText v-else class="absolute left-1/2 top-1/2 h-8 w-8 -translate-x-1/2 -translate-y-1/2 text-slate-400" />
+                <BarChart3 v-else-if="asset.asset_type === 'chart'" class="absolute left-1/2 top-1/2 h-8 w-8 -translate-x-1/2 -translate-y-1/2 text-success" />
+                <Sigma v-else-if="asset.asset_type === 'formula'" class="absolute left-1/2 top-1/2 h-8 w-8 -translate-x-1/2 -translate-y-1/2 text-ai" />
+                <Video v-else-if="asset.asset_type === 'video'" class="absolute left-1/2 top-1/2 h-8 w-8 -translate-x-1/2 -translate-y-1/2 text-danger" />
+                <FileText v-else class="absolute left-1/2 top-1/2 h-8 w-8 -translate-x-1/2 -translate-y-1/2 text-text-disabled" />
 
-                <div class="absolute inset-0 flex items-center justify-center gap-2 bg-slate-900/0 opacity-0 transition-all group-hover:bg-slate-900/20 group-hover:opacity-100">
+                <div class="absolute inset-0 flex items-center justify-center gap-2 bg-overlay/0 opacity-0 transition-all group-hover:bg-overlay/20 group-hover:opacity-100">
                   <UiIconButton
                     label="打开详情"
                     size="sm"
@@ -210,10 +218,10 @@
               </div>
               <div class="space-y-1.5 p-2.5">
                 <div class="flex items-center justify-between gap-2">
-                  <h3 class="truncate text-[13px] font-bold text-slate-800">{{ asset.name }}</h3>
-                  <span class="shrink-0 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-black uppercase text-slate-500">{{ asset.asset_type }}</span>
+                  <h3 class="truncate text-[13px] font-bold text-text">{{ asset.name }}</h3>
+                  <span class="shrink-0 rounded bg-surface-muted px-1.5 py-0.5 text-[10px] font-black uppercase text-text-muted">{{ asset.asset_type }}</span>
                 </div>
-                <div class="flex items-center justify-between gap-2 text-[10px] font-bold text-slate-400">
+                <div class="flex items-center justify-between gap-2 text-[10px] font-bold text-text-disabled">
                   <span class="truncate font-mono">{{ asset.original_name }}</span>
                   <span class="shrink-0">{{ resolveAssetStatusBadgeText(asset) }}</span>
                 </div>
@@ -258,11 +266,11 @@
     >
       <div class="space-y-4">
         <div>
-          <label class="mb-1 block text-xs font-bold text-slate-500">资源类型</label>
+          <label class="mb-1 block text-xs font-bold text-text-muted">资源类型</label>
           <UiSelect v-model="uploadForm.asset_type" :options="assetTypeOptions" />
         </div>
         <div>
-          <label class="mb-1 block text-xs font-bold text-slate-500">标签，逗号分隔</label>
+          <label class="mb-1 block text-xs font-bold text-text-muted">标签，逗号分隔</label>
           <UiInput v-model="uploadTagsText" placeholder="可留空" />
         </div>
       </div>
@@ -300,7 +308,7 @@
       </div>
 
       <template #footer>
-        <p class="mr-auto text-xs text-slate-500">SVG 会拒绝脚本、事件属性、foreignObject 与远程引用。</p>
+        <p class="mr-auto text-xs text-text-muted">SVG 会拒绝脚本、事件属性、foreignObject 与远程引用。</p>
         <UiButton variant="ghost" size="sm" @click="closeCreateForm">取消</UiButton>
         <UiButton :disabled="saving" @click="createAsset">创建资源</UiButton>
       </template>
@@ -316,61 +324,61 @@
       @update:open="value => { if (!value) closeBackfillDialog() }"
     >
       <div class="grid gap-4 lg:grid-cols-[260px_minmax(0,1fr)]">
-        <section class="space-y-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+        <section class="space-y-4 rounded-xl border border-border bg-canvas p-4">
           <div>
-            <h3 class="mb-2 text-xs font-black uppercase tracking-widest text-slate-400">资源类型</h3>
-            <label class="mb-2 flex items-center gap-2 text-sm font-bold text-slate-700">
+            <h3 class="mb-2 text-xs font-black uppercase tracking-widest text-text-disabled">资源类型</h3>
+            <label class="mb-2 flex items-center gap-2 text-sm font-bold text-text-emphasis">
               <UiCheckbox v-model="backfillForm.image" />
               Image
             </label>
-            <label class="mb-2 flex items-center gap-2 text-sm font-bold text-slate-700">
+            <label class="mb-2 flex items-center gap-2 text-sm font-bold text-text-emphasis">
               <UiCheckbox v-model="backfillForm.video" />
               Video
             </label>
-            <label class="mb-2 flex items-center gap-2 text-sm font-bold text-slate-700">
+            <label class="mb-2 flex items-center gap-2 text-sm font-bold text-text-emphasis">
               <UiCheckbox v-model="backfillForm.drawio" />
               Draw.io
             </label>
-            <label class="mb-2 flex items-center gap-2 text-sm font-bold text-slate-700">
+            <label class="mb-2 flex items-center gap-2 text-sm font-bold text-text-emphasis">
               <UiCheckbox v-model="backfillForm.formula" />
               Formula
             </label>
-            <label class="flex items-center gap-2 text-sm font-bold text-slate-700">
+            <label class="flex items-center gap-2 text-sm font-bold text-text-emphasis">
               <UiCheckbox v-model="backfillForm.mermaid" />
               Mermaid
             </label>
           </div>
           <div>
-            <h3 class="mb-2 text-xs font-black uppercase tracking-widest text-slate-400">范围</h3>
-            <p class="rounded-lg bg-white p-3 text-xs leading-5 text-slate-500">
+            <h3 class="mb-2 text-xs font-black uppercase tracking-widest text-text-disabled">范围</h3>
+            <p class="rounded-lg bg-surface p-3 text-xs leading-5 text-text-muted">
               仅处理当前已勾选的 Image、Video、Draw.io、Formula、Mermaid 资源，其他类型会自动忽略。
             </p>
           </div>
           <div>
-            <h3 class="mb-2 text-xs font-black uppercase tracking-widest text-slate-400">模式</h3>
+            <h3 class="mb-2 text-xs font-black uppercase tracking-widest text-text-disabled">模式</h3>
             <UiRadioGroup
               v-model="backfillForm.mode"
               aria-label="比例回填模式"
               :options="backfillModeOptions"
             />
           </div>
-          <p class="rounded-lg bg-white p-3 text-xs leading-5 text-slate-500">默认不会覆盖人工或资源助手维护的比例。预览模式只计算候选结果，不写入资源。</p>
+          <p class="rounded-lg bg-surface p-3 text-xs leading-5 text-text-muted">默认不会覆盖人工或资源助手维护的比例。预览模式只计算候选结果，不写入资源。</p>
         </section>
 
-        <section class="min-h-[320px] rounded-xl border border-slate-200 bg-white p-4">
-          <div v-if="!backfillResult" class="flex h-full min-h-[260px] items-center justify-center text-center text-sm font-semibold text-slate-400">
+        <section class="min-h-[320px] rounded-xl border border-border bg-surface p-4">
+          <div v-if="!backfillResult" class="flex h-full min-h-[260px] items-center justify-center text-center text-sm font-semibold text-text-disabled">
             运行后会在这里显示可更新、已跳过和失败资源。
           </div>
           <div v-else class="space-y-4">
             <div class="grid grid-cols-4 gap-2">
-              <div class="rounded-lg bg-indigo-50 p-3"><p class="text-[10px] font-black uppercase text-indigo-400">可更新</p><p class="mt-1 text-lg font-black text-indigo-700">{{ backfillResult.succeeded_count }}</p></div>
-              <div class="rounded-lg bg-slate-50 p-3"><p class="text-[10px] font-black uppercase text-slate-400">已跳过</p><p class="mt-1 text-lg font-black text-slate-700">{{ backfillResult.skipped_count }}</p></div>
-              <div class="rounded-lg bg-rose-50 p-3"><p class="text-[10px] font-black uppercase text-rose-400">失败</p><p class="mt-1 text-lg font-black text-rose-700">{{ backfillResult.failed_count }}</p></div>
-              <div class="rounded-lg bg-emerald-50 p-3"><p class="text-[10px] font-black uppercase text-emerald-400">总数</p><p class="mt-1 text-lg font-black text-emerald-700">{{ backfillResult.requested_count }}</p></div>
+              <div class="rounded-lg bg-surface-selected p-3"><p class="text-[10px] font-black uppercase text-accent-border">可更新</p><p class="mt-1 text-lg font-black text-accent-hover">{{ backfillResult.succeeded_count }}</p></div>
+              <div class="rounded-lg bg-canvas p-3"><p class="text-[10px] font-black uppercase text-text-disabled">已跳过</p><p class="mt-1 text-lg font-black text-text-emphasis">{{ backfillResult.skipped_count }}</p></div>
+              <div class="rounded-lg bg-danger-muted p-3"><p class="text-[10px] font-black uppercase text-danger">失败</p><p class="mt-1 text-lg font-black text-danger-strong">{{ backfillResult.failed_count }}</p></div>
+              <div class="rounded-lg bg-success-muted p-3"><p class="text-[10px] font-black uppercase text-success">总数</p><p class="mt-1 text-lg font-black text-success-strong">{{ backfillResult.requested_count }}</p></div>
             </div>
-            <div class="max-h-[360px] overflow-y-auto rounded-lg border border-slate-100">
+            <div class="max-h-[360px] overflow-y-auto rounded-lg border border-border-muted">
               <table class="w-full text-left text-xs">
-                <thead class="sticky top-0 bg-slate-50 text-slate-500">
+                <thead class="sticky top-0 bg-canvas text-text-muted">
                   <tr>
                     <th class="px-3 py-2 font-black">资源</th>
                     <th class="px-3 py-2 font-black">类型</th>
@@ -380,14 +388,14 @@
                   </tr>
                 </thead>
                 <tbody>
-                  <tr v-for="job in backfillResult.jobs" :key="job.id" class="border-t border-slate-100">
-                    <td class="max-w-[180px] truncate px-3 py-2 font-bold text-slate-700">{{ job.asset_name || `#${job.asset_id}` }}</td>
-                    <td class="px-3 py-2 font-mono text-slate-500">{{ job.asset_type }}</td>
-                    <td class="px-3 py-2 text-slate-500">{{ job.current_approx_aspect_ratio || '-' }}</td>
-                    <td class="px-3 py-2 font-bold text-slate-700">{{ job.next_approx_aspect_ratio || '-' }}</td>
+                  <tr v-for="job in backfillResult.jobs" :key="job.id" class="border-t border-border-muted">
+                    <td class="max-w-[180px] truncate px-3 py-2 font-bold text-text-emphasis">{{ job.asset_name || `#${job.asset_id}` }}</td>
+                    <td class="px-3 py-2 font-mono text-text-muted">{{ job.asset_type }}</td>
+                    <td class="px-3 py-2 text-text-muted">{{ job.current_approx_aspect_ratio || '-' }}</td>
+                    <td class="px-3 py-2 font-bold text-text-emphasis">{{ job.next_approx_aspect_ratio || '-' }}</td>
                     <td class="px-3 py-2" :title="job.error_message || ''">
-                      <span class="font-bold text-slate-600">{{ formatBackfillJobStatus(job.status) }}</span>
-                      <p v-if="job.error_message" class="mt-1 max-w-[220px] truncate text-[11px] text-slate-400">{{ job.error_message }}</p>
+                      <span class="font-bold text-text-secondary">{{ formatBackfillJobStatus(job.status) }}</span>
+                      <p v-if="job.error_message" class="mt-1 max-w-[220px] truncate text-[11px] text-text-disabled">{{ job.error_message }}</p>
                     </td>
                   </tr>
                 </tbody>
@@ -419,16 +427,16 @@
       size="workbench"
       body-preset="immersive"
       :show-header="false"
-      overlay-class="bg-slate-950/70 backdrop-blur-sm"
+      overlay-class="bg-overlay/70 backdrop-blur-sm"
       :z-index="220"
       @update:open="handleDetailDialogVisibleChange"
     >
       <div v-if="detailAsset" class="grid h-full min-h-0 grid-rows-[minmax(280px,0.95fr)_minmax(0,1.05fr)] overflow-hidden xl:grid-cols-[minmax(0,1.35fr)_460px] xl:grid-rows-1">
-        <section class="flex min-h-0 flex-col bg-slate-50">
-          <header class="flex shrink-0 items-center justify-between border-b border-slate-200 bg-white px-5 py-4">
+        <section class="flex min-h-0 flex-col bg-canvas">
+          <header class="flex shrink-0 items-center justify-between border-b border-border bg-surface px-5 py-4">
             <div class="min-w-0">
-              <h2 class="truncate text-base font-bold text-slate-800">{{ detailAsset.name }}</h2>
-              <p class="mt-1 truncate font-mono text-xs text-slate-400">{{ detailAsset.original_name }}</p>
+              <h2 class="truncate text-base font-bold text-text">{{ detailAsset.name }}</h2>
+              <p class="mt-1 truncate font-mono text-xs text-text-disabled">{{ detailAsset.original_name }}</p>
             </div>
             <BaseCloseButton label="关闭资源详情" @click="closeAssetDetail" />
           </header>
@@ -442,10 +450,10 @@
           </div>
         </section>
 
-        <aside class="flex min-h-0 flex-col border-t border-slate-200 bg-white xl:border-l xl:border-t-0">
-              <div class="shrink-0 border-b border-slate-100 bg-white">
+        <aside class="flex min-h-0 flex-col border-t border-border bg-surface xl:border-l xl:border-t-0">
+              <div class="shrink-0 border-b border-border-muted bg-surface">
                 <div class="px-5 pb-3 pt-4">
-                  <div class="grid grid-cols-3 rounded-xl bg-slate-100 p-1">
+                  <div class="grid grid-cols-3 rounded-xl bg-surface-muted p-1">
                     <UiButton
                       v-for="tab in detailTabs"
                       :key="tab.value"
@@ -453,15 +461,15 @@
                       variant="ghost"
                       size="sm"
                       class="h-8 rounded-lg px-3 text-xs font-bold transition-colors"
-                      :class="detailTab === tab.value ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'"
+                      :class="detailTab === tab.value ? 'bg-surface text-accent shadow-sm' : 'text-text-muted hover:text-text'"
                       @click="detailTab = tab.value"
                     >
                       {{ tab.label }}
                     </UiButton>
                   </div>
                 </div>
-                <div class="flex items-center justify-between gap-3 border-t border-slate-100 bg-slate-50/80 px-5 py-3">
-                  <span class="shrink-0 text-xs font-black uppercase tracking-widest text-slate-400">资源操作</span>
+                <div class="flex items-center justify-between gap-3 border-t border-border-muted bg-canvas/80 px-5 py-3">
+                  <span class="shrink-0 text-xs font-black uppercase tracking-widest text-text-disabled">资源操作</span>
                   <div class="flex min-w-0 flex-wrap justify-end gap-2">
                     <UiButton
                       type="button"
@@ -522,23 +530,23 @@
 
               <div class="min-h-0 flex-1 overflow-y-auto p-3">
                 <div v-if="detailTab === 'basic'" class="space-y-4">
-                  <section class="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                  <section class="rounded-xl border border-border bg-canvas p-4">
                     <div class="flex items-start justify-between gap-3">
                       <div class="min-w-0">
-                        <h3 class="truncate text-sm font-bold text-slate-800">资源摘要</h3>
-                        <p class="mt-1 truncate font-mono text-xs text-slate-400">{{ detailAsset.file_hash }}</p>
+                        <h3 class="truncate text-sm font-bold text-text">资源摘要</h3>
+                        <p class="mt-1 truncate font-mono text-xs text-text-disabled">{{ detailAsset.file_hash }}</p>
                       </div>
-                      <span class="shrink-0 rounded-full px-2 py-0.5 text-[10px] font-black" :class="detailAsset.status === 'active' ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-200 text-slate-600'">
+                      <span class="shrink-0 rounded-full px-2 py-0.5 text-[10px] font-black" :class="detailAsset.status === 'active' ? 'bg-success-muted text-success-strong' : 'bg-border text-text-secondary'">
                         {{ resolveAssetStatusBadgeText(detailAsset) }}
                       </span>
                     </div>
                     <dl class="mt-4 grid grid-cols-2 gap-3 text-xs">
-                      <div><dt class="text-slate-500">类型</dt><dd class="mt-1 font-bold text-slate-800">{{ detailAsset.asset_type }}</dd></div>
-                      <div><dt class="text-slate-500">大小</dt><dd class="mt-1 font-bold text-slate-800">{{ formatBytes(detailAsset.file_size) }}</dd></div>
-                      <div><dt class="text-slate-500">Content-Type</dt><dd class="mt-1 truncate font-mono text-slate-700">{{ detailAsset.content_type || '-' }}</dd></div>
-                      <div><dt class="text-slate-500">引用数</dt><dd class="mt-1 font-bold text-slate-800">{{ referenceCountText }}</dd></div>
-                      <div><dt class="text-slate-500">近似比例</dt><dd class="mt-1 font-bold text-slate-800">{{ formatAssetAspectRatio(detailAsset) }}</dd></div>
-                      <div><dt class="text-slate-500">比例来源</dt><dd class="mt-1 font-bold text-slate-800">{{ formatAspectRatioSource(detailAsset.aspect_ratio_source) }}</dd></div>
+                      <div><dt class="text-text-muted">类型</dt><dd class="mt-1 font-bold text-text">{{ detailAsset.asset_type }}</dd></div>
+                      <div><dt class="text-text-muted">大小</dt><dd class="mt-1 font-bold text-text">{{ formatBytes(detailAsset.file_size) }}</dd></div>
+                      <div><dt class="text-text-muted">Content-Type</dt><dd class="mt-1 truncate font-mono text-text-emphasis">{{ detailAsset.content_type || '-' }}</dd></div>
+                      <div><dt class="text-text-muted">引用数</dt><dd class="mt-1 font-bold text-text">{{ referenceCountText }}</dd></div>
+                      <div><dt class="text-text-muted">近似比例</dt><dd class="mt-1 font-bold text-text">{{ formatAssetAspectRatio(detailAsset) }}</dd></div>
+                      <div><dt class="text-text-muted">比例来源</dt><dd class="mt-1 font-bold text-text">{{ formatAspectRatioSource(detailAsset.aspect_ratio_source) }}</dd></div>
                     </dl>
                     <UiButton
                       v-if="canRecalculateDetailAspectRatio"
@@ -553,67 +561,67 @@
                     </UiButton>
                   </section>
                   <div>
-                    <label class="mb-1 block text-xs font-bold text-slate-500">资源 name</label>
+                    <label class="mb-1 block text-xs font-bold text-text-muted">资源 name</label>
                     <UiInput v-model="editForm.name" />
                   </div>
                   <div>
-                    <label class="mb-1 block text-xs font-bold text-slate-500">展示文件名</label>
+                    <label class="mb-1 block text-xs font-bold text-text-muted">展示文件名</label>
                     <UiInput v-model="editForm.original_name" />
                   </div>
                   <div>
-                    <label class="mb-1 block text-xs font-bold text-slate-500">描述</label>
+                    <label class="mb-1 block text-xs font-bold text-text-muted">描述</label>
                     <UiInput v-model="editForm.description" type="textarea" :rows="4" />
                   </div>
                   <div>
-                    <label class="mb-1 block text-xs font-bold text-slate-500">标签，逗号分隔</label>
+                    <label class="mb-1 block text-xs font-bold text-text-muted">标签，逗号分隔</label>
                     <UiInput v-model="editTagsText" />
                   </div>
                   <div v-if="canEditAssetAspectRatio(detailAsset)">
-                    <label class="mb-1 block text-xs font-bold text-slate-500">近似比例</label>
+                    <label class="mb-1 block text-xs font-bold text-text-muted">近似比例</label>
                     <UiInput v-model="editForm.approx_aspect_ratio" placeholder="16:9" />
                   </div>
                 </div>
 
                 <div v-else-if="detailTab === 'content'" class="flex h-full min-h-0 flex-col">
-                  <div v-if="!detailAsset.content_editable" class="flex flex-1 items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50 p-6 text-center">
+                  <div v-if="!detailAsset.content_editable" class="flex flex-1 items-center justify-center rounded-xl border border-dashed border-border bg-canvas p-6 text-center">
                     <div>
-                      <FileText class="mx-auto mb-3 h-10 w-10 text-slate-300" />
-                      <p class="text-sm font-bold text-slate-600">该资源不支持文本内容编辑</p>
-                      <p class="mt-2 text-xs leading-6 text-slate-400">位图图标和位图图片只能复制、归档、删除或维护元数据。</p>
+                      <FileText class="mx-auto mb-3 h-10 w-10 text-text-faint" />
+                      <p class="text-sm font-bold text-text-secondary">该资源不支持文本内容编辑</p>
+                      <p class="mt-2 text-xs leading-6 text-text-disabled">位图图标和位图图片只能复制、归档、删除或维护元数据。</p>
                     </div>
                   </div>
                   <template v-else>
                     <UiInput v-model="contentDraft" type="textarea" textarea-mode="fill" class="font-mono text-xs leading-5" />
-                    <p class="mt-3 text-xs text-slate-500">写入内容会自动保留写入前副本。</p>
+                    <p class="mt-3 text-xs text-text-muted">写入内容会自动保留写入前副本。</p>
                   </template>
                 </div>
 
                 <div v-else-if="detailTab === 'references'" class="space-y-4">
                   <div class="flex items-center justify-between">
-                    <h3 class="text-sm font-bold text-slate-700">引用明细</h3>
+                    <h3 class="text-sm font-bold text-text-emphasis">引用明细</h3>
                     <UiButton type="button" variant="ghost" size="xs" @click="loadReferences">刷新</UiButton>
                   </div>
-                  <div v-if="referencesLoading" class="text-sm text-slate-500">正在检查引用...</div>
-                  <div v-else-if="!referenceSummary?.has_references" class="rounded-xl bg-emerald-50 p-4 text-sm font-bold text-emerald-700">未发现引用阻断。</div>
+                  <div v-if="referencesLoading" class="text-sm text-text-muted">正在检查引用...</div>
+                  <div v-else-if="!referenceSummary?.has_references" class="rounded-xl bg-success-muted p-4 text-sm font-bold text-success-strong">未发现引用阻断。</div>
                   <div v-else class="space-y-3">
-                    <div class="rounded-xl bg-rose-50 p-4 text-xs leading-6 text-rose-700">
+                    <div class="rounded-xl bg-danger-muted p-4 text-xs leading-6 text-danger-strong">
                       页面 {{ referenceSummary.page_count }}，组件 {{ referenceSummary.component_count }}，组件版本 {{ referenceSummary.component_version_count }}，主题 {{ referenceSummary.theme_count }}，字体 {{ referenceSummary.font_count }}。
                     </div>
-                    <section v-for="group in referenceGroups" :key="group.kind" class="rounded-xl border border-slate-200 bg-white p-4">
+                    <section v-for="group in referenceGroups" :key="group.kind" class="rounded-xl border border-border bg-surface p-4">
                       <div class="mb-3 flex items-center justify-between">
-                        <h4 class="text-sm font-bold text-slate-700">{{ group.label }}</h4>
-                        <span class="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-bold text-slate-500">{{ group.items.length }}</span>
+                        <h4 class="text-sm font-bold text-text-emphasis">{{ group.label }}</h4>
+                        <span class="rounded-full bg-surface-muted px-2 py-0.5 text-xs font-bold text-text-muted">{{ group.items.length }}</span>
                       </div>
                       <div class="space-y-2">
                         <UiButton
                           v-for="item in group.items"
                           :key="`${item.kind}-${item.id}-${item.version_no || ''}`"
                           type="button"
-                          class="flex w-full items-center justify-between rounded-lg bg-slate-50 px-3 py-2 text-left text-xs transition-colors hover:bg-indigo-50"
+                          class="flex w-full items-center justify-between rounded-lg bg-canvas px-3 py-2 text-left text-xs transition-colors hover:bg-surface-selected"
                           @click="goToReference(item)"
                         >
-                          <span class="min-w-0 truncate font-semibold text-slate-700">{{ formatReferenceName(item) }}</span>
-                          <ArrowUpRight v-if="canOpenReference(item)" class="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                          <span class="min-w-0 truncate font-semibold text-text-emphasis">{{ formatReferenceName(item) }}</span>
+                          <ArrowUpRight v-if="canOpenReference(item)" class="h-3.5 w-3.5 shrink-0 text-text-disabled" />
                         </UiButton>
                       </div>
                     </section>
@@ -621,7 +629,7 @@
                 </div>
               </div>
 
-              <footer class="flex shrink-0 items-center justify-end gap-2 border-t border-slate-100 bg-slate-50 px-5 py-4">
+              <footer class="flex shrink-0 items-center justify-end gap-2 border-t border-border-muted bg-canvas px-5 py-4">
                 <UiButton variant="ghost" size="sm" @click="closeAssetDetail">关闭</UiButton>
                 <UiButton v-if="detailTab === 'basic'" size="sm" :disabled="saving" @click="saveAssetMetadata">保存信息</UiButton>
                 <UiButton v-if="detailTab === 'content' && detailAsset.content_editable" size="sm" :disabled="saving || !canSaveContent" @click="saveContent">
@@ -648,6 +656,7 @@ import {
   FilePlus2,
   FileText,
   Image,
+  ListChecks,
   PenTool,
   RefreshCw,
   Replace,
@@ -659,7 +668,6 @@ import {
   Upload,
   Video,
   Workflow,
-  X,
   ZoomIn,
 } from '@lucide/vue'
 
@@ -689,6 +697,7 @@ import { getWorkspace } from '@/api/catalog'
 import { getErrorCode, getErrorMessage } from '@/api/http'
 import DataState from '@/components/patterns/DataState.vue'
 import PageHeader from '@/components/patterns/PageHeader.vue'
+import SelectionToolbar from '@/components/patterns/SelectionToolbar.vue'
 import SimpleSearchBar from '@/components/patterns/SimpleSearchBar.vue'
 import ToolPanel from '@/components/patterns/ToolPanel.vue'
 import AssetPreviewFrame from '@/components/project/AssetPreviewFrame.vue'
@@ -743,6 +752,7 @@ const pageSize = ref(24)
 const availableTags = ref<string[]>([])
 const selectedAsset = ref<AssetResponse | null>(null)
 const selectedAssetIds = ref<Set<number>>(new Set())
+const selectionMode = ref(false)
 const detailAsset = ref<AssetResponse | null>(null)
 const detailTab = ref<DetailTab>('basic')
 const contentDraft = ref('')
@@ -1083,6 +1093,37 @@ function toggleCurrentPageSelection(): void {
 
 function clearBatchSelection(): void {
   selectedAssetIds.value = new Set()
+}
+
+/**
+ * 切换批量操作选择模式；退出时清空已勾选资源。
+ */
+function toggleSelectionMode(): void {
+  if (selectionMode.value) {
+    exitSelectionMode()
+    return
+  }
+  selectionMode.value = true
+}
+
+/**
+ * 退出选择模式并清空勾选。
+ */
+function exitSelectionMode(): void {
+  selectionMode.value = false
+  clearBatchSelection()
+}
+
+/**
+ * 卡片点击：选择模式下切换勾选，否则打开资源详情。
+ * @param asset 当前资源
+ */
+function handleAssetCardClick(asset: AssetResponse): void {
+  if (selectionMode.value) {
+    toggleAssetSelection(asset.id)
+    return
+  }
+  void openAssetDetail(asset)
 }
 
 function pruneBatchSelection(): void {
@@ -1766,13 +1807,13 @@ async function copyAssetName(asset: AssetResponse): Promise<void> {
 }
 
 function resolveAssetCardClass(asset: AssetResponse): string {
-  if (isAssetSelected(asset.id)) {
-    return 'border-indigo-500 ring-2 ring-indigo-200'
+  if (selectionMode.value && isAssetSelected(asset.id)) {
+    return 'border-accent-ring bg-surface-selected/40'
   }
   if (selectedAsset.value?.id === asset.id) {
-    return 'border-indigo-400 ring-1 ring-indigo-200'
+    return 'border-accent-border ring-1 ring-accent-ring'
   }
-  return 'border-slate-200'
+  return 'border-border'
 }
 
 function resolveAssetStatusBadgeText(asset: AssetResponse): string {

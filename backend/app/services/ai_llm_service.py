@@ -18,9 +18,11 @@ from app.ai.provider_catalog import (
 )
 from app.ai.secret_cipher import LlmSecretCipher
 from app.core.exceptions import AppException
+from app.models.ai_agent_runtime import AiAgentRun
 from app.models.ai_llm import AiLlmConfig, AiLlmProviderConfig, AiLlmSlotBinding
 from app.models.enums import AiLlmConfigScope, AiLlmSlot, AiModelType, RecordStatus, UserRole
 from app.schemas.llm import (
+    LLM_CONTEXT_RESERVED_TOKEN_MIN,
     LLM_CONTEXT_WINDOW_TOKEN_DEFAULT,
     LLM_COMPRESSION_TARGET_RATIO_DEFAULT,
     LLM_MAX_OUTPUT_TOKEN_DEFAULT,
@@ -288,6 +290,7 @@ class AiLlmService:
         config = await self._get_config_or_raise(config_id)
         if config.scope == AiLlmConfigScope.GLOBAL.value and not self._is_platform_admin:
             raise AppException(status_code=403, code="AI_LLM_GLOBAL_READONLY", detail="管理员全局模型不允许普通用户修改。")
+        await self._ensure_config_not_used_by_active_run(config.id)
 
         if "status" in payload.model_fields_set:
             raise AppException(
@@ -325,6 +328,19 @@ class AiLlmService:
         next_model_id = payload.model_id.strip() if payload.model_id is not None else config.model_id
         next_model_type = payload.model_type.value if payload.model_type is not None else config.model_type
         next_max_output_tokens = payload.max_output_tokens if payload.max_output_tokens is not None else config.max_output_tokens
+        next_context_window_tokens = (
+            payload.context_window_tokens if payload.context_window_tokens is not None else config.context_window_tokens
+        )
+        # 合并后校验：聊天模型扣除最大输出后必须至少保留 100K 上下文余量。
+        if (
+            next_model_type == AiModelType.CHAT.value
+            and next_context_window_tokens - next_max_output_tokens < LLM_CONTEXT_RESERVED_TOKEN_MIN
+        ):
+            raise AppException(
+                status_code=400,
+                code="AI_LLM_CONTEXT_RESERVE_INSUFFICIENT",
+                detail=f"上下文窗口减去最大输出后必须至少保留 {LLM_CONTEXT_RESERVED_TOKEN_MIN} tokens，请调大上下文窗口或调小最大输出。",
+            )
 
         provider_entry = self._validate_provider_constraints(
             provider_key=next_provider_config.provider_key,
@@ -392,10 +408,29 @@ class AiLlmService:
         config = await self._get_config_or_raise(config_id)
         if not self._can_edit_config(config):
             raise AppException(status_code=403, code="AI_LLM_GLOBAL_READONLY", detail="管理员全局模型不允许普通用户删除。")
+        await self._ensure_config_not_used_by_active_run(config.id)
 
         await self.session.execute(delete(AiLlmSlotBinding).where(AiLlmSlotBinding.llm_config_id == config.id))
         await self.session.delete(config)
         await self.session.commit()
+
+    async def _ensure_config_not_used_by_active_run(self, config_id: int) -> None:
+        """阻止修改或删除仍需暂停恢复的 run 模型配置。"""
+
+        active_run_id = await self.session.scalar(
+            select(AiAgentRun.run_id)
+            .where(
+                AiAgentRun.llm_config_id == config_id,
+                AiAgentRun.status.in_(("pending", "running", "paused", "waiting_external", "cancelling")),
+            )
+            .limit(1)
+        )
+        if active_run_id is not None:
+            raise AppException(
+                status_code=409,
+                code="AI_LLM_CONFIG_ACTIVE_RUN_IN_USE",
+                detail="当前模型仍被运行中的智能体任务使用，请等待任务结束后再修改或删除。",
+            )
 
     async def list_slot_bindings(self) -> list[LlmSlotBindingItem]:
         """列出当前用户全部固定槽位的绑定状态。"""
@@ -515,9 +550,9 @@ class AiLlmService:
         self,
         config: AiLlmConfig,
         *,
-        selection_kind: Literal["explicit_config", "slot_binding"],
+        selection_kind: Literal["explicit_config", "slot_binding", "run_override"],
     ) -> dict[str, Any]:
-        """把运行时模型配置固化为会话 metadata 中的只读快照。"""
+        """把模型身份固化为会话 metadata 中的精简只读快照。"""
 
         provider_config = config.provider_config
         provider_entry = get_llm_provider_entry(provider_config.provider_key)
@@ -533,6 +568,25 @@ class AiLlmService:
             "model_id": config.model_id,
             "model_type": config.model_type,
             "supports_image_input": bool(config.supports_image_input),
+        }
+
+    def build_run_llm_snapshot(
+        self,
+        config: AiLlmConfig,
+        *,
+        selection_kind: Literal["explicit_config", "slot_binding", "run_override"],
+    ) -> dict[str, Any]:
+        """构建包含可变运行参数且不含供应商密钥的 run 快照。"""
+
+        return {
+            **self.build_session_llm_metadata(config, selection_kind=selection_kind),
+            "thinking_enabled": bool(config.thinking_enabled),
+            "thinking_effort": config.thinking_effort,
+            "context_window_tokens": config.context_window_tokens,
+            "max_output_tokens": config.max_output_tokens,
+            "history_token_ratio": config.history_token_ratio,
+            "compression_target_ratio": config.compression_target_ratio,
+            "advanced_config_json": dict(config.advanced_config_json or {}),
         }
 
     async def get_slot_binding_lookup(self) -> dict[str, LlmSlotBindingItem]:

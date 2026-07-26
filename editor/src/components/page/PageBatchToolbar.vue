@@ -118,12 +118,12 @@ const emit = defineEmits<{
   gap: 0.45rem;
   min-height: 2.125rem;
   border-radius: 9999px;
-  border: 1px solid rgb(226 232 240);
-  background: white;
+  border: 1px solid rgb(var(--ui-border));
+  background: rgb(var(--ui-surface));
   padding: 0.35rem 0.75rem 0.35rem 0.5rem;
   font-size: 0.75rem;
   font-weight: 700;
-  color: rgb(71 85 105);
+  color: rgb(var(--ui-text-secondary));
   cursor: pointer;
   box-shadow: 0 1px 2px rgb(15 23 42 / 0.06);
   transition: all 0.18s ease;
@@ -131,9 +131,9 @@ const emit = defineEmits<{
 
 .batch-select-toggle:hover,
 .batch-select-toggle-active {
-  border-color: rgb(199 210 254);
-  background: rgb(238 242 255);
-  color: rgb(79 70 229);
+  border-color: rgb(var(--ui-accent-ring));
+  background: rgb(var(--ui-surface-selected));
+  color: rgb(var(--ui-accent));
 }
 
 .batch-select-box {
@@ -143,14 +143,15 @@ const emit = defineEmits<{
   align-items: center;
   justify-content: center;
   border-radius: 9999px;
-  border: 1px solid rgb(148 163 184);
-  background: white;
-  color: white;
+  border: 1px solid rgb(var(--ui-text-disabled));
+  background: rgb(var(--ui-surface));
+  color: rgb(var(--ui-surface));
 }
 
 .batch-select-toggle-active .batch-select-box {
-  border-color: rgb(79 70 229);
-  background: rgb(79 70 229);
+  border-color: rgb(var(--ui-accent));
+  background: rgb(var(--ui-accent));
+  color: rgb(var(--ui-text-inverse));
 }
 
 </style>

@@ -7,34 +7,18 @@
     body-preset="editor"
     @update:open="handleVisibleChange"
   >
-    <div class="flex h-full min-h-0 flex-col gap-2">
-      <div class="shrink-0 rounded-lg bg-slate-100 p-1">
-        <div class="grid grid-cols-2 gap-1">
-          <UiButton
-            variant="ghost"
-            class="h-10"
-            :class="activeTab === 'style' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'"
-            @click="activeTab = 'style'"
-          >
-            样式配置
-          </UiButton>
-          <UiButton
-            variant="ghost"
-            class="h-10 gap-2"
-            :class="activeTab === 'components' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'"
-            @click="activeTab = 'components'"
-          >
-            <span>建议组件</span>
-            <span class="rounded-full px-2 py-0.5 text-xs" :class="activeTab === 'components' ? 'bg-indigo-50 text-indigo-600' : 'bg-white text-slate-500'">
-              {{ suggestedComponentsDraft.length }}
-            </span>
-          </UiButton>
-        </div>
-      </div>
-
-      <div v-if="activeTab === 'style'" class="style-config-grid min-h-0 flex-1">
-        <ToolPanel class="style-editor-scroll min-h-0" title="基础配置">
-          <div class="rounded-lg border border-slate-200 bg-white p-4">
+    <UiTabs
+      class="flex h-full min-h-0 flex-col"
+      content-class="min-h-0 flex-1 pt-2"
+      list-class="shrink-0 overflow-x-auto"
+      :model-value="activeTab"
+      :items="editorTabOptions"
+      @update:model-value="activeTab = $event as 'style' | 'components'"
+    >
+      <template #style>
+        <div class="style-config-grid h-full min-h-0">
+          <ToolPanel class="style-editor-scroll min-h-0" title="基础配置">
+          <div class="rounded-lg border border-border bg-surface p-4">
             <div class="grid grid-cols-2 gap-3">
               <UiFormField label="样式 key" required :error="errors.key"><template #default="field"><UiInput v-model="draft.key" placeholder="NEW_STYLE_KEY" required :input-id="field.inputId" :described-by="field.describedBy" :invalid="field.invalid" /></template></UiFormField>
               <UiFormField label="样式名称" required :error="errors.name"><template #default="field"><UiInput v-model="draft.name" placeholder="样式名称" required :input-id="field.inputId" :described-by="field.describedBy" :invalid="field.invalid" /></template></UiFormField>
@@ -42,7 +26,7 @@
             <UiFormField label="样式描述" class="mt-3"><template #default="field"><UiInput v-model="draft.description" placeholder="说明适用场景" :input-id="field.inputId" :described-by="field.describedBy" /></template></UiFormField>
           </div>
 
-          <div class="rounded-lg border border-slate-200 bg-white p-4">
+          <div class="rounded-lg border border-border bg-surface p-4">
             <ThemeSelectorField
               :workspace-id="workspaceId"
               :model-value="draft.themeKey"
@@ -55,7 +39,7 @@
             />
           </div>
 
-          <div class="rounded-lg border border-slate-200 bg-white p-4">
+          <div class="rounded-lg border border-border bg-surface p-4">
             <div class="grid grid-cols-2 gap-3">
               <UiFormField label="页面宽度(px)"><template #default="field"><UiInput v-model="draft.pageWidth" placeholder="1920" :input-id="field.inputId" :described-by="field.describedBy" /></template></UiFormField>
               <UiFormField label="页面高度(px)"><template #default="field"><UiInput v-model="draft.pageHeight" placeholder="1080" :input-id="field.inputId" :described-by="field.describedBy" /></template></UiFormField>
@@ -67,51 +51,58 @@
           </div>
 
           <div class="grid gap-3 xl:grid-cols-[minmax(0,1.35fr)_minmax(220px,0.65fr)]">
-            <div class="rounded-lg border border-slate-200 bg-white p-4">
-              <label class="ml-1 text-sm font-semibold text-slate-700">菜单模式</label>
-              <div class="mt-3 grid grid-cols-3 gap-2 rounded-lg bg-slate-100 p-1">
-                <UiButton
-                  v-for="option in menuModeOptions"
-                  :key="option.value"
-                  variant="ghost"
-                  class="min-h-11"
-                  :class="draft.menuMode === option.value ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'"
-                  @click="draft.menuMode = option.value"
-                >
-                  {{ option.label }}
-                </UiButton>
-              </div>
+            <div class="rounded-lg border border-border bg-surface p-4">
+              <label class="ml-1 text-sm font-semibold text-text-emphasis">菜单模式</label>
+              <UiSegmentedControl
+                class="mt-3"
+                :model-value="draft.menuMode"
+                :options="menuModeOptions"
+                @update:model-value="draft.menuMode = $event as ProjectMenuMode"
+              />
             </div>
 
-            <div class="rounded-lg border border-slate-200 bg-white p-4">
-              <label class="ml-1 text-sm font-semibold text-slate-700">导出按钮</label>
-              <div class="mt-3 grid grid-cols-2 gap-2 rounded-lg bg-slate-100 p-1">
-                <UiButton
-                  v-for="option in pdfButtonOptions"
-                  :key="String(option.value)"
-                  variant="ghost"
-                  class="min-h-11"
-                  :class="draft.showPdfExportButton === option.value ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'"
-                  @click="draft.showPdfExportButton = option.value"
-                >
-                  {{ option.label }}
-                </UiButton>
-              </div>
+            <div class="rounded-lg border border-border bg-surface p-4">
+              <label class="ml-1 text-sm font-semibold text-text-emphasis">导出按钮</label>
+              <UiSegmentedControl
+                class="mt-3"
+                :model-value="draft.showPdfExportButton ? 'show' : 'hide'"
+                :options="pdfButtonOptions"
+                @update:model-value="draft.showPdfExportButton = $event === 'show'"
+              />
             </div>
           </div>
-        </ToolPanel>
+          </ToolPanel>
 
-        <ToolPanel class="min-h-0" title="样式规范 Markdown">
-          <UiInput
-            v-model="draft.styleSpecMarkdown"
-            type="textarea"
-            placeholder="用 Markdown 记录版式、排版、色彩和组件使用约束"
-            :rows="22"
-          />
-        </ToolPanel>
-      </div>
+          <ToolPanel class="min-h-0">
+            <template #header>
+              <div class="flex items-center justify-between gap-2">
+                <h2 class="text-title-sm font-semibold text-text">样式规范 Markdown</h2>
+                <UiSegmentedControl
+                  class="w-44"
+                  :model-value="specViewMode"
+                  :options="specViewModeOptions"
+                  @update:model-value="specViewMode = $event as 'edit' | 'preview'"
+                />
+              </div>
+            </template>
+            <UiInput
+              v-if="specViewMode === 'edit'"
+              v-model="draft.styleSpecMarkdown"
+              type="textarea"
+              placeholder="用 Markdown 记录版式、排版、色彩和组件使用约束"
+              :rows="22"
+            />
+            <div v-else-if="draft.styleSpecMarkdown.trim()" class="rounded-lg border border-border-muted bg-canvas px-5 py-4">
+              <StyleSpecMarkdownPreview :markdown="draft.styleSpecMarkdown" />
+            </div>
+            <p v-else class="flex min-h-[160px] items-center justify-center rounded-lg border border-dashed border-border bg-canvas text-sm text-text-disabled">
+              暂无样式规范内容，切换到编辑模式开始撰写。
+            </p>
+          </ToolPanel>
+        </div>
+      </template>
 
-      <div v-else class="min-h-0 flex-1">
+      <template #components>
         <SuggestedComponentsSelectorPanel
           v-model="suggestedComponentsDraft"
           class="h-full"
@@ -120,8 +111,8 @@
           unavailable-text="请先选择工作空间。"
           :loading="suggestedComponentsLoading"
         />
-      </div>
-    </div>
+      </template>
+    </UiTabs>
 
     <template #footer>
       <UiButton variant="ghost" @click="handleVisibleChange(false)">取消</UiButton>
@@ -137,10 +128,11 @@ import { computed, reactive, ref, watch } from 'vue'
 
 import { getErrorMessage } from '@/api/http'
 import { getWorkspaceStyleSuggestedComponents, type WorkspaceStylePayload } from '@/api/styles'
+import StyleSpecMarkdownPreview from '@/components/project/StyleSpecMarkdownPreview.vue'
 import SuggestedComponentsSelectorPanel from '@/components/project/SuggestedComponentsSelectorPanel.vue'
 import ThemeSelectorField from '@/components/theme/ThemeSelectorField.vue'
 import ToolPanel from '@/components/patterns/ToolPanel.vue'
-import { UiButton, UiDialog, UiFormField, UiInput } from '@/components/ui'
+import { UiButton, UiDialog, UiFormField, UiInput, UiSegmentedControl, UiTabs } from '@/components/ui'
 import { DEFAULT_PROJECT_STYLE_SPEC_MARKDOWN } from '@/constants/project-style'
 import type { ProjectMenuMode, SuggestedComponentItem, WorkspaceStyleItem } from '@/types/api'
 import { Message } from '@/utils/message'
@@ -155,11 +147,13 @@ const props = withDefaults(defineProps<{
   style?: WorkspaceStyleItem | null
   initialStyle?: Partial<WorkspaceStylePayload> | null
   defaultThemeKey?: string | null
+  initialTab?: 'style' | 'components'
   loading?: boolean
 }>(), {
   style: null,
   initialStyle: null,
   defaultThemeKey: null,
+  initialTab: 'style',
   loading: false,
 })
 
@@ -169,8 +163,8 @@ const emit = defineEmits<{
 }>()
 
 const draft = reactive({
-  key: 'NEW_STYLE_KEY',
-  name: '样式名称',
+  key: '',
+  name: '',
   description: '',
   pageWidth: String(DEFAULT_PROJECT_PAGE_WIDTH),
   pageHeight: String(DEFAULT_PROJECT_PAGE_HEIGHT),
@@ -189,17 +183,29 @@ const errors = reactive({
 const suggestedComponentsDraft = ref<SuggestedComponentItem[]>([])
 const suggestedComponentsLoading = ref(false)
 const activeTab = ref<'style' | 'components'>('style')
+const specViewMode = ref<'edit' | 'preview'>('edit')
 let suggestedComponentsLoadToken = 0
 
+/** 顶部页签选项；建议组件页签展示当前草稿数量。 */
+const editorTabOptions = computed(() => [
+  { label: '样式配置', value: 'style' },
+  { label: `建议组件 (${suggestedComponentsDraft.value.length})`, value: 'components' },
+])
+
+const specViewModeOptions = [
+  { label: '编辑', value: 'edit' },
+  { label: '预览', value: 'preview' },
+]
+
 const menuModeOptions = [
-  { label: '侧边缩略图', value: 'preview' as const },
-  { label: '底部缩略图', value: 'bottom-preview' as const },
-  { label: '文本', value: 'text' as const },
+  { label: '侧边缩略图', value: 'preview' },
+  { label: '底部缩略图', value: 'bottom-preview' },
+  { label: '文本', value: 'text' },
 ]
 
 const pdfButtonOptions = [
-  { label: '显示', value: true },
-  { label: '隐藏', value: false },
+  { label: '显示', value: 'show' },
+  { label: '隐藏', value: 'hide' },
 ]
 
 const normalizedPageWidth = computed(() => normalizeDimension(draft.pageWidth, DEFAULT_PROJECT_PAGE_WIDTH))
@@ -212,8 +218,8 @@ const normalizedIconDefaultStrokeWidth = computed(() => normalizeIntegerWithinRa
  */
 function syncDraft(): void {
   const source = (props.style ?? props.initialStyle ?? {}) as Partial<WorkspaceStylePayload> & Partial<WorkspaceStyleItem>
-  draft.key = String(source.key ?? 'NEW_STYLE_KEY')
-  draft.name = String(source.name ?? '样式名称')
+  draft.key = String(source.key ?? '')
+  draft.name = String(source.name ?? '')
   draft.description = String(source.description ?? '')
   draft.pageWidth = String(source.page_width ?? DEFAULT_PROJECT_PAGE_WIDTH)
   draft.pageHeight = String(source.page_height ?? DEFAULT_PROJECT_PAGE_HEIGHT)
@@ -335,11 +341,13 @@ function normalizeIntegerWithinRange(value: string, fallback: number, min: numbe
   return Math.min(max, Math.max(min, Math.round(parsedValue)))
 }
 
+// 仅在弹窗打开瞬间同步草稿；父级部分保存失败时更新 style 不应清掉用户未保存的输入。
 watch(
-  () => [props.modelValue, props.workspaceId, props.style, props.initialStyle] as const,
-  ([visible]) => {
+  () => props.modelValue,
+  (visible) => {
     if (visible) {
-      activeTab.value = 'style'
+      activeTab.value = props.initialTab
+      specViewMode.value = 'edit'
       syncDraft()
       void syncSuggestedComponents()
     } else {
@@ -357,25 +365,6 @@ watch(
   display: grid;
   gap: 1.25rem;
   grid-template-columns: minmax(0, 0.95fr) minmax(420px, 1.05fr);
-}
-
-.style-editor-scroll {
-  scrollbar-width: thin;
-  scrollbar-color: rgb(203 213 225) transparent;
-}
-
-.style-editor-scroll::-webkit-scrollbar {
-  height: 6px;
-  width: 6px;
-}
-
-.style-editor-scroll::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.style-editor-scroll::-webkit-scrollbar-thumb {
-  border-radius: 999px;
-  background: rgb(203 213 225);
 }
 
 @media (max-width: 1279px) {

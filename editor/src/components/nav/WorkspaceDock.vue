@@ -2,7 +2,7 @@
 <template>
   <aside
     data-testid="workspace-dock"
-    class="flex h-full w-14 shrink-0 flex-col items-center border-l border-slate-200 bg-white px-1 py-3 shadow-sm"
+    class="flex h-full w-14 shrink-0 flex-col items-center border-l border-border bg-surface px-1 py-3 shadow-sm"
   >
     <div class="flex min-h-0 flex-1 flex-col items-center gap-1.5">
       <UiButton
@@ -20,8 +20,8 @@
         <span class="mt-1 text-[10px] font-bold leading-none">{{ item.label }}</span>
       </UiButton>
 
-      <div class="mt-2 h-px w-8 bg-slate-200" />
-      <span class="text-[10px] font-bold leading-none text-slate-300" aria-hidden="true">侧栏</span>
+      <div class="mt-2 h-px w-8 bg-border" />
+      <span class="text-[10px] font-bold leading-none text-text-faint" aria-hidden="true">侧栏</span>
 
       <UiButton
         v-for="item in panelItems"
@@ -143,26 +143,26 @@ const panelItems = [
 }
 
 .dock-button-idle {
-  color: rgb(100 116 139);
+  color: rgb(var(--ui-text-muted));
 }
 
 .dock-button-idle:hover {
-  border-color: rgb(226 232 240);
-  background: rgb(248 250 252);
-  color: rgb(30 41 59);
+  border-color: rgb(var(--ui-border));
+  background: rgb(var(--ui-surface-hover));
+  color: rgb(var(--ui-text));
 }
 
 .dock-button-active {
-  border-color: rgb(199 210 254);
-  background: rgb(238 242 255);
-  color: rgb(79 70 229);
-  box-shadow: 0 1px 2px rgb(79 70 229 / 0.12);
+  border-color: rgb(var(--ui-accent-ring));
+  background: rgb(var(--ui-surface-selected));
+  color: rgb(var(--ui-accent));
+  box-shadow: 0 1px 2px rgb(var(--ui-accent) / 0.12);
 }
 
 .dock-button-panel-active {
-  border-color: rgb(167 243 208);
-  background: rgb(236 253 245);
-  color: rgb(4 120 87);
-  box-shadow: 0 1px 2px rgb(4 120 87 / 0.12);
+  border-color: rgb(var(--ui-success-border));
+  background: rgb(var(--ui-success-muted));
+  color: rgb(var(--ui-success-strong));
+  box-shadow: 0 1px 2px rgb(var(--ui-success-strong) / 0.12);
 }
 </style>

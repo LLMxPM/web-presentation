@@ -38,18 +38,18 @@ class WorkspaceTheme(TimestampMixin, AuditMixin, SoftDeleteMixin, Base):
     logo_path: Mapped[str | None] = mapped_column(String(255), nullable=True)
     invert_logo_path: Mapped[str | None] = mapped_column(String(255), nullable=True)
     project_icon_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    heading_font_id: Mapped[int | None] = mapped_column(
-        ForeignKey("workspace_font_configs.id"),
+    heading_font_family_id: Mapped[int | None] = mapped_column(
+        ForeignKey("workspace_font_families.id"),
         nullable=True,
         index=True,
     )
-    body_font_id: Mapped[int | None] = mapped_column(
-        ForeignKey("workspace_font_configs.id"),
+    body_font_family_id: Mapped[int | None] = mapped_column(
+        ForeignKey("workspace_font_families.id"),
         nullable=True,
         index=True,
     )
-    code_font_id: Mapped[int | None] = mapped_column(
-        ForeignKey("workspace_font_configs.id"),
+    code_font_family_id: Mapped[int | None] = mapped_column(
+        ForeignKey("workspace_font_families.id"),
         nullable=True,
         index=True,
     )

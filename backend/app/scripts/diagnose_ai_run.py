@@ -340,6 +340,8 @@ def _dump_run(run_model: AiAgentRun) -> dict[str, Any]:
         "page_id": run_model.page_id,
         "component_id": run_model.component_id,
         "source": run_model.source,
+        "llm_config_id": run_model.llm_config_id,
+        "llm_config_snapshot": run_model.llm_config_snapshot_json,
         "input_payload": run_model.input_payload_json or {},
         "content": run_model.content,
         "reasoning_content": run_model.reasoning_content,

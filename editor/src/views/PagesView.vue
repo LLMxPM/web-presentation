@@ -41,7 +41,7 @@
                   aria-label="预览卡片大小"
                   @update:model-value="setPageCardSize"
                 />
-                <div class="mx-0.5 h-5 w-px bg-slate-200"></div>
+                <div class="mx-0.5 h-5 w-px bg-border"></div>
                 <UiButton
                   variant="primary"
                   size="sm"
@@ -133,7 +133,6 @@
         :batch-action-pending="batchActionPending"
         :batch-progress-text="unroutedBatchScreenshotDownloadProgressText"
         :page-card-grid-style="pageCardGridStyle"
-        :page-create-card-style="pageCreateCardStyle"
         :screenshot-aspect-ratio="projectScreenshotAspectRatio"
         @refresh-screenshots="handleRefreshSectionPageScreenshots('unrouted')"
         @open-archived-pages="archivedPagesDialogVisible = true"
@@ -179,24 +178,16 @@
           />
         </UiFormField>
 
-        <div class="space-y-1.5 border-t border-slate-100 pt-2">
+        <div class="space-y-1.5 border-t border-border-muted pt-2">
           <div class="flex flex-wrap items-center justify-between gap-3">
-            <label class="ml-1 text-sm font-semibold text-slate-700">
+            <label class="ml-1 text-sm font-semibold text-text-emphasis">
               页面代码
-              <span class="text-red-500">*</span>
+              <span class="text-danger">*</span>
             </label>
-            <div class="flex items-center gap-2">
-              <span class="text-[11px] font-bold uppercase tracking-widest text-slate-400">编辑器主题</span>
-              <UiSegmentedControl
-                v-model="createEditorTheme"
-                aria-label="编辑器主题"
-                :options="themeOptions"
-              />
-            </div>
           </div>
-          <MonacoCodeEditor v-model="form.page_content" language="vue" :theme="createEditorTheme" :auto-save-delay="0"
+          <MonacoCodeEditor v-model="form.page_content" language="vue" :auto-save-delay="0"
             height="320px" :completion-config="{ includeDefault: true }" />
-          <p v-if="errors.page_content" class="ml-1 mt-0.5 text-xs text-red-500">{{ errors.page_content }}</p>
+          <p v-if="errors.page_content" class="ml-1 mt-0.5 text-xs text-danger">{{ errors.page_content }}</p>
         </div>
       </div>
       <template #footer>
@@ -323,9 +314,8 @@ import ProjectPresentationConfigDialog from '@/components/project/ProjectPresent
 import ProjectRouteConfigDialog from '@/components/project/ProjectRouteConfigDialog.vue'
 import ProjectSuggestedComponentsDialog from '@/components/project/ProjectSuggestedComponentsDialog.vue'
 import ProjectSuggestedReferenceAssetsDialog from '@/components/project/ProjectSuggestedReferenceAssetsDialog.vue'
-import { UiButton, UiDialog, UiFormField, UiIconButton, UiIconSegmented, UiInput, UiSegmentedControl } from '@/components/ui'
+import { UiButton, UiDialog, UiFormField, UiIconButton, UiIconSegmented, UiInput } from '@/components/ui'
 import { useAgentSidebarExpanded } from '@/composables/agent-sidebar-state'
-import type { EditorThemeMode } from '@/types/monaco'
 import type {
   PageCopyToProjectPayload,
   PageFileType,
@@ -338,7 +328,6 @@ import type {
   ProjectSuggestedReferenceAssetItem,
 } from '@/types/api'
 import { Message, createConfirm } from '@/utils/message'
-import { getDefaultEditorTheme } from '@/utils/monaco'
 import { canDownloadProjectBuildArtifact, canOpenProjectBuildArtifact } from '@/utils/project-build'
 import { appendRootPageRoute, mapRouteTreeToWriteItems } from '@/utils/project-route'
 import { buildPageDetailPath, buildWorkspaceHomePath } from '@/utils/workspace-routes'
@@ -407,10 +396,8 @@ const currentPageCardSizeOption = computed(() => {
   return pageCardSizeOptions.find(option => option.value === pageCardSize.value) ?? pageCardSizeOptions[1]
 })
 const pageCardGridStyle = computed(() => ({
-  gridTemplateColumns: `repeat(auto-fit, minmax(${currentPageCardSizeOption.value.minWidth}px, 1fr))`,
-}))
-const pageCreateCardStyle = computed(() => ({
-  minHeight: `${Math.round(currentPageCardSizeOption.value.minWidth * 0.82)}px`,
+  // 保留空轨道，使两个分区始终按同一列宽排版；现有卡片仍均分整行可用空间。
+  gridTemplateColumns: `repeat(auto-fill, minmax(min(100%, ${currentPageCardSizeOption.value.minWidth}px), 1fr))`,
 }))
 const allPages = computed<PageItem[]>(() => query.data.value?.items ?? [])
 const pages = computed<PageItem[]>(() => allPages.value)
@@ -450,7 +437,7 @@ const routedPageEntries = computed<RoutedPageEntry[]>(() => {
 const unroutedPages = computed<PageItem[]>(() => {
   return pages.value
     .filter((page) => getSortedRouteBindings(page).length === 0)
-    .sort((left, right) => left.title.localeCompare(right.title, 'zh-CN'))
+    .sort((left, right) => left.code.localeCompare(right.code, 'zh-CN', { numeric: true }))
 })
 const routedPagesForBatch = computed<PageItem[]>(() => {
   const pageMap = new Map<number, PageItem>()
@@ -552,7 +539,6 @@ const projectBuildAutomaticAssetNames = computed(() => (
 
 const dialogVisible = ref(false)
 const saving = ref(false)
-const createEditorTheme = ref<EditorThemeMode>(getDefaultEditorTheme())
 
 const form = reactive({
   page_content: '',
@@ -565,11 +551,6 @@ const errors = reactive({
   page_content: '',
   title: '',
 })
-
-const themeOptions: Array<{ label: string; value: EditorThemeMode }> = [
-  { label: '暗色', value: 'dark' },
-  { label: '明亮', value: 'light' },
-]
 
 watch(pageCardSize, (nextSize) => {
   persistPageCardSize(nextSize)
@@ -692,7 +673,6 @@ function openCreateDialog(): void {
   form.file_type = 'vue'
   form.title = ''
   form.summary = ''
-  createEditorTheme.value = getDefaultEditorTheme()
   errors.page_content = ''
   errors.title = ''
   dialogVisible.value = true
@@ -1465,16 +1445,16 @@ onUnmounted(() => {
   align-items: center;
   justify-content: center;
   border-radius: 0.5rem;
-  border: 1px solid rgb(226 232 240);
-  background: rgb(248 250 252);
-  color: rgb(100 116 139);
+  border: 1px solid rgb(var(--ui-border));
+  background: rgb(var(--ui-surface-hover));
+  color: rgb(var(--ui-text-muted));
   transition: all 0.2s ease;
 }
 
 .project-identity-action:hover {
-  border-color: rgb(199 210 254);
-  background: rgb(238 242 255);
-  color: rgb(79 70 229);
+  border-color: rgb(var(--ui-accent-ring));
+  background: rgb(var(--ui-surface-selected));
+  color: rgb(var(--ui-accent));
 }
 </style>
 

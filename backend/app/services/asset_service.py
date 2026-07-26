@@ -631,9 +631,11 @@ class AssetService:
         if asset.asset_type != AssetType.FONT.value:
             raise AppException(status_code=409, code="FONT_ASSET_INVALID", detail="字体注册关联的资源不是字体文件，无法一并删除。")
 
-        await font_service.workspace_theme_service.purge_soft_deleted_theme_font_references(workspace_id, font_config.id)
         await self._ensure_font_asset_has_no_external_references(workspace_id, asset)
+        family = font_config.family
         await self.session.delete(font_config)
+        await self.session.flush()
+        await font_service._cleanup_family_if_orphan(workspace_id, family)
         try:
             await self._delete_asset_records_and_unused_files(workspace_id, asset)
         except IntegrityError as error:

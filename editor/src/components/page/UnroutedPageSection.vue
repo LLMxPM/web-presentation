@@ -65,7 +65,7 @@
         新增页面
       </UiButton>
     </template>
-    <div class="grid gap-4" :style="pageCardGridStyle">
+    <div data-testid="unrouted-page-card-grid" class="grid gap-4" :style="pageCardGridStyle">
       <PageCard
         v-for="page in pages"
         :key="page.id"
@@ -86,17 +86,10 @@
         @archive-page="emit('archive-page', $event)"
       />
 
-      <UiButton
-        variant="ghost"
-        class="flex min-h-[220px] flex-col items-center justify-center rounded-lg border-2 border-dashed border-slate-200 bg-slate-50/50 p-6 text-slate-500 transition-all duration-300 hover:border-indigo-400 hover:bg-indigo-50 hover:text-indigo-600"
-        :style="pageCreateCardStyle"
-        @click="emit('open-create')"
-      >
-        <div class="mb-4 flex h-12 w-12 items-center justify-center rounded-full border border-slate-200 bg-white shadow-sm">
-          <Plus class="h-6 w-6" />
-        </div>
-        <span class="text-base font-bold">新增页面</span>
-      </UiButton>
+      <PageCreateCard
+        :screenshot-aspect-ratio="screenshotAspectRatio"
+        @open="emit('open-create')"
+      />
     </div>
     </DataState>
   </section>
@@ -112,6 +105,7 @@ import DataState from '@/components/patterns/DataState.vue'
 import { UiButton } from '@/components/ui'
 import PageBatchToolbar from './PageBatchToolbar.vue'
 import PageCard from './PageCard.vue'
+import PageCreateCard from './PageCreateCard.vue'
 import type { PageBatchAction, PageBatchScope } from './page-list-types'
 
 defineProps<{
@@ -129,7 +123,6 @@ defineProps<{
   batchActionPending: PageBatchAction | null
   batchProgressText?: string | null
   pageCardGridStyle: CSSProperties
-  pageCreateCardStyle: CSSProperties
   screenshotAspectRatio: string
 }>()
 

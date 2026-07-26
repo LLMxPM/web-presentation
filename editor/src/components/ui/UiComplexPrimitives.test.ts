@@ -120,4 +120,21 @@ describe('UiTabs', () => {
     await fireEvent.mouseDown(screen.getByRole('tab', { name: '高级' }), { button: 0 })
     expect(view.emitted()['update:modelValue']).toEqual([['advanced']])
   })
+
+  it('应允许为内容区补充布局类且标签本身不随容器拉伸', () => {
+    render(UiTabs, {
+      props: {
+        modelValue: 'style',
+        items: [
+          { label: '样式配置', value: 'style' },
+          { label: '建议组件 (12)', value: 'components' },
+        ],
+        contentClass: 'min-h-0 flex-1',
+      },
+      slots: { style: '样式内容', components: '组件内容' },
+    })
+
+    expect(screen.getByRole('tab', { name: '样式配置' })).toHaveClass('shrink-0')
+    expect(screen.getByRole('tabpanel')).toHaveClass('min-h-0', 'flex-1')
+  })
 })

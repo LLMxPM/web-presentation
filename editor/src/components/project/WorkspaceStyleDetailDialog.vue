@@ -3,60 +3,96 @@
   <UiDialog
     :open="modelValue"
     :title="styleItem ? `${styleItem.name} · 样式详情` : '样式详情'"
-    size="standard"
+    size="wide"
+    body-preset="dense"
     @update:open="handleVisibleChange"
   >
-    <div v-if="styleItem" class="space-y-5">
-      <section class="rounded-lg border border-slate-200 bg-white p-4">
-        <div class="flex flex-wrap items-start justify-between gap-3">
-          <div class="min-w-0">
-            <h3 class="truncate text-lg font-black text-slate-900">{{ styleItem.name }}</h3>
-            <p class="mt-1 font-mono text-xs text-slate-400">{{ styleItem.key }}</p>
+    <div v-if="styleItem" class="grid h-full min-h-0 gap-3 overflow-y-auto lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] lg:overflow-hidden">
+      <div class="flex min-h-0 min-w-0 flex-col gap-3 lg:overflow-y-auto lg:pr-1">
+        <section class="shrink-0 rounded-lg border border-border bg-surface p-4">
+          <div class="flex flex-wrap items-start justify-between gap-3">
+            <div class="min-w-0">
+              <h3 class="truncate text-lg font-black text-text-strong">{{ styleItem.name }}</h3>
+              <p class="mt-1 font-mono text-xs text-text-disabled">{{ styleItem.key }}</p>
+            </div>
+            <UiButton
+              v-if="styleItem.theme_key"
+              type="button"
+              variant="ghost"
+              size="xs"
+              :disabled="!matchedTheme"
+              :title="matchedTheme ? '查看主题详情' : '未找到主题详情'"
+              @click="openThemeDetail"
+            >
+              {{ themeBadgeText }}
+            </UiButton>
+            <span v-else class="rounded-full bg-surface-muted px-3 py-1 text-xs font-black text-text-muted">
+              不覆盖主题
+            </span>
           </div>
-          <UiButton
-            v-if="styleItem.theme_key"
-            type="button"
-            variant="ghost"
-            size="xs"
-            :disabled="!matchedTheme"
-            :title="matchedTheme ? '查看主题详情' : '未找到主题详情'"
-            @click="openThemeDetail"
-          >
-            {{ themeBadgeText }}
-          </UiButton>
-          <span v-else class="rounded-full bg-slate-100 px-3 py-1 text-xs font-black text-slate-500">
-            不覆盖主题
-          </span>
-        </div>
-        <p class="mt-3 text-sm leading-6 text-slate-500">{{ styleItem.description || '未填写样式说明。' }}</p>
-      </section>
+          <p class="mt-3 text-sm leading-6 text-text-muted">{{ styleItem.description || '未填写样式说明。' }}</p>
+        </section>
 
-      <section class="rounded-lg border border-slate-200 bg-white p-4">
-        <h4 class="text-sm font-black text-slate-900">展示配置</h4>
-        <div class="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          <div
-            v-for="item in detailItems"
-            :key="item.label"
-            class="rounded-lg border border-slate-100 bg-slate-50 px-4 py-3"
-          >
-            <p class="text-[11px] font-bold text-slate-400">{{ item.label }}</p>
-            <p class="mt-1 text-sm font-black text-slate-800">{{ item.value }}</p>
+        <section class="shrink-0 rounded-lg border border-border bg-surface p-4">
+          <h4 class="text-sm font-black text-text-strong">展示配置</h4>
+          <div class="mt-3 grid gap-2.5 sm:grid-cols-2">
+            <div
+              v-for="item in detailItems"
+              :key="item.label"
+              class="rounded-lg border border-border-muted bg-canvas px-3 py-2.5"
+            >
+              <p class="text-[11px] font-bold text-text-disabled">{{ item.label }}</p>
+              <p class="mt-1 text-sm font-black text-text">{{ item.value }}</p>
+            </div>
           </div>
-        </div>
-      </section>
+        </section>
 
-      <section class="rounded-lg border border-slate-200 bg-white p-4">
-        <h4 class="text-sm font-black text-slate-900">样式规范</h4>
-        <div v-if="selectedStyleSpecMarkdown" class="style-spec-markdown mt-3 rounded-lg border border-slate-100 bg-slate-50 px-5 py-4">
-          <MarkdownRender :nodes="selectedStyleSpecNodes" />
+        <section class="shrink-0 rounded-lg border border-border bg-surface p-4">
+          <h4 class="text-sm font-black text-text-strong">建议组件</h4>
+          <p v-if="suggestedComponentsLoading" class="mt-3 text-sm text-text-disabled">正在加载建议组件...</p>
+          <div v-else-if="suggestedComponents.length" class="mt-3 space-y-2">
+            <div
+              v-for="component in suggestedComponents"
+              :key="component.id"
+              class="rounded-lg border border-border-muted bg-canvas px-3 py-2.5"
+            >
+              <div class="flex items-center justify-between gap-3">
+                <div class="flex min-w-0 items-baseline gap-2">
+                  <span class="truncate text-sm font-bold text-text-emphasis">{{ component.name }}</span>
+                  <span class="shrink-0 font-mono text-[11px] text-text-disabled">{{ component.import_name }}</span>
+                </div>
+                <div class="flex shrink-0 items-center gap-1.5">
+                  <span
+                    v-if="component.available === false"
+                    class="rounded-full bg-danger-muted px-2 py-0.5 text-[10px] font-bold text-danger-strong"
+                    :title="component.unavailable_reason || '组件当前不可用'"
+                  >
+                    不可用
+                  </span>
+                  <span class="rounded-full bg-surface-muted px-2 py-0.5 text-[10px] font-bold text-text-muted">
+                    {{ component.component_type }}
+                  </span>
+                </div>
+              </div>
+              <p v-if="component.summary" class="mt-1 line-clamp-1 text-xs text-text-muted">{{ component.summary }}</p>
+            </div>
+          </div>
+          <p v-else class="mt-3 text-sm text-text-disabled">暂未配置建议组件。</p>
+        </section>
+      </div>
+
+      <section class="flex min-h-0 min-w-0 flex-col rounded-lg border border-border bg-surface p-4">
+        <h4 class="shrink-0 text-sm font-black text-text-strong">样式规范</h4>
+        <div v-if="selectedStyleSpecMarkdown" class="mt-3 min-h-0 flex-1 overflow-y-auto rounded-lg border border-border-muted bg-canvas px-5 py-4">
+          <StyleSpecMarkdownPreview :markdown="selectedStyleSpecMarkdown" />
         </div>
-        <div v-else class="mt-3 flex min-h-[160px] items-center justify-center rounded-lg border border-dashed border-slate-200 bg-slate-50 text-sm text-slate-400">
+        <div v-else class="mt-3 flex min-h-[160px] flex-1 items-center justify-center rounded-lg border border-dashed border-border bg-canvas text-sm text-text-disabled">
           当前样式还没有维护样式规范。
         </div>
       </section>
     </div>
 
-    <div v-else class="py-10 text-center text-sm text-slate-400">
+    <div v-else class="flex h-full items-center justify-center py-10 text-center text-sm text-text-disabled">
       当前没有可查看的样式。
     </div>
 
@@ -75,15 +111,16 @@
 </template>
 
 <script setup lang="ts">
-import 'markstream-vue/index.css'
-
 import { computed, ref, watch } from 'vue'
-import MarkdownRender, { getMarkdown, parseMarkdownToStructure } from 'markstream-vue'
 
 import { listWorkspaceThemes } from '@/api/themes'
+import { getErrorMessage } from '@/api/http'
+import { getWorkspaceStyleSuggestedComponents } from '@/api/styles'
+import StyleSpecMarkdownPreview from '@/components/project/StyleSpecMarkdownPreview.vue'
 import ThemeDetailDialog from '@/components/theme/ThemeDetailDialog.vue'
 import { UiButton, UiDialog } from '@/components/ui'
-import type { ProjectMenuMode, WorkspaceStyleItem, WorkspaceThemeItem } from '@/types/api'
+import type { ProjectMenuMode, SuggestedComponentItem, WorkspaceStyleItem, WorkspaceThemeItem } from '@/types/api'
+import { Message } from '@/utils/message'
 
 const props = defineProps<{
   modelValue: boolean
@@ -97,16 +134,15 @@ const emit = defineEmits<{
   edit: [style: WorkspaceStyleItem]
 }>()
 
-const markdownParser = getMarkdown()
 const matchedTheme = ref<WorkspaceThemeItem | null>(null)
 const themeLoading = ref(false)
 const themeDetailVisible = ref(false)
 const themeLoadToken = ref(0)
+const suggestedComponents = ref<SuggestedComponentItem[]>([])
+const suggestedComponentsLoading = ref(false)
+let suggestedComponentsLoadToken = 0
 
 const selectedStyleSpecMarkdown = computed(() => props.styleItem?.style_spec_markdown?.trim() || '')
-const selectedStyleSpecNodes = computed(() => parseMarkdownToStructure(selectedStyleSpecMarkdown.value, markdownParser, {
-  final: true,
-}))
 const themeBadgeText = computed(() => {
   const themeKey = props.styleItem?.theme_key
   if (!themeKey) return '不覆盖主题'
@@ -140,6 +176,44 @@ watch(
   },
   { immediate: true },
 )
+
+watch(
+  () => [props.modelValue, props.workspaceId, props.styleItem?.id] as const,
+  ([visible]) => {
+    if (!visible) {
+      return
+    }
+    void loadSuggestedComponents()
+  },
+  { immediate: true },
+)
+
+/**
+ * 加载当前样式已配置的建议组件，用于详情中展示引用组件清单。
+ */
+async function loadSuggestedComponents(): Promise<void> {
+  const token = ++suggestedComponentsLoadToken
+  if (!props.workspaceId || !props.styleItem?.id) {
+    suggestedComponents.value = []
+    suggestedComponentsLoading.value = false
+    return
+  }
+  suggestedComponentsLoading.value = true
+  try {
+    const response = await getWorkspaceStyleSuggestedComponents(props.workspaceId, props.styleItem.id)
+    if (token === suggestedComponentsLoadToken) {
+      suggestedComponents.value = response.items
+    }
+  } catch (error) {
+    if (token === suggestedComponentsLoadToken) {
+      Message.error(getErrorMessage(error, '加载样式建议组件失败。'))
+    }
+  } finally {
+    if (token === suggestedComponentsLoadToken) {
+      suggestedComponentsLoading.value = false
+    }
+  }
+}
 
 /**
  * 根据样式中的主题 key 加载主题摘要，用于顶部主题入口展示名称并打开详情。
@@ -239,66 +313,4 @@ function greatestCommonDivisor(left: number, right: number): number {
   return a || 1
 }
 </script>
-
-<style scoped>
-.style-spec-markdown :deep(.markstream-vue) {
-  background: transparent;
-  color: rgb(51 65 85);
-  font-size: 0.875rem;
-  line-height: 1.75;
-}
-
-.style-spec-markdown :deep(.markstream-vue > :first-child) {
-  margin-top: 0;
-}
-
-.style-spec-markdown :deep(.markstream-vue > :last-child) {
-  margin-bottom: 0;
-}
-
-.style-spec-markdown :deep(.markstream-vue > * + *) {
-  margin-top: 0.75rem;
-}
-
-.style-spec-markdown :deep(h1),
-.style-spec-markdown :deep(h2),
-.style-spec-markdown :deep(h3) {
-  color: rgb(15 23 42);
-  font-weight: 800;
-  line-height: 1.3;
-}
-
-.style-spec-markdown :deep(h1) {
-  font-size: 1.25rem;
-}
-
-.style-spec-markdown :deep(h2) {
-  font-size: 1.125rem;
-}
-
-.style-spec-markdown :deep(h3) {
-  font-size: 1rem;
-}
-
-.style-spec-markdown :deep(ul),
-.style-spec-markdown :deep(ol) {
-  padding-left: 1.25rem;
-}
-
-.style-spec-markdown :deep(code:not(pre code)) {
-  border-radius: 0.375rem;
-  background: rgb(241 245 249);
-  padding: 0.125rem 0.375rem;
-  color: rgb(30 41 59);
-  font-size: 0.8125rem;
-}
-
-.style-spec-markdown :deep(pre) {
-  overflow-x: auto;
-  border-radius: 0.75rem;
-  background: rgb(15 23 42);
-  padding: 1rem;
-  color: rgb(226 232 240);
-}
-</style>
 

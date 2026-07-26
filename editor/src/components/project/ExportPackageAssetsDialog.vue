@@ -11,13 +11,13 @@
     <div class="flex h-full min-h-0 flex-col gap-3">
       <section
         v-if="warningItems.length"
-        class="shrink-0 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3"
+        class="shrink-0 rounded-lg border border-warning-border bg-warning-muted px-4 py-3"
       >
-        <div class="flex items-center gap-2 text-sm font-bold text-amber-800">
+        <div class="flex items-center gap-2 text-sm font-bold text-warning-strong">
           <AlertTriangle class="h-4 w-4" />
           <span>导出提示</span>
         </div>
-        <ul class="mt-2 max-h-24 space-y-1 overflow-y-auto text-xs leading-5 text-amber-800">
+        <ul class="mt-2 max-h-24 space-y-1 overflow-y-auto text-xs leading-5 text-warning-strong">
           <li v-for="warning in warningItems" :key="warning">{{ warning }}</li>
         </ul>
       </section>
@@ -58,61 +58,61 @@
       </div>
 
       <div class="grid min-h-0 flex-1 gap-2 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,0.9fr)_minmax(0,1.55fr)]">
-        <div class="flex min-h-0 min-w-0 flex-col rounded-lg border border-slate-200 bg-slate-50/80 p-2.5">
-          <div class="flex shrink-0 items-center justify-between gap-2 text-[11px] font-semibold text-slate-500">
+        <div class="flex min-h-0 min-w-0 flex-col rounded-lg border border-border bg-canvas/80 p-2.5">
+          <div class="flex shrink-0 items-center justify-between gap-2 text-[11px] font-semibold text-text-muted">
             <span>自动包含</span>
-            <span class="rounded-full bg-white px-1.5 py-0.5 text-[10px]">{{ automaticIncludedAssets.length }}</span>
+            <span class="rounded-full bg-surface px-1.5 py-0.5 text-[10px]">{{ automaticIncludedAssets.length }}</span>
           </div>
           <div v-if="automaticIncludedAssets.length" class="resource-column-scroll mt-2 min-h-0 flex-1 space-y-1.5 overflow-y-auto pr-1">
             <UiButton
               v-for="asset in automaticIncludedAssets"
               :key="asset.name"
               type="button"
-              class="flex w-full min-w-0 cursor-not-allowed items-center justify-between gap-1 rounded-md border border-slate-200 bg-white px-2 py-1.5 text-left text-xs font-semibold text-slate-500"
+              class="flex w-full min-w-0 cursor-not-allowed items-center justify-between gap-1 rounded-md border border-border bg-surface px-2 py-1.5 text-left text-xs font-semibold text-text-muted"
               :title="`${asset.name} 已自动包含`"
               disabled
             >
               <span class="min-w-0 truncate">{{ asset.name }}</span>
-              <span class="shrink-0 rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-500">
+              <span class="shrink-0 rounded-full bg-surface-muted px-1.5 py-0.5 text-[10px] text-text-muted">
                 {{ asset.typeLabel }}
               </span>
             </UiButton>
           </div>
-          <p v-else class="mt-2 flex min-h-0 flex-1 items-center justify-center text-xs text-slate-400">暂无自动资源</p>
+          <p v-else class="mt-2 flex min-h-0 flex-1 items-center justify-center text-xs text-text-disabled">暂无自动资源</p>
         </div>
 
-        <div class="flex min-h-0 min-w-0 flex-col rounded-lg border border-indigo-100 bg-indigo-50/40 p-2.5">
-          <div class="flex shrink-0 items-center justify-between gap-2 text-[11px] font-semibold text-indigo-600">
+        <div class="flex min-h-0 min-w-0 flex-col rounded-lg border border-accent-muted bg-surface-selected/40 p-2.5">
+          <div class="flex shrink-0 items-center justify-between gap-2 text-[11px] font-semibold text-accent">
             <span>手动补充</span>
-            <span class="rounded-full bg-white px-1.5 py-0.5 text-[10px]">{{ manualIncludedAssets.length }}</span>
+            <span class="rounded-full bg-surface px-1.5 py-0.5 text-[10px]">{{ manualIncludedAssets.length }}</span>
           </div>
           <div v-if="manualIncludedAssets.length" class="resource-column-scroll mt-2 min-h-0 flex-1 space-y-1.5 overflow-y-auto pr-1">
             <UiButton
               v-for="asset in manualIncludedAssets"
               :key="asset.name"
               type="button"
-              class="flex w-full min-w-0 items-center justify-between gap-1 rounded-md border border-indigo-200 bg-white px-2 py-1.5 text-left text-xs font-semibold text-indigo-700"
+              class="flex w-full min-w-0 items-center justify-between gap-1 rounded-md border border-accent-ring bg-surface px-2 py-1.5 text-left text-xs font-semibold text-accent-hover"
               :title="`移除 ${asset.name}`"
               @click="emit('removeAsset', asset.name)"
             >
               <span class="min-w-0 truncate">{{ asset.name }}</span>
               <span class="inline-flex shrink-0 items-center gap-1">
-                <span class="rounded-full bg-indigo-50 px-1.5 py-0.5 text-[10px] text-indigo-500">
+                <span class="rounded-full bg-surface-selected px-1.5 py-0.5 text-[10px] text-accent-emphasis">
                   {{ asset.typeLabel }}
                 </span>
                 <X class="h-3 w-3" />
               </span>
             </UiButton>
           </div>
-          <p v-else class="mt-2 flex min-h-0 flex-1 items-center justify-center text-xs text-slate-400">未选择手动资源</p>
+          <p v-else class="mt-2 flex min-h-0 flex-1 items-center justify-center text-xs text-text-disabled">未选择手动资源</p>
         </div>
 
-        <div class="flex min-h-0 min-w-0 flex-col rounded-lg border border-slate-200 bg-white p-2.5">
-          <div class="flex shrink-0 items-center justify-between gap-2 text-[11px] font-semibold text-slate-500">
+        <div class="flex min-h-0 min-w-0 flex-col rounded-lg border border-border bg-surface p-2.5">
+          <div class="flex shrink-0 items-center justify-between gap-2 text-[11px] font-semibold text-text-muted">
             <span>待选资源</span>
-            <span class="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px]">{{ activeTabAssets.length }}</span>
+            <span class="rounded-full bg-surface-muted px-1.5 py-0.5 text-[10px]">{{ activeTabAssets.length }}</span>
           </div>
-          <div v-if="assetOptionsLoading" class="mt-2 flex min-h-0 flex-1 items-center justify-center text-sm font-semibold text-slate-400">
+          <div v-if="assetOptionsLoading" class="mt-2 flex min-h-0 flex-1 items-center justify-center text-sm font-semibold text-text-disabled">
             <RefreshCw class="mr-2 h-4 w-4 animate-spin" />
             正在加载资源
           </div>
@@ -131,7 +131,7 @@
               </UiIconButton>
               <div
                 ref="assetTypeTabScroller"
-                class="asset-type-tab-scroll flex min-w-0 flex-nowrap items-center gap-1 overflow-x-auto overflow-y-hidden rounded-md border border-slate-200 bg-slate-50 p-0.5"
+                class="asset-type-tab-scroll flex min-w-0 flex-nowrap items-center gap-1 overflow-x-auto overflow-y-hidden rounded-md border border-border bg-canvas p-0.5"
                 @wheel="handleAssetTypeTabWheel"
               >
                 <UiButton
@@ -139,14 +139,14 @@
                   :key="tab.key"
                   type="button"
                   class="inline-flex h-6 shrink-0 items-center justify-center gap-1 rounded px-1.5 text-[10px] font-semibold leading-none transition"
-                  :class="isActiveTab(tab.key) ? 'bg-indigo-600 text-white shadow-sm' : 'bg-white text-slate-600 ring-1 ring-slate-200 hover:bg-slate-100 hover:text-slate-800'"
+                  :class="isActiveTab(tab.key) ? 'bg-accent text-text-inverse shadow-sm' : 'bg-surface text-text-secondary ring-1 ring-border hover:bg-surface-muted hover:text-text'"
                   :title="`${tab.label} ${tab.count}`"
                   @click="activeAssetTypeTab = tab.key"
                 >
                   <span>{{ tab.label }}</span>
                   <span
                     class="shrink-0 rounded-full px-1 text-[9px] leading-4"
-                    :class="isActiveTab(tab.key) ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500'"
+                    :class="isActiveTab(tab.key) ? 'bg-surface/20 text-text-inverse' : 'bg-surface-muted text-text-muted'"
                   >
                     {{ tab.count }}
                   </span>
@@ -175,7 +175,7 @@
                 @click="emit('toggleAsset', asset.name)"
               >
                 <span class="truncate">{{ asset.name }}</span>
-                <span v-if="isAutomatic(asset.name)" class="shrink-0 rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-500">
+                <span v-if="isAutomatic(asset.name)" class="shrink-0 rounded-full bg-surface-muted px-1.5 py-0.5 text-[10px] text-text-muted">
                   自动
                 </span>
                 <Check v-else-if="isSelected(asset.name)" class="h-3.5 w-3.5 shrink-0" />
@@ -183,7 +183,7 @@
               </UiButton>
             </div>
           </div>
-          <p v-else class="mt-2 flex min-h-0 flex-1 items-center justify-center text-xs text-slate-400">
+          <p v-else class="mt-2 flex min-h-0 flex-1 items-center justify-center text-xs text-text-disabled">
             {{ workspaceId ? '没有匹配的资源' : '暂无工作空间资源' }}
           </p>
         </div>
@@ -397,12 +397,12 @@ function handleAssetTypeTabWheel(event: WheelEvent): void {
  */
 function assetOptionClass(assetName: string): string {
   if (isAutomatic(assetName)) {
-    return 'border-slate-200 bg-slate-50 text-slate-500'
+    return 'border-border bg-canvas text-text-muted'
   }
   if (isSelected(assetName)) {
-    return 'border-indigo-200 bg-indigo-50 text-indigo-700'
+    return 'border-accent-ring bg-surface-selected text-accent-hover'
   }
-  return 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
+  return 'border-border bg-surface text-text-secondary hover:border-border-strong'
 }
 
 /**
@@ -415,25 +415,6 @@ function resolveAssetTypeLabel(value: string | undefined): string {
 </script>
 
 <style scoped>
-.resource-column-scroll {
-  scrollbar-width: thin;
-  scrollbar-color: rgb(203 213 225) transparent;
-}
-
-.resource-column-scroll::-webkit-scrollbar {
-  height: 6px;
-  width: 6px;
-}
-
-.resource-column-scroll::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.resource-column-scroll::-webkit-scrollbar-thumb {
-  border-radius: 999px;
-  background: rgb(203 213 225);
-}
-
 .asset-type-tab-scroll {
   scrollbar-width: none;
   -ms-overflow-style: none;

@@ -189,7 +189,8 @@ class ProjectService:
 
         if payload.name is not None:
             project.name = payload.name
-        if payload.description is not None:
+        if "description" in payload.model_fields_set:
+            # 显式传入 null 表示清空描述；未传字段时保持原值。
             project.description = payload.description
         if payload.status is not None:
             previous_status = project.status

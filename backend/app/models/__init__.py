@@ -19,7 +19,7 @@ from app.models.asset import WorkspaceAsset
 from app.models.asset_render_hint_backfill_job import AssetRenderHintBackfillJob
 from app.models.component_component_dependency import ComponentVersionComponentDependency
 from app.models.component_resource import ComponentVersionComponentResource
-from app.models.font import WorkspaceFontConfig
+from app.models.font import WorkspaceFontConfig, WorkspaceFontFamily
 from app.models.page import Page
 from app.models.page_component_dependency import PageVersionComponentDependency
 from app.models.page_component_resource import PageVersionComponentResource
@@ -80,6 +80,7 @@ __all__ = [
     "WorkspaceAsset",
     "AssetRenderHintBackfillJob",
     "WorkspaceFontConfig",
+    "WorkspaceFontFamily",
     "WorkspaceStyle",
     "WorkspaceStyleSuggestedComponent",
     "WorkspaceTheme",

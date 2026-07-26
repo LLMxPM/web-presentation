@@ -1,17 +1,17 @@
 <!-- 文件功能：项目构建弹窗的构建参数区域，编辑部署基路径并提交构建任务。 -->
 <template>
-  <section class="rounded-lg border border-slate-200 bg-white p-4">
+  <section class="rounded-lg border border-border bg-surface p-4">
     <div class="flex items-start justify-between gap-4 flex-wrap">
       <div class="space-y-1">
-        <div class="flex items-center gap-2 text-slate-900">
-          <Rocket class="h-4 w-4 text-indigo-500" />
+        <div class="flex items-center gap-2 text-text-strong">
+          <Rocket class="h-4 w-4 text-accent-emphasis" />
           <h4 class="text-base font-semibold">构建设置</h4>
         </div>
       </div>
     </div>
 
     <div class="mt-4 flex items-start gap-3">
-      <label class="flex h-10 shrink-0 items-center text-sm font-semibold text-slate-700">部署基路径</label>
+      <label class="flex h-10 shrink-0 items-center text-sm font-semibold text-text-emphasis">部署基路径</label>
       <div class="flex min-w-0 flex-1 items-start gap-3">
         <UiFormField class="min-w-0 flex-1" :error="baseUrlError"><template #default="field"><UiInput :model-value="baseUrl" placeholder="./ 或 /demo/" :input-id="field.inputId" :described-by="field.describedBy" :invalid="field.invalid" @update:model-value="emit('update:baseUrl', String($event))" /></template></UiFormField>
         <UiButton

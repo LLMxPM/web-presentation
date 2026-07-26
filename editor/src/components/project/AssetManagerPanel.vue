@@ -9,7 +9,7 @@
     @update:model-value="emit('update:modelValue', $event)"
   >
     <template #icon>
-      <Image class="h-5 w-5 text-indigo-600" />
+      <Image class="h-5 w-5 text-accent" />
     </template>
 
     <template #actions>
@@ -26,7 +26,7 @@
       </UiButton>
     </template>
 
-    <div class="flex shrink-0 flex-col border-b border-slate-100 bg-slate-50/80">
+    <div class="flex shrink-0 flex-col border-b border-border-muted bg-canvas/80">
       <div class="space-y-2 px-4 py-3">
         <LibrarySegmentedControl
           :model-value="activeGroupKey"
@@ -34,7 +34,7 @@
           :columns="assetGroupOptions.length"
           @update:model-value="selectAssetGroup"
         />
-        <div v-if="hasMultipleCurrentAssetTypes" class="rounded-xl border border-slate-200/70 bg-white p-1 shadow-sm">
+        <div v-if="hasMultipleCurrentAssetTypes" class="rounded-xl border border-border/70 bg-surface p-1 shadow-sm">
           <LibrarySegmentedControl
             :model-value="activeType"
             :options="currentAssetTypes"
@@ -43,7 +43,7 @@
           />
         </div>
       </div>
-      <div class="border-t border-slate-100 px-4 py-2">
+      <div class="border-t border-border-muted px-4 py-2">
         <LibraryChipFilter v-model="activeTagFilter" :options="availableTagOptions" />
       </div>
     </div>
@@ -54,10 +54,10 @@
         <article
           v-for="asset in assets"
           :key="asset.id"
-          class="group flex cursor-pointer items-center gap-3 rounded-xl border border-slate-200 bg-white p-2.5 transition-all hover:border-indigo-200 hover:bg-indigo-50/20"
+          class="group flex cursor-pointer items-center gap-3 rounded-xl border border-border bg-surface p-2.5 transition-all hover:border-accent-ring hover:bg-surface-selected/20"
           @click="openPreview(asset)"
         >
-          <div class="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-slate-100 bg-slate-50">
+          <div class="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-border-muted bg-canvas">
             <img
               v-if="isImage(asset.original_name) && asset.url"
               :src="asset.url"
@@ -67,32 +67,32 @@
             />
             <div
               v-else-if="asset.asset_type === 'font'"
-              class="flex h-full w-full items-center justify-center text-sm font-bold text-slate-700"
+              class="flex h-full w-full items-center justify-center text-sm font-bold text-text-emphasis"
               :style="{ fontFamily: `'preview-font-${asset.id}'` }"
             >
               Aa
             </div>
-            <PenTool v-else-if="asset.asset_type === 'drawio'" class="h-5 w-5 text-orange-400" />
+            <PenTool v-else-if="asset.asset_type === 'drawio'" class="h-5 w-5 text-warning" />
             <Workflow v-else-if="asset.asset_type === 'mermaid'" class="h-5 w-5 text-cyan-500" />
-            <BarChart3 v-else-if="asset.asset_type === 'chart'" class="h-5 w-5 text-emerald-500" />
-            <Sigma v-else-if="asset.asset_type === 'formula'" class="h-5 w-5 text-violet-500" />
-            <Video v-else-if="asset.asset_type === 'video'" class="h-5 w-5 text-rose-500" />
-            <FileText v-else class="h-5 w-5 text-slate-400" />
+            <BarChart3 v-else-if="asset.asset_type === 'chart'" class="h-5 w-5 text-success" />
+            <Sigma v-else-if="asset.asset_type === 'formula'" class="h-5 w-5 text-ai" />
+            <Video v-else-if="asset.asset_type === 'video'" class="h-5 w-5 text-danger" />
+            <FileText v-else class="h-5 w-5 text-text-disabled" />
           </div>
 
           <div class="min-w-0 flex-1">
             <div class="flex min-w-0 items-center gap-2">
-              <h3 class="truncate text-xs font-bold text-slate-800">{{ asset.name }}</h3>
+              <h3 class="truncate text-xs font-bold text-text">{{ asset.name }}</h3>
               <span
                 v-if="asset.delete_block_reason"
-                class="shrink-0 rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-600"
+                class="shrink-0 rounded-full bg-warning-muted px-1.5 py-0.5 text-[10px] font-semibold text-warning"
                 title="该资源存在引用"
               >
                 已引用
               </span>
             </div>
-            <p class="mt-1 truncate font-mono text-[10px] text-slate-400">{{ asset.original_name }}</p>
-            <div class="mt-1 flex min-w-0 items-center gap-1 text-[10px] font-semibold text-slate-400">
+            <p class="mt-1 truncate font-mono text-[10px] text-text-disabled">{{ asset.original_name }}</p>
+            <div class="mt-1 flex min-w-0 items-center gap-1 text-[10px] font-semibold text-text-disabled">
               <span class="shrink-0">{{ formatBytes(asset.file_size) }}</span>
               <span v-if="asset.tags.length" class="truncate">/ {{ asset.tags.join(' / ') }}</span>
             </div>
@@ -143,11 +143,11 @@
     :description="runtimePreviewAsset?.original_name || ''"
     size="workbench"
     body-preset="immersive"
-    overlay-class="bg-slate-900/90 backdrop-blur-md"
+    overlay-class="bg-overlay/90 backdrop-blur-md"
     :z-index="300"
     @update:open="handleRuntimePreviewVisibleChange"
   >
-    <div v-if="runtimePreviewAsset" class="h-full min-h-0 bg-slate-50 p-4">
+    <div v-if="runtimePreviewAsset" class="h-full min-h-0 bg-canvas p-4">
       <AssetPreviewFrame
         :key="`${runtimePreviewAsset.id}:${runtimePreviewAsset.file_hash}`"
         class="h-full"
@@ -167,7 +167,7 @@
       background: 'transparent',
     }"
     panel-class="!pointer-events-none !border-0 !bg-transparent !shadow-none"
-    overlay-class="bg-slate-900/90 backdrop-blur-md"
+    overlay-class="bg-overlay/90 backdrop-blur-md"
     :z-index="300"
     @update:open="handleQuickPreviewDialogVisibleChange"
   >
@@ -175,7 +175,7 @@
       <AssetPreviewSurface
         v-if="previewAsset.asset_type !== 'font' && isImage(previewAsset.original_name)"
         :background="quickPreviewBackground"
-        class="pointer-events-auto relative flex h-full min-h-0 w-full items-center justify-center overflow-hidden rounded-2xl border border-white/20 shadow-2xl"
+        class="pointer-events-auto relative flex h-full min-h-0 w-full items-center justify-center overflow-hidden rounded-2xl border border-surface/20 shadow-2xl"
       >
         <AssetPreviewBackgroundControl
           v-model="quickPreviewBackground"
@@ -189,22 +189,22 @@
       </AssetPreviewSurface>
       <div
         v-else
-        class="pointer-events-auto relative flex w-full max-w-4xl flex-col items-center justify-center gap-6 rounded-2xl bg-white p-6 shadow-2xl sm:p-10"
+        class="pointer-events-auto relative flex w-full max-w-4xl flex-col items-center justify-center gap-6 rounded-2xl bg-surface p-6 shadow-2xl sm:p-10"
       >
         <div class="space-y-5 text-center" :style="previewAsset.asset_type === 'font' ? { fontFamily: `'preview-font-${previewAsset.id}'` } : undefined">
-          <div class="text-5xl text-slate-800">Aa Bb Cc Dd Ee Ff</div>
-          <div class="text-5xl text-slate-800">0123456789</div>
-          <div class="pt-2 text-6xl text-slate-800">字体效果预览测试</div>
-          <div class="pt-2 text-4xl text-slate-800 opacity-80">The quick brown fox jumps over the lazy dog.</div>
+          <div class="text-5xl text-text">Aa Bb Cc Dd Ee Ff</div>
+          <div class="text-5xl text-text">0123456789</div>
+          <div class="pt-2 text-6xl text-text">字体效果预览测试</div>
+          <div class="pt-2 text-4xl text-text opacity-80">The quick brown fox jumps over the lazy dog.</div>
         </div>
       </div>
       <div class="pointer-events-auto absolute right-3 top-3 flex gap-3 sm:right-6 sm:top-6">
-        <a v-if="previewAsset.url" :href="previewAsset.url + '?download=1'" download class="rounded-full bg-white/10 p-2.5 text-white backdrop-blur transition-all hover:bg-white/20">
+        <a v-if="previewAsset.url" :href="previewAsset.url + '?download=1'" download class="rounded-full bg-surface/10 p-2.5 text-text-inverse backdrop-blur transition-all hover:bg-surface/20">
           <Download class="h-5 w-5" />
         </a>
         <BaseCloseButton tone="inverse" label="关闭资源预览" @click="previewAsset = null" />
       </div>
-      <div class="pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full bg-slate-800/60 px-4 py-2 text-xs tracking-widest text-white backdrop-blur sm:bottom-6">
+      <div class="pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full bg-surface-inverse-raised/60 px-4 py-2 text-xs tracking-widest text-text-inverse backdrop-blur sm:bottom-6">
         {{ previewAsset.original_name }}
       </div>
     </div>

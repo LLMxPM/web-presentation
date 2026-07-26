@@ -3,8 +3,8 @@
   <span
     :class="[
       'inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold ring-1 ring-inset',
-      status === 'active' ? 'bg-emerald-50 text-emerald-700 ring-emerald-600/20' : '',
-      status === 'archived' ? 'bg-slate-100 text-slate-600 ring-slate-500/10' : ''
+      status === 'active' ? 'bg-success-muted text-success-strong ring-success/20' : '',
+      status === 'archived' ? 'bg-surface-muted text-text-secondary ring-slate-500/10' : ''
     ]"
   >
     {{ label }}

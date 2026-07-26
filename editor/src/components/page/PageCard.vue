@@ -2,11 +2,11 @@
 <template>
   <article
     data-testid="page-card"
-    class="group/card relative isolate flex cursor-pointer flex-col overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm transition-all duration-300 hover:-translate-y-1 hover:border-indigo-300 hover:shadow-md"
-    :class="selected ? 'border-indigo-400 ring-2 ring-indigo-100' : ''"
+    class="group/card relative isolate flex cursor-pointer flex-col overflow-hidden rounded-lg border border-border bg-surface shadow-sm transition-all duration-300 hover:-translate-y-1 hover:border-accent-border hover:shadow-md"
+    :class="selected ? 'border-accent-border ring-2 ring-accent-muted' : ''"
     @click="emit('open', page.id)"
   >
-    <div class="relative overflow-hidden bg-slate-100" :style="{ aspectRatio: screenshotAspectRatio }">
+    <div class="relative overflow-hidden bg-surface-muted" :style="{ aspectRatio: screenshotAspectRatio }">
       <img
         v-if="page.screenshot_url"
         :src="page.screenshot_url"
@@ -14,7 +14,7 @@
         class="h-full w-full object-cover transition-transform duration-300 group-hover/card:scale-[1.02]"
         loading="lazy"
       >
-      <div v-else class="flex h-full w-full flex-col items-center justify-center gap-1.5 text-slate-400">
+      <div v-else class="flex h-full w-full flex-col items-center justify-center gap-1.5 text-text-disabled">
         <Layout class="h-6 w-6" />
         <span class="text-[10px] font-semibold tracking-wide">尚未保存截图</span>
       </div>
@@ -33,7 +33,7 @@
         <div v-if="mode === 'routed'" class="page-card-route-path">
           <RouteIcon class="h-3 w-3 shrink-0" />
           <span class="min-w-0 truncate">{{ routePath }}</span>
-          <span v-if="isDuplicate" class="shrink-0 rounded-full bg-amber-50 px-1.5 py-0.5 text-amber-700">
+          <span v-if="isDuplicate" class="shrink-0 rounded-full bg-warning-muted px-1.5 py-0.5 text-warning-strong">
             重复 {{ duplicateIndex }}/{{ duplicateTotal }}
           </span>
         </div>
@@ -118,14 +118,20 @@
     <div class="p-3">
       <div class="flex min-w-0 items-center gap-2">
         <h3
-          class="truncate text-sm font-bold leading-tight text-slate-800 transition-colors group-hover/card:text-indigo-600"
+          class="truncate text-sm font-bold leading-tight text-text transition-colors group-hover/card:text-accent"
           :title="page.title"
         >
           {{ page.title }}
         </h3>
-        <div class="shrink-0 font-mono text-[10px] font-semibold uppercase tracking-widest text-slate-400">
+        <button
+          type="button"
+          class="shrink-0 cursor-pointer font-mono text-[10px] font-semibold uppercase tracking-widest text-text-disabled transition-colors hover:text-accent"
+          title="复制页面名称和编码"
+          aria-label="复制页面名称和编码"
+          @click.stop="handleCopyPageIdentity"
+        >
           {{ page.code }}
-        </div>
+        </button>
       </div>
     </div>
   </article>
@@ -138,6 +144,7 @@ import { Archive, Camera, Check, Copy, Layout, LoaderCircle, Route as RouteIcon 
 import CardActionBar from '@/components/patterns/CardActionBar.vue'
 import { UiCheckbox, UiIconButton } from '@/components/ui'
 import type { PageItem } from '@/types/api'
+import { Message } from '@/utils/message'
 
 const props = withDefaults(defineProps<{
   page: PageItem
@@ -175,6 +182,19 @@ const emit = defineEmits<{
 const showStaleBadge = computed(() => Boolean(props.page.screenshot_url && !props.page.screenshot_is_latest))
 
 /**
+ * 复制页面名称和编码到剪贴板，便于在对话或文档中引用页面。
+ */
+async function handleCopyPageIdentity(): Promise<void> {
+  const identityText = `${props.page.title} ${props.page.code}`
+  try {
+    await navigator.clipboard.writeText(identityText)
+    Message.success(`已复制：${identityText}`)
+  } catch {
+    Message.error('复制失败，请检查浏览器剪贴板权限。')
+  }
+}
+
+/**
  * 将页面选择变更上抛给列表视图，保留原有的批量选择状态来源。
  * @param checked 当前复选框值
  */
@@ -191,9 +211,9 @@ function handleSelectChange(checked: boolean | 'indeterminate'): void {
   align-items: center;
   justify-content: center;
   border-radius: 9999px;
-  border: 1px solid rgb(203 213 225);
-  background: rgb(255 255 255 / 0.95);
-  color: rgb(100 116 139);
+  border: 1px solid rgb(var(--ui-border-strong));
+  background: rgb(var(--ui-surface) / 0.95);
+  color: rgb(var(--ui-text-muted));
   box-shadow: 0 1px 2px rgb(15 23 42 / 0.08);
   backdrop-filter: blur(6px);
   cursor: pointer;
@@ -202,16 +222,16 @@ function handleSelectChange(checked: boolean | 'indeterminate'): void {
 
 .page-card-select:hover,
 .page-card-select-active {
-  border-color: rgb(129 140 248);
-  background: rgb(238 242 255 / 0.96);
-  color: rgb(79 70 229);
+  border-color: rgb(var(--ui-accent-border));
+  background: rgb(var(--ui-surface-selected) / 0.96);
+  color: rgb(var(--ui-accent));
   opacity: 1;
   transform: translateY(-1px);
 }
 
 .page-card-select-active {
-  background: rgb(79 70 229 / 0.96);
-  color: white;
+  background: rgb(var(--ui-accent) / 0.96);
+  color: rgb(var(--ui-text-inverse));
 }
 
 .page-card-select-box {
@@ -257,12 +277,12 @@ function handleSelectChange(checked: boolean | 'indeterminate'): void {
   align-items: center;
   gap: 0.375rem;
   border-radius: 9999px;
-  border: 1px solid rgb(167 243 208);
-  background: rgb(255 255 255 / 0.95);
+  border: 1px solid rgb(var(--ui-success-border));
+  background: rgb(var(--ui-surface) / 0.95);
   padding: 0.25rem 0.5rem;
   font-size: 0.625rem;
   font-weight: 700;
-  color: rgb(4 120 87);
+  color: rgb(var(--ui-success-strong));
   box-shadow: 0 1px 2px rgb(15 23 42 / 0.08);
   backdrop-filter: blur(6px);
 }
@@ -295,11 +315,11 @@ function handleSelectChange(checked: boolean | 'indeterminate'): void {
   align-items: center;
   justify-content: center;
   transform: rotate(45deg);
-  border: 1px solid rgb(253 230 138);
-  background: rgb(255 251 235 / 0.96);
+  border: 1px solid rgb(var(--ui-warning-border));
+  background: rgb(var(--ui-warning-muted) / 0.96);
   font-size: 0.625rem;
   font-weight: 800;
-  color: rgb(180 83 9);
+  color: rgb(var(--ui-warning-strong));
   box-shadow: 0 1px 3px rgb(15 23 42 / 0.12);
 }
 </style>

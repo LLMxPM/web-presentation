@@ -1,10 +1,10 @@
 <!-- 文件功能：页面名称与描述独立编辑弹窗，用于维护页面基础信息。 -->
 <template>
-  <UiDialog :open="modelValue" :title="page ? `编辑页面 · ${page.title}` : '编辑页面'" size="compact" @update:open="handleVisibleChange">
+  <UiDialog :open="modelValue" :title="page ? `编辑页面 · ${page.title}` : '编辑页面'" size="compact" :panel-style="{ height: 'auto' }" @update:open="handleVisibleChange">
     <div class="space-y-4">
       <UiFormField label="页面名称" required :error="errors.title"><template #default="field"><UiInput v-model="form.title" placeholder="请输入页面名称" required :input-id="field.inputId" :described-by="field.describedBy" :invalid="field.invalid" /></template></UiFormField>
       <UiFormField label="页面描述"><template #default="field"><UiInput v-model="form.summary" type="textarea" placeholder="补充页面用途、关键内容或使用约束" :rows="4" :input-id="field.inputId" :described-by="field.describedBy" /></template></UiFormField>
-      <p v-if="page" class="text-xs leading-5 text-slate-400">
+      <p v-if="page" class="text-xs leading-5 text-text-disabled">
         页面编码：<span class="font-mono font-semibold uppercase">{{ page.code }}</span>
       </p>
     </div>

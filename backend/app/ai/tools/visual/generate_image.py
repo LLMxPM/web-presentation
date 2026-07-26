@@ -2,15 +2,28 @@
 
 from __future__ import annotations
 
+import json
 from typing import Annotated, Any, Literal
 
-from pydantic import Field
+from pydantic import BeforeValidator, Field
 from pydantic_ai import CallDeferred
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.ai.image_generation_enqueue import enqueue_image_generation
 from app.ai.platform_tools import AgentToolContext, agent_tool
 from app.core.exceptions import AppException
+
+
+def _parse_json_array_string(value: Any) -> Any:
+    """把模型偶发输出的 JSON 数组字符串还原为列表，其它值交给 Pydantic 正常校验。"""
+
+    if not isinstance(value, str):
+        return value
+    try:
+        parsed = json.loads(value)
+    except (TypeError, ValueError):
+        return value
+    return parsed if isinstance(parsed, list) else value
 
 
 def build_generate_image_tool(session_factory: async_sessionmaker[AsyncSession]) -> Any:
@@ -29,7 +42,7 @@ def build_generate_image_tool(session_factory: async_sessionmaker[AsyncSession])
         count: Annotated[int, Field(ge=1, le=4)] = 1,
         asset_name_prefix: Annotated[str, Field(min_length=1, max_length=120)] = "generated-image",
         description: Annotated[str | None, Field(max_length=1024)] = None,
-        tags: Annotated[list[str], Field(max_length=20)] | None = None,
+        tags: Annotated[list[str], BeforeValidator(_parse_json_array_string), Field(max_length=20)] | None = None,
     ) -> dict[str, Any]:
         """创建图片生成或编辑任务；完成后自动保存资源并恢复父 run。"""
 

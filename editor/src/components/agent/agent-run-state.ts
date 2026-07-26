@@ -59,6 +59,8 @@ const TOOL_START_STATUS = 'tool_start'
 const TOOL_START_STATUS_TEXT = '等待工具调用开始'
 const TOOL_EXECUTION_STATUS = 'tool_execution'
 const TOOL_EXECUTION_STATUS_TEXT = '等待工具调用完成'
+const WAITING_EXTERNAL_STATUS = 'waiting_external'
+const WAITING_EXTERNAL_STATUS_TEXT = '页面变更正在后台排队或校验。'
 const CONTEXT_COMPRESSION_STATUS = 'context_compression'
 const CONTEXT_COMPRESSION_STARTED_TEXT = '上下文压缩中...'
 const CONTEXT_COMPRESSION_COMPLETED_TEXT = '上下文已压缩。'
@@ -159,6 +161,8 @@ export function applyAgentRunEvent(
       tagTrailingLocalItemsWithRunId(state, runId)
       state.activeRun = buildEventRunState(state, event, options.agentId, 'running')
       state.lastIssue = null
+      // 后台任务续跑后必须清掉 waiting_external 等临时等待项，否则会永久残留在时间线。
+      removeRunWaitingStatusItems(state, runId)
       appendRunStatusItem(state, event, MODEL_REQUEST_STATUS, MODEL_REQUEST_STATUS_TEXT)
       return { applied: true, terminal: false }
     case 'run.cancelling':
@@ -215,10 +219,11 @@ export function applyAgentRunEvent(
       return { applied: true, terminal: false }
     case 'tool.progress':
       upsertToolTimelineItem(state, event, 'running')
+      // 后台等待期间进度只更新 waiting_external 状态项，避免与其并排出现第二条等待提示。
       appendRunStatusItem(
         state,
         event,
-        TOOL_EXECUTION_STATUS,
+        isRunWaitingExternal(state, runId) ? WAITING_EXTERNAL_STATUS : TOOL_EXECUTION_STATUS,
         resolveToolProgressText(event),
       )
       return { applied: true, terminal: false }
@@ -267,7 +272,9 @@ export function applyAgentRunEvent(
       state.activeRun = buildEventRunState(state, event, options.agentId, 'waiting_external')
       state.lastIssue = null
       finishCurrentTextSegment(state)
-      appendRunStatusItem(state, event, 'waiting_external', '页面变更正在后台排队或校验。')
+      // 进入后台等待时收敛 tool_execution 等临时等待项，只保留一条 waiting_external 提示并置于时间线末尾。
+      removeRunWaitingStatusItems(state, runId)
+      appendRunStatusItem(state, event, WAITING_EXTERNAL_STATUS, WAITING_EXTERNAL_STATUS_TEXT)
       return { applied: true, terminal: false }
     case 'run.cancelled':
       state.pendingRequirement = null
@@ -1041,7 +1048,15 @@ function syncContextStatusFromEvent(state: AgentSessionRuntimeState, event: Agen
  */
 function ensureRunningRunStatusItem(state: AgentSessionRuntimeState): void {
   const run = state.activeRun
-  if (!run || (run.status !== 'pending' && run.status !== 'running') || !run.run_id) {
+  if (!run || !run.run_id) {
+    return
+  }
+  if (run.status === 'waiting_external') {
+    // 后台页面任务等待中的快照不含 run_status 项，需补齐与流式事件一致的等待提示。
+    appendRunStatusFromSnapshot(state, run, WAITING_EXTERNAL_STATUS, WAITING_EXTERNAL_STATUS_TEXT)
+    return
+  }
+  if (run.status !== 'pending' && run.status !== 'running') {
     return
   }
   if (hasRunWaitingStatusItem(state, run.run_id) || hasRunningTextItem(state, run.run_id)) {
@@ -1126,9 +1141,21 @@ function removeToolExecutionStatusItem(state: AgentSessionRuntimeState, runId: s
 function removeRunWaitingStatusItems(state: AgentSessionRuntimeState, runId: string): void {
   state.timelineItems = state.timelineItems.filter(item => !(
     item.kind === 'run_status'
-    && (item.status === MODEL_REQUEST_STATUS || item.status === TOOL_START_STATUS || item.status === TOOL_EXECUTION_STATUS)
+    && (
+      item.status === MODEL_REQUEST_STATUS
+      || item.status === TOOL_START_STATUS
+      || item.status === TOOL_EXECUTION_STATUS
+      || item.status === WAITING_EXTERNAL_STATUS
+    )
     && itemBelongsToRun(item, runId)
   ))
+}
+
+/**
+ * 判断指定 run 是否正处于后台页面任务等待态，用于把进度事件路由到 waiting_external 状态项。
+ */
+function isRunWaitingExternal(state: AgentSessionRuntimeState, runId: string): boolean {
+  return state.activeRun?.status === 'waiting_external' && state.activeRun.run_id === runId
 }
 
 function hasRunWaitingStatusItem(state: AgentSessionRuntimeState, runId: string): boolean {

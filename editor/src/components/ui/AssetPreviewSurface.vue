@@ -20,12 +20,12 @@ const props = defineProps<{
 
 const backgroundClass = computed(() => {
   if (props.background === 'dark') {
-    return 'bg-slate-900'
+    return 'bg-overlay'
   }
   if (props.background === 'checker') {
     return 'asset-preview-checker'
   }
-  return 'bg-white'
+  return 'bg-surface'
 })
 </script>
 

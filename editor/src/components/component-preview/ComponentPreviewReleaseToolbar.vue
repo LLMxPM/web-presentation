@@ -5,8 +5,8 @@
     :class="resolveRootClass()"
   >
     <div v-if="inline" :class="simplified ? 'min-w-[220px] flex-[1_1_224px] space-y-1' : 'w-[224px] space-y-1'">
-      <span class="block text-[11px] font-semibold text-slate-500">预览容器尺寸</span>
-      <div class="inline-flex h-9 w-full items-center overflow-hidden rounded-xl border border-slate-200 bg-white">
+      <span class="block text-[11px] font-semibold text-text-muted">预览容器尺寸</span>
+      <div class="inline-flex h-9 w-full items-center overflow-hidden rounded-xl border border-border bg-surface">
         <div class="h-full min-w-0 flex-1">
           <PreviewSizePresetSelect
             :current-width="modelValue.page.width"
@@ -19,24 +19,24 @@
           />
         </div>
 
-        <span class="h-5 w-px shrink-0 bg-slate-100" />
+        <span class="h-5 w-px shrink-0 bg-surface-muted" />
 
         <div class="grid h-full w-[104px] shrink-0 grid-cols-[minmax(0,1fr)_12px_minmax(0,1fr)] items-center">
           <input
             :value="String(modelValue.page.width)"
             type="text"
             inputmode="numeric"
-            class="h-full w-full min-w-0 bg-transparent px-0.5 text-center text-xs font-semibold tabular-nums text-slate-700 outline-none transition focus:bg-slate-50"
+            class="h-full w-full min-w-0 bg-transparent px-0.5 text-center text-xs font-semibold tabular-nums text-text-emphasis outline-none transition focus:bg-surface-hover"
             title="页面宽度"
             @input="updatePageDimensionField('width', ($event.target as HTMLInputElement).value)"
             @blur="normalizePageDimensionField('width')"
           >
-          <span class="text-center text-xs text-slate-300">×</span>
+          <span class="text-center text-xs text-text-faint">×</span>
           <input
             :value="String(modelValue.page.height)"
             type="text"
             inputmode="numeric"
-            class="h-full w-full min-w-0 bg-transparent px-0.5 text-center text-xs font-semibold tabular-nums text-slate-700 outline-none transition focus:bg-slate-50"
+            class="h-full w-full min-w-0 bg-transparent px-0.5 text-center text-xs font-semibold tabular-nums text-text-emphasis outline-none transition focus:bg-surface-hover"
             title="页面高度"
             @input="updatePageDimensionField('height', ($event.target as HTMLInputElement).value)"
             @blur="normalizePageDimensionField('height')"
@@ -46,7 +46,7 @@
     </div>
 
     <div v-else class="grid grid-cols-[48px_164px] items-center gap-x-3 gap-y-1">
-      <span class="text-[11px] font-semibold text-slate-500">预览容器尺寸</span>
+      <span class="text-[11px] font-semibold text-text-muted">预览容器尺寸</span>
       <div class="min-w-0">
         <PreviewSizePresetSelect
           :current-width="modelValue.page.width"
@@ -58,22 +58,22 @@
         />
       </div>
 
-      <div class="col-start-2 inline-flex h-9 w-full items-center overflow-hidden rounded-xl border border-slate-200 bg-white">
+      <div class="col-start-2 inline-flex h-9 w-full items-center overflow-hidden rounded-xl border border-border bg-surface">
         <input
           :value="String(modelValue.page.width)"
           type="text"
           inputmode="numeric"
-          class="h-full min-w-0 flex-1 bg-transparent px-1 text-center text-xs font-semibold tabular-nums text-slate-700 outline-none transition focus:bg-slate-50"
+          class="h-full min-w-0 flex-1 bg-transparent px-1 text-center text-xs font-semibold tabular-nums text-text-emphasis outline-none transition focus:bg-surface-hover"
           title="页面宽度"
           @input="updatePageDimensionField('width', ($event.target as HTMLInputElement).value)"
           @blur="normalizePageDimensionField('width')"
         >
-        <span class="text-xs text-slate-300">×</span>
+        <span class="text-xs text-text-faint">×</span>
         <input
           :value="String(modelValue.page.height)"
           type="text"
           inputmode="numeric"
-          class="h-full min-w-0 flex-1 bg-transparent px-1 text-center text-xs font-semibold tabular-nums text-slate-700 outline-none transition focus:bg-slate-50"
+          class="h-full min-w-0 flex-1 bg-transparent px-1 text-center text-xs font-semibold tabular-nums text-text-emphasis outline-none transition focus:bg-surface-hover"
           title="页面高度"
           @input="updatePageDimensionField('height', ($event.target as HTMLInputElement).value)"
           @blur="normalizePageDimensionField('height')"
@@ -82,8 +82,8 @@
     </div>
 
     <div v-if="inline && !simplified" class="w-[236px] space-y-1">
-      <span class="block text-[11px] font-semibold text-slate-500">字号与描边</span>
-      <div class="grid h-9 grid-cols-2 overflow-hidden rounded-xl border border-slate-200 bg-white">
+      <span class="block text-[11px] font-semibold text-text-muted">字号与描边</span>
+      <div class="grid h-9 grid-cols-2 overflow-hidden rounded-xl border border-border bg-surface">
         <UiUnitInput
           :model-value="modelValue.page.base_font_size"
           unit="px"
@@ -100,7 +100,7 @@
           :value="String(modelValue.page.icon_default_stroke_width)"
           type="text"
           inputmode="numeric"
-          class="h-full min-w-0 border-l border-slate-100 bg-transparent px-1 text-center text-xs font-semibold tabular-nums text-slate-700 outline-none transition focus:bg-slate-50"
+          class="h-full min-w-0 border-l border-border-muted bg-transparent px-1 text-center text-xs font-semibold tabular-nums text-text-emphasis outline-none transition focus:bg-surface-hover"
           title="默认图标描边"
           @input="updateIntegerPageSpecField('icon_default_stroke_width', ($event.target as HTMLInputElement).value, 1, 64)"
           @blur="normalizeIntegerPageSpecField('icon_default_stroke_width', 2, 1, 64)"
@@ -109,8 +109,8 @@
     </div>
 
     <div v-else-if="!simplified" class="grid grid-cols-[48px_164px] items-center gap-x-3 gap-y-1">
-      <span class="text-[11px] font-semibold text-slate-500">页面规格</span>
-      <div class="col-start-2 grid h-9 grid-cols-2 overflow-hidden rounded-xl border border-slate-200 bg-white">
+      <span class="text-[11px] font-semibold text-text-muted">页面规格</span>
+      <div class="col-start-2 grid h-9 grid-cols-2 overflow-hidden rounded-xl border border-border bg-surface">
         <UiUnitInput
           :model-value="modelValue.page.base_font_size"
           unit="px"
@@ -127,7 +127,7 @@
           :value="String(modelValue.page.icon_default_stroke_width)"
           type="text"
           inputmode="numeric"
-          class="h-full min-w-0 border-l border-slate-100 bg-transparent px-1 text-center text-xs font-semibold tabular-nums text-slate-700 outline-none transition focus:bg-slate-50"
+          class="h-full min-w-0 border-l border-border-muted bg-transparent px-1 text-center text-xs font-semibold tabular-nums text-text-emphasis outline-none transition focus:bg-surface-hover"
           title="默认图标描边"
           @input="updateIntegerPageSpecField('icon_default_stroke_width', ($event.target as HTMLInputElement).value, 1, 64)"
           @blur="normalizeIntegerPageSpecField('icon_default_stroke_width', 2, 1, 64)"
@@ -136,7 +136,7 @@
     </div>
 
     <div class="space-y-1" :class="inline && simplified ? 'min-w-[164px] flex-[1_1_164px]' : ''">
-      <span class="block text-[11px] font-semibold text-slate-500">主题</span>
+      <span class="block text-[11px] font-semibold text-text-muted">主题</span>
       <div :class="inline ? (simplified ? 'w-full' : 'w-[164px]') : 'w-[180px] max-w-full'">
         <ThemeSelectorField
           :workspace-id="workspaceId ?? null"

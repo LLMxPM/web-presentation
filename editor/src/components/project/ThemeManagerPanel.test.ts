@@ -9,7 +9,7 @@ import ThemeManagerPanel from '@/components/project/ThemeManagerPanel.vue'
 
 const getWorkspaceMock = vi.fn()
 const listWorkspaceThemesMock = vi.fn()
-const listWorkspaceFontsMock = vi.fn()
+const listWorkspaceFontFamiliesMock = vi.fn()
 const routerPushMock = vi.fn()
 const clipboardWriteTextMock = vi.fn()
 
@@ -28,7 +28,7 @@ vi.mock('@/api/themes', () => ({
 }))
 
 vi.mock('@/api/assets', () => ({
-  listWorkspaceFonts: (...args: unknown[]) => listWorkspaceFontsMock(...args),
+  listWorkspaceFontFamilies: (...args: unknown[]) => listWorkspaceFontFamiliesMock(...args),
 }))
 
 vi.mock('@/utils/message', () => ({
@@ -67,8 +67,8 @@ describe('ThemeManagerPanel', () => {
       page: 1,
       page_size: 100,
     })
-    listWorkspaceFontsMock.mockResolvedValue({
-      items: [createFontItem()],
+    listWorkspaceFontFamiliesMock.mockResolvedValue({
+      items: [createFontFamilyItem()],
       total: 1,
       page: 1,
       page_size: 100,
@@ -144,9 +144,9 @@ function createThemeItem() {
     invert_logo_asset_id: null,
     project_icon_asset_id: null,
     project_icon_name: null,
-    heading_font_id: null,
-    body_font_id: null,
-    code_font_id: null,
+    heading_font_family_id: 10,
+    body_font_family_id: 10,
+    code_font_family_id: null,
     heading_font_label: 'Inter',
     body_font_label: 'Inter',
     code_font_label: 'monospace',
@@ -154,9 +154,9 @@ function createThemeItem() {
     logo_asset: null,
     invert_logo_asset: null,
     project_icon_asset: null,
-    heading_font: null,
-    body_font: null,
-    code_font: null,
+    heading_font_family: { id: 10, name: 'SourceHanSans' },
+    body_font_family: { id: 10, name: 'SourceHanSans' },
+    code_font_family: null,
     resolved_theme_config_yaml: '',
     created_at: '2026-05-01T10:00:00+08:00',
     updated_at: '2026-05-01T10:00:00+08:00',
@@ -168,6 +168,7 @@ function createThemeItem() {
 function createFontItem() {
   return {
     id: 1,
+    family_id: 10,
     workspace_id: 7,
     asset_id: 2,
     asset_name: 'SourceHanSans',
@@ -178,6 +179,17 @@ function createFontItem() {
     font_display: 'swap',
     status: 'active',
     asset_url: 'https://backend.example.com/public/assets/7/font-hash',
+    created_at: '2026-05-01T10:00:00+08:00',
+    updated_at: '2026-05-01T10:00:00+08:00',
+  }
+}
+
+function createFontFamilyItem() {
+  return {
+    id: 10,
+    workspace_id: 7,
+    name: 'SourceHanSans',
+    faces: [createFontItem()],
     created_at: '2026-05-01T10:00:00+08:00',
     updated_at: '2026-05-01T10:00:00+08:00',
   }

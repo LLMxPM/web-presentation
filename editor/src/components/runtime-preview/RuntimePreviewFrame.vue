@@ -10,8 +10,8 @@
     />
     <div v-else :class="props.emptyContentClass">
       <div class="space-y-3">
-        <p v-if="props.emptyTitle" class="text-base font-semibold text-slate-700">{{ props.emptyTitle }}</p>
-        <p v-if="props.emptyDescription" class="text-sm text-slate-500">{{ props.emptyDescription }}</p>
+        <p v-if="props.emptyTitle" class="text-base font-semibold text-text-emphasis">{{ props.emptyTitle }}</p>
+        <p v-if="props.emptyDescription" class="text-sm text-text-muted">{{ props.emptyDescription }}</p>
       </div>
     </div>
   </div>
@@ -40,8 +40,8 @@ const props = withDefaults(defineProps<Props>(), {
   viewport: null,
   minHeight: '',
   layout: 'aspect',
-  containerClass: 'overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm',
-  iframeClass: 'block h-full w-full bg-slate-50',
+  containerClass: 'overflow-hidden rounded-2xl border border-border bg-surface shadow-sm',
+  iframeClass: 'block h-full w-full bg-canvas',
   emptyContentClass: 'flex h-full items-center justify-center px-8 text-center',
   emptyTitle: '',
   emptyDescription: '',

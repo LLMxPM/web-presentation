@@ -1,24 +1,24 @@
 <!-- 文件功能：提供可嵌入的建议组件双栏选择面板，维护有序已选组件与工作空间已发布组件候选。 -->
 <template>
   <div v-if="workspaceId" class="grid h-full min-h-0 grid-rows-[minmax(220px,0.95fr)_minmax(0,1.05fr)] gap-2 overflow-hidden lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.2fr)] lg:grid-rows-1">
-    <section class="flex h-full min-h-0 flex-col rounded-lg border border-indigo-100 bg-indigo-50/40 p-3">
+    <section class="flex h-full min-h-0 flex-col rounded-lg border border-accent-muted bg-surface-selected/40 p-3">
       <div class="flex shrink-0 items-center justify-between gap-2">
         <div class="flex min-w-0 items-center gap-2">
-          <Layers class="h-4 w-4 shrink-0 text-indigo-600" />
-          <h4 class="truncate text-sm font-bold text-indigo-700">{{ selectedTitle }}</h4>
+          <Layers class="h-4 w-4 shrink-0 text-accent" />
+          <h4 class="truncate text-sm font-bold text-accent-hover">{{ selectedTitle }}</h4>
         </div>
-        <span class="rounded-full bg-white px-2 py-0.5 text-xs font-semibold text-indigo-600">
+        <span class="rounded-full bg-surface px-2 py-0.5 text-xs font-semibold text-accent">
           {{ selectedComponentIds.length }}
         </span>
       </div>
       <p
         v-if="unavailableSelectedComponents.length"
-        class="mt-3 rounded-md border border-rose-100 bg-white px-3 py-2 text-xs leading-5 text-rose-600"
+        class="mt-3 rounded-md border border-danger-border bg-surface px-3 py-2 text-xs leading-5 text-danger"
       >
         有 {{ unavailableSelectedComponents.length }} 个建议组件已不可用，请移除后保存。
       </p>
 
-      <div v-if="loading" class="flex min-h-0 flex-1 items-center justify-center text-sm font-semibold text-slate-400">
+      <div v-if="loading" class="flex min-h-0 flex-1 items-center justify-center text-sm font-semibold text-text-disabled">
         <RefreshCw class="mr-2 h-4 w-4 animate-spin" />
         正在加载
       </div>
@@ -27,19 +27,19 @@
           v-for="component in selectedComponentSummaries"
           :key="component.id"
           class="flex w-full min-w-0 items-center justify-between gap-2 rounded-md border px-3 py-2 text-left transition"
-          :class="isComponentUnavailable(component) ? 'border-rose-200 bg-rose-50/60 hover:border-rose-300' : 'border-indigo-200 bg-white hover:border-indigo-300'"
+          :class="isComponentUnavailable(component) ? 'border-danger-border bg-danger-muted/60 hover:border-danger-border' : 'border-accent-ring bg-surface hover:border-accent-border'"
         >
           <span class="min-w-0 text-left">
-            <span class="block truncate text-xs font-bold text-slate-800">{{ component.name }}</span>
-            <span class="mt-0.5 block truncate font-mono text-[11px] text-slate-400">{{ component.import_name }}</span>
-            <span v-if="isComponentUnavailable(component)" class="mt-1 block text-[11px] font-semibold leading-4 text-rose-600">
+            <span class="block truncate text-xs font-bold text-text">{{ component.name }}</span>
+            <span class="mt-0.5 block truncate font-mono text-[11px] text-text-disabled">{{ component.import_name }}</span>
+            <span v-if="isComponentUnavailable(component)" class="mt-1 block text-[11px] font-semibold leading-4 text-danger">
               {{ component.unavailable_reason || '组件已不可用，请移除后保存。' }}
             </span>
           </span>
           <span class="inline-flex shrink-0 items-center gap-1">
             <span
               class="rounded-full px-1.5 py-0.5 text-[10px] font-semibold"
-              :class="isComponentUnavailable(component) ? 'bg-rose-100 text-rose-600' : 'bg-indigo-50 text-indigo-600'"
+              :class="isComponentUnavailable(component) ? 'bg-danger-muted text-danger' : 'bg-surface-selected text-accent'"
             >
               {{ component.component_type }}
             </span>
@@ -54,10 +54,10 @@
           </span>
         </article>
       </div>
-      <p v-else class="mt-3 flex min-h-0 flex-1 items-center justify-center text-xs text-slate-400">{{ selectedEmptyText }}</p>
+      <p v-else class="mt-3 flex min-h-0 flex-1 items-center justify-center text-xs text-text-disabled">{{ selectedEmptyText }}</p>
     </section>
 
-    <section class="flex h-full min-h-0 flex-col rounded-lg border border-slate-200 bg-white p-3">
+    <section class="flex h-full min-h-0 flex-col rounded-lg border border-border bg-surface p-3">
       <div class="grid shrink-0 grid-cols-[minmax(0,1fr)_auto_auto] gap-2">
         <SimpleSearchBar
           :model-value="componentKeyword"
@@ -95,7 +95,7 @@
         :options="componentTypeOptions"
       />
 
-      <div v-if="componentOptionsLoading" class="mt-3 flex min-h-0 flex-1 items-center justify-center text-sm font-semibold text-slate-400">
+      <div v-if="componentOptionsLoading" class="mt-3 flex min-h-0 flex-1 items-center justify-center text-sm font-semibold text-text-disabled">
         <RefreshCw class="mr-2 h-4 w-4 animate-spin" />
         正在加载组件
       </div>
@@ -130,11 +130,11 @@
           </UiIconButton>
         </article>
       </div>
-      <p v-else class="mt-3 flex min-h-0 flex-1 items-center justify-center text-xs text-slate-400">没有匹配的已发布组件</p>
+      <p v-else class="mt-3 flex min-h-0 flex-1 items-center justify-center text-xs text-text-disabled">没有匹配的已发布组件</p>
     </section>
   </div>
 
-  <div v-else class="flex min-h-[180px] items-center justify-center text-center text-sm text-slate-400">
+  <div v-else class="flex min-h-[180px] items-center justify-center text-center text-sm text-text-disabled">
     {{ unavailableText }}
   </div>
 
@@ -394,30 +394,9 @@ function toComponentSummary(component: WorkspaceComponentItem): ComponentSummary
  */
 function componentOptionClass(componentId: number): string {
   if (isSelected(componentId)) {
-    return 'border-indigo-200 bg-indigo-50 text-indigo-700'
+    return 'border-accent-ring bg-surface-selected text-accent-hover'
   }
-  return 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50'
+  return 'border-border bg-surface text-text-secondary hover:border-border-strong hover:bg-surface-hover'
 }
 </script>
-
-<style scoped>
-.component-column-scroll {
-  scrollbar-width: thin;
-  scrollbar-color: rgb(203 213 225) transparent;
-}
-
-.component-column-scroll::-webkit-scrollbar {
-  height: 6px;
-  width: 6px;
-}
-
-.component-column-scroll::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.component-column-scroll::-webkit-scrollbar-thumb {
-  border-radius: 999px;
-  background: rgb(203 213 225);
-}
-</style>
 

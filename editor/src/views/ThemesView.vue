@@ -8,7 +8,7 @@
       description="集中维护工作空间主题、字体注册与字体文件。"
     >
       <template #actions>
-        <UiButton variant="secondary" :disabled="loadingThemes || loadingFonts || loadingFontAssets" @click="reloadAll">
+        <UiButton variant="secondary" :disabled="loadingThemes || loadingFonts" @click="reloadAll">
           <RefreshCw class="h-3.5 w-3.5" />
           刷新
         </UiButton>
@@ -16,12 +16,12 @@
     </PageHeader>
 
     <div class="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_380px] gap-2 overflow-hidden">
-      <section class="flex min-h-0 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-        <header class="flex shrink-0 items-center justify-between gap-4 border-b border-slate-100 px-5 py-4">
+      <section class="flex min-h-0 flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-sm">
+        <header class="flex shrink-0 items-center justify-between gap-4 border-b border-border-muted px-5 py-4">
           <div class="min-w-0">
             <div class="flex items-center gap-2">
-              <h2 class="text-base font-black text-slate-900">主题库</h2>
-              <span class="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-black text-slate-500">
+              <h2 class="text-base font-black text-text-strong">主题库</h2>
+              <span class="rounded-full bg-surface-muted px-2 py-0.5 text-[11px] font-black text-text-muted">
                 共 {{ themeTotal }} 个主题
               </span>
             </div>
@@ -32,7 +32,7 @@
           </UiButton>
         </header>
 
-        <div class="shrink-0 border-b border-slate-100 px-5 py-3">
+        <div class="shrink-0 border-b border-border-muted px-5 py-3">
           <SimpleSearchBar
             v-model="themeKeyword"
             placeholder="搜索主题名称、key"
@@ -51,7 +51,7 @@
               v-for="theme in themes"
               :key="theme.id"
               class="group cursor-pointer rounded-xl border p-3 transition-all hover:shadow-md"
-              :class="isDefaultTheme(theme) ? 'ring-2 ring-indigo-100' : ''"
+              :class="isDefaultTheme(theme) ? 'ring-2 ring-accent-muted' : ''"
               :style="getThemeCardStyle(theme)"
               @click="openThemeDetail(theme)"
             >
@@ -61,7 +61,7 @@
                     <h3 class="truncate text-base font-black" :style="{ color: theme.palette.text.primary }">{{ theme.name }}</h3>
                     <span
                       v-if="isDefaultTheme(theme)"
-                      class="shrink-0 rounded-full border border-indigo-100 bg-indigo-50 px-2 py-0.5 text-[10px] font-black text-indigo-600"
+                      class="shrink-0 rounded-full border border-accent-muted bg-surface-selected px-2 py-0.5 text-[10px] font-black text-accent"
                     >
                       默认
                     </span>
@@ -163,25 +163,22 @@
         />
       </section>
 
-      <aside class="flex min-h-0 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-        <header class="shrink-0 border-b border-slate-100 px-4 py-4">
+      <aside class="flex min-h-0 flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-sm">
+        <header class="shrink-0 border-b border-border-muted px-4 py-4">
           <div class="flex items-start justify-between gap-3">
             <div class="min-w-0">
               <div class="flex items-center gap-2">
-                <h2 class="text-base font-black text-slate-900">字体管理</h2>
-                <span class="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-black text-slate-500">
-                  注册 {{ fontTotal }} / 文件 {{ fontAssetTotal }}
+                <h2 class="text-base font-black text-text-strong">字体管理</h2>
+                <span class="rounded-full bg-surface-muted px-2 py-0.5 text-[11px] font-black text-text-muted">
+                  共 {{ fontFamilyTotal }} 个字体族
                 </span>
               </div>
+              <p class="mt-1 text-xs text-text-disabled">上传后自动注册并归入字体族，同族多字重会自动匹配。</p>
             </div>
             <div class="flex shrink-0 items-center gap-1">
-              <UiButton size="sm" variant="ghost" :disabled="!workspaceId || uploadingFontAsset" @click="triggerFontUpload">
+              <UiButton size="sm" :disabled="!workspaceId || uploadingFontAsset" @click="triggerFontUpload">
                 <Upload class="h-3.5 w-3.5" />
-                {{ uploadingFontAsset ? '上传中' : '上传' }}
-              </UiButton>
-              <UiButton size="sm" @click="openCreateFont">
-                <Plus class="h-3.5 w-3.5" />
-                注册
+                {{ uploadingFontAsset ? '上传中' : '上传字体' }}
               </UiButton>
               <input
                 ref="fontFileInput"
@@ -198,253 +195,147 @@
                 :accept="ASSET_UPLOAD_ACCEPT.font"
                 @change="handleFontReplaceFileChange"
               />
+              <input
+                ref="fontAddFileInput"
+                data-testid="font-add-file-input"
+                type="file"
+                class="hidden"
+                :accept="ASSET_UPLOAD_ACCEPT.font"
+                multiple
+                @change="handleAddFaceFileChange"
+              />
             </div>
           </div>
         </header>
 
-        <div class="shrink-0 border-b border-slate-100 bg-slate-50/70 px-4 py-3">
-          <div class="grid grid-cols-2 gap-1 rounded-xl bg-slate-100 p-1">
-            <UiButton
-              type="button"
-              variant="ghost"
-              size="sm"
-              class="rounded-lg py-2 text-xs font-black transition-all"
-              :class="fontPanelTab === 'registrations' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'"
-              @click="fontPanelTab = 'registrations'"
-            >
-              字体注册
-            </UiButton>
-            <UiButton
-              type="button"
-              variant="ghost"
-              size="sm"
-              class="rounded-lg py-2 text-xs font-black transition-all"
-              :class="fontPanelTab === 'files' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'"
-              @click="fontPanelTab = 'files'"
-            >
-              字体文件
-            </UiButton>
-          </div>
+        <div class="shrink-0 border-b border-border-muted bg-canvas/70 px-4 py-3">
+          <SimpleSearchBar v-model="fontKeyword" placeholder="搜索字体族名称" />
         </div>
 
-        <div
-          v-if="fontPanelTab === 'registrations'"
-          class="grid shrink-0 grid-cols-[minmax(0,1fr)_96px] gap-2 border-b border-slate-100 bg-slate-50/70 px-4 py-3"
-        >
-          <SimpleSearchBar v-model="fontKeyword" placeholder="搜索字体注册" />
-          <UiSelect :model-value="fontStatus || allStatusValue" :options="statusOptions" @update:model-value="updateFontStatus" />
-        </div>
+        <div class="min-h-0 flex-1 overflow-y-auto p-4">
+          <DataState
+            :state="fontDataState"
+            :title="fontDataState === 'empty' ? (fontKeyword ? '未找到相关字体族' : '暂无字体，上传字体文件即可使用') : undefined"
+          >
+            <div class="space-y-4">
+              <section v-if="pendingFontAssets.length" class="space-y-2">
+                <h3 class="text-xs font-black text-warning-strong">待注册字体文件</h3>
+                <article
+                  v-for="asset in pendingFontAssets"
+                  :key="`pending-${asset.id}`"
+                  class="group rounded-xl border border-warning-muted bg-surface p-3"
+                >
+                  <div class="flex items-center justify-between gap-3">
+                    <div class="min-w-0">
+                      <h4 class="truncate text-sm font-bold text-text">{{ asset.original_name }}</h4>
+                      <p class="mt-0.5 text-[11px] text-text-disabled">{{ formatFontFileSize(asset.file_size) }}</p>
+                    </div>
+                    <div class="flex shrink-0 gap-1 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
+                      <UiIconButton label="完成注册" size="sm" variant="ghost" @click="openPendingFontEditor(asset)">
+                        <Pencil class="h-3.5 w-3.5" />
+                      </UiIconButton>
+                      <UiIconButton label="删除字体文件" size="sm" variant="danger" @click="deletePendingFontAsset(asset)">
+                        <Trash2 class="h-3.5 w-3.5" />
+                      </UiIconButton>
+                    </div>
+                  </div>
+                </article>
+              </section>
 
-        <div
-          v-else
-          class="grid shrink-0 grid-cols-[minmax(0,1fr)_96px] gap-2 border-b border-slate-100 bg-slate-50/70 px-4 py-3"
-        >
-          <SimpleSearchBar v-model="fontAssetKeyword" placeholder="搜索字体文件" />
-          <UiSelect :model-value="fontAssetStatus || allStatusValue" :options="statusOptions" @update:model-value="updateFontAssetStatus" />
-        </div>
-
-        <template v-if="fontPanelTab === 'registrations'">
-          <div v-if="loadingFonts" class="flex flex-1 items-center justify-center text-sm font-semibold text-slate-400">
-            正在加载字体注册...
-          </div>
-          <div v-else class="min-h-0 flex-1 overflow-y-auto p-4">
-            <div
-              v-if="fonts.length === 0"
-              class="flex min-h-[140px] flex-col items-center justify-center rounded-xl border-2 border-dashed border-slate-100 bg-slate-50 text-center"
-            >
-              <Type class="mb-3 h-10 w-10 text-slate-300" />
-              <p class="text-sm font-semibold text-slate-500">{{ fontKeyword ? '未找到相关字体注册' : '暂无字体注册' }}</p>
-            </div>
-
-            <div v-else class="space-y-3">
               <article
-                v-for="font in fonts"
-                :key="font.id"
-                class="rounded-xl border border-slate-200 bg-white p-3 transition-colors hover:border-indigo-200"
+                v-for="family in fontFamilies"
+                :key="family.id"
+                class="group/family rounded-xl border border-border bg-surface p-3 transition-colors hover:border-accent-ring"
               >
                 <div class="flex items-start justify-between gap-3">
-                  <div class="min-w-0">
-                    <h3 class="truncate text-sm font-black text-slate-800">{{ font.font_family }}</h3>
-                    <p class="mt-0.5 truncate font-mono text-[11px] text-slate-400">{{ font.asset_name }}</p>
+                  <div class="min-w-0 flex-1">
+                    <div v-if="renamingFamilyId === family.id" class="flex items-center gap-1.5">
+                      <UiInput
+                        v-model="renameFamilyValue"
+                        class="h-8"
+                        placeholder="字体族名称"
+                        @keyup.enter="confirmRenameFamily(family)"
+                      />
+                      <UiIconButton label="保存" size="sm" variant="ghost" :disabled="savingFamily" @click="confirmRenameFamily(family)">
+                        <Check class="h-3.5 w-3.5" />
+                      </UiIconButton>
+                      <UiIconButton label="取消" size="sm" variant="ghost" @click="cancelRenameFamily">
+                        <X class="h-3.5 w-3.5" />
+                      </UiIconButton>
+                    </div>
+                    <div v-else class="flex items-center gap-1.5">
+                      <h3 class="truncate text-sm font-black text-text">{{ family.name }}</h3>
+                      <span class="shrink-0 rounded-full bg-surface-muted px-1.5 py-0.5 text-[10px] font-bold text-text-muted">
+                        {{ family.faces.length }} 个文件
+                      </span>
+                      <UiIconButton
+                        label="重命名字体族"
+                        size="sm"
+                        variant="ghost"
+                        class="opacity-0 transition-opacity focus-visible:opacity-100 group-hover/family:opacity-100"
+                        @click="startRenameFamily(family)"
+                      >
+                        <Pencil class="h-3 w-3" />
+                      </UiIconButton>
+                    </div>
                   </div>
-                  <span
-                    class="shrink-0 rounded-full px-2 py-0.5 text-[10px] font-black"
-                    :class="font.status === 'active' ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'"
-                  >
-                    {{ font.status === 'active' ? '启用' : '归档' }}
-                  </span>
-                </div>
-
-                <div class="mt-3 rounded-lg bg-slate-50 p-3 text-slate-800" :style="{ fontFamily: `'theme-font-preview-${font.id}'` }">
-                  <div class="text-2xl">AaBb 0123</div>
-                  <div class="mt-1 text-sm text-slate-500">字体效果预览</div>
-                </div>
-
-                <div class="mt-3 flex items-center justify-between gap-3">
-                  <span class="truncate text-[11px] font-semibold text-slate-500">
-                    {{ font.font_format }} / {{ font.font_weight }} / {{ font.font_style }}
-                  </span>
-                  <div class="flex gap-1">
-                    <UiIconButton
-                      label="编辑"
-                      size="sm"
-                      variant="ghost"
-                      @click="openEditFont(font)"
-                    >
-                      <Pencil class="h-3.5 w-3.5" />
-                    </UiIconButton>
-                    <UiIconButton
-                      label="删除注册和字体文件"
-                      size="sm"
-                      variant="danger"
-                      @click="deleteFont(font)"
-                    >
-                      <Trash2 class="h-3.5 w-3.5" />
-                    </UiIconButton>
-                  </div>
-                </div>
-              </article>
-            </div>
-          </div>
-
-          <PaginationControl
-            compact
-            :page="fontPage"
-            :page-size="fontPageSize"
-            :total="fontTotal"
-            :page-size-options="[10, 20, 50, 100]"
-            @update:page="fontPage = $event"
-            @update:page-size="handleFontPageSizeChange"
-          />
-        </template>
-
-        <template v-else>
-          <div v-if="loadingFontAssets" class="flex flex-1 items-center justify-center text-sm font-semibold text-slate-400">
-            正在加载字体文件...
-          </div>
-          <div v-else class="min-h-0 flex-1 overflow-y-auto p-4">
-            <div
-              v-if="fontAssets.length === 0"
-              class="flex min-h-[140px] flex-col items-center justify-center rounded-xl border-2 border-dashed border-slate-100 bg-slate-50 text-center"
-            >
-              <Type class="mb-3 h-10 w-10 text-slate-300" />
-              <p class="text-sm font-semibold text-slate-500">{{ fontAssetKeyword ? '未找到相关字体文件' : '暂无字体文件' }}</p>
-            </div>
-
-            <div v-else class="space-y-3">
-              <article
-                v-for="asset in fontAssets"
-                :key="asset.id"
-                class="rounded-xl border border-slate-200 bg-white p-3 transition-colors hover:border-indigo-200"
-              >
-                <div class="flex items-start justify-between gap-3">
-                  <div class="min-w-0">
-                    <h3 class="truncate text-sm font-black text-slate-800">{{ asset.original_name }}</h3>
-                    <p class="mt-0.5 truncate font-mono text-[11px] text-slate-400">{{ asset.name }}</p>
-                  </div>
-                  <div class="flex shrink-0 flex-col items-end gap-1">
-                    <span
-                      class="rounded-full px-2 py-0.5 text-[10px] font-black"
-                      :class="asset.status === 'active' ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'"
-                    >
-                      {{ asset.status === 'active' ? '启用' : '归档' }}
-                    </span>
-                    <span
-                      class="rounded-full px-2 py-0.5 text-[10px] font-black"
-                      :class="asset.font_config ? 'bg-indigo-50 text-indigo-700' : 'bg-amber-50 text-amber-700'"
-                    >
-                      {{ asset.font_config ? '已注册' : '未注册' }}
-                    </span>
-                  </div>
-                </div>
-
-                <div class="mt-3 rounded-lg bg-slate-50 p-3 text-xs text-slate-500">
-                  <p v-if="asset.font_config" class="truncate font-bold text-slate-700">font-family：{{ asset.font_config.font_family }}</p>
-                  <p v-else class="font-bold text-amber-700">未注册为主题可选字体</p>
-                  <p class="mt-1 truncate">大小 {{ Math.max(1, Math.ceil(asset.file_size / 1024)) }} KB</p>
-                  <p v-if="asset.archive_reason" class="mt-1 truncate">归档原因：{{ asset.archive_reason }}</p>
-                </div>
-
-                <div class="mt-3 flex items-center justify-end gap-1">
                   <UiIconButton
-                    v-if="asset.font_config"
-                    label="编辑字体注册"
+                    label="添加字体文件"
                     size="sm"
                     variant="ghost"
-                    @click="openEditFontFromAsset(asset)"
-                  >
-                    <Pencil class="h-3.5 w-3.5" />
-                  </UiIconButton>
-                  <UiIconButton
-                    v-else-if="asset.status === 'active'"
-                    label="注册字体"
-                    size="sm"
-                    variant="ghost"
-                    @click="openCreateFontForAsset(asset)"
+                    class="shrink-0 opacity-0 transition-opacity focus-visible:opacity-100 group-hover/family:opacity-100"
+                    :disabled="uploadingFontAsset"
+                    @click="triggerAddFaceToFamily(family)"
                   >
                     <Plus class="h-3.5 w-3.5" />
                   </UiIconButton>
-                  <UiIconButton
-                    v-if="asset.status === 'active'"
-                    label="替换字体文件"
-                    size="sm"
-                    variant="ghost"
-                    @click="triggerReplaceFontAsset(asset)"
+                </div>
+
+                <div class="mt-3 space-y-2">
+                  <div
+                    v-for="face in family.faces"
+                    :key="face.id"
+                    class="group/face rounded-lg border border-border-muted bg-canvas/60 p-2.5"
                   >
-                    <RefreshCw class="h-3.5 w-3.5" />
-                  </UiIconButton>
-                  <UiIconButton
-                    v-if="!asset.font_config && asset.status === 'active'"
-                    label="删除字体文件"
-                    size="sm"
-                    variant="danger"
-                    @click="deleteFontAsset(asset)"
-                  >
-                    <Trash2 class="h-3.5 w-3.5" />
-                  </UiIconButton>
-                  <UiIconButton
-                    v-if="!asset.font_config && asset.status === 'archived'"
-                    label="恢复字体文件"
-                    size="sm"
-                    variant="ghost"
-                    @click="restoreFontAsset(asset)"
-                  >
-                    <RotateCcw class="h-3.5 w-3.5" />
-                  </UiIconButton>
-                  <UiIconButton
-                    v-if="!asset.font_config && asset.status === 'archived'"
-                    label="删除字体文件"
-                    size="sm"
-                    variant="danger"
-                    @click="deleteFontAsset(asset)"
-                  >
-                    <Trash2 class="h-3.5 w-3.5" />
-                  </UiIconButton>
-                  <UiIconButton
-                    v-if="asset.font_config"
-                    label="已注册字体文件需要先删除字体注册"
-                    size="sm"
-                    variant="danger"
-                    class="opacity-50"
-                    disabled
-                  >
-                    <Trash2 class="h-3.5 w-3.5" />
-                  </UiIconButton>
+                    <div class="flex items-center justify-between gap-2">
+                      <div class="min-w-0">
+                        <p class="truncate font-mono text-[11px] text-text">{{ face.asset_name }}</p>
+                        <p class="mt-0.5 text-[11px] font-semibold text-text-muted">
+                          {{ face.font_format }} · {{ face.font_weight }} · {{ face.font_style }}
+                          <span v-if="face.status !== 'active'" class="text-text-disabled">· 已停用</span>
+                        </p>
+                      </div>
+                      <div class="flex shrink-0 gap-1 opacity-0 transition-opacity focus-within:opacity-100 group-hover/face:opacity-100">
+                        <UiIconButton label="编辑字体" size="sm" variant="ghost" @click="openFaceEditor(face)">
+                          <Pencil class="h-3.5 w-3.5" />
+                        </UiIconButton>
+                        <UiIconButton label="替换字体文件" size="sm" variant="ghost" @click="triggerReplaceFace(face)">
+                          <RefreshCw class="h-3.5 w-3.5" />
+                        </UiIconButton>
+                        <UiIconButton label="删除字体" size="sm" variant="danger" @click="deleteFace(family, face)">
+                          <Trash2 class="h-3.5 w-3.5" />
+                        </UiIconButton>
+                      </div>
+                    </div>
+                    <div class="mt-2 rounded-md bg-canvas p-2 text-text" :style="getFacePreviewStyle(face)">
+                      <div class="text-lg">永字八法 AaBbGg 0123</div>
+                    </div>
+                  </div>
                 </div>
               </article>
             </div>
-          </div>
+          </DataState>
+        </div>
 
-          <PaginationControl
-            compact
-            :page="fontAssetPage"
-            :page-size="fontAssetPageSize"
-            :total="fontAssetTotal"
-            :page-size-options="[10, 20, 50, 100]"
-            @update:page="fontAssetPage = $event"
-            @update:page-size="handleFontAssetPageSizeChange"
-          />
-        </template>
+        <PaginationControl
+          compact
+          :page="fontFamilyPage"
+          :page-size="fontFamilyPageSize"
+          :total="fontFamilyTotal"
+          :page-size-options="[10, 20, 50, 100]"
+          @update:page="fontFamilyPage = $event"
+          @update:page-size="handleFontFamilyPageSizeChange"
+        />
       </aside>
     </div>
 
@@ -466,9 +357,9 @@
 
     <FontEditorDialog
       v-model="fontEditorVisible"
-      :editing-font="editingFont"
-      :font-assets="fontAssetsForRegistration"
-      :initial-asset="fontEditorInitialAsset"
+      :editing-font="editorFont"
+      :asset="editorAsset"
+      :preset-family-name="editorPresetFamilyName"
       :saving="savingFont"
       @save="saveFont"
     />
@@ -479,17 +370,17 @@
 import { computed, ref, watch, type CSSProperties } from 'vue'
 import { useRoute } from 'vue-router'
 import {
+  Check,
   ChevronRight,
   Copy,
   Pencil,
   Pin,
   Plus,
   RefreshCw,
-  RotateCcw,
   SwatchBook,
   Trash2,
-  Type,
   Upload,
+  X,
 } from '@lucide/vue'
 
 import {
@@ -497,9 +388,9 @@ import {
   deleteWorkspaceFontAsset,
   deleteWorkspaceFont,
   listWorkspaceAssets,
-  listWorkspaceFonts,
+  listWorkspaceFontFamilies,
+  renameWorkspaceFontFamily,
   replaceWorkspaceAssetFile,
-  restoreWorkspaceAsset,
   updateWorkspaceFont,
   uploadWorkspaceAsset,
 } from '@/api/assets'
@@ -514,9 +405,10 @@ import { ASSET_UPLOAD_ACCEPT, getAcceptedAssetExtensionText, isAcceptedAssetFile
 import FontEditorDialog from '@/components/theme/FontEditorDialog.vue'
 import ThemeDetailDialog from '@/components/theme/ThemeDetailDialog.vue'
 import ThemeEditorDialog from '@/components/theme/ThemeEditorDialog.vue'
-import { UiButton, UiIconButton, UiSelect } from '@/components/ui'
+import { UiButton, UiIconButton, UiInput } from '@/components/ui'
 import PaginationControl from '@/components/ui/PaginationControl.vue'
-import type { AssetResponse, RecordStatus, WorkspaceFontConfigItem, WorkspaceItem, WorkspaceThemeItem } from '@/types/api'
+import type { AssetResponse, WorkspaceFontConfigItem, WorkspaceFontConfigSummary, WorkspaceFontFamilyItem, WorkspaceItem, WorkspaceThemeItem } from '@/types/api'
+import { buildDefaultFontRegistration, inferFontFormat } from '@/utils/font-registration'
 import { createConfirm, Message } from '@/utils/message'
 
 const route = useRoute()
@@ -524,81 +416,50 @@ const workspaceId = computed(() => Number.parseInt(route.params.workspaceId as s
 
 const workspace = ref<WorkspaceItem | null>(null)
 const themes = ref<WorkspaceThemeItem[]>([])
-const fonts = ref<WorkspaceFontConfigItem[]>([])
-const fontAssets = ref<AssetResponse[]>([])
+const fontFamilies = ref<WorkspaceFontFamilyItem[]>([])
+const pendingFontAssets = ref<AssetResponse[]>([])
 const themeTotal = ref(0)
-const fontTotal = ref(0)
-const fontAssetTotal = ref(0)
+const fontFamilyTotal = ref(0)
 const themePage = ref(1)
 const themePageSize = ref(10)
-const fontPage = ref(1)
-const fontPageSize = ref(10)
-const fontAssetPage = ref(1)
-const fontAssetPageSize = ref(10)
+const fontFamilyPage = ref(1)
+const fontFamilyPageSize = ref(10)
 const themeKeyword = ref('')
 const themeDataState = computed<'loading' | 'empty' | 'ready'>(() => (
   loadingThemes.value ? 'loading' : themes.value.length ? 'ready' : 'empty'
 ))
 const fontKeyword = ref('')
-const fontStatus = ref<RecordStatus | ''>('')
-const fontAssetKeyword = ref('')
-const fontAssetStatus = ref<RecordStatus | ''>('')
-const allStatusValue = '__all__'
-const statusOptions = [
-  { value: allStatusValue, label: '全部' },
-  { value: 'active', label: '启用' },
-  { value: 'archived', label: '归档' },
-]
-
-/** 将统一选择器的“全部”哨兵值还原为 API 使用的空筛选。 */
-function resolveStatusFilter(value: unknown): RecordStatus | '' {
-  return value === 'active' || value === 'archived' ? value : ''
-}
-
-/** 更新字体注册状态筛选。 */
-function updateFontStatus(value: unknown): void {
-  fontStatus.value = resolveStatusFilter(value)
-}
-
-/** 更新字体文件状态筛选。 */
-function updateFontAssetStatus(value: unknown): void {
-  fontAssetStatus.value = resolveStatusFilter(value)
-}
+const fontDataState = computed<'loading' | 'empty' | 'ready'>(() => (
+  loadingFonts.value ? 'loading' : (fontFamilies.value.length || pendingFontAssets.value.length) ? 'ready' : 'empty'
+))
 const loadingThemes = ref(false)
 const loadingFonts = ref(false)
-const loadingFontAssets = ref(false)
 const uploadingFontAsset = ref(false)
 const savingTheme = ref(false)
 const savingFont = ref(false)
-const replacingFontAsset = ref<AssetResponse | null>(null)
-const fontPanelTab = ref<'registrations' | 'files'>('registrations')
+const savingFamily = ref(false)
+const renamingFamilyId = ref<number | null>(null)
+const renameFamilyValue = ref('')
+const replacingFontTarget = ref<WorkspaceFontConfigItem | null>(null)
 const themeDetailVisible = ref(false)
 const detailThemeId = ref<number | null>(null)
 const themeEditorVisible = ref(false)
 const fontEditorVisible = ref(false)
 const editingTheme = ref<WorkspaceThemeItem | null>(null)
-const editingFont = ref<WorkspaceFontConfigItem | null>(null)
-const fontEditorInitialAsset = ref<AssetResponse | null>(null)
+const editorAsset = ref<AssetResponse | null>(null)
+const editorFont = ref<WorkspaceFontConfigSummary | null>(null)
+const editorPresetFamilyName = ref<string | null>(null)
 const fontFileInput = ref<HTMLInputElement | null>(null)
 const fontReplaceFileInput = ref<HTMLInputElement | null>(null)
-
-const fontAssetsForRegistration = computed(() => {
-  const items = fontAssets.value.filter(asset => asset.status === 'active' && !asset.font_config)
-  const initialAsset = fontEditorInitialAsset.value
-  if (initialAsset && initialAsset.status === 'active' && !initialAsset.font_config && !items.some(asset => asset.id === initialAsset.id)) {
-    return [initialAsset, ...items]
-  }
-  return items
-})
+const fontAddFileInput = ref<HTMLInputElement | null>(null)
+const addFaceFamilyTarget = ref<WorkspaceFontFamilyItem | null>(null)
 
 interface FontEditorSavePayload {
-  asset_id: number
-  font_family: string
+  family_name: string
   font_format: string
   font_weight: string
   font_style: string
   font_display: string
-  status: RecordStatus
 }
 
 const workspaceTitle = computed(() => {
@@ -614,38 +475,31 @@ watch([themePage, themePageSize, themeKeyword], () => {
   void loadThemes()
 })
 
-watch([fontPage, fontPageSize, fontKeyword, fontStatus], () => {
+watch([fontFamilyPage, fontFamilyPageSize, fontKeyword], () => {
   void loadFonts()
-})
-
-watch([fontAssetPage, fontAssetPageSize, fontAssetKeyword, fontAssetStatus], () => {
-  void loadFontAssets()
 })
 
 watch(themeKeyword, () => {
   themePage.value = 1
 })
 
-watch([fontKeyword, fontStatus], () => {
-  fontPage.value = 1
+watch(fontKeyword, () => {
+  fontFamilyPage.value = 1
 })
 
-watch([fontAssetKeyword, fontAssetStatus], () => {
-  fontAssetPage.value = 1
-})
-
-watch(fonts, (items) => {
+watch([fontFamilies, pendingFontAssets], () => {
   let styleTag = document.getElementById('theme-font-preview')
   if (!styleTag) {
     styleTag = document.createElement('style')
     styleTag.id = 'theme-font-preview'
     document.head.appendChild(styleTag)
   }
-  styleTag.innerHTML = items
-    .filter(font => font.asset_url)
-    .map(font => `@font-face { font-family: 'theme-font-preview-${font.id}'; src: url('${font.asset_url}'); font-display: swap; }`)
-    .join('\n')
-})
+  const faceRules = fontFamilies.value
+    .flatMap(family => family.faces)
+    .filter(face => face.asset_url)
+    .map(face => `@font-face { font-family: 'theme-font-preview-${face.asset_id}'; src: url('${encodeURI(face.asset_url as string)}'); font-weight: ${face.font_weight}; font-style: ${face.font_style}; font-display: swap; }`)
+  styleTag.textContent = faceRules.join('\n')
+}, { deep: true })
 
 async function reloadAll(): Promise<void> {
   if (!Number.isFinite(workspaceId.value)) return
@@ -654,7 +508,7 @@ async function reloadAll(): Promise<void> {
   } catch (error) {
     Message.error(getErrorMessage(error, '加载工作空间失败。'))
   }
-  await Promise.all([loadThemes(), loadFonts(), loadFontAssets()])
+  await Promise.all([loadThemes(), loadFonts()])
 }
 
 async function loadThemes(): Promise<void> {
@@ -676,53 +530,50 @@ async function loadThemes(): Promise<void> {
 }
 
 async function loadFonts(): Promise<void> {
+  await Promise.all([loadFontFamilies(), loadPendingFontAssets()])
+}
+
+async function loadFontFamilies(): Promise<void> {
   if (!Number.isFinite(workspaceId.value)) return
   loadingFonts.value = true
   try {
-    const response = await listWorkspaceFonts(workspaceId.value, {
-      page: fontPage.value,
-      page_size: fontPageSize.value,
+    const response = await listWorkspaceFontFamilies(workspaceId.value, {
+      page: fontFamilyPage.value,
+      page_size: fontFamilyPageSize.value,
       keyword: fontKeyword.value.trim() || undefined,
-      status: fontStatus.value || undefined,
     })
-    fonts.value = response.items
-    fontTotal.value = response.total
+    fontFamilies.value = response.items
+    fontFamilyTotal.value = response.total
   } catch (error) {
-    Message.error(getErrorMessage(error, '加载字体注册失败。'))
+    fontFamilies.value = []
+    fontFamilyTotal.value = 0
+    Message.error(getErrorMessage(error, '加载字体族失败。'))
   } finally {
     loadingFonts.value = false
   }
 }
 
-async function loadFontAssets(): Promise<void> {
+async function loadPendingFontAssets(): Promise<void> {
   if (!Number.isFinite(workspaceId.value)) return
-  loadingFontAssets.value = true
   try {
     const response = await listWorkspaceAssets(workspaceId.value, {
       assetType: 'font',
-      page: fontAssetPage.value,
-      page_size: fontAssetPageSize.value,
-      keyword: fontAssetKeyword.value.trim() || undefined,
-      status: fontAssetStatus.value || undefined,
+      page: 1,
+      page_size: 100,
       sort_by: 'updated_at',
       sort_order: 'desc',
     })
-    fontAssets.value = response.items
-    fontAssetTotal.value = response.total
-  } catch (error) {
-    fontAssets.value = []
-    fontAssetTotal.value = 0
-    Message.error(getErrorMessage(error, '加载字体文件失败。'))
-  } finally {
-    loadingFontAssets.value = false
+    pendingFontAssets.value = response.items.filter(asset => !asset.font_config)
+  } catch {
+    pendingFontAssets.value = []
   }
 }
 
-async function loadFontAssetsWithPageFallback(): Promise<void> {
-  const currentPage = fontAssetPage.value
-  await loadFontAssets()
-  if (fontAssets.value.length === 0 && currentPage > 1) {
-    fontAssetPage.value = currentPage - 1
+async function loadFontsWithPageFallback(): Promise<void> {
+  const currentPage = fontFamilyPage.value
+  await loadFonts()
+  if (fontFamilies.value.length === 0 && currentPage > 1) {
+    fontFamilyPage.value = currentPage - 1
   }
 }
 
@@ -733,40 +584,95 @@ function triggerFontUpload(): void {
 
 async function handleFontFileChange(event: Event): Promise<void> {
   const target = event.target as HTMLInputElement
+  await processFontFilesSelection(target, null)
+}
+
+/**
+ * 处理字体文件选择：上传并自动注册；指定目标字体族时强制归入该族，否则按文件名推断。
+ * @param target 触发选择的文件输入框
+ * @param targetFamily 目标字体族；为空时走通用上传入口的推断归组
+ */
+async function processFontFilesSelection(target: HTMLInputElement, targetFamily: WorkspaceFontFamilyItem | null): Promise<void> {
   if (!target.files || target.files.length === 0 || !Number.isFinite(workspaceId.value)) return
 
   const files = Array.from(target.files)
+  const invalidFiles = files.filter(file => !isAcceptedAssetFile(file, 'font'))
+  if (invalidFiles.length > 0) {
+    Message.error(`字体文件仅支持 ${getAcceptedAssetExtensionText('font')}，已跳过：${invalidFiles.map(file => file.name).join('、')}`)
+  }
+  const validFiles = files.filter(file => isAcceptedAssetFile(file, 'font'))
+  if (validFiles.length === 0) {
+    target.value = ''
+    return
+  }
+
   uploadingFontAsset.value = true
-  let successCount = 0
-  let firstUploadedAsset: AssetResponse | null = null
-  let firstError = ''
+  let uploadedCount = 0
+  let registeredCount = 0
+  let firstPendingAsset: AssetResponse | null = null
+  const failures: string[] = []
 
   try {
-    for (const file of files) {
+    for (const file of validFiles) {
+      let uploaded: AssetResponse | null = null
       try {
-        const uploaded = await uploadFontAssetWithOverwriteConfirm(file)
-        if (uploaded) {
-          successCount += 1
-          firstUploadedAsset ??= uploaded
-        }
+        uploaded = await uploadFontAssetWithOverwriteConfirm(file)
       } catch (error) {
-        firstError ||= getErrorMessage(error, '上传字体文件失败。')
+        failures.push(`${file.name}：${getErrorMessage(error, '上传失败。')}`)
+        continue
+      }
+      if (!uploaded) continue
+      uploadedCount += 1
+      if (uploaded.font_config) {
+        // 覆盖了已注册字体：指定目标族且不在该族时，把 face 移动到目标族。
+        if (targetFamily && uploaded.font_config.family_id !== targetFamily.id) {
+          try {
+            await updateWorkspaceFont(workspaceId.value, uploaded.font_config.id, { family_name: targetFamily.name })
+            registeredCount += 1
+          } catch (error) {
+            failures.push(`${file.name}：${getErrorMessage(error, '移入字体族失败。')}`)
+          }
+        } else {
+          registeredCount += 1
+        }
+        continue
+      }
+      try {
+        const registration = buildDefaultFontRegistration(uploaded.original_name)
+        if (targetFamily) {
+          registration.family_name = targetFamily.name
+        }
+        await createWorkspaceFont(workspaceId.value, {
+          asset_id: uploaded.id,
+          ...registration,
+          status: 'active',
+        })
+        registeredCount += 1
+      } catch (error) {
+        firstPendingAsset ??= uploaded
+        failures.push(`${file.name}：${getErrorMessage(error, '自动注册失败。')}`)
       }
     }
 
-    if (successCount > 0) {
-      Message.success(files.length === 1 ? '字体文件已上传。' : `已上传 ${successCount} 个字体文件。`)
-      fontPanelTab.value = 'files'
-      fontAssetKeyword.value = ''
-      fontAssetStatus.value = ''
-      fontAssetPage.value = 1
-      await loadFontAssets()
-      if (firstUploadedAsset && files.length === 1) {
-        openCreateFontForAsset(firstUploadedAsset)
+    if (uploadedCount > 0) {
+      Message.success(
+        targetFamily
+          ? `已向字体族 "${targetFamily.name}" 添加 ${registeredCount} 个字体文件。`
+          : uploadedCount === 1 && registeredCount === 1
+            ? '字体已上传并自动注册，可直接在主题中选用。'
+            : `已上传 ${uploadedCount} 个字体，自动注册 ${registeredCount} 个。`,
+      )
+      if (!targetFamily) {
+        fontKeyword.value = ''
+        fontFamilyPage.value = 1
       }
+      await Promise.all([loadFonts(), loadThemes()])
     }
-    if (firstError) {
-      Message.error(successCount > 0 ? `部分字体上传失败：${firstError}` : firstError)
+    if (failures.length > 0) {
+      Message.error(failures.join('；'))
+    }
+    if (firstPendingAsset) {
+      openPendingFontEditor(firstPendingAsset, targetFamily?.name ?? null)
     }
   } finally {
     uploadingFontAsset.value = false
@@ -784,13 +690,35 @@ async function uploadFontAssetWithOverwriteConfirm(file: File): Promise<AssetRes
 
     const conflictMessage = getErrorMessage(error, `文件 "${file.name}" 已存在，请确认是否覆盖。`)
     const confirmed = await createConfirm(
-      `${conflictMessage} 覆盖后主题和预览中引用该资源 name 的位置会指向新文件，确认覆盖吗？`,
-      '覆盖同名字体资源',
+      `${conflictMessage} 覆盖后引用该字体的主题和页面会改用新文件，确认覆盖吗？`,
+      '覆盖同名字体',
     )
     if (!confirmed) return null
 
     return await uploadWorkspaceAsset(workspaceId.value, file, 'font', [], undefined, undefined, true)
   }
+}
+
+/**
+ * 触发向指定字体族添加字体文件的选择器。
+ * @param family 目标字体族
+ */
+function triggerAddFaceToFamily(family: WorkspaceFontFamilyItem): void {
+  if (!Number.isFinite(workspaceId.value) || uploadingFontAsset.value) return
+  addFaceFamilyTarget.value = family
+  fontAddFileInput.value?.click()
+}
+
+/** 处理“向字体族添加文件”的选择结果，上传后强制注册到目标族。 */
+async function handleAddFaceFileChange(event: Event): Promise<void> {
+  const target = event.target as HTMLInputElement
+  const family = addFaceFamilyTarget.value
+  addFaceFamilyTarget.value = null
+  if (!family) {
+    target.value = ''
+    return
+  }
+  await processFontFilesSelection(target, family)
 }
 
 function openCreateTheme(): void {
@@ -820,7 +748,7 @@ async function saveTheme(payload: WorkspaceThemePayload): Promise<void> {
       Message.success('主题已创建。')
     }
     themeEditorVisible.value = false
-    await Promise.all([loadThemes(), loadFonts(), loadWorkspaceOnly()])
+    await Promise.all([loadThemes(), loadWorkspaceOnly()])
   } catch (error) {
     Message.error(getErrorMessage(error, '保存主题失败。'))
   } finally {
@@ -871,164 +799,197 @@ async function loadWorkspaceOnly(): Promise<void> {
   workspace.value = await getWorkspace(workspaceId.value)
 }
 
-function openCreateFont(): void {
-  editingFont.value = null
-  fontEditorInitialAsset.value = fontAssetsForRegistration.value[0] ?? null
-  if (!fontEditorInitialAsset.value) {
-    fontPanelTab.value = 'files'
-    Message.info('请先上传或选择一个未注册的字体文件。')
-    return
-  }
+/**
+ * 打开待注册字体文件的补全注册弹窗。
+ * @param asset 尚未生成 face 记录的字体资源
+ * @param presetFamilyName 预置字体族名；从族内添加入口打开时覆盖文件名推断
+ */
+function openPendingFontEditor(asset: AssetResponse, presetFamilyName: string | null = null): void {
+  editorFont.value = null
+  editorAsset.value = asset
+  editorPresetFamilyName.value = presetFamilyName
   fontEditorVisible.value = true
 }
 
-function openCreateFontForAsset(asset: AssetResponse): void {
-  if (asset.font_config) {
-    Message.warning('该字体文件已注册，请直接编辑字体注册。')
-    return
-  }
-  if (asset.status !== 'active') {
-    Message.warning('归档字体文件需要先恢复后再注册。')
-    return
-  }
-  editingFont.value = null
-  fontEditorInitialAsset.value = asset
+/**
+ * 打开已注册 face 的编辑弹窗，用 face 字段合成弹窗预览所需的最小资源对象。
+ * @param face 字体族下的某个 face 记录
+ */
+function openFaceEditor(face: WorkspaceFontConfigItem): void {
+  editorFont.value = face
+  editorAsset.value = faceToAsset(face)
+  editorPresetFamilyName.value = null
   fontEditorVisible.value = true
 }
 
-function openEditFont(font: WorkspaceFontConfigItem): void {
-  editingFont.value = font
-  fontEditorInitialAsset.value = null
-  fontEditorVisible.value = true
+/**
+ * 将 face 记录转换为字体编辑弹窗所需的最小资源对象，仅承载预览与描述字段。
+ * @param face 字体族下的某个 face 记录
+ */
+function faceToAsset(face: WorkspaceFontConfigItem): AssetResponse {
+  return {
+    id: face.asset_id,
+    original_name: face.asset_name,
+    url: face.asset_url,
+  } as AssetResponse
 }
 
+/**
+ * 保存字体声明；编辑已有 face 时更新并恢复启用，待注册文件则新建 face。
+ */
 async function saveFont(payload: FontEditorSavePayload): Promise<void> {
-  if (!Number.isFinite(workspaceId.value)) return
-  if (!editingFont.value && !payload.asset_id) {
-    Message.error('请选择字体资源。')
-    return
-  }
-  if (!payload.font_family.trim()) {
-    Message.error('请填写 font-family。')
-    return
-  }
+  const face = editorFont.value
+  const asset = editorAsset.value
+  if (!Number.isFinite(workspaceId.value) || !asset) return
   savingFont.value = true
   try {
-    if (editingFont.value) {
-      await updateWorkspaceFont(workspaceId.value, editingFont.value.id, {
-        font_family: payload.font_family.trim(),
-        font_format: payload.font_format,
-        font_weight: payload.font_weight.trim(),
-        font_style: payload.font_style,
-        font_display: payload.font_display,
-        status: payload.status,
+    if (face) {
+      await updateWorkspaceFont(workspaceId.value, face.id, {
+        ...payload,
+        status: 'active',
       })
     } else {
       await createWorkspaceFont(workspaceId.value, {
-        asset_id: payload.asset_id,
-        font_family: payload.font_family.trim(),
-        font_format: payload.font_format,
-        font_weight: payload.font_weight.trim(),
-        font_style: payload.font_style,
-        font_display: payload.font_display,
-        status: payload.status,
+        asset_id: asset.id,
+        ...payload,
+        status: 'active',
       })
     }
-    Message.success('字体配置已保存。')
+    Message.success('字体已保存。')
     fontEditorVisible.value = false
-    await Promise.all([loadFonts(), loadFontAssets(), loadThemes()])
+    editorFont.value = null
+    editorAsset.value = null
+    editorPresetFamilyName.value = null
+    await Promise.all([loadFonts(), loadThemes()])
   } catch (error) {
-    Message.error(getErrorMessage(error, '保存字体配置失败。'))
+    Message.error(getErrorMessage(error, '保存字体失败。'))
   } finally {
     savingFont.value = false
   }
 }
 
-async function deleteFont(font: WorkspaceFontConfigItem): Promise<void> {
+/**
+ * 删除字体族下的某个 face，字体文件一并删除；空族由后端级联清理。
+ * @param family face 所属字体族
+ * @param face 需要删除的 face 记录
+ */
+async function deleteFace(family: WorkspaceFontFamilyItem, face: WorkspaceFontConfigItem): Promise<void> {
   if (!Number.isFinite(workspaceId.value)) return
-  const ok = await createConfirm(`确认删除字体注册 "${font.font_family}" 吗？默认会同时硬删除关联字体文件和历史记录。`, '删除字体注册')
+  const ok = await createConfirm(
+    `确认删除字体族 "${family.name}" 下的文件 "${face.asset_name}" 吗？字体文件会一并删除，删除后无法恢复。`,
+    '删除字体',
+  )
   if (!ok) return
   try {
-    await deleteWorkspaceFont(workspaceId.value, font.id, { deleteAsset: true })
-    Message.success('字体注册和字体文件已删除。')
-    await Promise.all([loadFontsWithPageFallback(), loadFontAssetsWithPageFallback(), loadThemes()])
+    await deleteWorkspaceFont(workspaceId.value, face.id, { deleteAsset: true })
+    Message.success('字体已删除。')
+    await Promise.all([loadFontsWithPageFallback(), loadThemes()])
   } catch (error) {
-    Message.error(getErrorMessage(error, '删除字体注册失败。'))
+    Message.error(getErrorMessage(error, '删除字体失败。'))
   }
 }
 
-function openEditFontFromAsset(asset: AssetResponse): void {
-  const registeredFont = fonts.value.find(font => font.id === asset.font_config?.id)
-  if (registeredFont) {
-    openEditFont(registeredFont)
-    return
+/**
+ * 删除尚未注册的字体文件。
+ * @param asset 待注册字体资源
+ */
+async function deletePendingFontAsset(asset: AssetResponse): Promise<void> {
+  if (!Number.isFinite(workspaceId.value)) return
+  const ok = await createConfirm(
+    `确认删除字体文件 "${asset.original_name}" 吗？删除后无法恢复。`,
+    '删除字体文件',
+  )
+  if (!ok) return
+  try {
+    await deleteWorkspaceFontAsset(workspaceId.value, asset.id)
+    Message.success('字体文件已删除。')
+    await loadFonts()
+  } catch (error) {
+    Message.error(getErrorMessage(error, '删除字体文件失败。'))
   }
-  fontPanelTab.value = 'registrations'
-  fontKeyword.value = asset.font_config?.font_family || asset.font_config?.asset_name || asset.name
-  Message.info('已切换到对应字体注册，请在列表中编辑。')
 }
 
-function triggerReplaceFontAsset(asset: AssetResponse): void {
-  if (asset.status !== 'active') {
-    Message.warning('归档字体文件不能替换，请先恢复。')
+/**
+ * 进入字体族重命名态，预填当前名称。
+ * @param family 目标字体族
+ */
+function startRenameFamily(family: WorkspaceFontFamilyItem): void {
+  renamingFamilyId.value = family.id
+  renameFamilyValue.value = family.name
+}
+
+/** 退出字体族重命名态。 */
+function cancelRenameFamily(): void {
+  renamingFamilyId.value = null
+  renameFamilyValue.value = ''
+}
+
+/**
+ * 提交字体族重命名，名称为空或未变化时直接退出。
+ * @param family 目标字体族
+ */
+async function confirmRenameFamily(family: WorkspaceFontFamilyItem): Promise<void> {
+  if (!Number.isFinite(workspaceId.value)) return
+  const nextName = renameFamilyValue.value.trim()
+  if (!nextName || nextName === family.name) {
+    cancelRenameFamily()
     return
   }
-  replacingFontAsset.value = asset
+  savingFamily.value = true
+  try {
+    await renameWorkspaceFontFamily(workspaceId.value, family.id, nextName)
+    Message.success('字体族已重命名。')
+    cancelRenameFamily()
+    await Promise.all([loadFonts(), loadThemes()])
+  } catch (error) {
+    Message.error(getErrorMessage(error, '重命名字体族失败。'))
+  } finally {
+    savingFamily.value = false
+  }
+}
+
+function triggerReplaceFace(face: WorkspaceFontConfigItem): void {
+  replacingFontTarget.value = face
   fontReplaceFileInput.value?.click()
 }
 
 async function handleFontReplaceFileChange(event: Event): Promise<void> {
   const target = event.target as HTMLInputElement
   const file = target.files?.[0] ?? null
-  const asset = replacingFontAsset.value
-  if (!file || !asset || !Number.isFinite(workspaceId.value)) {
+  const face = replacingFontTarget.value
+  if (!file || !face || !Number.isFinite(workspaceId.value)) {
     target.value = ''
-    replacingFontAsset.value = null
+    replacingFontTarget.value = null
     return
   }
   if (!isAcceptedAssetFile(file, 'font')) {
     Message.error(`字体文件仅支持 ${getAcceptedAssetExtensionText('font')}。`)
     target.value = ''
-    replacingFontAsset.value = null
+    replacingFontTarget.value = null
+    return
+  }
+  const confirmed = await createConfirm(
+    `确认用 "${file.name}" 替换字体文件 "${face.asset_name}" 吗？引用该字体的主题和页面会改用新文件。`,
+    '替换字体文件',
+  )
+  if (!confirmed) {
+    target.value = ''
+    replacingFontTarget.value = null
     return
   }
   try {
-    await replaceWorkspaceAssetFile(workspaceId.value, asset.id, file)
+    await replaceWorkspaceAssetFile(workspaceId.value, face.asset_id, file)
+    const nextFormat = inferFontFormat(file.name)
+    if (face.font_format !== nextFormat) {
+      await updateWorkspaceFont(workspaceId.value, face.id, { font_format: nextFormat })
+    }
     Message.success('字体文件已替换。')
-    await Promise.all([loadFontAssets(), loadFonts(), loadThemes()])
+    await Promise.all([loadFonts(), loadThemes()])
   } catch (error) {
     Message.error(getErrorMessage(error, '替换字体文件失败。'))
   } finally {
     target.value = ''
-    replacingFontAsset.value = null
-  }
-}
-
-async function restoreFontAsset(asset: AssetResponse): Promise<void> {
-  if (!Number.isFinite(workspaceId.value)) return
-  try {
-    await restoreWorkspaceAsset(workspaceId.value, asset.id, '恢复字体文件。')
-    Message.success('字体文件已恢复。')
-    await loadFontAssets()
-  } catch (error) {
-    Message.error(getErrorMessage(error, '恢复字体文件失败。'))
-  }
-}
-
-async function deleteFontAsset(asset: AssetResponse): Promise<void> {
-  if (!Number.isFinite(workspaceId.value)) return
-  if (asset.font_config) {
-    Message.warning('已注册字体文件需要先删除字体注册。')
-    return
-  }
-  const ok = await createConfirm(`确认硬删除字体文件 "${asset.original_name}" 吗？该操作会删除资产记录、历史记录，并在无复用时删除对象存储文件。`, '删除字体文件')
-  if (!ok) return
-  try {
-    await deleteWorkspaceFontAsset(workspaceId.value, asset.id)
-    Message.success('字体文件已删除。')
-    await loadFontAssetsWithPageFallback()
-  } catch (error) {
-    Message.error(getErrorMessage(error, '删除字体文件失败。'))
+    replacingFontTarget.value = null
   }
 }
 
@@ -1040,27 +1001,37 @@ async function loadThemesWithPageFallback(): Promise<void> {
   }
 }
 
-async function loadFontsWithPageFallback(): Promise<void> {
-  const currentPage = fontPage.value
-  await loadFonts()
-  if (fonts.value.length === 0 && currentPage > 1) {
-    fontPage.value = currentPage - 1
-  }
-}
-
 function handleThemePageSizeChange(value: number): void {
   themePageSize.value = value
   themePage.value = 1
 }
 
-function handleFontPageSizeChange(value: number): void {
-  fontPageSize.value = value
-  fontPage.value = 1
+function handleFontFamilyPageSizeChange(value: number): void {
+  fontFamilyPageSize.value = value
+  fontFamilyPage.value = 1
 }
 
-function handleFontAssetPageSizeChange(value: number): void {
-  fontAssetPageSize.value = value
-  fontAssetPage.value = 1
+/**
+ * 生成 face 预览样式，使用页面级 @font-face 注入的临时 font-family。
+ * @param face 字体族下的某个 face 记录
+ */
+function getFacePreviewStyle(face: WorkspaceFontConfigSummary): CSSProperties {
+  return {
+    fontFamily: `'theme-font-preview-${face.asset_id}'`,
+    fontWeight: face.font_weight || undefined,
+    fontStyle: face.font_style || undefined,
+  }
+}
+
+/**
+ * 将字体文件字节数格式化为可读大小。
+ * @param size 文件字节数
+ */
+function formatFontFileSize(size: number): string {
+  if (!Number.isFinite(size) || size <= 0) return '未知大小'
+  if (size < 1024) return `${size} B`
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`
 }
 
 function isDefaultTheme(theme: WorkspaceThemeItem): boolean {
@@ -1068,14 +1039,14 @@ function isDefaultTheme(theme: WorkspaceThemeItem): boolean {
 }
 
 function getThemeFontLabel(theme: WorkspaceThemeItem, slot: 'heading' | 'body' | 'code'): string {
-  const font = slot === 'heading' ? theme.heading_font : slot === 'body' ? theme.body_font : theme.code_font
+  const family = slot === 'heading' ? theme.heading_font_family : slot === 'body' ? theme.body_font_family : theme.code_font_family
   const fallback = slot === 'heading' ? theme.heading_font_label : slot === 'body' ? theme.body_font_label : theme.code_font_label
-  return font?.font_family || fallback || '未绑定'
+  return family?.name || fallback || '未绑定'
 }
 
 function isThemeFontFallback(theme: WorkspaceThemeItem, slot: 'heading' | 'body' | 'code'): boolean {
-  const font = slot === 'heading' ? theme.heading_font : slot === 'body' ? theme.body_font : theme.code_font
-  return !font
+  const family = slot === 'heading' ? theme.heading_font_family : slot === 'body' ? theme.body_font_family : theme.code_font_family
+  return !family
 }
 
 function getThemeCardStyle(theme: WorkspaceThemeItem): CSSProperties {

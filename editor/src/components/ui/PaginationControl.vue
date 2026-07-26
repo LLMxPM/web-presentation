@@ -1,13 +1,13 @@
 <!-- 文件功能：提供后台列表通用分页控件，支持完整模式与紧凑模式两种布局。 -->
 <template>
   <div
-    class="flex shrink-0 items-center gap-3 border-t border-slate-100 bg-white px-4 py-3 text-xs text-slate-500"
+    class="flex shrink-0 items-center gap-3 border-t border-border-muted bg-surface px-4 py-3 text-xs text-text-muted"
     :class="compact ? 'justify-between' : 'justify-between'"
   >
     <div class="flex min-w-0 items-center gap-2">
       <span class="shrink-0 font-semibold">共 {{ total }} 条</span>
       <template v-if="!compact">
-        <span class="text-slate-300">/</span>
+        <span class="text-text-faint">/</span>
         <UiSelect
           :model-value="pageSize"
           :options="pageSizeSelectOptions"
@@ -34,14 +34,14 @@
           :key="item.key"
           type="button"
           class="pagination-page"
-          :class="item.page === page ? 'border-indigo-200 bg-indigo-50 text-indigo-600' : 'border-slate-200 bg-white text-slate-500 hover:border-slate-300 hover:text-slate-700'"
+          :class="item.page === page ? 'border-accent-ring bg-surface-selected text-accent' : 'border-border bg-surface text-text-muted hover:border-border-strong hover:text-text-emphasis'"
           :disabled="item.ellipsis"
           @click="item.page && emit('update:page', item.page)"
         >
           {{ item.label }}
         </button>
       </template>
-      <span v-else class="px-2 font-semibold text-slate-600">{{ page }} / {{ pageCount }}</span>
+      <span v-else class="px-2 font-semibold text-text-secondary">{{ page }} / {{ pageCount }}</span>
 
       <button
         type="button"
@@ -113,17 +113,17 @@ function handlePageSizeChange(value: string | number | (string | number)[] | nul
 .pagination-button {
   height: 32px;
   border-radius: 8px;
-  border: 1px solid #e2e8f0;
-  background: #ffffff;
+  border: 1px solid rgb(var(--ui-border));
+  background: rgb(var(--ui-surface));
   padding: 0 10px;
   font-weight: 700;
-  color: #475569;
+  color: rgb(var(--ui-text-secondary));
   transition: all 0.16s ease;
 }
 
 .pagination-button:hover:not(:disabled) {
-  border-color: #cbd5e1;
-  color: #1e293b;
+  border-color: rgb(var(--ui-border-strong));
+  color: rgb(var(--ui-text));
 }
 
 .pagination-button:disabled {
@@ -143,6 +143,6 @@ function handlePageSizeChange(value: string | number | (string | number)[] | nul
 
 .pagination-page:disabled {
   cursor: default;
-  color: #94a3b8;
+  color: rgb(var(--ui-text-disabled));
 }
 </style>

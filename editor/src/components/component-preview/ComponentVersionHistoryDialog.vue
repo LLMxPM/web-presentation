@@ -8,7 +8,7 @@
     @update:open="emit('update:modelValue', $event)"
   >
     <div class="h-full overflow-hidden">
-      <div v-if="loading && !versions.length" class="px-6 py-10 text-sm text-slate-400">
+      <div v-if="loading && !versions.length" class="px-6 py-10 text-sm text-text-disabled">
         发布历史加载中...
       </div>
 
@@ -16,22 +16,22 @@
         v-else-if="versions.length"
         class="grid h-full min-h-0 grid-rows-[minmax(220px,0.9fr)_minmax(0,1.1fr)] overflow-hidden xl:grid-cols-[minmax(0,0.9fr)_minmax(420px,1.2fr)] xl:grid-rows-1"
       >
-        <div class="h-full overflow-y-auto divide-y divide-slate-100 border-r border-slate-100">
+        <div class="h-full overflow-y-auto divide-y divide-border-muted border-r border-border-muted">
           <article v-for="version in versions" :key="version.id" class="px-6 py-4">
             <div class="flex items-start justify-between gap-4">
               <div class="min-w-0 space-y-2">
                 <div class="flex flex-wrap items-center gap-2">
                   <span
                     v-if="version.is_current"
-                    class="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-600"
+                    class="rounded-full border border-success-border bg-success-muted px-2 py-0.5 text-[11px] font-semibold text-success"
                   >
                     当前发布
                   </span>
-                  <span class="text-sm font-semibold text-slate-900">v{{ version.version_no }}</span>
-                  <span class="text-xs text-slate-400">{{ version.version_label }}</span>
-                  <span class="text-xs text-slate-400">{{ formatDateTime(version.created_at) }}</span>
+                  <span class="text-sm font-semibold text-text-strong">v{{ version.version_no }}</span>
+                  <span class="text-xs text-text-disabled">{{ version.version_label }}</span>
+                  <span class="text-xs text-text-disabled">{{ formatDateTime(version.created_at) }}</span>
                 </div>
-                <p v-if="version.release_name || version.change_note" class="break-all text-sm text-slate-500">
+                <p v-if="version.release_name || version.change_note" class="break-all text-sm text-text-muted">
                   {{ version.release_name || version.change_note }}
                   <template v-if="version.release_name && version.change_note">
                     · {{ version.change_note }}
@@ -69,36 +69,35 @@
           </article>
         </div>
 
-        <section class="flex h-full min-h-0 flex-col overflow-hidden bg-slate-50/60">
-          <div class="border-b border-slate-100 px-6 py-4">
-            <h3 class="text-base font-semibold text-slate-900">{{ panelTitle }}</h3>
-            <p class="mt-1 text-sm text-slate-500">{{ panelSubtitle }}</p>
+        <section class="flex h-full min-h-0 flex-col overflow-hidden bg-canvas/60">
+          <div class="border-b border-border-muted px-6 py-4">
+            <h3 class="text-base font-semibold text-text-strong">{{ panelTitle }}</h3>
+            <p class="mt-1 text-sm text-text-muted">{{ panelSubtitle }}</p>
           </div>
 
           <div class="min-h-0 flex-1 overflow-hidden p-2">
             <div
               v-if="!panel"
-              class="flex h-full items-center justify-center rounded-xl border border-dashed border-slate-200 bg-white/80 px-8 text-center text-sm text-slate-500"
+              class="flex h-full items-center justify-center rounded-xl border border-dashed border-border bg-surface/80 px-8 text-center text-sm text-text-muted"
             >
               在左侧选择一个发布版本查看差异或预览
             </div>
 
-            <div v-else-if="panel.mode === 'diff' && activeVersionContent" class="h-full overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <div v-else-if="panel.mode === 'diff' && activeVersionContent" class="h-full overflow-hidden rounded-2xl border border-border bg-surface shadow-sm">
               <MonacoDiffViewer
                 :original-value="activeVersionContent.content"
                 :modified-value="draftContent"
                 language="vue"
-                :theme="editorTheme"
                 height="100%"
               />
             </div>
 
-            <div v-else-if="panel.mode === 'preview'" class="h-full overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 shadow-sm">
+            <div v-else-if="panel.mode === 'preview'" class="h-full overflow-hidden rounded-2xl border border-border bg-canvas shadow-sm">
               <RuntimePreviewFrame
                 :frame-url="previewFrameUrl"
                 :title="`component-release-preview-${activeVersionNo ?? 0}`"
                 layout="fill"
-                container-class="h-full overflow-hidden rounded-2xl border-0 bg-slate-50 shadow-none"
+                container-class="h-full overflow-hidden rounded-2xl border-0 bg-canvas shadow-none"
                 empty-title="发布版本预览准备中"
                 empty-description="正在生成所选发布版本的预览，请稍候。"
               />
@@ -107,7 +106,7 @@
         </section>
       </div>
 
-      <div v-else class="px-6 py-10 text-sm text-slate-400">
+      <div v-else class="px-6 py-10 text-sm text-text-disabled">
         当前组件还没有正式发布版本。
       </div>
     </div>
@@ -122,7 +121,6 @@ import RuntimePreviewFrame from '@/components/runtime-preview/RuntimePreviewFram
 import { UiDialog } from '@/components/ui'
 import UiButton from '@/components/ui/button/UiButton.vue'
 import type { WorkspaceComponentVersionContent, WorkspaceComponentVersionListItem } from '@/types/api'
-import type { EditorThemeMode } from '@/types/monaco'
 import { formatDateTime } from '@/utils/format'
 
 type VersionPanel = { mode: 'diff' | 'preview'; versionNo: number } | null
@@ -137,7 +135,6 @@ const props = defineProps<{
   draftContent: string
   versionContentMap: Record<number, WorkspaceComponentVersionContent>
   previewFrameUrl: string
-  editorTheme: EditorThemeMode
   previewingVersionNo: number | null
   loadingContentVersionNo: number | null
   restoringVersionNo: number | null

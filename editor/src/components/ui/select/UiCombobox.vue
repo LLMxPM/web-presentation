@@ -10,7 +10,7 @@
     @update:model-value="handleValueUpdate"
   >
     <ComboboxAnchor
-      class="flex w-full items-center rounded-ui-md border bg-white text-sm transition"
+      class="flex w-full items-center rounded-ui-md border bg-surface text-sm transition"
       :class="anchorClasses"
     >
       <!-- 多选标签区 -->
@@ -19,18 +19,18 @@
           <span
             v-for="opt in visibleSelectedOptions"
             :key="String(opt.value)"
-            class="inline-flex max-w-full items-center rounded-full bg-indigo-50 px-2 py-0.5 text-[11px] font-semibold text-indigo-700"
+            class="inline-flex max-w-full items-center rounded-full bg-surface-selected px-2 py-0.5 text-[11px] font-semibold text-accent-hover"
           >
             <span class="truncate">{{ opt.label }}</span>
           </span>
           <span
             v-if="hiddenSelectedCount > 0"
-            class="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-500"
+            class="inline-flex items-center rounded-full bg-surface-muted px-2 py-0.5 text-[11px] font-semibold text-text-muted"
           >
             +{{ hiddenSelectedCount }}
           </span>
           <ComboboxInput
-            class="min-w-[60px] flex-1 bg-transparent text-sm outline-none placeholder:text-slate-400"
+            class="min-w-[60px] flex-1 bg-transparent text-sm outline-none placeholder:text-text-disabled"
             :placeholder="searchPlaceholder"
             :model-value="searchKeyword"
             @update:model-value="searchKeyword = $event"
@@ -41,7 +41,7 @@
       <!-- 单选展示区 -->
       <template v-else>
         <ComboboxInput
-          class="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-slate-400"
+          class="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-text-disabled"
           :placeholder="displayText || placeholder"
           :model-value="searchKeyword"
           :display-value="() => openState ? searchKeyword : (displayText || '')"
@@ -53,7 +53,7 @@
       <button
         v-if="clearable && hasSelection && !disabled"
         type="button"
-        class="shrink-0 rounded p-0.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
+        class="shrink-0 rounded p-0.5 text-text-disabled transition hover:bg-surface-muted hover:text-text-secondary"
         title="清空选择"
         @pointerdown.prevent="clearSelection"
       >
@@ -61,7 +61,7 @@
       </button>
 
       <!-- 展开箭头 -->
-      <ComboboxTrigger class="shrink-0 p-0.5 text-slate-400">
+      <ComboboxTrigger class="shrink-0 p-0.5 text-text-disabled">
         <ChevronDown
           class="h-4 w-4 transition-transform duration-150"
           :class="openState ? 'rotate-180' : ''"
@@ -73,10 +73,10 @@
       <ComboboxContent
         position="popper"
         :side-offset="4"
-        class="z-dropdown max-h-72 min-w-[var(--reka-combobox-trigger-width)] overflow-hidden rounded-lg border border-slate-200 bg-white shadow-popover"
+        class="z-dropdown max-h-72 min-w-[var(--reka-combobox-trigger-width)] overflow-hidden rounded-lg border border-border bg-surface shadow-popover"
       >
         <ComboboxViewport class="max-h-72 overflow-y-auto p-1">
-          <ComboboxEmpty class="px-3 py-6 text-center text-sm text-slate-400">
+          <ComboboxEmpty class="px-3 py-6 text-center text-sm text-text-disabled">
             {{ emptyText }}
           </ComboboxEmpty>
           <ComboboxItem
@@ -84,27 +84,27 @@
             :key="String(option.value)"
             :value="option.value"
             :disabled="option.disabled"
-            class="flex cursor-default items-center gap-2 rounded-md px-2 py-1.5 text-sm text-slate-700 outline-none data-[highlighted]:bg-slate-100 data-[disabled]:opacity-40"
+            class="flex cursor-default items-center gap-2 rounded-md px-2 py-1.5 text-sm text-text-emphasis outline-none data-[highlighted]:bg-surface-muted data-[disabled]:opacity-40"
           >
             <span
               v-if="multiple"
               class="flex h-4 w-4 shrink-0 items-center justify-center rounded border"
               :class="isSelected(option.value)
-                ? 'border-indigo-500 bg-indigo-500 text-white'
-                : 'border-slate-200 bg-white text-transparent'"
+                ? 'border-border-focus bg-accent-emphasis text-text-inverse'
+                : 'border-border bg-surface text-transparent'"
             >
               <Check class="h-3 w-3" />
             </span>
             <span
               v-else
-              class="flex h-4 w-4 shrink-0 items-center justify-center text-indigo-600"
+              class="flex h-4 w-4 shrink-0 items-center justify-center text-accent"
               :class="isSelected(option.value) ? 'visible' : 'invisible'"
             >
               <Check class="h-3.5 w-3.5" />
             </span>
             <div class="min-w-0 flex-1">
               <div class="truncate">{{ option.label }}</div>
-              <div v-if="option.description" class="truncate text-[11px] text-slate-400">
+              <div v-if="option.description" class="truncate text-[11px] text-text-disabled">
                 {{ option.description }}
               </div>
             </div>
@@ -228,8 +228,8 @@ const anchorClasses = computed(() => {
     ? 'h-9 px-2 py-0 gap-1'
     : 'min-h-[40px] px-3 py-1.5 gap-2'
   const stateClass = props.disabled
-    ? 'border-slate-200 bg-slate-50 text-slate-400 cursor-not-allowed'
-    : 'border-slate-200 hover:border-slate-300 focus-within:border-indigo-400 focus-within:ring-2 focus-within:ring-indigo-500/20 cursor-pointer'
+    ? 'border-border bg-canvas text-text-disabled cursor-not-allowed'
+    : 'border-border hover:border-border-strong focus-within:border-accent-border focus-within:ring-2 focus-within:ring-border-focus/20 cursor-pointer'
   return [sizeClass, stateClass]
 })
 

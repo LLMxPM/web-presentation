@@ -1,8 +1,13 @@
+/**
+ * 文件功能：提供全局轻量消息提示，并兼容导出统一确认弹窗接口。
+ */
 import { createApp, h, ref } from 'vue'
 import { CheckCircle, AlertCircle, Info, XCircle } from '@lucide/vue'
 
+export { createConfirm } from './confirm'
+
 /**
- * 轻量级全局消息提示与弹窗工具，替代 ElMessage 和 ElMessageBox
+ * 轻量级全局消息提示工具，替代 ElMessage。
  */
 
 type MessageType = 'success' | 'error' | 'warning' | 'info'
@@ -30,11 +35,11 @@ const MessageContainer = {
         {
           key: msg.id,
           class: [
-            'flex items-center gap-3 px-4 py-3 rounded-xl shadow-lg border border-slate-200 min-w-[300px] pointer-events-auto transition-all transform duration-300 bg-white animate-in slide-in-from-top-4 fade-in',
-            msg.type === 'success' ? 'bg-emerald-50 border-emerald-100 text-emerald-700' : '',
-            msg.type === 'error' ? 'bg-red-50 border-red-100 text-red-700' : '',
-            msg.type === 'warning' ? 'bg-orange-50 border-orange-100 text-orange-700' : '',
-            msg.type === 'info' ? 'bg-blue-50 border-blue-100 text-blue-700' : '',
+            'flex items-center gap-3 px-4 py-3 rounded-xl shadow-lg border border-border min-w-[300px] pointer-events-auto transition-all transform duration-300 bg-surface animate-in slide-in-from-top-4 fade-in',
+            msg.type === 'success' ? 'bg-success-muted border-success-border text-success-strong' : '',
+            msg.type === 'error' ? 'bg-danger-muted border-danger-border text-danger-strong' : '',
+            msg.type === 'warning' ? 'bg-warning-muted border-warning-border text-warning-strong' : '',
+            msg.type === 'info' ? 'bg-info-muted border-info-border text-info-strong' : '',
           ]
         },
         [
@@ -73,54 +78,4 @@ export const Message = {
   error(message: string) { this.show({ message, type: 'error' }) },
   warning(message: string) { this.show({ message, type: 'warning' }) },
   info(message: string) { this.show({ message, type: 'info' }) },
-}
-
-// ----------------- Confirm 弹窗 -----------------
-
-export function createConfirm(message: string, title = '操作确认') {
-  return new Promise((resolve) => {
-    const div = document.createElement('div')
-    document.body.appendChild(div)
-    
-    const app = createApp({
-      setup() {
-        const visible = ref(true)
-        const handleCancel = () => {
-          visible.value = false
-          setTimeout(() => {
-            app.unmount()
-            div.remove()
-            resolve(false)
-          }, 300)
-        }
-        const handleConfirm = () => {
-          visible.value = false
-          setTimeout(() => {
-            app.unmount()
-            div.remove()
-            resolve(true)
-          }, 300)
-        }
-        
-return () => h('div', {
-          class: ['fixed inset-0 flex items-center justify-center p-4 transition-opacity duration-300', visible.value ? 'opacity-100' : 'opacity-0'],
-          style: { zIndex: 'var(--ui-z-confirm-overlay)' },
-        }, [
-          h('div', { class: 'absolute inset-0 bg-slate-900/40 backdrop-blur-sm', onClick: handleCancel }),
-          h('div', { class: ['relative w-full max-w-[400px] bg-white rounded-2xl shadow-xl overflow-hidden transform transition-all duration-300', visible.value ? 'scale-100' : 'scale-90 opacity-0'] }, [
-            h('div', { class: 'px-6 py-5' }, [
-              h('h3', { class: 'text-lg font-bold text-slate-900 mb-2' }, title),
-              h('p', { class: 'text-slate-600 text-sm leading-relaxed' }, message)
-            ]),
-            h('div', { class: 'px-6 py-4 bg-slate-50 flex justify-end gap-3' }, [
-              h('button', { class: 'px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-200 rounded-lg transition-colors', onClick: handleCancel }, '取消'),
-              h('button', { class: 'px-4 py-2 text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-colors shadow-sm', onClick: handleConfirm }, '确定')
-            ])
-          ])
-        ])
-      }
-    })
-    
-    app.mount(div)
-  })
 }

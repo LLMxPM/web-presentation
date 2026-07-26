@@ -35,31 +35,31 @@ export function getProjectBuildStatusMeta(status: ProjectBuildStatus | null | un
   if (status === 'succeeded') {
     return {
       label: '构建成功',
-      badgeClass: 'border-emerald-200 bg-emerald-50 text-emerald-700',
-      dotClass: 'bg-emerald-500',
+      badgeClass: 'border-success-border bg-success-muted text-success-strong',
+      dotClass: 'bg-success',
     }
   }
 
   if (status === 'failed') {
     return {
       label: '构建失败',
-      badgeClass: 'border-red-200 bg-red-50 text-red-700',
-      dotClass: 'bg-red-500',
+      badgeClass: 'border-danger-border bg-danger-muted text-danger-strong',
+      dotClass: 'bg-danger',
     }
   }
 
   if (status === 'running') {
     return {
       label: '构建中',
-      badgeClass: 'border-sky-200 bg-sky-50 text-sky-700',
-      dotClass: 'bg-sky-500',
+      badgeClass: 'border-info-border bg-info-muted text-info-strong',
+      dotClass: 'bg-info',
     }
   }
 
   return {
     label: '排队中',
-    badgeClass: 'border-amber-200 bg-amber-50 text-amber-700',
-    dotClass: 'bg-amber-500',
+    badgeClass: 'border-warning-border bg-warning-muted text-warning-strong',
+    dotClass: 'bg-warning',
   }
 }
 

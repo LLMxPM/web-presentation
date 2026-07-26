@@ -2,21 +2,21 @@
 <template>
   <div class="group relative">
     <Search
-      class="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400 transition-colors group-focus-within:text-indigo-500"
+      class="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-text-disabled transition-colors group-focus-within:text-accent-emphasis"
     />
     <input
       :value="modelValue"
       type="text"
       :placeholder="placeholder"
       :aria-label="ariaLabel || placeholder"
-      class="h-8 w-full rounded-lg border border-slate-200 bg-white pl-9 pr-9 text-xs transition-all focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+      class="h-8 w-full rounded-lg border border-border bg-surface pl-9 pr-9 text-xs transition-all focus:border-border-focus focus:outline-none focus:ring-1 focus:ring-border-focus"
       @input="emit('update:modelValue', ($event.target as HTMLInputElement).value)"
       @keydown.enter="emit('submit')"
     >
     <button
       v-if="modelValue"
       type="button"
-      class="absolute right-2 top-1/2 -translate-y-1/2 rounded-full p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
+      class="absolute right-2 top-1/2 -translate-y-1/2 rounded-full p-1 text-text-disabled transition-colors hover:bg-surface-muted hover:text-text-secondary"
       aria-label="清空搜索"
       @click="emit('update:modelValue', '')"
     >

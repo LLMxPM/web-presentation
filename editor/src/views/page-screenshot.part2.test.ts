@@ -720,7 +720,7 @@ describe('page screenshot views', () => {
     expect(screen.getByRole('button', { name: '关闭页面编辑' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '编辑器' })).toBeNull()
     expect(screen.queryByRole('button', { name: '可视化' })).toBeNull()
-    expect(screen.queryByRole('button', { name: '保存' })).toBeNull()
+    expect(screen.getByRole('button', { name: '保存' })).toBeDisabled()
 
     await fireEvent.click(screen.getByRole('button', { name: '源码编辑' }))
 
@@ -958,34 +958,46 @@ describe('page screenshot views', () => {
     await waitFor(() => expect(createProjectPreviewArtifactMock).toHaveBeenCalled())
     await fireEvent.click(screen.getByRole('button', { name: '编辑' }))
     await screen.findByTitle('页面详情 可视化编辑画布')
-    await fireEvent.click(screen.getByRole('button', { name: /Card/ }))
+    await fireEvent.click(screen.getByRole('button', { name: '页面结构（高级）' }))
+    await fireEvent.click(screen.getByRole('button', { name: /组件：Card/ }))
     await fireEvent.update(await screen.findByRole('textbox'), '未保存标题')
     expect(screen.getByText('1 项待保存')).toBeInTheDocument()
 
     await fireEvent.click(screen.getByRole('button', { name: '源码编辑' }))
 
-    expect(await screen.findByText('离开会放弃当前可视化编辑草稿，且这些修改尚未写入页面源码。是否继续？')).toBeInTheDocument()
-    expect(screen.getByRole('dialog', { name: '放弃可视化编辑' })).toHaveStyle({ height: 'auto' })
-    await fireEvent.click(screen.getByRole('button', { name: '确定' }))
+    await waitFor(() => {
+      expect(createConfirmMock).toHaveBeenCalledWith(
+        '离开会放弃当前可视化编辑草稿，且这些修改尚未写入页面源码。是否继续？',
+        '放弃可视化编辑',
+        { dangerous: true },
+      )
+    })
     expect(await screen.findByRole('button', { name: 'monaco-mark-dirty' })).toBeInTheDocument()
   })
 
   it('PageDetailView 收到 Agent 源码建议时不得绕过可视化脏草稿确认', async () => {
     getPageMock.mockResolvedValue(createPageDetailPayload())
+    createConfirmMock.mockResolvedValueOnce(false)
     render(PageDetailView, createTestingRenderOptions())
 
     expect(await screen.findByText('页面详情')).toBeInTheDocument()
     await waitFor(() => expect(createProjectPreviewArtifactMock).toHaveBeenCalled())
     await fireEvent.click(screen.getByRole('button', { name: '编辑' }))
     await screen.findByTitle('页面详情 可视化编辑画布')
-    await fireEvent.click(screen.getByRole('button', { name: /Card/ }))
+    await fireEvent.click(screen.getByRole('button', { name: '页面结构（高级）' }))
+    await fireEvent.click(screen.getByRole('button', { name: /组件：Card/ }))
     await fireEvent.update(await screen.findByRole('textbox'), '未保存标题')
     window.dispatchEvent(new CustomEvent('agent:apply-suggested-content', {
       detail: { pageId: 31, content: '<template><div>Agent 建议</div></template>' },
     }))
 
-    expect(await screen.findByRole('dialog', { name: '放弃可视化编辑' })).toBeInTheDocument()
-    await fireEvent.click(screen.getByRole('button', { name: '取消' }))
+    await waitFor(() => {
+      expect(createConfirmMock).toHaveBeenCalledWith(
+        '离开会放弃当前可视化编辑草稿，且这些修改尚未写入页面源码。是否继续？',
+        '放弃可视化编辑',
+        { dangerous: true },
+      )
+    })
     expect(screen.getByTitle('页面详情 可视化编辑画布')).toBeInTheDocument()
     expect(screen.getByText('1 项待保存')).toBeInTheDocument()
   })

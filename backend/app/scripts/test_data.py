@@ -18,11 +18,13 @@ from app.ai.provider_catalog import LLM_SLOT_DEFINITIONS
 from app.core.config import get_settings
 from app.db.base import Base
 from app.db.session import get_engine, get_session_factory
-from app.models.enums import AiLlmSlot, AiModelType
+from app.models.asset import WorkspaceAsset
+from app.models.enums import AiLlmSlot, AiModelType, AssetType
 from app.models.user import User
 from app.models.page import Page
 from app.models.workspace import Project, Workspace
 from app.services.ai_llm_service import AiLlmService
+from app.services.asset_service import AssetService
 from app.services.bootstrap_service import BootstrapService
 from app.services.page_service import PageService
 from app.services.project_route_service import ProjectRouteService
@@ -43,13 +45,22 @@ class SmokeDataNames:
     llm_config_name: str = "Smoke Mock LLM"
     image_llm_config_name: str = "Smoke Mock Image LLM"
     page_summary: str = "平台级 smoke 场景默认页面。"
+    image_asset_a: str = "smoke-image-a"
+    image_asset_b: str = "smoke-image-b"
 
 
 SMOKE_DATA = SmokeDataNames()
 DEFAULT_SMOKE_PAGE_CONTENT = """<template>
   <main class="smoke-page">
-    <h1>{{ title }}</h1>
+    <h1 class="text-4xl font-black text-center leading-tight text-slate-900">Smoke Page</h1>
     <p>platform smoke preview</p>
+    <AssetImage
+      name="smoke-image-a"
+      alt="Smoke illustration"
+      fit="contain"
+      position="center"
+      class="w-48 h-32 p-2 bg-white border rounded-lg"
+    />
     <ul>
       <li v-for="item in items" :key="item.id">{{ item.label }}</li>
     </ul>
@@ -57,7 +68,8 @@ DEFAULT_SMOKE_PAGE_CONTENT = """<template>
 </template>
 
 <script setup lang="ts">
-const title = 'Smoke Page'
+import AssetImage from '@runtime-kit/public/components/assets/AssetImage.v1.vue'
+
 const items = [
   { id: 'smoke-1', label: 'first item' },
   { id: 'smoke-2', label: 'second item' },
@@ -109,6 +121,7 @@ async def ensure_smoke_data() -> None:
             raise RuntimeError("默认管理员初始化失败。")
 
         workspace = await _ensure_workspace(session=session, operator_id=seed_user.id)
+        await _ensure_smoke_image_assets(session=session, workspace_id=workspace.id)
         project = await _ensure_project(session=session, workspace_id=workspace.id, operator_id=seed_user.id)
         page = await _ensure_page(
             session=session,
@@ -185,6 +198,48 @@ async def _ensure_page(*, session, workspace_id: int, project_id: int, operator_
     if page is None:
         raise RuntimeError("页面创建后未能重新加载。")
     return page
+
+
+async def _ensure_smoke_image_assets(*, session, workspace_id: int) -> None:
+    """创建两张可区分的 SVG 图片，供可视化编辑资源替换 E2E 使用。"""
+
+    assets = (
+        (
+            SMOKE_DATA.image_asset_a,
+            "smoke-image-a.svg",
+            '<svg xmlns="http://www.w3.org/2000/svg" width="320" height="180" viewBox="0 0 320 180">'
+            '<rect width="320" height="180" rx="24" fill="#4f46e5"/>'
+            '<circle cx="160" cy="90" r="48" fill="#ffffff"/>'
+            "</svg>",
+        ),
+        (
+            SMOKE_DATA.image_asset_b,
+            "smoke-image-b.svg",
+            '<svg xmlns="http://www.w3.org/2000/svg" width="320" height="180" viewBox="0 0 320 180">'
+            '<rect width="320" height="180" rx="24" fill="#0f766e"/>'
+            '<path d="M80 125L140 55l40 45 35-35 45 60z" fill="#ffffff"/>'
+            "</svg>",
+        ),
+    )
+    service = AssetService(session)
+    for name, original_name, content in assets:
+        existing = await session.scalar(
+            select(WorkspaceAsset).where(
+                WorkspaceAsset.workspace_id == workspace_id,
+                WorkspaceAsset.name == name,
+            )
+        )
+        if existing is not None:
+            continue
+        await service.create_content_asset(
+            workspace_id,
+            asset_type=AssetType.IMAGE,
+            name=name,
+            original_name=original_name,
+            content=content,
+            tags=["smoke", "visual-edit"],
+            description="可视化编辑 E2E 图片资源。",
+        )
 
 
 async def _ensure_project_routes(*, session, project_id: int, page_id: int, operator_id: int) -> None:

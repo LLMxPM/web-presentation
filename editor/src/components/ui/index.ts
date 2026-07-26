@@ -11,6 +11,7 @@ export { default as UiSegmentedControl } from './segmented/UiSegmentedControl.vu
 export { default as UiIconSegmented } from './segmented/UiIconSegmented.vue'
 export type { IconSegmentedOption } from './segmented/UiIconSegmented.vue'
 export { default as UiDialog } from './dialog/UiDialog.vue'
+export { default as UiConfirmHost } from './dialog/UiConfirmHost.vue'
 export { default as UiDropdownMenu } from './menu/UiDropdownMenu.vue'
 export type { DropdownMenuEntry } from './menu/UiDropdownMenu.vue'
 export { default as UiPopover } from './popover/UiPopover.vue'

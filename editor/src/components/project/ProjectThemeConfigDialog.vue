@@ -9,17 +9,17 @@
     <div v-if="project" class="space-y-4">
       <div class="flex items-start justify-between gap-4 flex-wrap">
         <div>
-          <div class="text-lg font-bold text-slate-900">{{ project.name }}</div>
-          <div class="mt-1 text-xs font-mono text-slate-400">{{ project.code }}</div>
+          <div class="text-lg font-bold text-text-strong">{{ project.name }}</div>
+          <div class="mt-1 text-xs font-mono text-text-disabled">{{ project.code }}</div>
         </div>
-        <div class="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+        <div class="rounded-xl border border-warning-border bg-warning-muted px-4 py-3 text-sm text-warning-strong">
           当前项目将直接引用工作空间主题库中的主题。
           <br>
           保存后，Runtime 预览会按所选主题动态组装 `themes.config.yaml`。
         </div>
       </div>
 
-      <div class="rounded-2xl border border-slate-200 bg-white p-4">
+      <div class="rounded-2xl border border-border bg-surface p-4">
         <ThemeSelectorField
           :workspace-id="workspaceId"
           :model-value="draftThemeKey"
@@ -31,7 +31,7 @@
       </div>
     </div>
 
-    <div v-else class="py-10 text-center text-sm text-slate-400">
+    <div v-else class="py-10 text-center text-sm text-text-disabled">
       当前没有可编辑的项目。
     </div>
 

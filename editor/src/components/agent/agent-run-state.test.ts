@@ -43,14 +43,23 @@ function timelineItem(overrides: Partial<AgentTimelineItem>): AgentTimelineItem 
 }
 
 describe('agent-run-state timeline', () => {
-  it('external 页面任务等待与进度事件应保持可中断运行态且不显示 HITL 表单', () => {
+  it('external 页面任务等待与进度事件应保持可中断运行态且只保留一条等待提示', () => {
     const state = createAgentSessionRuntimeState()
     const options = { agentId: 'agent-coordinator', agentDisplayName: '内容助手' }
 
     applyAgentRunEvent(state, event({ event: 'run.started', sequence: 1 }), options)
     applyAgentRunEvent(state, event({
-      event: 'run.waiting',
+      event: 'tool.started',
       sequence: 2,
+      data: {
+        tool_call_id: 'tool-page-1',
+        tool_name: 'create_project_page',
+        tool_args: { title: '新页面' },
+      },
+    }), options)
+    applyAgentRunEvent(state, event({
+      event: 'run.waiting',
+      sequence: 3,
       data: {
         requirement: {
           id: 'requirement-page-batch',
@@ -67,7 +76,7 @@ describe('agent-run-state timeline', () => {
     }), options)
     applyAgentRunEvent(state, event({
       event: 'tool.progress',
-      sequence: 3,
+      sequence: 4,
       data: {
         tool_call_id: 'tool-page-1',
         tool_name: 'create_project_page',
@@ -82,7 +91,89 @@ describe('agent-run-state timeline', () => {
       tool_call_id: 'tool-page-1',
       status: 'running',
     }))
-    expect(state.timelineItems.find(item => item.status === 'tool_execution')?.content).toBe('页面源码与运行时正在校验。')
+    // 后台等待期间只保留一条 waiting_external 提示，进度事件直接更新其文案。
+    expect(state.timelineItems.some(item => item.status === 'tool_execution')).toBe(false)
+    const waitingItems = state.timelineItems.filter(item => item.status === 'waiting_external')
+    expect(waitingItems).toHaveLength(1)
+    expect(waitingItems[0].content).toBe('页面源码与运行时正在校验。')
+  })
+
+  it('run.continued 与终态应清理 waiting_external 提示避免永久残留', () => {
+    const state = createAgentSessionRuntimeState()
+    const options = { agentId: 'agent-coordinator', agentDisplayName: '内容助手' }
+
+    applyAgentRunEvent(state, event({ event: 'run.started', sequence: 1 }), options)
+    applyAgentRunEvent(state, event({
+      event: 'tool.started',
+      sequence: 2,
+      data: {
+        tool_call_id: 'tool-page-1',
+        tool_name: 'apply_page_edits',
+        tool_args: { page_id: 12 },
+      },
+    }), options)
+    applyAgentRunEvent(state, event({
+      event: 'tool.progress',
+      sequence: 3,
+      data: { tool_call_id: 'tool-page-1', tool_name: 'apply_page_edits', phase: 'queued' },
+    }), options)
+    applyAgentRunEvent(state, event({ event: 'run.waiting', sequence: 4, data: { requirement: null } }), options)
+    expect(state.timelineItems.filter(item => item.status === 'waiting_external')).toHaveLength(1)
+
+    applyAgentRunEvent(state, event({ event: 'run.continued', sequence: 5 }), options)
+    expect(state.timelineItems.some(item => item.status === 'waiting_external')).toBe(false)
+    expect(state.timelineItems.find(item => item.status === 'model_request')).toEqual(expect.objectContaining({
+      content: '等待智能体输出中',
+    }))
+
+    // 续跑后 Pydantic AI 会回放同一调用的 started/completed 事件。
+    applyAgentRunEvent(state, event({
+      event: 'tool.started',
+      sequence: 6,
+      data: { tool_call_id: 'tool-page-1', tool_name: 'apply_page_edits' },
+    }), options)
+    applyAgentRunEvent(state, event({
+      event: 'tool.completed',
+      sequence: 7,
+      data: { tool_call_id: 'tool-page-1', tool_name: 'apply_page_edits', result: { status: 'completed' } },
+    }), options)
+    applyAgentRunEvent(state, event({ event: 'run.completed', sequence: 8 }), options)
+
+    expect(state.timelineItems.some(item => item.status === 'waiting_external')).toBe(false)
+    expect(state.timelineItems.some(item => item.status === 'tool_execution')).toBe(false)
+    expect(state.timelineItems.at(-1)).toEqual(expect.objectContaining({ kind: 'run_status', status: 'completed' }))
+  })
+
+  it('waiting_external 运行中快照应补齐后台等待提示', () => {
+    const state = createAgentSessionRuntimeState()
+
+    applyAgentRuntimeSnapshot(state, {
+      timelineItems: [
+        timelineItem({ id: 'user-1', kind: 'message', role: 'user', order_index: 0, content: '新增页面' }),
+      ],
+      activeRun: {
+        run_id: 'run-1',
+        session_id: 'session-1',
+        agent_id: 'agent-coordinator',
+        status: 'waiting_external',
+        pending_requirement: null,
+        content: null,
+        created_at: '2026-04-18T10:00:00+08:00',
+        event_index: 4,
+      },
+      lastRun: null,
+      pendingRequirement: null,
+      pendingImageAttachments: [],
+      contextStatus: null,
+      eventIndex: 4,
+    })
+
+    expect(state.stream.streaming).toBe(true)
+    expect(state.timelineItems.at(-1)).toEqual(expect.objectContaining({
+      kind: 'run_status',
+      status: 'waiting_external',
+      content: '页面变更正在后台排队或校验。',
+    }))
   })
 
   it('重复 sequence 不应重复追加 delta', () => {

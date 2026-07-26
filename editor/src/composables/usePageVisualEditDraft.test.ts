@@ -65,7 +65,7 @@ describe('usePageVisualEditDraft', () => {
     const target = createTarget('b', 1, 'binding-class')
     const baselineChanges = [
       { group: 'padding', className: 'p-6' },
-      { group: 'background', className: 'bg-white' },
+      { group: 'background', className: 'bg-surface' },
     ]
 
     draft.setTailwindTokens(target, [
@@ -73,13 +73,13 @@ describe('usePageVisualEditDraft', () => {
       { group: 'padding', className: ' p-8 ' },
     ], baselineChanges)
     draft.setTailwindTokens(target, [
-      { group: 'background', className: 'bg-slate-50' },
+      { group: 'background', className: 'bg-canvas' },
     ], baselineChanges)
     expect(draft.getOperation(target)).toMatchObject({
       type: 'set_tailwind_tokens',
       changes: [
         { group: 'padding', className: 'p-8' },
-        { group: 'background', className: 'bg-slate-50' },
+        { group: 'background', className: 'bg-canvas' },
       ],
     })
 
@@ -87,11 +87,11 @@ describe('usePageVisualEditDraft', () => {
       { group: 'padding', className: 'p-6' },
     ], baselineChanges)
     expect(draft.getOperation(target)).toMatchObject({
-      changes: [{ group: 'background', className: 'bg-slate-50' }],
+      changes: [{ group: 'background', className: 'bg-canvas' }],
     })
 
     draft.setTailwindTokens(target, [
-      { group: 'background', className: 'bg-white' },
+      { group: 'background', className: 'bg-surface' },
     ], baselineChanges)
 
     expect(draft.pendingCount.value).toBe(0)

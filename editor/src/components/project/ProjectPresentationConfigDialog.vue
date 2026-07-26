@@ -10,7 +10,7 @@
   >
     <div v-if="project && modelValue" class="project-config-layout">
       <section class="project-config-panel">
-        <section class="project-config-card shrink-0 bg-slate-50/70">
+        <section class="project-config-card shrink-0 bg-canvas/70">
           <WorkspaceStyleApplyField
             v-if="workspaceId"
             :workspace-id="workspaceId"
@@ -20,11 +20,11 @@
             @apply="applyWorkspaceStyle"
           />
           <div v-else>
-            <label class="text-sm font-semibold text-slate-700">应用样式</label>
-            <p class="mt-1 text-xs text-slate-400">缺少工作空间上下文，暂时不能从样式库填充项目草稿。</p>
+            <label class="text-sm font-semibold text-text-emphasis">应用样式</label>
+            <p class="mt-1 text-xs text-text-disabled">缺少工作空间上下文，暂时不能从样式库填充项目草稿。</p>
           </div>
 
-          <div class="mt-4 border-t border-slate-200 pt-4">
+          <div class="mt-4 border-t border-border pt-4">
             <ThemeSelectorField
               :workspace-id="workspaceId"
               :model-value="draft.themeKey"
@@ -36,7 +36,7 @@
           </div>
         </section>
 
-        <section class="project-config-card project-config-card--fill bg-white">
+        <section class="project-config-card project-config-card--fill bg-surface">
           <ProjectPresentationFields
             v-model:page-width="draft.pageWidth"
             v-model:page-height="draft.pageHeight"
@@ -48,16 +48,16 @@
         </section>
       </section>
 
-      <section class="project-config-card project-config-spec-card bg-white">
-        <UiFormField label="样式规范 Markdown">
+      <section class="project-config-card project-config-spec-card bg-surface">
+        <UiFormField label="样式规范 Markdown" class="min-h-0 flex-1">
           <template #default="field">
-            <UiInput v-model="draft.styleSpecMarkdown" type="textarea" placeholder="记录内容助手生成页面时应遵循的版式、排版和视觉约束" :rows="16" class="project-config-spec-textarea resize-none" :input-id="field.inputId" :described-by="field.describedBy" />
+            <UiInput v-model="draft.styleSpecMarkdown" type="textarea" textarea-mode="fill" placeholder="记录内容助手生成页面时应遵循的版式、排版和视觉约束" :rows="16" class="project-config-spec-textarea" :input-id="field.inputId" :described-by="field.describedBy" />
           </template>
         </UiFormField>
       </section>
     </div>
 
-    <div v-else class="py-10 text-center text-sm text-slate-400">
+    <div v-else class="py-10 text-center text-sm text-text-disabled">
       当前没有可编辑的项目。
     </div>
 
@@ -328,23 +328,26 @@ watch(
 
 .project-config-card {
   min-width: 0;
-  border: 1px solid rgb(226 232 240);
+  border: 1px solid rgb(var(--ui-border));
   border-radius: 0.5rem;
   padding: 1rem;
 }
 
+/* 卡片至少包住自身内容（不可收缩），高度不足时由左侧面板滚动，避免内容溢出背景框。 */
 .project-config-card--fill {
-  flex: 1 1 auto;
-  min-height: 0;
+  flex: 1 0 auto;
 }
 
+/* 右侧规范卡片用纵向 flex 撑满弹窗高度，textarea 走 fill 模式占据剩余空间。
+ * textarea 是 UiInput 内部非根节点，必须用 :deep() 才能命中透传 class。 */
 .project-config-spec-card {
+  display: flex;
   min-height: 0;
+  flex-direction: column;
 }
 
-.project-config-spec-textarea {
-  height: min(620px, calc(88dvh - 250px));
-  min-height: 360px;
+.project-config-spec-card :deep(.project-config-spec-textarea) {
+  min-height: 260px;
 }
 
 @media (max-height: 820px) {
@@ -354,11 +357,6 @@ watch(
 
   .project-config-card {
     padding: 0.875rem;
-  }
-
-  .project-config-spec-textarea {
-    height: calc(100dvh - 330px);
-    min-height: 260px;
   }
 }
 
@@ -383,8 +381,10 @@ watch(
     margin-top: 0.75rem;
   }
 
-  .project-config-spec-textarea {
+  /* 窄屏下布局改为纵向流式，卡片没有确定高度，改回固定高度避免塌陷。 */
+  .project-config-spec-card :deep(.project-config-spec-textarea) {
     height: min(420px, calc(100dvh - 330px));
+    flex: none;
   }
 }
 </style>

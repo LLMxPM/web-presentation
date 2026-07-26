@@ -239,7 +239,8 @@ class PageService:
         )
         if payload.title is not None:
             page_model.title = payload.title
-        if payload.summary is not None:
+        if "summary" in payload.model_fields_set:
+            # 显式传入 null 表示清空摘要；未传字段时保持原值。
             page_model.summary = payload.summary
         if "speaker_notes" in payload.model_fields_set:
             page_model.speaker_notes = next_speaker_notes

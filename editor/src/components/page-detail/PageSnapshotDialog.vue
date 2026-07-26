@@ -3,7 +3,7 @@
   <UiDialog :open="props.modelValue" :title="`创建快照 · ${props.versionLabel}`" size="compact"
     @update:open="emit('update:modelValue', $event)">
     <div class="space-y-4">
-      <p class="text-sm text-slate-500">
+      <p class="text-sm text-text-muted">
         为这个版本填写一个更容易识别的名称，后续在版本历史里会更好找。名称可留空。
       </p>
       <UiFormField label="快照名称">

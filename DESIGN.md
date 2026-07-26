@@ -94,6 +94,16 @@
 
 圆角只使用 `ui-sm`、`ui-md`、`ui-lg`、`ui-xl`。`rounded-full` 只用于头像、状态点、胶囊标签和圆形图标按钮。
 
+### 4.4 语义色 Token 家族
+
+所有颜色 Token 定义在 `editor/src/style.css` 的 `:root`（RGB 三元组），经 `editor/tailwind.config.js` 映射为语义类，是唯一事实源；夜间模式通过 `.dark` 覆盖同名变量实现，业务代码不得再引入具体色阶。
+
+- 表面 / 文字 / 边框：`surface`（含 `raised`/`muted`/`hover`/`selected`）、`text`（`strong`/`emphasis`/`secondary`/`muted`/`disabled`/`faint`/`inverse`）、`border`（`muted`/`strong`/`focus`）。
+- 品牌强调：`accent`（`hover` 深、`emphasis` 亮、`border` 选中边框、`ring` 选中环、`muted` 浅底）。
+- 状态色统一四档：`success` / `warning` / `danger` / `info` 各含 `DEFAULT`（底色文字）、`strong`（深色文字）、`border`（边框/环）、`muted`（浅背景）。状态徽章按「`bg-*-muted` + `text-*-strong` + `border-*-border`」组合，禁止再用 `emerald/rose/amber/sky` 等原始色阶。
+- AI 品牌色：`ai`（`strong`/`border`/`muted`），用于 Agent 相关标识，不复用 `violet-*`。
+- 固定深色面（夜间模式不翻转）：`surface-inverse`、`surface-inverse-raised`、`text-on-inverse`（代码块、暗色预览底）；蒙层基色 `overlay`（配透明度用于弹窗遮罩、悬停 scrim、Tooltip 深色底）。
+
 ## 5. 页面骨架
 
 ### 5.1 页面标题
@@ -342,6 +352,13 @@ ToolPanel
 ### 8.5 数据状态
 
 加载、空、错误和就绪状态优先使用 `DataState` 或业务层统一状态组件。切换状态时应保持容器尺寸稳定，避免工作台整体跳动。
+
+### 8.6 确认弹窗
+
+- 业务代码通过 `createConfirm()` 请求确认，不自行创建全屏遮罩或临时 Vue 应用。
+- 全局 `UiConfirmHost` 负责使用 `UiDialog` 串行展示请求，确保嵌套弹窗中的焦点、Esc 和指针交互正常。
+- 危险操作通过 `dangerous` 选项使用 `danger` 按钮语义；取消在左，确认在右。
+- 同一时刻只显示一个确认框，并按触发顺序结算并发请求。
 
 ## 9. 响应式规则
 

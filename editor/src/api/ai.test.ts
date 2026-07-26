@@ -134,6 +134,28 @@ describe('ai api', () => {
     )
   })
 
+  it('启动新 run 时应提交本轮选择的模型配置', async () => {
+    fetchMock.mockResolvedValueOnce(new Response(new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.close()
+      },
+    }), { status: 200 }))
+
+    await streamAgentRun('session-1', scope, {
+      run_id: 'run-model-switch',
+      message: '改用另一个模型继续',
+      llm_config_id: 9,
+    })
+
+    const request = fetchMock.mock.calls[0]?.[1] as RequestInit
+    expect(JSON.parse(String(request.body))).toEqual({
+      run_id: 'run-model-switch',
+      message: '改用另一个模型继续',
+      image_attachment_ids: [],
+      llm_config_id: 9,
+    })
+  })
+
   it('继续结构化提问时应提交 feedback selections', async () => {
     fetchMock.mockResolvedValueOnce(new Response(new ReadableStream<Uint8Array>({
       start(controller) {

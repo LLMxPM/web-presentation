@@ -20,7 +20,7 @@ describe('dialog presets', () => {
       props: {
         modelValue: true,
         editingFont: null,
-        fontAssets: [],
+        asset: null,
       },
     })
 
@@ -99,7 +99,6 @@ describe('dialog presets', () => {
         versionContentMap: {},
         historyPanelPreviewFrameUrl: '',
         editorLanguage: 'typescript',
-        editorTheme: 'light',
         previewingRuntimeVersionNo: null,
         previewVersionPending: false,
         previewVersionNo: null,

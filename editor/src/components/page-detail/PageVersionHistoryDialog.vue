@@ -3,29 +3,29 @@
   <UiDialog :open="props.modelValue" title="版本历史" size="canvas" body-preset="split"
     @update:open="emit('update:modelValue', $event)">
     <div class="h-full overflow-hidden">
-      <div v-if="props.loading && !props.versions.length" class="px-6 py-10 text-sm text-slate-400">
+      <div v-if="props.loading && !props.versions.length" class="px-6 py-10 text-sm text-text-disabled">
         版本历史加载中...
       </div>
 
       <div v-else-if="props.versions.length"
         class="grid h-full min-h-0 grid-rows-[minmax(220px,0.9fr)_minmax(0,1.1fr)] gap-0 overflow-hidden xl:grid-cols-[minmax(0,0.95fr)_minmax(420px,1.25fr)] xl:grid-rows-1">
-        <div class="h-full overflow-y-auto divide-y divide-slate-100 border-r border-slate-100">
+        <div class="h-full overflow-y-auto divide-y divide-border-muted border-r border-border-muted">
           <article v-for="version in props.versions" :key="version.id" class="px-6 py-4">
             <div class="flex items-start justify-between gap-4 flex-wrap">
               <div class="min-w-0 space-y-2">
                 <div class="flex items-center gap-2 flex-wrap">
                   <span v-if="version.is_current"
-                    class="px-2 py-0.5 text-[11px] font-semibold rounded-full border border-emerald-200 bg-emerald-50 text-emerald-600">
+                    class="px-2 py-0.5 text-[11px] font-semibold rounded-full border border-success-border bg-success-muted text-success">
                     当前
                   </span>
                   <span v-if="version.is_important"
-                    class="px-2 py-0.5 text-[11px] font-semibold rounded-full border border-amber-200 bg-amber-50 text-amber-600">
+                    class="px-2 py-0.5 text-[11px] font-semibold rounded-full border border-warning-border bg-warning-muted text-warning">
                     快照
                   </span>
-                  <span class="text-sm font-semibold text-slate-900">{{ version.version_label }}</span>
-                  <span class="text-xs text-slate-400">{{ formatDateTime(version.created_at) }}</span>
+                  <span class="text-sm font-semibold text-text-strong">{{ version.version_label }}</span>
+                  <span class="text-xs text-text-disabled">{{ formatDateTime(version.created_at) }}</span>
                 </div>
-                <p v-if="version.snapshot_name || version.change_note" class="text-sm text-slate-500 break-all">
+                <p v-if="version.snapshot_name || version.change_note" class="text-sm text-text-muted break-all">
                   {{ version.snapshot_name || version.change_note }}
                   <template v-if="version.snapshot_name && version.change_note">
                     · {{ version.change_note }}
@@ -60,39 +60,38 @@
           </article>
         </div>
 
-        <section class="flex h-full min-h-0 flex-col overflow-hidden bg-slate-50/60">
-          <div class="flex items-start justify-between gap-4 border-b border-slate-100 px-6 py-4">
+        <section class="flex h-full min-h-0 flex-col overflow-hidden bg-canvas/60">
+          <div class="flex items-start justify-between gap-4 border-b border-border-muted px-6 py-4">
             <div class="space-y-1">
               <h3 class="flex items-center gap-2">
-                <span class="text-base font-semibold text-slate-900">{{ props.panelTitle }}</span>
-                <span class="text-sm text-slate-500">{{ props.panelSubtitle }}</span>
+                <span class="text-base font-semibold text-text-strong">{{ props.panelTitle }}</span>
+                <span class="text-sm text-text-muted">{{ props.panelSubtitle }}</span>
               </h3>
             </div>
           </div>
 
           <div class="flex-1 min-h-0 overflow-hidden p-2">
             <div v-if="!props.historyPanel"
-              class="flex h-full items-center justify-center rounded-xl border border-dashed border-slate-200 bg-white/80 px-8 text-center text-sm text-slate-500">
+              class="flex h-full items-center justify-center rounded-xl border border-dashed border-border bg-surface/80 px-8 text-center text-sm text-text-muted">
               在左侧选择一个版本查看差异或预览
             </div>
 
-            <div v-else-if="shouldShowDiff" class="h-full overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <div v-else-if="shouldShowDiff" class="h-full overflow-hidden rounded-2xl border border-border bg-surface shadow-sm">
               <MonacoDiffViewer
                 :original-value="activeVersionContent?.resolved_content ?? ''"
                 :modified-value="props.currentContent"
                 :language="props.editorLanguage"
-                :theme="props.editorTheme"
                 height="100%"
               />
             </div>
 
             <div v-else-if="props.historyPanel?.mode === 'preview'"
-              class="h-full overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 shadow-sm">
+              class="h-full overflow-hidden rounded-2xl border border-border bg-canvas shadow-sm">
               <RuntimePreviewFrame
                 :frame-url="props.historyPanelPreviewFrameUrl"
                 :title="`runtime-preview-version-${activeVersionNo ?? 0}`"
                 layout="fill"
-                container-class="h-full overflow-hidden rounded-2xl border-0 bg-slate-50 shadow-none"
+                container-class="h-full overflow-hidden rounded-2xl border-0 bg-canvas shadow-none"
                 empty-title="版本预览准备中"
                 empty-description="正在生成所选版本的 Runtime 预览，请稍候。"
               />
@@ -101,7 +100,7 @@
         </section>
       </div>
 
-      <div v-else class="px-6 py-10 text-sm text-slate-400">
+      <div v-else class="px-6 py-10 text-sm text-text-disabled">
         当前页面还没有可展示的版本历史。
       </div>
     </div>
@@ -115,7 +114,7 @@ import { RotateCcw } from '@lucide/vue'
 import MonacoDiffViewer from '@/components/editor/MonacoDiffViewer.vue'
 import RuntimePreviewFrame from '@/components/runtime-preview/RuntimePreviewFrame.vue'
 import { UiButton, UiDialog } from '@/components/ui'
-import type { EditorLanguage, EditorThemeMode } from '@/types/monaco'
+import type { EditorLanguage } from '@/types/monaco'
 import type { PageVersionContent, PageVersionListItem } from '@/types/api'
 import { formatDateTime } from '@/utils/format'
 
@@ -132,7 +131,6 @@ interface Props {
   versionContentMap: Record<number, PageVersionContent>
   historyPanelPreviewFrameUrl: string
   editorLanguage: EditorLanguage
-  editorTheme: EditorThemeMode
   previewingRuntimeVersionNo: number | null
   previewVersionPending: boolean
   previewVersionNo: number | null

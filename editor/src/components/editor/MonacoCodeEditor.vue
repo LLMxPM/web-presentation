@@ -13,7 +13,6 @@ import type * as Monaco from 'monaco-editor'
 import type {
   EditorLanguage,
   EditorSaveReason,
-  EditorThemeMode,
   MonacoCompletionConfig,
   MonacoEditorExpose,
   MonacoEditorReadyPayload,
@@ -23,20 +22,19 @@ import {
   MonacoKeyCode,
   MonacoKeyMod,
   getDefaultEditorOptions,
-  getDefaultEditorTheme,
   initializeMonaco,
   resolveCompletionSuggestions,
   resolveMonacoLanguage,
   resolveMonacoTheme,
   toMonacoCompletionItems,
 } from '@/utils/monaco'
+import { useTheme } from '@/composables/useTheme'
 
 const props = withDefaults(defineProps<{
   modelValue: string
   language?: EditorLanguage
   readonly?: boolean
   height?: string | number
-  theme?: EditorThemeMode
   autoSaveDelay?: number | null
   shortcutBindings?: MonacoShortcutBinding[]
   completionConfig?: MonacoCompletionConfig
@@ -44,11 +42,13 @@ const props = withDefaults(defineProps<{
   language: 'vue',
   readonly: false,
   height: 480,
-  theme: getDefaultEditorTheme(),
   autoSaveDelay: 5000,
   shortcutBindings: () => [],
   completionConfig: () => ({ includeDefault: true }),
 })
+
+// 编辑器主题跟随全局明亮 / 夜间模式，不再由页面层独立控制。
+const { mode: themeMode } = useTheme()
 
 const emit = defineEmits<{
   'update:modelValue': [value: string]
@@ -252,7 +252,7 @@ onMounted(async () => {
     ...getDefaultEditorOptions(),
     model: modelRef.value,
     readOnly: props.readonly,
-    theme: resolveMonacoTheme(props.theme),
+    theme: resolveMonacoTheme(themeMode.value),
   })
 
   editorRef.value.onDidChangeModelContent(() => {
@@ -306,8 +306,8 @@ watch(() => props.readonly, (readonly) => {
   }
 })
 
-watch(() => props.theme, (theme) => {
-  monacoRef.value?.editor.setTheme(resolveMonacoTheme(theme))
+watch(themeMode, (mode) => {
+  monacoRef.value?.editor.setTheme(resolveMonacoTheme(mode))
 })
 
 watch(() => props.autoSaveDelay, () => {

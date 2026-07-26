@@ -3,13 +3,14 @@
   <div class="space-y-2">
     <div
       class="flex items-center rounded-xl"
-      :class="[triggerContainerClass, disabled ? 'cursor-not-allowed bg-slate-50 text-slate-400' : 'hover:border-slate-300']"
+      :class="[triggerContainerClass, disabled ? 'cursor-not-allowed bg-canvas text-text-disabled' : 'hover:border-border-strong']"
     >
       <button
         type="button"
         class="flex min-w-0 items-center text-left"
         :class="triggerButtonClass"
         :disabled="disabled"
+        :aria-label="size === 'compact' ? resolvedTitle : undefined"
         @click="openPicker"
       >
         <div
@@ -23,16 +24,16 @@
             class="object-contain"
             :class="previewImageClass"
           >
-          <ImageIcon v-else class="h-4 w-4 text-slate-300" />
+          <ImageIcon v-else class="h-4 w-4 text-text-faint" />
         </div>
         <div v-if="showAssetSummary" class="min-w-0 flex-1">
-          <div v-if="selectedAsset" class="truncate text-sm font-medium text-slate-700" :title="selectedAsset.name">
+          <div v-if="selectedAsset" class="truncate text-sm font-medium text-text-emphasis" :title="selectedAsset.name">
             {{ selectedAsset.name }}
           </div>
-          <div v-else class="truncate text-sm text-slate-400">
+          <div v-else class="truncate text-sm text-text-disabled">
             {{ resolvedPlaceholder }}
           </div>
-          <div v-if="showAssetMeta && selectedAsset" class="truncate text-[11px] text-slate-400">
+          <div v-if="showAssetMeta && selectedAsset" class="truncate text-[11px] text-text-disabled">
             {{ buildAssetMeta(selectedAsset) }}
           </div>
         </div>
@@ -41,7 +42,7 @@
       <button
         v-if="showClearButton"
         type="button"
-        class="shrink-0 text-slate-400 transition hover:text-slate-600"
+        class="shrink-0 text-text-disabled transition hover:text-text-secondary"
         :class="clearButtonClass"
         :title="`清空${resourceLabel}`"
         @click="clearSelection"
@@ -51,7 +52,7 @@
       <button
         v-if="showActionButton"
         type="button"
-        class="shrink-0 whitespace-nowrap text-xs font-semibold text-slate-600 transition hover:text-indigo-600"
+        class="shrink-0 whitespace-nowrap text-xs font-semibold text-text-secondary transition hover:text-accent"
         :class="actionButtonClass"
         :disabled="disabled"
         @click="openPicker"
@@ -60,7 +61,7 @@
       </button>
     </div>
 
-    <p v-if="hint" class="text-[11px] leading-5 text-slate-500">
+    <p v-if="hint" class="text-[11px] leading-5 text-text-muted">
       {{ hint }}
     </p>
   </div>
@@ -73,9 +74,9 @@
     @update:open="dialogVisible = $event"
   >
     <div class="grid h-full min-h-0 gap-4 overflow-y-auto lg:grid-cols-[300px_minmax(0,1fr)] lg:overflow-hidden">
-      <aside class="min-w-0 overflow-hidden rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+      <aside class="min-w-0 overflow-hidden rounded-2xl border border-border bg-canvas/70 p-4">
         <div class="flex min-w-0 items-center justify-between gap-2">
-          <div class="shrink-0 text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">{{ resourceLabel }}预览</div>
+          <div class="shrink-0 text-xs font-semibold uppercase tracking-[0.2em] text-text-disabled">{{ resourceLabel }}预览</div>
           <AssetPreviewBackgroundControl
             v-model="previewBackground"
             class="w-[148px] shrink-0"
@@ -83,7 +84,7 @@
         </div>
         <AssetPreviewSurface
           :background="previewBackground"
-          class="mt-3 flex min-h-[220px] items-center justify-center rounded-2xl border border-slate-200 transition-colors"
+          class="mt-3 flex min-h-[220px] items-center justify-center rounded-2xl border border-border transition-colors"
         >
           <img
             v-if="pendingAsset?.url"
@@ -91,17 +92,17 @@
             :alt="pendingAsset.name"
             class="h-24 w-24 object-contain"
           >
-          <div v-else class="flex flex-col items-center gap-2 text-slate-400">
+          <div v-else class="flex flex-col items-center gap-2 text-text-disabled">
             <ImageIcon class="h-8 w-8" />
             <span class="text-sm">未选择{{ resourceLabel }}</span>
           </div>
         </AssetPreviewSurface>
 
         <div class="mt-4 min-w-0 space-y-2 overflow-hidden">
-          <div class="truncate text-lg font-bold text-slate-900" :title="pendingAsset?.name">
+          <div class="truncate text-lg font-bold text-text-strong" :title="pendingAsset?.name">
             {{ pendingAsset?.name || `请选择${resourceLabel}` }}
           </div>
-          <div v-if="pendingAsset" class="min-w-0 space-y-2 text-xs text-slate-500">
+          <div v-if="pendingAsset" class="min-w-0 space-y-2 text-xs text-text-muted">
             <div class="flex min-w-0 items-center gap-1">
               <span class="shrink-0">原文件名：</span>
               <span class="min-w-0 truncate" :title="pendingAsset.original_name">{{ pendingAsset.original_name }}</span>
@@ -115,41 +116,41 @@
               <span
                 v-for="tag in getAssetTags(pendingAsset)"
                 :key="`${pendingAsset.id}-${tag}`"
-                class="rounded-full bg-indigo-50 px-2 py-1 text-[11px] font-semibold text-indigo-700"
+                class="rounded-full bg-surface-selected px-2 py-1 text-[11px] font-semibold text-accent-hover"
               >
                 {{ tag }}
               </span>
             </div>
-            <div v-else class="text-slate-400">当前资源没有标签。</div>
+            <div v-else class="text-text-disabled">当前资源没有标签。</div>
           </div>
         </div>
       </aside>
 
       <section class="flex min-h-0 min-w-0 flex-col gap-4">
         <div class="flex shrink-0 flex-wrap items-center gap-3">
-          <label class="flex min-w-0 flex-1 items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-3">
-            <Search class="h-4 w-4 shrink-0 text-slate-400" />
+          <label class="flex min-w-0 flex-1 items-center gap-2 rounded-2xl border border-border bg-canvas px-3">
+            <Search class="h-4 w-4 shrink-0 text-text-disabled" />
             <input
               v-model="searchKeyword"
               type="text"
-              class="h-11 min-w-0 flex-1 bg-transparent text-sm text-slate-700 outline-none placeholder:text-slate-400"
+              class="h-11 min-w-0 flex-1 bg-transparent text-sm text-text-emphasis outline-none placeholder:text-text-disabled"
               :placeholder="`按名称、文件名或标签搜索${resourceLabel}`"
             >
           </label>
-          <div class="rounded-full border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-500">
+          <div class="rounded-full border border-border bg-canvas px-3 py-2 text-xs font-semibold text-text-muted">
             共 {{ total }} 个{{ resourceLabel }}
           </div>
         </div>
 
-        <div v-if="loading" class="flex min-h-[360px] flex-1 items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-slate-50 text-sm text-slate-400">
+        <div v-if="loading" class="flex min-h-[360px] flex-1 items-center justify-center rounded-2xl border border-dashed border-border bg-canvas text-sm text-text-disabled">
           正在加载{{ resourceLabel }}资源...
         </div>
-        <div v-else-if="assets.length === 0" class="flex min-h-[360px] flex-1 flex-col items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-slate-50 text-center">
-          <ImageIcon class="h-8 w-8 text-slate-300" />
-          <div class="mt-3 text-sm font-semibold text-slate-500">没有匹配的{{ resourceLabel }}</div>
-          <div class="mt-1 text-xs text-slate-400">可尝试搜索资源名称、原文件名或标签。</div>
+        <div v-else-if="assets.length === 0" class="flex min-h-[360px] flex-1 flex-col items-center justify-center rounded-2xl border border-dashed border-border bg-canvas text-center">
+          <ImageIcon class="h-8 w-8 text-text-faint" />
+          <div class="mt-3 text-sm font-semibold text-text-muted">没有匹配的{{ resourceLabel }}</div>
+          <div class="mt-1 text-xs text-text-disabled">可尝试搜索资源名称、原文件名或标签。</div>
         </div>
-        <div v-else class="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-slate-100">
+        <div v-else class="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-border-muted">
           <div class="grid min-h-0 flex-1 grid-cols-[repeat(auto-fill,minmax(160px,1fr))] content-start gap-3 overflow-y-auto p-1">
             <button
               v-for="asset in assets"
@@ -157,30 +158,30 @@
               type="button"
               class="rounded-2xl border p-3 text-left transition"
               :class="pendingSelectedId === asset.id
-                ? 'border-indigo-400 bg-indigo-50 shadow-sm'
-                : 'border-slate-200 bg-white hover:border-indigo-200 hover:bg-slate-50'"
+                ? 'border-accent-border bg-surface-selected shadow-sm'
+                : 'border-border bg-surface hover:border-accent-ring hover:bg-surface-hover'"
               @click="selectPendingAsset(asset)"
             >
-              <div class="flex h-24 items-center justify-center rounded-xl border border-slate-100 bg-slate-50">
+              <div class="flex h-24 items-center justify-center rounded-xl border border-border-muted bg-canvas">
                 <img :src="asset.url || ''" :alt="asset.name" :class="assetType === 'icon' ? 'h-12 w-12 object-contain' : 'h-full w-full object-contain'">
               </div>
-              <div class="mt-3 truncate text-sm font-semibold text-slate-800">{{ asset.name }}</div>
-              <div class="mt-1 line-clamp-2 text-[11px] leading-5 text-slate-500">
+              <div class="mt-3 truncate text-sm font-semibold text-text">{{ asset.name }}</div>
+              <div class="mt-1 line-clamp-2 text-[11px] leading-5 text-text-muted">
                 {{ buildAssetMeta(asset) }}
               </div>
               <div class="mt-2 flex flex-wrap gap-1.5">
                 <template v-if="assetType === 'icon'">
-                  <span class="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600">
+                  <span class="rounded-full bg-surface-muted px-2 py-0.5 text-[10px] font-semibold text-text-secondary">
                     {{ getIconStyleLabel(asset.analysis_metadata) }}
                   </span>
-                  <span class="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600">
+                  <span class="rounded-full bg-surface-muted px-2 py-0.5 text-[10px] font-semibold text-text-secondary">
                     {{ getRenderModeLabel(asset.analysis_metadata) }}
                   </span>
                 </template>
                 <span
                   v-for="tag in getAssetTags(asset).slice(0, 2)"
                   :key="`${asset.id}-${tag}`"
-                  class="rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-semibold text-indigo-700"
+                  class="rounded-full bg-surface-selected px-2 py-0.5 text-[10px] font-semibold text-accent-hover"
                 >
                   {{ tag }}
                 </span>
@@ -285,7 +286,7 @@ const pendingAsset = computed(() => (
 const triggerContainerClass = computed(() => (
   props.size === 'compact'
     ? 'h-9 gap-1.5 px-0 py-0'
-    : 'min-h-10 border border-slate-200 bg-white px-3 py-2'
+    : 'min-h-10 border border-border bg-surface px-3 py-2'
 ))
 const previewBoxClass = computed(() => (
   props.size === 'compact'
@@ -294,8 +295,8 @@ const previewBoxClass = computed(() => (
 ))
 const previewBoxToneClass = computed(() => (
   props.size === 'compact'
-    ? 'border-slate-200 bg-white'
-    : (selectedAsset.value ? 'border-indigo-100 bg-indigo-50/70' : 'border-slate-200 bg-slate-50')
+    ? 'border-border bg-surface'
+    : (selectedAsset.value ? 'border-accent-muted bg-surface-selected/70' : 'border-border bg-canvas')
 ))
 const previewImageClass = computed(() => (
   props.size === 'compact'
@@ -304,8 +305,8 @@ const previewImageClass = computed(() => (
 ))
 const actionButtonClass = computed(() => (
   props.size === 'compact'
-    ? 'h-9 rounded-lg border border-slate-200 bg-white px-3 py-0 hover:border-indigo-200 hover:bg-indigo-50'
-    : 'rounded-lg border border-slate-200 px-2.5 py-1.5 hover:border-indigo-200 hover:bg-indigo-50'
+    ? 'h-9 rounded-lg border border-border bg-surface px-3 py-0 hover:border-accent-ring hover:bg-surface-selected'
+    : 'rounded-lg border border-border px-2.5 py-1.5 hover:border-accent-ring hover:bg-surface-selected'
 ))
 const showAssetMeta = computed(() => props.size !== 'compact')
 const showAssetSummary = computed(() => props.size !== 'compact')
@@ -315,8 +316,8 @@ const showClearButton = computed(() => (
 const showActionButton = computed(() => props.size !== 'compact')
 const clearButtonClass = computed(() => (
   props.size === 'compact'
-    ? 'flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'
-    : 'rounded-lg p-1.5 hover:bg-slate-100'
+    ? 'flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-surface hover:border-border-strong hover:bg-surface-hover'
+    : 'rounded-lg p-1.5 hover:bg-surface-muted'
 ))
 const triggerButtonClass = computed(() => (
   props.size === 'compact'

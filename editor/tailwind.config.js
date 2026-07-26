@@ -4,6 +4,7 @@
 
 /** @type {import('tailwindcss').Config} */
 export default {
+  darkMode: 'class',
   content: [
     "./index.html",
     "./src/**/*.{vue,js,ts,jsx,tsx}",
@@ -12,46 +13,81 @@ export default {
     extend: {
       colors: {
         canvas: 'rgb(var(--ui-canvas) / <alpha-value>)',
+        overlay: 'rgb(var(--ui-overlay) / <alpha-value>)',
         surface: {
           DEFAULT: 'rgb(var(--ui-surface) / <alpha-value>)',
           raised: 'rgb(var(--ui-surface-raised) / <alpha-value>)',
           muted: 'rgb(var(--ui-surface-muted) / <alpha-value>)',
           hover: 'rgb(var(--ui-surface-hover) / <alpha-value>)',
           selected: 'rgb(var(--ui-surface-selected) / <alpha-value>)',
+          inverse: 'rgb(var(--ui-surface-inverse) / <alpha-value>)',
+          'inverse-raised': 'rgb(var(--ui-surface-inverse-raised) / <alpha-value>)',
         },
         text: {
           DEFAULT: 'rgb(var(--ui-text) / <alpha-value>)',
+          strong: 'rgb(var(--ui-text-strong) / <alpha-value>)',
+          emphasis: 'rgb(var(--ui-text-emphasis) / <alpha-value>)',
           secondary: 'rgb(var(--ui-text-secondary) / <alpha-value>)',
           muted: 'rgb(var(--ui-text-muted) / <alpha-value>)',
           disabled: 'rgb(var(--ui-text-disabled) / <alpha-value>)',
+          faint: 'rgb(var(--ui-text-faint) / <alpha-value>)',
           inverse: 'rgb(var(--ui-text-inverse) / <alpha-value>)',
+          'on-inverse': 'rgb(var(--ui-text-on-inverse) / <alpha-value>)',
         },
         border: {
           DEFAULT: 'rgb(var(--ui-border) / <alpha-value>)',
+          muted: 'rgb(var(--ui-border-muted) / <alpha-value>)',
           strong: 'rgb(var(--ui-border-strong) / <alpha-value>)',
           focus: 'rgb(var(--ui-border-focus) / <alpha-value>)',
         },
         accent: {
           DEFAULT: 'rgb(var(--ui-accent) / <alpha-value>)',
           hover: 'rgb(var(--ui-accent-hover) / <alpha-value>)',
+          emphasis: 'rgb(var(--ui-accent-emphasis) / <alpha-value>)',
+          border: 'rgb(var(--ui-accent-border) / <alpha-value>)',
+          ring: 'rgb(var(--ui-accent-ring) / <alpha-value>)',
           muted: 'rgb(var(--ui-accent-muted) / <alpha-value>)',
         },
         danger: {
           DEFAULT: 'rgb(var(--ui-danger) / <alpha-value>)',
+          strong: 'rgb(var(--ui-danger-strong) / <alpha-value>)',
+          border: 'rgb(var(--ui-danger-border) / <alpha-value>)',
           muted: 'rgb(var(--ui-danger-muted) / <alpha-value>)',
         },
         warning: {
           DEFAULT: 'rgb(var(--ui-warning) / <alpha-value>)',
+          strong: 'rgb(var(--ui-warning-strong) / <alpha-value>)',
+          border: 'rgb(var(--ui-warning-border) / <alpha-value>)',
           muted: 'rgb(var(--ui-warning-muted) / <alpha-value>)',
         },
         success: {
           DEFAULT: 'rgb(var(--ui-success) / <alpha-value>)',
+          strong: 'rgb(var(--ui-success-strong) / <alpha-value>)',
+          border: 'rgb(var(--ui-success-border) / <alpha-value>)',
           muted: 'rgb(var(--ui-success-muted) / <alpha-value>)',
         },
         info: {
           DEFAULT: 'rgb(var(--ui-info) / <alpha-value>)',
+          strong: 'rgb(var(--ui-info-strong) / <alpha-value>)',
+          border: 'rgb(var(--ui-info-border) / <alpha-value>)',
           muted: 'rgb(var(--ui-info-muted) / <alpha-value>)',
         },
+        ai: {
+          DEFAULT: 'rgb(var(--ui-ai) / <alpha-value>)',
+          strong: 'rgb(var(--ui-ai-strong) / <alpha-value>)',
+          border: 'rgb(var(--ui-ai-border) / <alpha-value>)',
+          muted: 'rgb(var(--ui-ai-muted) / <alpha-value>)',
+        },
+      },
+      /*
+       * 裸写 border/divide（不带颜色）默认走语义边框 Token，
+       * 避免回退到 Tailwind 默认 gray-200 导致夜间模式出现亮色分割线。
+       */
+      borderColor: {
+        DEFAULT: 'rgb(var(--ui-border) / <alpha-value>)',
+      },
+      divideColor: {
+        DEFAULT: 'rgb(var(--ui-border) / <alpha-value>)',
       },
       borderRadius: {
         'ui-sm': 'var(--ui-radius-sm)',

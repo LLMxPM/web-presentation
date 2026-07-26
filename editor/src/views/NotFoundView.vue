@@ -2,12 +2,12 @@
 <template>
   <section class="flex min-h-[520px] items-center justify-center px-6 py-12">
     <div class="w-full max-w-xl text-center">
-      <div class="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-slate-100 text-slate-500">
+      <div class="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-surface-muted text-text-muted">
         <RouteOff class="h-8 w-8" />
       </div>
-      <p class="mt-6 text-xs font-black uppercase tracking-[0.24em] text-slate-400">404</p>
-      <h1 class="mt-3 text-2xl font-black text-slate-900">页面不存在</h1>
-      <p class="mx-auto mt-3 max-w-md text-sm leading-6 text-slate-500">
+      <p class="mt-6 text-xs font-black uppercase tracking-[0.24em] text-text-disabled">404</p>
+      <h1 class="mt-3 text-2xl font-black text-text-strong">页面不存在</h1>
+      <p class="mx-auto mt-3 max-w-md text-sm leading-6 text-text-muted">
         当前地址没有匹配到 Editor 页面，可能是链接已调整或路径输入有误。
       </p>
 

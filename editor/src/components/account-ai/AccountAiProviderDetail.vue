@@ -1,33 +1,33 @@
 <!-- 文件功能：承载账号 AI 设置中的供应商配置详情表单，集中维护 Base URL 与 API Key。 -->
 <template>
   <section class="space-y-5 p-5">
-    <div class="flex flex-wrap items-start justify-between gap-4 border-b border-slate-100 pb-4">
+    <div class="flex flex-wrap items-start justify-between gap-4 border-b border-border-muted pb-4">
       <div>
-        <h2 class="text-lg font-bold text-slate-900">{{ panelTitle }}</h2>
-        <p class="mt-1 text-sm text-slate-500">
+        <h2 class="text-lg font-bold text-text-strong">{{ panelTitle }}</h2>
+        <p class="mt-1 text-sm text-text-muted">
           {{ panelDescription }}
         </p>
         <div v-if="mode === 'detail' && selectedProviderConfig" class="mt-3 flex flex-wrap gap-2 text-xs font-semibold">
           <span
             class="rounded-full px-2.5 py-1"
-            :class="selectedProviderConfig.status === 'active' ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'"
+            :class="selectedProviderConfig.status === 'active' ? 'bg-success-muted text-success-strong' : 'bg-surface-muted text-text-muted'"
           >
             {{ selectedProviderConfig.status === 'active' ? '启用' : '不可用' }}
           </span>
           <span
             class="rounded-full px-2.5 py-1"
-            :class="selectedProviderConfig.scope === 'global' ? 'bg-indigo-50 text-indigo-700' : 'bg-slate-100 text-slate-600'"
+            :class="selectedProviderConfig.scope === 'global' ? 'bg-surface-selected text-accent-hover' : 'bg-surface-muted text-text-secondary'"
           >
             {{ selectedProviderConfig.scope === 'global' ? '全局供应商' : '个人供应商' }}
           </span>
           <span
             class="rounded-full px-2.5 py-1"
-            :class="selectedProviderConfig.has_api_key ? 'bg-slate-100 text-slate-600' : 'bg-amber-50 text-amber-700'"
+            :class="selectedProviderConfig.has_api_key ? 'bg-surface-muted text-text-secondary' : 'bg-warning-muted text-warning-strong'"
           >
             {{ selectedProviderConfig.has_api_key ? '已保存密钥' : '缺少密钥' }}
           </span>
         </div>
-        <p v-if="readOnlyProvider" class="mt-2 text-xs font-semibold text-amber-600">管理员全局供应商只读，可随全局模型被使用但不能修改。</p>
+        <p v-if="readOnlyProvider" class="mt-2 text-xs font-semibold text-warning">管理员全局供应商只读，可随全局模型被使用但不能修改。</p>
       </div>
       <div v-if="mode === 'detail' && selectedProviderConfig?.editable" class="flex flex-wrap justify-end gap-2">
         <UiButton
@@ -48,31 +48,31 @@
 
     <article v-if="mode === 'detail' && selectedProviderConfig" class="space-y-6">
       <section class="space-y-3">
-        <div class="flex items-start gap-3 border-b border-slate-100 pb-2">
-          <span class="mt-1 h-5 w-1 rounded-full bg-indigo-500"></span>
+        <div class="flex items-start gap-3 border-b border-border-muted pb-2">
+          <span class="mt-1 h-5 w-1 rounded-full bg-accent-emphasis"></span>
           <div>
-            <h3 class="text-base font-bold text-slate-900">供应商身份</h3>
-            <p class="mt-1 text-xs leading-5 text-slate-500">用于识别这组连接配置的目录来源、使用范围和可用状态。</p>
+            <h3 class="text-base font-bold text-text-strong">供应商身份</h3>
+            <p class="mt-1 text-xs leading-5 text-text-muted">用于识别这组连接配置的目录来源、使用范围和可用状态。</p>
           </div>
         </div>
         <dl class="grid gap-3 text-sm md:grid-cols-2 xl:grid-cols-4">
-          <div class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-            <dt class="text-xs font-semibold text-slate-400">供应商</dt>
-            <dd class="mt-1 font-bold text-slate-900">{{ selectedProviderConfig.provider_label }}</dd>
+          <div class="rounded-xl border border-border bg-canvas px-4 py-3">
+            <dt class="text-xs font-semibold text-text-disabled">供应商</dt>
+            <dd class="mt-1 font-bold text-text-strong">{{ selectedProviderConfig.provider_label }}</dd>
           </div>
-          <div class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-            <dt class="text-xs font-semibold text-slate-400">供应商 Key</dt>
+          <div class="rounded-xl border border-border bg-canvas px-4 py-3">
+            <dt class="text-xs font-semibold text-text-disabled">供应商 Key</dt>
             <dd class="mt-1 min-w-0">
-              <code class="block truncate rounded bg-white px-2 py-1 text-xs font-semibold text-slate-700">{{ selectedProviderConfig.provider_key }}</code>
+              <code class="block truncate rounded bg-surface px-2 py-1 text-xs font-semibold text-text-emphasis">{{ selectedProviderConfig.provider_key }}</code>
             </dd>
           </div>
-          <div class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-            <dt class="text-xs font-semibold text-slate-400">范围</dt>
-            <dd class="mt-1 font-semibold text-slate-700">{{ selectedProviderConfig.scope === 'global' ? '全局供应商' : '个人供应商' }}</dd>
+          <div class="rounded-xl border border-border bg-canvas px-4 py-3">
+            <dt class="text-xs font-semibold text-text-disabled">范围</dt>
+            <dd class="mt-1 font-semibold text-text-emphasis">{{ selectedProviderConfig.scope === 'global' ? '全局供应商' : '个人供应商' }}</dd>
           </div>
-          <div class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-            <dt class="text-xs font-semibold text-slate-400">状态</dt>
-            <dd class="mt-1 font-semibold" :class="selectedProviderConfig.status === 'active' ? 'text-emerald-700' : 'text-slate-500'">
+          <div class="rounded-xl border border-border bg-canvas px-4 py-3">
+            <dt class="text-xs font-semibold text-text-disabled">状态</dt>
+            <dd class="mt-1 font-semibold" :class="selectedProviderConfig.status === 'active' ? 'text-success-strong' : 'text-text-muted'">
               {{ selectedProviderConfig.status === 'active' ? '启用' : '不可用' }}
             </dd>
           </div>
@@ -80,21 +80,21 @@
       </section>
 
       <section class="space-y-3">
-        <div class="flex items-start gap-3 border-b border-slate-100 pb-2">
-          <span class="mt-1 h-5 w-1 rounded-full bg-sky-500"></span>
+        <div class="flex items-start gap-3 border-b border-border-muted pb-2">
+          <span class="mt-1 h-5 w-1 rounded-full bg-info"></span>
           <div>
-            <h3 class="text-base font-bold text-slate-900">连接凭证</h3>
-            <p class="mt-1 text-xs leading-5 text-slate-500">这里只读展示连接地址和密钥保存情况，不承载编辑输入。</p>
+            <h3 class="text-base font-bold text-text-strong">连接凭证</h3>
+            <p class="mt-1 text-xs leading-5 text-text-muted">这里只读展示连接地址和密钥保存情况，不承载编辑输入。</p>
           </div>
         </div>
         <dl class="grid gap-3 text-sm md:grid-cols-2">
-          <div class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-            <dt class="text-xs font-semibold text-slate-400">Base URL</dt>
-            <dd class="mt-1 truncate font-semibold text-slate-700">{{ selectedProviderConfig.base_url || '使用默认地址' }}</dd>
+          <div class="rounded-xl border border-border bg-canvas px-4 py-3">
+            <dt class="text-xs font-semibold text-text-disabled">Base URL</dt>
+            <dd class="mt-1 truncate font-semibold text-text-emphasis">{{ selectedProviderConfig.base_url || '使用默认地址' }}</dd>
           </div>
-          <div class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-            <dt class="text-xs font-semibold text-slate-400">API Key</dt>
-            <dd class="mt-1 font-semibold" :class="selectedProviderConfig.has_api_key ? 'text-slate-700' : 'text-amber-600'">
+          <div class="rounded-xl border border-border bg-canvas px-4 py-3">
+            <dt class="text-xs font-semibold text-text-disabled">API Key</dt>
+            <dd class="mt-1 max-w-full truncate font-semibold" :class="selectedProviderConfig.has_api_key ? 'text-text-emphasis' : 'text-warning'">
               {{ selectedProviderConfig.has_api_key ? selectedProviderConfig.api_key_masked : '未保存 API Key' }}
             </dd>
           </div>
@@ -102,35 +102,35 @@
       </section>
 
       <section v-if="currentProvider" class="space-y-3">
-        <div class="flex items-start gap-3 border-b border-slate-100 pb-2">
-          <span class="mt-1 h-5 w-1 rounded-full bg-emerald-500"></span>
+        <div class="flex items-start gap-3 border-b border-border-muted pb-2">
+          <span class="mt-1 h-5 w-1 rounded-full bg-success"></span>
           <div>
-            <h3 class="text-base font-bold text-slate-900">目录能力</h3>
-            <p class="mt-1 text-xs leading-5 text-slate-500">来自供应商目录的只读能力，供模型配置继承默认值和参数映射。</p>
+            <h3 class="text-base font-bold text-text-strong">目录能力</h3>
+            <p class="mt-1 text-xs leading-5 text-text-muted">来自供应商目录的只读能力，供模型配置继承默认值和参数映射。</p>
           </div>
         </div>
         <dl class="grid gap-3 text-sm md:grid-cols-2 xl:grid-cols-4">
-          <div class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-            <dt class="text-xs font-semibold text-slate-400">Base URL</dt>
-            <dd class="mt-1 font-semibold" :class="currentProvider.supports_base_url ? 'text-emerald-700' : 'text-slate-500'">
+          <div class="rounded-xl border border-border bg-canvas px-4 py-3">
+            <dt class="text-xs font-semibold text-text-disabled">Base URL</dt>
+            <dd class="mt-1 font-semibold" :class="currentProvider.supports_base_url ? 'text-success-strong' : 'text-text-muted'">
               {{ currentProvider.supports_base_url ? '可配置' : '不支持' }}
             </dd>
           </div>
-          <div class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-            <dt class="text-xs font-semibold text-slate-400">API Key</dt>
-            <dd class="mt-1 font-semibold" :class="currentProvider.supports_api_key ? 'text-emerald-700' : 'text-slate-500'">
+          <div class="rounded-xl border border-border bg-canvas px-4 py-3">
+            <dt class="text-xs font-semibold text-text-disabled">API Key</dt>
+            <dd class="mt-1 font-semibold" :class="currentProvider.supports_api_key ? 'text-success-strong' : 'text-text-muted'">
               {{ currentProvider.supports_api_key ? '需要密钥' : '不需要' }}
             </dd>
           </div>
-          <div class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-            <dt class="text-xs font-semibold text-slate-400">Thinking</dt>
-            <dd class="mt-1 font-semibold" :class="currentProvider.supports_thinking ? 'text-emerald-700' : 'text-slate-500'">
+          <div class="rounded-xl border border-border bg-canvas px-4 py-3">
+            <dt class="text-xs font-semibold text-text-disabled">Thinking</dt>
+            <dd class="mt-1 font-semibold" :class="currentProvider.supports_thinking ? 'text-success-strong' : 'text-text-muted'">
               {{ currentProvider.supports_thinking ? currentProvider.thinking_mode : '不支持' }}
             </dd>
           </div>
-          <div class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-            <dt class="text-xs font-semibold text-slate-400">默认模型</dt>
-            <dd class="mt-1 truncate font-semibold text-slate-700">
+          <div class="rounded-xl border border-border bg-canvas px-4 py-3">
+            <dt class="text-xs font-semibold text-text-disabled">默认模型</dt>
+            <dd class="mt-1 truncate font-semibold text-text-emphasis">
               {{ currentProvider.provider_type === 'image_generation' ? currentProvider.default_image_generation_model_id || '未设置' : currentProvider.default_model_id || '未设置' }}
             </dd>
           </div>
@@ -138,21 +138,21 @@
       </section>
     </article>
 
-    <div v-else-if="mode === 'detail'" class="rounded-2xl border border-dashed border-slate-200 px-4 py-12 text-center text-sm text-slate-500">
+    <div v-else-if="mode === 'detail'" class="rounded-2xl border border-dashed border-border px-4 py-12 text-center text-sm text-text-muted">
       请选择左侧供应商查看详情，或新建一个供应商。
     </div>
 
     <div v-if="mode !== 'detail'" class="space-y-5" :class="readOnlyProvider ? 'pointer-events-none opacity-70' : ''">
       <section class="space-y-3">
-        <div class="flex items-start gap-3 border-b border-slate-100 pb-2">
-          <span class="mt-1 h-5 w-1 rounded-full bg-indigo-500"></span>
+        <div class="flex items-start gap-3 border-b border-border-muted pb-2">
+          <span class="mt-1 h-5 w-1 rounded-full bg-accent-emphasis"></span>
           <div>
-            <h3 class="text-base font-bold text-slate-900">供应商身份</h3>
-            <p class="mt-1 text-xs leading-5 text-slate-500">选择供应商目录项并命名这组连接配置。</p>
+            <h3 class="text-base font-bold text-text-strong">供应商身份</h3>
+            <p class="mt-1 text-xs leading-5 text-text-muted">选择供应商目录项并命名这组连接配置。</p>
           </div>
         </div>
         <div class="grid gap-4 xl:grid-cols-2">
-          <UiFormField v-if="!selectedProviderConfigId && canCreateGlobal" label="供应商范围" class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700">
+          <UiFormField v-if="!selectedProviderConfigId && canCreateGlobal" label="供应商范围" class="rounded-xl border border-border bg-canvas px-4 py-3 text-sm font-semibold text-text-emphasis">
             <UiSelect v-model="form.scope" :options="scopeOptions" />
           </UiFormField>
 
@@ -166,7 +166,7 @@
           </UiFormField>
 
           <div class="space-y-1.5 xl:col-span-2">
-            <label class="ml-1 text-sm font-semibold text-slate-700">供应商</label>
+            <label class="ml-1 text-sm font-semibold text-text-emphasis">供应商</label>
             <UiCombobox
               :model-value="form.provider_key"
               :options="providerOptions"
@@ -174,7 +174,7 @@
               :disabled="Boolean(selectedProviderConfigId)"
               @update:model-value="value => form.provider_key = value as string | null"
             />
-            <p v-if="currentProvider" class="ml-1 text-xs text-slate-400">
+            <p v-if="currentProvider" class="ml-1 text-xs text-text-disabled">
               {{ currentProvider.provider_type === 'image_generation' ? '图片生成供应商' : 'Chat 供应商' }} · 协议由供应商类型固定
             </p>
           </div>
@@ -182,11 +182,11 @@
       </section>
 
       <section class="space-y-3">
-        <div class="flex items-start gap-3 border-b border-slate-100 pb-2">
-          <span class="mt-1 h-5 w-1 rounded-full bg-sky-500"></span>
+        <div class="flex items-start gap-3 border-b border-border-muted pb-2">
+          <span class="mt-1 h-5 w-1 rounded-full bg-info"></span>
           <div>
-            <h3 class="text-base font-bold text-slate-900">连接凭证</h3>
-            <p class="mt-1 text-xs leading-5 text-slate-500">仅保存连接地址和密钥；模型 ID 与预算在模型配置中维护。</p>
+            <h3 class="text-base font-bold text-text-strong">连接凭证</h3>
+            <p class="mt-1 text-xs leading-5 text-text-muted">仅保存连接地址和密钥；模型 ID 与预算在模型配置中维护。</p>
           </div>
         </div>
         <div class="grid gap-4 xl:grid-cols-2">
@@ -198,7 +198,7 @@
               @update:model-value="value => form.base_url = String(value)"
             />
           </UiFormField>
-          <p v-if="currentProvider?.requires_base_url" class="-mt-2 ml-1 text-xs text-amber-600">
+          <p v-if="currentProvider?.requires_base_url" class="-mt-2 ml-1 text-xs text-warning">
             当前供应商必须配置独立 Base URL。
           </p>
 
@@ -228,7 +228,7 @@
       title="配置说明"
       :description="helperText"
       :collapsible="false"
-      class="rounded-xl border border-slate-200 bg-slate-50 text-xs leading-6 text-slate-500"
+      class="rounded-xl border border-border bg-canvas text-xs leading-6 text-text-muted"
       :class="readOnlyProvider ? 'opacity-70' : ''"
     >
       <a
@@ -236,7 +236,7 @@
         :href="currentProvider.docs_url"
         target="_blank"
         rel="noreferrer"
-        class="ml-2 font-semibold text-indigo-600 underline underline-offset-2"
+        class="ml-2 font-semibold text-accent underline underline-offset-2"
       >
         {{ currentProvider.label }} 文档
       </a>

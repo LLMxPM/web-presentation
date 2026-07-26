@@ -634,6 +634,7 @@ async def stream_agent_run(
             reserved_lock=reserved_lock,
             image_attachment_ids=payload.image_attachment_ids,
             run_id=run_id,
+            llm_config_id=payload.llm_config_id,
         ),
         media_type="text/event-stream",
         headers={"X-Agent-Run-Id": run_id},

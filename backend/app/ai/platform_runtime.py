@@ -205,6 +205,9 @@ class PlatformAgentRuntimeStore:
         run_id: str,
         message: str,
         image_attachment_ids: list[int] | None,
+        llm_config_id: int | None = None,
+        llm_metadata: dict[str, Any] | None = None,
+        session_llm_metadata: dict[str, Any] | None = None,
     ) -> PlatformRunStart:
         """创建平台 run、用户消息与首个 run.started 事件。"""
 
@@ -223,9 +226,12 @@ class PlatformAgentRuntimeStore:
             page_id=scope.page_id,
             component_id=scope.component_id,
             source=scope.source,
+            llm_config_id=llm_config_id,
+            llm_config_snapshot_json=dict(llm_metadata) if llm_metadata is not None else None,
             input_payload_json={
                 "message": message,
                 "image_attachment_ids": list(image_attachment_ids or []),
+                "llm_config_id": llm_config_id,
             },
             message_history_json=[],
             event_index=-1,
@@ -233,6 +239,10 @@ class PlatformAgentRuntimeStore:
             created_at=now,
             updated_at=now,
         )
+        if session_llm_metadata is not None:
+            session_metadata = dict(session_model.metadata_json or {})
+            session_metadata["llm"] = dict(session_llm_metadata)
+            session_model.metadata_json = session_metadata
         self._session.add(run_model)
         # PostgreSQL 会立即校验消息表 run_id 外键；先刷入父 run，避免同批 flush 时子表先插入。
         await self._session.flush([run_model])
@@ -360,9 +370,14 @@ class PlatformAgentRuntimeStore:
             return
         tool_call_id = str(event.data.get("tool_call_id") or "").strip()
         summaries = await self._tool_attachment_summaries(session_id=run_model.session_id)
+        output_attachments = (
+            summaries.get((run_model.run_id, tool_call_id), [])
+            if tool_call_id
+            else summaries.get((run_model.run_id, tool_name), [])
+        )
         event.data["output_attachments"] = [
             item.model_dump(mode="json")
-            for item in summaries.get((run_model.run_id, tool_call_id), summaries.get((run_model.run_id, tool_name), []))
+            for item in output_attachments
         ]
 
     async def _refresh_event_projection_source(self, run_model: AiAgentRun, event: AgentRunEvent) -> None:
@@ -950,7 +965,13 @@ class PlatformAgentRuntimeStore:
             if item.kind == "tool" and item.tool is not None:
                 key = (item.run_id, item.tool.tool_call_id or "")
                 fallback_key = (item.run_id, item.tool.tool_name)
-                output_attachments = tool_attachments.get(key) or tool_attachments.get(fallback_key, [])
+                output_attachments = []
+                if item.tool.status == "completed":
+                    output_attachments = (
+                        tool_attachments.get(key, [])
+                        if item.tool.tool_call_id
+                        else tool_attachments.get(fallback_key, [])
+                    )
                 input_attachments = [
                     attachment_lookup[attachment_id]
                     for attachment_id in _tool_input_attachment_ids(item.tool.input_payload)
@@ -1421,6 +1442,7 @@ class PlatformAgentRuntimeStore:
             updated_at=_iso(model.updated_at),
             cancel_requested_at=_iso(model.cancel_requested_at),
             event_index=model.event_index,
+            llm=dict(model.llm_config_snapshot_json) if isinstance(model.llm_config_snapshot_json, dict) else None,
         )
 
     def build_context_status(

@@ -57,7 +57,7 @@ const NATIVE_CONTROL_EXEMPTIONS: NativeControlExemption[] = [
   { relativePath: 'views/AssetsView.vue', tag: 'input', expectedCount: 3, reason: '资源文件选择', attributePattern: /\btype\s*=\s*["']file["']/i },
   { relativePath: 'components/agent/AgentComposer.vue', tag: 'input', expectedCount: 1, reason: '图片附件选择', attributePattern: /\btype\s*=\s*["']file["']/i },
   { relativePath: 'views/WorkspaceStylesView.vue', tag: 'input', expectedCount: 1, reason: '样式包导入', attributePattern: /\btype\s*=\s*["']file["']/i },
-  { relativePath: 'views/ThemesView.vue', tag: 'input', expectedCount: 2, reason: '字体文件选择', attributePattern: /\btype\s*=\s*["']file["']/i },
+  { relativePath: 'views/ThemesView.vue', tag: 'input', expectedCount: 3, reason: '字体文件选择', attributePattern: /\btype\s*=\s*["']file["']/i },
   { relativePath: 'views/ProjectsView.vue', tag: 'input', expectedCount: 1, reason: '模板包导入', attributePattern: /\btype\s*=\s*["']file["']/i },
   { relativePath: 'components/project/ProjectSuggestedReferenceAssetsDialog.vue', tag: 'input', expectedCount: 1, reason: '参考资源选择', attributePattern: /\btype\s*=\s*["']file["']/i },
   { relativePath: 'components/theme/ThemeEditorDialog.vue', tag: 'input', expectedCount: 2, reason: '原生颜色选择器', attributePattern: /\btype\s*=\s*["']color["']/i },
@@ -68,11 +68,17 @@ const NATIVE_CONTROL_EXEMPTIONS: NativeControlExemption[] = [
   { relativePath: 'components/theme/ThemePreviewCard.vue', tag: 'button', expectedCount: 1, reason: '主题按钮样式示意' },
   { relativePath: 'components/component-preview/ComponentPreviewWorkbench.vue', tag: 'button', expectedCount: 1, reason: '简化模式透明缩放触发区' },
   { relativePath: 'components/patterns/PageHeader.vue', tag: 'button', expectedCount: 1, reason: 'Popover 描述触发按钮' },
+  { relativePath: 'components/theme/FontEditorDialog.vue', tag: 'button', expectedCount: 1, reason: '字体声明 Popover 说明触发按钮', attributePattern: /\baria-label\s*=\s*["']字体声明说明["']/i },
   { relativePath: 'components/patterns/SimpleSearchBar.vue', tag: 'input', expectedCount: 1, reason: '搜索栏输入框' },
   { relativePath: 'components/patterns/SimpleSearchBar.vue', tag: 'button', expectedCount: 1, reason: '搜索栏清空按钮' },
   { relativePath: 'components/agent/AgentSessionControls.vue', tag: 'button', expectedCount: 1, reason: '会话列表项切换按钮' },
+  { relativePath: 'components/nav/ProjectQuickSwitcher.vue', tag: 'button', expectedCount: 2, reason: '快速切换触发器与项目列表项' },
   { relativePath: 'components/agent/AgentVisualToolCard.vue', tag: 'button', expectedCount: 2, reason: '图片预览触发按钮' },
   { relativePath: 'components/project/SuggestedComponentsSelectorPanel.vue', tag: 'button', expectedCount: 1, reason: '建议组件选择触发按钮' },
+  { relativePath: 'components/project/ProjectSuggestedReferenceAssetsDialog.vue', tag: 'button', expectedCount: 1, reason: '建议资源整卡片选择触发区' },
+  { relativePath: 'components/page/PageCreateCard.vue', tag: 'button', expectedCount: 1, reason: '整卡片新增页面触发区' },
+  { relativePath: 'components/project/ProjectCreateCard.vue', tag: 'button', expectedCount: 1, reason: '整卡片新增项目触发区' },
+  { relativePath: 'components/page/PageCard.vue', tag: 'button', expectedCount: 1, reason: '页面编码内联复制触发按钮', attributePattern: /\baria-label\s*=\s*["']复制页面名称和编码["']/i },
 ]
 
 /**

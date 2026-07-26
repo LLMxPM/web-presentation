@@ -435,16 +435,52 @@ describe('page screenshot views', () => {
   })
 
   it('PagesView 页头应支持缓存预览卡片尺寸', async () => {
+    listPagesMock.mockResolvedValue({
+      items: [
+        createPageListPayload(),
+        createPageListPayload({
+          id: 32,
+          code: 'PG202604020002',
+          title: '已路由页面',
+          is_in_project_route: true,
+          route_bindings: [{
+            route_id: 101,
+            parent_route: null,
+            route: 'home',
+            full_path: '/home',
+          }],
+        }),
+      ],
+      total: 2,
+      page: 1,
+      page_size: 100,
+    })
+
     render(PagesView, createTestingRenderOptions())
 
     expect(await screen.findByText('页面详情')).toBeInTheDocument()
     const standardButton = screen.getByRole('button', { name: '标准' })
     expect(standardButton).toHaveAttribute('aria-pressed', 'true')
 
+    await fireEvent.click(screen.getByRole('button', { name: '紧凑' }))
+
+    expect(screen.getByTestId('unrouted-page-card-grid')).toHaveStyle({
+      gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 200px), 1fr))',
+    })
+    expect(screen.getByTestId('routed-page-card-grid')).toHaveStyle({
+      gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 200px), 1fr))',
+    })
+
     await fireEvent.click(screen.getByRole('button', { name: '超大' }))
 
     expect(localStorage.getItem('web-presentation:pages-view:preview-card-size')).toBe('huge')
     expect(screen.getByRole('button', { name: '超大' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByTestId('unrouted-page-card-grid')).toHaveStyle({
+      gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 540px), 1fr))',
+    })
+    expect(screen.getByTestId('routed-page-card-grid')).toHaveStyle({
+      gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 540px), 1fr))',
+    })
   })
 
   it('PagesView 智能体对话面板打开时应隐藏项目编码', async () => {

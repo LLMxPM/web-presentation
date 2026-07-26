@@ -23,9 +23,9 @@
       </div>
 
       <p v-if="summary" class="text-xs leading-5 text-text-secondary">{{ summary }}</p>
-      <div v-if="!isAnalysis && tool.outputAttachments.length" class="grid grid-cols-2 gap-2">
+      <div v-if="!isAnalysis && visibleOutputAttachments.length" class="grid grid-cols-2 gap-2">
         <button
-          v-for="attachment in tool.outputAttachments"
+          v-for="attachment in visibleOutputAttachments"
           :key="attachment.id"
           type="button"
           class="group min-w-0 overflow-hidden rounded-ui-md border border-border bg-surface text-left transition hover:border-border-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus"
@@ -42,7 +42,7 @@
 
       <div class="flex items-center justify-between gap-2 border-t border-border pt-1.5">
         <UiButton variant="ghost" size="xs" @click="$emit('openDetail')">查看工具详情</UiButton>
-        <UiButton v-if="!isAnalysis && tool.outputAttachments.length" variant="ghost" size="xs" @click="openAssetLibrary">
+        <UiButton v-if="!isAnalysis && visibleOutputAttachments.length" variant="ghost" size="xs" @click="openAssetLibrary">
           已保存到资源库 →
         </UiButton>
       </div>
@@ -57,7 +57,7 @@
     :show-close-button="false"
     :panel-style="{ background: 'transparent' }"
     panel-class="!pointer-events-none !border-0 !bg-transparent !shadow-none"
-    overlay-class="bg-slate-900/90 backdrop-blur-md"
+    overlay-class="bg-overlay/90 backdrop-blur-md"
     :z-index="1200"
     @update:open="handlePreviewVisibleChange"
   >
@@ -73,7 +73,7 @@
         label="关闭图片预览"
         @click="previewAttachment = null"
       />
-      <div class="pointer-events-none absolute bottom-3 left-1/2 max-w-[80%] -translate-x-1/2 truncate rounded-full bg-slate-800/60 px-4 py-2 text-xs tracking-widest text-white backdrop-blur sm:bottom-6">
+      <div class="pointer-events-none absolute bottom-3 left-1/2 max-w-[80%] -translate-x-1/2 truncate rounded-full bg-surface-inverse-raised/60 px-4 py-2 text-xs tracking-widest text-text-inverse backdrop-blur sm:bottom-6">
         {{ previewAttachment.original_name }}
       </div>
     </div>
@@ -97,6 +97,9 @@ const router = useRouter()
 type VisualAttachment = ToolCallDetail['outputAttachments'][number]
 const previewAttachment = ref<VisualAttachment | null>(null)
 const isAnalysis = computed(() => props.tool.toolName === 'analyze_visuals')
+const visibleOutputAttachments = computed(() => (
+  props.tool.status === 'error' && !isAnalysis.value ? [] : props.tool.outputAttachments
+))
 const input = computed<Record<string, unknown>>(() => isRecord(props.tool.inputPayload) ? props.tool.inputPayload : {})
 const output = computed<Record<string, unknown>>(() => isRecord(props.tool.outputPayload) ? props.tool.outputPayload : {})
 const detailLabel = computed(() => {
@@ -115,7 +118,7 @@ const analysisPreviewAttachments = computed(() => {
   return [...byId.values()]
 })
 const outputAssets = computed(() => (
-  Array.isArray(output.value.assets)
+  props.tool.status !== 'error' && Array.isArray(output.value.assets)
     ? output.value.assets.filter((item): item is { id: number, name: string } => (
         isRecord(item) && typeof item.id === 'number' && typeof item.name === 'string'
       ))

@@ -10,20 +10,23 @@ const sourceRoot = resolve(process.cwd(), 'src')
 const allowedModalFiles = new Set(['components/ui/dialog/UiDialog.vue'])
 
 /**
- * 递归收集目录下的全部 Vue 文件。
+ * 递归收集目录下可能承载模态实现的 Vue 与 TypeScript 源文件。
  * @param currentDir 当前遍历目录
- * @returns 目录内所有 Vue 文件绝对路径
+ * @returns 目录内所有运行时代码源文件绝对路径
  */
-function collectVueFiles(currentDir: string): string[] {
+function collectModalSourceFiles(currentDir: string): string[] {
   const result: string[] = []
   for (const entry of readdirSync(currentDir)) {
     const absolutePath = join(currentDir, entry)
     const stats = statSync(absolutePath)
     if (stats.isDirectory()) {
-      result.push(...collectVueFiles(absolutePath))
+      result.push(...collectModalSourceFiles(absolutePath))
       continue
     }
-    if (absolutePath.endsWith('.vue')) {
+    if (
+      (absolutePath.endsWith('.vue') || absolutePath.endsWith('.ts'))
+      && !absolutePath.endsWith('.test.ts')
+    ) {
       result.push(absolutePath)
     }
   }
@@ -32,7 +35,7 @@ function collectVueFiles(currentDir: string): string[] {
 
 describe('dialog modal guard', () => {
   it('仅允许 UI 弹窗层持有全屏模态 Teleport 壳层', () => {
-    const offenders = collectVueFiles(sourceRoot)
+    const offenders = collectModalSourceFiles(sourceRoot)
       .map(filePath => ({
         relativePath: relative(sourceRoot, filePath).replace(/\\/g, '/'),
         source: readFileSync(filePath, 'utf-8'),

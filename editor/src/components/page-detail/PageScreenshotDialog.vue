@@ -3,14 +3,14 @@
   <UiDialog :open="props.modelValue" :title="`${props.pageTitle} · 页面截图`" size="wide" body-preset="editor"
     @update:open="emit('update:modelValue', $event)">
     <div class="flex h-full min-h-0 flex-col gap-2">
-      <div class="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+      <div class="flex items-center justify-between gap-3 rounded-2xl border border-border bg-canvas px-4 py-3">
         <div class="min-w-0">
-          <p class="text-sm font-semibold text-slate-900">{{ screenshotUpdatedText }}</p>
-          <p v-if="props.screenshotUrl" class="mt-1 text-xs text-slate-500">截图版本：{{ screenshotVersionText }}</p>
+          <p class="text-sm font-semibold text-text-strong">{{ screenshotUpdatedText }}</p>
+          <p v-if="props.screenshotUrl" class="mt-1 text-xs text-text-muted">截图版本：{{ screenshotVersionText }}</p>
         </div>
         <div class="flex items-center gap-2">
           <span v-if="shouldShowScreenshotOutdatedWarning"
-            class="rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-700">
+            class="rounded-full border border-warning-border bg-warning-muted px-2.5 py-1 text-[11px] font-semibold text-warning-strong">
             当前截图不是最新版本
           </span>
           <UiButton
@@ -35,14 +35,14 @@
         </div>
       </div>
 
-      <div class="min-h-0 flex-1 overflow-hidden rounded-2xl border border-slate-200 bg-slate-50">
+      <div class="min-h-0 flex-1 overflow-hidden rounded-2xl border border-border bg-canvas">
         <img
           v-if="props.screenshotUrl"
           :src="props.screenshotUrl"
           :alt="`${props.pageTitle} 页面截图大图`"
           class="block h-full w-full object-contain"
         >
-        <div v-else class="flex h-full items-center justify-center px-6 text-center text-sm text-slate-400">
+        <div v-else class="flex h-full items-center justify-center px-6 text-center text-sm text-text-disabled">
           暂无截图，点击“重新截图”后会在这里展示最新画面。
         </div>
       </div>

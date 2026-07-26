@@ -12,25 +12,25 @@ interface AgentIconDefinition {
 
 const DEFAULT_AGENT_ICON: AgentIconDefinition = {
   component: Bot,
-  shellClass: 'bg-slate-100 text-slate-600 ring-slate-200',
-  activeShellClass: 'bg-slate-700 text-white ring-slate-300',
+  shellClass: 'bg-surface-muted text-text-secondary ring-border',
+  activeShellClass: 'bg-surface-inverse-raised text-text-inverse ring-border-strong',
 }
 
 const AGENT_ICON_DEFINITIONS: Record<string, AgentIconDefinition> = {
   'content-spark': {
     component: Sparkles,
-    shellClass: 'bg-sky-50 text-sky-700 ring-sky-100',
-    activeShellClass: 'bg-sky-600 text-white ring-sky-200',
+    shellClass: 'bg-info-muted text-info-strong ring-info-border',
+    activeShellClass: 'bg-info text-text-inverse ring-info-border',
   },
   'component-blocks': {
     component: Blocks,
-    shellClass: 'bg-violet-50 text-violet-700 ring-violet-100',
-    activeShellClass: 'bg-violet-600 text-white ring-violet-200',
+    shellClass: 'bg-ai-muted text-ai-strong ring-ai-border',
+    activeShellClass: 'bg-ai text-text-inverse ring-ai-border',
   },
   'resource-images': {
     component: Images,
-    shellClass: 'bg-emerald-50 text-emerald-700 ring-emerald-100',
-    activeShellClass: 'bg-emerald-600 text-white ring-emerald-200',
+    shellClass: 'bg-success-muted text-success-strong ring-success-border',
+    activeShellClass: 'bg-success text-text-inverse ring-success-border',
   },
 }
 

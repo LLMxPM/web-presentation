@@ -4,11 +4,11 @@
     <template #header>
       <div class="flex items-center justify-between gap-4">
       <div class="min-w-0">
-        <div class="flex items-center gap-2 text-sm font-semibold text-slate-900">
-          <FileText class="h-4 w-4 text-indigo-500" />
+        <div class="flex items-center gap-2 text-sm font-semibold text-text-strong">
+          <FileText class="h-4 w-4 text-accent-emphasis" />
           演讲者备注
         </div>
-        <p class="mt-1 truncate text-xs text-slate-500" :title="pageTitle">
+        <p class="mt-1 truncate text-xs text-text-muted" :title="pageTitle">
           {{ pageTitle }}
         </p>
       </div>
@@ -38,10 +38,10 @@
       />
 
       <div class="flex items-center justify-between gap-4 text-xs">
-        <span class="text-slate-500">
+        <span class="text-text-muted">
           纯文本备注会保留换行；空白内容保存后视为未填写。
         </span>
-        <span :class="overLimit ? 'font-semibold text-red-500' : 'text-slate-400'">
+        <span :class="overLimit ? 'font-semibold text-danger' : 'text-text-disabled'">
           {{ noteLength }} / {{ maxLength }}
         </span>
       </div>

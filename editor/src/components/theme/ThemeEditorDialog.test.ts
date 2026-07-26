@@ -7,10 +7,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import ThemeEditorDialog from './ThemeEditorDialog.vue'
 
-const listWorkspaceFontsMock = vi.fn()
+const listWorkspaceFontFamiliesMock = vi.fn()
 
 vi.mock('@/api/assets', () => ({
-  listWorkspaceFonts: (...args: unknown[]) => listWorkspaceFontsMock(...args),
+  listWorkspaceFontFamilies: (...args: unknown[]) => listWorkspaceFontFamiliesMock(...args),
 }))
 
 vi.mock('@/utils/message', () => ({
@@ -23,8 +23,8 @@ vi.mock('@/utils/message', () => ({
 describe('ThemeEditorDialog', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    listWorkspaceFontsMock.mockResolvedValue({
-      items: [createFontItem(2, '思源黑体'), createFontItem(3, 'Monaco'), createFontItem(4, 'SourceCodePro')],
+    listWorkspaceFontFamiliesMock.mockResolvedValue({
+      items: [createFontFamilyItem(2, '思源黑体'), createFontFamilyItem(3, 'Monaco'), createFontFamilyItem(4, 'SourceCodePro')],
       total: 3,
       page: 1,
       page_size: 100,
@@ -36,22 +36,22 @@ describe('ThemeEditorDialog', () => {
 
     await waitFor(() => {
       expect(screen.getByDisplayValue('lightblue')).toBeInTheDocument()
-      expect(listWorkspaceFontsMock).toHaveBeenCalledWith(7, expect.objectContaining({ page: 1, page_size: 100 }))
+      expect(listWorkspaceFontFamiliesMock).toHaveBeenCalledWith(7, expect.objectContaining({ page: 1, page_size: 100 }))
     })
 
     await fireEvent.click(screen.getByRole('button', { name: /保存主题/ }))
 
     const events = emitted() as Record<string, unknown[][]>
     const savePayload = events.save[0][0] as {
-      heading_font_id: number | null
-      body_font_id: number | null
-      code_font_id: number | null
+      heading_font_family_id: number | null
+      body_font_family_id: number | null
+      code_font_family_id: number | null
     }
 
     expect(savePayload).toMatchObject({
-      heading_font_id: null,
-      body_font_id: null,
-      code_font_id: null,
+      heading_font_family_id: null,
+      body_font_family_id: null,
+      code_font_family_id: null,
     })
   })
 
@@ -60,14 +60,14 @@ describe('ThemeEditorDialog', () => {
 
     await waitFor(() => {
       expect(screen.getByDisplayValue('Default_Theme')).toBeInTheDocument()
-      expect(listWorkspaceFontsMock).toHaveBeenCalledWith(7, expect.objectContaining({ page: 1, page_size: 100 }))
+      expect(listWorkspaceFontFamiliesMock).toHaveBeenCalledWith(7, expect.objectContaining({ page: 1, page_size: 100 }))
     })
 
     expect(screen.getByText('品牌资源与字体绑定')).toBeInTheDocument()
     expect(screen.queryByText('字号与图标规格')).not.toBeInTheDocument()
     expect(screen.queryByLabelText('基础字号')).not.toBeInTheDocument()
 
-    await fireEvent.update(screen.getByLabelText('主题 key'), 'BlueTheme')
+    await fireEvent.update(screen.getByLabelText(/^主题 key/), 'BlueTheme')
     await fireEvent.click(screen.getByRole('button', { name: /保存主题/ }))
 
     const events = emitted() as Record<string, unknown[][]>
@@ -75,18 +75,18 @@ describe('ThemeEditorDialog', () => {
       key: string
       name: string
       description: string | null
-      heading_font_id: number | null
-      body_font_id: number | null
-      code_font_id: number | null
+      heading_font_family_id: number | null
+      body_font_family_id: number | null
+      code_font_family_id: number | null
     }
 
     expect(savePayload).toMatchObject({
       key: 'bluetheme',
       name: '默认主题卡',
       description: '主题描述',
-      heading_font_id: 2,
-      body_font_id: 2,
-      code_font_id: 3,
+      heading_font_family_id: 2,
+      body_font_family_id: 2,
+      code_font_family_id: 3,
     })
     expect(savePayload).not.toHaveProperty('base_font_size')
     expect(savePayload).not.toHaveProperty('icon_default_size')
@@ -182,9 +182,9 @@ function createThemeItem() {
     logo_asset_id: null,
     invert_logo_asset_id: null,
     project_icon_asset_id: null,
-    heading_font_id: 2,
-    body_font_id: 2,
-    code_font_id: 3,
+    heading_font_family_id: 2,
+    body_font_family_id: 2,
+    code_font_family_id: 3,
     heading_font_label: '思源黑体',
     body_font_label: '思源黑体',
     code_font_label: 'Monaco',
@@ -193,9 +193,9 @@ function createThemeItem() {
     invert_logo_asset: null,
     project_icon_asset: null,
     project_icon_name: 'slider',
-    heading_font: createFontItem(2, '思源黑体'),
-    body_font: createFontItem(2, '思源黑体'),
-    code_font: createFontItem(3, 'Monaco'),
+    heading_font_family: { id: 2, name: '思源黑体' },
+    body_font_family: { id: 2, name: '思源黑体' },
+    code_font_family: { id: 3, name: 'Monaco' },
     resolved_theme_config_yaml: 'themes:\n  default: {}',
     created_by: null,
     updated_by: null,
@@ -204,19 +204,27 @@ function createThemeItem() {
   }
 }
 
-function createFontItem(id: number, family: string) {
+function createFontFamilyItem(id: number, name: string) {
   return {
     id,
     workspace_id: 7,
-    asset_id: id + 10,
-    asset_name: family,
-    font_family: family,
-    font_format: 'woff2',
-    font_weight: '400',
-    font_style: 'normal',
-    font_display: 'swap',
-    status: 'active' as const,
-    asset_url: 'https://backend.example.com/public/assets/7/font-hash',
+    name,
+    faces: [{
+      id: id + 100,
+      family_id: id,
+      workspace_id: 7,
+      asset_id: id + 10,
+      asset_name: name,
+      font_family: name,
+      font_format: 'woff2',
+      font_weight: '400',
+      font_style: 'normal',
+      font_display: 'swap',
+      status: 'active' as const,
+      asset_url: 'https://backend.example.com/public/assets/7/font-hash',
+      created_at: '2026-05-01T10:00:00+08:00',
+      updated_at: '2026-05-01T10:00:00+08:00',
+    }],
     created_at: '2026-05-01T10:00:00+08:00',
     updated_at: '2026-05-01T10:00:00+08:00',
   }

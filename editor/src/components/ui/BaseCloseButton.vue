@@ -5,7 +5,7 @@
     :aria-label="label"
     :title="label"
     :class="[
-      'inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40 disabled:pointer-events-none disabled:opacity-50',
+      'inline-flex h-[var(--ui-control-h-md)] w-[var(--ui-control-h-md)] shrink-0 items-center justify-center rounded-[var(--ui-radius-md)] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus/40 disabled:pointer-events-none disabled:opacity-50',
       toneClass,
     ]"
     @click.stop="emit('click', $event)"
@@ -32,7 +32,7 @@ const emit = defineEmits<{
 
 const toneClass = computed(() => (
   props.tone === 'inverse'
-    ? 'bg-white/10 text-white ring-1 ring-white/15 backdrop-blur hover:bg-white/20 hover:text-white'
-    : 'bg-transparent text-slate-400 hover:bg-slate-100 hover:text-slate-700'
+    ? 'bg-surface/10 text-text-inverse ring-1 ring-surface/15 backdrop-blur hover:bg-surface/20 hover:text-text-inverse'
+    : 'bg-transparent text-text-disabled hover:bg-surface-muted hover:text-text-emphasis'
 ))
 </script>

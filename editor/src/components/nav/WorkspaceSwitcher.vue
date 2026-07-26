@@ -5,25 +5,25 @@
       <template #trigger>
         <!-- Trigger -->
         <div
-          class="flex items-center gap-3 px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 transition-all cursor-pointer select-none border border-slate-200/50 shadow-sm"
+          class="flex items-center gap-3 px-4 py-2 rounded-xl bg-surface-muted hover:bg-border transition-all cursor-pointer select-none border border-border/50 shadow-sm"
           :class="triggerClass"
         >
           <div class="flex items-center gap-2">
-            <LayoutGrid class="w-4 h-4 text-indigo-600" />
+            <LayoutGrid class="w-4 h-4 text-accent" />
             <div class="flex items-baseline gap-1.5">
-              <span class="text-sm font-bold text-slate-800 line-clamp-1 max-w-[140px]">{{ currentWorkspace?.name || '请选择空间' }}</span>
+              <span class="text-sm font-bold text-text line-clamp-1 max-w-[140px]">{{ currentWorkspace?.name || '请选择空间' }}</span>
             </div>
           </div>
-          <ChevronDown class="w-4 h-4 text-slate-400 transition-transform duration-200"
+          <ChevronDown class="w-4 h-4 text-text-disabled transition-transform duration-200"
             :class="{ 'rotate-180': dropdownVisible }" />
         </div>
       </template>
 
       <!-- Dropdown Content -->
       <div class="py-2">
-        <div class="px-4 py-2 border-b border-slate-50 mb-1 flex items-center justify-between gap-3">
-          <span class="text-[11px] font-bold text-slate-400 uppercase tracking-widest">所属工作空间</span>
-          <UiButton variant="ghost" size="xs" class="text-slate-400 hover:text-slate-600"
+        <div class="px-4 py-2 border-b border-canvas mb-1 flex items-center justify-between gap-3">
+          <span class="text-[11px] font-bold text-text-disabled uppercase tracking-widest">所属工作空间</span>
+          <UiButton variant="ghost" size="xs" class="text-text-disabled hover:text-text-secondary"
             @click.stop="openArchivedDialog">
             查看已归档
           </UiButton>
@@ -32,31 +32,31 @@
         <div class="max-h-60 overflow-y-auto px-1.5 py-1">
           <div v-for="ws in activeWorkspaces" :key="ws.id" @click="handleSwitch(ws.id)"
             class="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-semibold transition-all mb-0.5 group cursor-pointer"
-            :class="ws.id === currentWorkspaceId ? 'bg-indigo-50 text-indigo-700' : 'text-slate-700 hover:bg-slate-50'">
+            :class="ws.id === currentWorkspaceId ? 'bg-surface-selected text-accent-hover' : 'text-text-emphasis hover:bg-surface-hover'">
             <div class="flex items-center gap-3 min-w-0">
               <div class="w-2 h-2 rounded-full shrink-0"
-                :class="ws.id === currentWorkspaceId ? 'bg-indigo-500' : 'bg-slate-200'"></div>
+                :class="ws.id === currentWorkspaceId ? 'bg-accent-emphasis' : 'bg-border'"></div>
               <span class="line-clamp-1">{{ ws.name }}</span>
             </div>
             <div class="flex items-center gap-1.5 shrink-0">
               <UiIconButton
                 size="xs"
                 label="归档工作空间"
-                class="bg-white/0 opacity-0 shadow-none hover:border-slate-100 hover:bg-white hover:text-amber-600 hover:shadow-sm group-hover:opacity-100"
+                class="bg-surface/0 opacity-0 shadow-none hover:border-border-muted hover:bg-surface hover:text-warning hover:shadow-sm group-hover:opacity-100"
                 :disabled="archivingWorkspaceId === ws.id" title="归档工作空间" @click.stop="handleArchiveWorkspace(ws)">
                 <Archive class="w-3.5 h-3.5" />
               </UiIconButton>
-              <Check v-if="ws.id === currentWorkspaceId" class="w-4 h-4 text-indigo-500" />
+              <Check v-if="ws.id === currentWorkspaceId" class="w-4 h-4 text-accent-emphasis" />
             </div>
           </div>
 
-          <div v-if="activeWorkspaces.length === 0" class="px-4 py-6 text-center text-slate-400 text-xs italic">
+          <div v-if="activeWorkspaces.length === 0" class="px-4 py-6 text-center text-text-disabled text-xs italic">
             暂无可用空间
           </div>
         </div>
 
-        <div class="mt-2 pt-1.5 border-t border-slate-100 px-1.5">
-          <UiButton variant="ghost" size="sm" class="w-full justify-start text-indigo-600 hover:bg-indigo-50" @click="openCreate">
+        <div class="mt-2 pt-1.5 border-t border-border-muted px-1.5">
+          <UiButton variant="ghost" size="sm" class="w-full justify-start text-accent hover:bg-surface-selected" @click="openCreate">
             <Plus class="w-4 h-4" />
             新建工作空间
           </UiButton>
@@ -132,9 +132,9 @@ const currentWorkspace = computed(() => {
 })
 
 const triggerClass = computed(() => ({
-  'bg-slate-200': dropdownVisible.value && !props.prominent,
-  'border-indigo-300 bg-white ring-2 ring-indigo-100 hover:bg-indigo-50': props.prominent,
-  'border-indigo-400 bg-indigo-50 ring-2 ring-indigo-200': props.prominent && dropdownVisible.value,
+  'bg-border': dropdownVisible.value && !props.prominent,
+  'border-accent-border bg-surface ring-2 ring-accent-muted hover:bg-surface-selected': props.prominent,
+  'border-accent-border bg-surface-selected ring-2 ring-accent-ring': props.prominent && dropdownVisible.value,
 }))
 
 /**

@@ -53,6 +53,7 @@ from app.services.workspace_style_package_format import (
 )
 from app.services.workspace_style_package_payloads import WorkspaceStylePackagePayloads
 from app.services.suggested_component_service import SuggestedComponentService
+from app.services.workspace_font_service import WorkspaceFontService
 
 
 @dataclass(slots=True)
@@ -78,6 +79,7 @@ class WorkspaceStylePackageService:
         self.style_repository = WorkspaceStyleRepository(session)
         self.theme_repository = WorkspaceThemeRepository(session)
         self.asset_service = AssetService(session)
+        self.font_service = WorkspaceFontService(session)
 
     async def export_package(
         self,
@@ -275,6 +277,7 @@ class WorkspaceStylePackageService:
 
         assets_by_id: dict[int, WorkspaceAsset] = {}
         fonts_by_id: dict[int, WorkspaceFontConfig] = {}
+        family_ids: list[int] = []
         for theme in themes:
             for asset_id in [theme.logo_asset_id, theme.invert_logo_asset_id, theme.project_icon_asset_id]:
                 if asset_id is None or asset_id in assets_by_id:
@@ -282,13 +285,16 @@ class WorkspaceStylePackageService:
                 asset = await self._get_asset_or_raise(workspace_id, asset_id, theme.name)
                 assets_by_id[asset.id] = asset
 
-            for font_id in [theme.heading_font_id, theme.body_font_id, theme.code_font_id]:
-                if font_id is None or font_id in fonts_by_id:
+            for family_id in [theme.heading_font_family_id, theme.body_font_family_id, theme.code_font_family_id]:
+                if family_id is None or family_id in family_ids:
                     continue
-                font_config = await self._get_font_config_or_raise(workspace_id, font_id, theme.name)
-                font_asset = await self._get_asset_or_raise(workspace_id, font_config.asset_id, theme.name)
-                assets_by_id[font_asset.id] = font_asset
-                fonts_by_id[font_config.id] = font_config
+                family_ids.append(family_id)
+
+        # 主题绑定字体族后，导出需携带该族全部字体文件，保证多字重往返不丢失。
+        for font_config in await self.font_service.list_font_configs_for_family_ids(workspace_id, family_ids):
+            font_asset = await self._get_asset_or_raise(workspace_id, font_config.asset_id, font_config.asset_name)
+            assets_by_id[font_asset.id] = font_asset
+            fonts_by_id[font_config.id] = font_config
         return list(assets_by_id.values()), list(fonts_by_id.values())
 
     @staticmethod
@@ -384,22 +390,6 @@ class WorkspaceStylePackageService:
                 detail=f'主题 "{theme_name}" 引用的资源 {asset_id} 不存在，无法导出。',
             )
         return asset
-
-    async def _get_font_config_or_raise(self, workspace_id: int, font_id: int, theme_name: str) -> WorkspaceFontConfig:
-        """读取主题依赖字体配置，不存在时阻断导出。"""
-
-        font_config = await self.session.scalar(
-            select(WorkspaceFontConfig)
-            .where(WorkspaceFontConfig.workspace_id == workspace_id)
-            .where(WorkspaceFontConfig.id == font_id)
-        )
-        if font_config is None:
-            raise AppException(
-                status_code=409,
-                code="WORKSPACE_STYLE_PACKAGE_FONT_MISSING",
-                detail=f'主题 "{theme_name}" 引用的字体配置 {font_id} 不存在，无法导出。',
-            )
-        return font_config
 
     async def _build_zip_archive(
         self,
@@ -815,18 +805,15 @@ class WorkspaceStylePackageService:
             asset = await self._get_asset_by_name(workspace_id, asset_name)
             if asset is None:
                 raise AppException(status_code=409, code="FONT_ASSET_NOT_FOUND", detail=f"字体资源 {asset_name} 不存在。")
-            self.session.add(
-                WorkspaceFontConfig(
-                    workspace_id=workspace_id,
-                    asset_id=asset.id,
-                    asset_name=asset.name,
-                    font_family=str(item["font_family"]).strip(),
-                    font_format=str(item["font_format"]).strip(),
-                    font_weight=str(item["font_weight"]).strip(),
-                    font_style=str(item["font_style"]).strip(),
-                    font_display=str(item["font_display"]).strip(),
-                    status=str(item.get("status") or RecordStatus.ACTIVE.value),
-                )
+            await self.font_service.register_imported_font_face(
+                workspace_id,
+                asset=asset,
+                font_family=str(item["font_family"]),
+                font_format=str(item["font_format"]),
+                font_weight=str(item["font_weight"]),
+                font_style=str(item["font_style"]),
+                font_display=str(item["font_display"]),
+                status=str(item.get("status") or RecordStatus.ACTIVE.value),
             )
         await self.session.flush()
 
@@ -857,9 +844,9 @@ class WorkspaceStylePackageService:
                     logo_path=logo_asset.name if logo_asset is not None else payload.get("logo_path"),
                     invert_logo_path=invert_logo_asset.name if invert_logo_asset is not None else payload.get("invert_logo_path"),
                     project_icon_name=project_icon_asset.name if project_icon_asset is not None else payload.get("project_icon_name"),
-                    heading_font_id=heading_font.id if heading_font is not None else None,
-                    body_font_id=body_font.id if body_font is not None else None,
-                    code_font_id=code_font.id if code_font is not None else None,
+                    heading_font_family_id=heading_font.family_id if heading_font is not None else None,
+                    body_font_family_id=body_font.family_id if body_font is not None else None,
+                    code_font_family_id=code_font.family_id if code_font is not None else None,
                     heading_font_label=heading_font.font_family if heading_font is not None else str(payload["heading_font_label"]),
                     body_font_label=body_font.font_family if body_font is not None else str(payload["body_font_label"]),
                     code_font_label=code_font.font_family if code_font is not None else str(payload["code_font_label"]),
@@ -932,9 +919,9 @@ class WorkspaceStylePackageService:
         logo_asset = await self._get_asset_by_id_or_none(theme.workspace_id, theme.logo_asset_id)
         invert_logo_asset = await self._get_asset_by_id_or_none(theme.workspace_id, theme.invert_logo_asset_id)
         project_icon_asset = await self._get_asset_by_id_or_none(theme.workspace_id, theme.project_icon_asset_id)
-        heading_font = await self._get_font_config_by_id_or_none(theme.workspace_id, theme.heading_font_id)
-        body_font = await self._get_font_config_by_id_or_none(theme.workspace_id, theme.body_font_id)
-        code_font = await self._get_font_config_by_id_or_none(theme.workspace_id, theme.code_font_id)
+        heading_font = await self.font_service.get_primary_font_config_for_family(theme.workspace_id, theme.heading_font_family_id)
+        body_font = await self.font_service.get_primary_font_config_for_family(theme.workspace_id, theme.body_font_family_id)
+        code_font = await self.font_service.get_primary_font_config_for_family(theme.workspace_id, theme.code_font_family_id)
         return {
             "key": theme.key,
             "name": theme.name,
@@ -1063,15 +1050,4 @@ class WorkspaceStylePackageService:
             select(WorkspaceFontConfig)
             .where(WorkspaceFontConfig.workspace_id == workspace_id)
             .where(WorkspaceFontConfig.asset_name == normalized_name)
-        )
-
-    async def _get_font_config_by_id_or_none(self, workspace_id: int, font_id: int | None) -> WorkspaceFontConfig | None:
-        """按 ID 读取字体配置，空 ID 返回空。"""
-
-        if font_id is None:
-            return None
-        return await self.session.scalar(
-            select(WorkspaceFontConfig)
-            .where(WorkspaceFontConfig.workspace_id == workspace_id)
-            .where(WorkspaceFontConfig.id == font_id)
         )

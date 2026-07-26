@@ -8,18 +8,18 @@
     @update:open="handleVisibleChange"
   >
     <div v-if="projectId && workspaceId" class="grid h-full min-h-0 grid-rows-[minmax(220px,0.95fr)_minmax(0,1.05fr)] gap-2 overflow-hidden lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.2fr)] lg:grid-rows-1">
-      <section class="flex h-full min-h-0 flex-col rounded-lg border border-indigo-100 bg-indigo-50/40 p-3">
+      <section class="flex h-full min-h-0 flex-col rounded-lg border border-accent-muted bg-surface-selected/40 p-3">
         <div class="flex shrink-0 items-center justify-between gap-2">
           <div class="flex min-w-0 items-center gap-2">
-            <Image class="h-4 w-4 shrink-0 text-indigo-600" />
-            <h4 class="truncate text-sm font-bold text-indigo-700">已选资源</h4>
+            <Image class="h-4 w-4 shrink-0 text-accent" />
+            <h4 class="truncate text-sm font-bold text-accent-hover">已选资源</h4>
           </div>
-          <span class="rounded-full bg-white px-2 py-0.5 text-xs font-semibold text-indigo-600">
+          <span class="rounded-full bg-surface px-2 py-0.5 text-xs font-semibold text-accent">
             {{ selectedAssetIds.length }}
           </span>
         </div>
 
-        <div v-if="loading" class="flex min-h-0 flex-1 items-center justify-center text-sm font-semibold text-slate-400">
+        <div v-if="loading" class="flex min-h-0 flex-1 items-center justify-center text-sm font-semibold text-text-disabled">
           <RefreshCw class="mr-2 h-4 w-4 animate-spin" />
           正在加载
         </div>
@@ -27,14 +27,14 @@
           <article
             v-for="asset in selectedAssetSummaries"
             :key="asset.id"
-            class="flex w-full min-w-0 items-center justify-between gap-2 rounded-md border border-indigo-200 bg-white px-3 py-2 text-left transition hover:border-indigo-300"
+            class="flex w-full min-w-0 items-center justify-between gap-2 rounded-md border border-accent-ring bg-surface px-3 py-2 text-left transition hover:border-accent-border"
           >
             <span class="min-w-0 text-left">
-              <span class="block truncate text-xs font-bold text-slate-800">{{ asset.name }}</span>
-              <span class="mt-0.5 block truncate text-[11px] text-slate-400">{{ asset.original_name }}</span>
+              <span class="block truncate text-xs font-bold text-text">{{ asset.name }}</span>
+              <span class="mt-0.5 block truncate text-[11px] text-text-disabled">{{ asset.original_name }}</span>
             </span>
             <span class="inline-flex shrink-0 items-center gap-1">
-              <span class="rounded-full bg-indigo-50 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-600">
+              <span class="rounded-full bg-surface-selected px-1.5 py-0.5 text-[10px] font-semibold text-accent">
                 {{ resolveAssetTypeLabel(asset.asset_type) }}
               </span>
               <UiIconButton
@@ -56,10 +56,10 @@
             </span>
           </article>
         </div>
-        <p v-else class="mt-3 flex min-h-0 flex-1 items-center justify-center text-xs text-slate-400">未选择资源</p>
+        <p v-else class="mt-3 flex min-h-0 flex-1 items-center justify-center text-xs text-text-disabled">未选择资源</p>
       </section>
 
-      <section class="flex h-full min-h-0 flex-col rounded-lg border border-slate-200 bg-white p-3">
+      <section class="flex h-full min-h-0 flex-col rounded-lg border border-border bg-surface p-3">
         <div class="grid shrink-0 grid-cols-[minmax(0,1fr)_auto_auto_auto] gap-2">
           <SimpleSearchBar
             :model-value="assetKeyword"
@@ -70,7 +70,7 @@
           <UiButton
             variant="secondary"
             :loading="assetOptionsLoading"
-            class="h-8 min-w-[80px] whitespace-nowrap"
+            class="min-w-[80px]"
             @click="loadAvailableAssets"
           >
             <template #icon>
@@ -80,9 +80,8 @@
           </UiButton>
           <UiButton
             variant="ghost"
-            size="sm"
             :loading="assetOptionsLoading"
-            class="h-8 min-w-[64px] whitespace-nowrap"
+            class="min-w-[64px]"
             @click="loadAvailableAssets"
           >
             <template #icon>
@@ -92,10 +91,9 @@
           </UiButton>
           <UiButton
             variant="secondary"
-            size="sm"
             :loading="uploading"
             :disabled="!projectId || !workspaceId || loading || saving"
-            class="h-11 min-w-[108px] whitespace-nowrap"
+            class="min-w-[108px]"
             :title="uploadButtonTitle"
             @click="triggerUpload"
           >
@@ -104,33 +102,24 @@
             </template>
             {{ uploadButtonText }}
           </UiButton>
-          <input
-            :ref="setUploadFileInput"
-            type="file"
-            class="hidden"
-            multiple
-            :accept="uploadAccept"
-            @change="handleUploadFileChange"
-          />
         </div>
+        <input
+          :ref="setUploadFileInput"
+          type="file"
+          class="hidden"
+          multiple
+          :accept="uploadAccept"
+          @change="handleUploadFileChange"
+        />
 
-        <div class="mt-3 flex shrink-0 flex-wrap gap-1.5">
-          <UiButton
-            v-for="tab in assetTypeTabs"
-            :key="tab.key"
-            variant="ghost"
-            size="xs"
-            :class="activeAssetTypeTab === tab.key ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'"
-            @click="activeAssetTypeTab = tab.key"
-          >
-            <span>{{ tab.label }}</span>
-            <span class="rounded-full px-1 text-[10px]" :class="activeAssetTypeTab === tab.key ? 'bg-white/20 text-white' : 'bg-white text-slate-500'">
-              {{ tab.count }}
-            </span>
-          </UiButton>
-        </div>
+        <UiSegmentedControl
+          v-model="activeAssetTypeTab"
+          class="mt-3 shrink-0"
+          aria-label="资源类型筛选"
+          :options="assetTypeOptions"
+        />
 
-        <div v-if="assetOptionsLoading" class="mt-3 flex min-h-0 flex-1 items-center justify-center text-sm font-semibold text-slate-400">
+        <div v-if="assetOptionsLoading" class="mt-3 flex min-h-0 flex-1 items-center justify-center text-sm font-semibold text-text-disabled">
           <RefreshCw class="mr-2 h-4 w-4 animate-spin" />
           正在加载资源
         </div>
@@ -141,9 +130,9 @@
             class="flex min-h-16 min-w-0 items-stretch justify-between gap-1 rounded-md border text-left transition"
             :class="assetOptionClass(asset.id)"
           >
-            <UiButton
-              variant="ghost"
-              class="h-auto min-w-0 flex-1 justify-between px-3 py-2 text-left"
+            <button
+              type="button"
+              class="flex min-w-0 flex-1 items-center justify-between gap-2 rounded-l-[var(--ui-radius-md)] px-3 py-2 text-left outline-none transition-colors hover:bg-[rgb(var(--ui-surface-hover))] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[rgb(var(--ui-border-focus))]"
               @click="toggleAsset(asset.id)"
             >
               <span class="min-w-0 text-left">
@@ -153,24 +142,23 @@
               </span>
               <Check v-if="isSelected(asset.id)" class="h-4 w-4 shrink-0" />
               <Plus v-else class="h-4 w-4 shrink-0" />
-            </UiButton>
+            </button>
             <UiIconButton
-              variant="ghost"
               size="sm"
-              class="rounded-l-none border-l border-current/10"
+              class="mr-2 self-center"
               :label="`预览资源 ${asset.name}`"
               :title="`预览 ${asset.name}`"
-              @click="openAssetPreview(asset)"
+              @click.stop="openAssetPreview(asset)"
             >
               <ZoomIn class="h-4 w-4" />
             </UiIconButton>
           </article>
         </div>
-        <p v-else class="mt-3 flex min-h-0 flex-1 items-center justify-center text-xs text-slate-400">没有匹配的内容资源</p>
+        <p v-else class="mt-3 flex min-h-0 flex-1 items-center justify-center text-xs text-text-disabled">没有匹配的内容资源</p>
       </section>
     </div>
 
-    <div v-else class="py-10 text-center text-sm text-slate-400">
+    <div v-else class="py-10 text-center text-sm text-text-disabled">
       当前没有可编辑的项目。
     </div>
 
@@ -206,7 +194,7 @@ import {
 } from '@/api/catalog'
 import { getErrorMessage } from '@/api/http'
 import SimpleSearchBar from '@/components/patterns/SimpleSearchBar.vue'
-import { UiButton, UiDialog, UiIconButton } from '@/components/ui'
+import { UiButton, UiDialog, UiIconButton, UiSegmentedControl } from '@/components/ui'
 import AssetPreviewFrame from '@/components/project/AssetPreviewFrame.vue'
 import type { AssetResponse, AssetType, ProjectSuggestedReferenceAssetItem } from '@/types/api'
 import { Message } from '@/utils/message'
@@ -298,6 +286,10 @@ const assetTypeTabs = computed(() => [
     count: group.items.length,
   })),
 ])
+const assetTypeOptions = computed(() => assetTypeTabs.value.map(tab => ({
+  value: tab.key,
+  label: `${tab.label} ${tab.count}`,
+})))
 const activeTabAssets = computed(() => {
   if (activeAssetTypeTab.value === 'all') {
     return assetOptions.value
@@ -497,30 +489,9 @@ function resolveAssetTypeLabel(assetType: AssetType): string {
  */
 function assetOptionClass(assetId: number): string {
   if (isSelected(assetId)) {
-    return 'border-indigo-200 bg-indigo-50 text-indigo-700'
+    return 'border-accent-ring bg-surface-selected text-accent-hover'
   }
-  return 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50'
+  return 'border-border bg-surface text-text-secondary hover:border-border-strong hover:bg-surface-hover'
 }
 </script>
-
-<style scoped>
-.asset-column-scroll {
-  scrollbar-width: thin;
-  scrollbar-color: rgb(203 213 225) transparent;
-}
-
-.asset-column-scroll::-webkit-scrollbar {
-  height: 6px;
-  width: 6px;
-}
-
-.asset-column-scroll::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.asset-column-scroll::-webkit-scrollbar-thumb {
-  border-radius: 999px;
-  background: rgb(203 213 225);
-}
-</style>
 

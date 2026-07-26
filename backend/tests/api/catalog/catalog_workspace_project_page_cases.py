@@ -105,6 +105,16 @@ async def test_workspace_project_and_page_crud(authenticated_client: AsyncClient
     )
     assert update_project_response.status_code == 200
     assert update_project_response.json()["name"] == "演示项目-更新"
+    # 未传 description 字段时保持原值
+    assert update_project_response.json()["description"] == "project"
+
+    # 显式传入 null 应清空项目描述
+    clear_project_description_response = await authenticated_client.patch(
+        f"/api/projects/{project_id}",
+        json={"description": None},
+    )
+    assert clear_project_description_response.status_code == 200
+    assert clear_project_description_response.json()["description"] is None
 
     # 更新页面标题
     update_page_response = await authenticated_client.patch(
@@ -113,6 +123,16 @@ async def test_workspace_project_and_page_crud(authenticated_client: AsyncClient
     )
     assert update_page_response.status_code == 200
     assert update_page_response.json()["title"] == "页面标题-更新"
+    # 未传 summary 字段时保持原值
+    assert update_page_response.json()["summary"] == "summary"
+
+    # 显式传入 null 应清空页面摘要
+    clear_page_summary_response = await authenticated_client.patch(
+        f"/api/pages/{page_id}",
+        json={"summary": None},
+    )
+    assert clear_page_summary_response.status_code == 200
+    assert clear_page_summary_response.json()["summary"] is None
 
     normalize_page_response = await authenticated_client.patch(
         f"/api/pages/{crlf_page_id}",

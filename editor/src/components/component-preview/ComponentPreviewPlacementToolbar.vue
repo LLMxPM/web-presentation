@@ -1,16 +1,16 @@
 <!-- 文件功能：提供组件预览占位控制，支持设置组件在页面中的宽高、对齐与留白。 -->
 <template>
-  <section :class="embedded ? '' : 'rounded-2xl border border-slate-200 bg-white/90 p-4 shadow-sm shadow-slate-200/60'">
+  <section :class="embedded ? '' : 'rounded-2xl border border-border bg-surface/90 p-4 shadow-sm'">
     <div v-if="inline" class="flex min-w-max items-end gap-2">
       <div class="space-y-1">
-        <span class="block text-[11px] font-semibold text-slate-500">宽度</span>
-        <div class="inline-flex h-9 items-center overflow-hidden rounded-xl border border-slate-200 bg-white">
+        <span class="block text-[11px] font-semibold text-text-muted">宽度</span>
+        <div class="inline-flex h-9 items-center overflow-hidden rounded-xl border border-border bg-surface">
           <input
             :value="resolveInlineSizeInput(modelValue.placement.width_mode, modelValue.placement.width_value)"
             :disabled="modelValue.placement.width_mode === 'auto'"
             type="text"
             inputmode="numeric"
-            class="h-full w-16 bg-transparent px-2 text-center text-xs font-semibold tabular-nums text-slate-700 outline-none transition focus:bg-slate-50 disabled:bg-slate-50 disabled:text-slate-300"
+            class="h-full w-16 bg-transparent px-2 text-center text-xs font-semibold tabular-nums text-text-emphasis outline-none transition focus:bg-surface-hover disabled:bg-canvas disabled:text-text-faint"
             :placeholder="modelValue.placement.width_mode === 'auto' ? '—' : '值'"
             @input="updatePlacementNumberField('width_value', ($event.target as HTMLInputElement).value)"
             @blur="normalizePlacementNumberField('width_value')"
@@ -21,11 +21,11 @@
                 type="button"
                 variant="ghost"
                 size="sm"
-                class="h-full w-[58px] rounded-none border-y-0 border-r-0 border-l border-slate-100 bg-slate-50/70 px-2 text-xs font-bold text-slate-600 hover:bg-slate-100 hover:text-slate-800"
+                class="h-full w-[58px] rounded-none border-y-0 border-r-0 border-l border-border-muted bg-canvas/70 px-2 text-xs font-bold text-text-secondary hover:bg-surface-muted hover:text-text"
                 title="宽度单位"
               >
                 <span>{{ resolveSizeModeLabel(modelValue.placement.width_mode) }}</span>
-                <ChevronDown class="h-3 w-3 text-slate-400" />
+                <ChevronDown class="h-3 w-3 text-text-disabled" />
               </UiButton>
             </template>
           </UiDropdownMenu>
@@ -33,14 +33,14 @@
       </div>
 
       <div class="space-y-1">
-        <span class="block text-[11px] font-semibold text-slate-500">高度</span>
-        <div class="inline-flex h-9 items-center overflow-hidden rounded-xl border border-slate-200 bg-white">
+        <span class="block text-[11px] font-semibold text-text-muted">高度</span>
+        <div class="inline-flex h-9 items-center overflow-hidden rounded-xl border border-border bg-surface">
           <input
             :value="resolveInlineSizeInput(modelValue.placement.height_mode, modelValue.placement.height_value)"
             :disabled="modelValue.placement.height_mode === 'auto'"
             type="text"
             inputmode="numeric"
-            class="h-full w-16 bg-transparent px-2 text-center text-xs font-semibold tabular-nums text-slate-700 outline-none transition focus:bg-slate-50 disabled:bg-slate-50 disabled:text-slate-300"
+            class="h-full w-16 bg-transparent px-2 text-center text-xs font-semibold tabular-nums text-text-emphasis outline-none transition focus:bg-surface-hover disabled:bg-canvas disabled:text-text-faint"
             :placeholder="modelValue.placement.height_mode === 'auto' ? '—' : '值'"
             @input="updatePlacementNumberField('height_value', ($event.target as HTMLInputElement).value)"
             @blur="normalizePlacementNumberField('height_value')"
@@ -51,11 +51,11 @@
                 type="button"
                 variant="ghost"
                 size="sm"
-                class="h-full w-[58px] rounded-none border-y-0 border-r-0 border-l border-slate-100 bg-slate-50/70 px-2 text-xs font-bold text-slate-600 hover:bg-slate-100 hover:text-slate-800"
+                class="h-full w-[58px] rounded-none border-y-0 border-r-0 border-l border-border-muted bg-canvas/70 px-2 text-xs font-bold text-text-secondary hover:bg-surface-muted hover:text-text"
                 title="高度单位"
               >
                 <span>{{ resolveSizeModeLabel(modelValue.placement.height_mode) }}</span>
-                <ChevronDown class="h-3 w-3 text-slate-400" />
+                <ChevronDown class="h-3 w-3 text-text-disabled" />
               </UiButton>
             </template>
           </UiDropdownMenu>
@@ -63,8 +63,8 @@
       </div>
 
       <div class="space-y-1">
-        <span class="block text-[11px] font-semibold text-slate-500">水平</span>
-        <div class="inline-flex h-9 overflow-hidden rounded-xl border border-slate-200 bg-white p-0.5">
+        <span class="block text-[11px] font-semibold text-text-muted">水平</span>
+        <div class="inline-flex h-9 overflow-hidden rounded-xl border border-border bg-surface p-0.5">
           <UiIconButton
             v-for="option in horizontalAlignOptions"
             :key="option.value"
@@ -73,8 +73,8 @@
             size="sm"
             class="h-8 w-8 rounded-lg"
             :class="modelValue.placement.horizontal_align === option.value
-              ? 'bg-indigo-50 text-indigo-600'
-              : 'text-slate-400 hover:bg-slate-50 hover:text-slate-700'"
+              ? 'bg-surface-selected text-accent'
+              : 'text-text-disabled hover:bg-surface-hover hover:text-text-emphasis'"
             :title="option.label"
             :aria-label="option.label"
             @click="updatePlacementField('horizontal_align', option.value)"
@@ -85,8 +85,8 @@
       </div>
 
       <div class="space-y-1">
-        <span class="block text-[11px] font-semibold text-slate-500">垂直</span>
-        <div class="inline-flex h-9 overflow-hidden rounded-xl border border-slate-200 bg-white p-0.5">
+        <span class="block text-[11px] font-semibold text-text-muted">垂直</span>
+        <div class="inline-flex h-9 overflow-hidden rounded-xl border border-border bg-surface p-0.5">
           <UiIconButton
             v-for="option in verticalAlignOptions"
             :key="option.value"
@@ -95,8 +95,8 @@
             size="sm"
             class="h-8 w-8 rounded-lg"
             :class="modelValue.placement.vertical_align === option.value
-              ? 'bg-indigo-50 text-indigo-600'
-              : 'text-slate-400 hover:bg-slate-50 hover:text-slate-700'"
+              ? 'bg-surface-selected text-accent'
+              : 'text-text-disabled hover:bg-surface-hover hover:text-text-emphasis'"
             :title="option.label"
             :aria-label="option.label"
             @click="updatePlacementField('vertical_align', option.value)"
@@ -107,24 +107,24 @@
       </div>
 
       <div class="space-y-1">
-        <span class="block text-[11px] font-semibold text-slate-500">留白</span>
-        <label class="inline-flex h-9 items-center overflow-hidden rounded-xl border border-slate-200 bg-white">
+        <span class="block text-[11px] font-semibold text-text-muted">留白</span>
+        <label class="inline-flex h-9 items-center overflow-hidden rounded-xl border border-border bg-surface">
           <input
             :value="String(modelValue.placement.padding)"
             type="text"
             inputmode="numeric"
-            class="h-full w-14 bg-transparent px-2 text-center text-xs font-semibold tabular-nums text-slate-700 outline-none transition focus:bg-slate-50"
+            class="h-full w-14 bg-transparent px-2 text-center text-xs font-semibold tabular-nums text-text-emphasis outline-none transition focus:bg-surface-hover"
             @input="updatePlacementNumberField('padding', ($event.target as HTMLInputElement).value)"
             @blur="normalizePlacementNumberField('padding')"
           >
-          <span class="w-8 border-l border-slate-100 text-center text-[10px] font-bold text-slate-400">px</span>
+          <span class="w-8 border-l border-border-muted text-center text-[10px] font-bold text-text-disabled">px</span>
         </label>
       </div>
 
       <UiButton
         variant="ghost"
         size="sm"
-        custom-class="!h-9 !px-2.5 !text-xs !text-slate-500"
+        custom-class="!h-9 !px-2.5 !text-xs !text-text-muted"
         @click="emit('reset-defaults')"
       >
         默认
@@ -135,7 +135,7 @@
 
     <div v-if="!inline" class="space-y-4">
       <div class="flex items-center justify-between gap-2">
-        <h4 v-if="!embedded" class="text-sm font-bold text-slate-800">组件占位</h4>
+        <h4 v-if="!embedded" class="text-sm font-bold text-text">组件占位</h4>
         <UiButton
           variant="ghost"
           size="sm"
@@ -148,58 +148,58 @@
 
       <div class="grid grid-cols-2 gap-2">
         <label class="space-y-1.5">
-          <span class="text-[11px] font-semibold text-slate-500">宽度模式</span>
+          <span class="text-[11px] font-semibold text-text-muted">宽度模式</span>
           <UiSelect :model-value="modelValue.placement.width_mode" :options="sizeModeSelectOptions" @update:model-value="value => updatePlacementField('width_mode', String(value))" />
         </label>
 
         <label class="space-y-1.5">
-          <span class="text-[11px] font-semibold text-slate-500">宽度值</span>
+          <span class="text-[11px] font-semibold text-text-muted">宽度值</span>
           <input
             :value="resolveSizeInput(modelValue.placement.width_value)"
             :disabled="modelValue.placement.width_mode === 'auto'"
             type="text"
             inputmode="numeric"
-            class="h-9 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm font-medium text-slate-700 outline-none transition focus:border-indigo-500 focus:bg-white disabled:text-slate-300"
+            class="h-9 w-full rounded-xl border border-border bg-canvas px-3 text-sm font-medium text-text-emphasis outline-none transition focus:border-border-focus focus:bg-surface disabled:text-text-faint"
             @input="updatePlacementNumberField('width_value', ($event.target as HTMLInputElement).value)"
             @blur="normalizePlacementNumberField('width_value')"
           >
         </label>
 
         <label class="space-y-1.5">
-          <span class="text-[11px] font-semibold text-slate-500">高度模式</span>
+          <span class="text-[11px] font-semibold text-text-muted">高度模式</span>
           <UiSelect :model-value="modelValue.placement.height_mode" :options="sizeModeSelectOptions" @update:model-value="value => updatePlacementField('height_mode', String(value))" />
         </label>
 
         <label class="space-y-1.5">
-          <span class="text-[11px] font-semibold text-slate-500">高度值</span>
+          <span class="text-[11px] font-semibold text-text-muted">高度值</span>
           <input
             :value="resolveSizeInput(modelValue.placement.height_value)"
             :disabled="modelValue.placement.height_mode === 'auto'"
             type="text"
             inputmode="numeric"
-            class="h-9 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm font-medium text-slate-700 outline-none transition focus:border-indigo-500 focus:bg-white disabled:text-slate-300"
+            class="h-9 w-full rounded-xl border border-border bg-canvas px-3 text-sm font-medium text-text-emphasis outline-none transition focus:border-border-focus focus:bg-surface disabled:text-text-faint"
             @input="updatePlacementNumberField('height_value', ($event.target as HTMLInputElement).value)"
             @blur="normalizePlacementNumberField('height_value')"
           >
         </label>
 
         <label class="space-y-1.5">
-          <span class="text-[11px] font-semibold text-slate-500">水平对齐</span>
+          <span class="text-[11px] font-semibold text-text-muted">水平对齐</span>
           <UiSelect :model-value="modelValue.placement.horizontal_align" :options="alignmentSelectOptions" @update:model-value="value => updatePlacementField('horizontal_align', String(value))" />
         </label>
 
         <label class="space-y-1.5">
-          <span class="text-[11px] font-semibold text-slate-500">垂直对齐</span>
+          <span class="text-[11px] font-semibold text-text-muted">垂直对齐</span>
           <UiSelect :model-value="modelValue.placement.vertical_align" :options="verticalAlignmentSelectOptions" @update:model-value="value => updatePlacementField('vertical_align', String(value))" />
         </label>
 
         <label class="col-span-2 space-y-1.5">
-          <span class="text-[11px] font-semibold text-slate-500">页面留白</span>
+          <span class="text-[11px] font-semibold text-text-muted">页面留白</span>
           <input
             :value="String(modelValue.placement.padding)"
             type="text"
             inputmode="numeric"
-            class="h-9 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm font-medium text-slate-700 outline-none transition focus:border-indigo-500 focus:bg-white"
+            class="h-9 w-full rounded-xl border border-border bg-canvas px-3 text-sm font-medium text-text-emphasis outline-none transition focus:border-border-focus focus:bg-surface"
             @input="updatePlacementNumberField('padding', ($event.target as HTMLInputElement).value)"
             @blur="normalizePlacementNumberField('padding')"
           >

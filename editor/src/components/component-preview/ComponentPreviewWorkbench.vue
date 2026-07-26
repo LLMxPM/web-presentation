@@ -1,33 +1,33 @@
 <!-- 文件功能：统一承载工作空间组件草稿与 Runtime Kit 内建组件的右侧预览工作台。 -->
 <template>
-  <section class="flex h-full min-h-0 flex-col overflow-hidden bg-slate-50/60">
+  <section class="flex h-full min-h-0 flex-col overflow-hidden bg-canvas/60">
     <header
-      class="flex shrink-0 border-b border-slate-200 bg-white py-2.5"
+      class="flex shrink-0 border-b border-border bg-surface py-2.5"
       :class="simplified ? 'component-preview-header--simplified flex-wrap items-center justify-between gap-2 px-3' : 'items-center justify-between gap-3 px-4'"
     >
       <div :class="simplified ? 'component-preview-header-title min-w-0' : 'min-w-0'">
         <div class="flex flex-wrap items-center gap-2">
           <slot name="title">
-            <h3 class="truncate text-sm font-bold text-slate-900">{{ resolvedTitle }}</h3>
+            <h3 class="truncate text-sm font-bold text-text-strong">{{ resolvedTitle }}</h3>
           </slot>
-          <span v-if="!$slots.title && titleBarComponentCode" class="max-w-[10rem] shrink truncate rounded-full bg-white px-2 py-0.5 text-[10px] font-mono font-bold text-slate-500 ring-1 ring-slate-200">
+          <span v-if="!$slots.title && titleBarComponentCode" class="max-w-[10rem] shrink truncate rounded-full bg-surface px-2 py-0.5 text-[10px] font-mono font-bold text-text-muted ring-1 ring-border">
             {{ titleBarComponentCode }}
           </span>
-          <span v-if="source?.kind === 'runtime-kit'" class="rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-black text-indigo-600">
+          <span v-if="source?.kind === 'runtime-kit'" class="rounded-full bg-surface-selected px-2 py-0.5 text-[10px] font-black text-accent">
             Runtime Kit
           </span>
-          <span v-if="source?.kind === 'workspace-draft' && isDraftPreview" class="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-black text-amber-600">
+          <span v-if="source?.kind === 'workspace-draft' && isDraftPreview" class="rounded-full bg-warning-muted px-2 py-0.5 text-[10px] font-black text-warning">
             草稿预览
           </span>
         </div>
-        <p v-if="resolvedSubtitle" class="mt-1 truncate text-xs text-slate-400">{{ resolvedSubtitle }}</p>
+        <p v-if="resolvedSubtitle" class="mt-1 truncate text-xs text-text-disabled">{{ resolvedSubtitle }}</p>
       </div>
 
       <div
         class="flex shrink-0 flex-wrap items-center justify-end gap-2"
         :class="simplified ? 'component-preview-header-actions' : ''"
       >
-        <div v-if="$slots['component-actions']" class="flex flex-wrap items-center justify-end gap-1.5 border-r border-slate-200 pr-2">
+        <div v-if="$slots['component-actions']" class="flex flex-wrap items-center justify-end gap-1.5 border-r border-border pr-2">
           <slot name="component-actions" :close-full-preview="closeFullPreviewDialog" :inside-full-preview="false" />
         </div>
         <div class="flex items-center justify-end gap-1.5">
@@ -66,7 +66,7 @@
     />
 
     <main v-else class="flex min-h-0 flex-1 flex-col overflow-hidden">
-      <div class="shrink-0 border-b border-slate-200 bg-white">
+      <div class="shrink-0 border-b border-border bg-surface">
         <div
           class="component-preview-toolbar-scrollbar-hidden flex min-w-0 gap-2 px-3 py-1.5"
           :class="simplified ? 'flex-wrap items-end overflow-visible' : 'items-center overflow-x-auto'"
@@ -81,7 +81,7 @@
             />
           </div>
 
-          <div v-if="!simplified" class="h-8 w-px shrink-0 bg-slate-200" />
+          <div v-if="!simplified" class="h-8 w-px shrink-0 bg-border" />
 
           <div :class="simplified ? 'min-w-0 flex-1' : 'min-w-max'">
             <ComponentPreviewReleaseToolbar
@@ -127,7 +127,7 @@
           >
             <div class="relative shrink-0" :style="previewFrameStageStyle">
               <div
-                class="absolute left-0 top-0 overflow-hidden rounded-[var(--ui-radius-lg)] border border-[rgb(var(--ui-border))] bg-[rgb(var(--ui-surface))] shadow-sm shadow-slate-200/70"
+                class="absolute left-0 top-0 overflow-hidden rounded-[var(--ui-radius-lg)] border border-[rgb(var(--ui-border))] bg-[rgb(var(--ui-surface))] shadow-sm"
                 :style="previewFrameContainerStyle"
               >
                 <iframe

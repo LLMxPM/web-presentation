@@ -196,7 +196,13 @@ def test_runtime_manifest_canonical_payload_should_validate_without_field_drift(
                     "severity": "warning",
                     "code": "NESTED_LOOP_UNSUPPORTED",
                     "message": "嵌套循环首版只读。",
-                }
+                },
+                {
+                    "severity": "warning",
+                    "code": "RICH_TEXT_SOURCE_RANGE_UNRESOLVED",
+                    "message": "无法定位富文本容器 <p> 的内部源码范围，该节点已降级为只读。",
+                    "sourceRange": {"start": 10, "end": 16},
+                },
             ],
             "tailwindCatalog": {
                 "version": 1,
@@ -217,6 +223,8 @@ def test_runtime_manifest_canonical_payload_should_validate_without_field_drift(
     assert binding_source.kind == "script-array-item"
     assert binding_source.collection_kind == "const-array"
     assert manifest.diagnostics[0].code == "NESTED_LOOP_UNSUPPORTED"
+    assert manifest.diagnostics[1].code == "RICH_TEXT_SOURCE_RANGE_UNRESOLVED"
+    assert manifest.diagnostics[1].source_range is not None
     assert manifest.tailwind_catalog.groups[0].options[0].class_name == "p-4"
 
 

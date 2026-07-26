@@ -7,22 +7,22 @@
     body-preset="auto"
     @update:open="handleVisibleChange"
   >
-    <div v-if="loading" class="flex min-h-[320px] items-center justify-center rounded-2xl bg-slate-50/80 text-sm font-bold text-slate-400">
+    <div v-if="loading" class="flex min-h-[320px] items-center justify-center rounded-2xl bg-canvas/80 text-sm font-bold text-text-disabled">
       正在加载主题详情...
     </div>
 
-    <div v-else-if="!theme" class="flex min-h-[320px] items-center justify-center rounded-2xl bg-slate-50/80">
-      <div class="rounded-2xl border border-dashed border-slate-200 bg-white px-8 py-10 text-center shadow-sm">
-        <SwatchBook class="mx-auto mb-3 h-10 w-10 text-slate-300" />
-        <p class="text-sm font-bold text-slate-500">未找到主题详情</p>
+    <div v-else-if="!theme" class="flex min-h-[320px] items-center justify-center rounded-2xl bg-canvas/80">
+      <div class="rounded-2xl border border-dashed border-border bg-surface px-8 py-10 text-center shadow-sm">
+        <SwatchBook class="mx-auto mb-3 h-10 w-10 text-text-faint" />
+        <p class="text-sm font-bold text-text-muted">未找到主题详情</p>
       </div>
     </div>
 
-    <div v-else data-testid="theme-detail-dialog" class="space-y-5 rounded-2xl bg-slate-50/80 p-0.5">
-      <section class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+    <div v-else data-testid="theme-detail-dialog" class="space-y-5 rounded-2xl bg-canvas/80 p-0.5">
+      <section class="rounded-2xl border border-border bg-surface p-4 shadow-sm">
         <div class="mb-3 flex items-start justify-between gap-3">
           <div>
-            <h3 class="text-sm font-black text-slate-900">快速预览</h3>
+            <h3 class="text-sm font-black text-text-strong">快速预览</h3>
           </div>
           <UiButton
             v-if="!isDefaultTheme"
@@ -45,15 +45,18 @@
           :project-icon-url="theme.project_icon_asset?.url"
           :project-icon-name="theme.project_icon_name"
           :project-icon-analysis="theme.project_icon_asset?.analysis_metadata || null"
-          :heading-font-label="theme.heading_font?.font_family || 'sans-serif'"
-          :body-font-label="theme.body_font?.font_family || 'sans-serif'"
-          :code-font-label="theme.code_font?.font_family || 'monospace'"
+          :heading-font-label="theme.heading_font_family?.name || theme.heading_font_label || 'sans-serif'"
+          :body-font-label="theme.body_font_family?.name || theme.body_font_label || 'sans-serif'"
+          :code-font-label="theme.code_font_family?.name || theme.code_font_label || 'monospace'"
+          :heading-font-family="fontFamilyById.get(theme.heading_font_family_id || -1) || null"
+          :body-font-family="fontFamilyById.get(theme.body_font_family_id || -1) || null"
+          :code-font-family="fontFamilyById.get(theme.code_font_family_id || -1) || null"
           layout-mode="compact"
         >
           <template #title-suffix>
             <span
               v-if="isDefaultTheme"
-              class="shrink-0 rounded-full border border-indigo-100 bg-indigo-50 px-2 py-0.5 text-[11px] font-black text-indigo-600"
+              class="shrink-0 rounded-full border border-accent-muted bg-surface-selected px-2 py-0.5 text-[11px] font-black text-accent"
             >
               默认
             </span>
@@ -62,25 +65,25 @@
       </section>
 
       <div class="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_420px]">
-        <section class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-          <h3 class="text-sm font-black text-slate-900">颜色 token</h3>
+        <section class="rounded-2xl border border-border bg-surface p-4 shadow-sm">
+          <h3 class="text-sm font-black text-text-strong">颜色 token</h3>
           <div class="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             <div
               v-for="group in colorGroups"
               :key="group.key"
-              class="rounded-xl border border-slate-100 bg-slate-50 p-3"
+              class="rounded-xl border border-border-muted bg-canvas p-3"
             >
-              <div class="text-xs font-black text-slate-700">{{ group.label }}</div>
+              <div class="text-xs font-black text-text-emphasis">{{ group.label }}</div>
               <div class="mt-3 space-y-2">
                 <div v-for="item in group.items" :key="item.key" class="flex items-center justify-between gap-3">
                   <div class="flex min-w-0 items-center gap-2">
                     <span
-                      class="h-5 w-5 shrink-0 rounded-md border border-white shadow ring-1 ring-slate-200"
+                      class="h-5 w-5 shrink-0 rounded-md border border-surface shadow ring-1 ring-border"
                       :style="{ backgroundColor: item.value }"
                     ></span>
-                    <span class="truncate text-xs font-semibold text-slate-600">{{ item.label }}</span>
+                    <span class="truncate text-xs font-semibold text-text-secondary">{{ item.label }}</span>
                   </div>
-                  <code class="shrink-0 rounded bg-white px-1.5 py-0.5 text-[11px] font-semibold text-slate-500">
+                  <code class="shrink-0 rounded bg-surface px-1.5 py-0.5 text-[11px] font-semibold text-text-muted">
                     {{ item.value }}
                   </code>
                 </div>
@@ -88,39 +91,39 @@
             </div>
           </div>
 
-          <div class="mt-4 rounded-xl border border-slate-100 bg-slate-50 p-3">
-            <div class="text-xs font-black text-slate-700">强调色</div>
+          <div class="mt-4 rounded-xl border border-border-muted bg-canvas p-3">
+            <div class="text-xs font-black text-text-emphasis">强调色</div>
             <div class="mt-3 grid grid-cols-3 gap-2 lg:grid-cols-6">
               <div
                 v-for="(color, index) in theme.palette.accent"
                 :key="`${color}-${index}`"
-                class="rounded-lg border border-slate-200 bg-white p-2"
+                class="rounded-lg border border-border bg-surface p-2"
               >
                 <div class="h-8 rounded-md" :style="{ backgroundColor: color }"></div>
-                <code class="mt-2 block truncate text-center text-[10px] font-semibold text-slate-500">{{ color }}</code>
+                <code class="mt-2 block truncate text-center text-[10px] font-semibold text-text-muted">{{ color }}</code>
               </div>
             </div>
           </div>
         </section>
 
         <aside>
-          <section class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <section class="rounded-2xl border border-border bg-surface p-4 shadow-sm">
             <div>
-              <h3 class="text-sm font-black text-slate-900">字体与品牌资源</h3>
+              <h3 class="text-sm font-black text-text-strong">字体与品牌资源</h3>
             </div>
 
             <div class="mt-4 grid gap-4 sm:grid-cols-2">
               <section>
-                <h4 class="text-xs font-black tracking-[0.12em] text-slate-500">字体绑定</h4>
+                <h4 class="text-xs font-black tracking-[0.12em] text-text-muted">字体绑定</h4>
                 <div class="mt-2.5 space-y-2.5">
-                  <ThemeDetailMetaCard label="标题字体" :value="theme.heading_font?.font_family" :description="fontDescription(theme.heading_font)" />
-                  <ThemeDetailMetaCard label="正文字体" :value="theme.body_font?.font_family" :description="fontDescription(theme.body_font)" />
-                  <ThemeDetailMetaCard label="代码字体" :value="theme.code_font?.font_family" :description="fontDescription(theme.code_font)" />
+                  <ThemeDetailMetaCard label="标题字体" :value="theme.heading_font_family?.name || theme.heading_font_label || undefined" :description="fontDescription(theme.heading_font_family, theme.heading_font_label)" />
+                  <ThemeDetailMetaCard label="正文字体" :value="theme.body_font_family?.name || theme.body_font_label || undefined" :description="fontDescription(theme.body_font_family, theme.body_font_label)" />
+                  <ThemeDetailMetaCard label="代码字体" :value="theme.code_font_family?.name || theme.code_font_label || undefined" :description="fontDescription(theme.code_font_family, theme.code_font_label)" />
                 </div>
               </section>
 
               <section>
-                <h4 class="text-xs font-black tracking-[0.12em] text-slate-500">品牌资源</h4>
+                <h4 class="text-xs font-black tracking-[0.12em] text-text-muted">品牌资源</h4>
                 <div class="mt-2.5 space-y-2.5">
                   <ThemeDetailMetaCard label="主题 Logo" :value="theme.logo_asset?.name" :description="theme.logo_asset?.original_name" />
                   <ThemeDetailMetaCard label="反色 Logo" :value="theme.invert_logo_asset?.name" :description="theme.invert_logo_asset?.original_name" />
@@ -139,9 +142,10 @@
 import { computed, defineComponent, h, ref, watch } from 'vue'
 import { Pin, SwatchBook } from '@lucide/vue'
 
+import { listWorkspaceFontFamilies } from '@/api/assets'
 import { getWorkspaceTheme } from '@/api/themes'
 import { UiButton, UiDialog } from '@/components/ui'
-import type { WorkspaceFontConfigItem, WorkspaceThemeItem } from '@/types/api'
+import type { WorkspaceFontFamilyItem, WorkspaceThemeFontFamilySummary, WorkspaceThemeItem } from '@/types/api'
 import ThemePreviewCard from './ThemePreviewCard.vue'
 
 const props = defineProps<{
@@ -158,9 +162,11 @@ const emit = defineEmits<{
 
 const loading = ref(false)
 const theme = ref<WorkspaceThemeItem | null>(null)
+const fontFamilies = ref<WorkspaceFontFamilyItem[]>([])
 const loadToken = ref(0)
 
 const isDefaultTheme = computed(() => Boolean(theme.value && props.defaultThemeKey === theme.value.key))
+const fontFamilyById = computed(() => new Map(fontFamilies.value.map(family => [family.id, family])))
 const colorGroups = computed(() => {
   if (!theme.value) return []
   return [
@@ -218,9 +224,14 @@ async function loadThemeDetail(): Promise<void> {
   loading.value = true
   theme.value = null
   try {
-    const response = await getWorkspaceTheme(props.workspaceId, props.themeId)
+    const [response, familyResponse] = await Promise.all([
+      getWorkspaceTheme(props.workspaceId, props.themeId),
+      listWorkspaceFontFamilies(props.workspaceId, { page: 1, page_size: 100 })
+        .catch(() => ({ items: [] as WorkspaceFontFamilyItem[] })),
+    ])
     if (loadToken.value === currentToken) {
       theme.value = response
+      fontFamilies.value = familyResponse.items
     }
   } finally {
     if (loadToken.value === currentToken) {
@@ -238,12 +249,14 @@ function handleVisibleChange(value: boolean): void {
 }
 
 /**
- * 格式化字体元信息，缺失时返回统一占位。
- * @param font 字体注册项
+ * 描述主题字体槽位的绑定状态，区分已绑定字体族、名称回退和未绑定。
+ * @param family 主题绑定的字体族摘要
+ * @param label 字体名称回退展示值
  */
-function fontDescription(font: WorkspaceFontConfigItem | null | undefined): string {
-  if (!font) return '未绑定已注册字体'
-  return `${font.font_format} / ${font.font_weight} / ${font.font_style} / ${font.font_display}`
+function fontDescription(family: WorkspaceThemeFontFamilySummary | null | undefined, label: string | null): string {
+  if (family) return '已绑定字体族，同族多字重自动匹配'
+  if (label) return '未绑定字体族，按名称回退'
+  return '未绑定已注册字体'
 }
 
 const ThemeDetailMetaCard = defineComponent({
@@ -263,10 +276,10 @@ const ThemeDetailMetaCard = defineComponent({
     },
   },
   setup(metaProps) {
-    return () => h('div', { class: 'rounded-lg border border-slate-100 bg-slate-50 px-3 py-2.5' }, [
-      h('div', { class: 'text-[11px] font-black text-slate-400' }, metaProps.label),
-      h('div', { class: 'mt-1 truncate text-[13px] font-black text-slate-800' }, metaProps.value || '未设置'),
-      h('div', { class: 'mt-1 truncate text-[11px] leading-4 text-slate-400' }, metaProps.description || '-'),
+    return () => h('div', { class: 'rounded-lg border border-border-muted bg-canvas px-3 py-2.5' }, [
+      h('div', { class: 'text-[11px] font-black text-text-disabled' }, metaProps.label),
+      h('div', { class: 'mt-1 truncate text-[13px] font-black text-text' }, metaProps.value || '未设置'),
+      h('div', { class: 'mt-1 truncate text-[11px] leading-4 text-text-disabled' }, metaProps.description || '-'),
     ])
   },
 })

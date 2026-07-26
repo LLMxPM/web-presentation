@@ -16,6 +16,10 @@ describe('editor-backend API contract', () => {
     expect(aiClientSource).toContain('/ai/sessions/${sessionId}/active-run/cancel')
   })
 
+  it('AI 新 run 请求应携带可切换的模型配置 ID', () => {
+    expect(aiClientSource).toContain('llm_config_id: payload.llm_config_id ?? null')
+  })
+
   it('项目构建查询应继续使用项目级列表和 build-jobs 详情路径', () => {
     expect(buildsClientSource).toContain('/projects/${projectId}/build-jobs')
     expect(buildsClientSource).toContain('/build-jobs/${jobId}')

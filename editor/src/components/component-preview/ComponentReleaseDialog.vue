@@ -7,7 +7,7 @@
     @update:open="emit('update:modelValue', $event)"
   >
     <div class="space-y-4">
-      <p class="text-sm leading-6 text-slate-500">
+      <p class="text-sm leading-6 text-text-muted">
         发布会把当前草稿定版为新的不可变版本，发布后页面和其他组件才能通过版本号引用。
       </p>
       <UiFormField label="发布名称">

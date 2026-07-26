@@ -96,6 +96,7 @@ def build_apply_page_edits_tool(session_factory: async_sessionmaker[AsyncSession
                 "edits_applied": edit_result.applied_edit_count,
                 "canonical_diff": edit_result.canonical_diff,
                 "diagnostics": _extract_diagnostics(validation_result),
+                "layout_analysis": _extract_layout_analysis(validation_result),
                 "code_check_summary": validation_result.get("summary"),
             }
             if _has_warning_diagnostics(response):
@@ -135,6 +136,13 @@ def _extract_diagnostics(result: dict[str, Any]) -> list[Any]:
 
     diagnostics = result.get("diagnostics")
     return list(diagnostics) if isinstance(diagnostics, list) else []
+
+
+def _extract_layout_analysis(result: dict[str, Any]) -> dict[str, Any] | None:
+    """从代码检查结果中读取结构化布局分析。"""
+
+    layout_analysis = result.get("layout_analysis")
+    return dict(layout_analysis) if isinstance(layout_analysis, dict) else None
 
 
 def _has_warning_diagnostics(result: dict[str, Any]) -> bool:

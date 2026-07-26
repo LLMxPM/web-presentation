@@ -41,4 +41,4 @@ class LlmSecretCipher:
             return None
         if len(normalized) <= 8:
             return "*" * len(normalized)
-        return f"{normalized[:4]}{'*' * max(4, len(normalized) - 8)}{normalized[-4:]}"
+        return f"{normalized[:4]}********{normalized[-4:]}"

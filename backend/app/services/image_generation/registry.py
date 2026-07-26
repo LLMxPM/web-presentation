@@ -60,14 +60,14 @@ class ImageProviderSpec:
 
 
 def _validate_dashscope_base_url(base_url: str | None) -> None:
-    """校验百炼工作空间 API 根地址。"""
+    """校验百炼图片供应商的 HTTPS Base URL。"""
 
     normalized = str(base_url or "").strip().rstrip("/")
-    if not normalized.startswith("https://") or not normalized.endswith("/api/v1"):
+    if not normalized.startswith("https://"):
         raise AppException(
             status_code=400,
             code="AI_LLM_BASE_URL_INVALID",
-            detail="百炼图片供应商 Base URL 必须使用 HTTPS 且以 /api/v1 结尾。",
+            detail="百炼图片供应商 Base URL 必须使用 HTTPS。",
         )
 
 

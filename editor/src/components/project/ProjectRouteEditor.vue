@@ -1,12 +1,12 @@
 <!-- 文件功能：提供项目路由的可视化编排界面，支持页面池、分组管理与结构化路由树编辑。 -->
 <template>
   <div class="grid flex-1 min-h-0 items-stretch gap-3 xl:grid-cols-[300px_minmax(0,1fr)]">
-    <section class="flex flex-col rounded-2xl border border-slate-200 bg-slate-50/70 p-3.5 xl:min-h-0">
+    <section class="flex flex-col rounded-2xl border border-border bg-canvas/70 p-3.5 xl:min-h-0">
       <div class="flex items-center justify-between gap-3">
         <div>
-          <h5 class="text-sm font-bold text-slate-900">页面池</h5>
+          <h5 class="text-sm font-bold text-text-strong">页面池</h5>
         </div>
-        <span class="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-500">
+        <span class="rounded-full border border-border bg-surface px-2.5 py-1 text-[11px] font-semibold text-text-muted">
           {{ props.pages.length }} 个页面
         </span>
       </div>
@@ -15,7 +15,7 @@
         <SimpleSearchBar v-model="pageKeyword" placeholder="搜索页面标题或编码" />
       </div>
 
-      <div v-if="props.loading" class="mt-4 flex items-center justify-center rounded-xl border border-dashed border-slate-200 bg-white px-4 py-10 text-center text-sm text-slate-400 xl:flex-1">
+      <div v-if="props.loading" class="mt-4 flex items-center justify-center rounded-xl border border-dashed border-border bg-surface px-4 py-10 text-center text-sm text-text-disabled xl:flex-1">
         正在加载项目页面和路由数据...
       </div>
 
@@ -23,22 +23,22 @@
         <article
           v-for="page in filteredPages"
           :key="page.id"
-          class="rounded-2xl border border-slate-200 bg-white p-3"
+          class="rounded-2xl border border-border bg-surface p-3"
         >
           <div class="flex items-start justify-between gap-3">
             <div class="min-w-0">
-              <div class="truncate text-sm font-semibold text-slate-900">{{ page.title }}</div>
-              <div class="mt-1 text-[11px] font-mono text-slate-400">{{ page.code }}</div>
+              <div class="truncate text-sm font-semibold text-text-strong">{{ page.title }}</div>
+              <div class="mt-1 text-[11px] font-mono text-text-disabled">{{ page.code }}</div>
             </div>
             <span
               class="rounded-lg px-2 py-1 text-[11px] font-semibold"
-              :class="getPageUsageCount(page.id) > 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'"
+              :class="getPageUsageCount(page.id) > 0 ? 'bg-success-muted text-success-strong' : 'bg-surface-muted text-text-muted'"
             >
               {{ getPageUsageCount(page.id) > 0 ? ` ${getPageUsageCount(page.id)}` : '未加入' }}
             </span>
           </div>
 
-          <p v-if="getPageUsageCount(page.id) > 0" class="mt-2 text-[11px] leading-5 text-slate-500">
+          <p v-if="getPageUsageCount(page.id) > 0" class="mt-2 text-[11px] leading-5 text-text-muted">
             {{ getPageUsageText(page.id) }}
           </p>
 
@@ -52,7 +52,7 @@
           </div>
         </article>
 
-        <div v-if="filteredPages.length === 0" class="rounded-xl border border-dashed border-slate-200 bg-white px-4 py-10 text-center text-sm text-slate-400">
+        <div v-if="filteredPages.length === 0" class="rounded-xl border border-dashed border-border bg-surface px-4 py-10 text-center text-sm text-text-disabled">
           没有匹配的页面。
         </div>
       </div>

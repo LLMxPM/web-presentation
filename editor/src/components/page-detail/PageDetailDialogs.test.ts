@@ -65,7 +65,6 @@ describe('PageVersionHistoryDialog', () => {
         versionContentMap: {},
         historyPanelPreviewFrameUrl: '',
         editorLanguage: 'typescript',
-        editorTheme: 'light',
         previewingRuntimeVersionNo: null,
         previewVersionPending: false,
         previewVersionNo: null,

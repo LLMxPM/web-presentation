@@ -3,16 +3,16 @@
   <section class="space-y-5">
     <div class="flex flex-wrap items-end justify-between gap-4">
       <div>
-        <h1 class="text-2xl font-bold text-slate-900">用户管理</h1>
+        <h1 class="text-2xl font-bold text-text-strong">用户管理</h1>
       </div>
       <UiButton variant="primary" @click="openCreate">
         新建用户
       </UiButton>
     </div>
 
-    <div class="overflow-hidden rounded-lg border border-slate-200 bg-white">
+    <div class="overflow-hidden rounded-lg border border-border bg-surface">
       <table class="w-full table-fixed text-left text-sm">
-        <thead class="bg-slate-50 text-xs font-semibold uppercase text-slate-500">
+        <thead class="bg-canvas text-xs font-semibold uppercase text-text-muted">
           <tr>
             <th class="w-40 px-4 py-3">用户名</th>
             <th class="px-4 py-3">显示名</th>
@@ -21,15 +21,15 @@
             <th class="w-64 px-4 py-3 text-right">操作</th>
           </tr>
         </thead>
-        <tbody class="divide-y divide-slate-100">
+        <tbody class="divide-y divide-border-muted">
           <tr v-for="user in usersQuery.data.value ?? []" :key="user.id">
-            <td class="px-4 py-3 font-semibold text-slate-800">{{ user.username }}</td>
-            <td class="px-4 py-3 text-slate-700">{{ user.display_name }}</td>
-            <td class="px-4 py-3 text-slate-600">{{ roleLabel(user.role) }}</td>
+            <td class="px-4 py-3 font-semibold text-text">{{ user.username }}</td>
+            <td class="px-4 py-3 text-text-emphasis">{{ user.display_name }}</td>
+            <td class="px-4 py-3 text-text-secondary">{{ roleLabel(user.role) }}</td>
             <td class="px-4 py-3">
               <span
                 class="rounded-full px-2 py-1 text-xs font-semibold"
-                :class="user.status === 'active' ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'"
+                :class="user.status === 'active' ? 'bg-success-muted text-success-strong' : 'bg-surface-muted text-text-muted'"
               >
                 {{ user.status === 'active' ? '启用' : '停用' }}
               </span>

@@ -8,6 +8,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import ThemeDetailDialog from './ThemeDetailDialog.vue'
 
 const getWorkspaceThemeMock = vi.fn()
+const listWorkspaceFontFamiliesMock = vi.fn()
+
+vi.mock('@/api/assets', () => ({
+  listWorkspaceFontFamilies: (...args: unknown[]) => listWorkspaceFontFamiliesMock(...args),
+}))
 
 vi.mock('@/api/themes', () => ({
   getWorkspaceTheme: (...args: unknown[]) => getWorkspaceThemeMock(...args),
@@ -17,6 +22,12 @@ describe('ThemeDetailDialog', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     getWorkspaceThemeMock.mockResolvedValue(createThemeItem())
+    listWorkspaceFontFamiliesMock.mockResolvedValue({
+      items: [createFontFamilyItem()],
+      total: 1,
+      page: 1,
+      page_size: 100,
+    })
   })
 
   it('应加载并展示快速预览、颜色 token、字体绑定和品牌资源', async () => {
@@ -24,6 +35,7 @@ describe('ThemeDetailDialog', () => {
 
     await waitFor(() => {
       expect(getWorkspaceThemeMock).toHaveBeenCalledWith(7, 1)
+      expect(listWorkspaceFontFamiliesMock).toHaveBeenCalledWith(7, { page: 1, page_size: 100 })
       expect(screen.getAllByText('默认主题卡').length).toBeGreaterThan(0)
     })
 
@@ -111,9 +123,9 @@ function createThemeItem() {
     logo_asset_id: null,
     invert_logo_asset_id: null,
     project_icon_asset_id: null,
-    heading_font_id: font.id,
-    body_font_id: font.id,
-    code_font_id: font.id,
+    heading_font_family_id: 20,
+    body_font_family_id: 20,
+    code_font_family_id: 20,
     heading_font_label: font.font_family,
     body_font_label: font.font_family,
     code_font_label: font.font_family,
@@ -122,9 +134,9 @@ function createThemeItem() {
     invert_logo_asset: null,
     project_icon_asset: null,
     project_icon_name: 'slider',
-    heading_font: font,
-    body_font: font,
-    code_font: font,
+    heading_font_family: { id: 20, name: font.font_family },
+    body_font_family: { id: 20, name: font.font_family },
+    code_font_family: { id: 20, name: font.font_family },
     resolved_theme_config_yaml: 'themes:\n  default:\n    colors: {}',
     created_by: null,
     updated_by: null,
@@ -136,6 +148,7 @@ function createThemeItem() {
 function createFontItem() {
   return {
     id: 2,
+    family_id: 20,
     workspace_id: 7,
     asset_id: 3,
     asset_name: 'SourceHanSans',
@@ -146,6 +159,17 @@ function createFontItem() {
     font_display: 'swap',
     status: 'active' as const,
     asset_url: 'https://backend.example.com/public/assets/7/font-hash',
+    created_at: '2026-05-01T10:00:00+08:00',
+    updated_at: '2026-05-01T10:00:00+08:00',
+  }
+}
+
+function createFontFamilyItem() {
+  return {
+    id: 20,
+    workspace_id: 7,
+    name: '思源黑体',
+    faces: [createFontItem()],
     created_at: '2026-05-01T10:00:00+08:00',
     updated_at: '2026-05-01T10:00:00+08:00',
   }

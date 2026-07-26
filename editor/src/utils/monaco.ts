@@ -166,13 +166,6 @@ export function resolveMonacoLanguage(language: EditorLanguage) {
 }
 
 /**
- * 返回编辑器默认主题名称，页面层可按需覆盖。
- */
-export function getDefaultEditorTheme() {
-  return 'dark' as const
-}
-
-/**
  * 生成当前语言的默认补全项，并合并调用方传入的自定义补全。
  */
 export function resolveCompletionSuggestions(

@@ -135,6 +135,9 @@ class BrowserCaptureService:
         context_options = {
             "viewport": {"width": viewport.width, "height": viewport.height},
             "device_scale_factor": 1,
+            # 模拟 prefers-reduced-motion，让遵循该媒体查询的页面直接呈现最终态，
+            # 避免入场动画中间帧被截入。
+            "reduced_motion": "reduce",
         }
         context = browser.new_context(**context_options)
         try:
@@ -190,7 +193,9 @@ class BrowserCaptureService:
                     detail=self._build_visual_ready_error_detail(visual_ready_result),
                 )
             page.wait_for_timeout(300)
-            return page.screenshot(type="png")
+            # animations="disabled" 会把有限次 CSS 动画/过渡快进到最终态，并把
+            # 无限循环动画取消回初始态，防止动画中间帧导致内容缺失。
+            return page.screenshot(type="png", animations="disabled")
         finally:
             try:
                 context.close()

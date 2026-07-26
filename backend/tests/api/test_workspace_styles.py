@@ -156,7 +156,7 @@ async def test_workspace_style_package_should_export_import_with_theme_dependenc
         "style-pkg-theme",
         logo_asset_id=logo_asset["id"],
         project_icon_asset_id=icon_asset["id"],
-        heading_font_id=font_config["id"],
+        heading_font_family_id=font_config["family_id"],
     )
     style = await _create_style(authenticated_client, source_workspace_id, "style-pkg", theme["key"])
     suggested_component = await _create_published_component(
@@ -266,7 +266,7 @@ async def test_workspace_style_package_should_export_import_with_theme_dependenc
     imported_theme = imported_themes_response.json()["items"][0]
     assert imported_theme["logo_asset"]["name"] == "style_pkg_logo"
     assert imported_theme["project_icon_asset"]["name"] == "style_pkg_icon"
-    assert imported_theme["heading_font"]["asset_name"] == "style_pkg_font"
+    assert imported_theme["heading_font_family"]["name"] == "PkgFont"
 
 
 async def test_workspace_style_package_export_should_warn_for_suggested_component_dynamic_assets(
@@ -341,7 +341,7 @@ async def test_workspace_style_package_should_overwrite_style_and_reject_depende
         source_workspace_id,
         "conflict-theme",
         logo_asset_id=logo_asset["id"],
-        heading_font_id=font_config["id"],
+        heading_font_family_id=font_config["family_id"],
     )
     style = await _create_style(authenticated_client, source_workspace_id, "conflict-style", theme["key"])
     archive_response = await authenticated_client.post(
@@ -528,14 +528,14 @@ async def _upload_font_asset(client: AsyncClient, workspace_id: int, name: str, 
     return response.json()
 
 
-async def _create_font_config(client: AsyncClient, workspace_id: int, asset_id: int, font_family: str) -> dict:
+async def _create_font_config(client: AsyncClient, workspace_id: int, asset_id: int, family_name: str) -> dict:
     """创建字体配置。"""
 
     response = await client.post(
         f"/api/workspaces/{workspace_id}/fonts",
         json={
             "asset_id": asset_id,
-            "font_family": font_family,
+            "family_name": family_name,
             "font_format": "woff2",
             "font_weight": "400",
             "font_style": "normal",
@@ -554,7 +554,7 @@ async def _create_theme(
     *,
     logo_asset_id: int | None = None,
     project_icon_asset_id: int | None = None,
-    heading_font_id: int | None = None,
+    heading_font_family_id: int | None = None,
 ) -> dict:
     """创建测试主题。"""
 
@@ -565,7 +565,7 @@ async def _create_theme(
             "name": f"{key} 主题",
             "logo_asset_id": logo_asset_id,
             "project_icon_asset_id": project_icon_asset_id,
-            "heading_font_id": heading_font_id,
+            "heading_font_family_id": heading_font_family_id,
             "palette": _theme_palette(),
         },
     )

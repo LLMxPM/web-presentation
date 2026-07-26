@@ -88,6 +88,14 @@ describe('page visual edit protocol contract', () => {
     expect(editorApiSource).toContain('source_id: operation.sourceId')
   })
 
+  it('富文本降级诊断码应在三端与契约文档保持一致', () => {
+    for (const source of [backendManifestSchemaSource, editorTypeSource, runtimeProtocolSource]) {
+      expect(source).toContain('RICH_TEXT_SOURCE_RANGE_UNRESOLVED')
+    }
+    expect(contractDoc).toContain('RICH_TEXT_SOURCE_RANGE_UNRESOLVED')
+    expect(contractDoc).toContain('不升级协议版本')
+  })
+
   it('Tailwind 目录应由 Runtime 以整数版本 1 下发，Editor 不提供任意 class 协议', () => {
     expect(backendManifestSchemaSource).toContain('version: Literal[1]')
     expect(editorTypeSource).toContain('version: PageVisualEditProtocolVersion')

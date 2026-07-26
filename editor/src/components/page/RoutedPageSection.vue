@@ -73,7 +73,7 @@
       description="可在下方页面中加入顶层路由，或通过路由配置统一编排。"
       :retryable="false"
     >
-    <div class="grid gap-4" :style="pageCardGridStyle">
+    <div data-testid="routed-page-card-grid" class="grid gap-4" :style="pageCardGridStyle">
       <PageCard
         v-for="entry in entries"
         :key="entry.key"
@@ -150,14 +150,15 @@ const emit = defineEmits<{
 </script>
 
 <style scoped>
+/* 构建按钮为品牌渐变强调面，边框与阴影使用 accent Token，渐变副色保留品牌天蓝。 */
 :deep(.project-build-action) {
-  border-color: rgb(99 102 241);
-  background: linear-gradient(135deg, rgb(79 70 229), rgb(14 165 233));
-  box-shadow: 0 8px 18px rgb(79 70 229 / 0.22);
+  border-color: rgb(var(--ui-border-focus));
+  background: linear-gradient(135deg, rgb(var(--ui-accent)), rgb(14 165 233));
+  box-shadow: 0 8px 18px rgb(var(--ui-accent) / 0.22);
 }
 
 :deep(.project-build-action:hover) {
-  border-color: rgb(67 56 202);
-  box-shadow: 0 10px 22px rgb(79 70 229 / 0.28);
+  border-color: rgb(var(--ui-accent-hover));
+  box-shadow: 0 10px 22px rgb(var(--ui-accent) / 0.28);
 }
 </style>

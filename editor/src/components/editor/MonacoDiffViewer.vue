@@ -10,26 +10,27 @@ import { computed, onBeforeUnmount, onMounted, shallowRef, watch } from 'vue'
 
 import type * as Monaco from 'monaco-editor'
 
-import type { EditorLanguage, EditorThemeMode } from '@/types/monaco'
+import type { EditorLanguage } from '@/types/monaco'
 import {
-  getDefaultEditorTheme,
   getDefaultEditorOptions,
   initializeMonaco,
   resolveMonacoLanguage,
   resolveMonacoTheme,
 } from '@/utils/monaco'
+import { useTheme } from '@/composables/useTheme'
 
 const props = withDefaults(defineProps<{
   originalValue: string
   modifiedValue: string
   language?: EditorLanguage
   height?: string | number
-  theme?: EditorThemeMode
 }>(), {
   language: 'vue',
   height: 420,
-  theme: getDefaultEditorTheme(),
 })
+
+// diff 视图主题跟随全局明亮 / 夜间模式，与主编辑器保持一致。
+const { mode: themeMode } = useTheme()
 
 const containerRef = shallowRef<HTMLDivElement | null>(null)
 const monacoRef = shallowRef<typeof Monaco | null>(null)
@@ -80,7 +81,7 @@ onMounted(async () => {
 
   diffEditorRef.value = monacoInstance.editor.createDiffEditor(containerRef.value, {
     ...getDefaultEditorOptions(),
-    theme: resolveMonacoTheme(props.theme),
+    theme: resolveMonacoTheme(themeMode.value),
     readOnly: true,
     originalEditable: false,
     // Monaco 官方提供的紧凑 inline diff 模式会隐藏原始侧行号，并尽量以内联方式呈现删除内容。
@@ -116,8 +117,8 @@ watch(() => props.language, (language) => {
   monacoRef.value.editor.setModelLanguage(modifiedModelRef.value, nextLanguage)
 })
 
-watch(() => props.theme, (theme) => {
-  monacoRef.value?.editor.setTheme(resolveMonacoTheme(theme))
+watch(themeMode, (mode) => {
+  monacoRef.value?.editor.setTheme(resolveMonacoTheme(mode))
 })
 
 onBeforeUnmount(() => {

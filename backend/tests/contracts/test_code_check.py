@@ -69,17 +69,48 @@ class FakeRuntimeDiagnosticsClient:
 
 
 class FakePageRenderDiagnosticsService:
-    """测试用页面渲染诊断服务，记录调用并返回固定 warning。"""
+    """测试用页面渲染诊断服务，记录调用并返回固定诊断与布局分析。"""
 
-    def __init__(self, diagnostics: list[dict[str, object]] | None = None) -> None:
+    def __init__(
+        self,
+        diagnostics: list[dict[str, object]] | None = None,
+        layout_analysis: dict[str, object] | None = None,
+    ) -> None:
         self.calls: list[dict[str, object]] = []
         self.diagnostics = diagnostics or []
+        self.layout_analysis = layout_analysis or {
+            "schema_version": 2,
+            "summary": {
+                "attention": "none",
+                "message": "未发现需要关注的视觉检测结果。",
+                "totals": {
+                    "text_layouts": 0,
+                    "item_groups": 0,
+                    "overflows": 0,
+                    "spatial_relations": 0,
+                },
+                "returned": {
+                    "text_layouts": 0,
+                    "item_groups": 0,
+                    "overflows": 0,
+                    "spatial_relations": 0,
+                },
+                "truncated": False,
+            },
+            "text_layouts": [],
+            "item_groups": [],
+            "overflows": [],
+            "spatial_relations": [],
+        }
 
-    async def diagnose_preview(self, preview_url: str, viewport: object) -> list[dict[str, object]]:
+    async def diagnose_preview(self, preview_url: str, viewport: object) -> dict[str, object]:
         """记录渲染诊断调用并返回预置结果。"""
 
         self.calls.append({"preview_url": preview_url, "viewport": viewport})
-        return list(self.diagnostics)
+        return {
+            "diagnostics": list(self.diagnostics),
+            "layout_analysis": dict(self.layout_analysis),
+        }
 
 
 async def _create_workspace(authenticated_client: AsyncClient, name: str) -> int:
@@ -313,6 +344,119 @@ async def test_page_code_check_should_append_render_warning_after_runtime_passed
     assert result["diagnostics"][0]["severity"] == "warning"
     assert result["diagnostics"][0]["code"] == "PAGE_RENDER_BOTTOM_OVERFLOW"
     assert fake_render.calls
+
+
+async def test_page_code_check_should_return_visual_layout_analysis_v2(
+    authenticated_client: AsyncClient,
+) -> None:
+    """v2 视觉事实应完整透传且不增加 warning 数量。"""
+
+    workspace_id = await _create_workspace(authenticated_client, "代码检查多行文本工作空间")
+    project_id = await _create_project(authenticated_client, workspace_id, "代码检查多行文本项目")
+    page_response = await authenticated_client.post(
+        "/api/pages",
+        json={
+            "workspace_id": workspace_id,
+            "project_id": project_id,
+            "title": "多行文本页面",
+            "page_content": "<template><main>原页面</main></template>",
+            "file_type": "vue",
+            "status": "active",
+        },
+    )
+    assert page_response.status_code == 200
+    layout_analysis = {
+        "schema_version": 2,
+        "summary": {
+            "attention": "likely_issue",
+            "message": "发现 3 项需要关注的视觉检测结果。",
+            "totals": {
+                "text_layouts": 1,
+                "item_groups": 1,
+                "overflows": 1,
+                "spatial_relations": 1,
+            },
+            "returned": {
+                "text_layouts": 1,
+                "item_groups": 1,
+                "overflows": 1,
+                "spatial_relations": 1,
+            },
+            "truncated": False,
+        },
+        "text_layouts": [
+            {
+                "target": {
+                    "label": "h2.title",
+                    "locator": {"kind": "id", "value": "#trend-title"},
+                    "text_sample": "企业智能化转型趋势",
+                    "repeat_index": None,
+                },
+                "text": "企业智能化转型趋势",
+                "line_count": 2,
+                "first_line": "企业智能化",
+                "last_line": "转型趋势",
+                "break_kind": "soft",
+                "stability": "stable",
+                "attention": "none",
+                "reason_codes": [],
+            }
+        ],
+        "item_groups": [
+            {
+                "target": {
+                    "label": "div.flex.flex-wrap",
+                    "locator": {"kind": "dom_path", "value": ":scope > div:nth-of-type(2)"},
+                    "text_sample": "案例库 模板库 新起点",
+                    "repeat_index": None,
+                },
+                "item_count": 5,
+                "row_count": 2,
+                "last_row_count": 1,
+                "item_pattern": "pill_like",
+                "attention": "review",
+                "reason_codes": ["single_item_last_row"],
+            }
+        ],
+        "overflows": [
+            {
+                "scope": "container",
+                "target": {"label": "span.clipped"},
+                "container": {"label": "div.card"},
+                "directions": ["right"],
+                "clipping": "hidden",
+                "visible_ratio": 0.25,
+                "attention": "likely_issue",
+                "reason_codes": ["text_clipped"],
+            }
+        ],
+        "spatial_relations": [
+            {
+                "relation": "touching",
+                "distance_px": 0,
+                "attention": "review",
+                "reason_codes": ["independent_surfaces_touching"],
+            }
+        ],
+    }
+    fake_render = FakePageRenderDiagnosticsService(layout_analysis=layout_analysis)
+
+    async with get_session_factory()() as session:
+        result = await CodeCheckService(
+            session,
+            runtime_client=FakeRuntimeDiagnosticsClient(),
+            render_diagnostics_service=fake_render,
+        ).check_page_code(
+            page_id=page_response.json()["id"],
+            workspace_id=workspace_id,
+            user_id=1,
+            content="<template><main>新页面</main></template>",
+        )
+
+    assert result["success"] is True
+    assert result["summary"] == "代码检查通过。"
+    assert result["diagnostics"] == []
+    assert result["layout_analysis"] == layout_analysis
 
 
 async def test_page_code_check_should_skip_render_warning_when_runtime_failed(
