@@ -1,11 +1,11 @@
 <!-- 文件功能：承载工作空间组件右侧工作台，负责预览/编辑/新建状态切换、草稿保存、发布和版本历史。 -->
 <template>
-  <section class="flex h-full min-h-0 flex-col overflow-hidden bg-white">
-    <div v-if="activeMode === 'empty' || activeMode === 'create'" class="flex h-full items-center justify-center bg-slate-50/70 p-6">
-      <div class="max-w-sm rounded-xl border border-dashed border-slate-200 bg-white px-7 py-8 text-center">
-        <Layers class="mx-auto mb-3 h-10 w-10 text-slate-300" />
-        <p class="text-sm font-bold text-slate-600">{{ activeMode === 'create' ? '正在新增组件草稿' : '请选择组件' }}</p>
-        <p class="mt-2 text-xs leading-6 text-slate-400">
+  <section class="flex h-full min-h-0 flex-col overflow-hidden bg-surface">
+    <div v-if="activeMode === 'empty' || activeMode === 'create'" class="flex h-full items-center justify-center bg-canvas/70 p-6">
+      <div class="max-w-sm rounded-xl border border-dashed border-border bg-surface px-7 py-8 text-center">
+        <Layers class="mx-auto mb-3 h-10 w-10 text-text-faint" />
+        <p class="text-sm font-bold text-text-secondary">{{ activeMode === 'create' ? '正在新增组件草稿' : '请选择组件' }}</p>
+        <p class="mt-2 text-xs leading-6 text-text-disabled">
           {{ activeMode === 'create' ? '请在弹窗中完成基础信息、预览配置和源码编辑。' : '点击左侧工作空间组件后会在这里打开预览，也可以新增组件草稿。' }}
         </p>
       </div>
@@ -22,11 +22,11 @@
     >
       <template #title>
         <div class="component-preview-title-inline flex min-w-0 items-center gap-2 overflow-hidden">
-          <h3 class="min-w-[6rem] flex-1 truncate text-sm font-bold text-slate-900">{{ previewTitle }}</h3>
-          <span v-if="currentComponent?.code" class="component-preview-title-code max-w-[7.5rem] shrink truncate rounded-full bg-white px-2 py-0.5 text-[10px] font-mono font-bold text-slate-500 ring-1 ring-slate-200">
+          <h3 class="min-w-[6rem] flex-1 truncate text-sm font-bold text-text-strong">{{ previewTitle }}</h3>
+          <span v-if="currentComponent?.code" class="component-preview-title-code max-w-[7.5rem] shrink truncate rounded-full bg-surface px-2 py-0.5 text-[10px] font-mono font-bold text-text-muted ring-1 ring-border">
             {{ currentComponent.code }}
           </span>
-          <span v-if="currentVersionLabel" class="shrink-0 rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-black text-indigo-600">
+          <span v-if="currentVersionLabel" class="shrink-0 rounded-full bg-surface-selected px-2 py-0.5 text-[10px] font-black text-accent">
             {{ currentVersionLabel }}
           </span>
         </div>
@@ -74,14 +74,12 @@
         :form="draft.form"
         :errors="draft.errors"
         :mode="activeMode === 'create' ? 'create' : 'edit'"
-        :editor-theme="editorTheme"
         :saving="saving"
         :preview-loading="previewLoading"
         :can-publish="canPublish"
         :can-view-history="Boolean(currentComponent)"
         class="h-full"
         @update:form="draft.replaceForm"
-        @update:editor-theme="editorTheme = $event"
         @preview-draft="handlePreviewDraft"
         @save-draft="handleSaveDraft"
         @publish="openReleaseDialog"
@@ -101,7 +99,6 @@
       :draft-content="draft.form.content"
       :version-content-map="versionContentMap"
       :preview-frame-url="versionPreviewFrameUrl"
-      :editor-theme="editorTheme"
       :previewing-version-no="previewingVersionNo"
       :loading-content-version-no="loadingContentVersionNo"
       :restoring-version-no="restoringVersionNo"
@@ -134,12 +131,12 @@
       size="standard"
       @update:open="showSchemaHelp = $event"
     >
-      <div class="space-y-4 text-sm leading-7 text-slate-600">
+      <div class="space-y-4 text-sm leading-7 text-text-secondary">
         <p>
-          <code class="font-bold text-indigo-600">previewSchema</code>
+          <code class="font-bold text-accent">previewSchema</code>
           用于声明预览时可调的 props、slots、mocks 与 presets，必须是 JSON 对象。
         </p>
-        <pre class="overflow-x-auto rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700"><code>{
+        <pre class="overflow-x-auto rounded-xl border border-border bg-canvas p-3 text-xs text-text-emphasis"><code>{
   "props": {
     "title": { "type": "string", "label": "标题", "default": "示例标题" }
   },
@@ -185,8 +182,6 @@ import type {
   WorkspaceComponentVersionContent,
   WorkspaceComponentVersionListItem,
 } from '@/types/api'
-import type { EditorThemeMode } from '@/types/monaco'
-import { getDefaultEditorTheme } from '@/utils/monaco'
 import { createConfirm, Message } from '@/utils/message'
 
 type WorkbenchMode = 'empty' | 'preview' | 'edit' | 'create'
@@ -207,7 +202,6 @@ const emit = defineEmits<{
 
 const draft = useWorkspaceComponentDraft({ workspaceId: () => props.workspaceId })
 const activeMode = ref<WorkbenchMode>('empty')
-const editorTheme = ref<EditorThemeMode>(getDefaultEditorTheme())
 const saving = ref(false)
 const publishing = ref(false)
 const previewLoading = ref(false)

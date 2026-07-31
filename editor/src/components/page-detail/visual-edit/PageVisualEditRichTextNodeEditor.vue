@@ -8,7 +8,7 @@
         :disabled="props.disabled"
         :rows="textRows(node.text)"
         :value="node.text"
-        class="w-full resize-y rounded-md border border-slate-200 bg-white px-2.5 py-2 text-sm leading-5 text-slate-700 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 disabled:bg-slate-50 disabled:text-slate-500"
+        class="w-full resize-y rounded-md border border-border bg-surface px-2.5 py-2 text-sm leading-5 text-text-emphasis outline-none focus:border-accent-border focus:ring-2 focus:ring-accent-muted disabled:bg-canvas disabled:text-text-muted"
         @focus="emitSelection($event, node.id)"
         @input="emitTextChange($event, node.id)"
         @keyup="emitSelection($event, node.id)"
@@ -19,17 +19,17 @@
       <article
         v-else
         class="rounded-lg border p-2.5"
-        :class="node.locked ? 'border-amber-200 bg-amber-50/50' : 'border-slate-200 bg-slate-50/60'"
+        :class="node.locked ? 'border-warning-border bg-warning-muted/50' : 'border-border bg-canvas/60'"
       >
         <header class="mb-2 flex items-center gap-2">
-          <span class="rounded bg-white px-1.5 py-0.5 text-[11px] font-bold text-slate-600 shadow-sm">
+          <span class="rounded bg-surface px-1.5 py-0.5 text-[11px] font-bold text-text-secondary shadow-sm">
             {{ tagLabel(node.tag) }}
           </span>
           <UiButton
             v-if="node.locked"
             variant="ghost"
             size="xs"
-            class="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800 hover:bg-amber-200"
+            class="rounded bg-warning-muted px-1.5 py-0.5 text-[10px] font-semibold text-warning-strong hover:bg-warning-border"
             :aria-expanded="expandedNodeIds.has(node.id)"
             :aria-label="`${expandedNodeIds.has(node.id) ? '隐藏' : '查看'}样式锁定详情 ${node.tag}`"
             @click="toggleDetails(node.id)"
@@ -40,7 +40,7 @@
             v-if="node.locked && !props.disabled"
             variant="ghost"
             size="xs"
-            class="ml-auto shrink-0 rounded px-2 py-1 text-[11px] font-semibold text-rose-600 hover:bg-rose-50"
+            class="ml-auto shrink-0 rounded px-2 py-1 text-[11px] font-semibold text-danger hover:bg-danger-muted"
             :aria-label="`删除锁定样式 ${node.tag}`"
             @click="emit('remove-lock', node.id)"
           >
@@ -50,7 +50,7 @@
             v-else-if="node.tag !== 'span' && !props.disabled"
             variant="ghost"
             size="xs"
-            class="ml-auto shrink-0 rounded px-2 py-1 text-[11px] font-semibold text-slate-500 hover:bg-white hover:text-indigo-700"
+            class="ml-auto shrink-0 rounded px-2 py-1 text-[11px] font-semibold text-text-muted hover:bg-surface hover:text-accent-hover"
             :aria-label="`取消${tagLabel(node.tag)}`"
             @click="emit('unwrap-node', node.id)"
           >
@@ -60,7 +60,7 @@
 
         <code
           v-if="node.locked && expandedNodeIds.has(node.id)"
-          class="mb-2 block overflow-x-auto whitespace-pre-wrap break-all rounded-md border border-amber-200 bg-white px-2 py-1.5 text-[10px] leading-4 text-amber-900"
+          class="mb-2 block overflow-x-auto whitespace-pre-wrap break-all rounded-md border border-warning-border bg-surface px-2 py-1.5 text-[10px] leading-4 text-warning-strong"
         >{{ node.openingTag }}</code>
 
         <PageVisualEditRichTextNodeEditor

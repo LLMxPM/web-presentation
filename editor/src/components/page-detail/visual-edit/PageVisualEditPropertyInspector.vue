@@ -3,13 +3,13 @@
   <ToolPanel
     class="min-h-0 rounded-none border-y-0 border-r-0"
     :title="inspectorTitle"
-    :description="props.node ? inspectorSubtitle : '从左侧图层或画布中选择一个容器。'"
+    :description="props.node ? inspectorSubtitle : '点击画布中的文字、区块或组件进行编辑。'"
   >
     <template #header>
       <div class="flex items-start justify-between gap-3">
         <div class="min-w-0">
-          <h3 class="text-title-sm font-semibold text-[rgb(var(--ui-text))]">{{ inspectorTitle }}</h3>
-          <p class="mt-0.5 truncate text-xs text-[rgb(var(--ui-text-muted))]">{{ props.node ? inspectorSubtitle : '从左侧图层或画布中选择一个容器。' }}</p>
+          <h3 class="truncate text-title-sm font-semibold text-[rgb(var(--ui-text))]" :title="inspectorTitle">{{ inspectorTitle }}</h3>
+          <p class="mt-0.5 truncate text-xs text-[rgb(var(--ui-text-muted))]">{{ props.node ? inspectorSubtitle : '点击画布中的文字、区块或组件进行编辑。' }}</p>
         </div>
         <div v-if="props.node && showTemplateActions" class="flex shrink-0 items-center gap-1">
           <UiIconButton
@@ -39,7 +39,7 @@
       <InspectorSection v-if="props.node.loop_context" title="循环容器" :collapsible="false">
         <p class="font-semibold">循环容器</p>
         <p class="mt-1 break-all">{{ props.node.loop_context.source_expression }}</p>
-        <p v-if="!props.node.loop_context.editable" class="mt-2 text-amber-700">
+        <p v-if="!props.node.loop_context.editable" class="mt-2 text-warning-strong">
           {{ readonlyReasonLabel(props.node.loop_context.readonly_reason) }}
         </p>
       </InspectorSection>
@@ -48,6 +48,8 @@
         <PropertyRow label="当前实例" for-id="visual-edit-instance" description="操作集合中对应的数据项。">
         <UiSelect
           v-model="selectedLocationIndex"
+          id="visual-edit-instance"
+          aria-label="当前重复项"
           :options="loopItemActions.instances.map(location => ({ value: location.index, label: instanceLabel(location) }))"
         />
         </PropertyRow>
@@ -88,11 +90,44 @@
         />
       </InspectorSection>
 
-      <template v-if="hasRenderableBindings">
-        <template v-if="showComponentPropForm">
+      <details class="rounded-ui-md border border-border bg-surface-muted px-3 py-2 text-xs text-text-muted">
+        <summary class="cursor-pointer font-medium outline-none focus-visible:ring-2 focus-visible:ring-border-focus">
+          技术详情
+        </summary>
+        <dl class="mt-2 grid grid-cols-[auto_minmax(0,1fr)] gap-x-2 gap-y-1">
+          <dt>源码标签</dt>
+          <dd class="min-w-0 break-all font-mono">{{ props.node.tag }}</dd>
+          <dt>节点标识</dt>
+          <dd class="min-w-0 break-all font-mono">{{ props.node.node_id }}</dd>
+          <template v-if="props.selectedBindingId">
+            <dt>绑定标识</dt>
+            <dd class="min-w-0 break-all font-mono">{{ props.selectedBindingId }}</dd>
+          </template>
+        </dl>
+      </details>
+
+      <div
+        v-if="isNativeImageNode"
+        class="rounded-lg border border-warning-border bg-warning-muted px-3 py-4 text-xs leading-5 text-warning-strong"
+      >
+        原生图片不提供低代码内容编辑。请改用 AssetImage.v1 图片组件，或通过 AI / 高级源码调整图片资源与展示方式。
+      </div>
+
+      <template v-else-if="hasRenderableBindings">
+        <PageVisualEditAssetImageInspector
+          v-if="componentInspectorKey === 'asset-image-v1'"
+          :workspace-id="workspaceId"
+          :fields="assetImageFieldViews"
+          :style="assetImageStyleView"
+          @select="selectBindingById"
+          @set-value="handleAssetImageValueChange"
+          @set-tailwind="handleAssetImageTailwindChange"
+        />
+
+        <template v-else-if="showComponentPropForm">
           <InspectorSection v-if="componentPropBindings.length" title="组件参数">
             <template #actions>
-              <span class="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-500">
+              <span class="shrink-0 rounded-full bg-surface-muted px-2 py-0.5 text-[11px] font-semibold text-text-muted">
                 {{ componentPropBindings.length }} 项
               </span>
             </template>
@@ -101,6 +136,7 @@
               :key="binding.binding_id"
               :control-id="bindingControlId(binding)"
               :control-type="bindingControlType(binding)"
+              :baseline-value="bindingBaselineValue(binding)"
               :baseline-rich-text="binding.kind === 'rich_text' ? String(bindingBaselineValue(binding) ?? '') : null"
               :description="bindingPropField(binding)?.description ?? null"
               :editable="isBindingValueEditable(binding)"
@@ -124,7 +160,7 @@
 
           <InspectorSection v-if="styleBindings.length" title="组件样式">
             <template #actions>
-              <span class="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-500">
+              <span class="shrink-0 rounded-full bg-surface-muted px-2 py-0.5 text-[11px] font-semibold text-text-muted">
                 {{ styleBindings.length }} 项
               </span>
             </template>
@@ -138,6 +174,7 @@
               :readonly-message="classReadonlyMessageForBinding(binding)"
               :template-literal-warning="shouldShowTemplateLiteralWarning(binding)"
               :unknown-tokens="unknownClassTokensForBinding(binding)"
+              :common-group-keys="commonTailwindGroupKeys"
               @change="payload => handleTailwindGroupChange(binding, payload.group, payload.className)"
               @select="selectBinding(binding)"
             />
@@ -145,73 +182,63 @@
         </template>
 
         <template v-else>
-          <nav
-            v-if="structureTabs.length > 1"
-            class="mb-4 grid rounded-lg bg-slate-100 p-1"
-            :class="structureTabs.length === 2 ? 'grid-cols-2' : 'grid-cols-3'"
-            role="tablist"
-            aria-label="结构编辑分区"
+          <UiTabs
+            v-if="structureTabs.length"
+            v-model="activeStructureTab"
+            :items="structureTabItems"
+            list-class="mb-4"
           >
-            <UiButton
-              v-for="tab in structureTabs"
-              :key="tab.key"
-              type="button"
-              role="tab"
-              variant="ghost"
-              size="sm"
-              class="rounded-md px-3 py-1.5 text-xs font-bold transition"
-              :class="activeStructureTab === tab.key ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'"
-              :aria-selected="activeStructureTab === tab.key"
-              @click="activeStructureTab = tab.key"
-            >
-              {{ tab.label }}
-            </UiButton>
-          </nav>
+            <template #content>
+              <section class="space-y-3">
+                <PageVisualEditValueField
+                  v-for="binding in contentBindings"
+                  :key="binding.binding_id"
+                  :control-id="bindingControlId(binding)"
+                  :control-type="bindingControlType(binding)"
+                  :baseline-value="bindingBaselineValue(binding)"
+                  :baseline-rich-text="binding.kind === 'rich_text' ? String(bindingBaselineValue(binding) ?? '') : null"
+                  :editable="isBindingValueEditable(binding)"
+                  :effective-value="bindingEffectiveValue(binding)"
+                  :kind="binding.kind"
+                  :label="bindingLabel(binding)"
+                  :option-index="bindingSelectedOptionIndex(binding)"
+                  :options="[]"
+                  :pending="hasCurrentOperation(binding)"
+                  :readonly-message="bindingReadonlyMessage(binding)"
+                  :required="false"
+                  :rows="5"
+                  :selected="isSelectedBinding(binding)"
+                  :template-literal-warning="shouldShowTemplateLiteralWarning(binding)"
+                  @select="selectBinding(binding)"
+                  @set-rich-text="html => stageRichText(binding, html)"
+                  @set-value="value => stageValue(binding, value)"
+                />
+              </section>
+            </template>
 
-          <section v-if="activeStructureTab === 'content'" class="space-y-3">
-            <PageVisualEditValueField
-              v-for="binding in contentBindings"
-              :key="binding.binding_id"
-              :control-id="bindingControlId(binding)"
-              :control-type="bindingControlType(binding)"
-              :baseline-rich-text="binding.kind === 'rich_text' ? String(bindingBaselineValue(binding) ?? '') : null"
-              :editable="isBindingValueEditable(binding)"
-              :effective-value="bindingEffectiveValue(binding)"
-              :kind="binding.kind"
-              :label="bindingLabel(binding)"
-              :option-index="bindingSelectedOptionIndex(binding)"
-              :options="[]"
-              :pending="hasCurrentOperation(binding)"
-              :readonly-message="bindingReadonlyMessage(binding)"
-              :required="false"
-              :rows="5"
-              :selected="isSelectedBinding(binding)"
-              :template-literal-warning="shouldShowTemplateLiteralWarning(binding)"
-              @select="selectBinding(binding)"
-              @set-rich-text="html => stageRichText(binding, html)"
-              @set-value="value => stageValue(binding, value)"
-            />
-          </section>
-
-          <section v-else-if="activeStructureTab === 'style'" class="space-y-3">
-            <PageVisualEditTailwindStyleEditor
-              v-for="binding in styleBindings"
-              :key="binding.binding_id"
-              :binding-id="binding.binding_id"
-              :editable="isTailwindEditable(binding)"
-              :groups="tailwindGroupViewsForBinding(binding)"
-              :pending="hasCurrentOperation(binding)"
-              :readonly-message="classReadonlyMessageForBinding(binding)"
-              :template-literal-warning="shouldShowTemplateLiteralWarning(binding)"
-              :unknown-tokens="unknownClassTokensForBinding(binding)"
-              @change="payload => handleTailwindGroupChange(binding, payload.group, payload.className)"
-              @select="selectBinding(binding)"
-            />
-          </section>
+            <template #style>
+              <section class="space-y-3">
+                <PageVisualEditTailwindStyleEditor
+                  v-for="binding in styleBindings"
+                  :key="binding.binding_id"
+                  :binding-id="binding.binding_id"
+                  :editable="isTailwindEditable(binding)"
+                  :groups="tailwindGroupViewsForBinding(binding)"
+                  :pending="hasCurrentOperation(binding)"
+                  :readonly-message="classReadonlyMessageForBinding(binding)"
+                  :template-literal-warning="shouldShowTemplateLiteralWarning(binding)"
+                  :unknown-tokens="unknownClassTokensForBinding(binding)"
+                  :common-group-keys="commonTailwindGroupKeys"
+                  @change="payload => handleTailwindGroupChange(binding, payload.group, payload.className)"
+                  @select="selectBinding(binding)"
+                />
+              </section>
+            </template>
+          </UiTabs>
         </template>
       </template>
 
-      <p v-else class="rounded-lg border border-dashed border-slate-200 px-3 py-6 text-center text-xs text-slate-400">
+      <p v-else class="rounded-lg border border-dashed border-border px-3 py-6 text-center text-xs text-text-disabled">
         {{ emptyStateText }}
       </p>
     </div>
@@ -219,7 +246,7 @@
       v-else
       state="empty"
       title="未选择编辑对象"
-      description="从左侧图层或画布中选择一个容器后，在这里修改内容、参数和样式。"
+      description="点击画布中的文字、区块或组件后，在这里修改内容、参数和样式。"
     />
   </ToolPanel>
 </template>
@@ -231,11 +258,12 @@ import { Copy, Trash2 } from '@lucide/vue'
 import InspectorSection from '@/components/patterns/InspectorSection.vue'
 import PropertyRow from '@/components/patterns/PropertyRow.vue'
 import DataState from '@/components/patterns/DataState.vue'
+import PageVisualEditAssetImageInspector from '@/components/page-detail/visual-edit/PageVisualEditAssetImageInspector.vue'
 import PageVisualEditTailwindStyleEditor from '@/components/page-detail/visual-edit/PageVisualEditTailwindStyleEditor.vue'
 import PageVisualEditValueField from '@/components/page-detail/visual-edit/PageVisualEditValueField.vue'
 import PageVisualEditJsonField from '@/components/page-detail/visual-edit/PageVisualEditJsonField.vue'
 import ToolPanel from '@/components/patterns/ToolPanel.vue'
-import { UiButton, UiIconButton, UiSelect } from '@/components/ui'
+import { UiButton, UiIconButton, UiSelect, UiTabs } from '@/components/ui'
 import type {
   PageVisualEditBinding,
   PageVisualEditComponentPropField,
@@ -260,6 +288,11 @@ import {
   resolvePageVisualEditComponentPropField,
   resolvePageVisualEditComponentSchema,
 } from '@/utils/page-visual-edit'
+import {
+  ASSET_IMAGE_PROP_NAMES,
+  ASSET_IMAGE_STYLE_GROUP_KEYS,
+  resolvePageVisualEditComponentInspector,
+} from '@/components/page-detail/visual-edit/page-visual-edit-component-inspectors'
 
 type StructureTabKey = 'content' | 'style'
 
@@ -272,6 +305,7 @@ const props = defineProps<{
   componentSchemas: Record<string, PageVisualEditComponentSchema>
   jsonSources: PageVisualEditJsonSource[]
   pendingOperations: PageVisualEditOperation[]
+  workspaceId?: number | null
 }>()
 
 const emit = defineEmits<{
@@ -293,24 +327,94 @@ const emit = defineEmits<{
 const selectedLocationIndex = ref(0)
 const activeStructureTab = ref<StructureTabKey>('content')
 const paragraphTags = new Set(['p', 'span', 'strong', 'em', 'small', 'label', 'li', 'dt', 'dd', 'blockquote', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6'])
+const textCommonTailwindGroupKeys = ['text-size', 'font-weight', 'text-alignment', 'line-height', 'text-color']
+const containerCommonTailwindGroupKeys = [
+  'flex-direction',
+  'items',
+  'justify',
+  'gap',
+  'padding',
+  'background-color',
+  'border-width',
+  'border-style',
+  'border-color',
+  'radius',
+  'shadow',
+]
 
 const componentSchema = computed(() => resolvePageVisualEditComponentSchema(props.node, props.componentSchemas))
+const componentInspectorKey = computed(() => resolvePageVisualEditComponentInspector(componentSchema.value))
 const nodeBindings = computed(() => props.node?.bindings ?? [])
+const selectedBinding = computed(() => (
+  nodeBindings.value.find(binding => binding.binding_id === props.selectedBindingId) ?? null
+))
 const componentPropBindings = computed(() => nodeBindings.value.filter(binding => (
   binding.kind === 'prop' && binding.source?.kind !== 'json-source'
 )))
 const contentBindings = computed(() => nodeBindings.value.filter(binding => binding.kind === 'text' || binding.kind === 'rich_text'))
 const styleBindings = computed(() => nodeBindings.value.filter(binding => binding.kind === 'class'))
 const showComponentPropForm = computed(() => props.node?.kind === 'component' && componentPropBindings.value.length > 0)
+const isNativeImageNode = computed(() => props.node?.kind === 'element' && props.node.tag.toLowerCase() === 'img')
+const workspaceId = computed(() => (
+  Number.isInteger(props.workspaceId) && Number(props.workspaceId) > 0
+    ? Number(props.workspaceId)
+    : null
+))
+const commonTailwindGroupKeys = computed(() => (
+  props.node && isParagraphLikeNode(props.node)
+    ? textCommonTailwindGroupKeys
+    : containerCommonTailwindGroupKeys
+))
 const structureTabs = computed<Array<{ key: StructureTabKey; label: string }>>(() => {
   const tabs: Array<{ key: StructureTabKey; label: string }> = []
   if (contentBindings.value.length) tabs.push({ key: 'content', label: '内容' })
   if (styleBindings.value.length) tabs.push({ key: 'style', label: '样式' })
   return tabs
 })
+const structureTabItems = computed(() => (
+  structureTabs.value.map(tab => ({ value: tab.key, label: tab.label }))
+))
 const hasRenderableBindings = computed(() => {
+  if (componentInspectorKey.value === 'asset-image-v1') return true
   if (showComponentPropForm.value) return componentPropBindings.value.length > 0 || styleBindings.value.length > 0
   return structureTabs.value.length > 0
+})
+const assetImageFieldViews = computed(() => componentPropBindings.value
+  .filter(binding => ASSET_IMAGE_PROP_NAMES.includes(binding.name as typeof ASSET_IMAGE_PROP_NAMES[number]))
+  .map(binding => ({
+    name: binding.name as typeof ASSET_IMAGE_PROP_NAMES[number],
+    bindingId: binding.binding_id,
+    value: bindingEffectiveValue(binding),
+    baselineValue: bindingBaselineValue(binding),
+    editable: isAssetImageStaticBinding(binding) && isBindingValueEditable(binding),
+    pending: hasCurrentOperation(binding),
+    readonlyMessage: assetImageReadonlyMessage(binding),
+    selected: isSelectedBinding(binding),
+    templateLiteralWarning: shouldShowTemplateLiteralWarning(binding),
+  })))
+const assetImageStyleView = computed(() => {
+  const binding = styleBindings.value[0]
+  if (!binding) return null
+  return {
+    bindingId: binding.binding_id,
+    editable: isAssetImageStaticBinding(binding) && isTailwindEditable(binding),
+    groups: tailwindGroupViewsForBinding(binding),
+    pending: hasCurrentOperation(binding),
+    readonlyMessage: assetImageClassReadonlyMessage(binding),
+    templateLiteralWarning: shouldShowTemplateLiteralWarning(binding),
+    unknownTokens: unknownClassTokensForBinding(binding),
+  }
+})
+const assetImageDisplayName = computed(() => {
+  const preferredNames = ['alt', 'name']
+  for (const name of preferredNames) {
+    const field = assetImageFieldViews.value.find(item => item.name === name)
+    if (typeof field?.value === 'string' && field.value.trim()) {
+      const normalizedValue = field.value.trim()
+      return normalizedValue.length > 18 ? `${normalizedValue.slice(0, 18)}…` : normalizedValue
+    }
+  }
+  return ''
 })
 const loopItemActions = computed<PageVisualEditLoopItemActions | null>(() => props.node?.loop_item_actions ?? null)
 const jsonBindingViews = computed(() => nodeBindings.value.flatMap((binding) => {
@@ -366,21 +470,25 @@ const nodeDeleted = computed(() => props.pendingOperations.some(operation => (
 const inspectorTitle = computed(() => {
   const node = props.node
   if (!node) return '未选择'
-  if (node.kind === 'component') return '组件编辑'
-  if (node.kind === 'root') return '页面结构'
-  if (isParagraphLikeNode(node)) return '段落编辑'
-  return '结构编辑'
+  if (componentInspectorKey.value === 'asset-image-v1') {
+    return assetImageDisplayName.value ? `图片：${assetImageDisplayName.value}` : '图片'
+  }
+  return semanticNodeTitle(node)
 })
 const inspectorSubtitle = computed(() => {
   const node = props.node
   if (!node) return ''
-  if (node.kind === 'component') {
-    return `${node.tag} · ${componentPropBindings.value.length} 个参数`
-  }
-  const segments = [node.kind === 'root' ? 'Page' : node.tag]
+  const segments = [inspectorScopeLabel.value]
+  if (componentInspectorKey.value === 'asset-image-v1') segments.push('工作空间图片')
+  if (componentPropBindings.value.length) segments.push(`${componentPropBindings.value.length} 项参数`)
   if (contentBindings.value.length) segments.push(`${contentBindings.value.length} 项内容`)
   if (styleBindings.value.length) segments.push(`${styleBindings.value.length} 组样式`)
   return segments.join(' · ')
+})
+const inspectorScopeLabel = computed(() => {
+  if (!props.node?.loop_context) return '当前元素'
+  if (selectedBinding.value?.source?.kind === 'template-literal') return '全部重复项'
+  return props.selectedInstancePath.length ? '当前重复项' : '全部重复项'
 })
 const emptyStateText = computed(() => {
   const node = props.node
@@ -430,11 +538,74 @@ function isParagraphLikeNode(node: PageVisualEditNode): boolean {
   return paragraphTags.has(node.tag.toLowerCase()) || node.bindings.some(binding => binding.kind === 'text' || binding.kind === 'rich_text')
 }
 
+/** 使用内容职责和静态短文本生成属性面板标题，源码标签只进入技术详情。 */
+function semanticNodeTitle(node: PageVisualEditNode): string {
+  if (node.kind === 'root') return '页面'
+  if (node.kind === 'component') {
+    return `组件：${componentSchema.value?.component_code || '自定义组件'}`
+  }
+  const tag = node.tag.toLowerCase()
+  const text = nodeTextSnippet(node)
+  if (/^h[1-6]$/.test(tag)) return labelWithSnippet('标题', text)
+  if (tag === 'img') return '原生图片'
+  if (['p', 'span', 'strong', 'em', 'small', 'label', 'li', 'dt', 'dd', 'blockquote'].includes(tag)) {
+    return labelWithSnippet('文本', text)
+  }
+  if (tag === 'button') return labelWithSnippet('按钮', text)
+  if (tag === 'a') return labelWithSnippet('链接', text)
+  if (['section', 'article', 'main', 'header', 'footer', 'nav', 'aside'].includes(tag)) return '区块'
+  if (tag === 'div') return '容器'
+  return '元素'
+}
+
+/** 从当前节点的可编辑内容中读取短文本，待保存值优先于页面版本原值。 */
+function nodeTextSnippet(node: PageVisualEditNode): string {
+  for (const binding of node.bindings) {
+    if (binding.kind !== 'text' && binding.kind !== 'rich_text') continue
+    const value = bindingEffectiveValue(binding)
+    if (typeof value !== 'string') continue
+    const normalized = value.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
+    if (!normalized) continue
+    const characters = Array.from(normalized)
+    return characters.length > 18 ? `${characters.slice(0, 18).join('')}…` : normalized
+  }
+  return ''
+}
+
+/** 为语义节点标题追加可读短内容。 */
+function labelWithSnippet(label: string, snippet: string): string {
+  return snippet ? `${label}：${snippet}` : label
+}
+
 /** 选择当前操作的绑定，用于保持画布定位与循环实例上下文一致。 */
 function selectBinding(binding: PageVisualEditBinding): void {
   if (binding.binding_id !== props.selectedBindingId) {
     emit('select-binding', binding.binding_id)
   }
+}
+
+/** 按 binding id 同步专用检查器的当前字段，不接受不存在的伪造目标。 */
+function selectBindingById(bindingId: string): void {
+  const binding = nodeBindings.value.find(item => item.binding_id === bindingId)
+  if (binding) selectBinding(binding)
+}
+
+/** 将 AssetImage 专用字段事件收窄到已注册的四个静态 prop。 */
+function handleAssetImageValueChange(payload: { bindingId: string; value: PageVisualEditValue }): void {
+  const binding = componentPropBindings.value.find(item => (
+    item.binding_id === payload.bindingId
+    && ASSET_IMAGE_PROP_NAMES.includes(item.name as typeof ASSET_IMAGE_PROP_NAMES[number])
+  ))
+  if (!binding || !isAssetImageStaticBinding(binding)) return
+  stageValue(binding, payload.value)
+}
+
+/** 将 AssetImage 图片框样式限制在明确允许的冲突组内。 */
+function handleAssetImageTailwindChange(payload: { bindingId: string; group: string; className: string }): void {
+  if (!ASSET_IMAGE_STYLE_GROUP_KEYS.includes(payload.group as typeof ASSET_IMAGE_STYLE_GROUP_KEYS[number])) return
+  const binding = styleBindings.value.find(item => item.binding_id === payload.bindingId)
+  if (!binding || !isAssetImageStaticBinding(binding)) return
+  handleTailwindGroupChange(binding, payload.group, payload.className)
 }
 
 /** 判断某个绑定是否为当前画布选中的绑定。 */
@@ -627,6 +798,27 @@ function bindingReadonlyMessage(binding: PageVisualEditBinding): string {
   return readonlyReasonLabel(binding.readonly_reason)
 }
 
+/** AssetImage 内容仅允许直接模板字面量，脚本数组和其他动态来源必须交给 AI 或源码编辑。 */
+function isAssetImageStaticBinding(binding: PageVisualEditBinding): boolean {
+  return binding.source?.kind === 'template-literal'
+}
+
+/** 为 AssetImage 动态 prop 提供普通语言说明。 */
+function assetImageReadonlyMessage(binding: PageVisualEditBinding): string {
+  if (!isAssetImageStaticBinding(binding)) {
+    return '此图片参数使用动态绑定，不能在这里安全修改。请使用 AI 或高级源码调整。'
+  }
+  return bindingReadonlyMessage(binding)
+}
+
+/** 为 AssetImage 动态 class 提供图片框语义的只读说明。 */
+function assetImageClassReadonlyMessage(binding: PageVisualEditBinding): string {
+  if (!isAssetImageStaticBinding(binding)) {
+    return '图片框样式使用动态 class，不能在这里安全修改。请使用 AI 或高级源码调整。'
+  }
+  return classReadonlyMessageForBinding(binding)
+}
+
 /** 判断模板字面量在循环中写回时是否需要提示会影响全部实例。 */
 function shouldShowTemplateLiteralWarning(binding: PageVisualEditBinding): boolean {
   return Boolean(props.loopNodeId) && binding.source?.kind === 'template-literal'
@@ -674,12 +866,14 @@ function tailwindGroupViewsForBinding(binding: PageVisualEditBinding): Array<{
   key: string
   label: string
   selectedClass: string
+  baselineClass: string
   options: Array<{ class_name: string; label: string }>
 }> {
   return (props.catalog?.groups ?? []).map(group => ({
     key: group.key,
     label: group.label,
     selectedClass: selectedClassForGroup(binding, group.key),
+    baselineClass: baselineClassForGroup(binding, group.key) ?? '',
     options: group.options,
   }))
 }
@@ -772,6 +966,7 @@ function readonlyReasonLabel(reason: string | null | undefined): string {
     ATTRIBUTE_VALUE_MISSING: '属性没有可写回的字面量值。',
     RICH_TEXT_DYNAMIC_CONTENT: '段落包含动态表达式，已合并展示但不能安全写回。',
     RICH_TEXT_UNSUPPORTED_STRUCTURE: '段落包含暂无法安全定位的模板控制结构，当前只读。',
+    RICH_TEXT_SOURCE_RANGE_UNRESOLVED: '无法定位富文本容器的内部源码范围，该节点已降级为只读。',
   }
   return reason ? labels[reason] ?? `只读：${reason}` : '此项当前只读。'
 }

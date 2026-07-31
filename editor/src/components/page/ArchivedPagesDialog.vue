@@ -4,31 +4,31 @@
     <div class="flex flex-col gap-4">
       <SimpleSearchBar v-model="keyword" placeholder="按页面名称、编码或源码搜索" />
 
-      <div class="overflow-hidden rounded-2xl border border-slate-200 bg-slate-50/50">
+      <div class="overflow-hidden rounded-2xl border border-border bg-canvas/50">
         <div
-          class="flex items-center justify-between border-b border-slate-200 px-4 py-3 text-xs font-semibold text-slate-500">
+          class="flex items-center justify-between border-b border-border px-4 py-3 text-xs font-semibold text-text-muted">
           <span>共 {{ archivedPages.length }} 个归档页面</span>
           <span>可搜索并恢复页面</span>
         </div>
 
-        <div v-if="query.isFetching.value" class="flex items-center justify-center py-12 text-sm text-slate-500">
+        <div v-if="query.isFetching.value" class="flex items-center justify-center py-12 text-sm text-text-muted">
           正在加载归档页面...
         </div>
 
         <div v-else-if="archivedPages.length === 0"
-          class="flex flex-col items-center justify-center gap-2 py-12 text-slate-500">
+          class="flex flex-col items-center justify-center gap-2 py-12 text-text-muted">
           <p class="text-sm font-semibold">{{ keyword.trim() ? '没有匹配的归档页面。' : '当前没有归档页面。' }}</p>
-          <p class="text-xs text-slate-400">恢复后的页面会重新出现在页面列表。</p>
+          <p class="text-xs text-text-disabled">恢复后的页面会重新出现在页面列表。</p>
         </div>
 
-        <div v-else class="divide-y divide-slate-200">
+        <div v-else class="divide-y divide-border">
           <div v-for="page in archivedPages" :key="page.id"
-            class="flex items-center justify-between gap-4 bg-white px-4 py-4">
-            <div class="w-40 shrink-0 overflow-hidden rounded-xl border border-slate-200 bg-slate-100"
+            class="flex items-center justify-between gap-4 bg-surface px-4 py-4">
+            <div class="w-40 shrink-0 overflow-hidden rounded-xl border border-border bg-surface-muted"
               :style="{ aspectRatio: screenshotAspectRatio }">
               <img v-if="page.screenshot_url" :src="page.screenshot_url" :alt="`${page.title} 最新截图`"
                 class="h-full w-full object-cover" loading="lazy">
-              <div v-else class="flex h-full w-full flex-col items-center justify-center gap-1.5 text-slate-400">
+              <div v-else class="flex h-full w-full flex-col items-center justify-center gap-1.5 text-text-disabled">
                 <ImageOff class="h-5 w-5" />
                 <span class="text-[10px] font-semibold">暂无截图</span>
               </div>
@@ -36,8 +36,8 @@
 
             <div class="min-w-0 flex-1">
               <div class="flex items-center gap-3">
-                <h4 class="truncate text-sm font-semibold text-slate-900">{{ page.title }}</h4>
-                <span class="font-mono text-[10px] font-bold uppercase tracking-widest text-slate-400">{{ page.code
+                <h4 class="truncate text-sm font-semibold text-text-strong">{{ page.title }}</h4>
+                <span class="font-mono text-[10px] font-bold uppercase tracking-widest text-text-disabled">{{ page.code
                   }}</span>
               </div>
             </div>

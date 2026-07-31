@@ -3,10 +3,15 @@
   <div class="relative flex min-h-0 flex-1 overflow-hidden">
     <div
       ref="scrollContainerRef"
-      class="agent-conversation-body flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto px-3 py-2.5"
+      class="agent-conversation-body min-h-0 flex-1 overflow-y-auto px-3 py-2.5"
       :class="{ 'agent-conversation-body--floating-toast': hasFloatingNotice }"
       @scroll="handleConversationScroll"
+      @wheel.passive="markUserScrollIntent"
+      @touchmove.passive="markUserScrollIntent"
+      @keydown="markUserScrollIntent"
+      @pointerdown="handleConversationPointerDown"
     >
+    <div ref="scrollContentRef" class="flex min-h-full flex-col gap-2">
     <section v-if="draftPatches.length" class="space-y-1.5">
       <div class="flex items-center justify-between gap-2">
         <h3 class="text-xs font-semibold text-text-secondary">草稿</h3>
@@ -329,6 +334,7 @@
         </div>
       </DataState>
     </section>
+    </div>
 
     </div>
 
@@ -385,6 +391,7 @@ import {
   formatCollapsedUserMessageSummary,
   formatMessageTime,
   formatToolGroupSummary,
+  getToolStatusTone,
   resolveMessageContent,
   resolveMessageMarkdownNodes as buildMessageMarkdownNodes,
   shouldExpandToolGroup,
@@ -420,10 +427,15 @@ const emit = defineEmits<{
 const markdownParser = getMarkdown()
 const markdownNodeCache = new Map<string, ReturnType<typeof buildMessageMarkdownNodes>>()
 const scrollContainerRef = ref<HTMLElement | null>(null)
+const scrollContentRef = ref<HTMLElement | null>(null)
 const autoScrollEnabled = ref(true)
 const failedAttachmentIds = ref(new Set<number>())
 const userMessageCollapseOverrides = ref(new Map<string, boolean>())
 let scrollAnimationFrame: number | null = null
+const USER_SCROLL_INTENT_WINDOW_MS = 1000
+let userScrollIntentUntil = 0
+let scrollbarDragging = false
+let contentResizeObserver: ResizeObserver | null = null
 const assistantBatchRendering = {
   initialRenderBatchSize: 12,
   renderBatchSize: 16,
@@ -468,10 +480,17 @@ watch(
 )
 
 onMounted(() => {
+  setupContentResizeObserver()
+  window.addEventListener('pointerup', releaseScrollbarDrag)
+  window.addEventListener('pointercancel', releaseScrollbarDrag)
   scheduleAutoScrollToBottom()
 })
 
 onBeforeUnmount(() => {
+  contentResizeObserver?.disconnect()
+  contentResizeObserver = null
+  window.removeEventListener('pointerup', releaseScrollbarDrag)
+  window.removeEventListener('pointercancel', releaseScrollbarDrag)
   if (scrollAnimationFrame !== null) {
     window.cancelAnimationFrame(scrollAnimationFrame)
   }
@@ -563,15 +582,6 @@ async function copyUserMessage(message: AgentMessageItem) {
 }
 
 /**
- * 将工具运行状态映射到统一 Badge 语义，工具类别不再使用独立颜色。
- */
-function getToolStatusTone(status: ToolCallDetail['status']) {
-  if (status === 'error') return 'danger' as const
-  if (status === 'running') return 'info' as const
-  return 'success' as const
-}
-
-/**
  * 已完成的用户回答在主时间线只显示问题摘要，详情按需展开。
  */
 function formatFeedbackRequestSummary(item: Extract<TimelineDisplayItem, { kind: 'feedback_request' }>) {
@@ -594,13 +604,71 @@ function attachmentPlaceholderText(attachment: AgentMessageAttachmentItem) {
 
 /**
  * 用户靠近底部时自动跟随新输出；手动上滑后保持当前位置，避免阅读历史时被拉回底部。
+ * 离开底部一律停止跟随；重新开启跟随要求滚动带有用户意图，
+ * 防止折叠内容、scrollTop clamp 等布局引发的滚动误恢复自动跟随。
  */
 function handleConversationScroll() {
   const container = scrollContainerRef.value
   if (!container) {
     return
   }
-  autoScrollEnabled.value = isNearConversationBottom(container)
+  if (!isNearConversationBottom(container)) {
+    autoScrollEnabled.value = false
+    return
+  }
+  if (hasUserScrollIntent()) {
+    autoScrollEnabled.value = true
+  }
+}
+
+/**
+ * 记录用户滚动意图；只有带意图的滚动回到底部才允许重新开启自动跟随。
+ */
+function markUserScrollIntent() {
+  userScrollIntentUntil = performance.now() + USER_SCROLL_INTENT_WINDOW_MS
+}
+
+/**
+ * 命中纵向滚动条区域的按下视为拖拽滚动条；普通点击（如折叠块）不计入滚动意图。
+ */
+function handleConversationPointerDown(event: PointerEvent) {
+  const container = scrollContainerRef.value
+  if (!container) {
+    return
+  }
+  if (event.target === container && event.offsetX >= container.clientWidth) {
+    scrollbarDragging = true
+  }
+}
+
+function releaseScrollbarDrag() {
+  scrollbarDragging = false
+}
+
+function hasUserScrollIntent() {
+  return scrollbarDragging || performance.now() <= userScrollIntentUntil
+}
+
+/**
+ * 批量渲染、图片加载或浮动提示 padding 切换会让内容在"滚到底"执行后继续增高；
+ * 监听内容尺寸变化，在跟随开启时持续贴底。
+ */
+function setupContentResizeObserver() {
+  if (typeof ResizeObserver === 'undefined') {
+    return
+  }
+  const content = scrollContentRef.value
+  if (!content) {
+    return
+  }
+  contentResizeObserver = new ResizeObserver(() => {
+    const container = scrollContainerRef.value
+    if (!container || !autoScrollEnabled.value) {
+      return
+    }
+    container.scrollTop = container.scrollHeight
+  })
+  contentResizeObserver.observe(content)
 }
 
 function scheduleAutoScrollToBottom() {
@@ -625,8 +693,13 @@ function scheduleAutoScrollToBottom() {
   })
 }
 
+/**
+ * 距底阈值需叠加容器 padding-bottom：浮动提示出现时底部 5.5rem 是留白，
+ * 用户看着最后一条消息时不应被误判为已离开底部。
+ */
 function isNearConversationBottom(container: HTMLElement) {
-  return container.scrollHeight - container.scrollTop - container.clientHeight <= 80
+  const paddingBottom = Number.parseFloat(window.getComputedStyle(container).paddingBottom) || 0
+  return container.scrollHeight - container.scrollTop - container.clientHeight <= 80 + paddingBottom
 }
 
 function buildConversationChangeSignature() {
@@ -634,7 +707,11 @@ function buildConversationChangeSignature() {
   return [
     props.timelineDisplayItems.length,
     lastItem?.id ?? '',
-    lastItem && 'content' in lastItem ? lastItem.content.length : '',
+    lastItem?.kind === 'message'
+      ? lastItem.message.content.length
+      : lastItem && 'content' in lastItem
+        ? lastItem.content.length
+        : '',
     lastItem?.kind === 'feedback_request'
       ? lastItem.entries.map(entry => `${entry.question}:${entry.answerText ?? ''}`).join('|')
       : '',
@@ -693,10 +770,10 @@ function getRunStatusDotClass(status: string | null) {
 }
 
 /**
- * 运行中的模型请求状态用省略号提示用户仍在等待输出。
+ * 运行中的模型请求与后台等待状态用省略号提示用户仍在等待输出。
  */
 function shouldAnimateRunStatus(status: string | null) {
-  return status === 'model_request' || status === 'tool_start' || status === 'tool_execution'
+  return status === 'model_request' || status === 'tool_start' || status === 'tool_execution' || status === 'waiting_external'
 }
 
 function getRequirementStatusClass(status: string | null) {
@@ -816,8 +893,8 @@ details[open] .details-chevron {
 .assistant-markdown :deep(.markstream-vue .node-placeholder),
 .reasoning-markdown :deep(.markstream-vue .node-placeholder) {
   min-height: 0.875rem;
-  border: 1px solid rgb(226 232 240 / 0.9);
-  background: linear-gradient(90deg, rgb(248 250 252), rgb(241 245 249), rgb(248 250 252));
+  border: 1px solid rgb(var(--ui-border) / 0.9);
+  background: linear-gradient(90deg, rgb(var(--ui-surface-hover)), rgb(var(--ui-surface-muted)), rgb(var(--ui-surface-hover)));
   opacity: 1;
 }
 

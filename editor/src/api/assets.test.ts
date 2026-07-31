@@ -3,10 +3,12 @@
  */
 import { describe, expect, it, vi } from 'vitest'
 
-const { getMock, postMock, putMock } = vi.hoisted(() => ({
+const { getMock, postMock, putMock, patchMock, deleteMock } = vi.hoisted(() => ({
   getMock: vi.fn(),
   postMock: vi.fn(),
   putMock: vi.fn(),
+  patchMock: vi.fn(),
+  deleteMock: vi.fn(),
 }))
 
 vi.mock('@/api/http', () => ({
@@ -14,6 +16,8 @@ vi.mock('@/api/http', () => ({
     get: getMock,
     post: postMock,
     put: putMock,
+    patch: patchMock,
+    delete: deleteMock,
   },
 }))
 
@@ -22,14 +26,19 @@ import {
   batchDeleteWorkspaceAssets,
   batchRestoreWorkspaceAssets,
   createAssetRenderHintBackfillJobs,
+  createWorkspaceFont,
+  deleteWorkspaceFontFamily,
   exportWorkspaceAssetPackage,
   getAssetRenderHintBackfillJobGroup,
   importWorkspaceAssetPackage,
   listWorkspaceAssets,
   listWorkspaceAssetTags,
+  listWorkspaceFontFamilies,
   listWorkspaceFonts,
+  renameWorkspaceFontFamily,
   replaceWorkspaceAssetFile,
   updateWorkspaceAsset,
+  updateWorkspaceFont,
   uploadWorkspaceAsset,
   waitForAssetRenderHintBackfillJobGroup,
 } from '@/api/assets'
@@ -291,5 +300,66 @@ describe('assets api', () => {
 
     expect(result.status).toBe('succeeded')
     expect(onProgress).toHaveBeenCalledTimes(2)
+  })
+
+  it('创建字体注册时应以 family_name 提交字体族归属', async () => {
+    postMock.mockResolvedValueOnce({ data: { id: 1 } })
+
+    await createWorkspaceFont(5, {
+      asset_id: 9,
+      family_name: 'Source Han Sans',
+      font_format: 'woff2',
+      font_weight: '400',
+      font_style: 'normal',
+      font_display: 'swap',
+      status: 'active',
+    })
+
+    expect(postMock).toHaveBeenCalledWith('/workspaces/5/fonts', {
+      asset_id: 9,
+      family_name: 'Source Han Sans',
+      font_format: 'woff2',
+      font_weight: '400',
+      font_style: 'normal',
+      font_display: 'swap',
+      status: 'active',
+    })
+  })
+
+  it('更新字体注册时应支持以 family_name 移动字体族', async () => {
+    patchMock.mockResolvedValueOnce({ data: { id: 1 } })
+
+    await updateWorkspaceFont(5, 3, { family_name: 'Inter', font_weight: '100 900' })
+
+    expect(patchMock).toHaveBeenCalledWith('/workspaces/5/fonts/3', {
+      family_name: 'Inter',
+      font_weight: '100 900',
+    })
+  })
+
+  it('读取字体族列表时应请求 font-families 接口并传递分页参数', async () => {
+    getMock.mockResolvedValueOnce({ data: { items: [], total: 0, page: 1, page_size: 100 } })
+
+    await listWorkspaceFontFamilies(5, { page: 2, page_size: 20, keyword: '思源' })
+
+    expect(getMock).toHaveBeenCalledWith('/workspaces/5/font-families', {
+      params: expect.objectContaining({ page: 2, page_size: 20, keyword: '思源' }),
+    })
+  })
+
+  it('重命名字体族时应向 font-families 提交新名称', async () => {
+    patchMock.mockResolvedValueOnce({ data: { id: 10 } })
+
+    await renameWorkspaceFontFamily(5, 10, '思源黑体')
+
+    expect(patchMock).toHaveBeenCalledWith('/workspaces/5/font-families/10', { name: '思源黑体' })
+  })
+
+  it('删除字体族时应调用 font-families 删除接口', async () => {
+    deleteMock.mockResolvedValueOnce({ data: undefined })
+
+    await deleteWorkspaceFontFamily(5, 10)
+
+    expect(deleteMock).toHaveBeenCalledWith('/workspaces/5/font-families/10')
   })
 })

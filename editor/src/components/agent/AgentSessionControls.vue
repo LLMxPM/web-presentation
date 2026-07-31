@@ -1,7 +1,7 @@
 <!-- 文件功能：渲染智能体会话新建按钮与会话切换下拉菜单。 -->
 <template>
   <div class="relative flex items-center gap-2">
-    <div class="inline-flex h-8 overflow-hidden rounded-xl border border-slate-200 bg-slate-50/80 shadow-sm">
+    <div class="inline-flex h-8 overflow-hidden rounded-xl border border-border bg-canvas/80 shadow-sm">
       <UiButton
         variant="ghost"
         size="sm"

@@ -215,6 +215,7 @@ class AgentActiveRunItem(SchemaBase):
     updated_at: str | None = None
     cancel_requested_at: str | None = None
     event_index: int = -1
+    llm: dict[str, Any] | None = None
 
 
 class AgentRunStartResponse(SchemaBase):
@@ -323,6 +324,7 @@ class AgentRunRequest(BaseModel):
     run_id: str | None = Field(default=None, max_length=64)
     message: str = ""
     image_attachment_ids: list[int] = Field(default_factory=list)
+    llm_config_id: int | None = Field(default=None, ge=1)
 
     @model_validator(mode="after")
     def validate_message_or_images(self) -> "AgentRunRequest":

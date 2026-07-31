@@ -7,7 +7,7 @@
       <ProjectRouteEditor v-model="draftRoutes" :pages="routePages" :loading="routeEditorLoading" />
     </div>
 
-    <div v-else class="py-10 text-center text-sm text-slate-400">
+    <div v-else class="py-10 text-center text-sm text-text-disabled">
       当前没有可编辑的项目。
     </div>
 

@@ -3,8 +3,8 @@
   <div :class="rootClass">
     <div class="flex items-start justify-between gap-3">
       <div>
-        <label class="text-sm font-semibold text-slate-700">{{ label }}</label>
-        <p v-if="hint" class="mt-1 text-xs text-slate-400">{{ hint }}</p>
+        <label class="text-sm font-semibold text-text-emphasis">{{ label }}</label>
+        <p v-if="hint" class="mt-1 text-xs text-text-disabled">{{ hint }}</p>
       </div>
       <UiButton
         variant="ghost"
@@ -68,7 +68,7 @@ const loading = ref(false)
 const styles = ref<WorkspaceStyleItem[]>([])
 const selectedStyleId = ref<number | null>(null)
 const rootClass = computed(() => (
-  props.embedded ? '' : 'rounded-xl border border-slate-200 bg-white p-4'
+  props.embedded ? '' : 'rounded-xl border border-border bg-surface p-4'
 ))
 
 const styleOptions = computed<SelectOption[]>(() => styles.value.map(style => ({

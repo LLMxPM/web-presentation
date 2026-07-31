@@ -19,7 +19,7 @@ from app.ai.session_facade_pydantic import AgentSessionFacade
 from app.core.exceptions import AppException
 from app.core.time_utils import utc_now
 from app.models.ai_agent_attachment import AiAgentImageAttachment
-from app.models.ai_agent_runtime import AiAgentMemberRun, AiAgentRun
+from app.models.ai_agent_runtime import AiAgentMemberRun, AiAgentRequirement, AiAgentRun
 from app.models.ai_image_generation import AiImageGenerationJob
 from app.models.ai_llm import AiLlmConfig
 from app.models.asset import WorkspaceAsset
@@ -41,6 +41,7 @@ logger = logging.getLogger(__name__)
 _MAX_ATTEMPTS = 3
 _LEASE_SECONDS = 120
 _HEARTBEAT_SECONDS = 30
+_TERMINAL_JOB_STATUSES = frozenset({"completed", "error", "cancelled"})
 
 
 async def recover_interrupted_image_generation_jobs_on_startup(
@@ -535,40 +536,36 @@ async def _continue_one_completed_job(
     *,
     app: FastAPI,
 ) -> None:
-    """找到一个已结束且父 run 已 waiting_external 的任务，回灌 deferred result。"""
+    """找到一组全部结束的图片任务，并一次性回灌同轮 deferred results。"""
 
     async with session_factory() as session:
-        job = await session.scalar(
+        candidates = list(
+            (await session.scalars(
             select(AiImageGenerationJob)
             .where(
-                AiImageGenerationJob.status.in_(("completed", "error", "cancelled")),
+                AiImageGenerationJob.status.in_(_TERMINAL_JOB_STATUSES),
                 AiImageGenerationJob.continued_at.is_(None),
             )
             .order_by(AiImageGenerationJob.finished_at.asc(), AiImageGenerationJob.id.asc())
-            .limit(1)
+            .limit(50)
+            )).all()
         )
-        if job is None:
+        if not candidates:
             return
-        run = await session.get(AiAgentRun, job.run_id)
-        if run is None or run.status in {"cancelled", "failed"} or run.cancel_requested_at is not None:
-            job.continued_at = utc_now()
-            await session.commit()
+
+        ready_batch = None
+        for candidate in candidates:
+            ready_batch = await _load_ready_image_continuation_batch(session, candidate)
+            if ready_batch is not None:
+                break
+        await session.commit()
+        if ready_batch is None:
             return
-        if run.status != "waiting_external":
-            return
-        user = await session.get(User, job.user_id)
-        if user is None or user.status != RecordStatus.ACTIVE.value:
-            return
-        deferred = DeferredToolResults()
-        deferred.calls[job.deferred_tool_call_id] = job.result_json if job.status == "completed" else recoverable_tool_error_result(
-            code=job.error_code or "AI_IMAGE_GENERATION_FAILED",
-            message=job.error_message or "图片生成任务失败。",
-            status_code=503,
-            hint="请检查视觉模型配置、参考图片或提示词后重试。",
-        )
+
+        run, user, jobs, deferred = ready_batch
         current = AuthContext(user=user, session_token="", backend_session_id=f"background:{run.run_id}")
         run_id = run.run_id
-        job_database_id = job.id
+        job_database_ids = [job.id for job in jobs]
     try:
         async with session_factory() as session:
             await AgentSessionFacade(app=app, current=current, session=session).continue_external_job_to_store(
@@ -579,12 +576,122 @@ async def _continue_one_completed_job(
         async with session_factory() as session:
             await session.execute(
                 update(AiImageGenerationJob)
-                .where(AiImageGenerationJob.id == job_database_id, AiImageGenerationJob.continued_at.is_(None))
+                .where(
+                    AiImageGenerationJob.id.in_(job_database_ids),
+                    AiImageGenerationJob.continued_at.is_(None),
+                )
                 .values(continued_at=utc_now())
             )
             await session.commit()
     except Exception:  # noqa: BLE001
         logger.exception("图片任务完成后恢复父 run 失败。", extra={"event": "ai.image_generation.continue_failed", "run_id": run_id})
+
+
+async def _load_ready_image_continuation_batch(
+    session: AsyncSession,
+    candidate: AiImageGenerationJob,
+) -> tuple[AiAgentRun, User, list[AiImageGenerationJob], DeferredToolResults] | None:
+    """读取候选任务所属 requirement；仅当同轮图片任务全部终态时返回续跑批次。"""
+
+    run = await session.get(AiAgentRun, candidate.run_id)
+    if run is None or run.status in {"cancelled", "failed"} or run.cancel_requested_at is not None:
+        candidate.continued_at = utc_now()
+        return None
+    if run.status != "waiting_external":
+        return None
+    requirement = await session.scalar(
+        select(AiAgentRequirement)
+        .where(
+            AiAgentRequirement.run_id == run.run_id,
+            AiAgentRequirement.kind == "external_job",
+            AiAgentRequirement.status.in_(("pending", "resolved")),
+        )
+        .order_by(AiAgentRequirement.created_at.desc(), AiAgentRequirement.id.desc())
+    )
+    expected_call_ids = _image_deferred_call_ids(
+        requirement.payload_json if requirement is not None else None,
+        fallback_call_id=candidate.deferred_tool_call_id,
+    )
+    if not expected_call_ids or candidate.deferred_tool_call_id not in expected_call_ids:
+        candidate.continued_at = utc_now()
+        return None
+    jobs = list(
+        (await session.scalars(
+            select(AiImageGenerationJob)
+            .where(
+                AiImageGenerationJob.run_id == run.run_id,
+                AiImageGenerationJob.deferred_tool_call_id.in_(expected_call_ids),
+                (
+                    AiImageGenerationJob.member_run_id == requirement.member_run_id
+                    if requirement is not None and requirement.member_run_id is not None
+                    else AiImageGenerationJob.member_run_id.is_(None)
+                ),
+            )
+            .order_by(AiImageGenerationJob.created_at.asc(), AiImageGenerationJob.id.asc())
+        )).all()
+    )
+    deferred = _build_image_deferred_results(expected_call_ids, jobs)
+    if deferred is None:
+        return None
+    user = await session.get(User, candidate.user_id)
+    if user is None or user.status != RecordStatus.ACTIVE.value:
+        return None
+    return run, user, jobs, deferred
+
+
+def _image_deferred_call_ids(payload: object, *, fallback_call_id: str) -> list[str]:
+    """从 external requirement 提取本轮图片调用 ID，旧单任务数据回退到候选 ID。"""
+
+    if not isinstance(payload, dict):
+        return [fallback_call_id] if fallback_call_id else []
+    tool_execution = payload.get("tool_execution")
+    if not isinstance(tool_execution, dict):
+        return [fallback_call_id] if fallback_call_id else []
+    raw_calls = tool_execution.get("tool_calls")
+    if not isinstance(raw_calls, list):
+        return [fallback_call_id] if fallback_call_id else []
+    call_ids: list[str] = []
+    for raw_call in raw_calls:
+        if not isinstance(raw_call, dict):
+            continue
+        metadata = raw_call.get("metadata")
+        kind = str(metadata.get("kind") or "") if isinstance(metadata, dict) else ""
+        tool_name = str(raw_call.get("tool_name") or "")
+        if kind != "image_generation" and tool_name != "generate_image":
+            continue
+        call_id = str(raw_call.get("tool_call_id") or "").strip()
+        if call_id and call_id not in call_ids:
+            call_ids.append(call_id)
+    return call_ids or ([fallback_call_id] if fallback_call_id else [])
+
+
+def _build_image_deferred_results(
+    expected_call_ids: list[str],
+    jobs: list[AiImageGenerationJob],
+) -> DeferredToolResults | None:
+    """校验同轮任务已全部终态，并按调用 ID 构造完整的 deferred results。"""
+
+    jobs_by_call_id = {job.deferred_tool_call_id: job for job in jobs}
+    if any(
+        call_id not in jobs_by_call_id
+        or jobs_by_call_id[call_id].status not in _TERMINAL_JOB_STATUSES
+        for call_id in expected_call_ids
+    ):
+        return None
+    deferred = DeferredToolResults()
+    for call_id in expected_call_ids:
+        job = jobs_by_call_id[call_id]
+        deferred.calls[call_id] = (
+            job.result_json
+            if job.status == "completed"
+            else recoverable_tool_error_result(
+                code=job.error_code or "AI_IMAGE_GENERATION_FAILED",
+                message=job.error_message or "图片生成任务失败。",
+                status_code=503,
+                hint="请检查视觉模型配置、参考图片或提示词后重试。",
+            )
+        )
+    return deferred
 
 
 async def _append_progress(

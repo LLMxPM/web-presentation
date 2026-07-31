@@ -4,36 +4,36 @@
     <div class="flex flex-col gap-4">
       <SimpleSearchBar v-model="keyword" placeholder="按项目名称或编码搜索" />
 
-      <div class="rounded-2xl border border-slate-200 bg-slate-50/50 overflow-hidden">
-        <div class="flex items-center justify-between px-4 py-3 border-b border-slate-200 text-xs font-semibold text-slate-500">
+      <div class="rounded-2xl border border-border bg-canvas/50 overflow-hidden">
+        <div class="flex items-center justify-between px-4 py-3 border-b border-border text-xs font-semibold text-text-muted">
           <span>共 {{ archivedProjects.length }} 个归档项目</span>
           <span>按归档时间从近到远排序</span>
         </div>
 
-        <div v-if="query.isFetching.value" class="flex items-center justify-center py-12 text-sm text-slate-500">
+        <div v-if="query.isFetching.value" class="flex items-center justify-center py-12 text-sm text-text-muted">
           正在加载归档项目...
         </div>
 
-        <div v-else-if="archivedProjects.length === 0" class="flex flex-col items-center justify-center py-12 gap-2 text-slate-500">
+        <div v-else-if="archivedProjects.length === 0" class="flex flex-col items-center justify-center py-12 gap-2 text-text-muted">
           <p class="text-sm font-semibold">{{ keyword.trim() ? '没有匹配的归档项目。' : '当前没有已归档项目。' }}</p>
-          <p class="text-xs text-slate-400">恢复后的项目会重新出现在项目主页。</p>
+          <p class="text-xs text-text-disabled">恢复后的项目会重新出现在项目主页。</p>
         </div>
 
-        <div v-else class="divide-y divide-slate-200">
+        <div v-else class="divide-y divide-border">
           <div
             v-for="project in archivedProjects"
             :key="project.id"
-            class="flex items-center justify-between gap-4 px-4 py-4 bg-white"
+            class="flex items-center justify-between gap-4 px-4 py-4 bg-surface"
           >
             <div class="min-w-0 flex-1">
               <div class="flex items-center gap-3">
-                <h4 class="text-sm font-semibold text-slate-900 truncate">{{ project.name }}</h4>
-                <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest font-mono">{{ project.code }}</span>
+                <h4 class="text-sm font-semibold text-text-strong truncate">{{ project.name }}</h4>
+                <span class="text-[10px] font-bold text-text-disabled uppercase tracking-widest font-mono">{{ project.code }}</span>
               </div>
-              <p class="mt-1 text-xs text-slate-500 line-clamp-2">
+              <p class="mt-1 text-xs text-text-muted line-clamp-2">
                 {{ project.description || '此项目尚未添加具体功能说明' }}
               </p>
-              <div class="mt-2 flex items-center gap-4 text-xs text-slate-400">
+              <div class="mt-2 flex items-center gap-4 text-xs text-text-disabled">
                 <span>归档于 {{ formatDateTime(project.archived_at) }}</span>
                 <span>更新于 {{ formatDateTime(project.updated_at) }}</span>
               </div>

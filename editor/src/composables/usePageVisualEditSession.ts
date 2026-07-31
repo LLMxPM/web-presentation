@@ -66,7 +66,6 @@ export function usePageVisualEditSession() {
       artifact.value = response
       stale.value = false
       lastRefreshSucceeded.value = true
-      selectNode(response.visual_edit.manifest.root.node_id)
       return response
     } catch (error) {
       if (sequence !== requestSequence) return null
@@ -89,6 +88,11 @@ export function usePageVisualEditSession() {
   async function save(pageId: number, changeNote = '可视化编辑'): Promise<PageVisualEditApplyResponse | null> {
     const currentArtifact = artifact.value
     if (!currentArtifact || !draft.hasPendingChanges.value || saving.value || stale.value) return null
+    const previousSelection = {
+      nodeId: selectedNodeId.value,
+      bindingId: selectedBindingId.value,
+      instancePath: cloneInstancePath(selectedInstancePath.value),
+    }
 
     saving.value = true
     errorMessage.value = ''
@@ -113,7 +117,10 @@ export function usePageVisualEditSession() {
     selectedNodeId.value = ''
     selectedBindingId.value = ''
     selectedInstancePath.value = []
-    await analyze(pageId, result.current_version_no)
+    const refreshedArtifact = await analyze(pageId, result.current_version_no)
+    if (refreshedArtifact && canRestoreSelection(refreshedArtifact.visual_edit.manifest.root, previousSelection)) {
+      selectNode(previousSelection.nodeId, previousSelection.bindingId, previousSelection.instancePath)
+    }
     return result
   }
 
@@ -233,6 +240,24 @@ export function usePageVisualEditSession() {
     discardChanges,
     reset,
   }
+}
+
+/**
+ * 判断保存前选区是否仍能在新 Manifest 中精确定位。
+ * 节点或显式绑定任一消失时保持未选择，避免误选结构相似但语义不同的对象。
+ */
+function canRestoreSelection(
+  root: PageVisualEditNode,
+  selection: {
+    nodeId: string
+    bindingId: string
+    instancePath: PageVisualEditInstancePathSegment[]
+  },
+): boolean {
+  if (!selection.nodeId) return false
+  const node = findVisualEditNode(root, selection.nodeId)
+  if (!node) return false
+  return !selection.bindingId || node.bindings.some(binding => binding.binding_id === selection.bindingId)
 }
 
 /**

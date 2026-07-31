@@ -5,7 +5,7 @@ from sqlalchemy import select
 
 from app.db.session import get_session_factory
 from app.models.asset import WorkspaceAsset
-from app.models.font import WorkspaceFontConfig
+from app.models.font import WorkspaceFontConfig, WorkspaceFontFamily
 from app.models.workspace_theme import WorkspaceTheme
 from app.core.time_utils import utc_now
 
@@ -75,7 +75,7 @@ async def test_workspace_font_config_should_only_accept_font_assets(
         f"/api/workspaces/{workspace_id}/fonts",
         json={
             "asset_id": asset_id,
-            "font_family": "非法图标字体",
+            "family_name": "非法图标字体",
             "font_weight": "400",
             "font_style": "normal",
             "font_display": "swap",
@@ -113,7 +113,7 @@ async def test_workspace_font_config_should_reject_duplicate_font_face_signature
         f"/api/workspaces/{workspace_id}/fonts",
         json={
             "asset_id": uploaded_asset_ids[0],
-            "font_family": "Brand Sans",
+            "family_name": "Brand Sans",
             "font_weight": "400",
             "font_style": "normal",
             "font_display": "swap",
@@ -126,7 +126,7 @@ async def test_workspace_font_config_should_reject_duplicate_font_face_signature
         f"/api/workspaces/{workspace_id}/fonts",
         json={
             "asset_id": uploaded_asset_ids[1],
-            "font_family": " brand sans ",
+            "family_name": " brand sans ",
             "font_weight": "400",
             "font_style": "NORMAL",
             "font_display": "swap",
@@ -140,7 +140,7 @@ async def test_workspace_font_config_should_reject_duplicate_font_face_signature
         f"/api/workspaces/{workspace_id}/fonts",
         json={
             "asset_id": uploaded_asset_ids[2],
-            "font_family": "Brand Sans",
+            "family_name": "Brand Sans",
             "font_weight": "700",
             "font_style": "normal",
             "font_display": "swap",
@@ -191,7 +191,7 @@ async def test_preview_artifact_config_bundle_should_include_resolved_workspace_
             f"/api/workspaces/{workspace_id}/fonts",
             json={
                 "asset_id": source_han_asset_id,
-                "font_family": "思源黑体",
+                "family_name": "思源黑体",
                 "font_weight": "100 900",
                 "font_style": "normal",
                 "font_display": "swap",
@@ -202,7 +202,7 @@ async def test_preview_artifact_config_bundle_should_include_resolved_workspace_
             f"/api/workspaces/{workspace_id}/fonts",
             json={
                 "asset_id": source_code_asset_id,
-                "font_family": "SourceCodePro",
+                "family_name": "SourceCodePro",
                 "font_weight": "400",
                 "font_style": "normal",
                 "font_display": "swap",
@@ -219,9 +219,9 @@ async def test_preview_artifact_config_bundle_should_include_resolved_workspace_
     update_theme_response = await authenticated_client.patch(
         f"/api/workspaces/{workspace_id}/themes/{theme_id}",
         json={
-            "heading_font_id": create_font_responses[0].json()["id"],
-            "body_font_id": create_font_responses[0].json()["id"],
-            "code_font_id": create_font_responses[1].json()["id"],
+            "heading_font_family_id": create_font_responses[0].json()["family_id"],
+            "body_font_family_id": create_font_responses[0].json()["family_id"],
+            "code_font_family_id": create_font_responses[1].json()["family_id"],
         },
     )
     assert update_theme_response.status_code == 200
@@ -288,7 +288,7 @@ async def test_preview_artifact_config_bundle_should_include_declared_non_theme_
         f"/api/workspaces/{workspace_id}/fonts",
         json={
             "asset_id": font_asset_response.json()["id"],
-            "font_family": "Brand Serif",
+            "family_name": "Brand Serif",
             "font_weight": "400",
             "font_style": "normal",
             "font_display": "swap",
@@ -354,7 +354,7 @@ async def test_preview_artifact_config_bundle_should_include_component_declared_
         f"/api/workspaces/{workspace_id}/fonts",
         json={
             "asset_id": font_asset_response.json()["id"],
-            "font_family": "Component Display",
+            "family_name": "Component Display",
             "font_weight": "700",
             "font_style": "normal",
             "font_display": "swap",
@@ -486,7 +486,7 @@ async def test_registered_font_asset_should_sync_font_config_name_and_still_bloc
         f"/api/workspaces/{workspace_id}/fonts",
         json={
             "asset_id": asset_id,
-            "font_family": "ThemeFontFamily",
+            "family_name": "ThemeFontFamily",
             "font_weight": "400",
             "font_style": "normal",
             "font_display": "swap",
@@ -495,6 +495,7 @@ async def test_registered_font_asset_should_sync_font_config_name_and_still_bloc
     )
     assert font_response.status_code == 200
     font_id = font_response.json()["id"]
+    family_id = font_response.json()["family_id"]
 
     themes_response = await authenticated_client.get(f"/api/workspaces/{workspace_id}/themes")
     assert themes_response.status_code == 200
@@ -503,9 +504,9 @@ async def test_registered_font_asset_should_sync_font_config_name_and_still_bloc
     update_theme_response = await authenticated_client.patch(
         f"/api/workspaces/{workspace_id}/themes/{theme_id}",
         json={
-            "heading_font_id": font_id,
-            "body_font_id": font_id,
-            "code_font_id": font_id,
+            "heading_font_family_id": family_id,
+            "body_font_family_id": family_id,
+            "code_font_family_id": family_id,
         },
     )
     assert update_theme_response.status_code == 200
@@ -568,7 +569,7 @@ async def test_delete_workspace_font_should_cleanup_soft_deleted_theme_reference
         f"/api/workspaces/{workspace_id}/fonts",
         json={
             "asset_id": asset_id,
-            "font_family": "SoftDeletedThemeFont",
+            "family_name": "SoftDeletedThemeFont",
             "font_weight": "400",
             "font_style": "normal",
             "font_display": "swap",
@@ -584,7 +585,7 @@ async def test_delete_workspace_font_should_cleanup_soft_deleted_theme_reference
 
     update_theme_response = await authenticated_client.patch(
         f"/api/workspaces/{workspace_id}/themes/{theme_id}",
-        json={"heading_font_id": font_id},
+        json={"heading_font_family_id": font_response.json()["family_id"]},
     )
     assert update_theme_response.status_code == 200
 
@@ -636,7 +637,7 @@ async def test_delete_workspace_font_with_asset_should_remove_config_asset_and_h
         f"/api/workspaces/{workspace_id}/fonts",
         json={
             "asset_id": asset_id,
-            "font_family": "DeleteWithAsset",
+            "family_name": "DeleteWithAsset",
             "font_weight": "400",
             "font_style": "normal",
             "font_display": "swap",
@@ -690,7 +691,7 @@ async def test_delete_workspace_font_with_asset_should_fail_when_theme_explicitl
         f"/api/workspaces/{workspace_id}/fonts",
         json={
             "asset_id": asset_id,
-            "font_family": "ExplicitThemeFont",
+            "family_name": "ExplicitThemeFont",
             "font_weight": "400",
             "font_style": "normal",
             "font_display": "swap",
@@ -705,7 +706,7 @@ async def test_delete_workspace_font_with_asset_should_fail_when_theme_explicitl
     theme_id = themes_response.json()["items"][0]["id"]
     update_theme_response = await authenticated_client.patch(
         f"/api/workspaces/{workspace_id}/themes/{theme_id}",
-        json={"heading_font_id": font_id},
+        json={"heading_font_family_id": font_response.json()["family_id"]},
     )
     assert update_theme_response.status_code == 200
 
@@ -761,7 +762,7 @@ async def test_unregistered_font_asset_endpoint_should_delete_only_unregistered_
         f"/api/workspaces/{workspace_id}/fonts",
         json={
             "asset_id": registered_asset_id,
-            "font_family": "RegisteredFont",
+            "family_name": "RegisteredFont",
             "font_weight": "400",
             "font_style": "normal",
             "font_display": "swap",
@@ -850,7 +851,7 @@ async def test_asset_list_should_include_font_config_summary_after_registering_f
         f"/api/workspaces/{workspace_id}/fonts",
         json={
             "asset_id": asset_id,
-            "font_family": "SummaryFontFamily",
+            "family_name": "SummaryFontFamily",
             "font_weight": "400",
             "font_style": "normal",
             "font_display": "swap",
@@ -899,7 +900,7 @@ async def test_workspace_font_list_should_page_keyword_and_status_filter(
             f"/api/workspaces/{workspace_id}/fonts",
             json={
                 "asset_id": upload_response.json()["id"],
-                "font_family": font_family,
+                "family_name": font_family,
                 "font_weight": "400",
                 "font_style": "normal",
                 "font_display": "swap",
@@ -982,7 +983,7 @@ async def test_preview_artifact_should_not_include_font_matched_only_by_workspac
         f"/api/workspaces/{workspace_id}/fonts",
         json={
             "asset_id": asset_id,
-            "font_family": "思源黑体",
+            "family_name": "思源黑体",
             "font_weight": "400",
             "font_style": "normal",
             "font_display": "swap",
@@ -1052,7 +1053,7 @@ async def test_preview_artifact_should_fail_when_font_config_asset_name_is_stale
         f"/api/workspaces/{workspace_id}/fonts",
         json={
             "asset_id": asset_payload["id"],
-            "font_family": "思源黑体",
+            "family_name": "思源黑体",
             "font_weight": "100 900",
             "font_style": "normal",
             "font_display": "swap",
@@ -1076,11 +1077,417 @@ async def test_preview_artifact_should_fail_when_font_config_asset_name_is_stale
     update_theme_response = await authenticated_client.patch(
         f"/api/workspaces/{workspace_id}/themes/{theme_id}",
         json={
-            "heading_font_id": font_id,
-            "body_font_id": font_id,
-            "code_font_id": font_id,
+            "heading_font_family_id": create_font_response.json()["family_id"],
+            "body_font_family_id": create_font_response.json()["family_id"],
+            "code_font_family_id": create_font_response.json()["family_id"],
         },
     )
-    assert update_theme_response.status_code == 409
-    assert update_theme_response.json()["code"] == "FONT_ASSET_NAME_MISMATCH"
-    assert "SourceHanSansSC-VF.otf.woff2" in update_theme_response.json()["message"]
+    assert update_theme_response.status_code == 200
+
+    project_response = await authenticated_client.post(
+        "/api/projects",
+        json={"workspace_id": workspace_id, "name": "历史字体配置项目", "status": "active"},
+    )
+    assert project_response.status_code == 200
+    project_id = project_response.json()["id"]
+    await _create_home_route(authenticated_client, workspace_id=workspace_id, project_id=project_id)
+
+    preview_response = await authenticated_client.post(
+        f"/api/projects/{project_id}/preview-artifacts",
+        json={"entry_descriptor": {"entry_type": "route", "route": "/home"}},
+    )
+    assert preview_response.status_code == 409
+    assert preview_response.json()["code"] == "FONT_ASSET_NAME_MISMATCH"
+    assert "SourceHanSansSC-VF.otf.woff2" in preview_response.json()["message"]
+
+
+async def _upload_font_asset(client: AsyncClient, workspace_id: int, file_name: str) -> dict:
+    """上传字体文件并返回资产载荷。"""
+
+    upload_response = await client.post(
+        f"/api/workspaces/{workspace_id}/assets/upload",
+        files={"file": (file_name, f"{file_name}-data".encode(), "font/woff2")},
+        data={"asset_type": "font", "tags": "[]"},
+    )
+    assert upload_response.status_code == 200
+    return upload_response.json()
+
+
+async def _register_font_face(
+    client: AsyncClient,
+    workspace_id: int,
+    *,
+    file_name: str,
+    family_name: str,
+    font_weight: str = "400",
+    font_style: str = "normal",
+    status: str = "active",
+) -> dict:
+    """上传并注册一个字体文件，返回字体配置响应载荷。"""
+
+    asset_payload = await _upload_font_asset(client, workspace_id, file_name)
+    create_response = await client.post(
+        f"/api/workspaces/{workspace_id}/fonts",
+        json={
+            "asset_id": asset_payload["id"],
+            "family_name": family_name,
+            "font_weight": font_weight,
+            "font_style": font_style,
+            "font_display": "swap",
+            "status": status,
+        },
+    )
+    assert create_response.status_code == 200
+    return create_response.json()
+
+
+async def test_font_family_should_merge_same_name_and_list_nested_faces(
+    authenticated_client: AsyncClient,
+) -> None:
+    """同名（trim + 忽略大小写）字体族应归并，字体族列表应内嵌全部字体文件。"""
+
+    workspace_response = await authenticated_client.post(
+        "/api/workspaces",
+        json={"name": "字体族归并空间", "status": "active"},
+    )
+    assert workspace_response.status_code == 200
+    workspace_id = workspace_response.json()["id"]
+
+    regular = await _register_font_face(
+        authenticated_client,
+        workspace_id,
+        file_name="MergeSans-Regular.woff2",
+        family_name="Merge Sans",
+        font_weight="400",
+    )
+    bold = await _register_font_face(
+        authenticated_client,
+        workspace_id,
+        file_name="MergeSans-Bold.woff2",
+        family_name=" merge sans ",
+        font_weight="700",
+    )
+    assert regular["family_id"] == bold["family_id"]
+    assert regular["font_family"] == "Merge Sans"
+    assert bold["font_family"] == "Merge Sans"
+
+    families_response = await authenticated_client.get(
+        f"/api/workspaces/{workspace_id}/font-families"
+    )
+    assert families_response.status_code == 200
+    families_payload = families_response.json()
+    assert families_payload["total"] == 1
+    family_item = families_payload["items"][0]
+    assert family_item["name"] == "Merge Sans"
+    assert [face["font_weight"] for face in family_item["faces"]] == ["400", "700"]
+    assert all(face["asset_url"] for face in family_item["faces"])
+
+
+async def test_font_family_rename_should_enforce_workspace_unique_name(
+    authenticated_client: AsyncClient,
+) -> None:
+    """字体族重命名应生效，与已有族名（忽略大小写）冲突时应拒绝。"""
+
+    workspace_response = await authenticated_client.post(
+        "/api/workspaces",
+        json={"name": "字体族重命名空间", "status": "active"},
+    )
+    assert workspace_response.status_code == 200
+    workspace_id = workspace_response.json()["id"]
+
+    alpha = await _register_font_face(
+        authenticated_client,
+        workspace_id,
+        file_name="RenameAlpha.woff2",
+        family_name="Rename Alpha",
+    )
+    await _register_font_face(
+        authenticated_client,
+        workspace_id,
+        file_name="RenameBeta.woff2",
+        family_name="Rename Beta",
+    )
+
+    rename_response = await authenticated_client.patch(
+        f"/api/workspaces/{workspace_id}/font-families/{alpha['family_id']}",
+        json={"name": "Rename Alpha Pro"},
+    )
+    assert rename_response.status_code == 200
+    assert rename_response.json()["name"] == "Rename Alpha Pro"
+
+    fonts_response = await authenticated_client.get(
+        f"/api/workspaces/{workspace_id}/fonts",
+        params={"keyword": "RenameAlpha"},
+    )
+    assert fonts_response.status_code == 200
+    assert fonts_response.json()["items"][0]["font_family"] == "Rename Alpha Pro"
+
+    duplicate_response = await authenticated_client.patch(
+        f"/api/workspaces/{workspace_id}/font-families/{alpha['family_id']}",
+        json={"name": " rename beta "},
+    )
+    assert duplicate_response.status_code == 409
+    assert duplicate_response.json()["code"] == "FONT_FAMILY_DUPLICATE_NAME"
+
+
+async def test_font_family_delete_should_reject_non_empty_and_cascade_on_last_face_delete(
+    authenticated_client: AsyncClient,
+) -> None:
+    """非空字体族不允许直接删除；删掉最后一个字体文件后空族应级联清理。"""
+
+    workspace_response = await authenticated_client.post(
+        "/api/workspaces",
+        json={"name": "字体族级联删除空间", "status": "active"},
+    )
+    assert workspace_response.status_code == 200
+    workspace_id = workspace_response.json()["id"]
+
+    face = await _register_font_face(
+        authenticated_client,
+        workspace_id,
+        file_name="CascadeSans.woff2",
+        family_name="Cascade Sans",
+    )
+
+    delete_family_response = await authenticated_client.delete(
+        f"/api/workspaces/{workspace_id}/font-families/{face['family_id']}"
+    )
+    assert delete_family_response.status_code == 409
+    assert delete_family_response.json()["code"] == "FONT_FAMILY_NOT_EMPTY"
+
+    delete_face_response = await authenticated_client.delete(
+        f"/api/workspaces/{workspace_id}/fonts/{face['id']}"
+    )
+    assert delete_face_response.status_code == 200
+
+    session_factory = get_session_factory()
+    async with session_factory() as session:
+        assert await session.get(WorkspaceFontFamily, face["family_id"]) is None
+
+
+async def test_font_face_move_to_new_family_should_cleanup_orphan_family(
+    authenticated_client: AsyncClient,
+) -> None:
+    """修改 family_name 应把字体文件移入目标族，原族变空后应自动清理。"""
+
+    workspace_response = await authenticated_client.post(
+        "/api/workspaces",
+        json={"name": "字体文件移族空间", "status": "active"},
+    )
+    assert workspace_response.status_code == 200
+    workspace_id = workspace_response.json()["id"]
+
+    face = await _register_font_face(
+        authenticated_client,
+        workspace_id,
+        file_name="MoveSans-Regular.woff2",
+        family_name="Move Sans Old",
+    )
+
+    move_response = await authenticated_client.patch(
+        f"/api/workspaces/{workspace_id}/fonts/{face['id']}",
+        json={"family_name": "Move Sans New"},
+    )
+    assert move_response.status_code == 200
+    assert move_response.json()["font_family"] == "Move Sans New"
+    assert move_response.json()["family_id"] != face["family_id"]
+
+    session_factory = get_session_factory()
+    async with session_factory() as session:
+        assert await session.get(WorkspaceFontFamily, face["family_id"]) is None
+
+
+async def test_font_face_declaration_fields_should_reject_invalid_values(
+    authenticated_client: AsyncClient,
+) -> None:
+    """font-weight/font-style 非法值应拒绝写入，防止脏数据注入 Runtime @font-face。"""
+
+    workspace_response = await authenticated_client.post(
+        "/api/workspaces",
+        json={"name": "字体声明校验空间", "status": "active"},
+    )
+    assert workspace_response.status_code == 200
+    workspace_id = workspace_response.json()["id"]
+    asset_payload = await _upload_font_asset(authenticated_client, workspace_id, "InvalidDeclaration.woff2")
+
+    invalid_weight_cases = ["900 100", "400; } body { color: red", "bold"]
+    for invalid_weight in invalid_weight_cases:
+        response = await authenticated_client.post(
+            f"/api/workspaces/{workspace_id}/fonts",
+            json={
+                "asset_id": asset_payload["id"],
+                "family_name": "Invalid Declaration",
+                "font_weight": invalid_weight,
+                "font_style": "normal",
+                "font_display": "swap",
+                "status": "active",
+            },
+        )
+        assert response.status_code == 400, invalid_weight
+        assert response.json()["code"] == "FONT_WEIGHT_INVALID"
+
+    invalid_style_response = await authenticated_client.post(
+        f"/api/workspaces/{workspace_id}/fonts",
+        json={
+            "asset_id": asset_payload["id"],
+            "family_name": "Invalid Declaration",
+            "font_weight": "400",
+            "font_style": "slanted",
+            "font_display": "swap",
+            "status": "active",
+        },
+    )
+    assert invalid_style_response.status_code == 400
+    assert invalid_style_response.json()["code"] == "FONT_STYLE_INVALID"
+
+    valid_range_response = await authenticated_client.post(
+        f"/api/workspaces/{workspace_id}/fonts",
+        json={
+            "asset_id": asset_payload["id"],
+            "family_name": "Invalid Declaration",
+            "font_weight": "100 900",
+            "font_style": "normal",
+            "font_display": "swap",
+            "status": "active",
+        },
+    )
+    assert valid_range_response.status_code == 200
+    assert valid_range_response.json()["font_weight"] == "100 900"
+
+
+async def test_preview_bundle_should_include_all_active_faces_of_theme_bound_family(
+    authenticated_client: AsyncClient,
+    runtime_service_headers: dict[str, str],
+) -> None:
+    """主题绑定字体族后，预览字体包应下发该族全部 active 字体文件，archived 不下发。"""
+
+    workspace_response = await authenticated_client.post(
+        "/api/workspaces",
+        json={"name": "字体族整族下发空间", "status": "active"},
+    )
+    assert workspace_response.status_code == 200
+    workspace_id = workspace_response.json()["id"]
+
+    regular = await _register_font_face(
+        authenticated_client,
+        workspace_id,
+        file_name="FamilySans-Regular.woff2",
+        family_name="Family Sans",
+        font_weight="400",
+    )
+    await _register_font_face(
+        authenticated_client,
+        workspace_id,
+        file_name="FamilySans-Bold.woff2",
+        family_name="Family Sans",
+        font_weight="700",
+    )
+    await _register_font_face(
+        authenticated_client,
+        workspace_id,
+        file_name="FamilySans-Light.woff2",
+        family_name="Family Sans",
+        font_weight="300",
+        status="archived",
+    )
+
+    themes_response = await authenticated_client.get(f"/api/workspaces/{workspace_id}/themes")
+    assert themes_response.status_code == 200
+    theme_id = themes_response.json()["items"][0]["id"]
+    update_theme_response = await authenticated_client.patch(
+        f"/api/workspaces/{workspace_id}/themes/{theme_id}",
+        json={"heading_font_family_id": regular["family_id"]},
+    )
+    assert update_theme_response.status_code == 200
+    theme_payload = update_theme_response.json()
+    assert theme_payload["heading_font_family_id"] == regular["family_id"]
+    assert theme_payload["heading_font_family"]["name"] == "Family Sans"
+
+    project_response = await authenticated_client.post(
+        "/api/projects",
+        json={"workspace_id": workspace_id, "name": "整族下发项目", "status": "active"},
+    )
+    assert project_response.status_code == 200
+    project_id = project_response.json()["id"]
+    await _create_home_route(authenticated_client, workspace_id=workspace_id, project_id=project_id)
+
+    preview_response = await authenticated_client.post(
+        f"/api/projects/{project_id}/preview-artifacts",
+        json={"entry_descriptor": {"entry_type": "route", "route": "/home"}},
+    )
+    assert preview_response.status_code == 200
+    config_bundle_response = await authenticated_client.get(
+        f"/internal/runtime/preview-artifacts/{preview_response.json()['artifact_id']}/config-bundle",
+        headers=runtime_service_headers,
+    )
+    assert config_bundle_response.status_code == 200
+
+    fonts_bundle = config_bundle_response.json()["fonts"]["items"]
+    assert fonts_bundle["FamilySans-Regular"]["font_family"] == "Family Sans"
+    assert fonts_bundle["FamilySans-Regular"]["font_weight"] == "400"
+    assert fonts_bundle["FamilySans-Bold"]["font_family"] == "Family Sans"
+    assert fonts_bundle["FamilySans-Bold"]["font_weight"] == "700"
+    assert "FamilySans-Light" not in fonts_bundle
+
+
+async def test_preview_bundle_should_include_whole_family_for_explicit_declaration(
+    authenticated_client: AsyncClient,
+    runtime_service_headers: dict[str, str],
+) -> None:
+    """源码显式声明单个字体文件时，预览字体包应带出所属字体族全部 active 字体文件。"""
+
+    workspace_response = await authenticated_client.post(
+        "/api/workspaces",
+        json={"name": "显式声明整族空间", "status": "active"},
+    )
+    assert workspace_response.status_code == 200
+    workspace_id = workspace_response.json()["id"]
+
+    await _register_font_face(
+        authenticated_client,
+        workspace_id,
+        file_name="DeclaredSerif-Regular.woff2",
+        family_name="Declared Serif",
+        font_weight="400",
+    )
+    await _register_font_face(
+        authenticated_client,
+        workspace_id,
+        file_name="DeclaredSerif-Bold.woff2",
+        family_name="Declared Serif",
+        font_weight="700",
+    )
+
+    project_response = await authenticated_client.post(
+        "/api/projects",
+        json={"workspace_id": workspace_id, "name": "显式声明整族项目", "status": "active"},
+    )
+    assert project_response.status_code == 200
+    project_id = project_response.json()["id"]
+    await _create_home_route(
+        authenticated_client,
+        workspace_id=workspace_id,
+        project_id=project_id,
+        page_content="""
+<script setup lang="ts">
+import { useAssetFontFamily } from '@runtime-kit/public/composables/assets/useAssetFontFamily.v1'
+const titleFont = useAssetFontFamily('DeclaredSerif-Regular')
+</script>
+<template><h1 :style="{ fontFamily: titleFont }">Declared</h1></template>
+        """.strip(),
+    )
+
+    preview_response = await authenticated_client.post(
+        f"/api/projects/{project_id}/preview-artifacts",
+        json={"entry_descriptor": {"entry_type": "route", "route": "/home"}},
+    )
+    assert preview_response.status_code == 200
+    config_bundle_response = await authenticated_client.get(
+        f"/internal/runtime/preview-artifacts/{preview_response.json()['artifact_id']}/config-bundle",
+        headers=runtime_service_headers,
+    )
+    assert config_bundle_response.status_code == 200
+
+    fonts_bundle = config_bundle_response.json()["fonts"]["items"]
+    assert fonts_bundle["DeclaredSerif-Regular"]["font_family"] == "Declared Serif"
+    assert fonts_bundle["DeclaredSerif-Bold"]["font_family"] == "Declared Serif"

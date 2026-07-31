@@ -4,42 +4,42 @@
     <div class="flex flex-col gap-4">
       <SimpleSearchBar v-model="keyword" placeholder="按工作空间名称或编码搜索" />
 
-      <div class="rounded-2xl border border-slate-200 bg-slate-50/50 overflow-hidden">
-        <div class="flex items-center justify-between px-4 py-3 border-b border-slate-200 text-xs font-semibold text-slate-500">
+      <div class="rounded-2xl border border-border bg-canvas/50 overflow-hidden">
+        <div class="flex items-center justify-between px-4 py-3 border-b border-border text-xs font-semibold text-text-muted">
           <span>共 {{ archivedWorkspaces.length }} 个归档工作空间</span>
           <span>按最近更新时间从近到远排序</span>
         </div>
 
-        <div v-if="loading" class="flex items-center justify-center py-12 text-sm text-slate-500">
+        <div v-if="loading" class="flex items-center justify-center py-12 text-sm text-text-muted">
           正在加载归档工作空间...
         </div>
 
-        <div v-else-if="archivedWorkspaces.length === 0" class="flex flex-col items-center justify-center py-12 gap-2 text-slate-500">
+        <div v-else-if="archivedWorkspaces.length === 0" class="flex flex-col items-center justify-center py-12 gap-2 text-text-muted">
           <p class="text-sm font-semibold">{{ keyword.trim() ? '没有匹配的归档工作空间。' : '当前没有已归档工作空间。' }}</p>
-          <p class="text-xs text-slate-400">恢复后的工作空间会重新出现在顶部切换列表中。</p>
+          <p class="text-xs text-text-disabled">恢复后的工作空间会重新出现在顶部切换列表中。</p>
         </div>
 
-        <div v-else class="divide-y divide-slate-200">
+        <div v-else class="divide-y divide-border">
           <div
             v-for="workspace in archivedWorkspaces"
             :key="workspace.id"
-            class="flex items-center justify-between gap-4 px-4 py-4 bg-white"
+            class="flex items-center justify-between gap-4 px-4 py-4 bg-surface"
           >
             <div class="min-w-0 flex-1">
               <div class="flex items-center gap-3">
-                <h4 class="text-sm font-semibold text-slate-900 truncate">{{ workspace.name }}</h4>
-                <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest font-mono">{{ workspace.code }}</span>
+                <h4 class="text-sm font-semibold text-text-strong truncate">{{ workspace.name }}</h4>
+                <span class="text-[10px] font-bold text-text-disabled uppercase tracking-widest font-mono">{{ workspace.code }}</span>
                 <span
                   v-if="workspace.id === currentWorkspaceId"
-                  class="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-500"
+                  class="inline-flex items-center rounded-full bg-surface-muted px-2 py-0.5 text-[10px] font-semibold text-text-muted"
                 >
                   当前空间
                 </span>
               </div>
-              <p class="mt-1 text-xs text-slate-500 line-clamp-2">
+              <p class="mt-1 text-xs text-text-muted line-clamp-2">
                 {{ workspace.description || '此工作空间尚未添加具体说明。' }}
               </p>
-              <div class="mt-2 flex items-center gap-4 text-xs text-slate-400">
+              <div class="mt-2 flex items-center gap-4 text-xs text-text-disabled">
                 <span>状态：已归档</span>
                 <span>更新于 {{ formatDateTime(workspace.updated_at) }}</span>
               </div>

@@ -142,6 +142,7 @@ async def test_pydantic_runner_should_pause_continue_and_replay_ask_user(
                 }
             ],
         )
+        latest_run.message_history_json[-1]["legacy_trace_marker"] = "会在 Pydantic AI 重序列化时被丢弃"
         continue_history = _build_continue_message_history(
             run_model_message_history=latest_run.message_history_json,
             run_input_payload=latest_run.input_payload_json,
@@ -210,6 +211,14 @@ async def test_pydantic_runner_should_pause_continue_and_replay_ask_user(
     assert completed_run.reasoning_content == "先确认用户偏好。收到用户反馈。"
     assert "tool-call" in _history_part_kinds(completed_run.message_history_json)
     assert _history_tool_call_ids(completed_run.message_history_json).count("tool-ask-layout") == 2
+    assert _history_tool_call_ids_by_kind(
+        completed_run.message_history_json,
+        part_kind="tool-call",
+    ).count("tool-ask-layout") == 1
+    assert _history_tool_call_ids_by_kind(
+        completed_run.message_history_json,
+        part_kind="tool-return",
+    ).count("tool-ask-layout") == 1
     assert tool_call.status == "completed"
     assert tool_call.output_payload_json == (
         'User feedback received: [{"question": "页面应优先调整哪个区域？", "selected": ["首屏"]}]'
@@ -242,6 +251,131 @@ async def test_pydantic_runner_should_pause_continue_and_replay_ask_user(
         "message",
     ]
     assert workspace_id == scope.workspace_id
+
+
+async def test_pydantic_runner_should_not_duplicate_history_across_multiple_deferred_resumes(
+    authenticated_client: AsyncClient,
+) -> None:
+    """多次 deferred 续跑应只追加本轮增量，旧 tool-call 不能随重序列化反复复制。"""
+
+    async def stream_function(messages: list[Any], info: AgentInfo) -> AsyncIterator[str | dict[int, DeltaToolCall]]:
+        """按已完成工具数请求下一步，第三步完成后输出最终结果。"""
+
+        _ = info
+        completed_steps = sum(
+            1
+            for message in messages
+            for part in getattr(message, "parts", [])
+            if getattr(part, "part_kind", None) == "tool-return"
+            and str(getattr(part, "tool_call_id", "")).startswith("tool-deferred-step-")
+        )
+        if completed_steps >= 3:
+            yield "三步后台任务已完成。"
+            return
+        next_step = completed_steps + 1
+        yield {
+            0: DeltaToolCall(
+                name="deferred_step_probe",
+                json_args=json.dumps({"step": next_step}),
+                tool_call_id=f"tool-deferred-step-{next_step}",
+            )
+        }
+
+    async def deferred_step_probe(step: int) -> str:
+        """模拟需要确认后执行的后台步骤。"""
+
+        return f"step {step} completed"
+
+    _, session_id, scope = await _create_workspace_session(
+        authenticated_client,
+        workspace_name="Pydantic Runner 多轮 deferred 工作空间",
+        session_name="Pydantic Runner 多轮 deferred 会话",
+    )
+    model = FunctionModel(stream_function=stream_function)
+    tools = [Tool(deferred_step_probe, name="deferred_step_probe", requires_approval=True)]
+
+    async with get_session_factory()() as db_session:
+        store = PlatformAgentRuntimeStore(db_session, user_id=1)
+        run_start = await store.start_run(
+            session_id=session_id,
+            agent_id="component-manager",
+            scope=scope,
+            run_id="pydantic-runner-multiple-deferred-resumes",
+            message="依次完成三个后台步骤。",
+            image_attachment_ids=[],
+        )
+        runner = PydanticAgentRunner(store)
+        events = await _collect_runner_events(
+            runner.stream_run(
+                run_model=run_start.run_model,
+                agent_id="component-manager",
+                model=model,
+                model_settings={},
+                runtime_context=_runtime_context(scope),
+                message="依次完成三个后台步骤。",
+                tools=tools,
+            )
+        )
+        assert events[-1].event == "run.paused"
+
+        latest_run = run_start.run_model
+        for step in range(1, 4):
+            requirement = await store.get_pending_requirement(run_id=latest_run.run_id)
+            assert requirement is not None
+            assert requirement.tool_call_id == f"tool-deferred-step-{step}"
+            latest_run.message_history_json[-1][f"legacy_trace_marker_{step}"] = "兼容字段"
+            continue_history = _build_continue_message_history(
+                run_model_message_history=latest_run.message_history_json,
+                run_input_payload=latest_run.input_payload_json,
+                run_id=latest_run.run_id,
+                tool_execution=requirement.payload_json["tool_execution"],
+            )
+            deferred_results = _build_deferred_results(
+                requirement_tool_call_id=requirement.tool_call_id,
+                decision="confirm",
+                note=None,
+                tool_execution=requirement.payload_json["tool_execution"],
+                feedback_selections=[],
+            )
+            await store.resolve_requirement(
+                requirement,
+                payload={
+                    "decision": "confirm",
+                    "note": None,
+                    "tool_execution": requirement.payload_json["tool_execution"],
+                    "feedback_selections": [],
+                },
+            )
+            latest_run.status = "running"
+            latest_run.pending_requirement_json = None
+            await store.append_event(
+                latest_run,
+                AgentRunEvent(event="run.continued", run_id=latest_run.run_id, session_id=session_id),
+            )
+            events = await _collect_runner_events(
+                runner.stream_run(
+                    run_model=latest_run,
+                    agent_id="component-manager",
+                    model=model,
+                    model_settings={},
+                    runtime_context=_runtime_context(scope),
+                    message="",
+                    tools=tools,
+                    message_history=continue_history,
+                    deferred_tool_results=deferred_results,
+                )
+            )
+            assert events[-1].event == ("run.completed" if step == 3 else "run.paused")
+
+        await db_session.refresh(latest_run)
+
+    assert latest_run.status == "completed"
+    assert latest_run.content == "三步后台任务已完成。"
+    assert len(latest_run.message_history_json) == 8
+    tool_call_ids = _history_tool_call_ids_by_kind(latest_run.message_history_json, part_kind="tool-call")
+    tool_return_ids = _history_tool_call_ids_by_kind(latest_run.message_history_json, part_kind="tool-return")
+    assert tool_call_ids == [f"tool-deferred-step-{step}" for step in range(1, 4)]
+    assert tool_return_ids == [f"tool-deferred-step-{step}" for step in range(1, 4)]
 
 
 async def test_pydantic_runner_should_not_inject_agent_description_as_system_prompt(
@@ -2466,4 +2600,19 @@ def _history_tool_call_ids(message_history: list[dict[str, Any]]) -> list[str]:
         for message in message_history
         for part in (message.get("parts") or [])
         if isinstance(part, dict) and str(part.get("part_kind") or "") in {"tool-call", "tool-return", "retry-prompt"}
+    ]
+
+
+def _history_tool_call_ids_by_kind(
+    message_history: list[dict[str, Any]],
+    *,
+    part_kind: str,
+) -> list[str]:
+    """按消息 part 类型提取工具调用 ID，区分重复调用和正常返回配对。"""
+
+    return [
+        str(part.get("tool_call_id") or "")
+        for message in message_history
+        for part in (message.get("parts") or [])
+        if isinstance(part, dict) and str(part.get("part_kind") or "") == part_kind
     ]

@@ -5,18 +5,18 @@
       <template #leading>
       <div class="min-w-0">
         <div class="flex items-center gap-2">
-          <h2 class="truncate text-sm font-bold text-slate-800">可视化编辑 · {{ props.pageTitle }}</h2>
+          <h2 class="truncate text-sm font-bold text-text">可视化编辑 · {{ props.pageTitle }}</h2>
           <span
             v-if="session.pendingCount.value"
-            class="rounded-full bg-indigo-100 px-2 py-0.5 text-[11px] font-bold text-indigo-700"
+            class="rounded-full bg-accent-muted px-2 py-0.5 text-[11px] font-bold text-accent-hover"
           >
             {{ session.pendingCount.value }} 项待保存
           </span>
-          <span v-if="session.stale.value" class="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-bold text-amber-800">
+          <span v-if="session.stale.value" class="rounded-full bg-warning-muted px-2 py-0.5 text-[11px] font-bold text-warning-strong">
             已过期
           </span>
         </div>
-        <p class="mt-0.5 text-xs text-slate-500">编辑期间画布保持当前 artifact；保存成功后重新分析并刷新。</p>
+        <p class="mt-0.5 text-xs text-text-muted">修改会先保存在本地，点击保存后刷新画布。</p>
       </div>
 
       </template>
@@ -29,11 +29,11 @@
           @click="discardChanges"
         >
           <Undo2 class="h-3.5 w-3.5" />
-          放弃修改
+          撤销全部修改
         </UiButton>
         <UiButton variant="ghost" size="sm" :disabled="busy" @click="reanalyze">
           <RefreshCw class="h-3.5 w-3.5" />
-          重新分析
+          重新载入页面
         </UiButton>
         <UiButton
           variant="primary"
@@ -43,7 +43,7 @@
           @click="saveChanges"
         >
           <Save class="h-3.5 w-3.5" />
-          保存并刷新
+          保存
         </UiButton>
       </div>
       </template>
@@ -52,52 +52,85 @@
     <div
       v-if="session.errorMessage.value"
       role="alert"
-      class="shrink-0 border-b border-rose-200 bg-rose-50 px-4 py-2 text-xs text-rose-700"
+      class="shrink-0 border-b border-danger-border bg-danger-muted px-4 py-2 text-xs text-danger-strong"
     >
       {{ session.errorMessage.value }}
     </div>
     <div
       v-if="diagnostics.length"
-      class="max-h-24 shrink-0 overflow-auto border-b border-amber-200 bg-amber-50 px-4 py-2"
+      class="shrink-0 border-b border-warning/20 bg-warning-muted px-4 py-2 text-xs text-warning"
     >
-      <p
-        v-for="diagnostic in diagnostics"
-        :key="`${diagnostic.code}:${diagnostic.source_range?.start ?? ''}:${diagnostic.source_range?.end ?? ''}:${diagnostic.message}`"
-        class="text-xs text-amber-800"
-      >
-        <span class="font-bold">{{ diagnostic.code }}</span> · {{ diagnostic.message }}
+      <p class="font-medium">
+        页面中有 {{ diagnostics.length }} 项内容暂不支持可视化编辑，可继续编辑其他内容，或使用 AI / 高级源码调整。
       </p>
+      <details class="mt-1">
+        <summary class="cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-border-focus">
+          查看技术详情
+        </summary>
+        <ul class="mt-1 max-h-20 list-disc space-y-1 overflow-auto pl-5 font-mono text-[11px]">
+          <li
+            v-for="diagnostic in diagnostics"
+            :key="`${diagnostic.code}:${diagnostic.source_range?.start ?? ''}:${diagnostic.source_range?.end ?? ''}:${diagnostic.message}`"
+          >
+            {{ diagnostic.code }} · {{ diagnostic.message }}
+          </li>
+        </ul>
+      </details>
     </div>
 
-    <div class="grid min-h-0 flex-1 grid-cols-[15rem_minmax(20rem,1fr)_21rem] overflow-hidden">
+    <div
+      class="grid min-h-0 flex-1 overflow-hidden"
+      :class="layerTreeVisible
+        ? 'grid-cols-[15rem_minmax(0,1fr)_22rem]'
+        : 'grid-cols-[minmax(0,1fr)_22rem]'"
+    >
       <PageVisualEditLayerTree
+        v-if="layerTreeVisible"
         :root="session.manifest.value?.root ?? null"
+        :component-schemas="session.artifact.value?.visual_edit.component_schemas ?? {}"
         :selected-node-id="session.selectedNodeId.value"
+        @close="layerTreeVisible = false"
         @select="handleLayerSelect"
       />
 
-      <main class="relative min-h-0 overflow-hidden bg-slate-200 p-3">
-        <div v-if="session.loading.value" class="absolute inset-0 z-10 flex items-center justify-center bg-white/80">
-          <div class="flex items-center gap-2 text-sm font-semibold text-slate-600">
-            <LoaderCircle class="h-5 w-5 animate-spin text-indigo-600" />
+      <main class="relative min-h-0 min-w-0 overflow-hidden bg-border p-3">
+        <div v-if="session.loading.value" class="absolute inset-0 z-10 flex items-center justify-center bg-surface/80">
+          <div class="flex items-center gap-2 text-sm font-semibold text-text-secondary">
+            <LoaderCircle class="h-5 w-5 animate-spin text-accent" />
             正在分析 Vue 页面…
           </div>
         </div>
 
-        <div v-if="session.artifact.value" class="h-full overflow-hidden rounded-lg border border-slate-300 bg-white shadow-sm">
+        <div v-if="!layerTreeVisible" class="absolute left-5 top-5 z-10">
+          <UiButton variant="secondary" size="sm" @click="layerTreeVisible = true">
+            <PanelLeftOpen class="h-3.5 w-3.5" />
+            页面结构（高级）
+          </UiButton>
+        </div>
+
+        <div v-if="session.artifact.value" class="h-full overflow-hidden rounded-lg border border-border-strong bg-surface shadow-sm">
           <iframe
             ref="previewFrame"
             :src="session.artifact.value.preview_url"
             :title="`${props.pageTitle} 可视化编辑画布`"
-            class="h-full w-full border-0 bg-white"
+            class="h-full w-full border-0 bg-surface"
             @load="session.syncPreviewSelection"
           />
         </div>
-        <div v-else class="flex h-full items-center justify-center rounded-lg border border-dashed border-slate-300 bg-white text-sm text-slate-400">
+        <div v-else class="flex h-full items-center justify-center rounded-lg border border-dashed border-border-strong bg-surface text-sm text-text-disabled">
           {{ session.errorMessage.value || '等待创建编辑态 artifact。' }}
         </div>
 
-        <div class="pointer-events-none absolute bottom-5 left-1/2 -translate-x-1/2 rounded-full bg-slate-900/85 px-3 py-1.5 text-[11px] font-semibold text-white shadow-lg">
+        <div
+          v-if="session.artifact.value && !session.selectedNode.value"
+          role="status"
+          class="pointer-events-none absolute left-1/2 top-5 z-10 flex -translate-x-1/2 items-center gap-2 rounded-full border border-[rgb(var(--ui-border))] bg-[rgb(var(--ui-surface))]/95 px-3 py-2 text-xs font-semibold text-[rgb(var(--ui-text-secondary))] shadow-sm"
+        >
+          <MousePointerClick class="h-4 w-4 text-[rgb(var(--ui-accent))]" />
+          点击画布中的文字、区块或组件进行编辑
+        </div>
+
+        <div class="pointer-events-none absolute bottom-5 left-1/2 -translate-x-1/2 rounded-full bg-overlay/85 px-3 py-1.5 text-[11px] font-semibold text-text-inverse shadow-lg">
           属性修改不会实时覆盖画布 · 保存后刷新
         </div>
       </main>
@@ -105,6 +138,7 @@
       <PageVisualEditPropertyInspector
         :key="inspectorRevision"
         :node="session.selectedNode.value"
+        :workspace-id="props.workspaceId"
         :selected-binding-id="session.selectedBindingId.value"
         :selected-instance-path="session.selectedInstancePath.value"
         :loop-node-id="selectedLoopNodeId"
@@ -143,7 +177,7 @@
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { LoaderCircle, RefreshCw, Save, Undo2 } from '@lucide/vue'
+import { LoaderCircle, MousePointerClick, PanelLeftOpen, RefreshCw, Save, Undo2 } from '@lucide/vue'
 
 import PageVisualEditLayerTree from '@/components/page-detail/visual-edit/PageVisualEditLayerTree.vue'
 import PageVisualEditPropertyInspector from '@/components/page-detail/visual-edit/PageVisualEditPropertyInspector.vue'
@@ -168,8 +202,10 @@ const props = withDefaults(defineProps<{
   baseVersionNo: number
   pageTitle: string
   showHeader?: boolean
+  workspaceId?: number | null
 }>(), {
   showHeader: true,
+  workspaceId: null,
 })
 
 const emit = defineEmits<{
@@ -183,6 +219,7 @@ const session = usePageVisualEditSession()
 const previewFrame = ref<HTMLIFrameElement | null>(null)
 const invalidJsonSourceIds = ref<Set<string>>(new Set())
 const inspectorRevision = ref(0)
+const layerTreeVisible = ref(false)
 const confirmVisible = ref(false)
 const confirmTitle = ref('')
 const confirmMessage = ref('')
@@ -432,13 +469,13 @@ function discardChanges(): void {
   session.discardChanges()
   invalidJsonSourceIds.value = new Set()
   inspectorRevision.value += 1
-  Message.info('已放弃可视化编辑草稿。')
+  Message.info('已撤销全部未保存修改。')
 }
 
-/** 重新分析最新版本；存在草稿时先明确确认放弃。 */
+/** 重新载入最新页面；存在草稿时先明确确认撤销。 */
 async function reanalyze(): Promise<void> {
   if (session.hasPendingChanges.value) {
-    const confirmed = await requestVisualEditConfirm('重新分析会放弃当前可视化编辑草稿，是否继续？', '重新分析页面')
+    const confirmed = await requestVisualEditConfirm('重新载入页面会撤销全部未保存修改，是否继续？', '重新载入页面')
     if (!confirmed) return
   }
   session.reset()
@@ -457,7 +494,7 @@ async function saveChanges(): Promise<void> {
   if (session.lastRefreshSucceeded.value) {
     Message.success(`已保存 ${result.operations_applied} 项可视化修改，并刷新编辑画布。`)
   } else {
-    Message.warning('修改已保存，但编辑画布重新分析失败，请稍后重试。')
+    Message.warning('修改已保存，但编辑画布刷新失败，请稍后重新载入页面。')
   }
 }
 

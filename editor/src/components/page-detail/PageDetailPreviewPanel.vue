@@ -31,7 +31,7 @@
       title="runtime-preview"
       :viewport="props.previewViewport"
       layout="fill"
-      container-class="h-full overflow-hidden bg-white"
+      container-class="h-full overflow-hidden bg-surface"
       :empty-title="currentPreviewEmptyTitle"
       :empty-description="currentPreviewEmptyDescription"
     />
@@ -41,17 +41,17 @@
       :title="previewDialogTitle"
       size="workbench"
       body-preset="immersive"
-      overlay-class="bg-slate-950/70 backdrop-blur-sm"
+      overlay-class="bg-overlay/70 backdrop-blur-sm"
       @update:open="isPreviewDialogOpen = $event"
     >
-      <div class="h-full min-h-0 bg-slate-100 p-3">
+      <div class="h-full min-h-0 bg-surface-muted p-3">
         <RuntimePreviewFrame
           v-if="props.previewFrameUrl"
           :frame-url="props.previewFrameUrl"
           title="runtime-preview-dialog"
           :viewport="props.previewViewport"
           layout="fill"
-          container-class="h-full overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm"
+          container-class="h-full overflow-hidden rounded-xl border border-border bg-surface shadow-sm"
         />
       </div>
     </UiDialog>

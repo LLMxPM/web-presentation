@@ -33,7 +33,7 @@ export const pageCardSizeOptions: PageCardSizeOption[] = [
   { value: 'compact', label: '紧凑', minWidth: 200, icon: Minimize2 },
   { value: 'standard', label: '标准', minWidth: 240, icon: Square },
   { value: 'large', label: '宽大', minWidth: 320, icon: Maximize2 },
-  { value: 'huge', label: '超大', minWidth: 520, icon: Expand },
+  { value: 'huge', label: '超大', minWidth: 540, icon: Expand },
 ]
 
 /**

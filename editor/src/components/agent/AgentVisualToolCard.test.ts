@@ -62,6 +62,24 @@ describe('AgentVisualToolCard', () => {
     await screen.getByRole('button', { name: /已保存到资源库/ }).click()
     expect(routerPush).toHaveBeenCalledWith({ name: 'assets', params: { workspaceId: 7 } })
   })
+
+  it('失败的图片生成不应渲染已落库的输出图片或资源标记', () => {
+    render(AgentVisualToolCard, {
+      props: {
+        tool: createTool({
+          status: 'error',
+          message: '智能体运行中断。',
+          outputPayload: { assets: [{ id: 9, name: 'partial-hero', original_name: 'partial-hero.png' }] },
+          outputAttachments: [createAttachment(2, 'partial-hero.png')],
+        }),
+      },
+    })
+
+    expect(screen.getByText('失败')).toBeTruthy()
+    expect(screen.queryByAltText('partial-hero.png')).toBeNull()
+    expect(screen.queryByText('partial-hero')).toBeNull()
+    expect(screen.queryByRole('button', { name: /已保存到资源库/ })).toBeNull()
+  })
 })
 
 function createTool(patch: Partial<ToolCallDetail>): ToolCallDetail {

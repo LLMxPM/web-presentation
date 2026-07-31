@@ -7,17 +7,17 @@
         :side="side"
         :align="align"
         :side-offset="sideOffset"
-        class="z-dropdown min-w-36 rounded-lg border border-slate-200 bg-white p-1 shadow-lg outline-none"
+        class="z-dropdown min-w-36 rounded-lg border border-border bg-surface p-1 shadow-lg outline-none"
         :class="contentClass"
       >
         <slot>
           <template v-for="(entry, index) in items" :key="entry.separator ? `sep-${index}` : entry.value">
-            <DropdownMenuSeparator v-if="entry.separator" class="my-1 h-px bg-slate-100" />
+            <DropdownMenuSeparator v-if="entry.separator" class="my-1 h-px bg-surface-muted" />
             <DropdownMenuItem
               v-else
               :disabled="entry.disabled"
-              class="flex cursor-default items-center gap-2 rounded-md px-2 py-1.5 text-sm outline-none data-[highlighted]:bg-slate-100 data-[highlighted]:text-slate-900 data-[disabled]:opacity-40"
-              :class="entry.danger ? 'text-red-600 data-[highlighted]:text-red-700' : 'text-slate-700'"
+              class="flex cursor-default items-center gap-2 rounded-md px-2 py-1.5 text-sm outline-none data-[highlighted]:bg-surface-muted data-[highlighted]:text-text-strong data-[disabled]:opacity-40"
+              :class="entry.danger ? 'text-danger data-[highlighted]:text-danger-strong' : 'text-text-emphasis'"
               @select="emit('select', entry.value!)"
             >
               <component :is="entry.icon" v-if="entry.icon" class="h-4 w-4 shrink-0 opacity-70" />

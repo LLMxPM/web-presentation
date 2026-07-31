@@ -1,8 +1,8 @@
 <!-- 文件功能：提供组件预览参数薄栏、Preset radio 切换与顶部浮层抽屉。 -->
 <template>
-  <section ref="dockRootRef" class="relative border-t border-slate-100 bg-slate-50/70">
+  <section ref="dockRootRef" class="relative border-t border-border-muted bg-canvas/70">
     <div class="flex h-10 items-center gap-2.5 overflow-hidden px-3">
-      <span class="shrink-0 text-xs font-bold text-slate-700">预览参数</span>
+      <span class="shrink-0 text-xs font-bold text-text-emphasis">预览参数</span>
 
       <div
         v-if="presetOptions.length"
@@ -27,12 +27,12 @@
           size="xs"
           class="rounded-full border px-2 py-0.5 text-[11px] font-semibold transition-colors"
           :class="activePanel === tab.key
-            ? 'border-indigo-300 bg-indigo-50 text-indigo-700'
-            : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900'"
+            ? 'border-accent-border bg-surface-selected text-accent-hover'
+            : 'border-border bg-surface text-text-secondary hover:border-border-strong hover:text-text-strong'"
           @click="selectPanelTab(tab.key)"
         >
           {{ tab.label }}
-          <span class="ml-0.5 text-[10px] text-slate-400">{{ tab.count }}</span>
+          <span class="ml-0.5 text-[10px] text-text-disabled">{{ tab.count }}</span>
         </UiButton>
       </div>
 
@@ -41,7 +41,7 @@
         class="min-w-0 truncate text-xs"
         :class="[
           simplified ? 'shrink-0' : 'flex-[0_1_220px]',
-          errorMessage ? 'font-semibold text-rose-500' : 'text-slate-400',
+          errorMessage ? 'font-semibold text-danger' : 'text-text-disabled',
         ]"
       >
         {{ statusText }}
@@ -61,7 +61,7 @@
         v-if="!simplified"
         label="展开预览参数"
         size="sm"
-        class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-white hover:text-slate-700 disabled:cursor-not-allowed disabled:text-slate-300 disabled:hover:bg-transparent"
+        class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-text-disabled transition-colors hover:bg-surface hover:text-text-emphasis disabled:cursor-not-allowed disabled:text-text-faint disabled:hover:bg-transparent"
         :disabled="!canOpenDrawer"
         :aria-expanded="drawerOpen"
         title="展开预览参数"
@@ -73,7 +73,7 @@
 
     <div
       v-if="drawerOpen && canOpenDrawer"
-      class="absolute left-0 right-0 top-full z-20 border-t border-slate-200 bg-white shadow-xl shadow-slate-900/10"
+      class="absolute left-0 right-0 top-full z-20 border-t border-border bg-surface shadow-xl shadow-slate-900/10"
     >
       <div class="max-h-[min(360px,42vh)] overflow-y-auto p-4">
         <ComponentPreviewPanel

@@ -12,8 +12,13 @@
       class="shrink-0"
       :icon="Palette"
       :title="workspaceTitle"
-      description="集中维护可复用的项目展示配置、主题引用和内容助手样式规范。"
+      description="集中维护可复用的项目展示配置、主题引用和内容助手样式规范；编辑样式不会影响已配置项目。"
     >
+      <template #meta>
+        <span class="shrink-0 rounded-full bg-surface-muted px-2 py-0.5 text-[11px] font-black text-text-muted">
+          共 {{ styleTotal }} 个样式
+        </span>
+      </template>
       <template #actions>
         <UiButton
           variant="secondary"
@@ -25,12 +30,12 @@
         </UiButton>
         <UiButton
           variant="secondary"
-          :disabled="!workspaceId || selectedStyleIds.length === 0 || exportPackagePending"
-          :loading="exportPackagePending"
-          @click="handleExportSelectedStyles"
+          :disabled="!workspaceId || (!selectionMode && styles.length === 0)"
+          :title="selectionMode ? '退出导出选择模式' : '进入选择模式后勾选要导出的样式'"
+          @click="toggleSelectionMode"
         >
           <Download class="h-3.5 w-3.5" />
-          导出样式
+          {{ selectionMode ? '退出选择' : '导出样式' }}
         </UiButton>
         <UiButton variant="secondary" :disabled="loading" @click="loadStyles">
           <RefreshCw class="h-3.5 w-3.5" />
@@ -44,124 +49,138 @@
     </PageHeader>
 
     <div class="min-h-0 flex-1 overflow-hidden">
-      <ToolPanel class="h-full min-h-0" :scroll-body="false">
-        <header class="flex shrink-0 items-center justify-between gap-4 border-b border-slate-100 px-5 py-4">
-          <div class="min-w-0">
-            <div class="flex items-center gap-2">
-              <h2 class="text-base font-black text-slate-900">样式库</h2>
-              <span class="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-black text-slate-500">
-                共 {{ styleTotal }} 个样式
-              </span>
-              <span
-                v-if="selectedStyleIds.length"
-                class="rounded-full bg-indigo-50 px-2 py-0.5 text-[11px] font-black text-indigo-600"
+      <ToolPanel class="h-full min-h-0">
+        <template #toolbar>
+          <div class="space-y-1.5 px-1 py-0.5">
+            <SimpleSearchBar
+              v-model="keyword"
+              placeholder="搜索样式名称、key"
+              aria-label="搜索样式名称、key"
+              @submit="handleSearchSubmit"
+            />
+            <SelectionToolbar
+              v-if="selectionMode"
+              :count="selectedStyleIds.length"
+              label="样式导出批量操作"
+              @clear="clearStyleSelection"
+            >
+              <UiButton size="sm" variant="ghost" :disabled="styles.length === 0" @click="selectAllVisibleStyles">
+                全选本页
+              </UiButton>
+              <UiButton
+                size="sm"
+                variant="primary"
+                :disabled="selectedStyleIds.length === 0"
+                :loading="exportPackagePending"
+                @click="handleExportSelectedStyles"
               >
-                已选 {{ selectedStyleIds.length }} 个
-              </span>
-            </div>
-            <p class="mt-1 text-xs text-slate-400">可编辑、复制、导出或查看样式详情；编辑样式不会影响已配置项目。</p>
+                <Download class="h-3.5 w-3.5" />
+                导出所选
+              </UiButton>
+              <UiButton size="xs" variant="ghost" class="ml-auto" @click="exitSelectionMode">
+                退出选择
+              </UiButton>
+            </SelectionToolbar>
           </div>
-        </header>
+        </template>
 
-        <div class="shrink-0 border-b border-slate-100 px-5 py-3">
-          <SimpleSearchBar
-            v-model="keyword"
-            placeholder="搜索样式名称、key"
-            aria-label="搜索样式名称、key"
-            @submit="loadStyles"
-          />
-        </div>
-
-        <div class="min-h-0 flex-1 overflow-y-auto p-3">
-          <DataState :state="styleDataState" :title="styleDataState === 'empty' ? (keyword ? '未找到相关样式' : '暂无样式') : undefined">
-          <div class="grid gap-4">
+        <DataState :state="styleDataState" :title="styleDataState === 'empty' ? (keyword ? '未找到相关样式' : '暂无样式') : undefined">
+          <div class="grid gap-3 2xl:grid-cols-2">
             <article
               v-for="style in styles"
               :key="style.id"
-              class="group rounded-lg border border-slate-200 p-5 transition-all hover:border-indigo-200 hover:shadow-md"
+              :data-style-id="style.id"
+              class="group cursor-pointer rounded-xl border p-4 transition-all hover:shadow-md"
+              :class="resolveStyleCardClass(style)"
+              @click="handleStyleCardClick(style)"
             >
-              <div class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(380px,520px)]">
-                <div class="min-w-0">
-                  <div class="flex items-start justify-between gap-3">
-                    <div class="flex min-w-0 items-start gap-3">
-                      <label
-                        class="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded border border-slate-300 bg-white"
-                        title="选择导出样式"
-                        @click.stop
+              <div class="flex items-start justify-between gap-2.5">
+                <div class="flex min-w-0 items-start gap-2.5">
+                  <label
+                    v-if="selectionMode"
+                    class="mt-1 flex h-5 w-5 shrink-0 items-center justify-center"
+                    @click.stop
+                  >
+                    <UiCheckbox
+                      :aria-label="`选择导出 ${style.name}`"
+                      :model-value="isStyleSelected(style)"
+                      @update:model-value="toggleStyleSelection(style)"
+                    />
+                  </label>
+                  <div class="min-w-0">
+                    <div class="flex min-w-0 items-center gap-2">
+                      <h3 class="truncate text-base font-black text-text-strong">{{ style.name }}</h3>
+                      <span
+                        v-if="style.theme_key"
+                        class="shrink-0 rounded-full bg-surface-muted px-2 py-0.5 text-[10px] font-bold text-text-muted"
                       >
-                        <UiCheckbox
-                          :aria-label="`选择导出 ${style.name}`"
-                          :model-value="isStyleSelected(style)"
-                          @update:model-value="toggleStyleSelection(style)"
-                        />
-                      </label>
-                      <div class="min-w-0">
-                        <h3 class="truncate text-base font-black text-slate-900">{{ style.name }}</h3>
-                        <p class="mt-0.5 truncate font-mono text-xs text-slate-400">{{ style.key }}</p>
-                      </div>
+                        主题 {{ style.theme_key }}
+                      </span>
                     </div>
+                    <p class="mt-0.5 truncate font-mono text-xs text-text-disabled">{{ style.key }}</p>
                   </div>
-                  <p class="mt-3 line-clamp-2 text-sm leading-5 text-slate-500">{{ style.description || '未填写样式说明。' }}</p>
-                  <p v-if="style.style_spec_markdown" class="mt-3 line-clamp-2 text-xs leading-5 text-slate-400">
-                    {{ style.style_spec_markdown }}
-                  </p>
                 </div>
+                <div class="flex shrink-0 items-center gap-1 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
+                  <UiIconButton
+                    label="编辑"
+                    size="sm"
+                    variant="ghost"
+                    @click.stop="openEditStyle(style)"
+                  >
+                    <Pencil class="h-3.5 w-3.5" />
+                  </UiIconButton>
+                  <UiIconButton
+                    label="管理建议组件"
+                    size="sm"
+                    variant="ghost"
+                    @click.stop="openEditStyle(style, 'components')"
+                  >
+                    <Component class="h-3.5 w-3.5" />
+                  </UiIconButton>
+                  <UiIconButton
+                    label="复制"
+                    size="sm"
+                    variant="ghost"
+                    @click.stop="copyStyle(style)"
+                  >
+                    <Copy class="h-3.5 w-3.5" />
+                  </UiIconButton>
+                  <UiIconButton
+                    label="删除"
+                    size="sm"
+                    variant="danger"
+                    @click.stop="deleteStyle(style)"
+                  >
+                    <Trash2 class="h-3.5 w-3.5" />
+                  </UiIconButton>
+                </div>
+              </div>
 
-                <div class="flex flex-col gap-3">
-                  <div class="flex justify-end gap-1 opacity-80 transition-opacity group-hover:opacity-100">
-                    <UiIconButton
-                      label="查看详情"
-                      size="sm"
-                      variant="ghost"
-                      @click.stop="openStyleDetailDialog(style)"
-                    >
-                      <Info class="h-3.5 w-3.5" />
-                    </UiIconButton>
-                    <UiIconButton
-                      label="管理建议组件"
-                      size="sm"
-                      variant="ghost"
-                      @click.stop="openSuggestedComponentsDialog(style)"
-                    >
-                      <Component class="h-3.5 w-3.5" />
-                    </UiIconButton>
-                    <UiIconButton
-                      label="编辑"
-                      size="sm"
-                      variant="ghost"
-                      @click.stop="openEditStyle(style)"
-                    >
-                      <Pencil class="h-3.5 w-3.5" />
-                    </UiIconButton>
-                    <UiIconButton
-                      label="复制"
-                      size="sm"
-                      variant="ghost"
-                      @click.stop="copyStyle(style)"
-                    >
-                      <Copy class="h-3.5 w-3.5" />
-                    </UiIconButton>
-                    <UiIconButton
-                      label="删除"
-                      size="sm"
-                      variant="danger"
-                      @click.stop="deleteStyle(style)"
-                    >
-                      <Trash2 class="h-3.5 w-3.5" />
-                    </UiIconButton>
-                  </div>
-                  <div class="grid grid-cols-2 gap-2 text-xs font-semibold text-slate-500 sm:grid-cols-4 xl:grid-cols-2">
-                    <span class="rounded-lg bg-slate-50 px-2.5 py-2">{{ style.page_width }} x {{ style.page_height }}</span>
-                    <span class="rounded-lg bg-slate-50 px-2.5 py-2">字号 {{ style.base_font_size }}</span>
-                    <span class="rounded-lg bg-slate-50 px-2.5 py-2">描边 {{ style.icon_default_stroke_width }}</span>
-                    <span class="rounded-lg bg-slate-50 px-2.5 py-2">{{ formatMenuMode(style.menu_mode) }}</span>
-                  </div>
-                </div>
+              <p class="mt-2 line-clamp-1 text-sm leading-5 text-text-muted">{{ style.description || '未填写样式说明。' }}</p>
+
+              <div class="mt-3 flex min-w-0 items-center justify-between gap-3">
+                <p class="truncate text-xs font-semibold text-text-muted" :title="formatStyleMeta(style)">{{ formatStyleMeta(style) }}</p>
+                <span
+                  class="shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold"
+                  :class="hasStyleSpec(style) ? 'bg-success-muted text-success-strong ring-1 ring-success-border' : 'bg-surface-muted text-text-disabled'"
+                >
+                  {{ hasStyleSpec(style) ? '已维护规范' : '未维护规范' }}
+                </span>
               </div>
             </article>
           </div>
-          </DataState>
-        </div>
+        </DataState>
+
+        <template #footer>
+          <PaginationControl
+            :page="stylePage"
+            :page-size="stylePageSize"
+            :total="styleTotal"
+            :page-size-options="[10, 20, 50, 100]"
+            @update:page="stylePage = $event"
+            @update:page-size="handleStylePageSizeChange"
+          />
+        </template>
       </ToolPanel>
     </div>
 
@@ -170,6 +189,7 @@
       :workspace-id="workspaceId"
       :style="editingStyle ?? null"
       :default-theme-key="workspaceDetails?.default_theme_key"
+      :initial-tab="editorInitialTab"
       :loading="saving"
       @save="saveStyle"
     />
@@ -180,13 +200,6 @@
       :style-item="selectedStyle ?? null"
       :default-theme-key="workspaceDetails?.default_theme_key"
       @edit="openEditStyle"
-    />
-
-    <WorkspaceStyleSuggestedComponentsDialog
-      v-model="suggestedComponentsDialogVisible"
-      :workspace-id="workspaceId"
-      :style="suggestedComponentsStyle ?? null"
-      @saved="handleSuggestedComponentsSaved"
     />
 
     <ExportPackageAssetsDialog
@@ -214,36 +227,36 @@
 
     <UiDialog :open="importDialogVisible" title="导入样式" size="standard" @update:open="importDialogVisible = $event">
       <div class="space-y-4">
-        <div class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-          <p class="text-sm font-bold text-slate-700">{{ importFile?.name || '未选择文件' }}</p>
-          <p v-if="importValidation" class="mt-1 text-xs text-slate-500">
+        <div class="rounded-xl border border-border bg-canvas px-4 py-3">
+          <p class="text-sm font-bold text-text-emphasis">{{ importFile?.name || '未选择文件' }}</p>
+          <p v-if="importValidation" class="mt-1 text-xs text-text-muted">
             样式 {{ importValidation.styles.length }} 个，组件 {{ importValidation.components.length }} 个，主题 {{ importValidation.themes.length }} 个，资源 {{ importValidation.assets.length }} 个，字体 {{ importValidation.fonts.length }} 个
           </p>
-          <p v-else-if="importValidatePending" class="mt-1 text-xs text-slate-500">正在预检样式离线包...</p>
+          <p v-else-if="importValidatePending" class="mt-1 text-xs text-text-muted">正在预检样式离线包...</p>
         </div>
 
-        <div v-if="importValidation?.errors.length" class="rounded-xl border border-rose-100 bg-rose-50 px-4 py-3">
-          <p class="mb-2 text-sm font-bold text-rose-700">预检未通过，请修改或删除相应资源后重试</p>
-          <ul class="space-y-1 text-xs leading-5 text-rose-700">
+        <div v-if="importValidation?.errors.length" class="rounded-xl border border-danger-border bg-danger-muted px-4 py-3">
+          <p class="mb-2 text-sm font-bold text-danger-strong">预检未通过，请修改或删除相应资源后重试</p>
+          <ul class="space-y-1 text-xs leading-5 text-danger-strong">
             <li v-for="error in importValidation.errors" :key="error">{{ error }}</li>
           </ul>
         </div>
 
-        <div v-if="importValidation?.warnings.length" class="rounded-xl border border-amber-100 bg-amber-50 px-4 py-3">
-          <p class="mb-2 text-sm font-bold text-amber-800">包内提示</p>
-          <ul class="space-y-1 text-xs leading-5 text-amber-800">
+        <div v-if="importValidation?.warnings.length" class="rounded-xl border border-warning-border bg-warning-muted px-4 py-3">
+          <p class="mb-2 text-sm font-bold text-warning-strong">包内提示</p>
+          <ul class="space-y-1 text-xs leading-5 text-warning-strong">
             <li v-for="warning in importValidation.warnings" :key="warning">{{ warning }}</li>
           </ul>
         </div>
 
         <div v-if="importValidation" class="space-y-3">
-          <section class="rounded-xl border border-slate-200 bg-white p-4">
-            <h4 class="text-sm font-bold text-slate-700">样式</h4>
+          <section class="rounded-xl border border-border bg-surface p-4">
+            <h4 class="text-sm font-bold text-text-emphasis">样式</h4>
             <div class="mt-2 max-h-40 space-y-2 overflow-y-auto">
               <div v-for="style in importValidation.styles" :key="style.key" class="flex items-center justify-between gap-3 text-xs">
-                <span class="font-semibold text-slate-700">{{ style.name }}</span>
+                <span class="font-semibold text-text-emphasis">{{ style.name }}</span>
                 <span class="flex shrink-0 items-center gap-2">
-                  <span class="font-mono text-slate-400">{{ style.key }}</span>
+                  <span class="font-mono text-text-disabled">{{ style.key }}</span>
                   <span
                     class="rounded-full px-2 py-0.5 text-[11px] font-bold ring-1"
                     :class="resolveImportActionBadgeClass(style.action)"
@@ -264,19 +277,19 @@
           </section>
 
           <section class="grid gap-3 lg:grid-cols-2">
-            <div class="rounded-xl border border-slate-200 bg-white p-4">
-              <h4 class="text-sm font-bold text-slate-700">组件</h4>
-              <div class="mt-2 max-h-40 overflow-y-auto rounded-lg border border-slate-100 text-xs text-slate-500">
+            <div class="rounded-xl border border-border bg-surface p-4">
+              <h4 class="text-sm font-bold text-text-emphasis">组件</h4>
+              <div class="mt-2 max-h-40 overflow-y-auto rounded-lg border border-border-muted text-xs text-text-muted">
                 <p v-if="importValidation.components.length === 0" class="px-3 py-2">无组件</p>
                 <div
                   v-for="component in importValidation.components"
                   :key="`${component.source_component_code}-${component.source_version_no}`"
-                  class="border-b border-slate-100 px-3 py-2.5 last:border-b-0 even:bg-slate-50/60"
+                  class="border-b border-border-muted px-3 py-2.5 last:border-b-0 even:bg-canvas/60"
                 >
                   <div class="flex items-center justify-between gap-3">
                     <div class="min-w-0 flex items-baseline gap-2">
-                      <span class="truncate font-semibold text-slate-700">{{ component.name }}</span>
-                      <span class="shrink-0 font-mono text-[11px] text-slate-400">{{ component.import_name }}</span>
+                      <span class="truncate font-semibold text-text-emphasis">{{ component.name }}</span>
+                      <span class="shrink-0 font-mono text-[11px] text-text-disabled">{{ component.import_name }}</span>
                     </div>
                     <span
                       class="shrink-0 rounded-full px-2 py-0.5 text-[11px] font-bold ring-1"
@@ -286,7 +299,7 @@
                       {{ resolveImportActionText(component.action) }}
                     </span>
                   </div>
-                  <div class="mt-1 flex min-w-0 items-center gap-2 text-[11px] text-slate-400">
+                  <div class="mt-1 flex min-w-0 items-center gap-2 text-[11px] text-text-disabled">
                     <span class="font-mono">fp: {{ formatFingerprint(component.component_fingerprint) }}</span>
                     <span v-if="component.matched_component_code" class="truncate">
                       匹配 {{ component.matched_component_code }}
@@ -295,9 +308,9 @@
                 </div>
               </div>
             </div>
-            <div class="rounded-xl border border-slate-200 bg-white p-4">
-              <h4 class="text-sm font-bold text-slate-700">主题</h4>
-              <div class="mt-2 max-h-32 space-y-1 overflow-y-auto text-xs text-slate-500">
+            <div class="rounded-xl border border-border bg-surface p-4">
+              <h4 class="text-sm font-bold text-text-emphasis">主题</h4>
+              <div class="mt-2 max-h-32 space-y-1 overflow-y-auto text-xs text-text-muted">
                 <p v-if="importValidation.themes.length === 0">无主题</p>
                 <div v-for="theme in importValidation.themes" :key="theme.key" class="flex items-center justify-between gap-2">
                   <span class="truncate">{{ theme.name }}</span>
@@ -310,14 +323,14 @@
                 </div>
               </div>
             </div>
-            <div class="rounded-xl border border-slate-200 bg-white p-4">
-              <h4 class="text-sm font-bold text-slate-700">资源</h4>
-              <div class="mt-2 max-h-32 space-y-1 overflow-y-auto text-xs text-slate-500">
+            <div class="rounded-xl border border-border bg-surface p-4">
+              <h4 class="text-sm font-bold text-text-emphasis">资源</h4>
+              <div class="mt-2 max-h-32 space-y-1 overflow-y-auto text-xs text-text-muted">
                 <p v-if="importValidation.assets.length === 0">无资源</p>
                 <div v-for="asset in importValidation.assets" :key="asset.name" class="flex items-center justify-between gap-2">
                   <span class="flex min-w-0 items-center gap-1.5">
                     <span class="truncate">{{ asset.name }}</span>
-                    <span class="shrink-0 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold text-slate-500">
+                    <span class="shrink-0 rounded bg-surface-muted px-1.5 py-0.5 text-[10px] font-bold text-text-muted">
                       {{ resolveAssetTypeLabel(asset.asset_type) }}
                     </span>
                   </span>
@@ -332,9 +345,9 @@
                 </div>
               </div>
             </div>
-            <div class="rounded-xl border border-slate-200 bg-white p-4">
-              <h4 class="text-sm font-bold text-slate-700">字体</h4>
-              <div class="mt-2 max-h-32 space-y-1 overflow-y-auto text-xs text-slate-500">
+            <div class="rounded-xl border border-border bg-surface p-4">
+              <h4 class="text-sm font-bold text-text-emphasis">字体</h4>
+              <div class="mt-2 max-h-32 space-y-1 overflow-y-auto text-xs text-text-muted">
                 <p v-if="importValidation.fonts.length === 0">无字体</p>
                 <div v-for="font in importValidation.fonts" :key="font.asset_name" class="flex items-center justify-between gap-2">
                   <span class="truncate">{{ font.asset_name }}</span>
@@ -371,8 +384,8 @@
       @update:open="importStyleSpecDialogVisible = $event"
     >
       <div class="space-y-3">
-        <div class="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs">
-          <span class="min-w-0 truncate font-semibold text-slate-700">{{ selectedImportStyleSpec?.key }}</span>
+        <div class="flex items-center justify-between gap-3 rounded-xl border border-border bg-canvas px-4 py-3 text-xs">
+          <span class="min-w-0 truncate font-semibold text-text-emphasis">{{ selectedImportStyleSpec?.key }}</span>
           <span
             v-if="selectedImportStyleSpec"
             class="shrink-0 rounded-full px-2 py-0.5 text-[11px] font-bold ring-1"
@@ -381,29 +394,29 @@
             {{ resolveImportActionText(selectedImportStyleSpec.action) }}
           </span>
         </div>
-        <section v-if="selectedImportStyleSpec" class="rounded-xl border border-slate-200 bg-white p-4">
-          <h4 class="text-sm font-black text-slate-900">展示配置</h4>
+        <section v-if="selectedImportStyleSpec" class="rounded-xl border border-border bg-surface p-4">
+          <h4 class="text-sm font-black text-text-strong">展示配置</h4>
           <div class="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             <div
               v-for="item in importStyleSpecDetailItems"
               :key="item.label"
-              class="rounded-lg border border-slate-100 bg-slate-50 px-3 py-2"
+              class="rounded-lg border border-border-muted bg-canvas px-3 py-2"
             >
-              <p class="text-[11px] font-bold text-slate-400">{{ item.label }}</p>
-              <p class="mt-1 text-sm font-black text-slate-800">{{ item.value }}</p>
+              <p class="text-[11px] font-bold text-text-disabled">{{ item.label }}</p>
+              <p class="mt-1 text-sm font-black text-text">{{ item.value }}</p>
             </div>
           </div>
         </section>
-        <pre class="max-h-[60vh] overflow-auto whitespace-pre-wrap rounded-xl border border-slate-200 bg-white p-4 text-sm leading-6 text-slate-700">{{ selectedImportStyleSpec?.style_spec_markdown || '无样式规范' }}</pre>
+        <pre class="max-h-[60vh] overflow-auto whitespace-pre-wrap rounded-xl border border-border bg-surface p-4 text-sm leading-6 text-text-emphasis">{{ selectedImportStyleSpec?.style_spec_markdown || '无样式规范' }}</pre>
       </div>
     </UiDialog>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { Copy, Download,Component, Info, Palette, Pencil, Plus, RefreshCw, Trash2, Upload } from '@lucide/vue'
+import { Component, Copy, Download, Palette, Pencil, Plus, RefreshCw, Trash2, Upload } from '@lucide/vue'
 
 import { getWorkspace } from '@/api/catalog'
 import { listWorkspaceAssets } from '@/api/assets'
@@ -423,17 +436,17 @@ import {
 } from '@/api/styles'
 import DataState from '@/components/patterns/DataState.vue'
 import PageHeader from '@/components/patterns/PageHeader.vue'
+import SelectionToolbar from '@/components/patterns/SelectionToolbar.vue'
 import SimpleSearchBar from '@/components/patterns/SimpleSearchBar.vue'
 import ToolPanel from '@/components/patterns/ToolPanel.vue'
 import { UiButton, UiCheckbox, UiDialog, UiIconButton } from '@/components/ui'
+import PaginationControl from '@/components/ui/PaginationControl.vue'
 import ExportPackageAssetsDialog from '@/components/project/ExportPackageAssetsDialog.vue'
 import WorkspaceStyleDetailDialog from '@/components/project/WorkspaceStyleDetailDialog.vue'
 import WorkspaceStyleEditorDialog from '@/components/project/WorkspaceStyleEditorDialog.vue'
-import WorkspaceStyleSuggestedComponentsDialog from '@/components/project/WorkspaceStyleSuggestedComponentsDialog.vue'
 import type {
   AssetResponse,
   ProjectMenuMode,
-  SuggestedComponentItem,
   WorkspaceStyleExportValidationResult,
   WorkspaceItem,
   WorkspaceStyleImportValidationResult,
@@ -449,9 +462,15 @@ const workspaceDetails = ref<WorkspaceItem | null>(null)
 const styles = ref<WorkspaceStyleItem[]>([])
 const selectedStyle = ref<WorkspaceStyleItem | null>(null)
 const selectedStyleIds = ref<number[]>([])
+const selectionMode = ref(false)
 const keyword = ref('')
 const styleTotal = ref(0)
+const stylePage = ref(1)
+const stylePageSize = ref(20)
 const loading = ref(false)
+const highlightStyleId = ref<number | null>(null)
+let highlightTimer: number | undefined
+let searchDebounceTimer: number | undefined
 const styleDataState = computed<'loading' | 'empty' | 'ready'>(() => (
   loading.value ? 'loading' : styles.value.length ? 'ready' : 'empty'
 ))
@@ -473,9 +492,8 @@ const importStyleSpecDialogVisible = ref(false)
 const selectedImportStyleSpec = ref<WorkspaceStylePackageStyleSummary | null>(null)
 const editorVisible = ref(false)
 const editingStyle = ref<WorkspaceStyleItem | null>(null)
+const editorInitialTab = ref<'style' | 'components'>('style')
 const styleDetailVisible = ref(false)
-const suggestedComponentsDialogVisible = ref(false)
-const suggestedComponentsStyle = ref<WorkspaceStyleItem | null>(null)
 
 const workspaceTitle = computed(() => workspaceDetails.value?.name ? `${workspaceDetails.value.name} · 样式库` : '样式库')
 const importStyleSpecDetailItems = computed(() => {
@@ -500,14 +518,32 @@ onMounted(() => {
   void loadStyles()
 })
 
+onBeforeUnmount(() => {
+  window.clearTimeout(searchDebounceTimer)
+  window.clearTimeout(highlightTimer)
+})
+
 watch(
   workspaceId,
   () => {
     selectedStyle.value = null
+    stylePage.value = 1
+    exitSelectionMode()
     void loadWorkspace()
     void loadStyles()
   },
 )
+
+watch(stylePage, () => {
+  void loadStyles()
+})
+
+watch(keyword, () => {
+  window.clearTimeout(searchDebounceTimer)
+  searchDebounceTimer = window.setTimeout(() => {
+    handleSearchSubmit()
+  }, 300)
+})
 
 /**
  * 加载工作空间详情，用于标题和默认主题。
@@ -525,7 +561,7 @@ async function loadWorkspace(): Promise<void> {
 }
 
 /**
- * 加载样式列表。
+ * 加载当前页样式列表；保留跨页/跨搜索的导出勾选。
  */
 async function loadStyles(): Promise<void> {
   if (!workspaceId.value) {
@@ -535,13 +571,12 @@ async function loadStyles(): Promise<void> {
   loading.value = true
   try {
     const response = await listWorkspaceStyles(workspaceId.value, {
-      page: 1,
-      page_size: 100,
+      page: stylePage.value,
+      page_size: stylePageSize.value,
       keyword: keyword.value.trim() || undefined,
     })
     styles.value = response.items
     styleTotal.value = response.total
-    syncSelectedStyleIds()
   } catch (error) {
     Message.error(getErrorMessage(error, '加载样式列表失败。'))
   } finally {
@@ -550,18 +585,47 @@ async function loadStyles(): Promise<void> {
 }
 
 /**
+ * 搜索提交时回到第一页并立即刷新列表。
+ */
+function handleSearchSubmit(): void {
+  window.clearTimeout(searchDebounceTimer)
+  if (stylePage.value !== 1) {
+    stylePage.value = 1
+    return
+  }
+  void loadStyles()
+}
+
+/**
+ * 切换页容量并回到第一页。
+ * @param size 新页容量
+ */
+function handleStylePageSizeChange(size: number): void {
+  stylePageSize.value = size
+  if (stylePage.value !== 1) {
+    stylePage.value = 1
+    return
+  }
+  void loadStyles()
+}
+
+/**
  * 打开新建样式弹窗。
  */
 function openCreateStyle(): void {
   editingStyle.value = null
+  editorInitialTab.value = 'style'
   editorVisible.value = true
 }
 
 /**
- * 打开编辑样式弹窗。
+ * 打开编辑样式弹窗，可指定初始定位到建议组件页签。
+ * @param style 待编辑样式
+ * @param tab 初始页签
  */
-function openEditStyle(style: WorkspaceStyleItem): void {
+function openEditStyle(style: WorkspaceStyleItem, tab: 'style' | 'components' = 'style'): void {
   editingStyle.value = style
+  editorInitialTab.value = tab
   editorVisible.value = true
 }
 
@@ -574,12 +638,87 @@ function openStyleDetailDialog(style: WorkspaceStyleItem): void {
 }
 
 /**
- * 打开样式建议组件管理弹窗。
+ * 卡片主点击：选择模式下切换勾选，否则打开详情。
+ * @param style 被点击样式
+ */
+function handleStyleCardClick(style: WorkspaceStyleItem): void {
+  if (selectionMode.value) {
+    toggleStyleSelection(style)
+    return
+  }
+  openStyleDetailDialog(style)
+}
+
+/**
+ * 切换导出选择模式；退出时清空已勾选样式。
+ */
+function toggleSelectionMode(): void {
+  if (selectionMode.value) {
+    exitSelectionMode()
+    return
+  }
+  selectionMode.value = true
+}
+
+/**
+ * 退出选择模式并清空勾选。
+ */
+function exitSelectionMode(): void {
+  selectionMode.value = false
+  selectedStyleIds.value = []
+}
+
+/**
+ * 清空当前勾选但保持选择模式。
+ */
+function clearStyleSelection(): void {
+  selectedStyleIds.value = []
+}
+
+/**
+ * 将当前页全部样式并入勾选集合。
+ */
+function selectAllVisibleStyles(): void {
+  const merged = new Set(selectedStyleIds.value)
+  for (const style of styles.value) {
+    merged.add(style.id)
+  }
+  selectedStyleIds.value = [...merged]
+}
+
+/**
+ * 生成样式卡片的选中/高亮边框样式。
  * @param style 当前样式
  */
-function openSuggestedComponentsDialog(style: WorkspaceStyleItem): void {
-  suggestedComponentsStyle.value = style
-  suggestedComponentsDialogVisible.value = true
+function resolveStyleCardClass(style: WorkspaceStyleItem): string {
+  if (selectionMode.value && isStyleSelected(style)) {
+    return 'border-accent-ring bg-surface-selected/40'
+  }
+  if (highlightStyleId.value === style.id) {
+    return 'border-accent-ring ring-2 ring-accent-muted'
+  }
+  return 'border-border hover:border-accent-ring'
+}
+
+/**
+ * 判断样式是否已维护非空规范。
+ * @param style 当前样式
+ */
+function hasStyleSpec(style: WorkspaceStyleItem): boolean {
+  return Boolean(style.style_spec_markdown?.trim())
+}
+
+/**
+ * 把展示配置汇总成单行可截断的元信息文本。
+ * @param style 当前样式
+ */
+function formatStyleMeta(style: WorkspaceStyleItem): string {
+  return [
+    `画布 ${style.page_width}×${style.page_height} (${formatAspectRatio(style.page_width, style.page_height)})`,
+    `字号 ${style.base_font_size}`,
+    `描边 ${style.icon_default_stroke_width}`,
+    formatMenuMode(style.menu_mode),
+  ].join(' · ')
 }
 
 /**
@@ -601,15 +740,7 @@ function toggleStyleSelection(style: WorkspaceStyleItem): void {
 }
 
 /**
- * 列表刷新后移除已经不可见的导出选择。
- */
-function syncSelectedStyleIds(): void {
-  const visibleStyleIds = new Set(styles.value.map(style => style.id))
-  selectedStyleIds.value = selectedStyleIds.value.filter(id => visibleStyleIds.has(id))
-}
-
-/**
- * 下载当前勾选样式的离线包。
+ * 预检当前勾选样式并打开导出确认弹窗，统一由用户确认后下载。
  */
 async function handleExportSelectedStyles(): Promise<void> {
   if (!workspaceId.value || selectedStyleIds.value.length === 0) {
@@ -618,16 +749,10 @@ async function handleExportSelectedStyles(): Promise<void> {
   exportPackagePending.value = true
   try {
     exportManualAssetNames.value = []
-    const validation = await validateWorkspaceStylePackageExport(workspaceId.value, {
+    exportValidation.value = await validateWorkspaceStylePackageExport(workspaceId.value, {
       style_ids: selectedStyleIds.value,
       manual_asset_names: [],
     })
-    exportValidation.value = validation
-    if (!shouldConfirmExport(validation)) {
-      await downloadSelectedStylePackage([])
-      Message.success('样式离线包已生成。')
-      return
-    }
     exportDialogVisible.value = true
     exportAssetKeyword.value = ''
     void loadExportAssetOptions()
@@ -636,19 +761,6 @@ async function handleExportSelectedStyles(): Promise<void> {
   } finally {
     exportPackagePending.value = false
   }
-}
-
-/**
- * 判断样式导出预检结果是否需要用户确认。
- * @param validation 导出预检结果
- */
-function shouldConfirmExport(validation: WorkspaceStyleExportValidationResult): boolean {
-  return (
-    validation.warnings.length > 0
-    || validation.dynamic_resource_components.length > 0
-    || validation.missing_static_asset_names.length > 0
-    || validation.missing_manual_asset_names.length > 0
-  )
 }
 
 /**
@@ -696,7 +808,7 @@ function removeExportManualAsset(assetName: string): void {
 }
 
 /**
- * 在确认弹窗中继续导出样式离线包。
+ * 在确认弹窗中继续导出样式离线包；成功后退出选择模式。
  */
 async function handleConfirmExportPackage(): Promise<void> {
   if (!workspaceId.value || selectedStyleIds.value.length === 0) {
@@ -706,6 +818,7 @@ async function handleConfirmExportPackage(): Promise<void> {
   try {
     await downloadSelectedStylePackage(exportManualAssetNames.value)
     exportDialogVisible.value = false
+    exitSelectionMode()
     Message.success('样式离线包已生成。')
   } catch (error) {
     Message.error(`导出样式失败：${getErrorMessage(error, '未知原因')}`)
@@ -829,10 +942,10 @@ function resolveImportActionText(action: string): string {
  * 为样式导入组件列表中的处理动作提供醒目的状态样式。
  */
 function resolveImportActionBadgeClass(action: string): string {
-  if (action === 'overwrite') return 'bg-amber-50 text-amber-700 ring-amber-200'
-  if (action === 'reuse') return 'bg-emerald-50 text-emerald-700 ring-emerald-200'
-  if (action === 'conflict') return 'bg-rose-50 text-rose-700 ring-rose-200'
-  return 'bg-sky-50 text-sky-700 ring-sky-200'
+  if (action === 'overwrite') return 'bg-warning-muted text-warning-strong ring-warning-border'
+  if (action === 'reuse') return 'bg-success-muted text-success-strong ring-success-border'
+  if (action === 'conflict') return 'bg-danger-muted text-danger-strong ring-danger-border'
+  return 'bg-info-muted text-info-strong ring-info-border'
 }
 
 /**
@@ -887,7 +1000,7 @@ function greatestCommonDivisor(left: number, right: number): number {
 }
 
 /**
- * 创建或更新样式。
+ * 创建或更新样式；样式主体与建议组件分段提交，建议组件失败时保留弹窗与草稿避免重复创建。
  */
 async function saveStyle(payload: WorkspaceStyleEditorSavePayload): Promise<void> {
   if (!workspaceId.value) {
@@ -895,35 +1008,53 @@ async function saveStyle(payload: WorkspaceStyleEditorSavePayload): Promise<void
   }
   const { suggested_component_ids: suggestedComponentIds, ...stylePayload } = payload
   saving.value = true
+  let savedStyle: WorkspaceStyleItem
   try {
-    const savedStyle = editingStyle.value
+    savedStyle = editingStyle.value
       ? await updateWorkspaceStyle(workspaceId.value, editingStyle.value.id, stylePayload)
       : await createWorkspaceStyle(workspaceId.value, stylePayload)
+  } catch (error) {
+    saving.value = false
+    Message.error(getErrorMessage(error, '保存样式失败。'))
+    return
+  }
+  try {
     if (suggestedComponentIds) {
       await updateWorkspaceStyleSuggestedComponents(workspaceId.value, savedStyle.id, suggestedComponentIds)
     }
-    editorVisible.value = false
-    editingStyle.value = null
-    await loadStyles()
-    Message.success('样式已保存。')
   } catch (error) {
-    Message.error(getErrorMessage(error, '保存样式失败。'))
-  } finally {
+    // 样式主体已落库：把弹窗切到编辑态，避免用户重试时重复创建样式。
+    editingStyle.value = savedStyle
     saving.value = false
+    Message.warning(`样式已保存，但建议组件保存失败：${getErrorMessage(error, '未知原因')}`)
+    void loadStyles()
+    return
   }
+  saving.value = false
+  editorVisible.value = false
+  editingStyle.value = null
+  await loadStyles()
+  Message.success('样式已保存。')
 }
 
 /**
- * 复制样式。
+ * 复制样式，并滚动定位与高亮新副本便于用户识别。
  */
 async function copyStyle(style: WorkspaceStyleItem): Promise<void> {
   if (!workspaceId.value) {
     return
   }
   try {
-    await copyWorkspaceStyle(workspaceId.value, style.id)
+    const copied = await copyWorkspaceStyle(workspaceId.value, style.id)
     await loadStyles()
     Message.success('样式已复制。')
+    highlightStyleId.value = copied.id
+    await nextTick()
+    document.querySelector(`[data-style-id="${copied.id}"]`)?.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' })
+    window.clearTimeout(highlightTimer)
+    highlightTimer = window.setTimeout(() => {
+      highlightStyleId.value = null
+    }, 3000)
   } catch (error) {
     Message.error(getErrorMessage(error, '复制样式失败。'))
   }
@@ -942,19 +1073,12 @@ async function deleteStyle(style: WorkspaceStyleItem): Promise<void> {
   }
   try {
     await deleteWorkspaceStyle(workspaceId.value, style.id)
+    selectedStyleIds.value = selectedStyleIds.value.filter(id => id !== style.id)
     await loadStyles()
     Message.success('样式已删除。')
   } catch (error) {
     Message.error(getErrorMessage(error, '删除样式失败。'))
   }
-}
-
-/**
- * 建议组件保存后保留当前列表，仅关闭弹窗并给出轻量提示。
- * @param _items 后端返回的建议组件摘要
- */
-function handleSuggestedComponentsSaved(_items: SuggestedComponentItem[]): void {
-  suggestedComponentsStyle.value = null
 }
 
 /**
@@ -966,28 +1090,4 @@ function formatMenuMode(mode: ProjectMenuMode): string {
   return '侧边缩略图'
 }
 </script>
-
-<style scoped>
-.style-icon-button,
-.style-icon-button-danger {
-  display: inline-flex;
-  height: 2rem;
-  width: 2rem;
-  align-items: center;
-  justify-content: center;
-  border-radius: 0.5rem;
-  color: rgb(100 116 139);
-  transition: all 0.18s ease;
-}
-
-.style-icon-button:hover {
-  background: rgb(238 242 255);
-  color: rgb(79 70 229);
-}
-
-.style-icon-button-danger:hover {
-  background: rgb(255 241 242);
-  color: rgb(225 29 72);
-}
-</style>
 

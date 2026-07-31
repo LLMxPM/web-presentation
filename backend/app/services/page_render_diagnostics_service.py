@@ -12,6 +12,7 @@ from urllib.parse import parse_qs, parse_qsl, urlencode, urlsplit, urlunsplit
 from app.core.config import get_settings
 from app.core.exceptions import AppException
 from app.services.capture_viewport_resolver import CaptureViewport
+from app.services.page_render_layout_script import build_page_render_layout_script
 from app.services.playwright_task_queue import PlaywrightTaskQueue, get_playwright_task_queue
 from app.services.runtime_build_client import RUNTIME_SERVICE_TOKEN_HEADER
 from app.services.token_service import TokenService
@@ -22,6 +23,13 @@ RUNTIME_PUBLIC_BASE_URL_HEADER = "x-runtime-public-base-url"
 PAGE_RENDER_WARNING_SOURCE = "runtime-render"
 PAGE_RENDER_BOTTOM_OVERFLOW_CODE = "PAGE_RENDER_BOTTOM_OVERFLOW"
 PAGE_RENDER_DIAGNOSTICS_UNAVAILABLE_CODE = "PAGE_RENDER_DIAGNOSTICS_UNAVAILABLE"
+LAYOUT_ANALYSIS_SCHEMA_VERSION = 2
+LAYOUT_ANALYSIS_RESULT_KEYS = (
+    "text_layouts",
+    "item_groups",
+    "overflows",
+    "spatial_relations",
+)
 
 logger = logging.getLogger(__name__)
 
@@ -45,8 +53,8 @@ class PageRenderDiagnosticsService:
         self,
         preview_url: str,
         viewport: CaptureViewport,
-    ) -> list[dict[str, object]]:
-        """打开页面预览并检查固定画布底部是否存在可见内容溢出。"""
+    ) -> dict[str, object]:
+        """打开页面预览并返回固定画布诊断与文本布局分析。"""
 
         try:
             target = self._build_browser_target(preview_url)
@@ -67,11 +75,9 @@ class PageRenderDiagnosticsService:
                 viewport.height,
                 exc_info=True,
             )
-            return [
-                self._build_unavailable_warning(
-                    f"页面渲染布局诊断不可用：{self._sanitize_error_message(error)}",
-                )
-            ]
+            return self._build_unavailable_result(
+                f"页面渲染布局诊断不可用：{self._sanitize_error_message(error)}",
+            )
 
     def _diagnose_preview_with_browser(
         self,
@@ -81,12 +87,14 @@ class PageRenderDiagnosticsService:
         *,
         timeout_ms: int,
         visual_ready_timeout_ms: int,
-    ) -> list[dict[str, object]]:
+    ) -> dict[str, object]:
         """使用池内长期浏览器和任务独立 Context 执行页面布局测量。"""
 
         context = browser.new_context(
             viewport={"width": viewport.width, "height": viewport.height},
             device_scale_factor=1,
+            # 模拟 prefers-reduced-motion，避免入场动画位移干扰布局测量结果。
+            reduced_motion="reduce",
         )
         try:
             # BrowserContext 创建成功后，即使 new_page 失败也要在本槽位线程中关闭它。
@@ -97,8 +105,8 @@ class PageRenderDiagnosticsService:
                 target.extra_http_headers,
             )
             self._wait_for_preview_ready(page, target.preview_url, timeout_ms, visual_ready_timeout_ms)
-            result = page.evaluate(self._build_bottom_overflow_script())
-            return self._normalize_diagnostics_result(result)
+            result = page.evaluate(build_page_render_layout_script())
+            return self._normalize_render_result(result)
         finally:
             try:
                 context.close()
@@ -243,90 +251,15 @@ class PageRenderDiagnosticsService:
             and request_parts.path == preview_parts.path
         )
 
-    @staticmethod
-    def _build_bottom_overflow_script() -> str:
-        """构造浏览器端页面底部溢出检测脚本。"""
+    def _normalize_render_result(self, result: object) -> dict[str, object]:
+        """规范化浏览器端布局分析结果，隔离非法诊断和文本明细。"""
 
-        return """
-        () => {
-          const tolerancePx = 2;
-          const root = document.querySelector('.runtime-page-print-source, .runtime-view-preview-source');
-          if (!root) {
-            return [{
-              severity: 'warning',
-              source: 'runtime-render',
-              code: 'PAGE_RENDER_DIAGNOSTICS_UNAVAILABLE',
-              message: '未找到页面渲染根节点 .runtime-page-print-source 或 .runtime-view-preview-source，无法检查底部溢出。'
-            }];
-          }
-
-          const rootRect = root.getBoundingClientRect();
-          const rootScrollOverflow = Math.max(0, Math.ceil(root.scrollHeight - root.clientHeight - tolerancePx));
-          let maxVisualOverflow = 0;
-          const offenders = [];
-
-          const describeElement = (element, overflowPx) => {
-            const tagName = String(element.tagName || '').toLowerCase();
-            const id = element.id ? `#${element.id}` : '';
-            const className = typeof element.className === 'string'
-              ? element.className.trim().split(/\\s+/).filter(Boolean).slice(0, 4).join('.')
-              : '';
-            const classLabel = className ? `.${className}` : '';
-            const text = String(element.textContent || '').replace(/\\s+/g, ' ').trim().slice(0, 60);
-            return `${tagName}${id}${classLabel} 超出 ${overflowPx}px${text ? `，文本：${text}` : ''}`;
-          };
-
-          for (const element of root.querySelectorAll('*')) {
-            const style = window.getComputedStyle(element);
-            if (
-              style.display === 'none'
-              || style.visibility === 'hidden'
-              || Number(style.opacity) === 0
-            ) {
-              continue;
-            }
-
-            const rect = element.getBoundingClientRect();
-            if (rect.width <= 0 || rect.height <= 0) {
-              continue;
-            }
-
-            const overflowPx = Math.ceil(rect.bottom - rootRect.bottom - tolerancePx);
-            if (overflowPx <= 0) {
-              continue;
-            }
-
-            maxVisualOverflow = Math.max(maxVisualOverflow, overflowPx);
-            offenders.push({ element, overflowPx });
-          }
-
-          const overflowPx = Math.max(rootScrollOverflow, maxVisualOverflow);
-          if (overflowPx <= 0) {
-            return [];
-          }
-
-          const samples = offenders
-            .sort((left, right) => right.overflowPx - left.overflowPx)
-            .slice(0, 3)
-            .map(item => describeElement(item.element, item.overflowPx));
-          const sampleText = samples.length ? ` 疑似元素：${samples.join('；')}` : '';
-          return [{
-            severity: 'warning',
-            source: 'runtime-render',
-            code: 'PAGE_RENDER_BOTTOM_OVERFLOW',
-            message: `页面内容底部超出画布 ${overflowPx}px，预览或导出时可能被裁切。${sampleText}`
-          }];
-        }
-        """
-
-    def _normalize_diagnostics_result(self, result: object) -> list[dict[str, object]]:
-        """规范化浏览器端返回值，过滤非 warning 结构。"""
-
-        if not isinstance(result, list):
-            return [self._build_unavailable_warning("页面渲染布局诊断返回了非法结果。")]
+        if not isinstance(result, dict):
+            return self._build_unavailable_result("页面渲染布局诊断返回了非法结果。")
 
         diagnostics: list[dict[str, object]] = []
-        for item in result:
+        raw_diagnostics = result.get("diagnostics")
+        for item in raw_diagnostics if isinstance(raw_diagnostics, list) else []:
             if not isinstance(item, dict):
                 continue
             code = str(item.get("code") or "").strip()
@@ -341,7 +274,56 @@ class PageRenderDiagnosticsService:
                     "message": message,
                 }
             )
-        return diagnostics
+        return {
+            "diagnostics": diagnostics,
+            "layout_analysis": self._normalize_layout_analysis(result.get("layout_analysis")),
+        }
+
+    @staticmethod
+    def _normalize_layout_analysis(value: object) -> dict[str, object]:
+        """规范化 v2 文本、分排、越界和空间关系统一契约。"""
+
+        if not isinstance(value, dict):
+            return PageRenderDiagnosticsService._empty_layout_analysis()
+        result_lists = {
+            key: _normalize_dict_list(value.get(key))
+            for key in LAYOUT_ANALYSIS_RESULT_KEYS
+        }
+        raw_summary = value.get("summary")
+        summary = _normalize_layout_summary(
+            raw_summary if isinstance(raw_summary, dict) else {},
+            result_lists,
+        )
+        return {
+            "schema_version": LAYOUT_ANALYSIS_SCHEMA_VERSION,
+            "summary": summary,
+            **result_lists,
+        }
+
+    @classmethod
+    def _build_unavailable_result(cls, message: str) -> dict[str, object]:
+        """构造渲染诊断不可用结果并保留稳定分析结构。"""
+
+        return {
+            "diagnostics": [cls._build_unavailable_warning(message)],
+            "layout_analysis": cls._empty_layout_analysis(),
+        }
+
+    @staticmethod
+    def _empty_layout_analysis() -> dict[str, object]:
+        """返回没有可报告布局事实时的稳定分析结构。"""
+
+        return {
+            "schema_version": LAYOUT_ANALYSIS_SCHEMA_VERSION,
+            "summary": {
+                "attention": "none",
+                "message": "未发现需要关注的视觉检测结果。",
+                "totals": {key: 0 for key in LAYOUT_ANALYSIS_RESULT_KEYS},
+                "returned": {key: 0 for key in LAYOUT_ANALYSIS_RESULT_KEYS},
+                "truncated": False,
+            },
+            **{key: [] for key in LAYOUT_ANALYSIS_RESULT_KEYS},
+        }
 
     @staticmethod
     def _build_unavailable_warning(message: str) -> dict[str, object]:
@@ -410,3 +392,54 @@ class PageRenderDiagnosticsService:
         """脱敏任意文本中常见的 token 查询参数。"""
 
         return re.sub(r"([?&]token=)[A-Za-z0-9_.-]+", r"\1[redacted]", value)
+
+
+def _coerce_non_negative_int(value: object, fallback: int) -> int:
+    """把浏览器返回的计数转换为非负整数。"""
+
+    try:
+        return max(0, int(value))
+    except (TypeError, ValueError):
+        return fallback
+
+
+def _normalize_dict_list(value: object) -> list[dict[str, object]]:
+    """仅保留浏览器布局清单中的对象项，避免异常数据破坏返回契约。"""
+
+    if not isinstance(value, list):
+        return []
+    return [dict(item) for item in value if isinstance(item, dict)]
+
+
+def _normalize_layout_summary(
+    value: dict[str, object],
+    result_lists: dict[str, list[dict[str, object]]],
+) -> dict[str, object]:
+    """按实际返回清单修正 summary 计数，并保留浏览器端截断前总数。"""
+
+    raw_totals = value.get("totals")
+    totals_source = raw_totals if isinstance(raw_totals, dict) else {}
+    totals = {
+        key: _coerce_non_negative_int(totals_source.get(key), len(result_lists[key]))
+        for key in LAYOUT_ANALYSIS_RESULT_KEYS
+    }
+    returned = {key: len(result_lists[key]) for key in LAYOUT_ANALYSIS_RESULT_KEYS}
+    valid_attentions = {"none", "review", "likely_issue"}
+    attention = str(value.get("attention") or "none")
+    if attention not in valid_attentions:
+        attention = "none"
+    message = str(value.get("message") or "").strip()
+    if not message:
+        message = (
+            "未发现需要关注的视觉检测结果。"
+            if attention == "none"
+            else "发现需要关注的视觉检测结果。"
+        )
+    return {
+        "attention": attention,
+        "message": message,
+        "totals": totals,
+        "returned": returned,
+        "truncated": bool(value.get("truncated"))
+        or any(totals[key] > returned[key] for key in LAYOUT_ANALYSIS_RESULT_KEYS),
+    }

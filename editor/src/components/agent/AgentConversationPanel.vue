@@ -29,7 +29,7 @@
   </Teleport>
 
   <section :class="panelShellClass">
-    <header v-if="!props.headerActionsTarget || !headerActionsReady" class="border-b border-slate-100 px-5 py-4">
+    <header v-if="!props.headerActionsTarget || !headerActionsReady" class="border-b border-border-muted px-5 py-4">
       <AgentSessionControls
         :sessions="displayedSessions"
         :active-session-id="activeSessionId"
@@ -48,14 +48,14 @@
     </header>
 
     <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
-      <section v-if="hasBindingIssue" class="m-4 space-y-4 rounded-3xl border border-amber-200 bg-amber-50/80 p-5">
+      <section v-if="hasBindingIssue" class="m-4 space-y-4 rounded-3xl border border-warning-border bg-warning-muted/80 p-5">
         <div class="space-y-2">
-          <p class="text-base font-semibold text-amber-800">{{ agentIssueTitle }}</p>
-          <p class="text-sm leading-6 text-amber-700">
+          <p class="text-base font-semibold text-warning-strong">{{ agentIssueTitle }}</p>
+          <p class="text-sm leading-6 text-warning-strong">
             {{ agentIssueDetail }}
           </p>
         </div>
-        <div class="rounded-2xl border border-white/80 bg-white/70 px-4 py-3 text-sm text-slate-600">
+        <div class="rounded-2xl border border-surface/80 bg-surface/70 px-4 py-3 text-sm text-text-secondary">
           <p>当前 agent：{{ selectedAgent?.name || agentDisplayName }}</p>
           <p>当前模型：{{ currentLlmModelLabel || selectedAgent?.bound_llm_name || '未选择' }}</p>
         </div>
@@ -86,13 +86,13 @@
         />
 
         <section v-if="composerContextIssue"
-          class="flex items-center gap-2 border-t border-amber-100 bg-amber-50/90 px-4 py-3 text-xs leading-5 text-amber-700">
+          class="flex items-center gap-2 border-t border-warning-border bg-warning-muted/90 px-4 py-3 text-xs leading-5 text-warning-strong">
           <span class="min-w-0 flex-1">{{ composerContextIssue }}</span>
           <UiButton
             v-if="composerContextRouteTarget"
             variant="secondary"
             size="xs"
-            class="inline-flex h-7 shrink-0 items-center gap-1 rounded-md border border-amber-200 bg-white px-2 text-[11px] font-semibold text-amber-700 shadow-sm transition hover:border-amber-300 hover:bg-amber-100"
+            class="inline-flex h-7 shrink-0 items-center gap-1 rounded-md border border-warning-border bg-surface px-2 text-[11px] font-semibold text-warning-strong shadow-sm transition hover:border-warning-border hover:bg-warning-muted"
             :aria-label="composerContextRouteTitle"
             :title="composerContextRouteTitle"
             @click="openComposerContextRoute"
@@ -105,13 +105,13 @@
         <section
           v-if="showVisualCapabilityStatus"
           aria-label="视觉工具状态"
-          class="flex shrink-0 items-center gap-1.5 border-t border-slate-100 bg-slate-50/80 px-3 py-1.5 text-[10px]"
+          class="flex shrink-0 items-center gap-1.5 border-t border-border-muted bg-canvas/80 px-3 py-1.5 text-[10px]"
         >
           <span
             class="inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 font-medium"
             :class="imageAnalysisAvailable
-              ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-              : 'border-slate-200 bg-white text-slate-400'"
+              ? 'border-success-border bg-success-muted text-success-strong'
+              : 'border-border bg-surface text-text-disabled'"
             :title="imageAnalysisCapabilityTitle"
           >
             <Eye class="h-3 w-3" />
@@ -121,8 +121,8 @@
           <span
             class="inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 font-medium"
             :class="imageGenerationAvailable
-              ? 'border-violet-200 bg-violet-50 text-violet-700'
-              : 'border-slate-200 bg-white text-slate-400'"
+              ? 'border-ai-border bg-ai-muted text-ai-strong'
+              : 'border-border bg-surface text-text-disabled'"
             :title="imageGenerationCapabilityTitle"
           >
             <WandSparkles class="h-3 w-3" />
@@ -133,7 +133,7 @@
             v-if="visualCapabilityConfigurationRequired"
             variant="ghost"
             size="xs"
-            class="ml-auto shrink-0 font-medium text-sky-600 transition hover:text-sky-700"
+            class="ml-auto shrink-0 font-medium text-info transition hover:text-info-strong"
             title="前往 AI 设置配置视觉模型"
             @click="goToAiSettings"
           >
@@ -169,7 +169,7 @@
           @action="handleComposerPrimaryAction">
           <template #action-prefix>
             <span
-              v-if="isNewSessionDraft || activeSessionLlmLabel"
+              v-if="isNewSessionDraft || activeSessionLlmLabel || selectedRunLlmConfig"
               class="relative inline-flex"
             >
               <UiDropdownMenu
@@ -185,16 +185,13 @@
                     variant="ghost"
                     size="xs"
                     class="inline-flex h-6 max-w-[150px] items-center gap-1 rounded-md border px-1.5 text-[10px] font-medium transition"
-                    :class="isNewSessionDraft
-                      ? 'border-slate-200 bg-white text-slate-600 hover:border-sky-200 hover:bg-sky-50 hover:text-sky-700'
-                      : 'cursor-default border-slate-100 bg-slate-50 text-slate-500'"
-                    :disabled="!isNewSessionDraft || llmConfigsQuery.isFetching.value || selectableModelCount === 0"
+                    :disabled="modelSelectionDisabled"
                     :title="llmModelButtonTitle"
                   >
                     <Globe2 v-if="currentLlmScope === 'global'" class="h-3 w-3 shrink-0" />
                     <UserRound v-else class="h-3 w-3 shrink-0" />
                     <span class="min-w-0 truncate">{{ currentLlmCompactName }}</span>
-                    <ChevronDown v-if="isNewSessionDraft" class="h-3 w-3 shrink-0 opacity-60" />
+                    <ChevronDown v-if="!modelSelectionDisabled" class="h-3 w-3 shrink-0 opacity-60" />
                   </UiButton>
                 </template>
               </UiDropdownMenu>
@@ -400,7 +397,7 @@ const memberRunDialogVisible = ref(false)
 const activeToolDetailId = ref<string | null>(null)
 const activeMemberRunIds = ref<string[]>([])
 const sendInFlightBySession = ref<Record<string, boolean>>({})
-const selectedNewSessionLlmConfigId = ref<number | null>(null)
+const selectedRunLlmConfigId = ref<number | null>(null)
 const autoNamingSessionIds = new Set<string>()
 const hitlActionInFlightBySession = ref<Record<string, boolean>>({})
 let componentDisposed = false
@@ -570,10 +567,15 @@ const llmModelDropdownItems = computed<DropdownMenuEntry[]>(() =>
     value: String(item.id),
     description: `${item.provider_label} / ${item.model_id}`,
     icon: item.scope === 'global' ? Globe2 : UserRound,
-    active: item.id === selectedNewSessionLlmConfigId.value,
+    active: item.id === selectedRunLlmConfigId.value,
   })),
 )
 const selectableModelCount = computed(() => activeLlmConfigs.value.length)
+const modelSelectionDisabled = computed(() => (
+  llmConfigsQuery.isFetching.value
+  || selectableModelCount.value === 0
+  || Boolean(activeRun.value && !['completed', 'cancelled', 'failed'].includes(activeRun.value.status))
+))
 const boundDraftLlmConfigId = computed(() => {
   const slot = selectedAgent.value?.llm_slot
   if (!slot) {
@@ -589,8 +591,8 @@ const defaultNewSessionLlmConfigId = computed(() => (
   ?? activePersonalLlmConfigs.value[0]?.id
   ?? null
 ))
-const selectedNewSessionLlmConfig = computed(() => (
-  selectedNewSessionLlmConfigId.value ? llmConfigById.value.get(selectedNewSessionLlmConfigId.value) ?? null : null
+const selectedRunLlmConfig = computed(() => (
+  selectedRunLlmConfigId.value ? llmConfigById.value.get(selectedRunLlmConfigId.value) ?? null : null
 ))
 const activeSessionLlmMetadata = computed(() => extractSessionLlmMetadata(activeSession.value))
 const activeSessionLlmConfigId = computed(() => normalizeLlmConfigId(activeSessionLlmMetadata.value?.config_id))
@@ -610,27 +612,19 @@ const activeSessionLlmLabel = computed(() => {
   return selectedAgent.value?.bound_llm_name || ''
 })
 const currentLlmModelLabel = computed(() => (
-  activeSessionId.value
-    ? activeSessionLlmLabel.value
-    : selectedNewSessionLlmConfig.value
-      ? formatLlmConfigLabel(selectedNewSessionLlmConfig.value)
-      : ''
+  selectedRunLlmConfig.value
+    ? formatLlmConfigLabel(selectedRunLlmConfig.value)
+    : activeSessionLlmLabel.value
 ))
 const currentLlmScope = computed(() => {
-  if (activeSessionId.value) {
-    return activeSessionLlmConfig.value?.scope ?? activeSessionLlmMetadata.value?.scope ?? 'personal'
-  }
-  return selectedNewSessionLlmConfig.value?.scope ?? 'personal'
+  return selectedRunLlmConfig.value?.scope ?? activeSessionLlmConfig.value?.scope ?? activeSessionLlmMetadata.value?.scope ?? 'personal'
 })
 const currentLlmCompactName = computed(() => {
-  if (activeSessionId.value) {
-    return activeSessionLlmConfig.value?.name ?? activeSessionLlmMetadata.value?.name ?? '会话模型'
-  }
-  return selectedNewSessionLlmConfig.value?.name ?? '选择模型'
+  return selectedRunLlmConfig.value?.name ?? activeSessionLlmConfig.value?.name ?? activeSessionLlmMetadata.value?.name ?? '选择模型'
 })
 const llmModelButtonTitle = computed(() => {
   const label = currentLlmModelLabel.value || currentLlmCompactName.value
-  return activeSessionId.value ? `会话模型：${label}` : `新会话模型：${label}`
+  return activeSessionId.value ? `下次运行模型：${label}` : `新会话模型：${label}`
 })
 const showVisualCapabilityStatus = computed(() => (
   ['agent-coordinator', 'resource-manager'].includes(agentId.value)
@@ -701,7 +695,7 @@ const createSessionMutation = useMutation({
     agent_id: agentId.value,
     scope: scope.value,
     session_name: sessionName ?? selectedAgent.value?.default_session_name ?? `${contextTitle.value} 对话`,
-    llm_config_id: selectedNewSessionLlmConfigId.value,
+    llm_config_id: selectedRunLlmConfigId.value,
   }),
 })
 
@@ -713,8 +707,7 @@ const hasContextIssue = computed(() => (
 ))
 const isModelSelectionPending = computed(() => isNewSessionDraft.value && llmConfigsQuery.isFetching.value)
 const hasModelSelectionIssue = computed(() => (
-  isNewSessionDraft.value
-  && !llmConfigsQuery.isFetching.value
+  !llmConfigsQuery.isFetching.value
   && selectableModelCount.value === 0
 ))
 const hasBindingIssue = computed(() => (
@@ -734,7 +727,7 @@ const activeSessionScopeSummary = computed(() => (
     : {
         typeLabel: '',
         title: activeSession.value?.session_name || '未选择会话',
-        colorClass: 'border-slate-200 bg-slate-50 text-slate-400',
+        colorClass: 'border-border bg-canvas text-text-disabled',
       }
 ))
 const activeSessionScopeTooltip = computed(() => (
@@ -817,7 +810,7 @@ const activeMemberRuns = computed(() => (
 const panelShellClass = computed(() => (
   props.embedded
     ? 'flex h-full min-h-0 flex-col bg-transparent'
-    : 'flex min-h-[720px] flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white/95 shadow-sm backdrop-blur'
+    : 'flex min-h-[720px] flex-col overflow-hidden rounded-3xl border border-border bg-surface/95 shadow-sm backdrop-blur'
 ))
 const timelineDisplayItems = computed(() => buildTimelineDisplayItems(timelineItems.value, {
   pendingRequirement: pendingRequirement.value,
@@ -1202,21 +1195,25 @@ watch(
 )
 
 watch(
-  () => [defaultNewSessionLlmConfigId.value, selectedNewSessionLlmConfigId.value, activeSessionId.value] as const,
+  () => [defaultNewSessionLlmConfigId.value, selectedRunLlmConfigId.value, activeSessionId.value] as const,
   () => {
     if (!isNewSessionDraft.value) {
       return
     }
-    const selectedId = selectedNewSessionLlmConfigId.value
+    const selectedId = selectedRunLlmConfigId.value
     if (selectedId !== null && llmConfigById.value.has(selectedId)) {
       return
     }
-    selectedNewSessionLlmConfigId.value = defaultNewSessionLlmConfigId.value
+    selectedRunLlmConfigId.value = defaultNewSessionLlmConfigId.value
   },
   { immediate: true },
 )
 
 watch(activeSessionId, () => {
+  const sessionModelId = normalizeLlmConfigId(extractSessionLlmMetadata(activeSession.value)?.config_id)
+  selectedRunLlmConfigId.value = sessionModelId && llmConfigById.value.has(sessionModelId)
+    ? sessionModelId
+    : defaultNewSessionLlmConfigId.value
   sessionMenuVisible.value = false
   toolDetailDialogVisible.value = false
   memberRunDialogVisible.value = false
@@ -1233,6 +1230,13 @@ watch(activeSessionId, () => {
       setSelectedWorkspaceSession(scope.value, agentId.value, activeSessionId.value)
     }
   }
+})
+
+watch(activeSessionLlmConfigId, (configId) => {
+  if (!activeSessionId.value || !configId || !llmConfigById.value.has(configId)) {
+    return
+  }
+  selectedRunLlmConfigId.value = configId
 })
 
 watch(activeRun, (run) => {
@@ -1265,12 +1269,12 @@ onBeforeUnmount(() => {
 })
 
 /**
- * 选择新会话草稿模型；真正创建会话时会随 payload 固化到后端。
+ * 选择下一次 run 使用的模型；Backend 会同时保存 run 快照和会话默认值。
  */
 function handleLlmModelSelect(value: string) {
   const configId = Number(value)
   if (Number.isFinite(configId)) {
-    selectedNewSessionLlmConfigId.value = configId
+    selectedRunLlmConfigId.value = configId
   }
 }
 
@@ -1284,7 +1288,7 @@ async function ensureActiveSession() {
   if (!props.routeAvailable) {
     throw new Error(props.routeUnavailableReason || '当前路由缺少工作空间上下文。')
   }
-  if (!selectedNewSessionLlmConfigId.value) {
+  if (!selectedRunLlmConfigId.value) {
     throw new Error('请选择用于本次会话的模型。')
   }
   const created = await createSessionMutation.mutateAsync(`${contextTitle.value} 会话`)
@@ -1379,6 +1383,7 @@ async function handleSend() {
       message,
       agent_id: runAgentId,
       image_attachment_ids: attachments.map(attachment => attachment.id),
+      llm_config_id: selectedRunLlmConfigId.value,
     }, {
       onEvent: event => handleRunEvent(event, sessionId),
       signal: streamAbortController.signal,

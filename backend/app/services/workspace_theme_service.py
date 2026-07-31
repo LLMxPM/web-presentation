@@ -10,8 +10,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import AppException
 from app.models.asset import WorkspaceAsset
-from app.models.enums import AssetType
-from app.models.font import WorkspaceFontConfig
+from app.models.enums import AssetType, RecordStatus
+from app.models.font import WorkspaceFontConfig, WorkspaceFontFamily
 from app.models.workspace import Project, Workspace
 from app.models.workspace_theme import WorkspaceTheme
 from app.repositories.workspace_repository import WorkspaceRepository
@@ -115,9 +115,9 @@ class WorkspaceThemeService:
             logo_path=resolved_payload["logo_path"],
             invert_logo_path=resolved_payload["invert_logo_path"],
             project_icon_name=resolved_payload["project_icon_name"],
-            heading_font_id=resolved_payload["heading_font_id"],
-            body_font_id=resolved_payload["body_font_id"],
-            code_font_id=resolved_payload["code_font_id"],
+            heading_font_family_id=resolved_payload["heading_font_family_id"],
+            body_font_family_id=resolved_payload["body_font_family_id"],
+            code_font_family_id=resolved_payload["code_font_family_id"],
             heading_font_label=resolved_payload["heading_font_label"],
             body_font_label=resolved_payload["body_font_label"],
             code_font_label=resolved_payload["code_font_label"],
@@ -152,9 +152,9 @@ class WorkspaceThemeService:
             logo_path=source_theme.logo_path,
             invert_logo_path=source_theme.invert_logo_path,
             project_icon_name=source_theme.project_icon_name,
-            heading_font_id=source_theme.heading_font_id,
-            body_font_id=source_theme.body_font_id,
-            code_font_id=source_theme.code_font_id,
+            heading_font_family_id=source_theme.heading_font_family_id,
+            body_font_family_id=source_theme.body_font_family_id,
+            code_font_family_id=source_theme.code_font_family_id,
             heading_font_label=source_theme.heading_font_label,
             body_font_label=source_theme.body_font_label,
             code_font_label=source_theme.code_font_label,
@@ -194,9 +194,9 @@ class WorkspaceThemeService:
         theme.logo_path = resolved_payload["logo_path"]
         theme.invert_logo_path = resolved_payload["invert_logo_path"]
         theme.project_icon_name = resolved_payload["project_icon_name"]
-        theme.heading_font_id = resolved_payload["heading_font_id"]
-        theme.body_font_id = resolved_payload["body_font_id"]
-        theme.code_font_id = resolved_payload["code_font_id"]
+        theme.heading_font_family_id = resolved_payload["heading_font_family_id"]
+        theme.body_font_family_id = resolved_payload["body_font_family_id"]
+        theme.code_font_family_id = resolved_payload["code_font_family_id"]
         theme.heading_font_label = resolved_payload["heading_font_label"]
         theme.body_font_label = resolved_payload["body_font_label"]
         theme.code_font_label = resolved_payload["code_font_label"]
@@ -240,9 +240,9 @@ class WorkspaceThemeService:
             logo_path=DEFAULT_THEME_LOGO_PATH,
             invert_logo_path=DEFAULT_THEME_INVERT_LOGO_PATH,
             project_icon_name=DEFAULT_THEME_PROJECT_ICON_NAME,
-            heading_font_id=None,
-            body_font_id=None,
-            code_font_id=None,
+            heading_font_family_id=None,
+            body_font_family_id=None,
+            code_font_family_id=None,
             heading_font_label=DEFAULT_THEME_HEADING_FONT,
             body_font_label=DEFAULT_THEME_BODY_FONT,
             code_font_label=DEFAULT_THEME_CODE_FONT,
@@ -277,18 +277,15 @@ class WorkspaceThemeService:
     async def build_theme_config_document(self, theme: WorkspaceTheme) -> dict[str, object]:
         """将主题实体组装为 Runtime 兼容的 themes.config 对象。"""
 
-        logo_asset, invert_logo_asset, project_icon_asset, heading_font, body_font, code_font = await self._load_theme_relations(theme)
-        heading_font_asset_name = await self._resolve_runtime_font_asset_name(theme.workspace_id, heading_font)
-        body_font_asset_name = await self._resolve_runtime_font_asset_name(theme.workspace_id, body_font)
-        code_font_asset_name = await self._resolve_runtime_font_asset_name(theme.workspace_id, code_font)
+        logo_asset, invert_logo_asset, project_icon_asset, heading_font_family, body_font_family, code_font_family = await self._load_theme_relations(theme)
         theme_entry = {
             "name": theme.name,
             "description": theme.description or "",
             "palette": dict(theme.palette),
             "typography": {
-                "headingfont": heading_font_asset_name if heading_font_asset_name else theme.heading_font_label,
-                "bodyfont": body_font_asset_name if body_font_asset_name else theme.body_font_label,
-                "codefont": code_font_asset_name if code_font_asset_name else theme.code_font_label,
+                "headingfont": heading_font_family.name if heading_font_family is not None else theme.heading_font_label,
+                "bodyfont": body_font_family.name if body_font_family is not None else theme.body_font_label,
+                "codefont": code_font_family.name if code_font_family is not None else theme.code_font_label,
             },
         }
         logo_path = logo_asset.name if logo_asset is not None else theme.logo_path
@@ -317,64 +314,58 @@ class WorkspaceThemeService:
         return yaml.safe_dump(document, allow_unicode=True, sort_keys=False)
 
     async def list_theme_font_asset_names(self, workspace_id: int) -> list[str]:
-        """收集工作空间全部主题最终会输出的字体资产名。"""
+        """收集工作空间全部主题绑定字体族下全部 face 的字体资产名。"""
 
         theme_items = await self.theme_repository.list_by_workspace(workspace_id)
-        font_names: list[str] = []
+        family_ids: list[int] = []
         for theme in theme_items:
-            _, _, _, heading_font, body_font, code_font = await self._load_theme_relations(theme)
-            for font_item in (heading_font, body_font, code_font):
-                runtime_asset_name = await self._resolve_runtime_font_asset_name(workspace_id, font_item)
-                if runtime_asset_name and runtime_asset_name not in font_names:
-                    font_names.append(runtime_asset_name)
-        return font_names
+            for family_id in (theme.heading_font_family_id, theme.body_font_family_id, theme.code_font_family_id):
+                if family_id is not None and family_id not in family_ids:
+                    family_ids.append(family_id)
+        return await self._list_font_asset_names_for_families(workspace_id, family_ids)
 
     async def list_theme_font_reference_tokens(self, workspace_id: int) -> list[str]:
-        """收集工作空间全部主题最终会输出的字体引用 token。"""
+        """收集工作空间全部主题最终会输出的字体引用 token（字体族名）。"""
 
         theme_items = await self.theme_repository.list_by_workspace(workspace_id)
         reference_tokens: list[str] = []
         for theme in theme_items:
-            logo_asset, invert_logo_asset, project_icon_asset, heading_font, body_font, code_font = await self._load_theme_relations(theme)
+            logo_asset, invert_logo_asset, project_icon_asset, heading_font_family, body_font_family, code_font_family = await self._load_theme_relations(theme)
             del logo_asset, invert_logo_asset, project_icon_asset
-            for token in await self._build_theme_font_reference_tokens(
-                workspace_id=workspace_id,
-                heading_font=heading_font,
-                body_font=body_font,
-                code_font=code_font,
+            for token in self._build_theme_font_reference_tokens(
+                heading_font_family=heading_font_family,
+                body_font_family=body_font_family,
+                code_font_family=code_font_family,
             ):
                 if token not in reference_tokens:
                     reference_tokens.append(token)
         return reference_tokens
 
     async def get_theme_font_asset_names_by_key(self, workspace_id: int, theme_key: str) -> list[str]:
-        """收集单个主题最终会输出的字体资产名。"""
+        """收集单个主题绑定字体族下全部 face 的字体资产名。"""
 
         theme = await self.theme_repository.get_by_key(workspace_id, theme_key)
         if theme is None:
             raise AppException(status_code=400, code="WORKSPACE_THEME_NOT_FOUND", detail="目标主题不存在。")
 
-        _, _, _, heading_font, body_font, code_font = await self._load_theme_relations(theme)
-        font_names: list[str] = []
-        for font_item in (heading_font, body_font, code_font):
-            runtime_asset_name = await self._resolve_runtime_font_asset_name(workspace_id, font_item)
-            if runtime_asset_name and runtime_asset_name not in font_names:
-                font_names.append(runtime_asset_name)
-        return font_names
+        family_ids: list[int] = []
+        for family_id in (theme.heading_font_family_id, theme.body_font_family_id, theme.code_font_family_id):
+            if family_id is not None and family_id not in family_ids:
+                family_ids.append(family_id)
+        return await self._list_font_asset_names_for_families(workspace_id, family_ids)
 
     async def get_theme_font_reference_tokens_by_key(self, workspace_id: int, theme_key: str) -> list[str]:
-        """收集单个主题最终会输出的字体引用 token。"""
+        """收集单个主题最终会输出的字体引用 token（字体族名）。"""
 
         theme = await self.theme_repository.get_by_key(workspace_id, theme_key)
         if theme is None:
             raise AppException(status_code=400, code="WORKSPACE_THEME_NOT_FOUND", detail="目标主题不存在。")
 
-        _, _, _, heading_font, body_font, code_font = await self._load_theme_relations(theme)
-        return await self._build_theme_font_reference_tokens(
-            workspace_id=workspace_id,
-            heading_font=heading_font,
-            body_font=body_font,
-            code_font=code_font,
+        _, _, _, heading_font_family, body_font_family, code_font_family = await self._load_theme_relations(theme)
+        return self._build_theme_font_reference_tokens(
+            heading_font_family=heading_font_family,
+            body_font_family=body_font_family,
+            code_font_family=code_font_family,
         )
 
     async def get_project_icon_name_by_key(self, workspace_id: int, theme_key: str | None) -> str | None:
@@ -405,33 +396,33 @@ class WorkspaceThemeService:
         )
         return total is not None
 
-    async def is_font_referenced(self, workspace_id: int, font_id: int) -> bool:
-        """判断字体配置是否被任意可见主题引用。"""
+    async def is_font_referenced(self, workspace_id: int, family_id: int) -> bool:
+        """判断字体族是否被任意可见主题引用。"""
 
         total = await self.session.scalar(
             select(WorkspaceTheme.id)
             .where(WorkspaceTheme.workspace_id == workspace_id)
             .where(WorkspaceTheme.deleted_at.is_(None))
             .where(
-                (WorkspaceTheme.heading_font_id == font_id)
-                | (WorkspaceTheme.body_font_id == font_id)
-                | (WorkspaceTheme.code_font_id == font_id)
+                (WorkspaceTheme.heading_font_family_id == family_id)
+                | (WorkspaceTheme.body_font_family_id == family_id)
+                | (WorkspaceTheme.code_font_family_id == family_id)
             )
             .limit(1)
         )
         return total is not None
 
-    async def purge_soft_deleted_theme_font_references(self, workspace_id: int, font_id: int) -> None:
-        """硬删除旧软删除主题，释放历史数据中残留的字体外键。"""
+    async def purge_soft_deleted_theme_font_references(self, workspace_id: int, family_id: int) -> None:
+        """硬删除旧软删除主题，释放历史数据中残留的字体族外键。"""
 
         stmt = (
             select(WorkspaceTheme)
             .where(WorkspaceTheme.workspace_id == workspace_id)
             .where(WorkspaceTheme.deleted_at.is_not(None))
             .where(
-                (WorkspaceTheme.heading_font_id == font_id)
-                | (WorkspaceTheme.body_font_id == font_id)
-                | (WorkspaceTheme.code_font_id == font_id)
+                (WorkspaceTheme.heading_font_family_id == family_id)
+                | (WorkspaceTheme.body_font_family_id == family_id)
+                | (WorkspaceTheme.code_font_family_id == family_id)
             )
         )
         for theme in (await self.session.execute(stmt)).scalars().all():
@@ -466,7 +457,7 @@ class WorkspaceThemeService:
     async def _to_item(self, theme: WorkspaceTheme) -> WorkspaceThemeItem:
         """将主题实体转换为接口响应。"""
 
-        logo_asset, invert_logo_asset, project_icon_asset, heading_font, body_font, code_font = await self._load_theme_relations(theme)
+        logo_asset, invert_logo_asset, project_icon_asset, heading_font_family, body_font_family, code_font_family = await self._load_theme_relations(theme)
         return WorkspaceThemeItem.model_validate(
             {
                 "id": theme.id,
@@ -478,9 +469,9 @@ class WorkspaceThemeService:
                 "invert_logo_asset_id": theme.invert_logo_asset_id,
                 "project_icon_asset_id": theme.project_icon_asset_id,
                 "project_icon_name": project_icon_asset.name if project_icon_asset is not None else theme.project_icon_name,
-                "heading_font_id": theme.heading_font_id,
-                "body_font_id": theme.body_font_id,
-                "code_font_id": theme.code_font_id,
+                "heading_font_family_id": theme.heading_font_family_id,
+                "body_font_family_id": theme.body_font_family_id,
+                "code_font_family_id": theme.code_font_family_id,
                 "heading_font_label": theme.heading_font_label,
                 "body_font_label": theme.body_font_label,
                 "code_font_label": theme.code_font_label,
@@ -488,9 +479,9 @@ class WorkspaceThemeService:
                 "logo_asset": self._build_asset_summary(theme.workspace_id, logo_asset),
                 "invert_logo_asset": self._build_asset_summary(theme.workspace_id, invert_logo_asset),
                 "project_icon_asset": self._build_asset_summary(theme.workspace_id, project_icon_asset),
-                "heading_font": heading_font,
-                "body_font": body_font,
-                "code_font": code_font,
+                "heading_font_family": heading_font_family,
+                "body_font_family": body_font_family,
+                "code_font_family": code_font_family,
                 "resolved_theme_config_yaml": yaml.safe_dump(
                     await self.build_theme_config_document(theme),
                     allow_unicode=True,
@@ -555,31 +546,31 @@ class WorkspaceThemeService:
             payload.project_icon_asset_id,
             current_theme.project_icon_asset_id if current_theme else None,
         )
-        heading_font_id = self._resolve_optional_update_field(
+        heading_font_family_id = self._resolve_optional_update_field(
             payload_fields,
-            "heading_font_id",
-            payload.heading_font_id,
-            current_theme.heading_font_id if current_theme else None,
+            "heading_font_family_id",
+            payload.heading_font_family_id,
+            current_theme.heading_font_family_id if current_theme else None,
         )
-        body_font_id = self._resolve_optional_update_field(
+        body_font_family_id = self._resolve_optional_update_field(
             payload_fields,
-            "body_font_id",
-            payload.body_font_id,
-            current_theme.body_font_id if current_theme else None,
+            "body_font_family_id",
+            payload.body_font_family_id,
+            current_theme.body_font_family_id if current_theme else None,
         )
-        code_font_id = self._resolve_optional_update_field(
+        code_font_family_id = self._resolve_optional_update_field(
             payload_fields,
-            "code_font_id",
-            payload.code_font_id,
-            current_theme.code_font_id if current_theme else None,
+            "code_font_family_id",
+            payload.code_font_family_id,
+            current_theme.code_font_family_id if current_theme else None,
         )
 
         logo_asset = await self._get_theme_logo_asset_or_none(workspace_id, logo_asset_id)
         invert_logo_asset = await self._get_theme_logo_asset_or_none(workspace_id, invert_logo_asset_id)
         project_icon_asset = await self._get_theme_project_icon_asset_or_none(workspace_id, project_icon_asset_id)
-        heading_font = await self._get_workspace_font_or_none(workspace_id, heading_font_id)
-        body_font = await self._get_workspace_font_or_none(workspace_id, body_font_id)
-        code_font = await self._get_workspace_font_or_none(workspace_id, code_font_id)
+        heading_font_family = await self._get_workspace_font_family_or_none(workspace_id, heading_font_family_id)
+        body_font_family = await self._get_workspace_font_family_or_none(workspace_id, body_font_family_id)
+        code_font_family = await self._get_workspace_font_family_or_none(workspace_id, code_font_family_id)
 
         return {
             "logo_asset_id": logo_asset.id if logo_asset is not None else None,
@@ -594,27 +585,27 @@ class WorkspaceThemeService:
                 if project_icon_asset is not None
                 else current_theme.project_icon_name if current_theme else DEFAULT_THEME_PROJECT_ICON_NAME
             ),
-            "heading_font_id": heading_font.id if heading_font is not None else None,
-            "body_font_id": body_font.id if body_font is not None else None,
-            "code_font_id": code_font.id if code_font is not None else None,
+            "heading_font_family_id": heading_font_family.id if heading_font_family is not None else None,
+            "body_font_family_id": body_font_family.id if body_font_family is not None else None,
+            "code_font_family_id": code_font_family.id if code_font_family is not None else None,
             "heading_font_label": self._resolve_theme_font_label(
                 payload_fields,
-                "heading_font_id",
-                heading_font,
+                "heading_font_family_id",
+                heading_font_family,
                 current_theme.heading_font_label if current_theme else None,
                 DEFAULT_THEME_HEADING_FONT,
             ),
             "body_font_label": self._resolve_theme_font_label(
                 payload_fields,
-                "body_font_id",
-                body_font,
+                "body_font_family_id",
+                body_font_family,
                 current_theme.body_font_label if current_theme else None,
                 DEFAULT_THEME_BODY_FONT,
             ),
             "code_font_label": self._resolve_theme_font_label(
                 payload_fields,
-                "code_font_id",
-                code_font,
+                "code_font_family_id",
+                code_font_family,
                 current_theme.code_font_label if current_theme else None,
                 DEFAULT_THEME_CODE_FONT,
             ),
@@ -654,34 +645,34 @@ class WorkspaceThemeService:
             raise AppException(status_code=400, code="WORKSPACE_THEME_ASSET_INVALID", detail="主题项目图标仅支持 icon 资源。")
         return asset
 
-    async def _get_workspace_font_or_none(self, workspace_id: int, font_id: int | None) -> WorkspaceFontConfig | None:
-        """读取工作空间字体配置。"""
+    async def _get_workspace_font_family_or_none(self, workspace_id: int, family_id: int | None) -> WorkspaceFontFamily | None:
+        """读取工作空间字体族。"""
 
-        if font_id is None:
+        if family_id is None:
             return None
 
-        font_config = await self.session.scalar(
-            select(WorkspaceFontConfig)
-            .where(WorkspaceFontConfig.workspace_id == workspace_id)
-            .where(WorkspaceFontConfig.id == font_id)
+        family = await self.session.scalar(
+            select(WorkspaceFontFamily)
+            .where(WorkspaceFontFamily.workspace_id == workspace_id)
+            .where(WorkspaceFontFamily.id == family_id)
         )
-        if font_config is None:
-            raise AppException(status_code=400, code="WORKSPACE_THEME_FONT_NOT_FOUND", detail="主题引用的字体配置不存在。")
-        return font_config
+        if family is None:
+            raise AppException(status_code=400, code="WORKSPACE_THEME_FONT_NOT_FOUND", detail="主题引用的字体族不存在。")
+        return family
 
     async def _load_theme_relations(
         self,
         theme: WorkspaceTheme,
-    ) -> tuple[WorkspaceAsset | None, WorkspaceAsset | None, WorkspaceAsset | None, WorkspaceFontConfig | None, WorkspaceFontConfig | None, WorkspaceFontConfig | None]:
-        """批量读取主题的资源和字体引用。"""
+    ) -> tuple[WorkspaceAsset | None, WorkspaceAsset | None, WorkspaceAsset | None, WorkspaceFontFamily | None, WorkspaceFontFamily | None, WorkspaceFontFamily | None]:
+        """批量读取主题的资源和字体族引用。"""
 
         logo_asset = await self._get_theme_logo_asset_or_none(theme.workspace_id, theme.logo_asset_id)
         invert_logo_asset = await self._get_theme_logo_asset_or_none(theme.workspace_id, theme.invert_logo_asset_id)
         project_icon_asset = await self._get_theme_project_icon_asset_or_none(theme.workspace_id, theme.project_icon_asset_id)
-        heading_font = await self._get_workspace_font_or_none(theme.workspace_id, theme.heading_font_id)
-        body_font = await self._get_workspace_font_or_none(theme.workspace_id, theme.body_font_id)
-        code_font = await self._get_workspace_font_or_none(theme.workspace_id, theme.code_font_id)
-        return logo_asset, invert_logo_asset, project_icon_asset, heading_font, body_font, code_font
+        heading_font_family = await self._get_workspace_font_family_or_none(theme.workspace_id, theme.heading_font_family_id)
+        body_font_family = await self._get_workspace_font_family_or_none(theme.workspace_id, theme.body_font_family_id)
+        code_font_family = await self._get_workspace_font_family_or_none(theme.workspace_id, theme.code_font_family_id)
+        return logo_asset, invert_logo_asset, project_icon_asset, heading_font_family, body_font_family, code_font_family
 
     async def _build_available_key(self, workspace_id: int, requested_key: str) -> str:
         """为复制场景生成不冲突的主题 key。"""
@@ -756,68 +747,52 @@ class WorkspaceThemeService:
     def _resolve_theme_font_label(
         payload_fields: set[str],
         field_name: str,
-        font_config: WorkspaceFontConfig | None,
+        font_family: WorkspaceFontFamily | None,
         current_label: str | None,
         default_label: str,
     ) -> str:
         """解析主题字体展示名，显式清空时回到浏览器默认字体。"""
 
-        if font_config is not None:
-            return font_config.font_family
+        if font_family is not None:
+            return font_family.name
         if current_label is not None and field_name not in payload_fields:
             return current_label
         return default_label
 
-    async def _resolve_runtime_font_asset_name(
-        self,
-        workspace_id: int,
-        font_config: WorkspaceFontConfig | None,
-    ) -> str | None:
-        """解析主题运行时应输出的字体资源逻辑名，优先以资产表当前 name 为准。"""
+    async def _list_font_asset_names_for_families(self, workspace_id: int, family_ids: list[int]) -> list[str]:
+        """列出指定字体族下全部启用 face 的字体资产名，供导出打包收集字体文件。"""
 
-        if font_config is None:
-            return None
+        if not family_ids:
+            return []
 
-        asset = await self.session.scalar(
-            select(WorkspaceAsset)
-            .where(WorkspaceAsset.workspace_id == workspace_id)
-            .where(WorkspaceAsset.id == font_config.asset_id)
+        stmt = (
+            select(WorkspaceFontConfig)
+            .where(WorkspaceFontConfig.workspace_id == workspace_id)
+            .where(WorkspaceFontConfig.family_id.in_(family_ids))
+            .where(WorkspaceFontConfig.status == RecordStatus.ACTIVE.value)
+            .order_by(WorkspaceFontConfig.id.asc())
         )
-        runtime_asset_name = str(asset.name if asset is not None and asset.name else "").strip()
-        recorded_asset_name = str(font_config.asset_name or "").strip()
-        if not runtime_asset_name:
-            raise AppException(
-                status_code=409,
-                code="FONT_ASSET_NAME_MISSING",
-                detail=f'字体配置 "{recorded_asset_name or font_config.id}" 缺少对应资产逻辑名，无法生成主题配置。',
-            )
-        if recorded_asset_name != runtime_asset_name:
-            raise AppException(
-                status_code=409,
-                code="FONT_ASSET_NAME_MISMATCH",
-                detail=(
-                    f'字体配置记录的 asset_name="{recorded_asset_name}" 与资产当前 name="{runtime_asset_name}" 不一致，'
-                    "请先修正字体配置数据后再继续。"
-                ),
-            )
-        return runtime_asset_name
+        font_names: list[str] = []
+        for face in (await self.session.execute(stmt)).scalars().all():
+            asset_name = str(face.asset_name or "").strip()
+            if asset_name and asset_name not in font_names:
+                font_names.append(asset_name)
+        return font_names
 
-    async def _build_theme_font_reference_tokens(
-        self,
+    @staticmethod
+    def _build_theme_font_reference_tokens(
         *,
-        workspace_id: int,
-        heading_font: WorkspaceFontConfig | None,
-        body_font: WorkspaceFontConfig | None,
-        code_font: WorkspaceFontConfig | None,
+        heading_font_family: WorkspaceFontFamily | None,
+        body_font_family: WorkspaceFontFamily | None,
+        code_font_family: WorkspaceFontFamily | None,
     ) -> list[str]:
-        """把主题显式绑定的字体资源名展开为 token 列表。"""
+        """把主题绑定的字体族名展开为 token 列表。"""
 
-        heading_font_token = await self._resolve_runtime_font_asset_name(workspace_id, heading_font)
-        body_font_token = await self._resolve_runtime_font_asset_name(workspace_id, body_font)
-        code_font_token = await self._resolve_runtime_font_asset_name(workspace_id, code_font)
         reference_tokens: list[str] = []
-        for token in (heading_font_token, body_font_token, code_font_token):
-            normalized_token = str(token or "").strip()
+        for family in (heading_font_family, body_font_family, code_font_family):
+            if family is None:
+                continue
+            normalized_token = str(family.name or "").strip()
             if normalized_token and normalized_token not in reference_tokens:
                 reference_tokens.append(normalized_token)
         return reference_tokens

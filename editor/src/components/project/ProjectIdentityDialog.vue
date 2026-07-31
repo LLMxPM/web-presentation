@@ -1,10 +1,10 @@
 <!-- 文件功能：项目名称与描述独立编辑弹窗，用于在页面列表页快速修改项目基础标识信息。 -->
 <template>
-  <UiDialog :open="modelValue" title="修改项目基础信息" size="standard" @update:open="handleVisibleChange">
+  <UiDialog :open="modelValue" title="修改项目基础信息" size="standard" :panel-style="{ height: 'auto' }" @update:open="handleVisibleChange">
     <div v-if="project" class="space-y-5">
-      <div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-        <p class="text-sm font-semibold text-slate-700">{{ project.code }}</p>
-        <p class="mt-1 text-xs leading-5 text-slate-500">
+      <div class="rounded-2xl border border-border bg-canvas px-4 py-3">
+        <p class="text-sm font-semibold text-text-emphasis">{{ project.code }}</p>
+        <p class="mt-1 text-xs leading-5 text-text-muted">
           这里只修改项目名称与描述，不影响页面尺寸、菜单模式、导出按钮和主题配置。
         </p>
       </div>
@@ -14,7 +14,7 @@
       <UiFormField label="项目描述"><template #default="field"><UiInput v-model="form.description" type="textarea" placeholder="概括此项目要阐述的内容" :rows="4" :input-id="field.inputId" :described-by="field.describedBy" /></template></UiFormField>
     </div>
 
-    <div v-else class="py-10 text-center text-sm text-slate-400">
+    <div v-else class="py-10 text-center text-sm text-text-disabled">
       当前没有可编辑的项目。
     </div>
 

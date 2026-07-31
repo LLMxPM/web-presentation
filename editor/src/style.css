@@ -1,5 +1,6 @@
 /**
  * 文件功能：定义 Editor 全局样式、语义化 Design Token 与迁移期基础样式兼容层。
+ * 注：修改 tailwind.config.js 后若样式未生效，需触发本文件重新编译或重启 dev server。
  */
 
 @tailwind base;
@@ -13,25 +14,48 @@
   --ui-surface-muted: 241 245 249;
   --ui-surface-hover: 248 250 252;
   --ui-surface-selected: 238 242 255;
+  --ui-text-strong: 15 23 42;
   --ui-text: 30 41 59;
+  --ui-text-emphasis: 51 65 85;
   --ui-text-secondary: 71 85 105;
   --ui-text-muted: 100 116 139;
   --ui-text-disabled: 148 163 184;
+  --ui-text-faint: 203 213 225;
   --ui-text-inverse: 255 255 255;
   --ui-border: 226 232 240;
+  --ui-border-muted: 241 245 249;
   --ui-border-strong: 203 213 225;
   --ui-border-focus: 99 102 241;
   --ui-accent: 79 70 229;
   --ui-accent-hover: 67 56 202;
+  --ui-accent-emphasis: 99 102 241;
+  --ui-accent-border: 129 140 248;
+  --ui-accent-ring: 199 210 254;
   --ui-accent-muted: 224 231 255;
   --ui-danger: 220 38 38;
+  --ui-danger-strong: 185 28 28;
+  --ui-danger-border: 254 202 202;
   --ui-danger-muted: 254 242 242;
   --ui-warning: 217 119 6;
+  --ui-warning-strong: 180 83 9;
+  --ui-warning-border: 253 230 138;
   --ui-warning-muted: 255 251 235;
-  --ui-success: 22 163 74;
-  --ui-success-muted: 240 253 244;
+  --ui-success: 5 150 105;
+  --ui-success-strong: 4 120 87;
+  --ui-success-border: 167 243 208;
+  --ui-success-muted: 236 253 245;
   --ui-info: 2 132 199;
+  --ui-info-strong: 3 105 161;
+  --ui-info-border: 186 230 253;
   --ui-info-muted: 240 249 255;
+  --ui-ai: 124 58 237;
+  --ui-ai-strong: 109 40 217;
+  --ui-ai-border: 221 214 254;
+  --ui-ai-muted: 245 243 255;
+  --ui-surface-inverse: 2 6 23;
+  --ui-surface-inverse-raised: 30 41 59;
+  --ui-text-on-inverse: 241 245 249;
+  --ui-overlay: 15 23 42;
   --ui-control-h-xs: 24px;
   --ui-control-h-sm: 28px;
   --ui-control-h-md: 32px;
@@ -68,8 +92,91 @@
   overscroll-behavior: none;
 }
 
+/*
+ * 夜间模式：仅覆盖需要翻转的语义色 Token。
+ * 固定深色面（surface-inverse*、text-on-inverse）与蒙层基色 overlay 不翻转，
+ * 因此不在此重定义。控件尺寸、圆角、层级、字体等非颜色 Token 同样保持不变。
+ */
+.dark {
+  --ui-canvas: 2 6 23;
+  --ui-surface: 15 23 42;
+  --ui-surface-raised: 30 41 59;
+  --ui-surface-muted: 30 41 59;
+  --ui-surface-hover: 30 41 59;
+  --ui-surface-selected: 30 27 75;
+  --ui-text-strong: 248 250 252;
+  --ui-text: 226 232 240;
+  --ui-text-emphasis: 203 213 225;
+  --ui-text-secondary: 148 163 184;
+  --ui-text-muted: 148 163 184;
+  --ui-text-disabled: 100 116 139;
+  --ui-text-faint: 71 85 105;
+  --ui-text-inverse: 15 23 42;
+  --ui-border: 51 65 85;
+  --ui-border-muted: 30 41 59;
+  --ui-border-strong: 71 85 105;
+  --ui-border-focus: 129 140 248;
+  --ui-accent: 129 140 248;
+  --ui-accent-hover: 165 180 252;
+  --ui-accent-emphasis: 129 140 248;
+  --ui-accent-border: 99 102 241;
+  --ui-accent-ring: 67 56 202;
+  --ui-accent-muted: 30 27 75;
+  --ui-danger: 248 113 113;
+  --ui-danger-strong: 252 165 165;
+  --ui-danger-border: 127 29 29;
+  --ui-danger-muted: 69 10 10;
+  --ui-warning: 251 191 36;
+  --ui-warning-strong: 252 211 77;
+  --ui-warning-border: 120 53 15;
+  --ui-warning-muted: 69 26 3;
+  --ui-success: 52 211 153;
+  --ui-success-strong: 110 231 183;
+  --ui-success-border: 6 78 59;
+  --ui-success-muted: 2 44 34;
+  --ui-info: 56 189 248;
+  --ui-info-strong: 125 211 252;
+  --ui-info-border: 12 74 110;
+  --ui-info-muted: 8 47 73;
+  --ui-ai: 167 139 250;
+  --ui-ai-strong: 196 181 253;
+  --ui-ai-border: 76 29 149;
+  --ui-ai-muted: 46 16 101;
+  --ui-shadow-popover: 0 8px 20px rgb(2 6 23 / 0.5);
+  --ui-shadow-dialog: 0 20px 48px rgb(2 6 23 / 0.6);
+  --ui-shadow-drag: 0 12px 24px rgb(2 6 23 / 0.55);
+}
+
 * {
   box-sizing: border-box;
+}
+
+/*
+ * 全局弱化滚动条：细宽度、半透明滑块、透明轨道，悬停时加深。
+ * Chrome 121+ / Firefox 走标准属性；::-webkit-scrollbar 仅作为 Safari 回退。
+ */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(var(--ui-border-strong) / 0.55) transparent;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgb(var(--ui-border-strong) / 0.55);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgb(var(--ui-border-strong) / 0.85);
 }
 
 html,

@@ -139,7 +139,13 @@ export async function renameAgentSession(
 export async function streamAgentRun(
   sessionId: string,
   scope: AgentScopeContext,
-  payload: { run_id: string; message: string; agent_id?: string; image_attachment_ids?: number[] },
+  payload: {
+    run_id: string
+    message: string
+    agent_id?: string
+    image_attachment_ids?: number[]
+    llm_config_id?: number | null
+  },
   options: AgentStreamOptions = {},
 ) {
   logAgentDev('run.start', { sessionId, scope, payload })
@@ -151,6 +157,7 @@ export async function streamAgentRun(
         run_id: payload.run_id,
         message: payload.message,
         image_attachment_ids: payload.image_attachment_ids ?? [],
+        llm_config_id: payload.llm_config_id ?? null,
       }),
     },
     options,

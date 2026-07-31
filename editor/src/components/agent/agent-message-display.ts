@@ -36,16 +36,25 @@ export function formatToolGroupSummary(tools: ToolCallDetail[]) {
 }
 
 /**
+ * 将工具运行状态映射到统一 Badge 语义，供时间线与工具详情弹窗共用。
+ */
+export function getToolStatusTone(status: ToolCallDetail['status']) {
+  if (status === 'error') return 'danger' as const
+  if (status === 'running') return 'info' as const
+  return 'success' as const
+}
+
+/**
  * 根据工具状态返回弱化行样式，避免工具调用比助手正文更抢眼。
  */
 export function getToolChipClass(status: ToolCallDetail['status']) {
   if (status === 'error') {
-    return 'border-red-200 text-red-600 hover:bg-red-50/40'
+    return 'border-danger-border text-danger hover:bg-danger-muted/40'
   }
   if (status === 'running') {
-    return 'border-slate-300 text-slate-600 hover:bg-slate-50'
+    return 'border-border-strong text-text-secondary hover:bg-surface-hover'
   }
-  return 'border-slate-200 text-slate-500 hover:bg-slate-50'
+  return 'border-border text-text-muted hover:bg-surface-hover'
 }
 
 /**

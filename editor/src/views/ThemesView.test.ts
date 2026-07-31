@@ -1,5 +1,5 @@
 /**
- * 文件功能：验证主题与字体页面的分页数据读取和字体注册入口。
+ * 文件功能：验证主题与字体页面的分页读取、字体族分组展示、上传自动注册、族内添加文件、face 删除与字体族重命名交互。
  */
 import { defineComponent, h } from 'vue'
 import { fireEvent, render, screen, waitFor } from '@testing-library/vue'
@@ -9,11 +9,13 @@ import ThemesView from '@/views/ThemesView.vue'
 
 const getWorkspaceMock = vi.fn()
 const listWorkspaceThemesMock = vi.fn()
-const listWorkspaceFontsMock = vi.fn()
 const listWorkspaceAssetsMock = vi.fn()
+const listWorkspaceFontFamiliesMock = vi.fn()
 const uploadWorkspaceAssetMock = vi.fn()
+const createWorkspaceFontMock = vi.fn()
 const deleteWorkspaceFontMock = vi.fn()
 const deleteWorkspaceFontAssetMock = vi.fn()
+const renameWorkspaceFontFamilyMock = vi.fn()
 const routerPushMock = vi.fn()
 
 vi.mock('vue-router', () => ({
@@ -42,13 +44,13 @@ vi.mock('@/api/themes', () => ({
 }))
 
 vi.mock('@/api/assets', () => ({
-  createWorkspaceFont: vi.fn(),
+  createWorkspaceFont: (...args: unknown[]) => createWorkspaceFontMock(...args),
   deleteWorkspaceFont: (...args: unknown[]) => deleteWorkspaceFontMock(...args),
   deleteWorkspaceFontAsset: (...args: unknown[]) => deleteWorkspaceFontAssetMock(...args),
   listWorkspaceAssets: (...args: unknown[]) => listWorkspaceAssetsMock(...args),
-  listWorkspaceFonts: (...args: unknown[]) => listWorkspaceFontsMock(...args),
+  listWorkspaceFontFamilies: (...args: unknown[]) => listWorkspaceFontFamiliesMock(...args),
+  renameWorkspaceFontFamily: (...args: unknown[]) => renameWorkspaceFontFamilyMock(...args),
   replaceWorkspaceAssetFile: vi.fn(),
-  restoreWorkspaceAsset: vi.fn(),
   updateWorkspaceFont: vi.fn(),
   uploadWorkspaceAsset: (...args: unknown[]) => uploadWorkspaceAssetMock(...args),
 }))
@@ -77,8 +79,8 @@ describe('ThemesView', () => {
       page: 1,
       page_size: 10,
     })
-    listWorkspaceFontsMock.mockResolvedValue({
-      items: [createFontItem()],
+    listWorkspaceFontFamiliesMock.mockResolvedValue({
+      items: [createFontFamilyItem()],
       total: 1,
       page: 1,
       page_size: 10,
@@ -87,14 +89,16 @@ describe('ThemesView', () => {
       items: [createFontAsset()],
       total: 1,
       page: 1,
-      page_size: 10,
+      page_size: 100,
     })
     uploadWorkspaceAssetMock.mockResolvedValue(createUploadedFontAsset())
+    createWorkspaceFontMock.mockResolvedValue(createFontConfigSummary())
     deleteWorkspaceFontMock.mockResolvedValue(undefined)
     deleteWorkspaceFontAssetMock.mockResolvedValue(undefined)
+    renameWorkspaceFontFamilyMock.mockResolvedValue(createFontFamilyItem())
   })
 
-  it('应突出主题库主区和字体管理侧栏，并从字体资源打开注册弹窗', async () => {
+  it('应按字体族分组展示，并支持从 face 编辑入口打开注册弹窗', async () => {
     renderThemesView()
 
     await waitFor(() => {
@@ -103,22 +107,17 @@ describe('ThemesView', () => {
     })
     expect(screen.getByText('主题库')).toBeInTheDocument()
     expect(screen.getByText('字体管理')).toBeInTheDocument()
-    expect(screen.getByText('字体注册')).toBeInTheDocument()
-    expect(screen.getByText('字体文件')).toBeInTheDocument()
     expect(screen.getByText('共 1 个主题')).toBeInTheDocument()
-    expect(screen.getByText('注册 1 / 文件 1')).toBeInTheDocument()
-    expect(screen.queryByText('默认主题')).not.toBeInTheDocument()
-    expect(screen.queryByText('主题数量')).not.toBeInTheDocument()
-    const themeCard = screen.getByText('标题字体').closest('article') as HTMLElement
-    expect(themeCard).toHaveStyle({ backgroundColor: 'rgb(13, 40, 106)', color: 'rgb(255, 255, 255)' })
+    expect(screen.getByText('共 1 个字体族')).toBeInTheDocument()
+    expect(screen.getByText('1 个文件')).toBeInTheDocument()
+    expect(screen.queryByText('待注册字体文件')).not.toBeInTheDocument()
     expect(listWorkspaceThemesMock).toHaveBeenCalledWith(7, expect.objectContaining({ page: 1, page_size: 10 }))
-    expect(listWorkspaceFontsMock).toHaveBeenCalledWith(7, expect.objectContaining({ page: 1, page_size: 10 }))
-    expect(listWorkspaceAssetsMock).toHaveBeenCalledWith(7, expect.objectContaining({ assetType: 'font', page: 1, page_size: 10 }))
+    expect(listWorkspaceFontFamiliesMock).toHaveBeenCalledWith(7, expect.objectContaining({ page: 1, page_size: 10 }))
+    expect(listWorkspaceAssetsMock).toHaveBeenCalledWith(7, expect.objectContaining({ assetType: 'font', page: 1, page_size: 100 }))
 
-    await fireEvent.click(screen.getByRole('button', { name: /^注册$/ }))
+    await fireEvent.click(screen.getByTitle('编辑字体'))
 
-    expect(screen.getAllByRole('combobox')).toHaveLength(4)
-    expect(screen.getAllByRole('combobox')[0]).toHaveTextContent('SourceHanSans / SourceHanSans.woff2')
+    expect(screen.getByText('编辑字体')).toBeInTheDocument()
     expect(screen.getByDisplayValue('SourceHanSans')).toBeInTheDocument()
   })
 
@@ -134,71 +133,160 @@ describe('ThemesView', () => {
     expect(screen.getByTestId('theme-detail-dialog')).toHaveTextContent('theme-id:1')
   })
 
-  it('应支持在页面内上传字体文件，并用上传结果打开注册弹窗', async () => {
+  it('上传字体文件后应自动完成注册并归入字体族', async () => {
     const { container } = renderThemesView()
 
     await waitFor(() => {
       expect(screen.getByText('共 1 个主题')).toBeInTheDocument()
     })
 
-    await fireEvent.click(screen.getByRole('button', { name: /^上传$/ }))
+    await fireEvent.click(screen.getByRole('button', { name: /上传字体/ }))
     const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement
     const file = new File(['font-data'], 'NewFont.woff2', { type: 'font/woff2' })
     await fireEvent.change(fileInput, { target: { files: [file] } })
 
     await waitFor(() => {
       expect(uploadWorkspaceAssetMock).toHaveBeenCalledWith(7, file, 'font')
-      expect(screen.getByDisplayValue('NewFont')).toBeInTheDocument()
+      expect(createWorkspaceFontMock).toHaveBeenCalledWith(7, {
+        asset_id: 3,
+        family_name: 'NewFont',
+        font_format: 'woff2',
+        font_weight: '400',
+        font_style: 'normal',
+        font_display: 'swap',
+        status: 'active',
+      })
     })
-    expect(listWorkspaceAssetsMock).toHaveBeenCalledWith(7, expect.objectContaining({ assetType: 'font', page: 1, page_size: 10 }))
+    expect(screen.queryByText('保存字体')).not.toBeInTheDocument()
+    expect(listWorkspaceFontFamiliesMock).toHaveBeenCalledWith(7, expect.objectContaining({ page: 1, page_size: 10 }))
   })
 
-  it('应展示字体文件页签并允许从未注册文件发起注册', async () => {
+  it('自动注册失败时应打开注册弹窗让用户补全', async () => {
+    createWorkspaceFontMock.mockRejectedValueOnce(new Error('注册失败'))
+    const { container } = renderThemesView()
+
+    await waitFor(() => {
+      expect(screen.getByText('共 1 个主题')).toBeInTheDocument()
+    })
+
+    await fireEvent.click(screen.getByRole('button', { name: /上传字体/ }))
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement
+    const file = new File(['font-data'], 'NewFont.woff2', { type: 'font/woff2' })
+    await fireEvent.change(fileInput, { target: { files: [file] } })
+
+    await waitFor(() => {
+      expect(screen.getByDisplayValue('NewFont')).toBeInTheDocument()
+    })
+  })
+
+  it('从字体族卡片添加文件时应强制注册到该族', async () => {
+    uploadWorkspaceAssetMock.mockResolvedValueOnce({
+      ...createUploadedFontAsset(),
+      name: 'NewFont-Bold',
+      original_name: 'NewFont-Bold.woff2',
+    })
     renderThemesView()
 
     await waitFor(() => {
-      expect(screen.getByText('字体文件')).toBeInTheDocument()
+      expect(screen.getByText('1 个文件')).toBeInTheDocument()
     })
 
-    await fireEvent.click(screen.getByText('字体文件'))
+    await fireEvent.click(screen.getByTitle('添加字体文件'))
+    const addInput = screen.getByTestId('font-add-file-input') as HTMLInputElement
+    const file = new File(['font-data'], 'NewFont-Bold.woff2', { type: 'font/woff2' })
+    await fireEvent.change(addInput, { target: { files: [file] } })
 
-    expect(screen.getByText('SourceHanSans.woff2')).toBeInTheDocument()
-    expect(screen.getByText('未注册')).toBeInTheDocument()
-
-    await fireEvent.click(screen.getByRole('button', { name: /^注册字体$/ }))
-
-    expect(screen.getByDisplayValue('SourceHanSans')).toBeInTheDocument()
+    await waitFor(() => {
+      expect(uploadWorkspaceAssetMock).toHaveBeenCalledWith(7, file, 'font')
+      // 族名强制为目标字体族，字重/样式仍按文件名推断
+      expect(createWorkspaceFontMock).toHaveBeenCalledWith(7, {
+        asset_id: 3,
+        family_name: 'SourceHanSans',
+        font_format: 'woff2',
+        font_weight: '700',
+        font_style: 'normal',
+        font_display: 'swap',
+        status: 'active',
+      })
+    })
   })
 
-  it('删除字体注册时默认同时删除关联字体文件', async () => {
+  it('族内添加文件注册失败时弹窗应预置目标族名', async () => {
+    createWorkspaceFontMock.mockRejectedValueOnce(new Error('字重冲突'))
+    uploadWorkspaceAssetMock.mockResolvedValueOnce({
+      ...createUploadedFontAsset(),
+      name: 'AnotherName-Bold',
+      original_name: 'AnotherName-Bold.woff2',
+    })
+    renderThemesView()
+
+    await waitFor(() => {
+      expect(screen.getByText('1 个文件')).toBeInTheDocument()
+    })
+
+    await fireEvent.click(screen.getByTitle('添加字体文件'))
+    const addInput = screen.getByTestId('font-add-file-input') as HTMLInputElement
+    const file = new File(['font-data'], 'AnotherName-Bold.woff2', { type: 'font/woff2' })
+    await fireEvent.change(addInput, { target: { files: [file] } })
+
+    // 弹窗族名预置为目标族 SourceHanSans，而非文件名推断的 AnotherName
+    await waitFor(() => {
+      expect(screen.getByText('注册字体')).toBeInTheDocument()
+      expect(screen.getByDisplayValue('SourceHanSans')).toBeInTheDocument()
+    })
+    expect(screen.queryByDisplayValue('AnotherName')).not.toBeInTheDocument()
+  })
+
+  it('删除字体族下的 face 时应连同字体文件一起删除', async () => {
     renderThemesView()
 
     await waitFor(() => {
       expect(screen.getAllByText('SourceHanSans').length).toBeGreaterThan(0)
     })
 
-    const deleteButton = screen.getByTitle('删除注册和字体文件')
-    await fireEvent.click(deleteButton)
+    await fireEvent.click(screen.getByTitle('删除字体'))
 
     await waitFor(() => {
       expect(deleteWorkspaceFontMock).toHaveBeenCalledWith(7, 1, { deleteAsset: true })
     })
+    expect(deleteWorkspaceFontAssetMock).not.toHaveBeenCalled()
   })
 
-  it('字体文件页签应直接删除未注册字体文件，不再先归档', async () => {
+  it('删除未注册字体文件时应直接硬删除文件', async () => {
+    listWorkspaceAssetsMock.mockResolvedValue({
+      items: [createPendingFontAsset()],
+      total: 1,
+      page: 1,
+      page_size: 100,
+    })
     renderThemesView()
 
     await waitFor(() => {
-      expect(screen.getByText('字体文件')).toBeInTheDocument()
+      expect(screen.getByText('待注册字体文件')).toBeInTheDocument()
     })
-
-    await fireEvent.click(screen.getByText('字体文件'))
-    expect(screen.queryByTitle('归档字体文件')).not.toBeInTheDocument()
 
     await fireEvent.click(screen.getByTitle('删除字体文件'))
 
     await waitFor(() => {
-      expect(deleteWorkspaceFontAssetMock).toHaveBeenCalledWith(7, 2)
+      expect(deleteWorkspaceFontAssetMock).toHaveBeenCalledWith(7, 4)
+    })
+    expect(deleteWorkspaceFontMock).not.toHaveBeenCalled()
+  })
+
+  it('重命名字体族应提交新的族名称', async () => {
+    renderThemesView()
+
+    await waitFor(() => {
+      expect(screen.getByText('1 个文件')).toBeInTheDocument()
+    })
+
+    await fireEvent.click(screen.getByTitle('重命名字体族'))
+    const renameInput = screen.getByPlaceholderText('字体族名称') as HTMLInputElement
+    await fireEvent.update(renameInput, '思源黑体')
+    await fireEvent.click(screen.getByTitle('保存'))
+
+    await waitFor(() => {
+      expect(renameWorkspaceFontFamilyMock).toHaveBeenCalledWith(7, 10, '思源黑体')
     })
   })
 })
@@ -214,18 +302,6 @@ function renderThemesView() {
           },
           setup(props, { attrs, slots }) {
             return () => h('button', { ...attrs, disabled: props.disabled }, slots.default?.())
-          },
-        }),
-        PageTitleBar: defineComponent({
-          name: 'PageTitleBar',
-          props: {
-            title: {
-              type: String,
-              required: true,
-            },
-          },
-          setup(props, { slots }) {
-            return () => h('header', [h('h1', props.title), slots.actions?.()])
           },
         }),
         ThemeEditorDialog: true,
@@ -261,15 +337,15 @@ function createThemeItem() {
     logo_asset_id: null,
     invert_logo_asset_id: null,
     project_icon_asset_id: null,
-    heading_font_id: null,
-    body_font_id: null,
-    code_font_id: null,
+    heading_font_family_id: null,
+    body_font_family_id: null,
+    code_font_family_id: null,
     heading_font_label: 'SourceHanSans',
     body_font_label: 'SourceHanSans',
     code_font_label: 'monospace',
-    heading_font: null,
-    body_font: null,
-    code_font: null,
+    heading_font_family: null,
+    body_font_family: null,
+    code_font_family: null,
     resolved_theme_config_yaml: 'themes:\n  default: {}',
     created_by: null,
     updated_by: null,
@@ -288,10 +364,10 @@ function createThemePalette() {
   }
 }
 
-function createFontItem() {
+function createFontConfigSummary() {
   return {
     id: 1,
-    workspace_id: 7,
+    family_id: 10,
     asset_id: 2,
     asset_name: 'SourceHanSans',
     font_family: 'SourceHanSans',
@@ -300,7 +376,25 @@ function createFontItem() {
     font_style: 'normal',
     font_display: 'swap',
     status: 'active',
+  }
+}
+
+function createFontFace() {
+  return {
+    ...createFontConfigSummary(),
+    workspace_id: 7,
     asset_url: 'https://backend.example.com/public/assets/7/font-hash',
+    created_at: '2026-05-01T10:00:00+08:00',
+    updated_at: '2026-05-01T10:00:00+08:00',
+  }
+}
+
+function createFontFamilyItem() {
+  return {
+    id: 10,
+    workspace_id: 7,
+    name: 'SourceHanSans',
+    faces: [createFontFace()],
     created_at: '2026-05-01T10:00:00+08:00',
     updated_at: '2026-05-01T10:00:00+08:00',
   }
@@ -330,13 +424,26 @@ function createFontAsset() {
     history_kind: null,
     content_editable: false,
     url: 'https://backend.example.com/public/assets/7/font-hash',
-    font_config: null,
+    font_config: createFontConfigSummary(),
     rename_block_reason: null,
     delete_block_reason: null,
     archive_block_reason: null,
     archive_warning_reasons: [],
     created_at: '2026-05-01T10:00:00+08:00',
     updated_at: '2026-05-01T10:00:00+08:00',
+  }
+}
+
+function createPendingFontAsset() {
+  return {
+    ...createFontAsset(),
+    id: 4,
+    name: 'PendingFont',
+    original_name: 'PendingFont.woff2',
+    file_name: 'pending-hash.woff2',
+    file_hash: 'pending-hash',
+    url: 'https://backend.example.com/public/assets/7/pending-hash',
+    font_config: null,
   }
 }
 
@@ -349,5 +456,6 @@ function createUploadedFontAsset() {
     file_name: 'new-font-hash.woff2',
     file_hash: 'new-font-hash',
     url: 'https://backend.example.com/public/assets/7/new-font-hash',
+    font_config: null,
   }
 }

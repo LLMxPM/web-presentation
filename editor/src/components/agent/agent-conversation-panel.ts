@@ -72,6 +72,7 @@ export function toolDetailFromTimelineItem(item: AgentTimelineItem, memberRuns: 
     return null
   }
   const delegateToolCallId = item.tool.tool_call_id || item.id
+  const hideFailedGeneratedOutput = item.tool.tool_name === 'generate_image' && item.tool.status === 'error'
   return {
     id: item.id,
     runId: item.run_id || null,
@@ -87,9 +88,9 @@ export function toolDetailFromTimelineItem(item: AgentTimelineItem, memberRuns: 
     progress: item.tool.progress ?? null,
     source: item.source,
     createdAt: item.created_at,
-    attachments: item.attachments ?? [],
+    attachments: hideFailedGeneratedOutput ? [] : item.attachments ?? [],
     inputAttachments: item.tool.input_attachments ?? [],
-    outputAttachments: item.tool.output_attachments ?? item.attachments ?? [],
+    outputAttachments: hideFailedGeneratedOutput ? [] : item.tool.output_attachments ?? item.attachments ?? [],
     delegatedMemberRuns: isDelegateToolName(item.tool.tool_name)
       ? memberRuns.filter(memberRun => (
           memberRun.parent_run_id === item.run_id

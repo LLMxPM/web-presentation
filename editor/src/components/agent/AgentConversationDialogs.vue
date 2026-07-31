@@ -4,49 +4,69 @@
     :open="toolDetailDialogVisible"
     :title="activeToolDetail ? `工具调用 · ${resolveToolDetailName(activeToolDetail)}` : '工具调用详情'"
     size="wide"
+    body-preset="dense"
+    body-class="flex min-h-0 flex-col overflow-hidden"
     :z-index="memberRunDialogVisible ? 1010 : 1000"
     @update:open="toolDetailDialogVisible = $event"
   >
-    <div v-if="activeToolDetail" class="space-y-4">
-      <section class="rounded-2xl border border-slate-200 bg-slate-50/80 p-4">
+    <div v-if="activeToolDetail" class="flex min-h-0 flex-1 flex-col gap-4 overflow-hidden">
+      <section class="shrink-0 rounded-ui-lg border border-border bg-surface-muted p-4">
         <div class="flex flex-wrap items-center justify-between gap-3">
-          <div class="min-w-0">
-            <p class="text-sm font-semibold text-slate-800">{{ resolveToolDetailName(activeToolDetail) }}</p>
-            <div class="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500">
+          <div class="min-w-0 flex-1">
+            <div class="flex min-w-0 items-center gap-2">
+              <p class="truncate text-sm font-semibold text-text">{{ resolveToolDetailName(activeToolDetail) }}</p>
+              <UiBadge :tone="getToolStatusTone(activeToolDetail.status)" size="sm" class="shrink-0">
+                {{ toolStatusLabelMap[activeToolDetail.status] }}
+              </UiBadge>
+            </div>
+            <div class="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-text-secondary">
               <span>{{ getToolSourceLabel(activeToolDetail.source) }}</span>
               <span v-if="activeToolDetail.memberAgentName">成员：{{ activeToolDetail.memberAgentName }}</span>
-              <span v-if="activeToolDetail.toolCallId">调用 ID：{{ activeToolDetail.toolCallId }}</span>
+              <span v-if="activeToolDetail.toolCallId" class="break-all">调用 ID：{{ activeToolDetail.toolCallId }}</span>
               <span v-if="activeToolDetail.createdAt">{{ formatDateTime(activeToolDetail.createdAt) }}</span>
             </div>
           </div>
-          <div class="flex flex-wrap items-center gap-2">
-            <UiButton
-              variant="secondary"
-              size="sm"
-              class="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 shadow-sm transition hover:border-sky-200 hover:text-sky-700"
-              title="复制工具调用详情"
-              @click="copyActiveToolDetail"
-            >
-              <Copy class="h-3.5 w-3.5" />
-              复制详情
-            </UiButton>
-            <span class="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-600">
-              {{ toolStatusLabelMap[activeToolDetail.status] }}
-            </span>
-          </div>
+          <UiButton
+            variant="secondary"
+            size="sm"
+            class="shrink-0"
+            title="复制工具调用详情"
+            @click="copyActiveToolDetail"
+          >
+            <Copy class="h-3.5 w-3.5" />
+            复制详情
+          </UiButton>
         </div>
       </section>
 
-      <div class="grid gap-3 md:grid-cols-2">
-        <section class="min-w-0 space-y-2">
-          <h4 class="text-sm font-semibold text-slate-800">工具输入</h4>
-          <pre class="max-h-[360px] overflow-auto overscroll-contain whitespace-pre-wrap break-words rounded-2xl bg-slate-950 p-4 text-xs leading-6 text-slate-100">{{
+      <div class="grid min-h-0 flex-1 grid-rows-2 gap-3 md:grid-cols-2 md:grid-rows-1">
+        <section class="flex min-h-0 min-w-0 flex-col gap-2">
+          <div class="flex shrink-0 items-center justify-between gap-2">
+            <h4 class="text-sm font-semibold text-text">工具输入</h4>
+            <UiIconButton
+              label="复制工具输入"
+              size="xs"
+              @click="copyToolPayload('input')"
+            >
+              <Copy />
+            </UiIconButton>
+          </div>
+          <pre class="tool-payload-scroll min-h-0 flex-1 overflow-auto overscroll-contain whitespace-pre-wrap break-words rounded-ui-lg border border-border bg-surface p-4 font-mono text-xs leading-6 text-text">{{
             formatToolPayload(activeToolDetail.inputPayload, '历史消息未保留输入参数。') }}</pre>
         </section>
 
-        <section class="min-w-0 space-y-2">
-          <h4 class="text-sm font-semibold text-slate-800">工具输出</h4>
-          <pre class="max-h-[360px] overflow-auto overscroll-contain whitespace-pre-wrap break-words rounded-2xl bg-slate-950 p-4 text-xs leading-6 text-slate-100">{{
+        <section class="flex min-h-0 min-w-0 flex-col gap-2">
+          <div class="flex shrink-0 items-center justify-between gap-2">
+            <h4 class="text-sm font-semibold text-text">工具输出</h4>
+            <UiIconButton
+              label="复制工具输出"
+              size="xs"
+              @click="copyToolPayload('output')"
+            >
+              <Copy />
+            </UiIconButton>
+          </div>
+          <pre class="tool-payload-scroll min-h-0 flex-1 overflow-auto overscroll-contain whitespace-pre-wrap break-words rounded-ui-lg border border-border bg-surface p-4 font-mono text-xs leading-6 text-text">{{
             formatToolPayload(activeToolDetail.outputPayload, activeToolDetail.message || '暂无输出。') }}</pre>
         </section>
       </div>
@@ -74,7 +94,7 @@
             variant="ghost"
             size="xs"
             class="rounded-md border px-2 py-1 text-xs"
-            :class="memberRun.run_id === selectedMemberRun.run_id ? 'border-sky-300 bg-sky-50 text-sky-700' : 'border-slate-200 bg-white text-slate-500'"
+            :class="memberRun.run_id === selectedMemberRun.run_id ? 'border-info-border bg-info-muted text-info-strong' : 'border-border bg-surface text-text-muted'"
             @click="selectedMemberRunId = memberRun.run_id"
           >
             {{ memberRun.agent_name || memberRun.agent_id || '成员助手' }}
@@ -82,46 +102,46 @@
         </div>
       </div>
 
-      <section class="shrink-0 rounded-lg border border-slate-200 bg-slate-50/80 px-3 py-2">
+      <section class="shrink-0 rounded-lg border border-border bg-canvas/80 px-3 py-2">
         <div class="flex flex-wrap items-center justify-between gap-2">
           <div class="min-w-0">
-            <p class="truncate text-sm font-semibold text-slate-800">{{ selectedMemberRun.agent_name || selectedMemberRun.agent_id || '成员助手' }}</p>
-            <p class="mt-0.5 break-all text-xs text-slate-500">Run ID：{{ selectedMemberRun.run_id }}</p>
+            <p class="truncate text-sm font-semibold text-text">{{ selectedMemberRun.agent_name || selectedMemberRun.agent_id || '成员助手' }}</p>
+            <p class="mt-0.5 break-all text-xs text-text-muted">Run ID：{{ selectedMemberRun.run_id }}</p>
           </div>
-          <span class="rounded-full border border-slate-200 bg-white px-2 py-0.5 text-xs text-slate-600">
+          <span class="rounded-full border border-border bg-surface px-2 py-0.5 text-xs text-text-secondary">
             {{ resolveMemberRunStatusLabel(selectedMemberRun.status) }}
           </span>
         </div>
       </section>
 
-      <section class="shrink-0 rounded-lg border border-slate-200 bg-white">
+      <section class="shrink-0 rounded-lg border border-border bg-surface">
         <UiButton
           variant="ghost"
           size="sm"
-          class="flex w-full items-center justify-between gap-3 px-3 py-2 text-left transition hover:bg-slate-50"
+          class="flex w-full items-center justify-between gap-3 px-3 py-2 text-left transition hover:bg-surface-hover"
           :title="memberMessagesExpanded ? '收起成员消息' : '展开成员消息'"
           :aria-label="memberMessagesExpanded ? '收起成员消息' : '展开成员消息'"
           @click="memberMessagesExpanded = !memberMessagesExpanded"
         >
           <span class="flex min-w-0 items-center gap-2">
-            <ChevronDown v-if="memberMessagesExpanded" class="h-4 w-4 shrink-0 text-slate-500" />
-            <ChevronRight v-else class="h-4 w-4 shrink-0 text-slate-500" />
-            <span class="text-sm font-semibold text-slate-800">成员消息</span>
+            <ChevronDown v-if="memberMessagesExpanded" class="h-4 w-4 shrink-0 text-text-muted" />
+            <ChevronRight v-else class="h-4 w-4 shrink-0 text-text-muted" />
+            <span class="text-sm font-semibold text-text">成员消息</span>
           </span>
-          <span class="shrink-0 rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs text-slate-500">
+          <span class="shrink-0 rounded-full border border-border bg-canvas px-2 py-0.5 text-xs text-text-muted">
             {{ memberMessagesExpanded ? '已展开' : '已隐藏' }}
           </span>
         </UiButton>
       </section>
 
       <div v-if="memberMessagesExpanded" class="grid shrink-0 gap-3 lg:grid-cols-2">
-        <section class="min-w-0 space-y-2 rounded-lg border border-slate-200 bg-white p-3">
+        <section class="min-w-0 space-y-2 rounded-lg border border-border bg-surface p-3">
           <div class="flex items-center justify-between gap-2">
-            <h4 class="text-sm font-semibold text-slate-800">传入消息</h4>
+            <h4 class="text-sm font-semibold text-text">传入消息</h4>
             <UiIconButton
               label="复制传入消息"
               size="sm"
-              class="inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 text-slate-500 transition hover:border-sky-200 hover:text-sky-700"
+              class="inline-flex h-7 w-7 items-center justify-center rounded-md border border-border text-text-muted transition hover:border-info-border hover:text-info-strong"
               title="复制传入消息"
               aria-label="复制传入消息"
               @click="copyMemberMessage('input')"
@@ -129,17 +149,17 @@
               <Copy class="h-3.5 w-3.5" />
             </UiIconButton>
           </div>
-          <pre class="max-h-44 overflow-auto overscroll-contain whitespace-pre-wrap break-words rounded-md bg-slate-950 p-3 text-xs leading-6 text-slate-100">{{
+          <pre class="max-h-44 overflow-auto overscroll-contain whitespace-pre-wrap break-words rounded-md bg-surface-inverse p-3 text-xs leading-6 text-text-on-inverse">{{
             formatMemberMessage(selectedMemberRun.input_prompt, '暂无传入消息。') }}</pre>
         </section>
 
-        <section class="min-w-0 space-y-2 rounded-lg border border-slate-200 bg-white p-3">
+        <section class="min-w-0 space-y-2 rounded-lg border border-border bg-surface p-3">
           <div class="flex items-center justify-between gap-2">
-            <h4 class="text-sm font-semibold text-slate-800">传出消息</h4>
+            <h4 class="text-sm font-semibold text-text">传出消息</h4>
             <UiIconButton
               label="复制传出消息"
               size="sm"
-              class="inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 text-slate-500 transition hover:border-sky-200 hover:text-sky-700"
+              class="inline-flex h-7 w-7 items-center justify-center rounded-md border border-border text-text-muted transition hover:border-info-border hover:text-info-strong"
               title="复制传出消息"
               aria-label="复制传出消息"
               @click="copyMemberMessage('output')"
@@ -147,12 +167,12 @@
               <Copy class="h-3.5 w-3.5" />
             </UiIconButton>
           </div>
-          <pre class="max-h-44 overflow-auto overscroll-contain whitespace-pre-wrap break-words rounded-md bg-slate-950 p-3 text-xs leading-6 text-slate-100">{{
+          <pre class="max-h-44 overflow-auto overscroll-contain whitespace-pre-wrap break-words rounded-md bg-surface-inverse p-3 text-xs leading-6 text-text-on-inverse">{{
             formatMemberMessage(selectedMemberRun.output_prompt, resolveMemberOutputEmptyText(selectedMemberRun.status)) }}</pre>
         </section>
       </div>
 
-      <div class="flex min-h-[180px] flex-1 flex-col overflow-hidden rounded-lg border border-slate-100 bg-white">
+      <div class="flex min-h-[180px] flex-1 flex-col overflow-hidden rounded-lg border border-border-muted bg-surface">
         <AgentConversationBody
           :timeline-display-items="selectedMemberTimelineItems"
           :draft-patches="[]"
@@ -179,9 +199,9 @@ import { ChevronDown, ChevronRight, Copy } from '@lucide/vue'
 import { computed, ref, watch } from 'vue'
 
 import AgentConversationBody from '@/components/agent/AgentConversationBody.vue'
-import { UiButton, UiDialog, UiIconButton } from '@/components/ui'
+import { UiBadge, UiButton, UiDialog, UiIconButton } from '@/components/ui'
 import { buildTimelineDisplayItems, formatToolPayload, type ToolCallDetail } from '@/components/agent/agent-conversation-panel'
-import { getToolSourceLabel, toolStatusLabelMap } from '@/components/agent/agent-message-display'
+import { getToolSourceLabel, getToolStatusTone, toolStatusLabelMap } from '@/components/agent/agent-message-display'
 import type { AgentActiveRunStatus, AgentMemberRunItem } from '@/types/api'
 import { formatDateTime } from '@/utils/format'
 import { Message } from '@/utils/message'
@@ -267,6 +287,28 @@ function buildToolDetailCopyText(tool: ToolCallDetail): string {
   const input = formatToolPayload(tool.inputPayload, '历史消息未保留输入参数。')
   const output = formatToolPayload(tool.outputPayload, tool.message || '暂无输出。')
   return `工具id:${toolId}\nLLM输入:\n${input}\n工具输出:\n${output}`
+}
+
+/**
+ * 复制当前工具的输入或输出格式化内容；内容为空时仅提示，不写入占位文案。
+ */
+async function copyToolPayload(kind: 'input' | 'output'): Promise<void> {
+  const tool = props.activeToolDetail
+  if (!tool) {
+    return
+  }
+  const label = kind === 'input' ? '工具输入' : '工具输出'
+  const text = formatToolPayload(kind === 'input' ? tool.inputPayload : tool.outputPayload, '')
+  if (!text.trim()) {
+    Message.warning(`${label}为空。`)
+    return
+  }
+  try {
+    await navigator.clipboard.writeText(text)
+    Message.success(`${label}已复制。`)
+  } catch {
+    Message.error(`复制${label}失败，请检查浏览器剪贴板权限。`)
+  }
 }
 
 /**

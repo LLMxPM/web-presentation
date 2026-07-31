@@ -2,52 +2,74 @@
 <template>
   <article
     class="rounded-lg border p-3 transition"
-    :class="props.selected ? 'border-indigo-200 bg-indigo-50/50' : 'border-slate-200 bg-white hover:border-slate-300'"
+    :class="props.selected ? 'border-accent-ring bg-surface-selected/50' : 'border-border bg-surface hover:border-border-strong'"
     @click="emit('select')"
     @focusin="emit('select')"
   >
     <div v-if="props.kind !== 'rich_text'" class="mb-2">
       <div class="flex items-center justify-between gap-3">
-        <label class="min-w-0 text-xs font-semibold text-slate-700" :for="props.controlId">
+        <label class="min-w-0 text-xs font-semibold text-text-emphasis" :for="props.controlId">
           {{ props.label }}
-          <span v-if="props.required" class="text-rose-500">*</span>
+          <span v-if="props.required" class="text-danger">*</span>
         </label>
-        <code v-if="props.propName" class="shrink-0 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-500">
-          {{ props.propName }}
-        </code>
+        <UiButton
+          v-if="canRestore"
+          type="button"
+          variant="ghost"
+          size="xs"
+          class="shrink-0"
+          :aria-label="`恢复${props.label}原值`"
+          @click.stop="restoreBaseline"
+        >
+          恢复原值
+        </UiButton>
       </div>
-      <p v-if="props.description" class="mt-1 text-[11px] leading-4 text-slate-500">
+      <p v-if="props.description" class="mt-1 text-[11px] leading-4 text-text-muted">
         {{ props.description }}
       </p>
     </div>
     <p
       v-if="props.templateLiteralWarning"
-      class="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800"
+      class="mb-3 rounded-lg bg-warning-muted px-3 py-2 text-xs text-warning-strong"
     >
       此项来自模板字面量，保存后会修改所有循环实例。
     </p>
 
     <div v-if="props.kind === 'rich_text'">
-      <label class="mb-1.5 block text-xs font-semibold text-slate-700">段落内容</label>
+      <div class="mb-1.5 flex items-center justify-between gap-2">
+        <label class="block text-xs font-semibold text-text-emphasis">段落内容</label>
+        <UiButton
+          v-if="canRestore"
+          type="button"
+          variant="ghost"
+          size="xs"
+          :aria-label="`恢复${props.label}原值`"
+          @click.stop="restoreBaseline"
+        >
+          恢复原值
+        </UiButton>
+      </div>
       <PageVisualEditRichTextEditor
         :model-value="String(props.effectiveValue ?? '')"
         :baseline-html="props.baselineRichText"
         :disabled="!props.editable"
         @update:model-value="emit('set-rich-text', $event)"
       />
-      <p v-if="!props.editable" class="mt-2 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600">
+      <p v-if="!props.editable" class="mt-2 rounded-lg bg-canvas px-3 py-2 text-xs text-text-secondary">
         {{ props.readonlyMessage }}
       </p>
     </div>
     <template v-else-if="props.editable">
       <UiSelect
         v-if="props.controlType === 'select'"
+        :id="props.controlId"
+        :aria-label="props.label"
         :model-value="props.optionIndex"
         :options="selectOptions"
         placeholder="请选择有限选项"
         @update:model-value="handleSelectValueChange"
       />
-      <label v-else-if="props.controlType === 'boolean'" class="flex items-center gap-2 text-sm text-slate-700">
+      <label v-else-if="props.controlType === 'boolean'" class="flex items-center gap-2 text-sm text-text-emphasis">
         <UiCheckbox
           :model-value="Boolean(props.effectiveValue)"
           @update:model-value="emit('set-value', $event === true)"
@@ -79,18 +101,31 @@
         @update:model-value="emit('set-value', $event)"
       />
     </template>
-    <p v-else class="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600">
+    <p v-else class="rounded-lg bg-canvas px-3 py-2 text-xs text-text-secondary">
       {{ props.readonlyMessage }}
     </p>
-    <p v-if="props.pending" class="mt-3 text-[11px] font-semibold text-indigo-600">
-      此项有待保存修改，画布暂未更新。
+    <p v-if="props.pending" class="mt-3 text-[11px] font-semibold text-accent">
+      {{ props.label }}：{{ displayValue(baselineDisplayValue) }}
+      <span aria-hidden="true">→</span>
+      {{ displayValue(props.effectiveValue) }}
     </p>
+    <details
+      v-if="props.propName"
+      class="mt-3 rounded-ui-md border border-border bg-surface-muted px-2.5 py-2 text-[11px] text-text-muted"
+    >
+      <summary class="cursor-pointer font-medium outline-none focus-visible:ring-2 focus-visible:ring-border-focus">
+        技术详情
+      </summary>
+      <p class="mt-1.5">
+        源码属性：<code class="font-mono">{{ props.propName }}</code>
+      </p>
+    </details>
   </article>
 </template>
 
 <script setup lang="ts">
 import PageVisualEditRichTextEditor from '@/components/page-detail/visual-edit/PageVisualEditRichTextEditor.vue'
-import { UiCheckbox, UiInput, UiSelect } from '@/components/ui'
+import { UiButton, UiCheckbox, UiInput, UiSelect } from '@/components/ui'
 import type { SelectModelValue, SelectOption } from '@/components/ui/select'
 import { computed } from 'vue'
 import type {
@@ -102,6 +137,7 @@ import type {
 const props = withDefaults(defineProps<{
   controlId: string
   controlType: string
+  baselineValue?: PageVisualEditValue
   baselineRichText?: string | null
   description?: string | null
   editable: boolean
@@ -136,6 +172,15 @@ const selectOptions = computed<SelectOption[]>(() => props.options.map((option, 
   label: option.label,
   value: index,
 })))
+const canRestore = computed(() => (
+  props.pending
+  && (props.kind === 'rich_text'
+    ? props.baselineRichText !== null
+    : props.baselineValue !== undefined)
+))
+const baselineDisplayValue = computed<PageVisualEditValue | undefined>(() => (
+  props.kind === 'rich_text' ? props.baselineRichText ?? '' : props.baselineValue
+))
 
 /** 写入有效数字值，空值或非法数字不生成字段事件。 */
 function handleNumberInput(rawValue: string): void {
@@ -149,5 +194,29 @@ function handleSelectValueChange(value: SelectModelValue): void {
   const optionIndex = Number(value)
   const option = props.options[optionIndex]
   if (option) emit('set-value', option.value)
+}
+
+/** 把当前字段恢复到 artifact 原值，让草稿层移除对应操作。 */
+function restoreBaseline(): void {
+  if (!canRestore.value) return
+  if (props.kind === 'rich_text') {
+    emit('set-rich-text', props.baselineRichText ?? '')
+    return
+  }
+  if (props.baselineValue !== undefined) emit('set-value', props.baselineValue)
+}
+
+/** 将字段值转换为简短业务摘要，避免待保存区暴露源码表达式。 */
+function displayValue(value: PageVisualEditValue | undefined): string {
+  const matchedOption = props.options.find(option => Object.is(option.value, value))
+  if (matchedOption) return matchedOption.label
+  if (typeof value === 'boolean') return value ? '开启' : '关闭'
+  if (value === null || value === undefined || value === '') return '空'
+  const normalized = String(value)
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+  const characters = Array.from(normalized)
+  return characters.length > 24 ? `${characters.slice(0, 24).join('')}…` : normalized
 }
 </script>

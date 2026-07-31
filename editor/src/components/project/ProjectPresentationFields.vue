@@ -1,6 +1,7 @@
 <!-- 文件功能：复用项目页面尺寸、字号、描边、菜单与导出按钮的展示配置表单。 -->
 <template>
-  <div class="grid h-full min-h-0 gap-4 2xl:grid-cols-[minmax(0,0.92fr)_minmax(280px,0.78fr)]">
+  <!-- 单列堆叠时用 content-start 避免 h-full 把两行拉开；2xl 双列时恢复 stretch 让左侧竖分隔线撑满卡片。 -->
+  <div class="grid h-full min-h-0 content-start gap-4 2xl:content-stretch 2xl:grid-cols-[minmax(0,0.92fr)_minmax(280px,0.78fr)]">
     <div class="min-w-0">
       <PreviewSizePresetSelect
         :current-width="normalizedPageWidth"

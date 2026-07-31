@@ -1,16 +1,16 @@
 <!-- 文件功能：封装内容助手输入区，统一处理多行输入、内嵌发送/中断按钮与快捷键提交交互。 -->
 <template>
-  <section class="shrink-0 border-t border-slate-200 bg-white px-2.5 pb-2 pt-1.5 shadow-[0_-2px_8px_rgba(15,23,42,0.035)]">
+  <section class="shrink-0 border-t border-border bg-surface px-2.5 pb-2 pt-1.5 shadow-[0_-2px_8px_rgba(15,23,42,0.035)]">
     <div
       v-if="!pendingRequirement"
-      class="rounded-md border border-slate-200 bg-white px-1.5 py-1 transition focus-within:border-sky-300"
+      class="rounded-md border border-border bg-surface px-1.5 py-1 transition focus-within:border-info-border"
       :class="{ 'opacity-70': composerState === 'disabled' }"
     >
       <textarea
         ref="textareaRef"
         :value="modelValue"
         rows="1"
-        class="w-full resize-none bg-transparent px-1 py-0.5 text-[13px] leading-[18px] text-slate-700 outline-none transition-[height]"
+        class="w-full resize-none bg-transparent px-1 py-0.5 text-[13px] leading-[18px] text-text-emphasis outline-none transition-[height]"
         :style="{ height: textareaHeight }"
         :disabled="textareaDisabled"
         :placeholder="placeholder"
@@ -22,7 +22,7 @@
         <article
           v-for="attachment in imageAttachments"
           :key="attachment.id"
-          class="group relative h-14 w-14 shrink-0 overflow-hidden rounded-md border border-slate-200 bg-slate-50"
+          class="group relative h-14 w-14 shrink-0 overflow-hidden rounded-md border border-border bg-canvas"
         >
           <img
             :src="attachment.url"
@@ -31,7 +31,7 @@
           >
           <div class="absolute inset-x-1 top-1 flex justify-between gap-1 opacity-0 transition group-hover:opacity-100">
             <UiIconButton
-              class="h-4 w-4 rounded bg-white/90 text-slate-500 shadow-sm hover:text-slate-800 [&_svg]:h-2.5 [&_svg]:w-2.5"
+              class="h-4 w-4 rounded bg-surface/90 text-text-muted shadow-sm hover:text-text [&_svg]:h-2.5 [&_svg]:w-2.5"
               label="保存为资源"
               aria-label="保存为资源"
               :disabled="Boolean(attachment.promoted_asset_id)"
@@ -40,7 +40,7 @@
               <Archive />
             </UiIconButton>
             <UiIconButton
-              class="h-4 w-4 rounded bg-white/90 text-slate-500 shadow-sm hover:text-red-600 [&_svg]:h-2.5 [&_svg]:w-2.5"
+              class="h-4 w-4 rounded bg-surface/90 text-text-muted shadow-sm hover:text-danger [&_svg]:h-2.5 [&_svg]:w-2.5"
               label="移除图片"
               aria-label="移除图片"
               @click="emit('removeImage', attachment.id)"
@@ -63,7 +63,7 @@
           >
           <UiIconButton
             size="xs"
-            :class="uploadButtonDisabled ? 'text-slate-300' : 'text-slate-400'"
+            :class="uploadButtonDisabled ? 'text-text-faint' : 'text-text-disabled'"
             label="上传图片"
             aria-label="上传图片"
             :title="imageUploadDisabledReason || '上传图片'"
@@ -86,7 +86,7 @@
           <span v-if="contextUsageVisible" ref="contextUsageRef" class="relative inline-flex shrink-0">
             <UiIconButton
               size="xs"
-              class="group h-6 w-6 rounded text-slate-500 hover:bg-slate-50 hover:text-slate-700"
+              class="group h-6 w-6 rounded text-text-muted hover:bg-surface-hover hover:text-text-emphasis"
               label="上下文用量"
               :aria-label="contextUsageAriaLabel"
               :aria-expanded="contextUsagePopoverVisible"
@@ -117,22 +117,22 @@
             </UiIconButton>
             <div
               v-if="contextUsagePopoverVisible"
-              class="absolute bottom-8 left-0 z-20 w-44 rounded-md border border-slate-200 bg-white p-3 text-xs shadow-lg shadow-slate-900/10"
+              class="absolute bottom-8 left-0 z-20 w-44 rounded-md border border-border bg-surface p-3 text-xs shadow-lg shadow-slate-900/10"
               role="dialog"
               aria-label="上下文用量详情"
             >
               <div class="flex items-center justify-between gap-3">
-                <span class="text-slate-500">已用上下文</span>
-                <span class="font-semibold text-slate-800">{{ contextUsedLabel }}</span>
+                <span class="text-text-muted">已用上下文</span>
+                <span class="font-semibold text-text">{{ contextUsedLabel }}</span>
               </div>
               <div class="mt-2 flex items-center justify-between gap-3">
-                <span class="text-slate-500">可用上下文</span>
-                <span class="font-semibold text-slate-800">{{ contextAvailableLabel }}</span>
+                <span class="text-text-muted">可用上下文</span>
+                <span class="font-semibold text-text">{{ contextAvailableLabel }}</span>
               </div>
-              <div class="mt-3 h-1.5 overflow-hidden rounded-full bg-slate-100">
+              <div class="mt-3 h-1.5 overflow-hidden rounded-full bg-surface-muted">
                 <div
                   class="h-full rounded-full transition-[width]"
-                  :class="contextUsageRatio >= 0.9 ? 'bg-red-500' : contextUsageRatio >= 0.7 ? 'bg-amber-500' : 'bg-sky-500'"
+                  :class="contextUsageRatio >= 0.9 ? 'bg-danger' : contextUsageRatio >= 0.7 ? 'bg-warning' : 'bg-info'"
                   :style="{ width: `${Math.round(contextUsageRatio * 100)}%` }"
                 />
               </div>

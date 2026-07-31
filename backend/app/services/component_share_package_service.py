@@ -722,18 +722,15 @@ class ComponentSharePackageService(ComponentSharePackageHelperMixin):
             asset = await self._get_asset_by_name(workspace_id, asset_name)
             if asset is None:
                 raise AppException(status_code=409, code="FONT_ASSET_NOT_FOUND", detail=f"字体资源 {asset_name} 不存在。")
-            self.session.add(
-                WorkspaceFontConfig(
-                    workspace_id=workspace_id,
-                    asset_id=asset.id,
-                    asset_name=asset.name,
-                    font_family=str(item["font_family"]).strip(),
-                    font_format=str(item["font_format"]).strip(),
-                    font_weight=str(item["font_weight"]).strip(),
-                    font_style=str(item["font_style"]).strip(),
-                    font_display=str(item["font_display"]).strip(),
-                    status=str(item.get("status") or RecordStatus.ACTIVE.value),
-                )
+            await WorkspaceFontService(self.session).register_imported_font_face(
+                workspace_id,
+                asset=asset,
+                font_family=str(item["font_family"]),
+                font_format=str(item["font_format"]),
+                font_weight=str(item["font_weight"]),
+                font_style=str(item["font_style"]),
+                font_display=str(item["font_display"]),
+                status=str(item.get("status") or RecordStatus.ACTIVE.value),
             )
         await self.session.flush()
 

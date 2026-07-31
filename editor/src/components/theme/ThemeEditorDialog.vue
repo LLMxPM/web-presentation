@@ -3,48 +3,63 @@
   <UiDialog :open="dialogVisible" :title="theme ? '编辑主题' : '新建主题'" size="canvas" @update:open="dialogVisible = $event">
     <div class="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_500px] 2xl:grid-cols-[minmax(0,1fr)_560px]">
       <div class="min-w-0 space-y-4">
-        <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <section class="rounded-2xl border border-border bg-surface p-5 shadow-sm">
           <div class="mb-4">
-            <h3 class="text-sm font-black text-slate-900">基础信息</h3>
-            <p class="mt-1 text-xs text-slate-400">主题 key 用于 Runtime 配置引用，保存时会自动归一化为小写。</p>
+            <h3 class="text-sm font-black text-text-strong">基础信息</h3>
+            <p class="mt-1 text-xs text-text-disabled">主题 key 用于 Runtime 配置引用，保存时会自动归一化为小写。</p>
           </div>
           <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <label class="space-y-1.5">
-              <span class="text-xs font-bold text-slate-500">主题 key</span>
-              <UiInput
-                v-model="form.key"
-                class="h-10 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm outline-none focus:border-indigo-500 focus:bg-white"
-              />
-            </label>
-            <label class="space-y-1.5">
-              <span class="text-xs font-bold text-slate-500">主题名称</span>
-              <UiInput
-                v-model="form.name"
-                class="h-10 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm outline-none focus:border-indigo-500 focus:bg-white"
-              />
-            </label>
+            <UiFormField
+              label="主题 key"
+              required
+              description="仅支持小写字母、数字、连字符和下划线"
+            >
+              <template #default="field">
+                <UiInput
+                  v-model="form.key"
+                  required
+                  placeholder="例如 lightblue"
+                  :input-id="field.inputId"
+                  :described-by="field.describedBy"
+                />
+              </template>
+            </UiFormField>
+            <UiFormField label="主题名称" required>
+              <template #default="field">
+                <UiInput
+                  v-model="form.name"
+                  required
+                  placeholder="请输入主题名称"
+                  :input-id="field.inputId"
+                  :described-by="field.describedBy"
+                />
+              </template>
+            </UiFormField>
           </div>
 
-          <label class="mt-4 block space-y-1.5">
-            <span class="text-xs font-bold text-slate-500">主题描述</span>
-            <UiInput
-              v-model="form.description"
-              class="h-10 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm outline-none focus:border-indigo-500 focus:bg-white"
-            />
-          </label>
+          <UiFormField class="mt-4" label="主题描述">
+            <template #default="field">
+              <UiInput
+                v-model="form.description"
+                placeholder="概括主题的视觉特征和适用场景"
+                :input-id="field.inputId"
+                :described-by="field.describedBy"
+              />
+            </template>
+          </UiFormField>
         </section>
 
-        <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <section class="rounded-2xl border border-border bg-surface p-5 shadow-sm">
           <div class="mb-5">
-            <h3 class="text-sm font-black text-slate-900">品牌资源与字体绑定</h3>
+            <h3 class="text-sm font-black text-text-strong">品牌资源与字体绑定</h3>
           </div>
 
           <div class="space-y-5">
             <div>
-              <h4 class="text-xs font-black text-slate-700">品牌资源</h4>
+              <h4 class="text-xs font-black text-text-emphasis">品牌资源</h4>
               <div class="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-3">
                 <div class="space-y-1.5">
-                  <span class="text-xs font-bold text-slate-500">主题 Logo</span>
+                  <span class="text-xs font-bold text-text-muted">主题 Logo</span>
                   <AssetPicker
                     :model-value="form.logo_asset_id"
                     :workspace-id="workspaceId"
@@ -58,7 +73,7 @@
                   />
                 </div>
                 <div class="space-y-1.5">
-                  <span class="text-xs font-bold text-slate-500">反色 Logo</span>
+                  <span class="text-xs font-bold text-text-muted">反色 Logo</span>
                   <AssetPicker
                     :model-value="form.invert_logo_asset_id"
                     :workspace-id="workspaceId"
@@ -72,7 +87,7 @@
                   />
                 </div>
                 <div class="space-y-1.5">
-                  <span class="text-xs font-bold text-slate-500">项目图标</span>
+                  <span class="text-xs font-bold text-text-muted">项目图标</span>
                   <AssetPicker
                     :model-value="form.project_icon_asset_id"
                     :workspace-id="workspaceId"
@@ -87,40 +102,40 @@
               </div>
             </div>
 
-            <div class="border-t border-slate-100 pt-4">
-              <h4 class="text-xs font-black text-slate-700">字体绑定</h4>
+            <div class="border-t border-border-muted pt-4">
+              <h4 class="text-xs font-black text-text-emphasis">字体绑定</h4>
               <div class="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3">
                 <label class="space-y-1.5">
-                  <span class="text-xs font-bold text-slate-500">标题字体</span>
+                  <span class="text-xs font-bold text-text-muted">标题字体</span>
                   <UiCombobox
-                    :model-value="form.heading_font_id"
+                    :model-value="form.heading_font_family_id"
                     :options="fontOptions"
                     clearable
                     placeholder="浏览器默认"
-                    search-placeholder="搜索字体名称"
-                    @update:model-value="updateNullableNumberField('heading_font_id', $event)"
+                    search-placeholder="搜索字体族名称"
+                    @update:model-value="updateNullableNumberField('heading_font_family_id', $event)"
                   />
                 </label>
                 <label class="space-y-1.5">
-                  <span class="text-xs font-bold text-slate-500">正文字体</span>
+                  <span class="text-xs font-bold text-text-muted">正文字体</span>
                   <UiCombobox
-                    :model-value="form.body_font_id"
+                    :model-value="form.body_font_family_id"
                     :options="fontOptions"
                     clearable
                     placeholder="浏览器默认"
-                    search-placeholder="搜索字体名称"
-                    @update:model-value="updateNullableNumberField('body_font_id', $event)"
+                    search-placeholder="搜索字体族名称"
+                    @update:model-value="updateNullableNumberField('body_font_family_id', $event)"
                   />
                 </label>
                 <label class="space-y-1.5">
-                  <span class="text-xs font-bold text-slate-500">代码字体</span>
+                  <span class="text-xs font-bold text-text-muted">代码字体</span>
                   <UiCombobox
-                    :model-value="form.code_font_id"
+                    :model-value="form.code_font_family_id"
                     :options="fontOptions"
                     clearable
                     placeholder="浏览器默认"
-                    search-placeholder="搜索字体名称"
-                    @update:model-value="updateNullableNumberField('code_font_id', $event)"
+                    search-placeholder="搜索字体族名称"
+                    @update:model-value="updateNullableNumberField('code_font_family_id', $event)"
                   />
                 </label>
               </div>
@@ -129,61 +144,61 @@
           </div>
         </section>
 
-        <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <section class="rounded-2xl border border-border bg-surface p-5 shadow-sm">
           <div class="mb-4">
-            <h3 class="text-sm font-black text-slate-900">颜色系统</h3>
+            <h3 class="text-sm font-black text-text-strong">颜色系统</h3>
           </div>
 
           <div class="grid grid-cols-1 gap-3 lg:grid-cols-2">
-            <div v-for="group in colorGroups" :key="group.key" class="rounded-xl border border-slate-100 bg-slate-50 p-3">
+            <div v-for="group in colorGroups" :key="group.key" class="rounded-xl border border-border-muted bg-canvas p-3">
               <div class="mb-2 flex items-center justify-between gap-2">
-                <h4 class="text-xs font-black text-slate-700">{{ group.label }}</h4>
-                <span class="text-[10px] font-bold text-slate-400">{{ group.fields.length }} tokens</span>
+                <h4 class="text-xs font-black text-text-emphasis">{{ group.label }}</h4>
+                <span class="text-[10px] font-bold text-text-disabled">{{ group.fields.length }} tokens</span>
               </div>
-              <p class="mb-2 text-[11px] leading-5 text-slate-400">{{ group.description }}</p>
+              <p class="mb-2 text-[11px] leading-5 text-text-disabled">{{ group.description }}</p>
               <div class="grid grid-cols-1 gap-2">
                 <label
                   v-for="field in group.fields"
                   :key="field.key"
-                  class="grid grid-cols-[4.5rem_2.25rem_minmax(0,1fr)] items-center gap-2 rounded-lg border border-slate-200 bg-white px-2 py-1.5"
+                  class="grid grid-cols-[4.5rem_2.25rem_minmax(0,1fr)] items-center gap-2 rounded-lg border border-border bg-surface px-2 py-1.5"
                 >
-                  <span class="truncate text-[11px] font-bold text-slate-500">{{ field.label }}</span>
+                  <span class="truncate text-[11px] font-bold text-text-muted">{{ field.label }}</span>
                   <input
                     :value="normalizeColor(field.getter())"
                     type="color"
-                    class="h-7 w-8 cursor-pointer rounded border border-slate-200 bg-white p-0.5"
+                    class="h-7 w-8 cursor-pointer rounded border border-border bg-surface p-0.5"
                     @input="field.setter(($event.target as HTMLInputElement).value)"
                   >
                   <UiInput
                     :value="field.getter()"
-                    class="h-7 min-w-0 rounded-md border border-slate-200 px-2 font-mono text-xs outline-none focus:border-indigo-500"
+                    class="h-7 min-w-0 rounded-md border border-border px-2 font-mono text-xs outline-none focus:border-border-focus"
                     @input="field.setter(($event.target as HTMLInputElement).value)"
                   />
                 </label>
               </div>
             </div>
 
-            <div class="rounded-xl border border-slate-100 bg-slate-50 p-3 lg:col-span-2">
+            <div class="rounded-xl border border-border-muted bg-canvas p-3 lg:col-span-2">
               <div class="mb-2 flex items-center justify-between gap-2">
-                <h4 class="text-xs font-black text-slate-700">强调色组</h4>
-                <span class="text-[10px] font-bold text-slate-400">{{ form.palette.accent.length }} tokens</span>
+                <h4 class="text-xs font-black text-text-emphasis">强调色组</h4>
+                <span class="text-[10px] font-bold text-text-disabled">{{ form.palette.accent.length }} tokens</span>
               </div>
               <div class="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
                 <label
                   v-for="(_, index) in form.palette.accent"
                   :key="`accent-${index}`"
-                  class="grid grid-cols-[3rem_2.25rem_minmax(0,1fr)] items-center gap-2 rounded-lg border border-slate-200 bg-white px-2 py-1.5"
+                  class="grid grid-cols-[3rem_2.25rem_minmax(0,1fr)] items-center gap-2 rounded-lg border border-border bg-surface px-2 py-1.5"
                 >
-                  <span class="truncate text-[11px] font-bold text-slate-500">色 {{ index + 1 }}</span>
+                  <span class="truncate text-[11px] font-bold text-text-muted">色 {{ index + 1 }}</span>
                   <input
                     :value="normalizeColor(form.palette.accent[index])"
                     type="color"
-                    class="h-7 w-8 cursor-pointer rounded border border-slate-200 bg-white p-0.5"
+                    class="h-7 w-8 cursor-pointer rounded border border-border bg-surface p-0.5"
                     @input="form.palette.accent[index] = ($event.target as HTMLInputElement).value"
                   >
                   <UiInput
                     v-model="form.palette.accent[index]"
-                    class="h-7 min-w-0 rounded-md border border-slate-200 px-2 font-mono text-xs outline-none focus:border-indigo-500"
+                    class="h-7 min-w-0 rounded-md border border-border px-2 font-mono text-xs outline-none focus:border-border-focus"
                   />
                 </label>
               </div>
@@ -192,13 +207,13 @@
         </section>
       </div>
 
-      <aside class="sticky top-0 min-w-0 space-y-4 rounded-2xl border border-slate-200 bg-slate-50 p-5 shadow-sm">
+      <aside class="sticky top-0 min-w-0 space-y-4 rounded-2xl border border-border bg-canvas p-5 shadow-sm">
         <div class="flex items-start justify-between gap-3">
           <div>
-            <h3 class="text-sm font-black text-slate-900">实时预览</h3>
-            <p class="mt-1 text-xs text-slate-400">更宽的预览区便于检查文字、Logo、图标和反色区域。</p>
+            <h3 class="text-sm font-black text-text-strong">实时预览</h3>
+            <p class="mt-1 text-xs text-text-disabled">更宽的预览区便于检查文字、Logo、图标和反色区域。</p>
           </div>
-          <span class="rounded-full bg-white px-2.5 py-1 text-[11px] font-bold text-slate-500 shadow-sm">保存前预览</span>
+          <span class="rounded-full bg-surface px-2.5 py-1 text-[11px] font-bold text-text-muted shadow-sm">保存前预览</span>
         </div>
         <ThemePreviewCard
           class="rounded-xl shadow-none"
@@ -211,9 +226,12 @@
           :project-icon-url="selectedProjectIconAsset?.url"
           :project-icon-name="selectedProjectIconAsset?.name || form.project_icon_name"
           :project-icon-analysis="selectedProjectIconAsset?.analysis_metadata || null"
-          :heading-font-label="selectedHeadingFont?.font_family || DEFAULT_HEADING_FONT_FAMILY"
-          :body-font-label="selectedBodyFont?.font_family || DEFAULT_BODY_FONT_FAMILY"
-          :code-font-label="selectedCodeFont?.font_family || DEFAULT_CODE_FONT_FAMILY"
+          :heading-font-label="selectedHeadingFont?.name || DEFAULT_HEADING_FONT_FAMILY"
+          :body-font-label="selectedBodyFont?.name || DEFAULT_BODY_FONT_FAMILY"
+          :code-font-label="selectedCodeFont?.name || DEFAULT_CODE_FONT_FAMILY"
+          :heading-font-family="selectedHeadingFont"
+          :body-font-family="selectedBodyFont"
+          :code-font-family="selectedCodeFont"
         />
       </aside>
     </div>
@@ -228,12 +246,12 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
 
-import { listWorkspaceFonts } from '@/api/assets'
+import { listWorkspaceFontFamilies } from '@/api/assets'
 import { getErrorMessage } from '@/api/http'
 import AssetPicker from '@/components/ui/AssetPicker.vue'
-import { UiButton, UiCombobox, UiDialog, UiInput } from '@/components/ui'
+import { UiButton, UiCombobox, UiDialog, UiFormField, UiInput } from '@/components/ui'
 import type { SelectModelValue, SelectOption } from '@/components/ui/select'
-import type { AssetResponse, ThemeAssetSummary, ThemePalette, WorkspaceFontConfigItem, WorkspaceThemeItem } from '@/types/api'
+import type { AssetResponse, ThemeAssetSummary, ThemePalette, WorkspaceFontFamilyItem, WorkspaceThemeItem } from '@/types/api'
 import { Message } from '@/utils/message'
 import ThemePreviewCard from './ThemePreviewCard.vue'
 
@@ -255,9 +273,9 @@ const emit = defineEmits<{
     logo_asset_id: number | null
     invert_logo_asset_id: number | null
     project_icon_asset_id: number | null
-    heading_font_id: number | null
-    body_font_id: number | null
-    code_font_id: number | null
+    heading_font_family_id: number | null
+    body_font_family_id: number | null
+    code_font_family_id: number | null
     palette: ThemePalette
   }]
 }>()
@@ -267,7 +285,7 @@ const dialogVisible = computed({
   set: (value: boolean) => emit('update:modelValue', value),
 })
 
-const fonts = ref<WorkspaceFontConfigItem[]>([])
+const fontFamilies = ref<WorkspaceFontFamilyItem[]>([])
 const selectedLogoAsset = ref<AssetResponse | ThemeAssetSummary | null>(null)
 const selectedInvertLogoAsset = ref<AssetResponse | ThemeAssetSummary | null>(null)
 const selectedProjectIconAsset = ref<AssetResponse | ThemeAssetSummary | null>(null)
@@ -289,9 +307,9 @@ const form = reactive({
   invert_logo_asset_id: null as number | null,
   project_icon_asset_id: null as number | null,
   project_icon_name: 'slider',
-  heading_font_id: null as number | null,
-  body_font_id: null as number | null,
-  code_font_id: null as number | null,
+  heading_font_family_id: null as number | null,
+  body_font_family_id: null as number | null,
+  code_font_family_id: null as number | null,
   palette: JSON.parse(JSON.stringify(DEFAULT_THEME_PALETTE)) as ThemePalette,
 })
 
@@ -326,15 +344,25 @@ const colorGroups = [
   },
 ]
 
-const selectedHeadingFont = computed(() => fonts.value.find(item => item.id === form.heading_font_id) || null)
-const selectedBodyFont = computed(() => fonts.value.find(item => item.id === form.body_font_id) || null)
-const selectedCodeFont = computed(() => fonts.value.find(item => item.id === form.code_font_id) || null)
-const fontOptions = computed<SelectOption[]>(() => fonts.value.map(font => ({
-  label: font.font_family,
-  value: font.id,
-  description: `${font.font_weight} / ${font.font_style} / ${font.font_display}`,
-  keywords: [font.font_family, font.asset_name, font.font_weight, font.font_style, font.font_display],
+const selectedHeadingFont = computed(() => fontFamilies.value.find(item => item.id === form.heading_font_family_id) || null)
+const selectedBodyFont = computed(() => fontFamilies.value.find(item => item.id === form.body_font_family_id) || null)
+const selectedCodeFont = computed(() => fontFamilies.value.find(item => item.id === form.code_font_family_id) || null)
+const fontOptions = computed<SelectOption[]>(() => fontFamilies.value.map(family => ({
+  label: family.name,
+  value: family.id,
+  description: describeFontFamily(family),
+  keywords: [family.name, ...family.faces.map(face => face.asset_name)],
 })))
+
+/** 汇总字体族内可用 face 的字重，作为下拉项的辅助说明。 */
+function describeFontFamily(family: WorkspaceFontFamilyItem): string {
+  const activeFaces = family.faces.filter(face => face.status === 'active')
+  if (activeFaces.length === 0) {
+    return '暂无可用字体文件'
+  }
+  const weights = Array.from(new Set(activeFaces.map(face => face.font_weight))).join(' / ')
+  return `${activeFaces.length} 个字体文件（${weights}）`
+}
 
 watch(
   () => [props.modelValue, props.theme] as const,
@@ -354,8 +382,8 @@ async function loadOptions() {
   }
 
   try {
-    const fontResponse = await listWorkspaceFonts(props.workspaceId, { page: 1, page_size: 100 })
-    fonts.value = fontResponse.items
+    const familyResponse = await listWorkspaceFontFamilies(props.workspaceId, { page: 1, page_size: 100 })
+    fontFamilies.value = familyResponse.items
   } catch (error) {
     Message.error(getErrorMessage(error, '加载主题编辑依赖失败。'))
   }
@@ -372,9 +400,9 @@ function syncForm(theme: WorkspaceThemeItem | null) {
   selectedInvertLogoAsset.value = theme?.invert_logo_asset || null
   selectedProjectIconAsset.value = theme?.project_icon_asset || null
   form.project_icon_name = theme?.project_icon_name || 'slider'
-  form.heading_font_id = theme?.heading_font_id || null
-  form.body_font_id = theme?.body_font_id || null
-  form.code_font_id = theme?.code_font_id || null
+  form.heading_font_family_id = theme?.heading_font_family_id || null
+  form.body_font_family_id = theme?.body_font_family_id || null
+  form.code_font_family_id = theme?.code_font_family_id || null
   form.palette = JSON.parse(JSON.stringify(theme?.palette || DEFAULT_THEME_PALETTE)) as ThemePalette
 }
 
@@ -384,7 +412,7 @@ function syncForm(theme: WorkspaceThemeItem | null) {
  * @param value 通用下拉组件回传的最新值
  */
 function updateNullableNumberField(
-  field: 'logo_asset_id' | 'invert_logo_asset_id' | 'project_icon_asset_id' | 'heading_font_id' | 'body_font_id' | 'code_font_id',
+  field: 'logo_asset_id' | 'invert_logo_asset_id' | 'project_icon_asset_id' | 'heading_font_family_id' | 'body_font_family_id' | 'code_font_family_id',
   value: SelectModelValue,
 ) {
   if (Array.isArray(value) || value == null || value === '') {
@@ -428,9 +456,9 @@ function handleSave() {
     logo_asset_id: form.logo_asset_id,
     invert_logo_asset_id: form.invert_logo_asset_id,
     project_icon_asset_id: form.project_icon_asset_id,
-    heading_font_id: form.heading_font_id,
-    body_font_id: form.body_font_id,
-    code_font_id: form.code_font_id,
+    heading_font_family_id: form.heading_font_family_id,
+    body_font_family_id: form.body_font_family_id,
+    code_font_family_id: form.code_font_family_id,
     palette: JSON.parse(JSON.stringify(form.palette)) as ThemePalette,
   })
 }

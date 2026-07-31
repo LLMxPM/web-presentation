@@ -18,10 +18,10 @@ const scopeTypeLabelMap: Record<AgentScopeContext['scope_type'], string> = {
 }
 
 const scopeTypeColorClassMap: Record<AgentScopeContext['scope_type'], string> = {
-  workspace: 'border-slate-200 bg-slate-50 text-slate-500',
-  project: 'border-emerald-200 bg-emerald-50 text-emerald-600',
-  page: 'border-sky-200 bg-sky-50 text-sky-600',
-  component: 'border-violet-200 bg-violet-50 text-violet-600',
+  workspace: 'border-border bg-canvas text-text-muted',
+  project: 'border-success-border bg-success-muted text-success',
+  page: 'border-info-border bg-info-muted text-info',
+  component: 'border-ai-border bg-ai-muted text-ai',
 }
 
 const workspaceSourceLabelMap: Record<string, string> = {

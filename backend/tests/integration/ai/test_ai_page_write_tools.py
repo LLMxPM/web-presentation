@@ -24,6 +24,80 @@ WARNING_DIAGNOSTIC = {
     "code": "PAGE_RENDER_BOTTOM_OVERFLOW",
     "message": "页面内容底部超出画布 42px。",
 }
+LAYOUT_ANALYSIS = {
+    "schema_version": 2,
+    "summary": {
+        "attention": "likely_issue",
+        "message": "发现 3 项需要关注的视觉检测结果。",
+        "totals": {
+            "text_layouts": 1,
+            "item_groups": 1,
+            "overflows": 1,
+            "spatial_relations": 1,
+        },
+        "returned": {
+            "text_layouts": 1,
+            "item_groups": 1,
+            "overflows": 1,
+            "spatial_relations": 1,
+        },
+        "truncated": False,
+    },
+    "text_layouts": [
+        {
+            "target": {
+                "label": "h2.title",
+                "locator": {"kind": "id", "value": "#trend-title"},
+                "text_sample": "企业智能化转型趋势",
+                "repeat_index": None,
+            },
+            "text": "企业智能化转型趋势",
+            "line_count": 2,
+            "first_line": "企业智能化",
+            "last_line": "转型趋势",
+            "break_kind": "soft",
+            "stability": "stable",
+            "attention": "none",
+            "reason_codes": [],
+        }
+    ],
+    "item_groups": [
+        {
+            "target": {
+                "label": "div.flex.flex-wrap",
+                "locator": {"kind": "dom_path", "value": ":scope > div:nth-of-type(2)"},
+                "text_sample": "案例库 模板库 新起点",
+                "repeat_index": None,
+            },
+            "item_count": 5,
+            "row_count": 2,
+            "last_row_count": 1,
+            "item_pattern": "pill_like",
+            "attention": "review",
+            "reason_codes": ["single_item_last_row"],
+        }
+    ],
+    "overflows": [
+        {
+            "scope": "container",
+            "target": {"label": "span.clipped"},
+            "container": {"label": "div.card"},
+            "directions": ["right"],
+            "clipping": "hidden",
+            "visible_ratio": 0.25,
+            "attention": "likely_issue",
+            "reason_codes": ["text_clipped"],
+        }
+    ],
+    "spatial_relations": [
+        {
+            "relation": "touching",
+            "distance_px": 0,
+            "attention": "review",
+            "reason_codes": ["independent_surfaces_touching"],
+        }
+    ],
+}
 
 
 class FakeCodeCheckService:
@@ -114,6 +188,7 @@ async def test_create_project_page_should_create_and_return_warning(
         "status": "passed",
         "summary": "代码检查通过，发现 1 个布局警告。",
         "diagnostics": [WARNING_DIAGNOSTIC],
+        "layout_analysis": LAYOUT_ANALYSIS,
     }
     monkeypatch.setattr(project_pages_module, "CodeCheckService", FakeCodeCheckService)
     tool = project_pages_module.build_create_project_page_tool(get_session_factory())
@@ -131,6 +206,7 @@ async def test_create_project_page_should_create_and_return_warning(
     assert result["success"] is True
     assert result["message"] == "页面已创建，但发现布局警告。"
     assert result["diagnostics"] == [WARNING_DIAGNOSTIC]
+    assert result["layout_analysis"] == LAYOUT_ANALYSIS
     assert result["code_check_summary"] == "代码检查通过，发现 1 个布局警告。"
     assert result["page_id"] > 0
     assert (await _list_project_pages(authenticated_client, project_id))["total"] == 1
@@ -150,6 +226,7 @@ async def test_apply_page_edits_should_save_and_return_warning(
         "status": "passed",
         "summary": "代码检查通过，发现 1 个布局警告。",
         "diagnostics": [WARNING_DIAGNOSTIC],
+        "layout_analysis": LAYOUT_ANALYSIS,
     }
     monkeypatch.setattr(apply_page_edits_module, "CodeCheckService", FakeCodeCheckService)
     tool = apply_page_edits_module.build_apply_page_edits_tool(get_session_factory())
@@ -174,6 +251,7 @@ async def test_apply_page_edits_should_save_and_return_warning(
     assert result["success"] is True
     assert result["message"] == "页面代码已更新并生成新版本，但发现布局警告。"
     assert result["diagnostics"] == [WARNING_DIAGNOSTIC]
+    assert result["layout_analysis"] == LAYOUT_ANALYSIS
     assert result["code_check_summary"] == "代码检查通过，发现 1 个布局警告。"
     assert result["version_no"] == page["current_version_no"] + 1
 

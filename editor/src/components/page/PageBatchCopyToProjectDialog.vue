@@ -7,14 +7,14 @@
     @update:open="handleDialogVisibleUpdate"
   >
     <div class="space-y-5">
-      <div class="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-600">
+      <div class="rounded-lg border border-border bg-canvas px-4 py-3 text-sm font-semibold text-text-secondary">
         已选择 {{ pages.length }} 个页面
       </div>
 
       <div class="space-y-1.5">
-        <label class="ml-1 text-sm font-semibold text-slate-700">
+        <label class="ml-1 text-sm font-semibold text-text-emphasis">
           目标项目
-          <span class="text-red-500">*</span>
+          <span class="text-danger">*</span>
         </label>
         <UiCombobox
           v-model="targetProjectId"
@@ -25,7 +25,7 @@
         />
       </div>
 
-      <label class="flex items-center gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700">
+      <label class="flex items-center gap-3 rounded-lg border border-border bg-canvas px-3 py-2 text-sm font-semibold text-text-emphasis">
         <UiCheckbox
           :model-value="joinRoute"
           :disabled="loading"
@@ -34,15 +34,15 @@
         复制后加入目标项目路由
       </label>
 
-      <div v-if="joinRoute" class="space-y-4 rounded-lg border border-slate-200 bg-white p-4">
+      <div v-if="joinRoute" class="space-y-4 rounded-lg border border-border bg-surface p-4">
         <div class="grid grid-cols-2 gap-2">
           <UiButton
             type="button"
             variant="ghost"
             class="inline-flex h-10 items-center justify-center rounded-lg border text-sm font-semibold transition"
             :class="routePlacement === 'root'
-              ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
-              : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'"
+              ? 'border-border-focus bg-surface-selected text-accent-hover'
+              : 'border-border bg-surface text-text-secondary hover:border-border-strong'"
             @click="routePlacement = 'root'"
           >
             顶层路由
@@ -52,8 +52,8 @@
             variant="ghost"
             class="inline-flex h-10 items-center justify-center rounded-lg border text-sm font-semibold transition"
             :class="routePlacement === 'group'
-              ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
-              : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'"
+              ? 'border-border-focus bg-surface-selected text-accent-hover'
+              : 'border-border bg-surface text-text-secondary hover:border-border-strong'"
             @click="routePlacement = 'group'"
           >
             目标分组
@@ -61,9 +61,9 @@
         </div>
 
         <div v-if="routePlacement === 'group'" class="space-y-1.5">
-          <label class="ml-1 text-sm font-semibold text-slate-700">
+          <label class="ml-1 text-sm font-semibold text-text-emphasis">
             路由分组
-            <span class="text-red-500">*</span>
+            <span class="text-danger">*</span>
           </label>
           <UiCombobox
             v-model="parentRouteId"

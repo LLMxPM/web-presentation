@@ -332,7 +332,7 @@ async def test_list_workspace_font_assets_tool_should_return_registered_fonts(
         f"/api/workspaces/{workspace_id}/fonts",
         json={
             "asset_id": asset["id"],
-            "font_family": "Brand Serif",
+            "family_name": "Brand Serif",
             "font_weight": "500",
             "font_style": "normal",
             "font_display": "swap",

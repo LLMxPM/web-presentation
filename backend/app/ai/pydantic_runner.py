@@ -163,7 +163,6 @@ class PydanticAgentRunner:
         base_run_message_history = _message_dicts(
             run_model.message_history_json if isinstance(run_model.message_history_json, list) else []
         )
-        previous_message_history_count = max(0, len(message_history or []) - len(base_run_message_history))
         projector: PydanticEventProjector | None = None
         try:
             catalog = get_agent_catalog_entry(agent_id)
@@ -259,7 +258,6 @@ class PydanticAgentRunner:
                             run_model=run_model,
                             agent_id=agent_id,
                             base_run_message_history=base_run_message_history,
-                            previous_message_history_count=previous_message_history_count,
                             final_messages=final_messages,
                             agent_run=agent_run,
                             context_budget=context_budget,
@@ -306,11 +304,7 @@ class PydanticAgentRunner:
                     raise RuntimeError("Pydantic AI run finished without result")
                 final_messages[:] = _merge_run_message_history(
                     base_run_message_history,
-                    self._safe_run_messages_with_image_refs(
-                        agent_run.result,
-                        message_image_refs,
-                        previous_message_count=previous_message_history_count,
-                    ),
+                    self._safe_new_messages_with_image_refs(agent_run.result, message_image_refs),
                 )
                 if context_processor is not None:
                     context_processor.record_message_history(final_messages)
@@ -364,7 +358,7 @@ class PydanticAgentRunner:
                 yield sse
             await self._store.save_run_message_history(
                 run_model,
-                _merge_run_message_history(base_run_message_history, final_messages),
+                final_messages or base_run_message_history,
             )
             event = await self._store.pause_for_requirement(run_model, requirement=exc.requirement)
             yield encode_sse_event(event)
@@ -451,7 +445,6 @@ class PydanticAgentRunner:
         run_model: AiAgentRun,
         agent_id: str,
         base_run_message_history: list[dict[str, Any]],
-        previous_message_history_count: int,
         final_messages: list[dict[str, Any]],
         agent_run: Any,
         context_budget: AgentHistoryBudget | None,
@@ -462,17 +455,9 @@ class PydanticAgentRunner:
 
         _ = agent_id, context_budget
         if agent_run.result is not None:
-            new_messages = self._safe_run_messages_with_image_refs(
-                agent_run.result,
-                message_image_refs,
-                previous_message_count=previous_message_history_count,
-            )
+            new_messages = self._safe_new_messages_with_image_refs(agent_run.result, message_image_refs)
         else:
-            new_messages = self._safe_run_messages_with_image_refs(
-                agent_run,
-                message_image_refs,
-                previous_message_count=previous_message_history_count,
-            )
+            new_messages = self._safe_new_messages_with_image_refs(agent_run, message_image_refs)
         messages = _merge_run_message_history(base_run_message_history, new_messages)
         final_messages[:] = messages
         if context_processor is not None:
@@ -581,28 +566,6 @@ class PydanticAgentRunner:
 
         from app.ai.image_refs import sanitize_message_history_image_refs
 
-        return sanitize_message_history_image_refs(
-            safe_new_messages(result),
-            image_refs=image_refs,
-        )
-
-    @staticmethod
-    def _safe_run_messages_with_image_refs(
-        result: Any,
-        image_refs: list[dict[str, Any]] | None,
-        *,
-        previous_message_count: int,
-    ) -> list[dict[str, Any]]:
-        """按传入历史长度截取当前平台 run 快照，兼容 paused run 恢复后的完整保存。"""
-
-        from app.ai.image_refs import sanitize_message_history_image_refs
-
-        all_messages = safe_messages(result)
-        if all_messages and len(all_messages) >= previous_message_count:
-            return sanitize_message_history_image_refs(
-                all_messages[previous_message_count:],
-                image_refs=image_refs,
-            )
         return sanitize_message_history_image_refs(
             safe_new_messages(result),
             image_refs=image_refs,
@@ -764,12 +727,10 @@ def _merge_run_message_history(
     base_message_history: list[dict[str, Any]],
     new_messages: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    """合并 paused run 继续前历史与本次新增消息，避免工具返回覆盖前置工具调用。"""
+    """把 paused run 旧快照与 Pydantic AI 本轮增量拼接为新的 run 快照。"""
 
     base = _message_dicts(base_message_history)
     latest = _message_dicts(new_messages)
-    if base and latest[: len(base)] == base:
-        return latest
     return [*base, *latest]
 
 

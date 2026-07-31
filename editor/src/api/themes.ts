@@ -28,9 +28,9 @@ export interface WorkspaceThemePayload {
   logo_asset_id?: number | null
   invert_logo_asset_id?: number | null
   project_icon_asset_id?: number | null
-  heading_font_id?: number | null
-  body_font_id?: number | null
-  code_font_id?: number | null
+  heading_font_family_id?: number | null
+  body_font_family_id?: number | null
+  code_font_family_id?: number | null
   palette: ThemePalette
 }
 

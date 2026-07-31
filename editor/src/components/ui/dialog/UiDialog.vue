@@ -3,27 +3,27 @@
   <DialogRoot :open="open" modal @update:open="emit('update:open', $event)">
     <Teleport to="body">
       <div v-if="open" class="dialog-shell fixed inset-0 z-dialog flex items-center justify-center" :data-dialog-size="resolvedSize" :data-dialog-body-preset="resolvedBodyPreset ?? 'legacy'" :style="{ zIndex }">
-      <DialogOverlay as-child><button type="button" class="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" :class="overlayClass" :aria-label="title ? `关闭${title}` : '关闭弹窗'" @click="emit('update:open', false)" /></DialogOverlay>
+      <DialogOverlay as-child><button type="button" class="absolute inset-0 bg-overlay/40 backdrop-blur-sm" :class="overlayClass" :aria-label="title ? `关闭${title}` : '关闭弹窗'" @click="emit('update:open', false)" /></DialogOverlay>
       <DialogContent
-        class="dialog-panel fixed z-[1001] flex min-h-0 w-full flex-col overflow-hidden border border-slate-200 bg-white shadow-2xl outline-none"
+        class="dialog-panel fixed z-[1001] flex min-h-0 w-full flex-col overflow-hidden border border-border bg-surface shadow-2xl outline-none"
         :class="panelClass"
         :style="panelStyle"
         @escape-key-down="emit('escape-key-down', $event)"
         @interact-outside="emit('interact-outside', $event)"
         @close-auto-focus="restoreFocus"
       >
-        <div v-if="showHeader" class="dialog-header flex shrink-0 items-start justify-between gap-3 border-b border-slate-100 bg-slate-50/50">
+        <div v-if="showHeader" class="dialog-header flex shrink-0 items-start justify-between gap-3 border-b border-border-muted bg-canvas/50">
           <slot name="header">
             <div class="min-w-0 flex-1">
-              <DialogTitle v-if="title" class="line-clamp-1 text-lg font-bold text-slate-900">{{ title }}</DialogTitle>
-              <DialogDescription v-if="description" class="mt-1 text-sm leading-6 text-slate-500">{{ description }}</DialogDescription>
+              <DialogTitle v-if="title" class="line-clamp-1 text-lg font-bold text-text-strong">{{ title }}</DialogTitle>
+              <DialogDescription v-if="description" class="mt-1 text-sm leading-6 text-text-muted">{{ description }}</DialogDescription>
             </div>
             <div v-if="$slots['header-extra']" class="flex shrink-0 items-center gap-2"><slot name="header-extra" /></div>
-            <DialogClose v-if="showCloseButton" as-child><button type="button" class="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600" :aria-label="title ? `关闭${title}` : '关闭弹窗'">×</button></DialogClose>
+            <BaseCloseButton v-if="showCloseButton" :label="title ? `关闭${title}` : '关闭弹窗'" @click="emit('update:open', false)" />
           </slot>
         </div>
         <div class="dialog-body" :class="[bodyPresetClass, bodyClass]"><slot /></div>
-        <div v-if="$slots.footer" class="dialog-footer flex shrink-0 items-center justify-end gap-3 border-t border-slate-100 bg-slate-50/20"><slot name="footer" /></div>
+        <div v-if="$slots.footer" class="dialog-footer flex shrink-0 items-center justify-end gap-3 border-t border-border-muted bg-canvas/20"><slot name="footer" /></div>
       </DialogContent>
       </div>
     </Teleport>
@@ -32,8 +32,9 @@
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, useSlots, watch, type CSSProperties } from 'vue'
-import { DialogClose, DialogContent, DialogDescription, DialogOverlay, DialogRoot, DialogTitle } from 'reka-ui'
+import { DialogContent, DialogDescription, DialogOverlay, DialogRoot, DialogTitle } from 'reka-ui'
 
+import BaseCloseButton from '../BaseCloseButton.vue'
 import { DIALOG_BODY_PRESET_CLASS, resolveDialogMaxWidth, resolveDialogTargetHeight, type DialogBodyPreset, type DialogSize } from '../dialog'
 
 const props = withDefaults(defineProps<{

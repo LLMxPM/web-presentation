@@ -149,7 +149,7 @@ describe('WorkspaceStyleEditorDialog', () => {
       },
     })
 
-    await fireEvent.click(screen.getByRole('button', { name: /建议组件/ }))
+    await fireEvent.mouseDown(screen.getByRole('tab', { name: /建议组件/ }), { button: 0 })
     expect((await screen.findAllByText('指标卡片')).length).toBeGreaterThan(0)
     await fireEvent.click(screen.getByRole('button', { name: /^趋势图表/ }))
     await fireEvent.click(screen.getByText('保存样式'))

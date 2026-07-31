@@ -10,9 +10,11 @@ const mocked = vi.hoisted(() => ({
   createWorkspaceStyle: vi.fn(),
   deleteWorkspaceStyle: vi.fn(),
   exportWorkspaceStylePackage: vi.fn(),
+  getWorkspaceStyleSuggestedComponents: vi.fn(),
   importWorkspaceStylePackage: vi.fn(),
   listWorkspaceStyles: vi.fn(),
   listWorkspaceAssets: vi.fn(),
+  listWorkspaceFontFamilies: vi.fn(),
   updateWorkspaceStyle: vi.fn(),
   updateWorkspaceStyleSuggestedComponents: vi.fn(),
   validateWorkspaceStylePackageExport: vi.fn(),
@@ -29,9 +31,9 @@ const mocked = vi.hoisted(() => ({
     invert_logo_asset_id: null,
     project_icon_asset_id: null,
     project_icon_name: null,
-    heading_font_id: null,
-    body_font_id: null,
-    code_font_id: null,
+    heading_font_family_id: null,
+    body_font_family_id: null,
+    code_font_family_id: null,
     heading_font_label: null,
     body_font_label: null,
     code_font_label: null,
@@ -45,9 +47,9 @@ const mocked = vi.hoisted(() => ({
     logo_asset: null,
     invert_logo_asset: null,
     project_icon_asset: null,
-    heading_font: null,
-    body_font: null,
-    code_font: null,
+    heading_font_family: null,
+    body_font_family: null,
+    code_font_family: null,
     resolved_theme_config_yaml: 'themes: {}',
     created_at: '2026-05-16T00:00:00Z',
     updated_at: '2026-05-16T00:00:00Z',
@@ -94,6 +96,7 @@ vi.mock('@/api/styles', () => ({
   createWorkspaceStyle: (...args: unknown[]) => mocked.createWorkspaceStyle(...args),
   deleteWorkspaceStyle: (...args: unknown[]) => mocked.deleteWorkspaceStyle(...args),
   exportWorkspaceStylePackage: (...args: unknown[]) => mocked.exportWorkspaceStylePackage(...args),
+  getWorkspaceStyleSuggestedComponents: (...args: unknown[]) => mocked.getWorkspaceStyleSuggestedComponents(...args),
   importWorkspaceStylePackage: (...args: unknown[]) => mocked.importWorkspaceStylePackage(...args),
   listWorkspaceStyles: (...args: unknown[]) => mocked.listWorkspaceStyles(...args),
   updateWorkspaceStyle: (...args: unknown[]) => mocked.updateWorkspaceStyle(...args),
@@ -104,6 +107,7 @@ vi.mock('@/api/styles', () => ({
 
 vi.mock('@/api/assets', () => ({
   listWorkspaceAssets: (...args: unknown[]) => mocked.listWorkspaceAssets(...args),
+  listWorkspaceFontFamilies: (...args: unknown[]) => mocked.listWorkspaceFontFamilies(...args),
 }))
 
 vi.mock('@/api/themes', () => ({
@@ -141,14 +145,6 @@ vi.mock('@/components/project/WorkspaceStyleEditorDialog.vue', () => ({
   },
 }))
 
-vi.mock('@/components/project/WorkspaceStyleSuggestedComponentsDialog.vue', () => ({
-  default: {
-    props: ['modelValue', 'style'],
-    emits: ['update:modelValue', 'saved'],
-    template: '<div v-if="modelValue" data-testid="style-suggested-components-dialog">{{ style?.name }}</div>',
-  },
-}))
-
 import WorkspaceStylesView from './WorkspaceStylesView.vue'
 
 describe('WorkspaceStylesView', () => {
@@ -167,6 +163,17 @@ describe('WorkspaceStylesView', () => {
       page_size: 100,
     })
     mocked.getWorkspaceTheme.mockResolvedValue(mocked.theme)
+    mocked.getWorkspaceStyleSuggestedComponents.mockResolvedValue({
+      items: [{
+        id: 1,
+        code: 'CMP001',
+        name: '指标卡片',
+        import_name: 'MetricCard',
+        component_type: '内容组件',
+        summary: '指标展示。',
+        current_version_no: 1,
+      }],
+    })
     mocked.exportWorkspaceStylePackage.mockResolvedValue({
       blob: new Blob(['zip']),
       filename: 'workspace-styles.zip',
@@ -182,6 +189,12 @@ describe('WorkspaceStylesView', () => {
       dynamic_resource_components: [],
     })
     mocked.listWorkspaceAssets.mockResolvedValue({
+      items: [],
+      total: 0,
+      page: 1,
+      page_size: 100,
+    })
+    mocked.listWorkspaceFontFamilies.mockResolvedValue({
       items: [],
       total: 0,
       page: 1,
@@ -275,7 +288,7 @@ describe('WorkspaceStylesView', () => {
     vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined)
   })
 
-  it('应在样式卡片上提供详情查看按钮', async () => {
+  it('点击样式卡片应打开详情弹窗', async () => {
     render(WorkspaceStylesView, {
       global: {
         stubs: {
@@ -286,7 +299,7 @@ describe('WorkspaceStylesView', () => {
 
     expect(await screen.findByText('路演样式')).toBeInTheDocument()
 
-    await fireEvent.click(screen.getByRole('button', { name: '查看详情' }))
+    await fireEvent.click(screen.getByText('路演样式'))
 
     expect(await screen.findByText('路演样式 · 样式详情')).toBeInTheDocument()
     expect(screen.getByText('展示配置')).toBeInTheDocument()
@@ -300,6 +313,10 @@ describe('WorkspaceStylesView', () => {
     expect(mocked.getWorkspaceTheme).toHaveBeenCalledWith(1, 3)
     expect(screen.getByText('导出按钮')).toBeInTheDocument()
     expect(screen.getByText('使用强标题。')).toBeInTheDocument()
+    // 详情中应展示引用的建议组件清单。
+    expect(mocked.getWorkspaceStyleSuggestedComponents).toHaveBeenCalledWith(1, 9)
+    expect(await screen.findByText('指标卡片')).toBeInTheDocument()
+    expect(screen.getByText('MetricCard')).toBeInTheDocument()
   })
 
   it('应在样式卡片上提供建议组件管理入口', async () => {
@@ -309,7 +326,7 @@ describe('WorkspaceStylesView', () => {
 
     await fireEvent.click(screen.getByRole('button', { name: '管理建议组件' }))
 
-    expect(screen.getByTestId('style-suggested-components-dialog')).toHaveTextContent('路演样式')
+    expect(screen.getByTestId('style-editor-dialog')).toBeInTheDocument()
   })
 
   it('编辑样式保存时应同步保存建议组件并剥离临时字段', async () => {
@@ -332,28 +349,40 @@ describe('WorkspaceStylesView', () => {
     expect(mocked.updateWorkspaceStyleSuggestedComponents).toHaveBeenCalledWith(1, 9, [1, 2])
   })
 
-  it('勾选样式后应允许导出离线包', async () => {
+  it('选择模式下勾选样式并确认后应导出离线包', async () => {
     renderWorkspaceStylesView()
 
-    const exportButton = await screen.findByRole('button', { name: '导出样式' })
-    expect(exportButton).toBeDisabled()
+    expect(await screen.findByText('路演样式')).toBeInTheDocument()
 
-    await screen.findByText('路演样式')
+    await fireEvent.click(screen.getByRole('button', { name: '导出样式' }))
+
+    const exportSelectedButton = screen.getByRole('button', { name: '导出所选' })
+    expect(exportSelectedButton).toBeDisabled()
+
     await fireEvent.click(screen.getByRole('checkbox', { name: '选择导出 路演样式' }))
-    expect(exportButton).not.toBeDisabled()
+    expect(exportSelectedButton).not.toBeDisabled()
 
-    await fireEvent.click(exportButton)
+    await fireEvent.click(exportSelectedButton)
 
-    expect(mocked.validateWorkspaceStylePackageExport).toHaveBeenCalledWith(1, {
-      style_ids: [9],
-      manual_asset_names: [],
+    await waitFor(() => {
+      expect(mocked.validateWorkspaceStylePackageExport).toHaveBeenCalledWith(1, {
+        style_ids: [9],
+        manual_asset_names: [],
+      })
     })
-    expect(mocked.exportWorkspaceStylePackage).toHaveBeenCalledWith(1, {
-      style_ids: [9],
-      manual_asset_names: [],
+
+    await fireEvent.click(await screen.findByRole('button', { name: '继续导出' }))
+
+    await waitFor(() => {
+      expect(mocked.exportWorkspaceStylePackage).toHaveBeenCalledWith(1, {
+        style_ids: [9],
+        manual_asset_names: [],
+      })
     })
     expect(anchorClickMock).toHaveBeenCalledTimes(1)
     expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:styles')
+    // 导出成功后退出选择模式，头部按钮恢复为导出样式。
+    expect(await screen.findByRole('button', { name: '导出样式' })).toBeInTheDocument()
   })
 
   it('选择 Zip 后应展示预检结果并确认导入', async () => {

@@ -151,7 +151,7 @@ describe('ComponentLibraryPanel', () => {
     }))
   })
 
-  it('未勾选导出组件时展示刷新入口，勾选后切换为导出入口', async () => {
+  it('导出组件按钮切换选择模式，并通过 SelectionToolbar 完成导出与退出', async () => {
     const { emitted, rerender } = render(ComponentLibraryPanel, {
       props: {
         modelValue: true,
@@ -171,11 +171,25 @@ describe('ComponentLibraryPanel', () => {
       expect(screen.getByText('销售卡片')).toBeInTheDocument()
     })
 
+    // 刷新入口常驻，不再与导出入口互斥
     expect(screen.getByTitle('刷新组件列表')).toBeInTheDocument()
-    expect(screen.queryByTitle('导出已勾选组件')).toBeNull()
-
     await fireEvent.click(screen.getByTitle('刷新组件列表'))
     expect(emitted('refresh-requested')).toHaveLength(1)
+
+    // 未进入选择模式时不渲染复选框与批量工具条
+    expect(screen.queryByTitle('选择导出组件')).toBeNull()
+    expect(screen.queryByText('已选择 0 项')).toBeNull()
+
+    await fireEvent.click(screen.getByTitle('进入选择模式后勾选要导出的组件'))
+
+    expect(screen.getByText('已选择 0 项')).toBeInTheDocument()
+    expect(screen.getByTitle('选择导出组件')).toBeInTheDocument()
+    expect(screen.getByText('导出所选').closest('button')).toBeDisabled()
+
+    // 选择模式下点击卡片切换勾选，不再触发预览选择
+    await fireEvent.click(screen.getByText('销售卡片'))
+    expect(emitted('workspace-component-selected')).toBeUndefined()
+    expect(emitted('update:batchSelectedComponentIds')?.at(-1)).toEqual([[componentItem.id]])
 
     await rerender({
       modelValue: true,
@@ -184,12 +198,19 @@ describe('ComponentLibraryPanel', () => {
       batchSelectedComponentIds: [componentItem.id],
     })
 
-    expect(screen.queryByTitle('刷新组件列表')).toBeNull()
-    expect(screen.getByTitle('导出已勾选组件')).toBeInTheDocument()
+    expect(screen.getByText('已选择 1 项')).toBeInTheDocument()
+    await fireEvent.click(screen.getByText('导出所选'))
+    expect(emitted('export-workspace-components')).toHaveLength(1)
+
+    // 退出选择清空勾选并隐藏工具条与复选框
+    await fireEvent.click(screen.getByTitle('退出导出选择模式'))
+    expect(emitted('update:batchSelectedComponentIds')?.at(-1)).toEqual([[]])
+    expect(screen.queryByText('已选择 1 项')).toBeNull()
+    expect(screen.queryByTitle('选择导出组件')).toBeNull()
   })
 
-  it('隐藏新建导入入口时仍保留刷新和导出入口', async () => {
-    const { rerender } = render(ComponentLibraryPanel, {
+  it('隐藏新建导入入口时仍保留刷新和导出选择入口', async () => {
+    render(ComponentLibraryPanel, {
       props: {
         modelValue: true,
         workspaceId: 11,
@@ -212,17 +233,6 @@ describe('ComponentLibraryPanel', () => {
     expect(screen.queryByTitle('导入组件离线包')).toBeNull()
     expect(screen.queryByTitle('新增组件')).toBeNull()
     expect(screen.getByTitle('刷新组件列表')).toBeInTheDocument()
-
-    await rerender({
-      modelValue: true,
-      workspaceId: 11,
-      closable: false,
-      showCreateImportActions: false,
-      batchSelectedComponentIds: [componentItem.id],
-    })
-
-    expect(screen.queryByTitle('导入组件离线包')).toBeNull()
-    expect(screen.queryByTitle('新增组件')).toBeNull()
-    expect(screen.getByTitle('导出已勾选组件')).toBeInTheDocument()
+    expect(screen.getByTitle('进入选择模式后勾选要导出的组件')).toBeInTheDocument()
   })
 })

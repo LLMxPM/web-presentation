@@ -1,11 +1,11 @@
 <!-- 文件功能：提供按语义标签切分、锁定静态 class 结构的受控富文本编辑器。 -->
 <template>
-  <div class="overflow-hidden rounded-lg border border-slate-200 bg-white">
-    <div v-if="!props.disabled" class="flex items-center gap-1 border-b border-slate-200 bg-slate-50 px-2 py-1.5">
+  <div class="overflow-hidden rounded-lg border border-border bg-surface">
+    <div v-if="!props.disabled" class="flex items-center gap-1 border-b border-border bg-canvas px-2 py-1.5">
       <UiButton
         variant="ghost"
         size="xs"
-        class="rounded px-2 py-1 text-xs font-bold text-slate-600 hover:bg-white hover:text-indigo-700 disabled:cursor-not-allowed disabled:opacity-40"
+        class="rounded px-2 py-1 text-xs font-bold text-text-secondary hover:bg-surface hover:text-accent-hover disabled:cursor-not-allowed disabled:opacity-40"
         :disabled="!canWrapSelection('strong')"
         aria-label="加粗所选文本"
         @mousedown.prevent="applySemanticTag('strong')"
@@ -15,14 +15,14 @@
       <UiButton
         variant="ghost"
         size="xs"
-        class="rounded px-2 py-1 text-xs italic text-slate-600 hover:bg-white hover:text-indigo-700 disabled:cursor-not-allowed disabled:opacity-40"
+        class="rounded px-2 py-1 text-xs italic text-text-secondary hover:bg-surface hover:text-accent-hover disabled:cursor-not-allowed disabled:opacity-40"
         :disabled="!canWrapSelection('em')"
         aria-label="斜体所选文本"
         @mousedown.prevent="applySemanticTag('em')"
       >
         I
       </UiButton>
-      <span class="ml-auto text-[10px] text-slate-400">选中文字添加语义 · Enter 换行</span>
+      <span class="ml-auto text-[10px] text-text-disabled">选中文字添加语义 · Enter 换行</span>
     </div>
 
     <div class="min-h-28 p-3">
@@ -36,10 +36,10 @@
       />
     </div>
 
-    <p v-if="invalidStructure" class="border-t border-amber-100 bg-amber-50 px-3 py-1.5 text-[11px] text-amber-800">
+    <p v-if="invalidStructure" class="border-t border-warning-border bg-warning-muted px-3 py-1.5 text-[11px] text-warning-strong">
       当前草稿修改了锁定样式结构，已恢复为基准内容。
     </p>
-    <p v-if="tooLong" class="border-t border-rose-100 bg-rose-50 px-3 py-1.5 text-[11px] text-rose-700">
+    <p v-if="tooLong" class="border-t border-danger-border bg-danger-muted px-3 py-1.5 text-[11px] text-danger-strong">
       内容超过 20000 字符限制，本次输入未加入草稿。
     </p>
   </div>

@@ -880,7 +880,7 @@ export interface AgentDescriptor {
 }
 
 export interface AgentSessionLlmMetadata {
-  selection_kind: 'explicit_config' | 'slot_binding'
+  selection_kind: 'explicit_config' | 'slot_binding' | 'run_override'
   config_id: number
   scope: AiLlmConfigScope
   name: string
@@ -890,6 +890,13 @@ export interface AgentSessionLlmMetadata {
   provider_label: string
   model_id: string
   supports_image_input: boolean
+  thinking_enabled?: boolean
+  thinking_effort?: string | null
+  context_window_tokens?: number
+  max_output_tokens?: number
+  history_token_ratio?: number
+  compression_target_ratio?: number
+  advanced_config_json?: Record<string, unknown>
 }
 
 export interface AgentToolConfigItem {
@@ -1129,6 +1136,7 @@ export interface AgentActiveRunItem {
   updated_at?: string | null
   cancel_requested_at?: string | null
   event_index?: number
+  llm?: AgentSessionLlmMetadata | null
 }
 
 export interface AgentRunStartResponse {
@@ -1340,6 +1348,7 @@ export interface ComponentPreviewOptions {
 
 export interface WorkspaceFontConfigSummary {
   id: number
+  family_id: number
   asset_id: number
   asset_name: string
   font_family: string
@@ -1353,6 +1362,15 @@ export interface WorkspaceFontConfigSummary {
 export interface WorkspaceFontConfigItem extends WorkspaceFontConfigSummary {
   workspace_id: number
   asset_url: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface WorkspaceFontFamilyItem {
+  id: number
+  workspace_id: number
+  name: string
+  faces: WorkspaceFontConfigItem[]
   created_at: string
   updated_at: string
 }
@@ -1420,6 +1438,11 @@ export interface AssetRenderHintMetadata {
   aspect_ratio_source: 'auto' | 'manual' | 'agent' | string
 }
 
+export interface WorkspaceThemeFontFamilySummary {
+  id: number
+  name: string
+}
+
 export interface WorkspaceThemeItem {
   id: number
   workspace_id: number
@@ -1430,9 +1453,9 @@ export interface WorkspaceThemeItem {
   invert_logo_asset_id: number | null
   project_icon_asset_id: number | null
   project_icon_name: string | null
-  heading_font_id: number | null
-  body_font_id: number | null
-  code_font_id: number | null
+  heading_font_family_id: number | null
+  body_font_family_id: number | null
+  code_font_family_id: number | null
   heading_font_label: string | null
   body_font_label: string | null
   code_font_label: string | null
@@ -1440,9 +1463,9 @@ export interface WorkspaceThemeItem {
   logo_asset: ThemeAssetSummary | null
   invert_logo_asset: ThemeAssetSummary | null
   project_icon_asset: ThemeAssetSummary | null
-  heading_font: WorkspaceFontConfigItem | null
-  body_font: WorkspaceFontConfigItem | null
-  code_font: WorkspaceFontConfigItem | null
+  heading_font_family: WorkspaceThemeFontFamilySummary | null
+  body_font_family: WorkspaceThemeFontFamilySummary | null
+  code_font_family: WorkspaceThemeFontFamilySummary | null
   resolved_theme_config_yaml: string
   created_at: string
   updated_at: string

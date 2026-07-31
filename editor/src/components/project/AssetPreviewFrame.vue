@@ -1,18 +1,18 @@
 <!-- 文件功能：封装工作空间资源的 Runtime iframe 预览、背景切换、加载态与错误态展示。 -->
 <template>
-  <section class="relative flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white">
+  <section class="relative flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-border bg-surface">
     <AssetPreviewBackgroundControl
       v-if="asset"
       v-model="previewBackground"
       class="absolute right-3 top-3 z-10 w-[148px] shadow-sm"
     />
-    <div v-if="loading" class="flex min-h-0 flex-1 items-center justify-center text-sm font-semibold text-slate-400">
+    <div v-if="loading" class="flex min-h-0 flex-1 items-center justify-center text-sm font-semibold text-text-disabled">
       正在创建资源预览...
     </div>
     <div v-else-if="errorMessage" class="flex min-h-0 flex-1 items-center justify-center p-6 text-center">
       <div class="max-w-sm">
-        <p class="text-sm font-bold text-rose-600">资源预览打开失败</p>
-        <p class="mt-2 text-xs leading-6 text-slate-500">{{ errorMessage }}</p>
+        <p class="text-sm font-bold text-danger">资源预览打开失败</p>
+        <p class="mt-2 text-xs leading-6 text-text-muted">{{ errorMessage }}</p>
       </div>
     </div>
     <RuntimePreviewFrame
@@ -20,8 +20,8 @@
       :frame-url="previewFrameUrl"
       :title="previewTitle"
       layout="fill"
-      container-class="min-h-0 flex-1 overflow-hidden bg-white"
-      iframe-class="block h-full w-full bg-white"
+      container-class="min-h-0 flex-1 overflow-hidden bg-surface"
+      iframe-class="block h-full w-full bg-surface"
       empty-content-class="flex h-full items-center justify-center px-8 text-center"
       empty-title="请选择资源"
       empty-description="资源预览会在这里打开。"

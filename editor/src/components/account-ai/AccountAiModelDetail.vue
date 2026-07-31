@@ -1,33 +1,33 @@
 <!-- 文件功能：承载账号 AI 设置中的模型详情表单，隔离模型编辑界面。 -->
 <template>
   <section class="space-y-5 p-5">
-    <div class="flex flex-wrap items-start justify-between gap-4 border-b border-slate-100 pb-4">
+    <div class="flex flex-wrap items-start justify-between gap-4 border-b border-border-muted pb-4">
       <div>
-        <h2 class="text-lg font-bold text-slate-900">{{ panelTitle }}</h2>
-        <p class="mt-1 text-sm text-slate-500">
+        <h2 class="text-lg font-bold text-text-strong">{{ panelTitle }}</h2>
+        <p class="mt-1 text-sm text-text-muted">
           {{ panelDescription }}
         </p>
         <div v-if="mode === 'detail' && selectedModel" class="mt-3 flex flex-wrap gap-2 text-xs font-semibold">
           <span
             class="rounded-full px-2.5 py-1"
-            :class="selectedModel.status === 'active' ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'"
+            :class="selectedModel.status === 'active' ? 'bg-success-muted text-success-strong' : 'bg-surface-muted text-text-muted'"
           >
             {{ selectedModel.status === 'active' ? '启用' : '不可用' }}
           </span>
           <span
             class="rounded-full px-2.5 py-1"
-            :class="selectedModel.scope === 'global' ? 'bg-indigo-50 text-indigo-700' : 'bg-slate-100 text-slate-600'"
+            :class="selectedModel.scope === 'global' ? 'bg-surface-selected text-accent-hover' : 'bg-surface-muted text-text-secondary'"
           >
             {{ selectedModel.scope === 'global' ? '全局模型' : '个人模型' }}
           </span>
-          <span class="rounded-full bg-slate-100 px-2.5 py-1 text-slate-600">
+          <span class="rounded-full bg-surface-muted px-2.5 py-1 text-text-secondary">
             {{ selectedModel.provider_config_name }}
           </span>
-          <span class="rounded-full bg-violet-50 px-2.5 py-1 text-violet-700">
+          <span class="rounded-full bg-ai-muted px-2.5 py-1 text-ai-strong">
             {{ selectedModel.model_type === 'image_generation' ? '图片生成' : '聊天模型' }}
           </span>
         </div>
-        <p v-if="readOnlyModel" class="mt-2 text-xs font-semibold text-amber-600">管理员全局模型只读，可选择绑定但不能修改。</p>
+        <p v-if="readOnlyModel" class="mt-2 text-xs font-semibold text-warning">管理员全局模型只读，可选择绑定但不能修改。</p>
       </div>
       <div v-if="mode === 'detail' && selectedModel?.editable" class="flex flex-wrap justify-end gap-2">
         <UiButton
@@ -48,32 +48,32 @@
 
     <article v-if="mode === 'detail' && selectedModel" class="space-y-6">
       <section v-if="(selectedModel.model_type ?? 'chat') === 'chat'" class="space-y-3">
-        <div class="flex items-start gap-3 border-b border-slate-100 pb-2">
-          <span class="mt-1 h-5 w-1 rounded-full bg-indigo-500"></span>
+        <div class="flex items-start gap-3 border-b border-border-muted pb-2">
+          <span class="mt-1 h-5 w-1 rounded-full bg-accent-emphasis"></span>
           <div>
-            <h3 class="text-base font-bold text-slate-900">模型身份</h3>
-            <p class="mt-1 text-xs leading-5 text-slate-500">用于识别模型归属、绑定入口和供应商真实模型 ID。</p>
+            <h3 class="text-base font-bold text-text-strong">模型身份</h3>
+            <p class="mt-1 text-xs leading-5 text-text-muted">用于识别模型归属、绑定入口和供应商真实模型 ID。</p>
           </div>
         </div>
         <dl class="grid gap-3 text-sm md:grid-cols-2 xl:grid-cols-4">
-          <div class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-            <dt class="text-xs font-semibold text-slate-400">供应商配置</dt>
-            <dd class="mt-1 truncate font-bold text-slate-900">{{ selectedModel.provider_config_name }}</dd>
-            <dd class="mt-1 text-xs text-slate-500">{{ selectedModel.provider_label }}</dd>
+          <div class="rounded-xl border border-border bg-canvas px-4 py-3">
+            <dt class="text-xs font-semibold text-text-disabled">供应商配置</dt>
+            <dd class="mt-1 truncate font-bold text-text-strong">{{ selectedModel.provider_config_name }}</dd>
+            <dd class="mt-1 text-xs text-text-muted">{{ selectedModel.provider_label }}</dd>
           </div>
-          <div class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-            <dt class="text-xs font-semibold text-slate-400">模型 ID</dt>
+          <div class="rounded-xl border border-border bg-canvas px-4 py-3">
+            <dt class="text-xs font-semibold text-text-disabled">模型 ID</dt>
             <dd class="mt-1 min-w-0">
-              <code class="block truncate rounded bg-white px-2 py-1 text-xs font-semibold text-slate-700">{{ selectedModel.model_id }}</code>
+              <code class="block truncate rounded bg-surface px-2 py-1 text-xs font-semibold text-text-emphasis">{{ selectedModel.model_id }}</code>
             </dd>
           </div>
-          <div class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-            <dt class="text-xs font-semibold text-slate-400">范围</dt>
-            <dd class="mt-1 font-semibold text-slate-700">{{ selectedModel.scope === 'global' ? '全局模型' : '个人模型' }}</dd>
+          <div class="rounded-xl border border-border bg-canvas px-4 py-3">
+            <dt class="text-xs font-semibold text-text-disabled">范围</dt>
+            <dd class="mt-1 font-semibold text-text-emphasis">{{ selectedModel.scope === 'global' ? '全局模型' : '个人模型' }}</dd>
           </div>
-          <div class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-            <dt class="text-xs font-semibold text-slate-400">状态</dt>
-            <dd class="mt-1 font-semibold" :class="selectedModel.status === 'active' ? 'text-emerald-700' : 'text-slate-500'">
+          <div class="rounded-xl border border-border bg-canvas px-4 py-3">
+            <dt class="text-xs font-semibold text-text-disabled">状态</dt>
+            <dd class="mt-1 font-semibold" :class="selectedModel.status === 'active' ? 'text-success-strong' : 'text-text-muted'">
               {{ selectedModel.status === 'active' ? '启用' : '不可用' }}
             </dd>
           </div>
@@ -81,71 +81,71 @@
       </section>
 
       <section v-if="(selectedModel.model_type ?? 'chat') === 'chat'" class="space-y-3">
-        <div class="flex items-start gap-3 border-b border-slate-100 pb-2">
-          <span class="mt-1 h-5 w-1 rounded-full bg-sky-500"></span>
+        <div class="flex items-start gap-3 border-b border-border-muted pb-2">
+          <span class="mt-1 h-5 w-1 rounded-full bg-info"></span>
           <div>
-            <h3 class="text-base font-bold text-slate-900">运行预算</h3>
-            <p class="mt-1 text-xs leading-5 text-slate-500">控制上下文窗口、单次输出和历史压缩目标。</p>
+            <h3 class="text-base font-bold text-text-strong">运行预算</h3>
+            <p class="mt-1 text-xs leading-5 text-text-muted">控制上下文窗口、单次输出和历史压缩目标。</p>
           </div>
         </div>
         <dl class="grid gap-3 text-sm md:grid-cols-2 xl:grid-cols-4">
-          <div class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-            <dt class="text-xs font-semibold text-slate-400">上下文窗口</dt>
-            <dd class="mt-1 font-semibold text-slate-700">{{ selectedModel.context_window_tokens.toLocaleString() }} tokens</dd>
+          <div class="rounded-xl border border-border bg-canvas px-4 py-3">
+            <dt class="text-xs font-semibold text-text-disabled">上下文窗口</dt>
+            <dd class="mt-1 font-semibold text-text-emphasis">{{ selectedModel.context_window_tokens.toLocaleString() }} tokens</dd>
           </div>
-          <div class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-            <dt class="text-xs font-semibold text-slate-400">最大输出</dt>
-            <dd class="mt-1 font-semibold text-slate-700">{{ selectedModel.max_output_tokens.toLocaleString() }} tokens</dd>
+          <div class="rounded-xl border border-border bg-canvas px-4 py-3">
+            <dt class="text-xs font-semibold text-text-disabled">最大输出</dt>
+            <dd class="mt-1 font-semibold text-text-emphasis">{{ selectedModel.max_output_tokens.toLocaleString() }} tokens</dd>
           </div>
-          <div class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-            <dt class="text-xs font-semibold text-slate-400">历史上下文比例</dt>
-            <dd class="mt-1 font-semibold text-slate-700">{{ selectedModel.history_token_ratio }}</dd>
+          <div class="rounded-xl border border-border bg-canvas px-4 py-3">
+            <dt class="text-xs font-semibold text-text-disabled">历史上下文比例</dt>
+            <dd class="mt-1 font-semibold text-text-emphasis">{{ selectedModel.history_token_ratio }}</dd>
           </div>
-          <div class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-            <dt class="text-xs font-semibold text-slate-400">压缩目标比例</dt>
-            <dd class="mt-1 font-semibold text-slate-700">{{ selectedModel.compression_target_ratio }}</dd>
+          <div class="rounded-xl border border-border bg-canvas px-4 py-3">
+            <dt class="text-xs font-semibold text-text-disabled">压缩目标比例</dt>
+            <dd class="mt-1 font-semibold text-text-emphasis">{{ selectedModel.compression_target_ratio }}</dd>
           </div>
         </dl>
       </section>
 
       <section class="space-y-3">
-        <div class="flex items-start gap-3 border-b border-slate-100 pb-2">
-          <span class="mt-1 h-5 w-1 rounded-full bg-emerald-500"></span>
+        <div class="flex items-start gap-3 border-b border-border-muted pb-2">
+          <span class="mt-1 h-5 w-1 rounded-full bg-success"></span>
           <div>
-            <h3 class="text-base font-bold text-slate-900">能力声明</h3>
-            <p class="mt-1 text-xs leading-5 text-slate-500">供 Agent 运行态决定请求参数映射、视觉输入和工具可用性。</p>
+            <h3 class="text-base font-bold text-text-strong">能力声明</h3>
+            <p class="mt-1 text-xs leading-5 text-text-muted">供 Agent 运行态决定请求参数映射、视觉输入和工具可用性。</p>
           </div>
         </div>
         <dl v-if="(selectedModel.model_type ?? 'chat') === 'chat'" class="grid gap-3 text-sm md:grid-cols-2">
-          <div class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-            <dt class="text-xs font-semibold text-slate-400">Reasoning</dt>
-            <dd class="mt-1 font-semibold" :class="selectedModel.thinking_enabled ? 'text-emerald-700' : 'text-slate-500'">
+          <div class="rounded-xl border border-border bg-canvas px-4 py-3">
+            <dt class="text-xs font-semibold text-text-disabled">Reasoning</dt>
+            <dd class="mt-1 font-semibold" :class="selectedModel.thinking_enabled ? 'text-success-strong' : 'text-text-muted'">
               {{ selectedModel.thinking_enabled ? `启用${selectedModel.thinking_effort ? ` · ${selectedModel.thinking_effort}` : ''}` : '未启用' }}
             </dd>
           </div>
-          <div class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-            <dt class="text-xs font-semibold text-slate-400">图片输入</dt>
-            <dd class="mt-1 font-semibold" :class="selectedModel.supports_image_input ? 'text-emerald-700' : 'text-slate-500'">
+          <div class="rounded-xl border border-border bg-canvas px-4 py-3">
+            <dt class="text-xs font-semibold text-text-disabled">图片输入</dt>
+            <dd class="mt-1 font-semibold" :class="selectedModel.supports_image_input ? 'text-success-strong' : 'text-text-muted'">
               {{ selectedModel.supports_image_input ? '支持' : '不支持' }}
             </dd>
           </div>
         </dl>
         <dl v-else-if="currentImageModel" class="grid gap-3 text-sm md:grid-cols-2 xl:grid-cols-4">
-          <div class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-            <dt class="text-xs font-semibold text-slate-400">操作</dt>
-            <dd class="mt-1 font-semibold text-slate-700">{{ currentImageModel.operations.join(' / ') }}</dd>
+          <div class="rounded-xl border border-border bg-canvas px-4 py-3">
+            <dt class="text-xs font-semibold text-text-disabled">操作</dt>
+            <dd class="mt-1 font-semibold text-text-emphasis">{{ currentImageModel.operations.join(' / ') }}</dd>
           </div>
-          <div class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-            <dt class="text-xs font-semibold text-slate-400">参考图 / 输出上限</dt>
-            <dd class="mt-1 font-semibold text-slate-700">{{ currentImageModel.max_reference_images }} / {{ currentImageModel.max_output_count }}</dd>
+          <div class="rounded-xl border border-border bg-canvas px-4 py-3">
+            <dt class="text-xs font-semibold text-text-disabled">参考图 / 输出上限</dt>
+            <dd class="mt-1 font-semibold text-text-emphasis">{{ currentImageModel.max_reference_images }} / {{ currentImageModel.max_output_count }}</dd>
           </div>
-          <div class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-            <dt class="text-xs font-semibold text-slate-400">质量</dt>
-            <dd class="mt-1 font-semibold text-slate-700">{{ currentImageModel.quality_options.join(' / ') }}</dd>
+          <div class="rounded-xl border border-border bg-canvas px-4 py-3">
+            <dt class="text-xs font-semibold text-text-disabled">质量</dt>
+            <dd class="mt-1 font-semibold text-text-emphasis">{{ currentImageModel.quality_options.join(' / ') }}</dd>
           </div>
-          <div class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-            <dt class="text-xs font-semibold text-slate-400">蒙版编辑</dt>
-            <dd class="mt-1 font-semibold" :class="currentImageModel.supports_mask ? 'text-emerald-700' : 'text-slate-500'">
+          <div class="rounded-xl border border-border bg-canvas px-4 py-3">
+            <dt class="text-xs font-semibold text-text-disabled">蒙版编辑</dt>
+            <dd class="mt-1 font-semibold" :class="currentImageModel.supports_mask ? 'text-success-strong' : 'text-text-muted'">
               {{ currentImageModel.supports_mask ? '支持' : '不支持' }}
             </dd>
           </div>
@@ -153,24 +153,24 @@
       </section>
     </article>
 
-    <div v-else-if="mode === 'detail'" class="rounded-2xl border border-dashed border-slate-200 px-4 py-12 text-center text-sm text-slate-500">
+    <div v-else-if="mode === 'detail'" class="rounded-2xl border border-dashed border-border px-4 py-12 text-center text-sm text-text-muted">
       请选择左侧模型查看详情，或新建一个模型。
     </div>
 
     <div v-if="mode !== 'detail'" class="space-y-5" :class="readOnlyModel ? 'pointer-events-none opacity-70' : ''">
       <section class="space-y-3">
-        <div class="flex items-start gap-3 border-b border-slate-100 pb-2">
-          <span class="mt-1 h-5 w-1 rounded-full bg-indigo-500"></span>
+        <div class="flex items-start gap-3 border-b border-border-muted pb-2">
+          <span class="mt-1 h-5 w-1 rounded-full bg-accent-emphasis"></span>
           <div>
-            <h3 class="text-base font-bold text-slate-900">模型身份</h3>
-            <p class="mt-1 text-xs leading-5 text-slate-500">模型名称用于绑定选择展示，模型 ID 按供应商真实 ID 填写。</p>
+            <h3 class="text-base font-bold text-text-strong">模型身份</h3>
+            <p class="mt-1 text-xs leading-5 text-text-muted">模型名称用于绑定选择展示，模型 ID 按供应商真实 ID 填写。</p>
           </div>
         </div>
         <div class="grid gap-4 xl:grid-cols-2">
-          <UiFormField label="模型类型" class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700">
+          <UiFormField label="模型类型" class="rounded-xl border border-border bg-canvas px-4 py-3 text-sm font-semibold text-text-emphasis">
             <UiSelect v-model="form.model_type" :options="modelTypeOptions" />
           </UiFormField>
-          <UiFormField v-if="!selectedConfigId && canCreateGlobal" label="模型范围" class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700">
+          <UiFormField v-if="!selectedConfigId && canCreateGlobal" label="模型范围" class="rounded-xl border border-border bg-canvas px-4 py-3 text-sm font-semibold text-text-emphasis">
             <UiSelect v-model="form.scope" :options="scopeOptions" />
           </UiFormField>
           <UiFormField label="模型名称" required>
@@ -183,14 +183,14 @@
           </UiFormField>
 
           <div class="space-y-1.5">
-            <label class="ml-1 text-sm font-semibold text-slate-700">供应商配置</label>
+            <label class="ml-1 text-sm font-semibold text-text-emphasis">供应商配置</label>
             <UiCombobox
               :model-value="form.provider_config_id"
               :options="providerConfigOptions"
               placeholder="请选择供应商配置"
               @update:model-value="value => form.provider_config_id = value === null ? null : Number(value)"
             />
-            <p v-if="currentProvider" class="ml-1 text-xs text-slate-400">{{ currentProvider.provider_adapter }}</p>
+            <p v-if="currentProvider" class="ml-1 text-xs text-text-disabled">{{ currentProvider.provider_adapter }}</p>
           </div>
 
           <UiFormField label="模型 ID" required>
@@ -205,13 +205,13 @@
           <datalist v-if="form.model_type === 'image_generation'" id="image-generation-model-options">
             <option v-for="model in imageModelOptions" :key="model.model_id" :value="model.model_id">{{ model.label }}</option>
           </datalist>
-          <p v-if="form.model_type === 'image_generation' && imageModelOptions.length" class="-mt-2 text-xs text-slate-500 xl:col-span-2">
+          <p v-if="form.model_type === 'image_generation' && imageModelOptions.length" class="-mt-2 text-xs text-text-muted xl:col-span-2">
             已知模型：{{ imageModelOptions.map(model => `${model.label} (${model.model_id})`).join('、') }}。
             {{ supportsCustomImageModel ? '也可填写该供应商的兼容模型 ID。' : '当前供应商只允许目录中的模型。' }}
           </p>
           <p
             v-if="currentProvider && !(currentProvider.supported_model_types ?? ['chat']).includes(form.model_type)"
-            class="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-semibold text-amber-700 xl:col-span-2"
+            class="rounded-xl border border-warning-border bg-warning-muted px-4 py-3 text-xs font-semibold text-warning-strong xl:col-span-2"
           >
             当前供应商不支持所选模型类型，请更换供应商配置。
           </p>
@@ -219,11 +219,11 @@
       </section>
 
       <section v-if="form.model_type === 'chat'" class="space-y-3">
-        <div class="flex items-start gap-3 border-b border-slate-100 pb-2">
-          <span class="mt-1 h-5 w-1 rounded-full bg-sky-500"></span>
+        <div class="flex items-start gap-3 border-b border-border-muted pb-2">
+          <span class="mt-1 h-5 w-1 rounded-full bg-info"></span>
           <div>
-            <h3 class="text-base font-bold text-slate-900">运行预算</h3>
-            <p class="mt-1 text-xs leading-5 text-slate-500">控制上下文窗口、单次输出和历史压缩目标，保存时会按后端范围归一化。</p>
+            <h3 class="text-base font-bold text-text-strong">运行预算</h3>
+            <p class="mt-1 text-xs leading-5 text-text-muted">控制上下文窗口、单次输出和历史压缩目标，保存时会按后端范围归一化。</p>
           </div>
         </div>
         <div class="grid gap-4 xl:grid-cols-2">
@@ -273,15 +273,15 @@
       </section>
 
       <section v-if="form.model_type === 'chat'" class="space-y-3">
-        <div class="flex items-start gap-3 border-b border-slate-100 pb-2">
-          <span class="mt-1 h-5 w-1 rounded-full bg-emerald-500"></span>
+        <div class="flex items-start gap-3 border-b border-border-muted pb-2">
+          <span class="mt-1 h-5 w-1 rounded-full bg-success"></span>
           <div>
-            <h3 class="text-base font-bold text-slate-900">能力声明</h3>
-            <p class="mt-1 text-xs leading-5 text-slate-500">声明 reasoning 与图片输入能力，供 Agent 运行态决定可用工具和参数映射。</p>
+            <h3 class="text-base font-bold text-text-strong">能力声明</h3>
+            <p class="mt-1 text-xs leading-5 text-text-muted">声明 reasoning 与图片输入能力，供 Agent 运行态决定可用工具和参数映射。</p>
           </div>
         </div>
         <div class="grid gap-4 xl:grid-cols-2">
-          <div class="flex items-start gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+          <div class="flex items-start gap-3 rounded-xl border border-border bg-canvas px-4 py-3 text-sm text-text-emphasis">
             <UiCheckbox
               :model-value="form.thinking_enabled"
               aria-label="启用思考 / reasoning"
@@ -290,13 +290,13 @@
             />
             <span>
               <span class="block font-semibold">启用思考 / reasoning</span>
-              <span class="mt-1 block text-xs text-slate-500">
+              <span class="mt-1 block text-xs text-text-muted">
                 {{ currentProvider?.supports_thinking ? `当前供应商会按 ${currentProvider.thinking_mode} 规则映射。` : '当前供应商不支持 thinking，保存时会自动忽略。' }}
               </span>
             </span>
           </div>
 
-          <div class="flex items-start gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+          <div class="flex items-start gap-3 rounded-xl border border-border bg-canvas px-4 py-3 text-sm text-text-emphasis">
             <UiCheckbox
               :model-value="form.supports_image_input"
               aria-label="支持图片输入"
@@ -304,13 +304,13 @@
             />
             <span>
               <span class="block font-semibold">支持图片输入</span>
-              <span class="mt-1 block text-xs text-slate-500">
+              <span class="mt-1 block text-xs text-text-muted">
                 {{ imageInputHint }}
               </span>
             </span>
           </div>
 
-          <div class="space-y-1.5 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 xl:col-span-2">
+          <div class="space-y-1.5 rounded-xl border border-border bg-canvas px-4 py-3 xl:col-span-2">
             <UiFormField label="思考强度">
               <UiInput
                 :model-value="form.thinking_effort ?? ''"
@@ -319,7 +319,7 @@
                 @update:model-value="value => form.thinking_effort = String(value).trim() || null"
               />
             </UiFormField>
-            <p class="ml-1 text-xs leading-5 text-slate-500">
+            <p class="ml-1 text-xs leading-5 text-text-muted">
               {{ thinkingEffortHint }}
             </p>
           </div>
@@ -327,29 +327,29 @@
       </section>
 
       <section v-else-if="currentImageModel" class="space-y-3">
-        <div class="flex items-start gap-3 border-b border-slate-100 pb-2">
-          <span class="mt-1 h-5 w-1 rounded-full bg-emerald-500"></span>
+        <div class="flex items-start gap-3 border-b border-border-muted pb-2">
+          <span class="mt-1 h-5 w-1 rounded-full bg-success"></span>
           <div>
-            <h3 class="text-base font-bold text-slate-900">生图能力</h3>
-            <p class="mt-1 text-xs leading-5 text-slate-500">能力由后端模型目录维护，保存和执行时会使用同一份约束。</p>
+            <h3 class="text-base font-bold text-text-strong">生图能力</h3>
+            <p class="mt-1 text-xs leading-5 text-text-muted">能力由后端模型目录维护，保存和执行时会使用同一份约束。</p>
           </div>
         </div>
         <dl class="grid gap-3 text-sm md:grid-cols-2 xl:grid-cols-4">
-          <div class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-            <dt class="text-xs font-semibold text-slate-400">操作</dt>
-            <dd class="mt-1 font-semibold text-slate-700">{{ currentImageModel.operations.join(' / ') }}</dd>
+          <div class="rounded-xl border border-border bg-canvas px-4 py-3">
+            <dt class="text-xs font-semibold text-text-disabled">操作</dt>
+            <dd class="mt-1 font-semibold text-text-emphasis">{{ currentImageModel.operations.join(' / ') }}</dd>
           </div>
-          <div class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-            <dt class="text-xs font-semibold text-slate-400">参考图 / 输出上限</dt>
-            <dd class="mt-1 font-semibold text-slate-700">{{ currentImageModel.max_reference_images }} / {{ currentImageModel.max_output_count }}</dd>
+          <div class="rounded-xl border border-border bg-canvas px-4 py-3">
+            <dt class="text-xs font-semibold text-text-disabled">参考图 / 输出上限</dt>
+            <dd class="mt-1 font-semibold text-text-emphasis">{{ currentImageModel.max_reference_images }} / {{ currentImageModel.max_output_count }}</dd>
           </div>
-          <div class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-            <dt class="text-xs font-semibold text-slate-400">分辨率档位</dt>
-            <dd class="mt-1 font-semibold text-slate-700">{{ currentImageModel.resolution_tiers.join(' / ') }}</dd>
+          <div class="rounded-xl border border-border bg-canvas px-4 py-3">
+            <dt class="text-xs font-semibold text-text-disabled">分辨率档位</dt>
+            <dd class="mt-1 font-semibold text-text-emphasis">{{ currentImageModel.resolution_tiers.join(' / ') }}</dd>
           </div>
-          <div class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-            <dt class="text-xs font-semibold text-slate-400">蒙版编辑</dt>
-            <dd class="mt-1 font-semibold" :class="currentImageModel.supports_mask ? 'text-emerald-700' : 'text-slate-500'">
+          <div class="rounded-xl border border-border bg-canvas px-4 py-3">
+            <dt class="text-xs font-semibold text-text-disabled">蒙版编辑</dt>
+            <dd class="mt-1 font-semibold" :class="currentImageModel.supports_mask ? 'text-success-strong' : 'text-text-muted'">
               {{ currentImageModel.supports_mask ? '支持' : '不支持' }}
             </dd>
           </div>
@@ -375,14 +375,14 @@
             :disabled="isFormLocked"
           />
         </UiFormField>
-        <div class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs leading-6 text-slate-500">
+        <div class="rounded-xl border border-border bg-canvas px-4 py-3 text-xs leading-6 text-text-muted">
           {{ advancedParameterHint }}
           <a
             v-if="currentProvider?.docs_url"
             :href="currentProvider.docs_url"
             target="_blank"
             rel="noreferrer"
-            class="ml-2 font-semibold text-indigo-600 underline underline-offset-2"
+            class="ml-2 font-semibold text-accent underline underline-offset-2"
           >
             {{ currentProvider.label }} 文档
           </a>

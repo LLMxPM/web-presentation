@@ -7,7 +7,6 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.schemas.asset import AssetAnalysisMetadata
-from app.schemas.font import WorkspaceFontConfigResponse
 
 
 def _normalize_theme_key(value: object) -> object:
@@ -79,9 +78,9 @@ class WorkspaceThemeBaseRequest(BaseModel):
     logo_asset_id: int | None = None
     invert_logo_asset_id: int | None = None
     project_icon_asset_id: int | None = None
-    heading_font_id: int | None = None
-    body_font_id: int | None = None
-    code_font_id: int | None = None
+    heading_font_family_id: int | None = None
+    body_font_family_id: int | None = None
+    code_font_family_id: int | None = None
     palette: ThemePalette
 
     @field_validator("key", mode="before")
@@ -105,9 +104,9 @@ class WorkspaceThemeUpdateRequest(BaseModel):
     logo_asset_id: int | None = None
     invert_logo_asset_id: int | None = None
     project_icon_asset_id: int | None = None
-    heading_font_id: int | None = None
-    body_font_id: int | None = None
-    code_font_id: int | None = None
+    heading_font_family_id: int | None = None
+    body_font_family_id: int | None = None
+    code_font_family_id: int | None = None
     palette: ThemePalette | None = None
 
     @field_validator("key", mode="before")
@@ -143,6 +142,15 @@ class WorkspaceThemeAssetSummary(BaseModel):
     url: str | None = None
 
 
+class WorkspaceThemeFontFamilySummary(BaseModel):
+    """主题响应中的字体族摘要。"""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+
+
 class WorkspaceThemeItem(BaseModel):
     """工作空间主题响应模型。"""
 
@@ -157,9 +165,9 @@ class WorkspaceThemeItem(BaseModel):
     invert_logo_asset_id: int | None
     project_icon_asset_id: int | None
     project_icon_name: str | None
-    heading_font_id: int | None
-    body_font_id: int | None
-    code_font_id: int | None
+    heading_font_family_id: int | None
+    body_font_family_id: int | None
+    code_font_family_id: int | None
     heading_font_label: str | None = None
     body_font_label: str | None = None
     code_font_label: str | None = None
@@ -167,9 +175,9 @@ class WorkspaceThemeItem(BaseModel):
     logo_asset: WorkspaceThemeAssetSummary | None = None
     invert_logo_asset: WorkspaceThemeAssetSummary | None = None
     project_icon_asset: WorkspaceThemeAssetSummary | None = None
-    heading_font: WorkspaceFontConfigResponse | None = None
-    body_font: WorkspaceFontConfigResponse | None = None
-    code_font: WorkspaceFontConfigResponse | None = None
+    heading_font_family: WorkspaceThemeFontFamilySummary | None = None
+    body_font_family: WorkspaceThemeFontFamilySummary | None = None
+    code_font_family: WorkspaceThemeFontFamilySummary | None = None
     resolved_theme_config_yaml: str
     created_at: datetime
     updated_at: datetime

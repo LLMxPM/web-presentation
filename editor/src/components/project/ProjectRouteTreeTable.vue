@@ -1,9 +1,9 @@
 <!-- 文件功能：以树表格形式展示并编辑项目路由节点，支持拖动排序、页面替换与顶层/子级页面维护。 -->
 <template>
-  <section class="flex flex-col rounded-2xl border border-slate-200 bg-white p-3 xl:min-h-0">
+  <section class="flex flex-col rounded-2xl border border-border bg-surface p-3 xl:min-h-0">
     <div class="flex items-center justify-between gap-3 flex-wrap">
       <div>
-        <h5 class="text-sm font-bold text-slate-900">路由编排</h5>
+        <h5 class="text-sm font-bold text-text-strong">路由编排</h5>
       </div>
       <div class="flex items-center gap-2">
         <div class="w-72">
@@ -22,16 +22,16 @@
     </div>
 
     <div v-if="routes.length === 0"
-      class="mt-4 flex flex-1 items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-6 py-12 text-center">
+      class="mt-4 flex flex-1 items-center justify-center rounded-2xl border border-dashed border-border bg-canvas px-6 py-12 text-center">
       <div>
-        <div class="text-base font-semibold text-slate-700">当前项目还没有路由</div>
-        <p class="mt-2 text-sm text-slate-500">可直接添加顶层页面，或先创建分组。</p>
+        <div class="text-base font-semibold text-text-emphasis">当前项目还没有路由</div>
+        <p class="mt-2 text-sm text-text-muted">可直接添加顶层页面，或先创建分组。</p>
       </div>
     </div>
 
-    <div v-else class="mt-4 rounded-2xl border border-slate-200 xl:min-h-0 xl:flex-1 xl:overflow-hidden">
+    <div v-else class="mt-4 rounded-2xl border border-border xl:min-h-0 xl:flex-1 xl:overflow-hidden">
       <div class="overflow-x-auto xl:h-full xl:overflow-auto">
-        <table class="min-w-full w-full table-fixed border-collapse text-sm text-slate-700">
+        <table class="min-w-full w-full table-fixed border-collapse text-sm text-text-emphasis">
           <colgroup>
             <col style="width: 9%">
             <col style="width: 11%">
@@ -40,7 +40,7 @@
             <col style="width: 9%">
             <col style="width: 12%">
           </colgroup>
-          <thead class="sticky top-0 z-10 bg-slate-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+          <thead class="sticky top-0 z-10 bg-canvas text-[11px] font-semibold uppercase tracking-wide text-text-muted">
             <tr>
               <th class="h-11 px-3 text-left whitespace-nowrap">拖动</th>
               <th class="h-11 px-3 text-left whitespace-nowrap">节点</th>
@@ -50,7 +50,7 @@
               <th class="h-11 px-3 text-left whitespace-nowrap">操作</th>
             </tr>
           </thead>
-          <tbody class="divide-y divide-slate-200 bg-white">
+          <tbody class="divide-y divide-border bg-surface">
             <template v-for="(routeItem, routeIndex) in routes" :key="buildRouteKey(routeItem, routeIndex)">
               <tr class="align-middle transition"
                 :class="[resolveDragRowClass('root', routeIndex, null), routeItem.hidden ? 'opacity-45' : 'opacity-100']"
@@ -63,9 +63,9 @@
                   </UiIconButton>
                 </td>
                 <td class="px-3 py-2">
-                  <div class="flex h-9 items-center gap-1.5 font-semibold text-slate-900">
-                    <FolderTree v-if="routeItem.route_type === 'group'" class="h-4 w-4 text-slate-500" />
-                    <FileText v-else class="h-4 w-4 text-slate-500" />
+                  <div class="flex h-9 items-center gap-1.5 font-semibold text-text-strong">
+                    <FolderTree v-if="routeItem.route_type === 'group'" class="h-4 w-4 text-text-muted" />
+                    <FileText v-else class="h-4 w-4 text-text-muted" />
                     <span>{{ routeItem.route_type === 'group' ? '分组' : '页面' }}</span>
                   </div>
                 </td>
@@ -102,7 +102,7 @@
               <template v-if="routeItem.route_type === 'group'">
                 <tr v-for="(childRoute, childIndex) in routeItem.children ?? []"
                   :key="`${buildRouteKey(routeItem, routeIndex)}-${childIndex}-${childRoute.page_id}`"
-                  class="align-middle bg-slate-50/40 transition"
+                  class="align-middle bg-canvas/40 transition"
                   :class="[resolveDragRowClass('child', routeIndex, childIndex), childRoute.hidden ? 'opacity-45' : 'opacity-100']"
                   draggable="true" @dragstart="handleChildDragStart(routeIndex, childIndex)"
                   @dragover.prevent="handleChildDragOver(routeIndex, childIndex)"
@@ -113,8 +113,8 @@
                     </UiIconButton>
                   </td>
                   <td class="px-3 py-2">
-                    <div class="flex h-9 items-center gap-1.5 pl-1 font-medium text-slate-700">
-                      <CornerDownRight class="h-4 w-4 text-slate-400" />
+                    <div class="flex h-9 items-center gap-1.5 pl-1 font-medium text-text-emphasis">
+                      <CornerDownRight class="h-4 w-4 text-text-disabled" />
                       <span>子页</span>
                     </div>
                   </td>
@@ -144,14 +144,14 @@
                   </td>
                 </tr>
 
-                <tr class="bg-slate-50/60">
+                <tr class="bg-canvas/60">
                   <td class="px-3 py-2">
-                    <div class="flex h-9 items-center pl-4 text-slate-400">
+                    <div class="flex h-9 items-center pl-4 text-text-disabled">
                       <Plus class="h-4 w-4" />
                     </div>
                   </td>
                   <td class="px-3 py-2">
-                    <div class="flex h-9 items-center font-medium text-slate-500">添加子页</div>
+                    <div class="flex h-9 items-center font-medium text-text-muted">添加子页</div>
                   </td>
                   <td class="px-2 py-2">
                     <div class="min-w-0">
@@ -527,7 +527,7 @@ function clearDragState(): void {
  */
 function resolveDragRowClass(kind: 'root' | 'child', routeIndex: number, childIndex: number | null): string {
   if (kind === 'root' && dragOverTarget.value?.kind === 'root' && dragOverTarget.value.routeIndex === routeIndex) {
-    return 'bg-indigo-50'
+    return 'bg-surface-selected'
   }
   if (
     kind === 'child'
@@ -535,7 +535,7 @@ function resolveDragRowClass(kind: 'root' | 'child', routeIndex: number, childIn
     && dragOverTarget.value.routeIndex === routeIndex
     && dragOverTarget.value.childIndex === childIndex
   ) {
-    return 'bg-indigo-50'
+    return 'bg-surface-selected'
   }
   return ''
 }

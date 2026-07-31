@@ -1,7 +1,7 @@
 <!-- 文件功能：展示 Runtime Kit 内建能力目录，负责筛选、复制 import，并把预览或说明意图交给外层。 -->
 <template>
   <section class="flex min-h-0 flex-col">
-    <div class="shrink-0 border-b border-slate-100 bg-white px-4 py-2">
+    <div class="shrink-0 border-b border-border-muted bg-surface px-4 py-2">
       <LibrarySegmentedControl
         v-if="!componentsOnly"
         :model-value="selectedKind"
@@ -18,51 +18,51 @@
     </div>
 
     <div v-if="loading" class="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 p-6">
-      <div class="h-8 w-8 animate-spin rounded-full border-4 border-indigo-600 border-t-transparent"></div>
-      <span class="text-sm font-bold text-slate-400">正在加载内建能力...</span>
+      <div class="h-8 w-8 animate-spin rounded-full border-4 border-accent border-t-transparent"></div>
+      <span class="text-sm font-bold text-text-disabled">正在加载内建能力...</span>
     </div>
 
     <div v-else class="min-h-0 flex-1 overflow-y-auto p-4 pb-24">
       <div
         v-if="filteredItems.length === 0"
-        class="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-slate-100 bg-slate-50 px-4 py-12 text-center"
+        class="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-border-muted bg-canvas px-4 py-12 text-center"
       >
-        <PackageOpen class="mb-3 h-10 w-10 text-slate-300" />
-        <p class="text-sm font-semibold text-slate-500">暂无匹配的内建能力</p>
+        <PackageOpen class="mb-3 h-10 w-10 text-text-faint" />
+        <p class="text-sm font-semibold text-text-muted">暂无匹配的内建能力</p>
       </div>
 
       <div v-else class="space-y-3">
         <article
           v-for="item in filteredItems"
           :key="`${item.kind}:${item.name}`"
-          class="group cursor-pointer rounded-xl border bg-white p-4 transition-all hover:border-indigo-300 hover:shadow-sm"
-          :class="selectedName === item.name ? 'border-indigo-400 ring-1 ring-indigo-200' : 'border-slate-200'"
+          class="group cursor-pointer rounded-xl border bg-surface p-4 transition-all hover:border-accent-border hover:shadow-sm"
+          :class="selectedName === item.name ? 'border-accent-border ring-1 ring-accent-ring' : 'border-border'"
           @click="openCapability(item)"
         >
           <div class="mb-2 flex items-start justify-between gap-3">
             <div class="min-w-0 flex-1">
               <div class="mb-1 flex flex-wrap items-center gap-2">
-                <h3 class="truncate text-sm font-bold text-slate-800 group-hover:text-indigo-600">
+                <h3 class="truncate text-sm font-bold text-text group-hover:text-accent">
                   {{ item.display_name }}
                 </h3>
-                <span class="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-black uppercase text-slate-500">
+                <span class="rounded bg-surface-muted px-1.5 py-0.5 text-[10px] font-black uppercase text-text-muted">
                   {{ item.category }}
                 </span>
-                <span class="rounded bg-slate-50 px-1.5 py-0.5 text-[10px] font-black uppercase text-slate-500">
+                <span class="rounded bg-canvas px-1.5 py-0.5 text-[10px] font-black uppercase text-text-muted">
                   {{ item.kind }}
                 </span>
-                <span class="rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] font-black uppercase text-emerald-600">
+                <span class="rounded bg-success-muted px-1.5 py-0.5 text-[10px] font-black uppercase text-success">
                   v{{ item.version_no }}
                 </span>
                 <span
                   v-if="!item.previewable"
-                  class="rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-black uppercase text-amber-600"
+                  class="rounded bg-warning-muted px-1.5 py-0.5 text-[10px] font-black uppercase text-warning"
                 >
                   doc-only
                 </span>
               </div>
-              <div class="inline-flex max-w-full rounded border border-slate-100 bg-slate-50 px-1.5 py-0.5">
-                <span class="truncate font-mono text-[10px] font-bold text-slate-400">{{ item.import_path }}</span>
+              <div class="inline-flex max-w-full rounded border border-border-muted bg-canvas px-1.5 py-0.5">
+                <span class="truncate font-mono text-[10px] font-bold text-text-disabled">{{ item.import_path }}</span>
               </div>
             </div>
             <div class="mt-0.5 flex shrink-0 items-center gap-1">
@@ -70,24 +70,24 @@
                 v-if="item.kind === 'component'"
                 label="复制 import 语句"
                 size="xs"
-                class="rounded-lg p-1 text-slate-400 opacity-0 transition-colors hover:bg-indigo-50 hover:text-indigo-600 group-hover:opacity-100"
+                class="rounded-lg p-1 text-text-disabled opacity-0 transition-colors hover:bg-surface-selected hover:text-accent group-hover:opacity-100"
                 title="复制 import 语句"
                 @click.stop="copyRuntimeKitComponentImportStatement(item)"
               >
                 <Copy class="h-3.5 w-3.5" />
               </UiIconButton>
-              <Eye v-if="item.previewable" class="h-4 w-4 text-slate-300 group-hover:text-indigo-500" />
-              <FileText v-else class="h-4 w-4 text-slate-300 group-hover:text-indigo-500" />
+              <Eye v-if="item.previewable" class="h-4 w-4 text-text-faint group-hover:text-accent-emphasis" />
+              <FileText v-else class="h-4 w-4 text-text-faint group-hover:text-accent-emphasis" />
             </div>
           </div>
-          <p class="mb-3 line-clamp-2 text-[11px] leading-relaxed text-slate-500">
+          <p class="mb-3 line-clamp-2 text-[11px] leading-relaxed text-text-muted">
             {{ item.summary || item.description }}
           </p>
           <div class="flex flex-wrap gap-1.5">
             <span
               v-for="tag in item.tags"
               :key="`${item.name}-${tag}`"
-              class="rounded-full bg-slate-50 px-2 py-0.5 text-[10px] font-semibold text-slate-400"
+              class="rounded-full bg-canvas px-2 py-0.5 text-[10px] font-semibold text-text-disabled"
             >
               {{ tag }}
             </span>

@@ -3,7 +3,7 @@
   <UiDialog :open="modelValue" :title="isEditMode ? '修改项目' : '新增项目'" size="canvas"
     @update:open="handleVisibleChange">
     <div class="space-y-4">
-      <section class="rounded-lg border border-slate-200 bg-white p-3">
+      <section class="rounded-lg border border-border bg-surface p-3">
         <div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
           <UiFormField label="项目名称" required :error="errors.name"><template #default="field"><UiInput v-model="form.name" placeholder="起一个具有辨识度的名称" required :input-id="field.inputId" :described-by="field.describedBy" :invalid="field.invalid" /></template></UiFormField>
           <UiFormField label="项目描述"><template #default="field"><UiInput v-model="form.description" placeholder="概括此项目要阐述的内容" :input-id="field.inputId" :described-by="field.describedBy" /></template></UiFormField>
@@ -12,7 +12,7 @@
 
       <div class="grid gap-4 xl:grid-cols-[minmax(360px,0.9fr)_minmax(520px,1.1fr)]">
         <div class="space-y-3">
-          <section class="rounded-lg border border-slate-200 bg-slate-50/70 p-4">
+          <section class="rounded-lg border border-border bg-canvas/70 p-4">
             <WorkspaceStyleApplyField
               v-if="workspaceId"
               :workspace-id="workspaceId"
@@ -22,11 +22,11 @@
               @apply="applyWorkspaceStyle"
             />
             <div v-else>
-              <label class="text-sm font-semibold text-slate-700">应用样式</label>
-              <p class="mt-1 text-xs text-slate-400">缺少工作空间上下文，暂时不能从样式库填充项目草稿。</p>
+              <label class="text-sm font-semibold text-text-emphasis">应用样式</label>
+              <p class="mt-1 text-xs text-text-disabled">缺少工作空间上下文，暂时不能从样式库填充项目草稿。</p>
             </div>
 
-            <div class="mt-4 border-t border-slate-200 pt-4">
+            <div class="mt-4 border-t border-border pt-4">
               <ThemeSelectorField
                 :workspace-id="workspaceId"
                 :model-value="form.theme_key"
@@ -35,11 +35,11 @@
                 :show-preview="false"
                 @update:model-value="handleThemeChange"
               />
-              <p v-if="errors.theme" class="mt-2 text-xs font-semibold text-rose-500">{{ errors.theme }}</p>
+              <p v-if="errors.theme" class="mt-2 text-xs font-semibold text-danger">{{ errors.theme }}</p>
             </div>
           </section>
 
-          <section class="rounded-lg border border-slate-200 bg-white p-4">
+          <section class="rounded-lg border border-border bg-surface p-4">
             <ProjectPresentationFields
               v-model:page-width="form.page_width"
               v-model:page-height="form.page_height"
@@ -51,7 +51,7 @@
           </section>
         </div>
 
-        <section class="rounded-lg border border-slate-200 bg-white p-4">
+        <section class="rounded-lg border border-border bg-surface p-4">
           <UiFormField label="样式规范 Markdown"><template #default="field"><UiInput v-model="form.style_spec_markdown" type="textarea" placeholder="可记录版式、排版、色彩和内容生成约束" :rows="22" class="min-h-[520px]" :input-id="field.inputId" :described-by="field.describedBy" /></template></UiFormField>
         </section>
       </div>

@@ -4,16 +4,16 @@
     <UiDropdownMenu :items="menuItems" side="bottom" align="end" @select="handleCommand">
       <template #trigger>
         <div
-          class="flex items-center gap-3 p-1.5 rounded-xl hover:bg-slate-100 transition-all cursor-pointer select-none"
+          class="flex items-center gap-3 p-1.5 rounded-xl hover:bg-surface-muted transition-all cursor-pointer select-none"
         >
-          <div class="w-9 h-9 flex items-center justify-center rounded-full bg-indigo-600 text-white font-bold text-sm shadow-sm ring-2 ring-white">
+          <div class="w-9 h-9 flex items-center justify-center rounded-full bg-accent text-text-inverse font-bold text-sm shadow-sm ring-2 ring-surface">
             {{ initials }}
           </div>
           <div class="hidden sm:flex flex-col">
-            <span class="text-sm font-bold text-slate-800 leading-tight">{{ user?.display_name || '-' }}</span>
-            <span class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">{{ user?.role === 'platform_admin' ? '平台管理员' : '工作空间用户' }}</span>
+            <span class="text-sm font-bold text-text leading-tight">{{ user?.display_name || '-' }}</span>
+            <span class="text-[11px] font-semibold text-text-disabled uppercase tracking-wider">{{ user?.role === 'platform_admin' ? '平台管理员' : '工作空间用户' }}</span>
           </div>
-          <ChevronDown class="w-4 h-4 text-slate-400" />
+          <ChevronDown class="w-4 h-4 text-text-disabled" />
         </div>
       </template>
     </UiDropdownMenu>

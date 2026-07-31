@@ -37,7 +37,7 @@
           >
             <MapPin class="h-4 w-4" />
             <span>选择对应工作空间，返回创作</span>
-            <ArrowRight class="h-4 w-4 text-indigo-400" />
+            <ArrowRight class="h-4 w-4 text-accent-border" />
           </div>
           <WorkspaceSwitcher :prominent="showWorkspaceSelectionHint" />
           <ProjectQuickSwitcher
@@ -52,7 +52,7 @@
             class="admin-layout-breadcrumb ml-1 flex min-w-0 items-center gap-2 border-l border-border pl-3 text-sm font-semibold text-text-muted"
           >
             <template v-for="(item, index) in headerBreadcrumbs" :key="`${item.label}-${index}`">
-              <ChevronRight v-if="index > 0" class="h-4 w-4 shrink-0 text-slate-300" />
+              <ChevronRight v-if="index > 0" class="h-4 w-4 shrink-0 text-text-faint" />
               <RouterLink
                 v-if="item.to"
                 :to="item.to"
@@ -66,6 +66,13 @@
         </div>
 
         <div class="admin-layout-user-menu flex shrink-0 items-center justify-end gap-2">
+          <UiIconButton
+            :label="isDark ? '切换到明亮模式' : '切换到暗黑模式'"
+            @click="toggleTheme"
+          >
+            <Sun v-if="isDark" class="h-4 w-4" />
+            <Moon v-else class="h-4 w-4" />
+          </UiIconButton>
           <UserMenu />
         </div>
       </header>
@@ -129,8 +136,10 @@
 import { computed, defineAsyncComponent, onMounted, onUnmounted, provide, ref, watch } from 'vue'
 import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
 import { useQuery } from '@tanstack/vue-query'
-import { ArrowRight, ChevronRight, MapPin } from '@lucide/vue'
+import { ArrowRight, ChevronRight, MapPin, Moon, Sun } from '@lucide/vue'
 import { getPage, getProject, getWorkspace } from '@/api/catalog'
+import { UiIconButton } from '@/components/ui'
+import { useTheme } from '@/composables/useTheme'
 import UserMenu from '@/components/nav/UserMenu.vue'
 import WorkspaceSwitcher from '@/components/nav/WorkspaceSwitcher.vue'
 import ProjectQuickSwitcher from '@/components/nav/ProjectQuickSwitcher.vue'
@@ -149,6 +158,7 @@ type SupplementPanelKey = 'assets' | 'components'
 
 const route = useRoute()
 const router = useRouter()
+const { isDark, toggle: toggleTheme } = useTheme()
 const activeSupplementPanel = ref<SupplementPanelKey | null>(null)
 const componentAgentSelection = ref<WorkspaceComponentItem | null>(null)
 const agentSidebarExpanded = ref(false)

@@ -14,16 +14,16 @@
         <div class="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-start gap-3">
           <div class="project-card-avatar" aria-hidden="true">{{ projectInitial }}</div>
           <div class="min-w-0 flex-1 pt-0.5">
-            <div class="grid min-w-0 grid-cols-[minmax(0,1fr)_minmax(3rem,40%)] items-center gap-2">
+            <div class="flex min-w-0 items-center gap-2">
               <h3
-                class="min-w-0 truncate text-lg font-black leading-tight text-slate-900 transition-colors group-hover:text-indigo-700"
+                class="min-w-0 flex-1 truncate text-lg font-black leading-tight text-text-strong transition-colors group-hover:text-accent-hover"
                 :title="project.name"
               >
                 {{ project.name }}
               </h3>
               <span class="project-card-code" :title="project.code">{{ project.code }}</span>
             </div>
-            <p class="mt-1.5 line-clamp-2 min-h-[2.5rem] text-sm font-medium leading-5 text-slate-500">
+            <p class="mt-1.5 line-clamp-2 min-h-[2.5rem] text-sm font-medium leading-5 text-text-muted">
               {{ project.description || '此项目尚未添加具体功能说明。' }}
             </p>
           </div>
@@ -72,8 +72,8 @@
         </div>
       </dl>
 
-      <div class="mt-auto flex items-center justify-between gap-3 border-t border-slate-100 pt-4">
-        <div class="flex min-w-0 items-center gap-2 text-[11px] font-bold text-slate-400">
+      <div class="mt-auto flex items-center justify-between gap-3 border-t border-border-muted pt-4">
+        <div class="flex min-w-0 items-center gap-2 text-[11px] font-bold text-text-disabled">
           <Calendar class="h-3.5 w-3.5 shrink-0" />
           <span class="truncate">更新于 {{ formatDateTime(project.updated_at) }}</span>
         </div>
@@ -137,9 +137,9 @@ const baseFontSizeLabel = computed(() => props.project.base_font_size || '-')
   min-height: 13.75rem;
   cursor: pointer;
   overflow: hidden;
-  border: 1px solid rgb(226 232 240);
+  border: 1px solid rgb(var(--ui-border));
   border-radius: 1rem;
-  background: rgb(255 255 255);
+  background: rgb(var(--ui-surface));
   box-shadow: 0 1px 2px rgb(15 23 42 / 0.04);
   transition:
     border-color 0.2s ease,
@@ -152,14 +152,14 @@ const baseFontSizeLabel = computed(() => props.project.base_font_size || '-')
   position: absolute;
   inset: 0 auto 0 0;
   width: 0.25rem;
-  background: rgb(79 70 229 / 0.78);
+  background: rgb(var(--ui-accent) / 0.78);
   opacity: 0.72;
   transition: opacity 0.2s ease, width 0.2s ease;
 }
 
 .project-card-surface:hover {
   transform: translateY(-0.25rem);
-  border-color: rgb(165 180 252);
+  border-color: rgb(var(--ui-accent-border));
   box-shadow: 0 14px 30px rgb(15 23 42 / 0.08);
 }
 
@@ -170,8 +170,8 @@ const baseFontSizeLabel = computed(() => props.project.base_font_size || '-')
 
 .project-card-surface:focus-visible {
   outline: none;
-  border-color: rgb(99 102 241);
-  box-shadow: 0 0 0 3px rgb(199 210 254 / 0.75), 0 14px 30px rgb(15 23 42 / 0.08);
+  border-color: rgb(var(--ui-border-focus));
+  box-shadow: 0 0 0 3px rgb(var(--ui-accent-ring) / 0.75), 0 14px 30px rgb(15 23 42 / 0.08);
 }
 
 .project-card-avatar {
@@ -181,10 +181,10 @@ const baseFontSizeLabel = computed(() => props.project.base_font_size || '-')
   flex: 0 0 auto;
   align-items: center;
   justify-content: center;
-  border: 1px solid rgb(224 231 255);
+  border: 1px solid rgb(var(--ui-accent-muted));
   border-radius: 0.75rem;
-  background: rgb(238 242 255);
-  color: rgb(67 56 202);
+  background: rgb(var(--ui-surface-selected));
+  color: rgb(var(--ui-accent-hover));
   font-size: 1rem;
   font-weight: 900;
   line-height: 1;
@@ -192,14 +192,16 @@ const baseFontSizeLabel = computed(() => props.project.base_font_size || '-')
 
 .project-card-code {
   display: inline-flex;
-  width: 100%;
+  flex: 0 1 auto;
+  min-width: 3rem;
+  max-width: 45%;
   min-height: 1.25rem;
   align-items: center;
   overflow: hidden;
   border-radius: 9999px;
-  background: rgb(248 250 252);
+  background: rgb(var(--ui-surface-hover));
   padding: 0.15rem 0.5rem;
-  color: rgb(148 163 184);
+  color: rgb(var(--ui-text-disabled));
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
   font-size: 0.625rem;
   font-weight: 800;
@@ -211,14 +213,14 @@ const baseFontSizeLabel = computed(() => props.project.base_font_size || '-')
 
 .project-card-meta {
   min-width: 0;
-  border: 1px solid rgb(241 245 249);
+  border: 1px solid rgb(var(--ui-border-muted));
   border-radius: 0.625rem;
-  background: rgb(248 250 252 / 0.72);
+  background: rgb(var(--ui-surface-hover) / 0.72);
   padding: 0.5rem 0.625rem;
 }
 
 .project-card-meta dt {
-  color: rgb(148 163 184);
+  color: rgb(var(--ui-text-disabled));
   font-size: 0.625rem;
   font-weight: 800;
   line-height: 1rem;
@@ -227,7 +229,7 @@ const baseFontSizeLabel = computed(() => props.project.base_font_size || '-')
 .project-card-meta dd {
   margin-top: 0.125rem;
   overflow: hidden;
-  color: rgb(51 65 85);
+  color: rgb(var(--ui-text-emphasis));
   font-size: 0.75rem;
   font-weight: 800;
   line-height: 1rem;
@@ -240,7 +242,7 @@ const baseFontSizeLabel = computed(() => props.project.base_font_size || '-')
   flex: 0 0 auto;
   align-items: center;
   gap: 0.25rem;
-  color: rgb(79 70 229);
+  color: rgb(var(--ui-accent));
   font-size: 0.75rem;
   font-weight: 800;
   white-space: nowrap;

@@ -1,6 +1,6 @@
 <!-- 文件功能：展示主题的视觉预览卡片，供主题库管理和选择器复用。 -->
 <template>
-  <div class="overflow-hidden border bg-white shadow-sm" :style="{
+  <div class="overflow-hidden border bg-surface shadow-sm" :style="{
     borderColor: palette.border.default,
     backgroundColor: palette.background.default,
     color: palette.text.primary,
@@ -24,7 +24,7 @@
         <div class="flex shrink-0 items-center gap-1">
           <slot name="actions" />
           <div v-if="collapsible"
-            class="ml-1 flex items-center justify-center rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors"
+            class="ml-1 flex items-center justify-center rounded-lg p-1 text-text-disabled hover:bg-surface-muted hover:text-text-emphasis transition-colors"
             @click.stop="isExpanded = !isExpanded">
             <component :is="isExpanded ? ChevronDown : ChevronRight" class="h-4 w-4" />
           </div>
@@ -158,7 +158,8 @@
 import { computed, ref, watch } from 'vue'
 import { ChevronDown, ChevronRight } from '@lucide/vue'
 
-import type { AssetAnalysisMetadata, ThemePalette } from '@/types/api'
+import { resolveFontPreviewFamily, useFontPreviewRegistry } from '@/composables/useFontPreviewRegistry'
+import type { AssetAnalysisMetadata, ThemePalette, WorkspaceFontFamilyItem } from '@/types/api'
 import { isStrokeWidthEditable } from '@/utils/assetAnalysis'
 
 const props = withDefaults(defineProps<{
@@ -174,6 +175,9 @@ const props = withDefaults(defineProps<{
   headingFontLabel: string
   bodyFontLabel: string
   codeFontLabel: string
+  headingFontFamily?: WorkspaceFontFamilyItem | null
+  bodyFontFamily?: WorkspaceFontFamilyItem | null
+  codeFontFamily?: WorkspaceFontFamilyItem | null
   baseFontSize?: string
   iconDefaultStrokeWidth?: number
   collapsible?: boolean
@@ -267,19 +271,26 @@ const pageDemoIconSvg = computed(() => buildPreviewSvgMarkup(
   normalizedPreviewStrokeWidth.value,
 ))
 const projectIconColor = computed(() => '#2563eb')
+const previewFontFamilies = computed(() => [
+  props.headingFontFamily ?? null,
+  props.bodyFontFamily ?? null,
+  props.codeFontFamily ?? null,
+])
+
+useFontPreviewRegistry(previewFontFamilies)
 
 const headingStyle = computed(() => ({
-  fontFamily: props.headingFontLabel,
+  fontFamily: resolveFontPreviewFamily(props.headingFontFamily, props.headingFontLabel),
   fontSize: `calc(${props.baseFontSize} * 1.08)`,
 }))
 
 const bodyStyle = computed(() => ({
-  fontFamily: props.bodyFontLabel,
+  fontFamily: resolveFontPreviewFamily(props.bodyFontFamily, props.bodyFontLabel),
   fontSize: props.baseFontSize,
 }))
 
 const codeStyle = computed(() => ({
-  fontFamily: props.codeFontLabel,
+  fontFamily: resolveFontPreviewFamily(props.codeFontFamily, props.codeFontLabel),
 }))
 
 
@@ -375,7 +386,7 @@ const inverseChipStyle = computed(() => ({
 const primaryActionStyle = computed(() => ({
   color: palette.value.text.invert,
   backgroundColor: palette.value.link.default,
-  fontFamily: props.bodyFontLabel,
+  fontFamily: resolveFontPreviewFamily(props.bodyFontFamily, props.bodyFontLabel),
 }))
 
 const summaryCardStyle = computed(() => ({

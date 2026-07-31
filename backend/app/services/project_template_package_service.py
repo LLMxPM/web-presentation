@@ -124,6 +124,7 @@ class ProjectTemplatePackageService:
         self.style_package_service = WorkspaceStylePackageService(session)
         self.object_storage_service = ObjectStorageService()
         self.project_config_service = ProjectConfigService(session)
+        self.font_service = WorkspaceFontService(session)
 
     async def validate_export_package(
         self,
@@ -1443,6 +1444,7 @@ class ProjectTemplatePackageService:
 
         assets_by_id: dict[int, WorkspaceAsset] = {}
         fonts_by_id: dict[int, WorkspaceFontConfig] = {}
+        family_ids: list[int] = []
         for theme in themes:
             for asset_id in [theme.logo_asset_id, theme.invert_logo_asset_id, theme.project_icon_asset_id]:
                 if asset_id is None:
@@ -1450,15 +1452,16 @@ class ProjectTemplatePackageService:
                 asset = await self.session.scalar(select(WorkspaceAsset).where(WorkspaceAsset.workspace_id == workspace_id, WorkspaceAsset.id == asset_id))
                 if asset is not None:
                     assets_by_id[asset.id] = asset
-            for font_id in [theme.heading_font_id, theme.body_font_id, theme.code_font_id]:
-                if font_id is None:
+            for family_id in [theme.heading_font_family_id, theme.body_font_family_id, theme.code_font_family_id]:
+                if family_id is None or family_id in family_ids:
                     continue
-                font = await self.session.scalar(select(WorkspaceFontConfig).where(WorkspaceFontConfig.workspace_id == workspace_id, WorkspaceFontConfig.id == font_id))
-                if font is not None:
-                    fonts_by_id[font.id] = font
-                    asset = await self.session.scalar(select(WorkspaceAsset).where(WorkspaceAsset.workspace_id == workspace_id, WorkspaceAsset.id == font.asset_id))
-                    if asset is not None:
-                        assets_by_id[asset.id] = asset
+                family_ids.append(family_id)
+        # 主题绑定字体族后，导出需携带该族全部字体文件，保证多字重往返不丢失。
+        for font in await self.font_service.list_font_configs_for_family_ids(workspace_id, family_ids):
+            fonts_by_id[font.id] = font
+            asset = await self.session.scalar(select(WorkspaceAsset).where(WorkspaceAsset.workspace_id == workspace_id, WorkspaceAsset.id == font.asset_id))
+            if asset is not None:
+                assets_by_id[asset.id] = asset
         return list(assets_by_id.values()), list(fonts_by_id.values())
 
     @staticmethod
@@ -1575,7 +1578,10 @@ class ProjectTemplatePackageService:
     async def _build_theme_payload(self, theme: WorkspaceTheme) -> dict[str, Any]:
         """构建主题离线载荷。"""
 
-        logo_asset, invert_logo_asset, project_icon_asset, heading_font, body_font, code_font = await WorkspaceThemeService(self.session)._load_theme_relations(theme)
+        logo_asset, invert_logo_asset, project_icon_asset, heading_font_family, body_font_family, code_font_family = await WorkspaceThemeService(self.session)._load_theme_relations(theme)
+        heading_font = await self.font_service.get_primary_font_config_for_family(theme.workspace_id, theme.heading_font_family_id)
+        body_font = await self.font_service.get_primary_font_config_for_family(theme.workspace_id, theme.body_font_family_id)
+        code_font = await self.font_service.get_primary_font_config_for_family(theme.workspace_id, theme.code_font_family_id)
         return {
             "key": theme.key,
             "name": theme.name,
@@ -1589,9 +1595,9 @@ class ProjectTemplatePackageService:
             "heading_font_asset_name": heading_font.asset_name if heading_font is not None else None,
             "body_font_asset_name": body_font.asset_name if body_font is not None else None,
             "code_font_asset_name": code_font.asset_name if code_font is not None else None,
-            "heading_font_label": heading_font.font_family if heading_font is not None else theme.heading_font_label,
-            "body_font_label": body_font.font_family if body_font is not None else theme.body_font_label,
-            "code_font_label": code_font.font_family if code_font is not None else theme.code_font_label,
+            "heading_font_label": heading_font_family.name if heading_font_family is not None else theme.heading_font_label,
+            "body_font_label": body_font_family.name if body_font_family is not None else theme.body_font_label,
+            "code_font_label": code_font_family.name if code_font_family is not None else theme.code_font_label,
             "palette": theme.palette,
         }
 

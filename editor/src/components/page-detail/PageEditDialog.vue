@@ -6,18 +6,18 @@
     body-preset="immersive"
     :show-header="false"
     :show-close-button="false"
-    panel-class="bg-white shadow-xl"
+    panel-class="bg-surface shadow-xl"
     @update:open="handleVisibleChange"
   >
     <div class="flex h-full min-h-0 flex-col bg-[rgb(var(--ui-canvas))]">
       <CommandBar class="shrink-0 rounded-none border-x-0 border-t-0 px-4 py-3" label="页面编辑操作">
         <template #leading>
-        <div class="flex min-w-0 flex-wrap items-center gap-3">
+        <div class="flex min-w-0 items-center gap-3">
           <div class="min-w-0 max-w-[24rem]">
-            <h2 class="truncate text-sm font-bold text-slate-900" :title="dialogTitle">{{ dialogTitle }}</h2>
+            <h2 class="truncate text-sm font-bold text-text-strong" :title="dialogTitle">{{ dialogTitle }}</h2>
           </div>
 
-          <div class="flex shrink-0 items-center rounded-lg border border-slate-200 bg-slate-50 p-0.5">
+          <div class="flex shrink-0 items-center rounded-lg border border-border bg-canvas p-0.5">
             
             <UiButton
               v-if="props.visualEnabled"
@@ -45,11 +45,11 @@
           <template v-if="props.mode === 'visual'">
             <span
               v-if="visualState.pendingCount"
-              class="rounded-full bg-indigo-100 px-2 py-0.5 text-[11px] font-bold text-indigo-700"
+              class="rounded-full bg-accent-muted px-2 py-0.5 text-[11px] font-bold text-accent-hover"
             >
               {{ visualState.pendingCount }} 项待保存
             </span>
-            <span v-if="visualState.stale" class="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-bold text-amber-800">
+            <span v-if="visualState.stale" class="rounded-full bg-warning-muted px-2 py-0.5 text-[11px] font-bold text-warning-strong">
               已过期
             </span>
           </template>
@@ -57,31 +57,13 @@
         </template>
 
         <template #actions>
-        <div class="flex shrink-0 flex-wrap items-center justify-end gap-2">
+        <div class="flex shrink-0 items-center justify-end gap-2">
           <template v-if="props.mode === 'source'">
             <UiButton variant="ghost" size="sm" @click="emit('copy-code')">
               <Copy class="h-3.5 w-3.5" />
               复制代码
             </UiButton>
-            <div class="flex items-center rounded-[var(--ui-radius-md)] bg-[rgb(var(--ui-surface-muted))] p-0.5">
-              <UiIconButton
-                label="明亮模式"
-                size="xs"
-                :class="props.editorTheme === 'light' ? 'bg-[rgb(var(--ui-surface))] text-[rgb(var(--ui-accent))] shadow-sm' : ''"
-                @click="emit('update:editorTheme', 'light')"
-              >
-                <Sun class="h-3.5 w-3.5" />
-              </UiIconButton>
-              <UiIconButton
-                label="暗黑模式"
-                size="xs"
-                :class="props.editorTheme === 'dark' ? 'bg-[rgb(var(--ui-surface))] text-[rgb(var(--ui-accent))] shadow-sm' : ''"
-                @click="emit('update:editorTheme', 'dark')"
-              >
-                <Moon class="h-3.5 w-3.5" />
-              </UiIconButton>
-            </div>
-            <label class="flex items-center gap-1.5 text-xs font-semibold text-slate-500">
+            <label class="flex items-center gap-1.5 text-xs font-semibold text-text-muted">
               自动保存
               <UiSelect
                 aria-label="自动保存"
@@ -111,12 +93,13 @@
               @click="visualEditPanelRef?.discardChanges()"
             >
               <Undo2 class="h-3.5 w-3.5" />
-              放弃修改
+              撤销全部修改
             </UiButton>
             <UiButton variant="ghost" size="sm" :disabled="props.busy" @click="visualEditPanelRef?.reanalyze()">
               <RefreshCw class="h-3.5 w-3.5" />
-              重新分析
+              重新载入页面
             </UiButton>
+            <span class="text-xs text-[rgb(var(--ui-text-muted))]">保存后刷新画布</span>
             <UiButton
               variant="primary"
               size="sm"
@@ -125,11 +108,11 @@
               @click="visualEditPanelRef?.saveChanges()"
             >
               <Save class="h-3.5 w-3.5" />
-              保存并刷新
+              保存
             </UiButton>
           </template>
 
-          <div class="mx-0.5 h-5 w-px bg-slate-200"></div>
+          <div class="mx-0.5 h-5 w-px bg-border"></div>
           <UiButton variant="ghost" size="sm" @click="emit('open-history')">
             <History class="h-3.5 w-3.5" />
             版本
@@ -147,7 +130,6 @@
         <PageDetailWorkbenchPanel
           v-if="props.mode === 'source'"
           :model-value="props.sourceValue"
-          :editor-theme="props.editorTheme"
           :auto-save-delay="props.autoSaveDelay"
           :editor-language="props.editorLanguage"
           editor-height="100%"
@@ -164,6 +146,7 @@
           :page-id="props.pageId"
           :base-version-no="props.baseVersionNo"
           :page-title="props.pageTitle"
+          :workspace-id="props.workspaceId"
           :show-header="false"
           @dirty-change="emit('visual-dirty-change', $event)"
           @busy-change="emit('visual-busy-change', $event)"
@@ -174,31 +157,17 @@
     </div>
   </UiDialog>
 
-  <UiDialog
-    :open="confirmVisible"
-    :title="confirmTitle"
-    size="compact"
-    z-index="var(--ui-z-confirm-overlay)"
-    :panel-style="{ height: 'auto' }"
-    @update:open="handleConfirmVisibleChange"
-  >
-    <p class="text-sm leading-6 text-[rgb(var(--ui-text-secondary))]">{{ confirmMessage }}</p>
-    <template #footer>
-      <UiButton variant="ghost" @click="resolvePageEditConfirm(false)">取消</UiButton>
-      <UiButton :variant="confirmDangerous ? 'danger' : 'primary'" @click="resolvePageEditConfirm(true)">确定</UiButton>
-    </template>
-  </UiDialog>
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref } from 'vue'
-import { Code2, Copy, History, Layers, Moon, RefreshCw, Save, SlidersHorizontal, Sun, Undo2, X } from '@lucide/vue'
+import { computed, ref } from 'vue'
+import { Code2, Copy, History, Layers, RefreshCw, Save, SlidersHorizontal, Undo2, X } from '@lucide/vue'
 
 import PageDetailWorkbenchPanel from '@/components/page-detail/PageDetailWorkbenchPanel.vue'
 import PageVisualEditPanel from '@/components/page-detail/visual-edit/PageVisualEditPanel.vue'
 import CommandBar from '@/components/patterns/CommandBar.vue'
 import { UiButton, UiDialog, UiIconButton, UiSelect } from '@/components/ui'
-import type { EditorLanguage, EditorSaveReason, EditorThemeMode, MonacoEditorReadyPayload } from '@/types/monaco'
+import type { EditorLanguage, EditorSaveReason, MonacoEditorReadyPayload } from '@/types/monaco'
 import type { PageEditMode } from '@/types/page-edit'
 import type { PageVisualEditApplyResponse, PageVisualEditPanelState } from '@/types/page-visual-edit'
 
@@ -214,7 +183,7 @@ interface PageVisualEditPanelExpose {
   saveChanges: () => Promise<void>
 }
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   modelValue: boolean
   mode: PageEditMode
   visualEnabled: boolean
@@ -224,14 +193,15 @@ const props = defineProps<{
   pageTitle: string
   sourceValue: string
   editorLanguage: EditorLanguage
-  editorTheme: EditorThemeMode
   autoSaveDelay: number
   autoSaveOptions: AutoSaveOption[]
-}>()
+  workspaceId?: number | null
+}>(), {
+  workspaceId: null,
+})
 
 const emit = defineEmits<{
   'update:sourceValue': [value: string]
-  'update:editorTheme': [value: EditorThemeMode]
   'update:autoSaveDelay': [value: number]
   'request-mode-change': [mode: PageEditMode]
   'request-close': []
@@ -247,11 +217,6 @@ const emit = defineEmits<{
 }>()
 
 const visualEditPanelRef = ref<PageVisualEditPanelExpose | null>(null)
-const confirmVisible = ref(false)
-const confirmTitle = ref('')
-const confirmMessage = ref('')
-const confirmDangerous = ref(false)
-let confirmResolver: ((confirmed: boolean) => void) | null = null
 const dialogTitle = computed(() => `编辑页面 · ${props.pageTitle}`)
 const visualState = ref<PageVisualEditPanelState>({
   pendingCount: 0,
@@ -282,35 +247,7 @@ function handleAutoSaveChange(value: string | number | boolean | (string | numbe
   emit('update:autoSaveDelay', Number(value))
 }
 
-/** 在页面编辑 workbench 内打开嵌套确认框，避免外层模态焦点陷阱拦截交互。 */
-function confirmAction(message: string, title: string, dangerous = false): Promise<boolean> {
-  resolvePageEditConfirm(false)
-  confirmMessage.value = message
-  confirmTitle.value = title
-  confirmDangerous.value = dangerous
-  confirmVisible.value = true
-  return new Promise(resolve => {
-    confirmResolver = resolve
-  })
-}
-
-/** 结算编辑器内确认操作，并确保遮罩、Escape 与按钮只触发一次。 */
-function resolvePageEditConfirm(confirmed: boolean): void {
-  confirmVisible.value = false
-  const resolver = confirmResolver
-  confirmResolver = null
-  resolver?.(confirmed)
-}
-
-/** 忽略 UiDialog 的 open 回写，只在关闭时取消当前确认。 */
-function handleConfirmVisibleChange(visible: boolean): void {
-  if (!visible) resolvePageEditConfirm(false)
-}
-
-onBeforeUnmount(() => resolvePageEditConfirm(false))
-
 defineExpose({
-  confirmAction,
   discardChanges: () => visualEditPanelRef.value?.discardChanges(),
   reanalyze: async () => await visualEditPanelRef.value?.reanalyze(),
   markStale: () => visualEditPanelRef.value?.markStale(),

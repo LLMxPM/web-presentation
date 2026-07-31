@@ -10,6 +10,7 @@ Runtime 接入文档说明根仓如何依赖 `web-runtime-vue` 子模块，以�
 | [Runtime Kit 契约](./runtime-kit-contract.md) | manifest 命名、版本化 import path 和 Backend 校验 |
 | [previewSchema 契约](./preview-schema.md) | 组件预览 schema 的能力边界和校验要求 |
 | [页面可视化编辑契约](./page-visual-edit.md) | Backend 源码权威、编辑态 artifact、SFC 节点映射与受限回写协议 |
+| [富文本源码范围定位加固计划](./rich-text-source-range-hardening-plan.md) | 自闭合文本候选节点误判、分析降级、测试矩阵与实施步骤 |
 | [构建产物规格](./release-artifact-spec.md) | Runtime 构建产物与 Backend 托管关系 |
 | [配置模板边界](./config-templates.md) | Backend 配置模板和 Runtime fixture 配置的边界 |
 

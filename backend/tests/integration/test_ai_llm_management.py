@@ -254,12 +254,11 @@ async def test_llm_provider_type_should_isolate_chat_and_image_models(authentica
 
 
 async def test_dashscope_image_provider_should_require_https_base_url(authenticated_client: AsyncClient) -> None:
-    """百炼生图供应商必须显式配置 HTTPS 根地址。"""
+    """百炼生图供应商必须显式配置 HTTPS 地址，但不限制路径后缀。"""
 
     invalid_cases = (
         (None, "AI_LLM_BASE_URL_REQUIRED"),
         ("http://dashscope.aliyuncs.com/api/v1", "AI_LLM_BASE_URL_INVALID"),
-        ("https://dashscope.aliyuncs.com/compatible-mode/v1", "AI_LLM_BASE_URL_INVALID"),
     )
     for base_url, expected_code in invalid_cases:
         response = await authenticated_client.post(
@@ -274,10 +273,12 @@ async def test_dashscope_image_provider_should_require_https_base_url(authentica
         assert response.status_code == 400
         assert response.json()["code"] == expected_code
 
-    # 测试各种有效的 Base URL 格式
+    # Base URL 可以使用任意 HTTPS 路径，不再要求以 /api/v1 结尾。
     valid_urls = [
         "https://dashscope.aliyuncs.com/api/v1",
         "https://workspace.cn-beijing.maas.aliyuncs.com/api/v1",
+        "https://dashscope.aliyuncs.com/compatible-mode/v1",
+        "https://dashscope.aliyuncs.com",
     ]
     for base_url in valid_urls:
         valid = await authenticated_client.post(
@@ -376,7 +377,7 @@ async def test_llm_provider_and_config_crud_should_split_secret_from_model(authe
     assert created_item["provider_config_name"] == "OpenRouter 工作账号"
     assert created_item["provider_label"] == "OpenRouter"
     assert created_item["context_window_tokens"] == 128000
-    assert created_item["max_output_tokens"] == 32000
+    assert created_item["max_output_tokens"] == 28000
     assert created_item["history_token_ratio"] == 0.5
     assert created_item["compression_target_ratio"] == 0.1
     assert created_item["thinking_effort"] == "xhigh"
@@ -437,6 +438,69 @@ async def test_llm_provider_and_config_crud_should_split_secret_from_model(authe
     )
     assert provider_status_response.status_code == 400
     assert provider_status_response.json()["code"] == "AI_LLM_PROVIDER_STATUS_UPDATE_UNSUPPORTED"
+
+
+async def test_llm_config_should_reserve_context_tokens_for_chat_models(authenticated_client: AsyncClient) -> None:
+    """聊天模型上下文窗口扣除最大输出后必须至少保留 100K tokens。"""
+
+    provider = await _create_llm_provider_config(authenticated_client, name="余量校验供应商")
+
+    # 创建：余量不足 100K 应被 schema 拒绝。
+    invalid_create = await authenticated_client.post(
+        "/api/ai/llm-configs",
+        json={
+            "name": "余量不足模型",
+            "provider_config_id": provider["id"],
+            "model_id": "gpt-4.1-mini",
+            "context_window_tokens": 128000,
+            "max_output_tokens": 32000,
+        },
+    )
+    assert invalid_create.status_code == 422
+
+    # 创建：窗口低于最低限应被字段级校验拒绝。
+    small_window_create = await authenticated_client.post(
+        "/api/ai/llm-configs",
+        json={
+            "name": "小窗口模型",
+            "provider_config_id": provider["id"],
+            "model_id": "gpt-4.1-mini",
+            "context_window_tokens": 32000,
+            "max_output_tokens": 4096,
+        },
+    )
+    assert small_window_create.status_code == 422
+
+    # 创建：恰好保留 100K 应成功。
+    valid_create = await authenticated_client.post(
+        "/api/ai/llm-configs",
+        json={
+            "name": "余量合法模型",
+            "provider_config_id": provider["id"],
+            "model_id": "gpt-4.1-mini",
+            "context_window_tokens": 128000,
+            "max_output_tokens": 28000,
+        },
+    )
+    assert valid_create.status_code == 201
+    config_id = valid_create.json()["id"]
+
+    # 更新：只改单侧字段时应按合并后结果校验。
+    invalid_update = await authenticated_client.patch(
+        f"/api/ai/llm-configs/{config_id}",
+        json={"max_output_tokens": 40000},
+    )
+    assert invalid_update.status_code == 400
+    assert invalid_update.json()["code"] == "AI_LLM_CONTEXT_RESERVE_INSUFFICIENT"
+
+    # 更新：同时调大窗口后应成功。
+    valid_update = await authenticated_client.patch(
+        f"/api/ai/llm-configs/{config_id}",
+        json={"context_window_tokens": 200000, "max_output_tokens": 40000},
+    )
+    assert valid_update.status_code == 200
+    assert valid_update.json()["context_window_tokens"] == 200000
+    assert valid_update.json()["max_output_tokens"] == 40000
 
 
 async def test_llm_config_delete_should_hard_delete_unbind_slots_and_block_existing_session_run(

@@ -444,6 +444,126 @@ def _image_generation_tool_spec() -> AgentToolSpec:
     )
 
 
+_EMPTY_LAYOUT_ANALYSIS_V2 = {
+    "schema_version": 2,
+    "summary": {
+        "attention": "none",
+        "message": "未发现需要关注的视觉检测结果。",
+        "totals": {
+            "text_layouts": 0,
+            "item_groups": 0,
+            "overflows": 0,
+            "spatial_relations": 0,
+        },
+        "returned": {
+            "text_layouts": 0,
+            "item_groups": 0,
+            "overflows": 0,
+            "spatial_relations": 0,
+        },
+        "truncated": False,
+    },
+    "text_layouts": [],
+    "item_groups": [],
+    "overflows": [],
+    "spatial_relations": [],
+}
+
+_LAYOUT_TARGET_RESPONSE_EXAMPLE = {
+    "label": "div.rounded-xl.bg-white",
+    "locator": {
+        "kind": "visual_node_id",
+        "value": '[data-page-visual-node-id="card-list"]',
+    },
+    "code_hint": {
+        "tag": "div",
+        "class_tokens": ["rounded-xl", "bg-white"],
+        "text_sample": "PDF 打印",
+        "repeat_index": 2,
+    },
+    "content_kind": "container",
+    "surface": {
+        "painted": True,
+        "kind": "solid",
+        "background_alpha": 1,
+        "has_border": True,
+        "has_shadow": False,
+    },
+    "geometry_reliability": "reliable",
+}
+
+_COMPACT_LAYOUT_TARGET_RESPONSE_EXAMPLE = {
+    "label": "h1.mt-3.text-[78px]",
+    "locator": {
+        "kind": "visual_node_id",
+        "value": '[data-page-visual-node-id="hero-title"]',
+    },
+    "text_sample": "能复用，也能归档",
+    "repeat_index": None,
+}
+
+_LAYOUT_ANALYSIS_V2_RESPONSE_EXAMPLE = {
+    "schema_version": 2,
+    "summary": {
+        "attention": "likely_issue",
+        "message": "发现 3 项需要关注的视觉检测结果：文本 1 项，越界 1 项，空间关系 1 项。",
+        "totals": {
+            "text_layouts": 1,
+            "item_groups": 0,
+            "overflows": 1,
+            "spatial_relations": 1,
+        },
+        "returned": {
+            "text_layouts": 1,
+            "item_groups": 0,
+            "overflows": 1,
+            "spatial_relations": 1,
+        },
+        "truncated": False,
+    },
+    "text_layouts": [{
+        "target": _COMPACT_LAYOUT_TARGET_RESPONSE_EXAMPLE,
+        "text": "能复用，也能归档",
+        "line_count": 2,
+        "first_line": "能复用，也能归",
+        "last_line": "档",
+        "break_kind": "soft",
+        "font_size_px": 78,
+        "container_width_px": 608,
+        "nowrap_overflow_px": 0,
+        "stability": "boundary",
+        "attention": "review",
+        "reason_codes": ["boundary_wrap"],
+        "message": "逐字行位检测为 2 行，但强制单行仅净超宽 0px；这是兼容性临界结果，不应视为确定换行。",
+    }],
+    "item_groups": [],
+    "overflows": [{
+        "scope": "container",
+        "target": _LAYOUT_TARGET_RESPONSE_EXAMPLE,
+        "container": {"label": "div.card"},
+        "directions": ["right"],
+        "overflow_px": {"right": 18},
+        "visible_ratio": 0.82,
+        "clipping": "hidden",
+        "attention": "likely_issue",
+        "reason_codes": ["text_clipped"],
+        "message": "右侧超出裁切容器 18px，部分内容可能不可见。",
+    }],
+    "spatial_relations": [{
+        "scope": {"label": "div.cards"},
+        "first": _LAYOUT_TARGET_RESPONSE_EXAMPLE,
+        "second": {"label": "div.card-b"},
+        "relation": "touching",
+        "visual_pair": "surface_surface",
+        "axis": "horizontal",
+        "distance_px": 0,
+        "attention": "review",
+        "reason_codes": ["independent_surfaces_touching"],
+        "message": "两个独立视觉容器贴边；若非组合布局，建议增加间距。",
+    }],
+}
+
+
 _COORDINATOR_TOOL_SPECS = (
 
     _visual_analysis_tool_spec(allow_page_screenshot=True),
@@ -610,7 +730,18 @@ _COORDINATOR_TOOL_SPECS = (
             '或改为同一 Vue 文件顶层 const 数组对象字面量中可静态枚举的字段；不要用 computed、'
             '函数返回、imported data、拼接或条件表达式生成 Icon/Asset* 的 name。'
             'success=true 时也可能返回 severity=warning 的布局诊断；遇到 PAGE_RENDER_BOTTOM_OVERFLOW 时应继续压缩内容、'
-            '调整容器高度或拆页，避免底部内容被固定画布裁切。不要在未处理错误的情况下继续写入页面。'
+            '调整容器高度或拆页，避免底部内容被固定画布裁切。layout_analysis 使用 schema_version=2；'
+            '先阅读 summary，再优先检查 attention=likely_issue 和 review。text_layouts 统一返回所有稳定多行和临界换行，'
+            '正常正文多行本身不是错误；boundary_wrap、孤字或孤词结合元素语义判断。item_groups 返回 flex-wrap 分排事实，'
+            '正常多排无需修改，末排孤项或临界分排才需要复核。overflows 统一返回画布和容器越界，'
+            '重点处理实际裁切或画布外的文本与交互内容，不要机械收回正常滚动和装饰出血。spatial_relations 统一返回重叠、'
+            '非透明视觉容器贴边和不超过 2px 的紧凑间距；distance_px 小于 0 表示重叠，等于 0 表示贴边。'
+            'intent 和 surface 用于判断有意叠层与视觉容器；保留角标、背景装饰和拼贴设计。'
+            'geometry_reliability=approximate 表示旋转或 clip-path 只能按外接矩形近似判断。'
+            'text_layouts 和 item_groups 的 target 使用 locator、text_sample、repeat_index 轻量定位，'
+            '稳定结果省略空默认字段，只有临界换行附带 font_size_px、container_width_px 和 nowrap_overflow_px。'
+            '空间结果使用 target.locator、code_hint.text_sample 和 repeat_index 对应页面源码。'
+            '不要在未处理错误的情况下继续写入页面。'
         ),
         response_example={'success': True,
          'status': 'passed',
@@ -621,7 +752,8 @@ _COORDINATOR_TOOL_SPECS = (
          'diagnostics': [{'severity': 'warning',
                           'source': 'runtime-render',
                           'code': 'PAGE_RENDER_BOTTOM_OVERFLOW',
-                          'message': '页面内容底部超出画布 42px，预览或导出时可能被裁切。'}]},
+                          'message': '页面内容底部超出画布 42px，预览或导出时可能被裁切。'}],
+         'layout_analysis': _LAYOUT_ANALYSIS_V2_RESPONSE_EXAMPLE},
     ),
 
     _tool(
@@ -639,7 +771,12 @@ _COORDINATOR_TOOL_SPECS = (
             '必须使用工具返回的 import_path，不要猜测路径。该工具会在保存前强制执行 Runtime validate；'
             'validate 失败时不会保存页面版本，并返回 diagnostics、canonical_diff 和 edits_applied。根据 diagnostics 修正后重新调用本工具。'
             'validate 通过但返回 severity=warning 时会继续保存页面版本，并在成功响应中返回 diagnostics 和 code_check_summary；'
-            '遇到 PAGE_RENDER_BOTTOM_OVERFLOW 时应继续调用本工具修正布局。'
+            '遇到 PAGE_RENDER_BOTTOM_OVERFLOW 时应继续调用本工具修正布局。layout_analysis 使用 schema_version=2；'
+            '先阅读 summary，优先处理 likely_issue，再复核 review。text_layouts 和 item_groups 中正常多行或正常分排无需机械修改。'
+            'overflows 中画布外或实际裁切的文本/交互内容应优先修复，正常滚动和装饰出血结合语义判断。'
+            'spatial_relations 统一表达重叠、贴边和临界间距；结合 intent、surface 和 message 判断，'
+            '不要机械消除有意角标、背景装饰和拼贴叠层。文本与分排目标使用 locator、text_sample、repeat_index'
+            ' 轻量定位；空间结果保留 code_hint 与 surface。geometry_reliability=approximate 时谨慎处理。'
         ),
         risk_level='write',
         sequential=True,
@@ -654,6 +791,7 @@ _COORDINATOR_TOOL_SPECS = (
                           'source': 'runtime-render',
                           'code': 'PAGE_RENDER_BOTTOM_OVERFLOW',
                           'message': '页面内容底部超出画布 42px。'}],
+         'layout_analysis': _EMPTY_LAYOUT_ANALYSIS_V2,
          'code_check_summary': '代码检查通过，发现 1 个布局警告。'},
     ),
 
@@ -670,6 +808,11 @@ _COORDINATOR_TOOL_SPECS = (
             'speaker_notes 是演讲模式展示给演讲者的纯文本备注，按普通文本保留换行，不写 HTML。'
             '本工具只创建页面记录和初始源码，不会自动维护项目路由；如需加入导航，创建后读取现有路由树并调用 update_project_route_tree 写入完整 routes。'
             '创建后如需视觉精修或处理 PAGE_RENDER_BOTTOM_OVERFLOW，应在页面上下文中读取新页面源码并通过结构化 edits 修改。'
+            'layout_analysis 使用 schema_version=2；先阅读 summary，优先处理 likely_issue，再复核 review。'
+            'text_layouts、item_groups、overflows 和 spatial_relations 分别表达文本换行、循环元素分排、越界与空间关系。'
+            '正常正文多行、正常分排、滚动、装饰出血和有意叠层无需机械修改；结合 intent、surface 和统一 message 判断。'
+            '文本与分排目标使用 locator、text_sample、repeat_index 轻量定位；空间结果保留 code_hint 与 surface。'
+            'geometry_reliability=approximate 时谨慎处理。'
         ),
         risk_level='write',
         sequential=True,
@@ -686,6 +829,7 @@ _COORDINATOR_TOOL_SPECS = (
                              'source': 'runtime-render',
                              'code': 'PAGE_RENDER_BOTTOM_OVERFLOW',
                              'message': '页面内容底部超出画布 42px。'}],
+            'layout_analysis': _EMPTY_LAYOUT_ANALYSIS_V2,
             'code_check_summary': '代码检查通过，发现 1 个布局警告。',
         },
     ),

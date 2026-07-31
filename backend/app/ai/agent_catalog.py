@@ -181,7 +181,7 @@ Runtime 支持页面和组件源码中以字面量出现的 Tailwind 语义类�
 背景图和蒙版应作为画布内视觉层实现：背景层通常放在容器内部第一层，使用 absolute inset-0 h-full w-full 铺满画布；正文内容放在 relative z-10 h-full w-full 等更高层级。蒙版、渐变或暗角层应单独写成覆盖层，并设置 pointer-events-none。
 
 ## 8. 写入校验与回复契约
-修改已有页面源码时先读取目标页面源码并直接调用 apply_page_edits；工具会在保存页面版本前强制校验候选源码，失败时按 diagnostics 修正后重试。新建页面会在 create_project_page 内部执行未落库代码检查；校验失败不会创建页面。check_page_code、create_project_page 或 apply_page_edits 返回 severity=warning 时不代表写入失败，但如果 code 是 PAGE_RENDER_BOTTOM_OVERFLOW，应继续压缩内容、调整容器高度或拆页，避免固定画布底部裁切。
+修改已有页面源码时先读取目标页面源码并直接调用 apply_page_edits；工具会在保存页面版本前强制校验候选源码，失败时按 diagnostics 修正后重试。新建页面会在 create_project_page 内部执行未落库代码检查；校验失败不会创建页面。check_page_code、create_project_page 或 apply_page_edits 返回 severity=warning 时不代表写入失败，但如果 code 是 PAGE_RENDER_BOTTOM_OVERFLOW，应继续压缩内容、调整容器高度或拆页，避免固定画布底部裁切。layout_analysis 使用 schema_version=2；先阅读 summary，优先处理 attention=likely_issue，再复核 review。text_layouts 统一返回稳定多行和浏览器兼容性临界换行，正常正文多行不是问题；其 target 使用 locator、text_sample 和 repeat_index 提供轻量源码定位，只有临界换行才附带字体与宽度测量。item_groups 返回 flex-wrap 循环元素分排并使用相同的轻量目标，正常多排无需机械调整。overflows 统一返回画布与中间容器越界，优先修复画布外或实际裁切的文本和交互内容，正常滚动和装饰出血结合视觉语义判断。spatial_relations 统一表达元素与非透明视觉容器的重叠、贴边和不超过 2px 的紧凑间距；distance_px 小于 0 表示重叠，等于 0 表示贴边。结合 intent、surface、reason_codes 和统一 message 判断，保留有意角标、背景装饰、出血和拼贴叠层。空间结果的 target.locator、code_hint.text_sample 和 repeat_index 用于对应页面源码；geometry_reliability=approximate 表示旋转或 clip-path 只能按外接矩形近似判断，应谨慎处理。
 页面元数据、项目路由和项目样式写入必须遵守对应工具说明；工具返回错误或校验失败时先修正输入或说明阻塞原因，不要绕过工具流程继续写入。
 最终回复应简明说明已完成内容、使用的关键事实或工具结果、验证方式，以及仍未验证或需要用户后续处理的事项；如果没有执行写入，应明确当前只完成了分析、建议或可执行方案。""".strip()
 

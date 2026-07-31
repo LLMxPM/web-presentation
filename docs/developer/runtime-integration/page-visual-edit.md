@@ -96,6 +96,8 @@ Manifest 每个节点通过 `template_actions` 声明模板级 `can_duplicate`�
 
 `component_schemas` 以页面源码中的默认导入本地名为 key。工作空间组件只允许从 `@workspace-components/<code>/v/<version>` 的精确钉住版本读取 `previewSchema.props`，不得回退组件当前草稿或最新版本；Runtime Kit 组件从其版本化能力清单读取。公开元数据仅保留属性控件需要的类型、标签、说明、默认值和有限选项，不下发 slots、mocks 或 presets。
 
+Editor 的专用组件检查器使用注册机制，并同时匹配 `source`、`component_code` 和 `version_no`。首批只注册 Runtime Kit `AssetImage.v1`：`name`、`alt`、`fit`、`position` 继续通过已有静态 prop binding 生成 `set_value`，外层图片框的受限 class 继续通过 `set_tailwind_tokens` 修改。检查器不得新增协议字段、自动插入缺失 prop/class，或把 `object-fit`、`object-position` 写入 Tailwind class；同名工作空间组件和其他版本不得误用该检查器。
+
 ## 5. 批量保存
 
 保存接口：
@@ -174,6 +176,8 @@ Runtime 选择消息应携带由外到内的 `instance_path`。单层 MVP 中必
 
 可视化选项必须从 Runtime safelist 派生的版本化目录下发，Editor 不维护第二份类清单。服务端按冲突组替换目标工具类，未识别类、响应式前缀、状态类和任意值应原样保留并只读展示。
 
+Editor 主流程只展示目录中的业务标签。文字常用项限定为字号、字重、对齐、行高和文字颜色；容器常用项限定为排列、对齐、整体间距、内边距、背景、边框、圆角和阴影。其余目录组进入“更多样式”，实际 class token 与未识别类只在折叠的技术详情中展示。
+
 Manifest v1 中的 Tailwind 目录使用独立版本 1 的以下结构；`label` 是面向用户的可视说明，Editor 不提供任意 class 文本框：
 
 ```json
@@ -233,6 +237,8 @@ Editor 主动定位使用同一 payload 字段，并将事件类型改为 `page-
 ## 9. 受限富文本
 
 - 可编辑 binding 使用 `kind: rich_text` 与 `source.kind: template-rich-text`，源码范围只覆盖容器 opening/closing tag 之间的内容。
+- 富文本候选标签只在具有成对标签时才聚合：自闭合写法（如 `<span class="dot" />`）按普通元素分析，保留节点、class binding 与循环定位，不生成 `rich_text` binding，也不进入 `set_rich_text` 可写目标集合；成对空容器仍生成 `start === end` 的零长度插入范围。
+- 单个富文本候选节点无法定位内部源码范围时，Runtime 不中断整页分析，而是降级为只读节点并在 Manifest `diagnostics` 中输出 `RICH_TEXT_SOURCE_RANGE_UNRESOLVED` 警告，诊断 `sourceRange` 指向整个元素；该降级不升级协议版本，也不得被映射为可重试的基础设施异常。
 - `set_rich_text.html` 允许转义文本、`br`、用户可增删的 classless `strong/em`，以及从规范源码原样保留的锁定标签外壳。链接、组件、静态或动态属性、内联 style 和其他标签均作为锁定外壳处理，Backend 负责基础语法、Vue 文本插值和 20000 字符限制，Runtime 结合当前源码执行最终结构校验。
 - Editor 递归拆分普通文本、可变语义标签与锁定标签；锁定标签内外的静态文本都可编辑，用户只能在单个文本片段内选择非空文本添加 classless `strong/em`，换行统一序列化为 `br`。
 - 锁定标签只显示“样式锁定”，用户点击后才展示原始 opening tag 与属性；点击“删除锁定样式”只移除标签外壳，内部文本和子标签提升到父级并与相邻文本合并。classless `strong/em` 取消标签时遵循相同的内容保留与合并规则。

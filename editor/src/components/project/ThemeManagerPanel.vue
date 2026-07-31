@@ -9,7 +9,7 @@
     @update:model-value="emit('update:modelValue', $event)"
   >
     <template #icon>
-      <SwatchBook class="h-5 w-5 text-indigo-600" />
+      <SwatchBook class="h-5 w-5 text-accent" />
     </template>
 
     <template #actions>
@@ -26,12 +26,12 @@
       </UiButton>
     </template>
 
-    <div class="shrink-0 border-b border-slate-100 bg-slate-50/80 px-4 py-3">
-      <div class="grid grid-cols-2 rounded-xl bg-slate-100 p-1">
+    <div class="shrink-0 border-b border-border-muted bg-canvas/80 px-4 py-3">
+      <div class="grid grid-cols-2 rounded-xl bg-surface-muted p-1">
         <UiButton
           variant="ghost"
           size="sm"
-          :class="activeTab === 'themes' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'"
+          :class="activeTab === 'themes' ? 'bg-surface text-accent shadow-sm' : 'text-text-muted hover:text-text'"
           @click="activeTab = 'themes'"
         >
           主题
@@ -39,7 +39,7 @@
         <UiButton
           variant="ghost"
           size="sm"
-          :class="activeTab === 'fonts' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'"
+          :class="activeTab === 'fonts' ? 'bg-surface text-accent shadow-sm' : 'text-text-muted hover:text-text'"
           @click="activeTab = 'fonts'"
         >
           字体
@@ -62,16 +62,19 @@
         :project-icon-url="theme.project_icon_asset?.url"
         :project-icon-name="theme.project_icon_name"
         :project-icon-analysis="theme.project_icon_asset?.analysis_metadata || null"
-        :heading-font-label="theme.heading_font?.font_family || 'sans-serif'"
-        :body-font-label="theme.body_font?.font_family || 'sans-serif'"
-        :code-font-label="theme.code_font?.font_family || 'monospace'"
+        :heading-font-label="theme.heading_font_family?.name || theme.heading_font_label || 'sans-serif'"
+        :body-font-label="theme.body_font_family?.name || theme.body_font_label || 'sans-serif'"
+        :code-font-label="theme.code_font_family?.name || theme.code_font_label || 'monospace'"
+        :heading-font-family="fontFamilyById.get(theme.heading_font_family_id || -1) || null"
+        :body-font-family="fontFamilyById.get(theme.body_font_family_id || -1) || null"
+        :code-font-family="fontFamilyById.get(theme.code_font_family_id || -1) || null"
         collapsible
         :default-expanded="workspace?.default_theme_key === theme.key"
       >
         <template #title-suffix>
           <span
             v-if="workspace?.default_theme_key === theme.key"
-            class="rounded-full border border-indigo-100 bg-indigo-50 px-2 py-0.5 text-[10px] font-bold text-indigo-600"
+            class="rounded-full border border-accent-muted bg-surface-selected px-2 py-0.5 text-[10px] font-bold text-accent"
           >
             默认
           </span>
@@ -85,24 +88,24 @@
       <article
         v-for="font in filteredFonts"
         :key="font.id"
-        class="rounded-xl border border-slate-200 bg-white p-3 shadow-sm transition-colors hover:border-indigo-200"
+        class="rounded-xl border border-border bg-surface p-3 shadow-sm transition-colors hover:border-accent-ring"
       >
         <div class="flex items-start justify-between gap-3">
           <div class="min-w-0">
-            <h3 class="truncate text-sm font-bold text-slate-800">{{ font.font_family }}</h3>
-            <p class="mt-0.5 truncate font-mono text-[11px] text-slate-400">{{ font.asset_name }}</p>
+            <h3 class="truncate text-sm font-bold text-text">{{ font.font_family }}</h3>
+            <p class="mt-0.5 truncate font-mono text-[11px] text-text-disabled">{{ font.asset_name }}</p>
           </div>
           <span
             class="shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold"
-            :class="font.status === 'active' ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'"
+            :class="font.status === 'active' ? 'bg-success-muted text-success-strong' : 'bg-surface-muted text-text-muted'"
           >
             {{ font.status === 'active' ? '启用' : '归档' }}
           </span>
         </div>
 
-        <div class="mt-3 rounded-lg bg-slate-50 p-3 text-slate-800" :style="{ fontFamily: `'theme-sidebar-font-${font.id}'` }">
+        <div class="mt-3 rounded-lg bg-canvas p-3 text-text" :style="{ fontFamily: resolveSidebarFontFamily(font) }">
           <div class="text-2xl font-semibold">Aa 中文 0123</div>
-          <div class="mt-1 text-xs text-slate-500">{{ font.font_weight }} / {{ font.font_style }} / {{ font.font_format }}</div>
+          <div class="mt-1 text-xs text-text-muted">{{ font.font_weight }} / {{ font.font_style }} / {{ font.font_format }}</div>
         </div>
 
         <div class="mt-3 flex items-center justify-end gap-2">
@@ -141,10 +144,10 @@
     :z-index="240"
     @update:open="handlePreviewDialogVisibleChange"
   >
-    <div v-if="previewFont" class="space-y-4" :style="{ fontFamily: `'theme-sidebar-font-${previewFont.id}'` }">
-      <p class="text-5xl leading-tight text-slate-900">AaBbCc 012345</p>
-      <p class="text-3xl leading-relaxed text-slate-800">字体效果预览：主题标题、正文与数字展示</p>
-      <p class="text-lg leading-8 text-slate-600">Web Presentation 主题字体预览，用于快速确认字体注册后的视觉效果。</p>
+    <div v-if="previewFont" class="space-y-4" :style="{ fontFamily: resolveSidebarFontFamily(previewFont) }">
+      <p class="text-5xl leading-tight text-text-strong">AaBbCc 012345</p>
+      <p class="text-3xl leading-relaxed text-text">字体效果预览：主题标题、正文与数字展示</p>
+      <p class="text-lg leading-8 text-text-secondary">Web Presentation 主题字体预览，用于快速确认字体注册后的视觉效果。</p>
     </div>
   </UiDialog>
 </template>
@@ -154,13 +157,14 @@ import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ArrowUpRight, Copy, Eye, SwatchBook } from '@lucide/vue'
 
-import { listWorkspaceFonts } from '@/api/assets'
+import { listWorkspaceFontFamilies } from '@/api/assets'
 import { getWorkspace } from '@/api/catalog'
 import { getErrorMessage } from '@/api/http'
 import { listWorkspaceThemes } from '@/api/themes'
 import { UiButton, UiDialog } from '@/components/ui'
 import DataState from '@/components/patterns/DataState.vue'
-import type { WorkspaceFontConfigItem, WorkspaceItem, WorkspaceThemeItem } from '@/types/api'
+import { resolveFontPreviewFamily, useFontPreviewRegistry } from '@/composables/useFontPreviewRegistry'
+import type { WorkspaceFontConfigItem, WorkspaceFontFamilyItem, WorkspaceItem, WorkspaceThemeItem } from '@/types/api'
 import { Message } from '@/utils/message'
 import { buildWorkspaceThemesPath } from '@/utils/workspace-routes'
 import ThemePreviewCard from '@/components/theme/ThemePreviewCard.vue'
@@ -187,10 +191,14 @@ const fontDataState = computed<'loading' | 'empty' | 'ready'>(() => (
 ))
 const themes = ref<WorkspaceThemeItem[]>([])
 const fonts = ref<WorkspaceFontConfigItem[]>([])
+const fontFamilies = ref<WorkspaceFontFamilyItem[]>([])
+const fontFamilyById = computed(() => new Map(fontFamilies.value.map(family => [family.id, family])))
 const searchKeyword = ref('')
 const workspace = ref<WorkspaceItem | null>(null)
 const activeTab = ref<SidebarTab>('themes')
 const previewFont = ref<WorkspaceFontConfigItem | null>(null)
+
+useFontPreviewRegistry(computed(() => fontFamilies.value))
 
 const filteredThemes = computed(() => {
   const keyword = normalizeSearchKeyword(searchKeyword.value)
@@ -213,35 +221,31 @@ watch(
   { immediate: true },
 )
 
-watch(fonts, (items) => {
-  let styleTag = document.getElementById('theme-sidebar-font-preview')
-  if (!styleTag) {
-    styleTag = document.createElement('style')
-    styleTag.id = 'theme-sidebar-font-preview'
-    document.head.appendChild(styleTag)
-  }
-  styleTag.innerHTML = items
-    .filter(font => font.asset_url)
-    .map(font => `@font-face { font-family: 'theme-sidebar-font-${font.id}'; src: url('${font.asset_url}'); font-display: swap; }`)
-    .join('\n')
-})
-
 async function loadData(workspaceId: number): Promise<void> {
   loading.value = true
   try {
     const [themeResponse, fontResponse, workspaceDetail] = await Promise.all([
       listWorkspaceThemes(workspaceId, { page: 1, page_size: 100 }),
-      listWorkspaceFonts(workspaceId, { page: 1, page_size: 100 }),
+      listWorkspaceFontFamilies(workspaceId, { page: 1, page_size: 100 }),
       getWorkspace(workspaceId),
     ])
     themes.value = themeResponse.items
-    fonts.value = fontResponse.items
+    fontFamilies.value = fontResponse.items
+    fonts.value = fontResponse.items.flatMap(family => family.faces)
     workspace.value = workspaceDetail
   } catch (error) {
     Message.error(getErrorMessage(error, '加载主题与字体失败。'))
   } finally {
     loading.value = false
   }
+}
+
+/**
+ * 解析字体侧栏卡片和弹窗实际使用的预览字体族。
+ * @param font 当前字体 face
+ */
+function resolveSidebarFontFamily(font: WorkspaceFontConfigItem): string {
+  return resolveFontPreviewFamily(fontFamilyById.value.get(font.family_id), font.font_family)
 }
 
 /**
@@ -265,9 +269,12 @@ function isThemeMatchedByKeyword(theme: WorkspaceThemeItem, keyword: string): bo
     theme.name,
     theme.description || '',
     theme.project_icon_name || '',
-    theme.heading_font?.font_family || '',
-    theme.body_font?.font_family || '',
-    theme.code_font?.font_family || '',
+    theme.heading_font_family?.name || '',
+    theme.body_font_family?.name || '',
+    theme.code_font_family?.name || '',
+    theme.heading_font_label || '',
+    theme.body_font_label || '',
+    theme.code_font_label || '',
   ].some(value => String(value || '').toLowerCase().includes(keyword))
 }
 

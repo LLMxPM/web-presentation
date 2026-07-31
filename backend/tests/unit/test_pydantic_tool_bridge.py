@@ -5,6 +5,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import pytest
+from pydantic import ValidationError
 from pydantic_ai import Agent, CallDeferred
 from pydantic_ai.messages import ModelResponse, TextPart, ToolCallPart
 from pydantic_ai.models.function import AgentInfo, FunctionModel
@@ -118,7 +119,28 @@ def test_generate_image_schema_should_follow_bound_model_capabilities() -> None:
     assert "quality" not in properties
     assert "mask_attachment_id" not in properties
     assert properties["resolution_tier"]["enum"] == ["auto", "standard", "high", "ultra"]
+    assert any(item.get("type") == "array" for item in properties["tags"]["anyOf"])
+    assert generate_image.max_retries == 3
     assert deps.dependencies["image_generation_config_id"] == 17
+
+
+def test_generate_image_tags_should_accept_json_array_string_before_validation() -> None:
+    """模型把 tags 数组序列化成字符串时应前置还原，非法普通字符串仍应拒绝。"""
+
+    tool = _wrap_platform_tool(build_generate_image_tool(None))  # type: ignore[arg-type]
+    validated = tool.function_schema.validator.validate_python({
+        "operation": "generate",
+        "prompt": "生成封面图",
+        "tags": '["delivery", "cover", "illustration"]',
+    })
+
+    assert validated["tags"] == ["delivery", "cover", "illustration"]
+    with pytest.raises(ValidationError):
+        tool.function_schema.validator.validate_python({
+            "operation": "generate",
+            "prompt": "生成封面图",
+            "tags": "delivery,cover",
+        })
 
 
 def test_generate_image_schema_should_keep_openai_quality_and_mask() -> None:

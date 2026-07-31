@@ -30,7 +30,7 @@
       @change="handleImportFileSelected"
     />
 
-    <div class="grid min-h-0 flex-1 grid-cols-[400px_minmax(0,1fr)] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+    <div class="grid min-h-0 flex-1 grid-cols-[400px_minmax(0,1fr)] overflow-hidden rounded-xl border border-border bg-surface shadow-sm">
       <ComponentLibraryPanel
         v-model="componentPanelVisible"
         :workspace-id="workspaceId"
@@ -51,7 +51,7 @@
         @refresh-requested="refreshComponentList"
       />
 
-      <main class="h-full min-h-0 min-w-0 overflow-hidden border-l border-slate-200 bg-slate-50/70">
+      <main class="h-full min-h-0 min-w-0 overflow-hidden border-l border-border bg-canvas/70">
         <WorkspaceComponentWorkbench
           v-if="activeWorkbench === 'workspace'"
           :workspace-id="workspaceId"
@@ -74,10 +74,10 @@
           class="h-full min-h-0"
         />
 
-        <section v-else class="flex h-full items-center justify-center bg-white px-6 text-center">
+        <section v-else class="flex h-full items-center justify-center bg-surface px-6 text-center">
           <div class="max-w-sm">
-            <p class="text-sm font-bold text-slate-600">请选择左侧组件</p>
-            <p class="mt-2 text-xs leading-6 text-slate-400">
+            <p class="text-sm font-bold text-text-secondary">请选择左侧组件</p>
+            <p class="mt-2 text-xs leading-6 text-text-disabled">
               工作空间组件会在右侧打开预览和编辑，Runtime Kit 可预览能力也会在这里展示。
             </p>
           </div>
@@ -115,37 +115,37 @@
 
     <UiDialog :open="importDialogVisible" title="导入组件" size="standard" @update:open="importDialogVisible = $event">
       <div class="space-y-4">
-        <div class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-          <p class="text-sm font-bold text-slate-700">{{ importFile?.name || '未选择文件' }}</p>
-          <p v-if="importValidation" class="mt-1 text-xs text-slate-500">
+        <div class="rounded-xl border border-border bg-canvas px-4 py-3">
+          <p class="text-sm font-bold text-text-emphasis">{{ importFile?.name || '未选择文件' }}</p>
+          <p v-if="importValidation" class="mt-1 text-xs text-text-muted">
             组件 {{ importValidation.components.length }} 个，资源 {{ importValidation.assets.length }} 个，字体 {{ importValidation.fonts.length }} 个
           </p>
         </div>
 
-        <div v-if="importValidation?.errors.length" class="rounded-xl border border-rose-100 bg-rose-50 px-4 py-3">
-          <p class="mb-2 text-sm font-bold text-rose-700">预检未通过</p>
-          <ul class="space-y-1 text-xs leading-5 text-rose-700">
+        <div v-if="importValidation?.errors.length" class="rounded-xl border border-danger-border bg-danger-muted px-4 py-3">
+          <p class="mb-2 text-sm font-bold text-danger-strong">预检未通过</p>
+          <ul class="space-y-1 text-xs leading-5 text-danger-strong">
             <li v-for="error in importValidation.errors" :key="error">{{ error }}</li>
           </ul>
         </div>
 
-        <div v-if="importValidation?.warnings.length" class="rounded-xl border border-amber-100 bg-amber-50 px-4 py-3">
-          <p class="mb-2 text-sm font-bold text-amber-800">包内提示</p>
-          <ul class="space-y-1 text-xs leading-5 text-amber-800">
+        <div v-if="importValidation?.warnings.length" class="rounded-xl border border-warning-border bg-warning-muted px-4 py-3">
+          <p class="mb-2 text-sm font-bold text-warning-strong">包内提示</p>
+          <ul class="space-y-1 text-xs leading-5 text-warning-strong">
             <li v-for="warning in importValidation.warnings" :key="warning">{{ warning }}</li>
           </ul>
         </div>
 
         <div v-if="importValidation" class="space-y-3">
-          <section class="rounded-xl border border-slate-200 bg-white p-4">
-            <h4 class="text-sm font-bold text-slate-700">组件</h4>
+          <section class="rounded-xl border border-border bg-surface p-4">
+            <h4 class="text-sm font-bold text-text-emphasis">组件</h4>
             <div class="mt-2 max-h-40 space-y-2 overflow-y-auto">
               <div v-for="component in importValidation.components" :key="`${component.source_component_code}-${component.source_version_no}`" class="flex items-center justify-between gap-3 text-xs">
                 <span class="min-w-0">
-                  <span class="block truncate font-semibold text-slate-700">{{ component.name }}</span>
-                  <span v-if="component.match_reason" class="mt-0.5 block truncate text-slate-400">{{ component.match_reason }}</span>
+                  <span class="block truncate font-semibold text-text-emphasis">{{ component.name }}</span>
+                  <span v-if="component.match_reason" class="mt-0.5 block truncate text-text-disabled">{{ component.match_reason }}</span>
                 </span>
-                <span class="shrink-0 text-right font-mono text-slate-400">
+                <span class="shrink-0 text-right font-mono text-text-disabled">
                   {{ component.import_name }} · {{ resolveImportActionText(component.action) }} · {{ formatFingerprint(component.component_fingerprint) }}
                 </span>
               </div>
@@ -153,18 +153,18 @@
           </section>
 
           <section class="grid gap-3 lg:grid-cols-2">
-            <div class="rounded-xl border border-slate-200 bg-white p-4">
-              <h4 class="text-sm font-bold text-slate-700">资源</h4>
-              <div class="mt-2 max-h-32 space-y-1 overflow-y-auto text-xs text-slate-500">
+            <div class="rounded-xl border border-border bg-surface p-4">
+              <h4 class="text-sm font-bold text-text-emphasis">资源</h4>
+              <div class="mt-2 max-h-32 space-y-1 overflow-y-auto text-xs text-text-muted">
                 <p v-if="importValidation.assets.length === 0">无资源</p>
                 <p v-for="asset in importValidation.assets" :key="asset.name">
                   {{ asset.name }} · {{ resolveImportActionText(asset.action) }}
                 </p>
               </div>
             </div>
-            <div class="rounded-xl border border-slate-200 bg-white p-4">
-              <h4 class="text-sm font-bold text-slate-700">字体</h4>
-              <div class="mt-2 max-h-32 space-y-1 overflow-y-auto text-xs text-slate-500">
+            <div class="rounded-xl border border-border bg-surface p-4">
+              <h4 class="text-sm font-bold text-text-emphasis">字体</h4>
+              <div class="mt-2 max-h-32 space-y-1 overflow-y-auto text-xs text-text-muted">
                 <p v-if="importValidation.fonts.length === 0">无字体</p>
                 <p v-for="font in importValidation.fonts" :key="font.asset_name">
                   {{ font.asset_name }} · {{ resolveImportActionText(font.action) }}

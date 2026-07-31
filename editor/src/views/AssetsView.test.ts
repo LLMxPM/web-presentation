@@ -227,8 +227,9 @@ describe('AssetsView', () => {
       expect(listWorkspaceAssetsMock).toHaveBeenCalledWith(7, expect.objectContaining({ excludeAssetType: 'font' }))
       expect(screen.getAllByText('hero_illustration').length).toBeGreaterThan(0)
     })
-    expect(screen.getAllByRole('button', { name: '全部' }).length).toBeGreaterThan(0)
-    expect(screen.queryByRole('button', { name: '字体' })).toBeNull()
+    expect(screen.getByRole('radio', { name: '全部' })).toBeChecked()
+    expect(screen.getByRole('radiogroup', { name: '资源类型筛选' })).toBeInTheDocument()
+    expect(screen.queryByRole('radio', { name: '字体' })).toBeNull()
 
     await fireEvent.click(screen.getByText('上传资源'))
     expect(screen.queryByRole('option', { name: '字体' })).toBeNull()
@@ -390,7 +391,10 @@ describe('AssetsView', () => {
     await waitFor(() => {
       expect(screen.getByText('formula_ratio')).toBeInTheDocument()
     })
+    // 未进入选择模式时不展示复选框与批量工具条
     expect(screen.queryByText('重新计算比例')).toBeNull()
+    expect(screen.queryByLabelText('选择资源 formula_ratio')).toBeNull()
+    await fireEvent.click(screen.getByText('批量操作'))
     await fireEvent.click(screen.getByLabelText('选择资源 formula_ratio'))
     await fireEvent.click(screen.getByText('重新计算比例'))
 
@@ -426,6 +430,7 @@ describe('AssetsView', () => {
     await waitFor(() => {
       expect(screen.getByText('poster_image')).toBeInTheDocument()
     })
+    await fireEvent.click(screen.getByText('批量操作'))
     await fireEvent.click(screen.getByLabelText('选择资源 poster_image'))
     await fireEvent.click(screen.getByText('重新计算比例'))
     await fireEvent.click(screen.getByText('开始预览'))
@@ -511,6 +516,7 @@ describe('AssetsView', () => {
     await waitFor(() => {
       expect(screen.getByText('formula_ratio')).toBeInTheDocument()
     })
+    await fireEvent.click(screen.getByText('批量操作'))
     await fireEvent.click(screen.getByLabelText('选择资源 formula_ratio'))
     await fireEvent.click(screen.getByText('重新计算比例'))
     await fireEvent.click(screen.getByText('开始预览'))
@@ -596,6 +602,7 @@ describe('AssetsView', () => {
     await waitFor(() => {
       expect(screen.getAllByText('hero_illustration').length).toBeGreaterThan(0)
     })
+    await fireEvent.click(screen.getByText('批量操作'))
     await fireEvent.click(screen.getByLabelText('选择资源 hero_illustration'))
     await fireEvent.click(screen.getByLabelText('选择资源 bitmap_photo'))
     await fireEvent.click(screen.getByText('批量归档'))
@@ -611,6 +618,7 @@ describe('AssetsView', () => {
     await waitFor(() => {
       expect(screen.getAllByText('hero_illustration').length).toBeGreaterThan(0)
     })
+    await fireEvent.click(screen.getByText('批量操作'))
     await fireEvent.click(screen.getByLabelText('选择资源 hero_illustration'))
     await fireEvent.click(screen.getByLabelText('选择资源 bitmap_photo'))
     await fireEvent.click(screen.getByText('导出选中'))
@@ -671,6 +679,7 @@ describe('AssetsView', () => {
     await waitFor(() => {
       expect(screen.getByText('archived_restore_cover')).toBeInTheDocument()
     })
+    await fireEvent.click(screen.getByText('批量操作'))
     await fireEvent.click(screen.getByLabelText('选择资源 archived_restore_cover'))
     await fireEvent.click(screen.getByText('批量恢复'))
 
@@ -711,6 +720,7 @@ describe('AssetsView', () => {
     await waitFor(() => {
       expect(screen.getByText('archived_cover')).toBeInTheDocument()
     })
+    await fireEvent.click(screen.getByText('批量操作'))
     await fireEvent.click(screen.getByLabelText('选择资源 archived_cover'))
     await fireEvent.click(screen.getByText('批量删除'))
 

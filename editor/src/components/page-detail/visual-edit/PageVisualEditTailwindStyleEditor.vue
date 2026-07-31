@@ -1,123 +1,126 @@
-<!-- 文件功能：渲染可视化编辑属性面板中的 Tailwind 分组样式控件，支持折叠、类名回显和未知类只读展示。 -->
+<!-- 文件功能：以“常用、更多、技术详情”的渐进结构编辑受限 Tailwind 样式。 -->
 <template>
   <article class="space-y-3" @click="emit('select')" @focusin="emit('select')">
     <p
       v-if="props.templateLiteralWarning"
-      class="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800"
+      class="rounded-ui-md bg-warning-muted px-3 py-2 text-xs text-warning"
     >
-      此项来自模板字面量，保存后会修改所有循环实例。
-  </p>
-    <template v-if="props.editable">
-      <section
-        v-for="section in groupedSections"
-        :key="section.key"
-        class="overflow-hidden rounded-lg border border-slate-200 bg-white"
+      此项来自模板字面量，保存后会修改全部重复项。
+    </p>
+
+    <div
+      v-if="props.editable"
+      class="overflow-hidden rounded-ui-lg border border-border bg-surface"
+    >
+      <UiTabs
+        v-model="activeStyleTab"
+        :items="styleTabs"
+        list-class="px-2"
       >
-        <UiButton
-          type="button"
-          variant="ghost"
-          class="h-auto flex w-full items-center justify-between gap-3 bg-slate-50 px-3 py-2 text-left transition hover:bg-slate-100"
-          :aria-expanded="isSectionExpanded(section.key)"
-          @click.stop="toggleSection(section.key)"
-        >
-          <span class="flex min-w-0 flex-1 items-center gap-2">
-            <component :is="isSectionExpanded(section.key) ? ChevronDown : ChevronRight" class="h-4 w-4 shrink-0 text-slate-400" />
-            <span class="truncate text-xs font-bold text-slate-700">{{ section.label }}</span>
-            <span class="shrink-0 rounded bg-slate-100 px-1.5 py-0.5 text-[11px] font-semibold text-slate-500">
-              {{ section.selectedGroupCount }}/{{ section.groups.length }} 项
-            </span>
-          </span>
-          <span class="flex min-w-0 max-w-[55%] shrink-0 justify-end gap-1 overflow-hidden">
-            <code
-              v-for="className in section.selectedClasses"
-              :key="className"
-              class="min-w-0 truncate rounded bg-white px-1.5 py-0.5 text-[10px] font-semibold text-slate-500"
-            >
-              {{ className }}
-            </code>
-            <span v-if="!section.selectedClasses.length" class="shrink-0 rounded bg-white px-1.5 py-0.5 text-[10px] font-semibold text-slate-400">
-              不设置
-            </span>
-          </span>
-        </UiButton>
-        <div v-show="isSectionExpanded(section.key)" class="space-y-3 border-t border-slate-100 p-3">
-          <div
-            v-for="group in section.groups"
-            :key="group.key"
-            class="grid gap-1.5"
-          >
-            <div class="flex items-center justify-between gap-2">
-              <label class="text-xs font-semibold text-slate-700" :for="tailwindSelectId(group.key)">
-                {{ group.label }}
-              </label>
-              <code class="shrink-0 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-500">
-                {{ group.selectedClass || '不设置' }}
-              </code>
-            </div>
-            <UiSelect
-              :model-value="group.selectedClass || emptyTailwindClassValue"
-              :options="tailwindOptions(group)"
-              @update:model-value="value => emit('change', { group: group.key, className: value === emptyTailwindClassValue ? '' : String(value ?? '') })"
+        <template #common>
+          <div class="p-3">
+            <PageVisualEditTailwindGroupFields
+              v-if="commonGroups.length"
+              :binding-id="props.bindingId"
+              :groups="commonGroups"
+              @change="emit('change', $event)"
             />
+            <p v-else class="py-5 text-center text-xs text-text-muted">
+              当前元素没有可用的常用样式。
+            </p>
           </div>
-        </div>
-      </section>
-    </template>
-    <p v-else class="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600">
+        </template>
+
+        <template #more>
+          <div v-if="moreSections.length" class="space-y-4 p-3">
+            <section
+              v-for="section in moreSections"
+              :key="section.key"
+              class="space-y-2"
+            >
+              <h4 class="text-xs font-semibold text-text-secondary">{{ section.label }}</h4>
+              <PageVisualEditTailwindGroupFields
+                :binding-id="props.bindingId"
+                :groups="section.groups"
+                @change="emit('change', $event)"
+              />
+            </section>
+          </div>
+          <p v-else class="p-5 text-center text-xs text-text-muted">
+            当前元素没有更多可编辑样式。
+          </p>
+        </template>
+      </UiTabs>
+    </div>
+    <p v-else class="rounded-ui-md bg-surface-muted px-3 py-2 text-xs text-text-secondary">
       {{ props.readonlyMessage }}
     </p>
 
-    <div v-if="props.unknownTokens.length" class="rounded-lg border border-amber-100 bg-amber-50/60 p-3">
-      <p class="mb-2 text-[11px] font-semibold text-amber-800">保留的复杂 / 未识别类（只读）</p>
-      <div class="flex flex-wrap gap-1.5">
-        <span
-          v-for="token in props.unknownTokens"
-          :key="token"
-          class="rounded-md border border-amber-200 bg-white px-2 py-1 font-mono text-[10px] text-amber-800"
-        >
-          {{ token }}
-        </span>
+    <details
+      v-if="technicalKnownTokens.length || props.unknownTokens.length"
+      class="rounded-ui-md border border-border bg-surface"
+    >
+      <summary
+        class="flex min-h-control-sm cursor-pointer select-none items-center px-3 text-xs font-medium text-text-muted outline-none hover:text-text focus-visible:ring-2 focus-visible:ring-border-focus"
+      >
+        技术详情
+      </summary>
+      <div class="space-y-3 border-t border-border p-3">
+        <div v-if="technicalKnownTokens.length">
+          <p class="mb-1.5 text-[11px] font-semibold text-text-secondary">当前 Tailwind 类名</p>
+          <div class="flex flex-wrap gap-1.5">
+            <code
+              v-for="token in technicalKnownTokens"
+              :key="token"
+              class="rounded-ui-sm bg-surface-muted px-2 py-1 text-[10px] text-text-secondary"
+            >
+              {{ token }}
+            </code>
+          </div>
+        </div>
+        <div v-if="props.unknownTokens.length">
+          <p class="mb-1.5 text-[11px] font-semibold text-warning">
+            保留的复杂或未识别类（只读）
+          </p>
+          <div class="flex flex-wrap gap-1.5">
+            <code
+              v-for="token in props.unknownTokens"
+              :key="token"
+              class="rounded-ui-sm border border-warning/20 bg-warning-muted px-2 py-1 text-[10px] text-warning"
+            >
+              {{ token }}
+            </code>
+          </div>
+        </div>
       </div>
-    </div>
-    <p v-if="props.pending" class="text-[11px] font-semibold text-indigo-600">
-      此项有待保存修改，画布暂未更新。
+    </details>
+
+    <p v-if="props.pending" class="text-[11px] font-semibold text-info">
+      此项有待保存修改；保存后画布刷新。
     </p>
   </article>
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
-import { ChevronDown, ChevronRight } from '@lucide/vue'
-import { UiButton, UiSelect } from '@/components/ui'
+import { computed, ref } from 'vue'
 
-interface TailwindOptionView {
-  class_name: string
-  label: string
-}
-
-interface TailwindGroupView {
-  key: string
-  label: string
-  selectedClass: string
-  options: TailwindOptionView[]
-}
-
-interface TailwindSectionView {
-  key: string
-  label: string
-  groups: TailwindGroupView[]
-  selectedGroupCount: number
-  selectedClasses: string[]
-}
+import PageVisualEditTailwindGroupFields from '@/components/page-detail/visual-edit/PageVisualEditTailwindGroupFields.vue'
+import {
+  sectionTailwindGroups,
+  type PageVisualEditTailwindGroupView,
+} from '@/components/page-detail/visual-edit/page-visual-edit-tailwind-view'
+import { UiTabs } from '@/components/ui'
 
 const props = defineProps<{
   bindingId: string
   editable: boolean
-  groups: TailwindGroupView[]
+  groups: PageVisualEditTailwindGroupView[]
   pending: boolean
   readonlyMessage: string
   templateLiteralWarning: boolean
   unknownTokens: string[]
+  commonGroupKeys?: string[]
+  allowedGroupKeys?: string[]
 }>()
 
 const emit = defineEmits<{
@@ -125,116 +128,31 @@ const emit = defineEmits<{
   select: []
 }>()
 
-const expandedSectionKeys = ref<Set<string>>(new Set())
-const emptyTailwindClassValue = '__tailwind-none__'
-const sectionDefinitions = [
-  {
-    key: 'layout',
-    label: '布局',
-    groups: ['display', 'position', 'flex-direction', 'flex-wrap', 'items', 'justify', 'grid-columns'],
-  },
-  {
-    key: 'spacing',
-    label: '间距',
-    groups: ['gap', 'gap-x', 'gap-y', 'padding', 'padding-x', 'padding-y', 'margin', 'margin-x', 'margin-y'],
-  },
-  {
-    key: 'sizing',
-    label: '尺寸',
-    groups: ['width', 'height', 'size'],
-  },
-  {
-    key: 'typography',
-    label: '字体',
-    groups: ['text-size', 'text-alignment', 'text-align', 'font-weight', 'line-height', 'text-color'],
-  },
-  {
-    key: 'appearance',
-    label: '外观',
-    groups: ['background-color', 'border-width', 'border-style', 'border-color', 'radius', 'shadow', 'opacity'],
-  },
+const activeStyleTab = ref('common')
+const styleTabs = [
+  { value: 'common', label: '常用样式' },
+  { value: 'more', label: '更多样式' },
 ]
 
-const groupedSections = computed<TailwindSectionView[]>(() => {
-  const remainingGroups = [...props.groups]
-  const sections = sectionDefinitions
-    .map((definition) => {
-      const groups = takeGroupsByKeys(remainingGroups, definition.groups)
-      return createSection(definition.key, definition.label, groups)
-    })
-    .filter(section => section.groups.length > 0)
-  if (remainingGroups.length) {
-    sections.push(createSection('other', '其他', remainingGroups))
-  }
-  return sections
+const visibleGroups = computed(() => {
+  if (props.allowedGroupKeys === undefined) return props.groups
+  const allowedKeys = new Set(props.allowedGroupKeys)
+  return props.groups.filter(group => allowedKeys.has(group.key))
 })
 
-watch(
-  () => groupedSections.value.map(section => `${section.key}:${section.selectedClasses.join(',')}`).join('|'),
-  () => {
-    const selectedSectionKeys = groupedSections.value
-      .filter(section => section.selectedClasses.length > 0)
-      .map(section => section.key)
-    expandedSectionKeys.value = new Set(selectedSectionKeys.length > 0
-      ? selectedSectionKeys
-      : groupedSections.value.slice(0, 1).map(section => section.key))
-  },
-  { immediate: true },
-)
+const commonGroups = computed(() => {
+  const groupByKey = new Map(visibleGroups.value.map(group => [group.key, group]))
+  return (props.commonGroupKeys ?? [])
+    .map(key => groupByKey.get(key))
+    .filter((group): group is PageVisualEditTailwindGroupView => Boolean(group))
+})
 
-/** 从待分组列表中按 key 取出目标组，同时保留目录顺序。 */
-function takeGroupsByKeys(groups: TailwindGroupView[], keys: string[]): TailwindGroupView[] {
-  const keySet = new Set(keys)
-  const matched = groups.filter(group => keySet.has(group.key))
-  for (const group of matched) {
-    const index = groups.findIndex(candidate => candidate.key === group.key)
-    if (index >= 0) groups.splice(index, 1)
-  }
-  return matched
-}
+const moreSections = computed(() => {
+  const commonKeys = new Set(commonGroups.value.map(group => group.key))
+  return sectionTailwindGroups(visibleGroups.value.filter(group => !commonKeys.has(group.key)))
+})
 
-/** 创建大分区视图，并汇总该分区当前生效的 Tailwind class。 */
-function createSection(key: string, label: string, groups: TailwindGroupView[]): TailwindSectionView {
-  return {
-    key,
-    label,
-    groups,
-    selectedGroupCount: groups.filter(group => group.selectedClass).length,
-    selectedClasses: groups.map(group => group.selectedClass).filter(Boolean),
-  }
-}
-
-/** 展开或折叠一个 Tailwind 样式大分区。 */
-function toggleSection(sectionKey: string): void {
-  const next = new Set(expandedSectionKeys.value)
-  if (next.has(sectionKey)) {
-    next.delete(sectionKey)
-  } else {
-    next.add(sectionKey)
-  }
-  expandedSectionKeys.value = next
-}
-
-/** 判断 Tailwind 样式大分区是否展开。 */
-function isSectionExpanded(sectionKey: string): boolean {
-  return expandedSectionKeys.value.has(sectionKey)
-}
-
-/** 生成 Tailwind 组选择器的稳定 DOM id。 */
-function tailwindSelectId(groupKey: string): string {
-  return `tailwind-${safeDomId(props.bindingId)}-${safeDomId(groupKey)}`
-}
-
-/** 将 Tailwind 分组值映射为统一选择器选项，并保留“不设置”入口。 */
-function tailwindOptions(group: TailwindGroupView): Array<{ value: string; label: string }> {
-  return [
-    { value: emptyTailwindClassValue, label: '不设置' },
-    ...group.options.map(option => ({ value: option.class_name, label: `${option.label} · ${option.class_name}` })),
-  ]
-}
-
-/** DOM id 只保留安全字符，避免绑定 id 中的分隔符影响 label 关联。 */
-function safeDomId(value: string): string {
-  return value.replace(/[^a-zA-Z0-9_-]/g, '-')
-}
+const technicalKnownTokens = computed(() => (
+  [...new Set(props.groups.map(group => group.selectedClass).filter(Boolean))]
+))
 </script>

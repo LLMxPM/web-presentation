@@ -44,7 +44,7 @@ class AiLlmConfig(TimestampMixin, AuditMixin, Base):
     thinking_effort: Mapped[str | None] = mapped_column(String(64), nullable=True)
     supports_image_input: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     context_window_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=128_000)
-    max_output_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=32_000)
+    max_output_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=28_000)
     history_token_ratio: Mapped[float] = mapped_column(Float, nullable=False, default=0.5)
     compression_target_ratio: Mapped[float] = mapped_column(Float, nullable=False, default=0.1)
     advanced_config_json: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)

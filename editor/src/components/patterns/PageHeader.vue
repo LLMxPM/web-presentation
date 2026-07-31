@@ -1,6 +1,6 @@
 <!-- 文件功能：提供一级页面标题、说明、上下文与主要操作的一致布局。 -->
 <template>
-  <header class="rounded-lg border border-slate-200 bg-white/95 px-3.5 py-2 shadow-sm">
+  <header class="rounded-lg border border-border bg-surface/95 px-3.5 py-2 shadow-sm">
     <div class="flex min-w-0 items-center gap-3">
       <div class="min-w-0 flex-1 space-y-1">
         <div v-if="$slots.eyebrow" class="text-xs text-[rgb(var(--ui-text-muted))]"><slot name="eyebrow" /></div>
@@ -16,7 +16,7 @@
             <template #trigger>
               <button
                 type="button"
-                class="flex size-5 shrink-0 items-center justify-center rounded-full text-[rgb(var(--ui-text-muted))] transition-colors hover:bg-slate-100 hover:text-[rgb(var(--ui-text-secondary))]"
+                class="flex size-5 shrink-0 items-center justify-center rounded-full text-[rgb(var(--ui-text-muted))] transition-colors hover:bg-surface-muted hover:text-[rgb(var(--ui-text-secondary))]"
               >
                 <Info :size="16" />
               </button>

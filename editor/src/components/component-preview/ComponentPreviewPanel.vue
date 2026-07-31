@@ -1,9 +1,9 @@
 <!-- 文件功能：渲染组件预览的 props、slots 与 mocks 参数面板，并把实时变更回传给父层。 -->
 <template>
-  <section :class="compactBody ? 'min-w-0 bg-transparent' : horizontal ? 'min-w-0 bg-transparent' : embedded ? '' : 'bg-white'">
+  <section :class="compactBody ? 'min-w-0 bg-transparent' : horizontal ? 'min-w-0 bg-transparent' : embedded ? '' : 'bg-surface'">
     <div v-if="horizontal && !compactBody" class="flex min-w-0 items-stretch gap-3 overflow-x-auto px-4 py-3">
       <div class="flex min-w-max items-center gap-2">
-        <span class="text-xs font-bold text-slate-700">预览参数</span>
+        <span class="text-xs font-bold text-text-emphasis">预览参数</span>
         <div v-if="panelTabs.length" class="flex flex-wrap gap-1.5">
           <UiButton
             v-for="tab in panelTabs"
@@ -13,12 +13,12 @@
             size="xs"
             class="rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-colors"
             :class="currentPanel === tab.key
-              ? 'border-indigo-300 bg-indigo-50 text-indigo-700'
-              : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900'"
+              ? 'border-accent-border bg-surface-selected text-accent-hover'
+              : 'border-border bg-surface text-text-secondary hover:border-border-strong hover:text-text-strong'"
             @click="currentPanel = tab.key"
           >
             {{ tab.label }}
-            <span class="ml-0.5 text-[10px] text-slate-400">{{ tab.count }}</span>
+            <span class="ml-0.5 text-[10px] text-text-disabled">{{ tab.count }}</span>
           </UiButton>
         </div>
         <UiButton
@@ -32,42 +32,42 @@
         </UiButton>
       </div>
 
-      <div v-if="loading" class="flex min-w-[220px] items-center rounded-xl border border-slate-200 bg-white px-4 text-xs font-semibold text-slate-400">
+      <div v-if="loading" class="flex min-w-[220px] items-center rounded-xl border border-border bg-surface px-4 text-xs font-semibold text-text-disabled">
         正在读取 previewSchema...
       </div>
 
-      <div v-else-if="errorMessage" class="flex min-w-[320px] items-center rounded-xl border border-rose-100 bg-rose-50 px-4 text-xs font-semibold leading-5 text-rose-500">
+      <div v-else-if="errorMessage" class="flex min-w-[320px] items-center rounded-xl border border-danger-border bg-danger-muted px-4 text-xs font-semibold leading-5 text-danger">
         组件预览启动失败：{{ errorMessage }}
       </div>
 
       <div
         v-else-if="!schema"
-        class="flex min-w-[260px] items-center rounded-xl border border-dashed border-slate-200 bg-white px-4 text-xs leading-5 text-slate-400"
+        class="flex min-w-[260px] items-center rounded-xl border border-dashed border-border bg-surface px-4 text-xs leading-5 text-text-disabled"
       >
         当前组件未导出 previewSchema，只能查看静态预览。
       </div>
 
-      <div v-else-if="panelTabs.length === 0" class="flex min-w-[320px] items-center rounded-xl border border-dashed border-slate-200 bg-white px-4 text-xs leading-5 text-slate-400">
+      <div v-else-if="panelTabs.length === 0" class="flex min-w-[320px] items-center rounded-xl border border-dashed border-border bg-surface px-4 text-xs leading-5 text-text-disabled">
         previewSchema 已导出，但暂无可编辑的 props、slots 或 mocks。
       </div>
 
       <div v-else class="flex min-w-max items-stretch gap-2">
         <section v-if="currentPanel === 'props' && propEntries.length" class="flex min-w-max items-stretch gap-2">
-          <h4 class="flex h-9 items-center text-[10px] font-bold uppercase tracking-wide text-slate-400">Props</h4>
+          <h4 class="flex h-9 items-center text-[10px] font-bold uppercase tracking-wide text-text-disabled">Props</h4>
           <article
             v-for="[propKey, propField] in propEntries"
             :key="propKey"
-            class="rounded-xl border border-slate-100 bg-white px-3 py-2.5"
+            class="rounded-xl border border-border-muted bg-surface px-3 py-2.5"
             :class="resolveHorizontalFieldCardClass(propField.type)"
           >
             <div class="mb-1.5">
               <div class="flex items-center gap-1.5">
-                <h5 class="truncate text-xs font-semibold text-slate-800">{{ propField.label || propKey }}</h5>
-                <span class="rounded bg-slate-50 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                <h5 class="truncate text-xs font-semibold text-text">{{ propField.label || propKey }}</h5>
+                <span class="rounded bg-canvas px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-text-disabled">
                   {{ propField.type }}
                 </span>
               </div>
-              <p v-if="propField.description" class="mt-0.5 line-clamp-2 text-[11px] leading-5 text-slate-400">
+              <p v-if="propField.description" class="mt-0.5 line-clamp-2 text-[11px] leading-5 text-text-disabled">
                 {{ propField.description }}
               </p>
             </div>
@@ -77,7 +77,7 @@
                 :model-value="Boolean(localState.props[propKey])"
                 @update:model-value="updateBooleanProp(propKey, $event === true)"
               />
-              <label :for="`preview-prop-horizontal-${propKey}`" class="text-sm text-slate-700">启用</label>
+              <label :for="`preview-prop-horizontal-${propKey}`" class="text-sm text-text-emphasis">启用</label>
             </div>
 
             <UiSelect
@@ -91,12 +91,11 @@
               <MonacoCodeEditor
                 :model-value="jsonDrafts[`prop:${propKey}`] || '{}'"
                 language="json"
-                theme="light"
                 :auto-save-delay="0"
                 height="116px"
                 @update:model-value="updateJsonDraft(`prop:${propKey}`, $event, (value) => updateJsonProp(propKey, value))"
               />
-              <p v-if="jsonErrors[`prop:${propKey}`]" class="text-xs text-red-500">
+              <p v-if="jsonErrors[`prop:${propKey}`]" class="text-xs text-danger">
                 {{ jsonErrors[`prop:${propKey}`] }}
               </p>
             </div>
@@ -113,54 +112,52 @@
         </section>
 
         <section v-if="currentPanel === 'slots' && slotEntries.length" class="flex min-w-max items-stretch gap-2">
-          <h4 class="flex h-9 items-center text-[10px] font-bold uppercase tracking-wide text-slate-400">Slots</h4>
+          <h4 class="flex h-9 items-center text-[10px] font-bold uppercase tracking-wide text-text-disabled">Slots</h4>
           <article
             v-for="[slotKey, slotField] in slotEntries"
             :key="slotKey"
-            class="w-[420px] rounded-xl border border-slate-100 bg-white px-3 py-2.5"
+            class="w-[420px] rounded-xl border border-border-muted bg-surface px-3 py-2.5"
           >
             <div class="mb-1.5">
-              <h5 class="truncate text-xs font-semibold text-slate-800">{{ slotField.label || slotKey }}</h5>
-              <p v-if="slotField.description" class="mt-0.5 line-clamp-2 text-[11px] leading-5 text-slate-400">
+              <h5 class="truncate text-xs font-semibold text-text">{{ slotField.label || slotKey }}</h5>
+              <p v-if="slotField.description" class="mt-0.5 line-clamp-2 text-[11px] leading-5 text-text-disabled">
                 {{ slotField.description }}
               </p>
             </div>
             <MonacoCodeEditor
               :model-value="jsonDrafts[`slot:${slotKey}`] || '[]'"
               language="json"
-              theme="light"
               :auto-save-delay="0"
               height="116px"
               @update:model-value="updateJsonDraft(`slot:${slotKey}`, $event, (value) => updateSlotValue(slotKey, value))"
             />
-            <p v-if="jsonErrors[`slot:${slotKey}`]" class="mt-2 text-xs text-red-500">
+            <p v-if="jsonErrors[`slot:${slotKey}`]" class="mt-2 text-xs text-danger">
               {{ jsonErrors[`slot:${slotKey}`] }}
             </p>
           </article>
         </section>
 
         <section v-if="currentPanel === 'mocks' && mockEntries.length" class="flex min-w-max items-stretch gap-2">
-          <h4 class="flex h-9 items-center text-[10px] font-bold uppercase tracking-wide text-slate-400">Mocks</h4>
+          <h4 class="flex h-9 items-center text-[10px] font-bold uppercase tracking-wide text-text-disabled">Mocks</h4>
           <article
             v-for="[mockKey, mockField] in mockEntries"
             :key="mockKey"
-            class="w-[420px] rounded-xl border border-slate-100 bg-white px-3 py-2.5"
+            class="w-[420px] rounded-xl border border-border-muted bg-surface px-3 py-2.5"
           >
             <div class="mb-1.5">
-              <h5 class="truncate text-xs font-semibold text-slate-800">{{ mockField.label || mockKey }}</h5>
-              <p v-if="mockField.description" class="mt-0.5 line-clamp-2 text-[11px] leading-5 text-slate-400">
+              <h5 class="truncate text-xs font-semibold text-text">{{ mockField.label || mockKey }}</h5>
+              <p v-if="mockField.description" class="mt-0.5 line-clamp-2 text-[11px] leading-5 text-text-disabled">
                 {{ mockField.description }}
               </p>
             </div>
             <MonacoCodeEditor
               :model-value="jsonDrafts[`mock:${mockKey}`] || '{}'"
               language="json"
-              theme="light"
               :auto-save-delay="0"
               height="116px"
               @update:model-value="updateJsonDraft(`mock:${mockKey}`, $event, (value) => updateMockValue(mockKey, value))"
             />
-            <p v-if="jsonErrors[`mock:${mockKey}`]" class="mt-2 text-xs text-red-500">
+            <p v-if="jsonErrors[`mock:${mockKey}`]" class="mt-2 text-xs text-danger">
               {{ jsonErrors[`mock:${mockKey}`] }}
             </p>
           </article>
@@ -169,11 +166,11 @@
     </div>
 
     <template v-else>
-      <header v-if="!embedded && !compactBody" class="border-b border-slate-100 px-3 py-2">
+      <header v-if="!embedded && !compactBody" class="border-b border-border-muted px-3 py-2">
       <div class="flex items-center justify-between gap-2">
         <div class="flex items-center gap-2">
-          <h3 class="text-xs font-bold text-slate-700">预览调参</h3>
-          <span v-if="schema && componentMeta" class="text-[10px] font-mono text-slate-400">
+          <h3 class="text-xs font-bold text-text-emphasis">预览调参</h3>
+          <span v-if="schema && componentMeta" class="text-[10px] font-mono text-text-disabled">
             {{ componentMeta.code }}<template v-if="componentMeta.versionNo"> · v{{ componentMeta.versionNo }}</template>
           </span>
         </div>
@@ -197,15 +194,15 @@
           size="xs"
           class="rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-colors"
           :class="currentPanel === tab.key
-            ? 'border-indigo-300 bg-indigo-50 text-indigo-700'
-            : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900'"
+            ? 'border-accent-border bg-surface-selected text-accent-hover'
+            : 'border-border bg-surface text-text-secondary hover:border-border-strong hover:text-text-strong'"
           @click="currentPanel = tab.key"
         >
           {{ tab.label }}
-          <span class="ml-0.5 text-[10px] text-slate-400">{{ tab.count }}</span>
+          <span class="ml-0.5 text-[10px] text-text-disabled">{{ tab.count }}</span>
         </UiButton>
       </div>
-      <p class="mt-2 text-[11px] leading-5 text-slate-400">
+      <p class="mt-2 text-[11px] leading-5 text-text-disabled">
         {{ headerText }}
       </p>
     </header>
@@ -221,12 +218,12 @@
             size="xs"
             class="rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-colors"
             :class="currentPanel === tab.key
-              ? 'border-indigo-300 bg-indigo-50 text-indigo-700'
-              : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900'"
+              ? 'border-accent-border bg-surface-selected text-accent-hover'
+              : 'border-border bg-surface text-text-secondary hover:border-border-strong hover:text-text-strong'"
             @click="currentPanel = tab.key"
           >
             {{ tab.label }}
-            <span class="ml-0.5 text-[10px] text-slate-400">{{ tab.count }}</span>
+            <span class="ml-0.5 text-[10px] text-text-disabled">{{ tab.count }}</span>
           </UiButton>
         </div>
         <UiButton
@@ -239,42 +236,42 @@
         </UiButton>
       </div>
 
-      <div v-if="loading" class="flex min-h-[160px] items-center justify-center text-xs font-semibold text-slate-400">
+      <div v-if="loading" class="flex min-h-[160px] items-center justify-center text-xs font-semibold text-text-disabled">
         正在读取 previewSchema...
       </div>
 
-      <div v-else-if="errorMessage" class="rounded-xl border border-rose-100 bg-rose-50 px-3 py-4 text-xs font-semibold leading-6 text-rose-500">
+      <div v-else-if="errorMessage" class="rounded-xl border border-danger-border bg-danger-muted px-3 py-4 text-xs font-semibold leading-6 text-danger">
         组件预览启动失败：{{ errorMessage }}
       </div>
 
       <div
         v-else-if="!schema"
-        class="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-xs leading-6 text-slate-400"
+        class="rounded-xl border border-dashed border-border bg-canvas px-3 py-4 text-xs leading-6 text-text-disabled"
       >
         当前组件未导出 previewSchema，只能查看静态预览。
       </div>
 
-      <div v-else-if="panelTabs.length === 0" class="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-xs leading-6 text-slate-400">
+      <div v-else-if="panelTabs.length === 0" class="rounded-xl border border-dashed border-border bg-canvas px-3 py-4 text-xs leading-6 text-text-disabled">
         previewSchema 已导出，但暂无可编辑的 props、slots 或 mocks。
       </div>
 
       <div v-else class="space-y-3">
         <section v-if="currentPanel === 'props' && propEntries.length" class="space-y-2">
-          <h4 class="text-[10px] font-bold uppercase tracking-wide text-slate-400">Props</h4>
+          <h4 class="text-[10px] font-bold uppercase tracking-wide text-text-disabled">Props</h4>
           <div class="space-y-2">
             <article
               v-for="[propKey, propField] in propEntries"
               :key="propKey"
-              class="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2.5"
+              class="rounded-xl border border-border-muted bg-canvas px-3 py-2.5"
             >
               <div class="mb-1.5">
                 <div class="flex items-center gap-1.5">
-                  <h5 class="text-xs font-semibold text-slate-800">{{ propField.label || propKey }}</h5>
-                  <span class="rounded bg-white px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                  <h5 class="text-xs font-semibold text-text">{{ propField.label || propKey }}</h5>
+                  <span class="rounded bg-surface px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-text-disabled">
                     {{ propField.type }}
                   </span>
                 </div>
-                <p v-if="propField.description" class="mt-0.5 text-[11px] leading-5 text-slate-400">
+                <p v-if="propField.description" class="mt-0.5 text-[11px] leading-5 text-text-disabled">
                   {{ propField.description }}
                 </p>
               </div>
@@ -284,7 +281,7 @@
                   :model-value="Boolean(localState.props[propKey])"
                   @update:model-value="updateBooleanProp(propKey, $event === true)"
                 />
-                <label :for="`preview-prop-${propKey}`" class="text-sm text-slate-700">启用</label>
+                <label :for="`preview-prop-${propKey}`" class="text-sm text-text-emphasis">启用</label>
               </div>
 
               <div v-else-if="propField.type === 'select'" class="space-y-2">
@@ -299,12 +296,11 @@
                 <MonacoCodeEditor
                   :model-value="jsonDrafts[`prop:${propKey}`] || '{}'"
                   language="json"
-                  theme="light"
                   :auto-save-delay="0"
                   height="140px"
                   @update:model-value="updateJsonDraft(`prop:${propKey}`, $event, (value) => updateJsonProp(propKey, value))"
                 />
-                <p v-if="jsonErrors[`prop:${propKey}`]" class="text-xs text-red-500">
+                <p v-if="jsonErrors[`prop:${propKey}`]" class="text-xs text-danger">
                   {{ jsonErrors[`prop:${propKey}`] }}
                 </p>
               </div>
@@ -322,54 +318,52 @@
         </section>
 
         <section v-if="currentPanel === 'slots' && slotEntries.length" class="space-y-2">
-          <h4 class="text-[10px] font-bold uppercase tracking-wide text-slate-400">Slots</h4>
+          <h4 class="text-[10px] font-bold uppercase tracking-wide text-text-disabled">Slots</h4>
           <article
             v-for="[slotKey, slotField] in slotEntries"
             :key="slotKey"
-            class="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2.5"
+            class="rounded-xl border border-border-muted bg-canvas px-3 py-2.5"
           >
             <div class="mb-1.5">
-              <h5 class="text-xs font-semibold text-slate-800">{{ slotField.label || slotKey }}</h5>
-              <p v-if="slotField.description" class="mt-0.5 text-[11px] leading-5 text-slate-400">
+              <h5 class="text-xs font-semibold text-text">{{ slotField.label || slotKey }}</h5>
+              <p v-if="slotField.description" class="mt-0.5 text-[11px] leading-5 text-text-disabled">
                 {{ slotField.description }}
               </p>
             </div>
             <MonacoCodeEditor
               :model-value="jsonDrafts[`slot:${slotKey}`] || '[]'"
               language="json"
-              theme="light"
               :auto-save-delay="0"
               :height="compactBody ? '180px' : '160px'"
               @update:model-value="updateJsonDraft(`slot:${slotKey}`, $event, (value) => updateSlotValue(slotKey, value))"
             />
-            <p v-if="jsonErrors[`slot:${slotKey}`]" class="mt-2 text-xs text-red-500">
+            <p v-if="jsonErrors[`slot:${slotKey}`]" class="mt-2 text-xs text-danger">
               {{ jsonErrors[`slot:${slotKey}`] }}
             </p>
           </article>
         </section>
 
         <section v-if="currentPanel === 'mocks' && mockEntries.length" class="space-y-2">
-          <h4 class="text-[10px] font-bold uppercase tracking-wide text-slate-400">Mocks</h4>
+          <h4 class="text-[10px] font-bold uppercase tracking-wide text-text-disabled">Mocks</h4>
           <article
             v-for="[mockKey, mockField] in mockEntries"
             :key="mockKey"
-            class="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2.5"
+            class="rounded-xl border border-border-muted bg-canvas px-3 py-2.5"
           >
             <div class="mb-1.5">
-              <h5 class="text-xs font-semibold text-slate-800">{{ mockField.label || mockKey }}</h5>
-              <p v-if="mockField.description" class="mt-0.5 text-[11px] leading-5 text-slate-400">
+              <h5 class="text-xs font-semibold text-text">{{ mockField.label || mockKey }}</h5>
+              <p v-if="mockField.description" class="mt-0.5 text-[11px] leading-5 text-text-disabled">
                 {{ mockField.description }}
               </p>
             </div>
             <MonacoCodeEditor
               :model-value="jsonDrafts[`mock:${mockKey}`] || '{}'"
               language="json"
-              theme="light"
               :auto-save-delay="0"
               :height="compactBody ? '160px' : '140px'"
               @update:model-value="updateJsonDraft(`mock:${mockKey}`, $event, (value) => updateMockValue(mockKey, value))"
             />
-            <p v-if="jsonErrors[`mock:${mockKey}`]" class="mt-2 text-xs text-red-500">
+            <p v-if="jsonErrors[`mock:${mockKey}`]" class="mt-2 text-xs text-danger">
               {{ jsonErrors[`mock:${mockKey}`] }}
             </p>
           </article>

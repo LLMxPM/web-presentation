@@ -73,7 +73,8 @@
           新增项目
         </UiButton>
       </template>
-      <div class="grid grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+      <!-- 列数按容器实际宽度自适应（DESIGN.md 6.4），避免视口断点与侧栏挤压后的内容区宽度失配。 -->
+      <div class="grid grid-cols-[repeat(auto-fill,minmax(min(100%,20rem),1fr))] gap-4">
         <ProjectCard
           v-for="proj in filteredProjects"
           :key="proj.id"
@@ -88,16 +89,7 @@
           @archive="handleArchiveProject"
         />
 
-        <UiButton
-          class="group flex min-h-[13.75rem] flex-col items-center justify-center rounded-[var(--ui-radius-lg)] border-2 border-dashed border-[rgb(var(--ui-border-strong))] bg-[rgb(var(--ui-surface-muted))] p-6 text-center transition-colors hover:border-[rgb(var(--ui-accent))] hover:bg-[rgb(var(--ui-accent-muted))]"
-          @click="openCreateDialog"
-        >
-          <div class="mb-4 flex h-14 w-14 items-center justify-center rounded-[var(--ui-radius-lg)] border border-[rgb(var(--ui-border))] bg-[rgb(var(--ui-surface))] text-[rgb(var(--ui-text-muted))] shadow-sm transition-colors group-hover:bg-[rgb(var(--ui-accent))] group-hover:text-[rgb(var(--ui-text-inverse))]">
-            <Plus class="h-7 w-7" />
-          </div>
-          <span class="text-base font-semibold text-[rgb(var(--ui-text))]">新增项目</span>
-          <span class="mt-1 text-sm text-[rgb(var(--ui-text-secondary))]">创建新的演示内容集合</span>
-        </UiButton>
+        <ProjectCreateCard @open="openCreateDialog" />
       </div>
     </DataState>
 
@@ -120,71 +112,71 @@
     />
     <UiDialog :open="exportTemplateDialogVisible" title="导出项目" size="wide" @update:open="exportTemplateDialogVisible = $event">
       <div class="space-y-4">
-        <div class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+        <div class="rounded-xl border border-border bg-canvas px-4 py-3">
           <div class="flex flex-wrap items-center justify-between gap-3">
             <div class="min-w-0">
-              <p class="truncate text-sm font-bold text-slate-800">{{ exportValidation?.project.name || selectedExportProject?.name || '项目' }}</p>
-              <p v-if="exportValidation" class="mt-1 text-xs text-slate-500">
+              <p class="truncate text-sm font-bold text-text">{{ exportValidation?.project.name || selectedExportProject?.name || '项目' }}</p>
+              <p v-if="exportValidation" class="mt-1 text-xs text-text-muted">
                 页面 {{ exportValidation.pages.length }} 个，组件 {{ exportValidation.components.length }} 个，主题 {{ exportValidation.themes.length }} 个，资源 {{ exportAssetCount }} 个，字体 {{ exportValidation.fonts.length }} 个
               </p>
             </div>
             <span
               v-if="exportValidation"
               class="rounded-full px-2.5 py-1 text-xs font-bold"
-              :class="exportValidation.can_export ? 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100' : 'bg-rose-50 text-rose-700 ring-1 ring-rose-100'"
+              :class="exportValidation.can_export ? 'bg-success-muted text-success-strong ring-1 ring-success-border' : 'bg-danger-muted text-danger-strong ring-1 ring-danger-border'"
             >
               {{ exportValidation.can_export ? '可导出' : '不可导出' }}
             </span>
           </div>
         </div>
 
-        <div v-if="exportValidation?.errors.length" class="rounded-xl border border-rose-100 bg-rose-50 px-4 py-3">
-          <p class="mb-2 text-sm font-bold text-rose-700">预检未通过</p>
-          <ul class="space-y-1 text-xs leading-5 text-rose-700">
+        <div v-if="exportValidation?.errors.length" class="rounded-xl border border-danger-border bg-danger-muted px-4 py-3">
+          <p class="mb-2 text-sm font-bold text-danger-strong">预检未通过</p>
+          <ul class="space-y-1 text-xs leading-5 text-danger-strong">
             <li v-for="error in exportValidation.errors" :key="error">{{ error }}</li>
           </ul>
         </div>
 
-        <div v-if="exportValidation?.warnings.length" class="rounded-xl border border-amber-100 bg-amber-50 px-4 py-3">
-          <p class="mb-2 text-sm font-bold text-amber-800">导出提示</p>
-          <ul class="space-y-1 text-xs leading-5 text-amber-800">
+        <div v-if="exportValidation?.warnings.length" class="rounded-xl border border-warning-border bg-warning-muted px-4 py-3">
+          <p class="mb-2 text-sm font-bold text-warning-strong">导出提示</p>
+          <ul class="space-y-1 text-xs leading-5 text-warning-strong">
             <li v-for="warning in exportValidation.warnings" :key="warning">{{ warning }}</li>
           </ul>
         </div>
 
-        <div v-if="exportPackagePending" class="rounded-xl border border-indigo-100 bg-indigo-50 px-4 py-3">
+        <div v-if="exportPackagePending" class="rounded-xl border border-accent-muted bg-surface-selected px-4 py-3">
           <div class="flex items-center justify-between gap-3">
             <div>
-              <p class="text-sm font-bold text-indigo-700">{{ exportProgressStage }}</p>
-              <p class="mt-1 text-xs text-indigo-500">
+              <p class="text-sm font-bold text-accent-hover">{{ exportProgressStage }}</p>
+              <p class="mt-1 text-xs text-accent-emphasis">
                 已耗时 {{ exportProgressElapsedText }}。页面较多或截图过期时会更久。
               </p>
             </div>
-            <span class="shrink-0 font-mono text-xs font-bold text-indigo-600">{{ exportProgressPercent }}%</span>
+            <span class="shrink-0 font-mono text-xs font-bold text-accent">{{ exportProgressPercent }}%</span>
           </div>
-          <div class="mt-3 h-2 overflow-hidden rounded-full bg-white">
+          <div class="mt-3 h-2 overflow-hidden rounded-full bg-surface">
             <div
-              class="h-full rounded-full bg-indigo-600 transition-all duration-500"
+              class="h-full rounded-full bg-accent transition-all duration-500"
               :style="{ width: `${exportProgressPercent}%` }"
             />
           </div>
         </div>
 
         <div v-if="exportValidation" class="grid gap-3 lg:grid-cols-2">
-          <section class="rounded-xl border border-slate-200 bg-white p-4">
-            <h4 class="text-sm font-bold text-slate-700">页面</h4>
-            <div class="mt-2 max-h-40 space-y-2 overflow-y-auto text-xs text-slate-500">
+          <section class="rounded-xl border border-border bg-surface p-4">
+            <h4 class="text-sm font-bold text-text-emphasis">页面</h4>
+            <div class="mt-2 max-h-40 space-y-2 overflow-y-auto text-xs text-text-muted">
               <p v-if="exportValidation.pages.length === 0">无页面</p>
               <div v-for="page in exportValidation.pages" :key="page.source_page_code" class="flex items-center justify-between gap-3">
-                <span class="min-w-0 truncate font-semibold text-slate-700">{{ page.title }}</span>
-                <span class="shrink-0 font-mono text-slate-400">{{ page.source_page_code }}.{{ page.file_type }}</span>
+                <span class="min-w-0 truncate font-semibold text-text-emphasis">{{ page.title }}</span>
+                <span class="shrink-0 font-mono text-text-disabled">{{ page.source_page_code }}.{{ page.file_type }}</span>
               </div>
             </div>
           </section>
 
-          <section class="rounded-xl border border-slate-200 bg-white p-4">
-            <h4 class="text-sm font-bold text-slate-700">截图</h4>
-            <div class="mt-2 space-y-2 text-xs text-slate-500">
+          <section class="rounded-xl border border-border bg-surface p-4">
+            <h4 class="text-sm font-bold text-text-emphasis">截图</h4>
+            <div class="mt-2 space-y-2 text-xs text-text-muted">
               <p v-if="exportValidation.screenshots.cover">
                 封面：{{ exportValidation.screenshots.cover.path }} · {{ exportValidation.screenshots.cover.width }}×{{ exportValidation.screenshots.cover.height }}
               </p>
@@ -197,28 +189,28 @@
             </div>
           </section>
 
-          <section class="rounded-xl border border-slate-200 bg-white p-4">
-            <h4 class="text-sm font-bold text-slate-700">组件</h4>
-            <div class="mt-2 max-h-40 space-y-2 overflow-y-auto text-xs text-slate-500">
+          <section class="rounded-xl border border-border bg-surface p-4">
+            <h4 class="text-sm font-bold text-text-emphasis">组件</h4>
+            <div class="mt-2 max-h-40 space-y-2 overflow-y-auto text-xs text-text-muted">
               <p v-if="exportValidation.components.length === 0">无组件</p>
               <div v-for="component in exportValidation.components" :key="`${component.source_component_code}-${component.source_version_no}`" class="flex items-center justify-between gap-3">
-                <span class="min-w-0 truncate font-semibold text-slate-700">{{ component.name }}</span>
-                <span class="shrink-0 font-mono text-slate-400">{{ component.import_name }} v{{ component.source_version_no }}</span>
+                <span class="min-w-0 truncate font-semibold text-text-emphasis">{{ component.name }}</span>
+                <span class="shrink-0 font-mono text-text-disabled">{{ component.import_name }} v{{ component.source_version_no }}</span>
               </div>
             </div>
           </section>
 
-          <section class="rounded-xl border border-slate-200 bg-white p-4">
-            <h4 class="text-sm font-bold text-slate-700">资源</h4>
-            <div class="mt-2 max-h-40 space-y-2 overflow-y-auto text-xs text-slate-500">
+          <section class="rounded-xl border border-border bg-surface p-4">
+            <h4 class="text-sm font-bold text-text-emphasis">资源</h4>
+            <div class="mt-2 max-h-40 space-y-2 overflow-y-auto text-xs text-text-muted">
               <p v-if="exportAssetCount === 0">无资源</p>
               <div v-for="asset in exportValidation.automatic_assets" :key="`auto-${asset.name}`" class="flex items-center justify-between gap-3">
-                <span class="min-w-0 truncate font-semibold text-slate-700">{{ asset.name }}</span>
-                <span class="shrink-0 text-slate-400">{{ resolveAssetTypeLabel(asset.asset_type) }} · 自动</span>
+                <span class="min-w-0 truncate font-semibold text-text-emphasis">{{ asset.name }}</span>
+                <span class="shrink-0 text-text-disabled">{{ resolveAssetTypeLabel(asset.asset_type) }} · 自动</span>
               </div>
               <div v-for="asset in exportValidation.manual_assets" :key="`manual-${asset.name}`" class="flex items-center justify-between gap-3">
-                <span class="min-w-0 truncate font-semibold text-slate-700">{{ asset.name }}</span>
-                <span class="shrink-0 text-slate-400">{{ resolveAssetTypeLabel(asset.asset_type) }} · 手动</span>
+                <span class="min-w-0 truncate font-semibold text-text-emphasis">{{ asset.name }}</span>
+                <span class="shrink-0 text-text-disabled">{{ resolveAssetTypeLabel(asset.asset_type) }} · 手动</span>
               </div>
             </div>
           </section>
@@ -240,64 +232,64 @@
 
     <UiDialog :open="importTemplateDialogVisible" title="导入项目" size="canvas" @update:open="importTemplateDialogVisible = $event">
       <div class="space-y-4">
-        <div class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+        <div class="rounded-xl border border-border bg-canvas px-4 py-3">
           <div class="flex flex-wrap items-center justify-between gap-3">
             <div class="min-w-0">
-              <p class="truncate text-sm font-bold text-slate-800">{{ importTemplateTitle }}</p>
-              <p class="mt-1 text-xs text-slate-500">{{ importTemplateFile?.name || '未选择文件' }}</p>
+              <p class="truncate text-sm font-bold text-text">{{ importTemplateTitle }}</p>
+              <p class="mt-1 text-xs text-text-muted">{{ importTemplateFile?.name || '未选择文件' }}</p>
             </div>
             <span
               v-if="importValidation"
               class="rounded-full px-2.5 py-1 text-xs font-bold"
-              :class="importValidation.valid ? 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100' : 'bg-rose-50 text-rose-700 ring-1 ring-rose-100'"
+              :class="importValidation.valid ? 'bg-success-muted text-success-strong ring-1 ring-success-border' : 'bg-danger-muted text-danger-strong ring-1 ring-danger-border'"
             >
               {{ importValidation.valid ? '可导入' : '不可导入' }}
             </span>
           </div>
-          <p v-if="importValidation" class="mt-2 text-xs text-slate-500">
+          <p v-if="importValidation" class="mt-2 text-xs text-text-muted">
             页面 {{ importValidation.pages.length }} 个，组件 {{ importValidation.components.length }} 个，主题 {{ importValidation.themes.length }} 个，资源 {{ importValidation.assets.length }} 个，字体 {{ importValidation.fonts.length }} 个
           </p>
-          <p v-else-if="importValidatePending" class="mt-2 text-xs text-slate-500">正在预检项目...</p>
+          <p v-else-if="importValidatePending" class="mt-2 text-xs text-text-muted">正在预检项目...</p>
         </div>
 
-        <div v-if="importValidation?.errors.length" class="rounded-xl border border-rose-100 bg-rose-50 px-4 py-3">
-          <p class="mb-2 text-sm font-bold text-rose-700">预检未通过</p>
-          <ul class="space-y-1 text-xs leading-5 text-rose-700">
+        <div v-if="importValidation?.errors.length" class="rounded-xl border border-danger-border bg-danger-muted px-4 py-3">
+          <p class="mb-2 text-sm font-bold text-danger-strong">预检未通过</p>
+          <ul class="space-y-1 text-xs leading-5 text-danger-strong">
             <li v-for="error in importValidation.errors" :key="error">{{ error }}</li>
           </ul>
         </div>
 
-        <div v-if="importValidation?.warnings.length" class="rounded-xl border border-amber-100 bg-amber-50 px-4 py-3">
-          <p class="mb-2 text-sm font-bold text-amber-800">导入提示</p>
-          <ul class="space-y-1 text-xs leading-5 text-amber-800">
+        <div v-if="importValidation?.warnings.length" class="rounded-xl border border-warning-border bg-warning-muted px-4 py-3">
+          <p class="mb-2 text-sm font-bold text-warning-strong">导入提示</p>
+          <ul class="space-y-1 text-xs leading-5 text-warning-strong">
             <li v-for="warning in importValidation.warnings" :key="warning">{{ warning }}</li>
           </ul>
         </div>
 
         <div v-if="importValidation" class="grid gap-3 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
           <section class="space-y-3">
-            <div class="rounded-xl border border-slate-200 bg-white p-4">
-              <h4 class="text-sm font-bold text-slate-700">项目信息</h4>
+            <div class="rounded-xl border border-border bg-surface p-4">
+              <h4 class="text-sm font-bold text-text-emphasis">项目信息</h4>
               <dl class="mt-3 grid gap-2 text-xs sm:grid-cols-2">
-                <div v-for="item in importMetadataItems" :key="item.label" class="rounded-lg bg-slate-50 px-3 py-2">
-                  <dt class="font-bold text-slate-400">{{ item.label }}</dt>
-                  <dd class="mt-1 truncate font-semibold text-slate-700">{{ item.value }}</dd>
+                <div v-for="item in importMetadataItems" :key="item.label" class="rounded-lg bg-canvas px-3 py-2">
+                  <dt class="font-bold text-text-disabled">{{ item.label }}</dt>
+                  <dd class="mt-1 truncate font-semibold text-text-emphasis">{{ item.value }}</dd>
                 </div>
               </dl>
             </div>
 
-            <div class="rounded-xl border border-slate-200 bg-white p-4">
-              <h4 class="text-sm font-bold text-slate-700">页面与截图</h4>
-              <div class="mt-2 max-h-44 space-y-2 overflow-y-auto text-xs text-slate-500">
+            <div class="rounded-xl border border-border bg-surface p-4">
+              <h4 class="text-sm font-bold text-text-emphasis">页面与截图</h4>
+              <div class="mt-2 max-h-44 space-y-2 overflow-y-auto text-xs text-text-muted">
                 <p v-if="importValidation.pages.length === 0">无页面</p>
                 <div v-for="page in importValidation.pages" :key="page.source_page_code" class="flex items-center justify-between gap-3">
-                  <span class="min-w-0 truncate font-semibold text-slate-700">{{ page.title }}</span>
-                  <span class="shrink-0 font-mono text-slate-400">{{ page.source_page_code }}.{{ page.file_type }}</span>
+                  <span class="min-w-0 truncate font-semibold text-text-emphasis">{{ page.title }}</span>
+                  <span class="shrink-0 font-mono text-text-disabled">{{ page.source_page_code }}.{{ page.file_type }}</span>
                 </div>
-                <p v-if="importValidation.screenshots.cover" class="border-t border-slate-100 pt-2">
+                <p v-if="importValidation.screenshots.cover" class="border-t border-border-muted pt-2">
                   封面截图：{{ importValidation.screenshots.cover.path }}
                 </p>
-                <p v-if="importValidation.screenshots.pages.length" class="text-slate-400">
+                <p v-if="importValidation.screenshots.pages.length" class="text-text-disabled">
                   页面截图 {{ importValidation.screenshots.pages.length }} 张
                 </p>
               </div>
@@ -305,39 +297,39 @@
           </section>
 
           <section class="space-y-3">
-            <div class="rounded-xl border border-slate-200 bg-white p-4">
-              <h4 class="text-sm font-bold text-slate-700">依赖预检</h4>
+            <div class="rounded-xl border border-border bg-surface p-4">
+              <h4 class="text-sm font-bold text-text-emphasis">依赖预检</h4>
               <div class="mt-3 grid gap-3 sm:grid-cols-2">
-                <div class="rounded-lg border border-slate-100 bg-slate-50 p-3">
-                  <p class="text-xs font-bold text-slate-500">组件</p>
-                  <div class="mt-2 max-h-28 space-y-1 overflow-y-auto text-xs text-slate-500">
+                <div class="rounded-lg border border-border-muted bg-canvas p-3">
+                  <p class="text-xs font-bold text-text-muted">组件</p>
+                  <div class="mt-2 max-h-28 space-y-1 overflow-y-auto text-xs text-text-muted">
                     <p v-if="importValidation.components.length === 0">无组件</p>
                     <p v-for="component in importValidation.components" :key="`${component.source_component_code}-${component.source_version_no}`" class="truncate">
                       {{ component.name }} · {{ resolveImportActionText(component.action) }}
                     </p>
                   </div>
                 </div>
-                <div class="rounded-lg border border-slate-100 bg-slate-50 p-3">
-                  <p class="text-xs font-bold text-slate-500">资源</p>
-                  <div class="mt-2 max-h-28 space-y-1 overflow-y-auto text-xs text-slate-500">
+                <div class="rounded-lg border border-border-muted bg-canvas p-3">
+                  <p class="text-xs font-bold text-text-muted">资源</p>
+                  <div class="mt-2 max-h-28 space-y-1 overflow-y-auto text-xs text-text-muted">
                     <p v-if="importValidation.assets.length === 0">无资源</p>
                     <p v-for="asset in importValidation.assets" :key="asset.name" class="truncate">
                       {{ asset.name }} · {{ resolveImportActionText(asset.action) }}
                     </p>
                   </div>
                 </div>
-                <div class="rounded-lg border border-slate-100 bg-slate-50 p-3">
-                  <p class="text-xs font-bold text-slate-500">主题</p>
-                  <div class="mt-2 max-h-24 space-y-1 overflow-y-auto text-xs text-slate-500">
+                <div class="rounded-lg border border-border-muted bg-canvas p-3">
+                  <p class="text-xs font-bold text-text-muted">主题</p>
+                  <div class="mt-2 max-h-24 space-y-1 overflow-y-auto text-xs text-text-muted">
                     <p v-if="importValidation.themes.length === 0">无主题</p>
                     <p v-for="theme in importValidation.themes" :key="theme.key" class="truncate">
                       {{ theme.name }} · {{ resolveImportActionText(theme.action) }}
                     </p>
                   </div>
                 </div>
-                <div class="rounded-lg border border-slate-100 bg-slate-50 p-3">
-                  <p class="text-xs font-bold text-slate-500">字体</p>
-                  <div class="mt-2 max-h-24 space-y-1 overflow-y-auto text-xs text-slate-500">
+                <div class="rounded-lg border border-border-muted bg-canvas p-3">
+                  <p class="text-xs font-bold text-text-muted">字体</p>
+                  <div class="mt-2 max-h-24 space-y-1 overflow-y-auto text-xs text-text-muted">
                     <p v-if="importValidation.fonts.length === 0">无字体</p>
                     <p v-for="font in importValidation.fonts" :key="font.asset_name" class="truncate">
                       {{ font.asset_name }} · {{ resolveImportActionText(font.action) }}
@@ -347,10 +339,10 @@
               </div>
             </div>
 
-            <div v-if="importPreviewArtifact" class="rounded-xl border border-slate-200 bg-white p-4">
+            <div v-if="importPreviewArtifact" class="rounded-xl border border-border bg-surface p-4">
               <div class="mb-3 flex items-center justify-between gap-3">
-                <h4 class="text-sm font-bold text-slate-700">临时预览</h4>
-                <span class="font-mono text-[11px] text-slate-400">{{ importPreviewArtifact.artifact_id }}</span>
+                <h4 class="text-sm font-bold text-text-emphasis">临时预览</h4>
+                <span class="font-mono text-[11px] text-text-disabled">{{ importPreviewArtifact.artifact_id }}</span>
               </div>
               <RuntimePreviewFrame
                 :frame-url="importPreviewArtifact.preview_url"
@@ -411,6 +403,7 @@ import PageHeader from '@/components/patterns/PageHeader.vue'
 import SimpleSearchBar from '@/components/patterns/SimpleSearchBar.vue'
 import ArchivedProjectsDialog from '@/components/project/ArchivedProjectsDialog.vue'
 import ProjectCard from '@/components/project/ProjectCard.vue'
+import ProjectCreateCard from '@/components/project/ProjectCreateCard.vue'
 import ProjectMetadataDialog from '@/components/project/ProjectMetadataDialog.vue'
 import WorkspaceMetadataDialog from '@/components/project/WorkspaceMetadataDialog.vue'
 import RuntimePreviewFrame from '@/components/runtime-preview/RuntimePreviewFrame.vue'

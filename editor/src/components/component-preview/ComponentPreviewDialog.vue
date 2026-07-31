@@ -6,13 +6,13 @@
     body-preset="immersive"
     :show-header="false"
     :show-close-button="false"
-    panel-class="bg-white shadow-xl"
+    panel-class="bg-surface shadow-xl"
     @update:open="handleOpenChange"
   >
     <div class="relative flex h-full min-h-0 flex-col">
       <BaseCloseButton
         v-if="showCloseButton"
-        class="absolute right-3 top-3 z-20 bg-white/90 shadow-sm ring-1 ring-slate-200 hover:bg-white"
+        class="absolute right-3 top-3 z-20 bg-surface/90 shadow-sm ring-1 ring-border hover:bg-surface"
         :label="closeLabel"
         @click="close"
       />

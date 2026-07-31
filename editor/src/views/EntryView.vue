@@ -3,13 +3,13 @@
   <div class="flex flex-col items-center justify-center h-full gap-6 animate-in fade-in duration-500">
     <!-- Pulsing Loader -->
     <div class="relative w-16 h-16">
-      <div class="absolute inset-0 border-4 border-indigo-200 rounded-full"></div>
-      <div class="absolute inset-0 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
+      <div class="absolute inset-0 border-4 border-accent-ring rounded-full"></div>
+      <div class="absolute inset-0 border-4 border-accent border-t-transparent rounded-full animate-spin"></div>
     </div>
     
     <div class="text-center space-y-2">
-      <span class="text-sm font-bold text-slate-500 uppercase tracking-widest animate-pulse transition-all">正在同步权限并加载工作空间</span>
-      <p class="text-[10px] text-slate-300 font-mono">ANTICGRAVITY ENGINE V1.0 INITIALIZING...</p>
+      <span class="text-sm font-bold text-text-muted uppercase tracking-widest animate-pulse transition-all">正在同步权限并加载工作空间</span>
+      <p class="text-[10px] text-text-faint font-mono">ANTICGRAVITY ENGINE V1.0 INITIALIZING...</p>
     </div>
   </div>
 </template>

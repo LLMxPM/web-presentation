@@ -2,7 +2,7 @@
  * 文件功能：验证可视化属性面板的稳定数组实例、按实际值类型控件和受限 Tailwind 交互边界。
  */
 
-import { fireEvent, render, screen } from '@testing-library/vue'
+import { fireEvent, render, screen, waitFor } from '@testing-library/vue'
 import { describe, expect, it } from 'vitest'
 
 import PageVisualEditPropertyInspector from '@/components/page-detail/visual-edit/PageVisualEditPropertyInspector.vue'
@@ -135,14 +135,14 @@ describe('PageVisualEditPropertyInspector', () => {
     expect(screen.queryByRole('textbox')).toBeNull()
   })
 
-  it('Tailwind 仅显示友好选项，复杂类保留为只读 badge', async () => {
+  it('Tailwind 主流程仅显示友好选项，复杂类收进技术详情', async () => {
     const node = createNode([{
       binding_id: 'binding-class',
       node_id: 'node-value',
       kind: 'class',
       name: 'class',
       value_type: 'string',
-      value: 'p-4 hover:bg-slate-100 w-[37px]',
+      value: 'p-4 hover:bg-surface-muted w-[37px]',
       source_range: { start: 20, end: 50 },
       editable: true,
       source: { kind: 'template-literal' },
@@ -165,6 +165,7 @@ describe('PageVisualEditPropertyInspector', () => {
           }],
         },
         componentSchemas: {},
+        jsonSources: [],
         pendingOperations: [],
       },
       global: {
@@ -178,11 +179,13 @@ describe('PageVisualEditPropertyInspector', () => {
       },
     })
 
-    expect(screen.getByText(/修改所有循环实例/)).toBeInTheDocument()
+    expect(screen.getByText(/修改全部重复项/)).toBeInTheDocument()
     expect(screen.getByRole('combobox')).toBeInTheDocument()
     expect(screen.queryByRole('textbox')).toBeNull()
-    expect(screen.getByText('hover:bg-slate-100')).toBeInTheDocument()
-    expect(screen.getByText('w-[37px]')).toBeInTheDocument()
+    const technicalDetails = [...rendered.container.querySelectorAll('details')]
+      .find(element => element.textContent?.includes('hover:bg-surface-muted'))
+    expect(technicalDetails).toHaveTextContent('hover:bg-surface-muted')
+    expect(technicalDetails).toHaveTextContent('w-[37px]')
 
     await fireEvent.update(screen.getByRole('combobox'), 'p-8')
     expect(rendered.emitted()['set-tailwind']?.[0]?.[0]).toEqual({
@@ -192,7 +195,7 @@ describe('PageVisualEditPropertyInspector', () => {
     })
   })
 
-  it('段落结构应通过内容和样式 tab 编辑，并回显 Tailwind 类名', async () => {
+  it('段落结构应通过内容和样式 tab 编辑，并默认展示常用文字样式', async () => {
     const node: PageVisualEditNode = {
       node_id: 'node-paragraph',
       kind: 'element',
@@ -229,7 +232,7 @@ describe('PageVisualEditPropertyInspector', () => {
         catalog: {
           version: 1,
           groups: [{
-            key: 'text-align',
+            key: 'text-alignment',
             label: '文本对齐',
             options: [
               { class_name: 'text-left', label: '左对齐' },
@@ -238,17 +241,20 @@ describe('PageVisualEditPropertyInspector', () => {
           }],
         },
         componentSchemas: {},
+        jsonSources: [],
         pendingOperations: [],
       },
     })
 
-    expect(screen.getByRole('heading', { name: '段落编辑' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '文本：段落内容' })).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: '内容' })).toHaveAttribute('aria-selected', 'true')
     expect(screen.getByRole('textbox')).toBeInTheDocument()
 
-    await fireEvent.click(screen.getByRole('tab', { name: '样式' }))
-    expect(screen.getByRole('button', { name: /字体/ })).toHaveAttribute('aria-expanded', 'true')
-    expect(screen.getByRole('combobox')).toBeInTheDocument()
+    await fireEvent.mouseDown(screen.getByRole('tab', { name: '样式' }), { button: 0 })
+    await waitFor(() => {
+      expect(screen.getByRole('tab', { name: '常用样式' })).toHaveAttribute('aria-selected', 'true')
+      expect(screen.getByRole('combobox', { name: '文本对齐' })).toBeInTheDocument()
+    })
   })
 
   it('kebab-case 组件应消费 PascalCase schema，并保持 select 原始值且让 json 只读', async () => {

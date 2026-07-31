@@ -3,61 +3,59 @@
   <div class="project-switcher relative shrink-0" data-testid="project-quick-switcher">
     <UiPopover :open="dropdownVisible" side="bottom" align="start" :side-offset="8" content-class="!p-0 w-72 rounded-2xl shadow-xl" @update:open="dropdownVisible = $event">
       <template #trigger>
-        <UiButton
-          variant="secondary"
+        <!-- Trigger：与相邻的 WorkspaceSwitcher 触发器保持同一套视觉 -->
+        <button
+          type="button"
           data-testid="project-quick-switcher-trigger"
-          class="flex max-w-[220px] items-center gap-2 rounded-xl border border-slate-200/70 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm transition-all hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 [&>span]:min-w-0"
-          :class="{ 'border-indigo-200 bg-indigo-50 text-indigo-700': dropdownVisible }"
+          class="flex max-w-[220px] cursor-pointer select-none items-center gap-2 rounded-xl border border-border/50 bg-surface-muted px-4 py-2 shadow-sm transition-all hover:bg-border disabled:cursor-not-allowed disabled:opacity-50"
+          :class="{ 'bg-border': dropdownVisible }"
           :disabled="!workspaceId"
           title="快速切换项目"
         >
-          <FolderKanban class="h-4 w-4 shrink-0 text-indigo-500" />
-          <span class="truncate">{{ triggerLabel }}</span>
+          <FolderKanban class="h-4 w-4 shrink-0 text-accent" />
+          <span class="min-w-0 truncate text-sm font-bold text-text">{{ triggerLabel }}</span>
           <ChevronDown
-            class="h-4 w-4 shrink-0 text-slate-400 transition-transform duration-200"
+            class="h-4 w-4 shrink-0 text-text-disabled transition-transform duration-200"
             :class="{ 'rotate-180': dropdownVisible }"
           />
-        </UiButton>
+        </button>
       </template>
 
+      <!-- Dropdown Content -->
       <div class="py-2">
-        <div class="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-2">
-          <span class="text-[11px] font-bold uppercase tracking-widest text-slate-400">快速切换项目</span>
-          <div class="flex shrink-0 items-center gap-2">
-            <UiButton
-              variant="ghost"
-              size="xs"
-              data-testid="project-quick-switcher-home"
-              class="overview-header-action"
-              :class="!currentProjectId ? 'overview-header-action-active' : 'overview-header-action-idle'"
-              @click="goToWorkspaceHome"
-            >
-              <span>项目列表</span>
-              <span class="overview-header-count">{{ projects.length }}</span>
-            </UiButton>
-          </div>
+        <div class="mb-1 flex items-center justify-between gap-3 border-b border-border-muted px-4 py-2">
+          <span class="text-[11px] font-bold uppercase tracking-widest text-text-disabled">快速切换项目</span>
+          <UiButton
+            variant="ghost"
+            size="xs"
+            data-testid="project-quick-switcher-home"
+            class="text-text-disabled hover:text-text-secondary"
+            @click="goToWorkspaceHome"
+          >
+            项目列表
+            <span class="rounded-full bg-surface-muted px-1.5 py-0.5 text-[10px] font-bold leading-none text-text-secondary">{{ projects.length }}</span>
+          </UiButton>
         </div>
 
         <div class="max-h-72 overflow-y-auto px-1.5 py-1">
-          <UiButton
+          <button
             v-for="project in projects"
             :key="project.id"
-            variant="ghost"
-            size="sm"
+            type="button"
             data-testid="project-quick-switcher-item"
-            class="project-item [&>span]:min-w-0 [&>span]:w-full [&>span]:justify-start"
-            :class="project.id === currentProjectId ? 'project-item-active' : 'project-item-idle'"
+            class="mb-0.5 flex w-full cursor-pointer items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold transition-all"
+            :class="project.id === currentProjectId ? 'bg-surface-selected text-accent-hover' : 'text-text-emphasis hover:bg-surface-hover'"
             @click="switchProject(project.id)"
           >
-            <FolderKanban class="h-4 w-4 shrink-0" />
-            <span class="min-w-0 flex-1 truncate text-left">{{ project.name }}</span>
-            <Check v-if="project.id === currentProjectId" class="h-4 w-4 shrink-0" />
-          </UiButton>
+            <FolderKanban class="h-4 w-4 shrink-0" :class="project.id === currentProjectId ? 'text-accent-emphasis' : 'text-text-disabled'" />
+            <span class="min-w-0 flex-1 truncate">{{ project.name }}</span>
+            <Check v-if="project.id === currentProjectId" class="h-4 w-4 shrink-0 text-accent-emphasis" />
+          </button>
 
-          <div v-if="projectsLoading" class="px-4 py-5 text-center text-xs font-medium text-slate-400">
+          <div v-if="projectsLoading" class="px-4 py-5 text-center text-xs font-medium text-text-disabled">
             正在加载项目...
           </div>
-          <div v-else-if="projects.length === 0" class="px-4 py-5 text-center text-xs font-medium text-slate-400">
+          <div v-else-if="projects.length === 0" class="px-4 py-5 text-center text-xs font-medium text-text-disabled">
             当前空间暂无项目
           </div>
         </div>
@@ -138,79 +136,3 @@ watch(
 )
 
 </script>
-
-<style scoped>
-.project-item {
-  display: flex;
-  width: 100%;
-  align-items: center;
-  gap: 0.75rem;
-  border-radius: 0.75rem;
-  padding: 0.625rem 0.75rem;
-  font-size: 0.875rem;
-  font-weight: 700;
-  transition: all 0.16s ease;
-}
-
-.project-item-idle {
-  color: rgb(51 65 85);
-}
-
-.project-item-idle:hover {
-  background: rgb(248 250 252);
-  color: rgb(30 41 59);
-}
-
-.project-item-active {
-  background: rgb(238 242 255);
-  color: rgb(79 70 229);
-}
-
-.overview-header-action {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.3125rem;
-  border-radius: 9999px;
-  border: 1px solid rgb(199 210 254);
-  background: rgb(238 242 255);
-  padding: 0.1875rem 0.25rem 0.1875rem 0.5625rem;
-  font-size: 0.6875rem;
-  font-weight: 900;
-  color: rgb(79 70 229);
-  transition: all 0.16s ease;
-}
-
-.overview-header-action-idle {
-  color: rgb(79 70 229);
-}
-
-.overview-header-action-idle:hover {
-  border-color: rgb(165 180 252);
-  background: rgb(224 231 255);
-  color: rgb(67 56 202);
-}
-
-.overview-header-action-active {
-  border-color: rgb(79 70 229);
-  background: rgb(79 70 229);
-  color: white;
-}
-
-.overview-header-count {
-  border-radius: 9999px;
-  background: rgb(67 56 202);
-  min-width: 1.125rem;
-  padding: 0.125rem 0.3125rem;
-  color: white;
-  font-size: 0.625rem;
-  font-weight: 900;
-  line-height: 1;
-  text-align: center;
-}
-
-.overview-header-action-active .overview-header-count {
-  background: white;
-  color: rgb(79 70 229);
-}
-
-</style>

@@ -39,6 +39,7 @@ describe('usePageVisualEditSession', () => {
     await nextTick()
     const frameWindow = session!.previewFrameRef.value?.contentWindow
     expect(frameWindow).toBeTruthy()
+    expect(session!.selectedNodeId.value).toBe('')
 
     const validMessage = {
       type: 'page-visual-edit:selection',
@@ -55,7 +56,7 @@ describe('usePageVisualEditSession', () => {
       origin: 'http://runtime.local',
       source: frameWindow,
     }))
-    expect(session!.selectedNodeId.value).toBe('root')
+    expect(session!.selectedNodeId.value).toBe('')
 
     for (const invalidKey of [Number.NaN, Number.POSITIVE_INFINITY, 1.5]) {
       window.dispatchEvent(new MessageEvent('message', {
@@ -69,7 +70,7 @@ describe('usePageVisualEditSession', () => {
         origin: 'http://runtime.local',
         source: frameWindow,
       }))
-      expect(session!.selectedNodeId.value).toBe('root')
+      expect(session!.selectedNodeId.value).toBe('')
     }
 
     window.dispatchEvent(new MessageEvent('message', {
@@ -111,6 +112,7 @@ describe('usePageVisualEditSession', () => {
       },
     }))
     await session!.analyze(9, 3)
+    session!.selectNode('node-card', 'binding-title')
     session!.setValue({ nodeId: 'node-card', bindingId: 'binding-title', instancePath: [] }, '新标题', '原标题')
 
     expect(await session!.save(9)).toBeNull()
@@ -121,11 +123,50 @@ describe('usePageVisualEditSession', () => {
     expect(result?.current_version_no).toBe(4)
     expect(session!.pendingCount.value).toBe(0)
     expect(session!.artifact.value?.artifact_id).toBe('artifact-2')
+    expect(session!.selectedNodeId.value).toBe('node-card')
+    expect(session!.selectedBindingId.value).toBe('binding-title')
     expect(createMock).toHaveBeenLastCalledWith(9, { base_version_no: 4 })
     expect(applyMock).toHaveBeenLastCalledWith(9, expect.objectContaining({
       artifact_id: 'artifact-1',
       operations: [expect.objectContaining({ type: 'set_value', value: '新标题' })],
     }))
+  })
+
+  it('保存刷新后仅恢复新 Manifest 中仍然存在的精确选区', async () => {
+    const refreshedArtifact = createArtifact('artifact-2', 4)
+    refreshedArtifact.visual_edit.manifest.root.children[0].bindings = []
+    createMock
+      .mockResolvedValueOnce(createArtifact('artifact-1', 3))
+      .mockResolvedValueOnce(refreshedArtifact)
+    applyMock.mockResolvedValue({
+      protocol_version: 1,
+      success: true,
+      page_id: 9,
+      previous_version_no: 3,
+      current_version_no: 4,
+      source_hash: 'b'.repeat(64),
+      operations_applied: 1,
+      canonical_diff: 'diff',
+      diagnostics: [],
+      refresh_required: true,
+    })
+
+    let session: ReturnType<typeof usePageVisualEditSession> | undefined
+    render(defineComponent({
+      setup() {
+        session = usePageVisualEditSession()
+        return () => h('div')
+      },
+    }))
+    await session!.analyze(9, 3)
+    session!.selectNode('node-card', 'binding-title')
+    session!.setValue({ nodeId: 'node-card', bindingId: 'binding-title', instancePath: [] }, '新标题', '原标题')
+
+    await session!.save(9)
+
+    expect(session!.selectedNodeId.value).toBe('')
+    expect(session!.selectedBindingId.value).toBe('')
+    expect(session!.selectedNode.value).toBeNull()
   })
 
   it('图层选择应向受信 iframe 下发 v1 节点定位消息', async () => {

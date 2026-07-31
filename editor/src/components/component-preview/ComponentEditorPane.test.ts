@@ -1,5 +1,5 @@
 /**
- * 文件功能：验证组件编辑面板的表单回写、主题切换和操作事件。
+ * 文件功能：验证组件编辑面板的表单回写和操作事件。
  */
 import { defineComponent, h } from 'vue'
 import { fireEvent, render, screen } from '@testing-library/vue'
@@ -27,13 +27,12 @@ const errors: WorkspaceComponentDraftErrors = {
 }
 
 describe('ComponentEditorPane', () => {
-  it('应回写表单字段并触发预览、保存和主题切换事件', async () => {
+  it('应回写表单字段并触发预览、保存事件', async () => {
     const { emitted } = render(ComponentEditorPane, {
       props: {
         form,
         errors,
         mode: 'edit',
-        editorTheme: 'light',
         saving: false,
         previewLoading: false,
         canPublish: true,
@@ -62,16 +61,13 @@ describe('ComponentEditorPane', () => {
 
     await fireEvent.update(screen.getByPlaceholderText('如：数据统计卡片'), '销售趋势卡片')
     await fireEvent.update(screen.getByPlaceholderText('如：SalesMetricCard'), 'SalesTrendCard')
-    await fireEvent.click(screen.getByRole('button', { name: '暗黑' }))
     await fireEvent.click(screen.getByRole('button', { name: '版本' }))
     await fireEvent.click(screen.getByRole('button', { name: '保存并预览' }))
     await fireEvent.click(screen.getByRole('button', { name: '保存草稿' }))
 
     const formEvents = emitted('update:form') as Array<[WorkspaceComponentDraftForm]> | undefined
-    const themeEvents = emitted('update:editorTheme') as Array<['dark']> | undefined
     expect(formEvents?.[0]?.[0]).toMatchObject({ name: '销售趋势卡片' })
     expect(formEvents?.[1]?.[0]).toMatchObject({ import_name: 'SalesTrendCard' })
-    expect(themeEvents?.[0]).toEqual(['dark'])
     expect(emitted('open-version-history')).toHaveLength(1)
     expect(emitted('preview-draft')).toHaveLength(1)
     expect(emitted('save-draft')).toHaveLength(1)
@@ -83,7 +79,6 @@ describe('ComponentEditorPane', () => {
         form,
         errors,
         mode: 'create',
-        editorTheme: 'light',
         saving: false,
         previewLoading: false,
         canPublish: false,

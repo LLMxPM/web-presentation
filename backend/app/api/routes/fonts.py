@@ -1,4 +1,4 @@
-"""文件功能：提供工作空间字体配置的增删改查接口。"""
+"""文件功能：提供工作空间字体族与字体文件配置的增删改查接口。"""
 
 from typing import Annotated
 
@@ -12,6 +12,8 @@ from app.schemas.font import (
     WorkspaceFontConfigCreateRequest,
     WorkspaceFontConfigResponse,
     WorkspaceFontConfigUpdateRequest,
+    WorkspaceFontFamilyResponse,
+    WorkspaceFontFamilyUpdateRequest,
 )
 from app.services.auth_service import AuthContext
 from app.services.asset_service import AssetService
@@ -30,6 +32,44 @@ async def list_workspace_fonts(
     """列出工作空间下的全部字体配置。"""
 
     return await WorkspaceFontService(session).list_workspace_fonts(workspace_id, query)
+
+
+@router.get("/workspaces/{workspace_id}/font-families", response_model=PagedResponse[WorkspaceFontFamilyResponse])
+async def list_workspace_font_families(
+    workspace_id: int,
+    query: Annotated[ListQuery, Depends(get_list_query)],
+    _: Annotated[AuthContext, Depends(get_current_user)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> PagedResponse[WorkspaceFontFamilyResponse]:
+    """列出工作空间下的字体族，每项内嵌全部字体文件。"""
+
+    return await WorkspaceFontService(session).list_workspace_font_families(workspace_id, query)
+
+
+@router.patch("/workspaces/{workspace_id}/font-families/{family_id}", response_model=WorkspaceFontFamilyResponse)
+async def rename_workspace_font_family(
+    workspace_id: int,
+    family_id: int,
+    payload: WorkspaceFontFamilyUpdateRequest,
+    _: Annotated[AuthContext, Depends(get_current_user)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> WorkspaceFontFamilyResponse:
+    """重命名字体族。"""
+
+    return await WorkspaceFontService(session).rename_font_family(workspace_id, family_id, payload)
+
+
+@router.delete("/workspaces/{workspace_id}/font-families/{family_id}", response_model=MessageResponse)
+async def delete_workspace_font_family(
+    workspace_id: int,
+    family_id: int,
+    _: Annotated[AuthContext, Depends(get_current_user)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> MessageResponse:
+    """删除空字体族；仍有字体文件或被主题绑定时返回 409。"""
+
+    await WorkspaceFontService(session).delete_font_family(workspace_id, family_id)
+    return MessageResponse(message="字体族已删除。")
 
 
 @router.post("/workspaces/{workspace_id}/fonts", response_model=WorkspaceFontConfigResponse)

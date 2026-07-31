@@ -1,32 +1,47 @@
 <!-- 文件功能：编辑 Manifest 中一个整块 JSON source，并在生成结构化操作前完成本地格式与规模校验。 -->
 <template>
-  <section class="rounded-lg border border-slate-200 bg-white p-3">
+  <section class="rounded-lg border border-border bg-surface p-3">
     <div class="mb-2">
       <div class="flex items-center justify-between gap-3">
-        <p class="min-w-0 flex-1 text-xs font-bold text-slate-700">{{ props.label }}</p>
+        <p class="min-w-0 flex-1 text-xs font-bold text-text-emphasis">{{ props.label }}</p>
         <div class="flex shrink-0 gap-1 whitespace-nowrap">
-          <UiButton variant="ghost" size="xs" class="whitespace-nowrap text-slate-600" @click="formatDraft">格式化</UiButton>
-          <UiButton variant="ghost" size="xs" class="whitespace-nowrap text-slate-600" @click="restoreBaseline">恢复</UiButton>
+          <UiButton variant="ghost" size="xs" class="whitespace-nowrap text-text-secondary" @click="formatDraft">格式化</UiButton>
+          <UiButton variant="ghost" size="xs" class="whitespace-nowrap text-text-secondary" @click="restoreBaseline">恢复</UiButton>
+          <UiButton variant="ghost" size="xs" class="inline-flex items-center gap-1 whitespace-nowrap text-text-secondary" @click="zoomVisible = true">
+            <Maximize2 class="h-3 w-3" />
+            放大
+          </UiButton>
         </div>
       </div>
-      <p v-if="props.componentProp" class="mt-1 text-[11px] text-amber-700">仅校验 JSON 格式，组件可能有额外运行约束。</p>
+      <p v-if="props.componentProp" class="mt-1 text-[11px] text-warning-strong">仅校验 JSON 格式，组件可能有额外运行约束。</p>
     </div>
     <MonacoCodeEditor
       :model-value="draft"
       language="json"
-      theme="light"
       :auto-save-delay="0"
       height="180px"
       @update:model-value="updateDraft"
     />
-    <p v-if="errorMessage" class="mt-2 text-xs text-rose-600">{{ errorMessage }}</p>
-    <p v-else-if="props.pendingValue !== undefined" class="mt-2 text-[11px] font-semibold text-indigo-600">此 JSON 有待保存修改，画布暂未更新。</p>
+    <p v-if="errorMessage" class="mt-2 text-xs text-danger">{{ errorMessage }}</p>
+    <p v-else-if="props.pendingValue !== undefined" class="mt-2 text-[11px] font-semibold text-accent">此 JSON 有待保存修改，画布暂未更新。</p>
+
+    <CodeZoomEditDialog
+      v-model:open="zoomVisible"
+      :model-value="draft"
+      :title="`放大编辑：${props.label}`"
+      description="修改会实时同步为待保存草稿，关闭弹窗后在属性面板统一保存。"
+      language="json"
+      :error="errorMessage"
+      @update:model-value="updateDraft"
+    />
   </section>
 </template>
 
 <script setup lang="ts">
 import { ref, watch } from 'vue'
+import { Maximize2 } from '@lucide/vue'
 
+import CodeZoomEditDialog from '@/components/editor/CodeZoomEditDialog.vue'
 import MonacoCodeEditor from '@/components/editor/MonacoCodeEditor.vue'
 import { UiButton } from '@/components/ui'
 import type { PageVisualEditJsonSource, PageVisualEditJsonValue } from '@/types/page-visual-edit'
@@ -49,6 +64,7 @@ const emit = defineEmits<{
 
 const draft = ref('')
 const errorMessage = ref('')
+const zoomVisible = ref(false)
 
 watch(
   () => [props.source.source_id, props.pendingValue, props.source.value] as const,

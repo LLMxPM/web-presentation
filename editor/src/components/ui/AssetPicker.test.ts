@@ -161,6 +161,21 @@ describe('AssetPicker', () => {
 
     expect(trigger).toHaveFocus()
   })
+
+  it('紧凑模式应为仅图标触发器提供明确的可访问名称', () => {
+    render(AssetPicker, {
+      props: {
+        modelValue: 'smoke-image-a',
+        workspaceId: 1,
+        assetType: 'image',
+        valueMode: 'name',
+        title: '选择图片资源',
+        size: 'compact',
+      },
+    })
+
+    expect(screen.getByRole('button', { name: '选择图片资源' })).toBeInTheDocument()
+  })
 })
 
 /**

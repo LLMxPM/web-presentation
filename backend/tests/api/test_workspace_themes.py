@@ -141,9 +141,9 @@ async def test_workspace_theme_create_without_fonts_should_use_browser_default_l
 
     assert theme_response.status_code == 200
     theme_item = theme_response.json()
-    assert theme_item["heading_font_id"] is None
-    assert theme_item["body_font_id"] is None
-    assert theme_item["code_font_id"] is None
+    assert theme_item["heading_font_family_id"] is None
+    assert theme_item["body_font_family_id"] is None
+    assert theme_item["code_font_family_id"] is None
     assert theme_item["heading_font_label"] == "system-ui"
     assert theme_item["body_font_label"] == "system-ui"
     assert theme_item["code_font_label"] == "monospace"
@@ -175,9 +175,9 @@ async def test_workspace_theme_update_should_preserve_omitted_fonts_and_reset_ex
         json={
             "key": "clearable-font-theme",
             "name": "可清空字体主题",
-            "heading_font_id": font_config["id"],
-            "body_font_id": font_config["id"],
-            "code_font_id": font_config["id"],
+            "heading_font_family_id": font_config["family_id"],
+            "body_font_family_id": font_config["family_id"],
+            "code_font_family_id": font_config["family_id"],
             "palette": _theme_palette(),
         },
     )
@@ -189,9 +189,9 @@ async def test_workspace_theme_update_should_preserve_omitted_fonts_and_reset_ex
         json={"name": "可清空字体主题改名"},
     )
     assert preserved_response.status_code == 200
-    assert preserved_response.json()["heading_font_id"] == font_config["id"]
-    assert preserved_response.json()["body_font_id"] == font_config["id"]
-    assert preserved_response.json()["code_font_id"] == font_config["id"]
+    assert preserved_response.json()["heading_font_family_id"] == font_config["family_id"]
+    assert preserved_response.json()["body_font_family_id"] == font_config["family_id"]
+    assert preserved_response.json()["code_font_family_id"] == font_config["family_id"]
     assert preserved_response.json()["heading_font_label"] == "ThemeUpdateFont"
     assert preserved_response.json()["body_font_label"] == "ThemeUpdateFont"
     assert preserved_response.json()["code_font_label"] == "ThemeUpdateFont"
@@ -199,16 +199,16 @@ async def test_workspace_theme_update_should_preserve_omitted_fonts_and_reset_ex
     cleared_response = await authenticated_client.patch(
         f"/api/workspaces/{workspace_id}/themes/{theme_id}",
         json={
-            "heading_font_id": None,
-            "body_font_id": None,
-            "code_font_id": None,
+            "heading_font_family_id": None,
+            "body_font_family_id": None,
+            "code_font_family_id": None,
         },
     )
     assert cleared_response.status_code == 200
     cleared_theme = cleared_response.json()
-    assert cleared_theme["heading_font_id"] is None
-    assert cleared_theme["body_font_id"] is None
-    assert cleared_theme["code_font_id"] is None
+    assert cleared_theme["heading_font_family_id"] is None
+    assert cleared_theme["body_font_family_id"] is None
+    assert cleared_theme["code_font_family_id"] is None
     assert cleared_theme["heading_font_label"] == "system-ui"
     assert cleared_theme["body_font_label"] == "system-ui"
     assert cleared_theme["code_font_label"] == "monospace"
@@ -245,14 +245,14 @@ async def _upload_font_asset(authenticated_client: AsyncClient, workspace_id: in
     return response.json()
 
 
-async def _create_font_config(authenticated_client: AsyncClient, workspace_id: int, asset_id: int, font_family: str) -> dict:
+async def _create_font_config(authenticated_client: AsyncClient, workspace_id: int, asset_id: int, family_name: str) -> dict:
     """注册字体配置并返回接口响应。"""
 
     response = await authenticated_client.post(
         f"/api/workspaces/{workspace_id}/fonts",
         json={
             "asset_id": asset_id,
-            "font_family": font_family,
+            "family_name": family_name,
             "font_weight": "400",
             "font_style": "normal",
             "font_display": "swap",

@@ -4,33 +4,33 @@
     <PageHeader :icon="Bot" title="AI 设置" description="集中管理智能体模型绑定、提示词、工具配置与模型。">
 
       <template #actions>
-        <dl class="grid w-full grid-cols-2 overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 text-center sm:grid-cols-4 lg:w-auto lg:min-w-[560px]">
-          <div class="border-b border-r border-slate-200 px-3 py-2 sm:border-b-0">
+        <dl class="grid w-full grid-cols-2 overflow-hidden rounded-2xl border border-border bg-canvas text-center sm:grid-cols-4 lg:w-auto lg:min-w-[560px]">
+          <div class="border-b border-r border-border px-3 py-2 sm:border-b-0">
             <dt class="sr-only">智能体</dt>
-            <dd class="inline-flex items-center justify-center gap-2 text-sm font-semibold text-slate-900">
-              <span class="text-slate-400">智能体</span>
-              <span class="text-base font-bold text-slate-900">{{ agentCount }}</span>
+            <dd class="inline-flex items-center justify-center gap-2 text-sm font-semibold text-text-strong">
+              <span class="text-text-disabled">智能体</span>
+              <span class="text-base font-bold text-text-strong">{{ agentCount }}</span>
             </dd>
           </div>
-          <div class="border-b border-slate-200 px-3 py-2 sm:border-b-0 sm:border-r">
+          <div class="border-b border-border px-3 py-2 sm:border-b-0 sm:border-r">
             <dt class="sr-only">可用模型</dt>
-            <dd class="inline-flex items-center justify-center gap-2 text-sm font-semibold text-slate-900">
-              <span class="text-slate-400">可用模型</span>
-              <span class="text-base font-bold text-slate-900">{{ activeModelCount }}</span>
+            <dd class="inline-flex items-center justify-center gap-2 text-sm font-semibold text-text-strong">
+              <span class="text-text-disabled">可用模型</span>
+              <span class="text-base font-bold text-text-strong">{{ activeModelCount }}</span>
             </dd>
           </div>
-          <div class="border-r border-slate-200 px-3 py-2">
+          <div class="border-r border-border px-3 py-2">
             <dt class="sr-only">未就绪智能体</dt>
-            <dd class="inline-flex items-center justify-center gap-2 text-sm font-semibold leading-6" :class="unreadySlotCount ? 'text-amber-600' : 'text-emerald-600'">
-              <span class="text-slate-400">未就绪智能体</span>
+            <dd class="inline-flex items-center justify-center gap-2 text-sm font-semibold leading-6" :class="unreadySlotCount ? 'text-warning' : 'text-success'">
+              <span class="text-text-disabled">未就绪智能体</span>
               <span class="text-base font-bold">{{ unreadySlotCount }}</span>
             </dd>
           </div>
           <div class="px-3 py-2">
             <dt class="sr-only">工具</dt>
-            <dd class="inline-flex items-center justify-center gap-2 text-sm font-semibold text-slate-900">
-              <span class="text-slate-400">工具</span>
-              <span class="text-base font-bold text-slate-900">{{ allToolCount }}</span>
+            <dd class="inline-flex items-center justify-center gap-2 text-sm font-semibold text-text-strong">
+              <span class="text-text-disabled">工具</span>
+              <span class="text-base font-bold text-text-strong">{{ allToolCount }}</span>
             </dd>
           </div>
         </dl>
@@ -39,8 +39,8 @@
 
     <section class="grid gap-5 xl:grid-cols-[380px_minmax(0,1fr)]">
       <ToolPanel class="min-h-[720px]" :scroll-body="false">
-        <div class="border-b border-slate-200 p-3">
-          <div class="grid grid-cols-3 rounded-xl bg-slate-100 p-1">
+        <div class="border-b border-border p-3">
+          <div class="grid grid-cols-3 rounded-xl bg-surface-muted p-1">
             <UiButton
               v-for="tab in sectionTabs"
               :key="tab.key"
@@ -48,7 +48,7 @@
               :aria-label="tab.label"
               variant="ghost"
               class="flex min-h-12 min-w-0 flex-col items-center justify-center rounded-lg px-2 py-1 text-xs font-bold transition [&>span]:!flex-col [&>span]:gap-0"
-              :class="activeSection === tab.key ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'"
+              :class="activeSection === tab.key ? 'bg-surface text-accent shadow-sm' : 'text-text-muted hover:text-text'"
               @click="setActiveSection(tab.key)"
             >
               <span class="flex items-center gap-1.5">
@@ -63,11 +63,11 @@
         <div v-if="activeSection === 'agents'" class="max-h-[calc(100vh-250px)] overflow-y-auto p-3">
           <div class="mb-3 flex items-center justify-between gap-3">
             <div>
-              <p class="text-sm font-semibold text-slate-900">智能体配置</p>
-              <p class="mt-0.5 text-xs text-slate-500">{{ agentCount }} 个智能体 · {{ unreadySlotCount }} 个需处理</p>
+              <p class="text-sm font-semibold text-text-strong">智能体配置</p>
+              <p class="mt-0.5 text-xs text-text-muted">{{ agentCount }} 个智能体 · {{ unreadySlotCount }} 个需处理</p>
             </div>
           </div>
-          <div v-if="agentConfigsQuery.isFetching.value && !(agentConfigsQuery.data.value?.length)" class="rounded-xl border border-dashed border-slate-200 px-4 py-10 text-center text-sm text-slate-400">
+          <div v-if="agentConfigsQuery.isFetching.value && !(agentConfigsQuery.data.value?.length)" class="rounded-xl border border-dashed border-border px-4 py-10 text-center text-sm text-text-disabled">
             正在读取智能体配置...
           </div>
           <div v-else-if="agentConfigsQuery.data.value?.length" class="space-y-2">
@@ -78,7 +78,7 @@
               variant="ghost"
               :aria-pressed="selectedAgentConfig?.id === agent.id"
               class="h-auto w-full rounded-xl border p-3 text-left transition [&>span]:!block [&>span]:min-w-0 [&>span]:w-full [&>span]:text-left"
-              :class="selectedAgentConfig?.id === agent.id ? '!border-indigo-400 !bg-indigo-50 ring-2 ring-indigo-200' : '!border-slate-200 !bg-white hover:!border-slate-300 hover:!bg-slate-50'"
+              :class="selectedAgentConfig?.id === agent.id ? '!border-accent-border !bg-surface-selected ring-2 ring-accent-ring' : '!border-border !bg-surface hover:!border-border-strong hover:!bg-canvas'"
               @click="selectAgent(agent.id)"
             >
               <div class="flex items-start justify-between gap-3">
@@ -87,8 +87,8 @@
                     <component :is="resolveAgentIconComponent(agent.icon)" class="h-4 w-4" />
                   </span>
                   <div class="min-w-0">
-                    <p class="truncate text-sm font-bold text-slate-900">{{ agent.name }}</p>
-                    <p class="mt-1 line-clamp-2 text-xs leading-5 text-slate-500">{{ agent.summary }}</p>
+                    <p class="truncate text-sm font-bold text-text-strong">{{ agent.name }}</p>
+                    <p class="mt-1 line-clamp-2 text-xs leading-5 text-text-muted">{{ agent.summary }}</p>
                   </div>
                 </div>
                 <span class="flex shrink-0 flex-col items-end gap-1">
@@ -99,19 +99,19 @@
                 </span>
               </div>
               <div class="mt-3 grid grid-cols-3 gap-2 text-[11px] font-semibold">
-                <span class="rounded-lg bg-slate-100 px-2 py-1 text-slate-500">
+                <span class="rounded-lg bg-surface-muted px-2 py-1 text-text-muted">
                   {{ agent.prompt_customized ? '提示词已改' : '默认提示词' }}
                 </span>
-                <span class="rounded-lg bg-emerald-50 px-2 py-1 text-emerald-700">
+                <span class="rounded-lg bg-success-muted px-2 py-1 text-success-strong">
                   {{ agent.enabled_tool_count }} 启用
                 </span>
-                <span class="rounded-lg bg-amber-50 px-2 py-1 text-amber-700">
+                <span class="rounded-lg bg-warning-muted px-2 py-1 text-warning-strong">
                   {{ agent.disabled_tool_count }} 关闭
                 </span>
               </div>
             </UiButton>
           </div>
-          <div v-else class="rounded-xl border border-dashed border-slate-200 px-4 py-10 text-center text-sm text-slate-400">
+          <div v-else class="rounded-xl border border-dashed border-border px-4 py-10 text-center text-sm text-text-disabled">
             暂无可配置智能体。
           </div>
         </div>
@@ -119,15 +119,15 @@
         <div v-else-if="activeSection === 'providers'" class="max-h-[calc(100vh-230px)] overflow-y-auto p-3">
           <div class="mb-3 flex items-center justify-between gap-3">
             <div>
-              <p class="text-sm font-semibold text-slate-900">供应商</p>
-              <p class="mt-0.5 text-xs text-slate-500">{{ providerCount }} 个配置 · {{ providerMissingKeyCount }} 个缺少密钥</p>
+              <p class="text-sm font-semibold text-text-strong">供应商</p>
+              <p class="mt-0.5 text-xs text-text-muted">{{ providerCount }} 个配置 · {{ providerMissingKeyCount }} 个缺少密钥</p>
             </div>
             <UiButton variant="primary" size="sm" @click="resetProviderForm">
               <Plus class="h-3.5 w-3.5" />
               新建供应商
             </UiButton>
           </div>
-          <div v-if="providerConfigsQuery.isFetching.value && !(providerConfigsQuery.data.value?.length)" class="rounded-xl border border-dashed border-slate-200 px-4 py-10 text-center text-sm text-slate-400">
+          <div v-if="providerConfigsQuery.isFetching.value && !(providerConfigsQuery.data.value?.length)" class="rounded-xl border border-dashed border-border px-4 py-10 text-center text-sm text-text-disabled">
             正在读取供应商...
           </div>
           <div v-else-if="providerConfigsQuery.data.value?.length" class="space-y-2">
@@ -138,39 +138,39 @@
               variant="ghost"
               :aria-pressed="selectedProviderConfigId === config.id"
               class="h-auto w-full rounded-xl border p-3 text-left transition [&>span]:!block [&>span]:min-w-0 [&>span]:w-full [&>span]:text-left"
-              :class="selectedProviderConfigId === config.id ? '!border-indigo-400 !bg-indigo-50 ring-2 ring-indigo-200' : '!border-slate-200 !bg-white hover:!border-slate-300 hover:!bg-slate-50'"
+              :class="selectedProviderConfigId === config.id ? '!border-accent-border !bg-surface-selected ring-2 ring-accent-ring' : '!border-border !bg-surface hover:!border-border-strong hover:!bg-canvas'"
               @click="handleEditProviderConfig(config)"
             >
               <div class="flex items-start justify-between gap-3">
                 <div class="min-w-0">
-                  <p class="truncate text-sm font-bold text-slate-900">{{ config.name }}</p>
-                  <p class="mt-1 truncate text-xs text-slate-500">{{ config.provider_label }} · {{ config.base_url || '默认地址' }}</p>
+                  <p class="truncate text-sm font-bold text-text-strong">{{ config.name }}</p>
+                  <p class="mt-1 truncate text-xs text-text-muted">{{ config.provider_label }} · {{ config.base_url || '默认地址' }}</p>
                 </div>
                 <span class="flex shrink-0 flex-col items-end gap-1">
 
                   <span
                     class="rounded-full px-2 py-0.5 text-[11px] font-semibold"
-                    :class="config.scope === 'global' ? 'bg-indigo-50 text-indigo-700' : 'bg-slate-100 text-slate-600'"
+                    :class="config.scope === 'global' ? 'bg-surface-selected text-accent-hover' : 'bg-surface-muted text-text-secondary'"
                   >
                     {{ config.scope === 'global' ? '全局' : '个人' }}
                   </span>
                   <span
                     class="rounded-full px-2 py-0.5 text-[11px] font-semibold"
-                    :class="config.status === 'active' ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'"
+                    :class="config.status === 'active' ? 'bg-success-muted text-success-strong' : 'bg-surface-muted text-text-muted'"
                   >
                     {{ config.status === 'active' ? '启用' : '不可用' }}
                   </span>
                 </span>
               </div>
               <div class="mt-3 flex min-w-0 items-center justify-between gap-2">
-                <code class="min-w-0 truncate rounded bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-600">{{ config.provider_key }}</code>
-                <span class="shrink-0 text-[11px] font-semibold" :class="config.has_api_key ? 'text-slate-500' : 'text-amber-600'">
+                <code class="min-w-0 truncate rounded bg-surface-muted px-2 py-1 text-[11px] font-semibold text-text-secondary">{{ config.provider_key }}</code>
+                <span class="min-w-0 max-w-[10rem] truncate text-right text-[11px] font-semibold" :class="config.has_api_key ? 'text-text-muted' : 'text-warning'">
                   {{ config.has_api_key ? config.api_key_masked : '未保存 API Key' }}
                 </span>
               </div>
             </UiButton>
           </div>
-          <div v-else class="rounded-xl border border-dashed border-slate-200 px-4 py-10 text-center text-sm text-slate-400">
+          <div v-else class="rounded-xl border border-dashed border-border px-4 py-10 text-center text-sm text-text-disabled">
             还没有供应商。
           </div>
         </div>
@@ -178,15 +178,15 @@
         <div v-else class="max-h-[calc(100vh-230px)] overflow-y-auto p-3">
           <div class="mb-3 flex items-center justify-between gap-3">
             <div>
-              <p class="text-sm font-semibold text-slate-900">模型</p>
-              <p class="mt-0.5 text-xs text-slate-500">{{ modelCount }} 个模型 · {{ activeModelCount }} 个启用</p>
+              <p class="text-sm font-semibold text-text-strong">模型</p>
+              <p class="mt-0.5 text-xs text-text-muted">{{ modelCount }} 个模型 · {{ activeModelCount }} 个启用</p>
             </div>
             <UiButton variant="primary" size="sm" @click="resetModelForm">
               <Plus class="h-3.5 w-3.5" />
               新建模型
             </UiButton>
           </div>
-          <div v-if="configsQuery.isFetching.value && !(configsQuery.data.value?.length)" class="rounded-xl border border-dashed border-slate-200 px-4 py-10 text-center text-sm text-slate-400">
+          <div v-if="configsQuery.isFetching.value && !(configsQuery.data.value?.length)" class="rounded-xl border border-dashed border-border px-4 py-10 text-center text-sm text-text-disabled">
             正在读取模型...
           </div>
           <div v-else-if="configsQuery.data.value?.length" class="space-y-2">
@@ -197,39 +197,39 @@
               variant="ghost"
               :aria-pressed="selectedConfigId === config.id"
               class="h-auto w-full rounded-xl border p-3 text-left transition [&>span]:!block [&>span]:min-w-0 [&>span]:w-full [&>span]:text-left"
-              :class="selectedConfigId === config.id ? '!border-indigo-400 !bg-indigo-50 ring-2 ring-indigo-200' : '!border-slate-200 !bg-white hover:!border-slate-300 hover:!bg-slate-50'"
+              :class="selectedConfigId === config.id ? '!border-accent-border !bg-surface-selected ring-2 ring-accent-ring' : '!border-border !bg-surface hover:!border-border-strong hover:!bg-canvas'"
               @click="handleEditModel(config)"
             >
               <div class="flex items-start justify-between gap-3">
                 <div class="min-w-0">
-                  <p class="truncate text-sm font-bold text-slate-900">{{ config.name }}</p>
-                  <p class="mt-1 truncate text-xs text-slate-500">{{ config.provider_config_name }} / {{ config.model_id }}</p>
+                  <p class="truncate text-sm font-bold text-text-strong">{{ config.name }}</p>
+                  <p class="mt-1 truncate text-xs text-text-muted">{{ config.provider_config_name }} / {{ config.model_id }}</p>
                 </div>
                 <span class="flex shrink-0 flex-col items-end gap-1">
 
                   <span
                     class="rounded-full px-2 py-0.5 text-[11px] font-semibold"
-                    :class="config.scope === 'global' ? 'bg-indigo-50 text-indigo-700' : 'bg-slate-100 text-slate-600'"
+                    :class="config.scope === 'global' ? 'bg-surface-selected text-accent-hover' : 'bg-surface-muted text-text-secondary'"
                   >
                     {{ config.scope === 'global' ? '全局' : '个人' }}
                   </span>
                   <span
                     class="rounded-full px-2 py-0.5 text-[11px] font-semibold"
-                    :class="config.status === 'active' ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'"
+                    :class="config.status === 'active' ? 'bg-success-muted text-success-strong' : 'bg-surface-muted text-text-muted'"
                   >
                     {{ config.status === 'active' ? '启用' : '不可用' }}
                   </span>
                 </span>
               </div>
               <div class="mt-3 flex min-w-0 items-center justify-between gap-2">
-                <code class="min-w-0 truncate rounded bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-600">{{ config.model_id }}</code>
-                <span class="shrink-0 text-[11px] font-semibold text-slate-500">
+                <code class="min-w-0 truncate rounded bg-surface-muted px-2 py-1 text-[11px] font-semibold text-text-secondary">{{ config.model_id }}</code>
+                <span class="shrink-0 text-[11px] font-semibold text-text-muted">
                   {{ config.provider_label }}
                 </span>
               </div>
             </UiButton>
           </div>
-          <div v-else class="rounded-xl border border-dashed border-slate-200 px-4 py-10 text-center text-sm text-slate-400">
+          <div v-else class="rounded-xl border border-dashed border-border px-4 py-10 text-center text-sm text-text-disabled">
             还没有模型。
           </div>
         </div>
@@ -237,27 +237,27 @@
 
       <ToolPanel class="min-h-[720px]" :scroll-body="false">
         <section v-if="activeSection === 'agents' && selectedAgentConfig" class="space-y-5 p-5">
-          <div class="flex flex-wrap items-start justify-between gap-4 border-b border-slate-100 pb-4">
+          <div class="flex flex-wrap items-start justify-between gap-4 border-b border-border-muted pb-4">
             <div class="flex min-w-0 items-start gap-3">
               <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ring-1" :class="getAgentIconShellClass(selectedAgentConfig.icon, true)">
                 <component :is="resolveAgentIconComponent(selectedAgentConfig.icon)" class="h-5 w-5" />
               </span>
               <div class="min-w-0">
-                <h2 class="text-lg font-bold text-slate-900">{{ selectedAgentConfig.name }}</h2>
-                <p class="mt-1 max-w-4xl text-sm leading-6 text-slate-500">{{ selectedAgentConfig.description }}</p>
+                <h2 class="text-lg font-bold text-text-strong">{{ selectedAgentConfig.name }}</h2>
+                <p class="mt-1 max-w-4xl text-sm leading-6 text-text-muted">{{ selectedAgentConfig.description }}</p>
               </div>
             </div>
             <div class="flex flex-wrap justify-end gap-2">
               <span class="rounded-full px-3 py-1 text-xs font-semibold" :class="getAgentSlotClass(selectedAgentConfig)">
                 {{ getAgentSlotLabel(selectedAgentConfig) }}
               </span>
-              <span class="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-500">
+              <span class="rounded-full bg-surface-muted px-3 py-1 text-xs font-semibold text-text-muted">
                 {{ selectedAgentConfig.enabled_tool_count }} / {{ totalToolCount }} 工具启用
               </span>
             </div>
           </div>
 
-          <nav class="grid gap-2 rounded-2xl border border-slate-200 bg-slate-50 p-2 md:grid-cols-3" aria-label="智能体配置分区">
+          <nav class="grid gap-2 rounded-2xl border border-border bg-canvas p-2 md:grid-cols-3" aria-label="智能体配置分区">
             <UiButton
               v-for="tab in agentPanelTabs"
               :key="tab.key"
@@ -265,7 +265,7 @@
               :aria-label="tab.label"
               variant="ghost"
               class="h-auto flex min-h-14 items-center justify-between gap-3 rounded-xl px-3 py-2 text-left text-sm transition [&>span]:min-w-0 [&>span]:w-full [&>span]:justify-between [&>span]:text-left"
-              :class="activeAgentPanel === tab.key ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-600 hover:bg-white/70 hover:text-slate-900'"
+              :class="activeAgentPanel === tab.key ? 'bg-surface text-accent-hover shadow-sm' : 'text-text-secondary hover:bg-surface/70 hover:text-text-strong'"
               @click="activeAgentPanel = tab.key"
             >
               <span class="min-w-0">
@@ -283,16 +283,16 @@
           </nav>
 
           <section v-if="activeAgentPanel === 'binding'" class="space-y-4">
-            <article class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            <article class="rounded-2xl border border-border bg-canvas p-4">
             <div class="flex flex-wrap items-start justify-between gap-4">
               <div>
-                <h3 class="text-sm font-bold text-slate-900">模型绑定</h3>
-                <p class="mt-1 text-xs leading-5 text-slate-500">
+                <h3 class="text-sm font-bold text-text-strong">模型绑定</h3>
+                <p class="mt-1 text-xs leading-5 text-text-muted">
                   绑定项：{{ selectedAgentConfig.llm_slot || '未配置' }}；
                   当前模型：{{ selectedAgentSlot?.llm_config_name || '未绑定可用模型' }}
                   <span v-if="selectedAgentSlot?.inherited_from_global">（继承全局默认）</span>
                 </p>
-                <p v-if="selectedAgentSlot && !selectedAgentSlot.binding_ready" class="mt-1 text-xs font-semibold text-amber-600">
+                <p v-if="selectedAgentSlot && !selectedAgentSlot.binding_ready" class="mt-1 text-xs font-semibold text-warning">
                   当前智能体未绑定模型，请选择一个启用中的模型。
                 </p>
               </div>
@@ -330,37 +330,37 @@
             </div>
             </article>
             <div class="grid gap-3 md:grid-cols-3">
-              <div class="rounded-xl border border-slate-200 bg-white px-4 py-3">
-                <p class="text-[11px] font-semibold text-slate-400">供应商</p>
-                <p class="mt-1 truncate text-sm font-bold text-slate-800">{{ selectedAgentSlot?.provider_label || '未配置' }}</p>
+              <div class="rounded-xl border border-border bg-surface px-4 py-3">
+                <p class="text-[11px] font-semibold text-text-disabled">供应商</p>
+                <p class="mt-1 truncate text-sm font-bold text-text">{{ selectedAgentSlot?.provider_label || '未配置' }}</p>
               </div>
-              <div class="rounded-xl border border-slate-200 bg-white px-4 py-3">
-                <p class="text-[11px] font-semibold text-slate-400">模型 ID</p>
-                <p class="mt-1 truncate text-sm font-bold text-slate-800">{{ selectedAgentSlot?.model_id || '未配置' }}</p>
+              <div class="rounded-xl border border-border bg-surface px-4 py-3">
+                <p class="text-[11px] font-semibold text-text-disabled">模型 ID</p>
+                <p class="mt-1 truncate text-sm font-bold text-text">{{ selectedAgentSlot?.model_id || '未配置' }}</p>
               </div>
-              <div class="rounded-xl border border-slate-200 bg-white px-4 py-3">
-                <p class="text-[11px] font-semibold text-slate-400">图片输入</p>
-                <p class="mt-1 text-sm font-bold" :class="selectedAgentSlot?.supports_image_input ? 'text-emerald-700' : 'text-slate-500'">
+              <div class="rounded-xl border border-border bg-surface px-4 py-3">
+                <p class="text-[11px] font-semibold text-text-disabled">图片输入</p>
+                <p class="mt-1 text-sm font-bold" :class="selectedAgentSlot?.supports_image_input ? 'text-success-strong' : 'text-text-muted'">
                   {{ selectedAgentSlot?.supports_image_input ? '可用' : '未启用' }}
                 </p>
               </div>
             </div>
-            <article v-if="selectedAgentConfig.id === 'agent-coordinator'" class="rounded-2xl border border-violet-200 bg-violet-50/40 p-4">
+            <article v-if="selectedAgentConfig.id === 'agent-coordinator'" class="rounded-2xl border border-ai-border bg-ai-muted/40 p-4">
               <div>
-                <h3 class="text-sm font-bold text-slate-900">视觉能力</h3>
-                <p class="mt-1 text-xs leading-5 text-slate-500">视觉模型独立于内容模型；图片理解同步单次调用，图片生成通过持久化任务执行。</p>
+                <h3 class="text-sm font-bold text-text-strong">视觉能力</h3>
+                <p class="mt-1 text-xs leading-5 text-text-muted">视觉模型独立于内容模型；图片理解同步单次调用，图片生成通过持久化任务执行。</p>
               </div>
               <div class="mt-3 grid gap-3 xl:grid-cols-2">
-                <div v-for="slot in visualSlots" :key="slot.slot" class="rounded-xl border border-violet-100 bg-white p-3">
+                <div v-for="slot in visualSlots" :key="slot.slot" class="rounded-xl border border-ai-border bg-surface p-3">
                   <div class="mb-2 flex items-start justify-between gap-2">
                     <div>
-                      <p class="text-sm font-bold text-slate-800">{{ slot.slot_label }}</p>
-                      <p class="mt-0.5 text-[11px] text-slate-500">
+                      <p class="text-sm font-bold text-text">{{ slot.slot_label }}</p>
+                      <p class="mt-0.5 text-[11px] text-text-muted">
                         {{ slot.binding_ready ? `${slot.provider_label} · ${slot.model_id}` : '尚未配置可用模型' }}
                         <span v-if="slot.inherited_from_global">（继承全局）</span>
                       </p>
                     </div>
-                    <span class="rounded-full px-2 py-0.5 text-[11px] font-semibold" :class="slot.binding_ready ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'">
+                    <span class="rounded-full px-2 py-0.5 text-[11px] font-semibold" :class="slot.binding_ready ? 'bg-success-muted text-success-strong' : 'bg-warning-muted text-warning-strong'">
                       {{ slot.binding_ready ? '可用' : '未配置' }}
                     </span>
                   </div>
@@ -393,8 +393,8 @@
                 placeholder="输入当前账号下的智能体提示词"
               />
             </UiFormField>
-            <div class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-              <p class="text-xs font-semibold" :class="promptDirty ? 'text-amber-600' : 'text-slate-500'">
+            <div class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-canvas px-4 py-3">
+              <p class="text-xs font-semibold" :class="promptDirty ? 'text-warning' : 'text-text-muted'">
                 {{ promptDirty ? '当前有未保存修改。' : (selectedAgentConfig.prompt_customized ? '当前使用账号自定义提示词。' : '当前使用系统默认提示词。') }}
               </p>
               <div class="flex justify-end gap-2">
@@ -411,10 +411,10 @@
           <section v-else class="space-y-3">
             <div class="flex items-center justify-between gap-3">
               <div>
-                <h3 class="text-sm font-bold text-slate-900">工具配置</h3>
-                <p class="mt-1 text-xs text-slate-500">按工具组管理启停、说明覆盖和面向 Agent 的只读工具契约。</p>
+                <h3 class="text-sm font-bold text-text-strong">工具配置</h3>
+                <p class="mt-1 text-xs text-text-muted">按工具组管理启停、说明覆盖和面向 Agent 的只读工具契约。</p>
               </div>
-              <span class="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-500">
+              <span class="rounded-full bg-surface-muted px-3 py-1 text-xs font-semibold text-text-muted">
                 {{ selectedAgentConfig.enabled_tool_count }} / {{ totalToolCount }} 可用
               </span>
             </div>
@@ -422,55 +422,55 @@
             <article
               v-for="group in selectedAgentConfig.tool_groups"
               :key="group.key"
-              class="overflow-hidden rounded-xl border border-slate-200"
+              class="overflow-hidden rounded-xl border border-border"
             >
               <UiButton
                 variant="ghost"
                 content-align="start"
-                class="h-auto min-h-[var(--ui-control-h-md)] w-full whitespace-normal bg-slate-50 px-4 py-3 text-left transition hover:bg-slate-100"
+                class="h-auto min-h-[var(--ui-control-h-md)] w-full whitespace-normal bg-canvas px-4 py-3 text-left transition hover:bg-surface-muted"
                 @click="toggleToolGroup(group.key)"
               >
                 <span class="block min-w-0">
                   <span class="flex min-w-0 items-center gap-2">
-                    <component :is="isToolGroupExpanded(group.key) ? ChevronDown : ChevronRight" class="h-4 w-4 text-slate-400" />
-                    <span class="text-sm font-bold text-slate-900">{{ group.label }}</span>
-                    <span class="text-xs text-slate-400">{{ getToolGroupEnabledCount(group) }} / {{ group.tools.length }} 启用</span>
+                    <component :is="isToolGroupExpanded(group.key) ? ChevronDown : ChevronRight" class="h-4 w-4 text-text-disabled" />
+                    <span class="text-sm font-bold text-text-strong">{{ group.label }}</span>
+                    <span class="text-xs text-text-disabled">{{ getToolGroupEnabledCount(group) }} / {{ group.tools.length }} 启用</span>
                   </span>
-                  <span class="ml-6 mt-1 block truncate text-xs leading-5 text-slate-500" :title="group.description">{{ group.description }}</span>
+                  <span class="ml-6 mt-1 block truncate text-xs leading-5 text-text-muted" :title="group.description">{{ group.description }}</span>
                 </span>
               </UiButton>
 
-              <div v-show="isToolGroupExpanded(group.key)" class="space-y-3 border-t border-slate-200 bg-white p-3">
+              <div v-show="isToolGroupExpanded(group.key)" class="space-y-3 border-t border-border bg-surface p-3">
                 <article
                   v-for="tool in group.tools"
                   :key="tool.key"
-                  class="rounded-xl border border-slate-200 bg-white p-4"
+                  class="rounded-xl border border-border bg-surface p-4"
                 >
                   <div class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                     <div class="min-w-0">
                       <div class="flex flex-wrap items-center gap-2">
-                        <p class="text-sm font-bold text-slate-900">{{ tool.label }}</p>
+                        <p class="text-sm font-bold text-text-strong">{{ tool.label }}</p>
                         <span class="rounded-full px-2 py-0.5 text-[11px] font-semibold" :class="getRiskClass(tool.risk_level)">
                           {{ getRiskLabel(tool) }}
                         </span>
-                        <span class="rounded-full px-2 py-0.5 text-[11px] font-semibold" :class="isToolCustomized(tool) ? 'bg-indigo-50 text-indigo-700' : 'bg-slate-100 text-slate-500'">
+                        <span class="rounded-full px-2 py-0.5 text-[11px] font-semibold" :class="isToolCustomized(tool) ? 'bg-surface-selected text-accent-hover' : 'bg-surface-muted text-text-muted'">
                           {{ isToolCustomized(tool) ? '已覆盖' : '默认说明' }}
                         </span>
                       </div>
-                      <code class="mt-1 block truncate text-[11px] text-slate-400">{{ tool.key }}</code>
-                      <p class="mt-2 line-clamp-2 text-xs leading-5 text-slate-500">{{ tool.description }}</p>
+                      <code class="mt-1 block truncate text-[11px] text-text-disabled">{{ tool.key }}</code>
+                      <p class="mt-2 line-clamp-2 text-xs leading-5 text-text-muted">{{ tool.description }}</p>
                     </div>
                     <div class="flex shrink-0 flex-wrap items-center gap-2 lg:justify-end">
-                      <label v-if="tool.configurable && toolDrafts[tool.key]" class="inline-flex h-8 items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 text-xs font-semibold">
+                      <label v-if="tool.configurable && toolDrafts[tool.key]" class="inline-flex h-8 items-center gap-2 rounded-lg border border-border bg-canvas px-3 text-xs font-semibold">
                         <UiCheckbox
                           :model-value="toolDrafts[tool.key].enabled"
                           @update:model-value="toolDrafts[tool.key].enabled = $event === true"
                         />
-                        <span :class="toolDrafts[tool.key].enabled ? 'text-emerald-700' : 'text-slate-400'">
+                        <span :class="toolDrafts[tool.key].enabled ? 'text-success-strong' : 'text-text-disabled'">
                           {{ toolDrafts[tool.key].enabled ? '启用' : '关闭' }}
                         </span>
                       </label>
-                      <span v-else class="inline-flex h-8 items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 px-3 text-xs font-semibold text-slate-400">
+                      <span v-else class="inline-flex h-8 items-center gap-1 rounded-lg border border-border bg-canvas px-3 text-xs font-semibold text-text-disabled">
                         <Lock class="h-3.5 w-3.5" />
                         系统只读
                       </span>
@@ -490,7 +490,7 @@
                     </div>
                   </div>
 
-                  <div v-if="editingToolKey === tool.key" class="mt-4 border-t border-slate-100 pt-4">
+                  <div v-if="editingToolKey === tool.key" class="mt-4 border-t border-border-muted pt-4">
                     <div v-if="tool.configurable && toolDrafts[tool.key]" class="grid gap-3 lg:grid-cols-2">
                       <UiFormField label="工具说明覆盖" v-slot="field">
                         <UiInput
@@ -516,14 +516,14 @@
                       </UiFormField>
                     </div>
 
-                    <section class="mt-4 space-y-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+                    <section class="mt-4 space-y-4 rounded-xl border border-border bg-canvas p-4">
                       <div class="flex flex-wrap items-start justify-between gap-3">
                         <div>
-                          <h4 class="text-sm font-bold text-slate-900">Agent 完整说明</h4>
-                          <p class="mt-1 text-xs leading-5 text-slate-500">{{ tool.agent_guide.effective_description }}</p>
+                          <h4 class="text-sm font-bold text-text-strong">Agent 完整说明</h4>
+                          <p class="mt-1 text-xs leading-5 text-text-muted">{{ tool.agent_guide.effective_description }}</p>
                         </div>
                         <div class="flex flex-wrap gap-2">
-                          <code class="rounded bg-white px-2 py-1 text-[11px] font-semibold text-slate-600">{{ tool.agent_guide.tool_name }}</code>
+                          <code class="rounded bg-surface px-2 py-1 text-[11px] font-semibold text-text-secondary">{{ tool.agent_guide.tool_name }}</code>
                           <span class="rounded-full px-2 py-1 text-[11px] font-semibold" :class="getRiskClass(tool.agent_guide.risk_level)">
                             {{ getRiskLabel(tool) }}
                           </span>
@@ -531,44 +531,44 @@
                       </div>
 
                       <dl class="grid gap-3 text-xs md:grid-cols-2">
-                        <div class="rounded-lg bg-white p-3">
-                          <dt class="font-semibold text-slate-400">系统默认说明</dt>
-                          <dd class="mt-1 leading-5 text-slate-700">{{ tool.agent_guide.system_description }}</dd>
+                        <div class="rounded-lg bg-surface p-3">
+                          <dt class="font-semibold text-text-disabled">系统默认说明</dt>
+                          <dd class="mt-1 leading-5 text-text-emphasis">{{ tool.agent_guide.system_description }}</dd>
                         </div>
-                        <div class="rounded-lg bg-white p-3">
-                          <dt class="font-semibold text-slate-400">上下文要求</dt>
-                          <dd class="mt-1 leading-5 text-slate-700">
+                        <div class="rounded-lg bg-surface p-3">
+                          <dt class="font-semibold text-text-disabled">上下文要求</dt>
+                          <dd class="mt-1 leading-5 text-text-emphasis">
                             {{ formatGuideList(tool.agent_guide.required_context_fields, '无额外上下文字段') }}
                           </dd>
                         </div>
-                        <div class="rounded-lg bg-white p-3">
-                          <dt class="font-semibold text-slate-400">运行时披露组</dt>
-                          <dd class="mt-1 leading-5 text-slate-700">
+                        <div class="rounded-lg bg-surface p-3">
+                          <dt class="font-semibold text-text-disabled">运行时披露组</dt>
+                          <dd class="mt-1 leading-5 text-text-emphasis">
                             {{ formatGuideList(tool.agent_guide.runtime_disclosure_groups, '不通过业务工具组披露') }}
                           </dd>
                         </div>
-                        <div class="rounded-lg bg-white p-3">
-                          <dt class="font-semibold text-slate-400">工具提示词</dt>
-                          <dd class="mt-1 whitespace-pre-wrap leading-5 text-slate-700">{{ tool.agent_guide.instructions || '无额外工具提示词' }}</dd>
+                        <div class="rounded-lg bg-surface p-3">
+                          <dt class="font-semibold text-text-disabled">工具提示词</dt>
+                          <dd class="mt-1 whitespace-pre-wrap leading-5 text-text-emphasis">{{ tool.agent_guide.instructions || '无额外工具提示词' }}</dd>
                         </div>
                       </dl>
 
                       <div class="grid gap-3 xl:grid-cols-2">
                         <div>
-                          <p class="mb-2 text-xs font-semibold text-slate-500">参数 JSON Schema</p>
-                          <pre class="max-h-72 overflow-auto rounded-lg bg-slate-950 p-3 text-[11px] leading-5 text-slate-100">{{ formatGuideJson(tool.agent_guide.parameters_schema ?? {}) }}</pre>
+                          <p class="mb-2 text-xs font-semibold text-text-muted">参数 JSON Schema</p>
+                          <pre class="max-h-72 overflow-auto rounded-lg bg-surface-inverse p-3 text-[11px] leading-5 text-text-on-inverse">{{ formatGuideJson(tool.agent_guide.parameters_schema ?? {}) }}</pre>
                         </div>
                         <div>
-                          <p class="mb-2 text-xs font-semibold text-slate-500">调用示例</p>
-                          <pre class="max-h-72 overflow-auto rounded-lg bg-slate-950 p-3 text-[11px] leading-5 text-slate-100">{{ formatGuideJson(tool.agent_guide.call_example ?? { tool_name: tool.agent_guide.tool_name, arguments: {} }) }}</pre>
+                          <p class="mb-2 text-xs font-semibold text-text-muted">调用示例</p>
+                          <pre class="max-h-72 overflow-auto rounded-lg bg-surface-inverse p-3 text-[11px] leading-5 text-text-on-inverse">{{ formatGuideJson(tool.agent_guide.call_example ?? { tool_name: tool.agent_guide.tool_name, arguments: {} }) }}</pre>
                         </div>
                       </div>
 
                       <div>
-                        <p class="mb-2 text-xs font-semibold text-slate-500">返回示例</p>
-                        <pre v-if="hasGuideResponseExample(tool)" class="max-h-72 overflow-auto rounded-lg bg-slate-950 p-3 text-[11px] leading-5 text-slate-100">{{ formatGuideJson(tool.agent_guide.response_example) }}</pre>
-                        <p v-else class="rounded-lg border border-dashed border-slate-200 bg-white px-3 py-4 text-xs text-slate-400">暂无返回示例</p>
-                        <p v-if="tool.agent_guide.response_notes" class="mt-2 text-xs leading-5 text-slate-500">{{ tool.agent_guide.response_notes }}</p>
+                        <p class="mb-2 text-xs font-semibold text-text-muted">返回示例</p>
+                        <pre v-if="hasGuideResponseExample(tool)" class="max-h-72 overflow-auto rounded-lg bg-surface-inverse p-3 text-[11px] leading-5 text-text-on-inverse">{{ formatGuideJson(tool.agent_guide.response_example) }}</pre>
+                        <p v-else class="rounded-lg border border-dashed border-border bg-surface px-3 py-4 text-xs text-text-disabled">暂无返回示例</p>
+                        <p v-if="tool.agent_guide.response_notes" class="mt-2 text-xs leading-5 text-text-muted">{{ tool.agent_guide.response_notes }}</p>
                       </div>
                     </section>
 
@@ -587,7 +587,7 @@
           </section>
         </section>
 
-        <section v-else-if="activeSection === 'agents'" class="flex min-h-[720px] items-center justify-center p-8 text-center text-sm text-slate-400">
+        <section v-else-if="activeSection === 'agents'" class="flex min-h-[720px] items-center justify-center p-8 text-center text-sm text-text-disabled">
           暂无可配置智能体。
         </section>
 
@@ -684,7 +684,9 @@ type ActiveAgentPanel = 'binding' | 'prompts' | 'tools'
 type ConfigPanelMode = 'create' | 'detail' | 'edit'
 
 const DEFAULT_CONTEXT_WINDOW_TOKENS = 128000
-const DEFAULT_MAX_OUTPUT_TOKENS = 32000
+const DEFAULT_MAX_OUTPUT_TOKENS = 28000
+// 后端硬性要求：聊天模型上下文窗口扣除最大输出后至少保留 100K tokens。
+const MIN_CONTEXT_RESERVED_TOKENS = 100000
 const DEFAULT_COMPRESSION_TARGET_RATIO = 0.1
 const DEFAULT_NEW_MODEL_PROVIDER_KEY = 'deepseek'
 
@@ -889,21 +891,21 @@ const agentPanelTabs = computed(() => [
     label: '模型绑定',
     meta: selectedAgentSlot.value?.binding_ready ? '运行入口已就绪' : '需要选择模型',
     badge: selectedSlotDirty.value ? '未保存' : '',
-    badgeClass: 'bg-amber-50 text-amber-700',
+    badgeClass: 'bg-warning-muted text-warning-strong',
   },
   {
     key: 'prompts' as const,
     label: '提示词',
     meta: selectedAgentConfig.value?.prompt_customized ? '已覆盖提示词' : '使用默认提示词',
     badge: promptDirty.value ? '未保存' : '',
-    badgeClass: 'bg-amber-50 text-amber-700',
+    badgeClass: 'bg-warning-muted text-warning-strong',
   },
   {
     key: 'tools' as const,
     label: '工具配置',
     meta: `${selectedAgentConfig.value?.enabled_tool_count ?? 0}/${totalToolCount.value} 启用`,
     badge: dirtyToolCount.value ? `${dirtyToolCount.value} 处` : '',
-    badgeClass: 'bg-amber-50 text-amber-700',
+    badgeClass: 'bg-warning-muted text-warning-strong',
   },
 ])
 
@@ -1272,8 +1274,8 @@ function getAgentSlotLabel(agent: AgentConfigItem) {
 /** 返回智能体模型绑定状态样式。 */
 function getAgentSlotClass(agent: AgentConfigItem) {
   const slot = slotsQuery.data.value?.find(item => item.slot === agent.llm_slot)
-  if (slot?.binding_ready) return 'bg-emerald-50 text-emerald-700'
-  return 'bg-amber-50 text-amber-700'
+  if (slot?.binding_ready) return 'bg-success-muted text-success-strong'
+  return 'bg-warning-muted text-warning-strong'
 }
 
 /** 用服务端配置重置工具草稿。 */
@@ -1455,10 +1457,10 @@ function getRiskLabel(tool: AgentToolConfigItem) {
 
 /** 返回工具风险级别样式。 */
 function getRiskClass(riskLevel: AgentToolConfigItem['risk_level']) {
-  if (riskLevel === 'danger') return 'bg-rose-50 text-rose-700'
-  if (riskLevel === 'write') return 'bg-amber-50 text-amber-700'
-  if (riskLevel === 'system') return 'bg-slate-100 text-slate-500'
-  return 'bg-emerald-50 text-emerald-700'
+  if (riskLevel === 'danger') return 'bg-danger-muted text-danger-strong'
+  if (riskLevel === 'write') return 'bg-warning-muted text-warning-strong'
+  if (riskLevel === 'system') return 'bg-surface-muted text-text-muted'
+  return 'bg-success-muted text-success-strong'
 }
 
 /** 将 Agent 工具说明中的列表字段格式化为紧凑文案。 */
@@ -1749,6 +1751,13 @@ async function handleSubmitModel() {
     return
   }
 
+  const contextWindowTokens = normalizePositiveInteger(modelForm.context_window_tokens, DEFAULT_CONTEXT_WINDOW_TOKENS)
+  const maxOutputTokens = normalizePositiveInteger(modelForm.max_output_tokens, DEFAULT_MAX_OUTPUT_TOKENS)
+  if (modelForm.model_type === 'chat' && contextWindowTokens - maxOutputTokens < MIN_CONTEXT_RESERVED_TOKENS) {
+    Message.error(`上下文窗口减去最大输出后必须至少保留 ${MIN_CONTEXT_RESERVED_TOKENS.toLocaleString()} tokens，请调大上下文窗口或调小最大输出。`)
+    return
+  }
+
   savingConfig.value = true
   try {
     if (selectedConfigId.value) {
@@ -1760,8 +1769,8 @@ async function handleSubmitModel() {
         thinking_enabled: modelForm.thinking_enabled,
         thinking_effort: modelForm.thinking_effort,
         supports_image_input: modelForm.supports_image_input,
-        context_window_tokens: normalizePositiveInteger(modelForm.context_window_tokens, DEFAULT_CONTEXT_WINDOW_TOKENS),
-        max_output_tokens: normalizePositiveInteger(modelForm.max_output_tokens, DEFAULT_MAX_OUTPUT_TOKENS),
+        context_window_tokens: contextWindowTokens,
+        max_output_tokens: maxOutputTokens,
         history_token_ratio: normalizeHistoryRatio(modelForm.history_token_ratio),
         compression_target_ratio: normalizeCompressionTargetRatio(modelForm.compression_target_ratio),
         advanced_config_json: advancedConfig,
@@ -1782,8 +1791,8 @@ async function handleSubmitModel() {
         thinking_enabled: modelForm.thinking_enabled,
         thinking_effort: modelForm.thinking_effort,
         supports_image_input: modelForm.supports_image_input,
-        context_window_tokens: normalizePositiveInteger(modelForm.context_window_tokens, DEFAULT_CONTEXT_WINDOW_TOKENS),
-        max_output_tokens: normalizePositiveInteger(modelForm.max_output_tokens, DEFAULT_MAX_OUTPUT_TOKENS),
+        context_window_tokens: contextWindowTokens,
+        max_output_tokens: maxOutputTokens,
         history_token_ratio: normalizeHistoryRatio(modelForm.history_token_ratio),
         compression_target_ratio: normalizeCompressionTargetRatio(modelForm.compression_target_ratio),
         advanced_config_json: advancedConfig,
