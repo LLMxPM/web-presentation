@@ -11,6 +11,7 @@
 | [模块边界](./architecture/module-boundaries.md) | Backend、Editor、Runtime、Infra 的修改边界 |
 | [测试文档入口](./testing/README.md) | 根仓、Backend、Editor、Runtime、契约和 E2E 测试入口 |
 | [部署文档入口](./deployment/README.md) | Compose 部署、环境变量、备份恢复、升级回滚和排障 |
+| [大文件与媒体资产管理](./large-files.md) | Git LFS 规则、媒体文件提交检查和历史迁移约束 |
 
 ## 分组导航
 

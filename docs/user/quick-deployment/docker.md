@@ -9,7 +9,7 @@
 ```yaml
 services:
   platform-lite:
-    image: llmxpm/web-presentation:sqlite-lite
+    image: registry.cn-hangzhou.aliyuncs.com/llmxpm/web-presentation:sqlite-lite
     restart: unless-stopped
     environment:
       BACKEND_PUBLIC_BASE_URL: "http://127.0.0.1:8080"

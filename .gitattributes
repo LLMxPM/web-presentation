@@ -1,0 +1,17 @@
+# 文件功能：定义大型二进制媒体与设计源文件的 Git LFS 跟踪规则。
+
+# 视频文件体积大且不可进行有效文本差异比较，统一交由 Git LFS 管理。
+*.mp4 filter=lfs diff=lfs merge=lfs -text
+*.m4v filter=lfs diff=lfs merge=lfs -text
+*.mov filter=lfs diff=lfs merge=lfs -text
+*.webm filter=lfs diff=lfs merge=lfs -text
+*.avi filter=lfs diff=lfs merge=lfs -text
+*.mkv filter=lfs diff=lfs merge=lfs -text
+
+# 无损音频和设计源文件通常体积较大，同样避免写入普通 Git 历史。
+*.wav filter=lfs diff=lfs merge=lfs -text
+*.flac filter=lfs diff=lfs merge=lfs -text
+*.psd filter=lfs diff=lfs merge=lfs -text
+*.psb filter=lfs diff=lfs merge=lfs -text
+*.ai filter=lfs diff=lfs merge=lfs -text
+*.sketch filter=lfs diff=lfs merge=lfs -text
