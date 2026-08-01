@@ -65,10 +65,10 @@
     </UiPopover>
 
     <!-- Workspace Dialog (Refactored) -->
-    <UiDialog :open="dialogVisible" title="创建工作空间" size="compact" @update:open="dialogVisible = $event">
-      <div class="space-y-5">
+    <UiDialog :open="dialogVisible" title="创建工作空间" size="compact" body-preset="dense" @update:open="dialogVisible = $event">
+      <div class="flex h-full min-h-0 flex-col gap-5">
         <UiFormField label="空间名称" required :error="errors.name"><template #default="field"><UiInput v-model="form.name" placeholder="给工作空间起个响亮的名字" required :input-id="field.inputId" :described-by="field.describedBy" :invalid="field.invalid" /></template></UiFormField>
-        <UiFormField label="详细描述"><template #default="field"><UiInput v-model="form.description" type="textarea" placeholder="（可选）描述此工作空间的用途或归口部门" :rows="4" :input-id="field.inputId" :described-by="field.describedBy" /></template></UiFormField>
+        <UiFormField class="min-h-0 flex-1" label="详细描述"><template #default="field"><UiInput v-model="form.description" type="textarea" textarea-mode="fill" placeholder="（可选）描述此工作空间的用途或归口部门" :input-id="field.inputId" :described-by="field.describedBy" /></template></UiFormField>
       </div>
       <template #footer>
         <UiButton variant="ghost" @click="dialogVisible = false">取消</UiButton>
