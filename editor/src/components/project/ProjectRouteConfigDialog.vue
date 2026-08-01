@@ -84,7 +84,7 @@ async function loadRouteEditorData(project: ProjectItem): Promise<void> {
 
   try {
     const [pagesResponse, routesResponse] = await Promise.all([
-      listPages({ page: 1, page_size: 100, project_id: project.id }),
+      listPages({ page: 1, page_size: 100, project_id: project.id, status: 'active' }),
       getProjectRoutes(project.id),
     ])
 

@@ -219,8 +219,9 @@ const dragSource = ref<DragTarget>(null)
 const dragOverTarget = ref<DragTarget>(null)
 
 const routes = computed(() => props.modelValue ?? [])
-const pageMap = computed(() => new Map(props.pages.map(page => [page.id, page])))
-const pageOptions = computed<SelectOption[]>(() => [...props.pages]
+const activePages = computed(() => props.pages.filter(page => page.status === 'active'))
+const pageMap = computed(() => new Map(activePages.value.map(page => [page.id, page])))
+const pageOptions = computed<SelectOption[]>(() => [...activePages.value]
   .sort((left, right) => left.title.localeCompare(right.title, 'zh-CN'))
   .map(page => ({
     label: page.title,

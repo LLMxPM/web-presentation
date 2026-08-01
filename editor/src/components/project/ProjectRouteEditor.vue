@@ -58,7 +58,7 @@
       </div>
     </section>
 
-    <ProjectRouteTreeTable v-model="routesDraft" :pages="props.pages" />
+    <ProjectRouteTreeTable v-model="routesDraft" :pages="activePages" />
   </div>
 </template>
 
@@ -88,11 +88,12 @@ const routesDraft = computed({
   get: () => props.modelValue ?? [],
   set: (value: ProjectRouteItemWrite[]) => emit('update:modelValue', value),
 })
-const pageMap = computed(() => new Map(props.pages.map(page => [page.id, page])))
+const activePages = computed(() => props.pages.filter(page => page.status === 'active'))
+const pageMap = computed(() => new Map(activePages.value.map(page => [page.id, page])))
 
 const filteredPages = computed(() => {
   const keyword = pageKeyword.value.trim().toLowerCase()
-  const orderedPages = [...props.pages].sort((left, right) => left.title.localeCompare(right.title, 'zh-CN'))
+  const orderedPages = [...activePages.value].sort((left, right) => left.title.localeCompare(right.title, 'zh-CN'))
   if (!keyword) {
     return orderedPages
   }
