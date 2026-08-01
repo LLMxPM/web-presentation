@@ -66,13 +66,7 @@
         </div>
 
         <div class="admin-layout-user-menu flex shrink-0 items-center justify-end gap-2">
-          <UiIconButton
-            :label="isDark ? '切换到明亮模式' : '切换到暗黑模式'"
-            @click="toggleTheme"
-          >
-            <Sun v-if="isDark" class="h-4 w-4" />
-            <Moon v-else class="h-4 w-4" />
-          </UiIconButton>
+          <ThemeModeMenu />
           <UserMenu />
         </div>
       </header>
@@ -136,11 +130,10 @@
 import { computed, defineAsyncComponent, onMounted, onUnmounted, provide, ref, watch } from 'vue'
 import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
 import { useQuery } from '@tanstack/vue-query'
-import { ArrowRight, ChevronRight, MapPin, Moon, Sun } from '@lucide/vue'
+import { ArrowRight, ChevronRight, MapPin } from '@lucide/vue'
 import { getPage, getProject, getWorkspace } from '@/api/catalog'
-import { UiIconButton } from '@/components/ui'
-import { useTheme } from '@/composables/useTheme'
 import UserMenu from '@/components/nav/UserMenu.vue'
+import ThemeModeMenu from '@/components/nav/ThemeModeMenu.vue'
 import WorkspaceSwitcher from '@/components/nav/WorkspaceSwitcher.vue'
 import ProjectQuickSwitcher from '@/components/nav/ProjectQuickSwitcher.vue'
 import WorkspaceDock from '@/components/nav/WorkspaceDock.vue'
@@ -158,7 +151,6 @@ type SupplementPanelKey = 'assets' | 'components'
 
 const route = useRoute()
 const router = useRouter()
-const { isDark, toggle: toggleTheme } = useTheme()
 const activeSupplementPanel = ref<SupplementPanelKey | null>(null)
 const componentAgentSelection = ref<WorkspaceComponentItem | null>(null)
 const agentSidebarExpanded = ref(false)
