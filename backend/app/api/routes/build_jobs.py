@@ -111,3 +111,17 @@ async def download_project_build_artifact(
         media_type="application/zip",
         headers={"Content-Disposition": f'attachment; filename="project-{project_id}-build-{job_id}.zip"'},
     )
+
+
+@router.delete("/projects/{project_id}/build-jobs/{job_id}/artifact", status_code=204)
+async def delete_project_build_artifact(
+    project_id: int,
+    job_id: int,
+    current: Annotated[AuthContext, Depends(get_current_user)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> Response:
+    """删除指定构建任务的归档产物，但保留任务历史。"""
+
+    await ProjectService(session).get(project_id, user_id=current.user.id)
+    await ProjectBuildService(session).delete_artifact(project_id=project_id, job_id=job_id)
+    return Response(status_code=204)

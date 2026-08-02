@@ -230,7 +230,7 @@ describe('ProjectBuildDialog', () => {
     expect(getEmittedEvents(view).submit?.[0]?.[0]).toEqual({ base_url: './', extra_asset_names: ['hero_bg'] })
   })
 
-  it('应展示构建历史并在点击打开或下载时抛出对应任务', async () => {
+  it('应展示构建历史并在点击产物操作时抛出对应任务', async () => {
     const view = render(ProjectBuildDialog, {
       props: {
         modelValue: true,
@@ -250,5 +250,8 @@ describe('ProjectBuildDialog', () => {
 
     await fireEvent.click(screen.getByText('ZIP'))
     expect(getEmittedEvents(view).download?.[0]?.[0]).toEqual(history[0])
+
+    await fireEvent.click(screen.getByRole('button', { name: '删除构建产物' }))
+    expect(getEmittedEvents(view).delete?.[0]?.[0]).toEqual(history[0])
   })
 })

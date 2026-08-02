@@ -74,6 +74,15 @@ export async function downloadProjectBuildArtifact(projectId: number, jobId: num
 }
 
 /**
+ * 删除指定构建任务的 ZIP 产物，构建历史记录仍会保留。
+ * @param projectId 项目 ID
+ * @param jobId 构建任务 ID
+ */
+export async function deleteProjectBuildArtifact(projectId: number, jobId: number): Promise<void> {
+  await http.delete(`/projects/${projectId}/build-jobs/${jobId}/artifact`)
+}
+
+/**
  * 从响应头推导下载文件名，缺省时回落到稳定命名。
  * @param contentDisposition 响应头
  * @param projectId 项目 ID

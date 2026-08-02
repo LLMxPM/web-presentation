@@ -564,6 +564,53 @@ async def test_project_preview_artifact_should_default_to_first_visible_route_wh
     }
 
 
+async def test_project_preview_artifact_should_explain_how_to_fix_missing_default_route(
+    authenticated_client: AsyncClient,
+) -> None:
+    """项目路由没有可见入口时，应返回可直接指导 Editor 用户修复的提示。"""
+
+    workspace_response = await authenticated_client.post(
+        "/api/workspaces",
+        json={"name": "无预览入口工作空间", "status": "active"},
+    )
+    assert workspace_response.status_code == 200
+    workspace_id = workspace_response.json()["id"]
+
+    project_response = await authenticated_client.post(
+        "/api/projects",
+        json={"workspace_id": workspace_id, "name": "无预览入口项目", "status": "active"},
+    )
+    assert project_response.status_code == 200
+    project_id = project_response.json()["id"]
+
+    page_response = await authenticated_client.post(
+        "/api/pages",
+        json={
+            "page_content": "<template><div>unrouted-page</div></template>",
+            "file_type": "vue",
+            "title": "未加入路由的页面",
+            "status": "active",
+            "workspace_id": workspace_id,
+            "project_id": project_id,
+        },
+    )
+    assert page_response.status_code == 200
+
+    preview_response = await authenticated_client.post(
+        f"/api/projects/{project_id}/preview-artifacts",
+        json={},
+    )
+
+    assert preview_response.status_code == 400
+    assert preview_response.json() == {
+        "code": "PREVIEW_ENTRY_ROUTE_NOT_FOUND",
+        "message": (
+            "整项目预览没有可用的入口页面。请先在「项目路由」中添加至少一个页面，"
+            "或将已有入口路由设为可见后重试。"
+        ),
+    }
+
+
 async def test_project_preview_artifact_should_accept_group_route_as_preview_entry(
     authenticated_client: AsyncClient,
 ) -> None:

@@ -207,6 +207,33 @@ class ProjectBuildService:
             raise AppException(status_code=404, code="BUILD_JOB_NOT_FOUND", detail="构建任务不存在。")
         return job
 
+    async def delete_artifact(self, *, project_id: int, job_id: int) -> ProjectBuildJob:
+        """删除已完成任务的归档文件并清空产物元数据，保留构建历史记录。"""
+
+        job = await self.get_job_by_project_and_id(project_id, job_id)
+        if job.status in ACTIVE_BUILD_STATUSES:
+            raise AppException(
+                status_code=409,
+                code="BUILD_ARTIFACT_DELETE_CONFLICT",
+                detail="构建任务仍在执行，暂时不能删除产物。",
+            )
+        if not job.artifact_storage_key:
+            raise AppException(
+                status_code=404,
+                code="BUILD_ARTIFACT_NOT_FOUND",
+                detail="当前构建任务没有可删除的产物。",
+            )
+
+        await self.object_storage.delete_object(job.artifact_storage_key)
+        job.artifact_storage_key = None
+        job.artifact_download_url = None
+        job.artifact_entry_file = None
+        job.artifact_sha256 = None
+        job.artifact_size_bytes = None
+        await self.session.commit()
+        await self.session.refresh(job)
+        return job
+
     async def persist_uploaded_artifact(
         self,
         *,

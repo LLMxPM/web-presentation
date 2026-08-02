@@ -824,10 +824,16 @@ class ProjectArtifactBuilder:
 
         normalized_route = cls.normalize_entry_route(route)
         if normalized_route not in cls.collect_runtime_route_paths(runtime_route_config):
+            detail = f"整项目预览入口路由不存在：{normalized_route}。"
+            if normalized_route == "/":
+                detail = (
+                    "整项目预览没有可用的入口页面。请先在「项目路由」中添加至少一个页面，"
+                    "或将已有入口路由设为可见后重试。"
+                )
             raise AppException(
                 status_code=400,
                 code="PREVIEW_ENTRY_ROUTE_NOT_FOUND",
-                detail=f"整项目预览入口路由不存在：{normalized_route}。",
+                detail=detail,
             )
         return normalized_route
 

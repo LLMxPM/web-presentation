@@ -613,11 +613,11 @@ async def test_run_project_build_job_should_update_status_for_success_and_failur
 
 
 @pytest.mark.asyncio
-async def test_project_build_artifact_upload_and_download_should_persist_metadata(
+async def test_project_build_artifact_upload_download_and_delete_should_persist_metadata(
     authenticated_client: AsyncClient,
     monkeypatch,
 ) -> None:
-    """Runtime 上传构建产物后，应能持久化元数据，并通过下载和公开代理访问。"""
+    """Runtime 上传构建产物后，应支持下载、公开代理和保留历史的产物删除。"""
 
     workspace_id, project_id = await create_active_project(authenticated_client)
 
@@ -753,6 +753,52 @@ async def test_project_build_artifact_upload_and_download_should_persist_metadat
     assert persisted_job.artifact_size_bytes == len(archive_content)
     assert persisted_job.artifact_storage_key == f"build-artifacts/{project_id}/{build_job['id']}/dist.zip"
     assert persisted_job.artifact_download_url
+
+    active_delete_response = await authenticated_client.delete(
+        f"/api/projects/{project_id}/build-jobs/{build_job['id']}/artifact"
+    )
+    assert active_delete_response.status_code == 409
+    assert active_delete_response.json()["code"] == "BUILD_ARTIFACT_DELETE_CONFLICT"
+
+    async with session_factory() as session:
+        completed_job = await session.get(ProjectBuildJob, build_job["id"])
+        assert completed_job is not None
+        completed_job.status = "succeeded"
+        await session.commit()
+
+    delete_response = await authenticated_client.delete(
+        f"/api/projects/{project_id}/build-jobs/{build_job['id']}/artifact"
+    )
+    assert delete_response.status_code == 204
+
+    deleted_detail_response = await authenticated_client.get(f"/api/build-jobs/{build_job['id']}")
+    assert deleted_detail_response.status_code == 200
+    deleted_detail = deleted_detail_response.json()
+    assert deleted_detail["status"] == "succeeded"
+    assert deleted_detail["artifact_storage_key"] is None
+    assert deleted_detail["artifact_download_url"] is None
+    assert deleted_detail["artifact_proxy_url"] is None
+    assert deleted_detail["artifact_entry_file"] is None
+    assert deleted_detail["artifact_sha256"] is None
+    assert deleted_detail["artifact_size_bytes"] is None
+
+    deleted_download_response = await authenticated_client.get(
+        f"/api/projects/{project_id}/build-jobs/{build_job['id']}/artifact"
+    )
+    assert deleted_download_response.status_code == 404
+    assert deleted_download_response.json()["code"] == "BUILD_ARTIFACT_NOT_FOUND"
+
+    deleted_proxy_response = await authenticated_client.get(
+        f"/build-artifacts/{project_id}/{build_job['id']}/"
+    )
+    assert deleted_proxy_response.status_code == 404
+    assert deleted_proxy_response.json()["code"] == "BUILD_ARTIFACT_NOT_FOUND"
+
+    repeated_delete_response = await authenticated_client.delete(
+        f"/api/projects/{project_id}/build-jobs/{build_job['id']}/artifact"
+    )
+    assert repeated_delete_response.status_code == 404
+    assert repeated_delete_response.json()["code"] == "BUILD_ARTIFACT_NOT_FOUND"
 
 
 @pytest.mark.asyncio

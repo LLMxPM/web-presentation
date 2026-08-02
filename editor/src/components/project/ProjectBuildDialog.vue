@@ -54,9 +54,11 @@
         :history="history"
         :history-loading="historyLoading"
         :latest-job-id="latestJobId"
+        :deleting-job-id="deletingJobId"
         @refresh="emit('refresh')"
         @open="job => emit('open', job)"
         @download="job => emit('download', job)"
+        @delete="job => emit('delete', job)"
       />
     </div>
   </UiDialog>
@@ -82,6 +84,7 @@ const props = withDefaults(defineProps<{
   historyLoading?: boolean
   latestJob?: ProjectBuildJob | null
   latestJobId?: number | null
+  deletingJobId?: number | null
   defaultBaseUrl?: string | null
   workspaceId?: number | null
   buildExtraAssetsJson?: ProjectBuildExtraAssetsJson | null
@@ -95,6 +98,7 @@ const props = withDefaults(defineProps<{
   historyLoading: false,
   latestJob: null,
   latestJobId: null,
+  deletingJobId: null,
   defaultBaseUrl: './',
   workspaceId: null,
   buildExtraAssetsJson: null,
@@ -112,6 +116,7 @@ const emit = defineEmits<{
   refresh: []
   open: [job: ProjectBuildJob]
   download: [job: ProjectBuildJob]
+  delete: [job: ProjectBuildJob]
 }>()
 
 const draft = reactive({

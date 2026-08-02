@@ -249,8 +249,10 @@
       :automatic-asset-names="projectBuildAutomaticAssetNames"
       :resource-issue-code="projectBuildResourceIssueCode" :resource-issue="projectBuildResourceIssue"
       :extra-assets-saving="projectBuildExtraAssetsSaving" :loading="projectBuildSubmitting"
+      :deleting-job-id="deletingBuildArtifactJobId"
       @refresh="handleBuildHistoryRefresh" @download="handleBuildArtifactDownload"
-      @open="handleBuildArtifactOpen" @save-extra-assets="handleProjectBuildExtraAssetsSave"
+      @open="handleBuildArtifactOpen" @delete="handleBuildArtifactDelete"
+      @save-extra-assets="handleProjectBuildExtraAssetsSave"
       @submit="handleProjectBuildSubmit" />
   </div>
 </template>
@@ -270,6 +272,7 @@ import {
 
 import {
   createProjectBuildJob,
+  deleteProjectBuildArtifact,
   downloadProjectBuildArtifact,
   getProjectBuildAssetSummary,
   getLatestProjectBuildJob,
@@ -479,6 +482,7 @@ const projectBuildSubmitting = ref(false)
 const projectBuildExtraAssetsSaving = ref(false)
 const projectBuildResourceIssueCode = ref<string | null>(null)
 const projectBuildResourceIssue = ref<ProjectBuildResourceIssueData | null>(null)
+const deletingBuildArtifactJobId = ref<number | null>(null)
 const projectIdentityDialogVisible = ref(false)
 const presentationConfigDialogVisible = ref(false)
 const suggestedReferenceAssetsDialogVisible = ref(false)
@@ -1327,6 +1331,36 @@ function handleBuildArtifactOpen(job: ProjectBuildJob): void {
   }
 
   window.open(job.artifact_proxy_url, '_blank', 'noopener,noreferrer')
+}
+
+/**
+ * 确认并删除指定任务的构建产物，同时保留构建历史。
+ * @param job 构建任务
+ */
+async function handleBuildArtifactDelete(job: ProjectBuildJob): Promise<void> {
+  if (!projectDetails.value || !job.artifact_storage_key) {
+    return
+  }
+
+  const confirmed = await createConfirm(
+    `确认删除构建任务 #${job.id} 的产物吗？删除后将无法在线打开或下载，但构建历史仍会保留。`,
+    '删除构建产物',
+    { dangerous: true, confirmLabel: '删除' },
+  )
+  if (!confirmed) {
+    return
+  }
+
+  deletingBuildArtifactJobId.value = job.id
+  try {
+    await deleteProjectBuildArtifact(projectDetails.value.id, job.id)
+    await handleBuildHistoryRefresh()
+    Message.success('构建产物已删除。')
+  } catch (error) {
+    Message.error(getErrorMessage(error, '删除构建产物失败。'))
+  } finally {
+    deletingBuildArtifactJobId.value = null
+  }
 }
 
 /**

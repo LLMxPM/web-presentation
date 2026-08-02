@@ -96,6 +96,19 @@
                 </template>
                 ZIP
               </UiButton>
+              <UiButton
+                variant="ghost"
+                size="sm"
+                class="h-8 whitespace-nowrap px-2 text-danger-strong"
+                :loading="deletingJobId === job.id"
+                aria-label="删除构建产物"
+                @click="emit('delete', job)"
+              >
+                <template #icon>
+                  <Trash2 class="h-3.5 w-3.5" />
+                </template>
+                删除
+              </UiButton>
             </div>
           </div>
 
@@ -112,7 +125,7 @@
 </template>
 
 <script setup lang="ts">
-import { Download, ExternalLink, History, RefreshCw } from '@lucide/vue'
+import { Download, ExternalLink, History, RefreshCw, Trash2 } from '@lucide/vue'
 
 import { UiButton } from '@/components/ui'
 import type { ProjectBuildJob, ProjectBuildStatus } from '@/types/api'
@@ -128,12 +141,14 @@ defineProps<{
   history: ProjectBuildJob[]
   historyLoading: boolean
   latestJobId?: number | null
+  deletingJobId?: number | null
 }>()
 
 const emit = defineEmits<{
   refresh: []
   open: [job: ProjectBuildJob]
   download: [job: ProjectBuildJob]
+  delete: [job: ProjectBuildJob]
 }>()
 
 /**
