@@ -33,6 +33,7 @@
 | [Runtime 接入文档](./developer/runtime-integration/README.md) | 子模块、Runtime Kit、previewSchema、构建产物和配置模板 |
 | [测试文档](./developer/testing/README.md) | 测试分层、命令、契约测试和 E2E smoke |
 | [生产部署指南](./developer/deployment/README.md) | compose 部署、环境变量、CI/CD、备份恢复、升级回滚和排障 |
+| [CLI 技术方案](./developer/cli/README.md) | 面向桌面 Agent 的 CLI 能力、认证、工作空间隔离和实施计划 |
 | [参考资料](./developer/reference/conventions.md) | 开发约定、接口契约、环境变量、术语和模板包 |
 
 ## 图片资源
