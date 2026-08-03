@@ -16,7 +16,7 @@ LOCK_DIR=${LOCK_DIR:-/tmp/web-presentation-sqlite-demo-data.lock}
 # 服务重新启动后等待健康检查通过的最长秒数。
 HEALTH_TIMEOUT_SECONDS=${HEALTH_TIMEOUT_SECONDS:-120}
 # Compose 文件路径；留空时自动使用脚本上级目录中的 SQLite 模板。
-COMPOSE_FILE=${COMPOSE_FILE:-}
+COMPOSE_FILE=${COMPOSE_FILE:-/opt/presentation/deploy/compose.yaml}
 
 # 内部运行时变量。
 # 当前脚本所在目录，用于推导默认 Compose 文件路径。
@@ -52,12 +52,21 @@ get_container_id() {
   printf '%s\n' "$container_id"
 }
 
-# 从容器挂载信息解析实际 Docker volume 名称。
-get_volume_name() {
+# 从容器挂载信息解析数据源，兼容命名 volume 与宿主机目录挂载。
+resolve_data_mount() {
   container_id=$1
-  volume_name=$(docker inspect --format "{{range .Mounts}}{{if eq .Destination \"$DATA_MOUNT_PATH\"}}{{.Name}}{{end}}{{end}}" "$container_id")
-  [ -n "$volume_name" ] || fail "容器未在 $DATA_MOUNT_PATH 挂载命名 volume"
-  printf '%s\n' "$volume_name"
+  DATA_MOUNT_TYPE=$(docker inspect --format "{{range .Mounts}}{{if eq .Destination \"$DATA_MOUNT_PATH\"}}{{.Type}}{{end}}{{end}}" "$container_id")
+  case "$DATA_MOUNT_TYPE" in
+    volume)
+      DATA_MOUNT_SOURCE=$(docker inspect --format "{{range .Mounts}}{{if eq .Destination \"$DATA_MOUNT_PATH\"}}{{.Name}}{{end}}{{end}}" "$container_id")
+      ;;
+    bind)
+      DATA_MOUNT_SOURCE=$(docker inspect --format "{{range .Mounts}}{{if eq .Destination \"$DATA_MOUNT_PATH\"}}{{.Source}}{{end}}{{end}}" "$container_id")
+      ;;
+    '') fail "容器未在 $DATA_MOUNT_PATH 挂载数据目录" ;;
+    *) fail "$DATA_MOUNT_PATH 使用了不支持的挂载类型：$DATA_MOUNT_TYPE" ;;
+  esac
+  [ -n "$DATA_MOUNT_SOURCE" ] || fail "无法解析 $DATA_MOUNT_PATH 的挂载源"
 }
 
 # 限制归档文件名，避免把环境变量内容拼入容器内 shell 命令。
@@ -132,20 +141,21 @@ trap 'cleanup 130' 1 2
 trap 'cleanup 143' 15
 
 container_id=$(get_container_id)
-volume_name=$(get_volume_name "$container_id")
+resolve_data_mount "$container_id"
 image_name=$(docker inspect --format '{{.Config.Image}}' "$container_id")
 backup_dir=$(dirname -- "$BACKUP_FILE")
 backup_name=$(basename -- "$BACKUP_FILE")
 validate_backup_name "$backup_name"
 
 mkdir -p "$backup_dir"
+log "使用 $DATA_MOUNT_TYPE 挂载源 $DATA_MOUNT_SOURCE 创建基线"
 log "停止 $COMPOSE_SERVICE 并创建基线：$BACKUP_FILE"
 compose stop "$COMPOSE_SERVICE" >/dev/null
 SERVICE_STOPPED=1
 
 rm -f "$BACKUP_FILE.tmp"
 docker run --rm --entrypoint sh \
-  -v "$volume_name:/data:ro" \
+  --mount "type=$DATA_MOUNT_TYPE,source=$DATA_MOUNT_SOURCE,target=/data,readonly" \
   -v "$backup_dir:/backup" \
   "$image_name" \
   -c "tar -C /data -czf /backup/$backup_name.tmp ."
