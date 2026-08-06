@@ -120,8 +120,8 @@ async def test_workspace_theme_delete_should_hard_delete_theme(authenticated_cli
     assert asset_delete_response.status_code == 204
 
 
-async def test_workspace_theme_create_without_fonts_should_use_browser_default_labels(authenticated_client: AsyncClient) -> None:
-    """创建主题不绑定字体时，应输出浏览器默认字体标签。"""
+async def test_workspace_theme_create_without_fonts_should_use_platform_default_presets(authenticated_client: AsyncClient) -> None:
+    """创建主题不绑定字体时，应输出跨端一致的平台字体预设。"""
 
     workspace_response = await authenticated_client.post(
         "/api/workspaces",
@@ -144,22 +144,25 @@ async def test_workspace_theme_create_without_fonts_should_use_browser_default_l
     assert theme_item["heading_font_family_id"] is None
     assert theme_item["body_font_family_id"] is None
     assert theme_item["code_font_family_id"] is None
-    assert theme_item["heading_font_label"] == "system-ui"
-    assert theme_item["body_font_label"] == "system-ui"
-    assert theme_item["code_font_label"] == "monospace"
+    assert theme_item["heading_font_label"] == "platform-sans"
+    assert theme_item["body_font_label"] == "platform-sans"
+    assert theme_item["code_font_label"] == "platform-mono"
+    assert theme_item["heading_font_preset"] == "platform-sans"
+    assert theme_item["body_font_preset"] == "platform-sans"
+    assert theme_item["code_font_preset"] == "platform-mono"
 
     resolved_config = yaml.safe_load(theme_item["resolved_theme_config_yaml"])
     assert resolved_config["themes"]["browser-default-font"]["typography"] == {
-        "headingfont": "system-ui",
-        "bodyfont": "system-ui",
-        "codefont": "monospace",
+        "headingfont": "platform-sans",
+        "bodyfont": "platform-sans",
+        "codefont": "platform-mono",
     }
 
 
 async def test_workspace_theme_update_should_preserve_omitted_fonts_and_reset_explicit_null(
     authenticated_client: AsyncClient,
 ) -> None:
-    """编辑主题未传字体字段应保留绑定，显式传 null 时应切回浏览器默认字体。"""
+    """编辑主题未传字体字段应保留绑定，显式传 null 时应切回平台默认字体。"""
 
     workspace_response = await authenticated_client.post(
         "/api/workspaces",
@@ -209,12 +212,44 @@ async def test_workspace_theme_update_should_preserve_omitted_fonts_and_reset_ex
     assert cleared_theme["heading_font_family_id"] is None
     assert cleared_theme["body_font_family_id"] is None
     assert cleared_theme["code_font_family_id"] is None
-    assert cleared_theme["heading_font_label"] == "system-ui"
-    assert cleared_theme["body_font_label"] == "system-ui"
-    assert cleared_theme["code_font_label"] == "monospace"
+    assert cleared_theme["heading_font_label"] == "platform-sans"
+    assert cleared_theme["body_font_label"] == "platform-sans"
+    assert cleared_theme["code_font_label"] == "platform-mono"
 
     resolved_config = yaml.safe_load(cleared_theme["resolved_theme_config_yaml"])
     assert resolved_config["themes"]["clearable-font-theme"]["typography"] == {
+        "headingfont": "platform-sans",
+        "bodyfont": "platform-sans",
+        "codefont": "platform-mono",
+    }
+
+
+async def test_workspace_theme_should_allow_explicit_system_font_presets(authenticated_client: AsyncClient) -> None:
+    """用户显式选择跟随系统时应保留 system-ui/monospace，并清除原字体族绑定。"""
+
+    workspace_response = await authenticated_client.post(
+        "/api/workspaces",
+        json={"name": "系统字体预设空间", "status": "active"},
+    )
+    workspace_id = workspace_response.json()["id"]
+    theme_response = await authenticated_client.post(
+        f"/api/workspaces/{workspace_id}/themes",
+        json={
+            "key": "follow-system",
+            "name": "跟随系统",
+            "heading_font_preset": "system-ui",
+            "body_font_preset": "system-ui",
+            "code_font_preset": "monospace",
+            "palette": _theme_palette(),
+        },
+    )
+
+    assert theme_response.status_code == 200
+    theme = theme_response.json()
+    assert theme["heading_font_preset"] == "system-ui"
+    assert theme["body_font_preset"] == "system-ui"
+    assert theme["code_font_preset"] == "monospace"
+    assert yaml.safe_load(theme["resolved_theme_config_yaml"])["themes"]["follow-system"]["typography"] == {
         "headingfont": "system-ui",
         "bodyfont": "system-ui",
         "codefont": "monospace",

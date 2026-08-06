@@ -43,12 +43,7 @@ async def _create_agent_session(authenticated_client: AsyncClient, workspace_id:
         json={
             "agent_id": "agent-coordinator",
             "session_name": "图片会话",
-            "scope": {
-                "scope_type": "project",
-                "workspace_id": workspace_id,
-                "project_id": project_id,
-                "source": "test",
-            },
+            "workspace_id": workspace_id,
             "llm_config_id": llm_config_id,
         },
     )
@@ -130,6 +125,25 @@ async def test_image_attachment_upload_should_reject_non_image(authenticated_cli
     assert response.json()["code"] == "AI_IMAGE_ATTACHMENT_TYPE_UNSUPPORTED"
 
 
+async def test_run_should_reject_more_than_ten_image_attachments(authenticated_client: AsyncClient) -> None:
+    """单条消息绕过 Editor 提交十一张图片时应返回请求校验错误。"""
+
+    workspace_id = await _create_workspace(authenticated_client)
+    session_id, project_id = await _create_agent_session(authenticated_client, workspace_id)
+
+    response = await authenticated_client.post(
+        f"/api/ai/sessions/{session_id}/runs/stream",
+        params={"workspace_id": workspace_id, "project_id": project_id, "scope_type": "project", "agent_id": "agent-coordinator"},
+        json={
+            "message": "分析图片",
+            "image_attachment_ids": list(range(1, 12)),
+            "focus": {"scope_type": "project", "project_id": project_id, "source": "test"},
+        },
+    )
+
+    assert response.status_code == 422
+
+
 async def test_run_with_image_attachment_should_not_require_content_model_vision(
     authenticated_client: AsyncClient,
     monkeypatch,
@@ -172,7 +186,11 @@ async def test_run_with_image_attachment_should_not_require_content_model_vision
     run_response = await authenticated_client.post(
         f"/api/ai/sessions/{session_id}/runs/stream",
         params={"workspace_id": workspace_id, "project_id": project_id, "scope_type": "project", "agent_id": "agent-coordinator"},
-        json={"message": "", "image_attachment_ids": [upload_response.json()["id"]]},
+        json={
+            "message": "",
+            "image_attachment_ids": [upload_response.json()["id"]],
+            "focus": {"scope_type": "project", "project_id": project_id, "source": "test"},
+        },
     )
 
     assert run_response.status_code == 200

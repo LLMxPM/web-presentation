@@ -31,7 +31,7 @@ describe('ThemeEditorDialog', () => {
     })
   })
 
-  it('新建主题未选择字体时应提交空字体绑定', async () => {
+  it('新建主题未选择字体时应提交平台默认预设', async () => {
     const { emitted } = renderDialog(null)
 
     await waitFor(() => {
@@ -46,12 +46,18 @@ describe('ThemeEditorDialog', () => {
       heading_font_family_id: number | null
       body_font_family_id: number | null
       code_font_family_id: number | null
+      heading_font_preset: string | null
+      body_font_preset: string | null
+      code_font_preset: string | null
     }
 
     expect(savePayload).toMatchObject({
       heading_font_family_id: null,
       body_font_family_id: null,
       code_font_family_id: null,
+      heading_font_preset: 'platform-sans',
+      body_font_preset: 'platform-sans',
+      code_font_preset: 'platform-mono',
     })
   })
 

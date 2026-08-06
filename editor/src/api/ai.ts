@@ -21,8 +21,6 @@ export interface AgentStreamOptions {
   signal?: AbortSignal
 }
 
-export type AgentSessionScopeMode = 'exact' | 'workspace'
-
 export class AgentStreamInterruptedError extends Error {
   /** 标识用户主动中断了当前流式传输，调用方不应按执行失败展示。 */
   constructor(message = '智能体流式传输已中断。') {
@@ -68,12 +66,10 @@ export async function listAgents(scope: AgentScopeContext, agentId?: string) {
 export async function listAgentSessions(
   scope: AgentScopeContext,
   agentId = 'agent-coordinator',
-  scopeMode: AgentSessionScopeMode = 'exact',
 ) {
   const { data } = await http.get<AgentSessionItem[]>('/ai/sessions', {
     params: {
-      ...buildScopeParams(scope, agentId),
-      scope_mode: scopeMode,
+      ...buildWorkspaceSessionParams(scope.workspace_id, agentId),
     },
   })
   return data
@@ -85,7 +81,11 @@ export async function listAgentSessions(
 export async function createAgentSession(payload: {
   agent_id?: string
   session_name?: string | null
-  scope: AgentScopeContext
+  workspace_id: number
+  focus_mode?: 'follow_route' | 'pinned_project' | 'workspace'
+  pinned_project_id?: number | null
+  work_scope_mode?: 'workspace' | 'selected_projects'
+  allowed_project_ids?: number[]
   llm_config_id?: number | null
 }) {
   const { data } = await http.post<AgentSessionItem>('/ai/sessions', payload)
@@ -97,7 +97,7 @@ export async function createAgentSession(payload: {
  */
 export async function getAgentSessionMessages(sessionId: string, scope: AgentScopeContext, agentId = 'agent-coordinator') {
   const { data } = await http.get<AgentMessageItem[]>(`/ai/sessions/${sessionId}/messages`, {
-    params: buildScopeParams(scope, agentId),
+    params: buildWorkspaceSessionParams(scope.workspace_id, agentId),
   })
   return data
 }
@@ -107,7 +107,7 @@ export async function getAgentSessionMessages(sessionId: string, scope: AgentSco
  */
 export async function getAgentSessionRuntime(sessionId: string, scope: AgentScopeContext, agentId = 'agent-coordinator') {
   const { data } = await http.get<AgentSessionRuntimeSnapshot>(`/ai/sessions/${sessionId}/runtime`, {
-    params: buildScopeParams(scope, agentId),
+    params: buildWorkspaceSessionParams(scope.workspace_id, agentId),
   })
   return data
 }
@@ -128,7 +128,25 @@ export async function renameAgentSession(
     session_name: payload.session_name ?? null,
     autogenerate: payload.autogenerate ?? false,
   }, {
-    params: buildScopeParams(scope, agentId),
+    params: buildWorkspaceSessionParams(scope.workspace_id, agentId),
+  })
+  return data
+}
+
+/** 更新仅对后续 Run 生效的会话焦点与项目工作集偏好。 */
+export async function updateAgentSessionPreferences(
+  sessionId: string,
+  workspaceId: number,
+  payload: {
+    focus_mode: 'follow_route' | 'pinned_project' | 'workspace'
+    pinned_project_id: number | null
+    work_scope_mode: 'workspace' | 'selected_projects'
+    allowed_project_ids: number[]
+  },
+  agentId = 'agent-coordinator',
+) {
+  const { data } = await http.patch<AgentSessionItem>(`/ai/sessions/${sessionId}/preferences`, payload, {
+    params: buildWorkspaceSessionParams(workspaceId, agentId),
   })
   return data
 }
@@ -150,7 +168,7 @@ export async function streamAgentRun(
 ) {
   logAgentDev('run.start', { sessionId, scope, payload })
   await streamSse(
-    `/ai/sessions/${sessionId}/runs/stream?${buildScopeQuery(scope, payload.agent_id)}`,
+    `/ai/sessions/${sessionId}/runs/stream?${buildWorkspaceSessionQuery(scope.workspace_id, payload.agent_id)}`,
     {
       method: 'POST',
       body: JSON.stringify({
@@ -158,6 +176,7 @@ export async function streamAgentRun(
         message: payload.message,
         image_attachment_ids: payload.image_attachment_ids ?? [],
         llm_config_id: payload.llm_config_id ?? null,
+        focus: buildRunFocus(scope),
       }),
     },
     options,
@@ -176,7 +195,7 @@ export async function streamAgentRunEvents(
 ) {
   logAgentDev('run.events.subscribe', { sessionId, runId, scope, payload })
   await streamSse(
-    `/ai/sessions/${sessionId}/runs/${runId}/events/stream?${buildScopeQuery(scope, payload.agent_id, {
+    `/ai/sessions/${sessionId}/runs/${runId}/events/stream?${buildWorkspaceSessionQuery(scope.workspace_id, payload.agent_id, {
       event_index: String(payload.event_index ?? -1),
     })}`,
     {
@@ -201,7 +220,7 @@ export async function uploadAgentImageAttachment(
     `/ai/sessions/${sessionId}/attachments/images`,
     formData,
     {
-      params: buildScopeParams(scope, agentId),
+      params: buildWorkspaceSessionParams(scope.workspace_id, agentId),
     },
   )
   return data
@@ -217,7 +236,7 @@ export async function deleteAgentImageAttachment(
   agentId = 'agent-coordinator',
 ) {
   await http.delete(`/ai/sessions/${sessionId}/attachments/images/${attachmentId}`, {
-    params: buildScopeParams(scope, agentId),
+    params: buildWorkspaceSessionParams(scope.workspace_id, agentId),
   })
 }
 
@@ -245,7 +264,7 @@ export async function promoteAgentImageAttachment(
       overwrite: payload.overwrite ?? false,
     },
     {
-      params: buildScopeParams(scope, agentId),
+      params: buildWorkspaceSessionParams(scope.workspace_id, agentId),
     },
   )
   return data
@@ -256,7 +275,7 @@ export async function promoteAgentImageAttachment(
  */
 export async function getAgentSessionActiveRun(sessionId: string, scope: AgentScopeContext, agentId = 'agent-coordinator') {
   const { data } = await http.get<AgentActiveRunItem | null>(`/ai/sessions/${sessionId}/active-run`, {
-    params: buildScopeParams(scope, agentId),
+    params: buildWorkspaceSessionParams(scope.workspace_id, agentId),
   })
   return data
 }
@@ -266,7 +285,7 @@ export async function getAgentSessionActiveRun(sessionId: string, scope: AgentSc
  */
 export async function getAgentSessionContextStatus(sessionId: string, scope: AgentScopeContext, agentId = 'agent-coordinator') {
   const { data } = await http.get<AgentContextStatusItem>(`/ai/sessions/${sessionId}/context-status`, {
-    params: buildScopeParams(scope, agentId),
+    params: buildWorkspaceSessionParams(scope.workspace_id, agentId),
   })
   return data
 }
@@ -292,7 +311,7 @@ export async function continueAgentSessionActiveRun(
 ) {
   logAgentDev('run.continue', { sessionId, scope, payload })
   await streamSse(
-    `/ai/sessions/${sessionId}/active-run/continue?${buildScopeQuery(scope, payload.agent_id)}`,
+    `/ai/sessions/${sessionId}/active-run/continue?${buildWorkspaceSessionQuery(scope.workspace_id, payload.agent_id)}`,
     {
       method: 'POST',
       body: JSON.stringify({
@@ -328,7 +347,7 @@ export async function cancelAgentSessionActiveRun(
       tool_call_id: payload.tool_call_id ?? null,
     },
     {
-      params: buildScopeParams(scope, payload.agent_id ?? 'agent-coordinator'),
+      params: buildWorkspaceSessionParams(scope.workspace_id, payload.agent_id ?? 'agent-coordinator'),
     },
   )
   logAgentDev('run.cancel.response', data)
@@ -477,11 +496,31 @@ function parseSseBlock(block: string): AgentRunEvent | null {
 /**
  * 组装页面范围查询串，确保 BFF 与当前详情页上下文保持一致。
  */
-function buildScopeQuery(scope: AgentScopeContext, agentId?: string, extra?: Record<string, string>) {
+/** 组装工作空间级会话接口查询串，不泄露已废弃的 session scope 参数。 */
+function buildWorkspaceSessionQuery(workspaceId: number, agentId?: string, extra?: Record<string, string>) {
   return new URLSearchParams({
-    ...buildScopeParams(scope, agentId),
+    ...buildWorkspaceSessionParams(workspaceId, agentId),
     ...(extra ?? {}),
   }).toString()
+}
+
+/** 组装工作空间级会话接口查询参数。 */
+function buildWorkspaceSessionParams(workspaceId: number, agentId?: string): Record<string, string> {
+  return {
+    workspace_id: String(workspaceId),
+    ...(agentId ? { agent_id: agentId } : {}),
+  }
+}
+
+/** 从当前路由构造下一轮候选焦点，workspace_id 由会话决定而不重复进入请求体。 */
+function buildRunFocus(scope: AgentScopeContext) {
+  return {
+    scope_type: scope.scope_type,
+    project_id: scope.project_id ?? null,
+    page_id: scope.page_id ?? null,
+    component_id: scope.component_id ?? null,
+    source: scope.source,
+  }
 }
 
 /**

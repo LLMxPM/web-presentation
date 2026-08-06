@@ -76,9 +76,9 @@ def test_default_theme_template_should_keep_minimal_runtime_theme_shape() -> Non
     assert set(theme["palette"]["link"]) == {"default", "hover", "visited"}
     assert len(theme["palette"]["accent"]) == 6
     assert theme["typography"] == {
-        "headingfont": "system-ui",
-        "bodyfont": "system-ui",
-        "codefont": "monospace",
+        "headingfont": "platform-sans",
+        "bodyfont": "platform-sans",
+        "codefont": "platform-mono",
     }
 
 

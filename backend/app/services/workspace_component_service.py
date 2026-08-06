@@ -268,8 +268,8 @@ class WorkspaceComponentService:
             dependencies=[WorkspaceComponentDependencyItem.model_validate(item) for item in dependencies],
         )
 
-    async def delete(self, component_id: int, *, user_id: int) -> None:
-        """对当前用户可访问的工作空间组件执行软删除。"""
+    async def archive(self, component_id: int, *, user_id: int) -> None:
+        """归档当前用户可访问的工作空间组件，使其退出普通查询。"""
 
         component = await self._get_component_or_raise(component_id)
         await self.workspace_service.ensure_access(component.workspace_id, user_id=user_id)

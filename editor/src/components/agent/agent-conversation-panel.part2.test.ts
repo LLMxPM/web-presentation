@@ -40,7 +40,7 @@ const messageWarningMock = vi.fn()
 const createConfirmMock = vi.fn()
 const clipboardWriteTextMock = vi.fn()
 const DEFAULT_AGENT_ID = 'agent-coordinator'
-const DEFAULT_PLACEHOLDER = '描述目标；内容助手会处理页面/项目任务，并按需调用组件或资源助手。'
+const DEFAULT_PLACEHOLDER = '描述目标；内容助手可以管理当前工作空间内的项目、页面、组件、资源、主题和样式。'
 
 const { AgentStreamInterruptedErrorMock, AgentRequestErrorMock } = vi.hoisted(() => {
   class AgentStreamInterruptedError extends Error {
@@ -611,7 +611,6 @@ describe('AgentConversationPanel', () => {
         page_id: 31,
       }),
       DEFAULT_AGENT_ID,
-      'workspace',
     )
 
     expect(screen.queryByText('会话列表')).toBeNull()
@@ -623,14 +622,9 @@ describe('AgentConversationPanel', () => {
 
     await fireEvent.click(screen.getByRole('button', { name: /素材排查记录/ }))
 
-    expect(localStorage.getItem('agent-session:v2:agent-coordinator:page:11:21:41::editor-page-detail')).toBe('session-2')
-    expect(localStorage.getItem('agent-session:v3:workspace-active:agent-coordinator:11')).toBe('session-2')
+    expect(localStorage.getItem('agent-session:v4:workspace:agent-coordinator:11')).toBe('session-2')
     expect(routerPushMock).not.toHaveBeenCalled()
-    await waitFor(() => {
-      expect(screen.getByText('当前页面不在此会话工作范围。')).toBeTruthy()
-    })
-    await fireEvent.click(screen.getByRole('button', { name: '打开此会话工作页面' }))
-    expect(routerPushMock).toHaveBeenCalledWith('/workspaces/11/projects/21/pages/41')
+    expect(screen.queryByText('当前页面不在此会话工作范围。')).toBeNull()
   })
 
   it('手动新会话应先进入虚拟空白态，首条消息再实际创建', async () => {
@@ -693,6 +687,8 @@ describe('AgentConversationPanel', () => {
 
     expect(createAgentSessionMock).not.toHaveBeenCalled()
     expect(screen.queryByText('旧会话内容')).toBeNull()
+    expect(screen.getByRole('button', { name: /下一轮.*页面/ }).className).toContain('w-[205px]')
+    expect(screen.getByRole('button', { name: /范围.*全部项目/ })).toBeTruthy()
 
     await fireEvent.update(screen.getByPlaceholderText(DEFAULT_PLACEHOLDER), '开启新讨论')
     await fireEvent.click(screen.getByRole('button', { name: /发送/ }))
@@ -700,12 +696,11 @@ describe('AgentConversationPanel', () => {
     await waitFor(() => {
       expect(createAgentSessionMock).toHaveBeenCalledWith({
         agent_id: DEFAULT_AGENT_ID,
-        scope: expect.objectContaining({
-          scope_type: 'page',
-          workspace_id: 11,
-          project_id: 21,
-          page_id: 31,
-        }),
+        workspace_id: 11,
+        focus_mode: 'follow_route',
+        pinned_project_id: null,
+        work_scope_mode: 'workspace',
+        allowed_project_ids: [],
         session_name: 'AI 页面 会话',
         llm_config_id: 7,
       })
@@ -723,7 +718,7 @@ describe('AgentConversationPanel', () => {
     })
   })
 
-  it('项目级会话在页面路由继续发送时应使用会话自身 scope', async () => {
+  it('工作空间会话在页面路由继续发送时应使用本轮路由焦点', async () => {
     const projectSession = {
       session_id: 'project-session',
       agent_id: DEFAULT_AGENT_ID,
@@ -752,10 +747,8 @@ describe('AgentConversationPanel', () => {
       expect(getAgentSessionRuntimeMock).toHaveBeenCalledWith(
         'project-session',
         expect.objectContaining({
-          scope_type: 'project',
+          scope_type: 'workspace',
           workspace_id: 11,
-          project_id: 21,
-          page_id: null,
           source: 'editor-agent-sidebar',
         }),
         DEFAULT_AGENT_ID,
@@ -769,11 +762,11 @@ describe('AgentConversationPanel', () => {
       expect(startAgentRunMock).toHaveBeenCalledWith(
         'project-session',
         expect.objectContaining({
-          scope_type: 'project',
+          scope_type: 'page',
           workspace_id: 11,
           project_id: 21,
-          page_id: null,
-          source: 'editor-agent-sidebar',
+          page_id: 31,
+          source: 'editor-page-detail',
         }),
         expect.objectContaining({
           message: '继续推进项目结构',
@@ -827,7 +820,7 @@ describe('AgentConversationPanel', () => {
     )
   })
 
-  it('切换项目、组件、资源和主题会话时不应自动跳转，但可手动打开工作页', async () => {
+  it('切换工作空间内的历史会话时不应自动跳转或限制当前路由', async () => {
     listAgentSessionsMock.mockResolvedValueOnce([
       {
         session_id: 'project-session',
@@ -859,7 +852,7 @@ describe('AgentConversationPanel', () => {
       },
       {
         session_id: 'component-library-session',
-        agent_id: 'component-manager',
+        agent_id: DEFAULT_AGENT_ID,
         session_name: '组件库会话',
         created_at: '2026-04-18T08:45:00+08:00',
         updated_at: '2026-04-18T09:15:00+08:00',
@@ -872,14 +865,15 @@ describe('AgentConversationPanel', () => {
       },
       {
         session_id: 'legacy-component-library-session',
-        agent_id: 'component-manager',
-        session_name: '历史组件助手会话',
+        agent_id: DEFAULT_AGENT_ID,
+        session_name: '组件库历史会话',
         created_at: '2026-04-18T08:35:00+08:00',
         updated_at: '2026-04-18T09:05:00+08:00',
         metadata: {
           scope_type: 'workspace',
           workspace_id: 11,
           workspace_name: '默认空间',
+          source: 'editor-component-library',
         },
       },
       {
@@ -916,30 +910,10 @@ describe('AgentConversationPanel', () => {
       pageTitle: '',
     }))
 
-    await waitFor(() => {
-      expect(screen.getByRole('button', { name: '切换会话' })).toBeTruthy()
-    })
-
-    const expectedRoutes: Array<[RegExp, string]> = [
-      [/项目会话/, '/workspaces/11/projects/21/pages'],
-      [/组件详情会话/, '/workspaces/11/components'],
-      [/组件库会话/, '/workspaces/11/components'],
-      [/历史组件助手会话/, '/workspaces/11/components'],
-      [/资源会话/, '/workspaces/11/assets'],
-      [/主题会话/, '/workspaces/11/themes'],
-    ]
-
-    for (const [name, targetRoute] of expectedRoutes) {
-      routerPushMock.mockClear()
-      await fireEvent.click(screen.getByRole('button', { name: '切换会话' }))
-      await fireEvent.click(await screen.findByRole('button', { name }))
-      expect(routerPushMock).not.toHaveBeenCalled()
-      await waitFor(() => {
-        expect(screen.getByText('当前页面不在此会话工作范围。')).toBeTruthy()
-      })
-      await fireEvent.click(screen.getByRole('button', { name: '打开此会话工作页面' }))
-      expect(routerPushMock).toHaveBeenCalledWith(targetRoute)
-    }
+    await waitFor(() => expect(listAgentSessionsMock).toHaveBeenCalled())
+    expect(routerPushMock).not.toHaveBeenCalled()
+    expect(screen.queryByText('当前页面不在此会话工作范围。')).toBeNull()
+    expect(screen.queryByRole('button', { name: '打开此会话工作页面' })).toBeNull()
   })
 
   it('不可启动路由上的助手切换不应自动选中其他页面会话或切换路由', async () => {
@@ -1007,8 +981,8 @@ describe('AgentConversationPanel', () => {
       expect(getAgentSessionRuntimeMock).toHaveBeenCalledWith(
         'page-session',
         expect.objectContaining({
-          scope_type: 'page',
-          page_id: 31,
+          scope_type: 'workspace',
+          workspace_id: 11,
         }),
         DEFAULT_AGENT_ID,
       )
@@ -1026,9 +1000,7 @@ describe('AgentConversationPanel', () => {
       routeUnavailableReason: '内容助手需要进入具体项目后才能启动。',
     })
 
-    await waitFor(() => {
-      expect(screen.getByText('当前页面不在此会话工作范围。')).toBeTruthy()
-    })
+    expect(screen.queryByText('当前页面不在此会话工作范围。')).toBeNull()
     expect(screen.queryByText('内容助手当前不可用')).toBeNull()
     expect(screen.queryByRole('button', { name: '前往 AI 设置' })).toBeNull()
     expect(routerPushMock).not.toHaveBeenCalled()
@@ -1116,18 +1088,17 @@ describe('AgentConversationPanel', () => {
     await waitFor(() => {
       expect(createAgentSessionMock).toHaveBeenCalledWith({
         agent_id: 'component-manager',
-        scope: expect.objectContaining({
-          scope_type: 'workspace',
-          workspace_id: 11,
-          component_id: null,
-          source: 'editor-component-library',
-        }),
+        workspace_id: 11,
+        focus_mode: 'follow_route',
+        pinned_project_id: null,
+        work_scope_mode: 'workspace',
+        allowed_project_ids: [],
         session_name: '组件库 会话',
         llm_config_id: 7,
       })
     })
     await waitFor(() => {
-      expect(localStorage.getItem('agent-session:v2:component-manager:workspace:11::::editor-component-library')).toBe('component-auto-session')
+      expect(localStorage.getItem('agent-session:v4:workspace:component-manager:11')).toBe('component-auto-session')
       expect(startAgentRunMock).toHaveBeenCalledWith(
         'component-auto-session',
         expect.objectContaining({ source: 'editor-component-library' }),
@@ -1216,9 +1187,8 @@ describe('AgentConversationPanel', () => {
         'session-1',
         expect.objectContaining({
           workspace_id: 11,
-          project_id: 21,
-          page_id: 31,
-          source: 'editor-page-detail',
+          scope_type: 'workspace',
+          source: 'editor-agent-sidebar',
         }),
         DEFAULT_AGENT_ID,
       )
@@ -1268,7 +1238,7 @@ describe('AgentConversationPanel', () => {
     expect(textarea.disabled).toBe(false)
   })
 
-  it('路由切换时应保留当前会话并禁用跨范围输入', async () => {
+  it('路由切换时应保留当前会话并允许下一轮跟随新路由', async () => {
     listAgentSessionsMock.mockResolvedValueOnce([
       {
         session_id: 'session-1',
@@ -1340,14 +1310,12 @@ describe('AgentConversationPanel', () => {
 
     await waitFor(() => {
       expect(screen.getByText('页面一会话内容应继续显示。')).toBeTruthy()
-      expect(screen.getByText('当前页面不在此会话工作范围。')).toBeTruthy()
     })
     expect(screen.queryByText('页面二会话')).toBeNull()
     const textarea = screen.getByPlaceholderText(DEFAULT_PLACEHOLDER) as HTMLTextAreaElement
-    expect(textarea.disabled).toBe(true)
-
-    await fireEvent.click(screen.getByRole('button', { name: '打开此会话工作页面' }))
-    expect(routerPushMock).toHaveBeenCalledWith('/workspaces/11/projects/21/pages/31')
+    expect(textarea.disabled).toBe(false)
+    expect(screen.queryByText('当前页面不在此会话工作范围。')).toBeNull()
+    expect(routerPushMock).not.toHaveBeenCalled()
   })
 
   it('项目 run 创建页面后切入页面 scope 仍应保留会话并按项目 scope 收尾', async () => {
@@ -1458,9 +1426,8 @@ describe('AgentConversationPanel', () => {
       expect(getAgentSessionRuntimeMock).toHaveBeenCalledWith(
         'project-session',
         expect.objectContaining({
-          scope_type: 'project',
-          project_id: 21,
-          page_id: null,
+          scope_type: 'workspace',
+          workspace_id: 11,
           source: 'editor-agent-sidebar',
         }),
         DEFAULT_AGENT_ID,
@@ -1475,79 +1442,6 @@ describe('AgentConversationPanel', () => {
 
     await fireEvent.click(screen.getByRole('button', { name: '切换会话' }))
     expect(await screen.findByRole('button', { name: /项目会话/ })).toBeTruthy()
-  })
-
-  it.each([
-    ['component-manager', 'editor-component-library', '/workspaces/11/components'],
-    ['resource-manager', 'editor-asset-library', '/workspaces/11/assets'],
-  ])('页面路由上打开 %s 历史会话时应显示越界检测和工作页入口', async (targetAgentId, source, targetRoute) => {
-    listAgentSessionsMock.mockResolvedValueOnce([
-      {
-        session_id: 'library-session',
-        agent_id: targetAgentId,
-        session_name: '库管理会话',
-        created_at: '2026-04-18T10:00:00+08:00',
-        updated_at: '2026-04-18T10:30:00+08:00',
-        metadata: {
-          scope_type: 'workspace',
-          workspace_id: 11,
-          source,
-        },
-      },
-    ])
-    getAgentSessionRuntimeMock.mockResolvedValueOnce(createRuntimeSnapshot({
-      session: {
-        session_id: 'library-session',
-        agent_id: targetAgentId,
-        session_name: '库管理会话',
-        created_at: '2026-04-18T10:00:00+08:00',
-        updated_at: '2026-04-18T10:30:00+08:00',
-        metadata: {
-          scope_type: 'workspace',
-          workspace_id: 11,
-          source,
-        },
-      },
-    }))
-
-    render(AgentConversationPanel, createTestingRenderOptions({
-      agentId: targetAgentId,
-      projectId: null,
-      pageId: null,
-      pageTitle: '',
-      contextTitle: '库管理',
-      scope: {
-        scope_type: 'workspace',
-        workspace_id: 11,
-        project_id: null,
-        page_id: null,
-        component_id: null,
-        workspace_name: null,
-        project_name: null,
-        page_title: null,
-        component_name: null,
-        source,
-      },
-      routeScope: {
-        scope_type: 'page',
-        workspace_id: 11,
-        project_id: 21,
-        page_id: 31,
-        component_id: null,
-        workspace_name: null,
-        project_name: null,
-        page_title: 'AI 页面',
-        component_name: null,
-        source: 'editor-page-detail',
-      },
-    }))
-
-    await waitFor(() => {
-      expect(screen.getByText('当前页面不在此会话工作范围。')).toBeTruthy()
-    })
-
-    await fireEvent.click(screen.getByRole('button', { name: '打开此会话工作页面' }))
-    expect(routerPushMock).toHaveBeenCalledWith(targetRoute)
   })
 
 })

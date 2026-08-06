@@ -7,11 +7,13 @@ import {
   uploadAgentImageAttachment,
 } from '@/api/ai'
 import { getErrorMessage } from '@/api/http'
+import {
+  AGENT_IMAGE_ATTACHMENT_ALLOWED_TYPES,
+  AGENT_IMAGE_ATTACHMENT_MAX_BYTES,
+  AGENT_IMAGE_ATTACHMENT_MAX_COUNT,
+} from '@/components/agent/agent-image-attachment-constants'
 import type { AgentImageAttachmentItem, AgentScopeContext } from '@/types/api'
 import { Message } from '@/utils/message'
-
-const IMAGE_ATTACHMENT_MAX_BYTES = 10 * 1024 * 1024
-const ALLOWED_IMAGE_ATTACHMENT_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp'])
 
 interface AgentImageAttachmentContext {
   getActiveSessionId: () => string
@@ -29,44 +31,77 @@ interface AgentImageAttachmentContext {
  * 生成图片附件动作；调用方负责提供会话状态读写和缓存刷新入口。
  */
 export function useAgentImageAttachments(context: AgentImageAttachmentContext) {
+  let uploadBatchInFlight = false
+
   /**
-   * 上传用户选择的图片附件，并把结果加入当前 Composer 待发送列表。
+   * 顺序上传一批图片附件，并把成功结果加入当前 Composer 待发送列表。
    */
-  async function handleUploadImage(file: File) {
+  async function handleUploadImages(files: File[]) {
     const disabledReason = context.getImageUploadDisabledReason()
     if (disabledReason) {
       Message.warning(disabledReason)
       return
     }
-    if (!isAllowedImageFile(file)) {
-      Message.error('图片附件仅支持 png、jpg、jpeg、webp。')
+    if (uploadBatchInFlight || !files.length) {
       return
     }
-    if (file.size > IMAGE_ATTACHMENT_MAX_BYTES) {
-      Message.error('单张图片不能超过 10MB。')
+
+    const currentAttachments = context.getPendingImageAttachments(context.getActiveSessionId())
+    const remainingCount = Math.max(0, AGENT_IMAGE_ATTACHMENT_MAX_COUNT - currentAttachments.length)
+    if (remainingCount === 0) {
+      Message.warning('每条消息最多上传 10 张图片。')
+      return
+    }
+    const acceptedFiles = files.slice(0, remainingCount)
+    if (acceptedFiles.length < files.length) {
+      Message.warning('每条消息最多上传 10 张图片，超出部分已忽略。')
+    }
+
+    const failures: string[] = []
+    const validFiles = acceptedFiles.filter((file) => {
+      if (!isAllowedImageFile(file)) {
+        failures.push(`${displayFileName(file)}：格式不支持`)
+        return false
+      }
+      if (file.size > AGENT_IMAGE_ATTACHMENT_MAX_BYTES) {
+        failures.push(`${displayFileName(file)}：超过 10MB`)
+        return false
+      }
+      return true
+    })
+    if (!validFiles.length) {
+      showBatchFailures(failures)
       return
     }
 
     let sessionId = ''
+    uploadBatchInFlight = true
     try {
       sessionId = await context.ensureActiveSession()
     } catch (error) {
       Message.error(getErrorMessage(error, '初始化智能体会话失败。'))
+      uploadBatchInFlight = false
       return
     }
 
     context.setImageUploading(sessionId, true)
     try {
-      const attachment = await uploadAgentImageAttachment(sessionId, context.getScope(), file, context.getAgentId())
-      context.setPendingImageAttachments(sessionId, [
-        ...context.getPendingImageAttachments(sessionId),
-        attachment,
-      ])
-    } catch (error) {
-      Message.error(getErrorMessage(error, '上传图片失败。'))
+      for (const file of validFiles) {
+        try {
+          const attachment = await uploadAgentImageAttachment(sessionId, context.getScope(), file, context.getAgentId())
+          context.setPendingImageAttachments(sessionId, [
+            ...context.getPendingImageAttachments(sessionId),
+            attachment,
+          ])
+        } catch (error) {
+          failures.push(`${displayFileName(file)}：${getErrorMessage(error, '上传失败')}`)
+        }
+      }
     } finally {
       context.setImageUploading(sessionId, false)
+      uploadBatchInFlight = false
     }
+    showBatchFailures(failures)
   }
 
   /**
@@ -114,16 +149,29 @@ export function useAgentImageAttachments(context: AgentImageAttachmentContext) {
   return {
     handlePromoteImage,
     handleRemoveImage,
-    handleUploadImage,
+    handleUploadImages,
   }
+}
+
+/**
+ * 汇总展示批次内的校验或上传失败，避免连续弹出多条消息。
+ */
+function showBatchFailures(failures: string[]) {
+  if (!failures.length) return
+  Message.error(`部分图片未能上传：${failures.join('；')}`)
+}
+
+/**
+ * 返回适合错误提示的文件名，兼容剪贴板生成的空文件名。
+ */
+function displayFileName(file: File) {
+  return file.name.trim() || '剪贴板图片'
 }
 
 /**
  * 校验前端允许上传给 Agent 的图片类型。
  */
 function isAllowedImageFile(file: File) {
-  if (ALLOWED_IMAGE_ATTACHMENT_TYPES.has(file.type)) {
-    return true
-  }
+  if (file.type) return AGENT_IMAGE_ATTACHMENT_ALLOWED_TYPES.has(file.type)
   return /\.(png|jpe?g|webp)$/i.test(file.name)
 }

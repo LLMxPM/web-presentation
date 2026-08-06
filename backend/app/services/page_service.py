@@ -8,7 +8,7 @@ from app.core.code_generator import CODE_PREFIX_PAGE, create_with_generated_code
 from app.core.config import get_settings
 from app.core.exceptions import AppException
 from app.core.text_normalizer import normalize_text_to_lf
-from app.core.time_utils import normalize_utc, utc_now
+from app.core.time_utils import utc_now
 from app.models.enums import PageFileType, ProjectRouteType, RecordStatus
 from app.models.page import Page
 from app.models.project_route import ProjectRoute
@@ -40,6 +40,7 @@ from app.services.page_version_service import PageVersionService
 from app.services.page_component_index_service import PageComponentIndexService
 from app.services.project_route_service import ProjectRouteService
 from app.services.page_screenshot_fingerprint_service import PageScreenshotFingerprintService
+from app.services.page_screenshot_url import build_page_screenshot_url
 from app.services.project_service import ProjectService
 from app.services.workspace_service import WorkspaceService
 
@@ -610,19 +611,7 @@ class PageService:
     def _build_versioned_screenshot_url(self, page_model: Page) -> str | None:
         """生成截图公开地址，并用截图更新时间作为浏览器缓存刷新版本。"""
 
-        if page_model.screenshot_storage_key is None:
-            return None
-
-        screenshot_url = (
-            f"{self.settings.backend_public_base_url.rstrip('/')}"
-            f"/public/page-screenshots/{page_model.id}"
-        )
-        if page_model.screenshot_updated_at is None:
-            return screenshot_url
-
-        version = int(normalize_utc(page_model.screenshot_updated_at).timestamp() * 1000)
-        separator = "&" if "?" in screenshot_url else "?"
-        return f"{screenshot_url}{separator}v={version}"
+        return build_page_screenshot_url(page_model, self.settings.backend_public_base_url)
 
     @staticmethod
     def _normalize_optional_text(value: str | None) -> str | None:

@@ -40,7 +40,7 @@ const messageWarningMock = vi.fn()
 const createConfirmMock = vi.fn()
 const clipboardWriteTextMock = vi.fn()
 const DEFAULT_AGENT_ID = 'agent-coordinator'
-const DEFAULT_PLACEHOLDER = '描述目标；内容助手会处理页面/项目任务，并按需调用组件或资源助手。'
+const DEFAULT_PLACEHOLDER = '描述目标；内容助手可以管理当前工作空间内的项目、页面、组件、资源、主题和样式。'
 
 const { AgentStreamInterruptedErrorMock, AgentRequestErrorMock } = vi.hoisted(() => {
   class AgentStreamInterruptedError extends Error {
@@ -584,9 +584,9 @@ describe('AgentConversationPanel', () => {
           status: 'completed',
           tool: {
             tool_call_id: 'delegate-call-resource',
-            tool_name: 'delegate_task_to_member',
+            tool_name: 'delegate_task_to_self',
             status: 'completed',
-            input_payload: { member_id: 'resource-manager', task: '整理资源' },
+            input_payload: { task: '整理资源' },
             output_payload: { success: true },
             message: '',
           },
@@ -598,8 +598,8 @@ describe('AgentConversationPanel', () => {
         {
           parent_run_id: 'parent-run-1',
           run_id: 'member-run-resource',
-          agent_id: 'resource-manager',
-          agent_name: '资源助手',
+          agent_id: 'agent-coordinator',
+          agent_name: '内容助手',
           status: 'completed',
           created_at: '2026-04-18T10:00:01+08:00',
           updated_at: '2026-04-18T10:00:02+08:00',
@@ -620,8 +620,8 @@ describe('AgentConversationPanel', () => {
               tool: {
                 tool_call_id: 'child-tool-list-assets',
                 tool_name: 'list_workspace_render_assets',
-                member_agent_id: 'resource-manager',
-                member_agent_name: '资源助手',
+                member_agent_id: 'agent-coordinator',
+                member_agent_name: '内容助手',
                 member_run_id: 'member-run-resource',
                 status: 'completed',
                 input_payload: { workspace_id: 11 },
@@ -639,20 +639,20 @@ describe('AgentConversationPanel', () => {
     render(AgentConversationPanel, createTestingRenderOptions())
 
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: '资源助手运行' })).toBeTruthy()
+      expect(screen.getByRole('button', { name: '内容助手子运行' })).toBeTruthy()
     })
 
-    await fireEvent.click(screen.getByRole('button', { name: '资源助手运行' }))
+    await fireEvent.click(screen.getByRole('button', { name: '内容助手子运行' }))
 
     await waitFor(() => {
-      expect(screen.getByText('资源助手运行详情')).toBeTruthy()
-      expect(screen.getByRole('button', { name: '展开成员消息' })).toBeTruthy()
+      expect(screen.getByText('内容助手子运行详情')).toBeTruthy()
+      expect(screen.getByRole('button', { name: '展开子运行消息' })).toBeTruthy()
       expect(screen.queryByText('传入消息')).toBeNull()
       expect(screen.queryByText('资源整理完成。')).toBeNull()
       expect(screen.getByRole('button', { name: /list_workspace_render_assets/ })).toBeTruthy()
     })
 
-    await fireEvent.click(screen.getByRole('button', { name: '展开成员消息' }))
+    await fireEvent.click(screen.getByRole('button', { name: '展开子运行消息' }))
 
     await waitFor(() => {
       expect(screen.getByText('传入消息')).toBeTruthy()
@@ -1486,16 +1486,16 @@ describe('AgentConversationPanel', () => {
     })
   })
 
-  it('资源助手展示图片理解和图片生成状态', async () => {
+  it('内容助手在资源入口展示图片理解和图片生成状态', async () => {
     listAgentsMock.mockResolvedValueOnce([
       {
-        id: 'resource-manager',
-        name: '资源助手',
-        icon: 'resource-images',
-        summary: '维护资源库并处理视觉素材。',
-        default_session_name: '资源助手会话',
+        id: DEFAULT_AGENT_ID,
+        name: '内容助手',
+        icon: 'content-spark',
+        summary: '维护内容与视觉素材。',
+        default_session_name: '内容助手会话',
         capabilities: ['图片理解', '图片生成编辑'],
-        llm_slot: 'resource_manager',
+        llm_slot: 'agent_coordinator',
         llm_binding_ready: true,
         image_analysis_available: true,
         image_generation_available: true,
@@ -1507,7 +1507,7 @@ describe('AgentConversationPanel', () => {
     ])
 
     render(AgentConversationPanel, createTestingRenderOptions({
-      agentId: 'resource-manager',
+      agentId: DEFAULT_AGENT_ID,
       projectId: undefined,
       pageId: undefined,
       source: 'editor-assets',
@@ -1515,7 +1515,7 @@ describe('AgentConversationPanel', () => {
 
     await waitFor(() => {
       const visualStatus = screen.getByRole('region', { name: '视觉工具状态' })
-      expect(within(visualStatus).getByTitle('analyze_visuals 已配置，可分析附件或工作空间图片资源')).toHaveTextContent(/看图\s*可用/)
+      expect(within(visualStatus).getByTitle('analyze_visuals 已配置，可按需分析附件、工作空间图片资源或页面截图')).toHaveTextContent(/看图\s*可用/)
       expect(within(visualStatus).getByTitle('generate_image 已配置，可生成或编辑图片并保存到资源库')).toHaveTextContent(/生成图片\s*可用/)
       expect(screen.getByLabelText('上传图片')).toHaveProperty('disabled', false)
     })

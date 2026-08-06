@@ -178,8 +178,8 @@ async def test_suggested_components_should_keep_unavailable_items_for_cleanup(
     )
     assert project_save_response.status_code == 200
 
-    delete_response = await authenticated_client.delete(f"/api/components/{deleted_component['id']}")
-    assert delete_response.status_code == 200
+    archive_response = await authenticated_client.post(f"/api/components/{deleted_component['id']}/archive")
+    assert archive_response.status_code == 200
 
     style_get_response = await authenticated_client.get(
         f"/api/workspaces/{workspace_id}/styles/{style_id}/suggested-components"
@@ -188,7 +188,7 @@ async def test_suggested_components_should_keep_unavailable_items_for_cleanup(
     style_items = style_get_response.json()["items"]
     assert [item["id"] for item in style_items] == [deleted_component["id"], active_component["id"]]
     assert style_items[0]["available"] is False
-    assert style_items[0]["unavailable_reason"] == "组件已删除，请移除后保存。"
+    assert style_items[0]["unavailable_reason"] == "组件已归档，请移除后保存。"
     assert style_items[1]["available"] is True
 
     project_get_response = await authenticated_client.get(f"/api/projects/{project_id}/suggested-components")
@@ -196,7 +196,7 @@ async def test_suggested_components_should_keep_unavailable_items_for_cleanup(
     project_items = project_get_response.json()["items"]
     assert [item["id"] for item in project_items] == [deleted_component["id"], active_component["id"]]
     assert project_items[0]["available"] is False
-    assert project_items[0]["unavailable_reason"] == "组件已删除，请移除后保存。"
+    assert project_items[0]["unavailable_reason"] == "组件已归档，请移除后保存。"
 
     cleanup_response = await authenticated_client.put(
         f"/api/workspaces/{workspace_id}/styles/{style_id}/suggested-components",

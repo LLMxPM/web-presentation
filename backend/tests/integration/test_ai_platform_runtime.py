@@ -25,7 +25,8 @@ from app.models.ai_agent_runtime import (
     AiAgentSession,
     AiAgentToolCall,
 )
-from app.schemas.agent import AgentPendingRequirement, AgentRunEvent, AgentScopeContext
+from app.schemas.agent import AgentFocusRequest, AgentPendingRequirement, AgentRunEvent, AgentScopeContext
+from app.services.agent_work_scope_service import AgentWorkScopeService
 
 
 async def _create_runtime_llm_config(authenticated_client: AsyncClient) -> int:
@@ -77,9 +78,9 @@ async def test_platform_runtime_should_persist_events_messages_and_snapshot(
     session_response = await authenticated_client.post(
         "/api/ai/sessions",
         json={
-            "agent_id": "component-manager",
+            "agent_id": "agent-coordinator",
             "session_name": "平台运行态会话",
-            "scope": scope.model_dump(mode="json"),
+            "workspace_id": scope.workspace_id,
             "llm_config_id": llm_config_id,
         },
     )
@@ -100,7 +101,7 @@ async def test_platform_runtime_should_persist_events_messages_and_snapshot(
         store = PlatformAgentRuntimeStore(db_session, user_id=1)
         run_start = await store.start_run(
             session_id=session_id,
-            agent_id="component-manager",
+            agent_id="agent-coordinator",
             scope=scope,
             run_id="platform-runtime-run-1",
             message="整理组件库",
@@ -175,7 +176,7 @@ async def test_platform_runtime_should_persist_events_messages_and_snapshot(
         )
         active_snapshot = await store.get_runtime_snapshot(
             session_id=session_id,
-            agent_id="component-manager",
+            agent_id="agent-coordinator",
             runtime_context=AgentRuntimeContext(
                 scope_type=scope.scope_type,
                 workspace_id=workspace_id,
@@ -191,26 +192,28 @@ async def test_platform_runtime_should_persist_events_messages_and_snapshot(
         await store.mark_terminal(run_model, status="completed", content="组件库整理完成。")
         snapshot = await store.get_runtime_snapshot(
             session_id=session_id,
-            agent_id="component-manager",
+            agent_id="agent-coordinator",
             runtime_context=AgentRuntimeContext(
                 scope_type=scope.scope_type,
                 workspace_id=workspace_id,
                 source=scope.source,
             ),
         )
-        messages = await store.list_messages(session_id=session_id, agent_id="component-manager")
+        messages = await store.list_messages(session_id=session_id, agent_id="agent-coordinator")
 
     assert [item.role for item in messages] == ["user", "assistant"]
     assert messages[0].content == "整理组件库"
     assert messages[1].reasoning_content == "先读取组件概览。"
     assert active_snapshot.active_run is not None
     assert active_snapshot.active_run.status == "running"
-    assert [item.kind for item in active_snapshot.timeline_items] == ["message", "reasoning", "message", "tool"]
-    assert active_snapshot.timeline_items[1].content == "先读取组件概览。"
-    assert active_snapshot.timeline_items[2].content == "正在整理组件库。"
+    assert [item.kind for item in active_snapshot.timeline_items] == ["message", "run_context", "reasoning", "message", "tool"]
+    assert active_snapshot.timeline_items[1].run_context is not None
+    assert active_snapshot.timeline_items[1].run_context.focus.workspace_id == workspace_id
+    assert active_snapshot.timeline_items[2].content == "先读取组件概览。"
+    assert active_snapshot.timeline_items[3].content == "正在整理组件库。"
     assert snapshot.last_run is not None
     assert snapshot.last_run.status == "completed"
-    assert [item.kind for item in snapshot.timeline_items] == ["message", "reasoning", "message", "tool"]
+    assert [item.kind for item in snapshot.timeline_items] == ["message", "run_context", "reasoning", "message", "tool"]
     assert snapshot.timeline_items[-1].tool is not None
     assert snapshot.timeline_items[-1].tool.output_payload == {"total": 2}
 
@@ -234,9 +237,9 @@ async def test_platform_runtime_snapshot_should_drop_resolved_requirement(
     session_response = await authenticated_client.post(
         "/api/ai/sessions",
         json={
-            "agent_id": "component-manager",
+            "agent_id": "agent-coordinator",
             "session_name": "平台运行态清理 HITL 会话",
-            "scope": scope.model_dump(mode="json"),
+            "workspace_id": scope.workspace_id,
             "llm_config_id": await _create_runtime_llm_config(authenticated_client),
         },
     )
@@ -247,7 +250,7 @@ async def test_platform_runtime_snapshot_should_drop_resolved_requirement(
         store = PlatformAgentRuntimeStore(db_session, user_id=1)
         run_start = await store.start_run(
             session_id=session_id,
-            agent_id="component-manager",
+            agent_id="agent-coordinator",
             scope=scope,
             run_id="platform-runtime-hitl-resolved",
             message="需要确认后执行工具",
@@ -272,7 +275,7 @@ async def test_platform_runtime_snapshot_should_drop_resolved_requirement(
         )
         paused_snapshot = await store.get_runtime_snapshot(
             session_id=session_id,
-            agent_id="component-manager",
+            agent_id="agent-coordinator",
             runtime_context=AgentRuntimeContext(
                 scope_type=scope.scope_type,
                 workspace_id=workspace_id,
@@ -298,7 +301,7 @@ async def test_platform_runtime_snapshot_should_drop_resolved_requirement(
         await store.mark_terminal(run_model, status="completed", content="确认后运行完成。")
         snapshot = await store.get_runtime_snapshot(
             session_id=session_id,
-            agent_id="component-manager",
+            agent_id="agent-coordinator",
             runtime_context=AgentRuntimeContext(
                 scope_type=scope.scope_type,
                 workspace_id=workspace_id,
@@ -344,7 +347,11 @@ async def test_platform_runtime_snapshot_should_rebuild_member_runs_from_member_
             session_id=session_id,
             agent_id="agent-coordinator",
             session_name="成员快照会话",
-            scope=scope,
+            workspace_id=scope.workspace_id,
+            focus_mode="follow_route",
+            pinned_project_id=None,
+            work_scope_mode="workspace",
+            allowed_project_ids=[],
         )
         run_start = await store.start_run(
             session_id=session_id,
@@ -359,13 +366,13 @@ async def test_platform_runtime_snapshot_should_rebuild_member_runs_from_member_
             member_run_id=member_run_id,
             parent_run_id=run_id,
             session_id=session_id,
-            agent_id="resource-manager",
+            agent_id="agent-coordinator",
             agent_name="资源助手",
             status="running",
             delegate_tool_call_id=delegate_tool_call_id,
             input_payload_json={
                 "task": "整理当前项目资源。",
-                "delegate_tool_name": "delegate_task_to_member",
+                "delegate_tool_name": "delegate_task_to_self",
                 "delegate_tool_call_id": delegate_tool_call_id,
             },
             message_history_json=[],
@@ -375,7 +382,7 @@ async def test_platform_runtime_snapshot_should_rebuild_member_runs_from_member_
         await db_session.refresh(member_run)
         member_event_data = {
             "member_run_id": member_run_id,
-            "member_agent_id": "resource-manager",
+            "member_agent_id": "agent-coordinator",
             "member_agent_name": "资源助手",
             "delegate_tool_call_id": delegate_tool_call_id,
         }
@@ -386,9 +393,9 @@ async def test_platform_runtime_snapshot_should_rebuild_member_runs_from_member_
                 run_id=run_id,
                 session_id=session_id,
                 data={
-                    "tool_name": "delegate_task_to_member",
+                    "tool_name": "delegate_task_to_self",
                     "tool_call_id": delegate_tool_call_id,
-                    "tool_args": {"member_id": "resource-manager", "task": "整理当前项目资源。"},
+                    "tool_args": {"member_id": "agent-coordinator", "task": "整理当前项目资源。"},
                 },
             ),
         )
@@ -473,7 +480,7 @@ async def test_platform_runtime_snapshot_should_rebuild_member_runs_from_member_
                 run_id=run_id,
                 session_id=session_id,
                 data={
-                    "tool_name": "delegate_task_to_member",
+                    "tool_name": "delegate_task_to_self",
                     "tool_call_id": delegate_tool_call_id,
                     "result": {"member_run_id": member_run_id, "status": "completed"},
                 },
@@ -498,12 +505,12 @@ async def test_platform_runtime_snapshot_should_rebuild_member_runs_from_member_
 
     assert snapshot.last_run is not None
     assert snapshot.last_run.status == "completed"
-    assert [item.tool.tool_name for item in snapshot.timeline_items if item.tool is not None] == ["delegate_task_to_member"]
+    assert [item.tool.tool_name for item in snapshot.timeline_items if item.tool is not None] == ["delegate_task_to_self"]
     assert len(snapshot.member_runs) == 1
     member = snapshot.member_runs[0]
     assert member.parent_run_id == run_id
     assert member.run_id == member_run_id
-    assert member.agent_id == "resource-manager"
+    assert member.agent_id == "agent-coordinator"
     assert member.delegate_tool_call_id == delegate_tool_call_id
     assert member.status == "completed"
     assert "任务：整理当前项目资源。" in (member.input_prompt or "")
@@ -539,9 +546,9 @@ async def test_platform_runtime_should_refresh_event_cursor_before_append(
     session_response = await authenticated_client.post(
         "/api/ai/sessions",
         json={
-            "agent_id": "component-manager",
+            "agent_id": "agent-coordinator",
             "session_name": "平台运行态并发游标会话",
-            "scope": scope.model_dump(mode="json"),
+            "workspace_id": scope.workspace_id,
             "llm_config_id": await _create_runtime_llm_config(authenticated_client),
         },
     )
@@ -552,20 +559,20 @@ async def test_platform_runtime_should_refresh_event_cursor_before_append(
         first_store = PlatformAgentRuntimeStore(first_session, user_id=1)
         run_start = await first_store.start_run(
             session_id=session_id,
-            agent_id="component-manager",
+            agent_id="agent-coordinator",
             scope=scope,
             run_id="platform-runtime-run-cursor",
             message="开始长任务",
             image_attachment_ids=[],
         )
         stale_run_model = run_start.run_model
-        assert stale_run_model.event_index == 0
+        assert stale_run_model.event_index == 1
 
         async with get_session_factory()() as second_session:
             second_store = PlatformAgentRuntimeStore(second_session, user_id=1)
             fresh_run_model = await second_store.get_active_run_model(
                 session_id=session_id,
-                agent_id="component-manager",
+                agent_id="agent-coordinator",
             )
             assert fresh_run_model is not None
             await second_store.append_event(
@@ -588,13 +595,13 @@ async def test_platform_runtime_should_refresh_event_cursor_before_append(
             ),
         )
 
-        assert cancel_event.event_index == 2
+        assert cancel_event.event_index == 3
         result = await first_session.execute(
             select(AiAgentRunEvent.event_index)
             .where(AiAgentRunEvent.run_id == stale_run_model.run_id)
             .order_by(AiAgentRunEvent.event_index.asc())
         )
-        assert result.scalars().all() == [0, 1, 2]
+        assert result.scalars().all() == [0, 1, 2, 3]
 
 
 async def test_platform_runtime_stream_should_poll_database_when_subscriber_misses_event(
@@ -629,9 +636,9 @@ async def test_platform_runtime_stream_should_poll_database_when_subscriber_miss
     session_response = await authenticated_client.post(
         "/api/ai/sessions",
         json={
-            "agent_id": "component-manager",
+            "agent_id": "agent-coordinator",
             "session_name": "平台运行态轮询恢复会话",
-            "scope": scope.model_dump(mode="json"),
+            "workspace_id": scope.workspace_id,
             "llm_config_id": await _create_runtime_llm_config(authenticated_client),
         },
     )
@@ -642,7 +649,7 @@ async def test_platform_runtime_stream_should_poll_database_when_subscriber_miss
         stream_store = PlatformAgentRuntimeStore(stream_session, user_id=1)
         run_start = await stream_store.start_run(
             session_id=session_id,
-            agent_id="component-manager",
+            agent_id="agent-coordinator",
             scope=scope,
             run_id="platform-runtime-run-polling-stream",
             message="开始后台任务",
@@ -660,7 +667,7 @@ async def test_platform_runtime_stream_should_poll_database_when_subscriber_miss
             writer_store = PlatformAgentRuntimeStore(writer_session, user_id=1)
             writer_run = await writer_store.get_active_run_model(
                 session_id=session_id,
-                agent_id="component-manager",
+                agent_id="agent-coordinator",
             )
             assert writer_run is not None
             await writer_store.append_event(
@@ -699,9 +706,9 @@ async def test_platform_runtime_should_fill_tool_input_when_complete_args_arrive
     session_response = await authenticated_client.post(
         "/api/ai/sessions",
         json={
-            "agent_id": "component-manager",
+            "agent_id": "agent-coordinator",
             "session_name": "平台运行态工具参数补全会话",
-            "scope": scope.model_dump(mode="json"),
+            "workspace_id": scope.workspace_id,
             "llm_config_id": await _create_runtime_llm_config(authenticated_client),
         },
     )
@@ -712,7 +719,7 @@ async def test_platform_runtime_should_fill_tool_input_when_complete_args_arrive
         store = PlatformAgentRuntimeStore(db_session, user_id=1)
         run_start = await store.start_run(
             session_id=session_id,
-            agent_id="component-manager",
+            agent_id="agent-coordinator",
             scope=scope,
             run_id="platform-runtime-run-late-tool-args",
             message="需要提问",
@@ -744,7 +751,7 @@ async def test_platform_runtime_should_fill_tool_input_when_complete_args_arrive
         )
         snapshot = await store.get_runtime_snapshot(
             session_id=session_id,
-            agent_id="component-manager",
+            agent_id="agent-coordinator",
             runtime_context=AgentRuntimeContext(
                 scope_type=scope.scope_type,
                 workspace_id=workspace_id,
@@ -782,9 +789,9 @@ async def test_platform_runtime_snapshot_should_keep_event_order_not_type_order(
     session_response = await authenticated_client.post(
         "/api/ai/sessions",
         json={
-            "agent_id": "component-manager",
+            "agent_id": "agent-coordinator",
             "session_name": "平台运行态顺序回放会话",
-            "scope": scope.model_dump(mode="json"),
+            "workspace_id": scope.workspace_id,
             "llm_config_id": await _create_runtime_llm_config(authenticated_client),
         },
     )
@@ -795,7 +802,7 @@ async def test_platform_runtime_snapshot_should_keep_event_order_not_type_order(
         store = PlatformAgentRuntimeStore(db_session, user_id=1)
         run_start = await store.start_run(
             session_id=session_id,
-            agent_id="component-manager",
+            agent_id="agent-coordinator",
             scope=scope,
             run_id="platform-runtime-run-order",
             message="先查工具再回答",
@@ -847,7 +854,7 @@ async def test_platform_runtime_snapshot_should_keep_event_order_not_type_order(
 
         snapshot = await store.get_runtime_snapshot(
             session_id=session_id,
-            agent_id="component-manager",
+            agent_id="agent-coordinator",
             runtime_context=AgentRuntimeContext(
                 scope_type=scope.scope_type,
                 workspace_id=workspace_id,
@@ -855,13 +862,13 @@ async def test_platform_runtime_snapshot_should_keep_event_order_not_type_order(
             ),
         )
 
-    assert [item.kind for item in snapshot.timeline_items] == ["message", "tool", "message"]
+    assert [item.kind for item in snapshot.timeline_items] == ["message", "run_context", "tool", "message"]
     assert snapshot.timeline_items[0].role == "user"
-    assert snapshot.timeline_items[1].tool is not None
-    assert snapshot.timeline_items[1].tool.output_payload == {"total": 0}
-    assert snapshot.timeline_items[2].role == "assistant"
-    assert snapshot.timeline_items[2].content == "工具后输出。"
-    assert [item.order_index for item in snapshot.timeline_items] == [0, 1, 2]
+    assert snapshot.timeline_items[2].tool is not None
+    assert snapshot.timeline_items[2].tool.output_payload == {"total": 0}
+    assert snapshot.timeline_items[3].role == "assistant"
+    assert snapshot.timeline_items[3].content == "工具后输出。"
+    assert [item.order_index for item in snapshot.timeline_items] == [0, 1, 2, 3]
 
 
 async def test_platform_runtime_cancel_should_be_idempotent(
@@ -883,9 +890,9 @@ async def test_platform_runtime_cancel_should_be_idempotent(
     session_response = await authenticated_client.post(
         "/api/ai/sessions",
         json={
-            "agent_id": "component-manager",
+            "agent_id": "agent-coordinator",
             "session_name": "平台运行态停止幂等会话",
-            "scope": scope.model_dump(mode="json"),
+            "workspace_id": scope.workspace_id,
             "llm_config_id": await _create_runtime_llm_config(authenticated_client),
         },
     )
@@ -896,15 +903,15 @@ async def test_platform_runtime_cancel_should_be_idempotent(
         store = PlatformAgentRuntimeStore(db_session, user_id=1)
         run_start = await store.start_run(
             session_id=session_id,
-            agent_id="component-manager",
+            agent_id="agent-coordinator",
             scope=scope,
             run_id="platform-runtime-run-cancel",
             message="开始长任务",
             image_attachment_ids=[],
         )
 
-        first = await store.request_cancel(session_id=session_id, agent_id="component-manager")
-        second = await store.request_cancel(session_id=session_id, agent_id="component-manager")
+        first = await store.request_cancel(session_id=session_id, agent_id="agent-coordinator")
+        second = await store.request_cancel(session_id=session_id, agent_id="agent-coordinator")
 
         assert first.run_id == run_start.run_model.run_id
         assert second.run_id == run_start.run_model.run_id
@@ -913,7 +920,7 @@ async def test_platform_runtime_cancel_should_be_idempotent(
             .where(AiAgentRunEvent.run_id == run_start.run_model.run_id)
             .order_by(AiAgentRunEvent.event_index.asc())
         )
-        assert result.scalars().all() == ["run.started", "run.cancelling"]
+        assert result.scalars().all() == ["run.started", "run.focus.snapshot", "run.cancelling"]
 
 
 async def test_platform_runtime_failed_run_should_close_running_tools(
@@ -935,9 +942,9 @@ async def test_platform_runtime_failed_run_should_close_running_tools(
     session_response = await authenticated_client.post(
         "/api/ai/sessions",
         json={
-            "agent_id": "component-manager",
+            "agent_id": "agent-coordinator",
             "session_name": "平台运行态失败工具收敛会话",
-            "scope": scope.model_dump(mode="json"),
+            "workspace_id": scope.workspace_id,
             "llm_config_id": await _create_runtime_llm_config(authenticated_client),
         },
     )
@@ -948,7 +955,7 @@ async def test_platform_runtime_failed_run_should_close_running_tools(
         store = PlatformAgentRuntimeStore(db_session, user_id=1)
         run_start = await store.start_run(
             session_id=session_id,
-            agent_id="component-manager",
+            agent_id="agent-coordinator",
             scope=scope,
             run_id="platform-runtime-run-tool-error-on-fail",
             message="创建页面",
@@ -976,7 +983,7 @@ async def test_platform_runtime_failed_run_should_close_running_tools(
         )
         snapshot = await store.get_runtime_snapshot(
             session_id=session_id,
-            agent_id="component-manager",
+            agent_id="agent-coordinator",
             runtime_context=AgentRuntimeContext(
                 scope_type=scope.scope_type,
                 workspace_id=workspace_id,
@@ -999,7 +1006,7 @@ async def test_platform_runtime_failed_run_should_close_running_tools(
     assert tool_status == "error"
     assert timeline_tool.status == "error"
     assert timeline_tool.message == "模型连接中断，本次输出没有完整返回。"
-    assert result.scalars().all() == ["run.started", "tool.started", "tool.error", "run.error"]
+    assert result.scalars().all() == ["run.started", "run.focus.snapshot", "tool.started", "tool.error", "run.error"]
 
 
 async def test_pydantic_runner_cancel_check_should_report_requested_cancel(
@@ -1021,9 +1028,9 @@ async def test_pydantic_runner_cancel_check_should_report_requested_cancel(
     session_response = await authenticated_client.post(
         "/api/ai/sessions",
         json={
-            "agent_id": "component-manager",
+            "agent_id": "agent-coordinator",
             "session_name": "平台运行态取消收敛会话",
-            "scope": scope.model_dump(mode="json"),
+            "workspace_id": scope.workspace_id,
             "llm_config_id": await _create_runtime_llm_config(authenticated_client),
         },
     )
@@ -1034,29 +1041,29 @@ async def test_pydantic_runner_cancel_check_should_report_requested_cancel(
         store = PlatformAgentRuntimeStore(db_session, user_id=1)
         run_start = await store.start_run(
             session_id=session_id,
-            agent_id="component-manager",
+            agent_id="agent-coordinator",
             scope=scope,
             run_id="platform-runtime-run-cancel-finalize",
             message="开始长任务",
             image_attachment_ids=[],
         )
-        await store.request_cancel(session_id=session_id, agent_id="component-manager")
+        await store.request_cancel(session_id=session_id, agent_id="agent-coordinator")
 
         should_stop, should_cancel = await PydanticAgentRunner(store)._cancel_event_if_requested(run_start.run_model)
 
         assert should_stop is True
         assert should_cancel is True
         await store.mark_terminal(run_start.run_model, status="cancelled", content="用户停止了当前运行。")
-        latest_run = await store.get_latest_run_model(session_id=session_id, agent_id="component-manager")
+        latest_run = await store.get_latest_run_model(session_id=session_id, agent_id="agent-coordinator")
         assert latest_run is not None
         assert latest_run.status == "cancelled"
-        assert await store.get_active_run_model(session_id=session_id, agent_id="component-manager") is None
+        assert await store.get_active_run_model(session_id=session_id, agent_id="agent-coordinator") is None
         result = await db_session.execute(
             select(AiAgentRunEvent.event)
             .where(AiAgentRunEvent.run_id == run_start.run_model.run_id)
             .order_by(AiAgentRunEvent.event_index.asc())
         )
-        assert result.scalars().all() == ["run.started", "run.cancelling", "run.cancelled"]
+        assert result.scalars().all() == ["run.started", "run.focus.snapshot", "run.cancelling", "run.cancelled"]
 
 
 async def test_cancelled_external_run_should_close_pending_requirement_and_tool(
@@ -1077,9 +1084,9 @@ async def test_cancelled_external_run_should_close_pending_requirement_and_tool(
     session_response = await authenticated_client.post(
         "/api/ai/sessions",
         json={
-            "agent_id": "component-manager",
+            "agent_id": "agent-coordinator",
             "session_name": "外部任务取消收敛会话",
-            "scope": scope.model_dump(mode="json"),
+            "workspace_id": scope.workspace_id,
             "llm_config_id": await _create_runtime_llm_config(authenticated_client),
         },
     )
@@ -1089,7 +1096,7 @@ async def test_cancelled_external_run_should_close_pending_requirement_and_tool(
         store = PlatformAgentRuntimeStore(db_session, user_id=1)
         run_start = await store.start_run(
             session_id=session_response.json()["session_id"],
-            agent_id="component-manager",
+            agent_id="agent-coordinator",
             scope=scope,
             run_id="platform-runtime-run-external-cancel",
             message="创建页面",
@@ -1158,13 +1165,14 @@ async def test_agent_message_history_should_rebuild_from_run_deltas(
             session=db_session,
             user_id=1,
             session_id=session_id,
-            agent_id="component-manager",
+            agent_id="agent-coordinator",
         )
         first_run = await db_session.get(AiAgentRun, first.run_id)
         second_run = await db_session.get(AiAgentRun, second.run_id)
 
     assert workspace_id == scope.workspace_id
-    assert [item["kind"] for item in rebuilt.message_json] == ["request", "response", "request", "response"]
+    assert [item["kind"] for item in rebuilt.message_json] == ["request", "request", "response", "request", "request", "response"]
+    assert "project_id=none" in rebuilt.message_json[0]["parts"][0]["content"]
     assert rebuilt.included_run_ids == ["history-delta-run-1", "history-delta-run-2"]
     assert first_run is not None and len(first_run.message_history_json) == 2
     assert second_run is not None and len(second_run.message_history_json) == 2
@@ -1190,7 +1198,7 @@ async def test_agent_message_history_should_exclude_current_continue_run(
         )
         current = await store.start_run(
             session_id=session_id,
-            agent_id="component-manager",
+            agent_id="agent-coordinator",
             scope=scope,
             run_id="history-continue-run-2",
             message="需要确认的当前问题",
@@ -1207,14 +1215,14 @@ async def test_agent_message_history_should_exclude_current_continue_run(
             session=db_session,
             user_id=1,
             session_id=session_id,
-            agent_id="component-manager",
+            agent_id="agent-coordinator",
             exclude_run_id=current.run_model.run_id,
         )
         rebuilt_without_exclusion = await rebuild_agent_message_history(
             session=db_session,
             user_id=1,
             session_id=session_id,
-            agent_id="component-manager",
+            agent_id="agent-coordinator",
         )
 
     assert rebuilt.included_run_ids == ["history-continue-run-1"]
@@ -1240,7 +1248,7 @@ async def test_agent_message_history_should_include_active_run_when_requested(
         )
         active = await store.start_run(
             session_id=session_id,
-            agent_id="component-manager",
+            agent_id="agent-coordinator",
             scope=scope,
             run_id="history-active-run-2",
             message="运行中的当前问题",
@@ -1257,13 +1265,13 @@ async def test_agent_message_history_should_include_active_run_when_requested(
             session=db_session,
             user_id=1,
             session_id=session_id,
-            agent_id="component-manager",
+            agent_id="agent-coordinator",
         )
         rebuilt_with_active = await rebuild_agent_message_history(
             session=db_session,
             user_id=1,
             session_id=session_id,
-            agent_id="component-manager",
+            agent_id="agent-coordinator",
             include_run_id=active.run_model.run_id,
         )
 
@@ -1286,7 +1294,7 @@ async def test_agent_message_history_should_sanitize_image_payload_and_preserve_
         store = PlatformAgentRuntimeStore(db_session, user_id=1)
         run_start = await store.start_run(
             session_id=session_id,
-            agent_id="component-manager",
+            agent_id="agent-coordinator",
             scope=scope,
             run_id="history-large-payload-run-1",
             message="生成图片并返回大结果",
@@ -1310,7 +1318,7 @@ async def test_agent_message_history_should_sanitize_image_payload_and_preserve_
             session=db_session,
             user_id=1,
             session_id=session_id,
-            agent_id="component-manager",
+            agent_id="agent-coordinator",
         )
         first_run = await db_session.get(AiAgentRun, run_start.run_model.run_id)
         second_run = await db_session.get(AiAgentRun, second.run_id)
@@ -1355,7 +1363,7 @@ async def test_agent_message_history_checkpoint_should_skip_covered_deltas(
             session=db_session,
             user_id=1,
             session_id=session_id,
-            agent_id="component-manager",
+            agent_id="agent-coordinator",
         )
         budget = build_history_budget(
             SimpleNamespace(context_window_tokens=1200, max_output_tokens=100, compression_target_ratio=0.05),
@@ -1365,7 +1373,7 @@ async def test_agent_message_history_checkpoint_should_skip_covered_deltas(
             session=db_session,
             user_id=1,
             session_id=session_id,
-            agent_id="component-manager",
+            agent_id="agent-coordinator",
             budget=budget,
             rebuilt_history=rebuilt,
         )
@@ -1383,7 +1391,7 @@ async def test_agent_message_history_checkpoint_should_skip_covered_deltas(
             session=db_session,
             user_id=1,
             session_id=session_id,
-            agent_id="component-manager",
+            agent_id="agent-coordinator",
         )
         third = await _finish_history_run(
             store,
@@ -1397,7 +1405,7 @@ async def test_agent_message_history_checkpoint_should_skip_covered_deltas(
             session=db_session,
             user_id=1,
             session_id=session_id,
-            agent_id="component-manager",
+            agent_id="agent-coordinator",
         )
         first_run = await db_session.get(AiAgentRun, first.run_id)
         second_run = await db_session.get(AiAgentRun, second.run_id)
@@ -1409,7 +1417,7 @@ async def test_agent_message_history_checkpoint_should_skip_covered_deltas(
     assert rebuilt_after_checkpoint.included_run_ids == []
     assert rebuilt_after_checkpoint.message_json[0]["parts"][0]["part_kind"] == "system-prompt"
     assert rebuilt_after_new_delta.included_run_ids == ["history-checkpoint-run-3"]
-    assert [item["kind"] for item in rebuilt_after_new_delta.message_json] == ["request", "request", "response"]
+    assert [item["kind"] for item in rebuilt_after_new_delta.message_json] == ["request", "request", "request", "response"]
     assert first_run is not None and len(first_run.message_history_json) == 2
     assert second_run is not None and len(second_run.message_history_json) == 2
     assert third_run is not None and len(third_run.message_history_json) == 2
@@ -1437,7 +1445,7 @@ async def test_context_processor_should_persist_only_stable_history_during_tool_
             session=db_session,
             user_id=1,
             session_id=session_id,
-            agent_id="component-manager",
+            agent_id="agent-coordinator",
         )
         budget = build_history_budget(
             SimpleNamespace(context_window_tokens=1200, max_output_tokens=100, compression_target_ratio=0.05),
@@ -1447,7 +1455,7 @@ async def test_context_processor_should_persist_only_stable_history_during_tool_
             session=db_session,
             user_id=1,
             session_id=session_id,
-            agent_id="component-manager",
+            agent_id="agent-coordinator",
             budget=budget,
             rebuilt_history=rebuilt,
         )
@@ -1506,7 +1514,7 @@ async def test_context_processor_should_compress_current_run_prefix_and_keep_too
             session=db_session,
             user_id=1,
             session_id=session_id,
-            agent_id="component-manager",
+            agent_id="agent-coordinator",
         )
         budget = build_history_budget(
             SimpleNamespace(context_window_tokens=1200, max_output_tokens=100, compression_target_ratio=0.05),
@@ -1516,7 +1524,7 @@ async def test_context_processor_should_compress_current_run_prefix_and_keep_too
             session=db_session,
             user_id=1,
             session_id=session_id,
-            agent_id="component-manager",
+            agent_id="agent-coordinator",
             budget=budget,
             rebuilt_history=rebuilt,
         )
@@ -1559,6 +1567,77 @@ async def test_context_processor_should_compress_current_run_prefix_and_keep_too
     assert compressed_messages[2].parts[0].part_kind == "tool-return"
 
 
+async def test_workspace_session_preferences_should_only_affect_future_run_focus(
+    authenticated_client: AsyncClient,
+) -> None:
+    """固定项目偏好应覆盖路由候选，偏好更新不得篡改已启动 Run 的焦点快照。"""
+
+    workspace_id, session_id, _ = await _create_history_workspace_session(authenticated_client, "焦点快照")
+    first_project_response = await authenticated_client.post(
+        "/api/projects",
+        json={"workspace_id": workspace_id, "name": "项目 A", "status": "active"},
+    )
+    second_project_response = await authenticated_client.post(
+        "/api/projects",
+        json={"workspace_id": workspace_id, "name": "项目 B", "status": "active"},
+    )
+    assert first_project_response.status_code == 200
+    assert second_project_response.status_code == 200
+    first_project_id = int(first_project_response.json()["id"])
+    second_project_id = int(second_project_response.json()["id"])
+
+    preference_response = await authenticated_client.patch(
+        f"/api/ai/sessions/{session_id}/preferences",
+        params={"workspace_id": workspace_id, "agent_id": "agent-coordinator"},
+        json={
+            "focus_mode": "pinned_project",
+            "pinned_project_id": first_project_id,
+            "work_scope_mode": "selected_projects",
+            "allowed_project_ids": [first_project_id, second_project_id],
+        },
+    )
+    assert preference_response.status_code == 200, preference_response.text
+    assert preference_response.json()["focus_version"] == 1
+
+    async with get_session_factory()() as db_session:
+        session_model = await db_session.get(AiAgentSession, session_id)
+        assert session_model is not None
+        focus = await AgentWorkScopeService(db_session, user_id=1).resolve_run_focus(
+            session_model=session_model,
+            requested=AgentFocusRequest(scope_type="project", project_id=second_project_id, source="editor-project"),
+        )
+        assert focus.project_id == first_project_id
+        store = PlatformAgentRuntimeStore(db_session, user_id=1)
+        run_start = await store.start_run(
+            session_id=session_id,
+            agent_id="agent-coordinator",
+            scope=focus,
+            run_id="immutable-focus-run",
+            message="固定项目任务",
+            image_attachment_ids=[],
+        )
+
+    next_preference_response = await authenticated_client.patch(
+        f"/api/ai/sessions/{session_id}/preferences",
+        params={"workspace_id": workspace_id, "agent_id": "agent-coordinator"},
+        json={
+            "focus_mode": "workspace",
+            "pinned_project_id": None,
+            "work_scope_mode": "workspace",
+            "allowed_project_ids": [],
+        },
+    )
+    assert next_preference_response.status_code == 200
+    assert next_preference_response.json()["focus_version"] == 2
+
+    async with get_session_factory()() as db_session:
+        persisted_run = await db_session.get(AiAgentRun, run_start.run_model.run_id)
+        assert persisted_run is not None
+        assert persisted_run.project_id == first_project_id
+        assert persisted_run.input_payload_json["focus_version"] == 1
+        assert persisted_run.input_payload_json["allowed_project_ids"] == [first_project_id, second_project_id]
+
+
 async def _read_next_sse_event(stream) -> AgentRunEvent:
     """读取异步 SSE 流中的下一条 AgentRunEvent。"""
 
@@ -1592,9 +1671,9 @@ async def _create_history_workspace_session(
     session_response = await authenticated_client.post(
         "/api/ai/sessions",
         json={
-            "agent_id": "component-manager",
+            "agent_id": "agent-coordinator",
             "session_name": f"历史上下文会话 {suffix}",
-            "scope": scope.model_dump(mode="json"),
+            "workspace_id": scope.workspace_id,
             "llm_config_id": await _create_runtime_llm_config(authenticated_client),
         },
     )
@@ -1615,7 +1694,7 @@ async def _finish_history_run(
 
     run_start = await store.start_run(
         session_id=session_id,
-        agent_id="component-manager",
+        agent_id="agent-coordinator",
         scope=scope,
         run_id=run_id,
         message=user_text,

@@ -40,7 +40,7 @@ const messageWarningMock = vi.fn()
 const createConfirmMock = vi.fn()
 const clipboardWriteTextMock = vi.fn()
 const DEFAULT_AGENT_ID = 'agent-coordinator'
-const DEFAULT_PLACEHOLDER = '描述目标；内容助手会处理页面/项目任务，并按需调用组件或资源助手。'
+const DEFAULT_PLACEHOLDER = '描述目标；内容助手可以管理当前工作空间内的项目、页面、组件、资源、主题和样式。'
 
 const { AgentStreamInterruptedErrorMock, AgentRequestErrorMock } = vi.hoisted(() => {
   class AgentStreamInterruptedError extends Error {
@@ -605,7 +605,7 @@ describe('AgentConversationPanel', () => {
     await waitFor(() => {
       expect(getAgentSessionRuntimeMock).toHaveBeenCalledWith(
         'session-32',
-        expect.objectContaining({ page_id: 32 }),
+        expect.objectContaining({ scope_type: 'workspace', workspace_id: 11 }),
         DEFAULT_AGENT_ID,
       )
     })
@@ -698,6 +698,8 @@ describe('AgentConversationPanel', () => {
       )
     })
     expect(screen.getByText('已经流出的片段。')).toBeTruthy()
+    expect(screen.getByRole('status').textContent).toContain('空间')
+    expect(screen.getByRole('status').textContent).not.toContain('任务焦点')
     expect(screen.queryByText('运行中快照里的旧内容不应覆盖本地片段。')).toBeNull()
   })
 
@@ -799,7 +801,7 @@ describe('AgentConversationPanel', () => {
     })
   })
 
-  it('顶部 scope 手动切路由后应只展示当前路由范围', async () => {
+  it('空闲时顶部不展示焦点或独立路由范围', async () => {
     const headerScopeTarget = document.createElement('div')
     headerScopeTarget.id = 'scope-target'
     document.body.appendChild(headerScopeTarget)
@@ -828,15 +830,14 @@ describe('AgentConversationPanel', () => {
       pageTitle: '页面二',
     }))
 
-    await waitFor(() => {
-      expect(screen.getByText('页面二')).toBeTruthy()
-      expect(screen.getByText('未选择会话')).toBeTruthy()
-    })
+    await waitFor(() => expect(screen.getByRole('button', { name: '新会话' })).toBeTruthy())
+    expect(screen.getByLabelText('Web-Presentation')).toBeTruthy()
+    expect(screen.queryByText('页面二')).toBeNull()
+    expect(screen.queryByText('当前焦点')).toBeNull()
     expect(screen.queryByText('页面一')).toBeNull()
     expect(screen.queryByText('不在范围')).toBeNull()
-    expect(screen.queryByText('会话')).toBeNull()
-    expect(screen.queryByText('当前')).toBeNull()
-    expect(screen.queryByText('页面')).toBeNull()
+    expect(screen.queryByText('当前路由')).toBeNull()
+    expect(screen.queryByText('会话范围')).toBeNull()
 
     headerScopeTarget.remove()
   })
@@ -968,7 +969,7 @@ describe('AgentConversationPanel', () => {
     await waitFor(() => {
       expect(cancelAgentSessionActiveRunMock).toHaveBeenCalledWith(
         'session-1',
-        expect.objectContaining({ page_id: 31 }),
+        expect.objectContaining({ scope_type: 'workspace', workspace_id: 11 }),
         expect.objectContaining({
           agent_id: DEFAULT_AGENT_ID,
           force: true,
@@ -1054,7 +1055,7 @@ describe('AgentConversationPanel', () => {
     await waitFor(() => {
       expect(cancelAgentSessionActiveRunMock).toHaveBeenCalledWith(
         'session-1',
-        expect.objectContaining({ page_id: 31 }),
+        expect.objectContaining({ scope_type: 'workspace', workspace_id: 11 }),
         expect.objectContaining({
           agent_id: DEFAULT_AGENT_ID,
           force: true,

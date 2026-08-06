@@ -21,7 +21,7 @@ local 与 S3 的差异只存在于工具内部：`analyze_visuals` 的附件输�
 
 ## 上传图片保存为资源
 
-用户明确要求把本轮上传图片保存、导入或加入资源库时，内容助手把可信 `attachment_id` 委派给资源助手，由 `save_uploaded_image_as_resource` 创建 `asset_type=image` 的工作空间资源。工具只接受当前用户、当前工作空间、当前会话中 active 且 `source_kind=user_upload` 的附件，不接受 URL、本地路径或 base64，也不开放覆盖已有资源。
+用户明确要求把本轮上传图片保存、导入或加入资源库时，统一内容助手通过资源创建操作传入可信 `attachment_id`，由内部 `save_uploaded_image_as_resource` 处理器创建 `asset_type=image` 的工作空间资源。处理器只接受当前用户、当前工作空间、当前会话中 active 且 `source_kind=user_upload` 的附件，不接受 URL、本地路径或 base64，也不开放覆盖已有资源。
 
 转换复用 `AgentImageAttachmentService` 与 `AssetService` 的既有校验、对象存储和渲染元数据链路。附件已有 `promoted_asset_id` 时直接返回关联资源并标记 `created=false`，不会重复创建资源或用新参数隐式修改已有元数据。图片生成结果仍由生成队列自动保存，不使用该工具重复提升。
 

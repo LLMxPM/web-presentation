@@ -147,6 +147,19 @@
               aria-label="打开完整预览"
               @click="openFullPreviewDialog"
             />
+            <div
+              v-if="showPreviewStatusOverlay"
+              data-testid="component-preview-status-overlay"
+              class="absolute inset-0 z-20 flex items-center justify-center bg-surface/85 px-8 text-center backdrop-blur-[1px]"
+            >
+              <div class="max-w-md space-y-3">
+                <p class="text-base font-semibold" :class="previewStatus === 'error' ? 'text-danger' : 'text-text-emphasis'">
+                  {{ componentStatusTitle }}
+                </p>
+                <p class="text-sm text-text-muted">{{ componentStatusDescription }}</p>
+                <UiButton v-if="previewStatus === 'error'" size="sm" @click="refreshCurrentPreview">重新生成预览</UiButton>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -222,11 +235,13 @@ const {
   previewFrameStageStyle,
   previewFrameUrl,
   previewLoading,
+  previewStatus,
   previewSchema,
   previewState,
   previewViewportRef,
   workspacePreviewDefaultConfig,
   handlePreviewStateChange,
+  markPreviewError,
   previewBaseConfig,
 } = session
 
@@ -268,14 +283,35 @@ const previewDataState = computed<'loading' | 'empty' | 'error' | 'ready'>(() =>
   return previewFrameUrl.value ? 'ready' : 'empty'
 })
 const previewStateTitle = computed(() => {
+  if (previewStatus.value === 'slow') return '网络较慢，仍在加载'
   if (previewDataState.value === 'loading') return '正在生成组件预览'
   if (previewDataState.value === 'error') return '组件预览生成失败'
   return '当前尚未生成预览'
 })
 const previewStateDescription = computed(() => {
+  if (previewStatus.value === 'slow') return '冷缓存或网络不稳定时可能需要更长时间，请稍候。'
   if (previewDataState.value === 'loading') return '正在准备页面尺寸、主题与组件参数。'
   if (previewDataState.value === 'error') return previewErrorMessage.value
   return '可以重新生成预览，或检查组件源码和 previewSchema。'
+})
+const showPreviewStatusOverlay = computed(() => Boolean(previewFrameUrl.value) && (
+  previewStatus.value === 'generating'
+  || previewStatus.value === 'loading'
+  || previewStatus.value === 'slow'
+  || previewStatus.value === 'error'
+))
+const componentStatusTitle = computed(() => {
+  if (previewStatus.value === 'generating') return '正在生成组件预览'
+  if (previewStatus.value === 'loading') return '正在加载组件预览'
+  if (previewStatus.value === 'slow') return '网络较慢，仍在加载'
+  return '组件预览加载失败'
+})
+const componentStatusDescription = computed(() => {
+  if (previewErrorMessage.value) return previewErrorMessage.value
+  if (previewStatus.value === 'generating') return '正在准备组件源码、页面配置与 Runtime artifact。'
+  if (previewStatus.value === 'loading') return '正在启动 Runtime 并加载组件模块。'
+  if (previewStatus.value === 'slow') return '冷缓存或网络不稳定时可能需要更长时间，请稍候。'
+  return '可以重新生成组件预览后再试。'
 })
 
 watch(
@@ -366,8 +402,7 @@ async function refreshCurrentPreview(): Promise<void> {
     emit('preview-refreshed')
   } catch (error) {
     const errorMessage = getErrorMessage(error, '生成组件预览失败')
-    session.previewLoading.value = false
-    session.previewErrorMessage.value = errorMessage
+    markPreviewError(errorMessage)
     Message.error(errorMessage)
   }
 }

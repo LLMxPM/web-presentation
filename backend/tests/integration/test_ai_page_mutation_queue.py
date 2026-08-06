@@ -55,10 +55,10 @@ async def test_ai_page_mutation_job_should_be_idempotent_and_lease_owned(
                 session_id="session-page-mutation-1",
                 agent_id="agent-coordinator",
                 user_id=user.id,
-                scope_type="project",
                 workspace_id=workspace_id,
-                project_id=project_id,
-                source="test",
+                focus_mode="follow_route",
+                work_scope_mode="workspace",
+                allowed_project_ids_json=[],
                 metadata_json={},
             )
         )
@@ -247,10 +247,10 @@ async def test_expired_continuation_lease_should_restore_waiting_external_run(
             session_id="session-recovery-1",
             agent_id="agent-coordinator",
             user_id=user.id,
-            scope_type="project",
             workspace_id=workspace_id,
-            project_id=project_id,
-            source="test",
+            focus_mode="follow_route",
+            work_scope_mode="workspace",
+            allowed_project_ids_json=[],
             metadata_json={},
         ))
         await session.flush()
@@ -334,11 +334,13 @@ async def test_expired_continuation_lease_should_restore_waiting_external_run(
         assert run.event_index == -1
 
 
+@pytest.mark.parametrize("generic_tool", [False, True], ids=["direct-tool", "generic-tool"])
 async def test_ai_page_mutation_executor_should_commit_page_and_job_together(
     authenticated_client: AsyncClient,
     monkeypatch,
+    generic_tool: bool,
 ) -> None:
-    """创建页成功时，页面初始版本和 Job 成功结果应在同一最终事务中写入。"""
+    """直接或通用工具创建页时，页面初始版本和 Job 结果应在同一事务中写入。"""
 
     workspace_response = await authenticated_client.post(
         "/api/workspaces",
@@ -361,10 +363,10 @@ async def test_ai_page_mutation_executor_should_commit_page_and_job_together(
             session_id="session-page-mutation-2",
             agent_id="agent-coordinator",
             user_id=user.id,
-            scope_type="project",
             workspace_id=workspace_id,
-            project_id=project_id,
-            source="test",
+            focus_mode="follow_route",
+            work_scope_mode="workspace",
+            allowed_project_ids_json=[],
             metadata_json={},
         ))
         await session.flush()
@@ -383,6 +385,20 @@ async def test_ai_page_mutation_executor_should_commit_page_and_job_together(
         )
         session.add(run)
         await session.flush()
+        page_arguments = {
+            "title": "队列封面",
+            "summary": "通过持久化队列创建",
+            "page_content": "<template><main>队列封面</main></template>",
+        }
+        tool_name = "create_entity" if generic_tool else "create_project_page"
+        tool_arguments = (
+            {
+                "resource_type": "page",
+                "payload": {"project_id": project_id, **page_arguments},
+            }
+            if generic_tool
+            else page_arguments
+        )
         await PlatformAgentRuntimeStore(session, user_id=user.id).append_event(
             run,
             AgentRunEvent(
@@ -391,15 +407,8 @@ async def test_ai_page_mutation_executor_should_commit_page_and_job_together(
                 session_id=run.session_id,
                 data={
                     "tool_call_id": "tool-page-mutation-2",
-                    "tool_name": "create_project_page",
-                    "tool_args": json.dumps(
-                        {
-                            "title": "队列封面",
-                            "summary": "通过持久化队列创建",
-                            "page_content": "<template><main>队列封面</main></template>",
-                        },
-                        ensure_ascii=False,
-                    ),
+                    "tool_name": tool_name,
+                    "tool_args": json.dumps(tool_arguments, ensure_ascii=False),
                 },
             ),
         )
@@ -450,8 +459,149 @@ async def test_ai_page_mutation_executor_should_commit_page_and_job_together(
         page = await session.scalar(select(Page).where(Page.project_id == project_id, Page.title == "队列封面"))
         assert job is not None and job.status == "succeeded"
         assert page is not None and page.current_version_no == 1
-        assert isinstance(job.result_json, dict) and job.result_json["page_id"] == page.id
+        assert isinstance(job.result_json, dict)
+        result_data = job.result_json["data"] if generic_tool else job.result_json
+        assert result_data["page_id"] == page.id
     assert phases == ["validating", "saving"]
+
+
+async def test_ai_page_mutation_executor_should_apply_generic_update_payload(
+    authenticated_client: AsyncClient,
+    monkeypatch,
+) -> None:
+    """通用 update_entity 的嵌套 payload 应被 Worker 解包并生成页面新版本。"""
+
+    workspace_response = await authenticated_client.post(
+        "/api/workspaces",
+        json={"name": "通用页面编辑工作空间", "status": "active"},
+    )
+    workspace_id = workspace_response.json()["id"]
+    project_response = await authenticated_client.post(
+        "/api/projects",
+        json={"workspace_id": workspace_id, "name": "通用页面编辑项目", "status": "active"},
+    )
+    project_id = project_response.json()["id"]
+    page_response = await authenticated_client.post(
+        "/api/pages",
+        json={
+            "workspace_id": workspace_id,
+            "project_id": project_id,
+            "title": "待编辑页面",
+            "page_content": "<template><main>旧内容</main></template>",
+            "file_type": "vue",
+            "status": "active",
+        },
+    )
+    assert workspace_response.status_code == 200
+    assert project_response.status_code == 200
+    assert page_response.status_code == 200
+    page_id = page_response.json()["id"]
+    next_content = "<template><main>新内容</main></template>"
+    session_factory = get_session_factory()
+
+    async with session_factory() as session:
+        user = await session.scalar(select(User).where(User.username == "admin"))
+        assert user is not None
+        session.add(AiAgentSession(
+            session_id="session-page-mutation-generic-update",
+            agent_id="agent-coordinator",
+            user_id=user.id,
+            workspace_id=workspace_id,
+            focus_mode="follow_route",
+            work_scope_mode="workspace",
+            allowed_project_ids_json=[],
+            metadata_json={},
+        ))
+        await session.flush()
+        run = AiAgentRun(
+            run_id="run-page-mutation-generic-update",
+            session_id="session-page-mutation-generic-update",
+            agent_id="agent-coordinator",
+            user_id=user.id,
+            status="waiting_external",
+            scope_type="page",
+            workspace_id=workspace_id,
+            project_id=project_id,
+            page_id=page_id,
+            source="test",
+            input_payload_json={"message": "更新页面"},
+            message_history_json=[],
+        )
+        session.add(run)
+        await session.flush()
+        await PlatformAgentRuntimeStore(session, user_id=user.id).append_event(
+            run,
+            AgentRunEvent(
+                event="tool.started",
+                run_id=run.run_id,
+                session_id=run.session_id,
+                data={
+                    "tool_call_id": "tool-page-mutation-generic-update",
+                    "tool_name": "update_entity",
+                    "tool_args": {
+                        "resource_type": "page",
+                        "target_id": page_id,
+                        "action": "content",
+                        "payload": {
+                            "edits": [{"type": "rewrite_file", "content": next_content}],
+                            "base_version_no": 1,
+                            "change_note": "通用工具更新",
+                        },
+                    },
+                },
+            ),
+        )
+
+    await enqueue_page_mutation(
+        session_factory,
+        run_id="run-page-mutation-generic-update",
+        session_id="session-page-mutation-generic-update",
+        run_step=1,
+        tool_call_id="tool-page-mutation-generic-update",
+        operation="apply_page_edits",
+        workspace_id=workspace_id,
+        project_id=project_id,
+        page_id=page_id,
+        base_version_no=1,
+    )
+    async with session_factory() as session:
+        claimed = await claim_pending_jobs(
+            session,
+            AiPageMutationJob,
+            worker_id="worker-generic-update",
+            limit=1,
+            lease_seconds=60,
+        )
+    assert len(claimed) == 1
+
+    async def fake_check_page_code(self, **kwargs):  # noqa: ANN001
+        """替代 Runtime/Chromium，聚焦验证通用工具参数解包。"""
+
+        _ = self
+        assert kwargs["content"] == next_content
+        return {"success": True, "status": "passed", "summary": "代码检查通过。", "diagnostics": []}
+
+    monkeypatch.setattr("app.ai.page_mutation_executor.CodeCheckService.check_page_code", fake_check_page_code)
+
+    async def progress(_: str) -> None:
+        """消费 Worker 进度事件。"""
+
+    await AiPageMutationExecutor(session_factory).execute(
+        database_id=claimed[0],
+        worker_id="worker-generic-update",
+        progress=progress,
+    )
+
+    async with session_factory() as session:
+        page = await session.get(Page, page_id)
+        job = await session.get(AiPageMutationJob, claimed[0])
+        assert page is not None
+        assert page.page_content == next_content
+        assert page.current_version_no == 2
+        assert job is not None and isinstance(job.result_json, dict)
+        assert job.result_json["operation"] == "update"
+        assert job.result_json["action"] == "content"
+        assert job.result_json["data"]["page_id"] == page_id
 
 
 async def test_reconcile_cancel_should_keep_running_job_and_resuming_batch_lease(
@@ -482,10 +632,10 @@ async def test_reconcile_cancel_should_keep_running_job_and_resuming_batch_lease
             session_id="session-page-mutation-cancel-lease",
             agent_id="agent-coordinator",
             user_id=user.id,
-            scope_type="project",
             workspace_id=workspace_id,
-            project_id=project_id,
-            source="test",
+            focus_mode="follow_route",
+            work_scope_mode="workspace",
+            allowed_project_ids_json=[],
             metadata_json={},
         ))
         await session.flush()

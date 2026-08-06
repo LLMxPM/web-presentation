@@ -103,10 +103,16 @@
               :preview-display-file-name="previewDisplayFileName"
               :preview-url="previewUrl"
               :preview-frame-url="previewFrameUrl"
+              :preview-artifact-id="previewArtifactId"
+              :preview-status="previewStatus"
+              :preview-status-message="previewStatusMessage"
               :preview-viewport="previewViewport"
               :page-title="pageDetails.title"
               :speaker-notes-panel-open="isSpeakerNotesPanelOpen"
               @refresh="refreshPreviewFrame"
+              @preview-ready="handlePagePreviewReady"
+              @preview-error="handlePagePreviewError"
+              @retry="retryRuntimePreview"
               @toggle-speaker-notes="isSpeakerNotesPanelOpen = !isSpeakerNotesPanelOpen"
             />
           </div>
@@ -263,6 +269,7 @@ import PageSnapshotDialog from '@/components/page-detail/PageSnapshotDialog.vue'
 import PageSpeakerNotesPanel from '@/components/page-detail/PageSpeakerNotesPanel.vue'
 import PageUsageDialog from '@/components/page-detail/PageUsageDialog.vue'
 import PageVersionHistoryDialog from '@/components/page-detail/PageVersionHistoryDialog.vue'
+import { useRuntimePreviewLifecycle } from '@/composables/useRuntimePreviewLifecycle'
 import { UiButton, UiIconButton } from '@/components/ui'
 import CommandBar from '@/components/patterns/CommandBar.vue'
 import DataState from '@/components/patterns/DataState.vue'
@@ -345,9 +352,18 @@ const isSpeakerNotesSaving = ref(false)
 const isPreviewEnabled = ref(true)
 const isPreviewPending = ref(false)
 const previewUrl = ref('')
+const previewArtifactId = ref('')
 const previewFilePath = ref('')
 const previewViewport = ref({ ...DEFAULT_PREVIEW_VIEWPORT })
 const previewRefreshToken = ref(0)
+const {
+  status: previewStatus,
+  message: previewStatusMessage,
+  start: beginPreviewLoading,
+  markReady: handlePagePreviewReady,
+  markError: handlePagePreviewError,
+  reset: resetPreviewLifecycle,
+} = useRuntimePreviewLifecycle()
 const pendingSnapshotVersionNo = ref<number | null>(null)
 const restoringVersionNo = ref<number | null>(null)
 const previewingRuntimeVersionNo = ref<number | null>(null)
@@ -431,7 +447,9 @@ const previewFrameUrl = computed(() => {
  * 更新 iframe 刷新令牌，避免浏览器复用旧的预览页快照。
  */
 function refreshPreviewFrame() {
+  if (!previewUrl.value) return
   previewRefreshToken.value = Date.now()
+  beginPreviewLoading('loading')
 }
 
 /**
@@ -439,9 +457,26 @@ function refreshPreviewFrame() {
  */
 function applyPreviewLink(previewLink: PreviewArtifactResponse) {
   previewUrl.value = previewLink.preview_url
+  previewArtifactId.value = previewLink.artifact_id
   previewFilePath.value = resolvePreviewFilePath(previewLink) ?? ''
   previewViewport.value = resolvePreviewViewport(previewLink)
   refreshPreviewFrame()
+}
+
+/** 错误态重试始终创建新 artifact，避免复用过期上下文。 */
+function retryRuntimePreview(): void {
+  if (!pageDetails.value || isPreviewPending.value) return
+  void syncRuntimePreview(pageDetails.value, { showSuccessMessage: false })
+}
+
+/** 切换页面或显式清空预览时同步重置生命周期状态。 */
+function resetRuntimePreviewState(): void {
+  resetPreviewLifecycle()
+  previewUrl.value = ''
+  previewArtifactId.value = ''
+  previewFilePath.value = ''
+  previewViewport.value = { ...DEFAULT_PREVIEW_VIEWPORT }
+  previewRefreshToken.value = 0
 }
 
 /**
@@ -690,10 +725,7 @@ watch(pageDetails, (page) => {
     versionPreviewLinkMap.value = {}
     editorExposeRef.value?.markClean(page.page_content)
     if (isNewPage) {
-      previewUrl.value = ''
-      previewFilePath.value = ''
-      previewViewport.value = { ...DEFAULT_PREVIEW_VIEWPORT }
-      previewRefreshToken.value = 0
+      resetRuntimePreviewState()
       previewInitializedPageId.value = null
       isSnapshotDialogOpen.value = false
       snapshotDialogVersionNo.value = null
@@ -881,9 +913,7 @@ async function handleVisualEditSaved(_response: PageVisualEditApplyResponse): Pr
   ])
   if (latestPage) syncPageIntoEditor(latestPage)
   isVisualEditDirty.value = false
-  previewUrl.value = ''
-  previewFilePath.value = ''
-  previewViewport.value = { ...DEFAULT_PREVIEW_VIEWPORT }
+  resetRuntimePreviewState()
   previewInitializedPageId.value = null
 }
 /**
@@ -1001,7 +1031,7 @@ function handleGlobalAgentProjectPagesUpdated(event: Event) {
 }
 
 /**
- * 接收组件助手写入事件；当前页引用该组件或无法判定时，重建运行时预览。
+ * 接收内容助手的组件写入事件；当前页引用该组件或无法判定时，重建运行时预览。
  */
 function handleGlobalAgentComponentUpdated(event: Event) {
   const detail = (event as CustomEvent<AgentMutationEventDetail>).detail
@@ -1011,7 +1041,7 @@ function handleGlobalAgentComponentUpdated(event: Event) {
 }
 
 /**
- * 接收资源助手写入事件；当前页引用该资源或无法判定时，重建运行时预览。
+ * 接收内容助手的资源写入事件；当前页引用该资源或无法判定时，重建运行时预览。
  */
 function handleGlobalAgentAssetUpdated(event: Event) {
   const detail = (event as CustomEvent<AgentMutationEventDetail>).detail
@@ -1477,9 +1507,7 @@ async function handleRestoreVersion(versionNo: number) {
     await queryClient.invalidateQueries({ queryKey: ['pages-by-project', projectId.value] })
     await queryClient.invalidateQueries({ queryKey: ['page-component-index', pageId.value] })
     syncPageIntoEditor(restoredPage)
-    previewUrl.value = ''
-    previewFilePath.value = ''
-    previewViewport.value = { ...DEFAULT_PREVIEW_VIEWPORT }
+    resetRuntimePreviewState()
     Message.success(`已恢复到 ${displayLabel}，并生成新的最新版本。`)
   } catch (error) {
     Message.error(getErrorMessage(error, '恢复页面版本失败。'))
@@ -1496,6 +1524,7 @@ async function syncRuntimePreview(
   options: { showSuccessMessage?: boolean } = {},
 ): Promise<boolean> {
   isPreviewPending.value = true
+  beginPreviewLoading('generating')
   try {
     const entryRoute = `src/views/${page.code}.${page.file_type}`
     const previewLink = await createProjectPreviewArtifact(projectId.value, entryRoute)
@@ -1506,7 +1535,9 @@ async function syncRuntimePreview(
     }
     return true
   } catch (error) {
-    Message.error(getErrorMessage(error, '生成草稿预览失败。'))
+    const errorMessage = getErrorMessage(error, '生成草稿预览失败。')
+    handlePagePreviewError(errorMessage)
+    Message.error(errorMessage)
     return false
   } finally {
     isPreviewPending.value = false

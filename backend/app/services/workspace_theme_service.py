@@ -9,6 +9,13 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import AppException
+from app.core.platform_fonts import (
+    MONO_FONT_PRESETS,
+    PLATFORM_MONO_FONT,
+    PLATFORM_SANS_FONT,
+    SANS_FONT_PRESETS,
+    resolve_font_preset,
+)
 from app.models.asset import WorkspaceAsset
 from app.models.enums import AssetType, RecordStatus
 from app.models.font import WorkspaceFontConfig, WorkspaceFontFamily
@@ -32,9 +39,9 @@ DEFAULT_THEME_DESCRIPTION = "白底蓝色主题，简约经典"
 DEFAULT_THEME_LOGO_PATH = None
 DEFAULT_THEME_INVERT_LOGO_PATH = None
 DEFAULT_THEME_PROJECT_ICON_NAME = None
-DEFAULT_THEME_HEADING_FONT = "system-ui"
-DEFAULT_THEME_BODY_FONT = "system-ui"
-DEFAULT_THEME_CODE_FONT = "monospace"
+DEFAULT_THEME_HEADING_FONT = PLATFORM_SANS_FONT
+DEFAULT_THEME_BODY_FONT = PLATFORM_SANS_FONT
+DEFAULT_THEME_CODE_FONT = PLATFORM_MONO_FONT
 DEFAULT_THEME_PALETTE = ThemePalette.model_validate(
     {
         "text": {
@@ -475,6 +482,18 @@ class WorkspaceThemeService:
                 "heading_font_label": theme.heading_font_label,
                 "body_font_label": theme.body_font_label,
                 "code_font_label": theme.code_font_label,
+                "heading_font_preset": (
+                    resolve_font_preset(theme.heading_font_label, SANS_FONT_PRESETS)
+                    if theme.heading_font_family_id is None else None
+                ),
+                "body_font_preset": (
+                    resolve_font_preset(theme.body_font_label, SANS_FONT_PRESETS)
+                    if theme.body_font_family_id is None else None
+                ),
+                "code_font_preset": (
+                    resolve_font_preset(theme.code_font_label, MONO_FONT_PRESETS)
+                    if theme.code_font_family_id is None else None
+                ),
                 "palette": theme.palette,
                 "logo_asset": self._build_asset_summary(theme.workspace_id, logo_asset),
                 "invert_logo_asset": self._build_asset_summary(theme.workspace_id, invert_logo_asset),
@@ -564,6 +583,15 @@ class WorkspaceThemeService:
             payload.code_font_family_id,
             current_theme.code_font_family_id if current_theme else None,
         )
+        heading_font_family_id = self._clear_family_for_explicit_preset(
+            payload_fields, "heading_font_preset", payload.heading_font_preset, heading_font_family_id
+        )
+        body_font_family_id = self._clear_family_for_explicit_preset(
+            payload_fields, "body_font_preset", payload.body_font_preset, body_font_family_id
+        )
+        code_font_family_id = self._clear_family_for_explicit_preset(
+            payload_fields, "code_font_preset", payload.code_font_preset, code_font_family_id
+        )
 
         logo_asset = await self._get_theme_logo_asset_or_none(workspace_id, logo_asset_id)
         invert_logo_asset = await self._get_theme_logo_asset_or_none(workspace_id, invert_logo_asset_id)
@@ -591,6 +619,8 @@ class WorkspaceThemeService:
             "heading_font_label": self._resolve_theme_font_label(
                 payload_fields,
                 "heading_font_family_id",
+                "heading_font_preset",
+                payload.heading_font_preset,
                 heading_font_family,
                 current_theme.heading_font_label if current_theme else None,
                 DEFAULT_THEME_HEADING_FONT,
@@ -598,6 +628,8 @@ class WorkspaceThemeService:
             "body_font_label": self._resolve_theme_font_label(
                 payload_fields,
                 "body_font_family_id",
+                "body_font_preset",
+                payload.body_font_preset,
                 body_font_family,
                 current_theme.body_font_label if current_theme else None,
                 DEFAULT_THEME_BODY_FONT,
@@ -605,6 +637,8 @@ class WorkspaceThemeService:
             "code_font_label": self._resolve_theme_font_label(
                 payload_fields,
                 "code_font_family_id",
+                "code_font_preset",
+                payload.code_font_preset,
                 code_font_family,
                 current_theme.code_font_label if current_theme else None,
                 DEFAULT_THEME_CODE_FONT,
@@ -747,17 +781,35 @@ class WorkspaceThemeService:
     def _resolve_theme_font_label(
         payload_fields: set[str],
         field_name: str,
+        preset_field_name: str,
+        preset_value: str | None,
         font_family: WorkspaceFontFamily | None,
         current_label: str | None,
         default_label: str,
     ) -> str:
-        """解析主题字体展示名，显式清空时回到浏览器默认字体。"""
+        """解析主题字体 token，显式清空时回到跨端一致的平台默认字体。"""
 
         if font_family is not None:
             return font_family.name
-        if current_label is not None and field_name not in payload_fields:
+        normalized_preset = str(preset_value or "").strip()
+        if preset_field_name in payload_fields and normalized_preset:
+            return normalized_preset
+        if current_label is not None and field_name not in payload_fields and preset_field_name not in payload_fields:
             return current_label
         return default_label
+
+    @staticmethod
+    def _clear_family_for_explicit_preset(
+        payload_fields: set[str],
+        preset_field_name: str,
+        preset_value: str | None,
+        family_id: int | None,
+    ) -> int | None:
+        """显式选择内置预设时清除旧字体族绑定，未传字段时保留当前绑定。"""
+
+        if preset_field_name in payload_fields and str(preset_value or "").strip():
+            return None
+        return family_id
 
     async def _list_font_asset_names_for_families(self, workspace_id: int, family_ids: list[int]) -> list[str]:
         """列出指定字体族下全部启用 face 的字体资产名，供导出打包收集字体文件。"""

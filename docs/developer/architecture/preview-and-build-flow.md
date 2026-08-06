@@ -11,9 +11,13 @@
 5. Runtime 回源 Backend 读取上下文、配置包、资源和远程模块。
 6. Runtime 渲染页面并把结果展示给 Editor。
 
+页面 iframe 使用版本 1 状态消息回传最终结果：成功发送 `page-preview:ready`，初始化或页面模块失败发送 `page-preview:error`；payload 必须包含当前 `artifactId`。Editor 同时校验消息窗口、origin、协议版本和 artifact，忽略旧预览迟到消息。Editor 在等待 8 秒后展示弱网提示，30 秒后进入可重试错误；超时不会销毁 iframe，因此同一 artifact 的迟到 ready 仍可恢复预览。
+
 ## 组件预览
 
 组件预览依赖组件源码和 previewSchema。Backend 负责校验 previewSchema 可导入能力，Runtime 负责按 schema 渲染典型状态。previewSchema 变化时要同步 Runtime 组件预览测试和 Backend 契约测试。
+
+组件预览沿用 `component-preview:ready/error` 消息，在 Editor 中采用与页面预览一致的 8 秒弱网提示和 30 秒可重试超时。刷新同一预览对象时保留旧 iframe 并覆盖加载状态；切换对象时清空旧画面，避免串用 artifact。
 
 ## 截图
 

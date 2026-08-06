@@ -17,6 +17,8 @@
               <button
                 type="button"
                 class="flex size-5 shrink-0 items-center justify-center rounded-full text-[rgb(var(--ui-text-muted))] transition-colors hover:bg-surface-muted hover:text-[rgb(var(--ui-text-secondary))]"
+                :aria-label="descriptionLabel || '查看页面描述'"
+                :title="descriptionLabel || '查看页面描述'"
               >
                 <Info :size="16" />
               </button>
@@ -44,6 +46,8 @@ defineProps<{
   icon?: Component
   /** 标题下的简短范围说明；点击信息图标可在浮层中查看。 */
   description?: string
+  /** 描述提示按钮的可访问名称。 */
+  descriptionLabel?: string
 }>()
 
 const isDescriptionOpen = ref(false)

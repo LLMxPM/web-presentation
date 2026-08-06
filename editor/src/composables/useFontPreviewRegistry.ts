@@ -2,6 +2,7 @@
 import { onBeforeUnmount, watch, type ComputedRef } from 'vue'
 
 import type { WorkspaceFontFamilyItem } from '@/types/api'
+import { resolveThemeFontPreviewFallback } from '@/utils/theme-font-presets'
 
 const STYLE_ELEMENT_ID = 'editor-font-preview-registry'
 const familyOwners = new Map<symbol, WorkspaceFontFamilyItem[]>()
@@ -47,10 +48,11 @@ export function resolveFontPreviewFamily(
   family: WorkspaceFontFamilyItem | null | undefined,
   fallbackFamily: string,
 ): string {
+  const resolvedFallback = resolveThemeFontPreviewFallback(fallbackFamily)
   if (!family || !family.faces.some(face => face.status === 'active' && face.asset_url)) {
-    return fallbackFamily
+    return resolvedFallback
   }
-  return `"${getFontPreviewFamilyAlias(family)}", ${fallbackFamily}`
+  return `"${getFontPreviewFamilyAlias(family)}", ${resolvedFallback}`
 }
 
 /** 汇总所有预览组件的字体依赖并重建唯一 style 节点。 */

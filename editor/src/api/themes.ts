@@ -3,6 +3,7 @@
  */
 import { http } from '@/api/http'
 import type { ListParams, PagedResponse, ThemePalette, WorkspaceThemeItem } from '@/types/api'
+import type { ThemeFontPreset } from '@/utils/theme-font-presets'
 
 function buildParams<T extends object>(params: ListParams & T) {
   const { page, page_size, keyword, status, sort_by, sort_order, ...rest } = params
@@ -31,6 +32,9 @@ export interface WorkspaceThemePayload {
   heading_font_family_id?: number | null
   body_font_family_id?: number | null
   code_font_family_id?: number | null
+  heading_font_preset?: ThemeFontPreset | null
+  body_font_preset?: ThemeFontPreset | null
+  code_font_preset?: ThemeFontPreset | null
   palette: ThemePalette
 }
 

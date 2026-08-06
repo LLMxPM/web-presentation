@@ -6,14 +6,20 @@
         :icon="FolderKanban"
         :title="workspaceQuery.data.value?.name ?? '正在加载工作空间...'"
         :description="workspaceDetails?.description || '暂无工作空间描述。'"
+        description-label="查看空间描述"
       >
+        <template #meta>
+          <UiIconButton
+            label="修改空间基础信息"
+            size="xs"
+            variant="ghost"
+            :disabled="!workspaceDetails"
+            @click="openWorkspaceEditDialog"
+          >
+            <SquarePen class="h-3.5 w-3.5" />
+          </UiIconButton>
+        </template>
         <template #actions>
-          <UiButton variant="ghost" size="md" :disabled="!workspaceDetails" @click="openWorkspaceEditDialog">
-            <template #icon>
-              <Settings2 class="w-4 h-4" />
-            </template>
-            编辑空间
-          </UiButton>
           <UiButton
             variant="secondary"
             size="md"
@@ -79,12 +85,12 @@
           v-for="proj in filteredProjects"
           :key="proj.id"
           :project="proj"
+          :preview-pending="previewProjectId === proj.id"
           :export-pending="exportValidateProjectId === proj.id"
           :export-disabled="exportPackagePending"
           :archive-pending="archivingProjectId === proj.id"
-          :theme-name="resolveProjectThemeName(proj)"
-          :theme-loading="themeQuery.isFetching.value"
           @open="goToProject"
+          @preview="handlePreviewProject"
           @export-template="handleValidateExportTemplate"
           @archive="handleArchiveProject"
         />
@@ -385,10 +391,11 @@
 import { computed, onBeforeUnmount, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/vue-query'
-import { Archive, Eye, FolderKanban, Plus, Settings2, Upload } from '@lucide/vue'
+import { Archive, Eye, FolderKanban, Plus, SquarePen, Upload } from '@lucide/vue'
 
 import { createProject, getWorkspace, listProjects, updateProject, updateWorkspace } from '@/api/catalog'
 import { getErrorMessage } from '@/api/http'
+import { createProjectPreviewArtifact } from '@/api/preview'
 import {
   createProjectTemplatePackagePreviewArtifact,
   exportProjectTemplatePackage,
@@ -396,7 +403,6 @@ import {
   validateProjectTemplatePackageExport,
   validateProjectTemplatePackageImport,
 } from '@/api/templates'
-import { listWorkspaceThemes } from '@/api/themes'
 import CommandBar from '@/components/patterns/CommandBar.vue'
 import DataState from '@/components/patterns/DataState.vue'
 import PageHeader from '@/components/patterns/PageHeader.vue'
@@ -407,7 +413,7 @@ import ProjectCreateCard from '@/components/project/ProjectCreateCard.vue'
 import ProjectMetadataDialog from '@/components/project/ProjectMetadataDialog.vue'
 import WorkspaceMetadataDialog from '@/components/project/WorkspaceMetadataDialog.vue'
 import RuntimePreviewFrame from '@/components/runtime-preview/RuntimePreviewFrame.vue'
-import { UiButton, UiDialog } from '@/components/ui'
+import { UiButton, UiDialog, UiIconButton } from '@/components/ui'
 import { createConfirm, Message } from '@/utils/message'
 import { downloadBlob } from '@/utils/zip-download'
 import type {
@@ -442,14 +448,6 @@ const query = useQuery(
   })),
 )
 
-const themeQuery = useQuery(
-  computed(() => ({
-    queryKey: ['workspace-themes', workspaceId.value, 'project-card-labels'],
-    queryFn: () => listWorkspaceThemes(workspaceId.value, { page: 1, page_size: 100 }),
-    enabled: !!workspaceId.value,
-  })),
-)
-
 const workspaceDetails = computed(() => workspaceQuery.data.value ?? null)
 const projects = computed(() => query.data.value?.items ?? [])
 const projectKeyword = ref('')
@@ -465,12 +463,10 @@ const projectDataState = computed<'loading' | 'empty' | 'error' | 'ready'>(() =>
   if (query.isError.value) return 'error'
   return filteredProjects.value.length === 0 ? 'empty' : 'ready'
 })
-const themeNameByKey = computed(() => new Map(
-  (themeQuery.data.value?.items ?? []).map(theme => [theme.key, theme.name]),
-))
 const dialogVisible = ref(false)
 const archivedDialogVisible = ref(false)
 const saving = ref(false)
+const previewProjectId = ref<number | null>(null)
 const archivingProjectId = ref<number | null>(null)
 const workspaceMetadataDialogVisible = ref(false)
 const workspaceSaving = ref(false)
@@ -631,14 +627,19 @@ function goToProject(id: number) {
 }
 
 /**
- * 按项目主题 key 映射主题名称；卡片不回退展示 key，避免把内部标识暴露给用户。
- * @param project 项目列表项
+ * 生成项目整体预览并在新标签页打开。
+ * @param project 需要预览的项目
  */
-function resolveProjectThemeName(project: ProjectItem): string | null {
-  if (!project.theme_key) {
-    return null
+async function handlePreviewProject(project: ProjectItem): Promise<void> {
+  previewProjectId.value = project.id
+  try {
+    const preview = await createProjectPreviewArtifact(project.id)
+    window.open(preview.preview_url, '_blank')
+  } catch (error) {
+    Message.error(getErrorMessage(error, '生成整项目预览失败。'))
+  } finally {
+    previewProjectId.value = null
   }
-  return themeNameByKey.value.get(project.theme_key) ?? null
 }
 
 /**

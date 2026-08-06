@@ -1,5 +1,7 @@
 """文件功能：验证智能体运行异常归一化，避免向用户暴露底层模型连接错误。"""
 
+from pydantic_ai.exceptions import UnexpectedModelBehavior
+
 from app.ai.run_errors import build_agent_error_log_extra, normalize_agent_run_exception
 
 
@@ -40,6 +42,31 @@ def test_normalize_agent_run_exception_should_map_payment_required() -> None:
     assert failure.code == "AI_MODEL_PAYMENT_REQUIRED"
     assert "余额或额度不足" in failure.message
     assert "Payment Required" in failure.raw_message
+
+
+def test_normalize_agent_run_exception_should_map_tool_argument_retry_exhaustion() -> None:
+    """工具参数重试耗尽应提示修正任务或模型，而不是误报网络错误。"""
+
+    failure = normalize_agent_run_exception(
+        UnexpectedModelBehavior("Tool 'query_entities' exceeded max retries count of 3"),
+        fallback_code="AI_RUN_FAILED",
+    )
+
+    assert failure.code == "AI_TOOL_ARGUMENT_RETRIES_EXHAUSTED"
+    assert "工具参数连续校验失败" in failure.message
+    assert "网络" not in failure.message
+
+
+def test_normalize_agent_run_exception_should_map_output_validation_retry_exhaustion() -> None:
+    """最终输出校验耗尽应与工具参数错误和网络故障区分。"""
+
+    failure = normalize_agent_run_exception(
+        UnexpectedModelBehavior("Exceeded maximum retries (1) for output validation"),
+        fallback_code="AI_RUN_FAILED",
+    )
+
+    assert failure.code == "AI_MODEL_OUTPUT_VALIDATION_FAILED"
+    assert "模型输出连续未满足" in failure.message
 
 
 def test_build_agent_error_log_extra_should_include_error_chain() -> None:

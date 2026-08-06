@@ -256,12 +256,7 @@ async def test_global_and_personal_llm_configs_should_follow_scope_rules(client:
         json={
             "agent_id": "agent-coordinator",
             "session_name": "全局模型会话",
-            "scope": {
-                "scope_type": "project",
-                "workspace_id": workspace_id,
-                "project_id": project_id,
-                "source": "test-multi-user",
-            },
+            "workspace_id": workspace_id,
             "llm_config_id": global_model["id"],
         },
     )
@@ -305,12 +300,7 @@ async def test_global_and_personal_llm_configs_should_follow_scope_rules(client:
         json={
             "agent_id": "agent-coordinator",
             "session_name": "越权模型会话",
-            "scope": {
-                "scope_type": "project",
-                "workspace_id": workspace_id,
-                "project_id": project_id,
-                "source": "test-multi-user",
-            },
+            "workspace_id": workspace_id,
             "llm_config_id": dave_model["id"],
         },
     )

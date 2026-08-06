@@ -48,8 +48,8 @@ def test_scope_context_should_use_compact_base_font_scale_note() -> None:
     assert "按 Runtime Tailwind 预设比例派生" not in context_text
 
 
-def test_scope_context_should_include_project_suggested_component_summaries() -> None:
-    """运行时上下文应注入项目建议组件摘要，并提示需再读取使用契约。"""
+def test_scope_context_should_not_preload_project_suggested_component_summaries() -> None:
+    """默认上下文不预注入建议组件，只提示通过通用查询工具按需读取。"""
 
     context_text = build_scope_context_text(
         AgentRuntimeContext(
@@ -71,15 +71,14 @@ def test_scope_context_should_include_project_suggested_component_summaries() ->
         )
     )
 
-    assert "项目建议组件" in context_text
-    assert "component_code=hero-cover" in context_text
-    assert "import_name=HeroCover" in context_text
-    assert "component_type=页面组件" in context_text
-    assert "组件摘要不能替代使用契约" in context_text
+    assert "component_code=hero-cover" not in context_text
+    assert "HeroCover" not in context_text
+    assert "建议组件" in context_text
+    assert "query_entities" in context_text
 
 
-def test_scope_context_should_include_project_suggested_reference_asset_ratio() -> None:
-    """运行时上下文应注入项目建议引用资源的近似比例，供智能体匹配展示槽位。"""
+def test_scope_context_should_not_preload_project_suggested_reference_assets() -> None:
+    """默认上下文不预注入建议资源及比例，避免无关重内容污染前缀。"""
 
     context_text = build_scope_context_text(
         AgentRuntimeContext(
@@ -104,8 +103,7 @@ def test_scope_context_should_include_project_suggested_reference_asset_ratio() 
         )
     )
 
-    assert "项目建议引用资源" in context_text
-    assert "name=hero_illustration" in context_text
-    assert "approx_aspect_ratio=16:9" in context_text
-    assert "approx_aspect_ratio_value=1.7778" in context_text
-    assert "aspect_ratio_source=auto" in context_text
+    assert "hero_illustration" not in context_text
+    assert "16:9" not in context_text
+    assert "建议资源" in context_text
+    assert "query_entities" in context_text

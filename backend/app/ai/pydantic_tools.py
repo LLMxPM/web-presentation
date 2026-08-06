@@ -19,9 +19,9 @@ from app.ai.auth_tokens import build_agent_tool_token
 from app.ai.image_generation_tool_schema import project_generate_image_schema
 from app.ai.image_refs import normalize_agent_image_ref
 from app.ai.platform_tools import AgentToolContext, recoverable_tool_error_result
+from app.ai.tool_arguments import json_compatible_annotation
 from app.ai.tool_specs import (
     AGENT_COORDINATOR_AGENT_ID,
-    RESOURCE_MANAGER_AGENT_ID,
     build_agent_tools_from_group_specs,
     list_agent_group_specs,
 )
@@ -58,6 +58,7 @@ _RECOVERABLE_TOOL_ERROR_HINTS = {
     ),
 }
 _IMAGE_GENERATION_TOOL_RETRIES = 3
+_DEFAULT_TOOL_ARGUMENT_RETRIES = 3
 
 
 @dataclass(slots=True)
@@ -77,6 +78,9 @@ def build_pydantic_tools(
     session_id: str,
     run_id: str,
     supports_image_input: bool,
+    work_scope_mode: str = "workspace",
+    allowed_project_ids: tuple[int, ...] | list[int] = (),
+    focus_version: int = 0,
     unavailable_group_keys: AbstractSet[str] | None = None,
     member_delegation_executor: Any | None = None,
     image_generation_model: ImageModelSpec | None = None,
@@ -99,6 +103,9 @@ def build_pydantic_tools(
         session_id=session_id,
         run_id=run_id,
         supports_image_input=supports_image_input,
+        work_scope_mode=work_scope_mode,
+        allowed_project_ids=allowed_project_ids,
+        focus_version=focus_version,
         unavailable_group_keys=unavailable_group_keys,
         member_delegation_executor=member_delegation_executor,
         image_generation_config_id=image_generation_config_id,
@@ -122,6 +129,9 @@ def _build_dependencies(
     session_id: str,
     run_id: str,
     supports_image_input: bool,
+    work_scope_mode: str = "workspace",
+    allowed_project_ids: tuple[int, ...] | list[int] = (),
+    focus_version: int = 0,
     unavailable_group_keys: AbstractSet[str] | None = None,
     member_delegation_executor: Any | None = None,
     image_generation_config_id: int | None = None,
@@ -146,6 +156,9 @@ def _build_dependencies(
         page_id=scope.page_id,
         component_id=scope.component_id,
         source=scope.source,
+        work_scope_mode=work_scope_mode,
+        allowed_project_ids=allowed_project_ids,
+        focus_version=focus_version,
         scopes=tuple(scopes),
     )
     dependencies = {
@@ -158,14 +171,15 @@ def _build_dependencies(
         "page_id": scope.page_id,
         "component_id": scope.component_id,
         "source": scope.source,
+        "work_scope_mode": work_scope_mode,
+        "allowed_project_ids": [int(item) for item in allowed_project_ids],
+        "focus_version": int(focus_version),
         "model_supports_image_input": supports_image_input,
         "backend_session_id": current.backend_session_id,
         "member_tool_auth_tokens": {},
         "allowed_visual_input_types": (
             ["attachment", "asset", "page_screenshot"]
             if agent_id == AGENT_COORDINATOR_AGENT_ID
-            else ["attachment", "asset"]
-            if agent_id == RESOURCE_MANAGER_AGENT_ID
             else []
         ),
     }
@@ -205,6 +219,7 @@ def _wrap_platform_tool(
                 "current_tool_call_id": ctx.tool_call_id,
                 "current_tool_name": ctx.tool_name,
                 "current_run_step": ctx.run_step,
+                "current_tool_call_approved": ctx.tool_call_approved,
             },
         )
         try:
@@ -236,7 +251,7 @@ def _wrap_platform_tool(
         max_retries=(
             _IMAGE_GENERATION_TOOL_RETRIES
             if str(getattr(tool_item, "name", "") or entrypoint.__name__) == "generate_image"
-            else None
+            else _DEFAULT_TOOL_ARGUMENT_RETRIES
         ),
         requires_approval=bool(getattr(tool_item, "requires_confirmation", False)),
         sequential=bool(getattr(tool_item, "sequential", False)),
@@ -277,6 +292,15 @@ def _wrapper_signature(entrypoint: Any) -> inspect.Signature:
 
     original = inspect.signature(entrypoint)
     parameters = list(original.parameters.values())
+    annotations = _resolved_entrypoint_annotations(entrypoint)
+    parameters = [
+        parameter.replace(
+            annotation=json_compatible_annotation(
+                annotations.get(parameter.name, parameter.annotation)
+            )
+        )
+        for parameter in parameters
+    ]
     if parameters:
         parameters[0] = inspect.Parameter(
             parameters[0].name,
@@ -289,14 +313,23 @@ def _wrapper_signature(entrypoint: Any) -> inspect.Signature:
 def _wrapper_annotations(entrypoint: Any) -> dict[str, Any]:
     """生成包装函数的注解，供 Pydantic AI schema 生成使用。"""
 
-    try:
-        annotations = dict(get_type_hints(entrypoint, include_extras=True))
-    except Exception:  # noqa: BLE001
-        annotations = dict(getattr(entrypoint, "__annotations__", {}) or {})
+    annotations = {
+        key: json_compatible_annotation(annotation)
+        for key, annotation in _resolved_entrypoint_annotations(entrypoint).items()
+    }
     parameters = list(inspect.signature(entrypoint).parameters)
     if parameters:
         annotations[parameters[0]] = RunContext[AgentToolDeps]
     return annotations
+
+
+def _resolved_entrypoint_annotations(entrypoint: Any) -> dict[str, Any]:
+    """解析工具真实类型注解；解析失败时保留函数原始注解。"""
+
+    try:
+        return dict(get_type_hints(entrypoint, include_extras=True))
+    except Exception:  # noqa: BLE001
+        return dict(getattr(entrypoint, "__annotations__", {}) or {})
 
 
 def _safe_tool_result(value: Any) -> Any:

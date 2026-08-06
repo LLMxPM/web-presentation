@@ -2,12 +2,12 @@
 <template>
   <Teleport v-if="props.headerScopeTarget && headerScopeReady" defer :to="props.headerScopeTarget">
     <AgentScopeStatus
-      :active-session-scope-summary="activeSessionScopeSummary"
-      :active-session-scope-tooltip="activeSessionScopeTooltip"
-      :route-scope-summary="routeScopeSummary"
-      :route-scope-tooltip="routeScopeTooltip"
-      :current-route-in-active-session-scope="currentRouteInActiveSessionScope"
+      v-if="hasActiveTask"
+      :type-label="currentFocusTypeLabel"
+      :label="currentFocusLabel"
+      :tooltip="currentFocusTooltip"
     />
+    <AgentIdleHeaderBrand v-else />
   </Teleport>
 
   <Teleport v-if="props.headerActionsTarget && headerActionsReady" defer :to="props.headerActionsTarget">
@@ -29,7 +29,16 @@
   </Teleport>
 
   <section :class="panelShellClass">
-    <header v-if="!props.headerActionsTarget || !headerActionsReady" class="border-b border-border-muted px-5 py-4">
+    <header v-if="!props.headerActionsTarget || !headerActionsReady" class="flex min-w-0 items-center justify-between gap-3 border-b border-border-muted px-5 py-4">
+      <AgentScopeStatus
+        v-if="hasActiveTask"
+        class="min-w-0 flex-1"
+        :type-label="currentFocusTypeLabel"
+        :label="currentFocusLabel"
+        :tooltip="currentFocusTooltip"
+      />
+      <AgentIdleHeaderBrand v-else-if="!props.headerScopeTarget || !headerScopeReady" class="min-w-0 flex-1" />
+      <span v-else class="min-w-0 flex-1" />
       <AgentSessionControls
         :sessions="displayedSessions"
         :active-session-id="activeSessionId"
@@ -155,7 +164,7 @@
           :hitl-loading="hitlActionInFlight"
           :can-apply-suggested-patch="canApplySuggestedPatch"
           :hitl-force-release-available="hitlForceReleaseAvailable"
-          @upload-image="handleUploadImage"
+          @upload-image="handleUploadImages"
           @remove-image="handleRemoveImage"
           @promote-image="handlePromoteImage"
           @hitl-confirm="handleContinueRun('confirm')"
@@ -167,6 +176,86 @@
           @save-draft-patch="saveDraftPatch"
           @context-usage-open="handleContextUsageOpen"
           @action="handleComposerPrimaryAction">
+          <template #contextControls>
+            <div class="flex min-w-0 items-center gap-1 text-[10px] text-text-muted" aria-label="下一轮焦点与工作范围">
+              <UiPopover :open="focusMenuVisible" side="top" align="start" :side-offset="8" content-class="w-64 space-y-3" @update:open="focusMenuVisible = $event">
+                <template #trigger>
+                  <UiButton
+                    variant="ghost"
+                    size="xs"
+                    content-align="start"
+                    class="h-6 w-[205px] min-w-0 px-1.5 text-[10px]"
+                    :title="`下一轮焦点：${nextFocusCompactLabel}`"
+                  >
+                    <component :is="nextFocusIcon" class="h-3 w-3 shrink-0" />
+                    <span class="shrink-0 text-text-muted">下一轮</span>
+                    <span class="min-w-0 flex-1 truncate text-left font-semibold text-text-emphasis">{{ nextFocusCompactLabel }}</span>
+                    <ChevronDown class="ml-auto h-3 w-3 shrink-0 opacity-60" />
+                  </UiButton>
+                </template>
+                <div>
+                  <p class="text-xs font-semibold text-text-emphasis">下一轮焦点</p>
+                  <p class="mt-1 text-[11px] leading-4 text-text-muted">只影响下一次发送；正在运行的任务不会改变。</p>
+                </div>
+                <UiSelect
+                  :model-value="sessionPreferences.focus_mode"
+                  :options="focusModeOptions"
+                  :disabled="focusPreferenceMutation.isPending.value"
+                  trigger-class="h-8 text-xs"
+                  @update:model-value="handleFocusModeChange"
+                />
+                <UiSelect
+                  v-if="sessionPreferences.focus_mode === 'pinned_project'"
+                  class="w-full"
+                  :model-value="sessionPreferences.pinned_project_id ?? ''"
+                  :options="projectFocusOptions"
+                  placeholder="选择固定项目"
+                  :title="pinnedProjectFocusLabel"
+                  :disabled="focusPreferenceMutation.isPending.value"
+                  trigger-class="h-8 text-xs"
+                  @update:model-value="handlePinnedProjectChange"
+                />
+                <p v-if="hasActiveTask" class="rounded-ui-md bg-info-muted px-2 py-1.5 text-[11px] leading-4 text-info-strong">
+                  当前任务：{{ formatFocusLabel(activeRun?.focus) }}
+                </p>
+              </UiPopover>
+
+              <span class="h-3 w-px shrink-0 bg-border-muted" />
+
+              <UiPopover :open="workScopeMenuVisible" side="top" align="start" :side-offset="8" content-class="w-64 space-y-3" @update:open="workScopeMenuVisible = $event">
+                <template #trigger>
+                  <UiButton variant="ghost" size="xs" class="h-6 min-w-0 gap-1 px-1.5 text-[10px]" title="设置项目工作范围">
+                    <FolderKanban class="h-3 w-3 shrink-0" />
+                    <span class="shrink-0 text-text-muted">范围</span>
+                    <span class="min-w-0 truncate font-semibold text-text-emphasis">{{ workScopeCompactLabel }}</span>
+                    <ChevronDown class="h-3 w-3 shrink-0 opacity-60" />
+                  </UiButton>
+                </template>
+                <div>
+                  <p class="text-xs font-semibold text-text-emphasis">项目工作范围</p>
+                  <p class="mt-1 text-[11px] leading-4 text-text-muted">限制项目、页面及项目级操作；工作空间资源仍按权限访问。</p>
+                </div>
+                <UiRadioGroup
+                  :model-value="sessionPreferences.work_scope_mode"
+                  :options="workScopeOptions"
+                  :disabled="focusPreferenceMutation.isPending.value"
+                  @update:model-value="handleWorkScopeModeChange"
+                />
+                <div v-if="sessionPreferences.work_scope_mode === 'selected_projects'" class="max-h-44 space-y-1 overflow-y-auto border-t border-border-muted pt-2">
+                  <label v-for="project in workspaceProjects" :key="project.id" class="flex items-center gap-2 py-0.5 text-xs text-text-secondary">
+                    <UiCheckbox
+                      :model-value="sessionPreferences.allowed_project_ids.includes(project.id)"
+                      :disabled="sessionPreferences.focus_mode === 'pinned_project' && sessionPreferences.pinned_project_id === project.id"
+                      @update:model-value="toggleAllowedProject(project.id)"
+                    />
+                    <span class="truncate">{{ project.name }}</span>
+                  </label>
+                  <p v-if="!workspaceProjects.length" class="text-xs text-text-muted">暂无可选项目</p>
+                  <p v-else-if="!sessionPreferences.allowed_project_ids.length" class="text-[11px] text-warning-strong">尚未选择项目，项目与页面操作将不可用。</p>
+                </div>
+              </UiPopover>
+            </div>
+          </template>
           <template #action-prefix>
             <span
               v-if="isNewSessionDraft || activeSessionLlmLabel || selectedRunLlmConfig"
@@ -216,7 +305,7 @@ import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/vue-query'
 import { storeToRefs } from 'pinia'
 import { useRoute, useRouter } from 'vue-router'
-import { ChevronDown, ExternalLink, Eye, Globe2, UserRound, WandSparkles } from '@lucide/vue'
+import { Building2, ChevronDown, ExternalLink, Eye, FolderKanban, Globe2, Route, UserRound, WandSparkles } from '@lucide/vue'
 
 import {
   AgentRequestError,
@@ -230,7 +319,9 @@ import {
   renameAgentSession,
   streamAgentRun,
   streamAgentRunEvents,
+  updateAgentSessionPreferences,
 } from '@/api/ai'
+import { listProjects } from '@/api/catalog'
 import { listLlmConfigs, listLlmSlots } from '@/api/llm'
 import { getErrorMessage } from '@/api/http'
 import {
@@ -246,18 +337,17 @@ import {
 } from '@/components/agent/agent-mutation-refresh'
 import { useAgentHitlActions } from '@/components/agent/agent-hitl-actions'
 import { useAgentImageAttachments } from '@/components/agent/agent-image-attachments'
+import { AGENT_IMAGE_ATTACHMENT_MAX_COUNT } from '@/components/agent/agent-image-attachment-constants'
 import { useAgentStreamControllers } from '@/components/agent/agent-stream-controllers'
 import { useAgentForceCancelTicker } from '@/components/agent/agent-force-cancel-ticker'
 import { useAgentSessionNavigation } from '@/components/agent/agent-session-navigation'
 import {
   buildSessionRouteLocation,
   findLatestSessionForScope,
-  formatScopeTooltip,
   getSelectedSession,
   getSelectedWorkspaceSession,
   isRouteScopeInsideSessionScope,
   isSessionTargetCurrentScope,
-  resolveScopeSummary,
   resolveSessionDisplayName,
   resolveSessionScope,
   setSelectedSession,
@@ -267,9 +357,10 @@ import { normalizeAgentRunEvent } from '@/components/agent/agent-run-state'
 import AgentComposer from '@/components/agent/AgentComposer.vue'
 import AgentConversationBody from '@/components/agent/AgentConversationBody.vue'
 import AgentConversationDialogs from '@/components/agent/AgentConversationDialogs.vue'
+import AgentIdleHeaderBrand from '@/components/agent/AgentIdleHeaderBrand.vue'
 import AgentScopeStatus from '@/components/agent/AgentScopeStatus.vue'
 import AgentSessionControls from '@/components/agent/AgentSessionControls.vue'
-import { UiButton, UiDropdownMenu } from '@/components/ui'
+import { UiButton, UiCheckbox, UiDropdownMenu, UiPopover, UiRadioGroup, UiSelect } from '@/components/ui'
 import type { DropdownMenuEntry } from '@/components/ui'
 import type {
   AgentActiveRunItem,
@@ -317,6 +408,11 @@ interface Props {
   autoNavigateTarget?: string | null
 }
 
+type SessionFocusPreferences = Pick<
+  AgentSessionItem,
+  'focus_mode' | 'pinned_project_id' | 'work_scope_mode' | 'allowed_project_ids'
+>
+
 interface AgentSessionLlmMetadata {
   selection_kind?: 'explicit_config' | 'slot_binding'
   config_id?: number | string | null
@@ -360,6 +456,8 @@ const emit = defineEmits<{
   'project-updated': [event: AgentMutationRefreshEvent]
   'component-updated': [event: AgentMutationRefreshEvent]
   'asset-updated': [event: AgentMutationRefreshEvent]
+  'theme-updated': [event: AgentMutationRefreshEvent]
+  'style-updated': [event: AgentMutationRefreshEvent]
 }>()
 
 const queryClient = useQueryClient()
@@ -388,10 +486,13 @@ const manuallySelectedSessionId = ref('')
 const lastHandledAutoCreateKey = ref<string | number | null>(null)
 const virtualNewSessionKey = ref<string | number | null>(null)
 const virtualNewSessionSequence = ref(0)
+const draftSessionPreferences = ref<SessionFocusPreferences>(createDefaultSessionPreferences())
 const draftPatches = ref<AgentSuggestedPatch[]>([])
 const headerScopeReady = ref(false)
 const headerActionsReady = ref(false)
 const sessionMenuVisible = ref(false)
+const focusMenuVisible = ref(false)
+const workScopeMenuVisible = ref(false)
 const toolDetailDialogVisible = ref(false)
 const memberRunDialogVisible = ref(false)
 const activeToolDetailId = ref<string | null>(null)
@@ -433,9 +534,8 @@ const contextTitle = computed(() => props.contextTitle || props.pageTitle || sel
 const emptyConversationText = computed(() => props.emptyText || `${agentDisplayName.value} 会结合当前上下文和可用工具给出建议。`)
 const composerPlaceholderText = computed(() => (
   props.composerPlaceholder
-  || '描述目标；内容助手会处理页面/项目任务，并按需调用组件或资源助手。'
+  || '描述目标；内容助手可以管理当前工作空间内的项目、页面、组件、资源、主题和样式。'
 ))
-const routeScopeSummary = computed(() => resolveScopeSummary(currentRouteScope.value, contextTitle.value))
 const activeRun = computed(() => readSessionValue(activeRunBySession.value, activeSessionId.value, null))
 const isStreaming = computed(() => isSessionRunning(activeSessionId.value))
 const isInterrupting = computed(() => readSessionValue(interruptingBySession.value, activeSessionId.value, false))
@@ -510,10 +610,32 @@ const sessionsQuery = useQuery(
       scope.value.workspace_id,
       'workspace',
     ],
-    queryFn: () => listAgentSessions(scope.value, agentId.value, 'workspace'),
+    queryFn: () => listAgentSessions(scope.value, agentId.value),
     enabled: !!scope.value.workspace_id,
   })),
 )
+
+const projectsQuery = useQuery(
+  computed(() => ({
+    queryKey: ['projects', 'agent-focus', scope.value.workspace_id],
+    queryFn: () => listProjects({ workspace_id: scope.value.workspace_id, page: 1, page_size: 100 }),
+    enabled: !!scope.value.workspace_id,
+  })),
+)
+const workspaceProjects = computed(() => projectsQuery.data.value?.items ?? [])
+const focusModeOptions = [
+  { label: '跟随当前路由', value: 'follow_route' },
+  { label: '固定项目', value: 'pinned_project' },
+  { label: '工作空间级', value: 'workspace' },
+]
+const workScopeOptions = [
+  { label: '全部项目', value: 'workspace' },
+  { label: '仅选择的项目', value: 'selected_projects' },
+]
+const projectFocusOptions = computed(() => workspaceProjects.value.map(project => ({
+  label: project.name,
+  value: project.id,
+})))
 
 const llmConfigsQuery = useQuery({
   queryKey: ['llm-configs', 'agent-conversation'],
@@ -525,13 +647,16 @@ const llmSlotsQuery = useQuery({
   queryFn: listLlmSlots,
 })
 
-const activeSession = computed<AgentSessionItem | null>(() => (
-  sessionsQuery.data.value?.find(item => item.session_id === activeSessionId.value)
+const normalizedSessions = computed(() => sessionsQuery.data.value?.map(normalizeSessionItem))
+const activeSession = computed<AgentSessionItem | null>(() => {
+  const item = normalizedSessions.value?.find(candidate => candidate.session_id === activeSessionId.value)
     ?? knownSessionsById.value[activeSessionId.value]
     ?? null
-))
+  return item ? normalizeSessionItem(item) : null
+})
+const sessionPreferences = computed<SessionFocusPreferences>(() => activeSession.value ?? draftSessionPreferences.value)
 const displayedSessions = computed<AgentSessionItem[] | undefined>(() => {
-  const sessions = sessionsQuery.data.value
+  const sessions = normalizedSessions.value
   const active = activeSession.value
   if (!active) {
     return sessions
@@ -547,6 +672,56 @@ const displayedSessions = computed<AgentSessionItem[] | undefined>(() => {
 const activeSessionScope = computed(() => activeSession.value ? resolveSessionScope(activeSession.value) : null)
 const activeSessionRuntimeScope = computed(() => activeSessionScope.value ?? scope.value)
 const activeSessionRuntimeAgentId = computed(() => activeSession.value?.agent_id ?? agentId.value)
+const nextRunFocus = computed<AgentScopeContext>(() => {
+  const preferences = sessionPreferences.value
+  if (preferences.focus_mode === 'follow_route') {
+    return currentRouteScope.value
+  }
+  if (preferences.focus_mode === 'pinned_project' && preferences.pinned_project_id) {
+    const project = workspaceProjects.value.find(item => item.id === preferences.pinned_project_id)
+    return {
+      scope_type: 'project',
+      workspace_id: scope.value.workspace_id,
+      project_id: preferences.pinned_project_id,
+      project_name: project?.name ?? null,
+      source: 'session-pinned-project',
+    }
+  }
+  return {
+    scope_type: 'workspace',
+    workspace_id: scope.value.workspace_id,
+    workspace_name: currentRouteScope.value.workspace_name ?? scope.value.workspace_name ?? null,
+    source: 'session-workspace',
+  }
+})
+const hasActiveTask = computed(() => Boolean(
+  activeRun.value && !['completed', 'cancelled', 'failed'].includes(activeRun.value.status),
+))
+const currentFocus = computed(() => activeRun.value?.focus ?? nextRunFocus.value)
+const currentFocusTypeLabel = computed(() => formatFocusType(currentFocus.value))
+const currentFocusLabel = computed(() => formatFocusName(currentFocus.value))
+const currentFocusTooltip = computed(() => (
+  `当前任务焦点：${currentFocusTypeLabel.value}“${currentFocusLabel.value}”。路由或偏好变化不会影响正在执行的任务。`
+))
+const nextFocusCompactLabel = computed(() => {
+  if (sessionPreferences.value.focus_mode === 'workspace') return '当前空间'
+  return `${formatFocusType(nextRunFocus.value)} · ${formatFocusName(nextRunFocus.value)}`
+})
+const nextFocusIcon = computed(() => {
+  if (sessionPreferences.value.focus_mode === 'follow_route') return Route
+  if (sessionPreferences.value.focus_mode === 'workspace') return Building2
+  return FolderKanban
+})
+const pinnedProjectFocusLabel = computed(() => {
+  const projectId = sessionPreferences.value.pinned_project_id
+  if (!projectId) return '选择固定项目'
+  return workspaceProjects.value.find(project => project.id === projectId)?.name ?? `项目 #${projectId}`
+})
+const workScopeCompactLabel = computed(() => {
+  const preferences = sessionPreferences.value
+  if (preferences.work_scope_mode === 'workspace') return '全部项目'
+  return preferences.allowed_project_ids.length ? `已选 ${preferences.allowed_project_ids.length} 个项目` : '未选择项目'
+})
 const isNewSessionDraft = computed(() => !activeSessionId.value)
 const activeLlmConfigs = computed<LlmConfigItem[]>(() => (
   (llmConfigsQuery.data.value ?? []).filter(item => (
@@ -627,7 +802,7 @@ const llmModelButtonTitle = computed(() => {
   return activeSessionId.value ? `下次运行模型：${label}` : `新会话模型：${label}`
 })
 const showVisualCapabilityStatus = computed(() => (
-  ['agent-coordinator', 'resource-manager'].includes(agentId.value)
+  agentId.value === 'agent-coordinator'
   && selectedAgent.value !== null
 ))
 const imageAnalysisAvailable = computed(() => Boolean(selectedAgent.value?.image_analysis_available))
@@ -640,9 +815,7 @@ const visualCapabilityConfigurationRequired = computed(() => (
 ))
 const imageAnalysisCapabilityTitle = computed(() => (
   imageAnalysisAvailable.value
-    ? agentId.value === 'resource-manager'
-      ? 'analyze_visuals 已配置，可分析附件或工作空间图片资源'
-      : 'analyze_visuals 已配置，可按需分析附件或页面截图'
+    ? 'analyze_visuals 已配置，可按需分析附件、工作空间图片资源或页面截图'
     : selectedAgent.value?.image_analysis_unavailable_reason || 'analyze_visuals 未配置图片理解模型'
 ))
 const imageGenerationCapabilityTitle = computed(() => (
@@ -693,10 +866,33 @@ const sessionLoadingText = computed(() => (
 const createSessionMutation = useMutation({
   mutationFn: (sessionName?: string | null) => createAgentSession({
     agent_id: agentId.value,
-    scope: scope.value,
+    workspace_id: scope.value.workspace_id,
+    focus_mode: sessionPreferences.value.focus_mode,
+    pinned_project_id: sessionPreferences.value.pinned_project_id,
+    work_scope_mode: sessionPreferences.value.work_scope_mode,
+    allowed_project_ids: [...sessionPreferences.value.allowed_project_ids],
     session_name: sessionName ?? selectedAgent.value?.default_session_name ?? `${contextTitle.value} 对话`,
     llm_config_id: selectedRunLlmConfigId.value,
   }),
+})
+
+const focusPreferenceMutation = useMutation({
+  mutationFn: (payload: {
+    focus_mode: AgentSessionItem['focus_mode']
+    pinned_project_id: number | null
+    work_scope_mode: AgentSessionItem['work_scope_mode']
+    allowed_project_ids: number[]
+  }) => updateAgentSessionPreferences(
+    activeSessionId.value,
+    scope.value.workspace_id,
+    payload,
+    activeSession.value?.agent_id ?? agentId.value,
+  ),
+  onSuccess: async (updated) => {
+    rememberSessions([updated])
+    await queryClient.invalidateQueries({ queryKey: ['ai-sessions'] })
+  },
+  onError: error => Message.error(getErrorMessage(error, '保存会话焦点失败。')),
 })
 
 const selectedAgent = computed<AgentDescriptor | null>(() => agentsQuery.data.value?.[0] ?? null)
@@ -720,21 +916,6 @@ const agentIssueDetail = computed(() => (
   hasContextIssue.value
     ? selectedAgent.value?.unavailable_reason || '当前路由上下文缺少智能体所需信息。'
     : '当前没有可用于发起会话的模型。请到“AI 设置”创建个人模型，或联系管理员提供全局模型。'
-))
-const activeSessionScopeSummary = computed(() => (
-  activeSessionScope.value
-    ? resolveScopeSummary(activeSessionScope.value, activeSession.value?.session_name || '未命名会话')
-    : {
-        typeLabel: '',
-        title: activeSession.value?.session_name || '未选择会话',
-        colorClass: 'border-border bg-canvas text-text-disabled',
-      }
-))
-const activeSessionScopeTooltip = computed(() => (
-  formatScopeTooltip('会话范围', activeSessionScopeSummary.value)
-))
-const routeScopeTooltip = computed(() => (
-  formatScopeTooltip('当前路由', routeScopeSummary.value)
 ))
 const currentRouteInActiveSessionScope = computed(() => {
   if (!activeSessionId.value || !activeSessionScope.value) {
@@ -819,7 +1000,7 @@ const timelineDisplayItems = computed(() => buildTimelineDisplayItems(timelineIt
 const composerActionDisabled = computed(() => (
   isStreaming.value
     ? isInterrupting.value
-    : isSendInFlight.value || pendingRequirement.value !== null || (!composerText.value.trim() && pendingImageAttachments.value.length === 0) || hasBindingIssue.value || isModelSelectionPending.value || composerInputDisabled.value
+    : isSendInFlight.value || imageUploading.value || pendingImageAttachments.value.length > AGENT_IMAGE_ATTACHMENT_MAX_COUNT || pendingRequirement.value !== null || (!composerText.value.trim() && pendingImageAttachments.value.length === 0) || hasBindingIssue.value || isModelSelectionPending.value || composerInputDisabled.value
 ))
 
 const {
@@ -900,6 +1081,19 @@ function setSessionSendInFlight(sessionId: string, inFlight: boolean) {
   delete sendInFlightBySession.value[key]
 }
 
+/** 将会话响应规范为工作空间级结构；仅用于组件内部稳定处理测试夹具与并发缓存。 */
+function normalizeSessionItem(session: AgentSessionItem): AgentSessionItem {
+  return {
+    ...session,
+    workspace_id: session.workspace_id ?? scope.value.workspace_id,
+    focus_mode: session.focus_mode ?? 'follow_route',
+    pinned_project_id: session.pinned_project_id ?? null,
+    work_scope_mode: session.work_scope_mode ?? 'workspace',
+    allowed_project_ids: session.allowed_project_ids ?? [],
+    focus_version: session.focus_version ?? 0,
+  }
+}
+
 /**
  * 记录已经见过的会话；路由 scope 切换后仍可用会话自身 scope 恢复运行态。
  * @param sessions 从列表、创建结果或 runtime 快照获得的会话项
@@ -910,7 +1104,10 @@ function rememberSessions(sessions: AgentSessionItem[]) {
   }
   knownSessionsById.value = {
     ...knownSessionsById.value,
-    ...Object.fromEntries(sessions.map(session => [session.session_id, session])),
+    ...Object.fromEntries(sessions.map(session => {
+      const normalized = normalizeSessionItem(session)
+      return [normalized.session_id, normalized]
+    })),
   }
 }
 
@@ -1061,7 +1258,7 @@ const {
 const {
   handlePromoteImage,
   handleRemoveImage,
-  handleUploadImage,
+  handleUploadImages,
 } = useAgentImageAttachments({
   getActiveSessionId: () => activeSessionId.value,
   getScope: () => scope.value,
@@ -1129,8 +1326,14 @@ watch(
   { immediate: true },
 )
 
+watch(virtualNewSessionKey, (virtualKey, previousKey) => {
+  if (virtualKey && virtualKey !== previousKey) {
+    draftSessionPreferences.value = createDefaultSessionPreferences()
+  }
+})
+
 watch(
-  () => [sessionsQuery.data.value, agentId.value] as const,
+  () => [normalizedSessions.value, agentId.value] as const,
   ([sessions]) => {
     if (virtualNewSessionKey.value) {
       activeSessionId.value = ''
@@ -1278,6 +1481,123 @@ function handleLlmModelSelect(value: string) {
   }
 }
 
+/** 使用当前会话其余偏好提交一次原子更新。 */
+function saveSessionPreferences(overrides: Partial<Pick<AgentSessionItem, 'focus_mode' | 'pinned_project_id' | 'work_scope_mode' | 'allowed_project_ids'>>) {
+  const session = activeSession.value
+  if (!session) {
+    draftSessionPreferences.value = {
+      focus_mode: overrides.focus_mode ?? draftSessionPreferences.value.focus_mode,
+      pinned_project_id: overrides.pinned_project_id !== undefined ? overrides.pinned_project_id : draftSessionPreferences.value.pinned_project_id,
+      work_scope_mode: overrides.work_scope_mode ?? draftSessionPreferences.value.work_scope_mode,
+      allowed_project_ids: overrides.allowed_project_ids ?? [...draftSessionPreferences.value.allowed_project_ids],
+    }
+    return
+  }
+  if (focusPreferenceMutation.isPending.value) {
+    return
+  }
+  void focusPreferenceMutation.mutateAsync({
+    focus_mode: overrides.focus_mode ?? session.focus_mode,
+    pinned_project_id: overrides.pinned_project_id !== undefined ? overrides.pinned_project_id : session.pinned_project_id,
+    work_scope_mode: overrides.work_scope_mode ?? session.work_scope_mode,
+    allowed_project_ids: overrides.allowed_project_ids ?? [...session.allowed_project_ids],
+  })
+}
+
+/** 切换三种焦点模式；固定项目优先采用当前路由项目或列表首项。 */
+function handleFocusModeChange(value: string | number | Array<string | number> | null) {
+  const focusMode = String(value) as AgentSessionItem['focus_mode']
+  const pinnedProjectId = focusMode === 'pinned_project'
+    ? (sessionPreferences.value.pinned_project_id ?? currentRouteScope.value.project_id ?? workspaceProjects.value[0]?.id ?? null)
+    : null
+  if (focusMode === 'pinned_project' && !pinnedProjectId) {
+    Message.warning('当前工作空间没有可固定的项目。')
+    return
+  }
+  const allowedProjectIds = focusMode === 'pinned_project'
+    && sessionPreferences.value.work_scope_mode === 'selected_projects'
+    && pinnedProjectId
+    ? [...new Set([...sessionPreferences.value.allowed_project_ids, pinnedProjectId])]
+    : undefined
+  saveSessionPreferences({ focus_mode: focusMode, pinned_project_id: pinnedProjectId, allowed_project_ids: allowedProjectIds })
+}
+
+/** 修改固定项目，只影响后续 Run。 */
+function handlePinnedProjectChange(value: string | number | Array<string | number> | null) {
+  const projectId = Number(value)
+  if (Number.isFinite(projectId) && projectId > 0) {
+    const allowedProjectIds = sessionPreferences.value.work_scope_mode === 'selected_projects'
+      ? [...new Set([...sessionPreferences.value.allowed_project_ids, projectId])]
+      : undefined
+    saveSessionPreferences({ focus_mode: 'pinned_project', pinned_project_id: projectId, allowed_project_ids: allowedProjectIds })
+  }
+}
+
+/** 放开会话到工作空间全部项目。 */
+function setWorkspaceWorkScope() {
+  saveSessionPreferences({ work_scope_mode: 'workspace', allowed_project_ids: [] })
+}
+
+/** 启用显式项目工作集；空列表明确表示暂不允许项目操作。 */
+function setSelectedProjectsWorkScope() {
+  const pinnedId = sessionPreferences.value.focus_mode === 'pinned_project'
+    ? sessionPreferences.value.pinned_project_id
+    : null
+  saveSessionPreferences({ work_scope_mode: 'selected_projects', allowed_project_ids: pinnedId ? [pinnedId] : [] })
+}
+
+/** 根据单选结果切换项目工作集模式。 */
+function handleWorkScopeModeChange(value: string) {
+  if (value === 'workspace') {
+    setWorkspaceWorkScope()
+    return
+  }
+  setSelectedProjectsWorkScope()
+}
+
+/** 增删工作集项目并立即保存。 */
+function toggleAllowedProject(projectId: number) {
+  const selected = new Set(sessionPreferences.value.allowed_project_ids)
+  if (selected.has(projectId)) {
+    selected.delete(projectId)
+  } else {
+    selected.add(projectId)
+  }
+  saveSessionPreferences({ work_scope_mode: 'selected_projects', allowed_project_ids: [...selected] })
+}
+
+/** 返回焦点对象的层级类型，统一使用空间、项目、页面等短名称。 */
+function formatFocusType(focus?: AgentScopeContext | null) {
+  if (focus?.page_id) return '页面'
+  if (focus?.project_id) return '项目'
+  if (focus?.component_id) return '组件'
+  return '空间'
+}
+
+/** 返回焦点对象名称；缺少名称时保留明确 ID 便于诊断。 */
+function formatFocusName(focus?: AgentScopeContext | null) {
+  if (!focus) return `#${scope.value.workspace_id}`
+  if (focus.page_id) return focus.page_title?.trim() || `#${focus.page_id}`
+  if (focus.project_id) return focus.project_name?.trim() || `#${focus.project_id}`
+  if (focus.component_id) return focus.component_name?.trim() || `#${focus.component_id}`
+  return focus.workspace_name?.trim() || `#${focus.workspace_id}`
+}
+
+/** 把焦点类型、名称组合为完整标签。 */
+function formatFocusLabel(focus?: AgentScopeContext | null) {
+  return `${formatFocusType(focus)} · ${formatFocusName(focus)}`
+}
+
+/** 创建尚未落库的新会话默认偏好。 */
+function createDefaultSessionPreferences(): SessionFocusPreferences {
+  return {
+    focus_mode: 'follow_route',
+    pinned_project_id: null,
+    work_scope_mode: 'workspace',
+    allowed_project_ids: [],
+  }
+}
+
 /**
  * 确保当前存在一个活跃会话；若没有则自动创建。
  */
@@ -1350,7 +1670,7 @@ async function handleSend() {
     setSessionSendInFlight(sessionId, true)
   }
   const runtimeRequest = resolveSessionRuntimeRequest(sessionId)
-  const runScope = { ...runtimeRequest.scope }
+  const runScope = { ...nextRunFocus.value }
   const runAgentId = runtimeRequest.agentId
 
   composerText.value = ''
@@ -1370,6 +1690,10 @@ async function handleSend() {
       session_id: sessionId,
       agent_id: runAgentId,
       status: 'running',
+      focus: runScope,
+      work_scope_mode: activeSession.value?.work_scope_mode ?? 'workspace',
+      allowed_project_ids: [...(activeSession.value?.allowed_project_ids ?? [])],
+      focus_version: activeSession.value?.focus_version ?? 0,
       pending_requirement: null,
       content: null,
       created_at: new Date().toISOString(),
@@ -1441,6 +1765,10 @@ async function handleInterruptRun() {
       session_id: response.session_id,
       agent_id: runtimeRequest.agentId,
       status: 'cancelling',
+      focus: activeRun.value?.focus ?? nextRunFocus.value,
+      work_scope_mode: activeRun.value?.work_scope_mode ?? activeSession.value?.work_scope_mode ?? 'workspace',
+      allowed_project_ids: activeRun.value?.allowed_project_ids ?? activeSession.value?.allowed_project_ids ?? [],
+      focus_version: activeRun.value?.focus_version ?? activeSession.value?.focus_version ?? 0,
       pending_requirement: null,
       content: null,
       created_at: activeRun.value?.created_at ?? new Date().toISOString(),
@@ -1453,6 +1781,10 @@ async function handleInterruptRun() {
       session_id: response.session_id,
       agent_id: runtimeRequest.agentId,
       status: 'cancelling',
+      focus: activeRun.value?.focus ?? nextRunFocus.value,
+      work_scope_mode: activeRun.value?.work_scope_mode ?? activeSession.value?.work_scope_mode ?? 'workspace',
+      allowed_project_ids: activeRun.value?.allowed_project_ids ?? activeSession.value?.allowed_project_ids ?? [],
+      focus_version: activeRun.value?.focus_version ?? activeSession.value?.focus_version ?? 0,
       pending_requirement: null,
       content: null,
       created_at: activeRun.value?.created_at ?? new Date().toISOString(),
@@ -1594,11 +1926,12 @@ function handleRunEvent(event: AgentRunEvent, fallbackSessionId = activeSessionI
  */
 function appendMutationRefreshEvents(sessionId: string, event: AgentRunEvent): void {
   const runtimeRequest = resolveSessionRuntimeRequest(sessionId)
+  const runFocus = readSessionValue(activeRunBySession.value, sessionId, null)?.focus ?? runtimeRequest.scope
   const nextEvents = buildMutationRefreshEvents(event, {
-    workspaceId: runtimeRequest.scope.workspace_id ?? null,
-    projectId: runtimeRequest.scope.project_id ?? null,
-    pageId: runtimeRequest.scope.page_id ?? null,
-    componentId: runtimeRequest.scope.component_id ?? null,
+    workspaceId: runFocus.workspace_id ?? null,
+    projectId: runFocus.project_id ?? null,
+    pageId: runFocus.page_id ?? null,
+    componentId: runFocus.component_id ?? null,
   })
   if (!nextEvents.length) {
     return
@@ -1631,6 +1964,10 @@ function emitMutationRefreshEvents(sessionId: string): void {
       emit('component-updated', event)
     } else if (event.kind === 'asset') {
       emit('asset-updated', event)
+    } else if (event.kind === 'theme') {
+      emit('theme-updated', event)
+    } else if (event.kind === 'style') {
+      emit('style-updated', event)
     }
   }
 }
@@ -1787,7 +2124,7 @@ function shouldAutonameSession(session: AgentSessionItem | null | undefined, ite
 /**
  * 后台 run 可能在用户切路由后才收敛；这时必须用会话自身 scope 读取和命名，避免写入当前路由状态。
  */
-function resolveSessionRuntimeRequest(sessionId: string, sessions: AgentSessionItem[] = sessionsQuery.data.value ?? []) {
+function resolveSessionRuntimeRequest(sessionId: string, sessions: AgentSessionItem[] = normalizedSessions.value ?? []) {
   const session = sessions.find(item => item.session_id === sessionId) ?? knownSessionsById.value[sessionId] ?? null
   const sessionScope = session ? resolveSessionScope(session) : null
   return {

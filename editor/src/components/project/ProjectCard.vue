@@ -1,109 +1,116 @@
-<!-- 文件功能：渲染工作空间首页的项目入口卡片，统一承载项目信息、快捷操作和稳定布局。 -->
+<!-- 文件功能：以首个页面截图为主体渲染项目卡片，并提供悬浮信息、快捷操作与身份复制。 -->
 <template>
-  <article
-    data-testid="project-card"
-    class="project-card-surface group"
-    role="button"
-    tabindex="0"
-    @click="emit('open', project.id)"
-    @keydown.enter="emit('open', project.id)"
-    @keydown.space.prevent="emit('open', project.id)"
-  >
-    <div class="flex min-h-full w-full flex-col p-4 sm:p-5">
-      <div class="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3">
-        <div class="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-start gap-3">
-          <div class="project-card-avatar" aria-hidden="true">{{ projectInitial }}</div>
-          <div class="min-w-0 flex-1 pt-0.5">
-            <div class="flex min-w-0 items-center gap-2">
-              <h3
-                class="min-w-0 flex-1 truncate text-lg font-black leading-tight text-text-strong transition-colors group-hover:text-accent-hover"
-                :title="project.name"
-              >
-                {{ project.name }}
-              </h3>
-              <span class="project-card-code" :title="project.code">{{ project.code }}</span>
-            </div>
-            <p class="mt-1.5 line-clamp-2 min-h-[2.5rem] text-sm font-medium leading-5 text-text-muted">
-              {{ project.description || '此项目尚未添加具体功能说明。' }}
-            </p>
-          </div>
-        </div>
+  <article data-testid="project-card" class="project-card group/card">
+    <div class="project-card-preview">
+      <img
+        v-if="project.first_page_screenshot_url"
+        :src="project.first_page_screenshot_url"
+        :alt="`${project.name} 首个页面截图`"
+        class="h-full w-full object-cover transition-transform duration-300 group-hover/card:scale-[1.015]"
+        loading="lazy"
+      >
+      <div v-else class="flex h-full w-full flex-col items-center justify-center gap-2 text-text-disabled">
+        <Presentation class="h-7 w-7" />
+        <span class="text-xs font-semibold">{{ placeholderText }}</span>
+      </div>
 
-        <div class="flex shrink-0 items-center gap-1">
-          <UiIconButton
-            label="导出项目"
-            size="sm"
-            variant="ghost"
-            :disabled="exportPending || exportDisabled"
-            :loading="exportPending"
-            :title="exportPending ? '项目导出预检中' : '导出项目'"
-            @click.stop="emit('export-template', project)"
-            @keydown.stop
-          >
-            <Download class="h-3.5 w-3.5" />
-          </UiIconButton>
-          <UiIconButton
-            label="归档项目"
-            size="sm"
-            variant="ghost"
-            :disabled="archivePending"
-            :loading="archivePending"
-            :title="archivePending ? '项目归档中' : '归档项目'"
-            @click.stop="emit('archive', project)"
-            @keydown.stop
-          >
-            <Archive class="h-3.5 w-3.5" />
-          </UiIconButton>
+      <a
+        :href="projectPath"
+        class="absolute inset-0 z-10 h-full w-full bg-transparent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-border-focus"
+        :aria-label="`打开项目：${project.name}`"
+        @click.prevent="emit('open', project.id)"
+      />
+
+      <div class="project-card-overlay" aria-hidden="true">
+        <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-text-on-inverse/75">
+          <span>{{ project.page_width }}×{{ project.page_height }}</span>
+          <span>更新于 {{ formatDateTime(project.updated_at) }}</span>
         </div>
       </div>
 
-      <dl class="mt-4 grid grid-cols-3 gap-2">
-        <div class="project-card-meta">
-          <dt>画布</dt>
-          <dd>{{ canvasLabel }}</dd>
-        </div>
-        <div class="project-card-meta">
-          <dt>主题</dt>
-          <dd>{{ themeLabel }}</dd>
-        </div>
-        <div class="project-card-meta">
-          <dt>基准字号</dt>
-          <dd>{{ baseFontSizeLabel }}</dd>
-        </div>
-      </dl>
+      <div class="project-card-actions">
+        <UiIconButton
+          label="预览项目"
+          size="sm"
+          variant="secondary"
+          :disabled="previewPending"
+          :loading="previewPending"
+          :title="previewPending ? '正在生成项目预览' : '预览项目'"
+          @click.stop="emit('preview', project)"
+        >
+          <Play class="h-3.5 w-3.5" />
+        </UiIconButton>
+        <UiIconButton
+          label="导出项目"
+          size="sm"
+          variant="secondary"
+          :disabled="exportPending || exportDisabled"
+          :loading="exportPending"
+          :title="exportPending ? '项目导出预检中' : '导出项目'"
+          @click.stop="emit('export-template', project)"
+        >
+          <Download class="h-3.5 w-3.5" />
+        </UiIconButton>
+        <UiIconButton
+          label="归档项目"
+          size="sm"
+          variant="secondary"
+          :disabled="archivePending"
+          :loading="archivePending"
+          :title="archivePending ? '项目归档中' : '归档项目'"
+          @click.stop="emit('archive', project)"
+        >
+          <Archive class="h-3.5 w-3.5" />
+        </UiIconButton>
+      </div>
+    </div>
 
-      <div class="mt-auto flex items-center justify-between gap-3 border-t border-border-muted pt-4">
-        <div class="flex min-w-0 items-center gap-2 text-[11px] font-bold text-text-disabled">
-          <Calendar class="h-3.5 w-3.5 shrink-0" />
-          <span class="truncate">更新于 {{ formatDateTime(project.updated_at) }}</span>
-        </div>
-        <span class="project-card-enter">
-          <span>打开项目</span>
-          <ChevronRight class="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
+    <div class="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2 p-3">
+      <UiButton
+        variant="ghost"
+        size="xs"
+        content-align="start"
+        class="min-w-0"
+        :title="`复制项目名称：${project.name}`"
+        :aria-label="`复制项目名称：${project.name}`"
+        @click="copyText(project.name, '项目名称')"
+      >
+        <span class="min-w-0 truncate text-sm font-bold">{{ project.name }}</span>
+      </UiButton>
+      <UiButton
+        variant="ghost"
+        size="xs"
+        class="max-w-36"
+        :title="`复制项目编码：${project.code}`"
+        :aria-label="`复制项目编码：${project.code}`"
+        @click="copyText(project.code, '项目编码')"
+      >
+        <span class="truncate font-mono text-[10px] font-semibold uppercase tracking-widest text-text-disabled">
+          {{ project.code }}
         </span>
-      </div>
+      </UiButton>
     </div>
   </article>
 </template>
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import { Archive, Calendar, ChevronRight, Download } from '@lucide/vue'
+import { Archive, Download, Play, Presentation } from '@lucide/vue'
 
-import { UiIconButton } from '@/components/ui'
+import { UiButton, UiIconButton } from '@/components/ui'
 import type { ProjectItem } from '@/types/api'
 import { formatDateTime } from '@/utils/format'
+import { Message } from '@/utils/message'
+import { buildProjectPagesPath } from '@/utils/workspace-routes'
 
 const props = withDefaults(defineProps<{
   project: ProjectItem
-  themeName?: string | null
-  themeLoading?: boolean
+  previewPending?: boolean
   exportPending?: boolean
   exportDisabled?: boolean
   archivePending?: boolean
 }>(), {
-  themeName: null,
-  themeLoading: false,
+  previewPending: false,
   exportPending: false,
   exportDisabled: false,
   archivePending: false,
@@ -111,140 +118,89 @@ const props = withDefaults(defineProps<{
 
 const emit = defineEmits<{
   open: [projectId: number]
+  preview: [project: ProjectItem]
   'export-template': [project: ProjectItem]
   archive: [project: ProjectItem]
 }>()
 
-const projectInitial = computed(() => (
-  props.project.name.trim().charAt(0) || props.project.code.trim().charAt(0) || 'P'
-).toUpperCase())
+const placeholderText = computed(() => props.project.first_page_title ? '首个页面暂无截图' : '项目暂无页面')
+const projectPath = computed(() => buildProjectPagesPath(props.project.workspace_id, props.project.id))
 
-const canvasLabel = computed(() => `${props.project.page_width}×${props.project.page_height}`)
-const themeLabel = computed(() => {
-  if (!props.project.theme_key) {
-    return '未设置'
+/**
+ * 复制项目名称或编码，复制按钮与打开项目入口互不干扰。
+ * @param value 需要写入剪贴板的文本
+ * @param label 面向用户的字段名称
+ */
+async function copyText(value: string, label: string): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(value)
+    Message.success(`${label}已复制。`)
+  } catch {
+    Message.error('复制失败，请检查浏览器剪贴板权限。')
   }
-  return props.themeName || (props.themeLoading ? '加载中' : '未命名主题')
-})
-const baseFontSizeLabel = computed(() => props.project.base_font_size || '-')
+}
 </script>
 
 <style scoped>
-.project-card-surface {
+.project-card {
   position: relative;
   isolation: isolate;
-  display: flex;
-  min-height: 13.75rem;
-  cursor: pointer;
   overflow: hidden;
   border: 1px solid rgb(var(--ui-border));
-  border-radius: 1rem;
+  border-radius: var(--ui-radius-lg);
   background: rgb(var(--ui-surface));
   box-shadow: 0 1px 2px rgb(15 23 42 / 0.04);
-  transition:
-    border-color 0.2s ease,
-    box-shadow 0.2s ease,
-    transform 0.2s ease;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
 }
 
-.project-card-surface::before {
-  content: "";
-  position: absolute;
-  inset: 0 auto 0 0;
-  width: 0.25rem;
-  background: rgb(var(--ui-accent) / 0.78);
-  opacity: 0.72;
-  transition: opacity 0.2s ease, width 0.2s ease;
-}
-
-.project-card-surface:hover {
-  transform: translateY(-0.25rem);
+.project-card:hover,
+.project-card:focus-within {
   border-color: rgb(var(--ui-accent-border));
-  box-shadow: 0 14px 30px rgb(15 23 42 / 0.08);
+  box-shadow: 0 10px 24px rgb(15 23 42 / 0.08);
+  transform: translateY(-0.125rem);
 }
 
-.project-card-surface:hover::before {
-  width: 0.375rem;
+.project-card-preview {
+  position: relative;
+  aspect-ratio: 2 / 1;
+  overflow: hidden;
+  background: rgb(var(--ui-surface-muted));
+}
+
+.project-card-overlay {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: flex-end;
+  padding: 3rem 0.75rem 0.75rem;
+  background: linear-gradient(to top, rgb(var(--ui-overlay) / 0.92), rgb(var(--ui-overlay) / 0.08) 72%);
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.project-card-actions {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  z-index: 30;
+  display: flex;
+  gap: 0.25rem;
+  opacity: 0;
+  transform: translateY(-0.25rem);
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.project-card:hover .project-card-overlay,
+.project-card:focus-within .project-card-overlay,
+.project-card:hover .project-card-actions,
+.project-card:focus-within .project-card-actions {
   opacity: 1;
 }
 
-.project-card-surface:focus-visible {
-  outline: none;
-  border-color: rgb(var(--ui-border-focus));
-  box-shadow: 0 0 0 3px rgb(var(--ui-accent-ring) / 0.75), 0 14px 30px rgb(15 23 42 / 0.08);
-}
-
-.project-card-avatar {
-  display: inline-flex;
-  width: 2.5rem;
-  height: 2.5rem;
-  flex: 0 0 auto;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid rgb(var(--ui-accent-muted));
-  border-radius: 0.75rem;
-  background: rgb(var(--ui-surface-selected));
-  color: rgb(var(--ui-accent-hover));
-  font-size: 1rem;
-  font-weight: 900;
-  line-height: 1;
-}
-
-.project-card-code {
-  display: inline-flex;
-  flex: 0 1 auto;
-  min-width: 3rem;
-  max-width: 45%;
-  min-height: 1.25rem;
-  align-items: center;
-  overflow: hidden;
-  border-radius: 9999px;
-  background: rgb(var(--ui-surface-hover));
-  padding: 0.15rem 0.5rem;
-  color: rgb(var(--ui-text-disabled));
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-  font-size: 0.625rem;
-  font-weight: 800;
-  letter-spacing: 0;
-  text-overflow: ellipsis;
-  text-transform: uppercase;
-  white-space: nowrap;
-}
-
-.project-card-meta {
-  min-width: 0;
-  border: 1px solid rgb(var(--ui-border-muted));
-  border-radius: 0.625rem;
-  background: rgb(var(--ui-surface-hover) / 0.72);
-  padding: 0.5rem 0.625rem;
-}
-
-.project-card-meta dt {
-  color: rgb(var(--ui-text-disabled));
-  font-size: 0.625rem;
-  font-weight: 800;
-  line-height: 1rem;
-}
-
-.project-card-meta dd {
-  margin-top: 0.125rem;
-  overflow: hidden;
-  color: rgb(var(--ui-text-emphasis));
-  font-size: 0.75rem;
-  font-weight: 800;
-  line-height: 1rem;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.project-card-enter {
-  display: inline-flex;
-  flex: 0 0 auto;
-  align-items: center;
-  gap: 0.25rem;
-  color: rgb(var(--ui-accent));
-  font-size: 0.75rem;
-  font-weight: 800;
-  white-space: nowrap;
+.project-card:hover .project-card-actions,
+.project-card:focus-within .project-card-actions {
+  transform: translateY(0);
 }
 </style>

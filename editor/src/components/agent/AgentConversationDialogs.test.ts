@@ -41,7 +41,7 @@ describe('AgentConversationDialogs', () => {
     await fireEvent.click(screen.getByRole('button', { name: '成员二' }))
     expect(screen.getByText('Run ID：member-run-2')).toBeInTheDocument()
 
-    await fireEvent.click(screen.getByRole('button', { name: '展开成员消息' }))
+    await fireEvent.click(screen.getByRole('button', { name: '展开子运行消息' }))
     expect(screen.getByText('传入消息')).toBeInTheDocument()
     expect(screen.getByText('第二个成员输入')).toBeInTheDocument()
   })

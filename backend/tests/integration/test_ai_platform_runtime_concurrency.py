@@ -43,7 +43,11 @@ async def _create_runtime_run(
             session_id=session_id,
             agent_id="component-manager",
             session_name="并发事件测试会话",
-            scope=scope,
+            workspace_id=scope.workspace_id,
+            focus_mode="follow_route",
+            pinned_project_id=None,
+            work_scope_mode="workspace",
+            allowed_project_ids=[],
         )
         await store.start_run(
             session_id=session_id,
@@ -92,8 +96,8 @@ async def test_atomic_allocator_should_return_unique_indexes_across_sqlite_sessi
             select(AiAgentRun.event_index).where(AiAgentRun.run_id == run_id)
         )
 
-    assert sorted(allocated_indexes) == list(range(1, 13))
-    assert persisted_index == 12
+    assert sorted(allocated_indexes) == list(range(2, 14))
+    assert persisted_index == 13
 
 
 async def test_append_event_should_persist_unique_indexes_from_concurrent_sqlite_sessions(
@@ -145,10 +149,10 @@ async def test_append_event_should_persist_unique_indexes_from_concurrent_sqlite
         ).scalars().all()
         persisted_run = await verify_session.get(AiAgentRun, run_id)
 
-    assert sorted(event.event_index for event in stored_events if event.event_index is not None) == list(range(1, 13))
-    assert event_indexes == list(range(13))
+    assert sorted(event.event_index for event in stored_events if event.event_index is not None) == list(range(2, 14))
+    assert event_indexes == list(range(14))
     assert persisted_run is not None
-    assert persisted_run.event_index == 12
+    assert persisted_run.event_index == 13
     assert len(persisted_run.content or "") == len("[0]") * 10 + len("[10]") * 2
 
 
@@ -228,7 +232,7 @@ async def test_append_event_should_retry_clean_sqlite_transaction_after_lock(
 
     assert rollback_count >= 1
     assert rollback_count == rollback_count_before_exhaustion + 2
-    assert stored_event.event_index == 1
+    assert stored_event.event_index == 2
     assert persisted_run is not None
     assert persisted_run.content == "锁持有期间的内容。事件追加。"
 
@@ -267,7 +271,7 @@ async def test_append_event_should_avoid_process_lock_after_sqlite_write(
             ),
         )
 
-    assert stored_event.event_index == 1
+    assert stored_event.event_index == 2
 
 
 async def test_member_event_should_not_append_after_parent_run_terminal(
@@ -311,8 +315,8 @@ async def test_member_event_should_not_append_after_parent_run_terminal(
             )
         )
 
-    assert terminal_event.event_index == 1
-    assert persisted_index == 1
+    assert terminal_event.event_index == 2
+    assert persisted_index == 2
     assert member_event_count == 0
     assert active_version > 0
     assert get_live_run_activity_version(run_id) == 0

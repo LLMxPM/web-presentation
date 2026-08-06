@@ -13,7 +13,7 @@ from app.models.mixins import AuditMixin, TimestampMixin
 
 
 class AiAgentSession(TimestampMixin, AuditMixin, Base):
-    """保存 Editor 智能体会话及其业务范围，作为平台会话事实源。"""
+    """保存工作空间级智能体会话及后续 Run 的焦点偏好。"""
 
     __tablename__ = "ai_agent_sessions"
 
@@ -21,12 +21,12 @@ class AiAgentSession(TimestampMixin, AuditMixin, Base):
     agent_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
     session_name: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    scope_type: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
     workspace_id: Mapped[int] = mapped_column(ForeignKey("workspaces.id"), nullable=False, index=True)
-    project_id: Mapped[int | None] = mapped_column(ForeignKey("projects.id"), nullable=True, index=True)
-    page_id: Mapped[int | None] = mapped_column(ForeignKey("pages.id"), nullable=True, index=True)
-    component_id: Mapped[int | None] = mapped_column(ForeignKey("workspace_components.id"), nullable=True, index=True)
-    source: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    focus_mode: Mapped[str] = mapped_column(String(32), nullable=False, default="follow_route", index=True)
+    pinned_project_id: Mapped[int | None] = mapped_column(ForeignKey("projects.id"), nullable=True, index=True)
+    work_scope_mode: Mapped[str] = mapped_column(String(32), nullable=False, default="workspace", index=True)
+    allowed_project_ids_json: Mapped[list[int]] = mapped_column(JSON, nullable=False, default=list)
+    focus_version: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     metadata_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
     summary_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)

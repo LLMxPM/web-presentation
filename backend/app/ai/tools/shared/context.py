@@ -47,16 +47,20 @@ async def resolve_tool_context(
         backend_session_id=backend_session_id,
     )
     await _raise_if_cancelled(session_factory, run_id)
+    trusted_scope_override = dependencies.get("trusted_scope_override") is True
     authorized_context = {
         "user_id": user_id,
         "session_id": session_id,
         "agent_id": _coerce_optional_str(claims.get("agent_id")) or agent_id,
         "run_id": run_id,
         "workspace_id": _coerce_int(claims.get("workspace_id"), "workspace_id"),
-        "project_id": _coerce_int(claims.get("project_id"), "project_id") if claims.get("project_id") is not None else None,
-        "page_id": _coerce_int(claims.get("page_id"), "page_id") if claims.get("page_id") is not None else None,
-        "component_id": _coerce_int(claims.get("component_id"), "component_id") if claims.get("component_id") is not None else None,
+        "project_id": _resolve_scoped_dependency(claims, dependencies, "project_id", trusted_scope_override),
+        "page_id": _resolve_scoped_dependency(claims, dependencies, "page_id", trusted_scope_override),
+        "component_id": _resolve_scoped_dependency(claims, dependencies, "component_id", trusted_scope_override),
         "source": source,
+        "work_scope_mode": str(claims.get("work_scope_mode") or "workspace"),
+        "allowed_project_ids": [int(item) for item in (claims.get("allowed_project_ids") or [])],
+        "focus_version": int(claims.get("focus_version") or 0),
     }
     resolved_dependencies = {
         **dependencies,
@@ -70,6 +74,22 @@ async def resolve_tool_context(
                 detail=f"当前工具缺少必要上下文字段：{field_name}。",
             )
     return resolved_dependencies, claims
+
+
+def _resolve_scoped_dependency(
+    claims: dict[str, Any],
+    dependencies: dict[str, Any],
+    field_name: str,
+    trusted_scope_override: bool,
+) -> int | None:
+    """解析范围 ID；只接受通用分派层完成归属校验后的内部覆盖。"""
+
+    if trusted_scope_override and dependencies.get(field_name) is not None:
+        return _coerce_int(dependencies.get(field_name), field_name)
+    claim_value = claims.get(field_name)
+    if claim_value is not None:
+        return _coerce_int(claim_value, field_name)
+    return None
 
 
 def _resolve_authorized_claims(

@@ -4,20 +4,23 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator
 
+from app.ai.model_budget import (
+    COMPRESSION_TARGET_RATIO,
+    CONTEXT_WINDOW_TOKEN_DEFAULT,
+    CONTEXT_WINDOW_TOKEN_MAX,
+    CONTEXT_WINDOW_TOKEN_MIN,
+    derive_model_run_budget,
+)
 from app.models.enums import AiLlmConfigScope, AiModelType
 from app.schemas.common import SchemaBase
 
-LLM_CONTEXT_WINDOW_TOKEN_MAX = 2_000_000
-LLM_MAX_OUTPUT_TOKEN_MAX = 2_000_000
-# 聊天模型扣除最大输出后必须保留的上下文余量硬性下限。
-LLM_CONTEXT_RESERVED_TOKEN_MIN = 100_000
-# 窗口最低限 = 保留余量 + 最小输出，低于此值的模型无法满足余量要求。
-LLM_CONTEXT_WINDOW_TOKEN_MIN = LLM_CONTEXT_RESERVED_TOKEN_MIN + 256
-LLM_CONTEXT_WINDOW_TOKEN_DEFAULT = 128_000
-LLM_MAX_OUTPUT_TOKEN_DEFAULT = 28_000
-LLM_COMPRESSION_TARGET_RATIO_DEFAULT = 0.1
+LLM_CONTEXT_WINDOW_TOKEN_MAX = CONTEXT_WINDOW_TOKEN_MAX
+LLM_CONTEXT_WINDOW_TOKEN_MIN = CONTEXT_WINDOW_TOKEN_MIN
+LLM_CONTEXT_WINDOW_TOKEN_DEFAULT = CONTEXT_WINDOW_TOKEN_DEFAULT
+LLM_MAX_OUTPUT_TOKEN_DEFAULT = derive_model_run_budget(CONTEXT_WINDOW_TOKEN_DEFAULT).max_output_tokens
+LLM_COMPRESSION_TARGET_RATIO_DEFAULT = COMPRESSION_TARGET_RATIO
 
 
 class LlmProviderCatalogItem(SchemaBase):
@@ -124,9 +127,6 @@ class LlmConfigCreateRequest(BaseModel):
     thinking_effort: str | None = Field(default=None, max_length=64)
     supports_image_input: bool = False
     context_window_tokens: int = Field(default=LLM_CONTEXT_WINDOW_TOKEN_DEFAULT, ge=LLM_CONTEXT_WINDOW_TOKEN_MIN, le=LLM_CONTEXT_WINDOW_TOKEN_MAX)
-    max_output_tokens: int = Field(default=LLM_MAX_OUTPUT_TOKEN_DEFAULT, ge=256, le=LLM_MAX_OUTPUT_TOKEN_MAX)
-    history_token_ratio: float = Field(default=0.5, ge=0.0, le=0.9)
-    compression_target_ratio: float = Field(default=LLM_COMPRESSION_TARGET_RATIO_DEFAULT, ge=0.02, le=0.5)
     advanced_config_json: dict[str, Any] = Field(default_factory=dict)
 
     @field_validator("advanced_config_json")
@@ -137,20 +137,6 @@ class LlmConfigCreateRequest(BaseModel):
         if not isinstance(value, dict):
             raise ValueError("advanced_config_json 必须是 JSON 对象。")
         return value
-
-    @model_validator(mode="after")
-    def validate_context_reserved_tokens(self) -> "LlmConfigCreateRequest":
-        """要求聊天模型扣除最大输出后至少保留 100K 上下文余量。"""
-
-        if (
-            self.model_type == AiModelType.CHAT
-            and self.context_window_tokens - self.max_output_tokens < LLM_CONTEXT_RESERVED_TOKEN_MIN
-        ):
-            raise ValueError(
-                f"上下文窗口减去最大输出后必须至少保留 {LLM_CONTEXT_RESERVED_TOKEN_MIN} tokens，请调大上下文窗口或调小最大输出。"
-            )
-        return self
-
 
 class LlmConfigUpdateRequest(BaseModel):
     """更新大模型配置的请求体。"""
@@ -163,9 +149,6 @@ class LlmConfigUpdateRequest(BaseModel):
     thinking_effort: str | None = Field(default=None, max_length=64)
     supports_image_input: bool | None = None
     context_window_tokens: int | None = Field(default=None, ge=LLM_CONTEXT_WINDOW_TOKEN_MIN, le=LLM_CONTEXT_WINDOW_TOKEN_MAX)
-    max_output_tokens: int | None = Field(default=None, ge=256, le=LLM_MAX_OUTPUT_TOKEN_MAX)
-    history_token_ratio: float | None = Field(default=None, ge=0.0, le=0.9)
-    compression_target_ratio: float | None = Field(default=None, ge=0.02, le=0.5)
     advanced_config_json: dict[str, Any] | None = None
     status: str | None = Field(default=None, pattern="^(active|archived)$")
 

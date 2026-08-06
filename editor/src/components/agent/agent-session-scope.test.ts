@@ -15,7 +15,13 @@ function createSession(metadata: Record<string, unknown>, sessionName = '页面�
   return {
     session_id: 'session-1',
     agent_id: 'agent-coordinator',
+    workspace_id: 11,
     session_name: sessionName,
+    focus_mode: 'follow_route',
+    pinned_project_id: null,
+    work_scope_mode: 'workspace',
+    allowed_project_ids: [],
+    focus_version: 0,
     created_at: '2026-05-11T10:00:00+08:00',
     updated_at: '2026-05-11T10:30:00+08:00',
     metadata,
@@ -54,7 +60,7 @@ describe('agent-session-scope', () => {
     expect(resolveSessionDisplayName(session)).toBe('页面排版优化')
   })
 
-  it('页面 scope 应展示工作空间到页面的完整路径', () => {
+  it('会话路径只展示稳定的工作空间授权边界', () => {
     const session = createSession({
       scope_type: 'page',
       workspace_id: 11,
@@ -66,10 +72,10 @@ describe('agent-session-scope', () => {
       source: 'editor-page-detail',
     })
 
-    expect(resolveSessionScopePath(session)).toBe('演示工作区 / 发布会方案 / 封面页')
+    expect(resolveSessionScopePath(session)).toBe('工作空间 #11')
   })
 
-  it('工作空间级工具入口应在路径中补充库入口名称', () => {
+  it('旧 metadata 中的库入口不再改变会话路径', () => {
     const session = createSession({
       scope_type: 'workspace',
       workspace_id: 11,
@@ -77,7 +83,7 @@ describe('agent-session-scope', () => {
       source: 'editor-component-library',
     }, '组件整理')
 
-    expect(resolveSessionScopePath(session)).toBe('演示工作区 / 组件库')
+    expect(resolveSessionScopePath(session)).toBe('工作空间 #11')
   })
 
   it('会话更新时间应使用简短月日时分格式', () => {
@@ -90,7 +96,7 @@ describe('agent-session-scope', () => {
     expect(resolveSessionSubtitle(session)).toBe('05-11 10:30')
   })
 
-  it('组件库与资源库工作空间会话只应匹配对应库路由', () => {
+  it('同一工作空间内的所有路由都属于同一会话边界', () => {
     const componentLibraryScope = createScope({ source: 'editor-component-library' })
     const assetLibraryScope = createScope({ source: 'editor-asset-library' })
     const pageRouteScope = createScope({
@@ -101,8 +107,8 @@ describe('agent-session-scope', () => {
       source: 'editor-page-detail',
     })
 
-    expect(isRouteScopeInsideSessionScope(componentLibraryScope, pageRouteScope)).toBe(false)
-    expect(isRouteScopeInsideSessionScope(assetLibraryScope, componentLibraryScope)).toBe(false)
+    expect(isRouteScopeInsideSessionScope(componentLibraryScope, pageRouteScope)).toBe(true)
+    expect(isRouteScopeInsideSessionScope(assetLibraryScope, componentLibraryScope)).toBe(true)
     expect(isRouteScopeInsideSessionScope(componentLibraryScope, createScope({ source: 'editor-component-library' }))).toBe(true)
   })
 

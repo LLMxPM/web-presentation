@@ -396,7 +396,7 @@ describe('AssetsView', () => {
     expect(screen.queryByLabelText('选择资源 formula_ratio')).toBeNull()
     await fireEvent.click(screen.getByText('批量操作'))
     await fireEvent.click(screen.getByLabelText('选择资源 formula_ratio'))
-    await fireEvent.click(screen.getByText('重新计算比例'))
+    await fireEvent.click(screen.getByText('重算比例'))
 
     expect(screen.getByText('重新计算选中资源比例')).toBeInTheDocument()
     expect(screen.getByText('预览结果')).toBeInTheDocument()
@@ -432,7 +432,7 @@ describe('AssetsView', () => {
     })
     await fireEvent.click(screen.getByText('批量操作'))
     await fireEvent.click(screen.getByLabelText('选择资源 poster_image'))
-    await fireEvent.click(screen.getByText('重新计算比例'))
+    await fireEvent.click(screen.getByText('重算比例'))
     await fireEvent.click(screen.getByText('开始预览'))
 
     await waitFor(() => {
@@ -518,7 +518,7 @@ describe('AssetsView', () => {
     })
     await fireEvent.click(screen.getByText('批量操作'))
     await fireEvent.click(screen.getByLabelText('选择资源 formula_ratio'))
-    await fireEvent.click(screen.getByText('重新计算比例'))
+    await fireEvent.click(screen.getByText('重算比例'))
     await fireEvent.click(screen.getByText('开始预览'))
 
     await waitFor(() => {
@@ -605,7 +605,7 @@ describe('AssetsView', () => {
     await fireEvent.click(screen.getByText('批量操作'))
     await fireEvent.click(screen.getByLabelText('选择资源 hero_illustration'))
     await fireEvent.click(screen.getByLabelText('选择资源 bitmap_photo'))
-    await fireEvent.click(screen.getByText('批量归档'))
+    await fireEvent.click(screen.getByText('归档'))
 
     await waitFor(() => {
       expect(batchArchiveWorkspaceAssetsMock).toHaveBeenCalledWith(7, [1, 2])
@@ -621,7 +621,7 @@ describe('AssetsView', () => {
     await fireEvent.click(screen.getByText('批量操作'))
     await fireEvent.click(screen.getByLabelText('选择资源 hero_illustration'))
     await fireEvent.click(screen.getByLabelText('选择资源 bitmap_photo'))
-    await fireEvent.click(screen.getByText('导出选中'))
+    await fireEvent.click(screen.getByText('导出'))
 
     await waitFor(() => {
       expect(exportWorkspaceAssetPackageMock).toHaveBeenCalledWith(7, [1, 2])
@@ -681,7 +681,7 @@ describe('AssetsView', () => {
     })
     await fireEvent.click(screen.getByText('批量操作'))
     await fireEvent.click(screen.getByLabelText('选择资源 archived_restore_cover'))
-    await fireEvent.click(screen.getByText('批量恢复'))
+    await fireEvent.click(screen.getByText('恢复'))
 
     await waitFor(() => {
       expect(batchRestoreWorkspaceAssetsMock).toHaveBeenCalledWith(7, [5])
@@ -722,7 +722,7 @@ describe('AssetsView', () => {
     })
     await fireEvent.click(screen.getByText('批量操作'))
     await fireEvent.click(screen.getByLabelText('选择资源 archived_cover'))
-    await fireEvent.click(screen.getByText('批量删除'))
+    await fireEvent.click(screen.getByText('删除'))
 
     await waitFor(() => {
       expect(batchDeleteWorkspaceAssetsMock).toHaveBeenCalledWith(7, [4])

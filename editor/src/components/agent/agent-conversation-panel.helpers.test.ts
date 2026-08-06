@@ -7,6 +7,7 @@ import {
   buildRunIssueState,
   buildTimelineDisplayItems,
   extractTimelineToolDetails,
+  resolveLogicalToolName,
 } from '@/components/agent/agent-conversation-panel'
 import type { AgentMemberRunItem, AgentPendingRequirement, AgentTimelineItem } from '@/types/api'
 
@@ -32,6 +33,42 @@ function timelineItem(overrides: Partial<AgentTimelineItem>): AgentTimelineItem 
 }
 
 describe('agent-conversation-panel timeline helpers', () => {
+  it('每轮焦点与工作范围应作为消息开头的独立展示项', () => {
+    const items = buildTimelineDisplayItems([
+      timelineItem({
+        id: 'run-context-1',
+        kind: 'run_context',
+        role: null,
+        order_index: 1,
+        run_context: {
+          focus: {
+            scope_type: 'page',
+            workspace_id: 11,
+            workspace_name: '产品空间',
+            project_id: 21,
+            project_name: '年度汇报',
+            page_id: 31,
+            page_title: '经营概览',
+            source: 'editor-page-detail',
+          },
+          work_scope_mode: 'selected_projects',
+          allowed_projects: [{ id: 21, name: '年度汇报' }],
+          focus_version: 2,
+        },
+      }),
+      timelineItem({ id: 'user-1', kind: 'message', role: 'user', order_index: 0, content: '修改页面' }),
+    ])
+
+    expect(items.map(item => item.kind)).toEqual(['message', 'run_context'])
+    expect(items[1].kind === 'run_context' ? items[1].context.focus.page_title : null).toBe('经营概览')
+  })
+
+  it('固定通用工具应显示真实逻辑操作名称', () => {
+    expect(resolveLogicalToolName('update_entity', { resource_type: 'theme' })).toBe('修改主题')
+    expect(resolveLogicalToolName('archive_entity', { resource_type: 'asset', target_ids: [1, 2] })).toBe('批量归档资源')
+    expect(resolveLogicalToolName('execute_dangerous_action', { resource_type: 'project', action: 'replace_routes' })).toBe('覆盖项目路由')
+  })
+
   it('应按 order_index 渲染 user、reasoning、assistant、tool 与状态项', () => {
     const items = buildTimelineDisplayItems([
       timelineItem({ id: 'tool-1', kind: 'tool', role: null, order_index: 3, status: 'completed', tool: {
@@ -250,8 +287,8 @@ describe('agent-conversation-panel timeline helpers', () => {
       {
         parent_run_id: 'run-1',
         run_id: 'member-run-resource',
-        agent_id: 'resource-manager',
-        agent_name: '资源助手',
+        agent_id: 'agent-coordinator',
+        agent_name: '内容助手',
         status: 'completed',
         created_at: '2026-04-18T10:00:01+08:00',
         updated_at: '2026-04-18T10:00:02+08:00',
@@ -262,9 +299,9 @@ describe('agent-conversation-panel timeline helpers', () => {
     const items = buildTimelineDisplayItems([
       timelineItem({ id: 'delegate-tool', kind: 'tool', role: null, order_index: 0, status: 'completed', tool: {
         tool_call_id: 'delegate-call-resource',
-        tool_name: 'delegate_task_to_member',
+        tool_name: 'delegate_task_to_self',
         status: 'completed',
-        input_payload: { member_id: 'resource-manager', task: '整理资源' },
+        input_payload: { task: '整理资源' },
         output_payload: { success: true },
         message: '',
       } }),

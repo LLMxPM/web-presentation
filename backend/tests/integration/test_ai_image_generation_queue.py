@@ -79,10 +79,10 @@ async def test_image_generation_job_should_be_idempotent_and_save_asset(
                 session_id="session-image-generation-1",
                 agent_id="agent-coordinator",
                 user_id=user_id,
-                scope_type="project",
                 workspace_id=workspace_id,
-                project_id=project_id,
-                source="test",
+                focus_mode="follow_route",
+                work_scope_mode="workspace",
+                allowed_project_ids_json=[],
                 metadata_json={},
             )
         )

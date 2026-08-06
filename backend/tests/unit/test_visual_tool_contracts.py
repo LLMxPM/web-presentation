@@ -27,13 +27,13 @@ from app.services.image_understanding_service import (
 )
 
 
-def test_visual_tools_are_content_and_resource_agent_single_source_specs() -> None:
-    """内容与资源助手应披露视觉工具，组件助手不应直接获得视觉能力。"""
+def test_visual_tools_are_unified_agent_single_source_specs() -> None:
+    """只有统一内容助手披露视觉工具，旧助手 ID 不再拥有目录。"""
 
     keys = {item.key for item in list_agent_tool_specs("agent-coordinator")}
     assert {"analyze_visuals", "generate_image"}.issubset(keys)
-    resource_keys = {item.key for item in list_agent_tool_specs("resource-manager")}
-    assert {"analyze_visuals", "generate_image"}.issubset(resource_keys)
+    assert list_agent_tool_specs("resource-manager") == ()
+    assert list_agent_tool_specs("component-manager") == ()
     assert get_agent_tool_spec("component-manager", "analyze_visuals") is None
     assert get_agent_tool_spec("component-manager", "generate_image") is None
 
@@ -83,7 +83,7 @@ async def test_visual_slot_availability_filters_groups_independently(monkeypatch
     )
 
     assert unavailable == frozenset({"image_generation"})
-    assert resource_unavailable == frozenset({"image_generation"})
+    assert resource_unavailable == frozenset()
     assert component_unavailable == frozenset()
     assert retained == frozenset()
 

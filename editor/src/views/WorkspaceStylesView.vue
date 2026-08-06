@@ -516,12 +516,22 @@ type WorkspaceStyleEditorSavePayload = WorkspaceStylePayload & { suggested_compo
 onMounted(() => {
   void loadWorkspace()
   void loadStyles()
+  window.addEventListener('agent:style-updated', handleAgentStyleUpdated)
 })
 
 onBeforeUnmount(() => {
+  window.removeEventListener('agent:style-updated', handleAgentStyleUpdated)
   window.clearTimeout(searchDebounceTimer)
   window.clearTimeout(highlightTimer)
 })
+
+/** 当前工作空间样式被智能体修改后刷新列表。 */
+function handleAgentStyleUpdated(event: Event): void {
+  const detail = (event as CustomEvent<{ workspaceId?: number | null }>).detail
+  if (detail?.workspaceId === workspaceId.value) {
+    void loadStyles()
+  }
+}
 
 watch(
   workspaceId,

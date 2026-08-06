@@ -85,25 +85,21 @@
           <span class="mt-1 h-5 w-1 rounded-full bg-info"></span>
           <div>
             <h3 class="text-base font-bold text-text-strong">运行预算</h3>
-            <p class="mt-1 text-xs leading-5 text-text-muted">控制上下文窗口、单次输出和历史压缩目标。</p>
+            <p class="mt-1 text-xs leading-5 text-text-muted">只需配置上下文窗口，其余预算由平台自动计算。</p>
           </div>
         </div>
-        <dl class="grid gap-3 text-sm md:grid-cols-2 xl:grid-cols-4">
+        <dl class="grid gap-3 text-sm md:grid-cols-3">
           <div class="rounded-xl border border-border bg-canvas px-4 py-3">
             <dt class="text-xs font-semibold text-text-disabled">上下文窗口</dt>
             <dd class="mt-1 font-semibold text-text-emphasis">{{ selectedModel.context_window_tokens.toLocaleString() }} tokens</dd>
           </div>
           <div class="rounded-xl border border-border bg-canvas px-4 py-3">
-            <dt class="text-xs font-semibold text-text-disabled">最大输出</dt>
+            <dt class="text-xs font-semibold text-text-disabled">自动最大输出</dt>
             <dd class="mt-1 font-semibold text-text-emphasis">{{ selectedModel.max_output_tokens.toLocaleString() }} tokens</dd>
           </div>
           <div class="rounded-xl border border-border bg-canvas px-4 py-3">
-            <dt class="text-xs font-semibold text-text-disabled">历史上下文比例</dt>
-            <dd class="mt-1 font-semibold text-text-emphasis">{{ selectedModel.history_token_ratio }}</dd>
-          </div>
-          <div class="rounded-xl border border-border bg-canvas px-4 py-3">
-            <dt class="text-xs font-semibold text-text-disabled">压缩目标比例</dt>
-            <dd class="mt-1 font-semibold text-text-emphasis">{{ selectedModel.compression_target_ratio }}</dd>
+            <dt class="text-xs font-semibold text-text-disabled">自动压缩目标</dt>
+            <dd class="mt-1 font-semibold text-text-emphasis">{{ compressionTargetTokens.toLocaleString() }} tokens</dd>
           </div>
         </dl>
       </section>
@@ -223,52 +219,26 @@
           <span class="mt-1 h-5 w-1 rounded-full bg-info"></span>
           <div>
             <h3 class="text-base font-bold text-text-strong">运行预算</h3>
-            <p class="mt-1 text-xs leading-5 text-text-muted">控制上下文窗口、单次输出和历史压缩目标，保存时会按后端范围归一化。</p>
+            <p class="mt-1 text-xs leading-5 text-text-muted">输入模型支持的上下文窗口，最大输出和历史压缩预算将自动计算。</p>
           </div>
         </div>
         <div class="grid gap-4 xl:grid-cols-2">
-          <UiFormField label="上下文窗口 tokens">
+          <UiFormField label="上下文窗口（K）">
             <UiInput
-              :model-value="form.context_window_tokens"
+              :model-value="form.context_window_tokens / 1000"
               type="number"
-              min="1"
+              min="128"
+              max="2000"
+              step="1"
               inputmode="numeric"
-              placeholder="例如：128000"
-              @update:model-value="value => form.context_window_tokens = Number(value) || 128000"
+              placeholder="例如：128"
+              @update:model-value="value => form.context_window_tokens = (Number(value) || 128) * 1000"
             />
+            <p class="mt-1 text-xs leading-5 text-text-muted">例如输入 128，表示 128K（128,000 tokens）。</p>
           </UiFormField>
-          <UiFormField label="最大输出 tokens">
-            <UiInput
-              :model-value="form.max_output_tokens"
-              type="number"
-              min="1"
-              inputmode="numeric"
-              placeholder="例如：32000"
-              @update:model-value="value => form.max_output_tokens = Number(value) || 32000"
-            />
-          </UiFormField>
-          <UiFormField label="历史上下文比例">
-            <UiInput
-              :model-value="form.history_token_ratio"
-              type="number"
-              min="0"
-              max="0.9"
-              step="0.05"
-              placeholder="0.5"
-              @update:model-value="value => form.history_token_ratio = Number(value)"
-            />
-          </UiFormField>
-          <UiFormField label="压缩目标比例">
-            <UiInput
-              :model-value="form.compression_target_ratio"
-              type="number"
-              min="0.02"
-              max="0.5"
-              step="0.01"
-              placeholder="0.1"
-              @update:model-value="value => form.compression_target_ratio = Number(value)"
-            />
-          </UiFormField>
+          <div class="rounded-xl border border-border bg-surface-muted px-4 py-3 text-xs leading-5 text-text-muted">
+            平台会自动预留 20% 输出空间（8K–64K）、8% 安全余量，并将历史压缩目标控制在 4K–32K。
+          </div>
         </div>
       </section>
 
@@ -422,9 +392,6 @@ interface LlmFormState {
   thinking_effort: string | null
   supports_image_input: boolean
   context_window_tokens: number
-  max_output_tokens: number
-  history_token_ratio: number
-  compression_target_ratio: number
 }
 
 type ConfigPanelMode = 'create' | 'detail' | 'edit'
@@ -443,6 +410,10 @@ const props = defineProps<{
   deletingConfigId: number | null
   canCreateGlobal: boolean
 }>()
+
+const compressionTargetTokens = computed(() => Math.round(
+  (props.selectedModel?.context_window_tokens ?? 0) * (props.selectedModel?.compression_target_ratio ?? 0),
+))
 
 const emit = defineEmits<{
   deleteModel: [config: LlmConfigItem]

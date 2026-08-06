@@ -3,9 +3,11 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.code_generator import CODE_PREFIX_PROJECT, create_with_generated_code
+from app.core.config import get_settings
 from app.core.exceptions import AppException
 from app.core.time_utils import utc_now
 from app.models.enums import RecordStatus
+from app.models.page import Page
 from app.models.workspace import Project
 from app.repositories.project_repository import ProjectRepository
 from app.repositories.workspace_repository import WorkspaceRepository
@@ -17,6 +19,7 @@ from app.schemas.project import (
     normalize_project_build_extra_assets_config,
 )
 from app.services.project_config_service import ProjectConfigService
+from app.services.page_screenshot_url import build_page_screenshot_url
 from app.services.project_suggested_reference_asset_service import ProjectSuggestedReferenceAssetService
 from app.services.suggested_component_service import SuggestedComponentService
 from app.services.workspace_theme_service import WorkspaceThemeService
@@ -33,9 +36,9 @@ class ProjectService:
         self.project_config_service = ProjectConfigService(session)
         self.workspace_theme_service = WorkspaceThemeService(session)
         self.workspace_service = WorkspaceService(session)
+        self.settings = get_settings()
 
-    @staticmethod
-    def _to_item(project: Project) -> ProjectItem:
+    def _to_item(self, project: Project, *, first_page: Page | None = None) -> ProjectItem:
         """将 ORM 项目对象转换为接口层需要的显式响应结构。"""
 
         return ProjectItem.model_validate(
@@ -61,6 +64,12 @@ class ProjectService:
                 "build_extra_assets_json": normalize_project_build_extra_assets_config(
                     project.build_extra_assets_json
                 ).model_dump(mode="python"),
+                "first_page_title": first_page.title if first_page is not None else None,
+                "first_page_screenshot_url": (
+                    build_page_screenshot_url(first_page, self.settings.backend_public_base_url)
+                    if first_page is not None
+                    else None
+                ),
                 "created_at": project.created_at,
                 "updated_at": project.updated_at,
                 "created_by": project.created_by,
@@ -79,8 +88,9 @@ class ProjectService:
             include_system_managed=False,
             user_id=user_id,
         )
+        first_pages = await self.repository.list_cover_pages([item.id for item in items])
         return PagedResponse[ProjectItem](
-            items=[self._to_item(item) for item in items],
+            items=[self._to_item(item, first_page=first_pages.get(item.id)) for item in items],
             total=total,
             page=query.page,
             page_size=query.page_size,

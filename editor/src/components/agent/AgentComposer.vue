@@ -6,6 +6,9 @@
       class="rounded-md border border-border bg-surface px-1.5 py-1 transition focus-within:border-info-border"
       :class="{ 'opacity-70': composerState === 'disabled' }"
     >
+      <div v-if="$slots.contextControls" class="mb-1 border-b border-border-muted px-0.5 pb-1">
+        <slot name="contextControls" />
+      </div>
       <textarea
         ref="textareaRef"
         :value="modelValue"
@@ -16,6 +19,7 @@
         :placeholder="placeholder"
         @input="handleInput"
         @keydown.enter.exact.prevent="emitPrimaryAction"
+        @paste="handlePaste"
       />
 
       <div v-if="imageAttachments.length" class="mt-1 flex gap-1.5 overflow-x-auto pb-1">
@@ -66,12 +70,20 @@
             :class="uploadButtonDisabled ? 'text-text-faint' : 'text-text-disabled'"
             label="上传图片"
             aria-label="上传图片"
-            :title="imageUploadDisabledReason || '上传图片'"
+            :title="imageUploadButtonTitle"
             :disabled="uploadButtonDisabled"
             @click="openImagePicker"
           >
             <ImagePlus />
           </UiIconButton>
+          <span
+            v-if="imageAttachments.length"
+            class="shrink-0 text-[11px]"
+            :class="imageAttachmentLimitExceeded ? 'text-danger-strong' : 'text-text-muted'"
+            aria-live="polite"
+          >
+            已添加 {{ imageAttachments.length }}/{{ AGENT_IMAGE_ATTACHMENT_MAX_COUNT }} 张<span v-if="imageAttachmentLimitExceeded">，请移除至 10 张以内</span>
+          </span>
           <UiIconButton
             size="xs"
             :label="sizeMode === 'expanded' ? '折叠输入框' : '展开输入框'"
@@ -185,8 +197,16 @@ import { Archive, ImagePlus, Maximize2, Minimize2, SendHorizonal, Square, X } fr
 
 import AgentChoicePrompt from '@/components/agent/AgentChoicePrompt.vue'
 import AgentToolConfirmPrompt from '@/components/agent/AgentToolConfirmPrompt.vue'
+import { AGENT_IMAGE_ATTACHMENT_MAX_COUNT } from '@/components/agent/agent-image-attachment-constants'
 import { UiButton, UiIconButton } from '@/components/ui'
 import type { AgentFeedbackSelection, AgentImageAttachmentItem, AgentPendingRequirement, AgentSuggestedPatch } from '@/types/api'
+import { Message } from '@/utils/message'
+
+const PASTED_IMAGE_EXTENSIONS: Record<string, string> = {
+  'image/png': 'png',
+  'image/jpeg': 'jpg',
+  'image/webp': 'webp',
+}
 
 interface Props {
   modelValue: string
@@ -227,7 +247,7 @@ const props = withDefaults(defineProps<Props>(), {
 const emit = defineEmits<{
   'update:modelValue': [value: string]
   action: []
-  uploadImage: [file: File]
+  uploadImage: [files: File[]]
   removeImage: [attachmentId: number]
   promoteImage: [attachmentId: number]
   hitlConfirm: []
@@ -277,13 +297,26 @@ const isRunningState = computed(() => composerState.value === 'streaming' || com
 const textareaDisabled = computed(() => composerState.value === 'disabled')
 const primaryActionLabel = computed(() => (isRunningState.value ? '停止' : '发送'))
 const primaryActionVariant = computed(() => (isRunningState.value ? 'secondary' : 'primary'))
-const primaryActionDisabled = computed(() => props.actionDisabled || composerState.value === 'disabled')
+const imageAttachmentLimitReached = computed(() => props.imageAttachments.length >= AGENT_IMAGE_ATTACHMENT_MAX_COUNT)
+const imageAttachmentLimitExceeded = computed(() => props.imageAttachments.length > AGENT_IMAGE_ATTACHMENT_MAX_COUNT)
+const primaryActionDisabled = computed(() => (
+  props.actionDisabled
+  || props.imageUploading
+  || imageAttachmentLimitExceeded.value
+  || composerState.value === 'disabled'
+))
 const uploadButtonDisabled = computed(() => (
   textareaDisabled.value
   || isRunningState.value
   || props.imageUploading
   || props.imageUploadDisabled
+  || imageAttachmentLimitReached.value
 ))
+const imageUploadButtonTitle = computed(() => {
+  if (imageAttachmentLimitReached.value) return '每条消息最多上传 10 张图片'
+  if (props.imageUploadDisabledReason) return props.imageUploadDisabledReason
+  return '上传图片'
+})
 const contextUsageVisible = computed(() => (
   Number.isFinite(Number(props.contextUsedTokens))
   && Number.isFinite(Number(props.contextAvailableTokens))
@@ -396,15 +429,68 @@ function openImagePicker() {
 }
 
 /**
- * 读取用户选择的图片文件并逐个交给父层处理。
+ * 读取用户选择的图片文件，并作为单个批次交给父层处理。
  */
 function handleImageInputChange(event: Event) {
   const input = event.target as HTMLInputElement
   const files = Array.from(input.files ?? [])
   input.value = ''
-  for (const file of files) {
-    emit('uploadImage', file)
+  emitImageBatch(files)
+}
+
+/**
+ * 图片优先处理剪贴板：存在图片时阻止同批文本插入，并上传全部图片项。
+ */
+function handlePaste(event: ClipboardEvent) {
+  const files = readClipboardImageFiles(event.clipboardData)
+  if (!files.length) return
+  event.preventDefault()
+  emitImageBatch(files)
+}
+
+/**
+ * 在当前交互状态允许上传时抛出非空图片批次。
+ */
+function emitImageBatch(files: File[]) {
+  if (!files.length) return
+  if (imageAttachmentLimitReached.value) {
+    Message.warning('每条消息最多上传 10 张图片。')
+    return
   }
+  if (props.imageUploadDisabledReason) {
+    Message.warning(props.imageUploadDisabledReason)
+    return
+  }
+  if (uploadButtonDisabled.value) return
+  emit('uploadImage', files)
+}
+
+/**
+ * 从剪贴板读取全部图片，并为缺少有效文件名的受支持图片补充稳定名称。
+ */
+function readClipboardImageFiles(clipboardData: DataTransfer | null) {
+  if (!clipboardData) return []
+  const itemFiles = Array.from(clipboardData.items ?? [])
+    .filter(item => item.kind === 'file' && item.type.startsWith('image/'))
+    .map(item => item.getAsFile())
+    .filter((file): file is File => Boolean(file))
+  const sourceFiles = itemFiles.length
+    ? itemFiles
+    : Array.from(clipboardData.files ?? []).filter(file => file.type.startsWith('image/'))
+  return sourceFiles.map((file, index) => normalizePastedImageFile(file, index))
+}
+
+/**
+ * 为浏览器生成的空名或无扩展名剪贴板图片创建后端可识别的文件名。
+ */
+function normalizePastedImageFile(file: File, index: number) {
+  const extension = PASTED_IMAGE_EXTENSIONS[file.type]
+  if (!extension || /\.(png|jpe?g|webp)$/i.test(file.name)) return file
+  const timestamp = new Date().toISOString().replace(/[-:.TZ]/g, '')
+  return new File([file], `pasted-image-${timestamp}-${index + 1}.${extension}`, {
+    type: file.type,
+    lastModified: file.lastModified,
+  })
 }
 
 /**

@@ -18,7 +18,7 @@ vi.mock('vue-router', () => ({
 
 vi.mock('@/api/catalog', () => ({
   listComponents: (...args: unknown[]) => listComponentsMock(...args),
-  deleteComponent: vi.fn(),
+  archiveComponent: vi.fn(),
 }))
 
 const componentItem: WorkspaceComponentItem = {
@@ -114,7 +114,7 @@ describe('ComponentLibraryPanel', () => {
     })
 
     expect(screen.queryByTitle('新增组件')).toBeNull()
-    expect(screen.queryByTitle('删除组件')).toBeNull()
+    expect(screen.queryByTitle('归档组件')).toBeNull()
     expect(screen.getByTitle('打开完整组件库页面')).toBeInTheDocument()
   })
 

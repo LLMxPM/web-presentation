@@ -30,10 +30,16 @@
       :frame-url="activePreviewFrameUrl"
       title="runtime-preview"
       :viewport="props.previewViewport"
+      :artifact-id="props.previewArtifactId"
+      :status="props.previewStatus"
+      :status-message="props.previewStatusMessage"
       layout="fill"
       container-class="h-full overflow-hidden bg-surface"
       :empty-title="currentPreviewEmptyTitle"
       :empty-description="currentPreviewEmptyDescription"
+      @ready="emit('preview-ready')"
+      @error="emit('preview-error', $event)"
+      @retry="emit('retry')"
     />
 
     <UiDialog
@@ -50,8 +56,14 @@
           :frame-url="props.previewFrameUrl"
           title="runtime-preview-dialog"
           :viewport="props.previewViewport"
+          :artifact-id="props.previewArtifactId"
+          :status="props.previewStatus"
+          :status-message="props.previewStatusMessage"
           layout="fill"
           container-class="h-full overflow-hidden rounded-xl border border-border bg-surface shadow-sm"
+          @ready="emit('preview-ready')"
+          @error="emit('preview-error', $event)"
+          @retry="emit('retry')"
         />
       </div>
     </UiDialog>
@@ -65,11 +77,15 @@ import { FileText, Maximize2, RefreshCw } from '@lucide/vue'
 import RuntimePreviewFrame from '@/components/runtime-preview/RuntimePreviewFrame.vue'
 import ToolPanel from '@/components/patterns/ToolPanel.vue'
 import { UiDialog, UiIconButton } from '@/components/ui'
+import type { RuntimePreviewStatus } from '@/types/runtime-preview'
 
 interface Props {
   previewEnabled: boolean
   previewUrl: string
   previewFrameUrl: string
+  previewArtifactId: string
+  previewStatus: RuntimePreviewStatus
+  previewStatusMessage: string
   previewViewport: {
     width: number
     height: number
@@ -83,6 +99,9 @@ const props = defineProps<Props>()
 
 const emit = defineEmits<{
   refresh: []
+  'preview-ready': []
+  'preview-error': [message: string]
+  retry: []
   toggleSpeakerNotes: []
 }>()
 

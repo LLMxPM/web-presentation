@@ -6,11 +6,15 @@ import { expect, test } from '@playwright/test'
 import { loginAsAdmin } from '../helpers/auth'
 import { openFirstPage, openFirstProject, waitForWorkspaceHome } from '../helpers/navigation'
 
-test('AI 侧栏应可打开并展示会话面板', async ({ page }) => {
+test('工作空间级内容助手无需进入项目即可打开，并可随页面导航继续使用', async ({ page }) => {
   await loginAsAdmin(page)
   await waitForWorkspaceHome(page)
+  await page.locator('[data-testid="agent-sidebar-toggle"]').click()
+  const panel = page.locator('[data-testid="agent-sidebar-panel"]')
+  await expect(panel).toBeVisible()
+  await expect(panel).not.toContainText('需要先进入项目')
+
   await openFirstProject(page)
   await openFirstPage(page)
-  await page.locator('[data-testid="agent-sidebar-toggle"]').click()
-  await expect(page.locator('[data-testid="agent-sidebar-panel"]')).toBeVisible()
+  await expect(panel).toBeVisible()
 })

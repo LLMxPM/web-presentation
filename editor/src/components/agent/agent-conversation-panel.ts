@@ -6,6 +6,7 @@ import type {
   AgentMessageAttachmentItem,
   AgentMessageItem,
   AgentPendingRequirement,
+  AgentRunContextSummary,
   AgentTimelineItem,
   AgentUserFeedbackQuestion,
 } from '@/types/api'
@@ -37,6 +38,7 @@ export interface FeedbackRequestEntry {
 }
 
 export type TimelineDisplayItem =
+  | { id: string, kind: 'run_context', item: AgentTimelineItem, context: AgentRunContextSummary }
   | { id: string, kind: 'message', item: AgentTimelineItem, message: AgentMessageItem }
   | { id: string, kind: 'reasoning', item: AgentTimelineItem, content: string, streaming: boolean }
   | { id: string, kind: 'tool_group', items: AgentTimelineItem[], tools: ToolCallDetail[] }
@@ -54,12 +56,14 @@ export type TimelineDisplayItem =
   | { id: string, kind: 'requirement', item: AgentTimelineItem, status: string | null, content: string }
 
 export interface AgentMutationRefreshEvent {
-  kind: 'page' | 'project-pages' | 'project' | 'component' | 'asset'
+  kind: 'page' | 'project-pages' | 'project' | 'component' | 'asset' | 'theme' | 'style'
   workspaceId: number | null
   projectId: number | null
   pageId: number | null
   componentId: number | null
   assetId?: number | null
+  themeId?: number | null
+  styleId?: number | null
   toolName: string
   result: unknown
 }
@@ -77,7 +81,7 @@ export function toolDetailFromTimelineItem(item: AgentTimelineItem, memberRuns: 
     id: item.id,
     runId: item.run_id || null,
     toolCallId: item.tool.tool_call_id,
-    toolName: item.tool.tool_name || '工具调用',
+    toolName: resolveLogicalToolName(item.tool.tool_name || '工具调用', item.tool.input_payload),
     memberAgentId: item.tool.member_agent_id ?? null,
     memberAgentName: item.tool.member_agent_name ?? null,
     memberRunId: item.tool.member_run_id ?? null,
@@ -101,6 +105,53 @@ export function toolDetailFromTimelineItem(item: AgentTimelineItem, memberRuns: 
         ))
       : [],
   }
+}
+
+/**
+ * 把固定通用工具名转换为用户可读的真实逻辑操作。
+ */
+export function resolveLogicalToolName(toolName: string, inputPayload: unknown): string {
+  if (!['query_entities', 'create_entity', 'update_entity', 'archive_entity', 'execute_action', 'execute_dangerous_action', 'get_operation_guide'].includes(toolName)) {
+    return toolName
+  }
+  const payload = isRecord(inputPayload) ? inputPayload : {}
+  const resourceLabel = {
+    project: '项目',
+    page: '页面',
+    component: '组件',
+    asset: '资源',
+    theme: '主题',
+    style: '样式',
+    runtime_kit: 'Runtime Kit',
+    font: '字体',
+  }[String(payload.resource_type || '')] || '业务对象'
+  if (toolName === 'get_operation_guide') return `查看${resourceLabel}操作手册`
+  if (toolName === 'query_entities') return `查询${resourceLabel}`
+  if (toolName === 'create_entity') return `创建${resourceLabel}`
+  if (toolName === 'update_entity') return `修改${resourceLabel}`
+  if (toolName === 'archive_entity') {
+    const count = Array.isArray(payload.target_ids) ? payload.target_ids.length : 0
+    return count > 1 ? `批量归档${resourceLabel}` : `归档${resourceLabel}`
+  }
+  const action = String(payload.action || '')
+  const fullActionLabel: Record<string, string> = {
+    replace_routes: '覆盖项目路由',
+    replace_style_config: '覆盖项目样式配置',
+    rename_key: '重命名主题 Key',
+  }
+  if (fullActionLabel[action]) return fullActionLabel[action]
+  const actionLabel = {
+    restore: '恢复',
+    publish: '发布',
+    copy: '复制',
+    check: '检查',
+  }[action] || '执行操作'
+  return `${actionLabel}${resourceLabel}`
+}
+
+/** 判断未知值是否为普通对象。 */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 /**
@@ -164,6 +215,15 @@ export function buildTimelineDisplayItems(
       continue
     }
     flushPendingTools()
+    if (item.kind === 'run_context' && item.run_context) {
+      displayItems.push({
+        id: item.id,
+        kind: 'run_context',
+        item,
+        context: item.run_context,
+      })
+      continue
+    }
     if (item.kind === 'message' && (item.role === 'user' || item.role === 'assistant')) {
       displayItems.push({
         id: item.id,
@@ -373,10 +433,10 @@ function isAskUserToolItem(item: AgentTimelineItem) {
 }
 
 /**
- * 判断工具是否为内容助手委派成员助手的入口。
+ * 判断工具是否为内容助手委派自身子运行的入口。
  */
 export function isDelegateToolName(toolName: string | null | undefined) {
-  return toolName === 'delegate_task_to_member'
+  return toolName === 'delegate_task_to_self'
 }
 
 function delegateToolMatchesMember(inputPayload: unknown, memberAgentId: string) {

@@ -22,10 +22,7 @@ from app.ai.agent_runtime_config import (
 )
 from app.ai.tool_specs import (
     AGENT_COORDINATOR_AGENT_ID,
-    COMPONENT_MANAGER_AGENT_ID,
-    RESOURCE_MANAGER_AGENT_ID,
     apply_tool_spec_metadata,
-    build_agent_tools_from_group_specs,
     get_agent_group_spec,
     get_agent_tool_spec,
     list_runtime_disclosure_groups,
@@ -484,11 +481,6 @@ class AiAgentConfigService:
             for definition in get_tool_group_definitions(session_factory=session_factory).values():
                 tools.extend(definition.build_tools())
             tools = apply_tool_spec_metadata(agent_id=agent_id, tools=tools)
-        elif agent_id in {COMPONENT_MANAGER_AGENT_ID, RESOURCE_MANAGER_AGENT_ID}:
-            tools = build_agent_tools_from_group_specs(
-                agent_id=agent_id,
-                session_factory=session_factory,
-            )
         else:
             tools = []
 

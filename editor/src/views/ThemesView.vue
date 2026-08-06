@@ -367,7 +367,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch, type CSSProperties } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch, type CSSProperties } from 'vue'
 import { useRoute } from 'vue-router'
 import {
   Check,
@@ -410,6 +410,7 @@ import PaginationControl from '@/components/ui/PaginationControl.vue'
 import type { AssetResponse, WorkspaceFontConfigItem, WorkspaceFontConfigSummary, WorkspaceFontFamilyItem, WorkspaceItem, WorkspaceThemeItem } from '@/types/api'
 import { buildDefaultFontRegistration, inferFontFormat } from '@/utils/font-registration'
 import { createConfirm, Message } from '@/utils/message'
+import { formatThemeFontLabel } from '@/utils/theme-font-presets'
 
 const route = useRoute()
 const workspaceId = computed(() => Number.parseInt(route.params.workspaceId as string, 10))
@@ -466,6 +467,17 @@ const workspaceTitle = computed(() => {
   const workspaceName = workspace.value?.name
   return workspaceName ? `${workspaceName} · 主题与字体` : '主题与字体'
 })
+
+/** 当前工作空间主题被智能体修改后刷新列表。 */
+function handleAgentThemeUpdated(event: Event): void {
+  const detail = (event as CustomEvent<{ workspaceId?: number | null }>).detail
+  if (detail?.workspaceId === workspaceId.value) {
+    void loadThemes()
+  }
+}
+
+onMounted(() => window.addEventListener('agent:theme-updated', handleAgentThemeUpdated))
+onBeforeUnmount(() => window.removeEventListener('agent:theme-updated', handleAgentThemeUpdated))
 
 watch(workspaceId, () => {
   void reloadAll()
@@ -1041,7 +1053,7 @@ function isDefaultTheme(theme: WorkspaceThemeItem): boolean {
 function getThemeFontLabel(theme: WorkspaceThemeItem, slot: 'heading' | 'body' | 'code'): string {
   const family = slot === 'heading' ? theme.heading_font_family : slot === 'body' ? theme.body_font_family : theme.code_font_family
   const fallback = slot === 'heading' ? theme.heading_font_label : slot === 'body' ? theme.body_font_label : theme.code_font_label
-  return family?.name || fallback || '未绑定'
+  return family?.name || formatThemeFontLabel(fallback) || '未绑定'
 }
 
 function isThemeFontFallback(theme: WorkspaceThemeItem, slot: 'heading' | 'body' | 'code'): boolean {

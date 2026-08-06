@@ -43,6 +43,44 @@ function timelineItem(overrides: Partial<AgentTimelineItem>): AgentTimelineItem 
 }
 
 describe('agent-run-state timeline', () => {
+  it('焦点快照应更新活跃 Run，并插入带名称的本轮上下文摘要', () => {
+    const state = createAgentSessionRuntimeState()
+    state.timelineItems = [timelineItem({ id: 'user-1', role: 'user', order_index: 10, content: '修改页面' })]
+    const options = { agentId: 'agent-coordinator', agentDisplayName: '内容助手' }
+
+    applyAgentRunEvent(state, event({ event: 'run.started', sequence: 1 }), options)
+    applyAgentRunEvent(state, event({
+      event: 'run.focus.snapshot',
+      sequence: 2,
+      data: {
+        focus: {
+          scope_type: 'page',
+          workspace_id: 11,
+          workspace_name: '产品空间',
+          project_id: 21,
+          project_name: '年度汇报',
+          page_id: 31,
+          page_title: '经营概览',
+          source: 'editor-page-detail',
+        },
+        work_scope_mode: 'selected_projects',
+        allowed_project_ids: [21],
+        allowed_projects: [{ id: 21, name: '年度汇报' }],
+        focus_version: 3,
+      },
+    }), options)
+
+    expect(state.activeRun).toEqual(expect.objectContaining({
+      focus: expect.objectContaining({ page_id: 31, page_title: '经营概览' }),
+      work_scope_mode: 'selected_projects',
+      allowed_project_ids: [21],
+      focus_version: 3,
+    }))
+    const contextItem = state.timelineItems.find(item => item.kind === 'run_context')
+    expect(contextItem?.order_index).toBeGreaterThan(10)
+    expect(contextItem?.run_context?.allowed_projects).toEqual([{ id: 21, name: '年度汇报' }])
+  })
+
   it('external 页面任务等待与进度事件应保持可中断运行态且只保留一条等待提示', () => {
     const state = createAgentSessionRuntimeState()
     const options = { agentId: 'agent-coordinator', agentDisplayName: '内容助手' }
@@ -1115,8 +1153,8 @@ describe('agent-run-state timeline', () => {
       sequence: null,
       data: {
         tool_call_id: 'delegate-call-resource',
-        tool_name: 'delegate_task_to_member',
-        tool_args: { member_id: 'resource-manager', task: '整理资源' },
+        tool_name: 'delegate_task_to_self',
+        tool_args: { task: '整理资源' },
       },
     }), options)
     applyAgentRunEvent(state, event({
@@ -1172,7 +1210,7 @@ describe('agent-run-state timeline', () => {
     }), options)
 
     expect(state.timelineItems.filter(item => item.kind === 'tool').map(item => item.tool?.tool_name)).toEqual([
-      'delegate_task_to_member',
+      'delegate_task_to_self',
     ])
     expect(state.memberRuns).toHaveLength(1)
     expect(state.memberRuns[0]).toEqual(expect.objectContaining({

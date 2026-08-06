@@ -377,8 +377,8 @@ async def test_llm_provider_and_config_crud_should_split_secret_from_model(authe
     assert created_item["provider_config_name"] == "OpenRouter 工作账号"
     assert created_item["provider_label"] == "OpenRouter"
     assert created_item["context_window_tokens"] == 128000
-    assert created_item["max_output_tokens"] == 28000
-    assert created_item["history_token_ratio"] == 0.5
+    assert created_item["max_output_tokens"] == 25600
+    assert created_item["history_token_ratio"] == 1.0
     assert created_item["compression_target_ratio"] == 0.1
     assert created_item["thinking_effort"] == "xhigh"
 
@@ -396,6 +396,13 @@ async def test_llm_provider_and_config_crud_should_split_secret_from_model(authe
     assert protected_key_response.status_code == 400
     assert protected_key_response.json()["code"] == "AI_LLM_ADVANCED_CONFIG_CONFLICT"
 
+    protected_budget_response = await authenticated_client.patch(
+        f"/api/ai/llm-configs/{config_id}",
+        json={"advanced_config_json": {"max_tokens": 999999}},
+    )
+    assert protected_budget_response.status_code == 400
+    assert protected_budget_response.json()["code"] == "AI_LLM_ADVANCED_CONFIG_CONFLICT"
+
     clear_secret_response = await authenticated_client.patch(
         f"/api/ai/llm-provider-configs/{provider['id']}",
         json={"api_key": ""},
@@ -408,10 +415,7 @@ async def test_llm_provider_and_config_crud_should_split_secret_from_model(authe
         f"/api/ai/llm-configs/{config_id}",
         json={
             "name": "OpenRouter 更新模型",
-            "context_window_tokens": 128000,
-            "max_output_tokens": 8192,
-            "history_token_ratio": 0.35,
-            "compression_target_ratio": 0.2,
+            "context_window_tokens": 256000,
             "advanced_config_json": {"temperature": 0.5},
         },
     )
@@ -419,10 +423,10 @@ async def test_llm_provider_and_config_crud_should_split_secret_from_model(authe
     updated_item = update_response.json()
     assert updated_item["name"] == "OpenRouter 更新模型"
     assert updated_item["status"] == "active"
-    assert updated_item["context_window_tokens"] == 128000
-    assert updated_item["max_output_tokens"] == 8192
-    assert updated_item["history_token_ratio"] == 0.35
-    assert updated_item["compression_target_ratio"] == 0.2
+    assert updated_item["context_window_tokens"] == 256000
+    assert updated_item["max_output_tokens"] == 51200
+    assert updated_item["history_token_ratio"] == 1.0
+    assert updated_item["compression_target_ratio"] == 0.1
     assert updated_item["advanced_config_json"] == {"temperature": 0.5}
 
     model_status_response = await authenticated_client.patch(
@@ -440,25 +444,12 @@ async def test_llm_provider_and_config_crud_should_split_secret_from_model(authe
     assert provider_status_response.json()["code"] == "AI_LLM_PROVIDER_STATUS_UPDATE_UNSUPPORTED"
 
 
-async def test_llm_config_should_reserve_context_tokens_for_chat_models(authenticated_client: AsyncClient) -> None:
-    """聊天模型上下文窗口扣除最大输出后必须至少保留 100K tokens。"""
+async def test_llm_config_should_derive_run_budget_from_context_window(authenticated_client: AsyncClient) -> None:
+    """聊天模型只接收上下文窗口配置，其余运行预算由后端自动派生。"""
 
     provider = await _create_llm_provider_config(authenticated_client, name="余量校验供应商")
 
-    # 创建：余量不足 100K 应被 schema 拒绝。
-    invalid_create = await authenticated_client.post(
-        "/api/ai/llm-configs",
-        json={
-            "name": "余量不足模型",
-            "provider_config_id": provider["id"],
-            "model_id": "gpt-4.1-mini",
-            "context_window_tokens": 128000,
-            "max_output_tokens": 32000,
-        },
-    )
-    assert invalid_create.status_code == 422
-
-    # 创建：窗口低于最低限应被字段级校验拒绝。
+    # 窗口低于平台最低限应被字段级校验拒绝。
     small_window_create = await authenticated_client.post(
         "/api/ai/llm-configs",
         json={
@@ -466,12 +457,11 @@ async def test_llm_config_should_reserve_context_tokens_for_chat_models(authenti
             "provider_config_id": provider["id"],
             "model_id": "gpt-4.1-mini",
             "context_window_tokens": 32000,
-            "max_output_tokens": 4096,
         },
     )
     assert small_window_create.status_code == 422
 
-    # 创建：恰好保留 100K 应成功。
+    # 创建时即使旧客户端携带手工预算字段，也应忽略并使用自动值。
     valid_create = await authenticated_client.post(
         "/api/ai/llm-configs",
         json={
@@ -479,28 +469,27 @@ async def test_llm_config_should_reserve_context_tokens_for_chat_models(authenti
             "provider_config_id": provider["id"],
             "model_id": "gpt-4.1-mini",
             "context_window_tokens": 128000,
-            "max_output_tokens": 28000,
+            "max_output_tokens": 9000,
+            "history_token_ratio": 0.35,
+            "compression_target_ratio": 0.2,
         },
     )
     assert valid_create.status_code == 201
-    config_id = valid_create.json()["id"]
+    created = valid_create.json()
+    config_id = created["id"]
+    assert created["max_output_tokens"] == 25600
+    assert created["history_token_ratio"] == 1.0
+    assert created["compression_target_ratio"] == 0.1
 
-    # 更新：只改单侧字段时应按合并后结果校验。
-    invalid_update = await authenticated_client.patch(
-        f"/api/ai/llm-configs/{config_id}",
-        json={"max_output_tokens": 40000},
-    )
-    assert invalid_update.status_code == 400
-    assert invalid_update.json()["code"] == "AI_LLM_CONTEXT_RESERVE_INSUFFICIENT"
-
-    # 更新：同时调大窗口后应成功。
+    # 更新窗口后应重新派生全部预算。
     valid_update = await authenticated_client.patch(
         f"/api/ai/llm-configs/{config_id}",
-        json={"context_window_tokens": 200000, "max_output_tokens": 40000},
+        json={"context_window_tokens": 200000},
     )
     assert valid_update.status_code == 200
     assert valid_update.json()["context_window_tokens"] == 200000
-    assert valid_update.json()["max_output_tokens"] == 40000
+    assert valid_update.json()["max_output_tokens"] == 39936
+    assert valid_update.json()["compression_target_ratio"] == 0.1
 
 
 async def test_llm_config_delete_should_hard_delete_unbind_slots_and_block_existing_session_run(
@@ -522,12 +511,7 @@ async def test_llm_config_delete_should_hard_delete_unbind_slots_and_block_exist
         json={
             "agent_id": "agent-coordinator",
             "session_name": "删除模型后会话",
-            "scope": {
-                "scope_type": "project",
-                "workspace_id": workspace_id,
-                "project_id": project_id,
-                "source": "test-agent-session",
-            },
+            "workspace_id": workspace_id,
             "llm_config_id": config["id"],
         },
     )
@@ -556,7 +540,10 @@ async def test_llm_config_delete_should_hard_delete_unbind_slots_and_block_exist
             "scope_type": "project",
             "agent_id": "agent-coordinator",
         },
-        json={"message": "继续使用已删除模型的会话"},
+        json={
+            "message": "继续使用已删除模型的会话",
+            "focus": {"scope_type": "project", "project_id": project_id, "source": "test-agent-session"},
+        },
     )
     assert run_response.status_code == 200
     assert "AI_LLM_CONFIG_NOT_FOUND" in run_response.text
@@ -597,8 +584,8 @@ async def test_llm_provider_config_delete_should_require_no_linked_models(authen
     assert detail_response.json()["code"] == "AI_LLM_PROVIDER_CONFIG_NOT_FOUND"
 
 
-async def test_llm_config_should_accept_large_context_model_limits(authenticated_client: AsyncClient) -> None:
-    """大模型配置应允许百万级上下文与超过旧 20 万限制的输出 token。"""
+async def test_llm_config_should_cap_large_context_derived_budgets(authenticated_client: AsyncClient) -> None:
+    """百万级上下文应自动限制输出和摘要预算，避免随窗口无限增长。"""
 
     provider = await _create_llm_provider_config(
         authenticated_client,
@@ -614,7 +601,6 @@ async def test_llm_config_should_accept_large_context_model_limits(authenticated
             "provider_config_id": provider["id"],
             "model_id": "openai/gpt-4.1-long-context",
             "context_window_tokens": 1_000_000,
-            "max_output_tokens": 300_000,
             "advanced_config_json": {},
         },
     )
@@ -622,11 +608,12 @@ async def test_llm_config_should_accept_large_context_model_limits(authenticated
     assert response.status_code == 201
     created_item = response.json()
     assert created_item["context_window_tokens"] == 1_000_000
-    assert created_item["max_output_tokens"] == 300_000
+    assert created_item["max_output_tokens"] == 65_536
+    assert created_item["compression_target_ratio"] == 0.032768
 
 
-async def test_llm_config_should_reject_mimo_output_above_provider_limit(authenticated_client: AsyncClient) -> None:
-    """MiMo 配置不应允许保存超过供应商硬限制的输出 token。"""
+async def test_llm_config_should_ignore_manual_mimo_output_budget(authenticated_client: AsyncClient) -> None:
+    """MiMo 配置也应忽略旧客户端手工输出值并使用自动预算。"""
 
     provider = await _create_llm_provider_config(
         authenticated_client,
@@ -647,8 +634,8 @@ async def test_llm_config_should_reject_mimo_output_above_provider_limit(authent
         },
     )
 
-    assert response.status_code == 400
-    assert response.json()["code"] == "AI_LLM_MAX_OUTPUT_TOKENS_UNSUPPORTED"
+    assert response.status_code == 201
+    assert response.json()["max_output_tokens"] == 65_536
 
 
 async def test_llm_slot_binding_should_drive_agent_binding_state(authenticated_client: AsyncClient) -> None:
@@ -685,34 +672,26 @@ async def test_llm_slot_binding_should_drive_agent_binding_state(authenticated_c
         "/api/ai/llm-slots/component_manager",
         json={"llm_config_id": config_id},
     )
-    assert update_component_slot_response.status_code == 200
-    assert update_component_slot_response.json()["binding_ready"] is True
-    assert update_component_slot_response.json()["llm_config_name"] == "总控模型"
+    assert update_component_slot_response.status_code == 400
+    assert update_component_slot_response.json()["code"] == "AI_LLM_SLOT_UNSUPPORTED"
 
     update_resource_slot_response = await authenticated_client.put(
         "/api/ai/llm-slots/resource_manager",
         json={"llm_config_id": config_id},
     )
-    assert update_resource_slot_response.status_code == 200
-    assert update_resource_slot_response.json()["binding_ready"] is True
-    assert update_resource_slot_response.json()["llm_config_name"] == "总控模型"
+    assert update_resource_slot_response.status_code == 400
+    assert update_resource_slot_response.json()["code"] == "AI_LLM_SLOT_UNSUPPORTED"
 
     slots_response = await authenticated_client.get("/api/ai/llm-slots")
     assert slots_response.status_code == 200
     slots = {item["slot"]: item for item in slots_response.json()}
     assert set(slots) == {
         "agent_coordinator",
-        "component_manager",
-        "resource_manager",
         "image_understanding",
         "image_generation",
     }
     assert slots["agent_coordinator"]["binding_ready"] is True
     assert slots["agent_coordinator"]["provider_label"] == "OpenAI"
-    assert slots["component_manager"]["binding_ready"] is True
-    assert slots["component_manager"]["provider_label"] == "OpenAI"
-    assert slots["resource_manager"]["binding_ready"] is True
-    assert slots["resource_manager"]["provider_label"] == "OpenAI"
     assert slots["image_understanding"]["binding_ready"] is False
     assert slots["image_generation"]["binding_ready"] is False
 
@@ -742,30 +721,14 @@ async def test_llm_slot_binding_should_drive_agent_binding_state(authenticated_c
     )
     assert agents_response.status_code == 200
     agents = {item["id"]: item for item in agents_response.json()}
-    assert set(agents) == {"agent-coordinator", "component-manager", "resource-manager"}
-    component_agent = agents["component-manager"]
+    assert set(agents) == {"agent-coordinator"}
     coordinator_agent = agents["agent-coordinator"]
-    resource_agent = agents["resource-manager"]
     assert coordinator_agent["llm_slot"] == "agent_coordinator"
     assert coordinator_agent["llm_binding_ready"] is True
     assert coordinator_agent["bound_llm_name"] == "总控模型"
     assert coordinator_agent["bound_provider_label"] == "OpenAI"
-    assert component_agent["llm_slot"] == "component_manager"
-    assert component_agent["llm_binding_ready"] is True
-    assert component_agent["bound_llm_name"] == "总控模型"
-    assert component_agent["bound_provider_label"] == "OpenAI"
-    assert resource_agent["llm_slot"] == "resource_manager"
-    assert resource_agent["llm_binding_ready"] is True
-    assert resource_agent["bound_llm_name"] == "总控模型"
-    assert resource_agent["bound_provider_label"] == "OpenAI"
-    assert resource_agent["image_analysis_available"] is False
-    assert resource_agent["image_generation_available"] is False
-    assert resource_agent["image_analysis_unavailable_reason"] == "请前往 AI 设置配置图片理解模型。"
-    assert resource_agent["image_generation_unavailable_reason"] == "请前往 AI 设置配置图片生成模型。"
-    assert agents["agent-coordinator"]["entry_kind"] == "team"
+    assert agents["agent-coordinator"]["entry_kind"] == "agent"
     assert agents["agent-coordinator"]["scope_type"] == "workspace"
-    assert agents["component-manager"]["scope_type"] == "workspace"
-    assert agents["resource-manager"]["scope_type"] == "workspace"
 
 
 async def test_visual_slots_should_validate_model_type_and_image_input(authenticated_client: AsyncClient) -> None:
@@ -861,12 +824,7 @@ async def test_agent_session_should_persist_explicit_personal_llm_config(authent
         json={
             "agent_id": "agent-coordinator",
             "session_name": "显式模型会话",
-            "scope": {
-                "scope_type": "project",
-                "workspace_id": workspace_id,
-                "project_id": project_id,
-                "source": "test-agent-session",
-            },
+            "workspace_id": workspace_id,
             "llm_config_id": config["id"],
         },
     )
@@ -907,7 +865,7 @@ async def test_agent_session_should_reject_deleted_selected_llm_config(authentic
         json={
             "agent_id": "agent-coordinator",
             "session_name": "删除模型会话",
-            "scope": scope_payload,
+            "workspace_id": workspace_id,
             "llm_config_id": config["id"],
         },
     )
@@ -919,7 +877,7 @@ async def test_agent_session_should_reject_deleted_selected_llm_config(authentic
         json={
             "agent_id": "agent-coordinator",
             "session_name": "不存在模型会话",
-            "scope": scope_payload,
+            "workspace_id": workspace_id,
             "llm_config_id": 999_999_999,
         },
     )
@@ -943,12 +901,7 @@ async def test_agent_session_without_llm_config_should_fallback_to_slot_binding(
         json={
             "agent_id": "agent-coordinator",
             "session_name": "槽位兼容会话",
-            "scope": {
-                "scope_type": "project",
-                "workspace_id": workspace_id,
-                "project_id": project_id,
-                "source": "test-agent-session",
-            },
+            "workspace_id": workspace_id,
         },
     )
 
@@ -1062,6 +1015,7 @@ def test_llm_model_resolver_should_build_common_provider_models() -> None:
     deepseek_model = resolver.resolve_model(deepseek_config)
     assert deepseek_model.__class__.__name__ == "OpenAIChatModel"
     assert resolver.resolve_model_settings(deepseek_config) == {
+        "max_tokens": 25_600,
         "openai_reasoning_effort": "max",
         "extra_body": {"thinking": {"type": "enabled"}},
     }
@@ -1078,6 +1032,7 @@ def test_llm_model_resolver_should_build_common_provider_models() -> None:
     deepseek_disabled_model = resolver.resolve_model(deepseek_disabled_config)
     assert deepseek_disabled_model.__class__.__name__ == "OpenAIChatModel"
     assert resolver.resolve_model_settings(deepseek_disabled_config) == {
+        "max_tokens": 25_600,
         "extra_body": {"thinking": {"type": "disabled"}},
     }
 
@@ -1094,6 +1049,7 @@ def test_llm_model_resolver_should_build_common_provider_models() -> None:
     deepseek_legacy_effort_model = resolver.resolve_model(deepseek_legacy_effort_config)
     assert deepseek_legacy_effort_model.__class__.__name__ == "OpenAIChatModel"
     assert resolver.resolve_model_settings(deepseek_legacy_effort_config) == {
+        "max_tokens": 25_600,
         "openai_reasoning_effort": "high",
         "extra_body": {"thinking": {"type": "enabled"}},
     }
@@ -1117,6 +1073,7 @@ def test_llm_model_resolver_should_build_common_provider_models() -> None:
     deepseek_custom_model = resolver.resolve_model(deepseek_custom_config)
     assert deepseek_custom_model.__class__.__name__ == "OpenAIChatModel"
     assert resolver.resolve_model_settings(deepseek_custom_config) == {
+        "max_tokens": 25_600,
         "openai_reasoning_effort": "max",
         "timeout": 60,
         "retries": 0,
@@ -1197,6 +1154,6 @@ def test_llm_model_resolver_should_build_common_provider_models() -> None:
     assert mimo_model.__class__.__name__ == "OpenAIChatModel"
     assert mimo_model.model_name == "mimo-v2.5"
     assert resolver.resolve_model_settings(mimo_config) == {
-        "max_tokens": 131_072,
+        "max_tokens": 25_600,
         "extra_body": {"thinking": {"type": "enabled"}},
     }

@@ -30,46 +30,28 @@ const workspaceSourceLabelMap: Record<string, string> = {
   'editor-theme-font-library': '主题与字体',
 }
 
-const routeBoundWorkspaceSources = new Set([
-  'editor-component-library',
-  'editor-asset-library',
-  'editor-theme-font-library',
-])
-
 /**
- * 生成当前 scope 的本地会话选择 key，避免不同页面、项目和侧栏入口互相覆盖。
+ * 生成工作空间级会话选择 key；v4 直接废弃全部旧 scope key。
  */
 export function buildSelectedSessionStorageKey(scopeValue: AgentScopeContext, agentIdValue: string) {
   return [
     'agent-session',
-    'v2',
+    'v4',
+    'workspace',
     agentIdValue,
-    scopeValue.scope_type,
     scopeValue.workspace_id,
-    scopeValue.project_id ?? '',
-    scopeValue.page_id ?? '',
-    scopeValue.component_id ?? '',
-    scopeValue.source || '',
   ].map(normalizeSessionStoragePart).join(':')
 }
 
 /**
- * 读取当前 scope 上一次选中的 session_id，并只迁移指向当前 canonical 路由的旧 key。
+ * 读取当前工作空间上一次选中的 session_id，不读取或迁移旧 key。
  */
 export function getSelectedSession(scopeValue: AgentScopeContext, agentIdValue: string, sessions: AgentSessionItem[]) {
   const persistedSessionId = localStorage.getItem(buildSelectedSessionStorageKey(scopeValue, agentIdValue)) ?? ''
   const persistedSession = sessions.find(item => item.session_id === persistedSessionId)
-  if (persistedSession && isSessionTargetCurrentScope(persistedSession, scopeValue)) {
+  if (persistedSession?.workspace_id === scopeValue.workspace_id) {
     return persistedSessionId
   }
-
-  const legacySessionId = localStorage.getItem(buildLegacySelectedSessionStorageKey(scopeValue, agentIdValue)) ?? ''
-  const legacySession = sessions.find(item => item.session_id === legacySessionId)
-  if (legacySession && isSessionTargetCurrentScope(legacySession, scopeValue)) {
-    setSelectedSession(scopeValue, agentIdValue, legacySessionId)
-    return legacySessionId
-  }
-
   return ''
 }
 
@@ -84,55 +66,29 @@ export function setSelectedSession(scopeValue: AgentScopeContext, agentIdValue: 
  * 读取当前工作空间和智能体最近活跃的会话。
  */
 export function getSelectedWorkspaceSession(scopeValue: AgentScopeContext, agentIdValue: string, sessions: AgentSessionItem[]) {
-  const persistedSessionId = localStorage.getItem(buildWorkspaceSelectedSessionStorageKey(scopeValue, agentIdValue)) ?? ''
+  const persistedSessionId = localStorage.getItem(buildSelectedSessionStorageKey(scopeValue, agentIdValue)) ?? ''
   const persistedSession = sessions.find(item => item.session_id === persistedSessionId)
-  if (!persistedSession) {
-    return ''
-  }
-  const sessionScope = resolveSessionScope(persistedSession)
-  return sessionScope?.workspace_id === scopeValue.workspace_id ? persistedSessionId : ''
+  return persistedSession?.workspace_id === scopeValue.workspace_id ? persistedSessionId : ''
 }
 
 /**
  * 记录当前工作空间和智能体最近活跃的会话。
  */
 export function setSelectedWorkspaceSession(scopeValue: AgentScopeContext, agentIdValue: string, sessionId: string) {
-  localStorage.setItem(buildWorkspaceSelectedSessionStorageKey(scopeValue, agentIdValue), sessionId)
+  setSelectedSession(scopeValue, agentIdValue, sessionId)
 }
 
 /**
- * 从 session metadata 中恢复工作范围，兼容旧会话缺少 scope_type 的数据。
+ * 将会话映射为工作空间授权范围；项目和页面只存在于 Run 焦点快照。
  */
 export function resolveSessionScope(session: AgentSessionItem): AgentScopeContext | null {
-  const metadata = session.metadata ?? {}
-  const workspaceId = toNumberOrNull(metadata.workspace_id)
-  if (!workspaceId) {
+  if (!session.workspace_id) {
     return null
   }
-  const projectId = toNumberOrNull(metadata.project_id)
-  const pageId = toNumberOrNull(metadata.page_id)
-  const componentId = toNumberOrNull(metadata.component_id)
-  const rawScopeType = String(metadata.scope_type || '')
-  const scopeType = ['workspace', 'project', 'page', 'component'].includes(rawScopeType)
-    ? rawScopeType as AgentScopeContext['scope_type']
-    : pageId
-      ? 'page'
-      : componentId
-        ? 'component'
-        : projectId
-          ? 'project'
-          : 'workspace'
   return {
-    scope_type: scopeType,
-    workspace_id: workspaceId,
-    project_id: projectId,
-    page_id: pageId,
-    component_id: componentId,
-    workspace_name: toTextOrNull(metadata.workspace_name),
-    project_name: toTextOrNull(metadata.project_name),
-    page_title: toTextOrNull(metadata.page_title),
-    component_name: toTextOrNull(metadata.component_name),
-    source: toTextOrNull(metadata.source) || resolveDefaultSessionSource(session.agent_id),
+    scope_type: 'workspace',
+    workspace_id: session.workspace_id,
+    source: 'editor-agent-sidebar',
   }
 }
 
@@ -232,34 +188,14 @@ export function resolveSessionSubtitle(session: AgentSessionItem): string {
  * 判断当前路由 scope 是否落在 session 工作范围内。
  */
 export function isRouteScopeInsideSessionScope(sessionScope: AgentScopeContext, routeScope: AgentScopeContext): boolean {
-  if (sessionScope.workspace_id !== routeScope.workspace_id) {
-    return false
-  }
-  if (sessionScope.scope_type === 'workspace') {
-    return isWorkspaceSourceInsideSessionScope(sessionScope, routeScope)
-  }
-  if (sessionScope.scope_type === 'project') {
-    return routeScope.project_id !== null && routeScope.project_id !== undefined
-      && routeScope.project_id === sessionScope.project_id
-  }
-  if (sessionScope.scope_type === 'page') {
-    return routeScope.page_id !== null && routeScope.page_id !== undefined
-      && routeScope.page_id === sessionScope.page_id
-  }
-  if (sessionScope.source === 'editor-component-library' && routeScope.source === 'editor-component-library') {
-    return true
-  }
-  return routeScope.component_id !== null && routeScope.component_id !== undefined
-    && routeScope.component_id === sessionScope.component_id
+  return sessionScope.workspace_id === routeScope.workspace_id
 }
 
 /**
  * 判断会话跳转目标是否就是当前路由 scope 的 canonical 目标。
  */
 export function isSessionTargetCurrentScope(session: AgentSessionItem, scopeValue: AgentScopeContext): boolean {
-  const sessionTarget = buildSessionRouteLocation(session)
-  const scopeTarget = buildScopeRouteLocation(scopeValue)
-  return sessionTarget !== null && sessionTarget === scopeTarget
+  return session.workspace_id === scopeValue.workspace_id
 }
 
 /**
@@ -279,17 +215,8 @@ export function findLatestSessionForScope(sessions: AgentSessionItem[], scopeVal
  * 为 session 工作范围生成跳转入口。
  */
 export function buildSessionRouteLocation(session: AgentSessionItem): string | null {
-  const sessionScope = resolveSessionScope(session)
-  if (!sessionScope) {
-    return null
-  }
-  if (sessionScope.scope_type === 'workspace' && session.agent_id === 'component-manager') {
-    return `/workspaces/${sessionScope.workspace_id}/components`
-  }
-  if (sessionScope.scope_type === 'workspace' && session.agent_id === 'resource-manager') {
-    return `/workspaces/${sessionScope.workspace_id}/assets`
-  }
-  return buildScopeRouteLocation(sessionScope)
+  void session
+  return null
 }
 
 /**
@@ -320,52 +247,6 @@ export function buildScopeRouteLocation(scopeValue: AgentScopeContext): string |
   return `/workspaces/${scopeValue.workspace_id}/home`
 }
 
-/**
- * 生成旧版 workspace 级 key，仅用于安全迁移历史选择。
- */
-function buildLegacySelectedSessionStorageKey(scopeValue: AgentScopeContext, agentIdValue: string) {
-  return [
-    'agent-session',
-    agentIdValue,
-    scopeValue.workspace_id,
-  ].map(normalizeSessionStoragePart).join(':')
-}
-
-/**
- * 生成工作空间级最近活跃会话 key，不随页面或项目路由变化。
- */
-function buildWorkspaceSelectedSessionStorageKey(scopeValue: AgentScopeContext, agentIdValue: string) {
-  return [
-    'agent-session',
-    'v3',
-    'workspace-active',
-    agentIdValue,
-    scopeValue.workspace_id,
-  ].map(normalizeSessionStoragePart).join(':')
-}
-
-/**
- * 兼容旧会话缺少 source 的数据，库助手按自身默认工作区入口恢复范围。
- */
-function resolveDefaultSessionSource(agentId: string): string {
-  if (agentId === 'component-manager') {
-    return 'editor-component-library'
-  }
-  if (agentId === 'resource-manager') {
-    return 'editor-asset-library'
-  }
-  return 'editor-agent-sidebar'
-}
-
-/**
- * 工作空间级组件库、资源库和主题字体会话只覆盖对应库路由，避免助手跨页面继续运行。
- */
-function isWorkspaceSourceInsideSessionScope(sessionScope: AgentScopeContext, routeScope: AgentScopeContext): boolean {
-  if (!routeBoundWorkspaceSources.has(sessionScope.source)) {
-    return true
-  }
-  return routeScope.source === sessionScope.source
-}
 
 /**
  * 规整 localStorage key 片段，避免空值和冒号造成 key 碰撞。
@@ -452,14 +333,6 @@ function formatBriefSessionTime(value: string | null | undefined): string {
   const hour = parts.find(part => part.type === 'hour')?.value ?? ''
   const minute = parts.find(part => part.type === 'minute')?.value ?? ''
   return `${month}-${day} ${hour}:${minute}`
-}
-
-function toNumberOrNull(value: unknown): number | null {
-  if (value === null || value === undefined || value === '') {
-    return null
-  }
-  const numberValue = Number(value)
-  return Number.isFinite(numberValue) ? numberValue : null
 }
 
 function toTextOrNull(value: unknown): string | null {

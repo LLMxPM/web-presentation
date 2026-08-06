@@ -456,8 +456,8 @@ export async function restoreComponentVersionToDraft(
 }
 
 /** 删除工作空间组件。 */
-export async function deleteComponent(id: number) {
-  const { data } = await http.delete<{ message: string }>(`/components/${id}`)
+export async function archiveComponent(id: number) {
+  const { data } = await http.post<{ message: string }>(`/components/${id}/archive`)
   return data
 }
 

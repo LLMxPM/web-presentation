@@ -1,4 +1,4 @@
-"""文件功能：构造成员助手委派运行中跨 Agent 传递的提示词。"""
+"""文件功能：构造统一内容助手自委派子运行的任务提示词。"""
 
 from __future__ import annotations
 
@@ -13,19 +13,19 @@ def build_member_prompt(
     expected_output: str | None,
     completed_results: list[dict[str, Any]],
 ) -> str:
-    """根据委派任务、上下文和前置结果构造成员助手实际收到的用户提示词。"""
+    """根据委派任务、上下文和前置结果构造自身子运行收到的用户提示词。"""
 
     parts = [
-        "内容助手委派给你的成员任务如下，请只处理你负责的工作空间组件库或资源库范围。",
+        "这是内容助手委派给自身子运行的独立任务，请在当前工作空间权限和通用工具边界内完成。",
         f"任务：{task}",
     ]
     if handoff_context:
         parts.append(f"上下文：{handoff_context}")
     if completed_results:
-        parts.append(f"前置成员结果：{json.dumps(completed_results, ensure_ascii=False)}")
+        parts.append(f"前置子任务结果：{json.dumps(completed_results, ensure_ascii=False)}")
     if expected_output:
         parts.append(f"期望返回：{expected_output}")
-    parts.append("完成后用中文简要返回已执行动作、关键对象 ID/名称、后续内容助手需要整合的事实。")
+    parts.append("完成后用中文简要返回已执行动作、关键对象 ID/名称、主运行需要整合的事实。")
     return "\n\n".join(parts)
 
 

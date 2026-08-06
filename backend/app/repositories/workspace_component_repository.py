@@ -76,7 +76,7 @@ class WorkspaceComponentRepository:
         return items, total
 
     async def get_by_id(self, component_id: int) -> WorkspaceComponent | None:
-        """按主键查询未删除组件。"""
+        """按主键查询未归档组件。"""
 
         workspace_alias = aliased(Workspace)
         statement = (
@@ -94,7 +94,7 @@ class WorkspaceComponentRepository:
         return component
 
     async def get_by_code(self, code: str) -> WorkspaceComponent | None:
-        """按业务编码查询未删除组件。"""
+        """按业务编码查询未归档组件。"""
 
         return await self.session.scalar(
             select(WorkspaceComponent)

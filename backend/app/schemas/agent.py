@@ -10,7 +10,7 @@ from app.schemas.common import SchemaBase
 
 
 class AgentScopeContext(SchemaBase):
-    """描述一次 Agent 交互绑定的业务范围，兼容旧页面级 metadata。"""
+    """描述单次 Run 固化的业务焦点。"""
 
     scope_type: Literal["workspace", "project", "page", "component"] = "page"
     workspace_id: int
@@ -22,6 +22,16 @@ class AgentScopeContext(SchemaBase):
     page_title: str | None = None
     component_name: str | None = None
     source: str = "editor-page-detail"
+
+
+class AgentFocusRequest(BaseModel):
+    """描述 Editor 当前路由提供给下一次 Run 的候选焦点。"""
+
+    scope_type: Literal["workspace", "project", "page", "component"] = "workspace"
+    project_id: int | None = Field(default=None, ge=1)
+    page_id: int | None = Field(default=None, ge=1)
+    component_id: int | None = Field(default=None, ge=1)
+    source: str = Field(default="editor-workspace", min_length=1, max_length=128)
 
 
 class AgentDescriptor(SchemaBase):
@@ -57,7 +67,13 @@ class AgentSessionItem(SchemaBase):
 
     session_id: str
     agent_id: str
+    workspace_id: int
     session_name: str | None = None
+    focus_mode: Literal["follow_route", "pinned_project", "workspace"] = "follow_route"
+    pinned_project_id: int | None = None
+    work_scope_mode: Literal["workspace", "selected_projects"] = "workspace"
+    allowed_project_ids: list[int] = Field(default_factory=list)
+    focus_version: int = 0
     created_at: str | None = None
     updated_at: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
@@ -209,6 +225,10 @@ class AgentActiveRunItem(SchemaBase):
     session_id: str
     agent_id: str
     status: AgentActiveRunStatus
+    focus: AgentScopeContext
+    work_scope_mode: Literal["workspace", "selected_projects"] = "workspace"
+    allowed_project_ids: list[int] = Field(default_factory=list)
+    focus_version: int = 0
     pending_requirement: AgentPendingRequirement | None = None
     content: str | None = None
     created_at: str | None = None
@@ -244,19 +264,36 @@ class AgentTimelineToolItem(SchemaBase):
     output_attachments: list[AgentMessageAttachmentItem] = Field(default_factory=list)
 
 
+class AgentRunProjectSummary(SchemaBase):
+    """描述 Run 项目工作集中的单个项目，名称用于界面与模型上下文展示。"""
+
+    id: int
+    name: str | None = None
+
+
+class AgentRunContextSummary(SchemaBase):
+    """描述每轮 Run 固化的焦点与项目工作范围。"""
+
+    focus: AgentScopeContext
+    work_scope_mode: Literal["workspace", "selected_projects"] = "workspace"
+    allowed_projects: list[AgentRunProjectSummary] = Field(default_factory=list)
+    focus_version: int = 0
+
+
 class AgentTimelineItem(SchemaBase):
     """按 session/run/event_index 派生的会话时间线项。"""
 
     id: str
     session_id: str
     run_id: str
-    kind: Literal["message", "reasoning", "tool", "run_status", "requirement"]
+    kind: Literal["run_context", "message", "reasoning", "tool", "run_status", "requirement"]
     role: Literal["user", "assistant"] | None = None
     event_index: int | None = None
     order_index: int
     content: str | None = None
     status: str | None = None
     tool: AgentTimelineToolItem | None = None
+    run_context: AgentRunContextSummary | None = None
     attachments: list[AgentMessageAttachmentItem] = Field(default_factory=list)
     source: Literal["message", "event", "synthetic"]
     created_at: str | None = None
@@ -297,8 +334,21 @@ class CreateAgentSessionRequest(BaseModel):
 
     agent_id: str = "agent-coordinator"
     session_name: str | None = Field(default=None, max_length=128)
-    scope: AgentScopeContext
+    workspace_id: int = Field(ge=1)
+    focus_mode: Literal["follow_route", "pinned_project", "workspace"] = "follow_route"
+    pinned_project_id: int | None = Field(default=None, ge=1)
+    work_scope_mode: Literal["workspace", "selected_projects"] = "workspace"
+    allowed_project_ids: list[int] = Field(default_factory=list, max_length=100)
     llm_config_id: int | None = Field(default=None, ge=1)
+
+
+class UpdateAgentSessionPreferencesRequest(BaseModel):
+    """更新只影响后续 Run 的会话焦点与项目工作集偏好。"""
+
+    focus_mode: Literal["follow_route", "pinned_project", "workspace"]
+    pinned_project_id: int | None = Field(default=None, ge=1)
+    work_scope_mode: Literal["workspace", "selected_projects"]
+    allowed_project_ids: list[int] = Field(default_factory=list, max_length=100)
 
 
 class RenameAgentSessionRequest(BaseModel):
@@ -323,8 +373,9 @@ class AgentRunRequest(BaseModel):
 
     run_id: str | None = Field(default=None, max_length=64)
     message: str = ""
-    image_attachment_ids: list[int] = Field(default_factory=list)
+    image_attachment_ids: list[int] = Field(default_factory=list, max_length=10)
     llm_config_id: int | None = Field(default=None, ge=1)
+    focus: AgentFocusRequest
 
     @model_validator(mode="after")
     def validate_message_or_images(self) -> "AgentRunRequest":

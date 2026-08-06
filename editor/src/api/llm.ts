@@ -35,9 +35,6 @@ export interface LlmConfigPayload {
   thinking_effort?: string | null
   supports_image_input: boolean
   context_window_tokens: number
-  max_output_tokens: number
-  history_token_ratio: number
-  compression_target_ratio: number
   advanced_config_json: Record<string, unknown>
 }
 
@@ -50,9 +47,6 @@ export interface LlmConfigUpdatePayload {
   thinking_effort?: string | null
   supports_image_input?: boolean
   context_window_tokens?: number
-  max_output_tokens?: number
-  history_token_ratio?: number
-  compression_target_ratio?: number
   advanced_config_json?: Record<string, unknown>
 }
 

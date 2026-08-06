@@ -49,8 +49,9 @@
       >
         <div class="flex flex-col gap-2">
         <template v-for="item in timelineDisplayItems" :key="item.id">
+          <AgentRunContextCard v-if="item.kind === 'run_context'" :context="item.context" />
           <article
-            v-if="item.kind === 'message'"
+            v-else-if="item.kind === 'message'"
             class="conversation-message flex px-0.5 py-0"
             :class="item.message.role === 'user' ? 'conversation-message--user justify-end' : 'conversation-message--assistant justify-start'"
           >
@@ -386,6 +387,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import DataState from '@/components/patterns/DataState.vue'
 import { UiBadge, UiButton, UiIconButton } from '@/components/ui'
 import AgentVisualToolCard from '@/components/agent/AgentVisualToolCard.vue'
+import AgentRunContextCard from '@/components/agent/AgentRunContextCard.vue'
 import {
   createMessageStreamingResolver,
   formatCollapsedUserMessageSummary,
@@ -528,10 +530,10 @@ function resolveReasoningMarkdownNodes(item: Extract<TimelineDisplayItem, { kind
  */
 function resolveToolDisplayName(tool: ToolCallDetail) {
   if (tool.delegatedMemberRuns.length === 1) {
-    return `${tool.delegatedMemberRuns[0].agent_name || tool.delegatedMemberRuns[0].agent_id || '成员助手'}运行`
+    return `${tool.delegatedMemberRuns[0].agent_name || '内容助手'}子运行`
   }
   if (tool.delegatedMemberRuns.length > 1) {
-    return `成员助手运行 · ${tool.delegatedMemberRuns.length} 个`
+    return `内容助手子运行 · ${tool.delegatedMemberRuns.length} 个`
   }
   return tool.memberAgentName ? `${tool.memberAgentName} · ${tool.toolName}` : tool.toolName
 }

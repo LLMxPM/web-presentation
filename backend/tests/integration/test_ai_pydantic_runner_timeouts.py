@@ -60,7 +60,7 @@ async def test_pydantic_runner_should_allow_tool_stream_to_exceed_model_idle_tim
         store = PlatformAgentRuntimeStore(db_session, user_id=1)
         run_start = await store.start_run(
             session_id=session_id,
-            agent_id="component-manager",
+            agent_id="agent-coordinator",
             scope=scope,
             run_id="pydantic-runner-tool-timeout-separated",
             message="调用慢工具。",
@@ -73,7 +73,7 @@ async def test_pydantic_runner_should_allow_tool_stream_to_exceed_model_idle_tim
                 tool_stream_idle_timeout_seconds=0.2,
             ).stream_run(
                 run_model=run_start.run_model,
-                agent_id="component-manager",
+                agent_id="agent-coordinator",
                 model=model,
                 model_settings={},
                 runtime_context=_runtime_context(scope),
@@ -81,7 +81,7 @@ async def test_pydantic_runner_should_allow_tool_stream_to_exceed_model_idle_tim
                 tools=[Tool(slow_tool, name="slow_tool")],
             )
         )
-        completed_run = await store.get_latest_run_model(session_id=session_id, agent_id="component-manager")
+        completed_run = await store.get_latest_run_model(session_id=session_id, agent_id="agent-coordinator")
 
     assert completed_run is not None
     assert completed_run.status == "completed"
@@ -130,7 +130,7 @@ async def test_pydantic_runner_should_refresh_tool_timeout_from_member_events(
                         content=f"成员进度 {index + 1}",
                         data={
                             "member_run_id": "member-run-heartbeat",
-                            "member_agent_id": "resource-manager",
+                            "member_agent_id": "agent-coordinator",
                         },
                     ),
                 )
@@ -147,7 +147,7 @@ async def test_pydantic_runner_should_refresh_tool_timeout_from_member_events(
         store = PlatformAgentRuntimeStore(db_session, user_id=1)
         run_start = await store.start_run(
             session_id=session_id,
-            agent_id="component-manager",
+            agent_id="agent-coordinator",
             scope=scope,
             run_id=run_id,
             message="执行带进度的成员任务。",
@@ -160,7 +160,7 @@ async def test_pydantic_runner_should_refresh_tool_timeout_from_member_events(
                 tool_stream_idle_timeout_seconds=0.08,
             ).stream_run(
                 run_model=run_start.run_model,
-                agent_id="component-manager",
+                agent_id="agent-coordinator",
                 model=model,
                 model_settings={},
                 runtime_context=_runtime_context(scope),
@@ -168,7 +168,7 @@ async def test_pydantic_runner_should_refresh_tool_timeout_from_member_events(
                 tools=[Tool(member_activity_tool, name="member_activity_tool")],
             )
         )
-        completed_run = await store.get_latest_run_model(session_id=session_id, agent_id="component-manager")
+        completed_run = await store.get_latest_run_model(session_id=session_id, agent_id="agent-coordinator")
 
     assert completed_run is not None
     assert completed_run.status == "completed"
@@ -211,7 +211,7 @@ async def test_pydantic_runner_should_fail_when_tool_stream_exceeds_own_idle_tim
         store = PlatformAgentRuntimeStore(db_session, user_id=1)
         run_start = await store.start_run(
             session_id=session_id,
-            agent_id="component-manager",
+            agent_id="agent-coordinator",
             scope=scope,
             run_id="pydantic-runner-tool-idle-timeout",
             message="调用超时工具。",
@@ -224,7 +224,7 @@ async def test_pydantic_runner_should_fail_when_tool_stream_exceeds_own_idle_tim
                 tool_stream_idle_timeout_seconds=0.02,
             ).stream_run(
                 run_model=run_start.run_model,
-                agent_id="component-manager",
+                agent_id="agent-coordinator",
                 model=model,
                 model_settings={},
                 runtime_context=_runtime_context(scope),
@@ -232,7 +232,7 @@ async def test_pydantic_runner_should_fail_when_tool_stream_exceeds_own_idle_tim
                 tools=[Tool(timeout_tool, name="timeout_tool")],
             )
         )
-        failed_run = await store.get_latest_run_model(session_id=session_id, agent_id="component-manager")
+        failed_run = await store.get_latest_run_model(session_id=session_id, agent_id="agent-coordinator")
         await asyncio.sleep(0.11)
 
     assert failed_run is not None

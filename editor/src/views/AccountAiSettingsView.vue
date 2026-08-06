@@ -684,10 +684,6 @@ type ActiveAgentPanel = 'binding' | 'prompts' | 'tools'
 type ConfigPanelMode = 'create' | 'detail' | 'edit'
 
 const DEFAULT_CONTEXT_WINDOW_TOKENS = 128000
-const DEFAULT_MAX_OUTPUT_TOKENS = 28000
-// 后端硬性要求：聊天模型上下文窗口扣除最大输出后至少保留 100K tokens。
-const MIN_CONTEXT_RESERVED_TOKENS = 100000
-const DEFAULT_COMPRESSION_TARGET_RATIO = 0.1
 const DEFAULT_NEW_MODEL_PROVIDER_KEY = 'deepseek'
 
 interface LlmFormState {
@@ -700,9 +696,6 @@ interface LlmFormState {
   thinking_effort: string | null
   supports_image_input: boolean
   context_window_tokens: number
-  max_output_tokens: number
-  history_token_ratio: number
-  compression_target_ratio: number
 }
 
 interface LlmProviderFormState {
@@ -761,9 +754,6 @@ const modelForm = reactive<LlmFormState>({
   thinking_effort: null,
   supports_image_input: false,
   context_window_tokens: DEFAULT_CONTEXT_WINDOW_TOKENS,
-  max_output_tokens: DEFAULT_MAX_OUTPUT_TOKENS,
-  history_token_ratio: 0.5,
-  compression_target_ratio: DEFAULT_COMPRESSION_TARGET_RATIO,
 })
 
 const providerForm = reactive<LlmProviderFormState>({
@@ -1147,15 +1137,9 @@ watch(
     }
     if (
       providerConfigId !== previousProviderConfigId
-      && shouldReplaceTokenDefault(modelForm.context_window_tokens, previousProviderKey, 'context')
+      && shouldReplaceContextWindowDefault(modelForm.context_window_tokens, previousProviderKey)
     ) {
       modelForm.context_window_tokens = provider.default_context_window_tokens ?? DEFAULT_CONTEXT_WINDOW_TOKENS
-    }
-    if (
-      providerConfigId !== previousProviderConfigId
-      && shouldReplaceTokenDefault(modelForm.max_output_tokens, previousProviderKey, 'output')
-    ) {
-      modelForm.max_output_tokens = provider.default_max_output_tokens ?? DEFAULT_MAX_OUTPUT_TOKENS
     }
     if (advancedConfigText.value.trim() === '{}' && Object.keys(provider.advanced_json_hint ?? {}).length > 0) {
       advancedConfigText.value = JSON.stringify(provider.advanced_json_hint, null, 2)
@@ -1177,7 +1161,6 @@ function prefillModelFormFromProvider(provider: LlmProviderCatalogItem | null) {
   modelForm.thinking_effort = provider?.supports_thinking ? provider.default_thinking_effort ?? null : null
   modelForm.supports_image_input = Boolean(provider?.default_supports_image_input)
   modelForm.context_window_tokens = provider?.default_context_window_tokens ?? DEFAULT_CONTEXT_WINDOW_TOKENS
-  modelForm.max_output_tokens = provider?.default_max_output_tokens ?? DEFAULT_MAX_OUTPUT_TOKENS
 }
 
 /** 使用供应商目录默认值预填供应商配置表单。 */
@@ -1254,12 +1237,10 @@ function findProviderDefaultSupportsImageInput(providerKey: string | null | unde
   return Boolean(providersQuery.data.value?.find(item => item.provider_key === providerKey)?.default_supports_image_input)
 }
 
-/** 判断 token 字段是否仍是默认值，可在切换供应商时替换。 */
-function shouldReplaceTokenDefault(value: number, providerKey: string | null | undefined, kind: 'context' | 'output') {
+/** 判断上下文窗口是否仍是供应商默认值，可在切换供应商时替换。 */
+function shouldReplaceContextWindowDefault(value: number, providerKey: string | null | undefined) {
   const provider = providersQuery.data.value?.find(item => item.provider_key === providerKey)
-  const previousDefault = kind === 'context'
-    ? provider?.default_context_window_tokens ?? DEFAULT_CONTEXT_WINDOW_TOKENS
-    : provider?.default_max_output_tokens ?? DEFAULT_MAX_OUTPUT_TOKENS
+  const previousDefault = provider?.default_context_window_tokens ?? DEFAULT_CONTEXT_WINDOW_TOKENS
   return value === previousDefault
 }
 
@@ -1570,8 +1551,6 @@ function resetModelForm() {
   modelForm.provider_config_id = providerConfig?.id ?? null
   const provider = findProviderForConfig(providerConfig)
   prefillModelFormFromProvider(provider)
-  modelForm.history_token_ratio = 0.5
-  modelForm.compression_target_ratio = DEFAULT_COMPRESSION_TARGET_RATIO
   advancedConfigText.value = '{}'
   advancedConfigError.value = ''
   advancedConfigCollapsed.value = true
@@ -1593,9 +1572,6 @@ async function handleEditModel(config: LlmConfigItem) {
   modelForm.thinking_effort = config.thinking_effort
   modelForm.supports_image_input = config.supports_image_input
   modelForm.context_window_tokens = config.context_window_tokens
-  modelForm.max_output_tokens = config.max_output_tokens
-  modelForm.history_token_ratio = config.history_token_ratio
-  modelForm.compression_target_ratio = config.compression_target_ratio
   advancedConfigText.value = JSON.stringify(config.advanced_config_json ?? {}, null, 2)
   advancedConfigError.value = ''
   advancedConfigCollapsed.value = true
@@ -1652,24 +1628,6 @@ function formatAdvancedConfig() {
 function normalizePositiveInteger(value: number, fallback: number) {
   const normalized = Math.floor(Number(value))
   return Number.isFinite(normalized) && normalized > 0 ? normalized : fallback
-}
-
-/** 将历史比例限制在后端允许范围内。 */
-function normalizeHistoryRatio(value: number) {
-  const normalized = Number(value)
-  if (!Number.isFinite(normalized)) {
-    return 0.5
-  }
-  return Math.min(0.9, Math.max(0, normalized))
-}
-
-/** 将压缩目标比例限制在后端允许范围内。 */
-function normalizeCompressionTargetRatio(value: number) {
-  const normalized = Number(value)
-  if (!Number.isFinite(normalized)) {
-    return DEFAULT_COMPRESSION_TARGET_RATIO
-  }
-  return Math.min(0.5, Math.max(0.02, normalized))
 }
 
 /** 创建或更新供应商配置。 */
@@ -1752,11 +1710,6 @@ async function handleSubmitModel() {
   }
 
   const contextWindowTokens = normalizePositiveInteger(modelForm.context_window_tokens, DEFAULT_CONTEXT_WINDOW_TOKENS)
-  const maxOutputTokens = normalizePositiveInteger(modelForm.max_output_tokens, DEFAULT_MAX_OUTPUT_TOKENS)
-  if (modelForm.model_type === 'chat' && contextWindowTokens - maxOutputTokens < MIN_CONTEXT_RESERVED_TOKENS) {
-    Message.error(`上下文窗口减去最大输出后必须至少保留 ${MIN_CONTEXT_RESERVED_TOKENS.toLocaleString()} tokens，请调大上下文窗口或调小最大输出。`)
-    return
-  }
 
   savingConfig.value = true
   try {
@@ -1770,9 +1723,6 @@ async function handleSubmitModel() {
         thinking_effort: modelForm.thinking_effort,
         supports_image_input: modelForm.supports_image_input,
         context_window_tokens: contextWindowTokens,
-        max_output_tokens: maxOutputTokens,
-        history_token_ratio: normalizeHistoryRatio(modelForm.history_token_ratio),
-        compression_target_ratio: normalizeCompressionTargetRatio(modelForm.compression_target_ratio),
         advanced_config_json: advancedConfig,
       }
       const updatedConfig = await updateLlmConfig(selectedConfigId.value, updatePayload)
@@ -1792,9 +1742,6 @@ async function handleSubmitModel() {
         thinking_effort: modelForm.thinking_effort,
         supports_image_input: modelForm.supports_image_input,
         context_window_tokens: contextWindowTokens,
-        max_output_tokens: maxOutputTokens,
-        history_token_ratio: normalizeHistoryRatio(modelForm.history_token_ratio),
-        compression_target_ratio: normalizeCompressionTargetRatio(modelForm.compression_target_ratio),
         advanced_config_json: advancedConfig,
       })
       queryClient.setQueryData<LlmConfigItem[]>(['llm-configs'], currentItems => [

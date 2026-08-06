@@ -82,8 +82,6 @@ class AiLlmSlot(str, Enum):
     """智能体可绑定的大模型槽位枚举。"""
 
     AGENT_COORDINATOR = "agent_coordinator"
-    COMPONENT_MANAGER = "component_manager"
-    RESOURCE_MANAGER = "resource_manager"
     IMAGE_UNDERSTANDING = "image_understanding"
     IMAGE_GENERATION = "image_generation"
 

@@ -413,7 +413,7 @@ class SuggestedComponentService:
         if component.workspace_id != workspace_id:
             return "组件不属于当前工作空间，请移除后保存。"
         if component.deleted_at is not None:
-            return "组件已删除，请移除后保存。"
+            return "组件已归档，请移除后保存。"
         if component.status != RecordStatus.ACTIVE.value:
             return "组件已归档，请移除后保存。"
         if component.current_version_no <= 0:

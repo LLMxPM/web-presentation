@@ -8,6 +8,7 @@ import type {
   AgentMemberRunItem,
   AgentPendingRequirement,
   AgentRunEvent,
+  AgentRunContextSummary,
   AgentTimelineItem,
   AgentTimelineToolItem,
 } from '@/types/api'
@@ -164,6 +165,9 @@ export function applyAgentRunEvent(
       // 后台任务续跑后必须清掉 waiting_external 等临时等待项，否则会永久残留在时间线。
       removeRunWaitingStatusItems(state, runId)
       appendRunStatusItem(state, event, MODEL_REQUEST_STATUS, MODEL_REQUEST_STATUS_TEXT)
+      return { applied: true, terminal: false }
+    case 'run.focus.snapshot':
+      applyRunFocusSnapshot(state, event, runId)
       return { applied: true, terminal: false }
     case 'run.cancelling':
       state.pendingRequirement = null
@@ -422,6 +426,14 @@ function buildEventRunState(
     session_id: event.session_id || state.activeRun?.session_id || '',
     agent_id: String(event.data.agent_id || agentId),
     status,
+    focus: state.activeRun?.focus ?? {
+      scope_type: 'workspace',
+      workspace_id: Number(event.data.workspace_id || 0),
+      source: 'event-recovery',
+    },
+    work_scope_mode: state.activeRun?.work_scope_mode ?? 'workspace',
+    allowed_project_ids: state.activeRun?.allowed_project_ids ?? [],
+    focus_version: state.activeRun?.focus_version ?? 0,
     pending_requirement: requirement,
     content: event.content ?? null,
     created_at: state.activeRun?.created_at ?? new Date().toISOString(),
@@ -429,6 +441,90 @@ function buildEventRunState(
     cancel_requested_at: status === 'cancelling' ? new Date().toISOString() : null,
     event_index: event.event_index ?? event.sequence ?? state.stream.lastSequenceByRun[runId] ?? -1,
   }
+}
+
+/** 应用后端固化的 Run 焦点快照，并在本轮用户消息之前插入上下文摘要。 */
+function applyRunFocusSnapshot(state: AgentSessionRuntimeState, event: AgentRunEvent, runId: string): void {
+  const rawFocus = isRecord(event.data.focus) ? event.data.focus : {}
+  const focus = {
+    scope_type: String(rawFocus.scope_type || 'workspace') as AgentRunContextSummary['focus']['scope_type'],
+    workspace_id: Number(rawFocus.workspace_id || 0),
+    project_id: optionalNumber(rawFocus.project_id),
+    page_id: optionalNumber(rawFocus.page_id),
+    component_id: optionalNumber(rawFocus.component_id),
+    workspace_name: optionalString(rawFocus.workspace_name),
+    project_name: optionalString(rawFocus.project_name),
+    page_title: optionalString(rawFocus.page_title),
+    component_name: optionalString(rawFocus.component_name),
+    source: String(rawFocus.source || 'run-focus-snapshot'),
+  }
+  const rawProjects = Array.isArray(event.data.allowed_projects) ? event.data.allowed_projects : []
+  const allowedProjects = rawProjects
+    .filter(isRecord)
+    .map(project => ({ id: Number(project.id), name: optionalString(project.name) }))
+    .filter(project => Number.isFinite(project.id) && project.id > 0)
+  const context: AgentRunContextSummary = {
+    focus,
+    work_scope_mode: event.data.work_scope_mode === 'selected_projects' ? 'selected_projects' : 'workspace',
+    allowed_projects: allowedProjects.length
+      ? allowedProjects
+      : (Array.isArray(event.data.allowed_project_ids) ? event.data.allowed_project_ids : [])
+          .map(projectId => ({ id: Number(projectId), name: null }))
+          .filter(project => Number.isFinite(project.id) && project.id > 0),
+    focus_version: Number(event.data.focus_version || 0),
+  }
+  if (state.activeRun?.run_id === runId) {
+    state.activeRun = {
+      ...state.activeRun,
+      focus,
+      work_scope_mode: context.work_scope_mode,
+      allowed_project_ids: context.allowed_projects.map(project => project.id),
+      focus_version: context.focus_version,
+    }
+  }
+  const existingIndex = state.timelineItems.findIndex(item => item.kind === 'run_context' && item.run_id === runId)
+  const runOrderIndexes = state.timelineItems.filter(item => item.run_id === runId).map(item => item.order_index)
+  const userMessage = state.timelineItems.find(item => item.run_id === runId && item.kind === 'message' && item.role === 'user')
+  const orderIndex = userMessage
+    ? userMessage.order_index + 0.5
+    : runOrderIndexes.length ? Math.min(...runOrderIndexes) - 0.5 : nextTimelineOrderIndex(state)
+  const item: AgentTimelineItem = {
+    id: `run-context-${runId}`,
+    session_id: event.session_id || state.activeRun?.session_id || '',
+    run_id: runId,
+    kind: 'run_context',
+    role: null,
+    event_index: event.event_index ?? event.sequence ?? null,
+    order_index: orderIndex,
+    content: null,
+    status: state.activeRun?.status ?? 'running',
+    tool: null,
+    run_context: context,
+    attachments: [],
+    source: 'synthetic',
+    created_at: new Date().toISOString(),
+  }
+  if (existingIndex >= 0) {
+    state.timelineItems.splice(existingIndex, 1, item)
+  } else {
+    state.timelineItems.push(item)
+  }
+}
+
+/** 判断事件字段是否为可安全读取的普通对象。 */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+/** 把事件中的可选 ID 转成 number 或 null。 */
+function optionalNumber(value: unknown): number | null {
+  const normalized = Number(value)
+  return Number.isFinite(normalized) && normalized > 0 ? normalized : null
+}
+
+/** 把事件中的可选名称转成非空字符串或 null。 */
+function optionalString(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() ? value.trim() : null
 }
 
 function appendAssistantDelta(state: AgentSessionRuntimeState, event: AgentRunEvent, delta: string): void {
@@ -650,7 +746,7 @@ function applyMemberRunEvent(state: AgentSessionRuntimeState, event: AgentRunEve
         memberRun,
         event,
         'failed',
-        String(event.data.message || event.content || '成员助手执行失败。'),
+        String(event.data.message || event.content || '内容助手子运行执行失败。'),
       )
       clearMemberStreamState(state, memberRun)
       break
@@ -935,7 +1031,7 @@ function assignMemberRunToDelegate(state: AgentSessionRuntimeState, memberRun: A
       item.kind === 'tool'
       && item.run_id === memberRun.parent_run_id
       && item.tool
-      && item.tool.tool_name === 'delegate_task_to_member'
+      && item.tool.tool_name === 'delegate_task_to_self'
       && !usedDelegateIds.has(item.tool.tool_call_id || item.id)
       && delegateToolMatchesMember(item.tool.input_payload, memberRun.agent_id)
     ))

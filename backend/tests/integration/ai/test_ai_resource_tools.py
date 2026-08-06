@@ -8,7 +8,7 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy import func, select
 
-from app.ai.agent import RESOURCE_MANAGER_AGENT_ID
+from app.ai.agent import AGENT_COORDINATOR_AGENT_ID
 from app.ai.auth_tokens import (
     PAGE_TOOL_READ_SCOPES,
     RESOURCE_TOOL_READ_SCOPES,
@@ -452,7 +452,7 @@ def _build_tool_run_context(
     run_id = "resource-tool-run"
     dependencies = {
         "user_id": current.user.id,
-        "agent_id": RESOURCE_MANAGER_AGENT_ID,
+        "agent_id": AGENT_COORDINATOR_AGENT_ID,
         "run_id": run_id,
         "session_id": session_id,
         "workspace_id": workspace_id,
@@ -466,7 +466,7 @@ def _build_tool_run_context(
         current,
         run_id=run_id,
         session_id=session_id,
-        agent_id=RESOURCE_MANAGER_AGENT_ID,
+        agent_id=AGENT_COORDINATOR_AGENT_ID,
         workspace_id=workspace_id,
         project_id=project_id,
         page_id=page_id,

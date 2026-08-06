@@ -17,6 +17,10 @@
       {{ requirement.note }}
     </div>
 
+    <div v-if="archiveSummary" class="mt-2 rounded-ui-md border border-border bg-surface-hover px-2.5 py-2 text-xs leading-5 text-text-secondary">
+      {{ archiveSummary }}
+    </div>
+
     <InspectorSection title="工具详情" class="mt-2 rounded-ui-md border border-border bg-surface-hover">
       <div class="space-y-2">
         <section v-if="requirement.suggested_patch" class="space-y-2">
@@ -63,6 +67,7 @@ import AgentHitlShell from '@/components/agent/AgentHitlShell.vue'
 import InspectorSection from '@/components/patterns/InspectorSection.vue'
 import { UiButton } from '@/components/ui'
 import type { AgentPendingRequirement, AgentSuggestedPatch } from '@/types/api'
+import { resolveLogicalToolName } from '@/components/agent/agent-conversation-panel'
 
 const props = withDefaults(defineProps<{
   requirement: AgentPendingRequirement
@@ -83,12 +88,40 @@ const emit = defineEmits<{
   saveDraftPatch: [patch: AgentSuggestedPatch]
 }>()
 
-const toolName = computed(() => props.requirement.tool_name || '未知工具')
+const toolArgs = computed(() => props.requirement.tool_execution?.['tool_args'] ?? {})
+const toolName = computed(() => resolveLogicalToolName(props.requirement.tool_name || '未知工具', toolArgs.value))
 const toolSourceName = computed(() => props.requirement.member_agent_name || '')
 const confirmTitle = computed(() => `允许执行 ${toolSourceName.value ? `${toolSourceName.value} · ` : ''}${toolName.value} 吗？`)
 const confirmSubtitle = computed(() => toolSourceName.value ? `来自 ${toolSourceName.value} 的工具正在等待你的确认。` : '该工具正在等待你的确认。')
+const archiveSummary = computed(() => {
+  if (props.requirement.tool_name !== 'archive_entity' || typeof toolArgs.value !== 'object' || toolArgs.value === null) {
+    return ''
+  }
+  const args = toolArgs.value as Record<string, unknown>
+  const execution = props.requirement.tool_execution as Record<string, unknown>
+  const callId = String(execution.tool_call_id || '')
+  const deferred = execution.deferred_metadata
+  const metadata = deferred && typeof deferred === 'object'
+    ? (deferred as Record<string, unknown>)[callId]
+    : null
+  const confirmation = metadata && typeof metadata === 'object'
+    ? metadata as Record<string, unknown>
+    : {}
+  const targetIds = Array.isArray(args.target_ids) ? args.target_ids : []
+  const targetItems = Array.isArray(confirmation.targets) ? confirmation.targets : []
+  const visibleTargets = targetItems.length > 0
+    ? targetItems.map((item) => {
+        const target = item && typeof item === 'object' ? item as Record<string, unknown> : {}
+        return String(target.title || target.name || target.key || target.code || target.import_name || target.id || '')
+      }).filter(Boolean)
+    : targetIds.slice(0, 20).map(String)
+  const total = Number(confirmation.target_count || targetIds.length)
+  const suffix = Boolean(confirmation.targets_truncated) || total > visibleTargets.length ? ` 等 ${total} 项` : `，共 ${total} 项`
+  const reason = String(args.archive_reason || '').trim()
+  const impact = String(confirmation.reference_impact || '').trim()
+  return `目标：${visibleTargets.join('、')}${suffix}${reason ? `；原因：${reason}` : ''}${impact ? `；引用影响：${impact}` : ''}`
+})
 const formattedToolArgs = computed(() => {
-  const toolArgs = props.requirement.tool_execution?.['tool_args'] ?? props.requirement.tool_execution
-  return JSON.stringify(toolArgs ?? {}, null, 2)
+  return JSON.stringify(toolArgs.value ?? {}, null, 2)
 })
 </script>

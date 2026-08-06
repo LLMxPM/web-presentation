@@ -1,15 +1,64 @@
 /**
  * 文件功能：验证组件预览会话对 Runtime iframe ready/error 消息的状态同步。
  */
-import { defineComponent, h, onMounted } from 'vue'
+import { defineComponent, h, nextTick, onMounted } from 'vue'
 import { render, screen, waitFor } from '@testing-library/vue'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { useComponentPreviewSession } from '@/composables/useComponentPreviewSession'
-import { COMPONENT_PREVIEW_ERROR_EVENT } from '@/types/component-preview'
+import { COMPONENT_PREVIEW_ERROR_EVENT, COMPONENT_PREVIEW_READY_EVENT, buildInitialComponentPreviewState } from '@/types/component-preview'
 import type { PreviewArtifactResponse } from '@/types/api'
 
 describe('useComponentPreviewSession', () => {
+  afterEach(() => vi.useRealTimers())
+
+  it('组件 iframe 应在 8 秒进入慢加载、30 秒超时，并允许迟到 ready 恢复', async () => {
+    vi.useFakeTimers()
+    render(defineComponent({
+      name: 'ComponentPreviewSessionTimeoutTestHost',
+      setup() {
+        const session = useComponentPreviewSession()
+        onMounted(() => {
+          void session.runPreview(() => Promise.resolve(createPreviewResponse()))
+        })
+        return () => h('div', [
+          h('span', { 'data-testid': 'status' }, session.previewStatus.value),
+          h('span', { 'data-testid': 'error' }, session.previewErrorMessage.value),
+        ])
+      },
+    }))
+    await Promise.resolve()
+    await nextTick()
+
+    expect(screen.getByTestId('status')).toHaveTextContent('loading')
+    vi.advanceTimersByTime(8000)
+    await nextTick()
+    expect(screen.getByTestId('status')).toHaveTextContent('slow')
+
+    vi.advanceTimersByTime(22000)
+    await nextTick()
+    expect(screen.getByTestId('status')).toHaveTextContent('error')
+    expect(screen.getByTestId('error')).toHaveTextContent('超过 30 秒')
+
+    window.dispatchEvent(new MessageEvent('message', {
+      origin: 'http://localhost',
+      data: {
+        type: COMPONENT_PREVIEW_READY_EVENT,
+        payload: {
+          version: 1,
+          artifactId: 'artifact-1',
+          schema: null,
+          defaultState: buildInitialComponentPreviewState(null),
+          componentMeta: { code: 'demo', displayName: 'Demo' },
+        },
+      },
+    }))
+    await nextTick()
+
+    expect(screen.getByTestId('status')).toHaveTextContent('ready')
+    expect(screen.getByTestId('error').textContent).toBe('')
+  })
+
   it('收到 Runtime 错误事件后应结束 loading 并记录错误信息', async () => {
     render(defineComponent({
       name: 'ComponentPreviewSessionErrorTestHost',

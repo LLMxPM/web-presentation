@@ -74,6 +74,60 @@ describe('agent-mutation-refresh', () => {
       }),
     ])
   })
+
+  it('统一 mutation envelope 应按逻辑对象刷新主题和样式', () => {
+    const themeEvents = buildMutationRefreshEvents(buildToolCompletedEvent('update_entity', {
+      success: true,
+      resource_type: 'theme',
+      operation: 'update',
+      target: { id: 7, resource_type: 'theme' },
+      mutation: { kind: 'theme', resource_type: 'theme', operation: 'update' },
+      data: { id: 7, name: '海洋主题' },
+    }), base)
+    const styleEvents = buildMutationRefreshEvents(buildToolCompletedEvent('archive_entity', {
+      success: true,
+      resource_type: 'style',
+      operation: 'archive',
+      mutation: { kind: 'style', resource_type: 'style', operation: 'archive' },
+      data: { archived_count: 2, target_ids: [8, 9] },
+    }), base)
+
+    expect(themeEvents).toEqual([
+      expect.objectContaining({ kind: 'theme', themeId: 7, toolName: 'update_entity' }),
+    ])
+    expect(styleEvents).toEqual([
+      expect.objectContaining({ kind: 'style', styleId: null, toolName: 'archive_entity' }),
+    ])
+  })
+
+  it('统一页面 mutation 应同时刷新页面详情和项目页面列表', () => {
+    const events = buildMutationRefreshEvents(buildToolCompletedEvent('update_entity', {
+      success: true,
+      resource_type: 'page',
+      operation: 'update',
+      target: { id: 42, resource_type: 'page' },
+      mutation: { kind: 'project-pages', resource_type: 'page', operation: 'update' },
+      data: { page_id: 42, project_id: 21 },
+    }), base)
+
+    expect(events.map(event => event.kind)).toEqual(['page', 'project-pages'])
+    expect(events.every(event => event.pageId === 42)).toBe(true)
+  })
+
+  it('批量组件归档应为每个目标生成刷新事件', () => {
+    const events = buildMutationRefreshEvents(buildToolCompletedEvent('archive_entity', {
+      success: true,
+      resource_type: 'component',
+      operation: 'archive',
+      mutation: { resource_type: 'component', operation: 'archive' },
+      targets: [{ id: 3 }, { id: 5 }],
+    }), base)
+
+    expect(events).toEqual([
+      expect.objectContaining({ kind: 'component', componentId: 3 }),
+      expect.objectContaining({ kind: 'component', componentId: 5 }),
+    ])
+  })
 })
 
 /**

@@ -63,29 +63,21 @@ describe('ai api', () => {
 
     expect(getMock).toHaveBeenCalledWith('/ai/sessions', {
       params: {
-        scope_type: 'project',
         workspace_id: '11',
-        source: 'editor-agent-sidebar',
         agent_id: 'agent-coordinator',
-        scope_mode: 'exact',
-        project_id: '21',
       },
     })
   })
 
-  it('会话列表可请求当前工作空间内同智能体全量会话', async () => {
+  it('会话列表可请求当前工作空间内指定智能体的会话', async () => {
     getMock.mockResolvedValueOnce({ data: [] })
 
-    await listAgentSessions(scope, 'agent-coordinator', 'workspace')
+    await listAgentSessions(scope, 'agent-coordinator')
 
     expect(getMock).toHaveBeenCalledWith('/ai/sessions', {
       params: {
-        scope_type: 'project',
         workspace_id: '11',
-        source: 'editor-agent-sidebar',
         agent_id: 'agent-coordinator',
-        scope_mode: 'workspace',
-        project_id: '21',
       },
     })
   })
@@ -97,11 +89,8 @@ describe('ai api', () => {
 
     expect(getMock).toHaveBeenCalledWith('/ai/sessions/session-1/context-status', {
       params: {
-        scope_type: 'project',
         workspace_id: '11',
-        source: 'editor-agent-sidebar',
         agent_id: 'agent-coordinator',
-        project_id: '21',
       },
     })
   })
@@ -153,6 +142,13 @@ describe('ai api', () => {
       message: '改用另一个模型继续',
       image_attachment_ids: [],
       llm_config_id: 9,
+      focus: {
+        scope_type: 'project',
+        project_id: 21,
+        page_id: null,
+        component_id: null,
+        source: 'editor-agent-sidebar',
+      },
     })
   })
 

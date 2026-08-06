@@ -5,6 +5,7 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 
 import { getWorkspace } from '@/api/catalog'
 import type { ComponentPreviewOptions, PreviewArtifactResponse } from '@/types/api'
+import type { RuntimePreviewStatus } from '@/types/runtime-preview'
 import {
   COMPONENT_PREVIEW_ERROR_EVENT,
   COMPONENT_PREVIEW_READY_EVENT,
@@ -33,11 +34,15 @@ export interface ComponentPreviewSessionPrepareOptions {
   zeroPaddingPreview?: boolean
 }
 
+const PREVIEW_SLOW_DELAY_MS = 8000
+const PREVIEW_TIMEOUT_MS = 30000
+
 /**
  * 创建组件预览会话状态，并在组件生命周期内监听 Runtime 宿主页 ready 消息。
  */
 export function useComponentPreviewSession() {
   const previewLoading = ref(false)
+  const previewStatus = ref<RuntimePreviewStatus>('idle')
   const previewUrl = ref('')
   const previewArtifactId = ref('')
   const previewRefreshToken = ref(0)
@@ -52,6 +57,9 @@ export function useComponentPreviewSession() {
   const previewComponentMeta = ref<ComponentPreviewReadyMessage['payload']['componentMeta'] | null>(null)
   const previewFrameRef = ref<HTMLIFrameElement | null>(null)
   let previewRequestSeq = 0
+  let previewLifecycleSeq = 0
+  let previewSlowTimer: number | null = null
+  let previewTimeoutTimer: number | null = null
   const {
     viewportRef: previewViewportRef,
     viewportSize: previewViewportSize,
@@ -121,6 +129,8 @@ export function useComponentPreviewSession() {
   onUnmounted(() => {
     window.removeEventListener('message', handleWindowMessage)
     disconnectViewportObserver()
+    previewLifecycleSeq += 1
+    clearPreviewLifecycleTimers()
   })
 
   /**
@@ -128,6 +138,8 @@ export function useComponentPreviewSession() {
    * @param options 工作空间与组件预览基线
    */
   async function preparePreviewConfig(options: ComponentPreviewSessionPrepareOptions): Promise<void> {
+    previewLoading.value = true
+    beginPreviewLoading('generating')
     const fallbackOptions = buildDefaultComponentPreviewOptions()
     if (options.zeroPaddingPreview) {
       fallbackOptions.placement.padding = 0
@@ -160,6 +172,7 @@ export function useComponentPreviewSession() {
     const requestSeq = previewRequestSeq + 1
     previewRequestSeq = requestSeq
     previewLoading.value = true
+    beginPreviewLoading('generating')
     previewErrorMessage.value = ''
     previewSchema.value = null
     previewComponentMeta.value = null
@@ -205,6 +218,7 @@ export function useComponentPreviewSession() {
   function resetPreviewState(): void {
     previewRequestSeq += 1
     previewLoading.value = false
+    previewStatus.value = 'idle'
     previewUrl.value = ''
     previewArtifactId.value = ''
     previewRefreshToken.value = 0
@@ -217,6 +231,8 @@ export function useComponentPreviewSession() {
     previewState.value = buildInitialComponentPreviewState(null)
     hasPreviewStateSnapshot.value = false
     previewComponentMeta.value = null
+    previewLifecycleSeq += 1
+    clearPreviewLifecycleTimers()
   }
 
   /**
@@ -227,6 +243,50 @@ export function useComponentPreviewSession() {
       return
     }
     previewRefreshToken.value = Date.now()
+    previewLoading.value = true
+    beginPreviewLoading('loading')
+  }
+
+  /**
+   * 启动组件 artifact 或 iframe 的等待周期，并在弱网阈值后更新用户反馈。
+   * @param status 当前等待阶段
+   */
+  function beginPreviewLoading(status: 'generating' | 'loading'): void {
+    clearPreviewLifecycleTimers()
+    const lifecycleSeq = previewLifecycleSeq + 1
+    previewLifecycleSeq = lifecycleSeq
+    previewStatus.value = status
+    previewSlowTimer = window.setTimeout(() => {
+      if (lifecycleSeq !== previewLifecycleSeq) return
+      previewStatus.value = 'slow'
+    }, PREVIEW_SLOW_DELAY_MS)
+    previewTimeoutTimer = window.setTimeout(() => {
+      if (lifecycleSeq !== previewLifecycleSeq) return
+      previewStatus.value = 'error'
+      previewLoading.value = false
+      previewErrorMessage.value = '组件预览加载超过 30 秒，可以重新生成预览。'
+      clearPreviewLifecycleTimers()
+    }, PREVIEW_TIMEOUT_MS)
+  }
+
+  /** 清理组件预览生命周期计时器。 */
+  function clearPreviewLifecycleTimers(): void {
+    if (previewSlowTimer !== null) window.clearTimeout(previewSlowTimer)
+    if (previewTimeoutTimer !== null) window.clearTimeout(previewTimeoutTimer)
+    previewSlowTimer = null
+    previewTimeoutTimer = null
+  }
+
+  /**
+   * 把当前组件预览切换到错误终态，供 artifact 请求失败与 Runtime error 共用。
+   * @param message 用户可读错误
+   */
+  function markPreviewError(message: string): void {
+    previewLifecycleSeq += 1
+    clearPreviewLifecycleTimers()
+    previewStatus.value = 'error'
+    previewLoading.value = false
+    previewErrorMessage.value = message
   }
 
   /**
@@ -298,6 +358,9 @@ export function useComponentPreviewSession() {
         previewState.value = cloneComponentPreviewState(message.payload.defaultState)
       }
       previewLoading.value = false
+      previewStatus.value = 'ready'
+      previewLifecycleSeq += 1
+      clearPreviewLifecycleTimers()
       return
     }
 
@@ -308,10 +371,9 @@ export function useComponentPreviewSession() {
       return
     }
 
-    previewErrorMessage.value = normalizePreviewErrorMessage(message.payload.message)
+    markPreviewError(normalizePreviewErrorMessage(message.payload.message))
     previewSchema.value = null
     previewComponentMeta.value = null
-    previewLoading.value = false
   }
 
   /**
@@ -345,11 +407,13 @@ export function useComponentPreviewSession() {
     previewFrameStageStyle,
     previewFrameUrl,
     previewLoading,
+    previewStatus,
     previewSchema,
     previewState,
     previewViewportRef,
     workspacePreviewDefaultConfig,
     handlePreviewStateChange,
+    markPreviewError,
     observeViewport,
     preparePreviewConfig,
     refreshPreviewFrame,

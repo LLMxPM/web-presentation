@@ -38,7 +38,7 @@ from app.ai.pydantic_event_projection import PydanticEventProjector
 from app.ai.pydantic_runner import PydanticAgentRunner, _requirement_from_deferred
 from app.ai.pydantic_tools import AgentToolDeps, _wrap_platform_tool
 from app.ai.session_facade_pydantic import AgentSessionFacade, _build_continue_message_history, _build_deferred_results
-from app.ai.tools.team_delegation import build_team_delegation_tools
+from app.ai.tools.self_delegation import build_self_delegation_tools
 from app.core.exceptions import AppException
 from app.db.session import get_session_factory
 from app.models.ai_agent_runtime import AiAgentMemberRun, AiAgentRun, AiAgentRunEvent, AiAgentSession, AiAgentToolCall
@@ -62,7 +62,7 @@ async def test_pydantic_runner_should_pause_continue_and_replay_ask_user(
         store = PlatformAgentRuntimeStore(db_session, user_id=1)
         run_start = await store.start_run(
             session_id=session_id,
-            agent_id="component-manager",
+            agent_id="agent-coordinator",
             scope=scope,
             run_id="pydantic-runner-ask-user",
             message="请根据需要询问我。",
@@ -73,7 +73,7 @@ async def test_pydantic_runner_should_pause_continue_and_replay_ask_user(
         first_events = await _collect_runner_events(
             runner.stream_run(
                 run_model=run_start.run_model,
-                agent_id="component-manager",
+                agent_id="agent-coordinator",
                 model=model,
                 model_settings={},
                 runtime_context=_runtime_context(scope),
@@ -82,7 +82,7 @@ async def test_pydantic_runner_should_pause_continue_and_replay_ask_user(
             )
         )
 
-        latest_run = await store.get_latest_run_model(session_id=session_id, agent_id="component-manager")
+        latest_run = await store.get_latest_run_model(session_id=session_id, agent_id="agent-coordinator")
         assert latest_run is not None
         assert latest_run.status == "paused"
         assert latest_run.message_history_json
@@ -164,7 +164,7 @@ async def test_pydantic_runner_should_pause_continue_and_replay_ask_user(
         second_events = await _collect_runner_events(
             runner.stream_run(
                 run_model=latest_run,
-                agent_id="component-manager",
+                agent_id="agent-coordinator",
                 model=model,
                 model_settings={},
                 runtime_context=_runtime_context(scope),
@@ -175,11 +175,11 @@ async def test_pydantic_runner_should_pause_continue_and_replay_ask_user(
             )
         )
 
-        completed_run = await store.get_latest_run_model(session_id=session_id, agent_id="component-manager")
+        completed_run = await store.get_latest_run_model(session_id=session_id, agent_id="agent-coordinator")
         assert completed_run is not None
         snapshot = await store.get_runtime_snapshot(
             session_id=session_id,
-            agent_id="component-manager",
+            agent_id="agent-coordinator",
             runtime_context=_runtime_context(scope),
         )
         result = await db_session.execute(
@@ -225,6 +225,7 @@ async def test_pydantic_runner_should_pause_continue_and_replay_ask_user(
     )
     assert event_names == [
         "run.started",
+        "run.focus.snapshot",
         "model.request.started",
         "reasoning.delta",
         "message.delta",
@@ -244,6 +245,7 @@ async def test_pydantic_runner_should_pause_continue_and_replay_ask_user(
     assert snapshot.last_run.status == "completed"
     assert [item.kind for item in snapshot.timeline_items] == [
         "message",
+        "run_context",
         "reasoning",
         "message",
         "tool",
@@ -298,7 +300,7 @@ async def test_pydantic_runner_should_not_duplicate_history_across_multiple_defe
         store = PlatformAgentRuntimeStore(db_session, user_id=1)
         run_start = await store.start_run(
             session_id=session_id,
-            agent_id="component-manager",
+            agent_id="agent-coordinator",
             scope=scope,
             run_id="pydantic-runner-multiple-deferred-resumes",
             message="依次完成三个后台步骤。",
@@ -308,7 +310,7 @@ async def test_pydantic_runner_should_not_duplicate_history_across_multiple_defe
         events = await _collect_runner_events(
             runner.stream_run(
                 run_model=run_start.run_model,
-                agent_id="component-manager",
+                agent_id="agent-coordinator",
                 model=model,
                 model_settings={},
                 runtime_context=_runtime_context(scope),
@@ -355,7 +357,7 @@ async def test_pydantic_runner_should_not_duplicate_history_across_multiple_defe
             events = await _collect_runner_events(
                 runner.stream_run(
                     run_model=latest_run,
-                    agent_id="component-manager",
+                    agent_id="agent-coordinator",
                     model=model,
                     model_settings={},
                     runtime_context=_runtime_context(scope),
@@ -389,7 +391,7 @@ async def test_pydantic_runner_should_not_inject_agent_description_as_system_pro
         session_name="Pydantic Runner 单 system 通道会话",
     )
     agent_config = EffectiveAgentRuntimeConfig(
-        agent_id="component-manager",
+        agent_id="agent-coordinator",
         description_override="这段目录描述不应作为 system_prompt 入模。",
         prompt_override="自定义完整提示词：优先给出可验证结果。",
         tool_configs={},
@@ -399,7 +401,7 @@ async def test_pydantic_runner_should_not_inject_agent_description_as_system_pro
         store = PlatformAgentRuntimeStore(db_session, user_id=1)
         run_start = await store.start_run(
             session_id=session_id,
-            agent_id="component-manager",
+            agent_id="agent-coordinator",
             scope=scope,
             run_id="pydantic-runner-single-system-channel",
             message="请回复一句话。",
@@ -409,7 +411,7 @@ async def test_pydantic_runner_should_not_inject_agent_description_as_system_pro
         await _collect_runner_events(
             PydanticAgentRunner(store).stream_run(
                 run_model=run_start.run_model,
-                agent_id="component-manager",
+                agent_id="agent-coordinator",
                 model=FunctionModel(stream_function=_single_text_stream_function),
                 model_settings={},
                 runtime_context=_runtime_context(scope),
@@ -418,7 +420,7 @@ async def test_pydantic_runner_should_not_inject_agent_description_as_system_pro
             )
         )
 
-        completed_run = await store.get_latest_run_model(session_id=session_id, agent_id="component-manager")
+        completed_run = await store.get_latest_run_model(session_id=session_id, agent_id="agent-coordinator")
 
     assert completed_run is not None
     assert completed_run.status == "completed"
@@ -440,7 +442,7 @@ async def test_pydantic_runner_should_not_inject_agent_description_as_system_pro
     )
     assert "你是 Web Presentation 的组件助手" not in instructions
     assert "自定义完整提示词：优先给出可验证结果。" in instructions
-    assert "当前业务范围如下：" in instructions
+    assert "本轮不可变业务焦点如下：" in instructions
 
 
 async def test_pydantic_runner_should_mark_rejected_approval_tool_error(
@@ -460,7 +462,7 @@ async def test_pydantic_runner_should_mark_rejected_approval_tool_error(
         store = PlatformAgentRuntimeStore(db_session, user_id=1)
         run_start = await store.start_run(
             session_id=session_id,
-            agent_id="component-manager",
+            agent_id="agent-coordinator",
             scope=scope,
             run_id="pydantic-runner-reject-approval",
             message="需要确认后写入。",
@@ -470,7 +472,7 @@ async def test_pydantic_runner_should_mark_rejected_approval_tool_error(
         first_events = await _collect_runner_events(
             runner.stream_run(
                 run_model=run_start.run_model,
-                agent_id="component-manager",
+                agent_id="agent-coordinator",
                 model=model,
                 model_settings={},
                 runtime_context=_runtime_context(scope),
@@ -479,7 +481,7 @@ async def test_pydantic_runner_should_mark_rejected_approval_tool_error(
             )
         )
 
-        latest_run = await store.get_latest_run_model(session_id=session_id, agent_id="component-manager")
+        latest_run = await store.get_latest_run_model(session_id=session_id, agent_id="agent-coordinator")
         assert latest_run is not None
         assert latest_run.status == "paused"
         requirement = await store.get_pending_requirement(run_id=latest_run.run_id)
@@ -519,7 +521,7 @@ async def test_pydantic_runner_should_mark_rejected_approval_tool_error(
         second_events = await _collect_runner_events(
             runner.stream_run(
                 run_model=latest_run,
-                agent_id="component-manager",
+                agent_id="agent-coordinator",
                 model=model,
                 model_settings={},
                 runtime_context=_runtime_context(scope),
@@ -529,7 +531,7 @@ async def test_pydantic_runner_should_mark_rejected_approval_tool_error(
                 deferred_tool_results=deferred_results,
             )
         )
-        completed_run = await store.get_latest_run_model(session_id=session_id, agent_id="component-manager")
+        completed_run = await store.get_latest_run_model(session_id=session_id, agent_id="agent-coordinator")
         assert completed_run is not None
         result = await db_session.execute(
             select(AiAgentToolCall).where(
@@ -602,7 +604,7 @@ async def test_pydantic_runner_should_resume_mixed_completed_and_deferred_tools(
         store = PlatformAgentRuntimeStore(db_session, user_id=1)
         run_start = await store.start_run(
             session_id=session_id,
-            agent_id="component-manager",
+            agent_id="agent-coordinator",
             scope=scope,
             run_id="pydantic-runner-mixed-completed-deferred",
             message="先改标题，再确认路由。",
@@ -612,7 +614,7 @@ async def test_pydantic_runner_should_resume_mixed_completed_and_deferred_tools(
         first_events = await _collect_runner_events(
             runner.stream_run(
                 run_model=run_start.run_model,
-                agent_id="component-manager",
+                agent_id="agent-coordinator",
                 model=model,
                 model_settings={},
                 runtime_context=_runtime_context(scope),
@@ -621,7 +623,7 @@ async def test_pydantic_runner_should_resume_mixed_completed_and_deferred_tools(
             )
         )
 
-        latest_run = await store.get_latest_run_model(session_id=session_id, agent_id="component-manager")
+        latest_run = await store.get_latest_run_model(session_id=session_id, agent_id="agent-coordinator")
         assert latest_run is not None
         requirement = await store.get_pending_requirement(run_id=latest_run.run_id)
         assert requirement is not None
@@ -656,7 +658,7 @@ async def test_pydantic_runner_should_resume_mixed_completed_and_deferred_tools(
         second_events = await _collect_runner_events(
             runner.stream_run(
                 run_model=latest_run,
-                agent_id="component-manager",
+                agent_id="agent-coordinator",
                 model=model,
                 model_settings={},
                 runtime_context=_runtime_context(scope),
@@ -666,7 +668,7 @@ async def test_pydantic_runner_should_resume_mixed_completed_and_deferred_tools(
                 deferred_tool_results=deferred_results,
             )
         )
-        completed_run = await store.get_latest_run_model(session_id=session_id, agent_id="component-manager")
+        completed_run = await store.get_latest_run_model(session_id=session_id, agent_id="agent-coordinator")
 
     assert latest_run.status == "completed"
     assert completed_run is not None
@@ -696,7 +698,7 @@ async def test_pydantic_runner_should_continue_after_recoverable_tool_error(
         store = PlatformAgentRuntimeStore(db_session, user_id=1)
         run_start = await store.start_run(
             session_id=session_id,
-            agent_id="component-manager",
+            agent_id="agent-coordinator",
             scope=scope,
             run_id=run_id,
             message="读取资源并继续。",
@@ -706,7 +708,7 @@ async def test_pydantic_runner_should_continue_after_recoverable_tool_error(
         events = await _collect_runner_events(
             PydanticAgentRunner(store).stream_run(
                 run_model=run_start.run_model,
-                agent_id="component-manager",
+                agent_id="agent-coordinator",
                 model=model,
                 model_settings={},
                 runtime_context=_runtime_context(scope),
@@ -715,7 +717,7 @@ async def test_pydantic_runner_should_continue_after_recoverable_tool_error(
                 deps=AgentToolDeps(dependencies={"run_id": run_id, "session_id": session_id}),
             )
         )
-        completed_run = await store.get_latest_run_model(session_id=session_id, agent_id="component-manager")
+        completed_run = await store.get_latest_run_model(session_id=session_id, agent_id="agent-coordinator")
         assert completed_run is not None
         tool_call = await db_session.scalar(
             select(AiAgentToolCall).where(
@@ -753,7 +755,7 @@ async def test_pydantic_runner_should_trim_open_tool_call_when_run_fails(
         store = PlatformAgentRuntimeStore(db_session, user_id=1)
         run_start = await store.start_run(
             session_id=session_id,
-            agent_id="component-manager",
+            agent_id="agent-coordinator",
             scope=scope,
             run_id=run_id,
             message="调用工具并失败。",
@@ -763,7 +765,7 @@ async def test_pydantic_runner_should_trim_open_tool_call_when_run_fails(
         events = await _collect_runner_events(
             PydanticAgentRunner(store).stream_run(
                 run_model=run_start.run_model,
-                agent_id="component-manager",
+                agent_id="agent-coordinator",
                 model=model,
                 model_settings={},
                 runtime_context=_runtime_context(scope),
@@ -772,12 +774,12 @@ async def test_pydantic_runner_should_trim_open_tool_call_when_run_fails(
                 deps=AgentToolDeps(dependencies={"run_id": run_id, "session_id": session_id}),
             )
         )
-        failed_run = await store.get_latest_run_model(session_id=session_id, agent_id="component-manager")
+        failed_run = await store.get_latest_run_model(session_id=session_id, agent_id="agent-coordinator")
         rebuilt_history = await rebuild_agent_message_history(
             session=db_session,
             user_id=1,
             session_id=session_id,
-            agent_id="component-manager",
+            agent_id="agent-coordinator",
         )
 
     assert failed_run is not None
@@ -804,7 +806,7 @@ async def test_pydantic_runner_should_return_member_delegation_result_to_coordin
     executor = _FakeMemberDelegationExecutor()
     tools = [
         _wrap_platform_tool(tool_item)
-        for tool_item in build_team_delegation_tools(get_session_factory())
+        for tool_item in build_self_delegation_tools(get_session_factory())
     ]
 
     async with get_session_factory()() as db_session:
@@ -813,7 +815,11 @@ async def test_pydantic_runner_should_return_member_delegation_result_to_coordin
             session_id=session_id,
             agent_id="agent-coordinator",
             session_name="Pydantic Runner 成员委派会话",
-            scope=scope,
+            workspace_id=scope.workspace_id,
+            focus_mode="follow_route",
+            pinned_project_id=None,
+            work_scope_mode="workspace",
+            allowed_project_ids=[],
         )
         run_start = await store.start_run(
             session_id=session_id,
@@ -855,12 +861,12 @@ async def test_pydantic_runner_should_return_member_delegation_result_to_coordin
     assert completed_run.content == "已整合资源助手结果。"
     assert executor.calls == [
         {
-            "member_id": "resource-manager",
+            "member_id": "agent-coordinator",
             "task": "整理封面图资源",
             "handoff_context": "页面需要封面视觉资源",
             "expected_output": "返回可引用资源名",
             "delegate_tool_call_id": "tool-delegate-resource",
-            "delegate_tool_name": "delegate_task_to_member",
+            "delegate_tool_name": "delegate_task_to_self",
         }
     ]
     assert "tool.completed" in [event.event for event in events]
@@ -886,7 +892,7 @@ async def test_pydantic_runner_should_return_parallel_member_delegation_results_
     executor = _FakeMemberDelegationExecutor()
     tools = [
         _wrap_platform_tool(tool_item)
-        for tool_item in build_team_delegation_tools(get_session_factory())
+        for tool_item in build_self_delegation_tools(get_session_factory())
     ]
 
     async with get_session_factory()() as db_session:
@@ -895,7 +901,11 @@ async def test_pydantic_runner_should_return_parallel_member_delegation_results_
             session_id=session_id,
             agent_id="agent-coordinator",
             session_name="Pydantic Runner 并行成员委派会话",
-            scope=scope,
+            workspace_id=scope.workspace_id,
+            focus_mode="follow_route",
+            pinned_project_id=None,
+            work_scope_mode="workspace",
+            allowed_project_ids=[],
         )
         run_start = await store.start_run(
             session_id=session_id,
@@ -928,7 +938,7 @@ async def test_pydantic_runner_should_return_parallel_member_delegation_results_
         rows = (
             await db_session.execute(
                 select(AiAgentToolCall)
-                .where(AiAgentToolCall.run_id == run_id, AiAgentToolCall.tool_name == "delegate_task_to_member")
+                .where(AiAgentToolCall.run_id == run_id, AiAgentToolCall.tool_name == "delegate_task_to_self")
                 .order_by(AiAgentToolCall.tool_call_id.asc())
             )
         ).scalars().all()
@@ -941,7 +951,7 @@ async def test_pydantic_runner_should_return_parallel_member_delegation_results_
         "tool-delegate-resource",
     }
     assert [row.status for row in rows] == ["completed", "completed"]
-    assert {row.output_payload_json["member_id"] for row in rows} == {"component-manager", "resource-manager"}
+    assert {row.output_payload_json["member_id"] for row in rows} == {"agent-coordinator", "agent-coordinator"}
     assert [event.event for event in events].count("tool.completed") == 2
     assert events[-1].event == "run.completed"
 
@@ -976,7 +986,7 @@ async def test_pydantic_runner_should_not_pause_parent_when_member_delegation_re
     monkeypatch.setattr(MemberDelegationExecutor, "_delegate_one", _paused_member_delegate_one)
     tools = [
         _wrap_platform_tool(tool_item)
-        for tool_item in build_team_delegation_tools(get_session_factory())
+        for tool_item in build_self_delegation_tools(get_session_factory())
     ]
 
     async with get_session_factory()() as db_session:
@@ -985,7 +995,11 @@ async def test_pydantic_runner_should_not_pause_parent_when_member_delegation_re
             session_id=session_id,
             agent_id="agent-coordinator",
             session_name="Pydantic Runner 成员 HITL 降级会话",
-            scope=scope,
+            workspace_id=scope.workspace_id,
+            focus_mode="follow_route",
+            pinned_project_id=None,
+            work_scope_mode="workspace",
+            allowed_project_ids=[],
         )
         run_start = await store.start_run(
             session_id=session_id,
@@ -1030,11 +1044,11 @@ async def test_pydantic_runner_should_not_pause_parent_when_member_delegation_re
     assert tool_call is not None
     assert tool_call.status == "completed"
     assert tool_call.output_payload_json["status"] == "failed"
-    assert "成员助手需要用户处理" in tool_call.output_payload_json["result"]
+    assert "内容助手子运行需要用户处理" in tool_call.output_payload_json["result"]
     assert member_run is not None
     assert member_run.status == "failed"
     assert member_run.pending_requirement_json is None
-    assert "成员助手需要用户处理" in (member_run.error_message or "")
+    assert "内容助手子运行需要用户处理" in (member_run.error_message or "")
     assert "run.paused" not in [event.event for event in events]
     assert "member.run.error" in [event.event for event in events]
     assert events[-1].event == "run.completed"
@@ -1057,7 +1071,7 @@ async def test_pydantic_runner_should_fail_fast_for_bad_ask_user_payload(
         store = PlatformAgentRuntimeStore(db_session, user_id=1)
         run_start = await store.start_run(
             session_id=session_id,
-            agent_id="component-manager",
+            agent_id="agent-coordinator",
             scope=scope,
             run_id="pydantic-runner-bad-ask-user",
             message="缺信息就问我。",
@@ -1066,7 +1080,7 @@ async def test_pydantic_runner_should_fail_fast_for_bad_ask_user_payload(
         events = await _collect_runner_events(
             PydanticAgentRunner(store).stream_run(
                 run_model=run_start.run_model,
-                agent_id="component-manager",
+                agent_id="agent-coordinator",
                 model=model,
                 model_settings={},
                 runtime_context=_runtime_context(scope),
@@ -1099,7 +1113,7 @@ async def test_pydantic_runner_should_buffer_consecutive_delta_chunks(
         store = PlatformAgentRuntimeStore(db_session, user_id=1)
         run_start = await store.start_run(
             session_id=session_id,
-            agent_id="component-manager",
+            agent_id="agent-coordinator",
             scope=scope,
             run_id="pydantic-runner-buffered-delta",
             message="请输出分段内容。",
@@ -1109,18 +1123,18 @@ async def test_pydantic_runner_should_buffer_consecutive_delta_chunks(
         events = await _collect_runner_events(
             PydanticAgentRunner(store).stream_run(
                 run_model=run_start.run_model,
-                agent_id="component-manager",
+                agent_id="agent-coordinator",
                 model=model,
                 model_settings={},
                 runtime_context=_runtime_context(scope),
                 message="请输出分段内容。",
             )
         )
-        completed_run = await store.get_latest_run_model(session_id=session_id, agent_id="component-manager")
+        completed_run = await store.get_latest_run_model(session_id=session_id, agent_id="agent-coordinator")
         assert completed_run is not None
         snapshot = await store.get_runtime_snapshot(
             session_id=session_id,
-            agent_id="component-manager",
+            agent_id="agent-coordinator",
             runtime_context=_runtime_context(scope),
         )
 
@@ -1154,7 +1168,7 @@ async def test_pydantic_event_projector_should_buffer_member_delta_chunks() -> N
     ]
     assert events[0].data == {
         "member_run_id": "member-run-1",
-        "member_agent_id": "resource-manager",
+        "member_agent_id": "agent-coordinator",
         "member_agent_name": "资源助手",
         "delegate_tool_call_id": "delegate-call-1",
     }
@@ -1183,7 +1197,7 @@ async def test_pydantic_event_projector_should_flush_member_text_before_tool_sta
     ]
     assert events[1].data == {
         "member_run_id": "member-run-1",
-        "member_agent_id": "resource-manager",
+        "member_agent_id": "agent-coordinator",
         "member_agent_name": "资源助手",
         "delegate_tool_call_id": "delegate-call-1",
         "tool_name": "list_workspace_render_assets",
@@ -1247,7 +1261,7 @@ async def test_pydantic_runner_should_flush_buffer_before_requested_cancel(
         store = PlatformAgentRuntimeStore(db_session, user_id=1)
         run_start = await store.start_run(
             session_id=session_id,
-            agent_id="component-manager",
+            agent_id="agent-coordinator",
             scope=scope,
             run_id="pydantic-runner-cancel-flush",
             message="开始长任务",
@@ -1257,7 +1271,7 @@ async def test_pydantic_runner_should_flush_buffer_before_requested_cancel(
             _collect_runner_events(
                 PydanticAgentRunner(store).stream_run(
                     run_model=run_start.run_model,
-                    agent_id="component-manager",
+                    agent_id="agent-coordinator",
                     model=model,
                     model_settings={},
                     runtime_context=_runtime_context(scope),
@@ -1268,10 +1282,10 @@ async def test_pydantic_runner_should_flush_buffer_before_requested_cancel(
         await asyncio.wait_for(raw_delta_buffered.wait(), timeout=3)
         async with get_session_factory()() as cancel_session:
             cancel_store = PlatformAgentRuntimeStore(cancel_session, user_id=1)
-            await cancel_store.request_cancel(session_id=session_id, agent_id="component-manager")
+            await cancel_store.request_cancel(session_id=session_id, agent_id="agent-coordinator")
         release_model.set()
         events = await asyncio.wait_for(collect_task, timeout=3)
-        completed_run = await store.get_latest_run_model(session_id=session_id, agent_id="component-manager")
+        completed_run = await store.get_latest_run_model(session_id=session_id, agent_id="agent-coordinator")
         assert completed_run is not None
         event_rows = (
             await db_session.execute(
@@ -1286,12 +1300,13 @@ async def test_pydantic_runner_should_flush_buffer_before_requested_cancel(
     assert completed_run.content == "已流出的局部内容。"
     assert [row[0] for row in event_rows] == [
         "run.started",
+        "run.focus.snapshot",
         "model.request.started",
         "run.cancelling",
         "message.delta",
         "run.cancelled",
     ]
-    assert event_rows[3][1]["content"] == "已流出的局部内容。"
+    assert event_rows[4][1]["content"] == "已流出的局部内容。"
 
 
 async def test_pydantic_runner_should_cancel_idle_stream_without_waiting_full_timeout(
@@ -1320,7 +1335,7 @@ async def test_pydantic_runner_should_cancel_idle_stream_without_waiting_full_ti
         store = PlatformAgentRuntimeStore(db_session, user_id=1)
         run_start = await store.start_run(
             session_id=session_id,
-            agent_id="component-manager",
+            agent_id="agent-coordinator",
             scope=scope,
             run_id="pydantic-runner-idle-cancel",
             message="开始长任务",
@@ -1330,7 +1345,7 @@ async def test_pydantic_runner_should_cancel_idle_stream_without_waiting_full_ti
             _collect_runner_events(
                 PydanticAgentRunner(store, stream_idle_timeout_seconds=30).stream_run(
                     run_model=run_start.run_model,
-                    agent_id="component-manager",
+                    agent_id="agent-coordinator",
                     model=model,
                     model_settings={},
                     runtime_context=_runtime_context(scope),
@@ -1341,10 +1356,10 @@ async def test_pydantic_runner_should_cancel_idle_stream_without_waiting_full_ti
         await asyncio.wait_for(raw_delta_buffered.wait(), timeout=3)
         async with get_session_factory()() as cancel_session:
             cancel_store = PlatformAgentRuntimeStore(cancel_session, user_id=1)
-            await cancel_store.request_cancel(session_id=session_id, agent_id="component-manager")
+            await cancel_store.request_cancel(session_id=session_id, agent_id="agent-coordinator")
 
         events = await asyncio.wait_for(collect_task, timeout=3)
-        completed_run = await store.get_latest_run_model(session_id=session_id, agent_id="component-manager")
+        completed_run = await store.get_latest_run_model(session_id=session_id, agent_id="agent-coordinator")
         event_rows = (
             await db_session.execute(
                 select(AiAgentRunEvent.event, AiAgentRunEvent.payload_json)
@@ -1359,12 +1374,13 @@ async def test_pydantic_runner_should_cancel_idle_stream_without_waiting_full_ti
     assert completed_run.content == "已流出的局部内容。"
     assert [row[0] for row in event_rows] == [
         "run.started",
+        "run.focus.snapshot",
         "model.request.started",
         "run.cancelling",
         "message.delta",
         "run.cancelled",
     ]
-    assert event_rows[3][1]["content"] == "已流出的局部内容。"
+    assert event_rows[4][1]["content"] == "已流出的局部内容。"
 
 
 async def test_pydantic_runner_should_fail_idle_model_stream(
@@ -1390,7 +1406,7 @@ async def test_pydantic_runner_should_fail_idle_model_stream(
         store = PlatformAgentRuntimeStore(db_session, user_id=1)
         run_start = await store.start_run(
             session_id=session_id,
-            agent_id="component-manager",
+            agent_id="agent-coordinator",
             scope=scope,
             run_id="pydantic-runner-idle-timeout",
             message="开始长任务",
@@ -1400,7 +1416,7 @@ async def test_pydantic_runner_should_fail_idle_model_stream(
             _collect_runner_events(
                 PydanticAgentRunner(store, stream_idle_timeout_seconds=0.05).stream_run(
                     run_model=run_start.run_model,
-                    agent_id="component-manager",
+                    agent_id="agent-coordinator",
                     model=model,
                     model_settings={},
                     runtime_context=_runtime_context(scope),
@@ -1409,7 +1425,7 @@ async def test_pydantic_runner_should_fail_idle_model_stream(
             ),
             timeout=3,
         )
-        failed_run = await store.get_latest_run_model(session_id=session_id, agent_id="component-manager")
+        failed_run = await store.get_latest_run_model(session_id=session_id, agent_id="agent-coordinator")
 
     assert failed_run is not None
     assert [event.event for event in events] == ["model.request.started", "message.delta", "run.error"]
@@ -1516,7 +1532,7 @@ async def test_interrupted_run_cleanup_should_use_new_session(
         store = PlatformAgentRuntimeStore(db_session, user_id=1)
         run_start = await store.start_run(
             session_id=session_id,
-            agent_id="component-manager",
+            agent_id="agent-coordinator",
             scope=scope,
             run_id="pydantic-runner-interrupted",
             message="开始后断开连接",
@@ -1562,7 +1578,7 @@ async def test_platform_runtime_should_recover_stale_active_run(
         store = PlatformAgentRuntimeStore(db_session, user_id=1)
         run_start = await store.start_run(
             session_id=session_id,
-            agent_id="component-manager",
+            agent_id="agent-coordinator",
             scope=scope,
             run_id="pydantic-runner-stale-active",
             message="开始长任务",
@@ -1574,7 +1590,7 @@ async def test_platform_runtime_should_recover_stale_active_run(
             run_model=run_start.run_model,
             idle_timeout_seconds=0.01,
         )
-        failed_run = await store.get_latest_run_model(session_id=session_id, agent_id="component-manager")
+        failed_run = await store.get_latest_run_model(session_id=session_id, agent_id="agent-coordinator")
 
     assert recovered_event is not None
     assert recovered_event.event == "run.error"
@@ -1623,7 +1639,7 @@ async def test_pydantic_runner_should_emit_context_status_after_each_model_respo
         store = PlatformAgentRuntimeStore(db_session, user_id=1)
         run_start = await store.start_run(
             session_id=session_id,
-            agent_id="component-manager",
+            agent_id="agent-coordinator",
             scope=scope,
             run_id="pydantic-runner-context-usage",
             message="调用工具后继续。",
@@ -1632,7 +1648,7 @@ async def test_pydantic_runner_should_emit_context_status_after_each_model_respo
         events = await _collect_runner_events(
             PydanticAgentRunner(store).stream_run(
                 run_model=run_start.run_model,
-                agent_id="component-manager",
+                agent_id="agent-coordinator",
                 model=model,
                 model_settings={},
                 runtime_context=_runtime_context(scope),
@@ -1641,7 +1657,7 @@ async def test_pydantic_runner_should_emit_context_status_after_each_model_respo
                 context_budget=budget,
             )
         )
-        completed_run = await store.get_latest_run_model(session_id=session_id, agent_id="component-manager")
+        completed_run = await store.get_latest_run_model(session_id=session_id, agent_id="agent-coordinator")
         assert completed_run is not None
 
     context_events = [event for event in events if event.event == "context.status"]
@@ -1700,19 +1716,19 @@ async def test_pydantic_runner_should_compress_completed_run_when_budget_exceede
             session=db_session,
             user_id=1,
             session_id=session_id,
-            agent_id="component-manager",
+            agent_id="agent-coordinator",
         )
         context_processor = build_context_limit_processor(
             session=db_session,
             user_id=1,
             session_id=session_id,
-            agent_id="component-manager",
+            agent_id="agent-coordinator",
             budget=budget,
             rebuilt_history=rebuilt,
         )
         run_start = await store.start_run(
             session_id=session_id,
-            agent_id="component-manager",
+            agent_id="agent-coordinator",
             scope=scope,
             run_id="pydantic-runner-compress-completed",
             message="请整理上下文。",
@@ -1721,7 +1737,7 @@ async def test_pydantic_runner_should_compress_completed_run_when_budget_exceede
         events = await _collect_runner_events(
             PydanticAgentRunner(store).stream_run(
                 run_model=run_start.run_model,
-                agent_id="component-manager",
+                agent_id="agent-coordinator",
                 model=model,
                 model_settings={},
                 runtime_context=_runtime_context(scope),
@@ -1730,7 +1746,7 @@ async def test_pydantic_runner_should_compress_completed_run_when_budget_exceede
                 context_processor=context_processor,
             )
         )
-        completed_run = await store.get_latest_run_model(session_id=session_id, agent_id="component-manager")
+        completed_run = await store.get_latest_run_model(session_id=session_id, agent_id="agent-coordinator")
         session_model = await db_session.get(AiAgentSession, session_id)
 
     compression_events = [event for event in events if event.event.startswith("context.compression.")]
@@ -1788,19 +1804,19 @@ async def test_pydantic_runner_should_fallback_when_model_compression_fails(
             session=db_session,
             user_id=1,
             session_id=session_id,
-            agent_id="component-manager",
+            agent_id="agent-coordinator",
         )
         context_processor = build_context_limit_processor(
             session=db_session,
             user_id=1,
             session_id=session_id,
-            agent_id="component-manager",
+            agent_id="agent-coordinator",
             budget=budget,
             rebuilt_history=rebuilt,
         )
         run_start = await store.start_run(
             session_id=session_id,
-            agent_id="component-manager",
+            agent_id="agent-coordinator",
             scope=scope,
             run_id="pydantic-runner-compress-fallback",
             message="请整理上下文。",
@@ -1809,7 +1825,7 @@ async def test_pydantic_runner_should_fallback_when_model_compression_fails(
         events = await _collect_runner_events(
             PydanticAgentRunner(store).stream_run(
                 run_model=run_start.run_model,
-                agent_id="component-manager",
+                agent_id="agent-coordinator",
                 model=model,
                 model_settings={},
                 runtime_context=_runtime_context(scope),
@@ -1894,19 +1910,19 @@ async def test_pydantic_runner_should_fail_before_next_request_when_compression_
             session=db_session,
             user_id=1,
             session_id=session_id,
-            agent_id="component-manager",
+            agent_id="agent-coordinator",
         )
         context_processor = build_context_limit_processor(
             session=db_session,
             user_id=1,
             session_id=session_id,
-            agent_id="component-manager",
+            agent_id="agent-coordinator",
             budget=budget,
             rebuilt_history=rebuilt,
         )
         run_start = await store.start_run(
             session_id=session_id,
-            agent_id="component-manager",
+            agent_id="agent-coordinator",
             scope=scope,
             run_id="pydantic-runner-compress-failed",
             message="调用工具后继续。",
@@ -1915,7 +1931,7 @@ async def test_pydantic_runner_should_fail_before_next_request_when_compression_
         events = await _collect_runner_events(
             PydanticAgentRunner(store).stream_run(
                 run_model=run_start.run_model,
-                agent_id="component-manager",
+                agent_id="agent-coordinator",
                 model=model,
                 model_settings={},
                 runtime_context=_runtime_context(scope),
@@ -1925,7 +1941,7 @@ async def test_pydantic_runner_should_fail_before_next_request_when_compression_
                 context_processor=context_processor,
             )
         )
-        failed_run = await store.get_latest_run_model(session_id=session_id, agent_id="component-manager")
+        failed_run = await store.get_latest_run_model(session_id=session_id, agent_id="agent-coordinator")
 
     event_names = [event.event for event in events]
     failed_event = next(event for event in events if event.event == "context.compression.failed")
@@ -2041,7 +2057,7 @@ async def _create_workspace_session(
     *,
     workspace_name: str,
     session_name: str,
-    agent_id: str = "component-manager",
+    agent_id: str = "agent-coordinator",
     source: str = "editor-component-library",
 ) -> tuple[int, str, AgentScopeContext]:
     """创建工作空间和指定智能体会话。"""
@@ -2056,7 +2072,7 @@ async def _create_workspace_session(
         json={
             "agent_id": agent_id,
             "session_name": session_name,
-            "scope": scope.model_dump(mode="json"),
+            "workspace_id": scope.workspace_id,
             "llm_config_id": await _create_smoke_llm_config(authenticated_client),
         },
     )
@@ -2172,7 +2188,7 @@ async def _project_member_events(raw_events: list[Any], *, flush: bool) -> list[
         event_prefix="member.",
         base_event_data=lambda: {
             "member_run_id": "member-run-1",
-            "member_agent_id": "resource-manager",
+            "member_agent_id": "agent-coordinator",
             "member_agent_name": "资源助手",
             "delegate_tool_call_id": "delegate-call-1",
         },
@@ -2223,7 +2239,7 @@ class _FakeMemberDelegationExecutor:
 
         self.calls: list[dict[str, Any]] = []
 
-    async def delegate_task_to_member(
+    async def delegate_task_to_self(
         self,
         *,
         member_id: str,
@@ -2245,7 +2261,7 @@ class _FakeMemberDelegationExecutor:
                 "delegate_tool_name": delegate_tool_name,
             }
         )
-        member_name = "资源助手" if member_id == "resource-manager" else "组件助手"
+        member_name = "资源助手" if member_id == "agent-coordinator" else "组件助手"
         member_run_id = (
             "member-run-fake-resource"
             if delegate_tool_call_id == "tool-delegate-resource"
@@ -2447,9 +2463,9 @@ async def _member_delegation_stream_function(
         return
     yield {
         0: DeltaToolCall(
-            name="delegate_task_to_member",
+            name="delegate_task_to_self",
             json_args=(
-                '{"member_id":"resource-manager","task":"整理封面图资源",'
+                '{"task":"整理封面图资源",'
                 '"handoff_context":"页面需要封面视觉资源","expected_output":"返回可引用资源名"}'
             ),
             tool_call_id="tool-delegate-resource",
@@ -2469,17 +2485,17 @@ async def _parallel_member_delegation_stream_function(
         return
     yield {
         0: DeltaToolCall(
-            name="delegate_task_to_member",
+            name="delegate_task_to_self",
             json_args=(
-                '{"member_id":"resource-manager","task":"整理封面图资源",'
+                '{"task":"整理封面图资源",'
                 '"handoff_context":"页面需要封面视觉资源","expected_output":"返回可引用资源名"}'
             ),
             tool_call_id="tool-delegate-resource",
         ),
         1: DeltaToolCall(
-            name="delegate_task_to_member",
+            name="delegate_task_to_self",
             json_args=(
-                '{"member_id":"component-manager","task":"检查 Hero 组件依赖",'
+                '{"task":"检查 Hero 组件依赖",'
                 '"handoff_context":"页面需要复用 Hero 组件","expected_output":"返回组件可用性结论"}'
             ),
             tool_call_id="tool-delegate-component",
@@ -2499,9 +2515,9 @@ async def _member_delegation_hitl_stream_function(
         return
     yield {
         0: DeltaToolCall(
-            name="delegate_task_to_member",
+            name="delegate_task_to_self",
             json_args=(
-                '{"member_id":"resource-manager","task":"执行需要用户确认的资源维护",'
+                '{"task":"执行需要用户确认的资源维护",'
                 '"handoff_context":"测试成员 HITL 降级","expected_output":"返回处理结果"}'
             ),
             tool_call_id="tool-delegate-hitl",

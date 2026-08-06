@@ -21,7 +21,7 @@
             </div>
             <div class="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-text-secondary">
               <span>{{ getToolSourceLabel(activeToolDetail.source) }}</span>
-              <span v-if="activeToolDetail.memberAgentName">成员：{{ activeToolDetail.memberAgentName }}</span>
+              <span v-if="activeToolDetail.memberAgentName">子运行：{{ activeToolDetail.memberAgentName }}</span>
               <span v-if="activeToolDetail.toolCallId" class="break-all">调用 ID：{{ activeToolDetail.toolCallId }}</span>
               <span v-if="activeToolDetail.createdAt">{{ formatDateTime(activeToolDetail.createdAt) }}</span>
             </div>
@@ -75,7 +75,7 @@
 
   <UiDialog
     :open="memberRunDialogVisible"
-    :title="selectedMemberRun ? `${selectedMemberRun.agent_name || selectedMemberRun.agent_id || '成员助手'}运行详情` : '成员助手运行详情'"
+    :title="selectedMemberRun ? `${selectedMemberRun.agent_name || '内容助手'}子运行详情` : '内容助手子运行详情'"
     size="wide"
     body-preset="dense"
     body-class="flex min-h-0 flex-col overflow-hidden"
@@ -97,7 +97,7 @@
             :class="memberRun.run_id === selectedMemberRun.run_id ? 'border-info-border bg-info-muted text-info-strong' : 'border-border bg-surface text-text-muted'"
             @click="selectedMemberRunId = memberRun.run_id"
           >
-            {{ memberRun.agent_name || memberRun.agent_id || '成员助手' }}
+            {{ memberRun.agent_name || '内容助手' }}
           </UiButton>
         </div>
       </div>
@@ -105,7 +105,7 @@
       <section class="shrink-0 rounded-lg border border-border bg-canvas/80 px-3 py-2">
         <div class="flex flex-wrap items-center justify-between gap-2">
           <div class="min-w-0">
-            <p class="truncate text-sm font-semibold text-text">{{ selectedMemberRun.agent_name || selectedMemberRun.agent_id || '成员助手' }}</p>
+            <p class="truncate text-sm font-semibold text-text">{{ selectedMemberRun.agent_name || '内容助手' }}</p>
             <p class="mt-0.5 break-all text-xs text-text-muted">Run ID：{{ selectedMemberRun.run_id }}</p>
           </div>
           <span class="rounded-full border border-border bg-surface px-2 py-0.5 text-xs text-text-secondary">
@@ -119,14 +119,14 @@
           variant="ghost"
           size="sm"
           class="flex w-full items-center justify-between gap-3 px-3 py-2 text-left transition hover:bg-surface-hover"
-          :title="memberMessagesExpanded ? '收起成员消息' : '展开成员消息'"
-          :aria-label="memberMessagesExpanded ? '收起成员消息' : '展开成员消息'"
+          :title="memberMessagesExpanded ? '收起子运行消息' : '展开子运行消息'"
+          :aria-label="memberMessagesExpanded ? '收起子运行消息' : '展开子运行消息'"
           @click="memberMessagesExpanded = !memberMessagesExpanded"
         >
           <span class="flex min-w-0 items-center gap-2">
             <ChevronDown v-if="memberMessagesExpanded" class="h-4 w-4 shrink-0 text-text-muted" />
             <ChevronRight v-else class="h-4 w-4 shrink-0 text-text-muted" />
-            <span class="text-sm font-semibold text-text">成员消息</span>
+            <span class="text-sm font-semibold text-text">子运行消息</span>
           </span>
           <span class="shrink-0 rounded-full border border-border bg-canvas px-2 py-0.5 text-xs text-text-muted">
             {{ memberMessagesExpanded ? '已展开' : '已隐藏' }}
@@ -176,7 +176,7 @@
         <AgentConversationBody
           :timeline-display-items="selectedMemberTimelineItems"
           :draft-patches="[]"
-          empty-conversation-text="暂无成员助手输出。"
+          empty-conversation-text="暂无子运行输出。"
           :loading="false"
           loading-text=""
           :last-run-issue="null"
@@ -334,7 +334,7 @@ function formatMemberMessage(prompt: string | null | undefined, emptyText: strin
 }
 
 function resolveMemberOutputEmptyText(status: AgentActiveRunStatus): string {
-  return status === 'running' || status === 'pending' ? '等待成员助手输出。' : '暂无传出消息。'
+  return status === 'running' || status === 'pending' ? '等待内容助手子运行输出。' : '暂无传出消息。'
 }
 
 function resolveMemberRunStatusLabel(status: AgentActiveRunStatus): string {

@@ -56,10 +56,10 @@ async def test_workspace_component_tools_should_return_public_usage_contract(
     assert "content" not in usage_result
 
 
-async def test_runtime_context_should_include_project_suggested_components(
+async def test_runtime_context_should_not_preload_project_suggested_components(
     authenticated_client: AsyncClient,
 ) -> None:
-    """运行时上下文应注入项目建议组件摘要，供内容助手初始筛选。"""
+    """默认运行时上下文不预载建议组件，避免跨项目会话固定前缀持续膨胀。"""
 
     workspace_id = await _create_workspace(authenticated_client, "AI 建议组件上下文空间")
     project_id = await _create_project(authenticated_client, workspace_id, "AI 建议组件上下文项目")
@@ -76,18 +76,22 @@ async def test_runtime_context_should_include_project_suggested_components(
                 project_id=project_id,
                 source="test",
             ),
+            work_scope_mode="selected_projects",
+            allowed_project_ids=[project_id],
         )
 
-    assert len(runtime_context.suggested_components) == 1
-    suggested_component = runtime_context.suggested_components[0]
-    assert suggested_component["code"] == component["code"]
-    assert suggested_component["import_name"] == component["import_name"]
-    assert "content" not in suggested_component
+    assert runtime_context.suggested_components == ()
+    assert runtime_context.workspace_name == "AI 建议组件上下文空间"
+    assert runtime_context.project_name == "AI 建议组件上下文项目"
+    assert runtime_context.allowed_projects == ((project_id, "AI 建议组件上下文项目"),)
 
     context_text = build_scope_context_text(runtime_context)
-    assert "项目建议组件" in context_text
-    assert f"component_code={component['code']}" in context_text
-    assert "组件摘要不能替代使用契约" in context_text
+    assert "项目建议组件" not in context_text
+    assert component["code"] not in context_text
+    assert "query_entities" in context_text
+    assert "工作空间名称：AI 建议组件上下文空间" in context_text
+    assert "项目名称：AI 建议组件上下文项目" in context_text
+    assert "允许的项目名称与 ID" in context_text
 
 
 async def _create_workspace(authenticated_client: AsyncClient, name: str) -> int:

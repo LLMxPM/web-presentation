@@ -27,6 +27,8 @@
     @project-updated="emit('project-updated', $event)"
     @component-updated="emit('component-updated', $event)"
     @asset-updated="emit('asset-updated', $event)"
+    @theme-updated="emit('theme-updated', $event)"
+    @style-updated="emit('style-updated', $event)"
   />
 </template>
 
@@ -87,5 +89,7 @@ const emit = defineEmits<{
   'project-updated': [event: AgentMutationRefreshEvent]
   'component-updated': [event: AgentMutationRefreshEvent]
   'asset-updated': [event: AgentMutationRefreshEvent]
+  'theme-updated': [event: AgentMutationRefreshEvent]
+  'style-updated': [event: AgentMutationRefreshEvent]
 }>()
 </script>

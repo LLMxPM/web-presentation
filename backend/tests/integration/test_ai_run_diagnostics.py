@@ -49,9 +49,9 @@ async def test_ai_run_diagnostics_should_collect_runtime_state(
     session_response = await authenticated_client.post(
         "/api/ai/sessions",
         json={
-            "agent_id": "component-manager",
+            "agent_id": "agent-coordinator",
             "session_name": "AI 诊断会话",
-            "scope": scope.model_dump(mode="json"),
+            "workspace_id": scope.workspace_id,
             "llm_config_id": llm_config_id,
         },
     )
@@ -62,7 +62,7 @@ async def test_ai_run_diagnostics_should_collect_runtime_state(
         store = PlatformAgentRuntimeStore(db_session, user_id=1)
         run_start = await store.start_run(
             session_id=session_id,
-            agent_id="component-manager",
+            agent_id="agent-coordinator",
             scope=scope,
             run_id="diagnostics-run-1",
             message="需要诊断",
@@ -175,6 +175,7 @@ async def test_ai_run_diagnostics_should_collect_runtime_state(
     assert payload["run"]["status"] == "completed"
     assert [item["event"] for item in payload["events"]] == [
         "run.started",
+        "run.focus.snapshot",
         "reasoning.delta",
         "tool.started",
         "run.paused",

@@ -15,6 +15,7 @@ from pydantic_ai.providers.openai import OpenAIProvider
 from pydantic_ai.providers.openrouter import OpenRouterProvider
 
 from app.ai.llm_http_trace import build_llm_http_trace_client
+from app.ai.model_budget import CONTEXT_WINDOW_TOKEN_DEFAULT, derive_model_run_budget
 from app.ai.provider_catalog import MIMO_MAX_COMPLETION_TOKENS
 from app.ai.secret_cipher import LlmSecretCipher
 from app.core.exceptions import AppException
@@ -90,8 +91,8 @@ class PydanticLlmModelResolver:
         advanced_config = config.advanced_config_json or {}
         if isinstance(advanced_config, dict):
             settings.update(advanced_config)
-        if config.max_output_tokens:
-            settings.setdefault("max_tokens", config.max_output_tokens)
+        context_window_tokens = int(config.context_window_tokens or CONTEXT_WINDOW_TOKEN_DEFAULT)
+        settings["max_tokens"] = derive_model_run_budget(context_window_tokens).max_output_tokens
         self._apply_provider_limits(config, settings)
         self._apply_thinking_settings(config, settings)
         return settings

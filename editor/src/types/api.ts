@@ -107,6 +107,8 @@ export interface ProjectItem {
   theme_config_yaml: string
   style_spec_markdown: string
   build_extra_assets_json?: ProjectBuildExtraAssetsJson
+  first_page_title: string | null
+  first_page_screenshot_url: string | null
   created_at: string
   updated_at: string
   created_by: number | null
@@ -970,7 +972,13 @@ export interface AgentConfigItem extends AgentCatalogItem {
 export interface AgentSessionItem {
   session_id: string
   agent_id: string
+  workspace_id: number
   session_name: string | null
+  focus_mode: 'follow_route' | 'pinned_project' | 'workspace'
+  pinned_project_id: number | null
+  work_scope_mode: 'workspace' | 'selected_projects'
+  allowed_project_ids: number[]
+  focus_version: number
   created_at: string | null
   updated_at: string | null
   metadata: Record<string, unknown> & { llm?: AgentSessionLlmMetadata }
@@ -1130,6 +1138,10 @@ export interface AgentActiveRunItem {
   session_id: string
   agent_id: string
   status: AgentActiveRunStatus
+  focus: AgentScopeContext
+  work_scope_mode: 'workspace' | 'selected_projects'
+  allowed_project_ids: number[]
+  focus_version: number
   pending_requirement: AgentPendingRequirement | null
   content: string | null
   created_at: string | null
@@ -1137,6 +1149,18 @@ export interface AgentActiveRunItem {
   cancel_requested_at?: string | null
   event_index?: number
   llm?: AgentSessionLlmMetadata | null
+}
+
+export interface AgentRunProjectSummary {
+  id: number
+  name: string | null
+}
+
+export interface AgentRunContextSummary {
+  focus: AgentScopeContext
+  work_scope_mode: 'workspace' | 'selected_projects'
+  allowed_projects: AgentRunProjectSummary[]
+  focus_version: number
 }
 
 export interface AgentRunStartResponse {
@@ -1165,13 +1189,14 @@ export interface AgentTimelineItem {
   id: string
   session_id: string
   run_id: string
-  kind: 'message' | 'reasoning' | 'tool' | 'run_status' | 'requirement'
+  kind: 'run_context' | 'message' | 'reasoning' | 'tool' | 'run_status' | 'requirement'
   role: 'user' | 'assistant' | null
   event_index: number | null
   order_index: number
   content: string | null
   status: string | null
   tool: AgentTimelineToolItem | null
+  run_context?: AgentRunContextSummary | null
   attachments?: AgentMessageAttachmentItem[]
   source: 'message' | 'event' | 'synthetic'
   created_at: string | null
@@ -1459,6 +1484,9 @@ export interface WorkspaceThemeItem {
   heading_font_label: string | null
   body_font_label: string | null
   code_font_label: string | null
+  heading_font_preset?: string | null
+  body_font_preset?: string | null
+  code_font_preset?: string | null
   palette: ThemePalette
   logo_asset: ThemeAssetSummary | null
   invert_logo_asset: ThemeAssetSummary | null

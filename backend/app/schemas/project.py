@@ -191,6 +191,8 @@ class ProjectItem(SchemaBase):
     theme_config_yaml: str
     style_spec_markdown: str
     build_extra_assets_json: ProjectBuildExtraAssetsConfig
+    first_page_title: str | None = None
+    first_page_screenshot_url: str | None = None
     created_at: datetime
     updated_at: datetime
     created_by: int | None

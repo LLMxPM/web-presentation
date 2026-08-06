@@ -98,7 +98,7 @@
             :disabled="assets.length === 0"
             @click="toggleCurrentPageSelection()"
           >
-            {{ allCurrentPageSelected ? '取消本页全选' : '本页全选' }}
+            {{ allCurrentPageSelected ? '取消全选' : '全选' }}
           </UiButton>
           <UiButton
             v-if="activeView === 'active'"
@@ -109,7 +109,7 @@
             @click="openSelectedBackfillDialog"
           >
             <Ruler class="h-3.5 w-3.5" />
-            {{ backfillRunning ? '计算中' : '重新计算比例' }}
+            {{ backfillRunning ? '计算中' : '重算比例' }}
           </UiButton>
           <UiButton
             variant="ghost"
@@ -118,7 +118,7 @@
             @click="exportSelectedAssets"
           >
             <Download class="h-3.5 w-3.5" />
-            {{ batchExporting ? '导出中' : '导出选中' }}
+            {{ batchExporting ? '导出中' : '导出' }}
           </UiButton>
           <UiButton
             v-if="activeView === 'active'"
@@ -128,7 +128,7 @@
             @click="archiveSelectedAssets"
           >
             <Archive class="h-3.5 w-3.5" />
-            批量归档
+            归档
           </UiButton>
           <UiButton
             v-if="activeView === 'archived'"
@@ -138,7 +138,7 @@
             @click="restoreSelectedAssets"
           >
             <RotateCcw class="h-3.5 w-3.5" />
-            批量恢复
+            恢复
           </UiButton>
           <UiButton
             v-if="activeView !== 'active'"
@@ -148,10 +148,10 @@
             @click="deleteSelectedAssets"
           >
             <Trash2 class="h-3.5 w-3.5" />
-            批量删除
+            删除
           </UiButton>
           <UiButton variant="ghost" size="xs" class="ml-auto" @click="exitSelectionMode">
-            退出选择
+            退出
           </UiButton>
         </SelectionToolbar>
 
@@ -362,7 +362,7 @@
               :options="backfillModeOptions"
             />
           </div>
-          <p class="rounded-lg bg-surface p-3 text-xs leading-5 text-text-muted">默认不会覆盖人工或资源助手维护的比例。预览模式只计算候选结果，不写入资源。</p>
+          <p class="rounded-lg bg-surface p-3 text-xs leading-5 text-text-muted">默认不会覆盖人工或内容助手维护的比例。预览模式只计算候选结果，不写入资源。</p>
         </section>
 
         <section class="min-h-[320px] rounded-xl border border-border bg-surface p-4">
@@ -1869,7 +1869,7 @@ function formatAssetAspectRatio(asset: AssetResponse): string {
 function formatAspectRatioSource(source: string | null | undefined): string {
   if (source === 'auto') return '自动'
   if (source === 'manual') return '人工'
-  if (source === 'agent') return '资源助手'
+  if (source === 'agent') return '内容助手'
   return '-'
 }
 

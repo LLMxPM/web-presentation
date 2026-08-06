@@ -23,30 +23,9 @@
     <Transition name="agent-panel">
       <section v-if="expanded" data-testid="agent-sidebar-panel" class="agent-sidebar-panel flex h-full flex-col overflow-hidden border border-border bg-canvas">
         <header class="border-b border-border bg-surface p-3">
-          <div class="grid h-8 grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
-            <div class="min-w-0 flex-1 overflow-hidden">
-              <div class="inline-flex max-w-full items-center rounded-ui-xl border border-border bg-surface-muted p-0.5 shadow-inner" role="tablist" aria-label="智能体切换">
-                <UiButton
-                  v-for="agent in agentButtons"
-                  :key="agent.id"
-                  type="button"
-                  role="tab"
-                  variant="ghost"
-                  size="xs"
-                  class="inline-flex h-6 min-w-0 items-center gap-1.5 rounded-ui-lg border text-xs font-semibold transition"
-                  :class="getAgentTabClass(agent.id, agent.icon)"
-                  :aria-selected="agent.id === agentId"
-                  :disabled="!canOpenAgent(agent.id)"
-                  :title="resolveAgentButtonTitle(agent.id, agent.name)"
-                  @click="openAgent(agent.id)"
-                >
-                  <span class="flex h-4 w-4 shrink-0 items-center justify-center rounded-ui-sm ring-1" :class="getAgentIconShellClass(agent.icon, agent.id === agentId)">
-                    <component :is="resolveAgentIconComponent(agent.icon)" class="h-3 w-3" />
-                  </span>
-                  <span class="truncate">{{ agent.name }}</span>
-                </UiButton>
-              </div>
-            </div>
+          <div class="grid h-8 grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2">
+            <div :id="headerScopeId" class="min-w-0 flex-1" />
+            <div :id="headerActionsId" class="flex shrink-0 items-center justify-end" />
             <UiIconButton
               label="收起"
               size="sm"
@@ -55,11 +34,6 @@
             >
               <PanelLeftClose class="h-4 w-4" />
             </UiIconButton>
-          </div>
-
-          <div class="mt-2 grid h-8 grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
-            <div :id="headerScopeId" class="min-w-0 flex-1" />
-            <div :id="headerActionsId" class="flex shrink-0 items-center justify-end" />
           </div>
         </header>
 
@@ -94,6 +68,8 @@
           @project-updated="handleProjectUpdated"
           @component-updated="handleComponentUpdated"
           @asset-updated="handleAssetUpdated"
+          @theme-updated="handleThemeUpdated"
+          @style-updated="handleStyleUpdated"
         />
       </section>
     </Transition>
@@ -108,13 +84,10 @@ import { PanelLeftClose } from '@lucide/vue'
 
 import { listAgents } from '@/api/ai'
 import { getAgentIconShellClass, resolveAgentIconComponent } from '@/components/agent/agent-icon'
-import { UiButton, UiIconButton } from '@/components/ui'
+import { UiIconButton } from '@/components/ui'
 import {
   buildPageDetailPath,
   buildProjectPagesPath,
-  buildWorkspaceAssetsPath,
-  buildWorkspaceComponentsPath,
-  buildWorkspaceHomePath,
 } from '@/utils/workspace-routes'
 import type { AgentMutationRefreshEvent } from '@/components/agent/agent-conversation-panel'
 import type { AgentScopeContext } from '@/types/api'
@@ -148,9 +121,9 @@ const emit = defineEmits<{
 }>()
 
 const AgentAssistantPanel = defineAsyncComponent(() => import('@/components/agent/AgentAssistantPanel.vue'))
-const expanded = ref(false)
+const expanded = ref(true)
 const route = useRoute()
-const activeAgentId = ref(props.agentId)
+const activeAgentId = ref('agent-coordinator')
 const agentId = computed(() => activeAgentId.value)
 const headerScopeId = 'global-agent-scope-summary'
 const headerScopeTarget = `#${headerScopeId}`
@@ -158,9 +131,6 @@ const headerActionsId = 'global-agent-session-actions'
 const headerActionsTarget = `#${headerActionsId}`
 const autoCreateKey = ref<string | number | null>(null)
 const autoCreateSequence = ref(0)
-const contentAgentProjectRequiredReason = '内容助手需要进入具体项目后才能启动。'
-const componentAgentRouteRequiredReason = '组件助手只能在组件库页面发起对话。'
-const resourceAgentRouteRequiredReason = '资源助手只能在资源库页面发起对话。'
 
 const workspaceId = computed(() => props.workspaceId)
 const projectId = computed(() => props.projectId ?? null)
@@ -200,7 +170,7 @@ const activeAgentUnavailableReason = computed(() => (
 const contextTitle = computed(() => agentTarget.value.contextTitle)
 const contextTypeLabel = computed(() => agentTarget.value.contextTypeLabel)
 const emptyText = computed(() => `智能体会在 ${contextTitle.value}${contextTypeLabel.value ? `（${contextTypeLabel.value}）` : ''}内执行任务。`)
-const composerPlaceholder = computed(() => '描述目标；内容助手会处理页面/项目任务，并按需调用组件或资源助手。')
+const composerPlaceholder = computed(() => '描述目标；内容助手可以管理当前工作空间内的项目、页面、组件、资源、主题和样式。')
 
 function normalizeContextName(value: string | null | undefined): string {
   return value?.trim() ?? ''
@@ -215,30 +185,22 @@ interface AgentTarget {
 
 /** 返回列表加载前的智能体按钮元数据，避免短暂回退到错误图标。 */
 function resolveFallbackAgentButton(targetAgentId: string): { id: string; name: string; icon: string } {
-  if (targetAgentId === 'component-manager') {
-    return { id: targetAgentId, name: '组件助手', icon: 'component-blocks' }
-  }
-  if (targetAgentId === 'resource-manager') {
-    return { id: targetAgentId, name: '资源助手', icon: 'resource-images' }
-  }
-  return { id: targetAgentId, name: '内容助手', icon: 'content-spark' }
+  void targetAgentId
+  return { id: 'agent-coordinator', name: '内容助手', icon: 'content-spark' }
 }
 
 /**
  * 后端通常会返回完整智能体列表；本地补齐可避免查询切换瞬间丢失切换入口。
  */
 function resolveFallbackAgentButtons(): Array<{ id: string; name: string; icon: string }> {
-  return [
-    resolveFallbackAgentButton('agent-coordinator'),
-    resolveFallbackAgentButton('component-manager'),
-    resolveFallbackAgentButton('resource-manager'),
-  ]
+  return [resolveFallbackAgentButton('agent-coordinator')]
 }
 
 function mergeAgentButtons<T extends { id: string }>(loadedAgents: T[]): Array<T | { id: string; name: string; icon: string }> {
-  const loadedIds = new Set(loadedAgents.map(agent => agent.id))
+  const unifiedAgents = loadedAgents.filter(agent => agent.id === 'agent-coordinator')
+  const loadedIds = new Set(unifiedAgents.map(agent => agent.id))
   return [
-    ...loadedAgents,
+    ...unifiedAgents,
     ...resolveFallbackAgentButtons().filter(agent => !loadedIds.has(agent.id)),
   ]
 }
@@ -247,6 +209,7 @@ function mergeAgentButtons<T extends { id: string }>(loadedAgents: T[]): Array<T
  * 按“目标助手”解析工作范围和默认落点；只有显式切换助手时才会使用 routePath 自动跳转。
  */
 function resolveAgentTarget(targetAgentId: string): AgentTarget {
+  void targetAgentId
   const wid = workspaceId.value ?? 0
   if (!wid) {
     return {
@@ -254,24 +217,6 @@ function resolveAgentTarget(targetAgentId: string): AgentTarget {
       routePath: null,
       contextTitle: '智能体会话',
       contextTypeLabel: '',
-    }
-  }
-
-  if (targetAgentId === 'component-manager') {
-    return {
-      scope: buildWorkspaceScope(wid, 'editor-component-library'),
-      routePath: buildWorkspaceComponentsPath(wid),
-      contextTitle: workspaceName.value || '组件库',
-      contextTypeLabel: '组件库',
-    }
-  }
-
-  if (targetAgentId === 'resource-manager') {
-    return {
-      scope: buildWorkspaceScope(wid, 'editor-asset-library'),
-      routePath: buildWorkspaceAssetsPath(wid),
-      contextTitle: workspaceName.value || '资源库',
-      contextTypeLabel: '资源库',
     }
   }
 
@@ -317,7 +262,7 @@ function resolveAgentTarget(targetAgentId: string): AgentTarget {
 
   return {
     scope: buildWorkspaceScope(wid, 'editor-agent-sidebar'),
-    routePath: buildWorkspaceHomePath(wid),
+    routePath: null,
     contextTitle: workspaceName.value || '当前工作空间',
     contextTypeLabel: '工作空间',
   }
@@ -412,9 +357,6 @@ function resolveAgentRunUnavailableReason(targetAgentId: string): string | null 
   if (routeBoundReason) {
     return routeBoundReason
   }
-  if (targetAgentId === 'agent-coordinator' && !projectId.value) {
-    return contentAgentProjectRequiredReason
-  }
   const loadedAgent = agentsQuery.data.value?.find(agent => agent.id === targetAgentId)
   if (loadedAgent?.available === false) {
     return loadedAgent.unavailable_reason || '当前路由上下文下不可用。'
@@ -442,42 +384,21 @@ function isAgentRunAvailable(targetAgentId: string): boolean {
 }
 
 function canOpenAgent(targetAgentId: string): boolean {
-  if (targetAgentId === 'agent-coordinator') {
-    return Boolean(workspaceId.value)
-  }
-  return resolveAgentSwitchUnavailableReason(targetAgentId) === null
+  return targetAgentId === 'agent-coordinator' && Boolean(workspaceId.value)
 }
 
 /**
- * 组件与资源助手只允许在各自完整库页面发起新对话，避免跨页面写入库资源。
+ * 统一助手在所有工作空间页面均可发起对话，不再绑定组件库或资源库路由。
  * @param targetAgentId 待判断的智能体 ID
  */
 function resolveRouteBoundAgentUnavailableReason(targetAgentId: string): string | null {
-  if (targetAgentId === 'component-manager' && route.name !== 'components') {
-    return componentAgentRouteRequiredReason
-  }
-  if (targetAgentId === 'resource-manager' && route.name !== 'assets') {
-    return resourceAgentRouteRequiredReason
-  }
+  void targetAgentId
   return null
 }
 
 function resolveAgentButtonTitle(targetAgentId: string, name: string): string {
   const unavailableReason = resolveAgentSwitchUnavailableReason(targetAgentId)
   return unavailableReason ? `${name}：${unavailableReason}` : name
-}
-
-/**
- * 返回展开态 tab 的状态样式，让当前智能体在背景和边框上明显区别于未选中项。
- */
-function getAgentTabClass(targetAgentId: string, icon: string | null | undefined): string {
-  if (!canOpenAgent(targetAgentId)) {
-    return 'cursor-not-allowed border-transparent text-text-faint'
-  }
-  if (targetAgentId !== agentId.value) {
-    return 'border-transparent text-text-muted hover:border-border hover:bg-surface hover:text-text'
-  }
-  return resolveAgentActiveClass(icon, 'tab')
 }
 
 /**
@@ -546,18 +467,16 @@ watch(
 watch(
   () => workspaceId.value,
   () => {
-    const routeAgentId = props.agentId || 'agent-coordinator'
-    activeAgentId.value = routeAgentId
+    activeAgentId.value = 'agent-coordinator'
     autoCreateKey.value = null
   },
 )
 
 watch(
   () => [props.agentId, route.name] as const,
-  ([nextAgentId]) => {
-    const routeAgentId = nextAgentId || 'agent-coordinator'
+  () => {
     if (!canOpenAgent(activeAgentId.value)) {
-      activeAgentId.value = routeAgentId
+      activeAgentId.value = 'agent-coordinator'
       autoCreateKey.value = null
     }
   },
@@ -600,6 +519,18 @@ function handleAssetUpdated(event: AgentMutationRefreshEvent): void {
   }))
 }
 
+function handleThemeUpdated(event: AgentMutationRefreshEvent): void {
+  window.dispatchEvent(new CustomEvent('agent:theme-updated', {
+    detail: buildMutationEventDetail(event),
+  }))
+}
+
+function handleStyleUpdated(event: AgentMutationRefreshEvent): void {
+  window.dispatchEvent(new CustomEvent('agent:style-updated', {
+    detail: buildMutationEventDetail(event),
+  }))
+}
+
 /**
  * 补齐全局事件上下文，避免局部面板缺字段时下游无法判断刷新范围。
  */
@@ -611,6 +542,8 @@ function buildMutationEventDetail(event: AgentMutationRefreshEvent): AgentMutati
     pageId: event.pageId ?? pageId.value,
     componentId: event.componentId ?? scope.value.component_id ?? null,
     assetId: event.assetId ?? null,
+    themeId: event.themeId ?? null,
+    styleId: event.styleId ?? null,
   }
 }
 </script>

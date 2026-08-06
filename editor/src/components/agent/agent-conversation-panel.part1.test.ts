@@ -40,7 +40,7 @@ const messageWarningMock = vi.fn()
 const createConfirmMock = vi.fn()
 const clipboardWriteTextMock = vi.fn()
 const DEFAULT_AGENT_ID = 'agent-coordinator'
-const DEFAULT_PLACEHOLDER = '描述目标；内容助手会处理页面/项目任务，并按需调用组件或资源助手。'
+const DEFAULT_PLACEHOLDER = '描述目标；内容助手可以管理当前工作空间内的项目、页面、组件、资源、主题和样式。'
 
 const { AgentStreamInterruptedErrorMock, AgentRequestErrorMock } = vi.hoisted(() => {
   class AgentStreamInterruptedError extends Error {
@@ -582,7 +582,7 @@ describe('AgentConversationPanel', () => {
     await waitFor(() => {
       expect(getAgentSessionRuntimeMock).toHaveBeenCalledWith(
         'session-1',
-        expect.objectContaining({ page_id: 31 }),
+        expect.objectContaining({ scope_type: 'workspace', workspace_id: 11 }),
         DEFAULT_AGENT_ID,
       )
     })
@@ -1006,10 +1006,13 @@ describe('AgentConversationPanel', () => {
       },
     ],
     [
-      'delete_component',
+      'archive_entity',
       {
         success: true,
-        component_id: 99,
+        resource_type: 'component',
+        operation: 'archive',
+        mutation: { kind: 'component' },
+        targets: [{ id: 99, name: '销售卡片' }],
       },
     ],
   ] as const)('组件写入工具 %s 完成后应发出组件刷新事件', async (toolName, result) => {
@@ -1195,7 +1198,7 @@ describe('AgentConversationPanel', () => {
     await waitFor(() => {
       expect(cancelAgentSessionActiveRunMock).toHaveBeenCalledWith(
         'session-1',
-        expect.objectContaining({ page_id: 31 }),
+        expect.objectContaining({ scope_type: 'workspace', workspace_id: 11 }),
         expect.objectContaining({ agent_id: DEFAULT_AGENT_ID }),
       )
     })
@@ -1306,7 +1309,7 @@ describe('AgentConversationPanel', () => {
     await waitFor(() => {
       expect(cancelAgentSessionActiveRunMock).toHaveBeenCalledWith(
         'session-1',
-        expect.objectContaining({ page_id: 31 }),
+        expect.objectContaining({ scope_type: 'workspace', workspace_id: 11 }),
         expect.objectContaining({ agent_id: DEFAULT_AGENT_ID }),
       )
     })
@@ -1417,7 +1420,7 @@ describe('AgentConversationPanel', () => {
     await waitFor(() => {
       expect(cancelAgentSessionActiveRunMock).toHaveBeenCalledWith(
         'session-1',
-        expect.objectContaining({ page_id: 31 }),
+        expect.objectContaining({ scope_type: 'workspace', workspace_id: 11 }),
         expect.objectContaining({ agent_id: DEFAULT_AGENT_ID, force: true }),
       )
     })

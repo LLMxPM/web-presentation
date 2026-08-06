@@ -177,8 +177,8 @@ describe('AdminLayout', () => {
   })
 
   it.each([
-    ['components', 'workspace-dock-components', 'component-manager', 'editor-component-library'],
-    ['assets', 'workspace-dock-assets', 'resource-manager', 'editor-asset-library'],
+    ['components', 'workspace-dock-components', 'agent-coordinator', 'editor-component-library'],
+    ['assets', 'workspace-dock-assets', 'agent-coordinator', 'editor-asset-library'],
     ['themes', 'workspace-dock-themes', 'agent-coordinator', 'editor-agent-sidebar'],
     ['workspaceStyles', 'workspace-dock-styles', 'agent-coordinator', 'editor-agent-sidebar'],
   ])('进入 %s 页面时应高亮对应 Dock 入口并保持正确智能体上下文', (routeName, testId, agentId, source) => {

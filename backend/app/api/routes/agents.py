@@ -32,6 +32,7 @@ from app.schemas.agent import (
     AgentRunRequest,
     CreateAgentSessionRequest,
     RenameAgentSessionRequest,
+    UpdateAgentSessionPreferencesRequest,
 )
 from app.schemas.common import MessageResponse
 from app.schemas.agent_config import (
@@ -48,11 +49,10 @@ from app.services.page_service import PageService
 from app.services.project_service import ProjectService
 from app.services.workspace_component_service import WorkspaceComponentService
 from app.repositories.workspace_repository import WorkspaceRepository
-from app.ai.agent import AGENT_COORDINATOR_AGENT_ID, COMPONENT_MANAGER_AGENT_ID, RESOURCE_MANAGER_AGENT_ID, AgentRuntimeContext
+from app.ai.agent import AGENT_COORDINATOR_AGENT_ID, AgentRuntimeContext
 from app.ai.registry import RegisteredAgentDescriptor
 
 router = APIRouter(prefix="/ai")
-CONTENT_AGENT_PROJECT_REQUIRED_REASON = "内容助手需要进入具体项目后才能启动。"
 
 
 @router.get("/agents", response_model=list[AgentDescriptor])
@@ -115,25 +115,25 @@ async def list_agents(
                 bound_provider_label=binding.provider_label if binding else None,
                 supports_image_input=binding.supports_image_input if binding else False,
                 image_analysis_available=bool(
-                    descriptor.id in {"agent-coordinator", "resource-manager"}
+                    descriptor.id == AGENT_COORDINATOR_AGENT_ID
                     and image_analysis_binding
                     and image_analysis_binding.binding_ready
                 ),
                 image_analysis_unavailable_reason=(
                     None
-                    if descriptor.id in {"agent-coordinator", "resource-manager"}
+                    if descriptor.id == AGENT_COORDINATOR_AGENT_ID
                     and image_analysis_binding
                     and image_analysis_binding.binding_ready
                     else "请前往 AI 设置配置图片理解模型。"
                 ),
                 image_generation_available=bool(
-                    descriptor.id in {"agent-coordinator", "resource-manager"}
+                    descriptor.id == AGENT_COORDINATOR_AGENT_ID
                     and image_generation_binding
                     and image_generation_binding.binding_ready
                 ),
                 image_generation_unavailable_reason=(
                     None
-                    if descriptor.id in {"agent-coordinator", "resource-manager"}
+                    if descriptor.id == AGENT_COORDINATOR_AGENT_ID
                     and image_generation_binding
                     and image_generation_binding.binding_ready
                     else "请前往 AI 设置配置图片生成模型。"
@@ -207,32 +207,22 @@ async def list_agent_sessions(
     request: Request,
     current: Annotated[AuthContext, Depends(get_current_user)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
-    project_id: int | None = None,
-    page_id: int | None = None,
-    component_id: int | None = None,
-    scope_type: Literal["workspace", "project", "page", "component"] | None = None,
-    scope_mode: Literal["exact", "workspace"] = "exact",
-    source: str = "editor-page-detail",
     agent_id: str = "agent-coordinator",
 ) -> list[AgentSessionItem]:
-    """列出当前页面范围或工作空间范围下的 Agent 会话。"""
+    """列出工作空间内未归档的 Agent 会话。"""
 
     scope = await _resolve_scope_context(
         session=session,
         user_id=current.user.id,
         workspace_id=workspace_id,
-        project_id=project_id,
-        page_id=page_id,
-        component_id=component_id,
-        scope_type=scope_type,
-        source=source,
+        scope_type="workspace",
+        source="editor-workspace",
     )
     descriptor = _get_agent_registry(request).get_descriptor(agent_id)
     _ensure_agent_available(descriptor, scope)
     return await AgentSessionFacade(app=request.app, current=current, session=session).list_sessions(
         agent_id=agent_id,
-        scope=scope,
-        scope_mode=scope_mode,
+        workspace_id=workspace_id,
     )
 
 
@@ -243,24 +233,25 @@ async def create_agent_session(
     current: Annotated[AuthContext, Depends(get_current_user)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> AgentSessionItem:
-    """创建一个绑定当前页面的 Agent 会话。"""
+    """创建一个固定绑定工作空间的 Agent 会话。"""
 
     scope = await _resolve_scope_context(
         session=session,
         user_id=current.user.id,
-        workspace_id=payload.scope.workspace_id,
-        project_id=payload.scope.project_id,
-        page_id=payload.scope.page_id,
-        component_id=payload.scope.component_id,
-        scope_type=payload.scope.scope_type,
-        source=payload.scope.source,
+        workspace_id=payload.workspace_id,
+        scope_type="workspace",
+        source="editor-workspace",
     )
     descriptor = _get_agent_registry(request).get_descriptor(payload.agent_id)
     _ensure_agent_launch_available(descriptor, scope)
     session_name = payload.session_name or descriptor.default_session_name
     return await AgentSessionFacade(app=request.app, current=current, session=session).create_session(
         agent_id=payload.agent_id,
-        scope=scope,
+        workspace_id=payload.workspace_id,
+        focus_mode=payload.focus_mode,
+        pinned_project_id=payload.pinned_project_id,
+        work_scope_mode=payload.work_scope_mode,
+        allowed_project_ids=payload.allowed_project_ids,
         session_name=session_name,
         llm_config_id=payload.llm_config_id,
     )
@@ -274,11 +265,6 @@ async def rename_agent_session(
     request: Request,
     current: Annotated[AuthContext, Depends(get_current_user)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
-    project_id: int | None = None,
-    page_id: int | None = None,
-    component_id: int | None = None,
-    scope_type: Literal["workspace", "project", "page", "component"] | None = None,
-    source: str = "editor-page-detail",
     agent_id: str = "agent-coordinator",
 ) -> AgentSessionItem:
     """重命名或自动命名当前页面范围内的 Agent 会话。"""
@@ -287,11 +273,8 @@ async def rename_agent_session(
         session=session,
         user_id=current.user.id,
         workspace_id=workspace_id,
-        project_id=project_id,
-        page_id=page_id,
-        component_id=component_id,
-        scope_type=scope_type,
-        source=source,
+        scope_type="workspace",
+        source="editor-workspace",
     )
     descriptor = _get_agent_registry(request).get_descriptor(agent_id)
     _ensure_agent_available(descriptor, scope)
@@ -306,6 +289,29 @@ async def rename_agent_session(
     )
 
 
+@router.patch("/sessions/{session_id}/preferences", response_model=AgentSessionItem)
+async def update_agent_session_preferences(
+    session_id: str,
+    payload: UpdateAgentSessionPreferencesRequest,
+    workspace_id: int,
+    request: Request,
+    current: Annotated[AuthContext, Depends(get_current_user)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+    agent_id: str = "agent-coordinator",
+) -> AgentSessionItem:
+    """更新仅对后续 Run 生效的焦点模式和项目工作集。"""
+
+    return await AgentSessionFacade(app=request.app, current=current, session=session).update_session_preferences(
+        session_id=session_id,
+        agent_id=agent_id,
+        workspace_id=workspace_id,
+        focus_mode=payload.focus_mode,
+        pinned_project_id=payload.pinned_project_id,
+        work_scope_mode=payload.work_scope_mode,
+        allowed_project_ids=payload.allowed_project_ids,
+    )
+
+
 @router.get("/sessions/{session_id}/messages", response_model=list[AgentMessageItem])
 async def get_agent_session_messages(
     session_id: str,
@@ -313,11 +319,6 @@ async def get_agent_session_messages(
     request: Request,
     current: Annotated[AuthContext, Depends(get_current_user)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
-    project_id: int | None = None,
-    page_id: int | None = None,
-    component_id: int | None = None,
-    scope_type: Literal["workspace", "project", "page", "component"] | None = None,
-    source: str = "editor-page-detail",
     agent_id: str = "agent-coordinator",
 ) -> list[AgentMessageItem]:
     """读取当前页面范围下的 Agent 会话消息。"""
@@ -326,11 +327,8 @@ async def get_agent_session_messages(
         session=session,
         user_id=current.user.id,
         workspace_id=workspace_id,
-        project_id=project_id,
-        page_id=page_id,
-        component_id=component_id,
-        scope_type=scope_type,
-        source=source,
+        scope_type="workspace",
+        source="editor-workspace",
     )
     descriptor = _get_agent_registry(request).get_descriptor(agent_id)
     _ensure_agent_available(descriptor, scope)
@@ -348,11 +346,6 @@ async def get_agent_session_runtime(
     request: Request,
     current: Annotated[AuthContext, Depends(get_current_user)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
-    project_id: int | None = None,
-    page_id: int | None = None,
-    component_id: int | None = None,
-    scope_type: Literal["workspace", "project", "page", "component"] | None = None,
-    source: str = "editor-page-detail",
     agent_id: str = "agent-coordinator",
 ) -> AgentSessionRuntimeSnapshot:
     """返回当前会话的完整运行时快照，供 Editor 刷新后恢复状态。"""
@@ -361,11 +354,8 @@ async def get_agent_session_runtime(
         session=session,
         user_id=current.user.id,
         workspace_id=workspace_id,
-        project_id=project_id,
-        page_id=page_id,
-        component_id=component_id,
-        scope_type=scope_type,
-        source=source,
+        scope_type="workspace",
+        source="editor-workspace",
     )
     descriptor = _get_agent_registry(request).get_descriptor(agent_id)
     _ensure_agent_available(descriptor, scope)
@@ -386,11 +376,6 @@ async def upload_agent_image_attachment(
     current: Annotated[AuthContext, Depends(get_current_user)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
     file: Annotated[UploadFile, File(...)],
-    project_id: int | None = None,
-    page_id: int | None = None,
-    component_id: int | None = None,
-    scope_type: Literal["workspace", "project", "page", "component"] | None = None,
-    source: str = "editor-page-detail",
     agent_id: str = "agent-coordinator",
 ) -> AgentImageAttachmentItem:
     """上传一张会话图片附件，供后续 Agent run 作为视觉输入。"""
@@ -399,11 +384,8 @@ async def upload_agent_image_attachment(
         session=session,
         user_id=current.user.id,
         workspace_id=workspace_id,
-        project_id=project_id,
-        page_id=page_id,
-        component_id=component_id,
-        scope_type=scope_type,
-        source=source,
+        scope_type="workspace",
+        source="editor-workspace",
     )
     descriptor = _get_agent_registry(request).get_descriptor(agent_id)
     _ensure_agent_available(descriptor, scope)
@@ -443,11 +425,6 @@ async def get_agent_image_attachment_content(
     request: Request,
     current: Annotated[AuthContext, Depends(get_current_user)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
-    project_id: int | None = None,
-    page_id: int | None = None,
-    component_id: int | None = None,
-    scope_type: Literal["workspace", "project", "page", "component"] | None = None,
-    source: str = "editor-page-detail",
     agent_id: str = "agent-coordinator",
 ) -> Response:
     """返回会话图片附件原始内容，用于登录态下的缩略图预览。"""
@@ -456,11 +433,8 @@ async def get_agent_image_attachment_content(
         session=session,
         user_id=current.user.id,
         workspace_id=workspace_id,
-        project_id=project_id,
-        page_id=page_id,
-        component_id=component_id,
-        scope_type=scope_type,
-        source=source,
+        scope_type="workspace",
+        source="editor-workspace",
     )
     descriptor = _get_agent_registry(request).get_descriptor(agent_id)
     _ensure_agent_available(descriptor, scope)
@@ -488,11 +462,6 @@ async def delete_agent_image_attachment(
     request: Request,
     current: Annotated[AuthContext, Depends(get_current_user)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
-    project_id: int | None = None,
-    page_id: int | None = None,
-    component_id: int | None = None,
-    scope_type: Literal["workspace", "project", "page", "component"] | None = None,
-    source: str = "editor-page-detail",
     agent_id: str = "agent-coordinator",
 ) -> MessageResponse:
     """软删除会话图片附件。"""
@@ -501,11 +470,8 @@ async def delete_agent_image_attachment(
         session=session,
         user_id=current.user.id,
         workspace_id=workspace_id,
-        project_id=project_id,
-        page_id=page_id,
-        component_id=component_id,
-        scope_type=scope_type,
-        source=source,
+        scope_type="workspace",
+        source="editor-workspace",
     )
     descriptor = _get_agent_registry(request).get_descriptor(agent_id)
     _ensure_agent_available(descriptor, scope)
@@ -532,11 +498,6 @@ async def promote_agent_image_attachment(
     request: Request,
     current: Annotated[AuthContext, Depends(get_current_user)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
-    project_id: int | None = None,
-    page_id: int | None = None,
-    component_id: int | None = None,
-    scope_type: Literal["workspace", "project", "page", "component"] | None = None,
-    source: str = "editor-page-detail",
     agent_id: str = "agent-coordinator",
 ) -> AgentImageAttachmentItem:
     """把会话图片附件保存为工作空间 image 资源。"""
@@ -545,11 +506,8 @@ async def promote_agent_image_attachment(
         session=session,
         user_id=current.user.id,
         workspace_id=workspace_id,
-        project_id=project_id,
-        page_id=page_id,
-        component_id=component_id,
-        scope_type=scope_type,
-        source=source,
+        scope_type="workspace",
+        source="editor-workspace",
     )
     descriptor = _get_agent_registry(request).get_descriptor(agent_id)
     _ensure_agent_available(descriptor, scope)
@@ -578,16 +536,11 @@ async def start_agent_run(
     request: Request,
     current: Annotated[AuthContext, Depends(get_current_user)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
-    project_id: int | None = None,
-    page_id: int | None = None,
-    component_id: int | None = None,
-    scope_type: Literal["workspace", "project", "page", "component"] | None = None,
-    source: str = "editor-page-detail",
     agent_id: str = "agent-coordinator",
 ) -> AgentRunStartResponse:
     """旧的两步式启动接口已废弃；新链路必须直接消费平台 SSE。"""
 
-    _ = session_id, payload, workspace_id, request, current, session, project_id, page_id, component_id, scope_type, source, agent_id
+    _ = session_id, payload, workspace_id, request, current, session, agent_id
     raise AppException(status_code=410, code="AI_RUN_START_DEPRECATED", detail="请使用流式运行接口启动智能体。")
 
 
@@ -599,29 +552,31 @@ async def stream_agent_run(
     request: Request,
     current: Annotated[AuthContext, Depends(get_current_user)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
-    project_id: int | None = None,
-    page_id: int | None = None,
-    component_id: int | None = None,
-    scope_type: Literal["workspace", "project", "page", "component"] | None = None,
-    source: str = "editor-page-detail",
     agent_id: str = "agent-coordinator",
 ) -> StreamingResponse:
-    """向 Agent 发送消息，并转发平台标准 SSE。"""
+    """按会话偏好解析本轮焦点，随后启动不可变焦点的流式 Run。"""
 
-    scope = await _resolve_scope_context(
-        session=session,
-        user_id=current.user.id,
+    facade = AgentSessionFacade(app=request.app, current=current, session=session)
+    session_item = await facade.ensure_session_access(
+        session_id=session_id,
+        agent_id=agent_id,
         workspace_id=workspace_id,
-        project_id=project_id,
-        page_id=page_id,
-        component_id=component_id,
-        scope_type=scope_type,
-        source=source,
+    )
+    scope = await facade.resolve_run_focus(
+        session_id=session_id,
+        agent_id=agent_id,
+        workspace_id=workspace_id,
+        requested=payload.focus,
     )
     descriptor = _get_agent_registry(request).get_descriptor(agent_id)
     _ensure_agent_launch_available(descriptor, scope)
-    runtime_context = await _build_runtime_context(session=session, scope=scope)
-    facade = AgentSessionFacade(app=request.app, current=current, session=session)
+    runtime_context = await build_agent_runtime_context(
+        session=session,
+        scope=scope,
+        work_scope_mode=session_item.work_scope_mode,
+        allowed_project_ids=session_item.allowed_project_ids,
+        focus_version=session_item.focus_version,
+    )
     reserved_lock = await facade.reserve_run_slot(session_id=session_id, agent_id=agent_id, scope=scope)
     run_id = payload.run_id or str(uuid4())
     return StreamingResponse(
@@ -649,11 +604,6 @@ async def stream_agent_run_events(
     request: Request,
     current: Annotated[AuthContext, Depends(get_current_user)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
-    project_id: int | None = None,
-    page_id: int | None = None,
-    component_id: int | None = None,
-    scope_type: Literal["workspace", "project", "page", "component"] | None = None,
-    source: str = "editor-page-detail",
     agent_id: str = "agent-coordinator",
     event_index: int = -1,
 ) -> StreamingResponse:
@@ -663,11 +613,8 @@ async def stream_agent_run_events(
         session=session,
         user_id=current.user.id,
         workspace_id=workspace_id,
-        project_id=project_id,
-        page_id=page_id,
-        component_id=component_id,
-        scope_type=scope_type,
-        source=source,
+        scope_type="workspace",
+        source="editor-workspace",
     )
     descriptor = _get_agent_registry(request).get_descriptor(agent_id)
     _ensure_agent_available(descriptor, scope)
@@ -736,11 +683,6 @@ async def get_agent_session_active_run(
     request: Request,
     current: Annotated[AuthContext, Depends(get_current_user)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
-    project_id: int | None = None,
-    page_id: int | None = None,
-    component_id: int | None = None,
-    scope_type: Literal["workspace", "project", "page", "component"] | None = None,
-    source: str = "editor-page-detail",
     agent_id: str = "agent-coordinator",
 ) -> AgentActiveRunItem | None:
     """读取当前会话最近一次平台 run 状态。"""
@@ -749,11 +691,8 @@ async def get_agent_session_active_run(
         session=session,
         user_id=current.user.id,
         workspace_id=workspace_id,
-        project_id=project_id,
-        page_id=page_id,
-        component_id=component_id,
-        scope_type=scope_type,
-        source=source,
+        scope_type="workspace",
+        source="editor-workspace",
     )
     descriptor = _get_agent_registry(request).get_descriptor(agent_id)
     _ensure_agent_available(descriptor, scope)
@@ -774,11 +713,6 @@ async def get_agent_session_context_status(
     request: Request,
     current: Annotated[AuthContext, Depends(get_current_user)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
-    project_id: int | None = None,
-    page_id: int | None = None,
-    component_id: int | None = None,
-    scope_type: Literal["workspace", "project", "page", "component"] | None = None,
-    source: str = "editor-page-detail",
     agent_id: str = "agent-coordinator",
 ) -> AgentContextStatusItem:
     """读取当前会话上下文预算、压缩状态与摘要详情。"""
@@ -787,11 +721,8 @@ async def get_agent_session_context_status(
         session=session,
         user_id=current.user.id,
         workspace_id=workspace_id,
-        project_id=project_id,
-        page_id=page_id,
-        component_id=component_id,
-        scope_type=scope_type,
-        source=source,
+        scope_type="workspace",
+        source="editor-workspace",
     )
     descriptor = _get_agent_registry(request).get_descriptor(agent_id)
     _ensure_agent_available(descriptor, scope)
@@ -813,11 +744,6 @@ async def cancel_agent_session_active_run(
     request: Request,
     current: Annotated[AuthContext, Depends(get_current_user)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
-    project_id: int | None = None,
-    page_id: int | None = None,
-    component_id: int | None = None,
-    scope_type: Literal["workspace", "project", "page", "component"] | None = None,
-    source: str = "editor-page-detail",
     agent_id: str = "agent-coordinator",
 ) -> AgentCancelRunResponse:
     """取消当前会话中未结束的平台 run。"""
@@ -826,11 +752,8 @@ async def cancel_agent_session_active_run(
         session=session,
         user_id=current.user.id,
         workspace_id=workspace_id,
-        project_id=project_id,
-        page_id=page_id,
-        component_id=component_id,
-        scope_type=scope_type,
-        source=source,
+        scope_type="workspace",
+        source="editor-workspace",
     )
     descriptor = _get_agent_registry(request).get_descriptor(agent_id)
     _ensure_agent_available(descriptor, scope)
@@ -851,11 +774,6 @@ async def continue_agent_session_active_run(
     request: Request,
     current: Annotated[AuthContext, Depends(get_current_user)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
-    project_id: int | None = None,
-    page_id: int | None = None,
-    component_id: int | None = None,
-    scope_type: Literal["workspace", "project", "page", "component"] | None = None,
-    source: str = "editor-page-detail",
     agent_id: str = "agent-coordinator",
 ) -> StreamingResponse:
     """继续当前会话中暂停等待确认的平台 run。"""
@@ -864,16 +782,13 @@ async def continue_agent_session_active_run(
         session=session,
         user_id=current.user.id,
         workspace_id=workspace_id,
-        project_id=project_id,
-        page_id=page_id,
-        component_id=component_id,
-        scope_type=scope_type,
-        source=source,
+        scope_type="workspace",
+        source="editor-workspace",
     )
     descriptor = _get_agent_registry(request).get_descriptor(agent_id)
     _ensure_agent_launch_available(descriptor, scope)
-    runtime_context = await _build_runtime_context(session=session, scope=scope)
     facade = AgentSessionFacade(app=request.app, current=current, session=session)
+    runtime_context = await _build_runtime_context(session=session, scope=scope)
     active_run = await facade.get_active_run(
         session_id=session_id,
         agent_id=agent_id,
@@ -882,6 +797,14 @@ async def continue_agent_session_active_run(
     )
     if active_run is None or active_run.status != "paused":
         raise AppException(status_code=409, code="AI_SESSION_RUN_NOT_PAUSED", detail="当前会话没有待继续的智能体运行。")
+    scope = active_run.focus
+    runtime_context = await build_agent_runtime_context(
+        session=session,
+        scope=scope,
+        work_scope_mode=active_run.work_scope_mode,
+        allowed_project_ids=active_run.allowed_project_ids,
+        focus_version=active_run.focus_version,
+    )
     event_stream = await facade.prepare_continue_active_raw_sse(
         session_id=session_id,
         agent_id=agent_id,
@@ -1066,28 +989,21 @@ def _resolve_unavailable_reason(descriptor: RegisteredAgentDescriptor, scope: Ag
     base_reason = _resolve_base_unavailable_reason(descriptor, scope)
     if base_reason:
         return base_reason
-    if descriptor.id == AGENT_COORDINATOR_AGENT_ID and scope.project_id is None:
-        return CONTENT_AGENT_PROJECT_REQUIRED_REASON
     return None
 
 
 def _resolve_base_unavailable_reason(descriptor: RegisteredAgentDescriptor, scope: AgentScopeContext) -> str | None:
     """返回读取类接口也必须满足的基础不可用原因。"""
 
-    if descriptor.id in {AGENT_COORDINATOR_AGENT_ID, COMPONENT_MANAGER_AGENT_ID, RESOURCE_MANAGER_AGENT_ID} and scope.workspace_id is None:
+    if descriptor.id == AGENT_COORDINATOR_AGENT_ID and scope.workspace_id is None:
         return "当前路由缺少 workspace_id，智能体不可用。"
     return None
 
 
 def _resolve_required_llm_slots(registry: AgentRegistry, descriptor: RegisteredAgentDescriptor) -> tuple[str, ...]:
-    """返回入口运行前必须绑定的模型槽位。"""
+    """返回统一助手入口运行前必须绑定的模型槽位。"""
 
     slots = [descriptor.llm_slot] if descriptor.llm_slot else []
-    if descriptor.id == AGENT_COORDINATOR_AGENT_ID:
-        for member_agent_id in (COMPONENT_MANAGER_AGENT_ID, RESOURCE_MANAGER_AGENT_ID):
-            member_descriptor = registry.get_descriptor(member_agent_id)
-            if member_descriptor.llm_slot:
-                slots.append(member_descriptor.llm_slot)
     return tuple(dict.fromkeys(slots))
 
 

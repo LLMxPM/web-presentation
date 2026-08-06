@@ -116,9 +116,9 @@
               <section>
                 <h4 class="text-xs font-black tracking-[0.12em] text-text-muted">字体绑定</h4>
                 <div class="mt-2.5 space-y-2.5">
-                  <ThemeDetailMetaCard label="标题字体" :value="theme.heading_font_family?.name || theme.heading_font_label || undefined" :description="fontDescription(theme.heading_font_family, theme.heading_font_label)" />
-                  <ThemeDetailMetaCard label="正文字体" :value="theme.body_font_family?.name || theme.body_font_label || undefined" :description="fontDescription(theme.body_font_family, theme.body_font_label)" />
-                  <ThemeDetailMetaCard label="代码字体" :value="theme.code_font_family?.name || theme.code_font_label || undefined" :description="fontDescription(theme.code_font_family, theme.code_font_label)" />
+                  <ThemeDetailMetaCard label="标题字体" :value="theme.heading_font_family?.name || formatThemeFontLabel(theme.heading_font_label) || undefined" :description="fontDescription(theme.heading_font_family, theme.heading_font_label)" />
+                  <ThemeDetailMetaCard label="正文字体" :value="theme.body_font_family?.name || formatThemeFontLabel(theme.body_font_label) || undefined" :description="fontDescription(theme.body_font_family, theme.body_font_label)" />
+                  <ThemeDetailMetaCard label="代码字体" :value="theme.code_font_family?.name || formatThemeFontLabel(theme.code_font_label) || undefined" :description="fontDescription(theme.code_font_family, theme.code_font_label)" />
                 </div>
               </section>
 
@@ -146,6 +146,7 @@ import { listWorkspaceFontFamilies } from '@/api/assets'
 import { getWorkspaceTheme } from '@/api/themes'
 import { UiButton, UiDialog } from '@/components/ui'
 import type { WorkspaceFontFamilyItem, WorkspaceThemeFontFamilySummary, WorkspaceThemeItem } from '@/types/api'
+import { formatThemeFontLabel, isThemeFontPreset } from '@/utils/theme-font-presets'
 import ThemePreviewCard from './ThemePreviewCard.vue'
 
 const props = defineProps<{
@@ -255,6 +256,8 @@ function handleVisibleChange(value: boolean): void {
  */
 function fontDescription(family: WorkspaceThemeFontFamilySummary | null | undefined, label: string | null): string {
   if (family) return '已绑定字体族，同族多字重自动匹配'
+  if (label === 'platform-sans' || label === 'platform-mono') return '平台内置字体，预览与截图排版一致'
+  if (isThemeFontPreset(label)) return '跟随运行设备字体，跨端排版可能存在差异'
   if (label) return '未绑定字体族，按名称回退'
   return '未绑定已注册字体'
 }

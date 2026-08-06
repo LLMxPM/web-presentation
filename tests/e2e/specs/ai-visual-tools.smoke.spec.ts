@@ -1,5 +1,5 @@
 /**
- * 文件功能：以确定性 API 桩覆盖图片上传、资源助手视觉状态、工具 SSE 回显与刷新快照恢复。
+ * 文件功能：以确定性 API 桩覆盖统一内容助手的图片上传、视觉状态、工具 SSE 回显与刷新快照恢复。
  */
 import { expect, test, type Page, type Route } from '@playwright/test'
 
@@ -17,12 +17,21 @@ test('local 图片应经视觉工具卡回显并在刷新后保持一致', async
   await openAgentSidebar(page)
 
   const fileInput = page.locator('[data-testid="agent-sidebar-panel"] input[type="file"]')
-  await fileInput.setInputFiles({
-    name: 'reference.png',
-    mimeType: 'image/png',
-    buffer: Buffer.from(pixelDataUrl.split(',')[1], 'base64'),
-  })
-  await expect(page.getByAltText('reference.png')).toBeVisible()
+  await fileInput.setInputFiles([
+    {
+      name: 'reference-a.png',
+      mimeType: 'image/png',
+      buffer: Buffer.from(pixelDataUrl.split(',')[1], 'base64'),
+    },
+    {
+      name: 'reference-b.png',
+      mimeType: 'image/png',
+      buffer: Buffer.from(pixelDataUrl.split(',')[1], 'base64'),
+    },
+  ])
+  await expect(page.getByAltText('reference-a.png')).toBeVisible()
+  await expect(page.getByAltText('reference-b.png')).toBeVisible()
+  await expect(page.getByText('已添加 2/10 张')).toBeVisible()
 
   const composer = page.locator('[data-testid="agent-sidebar-panel"] textarea')
   await composer.fill('先分析这张参考图，再生成一张蓝色主视觉。')
@@ -36,21 +45,21 @@ test('local 图片应经视觉工具卡回显并在刷新后保持一致', async
   await expectVisualToolResult(panel)
 })
 
-test('资源助手应展示图片理解与图片生成能力并允许上传参考图', async ({ page }) => {
+test('内容助手在资源库页面仍应展示视觉能力并允许上传参考图', async ({ page }) => {
   await loginAsAdmin(page)
-  await installVisualAiApiStub(page, 'resource-manager')
+  await installVisualAiApiStub(page)
   await waitForWorkspaceHome(page)
   await page.locator('[data-testid="workspace-dock-assets"]').click()
   await expect(page.locator('[data-testid="assets-view"]')).toBeVisible()
   await openAgentSidebar(page)
 
   const panel = page.locator('[data-testid="agent-sidebar-panel"]')
-  const resourceAgentTab = panel.getByRole('tab', { name: '资源助手', exact: true })
-  await resourceAgentTab.click()
-  await expect(resourceAgentTab).toHaveAttribute('aria-selected', 'true')
+  const contentAgentTab = panel.getByRole('tab', { name: '内容助手', exact: true })
+  await expect(contentAgentTab).toHaveAttribute('aria-selected', 'true')
+  await expect(panel.getByRole('tab')).toHaveCount(1)
 
   const visualStatus = panel.getByRole('region', { name: '视觉工具状态' })
-  await expect(visualStatus.getByTitle('analyze_visuals 已配置，可分析附件或工作空间图片资源')).toBeVisible()
+  await expect(visualStatus.getByTitle('analyze_visuals 已配置，可按需分析附件、工作空间图片资源或页面截图')).toBeVisible()
   await expect(visualStatus.getByTitle('generate_image 已配置，可生成或编辑图片并保存到资源库')).toBeVisible()
   await expect(panel.getByLabel('上传图片')).toBeEnabled()
 })
@@ -79,12 +88,17 @@ async function expectVisualToolResult(panel: ReturnType<Page['locator']>) {
 }
 
 /** 安装只覆盖 AI 接口的确定性桩，页面、项目与认证仍使用真实 smoke 环境。 */
-async function installVisualAiApiStub(page: Page, agentId = 'agent-coordinator') {
+async function installVisualAiApiStub(page: Page) {
+  const agentId = 'agent-coordinator'
   let session: Record<string, unknown> | null = null
   let completed = false
   let scope = { scope_type: 'page', workspace_id: 1, project_id: 1, page_id: 1, source: 'editor-page-detail' }
-  const inputAttachment = attachment(11, 'user_upload', 'reference.png', null)
+  const inputAttachments = [
+    attachment(11, 'user_upload', 'reference-a.png', null),
+    attachment(13, 'user_upload', 'reference-b.png', null),
+  ]
   const outputAttachment = attachment(12, 'tool_output', 'hero.png', 91)
+  let uploadIndex = 0
 
   await page.route('**/api/ai/**', async (route) => {
     const request = route.request()
@@ -100,15 +114,15 @@ async function installVisualAiApiStub(page: Page, agentId = 'agent-coordinator')
       }
       return json(route, [{
         id: agentId,
-        name: agentId === 'resource-manager' ? '资源助手' : '内容助手',
-        icon: agentId === 'resource-manager' ? 'resource-images' : 'content-spark',
+        name: '内容助手',
+        icon: 'content-spark',
         summary: '视觉工具 smoke',
         default_session_name: '视觉工具会话',
         capabilities: ['图片理解', '图片生成'],
         scope_type: 'workspace',
-        entry_kind: agentId === 'resource-manager' ? 'agent' : 'team',
+        entry_kind: 'agent',
         available: true,
-        llm_slot: agentId === 'resource-manager' ? 'resource_manager' : 'agent_coordinator',
+        llm_slot: 'agent_coordinator',
         llm_binding_ready: true,
         bound_llm_name: 'Smoke Chat',
         bound_provider_label: 'OpenAI',
@@ -120,36 +134,42 @@ async function installVisualAiApiStub(page: Page, agentId = 'agent-coordinator')
       }])
     }
     if (path.endsWith('/api/ai/llm-configs')) return json(route, [chatModel()])
-    if (path.endsWith('/api/ai/llm-slots')) return json(route, [chatSlot(agentId)])
+    if (path.endsWith('/api/ai/llm-slots')) return json(route, [chatSlot()])
     if (path.endsWith('/api/ai/sessions') && request.method() === 'GET') return json(route, session ? [session] : [])
     if (path.endsWith('/api/ai/sessions') && request.method() === 'POST') {
-      const body = request.postDataJSON() as { scope?: typeof scope }
-      scope = body.scope || scope
+      const body = request.postDataJSON() as { workspace_id: number }
+      expect(body.workspace_id).toBe(scope.workspace_id)
       session = sessionItem(scope, agentId)
       return json(route, session, 201)
     }
-    if (path.includes('/attachments/images') && request.method() === 'POST') return json(route, inputAttachment, 201)
+    if (path.includes('/attachments/images') && request.method() === 'POST') {
+      const uploaded = inputAttachments[Math.min(uploadIndex, inputAttachments.length - 1)]
+      uploadIndex += 1
+      return json(route, uploaded, 201)
+    }
     if (path.endsWith('/runs/stream') && request.method() === 'POST') {
+      expect((request.postDataJSON() as { image_attachment_ids: number[] }).image_attachment_ids).toEqual([11, 13])
       completed = true
       return route.fulfill({
         status: 200,
         contentType: 'text/event-stream',
-        body: visualSse(inputAttachment, outputAttachment),
+        body: visualSse(inputAttachments, outputAttachment),
       })
     }
-    if (path.endsWith('/runtime')) return json(route, runtimeSnapshot(session || sessionItem(scope, agentId), completed, inputAttachment, outputAttachment))
+    if (path.endsWith('/runtime')) return json(route, runtimeSnapshot(session || sessionItem(scope, agentId), completed, inputAttachments, outputAttachment))
     return route.fallback()
   })
 }
 
 /** 返回前端 SSE 解析器可直接消费的完整视觉任务事件。 */
-function visualSse(inputAttachment: Record<string, unknown>, outputAttachment: Record<string, unknown>) {
+function visualSse(inputAttachments: Record<string, unknown>[], outputAttachment: Record<string, unknown>) {
+  const visualInputs = inputAttachments.map(item => ({ source_type: 'attachment', attachment_id: item.id }))
   const events = [
     runEvent('run.started', 0, {}),
     runEvent('tool.started', 1, {
       tool_call_id: 'analyze-1', tool_name: 'analyze_visuals',
-      tool_args: { inputs: [{ source_type: 'attachment', attachment_id: 11 }], instruction: '分析图片', analysis_type: 'general' },
-      input_attachments: [inputAttachment],
+      tool_args: { inputs: visualInputs, instruction: '分析图片', analysis_type: 'general' },
+      input_attachments: inputAttachments,
     }),
     runEvent('tool.completed', 2, {
       tool_call_id: 'analyze-1', tool_name: 'analyze_visuals',
@@ -176,21 +196,21 @@ function visualSse(inputAttachment: Record<string, unknown>, outputAttachment: R
 function runtimeSnapshot(
   session: Record<string, unknown>,
   completed: boolean,
-  inputAttachment: Record<string, unknown>,
+  inputAttachments: Record<string, unknown>[],
   outputAttachment: Record<string, unknown>,
 ) {
   return {
     session,
     timeline_items: completed ? [
       toolTimeline('analyze-1', 'analyze_visuals', {
-        inputs: [{ source_type: 'attachment', attachment_id: 11 }], instruction: '分析图片', analysis_type: 'general',
-      }, { summary: '参考图为蓝色横向主视觉。' }, [inputAttachment], []),
+        inputs: inputAttachments.map(item => ({ source_type: 'attachment', attachment_id: item.id })), instruction: '分析图片', analysis_type: 'general',
+      }, { summary: '参考图为蓝色横向主视觉。' }, inputAttachments, []),
       toolTimeline('generate-1', 'generate_image', {
         operation: 'generate', prompt: '蓝色主视觉',
       }, { job_id: 'ai-image-job-smoke', assets: [{ id: 91, name: 'hero_visual', original_name: 'hero.png' }] }, [], [outputAttachment]),
     ] : [],
     member_runs: [], context_status: null, active_run: null, last_run: null,
-    pending_requirement: null, event_index: completed ? 7 : -1, pending_attachments: completed ? [] : [inputAttachment],
+    pending_requirement: null, event_index: completed ? 7 : -1, pending_attachments: completed ? [] : inputAttachments,
   }
 }
 
@@ -228,7 +248,9 @@ function attachment(id: number, sourceKind: string, originalName: string, assetI
 function sessionItem(metadata: Record<string, unknown>, agentId = 'agent-coordinator') {
   return {
     session_id: 'session-visual-smoke', agent_id: agentId, session_name: '视觉工具会话',
-    created_at: '2026-07-20T10:00:00+08:00', updated_at: '2026-07-20T10:00:00+08:00', metadata,
+    workspace_id: Number(metadata.workspace_id), focus_mode: 'follow_route', pinned_project_id: null,
+    work_scope_mode: 'workspace', allowed_project_ids: [], focus_version: 0,
+    created_at: '2026-07-20T10:00:00+08:00', updated_at: '2026-07-20T10:00:00+08:00', metadata: {},
   }
 }
 
@@ -242,10 +264,10 @@ function chatModel() {
   }
 }
 
-function chatSlot(agentId = 'agent-coordinator') {
+function chatSlot() {
   return {
-    slot: agentId === 'resource-manager' ? 'resource_manager' : 'agent_coordinator',
-    slot_label: agentId === 'resource-manager' ? '资源助手' : '内容助手',
+    slot: 'agent_coordinator',
+    slot_label: '内容助手',
     llm_config_id: 7, llm_config_name: 'Smoke Chat',
     provider_key: 'openai', provider_label: 'OpenAI', model_id: 'gpt-4.1-mini', model_type: 'chat',
     binding_ready: true, supports_image_input: false, inherited_from_global: true,

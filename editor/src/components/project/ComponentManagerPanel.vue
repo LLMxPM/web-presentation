@@ -157,7 +157,7 @@ function handleGlobalAgentComponentUpdated(event: Event): void {
 }
 
 /**
- * 组件被修改或删除时同步当前选中项，避免预览继续展示旧草稿。
+ * 组件被修改或归档时同步当前选中项，避免预览继续展示旧草稿。
  */
 async function refreshSelectedComponentAfterAgentMutation(detail?: AgentComponentMutationDetail): Promise<void> {
   const currentComponent = selectedComponent.value
@@ -168,7 +168,7 @@ async function refreshSelectedComponentAfterAgentMutation(detail?: AgentComponen
   if (componentId && componentId !== currentComponent.id) {
     return
   }
-  if (detail?.toolName === 'delete_component') {
+  if (isComponentArchive(detail)) {
     clearSelection()
     return
   }
@@ -179,6 +179,28 @@ async function refreshSelectedComponentAfterAgentMutation(detail?: AgentComponen
   selectedComponent.value = updatedComponent
   emit('component-selected', updatedComponent)
   previewRefreshKey.value += 1
+}
+
+/** 判断刷新事件是否来自统一组件归档操作。 */
+function isComponentArchive(detail?: AgentComponentMutationDetail): boolean {
+  const result = normalizeAgentMutationResult(detail?.result)
+  return detail?.toolName === 'archive_entity'
+    && result?.resource_type === 'component'
+    && result?.operation === 'archive'
+}
+
+/** 把工具返回值规整为可检查的统一结果对象。 */
+function normalizeAgentMutationResult(result: unknown): Record<string, unknown> | null {
+  if (typeof result === 'string') {
+    try {
+      const parsed = JSON.parse(result) as unknown
+      return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, unknown> : null
+    }
+    catch {
+      return null
+    }
+  }
+  return result && typeof result === 'object' && !Array.isArray(result) ? result as Record<string, unknown> : null
 }
 
 /**

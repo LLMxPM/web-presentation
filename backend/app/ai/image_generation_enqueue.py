@@ -71,7 +71,7 @@ async def enqueue_image_generation(
         if member_run_id:
             member_run = await session.get(AiAgentMemberRun, member_run_id)
             if member_run is None or member_run.parent_run_id != run_id or member_run.session_id != session_id:
-                raise AppException(status_code=409, code="AI_MEMBER_RUN_NOT_FOUND", detail="图片生成对应的资源助手运行不存在。")
+                raise AppException(status_code=409, code="AI_MEMBER_RUN_NOT_FOUND", detail="图片生成对应的内容助手子运行不存在。")
 
         reference_ids = [int(item) for item in request_payload.get("reference_attachment_ids") or []]
         mask_id = request_payload.get("mask_attachment_id")

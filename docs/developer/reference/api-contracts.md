@@ -17,7 +17,7 @@
 - 字体族端点：`GET /workspaces/{id}/font-families`（分页，每项内嵌全部 face）、`PATCH /workspaces/{id}/font-families/{family_id}`（重命名，同工作空间内唯一）、`DELETE /workspaces/{id}/font-families/{family_id}`（仅限无 face 且未被主题绑定，否则 409）。
 - Face 端点沿用 `/workspaces/{id}/fonts`：创建/更新请求使用 `family_name` 字符串（service 内 get-or-create 字体族），响应保留 `font_family`（由 family.name 派生）并新增 `family_id`。删除 face 后若字体族变空且未被主题绑定，级联删除空族。
 - `font_weight` 允许单值（如 `400`）或可变字体范围（如 `100 900`，min<=max）；`font_style`、`font_display` 为受限枚举，写入前统一校验。
-- 主题创建/更新的三个字体字段语义为 `*_font_family_id`（绑定字体族）；主题 `typography` 输出字体族名，字体 Bundle 按族下发全部启用 face，Runtime 逐 face 生成 @font-face 由浏览器按字重/样式自动匹配。
+- 主题创建/更新的字体来源字段分为 `*_font_family_id`（绑定工作空间字体族）和互斥的 `*_font_preset`（内置预设）。标题、正文支持 `platform-sans` / `system-ui`，代码支持 `platform-mono` / `monospace`；未指定时使用跨端一致的平台预设。主题 `typography` 输出字体族名或预设 token，字体 Bundle 按工作空间字体族下发全部启用 face，Runtime 同时负责把平台 token 映射到固定内置字体。
 
 ## Runtime 与 Backend
 

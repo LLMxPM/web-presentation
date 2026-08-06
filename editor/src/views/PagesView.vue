@@ -54,6 +54,18 @@
                   </template>
                   预览
                 </UiButton>
+                <UiButton
+                  variant="secondary"
+                  size="sm"
+                  :loading="exportValidationProjectId === projectId"
+                  :disabled="!projectDetails || exportPackagePending"
+                  @click="exportTemplateDialogVisible = true"
+                >
+                  <template #icon>
+                    <Download class="h-4 w-4" />
+                  </template>
+                  导出
+                </UiButton>
                 <UiButton variant="ghost" size="sm" :disabled="!projectDetails" @click="openPresentationConfigDialog">
                   <template #icon>
                     <SlidersHorizontal class="h-4 w-4" />
@@ -254,6 +266,13 @@
       @open="handleBuildArtifactOpen" @delete="handleBuildArtifactDelete"
       @save-extra-assets="handleProjectBuildExtraAssetsSave"
       @submit="handleProjectBuildSubmit" />
+
+    <ProjectTemplateExportDialog
+      v-model:open="exportTemplateDialogVisible"
+      :project="projectDetails"
+      @validation-change="exportValidationProjectId = $event"
+      @package-change="exportPackagePending = $event"
+    />
   </div>
 </template>
 
@@ -263,6 +282,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/vue-query'
 import {
   ArrowLeft,
+  Download,
   Image,
   Layers,
   Play,
@@ -317,6 +337,7 @@ import ProjectPresentationConfigDialog from '@/components/project/ProjectPresent
 import ProjectRouteConfigDialog from '@/components/project/ProjectRouteConfigDialog.vue'
 import ProjectSuggestedComponentsDialog from '@/components/project/ProjectSuggestedComponentsDialog.vue'
 import ProjectSuggestedReferenceAssetsDialog from '@/components/project/ProjectSuggestedReferenceAssetsDialog.vue'
+import ProjectTemplateExportDialog from '@/components/project/ProjectTemplateExportDialog.vue'
 import { UiButton, UiDialog, UiFormField, UiIconButton, UiIconSegmented, UiInput } from '@/components/ui'
 import { useAgentSidebarExpanded } from '@/composables/agent-sidebar-state'
 import type {
@@ -475,6 +496,9 @@ const routedRefreshableScreenshotCount = computed(() => routedRefreshableScreens
 const unroutedRefreshableScreenshotCount = computed(() => unroutedRefreshableScreenshotPages.value.length)
 
 const previewLoading = ref(false)
+const exportTemplateDialogVisible = ref(false)
+const exportValidationProjectId = ref<number | null>(null)
+const exportPackagePending = ref(false)
 const batchScreenshotRefreshing = ref(false)
 const batchScreenshotRefreshScope = ref<PageBatchScope | null>(null)
 const projectBuildDialogVisible = ref(false)

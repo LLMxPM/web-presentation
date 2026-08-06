@@ -11,6 +11,10 @@ from sqlalchemy import select
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.ai.page_mutation_arguments import (
+    normalize_page_mutation_arguments,
+    normalize_page_mutation_result,
+)
 from app.ai.run_event_writer import is_sqlite_lock_error
 from app.ai.platform_tools import recoverable_tool_error_result
 from app.ai.tools.page.apply_page_edits import (
@@ -46,6 +50,7 @@ class PageMutationExecutionContext:
     database_id: int
     job_id: str
     operation: str
+    tool_name: str
     run_id: str
     user_id: int
     workspace_id: int
@@ -112,7 +117,7 @@ class AiPageMutationExecutor:
             code=error.code,
             message=error.detail,
             status_code=error.status_code,
-            hint="请重新读取最新页面状态或修正参数后再调用。",
+            hint=_page_mutation_error_hint(error.code),
         )
         return await self._finish_without_page_write(
             database_id=database_id,
@@ -150,24 +155,26 @@ class AiPageMutationExecutor:
             user = await session.get(User, run.user_id)
             if user is None or user.status != RecordStatus.ACTIVE.value:
                 raise AppException(status_code=403, code="AUTH_DISABLED", detail="执行页面变更的用户已被禁用或删除。")
-            arguments = tool_call.input_payload_json
-            if not isinstance(arguments, dict):
-                raise AppException(
-                    status_code=422,
-                    code="AI_PAGE_MUTATION_ARGUMENTS_MISSING",
-                    detail="页面变更任务缺少原始工具参数。",
-                )
+            arguments = normalize_page_mutation_arguments(
+                operation=job.operation,
+                tool_name=tool_call.tool_name,
+                raw_arguments=tool_call.input_payload_json,
+                project_id=job.project_id,
+                page_id=job.page_id,
+                base_version_no=job.base_version_no,
+            )
             return PageMutationExecutionContext(
                 database_id=job.id,
                 job_id=job.job_id,
                 operation=job.operation,
+                tool_name=tool_call.tool_name,
                 run_id=job.run_id,
                 user_id=run.user_id,
                 workspace_id=job.workspace_id,
                 project_id=job.project_id,
                 page_id=job.page_id,
                 base_version_no=job.base_version_no,
-                arguments=dict(arguments),
+                arguments=arguments,
             )
 
     async def _execute_create(
@@ -247,7 +254,12 @@ class AiPageMutationExecutor:
                 session,
                 database_id=context.database_id,
                 worker_id=worker_id,
-                result=response,
+                result=normalize_page_mutation_result(
+                    operation=context.operation,
+                    tool_name=context.tool_name,
+                    result=response,
+                    page_id=None,
+                ),
             ):
                 await session.rollback()
                 raise AppException(
@@ -365,7 +377,12 @@ class AiPageMutationExecutor:
                 session,
                 database_id=context.database_id,
                 worker_id=worker_id,
-                result=response,
+                result=normalize_page_mutation_result(
+                    operation=context.operation,
+                    tool_name=context.tool_name,
+                    result=response,
+                    page_id=context.page_id,
+                ),
             ):
                 await session.rollback()
                 raise AppException(
@@ -501,6 +518,14 @@ def _extract_layout_analysis(result: dict[str, Any]) -> dict[str, Any] | None:
 
     layout_analysis = result.get("layout_analysis")
     return dict(layout_analysis) if isinstance(layout_analysis, dict) else None
+
+
+def _page_mutation_error_hint(code: str) -> str:
+    """为任务参数契约错误提供区别于普通页面校验失败的恢复建议。"""
+
+    if code == "AI_PAGE_MUTATION_ARGUMENTS_INVALID":
+        return "持久化任务参数与工具契约不一致，请重新发起操作；若连续出现，请检查服务端工具迁移链路。"
+    return "请重新读取最新页面状态或修正参数后再调用。"
 
 
 def _optional_string(value: Any) -> str | None:

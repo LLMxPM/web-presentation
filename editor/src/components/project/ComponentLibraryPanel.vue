@@ -197,7 +197,7 @@
                 v-if="!readOnly"
                 type="button"
                 variant="danger"
-                label="删除组件"
+                label="归档组件"
                 @click.stop="handleDelete(component)"
               >
                 <Trash2 class="h-3.5 w-3.5" />
@@ -226,7 +226,7 @@ import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ArrowUpRight, Box, Calendar, Copy, Download, Layers, Plus, RefreshCw, Trash2, Upload } from '@lucide/vue'
 
-import { deleteComponent, listComponents } from '@/api/catalog'
+import { archiveComponent, listComponents } from '@/api/catalog'
 import { getErrorMessage } from '@/api/http'
 import RuntimeKitCapabilityList from '@/components/component-preview/RuntimeKitCapabilityList.vue'
 import SelectionToolbar from '@/components/patterns/SelectionToolbar.vue'
@@ -483,26 +483,26 @@ function openComponentLibraryPage(): void {
 }
 
 /**
- * 删除组件并刷新列表；如果删除的是当前选择，同时清空右侧工作台。
- * @param component 待删除组件
+ * 归档组件并刷新列表；如果归档的是当前选择，同时清空右侧工作台。
+ * @param component 待归档组件
  */
 async function handleDelete(component: WorkspaceComponentItem): Promise<void> {
   if (props.readOnly) {
     return
   }
-  const confirmed = await createConfirm(`确认删除组件 "${component.name}" 吗？此操作为软删除。`, '确认删除')
+  const confirmed = await createConfirm(`确认归档组件 "${component.name}" 吗？归档后将退出普通列表。`, '确认归档')
   if (!confirmed) return
 
   try {
-    await deleteComponent(component.id)
-    Message.success('已删除')
+    await archiveComponent(component.id)
+    Message.success('已归档')
     if (props.selectedComponentId === component.id) {
       emit('workspace-component-selected', null)
     }
     await refresh()
     emit('refresh-requested')
   } catch (error) {
-    Message.error(getErrorMessage(error, '删除失败'))
+    Message.error(getErrorMessage(error, '归档失败'))
   }
 }
 

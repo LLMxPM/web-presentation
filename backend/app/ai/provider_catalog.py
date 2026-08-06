@@ -70,20 +70,13 @@ PROTECTED_ADVANCED_CONFIG_KEYS = {
     "async_client",
     "http_client",
     "host",
+    "max_tokens",
 }
 
 LLM_SLOT_DEFINITIONS: dict[str, LlmSlotDefinition] = {
     AiLlmSlot.AGENT_COORDINATOR.value: LlmSlotDefinition(
         slot=AiLlmSlot.AGENT_COORDINATOR.value,
-        label="总控智能体",
-    ),
-    AiLlmSlot.COMPONENT_MANAGER.value: LlmSlotDefinition(
-        slot=AiLlmSlot.COMPONENT_MANAGER.value,
-        label="组件助手",
-    ),
-    AiLlmSlot.RESOURCE_MANAGER.value: LlmSlotDefinition(
-        slot=AiLlmSlot.RESOURCE_MANAGER.value,
-        label="资源助手",
+        label="内容助手",
     ),
     AiLlmSlot.IMAGE_UNDERSTANDING.value: LlmSlotDefinition(
         slot=AiLlmSlot.IMAGE_UNDERSTANDING.value,

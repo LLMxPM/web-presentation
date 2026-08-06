@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from pydantic_ai.exceptions import UnexpectedModelBehavior
+
 
 STREAM_INTERRUPTED_MESSAGE = (
     "模型连接中断，本次输出没有完整返回。已保留当前对话进度，请重试；"
@@ -15,6 +17,10 @@ RATE_LIMITED_MESSAGE = "模型服务当前繁忙或触发限流，请稍后重�
 PAYMENT_REQUIRED_MESSAGE = "模型服务余额或额度不足，请检查当前供应商账号的计费状态、余额或用量额度。"
 TIMEOUT_MESSAGE = "模型服务响应超时，本次运行已停止。请稍后重试，或把任务拆成更小的步骤。"
 GENERIC_RUN_FAILED_MESSAGE = "智能体运行中断，请稍后重试。若多次出现，请检查当前模型配置和网络连接。"
+TOOL_ARGUMENT_RETRIES_EXHAUSTED_MESSAGE = (
+    "工具参数连续校验失败，系统已尝试兼容常见 JSON 编码。请重试；如果连续出现，请简化任务或调整模型。"
+)
+MODEL_OUTPUT_VALIDATION_FAILED_MESSAGE = "模型输出连续未满足运行要求，请重试或调整当前模型配置。"
 
 
 @dataclass(frozen=True)
@@ -59,6 +65,18 @@ def normalize_agent_run_exception(
 
     raw_message = str(error).strip()
     normalized = raw_message.lower()
+    if isinstance(error, UnexpectedModelBehavior) and "exceeded max retries count" in normalized and "tool " in normalized:
+        return AgentRunFailure(
+            code="AI_TOOL_ARGUMENT_RETRIES_EXHAUSTED",
+            message=TOOL_ARGUMENT_RETRIES_EXHAUSTED_MESSAGE,
+            raw_message=raw_message,
+        )
+    if isinstance(error, UnexpectedModelBehavior) and "maximum retries" in normalized and "output validation" in normalized:
+        return AgentRunFailure(
+            code="AI_MODEL_OUTPUT_VALIDATION_FAILED",
+            message=MODEL_OUTPUT_VALIDATION_FAILED_MESSAGE,
+            raw_message=raw_message,
+        )
     if _contains_any(normalized, ("incomplete chunked read", "peer closed connection", "remote protocol error", "server disconnected")):
         return AgentRunFailure(
             code="AI_MODEL_STREAM_INTERRUPTED",

@@ -78,6 +78,9 @@ def build_agent_tool_token(
     component_id: int | None,
     source: str,
     scopes: tuple[str, ...],
+    work_scope_mode: str = "workspace",
+    allowed_project_ids: tuple[int, ...] | list[int] = (),
+    focus_version: int = 0,
 ) -> str:
     """签发工具调用短期令牌，避免工具执行再依赖 Redis run 状态。"""
 
@@ -94,6 +97,9 @@ def build_agent_tool_token(
         "page_id": page_id,
         "component_id": component_id,
         "source": source,
+        "work_scope_mode": work_scope_mode,
+        "allowed_project_ids": [int(item) for item in allowed_project_ids],
+        "focus_version": int(focus_version),
         "backend_session_id": current.backend_session_id,
         "scopes": list(scopes),
     }

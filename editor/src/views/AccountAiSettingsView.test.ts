@@ -408,6 +408,7 @@ describe('AccountAiSettingsView', () => {
     await fireEvent.click(screen.getByRole('button', { name: '新建模型' }))
     await fireEvent.update(screen.getByPlaceholderText('例如：总控默认模型'), '新的模型')
     await fireEvent.update(screen.getByPlaceholderText('例如：gpt-4.1-mini'), 'gpt-4.1')
+    await fireEvent.update(screen.getByPlaceholderText('例如：128'), '256')
     await fireEvent.click(screen.getByRole('button', { name: '创建模型' }))
 
     await waitFor(() => {
@@ -420,10 +421,7 @@ describe('AccountAiSettingsView', () => {
         thinking_enabled: false,
         thinking_effort: 'medium',
         supports_image_input: false,
-        context_window_tokens: 128000,
-        max_output_tokens: 28000,
-        history_token_ratio: 0.5,
-        compression_target_ratio: 0.1,
+        context_window_tokens: 256000,
         advanced_config_json: {},
       })
     })
@@ -532,7 +530,7 @@ describe('AccountAiSettingsView', () => {
     expect(payload.thinking_enabled).toBe(true)
     expect(payload.thinking_effort).toBe('high')
     expect(payload.context_window_tokens).toBe(1000000)
-    expect(payload.max_output_tokens).toBe(384000)
+    expect(payload.max_output_tokens).toBeUndefined()
   })
 
   it('切换为图片生成模型时应清空 Chat 供应商并选择独立生图供应商', async () => {
@@ -683,7 +681,7 @@ describe('AccountAiSettingsView', () => {
     expect(payload.thinking_enabled).toBe(true)
     expect(payload.supports_image_input).toBe(true)
     expect(payload.context_window_tokens).toBe(1000000)
-    expect(payload.max_output_tokens).toBe(32768)
+    expect(payload.max_output_tokens).toBeUndefined()
     expect(payload.advanced_config_json).toEqual({})
   })
 

@@ -127,7 +127,7 @@ describe('ProjectSuggestedComponentsDialog', () => {
       items: [{
         ...savedComponent,
         available: false,
-        unavailable_reason: '组件已删除，请移除后保存。',
+        unavailable_reason: '组件已归档，请移除后保存。',
       }],
     })
     mocked.listComponents.mockResolvedValue({
@@ -146,7 +146,7 @@ describe('ProjectSuggestedComponentsDialog', () => {
       },
     })
 
-    expect(await screen.findByText('组件已删除，请移除后保存。')).toBeInTheDocument()
+    expect(await screen.findByText('组件已归档，请移除后保存。')).toBeInTheDocument()
     expect(screen.getByText('有 1 个建议组件已不可用，请移除后保存。')).toBeInTheDocument()
 
     await fireEvent.click(screen.getByRole('button', { name: '保存组件' }))

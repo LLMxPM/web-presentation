@@ -1,4 +1,4 @@
-"""文件功能：执行内容助手委派的组件助手与资源助手成员运行。"""
+"""文件功能：执行统一内容助手委派给自身的隔离子运行。"""
 
 from __future__ import annotations
 
@@ -42,15 +42,15 @@ from app.services.auth_service import AuthContext
 
 logger = logging.getLogger(__name__)
 
-_MEMBER_AGENT_IDS = {"component-manager", "resource-manager"}
+_MEMBER_AGENT_IDS = {"agent-coordinator"}
 _MEMBER_HITL_SKIPPED_CODE = "AI_MEMBER_DELEGATION_HITL_SKIPPED"
-_MEMBER_HITL_SKIPPED_MESSAGE = "成员助手需要用户处理，已终止该委派以保证父任务继续运行。"
+_MEMBER_HITL_SKIPPED_MESSAGE = "内容助手子运行需要用户处理，已终止该委派以保证主运行继续。"
 _PARENT_MEMBER_STOP_STATUSES = {"failed", "cancelled", "completed", "cancelling"}
 _PARENT_TERMINAL_STATUSES = {"failed", "cancelled", "completed"}
 
 
 class MemberDelegationPaused(Exception):
-    """成员助手暂停后通知父 run 进入同一个 HITL 等待态。"""
+    """内容助手子运行暂停后通知主 run 进入同一个 HITL 等待态。"""
 
     def __init__(self, requirement: AgentPendingRequirement) -> None:
         """保存需要交给父 run 暂停的 requirement。"""
@@ -61,7 +61,7 @@ class MemberDelegationPaused(Exception):
 
 @dataclass(slots=True, frozen=True)
 class MemberDelegationResult:
-    """描述一次成员委派完成后的稳定返回。"""
+    """描述一次自委派子运行完成后的稳定返回。"""
 
     member_run_id: str
     member_id: str
@@ -82,7 +82,7 @@ class MemberDelegationResult:
 
 
 class MemberDelegationExecutor:
-    """封装内容助手委派成员助手的创建、执行和恢复。"""
+    """封装内容助手自委派子运行的创建、执行和恢复。"""
 
     def __init__(
         self,
@@ -105,7 +105,7 @@ class MemberDelegationExecutor:
         self._parent_run_id = parent_run_id
         self._allowed_member_ids = frozenset(allowed_member_ids)
 
-    async def delegate_task_to_member(
+    async def delegate_task_to_self(
         self,
         *,
         member_id: str,
@@ -143,7 +143,7 @@ class MemberDelegationExecutor:
         requirement_payload: dict[str, Any],
         deferred_tool_results: DeferredToolResults,
     ) -> dict[str, Any]:
-        """恢复历史上已暂停的单成员 run，并返回成员结果。"""
+        """恢复已暂停的单个子 run，并返回子任务结果。"""
 
         tool_execution = requirement_payload.get("tool_execution")
         if not isinstance(tool_execution, dict):
@@ -412,7 +412,7 @@ class _MemberAgentRunner:
             await self._raise_if_parent_cancelled()
             catalog = get_agent_catalog_entry(self._member_run.agent_id)
             if catalog is None:
-                raise AppException(status_code=404, code="AI_AGENT_NOT_FOUND", detail="成员助手不存在。")
+                raise AppException(status_code=404, code="AI_AGENT_NOT_FOUND", detail="内容助手子运行配置不存在。")
             llm_service = AiLlmService(
                 self._session,
                 user_id=self._current.user.id,
@@ -439,16 +439,6 @@ class _MemberAgentRunner:
                 rebuilt_history=rebuilt_history,
             )
             member_delegation_executor = None
-            if self._member_run.agent_id == "component-manager":
-                member_delegation_executor = MemberDelegationExecutor(
-                    session_factory=self._session_factory,
-                    current=self._current,
-                    scope=self._scope,
-                    runtime_context=self._runtime_context,
-                    parent_session_id=self._parent_run.session_id,
-                    parent_run_id=self._parent_run.run_id,
-                    allowed_member_ids=("resource-manager",),
-                )
             visual_unavailable, image_generation_model, image_generation_config_id = (
                 await resolve_visual_tool_runtime(
                     llm_service=llm_service,
@@ -465,7 +455,10 @@ class _MemberAgentRunner:
                 session_id=self._parent_run.session_id,
                 run_id=self._parent_run.run_id,
                 supports_image_input=bool(llm_config.supports_image_input),
-                unavailable_group_keys=visual_unavailable,
+                work_scope_mode=self._runtime_context.work_scope_mode,
+                allowed_project_ids=self._runtime_context.allowed_project_ids,
+                focus_version=self._runtime_context.focus_version,
+                unavailable_group_keys=visual_unavailable | {"self_delegation"},
                 member_delegation_executor=member_delegation_executor,
                 image_generation_model=image_generation_model,
                 image_generation_config_id=image_generation_config_id,
@@ -715,7 +708,7 @@ class _MemberAgentRunner:
         requests: DeferredToolRequests,
         final_messages: list[dict[str, Any]],
     ) -> AgentRunEvent:
-        """成员助手触发 HITL 时暂停成员 run，并把 requirement 抛回父 run。"""
+        """子运行触发 HITL 时暂停自身，并把 requirement 抛回主 run。"""
 
         self._member_run.message_history_json = final_messages
         requirement = _member_requirement_from_deferred(
@@ -730,7 +723,7 @@ class _MemberAgentRunner:
         raise MemberDelegationPaused(requirement)
 
     async def _mark_failed_result(self, *, code: str, message: str) -> MemberDelegationResult:
-        """把成员运行收敛为失败，并返回可交给内容助手整合的成员结果。"""
+        """把子运行收敛为失败，并返回可交给主运行整合的结果。"""
 
         await self._raise_if_parent_cancelled()
         await self._mark_running_member_tools_failed(message=message)
@@ -741,14 +734,14 @@ class _MemberAgentRunner:
         self._member_run.updated_at = _utc_now()
         await self.append_member_event(
             "run.error",
-            data={"code": code, "message": message, "output_prompt": f"成员助手运行失败：{message}"},
+            data={"code": code, "message": message, "output_prompt": f"内容助手子运行失败：{message}"},
         )
         return MemberDelegationResult(
             member_run_id=self._member_run.member_run_id,
             member_id=self._member_run.agent_id,
             member_name=self._member_run.agent_name,
             status="failed",
-            result=f"成员助手运行失败：{message}",
+            result=f"内容助手子运行失败：{message}",
         )
 
     async def _mark_running_member_tools_failed(
@@ -867,7 +860,7 @@ def _member_requirement_from_deferred(
                 "parent_delegate_tool_args": parent_input.get("parent_delegate_tool_args") or {},
                 "deferred_metadata": requests.metadata,
             },
-            note="资源助手正在后台处理图片任务。",
+            note="内容助手子运行正在后台处理图片任务。",
         )
     feedback_schema = _feedback_schema_from_args(args) if tool_name == "ask_user" else []
     kind = "user_feedback" if tool_name == "ask_user" else "confirmation"
@@ -962,7 +955,7 @@ def _latest_member_response_text(messages: list[dict[str, Any]]) -> str | None:
 
 
 def _build_member_history_processors(context_processor: AgentContextLimitProcessor) -> list[Any]:
-    """构造成员助手历史处理器，适配 Pydantic AI 仅传 messages 的调用签名。"""
+    """构造子运行历史处理器，适配 Pydantic AI 仅传 messages 的调用签名。"""
 
     async def context_history_processor(messages: list[Any]) -> list[Any]:
         """在成员模型请求前执行上下文预算检查；成员侧暂不注入额外压缩服务。"""
@@ -1080,23 +1073,24 @@ def _parent_run_should_stop_member(parent_run: AiAgentRun) -> bool:
 
 
 def _workspace_member_scope(scope: AgentScopeContext) -> AgentScopeContext:
-    """把成员助手运行范围收窄为工作空间，避免继承项目或页面 scope。"""
+    """自委派沿用父 Run 的不可变焦点，路由变化不得影响子运行恢复。"""
 
-    return AgentScopeContext(
-        scope_type="workspace",
-        workspace_id=scope.workspace_id,
-        workspace_name=scope.workspace_name,
-        source=scope.source,
-    )
+    return scope.model_copy(deep=True)
 
 
 def _workspace_member_runtime_context(runtime_context: AgentRuntimeContext) -> AgentRuntimeContext:
-    """构建成员助手可见的工作空间级上下文，不注入项目、页面或样式信息。"""
+    """构建子运行上下文；保留父 Run 焦点与工作集，只排除重内容。"""
 
     return AgentRuntimeContext(
-        scope_type="workspace",
+        scope_type=runtime_context.scope_type,
         workspace_id=runtime_context.workspace_id,
         source=runtime_context.source,
+        project_id=runtime_context.project_id,
+        page_id=runtime_context.page_id,
+        component_id=runtime_context.component_id,
+        work_scope_mode=runtime_context.work_scope_mode,
+        allowed_project_ids=runtime_context.allowed_project_ids,
+        focus_version=runtime_context.focus_version,
     )
 
 

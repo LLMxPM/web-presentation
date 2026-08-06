@@ -20,9 +20,20 @@ describe('PageHeader 与 CommandBar', () => {
     })
 
     expect(screen.getByRole('heading', { level: 1, name: '组件库' })).toBeVisible()
-    await fireEvent.click(screen.getByRole('button', { name: '' }))
+    await fireEvent.click(screen.getByRole('button', { name: '查看页面描述' }))
     expect(await screen.findByText('管理工作空间组件')).toBeVisible()
     expect(screen.getByRole('button', { name: '新建组件' })).toBeVisible()
+  })
+
+  it('CommandBar 无默认内容时不渲染空容器，并保留标准内边距', () => {
+    render(CommandBar, {
+      props: { label: '项目页面操作' },
+      slots: { actions: '<button type="button">预览</button>' },
+    })
+
+    const toolbar = screen.getByRole('toolbar', { name: '项目页面操作' })
+    expect(toolbar).toHaveClass('px-2')
+    expect(toolbar.children).toHaveLength(1)
   })
 
   it('应为工具栏提供可访问名称和操作分区', () => {

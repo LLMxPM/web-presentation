@@ -1,10 +1,16 @@
 """文件功能：封装项目实体的数据访问逻辑。"""
 
+from __future__ import annotations
+
+from collections import defaultdict
+
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.models.enums import RecordStatus
+from app.models.enums import ProjectRouteType, RecordStatus
+from app.models.page import Page
+from app.models.project_route import ProjectRoute
 from app.models.workspace import Project, Workspace, WorkspaceMember
 from app.schemas.common import ListQuery
 
@@ -69,6 +75,88 @@ class ProjectRepository:
             .where(Project.id == project_id)
             .where(Project.deleted_at.is_(None))
         )
+
+    async def list_cover_pages(self, project_ids: list[int]) -> dict[int, Page]:
+        """按首个可见路由页面优先、页面编码升序兜底的规则读取项目封面页。"""
+
+        if not project_ids:
+            return {}
+
+        routes = list(await self.session.scalars(
+            select(ProjectRoute)
+            .where(ProjectRoute.project_id.in_(project_ids))
+            .order_by(ProjectRoute.project_id.asc(), ProjectRoute.order.asc(), ProjectRoute.id.asc())
+        ))
+        route_page_ids = [route.page_id for route in routes if route.page_id is not None]
+        route_pages = list(await self.session.scalars(
+            select(Page)
+            .where(Page.id.in_(route_page_ids))
+            .where(Page.status == RecordStatus.ACTIVE.value)
+            .where(Page.deleted_at.is_(None))
+        )) if route_page_ids else []
+        route_page_by_id = {page.id: page for page in route_pages}
+
+        ranked_fallback_ids = (
+            select(
+                Page.id.label("page_id"),
+                func.row_number().over(
+                    partition_by=Page.project_id,
+                    order_by=(Page.code.asc(), Page.id.asc()),
+                ).label("page_rank"),
+            )
+            .where(Page.project_id.in_(project_ids))
+            .where(Page.status == RecordStatus.ACTIVE.value)
+            .where(Page.deleted_at.is_(None))
+            .subquery()
+        )
+        fallback_pages = list(await self.session.scalars(
+            select(Page)
+            .join(ranked_fallback_ids, Page.id == ranked_fallback_ids.c.page_id)
+            .where(ranked_fallback_ids.c.page_rank == 1)
+        ))
+        fallback_by_project = {
+            int(page.project_id): page
+            for page in fallback_pages
+            if page.project_id is not None
+        }
+
+        roots_by_project: dict[int, list[ProjectRoute]] = defaultdict(list)
+        children_by_parent: dict[int, list[ProjectRoute]] = defaultdict(list)
+        for route in routes:
+            if route.parent_id is None:
+                roots_by_project[route.project_id].append(route)
+            else:
+                children_by_parent[route.parent_id].append(route)
+
+        cover_pages: dict[int, Page] = {}
+        for project_id in project_ids:
+            for root in self._sort_routes(roots_by_project.get(project_id, [])):
+                if root.hidden:
+                    continue
+                if root.route_type == ProjectRouteType.PAGE.value:
+                    page = route_page_by_id.get(root.page_id)
+                    if page is not None and page.project_id == project_id:
+                        cover_pages[project_id] = page
+                        break
+                    continue
+                for child in self._sort_routes(children_by_parent.get(root.id, [])):
+                    page = route_page_by_id.get(child.page_id)
+                    if not child.hidden and page is not None and page.project_id == project_id:
+                        cover_pages[project_id] = page
+                        break
+                if project_id in cover_pages:
+                    break
+
+            if project_id not in cover_pages and project_id in fallback_by_project:
+                cover_pages[project_id] = fallback_by_project[project_id]
+
+        return cover_pages
+
+    @staticmethod
+    def _sort_routes(routes: list[ProjectRoute]) -> list[ProjectRoute]:
+        """按路由显式顺序和主键稳定排序同级节点。"""
+
+        return sorted(routes, key=lambda route: (route.order, route.id))
 
     async def get_by_code(self, code: str) -> Project | None:
         """按业务编码查询未删除项目。"""

@@ -1,42 +1,22 @@
-<!-- 文件功能：渲染智能体会话范围与当前路由范围提示。 -->
+<!-- 文件功能：渲染内容助手活跃 Run 的当前任务焦点状态。 -->
 <template>
-  <div class="flex min-w-0 items-center gap-2 text-xs">
-    <div class="flex min-w-0 max-w-[180px] items-center gap-1.5" :title="activeSessionScopeTooltip">
-      <span class="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-border bg-surface text-text-disabled">
-        <MessageCircle class="h-3 w-3" />
-      </span>
-      <span class="inline-flex h-6 min-w-0 items-center truncate rounded-md border px-2 text-[11px] font-semibold leading-none" :class="activeSessionScopeSummary.colorClass">
-        {{ activeSessionScopeSummary.title }}
-      </span>
-    </div>
-    <span class="h-3.5 w-px shrink-0 bg-border" />
-    <div class="flex min-w-0 max-w-[180px] items-center gap-1.5" :title="routeScopeTooltip">
-      <span class="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-border bg-surface text-text-disabled">
-        <MapPin class="h-3 w-3" />
-      </span>
-      <span class="inline-flex h-6 min-w-0 items-center truncate rounded-md border px-2 text-[11px] font-semibold leading-none" :class="routeScopeSummary.colorClass">
-        {{ routeScopeSummary.title }}
-      </span>
-    </div>
-    <span
-      v-if="!currentRouteInActiveSessionScope"
-      class="inline-flex h-6 shrink-0 items-center rounded-md border border-warning-border bg-warning-muted px-2 text-[10px] font-semibold leading-none text-warning-strong"
-    >
-      不在范围
+  <div class="inline-flex h-7 min-w-0 max-w-[176px] items-center gap-1.5 rounded-ui-md border border-info-border bg-info-muted px-1.5 text-xs text-info-strong" :title="tooltip" role="status">
+    <span class="relative inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-ui-sm bg-surface/80">
+      <Crosshair class="h-3 w-3" />
+      <span class="absolute -right-0.5 -top-0.5 h-1.5 w-1.5 rounded-full bg-info ring-1 ring-surface" aria-hidden="true" />
     </span>
+    <span class="shrink-0 text-[10px] font-semibold">{{ typeLabel }}</span>
+    <span class="h-3 w-px shrink-0 bg-info-border" />
+    <span class="min-w-0 truncate text-[11px] font-semibold text-text-emphasis">{{ label }}</span>
   </div>
 </template>
 
 <script setup lang="ts">
-import { MapPin, MessageCircle } from '@lucide/vue'
-
-import type { ScopeSummary } from '@/components/agent/agent-session-scope'
+import { Crosshair } from '@lucide/vue'
 
 defineProps<{
-  activeSessionScopeSummary: ScopeSummary
-  activeSessionScopeTooltip: string
-  routeScopeSummary: ScopeSummary
-  routeScopeTooltip: string
-  currentRouteInActiveSessionScope: boolean
+  typeLabel: string
+  label: string
+  tooltip: string
 }>()
 </script>

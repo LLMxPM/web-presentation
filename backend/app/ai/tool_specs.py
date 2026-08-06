@@ -11,7 +11,6 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.ai.platform_tools import AgentToolContext, agent_tool
 from app.ai.auth_tokens import (
-    COMPONENT_TOOL_DELETE_SCOPES,
     COMPONENT_TOOL_READ_SCOPES,
     COMPONENT_TOOL_WRITE_SCOPES,
     PAGE_TOOL_PREVIEW_SCOPES,
@@ -25,35 +24,12 @@ from app.ai.auth_tokens import (
     RESOURCE_TOOL_WRITE_SCOPES,
     CODE_CHECK_TOOL_SCOPES,
 )
-from app.ai.tools.code_check import build_check_component_code_tool, build_check_page_code_tool
-from app.ai.tools.component import build_component_manager_tools
-from app.ai.tools.page import build_apply_page_edits_tool, build_get_page_content_tool
-from app.ai.tools.project import build_project_tools
-from app.ai.tools.resource import build_resource_manager_tools
-from app.ai.tools.team_delegation import build_resource_delegation_tools, build_team_delegation_tools
+from app.ai.tools.generic import build_generic_business_tools
+from app.ai.tools.generic.business_tools import ThemeCreatePayload, ThemeUpdatePayload
+from app.ai.tools.self_delegation import build_self_delegation_tools
 from app.ai.tools.visual import build_analyze_visuals_tool
-from app.ai.tools.workspace.assets import build_list_workspace_font_assets_tool
-from app.ai.tools.workspace.components import (
-    build_get_workspace_component_usage_tool,
-    build_list_workspace_components_tool,
-)
-from app.ai.tool_spec_data import (
-    _COMPONENT_LIBRARY_TOOL_KEYS,
-    _COMPONENT_LIST_RESPONSE_EXAMPLE,
-    _COORDINATOR_CONTENT_PROJECT_TOOL_KEYS,
-    _PROJECT_ROUTE_TREE_RESPONSE_EXAMPLE,
-    _PROJECT_ROUTE_UPDATE_RESPONSE_EXAMPLE,
-    _RESOURCE_LIBRARY_TOOL_KEYS,
-    _RUNTIME_KIT_LIST_RESPONSE_EXAMPLE,
-    _RUNTIME_KIT_TOOL_KEYS,
-    _TEAM_DELEGATION_TOOL_KEYS,
-    _WORKSPACE_COMPONENT_LIST_RESPONSE_EXAMPLE,
-    _WORKSPACE_COMPONENT_USAGE_RESPONSE_EXAMPLE,
-)
 
 AGENT_COORDINATOR_AGENT_ID = "agent-coordinator"
-COMPONENT_MANAGER_AGENT_ID = "component-manager"
-RESOURCE_MANAGER_AGENT_ID = "resource-manager"
 IMAGE_ANALYSIS_TOOL_GROUP_KEY = "image_analysis"
 IMAGE_GENERATION_TOOL_GROUP_KEY = "image_generation"
 
@@ -113,6 +89,54 @@ class AgentToolGroupSpec:
     requires_image_input: bool = False
 
 
+@dataclass(slots=True, frozen=True)
+class AgentOperationGuideSpec:
+    """描述通用工具中的一个逻辑业务操作，作为模型操作手册的事实源。"""
+
+    resource_type: str
+    operation: str
+    action: str | None
+    description: str
+    parameters: dict[str, Any]
+    constraints: tuple[str, ...] = ()
+    risk_level: Literal["read", "write", "danger"] = "read"
+    requires_confirmation: bool = False
+    required_context_fields: tuple[str, ...] = ("workspace_id",)
+    call_example: dict[str, Any] | None = None
+    response_example: Any | None = None
+    handler_tool_key: str = "query_entities"
+    mutation_kind: str | None = None
+
+    def to_payload(self) -> dict[str, Any]:
+        """转换为 get_operation_guide 的普通工具返回。"""
+
+        response_example = self.response_example or {
+            "success": True,
+            "resource_type": self.resource_type,
+            "operation": self.operation,
+            "action": self.action,
+            "message": "操作完成。",
+            "mutation": None if self.operation == "query" else {"kind": self.mutation_kind, "operation": self.operation},
+            "data": {},
+        }
+        return {
+            "resource_type": self.resource_type,
+            "operation": self.operation,
+            "action": self.action,
+            "description": self.description,
+            "parameters": self.parameters,
+            "constraints": list(self.constraints),
+            "risk_level": self.risk_level,
+            "requires_confirmation": self.requires_confirmation,
+            "required_context_fields": list(self.required_context_fields),
+            "call_example": self.call_example,
+            "response_example": response_example,
+            "handler_tool_key": self.handler_tool_key,
+            "mutation_kind": self.mutation_kind,
+            "note": "这是模型操作手册，不是授权凭证，也不是执行前置条件。",
+        }
+
+
 def list_agent_tool_specs(agent_id: str) -> tuple[AgentToolSpec, ...]:
     """返回指定智能体的工具规格列表。"""
 
@@ -141,6 +165,29 @@ def get_agent_group_spec(agent_id: str, group_key: str) -> AgentToolGroupSpec | 
     """按智能体 ID 和工具组 key 返回工具组规格。"""
 
     return _AGENT_GROUP_SPEC_MAP.get(agent_id, {}).get(group_key)
+
+
+def get_operation_guide_spec(
+    resource_type: str,
+    operation: str,
+    action: str | None = None,
+) -> AgentOperationGuideSpec | None:
+    """按对象、操作与 action 返回内容助手操作手册。"""
+
+    normalized_action = str(action or "").strip() or None
+    normalized_resource_type = str(resource_type or "").strip()
+    normalized_operation = str(operation or "").strip()
+    return _COORDINATOR_OPERATION_GUIDE_MAP.get(
+        (normalized_resource_type, normalized_operation, normalized_action)
+    ) or _COORDINATOR_OPERATION_GUIDE_MAP.get(
+        (normalized_resource_type, normalized_operation, None)
+    )
+
+
+def list_operation_guide_specs() -> tuple[AgentOperationGuideSpec, ...]:
+    """返回内容助手全部逻辑操作手册，供配置页和防漂移测试使用。"""
+
+    return _COORDINATOR_OPERATION_GUIDES
 
 
 def list_runtime_disclosure_groups(agent_id: str, tool_key: str) -> tuple[str, ...]:
@@ -306,59 +353,10 @@ def _build_user_feedback_tools(_session_factory: async_sessionmaker[AsyncSession
 
 
 
-def _build_coordinator_content_read_tools(session_factory: async_sessionmaker[AsyncSession]) -> list[Any]:
-    """构建内容助手页面与项目读取工具集合。"""
+def _build_self_delegation_runtime_tools(session_factory: async_sessionmaker[AsyncSession]) -> list[Any]:
+    """构建统一内容助手的自委派工具。"""
 
-    return [
-        build_get_page_content_tool(session_factory),
-        *_filter_tools(
-            build_project_tools(session_factory),
-            (
-                "get_project_style_config",
-                "list_project_pages",
-                "get_project_route_tree",
-            ),
-        ),
-    ]
-
-
-def _build_coordinator_component_read_tools(session_factory: async_sessionmaker[AsyncSession]) -> list[Any]:
-    """构建内容助手可直接使用的已发布组件用法查询工具。"""
-
-    return [
-        build_list_workspace_components_tool(session_factory),
-        build_get_workspace_component_usage_tool(session_factory),
-    ]
-
-
-def _build_coordinator_resource_read_tools(session_factory: async_sessionmaker[AsyncSession]) -> list[Any]:
-    """构建内容助手可直接使用的资源只读查询工具。"""
-
-    return [
-        *_filter_tools(
-            build_resource_manager_tools(session_factory),
-            ("list_resource_assets", "get_resource_asset_content", "list_resource_tags"),
-        ),
-        build_list_workspace_font_assets_tool(session_factory),
-    ]
-
-
-def _build_coordinator_runtime_kit_tools(session_factory: async_sessionmaker[AsyncSession]) -> list[Any]:
-    """构建内容助手可直接使用的 Runtime Kit 只读查询工具。"""
-
-    return _filter_tools(build_component_manager_tools(session_factory), _RUNTIME_KIT_TOOL_KEYS)
-
-
-def _build_team_delegation_runtime_tools(session_factory: async_sessionmaker[AsyncSession]) -> list[Any]:
-    """构建内容助手调用组件助手和资源助手的 Team 委派工具。"""
-
-    return build_team_delegation_tools(session_factory)
-
-
-def _build_resource_delegation_runtime_tools(session_factory: async_sessionmaker[AsyncSession]) -> list[Any]:
-    """构建组件助手调用资源助手的 Team 委派工具。"""
-
-    return build_resource_delegation_tools(session_factory)
+    return build_self_delegation_tools(session_factory)
 
 
 def _build_image_analysis_tools(session_factory: async_sessionmaker[AsyncSession]) -> list[Any]:
@@ -421,7 +419,7 @@ def _visual_analysis_tool_spec(*, allow_page_screenshot: bool) -> AgentToolSpec:
 
 
 def _image_generation_tool_spec() -> AgentToolSpec:
-    """生成内容助手和资源助手共享的图片生成规格。"""
+    """生成统一内容助手使用的图片生成规格。"""
 
     return _tool(
         "generate_image",
@@ -444,1423 +442,276 @@ def _image_generation_tool_spec() -> AgentToolSpec:
     )
 
 
-_EMPTY_LAYOUT_ANALYSIS_V2 = {
-    "schema_version": 2,
-    "summary": {
-        "attention": "none",
-        "message": "未发现需要关注的视觉检测结果。",
-        "totals": {
-            "text_layouts": 0,
-            "item_groups": 0,
-            "overflows": 0,
-            "spatial_relations": 0,
-        },
-        "returned": {
-            "text_layouts": 0,
-            "item_groups": 0,
-            "overflows": 0,
-            "spatial_relations": 0,
-        },
-        "truncated": False,
+def _operation_guide(
+    resource_type: str,
+    operation: str,
+    description: str,
+    parameters: dict[str, Any],
+    *,
+    action: str | None = None,
+    constraints: tuple[str, ...] = (),
+    risk_level: Literal["read", "write", "danger"] = "read",
+    requires_confirmation: bool = False,
+    call_example: dict[str, Any] | None = None,
+) -> AgentOperationGuideSpec:
+    """用统一默认值声明一项模型操作手册。"""
+
+    handler_tool_key = {
+        "query": "query_entities",
+        "create": "create_entity",
+        "update": "update_entity",
+        "archive": "archive_entity",
+        "action": "execute_dangerous_action" if risk_level == "danger" else "execute_action",
+    }[operation]
+    return AgentOperationGuideSpec(
+        resource_type=resource_type,
+        operation=operation,
+        action=action,
+        description=description,
+        parameters=parameters,
+        constraints=constraints,
+        risk_level=risk_level,
+        requires_confirmation=requires_confirmation,
+        call_example=call_example,
+        handler_tool_key=handler_tool_key,
+        mutation_kind=None if operation == "query" else resource_type,
+    )
+
+
+def _payload_parameters(base: dict[str, Any], payload_schema: dict[str, Any]) -> dict[str, Any]:
+    """为通用工具参数替换精确 payload Schema，避免模型从宽泛 object 猜测字段。"""
+
+    properties = dict(base["properties"])
+    properties["payload"] = payload_schema
+    return {**base, "properties": properties}
+
+
+_QUERY_PARAMETERS = {
+    "type": "object",
+    "properties": {
+        "resource_type": {"type": "string"},
+        "action": {"type": "string"},
+        "target_id": {"type": ["integer", "null"], "minimum": 1},
+        "filters": {"type": "object", "additionalProperties": True},
     },
-    "text_layouts": [],
-    "item_groups": [],
-    "overflows": [],
-    "spatial_relations": [],
+    "required": ["resource_type", "action"],
+    "additionalProperties": False,
+}
+_CREATE_PARAMETERS = {
+    "type": "object",
+    "properties": {
+        "resource_type": {"type": "string"},
+        "payload": {"type": "object", "additionalProperties": True},
+    },
+    "required": ["resource_type", "payload"],
+    "additionalProperties": False,
+}
+_UPDATE_PARAMETERS = {
+    "type": "object",
+    "properties": {
+        "resource_type": {"type": "string"},
+        "target_id": {"type": "integer", "minimum": 1},
+        "action": {"type": "string", "default": "metadata"},
+        "payload": {"type": "object", "additionalProperties": True},
+    },
+    "required": ["resource_type", "target_id", "payload"],
+    "additionalProperties": False,
+}
+_ARCHIVE_PARAMETERS = {
+    "type": "object",
+    "properties": {
+        "resource_type": {"enum": ["page", "component", "asset", "theme", "style"]},
+        "target_ids": {"type": "array", "items": {"type": "integer", "minimum": 1}, "minItems": 1, "maxItems": 100},
+        "archive_reason": {"type": ["string", "null"], "maxLength": 1000},
+        "versions": {"type": "object", "additionalProperties": {"type": "integer", "minimum": 0}},
+    },
+    "required": ["resource_type", "target_ids"],
+    "additionalProperties": False,
+}
+_ACTION_PARAMETERS = {
+    "type": "object",
+    "properties": {
+        "resource_type": {"type": "string"},
+        "action": {"type": "string"},
+        "target_id": {"type": ["integer", "null"], "minimum": 1},
+        "target_ids": {"type": ["array", "null"], "items": {"type": "integer", "minimum": 1}, "maxItems": 100},
+        "payload": {"type": "object", "additionalProperties": True},
+    },
+    "required": ["resource_type", "action"],
+    "additionalProperties": False,
 }
 
-_LAYOUT_TARGET_RESPONSE_EXAMPLE = {
-    "label": "div.rounded-xl.bg-white",
-    "locator": {
-        "kind": "visual_node_id",
-        "value": '[data-page-visual-node-id="card-list"]',
-    },
-    "code_hint": {
-        "tag": "div",
-        "class_tokens": ["rounded-xl", "bg-white"],
-        "text_sample": "PDF 打印",
-        "repeat_index": 2,
-    },
-    "content_kind": "container",
-    "surface": {
-        "painted": True,
-        "kind": "solid",
-        "background_alpha": 1,
-        "has_border": True,
-        "has_shadow": False,
-    },
-    "geometry_reliability": "reliable",
+_THEME_CREATE_PARAMETERS = _payload_parameters(_CREATE_PARAMETERS, ThemeCreatePayload.model_json_schema())
+_THEME_UPDATE_PARAMETERS = _payload_parameters(_UPDATE_PARAMETERS, ThemeUpdatePayload.model_json_schema())
+
+
+_COORDINATOR_OPERATION_GUIDES = (
+    _operation_guide("project", "query", "查询项目列表、详情、项目页面、路由树或样式配置。", _QUERY_PARAMETERS,
+                     constraints=("action 支持 list、detail、pages、route_tree、style_config、suggested_components、suggested_assets。", "子资源查询的 target_id 是项目 ID。"),
+                     call_example={"resource_type": "project", "action": "list", "filters": {"keyword": "季度"}}),
+    _operation_guide("page", "query", "查询页面列表、元数据详情或完整源码。", _QUERY_PARAMETERS,
+                     constraints=("action 支持 list、detail、content。", "list 可按 project_id、keyword、status 分页筛选。"),
+                     call_example={"resource_type": "page", "action": "content", "target_id": 31}),
+    _operation_guide("component", "query", "查询组件列表、详情、版本或依赖。", _QUERY_PARAMETERS,
+                     constraints=("action 支持 list、detail、versions、dependencies。",),
+                     call_example={"resource_type": "component", "action": "detail", "target_id": 12}),
+    _operation_guide("asset", "query", "查询资源列表、内容或标签。", _QUERY_PARAMETERS,
+                     constraints=("action 支持 list、content、tags。", "归档资源需在 filters 中明确 status=archived。"),
+                     call_example={"resource_type": "asset", "action": "list", "filters": {"keyword": "hero"}}),
+    _operation_guide("theme", "query", "查询主题文本字段和色板。", _QUERY_PARAMETERS,
+                     constraints=("action 支持 list、detail。", "返回不包含 Logo 与字体配置。", "list 设置 include_archived=true 可包含归档主题。"),
+                     call_example={"resource_type": "theme", "action": "list", "filters": {}}),
+    _operation_guide("style", "query", "查询工作空间样式。", _QUERY_PARAMETERS,
+                     constraints=("action 支持 list、detail。", "list 设置 include_archived=true 可包含归档样式。"),
+                     call_example={"resource_type": "style", "action": "detail", "target_id": 5}),
+    _operation_guide("runtime_kit", "query", "查询 Runtime Kit 公开能力目录或详情。", _QUERY_PARAMETERS,
+                     constraints=("action 支持 list、detail。", "该对象只读。"),
+                     call_example={"resource_type": "runtime_kit", "action": "list", "filters": {"kind": "component"}}),
+    _operation_guide("font", "query", "查询工作空间已注册字体。", _QUERY_PARAMETERS,
+                     constraints=("action 仅支持 list。", "字体只读。"),
+                     call_example={"resource_type": "font", "action": "list", "filters": {"keyword": "Inter"}}),
+
+    _operation_guide("project", "create", "创建当前工作空间中的项目。", _CREATE_PARAMETERS,
+                     constraints=("payload 支持 name、description、页面尺寸、基础字号、菜单模式、theme_key 和样式规范。", "workspace_id 由运行上下文注入。"), risk_level="write",
+                     call_example={"resource_type": "project", "payload": {"name": "季度汇报", "description": "2026 Q3"}}),
+    _operation_guide("page", "create", "在指定项目创建并校验 Vue 页面。", _CREATE_PARAMETERS,
+                     constraints=("payload 必须包含 project_id、title、page_content。", "通过持久化页面任务队列执行。"), risk_level="write",
+                     call_example={"resource_type": "page", "payload": {"project_id": 8, "title": "封面", "page_content": "<template><main>封面</main></template>"}}),
+    _operation_guide("component", "create", "创建组件草稿。", _CREATE_PARAMETERS,
+                     constraints=("payload 必须包含 name、import_name、content。", "创建后需单独发布。"), risk_level="write",
+                     call_example={"resource_type": "component", "payload": {"name": "指标卡", "import_name": "MetricCard", "content": "<template><div /></template>"}}),
+    _operation_guide("asset", "create", "创建可编辑的工作空间内容资源。", _CREATE_PARAMETERS,
+                     constraints=("payload 必须符合资源类型和内容格式限制。",), risk_level="write",
+                     call_example={"resource_type": "asset", "payload": {"name": "growth_chart", "original_name": "growth.json", "asset_type": "chart", "content": "{}"}}),
+    _operation_guide("theme", "create", "创建只含文本元数据和色板的主题。", _THEME_CREATE_PARAMETERS,
+                     constraints=("payload 只允许 key、name、description、palette。", "禁止 Logo、字体及字体 ID 字段。"), risk_level="write",
+                     call_example={"resource_type": "theme", "payload": {"key": "ocean", "name": "海洋", "description": "蓝色商务主题", "palette": {"text": {"primary": "#0f172a", "secondary": "#475569", "invert": "#ffffff"}, "background": {"default": "#ffffff", "invert": "#0f172a"}, "border": {"default": "#cbd5e1", "subtle": "#e2e8f0"}, "link": {"default": "#2563eb", "hover": "#1d4ed8", "visited": "#7c3aed"}, "accent": ["#2563eb"]}}}),
+    _operation_guide("style", "create", "创建工作空间样式模板。", _CREATE_PARAMETERS,
+                     constraints=("payload 可配置页面尺寸、字号、图标描边、菜单、主题 key 和 Markdown 样式规范。",), risk_level="write",
+                     call_example={"resource_type": "style", "payload": {"key": "report", "name": "报告", "page_width": 1920, "page_height": 1080}}),
+
+    _operation_guide("project", "update", "修改项目元数据和受控展示配置。", _UPDATE_PARAMETERS,
+                     constraints=("禁止修改 workspace_id、status 和 theme_config_yaml。",), risk_level="write",
+                     call_example={"resource_type": "project", "target_id": 8, "payload": {"name": "季度总结"}}),
+    _operation_guide("page", "update", "修改页面元数据。", _UPDATE_PARAMETERS, action="metadata",
+                     constraints=("payload 支持 title、summary、speaker_notes、change_note。",), risk_level="write",
+                     call_example={"resource_type": "page", "target_id": 31, "action": "metadata", "payload": {"title": "概览"}}),
+    _operation_guide("page", "update", "对页面源码应用结构化 edits。", _UPDATE_PARAMETERS, action="content",
+                     constraints=("payload 使用 apply_page_edits 的 edits、base_version_no 和 change_note 参数。", "通过持久化页面任务队列执行。"), risk_level="write"),
+    _operation_guide("component", "update", "修改组件元数据与 preview_schema。", _UPDATE_PARAMETERS, action="metadata",
+                     constraints=("payload 支持 name、import_name、component_type、summary、preview_schema、change_note。",), risk_level="write"),
+    _operation_guide("component", "update", "对组件源码应用结构化 edits。", _UPDATE_PARAMETERS, action="content",
+                     constraints=("payload 必须包含 edits、base_draft_hash、base_published_version_no。",), risk_level="write"),
+    _operation_guide("asset", "update", "修改资源元数据。", _UPDATE_PARAMETERS, action="metadata", risk_level="write"),
+    _operation_guide("asset", "update", "写入已预览的资源内容差异。", _UPDATE_PARAMETERS, action="content",
+                     constraints=("payload 必须包含 content，写入前建议执行 preview_content。",), risk_level="write"),
+    _operation_guide("theme", "update", "修改主题名称、描述或色板。", _THEME_UPDATE_PARAMETERS,
+                     constraints=("payload 只允许 name、description、palette。", "key 重命名必须使用危险动作 rename_key。", "禁止 Logo 和字体字段。"), risk_level="write"),
+    _operation_guide("style", "update", "修改工作空间样式模板。", _UPDATE_PARAMETERS, risk_level="write"),
+
+    *tuple(
+        _operation_guide(resource_type, "archive", "归档一个或多个同类型对象。", _ARCHIVE_PARAMETERS,
+                         constraints=("target_ids 支持 1～100 项并自动去重。", "批量归档先校验全部目标，任一失败整批回滚。", "单项免确认，批量必须确认。"),
+                         risk_level="write", requires_confirmation=False,
+                         call_example={"resource_type": resource_type, "target_ids": [12, 13], "archive_reason": "清理不再使用的内容"})
+        for resource_type in ("page", "component", "asset", "theme", "style")
+    ),
+
+    *tuple(
+        _operation_guide(resource_type, "action", "恢复一个或多个归档对象。", _ACTION_PARAMETERS, action="restore",
+                         constraints=("target_id 与 target_ids 二选一。", "恢复采用整批原子语义。"), risk_level="write",
+                         call_example={"resource_type": resource_type, "action": "restore", "target_ids": [12, 13]})
+        for resource_type in ("page", "component", "asset", "theme", "style")
+    ),
+    _operation_guide("component", "action", "发布组件当前草稿。", _ACTION_PARAMETERS, action="publish", risk_level="write"),
+    _operation_guide("component", "action", "检查组件候选代码。", _ACTION_PARAMETERS, action="check"),
+    _operation_guide("page", "action", "检查页面候选代码。", _ACTION_PARAMETERS, action="check"),
+    _operation_guide("page", "action", "把页面复制到同一工作空间的目标项目。", _ACTION_PARAMETERS, action="copy",
+                     constraints=("payload 必须包含 target_project_id，可选 title、summary 和路由位置。",), risk_level="write"),
+    _operation_guide("asset", "action", "复制资源。", _ACTION_PARAMETERS, action="copy", risk_level="write"),
+    _operation_guide("asset", "action", "预览资源内容差异。", _ACTION_PARAMETERS, action="preview_content"),
+    _operation_guide("asset", "action", "把会话上传图片保存为资源。", _ACTION_PARAMETERS, action="save_upload", risk_level="write"),
+    _operation_guide("theme", "action", "复制主题。", _ACTION_PARAMETERS, action="copy", risk_level="write"),
+    _operation_guide("style", "action", "复制样式。", _ACTION_PARAMETERS, action="copy", risk_level="write"),
+    _operation_guide("project", "action", "整体替换项目路由树。", _ACTION_PARAMETERS, action="replace_routes",
+                     risk_level="danger", requires_confirmation=True),
+    _operation_guide("project", "action", "整体替换项目样式配置。", _ACTION_PARAMETERS, action="replace_style_config",
+                     risk_level="danger", requires_confirmation=True),
+    _operation_guide("theme", "action", "重命名主题 key 并同步引用方。", _ACTION_PARAMETERS, action="rename_key",
+                     constraints=("payload 必须包含新的 key。",), risk_level="danger", requires_confirmation=True),
+)
+
+_COORDINATOR_OPERATION_GUIDE_MAP = {
+    (guide.resource_type, guide.operation, guide.action): guide
+    for guide in _COORDINATOR_OPERATION_GUIDES
 }
 
-_COMPACT_LAYOUT_TARGET_RESPONSE_EXAMPLE = {
-    "label": "h1.mt-3.text-[78px]",
-    "locator": {
-        "kind": "visual_node_id",
-        "value": '[data-page-visual-node-id="hero-title"]',
-    },
-    "text_sample": "能复用，也能归档",
-    "repeat_index": None,
-}
 
-_LAYOUT_ANALYSIS_V2_RESPONSE_EXAMPLE = {
-    "schema_version": 2,
-    "summary": {
-        "attention": "likely_issue",
-        "message": "发现 3 项需要关注的视觉检测结果：文本 1 项，越界 1 项，空间关系 1 项。",
-        "totals": {
-            "text_layouts": 1,
-            "item_groups": 0,
-            "overflows": 1,
-            "spatial_relations": 1,
-        },
-        "returned": {
-            "text_layouts": 1,
-            "item_groups": 0,
-            "overflows": 1,
-            "spatial_relations": 1,
-        },
-        "truncated": False,
-    },
-    "text_layouts": [{
-        "target": _COMPACT_LAYOUT_TARGET_RESPONSE_EXAMPLE,
-        "text": "能复用，也能归档",
-        "line_count": 2,
-        "first_line": "能复用，也能归",
-        "last_line": "档",
-        "break_kind": "soft",
-        "font_size_px": 78,
-        "container_width_px": 608,
-        "nowrap_overflow_px": 0,
-        "stability": "boundary",
-        "attention": "review",
-        "reason_codes": ["boundary_wrap"],
-        "message": "逐字行位检测为 2 行，但强制单行仅净超宽 0px；这是兼容性临界结果，不应视为确定换行。",
-    }],
-    "item_groups": [],
-    "overflows": [{
-        "scope": "container",
-        "target": _LAYOUT_TARGET_RESPONSE_EXAMPLE,
-        "container": {"label": "div.card"},
-        "directions": ["right"],
-        "overflow_px": {"right": 18},
-        "visible_ratio": 0.82,
-        "clipping": "hidden",
-        "attention": "likely_issue",
-        "reason_codes": ["text_clipped"],
-        "message": "右侧超出裁切容器 18px，部分内容可能不可见。",
-    }],
-    "spatial_relations": [{
-        "scope": {"label": "div.cards"},
-        "first": _LAYOUT_TARGET_RESPONSE_EXAMPLE,
-        "second": {"label": "div.card-b"},
-        "relation": "touching",
-        "visual_pair": "surface_surface",
-        "axis": "horizontal",
-        "distance_px": 0,
-        "attention": "review",
-        "reason_codes": ["independent_surfaces_touching"],
-        "message": "两个独立视觉容器贴边；若非组合布局，建议增加间距。",
-    }],
-}
-
-
+# 内容助手仅暴露固定通用业务工具与无法合理抽象的特殊工具；旧细粒度规格不再进入目录或运行时。
 _COORDINATOR_TOOL_SPECS = (
-
+    _tool("get_operation_guide", "查询操作手册", "generic_business", "通用业务", "查询对象操作、参数、限制和示例；返回内容不是授权凭证。",
+          default_instructions="首次使用、不确定参数或参数校验失败时查询；当前上下文已有对应手册时不要重复查询。", configurable=False),
+    _tool("query_entities", "查询业务对象", "generic_business", "通用业务", "统一查询项目、页面、组件、资源、主题、样式、Runtime Kit 和字体。"),
+    _tool("create_entity", "创建业务对象", "generic_business", "通用业务", "统一创建项目、页面、组件、资源、主题或样式。",
+          default_instructions="先确定 resource_type，并按操作手册提交 payload；不要猜测复杂字段。", risk_level="write", sequential=True),
+    _tool("update_entity", "修改业务对象", "generic_business", "通用业务", "统一修改项目、页面、组件、资源、主题或样式。",
+          default_instructions="只提交用户要求修改的字段；页面和组件源码使用 content action 与结构化 edits。", risk_level="write", sequential=True),
+    _tool("archive_entity", "归档业务对象", "generic_business", "通用业务", "归档 1～100 个同类型对象；单项免确认，批量动态确认并整批原子执行。",
+          default_instructions="只能归档真实查询得到的 ID；不得把归档解释成永久删除。", risk_level="write", sequential=True),
+    _tool("execute_action", "执行业务动作", "generic_business", "通用业务", "执行发布、复制、恢复归档、代码检查等普通动作。",
+          default_instructions="action 必须来自操作手册；本工具不能执行删除、清理或危险覆盖。", risk_level="write", sequential=True),
+    _tool("execute_dangerous_action", "执行危险业务动作", "generic_business", "通用业务", "执行路由覆盖、项目样式配置覆盖或主题 key 重命名。",
+          default_instructions="只允许操作手册登记的危险 action，确认后执行；不得传入删除或清理动作。",
+          requires_confirmation=True, risk_level="danger", sequential=True),
+    _tool('ask_user', '向用户单选提问', 'user_feedback', '用户交互', '向用户提出一个或多个结构化单选问题。',
+          default_instructions='仅在缺少必要业务信息且不能从上下文或工具结果推断时调用。', configurable=False, requires_confirmation=True,
+          risk_level='system', response_example={'questions': []}),
     _visual_analysis_tool_spec(allow_page_screenshot=True),
     _image_generation_tool_spec(),
-
-    _tool(
-        'ask_user',
-        '向用户单选提问',
-        'user_feedback',
-        '用户交互',
-        '向用户提出一个或多个结构化单选问题。',
-        default_instructions=(
-            '当缺少必要业务信息且不能从当前上下文或工具结果中推断时，调用 ask_user 一次性提出需要用户回答的问题。'
-            '每个问题必须是单选，multi_select 必须为 false；只提供真实业务选项，不要提供“其他”或自由输入字段，'
-            '平台前端会在选项下方提供自定义回答输入框。每题提供 2-4 个简短选项，问题文案必须具体、可回答，并优先把相关问题合并到同一次 ask_user 调用中。'
-        ),
-        configurable=False,
-        requires_confirmation=True,
-        risk_level='system',
-        response_example={'questions': [{'header': '目标范围',
-                        'question': '这次修改应优先覆盖哪个页面区域？',
-                        'options': [{'label': '首屏', 'description': '只调整首屏展示。'},
-                                    {'label': '全页面', 'description': '整体统一视觉和内容结构。'}],
-                        'multi_select': False}]},
-        response_notes='平台会强制按单选处理；用户也可以不选预设项，直接提交自定义回答。',
-    ),
-
-    _tool(
-        'delegate_task_to_member',
-        '委派成员助手',
-        'team_delegation',
-        'Team 委派',
-        '把明确的组件库或资源库任务委派给组件助手或资源助手，并等待成员结果供内容助手继续整合。',
-        default_instructions=(
-            '只在任务确实需要组件库维护、组件发布/删除、组件版本或依赖排查、资源图片识别或生成、资源创建、资源内容维护、'
-            '资源复制或资源归档时调用。member_id 只能是 component-manager 或 resource-manager；'
-            'task 必须写清目标对象、期望动作和边界，handoff_context 传递你已读取到的页面、项目、组件或资源事实，'
-            'expected_output 说明成员应返回哪些可用于你继续改写页面或回复用户的信息。成员完成后，你必须判断结果是否可用并继续推进主任务。'
-        ),
-        risk_level='system',
-        response_example={
-            'member_run_id': 'member-run-123',
-            'member_id': 'resource-manager',
-            'status': 'completed',
-            'result': '已创建资源 hero_illustration，可在页面中按资源名引用。',
-        },
-    ),
-
-    _tool(
-        'get_page_content',
-        '读取页面源码',
-        'content_project',
-        '内容与项目',
-        '读取页面源码；可传入 page_id，未传时自动读取当前上下文页面，并以适合 LLM 精确编辑的文本格式返回。',
-        default_instructions='修改页面源码前必须先读取目标页面；未指定 page_id 时可依赖当前上下文页面。返回源码为原始文本，生成 edits 时直接复制源码中的真实片段作为 old_text、anchor_text 或 content；每个 edit 对象必须包含 type 字段，取值只能是 replace_exact、insert_after 或 rewrite_file；调用 apply_page_edits 时 page_id 使用返回的目标页面 ID，base_version_no 使用返回的当前版本号。',
-        response_example=('页面源信息：\n'
-         '- 读取方式：工具参数 page_id\n'
-         '- 目标页面 ID：3\n'
-         '页面编码：page_demo\n'
-         '页面标题：示例页\n'
-         '当前页面画布尺寸（page_width / page_height）：1920 x 1080 px\n'
-         '当前项目基础字号（base_font_size）：20px，相当于 Tailwind 默认 16px 基准的 1.25 倍；'
-         'text-*、p-*、m-*、gap-*、space-* 等语义尺度会按该倍率渲染；'
-         '直接写 px、rem 或 Tailwind arbitrary values 不参与该倍率。\n'
-         '\n'
-         '源码：\n'
-         '```text\n'
-         '<template>\n'
-         '  <main>示例</main>\n'
-         '</template>\n'
-         '```'),
-        response_notes='返回值是纯文本，模型生成 edits 时必须使用源码区块中的真实文本片段。',
-    ),
-
-    _tool(
-        'get_project_style_config',
-        '读取项目样式配置',
-        'content_project',
-        '内容与项目',
-        '读取当前项目真实页面画布尺寸、基础字号、当前主题颜色/字体摘要，并可按需返回 Markdown 样式规范全文。',
-        default_instructions=(
-            '当前运行上下文通常已经注入 style_spec_markdown；常规生成或调整页面视觉方案时，优先用本工具读取真实页面画布、基础字号和当前主题颜色/字体摘要，'
-            '不要为了重复获取 style_spec_markdown 全文而调用本工具；'
-            '只有需要确认最新样式规范全文、准备更新项目样式规范，或运行上下文缺少样式规范时，才传 include_style_spec_markdown=true；'
-            'base_font_size 替代 Tailwind 默认 16px 基准，可按 base_font_size / 16px 理解 text-*、p-*、m-*、gap-*、space-* 等语义尺度的整体倍率；'
-            '直接写 px、rem 或 Tailwind arbitrary values 不参与该倍率；'
-            'style_spec_markdown 是用户维护的项目级页面视觉和内容排版约束。不要根据页面源码或截图反推项目级样式配置。'
-        ),
-        response_example={'page_width': 1920,
-         'page_height': 1080,
-         'base_font_size': '20px',
-         'theme': {'palette': {'text': {'primary': '#0D286A'}},
-                   'typography': {'headingfont': 'system-ui', 'bodyfont': 'system-ui', 'codefont': 'monospace'}},
-         'style_spec_markdown_in_runtime_context': True,
-         'style_spec_markdown_length': 18},
-    ),
-
-    _tool(
-        'list_project_pages',
-        '读取项目页面',
-        'content_project',
-        '内容与项目',
-        '读取当前项目下的启用页面摘要，供路由规划或页面定位使用；已归档页面不会返回。',
-        default_instructions=(
-            '维护项目路由前必须先读取现有路由树，并结合 list_project_pages 判断目标页面是否存在、'
-            '是否已在路由中。路由写入只接受单段 route 片段，例如 home、chapter-1 或 PAGE_01；'
-            '不要使用 /、/home、home/、a/b、空白或包含空格的 route。list_project_pages 返回的 page_id 是路由 page 节点唯一可用的页面引用来源，'
-            '不要用标题、page_code 或猜测 ID；归档页面不能作为路由绑定候选。'
-        ),
-        response_example={'total': 2,
-         'items': [{'page_id': 3,
-                    'page_code': 'page_cover',
-                    'title': '封面',
-                    'summary': '项目封面页。',
-                    'file_type': 'vue',
-                    'status': 'active',
-                    'is_in_project_route': True,
-                    'route_bindings': [{'route_id': 11,
-                                        'parent_route': None,
-                                        'route': 'cover',
-                                        'full_path': '/cover'}]},
-                   {'page_id': 4,
-                    'page_code': 'page_overview',
-                    'title': '概览',
-                    'summary': None,
-                    'file_type': 'vue',
-                    'status': 'active',
-                    'is_in_project_route': False,
-                    'route_bindings': []}]},
-        response_notes='维护路由时只能使用这里返回的启用页面 page_id 绑定页面；不要用 page_code、标题或猜测值作为 page_id。',
-    ),
-
-    _tool(
-        'get_project_route_tree',
-        '读取项目路由树',
-        'content_project',
-        '内容与项目',
-        '读取当前项目完整路由树。',
-        default_instructions=(
-            '维护项目路由前必须先读取现有路由树，并结合 list_project_pages 判断目标页面是否存在、'
-            '是否已在路由中。路由写入只接受单段 route 片段，例如 home、chapter-1 或 PAGE_01；'
-            '不要使用 /、/home、home/、a/b、空白或包含空格的 route。list_project_pages 返回的 page_id 是路由 page 节点唯一可用的页面引用来源，'
-            '不要用标题、page_code 或猜测 ID。'
-        ),
-        response_example=_PROJECT_ROUTE_TREE_RESPONSE_EXAMPLE,
-        response_notes='返回的 id 仅用于识别已有节点；update_project_route_tree 写入 routes 时不要携带 id。',
-    ),
-
-    _tool(
-        'check_page_code',
-        '检查页面代码',
-        'content_project',
-        '内容与项目',
-        '基于 Runtime 原生预览/构建链路检查页面当前源码、完整候选源码、新增页面未保存源码或 edits 应用后的候选源码，不修改页面。',
-        default_instructions=(
-            '主要用于新建页面完整 content 检查、用户明确要求只读诊断，或排查当前页面 Runtime 编译问题；'
-            '已有页面 edits 修改的默认路径是读取源码后直接调用 apply_page_edits，由 apply_page_edits 保存前内置校验。'
-            '新增页面尚无 page_id 时，在项目上下文中传入完整 content 即可检查未保存页面源码。'
-            'content 和 edits 只能二选一；使用 edits 检查候选修改时，edits 必须传真实 JSON 数组，数组元素必须是对象，'
-            '禁止把 edits 序列化成字符串、包在引号中或传 JSON.stringify 结果。正确示例：'
-            '{"edits":[{"type":"replace_exact","old_text":"...","new_text":"..."}]}。'
-            '该工具不落库；success=false 时根据 diagnostics 修正语法、'
-            'import、资源引用或 Runtime 编译问题，遇到动态资源名诊断时，将资源名改为字符串字面量，'
-            '或改为同一 Vue 文件顶层 const 数组对象字面量中可静态枚举的字段；不要用 computed、'
-            '函数返回、imported data、拼接或条件表达式生成 Icon/Asset* 的 name。'
-            'success=true 时也可能返回 severity=warning 的布局诊断；遇到 PAGE_RENDER_BOTTOM_OVERFLOW 时应继续压缩内容、'
-            '调整容器高度或拆页，避免底部内容被固定画布裁切。layout_analysis 使用 schema_version=2；'
-            '先阅读 summary，再优先检查 attention=likely_issue 和 review。text_layouts 统一返回所有稳定多行和临界换行，'
-            '正常正文多行本身不是错误；boundary_wrap、孤字或孤词结合元素语义判断。item_groups 返回 flex-wrap 分排事实，'
-            '正常多排无需修改，末排孤项或临界分排才需要复核。overflows 统一返回画布和容器越界，'
-            '重点处理实际裁切或画布外的文本与交互内容，不要机械收回正常滚动和装饰出血。spatial_relations 统一返回重叠、'
-            '非透明视觉容器贴边和不超过 2px 的紧凑间距；distance_px 小于 0 表示重叠，等于 0 表示贴边。'
-            'intent 和 surface 用于判断有意叠层与视觉容器；保留角标、背景装饰和拼贴设计。'
-            'geometry_reliability=approximate 表示旋转或 clip-path 只能按外接矩形近似判断。'
-            'text_layouts 和 item_groups 的 target 使用 locator、text_sample、repeat_index 轻量定位，'
-            '稳定结果省略空默认字段，只有临界换行附带 font_size_px、container_width_px 和 nowrap_overflow_px。'
-            '空间结果使用 target.locator、code_hint.text_sample 和 repeat_index 对应页面源码。'
-            '不要在未处理错误的情况下继续写入页面。'
-        ),
-        response_example={'success': True,
-         'status': 'passed',
-         'artifact_id': '123',
-         'summary': '代码检查通过，发现 1 个布局警告。',
-         'patch_repaired': False,
-         'canonical_diff': None,
-         'diagnostics': [{'severity': 'warning',
-                          'source': 'runtime-render',
-                          'code': 'PAGE_RENDER_BOTTOM_OVERFLOW',
-                          'message': '页面内容底部超出画布 42px，预览或导出时可能被裁切。'}],
-         'layout_analysis': _LAYOUT_ANALYSIS_V2_RESPONSE_EXAMPLE},
-    ),
-
-    _tool(
-        'apply_page_edits',
-        '应用页面 Edits',
-        'content_project',
-        '内容与项目',
-        '对指定 page_id 页面应用结构化 edits，并自动保存为新版本。',
-        default_instructions=(
-            '调用前必须已经读取目标页面源码；page_id 必须使用 get_page_content 返回的目标页面 ID，'
-            'base_version_no 必须使用读取工具返回的当前版本号。'
-            'edits 使用结构化对象数组，每个对象必须带 type：type="replace_exact" 传 old_text/new_text，'
-            'type="insert_after" 传 anchor_text/new_text，type="rewrite_file" 传完整 content。'
-            'old_text 和 anchor_text 必须来自 get_page_content 返回的源码区块，并在当前源码中唯一命中。涉及 Runtime Kit、工作空间组件或资源 import 时，'
-            '必须使用工具返回的 import_path，不要猜测路径。该工具会在保存前强制执行 Runtime validate；'
-            'validate 失败时不会保存页面版本，并返回 diagnostics、canonical_diff 和 edits_applied。根据 diagnostics 修正后重新调用本工具。'
-            'validate 通过但返回 severity=warning 时会继续保存页面版本，并在成功响应中返回 diagnostics 和 code_check_summary；'
-            '遇到 PAGE_RENDER_BOTTOM_OVERFLOW 时应继续调用本工具修正布局。layout_analysis 使用 schema_version=2；'
-            '先阅读 summary，优先处理 likely_issue，再复核 review。text_layouts 和 item_groups 中正常多行或正常分排无需机械修改。'
-            'overflows 中画布外或实际裁切的文本/交互内容应优先修复，正常滚动和装饰出血结合语义判断。'
-            'spatial_relations 统一表达重叠、贴边和临界间距；结合 intent、surface 和 message 判断，'
-            '不要机械消除有意角标、背景装饰和拼贴叠层。文本与分排目标使用 locator、text_sample、repeat_index'
-            ' 轻量定位；空间结果保留 code_hint 与 surface。geometry_reliability=approximate 时谨慎处理。'
-        ),
-        risk_level='write',
-        sequential=True,
-        response_example={'success': True,
-         'message': '页面代码已更新并生成新版本，但发现布局警告。',
-         'page_id': 3,
-         'page_code': 'page_demo',
-         'version_no': 4,
-         'edits_applied': 1,
-         'canonical_diff': '--- current\n+++ proposed\n@@ ...',
-         'diagnostics': [{'severity': 'warning',
-                          'source': 'runtime-render',
-                          'code': 'PAGE_RENDER_BOTTOM_OVERFLOW',
-                          'message': '页面内容底部超出画布 42px。'}],
-         'layout_analysis': _EMPTY_LAYOUT_ANALYSIS_V2,
-         'code_check_summary': '代码检查通过，发现 1 个布局警告。'},
-    ),
-
-    _tool(
-        'create_project_page',
-        '创建项目页面',
-        'content_project',
-        '内容与项目',
-        '在当前项目创建页面；page_content 必填，可同时写入演讲者备注。',
-        default_instructions=(
-            '创建页面前先确认当前项目、页面标题、页面说明、演讲者备注、页面编码语义和是否需要加入路由。'
-            'page_content 必须是非空、可运行的 Vue SFC；本工具会在创建前强制执行未落库代码检查。'
-            '校验失败时不会创建页面；校验通过但返回 severity=warning 时会创建页面，并在成功响应中返回 diagnostics 和 code_check_summary。'
-            'speaker_notes 是演讲模式展示给演讲者的纯文本备注，按普通文本保留换行，不写 HTML。'
-            '本工具只创建页面记录和初始源码，不会自动维护项目路由；如需加入导航，创建后读取现有路由树并调用 update_project_route_tree 写入完整 routes。'
-            '创建后如需视觉精修或处理 PAGE_RENDER_BOTTOM_OVERFLOW，应在页面上下文中读取新页面源码并通过结构化 edits 修改。'
-            'layout_analysis 使用 schema_version=2；先阅读 summary，优先处理 likely_issue，再复核 review。'
-            'text_layouts、item_groups、overflows 和 spatial_relations 分别表达文本换行、循环元素分排、越界与空间关系。'
-            '正常正文多行、正常分排、滚动、装饰出血和有意叠层无需机械修改；结合 intent、surface 和统一 message 判断。'
-            '文本与分排目标使用 locator、text_sample、repeat_index 轻量定位；空间结果保留 code_hint 与 surface。'
-            'geometry_reliability=approximate 时谨慎处理。'
-        ),
-        risk_level='write',
-        sequential=True,
-        response_example={
-            'success': True,
-            'message': '页面已创建，但发现布局警告。',
-            'page_id': 4,
-            'page_code': 'page_new',
-            'title': '新页面',
-            'summary': '页面说明。',
-            'speaker_notes': '开场先介绍议程。',
-            'version_no': 1,
-            'diagnostics': [{'severity': 'warning',
-                             'source': 'runtime-render',
-                             'code': 'PAGE_RENDER_BOTTOM_OVERFLOW',
-                             'message': '页面内容底部超出画布 42px。'}],
-            'layout_analysis': _EMPTY_LAYOUT_ANALYSIS_V2,
-            'code_check_summary': '代码检查通过，发现 1 个布局警告。',
-        },
-    ),
-
-    _tool(
-        'update_page_metadata',
-        '更新页面元数据',
-        'content_project',
-        '内容与项目',
-        '修改当前项目内页面的名称、说明或演讲者备注，不修改页面源码。',
-        default_instructions=(
-            '只用于页面基础信息维护，不修改 page_content。'
-            'title、summary 与 speaker_notes 至少传一个；如果需要调整页面内容，改用 get_page_content + apply_page_edits。'
-            'speaker_notes 是演讲模式展示给演讲者的纯文本备注，按普通文本保留换行，不写 HTML。'
-        ),
-        risk_level='write',
-        response_example={
-            'success': True,
-            'page_id': 3,
-            'page_code': 'page_demo',
-            'title': '新标题',
-            'summary': '新版页面说明。',
-            'speaker_notes': '重点说明关键结论。',
-            'version_no': 5,
-        },
-    ),
-
-    _tool(
-        'update_project_style_config',
-        '更新项目样式配置',
-        'content_project',
-        '内容与项目',
-        '更新当前项目 Markdown 样式规范。',
-        default_instructions=(
-            '这是会影响后续页面生成约束的项目级配置写入工具，调用前必须已读取 get_project_style_config。'
-            '本工具只能修改 style_spec_markdown；style_spec_markdown 是 Markdown 纯文本，按用户意图完整传入。'
-            '平台会处理工具确认和暂停流程，你不要自行模拟确认机制；意图不清时先调用 ask_user。'
-        ),
-        requires_confirmation=True,
-        risk_level='write',
-        response_example={'success': True,
-         'message': '项目样式规范已更新。',
-         'style_spec_markdown': '## 风格\n- 使用克制留白。'},
-    ),
-
-    _tool(
-        'update_project_route_tree',
-        '更新项目路由树',
-        'content_project',
-        '内容与项目',
-        '以整树覆盖方式更新当前项目路由树。',
-        default_instructions=(
-            '调用前必须读取项目页面列表和现有路由树；routes 参数是完整路由树覆盖内容，不是局部 patch。'
-            '新增、移动、隐藏或删除节点时，都要基于现有路由树构造完整 routes，保留不相关节点。'
-            '删除节点时，从完整 routes 中移除目标节点；删除分组等价于同时移除其 children。'
-            'route 必须是单段相对片段，推荐小写 kebab-case，例如 home、chapter-1；不允许 /、/home、home/、'
-            'a/b、空白或包含空格。page 节点必须传 route_type="page"、route、order、page_id，'
-            '不能传 children 或 group_title；group 节点必须传 route_type="group"、route、order、group_title、children，'
-            '不能传 page_id。page_id 只能来自 list_project_pages；不要传 id 或 icon 字段。'
-            '只在用户明确要求调整路由且意图清晰时使用；意图不清时先调用 ask_user。'
-        ),
-        risk_level='write',
-        response_example=_PROJECT_ROUTE_UPDATE_RESPONSE_EXAMPLE,
-        response_notes='routes 是完整树覆盖内容；写入成功后返回更新后的完整路由树。',
-    ),
-
-    _tool(
-        'list_workspace_components',
-        '读取可用组件',
-        'component_read',
-        '组件读取',
-        '查询当前项目建议组件或工作空间全量已发布组件摘要，支持按类型和关键字过滤。',
-        default_instructions=(
-            '页面需要选择复用组件时先调用该工具；默认 scope=suggested，优先返回项目建议组件。'
-            '当没有项目上下文、没有建议组件或建议组件筛选为空时，工具会自动回退全工作空间已发布组件，'
-            '并通过 source 与 fallback_reason 说明来源；明确需要全库时传 scope=all。未发布草稿不应被页面引用。'
-        ),
-        response_example=_WORKSPACE_COMPONENT_LIST_RESPONSE_EXAMPLE,
-    ),
-
-    _tool(
-        'get_workspace_component_usage',
-        '读取组件用法',
-        'component_read',
-        '组件读取',
-        '依据组件编码返回当前已发布版本的类型、公开预览契约、默认导入名、import_path 与完整 import 语句。',
-        default_instructions=(
-            '页面需要引用工作空间组件时调用该工具；生成页面源码必须使用返回的 import_statement 或 import_path，'
-            '不要猜测组件路径、版本号或默认导入名。preview_schema 是组件公开 props 与尺寸控制契约，'
-            '用于判断页面引用该组件时可传哪些 props、默认值和类型约束；不要把 preview_schema 当作源码或运行时代码。'
-            '该工具只面向已发布组件，不返回组件源码，也不用于组件编辑。'
-        ),
-        response_example=_WORKSPACE_COMPONENT_USAGE_RESPONSE_EXAMPLE,
-        response_notes='preview_schema 为 JSON 字符串或 null；存在时按 props 下的 type、label、default 等字段理解组件可配置项。',
-    ),
-
-    _tool(
-        'list_runtime_kit_capabilities',
-        '查询 Runtime Kit 目录',
-        'runtime_kit',
-        'Runtime Kit',
-        '查询 Agent 可引用的 Runtime Kit 只读能力，覆盖 component、composable、util 与 type。',
-        default_instructions=(
-            'Runtime Kit 只提供可在页面或组件源码中 import 的版本化公开能力，不是可直接调用的业务工具。'
-            '生成 Vue SFC 时必须按返回的公开 import_path、示例和约束原样使用，只使用工具结果中可见的 Runtime Kit 能力。'
-            '能力 name 带版本号，例如 Icon.v1；不要使用未带 .vN 的 @runtime-kit 路径。'
-        ),
-        response_example=_RUNTIME_KIT_LIST_RESPONSE_EXAMPLE,
-    ),
-
-    _tool(
-        'get_runtime_kit_capability',
-        '读取 Runtime Kit 能力',
-        'runtime_kit',
-        'Runtime Kit',
-        '读取 Agent 可引用的单个 Runtime Kit 能力详情和 import 用法。',
-        default_instructions=(
-            'Runtime Kit 只提供可在页面或组件源码中 import 的版本化公开能力，不是可直接调用的业务工具。'
-            '生成 Vue SFC 时必须按返回的公开 import_path、示例和约束原样使用，只使用工具结果中可见的 Runtime Kit 能力。'
-            '调用本工具时优先使用带版本号的能力 name，例如 Icon.v1；如果只传裸 base_name，例如 Icon，工具会自动匹配最新开放版本。'
-        ),
-        response_example={'name': 'DefaultContainer.v1',
-         'base_name': 'DefaultContainer',
-         'version_no': 1,
-         'kind': 'component',
-         'import_path': '@runtime-kit/public/components/page/layout/DefaultContainer.v1.vue',
-         'message': '生成代码时必须按工具返回 import_path 原样使用。'},
-    ),
-
-    _tool(
-        'list_resource_assets',
-        '读取资源列表',
-        'resource_read',
-        '资源读取',
-        '默认读取当前项目建议优先参考的内容资源摘要，必要时回退当前工作空间可见资源；支持按资源类型、标签和关键词过滤。',
-        default_instructions=(
-            '任务需要使用素材时先调用该工具；默认 scope=suggested，优先返回项目建议引用资源。'
-            '当没有项目上下文、没有建议资源或建议资源筛选为空时，工具会自动回退全工作空间 active 普通资源，'
-            '并通过 source 与 fallback_reason 说明来源；明确需要查全量资源库时传 scope=all。'
-            '使用返回资源生成页面时，必须优先按 approx_aspect_ratio / approx_aspect_ratio_value 匹配展示槽位宽高比。'
-        ),
-        response_example={'source': 'project_suggested',
-         'fallback_reason': None,
-         'total': 1,
-         'items': [{'id': 8,
-                    'name': 'hero_illustration',
-                    'original_name': 'hero.svg',
-                    'description': '首页主视觉插图',
-                    'asset_type': 'image',
-                    'approx_aspect_ratio': '16:9',
-                    'approx_aspect_ratio_value': 1.7778,
-                    'aspect_ratio_source': 'auto',
-                    'content_editable': True}]},
-    ),
-
-    _tool(
-        'get_resource_asset_content',
-        '读取资源内容',
-        'resource_read',
-        '资源读取',
-        '读取 content_editable=true 资源的 UTF-8 文本内容。',
-        default_instructions=(
-            '仅对资源列表中 content_editable=true 的资源调用。'
-            'content_editable=false 的资源不会返回文本内容。'
-        ),
-        response_example={'asset': {'id': 8, 'name': 'hero_illustration', 'asset_type': 'image'}, 'content': '<svg />'},
-    ),
-
-    _tool(
-        'list_resource_tags',
-        '读取资源标签',
-        'resource_read',
-        '资源读取',
-        '列出当前工作空间资源库中出现过的标签。',
-        response_example=['品牌', '图标'],
-    ),
-
-    _tool(
-        'list_workspace_font_assets',
-        '读取字体资源',
-        'resource_read',
-        '资源读取',
-        '查询当前工作空间内已注册并可用于页面源码的字体资源。',
-        default_instructions=(
-            '页面需要使用非主题字体时先调用该工具；返回的 asset_name 是 Runtime Kit useAssetFontFamily 的静态资源逻辑名，'
-            'font_family、font_weight、font_style 和 font_display 是对应 @font-face 声明摘要。'
-            '只使用工具返回的已注册 active 字体资源，不要猜测字体文件路径或手写 @font-face。'
-        ),
-        response_example=[
-            {
-                'name': 'BrandSerif',
-                'asset_name': 'BrandSerif',
-                'font_family': 'Brand Serif',
-                'font_weight': '400',
-                'font_style': 'normal',
-                'font_display': 'swap',
-                'extension': 'woff2',
-                'type': 'font',
-                'description': '品牌标题字体',
-            }
-        ],
-    ),
-
-)
-
-
-_COMPONENT_MANAGER_TOOL_SPECS = (
-
-    _tool(
-        'ask_user',
-        '向用户单选提问',
-        'user_feedback',
-        '用户交互',
-        '向用户提出一个或多个结构化单选问题。',
-        default_instructions=(
-            '当缺少必要业务信息且不能从当前上下文或工具结果中推断时，调用 ask_user 一次性提出需要用户回答的问题。'
-            '每个问题必须是单选，multi_select 必须为 false；只提供真实业务选项，不要提供“其他”或自由输入字段，'
-            '平台前端会在选项下方提供自定义回答输入框。每题提供 2-4 个简短选项，问题文案必须具体、可回答，并优先把相关问题合并到同一次 ask_user 调用中。'
-        ),
-        configurable=False,
-        requires_confirmation=True,
-        risk_level='system',
-        response_example={'questions': [{'header': '目标范围',
-                        'question': '这次修改应优先覆盖哪个页面区域？',
-                        'options': [{'label': '首屏', 'description': '只调整首屏展示。'},
-                                    {'label': '全页面', 'description': '整体统一视觉和内容结构。'}],
-                        'multi_select': False}]},
-        response_notes='平台会强制按单选处理；用户也可以不选预设项，直接提交自定义回答。',
-    ),
-
-    _tool(
-        'delegate_task_to_member',
-        '委派资源助手',
-        'team_delegation',
-        'Team 委派',
-        '把明确的资源库维护任务委派给资源助手，并等待成员结果供组件助手继续整合。',
-        default_instructions=(
-            '只在组件任务确实需要资源图片识别或生成、资源创建、资源内容维护、资源元数据更新、资源复制或资源归档时调用。'
-            'member_id 只能是 resource-manager；不要把组件源码、组件 API、组件发布或组件删除任务委派给资源助手。'
-            'task 必须写清目标资源、期望动作和边界，handoff_context 传递你已读取到的组件、资源或 Runtime Kit 事实，'
-            'expected_output 说明资源助手应返回哪些可用于你继续修改组件源码、preview_schema 或回复用户的信息。'
-            '资源助手完成后，你必须判断结果是否可用，并继续推进组件任务。'
-        ),
-        risk_level='system',
-        response_example={
-            'member_run_id': 'member-run-123',
-            'member_id': 'resource-manager',
-            'status': 'completed',
-            'result': '已创建 SVG 图片资源 hero_illustration，可在组件中按资源名引用。',
-        },
-    ),
-
-    _tool(
-        'list_components',
-        '读取组件列表',
-        'component_library',
-        '组件库',
-        '读取当前工作空间组件库中的组件摘要。',
-        response_example=_COMPONENT_LIST_RESPONSE_EXAMPLE,
-    ),
-
-    _tool(
-        'get_component_detail',
-        '读取组件详情',
-        'component_library',
-        '组件库',
-        '读取指定组件元数据，并以适合 LLM 精确编辑的文本格式返回源码。',
-        default_instructions='修改组件源码、preview_schema 或依赖判断前必须先读取组件详情。返回原始源码、草稿内容指纹和草稿基线版本号，生成 edits 时直接复制源码中的真实片段。',
-        response_example=('组件编码：cmp_hero_card\n'
-         '组件名称：HeroCard\n'
-         '源码引用名：HeroCard\n'
-         'current_version_no（当前发布版本号）：1\n'
-         'base_published_version_no（草稿基线版本号）：1\n'
-         'draft_hash（草稿内容指纹）：abc123\n'
-         '存在未发布修改：是\n'
-         '\n'
-         '源码：\n'
-         '```text\n'
-         '<template>\n'
-         '  <section>示例</section>\n'
-         '</template>\n'
-         '```'),
-        response_notes='返回值是纯文本，模型生成 edits 时必须使用源码区块中的真实文本片段。',
-    ),
-
-    _tool(
-        'list_component_versions',
-        '读取组件版本',
-        'component_library',
-        '组件库',
-        '读取指定组件的版本历史摘要。',
-        response_example=[{'version_no': 3, 'change_note': '更新样式'}],
-    ),
-
-    _tool(
-        'get_component_dependencies',
-        '读取组件依赖',
-        'component_library',
-        '组件库',
-        '读取指定组件当前版本的依赖索引。',
-        response_example={'component_id': 12, 'dependencies': []},
-    ),
-
-    _tool(
-        'list_runtime_kit_capabilities',
-        '查询 Runtime Kit 目录',
-        'component_library',
-        '组件库',
-        '查询 Agent 可引用的 Runtime Kit 只读能力，覆盖 component、composable、util 与 type。',
-        default_instructions=(
-            'Runtime Kit 只提供可在页面或组件源码中 import 的版本化公开能力，不是可直接调用的业务工具。'
-            '生成 Vue SFC 时必须按返回的公开 import_path、示例和约束原样使用，只使用工具结果中可见的 Runtime Kit 能力。'
-            '能力 name 带版本号，例如 Icon.v1；不要使用未带 .vN 的 @runtime-kit 路径。'
-        ),
-        response_example=_RUNTIME_KIT_LIST_RESPONSE_EXAMPLE,
-    ),
-
-    _tool(
-        'get_runtime_kit_capability',
-        '读取 Runtime Kit 能力',
-        'component_library',
-        '组件库',
-        '读取 Agent 可引用的单个 Runtime Kit 能力详情和 import 用法。',
-        default_instructions=(
-            'Runtime Kit 只提供可在页面或组件源码中 import 的版本化公开能力，不是可直接调用的业务工具。'
-            '生成 Vue SFC 时必须按返回的公开 import_path、示例和约束原样使用，只使用工具结果中可见的 Runtime Kit 能力。'
-            '调用本工具时优先使用带版本号的能力 name，例如 Icon.v1；如果只传裸 base_name，例如 Icon，工具会自动匹配最新开放版本。'
-        ),
-        response_example={'name': 'DefaultContainer.v1',
-         'base_name': 'DefaultContainer',
-         'version_no': 1,
-         'kind': 'component',
-         'import_path': '@runtime-kit/public/components/page/layout/DefaultContainer.v1.vue',
-         'message': '生成代码时必须按工具返回 import_path 原样使用。'},
-    ),
-
-    _tool(
-        'list_resource_assets',
-        '读取资源列表',
-        'component_library',
-        '组件库',
-        '默认读取当前项目建议优先参考的内容资源摘要，必要时回退当前工作空间可见资源；支持按资源类型、标签和关键词过滤。',
-        default_instructions=(
-            '默认 scope=suggested，优先返回项目建议引用资源；没有项目上下文、没有建议资源或筛选为空时会自动回退全工作空间资源。'
-            '组件或 preview_schema 明确需要浏览资源库素材时传 scope=all。'
-            '使用返回资源生成组件或 preview_schema 时，必须优先按 approx_aspect_ratio / approx_aspect_ratio_value 匹配展示槽位宽高比。'
-        ),
-        response_example={'source': 'workspace_all',
-         'fallback_reason': 'no_project_context',
-         'total': 1,
-         'items': [{'id': 8,
-                    'name': 'brand_icon',
-                    'description': '品牌主 Logo',
-                    'asset_type': 'icon',
-                    'tags': ['品牌']}]},
-    ),
-
-    _tool(
-        'get_resource_asset_content',
-        '读取资源内容',
-        'component_library',
-        '组件库',
-        '读取 content_editable=true 资源的 UTF-8 文本内容。',
-        default_instructions=(
-            '仅对资源列表中 content_editable=true 的资源调用。'
-            'content_editable=false 的资源不会返回文本内容。'
-        ),
-        response_example={'asset': {'id': 8, 'name': 'hero_illustration', 'asset_type': 'image'}, 'content': '<svg />'},
-    ),
-
-    _tool(
-        'list_resource_tags',
-        '读取资源标签',
-        'component_library',
-        '组件库',
-        '列出当前工作空间资源库中出现过的标签。',
-        response_example=['品牌', '图标'],
-    ),
-
-    _tool(
-        'check_component_code',
-        '检查组件代码',
-        'component_library',
-        '组件库',
-        '基于 Runtime 原生组件预览链路检查组件当前草稿、完整候选源码或 edits 应用后的候选源码，不修改组件。',
-        default_instructions=(
-            '主要用于新增组件完整 content 与 preview_schema 检查、用户明确要求只读诊断，或调试完整候选源码；'
-            '已有组件 edits 修改的默认路径是读取组件详情后直接调用 apply_component_edits，由 apply_component_edits 保存前内置校验。'
-            'component_type 仅为兼容创建前校验时的分类传参，'
-            '不参与检查、不落库；真正组件类型由 create_component 或元数据更新工具决定。preview_schema 可传 JSON 对象字符串，'
-            '也可传 JSON 对象；工具会在检查前归一化为对象字符串。该工具不落库；success=false 时根据 diagnostics 修正 Vue、'
-            'TypeScript、import、preview_schema 相关问题，遇到动态资源名诊断时，将资源名改为字符串字面量，'
-            '或改为同一 Vue 文件顶层 const 数组对象字面量中可静态枚举的字段；不要用 computed、'
-            '函数返回、imported data、拼接或条件表达式生成 Icon/Asset* 的 name。不要在未处理错误的情况下继续写入组件。'
-        ),
-        response_example={'success': True,
-         'status': 'passed',
-         'artifact_id': '123',
-         'summary': '代码检查通过。',
-         'patch_repaired': False,
-         'canonical_diff': '--- current\n+++ proposed\n@@ ...',
-         'diagnostics': []},
-    ),
-
-    _tool(
-        'create_component',
-        '创建组件',
-        'component_library',
-        '组件库',
-        '创建工作空间组件草稿，正式引用前需要发布。',
-        default_instructions=(
-            '创建组件前先确认组件名称、PascalCase import_name、component_type、组件说明、源码内容和是否需要 preview_schema；'
-            'component_type 未明确指定时默认使用内容组件；'
-            '页面组件用于封面、目录、页面骨架或整页视觉，必须具备整页画布承载能力；'
-            '可以直接基于 Runtime Kit 的 DefaultContainer 封装，也可以基于已发布页面组件复用其画布承载能力。'
-            '直接使用 DefaultContainer 前应通过 Runtime Kit 工具读取它的公开 import_path。'
-            '内容组件用于卡片、图表、指标组、表格、资源展示块等固定布局槽位，'
-            '必须在 props 或 preview_schema 中声明 width、height、minHeight、aspectRatio、fit 等尺寸控制参数；'
-            '原子组件用于页码、角标、图标、主题 Logo、小标签等小型单元，不强制 width/height，但应提供 size、fontSize、padding、variant 等轻量尺寸参数。'
-            'content 必须是非空、可运行的 Vue SFC；创建前优先调用 check_component_code 检查完整候选源码和 preview_schema。'
-            'preview_schema 必须是 JSON 对象字符串或 JSON 对象，字段名使用 snake_case 入参 preview_schema；'
-            '不要写成 Vue 代码里的 previewSchema 导出。schema 应与真实 props、slots 和 mock 数据保持一致，'
-            '常用结构为 props、slots、mocks、presets。props 字段支持 string、textarea、number、boolean、select、json 类型；'
-            'select 必须提供 options。slots.default 和 presets.*.slots.* 必须是节点数组，节点 type 仅支持 text、html、component。'
-            '创建后得到的是组件草稿；需要页面或其他组件正式引用时，必须再调用 publish_component 发布版本。'
-            '示例：{"props":{"title":{"type":"string","label":"标题","default":"季度经营概览"},"tone":{"type":"select","label":"强调色","default":"accent1","options":[{"label":"蓝色","value":"accent1"},{"label":"绿色","value":"accent2"}]},"metrics":{"type":"json","label":"指标数据","default":[{"label":"收入","value":"1280 万","trend":"+12%"}]}},"slots":{"default":{"label":"补充说明","default":[{"type":"text","value":"数据口径：'
-            '截至本季度末。"},{"type":"component","component":"@runtime-kit/public/components/primitives/Icon.v1.vue","props":{"name":"chart-line","size":20}}]}},"mocks":{"loading":{"label":"加载态","default":false}},"presets":[{"key":"growth","label":"增长场景","props":{"title":"增长亮点","tone":"accent2"}},{"key":"risk","label":"风险场景","props":{"title":"风险提醒","tone":"accent5"},"mocks":{"loading":false}}]}'
-        ),
-        risk_level='write',
-        response_example={'success': True,
-         'message': '组件草稿已创建，发布后才可被页面或其他组件引用。',
-         'component': {'code': 'cmp_hero_card', 'import_name': 'HeroCard'}},
-    ),
-
-    _tool(
-        'apply_component_edits',
-        '应用组件 Edits',
-        'component_library',
-        '组件库',
-        '对指定组件源码应用结构化 edits 并保存为草稿。',
-        default_instructions=(
-            '仅在用户明确要求修改已有组件时使用；新增组件不能使用 apply_component_edits，'
-            '因为尚无 component_id。调用前必须已经读取组件详情；base_draft_hash 使用草稿内容指纹，'
-            'base_published_version_no 使用草稿基线版本号。edits 使用 replace_exact、insert_after 或 rewrite_file，'
-            'old_text 和 anchor_text 必须来自组件详情源码区块并唯一命中。该工具会在保存草稿前强制执行 Runtime validate；'
-            'validate 失败时不会保存组件草稿，并返回 diagnostics、canonical_diff 和 edits_applied。根据 diagnostics 修正后重新调用本工具。'
-        ),
-        risk_level='write',
-        response_example={'success': True,
-         'component_id': 12,
-         'component_code': 'cmp_hero_card',
-         'version_no': 4,
-         'draft_hash': 'sha256...',
-         'base_published_version_no': 3,
-         'edits_applied': 1,
-         'canonical_diff': '--- current\n+++ proposed\n@@ ...',
-         'component': {'id': 12, 'code': 'cmp_hero_card', 'import_name': 'HeroCard'}},
-    ),
-
-    _tool(
-        'update_component_metadata',
-        '更新组件元数据',
-        'component_library',
-        '组件库',
-        '更新组件名称、引用名、分类、描述或 preview_schema。',
-        default_instructions=(
-            'import_name 是页面和组件源码默认导入时使用的标识符，只在确实需要修改引用名时传入；不修改时应省略该参数。'
-            '传入 import_name 时必须使用 PascalCase 英文标识符，匹配 ^[A-Z][A-Za-z0-9]{0,63}$，'
-            '且在同一工作空间启用组件内唯一；不要传 null、空字符串、中文或连字符命名。preview_schema 必须是 JSON 对象字符串，'
-            '字段名使用 snake_case 入参 preview_schema；不要写成 Vue 代码里的 previewSchema 导出。'
-            'schema 应与真实 props、slots 和 mock 数据保持一致，常用结构为 props、'
-            'slots、mocks、presets。props 字段支持 string、textarea、number、'
-            'boolean、select、json 类型；select 必须提供 options。slots.default 和 presets.*.slots.* 必须是节点数组，'
-            '节点 type 仅支持 text、html、component；component 节点只能引用 @runtime-kit 清单中的版本化组件或已发布的 @workspace-components/<component_code>/v/<version_no>。'
-            'presets 建议提供 2-3 个业务化样例，key 使用稳定英文短横线命名，label 使用中文可读名称。'
-            '示例：{"props":{"title":{"type":"string","label":"标题","default":"季度经营概览"},"tone":{"type":"select","label":"强调色","default":"accent1","options":[{"label":"蓝色","value":"accent1"},{"label":"绿色","value":"accent2"}]},"metrics":{"type":"json","label":"指标数据","default":[{"label":"收入","value":"1280 万","trend":"+12%"}]}},"slots":{"default":{"label":"补充说明","default":[{"type":"text","value":"数据口径：'
-            '截至本季度末。"},{"type":"component","component":"@runtime-kit/public/components/primitives/Icon.v1.vue","props":{"name":"chart-line","size":20}}]}},"mocks":{"loading":{"label":"加载态","default":false}},"presets":[{"key":"growth","label":"增长场景","props":{"title":"增长亮点","tone":"accent2"}},{"key":"risk","label":"风险场景","props":{"title":"风险提醒","tone":"accent5"},"mocks":{"loading":false}}]}'
-        ),
-        risk_level='write',
-        response_example={'success': True,
-         'message': '组件元数据已更新。',
-         'component': {'code': 'cmp_hero_card', 'import_name': 'HeroCard'}},
-    ),
-
-    _tool(
-        'publish_component',
-        '发布组件',
-        'component_library',
-        '组件库',
-        '发布组件当前草稿，生成可被页面和其他组件引用的正式版本。',
-        default_instructions=(
-            '发布会把当前组件草稿生成新的不可变正式版本，发布后页面和其他组件才能通过 @workspace-components/<component_code>/v/<version_no> 引用。'
-            '发布前应先确认当前草稿就是目标内容；如果刚生成或修改过源码，优先先调用 check_component_code。'
-            '发布不会改写已有页面中的旧版本 import；需要页面切换到新版本时，由内容助手后续修改页面源码。'
-        ),
-        risk_level='write',
-        response_example={'success': True,
-         'message': '组件草稿已发布为正式版本，可被页面或其他组件按版本引用。',
-         'component': {'code': 'cmp_hero_card', 'current_version_no': 1},
-         'import_usage': {'import_path': '@workspace-components/cmp_hero_card/v/1',
-                          'import_statement': 'import HeroCard from '
-                                              "'@workspace-components/cmp_hero_card/v/1'"}},
-    ),
-
-    _tool(
-        'delete_component',
-        '删除组件',
-        'component_library',
-        '组件库',
-        '删除指定工作空间组件；删除后不再作为可复用组件参与后续选择。',
-        default_instructions=(
-            '仅在用户明确要求删除组件时调用；如果用户只是希望页面不再使用某组件，应由内容助手修改页面引用，'
-            '不要删除组件库资产。调用前必须确认 component_id 来自组件读取工具结果，不要用名称、import_name 或猜测 ID。'
-            '删除会使组件不再作为可复用组件参与后续选择，可能影响依赖该组件的后续维护；意图或目标不清时先询问用户。'
-        ),
-        requires_confirmation=True,
-        risk_level='danger',
-        response_example={'success': True, 'message': '组件已删除。', 'component_id': 12, 'component_code': 'cmp_hero_card'},
-    ),
-
-)
-
-
-_RESOURCE_MANAGER_TOOL_SPECS = (
-
-    _visual_analysis_tool_spec(allow_page_screenshot=False),
-    _image_generation_tool_spec(),
-
-    _tool(
-        'ask_user',
-        '向用户单选提问',
-        'user_feedback',
-        '用户交互',
-        '向用户提出一个或多个结构化单选问题。',
-        default_instructions=(
-            '当缺少必要业务信息且不能从当前上下文或工具结果中推断时，调用 ask_user 一次性提出需要用户回答的问题。'
-            '每个问题必须是单选，multi_select 必须为 false；只提供真实业务选项，不要提供“其他”或自由输入字段，'
-            '平台前端会在选项下方提供自定义回答输入框。每题提供 2-4 个简短选项，问题文案必须具体、可回答，并优先把相关问题合并到同一次 ask_user 调用中。'
-        ),
-        configurable=False,
-        requires_confirmation=True,
-        risk_level='system',
-        response_example={'questions': [{'header': '目标范围',
-                        'question': '这次修改应优先覆盖哪个页面区域？',
-                        'options': [{'label': '首屏', 'description': '只调整首屏展示。'},
-                                    {'label': '全页面', 'description': '整体统一视觉和内容结构。'}],
-                        'multi_select': False}]},
-        response_notes='平台会强制按单选处理；用户也可以不选预设项，直接提交自定义回答。',
-    ),
-
-    _tool(
-        'list_resource_assets',
-        '读取资源列表',
-        'resource_library',
-        '资源库',
-        '读取当前工作空间资源库摘要，支持按资源类型、标签和关键词过滤。',
-        default_instructions=(
-            '资源助手按工作空间资源库维护资产；需要盘点、筛选或维护资源库时传 scope=all。'
-            '如果收到 suggested 返回并带 fallback_reason，按工具返回来源理解，不要假设存在项目建议资源。'
-        ),
-        response_example={'source': 'workspace_all',
-         'fallback_reason': None,
-         'total': 1,
-         'items': [{'id': 8,
-                    'name': 'hero_illustration',
-                    'original_name': 'hero.svg',
-                    'description': '首页主视觉插图',
-                    'asset_type': 'image',
-                    'approx_aspect_ratio': '16:9',
-                    'approx_aspect_ratio_value': 1.7778,
-                    'aspect_ratio_source': 'auto',
-                    'content_editable': True}]},
-    ),
-
-    _tool(
-        'get_resource_asset_content',
-        '读取资源内容',
-        'resource_library',
-        '资源库',
-        '读取 content_editable=true 资源的 UTF-8 文本内容。',
-        default_instructions=(
-            '仅对资源列表中 content_editable=true 的资源调用。'
-            'content_editable=false 的资源不会返回文本内容。'
-        ),
-        response_example={'asset': {'id': 8, 'name': 'hero_illustration', 'asset_type': 'image'}, 'content': '<svg />'},
-    ),
-
-    _tool(
-        'list_resource_tags',
-        '读取资源标签',
-        'resource_library',
-        '资源库',
-        '列出当前工作空间资源库中出现过的标签。',
-        response_example=['品牌', '图标'],
-    ),
-
-    _tool(
-        'save_uploaded_image_as_resource',
-        '保存上传图片为资源',
-        'resource_library',
-        '资源库',
-        '把当前会话中用户上传的图片附件保存为工作空间 image 资源；重复调用同一附件不会重复创建资源。',
-        default_instructions=(
-            '只有用户明确要求保存、导入或加入资源库时才能调用。attachment_id 必须来自当前会话可信附件引用，'
-            '禁止传 URL、本地路径、base64 或猜测的 ID；本工具仅支持 source_kind=user_upload 的图片附件。'
-            '工具不会覆盖同名资源；名称冲突时应改用清晰的新 name，或在确实需要用户决定时调用 ask_user。'
-            'tags 必须直接传 JSON 数组/list[str]，新增标签前优先调用 list_resource_tags 复用现有标签。'
-        ),
-        sequential=True,
-        risk_level='write',
-        response_example={
-            'success': True,
-            'created': True,
-            'message': '上传图片已保存为工作空间资源。',
-            'attachment_id': 25,
-            'asset': {'id': 91, 'name': 'product_hero', 'asset_type': 'image', 'original_name': 'hero.png'},
-        },
-        response_notes='created=false 表示该附件此前已保存，asset 返回已有资源；不会再次创建或隐式修改其元数据。',
-    ),
-
-    _tool(
-        'create_resource_asset',
-        '创建资源',
-        'resource_library',
-        '资源库',
-        '创建 SVG 图片、SVG 图标、Draw.io、Mermaid、Chart 或 Formula 资源；位图应使用 generate_image，video 和 font 不做内容生成。',
-        default_instructions=(
-            '只创建可由工具直接管理的内容资源：image(svg)、icon(svg)、drawio、mermaid、'
-            'chart、formula。本工具不生成 video、font、位图 image 或位图 icon；位图应使用 generate_image 或由用户上传，'
-            'video、font 只能由用户上传后维护元数据。非图标插画、背景、装饰图和流程视觉稿等 SVG 必须创建为 image(svg)，'
-            '不要创建为 icon。tags 字段必须直接传 JSON 数组/list[str]，例如 "tags": ["插图", "城市"]；'
-            '不要把数组再编码成 JSON 字符串，例如 "tags": "[\\"插图\\", \\"城市\\"]"。'
-            '创建 tags 要克制，优先复用当前工作空间已有标签；调用前应先用 list_resource_tags 查看现有标签，'
-            '只有现有标签明显无法覆盖资源语义时才新增少量标签。SVG 内容必须是以 <svg> 为根节点的可解析 XML，'
-            '并拒绝脚本、事件处理器、foreignObject 和远程引用。Chart 内容必须是 ECharts option 对象，'
-            '优先使用 .json 文件名和标准 JSON 内容；字段应符合 ECharts setOption 结构，'
-            '例如 title、tooltip、legend、xAxis、yAxis、series，不要生成 Chart.js、'
-            'Vega、Mermaid 或自定义图表 DSL。Draw.io 内容必须是 diagrams.net/draw.io XML，'
-            '建议使用 .drawio 或 .xml 文件名，XML 应包含 <mxfile> 根结构；不要写成 SVG、'
-            'Mermaid 或普通流程文本。Mermaid 内容必须是 Mermaid 图表源码，建议使用 .mmd 或 .mermaid 文件名，'
-            '并以 flowchart、sequenceDiagram、classDiagram、stateDiagram-v2、'
-            'erDiagram、gantt、pie、journey 等 Mermaid 图类型开头；不要包 Markdown 代码围栏。'
-            'Formula 内容必须是 MathJax 可渲染的 LaTeX 公式源码，建议使用 .tex 文件名；'
-            '可以使用 $...$、$$...$$、\\(...\\)、\\[...\\] 或 equation/align/gather/multline 环境，'
-            '不要写成 MathML、KaTeX HTML 或 SVG。'
-            'Mermaid 或 Draw.io 缺少可自动推断比例时，可传 approx_aspect_ratio，例如 "16:9" 或 "4/3"，'
-            '平台只记录近似比例，不记录宽高尺寸。'
-        ),
-        risk_level='write',
-        response_example={'success': True,
-         'message': '资源已创建。',
-         'asset': {'id': 8,
-                   'name': 'hero_illustration',
-                   'asset_type': 'image',
-                   'original_name': 'illustration.svg'}},
-    ),
-
-    _tool(
-        'preview_resource_content_diff',
-        '预览资源 Diff',
-        'resource_library',
-        '资源库',
-        '预览将新内容写入资源后的 unified diff，不落库。',
-        default_instructions=(
-            '用于写入资源内容前预览差异，不落库。SVG 必须是 <svg> 根节点的可解析 XML，并拒绝 script、'
-            '事件处理器、foreignObject 和远程引用。Chart 必须是 ECharts option 对象，'
-            '优先使用标准 JSON。Draw.io 必须是 diagrams.net/draw.io XML，并包含 <mxfile> 根结构。'
-            'Mermaid 必须是 Mermaid 图表源码，不要包 Markdown 代码围栏。Formula 必须是 MathJax 可渲染的 LaTeX 公式源码，'
-            '不要写成 MathML、KaTeX HTML 或 SVG。'
-        ),
-        risk_level='write',
-        response_example={'asset_id': 8, 'changed': True, 'unified_diff': '--- icon.svg\n+++ icon.svg'},
-    ),
-
-    _tool(
-        'apply_resource_content_diff',
-        '写入资源内容',
-        'resource_library',
-        '资源库',
-        '写入资源新内容。',
-        default_instructions=(
-            '写入资源内容会由平台保护已有引用和回退能力。写入前优先调用 preview_resource_content_diff；'
-            '用户已明确要求直接写入时，也必须确保内容类型合法，SVG 不含脚本、事件处理器、foreignObject 或远程引用。'
-        ),
-        risk_level='write',
-        response_example={'success': True, 'message': '资源内容已写入。', 'asset': {'id': 8, 'name': 'hero_illustration'}},
-    ),
-
-    _tool(
-        'update_resource_asset_metadata',
-        '更新资源元数据',
-        'resource_library',
-        '资源库',
-        '更新资源 name、展示文件名、描述、标签或近似比例；不修改内容。',
-        default_instructions=(
-            '仅修改用户明确要求变更的元数据字段，未要求修改的字段应省略，不要传空字符串或 null 覆盖。'
-            'asset_id 必须来自资源列表或读取结果，不要用资源 name 猜测 ID。name 是页面和组件引用资源时使用的逻辑名；'
-            '只有用户明确要求重命名资源时才修改 name，普通展示名调整优先修改 original_name 或 description。'
-            'tags 必须直接传 JSON 数组/list[str]，不要把数组编码成字符串；新增标签前优先复用 list_resource_tags 返回的已有标签。'
-            '需要人工维护 Mermaid、Draw.io 或图片近似比例时传 approx_aspect_ratio，例如 "16:9"、"4/3" 或 "1.7778"；'
-            '需要清除人工比例并回退自动推断时传 clear_approx_aspect_ratio=true。'
-        ),
-        risk_level='write',
-        response_example={'success': True, 'message': '资源元数据已更新。', 'asset': {'id': 8, 'name': 'hero_illustration'}},
-    ),
-
-    _tool(
-        'copy_resource_asset',
-        '复制资源',
-        'resource_library',
-        '资源库',
-        '复制资源记录并复用物理文件。',
-        default_instructions=(
-            '用于创建资源副本或从历史副本恢复为新资源；复制只复用物理文件并写入新资源记录，不修改原资源内容。'
-            'asset_id 必须来自资源列表、项目建议资源或读取结果。需要新逻辑名时传 name，并确保语义清晰；'
-            '未提供 name 时由后端生成副本名。tags 必须直接传 JSON 数组/list[str]，不要编码成字符串；'
-            '如果复制后还要改内容，应先复制，再对新资源调用内容预览/写入工具。'
-        ),
-        risk_level='write',
-        response_example={'success': True, 'message': '资源已复制。', 'asset': {'id': 9, 'name': 'hero_illustration_copy'}},
-    ),
-
-    _tool(
-        'archive_resource_asset',
-        '归档资源',
-        'resource_library',
-        '资源库',
-        '归档资源，不影响已存在引用。',
-        default_instructions=(
-            '仅在用户明确要求归档、隐藏或整理下架资源时调用；当用户要求删除资源时，说明当前能力是归档而不是物理删除。'
-            'asset_id 必须来自资源列表、项目建议资源或读取结果，不要用资源 name 猜测 ID。归档后资源不再出现在默认可见选择中，'
-            '但现有页面、组件、主题或字体引用仍可解析；archive_reason 应用一句话说明归档原因。'
-        ),
-        risk_level='write',
-        response_example={'success': True, 'message': '资源已归档，现有引用仍可解析。', 'asset': {'id': 8, 'name': 'hero_illustration'}},
-    ),
-
+    _tool('delegate_task_to_self', '委派自身子任务', 'self_delegation', '自委派', '把可独立执行的工作空间内容任务交给同一助手的隔离子运行。',
+          default_instructions='不需要选择成员身份；不得委派删除、清理或永久移除任务，归档应优先使用 archive_entity。', risk_level='system'),
 )
 
 _COORDINATOR_GROUP_SPECS = (
     _group(
-        IMAGE_ANALYSIS_TOOL_GROUP_KEY,
-        "图片理解",
-        "以隔离历史的单次调用统一分析会话附件、工作空间图片资源或页面当前版本截图。",
-        ("analyze_visuals",),
-        required_context_fields=("workspace_id",),
-        token_scopes=(*PAGE_TOOL_VISUAL_SCOPES, *RESOURCE_TOOL_READ_SCOPES),
-        build_tools=_build_image_analysis_tools,
-        disclosable=True,
-    ),
-    _group(
-        IMAGE_GENERATION_TOOL_GROUP_KEY,
-        "图片生成",
-        "创建持久化图片生成或编辑任务，并把结果保存到资源库。",
-        ("generate_image",),
-        required_context_fields=("workspace_id",),
-        build_tools=_build_image_generation_tools,
-        disclosable=True,
-    ),
-    _group(
-        "user_feedback",
-        "用户交互",
-        "在缺少必要业务信息时，向用户提出结构化单选问题。",
-        ("ask_user",),
-        build_tools=_build_user_feedback_tools,
-        disclosable=True,
-    ),
-    _group(
-        "team_delegation",
-        "Team 委派",
-        "调用组件助手或资源助手处理内容助手不直接负责的组件库与资源库维护任务。",
-        _TEAM_DELEGATION_TOOL_KEYS,
-        required_context_fields=("workspace_id",),
-        build_tools=_build_team_delegation_runtime_tools,
-        disclosable=True,
-    ),
-    _group(
-        "content_project",
-        "内容与项目",
-        "面向内容助手展示的合并工具组，覆盖页面读取、视觉检查、代码检查、页面写入和项目路由维护。",
-        _COORDINATOR_CONTENT_PROJECT_TOOL_KEYS,
-    ),
-    _group(
-        "content_read",
-        "内容读取",
-        "读取页面源码、项目页面、项目路由和项目样式配置；组件和资源使用事实由独立只读分组提供。",
-        (
-            "get_page_content",
-            "get_project_style_config",
-            "list_project_pages",
-            "get_project_route_tree",
-        ),
+        "generic_business",
+        "通用业务",
+        "固定通用工具，覆盖工作空间内项目、页面、组件、资源、主题和样式。",
+        ("get_operation_guide", "query_entities", "create_entity", "update_entity", "archive_entity", "execute_action", "execute_dangerous_action"),
         required_context_fields=("workspace_id",),
         token_scopes=(
             *PAGE_TOOL_READ_SCOPES,
+            *PAGE_TOOL_WRITE_SCOPES,
+            *PAGE_TOOL_SNAPSHOT_SCOPES,
+            *PAGE_TOOL_PREVIEW_SCOPES,
+            *PAGE_TOOL_VISUAL_SCOPES,
             *PROJECT_TOOL_READ_SCOPES,
+            *PROJECT_TOOL_WRITE_SCOPES,
+            *COMPONENT_TOOL_READ_SCOPES,
+            *COMPONENT_TOOL_WRITE_SCOPES,
+            *RESOURCE_TOOL_READ_SCOPES,
+            *RESOURCE_TOOL_WRITE_SCOPES,
+            *CODE_CHECK_TOOL_SCOPES,
         ),
-        build_tools=_build_coordinator_content_read_tools,
+        build_tools=build_generic_business_tools,
         disclosable=True,
     ),
-    _group(
-        "component_read",
-        "组件读取",
-        "默认查询项目建议组件并可回退全工作空间已发布组件，同时提供组件引用用法；不负责组件草稿、版本审计、依赖分析或组件维护。",
-        ("list_workspace_components", "get_workspace_component_usage"),
-        required_context_fields=("workspace_id",),
-        token_scopes=COMPONENT_TOOL_READ_SCOPES,
-        build_tools=_build_coordinator_component_read_tools,
-        disclosable=True,
-    ),
-    _group(
-        "runtime_kit",
-        "Runtime Kit",
-        "查询开放给 Agent 的 Runtime Kit import 能力目录和单项用法，供页面源码生成或改写时选择公开能力。",
-        _RUNTIME_KIT_TOOL_KEYS,
-        required_context_fields=("workspace_id",),
-        token_scopes=COMPONENT_TOOL_READ_SCOPES,
-        build_tools=_build_coordinator_runtime_kit_tools,
-        disclosable=True,
-    ),
-    _group(
-        "resource_read",
-        "资源读取",
-        "默认优先查询当前项目建议引用资源，并可回退全工作空间资源；同时提供资源内容、资源标签和已注册字体资源读取，不负责资源写入或归档。",
-        ("list_resource_assets", "get_resource_asset_content", "list_resource_tags", "list_workspace_font_assets"),
-        required_context_fields=("workspace_id",),
-        token_scopes=RESOURCE_TOOL_READ_SCOPES,
-        build_tools=_build_coordinator_resource_read_tools,
-        disclosable=True,
-    ),
-    _group(
-        "code_check",
-        "代码检查",
-        "基于 Runtime 原生能力检查页面源码或候选 edits 是否存在语法、导入、资源和编译错误；不修改页面。",
-        ("check_page_code",),
-        required_context_fields=("workspace_id",),
-        token_scopes=(*PAGE_TOOL_READ_SCOPES, *CODE_CHECK_TOOL_SCOPES),
-        build_tools=lambda session_factory: [build_check_page_code_tool(session_factory)],
-        disclosable=True,
-    ),
-    _group(
-        "page_write",
-        "页面写入",
-        "对指定 page_id 页面应用结构化 edits 并生成新版本，仅在用户明确要求修改时使用。",
-        ("get_page_content", "apply_page_edits"),
-        required_context_fields=("workspace_id",),
-        token_scopes=(*PAGE_TOOL_READ_SCOPES, *PAGE_TOOL_WRITE_SCOPES, *PAGE_TOOL_SNAPSHOT_SCOPES, *PAGE_TOOL_PREVIEW_SCOPES),
-        build_tools=lambda session_factory: [
-            build_get_page_content_tool(session_factory),
-            build_apply_page_edits_tool(session_factory),
-        ],
-        disclosable=True,
-    ),
-    _group(
-        "project_write",
-        "项目写入",
-        "创建页面、维护页面元数据、更新项目样式配置或更新项目路由树。",
-        (
-            "get_project_style_config",
-            "list_project_pages",
-            "create_project_page",
-            "update_page_metadata",
-            "update_project_style_config",
-            "get_project_route_tree",
-            "update_project_route_tree",
-        ),
-        required_context_fields=("project_id",),
-        token_scopes=(*PROJECT_TOOL_READ_SCOPES, *PROJECT_TOOL_WRITE_SCOPES),
-        build_tools=lambda session_factory: build_project_tools(session_factory),
-        disclosable=True,
-    ),
-)
-
-_COMPONENT_MANAGER_GROUP_SPECS = (
-    _group(
-        "user_feedback",
-        "用户交互",
-        "在缺少必要业务信息时，向用户提出结构化单选问题。",
-        ("ask_user",),
-        build_tools=_build_user_feedback_tools,
-    ),
-    _group(
-        "team_delegation",
-        "Team 委派",
-        "调用资源助手处理组件助手不直接负责的资源库维护任务。",
-        _TEAM_DELEGATION_TOOL_KEYS,
-        required_context_fields=("workspace_id",),
-        build_tools=_build_resource_delegation_runtime_tools,
-        disclosable=True,
-    ),
-    _group(
-        "component_library",
-        "组件库",
-        "面向组件助手展示的合并工具组，覆盖组件读取、Runtime Kit 查询、资源读取、代码检查和组件写入。",
-        _COMPONENT_LIBRARY_TOOL_KEYS,
-    ),
-    _group(
-        "component_read",
-        "组件读取",
-        "读取组件库、组件详情、版本历史和依赖索引。",
-        ("list_components", "get_component_detail", "list_component_versions", "get_component_dependencies"),
-        required_context_fields=("workspace_id",),
-        token_scopes=COMPONENT_TOOL_READ_SCOPES,
-        build_tools=lambda session_factory: _filter_tools(build_component_manager_tools(session_factory), ("list_components", "get_component_detail", "list_component_versions", "get_component_dependencies")),
-    ),
-    _group(
-        "runtime_kit",
-        "Runtime Kit",
-        "查询开放给 Agent 的 Runtime Kit import 能力目录和单项用法。",
-        _RUNTIME_KIT_TOOL_KEYS,
-        required_context_fields=("workspace_id",),
-        token_scopes=COMPONENT_TOOL_READ_SCOPES,
-        build_tools=lambda session_factory: _filter_tools(build_component_manager_tools(session_factory), _RUNTIME_KIT_TOOL_KEYS),
-    ),
-    _group(
-        "resource_read",
-        "资源读取",
-        "默认优先读取当前项目建议引用资源，并可回退全工作空间资源；同时提供标签和可编辑内容，供组件源码和 preview_schema 选择资源引用。",
-        ("list_resource_assets", "get_resource_asset_content", "list_resource_tags"),
-        required_context_fields=("workspace_id",),
-        token_scopes=RESOURCE_TOOL_READ_SCOPES,
-        build_tools=lambda session_factory: _filter_tools(
-            build_component_manager_tools(session_factory),
-            ("list_resource_assets", "get_resource_asset_content", "list_resource_tags"),
-        ),
-    ),
-    _group(
-        "code_check",
-        "代码检查",
-        "基于 Runtime 原生组件预览能力检查组件源码或候选 edits 是否存在语法、导入、资源和编译错误；不修改组件。",
-        ("check_component_code",),
-        required_context_fields=("workspace_id",),
-        token_scopes=(*COMPONENT_TOOL_READ_SCOPES, *CODE_CHECK_TOOL_SCOPES),
-        build_tools=lambda session_factory: [build_check_component_code_tool(session_factory)],
-    ),
-    _group(
-        "component_write",
-        "组件写入",
-        "创建组件草稿、应用组件 Edits、发布组件，并执行组件元数据写入或删除。",
-        ("create_component", "apply_component_edits", "update_component_metadata", "publish_component", "delete_component"),
-        required_context_fields=("workspace_id",),
-        token_scopes=(*COMPONENT_TOOL_WRITE_SCOPES, *COMPONENT_TOOL_DELETE_SCOPES),
-        build_tools=lambda session_factory: _filter_tools(build_component_manager_tools(session_factory), ("create_component", "apply_component_edits", "update_component_metadata", "publish_component", "delete_component")),
-    ),
-)
-
-_RESOURCE_MANAGER_GROUP_SPECS = (
-    _group(
-        IMAGE_ANALYSIS_TOOL_GROUP_KEY,
-        "图片理解",
-        "分析当前会话附件或工作空间图片资源，不提供页面截图访问能力。",
-        ("analyze_visuals",),
-        required_context_fields=("workspace_id",),
-        token_scopes=RESOURCE_TOOL_READ_SCOPES,
-        build_tools=_build_image_analysis_tools,
-        disclosable=True,
-    ),
-    _group(
-        IMAGE_GENERATION_TOOL_GROUP_KEY,
-        "图片生成",
-        "创建持久化图片生成或编辑任务，并把结果保存到资源库。",
-        ("generate_image",),
-        required_context_fields=("workspace_id",),
-        build_tools=_build_image_generation_tools,
-        disclosable=True,
-    ),
-    _group(
-        "user_feedback",
-        "用户交互",
-        "在缺少必要业务信息时，向用户提出结构化单选问题。",
-        ("ask_user",),
-        build_tools=_build_user_feedback_tools,
-    ),
-    _group(
-        "resource_library",
-        "资源库",
-        "面向资源助手展示的合并工具组，覆盖工作空间资源读取、上传图片保存、内容写入、元数据维护、复制和归档。",
-        _RESOURCE_LIBRARY_TOOL_KEYS,
-    ),
-    _group(
-        "resource_read",
-        "资源读取",
-        "读取当前工作空间资源库资产、标签和可编辑内容；资源助手不依赖项目或页面建议资源。",
-        ("list_resource_assets", "get_resource_asset_content", "list_resource_tags"),
-        required_context_fields=("workspace_id",),
-        token_scopes=RESOURCE_TOOL_READ_SCOPES,
-        build_tools=lambda session_factory: _filter_tools(
-            build_resource_manager_tools(session_factory),
-            ("list_resource_assets", "get_resource_asset_content", "list_resource_tags"),
-        ),
-    ),
-    _group(
-        "resource_write",
-        "资源写入",
-        "保存会话上传图片、创建可编辑资源、预览/写入内容、更新元数据、复制和归档资源；不暴露删除工具。",
-        (
-            "save_uploaded_image_as_resource",
-            "create_resource_asset",
-            "preview_resource_content_diff",
-            "apply_resource_content_diff",
-            "update_resource_asset_metadata",
-            "copy_resource_asset",
-            "archive_resource_asset",
-        ),
-        required_context_fields=("workspace_id",),
-        token_scopes=(*RESOURCE_TOOL_READ_SCOPES, *RESOURCE_TOOL_WRITE_SCOPES),
-        build_tools=lambda session_factory: _filter_tools(
-            build_resource_manager_tools(session_factory),
-            (
-                "save_uploaded_image_as_resource",
-                "create_resource_asset",
-                "preview_resource_content_diff",
-                "apply_resource_content_diff",
-                "update_resource_asset_metadata",
-                "copy_resource_asset",
-                "archive_resource_asset",
-            ),
-        ),
-    ),
+    _group("user_feedback", "用户交互", "向用户提出结构化单选问题。", ("ask_user",), build_tools=_build_user_feedback_tools, disclosable=True),
+    _group("self_delegation", "自委派", "调用同一内容助手的隔离子运行处理独立任务。", ("delegate_task_to_self",),
+           required_context_fields=("workspace_id",), build_tools=_build_self_delegation_runtime_tools, disclosable=True),
+    _group(IMAGE_ANALYSIS_TOOL_GROUP_KEY, "图片理解", "分析会话附件、资源或页面截图。", ("analyze_visuals",),
+           required_context_fields=("workspace_id",), token_scopes=(*PAGE_TOOL_VISUAL_SCOPES, *RESOURCE_TOOL_READ_SCOPES),
+           build_tools=_build_image_analysis_tools, disclosable=True),
+    _group(IMAGE_GENERATION_TOOL_GROUP_KEY, "图片生成", "生成或编辑图片并保存到资源库。", ("generate_image",),
+           required_context_fields=("workspace_id",), build_tools=_build_image_generation_tools, disclosable=True),
 )
 
 _AGENT_TOOL_SPECS = {
     AGENT_COORDINATOR_AGENT_ID: _COORDINATOR_TOOL_SPECS,
-    COMPONENT_MANAGER_AGENT_ID: _COMPONENT_MANAGER_TOOL_SPECS,
-    RESOURCE_MANAGER_AGENT_ID: _RESOURCE_MANAGER_TOOL_SPECS,
 }
 
 _AGENT_GROUP_SPECS = {
     AGENT_COORDINATOR_AGENT_ID: _COORDINATOR_GROUP_SPECS,
-    COMPONENT_MANAGER_AGENT_ID: _COMPONENT_MANAGER_GROUP_SPECS,
-    RESOURCE_MANAGER_AGENT_ID: _RESOURCE_MANAGER_GROUP_SPECS,
 }
 
 _AGENT_TOOL_SPEC_MAP = {

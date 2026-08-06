@@ -34,20 +34,21 @@
               >
                 {{ code }}
               </span>
+              <UiPopover v-if="description" v-model:open="descriptionOpen">
+                <template #trigger>
+                  <UiIconButton label="查看项目描述" size="xs" variant="ghost">
+                    <Info class="h-3.5 w-3.5" />
+                  </UiIconButton>
+                </template>
+                <div class="max-w-xs text-sm text-text-secondary">{{ description }}</div>
+              </UiPopover>
               <div v-if="$slots['title-actions']" class="flex shrink-0 items-center gap-1">
                 <slot name="title-actions" />
               </div>
             </div>
             
             <!-- 描述和元信息 -->
-            <div v-if="description || metaItems.length > 0" class="mt-0.5 min-w-0 space-y-0.5">
-              <p 
-                v-if="description" 
-                class="truncate text-xs leading-4 text-text-secondary"
-                :title="description"
-              >
-                {{ description }}
-              </p>
+            <div v-if="metaItems.length > 0" class="mt-0.5 min-w-0 space-y-0.5">
               <div v-if="metaItems.length > 0" class="flex min-h-4 min-w-0 items-center gap-x-3 text-xs leading-4 text-text-muted">
                 <span 
                   v-for="(item, index) in metaItems" 
@@ -74,7 +75,10 @@
 </template>
 
 <script setup lang="ts">
-import { ChevronRight } from '@lucide/vue'
+import { ref } from 'vue'
+import { ChevronRight, Info } from '@lucide/vue'
+
+import { UiIconButton, UiPopover } from '@/components/ui'
 
 interface BreadcrumbItem {
   label: string
@@ -98,4 +102,6 @@ withDefaults(
     titleClass: '',
   },
 )
+
+const descriptionOpen = ref(false)
 </script>

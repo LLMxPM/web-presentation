@@ -138,6 +138,14 @@ async def test_page_screenshot_should_save_and_expose_public_url(
     assert listed_page["screenshot_config_hash"] == screenshot_data["screenshot_config_hash"]
     assert listed_page["screenshot_is_latest"] is True
 
+    project_list_response = await authenticated_client.get(
+        f"/api/projects?page=1&page_size=10&workspace_id={workspace_id}&status=active"
+    )
+    assert project_list_response.status_code == 200
+    listed_project = next(item for item in project_list_response.json()["items"] if item["id"] == project_id)
+    assert listed_project["first_page_title"] == page_data["title"]
+    assert listed_project["first_page_screenshot_url"] == screenshot_data["screenshot_url"]
+
     async def fake_read_object(self, storage_key: str) -> bytes:  # noqa: ARG001
         assert storage_key == captured["storage_key"]
         return b"fake-png"

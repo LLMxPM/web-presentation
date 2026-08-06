@@ -235,8 +235,6 @@ const pageId = computed(() => {
   return pid ? parseInt(pid as string, 10) : null
 })
 const activeAgentId = computed(() => {
-  if (route.name === 'components') return 'component-manager'
-  if (route.name === 'assets') return 'resource-manager'
   return 'agent-coordinator'
 })
 const activeAgentSource = computed(() => {

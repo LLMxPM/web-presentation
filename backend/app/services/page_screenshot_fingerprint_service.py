@@ -9,6 +9,7 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.platform_fonts import PLATFORM_FONT_REVISION
 from app.models.page import Page
 from app.models.workspace import Project
 from app.schemas.project_app_config import ProjectAppPageConfig
@@ -79,6 +80,7 @@ class PageScreenshotFingerprintService:
 
         payload = {
             "schema_version": cls.SCHEMA_VERSION,
+            "platform_font_revision": PLATFORM_FONT_REVISION,
             "page": {
                 "width": page_config.width,
                 "height": page_config.height,

@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from math import ceil
 from typing import Any
 
 from pydantic_ai.messages import (
@@ -26,15 +25,10 @@ from app.ai.agent.runtime_context import AgentRuntimeContext
 from app.ai.context_usage import AgentContextUsageSnapshot, usage_snapshot_from_messages
 from app.ai.image_history_hydration import hydrate_agent_image_refs
 from app.ai.image_refs import normalize_agent_image_ref, sanitize_message_history_image_refs
+from app.ai.model_budget import CONTEXT_WINDOW_TOKEN_DEFAULT, derive_model_run_budget
 from app.core.exceptions import AppException
 from app.models.ai_agent_runtime import AiAgentRun, AiAgentSession
 from app.schemas.agent import AgentContextStatusItem
-
-DEFAULT_CONTEXT_WINDOW_TOKENS = 128_000
-DEFAULT_MAX_OUTPUT_TOKENS = 28_000
-DEFAULT_COMPRESSION_TARGET_RATIO = 0.25
-SAFETY_MARGIN_RATIO = 0.08
-MIN_SAFETY_MARGIN_TOKENS = 512
 
 _SUMMARY_KIND = "agent-message-history-summary.v1"
 _SUMMARY_PROMPT_PREFIX = "以下为较早智能体会话历史摘要，已替代压缩边界之前的原始消息："
@@ -332,6 +326,7 @@ async def rebuild_agent_message_history(
             delta = trim_unprocessed_tool_call_history(delta)
         if not delta:
             continue
+        message_json.extend(_run_focus_marker_json(run_model))
         message_json.extend(_message_dicts(delta))
         included_run_ids.append(run_model.run_id)
     covered_until_run_id = str(checkpoint.get("covered_until_run_id") or "") if checkpoint else ""
@@ -357,32 +352,46 @@ async def rebuild_agent_message_history(
     )
 
 
+def _run_focus_marker_json(run_model: AiAgentRun) -> list[dict[str, Any]]:
+    """为每段历史写入显式 Run/项目/页面 ID，支持跨项目摘要分区并消除‘当前’歧义。"""
+
+    run_input = run_model.input_payload_json or {}
+    focus = run_input.get("focus") if isinstance(run_input.get("focus"), dict) else {}
+    allowed_projects = run_input.get("allowed_projects") if isinstance(run_input.get("allowed_projects"), list) else []
+    marker = ModelRequest(
+        parts=[
+            SystemPromptPart(
+                content=(
+                    "历史分区标记："
+                    f"run_id={run_model.run_id}；workspace_id={run_model.workspace_id}；"
+                    f"project_id={run_model.project_id or 'none'}；page_id={run_model.page_id or 'none'}。"
+                    f"workspace_name={focus.get('workspace_name') or 'unknown'}；"
+                    f"project_name={focus.get('project_name') or 'none'}；"
+                    f"page_name={focus.get('page_title') or 'none'}；"
+                    f"allowed_projects={allowed_projects or 'workspace_all'}。"
+                    "后续摘要必须按这些显式 ID 归类。"
+                )
+            )
+        ]
+    )
+    dumped = ModelMessagesTypeAdapter.dump_python([marker], mode="json")
+    return dumped if isinstance(dumped, list) else []
 def build_history_budget(model_config: Any, *, runtime_context: AgentRuntimeContext) -> AgentHistoryBudget:
     """根据模型配置计算真实 usage 高水位压缩触发线。"""
 
     _ = runtime_context
-    context_window_tokens = _positive_int(getattr(model_config, "context_window_tokens", None), DEFAULT_CONTEXT_WINDOW_TOKENS)
-    max_output_tokens = _positive_int(getattr(model_config, "max_output_tokens", None), DEFAULT_MAX_OUTPUT_TOKENS)
-    compression_target_ratio = _bounded_float(
-        getattr(model_config, "compression_target_ratio", None),
-        DEFAULT_COMPRESSION_TARGET_RATIO,
-        lower=0.02,
-        upper=0.5,
+    context_window_tokens = _positive_int(
+        getattr(model_config, "context_window_tokens", None),
+        CONTEXT_WINDOW_TOKEN_DEFAULT,
     )
-    safety_margin_tokens = max(MIN_SAFETY_MARGIN_TOKENS, ceil(context_window_tokens * SAFETY_MARGIN_RATIO))
-    context_input_budget_tokens = max(0, context_window_tokens - max_output_tokens - safety_margin_tokens)
-    compression_target_tokens = (
-        0
-        if context_input_budget_tokens <= 0
-        else max(1, min(ceil(context_window_tokens * compression_target_ratio), context_input_budget_tokens))
-    )
+    derived = derive_model_run_budget(context_window_tokens)
     return AgentHistoryBudget(
-        context_window_tokens=context_window_tokens,
-        max_output_tokens=max_output_tokens,
-        compression_target_ratio=compression_target_ratio,
-        safety_margin_tokens=safety_margin_tokens,
-        context_input_budget_tokens=context_input_budget_tokens,
-        compression_target_tokens=compression_target_tokens,
+        context_window_tokens=derived.context_window_tokens,
+        max_output_tokens=derived.max_output_tokens,
+        compression_target_ratio=derived.compression_target_ratio,
+        safety_margin_tokens=derived.safety_margin_tokens,
+        context_input_budget_tokens=derived.context_input_budget_tokens,
+        compression_target_tokens=derived.compression_target_tokens,
     )
 
 
@@ -737,16 +746,6 @@ def _positive_int(value: Any, fallback: int) -> int:
     except (TypeError, ValueError):
         return fallback
     return normalized if normalized > 0 else fallback
-
-
-def _bounded_float(value: Any, fallback: float, *, lower: float, upper: float) -> float:
-    """把比例值约束到指定范围。"""
-
-    try:
-        normalized = float(value)
-    except (TypeError, ValueError):
-        return fallback
-    return min(upper, max(lower, normalized))
 
 
 def _context_limit_error() -> AppException:

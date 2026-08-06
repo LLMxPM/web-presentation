@@ -24,7 +24,7 @@ from app.ai.pydantic_tools import (
     build_pydantic_tools,
 )
 from app.ai.session_facade_pydantic import _build_continue_message_history, _build_deferred_results
-from app.ai.tool_specs import AGENT_COORDINATOR_AGENT_ID, RESOURCE_MANAGER_AGENT_ID
+from app.ai.tool_specs import AGENT_COORDINATOR_AGENT_ID
 from app.ai.tools.visual.generate_image import build_generate_image_tool
 from app.schemas.agent import AgentScopeContext
 from app.services.image_generation.registry import get_image_model_spec
@@ -69,13 +69,13 @@ def test_unified_visual_tool_should_not_require_content_model_image_input() -> N
     assert deps.dependencies["model_supports_image_input"] is False
 
 
-def test_resource_visual_schema_should_exclude_page_screenshot() -> None:
-    """资源助手图片理解 Schema 只能披露附件和资源图片。"""
+def test_removed_resource_agent_should_not_build_runtime_tools() -> None:
+    """已合并的资源助手 ID 不再构建独立运行时工具。"""
 
     current = SimpleNamespace(user=SimpleNamespace(id=1), backend_session_id="backend-session-1")
     scope = AgentScopeContext(scope_type="workspace", workspace_id=1)
     tools, deps = build_pydantic_tools(
-        agent_id=RESOURCE_MANAGER_AGENT_ID,
+        agent_id="resource-manager",
         session_factory=None,  # type: ignore[arg-type]
         runtime_config=None,
         current=current,  # type: ignore[arg-type]
@@ -85,12 +85,8 @@ def test_resource_visual_schema_should_exclude_page_screenshot() -> None:
         supports_image_input=False,
     )
 
-    analyze = next(tool for tool in tools if tool.name == "analyze_visuals")
-    schema_text = str(analyze.function_schema.json_schema)
-    assert "AttachmentVisualInput" in schema_text
-    assert "AssetVisualInput" in schema_text
-    assert "PageScreenshotVisualInput" not in schema_text
-    assert deps.dependencies["allowed_visual_input_types"] == ["attachment", "asset"]
+    assert tools == []
+    assert deps.dependencies["allowed_visual_input_types"] == []
 
 
 def test_generate_image_schema_should_follow_bound_model_capabilities() -> None:
@@ -141,6 +137,113 @@ def test_generate_image_tags_should_accept_json_array_string_before_validation()
             "prompt": "生成封面图",
             "tags": "delivery,cover",
         })
+
+
+def test_tool_bridge_should_decode_repeated_json_container_arguments() -> None:
+    """对象和数组参数被重复 JSON 序列化时应在 Schema 校验前还原。"""
+
+    @agent_tool(show_result=False)
+    def container_tool(
+        run_context: AgentToolContext,
+        filters: dict[str, object] | None = None,
+        target_ids: list[int] | None = None,
+    ) -> AgentToolResult:
+        """返回已解析的容器参数。"""
+
+        _ = run_context
+        return AgentToolResult(content=str((filters, target_ids)))
+
+    tool = _wrap_platform_tool(container_tool)
+    validated = tool.function_schema.validator.validate_python({
+        "filters": '"\\\"{\\\\\\\"project_id\\\\\\\": 52}\\\""',
+        "target_ids": '"[1, 2, 3]"',
+    })
+
+    assert validated["filters"] == {"project_id": 52}
+    assert validated["target_ids"] == [1, 2, 3]
+    properties = tool.function_schema.json_schema["properties"]
+    assert any(item.get("type") == "object" for item in properties["filters"]["anyOf"])
+    assert any(item.get("type") == "array" for item in properties["target_ids"]["anyOf"])
+
+
+def test_tool_bridge_should_not_decode_strings_inside_container() -> None:
+    """兼容解析只处理参数根节点，不能改写源码或业务 JSON 文本。"""
+
+    @agent_tool(show_result=False)
+    def payload_tool(run_context: AgentToolContext, payload: dict[str, object]) -> AgentToolResult:
+        """返回业务 payload。"""
+
+        _ = run_context
+        return AgentToolResult(content=str(payload))
+
+    tool = _wrap_platform_tool(payload_tool)
+    validated = tool.function_schema.validator.validate_python({
+        "payload": '{"content":"{\\"project_id\\":52}","source":"<template>{}</template>"}',
+    })
+
+    assert validated["payload"] == {
+        "content": '{"project_id":52}',
+        "source": "<template>{}</template>",
+    }
+
+
+def test_platform_tools_should_allow_three_argument_retries() -> None:
+    """普通平台工具应允许模型在参数校验失败后修正三次。"""
+
+    @agent_tool(show_result=False)
+    def query_tool(run_context: AgentToolContext, filters: dict[str, object]) -> AgentToolResult:
+        """执行测试查询。"""
+
+        _ = run_context
+        return AgentToolResult(content=str(filters))
+
+    assert _wrap_platform_tool(query_tool).max_retries == 3
+
+
+@pytest.mark.asyncio
+async def test_platform_tool_should_recover_after_repeated_invalid_arguments() -> None:
+    """模型连续两次给出错误容器参数后，第三次修正应继续完成运行。"""
+
+    @agent_tool(show_result=False)
+    def query_tool(run_context: AgentToolContext, filters: dict[str, object]) -> AgentToolResult:
+        """执行测试查询。"""
+
+        _ = run_context
+        return AgentToolResult(content=str(filters))
+
+    request_count = 0
+
+    async def model_func(messages: object, info: AgentInfo) -> ModelResponse:
+        """前两轮输出非法参数，第三轮修正，收到工具结果后结束。"""
+
+        nonlocal request_count
+        _ = info
+        request_count += 1
+        for message in reversed(messages):
+            for part in getattr(message, "parts", []):
+                if getattr(part, "part_kind", None) == "tool-return":
+                    return ModelResponse(
+                        parts=[TextPart(content="查询完成")],
+                        usage=RequestUsage(input_tokens=1, output_tokens=1),
+                    )
+        args = {"filters": "not-json"} if request_count < 3 else {"filters": {"project_id": 52}}
+        return ModelResponse(
+            parts=[ToolCallPart(tool_name="query_tool", args=args, tool_call_id=f"tool-{request_count}")],
+            usage=RequestUsage(input_tokens=1, output_tokens=1),
+        )
+
+    agent = Agent(
+        FunctionModel(model_func),
+        tools=[_wrap_platform_tool(query_tool)],
+        deps_type=AgentToolDeps,
+    )
+    result = await agent.run(
+        "查询项目组件",
+        deps=AgentToolDeps(dependencies={"run_id": "run-1", "session_id": "session-1"}),
+    )
+
+    assert result.output == "查询完成"
+    assert request_count == 4
 
 
 def test_generate_image_schema_should_keep_openai_quality_and_mask() -> None:

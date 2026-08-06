@@ -32,6 +32,11 @@ export function buildMutationRefreshEvents(
     result,
   }
 
+  const unifiedEvents = buildUnifiedMutationEvents(resultRecord, baseEvent)
+  if (unifiedEvents.length) {
+    return unifiedEvents
+  }
+
   if (toolName === 'apply_page_edits') {
     const pageId = resolveNumberField(resultRecord, ['page_id']) ?? baseEvent.pageId
     return [
@@ -81,7 +86,6 @@ export function buildMutationRefreshEvents(
     || toolName === 'apply_component_edits'
     || toolName === 'update_component_metadata'
     || toolName === 'publish_component'
-    || toolName === 'delete_component'
   ) {
     return [{
       ...baseEvent,
@@ -105,6 +109,59 @@ export function buildMutationRefreshEvents(
     }]
   }
 
+  return []
+}
+
+/**
+ * 按后端统一 mutation envelope 构造刷新事件，避免继续扩展物理工具名分支。
+ */
+function buildUnifiedMutationEvents(
+  resultRecord: Record<string, unknown> | null,
+  baseEvent: AgentMutationRefreshBase & { toolName: string, result: unknown },
+): AgentMutationRefreshEvent[] {
+  const mutation = resultRecord && isRecord(resultRecord.mutation) ? resultRecord.mutation : null
+  if (!mutation) return []
+  const resourceType = String(mutation.resource_type || resultRecord?.resource_type || '')
+  const data = resultRecord && isRecord(resultRecord.data) ? resultRecord.data : null
+  const nestedData = data && isRecord(data.data) ? data.data : data
+  const target = isRecord(resultRecord?.target) ? resultRecord.target : (isRecord(mutation.target) ? mutation.target : null)
+  const targets = resultRecord && Array.isArray(resultRecord.targets)
+    ? resultRecord.targets.filter(isRecord)
+    : []
+  const targetIds = [...new Set([
+    resolveNumberField(target, ['id']),
+    ...targets.map(item => resolveNumberField(item, ['id'])),
+  ].filter((value): value is number => value !== null))]
+  const targetId = targetIds[0] ?? null
+  const pageId = targetId ?? resolveNumberField(nestedData, ['page_id']) ?? baseEvent.pageId
+  const projectId = resourceType === 'project'
+    ? targetId ?? resolveNumberField(nestedData, ['project_id']) ?? baseEvent.projectId
+    : resolveNumberField(nestedData, ['project_id']) ?? baseEvent.projectId
+
+  if (resourceType === 'page') {
+    const pageIds = targetIds.length ? targetIds : [pageId]
+    return pageIds.flatMap(item => [
+      { ...baseEvent, kind: 'page' as const, pageId: item, projectId },
+      { ...baseEvent, kind: 'project-pages' as const, pageId: item, projectId },
+    ])
+  }
+  if (resourceType === 'project') return [{ ...baseEvent, kind: 'project', projectId }]
+  if (resourceType === 'component') {
+    const componentIds = targetIds.length ? targetIds : [baseEvent.componentId]
+    return componentIds.map(componentId => ({ ...baseEvent, kind: 'component' as const, componentId }))
+  }
+  if (resourceType === 'asset') {
+    const assetIds = targetIds.length ? targetIds : [resolveAssetIdFromResult(nestedData)]
+    return assetIds.map(assetId => ({ ...baseEvent, kind: 'asset' as const, assetId }))
+  }
+  if (resourceType === 'theme') {
+    const themeIds = targetIds.length ? targetIds : [null]
+    return themeIds.map(themeId => ({ ...baseEvent, kind: 'theme' as const, themeId }))
+  }
+  if (resourceType === 'style') {
+    const styleIds = targetIds.length ? targetIds : [null]
+    return styleIds.map(styleId => ({ ...baseEvent, kind: 'style' as const, styleId }))
+  }
   return []
 }
 
@@ -138,6 +195,8 @@ export function compactMutationRefreshEvents(events: AgentMutationRefreshEvent[]
       event.pageId ?? '',
       event.componentId ?? '',
       event.assetId ?? '',
+      event.themeId ?? '',
+      event.styleId ?? '',
     ].join(':'), event)
   }
   return [...eventMap.values()]

@@ -108,37 +108,37 @@
                 <label class="space-y-1.5">
                   <span class="text-xs font-bold text-text-muted">标题字体</span>
                   <UiCombobox
-                    :model-value="form.heading_font_family_id"
-                    :options="fontOptions"
-                    clearable
-                    placeholder="浏览器默认"
+                    :model-value="headingFontSelection"
+                    :options="sansFontOptions"
+                    placeholder="平台默认"
                     search-placeholder="搜索字体族名称"
-                    @update:model-value="updateNullableNumberField('heading_font_family_id', $event)"
+                    @update:model-value="updateFontSelection('heading', $event)"
                   />
                 </label>
                 <label class="space-y-1.5">
                   <span class="text-xs font-bold text-text-muted">正文字体</span>
                   <UiCombobox
-                    :model-value="form.body_font_family_id"
-                    :options="fontOptions"
-                    clearable
-                    placeholder="浏览器默认"
+                    :model-value="bodyFontSelection"
+                    :options="sansFontOptions"
+                    placeholder="平台默认"
                     search-placeholder="搜索字体族名称"
-                    @update:model-value="updateNullableNumberField('body_font_family_id', $event)"
+                    @update:model-value="updateFontSelection('body', $event)"
                   />
                 </label>
                 <label class="space-y-1.5">
                   <span class="text-xs font-bold text-text-muted">代码字体</span>
                   <UiCombobox
-                    :model-value="form.code_font_family_id"
-                    :options="fontOptions"
-                    clearable
-                    placeholder="浏览器默认"
+                    :model-value="codeFontSelection"
+                    :options="codeFontOptions"
+                    placeholder="平台等宽"
                     search-placeholder="搜索字体族名称"
-                    @update:model-value="updateNullableNumberField('code_font_family_id', $event)"
+                    @update:model-value="updateFontSelection('code', $event)"
                   />
                 </label>
               </div>
+              <p class="mt-2 text-[11px] leading-5 text-text-disabled">
+                平台字体会随页面加载，预览与服务端截图排版一致；跟随系统会因设备或容器字体不同产生差异。
+              </p>
             </div>
 
           </div>
@@ -226,9 +226,9 @@
           :project-icon-url="selectedProjectIconAsset?.url"
           :project-icon-name="selectedProjectIconAsset?.name || form.project_icon_name"
           :project-icon-analysis="selectedProjectIconAsset?.analysis_metadata || null"
-          :heading-font-label="selectedHeadingFont?.name || DEFAULT_HEADING_FONT_FAMILY"
-          :body-font-label="selectedBodyFont?.name || DEFAULT_BODY_FONT_FAMILY"
-          :code-font-label="selectedCodeFont?.name || DEFAULT_CODE_FONT_FAMILY"
+          :heading-font-label="selectedHeadingFont?.name || form.heading_font_preset || DEFAULT_HEADING_FONT_FAMILY"
+          :body-font-label="selectedBodyFont?.name || form.body_font_preset || DEFAULT_BODY_FONT_FAMILY"
+          :code-font-label="selectedCodeFont?.name || form.code_font_preset || DEFAULT_CODE_FONT_FAMILY"
           :heading-font-family="selectedHeadingFont"
           :body-font-family="selectedBodyFont"
           :code-font-family="selectedCodeFont"
@@ -253,6 +253,7 @@ import { UiButton, UiCombobox, UiDialog, UiFormField, UiInput } from '@/componen
 import type { SelectModelValue, SelectOption } from '@/components/ui/select'
 import type { AssetResponse, ThemeAssetSummary, ThemePalette, WorkspaceFontFamilyItem, WorkspaceThemeItem } from '@/types/api'
 import { Message } from '@/utils/message'
+import { isThemeFontPreset, type ThemeFontPreset } from '@/utils/theme-font-presets'
 import ThemePreviewCard from './ThemePreviewCard.vue'
 
 const props = withDefaults(defineProps<{
@@ -276,6 +277,9 @@ const emit = defineEmits<{
     heading_font_family_id: number | null
     body_font_family_id: number | null
     code_font_family_id: number | null
+    heading_font_preset: ThemeFontPreset | null
+    body_font_preset: ThemeFontPreset | null
+    code_font_preset: ThemeFontPreset | null
     palette: ThemePalette
   }]
 }>()
@@ -289,9 +293,9 @@ const fontFamilies = ref<WorkspaceFontFamilyItem[]>([])
 const selectedLogoAsset = ref<AssetResponse | ThemeAssetSummary | null>(null)
 const selectedInvertLogoAsset = ref<AssetResponse | ThemeAssetSummary | null>(null)
 const selectedProjectIconAsset = ref<AssetResponse | ThemeAssetSummary | null>(null)
-const DEFAULT_HEADING_FONT_FAMILY = 'system-ui'
-const DEFAULT_BODY_FONT_FAMILY = 'system-ui'
-const DEFAULT_CODE_FONT_FAMILY = 'monospace'
+const DEFAULT_HEADING_FONT_FAMILY: ThemeFontPreset = 'platform-sans'
+const DEFAULT_BODY_FONT_FAMILY: ThemeFontPreset = 'platform-sans'
+const DEFAULT_CODE_FONT_FAMILY: ThemeFontPreset = 'platform-mono'
 const DEFAULT_THEME_PALETTE: ThemePalette = {
   text: { primary: '#0D286A', secondary: '#1D5297', invert: '#ffffff' },
   background: { default: '#ffffff', invert: '#0D286A' },
@@ -310,6 +314,9 @@ const form = reactive({
   heading_font_family_id: null as number | null,
   body_font_family_id: null as number | null,
   code_font_family_id: null as number | null,
+  heading_font_preset: DEFAULT_HEADING_FONT_FAMILY as ThemeFontPreset | null,
+  body_font_preset: DEFAULT_BODY_FONT_FAMILY as ThemeFontPreset | null,
+  code_font_preset: DEFAULT_CODE_FONT_FAMILY as ThemeFontPreset | null,
   palette: JSON.parse(JSON.stringify(DEFAULT_THEME_PALETTE)) as ThemePalette,
 })
 
@@ -347,12 +354,25 @@ const colorGroups = [
 const selectedHeadingFont = computed(() => fontFamilies.value.find(item => item.id === form.heading_font_family_id) || null)
 const selectedBodyFont = computed(() => fontFamilies.value.find(item => item.id === form.body_font_family_id) || null)
 const selectedCodeFont = computed(() => fontFamilies.value.find(item => item.id === form.code_font_family_id) || null)
-const fontOptions = computed<SelectOption[]>(() => fontFamilies.value.map(family => ({
+const workspaceFontOptions = computed<SelectOption[]>(() => fontFamilies.value.map(family => ({
   label: family.name,
   value: family.id,
   description: describeFontFamily(family),
   keywords: [family.name, ...family.faces.map(face => face.asset_name)],
 })))
+const sansFontOptions = computed<SelectOption[]>(() => [
+  { label: '平台默认', value: 'platform-sans', description: '固定思源黑体，预览、截图和构建排版一致' },
+  { label: '跟随系统', value: 'system-ui', description: '使用当前设备字体，不同环境可能产生换行差异' },
+  ...workspaceFontOptions.value,
+])
+const codeFontOptions = computed<SelectOption[]>(() => [
+  { label: '平台等宽', value: 'platform-mono', description: '固定 Source Code Pro，跨端排版一致' },
+  { label: '系统等宽', value: 'monospace', description: '使用当前设备等宽字体，不同环境可能存在差异' },
+  ...workspaceFontOptions.value,
+])
+const headingFontSelection = computed(() => form.heading_font_family_id ?? form.heading_font_preset)
+const bodyFontSelection = computed(() => form.body_font_family_id ?? form.body_font_preset)
+const codeFontSelection = computed(() => form.code_font_family_id ?? form.code_font_preset)
 
 /** 汇总字体族内可用 face 的字重，作为下拉项的辅助说明。 */
 function describeFontFamily(family: WorkspaceFontFamilyItem): string {
@@ -403,6 +423,9 @@ function syncForm(theme: WorkspaceThemeItem | null) {
   form.heading_font_family_id = theme?.heading_font_family_id || null
   form.body_font_family_id = theme?.body_font_family_id || null
   form.code_font_family_id = theme?.code_font_family_id || null
+  form.heading_font_preset = resolveFontPreset(theme?.heading_font_preset || theme?.heading_font_label, DEFAULT_HEADING_FONT_FAMILY)
+  form.body_font_preset = resolveFontPreset(theme?.body_font_preset || theme?.body_font_label, DEFAULT_BODY_FONT_FAMILY)
+  form.code_font_preset = resolveFontPreset(theme?.code_font_preset || theme?.code_font_label, DEFAULT_CODE_FONT_FAMILY)
   form.palette = JSON.parse(JSON.stringify(theme?.palette || DEFAULT_THEME_PALETTE)) as ThemePalette
 }
 
@@ -412,7 +435,7 @@ function syncForm(theme: WorkspaceThemeItem | null) {
  * @param value 通用下拉组件回传的最新值
  */
 function updateNullableNumberField(
-  field: 'logo_asset_id' | 'invert_logo_asset_id' | 'project_icon_asset_id' | 'heading_font_family_id' | 'body_font_family_id' | 'code_font_family_id',
+  field: 'logo_asset_id' | 'invert_logo_asset_id' | 'project_icon_asset_id',
   value: SelectModelValue,
 ) {
   if (Array.isArray(value) || value == null || value === '') {
@@ -420,6 +443,26 @@ function updateNullableNumberField(
     return
   }
   form[field] = typeof value === 'number' ? value : Number(value)
+}
+
+/** 把接口中的内置 token 还原为选择值，旧的未知 label 回退到平台默认。 */
+function resolveFontPreset(value: string | null | undefined, fallback: ThemeFontPreset): ThemeFontPreset | null {
+  return isThemeFontPreset(value) ? value : fallback
+}
+
+/** 更新单个字体槽，并保证工作空间字体族与内置预设互斥。 */
+function updateFontSelection(slot: 'heading' | 'body' | 'code', value: SelectModelValue): void {
+  const defaultPreset = slot === 'code' ? DEFAULT_CODE_FONT_FAMILY : DEFAULT_HEADING_FONT_FAMILY
+  const normalizedValue = Array.isArray(value) || value == null || value === '' ? defaultPreset : value
+  const familyField = `${slot}_font_family_id` as const
+  const presetField = `${slot}_font_preset` as const
+  if (typeof normalizedValue === 'string' && isThemeFontPreset(normalizedValue)) {
+    form[familyField] = null
+    form[presetField] = normalizedValue
+    return
+  }
+  form[familyField] = typeof normalizedValue === 'number' ? normalizedValue : Number(normalizedValue)
+  form[presetField] = null
 }
 
 /**
@@ -459,6 +502,9 @@ function handleSave() {
     heading_font_family_id: form.heading_font_family_id,
     body_font_family_id: form.body_font_family_id,
     code_font_family_id: form.code_font_family_id,
+    heading_font_preset: form.heading_font_preset,
+    body_font_preset: form.body_font_preset,
+    code_font_preset: form.code_font_preset,
     palette: JSON.parse(JSON.stringify(form.palette)) as ThemePalette,
   })
 }

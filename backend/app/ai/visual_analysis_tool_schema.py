@@ -11,7 +11,7 @@ def project_visual_analysis_schema(
     *,
     allow_page_screenshot: bool,
 ) -> dict[str, Any]:
-    """移除资源助手不可访问的页面截图输入分支。"""
+    """按内容助手当前页面上下文移除不可访问的页面截图输入分支。"""
 
     projected = deepcopy(schema)
     if allow_page_screenshot:

@@ -312,13 +312,13 @@ async def create_component_version_preview_artifact(
     return await ComponentPreviewService(session).create_version_preview_artifact(component_id, version_no, tenant_id)
 
 
-@router.delete("/{component_id}", response_model=MessageResponse)
-async def delete_component(
+@router.post("/{component_id}/archive", response_model=MessageResponse)
+async def archive_component(
     component_id: int,
     current: Annotated[AuthContext, Depends(get_current_user)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> MessageResponse:
-    """删除指定工作空间组件。"""
+    """归档指定工作空间组件。"""
 
-    await WorkspaceComponentService(session).delete(component_id, user_id=current.user.id)
-    return MessageResponse(message="组件已删除。")
+    await WorkspaceComponentService(session).archive(component_id, user_id=current.user.id)
+    return MessageResponse(message="组件已归档。")

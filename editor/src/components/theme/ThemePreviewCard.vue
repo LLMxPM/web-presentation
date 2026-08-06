@@ -41,10 +41,10 @@
                 <div class="min-w-0">
                   <div class="text-[10px] font-bold uppercase tracking-[0.18em] opacity-55">页面组件示意</div>
                   <div class="mt-1.5 text-[20px] font-bold leading-tight" :style="headingStyle">
-                    大标题：{{ headingFontLabel }}
+                    大标题：{{ formattedHeadingFontLabel }}
                   </div>
                   <p class="mt-1 text-[11px] leading-5 opacity-90" :style="{ color: palette.text.secondary, ...bodyStyle }">
-                    正文{{ bodyFontLabel }}，展示字号 {{ baseFontSize }}
+                    正文{{ formattedBodyFontLabel }}，展示字号 {{ baseFontSize }}
                   </p>
                   <p class="mt-1 text-[10px] leading-5 opacity-75" :style="{ color: palette.text.secondary, ...bodyStyle }">
                     图标描边宽度 {{ iconDefaultStrokeWidth }}
@@ -125,7 +125,7 @@
                 </div>
               </div>
               <div class="mt-3 border-t pt-2" :style="{ borderColor: palette.border.subtle }">
-                <code class="text-[10px]" :style="inlineCodeStyle">{{ codeFontLabel }} | key: {{ key }}</code>
+                <code class="text-[10px]" :style="inlineCodeStyle">{{ formattedCodeFontLabel }} | key: {{ key }}</code>
               </div>
             </article>
 
@@ -161,6 +161,7 @@ import { ChevronDown, ChevronRight } from '@lucide/vue'
 import { resolveFontPreviewFamily, useFontPreviewRegistry } from '@/composables/useFontPreviewRegistry'
 import type { AssetAnalysisMetadata, ThemePalette, WorkspaceFontFamilyItem } from '@/types/api'
 import { isStrokeWidthEditable } from '@/utils/assetAnalysis'
+import { formatThemeFontLabel } from '@/utils/theme-font-presets'
 
 const props = withDefaults(defineProps<{
   keyName: string
@@ -276,6 +277,9 @@ const previewFontFamilies = computed(() => [
   props.bodyFontFamily ?? null,
   props.codeFontFamily ?? null,
 ])
+const formattedHeadingFontLabel = computed(() => formatThemeFontLabel(props.headingFontLabel))
+const formattedBodyFontLabel = computed(() => formatThemeFontLabel(props.bodyFontLabel))
+const formattedCodeFontLabel = computed(() => formatThemeFontLabel(props.codeFontLabel))
 
 useFontPreviewRegistry(previewFontFamilies)
 

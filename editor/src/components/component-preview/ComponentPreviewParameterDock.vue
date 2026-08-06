@@ -179,7 +179,7 @@ const statusText = computed(() => {
       : 'previewSchema 已导出，但暂无可编辑的 props、slots、mocks 或 presets。'
   }
   if (props.simplified) {
-    return presetOptions.value.length ? '请选择一个 preview preset' : '当前无可切换的 preview preset'
+    return presetOptions.value.length ? '' : '当前无可切换的预览参数预设'
   }
   return ''
 })

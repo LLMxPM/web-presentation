@@ -8,7 +8,7 @@ from collections.abc import AsyncGenerator
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from time import monotonic
-from typing import Any, Literal
+from typing import Any
 from uuid import uuid4
 from weakref import WeakValueDictionary
 
@@ -43,6 +43,8 @@ from app.schemas.agent import (
     AgentMessageItem,
     AgentPendingRequirement,
     AgentRunEvent,
+    AgentRunContextSummary,
+    AgentRunProjectSummary,
     AgentScopeContext,
     AgentSessionItem,
     AgentSessionRuntimeSnapshot,
@@ -95,20 +97,11 @@ class PlatformAgentRuntimeStore:
         self,
         *,
         agent_id: str,
-        scope: AgentScopeContext,
-        scope_mode: Literal["exact", "workspace"] = "exact",
+        workspace_id: int,
     ) -> list[AgentSessionItem]:
-        """按当前用户、Agent 与 scope 返回未删除会话列表。"""
+        """按当前用户、Agent 与工作空间返回未归档会话列表。"""
 
-        query = select(AiAgentSession)
-        if scope_mode == "workspace":
-            query = self._workspace_scope_query(
-                query,
-                agent_id=agent_id,
-                workspace_id=scope.workspace_id,
-            )
-        else:
-            query = self._scope_query(query, agent_id=agent_id, scope=scope)
+        query = self._workspace_scope_query(select(AiAgentSession), agent_id=agent_id, workspace_id=workspace_id)
 
         result = await self._session.execute(
             query
@@ -123,13 +116,17 @@ class PlatformAgentRuntimeStore:
         session_id: str,
         agent_id: str,
         session_name: str | None,
-        scope: AgentScopeContext,
+        workspace_id: int,
+        focus_mode: str,
+        pinned_project_id: int | None,
+        work_scope_mode: str,
+        allowed_project_ids: list[int],
         llm_metadata: dict[str, Any] | None = None,
     ) -> AgentSessionItem:
         """创建平台 Agent 会话。"""
 
         now = _utc_now()
-        metadata = _scope_metadata(scope)
+        metadata: dict[str, Any] = {}
         if llm_metadata is not None:
             metadata["llm"] = dict(llm_metadata)
         model = AiAgentSession(
@@ -137,12 +134,12 @@ class PlatformAgentRuntimeStore:
             agent_id=agent_id,
             user_id=self._user_id,
             session_name=session_name,
-            scope_type=scope.scope_type,
-            workspace_id=scope.workspace_id,
-            project_id=scope.project_id,
-            page_id=scope.page_id,
-            component_id=scope.component_id,
-            source=scope.source,
+            workspace_id=workspace_id,
+            focus_mode=focus_mode,
+            pinned_project_id=pinned_project_id,
+            work_scope_mode=work_scope_mode,
+            allowed_project_ids_json=list(allowed_project_ids),
+            focus_version=0,
             metadata_json=metadata,
             created_by=self._user_id,
             updated_by=self._user_id,
@@ -150,6 +147,30 @@ class PlatformAgentRuntimeStore:
             updated_at=now,
         )
         self._session.add(model)
+        await self._session.commit()
+        await self._session.refresh(model)
+        return self.map_session_item(model)
+
+    async def update_session_preferences(
+        self,
+        *,
+        session_id: str,
+        agent_id: str,
+        focus_mode: str,
+        pinned_project_id: int | None,
+        work_scope_mode: str,
+        allowed_project_ids: list[int],
+    ) -> AgentSessionItem:
+        """更新会话偏好并递增版本；已创建 Run 的快照不会被修改。"""
+
+        model = await self.require_session(session_id=session_id, agent_id=agent_id)
+        model.focus_mode = focus_mode
+        model.pinned_project_id = pinned_project_id
+        model.work_scope_mode = work_scope_mode
+        model.allowed_project_ids_json = list(allowed_project_ids)
+        model.focus_version += 1
+        model.updated_by = self._user_id
+        model.updated_at = _utc_now()
         await self._session.commit()
         await self._session.refresh(model)
         return self.map_session_item(model)
@@ -208,12 +229,28 @@ class PlatformAgentRuntimeStore:
         llm_config_id: int | None = None,
         llm_metadata: dict[str, Any] | None = None,
         session_llm_metadata: dict[str, Any] | None = None,
+        runtime_context: AgentRuntimeContext | None = None,
     ) -> PlatformRunStart:
         """创建平台 run、用户消息与首个 run.started 事件。"""
 
         session_model = await self.require_session(session_id=session_id, agent_id=agent_id)
         await self.ensure_no_active_run(session_id=session_id, agent_id=agent_id)
         now = _utc_now()
+        focus_snapshot = scope.model_copy(update={
+            "workspace_name": runtime_context.workspace_name if runtime_context else scope.workspace_name,
+            "project_name": runtime_context.project_name if runtime_context else scope.project_name,
+            "page_title": runtime_context.page_title if runtime_context else scope.page_title,
+            "component_name": runtime_context.component_name if runtime_context else scope.component_name,
+        })
+        allowed_projects = [
+            {"id": project_id, "name": project_name}
+            for project_id, project_name in (runtime_context.allowed_projects if runtime_context else ())
+        ]
+        if not allowed_projects:
+            allowed_projects = [
+                {"id": int(project_id), "name": None}
+                for project_id in (session_model.allowed_project_ids_json or [])
+            ]
         run_model = AiAgentRun(
             run_id=run_id,
             session_id=session_id,
@@ -232,6 +269,11 @@ class PlatformAgentRuntimeStore:
                 "message": message,
                 "image_attachment_ids": list(image_attachment_ids or []),
                 "llm_config_id": llm_config_id,
+                "focus": focus_snapshot.model_dump(mode="json"),
+                "work_scope_mode": session_model.work_scope_mode,
+                "allowed_project_ids": list(session_model.allowed_project_ids_json or []),
+                "allowed_projects": allowed_projects,
+                "focus_version": session_model.focus_version,
             },
             message_history_json=[],
             event_index=-1,
@@ -257,6 +299,22 @@ class PlatformAgentRuntimeStore:
         await self.append_event(
             run_model,
             AgentRunEvent(event="run.started", run_id=run_id, session_id=session_id, data={"agent_id": agent_id}),
+            commit=False,
+        )
+        await self.append_event(
+            run_model,
+            AgentRunEvent(
+                event="run.focus.snapshot",
+                run_id=run_id,
+                session_id=session_id,
+                data={
+                    "focus": focus_snapshot.model_dump(mode="json"),
+                    "work_scope_mode": session_model.work_scope_mode,
+                    "allowed_project_ids": list(session_model.allowed_project_ids_json or []),
+                    "allowed_projects": allowed_projects,
+                    "focus_version": session_model.focus_version,
+                },
+            ),
             commit=False,
         )
         session_model.updated_at = now
@@ -843,6 +901,25 @@ class PlatformAgentRuntimeStore:
 
         timeline_entries: list[tuple[tuple[int, int, int, str, str], AgentTimelineItem]] = []
         run_order = await self._run_order_map(session_id=session_id)
+        run_result = await self._session.execute(
+            select(AiAgentRun)
+            .where(AiAgentRun.session_id == session_id)
+            .order_by(AiAgentRun.created_at.asc())
+        )
+        runs = run_result.scalars().all()
+        for run in runs:
+            run_context_item = self._run_context_timeline_item(run)
+            timeline_entries.append((
+                _timeline_sort_key(
+                    run_order,
+                    run_id=run.run_id,
+                    event_index=None,
+                    phase=-1,
+                    created_at=run_context_item.created_at,
+                    fallback_id=run_context_item.id,
+                ),
+                run_context_item,
+            ))
         event_output_run_ids: set[str] = set()
         message_result = await self._session.execute(
             select(AiAgentMessage)
@@ -870,12 +947,7 @@ class PlatformAgentRuntimeStore:
                 item,
             ))
 
-        fallback_run_result = await self._session.execute(
-            select(AiAgentRun)
-            .where(AiAgentRun.session_id == session_id)
-            .order_by(AiAgentRun.created_at.asc())
-        )
-        for run in fallback_run_result.scalars().all():
+        for run in runs:
             if run.run_id in event_output_run_ids:
                 continue
             if run.reasoning_content:
@@ -954,7 +1026,7 @@ class PlatformAgentRuntimeStore:
                     kind="message",
                     role=message.role if message.role in {"user", "assistant"} else None,  # type: ignore[arg-type]
                     content=message.content,
-                    phase=-1 if message.role == "user" else 2,
+                    phase=-2 if message.role == "user" else 2,
                 )
 
         sorted_items = [item for _, item in sorted(timeline_entries, key=lambda entry: entry[0])]
@@ -981,6 +1053,52 @@ class PlatformAgentRuntimeStore:
                 item.tool.output_attachments = output_attachments
                 item.attachments = output_attachments
         return sorted_items
+
+    def _run_context_timeline_item(self, run: AiAgentRun) -> AgentTimelineItem:
+        """把 Run 输入快照转换成紧跟本轮用户消息的可回放上下文摘要。"""
+
+        payload = run.input_payload_json or {}
+        focus_payload = payload.get("focus") if isinstance(payload.get("focus"), dict) else {}
+        focus = AgentScopeContext.model_validate({
+            "scope_type": run.scope_type,
+            "workspace_id": run.workspace_id,
+            "project_id": run.project_id,
+            "page_id": run.page_id,
+            "component_id": run.component_id,
+            "source": run.source,
+            **focus_payload,
+        })
+        raw_projects = payload.get("allowed_projects") if isinstance(payload.get("allowed_projects"), list) else []
+        allowed_projects = [
+            AgentRunProjectSummary.model_validate(item)
+            for item in raw_projects
+            if isinstance(item, dict) and item.get("id") is not None
+        ]
+        if not allowed_projects:
+            allowed_projects = [
+                AgentRunProjectSummary(id=int(project_id), name=None)
+                for project_id in payload.get("allowed_project_ids") or []
+            ]
+        return AgentTimelineItem(
+            id=f"run-context-{run.run_id}",
+            session_id=run.session_id,
+            run_id=run.run_id,
+            kind="run_context",
+            role=None,
+            event_index=None,
+            order_index=0,
+            content=None,
+            status=run.status,
+            tool=None,
+            run_context=AgentRunContextSummary(
+                focus=focus,
+                work_scope_mode=str(payload.get("work_scope_mode") or "workspace"),  # type: ignore[arg-type]
+                allowed_projects=allowed_projects,
+                focus_version=int(payload.get("focus_version") or 0),
+            ),
+            source="synthetic",
+            created_at=_iso(run.created_at),
+        )
 
     async def _run_order_map(self, *, session_id: str) -> dict[str, int]:
         """按 run 创建顺序建立排序索引，event_index 只在单个 run 内有序。"""
@@ -1400,7 +1518,13 @@ class PlatformAgentRuntimeStore:
         return AgentSessionItem(
             session_id=model.session_id,
             agent_id=model.agent_id,
+            workspace_id=model.workspace_id,
             session_name=model.session_name,
+            focus_mode=model.focus_mode,
+            pinned_project_id=model.pinned_project_id,
+            work_scope_mode=model.work_scope_mode,
+            allowed_project_ids=list(model.allowed_project_ids_json or []),
+            focus_version=model.focus_version,
             created_at=_iso(model.created_at),
             updated_at=_iso(model.updated_at),
             metadata=dict(model.metadata_json or {}),
@@ -1431,11 +1555,25 @@ class PlatformAgentRuntimeStore:
         pending_requirement = None
         if model.status in {"paused", "waiting_external"} and isinstance(model.pending_requirement_json, dict):
             pending_requirement = AgentPendingRequirement.model_validate(model.pending_requirement_json)
+        run_input = model.input_payload_json or {}
+        focus_payload = run_input.get("focus") if isinstance(run_input.get("focus"), dict) else {}
         return AgentActiveRunItem(
             run_id=model.run_id,
             session_id=model.session_id,
             agent_id=model.agent_id,
             status=_map_run_status(model.status),
+            focus=AgentScopeContext.model_validate({
+                "scope_type": model.scope_type,
+                "workspace_id": model.workspace_id,
+                "project_id": model.project_id,
+                "page_id": model.page_id,
+                "component_id": model.component_id,
+                "source": model.source,
+                **focus_payload,
+            }),
+            work_scope_mode=str(run_input.get("work_scope_mode") or "workspace"),
+            allowed_project_ids=list(run_input.get("allowed_project_ids") or []),
+            focus_version=int(run_input.get("focus_version") or 0),
             pending_requirement=pending_requirement,
             content=model.content,
             created_at=_iso(model.created_at),
@@ -1486,20 +1624,6 @@ class PlatformAgentRuntimeStore:
             last_output_tokens=0,
             last_total_tokens=0,
             last_reasoning_tokens=0,
-        )
-
-    def _scope_query(self, query: Select[tuple[AiAgentSession]], *, agent_id: str, scope: AgentScopeContext) -> Select[tuple[AiAgentSession]]:
-        """给会话查询追加当前用户、Agent 与 scope 过滤条件。"""
-
-        return query.where(
-            AiAgentSession.user_id == self._user_id,
-            AiAgentSession.agent_id == agent_id,
-            AiAgentSession.workspace_id == scope.workspace_id,
-            AiAgentSession.scope_type == scope.scope_type,
-            AiAgentSession.project_id.is_(scope.project_id) if scope.project_id is None else AiAgentSession.project_id == scope.project_id,
-            AiAgentSession.page_id.is_(scope.page_id) if scope.page_id is None else AiAgentSession.page_id == scope.page_id,
-            AiAgentSession.component_id.is_(scope.component_id) if scope.component_id is None else AiAgentSession.component_id == scope.component_id,
-            AiAgentSession.source == scope.source,
         )
 
     def _workspace_scope_query(
@@ -1858,7 +1982,7 @@ def _timeline_sort_key(
     created_at: str | None,
     fallback_id: str,
 ) -> tuple[int, int, int, str, str]:
-    """生成前端 timeline 的全局排序 key；phase 负责把用户消息放到 run 事件前。"""
+    """生成前端 timeline 的全局排序 key；phase 负责依次放置用户消息、Run 上下文和事件。"""
 
     max_event_index = 1_000_000_000
     run_position = run_order.get(run_id, max_event_index)

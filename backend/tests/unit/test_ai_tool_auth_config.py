@@ -6,7 +6,6 @@ import pytest
 
 from app.ai.auth_tokens import (
     CODE_CHECK_TOOL_SCOPES,
-    COMPONENT_TOOL_DELETE_SCOPES,
     COMPONENT_TOOL_READ_SCOPES,
     COMPONENT_TOOL_WRITE_SCOPES,
     RESOURCE_TOOL_READ_SCOPES,
@@ -14,7 +13,7 @@ from app.ai.auth_tokens import (
 )
 from app.ai.agent.runtime_context import AgentRuntimeContext
 from app.ai.member_delegation import MemberDelegationExecutor
-from app.ai.tool_specs import COMPONENT_MANAGER_AGENT_ID, list_agent_group_specs
+from app.ai.tool_specs import AGENT_COORDINATOR_AGENT_ID, list_agent_group_specs
 from app.core.config import AppSettings
 from app.core.config import get_settings
 from app.schemas.agent import AgentScopeContext
@@ -95,24 +94,23 @@ def test_ai_tool_token_should_not_exceed_tool_auth_max(monkeypatch: pytest.Monke
     assert claims["exp"] - claims["iat"] == 7200
 
 
-def test_component_manager_group_scopes_should_cover_runtime_tools() -> None:
-    """组件助手签发 token 的 scope 应覆盖实际暴露的读写检查工具。"""
+def test_unified_agent_group_scopes_should_cover_runtime_tools() -> None:
+    """统一助手签发 token 的 scope 应覆盖组件、资源和代码检查工具。"""
 
     scopes = {
         scope
-        for group in list_agent_group_specs(COMPONENT_MANAGER_AGENT_ID)
+        for group in list_agent_group_specs(AGENT_COORDINATOR_AGENT_ID)
         for scope in group.token_scopes
     }
 
     assert set(COMPONENT_TOOL_READ_SCOPES).issubset(scopes)
     assert set(COMPONENT_TOOL_WRITE_SCOPES).issubset(scopes)
-    assert set(COMPONENT_TOOL_DELETE_SCOPES).issubset(scopes)
     assert set(CODE_CHECK_TOOL_SCOPES).issubset(scopes)
     assert set(RESOURCE_TOOL_READ_SCOPES).issubset(scopes)
 
 
-def test_member_delegation_executor_should_use_workspace_scope_for_members() -> None:
-    """成员助手运行时不应继承父会话的项目、页面、组件或样式上下文。"""
+def test_member_delegation_executor_should_preserve_parent_run_focus_without_heavy_context() -> None:
+    """自委派应继承父 Run 焦点与工作集，但不复制样式和建议列表等重上下文。"""
 
     executor = MemberDelegationExecutor(
         session_factory=None,  # type: ignore[arg-type]
@@ -143,14 +141,14 @@ def test_member_delegation_executor_should_use_workspace_scope_for_members() -> 
         parent_run_id="run-test",
     )
 
-    assert executor._scope.scope_type == "workspace"
-    assert executor._scope.project_id is None
-    assert executor._scope.page_id is None
-    assert executor._scope.component_id is None
-    assert executor._runtime_context.scope_type == "workspace"
-    assert executor._runtime_context.project_id is None
-    assert executor._runtime_context.page_id is None
-    assert executor._runtime_context.component_id is None
+    assert executor._scope.scope_type == "page"
+    assert executor._scope.project_id == 2
+    assert executor._scope.page_id == 3
+    assert executor._scope.component_id == 4
+    assert executor._runtime_context.scope_type == "page"
+    assert executor._runtime_context.project_id == 2
+    assert executor._runtime_context.page_id == 3
+    assert executor._runtime_context.component_id == 4
     assert executor._runtime_context.style_spec_markdown is None
     assert executor._runtime_context.suggested_reference_assets == ()
     assert executor._runtime_context.suggested_components == ()

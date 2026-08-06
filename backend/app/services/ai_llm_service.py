@@ -16,16 +16,14 @@ from app.ai.provider_catalog import (
     get_llm_slot_definition,
     list_llm_provider_entries,
 )
+from app.ai.model_budget import ModelRunBudget, derive_model_run_budget
 from app.ai.secret_cipher import LlmSecretCipher
 from app.core.exceptions import AppException
 from app.models.ai_agent_runtime import AiAgentRun
 from app.models.ai_llm import AiLlmConfig, AiLlmProviderConfig, AiLlmSlotBinding
 from app.models.enums import AiLlmConfigScope, AiLlmSlot, AiModelType, RecordStatus, UserRole
 from app.schemas.llm import (
-    LLM_CONTEXT_RESERVED_TOKEN_MIN,
     LLM_CONTEXT_WINDOW_TOKEN_DEFAULT,
-    LLM_COMPRESSION_TARGET_RATIO_DEFAULT,
-    LLM_MAX_OUTPUT_TOKEN_DEFAULT,
     LlmConfigCreateRequest,
     LlmConfigItem,
     LlmConfigUpdateRequest,
@@ -241,7 +239,6 @@ class AiLlmService:
             provider_key=provider_config.provider_key,
             base_url=provider_config.base_url,
             api_key=self._cipher.decrypt(provider_config.api_key_ciphertext),
-            max_output_tokens=payload.max_output_tokens,
         )
         self._validate_provider_model_type(provider_entry, payload.model_type.value)
         advanced_config = self._validate_model_advanced_config(
@@ -251,6 +248,10 @@ class AiLlmService:
             value=payload.advanced_config_json,
         )
         is_chat_model = payload.model_type == AiModelType.CHAT
+        run_budget = derive_model_run_budget(
+            payload.context_window_tokens,
+            provider_output_limit=MIMO_MAX_COMPLETION_TOKENS if provider_config.provider_key == "mimo" else None,
+        )
 
         config = AiLlmConfig(
             user_id=None if requested_scope == AiLlmConfigScope.GLOBAL else self.user_id,
@@ -264,9 +265,9 @@ class AiLlmService:
             thinking_effort=(self._normalize_thinking_effort(provider_entry, payload.thinking_effort) if is_chat_model else None),
             supports_image_input=bool(payload.supports_image_input and is_chat_model),
             context_window_tokens=payload.context_window_tokens,
-            max_output_tokens=payload.max_output_tokens,
-            history_token_ratio=payload.history_token_ratio,
-            compression_target_ratio=payload.compression_target_ratio,
+            max_output_tokens=run_budget.max_output_tokens,
+            history_token_ratio=1.0,
+            compression_target_ratio=run_budget.compression_target_ratio,
             advanced_config_json=advanced_config,
             status=RecordStatus.ACTIVE.value,
             created_by=operator_id,
@@ -327,26 +328,19 @@ class AiLlmService:
         next_name = payload.name.strip() if payload.name is not None else config.name
         next_model_id = payload.model_id.strip() if payload.model_id is not None else config.model_id
         next_model_type = payload.model_type.value if payload.model_type is not None else config.model_type
-        next_max_output_tokens = payload.max_output_tokens if payload.max_output_tokens is not None else config.max_output_tokens
         next_context_window_tokens = (
             payload.context_window_tokens if payload.context_window_tokens is not None else config.context_window_tokens
         )
-        # 合并后校验：聊天模型扣除最大输出后必须至少保留 100K 上下文余量。
-        if (
-            next_model_type == AiModelType.CHAT.value
-            and next_context_window_tokens - next_max_output_tokens < LLM_CONTEXT_RESERVED_TOKEN_MIN
-        ):
-            raise AppException(
-                status_code=400,
-                code="AI_LLM_CONTEXT_RESERVE_INSUFFICIENT",
-                detail=f"上下文窗口减去最大输出后必须至少保留 {LLM_CONTEXT_RESERVED_TOKEN_MIN} tokens，请调大上下文窗口或调小最大输出。",
-            )
+        run_budget = derive_model_run_budget(
+            next_context_window_tokens,
+            provider_output_limit=MIMO_MAX_COMPLETION_TOKENS if next_provider_config.provider_key == "mimo" else None,
+        )
 
         provider_entry = self._validate_provider_constraints(
             provider_key=next_provider_config.provider_key,
             base_url=next_provider_config.base_url,
             api_key=self._cipher.decrypt(next_provider_config.api_key_ciphertext),
-            max_output_tokens=next_max_output_tokens,
+            max_output_tokens=run_budget.max_output_tokens,
         )
         self._validate_provider_model_type(provider_entry, next_model_type)
         next_advanced_config = (
@@ -361,7 +355,7 @@ class AiLlmService:
                 provider_key=next_provider_config.provider_key,
                 model_id=next_model_id,
                 model_type=next_model_type,
-                value=config.advanced_config_json or {},
+                value=self._sanitize_stored_advanced_config(config.advanced_config_json or {}),
             )
         )
         next_thinking_effort = config.thinking_effort
@@ -386,14 +380,10 @@ class AiLlmService:
             config.supports_image_input = bool(payload.supports_image_input and next_model_type == AiModelType.CHAT.value)
         elif next_model_type != AiModelType.CHAT.value:
             config.supports_image_input = False
-        if payload.context_window_tokens is not None:
-            config.context_window_tokens = payload.context_window_tokens
-        if payload.max_output_tokens is not None:
-            config.max_output_tokens = next_max_output_tokens
-        if payload.history_token_ratio is not None:
-            config.history_token_ratio = payload.history_token_ratio
-        if payload.compression_target_ratio is not None:
-            config.compression_target_ratio = payload.compression_target_ratio
+        config.context_window_tokens = next_context_window_tokens
+        config.max_output_tokens = run_budget.max_output_tokens
+        config.history_token_ratio = 1.0
+        config.compression_target_ratio = run_budget.compression_target_ratio
         config.advanced_config_json = next_advanced_config
         config.updated_by = operator_id
 
@@ -578,14 +568,15 @@ class AiLlmService:
     ) -> dict[str, Any]:
         """构建包含可变运行参数且不含供应商密钥的 run 快照。"""
 
+        run_budget = self._derive_config_run_budget(config)
         return {
             **self.build_session_llm_metadata(config, selection_kind=selection_kind),
             "thinking_enabled": bool(config.thinking_enabled),
             "thinking_effort": config.thinking_effort,
             "context_window_tokens": config.context_window_tokens,
-            "max_output_tokens": config.max_output_tokens,
-            "history_token_ratio": config.history_token_ratio,
-            "compression_target_ratio": config.compression_target_ratio,
+            "max_output_tokens": run_budget.max_output_tokens,
+            "history_token_ratio": 1.0,
+            "compression_target_ratio": run_budget.compression_target_ratio,
             "advanced_config_json": dict(config.advanced_config_json or {}),
         }
 
@@ -744,6 +735,7 @@ class AiLlmService:
 
         provider_config = config.provider_config
         provider_entry = get_llm_provider_entry(provider_config.provider_key)
+        run_budget = self._derive_config_run_budget(config)
         editable = self._can_edit_config(config)
         return LlmConfigItem(
             id=config.id,
@@ -761,18 +753,31 @@ class AiLlmService:
             thinking_effort=config.thinking_effort,
             supports_image_input=bool(config.supports_image_input),
             context_window_tokens=int(config.context_window_tokens or LLM_CONTEXT_WINDOW_TOKEN_DEFAULT),
-            max_output_tokens=int(config.max_output_tokens or LLM_MAX_OUTPUT_TOKEN_DEFAULT),
-            history_token_ratio=float(config.history_token_ratio if config.history_token_ratio is not None else 0.5),
-            compression_target_ratio=float(
-                config.compression_target_ratio
-                if config.compression_target_ratio is not None
-                else LLM_COMPRESSION_TARGET_RATIO_DEFAULT
-            ),
-            advanced_config_json=self._validate_advanced_config(config.advanced_config_json or {}),
+            max_output_tokens=run_budget.max_output_tokens,
+            history_token_ratio=1.0,
+            compression_target_ratio=run_budget.compression_target_ratio,
+            advanced_config_json=self._sanitize_stored_advanced_config(config.advanced_config_json or {}),
             status=config.status,
             created_at=config.created_at.isoformat() if config.created_at is not None else None,
             updated_at=config.updated_at.isoformat() if config.updated_at is not None else None,
         )
+
+    @staticmethod
+    def _derive_config_run_budget(config: AiLlmConfig) -> ModelRunBudget:
+        """按模型当前窗口和供应商硬限制返回自动运行预算。"""
+
+        provider_key = config.provider_config.provider_key
+        return derive_model_run_budget(
+            int(config.context_window_tokens or LLM_CONTEXT_WINDOW_TOKEN_DEFAULT),
+            provider_output_limit=MIMO_MAX_COMPLETION_TOKENS if provider_key == "mimo" else None,
+        )
+
+    @classmethod
+    def _sanitize_stored_advanced_config(cls, value: dict[str, Any]) -> dict[str, Any]:
+        """读取历史配置时剔除旧 max_tokens，避免受管预算字段阻塞模型列表。"""
+
+        sanitized = {key: item for key, item in value.items() if key != "max_tokens"}
+        return cls._validate_advanced_config(sanitized)
 
     @staticmethod
     def _validate_slot_model_type(slot: str, config: AiLlmConfig) -> None:

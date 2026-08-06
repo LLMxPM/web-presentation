@@ -6,14 +6,13 @@ from app.ai.tool_specs import (
     AGENT_COORDINATOR_AGENT_ID,
     IMAGE_ANALYSIS_TOOL_GROUP_KEY,
     IMAGE_GENERATION_TOOL_GROUP_KEY,
-    RESOURCE_MANAGER_AGENT_ID,
 )
 from app.core.exceptions import AppException
 from app.services.ai_llm_service import AiLlmService
 from app.services.image_generation.contracts import ImageModelSpec
 from app.services.image_generation.registry import get_image_model_spec
 
-_VISUAL_AGENT_IDS = frozenset({AGENT_COORDINATOR_AGENT_ID, RESOURCE_MANAGER_AGENT_ID})
+_VISUAL_AGENT_IDS = frozenset({AGENT_COORDINATOR_AGENT_ID})
 
 
 async def resolve_visual_tool_runtime(

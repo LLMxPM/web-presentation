@@ -230,7 +230,7 @@ describe('ComponentsView', () => {
     })
   })
 
-  it('收到智能体删除当前组件事件后应清空选择', async () => {
+  it('收到智能体归档当前组件事件后应清空选择', async () => {
     const { setSelectedComponentMock } = renderComponentsView()
 
     await fireEvent.click(screen.getByRole('button', { name: '选择销售卡片' }))
@@ -238,8 +238,14 @@ describe('ComponentsView', () => {
       detail: {
         workspaceId: 11,
         componentId: 99,
-        toolName: 'delete_component',
-        result: { success: true, component_id: 99 },
+        toolName: 'archive_entity',
+        result: {
+          success: true,
+          resource_type: 'component',
+          operation: 'archive',
+          mutation: { kind: 'component' },
+          targets: [{ id: 99 }],
+        },
       },
     }))
 

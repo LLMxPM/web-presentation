@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from app.core.platform_fonts import MONO_FONT_PRESETS, SANS_FONT_PRESETS
 from app.schemas.asset import AssetAnalysisMetadata
 
 
@@ -81,6 +82,9 @@ class WorkspaceThemeBaseRequest(BaseModel):
     heading_font_family_id: int | None = None
     body_font_family_id: int | None = None
     code_font_family_id: int | None = None
+    heading_font_preset: str | None = None
+    body_font_preset: str | None = None
+    code_font_preset: str | None = None
     palette: ThemePalette
 
     @field_validator("key", mode="before")
@@ -89,6 +93,15 @@ class WorkspaceThemeBaseRequest(BaseModel):
         """统一将主题 key 归一化为小写，减少编辑时的格式摩擦。"""
 
         return _normalize_theme_key(value)
+
+    @model_validator(mode="after")
+    def validate_font_sources(self) -> "WorkspaceThemeBaseRequest":
+        """校验每个字体槽只能选择工作空间字体族或受支持的内置预设。"""
+
+        _validate_font_source("标题", self.heading_font_family_id, self.heading_font_preset, SANS_FONT_PRESETS)
+        _validate_font_source("正文", self.body_font_family_id, self.body_font_preset, SANS_FONT_PRESETS)
+        _validate_font_source("代码", self.code_font_family_id, self.code_font_preset, MONO_FONT_PRESETS)
+        return self
 
 
 class WorkspaceThemeCreateRequest(WorkspaceThemeBaseRequest):
@@ -107,6 +120,9 @@ class WorkspaceThemeUpdateRequest(BaseModel):
     heading_font_family_id: int | None = None
     body_font_family_id: int | None = None
     code_font_family_id: int | None = None
+    heading_font_preset: str | None = None
+    body_font_preset: str | None = None
+    code_font_preset: str | None = None
     palette: ThemePalette | None = None
 
     @field_validator("key", mode="before")
@@ -115,6 +131,15 @@ class WorkspaceThemeUpdateRequest(BaseModel):
         """统一将主题 key 归一化为小写，减少编辑时的格式摩擦。"""
 
         return _normalize_theme_key(value)
+
+    @model_validator(mode="after")
+    def validate_font_sources(self) -> "WorkspaceThemeUpdateRequest":
+        """校验显式传入的字体族和内置预设不会互相冲突。"""
+
+        _validate_font_source("标题", self.heading_font_family_id, self.heading_font_preset, SANS_FONT_PRESETS)
+        _validate_font_source("正文", self.body_font_family_id, self.body_font_preset, SANS_FONT_PRESETS)
+        _validate_font_source("代码", self.code_font_family_id, self.code_font_preset, MONO_FONT_PRESETS)
+        return self
 
 
 class WorkspaceThemeCopyRequest(BaseModel):
@@ -171,6 +196,9 @@ class WorkspaceThemeItem(BaseModel):
     heading_font_label: str | None = None
     body_font_label: str | None = None
     code_font_label: str | None = None
+    heading_font_preset: str | None = None
+    body_font_preset: str | None = None
+    code_font_preset: str | None = None
     palette: ThemePalette
     logo_asset: WorkspaceThemeAssetSummary | None = None
     invert_logo_asset: WorkspaceThemeAssetSummary | None = None
@@ -183,3 +211,18 @@ class WorkspaceThemeItem(BaseModel):
     updated_at: datetime
     created_by: int | None
     updated_by: int | None
+
+
+def _validate_font_source(
+    slot_name: str,
+    family_id: int | None,
+    preset: str | None,
+    allowed_presets: frozenset[str],
+) -> None:
+    """验证单个字体槽的来源和值域，避免主题配置生成不可控 CSS 字体名。"""
+
+    normalized_preset = str(preset or "").strip()
+    if family_id is not None and normalized_preset:
+        raise ValueError(f"{slot_name}字体不能同时选择字体族和内置预设。")
+    if normalized_preset and normalized_preset not in allowed_presets:
+        raise ValueError(f"{slot_name}字体预设不受支持。")

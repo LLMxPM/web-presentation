@@ -27,7 +27,7 @@ vi.mock('@/api/catalog', () => ({
   getComponentReferences: (...args: unknown[]) => getComponentReferencesMock(...args),
   listComponents: (...args: unknown[]) => listComponentsMock(...args),
   upgradeComponentReferences: (...args: unknown[]) => upgradeComponentReferencesMock(...args),
-  deleteComponent: vi.fn(),
+  archiveComponent: vi.fn(),
 }))
 
 vi.mock('@/api/runtime-kit', () => ({
@@ -71,7 +71,7 @@ describe('ComponentManagerPanel', () => {
 
     expect(screen.queryByText('未发布组件')).toBeNull()
     expect(screen.queryByText('新建')).toBeNull()
-    expect(screen.queryByTitle('删除组件')).toBeNull()
+    expect(screen.queryByTitle('归档组件')).toBeNull()
     expect(screen.queryByText('编辑组件')).toBeNull()
     expect(screen.queryByText('发布')).toBeNull()
     expect(screen.queryByTitle('发布后可复制 import 语句')).toBeNull()
