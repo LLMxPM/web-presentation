@@ -23,41 +23,41 @@ def _normalize_theme_key(value: object) -> object:
 class ThemeTextPalette(BaseModel):
     """主题文字色板。"""
 
-    primary: str = Field(min_length=1, max_length=64)
-    secondary: str = Field(min_length=1, max_length=64)
-    invert: str = Field(min_length=1, max_length=64)
+    primary: str = Field(min_length=1, max_length=64, description="正文和主要标题使用的主文字颜色。")
+    secondary: str = Field(min_length=1, max_length=64, description="辅助说明和弱化文字使用的次文字颜色。")
+    invert: str = Field(min_length=1, max_length=64, description="深色或反色背景上的文字颜色。")
 
 
 class ThemeBackgroundPalette(BaseModel):
     """主题背景色板。"""
 
-    default: str = Field(min_length=1, max_length=64)
-    invert: str = Field(min_length=1, max_length=64)
+    default: str = Field(min_length=1, max_length=64, description="页面默认背景颜色。")
+    invert: str = Field(min_length=1, max_length=64, description="反色区块或深色页面背景颜色。")
 
 
 class ThemeBorderPalette(BaseModel):
     """主题边框色板。"""
 
-    default: str = Field(min_length=1, max_length=64)
-    subtle: str = Field(min_length=1, max_length=64)
+    default: str = Field(min_length=1, max_length=64, description="常规边框颜色。")
+    subtle: str = Field(min_length=1, max_length=64, description="分隔线和弱化边框颜色。")
 
 
 class ThemeLinkPalette(BaseModel):
     """主题链接色板。"""
 
-    default: str = Field(min_length=1, max_length=64)
-    hover: str = Field(min_length=1, max_length=64)
-    visited: str = Field(min_length=1, max_length=64)
+    default: str = Field(min_length=1, max_length=64, description="链接默认颜色。")
+    hover: str = Field(min_length=1, max_length=64, description="链接悬停颜色。")
+    visited: str = Field(min_length=1, max_length=64, description="已访问链接颜色。")
 
 
 class ThemePalette(BaseModel):
     """主题总色板结构。"""
 
-    text: ThemeTextPalette
-    background: ThemeBackgroundPalette
-    border: ThemeBorderPalette
-    link: ThemeLinkPalette
-    accent: list[str] = Field(min_length=1, max_length=12)
+    text: ThemeTextPalette = Field(description="文字颜色组。")
+    background: ThemeBackgroundPalette = Field(description="背景颜色组。")
+    border: ThemeBorderPalette = Field(description="边框颜色组。")
+    link: ThemeLinkPalette = Field(description="链接状态颜色组。")
+    accent: list[str] = Field(min_length=1, max_length=12, description="按优先顺序排列的 1～12 个强调色。")
 
     @field_validator("accent")
     @classmethod

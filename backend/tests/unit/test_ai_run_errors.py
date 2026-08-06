@@ -48,7 +48,7 @@ def test_normalize_agent_run_exception_should_map_tool_argument_retry_exhaustion
     """工具参数重试耗尽应提示修正任务或模型，而不是误报网络错误。"""
 
     failure = normalize_agent_run_exception(
-        UnexpectedModelBehavior("Tool 'query_entities' exceeded max retries count of 3"),
+        UnexpectedModelBehavior("Tool 'list_entities' exceeded max retries count of 3"),
         fallback_code="AI_RUN_FAILED",
     )
 

@@ -135,33 +135,39 @@ def build_llm_http_trace_hooks(
             )
 
     async def on_response(response: httpx.Response) -> None:
-        """记录供应商响应状态和响应头，不读取 body，避免影响流式响应消费。"""
+        """记录供应商响应状态、响应头和错误响应体，不影响正常流式响应消费。"""
 
         trace_id = str(response.request.extensions.get(_TRACE_ID_EXTENSION) or uuid4().hex)
         started_at = response.request.extensions.get(_TRACE_STARTED_AT_EXTENSION)
         duration_ms = None
         if isinstance(started_at, (int, float)):
             duration_ms = round((monotonic() - started_at) * 1000, 2)
+        response_body: dict[str, Any] | None = None
         try:
-            _write_trace_record(
-                trace_dir,
-                {
-                    **_base_record("llm.http.response", trace_id=trace_id, metadata=metadata),
-                    "method": response.request.method,
-                    "url": _redact_url(str(response.request.url)),
-                    "status_code": response.status_code,
-                    "reason_phrase": response.reason_phrase,
-                    "http_version": response.http_version,
-                    "duration_ms": duration_ms,
-                    "headers": _redact_headers(response.headers),
-                },
-            )
+            if not 200 <= response.status_code < 300:
+                # 非 2xx 响应通常是供应商在开始流式输出前返回的错误；读取后 httpx
+                # 会缓存 body，调用方仍可继续读取，且正常 2xx 流不会被提前消费。
+                response_body = _format_body(await response.aread(), max_bytes=body_max_bytes)
         except Exception:
             logger.warning(
-                "记录 LLM HTTP 响应 trace 失败。",
+                "读取 LLM HTTP 错误响应 body trace 失败。",
                 exc_info=True,
                 extra={"event": "llm.http_trace.response_failed"},
             )
+        _write_trace_record(
+            trace_dir,
+            {
+                **_base_record("llm.http.response", trace_id=trace_id, metadata=metadata),
+                "method": response.request.method,
+                "url": _redact_url(str(response.request.url)),
+                "status_code": response.status_code,
+                "reason_phrase": response.reason_phrase,
+                "http_version": response.http_version,
+                "duration_ms": duration_ms,
+                "headers": _redact_headers(response.headers),
+                **({"body": response_body} if response_body is not None else {}),
+            },
+        )
 
     return {"request": [on_request], "response": [on_response]}
 

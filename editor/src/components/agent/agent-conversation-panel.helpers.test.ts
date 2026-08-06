@@ -64,6 +64,9 @@ describe('agent-conversation-panel timeline helpers', () => {
   })
 
   it('固定通用工具应显示真实逻辑操作名称', () => {
+    expect(resolveLogicalToolName('list_entities', { resource_type: 'page' })).toBe('罗列页面')
+    expect(resolveLogicalToolName('get_entity', { resource_type: 'page', view: 'content' })).toBe('读取页面')
+    expect(resolveLogicalToolName('query_entities', { resource_type: 'page' })).toBe('查询页面')
     expect(resolveLogicalToolName('update_entity', { resource_type: 'theme' })).toBe('修改主题')
     expect(resolveLogicalToolName('archive_entity', { resource_type: 'asset', target_ids: [1, 2] })).toBe('批量归档资源')
     expect(resolveLogicalToolName('execute_dangerous_action', { resource_type: 'project', action: 'replace_routes' })).toBe('覆盖项目路由')

@@ -67,15 +67,15 @@ async def test_workspace_session_should_query_pages_across_projects_but_reject_f
     await _create_page(authenticated_client, workspace_id, first_project_id, "项目一页面")
     await _create_page(authenticated_client, workspace_id, second_project_id, "项目二页面")
 
-    query_tool = {item.name: item for item in build_generic_business_tools(get_session_factory())}["query_entities"]
+    tools = {item.name: item for item in build_generic_business_tools(get_session_factory())}
     context = _build_tool_run_context(workspace_id, approved=False)
-    first = await query_tool.entrypoint(context, "page", "list", None, {"project_id": first_project_id})
-    second = await query_tool.entrypoint(context, "page", "list", None, {"project_id": second_project_id})
+    first = await tools["list_entities"].entrypoint(context, "page", {"project_id": first_project_id}, "items")
+    second = await tools["list_entities"].entrypoint(context, "page", {"project_id": second_project_id}, "items")
 
     assert [item["title"] for item in first["data"]["items"]] == ["项目一页面"]
     assert [item["title"] for item in second["data"]["items"]] == ["项目二页面"]
     with pytest.raises(AppException) as error:
-        await query_tool.entrypoint(context, "page", "list", None, {"project_id": foreign_project_id})
+        await tools["list_entities"].entrypoint(context, "page", {"project_id": foreign_project_id}, "items")
     assert error.value.code == "AI_ENTITY_SCOPE_DENIED"
 
 
@@ -95,10 +95,10 @@ async def test_selected_projects_should_filter_queries_and_confirm_cross_focus_w
         work_scope_mode="selected_projects",
         allowed_project_ids=[first_project_id],
     )
-    listed = await tools["query_entities"].entrypoint(selected_context, "project", "list", None, {})
+    listed = await tools["list_entities"].entrypoint(selected_context, "project", {}, "items")
     assert [item["id"] for item in listed["data"]["items"]] == [first_project_id]
     with pytest.raises(AppException) as error:
-        await tools["query_entities"].entrypoint(selected_context, "project", "detail", second_project_id, {})
+        await tools["get_entity"].entrypoint(selected_context, "project", "detail", second_project_id, None, {})
     assert error.value.code == "AI_PROJECT_OUTSIDE_WORK_SCOPE"
 
     cross_focus_context = _build_tool_run_context(
@@ -128,6 +128,35 @@ async def test_selected_projects_should_filter_queries_and_confirm_cross_focus_w
             None,
             {},
         )
+
+
+async def test_page_copy_should_use_target_project_id_for_cross_focus_confirmation(authenticated_client: AsyncClient) -> None:
+    """页面复制应按手册字段 target_project_id 识别目标项目并触发跨焦点确认。"""
+
+    workspace_id = await _create_workspace(authenticated_client, "页面复制字段契约")
+    source_project_id = await _create_project(authenticated_client, workspace_id, "源项目")
+    target_project_id = await _create_project(authenticated_client, workspace_id, "目标项目")
+    source_page_id = await _create_page(authenticated_client, workspace_id, source_project_id, "待复制页面")
+    execute_action = {item.name: item for item in build_generic_business_tools(get_session_factory())}["execute_action"]
+    context = _build_tool_run_context(
+        workspace_id,
+        approved=False,
+        focus_project_id=source_project_id,
+        work_scope_mode="selected_projects",
+        allowed_project_ids=[source_project_id, target_project_id],
+    )
+
+    with pytest.raises(ApprovalRequired) as error:
+        await execute_action.entrypoint(
+            context,
+            "page",
+            "copy",
+            source_page_id,
+            None,
+            {"target_project_id": target_project_id},
+        )
+
+    assert error.value.metadata["target"] == {"project_id": target_project_id}
 
 
 async def _create_workspace(client: AsyncClient, name: str) -> int:

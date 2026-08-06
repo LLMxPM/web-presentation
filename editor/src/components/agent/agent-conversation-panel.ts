@@ -111,7 +111,8 @@ export function toolDetailFromTimelineItem(item: AgentTimelineItem, memberRuns: 
  * 把固定通用工具名转换为用户可读的真实逻辑操作。
  */
 export function resolveLogicalToolName(toolName: string, inputPayload: unknown): string {
-  if (!['query_entities', 'create_entity', 'update_entity', 'archive_entity', 'execute_action', 'execute_dangerous_action', 'get_operation_guide'].includes(toolName)) {
+  // query_entities 已退出运行时目录，仅保留识别以兼容历史会话工具卡。
+  if (!['query_entities', 'list_entities', 'get_entity', 'create_entity', 'update_entity', 'archive_entity', 'execute_action', 'execute_dangerous_action', 'get_operation_guide'].includes(toolName)) {
     return toolName
   }
   const payload = isRecord(inputPayload) ? inputPayload : {}
@@ -127,6 +128,8 @@ export function resolveLogicalToolName(toolName: string, inputPayload: unknown):
   }[String(payload.resource_type || '')] || '业务对象'
   if (toolName === 'get_operation_guide') return `查看${resourceLabel}操作手册`
   if (toolName === 'query_entities') return `查询${resourceLabel}`
+  if (toolName === 'list_entities') return `罗列${resourceLabel}`
+  if (toolName === 'get_entity') return `读取${resourceLabel}`
   if (toolName === 'create_entity') return `创建${resourceLabel}`
   if (toolName === 'update_entity') return `修改${resourceLabel}`
   if (toolName === 'archive_entity') {

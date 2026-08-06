@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+from jsonschema import Draft202012Validator
 from pydantic import ValidationError
 from pydantic_ai import ApprovalRequired
 
@@ -11,16 +12,19 @@ from app.ai.platform_tools import AgentToolContext
 from app.ai.tool_specs import (
     AGENT_COORDINATOR_AGENT_ID,
     get_operation_guide_spec,
+    list_operation_guide_options,
     list_agent_tool_specs,
     list_operation_guide_specs,
 )
 from app.ai.tools.generic.business_tools import ThemeCreatePayload, ThemeUpdatePayload, build_generic_business_tools
 from app.ai.tools.self_delegation import build_self_delegation_tools
+from app.core.exceptions import AppException
 
 
 EXPECTED_GENERIC_TOOL_KEYS = {
     "get_operation_guide",
-    "query_entities",
+    "list_entities",
+    "get_entity",
     "create_entity",
     "update_entity",
     "archive_entity",
@@ -109,6 +113,100 @@ def test_operation_guides_should_bind_handlers_and_expose_strict_theme_schema() 
     assert payload["handler_tool_key"] == "create_entity"
     assert payload["mutation_kind"] == "theme"
     assert payload["response_example"]["success"] is True
+
+
+def test_operation_guides_should_expose_action_index_and_precise_schemas() -> None:
+    """多 action 操作应支持先发现后精确查询，且 payload 与 filters 不再接受任意字段。"""
+
+    project_query_options = list_operation_guide_options("project", "query")
+    execute_options = list_operation_guide_options("page", "action")
+
+    assert {item["action"] for item in project_query_options} == {
+        "list", "detail", "route_tree", "style_config",
+    }
+    assert {item["action"] for item in execute_options} == {"restore", "check", "copy"}
+
+    for guide in list_operation_guide_specs():
+        properties = guide.parameters["properties"]
+        Draft202012Validator.check_schema(guide.parameters)
+        assert guide.parameters["additionalProperties"] is False
+        assert all(property_schema.get("description") for property_schema in properties.values())
+        nested = properties.get("payload") or properties.get("filters")
+        if nested is not None:
+            assert nested.get("additionalProperties") is False
+        for definition in guide.parameters.get("$defs", {}).values():
+            assert all(
+                property_schema.get("description") or property_schema.get("$ref")
+                for property_schema in definition.get("properties", {}).values()
+            )
+        if guide.call_example is not None:
+            Draft202012Validator(guide.parameters).validate(guide.call_example)
+
+
+def test_dangerous_action_guides_should_describe_exact_payload_and_side_effects() -> None:
+    """危险动作必须披露精确参数、覆盖边界与副作用。"""
+
+    routes = get_operation_guide_spec("project", "action", "replace_routes")
+    style_config = get_operation_guide_spec("project", "action", "replace_style_config")
+    rename_key = get_operation_guide_spec("theme", "action", "rename_key")
+
+    assert routes is not None and style_config is not None and rename_key is not None
+    assert set(routes.parameters["properties"]["payload"]["properties"]) == {"routes", "change_note"}
+    assert "全量覆盖" in "".join(routes.constraints)
+    assert set(style_config.parameters["properties"]["payload"]["properties"]) == {"style_spec_markdown"}
+    assert "只替换 style_spec_markdown" in "".join(style_config.constraints)
+    assert set(rename_key.parameters["properties"]["payload"]["properties"]) == {"key"}
+    assert rename_key.side_effects
+
+
+def test_generic_action_tools_should_expose_parameter_descriptions() -> None:
+    """模型首次看到通用动作工具时即可理解顶层参数职责。"""
+
+    tools = {item.name: item for item in build_generic_business_tools(None)}  # type: ignore[arg-type]
+
+    for tool_name in ("get_operation_guide", "list_entities", "get_entity", "execute_action", "execute_dangerous_action"):
+        properties = tools[tool_name].parameters["properties"]
+        assert properties
+        assert all(item.get("description") for item in properties.values())
+    assert set(tools["execute_action"].parameters["properties"]["action"]["enum"]) == {
+        "restore", "publish", "check", "copy", "preview_content", "save_upload",
+    }
+    assert set(tools["execute_dangerous_action"].parameters["properties"]["action"]["enum"]) == {
+        "replace_routes", "replace_style_config", "rename_key",
+    }
+
+
+def test_read_tools_should_separate_collection_and_single_entity_parameters() -> None:
+    """集合查询与单项读取工具不得继续混用 action、target_id 和分页筛选。"""
+
+    tools = {item.name: item for item in build_generic_business_tools(None)}  # type: ignore[arg-type]
+    list_properties = set(tools["list_entities"].parameters["properties"])
+    get_properties = set(tools["get_entity"].parameters["properties"])
+
+    assert list_properties == {"resource_type", "filters", "collection"}
+    assert get_properties == {"resource_type", "view", "target_id", "lookup", "options"}
+    assert "action" not in list_properties | get_properties
+    assert "target_id" not in list_properties
+    assert "filters" not in get_properties
+
+
+async def test_action_payload_validation_should_return_recoverable_business_error() -> None:
+    """动作 payload 不符合精确手册时应返回可恢复业务错误，而不是泄漏 Pydantic 异常。"""
+
+    execute_action = {item.name: item for item in build_generic_business_tools(None)}["execute_action"]  # type: ignore[arg-type]
+
+    with pytest.raises(AppException) as error:
+        await execute_action.entrypoint(
+            AgentToolContext(run_id="run-1", session_id="session-1", dependencies={}),
+            "page",
+            "copy",
+            31,
+            None,
+            {"project_id": 9},
+        )
+
+    assert error.value.code == "AI_OPERATION_ARGUMENTS_INVALID"
+    assert "target_project_id" in error.value.detail
 
 
 async def test_batch_archive_should_require_approval_and_preserve_deduplicated_targets(monkeypatch) -> None:

@@ -31,7 +31,10 @@ class ProjectBuildExtraAssetsConfig(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    asset_names: list[str] = Field(default_factory=list)
+    asset_names: list[str] = Field(
+        default_factory=list,
+        description="构建时额外打包的工作空间资源 name；不接受 URL，最多 500 项并按顺序去重。",
+    )
 
     @field_validator("asset_names", mode="before")
     @classmethod

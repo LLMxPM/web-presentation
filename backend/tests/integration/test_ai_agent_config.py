@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from httpx import AsyncClient
+from sqlalchemy import delete, select
 
 from app.ai.agent_catalog import get_agent_catalog_entry, list_agent_catalog_entries
 from app.ai.tool_specs import (
@@ -12,11 +13,15 @@ from app.ai.tool_specs import (
     list_operation_guide_specs,
 )
 from app.db.session import get_session_factory
+from app.models.ai_agent_config import AiAgentToolUserConfig
+from app.models.user import User
+from app.services.ai_agent_config_service import AiAgentConfigService
 
 
 EXPECTED_TOOL_KEYS = {
     "get_operation_guide",
-    "query_entities",
+    "list_entities",
+    "get_entity",
     "create_entity",
     "update_entity",
     "archive_entity",
@@ -68,18 +73,54 @@ async def test_unified_agent_config_should_still_support_prompt_and_tool_overrid
     assert update_response.json()["effective_prompt"] == "优先直接完成任务。"
 
     tool_response = await authenticated_client.patch(
-        f"/api/ai/agent-configs/{AGENT_COORDINATOR_AGENT_ID}/tools/query_entities",
-        json={"enabled": False, "description_override": "读取业务对象。"},
+        f"/api/ai/agent-configs/{AGENT_COORDINATOR_AGENT_ID}/tools/list_entities",
+        json={"enabled": False, "description_override": "罗列业务对象。"},
     )
     assert tool_response.status_code == 200
-    query_tool = next(
+    list_tool = next(
         tool
         for group in tool_response.json()["tool_groups"]
         for tool in group["tools"]
-        if tool["key"] == "query_entities"
+        if tool["key"] == "list_entities"
     )
-    assert query_tool["enabled"] is False
-    assert query_tool["description"] == "读取业务对象。"
+    assert list_tool["enabled"] is False
+    assert list_tool["description"] == "罗列业务对象。"
+
+
+async def test_legacy_query_tool_config_should_apply_to_both_read_tools() -> None:
+    """升级前 query_entities 的用户配置应同时继承到新的集合与单项读取入口。"""
+
+    async with get_session_factory()() as session:
+        user_id = await session.scalar(select(User.id).where(User.username == "admin"))
+        assert user_id is not None
+        await session.execute(
+            delete(AiAgentToolUserConfig).where(
+                AiAgentToolUserConfig.user_id == int(user_id),
+                AiAgentToolUserConfig.agent_id == AGENT_COORDINATOR_AGENT_ID,
+                AiAgentToolUserConfig.tool_key.in_(("query_entities", "list_entities", "get_entity")),
+            )
+        )
+        session.add(AiAgentToolUserConfig(
+            user_id=int(user_id),
+            agent_id=AGENT_COORDINATOR_AGENT_ID,
+            tool_key="query_entities",
+            enabled=False,
+            description_override="旧查询说明",
+            instructions_override="旧查询提示",
+            created_by=int(user_id),
+            updated_by=int(user_id),
+        ))
+        await session.commit()
+
+        runtime_config = await AiAgentConfigService(session, user_id=int(user_id)).get_effective_runtime_config(
+            AGENT_COORDINATOR_AGENT_ID
+        )
+
+    for tool_key in ("list_entities", "get_entity"):
+        config = runtime_config.tool_configs[tool_key]
+        assert config.enabled is False
+        assert config.description_override == "旧查询说明"
+        assert config.instructions_override == "旧查询提示"
 
 
 def test_unified_tool_specs_should_match_runtime_and_guides() -> None:

@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import inspect
-from typing import Any
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import Field, ValidationError
 from pydantic_ai import ApprovalRequired
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -22,6 +22,12 @@ from app.ai.tools.generic.models import (
     build_mutation_envelope,
     build_query_envelope,
 )
+from app.ai.tools.generic.operation_models import (
+    ThemeCreatePayload,
+    ThemeUpdatePayload,
+    get_operation_payload_model,
+    get_query_filters_model,
+)
 from app.ai.tools.page import build_apply_page_edits_tool, build_get_page_content_tool
 from app.ai.tools.project import build_project_tools
 from app.ai.tools.resource import build_resource_manager_tools
@@ -34,36 +40,14 @@ from app.models.workspace_theme import WorkspaceTheme
 from app.schemas.common import ListQuery
 from app.schemas.page import PageCopyToProjectRequest, PageListQuery
 from app.schemas.project import ProjectCreateRequest, ProjectUpdateRequest
-from app.schemas.theme import ThemePalette, WorkspaceThemeCreateRequest, WorkspaceThemeUpdateRequest
+from app.schemas.theme import WorkspaceThemeCreateRequest, WorkspaceThemeUpdateRequest
 from app.schemas.workspace_style import WorkspaceStyleCreateRequest, WorkspaceStyleUpdateRequest
 from app.services.page_service import PageService
 from app.services.project_service import ProjectService
-from app.services.project_suggested_reference_asset_service import ProjectSuggestedReferenceAssetService
 from app.services.suggested_component_service import SuggestedComponentService
 from app.services.workspace_style_service import WorkspaceStyleService
 from app.services.workspace_theme_service import WorkspaceThemeService
 from app.services.agent_work_scope_service import project_is_in_work_scope
-
-
-class ThemeCreatePayload(BaseModel):
-    """限制内容助手创建主题时只能提交文本与色板字段。"""
-
-    model_config = ConfigDict(extra="forbid")
-
-    key: str = Field(min_length=1, max_length=64, pattern=r"^[a-z0-9_-]+$")
-    name: str = Field(min_length=1, max_length=128)
-    description: str | None = Field(default=None, max_length=2000)
-    palette: ThemePalette
-
-
-class ThemeUpdatePayload(BaseModel):
-    """限制内容助手修改主题时不能接触 Logo 和字体字段。"""
-
-    model_config = ConfigDict(extra="forbid")
-
-    name: str | None = Field(default=None, min_length=1, max_length=128)
-    description: str | None = Field(default=None, max_length=2000)
-    palette: ThemePalette | None = None
 
 
 def build_generic_business_tools(session_factory: async_sessionmaker[AsyncSession]) -> list[Any]:
@@ -74,9 +58,9 @@ def build_generic_business_tools(session_factory: async_sessionmaker[AsyncSessio
     @agent_tool(show_result=False)
     async def get_operation_guide(
         run_context: AgentToolContext,
-        resource_type: BusinessResourceType,
-        operation: BusinessOperation,
-        action: str | None = None,
+        resource_type: Annotated[BusinessResourceType, Field(description="业务对象类型。")],
+        operation: Annotated[BusinessOperation, Field(description="逻辑操作类型：查询、创建、修改、归档或业务动作。")],
+        action: Annotated[str | None, Field(description="具体 action；不传时返回该对象与操作支持的 action 索引。")] = None,
     ) -> dict[str, Any]:
         """读取对象操作手册、参数结构、限制和示例；该结果不是授权或执行前置条件。"""
 
@@ -86,10 +70,18 @@ def build_generic_business_tools(session_factory: async_sessionmaker[AsyncSessio
             required_scopes=(),
             required_dependency_fields=("workspace_id",),
         )
-        from app.ai.tool_specs import get_operation_guide_spec
+        from app.ai.tool_specs import get_operation_guide_spec, list_operation_guide_options
 
         guide = get_operation_guide_spec(resource_type, operation, action)
         if guide is None:
+            options = list_operation_guide_options(resource_type, operation)
+            if options and not str(action or "").strip():
+                return {
+                    "resource_type": resource_type,
+                    "operation": operation,
+                    "available_actions": options,
+                    "note": "请选择一个 action 再次查询，以取得精确参数 Schema；该索引不是授权凭证。",
+                }
             raise AppException(
                 status_code=404,
                 code="AI_OPERATION_GUIDE_NOT_FOUND",
@@ -98,14 +90,13 @@ def build_generic_business_tools(session_factory: async_sessionmaker[AsyncSessio
         return guide.to_payload()
 
     @agent_tool(show_result=False)
-    async def query_entities(
+    async def list_entities(
         run_context: AgentToolContext,
-        resource_type: BusinessResourceType,
-        action: str = "list",
-        target_id: int | None = None,
-        filters: dict[str, Any] | None = None,
+        resource_type: Annotated[BusinessResourceType, Field(description="要罗列或搜索的业务对象类型。")],
+        filters: Annotated[dict[str, Any] | None, Field(description="当前 resource_type 的列表筛选参数，必须符合操作手册中的精确 Schema。")] = None,
+        collection: Annotated[Literal["items", "tags"], Field(description="集合类型；通常使用 items，仅 asset 支持 tags。")] = "items",
     ) -> dict[str, Any]:
-        """统一查询业务对象；具体 action 与 filters 请先参考操作手册。"""
+        """统一罗列、搜索业务对象；不读取单项详情或源码。"""
 
         dependencies, claims = await resolve_tool_context(
             session_factory,
@@ -113,7 +104,10 @@ def build_generic_business_tools(session_factory: async_sessionmaker[AsyncSessio
             required_scopes=(),
             required_dependency_fields=("workspace_id",),
         )
-        data = await _query_entities(
+        action = "tags" if resource_type == "asset" and collection == "tags" else "list"
+        if collection == "tags" and resource_type != "asset":
+            raise AppException(status_code=400, code="AI_ENTITY_COLLECTION_UNSUPPORTED", detail="只有 asset 支持 tags 集合。")
+        data = await _dispatch_entity_query(
             session_factory,
             internal_tools,
             run_context,
@@ -121,16 +115,51 @@ def build_generic_business_tools(session_factory: async_sessionmaker[AsyncSessio
             claims=claims,
             resource_type=resource_type,
             action=action,
-            target_id=target_id,
+            target_id=None,
             filters=dict(filters or {}),
         )
         return build_query_envelope(resource_type=resource_type, action=action, data=data)
 
+    @agent_tool(show_result=False)
+    async def get_entity(
+        run_context: AgentToolContext,
+        resource_type: Annotated[Literal["project", "page", "component", "asset", "theme", "style", "runtime_kit"], Field(description="要读取的单项对象类型。")],
+        view: Annotated[Literal["detail", "content", "route_tree", "style_config", "versions", "dependencies"], Field(description="单项读取视图，必须与 resource_type 匹配。")],
+        target_id: Annotated[int | None, Field(gt=0, description="项目、页面、组件、资源、主题或样式 ID；Runtime Kit detail 不使用。")] = None,
+        lookup: Annotated[dict[str, Any] | None, Field(description="非 ID 定位参数；目前仅 Runtime Kit detail 使用 name 和可选 kind。")] = None,
+        options: Annotated[dict[str, Any] | None, Field(description="视图选项；例如 style_config 的 include_style_spec_markdown。")] = None,
+    ) -> dict[str, Any]:
+        """统一读取单个对象的详情、源码或结构化视图。"""
+
+        dependencies, claims = await resolve_tool_context(
+            session_factory,
+            run_context,
+            required_scopes=(),
+            required_dependency_fields=("workspace_id",),
+        )
+        query_options = dict(options or {})
+        if resource_type == "runtime_kit":
+            query_options.update(dict(lookup or {}))
+        elif lookup:
+            raise AppException(status_code=400, code="AI_ENTITY_LOOKUP_UNSUPPORTED", detail="当前对象只支持使用 target_id 定位。")
+        data = await _dispatch_entity_query(
+            session_factory,
+            internal_tools,
+            run_context,
+            dependencies=dependencies,
+            claims=claims,
+            resource_type=resource_type,
+            action=view,
+            target_id=target_id,
+            filters=query_options,
+        )
+        return build_query_envelope(resource_type=resource_type, action=view, data=data)
+
     @agent_tool(show_result=False, sequential=True)
     async def create_entity(
         run_context: AgentToolContext,
-        resource_type: BusinessResourceType,
-        payload: dict[str, Any],
+        resource_type: Annotated[BusinessResourceType, Field(description="要创建的业务对象类型。")],
+        payload: Annotated[dict[str, Any], Field(description="创建参数；字段必须严格符合对应操作手册。")],
     ) -> dict[str, Any]:
         """统一创建业务对象；payload 的真实字段由操作手册说明并由后端 Schema 校验。"""
 
@@ -140,10 +169,10 @@ def build_generic_business_tools(session_factory: async_sessionmaker[AsyncSessio
     @agent_tool(show_result=False, sequential=True)
     async def update_entity(
         run_context: AgentToolContext,
-        resource_type: BusinessResourceType,
-        target_id: int,
-        payload: dict[str, Any],
-        action: str = "metadata",
+        resource_type: Annotated[BusinessResourceType, Field(description="要修改的业务对象类型。")],
+        target_id: Annotated[int, Field(gt=0, description="真实查询得到的目标对象 ID。")],
+        payload: Annotated[dict[str, Any], Field(description="修改参数；只提交需要修改的字段，并严格符合操作手册。")],
+        action: Annotated[str, Field(description="修改动作；页面、组件和资源使用 metadata 或 content。")] = "metadata",
     ) -> dict[str, Any]:
         """统一修改业务对象；源码更新等复杂参数应按对应 action 的操作手册提交。"""
 
@@ -201,11 +230,11 @@ def build_generic_business_tools(session_factory: async_sessionmaker[AsyncSessio
     @agent_tool(show_result=False, sequential=True)
     async def execute_action(
         run_context: AgentToolContext,
-        resource_type: BusinessResourceType,
-        action: str,
-        target_id: int | None = None,
-        target_ids: list[int] | None = None,
-        payload: dict[str, Any] | None = None,
+        resource_type: Annotated[Literal["page", "component", "asset", "theme", "style"], Field(description="动作所属业务对象类型。")],
+        action: Annotated[Literal["restore", "publish", "check", "copy", "preview_content", "save_upload"], Field(description="已登记的普通 action；必须与 resource_type 组成操作手册支持的组合。")],
+        target_id: Annotated[int | None, Field(gt=0, description="单个目标 ID；save_upload 不使用，restore 可与 target_ids 二选一。")] = None,
+        target_ids: Annotated[list[int] | None, Field(min_length=1, max_length=100, description="批量目标 ID；仅 restore 使用。")] = None,
+        payload: Annotated[dict[str, Any] | None, Field(description="action 专属参数；必须严格符合操作手册。")] = None,
     ) -> dict[str, Any]:
         """执行发布、复制、恢复、检查等普通动作。"""
 
@@ -223,10 +252,10 @@ def build_generic_business_tools(session_factory: async_sessionmaker[AsyncSessio
     @agent_tool(show_result=False, requires_confirmation=True, sequential=True)
     async def execute_dangerous_action(
         run_context: AgentToolContext,
-        resource_type: BusinessResourceType,
-        action: str,
-        target_id: int | None = None,
-        payload: dict[str, Any] | None = None,
+        resource_type: Annotated[Literal["project", "theme"], Field(description="仅支持 project 或 theme。")],
+        action: Annotated[Literal["replace_routes", "replace_style_config", "rename_key"], Field(description="危险 action，必须与 resource_type 匹配。")],
+        target_id: Annotated[int | None, Field(gt=0, description="目标项目或主题 ID，三个危险动作均必填。")] = None,
+        payload: Annotated[dict[str, Any] | None, Field(description="危险动作的完整替换或重命名参数；必须严格符合操作手册。")] = None,
     ) -> dict[str, Any]:
         """执行路由整体覆盖、项目配置整体覆盖或主题 key 重命名等危险动作。"""
 
@@ -242,7 +271,8 @@ def build_generic_business_tools(session_factory: async_sessionmaker[AsyncSessio
 
     return [
         get_operation_guide,
-        query_entities,
+        list_entities,
+        get_entity,
         create_entity,
         update_entity,
         archive_entity,
@@ -267,7 +297,7 @@ def _build_internal_tool_map(session_factory: async_sessionmaker[AsyncSession]) 
     return {item.name: item for item in tools}
 
 
-async def _query_entities(
+async def _dispatch_entity_query(
     session_factory: async_sessionmaker[AsyncSession],
     tools: dict[str, PlatformTool],
     run_context: AgentToolContext,
@@ -281,6 +311,10 @@ async def _query_entities(
 ) -> Any:
     """分派统一查询并对主题结果执行字段裁剪。"""
 
+    filters_model = get_query_filters_model(resource_type, action)
+    if filters_model is None:
+        raise AppException(status_code=400, code="AI_ENTITY_QUERY_UNSUPPORTED", detail="该对象不支持指定查询 action。")
+    filters = _validate_arguments_model(filters_model, filters)
     workspace_id = int(dependencies["workspace_id"])
     user_id = extract_user_id(str(claims.get("sub")))
     if resource_type == "project":
@@ -295,25 +329,10 @@ async def _query_entities(
                 item = await service.get(target_id, user_id=user_id)
                 _ensure_workspace(item.workspace_id, workspace_id)
                 return item.model_dump(mode="json")
-        if action in {"pages", "route_tree", "style_config", "suggested_components", "suggested_assets"}:
+        if action in {"route_tree", "style_config"}:
             project_id = _required_target_id(target_id, "查询项目子资源时必须提供 target_id。")
             context = await _with_project_scope(session_factory, run_context, project_id)
-            if action == "suggested_components":
-                async with session_factory() as session:
-                    items = await SuggestedComponentService(session).list_project_component_items(
-                        project_id,
-                        workspace_id=workspace_id,
-                    )
-                    return {"items": [item.model_dump(mode="json") for item in items], "total": len(items)}
-            if action == "suggested_assets":
-                async with session_factory() as session:
-                    items = await ProjectSuggestedReferenceAssetService(session).list_asset_items(
-                        project_id,
-                        workspace_id=workspace_id,
-                    )
-                    return {"items": [item.model_dump(mode="json") for item in items], "total": len(items)}
             tool_name = {
-                "pages": "list_project_pages",
                 "route_tree": "get_project_route_tree",
                 "style_config": "get_project_style_config",
             }[action]
@@ -349,13 +368,28 @@ async def _query_entities(
         return await _query_themes(session_factory, workspace_id, action, target_id, filters)
     if resource_type == "style":
         return await _query_styles(session_factory, workspace_id, action, target_id, filters)
+    if resource_type == "component" and action == "list":
+        scope = str(filters.pop("scope", "all") or "all")
+        project_id = filters.pop("project_id", None) or dependencies.get("project_id")
+        if scope == "suggested":
+            resolved_project_id = _required_target_id(project_id, "查询项目建议组件时必须提供 project_id 或处于项目焦点。")
+            await _with_project_scope(session_factory, run_context, resolved_project_id)
+            async with session_factory() as session:
+                items = await SuggestedComponentService(session).list_project_component_items(
+                    resolved_project_id,
+                    workspace_id=workspace_id,
+                )
+                return _filter_suggested_items(items, filters)
+    query_context = run_context
+    if resource_type == "asset" and action == "list" and filters.get("project_id") is not None:
+        query_context = await _with_project_scope(session_factory, run_context, int(filters.pop("project_id")))
 
     tool_name = _query_tool_name(resource_type, action)
     if tool_name:
         payload = dict(filters)
         if target_id is not None:
             payload[_target_parameter(resource_type)] = target_id
-        return await _call_internal(tools[tool_name], run_context, payload)
+        return await _call_internal(tools[tool_name], query_context, payload)
     raise AppException(status_code=400, code="AI_ENTITY_QUERY_UNSUPPORTED", detail="该对象不支持指定查询 action。")
 
 
@@ -368,6 +402,7 @@ async def _create_entity(
 ) -> Any:
     """分派创建操作并保证工作空间 ID 来自运行上下文。"""
 
+    payload = _validate_operation_payload(resource_type, "create", None, payload)
     dependencies, claims = await resolve_tool_context(session_factory, run_context, required_scopes=(), required_dependency_fields=("workspace_id",))
     workspace_id = int(dependencies["workspace_id"])
     operator_id = extract_user_id(str(claims.get("sub")))
@@ -427,6 +462,8 @@ async def _update_entity(
 ) -> Any:
     """分派更新操作，主题普通更新明确排除 key、Logo 和字体。"""
 
+    normalized_action = action if resource_type in {"page", "component", "asset"} else None
+    payload = _validate_operation_payload(resource_type, "update", normalized_action, payload)
     dependencies, claims = await resolve_tool_context(session_factory, run_context, required_scopes=(), required_dependency_fields=("workspace_id",))
     workspace_id = int(dependencies["workspace_id"])
     operator_id = extract_user_id(str(claims.get("sub")))
@@ -489,6 +526,7 @@ async def _execute_action(
 ) -> dict[str, Any]:
     """执行普通动作，并统一包装既有工具结果。"""
 
+    payload = _validate_operation_payload(resource_type, "action", action, payload)
     if action == "restore":
         ids = target_ids or ([] if target_id is None else [target_id])
         return await restore_entities(session_factory, run_context, resource_type=resource_type, target_ids=ids, reason=payload.get("reason"))
@@ -503,7 +541,7 @@ async def _execute_action(
     if resource_type == "page" and action == "copy":
         page_id = _required_target_id(target_id, "复制页面时必须提供 target_id。")
         await _with_page_scope(session_factory, run_context, page_id)
-        destination_project_id = int(payload.get("project_id") or 0)
+        destination_project_id = int(payload.get("target_project_id") or 0)
         await _require_cross_focus_write_confirmation(session_factory, run_context, destination_project_id, "复制页面")
         dependencies, claims = await resolve_tool_context(
             session_factory,
@@ -548,6 +586,7 @@ async def _execute_dangerous_action(
 ) -> dict[str, Any]:
     """只分派显式登记的危险动作，禁止用 action 绕过删除边界。"""
 
+    payload = _validate_operation_payload(resource_type, "action", action, payload)
     if resource_type == "project" and action in {"replace_routes", "replace_style_config"}:
         project_id = _required_target_id(target_id, "危险项目操作必须提供 target_id。")
         context = await _with_project_scope(session_factory, run_context, project_id)
@@ -569,6 +608,40 @@ async def _execute_dangerous_action(
             result = _theme_payload(updated)
         return _wrap_internal_mutation("theme", "action", result, action=action, target_id=theme_id)
     raise AppException(status_code=400, code="AI_DANGEROUS_ACTION_UNSUPPORTED", detail="该危险动作未开放；删除和清理动作永不开放。")
+
+
+def _validate_operation_payload(
+    resource_type: str,
+    operation: str,
+    action: str | None,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    """使用操作手册同源模型校验 payload，并保留调用方显式提交的字段。"""
+
+    payload_model = get_operation_payload_model(resource_type, operation, action)
+    if payload_model is None:
+        error_code = "AI_DANGEROUS_ACTION_UNSUPPORTED" if operation == "action" and action in {
+            "replace_routes", "replace_style_config", "rename_key",
+        } else "AI_OPERATION_UNSUPPORTED"
+        raise AppException(status_code=400, code=error_code, detail="该对象与操作组合未开放。")
+    return _validate_arguments_model(payload_model, payload)
+
+
+def _validate_arguments_model(model: type[Any], arguments: dict[str, Any]) -> dict[str, Any]:
+    """把 Pydantic 参数错误转换为模型可恢复的统一业务错误。"""
+
+    try:
+        return model.model_validate(arguments).model_dump(mode="json", exclude_unset=True)
+    except ValidationError as exc:
+        issues = [
+            f"{'.'.join(str(part) for part in item['loc'])}: {item['msg']}"
+            for item in exc.errors(include_url=False)
+        ]
+        raise AppException(
+            status_code=422,
+            code="AI_OPERATION_ARGUMENTS_INVALID",
+            detail=f"操作参数不符合操作手册：{'；'.join(issues)}。请查询对应精确手册后重试。",
+        ) from exc
 
 
 async def _call_internal(tool: PlatformTool, run_context: AgentToolContext, arguments: dict[str, Any]) -> Any:
@@ -667,6 +740,27 @@ def _filter_project_items(data: dict[str, Any], dependencies: dict[str, Any]) ->
     allowed = {int(item) for item in dependencies.get("allowed_project_ids") or []}
     items = [item for item in data.get("items", []) if int(item.get("id") or 0) in allowed]
     return {**data, "items": items, "total": len(items)}
+
+
+def _filter_suggested_items(items: list[Any], filters: dict[str, Any]) -> dict[str, Any]:
+    """按通用组件列表筛选条件裁剪项目建议组件。"""
+
+    keyword = str(filters.get("keyword") or "").strip().lower()
+    component_type = str(filters.get("component_type") or "").strip()
+    limit = max(1, min(int(filters.get("limit", 50)), 100))
+    payload = [item.model_dump(mode="json") if hasattr(item, "model_dump") else dict(item) for item in items]
+    if component_type:
+        payload = [item for item in payload if str(item.get("component_type") or "") == component_type]
+    if keyword:
+        payload = [
+            item for item in payload
+            if keyword in " ".join(
+                str(item.get(field) or "").lower()
+                for field in ("name", "import_name", "summary", "code")
+            )
+        ]
+    total = len(payload)
+    return {"items": payload[:limit], "total": total, "source": "project_suggested"}
 
 
 def _filter_page_items(data: dict[str, Any], dependencies: dict[str, Any]) -> dict[str, Any]:

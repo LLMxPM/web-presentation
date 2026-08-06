@@ -74,7 +74,8 @@ def test_scope_context_should_not_preload_project_suggested_component_summaries(
     assert "component_code=hero-cover" not in context_text
     assert "HeroCover" not in context_text
     assert "建议组件" in context_text
-    assert "query_entities" in context_text
+    assert "list_entities" in context_text
+    assert "get_entity" in context_text
 
 
 def test_scope_context_should_not_preload_project_suggested_reference_assets() -> None:
@@ -106,4 +107,5 @@ def test_scope_context_should_not_preload_project_suggested_reference_assets() -
     assert "hero_illustration" not in context_text
     assert "16:9" not in context_text
     assert "建议资源" in context_text
-    assert "query_entities" in context_text
+    assert "list_entities" in context_text
+    assert "get_entity" in context_text

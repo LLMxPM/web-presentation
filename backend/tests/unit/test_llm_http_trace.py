@@ -71,6 +71,43 @@ async def test_llm_http_trace_hooks_should_write_redacted_jsonl(tmp_path: Path) 
     assert response_record["duration_ms"] is not None
 
 
+async def test_llm_http_trace_hooks_should_capture_redacted_error_response_body(tmp_path: Path) -> None:
+    """非 2xx 响应应记录脱敏 body，且读取 trace 后调用方仍能读取响应内容。"""
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        """返回一个包含供应商错误详情和敏感字段的模拟响应。"""
+
+        _ = request
+        return httpx.Response(
+            400,
+            json={
+                "error": {
+                    "code": 400,
+                    "message": "invalid_request",
+                    "api_key": "sk-response-secret",
+                    "metadata": {"token": "response-token"},
+                }
+            },
+        )
+
+    hooks = build_llm_http_trace_hooks(
+        trace_dir=tmp_path,
+        body_max_bytes=20_000,
+        metadata={"llm_config_id": 7, "provider_key": "openrouter", "model_id": "gpt-test"},
+    )
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler), event_hooks=hooks) as client:
+        response = await client.post("https://api.example.com/v1/chat/completions", json={"model": "gpt-test"})
+
+    assert response.status_code == 400
+    assert response.json()["error"]["message"] == "invalid_request"
+    response_record = _read_trace_records(tmp_path)[1]
+    assert response_record["status_code"] == 400
+    assert response_record["body"]["format"] == "json"
+    assert "invalid_request" in response_record["body"]["content"]
+    assert "sk-response-secret" not in response_record["body"]["content"]
+    assert "response-token" not in response_record["body"]["content"]
+
+
 def test_llm_http_trace_settings_should_validate_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     """配置应保留稳定默认值，并拒绝无效的请求体大小上限。"""
 

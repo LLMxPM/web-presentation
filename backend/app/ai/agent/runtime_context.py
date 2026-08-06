@@ -70,7 +70,7 @@ def build_scope_context_text(runtime_context: AgentRuntimeContext) -> str:
         )
     lines.extend(
         [
-            "项目样式、建议组件、建议资源、路由和页面源码不会预注入；需要时使用 query_entities 显式读取。",
+            "项目样式、建议组件、建议资源、路由和页面源码不会预注入；集合使用 list_entities，单项详情、源码或结构化视图使用 get_entity 显式读取。",
             "跨焦点读取允许；跨焦点写入会逐次要求用户确认。所有写入必须使用明确 ID，名称只用于搜索。",
             "你不得使用无 ID 的‘当前项目’或‘当前页面’，也不得假设存在任何未通过工具返回的信息。",
         ]

@@ -104,6 +104,9 @@ class AiAgentConfigService:
         effective_tools: dict[str, EffectiveToolRuntimeConfig] = {}
         for tool in catalog.tools:
             override = tool_config_map.get(tool.key)
+            if override is None and tool.key in {"list_entities", "get_entity"}:
+                # 旧统一查询工具的用户开关与说明同时继承到两个新入口，避免升级后静默丢失配置。
+                override = tool_config_map.get("query_entities")
             effective_tools[tool.key] = EffectiveToolRuntimeConfig(
                 key=tool.key,
                 enabled=True if not tool.configurable else (override.enabled if override is not None else True),

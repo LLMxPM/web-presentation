@@ -170,7 +170,7 @@ AI_LLM_HTTP_TRACE_DIR=.tmp/llm-http-trace
 AI_LLM_HTTP_TRACE_BODY_MAX_BYTES=200000
 ```
 
-开启后，Backend 会把 Pydantic AI provider 发出的请求和响应摘要写入 `backend/.tmp/llm-http-trace/llm-http-YYYYMMDD.jsonl`。记录包含请求 URL、脱敏 headers、脱敏且按大小上限截断的请求体、响应状态码、响应 headers 和耗时；不会读取或保存流式响应 body，避免影响 Agent 正常消费模型输出。该能力只用于本地开发排障，提交复现材料前应检查 trace 文件中是否包含用户输入、页面源码或其它业务敏感内容。
+开启后，Backend 会把 Pydantic AI provider 发出的请求和响应摘要写入 `backend/.tmp/llm-http-trace/llm-http-YYYYMMDD.jsonl`。记录包含请求 URL、脱敏 headers、脱敏且按大小上限截断的请求体、响应状态码、响应 headers 和耗时；非 2xx 响应还会记录脱敏且按同一上限截断的响应 body，便于查看供应商错误码和消息；正常 2xx 流式响应不会读取 body，避免影响 Agent 正常消费模型输出。该能力只用于本地开发排障，提交复现材料前应检查 trace 文件中是否包含用户输入、页面源码或其它业务敏感内容。
 
 ## Redis 临时态维护
 
