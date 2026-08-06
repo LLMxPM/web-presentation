@@ -73,9 +73,14 @@ describe('styles api', () => {
     await createWorkspaceStyle(5, payload)
     await updateWorkspaceStyle(5, 9, { style_spec_markdown: payload.style_spec_markdown })
 
-    expect(postMock).toHaveBeenCalledWith('/workspaces/5/styles', payload)
+    expect(postMock).toHaveBeenCalledWith('/workspaces/5/styles', {
+      key: 'pitch',
+      name: '路演样式',
+      description: null,
+      configuration: { presentation: expect.objectContaining({ style_spec_markdown: payload.style_spec_markdown }) },
+    })
     expect(patchMock).toHaveBeenCalledWith('/workspaces/5/styles/9', {
-      style_spec_markdown: payload.style_spec_markdown,
+      configuration: { presentation: { style_spec_markdown: payload.style_spec_markdown } },
     })
   })
 

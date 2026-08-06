@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.ai.agent_runtime_config import EffectiveAgentRuntimeConfig, apply_tool_runtime_config
 from app.ai.auth_tokens import build_agent_tool_token
+from app.ai.generic_business_tool_schema import GENERIC_BUSINESS_TOOL_KEYS
 from app.ai.image_generation_tool_schema import project_generate_image_schema
 from app.ai.image_refs import normalize_agent_image_ref
 from app.ai.platform_tools import AgentToolContext, recoverable_tool_error_result
@@ -286,6 +287,9 @@ def _wrap_platform_tool(
             tool.function_schema.json_schema,
             allow_page_screenshot=allow_page_screenshot,
         )
+    projected_parameters = getattr(tool_item, "parameters", None)
+    if tool.name in GENERIC_BUSINESS_TOOL_KEYS and isinstance(projected_parameters, dict):
+        tool.function_schema.json_schema = projected_parameters
     return tool
 
 

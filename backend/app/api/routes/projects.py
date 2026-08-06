@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.dependencies import get_current_user, get_list_query
 from app.db.session import get_db_session
 from app.schemas.common import ListQuery, MessageResponse, PagedResponse
-from app.schemas.component import SuggestedComponentsResponse, SuggestedComponentsUpdateRequest
+from app.schemas.component import SuggestedComponentsResponse
 from app.schemas.project import (
     ProjectCreateRequest,
     ProjectItem,
@@ -112,20 +112,6 @@ async def list_project_suggested_components(
         project_id,
         include_unavailable=True,
     )
-    return SuggestedComponentsResponse(items=items)
-
-
-@router.put("/{project_id}/suggested-components", response_model=SuggestedComponentsResponse)
-async def replace_project_suggested_components(
-    project_id: int,
-    payload: SuggestedComponentsUpdateRequest,
-    current: Annotated[AuthContext, Depends(get_current_user)],
-    session: Annotated[AsyncSession, Depends(get_db_session)],
-) -> SuggestedComponentsResponse:
-    """覆盖保存项目建议组件快照列表。"""
-
-    await ProjectService(session).get(project_id, user_id=current.user.id)
-    items = await SuggestedComponentService(session).replace_project_components(project_id, payload.component_ids)
     return SuggestedComponentsResponse(items=items)
 
 

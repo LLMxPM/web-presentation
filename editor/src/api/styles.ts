@@ -44,6 +44,30 @@ export interface WorkspaceStylePayload {
   menu_mode: ProjectMenuMode
   theme_key?: string | null
   style_spec_markdown: string
+  suggested_component_ids?: number[]
+}
+
+/** 把 Editor 扁平草稿转换为 Backend 统一样式配置写入结构。 */
+function buildStyleWritePayload(payload: Partial<WorkspaceStylePayload>, includeIdentity: boolean) {
+  const {
+    key, name, description, suggested_component_ids: componentIds,
+    page_width, page_height, base_font_size, icon_default_stroke_width,
+    show_pdf_export_button, menu_mode, theme_key, style_spec_markdown,
+  } = payload
+  const presentation = Object.fromEntries(Object.entries({
+    page_width, page_height, base_font_size, icon_default_stroke_width,
+    show_pdf_export_button, menu_mode, theme_key, style_spec_markdown,
+  }).filter(([, value]) => value !== undefined))
+  const configuration = {
+    ...(Object.keys(presentation).length ? { presentation } : {}),
+    ...(componentIds !== undefined ? { suggested_components: { component_ids: componentIds } } : {}),
+  }
+  return {
+    ...(includeIdentity ? { key } : {}),
+    ...(name !== undefined ? { name } : {}),
+    ...(description !== undefined ? { description } : {}),
+    ...(Object.keys(configuration).length ? { configuration } : {}),
+  }
 }
 
 /** 查询工作空间样式列表。 */
@@ -68,22 +92,12 @@ export async function getWorkspaceStyleSuggestedComponents(workspaceId: number, 
   return data
 }
 
-/** 覆盖保存样式建议组件。 */
-export async function updateWorkspaceStyleSuggestedComponents(
-  workspaceId: number,
-  styleId: number,
-  componentIds: number[],
-) {
-  const { data } = await http.put<SuggestedComponentsResponse>(
-    `/workspaces/${workspaceId}/styles/${styleId}/suggested-components`,
-    { component_ids: componentIds },
-  )
-  return data
-}
-
 /** 创建工作空间样式。 */
 export async function createWorkspaceStyle(workspaceId: number, payload: WorkspaceStylePayload) {
-  const { data } = await http.post<WorkspaceStyleItem>(`/workspaces/${workspaceId}/styles`, payload)
+  const { data } = await http.post<WorkspaceStyleItem>(
+    `/workspaces/${workspaceId}/styles`,
+    buildStyleWritePayload(payload, true),
+  )
   return data
 }
 
@@ -93,7 +107,10 @@ export async function updateWorkspaceStyle(
   styleId: number,
   payload: Partial<WorkspaceStylePayload>,
 ) {
-  const { data } = await http.patch<WorkspaceStyleItem>(`/workspaces/${workspaceId}/styles/${styleId}`, payload)
+  const { data } = await http.patch<WorkspaceStyleItem>(
+    `/workspaces/${workspaceId}/styles/${styleId}`,
+    buildStyleWritePayload(payload, false),
+  )
   return data
 }
 

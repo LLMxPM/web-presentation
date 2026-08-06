@@ -131,6 +131,7 @@ def build_get_component_detail_tool(session_factory: async_sessionmaker[AsyncSes
         async with session_factory() as session:
             component = await WorkspaceComponentService(session).get(int(component_id))
             _ensure_component_workspace(component.workspace_id, int(dependencies["workspace_id"]))
+            _ensure_component_active(component.status)
             return AgentToolResult(content=build_component_detail_prompt(component))
 
     return get_component_detail
@@ -152,6 +153,7 @@ def build_list_component_versions_tool(session_factory: async_sessionmaker[Async
             service = WorkspaceComponentService(session)
             component = await service.get(int(component_id))
             _ensure_component_workspace(component.workspace_id, int(dependencies["workspace_id"]))
+            _ensure_component_active(component.status)
             versions = await service.list_versions(component.id)
             return [item.model_dump(mode="json") for item in versions]
 
@@ -174,6 +176,7 @@ def build_get_component_dependencies_tool(session_factory: async_sessionmaker[As
             service = WorkspaceComponentService(session)
             component = await service.get(int(component_id))
             _ensure_component_workspace(component.workspace_id, int(dependencies["workspace_id"]))
+            _ensure_component_active(component.status)
             result = await service.get_current_dependencies(component.id)
             return result.model_dump(mode="json")
 
@@ -548,6 +551,14 @@ def _ensure_component_workspace(component_workspace_id: int, expected_workspace_
             code="AI_COMPONENT_SCOPE_DENIED",
             detail="组件不属于当前工作空间，拒绝访问。",
         )
+
+
+def _ensure_component_active(status: Any) -> None:
+    """拒绝读取已归档组件的详情、版本和依赖。"""
+
+    value = getattr(status, "value", status)
+    if str(value) != RecordStatus.ACTIVE.value:
+        raise AppException(status_code=404, code="AI_ENTITY_NOT_FOUND", detail="组件不存在或已归档。")
 
 
 def _ensure_component_edit_lock(

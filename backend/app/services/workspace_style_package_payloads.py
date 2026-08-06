@@ -76,7 +76,19 @@ class WorkspaceStylePackagePayloads:
         package_payload = dict(payload)
         package_payload.pop("suggested_components", None)
         package_payload.setdefault("style_spec_markdown", "")
-        return WorkspaceStyleCreateRequest.model_validate(package_payload).model_dump(mode="json")
+        presentation_fields = {
+            key: package_payload.pop(key)
+            for key in (
+                "page_width", "page_height", "base_font_size", "icon_default_stroke_width",
+                "show_pdf_export_button", "menu_mode", "theme_key", "style_spec_markdown",
+            )
+            if key in package_payload
+        }
+        normalized = WorkspaceStyleCreateRequest.model_validate(
+            {**package_payload, "configuration": {"presentation": presentation_fields}}
+        ).model_dump(mode="json")
+        presentation = normalized.pop("configuration")["presentation"]
+        return {**normalized, **presentation}
 
     @staticmethod
     def normalize_theme_payload(payload: dict[str, Any]) -> dict[str, Any]:

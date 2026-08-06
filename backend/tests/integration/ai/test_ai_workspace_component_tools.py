@@ -148,9 +148,9 @@ async def _save_project_suggested_components(
 ) -> None:
     """保存项目建议组件，供列表工具默认 suggested 范围读取。"""
 
-    response = await authenticated_client.put(
-        f"/api/projects/{project_id}/suggested-components",
-        json={"component_ids": component_ids},
+    response = await authenticated_client.patch(
+        f"/api/projects/{project_id}",
+        json={"configuration": {"mode": "patch", "suggested_components": {"component_ids": component_ids}}},
     )
     assert response.status_code == 200, response.text
 

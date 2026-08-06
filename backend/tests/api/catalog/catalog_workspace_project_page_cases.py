@@ -231,17 +231,17 @@ async def test_project_config_update_should_reject_invalid_structured_fields(aut
 
     response = await authenticated_client.patch(
         f"/api/projects/{project.json()['id']}",
-        json={"page_width": 0},
+        json={"configuration": {"mode": "patch", "presentation": {"page_width": 0}}},
     )
 
     assert response.status_code == 422
 
     normalized_response = await authenticated_client.patch(
         f"/api/projects/{project.json()['id']}",
-        json={
+        json={"configuration": {"mode": "patch", "presentation": {
             "base_font_size": "18",
             "icon_default_stroke_width": 3,
-        },
+        }}},
     )
     assert normalized_response.status_code == 200
     assert normalized_response.json()["base_font_size"] == "18px"
@@ -275,7 +275,7 @@ async def test_project_menu_mode_should_support_bottom_preview(authenticated_cli
             "workspace_id": workspace.json()["id"],
             "name": "底部菜单项目",
             "status": "active",
-            "menu_mode": "bottom-preview",
+            "configuration": {"mode": "custom", "presentation": {"menu_mode": "bottom-preview"}},
         },
     )
     assert project.status_code == 200
@@ -289,7 +289,7 @@ async def test_project_menu_mode_should_support_bottom_preview(authenticated_cli
 
     update_response = await authenticated_client.patch(
         f"/api/projects/{project.json()['id']}",
-        json={"menu_mode": "text"},
+        json={"configuration": {"mode": "patch", "presentation": {"menu_mode": "text"}}},
     )
     assert update_response.status_code == 200
     assert update_response.json()["menu_mode"] == "text"

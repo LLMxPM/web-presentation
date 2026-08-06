@@ -69,7 +69,7 @@ async def _create_project(
             "workspace_id": workspace_id,
             "name": name,
             "status": "active",
-            "style_spec_markdown": style_spec_markdown,
+            "configuration": {"mode": "custom", "presentation": {"style_spec_markdown": style_spec_markdown}},
         },
     )
     assert response.status_code == 200, response.text

@@ -54,10 +54,12 @@ const props = withDefaults(defineProps<{
   label?: string
   hint?: string
   embedded?: boolean
+  autoApplyKey?: string | null
 }>(), {
   label: '应用工作空间样式',
   hint: '会填充主题、页面尺寸、菜单模式、导出按钮和 Markdown 样式规范，保存后才会写入项目。',
   embedded: false,
+  autoApplyKey: null,
 })
 
 const emit = defineEmits<{
@@ -67,6 +69,7 @@ const emit = defineEmits<{
 const loading = ref(false)
 const styles = ref<WorkspaceStyleItem[]>([])
 const selectedStyleId = ref<number | null>(null)
+const autoAppliedWorkspaceId = ref<number | null>(null)
 const rootClass = computed(() => (
   props.embedded ? '' : 'rounded-xl border border-border bg-surface p-4'
 ))
@@ -84,6 +87,7 @@ watch(
   () => props.workspaceId,
   () => {
     selectedStyleId.value = null
+    autoAppliedWorkspaceId.value = null
     void loadStyles()
   },
   { immediate: true },
@@ -101,6 +105,14 @@ async function loadStyles(): Promise<void> {
   try {
     const response = await listWorkspaceStyles(props.workspaceId, { page: 1, page_size: 100 })
     styles.value = response.items
+    if (props.autoApplyKey && autoAppliedWorkspaceId.value !== props.workspaceId) {
+      const initialStyle = styles.value.find(style => style.key === props.autoApplyKey)
+      autoAppliedWorkspaceId.value = props.workspaceId
+      if (initialStyle) {
+        selectedStyleId.value = initialStyle.id
+        emit('apply', initialStyle)
+      }
+    }
   } catch (error) {
     Message.error(getErrorMessage(error, '加载样式列表失败。'))
   } finally {

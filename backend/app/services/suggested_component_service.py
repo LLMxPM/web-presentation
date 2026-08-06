@@ -198,7 +198,13 @@ class SuggestedComponentService:
 
         project = await self._get_project_or_raise(project_id, workspace_id=workspace_id)
         await self._get_style_or_raise(project.workspace_id, source_style_id)
-        components = await self.list_style_components(project.workspace_id, source_style_id)
+        component_ids = await self._list_style_component_ids(source_style_id)
+        components_by_id = await self._load_suggestible_components_by_id(
+            project.workspace_id,
+            component_ids,
+            invalid_code="PROJECT_SUGGESTED_COMPONENT_INVALID",
+        )
+        components = [components_by_id[component_id] for component_id in component_ids]
         await self._replace_project_components_with_models(project.id, components)
         if commit:
             await self.session.commit()
@@ -215,7 +221,14 @@ class SuggestedComponentService:
         """复制样式建议组件到另一个样式，供样式复制功能复用。"""
 
         await self._get_style_or_raise(workspace_id, target_style_id)
-        components = await self.list_style_components(workspace_id, source_style_id)
+        await self._get_style_or_raise(workspace_id, source_style_id)
+        component_ids = await self._list_style_component_ids(source_style_id)
+        components_by_id = await self._load_suggestible_components_by_id(
+            workspace_id,
+            component_ids,
+            invalid_code="WORKSPACE_STYLE_SUGGESTED_COMPONENT_INVALID",
+        )
+        components = [components_by_id[component_id] for component_id in component_ids]
         await self._delete_style_links(target_style_id)
         for index, component in enumerate(components):
             self.session.add(
@@ -228,6 +241,16 @@ class SuggestedComponentService:
         if commit:
             await self.session.commit()
         return [self.dump_component_item(component) for component in components]
+
+    async def _list_style_component_ids(self, style_id: int) -> list[int]:
+        """读取样式保存的完整建议组件 ID，避免复制时静默跳过失效关联。"""
+
+        statement = (
+            select(WorkspaceStyleSuggestedComponent.component_id)
+            .where(WorkspaceStyleSuggestedComponent.style_id == style_id)
+            .order_by(WorkspaceStyleSuggestedComponent.sort_order.asc(), WorkspaceStyleSuggestedComponent.id.asc())
+        )
+        return list((await self.session.scalars(statement)).all())
 
     async def clear_project_components(self, project_id: int, *, commit: bool = True) -> None:
         """清空项目建议组件快照；项目迁移工作空间时使用。"""

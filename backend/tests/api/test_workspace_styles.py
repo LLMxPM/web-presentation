@@ -6,10 +6,9 @@ import json
 import zipfile
 
 from httpx import AsyncClient
+from app.schemas.project_app_config import DEFAULT_PROJECT_STYLE_SPEC_MARKDOWN
 
 CONTENT_COMPONENT_SIZE_PREVIEW_SCHEMA = '{"props":{"height":{"type":"number","label":"高度","default":320}}}'
-
-from app.schemas.project_app_config import DEFAULT_PROJECT_STYLE_SPEC_MARKDOWN
 
 
 async def test_workspace_styles_should_crud_copy_and_not_link_projects(authenticated_client: AsyncClient) -> None:
@@ -37,14 +36,16 @@ async def test_workspace_styles_should_crud_copy_and_not_link_projects(authentic
             "key": " Pitch ",
             "name": "路演样式",
             "description": "用于项目路演。",
-            "page_width": 1600,
-            "page_height": 900,
-            "base_font_size": "18",
-            "icon_default_stroke_width": 3,
-            "show_pdf_export_button": False,
-            "menu_mode": "bottom-preview",
-            "theme_key": default_theme_key,
-            "style_spec_markdown": "## 版式\r\n- 使用强标题。",
+            "configuration": {"presentation": {
+                "page_width": 1600,
+                "page_height": 900,
+                "base_font_size": "18",
+                "icon_default_stroke_width": 3,
+                "show_pdf_export_button": False,
+                "menu_mode": "bottom-preview",
+                "theme_key": default_theme_key,
+                "style_spec_markdown": "## 版式\r\n- 使用强标题。",
+            }},
         },
     )
     assert create_response.status_code == 200
@@ -60,14 +61,7 @@ async def test_workspace_styles_should_crud_copy_and_not_link_projects(authentic
             "workspace_id": workspace_id,
             "name": "已应用样式项目",
             "status": "active",
-            "page_width": style["page_width"],
-            "page_height": style["page_height"],
-            "base_font_size": style["base_font_size"],
-            "icon_default_stroke_width": style["icon_default_stroke_width"],
-            "show_pdf_export_button": style["show_pdf_export_button"],
-            "menu_mode": style["menu_mode"],
-            "theme_key": style["theme_key"],
-            "style_spec_markdown": style["style_spec_markdown"],
+            "configuration": {"mode": "style", "style_id": style_id},
         },
     )
     assert project_response.status_code == 200
@@ -75,15 +69,15 @@ async def test_workspace_styles_should_crud_copy_and_not_link_projects(authentic
 
     update_response = await authenticated_client.patch(
         f"/api/workspaces/{workspace_id}/styles/{style_id}",
-        json={
+        json={"configuration": {"presentation": {
             "page_width": 1920,
             "theme_key": None,
             "style_spec_markdown": "## 新规范\r\n- 不影响项目。",
-        },
+        }}},
     )
     assert update_response.status_code == 200
     assert update_response.json()["page_width"] == 1920
-    assert update_response.json()["theme_key"] is None
+    assert update_response.json()["theme_key"] == default_theme_key
     assert update_response.json()["style_spec_markdown"] == "## 新规范\n- 不影响项目。"
 
     project_detail_response = await authenticated_client.get(f"/api/projects/{project_id}")
@@ -121,7 +115,7 @@ async def test_workspace_styles_should_validate_theme_scope(authenticated_client
         json={
             "key": "invalid-theme",
             "name": "非法主题样式",
-            "theme_key": "missing-theme",
+            "configuration": {"presentation": {"theme_key": "missing-theme"}},
         },
     )
     assert create_response.status_code == 400
@@ -165,9 +159,9 @@ async def test_workspace_style_package_should_export_import_with_theme_dependenc
         name="样式建议卡片",
         import_name="StyleSuggestedCard",
     )
-    suggested_response = await authenticated_client.put(
-        f"/api/workspaces/{source_workspace_id}/styles/{style['id']}/suggested-components",
-        json={"component_ids": [suggested_component["id"]]},
+    suggested_response = await authenticated_client.patch(
+        f"/api/workspaces/{source_workspace_id}/styles/{style['id']}",
+        json={"configuration": {"suggested_components": {"component_ids": [suggested_component["id"]]}}},
     )
     assert suggested_response.status_code == 200
 
@@ -289,9 +283,9 @@ async def test_workspace_style_package_export_should_warn_for_suggested_componen
             "<script setup>const props = defineProps({ runtimeAssetName: String })</script>"
         ),
     )
-    suggested_response = await authenticated_client.put(
-        f"/api/workspaces/{source_workspace_id}/styles/{style['id']}/suggested-components",
-        json={"component_ids": [suggested_component["id"]]},
+    suggested_response = await authenticated_client.patch(
+        f"/api/workspaces/{source_workspace_id}/styles/{style['id']}",
+        json={"configuration": {"suggested_components": {"component_ids": [suggested_component["id"]]}}},
     )
     assert suggested_response.status_code == 200
 
@@ -365,10 +359,10 @@ async def test_workspace_style_package_should_overwrite_style_and_reject_depende
     assert any("主题 \"conflict-theme\"" in error for error in validation["errors"])
 
 
-async def test_workspace_style_package_should_allow_style_without_theme(
+async def test_workspace_style_package_should_freeze_default_theme_for_new_style(
     authenticated_client: AsyncClient,
 ) -> None:
-    """未绑定主题的样式应可导出导入，包内不应强制包含主题。"""
+    """新样式未指定主题时应固化工作空间默认主题并随包导出。"""
 
     source_workspace_id = await _create_workspace(authenticated_client, "无主题样式源空间")
     style = await _create_style(authenticated_client, source_workspace_id, "no-theme-style", None)
@@ -380,19 +374,20 @@ async def test_workspace_style_package_should_allow_style_without_theme(
 
     with zipfile.ZipFile(io.BytesIO(export_response.content)) as archive:
         manifest = json.loads(archive.read("manifest.json").decode("utf-8"))
-        assert manifest["themes"] == []
+        assert len(manifest["themes"]) == 1
+        frozen_theme_key = manifest["themes"][0]["key"]
 
     target_workspace_id = await _create_workspace(authenticated_client, "无主题样式目标空间")
     import_response = await _import_style_package(authenticated_client, target_workspace_id, export_response.content)
     assert import_response.status_code == 200
-    assert import_response.json()["themes"] == []
+    assert import_response.json()["themes"][0]["key"] == frozen_theme_key
 
     styles_response = await authenticated_client.get(
         f"/api/workspaces/{target_workspace_id}/styles",
         params={"keyword": "no-theme-style", "page": 1, "page_size": 10},
     )
     assert styles_response.status_code == 200
-    assert styles_response.json()["items"][0]["theme_key"] is None
+    assert styles_response.json()["items"][0]["theme_key"] == frozen_theme_key
 
 
 async def test_workspace_style_package_should_reject_legacy_schema_version(
@@ -590,14 +585,16 @@ async def _create_style(
             "key": key,
             "name": f"{key} 样式",
             "description": "离线包测试样式。",
-            "page_width": page_width,
-            "page_height": 900,
-            "base_font_size": "18px",
-            "icon_default_stroke_width": 2,
-            "show_pdf_export_button": True,
-            "menu_mode": "preview",
-            "theme_key": theme_key,
-            "style_spec_markdown": style_spec_markdown,
+            "configuration": {"presentation": {
+                "page_width": page_width,
+                "page_height": 900,
+                "base_font_size": "18px",
+                "icon_default_stroke_width": 2,
+                "show_pdf_export_button": True,
+                "menu_mode": "preview",
+                "theme_key": theme_key,
+                "style_spec_markdown": style_spec_markdown,
+            }},
         },
     )
     assert response.status_code == 200

@@ -70,6 +70,9 @@ describe('agent-conversation-panel timeline helpers', () => {
     expect(resolveLogicalToolName('update_entity', { resource_type: 'theme' })).toBe('修改主题')
     expect(resolveLogicalToolName('archive_entity', { resource_type: 'asset', target_ids: [1, 2] })).toBe('批量归档资源')
     expect(resolveLogicalToolName('execute_dangerous_action', { resource_type: 'project', action: 'replace_routes' })).toBe('覆盖项目路由')
+    expect(resolveLogicalToolName('get_operation_guide', { operation_key: 'page.update.content' })).toBe('查看页面操作手册')
+    expect(resolveLogicalToolName('get_operation_guide', {})).toBe('查看操作手册索引')
+    expect(resolveLogicalToolName('execute_action', { resource_type: 'style', action: 'restore' })).toBe('恢复样式')
   })
 
   it('应按 order_index 渲染 user、reasoning、assistant、tool 与状态项', () => {

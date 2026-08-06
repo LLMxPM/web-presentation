@@ -853,7 +853,7 @@ async def test_runtime_project_icon_should_follow_theme_config(authenticated_cli
             "workspace_id": workspace_id,
             "name": "主题图标项目",
             "status": "active",
-            "theme_key": "custom",
+            "configuration": {"mode": "custom", "presentation": {"theme_key": "custom"}},
         },
     )
     assert project_response.status_code == 200

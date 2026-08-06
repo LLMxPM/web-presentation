@@ -344,7 +344,7 @@ async def test_page_screenshot_should_be_marked_outdated_after_project_display_c
 
     update_project_response = await authenticated_client.patch(
         f"/api/projects/{project_id}",
-        json={"page_width": 1366, "page_height": 768},
+        json={"configuration": {"mode": "patch", "presentation": {"page_width": 1366, "page_height": 768}}},
     )
     assert update_project_response.status_code == 200
 
@@ -795,7 +795,7 @@ async def test_batch_refresh_page_screenshots_should_refresh_missing_and_outdate
 
     update_project_response = await authenticated_client.patch(
         f"/api/projects/{project_id}",
-        json={"base_font_size": "18px"},
+        json={"configuration": {"mode": "patch", "presentation": {"base_font_size": "18px"}}},
     )
     assert update_project_response.status_code == 200
 

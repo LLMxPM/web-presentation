@@ -79,24 +79,31 @@ class WorkspaceStyleService:
 
         await self._get_workspace_or_raise(workspace_id)
         await self._ensure_style_key_available(workspace_id, payload.key)
-        resolved_theme_key = await self._resolve_theme_key(workspace_id, payload.theme_key)
+        presentation = payload.configuration.presentation
+        resolved_theme_key = await self._resolve_theme_key(workspace_id, presentation.theme_key)
         style = WorkspaceStyle(
             workspace_id=workspace_id,
             key=payload.key,
             name=payload.name,
             description=payload.description,
-            page_width=payload.page_width,
-            page_height=payload.page_height,
-            base_font_size=payload.base_font_size,
-            icon_default_stroke_width=payload.icon_default_stroke_width,
-            show_pdf_export_button=payload.show_pdf_export_button,
-            menu_mode=payload.menu_mode,
+            page_width=presentation.page_width,
+            page_height=presentation.page_height,
+            base_font_size=presentation.base_font_size,
+            icon_default_stroke_width=presentation.icon_default_stroke_width,
+            show_pdf_export_button=presentation.show_pdf_export_button,
+            menu_mode=presentation.menu_mode,
             theme_key=resolved_theme_key,
-            style_spec_markdown=payload.style_spec_markdown,
+            style_spec_markdown=presentation.style_spec_markdown,
             created_by=operator_id,
             updated_by=operator_id,
         )
         await self.style_repository.create(style)
+        await SuggestedComponentService(self.session).replace_style_components(
+            workspace_id,
+            style.id,
+            payload.configuration.suggested_components.component_ids,
+            commit=False,
+        )
         await self.session.commit()
         return await self.get(workspace_id, style.id)
 
@@ -148,30 +155,34 @@ class WorkspaceStyleService:
 
         style = await self._get_style_or_raise(workspace_id, style_id)
         payload_fields = payload.model_fields_set
-
-        if "key" in payload_fields and payload.key is not None and payload.key != style.key:
-            await self._ensure_style_key_available(workspace_id, payload.key, exclude_style_id=style.id)
-            style.key = payload.key
         if "name" in payload_fields and payload.name is not None:
             style.name = payload.name
         if "description" in payload_fields:
             style.description = payload.description
-        if "page_width" in payload_fields and payload.page_width is not None:
-            style.page_width = payload.page_width
-        if "page_height" in payload_fields and payload.page_height is not None:
-            style.page_height = payload.page_height
-        if "base_font_size" in payload_fields and payload.base_font_size is not None:
-            style.base_font_size = payload.base_font_size
-        if "icon_default_stroke_width" in payload_fields and payload.icon_default_stroke_width is not None:
-            style.icon_default_stroke_width = payload.icon_default_stroke_width
-        if "show_pdf_export_button" in payload_fields and payload.show_pdf_export_button is not None:
-            style.show_pdf_export_button = payload.show_pdf_export_button
-        if "menu_mode" in payload_fields and payload.menu_mode is not None:
-            style.menu_mode = payload.menu_mode
-        if "theme_key" in payload_fields:
-            style.theme_key = await self._resolve_theme_key(workspace_id, payload.theme_key)
-        if "style_spec_markdown" in payload_fields:
-            style.style_spec_markdown = payload.style_spec_markdown or ""
+        if payload.configuration is not None:
+            presentation = payload.configuration.presentation
+            if presentation is not None:
+                fields = presentation.model_fields_set
+                for field_name in (
+                    "page_width",
+                    "page_height",
+                    "base_font_size",
+                    "icon_default_stroke_width",
+                    "show_pdf_export_button",
+                    "menu_mode",
+                    "style_spec_markdown",
+                ):
+                    if field_name in fields:
+                        setattr(style, field_name, getattr(presentation, field_name))
+                if "theme_key" in fields:
+                    style.theme_key = await self._resolve_theme_key(workspace_id, presentation.theme_key)
+            if payload.configuration.suggested_components is not None:
+                await SuggestedComponentService(self.session).replace_style_components(
+                    workspace_id,
+                    style.id,
+                    payload.configuration.suggested_components.component_ids,
+                    commit=False,
+                )
 
         style.updated_by = operator_id
         await self.session.commit()
@@ -181,6 +192,7 @@ class WorkspaceStyleService:
         """删除工作空间样式；样式不与项目关联，因此可直接硬删除。"""
 
         style = await self._get_style_or_raise(workspace_id, style_id)
+        self.assert_style_can_delete(style)
         await SuggestedComponentService(self.session).clear_style_components(style.id, commit=False)
         await self.session.delete(style)
         await self.session.commit()
@@ -210,6 +222,13 @@ class WorkspaceStyleService:
         await self.style_repository.create(style)
         await self.session.flush()
         return style
+
+    @staticmethod
+    def assert_style_can_delete(style: WorkspaceStyle) -> None:
+        """保护工作空间 default 样式，避免项目默认初始化来源失效。"""
+
+        if style.key == DEFAULT_WORKSPACE_STYLE_KEY:
+            raise AppException(status_code=409, code="WORKSPACE_DEFAULT_STYLE_PROTECTED", detail="工作空间默认样式不能删除或归档。")
 
     @staticmethod
     def _to_item(style: WorkspaceStyle) -> WorkspaceStyleItem:
@@ -267,8 +286,11 @@ class WorkspaceStyleService:
             raise AppException(status_code=409, code="WORKSPACE_STYLE_KEY_DUPLICATE", detail="样式 key 已存在。")
 
     async def _resolve_theme_key(self, workspace_id: int, theme_key: str | None) -> str | None:
-        """校验样式引用的主题 key；空值表示应用样式时不覆盖项目主题。"""
+        """校验样式主题；未指定时固化为工作空间默认主题。"""
 
+        if theme_key is None:
+            workspace = await self._get_workspace_or_raise(workspace_id)
+            theme_key = workspace.default_theme_key
         return await self.workspace_theme_service.ensure_theme_key_exists(workspace_id, theme_key)
 
     async def _build_available_key(self, workspace_id: int, base_key: str) -> str:

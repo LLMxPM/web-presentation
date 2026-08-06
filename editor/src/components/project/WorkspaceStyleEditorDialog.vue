@@ -20,7 +20,7 @@
           <ToolPanel class="style-editor-scroll min-h-0" title="基础配置">
           <div class="rounded-lg border border-border bg-surface p-4">
             <div class="grid grid-cols-2 gap-3">
-              <UiFormField label="样式 key" required :error="errors.key"><template #default="field"><UiInput v-model="draft.key" placeholder="NEW_STYLE_KEY" required :input-id="field.inputId" :described-by="field.describedBy" :invalid="field.invalid" /></template></UiFormField>
+              <UiFormField label="样式 key" required :error="errors.key"><template #default="field"><UiInput v-model="draft.key" placeholder="NEW_STYLE_KEY" required :disabled="Boolean(style)" :input-id="field.inputId" :described-by="field.describedBy" :invalid="field.invalid" /></template></UiFormField>
               <UiFormField label="样式名称" required :error="errors.name"><template #default="field"><UiInput v-model="draft.name" placeholder="样式名称" required :input-id="field.inputId" :described-by="field.describedBy" :invalid="field.invalid" /></template></UiFormField>
             </div>
             <UiFormField label="样式描述" class="mt-3"><template #default="field"><UiInput v-model="draft.description" placeholder="说明适用场景" :input-id="field.inputId" :described-by="field.describedBy" /></template></UiFormField>

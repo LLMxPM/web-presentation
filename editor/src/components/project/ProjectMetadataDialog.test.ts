@@ -90,7 +90,7 @@ describe('ProjectMetadataDialog', () => {
       page_height: 900,
       theme_key: 'style-theme',
       style_spec_markdown: '## 示例样式',
-      suggested_component_source_style_id: 23,
+      source_style_id: 23,
     })
   })
 })

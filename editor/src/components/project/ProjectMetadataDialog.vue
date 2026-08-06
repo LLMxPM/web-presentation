@@ -17,6 +17,7 @@
               v-if="workspaceId"
               :workspace-id="workspaceId"
               embedded
+              :auto-apply-key="isEditMode ? null : 'default'"
               label="样式模板"
               hint="从模板快速填充项目展示配置。"
               @apply="applyWorkspaceStyle"
@@ -111,7 +112,7 @@ const emit = defineEmits<{
     menu_mode: ProjectMenuMode
     theme_key: string | null
     style_spec_markdown: string
-    suggested_component_source_style_id?: number | null
+    source_style_id?: number | null
   }]
 }>()
 
@@ -224,7 +225,7 @@ function handleSubmit(): void {
     menu_mode: ProjectMenuMode
     theme_key: string | null
     style_spec_markdown: string
-    suggested_component_source_style_id?: number | null
+    source_style_id?: number | null
   } = {
     name: form.name.trim(),
     description: form.description.trim() ? form.description.trim() : null,
@@ -239,7 +240,7 @@ function handleSubmit(): void {
     style_spec_markdown: form.style_spec_markdown,
   }
   if (appliedWorkspaceStyleId.value !== null) {
-    payload.suggested_component_source_style_id = appliedWorkspaceStyleId.value
+    payload.source_style_id = appliedWorkspaceStyleId.value
   }
   emit('submit', payload)
 }

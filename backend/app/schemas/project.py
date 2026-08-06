@@ -5,19 +5,11 @@ import re
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from app.core.text_normalizer import normalize_text_to_lf
 from app.models.enums import RecordStatus
 from app.models.enums import AssetType
 from app.schemas.common import SchemaBase
-from app.schemas.project_app_config import (
-    DEFAULT_PAGE_HEIGHT,
-    DEFAULT_PAGE_WIDTH,
-    DEFAULT_PROJECT_BASE_FONT_SIZE,
-    DEFAULT_PROJECT_ICON_DEFAULT_STROKE_WIDTH,
-    DEFAULT_PROJECT_STYLE_SPEC_MARKDOWN,
-    ProjectMenuMode,
-    normalize_project_base_font_size,
-)
+from app.schemas.presentation_style import ProjectCreateConfiguration, ProjectDefaultConfiguration, ProjectUpdateConfiguration
+from app.schemas.project_app_config import ProjectMenuMode
 
 
 _HTTP_URL_PATTERN = re.compile(r"^https?://", flags=re.IGNORECASE)
@@ -84,7 +76,7 @@ def normalize_project_build_extra_asset_names(value: object) -> list[str]:
 
 
 class ProjectCreateRequest(BaseModel):
-    """创建项目入参，code 由后端自动生成，必须指定所属工作空间。"""
+    """创建项目入参，展示配置通过明确初始化来源生成。"""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -92,31 +84,8 @@ class ProjectCreateRequest(BaseModel):
     name: str = Field(min_length=1, max_length=128)
     description: str | None = Field(default=None, max_length=2000)
     status: RecordStatus = RecordStatus.ACTIVE
-    page_width: int = Field(default=DEFAULT_PAGE_WIDTH, ge=1, le=8192)
-    page_height: int = Field(default=DEFAULT_PAGE_HEIGHT, ge=1, le=8192)
-    base_font_size: str = Field(default=DEFAULT_PROJECT_BASE_FONT_SIZE, min_length=1, max_length=32)
-    icon_default_stroke_width: int = Field(default=DEFAULT_PROJECT_ICON_DEFAULT_STROKE_WIDTH, ge=1, le=64)
-    show_pdf_export_button: bool = True
-    menu_mode: ProjectMenuMode = "preview"
-    theme_key: str | None = Field(default=None, min_length=1, max_length=64)
-    theme_config_yaml: str | None = None
-    style_spec_markdown: str = DEFAULT_PROJECT_STYLE_SPEC_MARKDOWN
+    configuration: ProjectCreateConfiguration = Field(default_factory=ProjectDefaultConfiguration)
     build_extra_assets_json: ProjectBuildExtraAssetsConfig = Field(default_factory=ProjectBuildExtraAssetsConfig)
-    suggested_component_source_style_id: int | None = Field(default=None, ge=1)
-
-    @field_validator("base_font_size", mode="before")
-    @classmethod
-    def normalize_base_font_size(cls, value: object) -> object:
-        """统一将基础字号规范为 px 字符串。"""
-
-        return normalize_project_base_font_size(value)
-
-    @field_validator("style_spec_markdown", mode="before")
-    @classmethod
-    def normalize_style_spec_markdown(cls, value: object) -> str:
-        """统一样式规范换行，保持 Markdown 纯文本稳定。"""
-
-        return normalize_text_to_lf(None if value is None else str(value))
 
     @model_validator(mode="after")
     def normalize_build_extra_assets_json(self) -> "ProjectCreateRequest":
@@ -127,7 +96,7 @@ class ProjectCreateRequest(BaseModel):
 
 
 class ProjectUpdateRequest(BaseModel):
-    """更新项目入参，允许修改工作空间和基本元数据（code 不可修改）。"""
+    """更新项目入参，项目专属字段与共享样式配置明确分层。"""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -135,33 +104,8 @@ class ProjectUpdateRequest(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=128)
     description: str | None = Field(default=None, max_length=2000)
     status: RecordStatus | None = None
-    page_width: int | None = Field(default=None, ge=1, le=8192)
-    page_height: int | None = Field(default=None, ge=1, le=8192)
-    base_font_size: str | None = Field(default=None, min_length=1, max_length=32)
-    icon_default_stroke_width: int | None = Field(default=None, ge=1, le=64)
-    show_pdf_export_button: bool | None = None
-    menu_mode: ProjectMenuMode | None = None
-    theme_key: str | None = Field(default=None, min_length=1, max_length=64)
-    theme_config_yaml: str | None = None
-    style_spec_markdown: str | None = None
+    configuration: ProjectUpdateConfiguration | None = None
     build_extra_assets_json: ProjectBuildExtraAssetsConfig | None = None
-    suggested_component_source_style_id: int | None = Field(default=None, ge=1)
-
-    @field_validator("base_font_size", mode="before")
-    @classmethod
-    def normalize_base_font_size(cls, value: object) -> object:
-        """统一将基础字号规范为 px 字符串。"""
-
-        return normalize_project_base_font_size(value)
-
-    @field_validator("style_spec_markdown", mode="before")
-    @classmethod
-    def normalize_style_spec_markdown(cls, value: object) -> str | None:
-        """统一样式规范换行，保留 None 供更新请求表示未传或清空。"""
-
-        if value is None:
-            return None
-        return normalize_text_to_lf(str(value))
 
     @model_validator(mode="after")
     def normalize_build_extra_assets_json(self) -> "ProjectUpdateRequest":

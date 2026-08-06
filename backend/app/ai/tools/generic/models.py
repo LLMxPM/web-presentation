@@ -17,18 +17,6 @@ BusinessResourceType = Literal[
     "runtime_kit",
     "font",
 ]
-BusinessOperation = Literal["query", "create", "update", "archive", "action"]
-
-
-class EntityTarget(BaseModel):
-    """描述通用工具的单个目标对象。"""
-
-    model_config = ConfigDict(extra="forbid")
-
-    id: int = Field(gt=0, description="目标对象主键。")
-    version: int | None = Field(default=None, ge=0, description="对象要求乐观锁时传入的版本号。")
-
-
 class EntityArchiveArguments(BaseModel):
     """校验并归一化单项或批量归档参数。"""
 
@@ -37,11 +25,6 @@ class EntityArchiveArguments(BaseModel):
     resource_type: BusinessResourceType
     target_ids: list[int] = Field(min_length=1, max_length=100)
     archive_reason: str | None = Field(default=None, max_length=1000)
-    versions: dict[str, int] = Field(
-        default_factory=dict,
-        description="可选乐观锁版本，key 为字符串形式的目标 ID。",
-    )
-
     @field_validator("target_ids")
     @classmethod
     def normalize_target_ids(cls, value: list[int]) -> list[int]:

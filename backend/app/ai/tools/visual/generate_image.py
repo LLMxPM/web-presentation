@@ -98,4 +98,7 @@ def build_generate_image_tool(session_factory: async_sessionmaker[AsyncSession])
         )
         raise CallDeferred(metadata=enqueued.as_metadata())
 
+    from app.ai.image_generation_tool_schema import project_generic_generate_image_schema
+
+    generate_image.parameters = project_generic_generate_image_schema(generate_image.parameters)
     return generate_image

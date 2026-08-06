@@ -33,7 +33,17 @@ def project_generate_image_schema(
     if isinstance(count_schema, dict):
         count_schema["maximum"] = model.max_output_count
 
-    return schema
+    return _project_operation_branches(schema, model.operations, supports_mask=model.supports_mask)
+
+
+def project_generic_generate_image_schema(source_schema: dict[str, Any]) -> dict[str, Any]:
+    """为配置页投影与供应商无关的 generate/edit 条件参数 Schema。"""
+
+    return _project_operation_branches(
+        deepcopy(source_schema),
+        ("generate", "edit"),
+        supports_mask=True,
+    )
 
 
 def _set_enum(properties: dict[str, Any], field_name: str, values: tuple[str, ...]) -> None:
@@ -70,3 +80,73 @@ def _set_array_max_items(field_schema: Any, maximum: int) -> None:
     for variant in field_schema.get("anyOf", []):
         if isinstance(variant, dict) and variant.get("type") == "array":
             variant["maxItems"] = maximum
+
+
+def _project_operation_branches(
+    schema: dict[str, Any],
+    operations: tuple[str, ...],
+    *,
+    supports_mask: bool,
+) -> dict[str, Any]:
+    """按 generate/edit 构造条件分支，直接表达参考图和蒙版约束。"""
+
+    source_properties = schema.get("properties", {})
+    source_required = list(schema.get("required", []))
+    branches: list[dict[str, Any]] = []
+    for operation in operations:
+        if operation not in {"generate", "edit"}:
+            continue
+        properties = deepcopy(source_properties)
+        properties["operation"] = {
+            "type": "string",
+            "const": operation,
+            "description": source_properties.get("operation", {}).get("description", "图片操作类型。"),
+        }
+        required = list(source_required)
+        if operation == "generate":
+            properties.pop("mask_attachment_id", None)
+        else:
+            reference_schema = _required_array_schema(properties.get("reference_attachment_ids"))
+            if reference_schema is not None:
+                properties["reference_attachment_ids"] = reference_schema
+            if "reference_attachment_ids" not in required:
+                required.append("reference_attachment_ids")
+            if not supports_mask:
+                properties.pop("mask_attachment_id", None)
+        branches.append(
+            {
+                "type": "object",
+                "properties": properties,
+                "required": required,
+                "additionalProperties": False,
+            }
+        )
+    if not branches:
+        return schema
+    projected: dict[str, Any] = {
+        "type": "object",
+        "oneOf": branches,
+    }
+    if "$defs" in schema:
+        projected["$defs"] = deepcopy(schema["$defs"])
+    return projected
+
+
+def _required_array_schema(field_schema: Any) -> dict[str, Any] | None:
+    """从可空数组中提取数组分支，并保证编辑至少有一张参考图。"""
+
+    if not isinstance(field_schema, dict):
+        return None
+    if field_schema.get("type") == "array":
+        result = deepcopy(field_schema)
+        result["minItems"] = max(1, int(result.get("minItems", 0)))
+        return result
+    for variant in field_schema.get("anyOf", []):
+        if isinstance(variant, dict) and variant.get("type") == "array":
+            result = deepcopy(variant)
+            result["minItems"] = max(1, int(result.get("minItems", 0)))
+            description = field_schema.get("description")
+            if description:
+                result["description"] = description
+            return result
+    return None

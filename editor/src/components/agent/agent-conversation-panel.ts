@@ -116,6 +116,8 @@ export function resolveLogicalToolName(toolName: string, inputPayload: unknown):
     return toolName
   }
   const payload = isRecord(inputPayload) ? inputPayload : {}
+  const operationKey = String(payload.operation_key || '')
+  const operationResourceType = operationKey.split('.')[0] || ''
   const resourceLabel = {
     project: '项目',
     page: '页面',
@@ -125,8 +127,10 @@ export function resolveLogicalToolName(toolName: string, inputPayload: unknown):
     style: '样式',
     runtime_kit: 'Runtime Kit',
     font: '字体',
-  }[String(payload.resource_type || '')] || '业务对象'
-  if (toolName === 'get_operation_guide') return `查看${resourceLabel}操作手册`
+  }[String(payload.resource_type || operationResourceType)] || '业务对象'
+  if (toolName === 'get_operation_guide') {
+    return operationKey ? `查看${resourceLabel}操作手册` : '查看操作手册索引'
+  }
   if (toolName === 'query_entities') return `查询${resourceLabel}`
   if (toolName === 'list_entities') return `罗列${resourceLabel}`
   if (toolName === 'get_entity') return `读取${resourceLabel}`
@@ -144,6 +148,7 @@ export function resolveLogicalToolName(toolName: string, inputPayload: unknown):
   }
   if (fullActionLabel[action]) return fullActionLabel[action]
   const actionLabel = {
+    // restore 已退出运行时动作，仅保留历史工具卡名称回放。
     restore: '恢复',
     publish: '发布',
     copy: '复制',

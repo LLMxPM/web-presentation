@@ -12,6 +12,7 @@ from app.ai.auth_tokens import PROJECT_TOOL_READ_SCOPES, PROJECT_TOOL_WRITE_SCOP
 from app.ai.tools.shared import resolve_tool_context
 from app.core.exceptions import AppException
 from app.schemas.project import ProjectUpdateRequest
+from app.schemas.presentation_style import PresentationConfigPatch, ProjectPatchConfiguration
 from app.services.project_config_service import ProjectConfigService
 from app.services.project_service import ProjectService
 
@@ -99,7 +100,12 @@ def build_update_project_style_config_tool(session_factory: async_sessionmaker[A
                 expected_workspace_id=workspace_id,
             )
             try:
-                payload = ProjectUpdateRequest(style_spec_markdown=style_spec_markdown)
+                payload = ProjectUpdateRequest(
+                    configuration=ProjectPatchConfiguration(
+                        mode="patch",
+                        presentation=PresentationConfigPatch(style_spec_markdown=style_spec_markdown),
+                    )
+                )
             except ValidationError as exc:
                 raise AppException(
                     status_code=400,

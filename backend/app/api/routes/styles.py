@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.dependencies import get_current_user, get_list_query, require_workspace_access
 from app.db.session import get_db_session
 from app.schemas.common import ListQuery, MessageResponse, PagedResponse
-from app.schemas.component import SuggestedComponentsResponse, SuggestedComponentsUpdateRequest
+from app.schemas.component import SuggestedComponentsResponse
 from app.schemas.workspace_style import (
     WorkspaceStyleCopyRequest,
     WorkspaceStyleCreateRequest,
@@ -137,24 +137,6 @@ async def list_workspace_style_suggested_components(
         workspace_id,
         style_id,
         include_unavailable=True,
-    )
-    return SuggestedComponentsResponse(items=items)
-
-
-@router.put("/workspaces/{workspace_id}/styles/{style_id}/suggested-components", response_model=SuggestedComponentsResponse)
-async def replace_workspace_style_suggested_components(
-    workspace_id: int,
-    style_id: int,
-    payload: SuggestedComponentsUpdateRequest,
-    _: Annotated[AuthContext, Depends(get_current_user)],
-    session: Annotated[AsyncSession, Depends(get_db_session)],
-) -> SuggestedComponentsResponse:
-    """覆盖保存工作空间样式建议组件列表。"""
-
-    items = await SuggestedComponentService(session).replace_style_components(
-        workspace_id,
-        style_id,
-        payload.component_ids,
     )
     return SuggestedComponentsResponse(items=items)
 

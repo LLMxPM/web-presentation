@@ -149,6 +149,7 @@
                     label="删除"
                     size="sm"
                     variant="danger"
+                    :disabled="style.key === 'default'"
                     @click.stop="deleteStyle(style)"
                   >
                     <Trash2 class="h-3.5 w-3.5" />
@@ -428,7 +429,6 @@ import {
   exportWorkspaceStylePackage,
   importWorkspaceStylePackage,
   listWorkspaceStyles,
-  updateWorkspaceStyleSuggestedComponents,
   updateWorkspaceStyle,
   validateWorkspaceStylePackageExport,
   validateWorkspaceStylePackageImport,
@@ -1010,34 +1010,22 @@ function greatestCommonDivisor(left: number, right: number): number {
 }
 
 /**
- * 创建或更新样式；样式主体与建议组件分段提交，建议组件失败时保留弹窗与草稿避免重复创建。
+ * 原子创建或更新样式展示配置与建议组件。
  */
 async function saveStyle(payload: WorkspaceStyleEditorSavePayload): Promise<void> {
   if (!workspaceId.value) {
     return
   }
-  const { suggested_component_ids: suggestedComponentIds, ...stylePayload } = payload
   saving.value = true
-  let savedStyle: WorkspaceStyleItem
   try {
-    savedStyle = editingStyle.value
-      ? await updateWorkspaceStyle(workspaceId.value, editingStyle.value.id, stylePayload)
-      : await createWorkspaceStyle(workspaceId.value, stylePayload)
+    if (editingStyle.value) {
+      await updateWorkspaceStyle(workspaceId.value, editingStyle.value.id, payload)
+    } else {
+      await createWorkspaceStyle(workspaceId.value, payload)
+    }
   } catch (error) {
     saving.value = false
     Message.error(getErrorMessage(error, '保存样式失败。'))
-    return
-  }
-  try {
-    if (suggestedComponentIds) {
-      await updateWorkspaceStyleSuggestedComponents(workspaceId.value, savedStyle.id, suggestedComponentIds)
-    }
-  } catch (error) {
-    // 样式主体已落库：把弹窗切到编辑态，避免用户重试时重复创建样式。
-    editingStyle.value = savedStyle
-    saving.value = false
-    Message.warning(`样式已保存，但建议组件保存失败：${getErrorMessage(error, '未知原因')}`)
-    void loadStyles()
     return
   }
   saving.value = false
@@ -1074,7 +1062,7 @@ async function copyStyle(style: WorkspaceStyleItem): Promise<void> {
  * 删除样式。
  */
 async function deleteStyle(style: WorkspaceStyleItem): Promise<void> {
-  if (!workspaceId.value) {
+  if (!workspaceId.value || style.key === 'default') {
     return
   }
   const confirmed = await createConfirm(`确定删除样式「${style.name}」吗？已配置项目不会受到影响。`, '删除样式')

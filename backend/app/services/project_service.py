@@ -11,6 +11,7 @@ from app.models.page import Page
 from app.models.workspace import Project
 from app.repositories.project_repository import ProjectRepository
 from app.repositories.workspace_repository import WorkspaceRepository
+from app.repositories.workspace_style_repository import WorkspaceStyleRepository
 from app.schemas.common import ListQuery, PagedResponse
 from app.schemas.project import (
     ProjectCreateRequest,
@@ -24,6 +25,7 @@ from app.services.project_suggested_reference_asset_service import ProjectSugges
 from app.services.suggested_component_service import SuggestedComponentService
 from app.services.workspace_theme_service import WorkspaceThemeService
 from app.services.workspace_service import WorkspaceService
+from app.services.workspace_style_service import DEFAULT_WORKSPACE_STYLE_KEY
 
 
 class ProjectService:
@@ -33,6 +35,7 @@ class ProjectService:
         self.session = session
         self.repository = ProjectRepository(session)
         self.workspace_repository = WorkspaceRepository(session)
+        self.workspace_style_repository = WorkspaceStyleRepository(session)
         self.project_config_service = ProjectConfigService(session)
         self.workspace_theme_service = WorkspaceThemeService(session)
         self.workspace_service = WorkspaceService(session)
@@ -116,20 +119,22 @@ class ProjectService:
         if workspace is None:
             raise AppException(status_code=404, code="WORKSPACE_NOT_FOUND", detail="所属工作空间不存在。")
 
-        config_values = self.project_config_service.build_create_config_values(theme_config_yaml=payload.theme_config_yaml)
-        resolved_theme_key = payload.theme_key
-        if resolved_theme_key is None and payload.theme_config_yaml is None:
-            resolved_theme_key = workspace.default_theme_key
-        if resolved_theme_key is not None:
-            resolved_theme_key = await self.workspace_theme_service.ensure_theme_key_exists(
-                payload.workspace_id,
-                resolved_theme_key,
+        config_values = self.project_config_service.build_create_config_values(theme_config_yaml=None)
+        configuration = payload.configuration
+        source_style = None
+        if configuration.mode in {"default", "style"}:
+            source_style = (
+                await self.workspace_style_repository.get_by_key(payload.workspace_id, DEFAULT_WORKSPACE_STYLE_KEY)
+                if configuration.mode == "default"
+                else await self.workspace_style_repository.get_by_id(payload.workspace_id, configuration.style_id)
             )
-        if payload.suggested_component_source_style_id is not None:
-            await SuggestedComponentService(self.session).ensure_style_in_workspace(
-                payload.workspace_id,
-                payload.suggested_component_source_style_id,
-            )
+            if source_style is None:
+                raise AppException(status_code=404, code="WORKSPACE_STYLE_NOT_FOUND", detail="项目初始化样式不存在或不可用。")
+            presentation = source_style
+        else:
+            presentation = configuration.presentation
+        resolved_theme_key = presentation.theme_key or workspace.default_theme_key
+        resolved_theme_key = await self.workspace_theme_service.ensure_theme_key_exists(payload.workspace_id, resolved_theme_key)
 
         async def write_project(code: str) -> Project:
             """使用指定编码创建项目。"""
@@ -141,25 +146,31 @@ class ProjectService:
                 description=payload.description,
                 status=payload.status.value,
                 archived_at=utc_now() if payload.status == RecordStatus.ARCHIVED else None,
-                page_width=payload.page_width,
-                page_height=payload.page_height,
-                base_font_size=payload.base_font_size,
-                icon_default_stroke_width=payload.icon_default_stroke_width,
-                show_pdf_export_button=payload.show_pdf_export_button,
-                menu_mode=payload.menu_mode,
+                page_width=presentation.page_width,
+                page_height=presentation.page_height,
+                base_font_size=presentation.base_font_size,
+                icon_default_stroke_width=presentation.icon_default_stroke_width,
+                show_pdf_export_button=presentation.show_pdf_export_button,
+                menu_mode=presentation.menu_mode,
                 theme_key=resolved_theme_key,
                 theme_config_yaml=config_values["theme_config_yaml"],
-                style_spec_markdown=payload.style_spec_markdown,
+                style_spec_markdown=presentation.style_spec_markdown,
                 build_extra_assets_json=payload.build_extra_assets_json.model_dump(mode="python"),
                 created_by=operator_id,
                 updated_by=operator_id,
             )
             await self.repository.create(project)
-            if payload.suggested_component_source_style_id is not None:
+            if source_style is not None:
                 await SuggestedComponentService(self.session).copy_style_components_to_project(
                     project.id,
-                    payload.suggested_component_source_style_id,
+                    source_style.id,
                     workspace_id=payload.workspace_id,
+                    commit=False,
+                )
+            else:
+                await SuggestedComponentService(self.session).replace_project_components(
+                    project.id,
+                    configuration.suggested_components.component_ids,
                     commit=False,
                 )
             return project
@@ -209,38 +220,51 @@ class ProjectService:
                 project.archived_at = project.archived_at if previous_status == RecordStatus.ARCHIVED.value else utc_now()
             else:
                 project.archived_at = None
-        if payload.page_width is not None:
-            project.page_width = payload.page_width
-        if payload.page_height is not None:
-            project.page_height = payload.page_height
-        if payload.base_font_size is not None:
-            project.base_font_size = payload.base_font_size
-        if payload.icon_default_stroke_width is not None:
-            project.icon_default_stroke_width = payload.icon_default_stroke_width
-        if payload.show_pdf_export_button is not None:
-            project.show_pdf_export_button = payload.show_pdf_export_button
-        if payload.menu_mode is not None:
-            project.menu_mode = payload.menu_mode
-        if payload.theme_key is not None:
-            project.theme_key = await self.workspace_theme_service.ensure_theme_key_exists(
-                project.workspace_id,
-                payload.theme_key,
-            )
-        if payload.theme_config_yaml is not None:
-            self.project_config_service.validate_yaml_text("themes", payload.theme_config_yaml)
-            project.theme_config_yaml = payload.theme_config_yaml
-        if payload.style_spec_markdown is not None:
-            project.style_spec_markdown = payload.style_spec_markdown
+        if payload.configuration is not None:
+            if payload.configuration.mode == "style":
+                source_style = await self.workspace_style_repository.get_by_id(project.workspace_id, payload.configuration.style_id)
+                if source_style is None:
+                    raise AppException(status_code=404, code="WORKSPACE_STYLE_NOT_FOUND", detail="待应用样式不存在或不可用。")
+                for field_name in (
+                    "page_width", "page_height", "base_font_size", "icon_default_stroke_width",
+                    "show_pdf_export_button", "menu_mode", "style_spec_markdown",
+                ):
+                    setattr(project, field_name, getattr(source_style, field_name))
+                current_workspace = await self.workspace_repository.get_by_id(project.workspace_id)
+                project.theme_key = await self.workspace_theme_service.ensure_theme_key_exists(
+                    project.workspace_id,
+                    source_style.theme_key or (current_workspace.default_theme_key if current_workspace is not None else None),
+                )
+                await SuggestedComponentService(self.session).copy_style_components_to_project(
+                    project.id,
+                    source_style.id,
+                    workspace_id=project.workspace_id,
+                    commit=False,
+                )
+            else:
+                presentation = payload.configuration.presentation
+                if presentation is not None:
+                    fields = presentation.model_fields_set
+                    for field_name in (
+                        "page_width", "page_height", "base_font_size", "icon_default_stroke_width",
+                        "show_pdf_export_button", "menu_mode", "style_spec_markdown",
+                    ):
+                        if field_name in fields:
+                            setattr(project, field_name, getattr(presentation, field_name))
+                    if "theme_key" in fields:
+                        workspace = await self.workspace_repository.get_by_id(project.workspace_id)
+                        project.theme_key = await self.workspace_theme_service.ensure_theme_key_exists(
+                            project.workspace_id,
+                            presentation.theme_key or (workspace.default_theme_key if workspace is not None else None),
+                        )
+                if payload.configuration.suggested_components is not None:
+                    await SuggestedComponentService(self.session).replace_project_components(
+                        project.id,
+                        payload.configuration.suggested_components.component_ids,
+                        commit=False,
+                    )
         if payload.build_extra_assets_json is not None:
             project.build_extra_assets_json = payload.build_extra_assets_json.model_dump(mode="python")
-        if payload.suggested_component_source_style_id is not None:
-            await SuggestedComponentService(self.session).copy_style_components_to_project(
-                project_id,
-                payload.suggested_component_source_style_id,
-                workspace_id=project.workspace_id,
-                commit=False,
-            )
-
         project.updated_by = operator_id
         await self.session.commit()
         reloaded = await self.repository.get_by_id(project.id)

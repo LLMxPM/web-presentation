@@ -9,13 +9,11 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.ai.tools.shared import SourceEditInput
 from app.models.enums import AssetType, RecordStatus, WorkspaceComponentType
 from app.schemas.project import ProjectBuildExtraAssetsConfig
-from app.schemas.project_app_config import (
-    DEFAULT_PAGE_HEIGHT,
-    DEFAULT_PAGE_WIDTH,
-    DEFAULT_PROJECT_BASE_FONT_SIZE,
-    DEFAULT_PROJECT_ICON_DEFAULT_STROKE_WIDTH,
-    DEFAULT_PROJECT_STYLE_SPEC_MARKDOWN,
-    ProjectMenuMode,
+from app.schemas.presentation_style import (
+    ProjectCreateConfiguration,
+    ProjectDefaultConfiguration,
+    StyleConfiguration,
+    StyleConfigurationPatch,
 )
 from app.schemas.project_route import ProjectRouteItemWrite
 from app.schemas.theme import ThemePalette
@@ -37,21 +35,8 @@ class CommonListFilters(OperationArgumentsModel):
     page: int = Field(default=1, ge=1, description="页码，从 1 开始。")
     page_size: int = Field(default=50, ge=1, le=100, description="每页数量，最大 100。")
     keyword: str | None = Field(default=None, description="按名称或描述进行模糊搜索的关键词。")
-    status: RecordStatus | None = Field(default=None, description="记录状态；不传时使用该对象的默认可见范围。")
     sort_by: str = Field(default="updated_at", description="排序字段，通常使用 updated_at。")
     sort_order: Literal["asc", "desc"] = Field(default="desc", description="排序方向。")
-
-
-class ArchivedListFilters(CommonListFilters):
-    """允许显式包含归档记录的列表筛选参数。"""
-
-    include_archived: bool = Field(default=False, description="是否同时返回归档记录。")
-
-
-class ArchivedDetailOptions(OperationArgumentsModel):
-    """主题或样式详情读取的归档可见性选项。"""
-
-    include_archived: bool = Field(default=False, description="是否允许读取已归档的目标对象。")
 
 
 class PageListFilters(CommonListFilters):
@@ -126,33 +111,29 @@ class ProjectCreatePayload(OperationArgumentsModel):
 
     name: str = Field(min_length=1, max_length=128, description="项目名称。")
     description: str | None = Field(default=None, max_length=2000, description="项目用途或内容范围说明。")
-    page_width: int = Field(default=DEFAULT_PAGE_WIDTH, ge=1, le=8192, description="页面画布宽度，单位为像素。")
-    page_height: int = Field(default=DEFAULT_PAGE_HEIGHT, ge=1, le=8192, description="页面画布高度，单位为像素。")
-    base_font_size: str = Field(default=DEFAULT_PROJECT_BASE_FONT_SIZE, min_length=1, max_length=32, description="项目基础字号，推荐使用 px 字符串。")
-    icon_default_stroke_width: int = Field(default=DEFAULT_PROJECT_ICON_DEFAULT_STROKE_WIDTH, ge=1, le=64, description="图标默认描边宽度。")
-    show_pdf_export_button: bool = Field(default=True, description="预览界面是否显示 PDF 导出按钮。")
-    menu_mode: ProjectMenuMode = Field(default="preview", description="项目菜单展示模式。")
-    theme_key: str | None = Field(default=None, min_length=1, max_length=64, description="当前工作空间已存在的主题 key。")
-    style_spec_markdown: str = Field(default=DEFAULT_PROJECT_STYLE_SPEC_MARKDOWN, description="供页面生成和编辑遵循的 Markdown 样式规范。")
+    configuration: ProjectCreateConfiguration = Field(default_factory=ProjectDefaultConfiguration, description="default/style/custom 三种初始化来源。")
     build_extra_assets_json: ProjectBuildExtraAssetsConfig | None = Field(default=None, description="构建时需要额外打包的工作空间资源名称。")
-    suggested_component_source_style_id: int | None = Field(default=None, ge=1, description="用于初始化建议组件的工作空间样式 ID。")
 
 
-class ProjectUpdatePayload(OperationArgumentsModel):
-    """修改项目元数据和受控展示配置的字段。"""
+class ProjectMetadataPayload(OperationArgumentsModel):
+    """修改项目名称与说明。"""
 
     name: str | None = Field(default=None, min_length=1, max_length=128, description="新的项目名称。")
     description: str | None = Field(default=None, max_length=2000, description="新的项目说明。")
-    page_width: int | None = Field(default=None, ge=1, le=8192, description="新的页面画布宽度。")
-    page_height: int | None = Field(default=None, ge=1, le=8192, description="新的页面画布高度。")
-    base_font_size: str | None = Field(default=None, min_length=1, max_length=32, description="新的基础字号。")
-    icon_default_stroke_width: int | None = Field(default=None, ge=1, le=64, description="新的图标默认描边宽度。")
-    show_pdf_export_button: bool | None = Field(default=None, description="是否显示 PDF 导出按钮。")
-    menu_mode: ProjectMenuMode | None = Field(default=None, description="新的菜单展示模式。")
-    theme_key: str | None = Field(default=None, min_length=1, max_length=64, description="新的主题 key。")
-    style_spec_markdown: str | None = Field(default=None, description="新的 Markdown 样式规范。")
-    build_extra_assets_json: ProjectBuildExtraAssetsConfig | None = Field(default=None, description="新的构建额外资源配置。")
-    suggested_component_source_style_id: int | None = Field(default=None, ge=1, description="新的建议组件来源样式 ID。")
+
+
+class ProjectConfigurationPayload(StyleConfigurationPatch):
+    """部分更新项目展示配置和建议组件快照。"""
+
+
+class ProjectApplyStylePayload(OperationArgumentsModel):
+    """从工作空间样式完整覆盖项目样式快照。"""
+
+    source_style_id: int = Field(gt=0, description="当前工作空间内 active 样式 ID。")
+
+
+class ProjectBuildAssetsPayload(ProjectBuildExtraAssetsConfig):
+    """修改项目构建时额外打包的资源名。"""
 
 
 class PageCreatePayload(OperationArgumentsModel):
@@ -270,36 +251,18 @@ class StyleCreatePayload(OperationArgumentsModel):
     key: str = Field(min_length=1, max_length=64, pattern=r"^[a-z0-9_-]+$", description="样式稳定 key。")
     name: str = Field(min_length=1, max_length=128, description="样式展示名称。")
     description: str | None = Field(default=None, max_length=2000, description="样式用途说明。")
-    page_width: int = Field(default=DEFAULT_PAGE_WIDTH, ge=1, le=8192, description="页面画布宽度。")
-    page_height: int = Field(default=DEFAULT_PAGE_HEIGHT, ge=1, le=8192, description="页面画布高度。")
-    base_font_size: str = Field(default=DEFAULT_PROJECT_BASE_FONT_SIZE, min_length=1, max_length=32, description="基础字号。")
-    icon_default_stroke_width: int = Field(default=DEFAULT_PROJECT_ICON_DEFAULT_STROKE_WIDTH, ge=1, le=64, description="图标默认描边宽度。")
-    show_pdf_export_button: bool = Field(default=True, description="是否显示 PDF 导出按钮。")
-    menu_mode: ProjectMenuMode = Field(default="preview", description="菜单展示模式。")
-    theme_key: str | None = Field(default=None, min_length=1, max_length=64, description="关联主题 key。")
-    style_spec_markdown: str = Field(default=DEFAULT_PROJECT_STYLE_SPEC_MARKDOWN, description="Markdown 样式规范。")
+    configuration: StyleConfiguration = Field(default_factory=StyleConfiguration, description="完整展示配置和建议组件。")
 
 
-class StyleUpdatePayload(OperationArgumentsModel):
-    """修改工作空间样式模板参数。"""
+class StyleMetadataPayload(OperationArgumentsModel):
+    """修改工作空间样式名称与说明。"""
 
-    key: str | None = Field(default=None, min_length=1, max_length=64, pattern=r"^[a-z0-9_-]+$", description="新的样式 key。")
     name: str | None = Field(default=None, min_length=1, max_length=128, description="新的样式名称。")
     description: str | None = Field(default=None, max_length=2000, description="新的样式说明。")
-    page_width: int | None = Field(default=None, ge=1, le=8192, description="新的画布宽度。")
-    page_height: int | None = Field(default=None, ge=1, le=8192, description="新的画布高度。")
-    base_font_size: str | None = Field(default=None, min_length=1, max_length=32, description="新的基础字号。")
-    icon_default_stroke_width: int | None = Field(default=None, ge=1, le=64, description="新的图标描边宽度。")
-    show_pdf_export_button: bool | None = Field(default=None, description="是否显示 PDF 导出按钮。")
-    menu_mode: ProjectMenuMode | None = Field(default=None, description="新的菜单展示模式。")
-    theme_key: str | None = Field(default=None, min_length=1, max_length=64, description="新的主题 key。")
-    style_spec_markdown: str | None = Field(default=None, description="新的 Markdown 样式规范。")
 
 
-class RestorePayload(OperationArgumentsModel):
-    """恢复归档对象的可选参数。"""
-
-    reason: str | None = Field(default=None, max_length=1000, description="恢复原因。")
+class StyleConfigurationPayload(StyleConfigurationPatch):
+    """部分更新工作空间样式配置与建议组件。"""
 
 
 class ComponentPublishPayload(OperationArgumentsModel):
@@ -374,18 +337,6 @@ class ReplaceRoutesPayload(OperationArgumentsModel):
     change_note: str | None = Field(default=None, description="本次路由调整说明。")
 
 
-class ReplaceStyleConfigPayload(OperationArgumentsModel):
-    """项目 Markdown 样式规范全量替换参数。"""
-
-    style_spec_markdown: str = Field(description="完整的新 Markdown 样式规范；传空字符串表示清空规范。")
-
-
-class ThemeRenameKeyPayload(OperationArgumentsModel):
-    """主题 key 重命名参数。"""
-
-    key: str = Field(min_length=1, max_length=64, pattern=r"^[a-z0-9_-]+$", description="新的主题 key；平台会同步当前工作空间内的引用方。")
-
-
 QUERY_FILTER_MODELS: dict[tuple[str, str], type[OperationArgumentsModel]] = {
     ("project", "list"): CommonListFilters,
     ("project", "detail"): EmptyArguments,
@@ -401,10 +352,10 @@ QUERY_FILTER_MODELS: dict[tuple[str, str], type[OperationArgumentsModel]] = {
     ("asset", "list"): AssetListFilters,
     ("asset", "content"): EmptyArguments,
     ("asset", "tags"): EmptyArguments,
-    ("theme", "list"): ArchivedListFilters,
-    ("theme", "detail"): ArchivedDetailOptions,
-    ("style", "list"): ArchivedListFilters,
-    ("style", "detail"): ArchivedDetailOptions,
+    ("theme", "list"): CommonListFilters,
+    ("theme", "detail"): EmptyArguments,
+    ("style", "list"): CommonListFilters,
+    ("style", "detail"): EmptyArguments,
     ("runtime_kit", "list"): RuntimeKitListFilters,
     ("runtime_kit", "detail"): RuntimeKitDetailFilters,
     ("font", "list"): FontListFilters,
@@ -418,15 +369,20 @@ PAYLOAD_MODELS: dict[tuple[str, str, str | None], type[OperationArgumentsModel]]
     ("asset", "create", None): AssetCreatePayload,
     ("theme", "create", None): ThemeCreatePayload,
     ("style", "create", None): StyleCreatePayload,
-    ("project", "update", None): ProjectUpdatePayload,
+    ("project", "update", "metadata"): ProjectMetadataPayload,
+    ("project", "update", "configuration"): ProjectConfigurationPayload,
+    ("project", "update", "apply_style"): ProjectApplyStylePayload,
+    ("project", "update", "route_tree"): ReplaceRoutesPayload,
+    ("project", "update", "build_assets"): ProjectBuildAssetsPayload,
     ("page", "update", "metadata"): PageMetadataPayload,
     ("page", "update", "content"): PageContentPayload,
     ("component", "update", "metadata"): ComponentMetadataPayload,
     ("component", "update", "content"): ComponentContentPayload,
     ("asset", "update", "metadata"): AssetMetadataPayload,
     ("asset", "update", "content"): AssetContentPayload,
-    ("theme", "update", None): ThemeUpdatePayload,
-    ("style", "update", None): StyleUpdatePayload,
+    ("theme", "update", "metadata"): ThemeUpdatePayload,
+    ("style", "update", "metadata"): StyleMetadataPayload,
+    ("style", "update", "configuration"): StyleConfigurationPayload,
     ("component", "action", "publish"): ComponentPublishPayload,
     ("component", "action", "check"): ComponentCheckPayload,
     ("page", "action", "check"): PageCheckPayload,
@@ -436,9 +392,6 @@ PAYLOAD_MODELS: dict[tuple[str, str, str | None], type[OperationArgumentsModel]]
     ("asset", "action", "save_upload"): AssetSaveUploadPayload,
     ("theme", "action", "copy"): NamedCopyPayload,
     ("style", "action", "copy"): NamedCopyPayload,
-    ("project", "action", "replace_routes"): ReplaceRoutesPayload,
-    ("project", "action", "replace_style_config"): ReplaceStyleConfigPayload,
-    ("theme", "action", "rename_key"): ThemeRenameKeyPayload,
 }
 
 
@@ -453,8 +406,6 @@ def get_operation_payload_model(
     operation: str,
     action: str | None,
 ) -> type[OperationArgumentsModel] | None:
-    """返回写操作对应的精确 payload 模型；恢复动作共用 RestorePayload。"""
+    """返回写操作对应的精确 payload 模型。"""
 
-    if operation == "action" and action == "restore" and resource_type in {"page", "component", "asset", "theme", "style"}:
-        return RestorePayload
     return PAYLOAD_MODELS.get((resource_type, operation, action))

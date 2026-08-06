@@ -27,33 +27,32 @@ async def test_batch_archive_should_be_atomic_and_isolated_by_workspace(authenti
     first_style_id = await _create_style(authenticated_client, first_workspace_id, "first_style", "样式一")
     second_style_id = await _create_style(authenticated_client, first_workspace_id, "second_style", "样式二")
     foreign_style_id = await _create_style(authenticated_client, second_workspace_id, "foreign_style", "其他样式")
-    archive_tool = {item.name: item for item in build_generic_business_tools(get_session_factory())}["archive_entity"]
-    execute_action_tool = {item.name: item for item in build_generic_business_tools(get_session_factory())}["execute_action"]
+    tools = {item.name: item for item in build_generic_business_tools(get_session_factory())}
+    archive_tool = tools["archive_entity"]
     context = _build_tool_run_context(first_workspace_id, approved=True)
 
+    guide_index = await tools["get_operation_guide"].entrypoint(context)
+    assert any(item["operation_key"] == "style.archive" for item in guide_index["operations"])
+    archive_guide = await tools["get_operation_guide"].entrypoint(context, "style.archive")
+    assert archive_guide["operation_key"] == "style.archive"
+    assert "versions" not in archive_guide["parameters"]["properties"]
+
     with pytest.raises(AppException) as error:
-        await archive_tool.entrypoint(context, "style", [first_style_id, foreign_style_id], "整理", None)
+        await archive_tool.entrypoint(context, "style", [first_style_id, foreign_style_id], "整理")
     assert error.value.code == "AI_ENTITY_TARGETS_NOT_FOUND"
     assert await _read_deleted_at(first_style_id) is None
 
-    result = await archive_tool.entrypoint(context, "style", [first_style_id, second_style_id], "整理", None)
+    result = await archive_tool.entrypoint(context, "style", [first_style_id, second_style_id], "整理")
 
     assert result["success"] is True
     assert result["data"]["archived_count"] == 2
     assert await _read_deleted_at(first_style_id) is not None
     assert await _read_deleted_at(second_style_id) is not None
 
-    restored = await execute_action_tool.entrypoint(
-        context,
-        "style",
-        "restore",
-        None,
-        [first_style_id, second_style_id],
-        {"reason": "恢复使用"},
-    )
-    assert restored["data"]["restored_count"] == 2
-    assert await _read_deleted_at(first_style_id) is None
-    assert await _read_deleted_at(second_style_id) is None
+    listed = await tools["list_entities"].entrypoint(context, "style", {}, "items")
+    assert first_style_id not in {item["id"] for item in listed["data"]["items"]}
+    with pytest.raises(AppException):
+        await tools["get_entity"].entrypoint(context, "style", "detail", first_style_id, None, {})
 
 
 async def test_workspace_session_should_query_pages_across_projects_but_reject_foreign_project(authenticated_client: AsyncClient) -> None:
@@ -79,8 +78,8 @@ async def test_workspace_session_should_query_pages_across_projects_but_reject_f
     assert error.value.code == "AI_ENTITY_SCOPE_DENIED"
 
 
-async def test_selected_projects_should_filter_queries_and_confirm_cross_focus_write(authenticated_client: AsyncClient) -> None:
-    """项目工作集覆盖列表与详情；工作集内但焦点外写入必须逐次确认。"""
+async def test_selected_projects_should_filter_queries_and_hide_archived_pages(authenticated_client: AsyncClient) -> None:
+    """项目工作集覆盖列表与详情，归档页面随后退出 AI 查询边界。"""
 
     workspace_id = await _create_workspace(authenticated_client, "工作集与焦点确认")
     first_project_id = await _create_project(authenticated_client, workspace_id, "焦点项目")
@@ -118,16 +117,12 @@ async def test_selected_projects_should_filter_queries_and_confirm_cross_focus_w
         work_scope_mode="selected_projects",
         allowed_project_ids=[first_project_id, second_project_id],
     )
-    await tools["archive_entity"].entrypoint(approved_context, "page", [second_page_id], "暂存", None)
-    with pytest.raises(ApprovalRequired):
-        await tools["execute_action"].entrypoint(
-            cross_focus_context,
-            "page",
-            "restore",
-            second_page_id,
-            None,
-            {},
-        )
+    await tools["archive_entity"].entrypoint(approved_context, "page", [second_page_id], "暂存")
+    archived_list = await tools["list_entities"].entrypoint(approved_context, "page", {"project_id": second_project_id}, "items")
+    assert archived_list["data"]["items"] == []
+    with pytest.raises(AppException) as archived_error:
+        await tools["get_entity"].entrypoint(approved_context, "page", "detail", second_page_id, None, {})
+    assert archived_error.value.code == "AI_ENTITY_NOT_FOUND"
 
 
 async def test_page_copy_should_use_target_project_id_for_cross_focus_confirmation(authenticated_client: AsyncClient) -> None:
@@ -152,7 +147,6 @@ async def test_page_copy_should_use_target_project_id_for_cross_focus_confirmati
             "page",
             "copy",
             source_page_id,
-            None,
             {"target_project_id": target_project_id},
         )
 

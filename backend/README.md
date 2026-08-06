@@ -218,11 +218,11 @@ Backend 内嵌基于 Pydantic AI 的智能体运行入口。Editor 通过 `/api/
 当前工具按入口分组装配：
 
 - 所有智能体：内置不可关闭的 `ask_user`，用于一次提出一个或多个结构化单选问题；Editor 在输入区覆盖式展示，支持逐题回答、前后切换、预设选项或自定义回答，不暴露 `get_user_input` 自由字段工具
-- `agent-coordinator`：按用户工具配置直接启用内容读取、项目描述/样式配置读取、组件读取、资源读取、页面写入、页面截图与项目写入工具；组件读取仅包含 `list_components`、`get_component_detail`，资源读取包含 `list_resource_assets`、`get_resource_asset_content`、`list_resource_tags`；项目样式配置写入工具 `update_project_style_config` 会通过用户确认暂停执行；组件/资源维护能力通过成员工具执行，成员工具事件会带 `member_agent_id`、`member_agent_name`、`member_run_id` 供 Editor 展示来源
+- `agent-coordinator`：按用户工具配置启用分层披露后的通用查询、创建、更新、归档和普通动作工具；项目元数据、展示配置、样式快照应用、路由树与构建资源均由 `update_entity` 的判别 action 承载，主题 key 创建后不可修改；组件/资源维护能力通过成员工具执行，成员工具事件会带 `member_agent_id`、`member_agent_name`、`member_run_id` 供 Editor 展示来源
 - `component-manager`：`list_components`、`get_component_detail`、`list_component_versions`、`get_component_dependencies`、`list_runtime_kit_capabilities`、`get_runtime_kit_capability`、`list_resource_assets`、`get_resource_asset_content`、`list_resource_tags`、`check_component_code`、`create_component`、`apply_component_edits`、`update_component_metadata`、`publish_component`、`delete_component`
 - `resource-manager`：`list_resource_assets`、`get_resource_asset_content`、`list_resource_tags`、`create_resource_asset`、`preview_resource_content_diff`、`apply_resource_content_diff`、`update_resource_asset_metadata`、`copy_resource_asset`、`archive_resource_asset`
 
-其中项目样式配置写入、路由整树覆盖、路由节点移除与组件删除通过 HITL 确认暂停执行；结构化提问同样通过 paused run 恢复；`apply_page_edits` 和 `apply_component_edits` 在写入前强制执行 Runtime validate，校验失败不落库。页面写入调用时必须显式传入目标 `page_id`，并使用 `base_version_no` 做乐观锁；组件写入使用 `base_draft_hash` 与 `base_published_version_no` 锁定当前草稿。
+其中跨焦点写入、批量归档、发布和构建等操作按真实业务语义动态请求确认；项目展示配置和路由整树覆盖属于普通写入，不再使用独立危险动作工具。结构化提问同样通过 paused run 恢复；`apply_page_edits` 和 `apply_component_edits` 在写入前强制执行 Runtime validate，校验失败不落库。页面写入调用时必须显式传入目标 `page_id`，并使用 `base_version_no` 做乐观锁；组件写入使用 `base_draft_hash` 与 `base_published_version_no` 锁定当前草稿。
 
 用户级智能体配置由内置目录和用户配置合成：
 

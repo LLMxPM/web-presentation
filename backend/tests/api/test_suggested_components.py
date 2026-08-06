@@ -24,14 +24,10 @@ async def _create_style(authenticated_client: AsyncClient, workspace_id: int, ke
         json={
             "key": key,
             "name": name,
-            "page_width": 1920,
-            "page_height": 1080,
-            "base_font_size": "20px",
-            "icon_default_stroke_width": 2,
-            "show_pdf_export_button": True,
-            "menu_mode": "preview",
-            "theme_key": None,
-            "style_spec_markdown": "## 组件\n优先复用建议组件。",
+            "configuration": {
+                "presentation": {"style_spec_markdown": "## 组件\n优先复用建议组件。"},
+                "suggested_components": {"component_ids": []},
+            },
         },
     )
     assert response.status_code == 200
@@ -91,13 +87,13 @@ async def test_workspace_style_suggested_components_should_save_published_compon
     card_component = await _create_component(authenticated_client, workspace_id, "指标卡片", "MetricCard")
     chart_component = await _create_component(authenticated_client, workspace_id, "趋势图表", "TrendChart")
 
-    save_response = await authenticated_client.put(
-        f"/api/workspaces/{workspace_id}/styles/{style_id}/suggested-components",
-        json={"component_ids": [chart_component["id"], card_component["id"], chart_component["id"]]},
+    save_response = await authenticated_client.patch(
+        f"/api/workspaces/{workspace_id}/styles/{style_id}",
+        json={"configuration": {"suggested_components": {"component_ids": [chart_component["id"], card_component["id"], chart_component["id"]]}}},
     )
 
     assert save_response.status_code == 200
-    items = save_response.json()["items"]
+    items = (await authenticated_client.get(f"/api/workspaces/{workspace_id}/styles/{style_id}/suggested-components")).json()["items"]
     assert [item["id"] for item in items] == [chart_component["id"], card_component["id"]]
     assert set(items[0]) == {
         "id",
@@ -141,16 +137,16 @@ async def test_suggested_components_should_reject_invalid_or_unpublished_compone
     assert archive_response.status_code == 200
 
     for component_id in (unpublished_component["id"], other_component["id"], archived_component["id"], 999999):
-        style_response = await authenticated_client.put(
-            f"/api/workspaces/{workspace_id}/styles/{style_id}/suggested-components",
-            json={"component_ids": [component_id]},
+        style_response = await authenticated_client.patch(
+            f"/api/workspaces/{workspace_id}/styles/{style_id}",
+            json={"configuration": {"suggested_components": {"component_ids": [component_id]}}},
         )
         assert style_response.status_code == 400
         assert style_response.json()["code"] == "WORKSPACE_STYLE_SUGGESTED_COMPONENT_INVALID"
 
-        project_response = await authenticated_client.put(
-            f"/api/projects/{project_id}/suggested-components",
-            json={"component_ids": [component_id]},
+        project_response = await authenticated_client.patch(
+            f"/api/projects/{project_id}",
+            json={"configuration": {"mode": "patch", "suggested_components": {"component_ids": [component_id]}}},
         )
         assert project_response.status_code == 400
         assert project_response.json()["code"] == "PROJECT_SUGGESTED_COMPONENT_INVALID"
@@ -167,14 +163,14 @@ async def test_suggested_components_should_keep_unavailable_items_for_cleanup(
     deleted_component = await _create_component(authenticated_client, workspace_id, "旧组件", "LegacyBlock")
     active_component = await _create_component(authenticated_client, workspace_id, "新组件", "FreshBlock")
 
-    style_save_response = await authenticated_client.put(
-        f"/api/workspaces/{workspace_id}/styles/{style_id}/suggested-components",
-        json={"component_ids": [deleted_component["id"], active_component["id"]]},
+    style_save_response = await authenticated_client.patch(
+        f"/api/workspaces/{workspace_id}/styles/{style_id}",
+        json={"configuration": {"suggested_components": {"component_ids": [deleted_component["id"], active_component["id"]]}}},
     )
     assert style_save_response.status_code == 200
-    project_save_response = await authenticated_client.put(
-        f"/api/projects/{project_id}/suggested-components",
-        json={"component_ids": [deleted_component["id"], active_component["id"]]},
+    project_save_response = await authenticated_client.patch(
+        f"/api/projects/{project_id}",
+        json={"configuration": {"mode": "patch", "suggested_components": {"component_ids": [deleted_component["id"], active_component["id"]]}}},
     )
     assert project_save_response.status_code == 200
 
@@ -198,12 +194,25 @@ async def test_suggested_components_should_keep_unavailable_items_for_cleanup(
     assert project_items[0]["available"] is False
     assert project_items[0]["unavailable_reason"] == "组件已归档，请移除后保存。"
 
-    cleanup_response = await authenticated_client.put(
-        f"/api/workspaces/{workspace_id}/styles/{style_id}/suggested-components",
-        json={"component_ids": [active_component["id"]]},
+    clean_project_id = await _create_project(authenticated_client, workspace_id, "样式应用原子校验项目")
+    apply_response = await authenticated_client.patch(
+        f"/api/projects/{clean_project_id}",
+        json={"configuration": {"mode": "style", "style_id": style_id}},
+    )
+    assert apply_response.status_code == 400
+    assert apply_response.json()["code"] == "PROJECT_SUGGESTED_COMPONENT_INVALID"
+    clean_project_components = await authenticated_client.get(
+        f"/api/projects/{clean_project_id}/suggested-components"
+    )
+    assert clean_project_components.json()["items"] == []
+
+    cleanup_response = await authenticated_client.patch(
+        f"/api/workspaces/{workspace_id}/styles/{style_id}",
+        json={"configuration": {"suggested_components": {"component_ids": [active_component["id"]]}}},
     )
     assert cleanup_response.status_code == 200
-    assert [item["id"] for item in cleanup_response.json()["items"]] == [active_component["id"]]
+    cleaned = await authenticated_client.get(f"/api/workspaces/{workspace_id}/styles/{style_id}/suggested-components")
+    assert [item["id"] for item in cleaned.json()["items"]] == [active_component["id"]]
 
 
 async def test_style_copy_and_project_apply_should_copy_suggested_component_snapshots(
@@ -217,13 +226,13 @@ async def test_style_copy_and_project_apply_should_copy_suggested_component_snap
     another_style_id = await _create_style(authenticated_client, workspace_id, "report", "报告样式")
     hero_component = await _create_component(authenticated_client, workspace_id, "头图组件", "HeroBlock")
     table_component = await _create_component(authenticated_client, workspace_id, "表格组件", "DataTableBlock")
-    await authenticated_client.put(
-        f"/api/workspaces/{workspace_id}/styles/{style_id}/suggested-components",
-        json={"component_ids": [hero_component["id"]]},
+    await authenticated_client.patch(
+        f"/api/workspaces/{workspace_id}/styles/{style_id}",
+        json={"configuration": {"suggested_components": {"component_ids": [hero_component["id"]]}}},
     )
-    await authenticated_client.put(
-        f"/api/workspaces/{workspace_id}/styles/{another_style_id}/suggested-components",
-        json={"component_ids": [table_component["id"]]},
+    await authenticated_client.patch(
+        f"/api/workspaces/{workspace_id}/styles/{another_style_id}",
+        json={"configuration": {"suggested_components": {"component_ids": [table_component["id"]]}}},
     )
 
     copy_response = await authenticated_client.post(
@@ -241,14 +250,14 @@ async def test_style_copy_and_project_apply_should_copy_suggested_component_snap
         authenticated_client,
         workspace_id,
         "应用建议组件项目",
-        suggested_component_source_style_id=style_id,
+        configuration={"mode": "style", "style_id": style_id},
     )
     project_components_response = await authenticated_client.get(f"/api/projects/{project_id}/suggested-components")
     assert [item["id"] for item in project_components_response.json()["items"]] == [hero_component["id"]]
 
     update_response = await authenticated_client.patch(
         f"/api/projects/{project_id}",
-        json={"suggested_component_source_style_id": another_style_id},
+        json={"configuration": {"mode": "style", "style_id": another_style_id}},
     )
     assert update_response.status_code == 200
     replaced_components_response = await authenticated_client.get(f"/api/projects/{project_id}/suggested-components")
@@ -262,3 +271,33 @@ async def test_style_copy_and_project_apply_should_copy_suggested_component_snap
     cleared_response = await authenticated_client.get(f"/api/projects/{project_id}/suggested-components")
     assert cleared_response.status_code == 200
     assert cleared_response.json()["items"] == []
+
+
+async def test_default_style_should_initialize_project_and_be_protected(authenticated_client: AsyncClient) -> None:
+    """缺省项目创建应完整复制 default 样式，且默认样式不可删除。"""
+
+    workspace_id = await _create_workspace(authenticated_client, "默认样式初始化空间")
+    styles = await authenticated_client.get(f"/api/workspaces/{workspace_id}/styles")
+    default_style = next(item for item in styles.json()["items"] if item["key"] == "default")
+    component = await _create_component(authenticated_client, workspace_id, "默认建议组件", "DefaultSuggestedBlock")
+    update_style = await authenticated_client.patch(
+        f"/api/workspaces/{workspace_id}/styles/{default_style['id']}",
+        json={"configuration": {
+            "presentation": {"page_width": 1440, "style_spec_markdown": "## 默认项目规范"},
+            "suggested_components": {"component_ids": [component["id"]]},
+        }},
+    )
+    assert update_style.status_code == 200
+
+    project_id = await _create_project(authenticated_client, workspace_id, "缺省配置项目")
+    project = await authenticated_client.get(f"/api/projects/{project_id}")
+    components = await authenticated_client.get(f"/api/projects/{project_id}/suggested-components")
+    assert project.json()["page_width"] == 1440
+    assert project.json()["style_spec_markdown"] == "## 默认项目规范"
+    assert [item["id"] for item in components.json()["items"]] == [component["id"]]
+
+    delete_response = await authenticated_client.delete(
+        f"/api/workspaces/{workspace_id}/styles/{default_style['id']}"
+    )
+    assert delete_response.status_code == 409
+    assert delete_response.json()["code"] == "WORKSPACE_DEFAULT_STYLE_PROTECTED"

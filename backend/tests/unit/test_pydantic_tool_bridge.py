@@ -5,6 +5,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import pytest
+from jsonschema import Draft202012Validator
 from pydantic import ValidationError
 from pydantic_ai import Agent, CallDeferred
 from pydantic_ai.messages import ModelResponse, TextPart, ToolCallPart
@@ -111,7 +112,8 @@ def test_generate_image_schema_should_follow_bound_model_capabilities() -> None:
     )
 
     generate_image = next(tool for tool in tools if tool.name == "generate_image")
-    properties = generate_image.function_schema.json_schema["properties"]
+    branches = generate_image.function_schema.json_schema["oneOf"]
+    properties = branches[0]["properties"]
 
     assert "quality" not in properties
     assert "mask_attachment_id" not in properties
@@ -267,11 +269,31 @@ def test_generate_image_schema_should_keep_openai_quality_and_mask() -> None:
     )
 
     generate_image = next(tool for tool in tools if tool.name == "generate_image")
-    properties = generate_image.function_schema.json_schema["properties"]
+    branches = generate_image.function_schema.json_schema["oneOf"]
+    generate_properties = next(
+        branch["properties"]
+        for branch in branches
+        if branch["properties"]["operation"]["const"] == "generate"
+    )
+    edit_branch = next(
+        branch
+        for branch in branches
+        if branch["properties"]["operation"]["const"] == "edit"
+    )
+    properties = edit_branch["properties"]
 
     assert properties["quality"]["enum"] == ["auto", "low", "medium", "high"]
     assert "mask_attachment_id" in properties
     assert properties["resolution_tier"]["enum"] == ["auto", "standard"]
+    assert "mask_attachment_id" not in generate_properties
+    assert "reference_attachment_ids" in edit_branch["required"]
+    validator = Draft202012Validator(generate_image.function_schema.json_schema)
+    assert not validator.is_valid({"operation": "edit", "prompt": "编辑图片"})
+    assert not validator.is_valid({
+        "operation": "generate",
+        "prompt": "生成图片",
+        "mask_attachment_id": 12,
+    })
 
 
 @pytest.mark.asyncio

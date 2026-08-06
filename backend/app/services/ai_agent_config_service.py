@@ -499,6 +499,10 @@ class AiAgentConfigService:
         """根据工具参数 schema 生成最小工具调用示例。"""
 
         properties = parameters_schema.get("properties", {}) if parameters_schema else {}
+        if not properties and parameters_schema:
+            branches = parameters_schema.get("oneOf")
+            first_branch = branches[0] if isinstance(branches, list) and branches else {}
+            properties = first_branch.get("properties", {}) if isinstance(first_branch, dict) else {}
         arguments = {
             str(name): cls._sample_schema_value(schema)
             for name, schema in properties.items()

@@ -88,7 +88,7 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
 
-import { createWorkspaceStyle, updateWorkspaceStyleSuggestedComponents, type WorkspaceStylePayload } from '@/api/styles'
+import { createWorkspaceStyle, type WorkspaceStylePayload } from '@/api/styles'
 import ThemeSelectorField from '@/components/theme/ThemeSelectorField.vue'
 import { UiButton, UiDialog, UiFormField, UiInput } from '@/components/ui'
 import type { ProjectItem, ProjectMenuMode, WorkspaceStyleItem } from '@/types/api'
@@ -128,7 +128,7 @@ const emit = defineEmits<{
     menu_mode: ProjectMenuMode
     theme_key: string | null
     style_spec_markdown: string
-    suggested_component_source_style_id?: number | null
+    source_style_id?: number | null
   }]
 }>()
 
@@ -236,7 +236,7 @@ function handleSave(): void {
     menu_mode: ProjectMenuMode
     theme_key: string | null
     style_spec_markdown: string
-    suggested_component_source_style_id?: number | null
+    source_style_id?: number | null
   } = {
     page_width: normalizedPageWidth.value,
     page_height: normalizedPageHeight.value,
@@ -248,7 +248,7 @@ function handleSave(): void {
     style_spec_markdown: draft.styleSpecMarkdown,
   }
   if (appliedWorkspaceStyleId.value !== null) {
-    payload.suggested_component_source_style_id = appliedWorkspaceStyleId.value
+    payload.source_style_id = appliedWorkspaceStyleId.value
   }
   emit('save', payload)
 }
@@ -268,13 +268,9 @@ async function handleSaveAsStyle(payload: WorkspaceStyleEditorSavePayload): Prom
   if (!props.workspaceId) {
     return
   }
-  const { suggested_component_ids: suggestedComponentIds, ...stylePayload } = payload
   saveAsStyleSaving.value = true
   try {
-    const savedStyle = await createWorkspaceStyle(props.workspaceId, stylePayload)
-    if (suggestedComponentIds) {
-      await updateWorkspaceStyleSuggestedComponents(props.workspaceId, savedStyle.id, suggestedComponentIds)
-    }
+    await createWorkspaceStyle(props.workspaceId, payload)
     saveAsStyleDialogVisible.value = false
     Message.success('样式已保存到工作空间样式库。')
   } catch (error) {

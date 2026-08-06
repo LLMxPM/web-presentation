@@ -424,8 +424,7 @@ async def test_preview_artifact_should_return_viewport_from_project_page_config(
             "workspace_id": workspace_id,
             "name": "预览尺寸项目",
             "status": "active",
-            "page_width": 1600,
-            "page_height": 900,
+            "configuration": {"mode": "custom", "presentation": {"page_width": 1600, "page_height": 900}},
         },
     )
     assert project_response.status_code == 200

@@ -1253,7 +1253,7 @@ async function handlePresentationConfigSave(payload: {
   menu_mode: ProjectMenuMode
   theme_key: string | null
   style_spec_markdown: string
-  suggested_component_source_style_id?: number | null
+  source_style_id?: number | null
 }): Promise<void> {
   if (!projectDetails.value) {
     return

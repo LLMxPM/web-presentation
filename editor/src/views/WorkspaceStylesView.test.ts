@@ -16,7 +16,6 @@ const mocked = vi.hoisted(() => ({
   listWorkspaceAssets: vi.fn(),
   listWorkspaceFontFamilies: vi.fn(),
   updateWorkspaceStyle: vi.fn(),
-  updateWorkspaceStyleSuggestedComponents: vi.fn(),
   validateWorkspaceStylePackageExport: vi.fn(),
   validateWorkspaceStylePackageImport: vi.fn(),
   listWorkspaceThemes: vi.fn(),
@@ -100,7 +99,6 @@ vi.mock('@/api/styles', () => ({
   importWorkspaceStylePackage: (...args: unknown[]) => mocked.importWorkspaceStylePackage(...args),
   listWorkspaceStyles: (...args: unknown[]) => mocked.listWorkspaceStyles(...args),
   updateWorkspaceStyle: (...args: unknown[]) => mocked.updateWorkspaceStyle(...args),
-  updateWorkspaceStyleSuggestedComponents: (...args: unknown[]) => mocked.updateWorkspaceStyleSuggestedComponents(...args),
   validateWorkspaceStylePackageExport: (...args: unknown[]) => mocked.validateWorkspaceStylePackageExport(...args),
   validateWorkspaceStylePackageImport: (...args: unknown[]) => mocked.validateWorkspaceStylePackageImport(...args),
 }))
@@ -281,7 +279,6 @@ describe('WorkspaceStylesView', () => {
     })
     mocked.createWorkspaceStyle.mockResolvedValue({ ...mocked.style, id: 10 })
     mocked.updateWorkspaceStyle.mockResolvedValue(mocked.style)
-    mocked.updateWorkspaceStyleSuggestedComponents.mockResolvedValue({ items: [] })
     anchorClickMock.mockImplementation(() => undefined)
     Object.defineProperty(HTMLAnchorElement.prototype, 'click', { configurable: true, value: anchorClickMock })
     vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:styles')
@@ -329,7 +326,7 @@ describe('WorkspaceStylesView', () => {
     expect(screen.getByTestId('style-editor-dialog')).toBeInTheDocument()
   })
 
-  it('编辑样式保存时应同步保存建议组件并剥离临时字段', async () => {
+  it('编辑样式保存时应原子提交展示配置与建议组件', async () => {
     renderWorkspaceStylesView()
 
     expect(await screen.findByText('路演样式')).toBeInTheDocument()
@@ -341,12 +338,11 @@ describe('WorkspaceStylesView', () => {
       expect(mocked.updateWorkspaceStyle).toHaveBeenCalled()
     })
     const stylePayload = mocked.updateWorkspaceStyle.mock.calls[0]?.[2] as Record<string, unknown>
-    expect(stylePayload).not.toHaveProperty('suggested_component_ids')
+    expect(stylePayload).toHaveProperty('suggested_component_ids', [1, 2])
     expect(mocked.updateWorkspaceStyle).toHaveBeenCalledWith(1, 9, expect.objectContaining({
       key: 'pitch',
       style_spec_markdown: '## 版式\n- 使用强标题。',
     }))
-    expect(mocked.updateWorkspaceStyleSuggestedComponents).toHaveBeenCalledWith(1, 9, [1, 2])
   })
 
   it('选择模式下勾选样式并确认后应导出离线包', async () => {

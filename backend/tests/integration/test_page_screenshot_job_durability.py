@@ -264,7 +264,7 @@ async def test_screenshot_job_should_skip_when_display_config_changes_during_cap
 
         update_response = await authenticated_client.patch(
             f"/api/projects/{page['project_id']}",
-            json={"page_width": 1366, "page_height": 768},
+            json={"configuration": {"mode": "patch", "presentation": {"page_width": 1366, "page_height": 768}}},
         )
         assert update_response.status_code == 200
         return b"stale-config-capture"

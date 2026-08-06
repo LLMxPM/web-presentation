@@ -130,12 +130,33 @@ export async function createProject(payload: {
   show_pdf_export_button: boolean
   menu_mode: ProjectMenuMode
   theme_key?: string | null
-  theme_config_yaml?: string | null
   style_spec_markdown?: string
   build_extra_assets_json?: ProjectBuildExtraAssetsJson
-  suggested_component_source_style_id?: number | null
+  source_style_id?: number | null
 }) {
-  const { data } = await http.post<ProjectItem>('/projects', payload)
+  const {
+    page_width, page_height, base_font_size, icon_default_stroke_width,
+    show_pdf_export_button, menu_mode, theme_key, style_spec_markdown,
+    source_style_id: sourceStyleId, ...projectPayload
+  } = payload
+  const presentation = {
+    page_width, page_height, base_font_size, icon_default_stroke_width,
+    show_pdf_export_button, menu_mode, theme_key, style_spec_markdown,
+  }
+  if (sourceStyleId) {
+    const { data: createdProject } = await http.post<ProjectItem>('/projects', {
+      ...projectPayload,
+      configuration: { mode: 'style', style_id: sourceStyleId },
+    })
+    const { data } = await http.patch<ProjectItem>(`/projects/${createdProject.id}`, {
+      configuration: { mode: 'patch', presentation },
+    })
+    return data
+  }
+  const { data } = await http.post<ProjectItem>('/projects', {
+    ...projectPayload,
+    configuration: { mode: 'custom', presentation },
+  })
   return data
 }
 
@@ -154,13 +175,33 @@ export async function updateProject(
     show_pdf_export_button: boolean
     menu_mode: ProjectMenuMode
     theme_key: string | null
-    theme_config_yaml: string
     style_spec_markdown: string
     build_extra_assets_json: ProjectBuildExtraAssetsJson
-    suggested_component_source_style_id: number | null
+    source_style_id: number | null
   }>,
 ) {
-  const { data } = await http.patch<ProjectItem>(`/projects/${id}`, payload)
+  const {
+    page_width, page_height, base_font_size, icon_default_stroke_width,
+    show_pdf_export_button, menu_mode, theme_key, style_spec_markdown,
+    source_style_id: sourceStyleId, ...projectPayload
+  } = payload
+  const presentation = Object.fromEntries(Object.entries({
+    page_width, page_height, base_font_size, icon_default_stroke_width,
+    show_pdf_export_button, menu_mode, theme_key, style_spec_markdown,
+  }).filter(([, value]) => value !== undefined))
+  const configuration = sourceStyleId
+    ? { mode: 'style', style_id: sourceStyleId }
+    : Object.keys(presentation).length ? { mode: 'patch', presentation } : undefined
+  const { data: updatedProject } = await http.patch<ProjectItem>(`/projects/${id}`, {
+    ...projectPayload,
+    ...(configuration ? { configuration } : {}),
+  })
+  if (!sourceStyleId || Object.keys(presentation).length === 0) {
+    return updatedProject
+  }
+  const { data } = await http.patch<ProjectItem>(`/projects/${id}`, {
+    configuration: { mode: 'patch', presentation },
+  })
   return data
 }
 
@@ -189,11 +230,11 @@ export async function getProjectSuggestedComponents(projectId: number) {
 
 /** 覆盖保存项目建议组件快照。 */
 export async function updateProjectSuggestedComponents(projectId: number, componentIds: number[]) {
-  const { data } = await http.put<SuggestedComponentsResponse>(
-    `/projects/${projectId}/suggested-components`,
-    { component_ids: componentIds },
+  await http.patch<ProjectItem>(
+    `/projects/${projectId}`,
+    { configuration: { mode: 'patch', suggested_components: { component_ids: componentIds } } },
   )
-  return data
+  return getProjectSuggestedComponents(projectId)
 }
 
 /** 查询项目结构化路由树。 */

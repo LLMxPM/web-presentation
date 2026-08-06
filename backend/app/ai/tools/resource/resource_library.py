@@ -145,6 +145,8 @@ def build_get_resource_asset_content_tool(session_factory: async_sessionmaker[As
         async with session_factory() as session:
             service = AssetService(session)
             asset = await service._get_asset_or_raise(int(dependencies["workspace_id"]), int(asset_id))
+            if str(getattr(asset.status, "value", asset.status)) != RecordStatus.ACTIVE.value:
+                raise AppException(status_code=404, code="AI_ENTITY_NOT_FOUND", detail="资源不存在或已归档。")
             try:
                 content = await service.get_asset_content(int(dependencies["workspace_id"]), int(asset_id))
             except AppException as exc:
