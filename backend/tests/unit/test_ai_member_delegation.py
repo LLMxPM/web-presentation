@@ -7,11 +7,14 @@ from typing import Any
 import pytest
 
 from app.ai.member_delegation import (
+    MemberDelegationExecutor,
+    MemberDelegationPaused,
     _MemberAgentRunner,
     _build_member_history_processors,
     _member_requirement_from_deferred,
     _merge_member_message_history,
 )
+from app.schemas.agent import AgentPendingRequirement
 from pydantic_ai import DeferredToolRequests
 from pydantic_ai.messages import ToolCallPart
 from app.core.exceptions import AppException
@@ -76,6 +79,54 @@ def test_member_image_generation_builds_external_job_requirement() -> None:
     assert requirement.tool_execution["job_ids"] == ["ai-image-job-1"]
     assert requirement.tool_execution["parent_delegate_tool_call_id"] == "delegate-1"
     assert requirement.tool_execution["requires_user_input"] is False
+
+
+def test_member_page_batch_should_keep_all_deferred_calls() -> None:
+    """成员同轮多个页面写入应形成一个可完整恢复的 external requirement。"""
+
+    parent_run = SimpleNamespace(run_id="run-parent", session_id="session-1")
+    member_run = SimpleNamespace(
+        member_run_id="member-run-1", agent_id="agent-coordinator", agent_name="内容助手",
+        input_payload_json={"delegate_tool_call_id": "delegate-1"},
+    )
+    requests = DeferredToolRequests(
+        calls=[
+            ToolCallPart(tool_name="create_entity", args={"title": "A"}, tool_call_id="raw-page-a"),
+            ToolCallPart(tool_name="create_entity", args={"title": "B"}, tool_call_id="raw-page-b"),
+        ],
+        metadata={
+            "raw-page-a": {"kind": "page_mutation", "batch_id": "batch-1", "job_id": "job-a"},
+            "raw-page-b": {"kind": "page_mutation", "batch_id": "batch-1", "job_id": "job-b"},
+        },
+    )
+    requirement = _member_requirement_from_deferred(requests, parent_run=parent_run, member_run=member_run)
+    assert requirement.tool_execution["batch_ids"] == ["batch-1"]
+    assert requirement.tool_execution["job_ids"] == ["job-a", "job-b"]
+    assert [item["tool_call_id"] for item in requirement.tool_execution["tool_calls"]] == ["raw-page-a", "raw-page-b"]
+
+
+@pytest.mark.asyncio
+async def test_member_external_job_should_pause_parent_instead_of_being_failed(monkeypatch: pytest.MonkeyPatch) -> None:
+    """成员页面或图片任务应把 external requirement 交给父运行持久化恢复。"""
+
+    requirement = AgentPendingRequirement(
+        id="requirement-member-page", kind="external_job", run_id="run-parent", session_id="session-1",
+        member_run_id="member-run-1", tool_name="create_entity", tool_execution={"member_run_id": "member-run-1"},
+    )
+    executor = object.__new__(MemberDelegationExecutor)
+    executor._write_fence = None
+
+    async def pause(**_: Any) -> Any:
+        """模拟成员页面工具入队后暂停。"""
+        raise MemberDelegationPaused(requirement)
+
+    monkeypatch.setattr(executor, "_delegate_one", pause)
+    with pytest.raises(MemberDelegationPaused) as exc_info:
+        await executor.delegate_task_to_self(
+            member_id="agent-coordinator", task="创建页面", handoff_context=None, expected_output="页面 ID",
+            delegate_tool_call_id="delegate-1", delegate_tool_name="delegate_task_to_self",
+        )
+    assert exc_info.value.requirement is requirement
 
 
 class _FailureRecoverySession:
@@ -173,6 +224,7 @@ def _build_test_runner(*, session: Any, parent_run: Any, member_run: Any) -> _Me
     runner._parent_session_id = parent_run.session_id
     runner._member_run_id = member_run.member_run_id
     runner._member_agent_id = member_run.agent_id
+    runner._write_fence = None
     runner._store = SimpleNamespace()
     return runner
 

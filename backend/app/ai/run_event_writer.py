@@ -8,7 +8,7 @@ from sqlalchemy import select, update
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.ai.run_write_fence import AgentRunWriteFenceLost, PageMutationContinuationWriteFence
+from app.ai.run_write_fence import AgentRunWriteFence, AgentRunWriteFenceLost
 from app.models.ai_agent_runtime import AiAgentRun
 
 SQLITE_BUSY_ERROR_CODE = 5
@@ -22,7 +22,7 @@ async def allocate_run_event_index(
     run_id: str,
     updated_at: datetime,
     require_active: bool = False,
-    write_fence: PageMutationContinuationWriteFence | None = None,
+    write_fence: AgentRunWriteFence | None = None,
 ) -> int:
     """原子递增指定 run 的事件游标；可把后台续跑租约围栏并入同一条写入。"""
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import inspect
 from dataclasses import dataclass, fields, is_dataclass
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from enum import Enum
 from types import SimpleNamespace
 from typing import AbstractSet, Any, get_type_hints
@@ -19,6 +19,7 @@ from app.ai.auth_tokens import build_agent_tool_token
 from app.ai.image_generation_tool_schema import project_generate_image_schema
 from app.ai.image_refs import normalize_agent_image_ref
 from app.ai.platform_tools import AgentToolContext, recoverable_tool_error_result
+from app.ai.run_write_fence import AgentRunWriteFence, agent_run_write_fence_scope
 from app.ai.tool_arguments import json_compatible_annotation
 from app.ai.tool_specs import (
     AGENT_COORDINATOR_AGENT_ID,
@@ -86,14 +87,18 @@ def build_pydantic_tools(
     image_generation_model: ImageModelSpec | None = None,
     image_generation_config_id: int | None = None,
     member_run_id: str | None = None,
+    write_fence: AgentRunWriteFence | None = None,
 ) -> tuple[list[Tool[AgentToolDeps]], AgentToolDeps]:
     """构建 Pydantic AI 工具和共享 deps。"""
 
+    effective_unavailable_group_keys = set(unavailable_group_keys or ())
+    if member_delegation_executor is None:
+        effective_unavailable_group_keys.add("self_delegation")
     raw_tools = build_agent_tools_from_group_specs(
         agent_id=agent_id,
         session_factory=session_factory,
         supports_image_input=supports_image_input,
-        unavailable_group_keys=unavailable_group_keys,
+        unavailable_group_keys=effective_unavailable_group_keys,
     )
     raw_tools = apply_tool_runtime_config(agent_id=agent_id, tools=raw_tools, runtime_config=runtime_config)
     dependencies = _build_dependencies(
@@ -106,14 +111,16 @@ def build_pydantic_tools(
         work_scope_mode=work_scope_mode,
         allowed_project_ids=allowed_project_ids,
         focus_version=focus_version,
-        unavailable_group_keys=unavailable_group_keys,
+        unavailable_group_keys=effective_unavailable_group_keys,
         member_delegation_executor=member_delegation_executor,
         image_generation_config_id=image_generation_config_id,
         member_run_id=member_run_id,
+        write_fence=write_fence,
     )
     return [
         _wrap_platform_tool(
             tool_item,
+            session_factory=session_factory,
             image_generation_model=image_generation_model if getattr(tool_item, "name", None) == "generate_image" else None,
             allow_page_screenshot=agent_id == AGENT_COORDINATOR_AGENT_ID,
         )
@@ -136,6 +143,7 @@ def _build_dependencies(
     member_delegation_executor: Any | None = None,
     image_generation_config_id: int | None = None,
     member_run_id: str | None = None,
+    write_fence: AgentRunWriteFence | None = None,
 ) -> dict[str, Any]:
     """生成平台工具上下文校验需要的 dependencies 字典。"""
 
@@ -189,6 +197,8 @@ def _build_dependencies(
         dependencies["member_run_id"] = member_run_id
     if member_delegation_executor is not None:
         dependencies["member_delegation_executor"] = member_delegation_executor
+    if write_fence is not None:
+        dependencies["agent_run_write_fence"] = write_fence
     dependencies["tool_auth_token"] = token
     return dependencies
 
@@ -196,6 +206,7 @@ def _build_dependencies(
 def _wrap_platform_tool(
     tool_item: Any,
     *,
+    session_factory: async_sessionmaker[AsyncSession] | None = None,
     image_generation_model: ImageModelSpec | None = None,
     allow_page_screenshot: bool = False,
 ) -> Tool[AgentToolDeps]:
@@ -223,10 +234,19 @@ def _wrap_platform_tool(
             },
         )
         try:
-            result = entrypoint(shim_context, **kwargs)
-            if inspect.isawaitable(result):
-                result = await result
-            return _safe_tool_result(result)
+            write_fence = ctx.deps.dependencies.get("agent_run_write_fence")
+            active_fence = write_fence if isinstance(write_fence, AgentRunWriteFence) else None
+            with agent_run_write_fence_scope(active_fence):
+                if active_fence is not None:
+                    if session_factory is None:
+                        raise RuntimeError("受围栏保护的工具缺少数据库会话工厂。")
+                    async with session_factory() as fence_session:
+                        await active_fence.ensure_owned(fence_session, now=datetime.now(tz=UTC))
+                        await fence_session.rollback()
+                result = entrypoint(shim_context, **kwargs)
+                if inspect.isawaitable(result):
+                    result = await result
+                return _safe_tool_result(result)
         except AppException as exc:
             if not _is_recoverable_tool_exception(exc):
                 raise

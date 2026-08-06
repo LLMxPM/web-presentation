@@ -33,6 +33,7 @@ from app.ai.pydantic_model_resolver import PydanticLlmModelResolver
 from app.ai.pydantic_tools import build_pydantic_tools
 from app.ai.visual_tool_runtime import resolve_visual_tool_runtime
 from app.ai.run_errors import build_agent_error_log_extra, normalize_agent_run_exception
+from app.ai.run_write_fence import AgentRunWriteFence, AgentRunWriteFenceLost, agent_run_write_fence_scope
 from app.core.exceptions import AppException
 from app.models.ai_agent_runtime import AiAgentMemberRun, AiAgentRun, AiAgentToolCall
 from app.schemas.agent import AgentPendingRequirement, AgentRunEvent, AgentScopeContext
@@ -93,6 +94,7 @@ class MemberDelegationExecutor:
         runtime_context: AgentRuntimeContext,
         parent_session_id: str,
         parent_run_id: str,
+        write_fence: AgentRunWriteFence | None = None,
         allowed_member_ids: tuple[str, ...] = tuple(sorted(_MEMBER_AGENT_IDS)),
     ) -> None:
         """保存父 run 与当前用户上下文，供委派工具运行时使用。"""
@@ -103,6 +105,7 @@ class MemberDelegationExecutor:
         self._runtime_context = _workspace_member_runtime_context(runtime_context)
         self._parent_session_id = parent_session_id
         self._parent_run_id = parent_run_id
+        self._write_fence = write_fence
         self._allowed_member_ids = frozenset(allowed_member_ids)
 
     async def delegate_task_to_self(
@@ -117,8 +120,9 @@ class MemberDelegationExecutor:
     ) -> dict[str, Any]:
         """创建单个成员 run；成员 HITL 不暂停父 run，而是返回失败结果。"""
 
-        try:
-            result = await self._delegate_one(
+        with agent_run_write_fence_scope(self._write_fence):
+            try:
+                result = await self._delegate_one(
                 member_id=member_id,
                 task=task,
                 handoff_context=handoff_context,
@@ -131,10 +135,12 @@ class MemberDelegationExecutor:
                     "handoff_context": handoff_context,
                     "expected_output": expected_output,
                 },
-                completed_results=[],
-            )
-        except MemberDelegationPaused as exc:
-            result = await self._fail_paused_member_delegation(exc.requirement)
+                    completed_results=[],
+                )
+            except MemberDelegationPaused as exc:
+                if exc.requirement.kind == "external_job":
+                    raise
+                result = await self._fail_paused_member_delegation(exc.requirement)
         return result.to_payload()
 
     async def continue_after_member_requirement(
@@ -148,10 +154,16 @@ class MemberDelegationExecutor:
         tool_execution = requirement_payload.get("tool_execution")
         if not isinstance(tool_execution, dict):
             raise AppException(status_code=409, code="AI_MEMBER_REQUIREMENT_INVALID", detail="成员待处理动作缺少工具执行上下文。")
-        member_result = await self._continue_member_run(
-            requirement_payload=requirement_payload,
-            deferred_tool_results=deferred_tool_results,
-        )
+        with agent_run_write_fence_scope(self._write_fence):
+            try:
+                member_result = await self._continue_member_run(
+                    requirement_payload=requirement_payload,
+                    deferred_tool_results=deferred_tool_results,
+                )
+            except MemberDelegationPaused as exc:
+                if exc.requirement.kind == "external_job":
+                    raise
+                member_result = await self._fail_paused_member_delegation(exc.requirement)
         return member_result.to_payload()
 
     async def _fail_paused_member_delegation(self, requirement: AgentPendingRequirement) -> MemberDelegationResult:
@@ -187,6 +199,7 @@ class MemberDelegationExecutor:
                 runtime_context=self._runtime_context,
                 parent_run=parent_run,
                 member_run=member_run,
+                write_fence=self._write_fence,
             )
             return await runner._mark_failed_result(
                 code=_MEMBER_HITL_SKIPPED_CODE,
@@ -245,6 +258,7 @@ class MemberDelegationExecutor:
                 runtime_context=self._runtime_context,
                 parent_run=parent_run,
                 member_run=member_run,
+                write_fence=self._write_fence,
             )
             return await runner.run(message=input_prompt)
 
@@ -272,6 +286,7 @@ class MemberDelegationExecutor:
                 runtime_context=self._runtime_context,
                 parent_run=parent_run,
                 member_run=member_run,
+                write_fence=self._write_fence,
             )
             await runner._raise_if_parent_cancelled()
             member_run.status = "running"
@@ -360,6 +375,7 @@ class MemberDelegationExecutor:
             runtime_context=self._runtime_context,
             parent_run=parent_run,
             member_run=member_run,
+            write_fence=self._write_fence,
         ).append_member_event("run.started", data={"input_prompt": input_prompt})
         return member_run
 
@@ -377,6 +393,7 @@ class _MemberAgentRunner:
         runtime_context: AgentRuntimeContext,
         parent_run: AiAgentRun,
         member_run: AiAgentMemberRun,
+        write_fence: AgentRunWriteFence | None = None,
     ) -> None:
         """保存成员运行需要的数据库、用户和业务范围。"""
 
@@ -391,7 +408,8 @@ class _MemberAgentRunner:
         self._parent_session_id = parent_run.session_id
         self._member_run_id = member_run.member_run_id
         self._member_agent_id = member_run.agent_id
-        self._store = PlatformAgentRuntimeStore(session, user_id=current.user.id)
+        self._write_fence = write_fence
+        self._store = PlatformAgentRuntimeStore(session, user_id=current.user.id, write_fence=write_fence)
         self._model_resolver = PydanticLlmModelResolver()
 
     async def run(
@@ -463,6 +481,7 @@ class _MemberAgentRunner:
                 image_generation_model=image_generation_model,
                 image_generation_config_id=image_generation_config_id,
                 member_run_id=self._member_run.member_run_id,
+                write_fence=self._write_fence,
             )
             agent = Agent(
                 self._model_resolver.resolve_model(llm_config),
@@ -568,6 +587,9 @@ class _MemberAgentRunner:
             )
         except MemberDelegationPaused:
             raise
+        except AgentRunWriteFenceLost:
+            await self._session.rollback()
+            raise
         except AppException as exc:
             if exc.code == "AI_RUN_CANCELLED":
                 raise
@@ -626,7 +648,7 @@ class _MemberAgentRunner:
             raise RuntimeError(f"Parent agent run no longer exists: {self._parent_run_id}")
         member_run = await self._session.get(AiAgentMemberRun, self._member_run_id, populate_existing=True)
         self._parent_run = parent_run
-        self._store = PlatformAgentRuntimeStore(self._session, user_id=self._current.user.id)
+        self._store = PlatformAgentRuntimeStore(self._session, user_id=self._current.user.id, write_fence=self._write_fence)
         if member_run is None:
             if require_member:
                 raise RuntimeError(f"Member agent run no longer exists: {self._member_run_id}")
@@ -822,16 +844,36 @@ def _member_requirement_from_deferred(
     args = _tool_args_as_dict(getattr(call, "args", None) if call is not None else None)
     metadata = _member_deferred_metadata(requests, tool_call_id)
     if metadata.get("kind") in {"page_mutation", "image_generation"}:
-        if requests.approvals or len(requests.calls or []) != 1:
+        external_calls = list(requests.calls or [])
+        if requests.approvals or any(
+            _member_deferred_metadata(requests, str(getattr(item, "tool_call_id", "") or "")).get("kind")
+            not in {"page_mutation", "image_generation"}
+            for item in external_calls
+        ):
             raise AppException(
                 status_code=422,
                 code="AI_EXTERNAL_JOB_MIXED_DEFERRED_CALLS",
                 detail="成员持久化外部任务不能与用户确认类 deferred 工具混合调用，请分两轮执行。",
             )
         parent_input = member_run.input_payload_json if isinstance(member_run.input_payload_json, dict) else {}
-        job_id = str(metadata.get("job_id") or "")
+        tool_calls = [
+            {
+                "tool_call_id": str(getattr(item, "tool_call_id", "") or ""),
+                "tool_name": str(getattr(item, "tool_name", "") or ""),
+                "tool_args": _tool_args_as_dict(getattr(item, "args", None)),
+                "metadata": _member_deferred_metadata(requests, str(getattr(item, "tool_call_id", "") or "")),
+            }
+            for item in external_calls
+        ]
+        batch_ids = list(dict.fromkeys(
+            str(item["metadata"].get("batch_id") or "") for item in tool_calls if str(item["metadata"].get("batch_id") or "")
+        ))
+        job_ids = list(dict.fromkeys(
+            str(item["metadata"].get("job_id") or "") for item in tool_calls if str(item["metadata"].get("job_id") or "")
+        ))
+        external_job_kinds = list(dict.fromkeys(str(item["metadata"].get("kind") or "") for item in tool_calls))
         return AgentPendingRequirement(
-            id=f"requirement-{job_id or member_run.member_run_id}",
+            id=f"requirement-{batch_ids[0] if batch_ids else job_ids[0] if job_ids else member_run.member_run_id}",
             kind="external_job",
             run_id=parent_run.run_id,
             session_id=parent_run.session_id,
@@ -843,14 +885,10 @@ def _member_requirement_from_deferred(
                 "tool_call_id": tool_call_id,
                 "tool_name": tool_name,
                 "tool_args": args,
-                "tool_calls": [{
-                    "tool_call_id": tool_call_id,
-                    "tool_name": tool_name,
-                    "tool_args": args,
-                    "metadata": metadata,
-                }],
-                "job_ids": [job_id] if job_id else [],
-                "external_job_kinds": [str(metadata.get("kind") or "")],
+                "tool_calls": tool_calls,
+                "batch_ids": batch_ids,
+                "job_ids": job_ids,
+                "external_job_kinds": external_job_kinds,
                 "requires_user_input": False,
                 "member_tool_call_id": tool_call_id,
                 "member_tool_name": tool_name,
@@ -860,7 +898,7 @@ def _member_requirement_from_deferred(
                 "parent_delegate_tool_args": parent_input.get("parent_delegate_tool_args") or {},
                 "deferred_metadata": requests.metadata,
             },
-            note="内容助手子运行正在后台处理图片任务。",
+            note=f"内容助手子运行正在后台处理 {len(tool_calls)} 个外部任务。",
         )
     feedback_schema = _feedback_schema_from_args(args) if tool_name == "ask_user" else []
     kind = "user_feedback" if tool_name == "ask_user" else "confirmation"

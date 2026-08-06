@@ -656,9 +656,9 @@ async def _continue_claimed_batch(
             deferred_results = DeferredToolResults()
             for job in jobs:
                 if job.status == "succeeded":
-                    deferred_results.calls[job.tool_call_id] = job.result_json
+                    deferred_results.calls[job.deferred_tool_call_id] = job.result_json
                 else:
-                    deferred_results.calls[job.tool_call_id] = recoverable_tool_error_result(
+                    deferred_results.calls[job.deferred_tool_call_id] = recoverable_tool_error_result(
                         code=job.error_code or "AI_PAGE_MUTATION_FAILED",
                         message=job.error_message or "页面变更任务执行失败。",
                         status_code=503,

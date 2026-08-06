@@ -14,12 +14,30 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 
+from app.ai.run_write_fence import AgentRunWriteFenceLost, current_agent_run_write_fence
 from app.core.config import get_settings
+from app.core.time_utils import utc_now
 
 logger = logging.getLogger(__name__)
 
 _engine: AsyncEngine | None = None
 _session_factory: async_sessionmaker[AsyncSession] | None = None
+
+
+class AgentWriteGuardedAsyncSession(AsyncSession):
+    """在 Agent 后台续跑上下文中为每次数据库提交自动校验写围栏。"""
+
+    async def commit(self) -> None:
+        """提交前在同一事务锁定围栏，失去租约时回滚全部业务写入。"""
+
+        write_fence = current_agent_run_write_fence()
+        if write_fence is not None:
+            try:
+                await write_fence.ensure_owned(self, now=utc_now())
+            except AgentRunWriteFenceLost:
+                await self.rollback()
+                raise
+        await super().commit()
 
 
 def get_engine() -> AsyncEngine:
@@ -48,6 +66,7 @@ def get_session_factory() -> async_sessionmaker[AsyncSession]:
     if _session_factory is None:
         _session_factory = async_sessionmaker(
             bind=get_engine(),
+            class_=AgentWriteGuardedAsyncSession,
             expire_on_commit=False,
             autoflush=False,
         )

@@ -22,7 +22,7 @@ from app.ai.agent.runtime_context import AgentRuntimeContext
 from app.ai.message_history import trim_unprocessed_tool_call_history
 from app.ai.member_prompts import build_member_prompt_from_payload
 from app.ai.run_event_writer import allocate_run_event_index, is_sqlite_lock_error
-from app.ai.run_write_fence import PageMutationContinuationWriteFence
+from app.ai.run_write_fence import AgentRunWriteFence
 from app.ai.tool_arguments import parse_tool_arguments
 from app.models.ai_agent_attachment import AiAgentImageAttachment
 from app.models.ai_agent_runtime import (
@@ -85,7 +85,7 @@ class PlatformAgentRuntimeStore:
         session: AsyncSession,
         *,
         user_id: int,
-        write_fence: PageMutationContinuationWriteFence | None = None,
+        write_fence: AgentRunWriteFence | None = None,
     ) -> None:
         """保存数据库会话、用户和可选后台续跑写入围栏。"""
 

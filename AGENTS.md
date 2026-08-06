@@ -84,6 +84,8 @@ Editor 和 Backend 只公开 `agent-coordinator` 一个内容助手，不再登�
 
 页面创建与结构化编辑属于重资源写工具：必须通过 `ai_page_mutation_jobs` 持久化队列执行，不能在 Pydantic tool 调用中直接并发运行 Runtime/Chromium。页面工具的 deferred result 由后台 Batch 协调器自动恢复；修改该流程时必须同时检查租约、取消、页面版本复核、SSE `waiting_external` 状态和自动续跑测试。截图任务与页面渲染诊断共享 Chromium 池，任何新增浏览器调用都必须接入该池，不能自行启动无上限的浏览器实例。
 
+后台 Batch 自动续跑必须把 `AgentRunWriteFence` 传播到 Pydantic 工具、成员委派、独立 Session 和后续持久化任务入队；任何续跑期间产生的数据库提交都必须在同一事务内复核围栏。动态工具只有在对应运行时执行器已经装配时才能向模型披露。成员页面任务必须分别保存命名空间工具调用 ID 与 Pydantic deferred 原始调用 ID，避免事件投影和结果回灌互相污染。
+
 ### editor/
 
 Editor 是创作工作台，负责登录、工作空间、项目、页面、组件、资源、主题、样式、AI 侧边栏、账户 AI 设置、预览 iframe 和构建入口。

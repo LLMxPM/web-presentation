@@ -36,7 +36,7 @@ from app.ai.platform_runtime import (
 from app.ai.pydantic_model_resolver import PydanticLlmModelResolver
 from app.ai.pydantic_runner import PydanticAgentRunner
 from app.ai.pydantic_tools import build_pydantic_tools
-from app.ai.run_write_fence import PageMutationContinuationWriteFence
+from app.ai.run_write_fence import AgentRunWriteFence, AgentRunWriteFenceLost, PageMutationContinuationWriteFence
 from app.ai.runtime_context_builder import build_agent_runtime_context
 from app.ai.tool_specs import (
     AGENT_COORDINATOR_AGENT_ID,
@@ -905,18 +905,23 @@ class AgentSessionFacade:
             stored_tool_execution = {}
             if isinstance(requirement.payload_json, dict) and isinstance(requirement.payload_json.get("tool_execution"), dict):
                 stored_tool_execution = dict(requirement.payload_json["tool_execution"])
-            deferred_call_id = str(
-                stored_tool_execution.get("member_tool_call_id")
-                or requirement.tool_call_id
-                or ""
-            )
-            if deferred_call_id not in deferred_results.calls:
+            stored_calls = stored_tool_execution.get("tool_calls")
+            deferred_call_ids = [
+                str(item.get("tool_call_id") or "")
+                for item in stored_calls
+                if isinstance(item, dict) and str(item.get("tool_call_id") or "")
+            ] if isinstance(stored_calls, list) else []
+            if not deferred_call_ids:
+                deferred_call_ids = [str(stored_tool_execution.get("member_tool_call_id") or requirement.tool_call_id or "")]
+            missing_call_ids = [item for item in deferred_call_ids if item not in deferred_results.calls]
+            if missing_call_ids:
                 raise AppException(
                     status_code=409,
                     code="AI_EXTERNAL_RESULT_MISSING",
-                    detail="成员外部任务缺少待回灌结果。",
+                    detail=f"成员外部任务缺少待回灌结果：{', '.join(missing_call_ids)}。",
                 )
-            stored_tool_execution["external_result"] = deferred_results.calls[deferred_call_id]
+            stored_tool_execution["external_results"] = {item: deferred_results.calls[item] for item in deferred_call_ids}
+            deferred_call_id = deferred_call_ids[0]
             stream = self._continue_member_active_raw_sse(
                 session_id=run_model.session_id,
                 agent_id=run_model.agent_id,
@@ -929,6 +934,7 @@ class AgentSessionFacade:
                 note=None,
                 feedback_selections=[],
                 runtime_context=runtime_context,
+                write_fence=continuation_fence,
             )
             async for _ in stream:
                 pass
@@ -956,9 +962,14 @@ class AgentSessionFacade:
             rebuilt_history=previous_history,
         )
         agent_config = await self._agent_config_service.get_effective_runtime_config(run_model.agent_id)
-        # 自动续跑持有 Batch 围栏。成员委派会在其它 Session 中写父运行态，当前
-        # 无法把同一围栏原子传播过去，因此本轮不暴露委派工具，避免旁路租约。
-        member_delegation_executor = None
+        member_delegation_executor = self._build_member_delegation_executor(
+            agent_id=run_model.agent_id,
+            scope=scope,
+            runtime_context=runtime_context,
+            session_id=run_model.session_id,
+            run_id=run_model.run_id,
+            write_fence=continuation_fence,
+        )
         visual_unavailable, image_generation_model, image_generation_config_id = (
             await self._resolve_visual_tool_runtime(
                 run_model.agent_id,
@@ -981,6 +992,7 @@ class AgentSessionFacade:
             member_delegation_executor=member_delegation_executor,
             image_generation_model=image_generation_model,
             image_generation_config_id=image_generation_config_id,
+            write_fence=continuation_fence,
         )
         await store.ensure_write_fence()
         if requirement.status == "pending":
@@ -1043,10 +1055,12 @@ class AgentSessionFacade:
         note: str | None,
         feedback_selections: list[dict[str, Any]],
         runtime_context: Any,
+        write_fence: AgentRunWriteFence | None = None,
     ) -> AsyncGenerator[bytes, None]:
         """继续成员 requirement：先恢复成员 run，再回填父级委派工具结果。"""
 
         async def worker() -> None:
+            store = PlatformAgentRuntimeStore(self._session, user_id=self._current.user.id, write_fence=write_fence)
             try:
                 descriptor = self._app.state.ai_registry.get_descriptor(agent_id)
                 llm_config = await self.resolve_run_llm_config(
@@ -1077,12 +1091,17 @@ class AgentSessionFacade:
                     runtime_context=runtime_context,
                     session_id=session_id,
                     run_id=run_model.run_id,
+                    write_fence=write_fence,
                 )
                 if member_delegation_executor is None:
                     raise AppException(status_code=409, code="AI_MEMBER_DELEGATION_UNAVAILABLE", detail="当前运行不能恢复内容助手子运行。")
                 if requirement.kind == "external_job":
                     member_deferred_results = DeferredToolResults()
-                    member_deferred_results.calls[expected_tool_call_id] = merged_tool_execution["external_result"]
+                    external_results = merged_tool_execution.get("external_results")
+                    if isinstance(external_results, dict):
+                        member_deferred_results.calls.update(external_results)
+                    else:
+                        member_deferred_results.calls[expected_tool_call_id] = merged_tool_execution["external_result"]
                 else:
                     member_deferred_results = _build_deferred_results(
                         requirement_tool_call_id=expected_tool_call_id,
@@ -1091,7 +1110,7 @@ class AgentSessionFacade:
                         tool_execution=merged_tool_execution,
                         feedback_selections=feedback_selections,
                     )
-                await self._store.resolve_requirement(
+                await store.resolve_requirement(
                     requirement,
                     payload={
                         "decision": decision,
@@ -1102,7 +1121,7 @@ class AgentSessionFacade:
                 )
                 run_model.status = "running"
                 run_model.pending_requirement_json = None
-                await self._store.append_event(
+                await store.append_event(
                     run_model,
                     AgentRunEvent(event="run.continued", run_id=run_model.run_id, session_id=session_id),
                 )
@@ -1138,6 +1157,7 @@ class AgentSessionFacade:
                     member_delegation_executor=member_delegation_executor,
                     image_generation_model=image_generation_model,
                     image_generation_config_id=image_generation_config_id,
+                    write_fence=write_fence,
                 )
                 current_message_history_json = await _hydrate_continue_message_history_json(
                     session=self._session,
@@ -1155,7 +1175,7 @@ class AgentSessionFacade:
                         "tool_args": parent_delegate_tool_args if isinstance(parent_delegate_tool_args, (dict, str)) else {},
                     },
                 )
-                await PydanticAgentRunner(self._store).run_to_store(
+                await PydanticAgentRunner(store).run_to_store(
                     run_model=run_model,
                     agent_id=agent_id,
                     model=self._model_resolver.resolve_model(llm_config),
@@ -1170,8 +1190,11 @@ class AgentSessionFacade:
                     context_budget=history_budget,
                     context_processor=context_processor,
                 )
+            except AgentRunWriteFenceLost:
+                await self._session.rollback()
+                raise
             except MemberDelegationPaused as exc:
-                await self._store.pause_for_requirement(run_model, requirement=exc.requirement)
+                await store.pause_for_requirement(run_model, requirement=exc.requirement)
             except AppException as exc:
                 logger.warning(
                     "Member delegated run continue stopped by application error",
@@ -1185,7 +1208,7 @@ class AgentSessionFacade:
                         user_error_message=exc.detail,
                     ),
                 )
-                await self._store.mark_terminal(
+                await store.mark_terminal(
                     run_model,
                     status="failed",
                     error_code=exc.code,
@@ -1210,7 +1233,7 @@ class AgentSessionFacade:
                         raw_error_message=failure.raw_message,
                     ),
                 )
-                await self._store.mark_terminal(
+                await store.mark_terminal(
                     run_model,
                     status="failed",
                     error_code=failure.code,
@@ -1231,11 +1254,12 @@ class AgentSessionFacade:
                 await task
             except asyncio.CancelledError:
                 task.cancel()
-                await self._mark_interrupted_run_terminal(
-                    run_model,
-                    fallback_code="AI_RUN_CONTINUE_INTERRUPTED",
-                    fallback_message="智能体继续运行连接中断，运行已停止。",
-                )
+                if write_fence is None:
+                    await self._mark_interrupted_run_terminal(
+                        run_model,
+                        fallback_code="AI_RUN_CONTINUE_INTERRUPTED",
+                        fallback_message="智能体继续运行连接中断，运行已停止。",
+                    )
                 raise
             finally:
                 if not task.done():
@@ -1357,6 +1381,7 @@ class AgentSessionFacade:
         runtime_context: Any,
         session_id: str,
         run_id: str,
+        write_fence: AgentRunWriteFence | None = None,
     ) -> MemberDelegationExecutor | None:
         """为统一内容助手构建同身份子运行委派执行器。"""
 
@@ -1371,6 +1396,7 @@ class AgentSessionFacade:
             runtime_context=runtime_context,
             parent_session_id=session_id,
             parent_run_id=run_id,
+            write_fence=write_fence,
             allowed_member_ids=allowed_member_ids,
         )
 
