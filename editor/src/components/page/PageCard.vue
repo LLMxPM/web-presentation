@@ -2,7 +2,7 @@
 <template>
   <article
     data-testid="page-card"
-    class="group/card relative isolate flex cursor-pointer flex-col overflow-hidden rounded-lg border border-border bg-surface shadow-sm transition-all duration-300 hover:-translate-y-1 hover:border-accent-border hover:shadow-md"
+    class="group/card relative isolate flex cursor-pointer flex-col overflow-hidden rounded-ui-md border border-border bg-surface transition-all duration-200 hover:-translate-y-0.5 hover:border-accent-border hover:shadow-sm"
     :class="selected ? 'border-accent-border ring-2 ring-accent-muted' : ''"
     @click="emit('open', page.id)"
   >

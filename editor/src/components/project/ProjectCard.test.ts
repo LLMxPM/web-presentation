@@ -67,9 +67,10 @@ describe('ProjectCard', () => {
       'https://example.test/page-7.png',
     )
     expect(screen.getByText('1920×1080')).toBeInTheDocument()
-    expect(screen.getByText('路由页面 2 / 5')).toHaveClass('project-card-route-count')
+    expect(screen.getByText('已编排 2 / 5 页')).toBeVisible()
     expect(screen.queryByText('用于季度业务复盘与新品发布。')).not.toBeInTheDocument()
-    expect(screen.queryByText('封面')).not.toBeInTheDocument()
+    expect(screen.queryByText('项目')).not.toBeInTheDocument()
+    expect(screen.getByText('季度发布会').closest('.project-card-identity')).toBeInTheDocument()
 
     await fireEvent.click(screen.getByRole('link', { name: '打开项目：季度发布会' }))
     await fireEvent.click(screen.getByRole('button', { name: '预览项目' }))
@@ -91,6 +92,8 @@ describe('ProjectCard', () => {
     render(ProjectCard, { props: { project } })
 
     expect(screen.getByText('项目暂无页面')).toBeInTheDocument()
+    expect(screen.getByText('进入项目后创建第一个页面')).toBeInTheDocument()
+    expect(screen.getByTestId('project-card-placeholder')).toHaveClass('text-text-disabled')
 
     await fireEvent.click(screen.getByRole('button', { name: '复制项目名称：季度发布会' }))
     await fireEvent.click(screen.getByRole('button', { name: '复制项目编码：PRJ007' }))
@@ -109,6 +112,9 @@ describe('ProjectCard', () => {
     })
 
     expect(screen.getByText('首个页面暂无截图')).toBeInTheDocument()
+    expect(screen.getByText('打开项目后更新封面截图')).toBeInTheDocument()
+    expect(screen.getByTestId('project-card-placeholder')).toHaveClass('text-warning-strong')
+    expect(screen.getByTestId('project-card-placeholder').parentElement).toHaveClass('project-card-preview-missing')
   })
 
   it('项目名称过长时应限制在卡片名称区域内', () => {

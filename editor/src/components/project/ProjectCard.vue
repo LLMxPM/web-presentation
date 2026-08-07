@@ -1,7 +1,36 @@
 <!-- 文件功能：以首个页面截图为主体渲染项目卡片，并提供悬浮信息、快捷操作与身份复制。 -->
 <template>
   <article data-testid="project-card" class="project-card group/card">
-    <div class="project-card-preview">
+    <div class="project-card-identity">
+      <UiButton
+        variant="ghost"
+        size="xs"
+        content-align="start"
+        class="min-w-0 flex-1"
+        :title="`复制项目名称：${project.name}`"
+        :aria-label="`复制项目名称：${project.name}`"
+        @click="copyText(project.name, '项目名称')"
+      >
+        <span class="block min-w-0 max-w-full truncate text-sm font-bold">{{ project.name }}</span>
+      </UiButton>
+      <UiButton
+        variant="ghost"
+        size="xs"
+        class="min-w-0 max-w-36"
+        :title="`复制项目编码：${project.code}`"
+        :aria-label="`复制项目编码：${project.code}`"
+        @click="copyText(project.code, '项目编码')"
+      >
+        <span class="block truncate font-mono text-[10px] font-semibold uppercase tracking-widest">
+          {{ project.code }}
+        </span>
+      </UiButton>
+    </div>
+
+    <div
+      class="project-card-preview"
+      :class="!project.first_page_screenshot_url && project.first_page_title ? 'project-card-preview-missing' : ''"
+    >
       <img
         v-if="project.first_page_screenshot_url"
         :src="project.first_page_screenshot_url"
@@ -9,9 +38,18 @@
         class="h-full w-full object-cover transition-transform duration-300 group-hover/card:scale-[1.015]"
         loading="lazy"
       >
-      <div v-else class="flex h-full w-full flex-col items-center justify-center gap-2 text-text-disabled">
-        <Presentation class="h-7 w-7" />
+      <div
+        v-else
+        data-testid="project-card-placeholder"
+        class="flex h-full w-full flex-col items-center justify-center gap-2"
+        :class="project.first_page_title ? 'text-warning-strong' : 'text-text-disabled'"
+      >
+        <ImageOff v-if="project.first_page_title" class="h-7 w-7" />
+        <Presentation v-else class="h-7 w-7" />
         <span class="text-xs font-semibold">{{ placeholderText }}</span>
+        <span class="text-[10px]" :class="project.first_page_title ? 'text-warning-strong/75' : 'text-text-muted'">
+          {{ project.first_page_title ? '打开项目后更新封面截图' : '进入项目后创建第一个页面' }}
+        </span>
       </div>
 
       <a
@@ -20,17 +58,6 @@
         :aria-label="`打开项目：${project.name}`"
         @click.prevent="emit('open', project.id)"
       />
-
-      <div class="project-card-route-count" aria-hidden="true">
-        路由页面 {{ project.routed_page_count }} / {{ project.total_page_count }}
-      </div>
-
-      <div class="project-card-overlay" aria-hidden="true">
-        <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-text-on-inverse/75">
-          <span>{{ project.page_width }}×{{ project.page_height }}</span>
-          <span>更新于 {{ formatDateTime(project.updated_at) }}</span>
-        </div>
-      </div>
 
       <div class="project-card-actions">
         <UiIconButton
@@ -69,39 +96,24 @@
       </div>
     </div>
 
-    <div class="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2 p-3">
-      <div class="min-w-0">
-        <UiButton
-          variant="ghost"
-          size="xs"
-          content-align="start"
-          class="min-w-0 w-full"
-          :title="`复制项目名称：${project.name}`"
-          :aria-label="`复制项目名称：${project.name}`"
-          @click="copyText(project.name, '项目名称')"
-        >
-          <span class="block min-w-0 max-w-full truncate text-sm font-bold">{{ project.name }}</span>
-        </UiButton>
-      </div>
-      <UiButton
-        variant="ghost"
-        size="xs"
-        class="max-w-36"
-        :title="`复制项目编码：${project.code}`"
-        :aria-label="`复制项目编码：${project.code}`"
-        @click="copyText(project.code, '项目编码')"
-      >
-        <span class="truncate font-mono text-[10px] font-semibold uppercase tracking-widest text-text-disabled">
-          {{ project.code }}
+    <div class="project-card-summary">
+      <div class="project-card-meta" aria-label="项目概览">
+        <span class="project-card-meta-primary">
+          <RouteIcon class="h-3 w-3" />
+          已编排 {{ project.routed_page_count }} / {{ project.total_page_count }} 页
         </span>
-      </UiButton>
+        <span>{{ project.page_width }}×{{ project.page_height }}</span>
+        <span class="ml-auto min-w-0 truncate" :title="`更新于 ${formatDateTime(project.updated_at)}`">
+          {{ formatDateTime(project.updated_at) }}
+        </span>
+      </div>
     </div>
   </article>
 </template>
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import { Archive, Download, Play, Presentation } from '@lucide/vue'
+import { Archive, Download, ImageOff, Play, Presentation, Route as RouteIcon } from '@lucide/vue'
 
 import { UiButton, UiIconButton } from '@/components/ui'
 import type { ProjectItem } from '@/types/api'
@@ -152,9 +164,9 @@ async function copyText(value: string, label: string): Promise<void> {
   position: relative;
   isolation: isolate;
   overflow: hidden;
-  border: 1px solid rgb(var(--ui-border));
+  border: 1px solid rgb(var(--ui-accent-border));
   border-radius: var(--ui-radius-lg);
-  background: rgb(var(--ui-surface));
+  background: rgb(var(--ui-surface-muted));
   box-shadow: 0 1px 2px rgb(15 23 42 / 0.04);
   transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
 }
@@ -168,42 +180,28 @@ async function copyText(value: string, label: string): Promise<void> {
 
 .project-card-preview {
   position: relative;
+  margin: 0.5rem;
   aspect-ratio: 2 / 1;
   overflow: hidden;
+  border: 1px solid rgb(var(--ui-border-muted));
+  border-radius: var(--ui-radius-md);
   background: rgb(var(--ui-surface-muted));
 }
 
-.project-card-overlay {
-  pointer-events: none;
-  position: absolute;
-  inset: 0;
-  z-index: 20;
-  display: flex;
-  align-items: flex-end;
-  padding: 3rem 0.75rem 0.75rem;
-  background: linear-gradient(to top, rgb(var(--ui-overlay) / 0.92), rgb(var(--ui-overlay) / 0.08) 72%);
-  opacity: 0;
-  transition: opacity 0.2s ease;
+.project-card-preview-missing {
+  border-color: rgb(var(--ui-warning-border));
+  background: rgb(var(--ui-warning-muted));
 }
 
-.project-card-route-count {
-  pointer-events: none;
-  position: absolute;
-  top: 0.75rem;
-  left: 0.75rem;
-  z-index: 30;
-  border-radius: 9999px;
-  border: 1px solid rgb(var(--ui-border-strong) / 0.9);
-  background: rgb(var(--ui-surface) / 0.96);
-  padding: 0.25rem 0.5rem;
-  color: rgb(var(--ui-text));
-  font-size: 0.75rem;
-  font-weight: 600;
-  line-height: 1rem;
-  box-shadow: 0 2px 6px rgb(15 23 42 / 0.2);
-  opacity: 0;
-  transform: translateY(-0.25rem);
-  transition: opacity 0.2s ease, transform 0.2s ease;
+.project-card-identity {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  min-width: 0;
+  border-bottom: 1px solid rgb(var(--ui-accent-border));
+  background: rgb(var(--ui-accent-muted));
+  padding: 0.375rem 0.5rem;
+  color: rgb(var(--ui-accent-hover));
 }
 
 .project-card-actions {
@@ -218,10 +216,6 @@ async function copyText(value: string, label: string): Promise<void> {
   transition: opacity 0.2s ease, transform 0.2s ease;
 }
 
-.project-card:hover .project-card-overlay,
-.project-card:focus-within .project-card-overlay,
-.project-card:hover .project-card-route-count,
-.project-card:focus-within .project-card-route-count,
 .project-card:hover .project-card-actions,
 .project-card:focus-within .project-card-actions {
   opacity: 1;
@@ -232,8 +226,28 @@ async function copyText(value: string, label: string): Promise<void> {
   transform: translateY(0);
 }
 
-.project-card:hover .project-card-route-count,
-.project-card:focus-within .project-card-route-count {
-  transform: translateY(0);
+.project-card-summary {
+  padding: 0.625rem 0.75rem;
+  border-top: 1px solid rgb(var(--ui-accent-border));
+  background: rgb(var(--ui-surface));
+}
+
+.project-card-meta {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.75rem;
+  color: rgb(var(--ui-text-muted));
+  font-size: 0.625rem;
+  line-height: 1rem;
+}
+
+.project-card-meta-primary {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 0.25rem;
+  color: rgb(var(--ui-text-secondary));
+  font-weight: 700;
 }
 </style>
