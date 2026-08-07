@@ -218,7 +218,7 @@ Backend 内嵌基于 Pydantic AI 的智能体运行入口。Editor 通过 `/api/
 当前工具按入口分组装配：
 
 - 所有智能体：内置不可关闭的 `ask_user`，用于一次提出一个或多个结构化单选问题；Editor 在输入区覆盖式展示，支持逐题回答、前后切换、预设选项或自定义回答，不暴露 `get_user_input` 自由字段工具
-- `agent-coordinator`：按用户工具配置启用分层披露后的通用查询、创建、更新、归档和普通动作工具；项目元数据、展示配置、样式快照应用、路由树与构建资源均由 `update_entity` 的判别 action 承载，主题 key 创建后不可修改；组件/资源维护能力通过成员工具执行，成员工具事件会带 `member_agent_id`、`member_agent_name`、`member_run_id` 供 Editor 展示来源
+- `agent-coordinator`：按用户工具配置启用分层披露后的通用查询、创建、更新、校验、归档和生命周期命令工具；创建按 `new/copy/upload` 区分来源，检查与差异预览不落库，`execute_action` 当前只开放组件发布；项目元数据、展示配置、样式快照应用、路由树与构建资源均由 `update_entity` 的判别 action 承载，主题 key 创建后不可修改
 - `component-manager`：`list_components`、`get_component_detail`、`list_component_versions`、`get_component_dependencies`、`list_runtime_kit_capabilities`、`get_runtime_kit_capability`、`list_resource_assets`、`get_resource_asset_content`、`list_resource_tags`、`check_component_code`、`create_component`、`apply_component_edits`、`update_component_metadata`、`publish_component`、`delete_component`
 - `resource-manager`：`list_resource_assets`、`get_resource_asset_content`、`list_resource_tags`、`create_resource_asset`、`preview_resource_content_diff`、`apply_resource_content_diff`、`update_resource_asset_metadata`、`copy_resource_asset`、`archive_resource_asset`
 

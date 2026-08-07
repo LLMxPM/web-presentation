@@ -52,12 +52,15 @@ def normalize_page_mutation_result(
     if result.get("success") is False:
         return result
     if tool_name == "create_entity" and operation == "create_page":
+        created_page_id = result.get("page_id")
         return build_mutation_envelope(
             resource_type="page",
             operation="create",
             message=str(result.get("message") or "页面已创建。"),
             mutation_kind="project-pages",
             data=result,
+            target=None if created_page_id is None else {"id": int(created_page_id), "resource_type": "page"},
+            effect="create",
         )
     if tool_name == "update_entity" and operation == "apply_page_edits":
         target = None if page_id is None else {"id": page_id, "resource_type": "page"}
@@ -82,7 +85,13 @@ def _normalize_create_arguments(tool_name: str, arguments: dict[str, Any]) -> di
         raise _invalid_arguments(f"页面创建任务不支持原始工具：{tool_name or 'unknown'}。")
     if str(arguments.get("resource_type") or "") != "page":
         raise _invalid_arguments("create_entity 页面任务的 resource_type 必须为 page。")
-    return _required_payload(arguments, tool_name=tool_name)
+    if str(arguments.get("mode") or "") != "new":
+        raise _invalid_arguments("create_entity 页面持久化任务的 mode 必须为 new。")
+    payload = _required_payload(arguments, tool_name=tool_name)
+    if "content" not in payload:
+        raise _invalid_arguments("create_entity 页面任务缺少 content。")
+    payload["page_content"] = payload.pop("content")
+    return payload
 
 
 def _normalize_apply_arguments(tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:

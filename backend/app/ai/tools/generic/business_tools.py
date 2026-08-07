@@ -19,6 +19,7 @@ from app.ai.tools.generic.models import (
     EntityArchiveArguments,
     build_mutation_envelope,
     build_query_envelope,
+    build_validation_envelope,
 )
 from app.ai.tools.generic.operation_models import (
     ThemeCreatePayload,
@@ -32,7 +33,7 @@ from app.ai.tools.resource import build_resource_manager_tools
 from app.ai.tools.shared import resolve_tool_context
 from app.ai.tools.workspace.assets import build_list_workspace_font_assets_tool
 from app.core.exceptions import AppException
-from app.models.enums import RecordStatus
+from app.models.enums import AssetType, RecordStatus
 from app.schemas.common import ListQuery
 from app.schemas.page import PageCopyToProjectRequest, PageListQuery
 from app.schemas.project import ProjectCreateRequest, ProjectUpdateRequest
@@ -40,9 +41,11 @@ from app.schemas.presentation_style import ProjectPatchConfiguration, ProjectSty
 from app.schemas.theme import WorkspaceThemeCreateRequest, WorkspaceThemeUpdateRequest
 from app.schemas.workspace_style import WorkspaceStyleCreateRequest, WorkspaceStyleUpdateRequest
 from app.services.page_service import PageService
+from app.services.asset_service import AssetService
 from app.services.project_service import ProjectService
 from app.services.suggested_component_service import SuggestedComponentService
 from app.services.workspace_style_service import WorkspaceStyleService
+from app.services.workspace_component_service import WorkspaceComponentService
 from app.services.workspace_theme_service import WorkspaceThemeService
 from app.services.agent_work_scope_service import project_is_in_work_scope
 
@@ -117,10 +120,10 @@ def build_generic_business_tools(session_factory: async_sessionmaker[AsyncSessio
     async def get_entity(
         run_context: AgentToolContext,
         resource_type: Annotated[Literal["project", "page", "component", "asset", "theme", "style", "runtime_kit"], Field(description="要读取的单项对象类型。")],
-        view: Annotated[Literal["detail", "content", "route_tree", "style_config", "versions", "dependencies"], Field(description="单项读取视图，必须与 resource_type 匹配。")],
+        view: Annotated[Literal["detail", "content", "configuration", "route_tree", "versions", "version_content", "dependencies"], Field(description="单项读取视图，必须与 resource_type 匹配。")],
         target_id: Annotated[int | None, Field(gt=0, description="项目、页面、组件、资源、主题或样式 ID；Runtime Kit detail 不使用。")] = None,
         lookup: Annotated[dict[str, Any] | None, Field(description="非 ID 定位参数；目前仅 Runtime Kit detail 使用 name 和可选 kind。")] = None,
-        options: Annotated[dict[str, Any] | None, Field(description="视图选项；例如 style_config 的 include_style_spec_markdown。")] = None,
+        options: Annotated[dict[str, Any] | None, Field(description="视图选项；例如 version_content 的 version_no。")] = None,
     ) -> dict[str, Any]:
         """统一读取单个对象的详情、源码或结构化视图。"""
 
@@ -152,12 +155,12 @@ def build_generic_business_tools(session_factory: async_sessionmaker[AsyncSessio
     async def create_entity(
         run_context: AgentToolContext,
         resource_type: Annotated[Literal["project", "page", "component", "asset", "theme", "style"], Field(description="要创建的业务对象类型。")],
+        mode: Annotated[Literal["new", "copy", "upload"], Field(description="创建来源模式；必须与 resource_type 匹配。")],
         payload: Annotated[dict[str, Any], Field(description="创建参数；字段必须严格符合对应操作手册。")],
     ) -> dict[str, Any]:
         """统一创建业务对象；payload 的真实字段由操作手册说明并由后端 Schema 校验。"""
 
-        result = await _create_entity(session_factory, internal_tools, run_context, resource_type, dict(payload))
-        return _wrap_internal_mutation(resource_type, "create", result)
+        return await _create_entity(session_factory, internal_tools, run_context, resource_type, mode, dict(payload))
 
     @agent_tool(show_result=False, sequential=True)
     async def update_entity(
@@ -221,14 +224,34 @@ def build_generic_business_tools(session_factory: async_sessionmaker[AsyncSessio
     @agent_tool(show_result=False, sequential=True)
     async def execute_action(
         run_context: AgentToolContext,
-        resource_type: Annotated[Literal["page", "component", "asset", "theme", "style"], Field(description="动作所属业务对象类型。")],
-        action: Annotated[Literal["publish", "check", "copy", "preview_content", "save_upload"], Field(description="已登记的普通 action；必须与 resource_type 组成操作手册支持的组合。")],
-        target_id: Annotated[int | None, Field(gt=0, description="单个目标 ID；save_upload 不使用。")] = None,
+        resource_type: Annotated[Literal["component"], Field(description="生命周期命令所属对象类型。")],
+        action: Annotated[Literal["publish"], Field(description="已登记的生命周期 action。")],
+        target_id: Annotated[int, Field(gt=0, description="要执行生命周期命令的目标 ID。")],
         payload: Annotated[dict[str, Any] | None, Field(description="action 专属参数；必须严格符合操作手册。")] = None,
     ) -> dict[str, Any]:
-        """执行发布、检查、复制、差异预览和上传保存等普通动作。"""
+        """执行改变已有对象业务状态、且不属于字段更新的生命周期命令。"""
 
         return await _execute_action(
+            session_factory,
+            internal_tools,
+            run_context,
+            resource_type=resource_type,
+            action=action,
+            target_id=target_id,
+            payload=dict(payload or {}),
+        )
+
+    @agent_tool(show_result=False)
+    async def validate_entity(
+        run_context: AgentToolContext,
+        resource_type: Annotated[Literal["page", "component", "asset"], Field(description="要校验的业务对象类型。")],
+        action: Annotated[Literal["check", "preview"], Field(description="只读校验动作；必须与 resource_type 匹配。")],
+        target_id: Annotated[int | None, Field(gt=0, description="current、edits 和资源预览使用的目标 ID。")] = None,
+        payload: Annotated[dict[str, Any] | None, Field(description="候选来源或预览参数；必须符合精确操作手册。")] = None,
+    ) -> dict[str, Any]:
+        """检查候选页面、组件源码或预览资源内容差异，不写入业务数据。"""
+
+        return await _validate_entity(
             session_factory,
             internal_tools,
             run_context,
@@ -245,6 +268,7 @@ def build_generic_business_tools(session_factory: async_sessionmaker[AsyncSessio
         create_entity,
         update_entity,
         archive_entity,
+        validate_entity,
         execute_action,
     ]
     from app.ai.generic_business_tool_schema import project_generic_business_tool_schema
@@ -305,14 +329,20 @@ async def _dispatch_entity_query(
                 _ensure_workspace(item.workspace_id, workspace_id)
                 _ensure_active_status(item.status, "项目")
                 return item.model_dump(mode="json")
-        if action in {"route_tree", "style_config"}:
+            if action == "configuration" and target_id is not None:
+                _ensure_project_in_work_scope(dependencies, target_id)
+                item = await service.get(target_id, user_id=user_id)
+                _ensure_workspace(item.workspace_id, workspace_id)
+                _ensure_active_status(item.status, "项目")
+                components = await SuggestedComponentService(session).list_project_component_items(
+                    target_id,
+                    workspace_id=workspace_id,
+                )
+                return _configuration_payload(item, components)
+        if action == "route_tree":
             project_id = _required_target_id(target_id, "查询项目子资源时必须提供 target_id。")
             context = await _with_project_scope(session_factory, run_context, project_id)
-            tool_name = {
-                "route_tree": "get_project_route_tree",
-                "style_config": "get_project_style_config",
-            }[action]
-            return await _call_internal(tools[tool_name], context, filters)
+            return await _call_internal(tools["get_project_route_tree"], context, filters)
     if resource_type == "page":
         if action == "list":
             if filters.get("project_id") is not None:
@@ -331,19 +361,32 @@ async def _dispatch_entity_query(
                 )
                 return _filter_page_items(result.model_dump(mode="json"), dependencies)
         page_id = _required_target_id(target_id, "查询页面详情时必须提供 target_id。")
-        if action == "detail":
+        if action in {"detail", "versions", "version_content", "dependencies"}:
             async with session_factory() as session:
-                item = await PageService(session).get(page_id, user_id=user_id)
+                service = PageService(session)
+                item = await service.get(page_id, user_id=user_id)
                 _ensure_workspace(item.workspace_id, workspace_id)
                 _ensure_project_in_work_scope(dependencies, item.project_id)
                 _ensure_active_status(item.status, "页面")
-                return item.model_dump(mode="json", exclude={"page_content"})
+                if action == "detail":
+                    return item.model_dump(mode="json", exclude={"page_content"})
+                if action == "versions":
+                    return [entry.model_dump(mode="json") for entry in await service.list_versions(page_id, user_id=user_id)]
+                if action == "version_content":
+                    return (await service.get_version_content(page_id, int(filters["version_no"]), user_id=user_id)).model_dump(mode="json")
+                return (await service.get_current_module_dependencies(page_id, user_id=user_id)).model_dump(mode="json")
         if action == "content":
             context = await _with_page_scope(session_factory, run_context, page_id)
             return await _call_internal(tools["get_page_content"], context, {"page_id": page_id})
     if resource_type == "theme":
         return await _query_themes(session_factory, workspace_id, action, target_id, filters)
     if resource_type == "style":
+        if action == "configuration":
+            style_id = _required_target_id(target_id, "读取样式配置时必须提供 target_id。")
+            async with session_factory() as session:
+                item = await WorkspaceStyleService(session).get(workspace_id, style_id)
+                components = await SuggestedComponentService(session).list_style_component_items(workspace_id, style_id)
+                return _configuration_payload(item, components)
         return await _query_styles(session_factory, workspace_id, action, target_id, filters)
     if resource_type == "component" and action == "list":
         scope = str(filters.pop("scope", "all") or "all")
@@ -357,6 +400,14 @@ async def _dispatch_entity_query(
                     workspace_id=workspace_id,
                 )
                 return _filter_suggested_items(items, filters)
+    if resource_type == "component" and action == "version_content":
+        component_id = _required_target_id(target_id, "读取组件版本内容时必须提供 target_id。")
+        async with session_factory() as session:
+            service = WorkspaceComponentService(session)
+            component = await service.get(component_id, user_id=user_id)
+            _ensure_workspace(component.workspace_id, workspace_id)
+            _ensure_active_status(component.status, "组件")
+            return (await service.get_version_content(component_id, int(filters["version_no"]), user_id=user_id)).model_dump(mode="json")
     query_context = run_context
     if resource_type == "asset" and action == "list" and filters.get("project_id") is not None:
         query_context = await _with_project_scope(session_factory, run_context, int(filters.pop("project_id")))
@@ -375,14 +426,76 @@ async def _create_entity(
     tools: dict[str, PlatformTool],
     run_context: AgentToolContext,
     resource_type: str,
+    mode: str,
     payload: dict[str, Any],
-) -> Any:
+) -> dict[str, Any]:
     """分派创建操作并保证工作空间 ID 来自运行上下文。"""
 
-    payload = _validate_operation_payload(resource_type, "create", None, payload)
+    payload = _validate_operation_payload(resource_type, "create", mode, payload)
     dependencies, claims = await resolve_tool_context(session_factory, run_context, required_scopes=(), required_dependency_fields=("workspace_id",))
     workspace_id = int(dependencies["workspace_id"])
     operator_id = extract_user_id(str(claims.get("sub")))
+    source_id = int(payload.pop("source_id")) if "source_id" in payload else None
+    if mode == "copy" and resource_type == "page":
+        await _with_page_scope(session_factory, run_context, _required_target_id(source_id, "复制页面时必须提供 source_id。"))
+        destination_project_id = int(payload.pop("project_id"))
+        await _require_cross_focus_write_confirmation(session_factory, run_context, destination_project_id, "复制页面")
+        async with session_factory() as session:
+            copied = await PageService(session).copy_to_project(
+                int(source_id),
+                PageCopyToProjectRequest.model_validate({"target_project_id": destination_project_id, **payload}),
+                operator_id,
+            )
+            _ensure_workspace(copied.workspace_id, workspace_id)
+            result = copied.model_dump(mode="json")
+        return _wrap_internal_mutation(resource_type, "create", result, target_id=copied.id, source_id=source_id, effect="create")
+    if mode == "copy" and resource_type in {"theme", "style"}:
+        result = await _copy_theme_or_style(
+            session_factory,
+            run_context,
+            resource_type,
+            _required_target_id(source_id, "复制时必须提供 source_id。"),
+            payload,
+        )
+        return _wrap_internal_mutation(
+            resource_type,
+            "create",
+            result,
+            target_id=_extract_result_target_id(result),
+            source_id=source_id,
+            effect="create",
+        )
+    if mode == "copy" and resource_type == "asset":
+        async with session_factory() as session:
+            source_asset = await AssetService(session)._get_asset_or_raise(
+                workspace_id,
+                _required_target_id(source_id, "复制资源时必须提供 source_id。"),
+            )
+            _ensure_active_status(source_asset.status, "资源")
+        result = await _call_internal(
+            tools["copy_resource_asset"],
+            run_context,
+            {"asset_id": _required_target_id(source_id, "复制资源时必须提供 source_id。"), **payload},
+        )
+        return _wrap_internal_mutation(
+            resource_type,
+            "create",
+            result,
+            target_id=_extract_result_target_id(result),
+            source_id=source_id,
+            effect="create",
+        )
+    if mode == "upload" and resource_type == "asset":
+        result = await _call_internal(tools["save_uploaded_image_as_resource"], run_context, payload)
+        return _wrap_internal_mutation(
+            resource_type,
+            "create",
+            result,
+            target_id=_extract_result_target_id(result),
+            effect="create",
+        )
+    if mode != "new":
+        raise AppException(status_code=400, code="AI_ENTITY_CREATE_UNSUPPORTED", detail="该对象类型不支持指定创建模式。")
     if resource_type == "project":
         if str(dependencies.get("work_scope_mode") or "workspace") == "selected_projects":
             raise AppException(
@@ -390,16 +503,15 @@ async def _create_entity(
                 code="AI_PROJECT_CREATE_OUTSIDE_WORK_SCOPE",
                 detail="显式项目工作集模式下不能创建尚未进入工作集的新项目；请先切换为全部项目。",
             )
-        if "status" in payload and str(payload["status"]) != RecordStatus.ACTIVE.value:
-            raise AppException(
-                status_code=400,
-                code="AI_PROJECT_STATUS_UNSUPPORTED",
-                detail="内容助手创建项目时只能使用 active 状态，不开放项目归档。",
-            )
+        if "build_assets" in payload:
+            build_assets = payload.pop("build_assets")
+            if build_assets is not None:
+                payload["build_extra_assets_json"] = build_assets
         payload["status"] = RecordStatus.ACTIVE.value
         payload["workspace_id"] = workspace_id
         async with session_factory() as session:
-            return (await ProjectService(session).create(ProjectCreateRequest.model_validate(payload), operator_id)).model_dump(mode="json")
+            result = (await ProjectService(session).create(ProjectCreateRequest.model_validate(payload), operator_id)).model_dump(mode="json")
+        return _wrap_internal_mutation(resource_type, "create", result, target_id=int(result["id"]), effect="create")
     if resource_type == "theme":
         safe = ThemeCreatePayload.model_validate(payload)
         async with session_factory() as session:
@@ -408,7 +520,8 @@ async def _create_entity(
                 WorkspaceThemeCreateRequest.model_validate(safe.model_dump()),
                 operator_id,
             )
-            return _theme_payload(created)
+            result = _theme_payload(created)
+        return _wrap_internal_mutation(resource_type, "create", result, target_id=created.id, effect="create")
     if resource_type == "style":
         async with session_factory() as session:
             created = await WorkspaceStyleService(session).create(
@@ -416,15 +529,33 @@ async def _create_entity(
                 WorkspaceStyleCreateRequest.model_validate(payload),
                 operator_id,
             )
-            return created.model_dump(mode="json")
+            result = created.model_dump(mode="json")
+        return _wrap_internal_mutation(resource_type, "create", result, target_id=created.id, effect="create")
     if resource_type == "page":
         project_id = int(payload.pop("project_id", 0) or 0)
         await _require_cross_focus_write_confirmation(session_factory, run_context, project_id, "创建页面")
         context = await _with_project_scope(session_factory, run_context, project_id)
-        return await _call_internal(tools["create_project_page"], context, payload)
+        payload["page_content"] = payload.pop("content")
+        result = await _call_internal(tools["create_project_page"], context, payload)
+        return _wrap_internal_mutation(
+            resource_type,
+            "create",
+            result,
+            target_id=_extract_result_target_id(result),
+            effect="create",
+        )
     tool_name = {"component": "create_component", "asset": "create_resource_asset"}.get(resource_type)
     if tool_name:
-        return await _call_internal(tools[tool_name], run_context, payload)
+        if resource_type == "asset":
+            payload["asset_type"] = AssetType(str(payload["asset_type"]))
+        result = await _call_internal(tools[tool_name], run_context, payload)
+        return _wrap_internal_mutation(
+            resource_type,
+            "create",
+            result,
+            target_id=_extract_result_target_id(result),
+            effect="create",
+        )
     raise AppException(status_code=400, code="AI_ENTITY_CREATE_UNSUPPORTED", detail="该对象类型不支持创建。")
 
 
@@ -453,7 +584,7 @@ async def _update_entity(
             request_payload = {"configuration": ProjectPatchConfiguration(mode="patch", **payload).model_dump(mode="json")}
         elif action == "apply_style":
             request_payload = {
-                "configuration": ProjectStyleConfiguration(mode="style", style_id=int(payload["source_style_id"])).model_dump(mode="json")
+                "configuration": ProjectStyleConfiguration(mode="style", style_id=int(payload["style_id"])).model_dump(mode="json")
             }
         elif action == "build_assets":
             request_payload = {"build_extra_assets_json": payload}
@@ -512,51 +643,68 @@ async def _execute_action(
     target_id: int | None,
     payload: dict[str, Any],
 ) -> dict[str, Any]:
-    """执行普通动作，并统一包装既有工具结果。"""
+    """执行已登记的生命周期命令，并返回 lifecycle mutation。"""
 
     payload = _validate_operation_payload(resource_type, "action", action, payload)
-    tool_name = {
-        ("component", "publish"): "publish_component",
-        ("component", "check"): "check_component_code",
-        ("page", "check"): "check_page_code",
-        ("asset", "copy"): "copy_resource_asset",
-        ("asset", "preview_content"): "preview_resource_content_diff",
-        ("asset", "save_upload"): "save_uploaded_image_as_resource",
-    }.get((resource_type, action))
-    if resource_type == "page" and action == "copy":
-        page_id = _required_target_id(target_id, "复制页面时必须提供 target_id。")
-        await _with_page_scope(session_factory, run_context, page_id)
-        destination_project_id = int(payload.get("target_project_id") or 0)
-        await _require_cross_focus_write_confirmation(session_factory, run_context, destination_project_id, "复制页面")
-        dependencies, claims = await resolve_tool_context(
-            session_factory,
+    if (resource_type, action) != ("component", "publish"):
+        raise AppException(status_code=400, code="AI_ACTION_UNSUPPORTED", detail="该生命周期命令未开放。")
+    component_id = _required_target_id(target_id, "发布组件时必须提供 target_id。")
+    result = await _call_internal(tools["publish_component"], run_context, {"component_id": component_id, **payload})
+    return _wrap_internal_mutation(
+        resource_type,
+        "action",
+        result,
+        action=action,
+        target_id=component_id,
+        effect="lifecycle",
+    )
+
+
+async def _validate_entity(
+    session_factory: async_sessionmaker[AsyncSession],
+    tools: dict[str, PlatformTool],
+    run_context: AgentToolContext,
+    *,
+    resource_type: str,
+    action: str,
+    target_id: int | None,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    """执行不落库校验，并把业务不通过归一化为 data.valid=false。"""
+
+    payload = _validate_operation_payload(resource_type, "validate", action, payload)
+    if resource_type == "asset" and action == "preview":
+        asset_id = _required_target_id(target_id, "预览资源内容差异时必须提供 target_id。")
+        result = await _call_internal(
+            tools["preview_resource_content_diff"],
             run_context,
-            required_scopes=(),
-            required_dependency_fields=("workspace_id",),
+            {"asset_id": asset_id, **payload},
         )
-        operator_id = extract_user_id(str(claims.get("sub")))
-        async with session_factory() as session:
-            copied = await PageService(session).copy_to_project(
-                page_id,
-                PageCopyToProjectRequest.model_validate(payload),
-                operator_id,
-            )
-            _ensure_workspace(copied.workspace_id, int(dependencies["workspace_id"]))
-            result = copied.model_dump(mode="json")
-        return _wrap_internal_mutation("page", "action", result, action=action, target_id=copied.id)
-    if resource_type in {"theme", "style"} and action == "copy":
-        result = await _copy_theme_or_style(session_factory, run_context, resource_type, _required_target_id(target_id, "复制时必须提供 target_id。"), payload)
-        return _wrap_internal_mutation(resource_type, "action", result, action=action, target_id=target_id)
-    if not tool_name:
-        raise AppException(status_code=400, code="AI_ACTION_UNSUPPORTED", detail="该普通动作未开放。")
-    arguments = dict(payload)
+        return build_validation_envelope(resource_type=resource_type, action=action, data=result)
+    if action != "check" or resource_type not in {"page", "component"}:
+        raise AppException(status_code=400, code="AI_ENTITY_VALIDATION_UNSUPPORTED", detail="该校验组合未开放。")
+    mode = str(payload.pop("mode"))
+    project_id = payload.pop("project_id", None)
+    if target_id is not None and project_id is not None:
+        raise AppException(status_code=422, code="AI_VALIDATION_PROJECT_CONFLICT", detail="提供 target_id 时不能再提交 project_id。")
+    if mode in {"current", "edits"} and target_id is None:
+        raise AppException(status_code=422, code="AI_VALIDATION_TARGET_REQUIRED", detail=f"mode={mode} 时必须提供 target_id。")
     context = run_context
+    arguments = dict(payload)
     if target_id is not None:
-        arguments[_target_parameter(resource_type)] = target_id
+        arguments[_target_parameter(resource_type)] = int(target_id)
         if resource_type == "page":
-            context = await _with_page_scope(session_factory, run_context, target_id)
-    result = await _call_internal(tools[tool_name], context, arguments)
-    return _wrap_internal_mutation(resource_type, "action", result, action=action, target_id=target_id)
+            context = await _with_page_scope(session_factory, run_context, int(target_id))
+    elif resource_type == "page":
+        if project_id is None:
+            raise AppException(status_code=422, code="AI_VALIDATION_PROJECT_REQUIRED", detail="无 target_id 的页面完整源码校验必须提供 project_id。")
+        context = await _with_project_scope(session_factory, run_context, int(project_id))
+    result = await _call_internal(
+        tools["check_page_code" if resource_type == "page" else "check_component_code"],
+        context,
+        arguments,
+    )
+    return build_validation_envelope(resource_type=resource_type, action=action, data=result)
 
 
 def _validate_operation_payload(
@@ -577,7 +725,7 @@ def _validate_arguments_model(model: type[Any], arguments: dict[str, Any]) -> di
     """把 Pydantic 参数错误转换为模型可恢复的统一业务错误。"""
 
     try:
-        return model.model_validate(arguments).model_dump(mode="json", exclude_unset=True)
+        return model.model_validate(arguments).model_dump(mode="python", exclude_unset=True)
     except ValidationError as exc:
         issues = [
             f"{'.'.join(str(part) for part in item['loc'])}: {item['msg']}"
@@ -864,6 +1012,7 @@ def _query_tool_name(resource_type: str, action: str) -> str | None:
         ("component", "versions"): "list_component_versions",
         ("component", "dependencies"): "get_component_dependencies",
         ("asset", "list"): "list_resource_assets",
+        ("asset", "detail"): "get_resource_asset_detail",
         ("asset", "content"): "get_resource_asset_content",
         ("asset", "tags"): "list_resource_tags",
         ("runtime_kit", "list"): "list_runtime_kit_capabilities",
@@ -878,6 +1027,26 @@ def _target_parameter(resource_type: str) -> str:
     return {"component": "component_id", "asset": "asset_id", "page": "page_id"}.get(resource_type, "target_id")
 
 
+def _configuration_payload(item: Any, components: list[Any]) -> dict[str, Any]:
+    """把项目或样式的扁平存储响应转换为共享配置快照。"""
+
+    return {
+        "presentation": {
+            "page_width": item.page_width,
+            "page_height": item.page_height,
+            "base_font_size": item.base_font_size,
+            "icon_default_stroke_width": item.icon_default_stroke_width,
+            "show_pdf_export_button": item.show_pdf_export_button,
+            "menu_mode": getattr(item.menu_mode, "value", item.menu_mode),
+            "theme_key": item.theme_key,
+            "style_spec_markdown": item.style_spec_markdown,
+        },
+        "suggested_components": {
+            "component_ids": [int(component.id) for component in components],
+        },
+    }
+
+
 def _wrap_internal_mutation(
     resource_type: str,
     operation: str,
@@ -885,21 +1054,39 @@ def _wrap_internal_mutation(
     *,
     action: str | None = None,
     target_id: int | None = None,
+    source_id: int | None = None,
+    effect: Literal["create", "update", "lifecycle"] = "update",
 ) -> dict[str, Any]:
     """把内部工具结果包装为统一 mutation envelope。"""
 
-    if isinstance(result, dict) and result.get("success") is False:
-        return result
     target = None if target_id is None else {"id": target_id, "resource_type": resource_type}
+    source = None if source_id is None else {"id": source_id, "resource_type": resource_type}
     return build_mutation_envelope(
         resource_type=resource_type,
         operation=operation,
         action=action,
         message=_result_message(result, f"{resource_type} 操作已完成。"),
         target=target,
+        source=source,
         mutation_kind={"page": "project-pages", "asset": "asset"}.get(resource_type, resource_type),
         data=result,
+        effect=effect,
     )
+
+
+def _extract_result_target_id(result: Any) -> int | None:
+    """从内部创建结果的常见形状中提取新对象 ID。"""
+
+    if not isinstance(result, dict):
+        return None
+    for field_name in ("id", "page_id", "component_id", "asset_id"):
+        if result.get(field_name) is not None:
+            return int(result[field_name])
+    for field_name in ("page", "component", "asset", "theme", "style"):
+        nested = result.get(field_name)
+        if isinstance(nested, dict) and nested.get("id") is not None:
+            return int(nested["id"])
+    return None
 
 
 def _result_message(result: Any, fallback: str) -> str:

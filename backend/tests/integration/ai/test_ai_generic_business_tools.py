@@ -8,7 +8,16 @@ from pydantic_ai import ApprovalRequired
 from sqlalchemy import select
 
 from app.ai.agent import AGENT_COORDINATOR_AGENT_ID
-from app.ai.auth_tokens import build_agent_tool_token
+from app.ai.auth_tokens import (
+    CODE_CHECK_TOOL_SCOPES,
+    PAGE_TOOL_READ_SCOPES,
+    PAGE_TOOL_WRITE_SCOPES,
+    PROJECT_TOOL_READ_SCOPES,
+    PROJECT_TOOL_WRITE_SCOPES,
+    RESOURCE_TOOL_READ_SCOPES,
+    RESOURCE_TOOL_WRITE_SCOPES,
+    build_agent_tool_token,
+)
 from app.ai.platform_tools import AgentToolContext
 from app.ai.tools.generic import build_generic_business_tools
 from app.core.exceptions import AppException
@@ -117,22 +126,37 @@ async def test_selected_projects_should_filter_queries_and_hide_archived_pages(a
         work_scope_mode="selected_projects",
         allowed_project_ids=[first_project_id, second_project_id],
     )
+    versions = await tools["get_entity"].entrypoint(approved_context, "page", "versions", second_page_id, None, {})
+    assert versions["data"][0]["version_no"] == 1
+    version_content = await tools["get_entity"].entrypoint(
+        approved_context,
+        "page",
+        "version_content",
+        second_page_id,
+        None,
+        {"version_no": 1},
+    )
+    assert "跨项目页面" in version_content["data"]["content"]
+    dependencies = await tools["get_entity"].entrypoint(approved_context, "page", "dependencies", second_page_id, None, {})
+    assert dependencies["data"]["page_id"] == second_page_id
     await tools["archive_entity"].entrypoint(approved_context, "page", [second_page_id], "暂存")
     archived_list = await tools["list_entities"].entrypoint(approved_context, "page", {"project_id": second_project_id}, "items")
     assert archived_list["data"]["items"] == []
     with pytest.raises(AppException) as archived_error:
         await tools["get_entity"].entrypoint(approved_context, "page", "detail", second_page_id, None, {})
     assert archived_error.value.code == "AI_ENTITY_NOT_FOUND"
+    with pytest.raises(AppException):
+        await tools["get_entity"].entrypoint(approved_context, "page", "versions", second_page_id, None, {})
 
 
-async def test_page_copy_should_use_target_project_id_for_cross_focus_confirmation(authenticated_client: AsyncClient) -> None:
-    """页面复制应按手册字段 target_project_id 识别目标项目并触发跨焦点确认。"""
+async def test_page_copy_create_mode_should_use_project_id_for_cross_focus_confirmation(authenticated_client: AsyncClient) -> None:
+    """页面复制创建模式应按 project_id 识别目标项目并触发跨焦点确认。"""
 
     workspace_id = await _create_workspace(authenticated_client, "页面复制字段契约")
     source_project_id = await _create_project(authenticated_client, workspace_id, "源项目")
     target_project_id = await _create_project(authenticated_client, workspace_id, "目标项目")
     source_page_id = await _create_page(authenticated_client, workspace_id, source_project_id, "待复制页面")
-    execute_action = {item.name: item for item in build_generic_business_tools(get_session_factory())}["execute_action"]
+    create_entity = {item.name: item for item in build_generic_business_tools(get_session_factory())}["create_entity"]
     context = _build_tool_run_context(
         workspace_id,
         approved=False,
@@ -142,15 +166,124 @@ async def test_page_copy_should_use_target_project_id_for_cross_focus_confirmati
     )
 
     with pytest.raises(ApprovalRequired) as error:
-        await execute_action.entrypoint(
+        await create_entity.entrypoint(
             context,
             "page",
             "copy",
-            source_page_id,
-            {"target_project_id": target_project_id},
+            {"source_id": source_page_id, "project_id": target_project_id},
         )
 
     assert error.value.metadata["target"] == {"project_id": target_project_id}
+
+    approved_context = _build_tool_run_context(
+        workspace_id,
+        approved=True,
+        focus_project_id=source_project_id,
+        work_scope_mode="selected_projects",
+        allowed_project_ids=[source_project_id, target_project_id],
+    )
+    copied = await create_entity.entrypoint(
+        approved_context,
+        "page",
+        "copy",
+        {"source_id": source_page_id, "project_id": target_project_id, "route_placement": "root"},
+    )
+    assert copied["effect"] == "create"
+    assert copied["source"] == {"id": source_page_id, "resource_type": "page"}
+    assert copied["target"]["id"] != source_page_id
+    assert copied["data"]["project_id"] == target_project_id
+
+
+async def test_asset_create_detail_and_validation_should_use_stable_envelopes(authenticated_client: AsyncClient) -> None:
+    """文本资源创建、详情读取和差异预览应分别返回 create/read 语义。"""
+
+    workspace_id = await _create_workspace(authenticated_client, "资源创建与校验")
+    tools = {item.name: item for item in build_generic_business_tools(get_session_factory())}
+    context = _build_tool_run_context(workspace_id, approved=True)
+
+    created = await tools["create_entity"].entrypoint(
+        context,
+        "asset",
+        "new",
+        {
+            "asset_type": "chart",
+            "name": "validation_chart",
+            "original_name": "validation_chart.json",
+            "content": '{"value": 1}',
+        },
+    )
+    asset_id = created["target"]["id"]
+    assert created["effect"] == "create"
+
+    detail = await tools["get_entity"].entrypoint(context, "asset", "detail", asset_id, None, {})
+    assert detail["effect"] == "read"
+    assert detail["data"]["id"] == asset_id
+    assert detail["data"]["content_editable"] is True
+    assert detail["data"]["references"]["page_count"] == 0
+
+    preview = await tools["validate_entity"].entrypoint(
+        context,
+        "asset",
+        "preview",
+        asset_id,
+        {"content": '{"value": 2}'},
+    )
+    assert preview["success"] is True
+    assert preview["effect"] == "read"
+    assert preview["mutation"] is None
+    assert preview["data"]["valid"] is True
+
+
+async def test_page_new_mode_should_create_page_and_route_atomically(authenticated_client: AsyncClient, monkeypatch) -> None:
+    """页面 new 模式应接受 content 字段，并在同一事务加入项目路由。"""
+
+    workspace_id = await _create_workspace(authenticated_client, "页面创建路由")
+    project_id = await _create_project(authenticated_client, workspace_id, "路由项目")
+    tools = {item.name: item for item in build_generic_business_tools(get_session_factory())}
+    context = _build_tool_run_context(workspace_id, approved=True, focus_project_id=project_id)
+
+    async def fake_check_page_code(self, **kwargs):  # noqa: ANN001
+        """跳过浏览器检查，聚焦页面与路由事务。"""
+
+        _ = self, kwargs
+        return {"success": True, "status": "passed", "summary": "通过", "diagnostics": []}
+
+    monkeypatch.setattr("app.ai.tools.project.project_pages.CodeCheckService.check_page_code", fake_check_page_code)
+    created = await tools["create_entity"].entrypoint(
+        context,
+        "page",
+        "new",
+        {
+            "project_id": project_id,
+            "title": "原子路由页面",
+            "content": "<template><main>原子路由</main></template>",
+            "route_placement": "root",
+            "route": "atomic-page",
+        },
+    )
+    route_tree = await tools["get_entity"].entrypoint(context, "project", "route_tree", project_id, None, {})
+
+    assert created["effect"] == "create"
+    assert created["target"]["id"] == created["data"]["page_id"]
+    assert any(item["page_id"] == created["target"]["id"] for item in route_tree["data"]["routes"])
+
+
+async def test_project_and_style_configuration_views_should_share_shape(authenticated_client: AsyncClient) -> None:
+    """项目与样式 configuration 视图应返回同构展示配置和建议组件 ID。"""
+
+    workspace_id = await _create_workspace(authenticated_client, "共享配置读取")
+    project_id = await _create_project(authenticated_client, workspace_id, "配置项目")
+    style_id = await _create_style(authenticated_client, workspace_id, "config_style", "配置样式")
+    tools = {item.name: item for item in build_generic_business_tools(get_session_factory())}
+    context = _build_tool_run_context(workspace_id, approved=True)
+
+    project_config = await tools["get_entity"].entrypoint(context, "project", "configuration", project_id, None, {})
+    style_config = await tools["get_entity"].entrypoint(context, "style", "configuration", style_id, None, {})
+
+    assert set(project_config["data"]) == {"presentation", "suggested_components"}
+    assert set(style_config["data"]) == {"presentation", "suggested_components"}
+    assert set(project_config["data"]["presentation"]) == set(style_config["data"]["presentation"])
+    assert project_config["data"]["suggested_components"]["component_ids"] == []
 
 
 async def _create_workspace(client: AsyncClient, name: str) -> int:
@@ -256,7 +389,15 @@ def _build_tool_run_context(
         page_id=None,
         component_id=None,
         source="test",
-        scopes=(),
+        scopes=(
+            *PAGE_TOOL_READ_SCOPES,
+            *PAGE_TOOL_WRITE_SCOPES,
+            *PROJECT_TOOL_READ_SCOPES,
+            *PROJECT_TOOL_WRITE_SCOPES,
+            *RESOURCE_TOOL_READ_SCOPES,
+            *RESOURCE_TOOL_WRITE_SCOPES,
+            *CODE_CHECK_TOOL_SCOPES,
+        ),
         work_scope_mode=work_scope_mode,
         allowed_project_ids=list(allowed_project_ids or []),
     )

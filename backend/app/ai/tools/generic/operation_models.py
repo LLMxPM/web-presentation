@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.ai.tools.shared import SourceEditInput
-from app.models.enums import AssetType, RecordStatus, WorkspaceComponentType
+from app.models.enums import AssetType, WorkspaceComponentType
 from app.schemas.project import ProjectBuildExtraAssetsConfig
 from app.schemas.presentation_style import (
     ProjectCreateConfiguration,
@@ -23,6 +23,20 @@ class OperationArgumentsModel(BaseModel):
     """操作参数基础模型，拒绝手册未声明的额外字段。"""
 
     model_config = ConfigDict(extra="forbid")
+
+
+class NonEmptyPatchModel(OperationArgumentsModel):
+    """更新参数基础模型，拒绝没有任何显式字段的空补丁。"""
+
+    model_config = ConfigDict(extra="forbid", json_schema_extra={"minProperties": 1})
+
+    @model_validator(mode="after")
+    def require_field(self) -> "NonEmptyPatchModel":
+        """确保更新操作至少表达一项真实修改。"""
+
+        if not self.model_fields_set:
+            raise ValueError("至少需要提供一个待修改字段。")
+        return self
 
 
 class EmptyArguments(OperationArgumentsModel):
@@ -45,13 +59,10 @@ class PageListFilters(CommonListFilters):
     project_id: int | None = Field(default=None, ge=1, description="可选项目 ID；必须属于当前工作空间和本轮项目工作集。")
 
 
-class ProjectStyleConfigFilters(OperationArgumentsModel):
-    """项目样式配置查询参数。"""
+class VersionContentOptions(OperationArgumentsModel):
+    """页面或组件指定历史版本内容的定位参数。"""
 
-    include_style_spec_markdown: bool = Field(
-        default=False,
-        description="是否返回可能较长的 Markdown 样式规范全文；仅确需编辑或审阅时设为 true。",
-    )
+    version_no: int = Field(ge=1, description="要读取的历史版本号。")
 
 
 class ComponentListFilters(OperationArgumentsModel):
@@ -112,10 +123,10 @@ class ProjectCreatePayload(OperationArgumentsModel):
     name: str = Field(min_length=1, max_length=128, description="项目名称。")
     description: str | None = Field(default=None, max_length=2000, description="项目用途或内容范围说明。")
     configuration: ProjectCreateConfiguration = Field(default_factory=ProjectDefaultConfiguration, description="default/style/custom 三种初始化来源。")
-    build_extra_assets_json: ProjectBuildExtraAssetsConfig | None = Field(default=None, description="构建时需要额外打包的工作空间资源名称。")
+    build_assets: ProjectBuildExtraAssetsConfig | None = Field(default=None, description="构建时需要额外打包的工作空间资源名称。")
 
 
-class ProjectMetadataPayload(OperationArgumentsModel):
+class ProjectMetadataPayload(NonEmptyPatchModel):
     """修改项目名称与说明。"""
 
     name: str | None = Field(default=None, min_length=1, max_length=128, description="新的项目名称。")
@@ -129,7 +140,7 @@ class ProjectConfigurationPayload(StyleConfigurationPatch):
 class ProjectApplyStylePayload(OperationArgumentsModel):
     """从工作空间样式完整覆盖项目样式快照。"""
 
-    source_style_id: int = Field(gt=0, description="当前工作空间内 active 样式 ID。")
+    style_id: int = Field(gt=0, description="当前工作空间内 active 样式 ID。")
 
 
 class ProjectBuildAssetsPayload(ProjectBuildExtraAssetsConfig):
@@ -141,18 +152,36 @@ class PageCreatePayload(OperationArgumentsModel):
 
     project_id: int = Field(gt=0, description="目标项目 ID；必须属于当前工作空间和本轮项目工作集。")
     title: str = Field(min_length=1, max_length=128, description="页面标题。")
-    page_content: str = Field(min_length=1, description="完整、可编译的 Vue 单文件组件源码。")
+    content: str = Field(min_length=1, description="完整、可编译的 Vue 单文件组件源码。")
     summary: str | None = Field(default=None, max_length=500, description="页面内容摘要。")
     speaker_notes: str | None = Field(default=None, max_length=10000, description="演讲者备注。")
+    route_placement: Literal["none", "root", "group"] = Field(default="none", description="是否同时写入项目路由树。")
+    parent_route_id: int | None = Field(default=None, ge=1, description="放入分组时的目标分组路由 ID。")
+    route: str | None = Field(default=None, min_length=1, max_length=128, description="可选路由片段；不传时由平台生成。")
+
+    @model_validator(mode="after")
+    def validate_route_placement(self) -> "PageCreatePayload":
+        """确保路由位置与父分组参数形成合法组合。"""
+
+        _validate_route_placement(self.route_placement, self.parent_route_id)
+        return self
 
 
-class PageMetadataPayload(OperationArgumentsModel):
+class PageMetadataPayload(NonEmptyPatchModel):
     """页面元数据修改参数。"""
 
     title: str | None = Field(default=None, min_length=1, max_length=128, description="新的页面标题。")
     summary: str | None = Field(default=None, max_length=500, description="新的页面摘要；空字符串表示清空。")
     speaker_notes: str | None = Field(default=None, max_length=10000, description="新的演讲者备注；空字符串表示清空。")
     change_note: str | None = Field(default=None, max_length=255, description="本次修改说明。")
+
+    @model_validator(mode="after")
+    def require_metadata_field(self) -> "PageMetadataPayload":
+        """修改说明不能单独构成页面元数据更新。"""
+
+        if not self.model_fields_set.intersection({"title", "summary", "speaker_notes"}):
+            raise ValueError("title、summary 与 speaker_notes 至少需要提供一项。")
+        return self
 
 
 class PageContentPayload(OperationArgumentsModel):
@@ -175,7 +204,7 @@ class ComponentCreatePayload(OperationArgumentsModel):
     change_note: str | None = Field(default=None, max_length=255, description="初始草稿说明。")
 
 
-class ComponentMetadataPayload(OperationArgumentsModel):
+class ComponentMetadataPayload(NonEmptyPatchModel):
     """组件元数据修改参数。"""
 
     name: str | None = Field(default=None, min_length=1, max_length=128, description="新的组件展示名称。")
@@ -184,6 +213,14 @@ class ComponentMetadataPayload(OperationArgumentsModel):
     summary: str | None = Field(default=None, max_length=500, description="新的组件摘要。")
     preview_schema: str | dict[str, Any] | None = Field(default=None, description="新的预览参数 Schema。")
     change_note: str | None = Field(default=None, max_length=255, description="本次修改说明。")
+
+    @model_validator(mode="after")
+    def require_metadata_field(self) -> "ComponentMetadataPayload":
+        """修改说明不能单独构成组件元数据更新。"""
+
+        if not self.model_fields_set.difference({"change_note"}):
+            raise ValueError("至少需要提供一个组件元数据字段。")
+        return self
 
 
 class ComponentContentPayload(OperationArgumentsModel):
@@ -210,7 +247,7 @@ class AssetCreatePayload(OperationArgumentsModel):
     approx_aspect_ratio: str | None = Field(default=None, description="近似宽高比，例如 16:9。")
 
 
-class AssetMetadataPayload(OperationArgumentsModel):
+class AssetMetadataPayload(NonEmptyPatchModel):
     """资源元数据修改参数。"""
 
     name: str | None = Field(default=None, min_length=1, description="新的稳定资源名。")
@@ -219,6 +256,16 @@ class AssetMetadataPayload(OperationArgumentsModel):
     tags: list[str] | str | None = Field(default=None, description="替换后的标签。")
     approx_aspect_ratio: str | None = Field(default=None, description="新的近似宽高比。")
     clear_approx_aspect_ratio: bool = Field(default=False, description="是否明确清除已有近似宽高比；与 approx_aspect_ratio 不要同时使用。")
+
+    @model_validator(mode="after")
+    def validate_aspect_ratio_operation(self) -> "AssetMetadataPayload":
+        """拒绝同时设置和清除近似宽高比。"""
+
+        if self.approx_aspect_ratio is not None and self.clear_approx_aspect_ratio:
+            raise ValueError("approx_aspect_ratio 与 clear_approx_aspect_ratio=true 不能同时提交。")
+        if self.model_fields_set == {"clear_approx_aspect_ratio"} and not self.clear_approx_aspect_ratio:
+            raise ValueError("clear_approx_aspect_ratio=false 不构成有效更新。")
+        return self
 
 
 class AssetContentPayload(OperationArgumentsModel):
@@ -237,7 +284,7 @@ class ThemeCreatePayload(OperationArgumentsModel):
     palette: ThemePalette = Field(description="完整主题色板；文字、背景、边框、链接和强调色均必须提供。")
 
 
-class ThemeUpdatePayload(OperationArgumentsModel):
+class ThemeUpdatePayload(NonEmptyPatchModel):
     """限制内容助手修改主题时不能接触 Logo 和字体字段。"""
 
     name: str | None = Field(default=None, min_length=1, max_length=128, description="新的主题名称。")
@@ -254,7 +301,7 @@ class StyleCreatePayload(OperationArgumentsModel):
     configuration: StyleConfiguration = Field(default_factory=StyleConfiguration, description="完整展示配置和建议组件。")
 
 
-class StyleMetadataPayload(OperationArgumentsModel):
+class StyleMetadataPayload(NonEmptyPatchModel):
     """修改工作空间样式名称与说明。"""
 
     name: str | None = Field(default=None, min_length=1, max_length=128, description="新的样式名称。")
@@ -272,14 +319,33 @@ class ComponentPublishPayload(OperationArgumentsModel):
     change_note: str | None = Field(default=None, description="发布说明。")
 
 
-class PageCheckPayload(OperationArgumentsModel):
+class ValidationSourcePayload(OperationArgumentsModel):
+    """页面或组件校验候选来源，确保完整源码与 edits 不混用。"""
+
+    mode: Literal["current", "content", "edits"] = Field(description="校验当前内容、完整候选源码或结构化 edits。")
+    content: str | None = Field(default=None, min_length=1, description="mode=content 时的完整候选源码。")
+    edits: list[SourceEditInput] | None = Field(default=None, min_length=1, description="mode=edits 时应用到目标当前源码的编辑。")
+
+    @model_validator(mode="after")
+    def validate_source(self) -> "ValidationSourcePayload":
+        """按 mode 约束候选内容字段。"""
+
+        if self.mode == "current" and (self.content is not None or self.edits is not None):
+            raise ValueError("mode=current 时不能提交 content 或 edits。")
+        if self.mode == "content" and (self.content is None or self.edits is not None):
+            raise ValueError("mode=content 时必须且只能提交 content。")
+        if self.mode == "edits" and (self.edits is None or self.content is not None):
+            raise ValueError("mode=edits 时必须且只能提交 edits。")
+        return self
+
+
+class PageCheckPayload(ValidationSourcePayload):
     """页面候选代码检查参数。"""
 
-    content: str | None = Field(default=None, description="待检查的完整页面源码；不传时检查 target_id 对应页面当前源码。")
-    edits: list[SourceEditInput] | None = Field(default=None, description="应用到现有页面源码后再检查的结构化 edits。")
+    project_id: int | None = Field(default=None, ge=1, description="无页面目标时，完整页面源码校验使用的明确项目 ID。")
 
 
-class ComponentCheckPayload(PageCheckPayload):
+class ComponentCheckPayload(ValidationSourcePayload):
     """组件候选代码检查参数。"""
 
     preview_schema: str | dict[str, Any] | None = Field(default=None, description="与候选源码一同检查的 preview_schema。")
@@ -289,23 +355,30 @@ class ComponentCheckPayload(PageCheckPayload):
 class PageCopyPayload(OperationArgumentsModel):
     """页面复制到目标项目的参数。"""
 
-    target_project_id: int = Field(gt=0, description="目标项目 ID；必须与源页面处于同一工作空间。")
+    source_id: int = Field(gt=0, description="源页面 ID。")
+    project_id: int = Field(gt=0, description="目标项目 ID；必须与源页面处于同一工作空间。")
     title: str | None = Field(default=None, min_length=1, max_length=128, description="复制后页面标题；不传则沿用源页面。")
     summary: str | None = Field(default=None, max_length=500, description="复制后页面摘要。")
     route_placement: Literal["none", "root", "group"] = Field(default="none", description="是否同时把新页面放入目标项目路由树。")
     parent_route_id: int | None = Field(default=None, ge=1, description="route_placement=group 时的目标分组路由 ID。")
     route: str | None = Field(default=None, min_length=1, max_length=128, description="可选路由片段；不传时由平台生成。")
 
+    @model_validator(mode="after")
+    def validate_route_placement(self) -> "PageCopyPayload":
+        """确保复制后的路由位置参数完整且无歧义。"""
+
+        _validate_route_placement(self.route_placement, self.parent_route_id)
+        return self
+
 
 class AssetCopyPayload(OperationArgumentsModel):
     """复制资源参数。"""
 
+    source_id: int = Field(gt=0, description="源资源 ID。")
     name: str | None = Field(default=None, description="新资源名称。")
     original_name: str | None = Field(default=None, description="新资源展示文件名。")
     description: str | None = Field(default=None, description="新资源说明。")
     tags: list[str] | str | None = Field(default=None, description="新资源标签。")
-    status: RecordStatus = Field(default=RecordStatus.ACTIVE, description="新副本状态，通常使用 active。")
-    archive_reason: str | None = Field(default=None, description="创建归档副本时的归档原因。")
 
 
 class AssetPreviewContentPayload(OperationArgumentsModel):
@@ -326,6 +399,7 @@ class AssetSaveUploadPayload(OperationArgumentsModel):
 class NamedCopyPayload(OperationArgumentsModel):
     """主题或样式复制参数。"""
 
+    source_id: int = Field(gt=0, description="源主题或样式 ID。")
     key: str | None = Field(default=None, min_length=1, max_length=64, pattern=r"^[a-z0-9_-]+$", description="新副本 key；不传时由平台生成。")
     name: str | None = Field(default=None, min_length=1, max_length=128, description="新副本名称。")
 
@@ -337,25 +411,40 @@ class ReplaceRoutesPayload(OperationArgumentsModel):
     change_note: str | None = Field(default=None, description="本次路由调整说明。")
 
 
+def _validate_route_placement(route_placement: str, parent_route_id: int | None) -> None:
+    """校验页面创建或复制的路由位置条件字段。"""
+
+    if route_placement == "group" and parent_route_id is None:
+        raise ValueError("route_placement=group 时必须提供 parent_route_id。")
+    if route_placement != "group" and parent_route_id is not None:
+        raise ValueError("只有 route_placement=group 时才能提供 parent_route_id。")
+
+
 QUERY_FILTER_MODELS: dict[tuple[str, str], type[OperationArgumentsModel]] = {
     ("project", "list"): CommonListFilters,
     ("project", "detail"): EmptyArguments,
     ("project", "route_tree"): EmptyArguments,
-    ("project", "style_config"): ProjectStyleConfigFilters,
+    ("project", "configuration"): EmptyArguments,
     ("page", "list"): PageListFilters,
     ("page", "detail"): EmptyArguments,
     ("page", "content"): EmptyArguments,
+    ("page", "versions"): EmptyArguments,
+    ("page", "version_content"): VersionContentOptions,
+    ("page", "dependencies"): EmptyArguments,
     ("component", "list"): ComponentListFilters,
     ("component", "detail"): EmptyArguments,
     ("component", "versions"): EmptyArguments,
+    ("component", "version_content"): VersionContentOptions,
     ("component", "dependencies"): EmptyArguments,
     ("asset", "list"): AssetListFilters,
+    ("asset", "detail"): EmptyArguments,
     ("asset", "content"): EmptyArguments,
     ("asset", "tags"): EmptyArguments,
     ("theme", "list"): CommonListFilters,
     ("theme", "detail"): EmptyArguments,
     ("style", "list"): CommonListFilters,
     ("style", "detail"): EmptyArguments,
+    ("style", "configuration"): EmptyArguments,
     ("runtime_kit", "list"): RuntimeKitListFilters,
     ("runtime_kit", "detail"): RuntimeKitDetailFilters,
     ("font", "list"): FontListFilters,
@@ -363,12 +452,17 @@ QUERY_FILTER_MODELS: dict[tuple[str, str], type[OperationArgumentsModel]] = {
 
 
 PAYLOAD_MODELS: dict[tuple[str, str, str | None], type[OperationArgumentsModel]] = {
-    ("project", "create", None): ProjectCreatePayload,
-    ("page", "create", None): PageCreatePayload,
-    ("component", "create", None): ComponentCreatePayload,
-    ("asset", "create", None): AssetCreatePayload,
-    ("theme", "create", None): ThemeCreatePayload,
-    ("style", "create", None): StyleCreatePayload,
+    ("project", "create", "new"): ProjectCreatePayload,
+    ("page", "create", "new"): PageCreatePayload,
+    ("page", "create", "copy"): PageCopyPayload,
+    ("component", "create", "new"): ComponentCreatePayload,
+    ("asset", "create", "new"): AssetCreatePayload,
+    ("asset", "create", "copy"): AssetCopyPayload,
+    ("asset", "create", "upload"): AssetSaveUploadPayload,
+    ("theme", "create", "new"): ThemeCreatePayload,
+    ("theme", "create", "copy"): NamedCopyPayload,
+    ("style", "create", "new"): StyleCreatePayload,
+    ("style", "create", "copy"): NamedCopyPayload,
     ("project", "update", "metadata"): ProjectMetadataPayload,
     ("project", "update", "configuration"): ProjectConfigurationPayload,
     ("project", "update", "apply_style"): ProjectApplyStylePayload,
@@ -384,14 +478,9 @@ PAYLOAD_MODELS: dict[tuple[str, str, str | None], type[OperationArgumentsModel]]
     ("style", "update", "metadata"): StyleMetadataPayload,
     ("style", "update", "configuration"): StyleConfigurationPayload,
     ("component", "action", "publish"): ComponentPublishPayload,
-    ("component", "action", "check"): ComponentCheckPayload,
-    ("page", "action", "check"): PageCheckPayload,
-    ("page", "action", "copy"): PageCopyPayload,
-    ("asset", "action", "copy"): AssetCopyPayload,
-    ("asset", "action", "preview_content"): AssetPreviewContentPayload,
-    ("asset", "action", "save_upload"): AssetSaveUploadPayload,
-    ("theme", "action", "copy"): NamedCopyPayload,
-    ("style", "action", "copy"): NamedCopyPayload,
+    ("page", "validate", "check"): PageCheckPayload,
+    ("component", "validate", "check"): ComponentCheckPayload,
+    ("asset", "validate", "preview"): AssetPreviewContentPayload,
 }
 
 

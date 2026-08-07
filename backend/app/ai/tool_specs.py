@@ -54,7 +54,6 @@ from app.ai.tools.generic.operation_models import (
     ProjectBuildAssetsPayload,
     ProjectConfigurationPayload,
     ProjectMetadataPayload,
-    ProjectStyleConfigFilters,
     ReplaceRoutesPayload,
     RuntimeKitDetailFilters,
     RuntimeKitListFilters,
@@ -63,6 +62,7 @@ from app.ai.tools.generic.operation_models import (
     StyleMetadataPayload,
     ThemeCreatePayload,
     ThemeUpdatePayload,
+    VersionContentOptions,
 )
 from app.ai.tools.self_delegation import build_self_delegation_tools
 from app.ai.tools.visual import build_analyze_visuals_tool
@@ -166,8 +166,17 @@ class AgentOperationGuideSpec:
             "operation": self.operation,
             "action": self.action,
             "message": "操作完成。",
-            "mutation": None if self.operation == "query" else {"kind": self.mutation_kind, "operation": self.operation},
-            "data": {},
+            "effect": (
+                "read"
+                if self.operation in {"query", "validate"}
+                else "create"
+                if self.operation == "create"
+                else "lifecycle"
+                if self.operation == "action"
+                else "update"
+            ),
+            "mutation": None if self.operation in {"query", "validate"} else {"kind": self.mutation_kind, "operation": self.operation},
+            "data": {"valid": True} if self.operation == "validate" else {},
         }
         return {
             "operation_key": self.operation_key,
@@ -522,6 +531,7 @@ def _operation_guide(
         "create": "create_entity",
         "update": "update_entity",
         "archive": "archive_entity",
+        "validate": "validate_entity",
         "action": "execute_action",
     }[operation]
     return AgentOperationGuideSpec(
@@ -538,7 +548,7 @@ def _operation_guide(
         requires_confirmation=requires_confirmation,
         call_example=call_example,
         handler_tool_key=handler_tool_key,
-        mutation_kind=None if operation == "query" else resource_type,
+        mutation_kind=None if operation in {"query", "validate"} else resource_type,
     )
 
 
@@ -568,7 +578,13 @@ def _operation_parameters(
         "resource_type": {"const": resource_type, "description": "业务对象类型。"},
     }
     required = ["resource_type"]
-    if operation in {"query", "update", "action"}:
+    if operation == "create":
+        properties["mode"] = {
+            "const": action or "new",
+            "description": "与当前操作手册匹配的固定创建模式。",
+        }
+        required.append("mode")
+    elif operation in {"query", "update", "validate", "action"}:
         properties["action"] = {
             "const": action or "metadata",
             "description": "与当前操作手册匹配的固定 action。",
@@ -653,7 +669,7 @@ def _query_parameters(
 
 def _write_parameters(
     resource_type: str,
-    operation: Literal["create", "update", "action"],
+    operation: Literal["create", "update", "validate", "action"],
     payload_model: type[BaseModel],
     *,
     action: str | None = None,
@@ -694,21 +710,28 @@ _COORDINATOR_OPERATION_GUIDES = (
                      call_example={"resource_type": "project", "view": "detail", "target_id": 8}),
     _operation_guide("project", "query", "读取项目完整路由树。", _query_parameters("project", "route_tree", EmptyArguments, target_required=True), action="route_tree",
                      call_example={"resource_type": "project", "view": "route_tree", "target_id": 8}),
-    _operation_guide("project", "query", "读取项目画布、主题摘要和样式规范。", _query_parameters("project", "style_config", ProjectStyleConfigFilters, target_required=True), action="style_config",
-                     call_example={"resource_type": "project", "view": "style_config", "target_id": 8, "options": {"include_style_spec_markdown": True}}),
+    _operation_guide("project", "query", "读取项目完整展示配置和有序建议组件快照。", _query_parameters("project", "configuration", EmptyArguments, target_required=True), action="configuration",
+                     call_example={"resource_type": "project", "view": "configuration", "target_id": 8}),
     _operation_guide("page", "query", "分页查询工作空间或指定项目的页面。", _query_parameters("page", "list", PageListFilters), action="list",
                      call_example={"resource_type": "page", "filters": {"project_id": 8, "keyword": "封面"}}),
     _operation_guide("page", "query", "读取页面元数据，不返回源码。", _query_parameters("page", "detail", EmptyArguments, target_required=True), action="detail"),
     _operation_guide("page", "query", "读取页面完整源码和当前版本信息。", _query_parameters("page", "content", EmptyArguments, target_required=True), action="content",
                      prerequisites=("先通过页面列表或当前焦点取得真实页面 ID。",),
                      call_example={"resource_type": "page", "view": "content", "target_id": 31}),
+    _operation_guide("page", "query", "读取页面版本历史列表。", _query_parameters("page", "versions", EmptyArguments, target_required=True), action="versions"),
+    _operation_guide("page", "query", "读取页面指定历史版本的完整源码。", _query_parameters("page", "version_content", VersionContentOptions, target_required=True), action="version_content",
+                     call_example={"resource_type": "page", "view": "version_content", "target_id": 31, "options": {"version_no": 2}}),
+    _operation_guide("page", "query", "读取页面当前版本的模块依赖索引。", _query_parameters("page", "dependencies", EmptyArguments, target_required=True), action="dependencies"),
     _operation_guide("component", "query", "查询工作空间组件或项目建议组件摘要。", _query_parameters("component", "list", ComponentListFilters), action="list"),
     _operation_guide("component", "query", "读取组件元数据、源码和编辑锁信息。", _query_parameters("component", "detail", EmptyArguments, target_required=True), action="detail",
                      call_example={"resource_type": "component", "view": "detail", "target_id": 12}),
     _operation_guide("component", "query", "读取组件发布版本历史。", _query_parameters("component", "versions", EmptyArguments, target_required=True), action="versions"),
+    _operation_guide("component", "query", "读取组件指定发布版本的完整源码。", _query_parameters("component", "version_content", VersionContentOptions, target_required=True), action="version_content",
+                     call_example={"resource_type": "component", "view": "version_content", "target_id": 12, "options": {"version_no": 1}}),
     _operation_guide("component", "query", "读取组件当前版本依赖索引。", _query_parameters("component", "dependencies", EmptyArguments, target_required=True), action="dependencies"),
     _operation_guide("asset", "query", "查询项目建议资源或工作空间资源摘要。", _query_parameters("asset", "list", AssetListFilters), action="list",
                      call_example={"resource_type": "asset", "filters": {"keyword": "hero", "scope": "all"}}),
+    _operation_guide("asset", "query", "读取 active 资源的元数据、类型和文本可编辑性。", _query_parameters("asset", "detail", EmptyArguments, target_required=True), action="detail"),
     _operation_guide("asset", "query", "读取可编辑资源的 UTF-8 文本内容。", _query_parameters("asset", "content", EmptyArguments, target_required=True), action="content",
                      constraints=("仅 SVG、Mermaid、Draw.io、Chart、Formula 等 content_editable 资源支持。",)),
     _operation_guide("asset", "query", "列出工作空间资源标签。", _query_parameters("asset", "tags", EmptyArguments), action="tags",
@@ -719,28 +742,34 @@ _COORDINATOR_OPERATION_GUIDES = (
                      constraints=("返回不包含 Logo 与字体配置。",)),
     _operation_guide("style", "query", "查询启用的工作空间样式模板。", _query_parameters("style", "list", CommonListFilters), action="list"),
     _operation_guide("style", "query", "读取启用的工作空间样式模板详情。", _query_parameters("style", "detail", EmptyArguments, target_required=True), action="detail"),
+    _operation_guide("style", "query", "读取样式完整展示配置和有序建议组件。", _query_parameters("style", "configuration", EmptyArguments, target_required=True), action="configuration"),
     _operation_guide("runtime_kit", "query", "查询可在页面或组件源码中引用的版本化 Runtime Kit 能力。", _query_parameters("runtime_kit", "list", RuntimeKitListFilters), action="list",
                      constraints=("该对象只读；公开 import path 必须带 .vN 版本。",)),
     _operation_guide("runtime_kit", "query", "读取单个 Runtime Kit 能力的参数和 import 用法。", _query_parameters("runtime_kit", "detail", RuntimeKitDetailFilters), action="detail"),
     _operation_guide("font", "query", "查询工作空间已注册且可用的字体资源。", _query_parameters("font", "list", FontListFilters), action="list",
                      constraints=("字体只读；主题写工具不开放字体配置。",)),
 
-    _operation_guide("project", "create", "创建当前工作空间中的项目。", _write_parameters("project", "create", ProjectCreatePayload),
+    _operation_guide("project", "create", "创建当前工作空间中的项目。", _write_parameters("project", "create", ProjectCreatePayload, action="new"), action="new",
                      constraints=("workspace_id 和 active 状态由运行上下文注入。",), risk_level="write",
-                     call_example={"resource_type": "project", "payload": {"name": "季度汇报", "description": "2026 Q3"}}),
-    _operation_guide("page", "create", "在指定项目创建并校验 Vue 页面。", _write_parameters("page", "create", PageCreatePayload),
+                     call_example={"resource_type": "project", "mode": "new", "payload": {"name": "季度汇报", "description": "2026 Q3"}}),
+    _operation_guide("page", "create", "在指定项目创建并校验 Vue 页面，可原子写入路由。", _write_parameters("page", "create", PageCreatePayload, action="new"), action="new",
                      prerequisites=("project_id 必须来自当前工作空间和本轮项目工作集。",), side_effects=("通过持久化页面任务队列执行并创建页面初始版本。",), risk_level="write",
-                     call_example={"resource_type": "page", "payload": {"project_id": 8, "title": "封面", "page_content": "<template><main>封面</main></template>"}}),
-    _operation_guide("component", "create", "创建可校验的组件草稿。", _write_parameters("component", "create", ComponentCreatePayload),
+                     call_example={"resource_type": "page", "mode": "new", "payload": {"project_id": 8, "title": "封面", "content": "<template><main>封面</main></template>", "route_placement": "root"}}),
+    _operation_guide("page", "create", "把页面复制到同工作空间的目标项目。", _write_parameters("page", "create", PageCopyPayload, action="copy"), action="copy",
+                     side_effects=("创建新页面；可同时原子写入目标项目路由。",), risk_level="write"),
+    _operation_guide("component", "create", "创建可校验的组件草稿。", _write_parameters("component", "create", ComponentCreatePayload, action="new"), action="new",
                      side_effects=("只创建草稿；正式被页面引用前还需 publish。",), risk_level="write",
-                     call_example={"resource_type": "component", "payload": {"name": "指标卡", "import_name": "MetricCard", "content": "<template><div /></template>"}}),
-    _operation_guide("asset", "create", "创建 SVG 图标、Draw.io、Mermaid、Chart 或 Formula 文本资源。", _write_parameters("asset", "create", AssetCreatePayload),
-                     constraints=("不支持生成位图 image、video 或 font；用户上传图片应使用 save_upload。",), risk_level="write",
-                     call_example={"resource_type": "asset", "payload": {"name": "growth_chart", "original_name": "growth.json", "asset_type": "chart", "content": "{}"}}),
-    _operation_guide("theme", "create", "创建只含文本元数据和色板的主题。", _write_parameters("theme", "create", ThemeCreatePayload),
+                     call_example={"resource_type": "component", "mode": "new", "payload": {"name": "指标卡", "import_name": "MetricCard", "content": "<template><div /></template>"}}),
+    _operation_guide("asset", "create", "创建 SVG、Draw.io、Mermaid、Chart 或 Formula 文本资源。", _write_parameters("asset", "create", AssetCreatePayload, action="new"), action="new",
+                     constraints=("不支持直接创建位图 image、video 或 font；上传图片使用 upload 模式。",), risk_level="write"),
+    _operation_guide("asset", "create", "复制 active 资源并创建 active 副本。", _write_parameters("asset", "create", AssetCopyPayload, action="copy"), action="copy", risk_level="write"),
+    _operation_guide("asset", "create", "把当前会话可信上传图片创建为工作空间资源。", _write_parameters("asset", "create", AssetSaveUploadPayload, action="upload"), action="upload",
+                     constraints=("只接受可信 attachment_id，不接受 URL、本地路径或 base64。",), risk_level="write"),
+    _operation_guide("theme", "create", "创建只含文本元数据和色板的主题。", _write_parameters("theme", "create", ThemeCreatePayload, action="new"), action="new",
                      constraints=("禁止 Logo、字体及字体 ID 字段。",), risk_level="write"),
-    _operation_guide("style", "create", "原子创建工作空间样式模板及其建议组件。", _write_parameters("style", "create", StyleCreatePayload), risk_level="write",
-                     call_example={"resource_type": "style", "payload": {"key": "report", "name": "报告", "configuration": {"presentation": {"page_width": 1920, "page_height": 1080}, "suggested_components": {"component_ids": []}}}}),
+    _operation_guide("theme", "create", "复制主题并创建新 key。", _write_parameters("theme", "create", NamedCopyPayload, action="copy"), action="copy", risk_level="write"),
+    _operation_guide("style", "create", "原子创建工作空间样式模板及其建议组件。", _write_parameters("style", "create", StyleCreatePayload, action="new"), action="new", risk_level="write"),
+    _operation_guide("style", "create", "复制样式配置和建议组件快照。", _write_parameters("style", "create", NamedCopyPayload, action="copy"), action="copy", risk_level="write"),
 
     _operation_guide("project", "update", "修改项目名称或说明。", _write_parameters("project", "update", ProjectMetadataPayload, action="metadata", target_mode="single"), action="metadata",
                      constraints=("禁止修改 workspace_id、status、展示配置和 theme_config_yaml。",), risk_level="write",
@@ -749,7 +778,7 @@ _COORDINATOR_OPERATION_GUIDES = (
                      call_example={"resource_type": "project", "action": "configuration", "target_id": 8, "payload": {"presentation": {"style_spec_markdown": "## 新规范"}, "suggested_components": {"component_ids": [12, 18]}}}),
     _operation_guide("project", "update", "把工作空间样式完整复制为项目独立配置快照。", _write_parameters("project", "update", ProjectApplyStylePayload, action="apply_style", target_mode="single"), action="apply_style",
                      constraints=("只复制当前样式快照，不建立实时继承关系。",), risk_level="write",
-                     call_example={"resource_type": "project", "action": "apply_style", "target_id": 8, "payload": {"source_style_id": 23}}),
+                     call_example={"resource_type": "project", "action": "apply_style", "target_id": 8, "payload": {"style_id": 23}}),
     _operation_guide("project", "update", "用完整新树替换项目现有路由树。", _write_parameters("project", "update", ReplaceRoutesPayload, action="route_tree", target_mode="single"), action="route_tree",
                      prerequisites=("先查询项目 pages 和 route_tree；routes 中所有 page_id 必须属于目标项目。",), constraints=("这是全量覆盖，不是增量追加；未包含的现有路由节点会被移除。",),
                      side_effects=("影响项目导航结构和页面访问路径。",), error_recovery=("校验失败时重新读取最新 route_tree 后重新构造完整 routes。",), risk_level="write"),
@@ -764,7 +793,7 @@ _COORDINATOR_OPERATION_GUIDES = (
                      prerequisites=("先读取组件 detail，取得源码、draft_hash 和 base_published_version_no。",), error_recovery=("编辑锁冲突时重新读取组件 detail。",), risk_level="write"),
     _operation_guide("asset", "update", "修改资源名称、描述、标签或近似比例。", _write_parameters("asset", "update", AssetMetadataPayload, action="metadata", target_mode="single"), action="metadata", risk_level="write"),
     _operation_guide("asset", "update", "写入资源完整文本内容。", _write_parameters("asset", "update", AssetContentPayload, action="content", target_mode="single"), action="content",
-                     prerequisites=("建议先用 preview_content 检查 unified diff。",), side_effects=("写入前自动创建 archived 历史副本。",), risk_level="write"),
+                     prerequisites=("建议先用 asset.validate.preview 检查 unified diff。",), side_effects=("写入前自动创建 archived 历史副本。",), risk_level="write"),
     _operation_guide("theme", "update", "修改主题名称、描述或完整色板。", _write_parameters("theme", "update", ThemeUpdatePayload, action="metadata", target_mode="single"), action="metadata",
                      constraints=("主题 key 创建后不可修改；禁止 Logo 和字体字段。",), risk_level="write"),
     _operation_guide("style", "update", "修改工作空间样式名称或说明。", _write_parameters("style", "update", StyleMetadataPayload, action="metadata", target_mode="single"), action="metadata", risk_level="write"),
@@ -780,19 +809,11 @@ _COORDINATOR_OPERATION_GUIDES = (
 
     _operation_guide("component", "action", "发布组件当前草稿，生成新的正式版本。", _write_parameters("component", "action", ComponentPublishPayload, action="publish", target_mode="single", payload_required=False), action="publish",
                      prerequisites=("组件必须存在可发布草稿；建议先执行 check。",), side_effects=("新版本可被页面和其他组件正式引用。",), risk_level="write"),
-    _operation_guide("component", "action", "检查组件当前或候选源码是否能由 Runtime 编译。", _write_parameters("component", "action", ComponentCheckPayload, action="check", target_mode="optional_single", payload_required=False), action="check",
-                     constraints=("content 与 edits 通常二选一；两者都不传时检查 target_id 或当前焦点组件源码。",)),
-    _operation_guide("page", "action", "检查页面当前或候选源码是否具有语法错误、页面布局是否有问题。", _write_parameters("page", "action", PageCheckPayload, action="check", target_mode="optional_single", payload_required=False), action="check",
-                     constraints=("content 与 edits 通常二选一；两者都不传时检查 target_id 或当前焦点页面源码。",)),
-    _operation_guide("page", "action", "把页面复制到同一工作空间的目标项目。", _write_parameters("page", "action", PageCopyPayload, action="copy", target_mode="single"), action="copy",
-                     prerequisites=("target_id 是源页面 ID；payload.target_project_id 是目标项目 ID。",), side_effects=("创建新的页面记录；route_placement 非 none 时同时修改目标项目路由树。",), risk_level="write",
-                     call_example={"resource_type": "page", "action": "copy", "target_id": 31, "payload": {"target_project_id": 9, "route_placement": "root"}}),
-    _operation_guide("asset", "action", "复制资源记录并复用物理文件。", _write_parameters("asset", "action", AssetCopyPayload, action="copy", target_mode="single", payload_required=False), action="copy", risk_level="write"),
-    _operation_guide("asset", "action", "预览资源内容写入后的 unified diff，不落库。", _write_parameters("asset", "action", AssetPreviewContentPayload, action="preview_content", target_mode="single"), action="preview_content"),
-    _operation_guide("asset", "action", "把当前会话中用户上传的图片保存为工作空间资源。", _write_parameters("asset", "action", AssetSaveUploadPayload, action="save_upload"), action="save_upload",
-                     constraints=("只接受可信 attachment_id，不接受 URL、本地路径或 base64。",), risk_level="write"),
-    _operation_guide("theme", "action", "复制主题并可指定新 key 或名称。", _write_parameters("theme", "action", NamedCopyPayload, action="copy", target_mode="single", payload_required=False), action="copy", risk_level="write"),
-    _operation_guide("style", "action", "复制样式并可指定新 key 或名称。", _write_parameters("style", "action", NamedCopyPayload, action="copy", target_mode="single", payload_required=False), action="copy", risk_level="write"),
+    _operation_guide("page", "validate", "检查当前页面、完整候选源码或结构化 edits。", _write_parameters("page", "validate", PageCheckPayload, action="check", target_mode="optional_single"), action="check",
+                     constraints=("mode=current/edits 必须提供 target_id；无 target_id 的 content 模式必须提供 project_id。",)),
+    _operation_guide("component", "validate", "检查当前组件、完整候选源码或结构化 edits。", _write_parameters("component", "validate", ComponentCheckPayload, action="check", target_mode="optional_single"), action="check",
+                     constraints=("mode=current/edits 必须提供 target_id；content 模式可检查新组件候选源码。",)),
+    _operation_guide("asset", "validate", "预览资源完整内容写入后的 unified diff，不落库。", _write_parameters("asset", "validate", AssetPreviewContentPayload, action="preview", target_mode="single"), action="preview"),
 )
 
 _COORDINATOR_OPERATION_GUIDE_MAP = {
@@ -807,24 +828,18 @@ _COORDINATOR_TOOL_SPECS = (
           default_instructions="首次使用、不确定参数或参数校验失败时查询；先省略 operation_key 获取索引，再携带选定 operation_key 获取精确手册。当前上下文已有对应精确手册时不要重复查询。", configurable=False),
     _tool("list_entities", "罗列业务对象", "generic_business", "通用业务", "统一罗列、搜索项目、页面、组件、资源、主题、样式、Runtime Kit 和字体；支持项目范围与建议集合筛选。",
           default_instructions="只用于集合查询，不读取详情或源码；项目页面用 page + project_id，建议组件或资源使用 scope=suggested。"),
-    _tool("get_entity", "读取业务对象", "generic_business", "通用业务", "统一读取单项详情、页面或资源内容、项目路由树和样式配置、组件版本或依赖。",
+    _tool("get_entity", "读取业务对象", "generic_business", "通用业务", "统一读取详情、共享配置、源码、路由、历史版本和依赖。",
           default_instructions="使用真实 target_id 和匹配的 view；Runtime Kit detail 使用 lookup.name，不使用 target_id。"),
-    _tool("create_entity", "创建业务对象", "generic_business", "通用业务", "统一创建项目、页面、组件、资源、主题或样式。",
-          default_instructions="先确定 resource_type，并按操作手册提交 payload；不要猜测复杂字段。", risk_level="write", sequential=True),
+    _tool("create_entity", "创建业务对象", "generic_business", "通用业务", "按 new、copy 或 upload 模式创建项目、页面、组件、资源、主题或样式。",
+          default_instructions="先确定 resource_type 和 mode；复制使用 payload.source_id，上传只接受可信 attachment_id。", risk_level="write", sequential=True),
     _tool("update_entity", "修改业务对象", "generic_business", "通用业务", "统一修改项目、页面、组件、资源、主题或样式，包括项目路由树与样式快照。",
           default_instructions="只提交用户要求修改的字段；项目和样式展示字段使用 configuration，应用样式使用 apply_style，页面和组件源码使用 content。", risk_level="write", sequential=True),
     _tool("archive_entity", "归档业务对象", "generic_business", "通用业务", "归档 1～100 个同类型对象；单项免确认，批量动态确认并整批原子执行。",
           default_instructions="只能归档真实查询得到的 ID；不得把归档解释成永久删除。", risk_level="write", sequential=True),
-    _tool("execute_action", "执行业务动作", "generic_business", "通用业务", (
-        "执行已登记的普通动作：component/publish、component/check、page/check、page/copy、"
-        "asset/copy、asset/preview_content、asset/save_upload、theme/copy 和 style/copy。"
-        "每个组合的 target_id 和 payload 结构不同。"
-    ),
-          default_instructions=(
-              "调用前使用对应 operation_key 查询精确 Schema。"
-              "page/copy 的 target_id 是源页面 ID，payload.target_project_id 是目标项目 ID；"
-              "asset/save_upload 不传 target_id。不得执行删除或清理。"
-          ), risk_level="write", sequential=True),
+    _tool("validate_entity", "校验候选改动", "generic_business", "通用业务", "检查页面或组件候选源码，或预览资源内容差异；不写入业务数据。",
+          default_instructions="按操作手册选择 current、content 或 edits 来源；校验不通过时读取 data.valid 和 diagnostics。"),
+    _tool("execute_action", "执行生命周期命令", "generic_business", "通用业务", "执行不能表达为字段 Patch 的对象生命周期命令；当前只开放组件发布。",
+          default_instructions="当前仅使用 component.action.publish；检查、复制、上传和差异预览不属于生命周期命令。", risk_level="write", sequential=True),
     _tool('ask_user', '向用户单选提问', 'user_feedback', '用户交互', '向用户提出一个或多个结构化单选问题。',
           default_instructions='仅在缺少必要业务信息且不能从上下文或工具结果推断时调用。', configurable=False, requires_confirmation=True,
           risk_level='system', response_example={'questions': []}),
@@ -839,7 +854,7 @@ _COORDINATOR_GROUP_SPECS = (
         "generic_business",
         "通用业务",
         "固定通用工具，覆盖工作空间内项目、页面、组件、资源、主题和样式。",
-        ("get_operation_guide", "list_entities", "get_entity", "create_entity", "update_entity", "archive_entity", "execute_action"),
+        ("get_operation_guide", "list_entities", "get_entity", "create_entity", "update_entity", "archive_entity", "validate_entity", "execute_action"),
         required_context_fields=("workspace_id",),
         token_scopes=(
             *PAGE_TOOL_READ_SCOPES,

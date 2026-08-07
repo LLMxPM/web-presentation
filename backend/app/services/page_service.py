@@ -103,17 +103,27 @@ class PageService:
             route_bindings = (await ProjectRouteService(self.session).build_page_bindings_map(page_model.project_id)).get(page_model.id)
         return await self._to_item(page_model, route_bindings=route_bindings)
 
-    async def create(self, payload: PageCreateRequest, operator_id: int, *, commit: bool = True) -> PageItem:
+    async def create(
+        self,
+        payload: PageCreateRequest,
+        operator_id: int,
+        *,
+        route_options: PageCopyToProjectRequest | None = None,
+        commit: bool = True,
+    ) -> PageItem:
         """创建页面资源；可由上层接管提交，以便和持久化任务状态保持原子性。"""
 
         normalized_page_content = normalize_text_to_lf(payload.page_content)
         if payload.workspace_id is None:
             raise AppException(status_code=400, code="PAGE_WORKSPACE_REQUIRED", detail="页面必须归属于工作空间。")
         await self.workspace_service.ensure_access(payload.workspace_id, user_id=operator_id)
+        target_project = None
         if payload.project_id is not None:
-            project = await self.project_service.get(payload.project_id, user_id=operator_id)
-            if project.workspace_id != payload.workspace_id:
+            target_project = await self.project_service.get(payload.project_id, user_id=operator_id)
+            if target_project.workspace_id != payload.workspace_id:
                 raise AppException(status_code=403, code="PAGE_PROJECT_SCOPE_DENIED", detail="页面项目不属于传入工作空间。")
+        if route_options is not None and (target_project is None or route_options.target_project_id != target_project.id):
+            raise AppException(status_code=400, code="PAGE_CREATE_ROUTE_PROJECT_INVALID", detail="页面路由目标必须与创建项目一致。")
 
         async def write_page(code: str) -> Page:
             """使用指定编码创建页面及其初始版本。"""
@@ -134,6 +144,13 @@ class PageService:
             )
             await self.repository.create(page_model)
             await self.version_service.initialize_page_version(page_model, operator_id)
+            if route_options is not None and target_project is not None:
+                await self._append_copy_route_if_requested(
+                    target_project=target_project,
+                    page_model=page_model,
+                    payload=route_options,
+                    operator_id=operator_id,
+                )
             return page_model
 
         page_model = await create_with_generated_code(

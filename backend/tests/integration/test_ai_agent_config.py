@@ -25,6 +25,7 @@ EXPECTED_TOOL_KEYS = {
     "create_entity",
     "update_entity",
     "archive_entity",
+    "validate_entity",
     "execute_action",
     "ask_user",
     "analyze_visuals",

@@ -17,6 +17,14 @@ from app.ai.tool_specs import (
     list_operation_guide_specs,
 )
 from app.ai.tools.generic.business_tools import ThemeCreatePayload, ThemeUpdatePayload, build_generic_business_tools
+from app.ai.tools.generic.operation_models import (
+    AssetMetadataPayload,
+    PageCopyPayload,
+    PageCreatePayload,
+    PageMetadataPayload,
+    ProjectApplyStylePayload,
+    ProjectCreatePayload,
+)
 from app.ai.tools.self_delegation import build_self_delegation_tools
 from app.core.exceptions import AppException
 
@@ -28,6 +36,7 @@ EXPECTED_GENERIC_TOOL_KEYS = {
     "create_entity",
     "update_entity",
     "archive_entity",
+    "validate_entity",
     "execute_action",
     "ask_user",
     "analyze_visuals",
@@ -99,9 +108,10 @@ def test_operation_guides_should_bind_handlers_and_expose_strict_theme_schema() 
     guides = list_operation_guide_specs()
     runtime_keys = {item.key for item in list_agent_tool_specs(AGENT_COORDINATOR_AGENT_ID)}
     assert all(guide.handler_tool_key in runtime_keys for guide in guides)
-    assert all(guide.mutation_kind == guide.resource_type for guide in guides if guide.operation != "query")
+    assert all(guide.mutation_kind == guide.resource_type for guide in guides if guide.operation not in {"query", "validate"})
+    assert all(guide.mutation_kind is None for guide in guides if guide.operation in {"query", "validate"})
 
-    create_guide = get_operation_guide_spec("theme.create")
+    create_guide = get_operation_guide_spec("theme.create.new")
     update_guide = get_operation_guide_spec("theme.update.metadata")
     assert create_guide is not None and update_guide is not None
     serialized = str(create_guide.parameters) + str(update_guide.parameters)
@@ -119,12 +129,12 @@ def test_operation_guides_should_expose_action_index_and_precise_schemas() -> No
 
     options = list_operation_guide_options()
     project_query_options = [item for item in options if str(item["operation_key"]).startswith("project.query.")]
-    execute_options = [item for item in options if str(item["operation_key"]).startswith("page.action.")]
+    validate_options = [item for item in options if str(item["operation_key"]).startswith("page.validate.")]
 
     assert {item["operation_key"] for item in project_query_options} == {
-        "project.query.list", "project.query.detail", "project.query.route_tree", "project.query.style_config",
+        "project.query.list", "project.query.detail", "project.query.route_tree", "project.query.configuration",
     }
-    assert {item["operation_key"] for item in execute_options} == {"page.action.check", "page.action.copy"}
+    assert {item["operation_key"] for item in validate_options} == {"page.validate.check"}
     assert len({guide.operation_key for guide in list_operation_guide_specs()}) == len(list_operation_guide_specs())
     assert not any("restore" in guide.operation_key for guide in list_operation_guide_specs())
 
@@ -156,7 +166,7 @@ def test_project_configuration_guides_should_replace_dangerous_actions() -> None
     assert set(routes.parameters["properties"]["payload"]["properties"]) == {"routes", "change_note"}
     assert "全量覆盖" in "".join(routes.constraints)
     assert set(configuration.parameters["properties"]["payload"]["properties"]) == {"presentation", "suggested_components"}
-    assert set(apply_style.parameters["properties"]["payload"]["properties"]) == {"source_style_id"}
+    assert set(apply_style.parameters["properties"]["payload"]["properties"]) == {"style_id"}
     assert not any("rename_key" in guide.operation_key for guide in list_operation_guide_specs())
 
 
@@ -170,7 +180,7 @@ def test_generic_tools_should_expose_discriminated_top_level_schemas() -> None:
     assert operation_key_variants[0]["enum"]
     assert "page.update.content" in operation_key_variants[0]["enum"]
 
-    for tool_name in ("list_entities", "get_entity", "create_entity", "update_entity", "archive_entity", "execute_action"):
+    for tool_name in ("list_entities", "get_entity", "create_entity", "update_entity", "archive_entity", "validate_entity", "execute_action"):
         schema = tools[tool_name].parameters
         Draft202012Validator.check_schema(schema)
         assert schema["oneOf"]
@@ -184,9 +194,12 @@ def test_generic_tools_should_expose_discriminated_top_level_schemas() -> None:
         (branch["properties"]["resource_type"]["const"], branch["properties"]["action"]["const"])
         for branch in tools["execute_action"].parameters["oneOf"]
     }
-    assert ("page", "check") in execute_pairs
-    assert ("component", "publish") in execute_pairs
-    assert not any(action == "restore" for _, action in execute_pairs)
+    assert execute_pairs == {("component", "publish")}
+    validate_pairs = {
+        (branch["properties"]["resource_type"]["const"], branch["properties"]["action"]["const"])
+        for branch in tools["validate_entity"].parameters["oneOf"]
+    }
+    assert validate_pairs == {("page", "check"), ("component", "check"), ("asset", "preview")}
     update_pairs = {
         (branch["properties"]["resource_type"]["const"], branch["properties"]["action"]["const"])
         for branch in tools["update_entity"].parameters["oneOf"]
@@ -204,6 +217,45 @@ def test_generic_tools_should_expose_discriminated_top_level_schemas() -> None:
     })
     archive_properties = tools["archive_entity"].parameters["oneOf"][0]["properties"]
     assert "versions" not in archive_properties
+
+    create_pairs = {
+        (branch["properties"]["resource_type"]["const"], branch["properties"]["mode"]["const"])
+        for branch in tools["create_entity"].parameters["oneOf"]
+    }
+    assert create_pairs == {
+        ("project", "new"), ("page", "new"), ("page", "copy"), ("component", "new"),
+        ("asset", "new"), ("asset", "copy"), ("asset", "upload"),
+        ("theme", "new"), ("theme", "copy"), ("style", "new"), ("style", "copy"),
+    }
+
+
+def test_update_and_route_payloads_should_reject_noop_or_conflicting_fields() -> None:
+    """更新补丁和页面路由条件字段应在同源模型层直接拒绝非法组合。"""
+
+    with pytest.raises(ValidationError):
+        PageMetadataPayload.model_validate({})
+    with pytest.raises(ValidationError):
+        PageMetadataPayload.model_validate({"change_note": "仅备注"})
+    with pytest.raises(ValidationError):
+        AssetMetadataPayload.model_validate({"approx_aspect_ratio": "16:9", "clear_approx_aspect_ratio": True})
+    with pytest.raises(ValidationError):
+        PageCopyPayload.model_validate({"source_id": 1, "project_id": 2, "route_placement": "group"})
+    with pytest.raises(ValidationError):
+        PageCopyPayload.model_validate({"source_id": 1, "project_id": 2, "parent_route_id": 3})
+
+
+def test_ai_create_fields_should_hide_storage_or_legacy_names() -> None:
+    """创建与样式应用参数只接受统一后的模型可见名称。"""
+
+    page = PageCreatePayload.model_validate({"project_id": 1, "title": "封面", "content": "<template />"})
+    project = ProjectCreatePayload.model_validate({"name": "报告", "build_assets": {"asset_names": ["hero"]}})
+    assert page.content == "<template />"
+    assert project.build_assets is not None and project.build_assets.asset_names == ["hero"]
+    assert ProjectApplyStylePayload.model_validate({"style_id": 2}).style_id == 2
+    with pytest.raises(ValidationError):
+        PageCreatePayload.model_validate({"project_id": 1, "title": "封面", "page_content": "<template />"})
+    with pytest.raises(ValidationError):
+        ProjectApplyStylePayload.model_validate({"source_style_id": 2})
 
 
 def test_read_tools_should_separate_collection_and_single_entity_parameters() -> None:
@@ -240,8 +292,8 @@ def test_read_tools_should_separate_collection_and_single_entity_parameters() ->
     assert "target_id" not in runtime_detail["properties"]
 
 
-async def test_action_payload_validation_should_return_recoverable_business_error() -> None:
-    """动作 payload 不符合精确手册时应返回可恢复业务错误，而不是泄漏 Pydantic 异常。"""
+async def test_removed_action_should_return_unsupported_business_error() -> None:
+    """复制已迁入创建工具，旧生命周期调用必须被明确拒绝。"""
 
     execute_action = {item.name: item for item in build_generic_business_tools(None)}["execute_action"]  # type: ignore[arg-type]
 
@@ -254,8 +306,7 @@ async def test_action_payload_validation_should_return_recoverable_business_erro
             payload={"project_id": 9},
         )
 
-    assert error.value.code == "AI_OPERATION_ARGUMENTS_INVALID"
-    assert "target_project_id" in error.value.detail
+    assert error.value.code == "AI_OPERATION_UNSUPPORTED"
 
 
 async def test_batch_archive_should_require_approval_and_preserve_deduplicated_targets(monkeypatch) -> None:

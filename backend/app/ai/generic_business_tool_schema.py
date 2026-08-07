@@ -14,6 +14,7 @@ GENERIC_BUSINESS_TOOL_KEYS = frozenset(
         "create_entity",
         "update_entity",
         "archive_entity",
+        "validate_entity",
         "execute_action",
     }
 )

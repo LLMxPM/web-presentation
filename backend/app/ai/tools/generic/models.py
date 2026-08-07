@@ -50,8 +50,10 @@ def build_mutation_envelope(
     data: Any,
     action: str | None = None,
     target: dict[str, Any] | None = None,
+    source: dict[str, Any] | None = None,
     targets: list[dict[str, Any]] | None = None,
     mutation_kind: str | None = None,
+    effect: Literal["create", "update", "lifecycle"] = "update",
 ) -> dict[str, Any]:
     """构造供模型和 Editor 同时消费的统一写入结果。"""
 
@@ -66,15 +68,19 @@ def build_mutation_envelope(
         mutation["target"] = target
     if targets:
         mutation["targets"] = targets
+    succeeded = not (isinstance(data, dict) and data.get("success") is False)
     payload: dict[str, Any] = {
-        "success": True,
+        "success": succeeded,
         "resource_type": resource_type,
         "operation": operation,
         "action": action,
         "message": message,
-        "mutation": mutation,
+        "effect": effect,
+        "mutation": mutation if succeeded else None,
         "data": data,
     }
+    if source is not None:
+        payload["source"] = source
     if target is not None:
         payload["target"] = target
     if targets is not None:
@@ -97,5 +103,32 @@ def build_query_envelope(
         "operation": "query",
         "action": action,
         "message": message,
+        "effect": "read",
+        "mutation": None,
         "data": data,
+    }
+
+
+def build_validation_envelope(
+    *,
+    resource_type: str,
+    action: str,
+    data: Any,
+    message: str = "校验完成。",
+) -> dict[str, Any]:
+    """构造不落库校验的稳定结果，并把业务校验失败留在 data.valid。"""
+
+    normalized = dict(data) if isinstance(data, dict) else {"result": data}
+    raw_success = normalized.pop("success", None)
+    if "valid" not in normalized:
+        normalized["valid"] = bool(raw_success) if raw_success is not None else True
+    return {
+        "success": True,
+        "resource_type": resource_type,
+        "operation": "validate",
+        "action": action,
+        "effect": "read",
+        "message": str(normalized.pop("message", None) or message),
+        "mutation": None,
+        "data": normalized,
     }

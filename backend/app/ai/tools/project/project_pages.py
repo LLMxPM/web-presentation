@@ -14,7 +14,7 @@ from app.ai.page_mutation_enqueue import enqueue_page_mutation
 from app.ai.tools.shared import resolve_tool_context
 from app.core.exceptions import AppException
 from app.models.enums import PageFileType, RecordStatus
-from app.schemas.page import PageCreateRequest, PageUpdateRequest
+from app.schemas.page import PageCopyToProjectRequest, PageCreateRequest, PageUpdateRequest
 from app.services.code_check_service import CodeCheckService
 from app.services.page_service import PageService
 
@@ -38,6 +38,9 @@ def build_create_project_page_tool(session_factory: async_sessionmaker[AsyncSess
         page_content: str,
         summary: str | None = None,
         speaker_notes: str | None = None,
+        route_placement: str = "none",
+        parent_route_id: int | None = None,
+        route: str | None = None,
     ) -> dict[str, Any]:
         """在当前项目创建页面；page_content 必填，可同时写入演讲者备注。"""
 
@@ -98,6 +101,12 @@ def build_create_project_page_tool(session_factory: async_sessionmaker[AsyncSess
                     status=RecordStatus.ACTIVE,
                 ),
                 operator_id,
+                route_options=PageCopyToProjectRequest(
+                    target_project_id=int(dependencies["project_id"]),
+                    route_placement=route_placement,
+                    parent_route_id=parent_route_id,
+                    route=route,
+                ),
             )
             response = {
                 "success": True,

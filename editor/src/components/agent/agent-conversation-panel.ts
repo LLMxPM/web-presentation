@@ -112,7 +112,7 @@ export function toolDetailFromTimelineItem(item: AgentTimelineItem, memberRuns: 
  */
 export function resolveLogicalToolName(toolName: string, inputPayload: unknown): string {
   // query_entities 已退出运行时目录，仅保留识别以兼容历史会话工具卡。
-  if (!['query_entities', 'list_entities', 'get_entity', 'create_entity', 'update_entity', 'archive_entity', 'execute_action', 'execute_dangerous_action', 'get_operation_guide'].includes(toolName)) {
+  if (!['query_entities', 'list_entities', 'get_entity', 'create_entity', 'update_entity', 'archive_entity', 'validate_entity', 'execute_action', 'execute_dangerous_action', 'get_operation_guide'].includes(toolName)) {
     return toolName
   }
   const payload = isRecord(inputPayload) ? inputPayload : {}
@@ -134,8 +134,14 @@ export function resolveLogicalToolName(toolName: string, inputPayload: unknown):
   if (toolName === 'query_entities') return `查询${resourceLabel}`
   if (toolName === 'list_entities') return `罗列${resourceLabel}`
   if (toolName === 'get_entity') return `读取${resourceLabel}`
-  if (toolName === 'create_entity') return `创建${resourceLabel}`
+  if (toolName === 'create_entity') {
+    const mode = String(payload.mode || 'new')
+    if (mode === 'copy') return `复制${resourceLabel}`
+    if (mode === 'upload') return `从上传创建${resourceLabel}`
+    return `创建${resourceLabel}`
+  }
   if (toolName === 'update_entity') return `修改${resourceLabel}`
+  if (toolName === 'validate_entity') return actionLabelForValidation(payload.action, resourceLabel)
   if (toolName === 'archive_entity') {
     const count = Array.isArray(payload.target_ids) ? payload.target_ids.length : 0
     return count > 1 ? `批量归档${resourceLabel}` : `归档${resourceLabel}`
@@ -155,6 +161,10 @@ export function resolveLogicalToolName(toolName: string, inputPayload: unknown):
     check: '检查',
   }[action] || '执行操作'
   return `${actionLabel}${resourceLabel}`
+}
+
+function actionLabelForValidation(action: unknown, resourceLabel: string): string {
+  return String(action || '') === 'preview' ? `预览${resourceLabel}改动` : `检查${resourceLabel}`
 }
 
 /** 判断未知值是否为普通对象。 */

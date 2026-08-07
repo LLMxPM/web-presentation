@@ -25,6 +25,7 @@ def build_resource_manager_tools(session_factory: async_sessionmaker[AsyncSessio
 
     return [
         build_list_resource_assets_tool(session_factory),
+        build_get_resource_asset_detail_tool(session_factory),
         build_get_resource_asset_content_tool(session_factory),
         build_list_resource_tags_tool(session_factory),
         build_save_uploaded_image_as_resource_tool(session_factory),
@@ -128,6 +129,35 @@ def build_list_resource_assets_tool(session_factory: async_sessionmaker[AsyncSes
             }
 
     return list_resource_assets
+
+
+def build_get_resource_asset_detail_tool(session_factory: async_sessionmaker[AsyncSession]) -> Any:
+    """构建 active 资源单项详情读取工具。"""
+
+    @agent_tool(show_result=False)
+    async def get_resource_asset_detail(run_context: AgentToolContext, asset_id: int) -> dict[str, Any]:
+        """读取资源元数据、渲染类型和文本可编辑性，不返回文件内容。"""
+
+        dependencies, _ = await resolve_tool_context(
+            session_factory,
+            run_context,
+            required_scopes=RESOURCE_TOOL_READ_SCOPES,
+            required_dependency_fields=("workspace_id",),
+        )
+        async with session_factory() as session:
+            service = AssetService(session)
+            asset = await service._get_asset_or_raise(int(dependencies["workspace_id"]), int(asset_id))
+            if str(getattr(asset.status, "value", asset.status)) != RecordStatus.ACTIVE.value:
+                raise AppException(status_code=404, code="AI_ENTITY_NOT_FOUND", detail="资源不存在或已归档。")
+            payload = _dump_asset(asset)
+            references = await service.preview_asset_references(
+                int(dependencies["workspace_id"]),
+                int(asset_id),
+            )
+            payload["references"] = references.model_dump(mode="json")
+            return payload
+
+    return get_resource_asset_detail
 
 
 def build_get_resource_asset_content_tool(session_factory: async_sessionmaker[AsyncSession]) -> Any:

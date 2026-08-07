@@ -451,7 +451,13 @@ async def test_ai_page_mutation_executor_should_commit_page_and_job_together(
         tool_arguments = (
             {
                 "resource_type": "page",
-                "payload": {"project_id": project_id, **page_arguments},
+                "mode": "new",
+                "payload": {
+                    "project_id": project_id,
+                    "title": page_arguments["title"],
+                    "summary": page_arguments["summary"],
+                    "content": page_arguments["page_content"],
+                },
             }
             if generic_tool
             else page_arguments

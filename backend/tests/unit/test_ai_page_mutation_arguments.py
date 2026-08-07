@@ -19,10 +19,11 @@ def test_create_entity_page_arguments_should_unwrap_payload() -> None:
         tool_name="create_entity",
         raw_arguments={
             "resource_type": "page",
+            "mode": "new",
             "payload": {
                 "project_id": 52,
                 "title": "Tool Evaluation & Benchmarking",
-                "page_content": "<template><main /></template>",
+                "content": "<template><main /></template>",
                 "summary": "选型对比",
             },
         },
@@ -89,6 +90,8 @@ def test_generic_deferred_result_should_keep_mutation_envelope() -> None:
     )
 
     assert created["operation"] == "create"
+    assert created["effect"] == "create"
+    assert created["target"] == {"id": 91, "resource_type": "page"}
     assert created["mutation"]["kind"] == "project-pages"
     assert created["data"]["page_id"] == 91
     assert updated["operation"] == "update"
@@ -112,8 +115,8 @@ def test_recoverable_deferred_result_should_not_be_wrapped() -> None:
 @pytest.mark.parametrize(
     ("tool_name", "raw_arguments"),
     [
-        ("create_entity", {"resource_type": "component", "payload": {}}),
-        ("create_entity", {"resource_type": "page", "payload": "{}"}),
+        ("create_entity", {"resource_type": "component", "mode": "new", "payload": {}}),
+        ("create_entity", {"resource_type": "page", "mode": "new", "payload": "{}"}),
         (
             "update_entity",
             {"resource_type": "page", "target_id": 81, "action": "metadata", "payload": {}},

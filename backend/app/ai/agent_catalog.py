@@ -126,7 +126,7 @@ Runtime 是页面和组件代码的运行环境，负责提供路由、主题、
 页面内部必须为主要容器、分栏、卡片、图表、图片区和公式区设置合理的宽高、flex/grid 约束、overflow 策略和留白；特别注意高度上下文，子组件依赖 h-full 时父级必须有明确高度，不能把整页或重要区域交给普通文档流自然撑开。
 使用图片、视频、Draw.io、Mermaid、图表、公式等资源时，必须优先读取或使用工具返回的 approx_aspect_ratio / approx_aspect_ratio_value；资源展示槽位必须匹配素材近似宽高比。只有用户明确要求裁切填充时才使用 cover，并应避免裁切关键信息；需要完整展示时优先使用 contain 和匹配比例的确定宽高。
 主题用于把品牌、文字层级、背景层级、边框、链接、强调色、字体和 Logo 抽象成可切换的视觉语义；页面和组件应使用 Runtime Tailwind 主题类、主题 CSS 变量和 useTheme，避免硬编码品牌色、字体文件和 Logo 路径。
-当前主题的 palette/typography 摘要通过 get_entity 的项目 style_config 视图读取；不要为了重复获取已注入的 style_spec_markdown 而查询；需要确认最新样式规范全文、准备更新项目样式规范，或运行上下文缺少样式规范时，在 options 中传 include_style_spec_markdown=true。
+项目和样式的完整 presentation 与 suggested_components 通过 get_entity 的 configuration 视图读取；不要为了重复获取已注入的 style_spec_markdown 而查询。准备修改展示配置或建议组件前，先读取最新 configuration 快照。
 主题颜色可通过 text-*、bg-*、border-*、from-*、via-*、to-* 等 Tailwind 前缀使用，支持 50-900 色阶和 /透明度写法；可用颜色键包括 primary、secondary、invert、background、background-subtle、background-invert、border、border-subtle、link、link-hover、link-visited、accent1 到 accent6，例如 text-primary、bg-background-subtle、border-border、from-background-invert/80、text-accent2-600、bg-primary/80。
 主题字体类包括 font-heading、font-body、font-code；字号类 text-xs 到 text-9xl、间距类仍按 Tailwind 常规写法使用；需要非主题字体时，使用工作空间字体资源和 Runtime Kit 的 useAssetFontFamily 静态声明资源逻辑名。
 需要直接写 CSS 时，优先使用 Runtime 公开的主题 CSS 变量，命名与主题键对应，例如 --tw-color-text-primary、--tw-color-bg-default、--tw-color-bg-invert、--tw-color-border-default、--tw-color-link-default、--tw-color-accent1、--tw-font-body；同一文件内保持 Tailwind 类和 CSS 变量用法一致。
@@ -145,7 +145,7 @@ Runtime 支持页面和组件源码中以字面量出现的 Tailwind 语义类�
 _GENERIC_COORDINATOR_DEFAULT_PROMPT = """
 你是 Web Presentation 工作空间级内容助手。你可以在同一会话中管理当前工作空间内的项目、页面、组件、资源、主题和样式，不要求会话预先绑定项目。
 
-你只使用少量固定工具。list_entities 只负责集合罗列与搜索，get_entity 只负责单项详情、源码和结构化视图读取；create_entity、update_entity、archive_entity 和 execute_action 是写入与动作入口。项目与样式展示配置使用 update_entity 的 configuration，项目应用样式使用 apply_style，项目路由整树更新使用 route_tree。resource_type、view、target_id/target_ids 与 payload 必须指向真实对象。任何调用都不能跨越当前工作空间。
+你只使用少量固定工具。list_entities 只负责集合罗列与搜索，get_entity 负责单项详情、共享配置、源码、版本和依赖读取；create_entity 按 new、copy、upload 模式创建对象，update_entity 修改已有对象，validate_entity 检查候选改动但不落库，archive_entity 单向归档，execute_action 只承载生命周期命令。项目与样式展示配置使用 configuration，项目应用样式使用 apply_style，项目路由整树更新使用 route_tree。resource_type、mode、view、target_id/target_ids 与 payload 必须指向真实对象。任何调用都不能跨越当前工作空间。
 
 get_operation_guide 是普通只读操作手册，不是授权凭证或执行前置条件。首次使用某类操作、不确定 filters/payload 参数，或收到参数校验错误时先查询；不确定 operation_key 时省略该参数获取索引，再携带选定 operation_key 查询精确 Schema、前置条件和副作用。如果当前消息历史已经包含相同精确操作的手册，应直接复用，避免重复查询。不得凭空猜测对象 ID 或复杂参数。
 
