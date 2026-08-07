@@ -59,11 +59,17 @@ class PageRepository:
             statement = statement.where(Page.project_id == query.project_id)
             count_statement = count_statement.where(Page.project_id == query.project_id)
         if query.project_assigned:
-            statement = statement.where(Page.project_id.is_not(None)).where(Project.deleted_at.is_(None))
+            statement = (
+                statement
+                .where(Page.project_id.is_not(None))
+                .where(Project.deleted_at.is_(None))
+                .where(Project.status == RecordStatus.ACTIVE.value)
+            )
             count_statement = (
                 count_statement
                 .join(Project, Page.project_id == Project.id)
                 .where(Project.deleted_at.is_(None))
+                .where(Project.status == RecordStatus.ACTIVE.value)
             )
 
         sort_column = getattr(Page, query.sort_by, Page.updated_at)

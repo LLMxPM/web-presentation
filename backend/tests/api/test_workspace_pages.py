@@ -77,3 +77,16 @@ async def test_workspace_page_list_should_support_assigned_filter_pagination_and
     assert after_archive_response.status_code == 200
     assert after_archive_response.json()["total"] == 1
     assert after_archive_response.json()["items"][0]["title"] == assigned_titles[1]
+
+    archive_project_response = await authenticated_client.patch(
+        f"/api/projects/{project_id}",
+        json={"status": "archived"},
+    )
+    assert archive_project_response.status_code == 200
+
+    after_project_archive_response = await authenticated_client.get(
+        f"/api/pages?workspace_id={workspace_id}&project_assigned=true&status=active&page=1&page_size=10",
+    )
+    assert after_project_archive_response.status_code == 200
+    assert after_project_archive_response.json()["total"] == 0
+    assert after_project_archive_response.json()["items"] == []
