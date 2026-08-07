@@ -37,18 +37,15 @@
         <Download class="h-4 w-4" />
         <span class="hidden lg:inline">{{ selectionMode ? '退出选择' : '导出组件' }}</span>
       </UiButton>
-      <UiButton
+      <UiIconButton
         v-if="!readOnly && componentPanelTab === 'workspace'"
         type="button"
-        variant="ghost"
-        size="sm"
         :disabled="loading"
-        title="刷新组件列表"
+        label="刷新组件列表"
         @click="emitRefreshRequest"
       >
-        <RefreshCw class="h-4 w-4" :class="{ 'animate-spin': loading }" />
-        <span class="hidden lg:inline">刷新</span>
-      </UiButton>
+        <RefreshCw class="h-3.5 w-3.5" :class="{ 'animate-spin': loading }" />
+      </UiIconButton>
       <UiButton
         v-if="showCreateImportActions && !readOnly && componentPanelTab === 'workspace'"
         type="button"
@@ -158,7 +155,11 @@
             </label>
             <div class="min-w-0 flex-1">
               <div class="mb-1 flex flex-wrap items-center gap-1.5">
-                <h3 class="truncate text-sm font-bold text-text transition-colors group-hover:text-accent">
+                <h3
+                  class="cursor-pointer truncate text-sm font-bold text-text transition-colors group-hover:text-accent"
+                  title="点击复制组件名称"
+                  @click.stop="copyWorkspaceComponentName(component)"
+                >
                   {{ component.name }}
                 </h3>
                 <div class="flex items-center gap-1.5">
@@ -173,12 +174,20 @@
                   </span>
                 </div>
               </div>
-              <div class="inline-flex max-w-full rounded border border-border-muted bg-canvas px-1.5 py-0.5">
+              <div
+                class="inline-flex max-w-full cursor-pointer rounded border border-border-muted bg-canvas px-1.5 py-0.5"
+                title="点击复制组件编码"
+                @click.stop="copyWorkspaceComponentCode(component)"
+              >
                 <span class="truncate font-mono text-[10px] font-bold uppercase tracking-wider text-text-disabled">
                   {{ component.code }}
                 </span>
               </div>
-              <div class="mt-1 inline-flex max-w-full rounded border border-accent-muted bg-surface-selected px-1.5 py-0.5">
+              <div
+                class="mt-1 inline-flex max-w-full cursor-pointer rounded border border-accent-muted bg-surface-selected px-1.5 py-0.5"
+                title="点击复制源码引用名"
+                @click.stop="copyWorkspaceComponentImportName(component)"
+              >
                 <span class="truncate font-mono text-[10px] font-bold text-accent-emphasis">
                   {{ component.import_name }}
                 </span>
@@ -191,14 +200,12 @@
                 :label="canCopyWorkspaceComponentImport(component) ? '复制 import 语句' : '发布后可复制 import 语句'"
                 @click.stop="copyComponentImportStatement(component)"
               >
-                <Copy class="h-3.5 w-3.5" />
+                <Braces class="h-3.5 w-3.5" />
               </UiIconButton>
               <UiIconButton
                 v-if="!readOnly"
                 type="button"
-                variant="secondary"
                 label="归档组件"
-                title="归档组件"
                 @click.stop="handleArchive(component)"
               >
                 <Archive class="h-3.5 w-3.5" />
@@ -225,7 +232,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { Archive, ArrowUpRight, Box, Calendar, Copy, Download, Layers, Plus, RefreshCw, Upload } from '@lucide/vue'
+import { Archive, ArrowUpRight, Box, Braces, Calendar, Download, Layers, Plus, RefreshCw, Upload } from '@lucide/vue'
 
 import { archiveComponent, listComponents } from '@/api/catalog'
 import { getErrorMessage } from '@/api/http'
@@ -235,6 +242,7 @@ import LibrarySegmentedControl from '@/components/project/LibrarySegmentedContro
 import LibrarySidebarPanel from '@/components/project/LibrarySidebarPanel.vue'
 import type { RuntimeKitComponentCapabilityItem, WorkspaceComponentItem } from '@/types/api'
 import { buildWorkspaceComponentImportUsage } from '@/utils/component-import'
+import { copyTextToClipboard } from '@/utils/clipboard'
 import { formatDateTime } from '@/utils/format'
 import { createConfirm, Message } from '@/utils/message'
 import { buildWorkspaceComponentsPath } from '@/utils/workspace-routes'
@@ -532,6 +540,30 @@ function isPublishedWorkspaceComponent(component: WorkspaceComponentItem): boole
 }
 
 /**
+ * 复制工作空间组件名称。
+ * @param component 待复制组件
+ */
+async function copyWorkspaceComponentName(component: WorkspaceComponentItem): Promise<void> {
+  await copyTextToClipboard(component.name, '组件名称已复制到剪贴板。')
+}
+
+/**
+ * 复制工作空间组件编码。
+ * @param component 待复制组件
+ */
+async function copyWorkspaceComponentCode(component: WorkspaceComponentItem): Promise<void> {
+  await copyTextToClipboard(component.code, '组件编码已复制到剪贴板。')
+}
+
+/**
+ * 复制工作空间组件源码引用名。
+ * @param component 待复制组件
+ */
+async function copyWorkspaceComponentImportName(component: WorkspaceComponentItem): Promise<void> {
+  await copyTextToClipboard(component.import_name, '源码引用名已复制到剪贴板。')
+}
+
+/**
  * 复制工作空间组件 import 语句。
  * @param component 待复制组件
  */
@@ -541,13 +573,7 @@ async function copyComponentImportStatement(component: WorkspaceComponentItem): 
     Message.error('组件发布后才能复制 import 语句。')
     return
   }
-
-  try {
-    await navigator.clipboard.writeText(usage.importStatement)
-    Message.success('import 语句已复制到剪贴板。')
-  } catch {
-    Message.error('复制 import 语句失败，请检查浏览器剪贴板权限。')
-  }
+  await copyTextToClipboard(usage.importStatement, 'import 语句已复制到剪贴板。')
 }
 
 function resolveComponentVersionBadgeText(component: WorkspaceComponentItem): string {

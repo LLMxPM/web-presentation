@@ -56,6 +56,9 @@
       />
       <span class="shrink-0 text-xs text-[rgb(var(--ui-text-secondary))]">共 {{ projectTotal }} 个项目</span>
       <template #actions>
+        <UiIconButton label="刷新项目列表" size="md" @click="handleRefreshProjects">
+          <RefreshCw class="h-4 w-4" />
+        </UiIconButton>
         <UiButton
           variant="secondary"
           size="md"
@@ -412,7 +415,7 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/vue-query'
-import { Archive, FolderKanban, Layers, Plus, SquarePen, Upload } from '@lucide/vue'
+import { Archive, FolderKanban, Layers, Plus, RefreshCw, SquarePen, Upload } from '@lucide/vue'
 
 import { createProject, getWorkspace, listProjects, updateProject, updateWorkspace } from '@/api/catalog'
 import { getErrorMessage } from '@/api/http'
@@ -592,6 +595,14 @@ const importMetadataItems = computed(() => [
 
 function openCreateDialog() {
   dialogVisible.value = true
+}
+
+/**
+ * 手动刷新项目列表与工作空间详情。
+ */
+function handleRefreshProjects(): void {
+  void query.refetch()
+  void workspaceQuery.refetch()
 }
 
 /**

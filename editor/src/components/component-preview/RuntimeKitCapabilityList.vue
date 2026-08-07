@@ -42,7 +42,11 @@
           <div class="mb-2 flex items-start justify-between gap-3">
             <div class="min-w-0 flex-1">
               <div class="mb-1 flex flex-wrap items-center gap-2">
-                <h3 class="truncate text-sm font-bold text-text group-hover:text-accent">
+                <h3
+                  class="cursor-pointer truncate text-sm font-bold text-text group-hover:text-accent"
+                  title="点击复制能力中文名称"
+                  @click.stop="copyRuntimeKitDisplayName(item)"
+                >
                   {{ item.display_name }}
                 </h3>
                 <span class="rounded bg-surface-muted px-1.5 py-0.5 text-[10px] font-black uppercase text-text-muted">
@@ -61,8 +65,12 @@
                   doc-only
                 </span>
               </div>
-              <div class="inline-flex max-w-full rounded border border-border-muted bg-canvas px-1.5 py-0.5">
-                <span class="truncate font-mono text-[10px] font-bold text-text-disabled">{{ item.import_path }}</span>
+              <div
+                class="inline-flex max-w-full cursor-pointer rounded border border-border-muted bg-canvas px-1.5 py-0.5"
+                title="点击复制能力英文名称"
+                @click.stop="copyRuntimeKitName(item)"
+              >
+                <span class="truncate font-mono text-[10px] font-bold text-text-disabled">{{ item.name }}</span>
               </div>
             </div>
             <div class="mt-0.5 flex shrink-0 items-center gap-1">
@@ -74,9 +82,8 @@
                 title="复制 import 语句"
                 @click.stop="copyRuntimeKitComponentImportStatement(item)"
               >
-                <Copy class="h-3.5 w-3.5" />
+                <Braces class="h-3.5 w-3.5" />
               </UiIconButton>
-              <Eye v-if="item.previewable" class="h-4 w-4 text-text-faint group-hover:text-accent-emphasis" />
               <FileText v-else class="h-4 w-4 text-text-faint group-hover:text-accent-emphasis" />
             </div>
           </div>
@@ -100,7 +107,7 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { Copy, Eye, FileText, PackageOpen } from '@lucide/vue'
+import { Braces, FileText, PackageOpen } from '@lucide/vue'
 
 import { getErrorMessage } from '@/api/http'
 import { listRuntimeKitComponents } from '@/api/runtime-kit'
@@ -109,6 +116,7 @@ import LibraryChipFilter from '@/components/project/LibraryChipFilter.vue'
 import LibrarySegmentedControl from '@/components/project/LibrarySegmentedControl.vue'
 import type { RuntimeKitCapabilityKind, RuntimeKitComponentCapabilityItem } from '@/types/api'
 import { buildRuntimeKitComponentImportUsage } from '@/utils/component-import'
+import { copyTextToClipboard } from '@/utils/clipboard'
 import { Message } from '@/utils/message'
 
 const props = withDefaults(defineProps<{
@@ -255,6 +263,22 @@ function openCapability(item: RuntimeKitComponentCapabilityItem): void {
 }
 
 /**
+ * 复制 Runtime Kit 能力的中文名称。
+ * @param item Runtime Kit 能力条目
+ */
+async function copyRuntimeKitDisplayName(item: RuntimeKitComponentCapabilityItem): Promise<void> {
+  await copyTextToClipboard(item.display_name, '能力中文名称已复制到剪贴板。')
+}
+
+/**
+ * 复制 Runtime Kit 能力的英文名称。
+ * @param item Runtime Kit 能力条目
+ */
+async function copyRuntimeKitName(item: RuntimeKitComponentCapabilityItem): Promise<void> {
+  await copyTextToClipboard(item.name, '能力英文名称已复制到剪贴板。')
+}
+
+/**
  * 复制 Runtime Kit 组件能力的 import 语句。
  * @param item Runtime Kit 能力条目
  */
@@ -264,13 +288,7 @@ async function copyRuntimeKitComponentImportStatement(item: RuntimeKitComponentC
     Message.error('当前能力不是可默认导入的组件。')
     return
   }
-
-  try {
-    await navigator.clipboard.writeText(usage.importStatement)
-    Message.success('import 语句已复制到剪贴板。')
-  } catch {
-    Message.error('复制 import 语句失败，请检查浏览器剪贴板权限。')
-  }
+  await copyTextToClipboard(usage.importStatement, 'import 语句已复制到剪贴板。')
 }
 
 void fetchItems()

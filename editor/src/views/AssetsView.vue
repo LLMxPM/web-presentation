@@ -482,16 +482,6 @@
                       替换
                     </UiButton>
                     <UiButton
-                      type="button"
-                      variant="secondary"
-                      size="sm"
-                      title="复制资源"
-                      @click="copySelected"
-                    >
-                      <Copy class="h-3.5 w-3.5" />
-                      复制
-                    </UiButton>
-                    <UiButton
                       v-if="detailAsset.status === 'active'"
                       type="button"
                       variant="secondary"
@@ -676,7 +666,6 @@ import {
   batchArchiveWorkspaceAssets,
   batchDeleteWorkspaceAssets,
   batchRestoreWorkspaceAssets,
-  copyWorkspaceAsset,
   createAssetRenderHintBackfillJobs,
   createWorkspaceAssetContent,
   deleteWorkspaceAsset,
@@ -1534,25 +1523,6 @@ async function saveContent(): Promise<void> {
     Message.error(getErrorMessage(error, '写入资源内容失败'))
   } finally {
     saving.value = false
-  }
-}
-
-async function copySelected(): Promise<void> {
-  if (!Number.isFinite(workspaceId.value) || !selectedAsset.value) return
-  const defaultName = selectedAsset.value.history_kind
-    ? `${selectedAsset.value.original_name.replace(/\W+/g, '_')}_copy`
-    : `${selectedAsset.value.name}_copy`
-  const name = window.prompt('输入复制后的资源 name', defaultName)
-  if (!name?.trim()) return
-  try {
-    const copied = await copyWorkspaceAsset(workspaceId.value, selectedAsset.value.id, { name: name.trim() })
-    Message.success('资源已复制')
-    activeView.value = copied.status === 'active' ? 'active' : 'archived'
-    page.value = 1
-    await refreshAssets()
-    await openAssetDetail(copied)
-  } catch (error) {
-    Message.error(getErrorMessage(error, '复制资源失败'))
   }
 }
 

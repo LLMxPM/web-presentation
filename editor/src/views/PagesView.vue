@@ -84,6 +84,14 @@
                   </template>
                   组件
                 </UiButton>
+                <UiIconButton
+                  label="刷新页面列表"
+                  size="sm"
+                  :disabled="!projectDetails"
+                  @click="handleRefreshPages"
+                >
+                  <RefreshCw class="h-4 w-4" />
+                </UiIconButton>
               </div>
             </template>
           </CommandBar>
@@ -286,6 +294,7 @@ import {
   Image,
   Layers,
   Play,
+  RefreshCw,
   SlidersHorizontal,
   SquarePen,
 } from '@lucide/vue'
@@ -694,6 +703,14 @@ function getSelectedPagesByScope(scope: PageBatchScope): PageItem[] {
  */
 function getRefreshableScreenshotPagesByScope(scope: PageBatchScope): PageItem[] {
   return scope === 'routed' ? routedRefreshableScreenshotPages.value : unroutedRefreshableScreenshotPages.value
+}
+
+/**
+ * 手动刷新页面列表与项目详情。
+ */
+function handleRefreshPages(): void {
+  void query.refetch()
+  void projectQuery.refetch()
 }
 
 function openCreateDialog(): void {

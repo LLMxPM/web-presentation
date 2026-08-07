@@ -9,7 +9,7 @@
         <slot name="icon" />
         <h2 class="truncate text-base font-bold text-text">{{ title }}</h2>
       </div>
-      <div class="flex shrink-0 items-center gap-1">
+      <div class="flex shrink-0 items-center gap-1 min-h-[var(--ui-control-h-sm)]">
         <slot name="actions" />
         <UiIconButton
           v-if="showClose"
