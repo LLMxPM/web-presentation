@@ -22,9 +22,11 @@ from app.ai.platform_tools import AgentToolContext
 from app.ai.tools.generic import build_generic_business_tools
 from app.core.exceptions import AppException
 from app.db.session import get_session_factory
+from app.models.enums import RecordStatus, UserRole
+from app.models.page import Page
 from app.models.user import User
+from app.models.workspace import Project
 from app.models.workspace_style import WorkspaceStyle
-from app.models.enums import UserRole
 from app.services.auth_service import AuthContext
 
 
@@ -147,6 +149,62 @@ async def test_selected_projects_should_filter_queries_and_hide_archived_pages(a
     assert archived_error.value.code == "AI_ENTITY_NOT_FOUND"
     with pytest.raises(AppException):
         await tools["get_entity"].entrypoint(approved_context, "page", "versions", second_page_id, None, {})
+
+
+async def test_project_archive_should_respect_work_scope_and_keep_child_pages(authenticated_client: AsyncClient) -> None:
+    """项目归档应遵守工作集，并且不得级联归档项目页面。"""
+
+    workspace_id = await _create_workspace(authenticated_client, "项目归档边界")
+    focus_project_id = await _create_project(authenticated_client, workspace_id, "焦点项目")
+    target_project_id = await _create_project(authenticated_client, workspace_id, "待归档项目")
+    page_id = await _create_page(authenticated_client, workspace_id, target_project_id, "保留页面")
+    tools = {item.name: item for item in build_generic_business_tools(get_session_factory())}
+
+    denied_context = _build_tool_run_context(
+        workspace_id,
+        approved=False,
+        focus_project_id=focus_project_id,
+        work_scope_mode="selected_projects",
+        allowed_project_ids=[focus_project_id],
+    )
+    with pytest.raises(AppException) as denied:
+        await tools["archive_entity"].entrypoint(denied_context, "project", [target_project_id], "整理")
+    assert denied.value.code == "AI_PROJECT_OUTSIDE_WORK_SCOPE"
+
+    cross_focus_context = _build_tool_run_context(
+        workspace_id,
+        approved=False,
+        focus_project_id=focus_project_id,
+        work_scope_mode="selected_projects",
+        allowed_project_ids=[focus_project_id, target_project_id],
+    )
+    with pytest.raises(ApprovalRequired):
+        await tools["archive_entity"].entrypoint(cross_focus_context, "project", [target_project_id], "整理")
+
+    approved_context = _build_tool_run_context(
+        workspace_id,
+        approved=True,
+        focus_project_id=focus_project_id,
+        work_scope_mode="selected_projects",
+        allowed_project_ids=[focus_project_id, target_project_id],
+    )
+    result = await tools["archive_entity"].entrypoint(
+        approved_context,
+        "project",
+        [target_project_id],
+        "整理",
+    )
+
+    assert result["success"] is True
+    assert result["data"]["archived_count"] == 1
+    async with get_session_factory()() as session:
+        project = await session.scalar(select(Project).where(Project.id == target_project_id))
+        page = await session.scalar(select(Page).where(Page.id == page_id))
+        assert project is not None
+        assert project.status == RecordStatus.ARCHIVED.value
+        assert project.archived_at is not None
+        assert page is not None
+        assert page.status == RecordStatus.ACTIVE.value
 
 
 async def test_page_copy_create_mode_should_use_project_id_for_cross_focus_confirmation(authenticated_client: AsyncClient) -> None:

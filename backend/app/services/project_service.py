@@ -41,7 +41,13 @@ class ProjectService:
         self.workspace_service = WorkspaceService(session)
         self.settings = get_settings()
 
-    def _to_item(self, project: Project, *, first_page: Page | None = None) -> ProjectItem:
+    def _to_item(
+        self,
+        project: Project,
+        *,
+        first_page: Page | None = None,
+        page_counts: tuple[int, int] = (0, 0),
+    ) -> ProjectItem:
         """将 ORM 项目对象转换为接口层需要的显式响应结构。"""
 
         return ProjectItem.model_validate(
@@ -67,6 +73,8 @@ class ProjectService:
                 "build_extra_assets_json": normalize_project_build_extra_assets_config(
                     project.build_extra_assets_json
                 ).model_dump(mode="python"),
+                "routed_page_count": page_counts[0],
+                "total_page_count": page_counts[1],
                 "first_page_title": first_page.title if first_page is not None else None,
                 "first_page_screenshot_url": (
                     build_page_screenshot_url(first_page, self.settings.backend_public_base_url)
@@ -92,8 +100,16 @@ class ProjectService:
             user_id=user_id,
         )
         first_pages = await self.repository.list_cover_pages([item.id for item in items])
+        page_counts = await self.repository.list_page_counts([item.id for item in items])
         return PagedResponse[ProjectItem](
-            items=[self._to_item(item, first_page=first_pages.get(item.id)) for item in items],
+            items=[
+                self._to_item(
+                    item,
+                    first_page=first_pages.get(item.id),
+                    page_counts=page_counts.get(item.id, (0, 0)),
+                )
+                for item in items
+            ],
             total=total,
             page=query.page,
             page_size=query.page_size,
@@ -107,7 +123,8 @@ class ProjectService:
             raise AppException(status_code=404, code="PROJECT_NOT_FOUND", detail="项目不存在。")
         if user_id is not None:
             await self.workspace_service.ensure_access(project.workspace_id, user_id=user_id)
-        return self._to_item(project)
+        page_counts = await self.repository.list_page_counts([project.id])
+        return self._to_item(project, page_counts=page_counts.get(project.id, (0, 0)))
 
     async def create(self, payload: ProjectCreateRequest, operator_id: int) -> ProjectItem:
         """创建项目，code 由系统自动生成，并校验工作空间存在性。"""
@@ -268,7 +285,8 @@ class ProjectService:
         project.updated_by = operator_id
         await self.session.commit()
         reloaded = await self.repository.get_by_id(project.id)
-        return self._to_item(reloaded)
+        page_counts = await self.repository.list_page_counts([project.id])
+        return self._to_item(reloaded, page_counts=page_counts.get(project.id, (0, 0)))
 
     async def delete(self, project_id: int, *, user_id: int) -> None:
         """对当前用户可访问项目执行软删除，不影响页面资源。"""

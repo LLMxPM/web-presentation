@@ -115,24 +115,27 @@
       </CardActionBar>
     </div>
 
-    <div class="p-3">
-      <div class="flex min-w-0 items-center gap-2">
-        <h3
-          class="truncate text-sm font-bold leading-tight text-text transition-colors group-hover/card:text-accent"
-          :title="page.title"
-        >
-          {{ page.title }}
-        </h3>
-        <button
-          type="button"
-          class="shrink-0 cursor-pointer font-mono text-[10px] font-semibold uppercase tracking-widest text-text-disabled transition-colors hover:text-accent"
-          title="复制页面名称和编码"
-          aria-label="复制页面名称和编码"
-          @click.stop="handleCopyPageIdentity"
-        >
-          {{ page.code }}
-        </button>
-      </div>
+    <div class="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2 p-3">
+      <UiButton
+        variant="ghost"
+        size="xs"
+        content-align="start"
+        class="min-w-0 w-full text-left text-sm font-bold leading-tight text-text transition-colors hover:text-accent"
+        :title="`复制页面名称：${page.title}`"
+        :aria-label="`复制页面名称：${page.title}`"
+        @click.stop="handleCopyPageName"
+      >
+        <span class="block min-w-0 max-w-full truncate">{{ page.title }}</span>
+      </UiButton>
+      <button
+        type="button"
+        class="min-w-0 max-w-36 cursor-pointer truncate font-mono text-[10px] font-semibold uppercase tracking-widest text-text-disabled transition-colors hover:text-accent"
+        :title="`复制页面编码：${page.code}`"
+        :aria-label="`复制页面编码：${page.code}`"
+        @click.stop="handleCopyPageCode"
+      >
+        <span class="block truncate">{{ page.code }}</span>
+      </button>
     </div>
   </article>
 </template>
@@ -142,7 +145,7 @@ import { computed } from 'vue'
 import { Archive, Camera, Check, Copy, Layout, LoaderCircle, Route as RouteIcon } from '@lucide/vue'
 
 import CardActionBar from '@/components/patterns/CardActionBar.vue'
-import { UiCheckbox, UiIconButton } from '@/components/ui'
+import { UiButton, UiCheckbox, UiIconButton } from '@/components/ui'
 import type { PageItem } from '@/types/api'
 import { Message } from '@/utils/message'
 
@@ -182,13 +185,28 @@ const emit = defineEmits<{
 const showStaleBadge = computed(() => Boolean(props.page.screenshot_url && !props.page.screenshot_is_latest))
 
 /**
- * 复制页面名称和编码到剪贴板，便于在对话或文档中引用页面。
+ * 复制页面名称到剪贴板，点击名称时不触发整卡片详情跳转。
  */
-async function handleCopyPageIdentity(): Promise<void> {
-  const identityText = `${props.page.title} ${props.page.code}`
+async function handleCopyPageName(): Promise<void> {
+  await copyPageText(props.page.title, '页面名称')
+}
+
+/**
+ * 复制页面编码到剪贴板，点击编码时不触发整卡片详情跳转。
+ */
+async function handleCopyPageCode(): Promise<void> {
+  await copyPageText(props.page.code, '页面编码')
+}
+
+/**
+ * 统一处理页面身份文本复制和结果提示。
+ * @param value 待复制的页面文本
+ * @param label 文本对应的字段名称
+ */
+async function copyPageText(value: string, label: string): Promise<void> {
   try {
-    await navigator.clipboard.writeText(identityText)
-    Message.success(`已复制：${identityText}`)
+    await navigator.clipboard.writeText(value)
+    Message.success(`${label}已复制。`)
   } catch {
     Message.error('复制失败，请检查浏览器剪贴板权限。')
   }

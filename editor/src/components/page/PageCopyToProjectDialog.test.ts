@@ -77,6 +77,8 @@ function createProject(id: number, name: string, workspaceId = 11, status: Recor
     theme_key: null,
     theme_config_yaml: 'themes: {}',
     style_spec_markdown: '',
+    routed_page_count: 0,
+    total_page_count: 0,
     created_at: '2026-05-21T00:00:00Z',
     updated_at: '2026-05-21T00:00:00Z',
     created_by: 1,

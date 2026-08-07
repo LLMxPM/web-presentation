@@ -58,6 +58,13 @@ class PageRepository:
         if query.project_id is not None:
             statement = statement.where(Page.project_id == query.project_id)
             count_statement = count_statement.where(Page.project_id == query.project_id)
+        if query.project_assigned:
+            statement = statement.where(Page.project_id.is_not(None)).where(Project.deleted_at.is_(None))
+            count_statement = (
+                count_statement
+                .join(Project, Page.project_id == Project.id)
+                .where(Project.deleted_at.is_(None))
+            )
 
         sort_column = getattr(Page, query.sort_by, Page.updated_at)
         sort_expression = sort_column.asc() if query.sort_order == "asc" else sort_column.desc()

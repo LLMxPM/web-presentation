@@ -135,6 +135,8 @@ function createProject(id: number, name: string) {
     theme_key: null,
     theme_config_yaml: '',
     style_spec_markdown: '',
+    routed_page_count: 0,
+    total_page_count: 0,
     created_at: '',
     updated_at: '',
     created_by: null,

@@ -21,6 +21,10 @@
         @click.prevent="emit('open', project.id)"
       />
 
+      <div class="project-card-route-count" aria-hidden="true">
+        路由页面 {{ project.routed_page_count }} / {{ project.total_page_count }}
+      </div>
+
       <div class="project-card-overlay" aria-hidden="true">
         <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-text-on-inverse/75">
           <span>{{ project.page_width }}×{{ project.page_height }}</span>
@@ -66,17 +70,19 @@
     </div>
 
     <div class="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2 p-3">
-      <UiButton
-        variant="ghost"
-        size="xs"
-        content-align="start"
-        class="min-w-0"
-        :title="`复制项目名称：${project.name}`"
-        :aria-label="`复制项目名称：${project.name}`"
-        @click="copyText(project.name, '项目名称')"
-      >
-        <span class="min-w-0 truncate text-sm font-bold">{{ project.name }}</span>
-      </UiButton>
+      <div class="min-w-0">
+        <UiButton
+          variant="ghost"
+          size="xs"
+          content-align="start"
+          class="min-w-0 w-full"
+          :title="`复制项目名称：${project.name}`"
+          :aria-label="`复制项目名称：${project.name}`"
+          @click="copyText(project.name, '项目名称')"
+        >
+          <span class="block min-w-0 max-w-full truncate text-sm font-bold">{{ project.name }}</span>
+        </UiButton>
+      </div>
       <UiButton
         variant="ghost"
         size="xs"
@@ -180,6 +186,26 @@ async function copyText(value: string, label: string): Promise<void> {
   transition: opacity 0.2s ease;
 }
 
+.project-card-route-count {
+  pointer-events: none;
+  position: absolute;
+  top: 0.75rem;
+  left: 0.75rem;
+  z-index: 30;
+  border-radius: 9999px;
+  border: 1px solid rgb(var(--ui-border-strong) / 0.9);
+  background: rgb(var(--ui-surface) / 0.96);
+  padding: 0.25rem 0.5rem;
+  color: rgb(var(--ui-text));
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1rem;
+  box-shadow: 0 2px 6px rgb(15 23 42 / 0.2);
+  opacity: 0;
+  transform: translateY(-0.25rem);
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
 .project-card-actions {
   position: absolute;
   top: 0.5rem;
@@ -194,6 +220,8 @@ async function copyText(value: string, label: string): Promise<void> {
 
 .project-card:hover .project-card-overlay,
 .project-card:focus-within .project-card-overlay,
+.project-card:hover .project-card-route-count,
+.project-card:focus-within .project-card-route-count,
 .project-card:hover .project-card-actions,
 .project-card:focus-within .project-card-actions {
   opacity: 1;
@@ -201,6 +229,11 @@ async function copyText(value: string, label: string): Promise<void> {
 
 .project-card:hover .project-card-actions,
 .project-card:focus-within .project-card-actions {
+  transform: translateY(0);
+}
+
+.project-card:hover .project-card-route-count,
+.project-card:focus-within .project-card-route-count {
   transform: translateY(0);
 }
 </style>

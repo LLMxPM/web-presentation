@@ -3,19 +3,21 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { postMock, patchMock } = vi.hoisted(() => ({
+const { getMock, postMock, patchMock } = vi.hoisted(() => ({
+  getMock: vi.fn(),
   postMock: vi.fn(),
   patchMock: vi.fn(),
 }))
 
 vi.mock('@/api/http', () => ({
   http: {
+    get: getMock,
     post: postMock,
     patch: patchMock,
   },
 }))
 
-import { createProject, updateProject } from '@/api/catalog'
+import { createProject, listPages, listProjects, updateProject } from '@/api/catalog'
 
 const presentation = {
   page_width: 1600,
@@ -31,6 +33,46 @@ const presentation = {
 describe('catalog project api', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+  })
+
+  it('列表 API 应透传项目分页搜索和页面项目归属过滤参数', async () => {
+    getMock
+      .mockResolvedValueOnce({ data: { items: [], total: 0, page: 2, page_size: 24 } })
+      .mockResolvedValueOnce({ data: { items: [], total: 0, page: 1, page_size: 24 } })
+
+    await listProjects({
+      page: 2,
+      page_size: 24,
+      workspace_id: 7,
+      status: 'active',
+      keyword: '项目',
+    })
+    await listPages({
+      page: 1,
+      page_size: 24,
+      workspace_id: 7,
+      project_assigned: true,
+      status: 'active',
+    })
+
+    expect(getMock).toHaveBeenNthCalledWith(1, '/projects', {
+      params: expect.objectContaining({
+        page: 2,
+        page_size: 24,
+        workspace_id: 7,
+        status: 'active',
+        keyword: '项目',
+      }),
+    })
+    expect(getMock).toHaveBeenNthCalledWith(2, '/pages', {
+      params: expect.objectContaining({
+        page: 1,
+        page_size: 24,
+        workspace_id: 7,
+        project_assigned: true,
+        status: 'active',
+      }),
+    })
   })
 
   it('创建项目时应先复制样式快照，再提交允许的展示补丁', async () => {

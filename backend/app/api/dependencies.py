@@ -79,6 +79,7 @@ def get_page_list_query(
     sort_order: Annotated[str, Query(pattern="^(asc|desc)$")] = "desc",
     workspace_id: int | None = None,
     project_id: int | None = None,
+    project_assigned: bool | None = None,
 ) -> PageListQuery:
     """解析页面资源专属列表参数。"""
 
@@ -92,4 +93,5 @@ def get_page_list_query(
         sort_order=sort_order,
         workspace_id=workspace_id,
         project_id=project_id,
+        project_assigned=project_assigned,
     )

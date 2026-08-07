@@ -16,6 +16,7 @@ from app.core.time_utils import utc_now
 from app.models.asset import WorkspaceAsset
 from app.models.enums import RecordStatus
 from app.models.page import Page
+from app.models.workspace import Project
 from app.models.workspace_component import WorkspaceComponent
 from app.models.workspace_style import WorkspaceStyle
 from app.models.workspace_theme import WorkspaceTheme
@@ -26,7 +27,7 @@ from app.services.workspace_style_service import WorkspaceStyleService
 from app.services.agent_work_scope_service import project_is_in_work_scope
 
 
-ARCHIVABLE_RESOURCE_TYPES = frozenset({"page", "component", "asset", "theme", "style"})
+ARCHIVABLE_RESOURCE_TYPES = frozenset({"project", "page", "component", "asset", "theme", "style"})
 
 
 async def build_archive_confirmation(
@@ -58,7 +59,7 @@ async def build_archive_confirmation(
             workspace_id=workspace_id,
             targets=targets,
         )
-        _validate_page_work_scope(dependencies, arguments.resource_type, targets)
+        _validate_project_work_scope(dependencies, arguments.resource_type, targets)
     return {
         "resource_type": arguments.resource_type,
         "target_count": len(targets),
@@ -103,7 +104,7 @@ async def archive_entities(
             workspace_id=workspace_id,
             targets=targets,
         )
-        _validate_page_work_scope(dependencies, arguments.resource_type, targets)
+        _validate_project_work_scope(dependencies, arguments.resource_type, targets)
         await _apply_archive(
             session,
             resource_type=arguments.resource_type,
@@ -193,7 +194,10 @@ async def _apply_archive(
 
     timestamp = utc_now()
     for item in targets:
-        if resource_type == "page":
+        if resource_type == "project":
+            item.status = RecordStatus.ARCHIVED.value
+            item.archived_at = timestamp
+        elif resource_type == "page":
             if item.project_id is not None:
                 await ProjectRouteService(session).remove_page_bindings(int(item.project_id), int(item.id))
             item.status = RecordStatus.ARCHIVED.value
@@ -213,6 +217,7 @@ def _resource_model(resource_type: str) -> type[Any]:
     """返回可归档资源对应的 ORM 模型。"""
 
     models: dict[str, type[Any]] = {
+        "project": Project,
         "page": Page,
         "component": WorkspaceComponent,
         "asset": WorkspaceAsset,
@@ -245,6 +250,7 @@ def _archive_reference_impact(resource_type: str) -> str:
     """返回确认卡使用的保守引用影响说明。"""
 
     return {
+        "project": "项目会从 AI 查询与操作边界隐藏；项目内页面、路由和工作空间共享资产不会被自动归档。",
         "page": "页面会从 AI 查询边界隐藏，已有项目路由绑定会被移除。",
         "component": "组件会从 AI 查询边界隐藏；已有页面源码引用不会自动改写，需另行检查运行效果。",
         "asset": "资源会从 AI 查询边界隐藏，既有引用仍可解析。",
@@ -253,10 +259,10 @@ def _archive_reference_impact(resource_type: str) -> str:
     }[resource_type]
 
 
-def _validate_page_work_scope(dependencies: dict[str, Any], resource_type: str, targets: list[Any]) -> None:
-    """确保页面归档覆盖工作集过滤，工作空间级对象不受项目工作集限制。"""
+def _validate_project_work_scope(dependencies: dict[str, Any], resource_type: str, targets: list[Any]) -> None:
+    """确保项目及页面归档遵守本轮项目工作集，工作空间级资产不受过滤。"""
 
-    if resource_type != "page":
+    if resource_type not in {"project", "page"}:
         return
     invalid = [
         int(item.id)
@@ -264,13 +270,13 @@ def _validate_page_work_scope(dependencies: dict[str, Any], resource_type: str, 
         if not project_is_in_work_scope(
             work_scope_mode=str(dependencies.get("work_scope_mode") or "workspace"),
             allowed_project_ids=list(dependencies.get("allowed_project_ids") or []),
-            project_id=item.project_id,
+            project_id=item.id if resource_type == "project" else item.project_id,
         )
     ]
     if invalid:
         raise AppException(
             status_code=403,
             code="AI_PROJECT_OUTSIDE_WORK_SCOPE",
-            detail="部分页面不在本轮固化的项目工作集中。",
+            detail="部分项目或页面不在本轮固化的项目工作集中。",
             data={"target_ids": invalid},
         )

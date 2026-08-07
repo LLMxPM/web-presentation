@@ -153,8 +153,27 @@ def test_unified_prompt_should_keep_runtime_and_fixed_canvas_guidance() -> None:
     assert catalog is not None
     for phrase in (
         "page_content 要写成完整、可运行的 Vue SFC 文件源码",
-        "页面是固定画布大小，不是流式网页",
+        "页面是固定画布，不是流式网页",
         "base_font_size / 16px",
         "PAGE_RENDER_BOTTOM_OVERFLOW",
+    ):
+        assert phrase in catalog.default_prompt
+
+
+def test_unified_prompt_should_describe_platform_assets_and_relations() -> None:
+    """统一提示词应提供稳定的平台背景、资产结构和对象关联知识。"""
+
+    catalog = get_agent_catalog_entry(AGENT_COORDINATOR_AGENT_ID)
+    assert catalog is not None
+    assert catalog.default_prompt.count("\n## ") == 9
+    for phrase in (
+        "工作空间是权限、数据隔离和共享资产的最高业务边界",
+        "页面通过 project_id 归属项目",
+        "组件是工作空间级共享代码资产",
+        "项目建议资源只是优先参考集合",
+        "样式应用到项目时会把当前样式完整复制为项目自己的独立快照",
+        "项目样式、建议组件、建议资源、路由树、页面源码和组件源码默认不会完整注入",
+        "create_entity 创建页面或组件、update_entity 修改页面或组件源码时都会自动执行校验",
+        "项目、页面、组件、资源、主题和样式归档后退出查询与操作边界",
     ):
         assert phrase in catalog.default_prompt

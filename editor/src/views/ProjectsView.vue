@@ -1,4 +1,4 @@
-<!-- 文件功能：展示当前工作空间下的启用项目入口，并提供项目创建、归档与归档列表查看能力。 -->
+<!-- 文件功能：展示当前工作空间下的分页项目入口，并提供项目与页面资产管理入口。 -->
 <template>
   <div data-testid="workspace-project-list" class="projects-view space-y-3 pb-12">
     <header class="animate-in fade-in slide-in-from-top-4 duration-700">
@@ -54,8 +54,16 @@
         placeholder="按项目名称或编码搜索"
         aria-label="搜索项目"
       />
-      <span class="shrink-0 text-xs text-[rgb(var(--ui-text-secondary))]">共 {{ projects.length }} 个项目</span>
+      <span class="shrink-0 text-xs text-[rgb(var(--ui-text-secondary))]">共 {{ projectTotal }} 个项目</span>
       <template #actions>
+        <UiButton
+          variant="secondary"
+          size="md"
+          @click="workspacePagesDialogVisible = true"
+        >
+          <Layers class="w-4 h-4" />
+          <span>所有页面</span>
+        </UiButton>
         <UiButton
           variant="secondary"
           size="md"
@@ -82,7 +90,7 @@
       <!-- 列数按容器实际宽度自适应（DESIGN.md 6.4），避免视口断点与侧栏挤压后的内容区宽度失配。 -->
       <div class="grid grid-cols-[repeat(auto-fill,minmax(min(100%,20rem),1fr))] gap-4">
         <ProjectCard
-          v-for="proj in filteredProjects"
+          v-for="proj in projects"
           :key="proj.id"
           :project="proj"
           :preview-pending="previewProjectId === proj.id"
@@ -95,9 +103,18 @@
           @archive="handleArchiveProject"
         />
 
-        <ProjectCreateCard @open="openCreateDialog" />
+        <ProjectCreateCard v-if="projectPage === 1 && !projectSearchKeyword" @open="openCreateDialog" />
       </div>
     </DataState>
+
+    <PaginationControl
+      v-if="projectTotal > 0"
+      :page="projectPage"
+      :page-size="projectPageSize"
+      :total="projectTotal"
+      @update:page="projectPage = $event"
+      @update:page-size="handleProjectPageSizeChange"
+    />
 
     <ProjectMetadataDialog
       v-model="dialogVisible"
@@ -108,6 +125,10 @@
     />
     <ArchivedProjectsDialog
       v-model="archivedDialogVisible"
+      :workspace-id="workspaceId"
+    />
+    <WorkspacePagesDialog
+      v-model="workspacePagesDialogVisible"
       :workspace-id="workspaceId"
     />
     <WorkspaceMetadataDialog
@@ -388,10 +409,10 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/vue-query'
-import { Archive, Eye, FolderKanban, Plus, SquarePen, Upload } from '@lucide/vue'
+import { Archive, FolderKanban, Layers, Plus, SquarePen, Upload } from '@lucide/vue'
 
 import { createProject, getWorkspace, listProjects, updateProject, updateWorkspace } from '@/api/catalog'
 import { getErrorMessage } from '@/api/http'
@@ -411,8 +432,10 @@ import ArchivedProjectsDialog from '@/components/project/ArchivedProjectsDialog.
 import ProjectCard from '@/components/project/ProjectCard.vue'
 import ProjectCreateCard from '@/components/project/ProjectCreateCard.vue'
 import ProjectMetadataDialog from '@/components/project/ProjectMetadataDialog.vue'
+import WorkspacePagesDialog from '@/components/project/WorkspacePagesDialog.vue'
 import WorkspaceMetadataDialog from '@/components/project/WorkspaceMetadataDialog.vue'
 import RuntimePreviewFrame from '@/components/runtime-preview/RuntimePreviewFrame.vue'
+import PaginationControl from '@/components/ui/PaginationControl.vue'
 import { UiButton, UiDialog, UiIconButton } from '@/components/ui'
 import { createConfirm, Message } from '@/utils/message'
 import { downloadBlob } from '@/utils/zip-download'
@@ -431,6 +454,12 @@ const router = useRouter()
 const queryClient = useQueryClient()
 
 const workspaceId = computed(() => parseInt(route.params.workspaceId as string, 10))
+const projectKeyword = ref('')
+const projectSearchKeyword = ref('')
+const projectPage = ref(1)
+const projectPageSize = ref(24)
+const workspacePagesDialogVisible = ref(false)
+let projectSearchDebounceTimer: number | null = null
 
 const workspaceQuery = useQuery(
   computed(() => ({
@@ -442,26 +471,34 @@ const workspaceQuery = useQuery(
 
 const query = useQuery(
   computed(() => ({
-    queryKey: ['projects-by-ws', workspaceId.value, 'active'],
-    queryFn: () => listProjects({ page: 1, page_size: 100, workspace_id: workspaceId.value, status: 'active' }),
+    queryKey: [
+      'projects-by-ws',
+      workspaceId.value,
+      'active',
+      projectSearchKeyword.value,
+      projectPage.value,
+      projectPageSize.value,
+    ],
+    queryFn: () => listProjects({
+      page: projectPage.value,
+      page_size: projectPageSize.value,
+      workspace_id: workspaceId.value,
+      status: 'active',
+      keyword: projectSearchKeyword.value || undefined,
+      sort_by: 'updated_at',
+      sort_order: 'desc',
+    }),
     enabled: !!workspaceId.value,
   })),
 )
 
 const workspaceDetails = computed(() => workspaceQuery.data.value ?? null)
 const projects = computed(() => query.data.value?.items ?? [])
-const projectKeyword = ref('')
-const filteredProjects = computed(() => {
-  const keyword = projectKeyword.value.trim().toLocaleLowerCase()
-  if (!keyword) return projects.value
-  return projects.value.filter(project => [project.name, project.code, project.description]
-    .filter((value): value is string => Boolean(value))
-    .some(value => value.toLocaleLowerCase().includes(keyword)))
-})
+const projectTotal = computed(() => query.data.value?.total ?? 0)
 const projectDataState = computed<'loading' | 'empty' | 'error' | 'ready'>(() => {
   if (query.isPending.value) return 'loading'
   if (query.isError.value) return 'error'
-  return filteredProjects.value.length === 0 ? 'empty' : 'ready'
+  return projects.value.length === 0 ? 'empty' : 'ready'
 })
 const dialogVisible = ref(false)
 const archivedDialogVisible = ref(false)
@@ -487,6 +524,32 @@ const importValidatePending = ref(false)
 const importPackagePending = ref(false)
 const importPreviewPending = ref(false)
 const importPreviewArtifact = ref<PreviewArtifactResponse | null>(null)
+
+watch(projectKeyword, () => {
+  if (projectSearchDebounceTimer !== null) {
+    window.clearTimeout(projectSearchDebounceTimer)
+  }
+  projectSearchDebounceTimer = window.setTimeout(() => {
+    projectSearchKeyword.value = projectKeyword.value.trim()
+    projectPage.value = 1
+    projectSearchDebounceTimer = null
+  }, 300)
+})
+
+watch(workspaceId, () => {
+  projectKeyword.value = ''
+  projectSearchKeyword.value = ''
+  projectPage.value = 1
+})
+
+watch(
+  () => query.data.value,
+  (data) => {
+    if (data && data.items.length === 0 && projectPage.value > 1) {
+      projectPage.value -= 1
+    }
+  },
+)
 
 const exportAssetCount = computed(() => (
   (exportValidation.value?.automatic_assets.length ?? 0) + (exportValidation.value?.manual_assets.length ?? 0)
@@ -532,6 +595,15 @@ function openCreateDialog() {
 }
 
 /**
+ * 切换项目列表每页数量并回到第一页。
+ * @param size 新的项目页容量
+ */
+function handleProjectPageSizeChange(size: number): void {
+  projectPageSize.value = size
+  projectPage.value = 1
+}
+
+/**
  * 打开工作空间基础信息编辑弹窗。
  */
 function openWorkspaceEditDialog(): void {
@@ -568,6 +640,9 @@ const archiveMutation = useMutation({
 
 onBeforeUnmount(() => {
   stopExportProgress()
+  if (projectSearchDebounceTimer !== null) {
+    window.clearTimeout(projectSearchDebounceTimer)
+  }
 })
 
 /**

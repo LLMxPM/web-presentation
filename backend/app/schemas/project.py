@@ -138,6 +138,8 @@ class ProjectItem(SchemaBase):
     theme_config_yaml: str
     style_spec_markdown: str
     build_extra_assets_json: ProjectBuildExtraAssetsConfig
+    routed_page_count: int = 0
+    total_page_count: int = 0
     first_page_title: str | None = None
     first_page_screenshot_url: str | None = None
     created_at: datetime

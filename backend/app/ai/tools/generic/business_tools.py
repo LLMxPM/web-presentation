@@ -60,7 +60,7 @@ def build_generic_business_tools(session_factory: async_sessionmaker[AsyncSessio
         run_context: AgentToolContext,
         operation_key: Annotated[str | None, Field(description="稳定操作键；不传时返回全部操作的紧凑索引。")] = None,
     ) -> dict[str, Any]:
-        """读取对象操作手册、参数结构、限制和示例；该结果不是授权或执行前置条件。"""
+        """读取对象操作手册、参数结构、限制和示例。"""
 
         await resolve_tool_context(
             session_factory,
@@ -74,7 +74,7 @@ def build_generic_business_tools(session_factory: async_sessionmaker[AsyncSessio
         if not normalized_key:
             return {
                 "operations": list_operation_guide_options(),
-                "note": "请选择 operation_key 再次查询，以取得精确参数 Schema；该索引不是授权凭证。",
+                "note": "请选择 operation_key 再次查询，以取得精确参数 Schema。",
             }
         guide = get_operation_guide_spec(normalized_key)
         if guide is None:
@@ -186,7 +186,7 @@ def build_generic_business_tools(session_factory: async_sessionmaker[AsyncSessio
     @agent_tool(show_result=False, sequential=True)
     async def archive_entity(
         run_context: AgentToolContext,
-        resource_type: Literal["page", "component", "asset", "theme", "style"],
+        resource_type: Literal["project", "page", "component", "asset", "theme", "style"],
         target_ids: list[int],
         archive_reason: str | None = None,
     ) -> dict[str, Any]:
@@ -199,16 +199,21 @@ def build_generic_business_tools(session_factory: async_sessionmaker[AsyncSessio
         )
         approved = bool(run_context.dependencies.get("current_tool_call_approved"))
         needs_confirmation_check = len(arguments.target_ids) > 1 or (
-            arguments.resource_type == "page" and run_context.dependencies.get("project_id") is not None
+            arguments.resource_type in {"project", "page"}
+            and run_context.dependencies.get("project_id") is not None
         )
         if not approved and needs_confirmation_check:
             confirmation = await build_archive_confirmation(session_factory, run_context, arguments)
             focus_project_id = run_context.dependencies.get("project_id")
-            target_project_ids = {
-                int(item["project_id"])
-                for item in confirmation.get("targets", [])
-                if item.get("project_id") is not None
-            }
+            target_project_ids = (
+                {int(item["id"]) for item in confirmation.get("targets", [])}
+                if arguments.resource_type == "project"
+                else {
+                    int(item["project_id"])
+                    for item in confirmation.get("targets", [])
+                    if item.get("project_id") is not None
+                }
+            )
             cross_focus = focus_project_id is not None and any(
                 item != int(focus_project_id) for item in target_project_ids
             )
@@ -216,7 +221,7 @@ def build_generic_business_tools(session_factory: async_sessionmaker[AsyncSessio
                 title = (
                     f"确认批量归档 {len(arguments.target_ids)} 个对象吗？"
                     if len(arguments.target_ids) > 1
-                    else "确认归档焦点外页面吗？"
+                    else "确认归档焦点外项目或页面吗？"
                 )
                 raise ApprovalRequired(metadata={"confirmation_title": title, **confirmation})
         return await archive_entities(session_factory, run_context, arguments)
@@ -249,7 +254,7 @@ def build_generic_business_tools(session_factory: async_sessionmaker[AsyncSessio
         target_id: Annotated[int | None, Field(gt=0, description="current、edits 和资源预览使用的目标 ID。")] = None,
         payload: Annotated[dict[str, Any] | None, Field(description="候选来源或预览参数；必须符合精确操作手册。")] = None,
     ) -> dict[str, Any]:
-        """检查候选页面、组件源码或预览资源内容差异，不写入业务数据。"""
+        """检查当前或候选页面、组件源码，或预览资源内容差异，不写入业务数据。"""
 
         return await _validate_entity(
             session_factory,

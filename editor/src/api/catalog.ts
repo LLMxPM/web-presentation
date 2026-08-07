@@ -256,7 +256,11 @@ export async function deleteProject(id: number) {
 }
 
 /** 查询页面资源列表。 */
-export async function listPages(params: ListParams & { workspace_id?: number | ''; project_id?: number | '' }) {
+export async function listPages(params: ListParams & {
+  workspace_id?: number | ''
+  project_id?: number | ''
+  project_assigned?: boolean
+}) {
   const { data } = await http.get<PagedResponse<PageItem>>('/pages', { params: buildParams(params) })
   return data
 }

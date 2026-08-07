@@ -52,7 +52,11 @@ class ProjectRepository:
             count_statement = count_statement.where(Project.workspace_id == workspace_id)
         if query.keyword:
             keyword = f"%{query.keyword}%"
-            condition = or_(Project.name.ilike(keyword), Project.code.ilike(keyword))
+            condition = or_(
+                Project.name.ilike(keyword),
+                Project.code.ilike(keyword),
+                Project.description.ilike(keyword),
+            )
             statement = statement.where(condition)
             count_statement = count_statement.where(condition)
         if query.status:
@@ -151,6 +155,33 @@ class ProjectRepository:
                 cover_pages[project_id] = fallback_by_project[project_id]
 
         return cover_pages
+
+    async def list_page_counts(self, project_ids: list[int]) -> dict[int, tuple[int, int]]:
+        """批量统计项目下启用页面总数和已加入路由的去重页面数。"""
+
+        if not project_ids:
+            return {}
+
+        result = await self.session.execute(
+            select(
+                Page.project_id,
+                func.count(func.distinct(Page.id)).label("total_page_count"),
+                func.count(func.distinct(ProjectRoute.page_id)).label("routed_page_count"),
+            )
+            .outerjoin(
+                ProjectRoute,
+                (ProjectRoute.project_id == Page.project_id) & (ProjectRoute.page_id == Page.id),
+            )
+            .where(Page.project_id.in_(project_ids))
+            .where(Page.status == RecordStatus.ACTIVE.value)
+            .where(Page.deleted_at.is_(None))
+            .group_by(Page.project_id)
+        )
+        return {
+            int(row.project_id): (int(row.routed_page_count or 0), int(row.total_page_count or 0))
+            for row in result.all()
+            if row.project_id is not None
+        }
 
     @staticmethod
     def _sort_routes(routes: list[ProjectRoute]) -> list[ProjectRoute]:

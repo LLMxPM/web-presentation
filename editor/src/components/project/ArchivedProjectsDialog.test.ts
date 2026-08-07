@@ -88,6 +88,8 @@ function createArchivedProject(): ProjectItem {
     theme_key: null,
     theme_config_yaml: '',
     style_spec_markdown: '',
+    routed_page_count: 0,
+    total_page_count: 0,
     created_at: '2026-06-01T08:00:00+08:00',
     updated_at: '2026-07-01T08:00:00+08:00',
     created_by: 1,

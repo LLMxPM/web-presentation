@@ -107,6 +107,8 @@ export interface ProjectItem {
   theme_config_yaml: string
   style_spec_markdown: string
   build_extra_assets_json?: ProjectBuildExtraAssetsJson
+  routed_page_count: number
+  total_page_count: number
   first_page_title: string | null
   first_page_screenshot_url: string | null
   created_at: string

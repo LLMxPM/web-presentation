@@ -75,16 +75,16 @@ async def test_self_delegation_should_inject_unified_agent_without_member_parame
     assert "member_id" not in tool.parameters["properties"]
 
 
-def test_operation_guides_should_not_define_delete_or_project_archive() -> None:
-    """逻辑操作手册不得通过 action 绕过删除与项目归档边界。"""
+def test_operation_guides_should_not_define_delete_or_workspace_archive() -> None:
+    """逻辑操作手册不得开放永久删除或工作空间归档。"""
 
     guides = list_operation_guide_specs()
 
     assert guides
     assert not any("delete" in (guide.action or "") or "purge" in (guide.action or "") for guide in guides)
-    assert not any(guide.resource_type in {"project", "workspace"} and guide.operation == "archive" for guide in guides)
+    assert not any(guide.resource_type == "workspace" and guide.operation == "archive" for guide in guides)
     assert {guide.resource_type for guide in guides if guide.operation == "archive"} == {
-        "page", "component", "asset", "theme", "style",
+        "project", "page", "component", "asset", "theme", "style",
     }
 
 
@@ -217,6 +217,10 @@ def test_generic_tools_should_expose_discriminated_top_level_schemas() -> None:
     })
     archive_properties = tools["archive_entity"].parameters["oneOf"][0]["properties"]
     assert "versions" not in archive_properties
+    assert {
+        branch["properties"]["resource_type"]["const"]
+        for branch in tools["archive_entity"].parameters["oneOf"]
+    } == {"project", "page", "component", "asset", "theme", "style"}
 
     create_pairs = {
         (branch["properties"]["resource_type"]["const"], branch["properties"]["mode"]["const"])

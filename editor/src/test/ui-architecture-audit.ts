@@ -78,7 +78,7 @@ const NATIVE_CONTROL_EXEMPTIONS: NativeControlExemption[] = [
   { relativePath: 'components/project/ProjectSuggestedReferenceAssetsDialog.vue', tag: 'button', expectedCount: 1, reason: '建议资源整卡片选择触发区' },
   { relativePath: 'components/page/PageCreateCard.vue', tag: 'button', expectedCount: 1, reason: '整卡片新增页面触发区' },
   { relativePath: 'components/project/ProjectCreateCard.vue', tag: 'button', expectedCount: 1, reason: '整卡片新增项目触发区' },
-  { relativePath: 'components/page/PageCard.vue', tag: 'button', expectedCount: 1, reason: '页面编码内联复制触发按钮', attributePattern: /\baria-label\s*=\s*["']复制页面名称和编码["']/i },
+  { relativePath: 'components/page/PageCard.vue', tag: 'button', expectedCount: 1, reason: '页面编码内联复制触发按钮', attributePattern: /\baria-label\s*=\s*.*复制页面编码：/i },
 ]
 
 /**

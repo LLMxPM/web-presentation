@@ -37,6 +37,8 @@ const baseProject: ProjectItem = {
   theme_key: null,
   theme_config_yaml: '',
   style_spec_markdown: '',
+  routed_page_count: 2,
+  total_page_count: 5,
   first_page_title: '封面',
   first_page_screenshot_url: 'https://example.test/page-7.png',
   created_at: '2026-08-01T08:00:00Z',
@@ -65,6 +67,7 @@ describe('ProjectCard', () => {
       'https://example.test/page-7.png',
     )
     expect(screen.getByText('1920×1080')).toBeInTheDocument()
+    expect(screen.getByText('路由页面 2 / 5')).toHaveClass('project-card-route-count')
     expect(screen.queryByText('用于季度业务复盘与新品发布。')).not.toBeInTheDocument()
     expect(screen.queryByText('封面')).not.toBeInTheDocument()
 
@@ -106,5 +109,16 @@ describe('ProjectCard', () => {
     })
 
     expect(screen.getByText('首个页面暂无截图')).toBeInTheDocument()
+  })
+
+  it('项目名称过长时应限制在卡片名称区域内', () => {
+    const longName = '这是一个用于验证项目卡片名称截断行为的超长项目名称'
+    render(ProjectCard, {
+      props: {
+        project: { ...baseProject, name: longName },
+      },
+    })
+
+    expect(screen.getByText(longName)).toHaveClass('block', 'max-w-full', 'truncate')
   })
 })

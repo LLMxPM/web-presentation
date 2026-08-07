@@ -196,7 +196,6 @@ class AgentOperationGuideSpec:
             "response_example": response_example,
             "handler_tool_key": self.handler_tool_key,
             "mutation_kind": self.mutation_kind,
-            "note": "这是模型操作手册，不是授权凭证，也不是执行前置条件。",
         }
 
 
@@ -804,7 +803,7 @@ _COORDINATOR_OPERATION_GUIDES = (
                          constraints=("target_ids 支持 1～100 项并自动去重。", "批量归档先校验全部目标，任一失败整批回滚。", "单项免确认，批量必须确认。"),
                          risk_level="write", requires_confirmation=False,
                          call_example={"resource_type": resource_type, "target_ids": [12, 13], "archive_reason": "清理不再使用的内容"})
-        for resource_type in ("page", "component", "asset", "theme", "style")
+        for resource_type in ("project", "page", "component", "asset", "theme", "style")
     ),
 
     _operation_guide("component", "action", "发布组件当前草稿，生成新的正式版本。", _write_parameters("component", "action", ComponentPublishPayload, action="publish", target_mode="single", payload_required=False), action="publish",
@@ -824,7 +823,7 @@ _COORDINATOR_OPERATION_GUIDE_MAP = {
 
 # 内容助手仅暴露固定通用业务工具与无法合理抽象的特殊工具；旧细粒度规格不再进入目录或运行时。
 _COORDINATOR_TOOL_SPECS = (
-    _tool("get_operation_guide", "查询操作手册", "generic_business", "通用业务", "按稳定 operation_key 查询精确参数 Schema、前置条件、副作用、限制和示例；省略 operation_key 时返回紧凑索引。返回内容不是授权凭证。",
+    _tool("get_operation_guide", "查询操作手册", "generic_business", "通用业务", "按稳定 operation_key 查询精确参数 Schema、前置条件、副作用、限制和示例；省略 operation_key 时返回紧凑索引。",
           default_instructions="首次使用、不确定参数或参数校验失败时查询；先省略 operation_key 获取索引，再携带选定 operation_key 获取精确手册。当前上下文已有对应精确手册时不要重复查询。", configurable=False),
     _tool("list_entities", "罗列业务对象", "generic_business", "通用业务", "统一罗列、搜索项目、页面、组件、资源、主题、样式、Runtime Kit 和字体；支持项目范围与建议集合筛选。",
           default_instructions="只用于集合查询，不读取详情或源码；项目页面用 page + project_id，建议组件或资源使用 scope=suggested。"),
@@ -836,8 +835,8 @@ _COORDINATOR_TOOL_SPECS = (
           default_instructions="只提交用户要求修改的字段；项目和样式展示字段使用 configuration，应用样式使用 apply_style，页面和组件源码使用 content。", risk_level="write", sequential=True),
     _tool("archive_entity", "归档业务对象", "generic_business", "通用业务", "归档 1～100 个同类型对象；单项免确认，批量动态确认并整批原子执行。",
           default_instructions="只能归档真实查询得到的 ID；不得把归档解释成永久删除。", risk_level="write", sequential=True),
-    _tool("validate_entity", "校验候选改动", "generic_business", "通用业务", "检查页面或组件候选源码，或预览资源内容差异；不写入业务数据。",
-          default_instructions="按操作手册选择 current、content 或 edits 来源；校验不通过时读取 data.valid 和 diagnostics。"),
+    _tool("validate_entity", "检查代码与预览差异", "generic_business", "通用业务", "检查当前页面或组件代码，也可检查完整候选源码、结构化 edits，或预览资源内容差异；不写入业务数据。",
+          default_instructions="页面和组件创建、源码更新会自动校验，不要在 create_entity 或 update_entity 前后重复调用；仅在需要单独检查当前代码、预先诊断候选代码或预览资源差异时使用。按操作手册选择 current、content、edits 或 preview。"),
     _tool("execute_action", "执行生命周期命令", "generic_business", "通用业务", "执行不能表达为字段 Patch 的对象生命周期命令；当前只开放组件发布。",
           default_instructions="当前仅使用 component.action.publish；检查、复制、上传和差异预览不属于生命周期命令。", risk_level="write", sequential=True),
     _tool('ask_user', '向用户单选提问', 'user_feedback', '用户交互', '向用户提出一个或多个结构化单选问题。',

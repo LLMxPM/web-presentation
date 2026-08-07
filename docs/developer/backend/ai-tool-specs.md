@@ -21,11 +21,11 @@
 
 `get_operation_guide` 只是模型的普通只读操作手册。省略 `operation_key` 时返回紧凑索引，传入 `page.update.content` 等稳定操作键时返回精确参数 Schema。返回结果自然进入消息历史，不生成令牌、授权记录、契约快照或执行前置状态。模型未先查询手册时，写工具仍应按照真实业务 Schema 正常校验；参数错误必须返回明确校验信息，供模型查询手册后重试。
 
-`AgentOperationGuideSpec` 同时登记稳定操作键、逻辑资源、操作、精确参数 Schema、处理工具 key、前端 mutation 类型、风险、确认、限制和示例。运行时通用工具只常驻合法对象、mode/action 的判别式顶层 Schema，复杂 `filters`、`payload` 和 `options` 由操作手册按需披露。`create_entity` 使用 `new/copy/upload` 区分普通创建、复制和可信附件创建；`validate_entity` 只执行页面/组件检查和资源差异预览，不产生 mutation；`execute_action` 只承载发布等生命周期命令。项目与样式共享 presentation 和 suggested components 配置结构，并通过 `get_entity.configuration` 返回同构快照；项目可通过 `apply_style` 复制完整独立快照。主题 key 和样式 key 只在创建时指定，已有对象不开放 key 修改。
+`AgentOperationGuideSpec` 同时登记稳定操作键、逻辑资源、操作、精确参数 Schema、处理工具 key、前端 mutation 类型、风险、确认、限制和示例。运行时通用工具只常驻合法对象、mode/action 的判别式顶层 Schema，复杂 `filters`、`payload` 和 `options` 由操作手册按需披露。`create_entity` 使用 `new/copy/upload` 区分普通创建、复制和可信附件创建；`validate_entity` 用于独立检查当前或候选页面/组件代码以及预览资源差异，不产生 mutation，页面和组件的创建、源码更新会在写工具内部自动校验，无需重复调用；`execute_action` 只承载发布等生命周期命令。项目与样式共享 presentation 和 suggested components 配置结构，并通过 `get_entity.configuration` 返回同构快照；项目可通过 `apply_style` 复制完整独立快照。主题 key 和样式 key 只在创建时指定，已有对象不开放 key 修改。
 
 通用返回 envelope 使用 `effect=read|create|update|lifecycle` 表达真实效果。创建返回新对象 `target`，复制额外返回 `source`；只读查询和校验返回 `mutation=null`。代码或布局校验不通过属于正常校验结果，工具调用仍返回 `success=true`，具体结果通过 `data.valid=false` 和 diagnostics 表达。
 
-归档是内容助手唯一的移除能力：单项直接执行，批量在运行时动态请求确认；整批先校验后写入，限制为同类型、同工作空间、去重后最多 100 项。归档不使用版本参数，工作空间和项目不能归档；归档对象退出 AI 查询与操作边界，内容助手不开放恢复能力。永久删除接口不得注册为 AI 工具，也不得由普通 action 间接分派；工作空间 `default` 样式作为项目默认初始化来源，不允许归档。
+归档是内容助手唯一的移除能力：单项直接执行，批量在运行时动态请求确认；整批先校验后写入，限制为同类型、同工作空间、去重后最多 100 项。归档不使用版本参数，工作空间不能归档，项目可以归档且不会连带归档其页面、路由或工作空间共享资产；归档对象退出 AI 查询与操作边界，内容助手不开放恢复能力。永久删除接口不得注册为 AI 工具，也不得由普通 action 间接分派；工作空间 `default` 样式作为项目默认初始化来源，不允许归档。
 
 ## 变更要求
 

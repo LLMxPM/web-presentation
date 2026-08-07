@@ -86,6 +86,7 @@ class PageListQuery(ListQuery):
 
     workspace_id: int | None = None
     project_id: int | None = None
+    project_assigned: bool | None = None
 
 
 class PageVersionListItem(SchemaBase):
