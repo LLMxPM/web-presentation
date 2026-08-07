@@ -10,6 +10,7 @@ from typing import Any
 from uuid import uuid4
 
 from pydantic_ai import Agent, DeferredToolRequests, DeferredToolResults
+from pydantic_ai.capabilities import ProcessHistory
 from pydantic_ai.messages import (
     ModelMessagesTypeAdapter,
     ModelRequest,
@@ -487,6 +488,8 @@ class _MemberAgentRunner:
                 self._model_resolver.resolve_model(llm_config),
                 name=self._member_run.agent_id,
                 output_type=[str, DeferredToolRequests],
+                # 保持升级前的语义：输出工具完成后，不继续执行同轮剩余工具。
+                end_strategy="early",
                 instructions=build_effective_instructions(
                     catalog,
                     agent_config,
@@ -494,7 +497,7 @@ class _MemberAgentRunner:
                 ),
                 deps_type=type(deps),
                 tools=tools,
-                history_processors=_build_member_history_processors(context_processor),
+                capabilities=[ProcessHistory(processor) for processor in _build_member_history_processors(context_processor)],
             )
             base_message_history = _message_dicts(self._member_run.message_history_json or [])
             projector = PydanticEventProjector(

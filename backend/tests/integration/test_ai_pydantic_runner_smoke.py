@@ -16,12 +16,15 @@ from pydantic_ai.messages import (
     FunctionToolCallEvent,
     ModelMessagesTypeAdapter,
     ModelResponse,
+    OutputToolCallEvent,
+    OutputToolResultEvent,
     PartDeltaEvent,
     PartStartEvent,
     TextPart,
     TextPartDelta,
     ThinkingPart,
     ToolCallPart,
+    ToolReturnPart,
 )
 from pydantic_ai.models.function import AgentInfo, DeltaThinkingPart, DeltaToolCall, FunctionModel
 from pydantic_ai.tools import DeferredToolRequests, Tool
@@ -1205,6 +1208,38 @@ async def test_pydantic_event_projector_should_flush_member_text_before_tool_sta
         "tool_args": {"workspace_id": 11},
         "raw_tool_call_id": "tool-list-assets",
     }
+
+
+async def test_pydantic_event_projector_should_project_output_tool_events() -> None:
+    """升级到 Pydantic AI 2.x 后，输出工具事件仍应保留平台工具时间线。"""
+
+    events = await _project_member_events(
+        [
+            OutputToolCallEvent(
+                ToolCallPart(
+                    tool_name="final_result",
+                    args={"response": "已完成。"},
+                    tool_call_id="output-call-1",
+                )
+            ),
+            OutputToolResultEvent(
+                ToolReturnPart(
+                    tool_name="final_result",
+                    content="已完成。",
+                    tool_call_id="output-call-1",
+                )
+            ),
+        ],
+        flush=False,
+    )
+
+    assert [(event.event, event.content) for event in events] == [
+        ("member.tool.started", None),
+        ("member.tool.completed", None),
+    ]
+    assert events[0].data["tool_name"] == "final_result"
+    assert events[0].data["tool_call_id"] == "member-run-1:output-call-1"
+    assert events[1].data["result"] == "已完成。"
 
 
 async def test_pydantic_event_projector_should_ignore_tool_part_start_until_function_call() -> None:

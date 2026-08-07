@@ -9,6 +9,7 @@ from time import monotonic
 from typing import Any
 
 from pydantic_ai import Agent, DeferredToolRequests, DeferredToolResults
+from pydantic_ai.capabilities import ProcessHistory
 from pydantic_ai.messages import ModelMessagesTypeAdapter, UserContent
 
 from app.ai.agent.runtime_context import AgentRuntimeContext, build_scope_context_text
@@ -197,10 +198,12 @@ class PydanticAgentRunner:
                 model,
                 name=agent_id,
                 output_type=[str, DeferredToolRequests],
+                # 保持升级前的语义：输出工具完成后，不继续执行同轮剩余工具。
+                end_strategy="early",
                 instructions=instructions,
                 deps_type=AgentToolDeps if deps is not None else type(None),
                 tools=tools or (),
-                history_processors=resolved_history_processors,
+                capabilities=[ProcessHistory(processor) for processor in resolved_history_processors],
             )
             projector = PydanticEventProjector(
                 run_id=run_model.run_id,
@@ -212,6 +215,9 @@ class PydanticAgentRunner:
                 on_message_delta=content_parts.append,
                 on_reasoning_delta=reasoning_parts.append,
             )
+            # Pydantic AI 1.107+ 在图迭代结束后向 agent.iter 生成器抛异常时，
+            # 会被清理逻辑改写为 RuntimeError，丢失平台错误码；先暂存，退出后再抛。
+            deferred_pause_error: Exception | None = None
             async with agent.iter(
                 message if message else None,
                 model_settings=model_settings or None,
@@ -312,14 +318,20 @@ class PydanticAgentRunner:
                 if isinstance(output, DeferredToolRequests):
                     async for sse in self._flush_projector_buffer(projector):
                         yield sse
-                    event = await self._pause_for_deferred_tools(
-                        run_model,
-                        output,
-                        final_messages=final_messages,
-                        context_processor=context_processor,
-                    )
-                    yield encode_sse_event(event)
-                    return
+                    try:
+                        event = await self._pause_for_deferred_tools(
+                            run_model,
+                            output,
+                            final_messages=final_messages,
+                            context_processor=context_processor,
+                        )
+                    except Exception as pause_error:  # noqa: BLE001
+                        deferred_pause_error = pause_error
+                    else:
+                        yield encode_sse_event(event)
+                        return
+            if deferred_pause_error is not None:
+                raise deferred_pause_error
             should_stop, should_cancel = await self._cancel_event_if_requested(run_model)
             if should_stop:
                 async for sse in self._flush_projector_buffer(projector, best_effort=True):

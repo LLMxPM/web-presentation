@@ -249,7 +249,7 @@ def test_merge_member_message_history_should_append_when_latest_not_prefix() -> 
 
 @pytest.mark.asyncio
 async def test_build_member_history_processors_should_accept_messages_only() -> None:
-    """成员历史处理器应适配 Pydantic AI 1.38 的单参数调用方式。"""
+    """成员历史处理器应适配 Pydantic AI 的单参数调用方式。"""
 
     context_processor = _FakeContextProcessor()
     messages = [{"kind": "request", "parts": []}]

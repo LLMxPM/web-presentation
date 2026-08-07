@@ -13,6 +13,8 @@ from pydantic_ai.messages import (
     FunctionToolCallEvent,
     FunctionToolResultEvent,
     ModelMessagesTypeAdapter,
+    OutputToolCallEvent,
+    OutputToolResultEvent,
     PartDeltaEvent,
     PartStartEvent,
     ThinkingPart,
@@ -105,15 +107,15 @@ class PydanticEventProjector:
             return await self._handle_part_start(raw_event.part)
         if isinstance(raw_event, PartDeltaEvent):
             return await self._handle_part_delta(raw_event.delta)
-        if isinstance(raw_event, FunctionToolCallEvent):
+        if isinstance(raw_event, (FunctionToolCallEvent, OutputToolCallEvent)):
             if _is_denied_tool_call(raw_event.part, self._denied_tool_call_ids):
                 return []
             emitted = await self.flush_delta_buffer()
             emitted.append(await self._emit("tool.started", data=self._tool_payload(raw_event.part)))
             return emitted
-        if isinstance(raw_event, FunctionToolResultEvent):
+        if isinstance(raw_event, (FunctionToolResultEvent, OutputToolResultEvent)):
             emitted = await self.flush_delta_buffer()
-            result = raw_event.result
+            result = raw_event.part
             raw_tool_call_id = str(getattr(result, "tool_call_id", "") or "")
             if raw_tool_call_id in self._denied_tool_call_ids:
                 emitted.append(
