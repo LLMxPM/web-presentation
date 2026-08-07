@@ -1,11 +1,13 @@
 """文件功能：封装项目的 CRUD 业务逻辑和工作空间校验规则。"""
 
+from datetime import datetime
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.code_generator import CODE_PREFIX_PROJECT, create_with_generated_code
 from app.core.config import get_settings
 from app.core.exceptions import AppException
-from app.core.time_utils import utc_now
+from app.core.time_utils import normalize_utc, utc_now
 from app.models.enums import RecordStatus
 from app.models.page import Page
 from app.models.workspace import Project
@@ -47,8 +49,13 @@ class ProjectService:
         *,
         first_page: Page | None = None,
         page_counts: tuple[int, int] = (0, 0),
+        latest_page_updated_at: datetime | None = None,
     ) -> ProjectItem:
         """将 ORM 项目对象转换为接口层需要的显式响应结构。"""
+
+        resolved_updated_at = project.updated_at
+        if latest_page_updated_at is not None and normalize_utc(latest_page_updated_at) > normalize_utc(resolved_updated_at):
+            resolved_updated_at = latest_page_updated_at
 
         return ProjectItem.model_validate(
             {
@@ -82,7 +89,7 @@ class ProjectService:
                     else None
                 ),
                 "created_at": project.created_at,
-                "updated_at": project.updated_at,
+                "updated_at": resolved_updated_at,
                 "created_by": project.created_by,
                 "updated_by": project.updated_by,
             }
@@ -101,12 +108,14 @@ class ProjectService:
         )
         first_pages = await self.repository.list_cover_pages([item.id for item in items])
         page_counts = await self.repository.list_page_counts([item.id for item in items])
+        latest_page_updated_at = await self.repository.list_page_latest_updated_at([item.id for item in items])
         return PagedResponse[ProjectItem](
             items=[
                 self._to_item(
                     item,
                     first_page=first_pages.get(item.id),
                     page_counts=page_counts.get(item.id, (0, 0)),
+                    latest_page_updated_at=latest_page_updated_at.get(item.id),
                 )
                 for item in items
             ],
@@ -124,7 +133,12 @@ class ProjectService:
         if user_id is not None:
             await self.workspace_service.ensure_access(project.workspace_id, user_id=user_id)
         page_counts = await self.repository.list_page_counts([project.id])
-        return self._to_item(project, page_counts=page_counts.get(project.id, (0, 0)))
+        latest_page_updated_at = await self.repository.list_page_latest_updated_at([project.id])
+        return self._to_item(
+            project,
+            page_counts=page_counts.get(project.id, (0, 0)),
+            latest_page_updated_at=latest_page_updated_at.get(project.id),
+        )
 
     async def create(self, payload: ProjectCreateRequest, operator_id: int) -> ProjectItem:
         """创建项目，code 由系统自动生成，并校验工作空间存在性。"""

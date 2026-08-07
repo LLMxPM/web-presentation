@@ -74,6 +74,8 @@ const NATIVE_CONTROL_EXEMPTIONS: NativeControlExemption[] = [
   { relativePath: 'components/agent/AgentSessionControls.vue', tag: 'button', expectedCount: 1, reason: '会话列表项切换按钮' },
   { relativePath: 'components/nav/ProjectQuickSwitcher.vue', tag: 'button', expectedCount: 2, reason: '快速切换触发器与项目列表项' },
   { relativePath: 'components/agent/AgentVisualToolCard.vue', tag: 'button', expectedCount: 2, reason: '图片预览触发按钮' },
+  { relativePath: 'components/agent/AgentConversationBody.vue', tag: 'button', expectedCount: 3, reason: '消息流图片预览触发按钮' },
+  { relativePath: 'components/agent/AgentImagePreviewDialog.vue', tag: 'button', expectedCount: 1, reason: '图片保存为资源动作按钮' },
   { relativePath: 'components/project/SuggestedComponentsSelectorPanel.vue', tag: 'button', expectedCount: 1, reason: '建议组件选择触发按钮' },
   { relativePath: 'components/project/ProjectSuggestedReferenceAssetsDialog.vue', tag: 'button', expectedCount: 1, reason: '建议资源整卡片选择触发区' },
   { relativePath: 'components/page/PageCreateCard.vue', tag: 'button', expectedCount: 1, reason: '整卡片新增页面触发区' },

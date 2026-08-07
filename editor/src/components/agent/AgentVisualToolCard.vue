@@ -49,35 +49,12 @@
     </div>
   </details>
 
-  <UiDialog
+  <AgentImagePreviewDialog
     :open="!!previewAttachment"
-    size="workbench"
-    body-preset="immersive"
-    :show-header="false"
-    :show-close-button="false"
-    :panel-style="{ background: 'transparent' }"
-    panel-class="!pointer-events-none !border-0 !bg-transparent !shadow-none"
-    overlay-class="bg-overlay/90 backdrop-blur-md"
-    :z-index="1200"
+    :attachment="previewAttachment"
+    :promote-attachment="promoteAttachment"
     @update:open="handlePreviewVisibleChange"
-  >
-    <div v-if="previewAttachment" class="pointer-events-none relative flex h-full min-h-0 items-center justify-center p-4 sm:p-6">
-      <img
-        :src="previewAttachment.url"
-        :alt="previewAttachment.original_name"
-        class="pointer-events-auto relative max-h-full max-w-full rounded-lg object-contain shadow-2xl drop-shadow-2xl"
-      >
-      <BaseCloseButton
-        class="pointer-events-auto absolute right-3 top-3 sm:right-6 sm:top-6"
-        tone="inverse"
-        label="关闭图片预览"
-        @click="previewAttachment = null"
-      />
-      <div class="pointer-events-none absolute bottom-3 left-1/2 max-w-[80%] -translate-x-1/2 truncate rounded-full bg-surface-inverse-raised/60 px-4 py-2 text-xs tracking-widest text-text-inverse backdrop-blur sm:bottom-6">
-        {{ previewAttachment.original_name }}
-      </div>
-    </div>
-  </UiDialog>
+  />
 </template>
 
 <script setup lang="ts">
@@ -85,11 +62,17 @@ import { ChevronRight } from '@lucide/vue'
 import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
+import AgentImagePreviewDialog from '@/components/agent/AgentImagePreviewDialog.vue'
 import type { ToolCallDetail } from '@/components/agent/agent-conversation-panel'
-import BaseCloseButton from '@/components/ui/BaseCloseButton.vue'
-import { UiBadge, UiButton, UiDialog } from '@/components/ui'
+import { UiBadge, UiButton } from '@/components/ui'
 
-const props = defineProps<{ tool: ToolCallDetail }>()
+const props = withDefaults(defineProps<{
+  tool: ToolCallDetail
+  /** 保存为资源的执行入口，透传给统一图片预览弹窗；未提供时隐藏保存交互。 */
+  promoteAttachment?: ((attachmentId: number) => Promise<boolean>) | null
+}>(), {
+  promoteAttachment: null,
+})
 defineEmits<{ openDetail: [] }>()
 
 const route = useRoute()

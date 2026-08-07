@@ -96,15 +96,16 @@
                   class="mt-1 flex flex-wrap gap-1"
                   :class="item.message.role === 'user' ? 'justify-end' : 'justify-start'"
                 >
-                  <a
+                  <button
                     v-for="attachment in item.message.attachments"
                     :key="attachment.id"
-                    :href="isAttachmentPreviewAvailable(attachment) ? attachment.url : undefined"
-                    target="_blank"
-                    rel="noreferrer"
+                    type="button"
                     class="message-attachment-thumb"
+                    :class="{ 'message-attachment-thumb--placeholder': !isAttachmentPreviewAvailable(attachment) }"
                     :title="attachment.original_name"
-                    @click.stop
+                    :disabled="!isAttachmentPreviewAvailable(attachment)"
+                    aria-label="预览图片"
+                    @click.stop="openAttachmentPreview(attachment)"
                   >
                     <img
                       v-if="isAttachmentPreviewAvailable(attachment)"
@@ -114,7 +115,7 @@
                       @error="event => handleAttachmentImageError(event, attachment)"
                     >
                     <span v-else class="message-attachment-placeholder">{{ attachmentPlaceholderText(attachment) }}</span>
-                  </a>
+                  </button>
                 </div>
               </div>
               <div
@@ -215,6 +216,7 @@
                   <AgentVisualToolCard
                     v-if="isVisualTool(tool)"
                     :tool="tool"
+                    :promote-attachment="promoteAttachment"
                     @open-detail="handleToolRowClick(tool)"
                   />
                   <template v-else>
@@ -230,15 +232,16 @@
                     <UiBadge :tone="getToolStatusTone(tool.status)" size="sm">{{ toolStatusLabelMap[tool.status] }}</UiBadge>
                   </UiButton>
                   <div v-if="tool.attachments.length" class="mt-1 flex flex-wrap gap-1">
-                    <a
+                    <button
                       v-for="attachment in tool.attachments"
                       :key="attachment.id"
-                      :href="isAttachmentPreviewAvailable(attachment) ? attachment.url : undefined"
-                      target="_blank"
-                      rel="noreferrer"
+                      type="button"
                       class="message-attachment-thumb"
+                      :class="{ 'message-attachment-thumb--placeholder': !isAttachmentPreviewAvailable(attachment) }"
                       :title="attachment.original_name"
-                      @click.stop
+                      :disabled="!isAttachmentPreviewAvailable(attachment)"
+                      aria-label="预览图片"
+                      @click.stop="openAttachmentPreview(attachment)"
                     >
                       <img
                         v-if="isAttachmentPreviewAvailable(attachment)"
@@ -248,7 +251,7 @@
                         @error="event => handleAttachmentImageError(event, attachment)"
                       >
                       <span v-else class="message-attachment-placeholder">{{ attachmentPlaceholderText(attachment) }}</span>
-                    </a>
+                    </button>
                   </div>
                   </template>
                 </div>
@@ -266,6 +269,7 @@
                     <AgentVisualToolCard
                       v-if="isVisualTool(tool)"
                       :tool="tool"
+                      :promote-attachment="promoteAttachment"
                       @open-detail="handleToolRowClick(tool)"
                     />
                     <template v-else>
@@ -281,15 +285,16 @@
                       <UiBadge :tone="getToolStatusTone(tool.status)" size="sm">{{ toolStatusLabelMap[tool.status] }}</UiBadge>
                     </UiButton>
                     <div v-if="tool.attachments.length" class="mt-1 flex flex-wrap gap-1">
-                      <a
+                      <button
                         v-for="attachment in tool.attachments"
                         :key="attachment.id"
-                        :href="isAttachmentPreviewAvailable(attachment) ? attachment.url : undefined"
-                        target="_blank"
-                        rel="noreferrer"
+                        type="button"
                         class="message-attachment-thumb"
+                        :class="{ 'message-attachment-thumb--placeholder': !isAttachmentPreviewAvailable(attachment) }"
                         :title="attachment.original_name"
-                        @click.stop
+                        :disabled="!isAttachmentPreviewAvailable(attachment)"
+                        aria-label="预览图片"
+                        @click.stop="openAttachmentPreview(attachment)"
                       >
                         <img
                           v-if="isAttachmentPreviewAvailable(attachment)"
@@ -299,7 +304,7 @@
                           @error="event => handleAttachmentImageError(event, attachment)"
                         >
                         <span v-else class="message-attachment-placeholder">{{ attachmentPlaceholderText(attachment) }}</span>
-                      </a>
+                      </button>
                     </div>
                     </template>
                   </div>
@@ -376,6 +381,13 @@
       </div>
     </section>
   </div>
+
+    <AgentImagePreviewDialog
+      :open="previewOpen"
+      :attachment="previewAttachment"
+      :promote-attachment="promoteAttachment"
+      @update:open="previewOpen = $event"
+    />
 </template>
 
 <script setup lang="ts">
@@ -386,6 +398,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import DataState from '@/components/patterns/DataState.vue'
 import { UiBadge, UiButton, UiIconButton } from '@/components/ui'
+import AgentImagePreviewDialog from '@/components/agent/AgentImagePreviewDialog.vue'
 import AgentVisualToolCard from '@/components/agent/AgentVisualToolCard.vue'
 import AgentRunContextCard from '@/components/agent/AgentRunContextCard.vue'
 import {
@@ -416,6 +429,8 @@ const props = defineProps<{
   cancellingRunForceAvailable: boolean
   isStreaming: boolean
   streamingTimelineItemId: string | null
+  /** 保存为资源的执行入口，透传给统一图片预览弹窗；未提供时隐藏保存交互。 */
+  promoteAttachment?: ((attachmentId: number) => Promise<boolean>) | null
 }>()
 
 const emit = defineEmits<{
@@ -433,6 +448,8 @@ const scrollContentRef = ref<HTMLElement | null>(null)
 const autoScrollEnabled = ref(true)
 const failedAttachmentIds = ref(new Set<number>())
 const userMessageCollapseOverrides = ref(new Map<string, boolean>())
+const previewOpen = ref(false)
+const previewAttachment = ref<AgentMessageAttachmentItem | null>(null)
 let scrollAnimationFrame: number | null = null
 const USER_SCROLL_INTENT_WINDOW_MS = 1000
 let userScrollIntentUntil = 0
@@ -598,6 +615,17 @@ function handleAttachmentImageError(event: Event, attachment: AgentMessageAttach
 
 function isAttachmentPreviewAvailable(attachment: AgentMessageAttachmentItem) {
   return attachment.preview_available && !failedAttachmentIds.value.has(attachment.id)
+}
+
+/**
+ * 打开统一图片预览弹窗查看消息流中的图片，替代新标签页打开。
+ */
+function openAttachmentPreview(attachment: AgentMessageAttachmentItem) {
+  if (!isAttachmentPreviewAvailable(attachment)) {
+    return
+  }
+  previewAttachment.value = attachment
+  previewOpen.value = true
 }
 
 function attachmentPlaceholderText(attachment: AgentMessageAttachmentItem) {
@@ -848,7 +876,17 @@ details[open] .details-chevron {
   border: 1px solid rgb(var(--ui-border));
   background: rgb(var(--ui-surface-hover));
   color: rgb(var(--ui-text-muted));
+  padding: 0;
+  cursor: pointer;
   text-decoration: none;
+}
+
+.message-attachment-thumb:disabled {
+  cursor: default;
+}
+
+.message-attachment-thumb--placeholder {
+  cursor: default;
 }
 
 .message-attachment-placeholder {

@@ -125,24 +125,21 @@ export function useAgentImageAttachments(context: AgentImageAttachmentContext) {
 
   /**
    * 将图片附件保存为工作空间资源，并刷新资源相关缓存。
+   * @returns 是否保存成功，供预览弹窗回显已保存状态。
    */
-  async function handlePromoteImage(attachmentId: number) {
+  async function handlePromoteImage(attachmentId: number): Promise<boolean> {
     const sessionId = context.getActiveSessionId()
     if (!sessionId) {
-      return
+      return false
     }
     try {
-      const promoted = await promoteAgentImageAttachment(sessionId, context.getScope(), attachmentId, {}, context.getAgentId())
-      context.setPendingImageAttachments(
-        sessionId,
-        context.getPendingImageAttachments(sessionId).map(item => (
-          item.id === promoted.id ? promoted : item
-        )),
-      )
+      await promoteAgentImageAttachment(sessionId, context.getScope(), attachmentId, {}, context.getAgentId())
       await context.invalidateWorkspaceAssets()
       Message.success('图片已保存为资源。')
+      return true
     } catch (error) {
       Message.error(getErrorMessage(error, '保存为资源失败。'))
+      return false
     }
   }
 

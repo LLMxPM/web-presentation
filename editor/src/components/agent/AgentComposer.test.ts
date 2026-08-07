@@ -97,4 +97,12 @@ describe('AgentComposer 图片附件', () => {
     expect(screen.getByRole('button', { name: '发送' })).toBeDisabled()
     expect(screen.getByText(/请移除至 10 张以内/)).toBeInTheDocument()
   })
+
+  it('未发送的待发送图片只提供移除交互，不提供保存为资源', () => {
+    renderComposer({ imageAttachments: [attachment(1)], modelValue: '' })
+
+    expect(screen.getByLabelText('移除图片')).toBeInTheDocument()
+    expect(screen.queryByLabelText('保存为资源')).toBeNull()
+    expect(screen.queryByRole('button', { name: '保存为资源' })).toBeNull()
+  })
 })

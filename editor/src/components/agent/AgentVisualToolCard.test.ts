@@ -41,6 +41,7 @@ describe('AgentVisualToolCard', () => {
     await fireEvent.click(screen.getByRole('button', { name: '预览图片 input.png' }))
     expect(screen.getByRole('button', { name: '关闭图片预览' })).toBeTruthy()
     expect(screen.getAllByAltText('input.png')).toHaveLength(2)
+    expect(screen.getByLabelText('下载图片')).toBeTruthy()
     expect(document.querySelector('a[target="_blank"]')).toBeNull()
   })
 

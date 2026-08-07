@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from datetime import datetime
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -63,12 +64,41 @@ class ProjectRepository:
             statement = statement.where(Project.status == query.status.value)
             count_statement = count_statement.where(Project.status == query.status.value)
 
-        sort_column = getattr(Project, query.sort_by, Project.updated_at)
-        sort_expression = sort_column.asc() if query.sort_order == "asc" else sort_column.desc()
+        if query.sort_by == "updated_at":
+            page_latest_subquery = (
+                select(func.max(Page.updated_at))
+                .where(Page.project_id == Project.id)
+                .where(Page.deleted_at.is_(None))
+                .scalar_subquery()
+            )
+            sort_expression = func.coalesce(
+                case(
+                    (Project.updated_at >= page_latest_subquery, Project.updated_at),
+                    else_=page_latest_subquery,
+                ),
+                Project.updated_at,
+            )
+        else:
+            sort_column = getattr(Project, query.sort_by, Project.updated_at)
+            sort_expression = sort_column
+        sort_expression = sort_expression.asc() if query.sort_order == "asc" else sort_expression.desc()
         statement = statement.order_by(sort_expression).offset((query.page - 1) * query.page_size).limit(query.page_size)
         total = int(await self.session.scalar(count_statement) or 0)
         result = await self.session.scalars(statement)
         return list(result), total
+
+    async def list_page_latest_updated_at(self, project_ids: list[int]) -> dict[int, datetime]:
+        """批量读取项目下所有未软删除页面的最新更新时间，未关联页面时返回空。"""
+
+        if not project_ids:
+            return {}
+        rows = list(await self.session.execute(
+            select(Page.project_id, func.max(Page.updated_at).label("latest_updated_at"))
+            .where(Page.project_id.in_(project_ids))
+            .where(Page.deleted_at.is_(None))
+            .group_by(Page.project_id)
+        ))
+        return {int(row.project_id): row.latest_updated_at for row in rows if row.project_id is not None}
 
     async def get_by_id(self, project_id: int) -> Project | None:
         """按主键查询未删除项目。"""

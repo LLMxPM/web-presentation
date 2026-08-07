@@ -33,16 +33,7 @@
             :alt="attachment.original_name"
             class="h-full w-full object-cover"
           >
-          <div class="absolute inset-x-1 top-1 flex justify-between gap-1 opacity-0 transition group-hover:opacity-100">
-            <UiIconButton
-              class="h-4 w-4 rounded bg-surface/90 text-text-muted shadow-sm hover:text-text [&_svg]:h-2.5 [&_svg]:w-2.5"
-              label="保存为资源"
-              aria-label="保存为资源"
-              :disabled="Boolean(attachment.promoted_asset_id)"
-              @click="emit('promoteImage', attachment.id)"
-            >
-              <Archive />
-            </UiIconButton>
+          <div class="absolute inset-x-1 top-1 flex justify-end gap-1 opacity-0 transition group-hover:opacity-100">
             <UiIconButton
               class="h-4 w-4 rounded bg-surface/90 text-text-muted shadow-sm hover:text-danger [&_svg]:h-2.5 [&_svg]:w-2.5"
               label="移除图片"
@@ -193,7 +184,7 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { Archive, ImagePlus, Maximize2, Minimize2, SendHorizonal, Square, X } from '@lucide/vue'
+import { ImagePlus, Maximize2, Minimize2, SendHorizonal, Square, X } from '@lucide/vue'
 
 import AgentChoicePrompt from '@/components/agent/AgentChoicePrompt.vue'
 import AgentToolConfirmPrompt from '@/components/agent/AgentToolConfirmPrompt.vue'
@@ -249,7 +240,6 @@ const emit = defineEmits<{
   action: []
   uploadImage: [files: File[]]
   removeImage: [attachmentId: number]
-  promoteImage: [attachmentId: number]
   hitlConfirm: []
   hitlReject: []
   hitlCancel: []

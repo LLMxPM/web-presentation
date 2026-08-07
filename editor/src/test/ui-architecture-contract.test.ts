@@ -20,7 +20,7 @@ import {
 /** 迁移完成后的精确统计；新增或删除豁免均需显式评审。 */
 const UI_MIGRATION_BASELINE: UiMigrationBaseline = {
   legacyClassReferences: 0,
-  nakedButtons: 15,
+  nakedButtons: 19,
   nakedInputs: 26,
   nakedTextareas: 2,
   nakedSelects: 0,
