@@ -4,6 +4,18 @@
     <PageHeader class="shrink-0" :icon="Component" :title="workspaceTitle" description="集中管理工作空间组件、Runtime Kit 预览与组件分享。">
       <template #actions>
         <UiButton
+          variant="ghost"
+          size="md"
+          :disabled="!workspaceId"
+          title="查看已归档组件并恢复"
+          @click="archivedComponentsDialogVisible = true"
+        >
+          <template #icon>
+            <Archive class="h-3.5 w-3.5" />
+          </template>
+          已归档
+        </UiButton>
+        <UiButton
           variant="secondary"
           size="md"
           :disabled="!workspaceId || importValidatePending || importPackagePending"
@@ -188,6 +200,12 @@
         </UiButton>
       </template>
     </UiDialog>
+
+    <ArchivedComponentsDialog
+      v-model="archivedComponentsDialogVisible"
+      :workspace-id="workspaceId"
+      @restored="refreshComponentList"
+    />
   </div>
 </template>
 
@@ -195,7 +213,7 @@
 import { computed, inject, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useQuery } from '@tanstack/vue-query'
-import { Component, Plus, Upload } from '@lucide/vue'
+import { Component, Plus, Upload, Archive } from '@lucide/vue'
 
 import {
   exportComponentPackage,
@@ -214,6 +232,7 @@ import WorkspaceComponentWorkbench from '@/components/component-preview/Workspac
 import PageHeader from '@/components/patterns/PageHeader.vue'
 import ComponentLibraryPanel from '@/components/project/ComponentLibraryPanel.vue'
 import ExportPackageAssetsDialog from '@/components/project/ExportPackageAssetsDialog.vue'
+import ArchivedComponentsDialog from '@/components/project/ArchivedComponentsDialog.vue'
 import { UiButton, UiDialog } from '@/components/ui'
 import { componentAgentContextKey } from '@/composables/component-agent-context'
 import type {
@@ -263,6 +282,7 @@ const importDialogVisible = ref(false)
 const importFileInputRef = ref<HTMLInputElement | null>(null)
 const importFile = ref<File | null>(null)
 const importValidation = ref<ComponentShareImportValidationResult | null>(null)
+const archivedComponentsDialogVisible = ref(false)
 const componentAgentContext = inject(componentAgentContextKey, null)
 const workspaceId = computed(() => Number.parseInt(route.params.workspaceId as string, 10))
 

@@ -506,6 +506,12 @@ export async function archiveComponent(id: number) {
   return data
 }
 
+/** 恢复已归档的工作空间组件。 */
+export async function restoreComponent(id: number) {
+  const { data } = await http.post<{ message: string }>(`/components/${id}/restore`)
+  return data
+}
+
 /** 创建页面资源，code 由后端自动生成。 */
 export async function createPage(payload: {
   page_content: string

@@ -55,6 +55,9 @@ class WorkspaceComponentRepository:
         if query.status:
             statement = statement.where(WorkspaceComponent.status == query.status.value)
             count_statement = count_statement.where(WorkspaceComponent.status == query.status.value)
+        else:
+            statement = statement.where(WorkspaceComponent.status == RecordStatus.ACTIVE.value)
+            count_statement = count_statement.where(WorkspaceComponent.status == RecordStatus.ACTIVE.value)
         if query.workspace_id is not None:
             statement = statement.where(WorkspaceComponent.workspace_id == query.workspace_id)
             count_statement = count_statement.where(WorkspaceComponent.workspace_id == query.workspace_id)

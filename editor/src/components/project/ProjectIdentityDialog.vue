@@ -4,9 +4,6 @@
     <div v-if="project" class="space-y-5">
       <div class="rounded-2xl border border-border bg-canvas px-4 py-3">
         <p class="text-sm font-semibold text-text-emphasis">{{ project.code }}</p>
-        <p class="mt-1 text-xs leading-5 text-text-muted">
-          这里只修改项目名称与描述，不影响页面尺寸、菜单模式、导出按钮和主题配置。
-        </p>
       </div>
 
       <UiFormField label="项目名称" required :error="errors.name"><template #default="field"><UiInput v-model="form.name" placeholder="起一个具有辨识度的名称" required :input-id="field.inputId" :described-by="field.describedBy" :invalid="field.invalid" /></template></UiFormField>

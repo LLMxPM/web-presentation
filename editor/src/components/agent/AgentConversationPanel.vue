@@ -195,7 +195,7 @@
                 </template>
                 <div>
                   <p class="text-xs font-semibold text-text-emphasis">下一轮焦点</p>
-                  <p class="mt-1 text-[11px] leading-4 text-text-muted">只影响下一次发送；正在运行的任务不会改变。</p>
+                  <p class="mt-1 text-[11px] leading-4 text-text-muted">只影响下一轮对话，不影响当前任务</p>
                 </div>
                 <UiSelect
                   :model-value="sessionPreferences.focus_mode"
@@ -233,7 +233,7 @@
                 </template>
                 <div>
                   <p class="text-xs font-semibold text-text-emphasis">项目工作范围</p>
-                  <p class="mt-1 text-[11px] leading-4 text-text-muted">限制项目、页面及项目级操作；工作空间资源仍按权限访问。</p>
+                  <p class="mt-1 text-[11px] leading-4 text-text-muted">控制智能体项目、页面的操作范围</p>
                 </div>
                 <UiRadioGroup
                   :model-value="sessionPreferences.work_scope_mode"

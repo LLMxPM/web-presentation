@@ -11,7 +11,6 @@ from app.core.component_preview_schema import (
 from app.core.code_generator import create_with_generated_code
 from app.core.exceptions import AppException
 from app.core.text_normalizer import normalize_text_to_lf
-from app.core.time_utils import utc_now
 from app.models.enums import PageFileType, RecordStatus, WorkspaceComponentType
 from app.models.workspace_component import WorkspaceComponent
 from app.repositories.workspace_component_repository import WorkspaceComponentRepository
@@ -61,9 +60,11 @@ class WorkspaceComponentService:
         )
 
     async def get(self, component_id: int, *, user_id: int | None = None) -> WorkspaceComponentItem:
-        """读取单个组件详情，并在传入用户时校验访问权。"""
+        """读取单个组件详情，并在传入用户时校验访问权；已归档组件对详情读取视为不存在。"""
 
         component = await self._get_component_or_raise(component_id)
+        if component.status != RecordStatus.ACTIVE.value:
+            raise AppException(status_code=404, code="COMPONENT_NOT_FOUND", detail="组件不存在或已归档。")
         if user_id is not None:
             await self.workspace_service.ensure_access(component.workspace_id, user_id=user_id)
         return await self._to_item(component)
@@ -269,11 +270,31 @@ class WorkspaceComponentService:
         )
 
     async def archive(self, component_id: int, *, user_id: int) -> None:
-        """归档当前用户可访问的工作空间组件，使其退出普通查询。"""
+        """归档当前用户可访问的工作空间组件，使其退出普通查询并进入归档恢复视图。"""
 
         component = await self._get_component_or_raise(component_id)
         await self.workspace_service.ensure_access(component.workspace_id, user_id=user_id)
-        component.deleted_at = utc_now()
+        if component.status == RecordStatus.ARCHIVED.value:
+            return
+        component.status = RecordStatus.ARCHIVED.value
+        component.updated_by = user_id
+        await self.session.commit()
+
+    async def restore(self, component_id: int, *, user_id: int) -> None:
+        """恢复已归档的工作空间组件；恢复前校验引用名当前仍未被启用组件占用。"""
+
+        component = await self._get_component_or_raise(component_id)
+        await self.workspace_service.ensure_access(component.workspace_id, user_id=user_id)
+        if component.status == RecordStatus.ACTIVE.value:
+            return
+        await self._assert_import_name_available(
+            workspace_id=component.workspace_id,
+            import_name=component.import_name,
+            status=RecordStatus.ACTIVE,
+            exclude_component_id=component.id,
+        )
+        component.status = RecordStatus.ACTIVE.value
+        component.updated_by = user_id
         await self.session.commit()
 
     async def get_by_code(self, *, workspace_id: int, component_code: str) -> WorkspaceComponentItem:

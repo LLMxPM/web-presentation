@@ -1041,6 +1041,7 @@ class AssetService:
         stmt = (
             select(WorkspaceComponent)
             .where(WorkspaceComponent.workspace_id == workspace_id)
+            .where(WorkspaceComponent.status == RecordStatus.ACTIVE.value)
             .where(WorkspaceComponent.deleted_at.is_(None))
         )
         components = list((await self.session.execute(stmt)).scalars().all())
@@ -1066,6 +1067,7 @@ class AssetService:
             select(WorkspaceComponentVersion, WorkspaceComponent)
             .join(WorkspaceComponent, WorkspaceComponent.id == WorkspaceComponentVersion.component_id)
             .where(WorkspaceComponent.workspace_id == workspace_id)
+            .where(WorkspaceComponent.status == RecordStatus.ACTIVE.value)
             .where(WorkspaceComponent.deleted_at.is_(None))
         )
         rows = list((await self.session.execute(stmt)).all())

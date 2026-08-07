@@ -196,11 +196,12 @@
               <UiIconButton
                 v-if="!readOnly"
                 type="button"
-                variant="danger"
+                variant="secondary"
                 label="归档组件"
-                @click.stop="handleDelete(component)"
+                title="归档组件"
+                @click.stop="handleArchive(component)"
               >
-                <Trash2 class="h-3.5 w-3.5" />
+                <Archive class="h-3.5 w-3.5" />
               </UiIconButton>
             </div>
           </div>
@@ -224,7 +225,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { ArrowUpRight, Box, Calendar, Copy, Download, Layers, Plus, RefreshCw, Trash2, Upload } from '@lucide/vue'
+import { Archive, ArrowUpRight, Box, Calendar, Copy, Download, Layers, Plus, RefreshCw, Upload } from '@lucide/vue'
 
 import { archiveComponent, listComponents } from '@/api/catalog'
 import { getErrorMessage } from '@/api/http'
@@ -486,7 +487,7 @@ function openComponentLibraryPage(): void {
  * 归档组件并刷新列表；如果归档的是当前选择，同时清空右侧工作台。
  * @param component 待归档组件
  */
-async function handleDelete(component: WorkspaceComponentItem): Promise<void> {
+async function handleArchive(component: WorkspaceComponentItem): Promise<void> {
   if (props.readOnly) {
     return
   }

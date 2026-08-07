@@ -540,3 +540,132 @@ async def test_component_package_import_should_reject_legacy_schema_and_tampered
     assert tampered_response.status_code == 200
     assert tampered_response.json()["valid"] is False
     assert any("component_fingerprint" in error for error in tampered_response.json()["errors"])
+
+
+async def test_workspace_component_archive_and_restore_round_trip(authenticated_client: AsyncClient) -> None:
+    """组件归档后退出普通列表并可恢复，恢复前校验引用名未被启用组件占用。"""
+
+    workspace_response = await authenticated_client.post(
+        "/api/workspaces",
+        json={"name": "组件归档恢复工作空间", "status": "active"},
+    )
+    assert workspace_response.status_code == 200
+    workspace_id = workspace_response.json()["id"]
+
+    create_response = await authenticated_client.post(
+        "/api/components",
+        json={
+            "workspace_id": workspace_id,
+            "name": "可恢复组件",
+            "import_name": "RestorableCard",
+            "content": "<template><div>restorable</div></template>",
+            "preview_schema": CONTENT_COMPONENT_SIZE_PREVIEW_SCHEMA,
+            "file_type": "vue",
+            "status": "active",
+        },
+    )
+    assert create_response.status_code == 200
+    component_id = create_response.json()["id"]
+
+    active_list = await authenticated_client.get(
+        "/api/components",
+        params={"workspace_id": workspace_id},
+    )
+    assert active_list.status_code == 200
+    assert active_list.json()["total"] == 1
+
+    archive_response = await authenticated_client.post(f"/api/components/{component_id}/archive")
+    assert archive_response.status_code == 200
+
+    active_after_archive = await authenticated_client.get(
+        "/api/components",
+        params={"workspace_id": workspace_id},
+    )
+    assert active_after_archive.status_code == 200
+    assert active_after_archive.json()["total"] == 0
+
+    archived_list = await authenticated_client.get(
+        "/api/components",
+        params={"workspace_id": workspace_id, "status": "archived"},
+    )
+    assert archived_list.status_code == 200
+    assert archived_list.json()["total"] == 1
+    assert archived_list.json()["items"][0]["status"] == "archived"
+
+    detail_response = await authenticated_client.get(f"/api/components/{component_id}")
+    assert detail_response.status_code == 404
+
+    restore_response = await authenticated_client.post(f"/api/components/{component_id}/restore")
+    assert restore_response.status_code == 200
+
+    active_after_restore = await authenticated_client.get(
+        "/api/components",
+        params={"workspace_id": workspace_id},
+    )
+    assert active_after_restore.status_code == 200
+    assert active_after_restore.json()["total"] == 1
+
+    detail_after_restore = await authenticated_client.get(f"/api/components/{component_id}")
+    assert detail_after_restore.status_code == 200
+    assert detail_after_restore.json()["status"] == "active"
+
+    # 再次恢复已启用组件应保持幂等，不报错。
+    idempotent_restore = await authenticated_client.post(f"/api/components/{component_id}/restore")
+    assert idempotent_restore.status_code == 200
+
+
+async def test_workspace_component_restore_should_reject_conflicting_import_name(
+    authenticated_client: AsyncClient,
+) -> None:
+    """恢复归档组件时，若其引用名已被新的启用组件占用，应返回引用名冲突错误。"""
+
+    workspace_response = await authenticated_client.post(
+        "/api/workspaces",
+        json={"name": "组件恢复冲突工作空间", "status": "active"},
+    )
+    assert workspace_response.status_code == 200
+    workspace_id = workspace_response.json()["id"]
+
+    async def _create_component(name: str, import_name: str, status: str) -> int:
+        """创建组件草稿并返回组件 ID。"""
+
+        create_response = await authenticated_client.post(
+            "/api/components",
+            json={
+                "workspace_id": workspace_id,
+                "name": name,
+                "import_name": import_name,
+                "content": "<template><div>conflict</div></template>",
+                "preview_schema": CONTENT_COMPONENT_SIZE_PREVIEW_SCHEMA,
+                "file_type": "vue",
+                "status": status,
+            },
+        )
+        assert create_response.status_code == 200, create_response.text
+        return int(create_response.json()["id"])
+
+    original_id = await _create_component("原始组件", "TwinCard", "active")
+    archive_response = await authenticated_client.post(f"/api/components/{original_id}/archive")
+    assert archive_response.status_code == 200
+
+    # 归档后引用名被释放，新启用组件可以复用。
+    replacement_id = await _create_component("替换组件", "TwinCard", "active")
+
+    restore_response = await authenticated_client.post(f"/api/components/{original_id}/restore")
+    assert restore_response.status_code == 409
+    assert restore_response.json()["code"] == "COMPONENT_IMPORT_NAME_CONFLICT"
+
+    # 归档列表仍保留，未发生部分恢复。
+    archived_list = await authenticated_client.get(
+        "/api/components",
+        params={"workspace_id": workspace_id, "status": "archived"},
+    )
+    assert archived_list.status_code == 200
+    assert [item["id"] for item in archived_list.json()["items"]] == [original_id]
+
+    active_list = await authenticated_client.get(
+        "/api/components",
+        params={"workspace_id": workspace_id},
+    )
+    assert active_list.status_code == 200
+    assert [item["id"] for item in active_list.json()["items"]] == [replacement_id]

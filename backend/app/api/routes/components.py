@@ -322,3 +322,15 @@ async def archive_component(
 
     await WorkspaceComponentService(session).archive(component_id, user_id=current.user.id)
     return MessageResponse(message="组件已归档。")
+
+
+@router.post("/{component_id}/restore", response_model=MessageResponse)
+async def restore_component(
+    component_id: int,
+    current: Annotated[AuthContext, Depends(get_current_user)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> MessageResponse:
+    """恢复指定已归档工作空间组件。"""
+
+    await WorkspaceComponentService(session).restore(component_id, user_id=current.user.id)
+    return MessageResponse(message="组件已恢复。")
