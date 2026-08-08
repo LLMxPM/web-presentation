@@ -33,6 +33,8 @@ const continueAgentRunMock = vi.fn()
 const continueAgentSessionActiveRunMock = vi.fn()
 const cancelAgentRunMock = vi.fn()
 const cancelAgentSessionActiveRunMock = vi.fn()
+const updateAgentSessionPreferencesMock = vi.fn()
+const listProjectsMock = vi.fn()
 const messageSuccessMock = vi.fn()
 const messageErrorMock = vi.fn()
 const messageInfoMock = vi.fn()
@@ -90,6 +92,11 @@ vi.mock('@/api/ai', () => ({
   continueAgentSessionActiveRun: (...args: unknown[]) => continueAgentSessionActiveRunMock(...args),
   cancelAgentRun: (...args: unknown[]) => cancelAgentRunMock(...args),
   cancelAgentSessionActiveRun: (...args: unknown[]) => cancelAgentSessionActiveRunMock(...args),
+  updateAgentSessionPreferences: (...args: unknown[]) => updateAgentSessionPreferencesMock(...args),
+}))
+
+vi.mock('@/api/catalog', () => ({
+  listProjects: (...args: unknown[]) => listProjectsMock(...args),
 }))
 
 vi.mock('@/api/llm', () => ({
@@ -546,6 +553,29 @@ describe('AgentConversationPanel', () => {
     streamAgentRunEventsMock.mockImplementation(async (_sessionId: string, runId: string, _scope: unknown, payload: { event_index?: number }, options?: { onEvent?: (event: any) => void, signal?: AbortSignal }) => {
       await streamAgentRunEventsByRunIdMock(runId, { after_sequence: payload?.event_index ?? -1 }, options)
     })
+    updateAgentSessionPreferencesMock.mockImplementation(async (_sessionId: string, _workspaceId: number, payload: {
+      focus_mode: string
+      pinned_project_id: number | null
+      work_scope_mode: string
+      allowed_project_ids: number[]
+    }) => ({
+      session_id: 'session-1',
+      agent_id: DEFAULT_AGENT_ID,
+      session_name: 'AI 页面 会话',
+      created_at: '2026-04-18T10:00:00+08:00',
+      updated_at: '2026-04-18T10:05:00+08:00',
+      focus_mode: payload.focus_mode,
+      pinned_project_id: payload.pinned_project_id,
+      work_scope_mode: payload.work_scope_mode,
+      allowed_project_ids: [...payload.allowed_project_ids],
+      metadata: {
+        workspace_id: 11,
+        project_id: 21,
+        page_id: 31,
+        source: 'editor-page-detail',
+      },
+    }))
+    listProjectsMock.mockResolvedValue({ items: [], total: 0, page: 1, page_size: 100 })
   })
 
   it('应通过新会话按钮旁的下拉菜单切换历史会话', async () => {
@@ -687,8 +717,7 @@ describe('AgentConversationPanel', () => {
 
     expect(createAgentSessionMock).not.toHaveBeenCalled()
     expect(screen.queryByText('旧会话内容')).toBeNull()
-    expect(screen.getByRole('button', { name: /下一轮.*页面/ }).className).toContain('w-[205px]')
-    expect(screen.getByRole('button', { name: /范围.*全部项目/ })).toBeTruthy()
+    expect(screen.getByRole('button', { name: /下一轮.*页面.*全部项目/ })).toBeTruthy()
 
     await fireEvent.update(screen.getByPlaceholderText(DEFAULT_PLACEHOLDER), '开启新讨论')
     await fireEvent.click(screen.getByRole('button', { name: /发送/ }))
@@ -1442,6 +1471,147 @@ describe('AgentConversationPanel', () => {
 
     await fireEvent.click(screen.getByRole('button', { name: '切换会话' }))
     expect(await screen.findByRole('button', { name: /项目会话/ })).toBeTruthy()
+  })
+
+  describe('下一轮设置面板', () => {
+    const focusSession = {
+      session_id: 'session-1',
+      agent_id: DEFAULT_AGENT_ID,
+      session_name: 'AI 页面 会话',
+      created_at: '2026-04-18T10:00:00+08:00',
+      updated_at: '2026-04-18T10:30:00+08:00',
+      focus_mode: 'follow_route',
+      pinned_project_id: null,
+      work_scope_mode: 'workspace',
+      allowed_project_ids: [],
+      metadata: {
+        scope_type: 'page',
+        workspace_id: 11,
+        project_id: 21,
+        page_id: 31,
+        page_title: 'AI 页面',
+        source: 'editor-page-detail',
+      },
+    }
+    const workspaceProjectItems = [
+      { id: 21, name: '演示项目' },
+      { id: 51, name: '经营项目' },
+      { id: 52, name: '数据项目' },
+    ]
+
+    it('固定项目焦点与项目工作范围在同一面板内设置并立即保存', async () => {
+      listAgentSessionsMock.mockResolvedValueOnce([focusSession])
+      listProjectsMock.mockResolvedValueOnce({ items: workspaceProjectItems, total: 3, page: 1, page_size: 100 })
+
+      render(AgentConversationPanel, createTestingRenderOptions())
+
+      const nextRunButton = await screen.findByRole('button', { name: /下一轮.*页面.*全部项目/ })
+      await fireEvent.click(nextRunButton)
+
+      await waitFor(() => {
+        expect(screen.getByText('下一轮设置')).toBeTruthy()
+        expect(screen.getByText('跟随当前路由')).toBeTruthy()
+        expect(screen.getByText('跟随当前路由：页面 · AI 页面')).toBeTruthy()
+      })
+
+      await fireEvent.click(screen.getByText('固定项目'))
+      await waitFor(() => {
+        expect(updateAgentSessionPreferencesMock).toHaveBeenCalledWith(
+          'session-1',
+          11,
+          expect.objectContaining({
+            focus_mode: 'pinned_project',
+            pinned_project_id: 21,
+            work_scope_mode: 'workspace',
+            allowed_project_ids: [],
+          }),
+          DEFAULT_AGENT_ID,
+        )
+      })
+
+      const pinnedOptionCheckbox = await screen.findByRole('checkbox', { name: '经营项目' })
+      await waitFor(() => {
+        expect(pinnedOptionCheckbox.disabled).toBe(false)
+      })
+      await fireEvent.click(pinnedOptionCheckbox)
+      await waitFor(() => {
+        expect(updateAgentSessionPreferencesMock).toHaveBeenLastCalledWith(
+          'session-1',
+          11,
+          expect.objectContaining({ focus_mode: 'pinned_project', pinned_project_id: 51 }),
+          DEFAULT_AGENT_ID,
+        )
+      })
+
+      await fireEvent.click(screen.getByText('仅选择的项目'))
+      await waitFor(() => {
+        expect(updateAgentSessionPreferencesMock).toHaveBeenLastCalledWith(
+          'session-1',
+          11,
+          expect.objectContaining({
+            work_scope_mode: 'selected_projects',
+            allowed_project_ids: [51],
+          }),
+          DEFAULT_AGENT_ID,
+        )
+      })
+
+      expect(screen.getByText('已固定')).toBeTruthy()
+      expect(screen.getAllByText('已选 1 项').length).toBeGreaterThanOrEqual(1)
+    })
+
+    it('工作范围全选与清空立即保存，且固定项目始终保留', async () => {
+      listAgentSessionsMock.mockResolvedValueOnce([{
+        ...focusSession,
+        focus_mode: 'pinned_project',
+        pinned_project_id: 51,
+        work_scope_mode: 'selected_projects',
+        allowed_project_ids: [51],
+      }])
+      listProjectsMock.mockResolvedValueOnce({ items: workspaceProjectItems, total: 3, page: 1, page_size: 100 })
+
+      render(AgentConversationPanel, createTestingRenderOptions())
+
+      const nextRunButton = await screen.findByRole('button', { name: /下一轮.*经营项目.*已选 1 项/ })
+      await fireEvent.click(nextRunButton)
+
+      await waitFor(() => {
+        expect(screen.getByText('下一轮设置')).toBeTruthy()
+      })
+
+      await fireEvent.click(screen.getByText('全选'))
+      await waitFor(() => {
+        expect(updateAgentSessionPreferencesMock).toHaveBeenLastCalledWith(
+          'session-1',
+          11,
+          expect.objectContaining({
+            work_scope_mode: 'selected_projects',
+            allowed_project_ids: [21, 51, 52],
+          }),
+          DEFAULT_AGENT_ID,
+        )
+      })
+      await waitFor(() => {
+        expect(screen.getByText('清空').closest('button')?.disabled).toBe(false)
+      })
+
+      await fireEvent.click(screen.getByText('清空'))
+      await waitFor(() => {
+        expect(updateAgentSessionPreferencesMock).toHaveBeenLastCalledWith(
+          'session-1',
+          11,
+          expect.objectContaining({
+            work_scope_mode: 'selected_projects',
+            allowed_project_ids: [51],
+          }),
+          DEFAULT_AGENT_ID,
+        )
+      })
+
+      const pinnedCheckbox = screen.getAllByRole('checkbox', { name: /经营项目/ }).at(-1)
+      expect(pinnedCheckbox).toBeDisabled()
+      expect(screen.getByText('已固定')).toBeTruthy()
+    })
   })
 
 })

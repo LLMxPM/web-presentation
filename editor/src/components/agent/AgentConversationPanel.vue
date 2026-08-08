@@ -178,81 +178,118 @@
           @action="handleComposerPrimaryAction">
           <template #contextControls>
             <div class="flex min-w-0 items-center gap-1 text-[10px] text-text-muted" aria-label="下一轮焦点与工作范围">
-              <UiPopover :open="focusMenuVisible" side="top" align="start" :side-offset="8" content-class="w-64 space-y-3" @update:open="focusMenuVisible = $event">
+              <UiPopover :open="nextRunMenuVisible" side="top" align="start" :side-offset="8" content-class="w-[400px] space-y-3" @update:open="nextRunMenuVisible = $event">
                 <template #trigger>
                   <UiButton
                     variant="ghost"
                     size="xs"
                     content-align="start"
-                    class="h-6 w-[205px] min-w-0 px-1.5 text-[10px]"
-                    :title="`下一轮焦点：${nextFocusCompactLabel}`"
+                    class="h-6 w-full min-w-0 px-1.5 text-[10px]"
+                    :title="`下一轮焦点与工作范围：${nextFocusCompactLabel}，${workScopeCompactLabel}`"
                   >
                     <component :is="nextFocusIcon" class="h-3 w-3 shrink-0" />
                     <span class="shrink-0 text-text-muted">下一轮</span>
                     <span class="min-w-0 flex-1 truncate text-left font-semibold text-text-emphasis">{{ nextFocusCompactLabel }}</span>
+                    <span class="shrink-0 rounded-ui-sm px-1 py-px text-[9px] font-medium" :class="workScopeBadgeClass">{{ workScopeCompactLabel }}</span>
                     <ChevronDown class="ml-auto h-3 w-3 shrink-0 opacity-60" />
                   </UiButton>
                 </template>
-                <div>
-                  <p class="text-xs font-semibold text-text-emphasis">下一轮焦点</p>
-                  <p class="mt-1 text-[11px] leading-4 text-text-muted">只影响下一轮对话，不影响当前任务</p>
-                </div>
-                <UiSelect
-                  :model-value="sessionPreferences.focus_mode"
-                  :options="focusModeOptions"
-                  :disabled="focusPreferenceMutation.isPending.value"
-                  trigger-class="h-8 text-xs"
-                  @update:model-value="handleFocusModeChange"
-                />
-                <UiSelect
-                  v-if="sessionPreferences.focus_mode === 'pinned_project'"
-                  class="w-full"
-                  :model-value="sessionPreferences.pinned_project_id ?? ''"
-                  :options="projectFocusOptions"
-                  placeholder="选择固定项目"
-                  :title="pinnedProjectFocusLabel"
-                  :disabled="focusPreferenceMutation.isPending.value"
-                  trigger-class="h-8 text-xs"
-                  @update:model-value="handlePinnedProjectChange"
-                />
-                <p v-if="hasActiveTask" class="rounded-ui-md bg-info-muted px-2 py-1.5 text-[11px] leading-4 text-info-strong">
-                  当前任务：{{ formatFocusLabel(activeRun?.focus) }}
-                </p>
-              </UiPopover>
 
-              <span class="h-3 w-px shrink-0 bg-border-muted" />
-
-              <UiPopover :open="workScopeMenuVisible" side="top" align="start" :side-offset="8" content-class="w-64 space-y-3" @update:open="workScopeMenuVisible = $event">
-                <template #trigger>
-                  <UiButton variant="ghost" size="xs" class="h-6 min-w-0 gap-1 px-1.5 text-[10px]" title="设置项目工作范围">
-                    <FolderKanban class="h-3 w-3 shrink-0" />
-                    <span class="shrink-0 text-text-muted">范围</span>
-                    <span class="min-w-0 truncate font-semibold text-text-emphasis">{{ workScopeCompactLabel }}</span>
-                    <ChevronDown class="h-3 w-3 shrink-0 opacity-60" />
-                  </UiButton>
-                </template>
                 <div>
-                  <p class="text-xs font-semibold text-text-emphasis">项目工作范围</p>
-                  <p class="mt-1 text-[11px] leading-4 text-text-muted">控制智能体项目、页面的操作范围</p>
+                  <p class="text-xs font-semibold text-text-emphasis">下一轮设置</p>
+                  <p class="mt-1 text-[11px] leading-4 text-text-muted">选择下一轮对话的焦点与项目工作范围，不影响当前任务</p>
                 </div>
-                <UiRadioGroup
-                  :model-value="sessionPreferences.work_scope_mode"
-                  :options="workScopeOptions"
-                  :disabled="focusPreferenceMutation.isPending.value"
-                  @update:model-value="handleWorkScopeModeChange"
-                />
-                <div v-if="sessionPreferences.work_scope_mode === 'selected_projects'" class="max-h-44 space-y-1 overflow-y-auto border-t border-border-muted pt-2">
-                  <label v-for="project in workspaceProjects" :key="project.id" class="flex items-center gap-2 py-0.5 text-xs text-text-secondary">
-                    <UiCheckbox
-                      :model-value="sessionPreferences.allowed_project_ids.includes(project.id)"
-                      :disabled="sessionPreferences.focus_mode === 'pinned_project' && sessionPreferences.pinned_project_id === project.id"
-                      @update:model-value="toggleAllowedProject(project.id)"
+
+                <div class="grid grid-cols-2 gap-3">
+                  <section class="min-w-0 space-y-1.5">
+                    <p class="text-[11px] font-semibold text-text-secondary">焦点</p>
+                    <div v-if="sessionPreferences.focus_mode === 'follow_route'" class="rounded-ui-md bg-surface-muted px-2 py-1.5 text-[11px] leading-4 text-text-muted">
+                      跟随当前路由：{{ formatFocusLabel(currentRouteScope) }}
+                    </div>
+                    <div v-else-if="sessionPreferences.focus_mode === 'pinned_project'" class="space-y-1">
+                      <UiInput v-model="focusProjectSearch" placeholder="搜索项目" clearable class="h-8" aria-label="搜索固定焦点项目" />
+                      <ul class="max-h-32 space-y-0.5 overflow-y-auto">
+                        <li v-for="project in filteredFocusProjects" :key="project.id">
+                          <label
+                            class="flex cursor-pointer items-center gap-2 rounded-ui-sm px-1.5 py-1 text-xs text-text-secondary transition-colors hover:bg-surface-hover"
+                            :class="{ 'bg-surface-selected text-text-emphasis': sessionPreferences.pinned_project_id === project.id }"
+                          >
+                            <UiCheckbox
+                              :model-value="sessionPreferences.pinned_project_id === project.id"
+                              @update:model-value="handlePinnedProjectChange(project.id)"
+                            />
+                            <span class="truncate">{{ project.name }}</span>
+                          </label>
+                        </li>
+                        <li v-if="!filteredFocusProjects.length" class="px-1.5 py-1 text-xs text-text-muted">没有匹配的项目</li>
+                      </ul>
+                    </div>
+                    <div v-else class="rounded-ui-md bg-surface-muted px-2 py-1.5 text-[11px] leading-4 text-text-muted">
+                      作用于整个工作空间
+                    </div>
+                  </section>
+
+                  <section class="min-w-0 space-y-1.5">
+                    <p class="text-[11px] font-semibold text-text-secondary">项目工作范围</p>
+                    <div v-if="sessionPreferences.work_scope_mode === 'workspace'" class="rounded-ui-md bg-surface-muted px-2 py-1.5 text-[11px] leading-4 text-text-muted">
+                      智能体可操作工作空间内全部项目
+                    </div>
+                    <div v-else class="space-y-1">
+                      <div class="flex items-center justify-between gap-2">
+                        <span class="text-[11px] text-text-muted">已选 {{ sessionPreferences.allowed_project_ids.length }} 项</span>
+                        <div class="flex items-center gap-0.5">
+                          <UiButton variant="ghost" size="xs" class="h-6 px-1.5 text-[10px]" @click="selectAllWorkspaceProjects">全选</UiButton>
+                          <UiButton variant="ghost" size="xs" class="h-6 px-1.5 text-[10px]" @click="clearSelectedProjects">清空</UiButton>
+                        </div>
+                      </div>
+                      <UiInput v-model="workScopeProjectSearch" placeholder="搜索项目" clearable class="h-8" aria-label="搜索工作范围项目" />
+                      <ul class="max-h-32 space-y-0.5 overflow-y-auto">
+                        <li v-for="project in filteredWorkScopeProjects" :key="project.id">
+                          <label
+                            class="flex items-center gap-2 rounded-ui-sm px-1.5 py-1 text-xs text-text-secondary"
+                            :class="isPinnedProject(project.id) ? 'cursor-not-allowed opacity-70' : 'cursor-pointer hover:bg-surface-hover'"
+                          >
+                            <UiCheckbox
+                              :model-value="sessionPreferences.allowed_project_ids.includes(project.id)"
+                              :disabled="isPinnedProject(project.id)"
+                              @update:model-value="toggleAllowedProject(project.id)"
+                            />
+                            <span class="min-w-0 flex-1 truncate">{{ project.name }}</span>
+                            <span v-if="isPinnedProject(project.id)" class="shrink-0 rounded-ui-sm bg-ai-muted px-1 py-px text-[9px] font-medium text-ai-strong">已固定</span>
+                          </label>
+                        </li>
+                        <li v-if="!filteredWorkScopeProjects.length" class="px-1.5 py-1 text-xs text-text-muted">没有匹配的项目</li>
+                      </ul>
+                      <p v-if="!workspaceProjects.length" class="text-xs text-text-muted">暂无可选项目</p>
+                      <p v-else-if="!sessionPreferences.allowed_project_ids.length" class="text-[11px] text-warning-strong">尚未选择项目，项目与页面操作将不可用。</p>
+                    </div>
+                  </section>
+                </div>
+
+                <section class="space-y-1.5 border-t border-border-muted pt-2.5">
+                  <div class="flex items-center gap-2">
+                    <span class="w-16 shrink-0 text-[11px] text-text-muted">焦点模式</span>
+                    <UiSegmentedControl
+                      class="min-w-0 flex-1"
+                      :model-value="sessionPreferences.focus_mode"
+                      :options="focusModeOptions"
+                      @update:model-value="handleFocusModeChange"
                     />
-                    <span class="truncate">{{ project.name }}</span>
-                  </label>
-                  <p v-if="!workspaceProjects.length" class="text-xs text-text-muted">暂无可选项目</p>
-                  <p v-else-if="!sessionPreferences.allowed_project_ids.length" class="text-[11px] text-warning-strong">尚未选择项目，项目与页面操作将不可用。</p>
-                </div>
+                  </div>
+                  <div class="flex items-center gap-2">
+                    <span class="w-16 shrink-0 text-[11px] text-text-muted">工作范围</span>
+                    <UiSegmentedControl
+                      class="min-w-0 flex-1"
+                      :model-value="sessionPreferences.work_scope_mode"
+                      :options="workScopeOptions"
+                      @update:model-value="handleWorkScopeModeChange"
+                    />
+                  </div>
+                </section>
+
+                <p v-if="hasActiveTask" class="rounded-ui-md bg-info-muted px-2 py-1.5 text-[11px] leading-4 text-info-strong">
+                  当前任务：{{ formatFocusLabel(activeRun?.focus) }}，不受上述设置影响
+                </p>
               </UiPopover>
             </div>
           </template>
@@ -360,7 +397,7 @@ import AgentConversationDialogs from '@/components/agent/AgentConversationDialog
 import AgentIdleHeaderBrand from '@/components/agent/AgentIdleHeaderBrand.vue'
 import AgentScopeStatus from '@/components/agent/AgentScopeStatus.vue'
 import AgentSessionControls from '@/components/agent/AgentSessionControls.vue'
-import { UiButton, UiCheckbox, UiDropdownMenu, UiPopover, UiRadioGroup, UiSelect } from '@/components/ui'
+import { UiButton, UiCheckbox, UiDropdownMenu, UiInput, UiPopover, UiSegmentedControl } from '@/components/ui'
 import type { DropdownMenuEntry } from '@/components/ui'
 import type {
   AgentActiveRunItem,
@@ -384,6 +421,9 @@ import { createClientUuid } from '@/utils/id'
 import { Message } from '@/utils/message'
 
 const FORCE_CANCEL_AVAILABLE_DELAY_MS = 10_000
+
+/** 等待后台保存的最新偏好变更；保存进行中的新变更在此排队，完成后自动补提。 */
+let queuedPreferenceOverrides: Partial<Pick<AgentSessionItem, 'focus_mode' | 'pinned_project_id' | 'work_scope_mode' | 'allowed_project_ids'>> | null = null
 
 interface Props {
   workspaceId: number
@@ -486,13 +526,14 @@ const manuallySelectedSessionId = ref('')
 const lastHandledAutoCreateKey = ref<string | number | null>(null)
 const virtualNewSessionKey = ref<string | number | null>(null)
 const virtualNewSessionSequence = ref(0)
-const draftSessionPreferences = ref<SessionFocusPreferences>(createDefaultSessionPreferences())
+const localPreferences = ref<SessionFocusPreferences>(createDefaultSessionPreferences())
 const draftPatches = ref<AgentSuggestedPatch[]>([])
 const headerScopeReady = ref(false)
 const headerActionsReady = ref(false)
 const sessionMenuVisible = ref(false)
-const focusMenuVisible = ref(false)
-const workScopeMenuVisible = ref(false)
+const nextRunMenuVisible = ref(false)
+const focusProjectSearch = ref('')
+const workScopeProjectSearch = ref('')
 const toolDetailDialogVisible = ref(false)
 const memberRunDialogVisible = ref(false)
 const activeToolDetailId = ref<string | null>(null)
@@ -632,10 +673,8 @@ const workScopeOptions = [
   { label: '全部项目', value: 'workspace' },
   { label: '仅选择的项目', value: 'selected_projects' },
 ]
-const projectFocusOptions = computed(() => workspaceProjects.value.map(project => ({
-  label: project.name,
-  value: project.id,
-})))
+const filteredFocusProjects = computed(() => filterProjectsByKeyword(workspaceProjects.value, focusProjectSearch.value))
+const filteredWorkScopeProjects = computed(() => filterProjectsByKeyword(workspaceProjects.value, workScopeProjectSearch.value))
 
 const llmConfigsQuery = useQuery({
   queryKey: ['llm-configs', 'agent-conversation'],
@@ -654,7 +693,16 @@ const activeSession = computed<AgentSessionItem | null>(() => {
     ?? null
   return item ? normalizeSessionItem(item) : null
 })
-const sessionPreferences = computed<SessionFocusPreferences>(() => activeSession.value ?? draftSessionPreferences.value)
+const sessionPreferences = computed<SessionFocusPreferences>(() => localPreferences.value)
+/**
+ * 会话切换或服务端返回更新时同步本地偏好；保存排队期间保留用户最新操作。
+ */
+watch(() => activeSession.value, (session) => {
+  if (!session || queuedPreferenceOverrides) {
+    return
+  }
+  localPreferences.value = extractSessionPreferences(session)
+}, { immediate: true })
 const displayedSessions = computed<AgentSessionItem[] | undefined>(() => {
   const sessions = normalizedSessions.value
   const active = activeSession.value
@@ -712,15 +760,22 @@ const nextFocusIcon = computed(() => {
   if (sessionPreferences.value.focus_mode === 'workspace') return Building2
   return FolderKanban
 })
-const pinnedProjectFocusLabel = computed(() => {
-  const projectId = sessionPreferences.value.pinned_project_id
-  if (!projectId) return '选择固定项目'
-  return workspaceProjects.value.find(project => project.id === projectId)?.name ?? `项目 #${projectId}`
-})
+const pinnedProjectId = computed(() => (
+  sessionPreferences.value.focus_mode === 'pinned_project' ? sessionPreferences.value.pinned_project_id : null
+))
 const workScopeCompactLabel = computed(() => {
   const preferences = sessionPreferences.value
   if (preferences.work_scope_mode === 'workspace') return '全部项目'
-  return preferences.allowed_project_ids.length ? `已选 ${preferences.allowed_project_ids.length} 个项目` : '未选择项目'
+  return preferences.allowed_project_ids.length ? `已选 ${preferences.allowed_project_ids.length} 项` : '未选择项目'
+})
+const workScopeBadgeClass = computed(() => {
+  const preferences = sessionPreferences.value
+  if (preferences.work_scope_mode === 'workspace') {
+    return 'bg-surface-muted text-text-muted'
+  }
+  return preferences.allowed_project_ids.length
+    ? 'bg-info-muted text-info-strong'
+    : 'bg-warning-muted text-warning-strong'
 })
 const isNewSessionDraft = computed(() => !activeSessionId.value)
 const activeLlmConfigs = computed<LlmConfigItem[]>(() => (
@@ -1328,7 +1383,7 @@ watch(
 
 watch(virtualNewSessionKey, (virtualKey, previousKey) => {
   if (virtualKey && virtualKey !== previousKey) {
-    draftSessionPreferences.value = createDefaultSessionPreferences()
+    localPreferences.value = createDefaultSessionPreferences()
   }
 })
 
@@ -1481,56 +1536,95 @@ function handleLlmModelSelect(value: string) {
   }
 }
 
-/** 使用当前会话其余偏好提交一次原子更新。 */
-function saveSessionPreferences(overrides: Partial<Pick<AgentSessionItem, 'focus_mode' | 'pinned_project_id' | 'work_scope_mode' | 'allowed_project_ids'>>) {
-  const session = activeSession.value
-  if (!session) {
-    draftSessionPreferences.value = {
-      focus_mode: overrides.focus_mode ?? draftSessionPreferences.value.focus_mode,
-      pinned_project_id: overrides.pinned_project_id !== undefined ? overrides.pinned_project_id : draftSessionPreferences.value.pinned_project_id,
-      work_scope_mode: overrides.work_scope_mode ?? draftSessionPreferences.value.work_scope_mode,
-      allowed_project_ids: overrides.allowed_project_ids ?? [...draftSessionPreferences.value.allowed_project_ids],
-    }
+type SessionPreferenceOverrides = Partial<Pick<AgentSessionItem, 'focus_mode' | 'pinned_project_id' | 'work_scope_mode' | 'allowed_project_ids'>>
+
+/** 从会话快照提取本地偏好状态。 */
+function extractSessionPreferences(session: AgentSessionItem): SessionFocusPreferences {
+  return {
+    focus_mode: session.focus_mode,
+    pinned_project_id: session.pinned_project_id,
+    work_scope_mode: session.work_scope_mode,
+    allowed_project_ids: [...session.allowed_project_ids],
+  }
+}
+
+/**
+ * 保存下一轮偏好：先乐观更新本地状态保证交互即时反馈，再串行排队提交到服务端。
+ * 无活跃会话时只写本地草稿，创建会话时随 createAgentSession 一起提交。
+ */
+function saveSessionPreferences(overrides: SessionPreferenceOverrides) {
+  localPreferences.value = {
+    focus_mode: overrides.focus_mode ?? localPreferences.value.focus_mode,
+    pinned_project_id: overrides.pinned_project_id !== undefined ? overrides.pinned_project_id : localPreferences.value.pinned_project_id,
+    work_scope_mode: overrides.work_scope_mode ?? localPreferences.value.work_scope_mode,
+    allowed_project_ids: overrides.allowed_project_ids ?? [...localPreferences.value.allowed_project_ids],
+  }
+  if (!activeSession.value) {
     return
   }
+  queuedPreferenceOverrides = overrides
   if (focusPreferenceMutation.isPending.value) {
     return
   }
-  void focusPreferenceMutation.mutateAsync({
-    focus_mode: overrides.focus_mode ?? session.focus_mode,
-    pinned_project_id: overrides.pinned_project_id !== undefined ? overrides.pinned_project_id : session.pinned_project_id,
-    work_scope_mode: overrides.work_scope_mode ?? session.work_scope_mode,
-    allowed_project_ids: overrides.allowed_project_ids ?? [...session.allowed_project_ids],
-  })
+  void flushPreferenceSaves()
+}
+
+/**
+ * 串行提交排队的偏好变更；每次提交前基于最新会话补齐未覆盖字段，
+ * 失败时回滚本地状态并停止后续提交，避免连续失败。
+ */
+async function flushPreferenceSaves() {
+  while (queuedPreferenceOverrides) {
+    const overrides = queuedPreferenceOverrides
+    queuedPreferenceOverrides = null
+    const session = activeSession.value
+    if (!session) {
+      return
+    }
+    try {
+      await focusPreferenceMutation.mutateAsync({
+        focus_mode: overrides.focus_mode ?? session.focus_mode,
+        pinned_project_id: overrides.pinned_project_id !== undefined ? overrides.pinned_project_id : session.pinned_project_id,
+        work_scope_mode: overrides.work_scope_mode ?? session.work_scope_mode,
+        allowed_project_ids: overrides.allowed_project_ids ?? [...session.allowed_project_ids],
+      })
+    } catch {
+      queuedPreferenceOverrides = null
+      const currentSession = activeSession.value
+      if (currentSession) {
+        localPreferences.value = extractSessionPreferences(currentSession)
+      }
+    }
+  }
 }
 
 /** 切换三种焦点模式；固定项目优先采用当前路由项目或列表首项。 */
 function handleFocusModeChange(value: string | number | Array<string | number> | null) {
   const focusMode = String(value) as AgentSessionItem['focus_mode']
-  const pinnedProjectId = focusMode === 'pinned_project'
+  const nextPinnedProjectId = focusMode === 'pinned_project'
     ? (sessionPreferences.value.pinned_project_id ?? currentRouteScope.value.project_id ?? workspaceProjects.value[0]?.id ?? null)
     : null
-  if (focusMode === 'pinned_project' && !pinnedProjectId) {
+  if (focusMode === 'pinned_project' && !nextPinnedProjectId) {
     Message.warning('当前工作空间没有可固定的项目。')
     return
   }
   const allowedProjectIds = focusMode === 'pinned_project'
     && sessionPreferences.value.work_scope_mode === 'selected_projects'
-    && pinnedProjectId
-    ? [...new Set([...sessionPreferences.value.allowed_project_ids, pinnedProjectId])]
+    && nextPinnedProjectId
+    ? [...new Set([...sessionPreferences.value.allowed_project_ids, nextPinnedProjectId])]
     : undefined
-  saveSessionPreferences({ focus_mode: focusMode, pinned_project_id: pinnedProjectId, allowed_project_ids: allowedProjectIds })
+  saveSessionPreferences({ focus_mode: focusMode, pinned_project_id: nextPinnedProjectId, allowed_project_ids: allowedProjectIds })
 }
 
-/** 修改固定项目，只影响后续 Run。 */
-function handlePinnedProjectChange(value: string | number | Array<string | number> | null) {
-  const projectId = Number(value)
-  if (Number.isFinite(projectId) && projectId > 0) {
-    const allowedProjectIds = sessionPreferences.value.work_scope_mode === 'selected_projects'
-      ? [...new Set([...sessionPreferences.value.allowed_project_ids, projectId])]
-      : undefined
-    saveSessionPreferences({ focus_mode: 'pinned_project', pinned_project_id: projectId, allowed_project_ids: allowedProjectIds })
+/** 修改固定项目，只影响后续 Run；固定项目始终并入显式工作集。 */
+function handlePinnedProjectChange(projectId: number) {
+  if (!Number.isFinite(projectId) || projectId <= 0) {
+    return
   }
+  const allowedProjectIds = sessionPreferences.value.work_scope_mode === 'selected_projects'
+    ? [...new Set([...sessionPreferences.value.allowed_project_ids, projectId])]
+    : undefined
+  saveSessionPreferences({ focus_mode: 'pinned_project', pinned_project_id: projectId, allowed_project_ids: allowedProjectIds })
 }
 
 /** 放开会话到工作空间全部项目。 */
@@ -1538,12 +1632,12 @@ function setWorkspaceWorkScope() {
   saveSessionPreferences({ work_scope_mode: 'workspace', allowed_project_ids: [] })
 }
 
-/** 启用显式项目工作集；空列表明确表示暂不允许项目操作。 */
+/** 启用显式项目工作集；空列表明确表示暂不允许项目操作，固定项目始终保留。 */
 function setSelectedProjectsWorkScope() {
-  const pinnedId = sessionPreferences.value.focus_mode === 'pinned_project'
-    ? sessionPreferences.value.pinned_project_id
-    : null
-  saveSessionPreferences({ work_scope_mode: 'selected_projects', allowed_project_ids: pinnedId ? [pinnedId] : [] })
+  saveSessionPreferences({
+    work_scope_mode: 'selected_projects',
+    allowed_project_ids: pinnedProjectId.value ? [pinnedProjectId.value] : [],
+  })
 }
 
 /** 根据单选结果切换项目工作集模式。 */
@@ -1555,8 +1649,11 @@ function handleWorkScopeModeChange(value: string) {
   setSelectedProjectsWorkScope()
 }
 
-/** 增删工作集项目并立即保存。 */
+/** 增删工作集项目并立即保存；固定项目不允许移出工作集。 */
 function toggleAllowedProject(projectId: number) {
+  if (isPinnedProject(projectId)) {
+    return
+  }
   const selected = new Set(sessionPreferences.value.allowed_project_ids)
   if (selected.has(projectId)) {
     selected.delete(projectId)
@@ -1564,6 +1661,37 @@ function toggleAllowedProject(projectId: number) {
     selected.add(projectId)
   }
   saveSessionPreferences({ work_scope_mode: 'selected_projects', allowed_project_ids: [...selected] })
+}
+
+/** 判断项目是否同时作为固定焦点存在，固定项目不可从工作集移除。 */
+function isPinnedProject(projectId: number) {
+  return pinnedProjectId.value === projectId
+}
+
+/** 全选当前过滤结果中的项目，固定项目始终保留。 */
+function selectAllWorkspaceProjects() {
+  const ids = new Set(filteredWorkScopeProjects.value.map(project => project.id))
+  if (pinnedProjectId.value) {
+    ids.add(pinnedProjectId.value)
+  }
+  saveSessionPreferences({ work_scope_mode: 'selected_projects', allowed_project_ids: [...ids] })
+}
+
+/** 清空工作集；固定项目作为唯一保留项继续留在集合中。 */
+function clearSelectedProjects() {
+  saveSessionPreferences({
+    work_scope_mode: 'selected_projects',
+    allowed_project_ids: pinnedProjectId.value ? [pinnedProjectId.value] : [],
+  })
+}
+
+/** 按名称关键字过滤项目列表，忽略大小写；空关键字返回完整列表。 */
+function filterProjectsByKeyword(projects: Array<{ id: number; name: string }>, keyword: string) {
+  const query = keyword.trim().toLowerCase()
+  if (!query) {
+    return projects
+  }
+  return projects.filter(project => project.name.toLowerCase().includes(query))
 }
 
 /** 返回焦点对象的层级类型，统一使用空间、项目、页面等短名称。 */
