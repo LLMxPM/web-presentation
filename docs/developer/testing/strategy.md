@@ -91,11 +91,11 @@ pnpm run test:all
 | `test:runtime:gate` | Runtime 子项目质量门禁，执行 `check + test + build`。 |
 | `test:contracts` | 根仓跨模块契约测试，只收集 `tests/contracts/**/*.test.ts`。不同于 `backend/tests/contracts`。 |
 | `test:e2e:run` | 不准备数据，运行 `auth + smoke`；globalSetup 仍校验 Backend 与 smoke 数据指纹。 |
-| `test:e2e:prepare` | 重置并播种 smoke 数据，然后检查或按环境变量启动 Backend、Editor、Runtime。 |
+| `test:e2e:prepare` | 准备 E2E 环境：未显式设置 `TESTING_START_*`/`TESTING_REUSE_BACKEND` 时先校验端口与 E2E 依赖并注入自启环境变量，再重置/播种 smoke 数据并启动或确认服务。 |
 | `test:e2e` | 平台 E2E smoke 默认入口，等价于 `test:e2e:prepare + test:e2e:run`。 |
 | `test:e2e:regression` | 准备环境后运行 `visual-edit + ai + runtime-heavy`。 |
 | `test:e2e:all` | 准备环境后运行全部 Playwright project。 |
-| `test:all` | 本地全量入口，包含 Backend、Editor gate、Runtime gate、根仓 contracts 和 E2E smoke。 |
+| `test:all` | 本地全量入口：Backend 全部 marker + Editor gate + Runtime gate + 根仓 contracts + 全部 E2E project。脚本先校验端口与 E2E 依赖，再自动注入 `TESTING_START_*` 与 `AI_TEST_MODE=mock` 并自启服务，无需手动设置环境变量；端口被占用或依赖未启动时立即报错并给出提示。 |
 
 辅助测试数据命令：
 

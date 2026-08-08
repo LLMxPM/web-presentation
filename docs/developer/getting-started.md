@@ -113,14 +113,16 @@ pnpm run test:e2e
 - `pnpm run test:e2e:run`：只执行 Playwright。
 - `pnpm run test:e2e`：先重置/播种 smoke 数据并确认服务，再执行 Playwright smoke。
 
-E2E 默认不会主动启动服务；如果需要由测试脚本启动 Backend、Editor、Runtime，在当前命令环境中设置：
+E2E 入口（`test:e2e`、`test:e2e:prepare`、`test:e2e:all`）默认由脚本自启服务：未显式设置 `TESTING_START_*` 时会先校验 8000/5173/7373 端口与本地 PostgreSQL/Redis 依赖，端口被占用时报错并给出提示。如果想复用已在运行的服务，可显式设置：
 
 ```powershell
-$env:TESTING_START_BACKEND='true'
-$env:TESTING_START_EDITOR='true'
+$env:TESTING_REUSE_BACKEND='true'   # 复用 Backend（必须满足 E2E 测试指纹）
+$env:TESTING_START_EDITOR='true'    # 未在运行时由脚本启动
 $env:TESTING_START_RUNTIME='true'
 pnpm run test:e2e
 ```
+
+`TESTING_REUSE_BACKEND=true` 会跳过端口校验；Backend 指纹不匹配时 prepare 会明确报错。
 
 E2E 报告与失败产物统一写入 `test-results/e2e/`：
 

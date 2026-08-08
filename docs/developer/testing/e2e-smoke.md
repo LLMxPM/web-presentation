@@ -41,12 +41,12 @@ pnpm run test:e2e:run
 
 ## 服务启动
 
-E2E 默认不会主动启动 Backend、Editor、Runtime。如果需要由测试脚本启动服务，在当前命令环境中设置：
+E2E 入口默认由脚本自启服务：未显式设置 `TESTING_START_*` 时，`prepare` 会先校验 8000/5173/7373 端口与本地 PostgreSQL/Redis 依赖，端口被占用时立即报错并给出提示，校验通过后自动注入 `TESTING_START_*` 与 `AI_TEST_MODE=mock` 并启动服务。
+
+复用已在运行的服务时，显式设置任一 `TESTING_START_*` 或 `TESTING_REUSE_BACKEND` 会跳过端口校验：
 
 ```powershell
-$env:TESTING_START_BACKEND='true'
-$env:TESTING_START_EDITOR='true'
-$env:TESTING_START_RUNTIME='true'
+$env:TESTING_REUSE_BACKEND='true'   # 复用 Backend（必须满足 E2E 测试指纹）
 pnpm run test:e2e
 ```
 

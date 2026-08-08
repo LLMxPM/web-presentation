@@ -331,7 +331,7 @@ def _wrapper_signature(entrypoint: Any) -> inspect.Signature:
             inspect.Parameter.POSITIONAL_OR_KEYWORD,
             annotation=RunContext[AgentToolDeps],
         )
-    return inspect.Signature(parameters=parameters, return_annotation=original.return_annotation)
+    return inspect.Signature(parameters=parameters, return_annotation=Any)
 
 
 def _wrapper_annotations(entrypoint: Any) -> dict[str, Any]:
@@ -340,6 +340,7 @@ def _wrapper_annotations(entrypoint: Any) -> dict[str, Any]:
     annotations = {
         key: json_compatible_annotation(annotation)
         for key, annotation in _resolved_entrypoint_annotations(entrypoint).items()
+        if key != "return"
     }
     parameters = list(inspect.signature(entrypoint).parameters)
     if parameters:
