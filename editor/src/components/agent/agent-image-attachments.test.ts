@@ -88,6 +88,29 @@ describe('useAgentImageAttachments', () => {
     expect(state.uploadingStates).toEqual([true, false])
   })
 
+  it('状态读取延迟时仍应累积整批上传结果', async () => {
+    let visibleAttachments: AgentImageAttachmentItem[] = []
+    let latestWrittenAttachments: AgentImageAttachmentItem[] = []
+    const context = {
+      ...createContext().context,
+      getPendingImageAttachments: () => visibleAttachments,
+      setPendingImageAttachments: (_sessionId: string, value: AgentImageAttachmentItem[]) => {
+        latestWrittenAttachments = value
+      },
+    }
+    uploadMock
+      .mockResolvedValueOnce(attachment(1, 'first.png'))
+      .mockResolvedValueOnce(attachment(2, 'second.png'))
+
+    await useAgentImageAttachments(context).handleUploadImages([
+      new File(['1'], 'first.png', { type: 'image/png' }),
+      new File(['2'], 'second.png', { type: 'image/png' }),
+    ])
+
+    visibleAttachments = latestWrittenAttachments
+    expect(visibleAttachments.map(item => item.original_name)).toEqual(['first.png', 'second.png'])
+  })
+
   it('仅填充剩余名额并忽略超出 10 张的文件', async () => {
     const state = createContext(Array.from({ length: 9 }, (_, index) => attachment(index + 1)))
     const files = [

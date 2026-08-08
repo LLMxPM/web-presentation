@@ -25,6 +25,24 @@ class FakeSession:
         self.scalar_count = 0
         self.commit_count = 0
         self.rollback_count = 0
+        self.flush_count = 0
+
+    class _NestedTransaction:
+        """模拟 SAVEPOINT：异常退出只记录嵌套回滚，不结束外层事务。"""
+
+        def __init__(self, session: "FakeSession") -> None:
+            self.session = session
+
+        async def __aenter__(self) -> None:
+            """进入 SAVEPOINT。"""
+
+        async def __aexit__(self, exc_type, exc, traceback) -> bool:  # noqa: ANN001
+            """异常时模拟数据库回滚当前 SAVEPOINT，并继续传播异常。"""
+
+            _ = (exc, traceback)
+            if exc_type is not None:
+                self.session.rollback_count += 1
+            return False
 
     async def scalar(self, _) -> str | None:
         """第一次表示当天无记录，后续返回已存在最大编码。"""
@@ -39,10 +57,15 @@ class FakeSession:
 
         self.commit_count += 1
 
-    async def rollback(self) -> None:
-        """记录回滚次数。"""
+    def begin_nested(self) -> "FakeSession._NestedTransaction":
+        """创建测试用嵌套事务上下文。"""
 
-        self.rollback_count += 1
+        return self._NestedTransaction(self)
+
+    async def flush(self) -> None:
+        """记录 flush 次数。"""
+
+        self.flush_count += 1
 
 
 def _integrity_error(constraint_name: str) -> IntegrityError:

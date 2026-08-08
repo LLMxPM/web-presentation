@@ -74,6 +74,8 @@ pnpm run test:contracts
 pnpm run test:e2e:run
 pnpm run test:e2e:prepare
 pnpm run test:e2e
+pnpm run test:e2e:regression
+pnpm run test:e2e:all
 pnpm run test:all
 ```
 
@@ -88,9 +90,11 @@ pnpm run test:all
 | `test:runtime` / `test:runtime:delegated` | 只委托执行 Runtime 子项目 Vitest。 |
 | `test:runtime:gate` | Runtime 子项目质量门禁，执行 `check + test + build`。 |
 | `test:contracts` | 根仓跨模块契约测试，只收集 `tests/contracts/**/*.test.ts`。不同于 `backend/tests/contracts`。 |
-| `test:e2e:run` | 只执行 Playwright，不准备数据、不检查服务。 |
+| `test:e2e:run` | 不准备数据，运行 `auth + smoke`；globalSetup 仍校验 Backend 与 smoke 数据指纹。 |
 | `test:e2e:prepare` | 重置并播种 smoke 数据，然后检查或按环境变量启动 Backend、Editor、Runtime。 |
 | `test:e2e` | 平台 E2E smoke 默认入口，等价于 `test:e2e:prepare + test:e2e:run`。 |
+| `test:e2e:regression` | 准备环境后运行 `visual-edit + ai + runtime-heavy`。 |
+| `test:e2e:all` | 准备环境后运行全部 Playwright project。 |
 | `test:all` | 本地全量入口，包含 Backend、Editor gate、Runtime gate、根仓 contracts 和 E2E smoke。 |
 
 辅助测试数据命令：
@@ -120,6 +124,7 @@ AI run 状态切换后无需执行 Redis run 迁移脚本；旧 Redis run key �
 | :--- | :--- | :--- |
 | `test-results/e2e/html-report/` | Playwright HTML reporter | E2E HTML 报告。 |
 | `test-results/e2e/artifacts/` | Playwright `outputDir` | 失败 trace、截图、视频和 `.last-run.json`。 |
+| `test-results/e2e/services/` | E2E 服务编排 | Backend、Editor、Runtime 子进程日志。 |
 | `backend/.pytest_cache/` | pytest | Backend 测试缓存，不是报告。 |
 | `.tmp/` | 手动诊断脚本 | AI run 诊断、截图排障等人工材料。 |
 | `backend/.tmp/` | Backend 本地调试 | LLM HTTP trace、本地 smoke DB 等运行态排障材料。 |
@@ -127,6 +132,7 @@ AI run 状态切换后无需执行 Redis run 迁移脚本；旧 Redis run key �
 约束：
 
 - 新增可持久化测试报告时优先放入 `test-results/<suite>/`。
+- `test-results/e2e/storage-state.json` 包含认证 cookie，不得上传为 CI artifact。
 - `.tmp/` 只放诊断或排障材料，不作为 CI 测试报告目录。
 - 不再提交 `output.txt`、`test_output.txt`、`test_result.txt` 这类一次性终端输出文件。
 
@@ -166,11 +172,13 @@ PR 必跑：
 - 每周一 03:00（Asia/Shanghai）的定时任务。
 - 手动触发 `.github/workflows/platform-test.yml` 且 `full_tests=true`。
 
+`main` push 的 E2E 执行 `test:e2e`；每周定时和手动 `full_tests=true` 执行 `test:e2e:all`。Release 质量门禁同样执行 `test:e2e:all`。
+
 全量测试范围：
 
 1. `backend integration`
 2. Runtime gate
-3. 根仓 `e2e` 冒烟
+3. 根仓分层 E2E（按触发类型运行 smoke 或 all）
 4. 平台镜像 build smoke：构建 `web-presentation` 单镜像但不推送
 
 全量流程中，`e2e` 冒烟依赖 Backend、Editor、contracts 和 Runtime 委托校验通过后再启动；平台镜像 build smoke 依赖 `e2e` 冒烟通过后再启动，避免基础测试失败时继续执行重型任务。
@@ -181,10 +189,7 @@ Release 发布：
 - 校验当前 `runtime` 子模块 SHA 对应的 Docker Hub 镜像 `web-runtime-vue:sha-<12位sha>` 已存在。
 - 构建并推送单个平台镜像 `web-presentation:<release_tag>`；稳定 Release 同时推送 `latest`。
 
-夜间或手动执行：
-
-- 扩展 E2E 回归
-- 截图 / PDF / 打印 / 长链路 AI 测试
+定时、手动全量和 Release 覆盖可视化编辑、真实构建、截图与长链路 AI 测试。
 
 ## 7. 故障排查
 

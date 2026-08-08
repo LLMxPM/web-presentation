@@ -20,6 +20,7 @@ from app.api.routes import (
     runtime_kit,
     styles,
     template_packages,
+    testing_readiness,
     themes,
     users,
     workspaces,
@@ -46,3 +47,4 @@ api_router.include_router(styles.router, tags=["styles"])
 api_router.include_router(template_packages.router, tags=["template-packages"])
 api_router.include_router(preview.router_admin, prefix="/projects", tags=["preview"])
 api_router.include_router(build_jobs.router, tags=["build-jobs"])
+api_router.include_router(testing_readiness.router, prefix="/testing", tags=["testing"])

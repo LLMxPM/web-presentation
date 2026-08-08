@@ -122,6 +122,12 @@ def create_app() -> FastAPI:
 
     settings = get_settings()
     configure_app_logging(settings)
+    if settings.ai_test_mode == "mock":
+        # mock 模式全局禁止真实模型网络请求；未被测试分派接管的
+        # 模型调用会立即失败，FunctionModel 不受影响。
+        from app.ai.testing.dispatch import enforce_mock_model_request_fence
+
+        enforce_mock_model_request_fence()
     app = FastAPI(title=settings.app_name, lifespan=lifespan)
     app.add_middleware(
         CORSMiddleware,

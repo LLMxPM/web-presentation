@@ -114,6 +114,7 @@
 
         <section
           v-if="showVisualCapabilityStatus"
+          data-testid="visual-status-region"
           aria-label="视觉工具状态"
           class="flex shrink-0 items-center gap-1.5 border-t border-border-muted bg-canvas/80 px-3 py-1.5 text-[10px]"
         >

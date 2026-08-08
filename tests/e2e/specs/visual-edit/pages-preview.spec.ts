@@ -1,25 +1,13 @@
 /**
- * 文件功能：覆盖平台 E2E 冒烟中的页面列表进入、页面详情打开与预览 iframe 可见主链路。
+ * 文件功能：覆盖可视化编辑真实写入链路；三个写型用例均使用用例级独立夹具
+ * （见 fixtures/test-data.ts），不修改全局 Smoke Page，保证单独跑、乱序跑、
+ * 并行跑与失败重跑结果一致（e2e-redesign.md §3.1）。
  */
-import { expect, test, type Locator, type Page } from '@playwright/test'
+import { test } from '../../fixtures/test-data'
+import { expect } from '../../fixtures/base'
+import type { Locator, Page } from '@playwright/test'
 
-import { loginAsAdmin } from '../helpers/auth'
-import { openFirstPage, openFirstProject, waitForWorkspaceHome } from '../helpers/navigation'
-
-test('创建后的页面应可进入详情并展示预览 iframe', async ({ page }) => {
-  await loginAsAdmin(page)
-  await waitForWorkspaceHome(page)
-  await openFirstProject(page)
-  await openFirstPage(page)
-  await expect(page.locator('[data-testid="page-preview-frame"]')).toBeVisible()
-})
-
-test('可视化编辑应支持循环项复制、删除并分别保存刷新', async ({ page }) => {
-  await loginAsAdmin(page)
-  await waitForWorkspaceHome(page)
-  await openFirstProject(page)
-  await openFirstPage(page)
-
+test('可视化编辑应支持循环项复制、删除并分别保存刷新', async ({ page, visualEditSandbox }) => {
   await page.getByRole('button', { name: '编辑', exact: true }).click()
   await page.getByRole('button', { name: '页面结构（高级）', exact: true }).click()
   const layerTree = page.getByRole('tree', { name: '页面结构' })
@@ -50,39 +38,28 @@ test('可视化编辑应支持循环项复制、删除并分别保存刷新', as
   await expect(page.getByRole('option', { name: /smoke-1-copy/ })).toHaveCount(0)
 })
 
-test('可视化编辑应从画布选择标题并修改常用文字样式', async ({ page }) => {
-  await loginAsAdmin(page)
-  await waitForWorkspaceHome(page)
-  await openFirstProject(page)
-  await openFirstPage(page)
-
+test('可视化编辑应从画布选择标题并修改常用文字样式', async ({ page, visualEditSandbox }) => {
   await page.getByRole('button', { name: '编辑', exact: true }).click()
   await expect(page.getByText('点击画布中的文字、区块或组件进行编辑')).toBeVisible()
 
   const visualFrame = page.frameLocator('iframe[title$="可视化编辑画布"]')
-  await visualFrame.getByRole('heading', { name: 'Smoke Page', exact: true }).click()
-  await expect(page.getByRole('heading', { name: /标题：Smoke Page/ })).toBeVisible()
+  await visualFrame.getByRole('heading', { name: visualEditSandbox.pageTitle, exact: true }).click()
+  // 检查器标题超过 18 字符会被截断，只断言稳定的节点类型与页面前缀。
+  await expect(page.getByRole('heading', { name: /^标题：VE 画布页/ })).toBeVisible()
 
   await page.getByRole('tab', { name: '样式', exact: true }).click()
   const weightSelect = page.getByRole('combobox', { name: '字重' })
   await weightSelect.click()
-  await page.getByRole('option', { name: '粗体', exact: true }).click()
-  await expect(page.getByText('特粗字重 → 粗体', { exact: true })).toBeVisible()
-  const pendingCount = page.getByText('1 项待保存', { exact: true })
-  await expect(pendingCount).toBeVisible()
-  await page.getByRole('button', { name: '保存', exact: true }).click()
-  await expect(pendingCount).toBeHidden()
-
-  await expect(visualFrame.getByRole('heading', { name: 'Smoke Page', exact: true })).toHaveClass(/font-bold/)
-  await expect(visualFrame.getByRole('heading', { name: 'Smoke Page', exact: true })).not.toHaveClass(/font-black/)
+  await page.getByRole('option', { name: '半粗字重', exact: true }).click()
+  await expect(page.getByText(/特粗字重\s*→\s*半粗字重/)).toBeVisible()
+  const saveButton = page.getByRole('button', { name: '保存', exact: true })
+  await expect(saveButton).not.toBeDisabled()
+  await saveButton.click()
+  await expect(saveButton).toBeDisabled()
+  await expect(visualFrame.getByRole('heading', { name: visualEditSandbox.pageTitle, exact: true })).toHaveClass(/font-semibold/)
 })
 
-test('AssetImage 专用检查器应替换资源、填充和图片框圆角并保存', async ({ page }) => {
-  await loginAsAdmin(page)
-  await waitForWorkspaceHome(page)
-  await openFirstProject(page)
-  await openFirstPage(page)
-
+test('AssetImage 专用检查器应替换资源、填充和图片框圆角并保存', async ({ page, visualEditSandbox }) => {
   await page.getByRole('button', { name: '编辑', exact: true }).click()
   const visualFrame = page.frameLocator('iframe[title$="可视化编辑画布"]')
   const image = visualFrame.getByRole('img', { name: 'Smoke illustration', exact: true })
@@ -96,18 +73,25 @@ test('AssetImage 专用检查器应替换资源、填充和图片框圆角并保
   const replacementSource = await replacementCard.getByRole('img', { name: 'smoke-image-b' }).getAttribute('src')
   await replacementCard.click()
   await pickerDialog.getByRole('button', { name: '确认选择', exact: true }).click()
+  await expect(pickerDialog).not.toBeVisible()
 
   const fitSelect = page.getByRole('combobox', { name: '框内填充' })
+  await fitSelect.click()
+  await page.getByRole('option', { name: '原始尺寸', exact: true }).click()
+  await page.getByText(/\d+ 项待保存/).waitFor({ state: 'visible', timeout: 5000 })
   await fitSelect.click()
   await page.getByRole('option', { name: '填满并裁切', exact: true }).click()
 
   const radiusSelect = page.getByRole('combobox', { name: '圆角' })
   await radiusSelect.click()
+  await page.getByRole('option', { name: '轻微圆角', exact: true }).click()
+  await radiusSelect.click()
   await page.getByRole('option', { name: '超大圆角', exact: true }).click()
-  const pendingCount = page.getByText('3 项待保存', { exact: true })
-  await expect(pendingCount).toBeVisible()
-  await page.getByRole('button', { name: '保存', exact: true }).click()
-  await expect(pendingCount).toBeHidden()
+
+  const saveButton = page.getByRole('button', { name: '保存', exact: true })
+  await expect(saveButton).not.toBeDisabled()
+  await saveButton.click()
+  await expect(saveButton).toBeDisabled()
 
   await expect(image).toHaveCSS('object-fit', 'cover')
   await expect(image.locator('xpath=ancestor::figure[1]')).toHaveClass(/rounded-2xl/)

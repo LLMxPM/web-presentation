@@ -229,6 +229,7 @@ class AiLlmService:
         requested_scope = payload.scope
         if requested_scope == AiLlmConfigScope.GLOBAL and not self._is_platform_admin:
             raise AppException(status_code=403, code="AI_LLM_GLOBAL_ADMIN_REQUIRED", detail="只有平台管理员可以维护全局模型。")
+        self._reject_e2e_mock_model_outside_e2e_database(payload.model_id)
 
         provider_config = await self._get_selectable_provider_config_or_raise(
             payload.provider_config_id,
@@ -327,6 +328,7 @@ class AiLlmService:
 
         next_name = payload.name.strip() if payload.name is not None else config.name
         next_model_id = payload.model_id.strip() if payload.model_id is not None else config.model_id
+        self._reject_e2e_mock_model_outside_e2e_database(next_model_id)
         next_model_type = payload.model_type.value if payload.model_type is not None else config.model_type
         next_context_window_tokens = (
             payload.context_window_tokens if payload.context_window_tokens is not None else config.context_window_tokens
@@ -928,6 +930,18 @@ class AiLlmService:
                 code="AI_LLM_PROVIDER_MODEL_TYPE_MISMATCH",
                 detail="当前供应商类型与所选模型类型不匹配。",
             )
+
+    @staticmethod
+    def _reject_e2e_mock_model_outside_e2e_database(model_id: str) -> None:
+        """禁止在非 E2E 数据库通过正常业务 API 创建或选择 e2e-mock-* 模型。"""
+
+        from app.ai.testing.scenarios import E2E_MOCK_MODEL_PREFIXES
+        from app.core.testing_environment import require_e2e_database
+
+        normalized = str(model_id or "").strip()
+        if not any(normalized.startswith(prefix) for prefix in E2E_MOCK_MODEL_PREFIXES):
+            return
+        require_e2e_database()
 
     @staticmethod
     def _validate_advanced_config(value: dict[str, Any]) -> dict[str, Any]:

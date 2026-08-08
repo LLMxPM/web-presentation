@@ -16,9 +16,11 @@
     "test:runtime:gate": "pnpm --dir runtime check && pnpm --dir runtime test && pnpm --dir runtime build",
     "test:runtime:delegated": "pnpm run test:runtime",
     "test:contracts": "vitest run",
-    "test:e2e:run": "playwright test",
+    "test:e2e:run": "playwright test --project=auth --project=smoke",
     "test:e2e:prepare": "pnpm run test:reset:data && pnpm run test:seed:smoke && node ./scripts/testing/ensure-services.mjs",
     "test:e2e": "pnpm run test:e2e:prepare && pnpm run test:e2e:run",
+    "test:e2e:regression": "pnpm run test:e2e:prepare && playwright test --project=visual-edit --project=ai --project=runtime-heavy",
+    "test:e2e:all": "pnpm run test:e2e:prepare && playwright test --project=auth --project=smoke --project=visual-edit --project=ai --project=runtime-heavy",
     "test:all": "pnpm run test:backend && pnpm run test:editor:gate && pnpm run test:runtime:gate && pnpm run test:contracts && pnpm run test:e2e",
     "test:seed:smoke": "node ./scripts/testing/seed-smoke-data.mjs",
     "test:reset:data": "node ./scripts/testing/reset-test-data.mjs"

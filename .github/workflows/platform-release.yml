@@ -126,7 +126,7 @@ jobs:
         run: bash .github/scripts/start-e2e-dependencies.sh
       - run: uv sync --project backend --group dev
       - run: pnpm exec playwright install --with-deps chromium
-      - run: pnpm run test:e2e
+      - run: pnpm run test:e2e:all
         env:
           TESTING_START_BACKEND: 'true'
           TESTING_START_EDITOR: 'true'
@@ -136,7 +136,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: test-results-e2e
-          path: test-results
+          path: |
+            test-results
+            !test-results/e2e/storage-state.json
 
   validate-runtime-image:
     runs-on: ubuntu-latest

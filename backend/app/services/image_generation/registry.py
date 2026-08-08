@@ -171,6 +171,14 @@ def get_image_model_spec(provider_key: str, model_id: str) -> ImageModelSpec:
 def get_image_generation_adapter(config) -> ImageGenerationAdapter:  # noqa: ANN001
     """由唯一供应商注册表创建与模型配置匹配的适配器。"""
 
+    # E2E mock 分派：只有 AI_TEST_MODE=mock 且 model ID 命中
+    # e2e-mock-image- 前缀时，才返回固定 PNG 测试适配器。
+    from app.ai.testing.dispatch import resolve_mock_image_adapter
+
+    mock_adapter = resolve_mock_image_adapter(config)
+    if mock_adapter is not None:
+        return mock_adapter
+
     return get_image_provider_spec(config.provider_config.provider_key).adapter_factory()
 
 

@@ -144,7 +144,13 @@ jobs:
         run: bash .github/scripts/start-e2e-dependencies.sh
       - run: uv sync --project backend --group dev
       - run: pnpm exec playwright install --with-deps chromium
-      - run: pnpm run test:e2e
+      - name: 执行分层 E2E
+        run: |
+          if [ "${GITHUB_EVENT_NAME}" = "schedule" ] || [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
+            pnpm run test:e2e:all
+          else
+            pnpm run test:e2e
+          fi
         env:
           TESTING_START_BACKEND: 'true'
           TESTING_START_EDITOR: 'true'
@@ -154,7 +160,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: test-results-e2e
-          path: test-results
+          path: |
+            test-results
+            !test-results/e2e/storage-state.json
 
   platform-image-build-smoke:
     runs-on: ubuntu-latest

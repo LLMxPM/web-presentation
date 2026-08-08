@@ -85,14 +85,13 @@ export function useAgentImageAttachments(context: AgentImageAttachmentContext) {
     }
 
     context.setImageUploading(sessionId, true)
+    let accumulatedAttachments = [...context.getPendingImageAttachments(sessionId)]
     try {
       for (const file of validFiles) {
         try {
           const attachment = await uploadAgentImageAttachment(sessionId, context.getScope(), file, context.getAgentId())
-          context.setPendingImageAttachments(sessionId, [
-            ...context.getPendingImageAttachments(sessionId),
-            attachment,
-          ])
+          accumulatedAttachments = [...accumulatedAttachments, attachment]
+          context.setPendingImageAttachments(sessionId, accumulatedAttachments)
         } catch (error) {
           failures.push(`${displayFileName(file)}：${getErrorMessage(error, '上传失败')}`)
         }

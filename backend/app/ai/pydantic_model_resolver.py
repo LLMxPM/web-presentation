@@ -46,6 +46,14 @@ class PydanticLlmModelResolver:
         if provider_config.status != RecordStatus.ACTIVE.value:
             raise AppException(status_code=409, code="AI_LLM_PROVIDER_CONFIG_DISABLED", detail="当前大模型供应商配置不可用。")
         provider_key = str(provider_config.provider_key or "").strip()
+
+        # E2E mock 仍遵守模型与供应商启用状态；仅跳过真实协议对象的创建和凭证解析。
+        from app.ai.testing.dispatch import resolve_mock_chat_model
+
+        mock_model = resolve_mock_chat_model(config)
+        if mock_model is not None:
+            return mock_model
+
         if provider_key in {"openai_image", "dashscope_image"}:
             raise AppException(
                 status_code=400,

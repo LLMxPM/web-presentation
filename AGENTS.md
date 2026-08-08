@@ -135,6 +135,8 @@ pnpm run test:runtime:gate
 pnpm run test:contracts
 pnpm run test:e2e:run
 pnpm run test:e2e
+pnpm run test:e2e:regression
+pnpm run test:e2e:all
 ```
 
 测试入口语义：
@@ -143,6 +145,7 @@ pnpm run test:e2e
 - `test:runtime` / `test:runtime:delegated` 只委托 Runtime 子项目 Vitest；需要 Runtime 完整门禁时使用 `test:runtime:gate`。
 - `test:contracts` 是根仓跨模块契约测试，不等同于 Backend 自身的 `backend/tests/contracts`。
 - `test:e2e:run` 只执行 Playwright；`test:e2e` 会先重置并播种 smoke 数据、确认服务，再执行 Playwright。
+- `test:e2e:run` / `test:e2e` 默认只运行 `auth + smoke`；扩展回归使用 `test:e2e:regression`，全部 project 使用 `test:e2e:all`。
 - E2E 报告和失败产物统一写入 `test-results/e2e/`。
 
 涉及以下范围时应特别补充验证：

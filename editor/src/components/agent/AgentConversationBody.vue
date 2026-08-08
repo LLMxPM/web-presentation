@@ -256,7 +256,7 @@
                   </template>
                 </div>
               </template>
-              <details v-else class="tool-call-group rounded-ui-md border border-border bg-surface-hover" :open="shouldExpandToolGroup(item.tools)">
+              <details v-else data-testid="tool-call-group" class="tool-call-group rounded-ui-md border border-border bg-surface-hover" :open="shouldExpandToolGroup(item.tools)">
                 <summary class="flex min-h-control-sm cursor-pointer select-none items-center gap-1.5 px-2 text-xs font-medium text-text-muted transition-colors hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus">
                   <ChevronRight class="h-3 w-3 transition details-chevron" />
                   <span class="min-w-0 flex-1 truncate">{{ formatToolGroupSummary(item.tools) }}</span>

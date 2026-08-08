@@ -33,6 +33,8 @@ from app.services.workspace_service import WorkspaceService
 
 E2E_DATABASE_MARKER = "_e2e"
 POSTGRES_MAINTENANCE_DATABASE = "postgres"
+# smoke 数据协议版本：seed 结构变化时递增，ensure-services 据此校验环境指纹。
+SEED_VERSION = 2
 
 
 @dataclass(slots=True, frozen=True)
@@ -42,8 +44,9 @@ class SmokeDataNames:
     workspace_name: str = "Smoke Workspace"
     project_name: str = "Smoke Project"
     page_title: str = "Smoke Page"
-    llm_config_name: str = "Smoke Mock LLM"
-    image_llm_config_name: str = "Smoke Mock Image LLM"
+    agent_llm_config_name: str = "Smoke E2E Mock Agent"
+    vision_llm_config_name: str = "Smoke E2E Mock Vision"
+    image_llm_config_name: str = "Smoke E2E Mock Image"
     page_summary: str = "平台级 smoke 场景默认页面。"
     image_asset_a: str = "smoke-image-a"
     image_asset_b: str = "smoke-image-b"
@@ -277,14 +280,25 @@ async def _ensure_mock_llm_binding(*, session, user_id: int, operator_id: int) -
     service = AiLlmService(session, user_id=user_id)
     existing_configs = await service.list_configs()
     provider_configs = await service.list_provider_configs()
-    chat_config = await _ensure_mock_llm_config(
+    agent_config = await _ensure_mock_llm_config(
         service=service,
         configs=existing_configs,
         provider_configs=provider_configs,
-        config_name=SMOKE_DATA.llm_config_name,
+        config_name=SMOKE_DATA.agent_llm_config_name,
         provider_name="OpenAI Mock 凭证",
         provider_key="openai",
-        model_id="gpt-5-mini",
+        model_id="e2e-mock-agent-chat",
+        model_type=AiModelType.CHAT,
+        operator_id=operator_id,
+    )
+    vision_config = await _ensure_mock_llm_config(
+        service=service,
+        configs=existing_configs,
+        provider_configs=provider_configs,
+        config_name=SMOKE_DATA.vision_llm_config_name,
+        provider_name="OpenAI Mock 凭证",
+        provider_key="openai",
+        model_id="e2e-mock-vision-chat",
         model_type=AiModelType.CHAT,
         operator_id=operator_id,
         supports_image_input=True,
@@ -296,13 +310,20 @@ async def _ensure_mock_llm_binding(*, session, user_id: int, operator_id: int) -
         config_name=SMOKE_DATA.image_llm_config_name,
         provider_name="OpenAI Mock 图片凭证",
         provider_key="openai_image",
-        model_id="gpt-image-2",
+        model_id="e2e-mock-image-gen",
         model_type=AiModelType.IMAGE_GENERATION,
         operator_id=operator_id,
     )
 
+    slot_targets = {
+        AiLlmSlot.AGENT_COORDINATOR.value: agent_config,
+        AiLlmSlot.IMAGE_UNDERSTANDING.value: vision_config,
+        AiLlmSlot.IMAGE_GENERATION.value: image_config,
+    }
     for slot in LLM_SLOT_DEFINITIONS:
-        target_config = image_config if slot == AiLlmSlot.IMAGE_GENERATION.value else chat_config
+        target_config = slot_targets.get(slot)
+        if target_config is None:
+            continue
         binding = await service.get_slot_binding(slot)
         if binding.llm_config_id == target_config.id and binding.binding_ready:
             continue

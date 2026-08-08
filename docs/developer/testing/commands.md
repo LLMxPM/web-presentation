@@ -39,9 +39,20 @@ pnpm run test:runtime:gate
 pnpm run test:contracts
 pnpm run test:e2e:run
 pnpm run test:e2e
+pnpm run test:e2e:regression
+pnpm run test:e2e:all
 ```
 
-`test:e2e` 会先重置并播种 smoke 数据、确认服务，再执行 Playwright。`test:e2e:run` 只执行 Playwright。
+- `test:e2e:run`：只运行 `auth + smoke`，不重置数据；globalSetup 会校验 smoke 数据指纹，未准备时提示先执行 prepare。
+- `test:e2e`：准备环境后运行 `auth + smoke`。
+- `test:e2e:regression`：准备环境后运行 `visual-edit + ai + runtime-heavy`。
+- `test:e2e:all`：准备环境后运行全部 Playwright project。
+
+单独准备数据与服务：
+
+```powershell
+pnpm run test:e2e:prepare
+```
 
 ## 全量
 

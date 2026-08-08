@@ -1,6 +1,6 @@
 <!-- 文件功能：为图片理解与图片生成工具提供稳定的输入缩略图、进度和结果画廊回显。 -->
 <template>
-  <details class="visual-tool-details rounded-ui-md border border-border bg-surface-hover" :open="tool.status !== 'completed'">
+  <details data-testid="visual-tool-card" class="visual-tool-details rounded-ui-md border border-border bg-surface-hover" :open="tool.status !== 'completed'">
     <summary class="flex min-h-control-sm cursor-pointer select-none items-center gap-1.5 px-2 text-xs font-medium text-text-muted transition-colors hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus">
       <ChevronRight class="visual-tool-chevron h-3 w-3 shrink-0 transition" />
       <span class="min-w-0 flex-1 truncate">{{ isAnalysis ? '图片理解' : '图片生成' }}</span>

@@ -9,9 +9,9 @@ import AgentFloatingTrigger from '@/components/agent/AgentFloatingTrigger.vue'
 const STORAGE_KEY = 'web-presentation:agent-floating-trigger-top'
 /** jsdom 默认视口高度。 */
 const VIEWPORT_HEIGHT = 768
-/** 与组件常量保持一致：顶栏 56px + 上下间距 16px。 */
+/** 与组件常量保持一致：顶栏 56px、入口 72px、上下间距 16px。 */
 const MIN_TOP = 72
-const MAX_TOP = VIEWPORT_HEIGHT - 48 - 16
+const MAX_TOP = VIEWPORT_HEIGHT - 72 - 16
 
 describe('AgentFloatingTrigger', () => {
   beforeEach(() => {
