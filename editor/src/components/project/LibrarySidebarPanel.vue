@@ -4,7 +4,7 @@
     v-show="modelValue"
     class="relative flex h-full min-h-0 w-[400px] shrink-0 flex-col overflow-hidden border-l border-border bg-surface transition-all duration-300"
   >
-    <div class="flex shrink-0 items-center justify-between border-b border-border-muted px-4 py-2.5">
+    <div v-if="showHeader" class="flex shrink-0 items-center justify-between border-b border-border-muted px-4 py-2.5">
       <div class="flex min-w-0 items-center gap-2">
         <slot name="icon" />
         <h2 class="truncate text-base font-bold text-text">{{ title }}</h2>
@@ -43,11 +43,14 @@ const props = withDefaults(defineProps<{
   searchPlaceholder?: string
   showSearch?: boolean
   showClose?: boolean
+  /** 是否渲染标题栏；嵌套抽屉等场景由外层提供标题时隐藏。 */
+  showHeader?: boolean
 }>(), {
   searchValue: '',
   searchPlaceholder: '搜索...',
   showSearch: false,
   showClose: true,
+  showHeader: true,
 })
 
 const emit = defineEmits<{

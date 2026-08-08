@@ -128,6 +128,8 @@ export default {
         dialog: 'var(--ui-z-dialog)',
         dropdown: 'var(--ui-z-dropdown)',
         popover: 'var(--ui-z-popover)',
+        'drawer-trigger': 'var(--ui-z-drawer-trigger)',
+        drawer: 'var(--ui-z-drawer)',
         'confirm-overlay': 'var(--ui-z-confirm-overlay)',
         toast: 'var(--ui-z-toast)',
       },

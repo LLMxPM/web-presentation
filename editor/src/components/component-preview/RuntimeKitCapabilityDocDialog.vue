@@ -5,6 +5,7 @@
     title="能力说明"
     size="wide"
     body-preset="auto"
+    :z-index="zIndex"
     @update:open="emit('update:modelValue', $event)"
   >
     <div v-if="item" class="space-y-5">
@@ -88,6 +89,8 @@ import type { RuntimeKitComponentCapabilityItem } from '@/types/api'
 defineProps<{
   modelValue: boolean
   item: RuntimeKitComponentCapabilityItem | null
+  /** 弹窗层级，供抽屉内嵌说明时抬升。 */
+  zIndex?: number
 }>()
 
 const emit = defineEmits<{

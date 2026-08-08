@@ -3,15 +3,16 @@
   <DialogRoot :open="open" modal @update:open="emit('update:open', $event)">
     <Teleport to="body">
       <div v-if="open" class="dialog-shell fixed inset-0 z-dialog flex items-center justify-center" :data-dialog-size="resolvedSize" :data-dialog-body-preset="resolvedBodyPreset ?? 'legacy'" :style="{ zIndex }">
-      <DialogOverlay as-child><button type="button" class="absolute inset-0 bg-overlay/40 backdrop-blur-sm" :class="overlayClass" :aria-label="title ? `关闭${title}` : '关闭弹窗'" @click="emit('update:open', false)" /></DialogOverlay>
+      <DialogOverlay as-child><button type="button" :class="overlayButtonClass" :aria-label="title ? `关闭${title}` : '关闭弹窗'" @click="emit('update:open', false)" /></DialogOverlay>
       <DialogContent
         class="dialog-panel fixed z-[1001] flex min-h-0 w-full flex-col overflow-hidden border border-border bg-surface shadow-2xl outline-none"
         :class="panelClass"
         :style="panelStyle"
         @escape-key-down="emit('escape-key-down', $event)"
-        @interact-outside="emit('interact-outside', $event)"
+        @interact-outside="handleInteractOutside"
         @close-auto-focus="restoreFocus"
       >
+        <DialogTitle v-if="!showHeader && title" class="sr-only">{{ title }}</DialogTitle>
         <div v-if="showHeader" class="dialog-header flex shrink-0 items-start justify-between gap-3 border-b border-border-muted bg-canvas/50">
           <slot name="header">
             <div class="min-w-0 flex-1">
@@ -49,10 +50,12 @@ const props = withDefaults(defineProps<{
   panelClass?: string
   panelStyle?: CSSProperties
   overlayClass?: string
+  /** 是否隐藏蒙版底色与模糊，用于侧栏抽屉等需要透出下层内容的弹层。 */
+  bareOverlay?: boolean
   showHeader?: boolean
   showCloseButton?: boolean
   zIndex?: string | number
-}>(), { size: 'compact', showHeader: true, showCloseButton: true, zIndex: 1000 })
+}>(), { size: 'compact', showHeader: true, showCloseButton: true, zIndex: 1000, bareOverlay: false })
 
 const emit = defineEmits<{
   'update:open': [value: boolean]
@@ -67,6 +70,11 @@ const resolvedSize = computed(() => props.size ?? 'compact')
 const resolvedBodyPreset = computed<DialogBodyPreset | null>(() => props.bodyPreset ?? (props.bodyClass ? null : 'auto'))
 const bodyPresetClass = computed(() => resolvedBodyPreset.value ? DIALOG_BODY_PRESET_CLASS[resolvedBodyPreset.value] : null)
 const showHeader = computed(() => props.showHeader && Boolean(slots.header || props.title || props.description || slots['header-extra'] || props.showCloseButton))
+const overlayButtonClass = computed(() => [
+  'absolute inset-0',
+  props.bareOverlay ? null : 'bg-overlay/40 backdrop-blur-sm',
+  props.overlayClass,
+])
 const panelStyle = computed<CSSProperties>(() => ({
   width: `min(${resolveDialogMaxWidth(resolvedSize.value, props.width)}, calc(100dvw - (var(--dialog-shell-gap) * 2)))`,
   height: `min(${resolveDialogTargetHeight(resolvedSize.value)}, calc(100dvh - (var(--dialog-shell-gap) * 2)))`,
@@ -74,6 +82,19 @@ const panelStyle = computed<CSSProperties>(() => ({
   left: '50%', top: '50%', transform: 'translate(-50%, -50%)', borderRadius: 'var(--ui-radius-xl, 12px)',
   ...props.panelStyle,
 }))
+
+/**
+ * 全局浮层入口位于 DialogContent 外部，但点击它不应关闭当前弹窗。
+ * @param event Reka 包装的外部交互事件
+ */
+function handleInteractOutside(event: Event): void {
+  const originalEvent = (event as CustomEvent<{ originalEvent?: Event }>).detail?.originalEvent
+  const target = originalEvent?.target ?? event.target
+  if (target instanceof Element && target.closest('[data-dialog-overlay-trigger]')) {
+    event.preventDefault()
+  }
+  emit('interact-outside', event)
+}
 
 /**
  * 为受控模式补齐焦点恢复。UiDialog 不强制业务方使用 DialogTrigger，

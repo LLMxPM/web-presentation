@@ -95,7 +95,7 @@ describe('ComponentManagerPanel', () => {
     await waitFor(() => {
       expect(screen.getByText('已发布组件')).toBeInTheDocument()
     })
-    await fireEvent.click(screen.getByText('已发布组件'))
+    await fireEvent.click(screen.getByText('已发布组件').closest('article') as HTMLElement)
 
     await waitFor(() => {
       expect(screen.getByTestId('preview-workbench')).toHaveTextContent('预览工作台：workspace-draft:已发布组件')
@@ -112,7 +112,7 @@ describe('ComponentManagerPanel', () => {
     renderPanel()
 
     await switchToRuntimeKitTab()
-    await fireEvent.click(screen.getByText('资源渲染器'))
+    await fireEvent.click(screen.getByText('资源渲染器').closest('article') as HTMLElement)
 
     await waitFor(() => {
       expect(screen.getByTestId('preview-workbench')).toHaveTextContent('预览工作台：runtime-kit:资源渲染器')

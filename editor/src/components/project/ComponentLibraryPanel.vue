@@ -3,6 +3,7 @@
   <LibrarySidebarPanel
     :model-value="modelValue"
     title="组件库"
+    :show-header="!hidePanelHeader"
     show-search
     :show-close="closable"
     v-model:search-value="searchKeyword"
@@ -15,7 +16,7 @@
 
     <template #actions>
       <UiButton
-        v-if="readOnly && workspaceId"
+        v-if="readOnly && workspaceId && !hideNavigation"
         type="button"
         variant="ghost"
         size="sm"
@@ -71,7 +72,7 @@
       </UiButton>
     </template>
 
-    <div class="shrink-0 border-b border-canvas bg-canvas/50 px-3 pb-2">
+    <div class="shrink-0 border-b border-canvas bg-canvas/50 px-3 py-3">
       <LibrarySegmentedControl
         :model-value="componentPanelTab"
         :options="componentPanelOptions"
@@ -264,6 +265,10 @@ const props = withDefaults(defineProps<{
   refreshKey?: number
   publishedOnly?: boolean
   runtimeKitComponentsOnly?: boolean
+  /** 是否隐藏“打开完整组件库页面”入口，弹窗层抽屉等场景应隐藏。 */
+  hideNavigation?: boolean
+  /** 是否隐藏内部标题栏，抽屉等由外层提供标题的场景应隐藏。 */
+  hidePanelHeader?: boolean
 }>(), {
   readOnly: false,
   closable: true,
@@ -276,6 +281,8 @@ const props = withDefaults(defineProps<{
   refreshKey: 0,
   publishedOnly: false,
   runtimeKitComponentsOnly: false,
+  hideNavigation: false,
+  hidePanelHeader: false,
 })
 
 const emit = defineEmits<{

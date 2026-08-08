@@ -87,7 +87,7 @@ describe('ComponentLibraryPanel', () => {
       expect(screen.getByText('SalesCard')).toBeInTheDocument()
     })
 
-    await fireEvent.click(screen.getByText('销售卡片'))
+    await fireEvent.click(screen.getByText('销售卡片').closest('article') as HTMLElement)
     await fireEvent.click(screen.getByTitle('新增组件'))
 
     expect(emitted('workspace-component-selected')?.[0]).toEqual([componentItem])
@@ -187,7 +187,7 @@ describe('ComponentLibraryPanel', () => {
     expect(screen.getByText('导出所选').closest('button')).toBeDisabled()
 
     // 选择模式下点击卡片切换勾选，不再触发预览选择
-    await fireEvent.click(screen.getByText('销售卡片'))
+    await fireEvent.click(screen.getByText('销售卡片').closest('article') as HTMLElement)
     expect(emitted('workspace-component-selected')).toBeUndefined()
     expect(emitted('update:batchSelectedComponentIds')?.at(-1)).toEqual([[componentItem.id]])
 

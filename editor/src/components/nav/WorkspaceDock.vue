@@ -1,4 +1,4 @@
-<!-- 文件功能：提供工作空间右侧统一 Dock，承载完整页面导航与轻量辅助面板开关。 -->
+<!-- 文件功能：提供工作空间右侧统一 Dock，承载完整页面导航与底部素材/组件抽屉入口。 -->
 <template>
   <aside
     data-testid="workspace-dock"
@@ -19,33 +19,31 @@
         <component :is="item.icon" class="h-5 w-5" />
         <span class="mt-1 text-[10px] font-bold leading-none">{{ item.label }}</span>
       </UiButton>
+    </div>
 
-      <div class="mt-2 h-px w-8 bg-border" />
-      <span class="text-[10px] font-bold leading-none text-text-faint" aria-hidden="true">侧栏</span>
-
-      <UiButton
-        v-for="item in panelItems"
-        :key="item.key"
-        variant="ghost"
-        :data-testid="`workspace-dock-panel-${item.key}`"
-        :title="item.title"
-        :aria-label="item.title"
-        class="dock-button [&>span]:flex-col [&>span]:gap-0"
-        :class="item.key === activePanel ? 'dock-button-panel-active' : 'dock-button-idle'"
-        @click="emit('toggle-panel', item.key)"
+    <div class="mt-auto flex flex-col items-center pt-1.5">
+      <UiIconButton
+        v-if="drawerClosed"
+        variant="primary"
+        size="md"
+        class="library-drawer-trigger !h-10 !w-10 !rounded-full shadow-popover"
+        data-dialog-overlay-trigger
+        label="打开素材 / 组件侧栏"
+        title="打开素材 / 组件侧栏（Ctrl+Shift+K）"
+        @click="toggleLibraryDrawer"
       >
-        <component :is="item.icon" class="h-5 w-5" />
-        <span class="mt-1 text-[10px] font-bold leading-none">{{ item.label }}</span>
-      </UiButton>
+        <Library class="h-5 w-5" />
+      </UiIconButton>
     </div>
   </aside>
 </template>
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import { Image, Layers, LayoutDashboard, Palette, SwatchBook } from '@lucide/vue'
+import { Image, Layers, LayoutDashboard, Library, Palette, SwatchBook } from '@lucide/vue'
 
-import { UiButton } from '@/components/ui'
+import { useLibraryDrawerState } from '@/composables/library-drawer-state'
+import { UiButton, UiIconButton } from '@/components/ui'
 import {
   buildWorkspaceAssetsPath,
   buildWorkspaceComponentsPath,
@@ -55,18 +53,28 @@ import {
   type WorkspaceRouteKey,
 } from '@/utils/workspace-routes'
 
-type WorkspaceDockPanelKey = 'assets' | 'components'
-
 const props = defineProps<{
   workspaceId: number
   activeKey: WorkspaceRouteKey
-  activePanel: WorkspaceDockPanelKey | null
 }>()
 
 const emit = defineEmits<{
   navigate: [path: string]
-  'toggle-panel': [panel: WorkspaceDockPanelKey]
 }>()
+
+const { activePanel, openLibraryDrawer, closeLibraryDrawer } = useLibraryDrawerState()
+const drawerClosed = computed(() => activePanel.value === null)
+
+/**
+ * 抽屉关闭时打开素材页签，打开时收起抽屉。
+ */
+function toggleLibraryDrawer(): void {
+  if (activePanel.value === null) {
+    openLibraryDrawer('assets')
+    return
+  }
+  closeLibraryDrawer()
+}
 
 /**
  * 生成完整页面导航项，点击后主内容区进行路由切换。
@@ -108,24 +116,6 @@ const navigationItems = computed(() => [
     path: buildWorkspaceStylesPath(props.workspaceId),
   },
 ])
-
-/**
- * 生成轻量辅助面板项，点击后从 Dock 左侧展开侧栏。
- */
-const panelItems = [
-  {
-    key: 'assets' as const,
-    label: '素材',
-    title: '资源库侧栏',
-    icon: Image,
-  },
-  {
-    key: 'components' as const,
-    label: '组件',
-    title: '组件库侧栏',
-    icon: Layers,
-  },
-]
 </script>
 
 <style scoped>
@@ -159,10 +149,12 @@ const panelItems = [
   box-shadow: 0 1px 2px rgb(var(--ui-accent) / 0.12);
 }
 
-.dock-button-panel-active {
-  border-color: rgb(var(--ui-success-border));
-  background: rgb(var(--ui-success-muted));
-  color: rgb(var(--ui-success-strong));
-  box-shadow: 0 1px 2px rgb(var(--ui-success-strong) / 0.12);
+/*
+ * 普通 UiDialog 会在 body 上禁用指针事件；抽屉入口需要显式恢复交互，
+ * 并使用统一 Token 越过普通弹窗，确保用户可从任意工作流打开素材抽屉。
+ */
+.library-drawer-trigger {
+  z-index: var(--ui-z-drawer-trigger);
+  pointer-events: auto;
 }
 </style>

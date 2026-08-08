@@ -77,6 +77,8 @@
   --ui-z-dialog: 1000;
   --ui-z-dropdown: 1100;
   --ui-z-popover: 1100;
+  --ui-z-drawer-trigger: 1210;
+  --ui-z-drawer: 1140;
   --ui-z-confirm-overlay: 1150;
   --ui-z-toast: 1200;
   --ui-font-sans: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;

@@ -7,6 +7,7 @@
     :show-header="false"
     :show-close-button="false"
     panel-class="bg-surface shadow-xl"
+    :z-index="zIndex"
     @update:open="handleOpenChange"
   >
     <div class="relative flex h-full min-h-0 flex-col">
@@ -29,6 +30,8 @@ const props = withDefaults(defineProps<{
   modelValue: boolean
   closeLabel?: string
   showCloseButton?: boolean
+  /** 弹窗层级，供抽屉内嵌预览时抬升。 */
+  zIndex?: number
 }>(), {
   closeLabel: '关闭组件预览',
   showCloseButton: false,

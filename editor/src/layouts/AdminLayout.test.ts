@@ -1,5 +1,5 @@
 /**
- * 文件功能：验证后台布局中的左侧 AI 助手、右侧工作空间 Dock、辅助面板与路由高亮逻辑。
+ * 文件功能：验证后台布局中的左侧 AI 助手、右侧工作空间 Dock 与路由高亮逻辑。
  */
 import { nextTick } from 'vue'
 import { fireEvent, render, screen, waitFor } from '@testing-library/vue'
@@ -130,17 +130,11 @@ describe('AdminLayout', () => {
     expect(container.querySelector('.admin-layout-agent')).toBeTruthy()
   })
 
-  it('窄窗口受限模式应保留明确提示，辅助面板使用独立覆盖层容器', async () => {
+  it('窄窗口受限模式应保留明确提示', () => {
     renderLayout()
 
     expect(screen.getByTestId('admin-layout-restricted-notice')).toHaveAttribute('role', 'status')
     expect(screen.getByTestId('admin-layout-restricted-notice').textContent).toContain('至少 960px')
-
-    await fireEvent.click(screen.getByTestId('workspace-dock-panel-assets'))
-
-    const supplementPanel = await screen.findByTestId('workspace-supplement-panel')
-    expect(supplementPanel).toHaveClass('admin-layout-supplement-panel')
-    expect(screen.getByTestId('asset-panel')).toBeTruthy()
   })
 
   it('应在后台框架底栏展示仓库、许可证与 Runtime 子模块信息', () => {
@@ -156,12 +150,38 @@ describe('AdminLayout', () => {
     expect(runtimeLink).toHaveAttribute('href', 'https://github.com/LLMxPM/web-runtime-vue')
   })
 
-  it('Dock 辅助入口应标注为侧栏入口', () => {
+  it('点击 Dock 完整页面入口应切换主路由', async () => {
     renderLayout()
 
-    expect(screen.getByTestId('workspace-dock-panel-assets').getAttribute('title')).toContain('侧栏')
-    expect(screen.getByTestId('workspace-dock-panel-components').getAttribute('title')).toContain('侧栏')
-    expect(screen.queryByTestId('workspace-dock-panel-themes')).toBeNull()
+    await fireEvent.click(screen.getByTestId('workspace-dock-components'))
+
+    expect(routerMock.push).toHaveBeenCalledWith('/workspaces/1/components')
+  })
+
+  it('点击 Dock 底部胶囊应打开素材/组件抽屉', async () => {
+    renderLayout()
+
+    await fireEvent.click(screen.getByRole('button', { name: '打开素材 / 组件侧栏' }))
+
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+    expect(await screen.findByTestId('asset-panel')).toBeInTheDocument()
+  })
+
+  it('进入 AI 设置页时应关闭左右两侧栏和右侧 Dock', async () => {
+    renderLayout()
+
+    setRoute({
+      name: 'accountAiSettings',
+      params: {},
+      meta: { hideSidebars: true },
+    })
+    await nextTick()
+
+    await waitFor(() => {
+      expect(screen.queryByTestId('agent-sidebar')).toBeNull()
+      expect(screen.queryByTestId('workspace-dock')).toBeNull()
+      expect(screen.queryByTestId('project-quick-switcher')).toBeNull()
+    })
   })
 
   it('智能体侧栏展开时应隐藏顶部品牌标题', async () => {
@@ -230,53 +250,6 @@ describe('AdminLayout', () => {
     const breadcrumb = screen.getByLabelText('当前位置')
     expect(breadcrumb.textContent).toContain('项目列表')
     expect(breadcrumb.textContent).toContain('项目首页')
-  })
-
-  it('点击 Dock 完整页面入口时应关闭辅助面板并切换主路由', async () => {
-    renderLayout()
-
-    await fireEvent.click(screen.getByTestId('workspace-dock-panel-assets'))
-    expect(await screen.findByTestId('asset-panel')).toBeTruthy()
-
-    await fireEvent.click(screen.getByTestId('workspace-dock-components'))
-
-    expect(routerMock.push).toHaveBeenCalledWith('/workspaces/1/components')
-    expect(screen.queryByTestId('asset-panel')).toBeNull()
-  })
-
-  it('点击 Dock 辅助面板入口时同一时间只展开一个右侧面板', async () => {
-    renderLayout()
-
-    await fireEvent.click(screen.getByTestId('workspace-dock-panel-assets'))
-    expect(await screen.findByTestId('asset-panel')).toBeTruthy()
-    expect(screen.queryByTestId('component-panel')).toBeNull()
-
-    await fireEvent.click(screen.getByTestId('workspace-dock-panel-components'))
-    expect(await screen.findByTestId('component-panel')).toBeTruthy()
-    expect(screen.queryByTestId('asset-panel')).toBeNull()
-
-    expect(screen.queryByTestId('workspace-dock-panel-themes')).toBeNull()
-  })
-
-  it('进入 AI 设置页时应关闭左右两侧栏、右侧 Dock 和辅助面板', async () => {
-    renderLayout()
-
-    await fireEvent.click(screen.getByTestId('workspace-dock-panel-assets'))
-    expect(await screen.findByTestId('asset-panel')).toBeTruthy()
-
-    setRoute({
-      name: 'accountAiSettings',
-      params: {},
-      meta: { hideSidebars: true },
-    })
-    await nextTick()
-
-    await waitFor(() => {
-      expect(screen.queryByTestId('agent-sidebar')).toBeNull()
-      expect(screen.queryByTestId('workspace-dock')).toBeNull()
-      expect(screen.queryByTestId('project-quick-switcher')).toBeNull()
-      expect(screen.queryByTestId('asset-panel')).toBeNull()
-    })
   })
 
   it('AI 设置页顶部应显著提示选择对应工作空间', () => {

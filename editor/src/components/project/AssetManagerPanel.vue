@@ -3,6 +3,7 @@
   <LibrarySidebarPanel
     :model-value="modelValue"
     title="资源库"
+    :show-header="!hidePanelHeader"
     show-search
     v-model:search-value="searchKeyword"
     search-placeholder="搜索资源名称、文件名、描述或标签..."
@@ -14,7 +15,7 @@
 
     <template #actions>
       <UiButton
-        v-if="workspaceId"
+        v-if="workspaceId && !hideNavigation"
         type="button"
         variant="ghost"
         size="sm"
@@ -144,7 +145,7 @@
     size="workbench"
     body-preset="immersive"
     overlay-class="bg-overlay/90 backdrop-blur-md"
-    :z-index="300"
+    :z-index="layerIndex"
     @update:open="handleRuntimePreviewVisibleChange"
   >
     <div v-if="runtimePreviewAsset" class="h-full min-h-0 bg-canvas p-4">
@@ -168,7 +169,7 @@
     }"
     panel-class="!pointer-events-none !border-0 !bg-transparent !shadow-none"
     overlay-class="bg-overlay/90 backdrop-blur-md"
-    :z-index="300"
+    :z-index="layerIndex"
     @update:open="handleQuickPreviewDialogVisibleChange"
   >
     <div v-if="previewAsset" class="pointer-events-none relative flex h-full min-h-0 items-center justify-center p-4 sm:p-6">
@@ -249,10 +250,20 @@ import type { AssetPreviewBackground } from '@/components/ui/asset-preview-backg
 import PaginationControl from '@/components/ui/PaginationControl.vue'
 import { UiButton, UiDialog, UiIconButton } from '@/components/ui'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   modelValue: boolean
   workspaceId: number | null
-}>()
+  /** 内嵌预览弹窗的层级，抽屉等浮层场景需高于宿主抽屉。 */
+  layerIndex?: number
+  /** 是否隐藏“打开完整资源库页面”入口，弹窗层抽屉等场景应隐藏。 */
+  hideNavigation?: boolean
+  /** 是否隐藏内部标题栏，抽屉等由外层提供标题的场景应隐藏。 */
+  hidePanelHeader?: boolean
+}>(), {
+  layerIndex: 300,
+  hideNavigation: false,
+  hidePanelHeader: false,
+})
 
 const emit = defineEmits<{
   (e: 'update:modelValue', value: boolean): void

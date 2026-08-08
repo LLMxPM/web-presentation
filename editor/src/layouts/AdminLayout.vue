@@ -90,35 +90,18 @@
           </div>
         </main>
 
-        <section
-          v-if="workspaceDockVisible && activeSupplementPanel"
-          data-testid="workspace-supplement-panel"
-          class="admin-layout-supplement-panel"
-        >
-          <AssetManagerPanel
-            v-if="assetPanelVisible"
-            v-model="assetPanelVisible"
-            :workspace-id="workspaceId"
-          />
-          <ComponentManagerPanel
-            v-if="componentPanelVisible"
-            v-model="componentPanelVisible"
-            read-only
-            :workspace-id="workspaceId"
-          />
-        </section>
         <WorkspaceDock
           v-if="workspaceDockVisible && workspaceId"
           :workspace-id="workspaceId"
           :active-key="activeWorkspaceRouteKey"
-          :active-panel="activeSupplementPanel"
           @navigate="handleDockNavigate"
-          @toggle-panel="toggleSupplementPanel"
         />
       </div>
 
       <OpenSourceFooter />
     </div>
+
+    <LibraryDrawerHost :workspace-id="workspaceId" />
 
     <div data-testid="admin-layout-restricted-notice" class="admin-layout-restricted-notice" role="status">
       当前窗口宽度较小，已隐藏辅助面板。建议使用至少 960px 宽的桌面窗口进行完整创作。
@@ -127,7 +110,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, defineAsyncComponent, onMounted, onUnmounted, provide, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, provide, ref, watch } from 'vue'
 import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
 import { useQuery } from '@tanstack/vue-query'
 import { ArrowRight, ChevronRight, MapPin } from '@lucide/vue'
@@ -139,66 +122,20 @@ import ProjectQuickSwitcher from '@/components/nav/ProjectQuickSwitcher.vue'
 import WorkspaceDock from '@/components/nav/WorkspaceDock.vue'
 import AgentGlobalSidebar from '@/components/agent/AgentGlobalSidebar.vue'
 import OpenSourceFooter from '@/components/layout/OpenSourceFooter.vue'
+import LibraryDrawerHost from '@/components/project/LibraryDrawerHost.vue'
 import { agentSidebarExpandedKey } from '@/composables/agent-sidebar-state'
 import { componentAgentContextKey } from '@/composables/component-agent-context'
 import { buildProjectPagesPath, buildWorkspaceHomePath, type WorkspaceRouteKey } from '@/utils/workspace-routes'
 import type { WorkspaceComponentItem } from '@/types/api'
 
-const AssetManagerPanel = defineAsyncComponent(() => import('@/components/project/AssetManagerPanel.vue'))
-const ComponentManagerPanel = defineAsyncComponent(() => import('@/components/project/ComponentManagerPanel.vue'))
-
-type SupplementPanelKey = 'assets' | 'components'
-
 const route = useRoute()
 const router = useRouter()
-const activeSupplementPanel = ref<SupplementPanelKey | null>(null)
 const componentAgentSelection = ref<WorkspaceComponentItem | null>(null)
 const agentSidebarExpanded = ref(false)
 
 interface HeaderBreadcrumb {
   label: string
   to?: string
-}
-
-const assetPanelVisible = computed({
-  get: () => activeSupplementPanel.value === 'assets',
-  set: value => updateSupplementPanel('assets', value),
-})
-const componentPanelVisible = computed({
-  get: () => activeSupplementPanel.value === 'components',
-  set: value => updateSupplementPanel('components', value),
-})
-
-/**
- * 接收右侧辅助面板的 v-model 回写，确保同一时间只展开一个面板。
- * @param panel 目标面板 key
- * @param visible 是否展开
- */
-function updateSupplementPanel(panel: SupplementPanelKey, visible: boolean): void {
-  if (visible) {
-    activeSupplementPanel.value = panel
-    return
-  }
-  if (activeSupplementPanel.value === panel) {
-    activeSupplementPanel.value = null
-  }
-}
-
-/**
- * 处理右侧 Dock 的轻量面板切换。
- * @param panel 待切换面板 key
- */
-function toggleSupplementPanel(panel: SupplementPanelKey): void {
-  activeSupplementPanel.value = activeSupplementPanel.value === panel ? null : panel
-}
-
-/**
- * 处理右侧 Dock 的完整页面导航，导航前关闭轻量面板。
- * @param path 目标页面路径
- */
-function handleDockNavigate(path: string): void {
-  activeSupplementPanel.value = null
-  void router.push(path)
 }
 
 /**
@@ -210,10 +147,11 @@ function setComponentAgentSelection(component: WorkspaceComponentItem | null) {
 }
 
 /**
- * 关闭布局级右侧辅助面板，避免跨路由保留上一个工作空间页面的侧栏状态。
+ * 处理右侧 Dock 的完整页面导航。
+ * @param path 目标页面路径
  */
-function closeSupplementPanels(): void {
-  activeSupplementPanel.value = null
+function handleDockNavigate(path: string): void {
+  void router.push(path)
 }
 
 provide(componentAgentContextKey, {
@@ -275,7 +213,6 @@ watch(
   ([visible, nextWorkspaceId]) => {
     if (!visible || !nextWorkspaceId) {
       agentSidebarExpanded.value = false
-      closeSupplementPanels()
     }
   },
   { immediate: true },
@@ -400,17 +337,6 @@ onUnmounted(() => {
   max-width: 11.25rem;
 }
 
-.admin-layout-supplement-panel {
-  z-index: var(--ui-z-dock);
-  display: flex;
-  width: 25rem;
-  min-width: 20rem;
-  max-width: min(32vw, 25rem);
-  overflow: hidden;
-  border-left: 1px solid rgb(var(--ui-border));
-  background: rgb(var(--ui-surface));
-}
-
 .admin-layout-restricted-notice {
   display: none;
 }
@@ -433,15 +359,6 @@ onUnmounted(() => {
   .admin-layout-breadcrumb-item {
     max-width: 8rem;
   }
-
-  .admin-layout-supplement-panel {
-    width: 20rem;
-    min-width: 18rem;
-  }
-
-  .admin-layout-supplement-panel :deep(.relative.flex.h-full) {
-    width: 100%;
-  }
 }
 
 @media (min-width: 960px) and (max-width: 1179px) {
@@ -454,25 +371,10 @@ onUnmounted(() => {
   .admin-layout-breadcrumb-item {
     max-width: 6rem;
   }
-
-  .admin-layout-supplement-panel {
-    position: absolute;
-    top: 0;
-    right: 3.5rem;
-    bottom: 0;
-    width: min(25rem, calc(100% - 7rem));
-    max-width: none;
-    box-shadow: var(--ui-shadow-popover);
-  }
-
-  .admin-layout-supplement-panel :deep(.relative.flex.h-full) {
-    width: 100%;
-  }
 }
 
 @media (max-width: 959px) {
   .admin-layout-agent,
-  .admin-layout-supplement-panel,
   .admin-layout-breadcrumb,
   :deep(.admin-layout-context > [data-testid='project-quick-switcher']) {
     display: none;

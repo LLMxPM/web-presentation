@@ -7,6 +7,8 @@
     :closable="closable"
     :published-only="true"
     :runtime-kit-components-only="true"
+    :hide-navigation="hideNavigation"
+    :hide-panel-header="hidePanelHeader"
     :selected-component-id="selectedComponent?.id ?? null"
     :selected-runtime-kit-name="selectedRuntimeKitItem?.name ?? null"
     :refresh-key="componentListRefreshKey"
@@ -16,7 +18,7 @@
     @runtime-kit-doc-selected="handleRuntimeKitDocSelected"
   />
 
-  <ComponentPreviewDialog v-model="previewDialogVisible" size="workbench">
+  <ComponentPreviewDialog v-model="previewDialogVisible" size="workbench" :z-index="layerIndex">
     <ComponentPreviewWorkbench
       :source="previewSource"
       :refresh-key="previewRefreshKey"
@@ -33,6 +35,7 @@
   <RuntimeKitCapabilityDocDialog
     v-model="runtimeKitDocDialogVisible"
     :item="runtimeKitDocItem"
+    :z-index="layerIndex"
   />
 </template>
 
@@ -54,9 +57,18 @@ const props = withDefaults(defineProps<{
   workspaceId: number | null
   readOnly?: boolean
   closable?: boolean
+  /** 内嵌预览弹窗的层级，抽屉等浮层场景需高于宿主抽屉。 */
+  layerIndex?: number
+  /** 是否隐藏“打开完整组件库页面”入口，弹窗层抽屉等场景应隐藏。 */
+  hideNavigation?: boolean
+  /** 是否隐藏内部标题栏，抽屉等由外层提供标题的场景应隐藏。 */
+  hidePanelHeader?: boolean
 }>(), {
   readOnly: true,
   closable: true,
+  layerIndex: 1000,
+  hideNavigation: false,
+  hidePanelHeader: false,
 })
 
 const emit = defineEmits<{

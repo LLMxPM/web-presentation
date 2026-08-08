@@ -50,6 +50,25 @@ describe('UiDialog', () => {
     expect(trigger).toHaveFocus()
   })
 
+  it('点击全局浮层入口时不应把当前弹窗误判为外部点击并关闭', async () => {
+    const DialogHarness = defineComponent({
+      components: { UiDialog },
+      template: `
+        <button type="button" data-testid="overlay-trigger" data-dialog-overlay-trigger>打开全局浮层</button>
+        <UiDialog :open="open" title="保留中的弹窗" @update:open="open = $event">内容</UiDialog>
+      `,
+      setup() {
+        return { open: ref(true) }
+      },
+    })
+    render(DialogHarness)
+
+    await fireEvent.pointerDown(screen.getByTestId('overlay-trigger'))
+    await fireEvent.click(screen.getByTestId('overlay-trigger'))
+
+    expect(screen.getByRole('dialog', { name: '保留中的弹窗' })).toBeInTheDocument()
+  })
+
   it('workbench 面板应使用壳层间距限制视口尺寸', () => {
     render(UiDialog, { props: { open: true, size: 'workbench' }, slots: { default: '内容' } })
 
