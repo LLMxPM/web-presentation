@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import asyncpg
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.engine import make_url
 
 import app.models  # noqa: F401
@@ -104,7 +104,13 @@ async def reset_all_test_data() -> None:
     await ensure_configured_database_exists()
     engine = get_engine()
     async with engine.begin() as connection:
-        await connection.run_sync(Base.metadata.drop_all)
+        if connection.dialect.name == "postgresql":
+            # E2E 库由 create_all 演进而非 alembic 迁移，旧版模型残留的外键约束
+            # 不在当前 metadata 依赖图中；带 CASCADE 逐表删除可避免孤儿约束阻断重建。
+            for table in reversed(Base.metadata.sorted_tables):
+                await connection.execute(text(f'DROP TABLE IF EXISTS "{table.name}" CASCADE'))
+        else:
+            await connection.run_sync(Base.metadata.drop_all)
         await connection.run_sync(Base.metadata.create_all)
     await BootstrapService(get_session_factory()).ensure_default_admin()
 

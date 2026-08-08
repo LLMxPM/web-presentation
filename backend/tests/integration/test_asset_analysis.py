@@ -29,7 +29,7 @@ async def _create_project(authenticated_client: AsyncClient, workspace_id: int, 
         "status": "active",
     }
     if theme_key is not None:
-        payload["theme_key"] = theme_key
+        payload["configuration"] = {"mode": "custom", "presentation": {"theme_key": theme_key}}
     response = await authenticated_client.post("/api/projects", json=payload)
     assert response.status_code == 200
     return response.json()["id"]

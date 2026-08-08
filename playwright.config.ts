@@ -9,6 +9,7 @@ const e2eArtifactDir = 'test-results/e2e/artifacts'
 
 export default defineConfig({
   testDir: './tests/e2e/specs',
+  globalSetup: './tests/e2e/global-setup.ts',
   timeout: 120_000,
   fullyParallel: false,
   reporter: [['list'], ['html', { outputFolder: e2eReportDir, open: 'never' }]],

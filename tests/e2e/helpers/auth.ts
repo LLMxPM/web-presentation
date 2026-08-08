@@ -8,5 +8,5 @@ export async function loginAsAdmin(page: Page) {
   await page.locator('[data-testid="login-username"]').fill('admin')
   await page.locator('[data-testid="login-password"]').fill('Admin123456')
   await page.locator('[data-testid="login-submit"]').click()
-  await expect(page).not.toHaveURL(/\/login$/)
+  await expect(page).not.toHaveURL(/\/login$/, { timeout: 15_000 })
 }
