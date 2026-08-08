@@ -10,6 +10,11 @@ import type {
   AgentTimelineItem,
   AgentUserFeedbackQuestion,
 } from '@/types/api'
+import {
+  collectEntityChangesByRun,
+  isRunTerminalForEntitySummary,
+  type AgentEntityChangeItem,
+} from '@/components/agent/agent-entity-change-summary'
 
 export interface ToolCallDetail {
   id: string
@@ -52,6 +57,7 @@ export type TimelineDisplayItem =
     pending: boolean
     status: string | null
   }
+  | { id: string, kind: 'entity_summary', runId: string, items: AgentEntityChangeItem[] }
   | { id: string, kind: 'run_status', item: AgentTimelineItem, status: string | null, content: string }
   | { id: string, kind: 'requirement', item: AgentTimelineItem, status: string | null, content: string }
 
@@ -177,12 +183,21 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  */
 export function buildTimelineDisplayItems(
   timelineItems: AgentTimelineItem[],
-  options: { pendingRequirement?: AgentPendingRequirement | null, memberRuns?: AgentMemberRunItem[] } = {},
+  options: {
+    pendingRequirement?: AgentPendingRequirement | null
+    memberRuns?: AgentMemberRunItem[]
+    workspaceId?: number | null
+    activeRunId?: string | null
+  } = {},
 ): TimelineDisplayItem[] {
   const orderedItems = [...timelineItems].sort(compareTimelineItems)
   const displayItems: TimelineDisplayItem[] = []
   const pendingRequirement = options.pendingRequirement ?? null
   const memberRuns = options.memberRuns ?? []
+  const workspaceId = options.workspaceId ?? null
+  const activeRunId = options.activeRunId ?? null
+  const entityChangesByRun = collectEntityChangesByRun(orderedItems, memberRuns, workspaceId)
+  const insertedEntitySummaryRunIds = new Set<string>()
   const skippedRequirementIds = new Set<string>()
   let pendingTools: AgentTimelineItem[] = []
   for (const item of orderedItems) {
@@ -290,7 +305,89 @@ export function buildTimelineDisplayItems(
     }
   }
   flushPendingTools()
+  insertEntitySummaries(displayItems, entityChangesByRun, insertedEntitySummaryRunIds, activeRunId)
   return displayItems
+}
+
+/**
+ * 在每个已终态 run 的助手消息与工具组之后、run_status 之前插入实体变更摘要卡。
+ * 不依赖时间线中的 run_status 项：后端主 run 快照通常不含该 kind。
+ */
+function insertEntitySummaries(
+  displayItems: TimelineDisplayItem[],
+  entityChangesByRun: Map<string, AgentEntityChangeItem[]>,
+  insertedRunIds: Set<string>,
+  activeRunId: string | null,
+) {
+  for (const runId of entityChangesByRun.keys()) {
+    tryInsertEntitySummaryForRun(displayItems, runId, entityChangesByRun, insertedRunIds, activeRunId)
+  }
+}
+
+/**
+ * 将摘要卡插到本 run「助手消息与工具组」的最后位置之后。
+ * 若该位置后紧跟本 run 的 run_status，则插在状态条之前。
+ */
+function tryInsertEntitySummaryForRun(
+  displayItems: TimelineDisplayItem[],
+  runId: string | null | undefined,
+  entityChangesByRun: Map<string, AgentEntityChangeItem[]>,
+  insertedRunIds: Set<string>,
+  activeRunId: string | null,
+) {
+  if (!runId || insertedRunIds.has(runId)) {
+    return
+  }
+  if (!isRunTerminalForEntitySummary(runId, activeRunId)) {
+    return
+  }
+  const items = entityChangesByRun.get(runId)
+  if (!items?.length) {
+    return
+  }
+
+  // 取助手消息与工具组二者中更靠后的锚点，避免卡插在「消息后、后续工具前」。
+  let anchorAfter = -1
+  for (let index = 0; index < displayItems.length; index += 1) {
+    const item = displayItems[index]
+    const isAssistantMessage = item.kind === 'message'
+      && item.message.role === 'assistant'
+      && item.item.run_id === runId
+    const isRunToolGroup = item.kind === 'tool_group'
+      && item.items.some(toolItem => toolItem.run_id === runId)
+    if (isAssistantMessage || isRunToolGroup) {
+      anchorAfter = index
+    }
+  }
+
+  let insertAt = anchorAfter >= 0 ? anchorAfter + 1 : -1
+  if (insertAt < 0) {
+    // 无消息/工具时，退到本 run 其它展示项之后。
+    for (let index = displayItems.length - 1; index >= 0; index -= 1) {
+      const item = displayItems[index]
+      if (
+        (item.kind === 'message' && item.item.run_id === runId)
+        || (item.kind === 'reasoning' && item.item.run_id === runId)
+        || (item.kind === 'feedback_request' && item.item.run_id === runId)
+        || (item.kind === 'run_context' && item.item.run_id === runId)
+      ) {
+        insertAt = index + 1
+        break
+      }
+    }
+  }
+  if (insertAt < 0) {
+    insertAt = displayItems.length
+  }
+
+  // insertAt 落在锚点后一项；若下一项是 run_status，splice 会自然插在状态条之前。
+  displayItems.splice(insertAt, 0, {
+    id: `entity-summary:${runId}`,
+    kind: 'entity_summary',
+    runId,
+    items,
+  })
+  insertedRunIds.add(runId)
 }
 
 /**

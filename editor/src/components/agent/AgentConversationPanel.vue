@@ -1051,6 +1051,8 @@ const panelShellClass = computed(() => (
 const timelineDisplayItems = computed(() => buildTimelineDisplayItems(timelineItems.value, {
   pendingRequirement: pendingRequirement.value,
   memberRuns: memberRuns.value,
+  workspaceId: props.workspaceId,
+  activeRunId: activeRun.value?.run_id ?? null,
 }))
 const composerActionDisabled = computed(() => (
   isStreaming.value

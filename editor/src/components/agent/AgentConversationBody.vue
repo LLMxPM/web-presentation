@@ -313,6 +313,11 @@
             </div>
           </article>
 
+          <AgentEntitySummaryCards
+            v-else-if="item.kind === 'entity_summary'"
+            :items="item.items"
+          />
+
           <article v-else-if="item.kind === 'run_status'" class="conversation-message conversation-message--trace px-0.5 py-0">
             <div class="flex min-h-control-xs w-full items-center gap-2 rounded-ui-md px-2 text-xs" :class="getRunStatusContainerClass(item.status)">
               <span class="h-1.5 w-1.5 shrink-0 rounded-full" :class="getRunStatusDotClass(item.status)" />
@@ -401,6 +406,7 @@ import { UiBadge, UiButton, UiIconButton } from '@/components/ui'
 import AgentImagePreviewDialog from '@/components/agent/AgentImagePreviewDialog.vue'
 import AgentVisualToolCard from '@/components/agent/AgentVisualToolCard.vue'
 import AgentRunContextCard from '@/components/agent/AgentRunContextCard.vue'
+import AgentEntitySummaryCards from '@/components/agent/AgentEntitySummaryCards.vue'
 import {
   createMessageStreamingResolver,
   formatCollapsedUserMessageSummary,

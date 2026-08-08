@@ -321,6 +321,121 @@ describe('agent-conversation-panel timeline helpers', () => {
     expect(toolGroup?.kind === 'tool_group' ? toolGroup.tools[0].delegatedMemberRuns : []).toEqual(memberRuns)
   })
 
+  it('Run 终态后应在助手消息与完成状态之间插入项目/页面实体摘要', () => {
+    const items = buildTimelineDisplayItems([
+      timelineItem({ id: 'user-1', kind: 'message', role: 'user', order_index: 0, content: '创建封面页' }),
+      timelineItem({
+        id: 'tool-1',
+        kind: 'tool',
+        role: null,
+        order_index: 1,
+        status: 'completed',
+        tool: {
+          tool_call_id: 'call-1',
+          tool_name: 'create_entity',
+          status: 'completed',
+          input_payload: { resource_type: 'page', project_id: 21, title: '封面' },
+          output_payload: {
+            success: true,
+            mutation: { resource_type: 'page', operation: 'create' },
+            target: { id: 42, resource_type: 'page' },
+            data: { page_id: 42, project_id: 21, title: '封面' },
+          },
+          message: '',
+        },
+      }),
+      timelineItem({ id: 'assistant-1', kind: 'message', role: 'assistant', order_index: 2, content: '已创建封面页。' }),
+      timelineItem({ id: 'status-1', kind: 'run_status', role: null, order_index: 3, status: 'completed', content: '运行已完成。' }),
+    ], { workspaceId: 11 })
+
+    expect(items.map(item => item.kind)).toEqual(['message', 'tool_group', 'message', 'entity_summary', 'run_status'])
+    const summary = items.find(item => item.kind === 'entity_summary')
+    expect(summary?.kind === 'entity_summary' ? summary.items : []).toEqual([
+      expect.objectContaining({ resourceType: 'page', id: 42, projectId: 21, name: '封面', effect: 'create' }),
+    ])
+  })
+
+  it('当前 activeRun 未结束时不应插入实体摘要', () => {
+    const items = buildTimelineDisplayItems([
+      timelineItem({
+        id: 'tool-1',
+        kind: 'tool',
+        role: null,
+        order_index: 0,
+        status: 'completed',
+        tool: {
+          tool_call_id: 'call-1',
+          tool_name: 'apply_page_edits',
+          status: 'completed',
+          input_payload: { page_id: 31 },
+          output_payload: { success: true, page_id: 31 },
+          message: '',
+        },
+      }),
+      timelineItem({ id: 'status-1', kind: 'run_status', role: null, order_index: 1, status: 'waiting_external', content: '页面变更正在后台处理。' }),
+    ], { workspaceId: 11, activeRunId: 'run-1' })
+
+    expect(items.map(item => item.kind)).toEqual(['tool_group', 'run_status'])
+  })
+
+  it('历史快照无 run_status 时仍应展示实体摘要', () => {
+    const items = buildTimelineDisplayItems([
+      timelineItem({ id: 'user-1', kind: 'message', role: 'user', order_index: 0, content: '创建封面页' }),
+      timelineItem({
+        id: 'tool-1',
+        kind: 'tool',
+        role: null,
+        order_index: 1,
+        status: 'completed',
+        tool: {
+          tool_call_id: 'call-1',
+          tool_name: 'create_entity',
+          status: 'completed',
+          input_payload: { resource_type: 'page', project_id: 21, title: '封面' },
+          output_payload: {
+            success: true,
+            mutation: { resource_type: 'page', operation: 'create' },
+            target: { id: 42, resource_type: 'page' },
+            data: { page_id: 42, project_id: 21, title: '封面' },
+          },
+          message: '',
+        },
+      }),
+      timelineItem({ id: 'assistant-1', kind: 'message', role: 'assistant', order_index: 2, content: '已创建封面页。' }),
+    ], { workspaceId: 11, activeRunId: null })
+
+    expect(items.map(item => item.kind)).toEqual(['message', 'tool_group', 'message', 'entity_summary'])
+  })
+
+  it('摘要卡应插在助手消息与工具组二者的最后位置之后', () => {
+    const items = buildTimelineDisplayItems([
+      timelineItem({ id: 'assistant-1', kind: 'message', role: 'assistant', order_index: 0, content: '先说明，再改页面。' }),
+      timelineItem({
+        id: 'tool-1',
+        kind: 'tool',
+        role: null,
+        order_index: 1,
+        status: 'completed',
+        tool: {
+          tool_call_id: 'call-1',
+          tool_name: 'apply_page_edits',
+          status: 'completed',
+          input_payload: { page_id: 31 },
+          output_payload: {
+            success: true,
+            mutation: { resource_type: 'page', operation: 'update' },
+            target: { id: 31, resource_type: 'page' },
+            data: { page_id: 31, project_id: 21, title: '经营概览' },
+          },
+          message: '',
+        },
+      }),
+      timelineItem({ id: 'status-1', kind: 'run_status', role: null, order_index: 2, status: 'completed', content: '运行已完成。' }),
+    ], { workspaceId: 11, activeRunId: null })
+
+    expect(items.map(item => item.kind)).toEqual(['message', 'tool_group', 'entity_summary', 'run_status'])
+  })
+
   it('运行失败标题应使用当前智能体名称', () => {
     expect(buildRunIssueState('模型协议错误', '组件助手').title).toBe('组件助手执行失败')
   })
