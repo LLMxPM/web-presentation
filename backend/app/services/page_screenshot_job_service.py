@@ -227,10 +227,11 @@ class PageScreenshotJobService:
         )
         self._raise_if_job_stale(terminal)
 
-        self.session.expire_all()
-        refreshed_page = await self.page_service._get_page_or_raise(page_id)
-        content = await self.object_storage_service.read_object(str(refreshed_page.screenshot_storage_key))
-        return await self.screenshot_service._build_result(page=refreshed_page, content=content, refreshed=True)
+        # 后台 Worker 使用独立 Session 发布截图，只刷新当前页面即可读取最新指针。
+        # 不得 expire_all()，否则会让 AI 工具在同一 Session 中预加载的附件等对象失效。
+        await self.session.refresh(page)
+        content = await self.object_storage_service.read_object(str(page.screenshot_storage_key))
+        return await self.screenshot_service._build_result(page=page, content=content, refreshed=True)
 
     async def wait_for_job_terminal(self, job_id: int, *, timeout_seconds: float) -> PageScreenshotJob:
         """兼容旧调用：等待过程使用短 Session，终态才在当前会话读取一次。"""
