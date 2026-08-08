@@ -81,6 +81,7 @@ const NATIVE_CONTROL_EXEMPTIONS: NativeControlExemption[] = [
   { relativePath: 'components/page/PageCreateCard.vue', tag: 'button', expectedCount: 1, reason: '整卡片新增页面触发区' },
   { relativePath: 'components/project/ProjectCreateCard.vue', tag: 'button', expectedCount: 1, reason: '整卡片新增项目触发区' },
   { relativePath: 'components/page/PageCard.vue', tag: 'button', expectedCount: 1, reason: '页面编码内联复制触发按钮', attributePattern: /\baria-label\s*=\s*.*复制页面编码：/i },
+  { relativePath: 'components/agent/AgentFloatingTrigger.vue', tag: 'button', expectedCount: 1, reason: '可拖拽悬浮 AI 形象入口，依赖原生指针事件与固定定位' },
 ]
 
 /**

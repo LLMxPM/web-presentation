@@ -9,7 +9,7 @@ import { openFirstPage, openFirstProject, waitForWorkspaceHome } from '../helper
 test('工作空间级内容助手无需进入项目即可打开，并可随页面导航继续使用', async ({ page }) => {
   await loginAsAdmin(page)
   await waitForWorkspaceHome(page)
-  await page.locator('[data-testid="agent-sidebar-toggle"]').click()
+  await page.locator('[data-testid="agent-floating-trigger"]').click()
   const panel = page.locator('[data-testid="agent-sidebar-panel"]')
   await expect(panel).toBeVisible()
   await expect(panel).not.toContainText('需要先进入项目')

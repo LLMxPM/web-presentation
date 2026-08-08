@@ -92,12 +92,23 @@ vi.mock('@/components/nav/ProjectQuickSwitcher.vue', () => ({
 vi.mock('@/components/agent/AgentGlobalSidebar.vue', () => ({
   default: {
     name: 'AgentGlobalSidebar',
-    props: ['agentId', 'source'],
+    props: ['expanded', 'source'],
     emits: ['update:expanded'],
     template: `
-      <aside data-testid="agent-sidebar" :data-agent-id="agentId" :data-source="source">
-        <button type="button" data-testid="agent-expand-state" @click="$emit('update:expanded', true)">展开智能体</button>
+      <aside data-testid="agent-sidebar" :data-source="source" :data-expanded="expanded">
+        <button type="button" data-testid="agent-collapse-state" @click="$emit('update:expanded', false)">收起智能体</button>
       </aside>
+    `,
+  },
+}))
+
+vi.mock('@/components/agent/AgentFloatingTrigger.vue', () => ({
+  default: {
+    name: 'AgentFloatingTrigger',
+    props: ['expanded'],
+    emits: ['update:expanded'],
+    template: `
+      <button type="button" data-testid="agent-floating-trigger" :data-expanded="expanded" @click="$emit('update:expanded', true)">打开智能体</button>
     `,
   },
 }))
@@ -179,29 +190,37 @@ describe('AdminLayout', () => {
 
     await waitFor(() => {
       expect(screen.queryByTestId('agent-sidebar')).toBeNull()
+      expect(screen.queryByTestId('agent-floating-trigger')).toBeNull()
       expect(screen.queryByTestId('workspace-dock')).toBeNull()
       expect(screen.queryByTestId('project-quick-switcher')).toBeNull()
     })
   })
 
-  it('智能体侧栏展开时应隐藏顶部品牌标题', async () => {
+  it('智能体面板应默认展开，收起后显示顶部品牌与悬浮入口', async () => {
     renderLayout()
-
-    expect(screen.getByTestId('app-brand-title')).toBeTruthy()
-    expect(screen.getByTestId('app-brand-title').parentElement).not.toHaveClass('admin-layout-brand-expanded')
-
-    await fireEvent.click(screen.getByTestId('agent-expand-state'))
 
     expect(screen.queryByTestId('app-brand-title')).toBeNull()
     expect(screen.getByTestId('admin-layout').querySelector('.admin-layout-brand')).toHaveClass('admin-layout-brand-expanded')
+    expect(screen.getByTestId('agent-sidebar').dataset.expanded).toBe('true')
+    expect(screen.getByTestId('agent-floating-trigger').dataset.expanded).toBe('true')
+
+    await fireEvent.click(screen.getByTestId('agent-collapse-state'))
+
+    expect(screen.getByTestId('app-brand-title')).toBeTruthy()
+    expect(screen.getByTestId('agent-sidebar').dataset.expanded).toBe('false')
+
+    await fireEvent.click(screen.getByTestId('agent-floating-trigger'))
+
+    expect(screen.queryByTestId('app-brand-title')).toBeNull()
+    expect(screen.getByTestId('agent-sidebar').dataset.expanded).toBe('true')
   })
 
   it.each([
-    ['components', 'workspace-dock-components', 'agent-coordinator', 'editor-component-library'],
-    ['assets', 'workspace-dock-assets', 'agent-coordinator', 'editor-asset-library'],
-    ['themes', 'workspace-dock-themes', 'agent-coordinator', 'editor-agent-sidebar'],
-    ['workspaceStyles', 'workspace-dock-styles', 'agent-coordinator', 'editor-agent-sidebar'],
-  ])('进入 %s 页面时应高亮对应 Dock 入口并保持正确智能体上下文', (routeName, testId, agentId, source) => {
+    ['components', 'workspace-dock-components', 'editor-component-library'],
+    ['assets', 'workspace-dock-assets', 'editor-asset-library'],
+    ['themes', 'workspace-dock-themes', 'editor-agent-sidebar'],
+    ['workspaceStyles', 'workspace-dock-styles', 'editor-agent-sidebar'],
+  ])('进入 %s 页面时应高亮对应 Dock 入口并保持正确智能体上下文', (routeName, testId, source) => {
     setRoute({
       name: routeName,
       params: { workspaceId: '1' },
@@ -210,7 +229,7 @@ describe('AdminLayout', () => {
     renderLayout()
 
     expect(screen.getByTestId(testId)).toHaveClass('dock-button-active')
-    expect(screen.getByTestId('agent-sidebar').dataset.agentId).toBe(agentId)
+    expect(screen.getByTestId('agent-floating-trigger')).toBeTruthy()
     expect(screen.getByTestId('agent-sidebar').dataset.source).toBe(source)
   })
 

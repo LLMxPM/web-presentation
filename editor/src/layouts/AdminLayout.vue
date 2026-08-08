@@ -3,7 +3,7 @@
   <div data-testid="admin-layout" class="admin-layout flex h-screen min-w-0 overflow-hidden bg-canvas text-text">
     <aside v-if="sidebarsVisible" class="admin-layout-agent">
       <AgentGlobalSidebar
-        :agent-id="activeAgentId"
+        :expanded="agentSidebarExpanded"
         :workspace-id="workspaceId"
         :project-id="projectId"
         :page-id="pageId"
@@ -16,6 +16,12 @@
         @update:expanded="agentSidebarExpanded = $event"
       />
     </aside>
+
+    <AgentFloatingTrigger
+      v-if="sidebarsVisible && workspaceId"
+      :expanded="agentSidebarExpanded"
+      @update:expanded="agentSidebarExpanded = $event"
+    />
 
     <div class="flex min-w-0 flex-1 flex-col overflow-hidden">
       <!-- Header Area -->
@@ -121,6 +127,7 @@ import WorkspaceSwitcher from '@/components/nav/WorkspaceSwitcher.vue'
 import ProjectQuickSwitcher from '@/components/nav/ProjectQuickSwitcher.vue'
 import WorkspaceDock from '@/components/nav/WorkspaceDock.vue'
 import AgentGlobalSidebar from '@/components/agent/AgentGlobalSidebar.vue'
+import AgentFloatingTrigger from '@/components/agent/AgentFloatingTrigger.vue'
 import OpenSourceFooter from '@/components/layout/OpenSourceFooter.vue'
 import LibraryDrawerHost from '@/components/project/LibraryDrawerHost.vue'
 import { agentSidebarExpandedKey } from '@/composables/agent-sidebar-state'
@@ -131,7 +138,8 @@ import type { WorkspaceComponentItem } from '@/types/api'
 const route = useRoute()
 const router = useRouter()
 const componentAgentSelection = ref<WorkspaceComponentItem | null>(null)
-const agentSidebarExpanded = ref(false)
+/** 工作空间默认展示内容助手，用户可通过面板头部按钮主动收起。 */
+const agentSidebarExpanded = ref(true)
 
 interface HeaderBreadcrumb {
   label: string
@@ -171,9 +179,6 @@ const projectId = computed(() => {
 const pageId = computed(() => {
   const pid = route.params.pageId
   return pid ? parseInt(pid as string, 10) : null
-})
-const activeAgentId = computed(() => {
-  return 'agent-coordinator'
 })
 const activeAgentSource = computed(() => {
   if (route.name === 'components') return 'editor-component-library'

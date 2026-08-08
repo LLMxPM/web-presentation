@@ -68,7 +68,7 @@ test('内容助手在资源库页面仍应展示视觉能力并允许上传参�
 async function openAgentSidebar(page: Page) {
   const panel = page.locator('[data-testid="agent-sidebar-panel"]')
   if (!await panel.isVisible()) {
-    await page.locator('[data-testid="agent-sidebar-toggle"]').click()
+    await page.locator('[data-testid="agent-floating-trigger"]').click()
   }
   await expect(panel).toBeVisible()
 }

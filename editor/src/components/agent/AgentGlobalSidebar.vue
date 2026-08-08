@@ -1,25 +1,6 @@
-<!-- 文件功能：提供后台左侧全局智能体入口，按当前路由上下文切换助手并校验可用性。 -->
+<!-- 文件功能：提供后台左侧全局智能体对话面板，按当前路由上下文切换助手并校验可用性。 -->
 <template>
   <aside class="flex h-full shrink-0 bg-surface">
-    <div v-if="!expanded" class="flex w-14 flex-col items-center gap-2 border-r border-border-muted py-4">
-      <UiIconButton
-        v-for="agent in agentButtons"
-        :key="agent.id"
-        type="button"
-        :data-testid="agent.id === 'agent-coordinator' ? 'agent-sidebar-toggle' : undefined"
-        :label="resolveAgentButtonTitle(agent.id, agent.name)"
-        class="h-10 w-10 rounded-lg border text-text-muted transition"
-        :class="getAgentRailButtonClass(agent.id, agent.icon)"
-        :title="resolveAgentButtonTitle(agent.id, agent.name)"
-        :disabled="!canOpenAgent(agent.id)"
-        @click="openAgent(agent.id)"
-      >
-        <span class="flex h-7 w-7 items-center justify-center rounded-lg ring-1 transition" :class="getAgentIconShellClass(agent.icon, agent.id === agentId)">
-          <component :is="resolveAgentIconComponent(agent.icon)" class="h-4 w-4" />
-        </span>
-      </UiIconButton>
-    </div>
-
     <Transition name="agent-panel">
       <section v-if="expanded" data-testid="agent-sidebar-panel" class="agent-sidebar-panel flex h-full flex-col overflow-hidden border border-border bg-canvas">
         <header class="border-b border-border bg-surface p-3">
@@ -30,7 +11,7 @@
               label="收起"
               size="sm"
               class="shrink-0 border-transparent text-text-muted hover:border-border hover:bg-surface-hover hover:text-text"
-              @click="expanded = false"
+              @click="emit('update:expanded', false)"
             >
               <PanelLeftClose class="h-4 w-4" />
             </UiIconButton>
@@ -49,18 +30,17 @@
           :page-id="scope.page_id ?? null"
           :component-id="scope.component_id ?? null"
           :agent-id="agentId"
-          :agent-display-name="selectedAgent?.name || '内容助手'"
+          :agent-display-name="'内容助手'"
           :scope="scope"
           :route-scope="routeScope"
           :context-title="contextTitle"
           :header-scope-target="headerScopeTarget"
           :header-actions-target="headerActionsTarget"
-          :auto-create-key="autoCreateKey"
           :auto-navigate-target="agentTargetRoute"
           :enable-page-patch-actions="scope.scope_type === 'page'"
           :empty-text="emptyText"
           :composer-placeholder="composerPlaceholder"
-          :route-available="isAgentRunAvailable(agentId)"
+          :route-available="isAgentRunAvailable()"
           :route-unavailable-reason="activeAgentUnavailableReason"
           @apply-suggested-content="handleApplySuggestedContent"
           @page-updated="handlePageUpdated"
@@ -77,13 +57,12 @@
 </template>
 
 <script setup lang="ts">
-import { computed, defineAsyncComponent, ref, watch } from 'vue'
+import { computed, defineAsyncComponent } from 'vue'
 import { useRoute } from 'vue-router'
 import { useQuery } from '@tanstack/vue-query'
 import { PanelLeftClose } from '@lucide/vue'
 
 import { listAgents } from '@/api/ai'
-import { getAgentIconShellClass, resolveAgentIconComponent } from '@/components/agent/agent-icon'
 import { UiIconButton } from '@/components/ui'
 import {
   buildPageDetailPath,
@@ -93,7 +72,7 @@ import type { AgentMutationRefreshEvent } from '@/components/agent/agent-convers
 import type { AgentScopeContext } from '@/types/api'
 
 interface Props {
-  agentId?: string
+  expanded?: boolean
   workspaceId: number | null
   projectId?: number | null
   pageId?: number | null
@@ -106,7 +85,7 @@ interface Props {
 }
 
 const props = withDefaults(defineProps<Props>(), {
-  agentId: 'agent-coordinator',
+  expanded: true,
   projectId: null,
   pageId: null,
   componentId: null,
@@ -121,16 +100,12 @@ const emit = defineEmits<{
 }>()
 
 const AgentAssistantPanel = defineAsyncComponent(() => import('@/components/agent/AgentAssistantPanel.vue'))
-const expanded = ref(true)
+const agentId = 'agent-coordinator'
 const route = useRoute()
-const activeAgentId = ref('agent-coordinator')
-const agentId = computed(() => activeAgentId.value)
 const headerScopeId = 'global-agent-scope-summary'
 const headerScopeTarget = `#${headerScopeId}`
 const headerActionsId = 'global-agent-session-actions'
 const headerActionsTarget = `#${headerActionsId}`
-const autoCreateKey = ref<string | number | null>(null)
-const autoCreateSequence = ref(0)
 
 const workspaceId = computed(() => props.workspaceId)
 const projectId = computed(() => props.projectId ?? null)
@@ -138,8 +113,8 @@ const pageId = computed(() => props.pageId ?? null)
 const workspaceName = computed(() => normalizeContextName(props.workspaceName))
 const projectName = computed(() => normalizeContextName(props.projectName))
 const pageTitle = computed(() => normalizeContextName(props.pageTitle))
-const agentPanelKey = computed(() => `${workspaceId.value ?? 'none'}:${agentId.value}`)
-const agentTarget = computed(() => resolveAgentTarget(agentId.value))
+const agentPanelKey = computed(() => `${workspaceId.value ?? 'none'}:${agentId}`)
+const agentTarget = computed(() => resolveAgentTarget())
 const scope = computed(() => agentTarget.value.scope)
 const routeScope = computed(() => resolveCurrentRouteScope())
 const agentTargetRoute = computed(() => agentTarget.value.routePath)
@@ -153,19 +128,13 @@ const scopeKey = computed(() => [
 ].join(':'))
 const agentsQuery = useQuery(
   computed(() => ({
-    queryKey: ['ai-agents', 'sidebar', agentId.value, scopeKey.value],
+    queryKey: ['ai-agents', 'sidebar', agentId, scopeKey.value],
     queryFn: () => listAgents(scope.value),
     enabled: !!workspaceId.value,
   })),
 )
-const agentButtons = computed(() => agentsQuery.data.value?.length
-  ? mergeAgentButtons(agentsQuery.data.value)
-  : resolveFallbackAgentButtons())
-const selectedAgent = computed(() => (
-  agentButtons.value.find(agent => agent.id === agentId.value) ?? resolveFallbackAgentButton(agentId.value)
-))
 const activeAgentUnavailableReason = computed(() => (
-  resolveAgentRunUnavailableReason(agentId.value) ?? ''
+  resolveAgentRunUnavailableReason() ?? ''
 ))
 const contextTitle = computed(() => agentTarget.value.contextTitle)
 const contextTypeLabel = computed(() => agentTarget.value.contextTypeLabel)
@@ -183,33 +152,10 @@ interface AgentTarget {
   contextTypeLabel: string
 }
 
-/** 返回列表加载前的智能体按钮元数据，避免短暂回退到错误图标。 */
-function resolveFallbackAgentButton(targetAgentId: string): { id: string; name: string; icon: string } {
-  void targetAgentId
-  return { id: 'agent-coordinator', name: '内容助手', icon: 'content-spark' }
-}
-
 /**
- * 后端通常会返回完整智能体列表；本地补齐可避免查询切换瞬间丢失切换入口。
+ * 按当前路由上下文解析统一内容助手的工作范围和默认落点。
  */
-function resolveFallbackAgentButtons(): Array<{ id: string; name: string; icon: string }> {
-  return [resolveFallbackAgentButton('agent-coordinator')]
-}
-
-function mergeAgentButtons<T extends { id: string }>(loadedAgents: T[]): Array<T | { id: string; name: string; icon: string }> {
-  const unifiedAgents = loadedAgents.filter(agent => agent.id === 'agent-coordinator')
-  const loadedIds = new Set(unifiedAgents.map(agent => agent.id))
-  return [
-    ...unifiedAgents,
-    ...resolveFallbackAgentButtons().filter(agent => !loadedIds.has(agent.id)),
-  ]
-}
-
-/**
- * 按“目标助手”解析工作范围和默认落点；只有显式切换助手时才会使用 routePath 自动跳转。
- */
-function resolveAgentTarget(targetAgentId: string): AgentTarget {
-  void targetAgentId
+function resolveAgentTarget(): AgentTarget {
   const wid = workspaceId.value ?? 0
   if (!wid) {
     return {
@@ -346,142 +292,22 @@ function resolveContentSource(): string {
 }
 
 /**
- * 读取当前路由上下文下指定助手的运行不可用原因；返回空值表示可以发起对话。
- * @param targetAgentId 待判断的智能体 ID
+ * 读取当前路由上下文下统一内容助手的运行不可用原因；返回空值表示可以发起对话。
  */
-function resolveAgentRunUnavailableReason(targetAgentId: string): string | null {
+function resolveAgentRunUnavailableReason(): string | null {
   if (!workspaceId.value) {
     return '当前路由缺少工作空间上下文。'
   }
-  const routeBoundReason = resolveRouteBoundAgentUnavailableReason(targetAgentId)
-  if (routeBoundReason) {
-    return routeBoundReason
-  }
-  const loadedAgent = agentsQuery.data.value?.find(agent => agent.id === targetAgentId)
+  const loadedAgent = agentsQuery.data.value?.find(agent => agent.id === agentId)
   if (loadedAgent?.available === false) {
     return loadedAgent.unavailable_reason || '当前路由上下文下不可用。'
   }
   return null
 }
 
-/**
- * 读取侧栏切换入口的不可用原因；库助手允许跨页面切换，但不能跨页面发起对话。
- * @param targetAgentId 待判断的智能体 ID
- */
-function resolveAgentSwitchUnavailableReason(targetAgentId: string): string | null {
-  if (!workspaceId.value) {
-    return '当前路由缺少工作空间上下文。'
-  }
-  const loadedAgent = agentsQuery.data.value?.find(agent => agent.id === targetAgentId)
-  if (loadedAgent?.available === false) {
-    return loadedAgent.unavailable_reason || '当前路由上下文下不可用。'
-  }
-  return null
+function isAgentRunAvailable(): boolean {
+  return resolveAgentRunUnavailableReason() === null
 }
-
-function isAgentRunAvailable(targetAgentId: string): boolean {
-  return resolveAgentRunUnavailableReason(targetAgentId) === null
-}
-
-function canOpenAgent(targetAgentId: string): boolean {
-  return targetAgentId === 'agent-coordinator' && Boolean(workspaceId.value)
-}
-
-/**
- * 统一助手在所有工作空间页面均可发起对话，不再绑定组件库或资源库路由。
- * @param targetAgentId 待判断的智能体 ID
- */
-function resolveRouteBoundAgentUnavailableReason(targetAgentId: string): string | null {
-  void targetAgentId
-  return null
-}
-
-function resolveAgentButtonTitle(targetAgentId: string, name: string): string {
-  const unavailableReason = resolveAgentSwitchUnavailableReason(targetAgentId)
-  return unavailableReason ? `${name}：${unavailableReason}` : name
-}
-
-/**
- * 返回收起态窄栏按钮样式，与展开态 tab 使用同一套强调色。
- */
-function getAgentRailButtonClass(targetAgentId: string, icon: string | null | undefined): string {
-  if (!canOpenAgent(targetAgentId)) {
-    return 'cursor-not-allowed border-transparent opacity-40 hover:bg-transparent hover:text-text-muted'
-  }
-  if (targetAgentId !== agentId.value) {
-    return 'border-transparent hover:border-border hover:bg-surface-muted hover:text-text'
-  }
-  return resolveAgentActiveClass(icon, 'rail')
-}
-
-/**
- * 根据智能体图标色系返回选中态样式，避免所有智能体都显示为同一种蓝色。
- * 使用 ! 前缀确保选中态样式不被 UiButton/UiIconButton ghost variant 的
- * border-transparent / bg-transparent 覆盖。
- */
-function resolveAgentActiveClass(icon: string | null | undefined, mode: 'tab' | 'rail'): string {
-  const normalizedIcon = String(icon || '').trim()
-  if (normalizedIcon === 'component-blocks') {
-    return mode === 'tab'
-      ? '!border-ai !bg-ai !text-text-inverse'
-      : '!border-ai-border !bg-ai-muted !text-ai-strong shadow-sm ring-2 ring-ai-border'
-  }
-  if (normalizedIcon === 'resource-images') {
-    return mode === 'tab'
-      ? '!border-success !bg-success !text-text-inverse'
-      : '!border-success-border !bg-success-muted !text-success-strong shadow-sm ring-2 ring-success-border'
-  }
-  if (normalizedIcon === 'content-spark') {
-    return mode === 'tab'
-      ? '!border-info !bg-info !text-text-inverse'
-      : '!border-info-border !bg-info-muted !text-info-strong shadow-sm ring-2 ring-info-border'
-  }
-  return mode === 'tab'
-    ? '!border-surface-inverse-raised !bg-surface-inverse-raised !text-text-on-inverse'
-    : '!border-border !bg-surface-muted !text-text shadow-sm ring-2 ring-border-muted'
-}
-
-function openAgent(targetAgentId: string): void {
-  if (!canOpenAgent(targetAgentId)) {
-    return
-  }
-  const agentChanged = targetAgentId !== activeAgentId.value
-  activeAgentId.value = targetAgentId
-  expanded.value = true
-  if (agentChanged && isAgentRunAvailable(targetAgentId)) {
-    autoCreateSequence.value += 1
-    autoCreateKey.value = `${targetAgentId}:${autoCreateSequence.value}`
-    return
-  }
-  autoCreateKey.value = null
-}
-
-watch(
-  expanded,
-  (value) => {
-    emit('update:expanded', value)
-  },
-  { immediate: true },
-)
-
-watch(
-  () => workspaceId.value,
-  () => {
-    activeAgentId.value = 'agent-coordinator'
-    autoCreateKey.value = null
-  },
-)
-
-watch(
-  () => [props.agentId, route.name] as const,
-  () => {
-    if (!canOpenAgent(activeAgentId.value)) {
-      activeAgentId.value = 'agent-coordinator'
-      autoCreateKey.value = null
-    }
-  },
-  { immediate: true },
-)
 
 function handleApplySuggestedContent(content: string): void {
   window.dispatchEvent(new CustomEvent('agent:apply-suggested-content', {

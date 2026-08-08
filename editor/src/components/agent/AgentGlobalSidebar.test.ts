@@ -1,5 +1,5 @@
 /**
- * 文件功能：验证全局侧栏只展示统一内容助手，并按当前路由提供业务上下文。
+ * 文件功能：验证全局侧栏只展示统一内容助手的对话面板，默认展开并按当前路由提供业务上下文。
  */
 import { defineComponent, reactive } from 'vue'
 import { render, screen, waitFor } from '@testing-library/vue'
@@ -43,7 +43,7 @@ describe('AgentGlobalSidebar', () => {
     listAgentsMock.mockResolvedValue([unifiedAgent])
   })
 
-  it('单智能体模式不展示助手切换 Tab 并默认展开', async () => {
+  it('默认展开并只展示统一内容助手面板', async () => {
     renderSidebar()
 
     expect(screen.getByTestId('agent-sidebar-panel')).toBeTruthy()
@@ -60,14 +60,14 @@ describe('AgentGlobalSidebar', () => {
       { ...unifiedAgent, id: 'component-manager', name: '组件助手' },
       { ...unifiedAgent, id: 'resource-manager', name: '资源助手' },
     ])
-    renderSidebar()
+    renderSidebar({ expanded: true })
 
     await waitFor(() => expect(screen.queryByRole('tab')).toBeNull())
     expect(screen.getByTestId('agent-panel').dataset.agentId).toBe('agent-coordinator')
   })
 
   it('组件库和页面路由都复用同一助手，并传入当前业务上下文', async () => {
-    const view = renderSidebar({ projectId: 7, pageId: 9, source: 'editor-page-detail' })
+    const view = renderSidebar({ projectId: 7, pageId: 9, source: 'editor-page-detail', expanded: true })
 
     await waitFor(() => expect(screen.getByTestId('agent-panel').dataset.agentId).toBe('agent-coordinator'))
     expect(screen.getByTestId('agent-panel').dataset.scopeType).toBe('workspace')
