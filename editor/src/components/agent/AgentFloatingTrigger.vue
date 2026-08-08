@@ -23,9 +23,7 @@
         <img class="agent-trigger__companion" :src="aiCompanionUrl" alt="">
       </span>
       <span class="agent-trigger__label" aria-hidden="true">
-        内容助手
-        <span>·</span>
-        <span>拖动调整位置</span>
+        点击开始创作
       </span>
     </button>
   </Transition>
@@ -48,7 +46,7 @@ const emit = defineEmits<{
 
 /** 全局持久化的形象顶部坐标 key（单位 px，相对视口）。 */
 const STORAGE_KEY = 'web-presentation:agent-floating-trigger-top'
-const TRIGGER_SIZE = 48
+const TRIGGER_SIZE = 72
 const VERTICAL_GAP = 16
 const DRAG_THRESHOLD = 5
 
@@ -152,8 +150,8 @@ onUnmounted(() => {
   position: fixed;
   left: 10px;
   z-index: var(--ui-z-dock);
-  width: 48px;
-  height: 48px;
+  width: 72px;
+  height: 72px;
   padding: 0;
   border: none;
   background: transparent;
@@ -180,20 +178,11 @@ onUnmounted(() => {
 
 .agent-trigger__surface {
   position: absolute;
-  inset: -3px;
+  inset: 0;
   display: grid;
   place-items: center;
   filter: drop-shadow(0 7px 9px rgb(var(--ui-overlay) / 0.2));
   transition: filter 0.18s ease;
-}
-
-.agent-trigger__surface::before {
-  position: absolute;
-  inset: 7px 5px 4px;
-  border: 1px solid rgb(var(--ui-ai-border) / 0.8);
-  border-radius: 9999px;
-  background: radial-gradient(circle at 45% 38%, rgb(var(--ui-surface-raised)) 0%, rgb(var(--ui-ai-muted)) 100%);
-  content: '';
 }
 
 .agent-trigger:hover .agent-trigger__surface,
@@ -203,16 +192,17 @@ onUnmounted(() => {
 
 .agent-trigger__companion {
   position: relative;
-  width: 54px;
-  height: 54px;
+  width: 72px;
+  height: 72px;
   object-fit: contain;
   pointer-events: none;
+  transform: scaleX(-1);
 }
 
 .agent-trigger__label {
   position: absolute;
   top: 50%;
-  left: 61px;
+  left: 85px;
   display: flex;
   width: max-content;
   align-items: center;
