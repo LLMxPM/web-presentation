@@ -3,8 +3,8 @@
   <aside class="flex h-full shrink-0 bg-surface">
     <Transition name="agent-panel">
       <section v-if="expanded" data-testid="agent-sidebar-panel" class="agent-sidebar-panel flex h-full flex-col overflow-hidden border border-border bg-canvas">
-        <header class="border-b border-border bg-surface p-3">
-          <div class="grid h-8 grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2">
+        <header class="flex h-14 shrink-0 items-center border-b border-border bg-surface px-3">
+          <div class="grid w-full grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2">
             <div :id="headerScopeId" class="min-w-0 flex-1" />
             <div :id="headerActionsId" class="flex shrink-0 items-center justify-end" />
             <UiIconButton
