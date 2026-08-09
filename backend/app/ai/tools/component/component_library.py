@@ -1,4 +1,4 @@
-"""文件功能：定义组件库读取、草稿、Edits 与归档工具。"""
+"""文件功能：定义组件库读取、草稿、Edits 与发布工具。"""
 
 from __future__ import annotations
 
@@ -64,7 +64,6 @@ def build_component_manager_tools(session_factory: async_sessionmaker[AsyncSessi
         build_apply_component_edits_tool(session_factory),
         build_update_component_metadata_tool(session_factory),
         build_publish_component_tool(session_factory),
-        build_archive_component_tool(session_factory),
     ]
 
 
@@ -511,35 +510,6 @@ def build_publish_component_tool(session_factory: async_sessionmaker[AsyncSessio
             }
 
     return publish_component
-
-
-def build_archive_component_tool(session_factory: async_sessionmaker[AsyncSession]) -> Any:
-    """构建组件归档工具；底层沿用组件服务的软归档语义。"""
-
-    @agent_tool(show_result=False)
-    async def archive_component(run_context: AgentToolContext, component_id: int) -> dict[str, Any]:
-        """归档指定工作空间组件，使其退出默认组件选择范围。"""
-
-        dependencies, claims = await resolve_tool_context(session_factory,
-            run_context,
-            required_scopes=COMPONENT_TOOL_WRITE_SCOPES,
-            required_dependency_fields=("workspace_id",),
-        )
-        operator_id = extract_user_id(str(claims.get("sub")))
-        async with session_factory() as session:
-            service = WorkspaceComponentService(session)
-            component = await service.get(int(component_id))
-            _ensure_component_workspace(component.workspace_id, int(dependencies["workspace_id"]))
-            await service.archive(component.id, user_id=operator_id)
-            return {
-                "success": True,
-                "operator_id": operator_id,
-                "message": "组件已归档。",
-                "component_id": component.id,
-                "component_code": component.code,
-            }
-
-    return archive_component
 
 
 def _ensure_component_workspace(component_workspace_id: int, expected_workspace_id: int) -> None:

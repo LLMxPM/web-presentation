@@ -862,7 +862,7 @@ describe('AgentConversationPanel', () => {
     })
   })
 
-  it('项目样式配置工具完成后应派发项目刷新事件', async () => {
+  it('统一项目修改工具完成后应派发项目刷新事件', async () => {
     const projectUpdatedSpy = vi.fn()
     streamAgentRunEventsByRunIdMock.mockImplementationOnce(async (_runId: string, _payload: unknown, options?: { onEvent?: (event: any) => void }) => {
       options?.onEvent?.({ event: 'run.started', run_id: 'run-project-style', session_id: 'session-1', content: null, data: {} })
@@ -873,8 +873,12 @@ describe('AgentConversationPanel', () => {
         content: null,
         data: {
           tool_call_id: 'tool-project-style',
-          tool_name: 'update_project_style_config',
-          result: { success: true, project_id: 21 },
+          tool_name: 'update_entity',
+          result: {
+            success: true,
+            mutation: { resource_type: 'project', operation: 'update' },
+            target: { id: 21, resource_type: 'project' },
+          },
         },
       })
       options?.onEvent?.({ event: 'run.completed', run_id: 'run-project-style', session_id: 'session-1', content: '样式配置已更新。', data: {} })
@@ -896,7 +900,7 @@ describe('AgentConversationPanel', () => {
         workspaceId: 11,
         projectId: 21,
         pageId: 31,
-        toolName: 'update_project_style_config',
+        toolName: 'update_entity',
       }))
     })
   })

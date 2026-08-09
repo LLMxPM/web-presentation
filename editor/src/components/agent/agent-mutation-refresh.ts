@@ -52,14 +52,6 @@ export function buildMutationRefreshEvents(
     ])
   }
 
-  if (toolName === 'update_project_style_config') {
-    return [{
-      ...baseEvent,
-      kind: 'project',
-      projectId: resolveNumberField(resultRecord, ['project_id']) ?? baseEvent.projectId,
-    }]
-  }
-
   if (toolName === 'update_page_metadata') {
     const pageId = resolveNumberField(resultRecord, ['page_id']) ?? baseEvent.pageId
     return [
@@ -100,7 +92,6 @@ export function buildMutationRefreshEvents(
     || toolName === 'apply_resource_content_diff'
     || toolName === 'update_resource_asset_metadata'
     || toolName === 'copy_resource_asset'
-    || toolName === 'archive_resource_asset'
   ) {
     return [{
       ...baseEvent,

@@ -26,14 +26,15 @@ describe('agent-mutation-refresh', () => {
     ])
   })
 
-  it('update_project_style_config 应触发项目详情刷新', () => {
-    const events = buildMutationRefreshEvents(buildToolCompletedEvent('update_project_style_config', {
+  it('update_entity 的项目变更应触发项目详情刷新', () => {
+    const events = buildMutationRefreshEvents(buildToolCompletedEvent('update_entity', {
       success: true,
-      style_spec_markdown: '## 风格',
+      mutation: { resource_type: 'project', operation: 'update' },
+      target: { id: 21, resource_type: 'project' },
     }), base)
 
     expect(events).toEqual([
-      expect.objectContaining({ kind: 'project', projectId: 21, toolName: 'update_project_style_config' }),
+      expect.objectContaining({ kind: 'project', projectId: 21, toolName: 'update_entity' }),
     ])
   })
 

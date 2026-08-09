@@ -308,7 +308,7 @@ describe('AdminLayout', () => {
       detail: {
         workspaceId: 1,
         projectId: 2,
-        toolName: 'update_project_style_config',
+        toolName: 'update_entity',
         result: { success: true, project_id: 2 },
       },
     }))

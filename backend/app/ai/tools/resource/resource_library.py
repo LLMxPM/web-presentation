@@ -1,4 +1,4 @@
-"""文件功能：定义资源助手的资源读取、内容写入、复制与归档工具。"""
+"""文件功能：定义资源助手的资源读取、内容写入与复制工具。"""
 
 from __future__ import annotations
 
@@ -34,7 +34,6 @@ def build_resource_manager_tools(session_factory: async_sessionmaker[AsyncSessio
         build_apply_resource_content_diff_tool(session_factory),
         build_update_resource_asset_metadata_tool(session_factory),
         build_copy_resource_asset_tool(session_factory),
-        build_archive_resource_asset_tool(session_factory),
     ]
 
 
@@ -418,33 +417,6 @@ def build_copy_resource_asset_tool(session_factory: async_sessionmaker[AsyncSess
             return {"success": True, "message": "资源已复制。", "asset": _dump_asset(asset)}
 
     return copy_resource_asset
-
-
-def build_archive_resource_asset_tool(session_factory: async_sessionmaker[AsyncSession]) -> Any:
-    """构建资源归档工具。"""
-
-    @agent_tool(show_result=False)
-    async def archive_resource_asset(
-        run_context: AgentToolContext,
-        asset_id: int,
-        archive_reason: str | None = None,
-    ) -> dict[str, Any]:
-        """归档资源；归档不影响已存在引用，不走 HITL 确认。"""
-
-        dependencies, _ = await resolve_tool_context(session_factory,
-            run_context,
-            required_scopes=RESOURCE_TOOL_WRITE_SCOPES,
-            required_dependency_fields=("workspace_id",),
-        )
-        async with session_factory() as session:
-            asset = await AssetService(session).archive_asset(
-                int(dependencies["workspace_id"]),
-                int(asset_id),
-                archive_reason=archive_reason,
-            )
-            return {"success": True, "message": "资源已归档，现有引用仍可解析。", "asset": _dump_asset(asset)}
-
-    return archive_resource_asset
 
 
 async def _list_all_resource_assets(

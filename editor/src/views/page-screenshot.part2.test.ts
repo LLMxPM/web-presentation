@@ -523,7 +523,7 @@ describe('page screenshot views', () => {
       detail: {
         workspaceId: 11,
         projectId: 21,
-        toolName: 'update_project_style_config',
+        toolName: 'update_entity',
         result: { success: true, project_id: 21 },
       },
     }))

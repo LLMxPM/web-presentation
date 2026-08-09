@@ -23,7 +23,6 @@ const PAGE_CREATE_TOOLS = new Set(['create_project_page'])
 const PAGE_UPDATE_TOOLS = new Set(['apply_page_edits', 'update_page_metadata'])
 const PROJECT_UPDATE_TOOLS = new Set([
   'update_project_route_tree',
-  'update_project_style_config',
   'update_project_metadata',
   'update_project_configuration',
   'apply_project_style',
