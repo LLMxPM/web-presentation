@@ -107,7 +107,14 @@ _GENERIC_COORDINATOR_DEFAULT_PROMPT = """
 
 页面是项目中的实际内容页，保存标题、摘要、演讲者备注、Vue SFC 源码、当前版本和截图信息。页面通过 project_id 归属项目，也通过项目路由节点进入导航树；修改页面内容会创建新版本，修改项目路由不会修改页面源码。页面可以引用已发布工作空间组件、工作空间资源和版本化 Runtime Kit 能力。
 
-组件是工作空间级共享代码资产，可跨当前工作空间内的多个项目和页面复用。组件当前行保存可编辑草稿，发布后生成正式版本；页面和其他组件应引用已发布版本，不要把未发布草稿当成稳定公共能力。组件可以继续依赖其他已发布组件、工作空间资源和 Runtime Kit。跨页重复使用、职责单一且有稳定 props/slots 契约的结构应主动创建为组件；单页一次性结构不要拆分，避免过度碎片化。
+组件是工作空间级共享代码资产，可跨当前工作空间内的多个项目和页面复用。组件当前行保存可编辑草稿，发布后生成正式版本；页面和其他组件应引用已发布版本，不要把未发布草稿当成稳定公共能力。组件可以继续依赖其他已发布组件、工作空间资源和 Runtime Kit。
+
+组件按职责分为三种类型：
+- 页面组件（component_type=页面组件）：整页模板，根部使用 Runtime Kit 的 DefaultContainer 提供画布能力，负责页面整体结构（如封面页、内容页、章节分隔页）。页面源码的根节点必须是页面组件或直接使用 DefaultContainer。
+- 内容组件（component_type=内容组件）：页面内的内容块，如卡片、图表、表格、指标区等，必须在 preview_schema.props 中声明尺寸控制字段（width、height、minHeight 或 aspectRatio）。
+- 原子组件（component_type=原子组件）：职责单一的小粒度 UI 元素，如按钮、徽章、头像、分割线等，不需要尺寸控制字段。
+
+跨页重复使用、职责单一且有稳定 props/slots 契约的结构应主动创建为组件；单页一次性结构不要拆分，避免过度碎片化。
 
 资源是工作空间级内容资产，包括图片、视频、图标、SVG、Draw.io、Mermaid、Chart、Formula 和字体等。资源通过稳定逻辑名称供页面或组件引用；资源元数据中的 asset_type、render_type、content_editable、标签和近似宽高比决定查询、编辑与渲染方式。项目建议资源只是优先参考集合，不改变资源的工作空间归属，也不限制读取其他可见资源。图标资源可通过 asset.create.new（asset_type=icon）创建为 SVG 文本资源，创建后所有页面均可通过 <Icon name="xxx" /> 引用；需要标识性图形时先查询工作空间已有图标，找不到再用 asset.create.new 创建。
 
@@ -154,7 +161,7 @@ resource_type、mode、view、action、target_id、target_ids、版本锁和 pay
 
 页面按真实 page_width、page_height 和 base_font_size 编写。base_font_size 替代 Tailwind 默认 16px 基准，可按 base_font_size / 16px 理解语义字号与间距倍率；直接写 px、rem 或 Tailwind arbitrary values 不参与该倍率。主要容器、分栏、卡片、图表、图片区和公式区应有明确宽高、flex/grid 约束、overflow 策略和留白，依赖 h-full 的子元素必须具备明确的父级高度上下文。
 
-页面根部优先使用项目建议组件中适合当前页型的已发布组件；找不到合适组件时再查询并使用 Runtime Kit 的 DefaultContainer。
+页面根部应使用已发布的页面组件（component_type=页面组件）；页面组件的根部使用 Runtime Kit 的 DefaultContainer 提供画布能力。优先从项目建议组件中选择合适的已发布页面组件；找不到时查询工作空间内其他已发布页面组件；仍无合适页面组件时直接使用 DefaultContainer 作为页面根节点。
 
 页面设计中需要的标识性图形（箭头、功能图标、装饰元素等），先通过 list_entities 查询工作空间已有图标资源；找不到合适图标时通过 asset.create.new（asset_type=icon）创建 SVG 图标资源，创建后所有页面均可通过 <Icon name="xxx" /> 引用。
 

@@ -68,7 +68,7 @@ class VersionContentOptions(OperationArgumentsModel):
 class ComponentListFilters(OperationArgumentsModel):
     """组件列表筛选参数。"""
 
-    component_type: WorkspaceComponentType | None = Field(default=None, description="组件分类。")
+    component_type: WorkspaceComponentType | None = Field(default=None, description="组件分类：页面组件（整页模板）、内容组件（页面内内容块）、原子组件（小粒度 UI 元素）。")
     keyword: str | None = Field(default=None, description="按组件名称、引用名或摘要搜索。")
     project_id: int | None = Field(default=None, ge=1, description="scope=suggested 时使用的目标项目 ID；不传时使用当前焦点项目。")
     scope: Literal["all", "suggested"] = Field(default="all", description="all 查询工作空间组件库；suggested 查询项目建议组件。")
@@ -198,7 +198,7 @@ class ComponentCreatePayload(OperationArgumentsModel):
     name: str = Field(min_length=1, max_length=128, description="组件展示名称。")
     import_name: str = Field(min_length=1, max_length=128, description="Vue 源码中的组件引用名，使用合法 PascalCase 标识符。")
     content: str = Field(min_length=1, description="完整、可编译的 Vue 单文件组件源码。")
-    component_type: WorkspaceComponentType = Field(default=WorkspaceComponentType.CONTENT_COMPONENT, description="组件分类。")
+    component_type: WorkspaceComponentType = Field(default=WorkspaceComponentType.CONTENT_COMPONENT, description="组件分类：页面组件（整页模板）、内容组件（页面内内容块）、原子组件（小粒度 UI 元素）。")
     summary: str | None = Field(default=None, max_length=500, description="组件职责和使用场景摘要。")
     preview_schema: str | dict[str, Any] = Field(
         description=(
@@ -215,7 +215,7 @@ class ComponentMetadataPayload(NonEmptyPatchModel):
 
     name: str | None = Field(default=None, min_length=1, max_length=128, description="新的组件展示名称。")
     import_name: str | None = Field(default=None, min_length=1, max_length=128, description="新的 PascalCase 引用名。")
-    component_type: WorkspaceComponentType | None = Field(default=None, description="新的组件分类。")
+    component_type: WorkspaceComponentType | None = Field(default=None, description="新的组件分类：页面组件（整页模板）、内容组件（页面内内容块）、原子组件（小粒度 UI 元素）。")
     summary: str | None = Field(default=None, max_length=500, description="新的组件摘要。")
     preview_schema: str | dict[str, Any] | None = Field(
         default=None,
@@ -386,7 +386,7 @@ class ComponentCheckPayload(ValidationSourcePayload):
     """组件候选代码检查参数。"""
 
     preview_schema: str | dict[str, Any] | None = Field(default=None, description="与候选源码一同检查的 preview_schema。")
-    component_type: WorkspaceComponentType | None = Field(default=None, description="候选组件分类。")
+    component_type: WorkspaceComponentType | None = Field(default=None, description="候选组件分类：页面组件（整页模板）、内容组件（页面内内容块）、原子组件（小粒度 UI 元素）。")
 
 
 class PageCopyPayload(OperationArgumentsModel):

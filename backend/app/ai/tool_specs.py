@@ -782,6 +782,7 @@ _COORDINATOR_OPERATION_GUIDES = (
         _write_parameters("component", "create", ComponentCreatePayload, action="new"),
         action="new",
         constraints=(
+            "组件分三种类型：页面组件（整页模板，根部使用 DefaultContainer）、内容组件（页面内内容块，需尺寸控制字段）、原子组件（小粒度 UI 元素，不需要尺寸控制字段）。",
             "所有组件类型都必须提供 preview_schema；根节点是 Schema 对象，不是组件 props 的实际预览值。",
             "组件属性定义必须放在 preview_schema.props 中，每个字段使用 type、default 等描述；字段名应与 Vue defineProps 保持一致。",
             "内容组件必须在 preview_schema.props 中声明至少一个尺寸控制字段，例如 width、height、minHeight 或 aspectRatio。",
