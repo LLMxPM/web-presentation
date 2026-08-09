@@ -98,13 +98,13 @@ const routes = [
         path: 'account/ai-settings',
         name: 'accountAiSettings',
         component: () => import('@/views/AccountAiSettingsView.vue'),
-        meta: { hideSidebars: true, fullHeight: true },
+        meta: { hideSidebars: true, fullHeight: true, globalPageTitle: 'AI 设置' },
       },
       {
         path: 'admin/users',
         name: 'users',
         component: () => import('@/views/UsersView.vue'),
-        meta: { hideSidebars: true, platformAdmin: true },
+        meta: { hideSidebars: true, platformAdmin: true, globalPageTitle: '用户管理' },
       },
       {
         path: ':pathMatch(.*)*',

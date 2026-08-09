@@ -42,17 +42,19 @@
 
 <script setup lang="ts">
 import { computed, reactive, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { Bot, ChevronDown, KeyRound, LogOut, UserCog } from '@lucide/vue'
 
 import { changePassword } from '@/api/auth'
 import { getErrorMessage } from '@/api/http'
 import { useAuthStore } from '@/stores/auth'
 import { Message } from '@/utils/message'
+import { buildGlobalPageLocation } from '@/utils/global-page-navigation'
 import { UiButton, UiDialog, UiDropdownMenu, UiFormField, UiInput } from '@/components/ui'
 import type { DropdownMenuEntry } from '@/components/ui'
 
 const router = useRouter()
+const route = useRoute()
 const authStore = useAuthStore()
 
 const user = computed(() => authStore.user)
@@ -97,9 +99,9 @@ async function handleCommand(command: string) {
     Message.success('已安全退出登录。')
     router.push({ name: 'login' })
   } else if (command === 'ai-settings') {
-    router.push({ name: 'accountAiSettings' })
+    router.push(buildGlobalPageLocation('accountAiSettings', route.fullPath))
   } else if (command === 'users') {
-    router.push({ name: 'users' })
+    router.push(buildGlobalPageLocation('users', route.fullPath))
   } else if (command === 'password') {
     form.old_password = ''
     form.new_password = ''

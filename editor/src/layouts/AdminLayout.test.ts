@@ -11,6 +11,7 @@ import AdminLayout from '@/layouts/AdminLayout.vue'
 interface MutableRoute {
   name: string
   params: Record<string, string>
+  query: Record<string, string>
   meta: Record<string, unknown>
 }
 
@@ -36,6 +37,7 @@ vi.mock('vue-router', async () => {
   routerMock.route = reactive({
     name: 'workspaceHome',
     params: { workspaceId: '1' },
+    query: {},
     meta: { workspaceNav: 'projects' },
   })
 
@@ -76,16 +78,20 @@ vi.mock('@/components/nav/UserMenu.vue', () => ({
 vi.mock('@/components/nav/WorkspaceSwitcher.vue', () => ({
   default: {
     name: 'WorkspaceSwitcher',
-    props: ['prominent'],
-    template: '<div data-testid="workspace-switcher" :data-prominent="prominent ? \'true\' : \'false\'">空间切换</div>',
+    template: '<div data-testid="workspace-switcher">空间切换</div>',
   },
 }))
 
 vi.mock('@/components/nav/ProjectQuickSwitcher.vue', () => ({
   default: {
     name: 'ProjectQuickSwitcher',
-    props: ['workspaceId', 'currentProjectId', 'currentProjectName'],
-    template: '<div data-testid="project-quick-switcher" :data-workspace-id="workspaceId" :data-project-id="currentProjectId" :data-project-name="currentProjectName || \'\'">项目切换</div>',
+    props: {
+      workspaceId: Number,
+      currentProjectId: Number,
+      currentProjectName: String,
+      breadcrumb: Boolean,
+    },
+    template: '<div data-testid="project-quick-switcher" :data-workspace-id="workspaceId" :data-project-id="currentProjectId" :data-project-name="currentProjectName || \'\'" :data-breadcrumb="breadcrumb ? \'true\' : \'false\'">项目切换</div>',
   },
 }))
 
@@ -125,6 +131,7 @@ describe('AdminLayout', () => {
     setRoute({
       name: 'workspaceHome',
       params: { workspaceId: '1' },
+      query: {},
       meta: { workspaceNav: 'projects' },
     })
   })
@@ -134,7 +141,8 @@ describe('AdminLayout', () => {
 
     expect(screen.getByTestId('agent-sidebar')).toBeTruthy()
     expect(screen.getByTestId('workspace-dock')).toHaveClass('w-14')
-    expect(screen.getByTestId('project-quick-switcher')).toBeTruthy()
+    expect(screen.queryByTestId('project-quick-switcher')).toBeNull()
+    expect(screen.getByLabelText('当前工作空间')).toBeTruthy()
     expect(screen.getByTestId('workspace-dock-projects')).toHaveClass('dock-button-active')
     expect(screen.getByTestId('admin-layout')).toHaveClass('min-w-0', 'overflow-hidden', 'bg-canvas')
     expect(screen.getByTestId('admin-layout-main')).toHaveClass('min-w-0', 'flex-1')
@@ -184,7 +192,8 @@ describe('AdminLayout', () => {
     setRoute({
       name: 'accountAiSettings',
       params: {},
-      meta: { hideSidebars: true },
+      query: { returnTo: '/workspaces/1/projects/2/pages/3' },
+      meta: { hideSidebars: true, globalPageTitle: 'AI 设置' },
     })
     await nextTick()
 
@@ -196,22 +205,18 @@ describe('AdminLayout', () => {
     })
   })
 
-  it('智能体面板应默认展开，收起后显示顶部品牌与悬浮入口', async () => {
+  it('智能体面板应默认展开，收起后显示悬浮入口', async () => {
     renderLayout()
 
-    expect(screen.queryByTestId('app-brand-title')).toBeNull()
-    expect(screen.getByTestId('admin-layout').querySelector('.admin-layout-brand')).toHaveClass('admin-layout-brand-expanded')
     expect(screen.getByTestId('agent-sidebar').dataset.expanded).toBe('true')
     expect(screen.getByTestId('agent-floating-trigger').dataset.expanded).toBe('true')
 
     await fireEvent.click(screen.getByTestId('agent-collapse-state'))
 
-    expect(screen.getByTestId('app-brand-title')).toBeTruthy()
     expect(screen.getByTestId('agent-sidebar').dataset.expanded).toBe('false')
 
     await fireEvent.click(screen.getByTestId('agent-floating-trigger'))
 
-    expect(screen.queryByTestId('app-brand-title')).toBeNull()
     expect(screen.getByTestId('agent-sidebar').dataset.expanded).toBe('true')
   })
 
@@ -224,6 +229,7 @@ describe('AdminLayout', () => {
     setRoute({
       name: routeName,
       params: { workspaceId: '1' },
+      query: {},
       meta: { fullHeight: true, workspaceNav: resolveWorkspaceNavFromRouteName(routeName) },
     })
     renderLayout()
@@ -237,64 +243,73 @@ describe('AdminLayout', () => {
     setRoute({
       name: 'pageDetail',
       params: { workspaceId: '1', projectId: '2', pageId: '3' },
+      query: {},
       meta: { workspaceNav: 'projects' },
     })
     renderLayout()
 
     expect(screen.getByTestId('workspace-dock-projects')).toHaveClass('dock-button-active')
     expect(screen.getByTestId('project-quick-switcher').dataset.projectId).toBe('2')
+    expect(screen.getByTestId('project-quick-switcher').dataset.breadcrumb).toBe('true')
   })
 
   it('页面详情页应显示项目内路径面包屑', async () => {
     setRoute({
       name: 'pageDetail',
       params: { workspaceId: '1', projectId: '2', pageId: '3' },
+      query: {},
       meta: { workspaceNav: 'projects' },
     })
     renderLayout()
 
-    expect(screen.getByText('项目列表')).toBeTruthy()
-    expect(screen.getByText('项目首页')).toBeTruthy()
+    expect(screen.getByText('空间首页')).toBeTruthy()
+    expect(screen.getByTestId('project-quick-switcher')).toBeTruthy()
     expect(await screen.findByText('演示页面')).toBeTruthy()
   })
 
-  it('项目页面列表应显示项目列表到项目首页的面包屑', () => {
+  it('项目页面列表应显示空间首页和项目切换节点', () => {
     setRoute({
       name: 'pages',
       params: { workspaceId: '1', projectId: '2' },
+      query: {},
       meta: { workspaceNav: 'projects' },
     })
     renderLayout()
 
     const breadcrumb = screen.getByLabelText('当前位置')
-    expect(breadcrumb.textContent).toContain('项目列表')
-    expect(breadcrumb.textContent).toContain('项目首页')
+    expect(breadcrumb.textContent).toContain('空间首页')
+    expect(screen.getByTestId('project-quick-switcher')).toBeTruthy()
   })
 
-  it('AI 设置页顶部应显著提示选择对应工作空间', () => {
+  it('AI 设置页顶部应展示来源空间并可返回原页面', async () => {
     setRoute({
       name: 'accountAiSettings',
       params: {},
-      meta: { hideSidebars: true },
+      query: { returnTo: '/workspaces/1/projects/2/pages/3' },
+      meta: { hideSidebars: true, globalPageTitle: 'AI 设置' },
     })
     renderLayout()
 
-    expect(screen.getByText('选择对应工作空间，返回创作')).toBeTruthy()
-    expect(screen.getByTestId('workspace-switcher').dataset.prominent).toBe('true')
+    expect(await screen.findByRole('button', { name: '返回 演示空间' })).toBeTruthy()
+    expect(screen.getByText('AI 设置')).toBeTruthy()
+    expect(screen.queryByTestId('workspace-switcher')).toBeNull()
     expect(screen.queryByLabelText('当前位置')).toBeNull()
+    await fireEvent.click(screen.getByTestId('global-page-return'))
+    expect(routerMock.push).toHaveBeenCalledWith('/workspaces/1/projects/2/pages/3')
   })
 
-  it('普通工作空间页面不展示 AI 设置页的工作空间选择提示', () => {
+  it('普通工作空间页面展示独立空间上下文而非全局返回', () => {
     renderLayout()
 
-    expect(screen.queryByText('选择对应工作空间，返回创作')).toBeNull()
-    expect(screen.getByTestId('workspace-switcher').dataset.prominent).toBe('false')
+    expect(screen.getByTestId('workspace-switcher')).toBeTruthy()
+    expect(screen.queryByTestId('global-page-return')).toBeNull()
   })
 
   it('收到智能体项目配置事件后应刷新顶部项目缓存', async () => {
     setRoute({
       name: 'pageDetail',
       params: { workspaceId: '1', projectId: '2', pageId: '3' },
+      query: {},
       meta: { workspaceNav: 'projects' },
     })
     renderLayout()
@@ -339,6 +354,7 @@ function setRoute(route: MutableRoute): void {
   }
   routerMock.route.name = route.name
   routerMock.route.params = route.params
+  routerMock.route.query = route.query
   routerMock.route.meta = route.meta
 }
 

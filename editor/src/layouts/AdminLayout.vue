@@ -26,41 +26,44 @@
     <div class="flex min-w-0 flex-1 flex-col overflow-hidden">
       <!-- Header Area -->
       <header class="admin-layout-header flex h-14 shrink-0 items-center justify-between border-b border-border bg-surface px-3">
-        <div
-          class="admin-layout-brand flex transition-[width,opacity] duration-150"
-          :class="[
-            agentSidebarExpanded ? 'w-0 overflow-hidden opacity-0' : 'w-48 overflow-hidden opacity-100',
-            { 'admin-layout-brand-expanded': agentSidebarExpanded },
-          ]"
-        >
-          <div v-if="!agentSidebarExpanded" data-testid="app-brand-title" class="select-none whitespace-nowrap text-lg font-extrabold tracking-tight text-text">Web-Presentation</div>
-        </div>
-
         <div class="admin-layout-context flex min-w-0 flex-1 items-center justify-start gap-2 px-2">
-          <div
-            v-if="showWorkspaceSelectionHint"
-            class="admin-layout-workspace-hint flex shrink-0 items-center gap-2 rounded-ui-md border border-accent/30 bg-accent-muted px-3 py-1.5 text-sm font-bold text-accent"
-          >
-            <MapPin class="h-4 w-4" />
-            <span>选择对应工作空间，返回创作</span>
-            <ArrowRight class="h-4 w-4 text-accent-border" />
+          <div v-if="globalPageTitle" class="flex min-w-0 items-center gap-2">
+            <UiButton
+              variant="ghost"
+              size="sm"
+              data-testid="global-page-return"
+              :title="globalReturnTitle"
+              @click="returnFromGlobalPage"
+            >
+              <ArrowLeft class="h-4 w-4" />
+              {{ globalReturnLabel }}
+            </UiButton>
+            <div class="h-5 w-px shrink-0 bg-border" />
+            <span class="truncate text-sm font-bold text-text">{{ globalPageTitle }}</span>
           </div>
-          <WorkspaceSwitcher :prominent="showWorkspaceSelectionHint" />
-          <ProjectQuickSwitcher
-            v-if="workspaceId && sidebarsVisible"
-            :workspace-id="workspaceId"
-            :current-project-id="projectId"
-            :current-project-name="projectQuery.data.value?.name"
-          />
+          <div
+            v-else-if="workspaceId"
+            class="admin-layout-workspace-context flex shrink-0 items-center border-r border-border pr-3"
+            aria-label="当前工作空间"
+          >
+            <WorkspaceSwitcher />
+          </div>
           <nav
-            v-if="headerBreadcrumbs.length > 0"
+            v-if="!globalPageTitle && headerBreadcrumbs.length > 0"
             aria-label="当前位置"
-            class="admin-layout-breadcrumb ml-1 flex min-w-0 items-center gap-2 border-l border-border pl-3 text-sm font-semibold text-text-muted"
+            class="admin-layout-breadcrumb flex min-w-0 items-center gap-2 text-sm font-semibold text-text-muted"
           >
             <template v-for="(item, index) in headerBreadcrumbs" :key="`${item.label}-${index}`">
               <ChevronRight v-if="index > 0" class="h-4 w-4 shrink-0 text-text-faint" />
+              <ProjectQuickSwitcher
+                v-if="item.projectSwitcher && workspaceId"
+                breadcrumb
+                :workspace-id="workspaceId"
+                :current-project-id="projectId"
+                :current-project-name="projectQuery.data.value?.name"
+              />
               <RouterLink
-                v-if="item.to"
+                v-else-if="item.to"
                 :to="item.to"
                 class="admin-layout-breadcrumb-item truncate transition-colors hover:text-text"
               >
@@ -119,7 +122,7 @@
 import { computed, onMounted, onUnmounted, provide, ref, watch } from 'vue'
 import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
 import { useQuery } from '@tanstack/vue-query'
-import { ArrowRight, ChevronRight, MapPin } from '@lucide/vue'
+import { ArrowLeft, ChevronRight } from '@lucide/vue'
 import { getPage, getProject, getWorkspace } from '@/api/catalog'
 import UserMenu from '@/components/nav/UserMenu.vue'
 import ThemeModeMenu from '@/components/nav/ThemeModeMenu.vue'
@@ -130,9 +133,11 @@ import AgentGlobalSidebar from '@/components/agent/AgentGlobalSidebar.vue'
 import AgentFloatingTrigger from '@/components/agent/AgentFloatingTrigger.vue'
 import OpenSourceFooter from '@/components/layout/OpenSourceFooter.vue'
 import LibraryDrawerHost from '@/components/project/LibraryDrawerHost.vue'
+import { UiButton } from '@/components/ui'
 import { agentSidebarExpandedKey } from '@/composables/agent-sidebar-state'
 import { componentAgentContextKey } from '@/composables/component-agent-context'
-import { buildProjectPagesPath, buildWorkspaceHomePath, type WorkspaceRouteKey } from '@/utils/workspace-routes'
+import { buildWorkspaceHomePath, type WorkspaceRouteKey } from '@/utils/workspace-routes'
+import { parseWorkspaceIdFromPath, resolveGlobalReturnPath } from '@/utils/global-page-navigation'
 import type { WorkspaceComponentItem } from '@/types/api'
 
 const route = useRoute()
@@ -144,6 +149,7 @@ const agentSidebarExpanded = ref(true)
 interface HeaderBreadcrumb {
   label: string
   to?: string
+  projectSwitcher?: boolean
 }
 
 /**
@@ -187,7 +193,9 @@ const activeAgentSource = computed(() => {
 })
 const fullHeightPage = computed(() => Boolean(route.meta.fullHeight))
 const sidebarsVisible = computed(() => !route.meta.hideSidebars)
-const showWorkspaceSelectionHint = computed(() => route.name === 'accountAiSettings')
+const globalPageTitle = computed(() => typeof route.meta.globalPageTitle === 'string' ? route.meta.globalPageTitle : '')
+const globalReturnPath = computed(() => resolveGlobalReturnPath(route.query.returnTo))
+const globalReturnWorkspaceId = computed(() => parseWorkspaceIdFromPath(globalReturnPath.value))
 const workspaceDockVisible = computed(() => sidebarsVisible.value && !!workspaceId.value)
 const activeWorkspaceRouteKey = computed<WorkspaceRouteKey>(() => {
   const routeKey = route.meta.workspaceNav
@@ -225,9 +233,9 @@ watch(
 
 const workspaceQuery = useQuery(
   computed(() => ({
-    queryKey: ['workspace', workspaceId.value],
-    queryFn: () => getWorkspace(workspaceId.value as number),
-    enabled: !!workspaceId.value,
+    queryKey: ['workspace', workspaceId.value ?? globalReturnWorkspaceId.value],
+    queryFn: () => getWorkspace((workspaceId.value ?? globalReturnWorkspaceId.value) as number),
+    enabled: !!(workspaceId.value ?? globalReturnWorkspaceId.value),
   })),
 )
 
@@ -261,21 +269,17 @@ function handleGlobalAgentProjectUpdated(event: Event): void {
 }
 
 const headerBreadcrumbs = computed<HeaderBreadcrumb[]>(() => {
-  if (route.name === 'accountAiSettings') {
-    return []
-  }
-
   if (!workspaceId.value) {
     return []
   }
 
   const breadcrumbs: HeaderBreadcrumb[] = []
   if (route.name === 'workspaceHome') {
-    return [{ label: '项目列表' }]
+    return [{ label: '空间首页' }]
   }
 
   breadcrumbs.push({
-    label: '项目列表',
+    label: '空间首页',
     to: buildWorkspaceHomePath(workspaceId.value),
   })
 
@@ -301,8 +305,8 @@ const headerBreadcrumbs = computed<HeaderBreadcrumb[]>(() => {
 
   if (projectId.value) {
     breadcrumbs.push({
-      label: '项目首页',
-      to: pageId.value ? buildProjectPagesPath(workspaceId.value, projectId.value) : undefined,
+      label: projectQuery.data.value?.name ?? '正在加载项目...',
+      projectSwitcher: true,
     })
   }
 
@@ -314,6 +318,19 @@ const headerBreadcrumbs = computed<HeaderBreadcrumb[]>(() => {
 
   return breadcrumbs
 })
+
+const globalReturnLabel = computed(() => {
+  const workspaceName = workspaceQuery.data.value?.name
+  return workspaceName ? `返回 ${workspaceName}` : '返回创作空间'
+})
+const globalReturnTitle = computed(() => globalReturnPath.value
+  ? `返回 ${globalReturnPath.value}`
+  : '返回最近使用的工作空间')
+
+/** 从全局管理页面返回进入前的位置；缺少可靠来源时交给根入口恢复最近空间。 */
+function returnFromGlobalPage(): void {
+  void router.push(globalReturnPath.value ?? '/')
+}
 
 onMounted(() => {
   window.addEventListener('agent:project-updated', handleGlobalAgentProjectUpdated)
@@ -347,9 +364,6 @@ onUnmounted(() => {
 }
 
 @media (min-width: 1440px) {
-  .admin-layout-brand:not(.admin-layout-brand-expanded) {
-    width: 10rem !important;
-  }
   .admin-layout-header {
     padding-right: 1.5rem;
     padding-left: 1.5rem;
@@ -357,22 +371,12 @@ onUnmounted(() => {
 }
 
 @media (min-width: 1180px) and (max-width: 1439px) {
-  .admin-layout-brand:not(.admin-layout-brand-expanded) {
-    width: 10rem !important;
-  }
-
   .admin-layout-breadcrumb-item {
     max-width: 8rem;
   }
 }
 
 @media (min-width: 960px) and (max-width: 1179px) {
-  .admin-layout-brand {
-    width: 0 !important;
-    overflow: hidden;
-    opacity: 0;
-  }
-
   .admin-layout-breadcrumb-item {
     max-width: 6rem;
   }
@@ -391,12 +395,6 @@ onUnmounted(() => {
 
   .admin-layout-header {
     height: 3.25rem;
-  }
-
-  .admin-layout-brand {
-    width: 0 !important;
-    overflow: hidden;
-    opacity: 0;
   }
 
   .admin-layout-context {

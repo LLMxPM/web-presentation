@@ -5,16 +5,14 @@
       <template #trigger>
         <!-- Trigger -->
         <div
-          class="flex items-center gap-3 px-4 py-2 rounded-xl bg-surface-muted hover:bg-border transition-all cursor-pointer select-none border border-border/50 shadow-sm"
+          class="flex min-w-[10rem] max-w-[17rem] cursor-pointer select-none items-center gap-1.5 rounded-ui-lg bg-transparent  transition-all hover:bg-surface-hover"
           :class="triggerClass"
         >
-          <div class="flex items-center gap-2">
-            <LayoutGrid class="w-4 h-4 text-accent" />
-            <div class="flex items-baseline gap-1.5">
-              <span class="text-sm font-bold text-text line-clamp-1 max-w-[140px]">{{ currentWorkspace?.name || '请选择空间' }}</span>
-            </div>
+          <div class="flex h-5 w-5 shrink-0 items-center justify-center text-accent">
+            <LayoutGrid class="h-5 w-5" />
           </div>
-          <ChevronDown class="w-4 h-4 text-text-disabled transition-transform duration-200"
+          <span class="min-w-0 flex-1 truncate text-medium font-extrabold text-accent-hover">{{ currentWorkspace?.name || '请选择空间' }}</span>
+          <ChevronDown class="h-4 w-4 shrink-0 text-text-muted transition-transform duration-200"
             :class="{ 'rotate-180': dropdownVisible }" />
         </div>
       </template>
@@ -132,9 +130,9 @@ const currentWorkspace = computed(() => {
 })
 
 const triggerClass = computed(() => ({
-  'bg-border': dropdownVisible.value && !props.prominent,
-  'border-accent-border bg-surface ring-2 ring-accent-muted hover:bg-surface-selected': props.prominent,
-  'border-accent-border bg-surface-selected ring-2 ring-accent-ring': props.prominent && dropdownVisible.value,
+  'bg-surface-hover': dropdownVisible.value && !props.prominent,
+  'ring-2 ring-accent-muted': props.prominent,
+  'bg-surface-selected ring-2 ring-accent-ring': props.prominent && dropdownVisible.value,
 }))
 
 /**

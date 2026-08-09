@@ -7,8 +7,8 @@
         <button
           type="button"
           data-testid="project-quick-switcher-trigger"
-          class="flex max-w-[220px] cursor-pointer select-none items-center gap-2 rounded-xl border border-border/50 bg-surface-muted px-4 py-2 shadow-sm transition-all hover:bg-border disabled:cursor-not-allowed disabled:opacity-50"
-          :class="{ 'bg-border': dropdownVisible }"
+          class="flex cursor-pointer select-none items-center gap-2 transition-all disabled:cursor-not-allowed disabled:opacity-50"
+          :class="triggerClass"
           :disabled="!workspaceId"
           title="快速切换项目"
         >
@@ -78,6 +78,7 @@ const props = defineProps<{
   workspaceId: number | null
   currentProjectId: number | null
   currentProjectName?: string | null
+  breadcrumb?: boolean
 }>()
 
 const router = useRouter()
@@ -100,6 +101,15 @@ const projects = computed(() => projectsQuery.data.value?.items ?? [])
 const projectsLoading = computed(() => projectsQuery.isFetching.value && projects.value.length === 0)
 const currentProject = computed(() => projects.value.find(project => project.id === props.currentProjectId) ?? null)
 const triggerLabel = computed(() => currentProject.value?.name ?? props.currentProjectName ?? '选择项目')
+const triggerClass = computed(() => props.breadcrumb
+  ? [
+      'max-w-[180px] rounded-ui-md px-1.5 py-1 text-text-secondary hover:bg-surface-hover hover:text-text',
+      dropdownVisible.value ? 'bg-surface-hover text-text' : '',
+    ]
+  : [
+      'max-w-[220px] rounded-xl border border-border/50 bg-surface-muted px-4 py-2 shadow-sm hover:bg-border',
+      dropdownVisible.value ? 'bg-border' : '',
+    ])
 
 /**
  * 关闭项目切换菜单。

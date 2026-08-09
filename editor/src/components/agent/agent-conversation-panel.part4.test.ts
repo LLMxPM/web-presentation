@@ -1342,7 +1342,10 @@ describe('AgentConversationPanel', () => {
 
     expect(screen.getByRole('button', { name: '新会话' })).toHaveProperty('disabled', true)
     await fireEvent.click(screen.getByRole('button', { name: '前往 AI 设置' }))
-    expect(routerPushMock).toHaveBeenCalledWith({ name: 'accountAiSettings' })
+    expect(routerPushMock).toHaveBeenCalledWith({
+      name: 'accountAiSettings',
+      query: { returnTo: '/workspaces/11/projects/21/pages/31' },
+    })
   })
 
   it('槽位未绑定但存在全局模型时允许创建会话', async () => {

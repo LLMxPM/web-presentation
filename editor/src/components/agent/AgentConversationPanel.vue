@@ -420,6 +420,7 @@ import { useAgentSessionStore } from '@/stores/agent-session'
 import { logClientWarning } from '@/utils/client-logger'
 import { createClientUuid } from '@/utils/id'
 import { Message } from '@/utils/message'
+import { buildGlobalPageLocation } from '@/utils/global-page-navigation'
 
 const FORCE_CANCEL_AVAILABLE_DELAY_MS = 10_000
 
@@ -2364,6 +2365,6 @@ function removeDraftPatch(patch: AgentSuggestedPatch) {
  * 跳转到 AI 设置页，供用户创建或维护个人模型。
  */
 function goToAiSettings() {
-  router.push({ name: 'accountAiSettings' })
+  router.push(buildGlobalPageLocation('accountAiSettings', route.fullPath))
 }
 </script>
