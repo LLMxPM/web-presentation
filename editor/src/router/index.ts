@@ -98,7 +98,7 @@ const routes = [
         path: 'account/ai-settings',
         name: 'accountAiSettings',
         component: () => import('@/views/AccountAiSettingsView.vue'),
-        meta: { hideSidebars: true },
+        meta: { hideSidebars: true, fullHeight: true },
       },
       {
         path: 'admin/users',

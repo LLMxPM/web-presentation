@@ -33,7 +33,14 @@ def build_generate_image_tool(session_factory: async_sessionmaker[AsyncSession])
     async def generate_image(
         run_context: AgentToolContext,
         operation: Literal["generate", "edit"],
-        prompt: Annotated[str, Field(min_length=1, max_length=8000)],
+        prompt: Annotated[
+            str,
+            Field(
+                min_length=1,
+                max_length=8000,
+                description="图片提示词，描述一张图片的内容、风格与构图。不要在一段 prompt 中列举多张不同图片的描述（如「第一张…第二张…」）；多张生成由 count 参数控制，所有图片共享同一 prompt。",
+            ),
+        ],
         reference_attachment_ids: Annotated[list[int], Field(max_length=16)] | None = None,
         mask_attachment_id: int | None = None,
         aspect_ratio: Literal[
@@ -42,7 +49,14 @@ def build_generate_image_tool(session_factory: async_sessionmaker[AsyncSession])
         ] = "auto",
         resolution_tier: Literal["auto", "standard", "high", "ultra"] = "auto",
         quality: Literal["auto", "low", "medium", "high"] = "auto",
-        count: Annotated[int, Field(ge=1, le=10)] = 1,
+        count: Annotated[
+            int,
+            Field(
+                ge=1,
+                le=10,
+                description="生成图片数量；所有图片共享同一 prompt，模型会生成 count 张变体。如需视觉差异较大的多张图片（不同构图/主题），应拆为多次独立调用，每次 count=1 并使用不同 prompt。",
+            ),
+        ] = 1,
         asset_name_prefix: Annotated[str, Field(min_length=1, max_length=120)] = "generated-image",
         description: Annotated[str | None, Field(max_length=1024)] = None,
         tags: Annotated[list[str], BeforeValidator(_parse_json_array_string), Field(max_length=20)] | None = None,

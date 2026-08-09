@@ -1,642 +1,84 @@
-<!-- 文件功能：整合账号级 AI 设置，集中管理智能体模型绑定、提示词、工具配置与模型。 -->
+<!-- 文件功能：整合账号级 AI 设置管理后台，调度内容助手、模型与供应商配置。 -->
 <template>
-  <div class="space-y-5 pb-10">
-    <PageHeader :icon="Bot" title="AI 设置" description="集中管理智能体模型绑定、提示词、工具配置与模型。">
-
-      <template #actions>
-        <dl class="grid w-full grid-cols-2 overflow-hidden rounded-2xl border border-border bg-canvas text-center sm:grid-cols-4 lg:w-auto lg:min-w-[560px]">
-          <div class="border-b border-r border-border px-3 py-2 sm:border-b-0">
-            <dt class="sr-only">智能体</dt>
-            <dd class="inline-flex items-center justify-center gap-2 text-sm font-semibold text-text-strong">
-              <span class="text-text-disabled">智能体</span>
-              <span class="text-base font-bold text-text-strong">{{ agentCount }}</span>
-            </dd>
-          </div>
-          <div class="border-b border-border px-3 py-2 sm:border-b-0 sm:border-r">
-            <dt class="sr-only">可用模型</dt>
-            <dd class="inline-flex items-center justify-center gap-2 text-sm font-semibold text-text-strong">
-              <span class="text-text-disabled">可用模型</span>
-              <span class="text-base font-bold text-text-strong">{{ activeModelCount }}</span>
-            </dd>
-          </div>
-          <div class="border-r border-border px-3 py-2">
-            <dt class="sr-only">未就绪智能体</dt>
-            <dd class="inline-flex items-center justify-center gap-2 text-sm font-semibold leading-6" :class="unreadySlotCount ? 'text-warning' : 'text-success'">
-              <span class="text-text-disabled">未就绪智能体</span>
-              <span class="text-base font-bold">{{ unreadySlotCount }}</span>
-            </dd>
-          </div>
-          <div class="px-3 py-2">
-            <dt class="sr-only">工具</dt>
-            <dd class="inline-flex items-center justify-center gap-2 text-sm font-semibold text-text-strong">
-              <span class="text-text-disabled">工具</span>
-              <span class="text-base font-bold text-text-strong">{{ allToolCount }}</span>
-            </dd>
-          </div>
-        </dl>
-      </template>
-    </PageHeader>
-
-    <section class="grid gap-5 xl:grid-cols-[380px_minmax(0,1fr)]">
-      <ToolPanel class="min-h-[720px]" :scroll-body="false">
-        <div class="border-b border-border p-3">
-          <div class="grid grid-cols-3 rounded-xl bg-surface-muted p-1">
-            <UiButton
-              v-for="tab in sectionTabs"
-              :key="tab.key"
-              type="button"
-              :aria-label="tab.label"
-              variant="ghost"
-              class="flex min-h-12 min-w-0 flex-col items-center justify-center rounded-lg px-2 py-1 text-xs font-bold transition [&>span]:!flex-col [&>span]:gap-0"
-              :class="activeSection === tab.key ? 'bg-surface text-accent shadow-sm' : 'text-text-muted hover:text-text'"
-              @click="setActiveSection(tab.key)"
-            >
-              <span class="flex items-center gap-1.5">
-                <component :is="tab.icon" class="h-3.5 w-3.5" />
-                <span>{{ tab.label }}</span>
-              </span>
-              <span class="mt-0.5 text-[11px] font-semibold opacity-70">{{ tab.meta }}</span>
-            </UiButton>
-          </div>
-        </div>
-
-        <div v-if="activeSection === 'agents'" class="max-h-[calc(100vh-250px)] overflow-y-auto p-3">
-          <div class="mb-3 flex items-center justify-between gap-3">
-            <div>
-              <p class="text-sm font-semibold text-text-strong">智能体配置</p>
-              <p class="mt-0.5 text-xs text-text-muted">{{ agentCount }} 个智能体 · {{ unreadySlotCount }} 个需处理</p>
-            </div>
-          </div>
-          <div v-if="agentConfigsQuery.isFetching.value && !(agentConfigsQuery.data.value?.length)" class="rounded-xl border border-dashed border-border px-4 py-10 text-center text-sm text-text-disabled">
-            正在读取智能体配置...
-          </div>
-          <div v-else-if="agentConfigsQuery.data.value?.length" class="space-y-2">
-            <UiButton
-              v-for="agent in agentConfigsQuery.data.value"
-              :key="agent.id"
-              type="button"
-              variant="ghost"
-              :aria-pressed="selectedAgentConfig?.id === agent.id"
-              class="h-auto w-full rounded-xl border p-3 text-left transition [&>span]:!block [&>span]:min-w-0 [&>span]:w-full [&>span]:text-left"
-              :class="selectedAgentConfig?.id === agent.id ? '!border-accent-border !bg-surface-selected ring-2 ring-accent-ring' : '!border-border !bg-surface hover:!border-border-strong hover:!bg-canvas'"
-              @click="selectAgent(agent.id)"
-            >
-              <div class="flex items-start justify-between gap-3">
-                <div class="flex min-w-0 items-start gap-3">
-                  <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ring-1" :class="getAgentIconShellClass(agent.icon, selectedAgentConfig?.id === agent.id)">
-                    <component :is="resolveAgentIconComponent(agent.icon)" class="h-4 w-4" />
-                  </span>
-                  <div class="min-w-0">
-                    <p class="truncate text-sm font-bold text-text-strong">{{ agent.name }}</p>
-                    <p class="mt-1 line-clamp-2 text-xs leading-5 text-text-muted">{{ agent.summary }}</p>
-                  </div>
-                </div>
-                <span class="flex shrink-0 flex-col items-end gap-1">
-   
-                  <span class="rounded-full px-2 py-0.5 text-[11px] font-semibold" :class="getAgentSlotClass(agent)">
-                    {{ getAgentSlotLabel(agent) }}
-                  </span>
-                </span>
-              </div>
-              <div class="mt-3 grid grid-cols-3 gap-2 text-[11px] font-semibold">
-                <span class="rounded-lg bg-surface-muted px-2 py-1 text-text-muted">
-                  {{ agent.prompt_customized ? '提示词已改' : '默认提示词' }}
-                </span>
-                <span class="rounded-lg bg-success-muted px-2 py-1 text-success-strong">
-                  {{ agent.enabled_tool_count }} 启用
-                </span>
-                <span class="rounded-lg bg-warning-muted px-2 py-1 text-warning-strong">
-                  {{ agent.disabled_tool_count }} 关闭
-                </span>
-              </div>
-            </UiButton>
-          </div>
-          <div v-else class="rounded-xl border border-dashed border-border px-4 py-10 text-center text-sm text-text-disabled">
-            暂无可配置智能体。
-          </div>
-        </div>
-
-        <div v-else-if="activeSection === 'providers'" class="max-h-[calc(100vh-230px)] overflow-y-auto p-3">
-          <div class="mb-3 flex items-center justify-between gap-3">
-            <div>
-              <p class="text-sm font-semibold text-text-strong">供应商</p>
-              <p class="mt-0.5 text-xs text-text-muted">{{ providerCount }} 个配置 · {{ providerMissingKeyCount }} 个缺少密钥</p>
-            </div>
-            <UiButton variant="primary" size="sm" @click="resetProviderForm">
-              <Plus class="h-3.5 w-3.5" />
-              新建供应商
-            </UiButton>
-          </div>
-          <div v-if="providerConfigsQuery.isFetching.value && !(providerConfigsQuery.data.value?.length)" class="rounded-xl border border-dashed border-border px-4 py-10 text-center text-sm text-text-disabled">
-            正在读取供应商...
-          </div>
-          <div v-else-if="providerConfigsQuery.data.value?.length" class="space-y-2">
-            <UiButton
-              v-for="config in providerConfigsQuery.data.value"
-              :key="config.id"
-              type="button"
-              variant="ghost"
-              :aria-pressed="selectedProviderConfigId === config.id"
-              class="h-auto w-full rounded-xl border p-3 text-left transition [&>span]:!block [&>span]:min-w-0 [&>span]:w-full [&>span]:text-left"
-              :class="selectedProviderConfigId === config.id ? '!border-accent-border !bg-surface-selected ring-2 ring-accent-ring' : '!border-border !bg-surface hover:!border-border-strong hover:!bg-canvas'"
-              @click="handleEditProviderConfig(config)"
-            >
-              <div class="flex items-start justify-between gap-3">
-                <div class="min-w-0">
-                  <p class="truncate text-sm font-bold text-text-strong">{{ config.name }}</p>
-                  <p class="mt-1 truncate text-xs text-text-muted">{{ config.provider_label }} · {{ config.base_url || '默认地址' }}</p>
-                </div>
-                <span class="flex shrink-0 flex-col items-end gap-1">
-
-                  <span
-                    class="rounded-full px-2 py-0.5 text-[11px] font-semibold"
-                    :class="config.scope === 'global' ? 'bg-surface-selected text-accent-hover' : 'bg-surface-muted text-text-secondary'"
-                  >
-                    {{ config.scope === 'global' ? '全局' : '个人' }}
-                  </span>
-                  <span
-                    class="rounded-full px-2 py-0.5 text-[11px] font-semibold"
-                    :class="config.status === 'active' ? 'bg-success-muted text-success-strong' : 'bg-surface-muted text-text-muted'"
-                  >
-                    {{ config.status === 'active' ? '启用' : '不可用' }}
-                  </span>
-                </span>
-              </div>
-              <div class="mt-3 flex min-w-0 items-center justify-between gap-2">
-                <code class="min-w-0 truncate rounded bg-surface-muted px-2 py-1 text-[11px] font-semibold text-text-secondary">{{ config.provider_key }}</code>
-                <span class="min-w-0 max-w-[10rem] truncate text-right text-[11px] font-semibold" :class="config.has_api_key ? 'text-text-muted' : 'text-warning'">
-                  {{ config.has_api_key ? config.api_key_masked : '未保存 API Key' }}
-                </span>
-              </div>
-            </UiButton>
-          </div>
-          <div v-else class="rounded-xl border border-dashed border-border px-4 py-10 text-center text-sm text-text-disabled">
-            还没有供应商。
-          </div>
-        </div>
-
-        <div v-else class="max-h-[calc(100vh-230px)] overflow-y-auto p-3">
-          <div class="mb-3 flex items-center justify-between gap-3">
-            <div>
-              <p class="text-sm font-semibold text-text-strong">模型</p>
-              <p class="mt-0.5 text-xs text-text-muted">{{ modelCount }} 个模型 · {{ activeModelCount }} 个启用</p>
-            </div>
-            <UiButton variant="primary" size="sm" @click="resetModelForm">
-              <Plus class="h-3.5 w-3.5" />
-              新建模型
-            </UiButton>
-          </div>
-          <div v-if="configsQuery.isFetching.value && !(configsQuery.data.value?.length)" class="rounded-xl border border-dashed border-border px-4 py-10 text-center text-sm text-text-disabled">
-            正在读取模型...
-          </div>
-          <div v-else-if="configsQuery.data.value?.length" class="space-y-2">
-            <UiButton
-              v-for="config in configsQuery.data.value"
-              :key="config.id"
-              type="button"
-              variant="ghost"
-              :aria-pressed="selectedConfigId === config.id"
-              class="h-auto w-full rounded-xl border p-3 text-left transition [&>span]:!block [&>span]:min-w-0 [&>span]:w-full [&>span]:text-left"
-              :class="selectedConfigId === config.id ? '!border-accent-border !bg-surface-selected ring-2 ring-accent-ring' : '!border-border !bg-surface hover:!border-border-strong hover:!bg-canvas'"
-              @click="handleEditModel(config)"
-            >
-              <div class="flex items-start justify-between gap-3">
-                <div class="min-w-0">
-                  <p class="truncate text-sm font-bold text-text-strong">{{ config.name }}</p>
-                  <p class="mt-1 truncate text-xs text-text-muted">{{ config.provider_config_name }} / {{ config.model_id }}</p>
-                </div>
-                <span class="flex shrink-0 flex-col items-end gap-1">
-
-                  <span
-                    class="rounded-full px-2 py-0.5 text-[11px] font-semibold"
-                    :class="config.scope === 'global' ? 'bg-surface-selected text-accent-hover' : 'bg-surface-muted text-text-secondary'"
-                  >
-                    {{ config.scope === 'global' ? '全局' : '个人' }}
-                  </span>
-                  <span
-                    class="rounded-full px-2 py-0.5 text-[11px] font-semibold"
-                    :class="config.status === 'active' ? 'bg-success-muted text-success-strong' : 'bg-surface-muted text-text-muted'"
-                  >
-                    {{ config.status === 'active' ? '启用' : '不可用' }}
-                  </span>
-                </span>
-              </div>
-              <div class="mt-3 flex min-w-0 items-center justify-between gap-2">
-                <code class="min-w-0 truncate rounded bg-surface-muted px-2 py-1 text-[11px] font-semibold text-text-secondary">{{ config.model_id }}</code>
-                <span class="shrink-0 text-[11px] font-semibold text-text-muted">
-                  {{ config.provider_label }}
-                </span>
-              </div>
-            </UiButton>
-          </div>
-          <div v-else class="rounded-xl border border-dashed border-border px-4 py-10 text-center text-sm text-text-disabled">
-            还没有模型。
-          </div>
-        </div>
-      </ToolPanel>
-
-      <ToolPanel class="min-h-[720px]" :scroll-body="false">
-        <section v-if="activeSection === 'agents' && selectedAgentConfig" class="space-y-5 p-5">
-          <div class="flex flex-wrap items-start justify-between gap-4 border-b border-border-muted pb-4">
-            <div class="flex min-w-0 items-start gap-3">
-              <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ring-1" :class="getAgentIconShellClass(selectedAgentConfig.icon, true)">
-                <component :is="resolveAgentIconComponent(selectedAgentConfig.icon)" class="h-5 w-5" />
-              </span>
-              <div class="min-w-0">
-                <h2 class="text-lg font-bold text-text-strong">{{ selectedAgentConfig.name }}</h2>
-                <p class="mt-1 max-w-4xl text-sm leading-6 text-text-muted">{{ selectedAgentConfig.description }}</p>
-              </div>
-            </div>
-            <div class="flex flex-wrap justify-end gap-2">
-              <span class="rounded-full px-3 py-1 text-xs font-semibold" :class="getAgentSlotClass(selectedAgentConfig)">
-                {{ getAgentSlotLabel(selectedAgentConfig) }}
-              </span>
-              <span class="rounded-full bg-surface-muted px-3 py-1 text-xs font-semibold text-text-muted">
-                {{ selectedAgentConfig.enabled_tool_count }} / {{ totalToolCount }} 工具启用
-              </span>
-            </div>
-          </div>
-
-          <nav class="grid gap-2 rounded-2xl border border-border bg-canvas p-2 md:grid-cols-3" aria-label="智能体配置分区">
-            <UiButton
-              v-for="tab in agentPanelTabs"
-              :key="tab.key"
-              type="button"
-              :aria-label="tab.label"
-              variant="ghost"
-              class="h-auto flex min-h-14 items-center justify-between gap-3 rounded-xl px-3 py-2 text-left text-sm transition [&>span]:min-w-0 [&>span]:w-full [&>span]:justify-between [&>span]:text-left"
-              :class="activeAgentPanel === tab.key ? 'bg-surface text-accent-hover shadow-sm' : 'text-text-secondary hover:bg-surface/70 hover:text-text-strong'"
-              @click="activeAgentPanel = tab.key"
-            >
-              <span class="min-w-0">
-                <span class="block truncate font-bold">{{ tab.label }}</span>
-                <span class="mt-0.5 block truncate text-[11px] font-semibold opacity-70">{{ tab.meta }}</span>
-              </span>
-              <span
-                v-if="tab.badge"
-                class="shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold"
-                :class="tab.badgeClass"
-              >
-                {{ tab.badge }}
-              </span>
-            </UiButton>
-          </nav>
-
-          <section v-if="activeAgentPanel === 'binding'" class="space-y-4">
-            <article class="rounded-2xl border border-border bg-canvas p-4">
-            <div class="flex flex-wrap items-start justify-between gap-4">
-              <div>
-                <h3 class="text-sm font-bold text-text-strong">模型绑定</h3>
-                <p class="mt-1 text-xs leading-5 text-text-muted">
-                  绑定项：{{ selectedAgentConfig.llm_slot || '未配置' }}；
-                  当前模型：{{ selectedAgentSlot?.llm_config_name || '未绑定可用模型' }}
-                  <span v-if="selectedAgentSlot?.inherited_from_global">（继承全局默认）</span>
-                </p>
-                <p v-if="selectedAgentSlot && !selectedAgentSlot.binding_ready" class="mt-1 text-xs font-semibold text-warning">
-                  当前智能体未绑定模型，请选择一个启用中的模型。
-                </p>
-              </div>
-              <div class="grid min-w-0 gap-2 sm:grid-cols-[minmax(0,1fr)_auto] 2xl:w-[560px]">
-                <UiCombobox
-                  v-if="selectedAgentConfig.llm_slot"
-                  v-model="slotDrafts[selectedAgentConfig.llm_slot]"
-                  :options="configOptions"
-                  clearable
-                  size="compact"
-                  placeholder="选择模型"
-                />
-                <div class="flex flex-wrap gap-2 sm:justify-end">
-                  <UiButton
-                    variant="primary"
-                    size="sm"
-                    :disabled="!selectedAgentConfig.llm_slot"
-                    :loading="bindingSlot === selectedAgentConfig.llm_slot"
-                    @click="handleSaveSelectedAgentSlot()"
-                  >
-                    保存模型绑定
-                  </UiButton>
-                  <UiButton
-                    v-if="canCreateGlobal"
-                    variant="ghost"
-                    size="sm"
-                    :disabled="!selectedAgentConfig.llm_slot"
-                    :loading="bindingSlot === `global:${selectedAgentConfig.llm_slot}`"
-                    @click="handleSaveSelectedAgentSlot('global')"
-                  >
-                    设为全局默认
-                  </UiButton>
-                </div>
-              </div>
-            </div>
-            </article>
-            <div class="grid gap-3 md:grid-cols-3">
-              <div class="rounded-xl border border-border bg-surface px-4 py-3">
-                <p class="text-[11px] font-semibold text-text-disabled">供应商</p>
-                <p class="mt-1 truncate text-sm font-bold text-text">{{ selectedAgentSlot?.provider_label || '未配置' }}</p>
-              </div>
-              <div class="rounded-xl border border-border bg-surface px-4 py-3">
-                <p class="text-[11px] font-semibold text-text-disabled">模型 ID</p>
-                <p class="mt-1 truncate text-sm font-bold text-text">{{ selectedAgentSlot?.model_id || '未配置' }}</p>
-              </div>
-              <div class="rounded-xl border border-border bg-surface px-4 py-3">
-                <p class="text-[11px] font-semibold text-text-disabled">图片输入</p>
-                <p class="mt-1 text-sm font-bold" :class="selectedAgentSlot?.supports_image_input ? 'text-success-strong' : 'text-text-muted'">
-                  {{ selectedAgentSlot?.supports_image_input ? '可用' : '未启用' }}
-                </p>
-              </div>
-            </div>
-            <article v-if="selectedAgentConfig.id === 'agent-coordinator'" class="rounded-2xl border border-ai-border bg-ai-muted/40 p-4">
-              <div>
-                <h3 class="text-sm font-bold text-text-strong">视觉能力</h3>
-                <p class="mt-1 text-xs leading-5 text-text-muted">视觉模型独立于内容模型；图片理解同步单次调用，图片生成通过持久化任务执行。</p>
-              </div>
-              <div class="mt-3 grid gap-3 xl:grid-cols-2">
-                <div v-for="slot in visualSlots" :key="slot.slot" class="rounded-xl border border-ai-border bg-surface p-3">
-                  <div class="mb-2 flex items-start justify-between gap-2">
-                    <div>
-                      <p class="text-sm font-bold text-text">{{ slot.slot_label }}</p>
-                      <p class="mt-0.5 text-[11px] text-text-muted">
-                        {{ slot.binding_ready ? `${slot.provider_label} · ${slot.model_id}` : '尚未配置可用模型' }}
-                        <span v-if="slot.inherited_from_global">（继承全局）</span>
-                      </p>
-                    </div>
-                    <span class="rounded-full px-2 py-0.5 text-[11px] font-semibold" :class="slot.binding_ready ? 'bg-success-muted text-success-strong' : 'bg-warning-muted text-warning-strong'">
-                      {{ slot.binding_ready ? '可用' : '未配置' }}
-                    </span>
-                  </div>
-                  <div class="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
-                    <UiCombobox
-                      v-model="slotDrafts[slot.slot]"
-                      :options="getSlotConfigOptions(slot.slot)"
-                      clearable
-                      size="compact"
-                      placeholder="选择视觉模型"
-                    />
-                    <UiButton size="sm" variant="primary" :loading="bindingSlot === slot.slot" @click="handleSaveSlot(slot.slot)">
-                      保存
-                    </UiButton>
-                  </div>
-                </div>
-              </div>
-            </article>
-          </section>
-
-          <section v-else-if="activeAgentPanel === 'prompts'" class="space-y-3">
-            <UiFormField label="智能体提示词" v-slot="field">
-              <UiInput
-                v-model="promptDraft"
-                type="textarea"
-                :input-id="field.inputId"
-                :described-by="field.describedBy"
-                :invalid="field.invalid"
-                :rows="18"
-                placeholder="输入当前账号下的智能体提示词"
-              />
-            </UiFormField>
-            <div class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-canvas px-4 py-3">
-              <p class="text-xs font-semibold" :class="promptDirty ? 'text-warning' : 'text-text-muted'">
-                {{ promptDirty ? '当前有未保存修改。' : (selectedAgentConfig.prompt_customized ? '当前使用账号自定义提示词。' : '当前使用系统默认提示词。') }}
-              </p>
-              <div class="flex justify-end gap-2">
-                <UiButton variant="ghost" :loading="savingPrompt" @click="handleRestorePrompt">
-                  恢复默认
-                </UiButton>
-                <UiButton variant="primary" :loading="savingPrompt" :disabled="!promptDirty" @click="handleSavePrompt">
-                  保存提示词
-                </UiButton>
-              </div>
-            </div>
-          </section>
-
-          <section v-else class="space-y-3">
-            <div class="flex items-center justify-between gap-3">
-              <div>
-                <h3 class="text-sm font-bold text-text-strong">工具配置</h3>
-                <p class="mt-1 text-xs text-text-muted">按工具组管理启停、说明覆盖和面向 Agent 的只读工具契约。</p>
-              </div>
-              <span class="rounded-full bg-surface-muted px-3 py-1 text-xs font-semibold text-text-muted">
-                {{ selectedAgentConfig.enabled_tool_count }} / {{ totalToolCount }} 可用
-              </span>
-            </div>
-
-            <article
-              v-for="group in selectedAgentConfig.tool_groups"
-              :key="group.key"
-              class="overflow-hidden rounded-xl border border-border"
-            >
-              <UiButton
-                variant="ghost"
-                content-align="start"
-                class="h-auto min-h-[var(--ui-control-h-md)] w-full whitespace-normal bg-canvas px-4 py-3 text-left transition hover:bg-surface-muted"
-                @click="toggleToolGroup(group.key)"
-              >
-                <span class="block min-w-0">
-                  <span class="flex min-w-0 items-center gap-2">
-                    <component :is="isToolGroupExpanded(group.key) ? ChevronDown : ChevronRight" class="h-4 w-4 text-text-disabled" />
-                    <span class="text-sm font-bold text-text-strong">{{ group.label }}</span>
-                    <span class="text-xs text-text-disabled">{{ getToolGroupEnabledCount(group) }} / {{ group.tools.length }} 启用</span>
-                  </span>
-                  <span class="ml-6 mt-1 block truncate text-xs leading-5 text-text-muted" :title="group.description">{{ group.description }}</span>
-                </span>
-              </UiButton>
-
-              <div v-show="isToolGroupExpanded(group.key)" class="space-y-3 border-t border-border bg-surface p-3">
-                <article
-                  v-for="tool in group.tools"
-                  :key="tool.key"
-                  class="rounded-xl border border-border bg-surface p-4"
-                >
-                  <div class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                    <div class="min-w-0">
-                      <div class="flex flex-wrap items-center gap-2">
-                        <p class="text-sm font-bold text-text-strong">{{ tool.label }}</p>
-                        <span class="rounded-full px-2 py-0.5 text-[11px] font-semibold" :class="getRiskClass(tool.risk_level)">
-                          {{ getRiskLabel(tool) }}
-                        </span>
-                        <span class="rounded-full px-2 py-0.5 text-[11px] font-semibold" :class="isToolCustomized(tool) ? 'bg-surface-selected text-accent-hover' : 'bg-surface-muted text-text-muted'">
-                          {{ isToolCustomized(tool) ? '已覆盖' : '默认说明' }}
-                        </span>
-                      </div>
-                      <code class="mt-1 block truncate text-[11px] text-text-disabled">{{ tool.key }}</code>
-                      <p class="mt-2 line-clamp-2 text-xs leading-5 text-text-muted">{{ tool.description }}</p>
-                    </div>
-                    <div class="flex shrink-0 flex-wrap items-center gap-2 lg:justify-end">
-                      <label v-if="tool.configurable && toolDrafts[tool.key]" class="inline-flex h-8 items-center gap-2 rounded-lg border border-border bg-canvas px-3 text-xs font-semibold">
-                        <UiCheckbox
-                          :model-value="toolDrafts[tool.key].enabled"
-                          @update:model-value="toolDrafts[tool.key].enabled = $event === true"
-                        />
-                        <span :class="toolDrafts[tool.key].enabled ? 'text-success-strong' : 'text-text-disabled'">
-                          {{ toolDrafts[tool.key].enabled ? '启用' : '关闭' }}
-                        </span>
-                      </label>
-                      <span v-else class="inline-flex h-8 items-center gap-1 rounded-lg border border-border bg-canvas px-3 text-xs font-semibold text-text-disabled">
-                        <Lock class="h-3.5 w-3.5" />
-                        系统只读
-                      </span>
-                      <UiButton variant="ghost" size="sm" @click="toggleToolEditor(tool.key)">
-                        {{ editingToolKey === tool.key ? '收起' : (tool.configurable ? '编辑' : '说明') }}
-                      </UiButton>
-                      <UiButton
-                        v-if="tool.configurable"
-                        variant="ghost"
-                        size="sm"
-                        :loading="savingToolKey === tool.key"
-                        :disabled="!isToolDirty(tool)"
-                        @click="handleSaveTool(tool)"
-                      >
-                        保存
-                      </UiButton>
-                    </div>
-                  </div>
-
-                  <div v-if="editingToolKey === tool.key" class="mt-4 border-t border-border-muted pt-4">
-                    <div v-if="tool.configurable && toolDrafts[tool.key]" class="grid gap-3 lg:grid-cols-2">
-                      <UiFormField label="工具说明覆盖" v-slot="field">
-                        <UiInput
-                          v-model="toolDrafts[tool.key].descriptionOverride"
-                          type="textarea"
-                          :input-id="field.inputId"
-                          :described-by="field.describedBy"
-                          :invalid="field.invalid"
-                          :rows="4"
-                          :placeholder="tool.default_description"
-                        />
-                      </UiFormField>
-                      <UiFormField label="工具提示词覆盖" v-slot="field">
-                        <UiInput
-                          v-model="toolDrafts[tool.key].instructionsOverride"
-                          type="textarea"
-                          :input-id="field.inputId"
-                          :described-by="field.describedBy"
-                          :invalid="field.invalid"
-                          :rows="4"
-                          placeholder="补充该工具的使用约束；留空表示使用默认说明"
-                        />
-                      </UiFormField>
-                    </div>
-
-                    <section class="mt-4 space-y-4 rounded-xl border border-border bg-canvas p-4">
-                      <div class="flex flex-wrap items-start justify-between gap-3">
-                        <div>
-                          <h4 class="text-sm font-bold text-text-strong">Agent 完整说明</h4>
-                          <p class="mt-1 text-xs leading-5 text-text-muted">{{ tool.agent_guide.effective_description }}</p>
-                        </div>
-                        <div class="flex flex-wrap gap-2">
-                          <code class="rounded bg-surface px-2 py-1 text-[11px] font-semibold text-text-secondary">{{ tool.agent_guide.tool_name }}</code>
-                          <span class="rounded-full px-2 py-1 text-[11px] font-semibold" :class="getRiskClass(tool.agent_guide.risk_level)">
-                            {{ getRiskLabel(tool) }}
-                          </span>
-                        </div>
-                      </div>
-
-                      <dl class="grid gap-3 text-xs md:grid-cols-2">
-                        <div class="rounded-lg bg-surface p-3">
-                          <dt class="font-semibold text-text-disabled">系统默认说明</dt>
-                          <dd class="mt-1 leading-5 text-text-emphasis">{{ tool.agent_guide.system_description }}</dd>
-                        </div>
-                        <div class="rounded-lg bg-surface p-3">
-                          <dt class="font-semibold text-text-disabled">上下文要求</dt>
-                          <dd class="mt-1 leading-5 text-text-emphasis">
-                            {{ formatGuideList(tool.agent_guide.required_context_fields, '无额外上下文字段') }}
-                          </dd>
-                        </div>
-                        <div class="rounded-lg bg-surface p-3">
-                          <dt class="font-semibold text-text-disabled">运行时披露组</dt>
-                          <dd class="mt-1 leading-5 text-text-emphasis">
-                            {{ formatGuideList(tool.agent_guide.runtime_disclosure_groups, '不通过业务工具组披露') }}
-                          </dd>
-                        </div>
-                        <div class="rounded-lg bg-surface p-3">
-                          <dt class="font-semibold text-text-disabled">工具提示词</dt>
-                          <dd class="mt-1 whitespace-pre-wrap leading-5 text-text-emphasis">{{ tool.agent_guide.instructions || '无额外工具提示词' }}</dd>
-                        </div>
-                      </dl>
-
-                      <div class="grid gap-3 xl:grid-cols-2">
-                        <div>
-                          <p class="mb-2 text-xs font-semibold text-text-muted">参数 JSON Schema</p>
-                          <pre class="max-h-72 overflow-auto rounded-lg bg-surface-inverse p-3 text-[11px] leading-5 text-text-on-inverse">{{ formatGuideJson(tool.agent_guide.parameters_schema ?? {}) }}</pre>
-                        </div>
-                        <div>
-                          <p class="mb-2 text-xs font-semibold text-text-muted">调用示例</p>
-                          <pre class="max-h-72 overflow-auto rounded-lg bg-surface-inverse p-3 text-[11px] leading-5 text-text-on-inverse">{{ formatGuideJson(tool.agent_guide.call_example ?? { tool_name: tool.agent_guide.tool_name, arguments: {} }) }}</pre>
-                        </div>
-                      </div>
-
-                      <div>
-                        <p class="mb-2 text-xs font-semibold text-text-muted">返回示例</p>
-                        <pre v-if="hasGuideResponseExample(tool)" class="max-h-72 overflow-auto rounded-lg bg-surface-inverse p-3 text-[11px] leading-5 text-text-on-inverse">{{ formatGuideJson(tool.agent_guide.response_example) }}</pre>
-                        <p v-else class="rounded-lg border border-dashed border-border bg-surface px-3 py-4 text-xs text-text-disabled">暂无返回示例</p>
-                        <p v-if="tool.agent_guide.response_notes" class="mt-2 text-xs leading-5 text-text-muted">{{ tool.agent_guide.response_notes }}</p>
-                      </div>
-                    </section>
-
-                    <div v-if="tool.configurable" class="mt-3 flex justify-end gap-2">
-                      <UiButton variant="ghost" size="sm" :loading="savingToolKey === tool.key" @click="handleRestoreTool(tool)">
-                        恢复默认
-                      </UiButton>
-                      <UiButton variant="primary" size="sm" :loading="savingToolKey === tool.key" :disabled="!isToolDirty(tool)" @click="handleSaveTool(tool)">
-                        保存工具
-                      </UiButton>
-                    </div>
-                  </div>
-                </article>
-              </div>
-            </article>
-          </section>
-        </section>
-
-        <section v-else-if="activeSection === 'agents'" class="flex min-h-[720px] items-center justify-center p-8 text-center text-sm text-text-disabled">
-          暂无可配置智能体。
-        </section>
-
-        <AccountAiProviderDetail
-          v-else-if="activeSection === 'providers'"
-          :form="providerForm"
-          :selected-provider-config-id="selectedProviderConfigId"
-          :selected-provider-config="selectedProviderConfig"
-          :mode="providerPanelMode"
-          :current-provider="currentProviderForProviderForm"
-          :provider-options="providerOptions"
-          :saving-provider-config="savingProviderConfig"
-          :deleting-provider-config-id="deletingProviderConfigId"
-          :can-create-global="canCreateGlobal"
-          @delete-provider="handleDeleteProviderConfig"
-          @cancel="handleCancelProviderEdit"
-          @edit="handleStartEditProviderConfig"
-          @submit="handleSubmitProviderConfig"
-        />
-
-        <AccountAiModelDetail
-          v-else
-          v-model:advanced-config-text="advancedConfigText"
-          v-model:advanced-config-collapsed="advancedConfigCollapsed"
-          :form="modelForm"
-          :selected-config-id="selectedConfigId"
-          :selected-model="selectedModel"
-          :mode="modelPanelMode"
-          :current-provider="currentProvider"
-          :provider-config-options="providerConfigOptions"
-          :advanced-config-error="advancedConfigError"
-          :saving-config="savingConfig"
-          :deleting-config-id="deletingConfigId"
-          :can-create-global="canCreateGlobal"
-          @delete-model="handleDeleteModel"
-          @cancel="handleCancelModelEdit"
-          @edit="handleStartEditModel"
-          @format-advanced="formatAdvancedConfig"
-          @submit="handleSubmitModel"
-        />
-      </ToolPanel>
-    </section>
-  </div>
+  <AccountAiSettingsWorkbench
+    :section="adminSection"
+    :assistant-tab="assistantSettingsTab"
+    :agent="selectedAgentConfig"
+    :models="configsQuery.data.value ?? []"
+    :provider-configs="providerConfigsQuery.data.value ?? []"
+    :provider-catalog="providersQuery.data.value ?? []"
+    :slots="slotsQuery.data.value ?? []"
+    :slot-drafts="slotDrafts"
+    :binding-slot="bindingSlot"
+    :prompt-draft="promptDraft"
+    :prompt-dirty="promptDirty"
+    :saving-prompt="savingPrompt"
+    :tool-drafts="toolDrafts"
+    :saving-tool-key="savingToolKey"
+    :selected-tool="selectedTool"
+    :tool-dialog-open="toolDialogOpen"
+    :provider-dialog-open="providerDialogOpen"
+    :provider-mode="providerPanelMode"
+    :provider-form="providerForm"
+    :selected-provider-config-id="selectedProviderConfigId"
+    :selected-provider-config="selectedProviderConfig"
+    :current-provider-for-provider-form="currentProviderForProviderForm"
+    :provider-options="providerOptions"
+    :saving-provider-config="savingProviderConfig"
+    :deleting-provider-config-id="deletingProviderConfigId"
+    :can-create-global="canCreateGlobal"
+    :model-dialog-open="modelDialogOpen"
+    :model-mode="modelPanelMode"
+    :model-form="modelForm"
+    :selected-config-id="selectedConfigId"
+    :selected-model="selectedModel"
+    :current-provider="currentProvider"
+    :provider-config-options="providerConfigOptions"
+    :advanced-config-text="advancedConfigText"
+    :advanced-config-error="advancedConfigError"
+    :advanced-config-collapsed="advancedConfigCollapsed"
+    :saving-config="savingConfig"
+    :deleting-config-id="deletingConfigId"
+    @change-section="handleAdminSectionChange"
+    @change-assistant-tab="handleAssistantTabChange"
+    @update-slot-draft="(slot, value) => slotDrafts[slot] = value"
+    @save-slot="handleSaveSlot"
+    @update-prompt="promptDraft = $event"
+    @save-prompt="handleSavePrompt"
+    @restore-prompt="handleRestorePrompt"
+    @open-tool="openToolDialog"
+    @update-tool-dialog-open="handleToolDialogVisibility"
+    @update-tool-enabled="(key, value) => toolDrafts[key].enabled = value"
+    @update-tool-description="(key, value) => toolDrafts[key].descriptionOverride = value"
+    @update-tool-instructions="(key, value) => toolDrafts[key].instructionsOverride = value"
+    @save-tool="handleSaveTool"
+    @restore-tool="handleRestoreTool"
+    @create-provider="openProviderCreateDialog"
+    @view-provider="openProviderDetailDialog"
+    @edit-provider="openProviderEditDialog"
+    @delete-provider="handleDeleteProviderConfig"
+    @update-provider-dialog-open="handleProviderDialogVisibility"
+    @cancel-provider="handleCancelProviderDialogEdit"
+    @start-edit-provider="handleStartEditProviderConfig"
+    @submit-provider="handleSubmitProviderConfig"
+    @create-model="openModelCreateDialog"
+    @view-model="openModelDetailDialog"
+    @edit-model="openModelEditDialog"
+    @delete-model="handleDeleteModel"
+    @update-model-dialog-open="handleModelDialogVisibility"
+    @cancel-model="handleCancelModelDialogEdit"
+    @start-edit-model="handleStartEditModel"
+    @submit-model="handleSubmitModel"
+    @format-advanced="formatAdvancedConfig"
+    @update-advanced-config-text="advancedConfigText = $event"
+    @update-advanced-config-collapsed="advancedConfigCollapsed = $event"
+  />
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useQuery, useQueryClient } from '@tanstack/vue-query'
-import { Bot,ChevronDown, ChevronRight, Cpu, Lock, Plus, Server } from '@lucide/vue'
+import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
 
 import {
   createLlmConfig,
@@ -653,18 +95,13 @@ import {
 } from '@/api/llm'
 import type { LlmConfigUpdatePayload, LlmProviderConfigUpdatePayload } from '@/api/llm'
 import {
-  listAgentCatalog,
   listAgentConfigs,
   updateAgentConfig,
   updateAgentToolConfig,
 } from '@/api/agent-config'
 import { getErrorMessage } from '@/api/http'
-import AccountAiModelDetail from '@/components/account-ai/AccountAiModelDetail.vue'
-import AccountAiProviderDetail from '@/components/account-ai/AccountAiProviderDetail.vue'
-import { getAgentIconShellClass, resolveAgentIconComponent } from '@/components/agent/agent-icon'
-import PageHeader from '@/components/patterns/PageHeader.vue'
-import ToolPanel from '@/components/patterns/ToolPanel.vue'
-import { UiButton, UiCheckbox, UiCombobox, UiFormField, UiInput } from '@/components/ui'
+import AccountAiSettingsWorkbench from '@/components/account-ai/AccountAiSettingsWorkbench.vue'
+import type { AiSettingsSection, AssistantSettingsTab } from '@/components/account-ai/account-ai-settings-types'
 import type { SelectOption } from '@/components/ui/select'
 import { useAuthStore } from '@/stores/auth'
 import type {
@@ -672,7 +109,6 @@ import type {
   AiModelType,
   AgentConfigItem,
   AgentToolConfigItem,
-  AgentToolGroupConfigItem,
   LlmConfigItem,
   LlmProviderCatalogItem,
   LlmProviderConfigItem,
@@ -714,6 +150,8 @@ interface ToolDraft {
 
 const queryClient = useQueryClient()
 const authStore = useAuthStore()
+const route = useRoute()
+const router = useRouter()
 const activeSection = ref<ActiveSection>('agents')
 const activeAgentPanel = ref<ActiveAgentPanel>('binding')
 
@@ -723,9 +161,9 @@ const savingPrompt = ref(false)
 const savingToolKey = ref<string | null>(null)
 const editingToolKey = ref<string | null>(null)
 const toolDrafts = reactive<Record<string, ToolDraft>>({})
-const expandedGroupKeys = reactive<Record<string, boolean>>({})
 const slotDrafts = reactive<Record<string, number | null>>({})
 const bindingSlot = ref<string | null>(null)
+const toolDialogOpen = ref(false)
 
 const selectedProviderConfigId = ref<number | null>(null)
 const providerPanelMode = ref<ConfigPanelMode>('create')
@@ -733,6 +171,8 @@ const providerCreateRequested = ref(false)
 const savingProviderConfig = ref(false)
 const deletingProviderConfigId = ref<number | null>(null)
 const applyingExistingProviderConfig = ref(false)
+const providerDialogOpen = ref(false)
+const providerDialogBaseline = ref('')
 
 const selectedConfigId = ref<number | null>(null)
 const modelPanelMode = ref<ConfigPanelMode>('create')
@@ -743,6 +183,8 @@ const advancedConfigCollapsed = ref(true)
 const savingConfig = ref(false)
 const deletingConfigId = ref<number | null>(null)
 const applyingExistingModel = ref(false)
+const modelDialogOpen = ref(false)
+const modelDialogBaseline = ref('')
 
 const modelForm = reactive<LlmFormState>({
   scope: 'personal',
@@ -784,53 +226,30 @@ const slotsQuery = useQuery({
   queryFn: listLlmSlots,
 })
 
-const catalogQuery = useQuery({
-  queryKey: ['agent-catalog'],
-  queryFn: listAgentCatalog,
-})
-
 const agentConfigsQuery = useQuery({
   queryKey: ['agent-configs'],
   queryFn: listAgentConfigs,
 })
 
-const agentCount = computed(() => agentConfigsQuery.data.value?.length ?? catalogQuery.data.value?.length ?? 0)
-const modelCount = computed(() => configsQuery.data.value?.length ?? 0)
-const providerCount = computed(() => providerConfigsQuery.data.value?.length ?? 0)
-const activeModelCount = computed(() => (configsQuery.data.value ?? []).filter(config => config.status === 'active').length)
-const providerMissingKeyCount = computed(() => (providerConfigsQuery.data.value ?? []).filter(config => !config.has_api_key).length)
-const unreadySlotCount = computed(() => (slotsQuery.data.value ?? []).filter(slot => !slot.binding_ready).length)
-const allToolCount = computed(() => (
-  (agentConfigsQuery.data.value ?? catalogQuery.data.value ?? [])
-    .reduce((total, agent) => total + agent.tool_groups.reduce((groupTotal, group) => groupTotal + group.tools.length, 0), 0)
-))
 const canCreateGlobal = computed(() => authStore.user?.role === 'platform_admin')
-
-const sectionTabs = computed(() => [
-  {
-    key: 'agents' as const,
-    label: '智能体',
-    meta: `${agentCount.value} 个配置`,
-    icon: Bot,
-  },
-  {
-    key: 'providers' as const,
-    label: '供应商',
-    meta: `${providerCount.value} 个配置`,
-    icon: Server,
-  },
-  {
-    key: 'models' as const,
-    label: '模型',
-    meta: `${activeModelCount.value}/${modelCount.value} 启用`,
-    icon: Cpu,
-  },
-])
 
 const selectedAgentConfig = computed<AgentConfigItem | null>(() => (
   agentConfigsQuery.data.value?.find(item => item.id === selectedAgentId.value)
   ?? agentConfigsQuery.data.value?.[0]
   ?? null
+))
+
+const adminSection = computed<AiSettingsSection>(() => activeSection.value === 'agents' ? 'assistant' : activeSection.value)
+const assistantSettingsTab = computed<AssistantSettingsTab>(() => {
+  if (activeAgentPanel.value === 'binding') return 'models'
+  if (activeAgentPanel.value === 'prompts') return 'prompt'
+  return 'tools'
+})
+
+const selectedTool = computed<AgentToolConfigItem | null>(() => (
+  selectedAgentConfig.value?.tool_groups
+    .flatMap(group => group.tools)
+    .find(tool => tool.key === editingToolKey.value) ?? null
 ))
 
 const selectedModel = computed<LlmConfigItem | null>(() => (
@@ -841,20 +260,11 @@ const selectedProviderConfig = computed<LlmProviderConfigItem | null>(() => (
   providerConfigsQuery.data.value?.find(item => item.id === selectedProviderConfigId.value) ?? null
 ))
 
+const providerDialogDirty = computed(() => providerDialogOpen.value && providerPanelMode.value !== 'detail' && providerDialogBaseline.value !== serializeProviderForm())
+const modelDialogDirty = computed(() => modelDialogOpen.value && modelPanelMode.value !== 'detail' && modelDialogBaseline.value !== serializeModelForm())
+
 const selectedModelProviderConfig = computed<LlmProviderConfigItem | null>(() => (
   providerConfigsQuery.data.value?.find(item => item.id === modelForm.provider_config_id) ?? null
-))
-
-const selectedAgentSlot = computed(() => {
-  const slotKey = selectedAgentConfig.value?.llm_slot
-  if (!slotKey) {
-    return null
-  }
-  return slotsQuery.data.value?.find(slot => slot.slot === slotKey) ?? null
-})
-
-const totalToolCount = computed(() => (
-  selectedAgentConfig.value?.tool_groups.reduce((total, group) => total + group.tools.length, 0) ?? 0
 ))
 
 const promptDirty = computed(() => {
@@ -862,11 +272,9 @@ const promptDirty = computed(() => {
   return promptDraft.value.trim() !== selectedAgentConfig.value.effective_prompt.trim()
 })
 
-const selectedSlotDirty = computed(() => {
-  const slot = selectedAgentConfig.value?.llm_slot
-  if (!slot) return false
-  return (slotDrafts[slot] ?? null) !== (selectedAgentSlot.value?.llm_config_id ?? null)
-})
+const slotDraftDirty = computed(() => (slotsQuery.data.value ?? []).some(slot => (
+  (slotDrafts[slot.slot] ?? null) !== (slot.llm_config_id ?? null)
+)))
 
 const dirtyToolCount = computed(() => (
   selectedAgentConfig.value?.tool_groups.reduce(
@@ -875,29 +283,8 @@ const dirtyToolCount = computed(() => (
   ) ?? 0
 ))
 
-const agentPanelTabs = computed(() => [
-  {
-    key: 'binding' as const,
-    label: '模型绑定',
-    meta: selectedAgentSlot.value?.binding_ready ? '运行入口已就绪' : '需要选择模型',
-    badge: selectedSlotDirty.value ? '未保存' : '',
-    badgeClass: 'bg-warning-muted text-warning-strong',
-  },
-  {
-    key: 'prompts' as const,
-    label: '提示词',
-    meta: selectedAgentConfig.value?.prompt_customized ? '已覆盖提示词' : '使用默认提示词',
-    badge: promptDirty.value ? '未保存' : '',
-    badgeClass: 'bg-warning-muted text-warning-strong',
-  },
-  {
-    key: 'tools' as const,
-    label: '工具配置',
-    meta: `${selectedAgentConfig.value?.enabled_tool_count ?? 0}/${totalToolCount.value} 启用`,
-    badge: dirtyToolCount.value ? `${dirtyToolCount.value} 处` : '',
-    badgeClass: 'bg-warning-muted text-warning-strong',
-  },
-])
+const assistantDirty = computed(() => promptDirty.value || dirtyToolCount.value > 0 || slotDraftDirty.value)
+
 
 const providerOptions = computed<SelectOption[]>(() => (
   providersQuery.data.value?.map(provider => ({
@@ -954,38 +341,6 @@ const providerConfigOptions = computed<SelectOption[]>(() => (
     }))
 ))
 
-const configOptions = computed<SelectOption[]>(() => (
-  (configsQuery.data.value ?? [])
-    .filter(config => config.status === 'active')
-    .filter(config => (config.model_type ?? 'chat') === 'chat')
-    .map(config => ({
-      label: config.name,
-      value: config.id,
-      description: `${config.scope === 'global' ? '全局模型' : '个人模型'} · ${config.provider_config_name} / ${config.model_id}`,
-      keywords: [config.provider_key, config.model_id, config.provider_label, config.provider_config_name],
-    }))
-))
-
-const visualSlots = computed(() => (
-  (slotsQuery.data.value ?? []).filter(slot => ['image_understanding', 'image_generation'].includes(slot.slot))
-))
-
-/** 按槽位协议筛选可绑定模型，避免把图片生成模型绑定到聊天槽位。 */
-function getSlotConfigOptions(slot: string): SelectOption[] {
-  return (configsQuery.data.value ?? [])
-    .filter(config => config.status === 'active')
-    .filter(config => {
-      if (slot === 'image_generation') return config.model_type === 'image_generation'
-      if (slot === 'image_understanding') return (config.model_type ?? 'chat') === 'chat' && config.supports_image_input
-      return (config.model_type ?? 'chat') === 'chat'
-    })
-    .map(config => ({
-      label: config.name,
-      value: config.id,
-      description: `${config.scope === 'global' ? '全局模型' : '个人模型'} · ${config.provider_config_name} / ${config.model_id}`,
-      keywords: [config.provider_key, config.model_id, config.provider_label],
-    }))
-}
 
 watch(
   () => agentConfigsQuery.data.value,
@@ -1007,9 +362,23 @@ watch(
     if (!config) return
     promptDraft.value = config.effective_prompt
     editingToolKey.value = null
-    activeAgentPanel.value = 'binding'
     resetToolDrafts(config)
-    resetGroupExpansion(config)
+  },
+  { immediate: true },
+)
+
+watch(
+  () => [route.query.section, route.query.tab] as const,
+  ([section, tab]) => {
+    activeSection.value = resolveLegacySection(section)
+    activeAgentPanel.value = resolveAssistantPanel(tab)
+    const normalizedSection = adminSection.value
+    const normalizedTab = assistantSettingsTab.value
+    const queryIsValid = section === normalizedSection
+      && (normalizedSection === 'assistant' ? tab === normalizedTab : tab === undefined)
+    if (!queryIsValid) {
+      void replaceNavigationQuery(normalizedSection, normalizedTab)
+    }
   },
   { immediate: true },
 )
@@ -1171,16 +540,198 @@ function prefillProviderFormFromProvider(provider: LlmProviderCatalogItem | null
   }
 }
 
-/** 切换账号 AI 设置的一级分区，保留各分区当前表单草稿。 */
-function setActiveSection(section: ActiveSection) {
-  activeSection.value = section
-  if (section === 'providers') {
-    openDefaultProviderDetail()
+/** 将路由查询参数解析为旧页面内部使用的一级分区。 */
+function resolveLegacySection(value: unknown): ActiveSection {
+  if (value === 'models' || value === 'providers') return value
+  return 'agents'
+}
+
+/** 将公开的助手 Tab 参数解析为旧页面内部面板标识。 */
+function resolveAssistantPanel(value: unknown): ActiveAgentPanel {
+  if (value === 'prompt') return 'prompts'
+  if (value === 'tools') return 'tools'
+  return 'binding'
+}
+
+/** 写入可刷新恢复的管理后台导航状态，不新增子路由。 */
+async function replaceNavigationQuery(section: AiSettingsSection, tab: AssistantSettingsTab = assistantSettingsTab.value) {
+  const query: Record<string, string | string[] | null | undefined> = { ...route.query, section }
+  if (section === 'assistant') query.tab = tab
+  else delete query.tab
+  await router.replace({ query })
+}
+
+/** 丢弃内容助手所有未保存草稿，并恢复服务端有效值。 */
+function discardAssistantDrafts() {
+  const config = selectedAgentConfig.value
+  if (config) {
+    promptDraft.value = config.effective_prompt
+    resetToolDrafts(config)
   }
-  if (section === 'models') {
-    openDefaultModelDetail()
+  for (const slot of slotsQuery.data.value ?? []) {
+    slotDrafts[slot.slot] = slot.llm_config_id
   }
 }
+
+/** 在离开含未保存草稿的助手区域前请求确认。 */
+async function confirmDiscardAssistantDrafts(): Promise<boolean> {
+  if (!assistantDirty.value) return true
+  const confirmed = await createConfirm('当前内容助手配置有未保存修改，确定放弃吗？', '放弃未保存修改')
+  if (confirmed) discardAssistantDrafts()
+  return confirmed
+}
+
+/** 切换一级管理模块，并同步 URL 查询参数。 */
+async function handleAdminSectionChange(section: AiSettingsSection) {
+  if (section === adminSection.value) return
+  if (adminSection.value === 'assistant' && !(await confirmDiscardAssistantDrafts())) return
+  activeSection.value = section === 'assistant' ? 'agents' : section
+  await replaceNavigationQuery(section)
+}
+
+/** 切换内容助手的二级配置面板，并保护未保存草稿。 */
+async function handleAssistantTabChange(tab: AssistantSettingsTab) {
+  if (tab === assistantSettingsTab.value) return
+  const previousPanel = activeAgentPanel.value
+  activeAgentPanel.value = resolveAssistantPanel(tab)
+  if (!(await confirmDiscardAssistantDrafts())) {
+    activeAgentPanel.value = previousPanel
+    return
+  }
+  await replaceNavigationQuery('assistant', tab)
+}
+
+/** 序列化供应商表单，供弹窗脏状态判断。 */
+function serializeProviderForm(): string {
+  return JSON.stringify(providerForm)
+}
+
+/** 序列化模型表单及高级参数，供弹窗脏状态判断。 */
+function serializeModelForm(): string {
+  return JSON.stringify({ ...modelForm, advancedConfigText: advancedConfigText.value })
+}
+
+/** 打开供应商新建弹窗并记录初始表单快照。 */
+async function openProviderCreateDialog() {
+  resetProviderForm()
+  await nextTick()
+  providerDialogBaseline.value = serializeProviderForm()
+  providerDialogOpen.value = true
+}
+
+/** 打开供应商只读详情弹窗。 */
+async function openProviderDetailDialog(config: LlmProviderConfigItem) {
+  await handleEditProviderConfig(config)
+  providerDialogBaseline.value = serializeProviderForm()
+  providerDialogOpen.value = true
+}
+
+/** 直接打开供应商编辑弹窗。 */
+async function openProviderEditDialog(config: LlmProviderConfigItem) {
+  await handleEditProviderConfig(config)
+  providerDialogBaseline.value = serializeProviderForm()
+  handleStartEditProviderConfig()
+  providerDialogOpen.value = true
+}
+
+/** 处理供应商弹窗关闭请求，避免静默丢弃输入。 */
+async function handleProviderDialogVisibility(open: boolean) {
+  if (open) {
+    providerDialogOpen.value = true
+    return
+  }
+  if (providerDialogDirty.value && !(await createConfirm('当前供应商配置有未保存修改，确定关闭吗？', '放弃未保存修改'))) return
+  providerDialogOpen.value = false
+}
+
+/** 取消供应商编辑前检查表单修改，并恢复服务端详情。 */
+async function handleCancelProviderDialogEdit() {
+  if (providerDialogDirty.value && !(await createConfirm('当前供应商配置有未保存修改，确定取消编辑吗？', '取消编辑'))) return
+  handleCancelProviderEdit()
+}
+
+/** 打开模型新建弹窗并记录初始表单快照。 */
+async function openModelCreateDialog() {
+  resetModelForm()
+  await nextTick()
+  modelDialogBaseline.value = serializeModelForm()
+  modelDialogOpen.value = true
+}
+
+/** 打开模型只读详情弹窗。 */
+async function openModelDetailDialog(config: LlmConfigItem) {
+  await handleEditModel(config)
+  modelDialogBaseline.value = serializeModelForm()
+  modelDialogOpen.value = true
+}
+
+/** 直接打开模型编辑弹窗。 */
+async function openModelEditDialog(config: LlmConfigItem) {
+  await handleEditModel(config)
+  modelDialogBaseline.value = serializeModelForm()
+  handleStartEditModel()
+  modelDialogOpen.value = true
+}
+
+/** 处理模型弹窗关闭请求，避免静默丢弃输入。 */
+async function handleModelDialogVisibility(open: boolean) {
+  if (open) {
+    modelDialogOpen.value = true
+    return
+  }
+  if (modelDialogDirty.value && !(await createConfirm('当前模型配置有未保存修改，确定关闭吗？', '放弃未保存修改'))) return
+  modelDialogOpen.value = false
+}
+
+/** 取消模型编辑前检查表单修改，并恢复服务端详情。 */
+async function handleCancelModelDialogEdit() {
+  if (modelDialogDirty.value && !(await createConfirm('当前模型配置有未保存修改，确定取消编辑吗？', '取消编辑'))) return
+  handleCancelModelEdit()
+}
+
+/** 打开单个工具配置弹窗。 */
+function openToolDialog(tool: AgentToolConfigItem) {
+  editingToolKey.value = tool.key
+  toolDialogOpen.value = true
+}
+
+/** 处理工具弹窗关闭请求，并仅恢复当前工具的未保存草稿。 */
+async function handleToolDialogVisibility(open: boolean) {
+  if (open) {
+    toolDialogOpen.value = true
+    return
+  }
+  const tool = selectedTool.value
+  if (tool && isToolDirty(tool)) {
+    const confirmed = await createConfirm('当前工具配置有未保存修改，确定关闭吗？', '放弃未保存修改')
+    if (!confirmed) return
+    toolDrafts[tool.key] = {
+      enabled: tool.enabled,
+      descriptionOverride: tool.description_override ?? '',
+      instructionsOverride: tool.instructions_override ?? '',
+    }
+  }
+  toolDialogOpen.value = false
+  editingToolKey.value = null
+}
+
+/** 浏览器刷新或关闭前提示尚未保存的配置。 */
+function handleBeforeUnload(event: BeforeUnloadEvent) {
+  if (!assistantDirty.value && !providerDialogDirty.value && !modelDialogDirty.value) return
+  event.preventDefault()
+  event.returnValue = ''
+}
+
+onBeforeRouteLeave(async () => {
+  if (!(await confirmDiscardAssistantDrafts())) return false
+  if (providerDialogDirty.value || modelDialogDirty.value) {
+    return await createConfirm('当前配置弹窗有未保存修改，确定离开 AI 设置吗？', '离开 AI 设置')
+  }
+  return true
+})
+
+onMounted(() => window.addEventListener('beforeunload', handleBeforeUnload))
+onBeforeUnmount(() => window.removeEventListener('beforeunload', handleBeforeUnload))
 
 /** 进入供应商分区时优先展示已有供应商详情，避免把新建表单作为默认落点。 */
 function openDefaultProviderDetail() {
@@ -1204,12 +755,6 @@ function openDefaultModelDetail() {
     return
   }
   void handleEditModel(firstModel)
-}
-
-/** 选中左侧智能体卡片并切换到智能体详情。 */
-function selectAgent(agentId: string) {
-  selectedAgentId.value = agentId
-  activeSection.value = 'agents'
 }
 
 /** 从供应商列表中查找默认 Base URL。 */
@@ -1244,21 +789,6 @@ function shouldReplaceContextWindowDefault(value: number, providerKey: string | 
   return value === previousDefault
 }
 
-/** 返回智能体模型绑定状态文案。 */
-function getAgentSlotLabel(agent: AgentConfigItem) {
-  const slot = slotsQuery.data.value?.find(item => item.slot === agent.llm_slot)
-  if (!agent.llm_slot) return '无绑定'
-  if (!slot) return '绑定项未知'
-  return slot.binding_ready ? slot.llm_config_name ?? '已绑定' : '需绑定'
-}
-
-/** 返回智能体模型绑定状态样式。 */
-function getAgentSlotClass(agent: AgentConfigItem) {
-  const slot = slotsQuery.data.value?.find(item => item.slot === agent.llm_slot)
-  if (slot?.binding_ready) return 'bg-success-muted text-success-strong'
-  return 'bg-warning-muted text-warning-strong'
-}
-
 /** 用服务端配置重置工具草稿。 */
 function resetToolDrafts(config: AgentConfigItem) {
   for (const key of Object.keys(toolDrafts)) {
@@ -1275,43 +805,8 @@ function resetToolDrafts(config: AgentConfigItem) {
   }
 }
 
-/** 重置工具组展开状态，默认全部折叠。 */
-function resetGroupExpansion(config: AgentConfigItem) {
-  for (const key of Object.keys(expandedGroupKeys)) {
-    delete expandedGroupKeys[key]
-  }
-  for (const group of config.tool_groups) {
-    expandedGroupKeys[group.key] = false
-  }
-}
-
-/** 统计工具组内当前草稿启用的工具数量。 */
-function getToolGroupEnabledCount(group: AgentToolGroupConfigItem) {
-  return group.tools.filter(tool => toolDrafts[tool.key]?.enabled ?? tool.enabled).length
-}
-
-/** 切换工具组展开状态。 */
-function toggleToolGroup(groupKey: string) {
-  expandedGroupKeys[groupKey] = !expandedGroupKeys[groupKey]
-}
-
-/** 判断工具组是否处于展开状态。 */
-function isToolGroupExpanded(groupKey: string) {
-  return expandedGroupKeys[groupKey] === true
-}
-
-/** 切换单个工具的详细编辑行。 */
-function toggleToolEditor(toolKey: string) {
-  editingToolKey.value = editingToolKey.value === toolKey ? null : toolKey
-}
-
-/** 保存当前智能体的模型绑定。 */
-async function handleSaveSelectedAgentSlot(scope: AiLlmConfigScope = 'personal') {
-  const slot = selectedAgentConfig.value?.llm_slot
-  if (!slot) {
-    Message.error('当前智能体没有可用的模型绑定项。')
-    return
-  }
+/** 保存固定槽位；管理员设置全局默认时仅允许选择全局模型。 */
+async function handleSaveSlot(slot: string, scope: AiLlmConfigScope = 'personal') {
   const selectedModelId = slotDrafts[slot] ?? null
   if (scope === 'global') {
     const selected = configsQuery.data.value?.find(config => config.id === selectedModelId)
@@ -1327,20 +822,6 @@ async function handleSaveSelectedAgentSlot(scope: AiLlmConfigScope = 'personal')
     Message.success(scope === 'global' ? '全局默认模型已保存。' : '模型绑定已保存。')
   } catch (error) {
     Message.error(getErrorMessage(error, '保存模型绑定失败。'))
-  } finally {
-    bindingSlot.value = null
-  }
-}
-
-/** 保存任意固定槽位，供视觉能力区域复用。 */
-async function handleSaveSlot(slot: string) {
-  bindingSlot.value = slot
-  try {
-    await updateLlmSlotBinding(slot, slotDrafts[slot] ?? null, 'personal')
-    await refreshLlmQueries()
-    Message.success('视觉模型绑定已保存。')
-  } catch (error) {
-    Message.error(getErrorMessage(error, '保存视觉模型绑定失败。'))
   } finally {
     bindingSlot.value = null
   }
@@ -1413,7 +894,6 @@ async function handleRestoreTool(tool: AgentToolConfigItem) {
     savingToolKey.value = null
   }
 }
-
 /** 判断工具草稿是否发生变化。 */
 function isToolDirty(tool: AgentToolConfigItem) {
   const draft = toolDrafts[tool.key]
@@ -1421,42 +901,6 @@ function isToolDirty(tool: AgentToolConfigItem) {
   return draft.enabled !== tool.enabled
     || draft.descriptionOverride.trim() !== (tool.description_override ?? '')
     || draft.instructionsOverride.trim() !== (tool.instructions_override ?? '')
-}
-
-/** 判断工具说明或提示词是否已经被覆盖。 */
-function isToolCustomized(tool: AgentToolConfigItem) {
-  return Boolean(tool.description_override || tool.instructions_override)
-}
-
-/** 返回工具风险级别标签文案。 */
-function getRiskLabel(tool: AgentToolConfigItem) {
-  if (!tool.configurable) return '系统工具'
-  if (tool.requires_confirmation) return '确认执行'
-  if (tool.risk_level === 'write') return '写入工具'
-  return '只读工具'
-}
-
-/** 返回工具风险级别样式。 */
-function getRiskClass(riskLevel: AgentToolConfigItem['risk_level']) {
-  if (riskLevel === 'danger') return 'bg-danger-muted text-danger-strong'
-  if (riskLevel === 'write') return 'bg-warning-muted text-warning-strong'
-  if (riskLevel === 'system') return 'bg-surface-muted text-text-muted'
-  return 'bg-success-muted text-success-strong'
-}
-
-/** 将 Agent 工具说明中的列表字段格式化为紧凑文案。 */
-function formatGuideList(items: string[], emptyText: string) {
-  return items.length ? items.join('、') : emptyText
-}
-
-/** 将 Agent 工具说明中的 JSON 数据格式化为只读代码块。 */
-function formatGuideJson(value: unknown) {
-  return JSON.stringify(value, null, 2)
-}
-
-/** 判断工具说明是否提供返回示例。 */
-function hasGuideResponseExample(tool: AgentToolConfigItem) {
-  return tool.agent_guide.response_example !== null && tool.agent_guide.response_example !== undefined
 }
 
 /** 按范围选择默认供应商配置，优先使用 DeepSeek。 */

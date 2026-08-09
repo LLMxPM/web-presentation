@@ -28,8 +28,8 @@ Demo 环境系统预置了一个低档位token-plan，额度优先，如果额�
 
 ![AI 设置入口](../assets/ai设置入口.png)
 
-1. 打开账户或个人中心中的 AI 设置页面。
-2. 先创建供应商配置，再创建并绑定模型。Chat 与图片生成供应商独立：OpenAI 分别选择 `openai`、`openai_image`，百炼分别选择 `dashscope`、`dashscope_image`，OpenRouter 分别选择 `openrouter`、`openrouter_image`，API Key 与 Base URL 不会互相复用。OpenRouter 图片供应商的默认 Base URL 为 `https://openrouter.ai/api/v1`，模型需从设置页列出的白名单中选择。
+1. 打开账户或个人中心中的 AI 设置页面。页面默认进入“内容助手”，左侧可切换“模型管理”和“供应商管理”。
+2. 首次配置时先在“供应商管理”创建连接，再到“模型管理”创建模型，最后回到“内容助手”的“模型与视觉能力”完成绑定。Chat 与图片生成供应商独立：OpenAI 分别选择 `openai`、`openai_image`，百炼分别选择 `dashscope`、`dashscope_image`，OpenRouter 分别选择 `openrouter`、`openrouter_image`，API Key 与 Base URL 不会互相复用。OpenRouter 图片供应商的默认 Base URL 为 `https://openrouter.ai/api/v1`，模型需从设置页列出的白名单中选择。
 3. 保存后回到项目页面或 AI 侧边栏，选择可用配置继续使用。
 
 平台会对保存的 API Key 做加密存储，避免在数据库中直接保存明文密钥。但 Demo 环境仍然是公开体验环境，API Key 安全需要自行注意：

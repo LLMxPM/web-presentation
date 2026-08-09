@@ -1,381 +1,102 @@
-<!-- 文件功能：承载账号 AI 设置中的模型详情表单，隔离模型编辑界面。 -->
+<!-- 文件功能：承载账号 AI 设置中的紧凑模型详情、能力参数与高级配置表单。 -->
 <template>
   <section class="space-y-5 p-5">
-    <div class="flex flex-wrap items-start justify-between gap-4 border-b border-border-muted pb-4">
-      <div>
-        <h2 class="text-lg font-bold text-text-strong">{{ panelTitle }}</h2>
-        <p class="mt-1 text-sm text-text-muted">
-          {{ panelDescription }}
-        </p>
-        <div v-if="mode === 'detail' && selectedModel" class="mt-3 flex flex-wrap gap-2 text-xs font-semibold">
-          <span
-            class="rounded-full px-2.5 py-1"
-            :class="selectedModel.status === 'active' ? 'bg-success-muted text-success-strong' : 'bg-surface-muted text-text-muted'"
-          >
-            {{ selectedModel.status === 'active' ? '启用' : '不可用' }}
-          </span>
-          <span
-            class="rounded-full px-2.5 py-1"
-            :class="selectedModel.scope === 'global' ? 'bg-surface-selected text-accent-hover' : 'bg-surface-muted text-text-secondary'"
-          >
-            {{ selectedModel.scope === 'global' ? '全局模型' : '个人模型' }}
-          </span>
-          <span class="rounded-full bg-surface-muted px-2.5 py-1 text-text-secondary">
-            {{ selectedModel.provider_config_name }}
-          </span>
-          <span class="rounded-full bg-ai-muted px-2.5 py-1 text-ai-strong">
-            {{ selectedModel.model_type === 'image_generation' ? '图片生成' : '聊天模型' }}
-          </span>
+    <header class="flex items-start justify-between gap-4 border-b border-border-muted pb-4">
+      <div class="min-w-0">
+        <h2 class="truncate text-lg font-bold text-text-strong">{{ panelTitle }}</h2>
+        <div v-if="mode === 'detail' && selectedModel" class="mt-2 flex flex-wrap gap-2 text-xs font-semibold">
+          <span class="rounded-full px-2 py-0.5" :class="selectedModel.status === 'active' ? 'bg-success-muted text-success-strong' : 'bg-surface-muted text-text-muted'">{{ selectedModel.status === 'active' ? '启用' : '不可用' }}</span>
+          <span class="rounded-full bg-surface-muted px-2 py-0.5 text-text-secondary">{{ selectedModel.scope === 'global' ? '全局模型' : '个人模型' }}</span>
+          <span class="rounded-full bg-surface-muted px-2 py-0.5 text-text-secondary">{{ selectedModel.model_type === 'image_generation' ? '图片生成' : 'Chat' }}</span>
         </div>
-        <p v-if="readOnlyModel" class="mt-2 text-xs font-semibold text-warning">管理员全局模型只读，可选择绑定但不能修改。</p>
+        <p v-if="readOnlyModel" class="mt-2 text-xs font-semibold text-warning-strong">全局模型为只读配置，可直接绑定使用。</p>
       </div>
-      <div v-if="mode === 'detail' && selectedModel?.editable" class="flex flex-wrap justify-end gap-2">
-        <UiButton
-          variant="primary"
-          @click="emit('edit')"
-        >
-          编辑模型
-        </UiButton>
-        <UiButton
-          variant="danger"
-          :loading="deletingConfigId === selectedModel.id"
-          @click="emit('deleteModel', selectedModel)"
-        >
-          删除模型
-        </UiButton>
+      <div v-if="mode === 'detail' && selectedModel?.editable" class="flex shrink-0 gap-2">
+        <UiButton variant="ghost" @click="emit('edit')">编辑</UiButton>
+        <UiButton variant="danger" :loading="deletingConfigId === selectedModel.id" @click="emit('deleteModel', selectedModel)">删除</UiButton>
       </div>
+    </header>
+
+    <div v-if="mode === 'detail' && selectedModel" class="space-y-5">
+      <dl class="grid gap-x-6 gap-y-4 text-sm md:grid-cols-2">
+        <div><dt class="text-xs font-semibold text-text-disabled">模型名称</dt><dd class="mt-1 font-semibold text-text-strong">{{ selectedModel.name }}</dd></div>
+        <div><dt class="text-xs font-semibold text-text-disabled">模型类型</dt><dd class="mt-1 text-text-emphasis">{{ selectedModel.model_type === 'image_generation' ? '图片生成模型' : '聊天 / 图片理解模型' }}</dd></div>
+        <div><dt class="text-xs font-semibold text-text-disabled">供应商配置</dt><dd class="mt-1 font-semibold text-text-strong">{{ selectedModel.provider_config_name }}</dd></div>
+        <div><dt class="text-xs font-semibold text-text-disabled">模型 ID</dt><dd class="mt-1 break-all font-mono text-text-emphasis">{{ selectedModel.model_id }}</dd></div>
+        <div v-if="selectedModel.model_type !== 'image_generation'"><dt class="text-xs font-semibold text-text-disabled">上下文窗口</dt><dd class="mt-1 text-text-emphasis">{{ selectedModel.context_window_tokens.toLocaleString() }} tokens</dd></div>
+        <div v-if="selectedModel.model_type !== 'image_generation'"><dt class="text-xs font-semibold text-text-disabled">能力</dt><dd class="mt-1 text-text-emphasis">{{ selectedModel.thinking_enabled ? 'Thinking' : '无 Thinking' }} · {{ selectedModel.supports_image_input ? '支持图片输入' : '不支持图片输入' }}</dd></div>
+        <div v-if="selectedModel.thinking_enabled"><dt class="text-xs font-semibold text-text-disabled">思考强度</dt><dd class="mt-1 text-text-emphasis">{{ selectedModel.thinking_effort || '供应商默认' }}</dd></div>
+      </dl>
     </div>
 
-    <article v-if="mode === 'detail' && selectedModel" class="space-y-6">
-      <section v-if="(selectedModel.model_type ?? 'chat') === 'chat'" class="space-y-3">
-        <div class="flex items-start gap-3 border-b border-border-muted pb-2">
-          <span class="mt-1 h-5 w-1 rounded-full bg-accent-emphasis"></span>
-          <div>
-            <h3 class="text-base font-bold text-text-strong">模型身份</h3>
-            <p class="mt-1 text-xs leading-5 text-text-muted">用于识别模型归属、绑定入口和供应商真实模型 ID。</p>
-          </div>
-        </div>
-        <dl class="grid gap-3 text-sm md:grid-cols-2 xl:grid-cols-4">
-          <div class="rounded-xl border border-border bg-canvas px-4 py-3">
-            <dt class="text-xs font-semibold text-text-disabled">供应商配置</dt>
-            <dd class="mt-1 truncate font-bold text-text-strong">{{ selectedModel.provider_config_name }}</dd>
-            <dd class="mt-1 text-xs text-text-muted">{{ selectedModel.provider_label }}</dd>
-          </div>
-          <div class="rounded-xl border border-border bg-canvas px-4 py-3">
-            <dt class="text-xs font-semibold text-text-disabled">模型 ID</dt>
-            <dd class="mt-1 min-w-0">
-              <code class="block truncate rounded bg-surface px-2 py-1 text-xs font-semibold text-text-emphasis">{{ selectedModel.model_id }}</code>
-            </dd>
-          </div>
-          <div class="rounded-xl border border-border bg-canvas px-4 py-3">
-            <dt class="text-xs font-semibold text-text-disabled">范围</dt>
-            <dd class="mt-1 font-semibold text-text-emphasis">{{ selectedModel.scope === 'global' ? '全局模型' : '个人模型' }}</dd>
-          </div>
-          <div class="rounded-xl border border-border bg-canvas px-4 py-3">
-            <dt class="text-xs font-semibold text-text-disabled">状态</dt>
-            <dd class="mt-1 font-semibold" :class="selectedModel.status === 'active' ? 'text-success-strong' : 'text-text-muted'">
-              {{ selectedModel.status === 'active' ? '启用' : '不可用' }}
-            </dd>
-          </div>
-        </dl>
-      </section>
-
-      <section v-if="(selectedModel.model_type ?? 'chat') === 'chat'" class="space-y-3">
-        <div class="flex items-start gap-3 border-b border-border-muted pb-2">
-          <span class="mt-1 h-5 w-1 rounded-full bg-info"></span>
-          <div>
-            <h3 class="text-base font-bold text-text-strong">运行预算</h3>
-            <p class="mt-1 text-xs leading-5 text-text-muted">只需配置上下文窗口，其余预算由平台自动计算。</p>
-          </div>
-        </div>
-        <dl class="grid gap-3 text-sm md:grid-cols-3">
-          <div class="rounded-xl border border-border bg-canvas px-4 py-3">
-            <dt class="text-xs font-semibold text-text-disabled">上下文窗口</dt>
-            <dd class="mt-1 font-semibold text-text-emphasis">{{ selectedModel.context_window_tokens.toLocaleString() }} tokens</dd>
-          </div>
-          <div class="rounded-xl border border-border bg-canvas px-4 py-3">
-            <dt class="text-xs font-semibold text-text-disabled">自动最大输出</dt>
-            <dd class="mt-1 font-semibold text-text-emphasis">{{ selectedModel.max_output_tokens.toLocaleString() }} tokens</dd>
-          </div>
-          <div class="rounded-xl border border-border bg-canvas px-4 py-3">
-            <dt class="text-xs font-semibold text-text-disabled">自动压缩目标</dt>
-            <dd class="mt-1 font-semibold text-text-emphasis">{{ compressionTargetTokens.toLocaleString() }} tokens</dd>
-          </div>
-        </dl>
-      </section>
-
-      <section class="space-y-3">
-        <div class="flex items-start gap-3 border-b border-border-muted pb-2">
-          <span class="mt-1 h-5 w-1 rounded-full bg-success"></span>
-          <div>
-            <h3 class="text-base font-bold text-text-strong">能力声明</h3>
-            <p class="mt-1 text-xs leading-5 text-text-muted">供 Agent 运行态决定请求参数映射、视觉输入和工具可用性。</p>
-          </div>
-        </div>
-        <dl v-if="(selectedModel.model_type ?? 'chat') === 'chat'" class="grid gap-3 text-sm md:grid-cols-2">
-          <div class="rounded-xl border border-border bg-canvas px-4 py-3">
-            <dt class="text-xs font-semibold text-text-disabled">Reasoning</dt>
-            <dd class="mt-1 font-semibold" :class="selectedModel.thinking_enabled ? 'text-success-strong' : 'text-text-muted'">
-              {{ selectedModel.thinking_enabled ? `启用${selectedModel.thinking_effort ? ` · ${selectedModel.thinking_effort}` : ''}` : '未启用' }}
-            </dd>
-          </div>
-          <div class="rounded-xl border border-border bg-canvas px-4 py-3">
-            <dt class="text-xs font-semibold text-text-disabled">图片输入</dt>
-            <dd class="mt-1 font-semibold" :class="selectedModel.supports_image_input ? 'text-success-strong' : 'text-text-muted'">
-              {{ selectedModel.supports_image_input ? '支持' : '不支持' }}
-            </dd>
-          </div>
-        </dl>
-        <dl v-else-if="currentImageModel" class="grid gap-3 text-sm md:grid-cols-2 xl:grid-cols-4">
-          <div class="rounded-xl border border-border bg-canvas px-4 py-3">
-            <dt class="text-xs font-semibold text-text-disabled">操作</dt>
-            <dd class="mt-1 font-semibold text-text-emphasis">{{ currentImageModel.operations.join(' / ') }}</dd>
-          </div>
-          <div class="rounded-xl border border-border bg-canvas px-4 py-3">
-            <dt class="text-xs font-semibold text-text-disabled">参考图 / 输出上限</dt>
-            <dd class="mt-1 font-semibold text-text-emphasis">{{ currentImageModel.max_reference_images }} / {{ currentImageModel.max_output_count }}</dd>
-          </div>
-          <div class="rounded-xl border border-border bg-canvas px-4 py-3">
-            <dt class="text-xs font-semibold text-text-disabled">质量</dt>
-            <dd class="mt-1 font-semibold text-text-emphasis">{{ currentImageModel.quality_options.join(' / ') }}</dd>
-          </div>
-          <div class="rounded-xl border border-border bg-canvas px-4 py-3">
-            <dt class="text-xs font-semibold text-text-disabled">蒙版编辑</dt>
-            <dd class="mt-1 font-semibold" :class="currentImageModel.supports_mask ? 'text-success-strong' : 'text-text-muted'">
-              {{ currentImageModel.supports_mask ? '支持' : '不支持' }}
-            </dd>
-          </div>
-        </dl>
-      </section>
-    </article>
-
-    <div v-else-if="mode === 'detail'" class="rounded-2xl border border-dashed border-border px-4 py-12 text-center text-sm text-text-muted">
-      请选择左侧模型查看详情，或新建一个模型。
-    </div>
-
-    <div v-if="mode !== 'detail'" class="space-y-5" :class="readOnlyModel ? 'pointer-events-none opacity-70' : ''">
-      <section class="space-y-3">
-        <div class="flex items-start gap-3 border-b border-border-muted pb-2">
-          <span class="mt-1 h-5 w-1 rounded-full bg-accent-emphasis"></span>
-          <div>
-            <h3 class="text-base font-bold text-text-strong">模型身份</h3>
-            <p class="mt-1 text-xs leading-5 text-text-muted">模型名称用于绑定选择展示，模型 ID 按供应商真实 ID 填写。</p>
-          </div>
-        </div>
-        <div class="grid gap-4 xl:grid-cols-2">
-          <UiFormField label="模型类型" class="rounded-xl border border-border bg-canvas px-4 py-3 text-sm font-semibold text-text-emphasis">
-            <UiSelect v-model="form.model_type" :options="modelTypeOptions" />
-          </UiFormField>
-          <UiFormField v-if="!selectedConfigId && canCreateGlobal" label="模型范围" class="rounded-xl border border-border bg-canvas px-4 py-3 text-sm font-semibold text-text-emphasis">
-            <UiSelect v-model="form.scope" :options="scopeOptions" />
-          </UiFormField>
-          <UiFormField label="模型名称" required>
-            <UiInput
-              :model-value="form.name"
-              placeholder="例如：总控默认模型"
-              required
-              @update:model-value="value => form.name = String(value)"
-            />
-          </UiFormField>
-
-          <div class="space-y-1.5">
-            <label class="ml-1 text-sm font-semibold text-text-emphasis">供应商配置</label>
-            <UiCombobox
-              :model-value="form.provider_config_id"
-              :options="providerConfigOptions"
-              placeholder="请选择供应商配置"
-              @update:model-value="value => form.provider_config_id = value === null ? null : Number(value)"
-            />
-            <p v-if="currentProvider" class="ml-1 text-xs text-text-disabled">{{ currentProvider.provider_adapter }}</p>
-          </div>
-
-          <UiFormField label="模型 ID" required>
-            <UiInput
-              :model-value="form.model_id"
-              :placeholder="form.model_type === 'image_generation' ? '选择已知模型或填写兼容模型 ID' : '例如：gpt-4.1-mini'"
-              :list="form.model_type === 'image_generation' ? 'image-generation-model-options' : undefined"
-              required
-              @update:model-value="handleModelIdUpdate"
-            />
-          </UiFormField>
-          <datalist v-if="form.model_type === 'image_generation'" id="image-generation-model-options">
-            <option v-for="model in imageModelOptions" :key="model.model_id" :value="model.model_id">{{ model.label }}</option>
-          </datalist>
-          <p v-if="form.model_type === 'image_generation' && imageModelOptions.length" class="-mt-2 text-xs text-text-muted xl:col-span-2">
-            已知模型：{{ imageModelOptions.map(model => `${model.label} (${model.model_id})`).join('、') }}。
-            {{ supportsCustomImageModel ? '也可填写该供应商的兼容模型 ID。' : '当前供应商只允许目录中的模型。' }}
-          </p>
-          <p
-            v-if="currentProvider && !(currentProvider.supported_model_types ?? ['chat']).includes(form.model_type)"
-            class="rounded-xl border border-warning-border bg-warning-muted px-4 py-3 text-xs font-semibold text-warning-strong xl:col-span-2"
-          >
-            当前供应商不支持所选模型类型，请更换供应商配置。
-          </p>
-        </div>
-      </section>
-
-      <section v-if="form.model_type === 'chat'" class="space-y-3">
-        <div class="flex items-start gap-3 border-b border-border-muted pb-2">
-          <span class="mt-1 h-5 w-1 rounded-full bg-info"></span>
-          <div>
-            <h3 class="text-base font-bold text-text-strong">运行预算</h3>
-            <p class="mt-1 text-xs leading-5 text-text-muted">输入模型支持的上下文窗口，最大输出和历史压缩预算将自动计算。</p>
-          </div>
-        </div>
-        <div class="grid gap-4 xl:grid-cols-2">
-          <UiFormField label="上下文窗口（K）">
-            <UiInput
-              :model-value="form.context_window_tokens / 1000"
-              type="number"
-              min="128"
-              max="2000"
-              step="1"
-              inputmode="numeric"
-              placeholder="例如：128"
-              @update:model-value="value => form.context_window_tokens = (Number(value) || 128) * 1000"
-            />
-            <p class="mt-1 text-xs leading-5 text-text-muted">例如输入 128，表示 128K（128,000 tokens）。</p>
-          </UiFormField>
-          <div class="rounded-xl border border-border bg-surface-muted px-4 py-3 text-xs leading-5 text-text-muted">
-            平台会自动预留 20% 输出空间（8K–64K）、8% 安全余量，并将历史压缩目标控制在 4K–32K。
-          </div>
-        </div>
-      </section>
-
-      <section v-if="form.model_type === 'chat'" class="space-y-3">
-        <div class="flex items-start gap-3 border-b border-border-muted pb-2">
-          <span class="mt-1 h-5 w-1 rounded-full bg-success"></span>
-          <div>
-            <h3 class="text-base font-bold text-text-strong">能力声明</h3>
-            <p class="mt-1 text-xs leading-5 text-text-muted">声明 reasoning 与图片输入能力，供 Agent 运行态决定可用工具和参数映射。</p>
-          </div>
-        </div>
-        <div class="grid gap-4 xl:grid-cols-2">
-          <div class="flex items-start gap-3 rounded-xl border border-border bg-canvas px-4 py-3 text-sm text-text-emphasis">
-            <UiCheckbox
-              :model-value="form.thinking_enabled"
-              aria-label="启用思考 / reasoning"
-              :disabled="currentProvider ? !currentProvider.supports_thinking : false"
-              @update:model-value="value => form.thinking_enabled = value === true"
-            />
-            <span>
-              <span class="block font-semibold">启用思考 / reasoning</span>
-              <span class="mt-1 block text-xs text-text-muted">
-                {{ currentProvider?.supports_thinking ? `当前供应商会按 ${currentProvider.thinking_mode} 规则映射。` : '当前供应商不支持 thinking，保存时会自动忽略。' }}
-              </span>
-            </span>
-          </div>
-
-          <div class="flex items-start gap-3 rounded-xl border border-border bg-canvas px-4 py-3 text-sm text-text-emphasis">
-            <UiCheckbox
-              :model-value="form.supports_image_input"
-              aria-label="支持图片输入"
-              @update:model-value="value => form.supports_image_input = value === true"
-            />
-            <span>
-              <span class="block font-semibold">支持图片输入</span>
-              <span class="mt-1 block text-xs text-text-muted">
-                {{ imageInputHint }}
-              </span>
-            </span>
-          </div>
-
-          <div class="space-y-1.5 rounded-xl border border-border bg-canvas px-4 py-3 xl:col-span-2">
-            <UiFormField label="思考强度">
-              <UiInput
-                :model-value="form.thinking_effort ?? ''"
-                placeholder="例如：medium、high、xhigh、max"
-                :disabled="!form.thinking_enabled || (currentProvider ? !currentProvider.supports_thinking : false)"
-                @update:model-value="value => form.thinking_effort = String(value).trim() || null"
-              />
-            </UiFormField>
-            <p class="ml-1 text-xs leading-5 text-text-muted">
-              {{ thinkingEffortHint }}
-            </p>
-          </div>
-        </div>
-      </section>
-
-      <section v-else-if="currentImageModel" class="space-y-3">
-        <div class="flex items-start gap-3 border-b border-border-muted pb-2">
-          <span class="mt-1 h-5 w-1 rounded-full bg-success"></span>
-          <div>
-            <h3 class="text-base font-bold text-text-strong">生图能力</h3>
-            <p class="mt-1 text-xs leading-5 text-text-muted">能力由后端模型目录维护，保存和执行时会使用同一份约束。</p>
-          </div>
-        </div>
-        <dl class="grid gap-3 text-sm md:grid-cols-2 xl:grid-cols-4">
-          <div class="rounded-xl border border-border bg-canvas px-4 py-3">
-            <dt class="text-xs font-semibold text-text-disabled">操作</dt>
-            <dd class="mt-1 font-semibold text-text-emphasis">{{ currentImageModel.operations.join(' / ') }}</dd>
-          </div>
-          <div class="rounded-xl border border-border bg-canvas px-4 py-3">
-            <dt class="text-xs font-semibold text-text-disabled">参考图 / 输出上限</dt>
-            <dd class="mt-1 font-semibold text-text-emphasis">{{ currentImageModel.max_reference_images }} / {{ currentImageModel.max_output_count }}</dd>
-          </div>
-          <div class="rounded-xl border border-border bg-canvas px-4 py-3">
-            <dt class="text-xs font-semibold text-text-disabled">分辨率档位</dt>
-            <dd class="mt-1 font-semibold text-text-emphasis">{{ currentImageModel.resolution_tiers.join(' / ') }}</dd>
-          </div>
-          <div class="rounded-xl border border-border bg-canvas px-4 py-3">
-            <dt class="text-xs font-semibold text-text-disabled">蒙版编辑</dt>
-            <dd class="mt-1 font-semibold" :class="currentImageModel.supports_mask ? 'text-success-strong' : 'text-text-muted'">
-              {{ currentImageModel.supports_mask ? '支持' : '不支持' }}
-            </dd>
-          </div>
-        </dl>
-      </section>
-    </div>
-
-    <InspectorSection
-      v-if="mode !== 'detail' || selectedModel"
-      title="高级参数"
-      :description="advancedParameterSubtitle"
-      :open="!collapsedModel"
-      :class="readOnlyModel ? 'opacity-70' : ''"
-      @update:open="value => collapsedModel = !value"
-    >
-      <div class="space-y-3">
-        <UiFormField label="JSON 配置" :error="advancedConfigError">
-          <UiInput
-            v-model="advancedTextModel"
-            type="textarea"
-            :rows="10"
-            :placeholder="advancedParameterPlaceholder"
-            :disabled="isFormLocked"
-          />
+    <div v-else class="space-y-5" :class="readOnlyModel ? 'pointer-events-none opacity-70' : ''">
+      <div class="grid gap-4 md:grid-cols-2">
+        <UiFormField v-slot="field" label="模型类型">
+          <UiSelect :id="field.inputId" v-model="form.model_type" :aria-describedby="field.describedBy" :options="modelTypeOptions" />
         </UiFormField>
-        <div class="rounded-xl border border-border bg-canvas px-4 py-3 text-xs leading-6 text-text-muted">
-          {{ advancedParameterHint }}
-          <a
-            v-if="currentProvider?.docs_url"
-            :href="currentProvider.docs_url"
-            target="_blank"
-            rel="noreferrer"
-            class="ml-2 font-semibold text-accent underline underline-offset-2"
-          >
-            {{ currentProvider.label }} 文档
-          </a>
+        <UiFormField v-if="mode === 'create' && canCreateGlobal" v-slot="field" label="配置范围">
+          <UiSelect :id="field.inputId" v-model="form.scope" :aria-describedby="field.describedBy" :options="scopeOptions" />
+        </UiFormField>
+        <UiFormField v-slot="field" label="模型名称" required>
+          <UiInput :input-id="field.inputId" :described-by="field.describedBy" :invalid="field.invalid" :model-value="form.name" placeholder="例如：内容助手默认模型" required @update:model-value="value => form.name = String(value)" />
+        </UiFormField>
+        <div class="space-y-1.5">
+          <label class="ml-1 text-sm font-semibold text-text-emphasis">供应商配置</label>
+          <UiCombobox :model-value="form.provider_config_id" :options="providerConfigOptions" placeholder="请选择供应商配置" @update:model-value="value => form.provider_config_id = value === null ? null : Number(value)" />
         </div>
+        <UiFormField v-if="form.model_type === 'chat'" v-slot="field" label="模型 ID" required>
+          <UiInput :input-id="field.inputId" :described-by="field.describedBy" :invalid="field.invalid" :model-value="form.model_id" placeholder="例如：gpt-4.1-mini" required @update:model-value="handleModelIdUpdate" />
+        </UiFormField>
+        <UiFormField v-else v-slot="field" label="模型 ID" required>
+          <UiSelect :id="field.inputId" :model-value="imageModelSelection" :aria-describedby="field.describedBy" :options="imageModelSelectOptions" placeholder="请选择生图模型" @update:model-value="handleImageModelSelection" />
+        </UiFormField>
+        <UiFormField v-if="form.model_type === 'image_generation' && imageModelSelection === CUSTOM_MODEL_ID" v-slot="field" label="自定义模型 ID" required>
+          <UiInput :input-id="field.inputId" :described-by="field.describedBy" :invalid="field.invalid" :model-value="form.model_id" placeholder="填写供应商支持的模型 ID" required @update:model-value="handleModelIdUpdate" />
+        </UiFormField>
       </div>
+
+      <div v-if="form.model_type === 'chat'" class="grid gap-4 border-t border-border-muted pt-4 md:grid-cols-2">
+        <UiFormField v-slot="field" label="上下文窗口（K）">
+          <UiInput :input-id="field.inputId" :described-by="field.describedBy" :invalid="field.invalid" :model-value="form.context_window_tokens / 1000" type="number" min="128" max="2000" step="1" inputmode="numeric" @update:model-value="value => form.context_window_tokens = (Number(value) || 128) * 1000" />
+        </UiFormField>
+        <UiFormField v-slot="field" label="思考强度">
+          <UiInput :input-id="field.inputId" :described-by="field.describedBy" :invalid="field.invalid" :model-value="form.thinking_effort ?? ''" placeholder="例如：medium、high" :disabled="!form.thinking_enabled || (currentProvider ? !currentProvider.supports_thinking : false)" @update:model-value="value => form.thinking_effort = String(value).trim() || null" />
+        </UiFormField>
+        <label class="flex items-start gap-3 rounded-ui-md border border-border bg-canvas px-4 py-3 text-sm text-text-emphasis">
+          <UiCheckbox :model-value="form.thinking_enabled" :disabled="currentProvider ? !currentProvider.supports_thinking : false" @update:model-value="value => form.thinking_enabled = value === true" />
+          <span><span class="block font-semibold">启用 Thinking</span><span class="mt-1 block text-xs text-text-muted">{{ thinkingEffortHint }}</span></span>
+        </label>
+        <label class="flex items-start gap-3 rounded-ui-md border border-border bg-canvas px-4 py-3 text-sm text-text-emphasis">
+          <UiCheckbox :model-value="form.supports_image_input" @update:model-value="value => form.supports_image_input = value === true" />
+          <span><span class="block font-semibold">支持图片输入</span><span class="mt-1 block text-xs text-text-muted">{{ imageInputHint }}</span></span>
+        </label>
+      </div>
+
+      <dl v-else-if="currentImageModel" class="grid gap-3 border-t border-border-muted pt-4 text-xs sm:grid-cols-2 lg:grid-cols-4">
+        <div><dt class="text-text-disabled">操作</dt><dd class="mt-1 font-semibold text-text-emphasis">{{ currentImageModel.operations.join(' / ') }}</dd></div>
+        <div><dt class="text-text-disabled">分辨率</dt><dd class="mt-1 font-semibold text-text-emphasis">{{ currentImageModel.resolution_tiers.join(' / ') }}</dd></div>
+        <div><dt class="text-text-disabled">参考图 / 输出</dt><dd class="mt-1 font-semibold text-text-emphasis">{{ currentImageModel.max_reference_images }} / {{ currentImageModel.max_output_count }}</dd></div>
+        <div><dt class="text-text-disabled">蒙版</dt><dd class="mt-1 font-semibold text-text-emphasis">{{ currentImageModel.supports_mask ? '支持' : '不支持' }}</dd></div>
+      </dl>
+    </div>
+
+    <InspectorSection v-if="mode !== 'detail' || selectedModel" title="高级参数" :description="mode === 'detail' ? '查看当前 JSON 配置' : '仅在需要供应商扩展参数时填写'" :open="!collapsedModel" @update:open="value => collapsedModel = !value">
+      <UiFormField label="JSON 配置" :error="advancedConfigError">
+        <UiInput v-model="advancedTextModel" type="textarea" :rows="9" :placeholder="advancedParameterPlaceholder" :disabled="isFormLocked" />
+      </UiFormField>
+      <p class="mt-2 text-xs text-text-muted">{{ advancedParameterHint }}</p>
     </InspectorSection>
 
-    <div v-if="mode !== 'detail'" class="flex justify-end gap-2">
-      <UiButton v-if="mode === 'edit'" variant="ghost" :disabled="savingConfig" @click="emit('cancel')">
-        取消
-      </UiButton>
-      <UiButton variant="ghost" :disabled="readOnlyModel" @click="emit('formatAdvanced')">
-        格式化 JSON
-      </UiButton>
-      <UiButton variant="primary" :loading="savingConfig" :disabled="readOnlyModel || !canSubmitModel" @click="emit('submit')">
-        {{ mode === 'edit' ? '保存模型' : '创建模型' }}
-      </UiButton>
-    </div>
+    <footer v-if="mode !== 'detail'" class="flex justify-end gap-2 border-t border-border-muted pt-4">
+      <UiButton v-if="mode === 'edit'" variant="ghost" :disabled="savingConfig" @click="emit('cancel')">取消</UiButton>
+      <UiButton variant="ghost" :disabled="readOnlyModel" @click="emit('formatAdvanced')">格式化 JSON</UiButton>
+      <UiButton :loading="savingConfig" :disabled="readOnlyModel || !canSubmitModel" @click="emit('submit')">{{ mode === 'edit' ? '保存模型' : '创建模型' }}</UiButton>
+    </footer>
   </section>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 
 import { UiButton, UiCheckbox, UiCombobox, UiFormField, UiInput, UiSelect } from '@/components/ui'
 import InspectorSection from '@/components/patterns/InspectorSection.vue'
@@ -410,10 +131,6 @@ const props = defineProps<{
   deletingConfigId: number | null
   canCreateGlobal: boolean
 }>()
-
-const compressionTargetTokens = computed(() => Math.round(
-  (props.selectedModel?.context_window_tokens ?? 0) * (props.selectedModel?.compression_target_ratio ?? 0),
-))
 
 const emit = defineEmits<{
   deleteModel: [config: LlmConfigItem]
@@ -471,6 +188,18 @@ const imageInputHint = computed(() => {
 })
 
 const imageModelOptions = computed(() => props.currentProvider?.image_generation_models ?? [])
+const CUSTOM_MODEL_ID = '__custom_model_id__'
+const imageModelSelection = ref<string | null>(null)
+const imageModelSelectOptions = computed<SelectOption[]>(() => {
+  const options = imageModelOptions.value.map(model => ({
+    value: model.model_id,
+    label: `${model.label}（${model.model_id}）`,
+  }))
+  if (imageModelOptions.value.some(model => model.allow_custom_model_id)) {
+    options.push({ value: CUSTOM_MODEL_ID, label: '自定义模型 ID' })
+  }
+  return options
+})
 const modelTypeOptions = [
   { value: 'chat', label: '聊天 / 图片理解模型' },
   { value: 'image_generation', label: '图片生成模型' },
@@ -479,16 +208,12 @@ const scopeOptions = [
   { value: 'personal', label: '个人模型' },
   { value: 'global', label: '管理员全局模型' },
 ]
-const supportsCustomImageModel = computed(() => imageModelOptions.value.some(model => model.allow_custom_model_id))
 const currentImageModel = computed<ImageGenerationModelCatalogItem | null>(() => {
   if (props.form.model_type !== 'image_generation') return null
   return imageModelOptions.value.find(model => model.model_id === props.form.model_id)
     ?? imageModelOptions.value.find(model => model.allow_custom_model_id)
     ?? null
 })
-const advancedParameterSubtitle = computed(() => props.form.model_type === 'image_generation'
-  ? '按模型能力 Schema 校验后映射到图片供应商协议'
-  : '默认折叠，透传给 Pydantic AI provider')
 const advancedParameterPlaceholder = computed(() => props.form.model_type === 'image_generation'
   ? JSON.stringify(currentImageModel.value?.advanced_defaults ?? {}, null, 2)
   : '{"temperature":0.2,"openai_reasoning_effort":"medium"}')
@@ -513,6 +238,37 @@ function handleModelIdUpdate(value: string | number) {
   }
 }
 
+/** 处理标准下拉中的生图模型选择，并初始化目录模型的安全默认参数。 */
+function handleImageModelSelection(value: string | number | null | (string | number)[]) {
+  if (Array.isArray(value) || value === null) return
+  imageModelSelection.value = String(value)
+  if (value === CUSTOM_MODEL_ID) {
+    props.form.model_id = ''
+    return
+  }
+  handleModelIdUpdate(value)
+}
+
+watch(
+  () => [props.form.model_type, props.currentProvider?.provider_key, props.form.model_id] as const,
+  ([modelType, , modelId]) => {
+    if (modelType !== 'image_generation') {
+      imageModelSelection.value = null
+      return
+    }
+    if (imageModelOptions.value.some(model => model.model_id === modelId)) {
+      imageModelSelection.value = modelId
+      return
+    }
+    if (modelId || imageModelSelection.value === CUSTOM_MODEL_ID) {
+      imageModelSelection.value = CUSTOM_MODEL_ID
+      return
+    }
+    imageModelSelection.value = null
+  },
+  { immediate: true },
+)
+
 const readOnlyModel = computed(() => Boolean(props.selectedModel && !props.selectedModel.editable))
 const isFormLocked = computed(() => readOnlyModel.value || props.mode === 'detail')
 const canSubmitModel = computed(() => Boolean(
@@ -525,10 +281,5 @@ const panelTitle = computed(() => {
   if (props.mode === 'create') return '新建模型'
   if (props.mode === 'detail') return props.selectedModel?.name ?? '模型详情'
   return readOnlyModel.value ? '查看模型' : '编辑模型'
-})
-const panelDescription = computed(() => {
-  if (props.mode === 'create') return '保存后可在智能体详情中绑定为模型。'
-  if (props.mode === 'detail') return '查看模型身份、运行预算、能力声明和高级参数。'
-  return '模型复用供应商配置中的 Base URL 与 API Key。'
 })
 </script>

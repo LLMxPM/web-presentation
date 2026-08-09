@@ -76,6 +76,7 @@ describe('router guard', () => {
     await router.push('/account/ai-settings')
 
     expect(router.currentRoute.value.name).toBe('accountAiSettings')
+    expect(router.currentRoute.value.meta.fullHeight).toBe(true)
   })
 
   it('旧 AI 设置子路径应进入 404 兜底页', async () => {

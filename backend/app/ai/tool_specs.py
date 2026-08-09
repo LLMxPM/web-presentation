@@ -496,6 +496,8 @@ def _image_generation_tool_spec() -> AgentToolSpec:
         default_instructions=(
             "只有用户明确表达生成或编辑图片的意图时才能调用，不要自行把普通内容任务扩展为图片生成。"
             "generate 无需参考图；edit 至少传一张 reference_attachment_ids。禁止传本地路径、base64 或业务对象 URL。"
+            "count 表示以同一个 prompt 生成的图片数量（变体）；prompt 只描述单张图片的内容，不要列举多张不同图片。"
+            "如需视觉差异较大的多张图片，应拆为多次独立调用（分别使用不同的 prompt，每次 count=1）。"
         ),
         sequential=True,
         risk_level="write",
