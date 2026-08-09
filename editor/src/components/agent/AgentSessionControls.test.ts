@@ -70,6 +70,31 @@ describe('AgentSessionControls', () => {
     expect(emitted()['switch-session']).toEqual([['session-2']])
   })
 
+  it('会话项只展示标题与时间，不再展示工作空间和固化模型', async () => {
+    await renderControls([createSession(1, {
+      metadata: {
+        scope_type: 'page',
+        workspace_id: 11,
+        workspace_name: '不应展示的工作空间',
+        project_id: 21,
+        project_name: '发布会方案',
+        page_id: 1,
+        page_title: '页面 1',
+        source: 'editor-page-detail',
+        llm: {
+          name: '不应展示的模型',
+          scope: 'global',
+          provider_label: 'OpenAI',
+          model_id: 'gpt-test',
+        },
+      },
+    })])
+
+    expect(screen.getByText('会话 1')).toBeInTheDocument()
+    expect(screen.queryByText(/不应展示的工作空间/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/不应展示的模型/)).not.toBeInTheDocument()
+  })
+
   it('无搜索时最多只渲染最近 50 条会话', async () => {
     await renderControls(Array.from({ length: 60 }, (_, index) => createSession(index + 1)))
 

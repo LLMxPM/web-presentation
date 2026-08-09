@@ -65,13 +65,6 @@
                   <p class="min-w-0 flex-1 truncate text-sm font-semibold">{{ resolveSessionDisplayName(session) }}</p>
                   <span class="shrink-0 text-[10px] opacity-50">{{ resolveSessionSubtitle(session) }}</span>
                 </div>
-                <p class="mt-1 truncate text-[11px] opacity-70" :title="resolveSessionScopePath(session)">
-                  {{ resolveSessionScopePath(session) }}
-                </p>
-                <p v-if="resolveSessionModelLabel(session)" class="mt-1 truncate text-[11px] opacity-70"
-                  :title="resolveSessionModelLabel(session)">
-                  {{ resolveSessionModelLabel(session) }}
-                </p>
               </div>
               <div class="flex shrink-0 flex-col items-end gap-1">
                 <UiBadge
@@ -100,8 +93,6 @@ import ToolPanel from '@/components/patterns/ToolPanel.vue'
 import { UiBadge, UiButton, UiIconButton, UiInput, UiPopover } from '@/components/ui'
 import {
   resolveSessionDisplayName,
-  resolveSessionModelLabel,
-  resolveSessionScopePath,
   resolveSessionSubtitle,
 } from '@/components/agent/agent-session-scope'
 import type { AgentSessionItem } from '@/types/api'

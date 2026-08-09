@@ -42,11 +42,15 @@
 </template>
 
 <script setup lang="ts">
+import { useQueryClient } from '@tanstack/vue-query'
 import { ChevronRight, FileText, FolderKanban, FolderOpen } from '@lucide/vue'
+import { ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
+import { getPage, getProject } from '@/api/catalog'
 import type { AgentEntityChangeItem } from '@/components/agent/agent-entity-change-summary'
 import { UiBadge } from '@/components/ui'
+import type { PageItem, ProjectItem } from '@/types/api'
 import { buildPageDetailPath, buildProjectPagesPath } from '@/utils/workspace-routes'
 import { Message } from '@/utils/message'
 
@@ -56,6 +60,64 @@ const props = defineProps<{
 
 const route = useRoute()
 const router = useRouter()
+const queryClient = useQueryClient()
+
+interface EntityDisplayDetail {
+  name: string
+  code: string
+  projectId: number | null
+  state: 'ready' | 'error'
+}
+
+const entityDetails = ref<Record<string, EntityDisplayDetail>>({})
+let loadSequence = 0
+
+watch(
+  () => props.items.map(item => entityKey(item)).join('|'),
+  () => void loadEntityDetails(),
+  { immediate: true },
+)
+
+/** 使用详情接口加载权威名称和编码，并借助查询缓存避免历史卡片重复请求。 */
+async function loadEntityDetails(): Promise<void> {
+  const sequence = ++loadSequence
+  const entries = await Promise.all(props.items.map(async (item) => {
+    try {
+      let detail: EntityDisplayDetail
+      if (item.resourceType === 'project') {
+        const project = await queryClient.fetchQuery<ProjectItem>({
+          queryKey: ['project', item.id],
+          queryFn: () => getProject(item.id),
+          staleTime: 60_000,
+        })
+        detail = { name: project.name, code: project.code, projectId: project.id, state: 'ready' }
+      } else {
+        const page = await queryClient.fetchQuery<PageItem>({
+          queryKey: ['page', item.id],
+          queryFn: () => getPage(item.id),
+          staleTime: 60_000,
+        })
+        detail = { name: page.title, code: page.code, projectId: page.project_id, state: 'ready' }
+      }
+      return [entityKey(item), detail] as const
+    } catch {
+      return [entityKey(item), {
+        name: item.name?.trim() || '',
+        code: '',
+        projectId: item.projectId,
+        state: 'error',
+      }] as const
+    }
+  }))
+  if (sequence === loadSequence) {
+    entityDetails.value = Object.fromEntries(entries)
+  }
+}
+
+/** 生成项目与页面详情缓存的稳定键。 */
+function entityKey(item: AgentEntityChangeItem): string {
+  return `${item.resourceType}-${item.id}`
+}
 
 /** 解析当前路由工作空间，优先实体上的 workspaceId。 */
 function resolveWorkspaceId(item: AgentEntityChangeItem): number | null {
@@ -75,25 +137,31 @@ function canOpen(item: AgentEntityChangeItem): boolean {
   if (item.resourceType === 'project') {
     return item.id > 0
   }
-  return Boolean(item.projectId && item.projectId > 0 && item.id > 0)
+  const projectId = entityDetails.value[entityKey(item)]?.projectId ?? item.projectId
+  return Boolean(projectId && projectId > 0 && item.id > 0)
 }
 
-/** 紧凑展示名：优先业务名称，否则类型 + ID。 */
+/** 展示后端返回的权威名称；加载期间可短暂沿用工具结果，但不暴露内部 ID。 */
 function resolveDisplayName(item: AgentEntityChangeItem): string {
-  const name = item.name?.trim()
+  const detail = entityDetails.value[entityKey(item)]
+  const name = detail?.name?.trim() || item.name?.trim()
   if (name) {
     return name
   }
-  return item.resourceType === 'project' ? `项目 #${item.id}` : `页面 #${item.id}`
+  if (!detail) {
+    return item.resourceType === 'project' ? '正在读取项目信息…' : '正在读取页面信息…'
+  }
+  return item.resourceType === 'project' ? '项目名称暂不可用' : '页面名称暂不可用'
 }
 
-/** 副标题标明实体类型与 ID，便于区分同名对象。 */
+/** 副标题展示业务类型与编码，不把数据库 ID 暴露给用户。 */
 function resolveSubtitle(item: AgentEntityChangeItem): string {
-  if (item.resourceType === 'project') {
-    return `项目 · #${item.id}`
+  const detail = entityDetails.value[entityKey(item)]
+  const typeLabel = item.resourceType === 'project' ? '项目' : '页面'
+  if (detail?.code) {
+    return `${typeLabel} · ${detail.code}`
   }
-  const projectPart = item.projectId ? `项目 #${item.projectId} · ` : ''
-  return `${projectPart}页面 · #${item.id}`
+  return detail?.state === 'error' ? `${typeLabel} · 编码暂不可用` : `${typeLabel} · 正在读取名称与编码`
 }
 
 function resolveTitle(item: AgentEntityChangeItem): string {
@@ -127,10 +195,11 @@ function openEntity(item: AgentEntityChangeItem) {
     void router.push(buildProjectPagesPath(workspaceId, item.id))
     return
   }
-  if (!item.projectId) {
+  const projectId = entityDetails.value[entityKey(item)]?.projectId ?? item.projectId
+  if (!projectId) {
     Message.warning('缺少所属项目，无法打开页面。')
     return
   }
-  void router.push(buildPageDetailPath(workspaceId, item.projectId, item.id))
+  void router.push(buildPageDetailPath(workspaceId, projectId, item.id))
 }
 </script>
