@@ -56,9 +56,9 @@ async def _create_and_publish_component(
     workspace_id: int,
     name: str,
     import_name: str,
-    preview_schema: str | None,
+    preview_schema: str,
 ) -> dict[str, Any]:
-    """创建并发布一个原子组件，允许覆盖有 schema 和无 schema 场景。"""
+    """创建并发布一个带必填 previewSchema 的原子组件。"""
 
     create_response = await authenticated_client.post(
         "/api/components",
@@ -273,12 +273,12 @@ async def test_create_visual_edit_artifact_should_expose_pinned_component_props_
         import_name="PinnedVisualCard",
         preview_schema=published_schema,
     )
-    no_schema_component = await _create_and_publish_component(
+    empty_schema_component = await _create_and_publish_component(
         authenticated_client,
         workspace_id=workspace_id,
-        name="无 Schema 组件",
-        import_name="BareVisualCard",
-        preview_schema=None,
+        name="无属性 Schema 组件",
+        import_name="EmptyVisualCard",
+        preview_schema='{"props":{}}',
     )
     draft_schema = json.dumps(
         {
@@ -298,9 +298,9 @@ async def test_create_visual_edit_artifact_should_expose_pinned_component_props_
 
     page_source = f"""<script setup lang="ts">
 import LocalPinnedCard from '@workspace-components/{pinned_component["code"]}/v/1'
-import LocalBareCard from '@workspace-components/{no_schema_component["code"]}/v/1'
+import LocalEmptyCard from '@workspace-components/{empty_schema_component["code"]}/v/1'
 </script>
-<template><LocalPinnedCard /><LocalBareCard /></template>"""
+<template><LocalPinnedCard /><LocalEmptyCard /></template>"""
     page_response = await authenticated_client.post(
         "/api/pages",
         json={
@@ -323,7 +323,7 @@ import LocalBareCard from '@workspace-components/{no_schema_component["code"]}/v
 
     assert response.status_code == 200
     component_schemas = response.json()["visual_edit"]["component_schemas"]
-    assert set(component_schemas) == {"LocalPinnedCard", "LocalBareCard"}
+    assert set(component_schemas) == {"LocalPinnedCard", "LocalEmptyCard"}
     pinned_schema = component_schemas["LocalPinnedCard"]
     assert pinned_schema["source"] == "workspace_component"
     assert pinned_schema["component_code"] == pinned_component["code"]
@@ -339,7 +339,7 @@ import LocalBareCard from '@workspace-components/{no_schema_component["code"]}/v
     assert "draftOnly" not in pinned_schema["props"]
     assert "slots" not in pinned_schema
     assert "presets" not in pinned_schema
-    assert component_schemas["LocalBareCard"]["props"] is None
+    assert component_schemas["LocalEmptyCard"]["props"] == {}
 
     artifact_id = response.json()["artifact_id"]
     manifest_response = await authenticated_client.get(
@@ -368,7 +368,7 @@ async def test_component_schema_dependency_errors_should_reuse_page_boundary(
         workspace_id=source_workspace_id,
         name="边界组件",
         import_name="BoundaryVisualCard",
-        preview_schema=None,
+        preview_schema='{"props":{}}',
     )
     target_workspace_id, target_project_id = await _create_workspace_and_project(
         authenticated_client,

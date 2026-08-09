@@ -341,7 +341,16 @@ class WorkspaceComponentService:
 
     @staticmethod
     def _validate_component_type_contract(*, component_type: str, preview_schema: str | None) -> None:
-        """按组件类型校验元数据契约，目前内容组件必须声明尺寸控制。"""
+        """校验组件预览 Schema，并对内容组件追加尺寸控制约束。"""
+
+        if preview_schema is None:
+            if component_type == WorkspaceComponentType.CONTENT_COMPONENT.value:
+                validate_content_component_size_controls(preview_schema)
+            raise AppException(
+                status_code=400,
+                code="COMPONENT_PREVIEW_SCHEMA_REQUIRED",
+                detail="组件必须配置 previewSchema；其根节点应为对象，组件属性定义应放在 previewSchema.props 中。",
+            )
 
         if component_type == WorkspaceComponentType.CONTENT_COMPONENT.value:
             validate_content_component_size_controls(preview_schema)

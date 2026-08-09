@@ -926,7 +926,7 @@ async def test_platform_runtime_cancel_should_be_idempotent(
 async def test_platform_runtime_failed_run_should_close_running_tools(
     authenticated_client: AsyncClient,
 ) -> None:
-    """run 失败时应把仍在运行的工具调用收敛为 error，避免快照残留进行中。"""
+    """run 失败时应把仍在运行的工具调用收敛为结果未知，避免快照残留进行中。"""
 
     workspace_response = await authenticated_client.post(
         "/api/workspaces",
@@ -1003,8 +1003,8 @@ async def test_platform_runtime_failed_run_should_close_running_tools(
         )
 
     timeline_tool = next(item.tool for item in snapshot.timeline_items if item.tool and item.tool.tool_call_id == "tool-create-page-1")
-    assert tool_status == "error"
-    assert timeline_tool.status == "error"
+    assert tool_status == "interrupted"
+    assert timeline_tool.status == "interrupted"
     assert timeline_tool.message == "模型连接中断，本次输出没有完整返回。"
     assert result.scalars().all() == ["run.started", "run.focus.snapshot", "tool.started", "tool.error", "run.error"]
 
@@ -1132,7 +1132,7 @@ async def test_cancelled_external_run_should_close_pending_requirement_and_tool(
             select(AiAgentToolCall).where(AiAgentToolCall.tool_call_id == "tool-external-cancel")
         )
         assert requirement is not None and requirement.status == "cancelled"
-        assert tool_call is not None and tool_call.status == "error"
+        assert tool_call is not None and tool_call.status == "interrupted"
 
 
 async def test_agent_message_history_should_rebuild_from_run_deltas(

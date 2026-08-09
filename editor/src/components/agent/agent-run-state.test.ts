@@ -1143,6 +1143,56 @@ describe('agent-run-state timeline', () => {
     }))
   })
 
+  it('run.error 应保留并标记最后一段未完成助手正文', () => {
+    const state = createAgentSessionRuntimeState()
+    const options = { agentId: 'agent-coordinator', agentDisplayName: '内容助手' }
+
+    applyAgentRunEvent(state, event({ event: 'run.started', event_index: 0, sequence: null }), options)
+    applyAgentRunEvent(state, event({
+      event: 'message.delta',
+      event_index: 1,
+      sequence: null,
+      content: '这是尚未完成的回答',
+    }), options)
+    applyAgentRunEvent(state, event({
+      event: 'run.error',
+      event_index: 2,
+      sequence: null,
+      data: { message: '模型流超时。' },
+    }), options)
+
+    expect(state.timelineItems.find(item => item.kind === 'message')).toEqual(expect.objectContaining({
+      content: '这是尚未完成的回答',
+      status: 'interrupted',
+    }))
+  })
+
+  it('tool.error outcome unknown 应显示执行结果未知', () => {
+    const state = createAgentSessionRuntimeState()
+    const options = { agentId: 'agent-coordinator', agentDisplayName: '内容助手' }
+
+    applyAgentRunEvent(state, event({ event: 'run.started', event_index: 0, sequence: null }), options)
+    applyAgentRunEvent(state, event({
+      event: 'tool.started',
+      event_index: 1,
+      sequence: null,
+      data: { tool_call_id: 'tool-unknown', tool_name: 'update_page_source' },
+    }), options)
+    applyAgentRunEvent(state, event({
+      event: 'tool.error',
+      event_index: 2,
+      sequence: null,
+      data: {
+        tool_call_id: 'tool-unknown',
+        tool_name: 'update_page_source',
+        outcome: 'unknown',
+        code: 'AI_TOOL_INTERRUPTED',
+      },
+    }), options)
+
+    expect(state.timelineItems.find(item => item.kind === 'tool')?.tool?.status).toBe('interrupted')
+  })
+
   it('平台 member 事件应进入独立成员运行，不污染父 run 时间线', () => {
     const state = createAgentSessionRuntimeState()
     const options = { agentId: 'agent-coordinator', agentDisplayName: '内容助手' }

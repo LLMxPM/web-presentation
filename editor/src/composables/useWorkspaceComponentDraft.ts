@@ -139,6 +139,10 @@ export function useWorkspaceComponentDraft(options: DraftOptions) {
     if (!validateDraft(normalizedPreviewSchema)) {
       return null
     }
+    if (normalizedPreviewSchema === null) {
+      errors.preview_schema = '组件必须配置 previewSchema。'
+      return null
+    }
 
     const component = currentComponent.value
     let savedComponent: WorkspaceComponentItem
@@ -213,7 +217,11 @@ export function useWorkspaceComponentDraft(options: DraftOptions) {
     if (form.preview_schema.trim() && !normalizedPreviewSchema && !errors.preview_schema) {
       errors.preview_schema = 'previewSchema JSON 解析失败。'
     }
-    if (!errors.preview_schema && form.component_type === '内容组件') {
+    if (!errors.preview_schema && !normalizedPreviewSchema) {
+      errors.preview_schema = form.component_type === '内容组件'
+        ? validateContentComponentSizeControls(normalizedPreviewSchema)
+        : '组件必须配置 previewSchema；组件属性定义应放在 previewSchema.props 中'
+    } else if (!errors.preview_schema && form.component_type === '内容组件') {
       errors.preview_schema = validateContentComponentSizeControls(normalizedPreviewSchema)
     }
     return !errors.name && !errors.import_name && !errors.component_type && !errors.content && !errors.preview_schema

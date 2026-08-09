@@ -226,7 +226,7 @@ async def test_workspace_component_should_reject_unknown_component_type(authenti
     assert "component_type" in legacy_response.json()["message"]
 
 async def test_content_component_should_require_size_control_preview_schema(authenticated_client: AsyncClient) -> None:
-    """内容组件必须在 previewSchema props 中声明尺寸控制参数。"""
+    """所有组件必须配置 previewSchema，且内容组件必须声明尺寸控制参数。"""
 
     workspace_response = await authenticated_client.post(
         "/api/workspaces",
@@ -266,6 +266,22 @@ async def test_content_component_should_require_size_control_preview_schema(auth
     assert missing_size_prop_response.status_code == 400
     assert missing_size_prop_response.json()["code"] == "CONTENT_COMPONENT_SIZE_CONTROL_REQUIRED"
 
+    for component_type, import_name in (("页面组件", "MissingPageSchema"), ("原子组件", "MissingAtomicSchema")):
+        missing_other_schema_response = await authenticated_client.post(
+            "/api/components",
+            json={
+                "workspace_id": workspace_id,
+                "name": f"缺少 Schema 的{component_type}",
+                "import_name": import_name,
+                "content": "<template><span>missing schema</span></template>",
+                "file_type": "vue",
+                "component_type": component_type,
+                "status": "active",
+            },
+        )
+        assert missing_other_schema_response.status_code == 400
+        assert missing_other_schema_response.json()["code"] == "COMPONENT_PREVIEW_SCHEMA_REQUIRED"
+
     atomic_response = await authenticated_client.post(
         "/api/components",
         json={
@@ -273,6 +289,7 @@ async def test_content_component_should_require_size_control_preview_schema(auth
             "name": "页码原子组件",
             "import_name": "PageNumberAtom",
             "content": "<template><span>1</span></template>",
+            "preview_schema": '{"props":{"value":{"type":"number","label":"页码","default":1}}}',
             "file_type": "vue",
             "component_type": "原子组件",
             "status": "active",

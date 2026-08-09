@@ -24,7 +24,7 @@ export interface ToolCallDetail {
   memberAgentId?: string | null
   memberAgentName?: string | null
   memberRunId?: string | null
-  status: 'running' | 'completed' | 'error'
+  status: 'running' | 'completed' | 'error' | 'interrupted'
   inputPayload: unknown
   outputPayload: unknown
   message: string

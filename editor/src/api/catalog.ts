@@ -315,7 +315,7 @@ export async function upgradeComponentReferences(id: number, payload: WorkspaceC
 export async function createComponent(payload: {
   workspace_id: number
   content: string
-  preview_schema?: string | null
+  preview_schema: string
   file_type: string
   name: string
   import_name: string
@@ -334,7 +334,7 @@ export async function updateComponent(
   payload: Partial<{
     workspace_id: number
     content: string
-    preview_schema: string | null
+    preview_schema: string
     file_type: string
     name: string
     import_name: string

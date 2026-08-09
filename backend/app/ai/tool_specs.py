@@ -775,9 +775,44 @@ _COORDINATOR_OPERATION_GUIDES = (
                      call_example={"resource_type": "page", "mode": "new", "payload": {"project_id": 8, "title": "封面", "content": "<template><main>封面</main></template>", "route_placement": "root"}}),
     _operation_guide("page", "create", "把页面复制到同工作空间的目标项目，也支持在源项目内创建副本。", _write_parameters("page", "create", PageCopyPayload, action="copy"), action="copy",
                      side_effects=("创建新页面；可同时原子写入目标项目路由。",), risk_level="write"),
-    _operation_guide("component", "create", "创建可校验的组件草稿。", _write_parameters("component", "create", ComponentCreatePayload, action="new"), action="new",
-                     side_effects=("只创建草稿；发布后生成正式版本；发布后应更新项目 configuration 的 suggested_components 使后续页面可优先复用。",), risk_level="write",
-                     call_example={"resource_type": "component", "mode": "new", "payload": {"name": "指标卡", "import_name": "MetricCard", "content": "<template><div /></template>"}}),
+    _operation_guide(
+        "component",
+        "create",
+        "创建可校验且带预览字段 Schema 的组件草稿。",
+        _write_parameters("component", "create", ComponentCreatePayload, action="new"),
+        action="new",
+        constraints=(
+            "所有组件类型都必须提供 preview_schema；根节点是 Schema 对象，不是组件 props 的实际预览值。",
+            "组件属性定义必须放在 preview_schema.props 中，每个字段使用 type、default 等描述；字段名应与 Vue defineProps 保持一致。",
+            "内容组件必须在 preview_schema.props 中声明至少一个尺寸控制字段，例如 width、height、minHeight 或 aspectRatio。",
+        ),
+        side_effects=("只创建草稿；发布后生成正式版本；发布后应更新项目 configuration 的 suggested_components 使后续页面可优先复用。",),
+        error_recovery=(
+            "收到 COMPONENT_PREVIEW_SCHEMA_REQUIRED 时补充合法的 preview_schema 后重试。",
+            "收到 CONTENT_COMPONENT_SIZE_CONTROL_REQUIRED 时，把尺寸字段定义放入 preview_schema.props；不要把 width、height 等预览值直接放在根节点。",
+        ),
+        risk_level="write",
+        call_example={
+            "resource_type": "component",
+            "mode": "new",
+            "payload": {
+                "name": "指标卡",
+                "import_name": "MetricCard",
+                "component_type": "内容组件",
+                "content": (
+                    '<script setup lang="ts">defineProps<{ title: string; width?: string; height?: string }>()</script>'
+                    '<template><div :style="{ width, height }">{{ title }}</div></template>'
+                ),
+                "preview_schema": {
+                    "props": {
+                        "title": {"type": "string", "label": "标题", "default": "季度收入"},
+                        "width": {"type": "string", "label": "宽度", "default": "100%"},
+                        "height": {"type": "string", "label": "高度", "default": "120px"},
+                    }
+                },
+            },
+        },
+    ),
     _operation_guide(
         "asset",
         "create",
@@ -877,7 +912,21 @@ _COORDINATOR_OPERATION_GUIDES = (
     _operation_guide("page", "update", "对页面最新源码应用结构化 edits。", _write_parameters("page", "update", PageContentPayload, action="content", target_mode="single"), action="content",
                      prerequisites=("先查询页面 content，使用返回的真实源码片段和 current_version_no。",), side_effects=("通过持久化页面任务队列校验，通过后创建新版本。",),
                      error_recovery=("版本冲突时重新读取页面 content 后重新生成 edits。", "精确文本未唯一命中时不得原样重试。"), risk_level="write"),
-    _operation_guide("component", "update", "修改组件元数据与 preview_schema。", _write_parameters("component", "update", ComponentMetadataPayload, action="metadata", target_mode="single"), action="metadata", risk_level="write"),
+    _operation_guide(
+        "component",
+        "update",
+        "修改组件元数据与 preview_schema。",
+        _write_parameters("component", "update", ComponentMetadataPayload, action="metadata", target_mode="single"),
+        action="metadata",
+        constraints=(
+            "所有组件类型都必须保留合法的 preview_schema；组件属性定义放在 preview_schema.props，不要在根节点填写预览值。",
+            "内容组件必须在 preview_schema.props 中保留至少一个尺寸控制字段。",
+        ),
+        error_recovery=(
+            "缺少 Schema 或尺寸控制字段时，先读取组件 detail，再提交包含合法 preview_schema 的元数据更新。",
+        ),
+        risk_level="write",
+    ),
     _operation_guide("component", "update", "对组件草稿应用结构化 edits。", _write_parameters("component", "update", ComponentContentPayload, action="content", target_mode="single"), action="content",
                      prerequisites=("先读取组件 detail，取得源码、draft_hash 和 base_published_version_no。",), error_recovery=("编辑锁冲突时重新读取组件 detail。",), risk_level="write"),
     _operation_guide("asset", "update", "修改资源名称、描述、标签或近似比例。", _write_parameters("asset", "update", AssetMetadataPayload, action="metadata", target_mode="single"), action="metadata", risk_level="write"),

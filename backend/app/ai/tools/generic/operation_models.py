@@ -200,7 +200,13 @@ class ComponentCreatePayload(OperationArgumentsModel):
     content: str = Field(min_length=1, description="完整、可编译的 Vue 单文件组件源码。")
     component_type: WorkspaceComponentType = Field(default=WorkspaceComponentType.CONTENT_COMPONENT, description="组件分类。")
     summary: str | None = Field(default=None, max_length=500, description="组件职责和使用场景摘要。")
-    preview_schema: str | dict[str, Any] | None = Field(default=None, description="组件预览参数 Schema，可传 JSON 对象或等价 JSON 字符串。")
+    preview_schema: str | dict[str, Any] = Field(
+        description=(
+            "必填的组件预览字段 Schema，可传 JSON 对象或等价 JSON 字符串；它描述字段而不是填写预览值。"
+            "组件属性必须放在 props 下，并以字段名映射 type、default 等定义；内容组件的 props 还必须包含至少一个"
+            " width、height、minHeight 或 aspectRatio 等尺寸控制字段。"
+        )
+    )
     change_note: str | None = Field(default=None, max_length=255, description="初始草稿说明。")
 
 
@@ -211,7 +217,13 @@ class ComponentMetadataPayload(NonEmptyPatchModel):
     import_name: str | None = Field(default=None, min_length=1, max_length=128, description="新的 PascalCase 引用名。")
     component_type: WorkspaceComponentType | None = Field(default=None, description="新的组件分类。")
     summary: str | None = Field(default=None, max_length=500, description="新的组件摘要。")
-    preview_schema: str | dict[str, Any] | None = Field(default=None, description="新的预览参数 Schema。")
+    preview_schema: str | dict[str, Any] | None = Field(
+        default=None,
+        description=(
+            "新的组件预览字段 Schema；组件属性必须放在 props 下，并以字段名映射 type、default 等定义。"
+            "所有组件都必须保留 preview_schema，内容组件还必须在 props 中声明尺寸控制字段。"
+        ),
+    )
     change_note: str | None = Field(default=None, max_length=255, description="本次修改说明。")
 
     @model_validator(mode="after")

@@ -12,6 +12,7 @@ export const toolStatusLabelMap: Record<ToolCallDetail['status'], string> = {
   running: '进行中',
   completed: '已完成',
   error: '失败',
+  interrupted: '执行结果未知',
 }
 
 /**
@@ -25,7 +26,7 @@ export function shouldExpandToolGroup(tools: ToolCallDetail[]) {
  * 生成折叠工具组摘要，避免多次连续工具调用挤占对话正文空间。
  */
 export function formatToolGroupSummary(tools: ToolCallDetail[]) {
-  const statusOrder: ToolCallDetail['status'][] = ['running', 'error', 'completed']
+  const statusOrder: ToolCallDetail['status'][] = ['running', 'interrupted', 'error', 'completed']
   const parts = statusOrder
     .map((status) => {
       const count = tools.filter(tool => tool.status === status).length
@@ -39,6 +40,7 @@ export function formatToolGroupSummary(tools: ToolCallDetail[]) {
  * 将工具运行状态映射到统一 Badge 语义，供时间线与工具详情弹窗共用。
  */
 export function getToolStatusTone(status: ToolCallDetail['status']) {
+  if (status === 'interrupted') return 'warning' as const
   if (status === 'error') return 'danger' as const
   if (status === 'running') return 'info' as const
   return 'success' as const
@@ -48,6 +50,9 @@ export function getToolStatusTone(status: ToolCallDetail['status']) {
  * 根据工具状态返回弱化行样式，避免工具调用比助手正文更抢眼。
  */
 export function getToolChipClass(status: ToolCallDetail['status']) {
+  if (status === 'interrupted') {
+    return 'border-warning-border text-warning hover:bg-warning-muted/40'
+  }
   if (status === 'error') {
     return 'border-danger-border text-danger hover:bg-danger-muted/40'
   }

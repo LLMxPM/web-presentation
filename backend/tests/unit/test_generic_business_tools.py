@@ -19,6 +19,7 @@ from app.ai.tool_specs import (
 from app.ai.tools.generic.business_tools import ThemeCreatePayload, ThemeUpdatePayload, build_generic_business_tools
 from app.ai.tools.generic.operation_models import (
     AssetMetadataPayload,
+    ComponentCreatePayload,
     PageCopyPayload,
     PageCreatePayload,
     PageMetadataPayload,
@@ -177,6 +178,33 @@ def test_asset_create_guide_should_expose_executable_content_contract() -> None:
     assert guide.response_example["data"]["asset"]["name"] == "trend-up"
     assert guide.response_example["mutation"]["target"]["id"] == 91
     Draft202012Validator(guide.parameters).validate(guide.call_example)
+
+
+def test_component_create_guide_should_require_and_explain_preview_schema() -> None:
+    """组件创建手册必须披露 preview_schema 结构、必填约束和可执行示例。"""
+
+    guide = get_operation_guide_spec("component.create.new")
+
+    assert guide is not None
+    payload_schema = guide.parameters["properties"]["payload"]
+    assert "preview_schema" in payload_schema["required"]
+    description = payload_schema["properties"]["preview_schema"]["description"]
+    serialized_constraints = "".join(guide.constraints)
+    assert "不是组件 props 的实际预览值" in serialized_constraints
+    assert "preview_schema.props" in serialized_constraints
+    assert "尺寸控制字段" in description
+    assert guide.call_example is not None
+    preview_schema = guide.call_example["payload"]["preview_schema"]
+    assert set(preview_schema["props"]) >= {"title", "width", "height"}
+    assert len(guide.error_recovery) >= 2
+    Draft202012Validator(guide.parameters).validate(guide.call_example)
+
+    with pytest.raises(ValidationError):
+        ComponentCreatePayload.model_validate({
+            "name": "缺少预览 Schema",
+            "import_name": "MissingPreviewSchema",
+            "content": "<template><div /></template>",
+        })
 
 
 def test_project_configuration_guides_should_replace_dangerous_actions() -> None:

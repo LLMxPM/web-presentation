@@ -257,7 +257,7 @@ class AgentTimelineToolItem(SchemaBase):
     member_agent_id: str | None = None
     member_agent_name: str | None = None
     member_run_id: str | None = None
-    status: Literal["running", "completed", "error"]
+    status: Literal["running", "completed", "error", "interrupted"]
     input_payload: Any | None = None
     output_payload: Any | None = None
     message: str = ""

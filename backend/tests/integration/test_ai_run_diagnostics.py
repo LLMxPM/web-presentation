@@ -195,10 +195,14 @@ async def test_ai_run_diagnostics_should_collect_runtime_state(
         "kinds": ["request", "response"],
         "part_kinds": ["user-prompt", "text"],
     }
+    assert payload["history_recovery"]["raw_message_count"] == 2
+    assert payload["history_recovery"]["recovered_message_count"] >= 2
+    assert payload["history_recovery"]["restored_tool_call_ids"] == ["tool-ask-diagnostics"]
     summary = format_ai_run_diagnostics_summary(payload)
     assert "AI run: diagnostics-run-1" in summary
     assert "Tool calls (1):" in summary
     assert "Requirements (1):" in summary
+    assert "last_checkpoint_phase: tool" in summary
     assert session_payload is not None
     assert session_payload["session"]["session_id"] == session_id
     assert session_payload["session"]["summary"]["covered_until_run_id"] == "diagnostics-run-1"

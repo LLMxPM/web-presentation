@@ -789,8 +789,14 @@ async def test_pydantic_runner_should_trim_open_tool_call_when_run_fails(
     assert failed_run.status == "failed"
     assert failed_run.error_code == "TEST_FATAL_TOOL_FAILED"
     assert events[-1].event == "run.error"
-    assert "tool-fatal-read" not in json.dumps(failed_run.message_history_json, ensure_ascii=False)
-    assert "tool-fatal-read" not in json.dumps(rebuilt_history.message_json, ensure_ascii=False)
+    assert "tool-fatal-read" in json.dumps(failed_run.message_history_json, ensure_ascii=False)
+    assert rebuilt_history.recovery_by_run[run_id]["trimmed_tool_call_ids"] == ["tool-fatal-read"]
+    assert not any(
+        part.get("part_kind") == "tool-return" and part.get("tool_call_id") == "tool-fatal-read"
+        for message in rebuilt_history.message_json
+        for part in (message.get("parts") if isinstance(message.get("parts"), list) else [])
+        if isinstance(part, dict)
+    )
 
 
 async def test_pydantic_runner_should_return_member_delegation_result_to_coordinator(

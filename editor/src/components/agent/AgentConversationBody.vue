@@ -74,6 +74,9 @@
                     :render-batch-delay="assistantBatchRendering.renderBatchDelay"
                     :render-batch-budget-ms="assistantBatchRendering.renderBatchBudgetMs"
                   />
+                  <UiBadge v-if="item.item.status === 'interrupted'" tone="warning" size="sm" class="mt-1">
+                    未完成
+                  </UiBadge>
                 </div>
                 <div v-else>
                   <UiButton

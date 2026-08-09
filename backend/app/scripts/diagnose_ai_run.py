@@ -14,6 +14,7 @@ from typing import Any, Literal
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.ai.message_history_recovery import recover_run_message_history
 from app.db.session import get_session_factory
 from app.models.ai_agent_runtime import (
     AiAgentMessage,
@@ -90,6 +91,7 @@ async def collect_ai_run_diagnostics(session: AsyncSession, run_id: str) -> dict
             .order_by(AiAgentMessage.order_index.asc(), AiAgentMessage.id.asc())
         )
     ).scalars().all()
+    recovered_history = await recover_run_message_history(session=session, run_model=run_model)
 
     return {
         "run": _dump_run(run_model),
@@ -99,6 +101,8 @@ async def collect_ai_run_diagnostics(session: AsyncSession, run_id: str) -> dict
         "messages": [_dump_message(item) for item in messages],
         "message_history_summary": _summarize_message_history(run_model.message_history_json),
         "message_history": run_model.message_history_json or [],
+        "recovered_message_history": recovered_history.message_json,
+        "history_recovery": recovered_history.diagnostics.model_dump(),
     }
 
 
@@ -157,6 +161,7 @@ def format_ai_run_diagnostics_summary(payload: dict[str, Any]) -> str:
         lines.append(f"- error: {run.get('error_code') or '-'} {run.get('error_message') or ''}".rstrip())
 
     history_summary = payload["message_history_summary"]
+    recovery = payload["history_recovery"]
     lines.extend([
         "",
         f"Events ({len(payload['events'])}):",
@@ -186,6 +191,12 @@ def format_ai_run_diagnostics_summary(payload: dict[str, Any]) -> str:
         "Message history:",
         f"- count: {history_summary['count']}",
         f"- kinds: {', '.join(history_summary['kinds']) if history_summary['kinds'] else '-'}",
+        f"- recovered_count: {recovery['recovered_message_count']}",
+        f"- user_input_restored: {recovery['user_input_restored']}",
+        f"- restored_tool_call_ids: {', '.join(recovery['restored_tool_call_ids']) if recovery['restored_tool_call_ids'] else '-'}",
+        f"- trimmed_tool_call_ids: {', '.join(recovery['trimmed_tool_call_ids']) if recovery['trimmed_tool_call_ids'] else '-'}",
+        f"- interrupted_draft_length: {recovery['draft_length']}",
+        f"- last_checkpoint_phase: {recovery['last_checkpoint_phase']}",
     ])
     return "\n".join(lines)
 

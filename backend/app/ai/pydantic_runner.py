@@ -306,6 +306,17 @@ class PydanticAgentRunner:
                                     return
                                 for event in await projector.handle_raw_event(raw_event):
                                     yield encode_sse_event(event)
+                        await self._sync_run_message_history(
+                            run_model=run_model,
+                            agent_id=agent_id,
+                            base_run_message_history=base_run_message_history,
+                            final_messages=final_messages,
+                            agent_run=agent_run,
+                            context_budget=context_budget,
+                            context_processor=context_processor,
+                            message_image_refs=message_image_refs,
+                            commit=True,
+                        )
                 if agent_run.result is None:
                     raise RuntimeError("Pydantic AI run finished without result")
                 final_messages[:] = _merge_run_message_history(
@@ -462,6 +473,7 @@ class PydanticAgentRunner:
         context_budget: AgentHistoryBudget | None,
         context_processor: AgentContextLimitProcessor | None,
         message_image_refs: list[dict[str, Any]] | None,
+        commit: bool = False,
     ) -> None:
         """每次模型响应后替换 run 消息快照，并刷新真实 usage 高水位。"""
 
@@ -474,7 +486,7 @@ class PydanticAgentRunner:
         final_messages[:] = messages
         if context_processor is not None:
             context_processor.record_message_history(final_messages)
-        await self._store.save_run_message_history(run_model, final_messages, commit=False)
+        await self._store.save_run_message_history(run_model, final_messages, commit=commit)
 
     def _build_history_compression_service(
         self,

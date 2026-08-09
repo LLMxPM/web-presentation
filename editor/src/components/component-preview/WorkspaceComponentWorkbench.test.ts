@@ -398,6 +398,7 @@ describe('WorkspaceComponentWorkbench', () => {
                     import_name: 'FullPreview',
                     component_type: '页面组件',
                     content: '<template><div /></template>',
+                    preview_schema: '{"props":{}}',
                   })
                   emit('preview-draft')
                 },
@@ -428,6 +429,7 @@ describe('WorkspaceComponentWorkbench', () => {
         import_name: 'FullPreview',
         component_type: '页面组件',
         content: '<template><div /></template>',
+        preview_schema: '{\n  "props": {}\n}',
       }))
       expect(screen.getByText('组件类型：页面组件')).toBeInTheDocument()
     })

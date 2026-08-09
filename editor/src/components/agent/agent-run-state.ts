@@ -239,7 +239,7 @@ export function applyAgentRunEvent(
       return { applied: true, terminal: false }
     case 'tool.error':
       removeToolExecutionStatusItem(state, runId)
-      upsertToolTimelineItem(state, event, 'error')
+      upsertToolTimelineItem(state, event, event.data.outcome === 'unknown' ? 'interrupted' : 'error')
       finishCurrentTextSegment(state)
       appendRunStatusItem(state, event, MODEL_REQUEST_STATUS, MODEL_REQUEST_STATUS_TEXT)
       return { applied: true, terminal: false }
@@ -281,6 +281,7 @@ export function applyAgentRunEvent(
       appendRunStatusItem(state, event, WAITING_EXTERNAL_STATUS, WAITING_EXTERNAL_STATUS_TEXT)
       return { applied: true, terminal: false }
     case 'run.cancelled':
+      markLastAssistantMessageInterrupted(state, runId)
       state.pendingRequirement = null
       state.activeRun = null
       state.lastRun = buildEventRunState(state, event, options.agentId, 'cancelled')
@@ -292,6 +293,7 @@ export function applyAgentRunEvent(
     case 'run.error':
       {
         const issue = buildRunIssueState(String(event.data.message || event.content || '智能体执行失败。'), options.agentDisplayName)
+        markLastAssistantMessageInterrupted(state, runId)
         failOpenToolTimelineItems(state, runId, issue.detail)
         state.activeRun = null
         state.lastRun = buildEventRunState(state, event, options.agentId, 'failed')
@@ -727,7 +729,7 @@ function applyMemberRunEvent(state: AgentSessionRuntimeState, event: AgentRunEve
       break
     case 'member.tool.error':
       removeMemberRunWaitingStatusItems(memberRun)
-      upsertMemberToolTimelineItem(memberRun, event, 'error')
+      upsertMemberToolTimelineItem(memberRun, event, event.data.outcome === 'unknown' ? 'interrupted' : 'error')
       finishMemberTextSegment(state, memberRun.run_id)
       appendMemberRunStatusItem(memberRun, event, MODEL_REQUEST_STATUS, MODEL_REQUEST_STATUS_TEXT)
       break
@@ -1338,6 +1340,22 @@ function finishCurrentTextSegment(state: AgentSessionRuntimeState): void {
     }
   }
   state.stream.streamingTimelineItemId = null
+}
+
+/**
+ * 将异常终止 Run 的最后一段可见助手正文标记为未完成，空占位不保留。
+ */
+function markLastAssistantMessageInterrupted(state: AgentSessionRuntimeState, runId: string): void {
+  for (let index = state.timelineItems.length - 1; index >= 0; index -= 1) {
+    const item = state.timelineItems[index]
+    if (item.run_id !== runId || item.kind !== 'message' || item.role !== 'assistant') {
+      continue
+    }
+    if (item.content?.trim()) {
+      item.status = 'interrupted'
+    }
+    return
+  }
 }
 
 /**

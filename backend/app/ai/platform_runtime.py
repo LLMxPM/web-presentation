@@ -19,7 +19,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import get_settings
 from app.ai.image_refs import sanitize_message_history_image_refs
 from app.ai.agent.runtime_context import AgentRuntimeContext
-from app.ai.message_history import trim_unprocessed_tool_call_history
 from app.ai.member_prompts import build_member_prompt_from_payload
 from app.ai.run_event_writer import allocate_run_event_index, is_sqlite_lock_error
 from app.ai.run_write_fence import AgentRunWriteFence
@@ -540,9 +539,7 @@ class PlatformAgentRuntimeStore:
         if status not in TERMINAL_RUN_STATUSES and status != "paused":
             raise ValueError(f"unsupported terminal status: {status}")
         if status in TERMINAL_RUN_STATUSES:
-            run_model.message_history_json = trim_unprocessed_tool_call_history(
-                run_model.message_history_json if isinstance(run_model.message_history_json, list) else []
-            )
+            # 原始 Pydantic 检查点保留用于审计；后续模型历史在重建时派生安全副本。
             run_model.pending_requirement_json = None
         run_model.status = status
         run_model.finished_at = _utc_now() if status in TERMINAL_RUN_STATUSES else None
@@ -600,7 +597,7 @@ class PlatformAgentRuntimeStore:
             )
         )
         for tool_call in result.scalars().all():
-            tool_call.status = "error"
+            tool_call.status = "interrupted"
             tool_call.message = tool_call.message or message
             if not tool_call.tool_call_id:
                 continue
@@ -614,6 +611,8 @@ class PlatformAgentRuntimeStore:
                         "tool_name": tool_call.tool_name,
                         "tool_call_id": tool_call.tool_call_id,
                         "message": message,
+                        "code": "AI_TOOL_INTERRUPTED",
+                        "outcome": "unknown",
                     },
                 ),
                 commit=False,
@@ -1185,7 +1184,7 @@ class PlatformAgentRuntimeStore:
                         "tool.started": "running",
                         "tool.progress": "running",
                         "tool.completed": "completed",
-                        "tool.error": "error",
+                        "tool.error": "interrupted" if event.data.get("outcome") == "unknown" else "error",
                     }[event.event],
                 )
                 if event.event == "tool.progress" and item.tool is not None:
@@ -1225,6 +1224,8 @@ class PlatformAgentRuntimeStore:
                     requirement_items_by_run=requirement_items_by_run,
                     run_id=run_id,
                 )
+            if event.event in {"run.cancelled", "run.error"}:
+                _mark_last_assistant_timeline_item_interrupted(items, run_id=run_id)
             if event.event == "run.error":
                 current_text_by_run[run_id] = None
                 _mark_open_tool_items_failed(
@@ -1305,7 +1306,7 @@ class PlatformAgentRuntimeStore:
                     member_agent_id=_optional_str(data.get("member_agent_id")),
                     member_agent_name=_optional_str(data.get("member_agent_name")),
                     member_run_id=_optional_str(data.get("member_run_id")),
-                    status=status if status in {"running", "completed", "error"} else "running",  # type: ignore[arg-type]
+                    status=status if status in {"running", "completed", "error", "interrupted"} else "running",  # type: ignore[arg-type]
                     input_payload=_first_present(data, ("tool_args", "arguments", "args")),
                     output_payload=_first_present(data, ("result", "output")),
                     message=str(data.get("message") or event.content or ""),
@@ -1318,7 +1319,7 @@ class PlatformAgentRuntimeStore:
             return existing
         existing.status = status
         if existing.tool is not None:
-            existing.tool.status = status if status in {"running", "completed", "error"} else existing.tool.status  # type: ignore[assignment]
+            existing.tool.status = status if status in {"running", "completed", "error", "interrupted"} else existing.tool.status  # type: ignore[assignment]
             input_payload = _first_present(data, ("tool_args", "arguments", "args"))
             if _is_meaningful_payload(input_payload) and not _is_meaningful_payload(existing.tool.input_payload):
                 existing.tool.input_payload = input_payload
@@ -1465,7 +1466,7 @@ class PlatformAgentRuntimeStore:
                 status = {
                     "member.tool.started": "running",
                     "member.tool.completed": "completed",
-                    "member.tool.error": "error",
+                    "member.tool.error": "interrupted" if data.get("outcome") == "unknown" else "error",
                 }[event.event]
                 tool_call_id = _optional_str(data.get("tool_call_id")) or f"member-event-{event_row.id}"
                 existing = tool_items.get(tool_call_id)
@@ -1782,7 +1783,7 @@ class PlatformAgentRuntimeStore:
                 tool_call_id=tool_call.tool_call_id,
                 tool_name=tool_call.tool_name,
                 member_run_id=tool_call.member_run_id,
-                status=tool_call.status if tool_call.status in {"running", "completed", "error"} else "running",  # type: ignore[arg-type]
+                status=tool_call.status if tool_call.status in {"running", "completed", "error", "interrupted"} else "running",  # type: ignore[arg-type]
                 input_payload=tool_call.input_payload_json,
                 output_payload=tool_call.output_payload_json,
                 message=tool_call.message or "",
@@ -1841,6 +1842,8 @@ class PlatformAgentRuntimeStore:
             "tool.completed": "completed",
             "tool.error": "error",
         }[normalized_event]
+        if normalized_event == "tool.error" and event.data.get("outcome") == "unknown":
+            status = "interrupted"
         raw_input_payload = (
             event.data.get("tool_args")
             if "tool_args" in event.data
@@ -2203,6 +2206,21 @@ def _mark_open_tool_items_failed(
         item.status = "error"
         item.tool.status = "error"
         item.tool.message = item.tool.message or message
+
+
+def _mark_last_assistant_timeline_item_interrupted(
+    items: list[AgentTimelineItem],
+    *,
+    run_id: str,
+) -> None:
+    """把失败 Run 最后一段可见助手正文标记为未完成。"""
+
+    for item in reversed(items):
+        if item.run_id != run_id or item.kind != "message" or item.role != "assistant":
+            continue
+        if str(item.content or "").strip():
+            item.status = "interrupted"
+        return
 
 
 def _map_run_status(status: str) -> str:

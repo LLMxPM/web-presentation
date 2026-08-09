@@ -25,6 +25,7 @@ from app.ai.agent.runtime_context import AgentRuntimeContext
 from app.ai.context_usage import AgentContextUsageSnapshot, usage_snapshot_from_messages
 from app.ai.image_history_hydration import hydrate_agent_image_refs
 from app.ai.image_refs import normalize_agent_image_ref, sanitize_message_history_image_refs
+from app.ai.message_history_recovery import recover_run_message_history
 from app.ai.model_budget import CONTEXT_WINDOW_TOKEN_DEFAULT, derive_model_run_budget
 from app.core.exceptions import AppException
 from app.models.ai_agent_runtime import AiAgentRun, AiAgentSession
@@ -57,6 +58,7 @@ class RebuiltAgentMessageHistory:
     covered_until_created_at: str | None
     summary_json: dict[str, Any] | None
     latest_usage: AgentContextUsageSnapshot
+    recovery_by_run: dict[str, dict[str, Any]]
 
 
 class AgentContextLimitProcessor:
@@ -312,6 +314,7 @@ async def rebuild_agent_message_history(
     )
     message_json: list[dict[str, Any]] = []
     included_run_ids: list[str] = []
+    recovery_by_run: dict[str, dict[str, Any]] = {}
     if checkpoint is not None:
         message_json.extend(_summary_message_json_from_checkpoint(checkpoint))
     for run_model in result.scalars().all():
@@ -321,9 +324,9 @@ async def rebuild_agent_message_history(
             continue
         if checkpoint is not None and _is_run_covered_by_checkpoint(run_model, checkpoint):
             continue
-        delta = run_model.message_history_json if isinstance(run_model.message_history_json, list) else []
-        if run_model.status in {"completed", "cancelled", "failed"}:
-            delta = trim_unprocessed_tool_call_history(delta)
+        recovered = await recover_run_message_history(session=session, run_model=run_model)
+        delta = recovered.message_json
+        recovery_by_run[run_model.run_id] = recovered.diagnostics.model_dump()
         if not delta:
             continue
         message_json.extend(_run_focus_marker_json(run_model))
@@ -349,6 +352,7 @@ async def rebuild_agent_message_history(
         covered_until_created_at=covered_until_created_at or None,
         summary_json=checkpoint,
         latest_usage=usage_snapshot_from_messages(message_json),
+        recovery_by_run=recovery_by_run,
     )
 
 

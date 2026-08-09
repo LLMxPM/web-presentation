@@ -138,11 +138,13 @@ const summary = computed(() => {
   return props.tool.progress?.message || props.tool.message || ''
 })
 const statusText = computed(() => {
+  if (props.tool.status === 'interrupted') return '执行结果未知'
   if (props.tool.status === 'error') return '失败'
   if (props.tool.status === 'completed') return '已完成'
   return phaseLabels[String(props.tool.progress?.phase || 'running')] || '处理中'
 })
 const statusTone = computed(() => {
+  if (props.tool.status === 'interrupted') return 'warning' as const
   if (props.tool.status === 'error') return 'danger' as const
   if (props.tool.status === 'completed') return 'success' as const
   return 'info' as const

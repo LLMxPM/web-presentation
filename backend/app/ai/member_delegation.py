@@ -559,6 +559,13 @@ class _MemberAgentRunner:
                             async for raw_event in stream:
                                 await self._raise_if_parent_cancelled()
                                 await projector.handle_raw_event(raw_event)
+                        self._sync_member_message_history(
+                            agent_run=agent_run,
+                            base_message_history=base_message_history,
+                            final_messages=final_messages,
+                            context_processor=context_processor,
+                        )
+                        await self.append_member_event("history.checkpoint", data={"phase": "tool"})
                 if agent_run.result is None:
                     raise RuntimeError("Pydantic AI member run finished without result")
                 final_messages[:] = _safe_new_member_messages(agent_run.result)
@@ -757,17 +764,43 @@ class _MemberAgentRunner:
         self._member_run.pending_requirement_json = None
         self._member_run.finished_at = _utc_now()
         self._member_run.updated_at = _utc_now()
+        result_text = await self._build_failed_member_result(message=message)
         await self.append_member_event(
             "run.error",
-            data={"code": code, "message": message, "output_prompt": f"内容助手子运行失败：{message}"},
+            data={"code": code, "message": message, "output_prompt": result_text},
         )
         return MemberDelegationResult(
             member_run_id=self._member_run.member_run_id,
             member_id=self._member_run.agent_id,
             member_name=self._member_run.agent_name,
             status="failed",
-            result=f"内容助手子运行失败：{message}",
+            result=result_text,
         )
+
+    async def _build_failed_member_result(self, *, message: str) -> str:
+        """把子运行失败和已确认工具事实合并回父运行，不携带隐藏推理。"""
+
+        result = await self._session.execute(
+            select(AiAgentToolCall)
+            .where(
+                AiAgentToolCall.run_id == self._parent_run.run_id,
+                AiAgentToolCall.member_run_id == self._member_run.member_run_id,
+                AiAgentToolCall.status.in_(("completed", "error")),
+            )
+            .order_by(AiAgentToolCall.id.asc())
+        )
+        facts = [
+            {
+                "tool_name": tool.tool_name,
+                "tool_call_id": tool.tool_call_id,
+                "status": tool.status,
+                "result": tool.output_payload_json,
+                "message": tool.message or None,
+            }
+            for tool in result.scalars().all()
+        ]
+        prefix = f"内容助手子运行失败：{message}"
+        return prefix if not facts else f"{prefix}；已确认工具事实：{json.dumps(facts, ensure_ascii=False)}"
 
     async def _mark_running_member_tools_failed(
         self,
@@ -785,7 +818,7 @@ class _MemberAgentRunner:
             )
         )
         for tool_call in result.scalars().all():
-            tool_call.status = "error"
+            tool_call.status = "interrupted"
             tool_call.message = tool_call.message or message
             if not emit_events or not tool_call.tool_call_id:
                 continue
@@ -795,6 +828,8 @@ class _MemberAgentRunner:
                     "tool_name": tool_call.tool_name,
                     "tool_call_id": tool_call.tool_call_id,
                     "message": message,
+                    "code": "AI_TOOL_INTERRUPTED",
+                    "outcome": "unknown",
                 },
             )
 
