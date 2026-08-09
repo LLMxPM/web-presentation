@@ -1029,6 +1029,7 @@ export interface AgentImageAttachmentItem {
   url: string
   preview_available: boolean
   promoted_asset_id: number | null
+  promotion_status: 'never' | 'promoted' | 'deleted'
   status: RecordStatus
   created_at: string | null
 }
@@ -1044,6 +1045,7 @@ export interface AgentMessageAttachmentItem {
   url: string
   preview_available: boolean
   promoted_asset_id: number | null
+  promotion_status: 'never' | 'promoted' | 'deleted'
 }
 
 export interface AgentContextStatusItem {

@@ -7,13 +7,14 @@ import { useAgentImageAttachments } from '@/components/agent/agent-image-attachm
 import type { AgentImageAttachmentItem } from '@/types/api'
 
 const uploadMock = vi.fn()
+const promoteMock = vi.fn()
 const messageErrorMock = vi.fn()
 const messageWarningMock = vi.fn()
 
 vi.mock('@/api/ai', () => ({
   uploadAgentImageAttachment: (...args: unknown[]) => uploadMock(...args),
   deleteAgentImageAttachment: vi.fn(),
-  promoteAgentImageAttachment: vi.fn(),
+  promoteAgentImageAttachment: (...args: unknown[]) => promoteMock(...args),
 }))
 
 vi.mock('@/utils/message', () => ({
@@ -39,6 +40,9 @@ function attachment(id: number, name = `${id}.png`): AgentImageAttachmentItem {
     url: `/attachments/${id}`,
     preview_available: true,
     promoted_asset_id: null,
+    promotion_status: 'never',
+    status: 'active',
+    created_at: null,
   }
 }
 
@@ -58,6 +62,7 @@ function createContext(initialAttachments: AgentImageAttachmentItem[] = []) {
       setPendingImageAttachments: (_sessionId: string, value: AgentImageAttachmentItem[]) => { attachments = value },
       setImageUploading: (_sessionId: string, value: boolean) => { uploadingStates.push(value) },
       invalidateWorkspaceAssets: vi.fn(),
+      refreshSessionRuntime: vi.fn(),
     },
     ensureActiveSession,
     getAttachments: () => attachments,
@@ -143,5 +148,16 @@ describe('useAgentImageAttachments', () => {
     expect(messageErrorMock).toHaveBeenCalledTimes(1)
     expect(messageErrorMock.mock.calls[0][0]).toContain('bad.png：格式不支持')
     expect(messageErrorMock.mock.calls[0][0]).toContain('failed.webp')
+  })
+
+  it('重新保存资源后刷新资源库与会话运行态', async () => {
+    const state = createContext()
+    promoteMock.mockResolvedValue({ ...attachment(7), promoted_asset_id: 99, promotion_status: 'promoted' })
+
+    const succeeded = await useAgentImageAttachments(state.context).handlePromoteImage(7)
+
+    expect(succeeded).toBe(true)
+    expect(state.context.invalidateWorkspaceAssets).toHaveBeenCalledTimes(1)
+    expect(state.context.refreshSessionRuntime).toHaveBeenCalledWith('session-1')
   })
 })

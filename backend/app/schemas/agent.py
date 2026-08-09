@@ -111,6 +111,7 @@ class AgentImageAttachmentItem(SchemaBase):
     url: str
     preview_available: bool = True
     promoted_asset_id: int | None = None
+    promotion_status: Literal["never", "promoted", "deleted"] = "never"
     status: str
     created_at: str | None = None
 
@@ -128,6 +129,7 @@ class AgentMessageAttachmentItem(SchemaBase):
     url: str
     preview_available: bool = True
     promoted_asset_id: int | None = None
+    promotion_status: Literal["never", "promoted", "deleted"] = "never"
 
 
 class AgentImageAttachmentPromoteRequest(BaseModel):

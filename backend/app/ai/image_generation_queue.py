@@ -302,6 +302,7 @@ async def _execute_job(
                         "content_type": attachment.content_type,
                         "file_size": attachment.file_size,
                         "promoted_asset_id": attachment.promoted_asset_id,
+                        "promotion_status": "promoted",
                     }
                 )
                 if asset is not None:
@@ -323,6 +324,7 @@ async def _execute_job(
                 "status": "completed",
                 "attachments": output_attachments,
                 "assets": output_assets,
+                "deleted_assets": [],
                 "audit": dict(job.model_snapshot_json or {}),
             }
             job.progress_json = {"phase": "completed", "message": "图片已生成并保存到资源库。"}

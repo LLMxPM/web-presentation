@@ -504,9 +504,21 @@ def _image_generation_tool_spec() -> AgentToolSpec:
         response_example={
             "job_id": "image-job-123",
             "status": "completed",
-            "attachments": [{"id": 25, "original_name": "hero-1.png", "promoted_asset_id": 91}],
+            "attachments": [
+                {
+                    "id": 25,
+                    "original_name": "hero-1.png",
+                    "promoted_asset_id": 91,
+                    "promotion_status": "promoted",
+                }
+            ],
             "assets": [{"id": 91, "name": "hero-1", "original_name": "hero-1.png"}],
+            "deleted_assets": [],
         },
+        response_notes=(
+            "历史回放时平台会按实时状态校正 promoted_asset_id、promotion_status、assets 与 deleted_assets；"
+            "资源库副本删除不影响附件原图。"
+        ),
     )
 
 

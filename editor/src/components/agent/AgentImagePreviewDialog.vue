@@ -98,14 +98,24 @@ watch(
   { immediate: true },
 )
 
-const isPromoted = computed(() => Boolean(props.attachment?.promoted_asset_id || locallyPromoted.value))
+const isPromoted = computed(() => Boolean(
+  props.attachment?.promotion_status === 'promoted'
+  || props.attachment?.promoted_asset_id
+  || locallyPromoted.value,
+))
+const isDeleted = computed(() => props.attachment?.promotion_status === 'deleted' && !locallyPromoted.value)
 const promoteButtonVisible = computed(() => Boolean(props.promoteAttachment))
 const promoteButtonLabel = computed(() => {
   if (isPromoted.value) return '已保存到资源库'
   if (promoting.value) return '保存中...'
+  if (isDeleted.value) return '重新保存为资源'
   return '保存为资源'
 })
-const promoteButtonTitle = computed(() => isPromoted.value ? '已保存到资源库' : '保存为资源')
+const promoteButtonTitle = computed(() => {
+  if (isPromoted.value) return '已保存到资源库'
+  if (isDeleted.value) return '重新保存为资源'
+  return '保存为资源'
+})
 
 /**
  * 响应遮罩点击与 Esc 关闭，仅向下透传关闭动作。

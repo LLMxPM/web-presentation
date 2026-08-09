@@ -20,6 +20,7 @@ function attachment(id: number, promotedAssetId: number | null = null): AgentMes
     url: `/api/ai/attachments/images/${id}/content`,
     preview_available: true,
     promoted_asset_id: promotedAssetId,
+    promotion_status: promotedAssetId ? 'promoted' : 'never',
   }
 }
 
@@ -72,6 +73,19 @@ describe('AgentImagePreviewDialog', () => {
       props: { open: true, attachment: attachment(2, 99), promoteAttachment: vi.fn() },
     })
 
+    expect(screen.getByRole('button', { name: '已保存到资源库' })).toBeDisabled()
+  })
+
+  it('资源库副本删除后提供重新保存入口', async () => {
+    const promoteAttachment = vi.fn().mockResolvedValue(true)
+    const deletedAttachment = { ...attachment(3), promotion_status: 'deleted' as const }
+    render(AgentImagePreviewDialog, {
+      props: { open: true, attachment: deletedAttachment, promoteAttachment },
+    })
+
+    await fireEvent.click(screen.getByRole('button', { name: '重新保存为资源' }))
+
+    expect(promoteAttachment).toHaveBeenCalledWith(3)
     expect(screen.getByRole('button', { name: '已保存到资源库' })).toBeDisabled()
   })
 })

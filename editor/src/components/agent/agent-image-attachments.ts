@@ -25,6 +25,7 @@ interface AgentImageAttachmentContext {
   setPendingImageAttachments: (sessionId: string, attachments: AgentImageAttachmentItem[]) => void
   setImageUploading: (sessionId: string, uploading: boolean) => void
   invalidateWorkspaceAssets: () => Promise<void>
+  refreshSessionRuntime: (sessionId: string) => Promise<void>
 }
 
 /**
@@ -134,6 +135,7 @@ export function useAgentImageAttachments(context: AgentImageAttachmentContext) {
     try {
       await promoteAgentImageAttachment(sessionId, context.getScope(), attachmentId, {}, context.getAgentId())
       await context.invalidateWorkspaceAssets()
+      await context.refreshSessionRuntime(sessionId)
       Message.success('图片已保存为资源。')
       return true
     } catch (error) {

@@ -3,10 +3,22 @@
 from __future__ import annotations
 
 import os
+import runpy
 import sqlite3
 import subprocess
 import sys
 from pathlib import Path
+
+
+def test_ai_attachment_lifecycle_foreign_key_names_fit_postgresql_limit() -> None:
+    """显式外键名不得超过 PostgreSQL 的 63 字节标识符上限。"""
+
+    backend_root = Path(__file__).resolve().parents[2]
+    migration_path = backend_root / "migrations" / "versions" / "20260809_0100_ai_attachment_asset_lifecycle.py"
+    migration_globals = runpy.run_path(str(migration_path))
+
+    foreign_key_names = migration_globals["_FK_NAMES"].values()
+    assert all(len(name.encode("utf-8")) <= 63 for name in foreign_key_names)
 
 
 def test_alembic_head_should_migrate_sqlite_database(tmp_path: Path) -> None:

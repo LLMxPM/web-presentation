@@ -39,10 +39,13 @@
       <div v-if="!isAnalysis && outputAssets.length" class="flex flex-wrap gap-1">
         <UiBadge v-for="asset in outputAssets" :key="asset.id" tone="success" size="sm">{{ asset.name }}</UiBadge>
       </div>
+      <div v-if="!isAnalysis && deletedOutputAttachments.length" class="flex flex-wrap gap-1">
+        <UiBadge tone="warning" size="sm">{{ deletedAssetStatusText }}</UiBadge>
+      </div>
 
       <div class="flex items-center justify-between gap-2 border-t border-border pt-1.5">
         <UiButton variant="ghost" size="xs" @click="$emit('openDetail')">查看工具详情</UiButton>
-        <UiButton v-if="!isAnalysis && visibleOutputAttachments.length" variant="ghost" size="xs" @click="openAssetLibrary">
+        <UiButton v-if="!isAnalysis && outputAssets.length" variant="ghost" size="xs" @click="openAssetLibrary">
           已保存到资源库 →
         </UiButton>
       </div>
@@ -100,16 +103,38 @@ const analysisPreviewAttachments = computed(() => {
   }
   return [...byId.values()]
 })
+const promotedAssetIds = computed(() => new Set(
+  visibleOutputAttachments.value
+    .filter(item => item.promotion_status === 'promoted' && item.promoted_asset_id)
+    .map(item => Number(item.promoted_asset_id)),
+))
+const deletedOutputAttachments = computed(() => (
+  visibleOutputAttachments.value.filter(item => item.promotion_status === 'deleted')
+))
 const outputAssets = computed(() => (
   props.tool.status !== 'error' && Array.isArray(output.value.assets)
     ? output.value.assets.filter((item): item is { id: number, name: string } => (
         isRecord(item) && typeof item.id === 'number' && typeof item.name === 'string'
+        && promotedAssetIds.value.has(item.id)
       ))
     : []
 ))
+const deletedAssetStatusText = computed(() => (
+  deletedOutputAttachments.value.length === 1
+    ? '资源库副本已删除'
+    : `${deletedOutputAttachments.value.length} 个资源库副本已删除`
+))
 const summary = computed(() => {
   if (isAnalysis.value) return String(output.value.summary || props.tool.message || '')
-  if (outputAssets.value.length) return `已生成 ${outputAssets.value.length} 张图片，并创建工作空间资源。`
+  const generatedCount = visibleOutputAttachments.value.length
+  const deletedCount = deletedOutputAttachments.value.length
+  if (generatedCount && deletedCount === generatedCount) {
+    return `已生成 ${generatedCount} 张图片；资源库副本已删除，会话原图仍保留。`
+  }
+  if (outputAssets.value.length && deletedCount) {
+    return `已生成 ${generatedCount} 张图片；${outputAssets.value.length} 个资源仍在资源库，${deletedCount} 个副本已删除。`
+  }
+  if (outputAssets.value.length) return `已生成 ${generatedCount} 张图片，并创建工作空间资源。`
   return props.tool.progress?.message || props.tool.message || ''
 })
 const statusText = computed(() => {

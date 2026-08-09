@@ -1333,6 +1333,9 @@ const {
   invalidateWorkspaceAssets: async () => {
     await queryClient.invalidateQueries({ queryKey: ['workspace-assets'] })
   },
+  refreshSessionRuntime: async sessionId => {
+    await finalizeRun(sessionId)
+  },
 })
 
 /**

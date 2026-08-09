@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import AppException
 from app.core.time_utils import format_in_app_timezone, utc_now
+from app.models.ai_agent_attachment import AiAgentImageAttachment
 from app.models.asset import WorkspaceAsset
 from app.models.enums import AssetType, RecordStatus
 from app.models.font import WorkspaceFontConfig
@@ -517,7 +518,22 @@ class AssetService:
 
         succeeded_ids: list[int] = []
         failures: list[dict[str, object]] = []
-        for asset_id in self._normalize_batch_asset_ids(asset_ids):
+        normalized_ids = self._normalize_batch_asset_ids(asset_ids)
+        selected_assets = list(
+            (
+                await self.session.execute(
+                    select(WorkspaceAsset)
+                    .where(WorkspaceAsset.workspace_id == workspace_id)
+                    .where(WorkspaceAsset.id.in_(normalized_ids))
+                )
+            )
+            .scalars()
+            .all()
+        )
+        history_ids = {item.id for item in selected_assets if item.source_asset_id is not None}
+        ordered_ids = [item for item in normalized_ids if item in history_ids]
+        ordered_ids.extend(item for item in normalized_ids if item not in history_ids)
+        for asset_id in ordered_ids:
             try:
                 await self._get_asset_or_raise(workspace_id, asset_id)
                 await self.delete_asset(workspace_id, asset_id)
@@ -526,6 +542,10 @@ class AssetService:
                 await self.session.rollback()
                 failures.append({"asset_id": asset_id, "code": error.code, "detail": error.detail})
 
+        succeeded_set = set(succeeded_ids)
+        succeeded_ids = [item for item in normalized_ids if item in succeeded_set]
+        failures_by_id = {int(item["asset_id"]): item for item in failures}
+        failures = [failures_by_id[item] for item in normalized_ids if item in failures_by_id]
         return self._build_batch_operation_payload(succeeded_ids, failures)
 
     async def update_asset_metadata(
@@ -587,7 +607,7 @@ class AssetService:
         return asset
 
     async def delete_asset(self, workspace_id: int, asset_id: int) -> None:
-        """删除已归档且无引用的资源；物理文件仅在无其他记录复用时删除。"""
+        """删除已归档且无引用的资源；会话原图保留，主资源历史随主记录清理。"""
 
         asset = await self.session.scalar(
             select(WorkspaceAsset)
@@ -605,18 +625,68 @@ class AssetService:
         if references.has_references:
             raise AppException(status_code=409, code="ASSET_DELETE_FORBIDDEN", detail="资源仍存在引用，请先解除引用后再删除。")
 
-        file_name = asset.file_name
+        history_assets = list(
+            (
+                await self.session.execute(
+                    select(WorkspaceAsset)
+                    .where(WorkspaceAsset.workspace_id == workspace_id)
+                    .where(WorkspaceAsset.source_asset_id == asset.id)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        deleted_assets = [asset, *history_assets]
+        file_names = {item.file_name for item in deleted_assets if item.file_name}
+        await self._detach_promoted_image_attachments(workspace_id, deleted_assets)
+        for history_asset in history_assets:
+            await self.session.delete(history_asset)
+        if history_assets:
+            await self.session.flush()
         await self.session.delete(asset)
         try:
             await self.session.commit()
         except IntegrityError as error:
             await self.session.rollback()
             raise AppException(status_code=409, code="ASSET_DELETE_FORBIDDEN", detail="资源仍存在外键引用，请先解除引用后再删除。") from error
-        if await self._count_file_name_references(workspace_id, file_name) == 0:
-            try:
-                await self.driver.delete(workspace_id, file_name)
-            except Exception:
-                pass
+        for file_name in file_names:
+            if await self._count_file_name_references(workspace_id, file_name) == 0:
+                try:
+                    await self.driver.delete(workspace_id, file_name)
+                except Exception:
+                    pass
+
+    async def _detach_promoted_image_attachments(
+        self,
+        workspace_id: int,
+        assets: list[WorkspaceAsset],
+    ) -> None:
+        """解除资源库副本与会话原图的当前关联，并保留可重新保存的历史状态。"""
+
+        assets_by_id = {item.id: item for item in assets}
+        if not assets_by_id:
+            return
+        attachments = list(
+            (
+                await self.session.execute(
+                    select(AiAgentImageAttachment)
+                    .where(AiAgentImageAttachment.workspace_id == workspace_id)
+                    .where(AiAgentImageAttachment.promoted_asset_id.in_(assets_by_id))
+                )
+            )
+            .scalars()
+            .all()
+        )
+        deleted_at = utc_now()
+        for attachment in attachments:
+            promoted_asset_id = attachment.promoted_asset_id
+            promoted_asset = assets_by_id.get(promoted_asset_id) if promoted_asset_id is not None else None
+            if promoted_asset is None:
+                continue
+            attachment.last_promoted_asset_id = promoted_asset.id
+            attachment.last_promoted_asset_name = promoted_asset.name
+            attachment.promoted_asset_id = None
+            attachment.promoted_asset_deleted_at = deleted_at
 
     async def delete_workspace_font_with_asset(self, workspace_id: int, font_id: int) -> None:
         """删除字体注册，并在安全时一并硬删除其字体资产和历史记录。"""

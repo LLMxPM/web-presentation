@@ -38,5 +38,12 @@ class AiAgentImageAttachment(TimestampMixin, AuditMixin, Base):
     model_url_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     model_url_last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     owned_object: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
-    promoted_asset_id: Mapped[int | None] = mapped_column(ForeignKey("workspace_assets.id"), nullable=True, index=True)
+    promoted_asset_id: Mapped[int | None] = mapped_column(
+        ForeignKey("workspace_assets.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    last_promoted_asset_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    last_promoted_asset_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    promoted_asset_deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default=RecordStatus.ACTIVE.value, index=True)

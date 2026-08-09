@@ -230,5 +230,6 @@ function mapImageAttachmentToMessageAttachment(attachment: AgentImageAttachmentI
     url: attachment.url,
     preview_available: attachment.preview_available,
     promoted_asset_id: attachment.promoted_asset_id,
+    promotion_status: attachment.promotion_status,
   }
 }

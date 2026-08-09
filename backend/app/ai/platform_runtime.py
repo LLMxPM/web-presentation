@@ -34,6 +34,7 @@ from app.models.ai_agent_runtime import (
     AiAgentSession,
     AiAgentToolCall,
 )
+from app.models.asset import WorkspaceAsset
 from app.models.enums import RecordStatus
 from app.schemas.agent import (
     AgentActiveRunItem,
@@ -1032,6 +1033,24 @@ class PlatformAgentRuntimeStore:
         sorted_items = [item for _, item in sorted(timeline_entries, key=lambda entry: entry[0])]
         tool_attachments = await self._tool_attachment_summaries(session_id=session_id)
         attachment_lookup = await self._attachment_summary_lookup(session_id=session_id)
+        promoted_asset_ids = {
+            attachment.promoted_asset_id
+            for attachments in tool_attachments.values()
+            for attachment in attachments
+            if attachment.promoted_asset_id is not None
+        }
+        promoted_assets: dict[int, WorkspaceAsset] = {}
+        if promoted_asset_ids:
+            assets = list(
+                (
+                    await self._session.execute(
+                        select(WorkspaceAsset).where(WorkspaceAsset.id.in_(promoted_asset_ids))
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            promoted_assets = {asset.id: asset for asset in assets}
         for order_index, item in enumerate(sorted_items):
             item.order_index = order_index
             if item.kind == "tool" and item.tool is not None:
@@ -1052,6 +1071,27 @@ class PlatformAgentRuntimeStore:
                 item.tool.input_attachments = input_attachments
                 item.tool.output_attachments = output_attachments
                 item.attachments = output_attachments
+                if item.tool.tool_name == "generate_image" and item.tool.status == "completed":
+                    output_payload = dict(item.tool.output_payload or {})
+                    output_payload["assets"] = [
+                        {
+                            "id": promoted_assets[attachment.promoted_asset_id].id,
+                            "name": promoted_assets[attachment.promoted_asset_id].name,
+                            "original_name": promoted_assets[attachment.promoted_asset_id].original_name,
+                        }
+                        for attachment in output_attachments
+                        if attachment.promoted_asset_id in promoted_assets
+                    ]
+                    output_payload["deleted_assets"] = [
+                        {
+                            "attachment_id": attachment.id,
+                            "status": "deleted",
+                            "message": "资源库副本已删除，会话原图仍可用并可重新保存。",
+                        }
+                        for attachment in output_attachments
+                        if attachment.promotion_status == "deleted"
+                    ]
+                    item.tool.output_payload = output_payload
         return sorted_items
 
     def _run_context_timeline_item(self, run: AiAgentRun) -> AgentTimelineItem:

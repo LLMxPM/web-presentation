@@ -1622,8 +1622,18 @@ async def _hydrate_continue_message_history_json(
 ) -> list[dict[str, Any]] | None:
     """兼容旧调用名；续跑只保留轻量图片引用，绝不重新水合像素。"""
 
-    _ = (session, user_id, session_id)
-    return replace_agent_image_refs_with_placeholders(message_history)
+    if not message_history:
+        return replace_agent_image_refs_with_placeholders(message_history)
+    from app.ai.image_history_hydration import reconcile_agent_image_asset_history
+
+    reconciled = await reconcile_agent_image_asset_history(
+        session=session,
+        user_id=user_id,
+        session_id=session_id,
+        message_json=message_history,
+        correction_position="start",
+    )
+    return replace_agent_image_refs_with_placeholders(reconciled)
 
 
 def _build_user_prompt(message: str, attachments: list[AiAgentImageAttachment]) -> str:

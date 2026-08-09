@@ -435,6 +435,9 @@ class AgentImageAttachmentService:
             overwrite=overwrite,
         )
         attachment.promoted_asset_id = asset.id
+        attachment.last_promoted_asset_id = asset.id
+        attachment.last_promoted_asset_name = asset.name
+        attachment.promoted_asset_deleted_at = None
         attachment.updated_by = operator_id
         await self.session.commit()
         await self.session.refresh(attachment)
@@ -634,6 +637,7 @@ class AgentImageAttachmentService:
             url=self._build_attachment_url(attachment),
             preview_available=attachment.status == _ATTACHMENT_STATUS_ACTIVE,
             promoted_asset_id=attachment.promoted_asset_id,
+            promotion_status=self._resolve_promotion_status(attachment),
             status=attachment.status,
             created_at=attachment.created_at.isoformat() if attachment.created_at is not None else None,
         )
@@ -652,7 +656,21 @@ class AgentImageAttachmentService:
             url=self._build_attachment_url(attachment),
             preview_available=attachment.status == _ATTACHMENT_STATUS_ACTIVE,
             promoted_asset_id=attachment.promoted_asset_id,
+            promotion_status=self._resolve_promotion_status(attachment),
         )
+
+    @staticmethod
+    def _resolve_promotion_status(attachment: AiAgentImageAttachment) -> str:
+        """根据当前资源关联与删除时间生成稳定的前端推广状态。"""
+
+        if attachment.promoted_asset_id is not None:
+            return "promoted"
+        if (
+            attachment.promoted_asset_deleted_at is not None
+            or attachment.last_promoted_asset_id is not None
+        ):
+            return "deleted"
+        return "never"
 
     @staticmethod
     def _build_attachment_url(attachment: AiAgentImageAttachment) -> str:

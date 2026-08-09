@@ -6,10 +6,17 @@ import struct
 import zipfile
 
 from httpx import AsyncClient
+from sqlalchemy import select
 
+from app.ai.image_history_hydration import reconcile_agent_image_asset_history
 from app.core.time_utils import utc_now
 from app.db.session import get_session_factory
+from app.models.ai_agent_attachment import AiAgentImageAttachment
+from app.models.asset import WorkspaceAsset
+from app.models.asset_render_hint_backfill_job import AssetRenderHintBackfillJob
+from app.models.user import User
 from app.models.workspace_theme import WorkspaceTheme
+from app.services.agent_image_attachment_service import AgentImageAttachmentService
 from app.services.project_artifact_builder import ProjectArtifactBuilder
 
 
@@ -1074,6 +1081,205 @@ async def test_asset_batch_delete_should_cleanup_legacy_soft_deleted_theme_fk(
 
     async with get_session_factory()() as session:
         assert await session.get(WorkspaceTheme, theme_id) is None
+
+
+async def test_promoted_ai_image_asset_delete_should_keep_attachment_and_allow_repromote(
+    authenticated_client: AsyncClient,
+) -> None:
+    """删除 AI 图片资源副本后应保留会话原图、校正历史，并允许重新保存。"""
+
+    workspace_id = await _create_workspace(
+        authenticated_client, "AI 图片资源独立生命周期空间"
+    )
+    session_factory = get_session_factory()
+    async with session_factory() as session:
+        user = await session.scalar(select(User).where(User.username == "admin"))
+        assert user is not None
+        user_id = user.id
+        attachment_service = AgentImageAttachmentService(session, user_id=user_id)
+        attachment = await attachment_service.register_tool_image(
+            workspace_id=workspace_id,
+            session_id="session-asset-lifecycle",
+            run_id="run-asset-lifecycle",
+            content=_build_png_header(1, 1),
+            content_type="image/png",
+            original_name="generated-lifecycle.png",
+            tool_name="generate_image",
+            tool_call_id="call-asset-lifecycle",
+            source_payload={},
+            operator_id=user_id,
+        )
+        (
+            _,
+            asset,
+            created,
+        ) = await attachment_service.promote_attachment_to_asset_with_result(
+            workspace_id=workspace_id,
+            session_id="session-asset-lifecycle",
+            attachment_id=attachment.id,
+            name="generated-lifecycle",
+            description=None,
+            tags=["generated"],
+            overwrite=False,
+            operator_id=user_id,
+        )
+        assert created is True
+        original_asset_id = asset.id
+
+    archive_response = await authenticated_client.post(
+        f"/api/workspaces/{workspace_id}/assets/{original_asset_id}/archive",
+        json={"archive_reason": "验证会话原图独立保留"},
+    )
+    assert archive_response.status_code == 200
+    delete_response = await authenticated_client.post(
+        f"/api/workspaces/{workspace_id}/assets/batch-delete",
+        json={"asset_ids": [original_asset_id]},
+    )
+    assert delete_response.status_code == 200
+    assert delete_response.json()["succeeded_count"] == 1
+
+    original_history = [
+        {
+            "parts": [
+                {
+                    "part_kind": "tool-return",
+                    "tool_name": "generate_image",
+                    "tool_call_id": "call-asset-lifecycle",
+                    "content": {
+                        "status": "completed",
+                        "attachments": [
+                            {
+                                "id": attachment.id,
+                                "promoted_asset_id": original_asset_id,
+                            }
+                        ],
+                        "assets": [
+                            {"id": original_asset_id, "name": "generated-lifecycle"}
+                        ],
+                    },
+                }
+            ],
+            "kind": "response",
+        }
+    ]
+    async with session_factory() as session:
+        stored_attachment = await session.get(AiAgentImageAttachment, attachment.id)
+        assert stored_attachment is not None
+        assert stored_attachment.status == "active"
+        assert stored_attachment.promoted_asset_id is None
+        assert stored_attachment.last_promoted_asset_id == original_asset_id
+        assert stored_attachment.promoted_asset_deleted_at is not None
+        _, content = await AgentImageAttachmentService(
+            session, user_id=user_id
+        ).read_attachment_content_by_id(attachment_id=attachment.id)
+        assert content == _build_png_header(1, 1)
+        reconciled = await reconcile_agent_image_asset_history(
+            session=session,
+            user_id=user_id,
+            session_id="session-asset-lifecycle",
+            message_json=original_history,
+        )
+        tool_result = reconciled[0]["parts"][0]["content"]
+        assert tool_result["attachments"][0]["promoted_asset_id"] is None
+        assert tool_result["attachments"][0]["promotion_status"] == "deleted"
+        assert tool_result["assets"] == []
+        assert (
+            tool_result["deleted_assets"][0]["previous_asset_id"] == original_asset_id
+        )
+        assert "旧 resource_id" in reconciled[-1]["parts"][0]["content"]
+        assert (
+            original_history[0]["parts"][0]["content"]["assets"][0]["id"]
+            == original_asset_id
+        )
+
+        attachment_service = AgentImageAttachmentService(session, user_id=user_id)
+        (
+            item,
+            replacement_asset,
+            created,
+        ) = await attachment_service.promote_attachment_to_asset_with_result(
+            workspace_id=workspace_id,
+            session_id="session-asset-lifecycle",
+            attachment_id=attachment.id,
+            name="generated-lifecycle",
+            description=None,
+            tags=["generated"],
+            overwrite=False,
+            operator_id=user_id,
+        )
+        assert created is True
+        assert item.promotion_status == "promoted"
+        assert item.promoted_asset_id == replacement_asset.id
+
+    blocked_delete_response = await authenticated_client.post(
+        f"/api/workspaces/{workspace_id}/assets/batch-delete",
+        json={"asset_ids": [replacement_asset.id]},
+    )
+    assert blocked_delete_response.status_code == 200
+    assert (
+        blocked_delete_response.json()["failures"][0]["code"]
+        == "ASSET_DELETE_REQUIRES_ARCHIVE"
+    )
+    async with session_factory() as session:
+        stored_attachment = await session.get(AiAgentImageAttachment, attachment.id)
+        assert stored_attachment is not None
+        assert stored_attachment.promoted_asset_id == replacement_asset.id
+        assert stored_attachment.promoted_asset_deleted_at is None
+
+
+async def test_primary_asset_delete_should_cleanup_history_and_render_hint_jobs(
+    authenticated_client: AsyncClient,
+) -> None:
+    """删除归档主资源时应清理历史副本和技术回填任务，不留下外键阻断。"""
+
+    workspace_id = await _create_workspace(authenticated_client, "资源技术引用清理空间")
+    asset = await _create_svg_asset(
+        authenticated_client, workspace_id, "technical_reference_icon"
+    )
+    update_response = await authenticated_client.put(
+        f"/api/workspaces/{workspace_id}/assets/{asset['id']}/content",
+        json={
+            "content": '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M2 2"/></svg>',
+            "change_note": "生成待清理历史",
+        },
+    )
+    assert update_response.status_code == 200
+    async with get_session_factory()() as session:
+        history = await session.scalar(
+            select(WorkspaceAsset).where(WorkspaceAsset.source_asset_id == asset["id"])
+        )
+        assert history is not None
+        history_id = history.id
+        job = AssetRenderHintBackfillJob(
+            job_group_id="asset-delete-cleanup",
+            workspace_id=workspace_id,
+            asset_id=asset["id"],
+            asset_type="icon",
+            source="test",
+            mode="missing",
+            overwrite_manual=False,
+            status="completed",
+            attempt_count=1,
+        )
+        session.add(job)
+        await session.commit()
+        job_id = job.id
+
+    archive_response = await authenticated_client.post(
+        f"/api/workspaces/{workspace_id}/assets/{asset['id']}/archive",
+        json={"archive_reason": "清理主资源"},
+    )
+    assert archive_response.status_code == 200
+    delete_response = await authenticated_client.post(
+        f"/api/workspaces/{workspace_id}/assets/batch-delete",
+        json={"asset_ids": [asset["id"]]},
+    )
+    assert delete_response.status_code == 200
+    assert delete_response.json()["succeeded_count"] == 1
+    async with get_session_factory()() as session:
+        assert await session.get(WorkspaceAsset, asset["id"]) is None
+        assert await session.get(WorkspaceAsset, history_id) is None
+        assert await session.get(AssetRenderHintBackfillJob, job_id) is None
 
 
 async def test_asset_package_export_and_import_should_preserve_metadata(

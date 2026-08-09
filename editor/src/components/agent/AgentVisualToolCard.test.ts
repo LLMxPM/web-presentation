@@ -50,7 +50,7 @@ describe('AgentVisualToolCard', () => {
       props: {
         tool: createTool({
           toolName: 'generate_image',
-          outputPayload: { assets: [{ id: 9, name: 'hero', original_name: 'hero.png' }] },
+          outputPayload: { assets: [{ id: 102, name: 'hero', original_name: 'hero.png' }] },
           outputAttachments: [createAttachment(2, 'hero.png')],
         }),
       },
@@ -81,6 +81,47 @@ describe('AgentVisualToolCard', () => {
     expect(screen.queryByText('partial-hero')).toBeNull()
     expect(screen.queryByRole('button', { name: /已保存到资源库/ })).toBeNull()
   })
+
+  it('资源副本删除后保留会话原图并展示可理解的状态', () => {
+    render(AgentVisualToolCard, {
+      props: {
+        tool: createTool({
+          outputPayload: { assets: [{ id: 102, name: 'deleted-hero' }] },
+          outputAttachments: [createAttachment(2, 'deleted-hero.png', 'deleted')],
+        }),
+      },
+    })
+
+    expect(screen.getByText('已生成 1 张图片；资源库副本已删除，会话原图仍保留。')).toBeTruthy()
+    expect(screen.getByText('资源库副本已删除')).toBeTruthy()
+    expect(screen.getByAltText('deleted-hero.png')).toBeTruthy()
+    expect(screen.queryByText('deleted-hero')).toBeNull()
+    expect(screen.queryByRole('button', { name: /已保存到资源库/ })).toBeNull()
+  })
+
+  it('多图任务部分删除时只展示仍有效的资源', () => {
+    render(AgentVisualToolCard, {
+      props: {
+        tool: createTool({
+          outputPayload: {
+            assets: [
+              { id: 101, name: 'active-hero' },
+              { id: 102, name: 'deleted-hero' },
+            ],
+          },
+          outputAttachments: [
+            createAttachment(1, 'active-hero.png', 'promoted'),
+            createAttachment(2, 'deleted-hero.png', 'deleted'),
+          ],
+        }),
+      },
+    })
+
+    expect(screen.getByText('已生成 2 张图片；1 个资源仍在资源库，1 个副本已删除。')).toBeTruthy()
+    expect(screen.getByText('active-hero')).toBeTruthy()
+    expect(screen.queryByText('deleted-hero')).toBeNull()
+    expect(screen.getByRole('button', { name: /已保存到资源库/ })).toBeTruthy()
+  })
 })
 
 function createTool(patch: Partial<ToolCallDetail>): ToolCallDetail {
@@ -104,7 +145,11 @@ function createTool(patch: Partial<ToolCallDetail>): ToolCallDetail {
   }
 }
 
-function createAttachment(id: number, originalName: string) {
+function createAttachment(
+  id: number,
+  originalName: string,
+  promotionStatus: 'never' | 'promoted' | 'deleted' = 'promoted',
+) {
   return {
     id,
     source_kind: 'tool_output' as const,
@@ -113,6 +158,7 @@ function createAttachment(id: number, originalName: string) {
     file_size: 100,
     url: `/api/ai/attachments/images/${id}/content`,
     preview_available: true,
-    promoted_asset_id: id + 100,
+    promoted_asset_id: promotionStatus === 'promoted' ? id + 100 : null,
+    promotion_status: promotionStatus,
   }
 }

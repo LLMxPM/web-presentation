@@ -698,6 +698,7 @@ describe('AgentConversationPanel', () => {
       url: '/api/ai/attachments/images/25/content',
       preview_available: true,
       promoted_asset_id: 91,
+      promotion_status: 'promoted',
     }
     getAgentSessionRuntimeMock.mockResolvedValueOnce(createRuntimeSnapshot({
       timeline_items: [

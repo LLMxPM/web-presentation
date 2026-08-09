@@ -36,6 +36,13 @@ def test_visual_tools_are_unified_agent_single_source_specs() -> None:
     assert list_agent_tool_specs("component-manager") == ()
     assert get_agent_tool_spec("component-manager", "analyze_visuals") is None
     assert get_agent_tool_spec("component-manager", "generate_image") is None
+    generation_spec = get_agent_tool_spec("agent-coordinator", "generate_image")
+    assert generation_spec is not None
+    assert (
+        generation_spec.response_example["attachments"][0]["promotion_status"]
+        == "promoted"
+    )
+    assert generation_spec.response_example["deleted_assets"] == []
 
 
 def test_visual_tools_use_independent_disclosure_groups_and_slot_filtering() -> None:

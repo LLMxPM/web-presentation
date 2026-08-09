@@ -642,7 +642,15 @@ function upsertToolTimelineItem(
 
 /** 读取后端为视觉工具 SSE 补齐的附件摘要，缺失时保留上一事件状态。 */
 function readEventAttachments(value: unknown, fallback: AgentMessageAttachmentItem[] | undefined): AgentMessageAttachmentItem[] {
-  return Array.isArray(value) ? value as AgentMessageAttachmentItem[] : fallback ?? []
+  if (!Array.isArray(value)) return fallback ?? []
+  return value.map((item) => {
+    const attachment = item as AgentMessageAttachmentItem
+    return {
+      ...attachment,
+      promotion_status: attachment.promotion_status
+        ?? (attachment.promoted_asset_id ? 'promoted' : 'never'),
+    }
+  })
 }
 
 function failOpenToolTimelineItems(state: AgentSessionRuntimeState, runId: string, message: string): void {

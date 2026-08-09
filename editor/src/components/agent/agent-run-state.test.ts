@@ -860,6 +860,7 @@ describe('agent-run-state timeline', () => {
       url: '/input.png',
       preview_available: true,
       promoted_asset_id: null,
+      promotion_status: 'never',
     }
     const outputAttachment = {
       ...inputAttachment,
@@ -868,6 +869,7 @@ describe('agent-run-state timeline', () => {
       original_name: 'output.png',
       url: '/output.png',
       promoted_asset_id: 99,
+      promotion_status: 'promoted',
     }
 
     applyAgentRunEvent(state, event({

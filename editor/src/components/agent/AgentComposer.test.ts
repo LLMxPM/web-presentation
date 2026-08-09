@@ -27,6 +27,9 @@ function attachment(id: number): AgentImageAttachmentItem {
     url: `/attachments/${id}`,
     preview_available: true,
     promoted_asset_id: null,
+    promotion_status: 'never',
+    status: 'active',
+    created_at: null,
   }
 }
 

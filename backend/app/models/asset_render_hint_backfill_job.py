@@ -26,7 +26,11 @@ class AssetRenderHintBackfillJob(TimestampMixin, Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     job_group_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     workspace_id: Mapped[int] = mapped_column(ForeignKey("workspaces.id"), nullable=False, index=True)
-    asset_id: Mapped[int] = mapped_column(ForeignKey("workspace_assets.id"), nullable=False, index=True)
+    asset_id: Mapped[int] = mapped_column(
+        ForeignKey("workspace_assets.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
     asset_type: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
     source: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
     mode: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
