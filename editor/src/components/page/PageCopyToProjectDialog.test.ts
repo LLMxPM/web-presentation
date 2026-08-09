@@ -1,5 +1,5 @@
 /**
- * 文件功能：验证页面跨项目复制弹窗的目标项目筛选与提交 payload。
+ * 文件功能：验证页面复制弹窗包含当前项目并正确提交复制 payload。
  */
 import { fireEvent, render, screen, waitFor } from '@testing-library/vue'
 import { describe, expect, it, vi, beforeEach } from 'vitest'
@@ -147,20 +147,21 @@ describe('PageCopyToProjectDialog', () => {
     })
   })
 
-  it('只列出当前工作空间其他 active 项目，并默认提交未加入路由', async () => {
+  it('列出当前工作空间全部 active 项目，并支持复制到当前项目', async () => {
     const view = renderDialog()
 
     await screen.findByText('目标项目')
-    expect(screen.queryByText('源项目')).not.toBeInTheDocument()
     expect(listProjectsMock).toHaveBeenCalledWith(expect.objectContaining({
       workspace_id: 11,
       status: 'active',
     }))
 
+    await fireEvent.click(screen.getByText('选择目标项目'))
+    await fireEvent.click(screen.getByText('源项目'))
     await fireEvent.click(screen.getByText('复制页面'))
 
     expect(getSubmitPayload(view)).toEqual({
-      target_project_id: 22,
+      target_project_id: 21,
       title: '源页面',
       summary: '源摘要',
       route_placement: 'none',
@@ -190,6 +191,8 @@ describe('PageCopyToProjectDialog', () => {
     const view = renderDialog()
 
     await screen.findByText('目标项目')
+    await fireEvent.click(screen.getByText('选择目标项目'))
+    await fireEvent.click(screen.getByRole('button', { name: '目标项目' }))
     await waitFor(() => expect(getProjectRoutesMock).toHaveBeenCalledWith(22))
 
     await fireEvent.update(screen.getByPlaceholderText('留空时使用新页面编码'), 'overview')

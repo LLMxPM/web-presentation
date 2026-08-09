@@ -269,7 +269,7 @@ async def test_page_copy_to_project_should_create_current_version_only(
 async def test_page_copy_to_project_should_validate_scope_and_status(
     authenticated_client: AsyncClient,
 ) -> None:
-    """页面复制应拒绝同项目、跨工作空间和非启用状态。"""
+    """页面复制应允许项目内副本，并拒绝跨工作空间和非启用状态。"""
 
     workspace = await _create_catalog_workspace(authenticated_client, "复制范围工作空间")
     other_workspace = await _create_catalog_workspace(authenticated_client, "复制范围其他工作空间")
@@ -282,8 +282,11 @@ async def test_page_copy_to_project_should_validate_scope_and_status(
         f"/api/pages/{source_page['id']}/copy-to-project",
         json={"target_project_id": source_project["id"]},
     )
-    assert same_project_response.status_code == 400
-    assert same_project_response.json()["code"] == "PAGE_COPY_TARGET_SAME_PROJECT"
+    assert same_project_response.status_code == 200
+    same_project_copy = same_project_response.json()
+    assert same_project_copy["id"] != source_page["id"]
+    assert same_project_copy["project_id"] == source_project["id"]
+    assert same_project_copy["workspace_id"] == workspace["id"]
 
     cross_workspace_response = await authenticated_client.post(
         f"/api/pages/{source_page['id']}/copy-to-project",

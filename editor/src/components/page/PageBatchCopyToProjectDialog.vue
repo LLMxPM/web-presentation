@@ -1,4 +1,4 @@
-<!-- 文件功能：提供多页面批量复制到同工作空间其他项目的弹窗表单。 -->
+<!-- 文件功能：提供多页面批量复制到同工作空间项目（含当前项目）的弹窗表单。 -->
 <template>
   <UiDialog
     :open="modelValue"
@@ -192,7 +192,7 @@ function resetForm(): void {
 }
 
 /**
- * 加载同工作空间下除当前项目外的 active 项目。
+ * 加载同工作空间下的 active 项目，允许在当前项目内批量创建页面副本。
  */
 async function loadProjects(): Promise<void> {
   if (!props.workspaceId) {
@@ -209,8 +209,7 @@ async function loadProjects(): Promise<void> {
       status: 'active',
     })
     projects.value = response.items.filter(project => (
-      project.id !== props.currentProjectId
-      && project.workspace_id === props.workspaceId
+      project.workspace_id === props.workspaceId
       && project.status === 'active'
     ))
     if (projects.value.length === 1) {

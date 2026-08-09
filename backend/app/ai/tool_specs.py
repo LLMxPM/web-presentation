@@ -757,7 +757,7 @@ _COORDINATOR_OPERATION_GUIDES = (
     _operation_guide("page", "create", "在指定项目创建并校验 Vue 页面，可原子写入路由。", _write_parameters("page", "create", PageCreatePayload, action="new"), action="new",
                      prerequisites=("project_id 必须来自当前工作空间和本轮项目工作集。",), side_effects=("通过持久化页面任务队列执行并创建页面初始版本。",), risk_level="write",
                      call_example={"resource_type": "page", "mode": "new", "payload": {"project_id": 8, "title": "封面", "content": "<template><main>封面</main></template>", "route_placement": "root"}}),
-    _operation_guide("page", "create", "把页面复制到同工作空间的目标项目。", _write_parameters("page", "create", PageCopyPayload, action="copy"), action="copy",
+    _operation_guide("page", "create", "把页面复制到同工作空间的目标项目，也支持在源项目内创建副本。", _write_parameters("page", "create", PageCopyPayload, action="copy"), action="copy",
                      side_effects=("创建新页面；可同时原子写入目标项目路由。",), risk_level="write"),
     _operation_guide("component", "create", "创建可校验的组件草稿。", _write_parameters("component", "create", ComponentCreatePayload, action="new"), action="new",
                      side_effects=("只创建草稿；发布后生成正式版本；发布后应更新项目 configuration 的 suggested_components 使后续页面可优先复用。",), risk_level="write",

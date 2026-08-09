@@ -171,7 +171,7 @@ class PageService:
         payload: PageCopyToProjectRequest,
         operator_id: int,
     ) -> PageItem:
-        """将当前页面复制到同工作空间内的另一个启用项目。"""
+        """将当前页面复制到同工作空间内的启用项目，目标可为源项目。"""
 
         source_page = await self._get_page_or_raise(page_id)
         await self._ensure_page_access(source_page, user_id=operator_id)
@@ -414,15 +414,12 @@ class PageService:
         await self.workspace_service.ensure_access(page_model.workspace_id, user_id=user_id)
 
     async def _validate_copy_scope(self, source_page: Page, target_project_id: int) -> Project:
-        """校验页面复制的项目范围，确保 v1 只在同工作空间内跨项目复制。"""
+        """校验页面复制范围，允许项目内复制并限制目标位于同一工作空间。"""
 
         if source_page.status != RecordStatus.ACTIVE.value:
             raise AppException(status_code=400, code="PAGE_COPY_SOURCE_INACTIVE", detail="源页面不是启用状态，不能复制。")
         if source_page.workspace_id is None or source_page.project_id is None:
             raise AppException(status_code=400, code="PAGE_COPY_SOURCE_UNBOUND", detail="源页面未关联工作空间或项目，不能复制。")
-        if source_page.project_id == target_project_id:
-            raise AppException(status_code=400, code="PAGE_COPY_TARGET_SAME_PROJECT", detail="不能将页面复制到源项目自身。")
-
         target_project = await self.project_repository.get_by_id(target_project_id)
         if target_project is None:
             raise AppException(status_code=404, code="PROJECT_NOT_FOUND", detail="目标项目不存在。")

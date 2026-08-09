@@ -353,10 +353,10 @@ class ComponentCheckPayload(ValidationSourcePayload):
 
 
 class PageCopyPayload(OperationArgumentsModel):
-    """页面复制到目标项目的参数。"""
+    """页面复制到目标项目的参数，支持在源项目内创建副本。"""
 
     source_id: int = Field(gt=0, description="源页面 ID。")
-    project_id: int = Field(gt=0, description="目标项目 ID；必须与源页面处于同一工作空间。")
+    project_id: int = Field(gt=0, description="目标项目 ID；必须与源页面处于同一工作空间，可以是源页面所属项目。")
     title: str | None = Field(default=None, min_length=1, max_length=128, description="复制后页面标题；不传则沿用源页面。")
     summary: str | None = Field(default=None, max_length=500, description="复制后页面摘要。")
     route_placement: Literal["none", "root", "group"] = Field(default="none", description="是否同时把新页面放入目标项目路由树。")
