@@ -238,13 +238,38 @@ EditableAssetType = Literal["icon", "drawio", "mermaid", "chart", "formula"]
 class AssetCreatePayload(OperationArgumentsModel):
     """创建可编辑文本资源参数。"""
 
-    asset_type: EditableAssetType = Field(description="可创建的文本资源类型；不支持 image、video 或 font。")
-    name: str = Field(min_length=1, description="工作空间内引用资源使用的稳定名称。")
-    original_name: str = Field(min_length=1, description="带合适扩展名的展示文件名。")
-    content: str = Field(description="资源的完整文本内容。")
+    asset_type: EditableAssetType = Field(
+        description=(
+            "可创建的文本资源类型。icon 表示 SVG 图标，不存在独立的 svg 类型；"
+            "不支持 image、video 或 font。"
+        )
+    )
+    name: str = Field(
+        min_length=1,
+        max_length=255,
+        description="工作空间内唯一的稳定引用名称；不能包含 / 或 \\，创建后页面和组件通过该名称引用资源。",
+    )
+    original_name: str = Field(
+        min_length=1,
+        max_length=255,
+        description=(
+            "带扩展名的展示文件名：icon 使用 .svg；drawio 使用 .drawio/.xml；"
+            "mermaid 使用 .mmd/.mermaid/.txt；chart 使用 .json/.yaml/.yml；formula 使用 .tex/.txt。"
+        ),
+    )
+    content: str = Field(
+        min_length=1,
+        description=(
+            "完整 UTF-8 文本内容，规范化后不能为空且不得超过 512 KiB。SVG/Draw.io 必须是可解析 XML；"
+            "Chart 必须是可解析的 JSON/YAML 且顶层为对象；Mermaid 和 Formula 保存源码文本。"
+        ),
+    )
     description: str | None = Field(default=None, description="资源用途说明。")
     tags: list[str] | str | None = Field(default=None, description="标签数组，或兼容的逗号分隔字符串。")
-    approx_aspect_ratio: str | None = Field(default=None, description="近似宽高比，例如 16:9。")
+    approx_aspect_ratio: str | None = Field(
+        default=None,
+        description="可选的正数近似宽高比，支持 16:9、4/3 或 1.5；省略时由可解析内容自动推导（若支持）。",
+    )
 
 
 class AssetMetadataPayload(NonEmptyPatchModel):

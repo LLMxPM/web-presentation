@@ -155,6 +155,30 @@ def test_operation_guides_should_expose_action_index_and_precise_schemas() -> No
             Draft202012Validator(guide.parameters).validate(guide.call_example)
 
 
+def test_asset_create_guide_should_expose_executable_content_contract() -> None:
+    """资源创建手册应披露类型映射、内容限制、恢复方式和可直接调用的示例。"""
+
+    guide = get_operation_guide_spec("asset.create.new")
+
+    assert guide is not None
+    payload_schema = guide.parameters["properties"]["payload"]
+    properties = payload_schema["properties"]
+    serialized_constraints = "".join(guide.constraints)
+    assert "不存在独立的 svg 类型" in properties["asset_type"]["description"]
+    assert ".drawio/.xml" in properties["original_name"]["description"]
+    assert "512 KiB" in properties["content"]["description"]
+    assert "currentColor" in serialized_constraints
+    assert "顶层为对象" in serialized_constraints
+    assert guide.prerequisites
+    assert guide.side_effects
+    assert len(guide.error_recovery) >= 3
+    assert guide.call_example is not None
+    assert guide.call_example["payload"]["asset_type"] == "icon"
+    assert guide.response_example["data"]["asset"]["name"] == "trend-up"
+    assert guide.response_example["mutation"]["target"]["id"] == 91
+    Draft202012Validator(guide.parameters).validate(guide.call_example)
+
+
 def test_project_configuration_guides_should_replace_dangerous_actions() -> None:
     """项目配置与路由应统一由 update 承载，主题 key 不提供修改入口。"""
 
