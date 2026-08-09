@@ -132,6 +132,7 @@ async def test_llm_provider_catalog_should_only_include_supported_providers(auth
         "openai_image",
         "openai_like",
         "openrouter",
+        "openrouter_image",
     }
     for provider_key in providers:
         assert provider_key in providers
@@ -169,6 +170,18 @@ async def test_llm_provider_catalog_should_only_include_supported_providers(auth
     assert providers["openrouter"]["default_base_url"] == "https://openrouter.ai/api/v1"
     assert providers["openrouter"]["thinking_mode"] == "openrouter_reasoning"
     assert providers["openrouter"]["advanced_json_hint"] == {}
+    assert providers["openrouter_image"]["provider_type"] == "image_generation"
+    assert providers["openrouter_image"]["default_base_url"] == "https://openrouter.ai/api/v1"
+    assert {item["model_id"] for item in providers["openrouter_image"]["image_generation_models"]} == {
+        "google/gemini-3.1-flash-lite-image",
+        "google/gemini-2.5-flash-image",
+        "qwen/qwen-image-3",
+        "qwen/qwen-image-3-pro",
+        "openai/gpt-image-2",
+        "openai/gpt-5.4-image-2",
+        "bytedance-seed/seedream-4.5",
+        "x-ai/grok-imagine-image-quality",
+    }
     assert providers["dashscope"]["default_model_id"] == "qwen-plus"
     assert providers["nvidia"]["default_model_id"] == "meta/llama-3.3-70b-instruct"
     assert providers["deepseek"]["thinking_mode"] == "openai_extra_body_thinking"

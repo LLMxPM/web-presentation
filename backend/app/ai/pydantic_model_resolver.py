@@ -54,7 +54,7 @@ class PydanticLlmModelResolver:
         if mock_model is not None:
             return mock_model
 
-        if provider_key in {"openai_image", "dashscope_image"}:
+        if provider_key in {"openai_image", "dashscope_image", "openrouter_image"}:
             raise AppException(
                 status_code=400,
                 code="AI_LLM_PROVIDER_MODEL_TYPE_MISMATCH",

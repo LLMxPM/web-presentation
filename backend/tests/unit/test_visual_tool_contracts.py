@@ -129,6 +129,13 @@ def test_image_provider_catalog_is_separated_from_chat_provider() -> None:
     assert image_provider.image_generation_models[0]["model_id"] == "gpt-image-2"
     assert image_provider.image_generation_models[0]["supports_mask"] is True
 
+    openrouter_image = get_llm_provider_entry("openrouter_image")
+    assert openrouter_image.provider_type == "image_generation"
+    assert openrouter_image.default_base_url == "https://openrouter.ai/api/v1"
+    assert openrouter_image.provider_adapter.endswith(".OpenRouterImageGenerationAdapter")
+    assert len(openrouter_image.image_generation_models) == 8
+    assert all(item["supports_mask"] is False for item in openrouter_image.image_generation_models)
+
 
 def test_content_prompt_only_contains_lightweight_attachment_metadata() -> None:
     """内容模型输入只包含附件元数据，不得出现对象 key、bytes 或 URL。"""

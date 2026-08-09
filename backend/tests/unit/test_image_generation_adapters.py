@@ -11,6 +11,7 @@ from app.services.dashscope_image_generation_adapter import DashScopeImageGenera
 from app.services.image_generation.contracts import ImageGenerationInput, ProviderTaskCursor
 from app.services.image_generation.registry import get_image_model_spec
 from app.services.image_generation_adapters import OpenAiImageGenerationAdapter
+from app.services.openrouter_image_generation_adapter import OpenRouterImageGenerationAdapter
 
 
 def _config(model_id: str = "wan2.7-image-pro") -> SimpleNamespace:
@@ -299,3 +300,175 @@ async def test_openai_edit_should_filter_operation_options_and_preserve_output_m
     assert "moderation" not in captured
     assert captured["output_format"] == "jpeg"
     assert result.images[0].content_type == "image/jpeg"
+
+
+@pytest.mark.asyncio
+async def test_openrouter_submit_should_map_canvas_references_and_result(monkeypatch) -> None:
+    """OpenRouter 应使用独立 `/images` 协议并保留响应媒体类型。"""
+
+    captured: dict[str, object] = {}
+
+    class FakeClient:
+        def __init__(self, **kwargs):  # noqa: ANN003
+            captured["client"] = kwargs
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, traceback):  # noqa: ANN001
+            return False
+
+        async def post(self, url, *, headers, json):  # noqa: ANN001
+            captured.update(url=url, headers=headers, json=json)
+            return httpx.Response(
+                200,
+                request=httpx.Request("POST", url),
+                json={
+                    "data": [
+                        {
+                            "b64_json": base64.b64encode(b"webp-bytes").decode("ascii"),
+                            "media_type": "image/webp",
+                        }
+                    ]
+                },
+            )
+
+    monkeypatch.setattr("app.services.openrouter_image_generation_adapter.httpx.AsyncClient", FakeClient)
+    adapter = OpenRouterImageGenerationAdapter()
+    monkeypatch.setattr(adapter._cipher, "decrypt", lambda _value: "sk-or-test")
+    config = SimpleNamespace(
+        model_id="qwen/qwen-image-3-pro",
+        provider_config=SimpleNamespace(api_key_ciphertext="encrypted", base_url="https://openrouter.ai/api/v1/"),
+    )
+    request = ImageGenerationInput(
+        operation="edit",
+        prompt="保持主体，改成水彩风格",
+        aspect_ratio="16:9",
+        resolution_tier="high",
+        quality="auto",
+        count=2,
+        references=[("source.png", "image/png", b"source")],
+        advanced_options={"seed": 42},
+    )
+
+    result = await adapter.submit(config, get_image_model_spec("openrouter_image", config.model_id), request)
+
+    body = captured["json"]
+    assert captured["url"] == "https://openrouter.ai/api/v1/images"
+    assert captured["headers"]["Authorization"] == "Bearer sk-or-test"  # type: ignore[index]
+    assert body["model"] == "qwen/qwen-image-3-pro"  # type: ignore[index]
+    assert body["resolution"] == "2K"  # type: ignore[index]
+    assert body["aspect_ratio"] == "16:9"  # type: ignore[index]
+    assert body["seed"] == 42  # type: ignore[index]
+    assert body["input_references"][0]["image_url"]["url"].startswith("data:image/png;base64,")  # type: ignore[index]
+    assert result.images[0].content == b"webp-bytes"
+    assert result.images[0].content_type == "image/webp"
+
+
+def test_openrouter_models_should_enforce_individual_capabilities() -> None:
+    """八个 OpenRouter 模型应使用各自的输出数量、参考图和分辨率约束。"""
+
+    expected_ids = {
+        "google/gemini-3.1-flash-lite-image",
+        "google/gemini-2.5-flash-image",
+        "qwen/qwen-image-3",
+        "qwen/qwen-image-3-pro",
+        "openai/gpt-image-2",
+        "openai/gpt-5.4-image-2",
+        "bytedance-seed/seedream-4.5",
+        "x-ai/grok-imagine-image-quality",
+    }
+    models = {model_id: get_image_model_spec("openrouter_image", model_id) for model_id in expected_ids}
+
+    assert set(models) == expected_ids
+    assert models["google/gemini-3.1-flash-lite-image"].max_output_count == 1
+    assert models["google/gemini-2.5-flash-image"].max_reference_images == 3
+    assert models["qwen/qwen-image-3"].resolution_tiers == ("auto", "standard", "high")
+    assert models["openai/gpt-image-2"].quality_options == ("auto", "low", "medium", "high")
+    assert models["openai/gpt-5.4-image-2"].aspect_ratios == ("auto",)
+    assert models["bytedance-seed/seedream-4.5"].max_output_count == 10
+    assert models["x-ai/grok-imagine-image-quality"].max_reference_images == 3
+
+    with pytest.raises(AppException) as exc_info:
+        get_image_model_spec("openrouter_image", "unsupported/image-model")
+    assert exc_info.value.code == "AI_IMAGE_GENERATION_MODEL_UNSUPPORTED"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("status_code", "payload", "expected_code", "retryable"),
+    [
+        (429, {"error": {"code": "rate_limit", "message": "slow down"}}, "AI_IMAGE_PROVIDER_RATE_LIMIT", True),
+        (400, {"error": {"code": "bad_request", "message": "invalid ratio"}}, "AI_IMAGE_PROVIDER_BAD_REQUEST", False),
+    ],
+)
+async def test_openrouter_provider_errors_should_preserve_retry_semantics(
+    monkeypatch,
+    status_code: int,
+    payload: dict,
+    expected_code: str,
+    retryable: bool,
+) -> None:
+    """OpenRouter HTTP 错误应映射为稳定错误码并保留是否可重试。"""
+
+    class FakeClient:
+        def __init__(self, **kwargs):  # noqa: ANN003
+            _ = kwargs
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, traceback):  # noqa: ANN001
+            return False
+
+        async def post(self, url, *, headers, json):  # noqa: ANN001
+            _ = (headers, json)
+            return httpx.Response(status_code, request=httpx.Request("POST", url), json=payload)
+
+    monkeypatch.setattr("app.services.openrouter_image_generation_adapter.httpx.AsyncClient", FakeClient)
+    adapter = OpenRouterImageGenerationAdapter()
+    monkeypatch.setattr(adapter._cipher, "decrypt", lambda _value: "sk-or-test")
+    config = SimpleNamespace(
+        model_id="google/gemini-2.5-flash-image",
+        provider_config=SimpleNamespace(api_key_ciphertext="encrypted", base_url="https://openrouter.ai/api/v1"),
+    )
+
+    with pytest.raises(AppException) as exc_info:
+        await adapter.submit(config, get_image_model_spec("openrouter_image", config.model_id), _request(resolution_tier="auto"))
+    assert exc_info.value.code == expected_code
+    assert exc_info.value.data == {"retryable": retryable}
+
+
+@pytest.mark.asyncio
+async def test_openrouter_should_reject_invalid_base64_result(monkeypatch) -> None:
+    """OpenRouter 非法 Base64 输出不得进入资源保存流程。"""
+
+    class FakeClient:
+        def __init__(self, **kwargs):  # noqa: ANN003
+            _ = kwargs
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, traceback):  # noqa: ANN001
+            return False
+
+        async def post(self, url, *, headers, json):  # noqa: ANN001
+            _ = (headers, json)
+            return httpx.Response(
+                200,
+                request=httpx.Request("POST", url),
+                json={"data": [{"b64_json": "not-base64", "media_type": "image/png"}]},
+            )
+
+    monkeypatch.setattr("app.services.openrouter_image_generation_adapter.httpx.AsyncClient", FakeClient)
+    adapter = OpenRouterImageGenerationAdapter()
+    monkeypatch.setattr(adapter._cipher, "decrypt", lambda _value: "sk-or-test")
+    config = SimpleNamespace(
+        model_id="google/gemini-2.5-flash-image",
+        provider_config=SimpleNamespace(api_key_ciphertext="encrypted", base_url="https://openrouter.ai/api/v1"),
+    )
+
+    with pytest.raises(AppException) as exc_info:
+        await adapter.submit(config, get_image_model_spec("openrouter_image", config.model_id), _request(resolution_tier="auto"))
+    assert exc_info.value.code == "AI_IMAGE_GENERATION_RESULT_INVALID"

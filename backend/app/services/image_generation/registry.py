@@ -10,6 +10,7 @@ from app.services.image_generation.contracts import ImageGenerationAdapter, Imag
 
 OPENAI_IMAGE_DOCS_URL = "https://developers.openai.com/api/docs/guides/image-generation"
 DASHSCOPE_IMAGE_DOCS_URL = "https://help.aliyun.com/en/model-studio/wan-image-generation-and-editing-api-reference"
+OPENROUTER_IMAGE_DOCS_URL = "https://openrouter.ai/docs/guides/overview/multimodal/image-generation"
 
 _COMMON_RATIOS = ("auto", "1:1", "3:2", "2:3")
 
@@ -76,6 +77,8 @@ def _build_registry() -> dict[str, ImageProviderSpec]:
 
     from app.services.dashscope_image_generation_adapter import DashScopeImageGenerationAdapter
     from app.services.image_generation_adapters import OpenAiImageGenerationAdapter
+    from app.services.openrouter_image_catalog import build_openrouter_image_models
+    from app.services.openrouter_image_generation_adapter import OpenRouterImageGenerationAdapter
 
     openai_model = ImageModelSpec(
         model_id="gpt-image-2",
@@ -107,6 +110,7 @@ def _build_registry() -> dict[str, ImageProviderSpec]:
         )
         for model_id, label in (("wan2.7-image-pro", "Wan 2.7 Image Pro"), ("wan2.7-image", "Wan 2.7 Image"))
     )
+    openrouter_models = build_openrouter_image_models()
     return {
         "openai_image": ImageProviderSpec(
             provider_key="openai_image",
@@ -132,6 +136,18 @@ def _build_registry() -> dict[str, ImageProviderSpec]:
             default_model_id="wan2.7-image-pro",
             models=dashscope_models,
             validate_base_url=_validate_dashscope_base_url,
+        ),
+        "openrouter_image": ImageProviderSpec(
+            provider_key="openrouter_image",
+            label="OpenRouter 图片",
+            docs_url=OPENROUTER_IMAGE_DOCS_URL,
+            adapter_factory=OpenRouterImageGenerationAdapter,
+            supports_base_url=True,
+            requires_base_url=False,
+            default_base_url="https://openrouter.ai/api/v1",
+            base_url_hint=None,
+            default_model_id="google/gemini-3.1-flash-lite-image",
+            models=openrouter_models,
         ),
     }
 
