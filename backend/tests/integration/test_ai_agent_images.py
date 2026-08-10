@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 from httpx import AsyncClient
 
 from app.core.config import get_settings
 from app.core.exceptions import AppException
+from app.models.ai_agent_runtime import AiAgentRun
 from app.services.agent_image_transport_resolver import AgentImageTransportResolver
 
 
@@ -160,22 +163,18 @@ async def test_run_with_image_attachment_should_not_require_content_model_vision
     monkeypatch.setattr("app.services.agent_image_attachment_service.ObjectStorageService.put_object", fake_put_object)
     captured_attachment_ids: list[int] = []
 
-    def fake_run_raw_sse(self, **kwargs):  # noqa: ANN001, ANN003
-        """截获流式运行参数，避免集成测试访问真实模型服务。"""
+    async def fake_execute_background_run(self, *, run_id: str, runtime_context) -> None:  # noqa: ANN001
+        """从已持久化 Run 截获附件参数，避免集成测试访问真实模型服务。"""
 
-        captured_attachment_ids.extend(kwargs.get("image_attachment_ids") or [])
+        run_model = await self._session.get(AiAgentRun, run_id)
+        assert run_model is not None
+        captured_attachment_ids.extend(run_model.input_payload_json.get("image_attachment_ids") or [])
+        await self._store.mark_terminal(run_model, status="completed", content="完成")
 
-        async def events():
-            try:
-                yield b"event: run.completed\ndata: {}\n\n"
-            finally:
-                reserved_lock = kwargs.get("reserved_lock")
-                if reserved_lock is not None and reserved_lock.locked():
-                    reserved_lock.release()
-
-        return events()
-
-    monkeypatch.setattr("app.api.routes.agents.AgentSessionFacade.run_raw_sse", fake_run_raw_sse)
+    monkeypatch.setattr(
+        "app.api.routes.agents.AgentSessionFacade.execute_background_run",
+        fake_execute_background_run,
+    )
     upload_response = await authenticated_client.post(
         f"/api/ai/sessions/{session_id}/attachments/images",
         params={"workspace_id": workspace_id, "project_id": project_id, "scope_type": "project", "agent_id": "agent-coordinator"},
@@ -195,6 +194,55 @@ async def test_run_with_image_attachment_should_not_require_content_model_vision
 
     assert run_response.status_code == 200
     assert captured_attachment_ids == [upload_response.json()["id"]]
+
+
+async def test_background_run_start_should_return_early_and_enforce_run_id_idempotency(
+    authenticated_client: AsyncClient,
+    monkeypatch,
+) -> None:
+    """两步启动接口不等待模型完成，并拒绝用同一 run_id 提交不同输入。"""
+
+    await _bind_agent_model(authenticated_client, supports_image_input=False)
+    workspace_id = await _create_workspace(authenticated_client, name="后台运行工作空间")
+    session_id, project_id = await _create_agent_session(authenticated_client, workspace_id)
+    worker_started = asyncio.Event()
+    release_worker = asyncio.Event()
+
+    async def fake_execute_background_run(self, *, run_id: str, runtime_context) -> None:  # noqa: ANN001
+        worker_started.set()
+        await release_worker.wait()
+        run_model = await self._session.get(AiAgentRun, run_id)
+        assert run_model is not None
+        await self._store.mark_terminal(run_model, status="completed", content="后台完成")
+
+    monkeypatch.setattr(
+        "app.api.routes.agents.AgentSessionFacade.execute_background_run",
+        fake_execute_background_run,
+    )
+    endpoint = f"/api/ai/sessions/{session_id}/runs"
+    params = {"workspace_id": workspace_id, "agent_id": "agent-coordinator"}
+    payload = {
+        "run_id": "run-background-idempotent",
+        "message": "继续在后台执行",
+        "focus": {"scope_type": "project", "project_id": project_id, "source": "test"},
+    }
+
+    first = await authenticated_client.post(endpoint, params=params, json=payload)
+    await asyncio.wait_for(worker_started.wait(), timeout=1)
+    repeated = await authenticated_client.post(endpoint, params=params, json=payload)
+    conflict = await authenticated_client.post(
+        endpoint,
+        params=params,
+        json={**payload, "message": "复用 ID 的不同输入"},
+    )
+
+    assert first.status_code == 202
+    assert first.json()["run_id"] == "run-background-idempotent"
+    assert repeated.status_code == 202
+    assert conflict.status_code == 409
+    assert conflict.json()["code"] == "AI_RUN_ID_CONFLICT"
+    release_worker.set()
+    await asyncio.sleep(0.05)
 
 
 async def test_image_transport_resolver_should_use_base64_when_url_unavailable(monkeypatch) -> None:

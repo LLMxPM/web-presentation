@@ -10,6 +10,7 @@ import type {
   AgentMessageItem,
   AgentRunCancelResponse,
   AgentRunEvent,
+  AgentRunStartResponse,
   AgentScopeContext,
   AgentSessionItem,
   AgentSessionRuntimeSnapshot,
@@ -184,6 +185,37 @@ export async function streamAgentRun(
 }
 
 /**
+ * 持久化并启动后台智能体 Run；事件需要通过独立 SSE 接口订阅。
+ */
+export async function startAgentRun(
+  sessionId: string,
+  scope: AgentScopeContext,
+  payload: {
+    run_id: string
+    message: string
+    agent_id?: string
+    image_attachment_ids?: number[]
+    llm_config_id?: number | null
+  },
+) {
+  logAgentDev('run.background.start', { sessionId, scope, payload })
+  const { data } = await http.post<AgentRunStartResponse>(
+    `/ai/sessions/${sessionId}/runs`,
+    {
+      run_id: payload.run_id,
+      message: payload.message,
+      image_attachment_ids: payload.image_attachment_ids ?? [],
+      llm_config_id: payload.llm_config_id ?? null,
+      focus: buildRunFocus(scope),
+    },
+    {
+      params: buildWorkspaceSessionParams(scope.workspace_id, payload.agent_id ?? 'agent-coordinator'),
+    },
+  )
+  return data
+}
+
+/**
  * 订阅已存在后台 run 的事件流，先回放历史事件再接收 live 事件。
  */
 export async function streamAgentRunEvents(
@@ -307,23 +339,22 @@ export async function continueAgentSessionActiveRun(
     }>
     agent_id?: string
   },
-  options: AgentStreamOptions = {},
 ) {
   logAgentDev('run.continue', { sessionId, scope, payload })
-  await streamSse(
-    `/ai/sessions/${sessionId}/active-run/continue?${buildWorkspaceSessionQuery(scope.workspace_id, payload.agent_id)}`,
+  const { data } = await http.post<AgentRunStartResponse>(
+    `/ai/sessions/${sessionId}/active-run/continue`,
     {
-      method: 'POST',
-      body: JSON.stringify({
-        session_id: sessionId,
-        decision: payload.decision ?? null,
-        note: payload.note ?? null,
-        tool_execution: payload.tool_execution,
-        feedback_selections: payload.feedback_selections ?? [],
-      }),
+      session_id: sessionId,
+      decision: payload.decision ?? null,
+      note: payload.note ?? null,
+      tool_execution: payload.tool_execution,
+      feedback_selections: payload.feedback_selections ?? [],
     },
-    options,
+    {
+      params: buildWorkspaceSessionParams(scope.workspace_id, payload.agent_id ?? 'agent-coordinator'),
+    },
   )
+  return data
 }
 
 /**

@@ -458,7 +458,7 @@ describe('AgentConversationPanel', () => {
         source: 'editor-page-detail',
       },
     })
-    continueAgentSessionActiveRunMock.mockResolvedValue(undefined)
+    continueAgentSessionActiveRunMock.mockResolvedValue({ run_id: 'run-1', session_id: 'session-1', status: 'running', event_index: 3 })
     continueAgentRunMock.mockResolvedValue({
       run_id: 'run-1',
       session_id: 'session-1',
@@ -475,12 +475,9 @@ describe('AgentConversationPanel', () => {
       session_id: 'session-1',
       cancel_requested: true,
     })
-    startAgentRunMock.mockResolvedValue({
-      run_id: 'run-1',
-      session_id: 'session-1',
-      status: 'pending',
-      event_index: -1,
-    })
+    startAgentRunMock.mockImplementation(async (sessionId: string, _scope: unknown, payload: { run_id?: string }) => ({
+      run_id: payload.run_id ?? 'run-1', session_id: sessionId, status: 'pending', event_index: -1,
+    }))
     streamAgentRunEventsByRunIdMock.mockImplementation(async (_runId: string, _payload: unknown, options?: { onEvent?: (event: any) => void }) => {
       options?.onEvent?.({ event: 'run.started', run_id: 'run-1', session_id: 'session-1', content: null, data: {} })
       options?.onEvent?.({ event: 'message.delta', run_id: 'run-1', session_id: 'session-1', content: '先读取页面依赖。', data: {} })

@@ -16,6 +16,7 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.ai.registry import AgentRegistry
+from app.ai.background_run_manager import AgentBackgroundRunManager
 from app.ai.page_mutation_queue import (
     recover_interrupted_ai_page_mutation_jobs_on_startup,
     run_ai_page_mutation_queue_loop,
@@ -26,7 +27,7 @@ from app.ai.image_generation_queue import (
 )
 from app.api.router import api_router
 from app.api.routes import build_artifacts, public_assets, internal_runtime, runtime_configs, well_known, preview
-from app.core.config import AppSettings, get_settings
+from app.core.config import get_settings
 from app.core.exceptions import AppException
 from app.core.logging_config import bind_request_id, configure_app_logging, reset_request_id, sanitize_log_text
 from app.db.errors import (
@@ -66,6 +67,7 @@ async def lifespan(app: FastAPI):
     ai_page_mutation_queue_task: asyncio.Task[None] | None = None
     ai_image_generation_queue_task: asyncio.Task[None] | None = None
     playwright_browser_pool = get_playwright_browser_pool()
+    agent_background_run_manager: AgentBackgroundRunManager = app.state.agent_background_run_manager
     try:
         session_factory = get_session_factory()
         await BootstrapService(session_factory).ensure_default_admin()
@@ -101,6 +103,7 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
+        await agent_background_run_manager.shutdown()
         if page_screenshot_queue_task is not None:
             await _stop_background_task(page_screenshot_queue_task)
         # 请求内“提交并等待”的兼容路径也会登记真实执行任务；必须在关闭浏览器池前
@@ -129,6 +132,7 @@ def create_app() -> FastAPI:
 
         enforce_mock_model_request_fence()
     app = FastAPI(title=settings.app_name, lifespan=lifespan)
+    app.state.agent_background_run_manager = AgentBackgroundRunManager()
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,

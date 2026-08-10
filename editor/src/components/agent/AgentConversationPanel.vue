@@ -355,7 +355,7 @@ import {
   listAgents,
   listAgentSessions,
   renameAgentSession,
-  streamAgentRun,
+  startAgentRun,
   streamAgentRunEvents,
   updateAgentSessionPreferences,
 } from '@/api/ai'
@@ -1255,6 +1255,18 @@ function ensureRunEventSubscription(sessionId: string, run: AgentActiveRunItem, 
 }
 
 /**
+ * paused Run 进入新执行阶段时替换旧订阅，避免上一阶段的收尾请求吞掉重新订阅。
+ */
+function restartRunEventSubscription(sessionId: string, run: AgentActiveRunItem, afterEventIndex = -1) {
+  const previousController = getStreamAbortController(run.run_id)
+  if (previousController) {
+    previousController.abort()
+    clearStreamAbortController(run.run_id, previousController)
+  }
+  ensureRunEventSubscription(sessionId, run, afterEventIndex)
+}
+
+/**
  * 判断指定会话是否仍在流式运行或处于平台非终态运行中。
  */
 function isSessionRunning(sessionId: string) {
@@ -1293,7 +1305,6 @@ const {
   getActiveRun: () => activeRun.value,
   getScope: () => activeSessionRuntimeScope.value,
   getAgentId: () => activeSessionRuntimeAgentId.value,
-  isDisposed: () => componentDisposed,
   setHitlActionInFlight,
   setSessionStreaming,
   syncActiveRun,
@@ -1307,11 +1318,8 @@ const {
       agentSessionStore.setTimelineItems(sessionId, previousItems)
     }
   },
-  createStreamAbortController,
-  clearStreamAbortController,
-  handleRunEvent,
+  restartRunEventSubscription,
   finalizeRun,
-  refreshAfterStreamInterrupted,
 })
 
 const {
@@ -1836,26 +1844,38 @@ async function handleSend() {
       cancel_requested_at: null,
       event_index: -1,
     })
-    const streamAbortController = createStreamAbortController(runId)
-    await streamAgentRun(sessionId, runScope, {
+    const response = await startAgentRun(sessionId, runScope, {
       run_id: runId,
       message,
       agent_id: runAgentId,
       image_attachment_ids: attachments.map(attachment => attachment.id),
       llm_config_id: selectedRunLlmConfigId.value,
-    }, {
-      onEvent: event => handleRunEvent(event, sessionId),
-      signal: streamAbortController.signal,
     })
-    clearStreamAbortController(runId, streamAbortController)
-    await finalizeRunAfterStream(sessionId)
-  } catch (error) {
-    if (error instanceof AgentStreamInterruptedError) {
-      if (!componentDisposed) {
-        void refreshAfterStreamInterrupted(sessionId)
-      }
-      return
+    syncActiveRun(sessionId, {
+      ...(activeRun.value ?? {
+        run_id: response.run_id,
+        session_id: response.session_id,
+        agent_id: runAgentId,
+        focus: runScope,
+        work_scope_mode: activeSession.value?.work_scope_mode ?? 'workspace',
+        allowed_project_ids: [...(activeSession.value?.allowed_project_ids ?? [])],
+        focus_version: activeSession.value?.focus_version ?? 0,
+        pending_requirement: null,
+        content: null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        cancel_requested_at: null,
+      }),
+      run_id: response.run_id,
+      session_id: response.session_id,
+      status: response.status,
+      event_index: response.event_index,
+    })
+    const backgroundRun = readSessionValue(activeRunBySession.value, sessionId, null)
+    if (backgroundRun) {
+      ensureRunEventSubscription(sessionId, backgroundRun, response.event_index)
     }
+  } catch (error) {
     if (isAgentRunActiveError(error)) {
       await recoverActiveRunAfterConflict(sessionId)
       return
@@ -1872,7 +1892,9 @@ async function handleSend() {
       }
     }
     setSessionSendInFlight(sessionId, false)
-    setSessionStreaming(sessionId, false)
+    if (!runId || !hasStreamAbortController(runId)) {
+      setSessionStreaming(sessionId, false)
+    }
   }
 }
 
@@ -2147,23 +2169,6 @@ async function finalizeRun(
   }
   emitMutationRefreshEvents(sessionId)
   agentSessionStore.setStreamingTimelineItemId(sessionId, null)
-}
-
-/**
- * 流式请求已正常结束后的收尾刷新失败只影响 UI 收敛，不应误报为执行失败。
- * @param sessionId 需要刷新运行态的会话 ID
- */
-async function finalizeRunAfterStream(sessionId: string) {
-  try {
-    await finalizeRun(sessionId)
-    const run = readSessionValue(activeRunBySession.value, sessionId, null)
-    if (run && shouldSubscribeRunEvents(run)) {
-      ensureRunEventSubscription(sessionId, run, run.event_index ?? -1)
-    }
-  } catch (error) {
-    logClientWarning('Failed to finalize agent run after stream closed', error)
-    void refreshAfterStreamInterrupted(sessionId)
-  }
 }
 
 /**

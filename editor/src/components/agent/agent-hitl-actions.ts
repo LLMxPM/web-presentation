@@ -2,7 +2,6 @@
  * 文件功能：集中封装智能体 HITL 暂停态的确认、回答、取消与强制释放动作。
  */
 import {
-  AgentStreamInterruptedError,
   cancelAgentSessionActiveRun,
   continueAgentSessionActiveRun,
 } from '@/api/ai'
@@ -11,7 +10,6 @@ import type {
   AgentActiveRunItem,
   AgentFeedbackSelection,
   AgentPendingRequirement,
-  AgentRunEvent,
   AgentScopeContext,
 } from '@/types/api'
 import { logClientWarning } from '@/utils/client-logger'
@@ -23,7 +21,6 @@ interface HitlActionContext {
   getActiveRun: () => AgentActiveRunItem | null
   getScope: () => AgentScopeContext
   getAgentId: () => string
-  isDisposed: () => boolean
   setHitlActionInFlight: (sessionId: string, value: boolean) => void
   setSessionStreaming: (sessionId: string, value: boolean) => void
   syncActiveRun: (sessionId: string, run: AgentActiveRunItem | null) => void
@@ -33,11 +30,8 @@ interface HitlActionContext {
     requirement: AgentPendingRequirement,
     feedbackSelections: AgentFeedbackSelection[],
   ) => (() => void) | void
-  createStreamAbortController: (runId: string) => AbortController
-  clearStreamAbortController: (runId: string, controller: AbortController) => void
-  handleRunEvent: (event: AgentRunEvent, fallbackSessionId: string) => void
+  restartRunEventSubscription: (sessionId: string, run: AgentActiveRunItem, afterEventIndex?: number) => void
   finalizeRun: (sessionId: string, options?: { preserveLocalCancelled?: boolean }) => Promise<void>
-  refreshAfterStreamInterrupted: (sessionId: string) => void | Promise<void>
 }
 
 /**
@@ -158,36 +152,35 @@ export function useAgentHitlActions(context: HitlActionContext) {
     context.setSessionStreaming(sessionId, true)
     context.syncActiveRun(sessionId, { ...pausedRun, status: 'running', pending_requirement: null })
 
-    const runId = requirement.run_id || pausedRun.run_id || ''
-    let streamAbortController: AbortController | null = null
+    let subscriptionStarted = false
     try {
-      streamAbortController = context.createStreamAbortController(runId)
-      await continueAgentSessionActiveRun(sessionId, context.getScope(), {
+      const response = await continueAgentSessionActiveRun(sessionId, context.getScope(), {
         agent_id: context.getAgentId(),
         decision: payload.decision,
         tool_execution: requirement.tool_execution,
         feedback_selections: payload.feedbackSelections,
-      }, {
-        onEvent: event => context.handleRunEvent(event, sessionId),
-        signal: streamAbortController.signal,
       })
-      await context.finalizeRun(sessionId)
-    } catch (error) {
-      if (error instanceof AgentStreamInterruptedError) {
-        if (!context.isDisposed()) {
-          void context.refreshAfterStreamInterrupted(sessionId)
-        }
-        return
+      const continuedRun: AgentActiveRunItem = {
+        ...pausedRun,
+        run_id: response.run_id,
+        session_id: response.session_id,
+        status: response.status,
+        pending_requirement: null,
+        event_index: response.event_index,
+        updated_at: new Date().toISOString(),
       }
+      context.syncActiveRun(sessionId, continuedRun)
+      context.restartRunEventSubscription(sessionId, continuedRun, response.event_index)
+      subscriptionStarted = true
+    } catch (error) {
       rollbackResolvedTimeline?.()
       await recoverHitlStateAfterFailedAction(sessionId, pausedRun, requirement)
       Message.error(getErrorMessage(error, '继续智能体执行失败。'))
     } finally {
-      if (streamAbortController) {
-        context.clearStreamAbortController(runId, streamAbortController)
-      }
       context.setHitlActionInFlight(sessionId, false)
-      context.setSessionStreaming(sessionId, false)
+      if (!subscriptionStarted) {
+        context.setSessionStreaming(sessionId, false)
+      }
     }
   }
 

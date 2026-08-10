@@ -4,16 +4,18 @@ AI Agent 由 Backend 统一承载，负责会话、run、消息、事件、工�
 
 ## 运行链路
 
-1. Editor 通过 `session_facade_pydantic.py` 发起会话 run、继续 paused run、取消 run 或发送图片附件引用；内容模型不直接接收图片像素。
-2. Backend 写入 `ai_agent_runs`、用户消息和 `run.started` 事件。
-3. `pydantic_runner.py` 创建 Pydantic AI `Agent`，装配模型、instructions、平台工具和 deps。
+1. Editor 先提交会话 run 或 paused run 的继续请求，再通过独立 SSE 请求订阅事件；内容模型不直接接收图片像素。
+2. Backend 写入 `ai_agent_runs`、用户消息和 `run.started` 事件，并把执行阶段交给应用级 `AgentBackgroundRunManager`。
+3. 后台管理器创建独立数据库会话，`pydantic_runner.py` 在其中创建 Pydantic AI `Agent`，装配模型、instructions、平台工具和 deps。
 4. `pydantic_tools.py` 把平台工具对象包装为 Pydantic AI Tool，并负责上下文注入和返回值序列化。
 5. `platform_runtime.py` 把模型流式事件、工具事件、HITL requirement 和终态事件持久化为平台运行态。
 6. Editor 通过 SSE 实时消费事件；刷新或重连时，从 `ai_agent_run_events` 按事件顺序回放。
 
+普通 Run 的后台能力以单个 Backend 进程为边界。关闭侧栏、切换路由、刷新页面或断开 SSE 只会取消订阅，不会取消执行；重新进入会话后按 `event_index` 回放。Backend 正常退出会取消仍在运行的进程内任务并写入 `AI_RUN_PROCESS_STOPPED`，异常退出则由 active-run 空闲超时收敛，不自动重跑。页面变更和图片生成等 external job 仍由各自的持久化租约队列负责，不能与进程内 Run 管理器合并。
+
 ## 事实源
 
-AI 会话、run、事件、消息、工具调用和 HITL 状态写入 Backend 主库 `ai_agent_*` 表。Redis 不保存 AI run/HITL 事实源，只保留预览、截图和构建等临时运行态。
+AI 会话、run、事件、消息、工具调用和 HITL 状态写入 Backend 主库 `ai_agent_*` 表。Redis 不保存 AI run/HITL 事实源，也不保存正在执行的 Python 协程；它只保留预览、截图和构建等临时运行态。
 
 | 表 | 作用 |
 | :--- | :--- |

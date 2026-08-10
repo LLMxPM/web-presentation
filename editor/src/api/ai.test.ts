@@ -3,14 +3,16 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { fetchMock, getMock } = vi.hoisted(() => ({
+const { fetchMock, getMock, postMock } = vi.hoisted(() => ({
   fetchMock: vi.fn(),
   getMock: vi.fn(),
+  postMock: vi.fn(),
 }))
 
 vi.mock('@/api/http', () => ({
   http: {
     get: getMock,
+    post: postMock,
   },
   resolveApiBaseUrl: () => '',
   getErrorMessage: (_error: unknown, fallback: string) => fallback,
@@ -22,6 +24,7 @@ import {
   getAgentSessionContextStatus,
   listAgents,
   listAgentSessions,
+  startAgentRun,
   streamAgentRun,
 } from '@/api/ai'
 import type { AgentScopeContext } from '@/types/api'
@@ -38,6 +41,8 @@ describe('ai api', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    fetchMock.mockReset()
+    postMock.mockReset()
     vi.stubGlobal('fetch', fetchMock)
   })
 
@@ -95,7 +100,7 @@ describe('ai api', () => {
     })
   })
 
-  it('流式运行和继续运行应透传 AbortSignal', async () => {
+  it('兼容流式运行应透传 AbortSignal，继续运行应改用后台提交接口', async () => {
     const signal = new AbortController().signal
     const buildEmptyStreamResponse = () => new Response(new ReadableStream<Uint8Array>({
       start(controller) {
@@ -103,23 +108,41 @@ describe('ai api', () => {
       },
     }), { status: 200 })
     fetchMock.mockImplementation(() => Promise.resolve(buildEmptyStreamResponse()))
+    postMock.mockResolvedValueOnce({ data: { run_id: 'run-1', session_id: 'session-1', status: 'running', event_index: 3 } })
 
     await streamAgentRun('session-1', scope, { run_id: 'run-1', message: '开始' }, { signal })
     await continueAgentSessionActiveRun('session-1', scope, {
       decision: 'confirm',
       note: null,
       tool_execution: {},
-    }, { signal })
+    })
 
     expect(fetchMock).toHaveBeenNthCalledWith(
       1,
       expect.stringContaining('/ai/sessions/session-1/runs/stream'),
       expect.objectContaining({ signal }),
     )
-    expect(fetchMock).toHaveBeenNthCalledWith(
-      2,
-      expect.stringContaining('/ai/sessions/session-1/active-run/continue'),
-      expect.objectContaining({ signal }),
+    expect(postMock).toHaveBeenCalledWith(
+      '/ai/sessions/session-1/active-run/continue',
+      expect.objectContaining({ decision: 'confirm' }),
+      expect.objectContaining({ params: expect.objectContaining({ workspace_id: '11' }) }),
+    )
+  })
+
+  it('后台启动接口应提交 run 快照并返回订阅游标', async () => {
+    postMock.mockResolvedValueOnce({ data: { run_id: 'run-background', session_id: 'session-1', status: 'running', event_index: -1 } })
+
+    const response = await startAgentRun('session-1', scope, {
+      run_id: 'run-background',
+      message: '后台执行',
+      llm_config_id: 9,
+    })
+
+    expect(response.run_id).toBe('run-background')
+    expect(postMock).toHaveBeenCalledWith(
+      '/ai/sessions/session-1/runs',
+      expect.objectContaining({ run_id: 'run-background', llm_config_id: 9 }),
+      expect.objectContaining({ params: { workspace_id: '11', agent_id: 'agent-coordinator' } }),
     )
   })
 
@@ -153,11 +176,7 @@ describe('ai api', () => {
   })
 
   it('继续结构化提问时应提交 feedback selections', async () => {
-    fetchMock.mockResolvedValueOnce(new Response(new ReadableStream<Uint8Array>({
-      start(controller) {
-        controller.close()
-      },
-    }), { status: 200 }))
+    postMock.mockResolvedValueOnce({ data: { run_id: 'run-1', session_id: 'session-1', status: 'running', event_index: 3 } })
 
     await continueAgentSessionActiveRun('session-1', scope, {
       decision: null,
@@ -168,7 +187,7 @@ describe('ai api', () => {
       ],
     })
 
-    const body = JSON.parse(String(fetchMock.mock.calls[0][1]?.body))
+    const body = postMock.mock.calls[0][1]
     expect(body).toEqual(expect.objectContaining({
       decision: null,
       feedback_selections: [

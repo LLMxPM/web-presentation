@@ -86,6 +86,8 @@ Editor 和 Backend 只公开 `agent-coordinator` 一个内容助手，不再登�
 
 后台 Batch 自动续跑必须把 `AgentRunWriteFence` 传播到 Pydantic 工具、成员委派、独立 Session 和后续持久化任务入队；任何续跑期间产生的数据库提交都必须在同一事务内复核围栏。动态工具只有在对应运行时执行器已经装配时才能向模型披露。成员页面任务必须分别保存命名空间工具调用 ID 与 Pydantic deferred 原始调用 ID，避免事件投影和结果回灌互相污染。
 
+普通智能体 Run 使用应用级进程内后台管理器执行，必须先持久化 Run，再用独立数据库 Session 执行 Pydantic AI；SSE 只允许回放和订阅事件，客户端断开不得取消 Run。该能力不承诺 Backend 重启恢复，进程退出应把仍在执行的普通 Run 收敛为 `AI_RUN_PROCESS_STOPPED`；页面变更、图片生成等 external job 继续使用各自的持久化租约队列。
+
 ### editor/
 
 Editor 是创作工作台，负责登录、工作空间、项目、页面、组件、资源、主题、样式、AI 侧边栏、账户 AI 设置、预览 iframe 和构建入口。

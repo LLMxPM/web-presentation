@@ -55,6 +55,7 @@ from app.schemas.agent import (
     AgentContextStatusItem,
     AgentMessageItem,
     AgentRunEvent,
+    AgentRunStartResponse,
     AgentFocusRequest,
     AgentScopeContext,
     AgentSessionItem,
@@ -348,6 +349,250 @@ class AgentSessionFacade:
             raise _map_store_error(exc) from exc
         return lock
 
+    async def reserve_continue_slot(self, *, session_id: str, agent_id: str) -> asyncio.Lock:
+        """为 paused Run 的继续阶段预留进程内槽位，阻止重复 HITL 提交。"""
+
+        lock = self._get_lock(session_id=session_id, agent_id=agent_id)
+        if lock.locked():
+            raise AppException(status_code=409, code="AI_SESSION_RUN_ACTIVE", detail="当前会话已有运行中的智能体任务。")
+        await lock.acquire()
+        return lock
+
+    async def prepare_background_run(
+        self,
+        *,
+        session_id: str,
+        agent_id: str,
+        scope: AgentScopeContext,
+        message: str,
+        runtime_context: Any,
+        image_attachment_ids: list[int] | None,
+        run_id: str,
+        llm_config_id: int | None,
+    ) -> tuple[AgentRunStartResponse, bool]:
+        """串行化同一会话的 Run 创建，避免并发请求越过 active-run 校验。"""
+
+        lock = self._get_lock(session_id=session_id, agent_id=agent_id)
+        async with lock:
+            return await self._prepare_background_run_unlocked(
+                session_id=session_id,
+                agent_id=agent_id,
+                scope=scope,
+                message=message,
+                runtime_context=runtime_context,
+                image_attachment_ids=image_attachment_ids,
+                run_id=run_id,
+                llm_config_id=llm_config_id,
+            )
+
+    async def _prepare_background_run_unlocked(
+        self,
+        *,
+        session_id: str,
+        agent_id: str,
+        scope: AgentScopeContext,
+        message: str,
+        runtime_context: Any,
+        image_attachment_ids: list[int] | None,
+        run_id: str,
+        llm_config_id: int | None,
+    ) -> tuple[AgentRunStartResponse, bool]:
+        """持久化新 Run；相同 run_id 的同请求按幂等成功返回。"""
+
+        existing = await self._session.get(AiAgentRun, run_id)
+        if existing is not None:
+            if not _matches_existing_run_request(
+                existing,
+                user_id=self._current.user.id,
+                session_id=session_id,
+                agent_id=agent_id,
+                scope=scope,
+                message=message,
+                image_attachment_ids=image_attachment_ids or [],
+                requested_llm_config_id=llm_config_id,
+            ):
+                raise AppException(status_code=409, code="AI_RUN_ID_CONFLICT", detail="run_id 已被其它请求使用。")
+            return AgentRunStartResponse(
+                run_id=existing.run_id,
+                session_id=existing.session_id,
+                status="running",
+                event_index=-1,
+            ), False
+
+        descriptor = self._app.state.ai_registry.get_descriptor(agent_id)
+        llm_config = await self.resolve_new_run_llm_config(
+            session_id=session_id,
+            agent_id=agent_id,
+            slot=descriptor.llm_slot or "",
+            requested_llm_config_id=llm_config_id,
+        )
+        llm_service = self._llm_service()
+        selection_kind: Literal["explicit_config", "run_override"] = (
+            "run_override" if llm_config_id is not None else "explicit_config"
+        )
+        image_ids = list(image_attachment_ids or [])
+        await self._resolve_run_images(
+            session_id=session_id,
+            scope=scope,
+            image_attachment_ids=image_ids,
+        )
+        run_start = await self._store.start_run(
+            session_id=session_id,
+            agent_id=agent_id,
+            scope=scope,
+            run_id=run_id,
+            message=message,
+            image_attachment_ids=image_ids,
+            llm_config_id=llm_config.id,
+            llm_metadata=llm_service.build_run_llm_snapshot(llm_config, selection_kind=selection_kind),
+            session_llm_metadata=llm_service.build_session_llm_metadata(llm_config, selection_kind=selection_kind),
+            runtime_context=runtime_context,
+        )
+        await self._mark_images_used(
+            session_id=session_id,
+            scope=scope,
+            image_attachment_ids=image_ids,
+            run_id=run_id,
+        )
+        return AgentRunStartResponse(
+            run_id=run_start.run_model.run_id,
+            session_id=session_id,
+            status="running",
+            event_index=-1,
+        ), True
+
+    async def execute_background_run(self, *, run_id: str, runtime_context: Any) -> None:
+        """使用独立数据库会话执行已持久化的新 Run，所有产物只写平台事件表。"""
+
+        run_model = await self._session.get(AiAgentRun, run_id)
+        if run_model is None or run_model.user_id != self._current.user.id:
+            return
+        if run_model.status not in {"pending", "running", "cancelling"}:
+            return
+        try:
+            descriptor = self._app.state.ai_registry.get_descriptor(run_model.agent_id)
+            llm_config = await self.resolve_run_llm_config(
+                run_model=run_model,
+                slot=descriptor.llm_slot or "",
+            )
+            previous_history = await rebuild_agent_message_history(
+                session=self._session,
+                user_id=self._current.user.id,
+                session_id=run_model.session_id,
+                agent_id=run_model.agent_id,
+                exclude_run_id=run_model.run_id,
+                hydrate_images=False,
+            )
+            history_budget = build_history_budget(llm_config, runtime_context=runtime_context)
+            context_processor = build_context_limit_processor(
+                session=self._session,
+                user_id=self._current.user.id,
+                session_id=run_model.session_id,
+                agent_id=run_model.agent_id,
+                budget=history_budget,
+                rebuilt_history=previous_history,
+            )
+            run_input = dict(run_model.input_payload_json or {})
+            image_attachments = await self._resolve_run_images(
+                session_id=run_model.session_id,
+                scope=_scope_from_run(run_model),
+                image_attachment_ids=list(run_input.get("image_attachment_ids") or []),
+            )
+            agent_config = await self._agent_config_service.get_effective_runtime_config(run_model.agent_id)
+            scope = _scope_from_run(run_model)
+            member_delegation_executor = self._build_member_delegation_executor(
+                agent_id=run_model.agent_id,
+                scope=scope,
+                runtime_context=runtime_context,
+                session_id=run_model.session_id,
+                run_id=run_model.run_id,
+            )
+            visual_unavailable, image_generation_model, image_generation_config_id = (
+                await self._resolve_visual_tool_runtime(run_model.agent_id)
+            )
+            tools, deps = build_pydantic_tools(
+                agent_id=run_model.agent_id,
+                session_factory=get_session_factory(),
+                runtime_config=agent_config,
+                current=self._current,
+                scope=scope,
+                session_id=run_model.session_id,
+                run_id=run_model.run_id,
+                supports_image_input=bool(llm_config.supports_image_input),
+                work_scope_mode=runtime_context.work_scope_mode,
+                allowed_project_ids=runtime_context.allowed_project_ids,
+                focus_version=runtime_context.focus_version,
+                unavailable_group_keys=visual_unavailable,
+                member_delegation_executor=member_delegation_executor,
+                image_generation_model=image_generation_model,
+                image_generation_config_id=image_generation_config_id,
+            )
+            await PydanticAgentRunner(self._store).run_to_store(
+                run_model=run_model,
+                agent_id=run_model.agent_id,
+                model=self._model_resolver.resolve_model(llm_config),
+                model_settings=self._model_resolver.resolve_model_settings(llm_config),
+                runtime_context=runtime_context,
+                message=_build_user_prompt(str(run_input.get("message") or ""), image_attachments),
+                agent_config=agent_config,
+                tools=tools,
+                deps=deps,
+                message_history=previous_history.messages or None,
+                message_image_refs=[build_agent_image_ref(item) for item in image_attachments],
+                context_budget=history_budget,
+                context_processor=context_processor,
+            )
+        except asyncio.CancelledError:
+            await self._mark_interrupted_run_terminal(
+                run_model,
+                fallback_code="AI_RUN_PROCESS_STOPPED",
+                fallback_message="Backend 已停止，当前智能体运行未继续执行。",
+            )
+            raise
+        except AppException as exc:
+            await self._store.mark_terminal(
+                run_model,
+                status="failed",
+                error_code=exc.code,
+                error_message=exc.detail,
+            )
+        except Exception as exc:  # noqa: BLE001
+            failure = normalize_agent_run_exception(exc, fallback_code="AI_RUN_SETUP_FAILED")
+            logger.exception(
+                "Agent background run setup failed",
+                extra=build_agent_error_log_extra(
+                    exc,
+                    event="ai.agent_run.background_setup_exception",
+                    run_id=run_model.run_id,
+                    session_id=run_model.session_id,
+                    agent_id=run_model.agent_id,
+                    error_code=failure.code,
+                    user_error_message=failure.message,
+                    raw_error_message=failure.raw_message,
+                ),
+            )
+            await self._store.mark_terminal(
+                run_model,
+                status="failed",
+                error_code=failure.code,
+                error_message=failure.message,
+            )
+
+    async def fail_background_run_start(self, *, run_id: str, code: str, message: str) -> None:
+        """后台任务未能登记时立即释放已持久化的 active Run。"""
+
+        run_model = await self._session.get(AiAgentRun, run_id)
+        if run_model is None or run_model.user_id != self._current.user.id:
+            return
+        if run_model.status not in {"pending", "running", "cancelling"}:
+            return
+        await self._store.mark_terminal(
+            run_model,
+            status="failed",
+            error_code=code,
+            error_message=message,
+        )
+
     def run_raw_sse(
         self,
         *,
@@ -612,6 +857,11 @@ class AgentSessionFacade:
             .values(cancel_requested_at=cancelled_at)
         )
         await self._session.commit()
+        if force:
+            manager = getattr(self._app.state, "agent_background_run_manager", None)
+            cancel_task = getattr(manager, "cancel", None)
+            if callable(cancel_task):
+                await cancel_task(run_model.run_id)
         return AgentCancelRunResponse(run_id=run_model.run_id, session_id=session_id, cancel_requested=True)
 
     async def prepare_continue_active_raw_sse(
@@ -625,6 +875,9 @@ class AgentSessionFacade:
         note: str | None,
         feedback_selections: list[dict[str, Any]] | None,
         runtime_context: Any,
+        interruption_code: str = "AI_RUN_CONTINUE_INTERRUPTED",
+        interruption_message: str = "智能体继续运行连接中断，运行已停止。",
+        reserved_lock: asyncio.Lock | None = None,
     ) -> AsyncGenerator[bytes, None]:
         """继续 paused run，并提交 Pydantic AI deferred tool 结果。"""
 
@@ -656,14 +909,20 @@ class AgentSessionFacade:
                 note=note,
                 feedback_selections=feedback_selections or [],
                 runtime_context=runtime_context,
+                interruption_code=interruption_code,
+                interruption_message=interruption_message,
+                reserved_lock=reserved_lock,
             )
 
         async def generator() -> AsyncGenerator[bytes, None]:
-            lock = self._get_lock(session_id=session_id, agent_id=agent_id)
-            if lock.locked():
+            lock = reserved_lock or self._get_lock(session_id=session_id, agent_id=agent_id)
+            acquired = reserved_lock is not None
+            if not acquired and lock.locked():
                 yield _error_event(session_id=session_id, run_id=run_model.run_id, code="AI_SESSION_RUN_ACTIVE", message="当前会话已有运行中的智能体任务。")
                 return
-            await lock.acquire()
+            if not acquired:
+                await lock.acquire()
+                acquired = True
             try:
                 descriptor = self._app.state.ai_registry.get_descriptor(agent_id)
                 llm_config = await self.resolve_run_llm_config(
@@ -776,8 +1035,8 @@ class AgentSessionFacade:
             except asyncio.CancelledError:
                 await self._mark_interrupted_run_terminal(
                     run_model,
-                    fallback_code="AI_RUN_CONTINUE_INTERRUPTED",
-                    fallback_message="智能体继续运行连接中断，运行已停止。",
+                    fallback_code=interruption_code,
+                    fallback_message=interruption_message,
                 )
                 raise
             except AppException as exc:
@@ -831,7 +1090,7 @@ class AgentSessionFacade:
                 )
                 yield encode_sse_event(event)
             finally:
-                if lock.locked():
+                if acquired and lock.locked():
                     lock.release()
 
         return generator()
@@ -1056,6 +1315,9 @@ class AgentSessionFacade:
         feedback_selections: list[dict[str, Any]],
         runtime_context: Any,
         write_fence: AgentRunWriteFence | None = None,
+        interruption_code: str = "AI_RUN_CONTINUE_INTERRUPTED",
+        interruption_message: str = "智能体继续运行连接中断，运行已停止。",
+        reserved_lock: asyncio.Lock | None = None,
     ) -> AsyncGenerator[bytes, None]:
         """继续成员 requirement：先恢复成员 run，再回填父级委派工具结果。"""
 
@@ -1241,11 +1503,14 @@ class AgentSessionFacade:
                 )
 
         async def generator() -> AsyncGenerator[bytes, None]:
-            lock = self._get_lock(session_id=session_id, agent_id=agent_id)
-            if lock.locked():
+            lock = reserved_lock or self._get_lock(session_id=session_id, agent_id=agent_id)
+            acquired = reserved_lock is not None
+            if not acquired and lock.locked():
                 yield _error_event(session_id=session_id, run_id=run_model.run_id, code="AI_SESSION_RUN_ACTIVE", message="当前会话已有运行中的智能体任务。")
                 return
-            await lock.acquire()
+            if not acquired:
+                await lock.acquire()
+                acquired = True
             live_queue = subscribe_live_run_events(run_id=run_model.run_id)
             task = asyncio.create_task(worker())
             try:
@@ -1257,8 +1522,8 @@ class AgentSessionFacade:
                 if write_fence is None:
                     await self._mark_interrupted_run_terminal(
                         run_model,
-                        fallback_code="AI_RUN_CONTINUE_INTERRUPTED",
-                        fallback_message="智能体继续运行连接中断，运行已停止。",
+                        fallback_code=interruption_code,
+                        fallback_message=interruption_message,
                     )
                 raise
             finally:
@@ -1266,7 +1531,7 @@ class AgentSessionFacade:
                     task.cancel()
                     with suppress(asyncio.CancelledError):
                         await task
-                if lock.locked():
+                if acquired and lock.locked():
                     lock.release()
 
         return generator()
@@ -1698,6 +1963,49 @@ def _extract_session_llm_config_id(metadata: Any) -> int | None:
     if isinstance(raw_config_id, str) and raw_config_id.strip().isdigit():
         return int(raw_config_id.strip())
     return None
+
+
+def _scope_from_run(run_model: AiAgentRun) -> AgentScopeContext:
+    """从不可变 Run 字段恢复工具执行所需焦点。"""
+
+    return AgentScopeContext(
+        scope_type=run_model.scope_type,  # type: ignore[arg-type]
+        workspace_id=run_model.workspace_id,
+        project_id=run_model.project_id,
+        page_id=run_model.page_id,
+        component_id=run_model.component_id,
+        source=run_model.source,
+    )
+
+
+def _matches_existing_run_request(
+    run_model: AiAgentRun,
+    *,
+    user_id: int,
+    session_id: str,
+    agent_id: str,
+    scope: AgentScopeContext,
+    message: str,
+    image_attachment_ids: list[int],
+    requested_llm_config_id: int | None,
+) -> bool:
+    """判断客户端重试是否与已保存 Run 表示同一个逻辑请求。"""
+
+    payload = dict(run_model.input_payload_json or {})
+    return (
+        run_model.user_id == user_id
+        and run_model.session_id == session_id
+        and run_model.agent_id == agent_id
+        and run_model.scope_type == scope.scope_type
+        and run_model.workspace_id == scope.workspace_id
+        and run_model.project_id == scope.project_id
+        and run_model.page_id == scope.page_id
+        and run_model.component_id == scope.component_id
+        and run_model.source == scope.source
+        and str(payload.get("message") or "") == message
+        and list(payload.get("image_attachment_ids") or []) == image_attachment_ids
+        and (requested_llm_config_id is None or run_model.llm_config_id == requested_llm_config_id)
+    )
 
 
 def _consume_interrupted_cleanup_result(task: asyncio.Task[None]) -> None:

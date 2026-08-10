@@ -4,12 +4,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { useAgentHitlActions } from '@/components/agent/agent-hitl-actions'
-import type {
-  AgentActiveRunItem,
-  AgentPendingRequirement,
-  AgentRunEvent,
-  AgentScopeContext,
-} from '@/types/api'
+import type { AgentActiveRunItem, AgentPendingRequirement, AgentScopeContext } from '@/types/api'
 
 const mocks = vi.hoisted(() => {
   class AgentStreamInterruptedError extends Error {
@@ -63,21 +58,16 @@ const scope: AgentScopeContext = {
 describe('useAgentHitlActions', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mocks.continueAgentSessionActiveRun.mockResolvedValue({
+      run_id: 'run-1',
+      session_id: 'session-1',
+      status: 'running',
+      event_index: 4,
+    })
   })
 
   it('确认继续应清理当前 session 的 requirement，并通过 SSE 继续 paused run', async () => {
-    const { actions, calls, controller, requirement } = createHitlFixture()
-    const runEvent: AgentRunEvent = {
-      event: 'RunCompleted',
-      run_id: 'run-1',
-      session_id: 'session-1',
-      content: '完成',
-      data: {},
-    }
-    mocks.continueAgentSessionActiveRun.mockImplementation(async (...args: unknown[]) => {
-      const options = args[3] as { onEvent?: (event: AgentRunEvent) => void }
-      options.onEvent?.(runEvent)
-    })
+    const { actions, calls, requirement } = createHitlFixture()
 
     await actions.handleContinueRun('confirm')
 
@@ -95,12 +85,14 @@ describe('useAgentHitlActions', () => {
         tool_execution: requirement.tool_execution,
         feedback_selections: [],
       }),
-      expect.objectContaining({ signal: controller.signal }),
     )
-    expect(calls.handleRunEvent).toHaveBeenCalledWith(runEvent, 'session-1')
-    expect(calls.finalizeRun).toHaveBeenCalledWith('session-1')
+    expect(calls.restartRunEventSubscription).toHaveBeenCalledWith(
+      'session-1',
+      expect.objectContaining({ run_id: 'run-1', status: 'running' }),
+      4,
+    )
+    expect(calls.finalizeRun).not.toHaveBeenCalled()
     expect(calls.setSessionStreaming).toHaveBeenNthCalledWith(1, 'session-1', true)
-    expect(calls.setSessionStreaming).toHaveBeenLastCalledWith('session-1', false)
     expect(calls.setHitlActionInFlight).toHaveBeenLastCalledWith('session-1', false)
   })
 
@@ -116,8 +108,6 @@ describe('useAgentHitlActions', () => {
         },
       }),
     })
-    mocks.continueAgentSessionActiveRun.mockResolvedValue(undefined)
-
     await actions.handleSubmitFeedbackRun([
       {
         question: '选择风格？',
@@ -139,19 +129,17 @@ describe('useAgentHitlActions', () => {
           },
         ],
       }),
-      expect.any(Object),
     )
   })
 
-  it('流式中断时应刷新运行状态，不按执行失败展示', async () => {
+  it('后台继续提交失败时应恢复 paused 状态并展示错误', async () => {
     const { actions, calls } = createHitlFixture()
-    mocks.continueAgentSessionActiveRun.mockRejectedValue(new mocks.AgentStreamInterruptedError())
+    mocks.continueAgentSessionActiveRun.mockRejectedValue(new Error('submit failed'))
 
     await actions.handleContinueRun('confirm')
 
-    expect(calls.refreshAfterStreamInterrupted).toHaveBeenCalledWith('session-1')
-    expect(calls.finalizeRun).not.toHaveBeenCalled()
-    expect(mocks.messageError).not.toHaveBeenCalled()
+    expect(calls.finalizeRun).toHaveBeenCalledWith('session-1')
+    expect(mocks.messageError).toHaveBeenCalled()
     expect(calls.setSessionStreaming).toHaveBeenLastCalledWith('session-1', false)
   })
 
@@ -195,18 +183,14 @@ function createHitlFixture(options: { requirement?: AgentPendingRequirement } = 
     cancel_requested_at: null,
     event_index: 3,
   }
-  const controller = new AbortController()
   const calls = {
     setHitlActionInFlight: vi.fn(),
     setSessionStreaming: vi.fn(),
     syncActiveRun: vi.fn(),
     setPendingRequirementForSession: vi.fn(),
     markPendingRequirementResolved: vi.fn(),
-    createStreamAbortController: vi.fn(() => controller),
-    clearStreamAbortController: vi.fn(),
-    handleRunEvent: vi.fn(),
+    restartRunEventSubscription: vi.fn(),
     finalizeRun: vi.fn().mockResolvedValue(undefined),
-    refreshAfterStreamInterrupted: vi.fn(),
   }
   const actions = useAgentHitlActions({
     getActiveSessionId: () => 'session-1',
@@ -214,13 +198,11 @@ function createHitlFixture(options: { requirement?: AgentPendingRequirement } = 
     getActiveRun: () => pausedRun,
     getScope: () => scope,
     getAgentId: () => 'agent-coordinator',
-    isDisposed: () => false,
     ...calls,
   })
   return {
     actions,
     calls,
-    controller,
     requirement,
   }
 }

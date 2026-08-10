@@ -558,8 +558,8 @@ async def test_llm_config_delete_should_hard_delete_unbind_slots_and_block_exist
             "focus": {"scope_type": "project", "project_id": project_id, "source": "test-agent-session"},
         },
     )
-    assert run_response.status_code == 200
-    assert "AI_LLM_CONFIG_NOT_FOUND" in run_response.text
+    assert run_response.status_code == 404
+    assert run_response.json()["code"] == "AI_LLM_CONFIG_NOT_FOUND"
 
 
 async def test_llm_provider_config_delete_should_require_no_linked_models(authenticated_client: AsyncClient) -> None:
@@ -866,12 +866,6 @@ async def test_agent_session_should_reject_deleted_selected_llm_config(authentic
     delete_response = await authenticated_client.delete(f"/api/ai/llm-configs/{config['id']}")
     assert delete_response.status_code == 200
     workspace_id, project_id = await _create_agent_project_scope(authenticated_client, "删除模型会话")
-    scope_payload = {
-        "scope_type": "project",
-        "workspace_id": workspace_id,
-        "project_id": project_id,
-        "source": "test-agent-session",
-    }
 
     deleted_response = await authenticated_client.post(
         "/api/ai/sessions",

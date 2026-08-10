@@ -5,16 +5,17 @@ from __future__ import annotations
 from typing import Annotated, Literal
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, File, Request, Response, UploadFile
+from fastapi import APIRouter, Depends, FastAPI, File, Request, Response, UploadFile
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.registry import AgentRegistry
+from app.ai.background_run_manager import AgentBackgroundRunManager
 from app.ai.runtime_context_builder import build_agent_runtime_context
 from app.ai.session_facade_pydantic import AgentSessionFacade
 from app.api.dependencies import get_current_user
 from app.core.exceptions import AppException
-from app.db.session import get_db_session
+from app.db.session import get_db_session, get_session_factory
 from app.schemas.agent import (
     AgentActiveRunItem,
     AgentCancelRunRequest,
@@ -538,10 +539,39 @@ async def start_agent_run(
     session: Annotated[AsyncSession, Depends(get_db_session)],
     agent_id: str = "agent-coordinator",
 ) -> AgentRunStartResponse:
-    """旧的两步式启动接口已废弃；新链路必须直接消费平台 SSE。"""
+    """持久化并启动后台 Run，立即返回事件订阅游标。"""
 
-    _ = session_id, payload, workspace_id, request, current, session, agent_id
-    raise AppException(status_code=410, code="AI_RUN_START_DEPRECATED", detail="请使用流式运行接口启动智能体。")
+    facade = AgentSessionFacade(app=request.app, current=current, session=session)
+    session_item = await facade.ensure_session_access(
+        session_id=session_id,
+        agent_id=agent_id,
+        workspace_id=workspace_id,
+    )
+    scope = await facade.resolve_run_focus(
+        session_id=session_id,
+        agent_id=agent_id,
+        workspace_id=workspace_id,
+        requested=payload.focus,
+    )
+    descriptor = _get_agent_registry(request).get_descriptor(agent_id)
+    _ensure_agent_launch_available(descriptor, scope)
+    runtime_context = await build_agent_runtime_context(
+        session=session,
+        scope=scope,
+        work_scope_mode=session_item.work_scope_mode,
+        allowed_project_ids=session_item.allowed_project_ids,
+        focus_version=session_item.focus_version,
+    )
+    return await _prepare_and_start_background_run(
+        app=request.app,
+        current=current,
+        facade=facade,
+        session_id=session_id,
+        agent_id=agent_id,
+        scope=scope,
+        runtime_context=runtime_context,
+        payload=payload,
+    )
 
 
 @router.post("/sessions/{session_id}/runs/stream")
@@ -577,22 +607,27 @@ async def stream_agent_run(
         allowed_project_ids=session_item.allowed_project_ids,
         focus_version=session_item.focus_version,
     )
-    reserved_lock = await facade.reserve_run_slot(session_id=session_id, agent_id=agent_id, scope=scope)
     run_id = payload.run_id or str(uuid4())
+    start_response = await _prepare_and_start_background_run(
+        app=request.app,
+        current=current,
+        facade=facade,
+        session_id=session_id,
+        agent_id=agent_id,
+        scope=scope,
+        runtime_context=runtime_context,
+        payload=payload.model_copy(update={"run_id": run_id}),
+    )
     return StreamingResponse(
-        facade.run_raw_sse(
+        facade.resume_raw_sse(
+            run_id=start_response.run_id,
             session_id=session_id,
             agent_id=agent_id,
             scope=scope,
-            message=payload.message,
-            runtime_context=runtime_context,
-            reserved_lock=reserved_lock,
-            image_attachment_ids=payload.image_attachment_ids,
-            run_id=run_id,
-            llm_config_id=payload.llm_config_id,
+            event_index=-1,
         ),
         media_type="text/event-stream",
-        headers={"X-Agent-Run-Id": run_id},
+        headers={"X-Agent-Run-Id": start_response.run_id},
     )
 
 
@@ -766,7 +801,11 @@ async def cancel_agent_session_active_run(
     )
 
 
-@router.post("/sessions/{session_id}/active-run/continue")
+@router.post(
+    "/sessions/{session_id}/active-run/continue",
+    response_model=AgentRunStartResponse,
+    status_code=202,
+)
 async def continue_agent_session_active_run(
     session_id: str,
     payload: AgentContinueRunRequest,
@@ -775,8 +814,8 @@ async def continue_agent_session_active_run(
     current: Annotated[AuthContext, Depends(get_current_user)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
     agent_id: str = "agent-coordinator",
-) -> StreamingResponse:
-    """继续当前会话中暂停等待确认的平台 run。"""
+) -> AgentRunStartResponse:
+    """提交 paused Run 的后台继续阶段，并立即返回订阅游标。"""
 
     scope = await _resolve_scope_context(
         session=session,
@@ -805,7 +844,8 @@ async def continue_agent_session_active_run(
         allowed_project_ids=active_run.allowed_project_ids,
         focus_version=active_run.focus_version,
     )
-    event_stream = await facade.prepare_continue_active_raw_sse(
+    # 在返回 202 前完成 requirement/tool_call_id 校验；真正执行仍由独立会话重新加载权威状态。
+    await facade.prepare_continue_active_raw_sse(
         session_id=session_id,
         agent_id=agent_id,
         scope=scope,
@@ -815,10 +855,137 @@ async def continue_agent_session_active_run(
         note=payload.note,
         feedback_selections=payload.feedback_selections,
     )
-    return StreamingResponse(
-        event_stream,
-        media_type="text/event-stream",
+    manager = getattr(request.app.state, "agent_background_run_manager", None)
+    if not isinstance(manager, AgentBackgroundRunManager):
+        raise AppException(status_code=503, code="AI_BACKGROUND_RUNNER_UNAVAILABLE", detail="智能体后台执行器未启动。")
+    reserved_lock = await facade.reserve_continue_slot(session_id=session_id, agent_id=agent_id)
+    try:
+        await manager.wait(active_run.run_id)
+    except BaseException:
+        if reserved_lock.locked():
+            reserved_lock.release()
+        raise
+
+    async def worker() -> None:
+        """使用独立数据库会话恢复 deferred tool 结果并继续模型运行。"""
+
+        async with get_session_factory()() as background_session:
+            background_facade = AgentSessionFacade(
+                app=request.app,
+                current=current,
+                session=background_session,
+            )
+            try:
+                event_stream = await background_facade.prepare_continue_active_raw_sse(
+                    session_id=session_id,
+                    agent_id=agent_id,
+                    scope=scope,
+                    runtime_context=runtime_context,
+                    tool_execution=payload.tool_execution,
+                    decision=payload.decision,
+                    note=payload.note,
+                    feedback_selections=payload.feedback_selections,
+                    interruption_code="AI_RUN_PROCESS_STOPPED",
+                    interruption_message="Backend 已停止，当前智能体运行未继续执行。",
+                    reserved_lock=reserved_lock,
+                )
+                async for _ in event_stream:
+                    pass
+            finally:
+                if reserved_lock.locked():
+                    reserved_lock.release()
+
+    try:
+        await manager.start(
+            run_id=active_run.run_id,
+            session_id=session_id,
+            agent_id=agent_id,
+            worker_factory=worker,
+        )
+    except ValueError as exc:
+        if reserved_lock.locked():
+            reserved_lock.release()
+        raise AppException(status_code=409, code="AI_SESSION_RUN_ACTIVE", detail="当前会话已有运行中的智能体任务。") from exc
+    except RuntimeError as exc:
+        if reserved_lock.locked():
+            reserved_lock.release()
+        raise AppException(status_code=503, code="AI_BACKGROUND_RUNNER_UNAVAILABLE", detail="智能体后台执行器正在停止。") from exc
+    return AgentRunStartResponse(
+        run_id=active_run.run_id,
+        session_id=session_id,
+        status="running",
+        event_index=active_run.event_index,
     )
+
+
+async def _prepare_and_start_background_run(
+    *,
+    app: FastAPI,
+    current: AuthContext,
+    facade: AgentSessionFacade,
+    session_id: str,
+    agent_id: str,
+    scope: AgentScopeContext,
+    runtime_context: AgentRuntimeContext,
+    payload: AgentRunRequest,
+) -> AgentRunStartResponse:
+    """持久化新 Run，并用独立数据库会话提交给应用级后台管理器。"""
+
+    run_id = payload.run_id or str(uuid4())
+    response, created = await facade.prepare_background_run(
+        session_id=session_id,
+        agent_id=agent_id,
+        scope=scope,
+        message=payload.message,
+        runtime_context=runtime_context,
+        image_attachment_ids=payload.image_attachment_ids,
+        run_id=run_id,
+        llm_config_id=payload.llm_config_id,
+    )
+    if not created:
+        return response
+
+    manager = getattr(app.state, "agent_background_run_manager", None)
+    if not isinstance(manager, AgentBackgroundRunManager):
+        await facade.fail_background_run_start(
+            run_id=run_id,
+            code="AI_BACKGROUND_RUNNER_UNAVAILABLE",
+            message="智能体后台执行器未启动。",
+        )
+        raise AppException(status_code=503, code="AI_BACKGROUND_RUNNER_UNAVAILABLE", detail="智能体后台执行器未启动。")
+
+    async def worker() -> None:
+        """为 Run 创建独立事务边界，避免依赖请求生命周期。"""
+
+        async with get_session_factory()() as background_session:
+            await AgentSessionFacade(
+                app=app,
+                current=current,
+                session=background_session,
+            ).execute_background_run(run_id=run_id, runtime_context=runtime_context)
+
+    try:
+        await manager.start(
+            run_id=run_id,
+            session_id=session_id,
+            agent_id=agent_id,
+            worker_factory=worker,
+        )
+    except ValueError as exc:
+        await facade.fail_background_run_start(
+            run_id=run_id,
+            code="AI_SESSION_RUN_ACTIVE",
+            message="当前会话已有运行中的智能体任务。",
+        )
+        raise AppException(status_code=409, code="AI_SESSION_RUN_ACTIVE", detail="当前会话已有运行中的智能体任务。") from exc
+    except RuntimeError as exc:
+        await facade.fail_background_run_start(
+            run_id=run_id,
+            code="AI_BACKGROUND_RUNNER_UNAVAILABLE",
+            message="智能体后台执行器正在停止。",
+        )
+        raise AppException(status_code=503, code="AI_BACKGROUND_RUNNER_UNAVAILABLE", detail="智能体后台执行器正在停止。") from exc
+    return response
 
 
 async def _resolve_scope_context(
