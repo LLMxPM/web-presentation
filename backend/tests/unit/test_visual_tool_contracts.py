@@ -18,6 +18,7 @@ from app.ai.tool_specs import (
     list_runtime_disclosure_groups,
 )
 from app.services.image_understanding_service import (
+    _SYSTEM_PROMPT,
     ImageUnderstandingInput,
     ImageUnderstandingItem,
     ImageUnderstandingOutput,
@@ -25,6 +26,24 @@ from app.services.image_understanding_service import (
     _model_failure_detail,
     _resolve_image_analysis_model_settings,
 )
+
+
+def test_analyze_visuals_spec_should_require_concrete_style_definition() -> None:
+    """图片理解指令说明必须阻止只引用工作空间私有名称的风格核对。"""
+
+    spec = get_agent_tool_spec("agent-coordinator", "analyze_visuals")
+    assert spec is not None
+    instructions = spec.default_instructions or ""
+    assert "不知道对话历史和工作空间私有名称" in instructions
+    assert "必须先查询主题色板" in instructions
+    assert "不得只引用名称" in instructions
+
+
+def test_image_understanding_prompt_should_forbid_ungrounded_style_confirmation() -> None:
+    """图片理解系统提示必须禁止对缺少定义的具名风格做出验证结论。"""
+
+    assert "不得声称已验证该风格" in _SYSTEM_PROMPT
+    assert "把缺少定义写入 warnings" in _SYSTEM_PROMPT
 
 
 def test_visual_tools_are_unified_agent_single_source_specs() -> None:

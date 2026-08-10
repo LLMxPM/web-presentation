@@ -60,6 +60,8 @@ local 与 S3 的差异只存在于工具内部：`analyze_visuals` 的附件输�
 
 `analyze_visuals` 接收 1～4 个判别联合输入、自足 `instruction`、分析类型和 detail。每个输入必须是 `{source_type: "attachment", attachment_id}`、`{source_type: "asset", asset_id}` 或 `{source_type: "page_screenshot", page_id}`。资源输入支持工作空间中 active 的普通图片/图标资源，当前可分析格式为 PNG、JPEG 和 WebP；SVG、GIF 等格式会返回可恢复的格式不支持错误。工具创建独立 Pydantic AI Agent，请求不包含内容助手 history 或其它工具。
 
+自足 `instruction` 不得依赖图片理解模型知晓工作空间私有名称（主题名、样式名、页面历史等）；内容助手需要核对主题或风格时，必须先查询主题色板，把具体十六进制色值及其用途写进 instruction。图片理解系统提示同时禁止模型对未给出定义的具名风格声称已验证：只报告可观察颜色并与指令给出的具体值比对，把缺少定义写入 warnings。
+
 稳定返回 `summary`、按输入顺序排列的 `items`、可选 `comparison` 和模型审计摘要。每个 item 包含平台注入的可信 `source`，以及描述、OCR、尺寸、宽高比、颜色、布局、视觉发现和警告；资源来源包含资源 ID、逻辑名、类型和预览附件引用，页面来源额外包含页面版本、截图刷新状态和预览附件引用。图片 bytes、base64 和模型临时 URL 不进入返回 JSON。
 
 工具结果只保存文本和 JSON。槽位未配置、模型不兼容、附件越权或模型失败会返回 recoverable tool error，由内容助手向用户解释配置或输入问题。
