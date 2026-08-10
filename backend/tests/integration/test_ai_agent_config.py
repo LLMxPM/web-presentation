@@ -154,7 +154,8 @@ def test_unified_prompt_should_keep_runtime_and_fixed_canvas_guidance() -> None:
     for phrase in (
         "page_content 要写成完整、可运行的 Vue SFC 文件源码",
         "页面是固定画布，不是流式网页",
-        "base_font_size / 16px",
+        "未注入时先读取目标项目 configuration",
+        "布局的具体数值基线",
         "PAGE_RENDER_BOTTOM_OVERFLOW",
     ):
         assert phrase in catalog.default_prompt

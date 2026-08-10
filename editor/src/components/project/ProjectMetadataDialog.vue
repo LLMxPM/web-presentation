@@ -72,7 +72,7 @@ import { computed, reactive, ref, watch } from 'vue'
 
 import { UiButton, UiDialog, UiFormField, UiInput } from '@/components/ui'
 import ThemeSelectorField from '@/components/theme/ThemeSelectorField.vue'
-import { DEFAULT_PROJECT_STYLE_SPEC_MARKDOWN } from '@/constants/project-style'
+import { useDefaultStyleSpec } from '@/composables/useDefaultStyleSpec'
 import WorkspaceStyleApplyField from './WorkspaceStyleApplyField.vue'
 import ProjectPresentationFields from './ProjectPresentationFields.vue'
 import type { ProjectItem, ProjectMenuMode, RecordStatus, WorkspaceStyleItem } from '@/types/api'
@@ -84,6 +84,8 @@ import {
   normalizeProjectDimension as normalizeDimension,
   normalizeProjectInteger as normalizeIntegerWithinRange,
 } from './project-presentation-values'
+
+const { defaultStyleSpecMarkdown } = useDefaultStyleSpec()
 
 const props = withDefaults(defineProps<{
   modelValue: boolean
@@ -127,7 +129,7 @@ const form = reactive({
   show_pdf_export_button: true,
   menu_mode: 'preview' as ProjectMenuMode,
   theme_key: null as string | null,
-  style_spec_markdown: DEFAULT_PROJECT_STYLE_SPEC_MARKDOWN,
+  style_spec_markdown: '',
 })
 
 const errors = reactive({
@@ -156,7 +158,7 @@ function syncFormFromProject(project: ProjectItem | null): void {
   form.show_pdf_export_button = project?.show_pdf_export_button ?? true
   form.menu_mode = project?.menu_mode ?? 'preview'
   form.theme_key = project?.theme_key ?? props.defaultThemeKey ?? null
-  form.style_spec_markdown = project?.style_spec_markdown ?? DEFAULT_PROJECT_STYLE_SPEC_MARKDOWN
+  form.style_spec_markdown = project?.style_spec_markdown ?? defaultStyleSpecMarkdown.value
   appliedWorkspaceStyleId.value = null
   errors.name = ''
   errors.theme = ''

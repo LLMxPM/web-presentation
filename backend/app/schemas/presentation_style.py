@@ -17,6 +17,7 @@ from app.schemas.project_app_config import (
     DEFAULT_PROJECT_SHOW_PDF_EXPORT_BUTTON,
     DEFAULT_PROJECT_STYLE_SPEC_MARKDOWN,
     ProjectMenuMode,
+    build_default_style_spec_markdown,
     normalize_project_base_font_size,
 )
 
@@ -68,6 +69,18 @@ class PresentationConfig(PresentationStyleModel):
         """统一 Markdown 换行，None 按空文本处理。"""
 
         return normalize_text_to_lf(None if value is None else str(value))
+
+    @model_validator(mode="after")
+    def align_default_style_spec_with_canvas(self) -> "PresentationConfig":
+        """未显式提供样式规范时，按实际画布与基础字号重新生成默认文本。"""
+
+        if "style_spec_markdown" not in self.model_fields_set:
+            self.style_spec_markdown = build_default_style_spec_markdown(
+                self.page_width,
+                self.page_height,
+                self.base_font_size,
+            )
+        return self
 
 
 class PresentationConfigPatch(PresentationStyleModel):

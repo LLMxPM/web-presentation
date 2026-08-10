@@ -8,13 +8,22 @@ from dataclasses import dataclass
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.tools.shared import SourceEditPayload, apply_source_edits
+from app.core.component_preview_schema import (
+    validate_component_preview_schema_text,
+    validate_content_component_size_controls,
+)
 from app.core.exceptions import AppException
 from app.core.text_normalizer import normalize_text_to_lf
-from app.models.enums import PageFileType, RecordStatus
+from app.models.enums import PageFileType, RecordStatus, WorkspaceComponentType
 from app.models.page import Page
 from app.schemas.release import PreviewEntryDescriptor
 from app.services.capture_viewport_resolver import CaptureViewport
 from app.services.component_preview_service import ComponentPreviewService
+from app.services.component_render_diagnostics_service import ComponentRenderDiagnosticsService
+from app.services.component_validation_profile import (
+    build_component_validation_profile,
+)
+from app.services.component_validation_service import ComponentValidationService
 from app.services.page_service import PageService
 from app.services.page_render_diagnostics_service import PageRenderDiagnosticsService
 from app.services.preview_service import PreviewService
@@ -73,10 +82,18 @@ class CodeCheckService:
         session: AsyncSession,
         runtime_client: RuntimeDiagnosticsClient | None = None,
         render_diagnostics_service: PageRenderDiagnosticsService | None = None,
+        component_render_diagnostics_service: ComponentRenderDiagnosticsService | None = None,
     ) -> None:
         self.session = session
         self.runtime_client = runtime_client or RuntimeDiagnosticsClient()
         self.render_diagnostics_service = render_diagnostics_service or PageRenderDiagnosticsService()
+        self.component_render_diagnostics_service = (
+            component_render_diagnostics_service or ComponentRenderDiagnosticsService()
+        )
+        self.component_validation_service = ComponentValidationService(
+            self.runtime_client,
+            self.component_render_diagnostics_service,
+        )
 
     async def check_page_code(
         self,
@@ -232,6 +249,7 @@ class CodeCheckService:
         content: str | None = None,
         edits: list[SourceEditPayload] | None = None,
         preview_schema: str | None = None,
+        component_type: WorkspaceComponentType | None = None,
     ) -> dict[str, object]:
         """检查组件当前草稿、完整候选源码或 edits 应用后的候选源码。"""
 
@@ -239,6 +257,7 @@ class CodeCheckService:
         current_content = ""
         component_name = "未保存组件草稿"
         resolved_preview_schema = preview_schema
+        resolved_component_type = component_type or WorkspaceComponentType.CONTENT_COMPONENT
         if component_id is not None:
             component = await WorkspaceComponentService(self.session).get(component_id)
             if component.workspace_id != workspace_id:
@@ -247,8 +266,10 @@ class CodeCheckService:
             component_name = component.name
             if preview_schema is None:
                 resolved_preview_schema = component.preview_schema
+            if component_type is None:
+                resolved_component_type = component.component_type
         elif content is None:
-            return self._failed_result(
+            return ComponentValidationService.contract_failed_result(
                 code="COMPONENT_TARGET_REQUIRED",
                 message="未指定组件时，必须传入 content 才能检查未保存组件源码。",
             )
@@ -259,7 +280,25 @@ class CodeCheckService:
             edits=edits,
         )
         if isinstance(candidate, dict):
-            return candidate
+            return ComponentValidationService.enrich_contract_failure(candidate)
+
+        try:
+            resolved_preview_schema = validate_component_preview_schema_text(resolved_preview_schema)
+            if resolved_component_type == WorkspaceComponentType.CONTENT_COMPONENT:
+                validate_content_component_size_controls(resolved_preview_schema)
+        except AppException as exc:
+            return ComponentValidationService.contract_failed_result(
+                code=exc.code,
+                message=exc.detail,
+                canonical_diff=candidate.canonical_diff,
+            )
+
+        profile_key, preview_options = build_component_validation_profile(resolved_component_type)
+        candidate_hash = ComponentValidationService.build_candidate_hash(
+            content=candidate.content,
+            preview_schema=resolved_preview_schema,
+            component_type=resolved_component_type,
+        )
 
         try:
             preview = await ComponentPreviewService(self.session).create_source_preview_artifact(
@@ -268,20 +307,28 @@ class CodeCheckService:
                 component_name=component_name,
                 content=candidate.content,
                 preview_schema=resolved_preview_schema,
-                preview_options=None,
+                preview_options=preview_options,
                 tenant_id=f"tenant_{user_id}",
                 file_type=PageFileType.VUE,
             )
         except AppException as exc:
-            return self._failed_result(code=exc.code, message=exc.detail)
+            return ComponentValidationService.contract_failed_result(
+                code=exc.code,
+                message=exc.detail,
+                canonical_diff=candidate.canonical_diff,
+            )
         await self._release_session_before_diagnostics()
-        return await self._dispatch_diagnostics(
+        return await self.component_validation_service.dispatch(
             artifact_id=preview.artifact_id,
             workspace_id=workspace_id,
             project_id=preview.project_id,
             label=f"component:{component_id or 'draft'}",
             patch_repaired=candidate.patch_repaired,
             canonical_diff=candidate.canonical_diff,
+            preview_url=preview.preview_url,
+            viewport=CaptureViewport(width=preview.viewport_width, height=preview.viewport_height),
+            profile_key=profile_key,
+            candidate_hash=candidate_hash,
         )
 
     async def _dispatch_diagnostics(

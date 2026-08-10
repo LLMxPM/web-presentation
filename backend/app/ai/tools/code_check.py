@@ -67,7 +67,6 @@ def build_check_component_code_tool(session_factory: async_sessionmaker[AsyncSes
     ) -> dict[str, Any]:
         """检查当前组件、指定组件或结构化 edits 应用后的候选组件源码是否能被 Runtime 编译。"""
 
-        _ = component_type
         dependencies, claims = await resolve_tool_context(session_factory,
             run_context,
             required_scopes=(*COMPONENT_TOOL_READ_SCOPES, *CODE_CHECK_TOOL_SCOPES),
@@ -82,6 +81,7 @@ def build_check_component_code_tool(session_factory: async_sessionmaker[AsyncSes
                 content=content,
                 edits=edits,
                 preview_schema=normalize_preview_schema_argument(preview_schema),
+                component_type=component_type,
             )
 
     allow_preview_schema_object_parameter(check_component_code)

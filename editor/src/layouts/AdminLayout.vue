@@ -13,14 +13,14 @@
         :page-title="pageQuery.data.value?.title"
         :component-name="activeAgentComponentName"
         :source="activeAgentSource"
-        @update:expanded="agentSidebarExpanded = $event"
+        @update:expanded="handleAgentSidebarUpdate"
       />
     </aside>
 
     <AgentFloatingTrigger
       v-if="sidebarsVisible && workspaceId"
       :expanded="agentSidebarExpanded"
-      @update:expanded="agentSidebarExpanded = $event"
+      @update:expanded="handleAgentSidebarUpdate"
     />
 
     <div class="flex min-w-0 flex-1 flex-col overflow-hidden">
@@ -145,6 +145,17 @@ const router = useRouter()
 const componentAgentSelection = ref<WorkspaceComponentItem | null>(null)
 /** 工作空间默认展示内容助手，用户可通过面板头部按钮主动收起。 */
 const agentSidebarExpanded = ref(true)
+/** 用户是否手动收起了侧栏，用于区分系统强制关闭与用户主动关闭。 */
+const userCollapsedSidebar = ref(false)
+
+function handleAgentSidebarUpdate(expanded: boolean): void {
+  if (expanded) {
+    userCollapsedSidebar.value = false
+  } else {
+    userCollapsedSidebar.value = true
+  }
+  agentSidebarExpanded.value = expanded
+}
 
 interface HeaderBreadcrumb {
   label: string
@@ -226,6 +237,8 @@ watch(
   ([visible, nextWorkspaceId]) => {
     if (!visible || !nextWorkspaceId) {
       agentSidebarExpanded.value = false
+    } else if (!userCollapsedSidebar.value) {
+      agentSidebarExpanded.value = true
     }
   },
   { immediate: true },

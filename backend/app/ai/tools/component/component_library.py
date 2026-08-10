@@ -289,6 +289,21 @@ def build_create_component_tool(session_factory: async_sessionmaker[AsyncSession
         )
         operator_id = extract_user_id(str(claims.get("sub")))
         async with session_factory() as session:
+            normalized_preview_schema = normalize_preview_schema_argument(preview_schema)
+            validation_result = await CodeCheckService(session).check_component_code(
+                workspace_id=int(dependencies["workspace_id"]),
+                user_id=operator_id,
+                content=content,
+                preview_schema=normalized_preview_schema,
+                component_type=component_type,
+            )
+            if not _is_validation_passed(validation_result):
+                return {
+                    **validation_result,
+                    "applied": False,
+                    "message": "组件校验失败，未创建草稿。",
+                    "validation": validation_result,
+                }
             created = await WorkspaceComponentService(session).create(
                 WorkspaceComponentCreateRequest(
                     workspace_id=int(dependencies["workspace_id"]),
@@ -298,7 +313,7 @@ def build_create_component_tool(session_factory: async_sessionmaker[AsyncSession
                     import_name=import_name,
                     component_type=component_type,
                     summary=summary,
-                    preview_schema=normalize_preview_schema_argument(preview_schema),
+                    preview_schema=normalized_preview_schema,
                     status=RecordStatus.ACTIVE,
                     change_note=change_note or "AI 助手创建组件",
                 ),
@@ -306,8 +321,10 @@ def build_create_component_tool(session_factory: async_sessionmaker[AsyncSession
             )
             return {
                 "success": True,
+                "applied": True,
                 "message": "组件草稿已创建，发布后才可被页面或其他组件引用。",
-                "component": created.model_dump(mode="json"),
+                "component": _component_mutation_summary(created),
+                "validation": validation_result,
             }
 
     allow_preview_schema_object_parameter(create_component)
@@ -363,6 +380,13 @@ def build_apply_component_edits_tool(session_factory: async_sessionmaker[AsyncSe
                 validation_result["component_id"] = component.id
                 validation_result["component_code"] = component.code
                 return validation_result
+            session.expire_all()
+            refreshed_component = await service.get(component.id)
+            _ensure_component_edit_lock(
+                refreshed_component,
+                base_draft_hash=base_draft_hash,
+                base_published_version_no=base_published_version_no,
+            )
             updated = await service.update(
                 component.id,
                 WorkspaceComponentUpdateRequest(
@@ -373,6 +397,7 @@ def build_apply_component_edits_tool(session_factory: async_sessionmaker[AsyncSe
             )
             return {
                 "success": True,
+                "applied": True,
                 "message": "组件源码草稿已更新，发布后才会生成新的可引用版本。",
                 "component_id": updated.id,
                 "component_code": updated.code,
@@ -381,7 +406,8 @@ def build_apply_component_edits_tool(session_factory: async_sessionmaker[AsyncSe
                 "base_published_version_no": updated.draft_base_version_no,
                 "edits_applied": edit_result.applied_edit_count,
                 "canonical_diff": edit_result.canonical_diff,
-                "component": updated.model_dump(mode="json"),
+                "component": _component_mutation_summary(updated),
+                "validation": validation_result,
             }
 
     return apply_component_edits
@@ -391,6 +417,27 @@ def _is_validation_passed(result: dict[str, Any]) -> bool:
     """判断 Runtime 代码检查结果是否通过。"""
 
     return bool(result.get("success") is True or result.get("status") == "passed")
+
+
+def _component_mutation_summary(component: WorkspaceComponentItem) -> dict[str, Any]:
+    """构造组件写入结果摘要，只返回后续操作需要的身份与版本锁字段。
+
+    源码与 preview_schema 是模型刚提交的入参回显，不重复返回以节省上下文；
+    需要最新源码时通过组件 detail 读取。
+    """
+
+    return {
+        "id": component.id,
+        "code": component.code,
+        "name": component.name,
+        "import_name": component.import_name,
+        "component_type": component.component_type.value,
+        "current_version_no": component.current_version_no,
+        "draft_base_version_no": component.draft_base_version_no,
+        "draft_hash": calculate_source_hash(component.content),
+        "has_unpublished_changes": component.has_unpublished_changes,
+        "status": component.status.value,
+    }
 
 
 def _with_apply_validation_metadata(
@@ -438,10 +485,43 @@ def build_update_component_metadata_tool(session_factory: async_sessionmaker[Asy
             service = WorkspaceComponentService(session)
             component = await service.get(int(component_id))
             _ensure_component_workspace(component.workspace_id, int(dependencies["workspace_id"]))
-            update_payload: dict[str, Any] = {
-                "preview_schema": component.preview_schema
+            base_content_hash = calculate_source_hash(component.content)
+            base_preview_schema = component.preview_schema
+            base_component_type = component.component_type
+            normalized_preview_schema = (
+                component.preview_schema
                 if preview_schema is None
-                else normalize_preview_schema_argument(preview_schema),
+                else normalize_preview_schema_argument(preview_schema)
+            )
+            resolved_component_type = component_type or component.component_type
+            validation_result: dict[str, Any] | None = None
+            if preview_schema is not None or component_type is not None:
+                validation_result = await CodeCheckService(session).check_component_code(
+                    component_id=component.id,
+                    workspace_id=component.workspace_id,
+                    user_id=operator_id,
+                    preview_schema=normalized_preview_schema,
+                    component_type=resolved_component_type,
+                )
+                if not _is_validation_passed(validation_result):
+                    return {
+                        **validation_result,
+                        "applied": False,
+                        "component_id": component.id,
+                        "component_code": component.code,
+                        "message": "组件校验失败，未更新 preview_schema 或组件类型。",
+                        "validation": validation_result,
+                    }
+                session.expire_all()
+                refreshed_component = await service.get(component.id)
+                _ensure_component_metadata_check_baseline(
+                    refreshed_component,
+                    content_hash=base_content_hash,
+                    preview_schema=base_preview_schema,
+                    component_type=base_component_type,
+                )
+            update_payload: dict[str, Any] = {
+                "preview_schema": normalized_preview_schema,
                 "change_note": change_note or "AI 助手组件元数据更新",
             }
             if name is not None:
@@ -459,8 +539,10 @@ def build_update_component_metadata_tool(session_factory: async_sessionmaker[Asy
             )
             return {
                 "success": True,
+                "applied": True,
                 "message": "组件元数据已更新。",
-                "component": updated.model_dump(mode="json"),
+                "component": _component_mutation_summary(updated),
+                "validation": validation_result,
             }
 
     allow_preview_schema_object_parameter(update_component_metadata)
@@ -500,7 +582,7 @@ def build_publish_component_tool(session_factory: async_sessionmaker[AsyncSessio
             return {
                 "success": True,
                 "message": "组件草稿已发布为正式版本，可被页面或其他组件按版本引用。",
-                "component": published.model_dump(mode="json"),
+                "component": _component_mutation_summary(published),
                 "import_usage": build_component_import_usage(
                     published.code,
                     published.current_version_no,
@@ -550,6 +632,27 @@ def _ensure_component_edit_lock(
             status_code=409,
             code="AI_COMPONENT_DRAFT_BASE_STALE",
             detail="组件草稿基线已变化，请重新读取组件详情后再修改。",
+        )
+
+
+def _ensure_component_metadata_check_baseline(
+    component: WorkspaceComponentItem,
+    *,
+    content_hash: str,
+    preview_schema: str | None,
+    component_type: WorkspaceComponentType,
+) -> None:
+    """复核 schema/type 校验使用的组件基线，避免耗时诊断期间写入对象已经变化。"""
+
+    if (
+        calculate_source_hash(component.content) != content_hash
+        or component.preview_schema != preview_schema
+        or component.component_type != component_type
+    ):
+        raise AppException(
+            status_code=409,
+            code="AI_COMPONENT_DRAFT_STALE",
+            detail="组件源码、preview_schema 或组件类型在校验期间已变化，请重新读取详情后再修改。",
         )
 
 

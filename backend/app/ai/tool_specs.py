@@ -771,8 +771,34 @@ _COORDINATOR_OPERATION_GUIDES = (
                      constraints=("workspace_id 和 active 状态由运行上下文注入。",), risk_level="write",
                      call_example={"resource_type": "project", "mode": "new", "payload": {"name": "季度汇报", "description": "2026 Q3"}}),
     _operation_guide("page", "create", "在指定项目创建并校验 Vue 页面，可原子写入路由。", _write_parameters("page", "create", PageCreatePayload, action="new"), action="new",
-                     prerequisites=("project_id 必须来自当前工作空间和本轮项目工作集。",), side_effects=("通过持久化页面任务队列执行并创建页面初始版本。",), risk_level="write",
-                     call_example={"resource_type": "page", "mode": "new", "payload": {"project_id": 8, "title": "封面", "content": "<template><main>封面</main></template>", "route_placement": "root"}}),
+                     prerequisites=(
+                         "project_id 必须来自当前工作空间和本轮项目工作集。",
+                         "写入 content 前先读取项目 configuration 取得画布尺寸、基础字号、样式规范和建议组件；页型与布局数值基线遵循样式规范，根结构优先复用建议组件中已发布的页面组件。",
+                     ),
+                     constraints=(
+                         "content 是完整 Vue SFC；根节点必须是已发布页面组件或 DefaultContainer，不得自行使用 transform: scale、zoom、100vh、100vw 或滚动长页。",
+                         "提交前完成布局约束自查：画布方向、安全边距、主要区域、栅格比例、视觉层级、资源槽位、文字容量、固定高度和潜在溢出；数值标准遵循项目样式规范。",
+                     ),
+                     side_effects=("通过持久化页面任务队列执行并创建页面初始版本。",), risk_level="write",
+                     call_example={
+                         "resource_type": "page",
+                         "mode": "new",
+                         "payload": {
+                             "project_id": 8,
+                             "title": "封面",
+                             "content": (
+                                 '<script setup lang="ts">'
+                                 "import DefaultContainer from '@runtime-kit/public/components/page/layout/DefaultContainer.v1.vue'"
+                                 "</script>"
+                                 "<template><DefaultContainer>"
+                                 '<main class="relative flex h-full flex-col items-center justify-center gap-6">'
+                                 '<h1 class="text-6xl font-bold text-primary">季度经营汇报</h1>'
+                                 '<p class="text-2xl text-secondary">2026 Q3</p>'
+                                 "</main></DefaultContainer></template>"
+                             ),
+                             "route_placement": "root",
+                         },
+                     }),
     _operation_guide("page", "create", "把页面复制到同工作空间的目标项目，也支持在源项目内创建副本。", _write_parameters("page", "create", PageCopyPayload, action="copy"), action="copy",
                      side_effects=("创建新页面；可同时原子写入目标项目路由。",), risk_level="write"),
     _operation_guide(
@@ -783,14 +809,18 @@ _COORDINATOR_OPERATION_GUIDES = (
         action="new",
         constraints=(
             "组件分三种类型：页面组件（整页模板，根部使用 DefaultContainer）、内容组件（页面内内容块，需尺寸控制字段）、原子组件（小粒度 UI 元素，不需要尺寸控制字段）。",
+            "页面组件应以 DefaultContainer 为根部提供可复用页面骨架：通过 props 或具名 slot 接收标题文本、默认 slot 接收正文内容，形成稳定契约，不硬编码具体页面内容。",
             "所有组件类型都必须提供 preview_schema；根节点是 Schema 对象，不是组件 props 的实际预览值。",
             "组件属性定义必须放在 preview_schema.props 中，每个字段使用 type、default 等描述；字段名应与 Vue defineProps 保持一致。",
             "内容组件必须在 preview_schema.props 中声明至少一个尺寸控制字段，例如 width、height、minHeight 或 aspectRatio。",
+            "写入前会自动执行契约、Runtime 编译、默认态与有界 presets 的真实渲染和布局检查；无需先调用 component.validate.check。",
+            "组件不绑定项目页面尺寸或基础字号；自动检查使用版本化临时 profile，具体项目兼容性由页面检查负责。",
         ),
-        side_effects=("只创建草稿；发布后生成正式版本；发布后应更新项目 configuration 的 suggested_components 使后续页面可优先复用。",),
+        side_effects=("只创建草稿；发布后生成正式版本；发布后应更新项目 configuration 的 suggested_components 使后续页面可优先复用。", "结果只返回组件摘要（含 draft_hash 和版本基线），不回显已提交的 content 与 preview_schema。",),
         error_recovery=(
             "收到 COMPONENT_PREVIEW_SCHEMA_REQUIRED 时补充合法的 preview_schema 后重试。",
             "收到 CONTENT_COMPONENT_SIZE_CONTROL_REQUIRED 时，把尺寸字段定义放入 preview_schema.props；不要把 width、height 等预览值直接放在根节点。",
+            "校验返回 valid=false 时根据 diagnostics 的 scenario_key、profile_key、facts 和 suggestion 修复后重试；unavailable/retryable=true 时不要改写候选，应稍后原样重试。",
         ),
         risk_level="write",
         call_example={
@@ -811,6 +841,39 @@ _COORDINATOR_OPERATION_GUIDES = (
                         "height": {"type": "string", "label": "高度", "default": "120px"},
                     }
                 },
+            },
+        },
+        response_example={
+            "success": True,
+            "resource_type": "component",
+            "operation": "create",
+            "action": None,
+            "message": "组件草稿已创建，发布后才可被页面或其他组件引用。",
+            "effect": "create",
+            "mutation": {
+                "kind": "component",
+                "resource_type": "component",
+                "operation": "create",
+                "target": {"id": 81, "resource_type": "component"},
+            },
+            "target": {"id": 81, "resource_type": "component"},
+            "data": {
+                "success": True,
+                "applied": True,
+                "message": "组件草稿已创建，发布后才可被页面或其他组件引用。",
+                "component": {
+                    "id": 81,
+                    "code": "CMP20260810001",
+                    "name": "指标卡",
+                    "import_name": "MetricCard",
+                    "component_type": "内容组件",
+                    "current_version_no": 0,
+                    "draft_base_version_no": 0,
+                    "draft_hash": "sha256:…",
+                    "has_unpublished_changes": True,
+                    "status": "active",
+                },
+                "validation": {"status": "passed", "summary": "组件可以编译并真实渲染；1 个场景全部通过。"},
             },
         },
     ),
@@ -911,7 +974,10 @@ _COORDINATOR_OPERATION_GUIDES = (
     _operation_guide("page", "update", "修改页面标题、摘要或演讲者备注。", _write_parameters("page", "update", PageMetadataPayload, action="metadata", target_mode="single"), action="metadata", risk_level="write",
                      call_example={"resource_type": "page", "target_id": 31, "action": "metadata", "payload": {"title": "概览"}}),
     _operation_guide("page", "update", "对页面最新源码应用结构化 edits。", _write_parameters("page", "update", PageContentPayload, action="content", target_mode="single"), action="content",
-                     prerequisites=("先查询页面 content，使用返回的真实源码片段和 current_version_no。",), side_effects=("通过持久化页面任务队列校验，通过后创建新版本。",),
+                     prerequisites=(
+                         "先查询页面 content，使用返回的真实源码片段和 current_version_no。",
+                         "改动涉及页面骨架（边距、分区、标题区、分栏）时，先读取项目 configuration 确认样式规范基线。",
+                     ), side_effects=("通过持久化页面任务队列校验，通过后创建新版本。",),
                      error_recovery=("版本冲突时重新读取页面 content 后重新生成 edits。", "精确文本未唯一命中时不得原样重试。"), risk_level="write"),
     _operation_guide(
         "component",
@@ -922,14 +988,16 @@ _COORDINATOR_OPERATION_GUIDES = (
         constraints=(
             "所有组件类型都必须保留合法的 preview_schema；组件属性定义放在 preview_schema.props，不要在根节点填写预览值。",
             "内容组件必须在 preview_schema.props 中保留至少一个尺寸控制字段。",
+            "提交 preview_schema 或 component_type 时会基于当前源码自动执行编译、真实渲染和布局检查；纯名称或摘要更新不启动 Runtime。",
         ),
         error_recovery=(
             "缺少 Schema 或尺寸控制字段时，先读取组件 detail，再提交包含合法 preview_schema 的元数据更新。",
         ),
+        side_effects=("结果只返回组件摘要，不回显已提交的 preview_schema 与源码。",),
         risk_level="write",
     ),
-    _operation_guide("component", "update", "对组件草稿应用结构化 edits。", _write_parameters("component", "update", ComponentContentPayload, action="content", target_mode="single"), action="content",
-                     prerequisites=("先读取组件 detail，取得源码、draft_hash 和 base_published_version_no。",), error_recovery=("编辑锁冲突时重新读取组件 detail。",), risk_level="write"),
+    _operation_guide("component", "update", "对组件草稿应用结构化 edits，并在写入前自动检查真实渲染结果。", _write_parameters("component", "update", ComponentContentPayload, action="content", target_mode="single"), action="content",
+                     prerequisites=("先读取组件 detail，取得源码、draft_hash 和 base_published_version_no。",), constraints=("自动执行契约、Runtime 编译、默认态与有界 presets 的真实渲染和布局检查，无需提前重复调用 validate_entity。",), side_effects=("结果只返回组件摘要、edits 计数与 canonical_diff，不回显完整源码。",), error_recovery=("编辑锁冲突时重新读取组件 detail。", "valid=false 时按 diagnostics 修复 edits；unavailable/retryable=true 时稍后原样重试。"), risk_level="write"),
     _operation_guide("asset", "update", "修改资源名称、描述、标签或近似比例。", _write_parameters("asset", "update", AssetMetadataPayload, action="metadata", target_mode="single"), action="metadata", risk_level="write"),
     _operation_guide("asset", "update", "写入资源完整文本内容。", _write_parameters("asset", "update", AssetContentPayload, action="content", target_mode="single"), action="content",
                      prerequisites=("建议先用 asset.validate.preview 检查 unified diff。",), side_effects=("写入前自动创建 archived 历史副本。",), risk_level="write"),
@@ -947,11 +1015,11 @@ _COORDINATOR_OPERATION_GUIDES = (
     ),
 
     _operation_guide("component", "action", "发布组件当前草稿，生成新的正式版本。", _write_parameters("component", "action", ComponentPublishPayload, action="publish", target_mode="single", payload_required=False), action="publish",
-                     prerequisites=("组件必须存在可发布草稿；建议先执行 check。",), side_effects=("新版本可被页面和其他组件正式引用。",), risk_level="write"),
+                     prerequisites=("组件必须存在可发布草稿；建议先执行 check。",), side_effects=("新版本可被页面和其他组件正式引用。", "结果返回组件摘要和 import_usage，不回显源码。",), risk_level="write"),
     _operation_guide("page", "validate", "检查当前页面、完整候选源码或结构化 edits。", _write_parameters("page", "validate", PageCheckPayload, action="check", target_mode="optional_single"), action="check",
                      constraints=("mode=current/edits 必须提供 target_id；无 target_id 的 content 模式必须提供 project_id。",)),
-    _operation_guide("component", "validate", "检查当前组件、完整候选源码或结构化 edits。", _write_parameters("component", "validate", ComponentCheckPayload, action="check", target_mode="optional_single"), action="check",
-                     constraints=("mode=current/edits 必须提供 target_id；content 模式可检查新组件候选源码。",)),
+    _operation_guide("component", "validate", "只读检查当前组件或候选源码、edits 与 preview_schema 的编译、真实渲染和布局结果。", _write_parameters("component", "validate", ComponentCheckPayload, action="check", target_mode="optional_single"), action="check",
+                     constraints=("mode=current/edits 必须提供 target_id；content 模式可检查新组件候选源码。", "新组件候选应同时提供 component_type 和完整 preview_schema；页面尺寸与基础字号使用平台版本化临时 profile，不继承当前焦点项目。", "三类组件写操作已经自动执行相同检查；仅在诊断当前组件、预检大幅修改或确认修复结果时单独调用。")),
     _operation_guide("asset", "validate", "预览资源完整内容写入后的 unified diff，不落库。", _write_parameters("asset", "validate", AssetPreviewContentPayload, action="preview", target_mode="single"), action="preview"),
 )
 

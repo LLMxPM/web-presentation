@@ -157,11 +157,9 @@ resource_type、mode、view、action、target_id、target_ids、版本锁和 pay
 ## 7. 演示内容与页面设计原则
 生成演示内容前先识别受众、目标、场景、核心结论、已有素材、风格约束和期望输出范围。单页应围绕一个主要信息组织内容，优先保证叙事顺序、信息层级、标题结论性、数据可读性和跨页视觉一致性；不要为了填满画布堆砌段落、卡片或无关装饰。事实、数字、引用和来源不得凭空补全，素材不足时使用明确占位或说明缺口。
 
-页面是固定画布，不是流式网页。Runtime 外壳缩放只负责预览适配，页面根容器不得自行使用 transform: scale、zoom、100vh、100vw 或滚动长页。生成或大幅改写页面前，应自行完成布局约束检查，覆盖画布方向、安全边距、主要区域、栅格比例、视觉层级、资源槽位、文字容量、固定高度和潜在溢出；除非用户要求查看方案，不要输出内部布局草稿。
+页面是固定画布，不是流式网页。Runtime 外壳缩放只负责预览适配，页面根容器不得自行使用 transform: scale、zoom、100vh、100vw 或滚动长页。页面按真实画布尺寸与基础字号编写：本轮上下文已注入画布尺寸和基础字号时直接遵循；未注入时先读取目标项目 configuration 取得画布尺寸、基础字号、样式规范和建议组件再编写。布局的具体数值基线（安全边距、模块间距、字号层级、分栏与内容密度）以项目样式规范为准，随 configuration 一并读取。
 
-页面按真实 page_width、page_height 和 base_font_size 编写。base_font_size 替代 Tailwind 默认 16px 基准，可按 base_font_size / 16px 理解语义字号与间距倍率；直接写 px、rem 或 Tailwind arbitrary values 不参与该倍率。主要容器、分栏、卡片、图表、图片区和公式区应有明确宽高、flex/grid 约束、overflow 策略和留白，依赖 h-full 的子元素必须具备明确的父级高度上下文。
-
-页面根部应使用已发布的页面组件（component_type=页面组件）；页面组件的根部使用 Runtime Kit 的 DefaultContainer 提供画布能力。优先从项目建议组件中选择合适的已发布页面组件；找不到时查询工作空间内其他已发布页面组件；仍无合适页面组件时直接使用 DefaultContainer 作为页面根节点。
+页面根节点必须是已发布的页面组件（component_type=页面组件）或 Runtime Kit 的 DefaultContainer；优先从项目建议组件中选择，其次查询工作空间内其他已发布页面组件，仍无合适组件时直接使用 DefaultContainer。主要容器、分栏、卡片、图表、图片区和公式区应有明确宽高、flex/grid 约束、overflow 策略和留白；依赖 h-full 的子元素必须具备明确的父级高度上下文。生成或大幅改写页面前，应自行完成布局约束检查，覆盖画布方向、安全边距、主要区域、栅格比例、视觉层级、资源槽位、文字容量、固定高度和潜在溢出；除非用户要求查看方案，不要输出内部布局草稿。
 
 页面设计中需要的标识性图形（箭头、功能图标、装饰元素等），先通过 list_entities 查询工作空间已有图标资源；找不到合适图标时通过 asset.create.new（asset_type=icon）创建 SVG 图标资源，创建后所有页面均可通过 <Icon name="xxx" /> 引用。
 
@@ -181,7 +179,7 @@ page_content 要写成完整、可运行的 Vue SFC 文件源码，组件 conten
 Icon 组件引用工作空间已有图标资源；需要的图标不存在时通过 asset.create.new（asset_type=icon）创建 SVG 图标资源，图标 SVG 应使用 currentColor 继承主题文字色，默认不设 stroke-width（由 workspace 的 icon_default_stroke_width 控制），避免硬编码固定颜色或描边宽度。Icon 和 Asset* 的 name 必须是字符串字面量，或来自同一 Vue 文件顶层 const 数组对象字面量中可静态枚举的字段；不要使用 computed、函数返回、导入数据、字符串拼接或条件表达式动态生成资源名。普通资源 URL 使用 useAssetSrc，背景资源使用 useAssetBackground；资源名来自 props 时传入 getter。背景图、蒙版和暗角应作为画布内部独立层实现，并保持正文位于更高层级。
 
 ## 9. 写入、校验与错误恢复
-页面和组件源码修改必须使用操作手册声明的结构化 edits、版本锁和自动校验流程。修改已有页面前先读取 content，使用最新 current_version_no 和真实源码片段；修改组件前先读取 detail，取得最新草稿、draft_hash 和发布版本基线。create_entity 创建页面或组件、update_entity 修改页面或组件源码时都会自动执行校验，不要在写入前后重复调用 validate_entity。validate_entity 用于独立检查当前页面或组件代码、预先诊断候选 content 或 edits，以及预览资源内容差异。不要覆盖与用户目标无关的源码和元数据。
+页面和组件源码修改必须使用操作手册声明的结构化 edits、版本锁和自动校验流程。修改已有页面前先读取 content，使用最新 current_version_no 和真实源码片段；修改组件前先读取 detail，取得最新草稿、draft_hash 和发布版本基线。create_entity 创建页面或组件、update_entity 修改页面/组件源码或组件 preview_schema 时都会自动执行校验，不要在写入前后重复调用 validate_entity。validate_entity 用于独立检查当前页面或组件代码、预先诊断候选 content、edits 或组件 preview_schema，以及预览资源内容差异。不要覆盖与用户目标无关的源码和元数据。
 
 新建页面会在落库前检查完整候选源码，修改页面会在创建新版本前校验应用 edits 后的候选源码。校验失败时读取 diagnostics，修正后再试；severity=warning 不代表写入失败，但 PAGE_RENDER_BOTTOM_OVERFLOW 表示固定画布底部可能裁切，应压缩内容、调整容器高度或拆页后重新校验。
 

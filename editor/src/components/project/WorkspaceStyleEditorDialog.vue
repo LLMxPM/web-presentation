@@ -133,7 +133,7 @@ import SuggestedComponentsSelectorPanel from '@/components/project/SuggestedComp
 import ThemeSelectorField from '@/components/theme/ThemeSelectorField.vue'
 import ToolPanel from '@/components/patterns/ToolPanel.vue'
 import { UiButton, UiDialog, UiFormField, UiInput, UiSegmentedControl, UiTabs } from '@/components/ui'
-import { DEFAULT_PROJECT_STYLE_SPEC_MARKDOWN } from '@/constants/project-style'
+import { useDefaultStyleSpec } from '@/composables/useDefaultStyleSpec'
 import type { ProjectMenuMode, SuggestedComponentItem, WorkspaceStyleItem } from '@/types/api'
 import { Message } from '@/utils/message'
 
@@ -162,6 +162,8 @@ const emit = defineEmits<{
   save: [payload: WorkspaceStylePayload & { suggested_component_ids: number[] }]
 }>()
 
+const { defaultStyleSpecMarkdown } = useDefaultStyleSpec()
+
 const draft = reactive({
   key: '',
   name: '',
@@ -173,7 +175,7 @@ const draft = reactive({
   showPdfExportButton: true,
   menuMode: 'bottom-preview' as ProjectMenuMode,
   themeKey: null as string | null,
-  styleSpecMarkdown: DEFAULT_PROJECT_STYLE_SPEC_MARKDOWN,
+  styleSpecMarkdown: '',
 })
 
 const errors = reactive({
@@ -228,7 +230,7 @@ function syncDraft(): void {
   draft.showPdfExportButton = source.show_pdf_export_button ?? true
   draft.menuMode = source.menu_mode ?? 'bottom-preview'
   draft.themeKey = source.theme_key ?? props.defaultThemeKey ?? null
-  draft.styleSpecMarkdown = String(source.style_spec_markdown ?? DEFAULT_PROJECT_STYLE_SPEC_MARKDOWN)
+  draft.styleSpecMarkdown = String(source.style_spec_markdown ?? defaultStyleSpecMarkdown.value)
   errors.key = ''
   errors.name = ''
 }

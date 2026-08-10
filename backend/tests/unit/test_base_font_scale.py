@@ -48,6 +48,42 @@ def test_scope_context_should_use_compact_base_font_scale_note() -> None:
     assert "按 Runtime Tailwind 预设比例派生" not in context_text
 
 
+def test_scope_context_should_point_to_style_spec_when_canvas_present() -> None:
+    """注入画布事实时应同时指向项目样式规范作为布局数值基线。"""
+
+    context_text = build_scope_context_text(
+        AgentRuntimeContext(
+            scope_type="page",
+            workspace_id=1,
+            project_id=2,
+            page_id=3,
+            source="test",
+            page_width=1920,
+            page_height=1080,
+            base_font_size="20px",
+        )
+    )
+
+    assert "布局数值基线" in context_text
+    assert "项目样式规范" in context_text
+    assert "本轮未注入画布尺寸与基础字号" not in context_text
+
+
+def test_scope_context_should_require_reading_configuration_when_canvas_missing() -> None:
+    """画布缺席时应提示先读取目标项目 configuration 再写入页面。"""
+
+    context_text = build_scope_context_text(
+        AgentRuntimeContext(
+            scope_type="workspace",
+            workspace_id=1,
+            source="test",
+        )
+    )
+
+    assert "本轮未注入画布尺寸与基础字号" in context_text
+    assert "configuration 取得画布尺寸、基础字号、样式规范和建议组件" in context_text
+
+
 def test_scope_context_should_not_preload_project_suggested_component_summaries() -> None:
     """默认上下文不预注入建议组件，只提示通过通用查询工具按需读取。"""
 

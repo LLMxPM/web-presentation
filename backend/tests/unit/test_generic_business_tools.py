@@ -199,6 +199,12 @@ def test_component_create_guide_should_require_and_explain_preview_schema() -> N
     assert len(guide.error_recovery) >= 2
     Draft202012Validator(guide.parameters).validate(guide.call_example)
 
+    summary_example = guide.response_example["data"]["component"]
+    assert "content" not in summary_example
+    assert "preview_schema" not in summary_example
+    assert summary_example["draft_hash"]
+    assert any("不回显" in side_effect for side_effect in guide.side_effects)
+
     with pytest.raises(ValidationError):
         ComponentCreatePayload.model_validate({
             "name": "缺少预览 Schema",

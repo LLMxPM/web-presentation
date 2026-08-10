@@ -81,6 +81,35 @@ def test_raw_tool_result_media_objects_should_be_replaced_by_agent_image_refs() 
     assert not contains_forbidden_image_payload(sanitized)
 
 
+def test_tool_result_json_schema_kind_property_should_remain_unchanged() -> None:
+    """工具结果包含名为 kind 的 JSON Schema 属性时，不应被误判为图片载荷。"""
+
+    raw_payload = {
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "lookup": {
+                    "type": "object",
+                    "properties": {
+                        "kind": {
+                            "anyOf": [
+                                {"enum": ["component", "composable", "util", "type"], "type": "string"},
+                                {"type": "null"},
+                            ],
+                            "default": None,
+                        }
+                    },
+                }
+            },
+        }
+    }
+
+    sanitized = sanitize_message_history_image_refs(raw_payload)
+
+    assert sanitized == raw_payload
+    assert not contains_forbidden_image_payload(sanitized)
+
+
 async def test_s3_model_url_should_reuse_within_idle_window_and_refresh_after_gap() -> None:
     """S3 图片在连续窗口内复用同一个 model_url，超过空闲窗口后刷新。"""
 

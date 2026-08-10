@@ -66,7 +66,12 @@ def build_scope_context_text(runtime_context: AgentRuntimeContext) -> str:
                 f"- 当前页面画布尺寸（page_width / page_height）：{runtime_context.page_width} x {runtime_context.page_height} px",
                 f"- {build_base_font_scale_note(runtime_context.base_font_size)}",
                 "- 页面和整页组件应按真实画布编写 Vue 与 Tailwind；可使用 Tailwind 语义类，也可在需要精确版式时使用 px、rem 或 Tailwind arbitrary values。",
+                "- 本项目布局数值基线（安全边距、模块间距、字号层级、分栏、内容密度、页面类型约定）位于项目样式规范，使用 get_entity 的 configuration 视图读取；编写或改写页面时应连同上方画布尺寸与基础字号一并遵循。",
             ]
+        )
+    else:
+        lines.append(
+            "- 本轮未注入画布尺寸与基础字号；确定目标项目后，写入页面或页面组件前先用 get_entity 读取该项目 configuration 取得画布尺寸、基础字号、样式规范和建议组件。"
         )
     lines.extend(
         [

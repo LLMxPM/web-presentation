@@ -102,7 +102,8 @@ def sanitize_message_history_image_refs(
             ref = normalize_agent_image_ref(item)
             if ref is not None:
                 return ref
-            if item.get("kind") in _MODEL_IMAGE_KINDS:
+            item_kind = item.get("kind")
+            if isinstance(item_kind, str) and item_kind in _MODEL_IMAGE_KINDS:
                 vendor_metadata = item.get("vendor_metadata")
                 vendor_ref = _image_ref_from_vendor_metadata(vendor_metadata)
                 return vendor_ref or next_ref() or "[图片内容已移除：缺少智能体图片引用]"
