@@ -378,7 +378,7 @@ async def test_llm_provider_and_config_crud_should_split_secret_from_model(authe
         json={
             "name": "OpenRouter 主模型",
             "provider_config_id": provider["id"],
-            "model_id": "openai/gpt-4.1-mini",
+            "model_id": "openai/gpt-5.6",
             "thinking_enabled": True,
             "thinking_effort": "xhigh",
             "advanced_config_json": {"temperature": 0.2},
@@ -389,11 +389,22 @@ async def test_llm_provider_and_config_crud_should_split_secret_from_model(authe
     assert created_item["provider_config_id"] == provider["id"]
     assert created_item["provider_config_name"] == "OpenRouter 工作账号"
     assert created_item["provider_label"] == "OpenRouter"
-    assert created_item["context_window_tokens"] == 128000
-    assert created_item["max_output_tokens"] == 25600
+    assert created_item["context_window_tokens"] == 1_017_232
+    assert created_item["model_max_output_tokens"] == 128_000
+    assert created_item["max_output_tokens"] == 32_768
+    assert created_item["required_model_context_tokens"] == 1_050_000
+    assert created_item["runtime_headroom_tokens"] == 32_768
+    assert created_item["compression_trigger_tokens"] == 984_464
+    assert created_item["compression_target_tokens"] == 16_384
+    assert created_item["budget_policy_version"] == "fixed-context-budget.v2"
     assert created_item["history_token_ratio"] == 1.0
-    assert created_item["compression_target_ratio"] == 0.1
-    assert created_item["thinking_effort"] == "xhigh"
+    assert created_item["compression_target_ratio"] == 16_384 / 1_017_232
+    assert created_item["reasoning_mode"] == "enabled"
+    assert created_item["reasoning_level"] == "max"
+    assert created_item["thinking_effort"] == "max"
+    assert created_item["effective_reasoning"]["native_value"] == "max"
+    assert created_item["capability_source"] == "built_in"
+    assert created_item["capability_verified"] is True
 
     config_id = created_item["id"]
     detail_response = await authenticated_client.get(f"/api/ai/llm-configs/{config_id}")
@@ -434,12 +445,14 @@ async def test_llm_provider_and_config_crud_should_split_secret_from_model(authe
     )
     assert update_response.status_code == 200
     updated_item = update_response.json()
+    assert updated_item["capability_source"] == "built_in"
     assert updated_item["name"] == "OpenRouter 更新模型"
     assert updated_item["status"] == "active"
     assert updated_item["context_window_tokens"] == 256000
-    assert updated_item["max_output_tokens"] == 51200
+    assert updated_item["max_output_tokens"] == 32768
     assert updated_item["history_token_ratio"] == 1.0
-    assert updated_item["compression_target_ratio"] == 0.1
+    assert updated_item["compression_target_tokens"] == 16384
+    assert updated_item["compression_trigger_tokens"] == 223232
     assert updated_item["advanced_config_json"] == {"temperature": 0.5}
 
     model_status_response = await authenticated_client.patch(
@@ -490,9 +503,10 @@ async def test_llm_config_should_derive_run_budget_from_context_window(authentic
     assert valid_create.status_code == 201
     created = valid_create.json()
     config_id = created["id"]
-    assert created["max_output_tokens"] == 25600
+    assert created["max_output_tokens"] == 32768
     assert created["history_token_ratio"] == 1.0
-    assert created["compression_target_ratio"] == 0.1
+    assert created["compression_target_tokens"] == 16384
+    assert created["compression_trigger_tokens"] == 95232
 
     # 更新窗口后应重新派生全部预算。
     valid_update = await authenticated_client.patch(
@@ -501,8 +515,155 @@ async def test_llm_config_should_derive_run_budget_from_context_window(authentic
     )
     assert valid_update.status_code == 200
     assert valid_update.json()["context_window_tokens"] == 200000
-    assert valid_update.json()["max_output_tokens"] == 39936
-    assert valid_update.json()["compression_target_ratio"] == 0.1
+    assert valid_update.json()["max_output_tokens"] == 32768
+    assert valid_update.json()["compression_target_tokens"] == 16384
+    assert valid_update.json()["compression_trigger_tokens"] == 167232
+
+
+async def test_llm_capability_resolve_and_reasoning_contract_should_use_new_fields(authenticated_client: AsyncClient) -> None:
+    """能力解析、三态四档与旧字段冲突应由 API 在保存前处理。"""
+
+    provider = await _create_llm_provider_config(authenticated_client, name="能力解析供应商")
+    capability_response = await authenticated_client.post(
+        "/api/ai/llm-model-capabilities/resolve",
+        json={"provider_config_id": provider["id"], "model_id": "gpt-5.6"},
+    )
+    assert capability_response.status_code == 200
+    capability = capability_response.json()
+    assert capability["source"] == "built_in"
+    assert capability["verified"] is True
+    assert capability["level_mapping"]["max"] == "max"
+    assert capability["request_output_tokens"] == 32_768
+    assert capability["context_window_tokens"] == 1_017_232
+    assert capability["required_model_context_tokens"] == 1_050_000
+    assert capability["compression_target_tokens"] == 16_384
+
+    create_response = await authenticated_client.post(
+        "/api/ai/llm-configs",
+        json={
+            "name": "显式关闭模型",
+            "provider_config_id": provider["id"],
+            "model_id": "gpt-5.6",
+            "reasoning_mode": "disabled",
+        },
+    )
+    assert create_response.status_code == 201
+    assert create_response.json()["reasoning_mode"] == "disabled"
+    assert create_response.json()["reasoning_level"] is None
+
+    conflict_response = await authenticated_client.post(
+        "/api/ai/llm-configs",
+        json={
+            "name": "冲突模型",
+            "provider_config_id": provider["id"],
+            "model_id": "gpt-5.6",
+            "reasoning_mode": "enabled",
+            "reasoning_level": "max",
+            "thinking_enabled": True,
+        },
+    )
+    assert conflict_response.status_code == 422
+
+    advanced_conflict_response = await authenticated_client.patch(
+        f"/api/ai/llm-configs/{create_response.json()['id']}",
+        json={"advanced_config_json": {"extra_body": {"thinking_budget": 9999, "custom": True}}},
+    )
+    assert advanced_conflict_response.status_code == 400
+    assert advanced_conflict_response.json()["code"] == "AI_LLM_ADVANCED_CONFIG_CONFLICT"
+
+    deep_conflict_response = await authenticated_client.patch(
+        f"/api/ai/llm-configs/{create_response.json()['id']}",
+        json={"advanced_config_json": {"vendor_options": [{"thinking": {"type": "enabled"}}]}},
+    )
+    assert deep_conflict_response.status_code == 400
+    assert deep_conflict_response.json()["code"] == "AI_LLM_ADVANCED_CONFIG_CONFLICT"
+
+    deep_budget_conflict_response = await authenticated_client.patch(
+        f"/api/ai/llm-configs/{create_response.json()['id']}",
+        json={"advanced_config_json": {"extra_body": {"compression_target_tokens": 2048}}},
+    )
+    assert deep_budget_conflict_response.status_code == 400
+    assert deep_budget_conflict_response.json()["code"] == "AI_LLM_ADVANCED_CONFIG_CONFLICT"
+
+    enabled_response = await authenticated_client.patch(
+        f"/api/ai/llm-configs/{create_response.json()['id']}",
+        json={"reasoning_mode": "enabled", "reasoning_level": "high", "context_window_tokens": 256000},
+    )
+    assert enabled_response.status_code == 200
+    assert enabled_response.json()["capability_source"] == "built_in"
+
+    clear_level_response = await authenticated_client.patch(
+        f"/api/ai/llm-configs/{create_response.json()['id']}",
+        json={"reasoning_level": None},
+    )
+    assert clear_level_response.status_code == 200
+    assert clear_level_response.json()["reasoning_level"] == "medium"
+
+    clear_override_response = await authenticated_client.patch(
+        f"/api/ai/llm-configs/{create_response.json()['id']}",
+        json={"model_capability_override": {}},
+    )
+    assert clear_override_response.status_code == 200
+    assert clear_override_response.json()["capability_source"] == "built_in"
+    assert clear_override_response.json()["context_window_tokens"] == 256_000
+
+    unsupported_window_response = await authenticated_client.post(
+        "/api/ai/llm-configs",
+        json={
+            "name": "超过模型总窗口",
+            "provider_config_id": provider["id"],
+            "model_id": "gpt-5.6",
+            "context_window_tokens": 1_050_000,
+        },
+    )
+    assert unsupported_window_response.status_code == 400
+    assert unsupported_window_response.json()["code"] == "AI_LLM_CONTEXT_WINDOW_UNSUPPORTED"
+
+    dashscope_provider = await _create_llm_provider_config(
+        authenticated_client,
+        name="Qwen 最新模型供应商",
+        provider_key="dashscope",
+        base_url="https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+    )
+    qwen_capability_response = await authenticated_client.post(
+        "/api/ai/llm-model-capabilities/resolve",
+        json={"provider_config_id": dashscope_provider["id"], "model_id": "qwen3.8-max"},
+    )
+    assert qwen_capability_response.status_code == 200
+    assert qwen_capability_response.json()["source"] == "built_in"
+    assert qwen_capability_response.json()["context_window_tokens"] == 967_232
+    assert qwen_capability_response.json()["model_context_window_tokens"] == 1_000_000
+
+    deepseek_provider = await _create_llm_provider_config(
+        authenticated_client,
+        name="未知模型上限供应商",
+        provider_key="deepseek",
+        base_url="https://api.deepseek.com",
+    )
+    unknown_capability_response = await authenticated_client.post(
+        "/api/ai/llm-model-capabilities/resolve",
+        json={"provider_config_id": deepseek_provider["id"], "model_id": "future-unregistered-model"},
+    )
+    assert unknown_capability_response.status_code == 200
+    assert unknown_capability_response.json()["verified"] is False
+    assert unknown_capability_response.json()["context_window_tokens"] == 200_000
+    assert unknown_capability_response.json()["model_context_window_tokens"] is None
+    assert unknown_capability_response.json()["required_model_context_tokens"] == 232_768
+    assert unknown_capability_response.json()["compression_trigger_tokens"] == 167_232
+    assert unknown_capability_response.json()["compression_target_tokens"] == 16_384
+
+    unknown_create_response = await authenticated_client.post(
+        "/api/ai/llm-configs",
+        json={
+            "name": "未来未识别模型",
+            "provider_config_id": deepseek_provider["id"],
+            "model_id": "future-unregistered-model",
+        },
+    )
+    assert unknown_create_response.status_code == 201
+    assert unknown_create_response.json()["context_window_tokens"] == 200_000
+    assert unknown_create_response.json()["required_model_context_tokens"] == 232_768
+    assert unknown_create_response.json()["capability_verified"] is False
 
 
 async def test_llm_config_delete_should_hard_delete_unbind_slots_and_block_existing_session_run(
@@ -613,16 +774,17 @@ async def test_llm_config_should_cap_large_context_derived_budgets(authenticated
             "name": "百万上下文模型",
             "provider_config_id": provider["id"],
             "model_id": "openai/gpt-4.1-long-context",
-            "context_window_tokens": 1_000_000,
+            "context_window_tokens": 967_232,
             "advanced_config_json": {},
         },
     )
 
     assert response.status_code == 201
     created_item = response.json()
-    assert created_item["context_window_tokens"] == 1_000_000
-    assert created_item["max_output_tokens"] == 65_536
-    assert created_item["compression_target_ratio"] == 0.032768
+    assert created_item["context_window_tokens"] == 967_232
+    assert created_item["max_output_tokens"] == 32_768
+    assert created_item["required_model_context_tokens"] == 1_000_000
+    assert created_item["compression_target_tokens"] == 16_384
 
 
 async def test_llm_config_should_ignore_manual_mimo_output_budget(authenticated_client: AsyncClient) -> None:
@@ -648,7 +810,7 @@ async def test_llm_config_should_ignore_manual_mimo_output_budget(authenticated_
     )
 
     assert response.status_code == 201
-    assert response.json()["max_output_tokens"] == 65_536
+    assert response.json()["max_output_tokens"] == 32_768
 
 
 async def test_llm_slot_binding_should_drive_agent_binding_state(authenticated_client: AsyncClient) -> None:
@@ -664,7 +826,7 @@ async def test_llm_slot_binding_should_drive_agent_binding_state(authenticated_c
         json={
             "name": "总控模型",
             "provider_config_id": provider["id"],
-            "model_id": "gpt-4.1-mini",
+            "model_id": "gpt-5.6",
             "thinking_enabled": True,
             "thinking_effort": "low",
             "advanced_config_json": {},
@@ -955,20 +1117,20 @@ def test_llm_model_resolver_should_build_common_provider_models() -> None:
     openai_config = build_config(
         id=1,
         provider_key="openai",
-        model_id="gpt-4.1-mini",
+        model_id="gpt-5.6",
         base_url="https://api.openai.com/v1",
         thinking_enabled=True,
         thinking_effort="medium",
     )
     openai_model = resolver.resolve_model(openai_config)
     assert openai_model.__class__.__name__ == "OpenAIChatModel"
-    assert openai_model.model_name == "gpt-4.1-mini"
+    assert openai_model.model_name == "gpt-5.6"
     assert resolver.resolve_model_settings(openai_config)["openai_reasoning_effort"] == "medium"
 
     openrouter_config = build_config(
         id=2,
         provider_key="openrouter",
-        model_id="openai/gpt-4.1-mini",
+        model_id="openai/gpt-5.6",
         api_key="sk-openrouter-test",
         base_url="https://openrouter.ai/api/v1",
         thinking_enabled=True,
@@ -976,8 +1138,8 @@ def test_llm_model_resolver_should_build_common_provider_models() -> None:
     )
     openrouter_model = resolver.resolve_model(openrouter_config)
     assert openrouter_model.__class__.__name__ == "OpenRouterModel"
-    assert openrouter_model.model_name == "openai/gpt-4.1-mini"
-    assert resolver.resolve_model_settings(openrouter_config)["openrouter_reasoning"] == {"effort": "xhigh"}
+    assert openrouter_model.model_name == "openai/gpt-5.6"
+    assert resolver.resolve_model_settings(openrouter_config)["openrouter_reasoning"] == {"effort": "max"}
 
     dashscope_config = build_config(
         id=3,
@@ -1008,7 +1170,7 @@ def test_llm_model_resolver_should_build_common_provider_models() -> None:
     openai_like_model = resolver.resolve_model(openai_like_config)
     assert openai_like_model.__class__.__name__ == "OpenAIChatModel"
     assert openai_like_model.model_name == "custom-model"
-    assert resolver.resolve_model_settings(openai_like_config)["openai_reasoning_effort"] == "max"
+    assert resolver.resolve_model_settings(openai_like_config)["openai_reasoning_effort"] == "high"
 
     deepseek_config = build_config(
         id=8,
@@ -1022,24 +1184,35 @@ def test_llm_model_resolver_should_build_common_provider_models() -> None:
     deepseek_model = resolver.resolve_model(deepseek_config)
     assert deepseek_model.__class__.__name__ == "OpenAIChatModel"
     assert resolver.resolve_model_settings(deepseek_config) == {
-        "max_tokens": 25_600,
+        "max_tokens": 32_768,
         "openai_reasoning_effort": "max",
         "extra_body": {"thinking": {"type": "enabled"}},
     }
 
-    deepseek_disabled_config = build_config(
+    deepseek_auto_config = build_config(
         id=9,
-        name="deepseek-disabled",
+        name="deepseek-auto",
         provider_key="deepseek",
         model_id="deepseek-v4-flash",
         api_key="sk-deepseek-test",
         base_url="https://api.deepseek.com",
         thinking_enabled=False,
     )
-    deepseek_disabled_model = resolver.resolve_model(deepseek_disabled_config)
-    assert deepseek_disabled_model.__class__.__name__ == "OpenAIChatModel"
+    deepseek_auto_model = resolver.resolve_model(deepseek_auto_config)
+    assert deepseek_auto_model.__class__.__name__ == "OpenAIChatModel"
+    assert resolver.resolve_model_settings(deepseek_auto_config) == {"max_tokens": 32_768}
+
+    deepseek_disabled_config = build_config(
+        id=14,
+        name="deepseek-disabled",
+        provider_key="deepseek",
+        model_id="deepseek-v4-flash",
+        api_key="sk-deepseek-test",
+        base_url="https://api.deepseek.com",
+        reasoning_mode="disabled",
+    )
     assert resolver.resolve_model_settings(deepseek_disabled_config) == {
-        "max_tokens": 25_600,
+        "max_tokens": 32_768,
         "extra_body": {"thinking": {"type": "disabled"}},
     }
 
@@ -1056,7 +1229,7 @@ def test_llm_model_resolver_should_build_common_provider_models() -> None:
     deepseek_legacy_effort_model = resolver.resolve_model(deepseek_legacy_effort_config)
     assert deepseek_legacy_effort_model.__class__.__name__ == "OpenAIChatModel"
     assert resolver.resolve_model_settings(deepseek_legacy_effort_config) == {
-        "max_tokens": 25_600,
+        "max_tokens": 32_768,
         "openai_reasoning_effort": "high",
         "extra_body": {"thinking": {"type": "enabled"}},
     }
@@ -1080,7 +1253,7 @@ def test_llm_model_resolver_should_build_common_provider_models() -> None:
     deepseek_custom_model = resolver.resolve_model(deepseek_custom_config)
     assert deepseek_custom_model.__class__.__name__ == "OpenAIChatModel"
     assert resolver.resolve_model_settings(deepseek_custom_config) == {
-        "max_tokens": 25_600,
+        "max_tokens": 32_768,
         "openai_reasoning_effort": "max",
         "timeout": 60,
         "retries": 0,
@@ -1155,12 +1328,11 @@ def test_llm_model_resolver_should_build_common_provider_models() -> None:
         base_url="https://api.xiaomimimo.com/v1",
         thinking_enabled=True,
         thinking_effort="max",
-        max_output_tokens=320_000,
     )
     mimo_model = resolver.resolve_model(mimo_config)
     assert mimo_model.__class__.__name__ == "OpenAIChatModel"
     assert mimo_model.model_name == "mimo-v2.5"
     assert resolver.resolve_model_settings(mimo_config) == {
-        "max_tokens": 25_600,
+        "max_tokens": 32_768,
         "extra_body": {"thinking": {"type": "enabled"}},
     }

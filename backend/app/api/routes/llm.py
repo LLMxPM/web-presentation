@@ -14,6 +14,8 @@ from app.schemas.llm import (
     LlmConfigCreateRequest,
     LlmConfigItem,
     LlmConfigUpdateRequest,
+    LlmModelCapabilityItem,
+    LlmModelCapabilityResolveRequest,
     LlmProviderCatalogItem,
     LlmProviderConfigCreateRequest,
     LlmProviderConfigItem,
@@ -45,6 +47,21 @@ async def list_llm_provider_configs(
     """列出当前用户可见的供应商配置。"""
 
     return await AiLlmService(session, user_id=current.user.id, user_role=current.user.role).list_provider_configs()
+
+
+@router.post("/llm-model-capabilities/resolve", response_model=LlmModelCapabilityItem)
+async def resolve_llm_model_capability(
+    payload: LlmModelCapabilityResolveRequest,
+    current: Annotated[AuthContext, Depends(get_current_user)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> LlmModelCapabilityItem:
+    """解析指定模型的能力、预算与平台四档映射。"""
+
+    return await AiLlmService(session, user_id=current.user.id, user_role=current.user.role).resolve_model_capability_item(
+        payload.provider_config_id,
+        payload.model_id,
+        override=payload.override,
+    )
 
 
 @router.post("/llm-provider-configs", response_model=LlmProviderConfigItem, status_code=201)

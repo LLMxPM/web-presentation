@@ -10,6 +10,7 @@
 | [工具确认与会话](./tools-and-confirmation.md) | 工具确认、会话范围、图片附件、中断和恢复 |
 | [当前上下文注入](./context-injection.md) | 自动注入的项目、页面、组件和资源上下文 |
 | [能力边界](./boundaries.md) | 统一内容助手、通用工具和可见性边界 |
+| [模型能力与推理设置](./model-settings.md) | 推理三态四档、最终生效值和上下文输出能力 |
 
 推荐顺序：先看[协作流程与提示词](./workflow.md)，再看[工具确认与会话](./tools-and-confirmation.md)；遇到“AI 为什么看不到/不能操作”时，再查[当前上下文注入](./context-injection.md)和[能力边界](./boundaries.md)。
 

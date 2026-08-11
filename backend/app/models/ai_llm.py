@@ -6,7 +6,7 @@ from sqlalchemy import Boolean, Float, ForeignKey, Index, Integer, JSON, String,
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
-from app.models.enums import AiLlmConfigScope, AiLlmSlot, AiModelType, RecordStatus
+from app.models.enums import AiLlmConfigScope, AiLlmSlot, AiModelType, AiReasoningMode, RecordStatus
 from app.models.mixins import AuditMixin, TimestampMixin
 
 
@@ -40,20 +40,43 @@ class AiLlmConfig(TimestampMixin, AuditMixin, Base):
     provider_config_id: Mapped[int] = mapped_column(ForeignKey("ai_llm_provider_configs.id"), nullable=False, index=True)
     model_id: Mapped[str] = mapped_column(String(255), nullable=False)
     model_type: Mapped[str] = mapped_column(String(32), nullable=False, default=AiModelType.CHAT.value, index=True)
-    thinking_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    thinking_effort: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    reasoning_mode: Mapped[str] = mapped_column(String(32), nullable=False, default=AiReasoningMode.AUTO.value)
+    reasoning_level: Mapped[str | None] = mapped_column(String(32), nullable=True)
     supports_image_input: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     context_window_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=128_000)
-    max_output_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=28_000)
     history_token_ratio: Mapped[float] = mapped_column(Float, nullable=False, default=0.5)
-    compression_target_ratio: Mapped[float] = mapped_column(Float, nullable=False, default=0.1)
     advanced_config_json: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    model_capability_json: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default=RecordStatus.ACTIVE.value, index=True)
 
     user = relationship("User", back_populates="llm_configs")
     provider_config: Mapped[AiLlmProviderConfig] = relationship(back_populates="llm_configs")
     slot_bindings: Mapped[list["AiLlmSlotBinding"]] = relationship(back_populates="llm_config")
 
+    @property
+    def thinking_enabled(self) -> bool:
+        """兼容旧 Python 调用方；数据库唯一事实源为 reasoning_mode。"""
+
+        return self.reasoning_mode == "enabled"
+
+    @thinking_enabled.setter
+    def thinking_enabled(self, value: bool) -> None:
+        """把旧开关写入转换为 enabled/auto。"""
+
+        self.reasoning_mode = "enabled" if value else "auto"
+
+    @property
+    def thinking_effort(self) -> str | None:
+        """兼容旧 Python 调用方读取推理强度。"""
+
+        return self.reasoning_level
+
+    @thinking_effort.setter
+    def thinking_effort(self, value: str | None) -> None:
+        """把旧强度写入转换为平台四档。"""
+
+        normalized = str(value or "").strip().lower()
+        self.reasoning_level = "max" if normalized in {"xhigh", "max", "ultra"} else "low" if normalized == "minimal" else normalized or None
 
 class AiLlmSlotBinding(TimestampMixin, AuditMixin, Base):
     """记录某个用户在固定槽位上绑定的模型配置。"""

@@ -1928,14 +1928,22 @@ def _apply_llm_snapshot(config: AiLlmConfig, snapshot: dict[str, Any]) -> AiLlmC
         "name",
         "model_id",
         "model_type",
-        "thinking_enabled",
-        "thinking_effort",
+        "reasoning_mode",
+        "reasoning_level",
         "supports_image_input",
         "context_window_tokens",
-        "max_output_tokens",
+        "budget_policy_version",
+        "required_model_context_tokens",
+        "request_output_tokens",
+        "runtime_headroom_tokens",
+        "compression_trigger_tokens",
+        "compression_target_tokens",
+        "model_max_output_tokens",
+        "request_max_output_tokens",
         "history_token_ratio",
         "compression_target_ratio",
         "advanced_config_json",
+        "model_capability_json",
     )
     values = {
         "id": config.id,
@@ -1945,7 +1953,25 @@ def _apply_llm_snapshot(config: AiLlmConfig, snapshot: dict[str, Any]) -> AiLlmC
         "provider_config": config.provider_config,
     }
     for field in snapshot_fields:
-        values[field] = snapshot.get(field, getattr(config, field))
+        values[field] = snapshot.get(field, getattr(config, field, None))
+    if "reasoning_mode" not in snapshot and "thinking_enabled" in snapshot:
+        values["reasoning_mode"] = "enabled" if snapshot.get("thinking_enabled") else "auto"
+        values["reasoning_level"] = snapshot.get("thinking_effort") if snapshot.get("thinking_enabled") else None
+    elif values["reasoning_mode"] is None:
+        legacy_enabled = bool(getattr(config, "thinking_enabled", False))
+        values["reasoning_mode"] = "enabled" if legacy_enabled else "auto"
+        values["reasoning_level"] = getattr(config, "thinking_effort", None) if legacy_enabled else None
+    if values["model_max_output_tokens"] is None:
+        values["model_max_output_tokens"] = getattr(config, "max_output_tokens", 65_536)
+    if "request_max_output_tokens" not in snapshot:
+        values["request_max_output_tokens"] = snapshot.get(
+            "max_output_tokens",
+            getattr(config, "request_max_output_tokens", getattr(config, "max_output_tokens", 25_600)),
+        )
+    values["model_capability_json"] = values["model_capability_json"] or {}
+    values["max_output_tokens"] = values["request_max_output_tokens"]
+    values["thinking_enabled"] = values["reasoning_mode"] == "enabled"
+    values["thinking_effort"] = values["reasoning_level"]
     return SimpleNamespace(**values)  # type: ignore[return-value]
 
 

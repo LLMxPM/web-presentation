@@ -50,8 +50,8 @@ describe('AccountAiModelDetail', () => {
       provider_config_id: 10,
       model_id: '',
       model_type: 'image_generation' as const,
-      thinking_enabled: false,
-      thinking_effort: null,
+      reasoning_mode: 'auto' as const,
+      reasoning_level: null,
       supports_image_input: false,
       context_window_tokens: 128000,
     })
@@ -62,6 +62,7 @@ describe('AccountAiModelDetail', () => {
         selectedModel: null,
         mode: 'create',
         currentProvider: imageProvider,
+        resolvedCapability: null,
         providerConfigOptions: [{ value: 10, label: '图片供应商配置' }],
         advancedConfigText: '{}',
         advancedConfigError: '',

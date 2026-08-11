@@ -110,3 +110,20 @@ class AiThinkingMode(str, Enum):
     DASHSCOPE_ENABLE_THINKING = "dashscope_enable_thinking"
     OLLAMA_THINK = "ollama_think"
     GOOGLE_THINKING_LEVEL = "google_thinking_level"
+
+
+class AiReasoningMode(str, Enum):
+    """平台统一的推理启停语义。"""
+
+    AUTO = "auto"
+    DISABLED = "disabled"
+    ENABLED = "enabled"
+
+
+class AiReasoningLevel(str, Enum):
+    """平台面向用户暴露的四档推理强度。"""
+
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+    MAX = "max"

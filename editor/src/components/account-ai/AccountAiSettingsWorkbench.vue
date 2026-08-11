@@ -201,11 +201,28 @@
       </main>
     </div>
 
-    <UiDialog :open="providerDialogOpen" title="供应商配置" size="wide" :show-header="false" @update:open="emit('updateProviderDialogOpen', $event)">
+    <UiDialog :open="providerDialogOpen" :title="providerDialogTitle" :description="providerDialogDescription" size="standard" @update:open="emit('updateProviderDialogOpen', $event)">
+      <template #header-extra>
+        <div v-if="providerMode === 'detail' && selectedProviderConfig?.editable" class="flex items-center gap-1.5">
+          <UiButton variant="ghost" size="sm" @click="emit('startEditProvider')">编辑</UiButton>
+          <UiButton variant="danger" size="sm" :loading="deletingProviderConfigId === selectedProviderConfig.id" @click="emit('deleteProvider', selectedProviderConfig)">删除</UiButton>
+        </div>
+      </template>
       <AccountAiProviderDetail v-bind="providerDetailProps" @cancel="emit('cancelProvider')" @edit="emit('startEditProvider')" @delete-provider="emit('deleteProvider', $event)" @submit="emit('submitProvider')" />
+      <template #footer>
+        <UiButton v-if="providerMode === 'detail'" variant="ghost" size="sm" @click="emit('updateProviderDialogOpen', false)">关闭</UiButton>
+        <UiButton v-else variant="ghost" size="sm" :disabled="savingProviderConfig" @click="providerMode === 'edit' ? emit('cancelProvider') : emit('updateProviderDialogOpen', false)">取消</UiButton>
+        <UiButton v-if="providerMode !== 'detail'" size="sm" :loading="savingProviderConfig" :disabled="!providerCanSubmit" @click="emit('submitProvider')">{{ providerMode === 'edit' ? '保存供应商' : '创建供应商' }}</UiButton>
+      </template>
     </UiDialog>
 
-    <UiDialog :open="modelDialogOpen" title="模型配置" size="wide" :show-header="false" @update:open="emit('updateModelDialogOpen', $event)">
+    <UiDialog :open="modelDialogOpen" :title="modelDialogTitle" :description="modelDialogDescription" size="wide" @update:open="emit('updateModelDialogOpen', $event)">
+      <template #header-extra>
+        <div v-if="modelMode === 'detail' && selectedModel?.editable" class="flex items-center gap-1.5">
+          <UiButton variant="ghost" size="sm" @click="emit('startEditModel')">编辑</UiButton>
+          <UiButton variant="danger" size="sm" :loading="deletingConfigId === selectedModel.id" @click="emit('deleteModel', selectedModel)">删除</UiButton>
+        </div>
+      </template>
       <AccountAiModelDetail
         v-bind="modelDetailProps"
         @cancel="emit('cancelModel')"
@@ -216,6 +233,12 @@
         @update:advanced-config-text="emit('updateAdvancedConfigText', $event)"
         @update:advanced-config-collapsed="emit('updateAdvancedConfigCollapsed', $event)"
       />
+      <template #footer>
+        <UiButton v-if="modelMode === 'detail'" variant="ghost" size="sm" @click="emit('updateModelDialogOpen', false)">关闭</UiButton>
+        <UiButton v-else variant="ghost" size="sm" :disabled="savingConfig" @click="modelMode === 'edit' ? emit('cancelModel') : emit('updateModelDialogOpen', false)">取消</UiButton>
+        <UiButton v-if="modelMode !== 'detail'" variant="ghost" size="sm" :disabled="modelReadOnly" @click="emit('formatAdvanced')">格式化 JSON</UiButton>
+        <UiButton v-if="modelMode !== 'detail'" size="sm" :loading="savingConfig" :disabled="modelReadOnly || !modelCanSubmit" @click="emit('submitModel')">{{ modelMode === 'edit' ? '保存模型' : '创建模型' }}</UiButton>
+      </template>
     </UiDialog>
 
     <UiDialog :open="toolDialogOpen" :title="selectedTool?.label || '工具配置'" description="维护当前工具配置并查看面向 Agent 的完整只读契约。" size="wide" @update:open="emit('updateToolDialogOpen', $event)">
@@ -269,11 +292,11 @@ import PageHeader from '@/components/patterns/PageHeader.vue'
 import SimpleSearchBar from '@/components/patterns/SimpleSearchBar.vue'
 import { UiButton, UiCheckbox, UiCombobox, UiDialog, UiFormField, UiInput, UiSelect, UiTabs } from '@/components/ui'
 import type { SelectOption } from '@/components/ui/select'
-import type { AgentConfigItem, AgentToolConfigItem, LlmConfigItem, LlmProviderCatalogItem, LlmProviderConfigItem, LlmSlotBindingItem } from '@/types/api'
+import type { AgentConfigItem, AgentToolConfigItem, AiReasoningLevel, AiReasoningMode, LlmConfigItem, LlmModelCapabilityItem, LlmProviderCatalogItem, LlmProviderConfigItem, LlmSlotBindingItem } from '@/types/api'
 import type { AiSettingsSection, AssistantSettingsTab, EntityDialogMode } from './account-ai-settings-types'
 
 interface ToolDraft { enabled: boolean; descriptionOverride: string; instructionsOverride: string }
-interface ModelForm { scope: 'global' | 'personal'; name: string; provider_config_id: number | null; model_id: string; model_type: 'chat' | 'image_generation'; thinking_enabled: boolean; thinking_effort: string | null; supports_image_input: boolean; context_window_tokens: number }
+interface ModelForm { scope: 'global' | 'personal'; name: string; provider_config_id: number | null; model_id: string; model_type: 'chat' | 'image_generation'; reasoning_mode: AiReasoningMode; reasoning_level: AiReasoningLevel | null; supports_image_input: boolean; context_window_tokens: number }
 interface ProviderForm { scope: 'global' | 'personal'; name: string; provider_key: string | null; base_url: string; api_key: string }
 
 const props = defineProps<{
@@ -282,7 +305,7 @@ const props = defineProps<{
   slotDrafts: Record<string, number | null>; bindingSlot: string | null; promptDraft: string; promptDirty: boolean; savingPrompt: boolean
   toolDrafts: Record<string, ToolDraft>; savingToolKey: string | null; selectedTool: AgentToolConfigItem | null; toolDialogOpen: boolean
   providerDialogOpen: boolean; providerMode: EntityDialogMode; providerForm: ProviderForm; selectedProviderConfigId: number | null; selectedProviderConfig: LlmProviderConfigItem | null; currentProviderForProviderForm: LlmProviderCatalogItem | null; providerOptions: SelectOption[]; savingProviderConfig: boolean; deletingProviderConfigId: number | null; canCreateGlobal: boolean
-  modelDialogOpen: boolean; modelMode: EntityDialogMode; modelForm: ModelForm; selectedConfigId: number | null; selectedModel: LlmConfigItem | null; currentProvider: LlmProviderCatalogItem | null; providerConfigOptions: SelectOption[]; advancedConfigText: string; advancedConfigError: string; advancedConfigCollapsed: boolean; savingConfig: boolean; deletingConfigId: number | null
+  modelDialogOpen: boolean; modelMode: EntityDialogMode; modelForm: ModelForm; selectedConfigId: number | null; selectedModel: LlmConfigItem | null; currentProvider: LlmProviderCatalogItem | null; resolvedCapability?: LlmModelCapabilityItem | null; providerConfigOptions: SelectOption[]; advancedConfigText: string; advancedConfigError: string; advancedConfigCollapsed: boolean; savingConfig: boolean; deletingConfigId: number | null
 }>()
 
 const emit = defineEmits<{
@@ -360,8 +383,21 @@ function slotOptions(slot: string): SelectOption[] {
   return props.models.filter(item => item.status === 'active').filter(item => slot === 'image_generation' ? item.model_type === 'image_generation' : slot === 'image_understanding' ? (item.model_type ?? 'chat') === 'chat' && item.supports_image_input : (item.model_type ?? 'chat') === 'chat').map(item => ({ label: item.name, value: item.id, description: `${item.provider_config_name} / ${item.model_id}` }))
 }
 
-const providerDetailProps = computed(() => ({ form: props.providerForm, selectedProviderConfigId: props.selectedProviderConfigId, selectedProviderConfig: props.selectedProviderConfig, mode: props.providerMode, currentProvider: props.currentProviderForProviderForm, providerOptions: props.providerOptions, savingProviderConfig: props.savingProviderConfig, deletingProviderConfigId: props.deletingProviderConfigId, canCreateGlobal: props.canCreateGlobal }))
-const modelDetailProps = computed(() => ({ form: props.modelForm, selectedConfigId: props.selectedConfigId, selectedModel: props.selectedModel, mode: props.modelMode, currentProvider: props.currentProvider, providerConfigOptions: props.providerConfigOptions, advancedConfigText: props.advancedConfigText, advancedConfigError: props.advancedConfigError, advancedConfigCollapsed: props.advancedConfigCollapsed, savingConfig: props.savingConfig, deletingConfigId: props.deletingConfigId, canCreateGlobal: props.canCreateGlobal }))
+const providerDetailProps = computed(() => ({ form: props.providerForm, selectedProviderConfigId: props.selectedProviderConfigId, selectedProviderConfig: props.selectedProviderConfig, mode: props.providerMode, currentProvider: props.currentProviderForProviderForm, providerOptions: props.providerOptions, savingProviderConfig: props.savingProviderConfig, deletingProviderConfigId: props.deletingProviderConfigId, canCreateGlobal: props.canCreateGlobal, showPanelHeader: false, showPanelFooter: false, embeddedInDialog: true }))
+const modelDetailProps = computed(() => ({ form: props.modelForm, selectedConfigId: props.selectedConfigId, selectedModel: props.selectedModel, mode: props.modelMode, currentProvider: props.currentProvider, resolvedCapability: props.resolvedCapability ?? null, providerConfigOptions: props.providerConfigOptions, advancedConfigText: props.advancedConfigText, advancedConfigError: props.advancedConfigError, advancedConfigCollapsed: props.advancedConfigCollapsed, savingConfig: props.savingConfig, deletingConfigId: props.deletingConfigId, canCreateGlobal: props.canCreateGlobal, showPanelHeader: false, showPanelFooter: false, embeddedInDialog: true }))
+
+const providerDialogTitle = computed(() => props.providerMode === 'create' ? '新建供应商' : props.providerMode === 'edit' ? '编辑供应商' : props.selectedProviderConfig?.name ?? '供应商详情')
+const providerDialogDescription = computed(() => props.providerMode === 'detail' ? '查看供应商连接、范围和凭证状态。' : '配置供应商协议、服务地址和访问凭证。')
+const modelDialogTitle = computed(() => props.modelMode === 'create' ? '新建模型' : props.modelMode === 'edit' ? '编辑模型' : props.selectedModel?.name ?? '模型详情')
+const modelDialogDescription = computed(() => props.modelMode === 'detail' ? '查看模型能力、请求预算和最终推理策略。' : '选择供应商模型，并配置能力与平台推理策略。')
+const providerCanSubmit = computed(() => Boolean(props.providerForm.name.trim() && props.providerForm.provider_key && (!props.currentProviderForProviderForm?.requires_base_url || props.providerForm.base_url.trim())))
+const modelReadOnly = computed(() => Boolean(props.selectedModel && !props.selectedModel.editable))
+const modelCanSubmit = computed(() => {
+  const modelContext = props.resolvedCapability?.model_context_window_tokens
+  const requiredContext = props.modelForm.context_window_tokens + (props.resolvedCapability?.request_output_tokens ?? 32_768)
+  const contextSupported = !modelContext || requiredContext <= modelContext
+  return Boolean(props.modelForm.name.trim() && props.modelForm.provider_config_id && props.modelForm.model_id.trim() && contextSupported && (!props.currentProvider || (props.currentProvider.supported_model_types ?? ['chat']).includes(props.modelForm.model_type)))
+})
 
 /** 判断工具是否覆盖了系统默认说明。 */
 function customized(tool: AgentToolConfigItem): boolean {

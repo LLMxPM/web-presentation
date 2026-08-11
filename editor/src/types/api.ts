@@ -5,6 +5,8 @@ export type RecordStatus = 'active' | 'archived'
 export type UserRole = 'platform_admin' | 'workspace_user'
 export type AiLlmConfigScope = 'global' | 'personal'
 export type AiModelType = 'chat' | 'image_generation'
+export type AiReasoningMode = 'auto' | 'disabled' | 'enabled'
+export type AiReasoningLevel = 'low' | 'medium' | 'high' | 'max'
 export type PageFileType = 'vue' | 'ts' | 'js' | 'json' | 'md' | 'txt' | 'yaml'
 export type PageVersionStorageType = 'snapshot' | 'diff'
 export type AssetType = 'icon' | 'font' | 'image' | 'video' | 'drawio' | 'mermaid' | 'chart' | 'formula'
@@ -1060,7 +1062,12 @@ export interface AgentContextStatusItem {
   summary: string | null
   topics: string[]
   summary_updated_at: string | null
+  budget_policy_version: string
   context_window_tokens: number
+  required_model_context_tokens: number
+  request_output_tokens: number
+  runtime_headroom_tokens: number
+  compression_trigger_tokens: number
   max_output_tokens: number
   history_token_ratio: number
   compression_target_ratio: number
@@ -1291,17 +1298,62 @@ export interface LlmConfigItem {
   provider_label: string
   model_id: string
   model_type?: AiModelType
+  reasoning_mode: AiReasoningMode
+  reasoning_level: AiReasoningLevel | null
   thinking_enabled: boolean
   thinking_effort: string | null
   supports_image_input: boolean
   context_window_tokens: number
+  required_model_context_tokens: number
+  request_output_tokens: number
+  runtime_headroom_tokens: number
+  compression_trigger_tokens: number
+  compression_target_tokens: number
+  budget_policy_version: string
+  model_max_output_tokens: number
+  request_max_output_tokens: number
   max_output_tokens: number
+  capability_source: 'built_in' | 'provider_default' | 'manual_override' | string
+  capability_verified: boolean
+  model_capability_json: Record<string, unknown>
+  effective_reasoning: EffectiveReasoningItem
   history_token_ratio: number
   compression_target_ratio: number
   advanced_config_json: Record<string, unknown>
   status: RecordStatus
   created_at: string | null
   updated_at: string | null
+}
+
+export interface EffectiveReasoningItem {
+  mode: AiReasoningMode
+  requested_level: AiReasoningLevel | null
+  native_value: string | number | null
+  degraded: boolean
+  message: string
+}
+
+export interface LlmModelCapabilityItem {
+  source: string
+  verified: boolean
+  profile_key: string
+  profile_version: number
+  context_window_tokens: number
+  model_context_window_tokens: number | null
+  model_max_output_tokens: number
+  required_model_context_tokens: number
+  request_output_tokens: number
+  runtime_headroom_tokens: number
+  compression_trigger_tokens: number
+  compression_target_tokens: number
+  budget_policy_version: string
+  request_max_output_tokens: number
+  supports_image_input: boolean
+  supports_reasoning: boolean
+  supports_explicit_disable: boolean
+  default_level: AiReasoningLevel | null
+  level_mapping: Record<AiReasoningLevel, string | number | null>
+  warnings: string[]
 }
 
 export interface LlmProviderConfigItem {

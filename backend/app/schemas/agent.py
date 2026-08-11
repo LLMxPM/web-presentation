@@ -155,7 +155,12 @@ class AgentContextStatusItem(SchemaBase):
     summary: str | None = None
     topics: list[str] = Field(default_factory=list)
     summary_updated_at: str | None = None
+    budget_policy_version: str
     context_window_tokens: int
+    required_model_context_tokens: int
+    request_output_tokens: int
+    runtime_headroom_tokens: int
+    compression_trigger_tokens: int
     max_output_tokens: int
     history_token_ratio: float
     compression_target_ratio: float

@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 
+import tiktoken
 from pydantic_ai.messages import (
     ModelMessage,
     ModelMessagesTypeAdapter,
@@ -26,7 +27,11 @@ from app.ai.context_usage import AgentContextUsageSnapshot, usage_snapshot_from_
 from app.ai.image_history_hydration import hydrate_agent_image_refs
 from app.ai.image_refs import normalize_agent_image_ref, sanitize_message_history_image_refs
 from app.ai.message_history_recovery import recover_run_message_history
-from app.ai.model_budget import CONTEXT_WINDOW_TOKEN_DEFAULT, derive_model_run_budget
+from app.ai.model_budget import (
+    CONTEXT_WINDOW_TOKEN_DEFAULT,
+    derive_legacy_model_run_budget,
+    derive_model_run_budget,
+)
 from app.core.exceptions import AppException
 from app.models.ai_agent_runtime import AiAgentRun, AiAgentSession
 from app.schemas.agent import AgentContextStatusItem
@@ -39,11 +44,13 @@ _SUMMARY_PROMPT_PREFIX = "以下为较早智能体会话历史摘要，已替代
 class AgentHistoryBudget:
     """描述模型上下文窗口、输出预留和压缩触发线。"""
 
+    budget_policy_version: str
     context_window_tokens: int
     max_output_tokens: int
     compression_target_ratio: float
     safety_margin_tokens: int
     context_input_budget_tokens: int
+    compression_trigger_tokens: int
     compression_target_tokens: int
 
 
@@ -163,9 +170,12 @@ class AgentContextLimitProcessor:
     ) -> list[ModelMessage]:
         """按上一轮 input + output 高水位判断是否压缩；不做本地 token 估算。"""
 
-        if self._latest_usage.context_used_tokens <= 0:
+        is_fixed_budget = self._budget.budget_policy_version == "fixed-context-budget.v2"
+        estimated_tokens = _estimate_model_message_tokens(messages) if is_fixed_budget else 0
+        observed_tokens = self._latest_usage.context_used_tokens
+        if not is_fixed_budget and observed_tokens <= 0:
             return messages
-        if self._latest_usage.context_used_tokens < self._budget.context_input_budget_tokens:
+        if max(observed_tokens, estimated_tokens) < self._budget.compression_trigger_tokens:
             return messages
 
         suffix_start = _preserved_suffix_start(messages)
@@ -189,6 +199,8 @@ class AgentContextLimitProcessor:
             raise _context_limit_error()
         summary_messages = _summary_messages_from_checkpoint(checkpoint)
         compressed = [*summary_messages, *suffix]
+        if is_fixed_budget and _estimate_model_message_tokens(compressed) > self._budget.context_input_budget_tokens:
+            raise _context_limit_error()
         self._history_prefix_message_count = len(summary_messages)
         self._history_prefix_run_ids = []
         self._existing_summary = checkpoint
@@ -388,13 +400,41 @@ def build_history_budget(model_config: Any, *, runtime_context: AgentRuntimeCont
         getattr(model_config, "context_window_tokens", None),
         CONTEXT_WINDOW_TOKEN_DEFAULT,
     )
-    derived = derive_model_run_budget(context_window_tokens)
+    policy_version = str(getattr(model_config, "budget_policy_version", "") or "")
+    legacy_output = getattr(model_config, "request_max_output_tokens", None)
+    has_legacy_fields = legacy_output is not None or hasattr(model_config, "max_output_tokens") or hasattr(model_config, "compression_target_ratio")
+    if policy_version:
+        current = derive_model_run_budget(context_window_tokens)
+        output_tokens = _positive_int(getattr(model_config, "request_output_tokens", None), current.max_output_tokens)
+        trigger_tokens = _positive_int(getattr(model_config, "compression_trigger_tokens", None), current.compression_trigger_tokens)
+        target_tokens = _positive_int(getattr(model_config, "compression_target_tokens", None), current.compression_target_tokens)
+        headroom_tokens = _positive_int(getattr(model_config, "runtime_headroom_tokens", None), current.runtime_headroom_tokens)
+        return AgentHistoryBudget(
+            budget_policy_version=policy_version,
+            context_window_tokens=context_window_tokens,
+            max_output_tokens=output_tokens,
+            compression_target_ratio=target_tokens / context_window_tokens,
+            safety_margin_tokens=headroom_tokens,
+            context_input_budget_tokens=context_window_tokens,
+            compression_trigger_tokens=trigger_tokens,
+            compression_target_tokens=target_tokens,
+        )
+    if has_legacy_fields:
+        # 旧实现只按窗口比例派生预算；即使旧对象带有 max_output_tokens，也不参与历史预算恢复。
+        derived = derive_legacy_model_run_budget(context_window_tokens)
+    else:
+        derived = derive_model_run_budget(
+            context_window_tokens,
+            provider_output_limit=getattr(model_config, "request_output_tokens", None),
+        )
     return AgentHistoryBudget(
+        budget_policy_version=derived.budget_policy_version,
         context_window_tokens=derived.context_window_tokens,
         max_output_tokens=derived.max_output_tokens,
         compression_target_ratio=derived.compression_target_ratio,
         safety_margin_tokens=derived.safety_margin_tokens,
         context_input_budget_tokens=derived.context_input_budget_tokens,
+        compression_trigger_tokens=derived.compression_trigger_tokens,
         compression_target_tokens=derived.compression_target_tokens,
     )
 
@@ -532,7 +572,7 @@ def build_context_status_item(
         session_id=session_id,
         agent_id=agent_id,
         compression_enabled=True,
-        compression_required=context_used_tokens >= budget.context_input_budget_tokens if context_used_tokens > 0 else False,
+        compression_required=context_used_tokens >= budget.compression_trigger_tokens if context_used_tokens > 0 else False,
         compression_status=_normalize_compression_status(compression_status, summary_available),
         compression_method=normalized_method,
         compression_error_message=compression_error_message,
@@ -540,7 +580,12 @@ def build_context_status_item(
         summary=str(summary.get("summary") or "") or None,
         topics=[str(item) for item in summary.get("topics", [])] if isinstance(summary.get("topics"), list) else [],
         summary_updated_at=str(summary.get("updated_at") or "") or None,
+        budget_policy_version=budget.budget_policy_version,
         context_window_tokens=budget.context_window_tokens,
+        required_model_context_tokens=budget.context_window_tokens + budget.max_output_tokens,
+        request_output_tokens=budget.max_output_tokens,
+        runtime_headroom_tokens=budget.safety_margin_tokens,
+        compression_trigger_tokens=budget.compression_trigger_tokens,
         max_output_tokens=budget.max_output_tokens,
         history_token_ratio=1.0,
         compression_target_ratio=budget.compression_target_ratio,
@@ -750,6 +795,15 @@ def _positive_int(value: Any, fallback: int) -> int:
     except (TypeError, ValueError):
         return fallback
     return normalized if normalized > 0 else fallback
+
+
+def _estimate_model_message_tokens(messages: list[ModelMessage]) -> int:
+    """使用统一 tokenizer 估算待发送消息，作为供应商请求前的硬预算保护。"""
+
+    dumped = ModelMessagesTypeAdapter.dump_python(messages, mode="json")
+    sanitized = sanitize_message_history_image_refs(dumped)
+    text = json.dumps(sanitized, ensure_ascii=False, default=str)
+    return len(tiktoken.get_encoding("cl100k_base").encode(text))
 
 
 def _context_limit_error() -> AppException:

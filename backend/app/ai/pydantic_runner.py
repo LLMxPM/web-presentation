@@ -533,7 +533,7 @@ class PydanticAgentRunner:
         usage = context_processor.latest_usage
         if usage.context_used_tokens <= 0:
             return
-        if usage.context_used_tokens < context_processor.budget.context_input_budget_tokens:
+        if usage.context_used_tokens < context_processor.budget.compression_trigger_tokens:
             return
         raw_messages = _safe_messages(agent_result) if agent_result is not None else []
         if not raw_messages:

@@ -1,7 +1,7 @@
 <!-- 文件功能：承载账号 AI 设置中的紧凑模型详情、能力参数与高级配置表单。 -->
 <template>
-  <section class="space-y-5 p-5">
-    <header class="flex items-start justify-between gap-4 border-b border-border-muted pb-4">
+  <section class="space-y-5" :class="embeddedInDialog ? '' : 'p-5'">
+    <header v-if="showPanelHeader" class="flex items-start justify-between gap-4 border-b border-border-muted pb-4">
       <div class="min-w-0">
         <h2 class="truncate text-lg font-bold text-text-strong">{{ panelTitle }}</h2>
         <div v-if="mode === 'detail' && selectedModel" class="mt-2 flex flex-wrap gap-2 text-xs font-semibold">
@@ -23,9 +23,12 @@
         <div><dt class="text-xs font-semibold text-text-disabled">模型类型</dt><dd class="mt-1 text-text-emphasis">{{ selectedModel.model_type === 'image_generation' ? '图片生成模型' : '聊天 / 图片理解模型' }}</dd></div>
         <div><dt class="text-xs font-semibold text-text-disabled">供应商配置</dt><dd class="mt-1 font-semibold text-text-strong">{{ selectedModel.provider_config_name }}</dd></div>
         <div><dt class="text-xs font-semibold text-text-disabled">模型 ID</dt><dd class="mt-1 break-all font-mono text-text-emphasis">{{ selectedModel.model_id }}</dd></div>
-        <div v-if="selectedModel.model_type !== 'image_generation'"><dt class="text-xs font-semibold text-text-disabled">上下文窗口</dt><dd class="mt-1 text-text-emphasis">{{ selectedModel.context_window_tokens.toLocaleString() }} tokens</dd></div>
-        <div v-if="selectedModel.model_type !== 'image_generation'"><dt class="text-xs font-semibold text-text-disabled">能力</dt><dd class="mt-1 text-text-emphasis">{{ selectedModel.thinking_enabled ? 'Thinking' : '无 Thinking' }} · {{ selectedModel.supports_image_input ? '支持图片输入' : '不支持图片输入' }}</dd></div>
-        <div v-if="selectedModel.thinking_enabled"><dt class="text-xs font-semibold text-text-disabled">思考强度</dt><dd class="mt-1 text-text-emphasis">{{ selectedModel.thinking_effort || '供应商默认' }}</dd></div>
+        <div v-if="selectedModel.model_type !== 'image_generation'"><dt class="text-xs font-semibold text-text-disabled">平台可用输入窗口</dt><dd class="mt-1 text-text-emphasis">{{ selectedModel.context_window_tokens.toLocaleString() }} tokens</dd></div>
+        <div v-if="selectedModel.model_type !== 'image_generation'"><dt class="text-xs font-semibold text-text-disabled">模型最低总上下文</dt><dd class="mt-1 text-text-emphasis">{{ selectedModel.required_model_context_tokens.toLocaleString() }} tokens</dd></div>
+        <div v-if="selectedModel.model_type !== 'image_generation'"><dt class="text-xs font-semibold text-text-disabled">压缩触发 / 摘要目标</dt><dd class="mt-1 text-text-emphasis">{{ selectedModel.compression_trigger_tokens.toLocaleString() }} / {{ selectedModel.compression_target_tokens.toLocaleString() }} tokens</dd></div>
+        <div v-if="selectedModel.model_type !== 'image_generation'"><dt class="text-xs font-semibold text-text-disabled">能力来源</dt><dd class="mt-1 text-text-emphasis">{{ capabilitySourceLabel(selectedModel.capability_source, selectedModel.capability_verified) }}</dd></div>
+        <div v-if="selectedModel.model_type !== 'image_generation'"><dt class="text-xs font-semibold text-text-disabled">推理策略</dt><dd class="mt-1 text-text-emphasis">{{ reasoningModeLabel(selectedModel.reasoning_mode) }}{{ selectedModel.reasoning_level ? ` · ${selectedModel.reasoning_level}` : '' }}</dd></div>
+        <div v-if="selectedModel.model_type !== 'image_generation'"><dt class="text-xs font-semibold text-text-disabled">最终生效</dt><dd class="mt-1 text-text-emphasis">{{ selectedModel.effective_reasoning?.message || '跟随模型默认。' }}</dd></div>
       </dl>
     </div>
 
@@ -55,21 +58,30 @@
         </UiFormField>
       </div>
 
-      <div v-if="form.model_type === 'chat'" class="grid gap-4 border-t border-border-muted pt-4 md:grid-cols-2">
-        <UiFormField v-slot="field" label="上下文窗口（K）">
-          <UiInput :input-id="field.inputId" :described-by="field.describedBy" :invalid="field.invalid" :model-value="form.context_window_tokens / 1000" type="number" min="128" max="2000" step="1" inputmode="numeric" @update:model-value="value => form.context_window_tokens = (Number(value) || 128) * 1000" />
+      <div v-if="form.model_type === 'chat'" class="space-y-4 border-t border-border-muted pt-4">
+        <UiFormField v-slot="field" label="平台可用输入窗口（K）" required>
+          <UiInput :input-id="field.inputId" :model-value="form.context_window_tokens / 1000" type="number" min="128" max="2000" step="1" required @update:model-value="value => form.context_window_tokens = (Number(value) || 128) * 1000" />
         </UiFormField>
-        <UiFormField v-slot="field" label="思考强度">
-          <UiInput :input-id="field.inputId" :described-by="field.describedBy" :invalid="field.invalid" :model-value="form.thinking_effort ?? ''" placeholder="例如：medium、high" :disabled="!form.thinking_enabled || (currentProvider ? !currentProvider.supports_thinking : false)" @update:model-value="value => form.thinking_effort = String(value).trim() || null" />
+        <div class="grid gap-3 rounded-ui-md border border-border bg-surface-muted p-4 text-xs sm:grid-cols-2 lg:grid-cols-4">
+          <div><span class="block text-text-disabled">模型最低总上下文</span><strong class="mt-1 block text-text-emphasis">{{ effectiveRequiredContextTokens.toLocaleString() }}</strong></div>
+          <div><span class="block text-text-disabled">压缩触发点</span><strong class="mt-1 block text-text-emphasis">{{ effectiveCompressionTriggerTokens.toLocaleString() }}</strong></div>
+          <div><span class="block text-text-disabled">单次输出上限</span><strong class="mt-1 block text-text-emphasis">{{ effectiveRequestOutputTokens.toLocaleString() }}</strong></div>
+          <div><span class="block text-text-disabled">压缩摘要目标</span><strong class="mt-1 block text-text-emphasis">{{ effectiveCompressionTargetTokens.toLocaleString() }}</strong></div>
+          <p class="sm:col-span-2 lg:col-span-4" :class="modelContextUnsupported ? 'text-danger-strong' : 'text-text-muted'">{{ capabilitySummary }}</p>
+        </div>
+        <UiFormField label="推理模式">
+          <UiSegmentedControl :model-value="form.reasoning_mode" :options="reasoningModeOptions" :disabled="currentProvider ? !currentProvider.supports_thinking : false" @update:model-value="handleReasoningModeUpdate" />
         </UiFormField>
-        <label class="flex items-start gap-3 rounded-ui-md border border-border bg-canvas px-4 py-3 text-sm text-text-emphasis">
-          <UiCheckbox :model-value="form.thinking_enabled" :disabled="currentProvider ? !currentProvider.supports_thinking : false" @update:model-value="value => form.thinking_enabled = value === true" />
-          <span><span class="block font-semibold">启用 Thinking</span><span class="mt-1 block text-xs text-text-muted">{{ thinkingEffortHint }}</span></span>
-        </label>
+        <UiFormField v-if="form.reasoning_mode === 'enabled'" label="推理强度">
+          <UiSegmentedControl :model-value="form.reasoning_level ?? 'medium'" :options="reasoningLevelOptions" @update:model-value="handleReasoningLevelUpdate" />
+          <p class="mt-2 text-xs" :class="form.reasoning_level === 'max' ? 'text-warning-strong' : 'text-text-muted'">{{ effectiveReasoningHint }}</p>
+        </UiFormField>
+        <div class="grid gap-4 md:grid-cols-2">
         <label class="flex items-start gap-3 rounded-ui-md border border-border bg-canvas px-4 py-3 text-sm text-text-emphasis">
           <UiCheckbox :model-value="form.supports_image_input" @update:model-value="value => form.supports_image_input = value === true" />
           <span><span class="block font-semibold">支持图片输入</span><span class="mt-1 block text-xs text-text-muted">{{ imageInputHint }}</span></span>
         </label>
+        </div>
       </div>
 
       <dl v-else-if="currentImageModel" class="grid gap-3 border-t border-border-muted pt-4 text-xs sm:grid-cols-2 lg:grid-cols-4">
@@ -87,7 +99,7 @@
       <p class="mt-2 text-xs text-text-muted">{{ advancedParameterHint }}</p>
     </InspectorSection>
 
-    <footer v-if="mode !== 'detail'" class="flex justify-end gap-2 border-t border-border-muted pt-4">
+    <footer v-if="showPanelFooter && mode !== 'detail'" class="flex justify-end gap-2 border-t border-border-muted pt-4">
       <UiButton v-if="mode === 'edit'" variant="ghost" :disabled="savingConfig" @click="emit('cancel')">取消</UiButton>
       <UiButton variant="ghost" :disabled="readOnlyModel" @click="emit('formatAdvanced')">格式化 JSON</UiButton>
       <UiButton :loading="savingConfig" :disabled="readOnlyModel || !canSubmitModel" @click="emit('submit')">{{ mode === 'edit' ? '保存模型' : '创建模型' }}</UiButton>
@@ -98,10 +110,10 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 
-import { UiButton, UiCheckbox, UiCombobox, UiFormField, UiInput, UiSelect } from '@/components/ui'
+import { UiButton, UiCheckbox, UiCombobox, UiFormField, UiInput, UiSegmentedControl, UiSelect } from '@/components/ui'
 import InspectorSection from '@/components/patterns/InspectorSection.vue'
 import type { SelectOption } from '@/components/ui/select'
-import type { AiLlmConfigScope, AiModelType, ImageGenerationModelCatalogItem, LlmConfigItem, LlmProviderCatalogItem } from '@/types/api'
+import type { AiLlmConfigScope, AiModelType, AiReasoningLevel, AiReasoningMode, ImageGenerationModelCatalogItem, LlmConfigItem, LlmModelCapabilityItem, LlmProviderCatalogItem } from '@/types/api'
 
 interface LlmFormState {
   scope: AiLlmConfigScope
@@ -109,8 +121,8 @@ interface LlmFormState {
   provider_config_id: number | null
   model_id: string
   model_type: AiModelType
-  thinking_enabled: boolean
-  thinking_effort: string | null
+  reasoning_mode: AiReasoningMode
+  reasoning_level: AiReasoningLevel | null
   supports_image_input: boolean
   context_window_tokens: number
 }
@@ -123,6 +135,7 @@ const props = defineProps<{
   selectedModel: LlmConfigItem | null
   mode: ConfigPanelMode
   currentProvider: LlmProviderCatalogItem | null
+  resolvedCapability: LlmModelCapabilityItem | null
   providerConfigOptions: SelectOption[]
   advancedConfigText: string
   advancedConfigError: string
@@ -130,6 +143,9 @@ const props = defineProps<{
   savingConfig: boolean
   deletingConfigId: number | null
   canCreateGlobal: boolean
+  showPanelHeader?: boolean
+  showPanelFooter?: boolean
+  embeddedInDialog?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -152,32 +168,36 @@ const collapsedModel = computed({
   set: value => emit('update:advancedConfigCollapsed', value),
 })
 
-const thinkingEffortHint = computed(() => {
-  if (!props.currentProvider?.supports_thinking) {
-    return '当前供应商不支持 thinking。'
+const reasoningModeOptions = computed(() => [
+  { value: 'auto', label: '跟随模型' },
+  { value: 'disabled', label: '关闭推理', disabled: !props.resolvedCapability?.supports_explicit_disable },
+  { value: 'enabled', label: '指定强度', disabled: props.resolvedCapability ? !props.resolvedCapability.supports_reasoning : false },
+])
+const reasoningLevelOptions = [
+  { value: 'low', label: '快速' }, { value: 'medium', label: '均衡' }, { value: 'high', label: '深入' }, { value: 'max', label: '极致' },
+]
+const effectiveReasoningHint = computed(() => {
+  const level = props.form.reasoning_level ?? 'medium'
+  const native = props.resolvedCapability?.level_mapping?.[level]
+  const prefix = level === 'max' ? '极致模式可能显著增加延迟和成本。' : ''
+  return `${prefix}${native === null ? '当前模型只支持推理开关，强度不参与请求。' : `最终生效：${native ?? level}。`}`
+})
+const capabilitySummary = computed(() => {
+  const capability = props.resolvedCapability
+  if (!capability) return '等待识别模型能力。'
+  const source = capabilitySourceLabel(capability.source, capability.verified)
+  if (modelContextUnsupported.value) {
+    return `${source} · 模型档案仅支持 ${capability.model_context_window_tokens?.toLocaleString()} tokens，总上下文不足。`
   }
-  if (!props.form.thinking_enabled) {
-    return '开启思考后才会向模型传递强度参数。'
-  }
-  if (props.currentProvider.thinking_mode === 'dashscope_enable_thinking') {
-    return 'DashScope 的 low / medium / high 会映射为 thinking_budget；其他值会按默认预算处理。'
-  }
-  if (props.currentProvider.thinking_mode === 'google_thinking_level') {
-    return 'Google Gemini 会映射为 thinking_level。'
-  }
-  if (props.currentProvider.thinking_mode === 'openrouter_reasoning') {
-    return 'OpenRouter 会映射为 openrouter_reasoning.effort。'
-  }
-  if (props.currentProvider.thinking_mode === 'ollama_think') {
-    return 'Ollama 会映射到 extra_body.think。'
-  }
-  if (props.currentProvider.thinking_mode === 'openai_extra_body_thinking') {
-    if (props.currentProvider.provider_key === 'deepseek') {
-      return 'DeepSeek 会写入 extra_body.thinking.type；强度仅使用 high / max，历史 low / medium 会兼容为 high，xhigh 会兼容为 max。'
-    }
-    return 'MiMo 会写入 extra_body.thinking.type；思考强度不参与请求参数。'
-  }
-  return 'OpenAI 兼容供应商会映射为 Pydantic AI reasoning settings。'
+  return `${source}${capability.warnings.length ? ` · ${capability.warnings.join('；')}` : ' · 当前预算满足模型能力。'}`
+})
+const effectiveRequestOutputTokens = computed(() => props.resolvedCapability?.request_output_tokens ?? props.selectedModel?.request_output_tokens ?? 32_768)
+const effectiveRequiredContextTokens = computed(() => props.form.context_window_tokens + effectiveRequestOutputTokens.value)
+const effectiveCompressionTriggerTokens = computed(() => Math.max(0, props.form.context_window_tokens - 32_768))
+const effectiveCompressionTargetTokens = computed(() => props.resolvedCapability?.compression_target_tokens ?? props.selectedModel?.compression_target_tokens ?? 16_384)
+const modelContextUnsupported = computed(() => {
+  const total = props.resolvedCapability?.model_context_window_tokens
+  return Boolean(total && effectiveRequiredContextTokens.value > total)
 })
 
 const imageInputHint = computed(() => {
@@ -216,10 +236,10 @@ const currentImageModel = computed<ImageGenerationModelCatalogItem | null>(() =>
 })
 const advancedParameterPlaceholder = computed(() => props.form.model_type === 'image_generation'
   ? JSON.stringify(currentImageModel.value?.advanced_defaults ?? {}, null, 2)
-  : '{"temperature":0.2,"openai_reasoning_effort":"medium"}')
+  : '{"temperature":0.2}')
 const advancedParameterHint = computed(() => {
   if (props.form.model_type !== 'image_generation') {
-    return '历史上下文超过预算后会自动摘要；高级配置不能覆盖 id / provider / api_key / base_url / client / async_client / http_client 等受管字段。'
+    return '历史上下文超过预算后会自动摘要；推理模式、强度和输出预算属于受管字段，不能在 JSON 中重复配置。'
   }
   const properties = currentImageModel.value?.advanced_schema?.properties
   const keys = properties && typeof properties === 'object' ? Object.keys(properties) : []
@@ -275,6 +295,7 @@ const canSubmitModel = computed(() => Boolean(
   props.form.name.trim()
   && props.form.provider_config_id
   && props.form.model_id.trim()
+  && !modelContextUnsupported.value
   && (!props.currentProvider || (props.currentProvider.supported_model_types ?? ['chat']).includes(props.form.model_type)),
 ))
 const panelTitle = computed(() => {
@@ -282,4 +303,26 @@ const panelTitle = computed(() => {
   if (props.mode === 'detail') return props.selectedModel?.name ?? '模型详情'
   return readOnlyModel.value ? '查看模型' : '编辑模型'
 })
+
+/** 更新推理三态，并维护档位字段的组合约束。 */
+function handleReasoningModeUpdate(value: string) {
+  props.form.reasoning_mode = value as AiReasoningMode
+  props.form.reasoning_level = value === 'enabled' ? props.form.reasoning_level ?? 'medium' : null
+}
+
+/** 更新平台四档推理强度。 */
+function handleReasoningLevelUpdate(value: string) {
+  props.form.reasoning_level = value as AiReasoningLevel
+}
+
+/** 返回能力来源的用户可读名称。 */
+function capabilitySourceLabel(source: string, verified: boolean) {
+  const labels: Record<string, string> = { built_in: '内置模型档案', provider_default: '供应商默认', manual_override: '手工覆盖' }
+  return `${labels[source] ?? source}${verified ? '' : ' · 未验证'}`
+}
+
+/** 返回推理三态的用户可读名称。 */
+function reasoningModeLabel(mode: AiReasoningMode) {
+  return ({ auto: '跟随模型', disabled: '关闭推理', enabled: '指定强度' } as const)[mode]
+}
 </script>

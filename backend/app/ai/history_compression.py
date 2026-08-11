@@ -9,6 +9,8 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 
+import tiktoken
+
 from pydantic_ai import Agent
 from pydantic_ai.messages import ModelMessage, ModelMessagesTypeAdapter
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -157,8 +159,19 @@ class HistoryCompressionService:
     ) -> HistoryCompressionResult:
         """优先调用模型摘要；模型失败时使用确定性摘要兜底。"""
 
+        # 极小窗口的旧比例快照可能把摘要目标压到 0；保留旧实现的最小可读摘要语义。
+        effective_target_tokens = (
+            target_tokens
+            if self._budget.budget_policy_version == "fixed-context-budget.v2"
+            else max(256, target_tokens)
+        )
+
         try:
-            summary = await self._model_summary(prefix=prefix, existing_summary=existing_summary, target_tokens=target_tokens)
+            summary = await self._model_summary(
+                prefix=prefix,
+                existing_summary=existing_summary,
+                target_tokens=effective_target_tokens,
+            )
             method = "model"
         except Exception as exc:  # noqa: BLE001
             logger.warning(
@@ -173,7 +186,7 @@ class HistoryCompressionService:
             summary = build_deterministic_summary(
                 prefix,
                 existing_summary=existing_summary,
-                target_tokens=target_tokens,
+                target_tokens=effective_target_tokens,
             )
             method = "deterministic_fallback"
         checkpoint = await self._build_checkpoint(
@@ -194,12 +207,38 @@ class HistoryCompressionService:
     ) -> str:
         """调用当前 Agent 绑定模型生成中文历史摘要。"""
 
-        history_text = _history_json_text(prefix, target_tokens=target_tokens)
+        history_text = _history_json_text(prefix)
         previous_summary = str((existing_summary or {}).get("summary") or "").strip() or "（无）"
-        prompt = _MODEL_USER_PROMPT_TEMPLATE.format(
-            previous_summary=previous_summary,
-            history_json=history_text,
-        )
+        chunks = _split_text_by_tokens(history_text, max_tokens=48_000)
+        if len(chunks) == 1:
+            summary = await self._run_summary_prompt(
+                previous_summary=previous_summary,
+                history_text=chunks[0],
+                target_tokens=target_tokens,
+            )
+        else:
+            chunk_target = max(512, target_tokens // len(chunks))
+            partials = [
+                await self._run_summary_prompt(
+                    previous_summary="（分块摘要阶段不合并既有摘要）",
+                    history_text=chunk,
+                    target_tokens=chunk_target,
+                )
+                for chunk in chunks
+            ]
+            summary = await self._run_summary_prompt(
+                previous_summary=previous_summary,
+                history_text="\n\n".join(f"分块 {index + 1}：\n{item}" for index, item in enumerate(partials)),
+                target_tokens=target_tokens,
+            )
+        if not summary:
+            raise RuntimeError("模型压缩返回空摘要。")
+        return _truncate_text_by_tokens(summary, target_tokens)
+
+    async def _run_summary_prompt(self, *, previous_summary: str, history_text: str, target_tokens: int) -> str:
+        """执行一次摘要请求，调用方负责分块与最终合并。"""
+
+        prompt = _MODEL_USER_PROMPT_TEMPLATE.format(previous_summary=previous_summary, history_json=history_text)
         settings = dict(self._model_settings)
         settings["max_tokens"] = max(1, int(target_tokens or 1))
         agent = Agent(
@@ -209,10 +248,7 @@ class HistoryCompressionService:
             system_prompt=_MODEL_SYSTEM_PROMPT,
         )
         result = await agent.run(prompt, model_settings=settings or None, infer_name=False)
-        summary = str(getattr(result, "output", "") or "").strip()
-        if not summary:
-            raise RuntimeError("模型压缩返回空摘要。")
-        return summary[: max(600, target_tokens * 3)]
+        return str(getattr(result, "output", "") or "").strip()
 
     async def _build_checkpoint(
         self,
@@ -311,22 +347,47 @@ def build_deterministic_summary(
     """生成确定性摘要文本，作为模型压缩失败时的兜底。"""
 
     previous = str((existing_summary or {}).get("summary") or "").strip()
-    text = _history_json_text(messages, target_tokens=target_tokens)
+    text = _history_json_text(messages)
     prefix = f"既有摘要：\n{previous}\n\n" if previous else ""
-    limit = max(600, target_tokens * 3)
-    return (prefix + "原始历史压缩摘录：\n" + text)[:limit]
+    return _truncate_text_by_tokens(prefix + "原始历史压缩摘录：\n" + text, target_tokens)
 
 
-def _history_json_text(messages: list[ModelMessage], *, target_tokens: int) -> str:
-    """把模型消息转为清洗后的 JSON 文本，限制输入长度以保护压缩调用。"""
+def _history_json_text(messages: list[ModelMessage]) -> str:
+    """把全部模型消息转为清洗后的 JSON 文本，分块由调用方负责。"""
 
     dumped = ModelMessagesTypeAdapter.dump_python(messages, mode="json")
     sanitized = sanitize_message_history_image_refs(dumped)
-    text = json.dumps(sanitized, ensure_ascii=False, default=str)
-    limit = max(12_000, int(target_tokens or 1) * 6)
-    if len(text) <= limit:
-        return text
-    return f"{text[:limit]}\n...[历史过长，已截断用于摘要压缩]"
+    return json.dumps(sanitized, ensure_ascii=False, default=str)
+
+
+def _split_text_by_tokens(text: str, *, max_tokens: int) -> list[str]:
+    """按 tokenizer 分割文本并完整保留内容，避免长历史按字符截断。"""
+
+    encoding = tiktoken.get_encoding("cl100k_base")
+    tokens = encoding.encode(text)
+    size = max(1, int(max_tokens))
+    if not tokens:
+        return [""]
+    decoded, offsets = encoding.decode_with_offsets(tokens)
+    chunks: list[str] = []
+    token_start = 0
+    while token_start < len(tokens):
+        token_end = min(token_start + size, len(tokens))
+        # 单个 Unicode 字符可能跨多个 token；向后移动到字符边界，避免产生替换字符。
+        while token_end < len(tokens) and offsets[token_end] <= offsets[token_end - 1]:
+            token_end += 1
+        char_start = offsets[token_start]
+        char_end = offsets[token_end] if token_end < len(tokens) else len(decoded)
+        chunks.append(decoded[char_start:char_end])
+        token_start = token_end
+    return chunks
+
+
+def _truncate_text_by_tokens(text: str, max_tokens: int) -> str:
+    """把摘要输出限制到目标 token 数，避免字符长度与 token 数失配。"""
+
+    encoding = tiktoken.get_encoding("cl100k_base")
+    return encoding.decode(encoding.encode(text)[: max(1, int(max_tokens))])
 
 
 def _build_in_memory_checkpoint(

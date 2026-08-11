@@ -4,23 +4,23 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.ai.model_budget import (
-    COMPRESSION_TARGET_RATIO,
+    COMPRESSION_TARGET_TOKENS,
     CONTEXT_WINDOW_TOKEN_DEFAULT,
     CONTEXT_WINDOW_TOKEN_MAX,
     CONTEXT_WINDOW_TOKEN_MIN,
     derive_model_run_budget,
 )
-from app.models.enums import AiLlmConfigScope, AiModelType
+from app.models.enums import AiLlmConfigScope, AiModelType, AiReasoningLevel, AiReasoningMode
 from app.schemas.common import SchemaBase
 
 LLM_CONTEXT_WINDOW_TOKEN_MAX = CONTEXT_WINDOW_TOKEN_MAX
 LLM_CONTEXT_WINDOW_TOKEN_MIN = CONTEXT_WINDOW_TOKEN_MIN
 LLM_CONTEXT_WINDOW_TOKEN_DEFAULT = CONTEXT_WINDOW_TOKEN_DEFAULT
 LLM_MAX_OUTPUT_TOKEN_DEFAULT = derive_model_run_budget(CONTEXT_WINDOW_TOKEN_DEFAULT).max_output_tokens
-LLM_COMPRESSION_TARGET_RATIO_DEFAULT = COMPRESSION_TARGET_RATIO
+LLM_COMPRESSION_TARGET_TOKEN_DEFAULT = COMPRESSION_TARGET_TOKENS
 
 
 class LlmProviderCatalogItem(SchemaBase):
@@ -65,13 +65,27 @@ class LlmConfigItem(SchemaBase):
     provider_label: str
     model_id: str
     model_type: AiModelType = AiModelType.CHAT
-    thinking_enabled: bool
-    thinking_effort: str | None = None
+    reasoning_mode: AiReasoningMode
+    reasoning_level: AiReasoningLevel | None = None
+    thinking_enabled: bool = Field(default=False, deprecated=True)
+    thinking_effort: str | None = Field(default=None, deprecated=True)
     supports_image_input: bool
-    context_window_tokens: int
-    max_output_tokens: int
+    context_window_tokens: int = Field(description="平台允许供应商请求使用的最大输入 tokens。")
+    required_model_context_tokens: int
+    request_output_tokens: int
+    runtime_headroom_tokens: int
+    compression_trigger_tokens: int
+    compression_target_tokens: int
+    budget_policy_version: str
+    model_max_output_tokens: int = Field(deprecated=True)
+    request_max_output_tokens: int = Field(deprecated=True)
+    max_output_tokens: int = Field(deprecated=True)
+    capability_source: str
+    capability_verified: bool
+    model_capability_json: dict[str, Any] = Field(default_factory=dict)
+    effective_reasoning: dict[str, Any] = Field(default_factory=dict)
     history_token_ratio: float
-    compression_target_ratio: float
+    compression_target_ratio: float = Field(deprecated=True)
     advanced_config_json: dict[str, Any] = Field(default_factory=dict)
     status: str
     created_at: str | None = None
@@ -123,11 +137,21 @@ class LlmConfigCreateRequest(BaseModel):
     provider_config_id: int = Field(ge=1)
     model_id: str = Field(min_length=1, max_length=255)
     model_type: AiModelType = AiModelType.CHAT
-    thinking_enabled: bool = False
-    thinking_effort: str | None = Field(default=None, max_length=64)
+    reasoning_mode: AiReasoningMode | None = None
+    reasoning_level: AiReasoningLevel | None = None
+    thinking_enabled: bool | None = Field(default=None, deprecated=True)
+    thinking_effort: str | None = Field(default=None, max_length=64, deprecated=True)
     supports_image_input: bool = False
-    context_window_tokens: int = Field(default=LLM_CONTEXT_WINDOW_TOKEN_DEFAULT, ge=LLM_CONTEXT_WINDOW_TOKEN_MIN, le=LLM_CONTEXT_WINDOW_TOKEN_MAX)
+    context_window_tokens: int | None = Field(default=None, ge=LLM_CONTEXT_WINDOW_TOKEN_MIN, le=LLM_CONTEXT_WINDOW_TOKEN_MAX, description="平台可用输入窗口 tokens；省略时采用能力解析建议值。")
+    model_capability_override: dict[str, Any] | None = None
     advanced_config_json: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def normalize_reasoning_contract(self) -> "LlmConfigCreateRequest":
+        """兼容旧字段并确保三态与四档组合有效。"""
+
+        _normalize_reasoning_request(self)
+        return self
 
     @field_validator("advanced_config_json")
     @classmethod
@@ -145,12 +169,22 @@ class LlmConfigUpdateRequest(BaseModel):
     provider_config_id: int | None = Field(default=None, ge=1)
     model_id: str | None = Field(default=None, min_length=1, max_length=255)
     model_type: AiModelType | None = None
-    thinking_enabled: bool | None = None
-    thinking_effort: str | None = Field(default=None, max_length=64)
+    reasoning_mode: AiReasoningMode | None = None
+    reasoning_level: AiReasoningLevel | None = None
+    thinking_enabled: bool | None = Field(default=None, deprecated=True)
+    thinking_effort: str | None = Field(default=None, max_length=64, deprecated=True)
     supports_image_input: bool | None = None
-    context_window_tokens: int | None = Field(default=None, ge=LLM_CONTEXT_WINDOW_TOKEN_MIN, le=LLM_CONTEXT_WINDOW_TOKEN_MAX)
+    context_window_tokens: int | None = Field(default=None, ge=LLM_CONTEXT_WINDOW_TOKEN_MIN, le=LLM_CONTEXT_WINDOW_TOKEN_MAX, description="平台可用输入窗口 tokens。")
+    model_capability_override: dict[str, Any] | None = None
     advanced_config_json: dict[str, Any] | None = None
     status: str | None = Field(default=None, pattern="^(active|archived)$")
+
+    @model_validator(mode="after")
+    def normalize_reasoning_contract(self) -> "LlmConfigUpdateRequest":
+        """兼容旧字段并拒绝新旧推理字段混用。"""
+
+        _normalize_reasoning_request(self, partial=True)
+        return self
 
     @field_validator("advanced_config_json")
     @classmethod
@@ -188,3 +222,65 @@ class LlmProviderConfigUpdateRequest(BaseModel):
     base_url: str | None = Field(default=None, max_length=1024)
     api_key: str | None = Field(default=None, max_length=4096)
     status: str | None = Field(default=None, pattern="^(active|archived)$")
+
+
+class LlmModelCapabilityResolveRequest(BaseModel):
+    """请求解析指定供应商配置与模型 ID 的能力。"""
+
+    provider_config_id: int = Field(ge=1)
+    model_id: str = Field(min_length=1, max_length=255)
+    override: dict[str, Any] | None = None
+
+
+class LlmModelCapabilityItem(SchemaBase):
+    """返回模型能力、来源和平台四档的实际映射。"""
+
+    source: str
+    verified: bool
+    profile_key: str
+    profile_version: int
+    context_window_tokens: int
+    model_context_window_tokens: int | None = None
+    model_max_output_tokens: int
+    required_model_context_tokens: int
+    request_output_tokens: int
+    runtime_headroom_tokens: int
+    compression_trigger_tokens: int
+    compression_target_tokens: int
+    budget_policy_version: str
+    request_max_output_tokens: int = Field(deprecated=True)
+    supports_image_input: bool
+    supports_reasoning: bool
+    supports_explicit_disable: bool
+    default_level: str | None = None
+    level_mapping: dict[str, str | int | None] = Field(default_factory=dict)
+    warnings: list[str] = Field(default_factory=list)
+
+
+def _normalize_reasoning_request(value: Any, *, partial: bool = False) -> None:
+    """把旧 thinking 字段转换为新契约，并拒绝同一请求混用两套字段。"""
+
+    fields = value.model_fields_set
+    uses_new = bool({"reasoning_mode", "reasoning_level"} & fields)
+    uses_legacy = bool({"thinking_enabled", "thinking_effort"} & fields)
+    if uses_new and uses_legacy:
+        raise ValueError("reasoning_mode/reasoning_level 不能与旧 thinking 字段同时提交。")
+    if uses_legacy:
+        enabled = bool(value.__dict__.get("thinking_enabled"))
+        effort = str(value.__dict__.get("thinking_effort") or "").strip().lower()
+        if not enabled:
+            value.reasoning_mode = AiReasoningMode.AUTO
+            value.reasoning_level = None
+        elif effort in {"none", "off", "disabled"}:
+            value.reasoning_mode = AiReasoningMode.DISABLED
+            value.reasoning_level = None
+        else:
+            value.reasoning_mode = AiReasoningMode.ENABLED
+            normalized = "low" if effort == "minimal" else "max" if effort in {"xhigh", "max", "ultra"} else effort
+            value.reasoning_level = AiReasoningLevel(normalized if normalized in {item.value for item in AiReasoningLevel} else "medium")
+    elif not partial and value.reasoning_mode is None:
+        value.reasoning_mode = AiReasoningMode.AUTO
+    if value.reasoning_mode == AiReasoningMode.ENABLED and value.reasoning_level is None:
+        value.reasoning_level = AiReasoningLevel.MEDIUM
+    if value.reasoning_mode in {AiReasoningMode.AUTO, AiReasoningMode.DISABLED}:
+        value.reasoning_level = None

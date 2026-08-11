@@ -19,6 +19,7 @@ const createLlmConfigMock = vi.fn()
 const updateLlmConfigMock = vi.fn()
 const deleteLlmConfigMock = vi.fn()
 const updateLlmSlotBindingMock = vi.fn()
+const resolveLlmModelCapabilityMock = vi.fn()
 const listAgentCatalogMock = vi.fn()
 const listAgentConfigsMock = vi.fn()
 const updateAgentConfigMock = vi.fn()
@@ -47,6 +48,7 @@ vi.mock('@/api/llm', () => ({
   updateLlmConfig: (...args: unknown[]) => updateLlmConfigMock(...args),
   deleteLlmConfig: (...args: unknown[]) => deleteLlmConfigMock(...args),
   updateLlmSlotBinding: (...args: unknown[]) => updateLlmSlotBindingMock(...args),
+  resolveLlmModelCapability: (...args: unknown[]) => resolveLlmModelCapabilityMock(...args),
 }))
 
 vi.mock('@/api/agent-config', () => ({
@@ -180,8 +182,12 @@ function createLlmConfigItem(overrides: Record<string, unknown> = {}) {
     model_id: 'gpt-4.1-mini',
     thinking_enabled: true,
     thinking_effort: 'medium',
+    reasoning_mode: 'enabled',
+    reasoning_level: 'medium',
     supports_image_input: true,
     context_window_tokens: 128000,
+    model_max_output_tokens: 32000,
+    request_max_output_tokens: 25600,
     max_output_tokens: 28000,
     history_token_ratio: 0.5,
     compression_target_ratio: 0.1,
@@ -337,6 +343,21 @@ describe('AccountAiSettingsView', () => {
     updateAgentConfigMock.mockResolvedValue(agentConfig)
     updateAgentToolConfigMock.mockResolvedValue(agentConfig)
     createConfirmMock.mockResolvedValue(true)
+    resolveLlmModelCapabilityMock.mockResolvedValue({
+      source: 'built_in',
+      verified: true,
+      profile_key: 'openai:gpt-4.1',
+      profile_version: 1,
+      context_window_tokens: 1_000_000,
+      model_max_output_tokens: 32_768,
+      request_max_output_tokens: 32_768,
+      supports_image_input: true,
+      supports_reasoning: true,
+      supports_explicit_disable: true,
+      default_level: 'medium',
+      level_mapping: { low: 'low', medium: 'medium', high: 'high', max: 'high' },
+      warnings: [],
+    })
   })
 
   it('默认进入内容助手并使用管理后台导航', async () => {
@@ -400,9 +421,23 @@ describe('AccountAiSettingsView', () => {
 
     await fireEvent.click(screen.getByRole('button', { name: '新建模型' }))
     expect(await screen.findByRole('heading', { name: '新建模型' })).toBeTruthy()
+    expect(screen.getByText('选择供应商模型，并配置能力与平台推理策略。')).toBeTruthy()
+    expect(screen.getByRole('button', { name: '关闭新建模型' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: '取消' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: '创建模型' })).toBeTruthy()
+    await fireEvent.click(screen.getByRole('button', { name: '关闭新建模型' }))
+    expect(createConfirmMock).not.toHaveBeenCalled()
+    await fireEvent.click(screen.getByRole('button', { name: '新建模型' }))
     expect(screen.getByLabelText(/^模型名称/)).toBeTruthy()
     expect(screen.getByLabelText(/^模型 ID/)).toBeTruthy()
     expect(screen.queryByText('平台会自动预留 20% 输出空间')).toBeNull()
+    expect(screen.getByRole('radio', { name: '跟随模型' })).toBeChecked()
+
+    await fireEvent.click(screen.getByRole('radio', { name: '指定强度' }))
+    expect(screen.getByRole('radio', { name: '快速' })).toBeTruthy()
+    expect(screen.getByRole('radio', { name: '均衡' })).toBeTruthy()
+    expect(screen.getByRole('radio', { name: '深入' })).toBeTruthy()
+    expect(screen.getByRole('radio', { name: '极致' })).toBeTruthy()
   })
 
   it('供应商管理应使用表格，并支持详情进入紧凑编辑表单', async () => {
@@ -412,6 +447,15 @@ describe('AccountAiSettingsView', () => {
     await fireEvent.click(getDesktopNavigationButton(/供应商管理/))
     await waitFor(() => expect(screen.getByRole('heading', { name: '供应商管理' })).toBeTruthy())
     expect(screen.getByRole('columnheader', { name: '连接状态' })).toBeTruthy()
+
+    await fireEvent.click(screen.getByRole('button', { name: '新建供应商' }))
+    expect(await screen.findByRole('heading', { name: '新建供应商' })).toBeTruthy()
+    expect(screen.getByText('配置供应商协议、服务地址和访问凭证。')).toBeTruthy()
+    expect(screen.getByRole('button', { name: '关闭新建供应商' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: '取消' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: '创建供应商' })).toBeTruthy()
+    await fireEvent.click(screen.getByRole('button', { name: '关闭新建供应商' }))
+    expect(createConfirmMock).not.toHaveBeenCalled()
 
     const providerRow = screen.getByRole('row', { name: /OpenAI 工作账号.*OpenAI/ })
     await fireEvent.click(within(providerRow).getByRole('button', { name: '查看' }))

@@ -33,6 +33,7 @@
     :selected-config-id="selectedConfigId"
     :selected-model="selectedModel"
     :current-provider="currentProvider"
+    :resolved-capability="resolvedCapability"
     :provider-config-options="providerConfigOptions"
     :advanced-config-text="advancedConfigText"
     :advanced-config-error="advancedConfigError"
@@ -88,6 +89,7 @@ import {
   listLlmConfigs,
   listLlmProviderConfigs,
   listLlmProviders,
+  resolveLlmModelCapability,
   listLlmSlots,
   updateLlmConfig,
   updateLlmProviderConfig,
@@ -107,9 +109,12 @@ import { useAuthStore } from '@/stores/auth'
 import type {
   AiLlmConfigScope,
   AiModelType,
+  AiReasoningLevel,
+  AiReasoningMode,
   AgentConfigItem,
   AgentToolConfigItem,
   LlmConfigItem,
+  LlmModelCapabilityItem,
   LlmProviderCatalogItem,
   LlmProviderConfigItem,
 } from '@/types/api'
@@ -119,7 +124,7 @@ type ActiveSection = 'agents' | 'providers' | 'models'
 type ActiveAgentPanel = 'binding' | 'prompts' | 'tools'
 type ConfigPanelMode = 'create' | 'detail' | 'edit'
 
-const DEFAULT_CONTEXT_WINDOW_TOKENS = 128000
+const DEFAULT_CONTEXT_WINDOW_TOKENS = 200000
 const DEFAULT_NEW_MODEL_PROVIDER_KEY = 'deepseek'
 
 interface LlmFormState {
@@ -128,8 +133,8 @@ interface LlmFormState {
   provider_config_id: number | null
   model_id: string
   model_type: AiModelType
-  thinking_enabled: boolean
-  thinking_effort: string | null
+  reasoning_mode: AiReasoningMode
+  reasoning_level: AiReasoningLevel | null
   supports_image_input: boolean
   context_window_tokens: number
 }
@@ -192,11 +197,14 @@ const modelForm = reactive<LlmFormState>({
   provider_config_id: null,
   model_id: '',
   model_type: 'chat',
-  thinking_enabled: false,
-  thinking_effort: null,
+  reasoning_mode: 'auto',
+  reasoning_level: null,
   supports_image_input: false,
   context_window_tokens: DEFAULT_CONTEXT_WINDOW_TOKENS,
 })
+
+const resolvedCapability = ref<LlmModelCapabilityItem | null>(null)
+let capabilityRequestSequence = 0
 
 const providerForm = reactive<LlmProviderFormState>({
   scope: 'personal',
@@ -317,8 +325,8 @@ watch(
       ? provider?.default_image_generation_model_id ?? ''
       : provider?.default_model_id ?? ''
     if (modelType === 'image_generation') {
-      modelForm.thinking_enabled = false
-      modelForm.thinking_effort = null
+      modelForm.reasoning_mode = 'auto'
+      modelForm.reasoning_level = null
       modelForm.supports_image_input = false
     }
   },
@@ -351,6 +359,37 @@ watch(
     }
     if (!items.some(item => item.id === selectedAgentId.value)) {
       selectedAgentId.value = items[0].id
+    }
+  },
+  { immediate: true },
+)
+
+watch(
+  () => [modelForm.provider_config_id, modelForm.model_id, modelForm.model_type] as const,
+  async ([providerConfigId, modelId, modelType]) => {
+    const sequence = ++capabilityRequestSequence
+    const shouldApplyResolvedDefaults = !applyingExistingModel.value
+    if (modelType !== 'chat' || !providerConfigId || !modelId.trim()) {
+      resolvedCapability.value = null
+      return
+    }
+    try {
+      const capability = await resolveLlmModelCapability(providerConfigId, modelId.trim())
+      if (sequence !== capabilityRequestSequence) return
+      resolvedCapability.value = capability
+      if (shouldApplyResolvedDefaults) {
+        modelForm.context_window_tokens = capability.context_window_tokens
+        modelForm.supports_image_input = capability.supports_image_input
+        syncResolvedCapabilityIntoBaseline(capability)
+      }
+      if (!capability.supports_reasoning) {
+        modelForm.reasoning_mode = 'auto'
+        modelForm.reasoning_level = null
+      } else if (modelForm.reasoning_mode === 'disabled' && !capability.supports_explicit_disable) {
+        modelForm.reasoning_mode = 'auto'
+      }
+    } catch {
+      if (sequence === capabilityRequestSequence) resolvedCapability.value = null
     }
   },
   { immediate: true },
@@ -485,18 +524,11 @@ watch(
         : provider.default_model_id ?? ''
     }
     if (!provider.supports_thinking) {
-      modelForm.thinking_enabled = false
-      modelForm.thinking_effort = null
-    } else {
-      if (
-        providerConfigId !== previousProviderConfigId
-        && modelForm.thinking_enabled === findProviderDefaultThinkingEnabled(previousProviderKey)
-      ) {
-        modelForm.thinking_enabled = provider.default_thinking_enabled
-      }
-      if (!modelForm.thinking_effort || modelForm.thinking_effort === findProviderDefaultThinkingEffort(previousProviderKey)) {
-        modelForm.thinking_effort = provider.default_thinking_effort ?? null
-      }
+      modelForm.reasoning_mode = 'auto'
+      modelForm.reasoning_level = null
+    } else if (providerConfigId !== previousProviderConfigId && !applyingExistingModel.value) {
+      modelForm.reasoning_mode = 'auto'
+      modelForm.reasoning_level = null
     }
     if (
       providerConfigId !== previousProviderConfigId
@@ -508,7 +540,7 @@ watch(
       providerConfigId !== previousProviderConfigId
       && shouldReplaceContextWindowDefault(modelForm.context_window_tokens, previousProviderKey)
     ) {
-      modelForm.context_window_tokens = provider.default_context_window_tokens ?? DEFAULT_CONTEXT_WINDOW_TOKENS
+      modelForm.context_window_tokens = DEFAULT_CONTEXT_WINDOW_TOKENS
     }
     if (advancedConfigText.value.trim() === '{}' && Object.keys(provider.advanced_json_hint ?? {}).length > 0) {
       advancedConfigText.value = JSON.stringify(provider.advanced_json_hint, null, 2)
@@ -526,10 +558,10 @@ function prefillModelFormFromProvider(provider: LlmProviderCatalogItem | null) {
   modelForm.model_id = modelForm.model_type === 'image_generation'
     ? provider?.default_image_generation_model_id ?? ''
     : provider?.default_model_id ?? ''
-  modelForm.thinking_enabled = Boolean(provider?.supports_thinking && provider.default_thinking_enabled)
-  modelForm.thinking_effort = provider?.supports_thinking ? provider.default_thinking_effort ?? null : null
+  modelForm.reasoning_mode = 'auto'
+  modelForm.reasoning_level = null
   modelForm.supports_image_input = Boolean(provider?.default_supports_image_input)
-  modelForm.context_window_tokens = provider?.default_context_window_tokens ?? DEFAULT_CONTEXT_WINDOW_TOKENS
+  modelForm.context_window_tokens = DEFAULT_CONTEXT_WINDOW_TOKENS
 }
 
 /** 使用供应商目录默认值预填供应商配置表单。 */
@@ -609,6 +641,19 @@ function serializeProviderForm(): string {
 /** 序列化模型表单及高级参数，供弹窗脏状态判断。 */
 function serializeModelForm(): string {
   return JSON.stringify({ ...modelForm, advancedConfigText: advancedConfigText.value })
+}
+
+/** 只同步异步解析出的能力默认值，避免把用户输入误记为弹窗初始状态。 */
+function syncResolvedCapabilityIntoBaseline(capability: LlmModelCapabilityItem) {
+  if (!modelDialogBaseline.value) return
+  try {
+    const baseline = JSON.parse(modelDialogBaseline.value) as Record<string, unknown>
+    baseline.context_window_tokens = capability.context_window_tokens
+    baseline.supports_image_input = capability.supports_image_input
+    modelDialogBaseline.value = JSON.stringify(baseline)
+  } catch {
+    // 基线只由本模块生成；解析异常时保留原值，让关闭保护继续按更安全的脏状态处理。
+  }
 }
 
 /** 打开供应商新建弹窗并记录初始表单快照。 */
@@ -767,14 +812,13 @@ function findProviderDefaultModelId(providerKey: string | null | undefined) {
   return providersQuery.data.value?.find(item => item.provider_key === providerKey)?.default_model_id ?? ''
 }
 
-/** 从供应商列表中查找默认 thinking enabled。 */
-function findProviderDefaultThinkingEnabled(providerKey: string | null | undefined) {
-  return Boolean(providersQuery.data.value?.find(item => item.provider_key === providerKey)?.default_thinking_enabled)
-}
-
-/** 从供应商列表中查找默认 thinking effort。 */
-function findProviderDefaultThinkingEffort(providerKey: string | null | undefined) {
-  return providersQuery.data.value?.find(item => item.provider_key === providerKey)?.default_thinking_effort ?? null
+/** 把供应商原生强度压缩为平台固定四档。 */
+function normalizePlatformReasoningLevel(value: string | null | undefined): AiReasoningLevel {
+  const normalized = String(value ?? '').trim().toLowerCase()
+  if (normalized === 'minimal') return 'low'
+  if (['xhigh', 'max', 'ultra'].includes(normalized)) return 'max'
+  if (normalized === 'low' || normalized === 'high') return normalized
+  return 'medium'
 }
 
 /** 从供应商列表中查找默认图片输入能力。 */
@@ -785,8 +829,7 @@ function findProviderDefaultSupportsImageInput(providerKey: string | null | unde
 /** 判断上下文窗口是否仍是供应商默认值，可在切换供应商时替换。 */
 function shouldReplaceContextWindowDefault(value: number, providerKey: string | null | undefined) {
   const provider = providersQuery.data.value?.find(item => item.provider_key === providerKey)
-  const previousDefault = provider?.default_context_window_tokens ?? DEFAULT_CONTEXT_WINDOW_TOKENS
-  return value === previousDefault
+  return value === DEFAULT_CONTEXT_WINDOW_TOKENS || value === provider?.default_context_window_tokens
 }
 
 /** 用服务端配置重置工具草稿。 */
@@ -1012,8 +1055,8 @@ async function handleEditModel(config: LlmConfigItem) {
   modelForm.provider_config_id = config.provider_config_id
   modelForm.model_type = config.model_type ?? 'chat'
   modelForm.model_id = config.model_id
-  modelForm.thinking_enabled = config.thinking_enabled
-  modelForm.thinking_effort = config.thinking_effort
+  modelForm.reasoning_mode = config.reasoning_mode ?? (config.thinking_enabled ? 'enabled' : 'auto')
+  modelForm.reasoning_level = config.reasoning_level ?? (config.thinking_enabled ? normalizePlatformReasoningLevel(config.thinking_effort) : null)
   modelForm.supports_image_input = config.supports_image_input
   modelForm.context_window_tokens = config.context_window_tokens
   advancedConfigText.value = JSON.stringify(config.advanced_config_json ?? {}, null, 2)
@@ -1163,8 +1206,8 @@ async function handleSubmitModel() {
         provider_config_id: providerConfigId,
         model_id: modelForm.model_id.trim(),
         model_type: modelForm.model_type,
-        thinking_enabled: modelForm.thinking_enabled,
-        thinking_effort: modelForm.thinking_effort,
+        reasoning_mode: modelForm.reasoning_mode,
+        reasoning_level: modelForm.reasoning_mode === 'enabled' ? modelForm.reasoning_level ?? 'medium' : null,
         supports_image_input: modelForm.supports_image_input,
         context_window_tokens: contextWindowTokens,
         advanced_config_json: advancedConfig,
@@ -1182,8 +1225,8 @@ async function handleSubmitModel() {
         provider_config_id: providerConfigId,
         model_id: modelForm.model_id.trim(),
         model_type: modelForm.model_type,
-        thinking_enabled: modelForm.thinking_enabled,
-        thinking_effort: modelForm.thinking_effort,
+        reasoning_mode: modelForm.reasoning_mode,
+        reasoning_level: modelForm.reasoning_mode === 'enabled' ? modelForm.reasoning_level ?? 'medium' : null,
         supports_image_input: modelForm.supports_image_input,
         context_window_tokens: contextWindowTokens,
         advanced_config_json: advancedConfig,

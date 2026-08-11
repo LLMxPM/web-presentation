@@ -15,12 +15,13 @@ from pydantic_ai.providers.openai import OpenAIProvider
 from pydantic_ai.providers.openrouter import OpenRouterProvider
 
 from app.ai.llm_http_trace import build_llm_http_trace_client
+from app.ai.model_capabilities import capability_from_snapshot, resolve_model_capability
 from app.ai.model_budget import CONTEXT_WINDOW_TOKEN_DEFAULT, derive_model_run_budget
-from app.ai.provider_catalog import MIMO_MAX_COMPLETION_TOKENS
+from app.ai.provider_catalog import MIMO_MAX_COMPLETION_TOKENS, get_llm_provider_entry
 from app.ai.secret_cipher import LlmSecretCipher
 from app.core.exceptions import AppException
 from app.models.ai_llm import AiLlmConfig
-from app.models.enums import AiThinkingMode, RecordStatus
+from app.models.enums import AiReasoningMode, AiThinkingMode, RecordStatus
 
 DASHSCOPE_THINKING_BUDGETS = {
     "low": 2_000,
@@ -100,7 +101,20 @@ class PydanticLlmModelResolver:
         if isinstance(advanced_config, dict):
             settings.update(advanced_config)
         context_window_tokens = int(config.context_window_tokens or CONTEXT_WINDOW_TOKEN_DEFAULT)
-        settings["max_tokens"] = derive_model_run_budget(context_window_tokens).max_output_tokens
+        capability = self._resolve_capability(config)
+        provider_key = self._resolve_provider_key(config)
+        output_limit = capability.profile.model_max_output_tokens
+        if provider_key == "mimo":
+            output_limit = min(output_limit, MIMO_MAX_COMPLETION_TOKENS)
+        legacy_output = getattr(config, "request_max_output_tokens", None) or getattr(config, "max_output_tokens", None)
+        policy_output = getattr(config, "request_output_tokens", None)
+        settings["max_tokens"] = (
+            int(policy_output)
+            if getattr(config, "budget_policy_version", None) and policy_output
+            else int(legacy_output)
+            if not getattr(config, "budget_policy_version", None) and legacy_output
+            else derive_model_run_budget(context_window_tokens, provider_output_limit=output_limit).max_output_tokens
+        )
         self._apply_provider_limits(config, settings)
         self._apply_thinking_settings(config, settings)
         return settings
@@ -119,39 +133,62 @@ class PydanticLlmModelResolver:
         """按供应商差异写入 Pydantic AI 支持的 thinking 参数。"""
 
         provider_key = self._resolve_provider_key(config)
-        mode = self._resolve_thinking_mode(provider_key)
-        if mode == AiThinkingMode.NONE.value:
+        adapter_mode = self._resolve_thinking_mode(provider_key)
+        if adapter_mode == AiThinkingMode.NONE.value:
             return
 
-        enabled = bool(config.thinking_enabled)
-        effort = str(config.thinking_effort or "").strip()
-        if mode == AiThinkingMode.OPENAI_REASONING.value:
-            if enabled and effort:
-                settings.setdefault("openai_reasoning_effort", effort)
+        legacy_enabled = bool(getattr(config, "thinking_enabled", False))
+        reasoning_mode = str(getattr(config, "reasoning_mode", "") or (AiReasoningMode.ENABLED.value if legacy_enabled else AiReasoningMode.AUTO.value))
+        level = str(getattr(config, "reasoning_level", "") or getattr(config, "thinking_effort", "") or "medium").strip()
+        capability = self._resolve_capability(config)
+        effective = capability.effective_reasoning(reasoning_mode, level)
+        native = effective.get("native_value")
+        if reasoning_mode == AiReasoningMode.AUTO.value:
             return
-        if mode == AiThinkingMode.OPENROUTER_REASONING.value:
-            if enabled and effort:
-                settings.setdefault("openrouter_reasoning", {"effort": effort})
+        enabled = reasoning_mode == AiReasoningMode.ENABLED.value
+        if enabled and not capability.profile.supports_reasoning:
             return
-        if mode == AiThinkingMode.GOOGLE_THINKING_LEVEL.value:
-            if enabled and effort:
-                settings.setdefault("google_thinking_config", {"thinking_level": effort.upper(), "include_thoughts": True})
+        if adapter_mode == AiThinkingMode.OPENAI_REASONING.value:
+            settings.setdefault("openai_reasoning_effort", native if enabled else "none")
             return
-        if mode == AiThinkingMode.OLLAMA_THINK.value:
-            if enabled and effort:
-                self._merge_extra_body(settings, {"think": effort})
+        if adapter_mode == AiThinkingMode.OPENROUTER_REASONING.value:
+            settings.setdefault("openrouter_reasoning", {"effort": native if enabled else "none"})
             return
-        if mode == AiThinkingMode.DASHSCOPE_ENABLE_THINKING.value:
+        if adapter_mode == AiThinkingMode.GOOGLE_THINKING_LEVEL.value:
+            if enabled and native:
+                settings.setdefault("google_thinking_config", {"thinking_level": str(native).upper(), "include_thoughts": True})
+            return
+        if adapter_mode == AiThinkingMode.OLLAMA_THINK.value:
+            self._merge_extra_body(settings, {"think": native if enabled else False})
+            return
+        if adapter_mode == AiThinkingMode.DASHSCOPE_ENABLE_THINKING.value:
             body: dict[str, Any] = {"enable_thinking": enabled}
             if enabled:
-                body["thinking_budget"] = DASHSCOPE_THINKING_BUDGETS.get(effort, DASHSCOPE_THINKING_BUDGETS["medium"])
+                body["thinking_budget"] = int(native or DASHSCOPE_THINKING_BUDGETS["medium"])
             self._merge_extra_body(settings, body)
             return
-        if mode == AiThinkingMode.OPENAI_EXTRA_BODY_THINKING.value:
+        if adapter_mode == AiThinkingMode.OPENAI_EXTRA_BODY_THINKING.value:
             body = {"thinking": {"type": "enabled" if enabled else "disabled"}}
             self._merge_extra_body(settings, body)
-            if enabled and provider_key == "deepseek" and effort:
-                settings.setdefault("openai_reasoning_effort", self._normalize_deepseek_effort(effort))
+            if enabled and provider_key == "deepseek" and native:
+                settings.setdefault("openai_reasoning_effort", str(native))
+
+    def _resolve_capability(self, config: AiLlmConfig):
+        """优先从配置或 Run 快照恢复能力，旧快照再回退到当前目录。"""
+
+        snapshot = getattr(config, "model_capability_json", None)
+        restored = capability_from_snapshot(snapshot if isinstance(snapshot, dict) else {})
+        if restored is not None:
+            return restored
+        provider_key = self._resolve_provider_key(config)
+        entry = get_llm_provider_entry(provider_key)
+        return resolve_model_capability(
+            provider_key,
+            str(config.model_id),
+            default_context_window_tokens=entry.default_context_window_tokens,
+            default_model_max_output_tokens=entry.default_max_output_tokens,
+            default_supports_image_input=entry.default_supports_image_input,
+        )
 
     @staticmethod
     def _get_provider_config(config: AiLlmConfig):

@@ -1,7 +1,7 @@
 <!-- 文件功能：承载账号 AI 设置中的紧凑供应商详情与连接凭证表单。 -->
 <template>
-  <section class="space-y-5 p-5">
-    <header class="flex items-start justify-between gap-4 border-b border-border-muted pb-4">
+  <section class="space-y-5" :class="embeddedInDialog ? '' : 'p-5'">
+    <header v-if="showPanelHeader" class="flex items-start justify-between gap-4 border-b border-border-muted pb-4">
       <div class="min-w-0">
         <h2 class="truncate text-lg font-bold text-text-strong">{{ panelTitle }}</h2>
         <div v-if="mode === 'detail' && selectedProviderConfig" class="mt-2 flex flex-wrap gap-2 text-xs font-semibold">
@@ -48,7 +48,7 @@
       <p class="md:col-span-2 text-xs text-text-muted">连接凭证由后端安全存储；模型 ID 和运行参数请在模型管理中维护。</p>
     </div>
 
-    <footer v-if="mode !== 'detail'" class="flex justify-end gap-2 border-t border-border-muted pt-4">
+    <footer v-if="showPanelFooter && mode !== 'detail'" class="flex justify-end gap-2 border-t border-border-muted pt-4">
       <UiButton v-if="mode === 'edit'" variant="ghost" :disabled="savingProviderConfig" @click="emit('cancel')">取消</UiButton>
       <UiButton :loading="savingProviderConfig" :disabled="readOnlyProvider || !canSubmitProvider" @click="emit('submit')">{{ mode === 'edit' ? '保存供应商' : '创建供应商' }}</UiButton>
     </footer>
@@ -82,6 +82,9 @@ const props = defineProps<{
   savingProviderConfig: boolean
   deletingProviderConfigId: number | null
   canCreateGlobal: boolean
+  showPanelHeader?: boolean
+  showPanelFooter?: boolean
+  embeddedInDialog?: boolean
 }>()
 
 const emit = defineEmits<{

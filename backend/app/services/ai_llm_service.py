@@ -16,17 +16,20 @@ from app.ai.provider_catalog import (
     get_llm_slot_definition,
     list_llm_provider_entries,
 )
+from app.ai.model_capabilities import capability_from_snapshot, resolve_model_capability
 from app.ai.model_budget import ModelRunBudget, derive_model_run_budget
 from app.ai.secret_cipher import LlmSecretCipher
 from app.core.exceptions import AppException
 from app.models.ai_agent_runtime import AiAgentRun
 from app.models.ai_llm import AiLlmConfig, AiLlmProviderConfig, AiLlmSlotBinding
-from app.models.enums import AiLlmConfigScope, AiLlmSlot, AiModelType, RecordStatus, UserRole
+from app.models.enums import AiLlmConfigScope, AiLlmSlot, AiModelType, AiReasoningMode, RecordStatus, UserRole
 from app.schemas.llm import (
     LLM_CONTEXT_WINDOW_TOKEN_DEFAULT,
+    LLM_CONTEXT_WINDOW_TOKEN_MIN,
     LlmConfigCreateRequest,
     LlmConfigItem,
     LlmConfigUpdateRequest,
+    LlmModelCapabilityItem,
     LlmProviderCatalogItem,
     LlmProviderConfigCreateRequest,
     LlmProviderConfigItem,
@@ -81,6 +84,53 @@ class AiLlmService:
             )
             for item in list_llm_provider_entries()
         ]
+
+    async def resolve_model_capability_item(
+        self,
+        provider_config_id: int,
+        model_id: str,
+        *,
+        override: dict[str, Any] | None = None,
+    ) -> LlmModelCapabilityItem:
+        """解析模型能力并返回平台四档到供应商原生值的映射。"""
+
+        provider_config = await self._get_provider_config_or_raise(provider_config_id)
+        if provider_config.status != RecordStatus.ACTIVE.value:
+            raise AppException(status_code=409, code="AI_LLM_PROVIDER_CONFIG_DISABLED", detail="只能解析启用中的供应商配置。")
+        entry = get_llm_provider_entry(provider_config.provider_key)
+        capability = resolve_model_capability(
+            provider_config.provider_key,
+            model_id,
+            default_context_window_tokens=entry.default_context_window_tokens,
+            default_model_max_output_tokens=entry.default_max_output_tokens,
+            default_supports_image_input=entry.default_supports_image_input,
+            override=override,
+        )
+        item = capability.as_dict()
+        suggested_input_tokens = self._recommended_usable_input_tokens(capability, provider_config.provider_key)
+        run_budget = derive_model_run_budget(
+            suggested_input_tokens,
+            provider_output_limit=self._model_output_limit(capability.profile.model_max_output_tokens, provider_config.provider_key),
+        )
+        warnings = list(item["warnings"])
+        if not capability.profile.verified:
+            warnings.append(f"请确认模型至少支持 {run_budget.required_model_context_tokens} tokens 总上下文。")
+        return LlmModelCapabilityItem(
+            source=str(item["source"]), verified=bool(item["verified"]), profile_key=str(item["profile_key"]),
+            profile_version=int(item["profile_version"]), context_window_tokens=suggested_input_tokens,
+            model_context_window_tokens=int(item["context_window_tokens"]) if capability.profile.source != "provider_default" else None,
+            model_max_output_tokens=int(item["model_max_output_tokens"]),
+            required_model_context_tokens=run_budget.required_model_context_tokens,
+            request_output_tokens=run_budget.max_output_tokens,
+            runtime_headroom_tokens=run_budget.runtime_headroom_tokens,
+            compression_trigger_tokens=run_budget.compression_trigger_tokens,
+            compression_target_tokens=run_budget.compression_target_tokens,
+            budget_policy_version=run_budget.budget_policy_version,
+            request_max_output_tokens=run_budget.max_output_tokens,
+            supports_image_input=bool(item["supports_image_input"]), supports_reasoning=bool(item["supports_reasoning"]),
+            supports_explicit_disable=bool(item["supports_explicit_disable"]), default_level=item.get("default_level"),
+            level_mapping=dict(item["level_mapping"]), warnings=warnings,
+        )
 
     async def list_provider_configs(self) -> list[LlmProviderConfigItem]:
         """列出当前用户可见的供应商凭证配置。"""
@@ -249,10 +299,45 @@ class AiLlmService:
             value=payload.advanced_config_json,
         )
         is_chat_model = payload.model_type == AiModelType.CHAT
-        run_budget = derive_model_run_budget(
-            payload.context_window_tokens,
-            provider_output_limit=MIMO_MAX_COMPLETION_TOKENS if provider_config.provider_key == "mimo" else None,
+        base_capability = resolve_model_capability(
+            provider_config.provider_key,
+            payload.model_id,
+            default_context_window_tokens=provider_entry.default_context_window_tokens,
+            default_model_max_output_tokens=provider_entry.default_max_output_tokens,
+            default_supports_image_input=provider_entry.default_supports_image_input,
         )
+        capability_override = dict(payload.model_capability_override or {})
+        if (
+            "supports_image_input" in payload.model_fields_set
+            and payload.supports_image_input != base_capability.profile.supports_image_input
+        ):
+            capability_override["supports_image_input"] = payload.supports_image_input
+        capability = (
+            resolve_model_capability(
+                provider_config.provider_key,
+                payload.model_id,
+                default_context_window_tokens=provider_entry.default_context_window_tokens,
+                default_model_max_output_tokens=provider_entry.default_max_output_tokens,
+                default_supports_image_input=provider_entry.default_supports_image_input,
+                override=capability_override,
+            )
+            if capability_override
+            else base_capability
+        )
+        reasoning_mode = payload.reasoning_mode.value if payload.reasoning_mode is not None else AiReasoningMode.AUTO.value
+        reasoning_level = payload.reasoning_level.value if payload.reasoning_level is not None else None
+        if is_chat_model:
+            self._validate_reasoning_policy(capability, reasoning_mode)
+        usable_input_tokens = payload.context_window_tokens or self._recommended_usable_input_tokens(
+            capability,
+            provider_config.provider_key,
+        )
+        run_budget = derive_model_run_budget(
+            usable_input_tokens,
+            provider_output_limit=self._model_output_limit(capability.profile.model_max_output_tokens, provider_config.provider_key),
+        )
+        if is_chat_model:
+            self._validate_model_context_capacity(capability, run_budget)
 
         config = AiLlmConfig(
             user_id=None if requested_scope == AiLlmConfigScope.GLOBAL else self.user_id,
@@ -262,14 +347,13 @@ class AiLlmService:
             provider_config=provider_config,
             model_id=payload.model_id.strip(),
             model_type=payload.model_type.value,
-            thinking_enabled=bool(is_chat_model and payload.thinking_enabled and provider_entry.supports_thinking),
-            thinking_effort=(self._normalize_thinking_effort(provider_entry, payload.thinking_effort) if is_chat_model else None),
-            supports_image_input=bool(payload.supports_image_input and is_chat_model),
-            context_window_tokens=payload.context_window_tokens,
-            max_output_tokens=run_budget.max_output_tokens,
+            reasoning_mode=reasoning_mode if is_chat_model and provider_entry.supports_thinking else AiReasoningMode.AUTO.value,
+            reasoning_level=reasoning_level if is_chat_model and reasoning_mode == AiReasoningMode.ENABLED.value else None,
+            supports_image_input=bool(capability.profile.supports_image_input and is_chat_model),
+            context_window_tokens=usable_input_tokens,
             history_token_ratio=1.0,
-            compression_target_ratio=run_budget.compression_target_ratio,
             advanced_config_json=advanced_config,
+            model_capability_json={**capability.as_dict(), "provider_key": provider_config.provider_key},
             status=RecordStatus.ACTIVE.value,
             created_by=operator_id,
             updated_by=operator_id,
@@ -330,13 +414,46 @@ class AiLlmService:
         next_model_id = payload.model_id.strip() if payload.model_id is not None else config.model_id
         self._reject_e2e_mock_model_outside_e2e_database(next_model_id)
         next_model_type = payload.model_type.value if payload.model_type is not None else config.model_type
-        next_context_window_tokens = (
-            payload.context_window_tokens if payload.context_window_tokens is not None else config.context_window_tokens
+        provider_entry = get_llm_provider_entry(next_provider_config.provider_key)
+        base_capability = resolve_model_capability(
+            next_provider_config.provider_key,
+            next_model_id,
+            default_context_window_tokens=provider_entry.default_context_window_tokens,
+            default_model_max_output_tokens=provider_entry.default_max_output_tokens,
+            default_supports_image_input=provider_entry.default_supports_image_input,
         )
+        capability_override = dict(payload.model_capability_override or {})
+        if (
+            payload.supports_image_input is not None
+            and payload.supports_image_input != base_capability.profile.supports_image_input
+        ):
+            capability_override["supports_image_input"] = payload.supports_image_input
+        stored_capability = capability_from_snapshot(config.model_capability_json or {})
+        capability_inputs_changed = (
+            bool(capability_override)
+            or "model_capability_override" in payload.model_fields_set
+            or next_model_id != config.model_id
+            or next_provider_config.id != config.provider_config_id
+        )
+        capability = (
+            resolve_model_capability(
+                next_provider_config.provider_key,
+                next_model_id,
+                default_context_window_tokens=provider_entry.default_context_window_tokens,
+                default_model_max_output_tokens=provider_entry.default_max_output_tokens,
+                default_supports_image_input=provider_entry.default_supports_image_input,
+                override=capability_override,
+            )
+            if capability_override
+            else base_capability
+        ) if capability_inputs_changed or stored_capability is None else stored_capability
+        next_context_window_tokens = payload.context_window_tokens if payload.context_window_tokens is not None else config.context_window_tokens
         run_budget = derive_model_run_budget(
             next_context_window_tokens,
-            provider_output_limit=MIMO_MAX_COMPLETION_TOKENS if next_provider_config.provider_key == "mimo" else None,
+            provider_output_limit=self._model_output_limit(capability.profile.model_max_output_tokens, next_provider_config.provider_key),
         )
+        if next_model_type == AiModelType.CHAT.value:
+            self._validate_model_context_capacity(capability, run_budget)
 
         provider_entry = self._validate_provider_constraints(
             provider_key=next_provider_config.provider_key,
@@ -360,11 +477,16 @@ class AiLlmService:
                 value=self._sanitize_stored_advanced_config(config.advanced_config_json or {}),
             )
         )
-        next_thinking_effort = config.thinking_effort
-        if payload.thinking_effort is not None:
-            next_thinking_effort = self._normalize_thinking_effort(provider_entry, payload.thinking_effort)
-        elif next_provider_config.id != config.provider_config_id:
-            next_thinking_effort = self._normalize_thinking_effort(provider_entry, config.thinking_effort)
+        next_reasoning_mode = payload.reasoning_mode.value if payload.reasoning_mode is not None else config.reasoning_mode
+        next_reasoning_level = (
+            payload.reasoning_level.value if payload.reasoning_level is not None else None
+        ) if "reasoning_level" in payload.model_fields_set else config.reasoning_level
+        if next_reasoning_mode != AiReasoningMode.ENABLED.value:
+            next_reasoning_level = None
+        elif next_reasoning_level is None:
+            next_reasoning_level = capability.profile.default_level or "medium"
+        if next_model_type == AiModelType.CHAT.value:
+            self._validate_reasoning_policy(capability, next_reasoning_mode)
 
         config.name = next_name
         config.provider_config_id = next_provider_config.id
@@ -372,21 +494,13 @@ class AiLlmService:
         config.model_id = next_model_id
         config.model_type = next_model_type
         is_chat_model = next_model_type == AiModelType.CHAT.value
-        config.thinking_enabled = bool(
-            is_chat_model
-            and provider_entry.supports_thinking
-            and (payload.thinking_enabled if payload.thinking_enabled is not None else config.thinking_enabled)
-        )
-        config.thinking_effort = next_thinking_effort if is_chat_model and provider_entry.supports_thinking else None
-        if payload.supports_image_input is not None:
-            config.supports_image_input = bool(payload.supports_image_input and next_model_type == AiModelType.CHAT.value)
-        elif next_model_type != AiModelType.CHAT.value:
-            config.supports_image_input = False
+        config.reasoning_mode = next_reasoning_mode if is_chat_model and provider_entry.supports_thinking else AiReasoningMode.AUTO.value
+        config.reasoning_level = next_reasoning_level if is_chat_model and config.reasoning_mode == AiReasoningMode.ENABLED.value else None
+        config.supports_image_input = bool(capability.profile.supports_image_input and is_chat_model)
         config.context_window_tokens = next_context_window_tokens
-        config.max_output_tokens = run_budget.max_output_tokens
         config.history_token_ratio = 1.0
-        config.compression_target_ratio = run_budget.compression_target_ratio
         config.advanced_config_json = next_advanced_config
+        config.model_capability_json = {**capability.as_dict(), "provider_key": next_provider_config.provider_key}
         config.updated_by = operator_id
 
         await self.session.commit()
@@ -573,13 +687,25 @@ class AiLlmService:
         run_budget = self._derive_config_run_budget(config)
         return {
             **self.build_session_llm_metadata(config, selection_kind=selection_kind),
-            "thinking_enabled": bool(config.thinking_enabled),
-            "thinking_effort": config.thinking_effort,
+            "reasoning_mode": config.reasoning_mode,
+            "reasoning_level": config.reasoning_level,
+            "thinking_enabled": config.reasoning_mode == AiReasoningMode.ENABLED.value,
+            "thinking_effort": config.reasoning_level,
             "context_window_tokens": config.context_window_tokens,
+            "budget_policy_version": run_budget.budget_policy_version,
+            "required_model_context_tokens": run_budget.required_model_context_tokens,
+            "request_output_tokens": run_budget.max_output_tokens,
+            "runtime_headroom_tokens": run_budget.runtime_headroom_tokens,
+            "compression_trigger_tokens": run_budget.compression_trigger_tokens,
+            "compression_target_tokens": run_budget.compression_target_tokens,
+            # 兼容一个发布周期的历史快照键。
+            "model_max_output_tokens": self._snapshot_model_output_limit(config),
+            "request_max_output_tokens": run_budget.max_output_tokens,
             "max_output_tokens": run_budget.max_output_tokens,
             "history_token_ratio": 1.0,
             "compression_target_ratio": run_budget.compression_target_ratio,
             "advanced_config_json": dict(config.advanced_config_json or {}),
+            "model_capability_json": dict(config.model_capability_json or {}),
         }
 
     async def get_slot_binding_lookup(self) -> dict[str, LlmSlotBindingItem]:
@@ -738,6 +864,14 @@ class AiLlmService:
         provider_config = config.provider_config
         provider_entry = get_llm_provider_entry(provider_config.provider_key)
         run_budget = self._derive_config_run_budget(config)
+        capability = capability_from_snapshot(config.model_capability_json or {}) or resolve_model_capability(
+            provider_config.provider_key,
+            config.model_id,
+            default_context_window_tokens=provider_entry.default_context_window_tokens,
+            default_model_max_output_tokens=provider_entry.default_max_output_tokens,
+            default_supports_image_input=provider_entry.default_supports_image_input,
+        )
+        effective_reasoning = capability.effective_reasoning(config.reasoning_mode, config.reasoning_level)
         editable = self._can_edit_config(config)
         return LlmConfigItem(
             id=config.id,
@@ -751,11 +885,25 @@ class AiLlmService:
             provider_label=provider_entry.label,
             model_id=config.model_id,
             model_type=AiModelType(config.model_type),
-            thinking_enabled=bool(config.thinking_enabled and provider_entry.supports_thinking),
-            thinking_effort=config.thinking_effort,
+            reasoning_mode=config.reasoning_mode,
+            reasoning_level=config.reasoning_level,
+            thinking_enabled=bool(config.reasoning_mode == AiReasoningMode.ENABLED.value and provider_entry.supports_thinking),
+            thinking_effort=config.reasoning_level,
             supports_image_input=bool(config.supports_image_input),
             context_window_tokens=int(config.context_window_tokens or LLM_CONTEXT_WINDOW_TOKEN_DEFAULT),
+            required_model_context_tokens=run_budget.required_model_context_tokens,
+            request_output_tokens=run_budget.max_output_tokens,
+            runtime_headroom_tokens=run_budget.runtime_headroom_tokens,
+            compression_trigger_tokens=run_budget.compression_trigger_tokens,
+            compression_target_tokens=run_budget.compression_target_tokens,
+            budget_policy_version=run_budget.budget_policy_version,
+            model_max_output_tokens=capability.profile.model_max_output_tokens,
+            request_max_output_tokens=run_budget.max_output_tokens,
             max_output_tokens=run_budget.max_output_tokens,
+            capability_source=capability.profile.source,
+            capability_verified=capability.profile.verified,
+            model_capability_json={**capability.as_dict(), "provider_key": provider_config.provider_key},
+            effective_reasoning=effective_reasoning,
             history_token_ratio=1.0,
             compression_target_ratio=run_budget.compression_target_ratio,
             advanced_config_json=self._sanitize_stored_advanced_config(config.advanced_config_json or {}),
@@ -766,12 +914,51 @@ class AiLlmService:
 
     @staticmethod
     def _derive_config_run_budget(config: AiLlmConfig) -> ModelRunBudget:
-        """按模型当前窗口和供应商硬限制返回自动运行预算。"""
+        """按平台可用输入窗口和能力档案硬限制返回固定运行预算。"""
 
         provider_key = config.provider_config.provider_key
+        capability = capability_from_snapshot(config.model_capability_json or {})
+        model_output_limit = capability.profile.model_max_output_tokens if capability is not None else 65_536
         return derive_model_run_budget(
             int(config.context_window_tokens or LLM_CONTEXT_WINDOW_TOKEN_DEFAULT),
-            provider_output_limit=MIMO_MAX_COMPLETION_TOKENS if provider_key == "mimo" else None,
+            provider_output_limit=AiLlmService._model_output_limit(
+                model_output_limit,
+                provider_key,
+            ),
+        )
+
+    @staticmethod
+    def _snapshot_model_output_limit(config: AiLlmConfig) -> int:
+        """从配置能力快照读取模型输出硬上限，仅用于旧快照字段兼容。"""
+
+        capability = capability_from_snapshot(config.model_capability_json or {})
+        return capability.profile.model_max_output_tokens if capability is not None else 65_536
+
+    @staticmethod
+    def _recommended_usable_input_tokens(capability, provider_key: str) -> int:
+        """返回模型表单建议的可用输入窗口；未知模型固定使用 200K。"""
+
+        if capability.profile.source == "provider_default":
+            return 200_000
+        output_limit = AiLlmService._model_output_limit(capability.profile.model_max_output_tokens, provider_key)
+        output_tokens = derive_model_run_budget(LLM_CONTEXT_WINDOW_TOKEN_DEFAULT, provider_output_limit=output_limit).max_output_tokens
+        return max(LLM_CONTEXT_WINDOW_TOKEN_MIN, capability.profile.context_window_tokens - output_tokens)
+
+    @staticmethod
+    def _validate_model_context_capacity(capability, budget: ModelRunBudget) -> None:
+        """已验证模型必须能够容纳用户输入窗口与实际输出预算。"""
+
+        if capability.profile.source == "provider_default":
+            return
+        if budget.required_model_context_tokens <= capability.profile.context_window_tokens:
+            return
+        raise AppException(
+            status_code=400,
+            code="AI_LLM_CONTEXT_WINDOW_UNSUPPORTED",
+            detail=(
+                f"当前配置至少需要模型支持 {budget.required_model_context_tokens} tokens 总上下文，"
+                f"但能力档案仅声明 {capability.profile.context_window_tokens} tokens。"
+            ),
         )
 
     @classmethod
@@ -873,13 +1060,20 @@ class AiLlmService:
         normalized = str(value or "").strip()
         return normalized or None
 
-    def _normalize_thinking_effort(self, provider_entry, value: str | None) -> str | None:
-        """归一化用户填写的思考强度；具体可用性由供应商接口决定。"""
+    @staticmethod
+    def _model_output_limit(model_max_output_tokens: int, provider_key: str) -> int:
+        """合并模型硬上限与供应商额外硬限制。"""
 
-        if not provider_entry.supports_thinking:
-            return None
-        normalized = str(value or "").strip().lower()
-        return normalized or None
+        return min(model_max_output_tokens, MIMO_MAX_COMPLETION_TOKENS) if provider_key == "mimo" else model_max_output_tokens
+
+    @staticmethod
+    def _validate_reasoning_policy(capability, mode: str) -> None:
+        """拒绝模型不支持的推理模式，避免延迟到真实请求才失败。"""
+
+        if mode == AiReasoningMode.ENABLED.value and not capability.profile.supports_reasoning:
+            raise AppException(status_code=400, code="AI_LLM_REASONING_UNSUPPORTED", detail="当前模型能力档案不支持推理。")
+        if mode == AiReasoningMode.DISABLED.value and not capability.profile.supports_explicit_disable:
+            raise AppException(status_code=400, code="AI_LLM_REASONING_DISABLE_UNSUPPORTED", detail="当前模型不能确认支持显式关闭推理，请改用自动模式。")
 
     def _validate_provider_constraints(
         self,
@@ -956,7 +1150,50 @@ class AiLlmService:
                 code="AI_LLM_ADVANCED_CONFIG_CONFLICT",
                 detail=f"高级配置禁止覆盖受管字段：{', '.join(conflicted_keys)}。",
             )
+        managed_keys = {
+            "reasoning",
+            "openai_reasoning_effort",
+            "openrouter_reasoning",
+            "google_thinking_config",
+            "enable_thinking",
+            "thinking_budget",
+            "think",
+            "thinking",
+            "max_tokens",
+            "max_output_tokens",
+            "request_max_output_tokens",
+            "request_output_tokens",
+            "model_max_output_tokens",
+            "context_window_tokens",
+            "runtime_headroom_tokens",
+            "compression_trigger_tokens",
+            "compression_target_tokens",
+            "compression_target_ratio",
+        }
+        nested_conflicts = AiLlmService._find_nested_keys(value, managed_keys)
+        if nested_conflicts:
+            raise AppException(
+                status_code=400,
+                code="AI_LLM_ADVANCED_CONFIG_CONFLICT",
+                detail=f"高级配置禁止覆盖受管字段：{', '.join(nested_conflicts)}。",
+            )
         return dict(value)
+
+    @staticmethod
+    def _find_nested_keys(value: Any, managed_keys: set[str], path: str = "") -> list[str]:
+        """递归查找受管推理与预算键，覆盖对象、数组和 extra_body 深层结构。"""
+
+        conflicts: list[str] = []
+        if isinstance(value, dict):
+            for key, child in value.items():
+                child_path = f"{path}.{key}" if path else str(key)
+                if str(key).lower() in managed_keys:
+                    conflicts.append(child_path)
+                conflicts.extend(AiLlmService._find_nested_keys(child, managed_keys, child_path))
+        elif isinstance(value, list):
+            for index, child in enumerate(value):
+                conflicts.extend(AiLlmService._find_nested_keys(child, managed_keys, f"{path}[{index}]"))
+        return sorted(set(conflicts))
 
     @classmethod
     def _validate_model_advanced_config(

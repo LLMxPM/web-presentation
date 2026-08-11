@@ -5,9 +5,12 @@ import { http } from '@/api/http'
 import type {
   AiLlmConfigScope,
   AiModelType,
+  AiReasoningLevel,
+  AiReasoningMode,
   LlmConfigItem,
   LlmProviderCatalogItem,
   LlmProviderConfigItem,
+  LlmModelCapabilityItem,
   LlmSlotBindingItem,
 } from '@/types/api'
 
@@ -31,8 +34,8 @@ export interface LlmConfigPayload {
   provider_config_id: number
   model_id: string
   model_type: AiModelType
-  thinking_enabled: boolean
-  thinking_effort?: string | null
+  reasoning_mode: AiReasoningMode
+  reasoning_level?: AiReasoningLevel | null
   supports_image_input: boolean
   context_window_tokens: number
   advanced_config_json: Record<string, unknown>
@@ -43,8 +46,8 @@ export interface LlmConfigUpdatePayload {
   provider_config_id?: number
   model_id?: string
   model_type?: AiModelType
-  thinking_enabled?: boolean
-  thinking_effort?: string | null
+  reasoning_mode?: AiReasoningMode
+  reasoning_level?: AiReasoningLevel | null
   supports_image_input?: boolean
   context_window_tokens?: number
   advanced_config_json?: Record<string, unknown>
@@ -55,6 +58,18 @@ export interface LlmConfigUpdatePayload {
  */
 export async function listLlmProviders() {
   const { data } = await http.get<LlmProviderCatalogItem[]>('/ai/llm-providers')
+  return data
+}
+
+/**
+ * 解析指定模型的能力、请求预算和四档推理映射。
+ */
+export async function resolveLlmModelCapability(providerConfigId: number, modelId: string, override?: Record<string, unknown>) {
+  const { data } = await http.post<LlmModelCapabilityItem>('/ai/llm-model-capabilities/resolve', {
+    provider_config_id: providerConfigId,
+    model_id: modelId,
+    ...(override ? { override } : {}),
+  })
   return data
 }
 

@@ -59,7 +59,7 @@ describe('E2E project 收集边界', () => {
 
     // auth + smoke 构成默认 test:e2e 的轻量核心链路。
     expect(counts['auth']).toBe(1)
-    expect(counts['smoke']).toBe(6)
+    expect(counts['smoke']).toBe(7)
     // regression 范围为写型夹具、AI 真实链路与 Runtime 重型链路。
     expect(counts['visual-edit']).toBe(3)
     expect(counts['ai']).toBe(3)

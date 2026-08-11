@@ -71,6 +71,10 @@ PROTECTED_ADVANCED_CONFIG_KEYS = {
     "http_client",
     "host",
     "max_tokens",
+    "reasoning",
+    "openai_reasoning_effort",
+    "openrouter_reasoning",
+    "google_thinking_config",
 }
 
 LLM_SLOT_DEFINITIONS: dict[str, LlmSlotDefinition] = {
