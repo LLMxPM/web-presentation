@@ -157,8 +157,16 @@ def test_unified_prompt_should_keep_runtime_and_fixed_canvas_guidance() -> None:
         "未注入时先读取目标项目 configuration",
         "布局的具体数值基线",
         "PAGE_RENDER_BOTTOM_OVERFLOW",
+        "Runtime 主题语义颜色键包括",
+        "background-subtle 是 Runtime 提供的语义背景槽位",
+        "只使用上述 Runtime 主题键，不要猜测其它语义颜色键",
+        "未列出的语义 Token 不得自行引入",
+        "不要拼接 text-${tone}、from-${color}",
+        "var(--tw-color-text-primary)",
+        "useTheme().themeStyles 提供的是 --theme-* 变量",
     ):
         assert phrase in catalog.default_prompt
+    assert "Editor" not in catalog.default_prompt
 
 
 def test_unified_prompt_should_describe_platform_assets_and_relations() -> None:

@@ -213,6 +213,60 @@ def test_component_create_guide_should_require_and_explain_preview_schema() -> N
         })
 
 
+def test_runtime_theme_guidance_should_cover_source_and_mutation_boundaries() -> None:
+    """页面、组件、主题和 Runtime Kit 手册应覆盖主题类与源码边界。"""
+
+    page_create = get_operation_guide_spec("page.create.new")
+    page_update = get_operation_guide_spec("page.update.content")
+    page_validate = get_operation_guide_spec("page.validate.check")
+    component_create = get_operation_guide_spec("component.create.new")
+    component_update = get_operation_guide_spec("component.update.content")
+    component_validate = get_operation_guide_spec("component.validate.check")
+    theme_create = get_operation_guide_spec("theme.create.new")
+    theme_update = get_operation_guide_spec("theme.update.metadata")
+    runtime_list = get_operation_guide_spec("runtime_kit.query.list")
+    runtime_detail = get_operation_guide_spec("runtime_kit.query.detail")
+
+    assert all(
+        guide is not None
+        for guide in (
+            page_create,
+            page_update,
+            page_validate,
+            component_create,
+            component_update,
+            component_validate,
+            theme_create,
+            theme_update,
+            runtime_list,
+            runtime_detail,
+        )
+    )
+
+    page_create_text = "".join(page_create.prerequisites + page_create.constraints)  # type: ignore[union-attr]
+    page_update_text = "".join(page_update.prerequisites + page_update.constraints)  # type: ignore[union-attr]
+    component_text = "".join(component_create.constraints + component_update.constraints)  # type: ignore[union-attr]
+    validation_text = "".join(page_validate.constraints + component_validate.constraints)  # type: ignore[union-attr]
+    theme_text = "".join(theme_create.constraints + theme_update.constraints)  # type: ignore[union-attr]
+    runtime_text = "".join(runtime_list.constraints + runtime_detail.constraints)  # type: ignore[union-attr]
+
+    assert "读取项目 configuration" in page_create_text
+    assert "Runtime 主题语义类" in page_create_text
+    assert "text-${tone}" in page_create_text
+    assert "Runtime 主题语义类" in page_update_text
+    assert "跨项目和主题复用" in component_text
+    assert "完整静态字符串" in component_text
+    assert "未列出的主题 Token" in validation_text
+    assert "模型调用前应依据 Runtime 主题契约自行复核" in validation_text
+    assert "不会单独报告未列出的主题 Token" in validation_text
+    assert "Editor" not in page_create_text + page_update_text + component_text + validation_text + theme_text + runtime_text
+    assert "动态 Tailwind 类拼接" in validation_text
+    assert "palette 只接受当前主题 Schema" in theme_text
+    assert "Tailwind 类名" in theme_text
+    assert "Runtime Tailwind 主题类属于 Runtime" in runtime_text
+    assert "不通过 import 暴露" in runtime_text
+
+
 def test_project_configuration_guides_should_replace_dangerous_actions() -> None:
     """项目配置与路由应统一由 update 承载，主题 key 不提供修改入口。"""
 

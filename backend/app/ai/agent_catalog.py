@@ -172,14 +172,17 @@ page_content 要写成完整、可运行的 Vue SFC 文件源码，组件 conten
 
 项目和样式的完整 presentation 与 suggested_components 通过 get_entity 的 configuration 视图读取。准备修改项目展示配置、样式配置或建议组件前，先读取最新 configuration 快照。页面和组件应优先使用 Runtime Tailwind 主题类、主题 CSS 变量和 useTheme，避免硬编码品牌色、字体文件和 Logo 路径。如果项目当前主题色板与视觉目标不匹配，先通过 theme.create.copy 复制现有主题并调整 palette 或 theme.create.new 创建新主题，再在页面中使用主题类；动态样式使用完整类名枚举映射，不要拼接 text-${tone}、from-${color} 等 Tailwind 类。
 
-主题颜色可通过 text-*、bg-*、border-*、from-*、via-*、to-* 等前缀及透明度使用；字体语义类包括 font-heading、font-body 和 font-code。需要非主题字体时，先查询工作空间字体并使用 Runtime Kit 的 useAssetFontFamily。主题 Logo 优先使用 ThemeLogo，并通过 size 控制等比高度，不要硬编码资源路径。
+Runtime 主题语义颜色键包括 primary、secondary、invert、background、background-subtle、background-invert、border、border-subtle、link、link-hover、link-visited 和 accent1 至 accent6；通过 text-*、bg-*、border-*、from-*、via-*、to-* 前缀使用，并支持 50-900 色阶和 /透明度，例如 text-primary、bg-background-subtle、border-border、from-background-invert/80、text-accent2-600、bg-primary/80。background-subtle 是 Runtime 提供的语义背景槽位，不是主题写入 Schema 中的 palette.background.subtle 字段；只使用上述 Runtime 主题键，不要猜测其它语义颜色键。
+Runtime 页面和组件可以使用 Runtime safelist 与源码扫描支持的常用 Tailwind 工具类；未列出的语义 Token 不得自行引入。Tailwind 类必须以完整静态字符串出现在模板、脚本常量或顶层枚举映射中；不要拼接 text-${tone}、from-${color} 或运行时生成 import。Tailwind arbitrary values 可以使用，但必须以源码中的静态完整类出现；可视化编辑不保证支持任意值或未识别类。
+字体语义类包括 font-heading、font-body 和 font-code；字号类使用 text-xs 至 text-9xl，间距类使用 Runtime 支持的 Tailwind spacing。页面基础字号会替换 Tailwind 默认 16px 基准，text-*、p-*、m-*、gap-*、space-* 等语义尺度随倍率变化；直接写 px、rem 或 arbitrary values 不参与该倍率。需要非主题字体时，先查询工作空间字体并使用 Runtime Kit 的 useAssetFontFamily。
+直接写 CSS 时优先使用 Runtime 桥接变量 var(--tw-color-text-primary)、var(--tw-color-bg-default)、var(--tw-color-bg-subtle)、var(--tw-color-bg-invert)、var(--tw-color-border-default)、var(--tw-color-link-default)、var(--tw-color-accent1) 和 var(--tw-font-body)。useTheme().themeStyles 提供的是 --theme-* 变量，通常由 Runtime 应用到根节点；不要猜测 --color-* 或其它未公开变量。主题 Logo 优先使用 Runtime Kit 的 ThemeLogo，只通过 size 控制等比高度；只有高级场景才使用 useTheme 的 themeLogo、themeInvertLogo 或 themeStyles，不要硬编码资源路径。
 
 页面或组件渲染资源时，根据工具返回的 render_type 选择 AssetImage、AssetVideo、AssetDrawio、AssetMermaid、AssetChart、AssetFormula 或 Icon。资源槽位应匹配 approx_aspect_ratio 或 approx_aspect_ratio_value；完整展示优先 contain，只有用户明确要求裁切填充时才使用 cover，并避免裁切关键信息。AssetImage 使用 fit 控制 contain 或 cover，其 class 是资源容器而不是内部 img 的 class；纵向长图完整展示时应在 AssetImage 或其明确高度上下文中提供确定高度。
 
 Icon 组件引用工作空间已有图标资源；需要的图标不存在时通过 asset.create.new（asset_type=icon）创建 SVG 图标资源，图标 SVG 应使用 currentColor 继承主题文字色，默认不设 stroke-width（由 workspace 的 icon_default_stroke_width 控制），避免硬编码固定颜色或描边宽度。Icon 和 Asset* 的 name 必须是字符串字面量，或来自同一 Vue 文件顶层 const 数组对象字面量中可静态枚举的字段；不要使用 computed、函数返回、导入数据、字符串拼接或条件表达式动态生成资源名。普通资源 URL 使用 useAssetSrc，背景资源使用 useAssetBackground；资源名来自 props 时传入 getter。背景图、蒙版和暗角应作为画布内部独立层实现，并保持正文位于更高层级。
 
 ## 9. 写入、校验与错误恢复
-页面和组件源码修改必须使用操作手册声明的结构化 edits、版本锁和自动校验流程。修改已有页面前先读取 content，使用最新 current_version_no 和真实源码片段；修改组件前先读取 detail，取得最新草稿、draft_hash 和发布版本基线。create_entity 创建页面或组件、update_entity 修改页面/组件源码或组件 preview_schema 时都会自动执行校验，不要在写入前后重复调用 validate_entity。validate_entity 用于独立检查当前页面或组件代码、预先诊断候选 content、edits 或组件 preview_schema，以及预览资源内容差异。不要覆盖与用户目标无关的源码和元数据。
+页面和组件源码修改必须使用操作手册声明的结构化 edits、版本锁和自动校验流程。修改已有页面前先读取 content，使用最新 current_version_no 和真实源码片段；修改组件前先读取 detail，取得最新草稿、draft_hash 和发布版本基线。create_entity 创建页面或组件、update_entity 修改页面或组件源码时都会自动执行校验；update_entity 修改组件 preview_schema 时也会按当前组件规则执行校验。不要在写入前后重复调用 validate_entity。validate_entity 用于独立检查当前页面或组件代码、预先诊断候选 content、edits 或组件 preview_schema，以及预览资源内容差异。不要覆盖与用户目标无关的源码和元数据。
 
 新建页面会在落库前检查完整候选源码，修改页面会在创建新版本前校验应用 edits 后的候选源码。校验失败时读取 diagnostics，修正后再试；severity=warning 不代表写入失败，但 PAGE_RENDER_BOTTOM_OVERFLOW 表示固定画布底部可能裁切，应压缩内容、调整容器高度或拆页后重新校验。
 
