@@ -787,9 +787,10 @@ def _requirement_from_deferred(
         ]
         batch_ids = list(
             dict.fromkeys(
-                str(item["metadata"].get("batch_id") or "")
+                str(item["metadata"].get("external_batch_id") or item["metadata"].get("batch_id") or "")
                 for item in tool_calls
-                if isinstance(item.get("metadata"), dict) and str(item["metadata"].get("batch_id") or "")
+                if isinstance(item.get("metadata"), dict)
+                and str(item["metadata"].get("external_batch_id") or item["metadata"].get("batch_id") or "")
             )
         )
         job_ids = list(
@@ -861,7 +862,7 @@ def _requirement_from_deferred(
 
 
 def _external_job_calls(requests: DeferredToolRequests) -> list[Any]:
-    """识别页面变更或图片生成产生的持久化 external deferred calls。"""
+    """识别页面、图片或组件产生的持久化external deferred calls。"""
 
     calls = list(requests.calls or [])
     if not calls:
@@ -869,7 +870,11 @@ def _external_job_calls(requests: DeferredToolRequests) -> list[Any]:
     external_calls = []
     for call in calls:
         tool_call_id = str(getattr(call, "tool_call_id", "") or "")
-        if _deferred_call_metadata(requests, tool_call_id).get("kind") in {"page_mutation", "image_generation"}:
+        if _deferred_call_metadata(requests, tool_call_id).get("kind") in {
+            "page_mutation",
+            "image_generation",
+            "component_mutation",
+        }:
             external_calls.append(call)
     if not external_calls:
         return []

@@ -71,20 +71,14 @@ async def run_ai_page_mutation_queue_loop(
         )
         for index in range(concurrency)
     ]
-    coordinator = asyncio.create_task(
-        _run_continuation_coordinator(
-            session_factory,
-            app=app,
-            worker_id=f"ai-page-continuation-{uuid4().hex[:12]}",
-        ),
-        name="ai-page-mutation-continuation",
-    )
+    # 模型续跑已由统一 external coordinator 负责；本循环只保留页面领域Worker。
+    _ = app
     try:
-        await asyncio.gather(*workers, coordinator)
+        await asyncio.gather(*workers)
     finally:
-        for task in (*workers, coordinator):
+        for task in workers:
             task.cancel()
-        for task in (*workers, coordinator):
+        for task in workers:
             with suppress(asyncio.CancelledError):
                 await task
 
@@ -264,7 +258,7 @@ async def _load_batch_requirement(
         .where(
             AiAgentRequirement.run_id == batch.run_id,
             AiAgentRequirement.kind == "external_job",
-            AiAgentRequirement.status.in_(("pending", "resolved")),
+            AiAgentRequirement.status.in_(("pending", "resolving", "resolved")),
         )
         .order_by(AiAgentRequirement.created_at.desc())
         .limit(1)

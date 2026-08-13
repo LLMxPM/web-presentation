@@ -17,6 +17,11 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.ai.registry import AgentRegistry
 from app.ai.background_run_manager import AgentBackgroundRunManager
+from app.ai.external_task_queue import run_ai_external_task_coordinator
+from app.ai.component_mutation_queue import (
+    recover_interrupted_component_mutation_tasks,
+    run_ai_component_mutation_queue_loop,
+)
 from app.ai.page_mutation_queue import (
     recover_interrupted_ai_page_mutation_jobs_on_startup,
     run_ai_page_mutation_queue_loop,
@@ -67,6 +72,8 @@ async def lifespan(app: FastAPI):
     runtime_artifact_sweeper_task: asyncio.Task[None] | None = None
     ai_page_mutation_queue_task: asyncio.Task[None] | None = None
     ai_image_generation_queue_task: asyncio.Task[None] | None = None
+    ai_external_task_coordinator_task: asyncio.Task[None] | None = None
+    ai_component_mutation_queue_task: asyncio.Task[None] | None = None
     model_catalog_sync_task: asyncio.Task[None] | None = None
     playwright_browser_pool = get_playwright_browser_pool()
     agent_background_run_manager: AgentBackgroundRunManager = app.state.agent_background_run_manager
@@ -82,6 +89,7 @@ async def lifespan(app: FastAPI):
         if get_settings().ai_enabled:
             await recover_interrupted_ai_page_mutation_jobs_on_startup(session_factory)
             await recover_interrupted_image_generation_jobs_on_startup(session_factory)
+            await recover_interrupted_component_mutation_tasks(session_factory)
         # 进程内的测试或热重启可能复用全局池对象；只有明确的新应用生命周期
         # 才允许重新开放已由上一轮 shutdown 关闭的 Chromium 池。
         await playwright_browser_pool.start(allow_reopen=True)
@@ -99,6 +107,14 @@ async def lifespan(app: FastAPI):
             ai_image_generation_queue_task = asyncio.create_task(
                 run_ai_image_generation_queue_loop(session_factory, app=app),
                 name="ai-image-generation-queue",
+            )
+            ai_external_task_coordinator_task = asyncio.create_task(
+                run_ai_external_task_coordinator(session_factory, app=app),
+                name="ai-external-task-coordinator",
+            )
+            ai_component_mutation_queue_task = asyncio.create_task(
+                run_ai_component_mutation_queue_loop(session_factory),
+                name="ai-component-mutation-queue",
             )
         if get_settings().ai_model_catalog_sync_enabled:
             model_catalog_sync_task = asyncio.create_task(
@@ -126,6 +142,10 @@ async def lifespan(app: FastAPI):
             await _stop_background_task(ai_page_mutation_queue_task)
         if ai_image_generation_queue_task is not None:
             await _stop_background_task(ai_image_generation_queue_task)
+        if ai_external_task_coordinator_task is not None:
+            await _stop_background_task(ai_external_task_coordinator_task)
+        if ai_component_mutation_queue_task is not None:
+            await _stop_background_task(ai_component_mutation_queue_task)
         if model_catalog_sync_task is not None:
             await _stop_background_task(model_catalog_sync_task)
         await playwright_browser_pool.stop()

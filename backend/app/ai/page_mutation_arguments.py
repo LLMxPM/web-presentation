@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from app.ai.tools.generic.models import build_mutation_envelope
+from app.ai.tool_arguments import decode_json_container
 from app.core.exceptions import AppException
 
 
@@ -109,9 +110,12 @@ def _normalize_apply_arguments(tool_name: str, arguments: dict[str, Any]) -> dic
 
 
 def _required_payload(arguments: dict[str, Any], *, tool_name: str) -> dict[str, Any]:
-    """读取通用工具 payload，缺失时返回可定位契约漂移的错误。"""
+    """读取通用工具 payload，并兼容模型重复 JSON 编码的对象参数。"""
 
-    payload = arguments.get("payload")
+    payload = decode_json_container(
+        arguments.get("payload"),
+        expected_types=(dict,),
+    )
     if not isinstance(payload, dict):
         raise _invalid_arguments(f"{tool_name} 页面任务缺少对象形式的 payload。")
     return dict(payload)

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from typing import Any
+from pydantic_ai import CallDeferred
 
 from app.ai.platform_tools import AgentToolContext, AgentToolResult, agent_tool
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -44,6 +45,7 @@ from app.schemas.component import (
 )
 from app.services.code_check_service import CodeCheckService, build_code_check_failed_result
 from app.services.workspace_component_service import WorkspaceComponentService
+from app.ai.component_mutation_enqueue import enqueue_component_mutation
 
 
 def build_component_manager_tools(session_factory: async_sessionmaker[AsyncSession]) -> list[Any]:
@@ -288,6 +290,30 @@ def build_create_component_tool(session_factory: async_sessionmaker[AsyncSession
             required_dependency_fields=("workspace_id",),
         )
         operator_id = extract_user_id(str(claims.get("sub")))
+        deferred_tool_call_id = str(dependencies.get("current_tool_call_id") or "").strip()
+        member_run_id = str(dependencies.get("member_run_id") or "").strip() or None
+        if deferred_tool_call_id:
+            tool_call_id = f"{member_run_id}:{deferred_tool_call_id}" if member_run_id else deferred_tool_call_id
+            enqueued = await enqueue_component_mutation(
+                session_factory,
+                run_id=run_context.run_id,
+                session_id=run_context.session_id,
+                tool_call_id=tool_call_id,
+                deferred_tool_call_id=deferred_tool_call_id,
+                member_run_id=member_run_id,
+                operation="create_component",
+                workspace_id=int(dependencies["workspace_id"]),
+                arguments={
+                    "name": name,
+                    "import_name": import_name,
+                    "content": content,
+                    "component_type": component_type.value,
+                    "summary": summary,
+                    "preview_schema": preview_schema,
+                    "change_note": change_note,
+                },
+            )
+            raise CallDeferred(metadata=enqueued.as_metadata())
         async with session_factory() as session:
             normalized_preview_schema = normalize_preview_schema_argument(preview_schema)
             validation_result = await CodeCheckService(session).check_component_code(
@@ -351,6 +377,31 @@ def build_apply_component_edits_tool(session_factory: async_sessionmaker[AsyncSe
             required_dependency_fields=("workspace_id",),
         )
         operator_id = extract_user_id(str(claims.get("sub")))
+        deferred_tool_call_id = str(dependencies.get("current_tool_call_id") or "").strip()
+        member_run_id = str(dependencies.get("member_run_id") or "").strip() or None
+        if deferred_tool_call_id:
+            tool_call_id = f"{member_run_id}:{deferred_tool_call_id}" if member_run_id else deferred_tool_call_id
+            enqueued = await enqueue_component_mutation(
+                session_factory,
+                run_id=run_context.run_id,
+                session_id=run_context.session_id,
+                tool_call_id=tool_call_id,
+                deferred_tool_call_id=deferred_tool_call_id,
+                member_run_id=member_run_id,
+                operation="apply_component_edits",
+                workspace_id=int(dependencies["workspace_id"]),
+                component_id=int(component_id),
+                base_draft_hash=base_draft_hash,
+                base_published_version_no=int(base_published_version_no),
+                arguments={
+                    "component_id": component_id,
+                    "edits": [edit.model_dump(mode="json") for edit in edits],
+                    "base_draft_hash": base_draft_hash,
+                    "base_published_version_no": base_published_version_no,
+                    "change_note": change_note,
+                },
+            )
+            raise CallDeferred(metadata=enqueued.as_metadata())
         async with session_factory() as session:
             service = WorkspaceComponentService(session)
             component = await service.get(int(component_id))
@@ -481,6 +532,31 @@ def build_update_component_metadata_tool(session_factory: async_sessionmaker[Asy
             required_dependency_fields=("workspace_id",),
         )
         operator_id = extract_user_id(str(claims.get("sub")))
+        deferred_tool_call_id = str(dependencies.get("current_tool_call_id") or "").strip()
+        member_run_id = str(dependencies.get("member_run_id") or "").strip() or None
+        if deferred_tool_call_id and (preview_schema is not None or component_type is not None):
+            tool_call_id = f"{member_run_id}:{deferred_tool_call_id}" if member_run_id else deferred_tool_call_id
+            enqueued = await enqueue_component_mutation(
+                session_factory,
+                run_id=run_context.run_id,
+                session_id=run_context.session_id,
+                tool_call_id=tool_call_id,
+                deferred_tool_call_id=deferred_tool_call_id,
+                member_run_id=member_run_id,
+                operation="update_component_metadata",
+                workspace_id=int(dependencies["workspace_id"]),
+                component_id=int(component_id),
+                arguments={
+                    "component_id": component_id,
+                    "name": name,
+                    "import_name": import_name,
+                    "component_type": component_type.value if component_type is not None else None,
+                    "summary": summary,
+                    "preview_schema": preview_schema,
+                    "change_note": change_note,
+                },
+            )
+            raise CallDeferred(metadata=enqueued.as_metadata())
         async with session_factory() as session:
             service = WorkspaceComponentService(session)
             component = await service.get(int(component_id))

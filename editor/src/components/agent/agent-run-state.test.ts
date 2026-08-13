@@ -210,7 +210,7 @@ describe('agent-run-state timeline', () => {
     expect(state.timelineItems.at(-1)).toEqual(expect.objectContaining({
       kind: 'run_status',
       status: 'waiting_external',
-      content: '页面变更正在后台排队或校验。',
+      content: '后台任务正在排队、生成或校验。',
     }))
   })
 

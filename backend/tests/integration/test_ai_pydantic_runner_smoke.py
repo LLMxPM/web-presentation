@@ -1053,11 +1053,13 @@ async def test_pydantic_runner_should_not_pause_parent_when_member_delegation_re
     assert tool_call is not None
     assert tool_call.status == "completed"
     assert tool_call.output_payload_json["status"] == "failed"
-    assert "内容助手子运行需要用户处理" in tool_call.output_payload_json["result"]
+    assert "成员任务需要父级处理用户确认" in tool_call.output_payload_json["result"]
+    assert tool_call.output_payload_json["error"]["code"] == "AI_MEMBER_HITL_REQUIRES_PARENT"
+    assert tool_call.output_payload_json["error"]["retryable_at_parent"] is True
     assert member_run is not None
     assert member_run.status == "failed"
     assert member_run.pending_requirement_json is None
-    assert "内容助手子运行需要用户处理" in (member_run.error_message or "")
+    assert "子运行不能直接请求用户确认" in (member_run.error_message or "")
     assert "run.paused" not in [event.event for event in events]
     assert "member.run.error" in [event.event for event in events]
     assert events[-1].event == "run.completed"

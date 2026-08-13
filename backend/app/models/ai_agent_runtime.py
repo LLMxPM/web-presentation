@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import DateTime, ForeignKey, Integer, JSON, String, Text, UniqueConstraint
+from sqlalchemy import DateTime, ForeignKey, Index, Integer, JSON, String, Text, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -36,6 +36,16 @@ class AiAgentRun(TimestampMixin, Base):
     """记录一次平台智能体运行的状态、输入、上下文与恢复游标。"""
 
     __tablename__ = "ai_agent_runs"
+    __table_args__ = (
+        Index(
+            "uq_ai_agent_runs_active_session_agent",
+            "session_id",
+            "agent_id",
+            unique=True,
+            sqlite_where=text("status IN ('running','paused','waiting_external','cancelling')"),
+            postgresql_where=text("status IN ('running','paused','waiting_external','cancelling')"),
+        ),
+    )
 
     run_id: Mapped[str] = mapped_column(String(128), primary_key=True)
     session_id: Mapped[str] = mapped_column(ForeignKey("ai_agent_sessions.session_id"), nullable=False, index=True)

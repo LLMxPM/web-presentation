@@ -13,7 +13,7 @@ from uuid import uuid4
 from weakref import WeakValueDictionary
 
 from sqlalchemy import Select, func, select
-from sqlalchemy.exc import OperationalError
+from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
@@ -22,6 +22,7 @@ from app.ai.agent.runtime_context import AgentRuntimeContext
 from app.ai.member_prompts import build_member_prompt_from_payload
 from app.ai.run_event_writer import allocate_run_event_index, is_sqlite_lock_error
 from app.ai.run_write_fence import AgentRunWriteFence
+from app.ai.external_task_control import seal_external_batch_for_requirement
 from app.ai.tool_arguments import parse_tool_arguments
 from app.models.ai_agent_attachment import AiAgentImageAttachment
 from app.models.ai_agent_runtime import (
@@ -287,7 +288,13 @@ class PlatformAgentRuntimeStore:
             session_model.metadata_json = session_metadata
         self._session.add(run_model)
         # PostgreSQL 会立即校验消息表 run_id 外键；先刷入父 run，避免同批 flush 时子表先插入。
-        await self._session.flush([run_model])
+        try:
+            await self._session.flush([run_model])
+        except IntegrityError as exc:
+            if not _is_active_run_unique_conflict(exc):
+                raise
+            await self._session.rollback()
+            raise ValueError("AI_SESSION_RUN_ACTIVE") from exc
         await self._append_message(
             session_id=session_id,
             run_id=run_id,
@@ -631,7 +638,7 @@ class PlatformAgentRuntimeStore:
         result = await self._session.execute(
             select(AiAgentRequirement).where(
                 AiAgentRequirement.run_id == run_model.run_id,
-                AiAgentRequirement.status == "pending",
+                AiAgentRequirement.status.in_(("pending", "resolving")),
             )
         )
         now = _utc_now()
@@ -653,8 +660,7 @@ class PlatformAgentRuntimeStore:
         is_external_job = requirement.kind == "external_job"
         run_model.status = "waiting_external" if is_external_job else "paused"
         run_model.pending_requirement_json = payload
-        self._session.add(
-            AiAgentRequirement(
+        requirement_model = AiAgentRequirement(
                 requirement_id=requirement.id or f"req-{uuid4().hex}",
                 session_id=run_model.session_id,
                 run_id=run_model.run_id,
@@ -667,7 +673,14 @@ class PlatformAgentRuntimeStore:
                 member_run_id=requirement.member_run_id,
                 payload_json=payload,
             )
-        )
+        self._session.add(requirement_model)
+        await self._session.flush([requirement_model])
+        if is_external_job and _requirement_uses_unified_external_batch(payload):
+            await seal_external_batch_for_requirement(
+                self._session,
+                run=run_model,
+                requirement=requirement_model,
+            )
         return await self.append_event(
             run_model,
             AgentRunEvent(
@@ -732,6 +745,21 @@ class PlatformAgentRuntimeStore:
         requirement.status = "resolved"
         requirement.resolved_payload_json = payload
         requirement.resolved_at = _utc_now()
+        await self._session.flush()
+
+    async def begin_requirement_resolution(
+        self,
+        requirement: AiAgentRequirement,
+        *,
+        payload: dict[str, Any],
+    ) -> None:
+        """把Requirement置为resolving；只有结果进入模型历史后才能最终resolved。"""
+
+        if requirement.status not in {"pending", "resolving"}:
+            raise ValueError("AI_RUN_REQUIREMENT_STALE")
+        requirement.status = "resolving"
+        requirement.resolved_payload_json = payload
+        requirement.resolved_at = None
         await self._session.flush()
 
     async def get_active_run_model(self, *, session_id: str, agent_id: str) -> AiAgentRun | None:
@@ -1306,7 +1334,7 @@ class PlatformAgentRuntimeStore:
                     member_agent_id=_optional_str(data.get("member_agent_id")),
                     member_agent_name=_optional_str(data.get("member_agent_name")),
                     member_run_id=_optional_str(data.get("member_run_id")),
-                    status=status if status in {"running", "completed", "error", "interrupted"} else "running",  # type: ignore[arg-type]
+                    status=status if status in {"running", "waiting_external", "completed", "error", "cancelled", "interrupted"} else "running",  # type: ignore[arg-type]
                     input_payload=_first_present(data, ("tool_args", "arguments", "args")),
                     output_payload=_first_present(data, ("result", "output")),
                     message=str(data.get("message") or event.content or ""),
@@ -1319,7 +1347,7 @@ class PlatformAgentRuntimeStore:
             return existing
         existing.status = status
         if existing.tool is not None:
-            existing.tool.status = status if status in {"running", "completed", "error", "interrupted"} else existing.tool.status  # type: ignore[assignment]
+            existing.tool.status = status if status in {"running", "waiting_external", "completed", "error", "cancelled", "interrupted"} else existing.tool.status  # type: ignore[assignment]
             input_payload = _first_present(data, ("tool_args", "arguments", "args"))
             if _is_meaningful_payload(input_payload) and not _is_meaningful_payload(existing.tool.input_payload):
                 existing.tool.input_payload = input_payload
@@ -1513,12 +1541,13 @@ class PlatformAgentRuntimeStore:
                 clear_model_request_item()
                 current_text = None
                 continue
-            if event.event in {"member.model.request.started", "member.run.paused", "member.run.completed", "member.run.cancelled", "member.run.error"}:
+            if event.event in {"member.model.request.started", "member.run.waiting", "member.run.paused", "member.run.completed", "member.run.cancelled", "member.run.error"}:
                 if event.event != "member.model.request.started":
                     clear_model_request_item()
                 current_text = None
                 status = {
                     "member.model.request.started": "model_request",
+                    "member.run.waiting": "waiting_external",
                     "member.run.paused": "paused",
                     "member.run.completed": "completed",
                     "member.run.cancelled": "cancelled",
@@ -1526,6 +1555,7 @@ class PlatformAgentRuntimeStore:
                 }[event.event]
                 content = {
                     "member.model.request.started": "等待智能体输出中",
+                    "member.run.waiting": "后台任务正在处理中。",
                     "member.run.paused": "等待用户处理。",
                     "member.run.completed": "运行已完成。",
                     "member.run.cancelled": "运行已停止。",
@@ -1788,7 +1818,7 @@ class PlatformAgentRuntimeStore:
                 tool_call_id=tool_call.tool_call_id,
                 tool_name=tool_call.tool_name,
                 member_run_id=tool_call.member_run_id,
-                status=tool_call.status if tool_call.status in {"running", "completed", "error", "interrupted"} else "running",  # type: ignore[arg-type]
+                status=tool_call.status if tool_call.status in {"running", "waiting_external", "completed", "error", "cancelled", "interrupted"} else "running",  # type: ignore[arg-type]
                 input_payload=tool_call.input_payload_json,
                 output_payload=tool_call.output_payload_json,
                 message=tool_call.message or "",
@@ -2236,6 +2266,33 @@ def _map_run_status(status: str) -> str:
     if status in {"pending", "running", "paused", "waiting_external", "cancelling", "completed", "cancelled"}:
         return status
     return "failed"
+
+
+def _requirement_uses_unified_external_batch(payload: dict[str, Any]) -> bool:
+    """判断Requirement是否携带统一Batch元数据，兼容迁移前历史deferred记录。"""
+
+    tool_execution = payload.get("tool_execution")
+    if not isinstance(tool_execution, dict):
+        return False
+    calls = tool_execution.get("tool_calls")
+    if not isinstance(calls, list):
+        return False
+    return any(
+        isinstance(item, dict)
+        and isinstance(item.get("metadata"), dict)
+        and bool(item["metadata"].get("external_batch_id"))
+        for item in calls
+    )
+
+
+def _is_active_run_unique_conflict(error: IntegrityError) -> bool:
+    """识别数据库最终仲裁产生的同会话活动Run唯一冲突。"""
+
+    message = str(error).lower()
+    return (
+        "uq_ai_agent_runs_active_session_agent" in message
+        or "ai_agent_runs.session_id, ai_agent_runs.agent_id" in message
+    )
 
 
 def _utc_now() -> datetime:

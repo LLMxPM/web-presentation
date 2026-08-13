@@ -45,7 +45,8 @@ from app.ai.visual_tool_runtime import resolve_visual_tool_runtime
 from app.ai.run_errors import build_agent_error_log_extra, normalize_agent_run_exception
 from app.core.exceptions import AppException
 from app.db.session import get_session_factory
-from app.models.ai_agent_runtime import AiAgentRequirement, AiAgentRun
+from app.models.ai_agent_runtime import AiAgentMemberRun, AiAgentRequirement, AiAgentRun, AiAgentToolCall
+from app.models.ai_external_task import AiAgentExternalBatch, AiAgentExternalTask
 from app.models.ai_llm import AiLlmConfig
 from app.models.ai_image_generation import AiImageGenerationJob
 from app.core.time_utils import utc_now
@@ -872,6 +873,58 @@ class AgentSessionFacade:
             )
             .values(cancel_requested_at=cancelled_at)
         )
+        await self._session.execute(
+            update(AiAgentExternalTask)
+            .where(
+                AiAgentExternalTask.run_id == run_model.run_id,
+                AiAgentExternalTask.status == "pending",
+            )
+            .values(
+                status="cancelled",
+                cancel_requested_at=cancelled_at,
+                finished_at=cancelled_at,
+            )
+        )
+        await self._session.execute(
+            update(AiAgentExternalTask)
+            .where(
+                AiAgentExternalTask.run_id == run_model.run_id,
+                AiAgentExternalTask.status.in_(("running", "waiting_provider")),
+            )
+            .values(cancel_requested_at=cancelled_at)
+        )
+        await self._session.execute(
+            update(AiAgentExternalBatch)
+            .where(
+                AiAgentExternalBatch.run_id == run_model.run_id,
+                AiAgentExternalBatch.status.in_(("collecting", "waiting_tasks", "ready")),
+            )
+            .values(status="cancelled", finished_at=cancelled_at)
+        )
+        await self._session.execute(
+            update(AiAgentRequirement)
+            .where(
+                AiAgentRequirement.run_id == run_model.run_id,
+                AiAgentRequirement.status.in_(("pending", "resolving")),
+            )
+            .values(status="cancelled", resolved_at=cancelled_at)
+        )
+        await self._session.execute(
+            update(AiAgentMemberRun)
+            .where(
+                AiAgentMemberRun.parent_run_id == run_model.run_id,
+                AiAgentMemberRun.status.in_(("running", "waiting_external")),
+            )
+            .values(status="cancelled", finished_at=cancelled_at)
+        )
+        await self._session.execute(
+            update(AiAgentToolCall)
+            .where(
+                AiAgentToolCall.run_id == run_model.run_id,
+                AiAgentToolCall.status.in_(("running", "waiting_external")),
+            )
+            .values(status="cancelled", message="父级运行已取消。")
+        )
         await self._session.commit()
         if force:
             manager = getattr(self._app.state, "agent_background_run_manager", None)
@@ -997,15 +1050,13 @@ class AgentSessionFacade:
                     tool_execution=merged_tool_execution,
                     feedback_selections=feedback_selections or [],
                 )
-                await self._store.resolve_requirement(
-                    requirement,
-                    payload={
-                        "decision": decision,
-                        "note": note,
-                        "tool_execution": merged_tool_execution,
-                        "feedback_selections": feedback_selections or [],
-                    },
-                )
+                resolution_payload = {
+                    "decision": decision,
+                    "note": note,
+                    "tool_execution": merged_tool_execution,
+                    "feedback_selections": feedback_selections or [],
+                }
+                await self._store.begin_requirement_resolution(requirement, payload=resolution_payload)
                 run_model.status = "running"
                 run_model.pending_requirement_json = None
                 continued = await self._store.append_event(
@@ -1048,6 +1099,7 @@ class AgentSessionFacade:
                     context_processor=context_processor,
                 ):
                     yield chunk
+                await self._store.resolve_requirement(requirement, payload=resolution_payload)
             except asyncio.CancelledError:
                 await self._mark_interrupted_run_terminal(
                     run_model,
@@ -1116,7 +1168,7 @@ class AgentSessionFacade:
         *,
         run_id: str,
         deferred_results: DeferredToolResults,
-        continuation_fence: PageMutationContinuationWriteFence | None = None,
+        continuation_fence: AgentRunWriteFence | None = None,
     ) -> str:
         """兼容入口：由后台协调器恢复页面变更 external_job run。"""
 
@@ -1132,7 +1184,7 @@ class AgentSessionFacade:
         *,
         run_id: str,
         deferred_results: DeferredToolResults,
-        continuation_fence: PageMutationContinuationWriteFence | None = None,
+        continuation_fence: AgentRunWriteFence | None = None,
         source: str = "external_job_queue",
     ) -> str:
         """恢复通用 external_job run；页面任务可额外提供租约写围栏。"""
@@ -1153,7 +1205,7 @@ class AgentSessionFacade:
             .where(
                 AiAgentRequirement.run_id == run_model.run_id,
                 AiAgentRequirement.kind == "external_job",
-                AiAgentRequirement.status.in_(("pending", "resolved")),
+                AiAgentRequirement.status.in_(("pending", "resolving", "resolved")),
             )
             .order_by(AiAgentRequirement.created_at.desc())
         )
@@ -1210,6 +1262,7 @@ class AgentSessionFacade:
                 feedback_selections=[],
                 runtime_context=runtime_context,
                 write_fence=continuation_fence,
+                internal_execution=True,
             )
             async for _ in stream:
                 pass
@@ -1270,10 +1323,11 @@ class AgentSessionFacade:
             write_fence=continuation_fence,
         )
         await store.ensure_write_fence()
-        if requirement.status == "pending":
-            await store.resolve_requirement(
+        resolution_payload = {"source": source, "tool_call_ids": sorted(deferred_results.calls)}
+        if requirement.status in {"pending", "resolving"}:
+            await store.begin_requirement_resolution(
                 requirement,
-                payload={"source": source, "tool_call_ids": sorted(deferred_results.calls)},
+                payload=resolution_payload,
             )
         run_model.status = "running"
         run_model.pending_requirement_json = None
@@ -1313,6 +1367,7 @@ class AgentSessionFacade:
             context_budget=history_budget,
             context_processor=context_processor,
         )
+        await store.resolve_requirement(requirement, payload=resolution_payload)
         await self._session.refresh(run_model, attribute_names=["status"])
         return run_model.status
 
@@ -1334,6 +1389,7 @@ class AgentSessionFacade:
         interruption_code: str = "AI_RUN_CONTINUE_INTERRUPTED",
         interruption_message: str = "智能体继续运行连接中断，运行已停止。",
         reserved_lock: asyncio.Lock | None = None,
+        internal_execution: bool = False,
     ) -> AsyncGenerator[bytes, None]:
         """继续成员 requirement：先恢复成员 run，再回填父级委派工具结果。"""
 
@@ -1388,15 +1444,13 @@ class AgentSessionFacade:
                         tool_execution=merged_tool_execution,
                         feedback_selections=feedback_selections,
                     )
-                await store.resolve_requirement(
-                    requirement,
-                    payload={
-                        "decision": decision,
-                        "note": note,
-                        "tool_execution": merged_tool_execution,
-                        "feedback_selections": feedback_selections,
-                    },
-                )
+                resolution_payload = {
+                    "decision": decision,
+                    "note": note,
+                    "tool_execution": merged_tool_execution,
+                    "feedback_selections": feedback_selections,
+                }
+                await store.begin_requirement_resolution(requirement, payload=resolution_payload)
                 run_model.status = "running"
                 run_model.pending_requirement_json = None
                 await store.append_event(
@@ -1409,6 +1463,7 @@ class AgentSessionFacade:
                     requirement_payload=requirement_payload,
                     deferred_tool_results=member_deferred_results,
                 )
+                await store.resolve_requirement(requirement, payload=resolution_payload)
                 parent_delegate_call_id = str(merged_tool_execution.get("parent_delegate_tool_call_id") or "").strip()
                 parent_delegate_tool_name = str(merged_tool_execution.get("parent_delegate_tool_name") or "delegate_task_to_self").strip()
                 parent_delegate_tool_args = merged_tool_execution.get("parent_delegate_tool_args")
@@ -1527,6 +1582,13 @@ class AgentSessionFacade:
             if not acquired:
                 await lock.acquire()
                 acquired = True
+            if internal_execution:
+                try:
+                    await worker()
+                finally:
+                    if acquired and lock.locked():
+                        lock.release()
+                return
             live_queue = subscribe_live_run_events(run_id=run_model.run_id)
             task = asyncio.create_task(worker())
             try:

@@ -824,7 +824,7 @@ _COORDINATOR_OPERATION_GUIDES = (
             "写入前会自动执行契约、Runtime 编译、默认态与有界 presets 的真实渲染和布局检查；无需先调用 component.validate.check。",
             "组件不绑定项目页面尺寸或基础字号；自动检查使用版本化临时 profile，具体项目兼容性由页面检查负责。",
         ),
-        side_effects=("只创建草稿；发布后生成正式版本；发布后应更新项目 configuration 的 suggested_components 使后续页面可优先复用。", "结果只返回组件摘要（含 draft_hash 和版本基线），不回显已提交的 content 与 preview_schema。",),
+        side_effects=("通过统一后台任务执行契约、编译、渲染和布局检查；只创建草稿，发布后生成正式版本。", "发布后应更新项目 configuration 的 suggested_components 使后续页面可优先复用。", "结果只返回组件摘要（含 draft_hash 和版本基线），不回显已提交的 content 与 preview_schema。",),
         error_recovery=(
             "收到 COMPONENT_PREVIEW_SCHEMA_REQUIRED 时补充合法的 preview_schema 后重试。",
             "收到 CONTENT_COMPONENT_SIZE_CONTROL_REQUIRED 时，把尺寸字段定义放入 preview_schema.props；不要把 width、height 等预览值直接放在根节点。",
@@ -1008,10 +1008,10 @@ _COORDINATOR_OPERATION_GUIDES = (
         error_recovery=(
             "缺少 Schema 或尺寸控制字段时，先读取组件 detail，再提交包含合法 preview_schema 的元数据更新。",
         ),
-        side_effects=("结果只返回组件摘要，不回显已提交的 preview_schema 与源码。",),
+        side_effects=("提交 preview_schema 或 component_type 时通过统一后台任务执行；纯名称、摘要等轻量元数据保持同步。", "结果只返回组件摘要，不回显已提交的 preview_schema 与源码。",),
         risk_level="write",
     ),
-    _operation_guide("component", "update", "对组件草稿应用结构化 edits，并在写入前自动检查真实渲染结果。", _write_parameters("component", "update", ComponentContentPayload, action="content", target_mode="single"), action="content",
+    _operation_guide("component", "update", "通过统一后台任务对组件草稿应用结构化 edits，并在写入前自动检查真实渲染结果。", _write_parameters("component", "update", ComponentContentPayload, action="content", target_mode="single"), action="content",
                      prerequisites=("先读取组件 detail，取得源码、draft_hash 和 base_published_version_no。",),
                      constraints=("自动执行契约、Runtime 编译、默认态与有界 presets 的真实渲染和布局检查，无需提前重复调用 validate_entity。", "新增 Tailwind 类必须是完整静态字符串；动态样式使用顶层枚举映射，禁止拼接 text-${tone}、from-${color} 等类名。", "组件颜色、字体和 Logo 应使用 Runtime 主题语义类或版本化 Runtime Kit，不要绑定当前项目的具体主题值。"),
                      side_effects=("结果只返回组件摘要、edits 计数与 canonical_diff，不回显完整源码。",), error_recovery=("编辑锁冲突时重新读取组件 detail。", "valid=false 时按 diagnostics 修复 edits；unavailable/retryable=true 时稍后原样重试。"), risk_level="write"),
@@ -1070,7 +1070,7 @@ _COORDINATOR_TOOL_SPECS = (
     _visual_analysis_tool_spec(allow_page_screenshot=True),
     _image_generation_tool_spec(),
     _tool('delegate_task_to_self', '委派自身子任务', 'self_delegation', '自委派', '把可独立执行的工作空间内容任务交给同一助手的隔离子运行。',
-          default_instructions='不需要选择成员身份；不得委派删除、清理或永久移除任务，归档应优先使用 archive_entity。', risk_level='system'),
+          default_instructions='不需要选择成员身份；不得委派删除、清理或永久移除任务。收到 AI_MEMBER_HITL_REQUIRES_PARENT 或 AI_MEMBER_HITL_REDELEGATION_BLOCKED 后不得再次委派相同任务，必须由父级直接调用 blocked_tool 指示的工具。', risk_level='system'),
 )
 
 _COORDINATOR_GROUP_SPECS = (

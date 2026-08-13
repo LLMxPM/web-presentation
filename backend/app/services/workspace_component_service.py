@@ -69,8 +69,14 @@ class WorkspaceComponentService:
             await self.workspace_service.ensure_access(component.workspace_id, user_id=user_id)
         return await self._to_item(component)
 
-    async def create(self, payload: WorkspaceComponentCreateRequest, operator_id: int) -> WorkspaceComponentItem:
-        """创建工作空间组件草稿，不生成正式发布版本。"""
+    async def create(
+        self,
+        payload: WorkspaceComponentCreateRequest,
+        operator_id: int,
+        *,
+        commit: bool = True,
+    ) -> WorkspaceComponentItem:
+        """创建工作空间组件草稿；可由队列在外层事务统一提交。"""
 
         if payload.file_type != PageFileType.VUE:
             raise AppException(status_code=400, code="COMPONENT_FILE_TYPE_INVALID", detail="当前阶段仅支持 Vue 组件。")
@@ -121,12 +127,22 @@ class WorkspaceComponentService:
             WorkspaceComponent,
             CODE_PREFIX_COMPONENT,
             write_component,
+            commit=commit,
         )
+        if not commit:
+            await self.session.flush()
         reloaded = await self.repository.get_by_id(component.id)
         return await self._to_item(reloaded)
 
-    async def update(self, component_id: int, payload: WorkspaceComponentUpdateRequest, operator_id: int) -> WorkspaceComponentItem:
-        """更新组件元数据和草稿源码，不生成正式发布版本。"""
+    async def update(
+        self,
+        component_id: int,
+        payload: WorkspaceComponentUpdateRequest,
+        operator_id: int,
+        *,
+        commit: bool = True,
+    ) -> WorkspaceComponentItem:
+        """更新组件元数据和草稿源码；可由队列在外层事务统一提交。"""
 
         component = await self._get_component_or_raise(component_id)
         await self.workspace_service.ensure_access(component.workspace_id, user_id=operator_id)
@@ -179,7 +195,10 @@ class WorkspaceComponentService:
             component.status = payload.status.value
 
         component.updated_by = operator_id
-        await self.session.commit()
+        if commit:
+            await self.session.commit()
+        else:
+            await self.session.flush()
         reloaded = await self.repository.get_by_id(component.id)
         return await self._to_item(reloaded)
 

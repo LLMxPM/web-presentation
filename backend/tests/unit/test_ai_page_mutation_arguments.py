@@ -37,6 +37,54 @@ def test_create_entity_page_arguments_should_unwrap_payload() -> None:
     assert arguments["summary"] == "选型对比"
 
 
+def test_create_entity_page_arguments_should_decode_json_payload() -> None:
+    """持久化的通用页面创建参数即使把 payload 编码为 JSON 字符串也应正常执行。"""
+
+    arguments = normalize_page_mutation_arguments(
+        operation="create_page",
+        tool_name="create_entity",
+        raw_arguments={
+            "resource_type": "page",
+            "mode": "new",
+            "payload": (
+                '{"project_id": 52, "title": "封面", '
+                '"content": "<template><main /></template>", '
+                '"speaker_notes": "{\\"keep\\": \\"text\\"}"}'
+            ),
+        },
+        project_id=52,
+        page_id=None,
+        base_version_no=None,
+    )
+
+    assert arguments["title"] == "封面"
+    assert arguments["page_content"] == "<template><main /></template>"
+    assert arguments["speaker_notes"] == '{"keep": "text"}'
+
+
+def test_update_entity_page_arguments_should_decode_repeated_json_payload() -> None:
+    """页面更新任务应兼容有限层数内被重复 JSON 编码的 payload。"""
+
+    arguments = normalize_page_mutation_arguments(
+        operation="apply_page_edits",
+        tool_name="update_entity",
+        raw_arguments={
+            "resource_type": "page",
+            "target_id": 81,
+            "action": "content",
+            "payload": '"{\\"edits\\":[{\\"old\\":\\"旧\\",\\"new\\":\\"新\\"}],\\"base_version_no\\":3}"',
+        },
+        project_id=52,
+        page_id=81,
+        base_version_no=3,
+    )
+
+    assert arguments == {
+        "edits": [{"old": "旧", "new": "新"}],
+        "base_version_no": 3,
+    }
+
+
 def test_update_entity_page_arguments_should_unwrap_content_payload() -> None:
     """通用页面内容修改调用应解包 edits，并校验外层 target_id。"""
 
@@ -116,7 +164,8 @@ def test_recoverable_deferred_result_should_not_be_wrapped() -> None:
     ("tool_name", "raw_arguments"),
     [
         ("create_entity", {"resource_type": "component", "mode": "new", "payload": {}}),
-        ("create_entity", {"resource_type": "page", "mode": "new", "payload": "{}"}),
+        ("create_entity", {"resource_type": "page", "mode": "new", "payload": "[]"}),
+        ("create_entity", {"resource_type": "page", "mode": "new", "payload": "not-json"}),
         (
             "update_entity",
             {"resource_type": "page", "target_id": 81, "action": "metadata", "payload": {}},

@@ -61,7 +61,7 @@ const TOOL_START_STATUS_TEXT = '等待工具调用开始'
 const TOOL_EXECUTION_STATUS = 'tool_execution'
 const TOOL_EXECUTION_STATUS_TEXT = '等待工具调用完成'
 const WAITING_EXTERNAL_STATUS = 'waiting_external'
-const WAITING_EXTERNAL_STATUS_TEXT = '页面变更正在后台排队或校验。'
+const WAITING_EXTERNAL_STATUS_TEXT = '后台任务正在排队、生成或校验。'
 const CONTEXT_COMPRESSION_STATUS = 'context_compression'
 const CONTEXT_COMPRESSION_STARTED_TEXT = '上下文压缩中...'
 const CONTEXT_COMPRESSION_COMPLETED_TEXT = '上下文已压缩。'
@@ -381,7 +381,7 @@ function resolveToolProgressText(event: AgentRunEvent): string {
   if (phase === 'validating') return '页面源码与运行时正在校验。'
   if (phase === 'rendering') return '页面渲染检查中。'
   if (phase === 'saving') return '正在保存页面变更。'
-  return String(event.data.message || event.content || '页面变更正在后台处理。')
+  return String(event.data.message || event.content || '后台任务正在处理。')
 }
 
 /**
@@ -737,6 +737,12 @@ function applyMemberRunEvent(state: AgentSessionRuntimeState, event: AgentRunEve
       memberRun.status = 'paused'
       removeMemberRunWaitingStatusItems(memberRun)
       appendMemberRunStatusItem(memberRun, event, 'paused', '等待用户处理。')
+      clearMemberStreamState(state, memberRun)
+      break
+    case 'member.run.waiting':
+      memberRun.status = 'waiting_external'
+      removeMemberRunWaitingStatusItems(memberRun)
+      appendMemberRunStatusItem(memberRun, event, 'waiting_external', '后台任务正在处理中。')
       clearMemberStreamState(state, memberRun)
       break
     case 'member.run.cancelled':

@@ -13,6 +13,7 @@ from app.models.ai_agent_runtime import (
 )
 from app.models.ai_page_mutation import AiPageMutationBatch, AiPageMutationJob
 from app.models.ai_image_generation import AiImageGenerationJob
+from app.models.ai_external_task import AiAgentExternalBatch, AiAgentExternalTask, AiComponentMutationTask
 from app.models.ai_image_model import AiImageModelConfig, AiImageProviderConfig, AiImageSlotBinding
 from app.models.ai_llm import AiLlmConfig, AiLlmProviderConfig, AiLlmSlotBinding
 from app.models.ai_model_catalog import AiChatModelCatalog, AiChatProviderCatalog, AiModelCatalogSyncState
@@ -61,6 +62,9 @@ __all__ = [
     "AiPageMutationBatch",
     "AiPageMutationJob",
     "AiImageGenerationJob",
+    "AiAgentExternalBatch",
+    "AiAgentExternalTask",
+    "AiComponentMutationTask",
     "AiImageProviderConfig",
     "AiImageModelConfig",
     "AiImageSlotBinding",

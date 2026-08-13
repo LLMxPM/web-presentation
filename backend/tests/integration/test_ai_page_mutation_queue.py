@@ -452,12 +452,15 @@ async def test_ai_page_mutation_executor_should_commit_page_and_job_together(
             {
                 "resource_type": "page",
                 "mode": "new",
-                "payload": {
-                    "project_id": project_id,
-                    "title": page_arguments["title"],
-                    "summary": page_arguments["summary"],
-                    "content": page_arguments["page_content"],
-                },
+                "payload": json.dumps(
+                    {
+                        "project_id": project_id,
+                        "title": page_arguments["title"],
+                        "summary": page_arguments["summary"],
+                        "content": page_arguments["page_content"],
+                    },
+                    ensure_ascii=False,
+                ),
             }
             if generic_tool
             else page_arguments
@@ -532,7 +535,7 @@ async def test_ai_page_mutation_executor_should_apply_generic_update_payload(
     authenticated_client: AsyncClient,
     monkeypatch,
 ) -> None:
-    """通用 update_entity 的嵌套 payload 应被 Worker 解包并生成页面新版本。"""
+    """通用 update_entity 的 JSON 字符串 payload 应被 Worker 解包并生成页面新版本。"""
 
     workspace_response = await authenticated_client.post(
         "/api/workspaces",
@@ -605,11 +608,14 @@ async def test_ai_page_mutation_executor_should_apply_generic_update_payload(
                         "resource_type": "page",
                         "target_id": page_id,
                         "action": "content",
-                        "payload": {
-                            "edits": [{"type": "rewrite_file", "content": next_content}],
-                            "base_version_no": 1,
-                            "change_note": "通用工具更新",
-                        },
+                        "payload": json.dumps(
+                            {
+                                "edits": [{"type": "rewrite_file", "content": next_content}],
+                                "base_version_no": 1,
+                                "change_note": "通用工具更新",
+                            },
+                            ensure_ascii=False,
+                        ),
                     },
                 },
             ),

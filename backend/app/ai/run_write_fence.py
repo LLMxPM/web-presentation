@@ -12,6 +12,8 @@ from sqlalchemy import exists, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.ai_page_mutation import AiPageMutationBatch
+from app.models.ai_external_task import AiAgentExternalBatch
+from app.models.ai_agent_runtime import AiAgentRun
 
 
 class AgentRunWriteFenceLost(RuntimeError):
@@ -106,3 +108,55 @@ class PageMutationContinuationWriteFence:
         return (
             await session.scalar(select(AiPageMutationBatch.batch_id).where(*self.batch_conditions(now)))
         ) is not None
+
+
+@dataclass(frozen=True, slots=True)
+class ExternalBatchContinuationWriteFence:
+    """约束统一外部Batch续跑的所有运行态写入必须由当前租约代次完成。"""
+
+    batch_id: str
+    worker_id: str
+    lease_generation: int
+
+    def batch_conditions(self, now: datetime) -> tuple[Any, ...]:
+        """返回统一Batch当前租约条件。"""
+
+        return (
+            AiAgentExternalBatch.batch_id == self.batch_id,
+            AiAgentExternalBatch.status == "resuming",
+            AiAgentExternalBatch.worker_id == self.worker_id,
+            AiAgentExternalBatch.lease_generation == self.lease_generation,
+            AiAgentExternalBatch.lease_expires_at.is_not(None),
+            AiAgentExternalBatch.lease_expires_at > now,
+            exists(
+                select(AiAgentRun.run_id).where(
+                    AiAgentRun.run_id == AiAgentExternalBatch.run_id,
+                    AiAgentRun.status.in_(("running", "paused", "waiting_external", "completed")),
+                    AiAgentRun.cancel_requested_at.is_(None),
+                )
+            ),
+        )
+
+    def condition(self, now: datetime) -> Any:
+        """构造可嵌入其它写语句的统一Batch EXISTS围栏。"""
+
+        return exists(select(AiAgentExternalBatch.batch_id).where(*self.batch_conditions(now)))
+
+    async def ensure_owned(self, session: AsyncSession, *, now: datetime) -> None:
+        """在提交前锁定并确认当前续跑租约。"""
+
+        result = await session.execute(
+            update(AiAgentExternalBatch)
+            .where(*self.batch_conditions(now))
+            .values(lease_generation=AiAgentExternalBatch.lease_generation)
+            .execution_options(synchronize_session=False)
+        )
+        if int(result.rowcount or 0) != 1:
+            raise AgentRunWriteFenceLost(
+                f"AI外部Batch续跑租约已失效：batch={self.batch_id}, generation={self.lease_generation}"
+            )
+
+    async def is_owned(self, session: AsyncSession, *, now: datetime) -> bool:
+        """只读检查统一Batch租约所有权。"""
+
+        return await session.scalar(select(AiAgentExternalBatch.batch_id).where(*self.batch_conditions(now))) is not None

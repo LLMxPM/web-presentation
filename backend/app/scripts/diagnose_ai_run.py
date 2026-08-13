@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.ai.message_history_recovery import recover_run_message_history
 from app.db.session import get_session_factory
 from app.models.ai_agent_runtime import (
+    AiAgentMemberRun,
     AiAgentMessage,
     AiAgentRequirement,
     AiAgentRun,
@@ -24,6 +25,7 @@ from app.models.ai_agent_runtime import (
     AiAgentSession,
     AiAgentToolCall,
 )
+from app.models.ai_external_task import AiAgentExternalBatch, AiAgentExternalTask
 
 
 OutputFormat = Literal["summary", "json"]
@@ -91,6 +93,27 @@ async def collect_ai_run_diagnostics(session: AsyncSession, run_id: str) -> dict
             .order_by(AiAgentMessage.order_index.asc(), AiAgentMessage.id.asc())
         )
     ).scalars().all()
+    member_runs = (
+        await session.execute(
+            select(AiAgentMemberRun)
+            .where(AiAgentMemberRun.parent_run_id == normalized_run_id)
+            .order_by(AiAgentMemberRun.created_at.asc(), AiAgentMemberRun.member_run_id.asc())
+        )
+    ).scalars().all()
+    external_batches = (
+        await session.execute(
+            select(AiAgentExternalBatch)
+            .where(AiAgentExternalBatch.run_id == normalized_run_id)
+            .order_by(AiAgentExternalBatch.sequence_no.asc())
+        )
+    ).scalars().all()
+    external_tasks = (
+        await session.execute(
+            select(AiAgentExternalTask)
+            .where(AiAgentExternalTask.run_id == normalized_run_id)
+            .order_by(AiAgentExternalTask.created_at.asc(), AiAgentExternalTask.id.asc())
+        )
+    ).scalars().all()
     recovered_history = await recover_run_message_history(session=session, run_model=run_model)
 
     return {
@@ -98,6 +121,15 @@ async def collect_ai_run_diagnostics(session: AsyncSession, run_id: str) -> dict
         "events": [_dump_event(item) for item in events],
         "tool_calls": [_dump_tool_call(item) for item in tool_calls],
         "requirements": [_dump_requirement(item) for item in requirements],
+        "member_runs": [_dump_member_run(item) for item in member_runs],
+        "external_batches": [_dump_external_batch(item) for item in external_batches],
+        "external_tasks": [_dump_external_task(item) for item in external_tasks],
+        "external_consistency": _external_consistency_summary(
+            run_model,
+            requirements=requirements,
+            batches=external_batches,
+            tasks=external_tasks,
+        ),
         "messages": [_dump_message(item) for item in messages],
         "message_history_summary": _summarize_message_history(run_model.message_history_json),
         "message_history": run_model.message_history_json or [],
@@ -181,6 +213,19 @@ def format_ai_run_diagnostics_summary(payload: dict[str, Any]) -> str:
             f"- {item['requirement_id']} [{item['status']}] kind={item['kind']} tool={item['tool_name'] or '-'} call_id={item['tool_call_id'] or '-'}"
             for item in payload["requirements"]
         ],
+        "",
+        f"External batches ({len(payload['external_batches'])}):",
+        *[
+            f"- {item['batch_id']} [{item['status']}] requirement={item['requirement_id'] or '-'} member={item['member_run_id'] or '-'} lease={item['worker_id'] or '-'}#{item['lease_generation']}"
+            for item in payload["external_batches"]
+        ],
+        "",
+        f"External tasks ({len(payload['external_tasks'])}):",
+        *[
+            f"- {item['task_id']} [{item['status']}] kind={item['kind']} call_id={item['tool_call_id']} consumed={item['result_consumed_at'] or '-'}"
+            for item in payload["external_tasks"]
+        ],
+        f"- consistency: {payload['external_consistency']['status']} {payload['external_consistency']['message']}",
         "",
         f"Messages ({len(payload['messages'])}):",
         *[
@@ -446,6 +491,94 @@ def _dump_requirement(requirement: AiAgentRequirement) -> dict[str, Any]:
         "created_at": _iso(requirement.created_at),
         "updated_at": _iso(requirement.updated_at),
     }
+
+
+def _dump_member_run(member_run: AiAgentMemberRun) -> dict[str, Any]:
+    """转换成员Run ORM为诊断字典。"""
+
+    return {
+        "member_run_id": member_run.member_run_id,
+        "parent_run_id": member_run.parent_run_id,
+        "agent_id": member_run.agent_id,
+        "status": member_run.status,
+        "delegate_tool_call_id": member_run.delegate_tool_call_id,
+        "pending_requirement": member_run.pending_requirement_json,
+        "error_message": member_run.error_message,
+        "started_at": _iso(member_run.started_at),
+        "finished_at": _iso(member_run.finished_at),
+    }
+
+
+def _dump_external_batch(batch: AiAgentExternalBatch) -> dict[str, Any]:
+    """转换统一外部Batch ORM为诊断字典。"""
+
+    return {
+        "batch_id": batch.batch_id,
+        "run_id": batch.run_id,
+        "member_run_id": batch.member_run_id,
+        "requirement_id": batch.requirement_id,
+        "sequence_no": batch.sequence_no,
+        "group_key": batch.group_key,
+        "status": batch.status,
+        "worker_id": batch.worker_id,
+        "lease_generation": batch.lease_generation,
+        "lease_expires_at": _iso(batch.lease_expires_at),
+        "heartbeat_at": _iso(batch.heartbeat_at),
+        "error_code": batch.error_code,
+        "error_message": batch.error_message,
+    }
+
+
+def _dump_external_task(task: AiAgentExternalTask) -> dict[str, Any]:
+    """转换统一外部Task ORM为诊断字典。"""
+
+    return {
+        "task_id": task.task_id,
+        "batch_id": task.batch_id,
+        "run_id": task.run_id,
+        "member_run_id": task.member_run_id,
+        "kind": task.kind,
+        "tool_call_id": task.tool_call_id,
+        "deferred_tool_call_id": task.deferred_tool_call_id,
+        "status": task.status,
+        "attempt_count": task.attempt_count,
+        "worker_id": task.worker_id,
+        "lease_expires_at": _iso(task.lease_expires_at),
+        "heartbeat_at": _iso(task.heartbeat_at),
+        "progress_at": _iso(task.progress_at),
+        "result_consumed_at": _iso(task.result_consumed_at),
+        "has_result": task.result_json is not None,
+        "result_summary": task.result_summary_json,
+        "error_code": task.error_code,
+        "error_message": task.error_message,
+    }
+
+
+def _external_consistency_summary(
+    run: AiAgentRun,
+    *,
+    requirements: list[AiAgentRequirement],
+    batches: list[AiAgentExternalBatch],
+    tasks: list[AiAgentExternalTask],
+) -> dict[str, str]:
+    """只读判断waiting_external的Requirement、Batch和Task关联是否完整。"""
+
+    if run.status != "waiting_external":
+        return {"status": "not_applicable", "message": "Run当前不在waiting_external。"}
+    active_requirements = [item for item in requirements if item.kind == "external_job" and item.status in {"pending", "resolving"}]
+    if len(active_requirements) != 1:
+        return {"status": "inconsistent", "message": "活动external Requirement数量不是1。"}
+    requirement = active_requirements[0]
+    active_batches = [
+        item
+        for item in batches
+        if item.requirement_id == requirement.requirement_id and item.status in {"waiting_tasks", "ready", "resuming"}
+    ]
+    if len(active_batches) != 1:
+        return {"status": "inconsistent", "message": "Requirement没有唯一非终态Batch。"}
+    if not any(item.batch_id == active_batches[0].batch_id for item in tasks):
+        return {"status": "inconsistent", "message": "Batch没有Task。"}
+    return {"status": "consistent", "message": "关联完整。"}
 
 
 def _dump_message(message: AiAgentMessage) -> dict[str, Any]:

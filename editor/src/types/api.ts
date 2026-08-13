@@ -1187,7 +1187,7 @@ export interface AgentTimelineToolItem {
   member_agent_id?: string | null
   member_agent_name?: string | null
   member_run_id?: string | null
-  status: 'running' | 'completed' | 'error' | 'interrupted'
+  status: 'running' | 'waiting_external' | 'completed' | 'error' | 'cancelled' | 'interrupted'
   input_payload: unknown
   output_payload: unknown
   message: string

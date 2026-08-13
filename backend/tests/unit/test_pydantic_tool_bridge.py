@@ -586,6 +586,33 @@ def test_deferred_page_mutations_should_build_one_external_batch_requirement() -
     assert requirement.tool_execution["tool_calls"][0]["tool_args"]["title"] == "封面"
 
 
+def test_deferred_component_mutation_should_use_external_batch_identifier() -> None:
+    """纯组件重任务应保留统一Batch ID，避免Requirement退化为调用ID命名。"""
+
+    requests = DeferredToolRequests(
+        calls=[
+            ToolCallPart(
+                tool_name="update_entity",
+                args={"resource_type": "component", "target_id": 9},
+                tool_call_id="tool-component-1",
+            )
+        ],
+        metadata={
+            "tool-component-1": {
+                "kind": "component_mutation",
+                "external_batch_id": "external-batch-component-1",
+                "external_task_id": "external-task-component-1",
+            }
+        },
+    )
+
+    requirement = _requirement_from_deferred(requests, run_id="run-1", session_id="session-1")
+
+    assert requirement.id == "requirement-external-batch-component-1"
+    assert requirement.tool_execution["batch_ids"] == ["external-batch-component-1"]
+    assert requirement.tool_execution["external_job_kinds"] == ["component_mutation"]
+
+
 def test_mixed_deferred_page_mutation_should_fail_fast() -> None:
     """页面写入与用户确认 deferred 混用时应直接失败，避免 Job 永远等不到 waiting_external。"""
 

@@ -4,7 +4,7 @@ from pathlib import Path
 from functools import lru_cache
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -207,6 +207,14 @@ class AppSettings(BaseSettings):
         if value <= 0:
             raise ValueError("截图与 Playwright 整数配置必须为正整数。")
         return value
+
+    @model_validator(mode="after")
+    def validate_durable_job_lease_ratio(self) -> "AppSettings":
+        """确保持久化任务租约至少覆盖三个心跳周期，避免正常慢任务被抢占。"""
+
+        if self.durable_job_lease_seconds < self.durable_job_heartbeat_seconds * 3:
+            raise ValueError("DURABLE_JOB_LEASE_SECONDS 必须至少为心跳间隔的3倍。")
+        return self
 
     @field_validator(
         "page_screenshot_timeout_seconds",

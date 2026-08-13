@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -47,6 +48,9 @@ logger = logging.getLogger(__name__)
 _MEMBER_AGENT_IDS = {"agent-coordinator"}
 _MEMBER_HITL_SKIPPED_CODE = "AI_MEMBER_DELEGATION_HITL_SKIPPED"
 _MEMBER_HITL_SKIPPED_MESSAGE = "内容助手子运行需要用户处理，已终止该委派以保证主运行继续。"
+_MEMBER_HITL_REQUIRED_CODE = "AI_MEMBER_HITL_REQUIRES_PARENT"
+_MEMBER_HITL_REDELEGATION_CODE = "AI_MEMBER_HITL_REDELEGATION_BLOCKED"
+_MEMBER_HITL_HINT = "不要再次委派相同任务；请由父级直接调用该工具，以生成用户可处理的确认或问题。"
 _PARENT_MEMBER_STOP_STATUSES = {"failed", "cancelled", "completed", "cancelling"}
 _PARENT_TERMINAL_STATUSES = {"failed", "cancelled", "completed"}
 
@@ -70,6 +74,7 @@ class MemberDelegationResult:
     member_name: str | None
     status: str
     result: str
+    error: dict[str, Any] | None = None
 
     def to_payload(self) -> dict[str, Any]:
         """转换成可作为委派工具返回值的 JSON 对象。"""
@@ -80,6 +85,7 @@ class MemberDelegationResult:
             "member_name": self.member_name,
             "status": self.status,
             "result": self.result,
+            **({"error": self.error} if self.error is not None else {}),
         }
 
 
@@ -202,10 +208,7 @@ class MemberDelegationExecutor:
                 member_run=member_run,
                 write_fence=self._write_fence,
             )
-            return await runner._mark_failed_result(
-                code=_MEMBER_HITL_SKIPPED_CODE,
-                message=_MEMBER_HITL_SKIPPED_MESSAGE,
-            )
+            return await runner._mark_hitl_required_result(requirement)
 
     async def _delegate_one(
         self,
@@ -238,6 +241,24 @@ class MemberDelegationExecutor:
             parent_run = await self._require_parent_run(session)
             if _parent_run_should_stop_member(parent_run):
                 raise AppException(status_code=409, code="AI_RUN_CANCELLED", detail="当前智能体运行已被取消。")
+            delegation_fingerprint = _delegation_fingerprint(
+                task=task,
+                handoff_context=handoff_context,
+                expected_output=expected_output,
+            )
+            if delegation_fingerprint in _member_hitl_fingerprints(parent_run):
+                return MemberDelegationResult(
+                    member_run_id="",
+                    member_id=member_id,
+                    member_name=getattr(get_agent_catalog_entry(member_id), "name", member_id),
+                    status="failed",
+                    result="相同成员任务此前已经要求父级处理用户确认。",
+                    error=_member_hitl_error_payload(
+                        code=_MEMBER_HITL_REDELEGATION_CODE,
+                        tool_name=None,
+                        tool_args={},
+                    ),
+                )
             member_run = await self._create_member_run(
                 session,
                 parent_run=parent_run,
@@ -251,6 +272,9 @@ class MemberDelegationExecutor:
                 completed_results=completed_results,
                 input_prompt=input_prompt,
             )
+            member_input = dict(member_run.input_payload_json or {})
+            member_input["delegation_fingerprint"] = delegation_fingerprint
+            member_run.input_payload_json = member_input
             runner = _MemberAgentRunner(
                 session=session,
                 session_factory=self._session_factory,
@@ -748,10 +772,11 @@ class _MemberAgentRunner:
             parent_run=self._parent_run,
             member_run=self._member_run,
         )
-        self._member_run.status = "paused"
-        self._member_run.pending_requirement_json = requirement.model_dump(mode="json")
-        self._member_run.updated_at = _utc_now()
-        await self.append_member_event("run.paused", data={"requirement": requirement.model_dump(mode="json")})
+        if requirement.kind == "external_job":
+            self._member_run.status = "waiting_external"
+            self._member_run.pending_requirement_json = requirement.model_dump(mode="json")
+            self._member_run.updated_at = _utc_now()
+            await self.append_member_event("run.waiting", data={"requirement": requirement.model_dump(mode="json")})
         raise MemberDelegationPaused(requirement)
 
     async def _mark_failed_result(self, *, code: str, message: str) -> MemberDelegationResult:
@@ -775,6 +800,50 @@ class _MemberAgentRunner:
             member_name=self._member_run.agent_name,
             status="failed",
             result=result_text,
+        )
+
+    async def _mark_hitl_required_result(self, requirement: AgentPendingRequirement) -> MemberDelegationResult:
+        """把成员HITL直接收敛为结构化失败，并记录防重复委派指纹。"""
+
+        tool_execution = requirement.tool_execution if isinstance(requirement.tool_execution, dict) else {}
+        tool_name = _optional_text(tool_execution.get("member_tool_name") or tool_execution.get("tool_name"))
+        raw_args = tool_execution.get("tool_args")
+        tool_args = dict(raw_args) if isinstance(raw_args, dict) else {}
+        await self._raise_if_parent_cancelled()
+        await self._mark_running_member_tools_failed(
+            message="子运行不能直接请求用户确认。",
+            outcome_unknown=False,
+        )
+        self._member_run.status = "failed"
+        self._member_run.error_message = "子运行不能直接请求用户确认。"
+        self._member_run.pending_requirement_json = None
+        self._member_run.finished_at = _utc_now()
+        member_input = dict(self._member_run.input_payload_json or {})
+        fingerprint = _optional_text(member_input.get("delegation_fingerprint"))
+        if fingerprint:
+            parent_input = dict(self._parent_run.input_payload_json or {})
+            fingerprints = list(parent_input.get("member_hitl_fingerprints") or [])
+            if fingerprint not in fingerprints:
+                fingerprints.append(fingerprint)
+            parent_input["member_hitl_fingerprints"] = fingerprints[-32:]
+            self._parent_run.input_payload_json = parent_input
+        error = _member_hitl_error_payload(
+            code=_MEMBER_HITL_REQUIRED_CODE,
+            tool_name=tool_name,
+            tool_args=tool_args,
+        )
+        await self.append_member_event(
+            "run.error",
+            data={"code": _MEMBER_HITL_REQUIRED_CODE, "message": error["message"], "output_prompt": error["hint"]},
+        )
+        failed_result = await self._build_failed_member_result(message="成员任务需要父级处理用户确认。")
+        return MemberDelegationResult(
+            member_run_id=self._member_run.member_run_id,
+            member_id=self._member_run.agent_id,
+            member_name=self._member_run.agent_name,
+            status="failed",
+            result=failed_result,
+            error=error,
         )
 
     async def _build_failed_member_result(self, *, message: str) -> str:
@@ -807,6 +876,7 @@ class _MemberAgentRunner:
         *,
         message: str,
         emit_events: bool = True,
+        outcome_unknown: bool = True,
     ) -> None:
         """成员 run 失败时补齐仍在 running 的成员工具，避免运行态快照残留进行中状态。"""
 
@@ -818,7 +888,7 @@ class _MemberAgentRunner:
             )
         )
         for tool_call in result.scalars().all():
-            tool_call.status = "interrupted"
+            tool_call.status = "interrupted" if outcome_unknown else "error"
             tool_call.message = tool_call.message or message
             if not emit_events or not tool_call.tool_call_id:
                 continue
@@ -828,8 +898,8 @@ class _MemberAgentRunner:
                     "tool_name": tool_call.tool_name,
                     "tool_call_id": tool_call.tool_call_id,
                     "message": message,
-                    "code": "AI_TOOL_INTERRUPTED",
-                    "outcome": "unknown",
+                    "code": "AI_TOOL_INTERRUPTED" if outcome_unknown else _MEMBER_HITL_REQUIRED_CODE,
+                    "outcome": "unknown" if outcome_unknown else "failed",
                 },
             )
 
@@ -881,11 +951,12 @@ def _member_requirement_from_deferred(
     tool_call_id = str(getattr(call, "tool_call_id", "") or "") if call is not None else ""
     args = _tool_args_as_dict(getattr(call, "args", None) if call is not None else None)
     metadata = _member_deferred_metadata(requests, tool_call_id)
-    if metadata.get("kind") in {"page_mutation", "image_generation"}:
+    external_kinds = {"page_mutation", "image_generation", "component_mutation"}
+    if metadata.get("kind") in external_kinds:
         external_calls = list(requests.calls or [])
         if requests.approvals or any(
             _member_deferred_metadata(requests, str(getattr(item, "tool_call_id", "") or "")).get("kind")
-            not in {"page_mutation", "image_generation"}
+            not in external_kinds
             for item in external_calls
         ):
             raise AppException(
@@ -904,7 +975,9 @@ def _member_requirement_from_deferred(
             for item in external_calls
         ]
         batch_ids = list(dict.fromkeys(
-            str(item["metadata"].get("batch_id") or "") for item in tool_calls if str(item["metadata"].get("batch_id") or "")
+            str(item["metadata"].get("external_batch_id") or item["metadata"].get("batch_id") or "")
+            for item in tool_calls
+            if str(item["metadata"].get("external_batch_id") or item["metadata"].get("batch_id") or "")
         ))
         job_ids = list(dict.fromkeys(
             str(item["metadata"].get("job_id") or "") for item in tool_calls if str(item["metadata"].get("job_id") or "")
@@ -1146,6 +1219,59 @@ def _parent_run_should_stop_member(parent_run: AiAgentRun) -> bool:
     """判断父运行是否已请求停止或进入不应继续接收成员事件的状态。"""
 
     return parent_run.cancel_requested_at is not None or parent_run.status in _PARENT_MEMBER_STOP_STATUSES
+
+
+def _delegation_fingerprint(*, task: str, handoff_context: str | None, expected_output: str | None) -> str:
+    """生成父Run内稳定委派指纹，阻止相同HITL任务递归重试。"""
+
+    payload = json.dumps(
+        {"task": task.strip(), "handoff_context": handoff_context or "", "expected_output": expected_output or ""},
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _member_hitl_fingerprints(parent_run: AiAgentRun) -> frozenset[str]:
+    """读取父Run已确认需要父级处理的成员任务指纹。"""
+
+    payload = parent_run.input_payload_json if isinstance(parent_run.input_payload_json, dict) else {}
+    return frozenset(str(item) for item in payload.get("member_hitl_fingerprints") or [] if str(item))
+
+
+def _member_hitl_error_payload(*, code: str, tool_name: str | None, tool_args: dict[str, Any]) -> dict[str, Any]:
+    """构造成员HITL稳定错误契约，指导父模型直接调用被阻塞工具。"""
+
+    return {
+        "code": code,
+        "message": "子运行不能直接请求用户确认。",
+        "retryable_by_member": False,
+        "retryable_at_parent": True,
+        "hint": _MEMBER_HITL_HINT,
+        "blocked_tool": {"tool_name": tool_name, "tool_args": _safe_hitl_tool_args(tool_args)},
+    }
+
+
+def _safe_hitl_tool_args(value: dict[str, Any]) -> dict[str, Any]:
+    """移除令牌、密钥及内部依赖字段后再把参数交回父模型。"""
+
+    sensitive_fragments = ("token", "secret", "password", "api_key", "authorization", "credential")
+
+    def sanitize(item: Any) -> Any:
+        if isinstance(item, dict):
+            return {
+                str(key): sanitize(child)
+                for key, child in item.items()
+                if str(key).lower() not in {"dependencies", "internal_dependencies"}
+                and not any(fragment in str(key).lower() for fragment in sensitive_fragments)
+            }
+        if isinstance(item, list):
+            return [sanitize(child) for child in item]
+        return item
+
+    sanitized = sanitize(value)
+    return sanitized if isinstance(sanitized, dict) else {}
 
 
 def _workspace_member_scope(scope: AgentScopeContext) -> AgentScopeContext:

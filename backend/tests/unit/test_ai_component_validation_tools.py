@@ -34,6 +34,30 @@ from app.services.workspace_component_service import WorkspaceComponentService
 PREVIEW_SCHEMA = '{"props":{"height":{"type":"number","default":320}}}'
 
 
+class _TransactionProbeSession:
+    """记录CodeCheck进入慢Runtime诊断前是否主动结束数据库事务。"""
+
+    def __init__(self) -> None:
+        self.commit_count = 0
+
+    def in_transaction(self) -> bool:
+        return True
+
+    async def commit(self) -> None:
+        self.commit_count += 1
+
+
+async def test_component_code_check_should_release_transaction_before_slow_diagnostics() -> None:
+    """组件Worker可复用Session对象，但不得跨Runtime/Chromium等待持有数据库事务。"""
+
+    session = _TransactionProbeSession()
+    service = CodeCheckService(session)  # type: ignore[arg-type]
+
+    await service._release_session_before_diagnostics()
+
+    assert session.commit_count == 1
+
+
 def _build_context(scopes: tuple[str, ...]) -> AgentToolContext:
     """构造包含指定工具权限的工作空间级运行上下文。"""
 

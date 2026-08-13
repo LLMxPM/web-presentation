@@ -15,19 +15,15 @@ from sqlalchemy.orm import selectinload
 
 from app.ai.platform_runtime import PlatformAgentRuntimeStore
 from app.ai.platform_tools import recoverable_tool_error_result
-from app.ai.session_facade_pydantic import AgentSessionFacade
 from app.core.exceptions import AppException
 from app.core.time_utils import utc_now
 from app.models.ai_agent_attachment import AiAgentImageAttachment
-from app.models.ai_agent_runtime import AiAgentMemberRun, AiAgentRequirement, AiAgentRun
+from app.models.ai_agent_runtime import AiAgentMemberRun, AiAgentRun
 from app.models.ai_image_generation import AiImageGenerationJob
 from app.models.ai_image_model import AiImageModelConfig
 from app.models.asset import WorkspaceAsset
-from app.models.enums import RecordStatus
-from app.models.user import User
 from app.schemas.agent import AgentRunEvent
 from app.services.agent_image_attachment_service import AgentImageAttachmentService
-from app.services.auth_service import AuthContext
 from app.services.durable_job_lease_service import (
     build_durable_worker_id,
     claim_pending_jobs,
@@ -87,7 +83,8 @@ async def run_ai_image_generation_queue_loop(
             job_id = await _claim_one_job(session_factory, worker_id=worker_id)
             if job_id is not None:
                 await _execute_job(session_factory, database_id=job_id, worker_id=worker_id)
-            await _continue_one_completed_job(session_factory, app=app)
+            # 终态结果由统一 external coordinator 聚合并回灌模型。
+            _ = app
             if job_id is None:
                 await recover_interrupted_image_generation_jobs_on_startup(session_factory)
                 await asyncio.sleep(0.5)
@@ -533,123 +530,12 @@ async def _cancel_one_waiting_provider_job(session_factory: async_sessionmaker[A
     return True
 
 
-async def _continue_one_completed_job(
-    session_factory: async_sessionmaker[AsyncSession],
-    *,
-    app: FastAPI,
-) -> None:
-    """找到一组全部结束的图片任务，并一次性回灌同轮 deferred results。"""
-
-    async with session_factory() as session:
-        candidates = list(
-            (await session.scalars(
-            select(AiImageGenerationJob)
-            .where(
-                AiImageGenerationJob.status.in_(_TERMINAL_JOB_STATUSES),
-                AiImageGenerationJob.continued_at.is_(None),
-            )
-            .order_by(AiImageGenerationJob.finished_at.asc(), AiImageGenerationJob.id.asc())
-            .limit(50)
-            )).all()
-        )
-        if not candidates:
-            return
-
-        ready_batch = None
-        for candidate in candidates:
-            ready_batch = await _load_ready_image_continuation_batch(session, candidate)
-            if ready_batch is not None:
-                break
-        await session.commit()
-        if ready_batch is None:
-            return
-
-        run, user, jobs, deferred = ready_batch
-        current = AuthContext(user=user, session_token="", backend_session_id=f"background:{run.run_id}")
-        run_id = run.run_id
-        job_database_ids = [job.id for job in jobs]
-    try:
-        async with session_factory() as session:
-            await AgentSessionFacade(app=app, current=current, session=session).continue_external_job_to_store(
-                run_id=run_id,
-                deferred_results=deferred,
-                source="ai_image_generation_queue",
-            )
-        async with session_factory() as session:
-            await session.execute(
-                update(AiImageGenerationJob)
-                .where(
-                    AiImageGenerationJob.id.in_(job_database_ids),
-                    AiImageGenerationJob.continued_at.is_(None),
-                )
-                .values(continued_at=utc_now())
-            )
-            await session.commit()
-    except Exception:  # noqa: BLE001
-        logger.exception("图片任务完成后恢复父 run 失败。", extra={"event": "ai.image_generation.continue_failed", "run_id": run_id})
-
-
-async def _load_ready_image_continuation_batch(
-    session: AsyncSession,
-    candidate: AiImageGenerationJob,
-) -> tuple[AiAgentRun, User, list[AiImageGenerationJob], DeferredToolResults] | None:
-    """读取候选任务所属 requirement；仅当同轮图片任务全部终态时返回续跑批次。"""
-
-    run = await session.get(AiAgentRun, candidate.run_id)
-    if run is None or run.status in {"cancelled", "failed"} or run.cancel_requested_at is not None:
-        candidate.continued_at = utc_now()
-        return None
-    if run.status != "waiting_external":
-        return None
-    requirement = await session.scalar(
-        select(AiAgentRequirement)
-        .where(
-            AiAgentRequirement.run_id == run.run_id,
-            AiAgentRequirement.kind == "external_job",
-            AiAgentRequirement.status.in_(("pending", "resolved")),
-        )
-        .order_by(AiAgentRequirement.created_at.desc(), AiAgentRequirement.id.desc())
-    )
-    expected_call_ids = _image_deferred_call_ids(
-        requirement.payload_json if requirement is not None else None,
-        fallback_call_id=candidate.deferred_tool_call_id,
-    )
-    if not expected_call_ids or candidate.deferred_tool_call_id not in expected_call_ids:
-        candidate.continued_at = utc_now()
-        return None
-    jobs = list(
-        (await session.scalars(
-            select(AiImageGenerationJob)
-            .where(
-                AiImageGenerationJob.run_id == run.run_id,
-                AiImageGenerationJob.deferred_tool_call_id.in_(expected_call_ids),
-                (
-                    AiImageGenerationJob.member_run_id == requirement.member_run_id
-                    if requirement is not None and requirement.member_run_id is not None
-                    else AiImageGenerationJob.member_run_id.is_(None)
-                ),
-            )
-            .order_by(AiImageGenerationJob.created_at.asc(), AiImageGenerationJob.id.asc())
-        )).all()
-    )
-    deferred = _build_image_deferred_results(expected_call_ids, jobs)
-    if deferred is None:
-        return None
-    user = await session.get(User, candidate.user_id)
-    if user is None or user.status != RecordStatus.ACTIVE.value:
-        return None
-    return run, user, jobs, deferred
-
-
 def _image_deferred_call_ids(payload: object, *, fallback_call_id: str) -> list[str]:
-    """从 external requirement 提取本轮图片调用 ID，旧单任务数据回退到候选 ID。"""
+    """从Requirement提取图片调用ID；统一协调器使用同一筛选语义。"""
 
-    if not isinstance(payload, dict):
+    if not isinstance(payload, dict) or not isinstance(payload.get("tool_execution"), dict):
         return [fallback_call_id] if fallback_call_id else []
-    tool_execution = payload.get("tool_execution")
-    if not isinstance(tool_execution, dict):
-        return [fallback_call_id] if fallback_call_id else []
-    raw_calls = tool_execution.get("tool_calls")
+    raw_calls = payload["tool_execution"].get("tool_calls")
     if not isinstance(raw_calls, list):
         return [fallback_call_id] if fallback_call_id else []
     call_ids: list[str] = []
@@ -658,8 +544,7 @@ def _image_deferred_call_ids(payload: object, *, fallback_call_id: str) -> list[
             continue
         metadata = raw_call.get("metadata")
         kind = str(metadata.get("kind") or "") if isinstance(metadata, dict) else ""
-        tool_name = str(raw_call.get("tool_name") or "")
-        if kind != "image_generation" and tool_name != "generate_image":
+        if kind != "image_generation" and str(raw_call.get("tool_name") or "") != "generate_image":
             continue
         call_id = str(raw_call.get("tool_call_id") or "").strip()
         if call_id and call_id not in call_ids:
@@ -671,7 +556,7 @@ def _build_image_deferred_results(
     expected_call_ids: list[str],
     jobs: list[AiImageGenerationJob],
 ) -> DeferredToolResults | None:
-    """校验同轮任务已全部终态，并按调用 ID 构造完整的 deferred results。"""
+    """构造图片整批结果；仅保留为统一协调器聚合语义的单元测试辅助。"""
 
     jobs_by_call_id = {job.deferred_tool_call_id: job for job in jobs}
     if any(

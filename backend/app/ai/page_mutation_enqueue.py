@@ -11,8 +11,10 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.config import get_settings
 from app.core.exceptions import AppException
+from app.ai.external_task_control import enqueue_external_task
 from app.models.ai_agent_runtime import AiAgentMemberRun, AiAgentRun
 from app.models.ai_page_mutation import AiPageMutationBatch, AiPageMutationJob
+from app.models.ai_external_task import AiAgentExternalTask
 from app.schemas.agent import AgentRunEvent
 
 _ACTIVE_JOB_STATUSES = ("pending", "running")
@@ -25,6 +27,8 @@ class EnqueuedPageMutation:
     batch_id: str
     job_id: str
     run_step: int
+    external_batch_id: str | None = None
+    external_task_id: str | None = None
 
     def as_metadata(self) -> dict[str, object]:
         """转换为 Pydantic AI deferred metadata。"""
@@ -34,6 +38,8 @@ class EnqueuedPageMutation:
             "batch_id": self.batch_id,
             "job_id": self.job_id,
             "run_step": self.run_step,
+            **({"external_batch_id": self.external_batch_id} if self.external_batch_id else {}),
+            **({"external_task_id": self.external_task_id} if self.external_task_id else {}),
         }
 
 
@@ -81,10 +87,18 @@ async def enqueue_page_mutation(
         )
         if existing is not None:
             existing_batch = await session.get(AiPageMutationBatch, existing.batch_id)
+            existing_external = await session.scalar(
+                select(AiAgentExternalTask).where(
+                    AiAgentExternalTask.run_id == normalized_run_id,
+                    AiAgentExternalTask.tool_call_id == normalized_tool_call_id,
+                )
+            )
             return EnqueuedPageMutation(
                 batch_id=existing.batch_id,
                 job_id=existing.job_id,
                 run_step=existing_batch.run_step if existing_batch is not None else run_step,
+                external_batch_id=existing_external.batch_id if existing_external else None,
+                external_task_id=existing_external.task_id if existing_external else None,
             )
         run = await session.get(AiAgentRun, normalized_run_id)
         if run is None or run.session_id != normalized_session_id:
@@ -96,6 +110,14 @@ async def enqueue_page_mutation(
             member_run = await session.get(AiAgentMemberRun, member_run_id)
             if member_run is None or member_run.parent_run_id != normalized_run_id or member_run.session_id != normalized_session_id:
                 raise AppException(status_code=409, code="AI_MEMBER_RUN_NOT_FOUND", detail="页面变更对应的内容助手子运行不存在。")
+        external_task = await enqueue_external_task(
+            session,
+            run=run,
+            kind="page_mutation",
+            tool_call_id=normalized_tool_call_id,
+            deferred_tool_call_id=normalized_deferred_tool_call_id,
+            member_run_id=member_run_id,
+        )
         active_count = int(
             await session.scalar(
                 select(func.count(AiPageMutationJob.id)).where(AiPageMutationJob.status.in_(_ACTIVE_JOB_STATUSES))
@@ -212,7 +234,21 @@ async def enqueue_page_mutation(
             batch = await session.get(AiPageMutationBatch, batch_id)
             if batch is None:
                 raise RuntimeError("AI 页面变更任务缺少所属 Batch。")
-    return EnqueuedPageMutation(batch_id=batch_id, job_id=job_id, run_step=batch.run_step)
+            external_task = await session.scalar(
+                select(AiAgentExternalTask).where(
+                    AiAgentExternalTask.run_id == normalized_run_id,
+                    AiAgentExternalTask.tool_call_id == normalized_tool_call_id,
+                )
+            )
+            if external_task is None:
+                raise RuntimeError("AI 页面变更任务缺少统一外部任务。")
+    return EnqueuedPageMutation(
+        batch_id=batch_id,
+        job_id=job_id,
+        run_step=batch.run_step,
+        external_batch_id=external_task.batch_id,
+        external_task_id=external_task.task_id,
+    )
 
 
 def _stable_identifier(prefix: str, *parts: str) -> str:

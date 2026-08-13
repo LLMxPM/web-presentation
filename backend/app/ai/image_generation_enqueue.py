@@ -11,8 +11,10 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.exceptions import AppException
+from app.ai.external_task_control import enqueue_external_task
 from app.models.ai_agent_runtime import AiAgentMemberRun, AiAgentRun
 from app.models.ai_image_generation import AiImageGenerationJob
+from app.models.ai_external_task import AiAgentExternalTask
 from app.schemas.agent import AgentRunEvent
 from app.services.ai_image_config_service import AiImageConfigService
 from app.services.agent_image_attachment_service import AgentImageAttachmentService
@@ -24,11 +26,18 @@ class EnqueuedImageGeneration:
     """返回给 Pydantic AI deferred metadata 的稳定任务引用。"""
 
     job_id: str
+    external_batch_id: str | None = None
+    external_task_id: str | None = None
 
     def as_metadata(self) -> dict[str, object]:
         """转换成通用 external-job metadata。"""
 
-        return {"kind": "image_generation", "job_id": self.job_id}
+        return {
+            "kind": "image_generation",
+            "job_id": self.job_id,
+            **({"external_batch_id": self.external_batch_id} if self.external_batch_id else {}),
+            **({"external_task_id": self.external_task_id} if self.external_task_id else {}),
+        }
 
 
 async def enqueue_image_generation(
@@ -60,7 +69,17 @@ async def enqueue_image_generation(
             )
         )
         if existing is not None:
-            return EnqueuedImageGeneration(job_id=existing.job_id)
+            existing_external = await session.scalar(
+                select(AiAgentExternalTask).where(
+                    AiAgentExternalTask.run_id == run_id,
+                    AiAgentExternalTask.tool_call_id == tool_call_id,
+                )
+            )
+            return EnqueuedImageGeneration(
+                job_id=existing.job_id,
+                external_batch_id=existing_external.batch_id if existing_external else None,
+                external_task_id=existing_external.task_id if existing_external else None,
+            )
         run = await session.get(AiAgentRun, run_id)
         if run is None or run.user_id != user_id or run.session_id != session_id:
             raise AppException(status_code=409, code="AI_RUN_NOT_ACTIVE", detail="图片生成对应的智能体运行不存在。")
@@ -71,6 +90,14 @@ async def enqueue_image_generation(
             member_run = await session.get(AiAgentMemberRun, member_run_id)
             if member_run is None or member_run.parent_run_id != run_id or member_run.session_id != session_id:
                 raise AppException(status_code=409, code="AI_MEMBER_RUN_NOT_FOUND", detail="图片生成对应的内容助手子运行不存在。")
+        external_task = await enqueue_external_task(
+            session,
+            run=run,
+            kind="image_generation",
+            tool_call_id=tool_call_id,
+            deferred_tool_call_id=deferred_tool_call_id,
+            member_run_id=member_run_id,
+        )
 
         reference_ids = [int(item) for item in request_payload.get("reference_attachment_ids") or []]
         mask_id = request_payload.get("mask_attachment_id")
@@ -154,4 +181,16 @@ async def enqueue_image_generation(
             if existing is None:
                 raise
             job_id = existing.job_id
-    return EnqueuedImageGeneration(job_id=job_id)
+            external_task = await session.scalar(
+                select(AiAgentExternalTask).where(
+                    AiAgentExternalTask.run_id == run_id,
+                    AiAgentExternalTask.tool_call_id == tool_call_id,
+                )
+            )
+            if external_task is None:
+                raise RuntimeError("AI 图片生成任务缺少统一外部任务。")
+    return EnqueuedImageGeneration(
+        job_id=job_id,
+        external_batch_id=external_task.batch_id,
+        external_task_id=external_task.task_id,
+    )

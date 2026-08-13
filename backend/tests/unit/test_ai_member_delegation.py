@@ -12,6 +12,7 @@ from app.ai.member_delegation import (
     _MemberAgentRunner,
     _build_member_history_processors,
     _member_requirement_from_deferred,
+    _member_hitl_error_payload,
     _merge_member_message_history,
 )
 from app.schemas.agent import AgentPendingRequirement
@@ -103,6 +104,49 @@ def test_member_page_batch_should_keep_all_deferred_calls() -> None:
     assert requirement.tool_execution["batch_ids"] == ["batch-1"]
     assert requirement.tool_execution["job_ids"] == ["job-a", "job-b"]
     assert [item["tool_call_id"] for item in requirement.tool_execution["tool_calls"]] == ["raw-page-a", "raw-page-b"]
+
+
+def test_member_component_task_should_use_unified_external_batch() -> None:
+    """成员组件重任务应进入external requirement，而不是触发成员HITL失败。"""
+
+    parent_run = SimpleNamespace(run_id="run-parent", session_id="session-1")
+    member_run = SimpleNamespace(
+        member_run_id="member-run-1",
+        agent_id="agent-coordinator",
+        agent_name="内容助手",
+        input_payload_json={"delegate_tool_call_id": "delegate-1"},
+    )
+    requests = DeferredToolRequests(
+        calls=[ToolCallPart(tool_name="update_entity", args={"target_id": 9}, tool_call_id="raw-component")],
+        metadata={
+            "raw-component": {
+                "kind": "component_mutation",
+                "external_batch_id": "external-batch-1",
+                "external_task_id": "external-task-1",
+            }
+        },
+    )
+
+    requirement = _member_requirement_from_deferred(requests, parent_run=parent_run, member_run=member_run)
+
+    assert requirement.kind == "external_job"
+    assert requirement.tool_execution["batch_ids"] == ["external-batch-1"]
+    assert requirement.tool_execution["external_job_kinds"] == ["component_mutation"]
+
+
+def test_member_hitl_error_should_direct_parent_without_member_retry() -> None:
+    """成员HITL结构化错误必须明确父级直调恢复契约。"""
+
+    error = _member_hitl_error_payload(
+        code="AI_MEMBER_HITL_REQUIRES_PARENT",
+        tool_name="archive_entity",
+        tool_args={"resource_type": "page", "target_ids": [1, 2]},
+    )
+
+    assert error["retryable_by_member"] is False
+    assert error["retryable_at_parent"] is True
+    assert error["blocked_tool"]["tool_name"] == "archive_entity"
+    assert "不要再次委派" in error["hint"]
 
 
 @pytest.mark.asyncio

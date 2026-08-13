@@ -24,7 +24,7 @@ export interface ToolCallDetail {
   memberAgentId?: string | null
   memberAgentName?: string | null
   memberRunId?: string | null
-  status: 'running' | 'completed' | 'error' | 'interrupted'
+  status: 'running' | 'waiting_external' | 'completed' | 'error' | 'cancelled' | 'interrupted'
   inputPayload: unknown
   outputPayload: unknown
   message: string
@@ -857,7 +857,7 @@ function resolveRunStatusText(status: string | null) {
   if (status === 'failed') return '运行失败。'
   if (status === 'cancelled') return '运行已停止。'
   if (status === 'paused') return '等待用户处理。'
-  if (status === 'waiting_external') return '页面变更正在后台处理。'
+  if (status === 'waiting_external') return '后台任务正在处理。'
   if (status === 'completed') return '运行已完成。'
   return '运行状态已更新。'
 }
