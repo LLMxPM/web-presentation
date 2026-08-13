@@ -9,7 +9,7 @@ import httpx
 
 from app.ai.secret_cipher import LlmSecretCipher
 from app.core.exceptions import AppException
-from app.models.ai_llm import AiLlmConfig
+from app.models.ai_image_model import AiImageModelConfig
 from app.services.image_generation.contracts import (
     GeneratedImage,
     ImageGenerationInput,
@@ -32,7 +32,7 @@ class DashScopeImageGenerationAdapter:
     def __init__(self) -> None:
         self._cipher = LlmSecretCipher()
 
-    def validate(self, config: AiLlmConfig, model: ImageModelSpec, request: ImageGenerationInput) -> None:
+    def validate(self, config: AiImageModelConfig, model: ImageModelSpec, request: ImageGenerationInput) -> None:
         """校验百炼图片生成请求。"""
 
         validate_model_request(model, request)
@@ -40,7 +40,7 @@ class DashScopeImageGenerationAdapter:
 
     async def submit(
         self,
-        config: AiLlmConfig,
+        config: AiImageModelConfig,
         model: ImageModelSpec,
         request: ImageGenerationInput,
     ) -> ImageProviderResult:
@@ -105,7 +105,7 @@ class DashScopeImageGenerationAdapter:
 
     async def resume(
         self,
-        config: AiLlmConfig,
+        config: AiImageModelConfig,
         model: ImageModelSpec,
         cursor: ProviderTaskCursor,
     ) -> ImageProviderResult:
@@ -149,7 +149,7 @@ class DashScopeImageGenerationAdapter:
                 ),
             )
 
-    async def cancel(self, config: AiLlmConfig, cursor: ProviderTaskCursor) -> bool:
+    async def cancel(self, config: AiImageModelConfig, cursor: ProviderTaskCursor) -> bool:
         """按游标能力尝试取消仍在处理的百炼任务。"""
 
         if not cursor.cancellable:
@@ -162,7 +162,7 @@ class DashScopeImageGenerationAdapter:
         except httpx.HTTPError:
             return False
 
-    def _connection(self, config: AiLlmConfig) -> tuple[str, dict[str, str]]:
+    def _connection(self, config: AiImageModelConfig) -> tuple[str, dict[str, str]]:
         """解析并校验百炼图片连接。"""
 
         provider = config.provider_config
@@ -175,7 +175,7 @@ class DashScopeImageGenerationAdapter:
         return base_url, {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
 
     @staticmethod
-    def _validate_request(config: AiLlmConfig, request: ImageGenerationInput) -> None:
+    def _validate_request(config: AiImageModelConfig, request: ImageGenerationInput) -> None:
         """校验百炼图片生成请求。"""
 
         if request.mask is not None:

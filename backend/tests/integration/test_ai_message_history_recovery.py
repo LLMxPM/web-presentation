@@ -149,18 +149,19 @@ async def _create_session(authenticated_client: AsyncClient, suffix: str) -> tup
 
     workspace = await authenticated_client.post("/api/workspaces", json={"name": f"历史恢复-{suffix}", "status": "active"})
     assert workspace.status_code == 200
-    provider = await authenticated_client.post("/api/ai/llm-provider-configs", json={
+    provider = await authenticated_client.post("/api/ai/chat-provider-configs", json={
         "name": f"历史恢复供应商-{suffix}",
-        "provider_key": "openai",
+        "catalog_provider_key": "openai",
         "base_url": "https://api.openai.com/v1",
         "api_key": "sk-history-recovery-test",
     })
     assert provider.status_code == 201
-    model = await authenticated_client.post("/api/ai/llm-configs", json={
+    model = await authenticated_client.post("/api/ai/chat-model-configs", json={
         "name": f"历史恢复模型-{suffix}",
         "provider_config_id": provider.json()["id"],
         "model_id": "gpt-4.1-mini",
-        "advanced_config_json": {},
+        "capability_override": {"supports_tool_call": True},
+        "advanced_config": {},
     })
     assert model.status_code == 201
     session = await authenticated_client.post("/api/ai/sessions", json={

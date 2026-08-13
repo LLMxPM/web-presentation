@@ -27,32 +27,27 @@ local 与 S3 的差异只存在于工具内部：`analyze_visuals` 的附件输�
 
 ## 模型类型与固定槽位
 
-`ai_llm_configs.model_type` 支持：
-
-- `chat`：普通对话与图片理解模型；只有它可以声明 `supports_image_input=true`。
-- `image_generation`：Image API 模型；不使用 thinking、上下文窗口和历史压缩配置。
+聊天与生图不再通过 `model_type` 共用表：图片理解引用 `ai_chat_model_configs`，图片生成引用 `ai_image_model_configs`。生图模型不包含 thinking、上下文窗口或历史压缩字段。
 
 固定视觉槽位沿用个人优先、全局回退规则：
 
 | 槽位 | 绑定要求 |
 | :--- | :--- |
-| `image_understanding` | active、`chat`、`supports_image_input=true` |
-| `image_generation` | active、`image_generation` |
+| `image_understanding` | active 聊天模型、`supports_image_input=true` |
+| `image_generation` | active 图片模型 |
 
-视觉槽位缺失只禁用对应能力，不影响内容助手启动。供应商类型与模型类型严格一一对应：Chat 模型只能引用 Chat 供应商，图片生成模型只能引用图片生成供应商；修改模型类型时必须同时切换到兼容的供应商配置。
+视觉槽位缺失只禁用对应能力，不影响内容助手启动。Chat 与图片供应商、模型、凭证和绑定使用独立表与接口，不能跨域引用。
 
-现有 `/ai/llm-*` 接口和数据库命名保持不变，但供应商配置彼此独立：
+图片配置使用 `/ai/image-provider-configs`、`/ai/image-model-configs` 和 `/ai/image-model-bindings/image_generation`：
 
 | provider key | 类型 | 默认模型 | 协议 |
 | :--- | :--- | :--- | :--- |
-| `openai` | `chat` | 目录现有默认值 | Pydantic AI Chat |
-| `dashscope` | `chat` | `qwen-plus` | 百炼 Chat 兼容接口 |
 | `openai_image` | `image_generation` | `gpt-image-2` | OpenAI Image API |
 | `dashscope_image` | `image_generation` | `wan2.7-image-pro` | 百炼 Wan 异步图片 API |
 
 `provider_key` 通过 `backend/app/services/image_generation/registry.py` 的代码注册表决定 adapter，不允许从数据库导入任意类或另外覆盖协议类型。同一品牌的 Chat 与生图配置不共享 API Key、Base URL 或生命周期；例如已有 `openai` 配置不会自动成为 `openai_image` 配置。`dashscope_image` 必须显式填写使用 HTTPS 且以 `/api/v1` 结尾的 workspace Base URL。
 
-图片供应商注册表是生图 adapter、连接约束、默认模型和模型能力的单一事实源。`/ai/llm-providers` 中的 `provider_adapter`、`default_image_generation_model_id`、`advanced_json_hint` 和 `image_generation_models` 均由注册表派生。每个模型能力项声明生成/编辑操作、宽高比、分辨率、质量、参考图和输出数量上限、蒙版支持以及高级参数 JSON Schema。
+图片供应商注册表是生图 adapter、连接约束、默认模型和模型能力的单一事实源，`/ai/image-provider-catalog` 完全由注册表派生。每个模型能力项声明生成/编辑操作、宽高比、分辨率、质量、参考图和输出数量上限、蒙版支持以及高级参数 JSON Schema。
 
 新增同协议模型时，只增加 `ImageModelSpec`；新增供应商时，实现 `submit/resume/cancel` 统一协议并注册 `ImageProviderSpec`。同步供应商从 `submit` 直接返回完成结果，异步供应商返回 `ProviderTaskCursor`。队列不感知供应商品牌，也不维护供应商状态枚举。
 

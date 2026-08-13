@@ -37,6 +37,7 @@ from app.db.errors import (
 )
 from app.db.session import get_session_factory
 from app.services.bootstrap_service import BootstrapService
+from app.services.ai_model_catalog_service import AiModelCatalogService, run_model_catalog_sync_loop
 from app.services.object_storage_service import ObjectStorageService
 from app.services.asset_render_hint_backfill_job_service import (
     recover_interrupted_asset_render_hint_backfill_jobs_on_startup,
@@ -66,11 +67,14 @@ async def lifespan(app: FastAPI):
     runtime_artifact_sweeper_task: asyncio.Task[None] | None = None
     ai_page_mutation_queue_task: asyncio.Task[None] | None = None
     ai_image_generation_queue_task: asyncio.Task[None] | None = None
+    model_catalog_sync_task: asyncio.Task[None] | None = None
     playwright_browser_pool = get_playwright_browser_pool()
     agent_background_run_manager: AgentBackgroundRunManager = app.state.agent_background_run_manager
     try:
         session_factory = get_session_factory()
         await BootstrapService(session_factory).ensure_default_admin()
+        async with session_factory() as catalog_session:
+            await AiModelCatalogService(catalog_session).ensure_minimal_catalog()
         ensure_redis_runtime_available()
         await recover_interrupted_build_jobs_on_startup(session_factory)
         await recover_interrupted_screenshot_jobs_on_startup(session_factory)
@@ -96,6 +100,11 @@ async def lifespan(app: FastAPI):
                 run_ai_image_generation_queue_loop(session_factory, app=app),
                 name="ai-image-generation-queue",
             )
+        if get_settings().ai_model_catalog_sync_enabled:
+            model_catalog_sync_task = asyncio.create_task(
+                run_model_catalog_sync_loop(session_factory),
+                name="ai-model-catalog-sync",
+            )
     except SQLAlchemyError as exc:
         if is_database_connectivity_error(exc):
             _raise_database_connectivity_error(exc, phase="Backend 启动时")
@@ -117,6 +126,8 @@ async def lifespan(app: FastAPI):
             await _stop_background_task(ai_page_mutation_queue_task)
         if ai_image_generation_queue_task is not None:
             await _stop_background_task(ai_image_generation_queue_task)
+        if model_catalog_sync_task is not None:
+            await _stop_background_task(model_catalog_sync_task)
         await playwright_browser_pool.stop()
 
 

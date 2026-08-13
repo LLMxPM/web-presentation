@@ -63,10 +63,7 @@ const emit = defineEmits<{
 /** 汇总模型在列表中需要快速识别的能力。 */
 function capabilityLabel(config: LlmConfigItem): string {
   if (config.model_type === 'image_generation') return '图片生成'
-  const reasoningMode = config.reasoning_mode ?? (config.thinking_enabled ? 'enabled' : 'auto')
-  const reasoning = reasoningMode === 'enabled'
-    ? `推理 ${config.reasoning_level ?? config.thinking_effort ?? 'medium'}`
-    : reasoningMode === 'disabled' ? '推理关闭' : '推理跟随模型'
+  const reasoning = config.model_capability_json?.supports_reasoning ? '支持推理' : '未声明推理'
   return [reasoning, config.supports_image_input ? '图片输入' : ''].filter(Boolean).join(' · ')
 }
 </script>

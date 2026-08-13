@@ -7,7 +7,6 @@ from typing import Any
 
 from app.core.exceptions import AppException
 from app.models.enums import AiLlmSlot, AiModelType, AiThinkingMode
-from app.services.image_generation.registry import list_image_provider_specs
 
 OPENAI_DOCS_URL = "https://pydantic.dev/docs/ai/models/openai/"
 OPENROUTER_DOCS_URL = "https://pydantic.dev/docs/ai/models/openrouter/"
@@ -86,10 +85,6 @@ LLM_SLOT_DEFINITIONS: dict[str, LlmSlotDefinition] = {
         slot=AiLlmSlot.IMAGE_UNDERSTANDING.value,
         label="图片理解",
     ),
-    AiLlmSlot.IMAGE_GENERATION.value: LlmSlotDefinition(
-        slot=AiLlmSlot.IMAGE_GENERATION.value,
-        label="图片生成",
-    ),
 }
 
 LLM_PROVIDER_CATALOG: dict[str, LlmProviderCatalogEntry] = {
@@ -147,7 +142,7 @@ LLM_PROVIDER_CATALOG: dict[str, LlmProviderCatalogEntry] = {
         provider_adapter="pydantic_ai.providers.openai.OpenAIProvider",
         docs_url=OPENAI_LIKE_DOCS_URL,
         supports_base_url=True,
-        requires_base_url=False,
+        requires_base_url=True,
         supports_api_key=True,
         supports_thinking=True,
         thinking_mode=AiThinkingMode.OPENAI_REASONING.value,
@@ -239,27 +234,6 @@ LLM_PROVIDER_CATALOG: dict[str, LlmProviderCatalogEntry] = {
         default_supports_image_input=True,
     ),
 }
-
-for image_provider in list_image_provider_specs():
-    LLM_PROVIDER_CATALOG[image_provider.provider_key] = LlmProviderCatalogEntry(
-        provider_key=image_provider.provider_key,
-        label=image_provider.label,
-        provider_type=AiModelType.IMAGE_GENERATION.value,
-        provider_adapter=image_provider.adapter_path,
-        docs_url=image_provider.docs_url,
-        supports_base_url=image_provider.supports_base_url,
-        requires_base_url=image_provider.requires_base_url,
-        supports_api_key=True,
-        supports_thinking=False,
-        thinking_mode=AiThinkingMode.NONE.value,
-        default_base_url=image_provider.default_base_url,
-        supported_model_types=(AiModelType.IMAGE_GENERATION.value,),
-        default_image_generation_model_id=image_provider.default_model_id,
-        base_url_hint=image_provider.base_url_hint,
-        advanced_json_hint=dict(next(model for model in image_provider.models if model.model_id == image_provider.default_model_id).advanced_defaults),
-        image_generation_models=tuple(model.as_catalog_item() for model in image_provider.models),
-    )
-
 
 def list_llm_provider_entries() -> list[LlmProviderCatalogEntry]:
     """按标签排序返回所有可用供应商目录项。"""

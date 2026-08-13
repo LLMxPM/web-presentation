@@ -38,7 +38,7 @@
 </template>
 
 <script setup lang="ts">
-import { Bot, Cpu, Server } from '@lucide/vue'
+import { Bot, Image, MessagesSquare } from '@lucide/vue'
 import { computed } from 'vue'
 
 import { UiButton, UiTabs } from '@/components/ui'
@@ -55,8 +55,8 @@ const emit = defineEmits<{ 'update:modelValue': [value: AiSettingsSection] }>()
 
 const items = computed(() => [
   { value: 'assistant' as const, label: '内容助手', meta: props.assistantReady ? '已就绪' : '待配置', warning: !props.assistantReady, icon: Bot },
-  { value: 'models' as const, label: '模型管理', meta: `${props.modelCount}`, warning: false, icon: Cpu },
-  { value: 'providers' as const, label: '供应商管理', meta: `${props.providerCount}`, warning: false, icon: Server },
+  { value: 'chat' as const, label: '聊天模型', meta: `${props.modelCount}`, warning: false, icon: MessagesSquare },
+  { value: 'image' as const, label: '图片生成', meta: `${props.providerCount}`, warning: false, icon: Image },
 ])
 
 const mobileItems = computed(() => items.value.map(item => ({ label: item.label, value: item.value })))

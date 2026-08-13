@@ -6,6 +6,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
+from app.schemas.model_config import ReasoningPolicy
+
 from app.schemas.common import SchemaBase
 
 
@@ -382,6 +384,7 @@ class AgentRunRequest(BaseModel):
     message: str = ""
     image_attachment_ids: list[int] = Field(default_factory=list, max_length=10)
     llm_config_id: int | None = Field(default=None, ge=1)
+    reasoning: ReasoningPolicy = Field(default_factory=ReasoningPolicy)
     focus: AgentFocusRequest
 
     @model_validator(mode="after")

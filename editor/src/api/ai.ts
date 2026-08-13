@@ -22,6 +22,11 @@ export interface AgentStreamOptions {
   signal?: AbortSignal
 }
 
+export interface AgentReasoningPolicy {
+  mode: 'auto' | 'disabled' | 'effort' | 'budget_tokens'
+  value?: string | number | null
+}
+
 export class AgentStreamInterruptedError extends Error {
   /** 标识用户主动中断了当前流式传输，调用方不应按执行失败展示。 */
   constructor(message = '智能体流式传输已中断。') {
@@ -164,6 +169,7 @@ export async function streamAgentRun(
     agent_id?: string
     image_attachment_ids?: number[]
     llm_config_id?: number | null
+    reasoning?: AgentReasoningPolicy
   },
   options: AgentStreamOptions = {},
 ) {
@@ -177,6 +183,7 @@ export async function streamAgentRun(
         message: payload.message,
         image_attachment_ids: payload.image_attachment_ids ?? [],
         llm_config_id: payload.llm_config_id ?? null,
+        reasoning: payload.reasoning ?? { mode: 'auto' },
         focus: buildRunFocus(scope),
       }),
     },
@@ -196,6 +203,7 @@ export async function startAgentRun(
     agent_id?: string
     image_attachment_ids?: number[]
     llm_config_id?: number | null
+    reasoning?: AgentReasoningPolicy
   },
 ) {
   logAgentDev('run.background.start', { sessionId, scope, payload })
@@ -206,6 +214,7 @@ export async function startAgentRun(
       message: payload.message,
       image_attachment_ids: payload.image_attachment_ids ?? [],
       llm_config_id: payload.llm_config_id ?? null,
+      reasoning: payload.reasoning ?? { mode: 'auto' },
       focus: buildRunFocus(scope),
     },
     {

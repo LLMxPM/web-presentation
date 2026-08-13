@@ -10,7 +10,7 @@ import httpx
 
 from app.ai.secret_cipher import LlmSecretCipher
 from app.core.exceptions import AppException
-from app.models.ai_llm import AiLlmConfig
+from app.models.ai_image_model import AiImageModelConfig
 from app.services.image_generation.contracts import (
     GeneratedImage,
     ImageGenerationInput,
@@ -30,7 +30,7 @@ class OpenRouterImageGenerationAdapter:
     def __init__(self) -> None:
         self._cipher = LlmSecretCipher()
 
-    def validate(self, config: AiLlmConfig, model: ImageModelSpec, request: ImageGenerationInput) -> None:
+    def validate(self, config: AiImageModelConfig, model: ImageModelSpec, request: ImageGenerationInput) -> None:
         """按模型白名单校验公共参数和 OpenRouter 特有约束。"""
 
         _ = config
@@ -40,7 +40,7 @@ class OpenRouterImageGenerationAdapter:
 
     async def submit(
         self,
-        config: AiLlmConfig,
+        config: AiImageModelConfig,
         model: ImageModelSpec,
         request: ImageGenerationInput,
     ) -> ImageProviderResult:
@@ -63,7 +63,7 @@ class OpenRouterImageGenerationAdapter:
 
     async def resume(
         self,
-        config: AiLlmConfig,
+        config: AiImageModelConfig,
         model: ImageModelSpec,
         cursor: ProviderTaskCursor,
     ) -> ImageProviderResult:
@@ -72,13 +72,13 @@ class OpenRouterImageGenerationAdapter:
         _ = (config, model, cursor)
         raise AppException(status_code=409, code="AI_IMAGE_PROVIDER_TASK_INVALID", detail="OpenRouter 图片任务不支持轮询。")
 
-    async def cancel(self, config: AiLlmConfig, cursor: ProviderTaskCursor) -> bool:
+    async def cancel(self, config: AiImageModelConfig, cursor: ProviderTaskCursor) -> bool:
         """OpenRouter 当前非流式接入没有外部取消入口。"""
 
         _ = (config, cursor)
         return False
 
-    def _connection(self, config: AiLlmConfig) -> tuple[str, dict[str, str]]:
+    def _connection(self, config: AiImageModelConfig) -> tuple[str, dict[str, str]]:
         """解密凭证并构造 OpenRouter Image API 连接信息。"""
 
         provider = config.provider_config
@@ -91,7 +91,7 @@ class OpenRouterImageGenerationAdapter:
         return base_url, {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
 
     @staticmethod
-    def _request_body(config: AiLlmConfig, request: ImageGenerationInput) -> dict[str, Any]:
+    def _request_body(config: AiImageModelConfig, request: ImageGenerationInput) -> dict[str, Any]:
         """把平台语义参数转换为 OpenRouter Image API JSON。"""
 
         body: dict[str, Any] = {"model": config.model_id, "prompt": request.prompt, "n": request.count}

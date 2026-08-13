@@ -116,17 +116,12 @@ async def test_seed_should_bind_three_mock_slots_and_report_ready(
         )
         assert login.status_code == 200
 
-        slots = (await client.get("/api/ai/llm-slots")).json()
-        expected_bindings = {
-            "agent_coordinator": "e2e-mock-agent-chat",
-            "image_understanding": "e2e-mock-vision-chat",
-            "image_generation": "e2e-mock-image-gen",
-        }
-        for slot_name, expected_model_id in expected_bindings.items():
-            target = next((item for item in slots if item["slot"] == slot_name), None)
-            assert target is not None, f"槽位 {slot_name} 缺少绑定记录"
-            assert target["model_id"] == expected_model_id
-            assert target["binding_ready"] is True
+        agent = (await client.get("/api/ai/chat-model-bindings/agent_coordinator")).json()
+        vision = (await client.get("/api/ai/chat-model-bindings/image_understanding")).json()
+        image = (await client.get("/api/ai/image-model-bindings/image_generation")).json()
+        assert agent["model_name"] == "Smoke E2E Mock Agent" and agent["binding_ready"] is True
+        assert vision["model_name"] == "Smoke E2E Mock Vision" and vision["binding_ready"] is True
+        assert image["model_name"] == "Smoke E2E Mock Image" and image["binding_ready"] is True
     finally:
         await _teardown_mock_client(client)
 
@@ -137,18 +132,18 @@ async def test_create_config_should_reject_e2e_mock_model_outside_e2e_database(
     """非 E2E 数据库禁止通过业务 API 创建 e2e-mock-* 模型配置。"""
 
     provider = await authenticated_client.post(
-        "/api/ai/llm-provider-configs",
-        json={"name": "E2E 防护用例供应商", "provider_key": "openai", "api_key": "sk-test"},
+        "/api/ai/chat-provider-configs",
+        json={"name": "E2E 防护用例供应商", "catalog_provider_key": "openai", "api_key": "sk-test"},
     )
     assert provider.status_code == 201
 
     response = await authenticated_client.post(
-        "/api/ai/llm-configs",
+        "/api/ai/chat-model-configs",
         json={
             "name": "E2E 防护用例模型",
             "provider_config_id": provider.json()["id"],
             "model_id": "e2e-mock-agent-chat",
-            "model_type": "chat",
+            "capability_override": {"supports_tool_call": True},
         },
     )
     assert response.status_code == 400
@@ -161,23 +156,23 @@ async def test_update_config_should_reject_switching_to_e2e_mock_model(
     """非 E2E 数据库同样禁止把既有配置的模型切换为 e2e-mock-*。"""
 
     provider = await authenticated_client.post(
-        "/api/ai/llm-provider-configs",
-        json={"name": "E2E 防护用例供应商二", "provider_key": "openai", "api_key": "sk-test"},
+        "/api/ai/chat-provider-configs",
+        json={"name": "E2E 防护用例供应商二", "catalog_provider_key": "openai", "api_key": "sk-test"},
     )
     assert provider.status_code == 201
     created = await authenticated_client.post(
-        "/api/ai/llm-configs",
+        "/api/ai/chat-model-configs",
         json={
             "name": "E2E 防护用例普通模型",
             "provider_config_id": provider.json()["id"],
             "model_id": "gpt-5-mini",
-            "model_type": "chat",
+            "capability_override": {"supports_tool_call": True},
         },
     )
     assert created.status_code == 201
 
     response = await authenticated_client.patch(
-        f"/api/ai/llm-configs/{created.json()['id']}",
+        f"/api/ai/chat-model-configs/{created.json()['id']}",
         json={"model_id": "e2e-mock-vision-chat"},
     )
     assert response.status_code == 400

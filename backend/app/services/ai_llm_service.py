@@ -37,6 +37,7 @@ from app.schemas.llm import (
     LlmSlotBindingItem,
     LlmSlotBindingUpdateRequest,
 )
+from app.schemas.model_config import ReasoningPolicy
 from app.services.image_generation.contracts import validate_advanced_options
 from app.services.image_generation.registry import (
     get_image_model_spec,
@@ -632,6 +633,7 @@ class AiLlmService:
                 detail="当前智能体槽位绑定的供应商配置不可用，请重新绑定。",
             )
         self._validate_slot_model_type(slot, binding.llm_config)
+        await self._apply_current_catalog_capability(binding.llm_config)
         return binding.llm_config
 
     async def get_selectable_active_config_or_raise(self, config_id: int) -> AiLlmConfig:
@@ -650,7 +652,45 @@ class AiLlmService:
                 code="AI_LLM_PROVIDER_CONFIG_DISABLED",
                 detail="只能选择供应商可用的大模型配置。",
             )
+        await self._apply_current_catalog_capability(config)
         return config
+
+    async def _apply_current_catalog_capability(self, config: AiLlmConfig) -> None:
+        """新 Run 使用当前目录与用户覆盖合并结果，随后由 Run 快照冻结。"""
+
+        from app.services.ai_chat_config_service import AiChatConfigService
+
+        provider = config.provider_config
+        capability, catalog_version = await AiChatConfigService(
+            self.session,
+            user_id=self.user_id,
+            user_role=self.user_role,
+        )._resolve_capability(provider, config.model_id, dict(getattr(config, "capability_override_json", {}) or {}))
+        config.model_capability_json = AiChatConfigService._legacy_capability_snapshot(provider, config.model_id, capability)
+        config.context_window_tokens = int(capability["input_tokens"])
+        config.supports_image_input = bool(capability["supports_image_input"])
+        config.catalog_version = catalog_version
+
+    def apply_run_reasoning_policy(self, config: AiLlmConfig, *, slot: str, reasoning: ReasoningPolicy) -> None:
+        """按本轮所选模型与固定协议校验推理策略，并仅附着到本次 ORM 对象。"""
+
+        from app.services.ai_chat_config_service import AiChatConfigService
+
+        capability = dict(config.model_capability_json or {})
+        protocol_key = str(getattr(config.provider_config, "protocol_key", "") or "")
+        AiChatConfigService(
+            self.session,
+            user_id=self.user_id,
+            user_role=self.user_role,
+        )._validate_policy(slot, protocol_key, capability, reasoning)
+        config.reasoning_mode = (
+            AiReasoningMode.DISABLED.value if reasoning.mode == "disabled"
+            else AiReasoningMode.ENABLED.value if reasoning.mode in {"effort", "budget_tokens"}
+            else AiReasoningMode.AUTO.value
+        )
+        config.reasoning_level = str(reasoning.value) if reasoning.mode == "effort" else None
+        config._reasoning_budget_tokens = int(reasoning.value) if reasoning.mode == "budget_tokens" else None
+        config._usage_policy_json = {"reasoning": reasoning.model_dump(mode="json")}
 
     def build_session_llm_metadata(
         self,
@@ -661,7 +701,6 @@ class AiLlmService:
         """把模型身份固化为会话 metadata 中的精简只读快照。"""
 
         provider_config = config.provider_config
-        provider_entry = get_llm_provider_entry(provider_config.provider_key)
         return {
             "selection_kind": selection_kind,
             "config_id": config.id,
@@ -670,7 +709,7 @@ class AiLlmService:
             "provider_config_id": provider_config.id,
             "provider_config_name": provider_config.name,
             "provider_key": provider_config.provider_key,
-            "provider_label": provider_entry.label,
+            "provider_label": self._provider_label(provider_config),
             "model_id": config.model_id,
             "model_type": config.model_type,
             "supports_image_input": bool(config.supports_image_input),
@@ -706,6 +745,11 @@ class AiLlmService:
             "compression_target_ratio": run_budget.compression_target_ratio,
             "advanced_config_json": dict(config.advanced_config_json or {}),
             "model_capability_json": dict(config.model_capability_json or {}),
+            "usage_policy_json": dict(getattr(config, "_usage_policy_json", {}) or {}),
+            "reasoning_budget_tokens": getattr(config, "_reasoning_budget_tokens", None),
+            "protocol_key": str(getattr(config.provider_config, "protocol_key", "") or ""),
+            "catalog_version": getattr(config, "catalog_version", None),
+            "base_url_configured": bool(config.provider_config.base_url),
         }
 
     async def get_slot_binding_lookup(self) -> dict[str, LlmSlotBindingItem]:
@@ -756,7 +800,7 @@ class AiLlmService:
             return
         config = binding.llm_config
         provider_config = config.provider_config if config is not None else None
-        provider_entry = get_llm_provider_entry(provider_config.provider_key) if provider_config is not None else None
+        provider_label = self._provider_label(provider_config) if provider_config is not None else None
         binding_ready = bool(
             config is not None
             and config.status == RecordStatus.ACTIVE.value
@@ -776,7 +820,7 @@ class AiLlmService:
             provider_config_id=provider_config.id if provider_config is not None else None,
             provider_config_name=provider_config.name if provider_config is not None else None,
             provider_key=provider_config.provider_key if provider_config is not None else None,
-            provider_label=provider_entry.label if provider_entry is not None else None,
+            provider_label=provider_label,
             model_id=config.model_id if config is not None else None,
             model_type=AiModelType(config.model_type) if config is not None else None,
             binding_ready=binding_ready,
@@ -936,7 +980,7 @@ class AiLlmService:
 
     @staticmethod
     def _recommended_usable_input_tokens(capability, provider_key: str) -> int:
-        """返回模型表单建议的可用输入窗口；未知模型固定使用 200K。"""
+        """返回模型表单建议的可用输入窗口；未知模型保持 200K 的保守建议值。"""
 
         if capability.profile.source == "provider_default":
             return 200_000
@@ -1005,6 +1049,15 @@ class AiLlmService:
             created_at=config.created_at.isoformat() if config.created_at is not None else None,
             updated_at=config.updated_at.isoformat() if config.updated_at is not None else None,
         )
+
+    @staticmethod
+    def _provider_label(config: AiLlmProviderConfig) -> str:
+        """目录供应商不在旧静态表时使用用户连接名称，避免运行链路依赖静态 key 覆盖率。"""
+
+        try:
+            return get_llm_provider_entry(config.provider_key).label
+        except AppException:
+            return config.name
 
     @property
     def _is_platform_admin(self) -> bool:

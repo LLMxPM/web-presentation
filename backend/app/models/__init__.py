@@ -13,7 +13,9 @@ from app.models.ai_agent_runtime import (
 )
 from app.models.ai_page_mutation import AiPageMutationBatch, AiPageMutationJob
 from app.models.ai_image_generation import AiImageGenerationJob
+from app.models.ai_image_model import AiImageModelConfig, AiImageProviderConfig, AiImageSlotBinding
 from app.models.ai_llm import AiLlmConfig, AiLlmProviderConfig, AiLlmSlotBinding
+from app.models.ai_model_catalog import AiChatModelCatalog, AiChatProviderCatalog, AiModelCatalogSyncState
 from app.models.user import UserSession, User
 from app.models.asset import WorkspaceAsset
 from app.models.asset_render_hint_backfill_job import AssetRenderHintBackfillJob
@@ -43,6 +45,9 @@ __all__ = [
     "AiLlmConfig",
     "AiLlmProviderConfig",
     "AiLlmSlotBinding",
+    "AiChatProviderCatalog",
+    "AiChatModelCatalog",
+    "AiModelCatalogSyncState",
     "AiAgentImageAttachment",
     "AiAgentSession",
     "AiAgentRun",
@@ -56,6 +61,9 @@ __all__ = [
     "AiPageMutationBatch",
     "AiPageMutationJob",
     "AiImageGenerationJob",
+    "AiImageProviderConfig",
+    "AiImageModelConfig",
+    "AiImageSlotBinding",
     "UserSession",
     "User",
     "Workspace",

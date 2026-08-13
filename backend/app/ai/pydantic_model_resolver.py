@@ -47,6 +47,7 @@ class PydanticLlmModelResolver:
         if provider_config.status != RecordStatus.ACTIVE.value:
             raise AppException(status_code=409, code="AI_LLM_PROVIDER_CONFIG_DISABLED", detail="当前大模型供应商配置不可用。")
         provider_key = str(provider_config.provider_key or "").strip()
+        protocol_key = str(getattr(provider_config, "protocol_key", "") or "").strip()
 
         # E2E mock 仍遵守模型与供应商启用状态；仅跳过真实协议对象的创建和凭证解析。
         from app.ai.testing.dispatch import resolve_mock_chat_model
@@ -55,12 +56,6 @@ class PydanticLlmModelResolver:
         if mock_model is not None:
             return mock_model
 
-        if provider_key in {"openai_image", "dashscope_image", "openrouter_image"}:
-            raise AppException(
-                status_code=400,
-                code="AI_LLM_PROVIDER_MODEL_TYPE_MISMATCH",
-                detail="图片生成供应商不能作为 Chat 模型运行。",
-            )
         model_id = str(config.model_id or "").strip()
         api_key = self._cipher.decrypt(provider_config.api_key_ciphertext)
         base_url = str(provider_config.base_url or "").strip() or None
@@ -70,23 +65,25 @@ class PydanticLlmModelResolver:
 
         http_client = build_llm_http_trace_client(config)
 
-        if provider_key == "google":
-            return GoogleModel(model_id, provider=GoogleProvider(api_key=api_key or None, http_client=http_client))
-        if provider_key == "openrouter":
+        if protocol_key == "google_chat" or provider_key == "google":
+            return GoogleModel(model_id, provider=GoogleProvider(api_key=api_key or None, base_url=base_url, http_client=http_client))
+        if protocol_key == "openrouter_chat" or provider_key == "openrouter":
             return OpenRouterModel(model_id, provider=OpenRouterProvider(api_key=api_key or None, http_client=http_client))
-        if provider_key == "ollama":
+        if protocol_key == "ollama_openai_compatible" or provider_key == "ollama":
             return OpenAIChatModel(
                 model_id,
                 provider=OllamaProvider(base_url=base_url or "http://localhost:11434/v1", http_client=http_client),
             )
-        if provider_key == "dashscope":
+        if protocol_key == "alibaba_openai_compatible" or provider_key == "dashscope":
             return OpenAIChatModel(
                 model_id,
                 provider=AlibabaProvider(api_key=api_key or None, base_url=base_url, http_client=http_client),
             )
-        if provider_key == "deepseek":
+        if protocol_key == "deepseek_openai_compatible" or provider_key == "deepseek":
             return OpenAIChatModel(model_id, provider=DeepSeekProvider(api_key=api_key or None, http_client=http_client))
-        if provider_key in {"openai", "openai_like", "nvidia", "mimo"}:
+        if protocol_key in {"openai_chat", "openai_compatible_chat", "xiaomi_openai_compatible"} or provider_key in {"openai", "openai_like", "nvidia", "mimo"}:
+            if protocol_key in {"openai_compatible_chat", "xiaomi_openai_compatible"} and not base_url:
+                raise AppException(status_code=400, code="AI_LLM_BASE_URL_REQUIRED", detail="OpenAI-compatible 聊天供应商必须配置 Base URL。")
             return OpenAIChatModel(
                 model_id,
                 provider=OpenAIProvider(api_key=api_key or None, base_url=base_url, http_client=http_client),
@@ -133,7 +130,7 @@ class PydanticLlmModelResolver:
         """按供应商差异写入 Pydantic AI 支持的 thinking 参数。"""
 
         provider_key = self._resolve_provider_key(config)
-        adapter_mode = self._resolve_thinking_mode(provider_key)
+        adapter_mode = self._resolve_thinking_mode(provider_key, self._resolve_protocol_key(config))
         if adapter_mode == AiThinkingMode.NONE.value:
             return
 
@@ -164,7 +161,7 @@ class PydanticLlmModelResolver:
         if adapter_mode == AiThinkingMode.DASHSCOPE_ENABLE_THINKING.value:
             body: dict[str, Any] = {"enable_thinking": enabled}
             if enabled:
-                body["thinking_budget"] = int(native or DASHSCOPE_THINKING_BUDGETS["medium"])
+                body["thinking_budget"] = int(getattr(config, "_reasoning_budget_tokens", None) or native or DASHSCOPE_THINKING_BUDGETS["medium"])
             self._merge_extra_body(settings, body)
             return
         if adapter_mode == AiThinkingMode.OPENAI_EXTRA_BODY_THINKING.value:
@@ -204,6 +201,11 @@ class PydanticLlmModelResolver:
 
         return str(self._get_provider_config(config).provider_key or "").strip()
 
+    def _resolve_protocol_key(self, config: AiLlmConfig) -> str:
+        """读取服务端固化的调用协议，用户不能通过高级参数覆盖。"""
+
+        return str(getattr(self._get_provider_config(config), "protocol_key", "") or "").strip()
+
     @staticmethod
     def _merge_extra_body(settings: dict[str, Any], patch: dict[str, Any]) -> None:
         """把平台派生的 extra_body 合并进高级配置，避免覆盖用户自定义字段。"""
@@ -224,19 +226,19 @@ class PydanticLlmModelResolver:
         return "high"
 
     @staticmethod
-    def _resolve_thinking_mode(provider_key: str) -> str:
+    def _resolve_thinking_mode(provider_key: str, protocol_key: str = "") -> str:
         """返回 provider 对应的 thinking 映射模式。"""
 
-        if provider_key == "google":
+        if protocol_key == "google_chat" or provider_key == "google":
             return AiThinkingMode.GOOGLE_THINKING_LEVEL.value
-        if provider_key == "ollama":
+        if protocol_key == "ollama_openai_compatible" or provider_key == "ollama":
             return AiThinkingMode.OLLAMA_THINK.value
-        if provider_key == "dashscope":
+        if protocol_key == "alibaba_openai_compatible" or provider_key == "dashscope":
             return AiThinkingMode.DASHSCOPE_ENABLE_THINKING.value
-        if provider_key in {"deepseek", "mimo"}:
+        if protocol_key in {"deepseek_openai_compatible", "xiaomi_openai_compatible"} or provider_key in {"deepseek", "mimo"}:
             return AiThinkingMode.OPENAI_EXTRA_BODY_THINKING.value
-        if provider_key == "openrouter":
+        if protocol_key == "openrouter_chat" or provider_key == "openrouter":
             return AiThinkingMode.OPENROUTER_REASONING.value
-        if provider_key in {"openai", "openai_like", "nvidia"}:
+        if protocol_key in {"openai_chat", "openai_compatible_chat"} or provider_key in {"openai", "openai_like", "nvidia"}:
             return AiThinkingMode.OPENAI_REASONING.value
         return AiThinkingMode.NONE.value

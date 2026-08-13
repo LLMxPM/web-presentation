@@ -31,7 +31,7 @@ async def test_image_generation_job_should_be_idempotent_and_save_asset(
     """同一工具调用只创建一个任务，成功结果同时成为工具附件和工作空间资源。"""
 
     provider = await authenticated_client.post(
-        "/api/ai/llm-provider-configs",
+        "/api/ai/image-provider-configs",
         json={
             "name": "图片生成测试供应商",
             "provider_key": "openai_image",
@@ -41,19 +41,18 @@ async def test_image_generation_job_should_be_idempotent_and_save_asset(
     )
     assert provider.status_code == 201
     model = await authenticated_client.post(
-        "/api/ai/llm-configs",
+        "/api/ai/image-model-configs",
         json={
             "name": "图片生成测试模型",
             "provider_config_id": provider.json()["id"],
-            "model_type": "image_generation",
             "model_id": "gpt-image-2",
-            "advanced_config_json": {},
+            "advanced_config": {},
         },
     )
     assert model.status_code == 201
     binding = await authenticated_client.put(
-        "/api/ai/llm-slots/image_generation",
-        json={"llm_config_id": model.json()["id"]},
+        "/api/ai/image-model-bindings/image_generation",
+        json={"model_config_id": model.json()["id"]},
     )
     assert binding.status_code == 200
     workspace = await authenticated_client.post(

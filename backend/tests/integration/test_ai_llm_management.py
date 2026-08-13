@@ -1,1338 +1,160 @@
-"""文件功能：验证用户级大模型管理接口、槽位绑定与模型解析能力。"""
+"""文件功能：验证拆分后的 Chat/Image 模型配置、目录和槽位绑定集成契约。"""
 
 from __future__ import annotations
 
 from httpx import AsyncClient
 
-from app.ai.pydantic_model_resolver import PydanticLlmModelResolver
-from app.ai.secret_cipher import LlmSecretCipher
-from app.models.ai_llm import AiLlmConfig, AiLlmProviderConfig
-from app.models.enums import RecordStatus
 
+async def _chat_provider(client: AsyncClient, *, custom: bool = False) -> dict:
+    """创建目录或自定义聊天供应商。"""
 
-async def _create_workspace(authenticated_client: AsyncClient, name: str) -> int:
-    """创建一个工作空间并返回主键。"""
-
-    response = await authenticated_client.post(
-        "/api/workspaces",
-        json={"name": name, "status": "active"},
-    )
-    assert response.status_code == 200
-    return response.json()["id"]
-
-
-async def _create_project(authenticated_client: AsyncClient, workspace_id: int, name: str) -> int:
-    """创建一个项目并返回主键。"""
-
-    response = await authenticated_client.post(
-        "/api/projects",
-        json={"workspace_id": workspace_id, "name": name, "status": "active"},
-    )
-    assert response.status_code == 200
-    return response.json()["id"]
-
-
-async def _create_page(
-    authenticated_client: AsyncClient,
-    *,
-    workspace_id: int,
-    project_id: int,
-    title: str,
-) -> int:
-    """创建一个页面并返回主键。"""
-
-    response = await authenticated_client.post(
-        "/api/pages",
-        json={
-            "workspace_id": workspace_id,
-            "project_id": project_id,
-            "title": title,
-            "page_content": "<template><div>ai</div></template>",
-            "file_type": "vue",
-            "status": "active",
-        },
-    )
-    assert response.status_code == 200
-    return response.json()["id"]
-
-
-async def _create_llm_provider_config(
-    authenticated_client: AsyncClient,
-    *,
-    name: str,
-    provider_key: str = "openai",
-    base_url: str | None = "https://api.openai.com/v1",
-    api_key: str | None = "sk-session-provider",
-) -> dict:
-    """创建一个测试用供应商配置。"""
-
-    response = await authenticated_client.post(
-        "/api/ai/llm-provider-configs",
-        json={
-            "name": name,
-            "provider_key": provider_key,
-            "base_url": base_url,
-            "api_key": api_key,
-        },
-    )
-    assert response.status_code == 201
+    payload = {
+        "name": "自定义兼容连接" if custom else "OpenAI 连接",
+        "custom": custom,
+        "catalog_provider_key": None if custom else "openai",
+        "base_url": "https://compatible.example/v1" if custom else "https://api.openai.com/v1",
+        "api_key": "sk-chat-test",
+    }
+    response = await client.post("/api/ai/chat-provider-configs", json=payload)
+    assert response.status_code == 201, response.text
     return response.json()
 
 
-async def _create_llm_config(
-    authenticated_client: AsyncClient,
-    *,
-    name: str,
-    supports_image_input: bool = False,
-) -> dict:
-    """创建一个测试用个人大模型配置。"""
+async def _chat_model(client: AsyncClient, provider_id: int, *, tool_call: bool = True) -> dict:
+    """创建显式声明能力的聊天模型。"""
 
-    provider = await _create_llm_provider_config(
-        authenticated_client,
-        name=f"{name} 供应商",
-    )
-    response = await authenticated_client.post(
-        "/api/ai/llm-configs",
-        json={
-            "name": name,
-            "provider_config_id": provider["id"],
-            "model_id": "gpt-4.1-mini",
-            "supports_image_input": supports_image_input,
-            "advanced_config_json": {},
+    response = await client.post("/api/ai/chat-model-configs", json={
+        "name": "内容模型",
+        "provider_config_id": provider_id,
+        "model_id": "manual-chat-model",
+        "capability_override": {
+            "context_tokens": 200_000,
+            "input_tokens": 191_808,
+            "output_tokens": 8_192,
+            "supports_tool_call": tool_call,
+            "supports_reasoning": True,
         },
-    )
-    assert response.status_code == 201
+        "advanced_config": {"temperature": 0.2},
+    })
+    assert response.status_code == 201, response.text
     return response.json()
 
 
-async def _create_agent_project_scope(authenticated_client: AsyncClient, name: str) -> tuple[int, int]:
-    """创建内容助手可启动的项目级 scope。"""
+async def _image_model(client: AsyncClient) -> dict:
+    """创建独立的图片供应商和模型。"""
 
-    workspace_id = await _create_workspace(authenticated_client, f"{name} 工作空间")
-    project_id = await _create_project(authenticated_client, workspace_id, f"{name} 项目")
-    return workspace_id, project_id
-
-
-async def test_llm_provider_catalog_should_only_include_supported_providers(authenticated_client: AsyncClient) -> None:
-    """供应商目录接口应只返回平台保留的 provider 元数据。"""
-
-    response = await authenticated_client.get("/api/ai/llm-providers")
-    assert response.status_code == 200
-
-    providers = {item["provider_key"]: item for item in response.json()}
-    assert set(providers) == {
-        "dashscope",
-        "dashscope_image",
-        "deepseek",
-        "google",
-        "mimo",
-        "nvidia",
-        "ollama",
-        "openai",
-        "openai_image",
-        "openai_like",
-        "openrouter",
-        "openrouter_image",
-    }
-    for provider_key in providers:
-        assert provider_key in providers
-        assert providers[provider_key]["label"]
-        assert providers[provider_key]["provider_adapter"]
-        assert providers[provider_key]["docs_url"].startswith("https://")
-    assert providers["ollama"]["supports_thinking"] is True
-    assert providers["ollama"]["thinking_mode"] == "ollama_think"
-    assert providers["ollama"]["default_base_url"] == "http://localhost:11434"
-    assert providers["ollama"]["default_model_id"] == "llama3.1"
-    assert providers["ollama"]["default_thinking_effort"] == "medium"
-    assert providers["ollama"]["thinking_effort_options"] == ["low", "medium", "high"]
-    assert providers["google"]["supports_thinking"] is True
-    assert providers["google"]["thinking_mode"] == "google_thinking_level"
-    assert providers["google"]["default_model_id"] == "gemini-flash-latest"
-    assert providers["google"]["thinking_effort_options"] == ["low", "high"]
-    assert providers["openai"]["default_base_url"] == "https://api.openai.com/v1"
-    assert providers["openai"]["provider_type"] == "chat"
-    assert providers["openai"]["supported_model_types"] == ["chat"]
-    assert providers["openai_image"]["provider_type"] == "image_generation"
-    assert providers["openai_image"]["supported_model_types"] == ["image_generation"]
-    assert providers["openai_image"]["default_image_generation_model_id"] == "gpt-image-2"
-    assert providers["openai_image"]["image_generation_models"][0]["supports_mask"] is True
-    assert providers["dashscope_image"]["provider_type"] == "image_generation"
-    assert providers["dashscope_image"]["requires_base_url"] is True
-    assert {item["model_id"] for item in providers["dashscope_image"]["image_generation_models"]} == {
-        "wan2.7-image",
-        "wan2.7-image-pro",
-    }
-    assert all(
-        item["supported_model_types"] == ["chat"]
-        for key, item in providers.items()
-        if item["provider_type"] == "chat"
-    )
-    assert providers["openrouter"]["default_base_url"] == "https://openrouter.ai/api/v1"
-    assert providers["openrouter"]["thinking_mode"] == "openrouter_reasoning"
-    assert providers["openrouter"]["advanced_json_hint"] == {}
-    assert providers["openrouter_image"]["provider_type"] == "image_generation"
-    assert providers["openrouter_image"]["default_base_url"] == "https://openrouter.ai/api/v1"
-    assert {item["model_id"] for item in providers["openrouter_image"]["image_generation_models"]} == {
-        "google/gemini-3.1-flash-lite-image",
-        "google/gemini-2.5-flash-image",
-        "qwen/qwen-image-3",
-        "qwen/qwen-image-3-pro",
-        "openai/gpt-image-2",
-        "openai/gpt-5.4-image-2",
-        "bytedance-seed/seedream-4.5",
-        "x-ai/grok-imagine-image-quality",
-    }
-    assert providers["dashscope"]["default_model_id"] == "qwen-plus"
-    assert providers["nvidia"]["default_model_id"] == "meta/llama-3.3-70b-instruct"
-    assert providers["deepseek"]["thinking_mode"] == "openai_extra_body_thinking"
-    assert providers["deepseek"]["default_base_url"] == "https://api.deepseek.com"
-    assert providers["deepseek"]["default_model_id"] == "deepseek-v4-pro"
-    assert providers["deepseek"]["default_thinking_enabled"] is True
-    assert providers["deepseek"]["default_context_window_tokens"] == 1_000_000
-    assert providers["deepseek"]["default_max_output_tokens"] == 384_000
-    assert providers["deepseek"]["thinking_effort_options"] == ["high", "max"]
-    assert providers["mimo"]["default_base_url"] == "https://api.xiaomimimo.com/v1"
-    assert providers["mimo"]["default_model_id"] == "mimo-v2.5"
-    assert providers["mimo"]["default_thinking_enabled"] is True
-    assert providers["mimo"]["default_context_window_tokens"] == 1_000_000
-    assert providers["mimo"]["default_max_output_tokens"] == 32_768
-    assert providers["mimo"]["default_supports_image_input"] is True
-    assert all(item["advanced_json_hint"] == {} for item in providers.values() if item["provider_type"] == "chat")
-    assert providers["dashscope_image"]["advanced_json_hint"]["execution_mode"] == "async"
+    provider = await client.post("/api/ai/image-provider-configs", json={
+        "name": "OpenAI 图片连接",
+        "provider_key": "openai_image",
+        "base_url": "https://api.openai.com/v1",
+        "api_key": "sk-image-test",
+    })
+    assert provider.status_code == 201, provider.text
+    model = await client.post("/api/ai/image-model-configs", json={
+        "name": "图片模型",
+        "provider_config_id": provider.json()["id"],
+        "model_id": "gpt-image-2",
+        "advanced_config": {},
+    })
+    assert model.status_code == 201, model.text
+    return model.json()
 
 
-async def test_llm_provider_type_should_isolate_chat_and_image_models(authenticated_client: AsyncClient) -> None:
-    """模型只能引用同类型供应商，修改类型时必须同时切换兼容供应商。"""
+async def test_catalog_and_provider_protocol_are_server_controlled(authenticated_client: AsyncClient) -> None:
+    """目录只展示已实现协议，连接响应不泄露密钥且协议不可由用户覆盖。"""
 
-    chat_provider = await _create_llm_provider_config(authenticated_client, name="Chat 独立供应商")
-    image_provider = await _create_llm_provider_config(
-        authenticated_client,
-        name="生图独立供应商",
-        provider_key="openai_image",
-    )
-    assert chat_provider["provider_type"] == "chat"
-    assert image_provider["provider_type"] == "image_generation"
+    catalog = await authenticated_client.get("/api/ai/chat-provider-catalog")
+    assert catalog.status_code == 200
+    assert all(item["protocol_key"] not in {"anthropic", "bedrock", "openai_responses"} for item in catalog.json())
 
-    invalid_image = await authenticated_client.post(
-        "/api/ai/llm-configs",
-        json={
-            "name": "错误生图模型",
-            "provider_config_id": chat_provider["id"],
-            "model_type": "image_generation",
-            "model_id": "gpt-image-2",
-        },
-    )
-    assert invalid_image.status_code == 400
-    assert invalid_image.json()["code"] == "AI_LLM_PROVIDER_MODEL_TYPE_MISMATCH"
-
-    invalid_chat = await authenticated_client.post(
-        "/api/ai/llm-configs",
-        json={
-            "name": "错误 Chat 模型",
-            "provider_config_id": image_provider["id"],
-            "model_type": "chat",
-            "model_id": "gpt-4.1-mini",
-        },
-    )
-    assert invalid_chat.status_code == 400
-    assert invalid_chat.json()["code"] == "AI_LLM_PROVIDER_MODEL_TYPE_MISMATCH"
-
-    chat_model = await authenticated_client.post(
-        "/api/ai/llm-configs",
-        json={
-            "name": "可更新 Chat 模型",
-            "provider_config_id": chat_provider["id"],
-            "model_id": "gpt-4.1-mini",
-        },
-    )
-    assert chat_model.status_code == 201
-    invalid_update = await authenticated_client.patch(
-        f"/api/ai/llm-configs/{chat_model.json()['id']}",
-        json={"model_type": "image_generation"},
-    )
-    assert invalid_update.status_code == 400
-    assert invalid_update.json()["code"] == "AI_LLM_PROVIDER_MODEL_TYPE_MISMATCH"
-
-    valid_update = await authenticated_client.patch(
-        f"/api/ai/llm-configs/{chat_model.json()['id']}",
-        json={
-            "model_type": "image_generation",
-            "provider_config_id": image_provider["id"],
-            "model_id": "gpt-image-2",
-        },
-    )
-    assert valid_update.status_code == 200
-    assert valid_update.json()["provider_key"] == "openai_image"
-    assert valid_update.json()["model_type"] == "image_generation"
-
-
-async def test_dashscope_image_provider_should_require_https_base_url(authenticated_client: AsyncClient) -> None:
-    """百炼生图供应商必须显式配置 HTTPS 地址，但不限制路径后缀。"""
-
-    invalid_cases = (
-        (None, "AI_LLM_BASE_URL_REQUIRED"),
-        ("http://dashscope.aliyuncs.com/api/v1", "AI_LLM_BASE_URL_INVALID"),
-    )
-    for base_url, expected_code in invalid_cases:
-        response = await authenticated_client.post(
-            "/api/ai/llm-provider-configs",
-            json={
-                "name": "无效百炼生图供应商",
-                "provider_key": "dashscope_image",
-                "base_url": base_url,
-                "api_key": "sk-dashscope-image",
-            },
-        )
-        assert response.status_code == 400
-        assert response.json()["code"] == expected_code
-
-    # Base URL 可以使用任意 HTTPS 路径，不再要求以 /api/v1 结尾。
-    valid_urls = [
-        "https://dashscope.aliyuncs.com/api/v1",
-        "https://workspace.cn-beijing.maas.aliyuncs.com/api/v1",
-        "https://dashscope.aliyuncs.com/compatible-mode/v1",
-        "https://dashscope.aliyuncs.com",
-    ]
-    for base_url in valid_urls:
-        valid = await authenticated_client.post(
-            "/api/ai/llm-provider-configs",
-            json={
-                "name": f"有效百炼生图供应商 {base_url}",
-                "provider_key": "dashscope_image",
-                "base_url": base_url,
-                "api_key": "sk-dashscope-image",
-            },
-        )
-        assert valid.status_code == 201
-    assert valid.json()["provider_type"] == "image_generation"
-
-
-async def test_image_model_catalog_should_validate_model_and_advanced_options(authenticated_client: AsyncClient) -> None:
-    """模型创建应复用目录能力，并拒绝未知模型或未声明的供应商参数。"""
-
-    provider = await _create_llm_provider_config(
-        authenticated_client,
-        name="百炼模型能力供应商",
-        provider_key="dashscope_image",
-        base_url="https://workspace.cn-beijing.maas.aliyuncs.com/api/v1",
-    )
-    unknown_model = await authenticated_client.post(
-        "/api/ai/llm-configs",
-        json={
-            "name": "未知百炼模型",
-            "provider_config_id": provider["id"],
-            "model_type": "image_generation",
-            "model_id": "wan-unknown",
-        },
-    )
-    assert unknown_model.status_code == 400
-    assert unknown_model.json()["code"] == "AI_IMAGE_GENERATION_MODEL_UNSUPPORTED"
-
-    invalid_options = await authenticated_client.post(
-        "/api/ai/llm-configs",
-        json={
-            "name": "错误百炼参数",
-            "provider_config_id": provider["id"],
-            "model_type": "image_generation",
-            "model_id": "wan2.7-image-pro",
-            "advanced_config_json": {"callback_url": "https://unsafe.example/callback"},
-        },
-    )
-    assert invalid_options.status_code == 422
-    assert invalid_options.json()["code"] == "AI_IMAGE_ADVANCED_CONFIG_UNSUPPORTED"
-
-    valid = await authenticated_client.post(
-        "/api/ai/llm-configs",
-        json={
-            "name": "同步百炼模型",
-            "provider_config_id": provider["id"],
-            "model_type": "image_generation",
-            "model_id": "wan2.7-image-pro",
-            "advanced_config_json": {"execution_mode": "sync", "watermark": True},
-        },
-    )
-    assert valid.status_code == 201
-    assert valid.json()["advanced_config_json"] == {"execution_mode": "sync", "watermark": True}
-
-
-async def test_llm_provider_and_config_crud_should_split_secret_from_model(authenticated_client: AsyncClient) -> None:
-    """供应商配置负责密钥脱敏，模型配置只引用供应商并维护模型参数。"""
-
-    provider_response = await authenticated_client.post(
-        "/api/ai/llm-provider-configs",
-        json={
-            "name": "OpenRouter 工作账号",
-            "provider_key": "openrouter",
-            "base_url": "https://openrouter.ai/api/v1",
-            "api_key": "sk-or-v1-test-secret",
-        },
-    )
-    assert provider_response.status_code == 201
-    provider = provider_response.json()
+    provider = await _chat_provider(authenticated_client)
+    assert provider["protocol_key"] == "openai_chat"
     assert provider["has_api_key"] is True
-    assert provider["api_key_masked"] != "sk-or-v1-test-secret"
-    assert provider["provider_label"] == "OpenRouter"
-
-    create_response = await authenticated_client.post(
-        "/api/ai/llm-configs",
-        json={
-            "name": "OpenRouter 主模型",
-            "provider_config_id": provider["id"],
-            "model_id": "openai/gpt-5.6",
-            "thinking_enabled": True,
-            "thinking_effort": "xhigh",
-            "advanced_config_json": {"temperature": 0.2},
-        },
-    )
-    assert create_response.status_code == 201
-    created_item = create_response.json()
-    assert created_item["provider_config_id"] == provider["id"]
-    assert created_item["provider_config_name"] == "OpenRouter 工作账号"
-    assert created_item["provider_label"] == "OpenRouter"
-    assert created_item["context_window_tokens"] == 1_017_232
-    assert created_item["model_max_output_tokens"] == 128_000
-    assert created_item["max_output_tokens"] == 32_768
-    assert created_item["required_model_context_tokens"] == 1_050_000
-    assert created_item["runtime_headroom_tokens"] == 32_768
-    assert created_item["compression_trigger_tokens"] == 984_464
-    assert created_item["compression_target_tokens"] == 16_384
-    assert created_item["budget_policy_version"] == "fixed-context-budget.v2"
-    assert created_item["history_token_ratio"] == 1.0
-    assert created_item["compression_target_ratio"] == 16_384 / 1_017_232
-    assert created_item["reasoning_mode"] == "enabled"
-    assert created_item["reasoning_level"] == "max"
-    assert created_item["thinking_effort"] == "max"
-    assert created_item["effective_reasoning"]["native_value"] == "max"
-    assert created_item["capability_source"] == "built_in"
-    assert created_item["capability_verified"] is True
-
-    config_id = created_item["id"]
-    detail_response = await authenticated_client.get(f"/api/ai/llm-configs/{config_id}")
-    assert detail_response.status_code == 200
-    assert detail_response.json()["advanced_config_json"] == {"temperature": 0.2}
-
-    protected_key_response = await authenticated_client.patch(
-        f"/api/ai/llm-configs/{config_id}",
-        json={
-            "advanced_config_json": {"api_key": "should-fail"},
-        },
-    )
-    assert protected_key_response.status_code == 400
-    assert protected_key_response.json()["code"] == "AI_LLM_ADVANCED_CONFIG_CONFLICT"
-
-    protected_budget_response = await authenticated_client.patch(
-        f"/api/ai/llm-configs/{config_id}",
-        json={"advanced_config_json": {"max_tokens": 999999}},
-    )
-    assert protected_budget_response.status_code == 400
-    assert protected_budget_response.json()["code"] == "AI_LLM_ADVANCED_CONFIG_CONFLICT"
-
-    clear_secret_response = await authenticated_client.patch(
-        f"/api/ai/llm-provider-configs/{provider['id']}",
-        json={"api_key": ""},
-    )
-    assert clear_secret_response.status_code == 200
-    assert clear_secret_response.json()["has_api_key"] is False
-    assert clear_secret_response.json()["api_key_masked"] is None
-
-    update_response = await authenticated_client.patch(
-        f"/api/ai/llm-configs/{config_id}",
-        json={
-            "name": "OpenRouter 更新模型",
-            "context_window_tokens": 256000,
-            "advanced_config_json": {"temperature": 0.5},
-        },
-    )
-    assert update_response.status_code == 200
-    updated_item = update_response.json()
-    assert updated_item["capability_source"] == "built_in"
-    assert updated_item["name"] == "OpenRouter 更新模型"
-    assert updated_item["status"] == "active"
-    assert updated_item["context_window_tokens"] == 256000
-    assert updated_item["max_output_tokens"] == 32768
-    assert updated_item["history_token_ratio"] == 1.0
-    assert updated_item["compression_target_tokens"] == 16384
-    assert updated_item["compression_trigger_tokens"] == 223232
-    assert updated_item["advanced_config_json"] == {"temperature": 0.5}
-
-    model_status_response = await authenticated_client.patch(
-        f"/api/ai/llm-configs/{config_id}",
-        json={"status": "archived"},
-    )
-    assert model_status_response.status_code == 400
-    assert model_status_response.json()["code"] == "AI_LLM_CONFIG_STATUS_UPDATE_UNSUPPORTED"
-
-    provider_status_response = await authenticated_client.patch(
-        f"/api/ai/llm-provider-configs/{provider['id']}",
-        json={"status": "archived"},
-    )
-    assert provider_status_response.status_code == 400
-    assert provider_status_response.json()["code"] == "AI_LLM_PROVIDER_STATUS_UPDATE_UNSUPPORTED"
-
-
-async def test_llm_config_should_derive_run_budget_from_context_window(authenticated_client: AsyncClient) -> None:
-    """聊天模型只接收上下文窗口配置，其余运行预算由后端自动派生。"""
-
-    provider = await _create_llm_provider_config(authenticated_client, name="余量校验供应商")
-
-    # 窗口低于平台最低限应被字段级校验拒绝。
-    small_window_create = await authenticated_client.post(
-        "/api/ai/llm-configs",
-        json={
-            "name": "小窗口模型",
-            "provider_config_id": provider["id"],
-            "model_id": "gpt-4.1-mini",
-            "context_window_tokens": 32000,
-        },
-    )
-    assert small_window_create.status_code == 422
-
-    # 创建时即使旧客户端携带手工预算字段，也应忽略并使用自动值。
-    valid_create = await authenticated_client.post(
-        "/api/ai/llm-configs",
-        json={
-            "name": "余量合法模型",
-            "provider_config_id": provider["id"],
-            "model_id": "gpt-4.1-mini",
-            "context_window_tokens": 128000,
-            "max_output_tokens": 9000,
-            "history_token_ratio": 0.35,
-            "compression_target_ratio": 0.2,
-        },
-    )
-    assert valid_create.status_code == 201
-    created = valid_create.json()
-    config_id = created["id"]
-    assert created["max_output_tokens"] == 32768
-    assert created["history_token_ratio"] == 1.0
-    assert created["compression_target_tokens"] == 16384
-    assert created["compression_trigger_tokens"] == 95232
-
-    # 更新窗口后应重新派生全部预算。
-    valid_update = await authenticated_client.patch(
-        f"/api/ai/llm-configs/{config_id}",
-        json={"context_window_tokens": 200000},
-    )
-    assert valid_update.status_code == 200
-    assert valid_update.json()["context_window_tokens"] == 200000
-    assert valid_update.json()["max_output_tokens"] == 32768
-    assert valid_update.json()["compression_target_tokens"] == 16384
-    assert valid_update.json()["compression_trigger_tokens"] == 167232
-
-
-async def test_llm_capability_resolve_and_reasoning_contract_should_use_new_fields(authenticated_client: AsyncClient) -> None:
-    """能力解析、三态四档与旧字段冲突应由 API 在保存前处理。"""
-
-    provider = await _create_llm_provider_config(authenticated_client, name="能力解析供应商")
-    capability_response = await authenticated_client.post(
-        "/api/ai/llm-model-capabilities/resolve",
-        json={"provider_config_id": provider["id"], "model_id": "gpt-5.6"},
-    )
-    assert capability_response.status_code == 200
-    capability = capability_response.json()
-    assert capability["source"] == "built_in"
-    assert capability["verified"] is True
-    assert capability["level_mapping"]["max"] == "max"
-    assert capability["request_output_tokens"] == 32_768
-    assert capability["context_window_tokens"] == 1_017_232
-    assert capability["required_model_context_tokens"] == 1_050_000
-    assert capability["compression_target_tokens"] == 16_384
-
-    create_response = await authenticated_client.post(
-        "/api/ai/llm-configs",
-        json={
-            "name": "显式关闭模型",
-            "provider_config_id": provider["id"],
-            "model_id": "gpt-5.6",
-            "reasoning_mode": "disabled",
-        },
-    )
-    assert create_response.status_code == 201
-    assert create_response.json()["reasoning_mode"] == "disabled"
-    assert create_response.json()["reasoning_level"] is None
-
-    conflict_response = await authenticated_client.post(
-        "/api/ai/llm-configs",
-        json={
-            "name": "冲突模型",
-            "provider_config_id": provider["id"],
-            "model_id": "gpt-5.6",
-            "reasoning_mode": "enabled",
-            "reasoning_level": "max",
-            "thinking_enabled": True,
-        },
-    )
-    assert conflict_response.status_code == 422
-
-    advanced_conflict_response = await authenticated_client.patch(
-        f"/api/ai/llm-configs/{create_response.json()['id']}",
-        json={"advanced_config_json": {"extra_body": {"thinking_budget": 9999, "custom": True}}},
-    )
-    assert advanced_conflict_response.status_code == 400
-    assert advanced_conflict_response.json()["code"] == "AI_LLM_ADVANCED_CONFIG_CONFLICT"
-
-    deep_conflict_response = await authenticated_client.patch(
-        f"/api/ai/llm-configs/{create_response.json()['id']}",
-        json={"advanced_config_json": {"vendor_options": [{"thinking": {"type": "enabled"}}]}},
-    )
-    assert deep_conflict_response.status_code == 400
-    assert deep_conflict_response.json()["code"] == "AI_LLM_ADVANCED_CONFIG_CONFLICT"
-
-    deep_budget_conflict_response = await authenticated_client.patch(
-        f"/api/ai/llm-configs/{create_response.json()['id']}",
-        json={"advanced_config_json": {"extra_body": {"compression_target_tokens": 2048}}},
-    )
-    assert deep_budget_conflict_response.status_code == 400
-    assert deep_budget_conflict_response.json()["code"] == "AI_LLM_ADVANCED_CONFIG_CONFLICT"
-
-    enabled_response = await authenticated_client.patch(
-        f"/api/ai/llm-configs/{create_response.json()['id']}",
-        json={"reasoning_mode": "enabled", "reasoning_level": "high", "context_window_tokens": 256000},
-    )
-    assert enabled_response.status_code == 200
-    assert enabled_response.json()["capability_source"] == "built_in"
-
-    clear_level_response = await authenticated_client.patch(
-        f"/api/ai/llm-configs/{create_response.json()['id']}",
-        json={"reasoning_level": None},
-    )
-    assert clear_level_response.status_code == 200
-    assert clear_level_response.json()["reasoning_level"] == "medium"
-
-    clear_override_response = await authenticated_client.patch(
-        f"/api/ai/llm-configs/{create_response.json()['id']}",
-        json={"model_capability_override": {}},
-    )
-    assert clear_override_response.status_code == 200
-    assert clear_override_response.json()["capability_source"] == "built_in"
-    assert clear_override_response.json()["context_window_tokens"] == 256_000
-
-    unsupported_window_response = await authenticated_client.post(
-        "/api/ai/llm-configs",
-        json={
-            "name": "超过模型总窗口",
-            "provider_config_id": provider["id"],
-            "model_id": "gpt-5.6",
-            "context_window_tokens": 1_050_000,
-        },
-    )
-    assert unsupported_window_response.status_code == 400
-    assert unsupported_window_response.json()["code"] == "AI_LLM_CONTEXT_WINDOW_UNSUPPORTED"
-
-    dashscope_provider = await _create_llm_provider_config(
-        authenticated_client,
-        name="Qwen 最新模型供应商",
-        provider_key="dashscope",
-        base_url="https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
-    )
-    qwen_capability_response = await authenticated_client.post(
-        "/api/ai/llm-model-capabilities/resolve",
-        json={"provider_config_id": dashscope_provider["id"], "model_id": "qwen3.8-max"},
-    )
-    assert qwen_capability_response.status_code == 200
-    assert qwen_capability_response.json()["source"] == "built_in"
-    assert qwen_capability_response.json()["context_window_tokens"] == 967_232
-    assert qwen_capability_response.json()["model_context_window_tokens"] == 1_000_000
-
-    deepseek_provider = await _create_llm_provider_config(
-        authenticated_client,
-        name="未知模型上限供应商",
-        provider_key="deepseek",
-        base_url="https://api.deepseek.com",
-    )
-    unknown_capability_response = await authenticated_client.post(
-        "/api/ai/llm-model-capabilities/resolve",
-        json={"provider_config_id": deepseek_provider["id"], "model_id": "future-unregistered-model"},
-    )
-    assert unknown_capability_response.status_code == 200
-    assert unknown_capability_response.json()["verified"] is False
-    assert unknown_capability_response.json()["context_window_tokens"] == 200_000
-    assert unknown_capability_response.json()["model_context_window_tokens"] is None
-    assert unknown_capability_response.json()["required_model_context_tokens"] == 232_768
-    assert unknown_capability_response.json()["compression_trigger_tokens"] == 167_232
-    assert unknown_capability_response.json()["compression_target_tokens"] == 16_384
-
-    unknown_create_response = await authenticated_client.post(
-        "/api/ai/llm-configs",
-        json={
-            "name": "未来未识别模型",
-            "provider_config_id": deepseek_provider["id"],
-            "model_id": "future-unregistered-model",
-        },
-    )
-    assert unknown_create_response.status_code == 201
-    assert unknown_create_response.json()["context_window_tokens"] == 200_000
-    assert unknown_create_response.json()["required_model_context_tokens"] == 232_768
-    assert unknown_create_response.json()["capability_verified"] is False
-
-
-async def test_llm_config_delete_should_hard_delete_unbind_slots_and_block_existing_session_run(
-    authenticated_client: AsyncClient,
-) -> None:
-    """删除模型应移除模型记录和槽位绑定，已固化该模型的会话不能继续发起运行。"""
-
-    config = await _create_llm_config(authenticated_client, name="待删除会话模型")
-    slot_response = await authenticated_client.put(
-        "/api/ai/llm-slots/agent_coordinator",
-        json={"llm_config_id": config["id"]},
-    )
-    assert slot_response.status_code == 200
-    assert slot_response.json()["binding_ready"] is True
-
-    workspace_id, project_id = await _create_agent_project_scope(authenticated_client, "删除模型会话")
-    create_session_response = await authenticated_client.post(
-        "/api/ai/sessions",
-        json={
-            "agent_id": "agent-coordinator",
-            "session_name": "删除模型后会话",
-            "workspace_id": workspace_id,
-            "llm_config_id": config["id"],
-        },
-    )
-    assert create_session_response.status_code == 201
-    session_id = create_session_response.json()["session_id"]
-
-    delete_response = await authenticated_client.delete(f"/api/ai/llm-configs/{config['id']}")
-    assert delete_response.status_code == 200
-    assert delete_response.json()["message"] == "模型已删除。"
-
-    detail_response = await authenticated_client.get(f"/api/ai/llm-configs/{config['id']}")
-    assert detail_response.status_code == 404
-    assert detail_response.json()["code"] == "AI_LLM_CONFIG_NOT_FOUND"
-
-    slots_response = await authenticated_client.get("/api/ai/llm-slots")
-    assert slots_response.status_code == 200
-    agent_slot = {item["slot"]: item for item in slots_response.json()}["agent_coordinator"]
-    assert agent_slot["llm_config_id"] is None
-    assert agent_slot["binding_ready"] is False
-
-    run_response = await authenticated_client.post(
-        f"/api/ai/sessions/{session_id}/runs/stream",
-        params={
-            "workspace_id": workspace_id,
-            "project_id": project_id,
-            "scope_type": "project",
-            "agent_id": "agent-coordinator",
-        },
-        json={
-            "message": "继续使用已删除模型的会话",
-            "focus": {"scope_type": "project", "project_id": project_id, "source": "test-agent-session"},
-        },
-    )
-    assert run_response.status_code == 404
-    assert run_response.json()["code"] == "AI_LLM_CONFIG_NOT_FOUND"
-
-
-async def test_llm_provider_config_delete_should_require_no_linked_models(authenticated_client: AsyncClient) -> None:
-    """删除供应商前必须先删除所有引用它的模型。"""
-
-    provider = await _create_llm_provider_config(
-        authenticated_client,
-        name="待删除供应商",
-    )
-    create_response = await authenticated_client.post(
-        "/api/ai/llm-configs",
-        json={
-            "name": "引用待删除供应商的模型",
-            "provider_config_id": provider["id"],
-            "model_id": "gpt-4.1-mini",
-            "advanced_config_json": {},
-        },
-    )
-    assert create_response.status_code == 201
-    config = create_response.json()
-
-    blocked_response = await authenticated_client.delete(f"/api/ai/llm-provider-configs/{provider['id']}")
-    assert blocked_response.status_code == 409
-    assert blocked_response.json()["code"] == "AI_LLM_PROVIDER_CONFIG_IN_USE"
-
-    delete_model_response = await authenticated_client.delete(f"/api/ai/llm-configs/{config['id']}")
-    assert delete_model_response.status_code == 200
-
-    delete_provider_response = await authenticated_client.delete(f"/api/ai/llm-provider-configs/{provider['id']}")
-    assert delete_provider_response.status_code == 200
-    assert delete_provider_response.json()["message"] == "供应商已删除。"
-
-    detail_response = await authenticated_client.get(f"/api/ai/llm-provider-configs/{provider['id']}")
-    assert detail_response.status_code == 404
-    assert detail_response.json()["code"] == "AI_LLM_PROVIDER_CONFIG_NOT_FOUND"
-
-
-async def test_llm_config_should_cap_large_context_derived_budgets(authenticated_client: AsyncClient) -> None:
-    """百万级上下文应自动限制输出和摘要预算，避免随窗口无限增长。"""
-
-    provider = await _create_llm_provider_config(
-        authenticated_client,
-        name="OpenRouter 长上下文供应商",
-        provider_key="openrouter",
-        base_url="https://openrouter.ai/api/v1",
-        api_key="sk-or-v1-large-context",
-    )
-    response = await authenticated_client.post(
-        "/api/ai/llm-configs",
-        json={
-            "name": "百万上下文模型",
-            "provider_config_id": provider["id"],
-            "model_id": "openai/gpt-4.1-long-context",
-            "context_window_tokens": 967_232,
-            "advanced_config_json": {},
-        },
-    )
-
-    assert response.status_code == 201
-    created_item = response.json()
-    assert created_item["context_window_tokens"] == 967_232
-    assert created_item["max_output_tokens"] == 32_768
-    assert created_item["required_model_context_tokens"] == 1_000_000
-    assert created_item["compression_target_tokens"] == 16_384
-
-
-async def test_llm_config_should_ignore_manual_mimo_output_budget(authenticated_client: AsyncClient) -> None:
-    """MiMo 配置也应忽略旧客户端手工输出值并使用自动预算。"""
-
-    provider = await _create_llm_provider_config(
-        authenticated_client,
-        name="MiMo 供应商",
-        provider_key="mimo",
-        base_url="https://api.xiaomimimo.com/v1",
-        api_key="sk-mimo-test",
-    )
-    response = await authenticated_client.post(
-        "/api/ai/llm-configs",
-        json={
-            "name": "MiMo 超限模型",
-            "provider_config_id": provider["id"],
-            "model_id": "mimo-v2.5",
-            "context_window_tokens": 1_000_000,
-            "max_output_tokens": 200_000,
-            "advanced_config_json": {},
-        },
-    )
-
-    assert response.status_code == 201
-    assert response.json()["max_output_tokens"] == 32_768
-
-
-async def test_llm_slot_binding_should_drive_agent_binding_state(authenticated_client: AsyncClient) -> None:
-    """当前固定槽位绑定后，Agent 列表应返回已绑定的大模型信息。"""
-
-    provider = await _create_llm_provider_config(
-        authenticated_client,
-        name="OpenAI 槽位供应商",
-        api_key="sk-test-openai",
-    )
-    config_response = await authenticated_client.post(
-        "/api/ai/llm-configs",
-        json={
-            "name": "总控模型",
-            "provider_config_id": provider["id"],
-            "model_id": "gpt-5.6",
-            "thinking_enabled": True,
-            "thinking_effort": "low",
-            "advanced_config_json": {},
-        },
-    )
-    assert config_response.status_code == 201
-    config_id = config_response.json()["id"]
-
-    update_slot_response = await authenticated_client.put(
-        "/api/ai/llm-slots/agent_coordinator",
-        json={"llm_config_id": config_id},
-    )
-    assert update_slot_response.status_code == 200
-    assert update_slot_response.json()["binding_ready"] is True
-    assert update_slot_response.json()["llm_config_name"] == "总控模型"
-
-    update_component_slot_response = await authenticated_client.put(
-        "/api/ai/llm-slots/component_manager",
-        json={"llm_config_id": config_id},
-    )
-    assert update_component_slot_response.status_code == 400
-    assert update_component_slot_response.json()["code"] == "AI_LLM_SLOT_UNSUPPORTED"
-
-    update_resource_slot_response = await authenticated_client.put(
-        "/api/ai/llm-slots/resource_manager",
-        json={"llm_config_id": config_id},
-    )
-    assert update_resource_slot_response.status_code == 400
-    assert update_resource_slot_response.json()["code"] == "AI_LLM_SLOT_UNSUPPORTED"
-
-    slots_response = await authenticated_client.get("/api/ai/llm-slots")
-    assert slots_response.status_code == 200
-    slots = {item["slot"]: item for item in slots_response.json()}
-    assert set(slots) == {
-        "agent_coordinator",
-        "image_understanding",
-        "image_generation",
-    }
-    assert slots["agent_coordinator"]["binding_ready"] is True
-    assert slots["agent_coordinator"]["provider_label"] == "OpenAI"
-    assert slots["image_understanding"]["binding_ready"] is False
-    assert slots["image_generation"]["binding_ready"] is False
-
-    removed_slot_response = await authenticated_client.put(
-        "/api/ai/llm-slots/page_editor",
-        json={"llm_config_id": config_id},
-    )
-    assert removed_slot_response.status_code == 400
-    assert removed_slot_response.json()["code"] == "AI_LLM_SLOT_UNSUPPORTED"
-
-    workspace_id = await _create_workspace(authenticated_client, "AI LLM 工作空间")
-    project_id = await _create_project(authenticated_client, workspace_id, "AI LLM 项目")
-    page_id = await _create_page(
-        authenticated_client,
-        workspace_id=workspace_id,
-        project_id=project_id,
-        title="AI LLM 页面",
-    )
-
-    agents_response = await authenticated_client.get(
-        "/api/ai/agents",
-        params={
-            "workspace_id": workspace_id,
-            "project_id": project_id,
-            "page_id": page_id,
-        },
-    )
-    assert agents_response.status_code == 200
-    agents = {item["id"]: item for item in agents_response.json()}
-    assert set(agents) == {"agent-coordinator"}
-    coordinator_agent = agents["agent-coordinator"]
-    assert coordinator_agent["llm_slot"] == "agent_coordinator"
-    assert coordinator_agent["llm_binding_ready"] is True
-    assert coordinator_agent["bound_llm_name"] == "总控模型"
-    assert coordinator_agent["bound_provider_label"] == "OpenAI"
-    assert agents["agent-coordinator"]["entry_kind"] == "agent"
-    assert agents["agent-coordinator"]["scope_type"] == "workspace"
-
-
-async def test_visual_slots_should_validate_model_type_and_image_input(authenticated_client: AsyncClient) -> None:
-    """两个视觉槽位应分别约束聊天视觉能力和图片生成模型类型。"""
-
-    provider = await _create_llm_provider_config(authenticated_client, name="视觉槽位供应商")
-    image_provider = await _create_llm_provider_config(
-        authenticated_client,
-        name="视觉槽位图片供应商",
-        provider_key="openai_image",
-    )
-    plain_chat = await authenticated_client.post(
-        "/api/ai/llm-configs",
-        json={
-            "name": "纯文本模型",
-            "provider_config_id": provider["id"],
-            "model_id": "gpt-4.1-mini",
-            "supports_image_input": False,
-            "advanced_config_json": {},
-        },
-    )
-    assert plain_chat.status_code == 201
-    image_chat = await authenticated_client.post(
-        "/api/ai/llm-configs",
-        json={
-            "name": "图片理解模型",
-            "provider_config_id": provider["id"],
-            "model_id": "gpt-4.1-mini",
-            "supports_image_input": True,
-            "advanced_config_json": {},
-        },
-    )
-    assert image_chat.status_code == 201
-    image_generation = await authenticated_client.post(
-        "/api/ai/llm-configs",
-        json={
-            "name": "图片生成模型",
-            "provider_config_id": image_provider["id"],
-            "model_type": "image_generation",
-            "model_id": "gpt-image-2",
-            "thinking_enabled": True,
-            "thinking_effort": "high",
-            "supports_image_input": True,
-            "advanced_config_json": {},
-        },
-    )
-    assert image_generation.status_code == 201
-    assert image_generation.json()["model_type"] == "image_generation"
-    assert image_generation.json()["thinking_enabled"] is False
-    assert image_generation.json()["thinking_effort"] is None
-    assert image_generation.json()["supports_image_input"] is False
-
-    invalid_understanding = await authenticated_client.put(
-        "/api/ai/llm-slots/image_understanding",
-        json={"llm_config_id": plain_chat.json()["id"]},
-    )
-    assert invalid_understanding.status_code == 409
-    assert invalid_understanding.json()["code"] == "AI_LLM_SLOT_MODEL_INCOMPATIBLE"
-
-    understanding = await authenticated_client.put(
-        "/api/ai/llm-slots/image_understanding",
-        json={"llm_config_id": image_chat.json()["id"]},
-    )
-    generation = await authenticated_client.put(
-        "/api/ai/llm-slots/image_generation",
-        json={"llm_config_id": image_generation.json()["id"]},
-    )
-    assert understanding.status_code == 200
-    assert understanding.json()["binding_ready"] is True
-    assert generation.status_code == 200
-    assert generation.json()["binding_ready"] is True
-
-    invalid_agent_binding = await authenticated_client.put(
-        "/api/ai/llm-slots/agent_coordinator",
-        json={"llm_config_id": image_generation.json()["id"]},
-    )
-    assert invalid_agent_binding.status_code == 409
-    assert invalid_agent_binding.json()["code"] == "AI_LLM_SLOT_MODEL_INCOMPATIBLE"
-
-
-async def test_agent_session_should_persist_explicit_personal_llm_config(authenticated_client: AsyncClient) -> None:
-    """创建会话时显式选择个人模型，应把具体配置固化到 metadata.llm。"""
-
-    config = await _create_llm_config(
-        authenticated_client,
-        name="会话个人模型",
-        supports_image_input=True,
-    )
-    workspace_id, project_id = await _create_agent_project_scope(authenticated_client, "显式模型会话")
-
-    response = await authenticated_client.post(
-        "/api/ai/sessions",
-        json={
-            "agent_id": "agent-coordinator",
-            "session_name": "显式模型会话",
-            "workspace_id": workspace_id,
-            "llm_config_id": config["id"],
-        },
-    )
-
-    assert response.status_code == 201
-    llm_metadata = response.json()["metadata"]["llm"]
-    assert llm_metadata == {
-        "selection_kind": "explicit_config",
-        "config_id": config["id"],
-        "scope": "personal",
-        "name": "会话个人模型",
-        "provider_config_id": config["provider_config_id"],
-        "provider_config_name": config["provider_config_name"],
-        "provider_key": "openai",
-        "provider_label": "OpenAI",
-        "model_id": "gpt-4.1-mini",
-        "model_type": "chat",
-        "supports_image_input": True,
-    }
-
-
-async def test_agent_session_should_reject_deleted_selected_llm_config(authenticated_client: AsyncClient) -> None:
-    """会话显式模型选择应拒绝已删除模型和不存在模型。"""
-
-    config = await _create_llm_config(authenticated_client, name="删除会话模型")
-    delete_response = await authenticated_client.delete(f"/api/ai/llm-configs/{config['id']}")
-    assert delete_response.status_code == 200
-    workspace_id, project_id = await _create_agent_project_scope(authenticated_client, "删除模型会话")
-
-    deleted_response = await authenticated_client.post(
-        "/api/ai/sessions",
-        json={
-            "agent_id": "agent-coordinator",
-            "session_name": "删除模型会话",
-            "workspace_id": workspace_id,
-            "llm_config_id": config["id"],
-        },
-    )
-    assert deleted_response.status_code == 404
-    assert deleted_response.json()["code"] == "AI_LLM_CONFIG_NOT_FOUND"
-
-    missing_response = await authenticated_client.post(
-        "/api/ai/sessions",
-        json={
-            "agent_id": "agent-coordinator",
-            "session_name": "不存在模型会话",
-            "workspace_id": workspace_id,
-            "llm_config_id": 999_999_999,
-        },
-    )
-    assert missing_response.status_code == 404
-    assert missing_response.json()["code"] == "AI_LLM_CONFIG_NOT_FOUND"
-
-
-async def test_agent_session_without_llm_config_should_fallback_to_slot_binding(authenticated_client: AsyncClient) -> None:
-    """旧客户端未传 llm_config_id 时，应继续按当前智能体槽位绑定创建会话。"""
-
-    config = await _create_llm_config(authenticated_client, name="槽位兼容模型")
-    slot_response = await authenticated_client.put(
-        "/api/ai/llm-slots/agent_coordinator",
-        json={"llm_config_id": config["id"]},
-    )
-    assert slot_response.status_code == 200
-    workspace_id, project_id = await _create_agent_project_scope(authenticated_client, "槽位兼容会话")
-
-    response = await authenticated_client.post(
-        "/api/ai/sessions",
-        json={
-            "agent_id": "agent-coordinator",
-            "session_name": "槽位兼容会话",
-            "workspace_id": workspace_id,
-        },
-    )
-
-    assert response.status_code == 201
-    llm_metadata = response.json()["metadata"]["llm"]
-    assert llm_metadata["selection_kind"] == "slot_binding"
-    assert llm_metadata["config_id"] == config["id"]
-    assert llm_metadata["name"] == "槽位兼容模型"
-
-
-def test_llm_model_resolver_should_build_common_provider_models() -> None:
-    """模型解析器应能构造常见供应商的 Pydantic AI 模型对象与运行参数。"""
-
-    cipher = LlmSecretCipher()
-    resolver = PydanticLlmModelResolver()
-
-    def build_config(*, id: int, provider_key: str, model_id: str, api_key: str = "sk-test", **kwargs) -> AiLlmConfig:
-        """构造激活状态的大模型配置，聚焦 provider 差异字段。"""
-
-        base_url = kwargs.pop("base_url", None)
-        provider_config = AiLlmProviderConfig(
-            id=id + 100,
-            user_id=1,
-            scope="personal",
-            name=f"{provider_key} 供应商",
-            provider_key=provider_key,
-            base_url=base_url,
-            api_key_ciphertext=cipher.encrypt(api_key),
-            status=RecordStatus.ACTIVE.value,
-        )
-        return AiLlmConfig(
-            id=id,
-            user_id=1,
-            scope="personal",
-            name=kwargs.pop("name", provider_key),
-            provider_config_id=provider_config.id,
-            provider_config=provider_config,
-            model_id=model_id,
-            advanced_config_json=kwargs.pop("advanced_config_json", {}),
-            status=RecordStatus.ACTIVE.value,
-            **kwargs,
-        )
-
-    openai_config = build_config(
-        id=1,
-        provider_key="openai",
-        model_id="gpt-5.6",
-        base_url="https://api.openai.com/v1",
-        thinking_enabled=True,
-        thinking_effort="medium",
-    )
-    openai_model = resolver.resolve_model(openai_config)
-    assert openai_model.__class__.__name__ == "OpenAIChatModel"
-    assert openai_model.model_name == "gpt-5.6"
-    assert resolver.resolve_model_settings(openai_config)["openai_reasoning_effort"] == "medium"
-
-    openrouter_config = build_config(
-        id=2,
-        provider_key="openrouter",
-        model_id="openai/gpt-5.6",
-        api_key="sk-openrouter-test",
-        base_url="https://openrouter.ai/api/v1",
-        thinking_enabled=True,
-        thinking_effort="xhigh",
-    )
-    openrouter_model = resolver.resolve_model(openrouter_config)
-    assert openrouter_model.__class__.__name__ == "OpenRouterModel"
-    assert openrouter_model.model_name == "openai/gpt-5.6"
-    assert resolver.resolve_model_settings(openrouter_config)["openrouter_reasoning"] == {"effort": "max"}
-
-    dashscope_config = build_config(
-        id=3,
-        provider_key="dashscope",
-        model_id="qwen-plus",
-        api_key="sk-dashscope-test",
-        base_url="https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
-        thinking_enabled=True,
-        thinking_effort="medium",
-    )
-    dashscope_model = resolver.resolve_model(dashscope_config)
-    assert dashscope_model.__class__.__name__ == "OpenAIChatModel"
-    assert dashscope_model.model_name == "qwen-plus"
-    assert resolver.resolve_model_settings(dashscope_config)["extra_body"] == {
-        "enable_thinking": True,
-        "thinking_budget": 5000,
-    }
-
-    openai_like_config = build_config(
-        id=4,
-        provider_key="openai_like",
-        model_id="custom-model",
-        api_key="sk-compatible-test",
-        base_url="https://api.example.com/v1",
-        thinking_enabled=True,
-        thinking_effort="max",
-    )
-    openai_like_model = resolver.resolve_model(openai_like_config)
-    assert openai_like_model.__class__.__name__ == "OpenAIChatModel"
-    assert openai_like_model.model_name == "custom-model"
-    assert resolver.resolve_model_settings(openai_like_config)["openai_reasoning_effort"] == "high"
-
-    deepseek_config = build_config(
-        id=8,
-        provider_key="deepseek",
-        model_id="deepseek-v4-flash",
-        api_key="sk-deepseek-test",
-        base_url="https://api.deepseek.com",
-        thinking_enabled=True,
-        thinking_effort="xhigh",
-    )
-    deepseek_model = resolver.resolve_model(deepseek_config)
-    assert deepseek_model.__class__.__name__ == "OpenAIChatModel"
-    assert resolver.resolve_model_settings(deepseek_config) == {
-        "max_tokens": 32_768,
-        "openai_reasoning_effort": "max",
-        "extra_body": {"thinking": {"type": "enabled"}},
-    }
-
-    deepseek_auto_config = build_config(
-        id=9,
-        name="deepseek-auto",
-        provider_key="deepseek",
-        model_id="deepseek-v4-flash",
-        api_key="sk-deepseek-test",
-        base_url="https://api.deepseek.com",
-        thinking_enabled=False,
-    )
-    deepseek_auto_model = resolver.resolve_model(deepseek_auto_config)
-    assert deepseek_auto_model.__class__.__name__ == "OpenAIChatModel"
-    assert resolver.resolve_model_settings(deepseek_auto_config) == {"max_tokens": 32_768}
-
-    deepseek_disabled_config = build_config(
-        id=14,
-        name="deepseek-disabled",
-        provider_key="deepseek",
-        model_id="deepseek-v4-flash",
-        api_key="sk-deepseek-test",
-        base_url="https://api.deepseek.com",
-        reasoning_mode="disabled",
-    )
-    assert resolver.resolve_model_settings(deepseek_disabled_config) == {
-        "max_tokens": 32_768,
-        "extra_body": {"thinking": {"type": "disabled"}},
-    }
-
-    deepseek_legacy_effort_config = build_config(
-        id=12,
-        name="deepseek-legacy-effort",
-        provider_key="deepseek",
-        model_id="deepseek-v4-pro",
-        api_key="sk-deepseek-test",
-        base_url="https://api.deepseek.com",
-        thinking_enabled=True,
-        thinking_effort="medium",
-    )
-    deepseek_legacy_effort_model = resolver.resolve_model(deepseek_legacy_effort_config)
-    assert deepseek_legacy_effort_model.__class__.__name__ == "OpenAIChatModel"
-    assert resolver.resolve_model_settings(deepseek_legacy_effort_config) == {
-        "max_tokens": 32_768,
-        "openai_reasoning_effort": "high",
-        "extra_body": {"thinking": {"type": "enabled"}},
-    }
-
-    deepseek_custom_config = build_config(
-        id=10,
-        name="deepseek-custom",
-        provider_key="deepseek",
-        model_id="deepseek-v4-pro",
-        api_key="sk-deepseek-test",
-        base_url="https://api.deepseek.com",
-        thinking_enabled=True,
-        thinking_effort="medium",
-        advanced_config_json={
-            "openai_reasoning_effort": "max",
-            "timeout": 60,
-            "retries": 0,
-            "extra_body": {"thinking": {"type": "disabled"}, "custom": "value"},
-        },
-    )
-    deepseek_custom_model = resolver.resolve_model(deepseek_custom_config)
-    assert deepseek_custom_model.__class__.__name__ == "OpenAIChatModel"
-    assert resolver.resolve_model_settings(deepseek_custom_config) == {
-        "max_tokens": 32_768,
-        "openai_reasoning_effort": "max",
-        "timeout": 60,
-        "retries": 0,
-        "extra_body": {
-            "thinking": {"type": "enabled"},
-            "custom": "value",
-        },
-    }
-
-    ollama_config = build_config(
-        id=5,
-        provider_key="ollama",
-        model_id="llama3.1",
-        api_key="",
-        base_url="http://localhost:11434",
-        thinking_enabled=True,
-        thinking_effort="medium",
-    )
-    ollama_model = resolver.resolve_model(ollama_config)
-    assert ollama_model.__class__.__name__ == "OpenAIChatModel"
-    assert ollama_model.model_name == "llama3.1"
-    assert resolver.resolve_model_settings(ollama_config)["extra_body"] == {"think": "medium"}
-
-    ollama_custom_think_config = build_config(
-        id=7,
-        name="ollama-custom-think",
-        provider_key="ollama",
-        model_id="gpt-oss:20b",
-        api_key="",
-        base_url="http://localhost:11434",
-        thinking_enabled=True,
-        thinking_effort="low",
-        advanced_config_json={"extra_body": {"think": "high"}},
-    )
-    ollama_custom_think_model = resolver.resolve_model(ollama_custom_think_config)
-    assert ollama_custom_think_model.__class__.__name__ == "OpenAIChatModel"
-    assert resolver.resolve_model_settings(ollama_custom_think_config)["extra_body"] == {"think": "low"}
-
-    google_config = build_config(
-        id=11,
-        provider_key="google",
-        model_id="gemini-2.5-pro",
-        api_key="sk-google-test",
-        thinking_enabled=True,
-        thinking_effort="low",
-    )
-    google_model = resolver.resolve_model(google_config)
-    assert google_model.__class__.__name__ == "GoogleModel"
-    assert google_model.model_name == "gemini-2.5-pro"
-    assert resolver.resolve_model_settings(google_config)["google_thinking_config"] == {
-        "thinking_level": "LOW",
-        "include_thoughts": True,
-    }
-
-    nvidia_config = build_config(
-        id=6,
-        provider_key="nvidia",
-        model_id="meta/llama-3.3-70b-instruct",
-        api_key="nvapi-test",
-        base_url="https://integrate.api.nvidia.com/v1",
-        thinking_enabled=True,
-    )
-    nvidia_model = resolver.resolve_model(nvidia_config)
-    assert nvidia_model.__class__.__name__ == "OpenAIChatModel"
-    assert nvidia_model.model_name == "meta/llama-3.3-70b-instruct"
-
-    mimo_config = build_config(
-        id=13,
-        provider_key="mimo",
-        model_id="mimo-v2.5",
-        api_key="sk-mimo-test",
-        base_url="https://api.xiaomimimo.com/v1",
-        thinking_enabled=True,
-        thinking_effort="max",
-    )
-    mimo_model = resolver.resolve_model(mimo_config)
-    assert mimo_model.__class__.__name__ == "OpenAIChatModel"
-    assert mimo_model.model_name == "mimo-v2.5"
-    assert resolver.resolve_model_settings(mimo_config) == {
-        "max_tokens": 32_768,
-        "extra_body": {"thinking": {"type": "enabled"}},
-    }
+    assert "sk-chat-test" not in str(provider)
+
+
+async def test_custom_compatible_requires_base_url_and_only_auto_reasoning(authenticated_client: AsyncClient) -> None:
+    """自定义供应商不回退 OpenAI 地址，也不能接受未知方言的推理参数。"""
+
+    rejected = await authenticated_client.post("/api/ai/chat-provider-configs", json={
+        "name": "缺少地址", "custom": True, "catalog_provider_key": None, "api_key": "sk-test",
+    })
+    assert rejected.status_code == 422
+
+    provider = await _chat_provider(authenticated_client, custom=True)
+    model = await _chat_model(authenticated_client, provider["id"])
+    binding = await authenticated_client.put("/api/ai/chat-model-bindings/agent_coordinator", json={
+        "model_config_id": model["id"],
+        "policy": {"reasoning": {"mode": "disabled"}, "input_budget_tokens": None, "output_budget_tokens": None},
+    })
+    assert binding.status_code == 422
+
+    accepted = await authenticated_client.put("/api/ai/chat-model-bindings/agent_coordinator", json={
+        "model_config_id": model["id"],
+    })
+    assert accepted.status_code == 200
+
+
+async def test_capability_override_cannot_spoof_catalog_metadata(authenticated_client: AsyncClient) -> None:
+    """用户只能覆盖客观能力字段，不能伪造目录来源和验证状态。"""
+
+    provider = await _chat_provider(authenticated_client, custom=True)
+    rejected = await authenticated_client.post("/api/ai/chat-model-configs", json={
+        "name": "伪造目录模型",
+        "provider_config_id": provider["id"],
+        "model_id": "manual-model",
+        "capability_override": {"source": "models.dev", "verified": True},
+    })
+    assert rejected.status_code == 400
+    assert rejected.json()["code"] == "AI_CHAT_CAPABILITY_OVERRIDE_INVALID"
+
+
+async def test_chat_binding_only_validates_slot_capability(authenticated_client: AsyncClient) -> None:
+    """槽位只绑定模型并校验客观能力，不再接收推理或 token 预算。"""
+
+    provider = await _chat_provider(authenticated_client)
+    unsupported = await _chat_model(authenticated_client, provider["id"], tool_call=False)
+    rejected = await authenticated_client.put("/api/ai/chat-model-bindings/agent_coordinator", json={"model_config_id": unsupported["id"]})
+    assert rejected.status_code == 409
+
+    supported = await _chat_model(authenticated_client, provider["id"])
+    bound = await authenticated_client.put("/api/ai/chat-model-bindings/agent_coordinator", json={"model_config_id": supported["id"]})
+    assert bound.status_code == 200
+    assert "policy" not in bound.json()
+    assert "effective_output_budget_tokens" not in bound.json()
+    assert bound.json()["provider_config_id"] == provider["id"]
+    assert bound.json()["provider_name"] == "OpenAI"
+    assert bound.json()["model_id"] == "manual-chat-model"
+
+    rejected_policy = await authenticated_client.put("/api/ai/chat-model-bindings/agent_coordinator", json={
+        "model_config_id": supported["id"],
+        "policy": {"reasoning": {"mode": "auto"}, "input_budget_tokens": 195_000, "output_budget_tokens": 8_192},
+    })
+    assert rejected_policy.status_code == 422
+
+
+async def test_chat_and_image_domains_cannot_cross_bind(authenticated_client: AsyncClient) -> None:
+    """两类模型使用独立 ID 域、接口和槽位，交叉绑定会被拒绝。"""
+
+    provider = await _chat_provider(authenticated_client)
+    chat = await _chat_model(authenticated_client, provider["id"])
+    image = await _image_model(authenticated_client)
+
+    wrong_image = await authenticated_client.put("/api/ai/image-model-bindings/image_generation", json={"model_config_id": chat["id"] + 100_000})
+    wrong_chat = await authenticated_client.put("/api/ai/chat-model-bindings/agent_coordinator", json={"model_config_id": image["id"] + 100_000})
+    assert wrong_image.status_code == 404
+    assert wrong_chat.status_code == 404
+
+    bound = await authenticated_client.put("/api/ai/image-model-bindings/image_generation", json={"model_config_id": image["id"]})
+    assert bound.status_code == 200
+    assert bound.json()["binding_ready"] is True
+    assert bound.json()["provider_key"] == "openai_image"
+    assert bound.json()["model_id"] == "gpt-image-2"
+
+
+async def test_removed_mixed_endpoints_return_not_found(authenticated_client: AsyncClient) -> None:
+    """旧混合接口一次性移除，不形成隐式兼容层。"""
+
+    for path in ("/api/ai/llm-providers", "/api/ai/llm-provider-configs", "/api/ai/llm-configs", "/api/ai/llm-slots"):
+        response = await authenticated_client.get(path)
+        assert response.status_code == 404

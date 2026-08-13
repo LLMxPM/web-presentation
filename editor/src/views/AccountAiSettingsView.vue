@@ -7,6 +7,9 @@
     :models="configsQuery.data.value ?? []"
     :provider-configs="providerConfigsQuery.data.value ?? []"
     :provider-catalog="providersQuery.data.value ?? []"
+    :chat-model-catalog="chatModelCatalogQuery.data.value ?? []"
+    :catalog-sync-state="catalogSyncQuery.data.value ?? null"
+    :refreshing-catalog="refreshingCatalog"
     :slots="slotsQuery.data.value ?? []"
     :slot-drafts="slotDrafts"
     :binding-slot="bindingSlot"
@@ -70,6 +73,7 @@
     @cancel-model="handleCancelModelDialogEdit"
     @start-edit-model="handleStartEditModel"
     @submit-model="handleSubmitModel"
+    @refresh-catalog="handleRefreshCatalog"
     @format-advanced="formatAdvancedConfig"
     @update-advanced-config-text="advancedConfigText = $event"
     @update-advanced-config-collapsed="advancedConfigCollapsed = $event"
@@ -89,6 +93,9 @@ import {
   listLlmConfigs,
   listLlmProviderConfigs,
   listLlmProviders,
+  listChatCatalogModels,
+  getModelCatalogSyncState,
+  refreshModelCatalog,
   resolveLlmModelCapability,
   listLlmSlots,
   updateLlmConfig,
@@ -96,6 +103,8 @@ import {
   updateLlmSlotBinding,
 } from '@/api/llm'
 import type { LlmConfigUpdatePayload, LlmProviderConfigUpdatePayload } from '@/api/llm'
+import type { ModelCatalogSyncState } from '@/api/llm'
+import type { ChatModelCatalogItem } from '@/api/model-config'
 import {
   listAgentConfigs,
   updateAgentConfig,
@@ -109,8 +118,6 @@ import { useAuthStore } from '@/stores/auth'
 import type {
   AiLlmConfigScope,
   AiModelType,
-  AiReasoningLevel,
-  AiReasoningMode,
   AgentConfigItem,
   AgentToolConfigItem,
   LlmConfigItem,
@@ -133,8 +140,6 @@ interface LlmFormState {
   provider_config_id: number | null
   model_id: string
   model_type: AiModelType
-  reasoning_mode: AiReasoningMode
-  reasoning_level: AiReasoningLevel | null
   supports_image_input: boolean
   context_window_tokens: number
 }
@@ -186,6 +191,7 @@ const advancedConfigText = ref('{}')
 const advancedConfigError = ref('')
 const advancedConfigCollapsed = ref(true)
 const savingConfig = ref(false)
+const refreshingCatalog = ref(false)
 const deletingConfigId = ref<number | null>(null)
 const applyingExistingModel = ref(false)
 const modelDialogOpen = ref(false)
@@ -197,8 +203,6 @@ const modelForm = reactive<LlmFormState>({
   provider_config_id: null,
   model_id: '',
   model_type: 'chat',
-  reasoning_mode: 'auto',
-  reasoning_level: null,
   supports_image_input: false,
   context_window_tokens: DEFAULT_CONTEXT_WINDOW_TOKENS,
 })
@@ -247,7 +251,16 @@ const selectedAgentConfig = computed<AgentConfigItem | null>(() => (
   ?? null
 ))
 
-const adminSection = computed<AiSettingsSection>(() => activeSection.value === 'agents' ? 'assistant' : activeSection.value)
+const adminSection = computed<AiSettingsSection>(() => {
+  if (activeSection.value === 'agents') return 'assistant'
+  return activeSection.value === 'models' ? 'chat' : 'image'
+})
+
+const catalogSyncQuery = useQuery<ModelCatalogSyncState>({
+  queryKey: ['model-catalog-sync'],
+  queryFn: getModelCatalogSyncState,
+  refetchInterval: query => query.state.data?.syncing ? 2_000 : false,
+})
 const assistantSettingsTab = computed<AssistantSettingsTab>(() => {
   if (activeAgentPanel.value === 'binding') return 'models'
   if (activeAgentPanel.value === 'prompts') return 'prompt'
@@ -275,6 +288,20 @@ const selectedModelProviderConfig = computed<LlmProviderConfigItem | null>(() =>
   providerConfigsQuery.data.value?.find(item => item.id === modelForm.provider_config_id) ?? null
 ))
 
+const selectedChatCatalogProviderKey = computed(() => {
+  if (modelForm.model_type !== 'chat') return ''
+  const provider = selectedModelProviderConfig.value
+  return provider?.provider_type === 'chat' && provider.provider_key !== 'custom-openai-compatible'
+    ? provider.provider_key
+    : ''
+})
+
+const chatModelCatalogQuery = useQuery<ChatModelCatalogItem[]>({
+  queryKey: computed(() => ['chat-model-catalog', selectedChatCatalogProviderKey.value]),
+  queryFn: () => listChatCatalogModels(selectedChatCatalogProviderKey.value),
+  enabled: computed(() => Boolean(selectedChatCatalogProviderKey.value && modelDialogOpen.value)),
+})
+
 const promptDirty = computed(() => {
   if (!selectedAgentConfig.value) return false
   return promptDraft.value.trim() !== selectedAgentConfig.value.effective_prompt.trim()
@@ -295,14 +322,16 @@ const assistantDirty = computed(() => promptDirty.value || dirtyToolCount.value 
 
 
 const providerOptions = computed<SelectOption[]>(() => (
-  providersQuery.data.value?.map(provider => ({
-    label: `${getCatalogProviderType(provider) === 'image_generation' ? '图片生成' : 'Chat'} · ${provider.label}`,
+  providersQuery.data.value
+    ?.filter(provider => getCatalogProviderType(provider) === (adminSection.value === 'image' ? 'image_generation' : 'chat'))
+    .map(provider => ({
+    label: provider.label,
     value: provider.provider_key,
     description: getCatalogProviderType(provider) === 'image_generation'
       ? `图片生成供应商${provider.default_image_generation_model_id ? ` · ${provider.default_image_generation_model_id}` : ''}`
-      : provider.supports_thinking
-      ? `支持 thinking · ${provider.thinking_mode}${provider.default_model_id ? ` · ${provider.default_model_id}` : ''}`
-      : '不支持 thinking',
+      : provider.provider_adapter === 'openai_compatible_chat'
+        ? '推理能力由具体模型决定 · 标准 effort 按 Models.dev 开放'
+        : '推理能力由具体模型决定 · 支持显式参数控制',
     keywords: [provider.provider_key, provider.provider_adapter],
   })) ?? []
 ))
@@ -324,11 +353,7 @@ watch(
     modelForm.model_id = modelType === 'image_generation'
       ? provider?.default_image_generation_model_id ?? ''
       : provider?.default_model_id ?? ''
-    if (modelType === 'image_generation') {
-      modelForm.reasoning_mode = 'auto'
-      modelForm.reasoning_level = null
-      modelForm.supports_image_input = false
-    }
+    if (modelType === 'image_generation') modelForm.supports_image_input = false
   },
 )
 
@@ -378,15 +403,8 @@ watch(
       if (sequence !== capabilityRequestSequence) return
       resolvedCapability.value = capability
       if (shouldApplyResolvedDefaults) {
-        modelForm.context_window_tokens = capability.context_window_tokens
         modelForm.supports_image_input = capability.supports_image_input
         syncResolvedCapabilityIntoBaseline(capability)
-      }
-      if (!capability.supports_reasoning) {
-        modelForm.reasoning_mode = 'auto'
-        modelForm.reasoning_level = null
-      } else if (modelForm.reasoning_mode === 'disabled' && !capability.supports_explicit_disable) {
-        modelForm.reasoning_mode = 'auto'
       }
     } catch {
       if (sequence === capabilityRequestSequence) resolvedCapability.value = null
@@ -518,17 +536,10 @@ watch(
     if (!provider || applyingExistingModel.value) {
       return
     }
-    if (providerConfigId !== previousProviderConfigId && (!modelForm.model_id || modelForm.model_id === findProviderDefaultModelId(previousProviderKey))) {
+    if (providerConfigId !== previousProviderConfigId) {
       modelForm.model_id = modelForm.model_type === 'image_generation'
         ? provider.default_image_generation_model_id ?? ''
         : provider.default_model_id ?? ''
-    }
-    if (!provider.supports_thinking) {
-      modelForm.reasoning_mode = 'auto'
-      modelForm.reasoning_level = null
-    } else if (providerConfigId !== previousProviderConfigId && !applyingExistingModel.value) {
-      modelForm.reasoning_mode = 'auto'
-      modelForm.reasoning_level = null
     }
     if (
       providerConfigId !== previousProviderConfigId
@@ -558,8 +569,6 @@ function prefillModelFormFromProvider(provider: LlmProviderCatalogItem | null) {
   modelForm.model_id = modelForm.model_type === 'image_generation'
     ? provider?.default_image_generation_model_id ?? ''
     : provider?.default_model_id ?? ''
-  modelForm.reasoning_mode = 'auto'
-  modelForm.reasoning_level = null
   modelForm.supports_image_input = Boolean(provider?.default_supports_image_input)
   modelForm.context_window_tokens = DEFAULT_CONTEXT_WINDOW_TOKENS
 }
@@ -574,7 +583,8 @@ function prefillProviderFormFromProvider(provider: LlmProviderCatalogItem | null
 
 /** 将路由查询参数解析为旧页面内部使用的一级分区。 */
 function resolveLegacySection(value: unknown): ActiveSection {
-  if (value === 'models' || value === 'providers') return value
+  if (value === 'chat') return 'models'
+  if (value === 'image') return 'providers'
   return 'agents'
 }
 
@@ -617,7 +627,7 @@ async function confirmDiscardAssistantDrafts(): Promise<boolean> {
 async function handleAdminSectionChange(section: AiSettingsSection) {
   if (section === adminSection.value) return
   if (adminSection.value === 'assistant' && !(await confirmDiscardAssistantDrafts())) return
-  activeSection.value = section === 'assistant' ? 'agents' : section
+  activeSection.value = section === 'assistant' ? 'agents' : section === 'chat' ? 'models' : 'providers'
   await replaceNavigationQuery(section)
 }
 
@@ -648,7 +658,6 @@ function syncResolvedCapabilityIntoBaseline(capability: LlmModelCapabilityItem) 
   if (!modelDialogBaseline.value) return
   try {
     const baseline = JSON.parse(modelDialogBaseline.value) as Record<string, unknown>
-    baseline.context_window_tokens = capability.context_window_tokens
     baseline.supports_image_input = capability.supports_image_input
     modelDialogBaseline.value = JSON.stringify(baseline)
   } catch {
@@ -657,8 +666,8 @@ function syncResolvedCapabilityIntoBaseline(capability: LlmModelCapabilityItem) 
 }
 
 /** 打开供应商新建弹窗并记录初始表单快照。 */
-async function openProviderCreateDialog() {
-  resetProviderForm()
+async function openProviderCreateDialog(modelType: AiModelType = 'chat') {
+  resetProviderForm(modelType)
   await nextTick()
   providerDialogBaseline.value = serializeProviderForm()
   providerDialogOpen.value = true
@@ -696,8 +705,8 @@ async function handleCancelProviderDialogEdit() {
 }
 
 /** 打开模型新建弹窗并记录初始表单快照。 */
-async function openModelCreateDialog() {
-  resetModelForm()
+async function openModelCreateDialog(modelType: AiModelType = 'chat') {
+  resetModelForm(modelType)
   await nextTick()
   modelDialogBaseline.value = serializeModelForm()
   modelDialogOpen.value = true
@@ -805,20 +814,6 @@ function openDefaultModelDetail() {
 /** 从供应商列表中查找默认 Base URL。 */
 function findProviderDefaultBaseUrl(providerKey: string | null | undefined) {
   return providersQuery.data.value?.find(item => item.provider_key === providerKey)?.default_base_url ?? ''
-}
-
-/** 从供应商列表中查找默认模型 ID。 */
-function findProviderDefaultModelId(providerKey: string | null | undefined) {
-  return providersQuery.data.value?.find(item => item.provider_key === providerKey)?.default_model_id ?? ''
-}
-
-/** 把供应商原生强度压缩为平台固定四档。 */
-function normalizePlatformReasoningLevel(value: string | null | undefined): AiReasoningLevel {
-  const normalized = String(value ?? '').trim().toLowerCase()
-  if (normalized === 'minimal') return 'low'
-  if (['xhigh', 'max', 'ultra'].includes(normalized)) return 'max'
-  if (normalized === 'low' || normalized === 'high') return normalized
-  return 'medium'
 }
 
 /** 从供应商列表中查找默认图片输入能力。 */
@@ -975,15 +970,16 @@ function getProviderConfigType(config: LlmProviderConfigItem): AiModelType {
 }
 
 /** 重置供应商表单并切换到新建状态。 */
-function resetProviderForm() {
-  activeSection.value = 'providers'
+function resetProviderForm(modelType: AiModelType = 'chat') {
+  activeSection.value = modelType === 'image_generation' ? 'providers' : 'models'
   providerPanelMode.value = 'create'
   providerCreateRequested.value = true
   selectedProviderConfigId.value = null
   providerForm.scope = 'personal'
   providerForm.name = ''
-  const provider = providersQuery.data.value?.length
-    ? findDefaultNewModelProvider(providersQuery.data.value)
+  const matchingProviders = (providersQuery.data.value ?? []).filter(item => getCatalogProviderType(item) === modelType)
+  const provider = matchingProviders.length
+    ? findDefaultNewModelProvider(matchingProviders)
     : null
   providerForm.provider_key = provider?.provider_key ?? null
   providerForm.api_key = ''
@@ -992,7 +988,7 @@ function resetProviderForm() {
 
 /** 把已有供应商配置装载到右侧表单。 */
 async function handleEditProviderConfig(config: LlmProviderConfigItem) {
-  activeSection.value = 'providers'
+  activeSection.value = getProviderConfigType(config) === 'image_generation' ? 'providers' : 'models'
   providerPanelMode.value = 'detail'
   providerCreateRequested.value = false
   applyingExistingProviderConfig.value = true
@@ -1026,15 +1022,15 @@ function handleCancelProviderEdit() {
 }
 
 /** 重置模型表单并切换到新建状态。 */
-function resetModelForm() {
-  activeSection.value = 'models'
+function resetModelForm(modelType: AiModelType = 'chat') {
+  activeSection.value = modelType === 'image_generation' ? 'providers' : 'models'
   modelPanelMode.value = 'create'
   modelCreateRequested.value = true
   selectedConfigId.value = null
   modelForm.scope = 'personal'
-  modelForm.model_type = 'chat'
+  modelForm.model_type = modelType
   modelForm.name = ''
-  const providerConfig = findDefaultProviderConfigForScope(modelForm.scope)
+  const providerConfig = findDefaultProviderConfigForScope(modelForm.scope, modelType)
   modelForm.provider_config_id = providerConfig?.id ?? null
   const provider = findProviderForConfig(providerConfig)
   prefillModelFormFromProvider(provider)
@@ -1045,7 +1041,7 @@ function resetModelForm() {
 
 /** 把已有模型装载到右侧表单。 */
 async function handleEditModel(config: LlmConfigItem) {
-  activeSection.value = 'models'
+  activeSection.value = config.model_type === 'image_generation' ? 'providers' : 'models'
   modelPanelMode.value = 'detail'
   modelCreateRequested.value = false
   applyingExistingModel.value = true
@@ -1055,8 +1051,6 @@ async function handleEditModel(config: LlmConfigItem) {
   modelForm.provider_config_id = config.provider_config_id
   modelForm.model_type = config.model_type ?? 'chat'
   modelForm.model_id = config.model_id
-  modelForm.reasoning_mode = config.reasoning_mode ?? (config.thinking_enabled ? 'enabled' : 'auto')
-  modelForm.reasoning_level = config.reasoning_level ?? (config.thinking_enabled ? normalizePlatformReasoningLevel(config.thinking_effort) : null)
   modelForm.supports_image_input = config.supports_image_input
   modelForm.context_window_tokens = config.context_window_tokens
   advancedConfigText.value = JSON.stringify(config.advanced_config_json ?? {}, null, 2)
@@ -1117,6 +1111,24 @@ function normalizePositiveInteger(value: number, fallback: number) {
   return Number.isFinite(normalized) && normalized > 0 ? normalized : fallback
 }
 
+/** 管理员手动刷新 Models.dev，并让供应商与模型选择立即读取新目录。 */
+async function handleRefreshCatalog() {
+  refreshingCatalog.value = true
+  try {
+    await refreshModelCatalog()
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['llm-providers'] }),
+      queryClient.invalidateQueries({ queryKey: ['model-catalog-sync'] }),
+      queryClient.invalidateQueries({ queryKey: ['chat-model-catalog'] }),
+    ])
+    Message.success('Models.dev 模型目录已刷新。')
+  } catch (error) {
+    Message.error(getErrorMessage(error, '刷新 Models.dev 模型目录失败。'))
+  } finally {
+    refreshingCatalog.value = false
+  }
+}
+
 /** 创建或更新供应商配置。 */
 async function handleSubmitProviderConfig() {
   if (selectedProviderConfig.value && !selectedProviderConfig.value.editable) {
@@ -1158,6 +1170,7 @@ async function handleSubmitProviderConfig() {
         name: providerForm.name.trim(),
         scope: providerForm.scope,
         provider_key: providerKey,
+        provider_type: getCatalogProviderType(provider),
         base_url: baseUrl,
         api_key: apiKey,
       })
@@ -1206,8 +1219,6 @@ async function handleSubmitModel() {
         provider_config_id: providerConfigId,
         model_id: modelForm.model_id.trim(),
         model_type: modelForm.model_type,
-        reasoning_mode: modelForm.reasoning_mode,
-        reasoning_level: modelForm.reasoning_mode === 'enabled' ? modelForm.reasoning_level ?? 'medium' : null,
         supports_image_input: modelForm.supports_image_input,
         context_window_tokens: contextWindowTokens,
         advanced_config_json: advancedConfig,
@@ -1225,8 +1236,6 @@ async function handleSubmitModel() {
         provider_config_id: providerConfigId,
         model_id: modelForm.model_id.trim(),
         model_type: modelForm.model_type,
-        reasoning_mode: modelForm.reasoning_mode,
-        reasoning_level: modelForm.reasoning_mode === 'enabled' ? modelForm.reasoning_level ?? 'medium' : null,
         supports_image_input: modelForm.supports_image_input,
         context_window_tokens: contextWindowTokens,
         advanced_config_json: advancedConfig,

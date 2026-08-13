@@ -15,9 +15,9 @@ async def test_ai_sessions_should_list_workspace_sessions_only(authenticated_cli
 
     workspace_id = await _create_workspace(authenticated_client, "会话范围工作空间")
     project_id = await _create_project(authenticated_client, workspace_id, "会话范围项目")
-    page_id = await _create_page(authenticated_client, workspace_id, project_id, "会话范围页面")
+    await _create_page(authenticated_client, workspace_id, project_id, "会话范围页面")
     other_workspace_id = await _create_workspace(authenticated_client, "其他会话范围工作空间")
-    other_project_id = await _create_project(authenticated_client, other_workspace_id, "其他会话范围项目")
+    await _create_project(authenticated_client, other_workspace_id, "其他会话范围项目")
 
     project_session = await _create_agent_session(
         authenticated_client,
@@ -136,10 +136,10 @@ async def _create_llm_config(client: AsyncClient) -> int:
     """创建会话列表测试使用的显式模型配置。"""
 
     provider_response = await client.post(
-        "/api/ai/llm-provider-configs",
+        "/api/ai/chat-provider-configs",
         json={
             "name": "会话列表测试供应商",
-            "provider_key": "openai",
+            "catalog_provider_key": "openai",
             "base_url": "https://api.openai.com/v1",
             "api_key": "sk-session-scope",
         },
@@ -148,12 +148,13 @@ async def _create_llm_config(client: AsyncClient) -> int:
     provider_id = provider_response.json()["id"]
 
     response = await client.post(
-        "/api/ai/llm-configs",
+        "/api/ai/chat-model-configs",
         json={
             "name": "会话列表测试模型",
             "provider_config_id": provider_id,
             "model_id": "gpt-4.1-mini",
-            "advanced_config_json": {},
+            "capability_override": {"supports_tool_call": True},
+            "advanced_config": {},
         },
     )
     assert response.status_code == 201

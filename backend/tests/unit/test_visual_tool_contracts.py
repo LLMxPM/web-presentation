@@ -8,7 +8,7 @@ from pydantic_ai.exceptions import ModelHTTPError
 from pydantic_ai.messages import BinaryContent, ToolCallPart
 
 from app.ai.message_history import replace_agent_image_refs_with_placeholders
-from app.ai.provider_catalog import get_llm_provider_entry
+from app.ai.provider_catalog import get_llm_provider_entry, list_llm_provider_entries
 from app.ai.pydantic_runner import _requirement_from_deferred
 from app.ai.session_facade_pydantic import AgentSessionFacade, _build_user_prompt
 from app.ai.tool_specs import (
@@ -26,6 +26,7 @@ from app.services.image_understanding_service import (
     _model_failure_detail,
     _resolve_image_analysis_model_settings,
 )
+from app.services.image_generation.registry import get_image_provider_spec
 
 
 def test_analyze_visuals_spec_should_require_concrete_style_definition() -> None:
@@ -145,22 +146,20 @@ def test_image_provider_catalog_is_separated_from_chat_provider() -> None:
     """OpenAI Chat 与图片供应商应使用独立 key 和单一模型类型。"""
 
     chat_provider = get_llm_provider_entry("openai")
-    image_provider = get_llm_provider_entry("openai_image")
+    image_provider = get_image_provider_spec("openai_image")
     assert chat_provider.provider_type == "chat"
     assert chat_provider.supported_model_types == ("chat",)
-    assert image_provider.provider_type == "image_generation"
-    assert image_provider.supported_model_types == ("image_generation",)
-    assert image_provider.default_image_generation_model_id == "gpt-image-2"
-    assert image_provider.provider_adapter.endswith(".OpenAiImageGenerationAdapter")
-    assert image_provider.image_generation_models[0]["model_id"] == "gpt-image-2"
-    assert image_provider.image_generation_models[0]["supports_mask"] is True
+    assert image_provider.default_model_id == "gpt-image-2"
+    assert image_provider.adapter_path.endswith(".OpenAiImageGenerationAdapter")
+    assert image_provider.models[0].model_id == "gpt-image-2"
+    assert image_provider.models[0].supports_mask is True
+    assert all(item.provider_key != "openai_image" for item in list_llm_provider_entries())
 
-    openrouter_image = get_llm_provider_entry("openrouter_image")
-    assert openrouter_image.provider_type == "image_generation"
+    openrouter_image = get_image_provider_spec("openrouter_image")
     assert openrouter_image.default_base_url == "https://openrouter.ai/api/v1"
-    assert openrouter_image.provider_adapter.endswith(".OpenRouterImageGenerationAdapter")
-    assert len(openrouter_image.image_generation_models) == 8
-    assert all(item["supports_mask"] is False for item in openrouter_image.image_generation_models)
+    assert openrouter_image.adapter_path.endswith(".OpenRouterImageGenerationAdapter")
+    assert len(openrouter_image.models) == 8
+    assert all(item.supports_mask is False for item in openrouter_image.models)
 
 
 def test_content_prompt_only_contains_lightweight_attachment_metadata() -> None:

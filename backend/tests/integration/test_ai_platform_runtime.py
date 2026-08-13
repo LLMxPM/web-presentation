@@ -33,10 +33,10 @@ async def _create_runtime_llm_config(authenticated_client: AsyncClient) -> int:
     """创建运行态测试会话使用的显式模型配置。"""
 
     provider_response = await authenticated_client.post(
-        "/api/ai/llm-provider-configs",
+        "/api/ai/chat-provider-configs",
         json={
             "name": "运行态测试供应商",
-            "provider_key": "openai",
+            "catalog_provider_key": "openai",
             "base_url": "https://api.openai.com/v1",
             "api_key": "sk-runtime-test",
         },
@@ -45,12 +45,13 @@ async def _create_runtime_llm_config(authenticated_client: AsyncClient) -> int:
     provider_id = provider_response.json()["id"]
 
     response = await authenticated_client.post(
-        "/api/ai/llm-configs",
+        "/api/ai/chat-model-configs",
         json={
             "name": "运行态测试模型",
             "provider_config_id": provider_id,
             "model_id": "gpt-4.1-mini",
-            "advanced_config_json": {},
+            "capability_override": {"supports_tool_call": True},
+            "advanced_config": {},
         },
     )
     assert response.status_code == 201

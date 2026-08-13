@@ -61,6 +61,7 @@ from app.schemas.agent import (
     AgentSessionItem,
     AgentSessionRuntimeSnapshot,
 )
+from app.schemas.model_config import ReasoningPolicy
 from app.services.agent_work_scope_service import AgentWorkScopeService
 from app.services.ai_agent_config_service import AiAgentConfigService
 from app.services.ai_llm_service import AiLlmService
@@ -369,6 +370,7 @@ class AgentSessionFacade:
         image_attachment_ids: list[int] | None,
         run_id: str,
         llm_config_id: int | None,
+        reasoning: ReasoningPolicy | None = None,
     ) -> tuple[AgentRunStartResponse, bool]:
         """串行化同一会话的 Run 创建，避免并发请求越过 active-run 校验。"""
 
@@ -383,6 +385,7 @@ class AgentSessionFacade:
                 image_attachment_ids=image_attachment_ids,
                 run_id=run_id,
                 llm_config_id=llm_config_id,
+                reasoning=reasoning,
             )
 
     async def _prepare_background_run_unlocked(
@@ -396,6 +399,7 @@ class AgentSessionFacade:
         image_attachment_ids: list[int] | None,
         run_id: str,
         llm_config_id: int | None,
+        reasoning: ReasoningPolicy | None = None,
     ) -> tuple[AgentRunStartResponse, bool]:
         """持久化新 Run；相同 run_id 的同请求按幂等成功返回。"""
 
@@ -410,6 +414,7 @@ class AgentSessionFacade:
                 message=message,
                 image_attachment_ids=image_attachment_ids or [],
                 requested_llm_config_id=llm_config_id,
+                requested_reasoning=reasoning or ReasoningPolicy(),
             ):
                 raise AppException(status_code=409, code="AI_RUN_ID_CONFLICT", detail="run_id 已被其它请求使用。")
             return AgentRunStartResponse(
@@ -427,6 +432,11 @@ class AgentSessionFacade:
             requested_llm_config_id=llm_config_id,
         )
         llm_service = self._llm_service()
+        llm_service.apply_run_reasoning_policy(
+            llm_config,
+            slot=descriptor.llm_slot or "",
+            reasoning=reasoning or ReasoningPolicy(),
+        )
         selection_kind: Literal["explicit_config", "run_override"] = (
             "run_override" if llm_config_id is not None else "explicit_config"
         )
@@ -605,6 +615,7 @@ class AgentSessionFacade:
         image_attachment_ids: list[int] | None = None,
         run_id: str | None = None,
         llm_config_id: int | None = None,
+        reasoning: ReasoningPolicy | None = None,
     ) -> AsyncGenerator[bytes, None]:
         """启动 Pydantic AI run 并输出平台 SSE；函数名保留以兼容路由。"""
 
@@ -631,6 +642,11 @@ class AgentSessionFacade:
                     "run_override" if llm_config_id is not None else "explicit_config"
                 )
                 llm_service = self._llm_service()
+                llm_service.apply_run_reasoning_policy(
+                    llm_config,
+                    slot=descriptor.llm_slot or "",
+                    reasoning=reasoning or ReasoningPolicy(),
+                )
                 llm_metadata = llm_service.build_run_llm_snapshot(
                     llm_config,
                     selection_kind=selection_kind,
@@ -1944,6 +1960,8 @@ def _apply_llm_snapshot(config: AiLlmConfig, snapshot: dict[str, Any]) -> AiLlmC
         "compression_target_ratio",
         "advanced_config_json",
         "model_capability_json",
+        "reasoning_budget_tokens",
+        "usage_policy_json",
     )
     values = {
         "id": config.id,
@@ -1972,6 +1990,8 @@ def _apply_llm_snapshot(config: AiLlmConfig, snapshot: dict[str, Any]) -> AiLlmC
     values["max_output_tokens"] = values["request_max_output_tokens"]
     values["thinking_enabled"] = values["reasoning_mode"] == "enabled"
     values["thinking_effort"] = values["reasoning_level"]
+    values["_reasoning_budget_tokens"] = values.pop("reasoning_budget_tokens", None)
+    values["_usage_policy_json"] = values.pop("usage_policy_json", {}) or {}
     return SimpleNamespace(**values)  # type: ignore[return-value]
 
 
@@ -2014,10 +2034,13 @@ def _matches_existing_run_request(
     message: str,
     image_attachment_ids: list[int],
     requested_llm_config_id: int | None,
+    requested_reasoning: ReasoningPolicy,
 ) -> bool:
     """判断客户端重试是否与已保存 Run 表示同一个逻辑请求。"""
 
     payload = dict(run_model.input_payload_json or {})
+    snapshot = dict(run_model.llm_config_snapshot_json or {})
+    usage_policy = snapshot.get("usage_policy_json") if isinstance(snapshot.get("usage_policy_json"), dict) else {}
     return (
         run_model.user_id == user_id
         and run_model.session_id == session_id
@@ -2031,6 +2054,7 @@ def _matches_existing_run_request(
         and str(payload.get("message") or "") == message
         and list(payload.get("image_attachment_ids") or []) == image_attachment_ids
         and (requested_llm_config_id is None or run_model.llm_config_id == requested_llm_config_id)
+        and usage_policy.get("reasoning") == requested_reasoning.model_dump(mode="json")
     )
 
 

@@ -136,12 +136,17 @@ describe('ai api', () => {
       run_id: 'run-background',
       message: '后台执行',
       llm_config_id: 9,
+      reasoning: { mode: 'effort', value: 'high' },
     })
 
     expect(response.run_id).toBe('run-background')
     expect(postMock).toHaveBeenCalledWith(
       '/ai/sessions/session-1/runs',
-      expect.objectContaining({ run_id: 'run-background', llm_config_id: 9 }),
+      expect.objectContaining({
+        run_id: 'run-background',
+        llm_config_id: 9,
+        reasoning: { mode: 'effort', value: 'high' },
+      }),
       expect.objectContaining({ params: { workspace_id: '11', agent_id: 'agent-coordinator' } }),
     )
   })
@@ -165,6 +170,7 @@ describe('ai api', () => {
       message: '改用另一个模型继续',
       image_attachment_ids: [],
       llm_config_id: 9,
+      reasoning: { mode: 'auto' },
       focus: {
         scope_type: 'project',
         project_id: 21,

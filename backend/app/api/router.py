@@ -11,7 +11,8 @@ from app.api.routes import (
     client_logs,
     components,
     fonts,
-    llm,
+    model_configs,
+    model_catalog,
     page_screenshot_jobs,
     page_visual_edit,
     pages,
@@ -32,7 +33,8 @@ api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
 api_router.include_router(users.router, tags=["users"])
 api_router.include_router(agents.router, tags=["agents"])
 api_router.include_router(client_logs.router, prefix="/client-logs", tags=["client-logs"])
-api_router.include_router(llm.router, tags=["llm"])
+api_router.include_router(model_configs.router, tags=["model-configs"])
+api_router.include_router(model_catalog.router, tags=["model-catalog"])
 api_router.include_router(workspaces.router, prefix="/workspaces", tags=["workspaces"])
 api_router.include_router(projects.router, prefix="/projects", tags=["projects"])
 api_router.include_router(pages.router, prefix="/pages", tags=["pages"])

@@ -12,7 +12,7 @@ from openai import AsyncOpenAI
 
 from app.ai.secret_cipher import LlmSecretCipher
 from app.core.exceptions import AppException
-from app.models.ai_llm import AiLlmConfig
+from app.models.ai_image_model import AiImageModelConfig
 from app.services.image_generation.contracts import (
     GeneratedImage,
     ImageGenerationAdapter,
@@ -31,7 +31,7 @@ class OpenAiImageGenerationAdapter:
     def __init__(self) -> None:
         self._cipher = LlmSecretCipher()
 
-    def validate(self, config: AiLlmConfig, model: ImageModelSpec, request: ImageGenerationInput) -> None:
+    def validate(self, config: AiImageModelConfig, model: ImageModelSpec, request: ImageGenerationInput) -> None:
         """校验 OpenAI 图片请求的公共能力约束。"""
 
         _ = config
@@ -45,7 +45,7 @@ class OpenAiImageGenerationAdapter:
 
     async def submit(
         self,
-        config: AiLlmConfig,
+        config: AiImageModelConfig,
         model: ImageModelSpec,
         request: ImageGenerationInput,
     ) -> ImageProviderResult:
@@ -83,7 +83,7 @@ class OpenAiImageGenerationAdapter:
 
     async def resume(
         self,
-        config: AiLlmConfig,
+        config: AiImageModelConfig,
         model: ImageModelSpec,
         cursor: ProviderTaskCursor,
     ) -> ImageProviderResult:
@@ -92,14 +92,14 @@ class OpenAiImageGenerationAdapter:
         _ = (config, model, cursor)
         raise AppException(status_code=409, code="AI_IMAGE_PROVIDER_TASK_INVALID", detail="OpenAI 图片任务不支持轮询。")
 
-    async def cancel(self, config: AiLlmConfig, cursor: ProviderTaskCursor) -> bool:
+    async def cancel(self, config: AiImageModelConfig, cursor: ProviderTaskCursor) -> bool:
         """OpenAI 当前适配器没有可取消的外部任务。"""
 
         _ = (config, cursor)
         return False
 
 
-def get_image_generation_adapter(config: AiLlmConfig) -> ImageGenerationAdapter:
+def get_image_generation_adapter(config: AiImageModelConfig) -> ImageGenerationAdapter:
     """兼容旧导入路径，并委托唯一图片供应商注册表。"""
 
     from app.services.image_generation.registry import get_image_generation_adapter as resolve_adapter
@@ -138,7 +138,7 @@ def normalize_image_request(
     )
 
 
-def validate_image_generation_request(config: AiLlmConfig, payload: dict[str, Any]) -> None:
+def validate_image_generation_request(config: AiImageModelConfig, payload: dict[str, Any]) -> None:
     """在入队前按绑定供应商校验画布、操作和输入数量。"""
 
     references = [("reference.png", "image/png", b"") for _ in payload.get("reference_attachment_ids") or []]

@@ -941,6 +941,7 @@ async def _prepare_and_start_background_run(
         image_attachment_ids=payload.image_attachment_ids,
         run_id=run_id,
         llm_config_id=payload.llm_config_id,
+        reasoning=payload.reasoning,
     )
     if not created:
         return response

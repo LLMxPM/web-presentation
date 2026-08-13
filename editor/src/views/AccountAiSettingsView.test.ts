@@ -20,6 +20,9 @@ const updateLlmConfigMock = vi.fn()
 const deleteLlmConfigMock = vi.fn()
 const updateLlmSlotBindingMock = vi.fn()
 const resolveLlmModelCapabilityMock = vi.fn()
+const listChatCatalogModelsMock = vi.fn()
+const getModelCatalogSyncStateMock = vi.fn()
+const refreshModelCatalogMock = vi.fn()
 const listAgentCatalogMock = vi.fn()
 const listAgentConfigsMock = vi.fn()
 const updateAgentConfigMock = vi.fn()
@@ -49,6 +52,9 @@ vi.mock('@/api/llm', () => ({
   deleteLlmConfig: (...args: unknown[]) => deleteLlmConfigMock(...args),
   updateLlmSlotBinding: (...args: unknown[]) => updateLlmSlotBindingMock(...args),
   resolveLlmModelCapability: (...args: unknown[]) => resolveLlmModelCapabilityMock(...args),
+  listChatCatalogModels: (...args: unknown[]) => listChatCatalogModelsMock(...args),
+  getModelCatalogSyncState: () => getModelCatalogSyncStateMock(),
+  refreshModelCatalog: () => refreshModelCatalogMock(),
 }))
 
 vi.mock('@/api/agent-config', () => ({
@@ -290,6 +296,21 @@ describe('AccountAiSettingsView', () => {
         advanced_json_hint: {},
       },
     ])
+    listChatCatalogModelsMock.mockResolvedValue([])
+    getModelCatalogSyncStateMock.mockResolvedValue({
+      catalog_version: 'test-catalog',
+      last_attempt_at: '2026-08-12T10:00:00Z',
+      last_success_at: '2026-08-12T10:00:00Z',
+      last_error: null,
+      syncing: false,
+    })
+    refreshModelCatalogMock.mockResolvedValue({
+      catalog_version: 'test-catalog',
+      last_attempt_at: '2026-08-12T10:00:00Z',
+      last_success_at: '2026-08-12T10:00:00Z',
+      last_error: null,
+      syncing: false,
+    })
     listLlmProviderConfigsMock.mockResolvedValue([createProviderConfigItem()])
     listLlmConfigsMock.mockResolvedValue([createLlmConfigItem()])
     listLlmSlotsMock.mockResolvedValue([
@@ -403,7 +424,7 @@ describe('AccountAiSettingsView', () => {
     })
 
     await fireEvent.update(prompt, '尚未保存的提示词')
-    await fireEvent.click(getDesktopNavigationButton(/模型管理/))
+    await fireEvent.click(getDesktopNavigationButton(/聊天模型/))
     expect(createConfirmMock).toHaveBeenCalledWith(
       '当前内容助手配置有未保存修改，确定放弃吗？',
       '放弃未保存修改',
@@ -414,14 +435,14 @@ describe('AccountAiSettingsView', () => {
     render(AccountAiSettingsView, createTestingRenderOptions())
     await waitForSettingsReady()
 
-    await fireEvent.click(getDesktopNavigationButton(/模型管理/))
-    await waitFor(() => expect(screen.getByRole('heading', { name: '模型管理' })).toBeTruthy())
+    await fireEvent.click(getDesktopNavigationButton(/聊天模型/))
+    await waitFor(() => expect(screen.getByRole('heading', { name: '聊天模型' })).toBeTruthy())
     expect(screen.getByRole('columnheader', { name: '模型 ID' })).toBeTruthy()
     expect(screen.getByRole('row', { name: /总控模型.*gpt-4.1-mini/ })).toBeTruthy()
 
     await fireEvent.click(screen.getByRole('button', { name: '新建模型' }))
     expect(await screen.findByRole('heading', { name: '新建模型' })).toBeTruthy()
-    expect(screen.getByText('选择供应商模型，并配置能力与平台推理策略。')).toBeTruthy()
+    expect(screen.getByText('选择供应商模型，并配置模型能力与高级参数。')).toBeTruthy()
     expect(screen.getByRole('button', { name: '关闭新建模型' })).toBeTruthy()
     expect(screen.getByRole('button', { name: '取消' })).toBeTruthy()
     expect(screen.getByRole('button', { name: '创建模型' })).toBeTruthy()
@@ -429,26 +450,23 @@ describe('AccountAiSettingsView', () => {
     expect(createConfirmMock).not.toHaveBeenCalled()
     await fireEvent.click(screen.getByRole('button', { name: '新建模型' }))
     expect(screen.getByLabelText(/^模型名称/)).toBeTruthy()
-    expect(screen.getByLabelText(/^模型 ID/)).toBeTruthy()
+    expect(screen.getByText('Models.dev 模型')).toBeTruthy()
+    expect(screen.getByText('配置域')).toBeTruthy()
+    expect(screen.queryByText('全部模型类型')).toBeNull()
     expect(screen.queryByText('平台会自动预留 20% 输出空间')).toBeNull()
-    expect(screen.getByRole('radio', { name: '跟随模型' })).toBeChecked()
-
-    await fireEvent.click(screen.getByRole('radio', { name: '指定强度' }))
-    expect(screen.getByRole('radio', { name: '快速' })).toBeTruthy()
-    expect(screen.getByRole('radio', { name: '均衡' })).toBeTruthy()
-    expect(screen.getByRole('radio', { name: '深入' })).toBeTruthy()
-    expect(screen.getByRole('radio', { name: '极致' })).toBeTruthy()
+    expect(screen.getByText(/能力默认来自 Models\.dev/)).toBeTruthy()
+    expect(screen.queryByText('推理模式')).toBeNull()
   })
 
   it('供应商管理应使用表格，并支持详情进入紧凑编辑表单', async () => {
     render(AccountAiSettingsView, createTestingRenderOptions())
     await waitForSettingsReady()
 
-    await fireEvent.click(getDesktopNavigationButton(/供应商管理/))
-    await waitFor(() => expect(screen.getByRole('heading', { name: '供应商管理' })).toBeTruthy())
+    await fireEvent.click(getDesktopNavigationButton(/聊天模型/))
+    await waitFor(() => expect(screen.getByRole('heading', { name: '聊天模型' })).toBeTruthy())
     expect(screen.getByRole('columnheader', { name: '连接状态' })).toBeTruthy()
 
-    await fireEvent.click(screen.getByRole('button', { name: '新建供应商' }))
+    await fireEvent.click(screen.getByRole('button', { name: '连接供应商' }))
     expect(await screen.findByRole('heading', { name: '新建供应商' })).toBeTruthy()
     expect(screen.getByText('配置供应商协议、服务地址和访问凭证。')).toBeTruthy()
     expect(screen.getByRole('button', { name: '关闭新建供应商' })).toBeTruthy()
@@ -466,6 +484,31 @@ describe('AccountAiSettingsView', () => {
     expect(screen.getByLabelText(/^API Key/)).toBeTruthy()
     expect(screen.queryByText('供应商身份')).toBeNull()
     expect(screen.queryByText('目录能力')).toBeNull()
+  })
+
+  it('聊天与图片页面应隔离列表、筛选和新建表单域', async () => {
+    listLlmProviderConfigsMock.mockResolvedValue([
+      createProviderConfigItem(),
+      createProviderConfigItem({ id: -20, name: '图片专用连接', provider_key: 'openai_image', provider_label: 'OpenAI Images', provider_type: 'image_generation' }),
+    ])
+    listLlmConfigsMock.mockResolvedValue([
+      createLlmConfigItem(),
+      createLlmConfigItem({ id: -2, name: '图片专用模型', provider_config_id: -20, provider_config_name: '图片专用连接', provider_key: 'openai_image', provider_label: 'OpenAI Images', model_id: 'gpt-image-2', model_type: 'image_generation' }),
+    ])
+    render(AccountAiSettingsView, createTestingRenderOptions())
+    await waitForSettingsReady()
+
+    await fireEvent.click(getDesktopNavigationButton(/图片生成/))
+    await waitFor(() => expect(screen.getByRole('heading', { name: '图片生成' })).toBeTruthy())
+    const imageModelRow = screen.getByRole('row', { name: /图片专用模型.*gpt-image-2/ })
+    const imageProviderRow = screen.getByRole('row', { name: /图片专用连接.*OpenAI Images/ })
+    expect(imageModelRow.compareDocumentPosition(imageProviderRow) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(screen.queryByRole('row', { name: /总控模型.*gpt-4.1-mini/ })).toBeNull()
+    expect(screen.queryByText('全部供应商类型')).toBeNull()
+
+    await fireEvent.click(screen.getByRole('button', { name: '新建模型' }))
+    expect(await screen.findByText('图片生成模型')).toBeTruthy()
+    expect(screen.queryByText('聊天 / 图片理解模型')).toBeNull()
   })
 
   it('工具配置应使用筛选表格并展示完整只读契约', async () => {

@@ -13,9 +13,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.core.exceptions import AppException
 from app.models.ai_agent_runtime import AiAgentMemberRun, AiAgentRun
 from app.models.ai_image_generation import AiImageGenerationJob
-from app.models.enums import AiLlmSlot
 from app.schemas.agent import AgentRunEvent
-from app.services.ai_llm_service import AiLlmService
+from app.services.ai_image_config_service import AiImageConfigService
 from app.services.agent_image_attachment_service import AgentImageAttachmentService
 from app.services.image_generation_adapters import validate_image_generation_request
 
@@ -82,12 +81,11 @@ async def enqueue_image_generation(
                 session_id=session_id,
                 attachment_ids=all_ids,
             )
-        llm_service = AiLlmService(session, user_id=user_id)
+        image_service = AiImageConfigService(session, user_id=user_id, user_role="workspace_user")
         if model_config_id is None:
-            model_config = await llm_service.get_bound_config_or_raise(AiLlmSlot.IMAGE_GENERATION.value)
+            model_config = await image_service.get_bound_model_or_raise()
         else:
-            model_config = await llm_service.get_selectable_active_config_or_raise(model_config_id)
-            llm_service._validate_slot_model_type(AiLlmSlot.IMAGE_GENERATION.value, model_config)
+            model_config = await image_service._model(model_config_id, selectable=True)
         validate_image_generation_request(model_config, request_payload)
         provider = model_config.provider_config
         job = AiImageGenerationJob(

@@ -32,7 +32,7 @@ class AiImageGenerationJob(TimestampMixin, Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
     workspace_id: Mapped[int] = mapped_column(ForeignKey("workspaces.id"), nullable=False, index=True)
     project_id: Mapped[int | None] = mapped_column(ForeignKey("projects.id"), nullable=True, index=True)
-    model_config_id: Mapped[int] = mapped_column(ForeignKey("ai_llm_configs.id"), nullable=False, index=True)
+    model_config_id: Mapped[int] = mapped_column(ForeignKey("ai_image_model_configs.id"), nullable=False, index=True)
     operation: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
     request_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
     model_snapshot_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)

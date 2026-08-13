@@ -6,12 +6,12 @@ from dataclasses import dataclass, replace
 from fnmatch import fnmatch
 from typing import Any
 
-from app.ai.model_budget import CONTEXT_WINDOW_TOKEN_DEFAULT
 from app.models.enums import AiReasoningLevel, AiReasoningMode
 
 CAPABILITY_PROFILE_VERSION = 2
 PLATFORM_REASONING_LEVELS = tuple(item.value for item in AiReasoningLevel)
-UNKNOWN_MODEL_CONTEXT_WINDOW_MAX = 200_000
+UNKNOWN_MODEL_CONTEXT_WINDOW_DEFAULT = 1_000_000
+UNKNOWN_MODEL_CONTEXT_WINDOW_MAX = 1_000_000
 
 
 @dataclass(frozen=True, slots=True)
@@ -127,19 +127,30 @@ MODEL_CAPABILITY_PROFILES = (
     _profile("openai-gpt-5.6-family", "openai", "gpt-5.6*", context=1_050_000, max_output=128_000, image=True, disable=True, native=("low", "medium", "high", "xhigh", "max"), mapping={"low": "low", "medium": "medium", "high": "high", "max": "max"}),
     _profile("openai-gpt-5.2-5.5", "openai", "gpt-5.[2-5]*", context=400_000, max_output=128_000, image=True, disable=True, native=("low", "medium", "high", "xhigh"), mapping={"low": "low", "medium": "medium", "high": "high", "max": "xhigh"}),
     _profile("openai-gpt-4.1", "openai", "gpt-4.1*", context=1_000_000, max_output=32_768, image=True, reasoning=False),
+    _profile("openai-like-gpt-5.6", "openai_like", "gpt-5.6", context=1_050_000, max_output=128_000, image=True, disable=True, native=("low", "medium", "high", "xhigh", "max"), mapping={"low": "low", "medium": "medium", "high": "high", "max": "max"}),
+    _profile("openai-like-gpt-5.6-sol", "openai_like", "gpt-5.6-sol", context=1_050_000, max_output=128_000, image=True, disable=True, native=("low", "medium", "high", "xhigh", "max"), mapping={"low": "low", "medium": "medium", "high": "high", "max": "max"}),
+    _profile("openai-like-gpt-5.6-terra", "openai_like", "gpt-5.6-terra", context=1_050_000, max_output=128_000, image=True, disable=True, native=("low", "medium", "high", "xhigh", "max"), mapping={"low": "low", "medium": "medium", "high": "high", "max": "max"}),
+    _profile("openai-like-gpt-5.6-luna", "openai_like", "gpt-5.6-luna", context=1_050_000, max_output=128_000, image=True, disable=True, native=("low", "medium", "high", "xhigh", "max"), mapping={"low": "low", "medium": "medium", "high": "high", "max": "max"}),
+    _profile("openai-like-gpt-5.6-family", "openai_like", "gpt-5.6*", context=1_050_000, max_output=128_000, image=True, disable=True, native=("low", "medium", "high", "xhigh", "max"), mapping={"low": "low", "medium": "medium", "high": "high", "max": "max"}),
+    _profile("openai-like-gpt-5.2-5.5", "openai_like", "gpt-5.[2-5]*", context=400_000, max_output=128_000, image=True, disable=True, native=("low", "medium", "high", "xhigh"), mapping={"low": "low", "medium": "medium", "high": "high", "max": "xhigh"}),
+    _profile("openai-like-gpt-4.1", "openai_like", "gpt-4.1*", context=1_000_000, max_output=32_768, image=True, reasoning=False),
     _profile("dashscope-qwen3.8-max", "dashscope", "qwen3.8-max*", context=1_000_000, max_output=64_000, disable=True, native=("2000", "5000", "10000"), mapping={"low": 2_000, "medium": 5_000, "high": 10_000, "max": 10_000}, budget=True, verified=False),
     _profile("openai-like-kimi-k3", "openai_like", "kimi-k3*", context=1_000_000, max_output=64_000, image=True, disable=False, native=("high",), mapping={"low": "high", "medium": "high", "high": "high", "max": "high"}, verified=False),
     _profile("openai-like-glm-5.2", "openai_like", "glm-5.2*", context=1_000_000, max_output=128_000, disable=False, native=("low", "medium", "high", "max"), mapping={"low": "low", "medium": "medium", "high": "high", "max": "max"}),
     _profile("openrouter-qwen3.8-max", "openrouter", "qwen/qwen3.8-max*", context=1_000_000, max_output=64_000, disable=False, native=("low", "medium", "high"), mapping={"low": "low", "medium": "medium", "high": "high", "max": "high"}, verified=False),
     _profile("openrouter-kimi-k3", "openrouter", "moonshotai/kimi-k3*", context=1_000_000, max_output=64_000, image=True, disable=False, native=("high",), mapping={"low": "high", "medium": "high", "high": "high", "max": "high"}, verified=False),
     _profile("openrouter-glm-5.2", "openrouter", "z-ai/glm-5.2*", context=1_000_000, max_output=128_000, disable=False, native=("low", "medium", "high", "max"), mapping={"low": "low", "medium": "medium", "high": "high", "max": "max"}),
+    _profile("openai-like-qwen3.8-max", "openai_like", "qwen3.8-max*", context=1_000_000, max_output=64_000, disable=True, native=("2000", "5000", "10000"), mapping={"low": 2_000, "medium": 5_000, "high": 10_000, "max": 10_000}, budget=True, verified=False),
+    _profile("openai-like-openrouter-qwen3.8-max", "openai_like", "qwen/qwen3.8-max*", context=1_000_000, max_output=64_000, disable=False, native=("low", "medium", "high"), mapping={"low": "low", "medium": "medium", "high": "high", "max": "high"}, verified=False),
+    _profile("openai-like-openrouter-kimi-k3", "openai_like", "moonshotai/kimi-k3*", context=1_000_000, max_output=64_000, image=True, disable=False, native=("high",), mapping={"low": "high", "medium": "high", "high": "high", "max": "high"}, verified=False),
+    _profile("openai-like-openrouter-glm-5.2", "openai_like", "z-ai/glm-5.2*", context=1_000_000, max_output=128_000, disable=False, native=("low", "medium", "high", "max"), mapping={"low": "low", "medium": "medium", "high": "high", "max": "max"}),
 )
 
 
 def _provider_default(provider_key: str, *, context_window_tokens: int | None, model_max_output_tokens: int | None, supports_image_input: bool) -> ModelCapabilityProfile:
     """创建未知模型的供应商默认档案，保持兼容但明确标记未验证。"""
 
-    context = min(int(context_window_tokens or CONTEXT_WINDOW_TOKEN_DEFAULT), UNKNOWN_MODEL_CONTEXT_WINDOW_MAX)
+    context = min(int(context_window_tokens or UNKNOWN_MODEL_CONTEXT_WINDOW_DEFAULT), UNKNOWN_MODEL_CONTEXT_WINDOW_MAX)
     output = int(model_max_output_tokens or 65_536)
     common = {"low": "low", "medium": "medium", "high": "high", "max": "high"}
     presets: dict[str, dict[str, Any]] = {
@@ -195,13 +206,8 @@ def resolve_model_capability(
         model_max_output_tokens=default_model_max_output_tokens,
         supports_image_input=default_supports_image_input,
     )
-    warnings = (
-        ()
-        if matched and matched.verified
-        else ("当前模型档案包含供应商尚未完整公开的能力参数，正在使用平台保守值。",)
-        if matched
-        else ("当前模型未命中内置能力档案，平台可用输入窗口默认按 200K 处理；请自行确认模型满足所示最低总上下文。",)
-    )
+    # 能力来源和验证状态由结构化字段表达，提示只保留给用户可执行的确认动作。
+    warnings: tuple[str, ...] = ()
     if override:
         level_mapping = dict(profile.level_mapping)
         override_mapping = override.get("level_mapping")
@@ -227,7 +233,7 @@ def resolve_model_capability(
             source="manual_override",
             verified=False,
         )
-        warnings = ("当前模型能力包含手工覆盖值。",)
+        warnings = ()
     return ResolvedModelCapability(profile=profile, warnings=warnings)
 
 

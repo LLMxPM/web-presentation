@@ -140,11 +140,11 @@ async def test_global_and_personal_llm_configs_should_follow_scope_rules(client:
     await _create_user(client, username="dave", display_name="Dave")
 
     global_provider_response = await client.post(
-        "/api/ai/llm-provider-configs",
+        "/api/ai/chat-provider-configs",
         json={
             "scope": "global",
             "name": "平台默认供应商",
-            "provider_key": "openai",
+            "catalog_provider_key": "openai",
             "base_url": "https://api.openai.com/v1",
             "api_key": "sk-global",
         },
@@ -154,13 +154,14 @@ async def test_global_and_personal_llm_configs_should_follow_scope_rules(client:
     assert global_provider["scope"] == "global"
 
     global_model_response = await client.post(
-        "/api/ai/llm-configs",
+        "/api/ai/chat-model-configs",
         json={
             "scope": "global",
             "name": "平台默认模型",
             "provider_config_id": global_provider["id"],
             "model_id": "gpt-4.1-mini",
-            "advanced_config_json": {},
+            "advanced_config": {},
+            "capability_override": {"supports_tool_call": True},
         },
     )
     assert global_model_response.status_code == 201
@@ -169,8 +170,8 @@ async def test_global_and_personal_llm_configs_should_follow_scope_rules(client:
     assert global_model["editable"] is True
 
     global_slot_response = await client.put(
-        "/api/ai/llm-slots/agent_coordinator",
-        json={"llm_config_id": global_model["id"], "scope": "global"},
+        "/api/ai/chat-model-bindings/agent_coordinator",
+        json={"model_config_id": global_model["id"], "scope": "global"},
     )
     assert global_slot_response.status_code == 200
     assert global_slot_response.json()["binding_ready"] is True
@@ -178,48 +179,48 @@ async def test_global_and_personal_llm_configs_should_follow_scope_rules(client:
     await _logout(client)
     await _login(client, "carol", "User123456")
 
-    list_response = await client.get("/api/ai/llm-configs")
+    list_response = await client.get("/api/ai/chat-model-configs")
     assert list_response.status_code == 200
     visible_models = {item["id"]: item for item in list_response.json()}
     assert visible_models[global_model["id"]]["scope"] == "global"
     assert visible_models[global_model["id"]]["editable"] is False
-    provider_list_response = await client.get("/api/ai/llm-provider-configs")
+    provider_list_response = await client.get("/api/ai/chat-provider-configs")
     assert provider_list_response.status_code == 200
     visible_providers = {item["id"]: item for item in provider_list_response.json()}
     assert visible_providers[global_provider["id"]]["scope"] == "global"
     assert visible_providers[global_provider["id"]]["editable"] is False
 
     update_global_response = await client.patch(
-        f"/api/ai/llm-configs/{global_model['id']}",
+        f"/api/ai/chat-model-configs/{global_model['id']}",
         json={"name": "尝试修改全局模型"},
     )
     assert update_global_response.status_code == 403
-    assert update_global_response.json()["code"] == "AI_LLM_GLOBAL_READONLY"
+    assert update_global_response.json()["code"] == "AI_CHAT_MODEL_READONLY"
 
     create_global_response = await client.post(
-        "/api/ai/llm-configs",
+        "/api/ai/chat-model-configs",
         json={
             "scope": "global",
             "name": "越权全局模型",
             "provider_config_id": global_provider["id"],
             "model_id": "gpt-4.1-mini",
-            "advanced_config_json": {},
+            "advanced_config": {},
         },
     )
     assert create_global_response.status_code == 403
-    assert create_global_response.json()["code"] == "AI_LLM_GLOBAL_ADMIN_REQUIRED"
+    assert create_global_response.json()["code"] == "AI_CHAT_GLOBAL_ADMIN_REQUIRED"
 
-    inherited_slots_response = await client.get("/api/ai/llm-slots")
+    inherited_slots_response = await client.get("/api/ai/chat-model-bindings/agent_coordinator")
     assert inherited_slots_response.status_code == 200
-    inherited_slot = {item["slot"]: item for item in inherited_slots_response.json()}["agent_coordinator"]
-    assert inherited_slot["llm_config_id"] == global_model["id"]
+    inherited_slot = inherited_slots_response.json()
+    assert inherited_slot["model_config_id"] == global_model["id"]
     assert inherited_slot["inherited_from_global"] is True
 
     personal_provider_response = await client.post(
-        "/api/ai/llm-provider-configs",
+        "/api/ai/chat-provider-configs",
         json={
             "name": "Carol 个人供应商",
-            "provider_key": "openai",
+            "catalog_provider_key": "openai",
             "base_url": "https://api.openai.com/v1",
             "api_key": "sk-personal",
         },
@@ -228,12 +229,13 @@ async def test_global_and_personal_llm_configs_should_follow_scope_rules(client:
     personal_provider = personal_provider_response.json()
 
     personal_model_response = await client.post(
-        "/api/ai/llm-configs",
+        "/api/ai/chat-model-configs",
         json={
             "name": "Carol 个人模型",
             "provider_config_id": personal_provider["id"],
             "model_id": "gpt-4.1",
-            "advanced_config_json": {},
+            "advanced_config": {},
+            "capability_override": {"supports_tool_call": True},
         },
     )
     assert personal_model_response.status_code == 201
@@ -242,15 +244,15 @@ async def test_global_and_personal_llm_configs_should_follow_scope_rules(client:
     assert personal_model["editable"] is True
 
     personal_slot_response = await client.put(
-        "/api/ai/llm-slots/agent_coordinator",
-        json={"llm_config_id": personal_model["id"]},
+        "/api/ai/chat-model-bindings/agent_coordinator",
+        json={"model_config_id": personal_model["id"]},
     )
     assert personal_slot_response.status_code == 200
-    assert personal_slot_response.json()["llm_config_id"] == personal_model["id"]
+    assert personal_slot_response.json()["model_config_id"] == personal_model["id"]
     assert personal_slot_response.json()["inherited_from_global"] is False
 
     workspace_id = await _create_workspace(client, "Carol 会话空间")
-    project_id = await _create_project(client, workspace_id, "Carol 会话项目")
+    await _create_project(client, workspace_id, "Carol 会话项目")
     global_session_response = await client.post(
         "/api/ai/sessions",
         json={
@@ -271,10 +273,10 @@ async def test_global_and_personal_llm_configs_should_follow_scope_rules(client:
     await _logout(client)
     await _login(client, "dave", "User123456")
     dave_provider_response = await client.post(
-        "/api/ai/llm-provider-configs",
+        "/api/ai/chat-provider-configs",
         json={
             "name": "Dave 个人供应商",
-            "provider_key": "openai",
+            "catalog_provider_key": "openai",
             "base_url": "https://api.openai.com/v1",
             "api_key": "sk-dave",
         },
@@ -282,12 +284,13 @@ async def test_global_and_personal_llm_configs_should_follow_scope_rules(client:
     assert dave_provider_response.status_code == 201
     dave_provider = dave_provider_response.json()
     dave_model_response = await client.post(
-        "/api/ai/llm-configs",
+        "/api/ai/chat-model-configs",
         json={
             "name": "Dave 个人模型",
             "provider_config_id": dave_provider["id"],
             "model_id": "gpt-4.1",
-            "advanced_config_json": {},
+            "advanced_config": {},
+            "capability_override": {"supports_tool_call": True},
         },
     )
     assert dave_model_response.status_code == 201

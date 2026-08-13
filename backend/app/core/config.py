@@ -64,6 +64,7 @@ class AppSettings(BaseSettings):
     ai_llm_http_trace_enabled: bool = False
     ai_llm_http_trace_dir: str = ".tmp/llm-http-trace"
     ai_llm_http_trace_body_max_bytes: int = 200_000
+    ai_model_catalog_sync_enabled: bool = True
     ai_image_transport_mode: str = "auto"
     ai_image_attachment_max_bytes: int = 10 * 1024 * 1024
     ai_image_model_url_reuse_window_seconds: int = 7200

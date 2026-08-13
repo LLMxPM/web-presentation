@@ -9,21 +9,25 @@ from sqlalchemy import select, text
 from sqlalchemy.engine import make_url
 
 import app.models  # noqa: F401
-from app.schemas.llm import LlmConfigCreateRequest, LlmProviderConfigCreateRequest, LlmSlotBindingUpdateRequest
+from app.schemas.model_config import (
+    ChatBindingUpdate, ChatModelConfigCreate, ChatProviderConfigCreate,
+    ImageBindingUpdate, ImageModelConfigCreate, ImageProviderConfigCreate,
+)
 from app.schemas.page import PageCreateRequest
 from app.schemas.project import ProjectCreateRequest
 from app.schemas.project_route import ProjectRouteItemWrite, ProjectRouteTreeWriteRequest
 from app.schemas.workspace import WorkspaceCreateRequest
-from app.ai.provider_catalog import LLM_SLOT_DEFINITIONS
 from app.core.config import get_settings
 from app.db.base import Base
 from app.db.session import get_engine, get_session_factory
 from app.models.asset import WorkspaceAsset
-from app.models.enums import AiLlmSlot, AiModelType, AssetType
+from app.models.enums import AiLlmSlot, AssetType
 from app.models.user import User
 from app.models.page import Page
 from app.models.workspace import Project, Workspace
-from app.services.ai_llm_service import AiLlmService
+from app.services.ai_chat_config_service import AiChatConfigService
+from app.services.ai_image_config_service import AiImageConfigService
+from app.services.ai_model_catalog_service import AiModelCatalogService
 from app.services.asset_service import AssetService
 from app.services.bootstrap_service import BootstrapService
 from app.services.page_service import PageService
@@ -277,103 +281,43 @@ async def _ensure_mock_llm_binding(*, session, user_id: int, operator_id: int) -
     if get_settings().ai_test_mode != "mock":
         return
 
-    service = AiLlmService(session, user_id=user_id)
-    existing_configs = await service.list_configs()
-    provider_configs = await service.list_provider_configs()
-    agent_config = await _ensure_mock_llm_config(
-        service=service,
-        configs=existing_configs,
-        provider_configs=provider_configs,
-        config_name=SMOKE_DATA.agent_llm_config_name,
-        provider_name="OpenAI Mock 凭证",
-        provider_key="openai",
-        model_id="e2e-mock-agent-chat",
-        model_type=AiModelType.CHAT,
-        operator_id=operator_id,
-    )
-    vision_config = await _ensure_mock_llm_config(
-        service=service,
-        configs=existing_configs,
-        provider_configs=provider_configs,
-        config_name=SMOKE_DATA.vision_llm_config_name,
-        provider_name="OpenAI Mock 凭证",
-        provider_key="openai",
-        model_id="e2e-mock-vision-chat",
-        model_type=AiModelType.CHAT,
-        operator_id=operator_id,
-        supports_image_input=True,
-    )
-    image_config = await _ensure_mock_llm_config(
-        service=service,
-        configs=existing_configs,
-        provider_configs=provider_configs,
-        config_name=SMOKE_DATA.image_llm_config_name,
-        provider_name="OpenAI Mock 图片凭证",
-        provider_key="openai_image",
-        model_id="e2e-mock-image-gen",
-        model_type=AiModelType.IMAGE_GENERATION,
-        operator_id=operator_id,
-    )
-
-    slot_targets = {
-        AiLlmSlot.AGENT_COORDINATOR.value: agent_config,
-        AiLlmSlot.IMAGE_UNDERSTANDING.value: vision_config,
-        AiLlmSlot.IMAGE_GENERATION.value: image_config,
-    }
-    for slot in LLM_SLOT_DEFINITIONS:
-        target_config = slot_targets.get(slot)
-        if target_config is None:
-            continue
-        binding = await service.get_slot_binding(slot)
-        if binding.llm_config_id == target_config.id and binding.binding_ready:
-            continue
-        await service.update_slot_binding(
-            slot,
-            LlmSlotBindingUpdateRequest(llm_config_id=target_config.id),
-            operator_id=operator_id,
+    await AiModelCatalogService(session).ensure_minimal_catalog()
+    chat = AiChatConfigService(session, user_id=user_id, user_role="workspace_user")
+    image = AiImageConfigService(session, user_id=user_id, user_role="workspace_user")
+    chat_provider = next((item for item in await chat.list_providers() if item.name == "OpenAI Mock 凭证"), None)
+    if chat_provider is None:
+        chat_provider = await chat.create_provider(
+            ChatProviderConfigCreate(name="OpenAI Mock 凭证", catalog_provider_key="openai"), operator_id=operator_id
         )
+    chat_models = await chat.list_models()
+    agent_config = next((item for item in chat_models if item.name == SMOKE_DATA.agent_llm_config_name), None)
+    if agent_config is None:
+        agent_config = await chat.create_model(ChatModelConfigCreate(
+            name=SMOKE_DATA.agent_llm_config_name, provider_config_id=chat_provider.id,
+            model_id="e2e-mock-agent-chat", capability_override={"supports_tool_call": True},
+        ), operator_id=operator_id)
+    vision_config = next((item for item in chat_models if item.name == SMOKE_DATA.vision_llm_config_name), None)
+    if vision_config is None:
+        vision_config = await chat.create_model(ChatModelConfigCreate(
+            name=SMOKE_DATA.vision_llm_config_name, provider_config_id=chat_provider.id,
+            model_id="e2e-mock-vision-chat", capability_override={"supports_tool_call": True, "supports_image_input": True},
+        ), operator_id=operator_id)
+    await chat.update_binding(AiLlmSlot.AGENT_COORDINATOR.value,
+        ChatBindingUpdate(model_config_id=agent_config.id), operator_id=operator_id)
+    await chat.update_binding(AiLlmSlot.IMAGE_UNDERSTANDING.value,
+        ChatBindingUpdate(model_config_id=vision_config.id), operator_id=operator_id)
 
-
-async def _ensure_mock_llm_config(
-    *,
-    service: AiLlmService,
-    configs: list,
-    provider_configs: list,
-    config_name: str,
-    provider_name: str,
-    provider_key: str,
-    model_id: str,
-    model_type: AiModelType,
-    operator_id: int,
-    supports_image_input: bool = False,
-):
-    """确保 smoke 场景拥有与目标协议匹配的 mock 模型配置。"""
-
-    config = next((item for item in configs if item.name == config_name and item.model_type == model_type), None)
-    if config is not None:
-        return config
-
-    provider = next(
-        (item for item in provider_configs if item.name == provider_name and item.provider_key == provider_key),
-        None,
-    )
-    if provider is None:
-        provider = await service.create_provider_config(
-            LlmProviderConfigCreateRequest(name=provider_name, provider_key=provider_key, api_key=None),
-            operator_id=operator_id,
+    image_provider = next((item for item in await image.list_providers() if item.name == "OpenAI Mock 图片凭证"), None)
+    if image_provider is None:
+        image_provider = await image.create_provider(
+            ImageProviderConfigCreate(name="OpenAI Mock 图片凭证", provider_key="openai_image"), operator_id=operator_id
         )
-    return await service.create_config(
-        LlmConfigCreateRequest(
-            name=config_name,
-            provider_config_id=provider.id,
-            model_id=model_id,
-            model_type=model_type,
-            reasoning_mode="enabled" if model_type == AiModelType.CHAT else "auto",
-            reasoning_level="low" if model_type == AiModelType.CHAT else None,
-            supports_image_input=supports_image_input,
-        ),
-        operator_id=operator_id,
-    )
+    image_config = next((item for item in await image.list_models() if item.name == SMOKE_DATA.image_llm_config_name), None)
+    if image_config is None:
+        image_config = await image.create_model(ImageModelConfigCreate(
+            name=SMOKE_DATA.image_llm_config_name, provider_config_id=image_provider.id, model_id="e2e-mock-image-gen"
+        ), operator_id=operator_id)
+    await image.update_binding(ImageBindingUpdate(model_config_id=image_config.id), operator_id=operator_id)
 
 
 def require_e2e_database_url() -> None:

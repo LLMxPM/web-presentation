@@ -11,6 +11,7 @@ from app.core.exceptions import AppException
 from app.core.testing_environment import database_profile, redis_profile
 from app.db.session import get_db_session
 from app.models.ai_llm import AiLlmConfig, AiLlmProviderConfig, AiLlmSlotBinding
+from app.models.ai_image_model import AiImageModelConfig, AiImageProviderConfig, AiImageSlotBinding
 from app.models.enums import AiLlmSlot, RecordStatus
 from app.models.user import User
 from app.models.workspace import Workspace
@@ -69,21 +70,32 @@ async def _smoke_data_ready(session: AsyncSession, *, workspace_name: str, admin
     admin_id = await session.scalar(select(User.id).where(User.username == admin_username))
     if admin_id is None:
         return False
-    bindings = (
+    chat_bindings = (
         await session.execute(
             select(AiLlmSlotBinding.slot, AiLlmConfig.model_id)
             .join(AiLlmConfig, AiLlmConfig.id == AiLlmSlotBinding.llm_config_id)
             .join(AiLlmProviderConfig, AiLlmProviderConfig.id == AiLlmConfig.provider_config_id)
             .where(
                 AiLlmSlotBinding.user_id == admin_id,
-                AiLlmSlotBinding.slot.in_(_READINESS_SLOTS),
+                AiLlmSlotBinding.slot.in_((AiLlmSlot.AGENT_COORDINATOR.value, AiLlmSlot.IMAGE_UNDERSTANDING.value)),
                 AiLlmSlotBinding.llm_config_id.is_not(None),
                 AiLlmConfig.status == RecordStatus.ACTIVE.value,
                 AiLlmProviderConfig.status == RecordStatus.ACTIVE.value,
             )
         )
     ).all()
-    bound_models = {slot: model_id for slot, model_id in bindings}
+    image_binding = await session.execute(
+        select(AiImageSlotBinding.slot, AiImageModelConfig.model_id)
+        .join(AiImageModelConfig, AiImageModelConfig.id == AiImageSlotBinding.model_config_id)
+        .join(AiImageProviderConfig, AiImageProviderConfig.id == AiImageModelConfig.provider_config_id)
+        .where(
+            AiImageSlotBinding.user_id == admin_id,
+            AiImageSlotBinding.slot == AiLlmSlot.IMAGE_GENERATION.value,
+            AiImageModelConfig.status == RecordStatus.ACTIVE.value,
+            AiImageProviderConfig.status == RecordStatus.ACTIVE.value,
+        )
+    )
+    bound_models = {slot: model_id for slot, model_id in [*chat_bindings, *image_binding.all()]}
     return all(
         str(bound_models.get(slot) or "").startswith(prefix)
         for slot, prefix in _EXPECTED_SLOT_MODEL_PREFIXES.items()

@@ -21,7 +21,7 @@ from app.core.time_utils import utc_now
 from app.models.ai_agent_attachment import AiAgentImageAttachment
 from app.models.ai_agent_runtime import AiAgentMemberRun, AiAgentRequirement, AiAgentRun
 from app.models.ai_image_generation import AiImageGenerationJob
-from app.models.ai_llm import AiLlmConfig
+from app.models.ai_image_model import AiImageModelConfig
 from app.models.asset import WorkspaceAsset
 from app.models.enums import RecordStatus
 from app.models.user import User
@@ -152,9 +152,9 @@ async def _execute_job(
             if job is None:
                 return
             config = await session.scalar(
-                select(AiLlmConfig)
-                .where(AiLlmConfig.id == job.model_config_id)
-                .options(selectinload(AiLlmConfig.provider_config))
+                select(AiImageModelConfig)
+                .where(AiImageModelConfig.id == job.model_config_id)
+                .options(selectinload(AiImageModelConfig.provider_config))
             )
             if config is None:
                 raise RuntimeError("图片生成模型配置不存在。")
@@ -510,9 +510,9 @@ async def _cancel_one_waiting_provider_job(session_factory: async_sessionmaker[A
         if not should_cancel:
             return False
         config = await session.scalar(
-            select(AiLlmConfig)
-            .where(AiLlmConfig.id == job.model_config_id)
-            .options(selectinload(AiLlmConfig.provider_config))
+            select(AiImageModelConfig)
+            .where(AiImageModelConfig.id == job.model_config_id)
+            .options(selectinload(AiImageModelConfig.provider_config))
         )
         provider_cursor = _provider_cursor_from_job(job)
         job_id = job.id

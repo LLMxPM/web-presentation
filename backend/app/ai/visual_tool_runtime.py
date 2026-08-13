@@ -9,6 +9,7 @@ from app.ai.tool_specs import (
 )
 from app.core.exceptions import AppException
 from app.services.ai_llm_service import AiLlmService
+from app.services.ai_image_config_service import AiImageConfigService
 from app.services.image_generation.contracts import ImageModelSpec
 from app.services.image_generation.registry import get_image_model_spec
 
@@ -30,18 +31,28 @@ async def resolve_visual_tool_runtime(
     image_generation_model: ImageModelSpec | None = None
     image_generation_config_id: int | None = None
     image_analysis_binding = slot_lookup.get("image_understanding")
-    image_generation_binding = slot_lookup.get("image_generation")
+    image_service = (
+        AiImageConfigService(
+            llm_service.session,
+            user_id=llm_service.user_id,
+            user_role=llm_service.user_role,
+        )
+        if hasattr(llm_service, "session")
+        else None
+    )
+    image_generation_binding = await image_service.get_binding() if image_service is not None else slot_lookup.get("image_generation")
     if image_analysis_binding is None or not image_analysis_binding.binding_ready:
         unavailable.add(IMAGE_ANALYSIS_TOOL_GROUP_KEY)
     if image_generation_binding is None or not image_generation_binding.binding_ready:
         unavailable.add(IMAGE_GENERATION_TOOL_GROUP_KEY)
     else:
         try:
+            image_config = await image_service._model(image_generation_binding.model_config_id, selectable=True) if image_service is not None else None
             image_generation_model = get_image_model_spec(
-                str(image_generation_binding.provider_key or ""),
-                str(image_generation_binding.model_id or ""),
+                str(image_config.provider_config.provider_key if image_config is not None else image_generation_binding.provider_key),
+                str(image_config.model_id if image_config is not None else image_generation_binding.model_id),
             )
-            image_generation_config_id = image_generation_binding.llm_config_id
+            image_generation_config_id = image_generation_binding.model_config_id if hasattr(image_generation_binding, "model_config_id") else image_generation_binding.llm_config_id
         except AppException:
             unavailable.add(IMAGE_GENERATION_TOOL_GROUP_KEY)
     if "analyze_visuals" in retained_tool_names:

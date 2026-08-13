@@ -6,8 +6,8 @@
     <div class="ai-settings-shell grid min-h-0 flex-1 overflow-hidden rounded-ui-xl border border-border bg-surface shadow-sm">
       <AccountAiSettingsNavigation
         :model-value="section"
-        :model-count="models.length"
-        :provider-count="providerConfigs.length"
+        :model-count="chatModels.length"
+        :provider-count="imageModels.length"
         :assistant-ready="assistantReady"
         @update:model-value="emit('changeSection', $event)"
       />
@@ -89,7 +89,7 @@
                 </div>
                 <div v-if="models.length === 0" class="rounded-ui-lg border border-warning-border bg-warning-muted px-4 py-3 text-sm text-warning-strong">
                   还没有可绑定模型，请先前往“模型管理”创建模型。
-                  <UiButton class="ml-2" variant="ghost" size="sm" @click="emit('changeSection', 'models')">前往模型管理</UiButton>
+                  <UiButton class="ml-2" variant="ghost" size="sm" @click="emit('changeSection', 'chat')">前往聊天模型</UiButton>
                 </div>
               </div>
             </template>
@@ -160,42 +160,43 @@
           </UiTabs>
         </section>
 
-        <section v-else-if="section === 'models'" class="flex min-h-0 flex-1 flex-col">
+        <section v-else-if="section === 'chat'" class="flex min-h-0 flex-1 flex-col">
           <header class="shrink-0 border-b border-border-muted bg-surface px-5 py-4">
             <div class="flex items-center justify-between gap-4">
-              <div><h2 class="text-lg font-bold text-text-strong">模型管理</h2><p class="mt-1 text-xs text-text-muted">管理可供内容助手和视觉能力绑定的模型。</p></div>
-              <UiButton @click="emit('createModel')"><Plus class="h-4 w-4" />新建模型</UiButton>
+              <div><h2 class="text-lg font-bold text-text-strong">聊天模型</h2><p class="mt-1 text-xs text-text-muted">先连接供应商，再选择目录模型或填写兼容模型 ID。</p></div>
+              <div class="flex gap-2"><UiButton v-if="canCreateGlobal" variant="ghost" :loading="refreshingCatalog" @click="emit('refreshCatalog')">刷新 Models.dev</UiButton><UiButton variant="secondary" @click="emit('createProvider', 'chat')"><Plus class="h-4 w-4" />连接供应商</UiButton><UiButton @click="emit('createModel', 'chat')"><Plus class="h-4 w-4" />新建模型</UiButton></div>
             </div>
-            <div class="mt-4 grid gap-2 lg:grid-cols-[minmax(260px,1fr)_180px_220px_160px]">
-              <SimpleSearchBar v-model="modelKeyword" placeholder="搜索模型名称、ID 或供应商" />
-              <UiSelect v-model="modelTypeFilter" :options="modelTypeOptions" />
+            <p class="mt-2 text-xs" :class="catalogSyncState?.last_error ? 'text-warning-strong' : 'text-text-muted'">{{ catalogStatusText }}</p>
+            <div class="mt-4 grid gap-2 lg:grid-cols-[minmax(260px,1fr)_220px_160px]">
+              <SimpleSearchBar v-model="chatKeyword" placeholder="搜索聊天模型或供应商" />
               <UiSelect v-model="modelProviderFilter" :options="modelProviderOptions" />
               <UiSelect v-model="modelScopeFilter" :options="scopeOptions" />
             </div>
           </header>
-          <div class="min-h-0 flex-1 overflow-hidden">
+          <div class="grid min-h-0 flex-1 grid-rows-2 overflow-hidden">
             <DataState :state="modelDataState" :title="modelDataState === 'empty' ? '没有符合条件的模型' : undefined">
               <AccountAiModelTable class="h-full" :items="filteredModels" @view="emit('viewModel', $event)" @edit="emit('editModel', $event)" @delete="emit('deleteModel', $event)" />
             </DataState>
+            <div class="min-h-0 border-t border-border-muted"><AccountAiProviderTable class="h-full" :items="filteredProviders" @view="emit('viewProvider', $event)" @edit="emit('editProvider', $event)" @delete="emit('deleteProvider', $event)" /></div>
           </div>
         </section>
 
         <section v-else class="flex min-h-0 flex-1 flex-col">
           <header class="shrink-0 border-b border-border-muted bg-surface px-5 py-4">
             <div class="flex items-center justify-between gap-4">
-              <div><h2 class="text-lg font-bold text-text-strong">供应商管理</h2><p class="mt-1 text-xs text-text-muted">管理独立的 Chat 与图片生成连接凭证。</p></div>
-              <UiButton @click="emit('createProvider')"><Plus class="h-4 w-4" />新建供应商</UiButton>
+              <div><h2 class="text-lg font-bold text-text-strong">图片生成</h2><p class="mt-1 text-xs text-text-muted">图片供应商、凭证、模型能力与聊天模型完全独立。</p></div>
+              <div class="flex gap-2"><UiButton variant="secondary" @click="emit('createProvider', 'image_generation')"><Plus class="h-4 w-4" />连接供应商</UiButton><UiButton @click="emit('createModel', 'image_generation')"><Plus class="h-4 w-4" />新建模型</UiButton></div>
             </div>
-            <div class="mt-4 grid gap-2 lg:grid-cols-[minmax(260px,1fr)_180px_160px]">
-              <SimpleSearchBar v-model="providerKeyword" placeholder="搜索配置名称、供应商或 key" />
-              <UiSelect v-model="providerTypeFilter" :options="providerTypeOptions" />
+            <div class="mt-4 grid gap-2 lg:grid-cols-[minmax(260px,1fr)_160px]">
+              <SimpleSearchBar v-model="imageKeyword" placeholder="搜索图片模型或供应商" />
               <UiSelect v-model="providerScopeFilter" :options="scopeOptions" />
             </div>
           </header>
-          <div class="min-h-0 flex-1 overflow-hidden">
-            <DataState :state="providerDataState" :title="providerDataState === 'empty' ? '没有符合条件的供应商' : undefined">
-              <AccountAiProviderTable class="h-full" :items="filteredProviders" @view="emit('viewProvider', $event)" @edit="emit('editProvider', $event)" @delete="emit('deleteProvider', $event)" />
+          <div class="grid min-h-0 flex-1 grid-rows-2 overflow-hidden">
+            <DataState :state="modelDataState" :title="modelDataState === 'empty' ? '没有符合条件的模型' : undefined">
+              <AccountAiModelTable class="h-full" :items="filteredModels" @view="emit('viewModel', $event)" @edit="emit('editModel', $event)" @delete="emit('deleteModel', $event)" />
             </DataState>
+            <div class="min-h-0 border-t border-border-muted"><AccountAiProviderTable class="h-full" :items="filteredProviders" @view="emit('viewProvider', $event)" @edit="emit('editProvider', $event)" @delete="emit('deleteProvider', $event)" /></div>
           </div>
         </section>
       </main>
@@ -292,16 +293,19 @@ import PageHeader from '@/components/patterns/PageHeader.vue'
 import SimpleSearchBar from '@/components/patterns/SimpleSearchBar.vue'
 import { UiButton, UiCheckbox, UiCombobox, UiDialog, UiFormField, UiInput, UiSelect, UiTabs } from '@/components/ui'
 import type { SelectOption } from '@/components/ui/select'
-import type { AgentConfigItem, AgentToolConfigItem, AiReasoningLevel, AiReasoningMode, LlmConfigItem, LlmModelCapabilityItem, LlmProviderCatalogItem, LlmProviderConfigItem, LlmSlotBindingItem } from '@/types/api'
+import type { ModelCatalogSyncState } from '@/api/llm'
+import type { ChatModelCatalogItem } from '@/api/model-config'
+import type { AgentConfigItem, AgentToolConfigItem, AiModelType, LlmConfigItem, LlmModelCapabilityItem, LlmProviderCatalogItem, LlmProviderConfigItem, LlmSlotBindingItem } from '@/types/api'
 import type { AiSettingsSection, AssistantSettingsTab, EntityDialogMode } from './account-ai-settings-types'
 
 interface ToolDraft { enabled: boolean; descriptionOverride: string; instructionsOverride: string }
-interface ModelForm { scope: 'global' | 'personal'; name: string; provider_config_id: number | null; model_id: string; model_type: 'chat' | 'image_generation'; reasoning_mode: AiReasoningMode; reasoning_level: AiReasoningLevel | null; supports_image_input: boolean; context_window_tokens: number }
+interface ModelForm { scope: 'global' | 'personal'; name: string; provider_config_id: number | null; model_id: string; model_type: 'chat' | 'image_generation'; supports_image_input: boolean; context_window_tokens: number }
 interface ProviderForm { scope: 'global' | 'personal'; name: string; provider_key: string | null; base_url: string; api_key: string }
 
 const props = defineProps<{
   section: AiSettingsSection; assistantTab: AssistantSettingsTab; agent: AgentConfigItem | null
   models: LlmConfigItem[]; providerConfigs: LlmProviderConfigItem[]; providerCatalog: LlmProviderCatalogItem[]; slots: LlmSlotBindingItem[]
+  chatModelCatalog: ChatModelCatalogItem[]; catalogSyncState: ModelCatalogSyncState | null; refreshingCatalog: boolean
   slotDrafts: Record<string, number | null>; bindingSlot: string | null; promptDraft: string; promptDirty: boolean; savingPrompt: boolean
   toolDrafts: Record<string, ToolDraft>; savingToolKey: string | null; selectedTool: AgentToolConfigItem | null; toolDialogOpen: boolean
   providerDialogOpen: boolean; providerMode: EntityDialogMode; providerForm: ProviderForm; selectedProviderConfigId: number | null; selectedProviderConfig: LlmProviderConfigItem | null; currentProviderForProviderForm: LlmProviderCatalogItem | null; providerOptions: SelectOption[]; savingProviderConfig: boolean; deletingProviderConfigId: number | null; canCreateGlobal: boolean
@@ -313,16 +317,15 @@ const emit = defineEmits<{
   updateSlotDraft: [slot: string, value: number | null]; saveSlot: [slot: string, scope: 'personal' | 'global']
   updatePrompt: [value: string]; savePrompt: []; restorePrompt: []
   openTool: [tool: AgentToolConfigItem]; updateToolDialogOpen: [value: boolean]; updateToolEnabled: [key: string, value: boolean]; updateToolDescription: [key: string, value: string]; updateToolInstructions: [key: string, value: string]; saveTool: [tool: AgentToolConfigItem]; restoreTool: [tool: AgentToolConfigItem]
-  createProvider: []; viewProvider: [config: LlmProviderConfigItem]; editProvider: [config: LlmProviderConfigItem]; deleteProvider: [config: LlmProviderConfigItem]; updateProviderDialogOpen: [value: boolean]; cancelProvider: []; startEditProvider: []; submitProvider: []
-  createModel: []; viewModel: [config: LlmConfigItem]; editModel: [config: LlmConfigItem]; deleteModel: [config: LlmConfigItem]; updateModelDialogOpen: [value: boolean]; cancelModel: []; startEditModel: []; submitModel: []; formatAdvanced: []; updateAdvancedConfigText: [value: string]; updateAdvancedConfigCollapsed: [value: boolean]
+  createProvider: [modelType?: AiModelType]; viewProvider: [config: LlmProviderConfigItem]; editProvider: [config: LlmProviderConfigItem]; deleteProvider: [config: LlmProviderConfigItem]; updateProviderDialogOpen: [value: boolean]; cancelProvider: []; startEditProvider: []; submitProvider: []
+  createModel: [modelType?: AiModelType]; viewModel: [config: LlmConfigItem]; editModel: [config: LlmConfigItem]; deleteModel: [config: LlmConfigItem]; updateModelDialogOpen: [value: boolean]; cancelModel: []; startEditModel: []; submitModel: []; formatAdvanced: []; updateAdvancedConfigText: [value: string]; updateAdvancedConfigCollapsed: [value: boolean]
+  refreshCatalog: []
 }>()
 
 const assistantTabs = [{ label: '模型与视觉能力', value: 'models' }, { label: '提示词', value: 'prompt' }, { label: '工具配置', value: 'tools' }]
-const modelKeyword = ref(''); const modelTypeFilter = ref('all'); const modelProviderFilter = ref('all'); const modelScopeFilter = ref('all')
-const providerKeyword = ref(''); const providerTypeFilter = ref('all'); const providerScopeFilter = ref('all')
+const chatKeyword = ref(''); const imageKeyword = ref(''); const modelProviderFilter = ref('all'); const modelScopeFilter = ref('all')
+const providerScopeFilter = ref('all')
 const toolKeyword = ref(''); const toolGroupFilter = ref('all'); const toolRiskFilter = ref('all'); const toolEnabledFilter = ref('all')
-const modelTypeOptions = [{ label: '全部模型类型', value: 'all' }, { label: 'Chat', value: 'chat' }, { label: '图片生成', value: 'image_generation' }]
-const providerTypeOptions = [{ label: '全部供应商类型', value: 'all' }, { label: 'Chat', value: 'chat' }, { label: '图片生成', value: 'image_generation' }]
 const scopeOptions = [{ label: '全部范围', value: 'all' }, { label: '个人', value: 'personal' }, { label: '全局', value: 'global' }]
 const toolRiskOptions = [{ label: '全部风险', value: 'all' }, { label: '系统', value: 'system' }, { label: '只读', value: 'read' }, { label: '写入', value: 'write' }, { label: '危险', value: 'danger' }]
 const toolEnabledOptions = [{ label: '全部状态', value: 'all' }, { label: '已启用', value: 'enabled' }, { label: '已关闭', value: 'disabled' }]
@@ -332,24 +335,28 @@ const contentSlot = computed(() => props.slots.find(slot => slot.slot === props.
 const assistantReady = computed(() => Boolean(contentSlot.value?.binding_ready))
 const allTools = computed(() => props.agent?.tool_groups.flatMap(group => group.tools) ?? [])
 const toolGroupOptions = computed(() => [{ label: '全部工具组', value: 'all' }, ...(props.agent?.tool_groups.map(group => ({ label: group.label, value: group.key })) ?? [])])
-const modelProviderOptions = computed(() => [{ label: '全部供应商配置', value: 'all' }, ...props.providerConfigs.map(item => ({ label: item.name, value: String(item.id) }))])
+const chatModels = computed(() => props.models.filter(item => (item.model_type ?? 'chat') === 'chat'))
+const imageModels = computed(() => props.models.filter(item => item.model_type === 'image_generation'))
+const domainModels = computed(() => props.section === 'image' ? imageModels.value : chatModels.value)
+const domainProviders = computed(() => props.providerConfigs.filter(item => (
+  props.section === 'image' ? item.provider_type === 'image_generation' : (item.provider_type ?? 'chat') === 'chat'
+)))
+const modelProviderOptions = computed(() => [{ label: '全部供应商配置', value: 'all' }, ...domainProviders.value.map(item => ({ label: item.name, value: String(item.id) }))])
 
 /** 根据管理栏关键字、类型、供应商和范围筛选模型。 */
-const filteredModels = computed(() => props.models.filter((item) => {
-  const keyword = modelKeyword.value.trim().toLowerCase()
+const filteredModels = computed(() => domainModels.value.filter((item) => {
+  const keyword = (props.section === 'image' ? imageKeyword.value : chatKeyword.value).trim().toLowerCase()
   const searchable = `${item.name} ${item.model_id} ${item.provider_config_name} ${item.provider_label}`.toLowerCase()
   return (!keyword || searchable.includes(keyword))
-    && (modelTypeFilter.value === 'all' || (item.model_type ?? 'chat') === modelTypeFilter.value)
     && (modelProviderFilter.value === 'all' || item.provider_config_id === Number(modelProviderFilter.value))
     && (modelScopeFilter.value === 'all' || item.scope === modelScopeFilter.value)
 }))
 
 /** 根据管理栏关键字、类型和范围筛选供应商。 */
-const filteredProviders = computed(() => props.providerConfigs.filter((item) => {
-  const keyword = providerKeyword.value.trim().toLowerCase()
+const filteredProviders = computed(() => domainProviders.value.filter((item) => {
+  const keyword = (props.section === 'image' ? imageKeyword.value : chatKeyword.value).trim().toLowerCase()
   const searchable = `${item.name} ${item.provider_label} ${item.provider_key}`.toLowerCase()
   return (!keyword || searchable.includes(keyword))
-    && (providerTypeFilter.value === 'all' || (item.provider_type ?? 'chat') === providerTypeFilter.value)
     && (providerScopeFilter.value === 'all' || item.scope === providerScopeFilter.value)
 }))
 
@@ -365,8 +372,16 @@ const filteredTools = computed(() => allTools.value.filter((tool) => {
 }))
 
 /** 将筛选结果映射为统一数据状态。 */
-const modelDataState = computed(() => props.models.length === 0 ? 'empty' : filteredModels.value.length === 0 ? 'empty' : 'ready')
-const providerDataState = computed(() => props.providerConfigs.length === 0 ? 'empty' : filteredProviders.value.length === 0 ? 'empty' : 'ready')
+const modelDataState = computed(() => domainModels.value.length === 0 ? 'empty' : filteredModels.value.length === 0 ? 'empty' : 'ready')
+
+const catalogStatusText = computed(() => {
+  const state = props.catalogSyncState
+  if (!state) return '正在读取 Models.dev 目录状态…'
+  if (state.syncing) return '正在后台同步 Models.dev，现有配置仍可使用。'
+  if (state.last_error) return `上次同步失败，当前使用上一版缓存：${state.last_error}`
+  if (state.catalog_version === 'bootstrap-v1' || !state.last_success_at) return '当前仅有离线启动目录；后台联网同步完成后会自动扩展供应商和模型。'
+  return `Models.dev 目录已同步 · ${state.last_success_at}`
+})
 
 /** 为固定能力槽位生成绑定、可选模型与状态数据。 */
 const slotRows = computed(() => {
@@ -384,19 +399,17 @@ function slotOptions(slot: string): SelectOption[] {
 }
 
 const providerDetailProps = computed(() => ({ form: props.providerForm, selectedProviderConfigId: props.selectedProviderConfigId, selectedProviderConfig: props.selectedProviderConfig, mode: props.providerMode, currentProvider: props.currentProviderForProviderForm, providerOptions: props.providerOptions, savingProviderConfig: props.savingProviderConfig, deletingProviderConfigId: props.deletingProviderConfigId, canCreateGlobal: props.canCreateGlobal, showPanelHeader: false, showPanelFooter: false, embeddedInDialog: true }))
-const modelDetailProps = computed(() => ({ form: props.modelForm, selectedConfigId: props.selectedConfigId, selectedModel: props.selectedModel, mode: props.modelMode, currentProvider: props.currentProvider, resolvedCapability: props.resolvedCapability ?? null, providerConfigOptions: props.providerConfigOptions, advancedConfigText: props.advancedConfigText, advancedConfigError: props.advancedConfigError, advancedConfigCollapsed: props.advancedConfigCollapsed, savingConfig: props.savingConfig, deletingConfigId: props.deletingConfigId, canCreateGlobal: props.canCreateGlobal, showPanelHeader: false, showPanelFooter: false, embeddedInDialog: true }))
+const modelDetailProps = computed(() => ({ form: props.modelForm, selectedConfigId: props.selectedConfigId, selectedModel: props.selectedModel, mode: props.modelMode, currentProvider: props.currentProvider, resolvedCapability: props.resolvedCapability ?? null, chatModelCatalog: props.chatModelCatalog, providerConfigOptions: props.providerConfigOptions, advancedConfigText: props.advancedConfigText, advancedConfigError: props.advancedConfigError, advancedConfigCollapsed: props.advancedConfigCollapsed, savingConfig: props.savingConfig, deletingConfigId: props.deletingConfigId, canCreateGlobal: props.canCreateGlobal, showPanelHeader: false, showPanelFooter: false, embeddedInDialog: true }))
 
 const providerDialogTitle = computed(() => props.providerMode === 'create' ? '新建供应商' : props.providerMode === 'edit' ? '编辑供应商' : props.selectedProviderConfig?.name ?? '供应商详情')
 const providerDialogDescription = computed(() => props.providerMode === 'detail' ? '查看供应商连接、范围和凭证状态。' : '配置供应商协议、服务地址和访问凭证。')
 const modelDialogTitle = computed(() => props.modelMode === 'create' ? '新建模型' : props.modelMode === 'edit' ? '编辑模型' : props.selectedModel?.name ?? '模型详情')
-const modelDialogDescription = computed(() => props.modelMode === 'detail' ? '查看模型能力、请求预算和最终推理策略。' : '选择供应商模型，并配置能力与平台推理策略。')
+const modelDialogDescription = computed(() => props.modelMode === 'detail' ? '查看模型能力和平台自动计算的请求预算。' : '选择供应商模型，并配置模型能力与高级参数。')
 const providerCanSubmit = computed(() => Boolean(props.providerForm.name.trim() && props.providerForm.provider_key && (!props.currentProviderForProviderForm?.requires_base_url || props.providerForm.base_url.trim())))
 const modelReadOnly = computed(() => Boolean(props.selectedModel && !props.selectedModel.editable))
 const modelCanSubmit = computed(() => {
-  const modelContext = props.resolvedCapability?.model_context_window_tokens
-  const requiredContext = props.modelForm.context_window_tokens + (props.resolvedCapability?.request_output_tokens ?? 32_768)
-  const contextSupported = !modelContext || requiredContext <= modelContext
-  return Boolean(props.modelForm.name.trim() && props.modelForm.provider_config_id && props.modelForm.model_id.trim() && contextSupported && (!props.currentProvider || (props.currentProvider.supported_model_types ?? ['chat']).includes(props.modelForm.model_type)))
+  return Boolean(props.modelForm.name.trim() && props.modelForm.provider_config_id && props.modelForm.model_id.trim()
+    && (!props.currentProvider || (props.currentProvider.supported_model_types ?? ['chat']).includes(props.modelForm.model_type)))
 })
 
 /** 判断工具是否覆盖了系统默认说明。 */

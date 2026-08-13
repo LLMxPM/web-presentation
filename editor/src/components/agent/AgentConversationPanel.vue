@@ -295,9 +295,9 @@
             </div>
           </template>
           <template #action-prefix>
-            <span
+            <div
               v-if="isNewSessionDraft || activeSessionLlmLabel || selectedRunLlmConfig"
-              class="relative inline-flex"
+              class="relative inline-flex items-center gap-1"
             >
               <UiDropdownMenu
                 :items="llmModelDropdownItems"
@@ -322,7 +322,28 @@
                   </UiButton>
                 </template>
               </UiDropdownMenu>
-            </span>
+              <UiDropdownMenu
+                :items="runReasoningDropdownItems"
+                side="top"
+                align="end"
+                content-class="w-40"
+                @select="handleRunReasoningSelect"
+              >
+                <template #trigger>
+                  <UiButton
+                    type="button"
+                    variant="ghost"
+                    size="xs"
+                    class="inline-flex h-6 max-w-[120px] items-center gap-1 rounded-md border px-1.5 text-[10px] font-medium transition"
+                    :disabled="modelSelectionDisabled"
+                    :title="reasoningButtonTitle"
+                  >
+                    <span class="min-w-0 truncate">推理：{{ reasoningPolicyLabel }}</span>
+                    <ChevronDown class="h-3 w-3 shrink-0 opacity-60" />
+                  </UiButton>
+                </template>
+              </UiDropdownMenu>
+            </div>
           </template>
         </AgentComposer>
       </template>
@@ -348,6 +369,7 @@ import { Building2, ChevronDown, ExternalLink, Eye, FolderKanban, Globe2, Route,
 import {
   AgentRequestError,
   AgentStreamInterruptedError,
+  type AgentReasoningPolicy,
   cancelAgentSessionActiveRun,
   createAgentSession,
   getAgentSessionContextStatus,
@@ -421,6 +443,7 @@ import { logClientWarning } from '@/utils/client-logger'
 import { createClientUuid } from '@/utils/id'
 import { Message } from '@/utils/message'
 import { buildGlobalPageLocation } from '@/utils/global-page-navigation'
+import { protocolReasoningControls, reasoningEfforts } from '@/utils/reasoning-controls'
 
 const FORCE_CANCEL_AVAILABLE_DELAY_MS = 10_000
 
@@ -542,6 +565,7 @@ const activeToolDetailId = ref<string | null>(null)
 const activeMemberRunIds = ref<string[]>([])
 const sendInFlightBySession = ref<Record<string, boolean>>({})
 const selectedRunLlmConfigId = ref<number | null>(null)
+const selectedRunReasoning = ref<AgentReasoningPolicy>({ mode: 'auto' })
 const autoNamingSessionIds = new Set<string>()
 const hitlActionInFlightBySession = ref<Record<string, boolean>>({})
 let componentDisposed = false
@@ -826,6 +850,35 @@ const defaultNewSessionLlmConfigId = computed(() => (
 const selectedRunLlmConfig = computed(() => (
   selectedRunLlmConfigId.value ? llmConfigById.value.get(selectedRunLlmConfigId.value) ?? null : null
 ))
+const selectedRunReasoningOptions = computed(() => selectedRunLlmConfig.value?.model_capability_json?.reasoning_options)
+const selectedRunProtocol = computed(() => String(selectedRunLlmConfig.value?.model_capability_json?.protocol_key ?? ''))
+const runReasoningEfforts = computed(() => {
+  const capability = selectedRunLlmConfig.value?.model_capability_json ?? {}
+  if (!capability.supports_reasoning || !protocolReasoningControls(selectedRunProtocol.value).has('effort')) return []
+  return reasoningEfforts(selectedRunReasoningOptions.value).filter(value => value !== 'none')
+})
+const runReasoningDropdownItems = computed<DropdownMenuEntry[]>(() => [
+  { label: '自动', value: 'auto', active: selectedRunReasoning.value.mode === 'auto' },
+  ...runReasoningEfforts.value.map(value => ({
+    label: value,
+    value: `effort:${value}`,
+    active: selectedRunReasoning.value.mode === 'effort' && selectedRunReasoning.value.value === value,
+  })),
+])
+const reasoningPolicyLabel = computed(() => {
+  const policy = selectedRunReasoning.value
+  if (policy.mode === 'effort') return String(policy.value || '')
+  return '自动'
+})
+const reasoningRestrictionText = computed(() => {
+  const capability = selectedRunLlmConfig.value?.model_capability_json ?? {}
+  if (!capability.supports_reasoning) return '当前模型未在 Models.dev 或能力覆盖中声明推理能力，因此只能使用自动模式。'
+  if (!protocolReasoningControls(selectedRunProtocol.value).size) return '当前连接使用通用 OpenAI-compatible 协议，平台不知道其推理参数方言，因此只能使用自动模式。'
+  return '当前模型没有公布可由该协议安全控制的推理参数，因此只能使用自动模式。'
+})
+const reasoningButtonTitle = computed(() => runReasoningEfforts.value.length
+  ? `下一轮推理强度：${reasoningPolicyLabel.value}`
+  : reasoningRestrictionText.value)
 const activeSessionLlmMetadata = computed(() => extractSessionLlmMetadata(activeSession.value))
 const activeSessionLlmConfigId = computed(() => normalizeLlmConfigId(activeSessionLlmMetadata.value?.config_id))
 const activeSessionLlmConfig = computed(() => (
@@ -1482,11 +1535,18 @@ watch(
   { immediate: true },
 )
 
+watch(runReasoningEfforts, (efforts) => {
+  if (selectedRunReasoning.value.mode === 'effort' && !efforts.includes(String(selectedRunReasoning.value.value ?? ''))) {
+    selectedRunReasoning.value = { mode: 'auto' }
+  }
+}, { immediate: true })
+
 watch(activeSessionId, () => {
   const sessionModelId = normalizeLlmConfigId(extractSessionLlmMetadata(activeSession.value)?.config_id)
   selectedRunLlmConfigId.value = sessionModelId && llmConfigById.value.has(sessionModelId)
     ? sessionModelId
     : defaultNewSessionLlmConfigId.value
+  selectedRunReasoning.value = { mode: 'auto' }
   sessionMenuVisible.value = false
   toolDetailDialogVisible.value = false
   memberRunDialogVisible.value = false
@@ -1548,7 +1608,16 @@ function handleLlmModelSelect(value: string) {
   const configId = Number(value)
   if (Number.isFinite(configId)) {
     selectedRunLlmConfigId.value = configId
+    selectedRunReasoning.value = { mode: 'auto' }
   }
+}
+
+/** 从单层菜单选择自动或 Models.dev 公布的原始推理强度。 */
+function handleRunReasoningSelect(value: string) {
+  const effort = value.startsWith('effort:') ? value.slice('effort:'.length) : ''
+  selectedRunReasoning.value = effort && runReasoningEfforts.value.includes(effort)
+    ? { mode: 'effort', value: effort }
+    : { mode: 'auto' }
 }
 
 type SessionPreferenceOverrides = Partial<Pick<AgentSessionItem, 'focus_mode' | 'pinned_project_id' | 'work_scope_mode' | 'allowed_project_ids'>>
@@ -1850,6 +1919,7 @@ async function handleSend() {
       agent_id: runAgentId,
       image_attachment_ids: attachments.map(attachment => attachment.id),
       llm_config_id: selectedRunLlmConfigId.value,
+      reasoning: { ...selectedRunReasoning.value },
     })
     syncActiveRun(sessionId, {
       ...(activeRun.value ?? {

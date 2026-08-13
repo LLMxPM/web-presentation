@@ -24,28 +24,45 @@
       <div><dt class="text-xs font-semibold text-text-disabled">类型</dt><dd class="mt-1 text-text-emphasis">{{ currentProvider?.provider_type === 'image_generation' ? '图片生成' : 'Chat' }}</dd></div>
       <div class="md:col-span-2"><dt class="text-xs font-semibold text-text-disabled">Base URL</dt><dd class="mt-1 break-all text-text-emphasis">{{ selectedProviderConfig.base_url || '使用供应商默认地址' }}</dd></div>
       <div><dt class="text-xs font-semibold text-text-disabled">API Key</dt><dd class="mt-1 font-semibold" :class="selectedProviderConfig.has_api_key ? 'text-text-emphasis' : 'text-warning-strong'">{{ selectedProviderConfig.has_api_key ? selectedProviderConfig.api_key_masked : '未配置' }}</dd></div>
-      <div v-if="currentProvider"><dt class="text-xs font-semibold text-text-disabled">Thinking</dt><dd class="mt-1 text-text-emphasis">{{ currentProvider.supports_thinking ? currentProvider.thinking_mode : '不支持' }}</dd></div>
+      <div v-if="currentProvider?.provider_type !== 'image_generation'"><dt class="text-xs font-semibold text-text-disabled">推理参数</dt><dd class="mt-1 text-text-emphasis">{{ reasoningTransportLabel }}</dd></div>
     </dl>
 
-    <div v-else class="grid gap-4 md:grid-cols-2" :class="readOnlyProvider ? 'pointer-events-none opacity-70' : ''">
-      <UiFormField v-if="!selectedProviderConfigId && canCreateGlobal" label="配置范围">
-        <UiSelect v-model="form.scope" :options="scopeOptions" />
-      </UiFormField>
-      <UiFormField v-slot="field" label="配置名称" required>
-        <UiInput :input-id="field.inputId" :described-by="field.describedBy" :invalid="field.invalid" :model-value="form.name" placeholder="例如：OpenAI 工作账号" required @update:model-value="value => form.name = String(value)" />
-      </UiFormField>
-      <div class="space-y-1.5" :class="{ 'md:col-span-2': selectedProviderConfigId }">
-        <label class="ml-1 text-sm font-semibold text-text-emphasis">供应商</label>
-        <UiCombobox :model-value="form.provider_key" :options="providerOptions" placeholder="请选择供应商" :disabled="Boolean(selectedProviderConfigId)" @update:model-value="value => form.provider_key = value as string | null" />
-      </div>
-      <UiFormField v-slot="field" label="Base URL">
-        <UiInput :input-id="field.inputId" :described-by="field.describedBy" :invalid="field.invalid" :model-value="form.base_url" :placeholder="currentProvider?.base_url_hint || '使用供应商默认地址'" :disabled="currentProvider ? !currentProvider.supports_base_url : false" @update:model-value="value => form.base_url = String(value)" />
-        <p v-if="currentProvider?.requires_base_url" class="mt-1 text-xs text-warning-strong">当前供应商必须填写 Base URL。</p>
-      </UiFormField>
-      <UiFormField v-slot="field" label="API Key">
-        <UiInput :input-id="field.inputId" :described-by="field.describedBy" :invalid="field.invalid" :model-value="form.api_key" placeholder="编辑时留空表示保持原密钥" type="password" password-toggle :disabled="currentProvider ? !currentProvider.supports_api_key : false" @update:model-value="value => form.api_key = String(value)" />
-      </UiFormField>
-      <p class="md:col-span-2 text-xs text-text-muted">连接凭证由后端安全存储；模型 ID 和运行参数请在模型管理中维护。</p>
+    <div v-else class="space-y-5" :class="readOnlyProvider ? 'pointer-events-none opacity-70' : ''">
+      <section class="space-y-3">
+        <div>
+          <h3 class="text-sm font-bold text-text-strong">基础信息</h3>
+          <p class="mt-1 text-xs text-text-muted">先定义配置名称和使用范围，便于在模型配置中识别。</p>
+        </div>
+        <div class="grid gap-4 md:grid-cols-2">
+          <UiFormField v-slot="field" label="配置名称" required>
+            <UiInput :input-id="field.inputId" :described-by="field.describedBy" :invalid="field.invalid" :model-value="form.name" placeholder="例如：OpenAI 工作账号" required @update:model-value="value => form.name = String(value)" />
+          </UiFormField>
+          <UiFormField v-if="!selectedProviderConfigId && canCreateGlobal" label="配置范围">
+            <UiSelect v-model="form.scope" :options="scopeOptions" />
+          </UiFormField>
+        </div>
+      </section>
+
+      <section class="space-y-3 border-t border-border-muted pt-5">
+        <div>
+          <h3 class="text-sm font-bold text-text-strong">供应商连接</h3>
+          <p class="mt-1 text-xs text-text-muted">选择协议后，填写该供应商的服务地址和访问凭证。</p>
+        </div>
+        <div class="grid gap-4 md:grid-cols-2">
+          <div class="space-y-1.5 md:col-span-2">
+            <label class="ml-1 text-sm font-semibold text-text-emphasis">供应商</label>
+            <UiCombobox :model-value="form.provider_key" :options="providerOptions" placeholder="请选择供应商" :disabled="Boolean(selectedProviderConfigId)" @update:model-value="value => form.provider_key = value as string | null" />
+          </div>
+          <UiFormField v-slot="field" label="Base URL">
+            <UiInput :input-id="field.inputId" :described-by="field.describedBy" :invalid="field.invalid" :model-value="form.base_url" :placeholder="currentProvider?.base_url_hint || '使用供应商默认地址'" :disabled="currentProvider ? !currentProvider.supports_base_url : false" @update:model-value="value => form.base_url = String(value)" />
+            <p v-if="currentProvider?.requires_base_url" class="mt-1 text-xs text-warning-strong">当前供应商必须填写 Base URL。</p>
+          </UiFormField>
+          <UiFormField v-slot="field" label="API Key">
+            <UiInput :input-id="field.inputId" :described-by="field.describedBy" :invalid="field.invalid" :model-value="form.api_key" placeholder="编辑时留空表示保持原密钥" type="password" password-toggle :disabled="currentProvider ? !currentProvider.supports_api_key : false" @update:model-value="value => form.api_key = String(value)" />
+          </UiFormField>
+        </div>
+        <p class="text-xs text-text-muted">连接凭证由后端安全存储；模型 ID 和运行参数请在模型管理中维护。</p>
+      </section>
     </div>
 
     <footer v-if="showPanelFooter && mode !== 'detail'" class="flex justify-end gap-2 border-t border-border-muted pt-4">
@@ -95,6 +112,9 @@ const emit = defineEmits<{
 }>()
 
 const readOnlyProvider = computed(() => Boolean(props.selectedProviderConfig && !props.selectedProviderConfig.editable))
+const reasoningTransportLabel = computed(() => props.currentProvider?.provider_adapter === 'openai_compatible_chat'
+  ? '支持 Models.dev 明确声明的标准 effort；其他推理参数保持自动'
+  : '支持固定协议控制；可用选项由具体模型决定')
 const canSubmitProvider = computed(() => Boolean(
   props.form.name.trim()
   && props.form.provider_key

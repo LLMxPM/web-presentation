@@ -55,8 +55,8 @@ def test_alembic_head_should_migrate_sqlite_database(tmp_path: Path) -> None:
     assert database_path.exists()
 
 
-def test_content_agent_toolset_migration_should_reset_configs_and_preserve_messages(tmp_path: Path) -> None:
-    """工具体系迁移应取消旧活动运行、清空内容助手覆盖，但保留会话历史。"""
+def test_content_agent_toolset_migration_should_reset_configs_and_runtime_history(tmp_path: Path) -> None:
+    """最终模型拆分迁移应清空旧 AI 配置及运行历史。"""
 
     backend_root = Path(__file__).resolve().parents[2]
     database_path = tmp_path / "content-agent-migration.db"
@@ -101,22 +101,14 @@ def test_content_agent_toolset_migration_should_reset_configs_and_preserve_messa
         assert connection.execute("SELECT COUNT(*) FROM ai_agent_user_configs WHERE agent_id = 'agent-coordinator'").fetchone() == (0,)
         assert connection.execute("SELECT COUNT(*) FROM ai_agent_tool_user_configs WHERE agent_id = 'agent-coordinator'").fetchone() == (0,)
         assert connection.execute("SELECT COUNT(*) FROM ai_agent_user_configs WHERE agent_id IN ('component-manager', 'resource-manager')").fetchone() == (0,)
-        assert connection.execute("SELECT status, error_code FROM ai_agent_runs WHERE run_id = 'run-old'").fetchone() == ("cancelled", "AI_TOOLSET_MIGRATED")
-        assert connection.execute("SELECT status FROM ai_agent_requirements WHERE requirement_id = 'req-old'").fetchone() == ("cancelled",)
-        assert connection.execute("SELECT status FROM ai_agent_tool_calls WHERE tool_call_id = 'call-old'").fetchone() == ("error",)
-        assert connection.execute("SELECT content FROM ai_agent_messages WHERE run_id = 'run-old'").fetchone() == ("需要保留的历史消息",)
-        session_row = connection.execute(
-            "SELECT focus_mode, pinned_project_id, work_scope_mode, allowed_project_ids_json, focus_version, deleted_at FROM ai_agent_sessions WHERE session_id = 'session-old'"
-        ).fetchone()
-        assert session_row is not None
-        assert session_row[:5] == ("follow_route", None, "workspace", "[]", 0)
-        assert session_row[5] is not None
+        for table in ("ai_agent_runs", "ai_agent_requirements", "ai_agent_tool_calls", "ai_agent_messages", "ai_agent_sessions"):
+            assert connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone() == (0,)
         columns = {row[1] for row in connection.execute("PRAGMA table_info(ai_agent_sessions)").fetchall()}
         assert {"scope_type", "project_id", "page_id", "component_id", "source"}.isdisjoint(columns)
 
 
-def test_llm_reasoning_capability_migration_should_normalize_legacy_values(tmp_path: Path) -> None:
-    """模型能力迁移应规范化旧档位，并能完整降级回旧表结构。"""
+def test_model_split_migration_should_reset_legacy_values_and_restore_empty_tables_on_downgrade(tmp_path: Path) -> None:
+    """模型拆分不迁移旧值，降级也只恢复空的旧表结构。"""
 
     backend_root = Path(__file__).resolve().parents[2]
     database_path = tmp_path / "llm-reasoning-migration.db"
@@ -155,22 +147,12 @@ def test_llm_reasoning_capability_migration_should_normalize_legacy_values(tmp_p
     _run_alembic(backend_root, env, "head")
 
     with sqlite3.connect(database_path) as connection:
-        rows = connection.execute(
-            "SELECT id, reasoning_mode, reasoning_level, context_window_tokens FROM ai_llm_configs ORDER BY id"
-        ).fetchall()
-        assert rows == [
-            (1, "auto", None, 128000),
-            (2, "enabled", "low", 128000),
-            (3, "enabled", "low", 128000),
-            (4, "enabled", "max", 128000),
-            (5, "disabled", None, 128000),
-            (6, "enabled", "high", 128000),
-            (7, "enabled", "medium", 128000),
-        ]
-        columns = {row[1] for row in connection.execute("PRAGMA table_info(ai_llm_configs)").fetchall()}
-        assert {"thinking_enabled", "thinking_effort", "max_output_tokens"}.isdisjoint(columns)
-        assert {"model_max_output_tokens", "request_max_output_tokens", "compression_target_ratio"}.isdisjoint(columns)
-        assert {"reasoning_mode", "reasoning_level", "model_capability_json"}.issubset(columns)
+        tables = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'").fetchall()}
+        assert "ai_llm_configs" not in tables
+        assert {"ai_chat_provider_configs", "ai_chat_model_configs", "ai_chat_slot_bindings"}.issubset(tables)
+        assert {"ai_image_provider_configs", "ai_image_model_configs", "ai_image_slot_bindings"}.issubset(tables)
+        assert connection.execute("SELECT COUNT(*) FROM ai_chat_model_configs").fetchone() == (0,)
+        assert connection.execute("SELECT COUNT(*) FROM ai_image_model_configs").fetchone() == (0,)
 
     _run_alembic(backend_root, env, "20260809_0100", command="downgrade")
 
@@ -178,9 +160,7 @@ def test_llm_reasoning_capability_migration_should_normalize_legacy_values(tmp_p
         columns = {row[1] for row in connection.execute("PRAGMA table_info(ai_llm_configs)").fetchall()}
         assert {"thinking_enabled", "thinking_effort", "max_output_tokens"}.issubset(columns)
         assert {"reasoning_mode", "reasoning_level", "model_capability_json"}.isdisjoint(columns)
-        assert connection.execute(
-            "SELECT thinking_enabled, thinking_effort, max_output_tokens FROM ai_llm_configs WHERE id = 4"
-        ).fetchone() == (1, "max", 32768)
+        assert connection.execute("SELECT COUNT(*) FROM ai_llm_configs").fetchone() == (0,)
 
 
 def _run_alembic(backend_root: Path, env: dict[str, str], revision: str, *, command: str = "upgrade") -> None:

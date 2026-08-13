@@ -8,7 +8,7 @@ from typing import Any, Literal, Protocol, TYPE_CHECKING
 from app.core.exceptions import AppException
 
 if TYPE_CHECKING:
-    from app.models.ai_llm import AiLlmConfig
+    from app.models.ai_image_model import AiImageModelConfig
 
 
 @dataclass(slots=True)
@@ -112,23 +112,23 @@ class ImageProviderResult:
 class ImageGenerationAdapter(Protocol):
     """约束供应商提交、恢复和取消生命周期，不区分同步或异步实现。"""
 
-    def validate(self, config: AiLlmConfig, model: ImageModelSpec, request: ImageGenerationInput) -> None: ...
+    def validate(self, config: AiImageModelConfig, model: ImageModelSpec, request: ImageGenerationInput) -> None: ...
 
     async def submit(
         self,
-        config: AiLlmConfig,
+        config: AiImageModelConfig,
         model: ImageModelSpec,
         request: ImageGenerationInput,
     ) -> ImageProviderResult: ...
 
     async def resume(
         self,
-        config: AiLlmConfig,
+        config: AiImageModelConfig,
         model: ImageModelSpec,
         cursor: ProviderTaskCursor,
     ) -> ImageProviderResult: ...
 
-    async def cancel(self, config: AiLlmConfig, cursor: ProviderTaskCursor) -> bool: ...
+    async def cancel(self, config: AiImageModelConfig, cursor: ProviderTaskCursor) -> bool: ...
 
 
 def validate_model_request(model: ImageModelSpec, request: ImageGenerationInput) -> None:
