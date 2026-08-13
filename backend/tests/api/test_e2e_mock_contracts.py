@@ -122,6 +122,13 @@ async def test_seed_should_bind_three_mock_slots_and_report_ready(
         assert agent["model_name"] == "Smoke E2E Mock Agent" and agent["binding_ready"] is True
         assert vision["model_name"] == "Smoke E2E Mock Vision" and vision["binding_ready"] is True
         assert image["model_name"] == "Smoke E2E Mock Image" and image["binding_ready"] is True
+
+        workspaces = (await client.get("/api/workspaces")).json()
+        workspace_id = next(item["id"] for item in workspaces["items"] if item["name"] == "Smoke Workspace")
+        agents = (await client.get(f"/api/ai/agents?workspace_id={workspace_id}")).json()
+        coordinator = next(item for item in agents if item["id"] == "agent-coordinator")
+        assert coordinator["image_generation_available"] is True
+        assert coordinator["image_analysis_available"] is True
     finally:
         await _teardown_mock_client(client)
 
@@ -177,3 +184,23 @@ async def test_update_config_should_reject_switching_to_e2e_mock_model(
     )
     assert response.status_code == 400
     assert response.json()["code"] == "AI_LLM_E2E_MOCK_ENVIRONMENT_REQUIRED"
+
+
+async def test_agents_should_report_image_generation_unavailable_without_binding(
+    authenticated_client: AsyncClient,
+) -> None:
+    """未配置图片生成模型时，Agent 列表必须把 generate_image 标记为不可用。"""
+
+    workspace = await authenticated_client.post(
+        "/api/workspaces",
+        json={"name": "Agent 图片可用性断言工作空间"},
+    )
+    assert workspace.status_code == 200
+
+    agents = (await authenticated_client.get(
+        f"/api/ai/agents?workspace_id={workspace.json()['id']}"
+    )).json()
+    coordinator = next(item for item in agents if item["id"] == "agent-coordinator")
+    assert coordinator["image_generation_available"] is False
+    assert coordinator["image_generation_unavailable_reason"] == "请前往 AI 设置配置图片生成模型。"
+    assert coordinator["image_analysis_available"] is False

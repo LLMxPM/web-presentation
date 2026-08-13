@@ -92,12 +92,23 @@ async def test_visual_slot_availability_filters_groups_independently(monkeypatch
     """内容助手应按两个槽位分别裁剪工具，且 external job 续跑保留原工具定义。"""
 
     class FakeLlmService:
-        async def get_slot_binding_lookup(self):  # noqa: ANN201
-            return {
-                "image_understanding": SimpleNamespace(binding_ready=True),
-                "image_generation": SimpleNamespace(binding_ready=False),
-            }
+        session = object()
+        user_id = 1
+        user_role = "workspace_user"
 
+        async def get_slot_binding_lookup(self):  # noqa: ANN201
+            return {"image_understanding": SimpleNamespace(binding_ready=True)}
+
+    class FakeImageConfigService:
+        def __init__(self, session, *, user_id, user_role):  # noqa: ANN001, ANN003
+            assert session is FakeLlmService.session
+            assert user_id == 1
+            assert user_role == "workspace_user"
+
+        async def get_binding(self):  # noqa: ANN201
+            return SimpleNamespace(binding_ready=False)
+
+    monkeypatch.setattr("app.ai.visual_tool_runtime.AiImageConfigService", FakeImageConfigService)
     facade = object.__new__(AgentSessionFacade)
     monkeypatch.setattr(facade, "_llm_service", lambda: FakeLlmService())
 
@@ -120,17 +131,29 @@ async def test_visual_tool_runtime_should_resolve_bound_image_model_once(monkeyp
     """视觉工具运行态应同时返回可见性、模型能力和同轮执行配置 ID。"""
 
     class FakeLlmService:
-        async def get_slot_binding_lookup(self):  # noqa: ANN201
-            return {
-                "image_understanding": SimpleNamespace(binding_ready=True),
-                "image_generation": SimpleNamespace(
-                    binding_ready=True,
-                    provider_key="dashscope_image",
-                    model_id="wan2.7-image-pro",
-                    llm_config_id=17,
-                ),
-            }
+        session = object()
+        user_id = 1
+        user_role = "workspace_user"
 
+        async def get_slot_binding_lookup(self):  # noqa: ANN201
+            return {"image_understanding": SimpleNamespace(binding_ready=True)}
+
+    class FakeImageConfigService:
+        def __init__(self, session, *, user_id, user_role):  # noqa: ANN001, ANN003
+            pass
+
+        async def get_binding(self):  # noqa: ANN201
+            return SimpleNamespace(binding_ready=True, model_config_id=17)
+
+        async def _model(self, row_id, *, selectable=False):  # noqa: ANN001
+            assert row_id == 17
+            assert selectable is True
+            return SimpleNamespace(
+                model_id="wan2.7-image-pro",
+                provider_config=SimpleNamespace(provider_key="dashscope_image"),
+            )
+
+    monkeypatch.setattr("app.ai.visual_tool_runtime.AiImageConfigService", FakeImageConfigService)
     facade = object.__new__(AgentSessionFacade)
     monkeypatch.setattr(facade, "_llm_service", lambda: FakeLlmService())
 

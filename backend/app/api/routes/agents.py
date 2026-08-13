@@ -43,6 +43,7 @@ from app.schemas.agent_config import (
     AgentToolConfigUpdateRequest,
 )
 from app.services.ai_agent_config_service import AiAgentConfigService
+from app.services.ai_image_config_service import AiImageConfigService
 from app.services.ai_llm_service import AiLlmService
 from app.services.agent_image_attachment_service import AgentImageAttachmentService
 from app.services.auth_service import AuthContext
@@ -84,6 +85,11 @@ async def list_agents(
     registry = _get_agent_registry(request)
     slot_lookup = await AiLlmService(session, user_id=current.user.id).get_slot_binding_lookup()
     config_service = AiAgentConfigService(session, user_id=current.user.id)
+    image_service = AiImageConfigService(
+        session,
+        user_id=current.user.id,
+        user_role=current.user.role,
+    )
     descriptors = registry.list_descriptors()
     if agent_id:
         descriptors = [registry.get_descriptor(agent_id)]
@@ -92,7 +98,7 @@ async def list_agents(
         agent_config = await config_service.get_config_summary(descriptor.id)
         binding = slot_lookup.get(descriptor.llm_slot) if descriptor.llm_slot else None
         image_analysis_binding = slot_lookup.get("image_understanding")
-        image_generation_binding = slot_lookup.get("image_generation")
+        image_generation_binding = await image_service.get_binding()
         required_llm_slots = _resolve_required_llm_slots(registry, descriptor)
         llm_binding_ready = bool(required_llm_slots) and all(
             bool((slot_lookup.get(slot) if slot else None) and slot_lookup[slot].binding_ready)
