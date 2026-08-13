@@ -42,8 +42,8 @@ def upgrade() -> None:
         sa.Column("finished_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("error_code", sa.String(128), nullable=True),
         sa.Column("error_message", sa.Text(), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
+        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
         sa.UniqueConstraint("run_id", "sequence_no", name="uq_ai_external_batches_run_sequence"),
     )
     op.create_table(
@@ -71,8 +71,8 @@ def upgrade() -> None:
         sa.Column("error_message", sa.Text(), nullable=True),
         sa.Column("started_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("finished_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
+        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
         sa.UniqueConstraint("run_id", "tool_call_id", name="uq_ai_external_tasks_run_tool_call"),
     )
     op.create_table(
