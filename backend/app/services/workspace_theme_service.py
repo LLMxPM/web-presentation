@@ -34,8 +34,8 @@ from app.schemas.theme import (
 )
 
 DEFAULT_THEME_KEY = "lightblue"
-DEFAULT_THEME_NAME = "白底蓝色"
-DEFAULT_THEME_DESCRIPTION = "白底蓝色主题，简约经典"
+DEFAULT_THEME_NAME = "明亮多彩"
+DEFAULT_THEME_DESCRIPTION = "浅底明亮主题，现代多彩风格"
 DEFAULT_THEME_LOGO_PATH = None
 DEFAULT_THEME_INVERT_LOGO_PATH = None
 DEFAULT_THEME_PROJECT_ICON_NAME = None
@@ -45,30 +45,30 @@ DEFAULT_THEME_CODE_FONT = PLATFORM_MONO_FONT
 DEFAULT_THEME_PALETTE = ThemePalette.model_validate(
     {
         "text": {
-            "primary": "#0D286A",
-            "secondary": "#1D5297",
-            "invert": "#ffffff",
+            "primary": "#1F2937",
+            "secondary": "#6B7280",
+            "invert": "#FFFFFF",
         },
         "background": {
-            "default": "#ffffff",
-            "invert": "#0D286A",
+            "default": "#FAFBFC",
+            "invert": "#1F2937",
         },
         "border": {
-            "default": "#e5e7eb",
-            "subtle": "#d1d5db",
+            "default": "#E5E7EB",
+            "subtle": "#D1D5DB",
         },
         "link": {
-            "default": "#3b82f6",
-            "hover": "#2563eb",
-            "visited": "#7c3aed",
+            "default": "#3B82F6",
+            "hover": "#2563EB",
+            "visited": "#8B5CF6",
         },
         "accent": [
-            "#0D286A",
-            "#260E6D",
-            "#9E8403",
-            "#9E6B03",
-            "#A110AB",
-            "#C5003C",
+            "#3B82F6",
+            "#8B5CF6",
+            "#EC4899",
+            "#10B981",
+            "#F59E0B",
+            "#EF4444",
         ],
     }
 )
