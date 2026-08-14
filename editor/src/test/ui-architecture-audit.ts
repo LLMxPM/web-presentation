@@ -83,6 +83,7 @@ const NATIVE_CONTROL_EXEMPTIONS: NativeControlExemption[] = [
   { relativePath: 'components/page/PageCard.vue', tag: 'button', expectedCount: 1, reason: '页面编码内联复制触发按钮', attributePattern: /\baria-label\s*=\s*.*复制页面编码：/i },
   { relativePath: 'components/agent/AgentFloatingTrigger.vue', tag: 'button', expectedCount: 1, reason: '可拖拽悬浮 AI 形象入口，依赖原生指针事件与固定定位' },
   { relativePath: 'components/agent/AgentEntitySummaryCards.vue', tag: 'button', expectedCount: 1, reason: '实体总结快捷卡片整行打开触发区' },
+  { relativePath: 'components/agent/AgentRunContextCard.vue', tag: 'button', expectedCount: 1, reason: '本轮工作焦点跳转触发按钮' },
 ]
 
 /**

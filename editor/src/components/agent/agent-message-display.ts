@@ -10,7 +10,9 @@ import { APP_TIMEZONE } from '@/utils/timezone'
 
 export const toolStatusLabelMap: Record<ToolCallDetail['status'], string> = {
   running: '进行中',
+  waiting_external: '后台处理中',
   completed: '已完成',
+  cancelled: '已取消',
   error: '失败',
   interrupted: '执行结果未知',
 }
