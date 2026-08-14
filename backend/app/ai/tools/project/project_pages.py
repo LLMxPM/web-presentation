@@ -11,15 +11,22 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.ai.auth_tokens import PROJECT_TOOL_WRITE_SCOPES, extract_user_id
 from app.ai.page_mutation_enqueue import enqueue_page_mutation
+from app.ai.external_task_enqueue_timeout import ExternalTaskEnqueueDeadline
 from app.ai.tools.shared import resolve_tool_context
 from app.core.exceptions import AppException
 from app.models.enums import PageFileType, RecordStatus
-from app.schemas.page import PageCopyToProjectRequest, PageCreateRequest, PageUpdateRequest
+from app.schemas.page import (
+    PageCopyToProjectRequest,
+    PageCreateRequest,
+    PageUpdateRequest,
+)
 from app.services.code_check_service import CodeCheckService
 from app.services.page_service import PageService
 
 
-def build_project_page_tools(session_factory: async_sessionmaker[AsyncSession]) -> list[Any]:
+def build_project_page_tools(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> list[Any]:
     """构建项目页面结构管理工具列表。"""
 
     return [
@@ -28,7 +35,9 @@ def build_project_page_tools(session_factory: async_sessionmaker[AsyncSession]) 
     ]
 
 
-def build_create_project_page_tool(session_factory: async_sessionmaker[AsyncSession]) -> Any:
+def build_create_project_page_tool(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> Any:
     """构建项目页面创建工具。"""
 
     @agent_tool(show_result=False, sequential=True)
@@ -47,7 +56,11 @@ def build_create_project_page_tool(session_factory: async_sessionmaker[AsyncSess
         normalized_title = str(title or "").strip()
         normalized_page_content = str(page_content or "")
         if not normalized_title:
-            raise AppException(status_code=400, code="AI_PAGE_TITLE_REQUIRED", detail="页面标题不能为空。")
+            raise AppException(
+                status_code=400,
+                code="AI_PAGE_TITLE_REQUIRED",
+                detail="页面标题不能为空。",
+            )
         if not normalized_page_content.strip():
             raise AppException(
                 status_code=400,
@@ -55,27 +68,39 @@ def build_create_project_page_tool(session_factory: async_sessionmaker[AsyncSess
                 detail="创建页面时必须提供非空 page_content。建议先写入结构清晰、可运行的占位 Vue SFC，后续再切换到页面上下文细化。",
             )
 
-        dependencies, claims = await resolve_tool_context(session_factory,
-            run_context,
-            required_scopes=PROJECT_TOOL_WRITE_SCOPES,
-            required_dependency_fields=("workspace_id", "project_id"),
+        enqueue_deadline = ExternalTaskEnqueueDeadline.start()
+        dependencies, claims = await enqueue_deadline.wait(
+            resolve_tool_context(
+                session_factory,
+                run_context,
+                required_scopes=PROJECT_TOOL_WRITE_SCOPES,
+                required_dependency_fields=("workspace_id", "project_id"),
+            )
         )
         operator_id = extract_user_id(str(claims.get("sub")))
-        deferred_tool_call_id = str(dependencies.get("current_tool_call_id") or "").strip()
+        deferred_tool_call_id = str(
+            dependencies.get("current_tool_call_id") or ""
+        ).strip()
         member_run_id = str(dependencies.get("member_run_id") or "").strip() or None
-        tool_call_id = f"{member_run_id}:{deferred_tool_call_id}" if member_run_id and deferred_tool_call_id else deferred_tool_call_id
+        tool_call_id = (
+            f"{member_run_id}:{deferred_tool_call_id}"
+            if member_run_id and deferred_tool_call_id
+            else deferred_tool_call_id
+        )
         if deferred_tool_call_id:
-            enqueued = await enqueue_page_mutation(
-                session_factory,
-                run_id=run_context.run_id,
-                session_id=run_context.session_id,
-                run_step=int(dependencies.get("current_run_step") or 0),
-                tool_call_id=tool_call_id,
-                deferred_tool_call_id=deferred_tool_call_id,
-                member_run_id=member_run_id,
-                operation="create_page",
-                workspace_id=int(dependencies["workspace_id"]),
-                project_id=int(dependencies["project_id"]),
+            enqueued = await enqueue_deadline.wait(
+                enqueue_page_mutation(
+                    session_factory,
+                    run_id=run_context.run_id,
+                    session_id=run_context.session_id,
+                    run_step=int(dependencies.get("current_run_step") or 0),
+                    tool_call_id=tool_call_id,
+                    deferred_tool_call_id=deferred_tool_call_id,
+                    member_run_id=member_run_id,
+                    operation="create_page",
+                    workspace_id=int(dependencies["workspace_id"]),
+                    project_id=int(dependencies["project_id"]),
+                )
             )
             raise CallDeferred(metadata=enqueued.as_metadata())
         async with session_factory() as session:
@@ -129,7 +154,9 @@ def build_create_project_page_tool(session_factory: async_sessionmaker[AsyncSess
     return create_project_page
 
 
-def build_update_page_metadata_tool(session_factory: async_sessionmaker[AsyncSession]) -> Any:
+def build_update_page_metadata_tool(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> Any:
     """构建页面标题与说明维护工具。"""
 
     @agent_tool(show_result=False)
@@ -151,9 +178,14 @@ def build_update_page_metadata_tool(session_factory: async_sessionmaker[AsyncSes
             )
         normalized_title = None if title is None else str(title).strip()
         if title is not None and not normalized_title:
-            raise AppException(status_code=400, code="AI_PAGE_TITLE_REQUIRED", detail="页面标题不能为空。")
+            raise AppException(
+                status_code=400,
+                code="AI_PAGE_TITLE_REQUIRED",
+                detail="页面标题不能为空。",
+            )
 
-        dependencies, claims = await resolve_tool_context(session_factory,
+        dependencies, claims = await resolve_tool_context(
+            session_factory,
             run_context,
             required_scopes=PROJECT_TOOL_WRITE_SCOPES,
             required_dependency_fields=("workspace_id", "project_id"),
@@ -170,7 +202,9 @@ def build_update_page_metadata_tool(session_factory: async_sessionmaker[AsyncSes
                 expected_workspace_id=workspace_id,
                 expected_project_id=project_id,
             )
-            update_payload: dict[str, Any] = {"change_note": change_note or "AI 助手页面元数据更新"}
+            update_payload: dict[str, Any] = {
+                "change_note": change_note or "AI 助手页面元数据更新"
+            }
             if title is not None:
                 update_payload["title"] = normalized_title
             if summary is not None:
@@ -206,7 +240,10 @@ def _ensure_page_scope(
 ) -> None:
     """校验页面属于当前项目，避免跨项目维护页面元数据。"""
 
-    if page_workspace_id != expected_workspace_id or page_project_id != expected_project_id:
+    if (
+        page_workspace_id != expected_workspace_id
+        or page_project_id != expected_project_id
+    ):
         raise AppException(
             status_code=403,
             code="AI_PAGE_SCOPE_DENIED",

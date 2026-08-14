@@ -5,6 +5,9 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
+import pytest
+from pydantic_ai import CallDeferred
+
 from app.ai.agent import AGENT_COORDINATOR_AGENT_ID
 from app.ai.auth_tokens import (
     CODE_CHECK_TOOL_SCOPES,
@@ -24,7 +27,12 @@ from app.ai.tools.component.component_library import (
 )
 from app.ai.tools.shared import calculate_source_hash
 from app.db.session import get_session_factory
-from app.models.enums import PageFileType, RecordStatus, UserRole, WorkspaceComponentType
+from app.models.enums import (
+    PageFileType,
+    RecordStatus,
+    UserRole,
+    WorkspaceComponentType,
+)
 from app.models.user import User
 from app.schemas.component import WorkspaceComponentItem
 from app.services.auth_service import AuthContext
@@ -47,7 +55,9 @@ class _TransactionProbeSession:
         self.commit_count += 1
 
 
-async def test_component_code_check_should_release_transaction_before_slow_diagnostics() -> None:
+async def test_component_code_check_should_release_transaction_before_slow_diagnostics() -> (
+    None
+):
     """组件Worker可复用Session对象，但不得跨Runtime/Chromium等待持有数据库事务。"""
 
     session = _TransactionProbeSession()
@@ -115,11 +125,13 @@ def _failed_validation() -> dict[str, object]:
         "valid": False,
         "status": "failed",
         "retryable": False,
-        "diagnostics": [{
-            "severity": "error",
-            "code": "COMPONENT_RENDER_EMPTY",
-            "message": "组件没有可见内容。",
-        }],
+        "diagnostics": [
+            {
+                "severity": "error",
+                "code": "COMPONENT_RENDER_EMPTY",
+                "message": "组件没有可见内容。",
+            }
+        ],
     }
 
 
@@ -166,7 +178,9 @@ async def test_create_component_should_validate_before_writing(monkeypatch) -> N
     assert calls == {"check": 1, "create": 0}
 
 
-async def test_preview_schema_update_should_validate_before_writing(monkeypatch) -> None:
+async def test_preview_schema_update_should_validate_before_writing(
+    monkeypatch,
+) -> None:
     """preview_schema 候选校验失败时不得调用组件更新服务。"""
 
     calls = {"check": 0, "update": 0}
@@ -212,7 +226,13 @@ async def test_preview_schema_update_should_validate_before_writing(monkeypatch)
 def _passed_validation() -> dict[str, object]:
     """返回确定性的校验通过结果。"""
 
-    return {"success": True, "valid": True, "status": "passed", "retryable": False, "diagnostics": []}
+    return {
+        "success": True,
+        "valid": True,
+        "status": "passed",
+        "retryable": False,
+        "diagnostics": [],
+    }
 
 
 def _component_item(
@@ -249,7 +269,9 @@ def _component_item(
     )
 
 
-def _assert_component_summary_without_echo(summary: dict[str, object], expected: WorkspaceComponentItem) -> None:
+def _assert_component_summary_without_echo(
+    summary: dict[str, object], expected: WorkspaceComponentItem
+) -> None:
     """断言写入结果只包含摘要字段，不回显源码与 preview_schema。"""
 
     assert summary["id"] == expected.id
@@ -259,7 +281,9 @@ def _assert_component_summary_without_echo(summary: dict[str, object], expected:
     assert "preview_schema" not in summary
 
 
-async def test_create_component_result_should_return_summary_without_source_echo(monkeypatch) -> None:
+async def test_create_component_result_should_return_summary_without_source_echo(
+    monkeypatch,
+) -> None:
     """创建成功后只返回组件摘要，不回显模型刚提交的源码与 preview_schema。"""
 
     created_item = _component_item()
@@ -288,7 +312,9 @@ async def test_create_component_result_should_return_summary_without_source_echo
     _assert_component_summary_without_echo(result["component"], created_item)
 
 
-async def test_apply_component_edits_result_should_return_summary_without_source_echo(monkeypatch) -> None:
+async def test_apply_component_edits_result_should_return_summary_without_source_echo(
+    monkeypatch,
+) -> None:
     """组件源码 edits 成功后只返回摘要和编辑元数据，不回显完整源码。"""
 
     base_content = "<template><div>旧文案</div></template>"
@@ -326,7 +352,69 @@ async def test_apply_component_edits_result_should_return_summary_without_source
     _assert_component_summary_without_echo(result["component"], updated_item)
 
 
-async def test_update_component_metadata_result_should_return_summary_without_source_echo(monkeypatch) -> None:
+async def test_apply_component_edits_should_normalize_generic_dicts_before_enqueue(
+    monkeypatch,
+) -> None:
+    """通用update_entity内部分派的字典edits应正常入队，不得调用不存在的model_dump。"""
+
+    captured: dict[str, object] = {}
+
+    async def fake_resolve_tool_context(*args: object, **kwargs: object):
+        _ = args, kwargs
+        return {
+            "workspace_id": 7,
+            "current_tool_call_id": "tool-component-dict-edits",
+        }, {"sub": "user:1"}
+
+    async def fake_enqueue_component_mutation(*args: object, **kwargs: object):
+        _ = args
+        captured.update(kwargs)
+        return SimpleNamespace(
+            as_metadata=lambda: {
+                "kind": "component_mutation",
+                "external_task_id": "task-1",
+            }
+        )
+
+    monkeypatch.setattr(
+        component_library_tools, "resolve_tool_context", fake_resolve_tool_context
+    )
+    monkeypatch.setattr(
+        component_library_tools,
+        "enqueue_component_mutation",
+        fake_enqueue_component_mutation,
+    )
+    tool = build_apply_component_edits_tool(get_session_factory())
+
+    with pytest.raises(CallDeferred):
+        await tool.entrypoint(
+            _build_context(COMPONENT_TOOL_WRITE_SCOPES),
+            component_id=89,
+            edits=[
+                {
+                    "type": "replace_exact",
+                    "old_text": "旧标题",
+                    "new_text": "新标题",
+                }
+            ],
+            base_draft_hash="a" * 64,
+            base_published_version_no=0,
+        )
+
+    assert captured["arguments"] == {
+        "component_id": 89,
+        "edits": [
+            {"type": "replace_exact", "old_text": "旧标题", "new_text": "新标题"}
+        ],
+        "base_draft_hash": "a" * 64,
+        "base_published_version_no": 0,
+        "change_note": None,
+    }
+
+
+async def test_update_component_metadata_result_should_return_summary_without_source_echo(
+    monkeypatch,
+) -> None:
     """组件元数据更新成功后只返回摘要，不回显源码与 preview_schema。"""
 
     base_component = _component_item()
@@ -357,7 +445,9 @@ async def test_update_component_metadata_result_should_return_summary_without_so
     _assert_component_summary_without_echo(result["component"], updated_item)
 
 
-async def test_publish_component_result_should_return_summary_without_source_echo(monkeypatch) -> None:
+async def test_publish_component_result_should_return_summary_without_source_echo(
+    monkeypatch,
+) -> None:
     """组件发布成功后只返回摘要和引用用法，不回显源码与 preview_schema。"""
 
     base_component = _component_item()
@@ -388,7 +478,9 @@ async def test_publish_component_result_should_return_summary_without_source_ech
     _assert_component_summary_without_echo(result["component"], published_item)
 
 
-async def test_independent_component_check_should_forward_component_type(monkeypatch) -> None:
+async def test_independent_component_check_should_forward_component_type(
+    monkeypatch,
+) -> None:
     """独立组件 check 应把候选类型传给同一校验内核。"""
 
     captured: dict[str, object] = {}
@@ -400,7 +492,9 @@ async def test_independent_component_check_should_forward_component_type(monkeyp
     monkeypatch.setattr(CodeCheckService, "check_component_code", fake_check)
     _patch_resolved_tool_context(monkeypatch, code_check_tools)
     tool = build_check_component_code_tool(get_session_factory())
-    scopes = tuple(dict.fromkeys((*COMPONENT_TOOL_READ_SCOPES, *CODE_CHECK_TOOL_SCOPES)))
+    scopes = tuple(
+        dict.fromkeys((*COMPONENT_TOOL_READ_SCOPES, *CODE_CHECK_TOOL_SCOPES))
+    )
 
     result = await tool.entrypoint(
         _build_context(scopes),

@@ -32,7 +32,7 @@ from app.ai.run_write_fence import AgentRunWriteFenceLost
 from app.ai.tool_arguments import parse_tool_arguments
 from app.core.exceptions import AppException
 from app.core.config import get_settings
-from app.models.ai_agent_runtime import AiAgentRun
+from app.models.ai_agent_runtime import AiAgentRequirement, AiAgentRun
 from app.schemas.agent import AgentPendingRequirement, AgentRunEvent
 
 logger = logging.getLogger(__name__)
@@ -89,6 +89,8 @@ class PydanticAgentRunner:
         context_budget: AgentHistoryBudget | None = None,
         context_processor: AgentContextLimitProcessor | None = None,
         message_image_refs: list[dict[str, Any]] | None = None,
+        consuming_requirement: AiAgentRequirement | None = None,
+        requirement_resolution_payload: dict[str, Any] | None = None,
     ) -> AsyncGenerator[bytes, None]:
         """执行一次 Pydantic AI run 并输出平台 SSE。"""
 
@@ -110,6 +112,8 @@ class PydanticAgentRunner:
                 context_budget=context_budget,
                 context_processor=context_processor,
                 message_image_refs=message_image_refs,
+                consuming_requirement=consuming_requirement,
+                requirement_resolution_payload=requirement_resolution_payload,
             )
         )
         try:
@@ -155,12 +159,15 @@ class PydanticAgentRunner:
         context_budget: AgentHistoryBudget | None = None,
         context_processor: AgentContextLimitProcessor | None = None,
         message_image_refs: list[dict[str, Any]] | None = None,
+        consuming_requirement: AiAgentRequirement | None = None,
+        requirement_resolution_payload: dict[str, Any] | None = None,
     ) -> AsyncGenerator[bytes, None]:
-        """执行 Pydantic AI run 并写入平台事件；直接产物仅供内部消费。"""
+        """执行Pydantic AI run；首个模型响应落库时原子确认已消费Requirement。"""
 
         content_parts: list[str] = []
         reasoning_parts: list[str] = []
         final_messages: list[dict[str, Any]] = []
+        requirement_consumed = False
         base_run_message_history = _message_dicts(
             run_model.message_history_json if isinstance(run_model.message_history_json, list) else []
         )
@@ -270,6 +277,14 @@ class PydanticAgentRunner:
                             context_processor=context_processor,
                             message_image_refs=message_image_refs,
                         )
+                        if consuming_requirement is not None and not requirement_consumed:
+                            # Deferred结果只有在首个模型响应及其历史已经生成后才算真正被消费；
+                            # 与model.request.completed事件共用一次提交，禁止新Requirement先于旧Requirement终态可见。
+                            await self._store.resolve_requirement(
+                                consuming_requirement,
+                                payload=requirement_resolution_payload or {},
+                            )
+                            requirement_consumed = True
                         yield await self._yield_and_store(
                             run_model,
                             AgentRunEvent(event="model.request.completed", run_id=run_model.run_id, session_id=run_model.session_id),

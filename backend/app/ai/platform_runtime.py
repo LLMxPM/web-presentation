@@ -213,9 +213,6 @@ class PlatformAgentRuntimeStore:
 
         active_run = await self.get_active_run_model(session_id=session_id, agent_id=agent_id)
         if active_run is not None:
-            recovered_event = await self.recover_stale_active_run(run_model=active_run)
-            if recovered_event is not None:
-                return
             raise ValueError("AI_SESSION_RUN_ACTIVE")
 
     async def start_run(
@@ -740,8 +737,12 @@ class PlatformAgentRuntimeStore:
         *,
         payload: dict[str, Any],
     ) -> None:
-        """标记 requirement 已解决。"""
+        """幂等标记Requirement已解决，禁止覆盖失败或取消终态。"""
 
+        if requirement.status == "resolved":
+            return
+        if requirement.status not in {"pending", "resolving"}:
+            raise ValueError("AI_RUN_REQUIREMENT_STALE")
         requirement.status = "resolved"
         requirement.resolved_payload_json = payload
         requirement.resolved_at = _utc_now()
@@ -775,13 +776,7 @@ class PlatformAgentRuntimeStore:
             )
             .order_by(AiAgentRun.created_at.desc())
         )
-        active_run = result.scalars().first()
-        if active_run is None:
-            return None
-        recovered_event = await self.recover_stale_active_run(run_model=active_run)
-        if recovered_event is not None:
-            return None
-        return active_run
+        return result.scalars().first()
 
     async def get_latest_run_model(self, *, session_id: str, agent_id: str) -> AiAgentRun | None:
         """读取最近一次 run。"""
@@ -819,10 +814,6 @@ class PlatformAgentRuntimeStore:
 
         session_model = await self.require_session(session_id=session_id, agent_id=agent_id)
         latest_run = await self.get_latest_run_model(session_id=session_id, agent_id=agent_id)
-        if latest_run is not None and latest_run.status in ACTIVE_RUN_STATUSES:
-            recovered_event = await self.recover_stale_active_run(run_model=latest_run)
-            if recovered_event is not None:
-                latest_run = await self.get_latest_run_model(session_id=session_id, agent_id=agent_id)
         active_run = self.map_active_run(latest_run) if latest_run is not None and latest_run.status in ACTIVE_RUN_STATUSES else None
         last_run = self.map_active_run(latest_run) if latest_run is not None and latest_run.status not in ACTIVE_RUN_STATUSES else None
         timeline_items = await self.build_timeline_items(session_id=session_id)
@@ -1959,6 +1950,8 @@ async def stream_replay_then_subscribe(
 ) -> AsyncGenerator[bytes, None]:
     """先从数据库回放事件，再订阅本进程实时事件，并用数据库轮询兜底跨进程恢复。"""
 
+    # 兼容既有调用参数；观察链路不再依据空闲时间改变Run终态。
+    _ = idle_timeout_seconds
     last_index = event_index
     for event in await store.replay_events(run_id=run_id, event_index=last_index):
         yield encode_sse_event(event)
@@ -1985,13 +1978,6 @@ async def stream_replay_then_subscribe(
                     continue
                 run_status = await store.get_run_status(run_id=run_id)
                 if run_status in TERMINAL_RUN_STATUSES or run_status == "paused":
-                    return
-                recovered_event = await store.recover_stale_active_run(
-                    run_id=run_id,
-                    idle_timeout_seconds=idle_timeout_seconds,
-                )
-                if recovered_event is not None:
-                    yield encode_sse_event(recovered_event)
                     return
                 now = monotonic()
                 if now - last_keepalive_at >= _SSE_KEEPALIVE_INTERVAL_SECONDS:

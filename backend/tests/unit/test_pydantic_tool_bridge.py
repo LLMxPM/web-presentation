@@ -19,6 +19,7 @@ from app.ai.platform_tools import AgentToolContext, AgentToolResult, agent_tool
 from app.ai.pydantic_runner import _requirement_from_deferred, _safe_messages
 from app.ai.pydantic_tools import (
     AgentToolDeps,
+    _is_recoverable_tool_exception,
     _recoverable_tool_error_hint,
     _safe_tool_result,
     _wrap_platform_tool,
@@ -30,6 +31,19 @@ from app.ai.tools.visual.generate_image import build_generate_image_tool
 from app.ai.tools.project.project_pages import build_create_project_page_tool
 from app.schemas.agent import AgentScopeContext
 from app.services.image_generation.registry import get_image_model_spec
+
+
+def test_external_enqueue_timeout_should_be_recoverable_by_parent_model() -> None:
+    """入队短超时应作为结构化工具结果回灌，而不是直接终止整个Run。"""
+
+    error = AppException(
+        status_code=503,
+        code="AI_EXTERNAL_TASK_ENQUEUE_TIMEOUT",
+        detail="后台任务入队超时。",
+    )
+
+    assert _is_recoverable_tool_exception(error) is True
+    assert "先查询目标实体" in _recoverable_tool_error_hint(error.code)
 
 
 def test_pydantic_tool_bridge_should_expose_tool_instructions_in_description() -> None:

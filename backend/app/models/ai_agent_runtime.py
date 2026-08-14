@@ -130,6 +130,15 @@ class AiAgentRequirement(TimestampMixin, Base):
     """保存待用户处理的确认、反馈或外部工具结果请求。"""
 
     __tablename__ = "ai_agent_requirements"
+    __table_args__ = (
+        Index(
+            "uq_ai_agent_requirements_active_external_run",
+            "run_id",
+            unique=True,
+            sqlite_where=text("kind = 'external_job' AND status IN ('pending','resolving')"),
+            postgresql_where=text("kind = 'external_job' AND status IN ('pending','resolving')"),
+        ),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     requirement_id: Mapped[str] = mapped_column(String(128), nullable=False, unique=True, index=True)

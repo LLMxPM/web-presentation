@@ -118,8 +118,8 @@ class ExternalBatchContinuationWriteFence:
     worker_id: str
     lease_generation: int
 
-    def batch_conditions(self, now: datetime) -> tuple[Any, ...]:
-        """返回统一Batch当前租约条件。"""
+    def lease_conditions(self, now: datetime) -> tuple[Any, ...]:
+        """返回不含Run状态的租约条件，供协调器在Run终态后执行Batch收尾。"""
 
         return (
             AiAgentExternalBatch.batch_id == self.batch_id,
@@ -128,6 +128,13 @@ class ExternalBatchContinuationWriteFence:
             AiAgentExternalBatch.lease_generation == self.lease_generation,
             AiAgentExternalBatch.lease_expires_at.is_not(None),
             AiAgentExternalBatch.lease_expires_at > now,
+        )
+
+    def batch_conditions(self, now: datetime) -> tuple[Any, ...]:
+        """返回统一Batch租约及Run写权限条件。"""
+
+        return (
+            *self.lease_conditions(now),
             exists(
                 select(AiAgentRun.run_id).where(
                     AiAgentRun.run_id == AiAgentExternalBatch.run_id,

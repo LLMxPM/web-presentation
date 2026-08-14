@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from typing import Any
+from pydantic import TypeAdapter
 from pydantic_ai import CallDeferred
 
 from app.ai.platform_tools import AgentToolContext, AgentToolResult, agent_tool
@@ -43,12 +44,21 @@ from app.schemas.component import (
     WorkspaceComponentPublishRequest,
     WorkspaceComponentUpdateRequest,
 )
-from app.services.code_check_service import CodeCheckService, build_code_check_failed_result
+from app.services.code_check_service import (
+    CodeCheckService,
+    build_code_check_failed_result,
+)
 from app.services.workspace_component_service import WorkspaceComponentService
 from app.ai.component_mutation_enqueue import enqueue_component_mutation
+from app.ai.external_task_enqueue_timeout import ExternalTaskEnqueueDeadline
 
 
-def build_component_manager_tools(session_factory: async_sessionmaker[AsyncSession]) -> list[Any]:
+_SOURCE_EDIT_INPUT_ADAPTER = TypeAdapter(SourceEditInput)
+
+
+def build_component_manager_tools(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> list[Any]:
     """构建组件助手可用的全部工具。"""
 
     return [
@@ -69,7 +79,9 @@ def build_component_manager_tools(session_factory: async_sessionmaker[AsyncSessi
     ]
 
 
-def build_list_components_tool(session_factory: async_sessionmaker[AsyncSession]) -> Any:
+def build_list_components_tool(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> Any:
     """构建工作空间组件列表读取工具。"""
 
     @agent_tool(show_result=False)
@@ -81,7 +93,8 @@ def build_list_components_tool(session_factory: async_sessionmaker[AsyncSession]
     ) -> dict[str, Any]:
         """读取当前工作空间组件库中的组件摘要。"""
 
-        dependencies, _ = await resolve_tool_context(session_factory,
+        dependencies, _ = await resolve_tool_context(
+            session_factory,
             run_context,
             required_scopes=COMPONENT_TOOL_READ_SCOPES,
             required_dependency_fields=("workspace_id",),
@@ -117,35 +130,47 @@ def build_list_components_tool(session_factory: async_sessionmaker[AsyncSession]
     return list_components
 
 
-def build_get_component_detail_tool(session_factory: async_sessionmaker[AsyncSession]) -> Any:
+def build_get_component_detail_tool(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> Any:
     """构建组件详情读取工具。"""
 
     @agent_tool(show_result=False)
-    async def get_component_detail(run_context: AgentToolContext, component_id: int) -> AgentToolResult:
+    async def get_component_detail(
+        run_context: AgentToolContext, component_id: int
+    ) -> AgentToolResult:
         """读取指定组件元数据，并以适合 LLM 精确编辑的文本格式返回源码。"""
 
-        dependencies, _ = await resolve_tool_context(session_factory,
+        dependencies, _ = await resolve_tool_context(
+            session_factory,
             run_context,
             required_scopes=COMPONENT_TOOL_READ_SCOPES,
             required_dependency_fields=("workspace_id",),
         )
         async with session_factory() as session:
             component = await WorkspaceComponentService(session).get(int(component_id))
-            _ensure_component_workspace(component.workspace_id, int(dependencies["workspace_id"]))
+            _ensure_component_workspace(
+                component.workspace_id, int(dependencies["workspace_id"])
+            )
             _ensure_component_active(component.status)
             return AgentToolResult(content=build_component_detail_prompt(component))
 
     return get_component_detail
 
 
-def build_list_component_versions_tool(session_factory: async_sessionmaker[AsyncSession]) -> Any:
+def build_list_component_versions_tool(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> Any:
     """构建组件版本列表读取工具。"""
 
     @agent_tool(show_result=False)
-    async def list_component_versions(run_context: AgentToolContext, component_id: int) -> list[dict[str, Any]]:
+    async def list_component_versions(
+        run_context: AgentToolContext, component_id: int
+    ) -> list[dict[str, Any]]:
         """读取指定组件的版本历史摘要。"""
 
-        dependencies, _ = await resolve_tool_context(session_factory,
+        dependencies, _ = await resolve_tool_context(
+            session_factory,
             run_context,
             required_scopes=COMPONENT_TOOL_READ_SCOPES,
             required_dependency_fields=("workspace_id",),
@@ -153,7 +178,9 @@ def build_list_component_versions_tool(session_factory: async_sessionmaker[Async
         async with session_factory() as session:
             service = WorkspaceComponentService(session)
             component = await service.get(int(component_id))
-            _ensure_component_workspace(component.workspace_id, int(dependencies["workspace_id"]))
+            _ensure_component_workspace(
+                component.workspace_id, int(dependencies["workspace_id"])
+            )
             _ensure_component_active(component.status)
             versions = await service.list_versions(component.id)
             return [item.model_dump(mode="json") for item in versions]
@@ -161,14 +188,19 @@ def build_list_component_versions_tool(session_factory: async_sessionmaker[Async
     return list_component_versions
 
 
-def build_get_component_dependencies_tool(session_factory: async_sessionmaker[AsyncSession]) -> Any:
+def build_get_component_dependencies_tool(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> Any:
     """构建组件当前依赖读取工具。"""
 
     @agent_tool(show_result=False)
-    async def get_component_dependencies(run_context: AgentToolContext, component_id: int) -> dict[str, Any]:
+    async def get_component_dependencies(
+        run_context: AgentToolContext, component_id: int
+    ) -> dict[str, Any]:
         """读取指定组件当前版本的依赖索引。"""
 
-        dependencies, _ = await resolve_tool_context(session_factory,
+        dependencies, _ = await resolve_tool_context(
+            session_factory,
             run_context,
             required_scopes=COMPONENT_TOOL_READ_SCOPES,
             required_dependency_fields=("workspace_id",),
@@ -176,7 +208,9 @@ def build_get_component_dependencies_tool(session_factory: async_sessionmaker[As
         async with session_factory() as session:
             service = WorkspaceComponentService(session)
             component = await service.get(int(component_id))
-            _ensure_component_workspace(component.workspace_id, int(dependencies["workspace_id"]))
+            _ensure_component_workspace(
+                component.workspace_id, int(dependencies["workspace_id"])
+            )
             _ensure_component_active(component.status)
             result = await service.get_current_dependencies(component.id)
             return result.model_dump(mode="json")
@@ -184,7 +218,9 @@ def build_get_component_dependencies_tool(session_factory: async_sessionmaker[As
     return get_component_dependencies
 
 
-def build_list_runtime_kit_capabilities_tool(session_factory: async_sessionmaker[AsyncSession]) -> Any:
+def build_list_runtime_kit_capabilities_tool(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> Any:
     """构建 Runtime Kit 公开能力目录查询工具。"""
 
     @agent_tool(show_result=False)
@@ -200,7 +236,8 @@ def build_list_runtime_kit_capabilities_tool(session_factory: async_sessionmaker
     ) -> dict[str, Any]:
         """查询 Agent 可引用的 Runtime Kit 只读能力，覆盖 component、composable、util 与 type。"""
 
-        await resolve_tool_context(session_factory,
+        await resolve_tool_context(
+            session_factory,
             run_context,
             required_scopes=COMPONENT_TOOL_READ_SCOPES,
             required_dependency_fields=("workspace_id",),
@@ -222,7 +259,11 @@ def build_list_runtime_kit_capabilities_tool(session_factory: async_sessionmaker
                 continue
             if normalized_category and item["category"] != normalized_category:
                 continue
-            if normalized_keyword and normalized_keyword not in _build_runtime_kit_capability_search_text(item):
+            if (
+                normalized_keyword
+                and normalized_keyword
+                not in _build_runtime_kit_capability_search_text(item)
+            ):
                 continue
             total_matches += 1
             if len(matched_items) < bounded_limit:
@@ -236,7 +277,9 @@ def build_list_runtime_kit_capabilities_tool(session_factory: async_sessionmaker
     return list_runtime_kit_capabilities
 
 
-def build_get_runtime_kit_capability_tool(session_factory: async_sessionmaker[AsyncSession]) -> Any:
+def build_get_runtime_kit_capability_tool(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> Any:
     """构建单个 Runtime Kit 公开能力详情查询工具。"""
 
     @agent_tool(show_result=False)
@@ -247,14 +290,19 @@ def build_get_runtime_kit_capability_tool(session_factory: async_sessionmaker[As
     ) -> dict[str, Any]:
         """读取 Agent 可引用的单个 Runtime Kit 能力详情和 import 用法。"""
 
-        await resolve_tool_context(session_factory,
+        await resolve_tool_context(
+            session_factory,
             run_context,
             required_scopes=COMPONENT_TOOL_READ_SCOPES,
             required_dependency_fields=("workspace_id",),
         )
         normalized_name = str(name or "").strip()
         if not normalized_name:
-            raise AppException(status_code=400, code="RUNTIME_KIT_CAPABILITY_NAME_REQUIRED", detail="能力名称不能为空。")
+            raise AppException(
+                status_code=400,
+                code="RUNTIME_KIT_CAPABILITY_NAME_REQUIRED",
+                detail="能力名称不能为空。",
+            )
         normalized_kind = _normalize_runtime_kit_kind(kind)
         item = _get_agent_runtime_kit_capability(normalized_name, kind=normalized_kind)
         if item is None:
@@ -268,7 +316,9 @@ def build_get_runtime_kit_capability_tool(session_factory: async_sessionmaker[As
     return get_runtime_kit_capability
 
 
-def build_create_component_tool(session_factory: async_sessionmaker[AsyncSession]) -> Any:
+def build_create_component_tool(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> Any:
     """构建组件创建工具。"""
 
     @agent_tool(show_result=False)
@@ -284,38 +334,52 @@ def build_create_component_tool(session_factory: async_sessionmaker[AsyncSession
     ) -> dict[str, Any]:
         """创建工作空间组件草稿，正式引用前需要发布。"""
 
-        dependencies, claims = await resolve_tool_context(session_factory,
-            run_context,
-            required_scopes=COMPONENT_TOOL_WRITE_SCOPES,
-            required_dependency_fields=("workspace_id",),
+        enqueue_deadline = ExternalTaskEnqueueDeadline.start()
+        dependencies, claims = await enqueue_deadline.wait(
+            resolve_tool_context(
+                session_factory,
+                run_context,
+                required_scopes=COMPONENT_TOOL_WRITE_SCOPES,
+                required_dependency_fields=("workspace_id",),
+            )
         )
         operator_id = extract_user_id(str(claims.get("sub")))
-        deferred_tool_call_id = str(dependencies.get("current_tool_call_id") or "").strip()
+        deferred_tool_call_id = str(
+            dependencies.get("current_tool_call_id") or ""
+        ).strip()
         member_run_id = str(dependencies.get("member_run_id") or "").strip() or None
         if deferred_tool_call_id:
-            tool_call_id = f"{member_run_id}:{deferred_tool_call_id}" if member_run_id else deferred_tool_call_id
-            enqueued = await enqueue_component_mutation(
-                session_factory,
-                run_id=run_context.run_id,
-                session_id=run_context.session_id,
-                tool_call_id=tool_call_id,
-                deferred_tool_call_id=deferred_tool_call_id,
-                member_run_id=member_run_id,
-                operation="create_component",
-                workspace_id=int(dependencies["workspace_id"]),
-                arguments={
-                    "name": name,
-                    "import_name": import_name,
-                    "content": content,
-                    "component_type": component_type.value,
-                    "summary": summary,
-                    "preview_schema": preview_schema,
-                    "change_note": change_note,
-                },
+            tool_call_id = (
+                f"{member_run_id}:{deferred_tool_call_id}"
+                if member_run_id
+                else deferred_tool_call_id
+            )
+            enqueued = await enqueue_deadline.wait(
+                enqueue_component_mutation(
+                    session_factory,
+                    run_id=run_context.run_id,
+                    session_id=run_context.session_id,
+                    tool_call_id=tool_call_id,
+                    deferred_tool_call_id=deferred_tool_call_id,
+                    member_run_id=member_run_id,
+                    operation="create_component",
+                    workspace_id=int(dependencies["workspace_id"]),
+                    arguments={
+                        "name": name,
+                        "import_name": import_name,
+                        "content": content,
+                        "component_type": component_type.value,
+                        "summary": summary,
+                        "preview_schema": preview_schema,
+                        "change_note": change_note,
+                    },
+                )
             )
             raise CallDeferred(metadata=enqueued.as_metadata())
         async with session_factory() as session:
-            normalized_preview_schema = normalize_preview_schema_argument(preview_schema)
+            normalized_preview_schema = normalize_preview_schema_argument(
+                preview_schema
+            )
             validation_result = await CodeCheckService(session).check_component_code(
                 workspace_id=int(dependencies["workspace_id"]),
                 user_id=operator_id,
@@ -357,7 +421,9 @@ def build_create_component_tool(session_factory: async_sessionmaker[AsyncSession
     return create_component
 
 
-def build_apply_component_edits_tool(session_factory: async_sessionmaker[AsyncSession]) -> Any:
+def build_apply_component_edits_tool(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> Any:
     """构建应用组件源码 Edits 的工具。"""
 
     @agent_tool(show_result=False)
@@ -371,50 +437,71 @@ def build_apply_component_edits_tool(session_factory: async_sessionmaker[AsyncSe
     ) -> dict[str, Any]:
         """对指定组件源码应用结构化 edits 并保存为草稿。"""
 
-        dependencies, claims = await resolve_tool_context(session_factory,
-            run_context,
-            required_scopes=COMPONENT_TOOL_WRITE_SCOPES,
-            required_dependency_fields=("workspace_id",),
+        normalized_edits = [
+            _SOURCE_EDIT_INPUT_ADAPTER.validate_python(edit) for edit in edits
+        ]
+        enqueue_deadline = ExternalTaskEnqueueDeadline.start()
+        dependencies, claims = await enqueue_deadline.wait(
+            resolve_tool_context(
+                session_factory,
+                run_context,
+                required_scopes=COMPONENT_TOOL_WRITE_SCOPES,
+                required_dependency_fields=("workspace_id",),
+            )
         )
         operator_id = extract_user_id(str(claims.get("sub")))
-        deferred_tool_call_id = str(dependencies.get("current_tool_call_id") or "").strip()
+        deferred_tool_call_id = str(
+            dependencies.get("current_tool_call_id") or ""
+        ).strip()
         member_run_id = str(dependencies.get("member_run_id") or "").strip() or None
         if deferred_tool_call_id:
-            tool_call_id = f"{member_run_id}:{deferred_tool_call_id}" if member_run_id else deferred_tool_call_id
-            enqueued = await enqueue_component_mutation(
-                session_factory,
-                run_id=run_context.run_id,
-                session_id=run_context.session_id,
-                tool_call_id=tool_call_id,
-                deferred_tool_call_id=deferred_tool_call_id,
-                member_run_id=member_run_id,
-                operation="apply_component_edits",
-                workspace_id=int(dependencies["workspace_id"]),
-                component_id=int(component_id),
-                base_draft_hash=base_draft_hash,
-                base_published_version_no=int(base_published_version_no),
-                arguments={
-                    "component_id": component_id,
-                    "edits": [edit.model_dump(mode="json") for edit in edits],
-                    "base_draft_hash": base_draft_hash,
-                    "base_published_version_no": base_published_version_no,
-                    "change_note": change_note,
-                },
+            tool_call_id = (
+                f"{member_run_id}:{deferred_tool_call_id}"
+                if member_run_id
+                else deferred_tool_call_id
+            )
+            enqueued = await enqueue_deadline.wait(
+                enqueue_component_mutation(
+                    session_factory,
+                    run_id=run_context.run_id,
+                    session_id=run_context.session_id,
+                    tool_call_id=tool_call_id,
+                    deferred_tool_call_id=deferred_tool_call_id,
+                    member_run_id=member_run_id,
+                    operation="apply_component_edits",
+                    workspace_id=int(dependencies["workspace_id"]),
+                    component_id=int(component_id),
+                    base_draft_hash=base_draft_hash,
+                    base_published_version_no=int(base_published_version_no),
+                    arguments={
+                        "component_id": component_id,
+                        "edits": [
+                            edit.model_dump(mode="json") for edit in normalized_edits
+                        ],
+                        "base_draft_hash": base_draft_hash,
+                        "base_published_version_no": base_published_version_no,
+                        "change_note": change_note,
+                    },
+                )
             )
             raise CallDeferred(metadata=enqueued.as_metadata())
         async with session_factory() as session:
             service = WorkspaceComponentService(session)
             component = await service.get(int(component_id))
-            _ensure_component_workspace(component.workspace_id, int(dependencies["workspace_id"]))
+            _ensure_component_workspace(
+                component.workspace_id, int(dependencies["workspace_id"])
+            )
             _ensure_component_edit_lock(
                 component,
                 base_draft_hash=base_draft_hash,
                 base_published_version_no=base_published_version_no,
             )
             try:
-                edit_result = apply_source_edits(component.content, edits)
+                edit_result = apply_source_edits(component.content, normalized_edits)
             except AppException as exc:
-                return build_code_check_failed_result(code=exc.code, message=exc.detail, source="edits")
+                return build_code_check_failed_result(
+                    code=exc.code, message=exc.detail, source="edits"
+                )
             validation_result = await CodeCheckService(session).check_component_code(
                 component_id=component.id,
                 workspace_id=component.workspace_id,
@@ -510,7 +597,9 @@ def _with_apply_validation_metadata(
     return enriched
 
 
-def build_update_component_metadata_tool(session_factory: async_sessionmaker[AsyncSession]) -> Any:
+def build_update_component_metadata_tool(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> Any:
     """构建更新组件元数据和预览 schema 的工具。"""
 
     @agent_tool(show_result=False)
@@ -526,41 +615,59 @@ def build_update_component_metadata_tool(session_factory: async_sessionmaker[Asy
     ) -> dict[str, Any]:
         """更新组件名称、源码引用名、分类、描述或 preview_schema。"""
 
-        dependencies, claims = await resolve_tool_context(session_factory,
-            run_context,
-            required_scopes=COMPONENT_TOOL_WRITE_SCOPES,
-            required_dependency_fields=("workspace_id",),
+        enqueue_deadline = ExternalTaskEnqueueDeadline.start()
+        dependencies, claims = await enqueue_deadline.wait(
+            resolve_tool_context(
+                session_factory,
+                run_context,
+                required_scopes=COMPONENT_TOOL_WRITE_SCOPES,
+                required_dependency_fields=("workspace_id",),
+            )
         )
         operator_id = extract_user_id(str(claims.get("sub")))
-        deferred_tool_call_id = str(dependencies.get("current_tool_call_id") or "").strip()
+        deferred_tool_call_id = str(
+            dependencies.get("current_tool_call_id") or ""
+        ).strip()
         member_run_id = str(dependencies.get("member_run_id") or "").strip() or None
-        if deferred_tool_call_id and (preview_schema is not None or component_type is not None):
-            tool_call_id = f"{member_run_id}:{deferred_tool_call_id}" if member_run_id else deferred_tool_call_id
-            enqueued = await enqueue_component_mutation(
-                session_factory,
-                run_id=run_context.run_id,
-                session_id=run_context.session_id,
-                tool_call_id=tool_call_id,
-                deferred_tool_call_id=deferred_tool_call_id,
-                member_run_id=member_run_id,
-                operation="update_component_metadata",
-                workspace_id=int(dependencies["workspace_id"]),
-                component_id=int(component_id),
-                arguments={
-                    "component_id": component_id,
-                    "name": name,
-                    "import_name": import_name,
-                    "component_type": component_type.value if component_type is not None else None,
-                    "summary": summary,
-                    "preview_schema": preview_schema,
-                    "change_note": change_note,
-                },
+        if deferred_tool_call_id and (
+            preview_schema is not None or component_type is not None
+        ):
+            tool_call_id = (
+                f"{member_run_id}:{deferred_tool_call_id}"
+                if member_run_id
+                else deferred_tool_call_id
+            )
+            enqueued = await enqueue_deadline.wait(
+                enqueue_component_mutation(
+                    session_factory,
+                    run_id=run_context.run_id,
+                    session_id=run_context.session_id,
+                    tool_call_id=tool_call_id,
+                    deferred_tool_call_id=deferred_tool_call_id,
+                    member_run_id=member_run_id,
+                    operation="update_component_metadata",
+                    workspace_id=int(dependencies["workspace_id"]),
+                    component_id=int(component_id),
+                    arguments={
+                        "component_id": component_id,
+                        "name": name,
+                        "import_name": import_name,
+                        "component_type": component_type.value
+                        if component_type is not None
+                        else None,
+                        "summary": summary,
+                        "preview_schema": preview_schema,
+                        "change_note": change_note,
+                    },
+                )
             )
             raise CallDeferred(metadata=enqueued.as_metadata())
         async with session_factory() as session:
             service = WorkspaceComponentService(session)
             component = await service.get(int(component_id))
-            _ensure_component_workspace(component.workspace_id, int(dependencies["workspace_id"]))
+            _ensure_component_workspace(
+                component.workspace_id, int(dependencies["workspace_id"])
+            )
             base_content_hash = calculate_source_hash(component.content)
             base_preview_schema = component.preview_schema
             base_component_type = component.component_type
@@ -572,7 +679,9 @@ def build_update_component_metadata_tool(session_factory: async_sessionmaker[Asy
             resolved_component_type = component_type or component.component_type
             validation_result: dict[str, Any] | None = None
             if preview_schema is not None or component_type is not None:
-                validation_result = await CodeCheckService(session).check_component_code(
+                validation_result = await CodeCheckService(
+                    session
+                ).check_component_code(
                     component_id=component.id,
                     workspace_id=component.workspace_id,
                     user_id=operator_id,
@@ -625,7 +734,9 @@ def build_update_component_metadata_tool(session_factory: async_sessionmaker[Asy
     return update_component_metadata
 
 
-def build_publish_component_tool(session_factory: async_sessionmaker[AsyncSession]) -> Any:
+def build_publish_component_tool(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> Any:
     """构建发布组件草稿为正式版本的工具。"""
 
     @agent_tool(show_result=False)
@@ -637,7 +748,8 @@ def build_publish_component_tool(session_factory: async_sessionmaker[AsyncSessio
     ) -> dict[str, Any]:
         """发布组件当前草稿，生成可被页面和其他组件引用的正式版本。"""
 
-        dependencies, claims = await resolve_tool_context(session_factory,
+        dependencies, claims = await resolve_tool_context(
+            session_factory,
             run_context,
             required_scopes=COMPONENT_TOOL_WRITE_SCOPES,
             required_dependency_fields=("workspace_id",),
@@ -646,7 +758,9 @@ def build_publish_component_tool(session_factory: async_sessionmaker[AsyncSessio
         async with session_factory() as session:
             service = WorkspaceComponentService(session)
             component = await service.get(int(component_id))
-            _ensure_component_workspace(component.workspace_id, int(dependencies["workspace_id"]))
+            _ensure_component_workspace(
+                component.workspace_id, int(dependencies["workspace_id"])
+            )
             published = await service.publish(
                 component.id,
                 WorkspaceComponentPublishRequest(
@@ -670,7 +784,9 @@ def build_publish_component_tool(session_factory: async_sessionmaker[AsyncSessio
     return publish_component
 
 
-def _ensure_component_workspace(component_workspace_id: int, expected_workspace_id: int) -> None:
+def _ensure_component_workspace(
+    component_workspace_id: int, expected_workspace_id: int
+) -> None:
     """校验组件属于当前工作空间，避免跨工作空间读写。"""
 
     if component_workspace_id != expected_workspace_id:
@@ -686,7 +802,9 @@ def _ensure_component_active(status: Any) -> None:
 
     value = getattr(status, "value", status)
     if str(value) != RecordStatus.ACTIVE.value:
-        raise AppException(status_code=404, code="AI_ENTITY_NOT_FOUND", detail="组件不存在或已归档。")
+        raise AppException(
+            status_code=404, code="AI_ENTITY_NOT_FOUND", detail="组件不存在或已归档。"
+        )
 
 
 def _ensure_component_edit_lock(
@@ -766,7 +884,9 @@ def _list_agent_runtime_kit_capabilities(
     ]
 
 
-def _get_agent_runtime_kit_capability(name: str, *, kind: str | None = None) -> dict[str, Any] | None:
+def _get_agent_runtime_kit_capability(
+    name: str, *, kind: str | None = None
+) -> dict[str, Any] | None:
     """按完整能力名读取 Agent 可见能力；裸 base_name 自动回退到最新版本。"""
 
     item = get_runtime_kit_capability_item(name, kind=kind)
@@ -777,7 +897,9 @@ def _get_agent_runtime_kit_capability(name: str, *, kind: str | None = None) -> 
 
     candidates = _list_agent_runtime_kit_capabilities(base_name=name)
     if kind is not None:
-        candidates = [candidate for candidate in candidates if candidate["kind"] == kind]
+        candidates = [
+            candidate for candidate in candidates if candidate["kind"] == kind
+        ]
     return candidates[0] if candidates else None
 
 
@@ -837,14 +959,18 @@ def _dump_runtime_kit_capability_detail(item: dict[str, Any]) -> dict[str, Any]:
         "returns": item["returns"],
         "return_example": item["return_example"],
         "constraints": item["constraints"],
-        "preview_schema": _filter_agent_runtime_kit_preview_schema(item["preview_schema"]),
+        "preview_schema": _filter_agent_runtime_kit_preview_schema(
+            item["preview_schema"]
+        ),
         "preview_options": item["preview_options"],
         "audiences": item["audiences"],
         "message": "该能力只能通过公开 import_path 在页面或组件源码中引用，不能作为后端工具调用。",
     }
 
 
-def _filter_agent_runtime_kit_preview_schema(value: dict[str, Any] | None) -> dict[str, Any] | None:
+def _filter_agent_runtime_kit_preview_schema(
+    value: dict[str, Any] | None,
+) -> dict[str, Any] | None:
     """过滤不应暴露给 Agent 的 preview_schema 字段。"""
 
     if not isinstance(value, dict):
@@ -856,7 +982,10 @@ def _filter_agent_runtime_kit_preview_schema(value: dict[str, Any] | None) -> di
     if isinstance(props, dict):
         filtered_props: dict[str, Any] = {}
         for prop_name, prop_schema in props.items():
-            if isinstance(prop_schema, dict) and prop_schema.get("agent_visible") is False:
+            if (
+                isinstance(prop_schema, dict)
+                and prop_schema.get("agent_visible") is False
+            ):
                 hidden_prop_names.add(str(prop_name))
                 continue
             if isinstance(prop_schema, dict):

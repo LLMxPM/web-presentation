@@ -41,6 +41,7 @@ _NON_RECOVERABLE_TOOL_ERROR_CODES = {
     "AI_TOOL_SCOPE_REQUIRED",
 }
 _RECOVERABLE_TOOL_ERROR_CODES = {
+    "AI_EXTERNAL_TASK_ENQUEUE_TIMEOUT",
     "PAGE_SCREENSHOT_ASSET_NOT_READY",
     "PAGE_SCREENSHOT_BROWSER_MISSING",
     "PAGE_SCREENSHOT_CAPTURE_FAILED",
@@ -54,6 +55,10 @@ _RECOVERABLE_TOOL_ERROR_CODES = {
 }
 _RECOVERABLE_TOOL_ERROR_HINT = "请根据错误信息修正工具参数、改用其他对象；如果缺少必要信息，请询问用户。"
 _RECOVERABLE_TOOL_ERROR_HINTS = {
+    "AI_EXTERNAL_TASK_ENQUEUE_TIMEOUT": (
+        "不要原样重试写操作。先查询目标实体的最新状态；确认操作未生效后，"
+        "再使用最新版本参数重新调用。"
+    ),
     "AI_IMAGE_ANALYSIS_MODEL_FAILED": (
         "不要使用相同参数立即重试。页面任务可继续依据页面源码、组件契约和代码检查结果分析，"
         "但必须明确说明尚未完成图片像素验证；若任务必须看图，请提示用户检查图片理解模型配置后重试。"

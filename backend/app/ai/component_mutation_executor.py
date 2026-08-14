@@ -14,11 +14,18 @@ from app.ai.tools.component.component_library import (
     _ensure_component_workspace,
     _is_validation_passed,
 )
-from app.ai.tools.shared import apply_source_edits, calculate_source_hash, normalize_preview_schema_argument
+from app.ai.tools.shared import (
+    apply_source_edits,
+    calculate_source_hash,
+    normalize_preview_schema_argument,
+)
 from app.core.exceptions import AppException
 from app.models.ai_external_task import AiComponentMutationTask
 from app.models.enums import PageFileType, RecordStatus, WorkspaceComponentType
-from app.schemas.component import WorkspaceComponentCreateRequest, WorkspaceComponentUpdateRequest
+from app.schemas.component import (
+    WorkspaceComponentCreateRequest,
+    WorkspaceComponentUpdateRequest,
+)
 from app.services.code_check_service import CodeCheckService
 from app.services.workspace_component_service import WorkspaceComponentService
 
@@ -29,7 +36,9 @@ class AiComponentMutationExecutor:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
 
-    async def execute(self, detail: AiComponentMutationTask, *, operator_id: int) -> dict[str, Any]:
+    async def execute(
+        self, detail: AiComponentMutationTask, *, operator_id: int
+    ) -> dict[str, Any]:
         """按领域操作分派执行；业务校验失败以recoverable result返回。"""
 
         try:
@@ -39,7 +48,11 @@ class AiComponentMutationExecutor:
                 return await self._apply_edits(detail, operator_id=operator_id)
             if detail.operation == "update_component_metadata":
                 return await self._update_metadata(detail, operator_id=operator_id)
-            raise AppException(status_code=400, code="AI_COMPONENT_OPERATION_INVALID", detail="未知的组件任务类型。")
+            raise AppException(
+                status_code=400,
+                code="AI_COMPONENT_OPERATION_INVALID",
+                detail="未知的组件任务类型。",
+            )
         except AppException as exc:
             return recoverable_tool_error_result(
                 code=exc.code,
@@ -48,14 +61,19 @@ class AiComponentMutationExecutor:
                 hint="请重新读取组件详情或调整参数后再调用。",
             )
 
-    async def _create(self, detail: AiComponentMutationTask, *, operator_id: int) -> dict[str, Any]:
+    async def _create(
+        self, detail: AiComponentMutationTask, *, operator_id: int
+    ) -> dict[str, Any]:
         """校验并创建组件草稿。"""
 
-        args = detail.arguments_json or {}
-        component_type = WorkspaceComponentType(args.get("component_type") or WorkspaceComponentType.CONTENT_COMPONENT.value)
+        workspace_id = int(detail.workspace_id)
+        args = dict(detail.arguments_json or {})
+        component_type = WorkspaceComponentType(
+            args.get("component_type") or WorkspaceComponentType.CONTENT_COMPONENT.value
+        )
         preview_schema = normalize_preview_schema_argument(args.get("preview_schema"))
         validation = await CodeCheckService(self.session).check_component_code(
-            workspace_id=detail.workspace_id,
+            workspace_id=workspace_id,
             user_id=operator_id,
             content=str(args.get("content") or ""),
             preview_schema=preview_schema,
@@ -65,7 +83,7 @@ class AiComponentMutationExecutor:
             return _validation_error("组件校验失败，未创建草稿。", validation)
         created = await WorkspaceComponentService(self.session).create(
             WorkspaceComponentCreateRequest(
-                workspace_id=detail.workspace_id,
+                workspace_id=workspace_id,
                 content=str(args.get("content") or ""),
                 file_type=PageFileType.VUE,
                 name=str(args.get("name") or ""),
@@ -88,17 +106,23 @@ class AiComponentMutationExecutor:
             "validation": validation,
         }
 
-    async def _apply_edits(self, detail: AiComponentMutationTask, *, operator_id: int) -> dict[str, Any]:
+    async def _apply_edits(
+        self, detail: AiComponentMutationTask, *, operator_id: int
+    ) -> dict[str, Any]:
         """在校验前后复核草稿锁，并原子保存源码编辑。"""
 
-        args = detail.arguments_json or {}
+        component_id = int(detail.component_id or 0)
+        workspace_id = int(detail.workspace_id)
+        base_draft_hash = str(detail.base_draft_hash or "")
+        base_published_version_no = int(detail.base_published_version_no or 0)
+        args = dict(detail.arguments_json or {})
         service = WorkspaceComponentService(self.session)
-        component = await service.get(int(detail.component_id or 0), user_id=operator_id)
-        _ensure_component_workspace(component.workspace_id, detail.workspace_id)
+        component = await service.get(component_id, user_id=operator_id)
+        _ensure_component_workspace(component.workspace_id, workspace_id)
         _ensure_component_edit_lock(
             component,
-            base_draft_hash=str(detail.base_draft_hash or ""),
-            base_published_version_no=int(detail.base_published_version_no or 0),
+            base_draft_hash=base_draft_hash,
+            base_published_version_no=base_published_version_no,
         )
         edits = apply_source_edits(component.content, list(args.get("edits") or []))
         validation = await CodeCheckService(self.session).check_component_code(
@@ -110,14 +134,14 @@ class AiComponentMutationExecutor:
         if not _is_validation_passed(validation):
             return _validation_error("组件代码校验失败，未保存草稿。", validation)
         self.session.expire_all()
-        refreshed = await service.get(component.id, user_id=operator_id)
+        refreshed = await service.get(component_id, user_id=operator_id)
         _ensure_component_edit_lock(
             refreshed,
-            base_draft_hash=str(detail.base_draft_hash or ""),
-            base_published_version_no=int(detail.base_published_version_no or 0),
+            base_draft_hash=base_draft_hash,
+            base_published_version_no=base_published_version_no,
         )
         updated = await service.update(
-            component.id,
+            component_id,
             WorkspaceComponentUpdateRequest(
                 content=edits.next_content,
                 change_note=args.get("change_note") or "AI 助手组件源码更新",
@@ -138,13 +162,17 @@ class AiComponentMutationExecutor:
             "validation": validation,
         }
 
-    async def _update_metadata(self, detail: AiComponentMutationTask, *, operator_id: int) -> dict[str, Any]:
+    async def _update_metadata(
+        self, detail: AiComponentMutationTask, *, operator_id: int
+    ) -> dict[str, Any]:
         """复核源码、Schema及组件类型基线后更新重校验元数据。"""
 
-        args = detail.arguments_json or {}
+        component_id = int(detail.component_id or 0)
+        workspace_id = int(detail.workspace_id)
+        args = dict(detail.arguments_json or {})
         service = WorkspaceComponentService(self.session)
-        component = await service.get(int(detail.component_id or 0), user_id=operator_id)
-        _ensure_component_workspace(component.workspace_id, detail.workspace_id)
+        component = await service.get(component_id, user_id=operator_id)
+        _ensure_component_workspace(component.workspace_id, workspace_id)
         base_content_hash = calculate_source_hash(component.content)
         base_preview_schema = component.preview_schema
         base_component_type = component.component_type
@@ -153,7 +181,9 @@ class AiComponentMutationExecutor:
             if args.get("preview_schema") is None
             else normalize_preview_schema_argument(args.get("preview_schema"))
         )
-        component_type = WorkspaceComponentType(args.get("component_type") or component.component_type.value)
+        component_type = WorkspaceComponentType(
+            args.get("component_type") or component.component_type.value
+        )
         validation = await CodeCheckService(self.session).check_component_code(
             component_id=component.id,
             workspace_id=component.workspace_id,
@@ -164,7 +194,7 @@ class AiComponentMutationExecutor:
         if not _is_validation_passed(validation):
             return _validation_error("组件校验失败，未更新元数据。", validation)
         self.session.expire_all()
-        refreshed = await service.get(component.id, user_id=operator_id)
+        refreshed = await service.get(component_id, user_id=operator_id)
         _ensure_component_metadata_check_baseline(
             refreshed,
             content_hash=base_content_hash,
@@ -180,7 +210,7 @@ class AiComponentMutationExecutor:
             if args.get(key) is not None:
                 payload[key] = args[key]
         updated = await service.update(
-            component.id,
+            component_id,
             WorkspaceComponentUpdateRequest(**payload),
             operator_id,
             commit=False,

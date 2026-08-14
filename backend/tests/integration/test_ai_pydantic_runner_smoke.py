@@ -37,6 +37,7 @@ from app.ai.member_delegation import MemberDelegationExecutor, MemberDelegationP
 from app.ai.message_history import build_context_limit_processor, build_history_budget, rebuild_agent_message_history
 from app.ai.platform_tools import AgentToolContext, agent_tool
 from app.ai.platform_runtime import PlatformAgentRuntimeStore
+from app.ai.run_recovery import recover_interrupted_agent_runs_on_startup
 from app.ai.pydantic_event_projection import PydanticEventProjector
 from app.ai.pydantic_runner import PydanticAgentRunner, _requirement_from_deferred
 from app.ai.pydantic_tools import AgentToolDeps, _wrap_platform_tool
@@ -342,14 +343,15 @@ async def test_pydantic_runner_should_not_duplicate_history_across_multiple_defe
                 tool_execution=requirement.payload_json["tool_execution"],
                 feedback_selections=[],
             )
-            await store.resolve_requirement(
+            resolution_payload = {
+                "decision": "confirm",
+                "note": None,
+                "tool_execution": requirement.payload_json["tool_execution"],
+                "feedback_selections": [],
+            }
+            await store.begin_requirement_resolution(
                 requirement,
-                payload={
-                    "decision": "confirm",
-                    "note": None,
-                    "tool_execution": requirement.payload_json["tool_execution"],
-                    "feedback_selections": [],
-                },
+                payload=resolution_payload,
             )
             latest_run.status = "running"
             latest_run.pending_requirement_json = None
@@ -368,8 +370,12 @@ async def test_pydantic_runner_should_not_duplicate_history_across_multiple_defe
                     tools=tools,
                     message_history=continue_history,
                     deferred_tool_results=deferred_results,
+                    consuming_requirement=requirement,
+                    requirement_resolution_payload=resolution_payload,
                 )
             )
+            await db_session.refresh(requirement)
+            assert requirement.status == "resolved"
             assert events[-1].event == ("run.completed" if step == 3 else "run.paused")
 
         await db_session.refresh(latest_run)
@@ -1609,7 +1615,7 @@ async def test_interrupted_run_cleanup_should_use_new_session(
 async def test_platform_runtime_should_recover_stale_active_run(
     authenticated_client: AsyncClient,
 ) -> None:
-    """读取运行态时应能把长时间无事件的 active run 收敛为失败终态。"""
+    """观察读取不得终态化活跃Run；显式执行恢复时仍可收敛历史坏状态。"""
 
     _, session_id, scope = await _create_workspace_session(
         authenticated_client,
@@ -1629,6 +1635,10 @@ async def test_platform_runtime_should_recover_stale_active_run(
         )
         await asyncio.sleep(0.02)
 
+        active_run = await store.get_active_run_model(session_id=session_id, agent_id="agent-coordinator")
+        assert active_run is not None
+        assert active_run.status == "running"
+
         recovered_event = await store.recover_stale_active_run(
             run_model=run_start.run_model,
             idle_timeout_seconds=0.01,
@@ -1640,6 +1650,37 @@ async def test_platform_runtime_should_recover_stale_active_run(
     assert failed_run is not None
     assert failed_run.status == "failed"
     assert failed_run.error_code == "AI_AGENT_STREAM_IDLE_TIMEOUT"
+
+
+async def test_startup_recovery_should_replace_observer_side_stale_run_failure(
+    authenticated_client: AsyncClient,
+) -> None:
+    """进程重启恢复负责终态化普通Run，避免把该职责重新放回快照或SSE。"""
+
+    _, session_id, scope = await _create_workspace_session(
+        authenticated_client,
+        workspace_name="Pydantic Runner startup recovery 工作空间",
+        session_name="Pydantic Runner startup recovery 会话",
+    )
+    async with get_session_factory()() as db_session:
+        store = PlatformAgentRuntimeStore(db_session, user_id=1)
+        run_start = await store.start_run(
+            session_id=session_id,
+            agent_id="agent-coordinator",
+            scope=scope,
+            run_id="pydantic-runner-startup-recovery",
+            message="模拟上个进程遗留运行",
+            image_attachment_ids=[],
+        )
+
+    assert await recover_interrupted_agent_runs_on_startup(get_session_factory()) == 1
+
+    async with get_session_factory()() as verify_session:
+        recovered = await verify_session.get(AiAgentRun, run_start.run_model.run_id)
+
+    assert recovered is not None
+    assert recovered.status == "failed"
+    assert recovered.error_code == "AI_RUN_PROCESS_STOPPED"
 
 
 async def test_pydantic_runner_should_emit_context_status_after_each_model_response(

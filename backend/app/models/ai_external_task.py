@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import DateTime, ForeignKey, Integer, JSON, String, Text, UniqueConstraint
+from sqlalchemy import DateTime, ForeignKey, Index, Integer, JSON, String, Text, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -16,7 +16,30 @@ class AiAgentExternalBatch(TimestampMixin, Base):
     """聚合同一父级或成员模型 step 的外部任务，并独占一次模型续跑。"""
 
     __tablename__ = "ai_agent_external_batches"
-    __table_args__ = (UniqueConstraint("run_id", "sequence_no", name="uq_ai_external_batches_run_sequence"),)
+    __table_args__ = (
+        UniqueConstraint("run_id", "sequence_no", name="uq_ai_external_batches_run_sequence"),
+        Index(
+            "uq_ai_external_batches_resuming_run",
+            "run_id",
+            unique=True,
+            sqlite_where=text("status = 'resuming'"),
+            postgresql_where=text("status = 'resuming'"),
+        ),
+        Index(
+            "uq_ai_external_batches_collecting_parent",
+            "run_id",
+            unique=True,
+            sqlite_where=text("status = 'collecting' AND member_run_id IS NULL"),
+            postgresql_where=text("status = 'collecting' AND member_run_id IS NULL"),
+        ),
+        Index(
+            "uq_ai_external_batches_collecting_member",
+            "member_run_id",
+            unique=True,
+            sqlite_where=text("status = 'collecting' AND member_run_id IS NOT NULL"),
+            postgresql_where=text("status = 'collecting' AND member_run_id IS NOT NULL"),
+        ),
+    )
 
     batch_id: Mapped[str] = mapped_column(String(128), primary_key=True)
     run_id: Mapped[str] = mapped_column(ForeignKey("ai_agent_runs.run_id"), nullable=False, index=True)

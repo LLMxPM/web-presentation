@@ -11,14 +11,24 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.ai.auth_tokens import PAGE_TOOL_WRITE_SCOPES, extract_user_id
 from app.ai.page_mutation_enqueue import enqueue_page_mutation
-from app.ai.tools.shared import SourceEditInput, apply_source_edits, resolve_tool_context
+from app.ai.external_task_enqueue_timeout import ExternalTaskEnqueueDeadline
+from app.ai.tools.shared import (
+    SourceEditInput,
+    apply_source_edits,
+    resolve_tool_context,
+)
 from app.core.exceptions import AppException
 from app.schemas.page import PageItem, PageUpdateRequest
-from app.services.code_check_service import CodeCheckService, build_code_check_failed_result
+from app.services.code_check_service import (
+    CodeCheckService,
+    build_code_check_failed_result,
+)
 from app.services.page_service import PageService
 
 
-def build_apply_page_edits_tool(session_factory: async_sessionmaker[AsyncSession]) -> Any:
+def build_apply_page_edits_tool(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> Any:
     """构建页面结构化 Edits 更新工具，负责直接写回页面并自动生成版本。"""
 
     @agent_tool(show_result=False, sequential=True)
@@ -31,32 +41,43 @@ def build_apply_page_edits_tool(session_factory: async_sessionmaker[AsyncSession
     ) -> dict[str, Any]:
         """对指定页面应用结构化 edits，并自动保存为新版本。"""
 
-        dependencies, claims = await resolve_tool_context(
-            session_factory,
-            run_context,
-            required_scopes=PAGE_TOOL_WRITE_SCOPES,
-            required_dependency_fields=("workspace_id",),
+        enqueue_deadline = ExternalTaskEnqueueDeadline.start()
+        dependencies, claims = await enqueue_deadline.wait(
+            resolve_tool_context(
+                session_factory,
+                run_context,
+                required_scopes=PAGE_TOOL_WRITE_SCOPES,
+                required_dependency_fields=("workspace_id",),
+            )
         )
         target_page_id = int(page_id)
         operator_id = extract_user_id(str(claims.get("sub")))
 
-        deferred_tool_call_id = str(dependencies.get("current_tool_call_id") or "").strip()
+        deferred_tool_call_id = str(
+            dependencies.get("current_tool_call_id") or ""
+        ).strip()
         member_run_id = str(dependencies.get("member_run_id") or "").strip() or None
-        tool_call_id = f"{member_run_id}:{deferred_tool_call_id}" if member_run_id and deferred_tool_call_id else deferred_tool_call_id
+        tool_call_id = (
+            f"{member_run_id}:{deferred_tool_call_id}"
+            if member_run_id and deferred_tool_call_id
+            else deferred_tool_call_id
+        )
         if deferred_tool_call_id:
-            enqueued = await enqueue_page_mutation(
-                session_factory,
-                run_id=run_context.run_id,
-                session_id=run_context.session_id,
-                run_step=int(dependencies.get("current_run_step") or 0),
-                tool_call_id=tool_call_id,
-                deferred_tool_call_id=deferred_tool_call_id,
-                member_run_id=member_run_id,
-                operation="apply_page_edits",
-                workspace_id=int(dependencies["workspace_id"]),
-                project_id=_coerce_optional_int(dependencies.get("project_id")),
-                page_id=target_page_id,
-                base_version_no=int(base_version_no),
+            enqueued = await enqueue_deadline.wait(
+                enqueue_page_mutation(
+                    session_factory,
+                    run_id=run_context.run_id,
+                    session_id=run_context.session_id,
+                    run_step=int(dependencies.get("current_run_step") or 0),
+                    tool_call_id=tool_call_id,
+                    deferred_tool_call_id=deferred_tool_call_id,
+                    member_run_id=member_run_id,
+                    operation="apply_page_edits",
+                    workspace_id=int(dependencies["workspace_id"]),
+                    project_id=_coerce_optional_int(dependencies.get("project_id")),
+                    page_id=target_page_id,
+                    base_version_no=int(base_version_no),
+                )
             )
             raise CallDeferred(metadata=enqueued.as_metadata())
 
@@ -68,7 +89,9 @@ def build_apply_page_edits_tool(session_factory: async_sessionmaker[AsyncSession
             try:
                 edit_result = apply_source_edits(current_page.page_content, edits)
             except AppException as exc:
-                return build_code_check_failed_result(code=exc.code, message=exc.detail, source="edits")
+                return build_code_check_failed_result(
+                    code=exc.code, message=exc.detail, source="edits"
+                )
             validation_result = await CodeCheckService(session).check_page_code(
                 page_id=target_page_id,
                 workspace_id=current_page.workspace_id,

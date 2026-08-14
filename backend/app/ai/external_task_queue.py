@@ -10,8 +10,10 @@ from uuid import uuid4
 
 from fastapi import FastAPI
 from pydantic_ai import DeferredToolResults
-from sqlalchemy import func, select, update
+from sqlalchemy import exists, func, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.orm import aliased
 
 from app.ai.external_task_control import consume_external_batch_results
 from app.ai.platform_runtime import PlatformAgentRuntimeStore
@@ -35,6 +37,10 @@ _TASK_TERMINAL = frozenset({"succeeded", "failed", "cancelled"})
 
 class _ExternalContinuationLeaseLost(RuntimeError):
     """表示统一Batch续跑已失去租约，当前模型调用必须主动终止。"""
+
+
+class _ExternalContinuationResultNotConsumed(RuntimeError):
+    """表示模型续跑结束，但Deferred结果尚未形成可清理的消费提交点。"""
 
 
 async def run_ai_external_task_coordinator(
@@ -357,10 +363,64 @@ async def audit_external_state_consistency(session_factory: async_sessionmaker[A
                     )
                 ).all()
             )
-            if len(requirements) != 1:
-                await _fail_waiting_run(session, run=run, message="等待外部任务的运行缺少唯一活动Requirement。")
+            # 兼容旧版本留下的交接残片：Batch及结果均已消费时，Requirement可确定补齐为resolved。
+            for item in requirements:
+                historical_batch = await session.scalar(
+                    select(AiAgentExternalBatch).where(AiAgentExternalBatch.requirement_id == item.requirement_id)
+                )
+                if historical_batch is None or historical_batch.status != "completed":
+                    continue
+                task_count = int(
+                    await session.scalar(
+                        select(func.count(AiAgentExternalTask.id)).where(
+                            AiAgentExternalTask.batch_id == historical_batch.batch_id
+                        )
+                    )
+                    or 0
+                )
+                unconsumed_count = int(
+                    await session.scalar(
+                        select(func.count(AiAgentExternalTask.id)).where(
+                            AiAgentExternalTask.batch_id == historical_batch.batch_id,
+                            AiAgentExternalTask.result_consumed_at.is_(None),
+                        )
+                    )
+                    or 0
+                )
+                if task_count and unconsumed_count == 0:
+                    item.status = "resolved"
+                    item.resolved_at = item.resolved_at or historical_batch.finished_at or now
+            requirements = [item for item in requirements if item.status in {"pending", "resolving"}]
+            if not requirements:
+                await _fail_waiting_run(session, run=run, message="等待外部任务的运行缺少活动Requirement。")
                 continue
-            requirement = requirements[0]
+
+            pending_payload = run.pending_requirement_json if isinstance(run.pending_requirement_json, dict) else {}
+            current_requirement_id = str(pending_payload.get("id") or "")
+            requirement = next(
+                (item for item in requirements if item.requirement_id == current_requirement_id),
+                requirements[0] if len(requirements) == 1 else None,
+            )
+            if requirement is None:
+                await _fail_waiting_run(session, run=run, message="等待外部任务的运行无法确定当前Requirement。")
+                continue
+            invalid_predecessor = False
+            for predecessor in requirements:
+                if predecessor.requirement_id == requirement.requirement_id:
+                    continue
+                predecessor_batch = await session.scalar(
+                    select(AiAgentExternalBatch).where(
+                        AiAgentExternalBatch.requirement_id == predecessor.requirement_id,
+                        AiAgentExternalBatch.status == "resuming",
+                        AiAgentExternalBatch.lease_expires_at > now,
+                    )
+                )
+                if predecessor_batch is None:
+                    invalid_predecessor = True
+                    break
+            if invalid_predecessor:
+                await _fail_waiting_run(session, run=run, message="等待外部任务的运行存在无法恢复的多活动Requirement。")
+                continue
             batch = await session.scalar(
                 select(AiAgentExternalBatch).where(
                     AiAgentExternalBatch.requirement_id == requirement.requirement_id,
@@ -453,6 +513,7 @@ async def _claim_ready_batch(
     now = utc_now()
     lease_seconds = max(int(settings.durable_job_lease_seconds), int(settings.durable_job_heartbeat_seconds) * 3)
     async with session_factory() as session:
+        other_resuming = aliased(AiAgentExternalBatch)
         candidate = await session.scalar(
             select(AiAgentExternalBatch)
             .join(AiAgentRun, AiAgentRun.run_id == AiAgentExternalBatch.run_id)
@@ -460,6 +521,10 @@ async def _claim_ready_batch(
                 AiAgentExternalBatch.status == "ready",
                 AiAgentRun.status == "waiting_external",
                 AiAgentRun.cancel_requested_at.is_(None),
+                ~exists().where(
+                    other_resuming.run_id == AiAgentExternalBatch.run_id,
+                    other_resuming.status == "resuming",
+                ),
             )
             .order_by(AiAgentExternalBatch.created_at.asc())
             .limit(1)
@@ -496,7 +561,12 @@ async def _claim_ready_batch(
                 )
                 .values(status="resolving")
             )
-        await session.commit()
+        try:
+            await session.commit()
+        except IntegrityError:
+            # 两个协调器可能同时看到同一Run的不同ready Batch；数据库唯一索引负责最终串行化。
+            await session.rollback()
+            return None
         return candidate.batch_id, generation
 
 
@@ -551,6 +621,7 @@ async def _continue_batch(
                 )
             current = AuthContext(user=user, session_token="", backend_session_id=f"background:{run.run_id}")
             run_id = run.run_id
+            requirement_id = requirement.requirement_id
         async def continue_model() -> str:
             """在独立短会话中执行受围栏保护的模型续跑。"""
 
@@ -558,6 +629,7 @@ async def _continue_batch(
                 return await AgentSessionFacade(app=app, current=current, session=session).continue_external_job_to_store(
                     run_id=run_id,
                     deferred_results=deferred,
+                    requirement_id=requirement_id,
                     continuation_fence=fence,
                     source="ai_external_task_queue",
                 )
@@ -582,12 +654,39 @@ async def _continue_batch(
         if lease_lost.is_set():
             raise _ExternalContinuationLeaseLost()
         async with session_factory() as session:
-            batch = await session.scalar(select(AiAgentExternalBatch).where(*fence.batch_conditions(utc_now())))
+            # 模型可能已经把Run收敛为failed/cancelled；协调器仍须用原租约完成Batch终态收尾。
+            batch = await session.scalar(select(AiAgentExternalBatch).where(*fence.lease_conditions(utc_now())))
             if batch is None:
                 raise AgentRunWriteFenceLost("统一外部Batch收尾时租约已失效。")
-            await consume_external_batch_results(session, batch=batch)
-            await _finish_legacy_domain_rows(session, batch_id=batch_id)
+            requirement = await session.scalar(
+                select(AiAgentRequirement).where(AiAgentRequirement.requirement_id == requirement_id)
+            )
+            if requirement is None:
+                await _fail_inconsistent(session, batch=batch, run=await session.get(AiAgentRun, batch.run_id))
+                return
+            if requirement.status == "resolved":
+                await consume_external_batch_results(session, batch=batch)
+                await _finish_legacy_domain_rows(session, batch_id=batch_id)
+            elif requirement.status in {"failed", "cancelled"}:
+                batch.status = requirement.status
+                batch.error_code = "AI_EXTERNAL_CONTINUE_FAILED" if requirement.status == "failed" else None
+                batch.error_message = (
+                    "模型续跑失败，外部任务结果未清理。" if requirement.status == "failed" else "模型续跑已取消。"
+                )
+                batch.finished_at = utc_now()
+                batch.worker_id = None
+                batch.lease_expires_at = None
+                batch.heartbeat_at = None
+            else:
+                raise _ExternalContinuationResultNotConsumed(
+                    "模型续跑未提交Deferred结果消费状态，保留结果并等待租约恢复。"
+                )
             await session.commit()
+    except _ExternalContinuationResultNotConsumed:
+        logger.warning(
+            "统一外部Batch续跑未形成结果消费提交点，保留租约等待恢复。",
+            extra={"batch_id": batch_id},
+        )
     except (AgentRunWriteFenceLost, _ExternalContinuationLeaseLost):
         logger.warning("统一外部Batch续跑失去租约。", extra={"batch_id": batch_id})
     except asyncio.CancelledError:

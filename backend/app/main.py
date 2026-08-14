@@ -17,6 +17,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.ai.registry import AgentRegistry
 from app.ai.background_run_manager import AgentBackgroundRunManager
+from app.ai.run_recovery import recover_interrupted_agent_runs_on_startup
 from app.ai.external_task_queue import run_ai_external_task_coordinator
 from app.ai.component_mutation_queue import (
     recover_interrupted_component_mutation_tasks,
@@ -83,6 +84,8 @@ async def lifespan(app: FastAPI):
         async with session_factory() as catalog_session:
             await AiModelCatalogService(catalog_session).ensure_minimal_catalog()
         ensure_redis_runtime_available()
+        if get_settings().ai_enabled:
+            await recover_interrupted_agent_runs_on_startup(session_factory)
         await recover_interrupted_build_jobs_on_startup(session_factory)
         await recover_interrupted_screenshot_jobs_on_startup(session_factory)
         await recover_interrupted_asset_render_hint_backfill_jobs_on_startup(session_factory)

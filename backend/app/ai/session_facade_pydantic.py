@@ -36,7 +36,7 @@ from app.ai.platform_runtime import (
 from app.ai.pydantic_model_resolver import PydanticLlmModelResolver
 from app.ai.pydantic_runner import PydanticAgentRunner
 from app.ai.pydantic_tools import build_pydantic_tools
-from app.ai.run_write_fence import AgentRunWriteFence, AgentRunWriteFenceLost, PageMutationContinuationWriteFence
+from app.ai.run_write_fence import AgentRunWriteFence, AgentRunWriteFenceLost
 from app.ai.runtime_context_builder import build_agent_runtime_context
 from app.ai.tool_specs import (
     AGENT_COORDINATOR_AGENT_ID,
@@ -1097,9 +1097,10 @@ class AgentSessionFacade:
                     deferred_tool_results=deferred_results,
                     context_budget=history_budget,
                     context_processor=context_processor,
+                    consuming_requirement=requirement,
+                    requirement_resolution_payload=resolution_payload,
                 ):
                     yield chunk
-                await self._store.resolve_requirement(requirement, payload=resolution_payload)
             except asyncio.CancelledError:
                 await self._mark_interrupted_run_terminal(
                     run_model,
@@ -1184,6 +1185,7 @@ class AgentSessionFacade:
         *,
         run_id: str,
         deferred_results: DeferredToolResults,
+        requirement_id: str | None = None,
         continuation_fence: AgentRunWriteFence | None = None,
         source: str = "external_job_queue",
     ) -> str:
@@ -1200,15 +1202,14 @@ class AgentSessionFacade:
             raise AppException(status_code=404, code="AI_RUN_NOT_FOUND", detail="待恢复的智能体运行不存在。")
         if run_model.status != "waiting_external" or run_model.cancel_requested_at is not None:
             raise AppException(status_code=409, code="AI_RUN_NOT_WAITING_EXTERNAL", detail="智能体运行已不再等待外部任务。")
-        requirement = await self._session.scalar(
-            select(AiAgentRequirement)
-            .where(
-                AiAgentRequirement.run_id == run_model.run_id,
-                AiAgentRequirement.kind == "external_job",
-                AiAgentRequirement.status.in_(("pending", "resolving", "resolved")),
-            )
-            .order_by(AiAgentRequirement.created_at.desc())
+        requirement_query = select(AiAgentRequirement).where(
+            AiAgentRequirement.run_id == run_model.run_id,
+            AiAgentRequirement.kind == "external_job",
+            AiAgentRequirement.status.in_(("pending", "resolving", "resolved")),
         )
+        if requirement_id:
+            requirement_query = requirement_query.where(AiAgentRequirement.requirement_id == requirement_id)
+        requirement = await self._session.scalar(requirement_query.order_by(AiAgentRequirement.created_at.desc()))
         if requirement is None:
             raise AppException(status_code=409, code="AI_EXTERNAL_REQUIREMENT_MISSING", detail="外部任务缺少待恢复 requirement。")
 
@@ -1366,8 +1367,9 @@ class AgentSessionFacade:
             deferred_tool_results=deferred_results,
             context_budget=history_budget,
             context_processor=context_processor,
+            consuming_requirement=requirement,
+            requirement_resolution_payload=resolution_payload,
         )
-        await store.resolve_requirement(requirement, payload=resolution_payload)
         await self._session.refresh(run_model, attribute_names=["status"])
         return run_model.status
 

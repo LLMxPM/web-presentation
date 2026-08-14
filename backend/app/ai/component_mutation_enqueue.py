@@ -97,8 +97,8 @@ async def enqueue_component_mutation(
                         "member_agent_name": member_run.agent_name,
                     } if member_run else {}),
                 },
-                commit=False,
-            )
+            ),
+            commit=False,
         )
         await session.commit()
         return EnqueuedComponentMutation(batch_id=task.batch_id, task_id=task.task_id)
