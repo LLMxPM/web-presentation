@@ -79,7 +79,11 @@ class FakePageRenderDiagnosticsService:
         self.calls: list[dict[str, object]] = []
         self.diagnostics = diagnostics or []
         self.layout_analysis = layout_analysis or {
-            "schema_version": 2,
+            "schema_version": 3,
+            "meta": {
+                "canvas_size": {"width": 1920, "height": 1080},
+                "threshold_scale": 1080,
+            },
             "summary": {
                 "attention": "none",
                 "message": "未发现需要关注的视觉检测结果。",
@@ -88,12 +92,14 @@ class FakePageRenderDiagnosticsService:
                     "item_groups": 0,
                     "overflows": 0,
                     "spatial_relations": 0,
+                    "empty_regions": 0,
                 },
                 "returned": {
                     "text_layouts": 0,
                     "item_groups": 0,
                     "overflows": 0,
                     "spatial_relations": 0,
+                    "empty_regions": 0,
                 },
                 "truncated": False,
             },
@@ -101,6 +107,7 @@ class FakePageRenderDiagnosticsService:
             "item_groups": [],
             "overflows": [],
             "spatial_relations": [],
+            "empty_regions": [],
         }
 
     async def diagnose_preview(self, preview_url: str, viewport: object) -> dict[str, object]:
@@ -377,10 +384,10 @@ async def test_page_code_check_should_append_render_warning_after_runtime_passed
     assert fake_render.calls
 
 
-async def test_page_code_check_should_return_visual_layout_analysis_v2(
+async def test_page_code_check_should_return_visual_layout_analysis_v3(
     authenticated_client: AsyncClient,
 ) -> None:
-    """v2 视觉事实应完整透传且不增加 warning 数量。"""
+    """v3 视觉事实应完整透传且不增加 warning 数量。"""
 
     workspace_id = await _create_workspace(authenticated_client, "代码检查多行文本工作空间")
     project_id = await _create_project(authenticated_client, workspace_id, "代码检查多行文本项目")
@@ -397,22 +404,28 @@ async def test_page_code_check_should_return_visual_layout_analysis_v2(
     )
     assert page_response.status_code == 200
     layout_analysis = {
-        "schema_version": 2,
+        "schema_version": 3,
+        "meta": {
+            "canvas_size": {"width": 1920, "height": 1080},
+            "threshold_scale": 1080,
+        },
         "summary": {
-            "attention": "likely_issue",
-            "message": "发现 3 项需要关注的视觉检测结果。",
-            "totals": {
-                "text_layouts": 1,
-                "item_groups": 1,
-                "overflows": 1,
-                "spatial_relations": 1,
-            },
-            "returned": {
-                "text_layouts": 1,
-                "item_groups": 1,
-                "overflows": 1,
-                "spatial_relations": 1,
-            },
+        "attention": "likely_issue",
+        "message": "发现 8 项需要关注的视觉检测结果。",
+        "totals": {
+            "text_layouts": 1,
+            "item_groups": 1,
+            "overflows": 1,
+            "spatial_relations": 1,
+            "empty_regions": 4,
+        },
+        "returned": {
+            "text_layouts": 1,
+            "item_groups": 1,
+            "overflows": 1,
+            "spatial_relations": 1,
+            "empty_regions": 4,
+        },
             "truncated": False,
         },
         "text_layouts": [
@@ -468,6 +481,100 @@ async def test_page_code_check_should_return_visual_layout_analysis_v2(
                 "attention": "review",
                 "reason_codes": ["independent_surfaces_touching"],
             }
+        ],
+        "empty_regions": [
+            {
+                "kind": "vertical_gap",
+                "first": {
+                    "label": "div.card",
+                    "locator": {"kind": "id", "value": "#cards"},
+                    "text_sample": "卡片组",
+                    "repeat_index": None,
+                },
+                "second": {
+                    "label": "footer",
+                    "locator": {"kind": "dom_path", "value": ":scope > footer:nth-of-type(2)"},
+                    "text_sample": "页脚",
+                    "repeat_index": None,
+                },
+                "gap_top_px": 420,
+                "gap_bottom_px": 600,
+                "height_px": 180,
+                "width_px": 900,
+                "ratio_of_canvas": 0.25,
+                "attention": "review",
+                "reason_codes": ["large_vertical_gap"],
+            },
+            {
+                "kind": "leading_gap",
+                "first": {
+                    "label": "h2.title",
+                    "locator": {"kind": "id", "value": "#card-title"},
+                    "text_sample": "卡片标题",
+                    "repeat_index": None,
+                },
+                "parent": {
+                    "label": "div.card",
+                    "locator": {"kind": "id", "value": "#cards"},
+                    "text_sample": "卡片组",
+                    "repeat_index": None,
+                },
+                "gap_top_px": 60,
+                "gap_bottom_px": 260,
+                "height_px": 200,
+                "ratio_of_parent": 0.33,
+                "attention": "review",
+                "reason_codes": ["leading_gap"],
+            },
+            {
+                "kind": "right_gap",
+                "first": {
+                    "label": "p.body",
+                    "locator": {"kind": "dom_path", "value": ":scope > div:nth-of-type(1) > p:nth-of-type(2)"},
+                    "text_sample": "正文内容",
+                    "repeat_index": None,
+                },
+                "parent": {
+                    "label": "div.card",
+                    "locator": {"kind": "id", "value": "#cards"},
+                    "text_sample": "卡片组",
+                    "repeat_index": None,
+                },
+                "gap_left_px": 880,
+                "gap_right_px": 1240,
+                "width_px": 360,
+                "ratio_of_parent": 0.5,
+                "attention": "review",
+                "reason_codes": ["right_gap"],
+            },
+            {
+                "kind": "interior_gap",
+                "first": {
+                    "label": "p.body",
+                    "locator": {"kind": "dom_path", "value": ":scope > div:nth-of-type(1) > p:nth-of-type(2)"},
+                    "text_sample": "正文内容",
+                    "repeat_index": None,
+                },
+                "second": {
+                    "label": "div.arrow",
+                    "locator": {"kind": "dom_path", "value": ":scope > div:nth-of-type(1) > div:nth-of-type(3)"},
+                    "text_sample": "→",
+                    "repeat_index": None,
+                },
+                "parent": {
+                    "label": "div.card",
+                    "locator": {"kind": "id", "value": "#cards"},
+                    "text_sample": "卡片组",
+                    "repeat_index": None,
+                },
+                "gap_top_px": 260,
+                "gap_bottom_px": 714,
+                "height_px": 454,
+                "width_px": 152,
+                "ratio_of_parent": 0.6,
+                "attention": "review",
+                "reason_codes": ["interior_gap"],
+            },
         ],
     }
     fake_render = FakePageRenderDiagnosticsService(layout_analysis=layout_analysis)

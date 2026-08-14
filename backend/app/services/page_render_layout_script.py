@@ -8,6 +8,7 @@ from app.services.page_render_overlap_analysis_script import build_overlap_analy
 from app.services.page_render_spatial_shared_script import build_spatial_analysis_shared_helpers
 from app.services.page_render_text_measurement_script import build_text_measurement_helpers
 from app.services.page_render_wrapped_items_script import build_wrapped_item_analysis_helpers
+from app.services.page_render_empty_area_script import build_empty_area_analysis_helpers
 
 
 def build_page_render_layout_script() -> str:
@@ -15,17 +16,18 @@ def build_page_render_layout_script() -> str:
 
     script = r"""
     () => {
-      const tolerancePx = 2;
       const maxTextLength = 300;
       const resultLimits = {
         text_layouts: 50,
         item_groups: 20,
         overflows: 30,
-        spatial_relations: 30
+        spatial_relations: 30,
+        empty_regions: 10
       };
       const root = document.querySelector('.runtime-page-print-source, .runtime-view-preview-source');
       const emptyAnalysis = {
-        schema_version: 2,
+        schema_version: 3,
+        meta: null,
         summary: {
           attention: 'none',
           message: '未发现需要关注的视觉检测结果。',
@@ -33,20 +35,23 @@ def build_page_render_layout_script() -> str:
             text_layouts: 0,
             item_groups: 0,
             overflows: 0,
-            spatial_relations: 0
+            spatial_relations: 0,
+            empty_regions: 0
           },
           returned: {
             text_layouts: 0,
             item_groups: 0,
             overflows: 0,
-            spatial_relations: 0
+            spatial_relations: 0,
+            empty_regions: 0
           },
           truncated: false
         },
         text_layouts: [],
         item_groups: [],
         overflows: [],
-        spatial_relations: []
+        spatial_relations: [],
+        empty_regions: []
       };
       if (!root) {
         return {
@@ -61,7 +66,21 @@ def build_page_render_layout_script() -> str:
       }
 
       const rootRect = root.getBoundingClientRect();
-      const rootScrollOverflow = Math.max(0, Math.ceil(root.scrollHeight - root.clientHeight - tolerancePx));
+      // 画布短边作为全部固定像素阈值的折算基准：默认 1920x1080 画布行为保持不变，
+      // 小画布（如 1000x560 图卡）阈值随尺寸收紧，大画布（如 4K）阈值线性放宽。
+      const canvasBase = Math.min(rootRect.width, rootRect.height);
+      const scaleCanvasPx = (px) => Math.max(px * 0.5, canvasBase * (px / 1080));
+      const tolerancePx = Math.max(1, canvasBase / 540);
+      // 裁剪画布上 scrollHeight 会包含绝对定位装饰层的溢出，无法区分装饰与真实内容，
+      // 因此只使用逐元素 rect 判定；可滚动或可见溢出画布仍以 scrollHeight 差值兜底。
+      const rootStyle = window.getComputedStyle(root);
+      const rootClipsOverflow = (
+        ['hidden', 'clip'].includes(rootStyle.overflowX)
+        && ['hidden', 'clip'].includes(rootStyle.overflowY)
+      );
+      const rootScrollOverflow = rootClipsOverflow
+        ? 0
+        : Math.max(0, Math.ceil(root.scrollHeight - root.clientHeight - tolerancePx));
       let maxVisualOverflow = 0;
       const offenders = [];
 
@@ -101,10 +120,29 @@ __SPATIAL_ANALYSIS_SHARED_HELPERS__
 __OVERFLOW_ANALYSIS_HELPERS__
 __OVERLAP_ANALYSIS_HELPERS__
 __TEXT_MEASUREMENT_HELPERS__
+__EMPTY_AREA_ANALYSIS_HELPERS__
 __LAYOUT_SUMMARY_HELPERS__
 
+      const skipDecorOverflow = (element) => {
+        const kind = classifySpatialContent(element);
+        if (kind === 'decorative') {
+          return true;
+        }
+        const style = window.getComputedStyle(element);
+        if (
+          (kind === 'container' || kind === 'image')
+          && (style.position === 'absolute' || style.position === 'fixed')
+        ) {
+          return true;
+        }
+        return false;
+      };
+
       for (const element of root.querySelectorAll('*')) {
-        if (!isVisible(element)) {
+        if (!isVisible(element) || !isOverflowCandidate(element)) {
+          continue;
+        }
+        if (skipDecorOverflow(element)) {
           continue;
         }
         const rect = element.getBoundingClientRect();
@@ -179,25 +217,43 @@ __LAYOUT_SUMMARY_HELPERS__
         result.messages.push(message);
       };
 
-      const buildTextReasons = (lines) => {
+      const buildTextReasons = (lines, element) => {
         const result = { codes: [], messages: [] };
+        const style = window.getComputedStyle(element);
+        const elementRect = element.getBoundingClientRect();
+        const fontSize = Number.parseFloat(style.fontSize) || 0;
+        const containerWidth = elementRect.width;
+        const centerAligned = style.textAlign === 'center';
         const lastLine = String(lines.at(-1) || '').trim();
         const previousLine = String(lines.at(-2) || '').trim();
         const meaningful = segmentGraphemes(lastLine.replace(/[\s，。！？；：、,.!?;:'"“”‘’（）()[\]【】《》<>—–-]/g, ''));
         const containsCjk = /[\u3400-\u9fff]/u.test(lastLine);
-        if (containsCjk && meaningful.length > 0 && meaningful.length <= 2) {
+        // 孤行判定按容器宽度与字号折算：最后一行实际占宽约 55% 以上或达到标题级字号才报告，
+        // 避免宽容器内短句、窄容器内 1-2 字结尾被机械判为孤行。
+        const estimatedWidth = meaningful.length * fontSize * (containsCjk ? 1 : 0.6);
+        const shortLinePlausible = (
+          containerWidth <= 0
+          || estimatedWidth >= containerWidth * 0.55
+          || fontSize >= 18
+        );
+        if (
+          containsCjk
+          && meaningful.length > 0
+          && meaningful.length <= 2
+          && shortLinePlausible
+        ) {
           appendTextReason(
             result,
             'short_last_line',
-            `最后一行仅包含 ${meaningful.length} 个有效汉字，可能形成孤行`
+            `最后一行仅包含 ${meaningful.length} 个有效汉字，可能形成孤行${centerAligned ? '（居中文本，标题或签名设计可忽略）' : ''}`
           );
         }
         const englishWords = lastLine.match(/[A-Za-z]+(?:['’-][A-Za-z]+)*/g) || [];
-        if (!containsCjk && englishWords.length === 1 && lines.length > 1) {
+        if (!containsCjk && englishWords.length === 1 && lines.length > 1 && shortLinePlausible) {
           appendTextReason(
             result,
             'single_word_last_line',
-            '英文最后一行仅包含一个单词，可能形成孤词'
+            `英文最后一行仅包含一个单词，可能形成孤词${centerAligned ? '（居中文本，标题或签名设计可忽略）' : ''}`
           );
         }
         if (/^[，。！？；：、,.!?;:）)\]】》]/u.test(lastLine)) {
@@ -286,7 +342,7 @@ __LAYOUT_SUMMARY_HELPERS__
                 `逐字行位检测为 ${lineTexts.length} 行，但强制单行仅净超宽 ${nowrapOverflowPx}px；这是兼容性临界结果，不应视为确定换行`
               ]
             }
-          : buildTextReasons(lineTexts);
+          : buildTextReasons(lineTexts, element);
         const result = {
           target: describeCompactTarget(element),
           text: normalizedText.slice(0, maxTextLength),
@@ -322,11 +378,13 @@ __LAYOUT_SUMMARY_HELPERS__
       const itemGroups = analyzeWrappedItemGroups();
       const overflows = analyzeSpatialOverflows();
       const spatialRelations = analyzeSpatialRelations();
+      const emptyRegions = analyzeEmptyRegions();
       const allResults = {
         text_layouts: prioritizeLayoutResults(textLayouts),
         item_groups: prioritizeLayoutResults(itemGroups),
         overflows: prioritizeLayoutResults(overflows),
-        spatial_relations: prioritizeLayoutResults(spatialRelations)
+        spatial_relations: prioritizeLayoutResults(spatialRelations),
+        empty_regions: prioritizeLayoutResults(emptyRegions)
       };
       const returnedResults = Object.fromEntries(
         Object.entries(allResults).map(([key, items]) => [
@@ -338,7 +396,14 @@ __LAYOUT_SUMMARY_HELPERS__
       return {
         diagnostics,
         layout_analysis: {
-          schema_version: 2,
+          schema_version: 3,
+          meta: {
+            canvas_size: {
+              width: Math.round(rootRect.width * 100) / 100,
+              height: Math.round(rootRect.height * 100) / 100
+            },
+            threshold_scale: Math.round(canvasBase * 100) / 100
+          },
           summary: buildLayoutSummary(allResults, returnedResults),
           ...returnedResults
         }
@@ -351,6 +416,7 @@ __LAYOUT_SUMMARY_HELPERS__
         "__OVERFLOW_ANALYSIS_HELPERS__": build_overflow_analysis_helpers(),
         "__OVERLAP_ANALYSIS_HELPERS__": build_overlap_analysis_helpers(),
         "__TEXT_MEASUREMENT_HELPERS__": build_text_measurement_helpers(),
+        "__EMPTY_AREA_ANALYSIS_HELPERS__": build_empty_area_analysis_helpers(),
         "__LAYOUT_SUMMARY_HELPERS__": build_layout_summary_helpers(),
     }
     for placeholder, value in replacements.items():

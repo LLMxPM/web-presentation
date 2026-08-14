@@ -404,7 +404,8 @@ class CodeCheckService:
             render_result.get("layout_analysis")
             if isinstance(render_result, dict) and isinstance(render_result.get("layout_analysis"), dict)
             else {
-                "schema_version": 2,
+                "schema_version": 3,
+                "meta": None,
                 "summary": {
                     "attention": "none",
                     "message": "未发现需要关注的视觉检测结果。",
@@ -413,12 +414,14 @@ class CodeCheckService:
                         "item_groups": 0,
                         "overflows": 0,
                         "spatial_relations": 0,
+                        "empty_regions": 0,
                     },
                     "returned": {
                         "text_layouts": 0,
                         "item_groups": 0,
                         "overflows": 0,
                         "spatial_relations": 0,
+                        "empty_regions": 0,
                     },
                     "truncated": False,
                 },
@@ -426,6 +429,7 @@ class CodeCheckService:
                 "item_groups": [],
                 "overflows": [],
                 "spatial_relations": [],
+                "empty_regions": [],
             }
         )
 

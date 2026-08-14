@@ -44,13 +44,48 @@ def build_overlap_analysis_helpers() -> str:
             window.getComputedStyle(first).backgroundColor
             === window.getComputedStyle(second).backgroundColor
           );
-          return (
+          if (
             ['hidden', 'clip'].includes(parentStyle.overflow)
             && describeSurface(parent).painted
             && sameBackground
             && !firstTarget.surface.has_shadow
             && !secondTarget.surface.has_shadow
-          );
+          ) {
+            return true;
+          }
+          // flex/grid 组合容器内的圆角子项紧贴视为组合布局，不作为独立表面贴边报告。
+          if (parentStyle.display.includes('flex') || parentStyle.display.includes('grid')) {
+            const firstStyle = window.getComputedStyle(first);
+            const secondStyle = window.getComputedStyle(second);
+            const firstRadius = Math.min(
+              ...[
+                firstStyle.borderTopLeftRadius,
+                firstStyle.borderTopRightRadius,
+                firstStyle.borderBottomRightRadius,
+                firstStyle.borderBottomLeftRadius
+              ].map(parseCssLength)
+            );
+            const secondRadius = Math.min(
+              ...[
+                secondStyle.borderTopLeftRadius,
+                secondStyle.borderTopRightRadius,
+                secondStyle.borderBottomRightRadius,
+                secondStyle.borderBottomLeftRadius
+              ].map(parseCssLength)
+            );
+            const maxHeight = Math.max(
+              first.getBoundingClientRect().height,
+              second.getBoundingClientRect().height
+            );
+            if (
+              Math.min(firstRadius, secondRadius) >= maxHeight * 0.3
+              && !firstTarget.surface.has_shadow
+              && !secondTarget.surface.has_shadow
+            ) {
+              return true;
+            }
+          }
+          return false;
         };
 
         const resolveVisualPair = (first, second) => {
@@ -109,11 +144,11 @@ def build_overlap_analysis_helpers() -> str:
             firstRect.top - secondRect.bottom
           );
           const horizontalThreshold = Math.max(
-            8,
+            scaleCanvasPx(8),
             Math.min(firstRect.height, secondRect.height) * 0.25
           );
           const verticalThreshold = Math.max(
-            8,
+            scaleCanvasPx(8),
             Math.min(firstRect.width, secondRect.width) * 0.25
           );
           const candidates = [];

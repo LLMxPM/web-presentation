@@ -14,11 +14,26 @@ def test_render_diagnostics_script_should_support_route_and_standalone_roots() -
 
     assert ".runtime-page-print-source" in script
     assert ".runtime-view-preview-source" in script
-    assert "schema_version: 2" in script
+    assert "schema_version: 3" in script
+    assert "canvas_size" in script
+    assert "threshold_scale" in script
+    assert "scaleCanvasPx" in script
     assert "text_layouts" in script
     assert "item_groups" in script
     assert "overflows" in script
     assert "spatial_relations" in script
+    assert "empty_regions" in script
+    assert "analyzeEmptyRegions" in script
+    assert "large_vertical_gap" in script
+    assert "large_horizontal_gap" in script
+    assert "interior_gap" in script
+    assert "dedupe = true" in script
+    assert "}, false);" in script
+    assert "leading_gap" in script
+    assert "trailing_gap" in script
+    assert "trailing_bottom_gap" in script
+    assert "left_gap" in script
+    assert "right_gap" in script
     assert "style.flexWrap === 'nowrap'" in script
     assert "single_item_last_row" in script
     assert "pill_like" in script
@@ -35,6 +50,7 @@ def test_render_diagnostics_script_should_support_route_and_standalone_roots() -
     assert "item_groups: 20" in script
     assert "overflows: 30" in script
     assert "spatial_relations: 30" in script
+    assert "empty_regions: 10" in script
     assert "nowrapOverflowPx <= tolerancePx" in script
     assert "originalClientWidth" in script
     assert "originalOffsetWidth" in script
@@ -49,14 +65,18 @@ def test_render_diagnostics_script_should_support_route_and_standalone_roots() -
 
 
 def test_render_diagnostics_should_normalize_layout_analysis() -> None:
-    """真实渲染结果应规范化为 v2 四类视觉检测契约。"""
+    """真实渲染结果应规范化为 v3 五类视觉检测契约并保留画布元数据。"""
 
     service = PageRenderDiagnosticsService()
     result = service._normalize_render_result(
         {
             "diagnostics": [],
             "layout_analysis": {
-                "schema_version": 2,
+                "schema_version": 3,
+                "meta": {
+                    "canvas_size": {"width": 1920, "height": 1080},
+                    "threshold_scale": 1080,
+                },
                 "summary": {
                     "attention": "likely_issue",
                     "message": "发现 4 项需要关注的视觉检测结果。",
@@ -65,6 +85,7 @@ def test_render_diagnostics_should_normalize_layout_analysis() -> None:
                         "item_groups": 1,
                         "overflows": 1,
                         "spatial_relations": 1,
+                        "empty_regions": 4,
                     },
                     "returned": {},
                     "truncated": True,
@@ -104,13 +125,48 @@ def test_render_diagnostics_should_normalize_layout_analysis() -> None:
                         "attention": "review",
                     }
                 ],
+                "empty_regions": [
+                    {
+                        "kind": "vertical_gap",
+                        "first": {"label": "div.card"},
+                        "second": {"label": "footer"},
+                        "height_px": 180,
+                        "attention": "review",
+                    },
+                    {
+                        "kind": "leading_gap",
+                        "first": {"label": "h2.title"},
+                        "parent": {"label": "div.card"},
+                        "height_px": 200,
+                        "ratio_of_parent": 0.33,
+                        "attention": "review",
+                    },
+                    {
+                        "kind": "right_gap",
+                        "first": {"label": "p.body"},
+                        "parent": {"label": "div.card"},
+                        "width_px": 360,
+                        "ratio_of_parent": 0.5,
+                        "attention": "review",
+                    },
+                    {
+                        "kind": "interior_gap",
+                        "first": {"label": "p.body"},
+                        "second": {"label": "div.arrow"},
+                        "parent": {"label": "div.card"},
+                        "height_px": 454,
+                        "ratio_of_parent": 0.6,
+                        "attention": "review",
+                    },
+                ],
             },
         }
     )
 
     assert result["diagnostics"] == []
     analysis = result["layout_analysis"]
-    assert analysis["schema_version"] == 2
+    assert analysis["schema_version"] == 3
+    assert analysis["meta"] == {"canvas_size": {"width": 1920, "height": 1080}, "threshold_scale": 1080}
     assert analysis["summary"]["attention"] == "likely_issue"
     assert analysis["summary"]["totals"]["text_layouts"] == 2
     assert analysis["summary"]["returned"]["text_layouts"] == 1
@@ -119,6 +175,51 @@ def test_render_diagnostics_should_normalize_layout_analysis() -> None:
     assert analysis["item_groups"][0]["last_row_count"] == 1
     assert analysis["overflows"][0]["clipping"] == "hidden"
     assert analysis["spatial_relations"][0]["relation"] == "touching"
+    assert analysis["empty_regions"][0]["kind"] == "vertical_gap"
+    assert analysis["empty_regions"][0]["height_px"] == 180
+    assert analysis["empty_regions"][1]["kind"] == "leading_gap"
+    assert analysis["empty_regions"][1]["ratio_of_parent"] == 0.33
+    assert analysis["empty_regions"][2]["kind"] == "right_gap"
+    assert analysis["empty_regions"][2]["width_px"] == 360
+    assert analysis["empty_regions"][3]["kind"] == "interior_gap"
+    assert analysis["empty_regions"][3]["height_px"] == 454
+
+
+def test_render_diagnostics_should_reject_invalid_layout_meta() -> None:
+    """画布元数据字段非法时应整体归一化为 None，避免破坏返回契约。"""
+
+    service = PageRenderDiagnosticsService()
+    result = service._normalize_render_result(
+        {
+            "diagnostics": [],
+            "layout_analysis": {
+                "schema_version": 3,
+                "meta": {
+                    "canvas_size": {"width": -1, "height": "invalid"},
+                    "threshold_scale": 0,
+                },
+                "summary": {
+                    "attention": "none",
+                    "message": "未发现需要关注的视觉检测结果。",
+                    "totals": {
+                        "text_layouts": 0,
+                        "item_groups": 0,
+                        "overflows": 0,
+                        "spatial_relations": 0,
+                        "empty_regions": 0,
+                    },
+                    "returned": {},
+                    "truncated": False,
+                },
+                "text_layouts": [],
+                "item_groups": [],
+                "overflows": [],
+                "spatial_relations": [],
+                "empty_regions": [],
+            },
+        }
+    )
+    assert result["layout_analysis"]["meta"] is None
 
 
 def test_diagnostics_should_close_context_when_new_page_fails() -> None:

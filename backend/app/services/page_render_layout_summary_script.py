@@ -24,7 +24,8 @@ def build_layout_summary_helpers() -> str:
           text_layouts: '文本',
           item_groups: '分排',
           overflows: '越界',
-          spatial_relations: '空间关系'
+          spatial_relations: '空间关系',
+          empty_regions: '空白区'
         };
         const totals = {};
         const returned = {};

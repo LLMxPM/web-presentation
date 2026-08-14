@@ -186,7 +186,7 @@ Icon 组件引用工作空间已有图标资源；需要的图标不存在时通
 
 新建页面会在落库前检查完整候选源码，修改页面会在创建新版本前校验应用 edits 后的候选源码。校验失败时读取 diagnostics，修正后再试；severity=warning 不代表写入失败，但 PAGE_RENDER_BOTTOM_OVERFLOW 表示固定画布底部可能裁切，应压缩内容、调整容器高度或拆页后重新校验。
 
-读取 layout_analysis 时先看 summary，优先处理 attention=likely_issue，再复核 review。正常正文多行、正常 flex-wrap 分排、滚动容器和有意装饰出血不应机械修复；优先处理真实画布越界、内容裁切、不可读重叠和意外紧贴。geometry_reliability=approximate 表示旋转或 clip-path 仅按外接矩形近似判断，需要结合视觉语义谨慎处理。
+读取 layout_analysis 时先看 summary，优先处理 attention=likely_issue，再复核 review。layout_analysis.meta 提供画布尺寸 canvas_size 与阈值基准 threshold_scale，全部固定像素阈值按画布短边折算，小画布（如卡片、竖版）判定更宽松、大画布（如 4K）判定更严格，判断结果时结合画布实际尺寸。正常正文多行、正常 flex-wrap 分排、滚动容器和有意装饰出血不应机械修复；PAGE_RENDER_BOTTOM_OVERFLOW 与越界检测已排除 aria-hidden、pointer-events:none 和绝对定位的背景/图片装饰层，剩余报告多为真实内容溢出。优先处理真实画布越界、内容裁切、不可读重叠和意外紧贴；flex/grid 组合容器内的圆角子项紧贴已按组合布局豁免，不再报告独立表面贴边，剩余 touching/tight 多为独立卡片或需要间距的设计。empty_regions 中的空白区发现描述内容带之间、容器内部内容块之间、画布或容器顶部/底部/左右两侧的几何空白；封面页、章节页的刻意留白属于设计意图，不应机械压缩，正文页面出现明显空白带（尤其 parent 指向具体卡片或容器且比例较大时，或左右留白明显不对称时）应结合安全边距基线判断是否需要补充内容、调整栅格、margin/padding 或容器尺寸；左右对称的居中布局属于正常设计，不应按问题处理，对称留白已合并为单条报告。interior_gap 常由 mt-auto、固定高度容器或大 margin 撑开内容造成，结合容器内实际内容判断是否脱节；由 space-between/space-around/center 分布撑开的间隙会在消息中标注，一般属于布局意图。short_last_line、single_word_last_line 已按容器宽度与字号过滤窄容器短句场景，且居中文本会在消息中标注，剩余孤行/孤词报告更有参考价值。geometry_reliability=approximate 表示旋转或 clip-path 仅按外接矩形近似判断，需要结合视觉语义谨慎处理。
 
 页面元数据、项目路由、项目展示配置、样式和资源写入必须遵守各自操作手册。路由树更新是全量替换，不是增量追加；应用样式是复制快照，不是建立继承；资源文本更新前应优先执行差异预览。工具返回错误时先按错误语义修正，不能通过其他工具绕过校验、版本、权限或确认流程。
 

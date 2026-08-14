@@ -23,12 +23,13 @@ RUNTIME_PUBLIC_BASE_URL_HEADER = "x-runtime-public-base-url"
 PAGE_RENDER_WARNING_SOURCE = "runtime-render"
 PAGE_RENDER_BOTTOM_OVERFLOW_CODE = "PAGE_RENDER_BOTTOM_OVERFLOW"
 PAGE_RENDER_DIAGNOSTICS_UNAVAILABLE_CODE = "PAGE_RENDER_DIAGNOSTICS_UNAVAILABLE"
-LAYOUT_ANALYSIS_SCHEMA_VERSION = 2
+LAYOUT_ANALYSIS_SCHEMA_VERSION = 3
 LAYOUT_ANALYSIS_RESULT_KEYS = (
     "text_layouts",
     "item_groups",
     "overflows",
     "spatial_relations",
+    "empty_regions",
 )
 
 logger = logging.getLogger(__name__)
@@ -296,6 +297,7 @@ class PageRenderDiagnosticsService:
         )
         return {
             "schema_version": LAYOUT_ANALYSIS_SCHEMA_VERSION,
+            "meta": _normalize_layout_meta(value.get("meta")),
             "summary": summary,
             **result_lists,
         }
@@ -315,6 +317,7 @@ class PageRenderDiagnosticsService:
 
         return {
             "schema_version": LAYOUT_ANALYSIS_SCHEMA_VERSION,
+            "meta": None,
             "summary": {
                 "attention": "none",
                 "message": "未发现需要关注的视觉检测结果。",
@@ -401,6 +404,35 @@ def _coerce_non_negative_int(value: object, fallback: int) -> int:
         return max(0, int(value))
     except (TypeError, ValueError):
         return fallback
+
+
+def _coerce_positive_number(value: object) -> float | None:
+    """把浏览器返回的尺寸数值转换为正数，非法时返回 None。"""
+
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if number > 0 else None
+
+
+def _normalize_layout_meta(value: object) -> dict[str, object] | None:
+    """规范化 v3 画布元数据，任一字段非法时整体返回 None。"""
+
+    if not isinstance(value, dict):
+        return None
+    canvas = value.get("canvas_size")
+    if not isinstance(canvas, dict):
+        return None
+    width = _coerce_positive_number(canvas.get("width"))
+    height = _coerce_positive_number(canvas.get("height"))
+    threshold_scale = _coerce_positive_number(value.get("threshold_scale"))
+    if width is None or height is None or threshold_scale is None:
+        return None
+    return {
+        "canvas_size": {"width": width, "height": height},
+        "threshold_scale": threshold_scale,
+    }
 
 
 def _normalize_dict_list(value: object) -> list[dict[str, object]]:
