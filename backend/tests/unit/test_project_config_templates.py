@@ -69,6 +69,8 @@ def test_default_theme_template_should_keep_minimal_runtime_theme_shape() -> Non
     theme = themes_config["themes"][default_theme_key]
 
     assert default_theme_key == "lightblue"
+    assert theme["name"] == "明亮商务蓝"
+    assert theme["description"] == "明亮、专业、克制的商务主题，适合汇报、方案和数据解读。"
     assert set(theme["palette"]) == {"text", "background", "border", "link", "accent"}
     assert set(theme["palette"]["text"]) == {"primary", "secondary", "invert"}
     assert set(theme["palette"]["background"]) == {"default", "invert"}
@@ -80,6 +82,24 @@ def test_default_theme_template_should_keep_minimal_runtime_theme_shape() -> Non
         "bodyfont": "platform-sans",
         "codefont": "platform-mono",
     }
+
+
+def test_default_style_spec_should_be_suggestion_oriented() -> None:
+    """默认样式规范应提供视觉建议，不限制固定页型或强制使用图片。"""
+
+    from app.schemas.project_app_config import DEFAULT_PROJECT_STYLE_SPEC_MARKDOWN
+
+    spec = DEFAULT_PROJECT_STYLE_SPEC_MARKDOWN
+
+    assert "## 约束强度" in spec
+    assert "## 视觉素材选择" in spec
+    assert "## 卡片与内容模块" in spec
+    assert "## 页面节奏与变化" in spec
+    assert "页面类型参考" not in spec
+    assert "封面页：" not in spec
+    assert "必须使用图片" not in spec
+    assert "不要求每页使用图片" in spec
+    assert "卡片内部出现大片空白" in spec
 
 
 def test_default_icon_template_should_not_embed_runtime_fixture_icons() -> None:

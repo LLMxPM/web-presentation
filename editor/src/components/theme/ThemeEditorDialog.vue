@@ -297,16 +297,16 @@ const DEFAULT_HEADING_FONT_FAMILY: ThemeFontPreset = 'platform-sans'
 const DEFAULT_BODY_FONT_FAMILY: ThemeFontPreset = 'platform-sans'
 const DEFAULT_CODE_FONT_FAMILY: ThemeFontPreset = 'platform-mono'
 const DEFAULT_THEME_PALETTE: ThemePalette = {
-  text: { primary: '#0D286A', secondary: '#1D5297', invert: '#ffffff' },
-  background: { default: '#ffffff', invert: '#0D286A' },
-  border: { default: '#e5e7eb', subtle: '#d1d5db' },
-  link: { default: '#3b82f6', hover: '#2563eb', visited: '#7c3aed' },
-  accent: ['#0D286A', '#260E6D', '#9E8403', '#9E6B03', '#A110AB', '#C5003C'],
+  text: { primary: '#20364D', secondary: '#627487', invert: '#FFFFFF' },
+  background: { default: '#FFFFFF', invert: '#173B5C' },
+  border: { default: '#D8E2EC', subtle: '#EDF2F6' },
+  link: { default: '#1B6CA8', hover: '#0F4C81', visited: '#5E6CB5' },
+  accent: ['#2D7BB8', '#159A8C', '#D39A24', '#E07B67', '#6C73B8', '#6C9BB8'],
 }
 const form = reactive({
   key: 'lightblue',
-  name: '白底蓝色',
-  description: '白底蓝色主题，简约经典',
+  name: '明亮商务蓝',
+  description: '明亮、专业、克制的商务主题，适合汇报、方案和数据解读。',
   logo_asset_id: null as number | null,
   invert_logo_asset_id: null as number | null,
   project_icon_asset_id: null as number | null,
@@ -411,8 +411,8 @@ async function loadOptions() {
 
 function syncForm(theme: WorkspaceThemeItem | null) {
   form.key = theme?.key || 'lightblue'
-  form.name = theme?.name || '白底蓝色'
-  form.description = theme?.description || '白底蓝色主题，简约经典'
+  form.name = theme?.name || '明亮商务蓝'
+  form.description = theme?.description || '明亮、专业、克制的商务主题，适合汇报、方案和数据解读。'
   form.logo_asset_id = theme?.logo_asset_id || null
   form.invert_logo_asset_id = theme?.invert_logo_asset_id || null
   form.project_icon_asset_id = theme?.project_icon_asset_id || null

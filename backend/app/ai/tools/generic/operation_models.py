@@ -244,7 +244,7 @@ class ComponentContentPayload(OperationArgumentsModel):
     change_note: str | None = Field(default=None, max_length=255, description="本次源码修改说明。")
 
 
-EditableAssetType = Literal["icon", "drawio", "mermaid", "chart", "formula"]
+EditableAssetType = Literal["icon", "image", "drawio", "mermaid", "chart", "formula"]
 
 
 class AssetCreatePayload(OperationArgumentsModel):
@@ -252,8 +252,8 @@ class AssetCreatePayload(OperationArgumentsModel):
 
     asset_type: EditableAssetType = Field(
         description=(
-            "可创建的文本资源类型。icon 表示 SVG 图标，不存在独立的 svg 类型；"
-            "不支持 image、video 或 font。"
+            "可创建的资源类型。icon 表示 SVG 图标，image 仅表示 SVG 图片，不存在独立的 svg 类型；"
+            "不支持非 SVG 位图、video 或 font。"
         )
     )
     name: str = Field(
@@ -265,7 +265,7 @@ class AssetCreatePayload(OperationArgumentsModel):
         min_length=1,
         max_length=255,
         description=(
-            "带扩展名的展示文件名：icon 使用 .svg；drawio 使用 .drawio/.xml；"
+            "带扩展名的展示文件名：icon 和 SVG image 使用 .svg；drawio 使用 .drawio/.xml；"
             "mermaid 使用 .mmd/.mermaid/.txt；chart 使用 .json/.yaml/.yml；formula 使用 .tex/.txt。"
         ),
     )

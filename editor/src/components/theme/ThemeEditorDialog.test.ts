@@ -36,6 +36,8 @@ describe('ThemeEditorDialog', () => {
 
     await waitFor(() => {
       expect(screen.getByDisplayValue('lightblue')).toBeInTheDocument()
+      expect(screen.getByDisplayValue('明亮商务蓝')).toBeInTheDocument()
+      expect(screen.getByDisplayValue('明亮、专业、克制的商务主题，适合汇报、方案和数据解读。')).toBeInTheDocument()
       expect(listWorkspaceFontFamiliesMock).toHaveBeenCalledWith(7, expect.objectContaining({ page: 1, page_size: 100 }))
     })
 
@@ -49,6 +51,7 @@ describe('ThemeEditorDialog', () => {
       heading_font_preset: string | null
       body_font_preset: string | null
       code_font_preset: string | null
+      palette: Record<string, unknown>
     }
 
     expect(savePayload).toMatchObject({
@@ -58,6 +61,13 @@ describe('ThemeEditorDialog', () => {
       heading_font_preset: 'platform-sans',
       body_font_preset: 'platform-sans',
       code_font_preset: 'platform-mono',
+    })
+    expect(savePayload.palette).toEqual({
+      text: { primary: '#20364D', secondary: '#627487', invert: '#FFFFFF' },
+      background: { default: '#FFFFFF', invert: '#173B5C' },
+      border: { default: '#D8E2EC', subtle: '#EDF2F6' },
+      link: { default: '#1B6CA8', hover: '#0F4C81', visited: '#5E6CB5' },
+      accent: ['#2D7BB8', '#159A8C', '#D39A24', '#E07B67', '#6C73B8', '#6C9BB8'],
     })
   })
 

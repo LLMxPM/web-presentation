@@ -1,29 +1,29 @@
 themes:
   lightblue:
-    name: 白底蓝色
-    description: 白底蓝色主题，简约经典
+    name: 明亮商务蓝
+    description: 明亮、专业、克制的商务主题，适合汇报、方案和数据解读。
     palette:
       text:
-        primary: "#0D286A"
-        secondary: "#1D5297"
-        invert: "#ffffff"
+        primary: "#20364D"
+        secondary: "#627487"
+        invert: "#FFFFFF"
       background:
-        default: "#ffffff"
-        invert: "#0D286A"
+        default: "#FFFFFF"
+        invert: "#173B5C"
       border:
-        default: "#e5e7eb"
-        subtle: "#d1d5db"
+        default: "#D8E2EC"
+        subtle: "#EDF2F6"
       link:
-        default: "#3b82f6"
-        hover: "#2563eb"
-        visited: "#7c3aed"
+        default: "#1B6CA8"
+        hover: "#0F4C81"
+        visited: "#5E6CB5"
       accent:
-        - "#0D286A"
-        - "#260E6D"
-        - "#9E8403"
-        - "#9E6B03"
-        - "#A110AB"
-        - "#C5003C"
+        - "#2D7BB8"
+        - "#159A8C"
+        - "#D39A24"
+        - "#E07B67"
+        - "#6C73B8"
+        - "#6C9BB8"
     typography:
       headingfont: platform-sans
       bodyfont: platform-sans

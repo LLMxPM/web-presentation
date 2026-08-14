@@ -19,7 +19,18 @@ async def test_workspace_theme_update_should_normalize_key_and_cascade_reference
 
     themes_response = await authenticated_client.get(f"/api/workspaces/{workspace_id}/themes")
     assert themes_response.status_code == 200
-    theme_id = themes_response.json()["items"][0]["id"]
+    default_theme = themes_response.json()["items"][0]
+    assert default_theme["key"] == "lightblue"
+    assert default_theme["name"] == "明亮商务蓝"
+    assert default_theme["description"] == "明亮、专业、克制的商务主题，适合汇报、方案和数据解读。"
+    assert default_theme["palette"] == {
+        "text": {"primary": "#20364D", "secondary": "#627487", "invert": "#FFFFFF"},
+        "background": {"default": "#FFFFFF", "invert": "#173B5C"},
+        "border": {"default": "#D8E2EC", "subtle": "#EDF2F6"},
+        "link": {"default": "#1B6CA8", "hover": "#0F4C81", "visited": "#5E6CB5"},
+        "accent": ["#2D7BB8", "#159A8C", "#D39A24", "#E07B67", "#6C73B8", "#6C9BB8"],
+    }
+    theme_id = default_theme["id"]
 
     update_response = await authenticated_client.patch(
         f"/api/workspaces/{workspace_id}/themes/{theme_id}",

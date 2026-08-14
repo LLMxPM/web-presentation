@@ -18,6 +18,7 @@ from app.ai.tool_specs import (
 )
 from app.ai.tools.generic.business_tools import ThemeCreatePayload, ThemeUpdatePayload, build_generic_business_tools
 from app.ai.tools.generic.operation_models import (
+    AssetCreatePayload,
     AssetMetadataPayload,
     ComponentCreatePayload,
     PageCopyPayload,
@@ -166,6 +167,7 @@ def test_asset_create_guide_should_expose_executable_content_contract() -> None:
     properties = payload_schema["properties"]
     serialized_constraints = "".join(guide.constraints)
     assert "不存在独立的 svg 类型" in properties["asset_type"]["description"]
+    assert set(properties["asset_type"]["enum"]) == {"icon", "image", "drawio", "mermaid", "chart", "formula"}
     assert ".drawio/.xml" in properties["original_name"]["description"]
     assert "512 KiB" in properties["content"]["description"]
     assert "currentColor" in serialized_constraints
@@ -178,6 +180,21 @@ def test_asset_create_guide_should_expose_executable_content_contract() -> None:
     assert guide.response_example["data"]["asset"]["name"] == "trend-up"
     assert guide.response_example["mutation"]["target"]["id"] == 91
     Draft202012Validator(guide.parameters).validate(guide.call_example)
+
+
+def test_asset_create_payload_should_allow_svg_image_resource() -> None:
+    """统一资源创建参数应允许创建 SVG 图片，但不扩展为位图生成。"""
+
+    payload = AssetCreatePayload.model_validate(
+        {
+            "asset_type": "image",
+            "name": "business-illustration",
+            "original_name": "business-illustration.svg",
+            "content": '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 9"><rect width="16" height="9" fill="currentColor"/></svg>',
+        }
+    )
+
+    assert payload.asset_type == "image"
 
 
 def test_component_create_guide_should_require_and_explain_preview_schema() -> None:

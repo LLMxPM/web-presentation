@@ -34,8 +34,8 @@ from app.schemas.theme import (
 )
 
 DEFAULT_THEME_KEY = "lightblue"
-DEFAULT_THEME_NAME = "明亮多彩"
-DEFAULT_THEME_DESCRIPTION = "浅底明亮主题，现代多彩风格"
+DEFAULT_THEME_NAME = "明亮商务蓝"
+DEFAULT_THEME_DESCRIPTION = "明亮、专业、克制的商务主题，适合汇报、方案和数据解读。"
 DEFAULT_THEME_LOGO_PATH = None
 DEFAULT_THEME_INVERT_LOGO_PATH = None
 DEFAULT_THEME_PROJECT_ICON_NAME = None
@@ -45,30 +45,30 @@ DEFAULT_THEME_CODE_FONT = PLATFORM_MONO_FONT
 DEFAULT_THEME_PALETTE = ThemePalette.model_validate(
     {
         "text": {
-            "primary": "#1F2937",
-            "secondary": "#6B7280",
+            "primary": "#20364D",
+            "secondary": "#627487",
             "invert": "#FFFFFF",
         },
         "background": {
-            "default": "#FAFBFC",
-            "invert": "#1F2937",
+            "default": "#FFFFFF",
+            "invert": "#173B5C",
         },
         "border": {
-            "default": "#E5E7EB",
-            "subtle": "#D1D5DB",
+            "default": "#D8E2EC",
+            "subtle": "#EDF2F6",
         },
         "link": {
-            "default": "#3B82F6",
-            "hover": "#2563EB",
-            "visited": "#8B5CF6",
+            "default": "#1B6CA8",
+            "hover": "#0F4C81",
+            "visited": "#5E6CB5",
         },
         "accent": [
-            "#3B82F6",
-            "#8B5CF6",
-            "#EC4899",
-            "#10B981",
-            "#F59E0B",
-            "#EF4444",
+            "#2D7BB8",
+            "#159A8C",
+            "#D39A24",
+            "#E07B67",
+            "#6C73B8",
+            "#6C9BB8",
         ],
     }
 )
