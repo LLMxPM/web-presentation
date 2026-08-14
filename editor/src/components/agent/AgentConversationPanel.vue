@@ -86,6 +86,7 @@
           :cancelling-run-force-available="cancellingRunForceAvailable"
           :is-streaming="isStreaming"
           :streaming-timeline-item-id="streamingTimelineItemId"
+          :session-id="activeSessionId"
           :promote-attachment="handlePromoteImage"
           @apply-suggested-patch="applySuggestedPatch"
           @remove-draft-patch="removeDraftPatch"

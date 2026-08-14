@@ -6,9 +6,12 @@
       class="agent-conversation-body min-h-0 flex-1 overflow-y-auto px-3 py-2.5"
       :class="{ 'agent-conversation-body--floating-toast': hasFloatingNotice }"
       @scroll="handleConversationScroll"
-      @wheel.passive="markUserScrollIntent"
-      @touchmove.passive="markUserScrollIntent"
-      @keydown="markUserScrollIntent"
+      @wheel.passive="handleConversationWheel"
+      @touchstart.passive="handleConversationTouchStart"
+      @touchmove.passive="handleConversationTouchMove"
+      @touchend.passive="handleConversationTouchEnd"
+      @touchcancel.passive="handleConversationTouchEnd"
+      @keydown="handleConversationKeydown"
       @pointerdown="handleConversationPointerDown"
     >
     <div ref="scrollContentRef" class="flex min-h-full flex-col gap-2">
@@ -70,7 +73,7 @@
                   <MarkdownRender
                     v-else-if="resolveMessageContent(item.message)"
                     :nodes="resolveMessageMarkdownNodes(item.message)"
-                    :max-live-nodes="320"
+                    :max-live-nodes="0"
                     batch-rendering
                     :initial-render-batch-size="assistantBatchRendering.initialRenderBatchSize"
                     :render-batch-size="assistantBatchRendering.renderBatchSize"
@@ -174,7 +177,7 @@
                 <div class="reasoning-markdown max-h-40 overflow-auto border-t border-border px-2 py-1.5">
                   <MarkdownRender
                     :nodes="resolveReasoningMarkdownNodes(item)"
-                    :max-live-nodes="160"
+                    :max-live-nodes="0"
                     batch-rendering
                     :initial-render-batch-size="assistantBatchRendering.initialRenderBatchSize"
                     :render-batch-size="assistantBatchRendering.renderBatchSize"
@@ -404,7 +407,7 @@
 import 'markstream-vue/index.css'
 import MarkdownRender, { getMarkdown, parseMarkdownToStructure } from 'markstream-vue'
 import { ChevronDown, ChevronRight, Copy, Sparkles } from '@lucide/vue'
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 
 import DataState from '@/components/patterns/DataState.vue'
 import { UiBadge, UiButton, UiIconButton } from '@/components/ui'
@@ -426,6 +429,7 @@ import {
   toolStatusLabelMap,
 } from '@/components/agent/agent-message-display'
 import type { TimelineDisplayItem, ToolCallDetail } from '@/components/agent/agent-conversation-panel'
+import { useAgentConversationScroll } from '@/components/agent/useAgentConversationScroll'
 import type { AgentActiveRunItem, AgentMessageAttachmentItem, AgentMessageItem, AgentSuggestedPatch } from '@/types/api'
 import { Message } from '@/utils/message'
 
@@ -441,6 +445,7 @@ const props = withDefaults(defineProps<{
   cancellingRunForceAvailable: boolean
   isStreaming: boolean
   streamingTimelineItemId: string | null
+  sessionId?: string | null
   /** 保存为资源的执行入口，透传给统一图片预览弹窗；未提供时隐藏保存交互。 */
   promoteAttachment?: ((attachmentId: number) => Promise<boolean>) | null
 }>(), {
@@ -457,18 +462,13 @@ const emit = defineEmits<{
 
 const markdownParser = getMarkdown()
 const markdownNodeCache = new Map<string, ReturnType<typeof buildMessageMarkdownNodes>>()
+const streamingMarkdownCacheKeyByItem = new Map<string, string>()
 const scrollContainerRef = ref<HTMLElement | null>(null)
 const scrollContentRef = ref<HTMLElement | null>(null)
-const autoScrollEnabled = ref(true)
 const failedAttachmentIds = ref(new Set<number>())
 const userMessageCollapseOverrides = ref(new Map<string, boolean>())
 const previewOpen = ref(false)
 const previewAttachment = ref<AgentMessageAttachmentItem | null>(null)
-let scrollAnimationFrame: number | null = null
-const USER_SCROLL_INTENT_WINDOW_MS = 1000
-let userScrollIntentUntil = 0
-let scrollbarDragging = false
-let contentResizeObserver: ResizeObserver | null = null
 const assistantBatchRendering = {
   initialRenderBatchSize: 12,
   renderBatchSize: 16,
@@ -504,6 +504,21 @@ const isMessageStreaming = createMessageStreamingResolver(
   () => props.streamingTimelineItemId,
 )
 
+const {
+  handleKeydown: handleConversationKeydown,
+  handlePointerDown: handleConversationPointerDown,
+  handleScroll: handleConversationScroll,
+  handleTouchEnd: handleConversationTouchEnd,
+  handleTouchMove: handleConversationTouchMove,
+  handleTouchStart: handleConversationTouchStart,
+  handleWheel: handleConversationWheel,
+  scheduleScrollToBottom: scheduleAutoScrollToBottom,
+} = useAgentConversationScroll({
+  scrollContainerRef,
+  scrollContentRef,
+  sessionKey: () => props.sessionId ?? null,
+})
+
 watch(
   () => buildConversationChangeSignature(),
   () => {
@@ -511,23 +526,6 @@ watch(
   },
   { flush: 'post' },
 )
-
-onMounted(() => {
-  setupContentResizeObserver()
-  window.addEventListener('pointerup', releaseScrollbarDrag)
-  window.addEventListener('pointercancel', releaseScrollbarDrag)
-  scheduleAutoScrollToBottom()
-})
-
-onBeforeUnmount(() => {
-  contentResizeObserver?.disconnect()
-  contentResizeObserver = null
-  window.removeEventListener('pointerup', releaseScrollbarDrag)
-  window.removeEventListener('pointercancel', releaseScrollbarDrag)
-  if (scrollAnimationFrame !== null) {
-    window.cancelAnimationFrame(scrollAnimationFrame)
-  }
-})
 
 /**
  * 只有空 assistant 占位才显示省略号。
@@ -543,6 +541,7 @@ function resolveMessageMarkdownNodes(message: AgentMessageItem) {
   return readMarkdownCache(
     buildMarkdownCacheKey('content', message.id, message.content, isMessageStreaming(message)),
     () => buildMessageMarkdownNodes(message, markdownParser, isMessageStreaming),
+    isMessageStreaming(message) ? `content:${message.id}` : null,
   )
 }
 
@@ -553,6 +552,7 @@ function resolveReasoningMarkdownNodes(item: Extract<TimelineDisplayItem, { kind
   return readMarkdownCache(
     buildMarkdownCacheKey('reasoning', item.id, item.content, item.streaming),
     () => parseMarkdownToStructure(item.content, markdownParser, { final: !item.streaming }),
+    item.streaming ? `reasoning:${item.id}` : null,
   )
 }
 
@@ -646,106 +646,6 @@ function attachmentPlaceholderText(attachment: AgentMessageAttachmentItem) {
   return attachment.source_kind === 'tool_output' ? '工具图片' : '图片'
 }
 
-/**
- * 用户靠近底部时自动跟随新输出；手动上滑后保持当前位置，避免阅读历史时被拉回底部。
- * 离开底部一律停止跟随；重新开启跟随要求滚动带有用户意图，
- * 防止折叠内容、scrollTop clamp 等布局引发的滚动误恢复自动跟随。
- */
-function handleConversationScroll() {
-  const container = scrollContainerRef.value
-  if (!container) {
-    return
-  }
-  if (!isNearConversationBottom(container)) {
-    autoScrollEnabled.value = false
-    return
-  }
-  if (hasUserScrollIntent()) {
-    autoScrollEnabled.value = true
-  }
-}
-
-/**
- * 记录用户滚动意图；只有带意图的滚动回到底部才允许重新开启自动跟随。
- */
-function markUserScrollIntent() {
-  userScrollIntentUntil = performance.now() + USER_SCROLL_INTENT_WINDOW_MS
-}
-
-/**
- * 命中纵向滚动条区域的按下视为拖拽滚动条；普通点击（如折叠块）不计入滚动意图。
- */
-function handleConversationPointerDown(event: PointerEvent) {
-  const container = scrollContainerRef.value
-  if (!container) {
-    return
-  }
-  if (event.target === container && event.offsetX >= container.clientWidth) {
-    scrollbarDragging = true
-  }
-}
-
-function releaseScrollbarDrag() {
-  scrollbarDragging = false
-}
-
-function hasUserScrollIntent() {
-  return scrollbarDragging || performance.now() <= userScrollIntentUntil
-}
-
-/**
- * 批量渲染、图片加载或浮动提示 padding 切换会让内容在"滚到底"执行后继续增高；
- * 监听内容尺寸变化，在跟随开启时持续贴底。
- */
-function setupContentResizeObserver() {
-  if (typeof ResizeObserver === 'undefined') {
-    return
-  }
-  const content = scrollContentRef.value
-  if (!content) {
-    return
-  }
-  contentResizeObserver = new ResizeObserver(() => {
-    const container = scrollContainerRef.value
-    if (!container || !autoScrollEnabled.value) {
-      return
-    }
-    container.scrollTop = container.scrollHeight
-  })
-  contentResizeObserver.observe(content)
-}
-
-function scheduleAutoScrollToBottom() {
-  if (!autoScrollEnabled.value) {
-    return
-  }
-  void nextTick(() => {
-    if (!autoScrollEnabled.value) {
-      return
-    }
-    if (scrollAnimationFrame !== null) {
-      window.cancelAnimationFrame(scrollAnimationFrame)
-    }
-    scrollAnimationFrame = window.requestAnimationFrame(() => {
-      scrollAnimationFrame = null
-      const container = scrollContainerRef.value
-      if (!container || !autoScrollEnabled.value) {
-        return
-      }
-      container.scrollTop = container.scrollHeight
-    })
-  })
-}
-
-/**
- * 距底阈值需叠加容器 padding-bottom：浮动提示出现时底部 5.5rem 是留白，
- * 用户看着最后一条消息时不应被误判为已离开底部。
- */
-function isNearConversationBottom(container: HTMLElement) {
-  const paddingBottom = Number.parseFloat(window.getComputedStyle(container).paddingBottom) || 0
-  return container.scrollHeight - container.scrollTop - container.clientHeight <= 80 + paddingBottom
-}
-
 function buildConversationChangeSignature() {
   const lastItem = props.timelineDisplayItems.at(-1)
   return [
@@ -777,12 +677,20 @@ function buildMarkdownCacheKey(kind: 'content' | 'reasoning', id: string, conten
 function readMarkdownCache(
   key: string,
   factory: () => ReturnType<typeof buildMessageMarkdownNodes>,
+  streamingItemKey: string | null = null,
 ) {
   const cached = markdownNodeCache.get(key)
   if (cached) {
     return cached
   }
   const value = factory()
+  if (streamingItemKey) {
+    const previousKey = streamingMarkdownCacheKeyByItem.get(streamingItemKey)
+    if (previousKey && previousKey !== key) {
+      markdownNodeCache.delete(previousKey)
+    }
+    streamingMarkdownCacheKeyByItem.set(streamingItemKey, key)
+  }
   markdownNodeCache.set(key, value)
   trimMarkdownCache()
   return value
@@ -831,6 +739,10 @@ function getRequirementStatusClass(status: string | null) {
 <style scoped>
 .agent-conversation-body--floating-toast {
   padding-bottom: 5.5rem;
+}
+
+.agent-conversation-body {
+  overflow-anchor: none;
 }
 
 details[open] .details-chevron {

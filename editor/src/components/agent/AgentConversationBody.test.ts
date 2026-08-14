@@ -41,7 +41,7 @@ function assistantMessageItem(content: string): TimelineDisplayItem {
   return { id: 'assistant-1', kind: 'message', item: timelineItem, message }
 }
 
-function baseProps(content: string) {
+function baseProps(content: string, sessionId = 'session-1') {
   return {
     timelineDisplayItems: [assistantMessageItem(content)],
     draftPatches: [],
@@ -52,6 +52,7 @@ function baseProps(content: string) {
     cancellingRunForceAvailable: false,
     isStreaming: true,
     streamingTimelineItemId: 'assistant-1',
+    sessionId,
   }
 }
 
@@ -85,15 +86,45 @@ function installScrollMetrics(element: HTMLElement, metrics: ScrollMetrics) {
 async function flushAutoScroll() {
   await nextTick()
   await nextTick()
+  flushAnimationFrames()
+  await nextTick()
+}
+
+let animationFrameId = 0
+let pendingAnimationFrames = new Map<number, FrameRequestCallback>()
+let resizeObserverCallbacks: ResizeObserverCallback[] = []
+
+class ControlledResizeObserver implements ResizeObserver {
+  constructor(callback: ResizeObserverCallback) {
+    resizeObserverCallbacks.push(callback)
+  }
+
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+}
+
+/** 模拟真实浏览器下一帧执行，避免同步 rAF 隐藏调度状态问题。 */
+function flushAnimationFrames() {
+  const callbacks = [...pendingAnimationFrames.values()]
+  pendingAnimationFrames.clear()
+  callbacks.forEach(callback => callback(performance.now()))
 }
 
 describe('AgentConversationBody 滚动跟随', () => {
   beforeEach(() => {
+    animationFrameId = 0
+    pendingAnimationFrames = new Map()
+    resizeObserverCallbacks = []
+    vi.stubGlobal('ResizeObserver', ControlledResizeObserver)
     vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
-      callback(0)
-      return 1
+      animationFrameId += 1
+      pendingAnimationFrames.set(animationFrameId, callback)
+      return animationFrameId
     })
-    vi.stubGlobal('cancelAnimationFrame', () => {})
+    vi.stubGlobal('cancelAnimationFrame', (id: number) => {
+      pendingAnimationFrames.delete(id)
+    })
   })
 
   afterEach(() => {
@@ -115,28 +146,30 @@ describe('AgentConversationBody 滚动跟随', () => {
     await rerender(baseProps(`第一段${'内容'.repeat(200)}`))
     await flushAutoScroll()
 
-    expect(state.scrollTop).toBe(1600)
+    expect(state.scrollTop).toBe(1200)
   })
 
   it('用户上滑离开底部后，新内容不应把视口拉回底部', async () => {
     const metrics: ScrollMetrics = { scrollTop: 600, scrollHeight: 1000, clientHeight: 400 }
     const { rerender, scrollBody, metrics: state } = setup('第一段', metrics)
 
-    state.scrollTop = 100
+    scrollBody.dispatchEvent(new WheelEvent('wheel', { deltaY: -20 }))
+    state.scrollTop = 580
     scrollBody.dispatchEvent(new Event('scroll'))
 
     state.scrollHeight = 1600
     await rerender(baseProps(`第一段${'内容'.repeat(200)}`))
     await flushAutoScroll()
 
-    expect(state.scrollTop).toBe(100)
+    expect(state.scrollTop).toBe(580)
   })
 
-  it('无用户意图的贴底滚动不恢复跟随，滚轮回到底部后才恢复', async () => {
+  it('向上滚动后的布局 clamp 不恢复跟随，用户滚回底部后才恢复', async () => {
     const metrics: ScrollMetrics = { scrollTop: 600, scrollHeight: 1000, clientHeight: 400 }
     const { rerender, scrollBody, metrics: state } = setup('第一段', metrics)
 
     // 先上滑关闭跟随
+    scrollBody.dispatchEvent(new WheelEvent('wheel', { deltaY: -20 }))
     state.scrollTop = 100
     scrollBody.dispatchEvent(new Event('scroll'))
 
@@ -151,12 +184,46 @@ describe('AgentConversationBody 滚动跟随', () => {
 
     // 用户滚轮滚回底部，应重新开启跟随
     state.scrollTop = 1200
-    scrollBody.dispatchEvent(new Event('wheel'))
+    scrollBody.dispatchEvent(new WheelEvent('wheel', { deltaY: 20 }))
     scrollBody.dispatchEvent(new Event('scroll'))
 
     state.scrollHeight = 2200
     await rerender(baseProps(`第一段${'内容'.repeat(400)}`))
     await flushAutoScroll()
-    expect(state.scrollTop).toBe(2200)
+    expect(state.scrollTop).toBe(1800)
+  })
+
+  it('多次内容尺寸变化应合并为同一动画帧的贴底写入', async () => {
+    const metrics: ScrollMetrics = { scrollTop: 600, scrollHeight: 1000, clientHeight: 400 }
+    const { metrics: state } = setup('第一段', metrics)
+    await flushAutoScroll()
+
+    state.scrollHeight = 1600
+    resizeObserverCallbacks.forEach(callback => {
+      callback([], {} as ResizeObserver)
+      callback([], {} as ResizeObserver)
+      callback([], {} as ResizeObserver)
+    })
+    await nextTick()
+
+    expect(pendingAnimationFrames.size).toBe(1)
+    flushAnimationFrames()
+    expect(state.scrollTop).toBe(1200)
+  })
+
+  it('切换会话后应重新跟随新会话底部', async () => {
+    const metrics: ScrollMetrics = { scrollTop: 600, scrollHeight: 1000, clientHeight: 400 }
+    const { rerender, scrollBody, metrics: state } = setup('第一段', metrics)
+    await flushAutoScroll()
+
+    scrollBody.dispatchEvent(new WheelEvent('wheel', { deltaY: -20 }))
+    state.scrollTop = 580
+    scrollBody.dispatchEvent(new Event('scroll'))
+
+    state.scrollHeight = 1600
+    await rerender(baseProps('新会话消息', 'session-2'))
+    await flushAutoScroll()
+
+    expect(state.scrollTop).toBe(1200)
   })
 })
