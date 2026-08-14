@@ -45,7 +45,6 @@ function baseProps(content: string) {
   return {
     timelineDisplayItems: [assistantMessageItem(content)],
     draftPatches: [],
-    emptyConversationText: '暂无对话',
     loading: false,
     loadingText: '加载中',
     lastRunIssue: null,

@@ -79,7 +79,6 @@
         <AgentConversationBody
           :timeline-display-items="timelineDisplayItems"
           :draft-patches="draftPatches"
-          :empty-conversation-text="emptyConversationText"
           :loading="sessionLoading"
           :loading-text="sessionLoadingText"
           :last-run-issue="lastRunIssue"
@@ -462,7 +461,6 @@ interface Props {
   routeScope?: AgentScopeContext | null
   contextTitle?: string
   enablePagePatchActions?: boolean
-  emptyText?: string
   composerPlaceholder?: string
   embedded?: boolean
   headerScopeTarget?: string | null
@@ -503,7 +501,6 @@ const props = withDefaults(defineProps<Props>(), {
   routeScope: null,
   contextTitle: '',
   enablePagePatchActions: true,
-  emptyText: '',
   composerPlaceholder: '',
   embedded: false,
   headerScopeTarget: null,
@@ -598,7 +595,6 @@ const currentRouteScope = computed<AgentScopeContext>(() => props.routeScope ?? 
 const agentId = computed(() => props.agentId || 'agent-coordinator')
 const agentDisplayName = computed(() => selectedAgent.value?.name || props.agentDisplayName || '内容助手')
 const contextTitle = computed(() => props.contextTitle || props.pageTitle || selectedAgent.value?.default_session_name || '智能体会话')
-const emptyConversationText = computed(() => props.emptyText || `${agentDisplayName.value} 会结合当前上下文和可用工具给出建议。`)
 const composerPlaceholderText = computed(() => (
   props.composerPlaceholder
   || '描述目标；内容助手可以管理当前工作空间内的项目、页面、组件、资源、主题和样式。'

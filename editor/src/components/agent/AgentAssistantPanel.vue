@@ -12,7 +12,6 @@
     :route-scope="routeScope"
     :context-title="contextTitle"
     :enable-page-patch-actions="enablePagePatchActions"
-    :empty-text="emptyText"
     :composer-placeholder="composerPlaceholder"
     :embedded="embedded"
     :header-scope-target="headerScopeTarget"
@@ -49,7 +48,6 @@ interface Props {
   routeScope?: AgentScopeContext | null
   contextTitle?: string
   enablePagePatchActions?: boolean
-  emptyText?: string
   composerPlaceholder?: string
   embedded?: boolean
   headerScopeTarget?: string | null
@@ -71,7 +69,6 @@ withDefaults(defineProps<Props>(), {
   routeScope: null,
   contextTitle: '',
   enablePagePatchActions: false,
-  emptyText: '',
   composerPlaceholder: '',
   embedded: false,
   headerScopeTarget: null,

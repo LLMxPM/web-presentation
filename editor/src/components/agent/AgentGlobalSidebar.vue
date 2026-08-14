@@ -38,7 +38,6 @@
           :header-actions-target="headerActionsTarget"
           :auto-navigate-target="agentTargetRoute"
           :enable-page-patch-actions="scope.scope_type === 'page'"
-          :empty-text="emptyText"
           :composer-placeholder="composerPlaceholder"
           :route-available="isAgentRunAvailable()"
           :route-unavailable-reason="activeAgentUnavailableReason"
@@ -137,8 +136,6 @@ const activeAgentUnavailableReason = computed(() => (
   resolveAgentRunUnavailableReason() ?? ''
 ))
 const contextTitle = computed(() => agentTarget.value.contextTitle)
-const contextTypeLabel = computed(() => agentTarget.value.contextTypeLabel)
-const emptyText = computed(() => `智能体会在 ${contextTitle.value}${contextTypeLabel.value ? `（${contextTypeLabel.value}）` : ''}内执行任务。`)
 const composerPlaceholder = computed(() => '描述目标；内容助手可以管理当前工作空间内的项目、页面、组件、资源、主题和样式。')
 
 function normalizeContextName(value: string | null | undefined): string {

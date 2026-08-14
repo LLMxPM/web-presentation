@@ -608,7 +608,7 @@ describe('AgentConversationPanel', () => {
     })
     expect(screen.queryByText('页面一的旧快照不应显示在页面二。')).toBeNull()
     await waitFor(() => {
-      expect(screen.getByText(/内容助手 会结合当前上下文/)).toBeTruthy()
+      expect(screen.getByText('发送文本或图片开始创作')).toBeTruthy()
     })
   })
 

@@ -42,12 +42,15 @@
     </section>
 
     <section class="flex min-h-[140px] flex-1 flex-col">
-      <DataState
-        :state="conversationDataState"
-        :title="conversationDataState === 'loading' ? loadingText : emptyConversationText"
-        :description="conversationDataState === 'empty' ? '发送消息后，助手会在当前会话中持续反馈进度。' : undefined"
+      <DataState v-if="conversationDataState === 'loading'" state="loading" :title="loadingText" />
+      <div
+        v-else-if="conversationDataState === 'empty'"
+        class="flex flex-1 flex-col items-center justify-center gap-2 px-4 py-4 text-center"
       >
-        <div class="flex flex-col gap-2">
+        <Sparkles class="h-4 w-4 text-info" />
+        <p class="text-sm font-semibold text-text">{{ emptyConversationText }}</p>
+      </div>
+      <div v-else class="flex flex-col gap-2">
         <template v-for="item in timelineDisplayItems" :key="item.id">
           <AgentRunContextCard v-if="item.kind === 'run_context'" :context="item.context" />
           <article
@@ -345,8 +348,7 @@
             </div>
           </article>
         </template>
-        </div>
-      </DataState>
+      </div>
     </section>
     </div>
 
@@ -401,7 +403,7 @@
 <script setup lang="ts">
 import 'markstream-vue/index.css'
 import MarkdownRender, { getMarkdown, parseMarkdownToStructure } from 'markstream-vue'
-import { ChevronDown, ChevronRight, Copy } from '@lucide/vue'
+import { ChevronDown, ChevronRight, Copy, Sparkles } from '@lucide/vue'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import DataState from '@/components/patterns/DataState.vue'
@@ -427,10 +429,11 @@ import type { TimelineDisplayItem, ToolCallDetail } from '@/components/agent/age
 import type { AgentActiveRunItem, AgentMessageAttachmentItem, AgentMessageItem, AgentSuggestedPatch } from '@/types/api'
 import { Message } from '@/utils/message'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   timelineDisplayItems: TimelineDisplayItem[]
   draftPatches: AgentSuggestedPatch[]
-  emptyConversationText: string
+  /** 空会话提示文案；未提供时使用默认发送引导。 */
+  emptyConversationText?: string
   loading: boolean
   loadingText: string
   lastRunIssue: { title: string, detail: string } | null
@@ -440,7 +443,9 @@ const props = defineProps<{
   streamingTimelineItemId: string | null
   /** 保存为资源的执行入口，透传给统一图片预览弹窗；未提供时隐藏保存交互。 */
   promoteAttachment?: ((attachmentId: number) => Promise<boolean>) | null
-}>()
+}>(), {
+  emptyConversationText: '发送文本或图片开始创作',
+})
 
 const emit = defineEmits<{
   'apply-suggested-patch': [patch: AgentSuggestedPatch]
