@@ -1857,11 +1857,15 @@ async def test_pydantic_runner_should_compress_completed_run_when_budget_exceede
 ) -> None:
     """最终响应超过上下文预算时，应同步模型压缩并写入会话检查点。"""
 
+    compression_calls = 0
+
     async def model_function(messages: list[Any], info: AgentInfo) -> ModelResponse:
         """主模型与压缩模型共用同一 FunctionModel。"""
 
+        nonlocal compression_calls
         _ = info
         if _is_compression_prompt(messages):
+            compression_calls += 1
             return ModelResponse(
                 parts=[TextPart(content="模型摘要：用户要求整理上下文，最终回答已经生成。")],
                 usage=RequestUsage(input_tokens=10, output_tokens=8),
@@ -1884,7 +1888,14 @@ async def test_pydantic_runner_should_compress_completed_run_when_budget_exceede
     )
     model = FunctionModel(function=model_function, stream_function=stream_function)
     budget = build_history_budget(
-        SimpleNamespace(context_window_tokens=613, max_output_tokens=100, compression_target_ratio=0.1),
+        SimpleNamespace(
+            context_window_tokens=2048,
+            budget_policy_version="fixed-context-budget.test",
+            request_output_tokens=256,
+            compression_trigger_tokens=1,
+            compression_target_tokens=256,
+            runtime_headroom_tokens=0,
+        ),
         runtime_context=_runtime_context(scope),
     )
 
@@ -1935,7 +1946,9 @@ async def test_pydantic_runner_should_compress_completed_run_when_budget_exceede
         "context.compression.started",
         "context.compression.completed",
     ]
+    assert compression_calls == 1
     assert completed_event.data["compression_method"] == "model"
+    assert completed_event.data["compression_input_stats"]["normalized_item_count"] > 0
     assert completed_event.data["context_status"]["compression_status"] == "compressed"
     assert session_model is not None and isinstance(session_model.summary_json, dict)
     assert session_model.summary_json["covered_until_run_id"] == "pydantic-runner-compress-completed"
@@ -1972,7 +1985,14 @@ async def test_pydantic_runner_should_fallback_when_model_compression_fails(
     )
     model = FunctionModel(function=model_function, stream_function=stream_function)
     budget = build_history_budget(
-        SimpleNamespace(context_window_tokens=613, max_output_tokens=100, compression_target_ratio=0.1),
+        SimpleNamespace(
+            context_window_tokens=2048,
+            budget_policy_version="fixed-context-budget.test",
+            request_output_tokens=256,
+            compression_trigger_tokens=1,
+            compression_target_tokens=256,
+            runtime_headroom_tokens=0,
+        ),
         runtime_context=_runtime_context(scope),
     )
 
@@ -2020,7 +2040,7 @@ async def test_pydantic_runner_should_fallback_when_model_compression_fails(
     assert completed_event.data["context_status"]["compression_method"] == "deterministic_fallback"
     assert session_model is not None and isinstance(session_model.summary_json, dict)
     assert session_model.summary_json["compression_method"] == "deterministic_fallback"
-    assert "原始历史压缩摘录" in session_model.summary_json["summary"]
+    assert "结构化历史事实" in session_model.summary_json["summary"]
 
 
 async def test_pydantic_runner_should_fail_before_next_request_when_compression_fails(
@@ -2070,7 +2090,7 @@ async def test_pydantic_runner_should_fail_before_next_request_when_compression_
         _ = args, kwargs
         raise RuntimeError("deterministic fallback failed")
 
-    monkeypatch.setattr("app.ai.history_compression.build_deterministic_summary", broken_deterministic_summary)
+    monkeypatch.setattr("app.ai.history_compression.build_deterministic_summary_from_input", broken_deterministic_summary)
     _, session_id, scope = await _create_workspace_session(
         authenticated_client,
         workspace_name="Pydantic Runner 压缩失败工作空间",
@@ -2078,7 +2098,14 @@ async def test_pydantic_runner_should_fail_before_next_request_when_compression_
     )
     model = FunctionModel(function=model_function, stream_function=stream_function)
     budget = build_history_budget(
-        SimpleNamespace(context_window_tokens=613, max_output_tokens=100, compression_target_ratio=0.1),
+        SimpleNamespace(
+            context_window_tokens=2048,
+            budget_policy_version="fixed-context-budget.test",
+            request_output_tokens=256,
+            compression_trigger_tokens=1,
+            compression_target_tokens=256,
+            runtime_headroom_tokens=0,
+        ),
         runtime_context=_runtime_context(scope),
     )
 

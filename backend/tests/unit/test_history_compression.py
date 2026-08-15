@@ -1,39 +1,40 @@
-"""文件功能：验证历史压缩的 token 感知分块不会截断或损坏长文本。"""
+"""文件功能：验证历史压缩不再分块，并保持结构化输入的完整语义。"""
 
 from __future__ import annotations
 
-import tiktoken
 from pydantic_ai.messages import ModelRequest, UserPromptPart
 
-from app.ai.history_compression import _history_json_text, _split_text_by_tokens
+from app.ai.history_compression import build_deterministic_summary
+from app.ai.history_compression_input import build_local_compression_input
 
 
-def test_split_text_by_tokens_should_preserve_unicode_content() -> None:
-    """跨 token 的中文与 Emoji 在分块后仍应逐字还原。"""
+def test_deterministic_summary_should_keep_unicode_content_without_chunking() -> None:
+    """确定性摘要应直接消费结构化输入，不依赖历史文本分块。"""
 
     source = ("中文历史🙂工具调用完成。" * 80) + "最终约束"
-    chunks = _split_text_by_tokens(source, max_tokens=17)
+    messages = [ModelRequest(parts=[UserPromptPart(content=source)])]
+    summary = build_deterministic_summary(messages, existing_summary=None, target_tokens=2_000)
 
-    assert len(chunks) > 1
-    assert "".join(chunks) == source
-    assert "�" not in "".join(chunks)
-
-
-def test_split_text_by_tokens_should_respect_token_sized_chunks() -> None:
-    """普通文本分块应保持在指定 token 尺寸内。"""
-
-    encoding = tiktoken.get_encoding("cl100k_base")
-    source = "history item with stable token boundaries\n" * 100
-    chunks = _split_text_by_tokens(source, max_tokens=32)
-
-    assert "".join(chunks) == source
-    assert all(len(encoding.encode(chunk)) <= 32 for chunk in chunks)
+    assert source in summary
+    assert "�" not in summary
 
 
-def test_history_json_text_should_keep_run_partition_metadata_for_compressor() -> None:
-    """压缩器序列化历史时应保留应用侧分区 metadata。"""
+def test_structured_compression_input_should_not_split_one_message() -> None:
+    """单条长消息在结构化输入中保持一个事实项，而不是切成多个 JSON 片段。"""
 
-    text = _history_json_text([
+    result = build_local_compression_input(
+        [ModelRequest(parts=[UserPromptPart(content="history item with stable token boundaries\n" * 100)])]
+    )
+
+    message_items = [item for item in result.payload["items"] if item["kind"] == "user_message"]
+    assert len(message_items) == 1
+    assert result.stats.normalized_item_count == 1
+
+
+def test_structured_compression_input_should_keep_run_partition_metadata() -> None:
+    """结构化输入应保留应用侧分区 metadata。"""
+
+    result = build_local_compression_input([
         ModelRequest(
             parts=[UserPromptPart(content="历史用户消息")],
             metadata={
@@ -45,9 +46,10 @@ def test_history_json_text_should_keep_run_partition_metadata_for_compressor() -
             },
         )
     ])
+    context = next(item for item in result.payload["items"] if item["kind"] == "run_context")
 
-    assert '"run_id": "run-1"' in text
-    assert '"workspace_id": 10' in text
-    assert '"project_id": 20' in text
-    assert '"page_id": 30' in text
-    assert '"allowed_projects"' in text
+    assert context["run_id"] == "run-1"
+    assert context["workspace_id"] == 10
+    assert context["project_id"] == 20
+    assert context["page_id"] == 30
+    assert context["allowed_projects"]

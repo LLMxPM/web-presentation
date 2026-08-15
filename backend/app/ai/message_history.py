@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
@@ -23,8 +22,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.agent.runtime_context import AgentRuntimeContext
 from app.ai.context_usage import AgentContextUsageSnapshot, usage_snapshot_from_messages
+from app.ai.history_compression_input import (
+    build_local_compression_input,
+    render_deterministic_compression_text,
+)
 from app.ai.image_history_hydration import hydrate_agent_image_refs
-from app.ai.image_refs import normalize_agent_image_ref, sanitize_message_history_image_refs
+from app.ai.image_refs import normalize_agent_image_ref
 from app.ai.message_history_recovery import recover_run_message_history
 from app.ai.model_budget import (
     CONTEXT_WINDOW_TOKEN_DEFAULT,
@@ -605,15 +608,15 @@ def build_context_status_item(
 
 
 def _summarize_messages(messages: list[ModelMessage], *, existing_summary: dict[str, Any] | None, target_tokens: int) -> str:
-    """生成压缩摘要；当前使用确定性文本摘要，避免额外模型调用导致递归上下文问题。"""
+    """生成结构化确定性摘要，供成员运行等无模型压缩服务路径复用。"""
 
     previous = str((existing_summary or {}).get("summary") or "").strip()
-    dumped = ModelMessagesTypeAdapter.dump_python(messages, mode="json")
-    sanitized = sanitize_message_history_image_refs(dumped)
-    text = json.dumps(sanitized, ensure_ascii=False, default=str)
-    prefix = f"既有摘要：\n{previous}\n\n" if previous else ""
-    limit = max(600, target_tokens * 3)
-    return (prefix + "原始历史压缩摘录：\n" + text)[:limit]
+    compression_input = build_local_compression_input(messages)
+    return render_deterministic_compression_text(
+        compression_input,
+        previous_summary=previous,
+        target_tokens=max(256, int(target_tokens or 0)),
+    )
 
 
 def _summary_messages_from_checkpoint(checkpoint: dict[str, Any]) -> list[ModelMessage]:

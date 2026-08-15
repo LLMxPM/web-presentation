@@ -31,9 +31,16 @@ class _FakeContextProcessor:
         self.seen_run_context: Any | None = None
         self.seen_messages: list[Any] | None = None
 
-    async def process(self, run_context: Any | None, messages: list[Any]) -> list[Any]:
+    async def process(
+        self,
+        run_context: Any | None,
+        messages: list[Any],
+        *,
+        compression_service: Any | None = None,
+    ) -> list[Any]:
         """记录调用参数并原样返回消息列表。"""
 
+        _ = compression_service
         self.seen_run_context = run_context
         self.seen_messages = messages
         return messages
@@ -298,7 +305,7 @@ async def test_build_member_history_processors_should_accept_messages_only() -> 
     context_processor = _FakeContextProcessor()
     messages = [{"kind": "request", "parts": []}]
 
-    history_processor = _build_member_history_processors(context_processor)[0]  # type: ignore[arg-type]
+    history_processor = _build_member_history_processors(context_processor, SimpleNamespace())[0]  # type: ignore[arg-type]
 
     assert await history_processor(messages) == messages
     assert context_processor.seen_run_context is None

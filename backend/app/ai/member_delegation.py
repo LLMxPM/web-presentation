@@ -25,6 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.ai.agent.runtime_context import AgentRuntimeContext, prepend_runtime_context_to_user_message
 from app.ai.agent_catalog import get_agent_catalog_entry
 from app.ai.agent_runtime_config import build_effective_instructions
+from app.ai.history_compression import HistoryCompressionService
 from app.ai.image_history_hydration import hydrate_agent_image_refs
 from app.ai.image_refs import sanitize_message_history_image_refs
 from app.ai.message_history import AgentContextLimitProcessor, build_context_limit_processor, build_history_budget, rebuild_agent_message_history
@@ -480,9 +481,26 @@ class _MemberAgentRunner:
                 session=self._session,
                 user_id=self._current.user.id,
                 session_id=self._parent_run.session_id,
-                agent_id=self._member_run.agent_id,
+                agent_id=self._parent_run.agent_id,
                 budget=history_budget,
                 rebuilt_history=rebuilt_history,
+            )
+            member_model = self._model_resolver.resolve_model(llm_config)
+            member_model_settings = self._model_resolver.resolve_model_settings(llm_config) or None
+            compression_service = HistoryCompressionService(
+                session=self._session,
+                user_id=self._current.user.id,
+                session_id=self._parent_run.session_id,
+                # 成员历史仍归属父会话；持久检查点必须按父 Agent 校验 session。
+                agent_id=self._parent_run.agent_id,
+                store=self._store,
+                run_model=self._parent_run,
+                budget=history_budget,
+                model=member_model,
+                model_settings=member_model_settings,
+                latest_usage=lambda: context_processor.latest_usage,
+                retained_message_count=lambda: context_processor.history_prefix_message_count,
+                emit_events=False,
             )
             member_delegation_executor = None
             visual_unavailable, image_generation_model, image_generation_config_id = (
@@ -512,7 +530,7 @@ class _MemberAgentRunner:
                 write_fence=self._write_fence,
             )
             agent = Agent(
-                self._model_resolver.resolve_model(llm_config),
+                member_model,
                 name=self._member_run.agent_id,
                 output_type=[str, DeferredToolRequests],
                 # 保持升级前的语义：输出工具完成后，不继续执行同轮剩余工具。
@@ -523,7 +541,10 @@ class _MemberAgentRunner:
                 ),
                 deps_type=type(deps),
                 tools=tools,
-                capabilities=[ProcessHistory(processor) for processor in _build_member_history_processors(context_processor)],
+                capabilities=[
+                    ProcessHistory(processor)
+                    for processor in _build_member_history_processors(context_processor, compression_service)
+                ],
             )
             base_message_history = _message_dicts(self._member_run.message_history_json or [])
             projector = PydanticEventProjector(
@@ -562,7 +583,7 @@ class _MemberAgentRunner:
                 )
                 if message
                 else None,
-                model_settings=self._model_resolver.resolve_model_settings(llm_config) or None,
+                model_settings=member_model_settings,
                 deps=deps,
                 message_history=message_history,
                 deferred_tool_results=deferred_tool_results,
@@ -1111,13 +1132,16 @@ def _latest_member_response_text(messages: list[dict[str, Any]]) -> str | None:
     return None
 
 
-def _build_member_history_processors(context_processor: AgentContextLimitProcessor) -> list[Any]:
-    """构造子运行历史处理器，适配 Pydantic AI 仅传 messages 的调用签名。"""
+def _build_member_history_processors(
+    context_processor: AgentContextLimitProcessor,
+    compression_service: HistoryCompressionService,
+) -> list[Any]:
+    """构造成员历史处理器，并复用总控的结构化单次压缩服务。"""
 
     async def context_history_processor(messages: list[Any]) -> list[Any]:
-        """在成员模型请求前执行上下文预算检查；成员侧暂不注入额外压缩服务。"""
+        """在成员模型请求前执行预算检查和结构化历史压缩。"""
 
-        return await context_processor.process(None, messages)
+        return await context_processor.process(None, messages, compression_service=compression_service)
 
     return [context_history_processor]
 
