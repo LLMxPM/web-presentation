@@ -163,7 +163,7 @@ class HistoryCompressionService:
         # 极小窗口的旧比例快照可能把摘要目标压到 0；保留旧实现的最小可读摘要语义。
         effective_target_tokens = (
             target_tokens
-            if self._budget.budget_policy_version == "fixed-context-budget.v2"
+            if self._budget.budget_policy_version.startswith("fixed-context-budget.")
             else max(256, target_tokens)
         )
 

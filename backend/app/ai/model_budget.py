@@ -8,9 +8,10 @@ from math import ceil, floor
 CONTEXT_WINDOW_TOKEN_DEFAULT = 128_000
 CONTEXT_WINDOW_TOKEN_MIN = 128_000
 CONTEXT_WINDOW_TOKEN_MAX = 2_000_000
-BUDGET_POLICY_VERSION = "fixed-context-budget.v2"
+BUDGET_POLICY_VERSION = "fixed-context-budget.v3"
 REQUEST_OUTPUT_TOKENS = 32_768
-RUNTIME_HEADROOM_TOKENS = 32_768
+# 固定策略不再额外扣除平台 headroom；模型目录提供的 input limit 已是可用输入窗口。
+RUNTIME_HEADROOM_TOKENS = 0
 COMPRESSION_TARGET_TOKENS = 16_384
 
 # 仅供没有 budget_policy_version 的历史 Run 恢复旧预算，不再用于新配置。
@@ -48,8 +49,8 @@ def derive_model_run_budget(context_window_tokens: int, *, provider_output_limit
     output_tokens = REQUEST_OUTPUT_TOKENS
     if provider_output_limit is not None:
         output_tokens = min(output_tokens, max(1, int(provider_output_limit)))
-    headroom = min(RUNTIME_HEADROOM_TOKENS, usable_input)
-    trigger = max(0, usable_input - headroom)
+    headroom = RUNTIME_HEADROOM_TOKENS
+    trigger = usable_input
     compression_target = min(COMPRESSION_TARGET_TOKENS, usable_input)
     return ModelRunBudget(
         budget_policy_version=BUDGET_POLICY_VERSION,

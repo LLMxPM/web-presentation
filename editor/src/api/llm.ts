@@ -227,11 +227,12 @@ function toImageProvider(item: ImageProviderConfigItem): LlmProviderConfigItem {
 
 function toCapability(value: Record<string, unknown>): LlmModelCapabilityItem {
   const context = Number(value.context_tokens ?? 200000); const output = Number(value.output_tokens ?? 8192)
+  const input = Number(value.input_tokens ?? Math.max(1, context - output)); const requestOutput = Math.min(output, 32768)
   return { source: String(value.source ?? 'conservative_default'), verified: Boolean(value.verified), profile_key: 'catalog', profile_version: 3,
-    context_window_tokens: Number(value.input_tokens ?? context - output), model_context_window_tokens: context,
-    model_max_output_tokens: output, required_model_context_tokens: context, request_output_tokens: Math.min(output, 32768),
-    runtime_headroom_tokens: 32768, compression_trigger_tokens: Math.max(1, context - 32768), compression_target_tokens: 16384,
-    budget_policy_version: 'slot-policy-v1', request_max_output_tokens: Math.min(output, 32768),
+    context_window_tokens: input, model_context_window_tokens: context,
+    model_max_output_tokens: output, required_model_context_tokens: input + requestOutput, request_output_tokens: requestOutput,
+    runtime_headroom_tokens: 0, compression_trigger_tokens: input, compression_target_tokens: 16384,
+    budget_policy_version: 'fixed-context-budget.v3', request_max_output_tokens: requestOutput,
     supports_image_input: Boolean(value.supports_image_input), supports_reasoning: Boolean(value.supports_reasoning),
     supports_explicit_disable: false, default_level: null, level_mapping: { low: null, medium: null, high: null, max: null }, warnings: [] }
 }

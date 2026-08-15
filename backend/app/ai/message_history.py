@@ -7,7 +7,6 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 
-import tiktoken
 from pydantic_ai.messages import (
     ModelMessage,
     ModelMessagesTypeAdapter,
@@ -168,14 +167,12 @@ class AgentContextLimitProcessor:
         *,
         compression_service: Any | None = None,
     ) -> list[ModelMessage]:
-        """按上一轮 input + output 高水位判断是否压缩；不做本地 token 估算。"""
+        """按上一轮真实 input + output 高水位判断是否压缩。"""
 
-        is_fixed_budget = self._budget.budget_policy_version == "fixed-context-budget.v2"
-        estimated_tokens = _estimate_model_message_tokens(messages) if is_fixed_budget else 0
         observed_tokens = self._latest_usage.context_used_tokens
-        if not is_fixed_budget and observed_tokens <= 0:
+        if observed_tokens <= 0:
             return messages
-        if max(observed_tokens, estimated_tokens) < self._budget.compression_trigger_tokens:
+        if observed_tokens < self._budget.compression_trigger_tokens:
             return messages
 
         suffix_start = _preserved_suffix_start(messages)
@@ -199,8 +196,6 @@ class AgentContextLimitProcessor:
             raise _context_limit_error()
         summary_messages = _summary_messages_from_checkpoint(checkpoint)
         compressed = [*summary_messages, *suffix]
-        if is_fixed_budget and _estimate_model_message_tokens(compressed) > self._budget.context_input_budget_tokens:
-            raise _context_limit_error()
         self._history_prefix_message_count = len(summary_messages)
         self._history_prefix_run_ids = []
         self._existing_summary = checkpoint
@@ -797,15 +792,6 @@ def _positive_int(value: Any, fallback: int) -> int:
     except (TypeError, ValueError):
         return fallback
     return normalized if normalized > 0 else fallback
-
-
-def _estimate_model_message_tokens(messages: list[ModelMessage]) -> int:
-    """使用统一 tokenizer 估算待发送消息，作为供应商请求前的硬预算保护。"""
-
-    dumped = ModelMessagesTypeAdapter.dump_python(messages, mode="json")
-    sanitized = sanitize_message_history_image_refs(dumped)
-    text = json.dumps(sanitized, ensure_ascii=False, default=str)
-    return len(tiktoken.get_encoding("cl100k_base").encode(text))
 
 
 def _context_limit_error() -> AppException:
