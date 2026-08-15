@@ -88,11 +88,10 @@ async def test_runtime_context_should_not_preload_project_suggested_components(
     context_text = build_scope_context_text(runtime_context)
     assert "项目建议组件" not in context_text
     assert component["code"] not in context_text
-    assert "list_entities" in context_text
-    assert "get_entity" in context_text
-    assert "工作空间名称：AI 建议组件上下文空间" in context_text
-    assert "项目名称：AI 建议组件上下文项目" in context_text
-    assert "允许的项目名称与 ID" in context_text
+    assert "<application_context>" in context_text
+    assert '"workspace_name":"AI 建议组件上下文空间"' in context_text
+    assert '"project_name":"AI 建议组件上下文项目"' in context_text
+    assert '"allowed_projects":[{"id":' in context_text
 
 
 async def _create_workspace(authenticated_client: AsyncClient, name: str) -> int:

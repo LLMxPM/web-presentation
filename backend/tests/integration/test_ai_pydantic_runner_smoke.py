@@ -14,6 +14,7 @@ from httpx import AsyncClient
 from pydantic_ai import Agent, DeferredToolResults
 from pydantic_ai.messages import (
     FunctionToolCallEvent,
+    ModelRequest,
     ModelMessagesTypeAdapter,
     ModelResponse,
     OutputToolCallEvent,
@@ -425,6 +426,7 @@ async def test_pydantic_runner_should_not_inject_agent_description_as_system_pro
                 model_settings={},
                 runtime_context=_runtime_context(scope),
                 message="请回复一句话。",
+                include_runtime_context=True,
                 agent_config=agent_config,
             )
         )
@@ -444,6 +446,8 @@ async def test_pydantic_runner_should_not_inject_agent_description_as_system_pro
         if isinstance(part, dict)
     ]
     instructions = str(first_request.get("instructions") or "")
+    assert first_request["metadata"]["run_id"] == completed_run.run_id
+    assert first_request["metadata"]["workspace_id"] == scope.workspace_id
     assert all(part.get("part_kind") != "system-prompt" for part in request_parts)
     assert "这段目录描述不应作为 system_prompt 入模。" not in json.dumps(
         completed_run.message_history_json,
@@ -451,7 +455,97 @@ async def test_pydantic_runner_should_not_inject_agent_description_as_system_pro
     )
     assert "你是 Web Presentation 的组件助手" not in instructions
     assert "自定义完整提示词：优先给出可验证结果。" in instructions
-    assert "本轮不可变业务焦点如下：" in instructions
+    assert "application_context" not in instructions
+    user_parts = [part for part in request_parts if part.get("part_kind") == "user-prompt"]
+    assert user_parts
+    assert "<application_context>" in json.dumps(user_parts[0].get("content"), ensure_ascii=False)
+    assert "请回复一句话。" in json.dumps(user_parts[0].get("content"), ensure_ascii=False)
+    assert json.dumps(user_parts[0].get("content"), ensure_ascii=False).count("<application_context>") == 1
+
+
+async def test_pydantic_runner_should_keep_provider_instructions_stable_across_focuses(
+    authenticated_client: AsyncClient,
+) -> None:
+    """不同焦点只改变用户上下文，不应改变 Provider-facing 的稳定 instructions。"""
+
+    _, session_id, scope = await _create_workspace_session(
+        authenticated_client,
+        workspace_name="Pydantic Runner 缓存边界工作空间",
+        session_name="Pydantic Runner 缓存边界会话",
+    )
+    instructions_seen: list[str] = []
+
+    async def capture_stream(messages: list[Any], info: AgentInfo) -> AsyncIterator[str]:
+        """记录 Provider 收到的稳定 instructions 并返回固定文本。"""
+
+        _ = info
+        request = next(item for item in messages if isinstance(item, ModelRequest))
+        instructions_seen.append(str(request.instructions or ""))
+        yield "固定回答。"
+
+    agent_config = EffectiveAgentRuntimeConfig(
+        agent_id="agent-coordinator",
+        description_override=None,
+        prompt_override="缓存边界测试的稳定提示词。",
+        tool_configs={},
+    )
+    model = FunctionModel(stream_function=capture_stream)
+
+    async with get_session_factory()() as db_session:
+        store = PlatformAgentRuntimeStore(db_session, user_id=1)
+        first = await store.start_run(
+            session_id=session_id,
+            agent_id="agent-coordinator",
+            scope=scope,
+            run_id="pydantic-runner-cache-focus-1",
+            message="相同用户任务",
+            image_attachment_ids=[],
+        )
+        await _collect_runner_events(
+            PydanticAgentRunner(store).stream_run(
+                run_model=first.run_model,
+                agent_id="agent-coordinator",
+                model=model,
+                model_settings={},
+                runtime_context=_runtime_context(scope),
+                message="相同用户任务",
+                include_runtime_context=True,
+                agent_config=agent_config,
+            )
+        )
+        second = await store.start_run(
+            session_id=session_id,
+            agent_id="agent-coordinator",
+            scope=scope,
+            run_id="pydantic-runner-cache-focus-2",
+            message="相同用户任务",
+            image_attachment_ids=[],
+        )
+        changed_focus = AgentRuntimeContext(
+            scope_type=scope.scope_type,
+            workspace_id=scope.workspace_id,
+            project_id=987,
+            page_id=654,
+            source=scope.source,
+            focus_version=2,
+        )
+        await _collect_runner_events(
+            PydanticAgentRunner(store).stream_run(
+                run_model=second.run_model,
+                agent_id="agent-coordinator",
+                model=model,
+                model_settings={},
+                runtime_context=changed_focus,
+                message="相同用户任务",
+                include_runtime_context=True,
+                agent_config=agent_config,
+            )
+        )
+
+    assert len(instructions_seen) == 2
+    assert instructions_seen[0] == instructions_seen[1]
+    assert "application_context" not in instructions_seen[0]
+    assert "987" not in instructions_seen[0]
 
 
 async def test_pydantic_runner_should_mark_rejected_approval_tool_error(

@@ -14,9 +14,9 @@ from pydantic_ai.messages import (
     ModelRequest,
     ModelResponse,
     RetryPromptPart,
-    SystemPromptPart,
     ToolCallPart,
     ToolReturnPart,
+    UserPromptPart,
 )
 from pydantic_ai.tools import RunContext
 from sqlalchemy import select
@@ -341,8 +341,7 @@ async def rebuild_agent_message_history(
         recovery_by_run[run_model.run_id] = recovered.diagnostics.model_dump()
         if not delta:
             continue
-        message_json.extend(_run_focus_marker_json(run_model))
-        message_json.extend(_message_dicts(delta))
+        message_json.extend(annotate_run_partition_metadata(delta, run_model))
         included_run_ids.append(run_model.run_id)
     covered_until_run_id = str(checkpoint.get("covered_until_run_id") or "") if checkpoint else ""
     covered_until_created_at = str(checkpoint.get("covered_until_created_at") or "") if checkpoint else ""
@@ -368,30 +367,33 @@ async def rebuild_agent_message_history(
     )
 
 
-def _run_focus_marker_json(run_model: AiAgentRun) -> list[dict[str, Any]]:
-    """为每段历史写入显式 Run/项目/页面 ID，支持跨项目摘要分区并消除‘当前’歧义。"""
+def annotate_run_partition_metadata(
+    delta: list[dict[str, Any]],
+    run_model: AiAgentRun,
+) -> list[dict[str, Any]]:
+    """把 Run 分区信息写入首个请求 metadata，供压缩器读取且不进入模型指令。"""
 
-    run_input = run_model.input_payload_json or {}
-    focus = run_input.get("focus") if isinstance(run_input.get("focus"), dict) else {}
+    run_input = run_model.input_payload_json if isinstance(run_model.input_payload_json, dict) else {}
     allowed_projects = run_input.get("allowed_projects") if isinstance(run_input.get("allowed_projects"), list) else []
-    marker = ModelRequest(
-        parts=[
-            SystemPromptPart(
-                content=(
-                    "历史分区标记："
-                    f"run_id={run_model.run_id}；workspace_id={run_model.workspace_id}；"
-                    f"project_id={run_model.project_id or 'none'}；page_id={run_model.page_id or 'none'}。"
-                    f"workspace_name={focus.get('workspace_name') or 'unknown'}；"
-                    f"project_name={focus.get('project_name') or 'none'}；"
-                    f"page_name={focus.get('page_title') or 'none'}；"
-                    f"allowed_projects={allowed_projects or 'workspace_all'}。"
-                    "后续摘要必须按这些显式 ID 归类。"
-                )
-            )
-        ]
-    )
-    dumped = ModelMessagesTypeAdapter.dump_python([marker], mode="json")
-    return dumped if isinstance(dumped, list) else []
+    metadata = {
+        "run_id": run_model.run_id,
+        "workspace_id": run_model.workspace_id,
+        "project_id": run_model.project_id,
+        "page_id": run_model.page_id,
+        "allowed_projects": allowed_projects,
+    }
+    annotated = _message_dicts(delta)
+    for item in annotated:
+        if item.get("kind") != "request":
+            continue
+        item["metadata"] = {
+            **(item.get("metadata") if isinstance(item.get("metadata"), dict) else {}),
+            **metadata,
+        }
+        break
+    return annotated
+
+
 def build_history_budget(model_config: Any, *, runtime_context: AgentRuntimeContext) -> AgentHistoryBudget:
     """根据模型配置计算真实 usage 高水位压缩触发线。"""
 
@@ -620,7 +622,7 @@ def _summarize_messages(messages: list[ModelMessage], *, existing_summary: dict[
 
 
 def _summary_messages_from_checkpoint(checkpoint: dict[str, Any]) -> list[ModelMessage]:
-    """把检查点转换为模型可接收的 system summary 消息。"""
+    """把检查点转换为模型可接收的应用上下文用户消息。"""
 
     return _validate_message_json(_summary_message_json_from_checkpoint(checkpoint))
 
@@ -673,8 +675,8 @@ def _summary_message_json_from_checkpoint(checkpoint: dict[str, Any]) -> list[di
         return []
     message = ModelRequest(
         parts=[
-            SystemPromptPart(
-                content=f"{_SUMMARY_PROMPT_PREFIX}\n{summary}",
+            UserPromptPart(
+                content=f"<application_context>\n{_SUMMARY_PROMPT_PREFIX}\n{summary}\n</application_context>",
             )
         ]
     )

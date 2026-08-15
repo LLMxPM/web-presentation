@@ -1172,8 +1172,16 @@ async def test_agent_message_history_should_rebuild_from_run_deltas(
         second_run = await db_session.get(AiAgentRun, second.run_id)
 
     assert workspace_id == scope.workspace_id
-    assert [item["kind"] for item in rebuilt.message_json] == ["request", "request", "response", "request", "request", "response"]
-    assert "project_id=none" in rebuilt.message_json[0]["parts"][0]["content"]
+    assert [item["kind"] for item in rebuilt.message_json] == ["request", "response", "request", "response"]
+    assert rebuilt.message_json[0]["metadata"] == {
+        "run_id": first.run_id,
+        "workspace_id": scope.workspace_id,
+        "project_id": scope.project_id,
+        "page_id": scope.page_id,
+        "allowed_projects": [],
+    }
+    assert "历史分区标记" not in json.dumps(rebuilt.message_json, ensure_ascii=False)
+    assert rebuilt.message_json[2]["metadata"]["run_id"] == second.run_id
     assert rebuilt.included_run_ids == ["history-delta-run-1", "history-delta-run-2"]
     assert first_run is not None and len(first_run.message_history_json) == 2
     assert second_run is not None and len(second_run.message_history_json) == 2
@@ -1416,9 +1424,10 @@ async def test_agent_message_history_checkpoint_should_skip_covered_deltas(
     assert isinstance(checkpoint, dict)
     assert checkpoint["covered_until_run_id"] == "history-checkpoint-run-2"
     assert rebuilt_after_checkpoint.included_run_ids == []
-    assert rebuilt_after_checkpoint.message_json[0]["parts"][0]["part_kind"] == "system-prompt"
+    assert rebuilt_after_checkpoint.message_json[0]["parts"][0]["part_kind"] == "user-prompt"
+    assert rebuilt_after_checkpoint.message_json[0]["parts"][0]["content"].startswith("<application_context>")
     assert rebuilt_after_new_delta.included_run_ids == ["history-checkpoint-run-3"]
-    assert [item["kind"] for item in rebuilt_after_new_delta.message_json] == ["request", "request", "request", "response"]
+    assert [item["kind"] for item in rebuilt_after_new_delta.message_json] == ["request", "request", "response"]
     assert first_run is not None and len(first_run.message_history_json) == 2
     assert second_run is not None and len(second_run.message_history_json) == 2
     assert third_run is not None and len(third_run.message_history_json) == 2

@@ -83,15 +83,10 @@ def build_default_runtime_config(agent_id: str) -> EffectiveAgentRuntimeConfig:
 def build_effective_instructions(
     catalog: AgentCatalogEntry,
     runtime_config: EffectiveAgentRuntimeConfig | None,
-    *runtime_context_sections: str,
 ) -> list[str]:
-    """返回当前 Agent 入模的单个完整提示词，可追加本次运行动态上下文。"""
+    """返回当前 Agent 的稳定 system/developer instructions。"""
 
-    prompt_chunks = [
-        resolve_effective_prompt(catalog, runtime_config),
-        *runtime_context_sections,
-    ]
-    effective_prompt = "\n\n".join(chunk.strip() for chunk in prompt_chunks if chunk and chunk.strip())
+    effective_prompt = resolve_effective_prompt(catalog, runtime_config).strip()
     return [effective_prompt] if effective_prompt else []
 
 

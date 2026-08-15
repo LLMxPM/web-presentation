@@ -37,6 +37,7 @@ from app.ai.pydantic_model_resolver import PydanticLlmModelResolver
 from app.ai.pydantic_runner import PydanticAgentRunner
 from app.ai.pydantic_tools import build_pydantic_tools
 from app.ai.run_write_fence import AgentRunWriteFence, AgentRunWriteFenceLost
+from app.ai.agent.runtime_context import AgentRuntimeContext, prepend_runtime_context_to_user_message
 from app.ai.runtime_context_builder import build_agent_runtime_context
 from app.ai.tool_specs import (
     AGENT_COORDINATOR_AGENT_ID,
@@ -545,6 +546,7 @@ class AgentSessionFacade:
                 model_settings=self._model_resolver.resolve_model_settings(llm_config),
                 runtime_context=runtime_context,
                 message=_build_user_prompt(str(run_input.get("message") or ""), image_attachments),
+                include_runtime_context=True,
                 agent_config=agent_config,
                 tools=tools,
                 deps=deps,
@@ -734,6 +736,7 @@ class AgentSessionFacade:
                     model_settings=model_settings,
                     runtime_context=runtime_context,
                     message=_build_user_prompt(message, image_attachments),
+                    include_runtime_context=True,
                     agent_config=agent_config,
                     tools=tools,
                     deps=deps,
@@ -1077,6 +1080,7 @@ class AgentSessionFacade:
                     run_input_payload=run_model.input_payload_json,
                     run_id=run_model.run_id,
                     tool_execution=merged_tool_execution,
+                    runtime_context=runtime_context,
                 )
                 message_history = [
                     *previous_history.messages,
@@ -1090,6 +1094,7 @@ class AgentSessionFacade:
                     model_settings=self._model_resolver.resolve_model_settings(llm_config),
                     runtime_context=runtime_context,
                     message=note or "",
+                    include_runtime_context=False,
                     agent_config=agent_config,
                     tools=tools,
                     deps=deps,
@@ -1352,6 +1357,7 @@ class AgentSessionFacade:
             run_input_payload=run_model.input_payload_json,
             run_id=run_model.run_id,
             tool_execution=tool_execution,
+            runtime_context=runtime_context,
         )
         await PydanticAgentRunner(store).run_to_store(
             run_model=run_model,
@@ -1360,6 +1366,7 @@ class AgentSessionFacade:
             model_settings=self._model_resolver.resolve_model_settings(llm_config),
             runtime_context=runtime_context,
             message="",
+            include_runtime_context=False,
             agent_config=agent_config,
             tools=tools,
             deps=deps,
@@ -1509,6 +1516,7 @@ class AgentSessionFacade:
                         "tool_call_id": parent_delegate_call_id,
                         "tool_args": parent_delegate_tool_args if isinstance(parent_delegate_tool_args, (dict, str)) else {},
                     },
+                    runtime_context=runtime_context,
                 )
                 await PydanticAgentRunner(store).run_to_store(
                     run_model=run_model,
@@ -1517,6 +1525,7 @@ class AgentSessionFacade:
                     model_settings=self._model_resolver.resolve_model_settings(llm_config),
                     runtime_context=runtime_context,
                     message=note or "",
+                    include_runtime_context=False,
                     agent_config=agent_config,
                     tools=tools,
                     deps=deps,
@@ -1927,6 +1936,7 @@ def _build_continue_message_history(
     run_input_payload: dict[str, Any] | None,
     run_id: str,
     tool_execution: dict[str, Any],
+    runtime_context: AgentRuntimeContext | None = None,
 ) -> list[Any]:
     """读取继续运行所需的 Pydantic AI 历史；空历史时重建最小 deferred tool 上下文。"""
 
@@ -1952,6 +1962,8 @@ def _build_continue_message_history(
         return []
     input_payload = run_input_payload if isinstance(run_input_payload, dict) else {}
     message = str(input_payload.get("message") or "").strip() or "继续当前智能体运行。"
+    if runtime_context is not None:
+        message = prepend_runtime_context_to_user_message(message, runtime_context)
     return [
         ModelRequest(parts=[UserPromptPart(content=message)], run_id=run_id),
         ModelResponse(parts=tool_parts, run_id=run_id),

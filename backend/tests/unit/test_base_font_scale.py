@@ -1,6 +1,10 @@
 """文件功能：验证 AI 提示中基础字号倍率说明的格式化行为。"""
 
-from app.ai.agent.runtime_context import AgentRuntimeContext, build_scope_context_text
+from app.ai.agent.runtime_context import (
+    AgentRuntimeContext,
+    build_scope_context_text,
+    prepend_runtime_context_to_user_message,
+)
 from app.ai.base_font_scale import build_base_font_scale_note
 
 
@@ -27,8 +31,8 @@ def test_base_font_scale_note_should_fallback_to_unknown_ratio() -> None:
     assert "Tailwind 默认 16px 基准的倍率未知" in invalid_note
 
 
-def test_scope_context_should_use_compact_base_font_scale_note() -> None:
-    """运行时上下文应使用简化倍率说明，不再注入旧版长篇换算口径。"""
+def test_scope_context_should_encode_only_dynamic_application_context() -> None:
+    """运行时用户上下文只编码动态焦点事实，不复制稳定执行规则。"""
 
     context_text = build_scope_context_text(
         AgentRuntimeContext(
@@ -43,13 +47,18 @@ def test_scope_context_should_use_compact_base_font_scale_note() -> None:
         )
     )
 
-    assert "Tailwind 默认 16px 基准的 1.25 倍" in context_text
-    assert "text-base 等于该值" not in context_text
-    assert "按 Runtime Tailwind 预设比例派生" not in context_text
+    assert "<application_context>" in context_text
+    assert '"workspace_id":1' in context_text
+    assert '"project_id":2' in context_text
+    assert '"page_id":3' in context_text
+    assert '"page_width":1920' in context_text
+    assert '"base_font_size":"20px"' in context_text
+    assert "布局数值基线" not in context_text
+    assert "list_entities" not in context_text
 
 
-def test_scope_context_should_point_to_style_spec_when_canvas_present() -> None:
-    """注入画布事实时应同时指向项目样式规范作为布局数值基线。"""
+def test_scope_context_should_keep_focus_payload_field_order_stable() -> None:
+    """应用上下文字段顺序固定，保证同一结构下的缓存边界可预测。"""
 
     context_text = build_scope_context_text(
         AgentRuntimeContext(
@@ -64,13 +73,14 @@ def test_scope_context_should_point_to_style_spec_when_canvas_present() -> None:
         )
     )
 
-    assert "布局数值基线" in context_text
-    assert "项目样式规范" in context_text
-    assert "本轮未注入画布尺寸与基础字号" not in context_text
+    assert context_text.index('"scope_type"') < context_text.index('"workspace_id"')
+    assert context_text.index('"workspace_id"') < context_text.index('"project_id"')
+    assert context_text.index('"project_id"') < context_text.index('"page_id"')
+    assert context_text.index('"focus_version"') < context_text.index('"canvas"')
 
 
-def test_scope_context_should_require_reading_configuration_when_canvas_missing() -> None:
-    """画布缺席时应提示先读取目标项目 configuration 再写入页面。"""
+def test_scope_context_should_preserve_missing_canvas_as_explicit_nulls() -> None:
+    """未加载画布事实时保留空值，稳定规则由 Agent 默认提示词负责。"""
 
     context_text = build_scope_context_text(
         AgentRuntimeContext(
@@ -80,8 +90,10 @@ def test_scope_context_should_require_reading_configuration_when_canvas_missing(
         )
     )
 
-    assert "本轮未注入画布尺寸与基础字号" in context_text
-    assert "configuration 取得画布尺寸、基础字号、样式规范和建议组件" in context_text
+    assert '"page_width":null' in context_text
+    assert '"page_height":null' in context_text
+    assert '"base_font_size":null' in context_text
+    assert "configuration" not in context_text
 
 
 def test_scope_context_should_not_preload_project_suggested_component_summaries() -> None:
@@ -109,9 +121,9 @@ def test_scope_context_should_not_preload_project_suggested_component_summaries(
 
     assert "component_code=hero-cover" not in context_text
     assert "HeroCover" not in context_text
-    assert "建议组件" in context_text
-    assert "list_entities" in context_text
-    assert "get_entity" in context_text
+    assert "建议组件" not in context_text
+    assert "list_entities" not in context_text
+    assert "get_entity" not in context_text
 
 
 def test_scope_context_should_not_preload_project_suggested_reference_assets() -> None:
@@ -142,6 +154,19 @@ def test_scope_context_should_not_preload_project_suggested_reference_assets() -
 
     assert "hero_illustration" not in context_text
     assert "16:9" not in context_text
-    assert "建议资源" in context_text
-    assert "list_entities" in context_text
-    assert "get_entity" in context_text
+    assert "建议资源" not in context_text
+    assert "list_entities" not in context_text
+    assert "get_entity" not in context_text
+
+
+def test_prepend_runtime_context_should_preserve_original_user_content() -> None:
+    """焦点块与原始文本或附件合并时不改写原始内容顺序。"""
+
+    runtime_context = AgentRuntimeContext(scope_type="page", workspace_id=1, project_id=2, source="test")
+    text_message = prepend_runtime_context_to_user_message("原始任务文本", runtime_context)
+    list_message = prepend_runtime_context_to_user_message(["原始任务文本", "附件引用"], runtime_context)
+
+    assert isinstance(text_message, str)
+    assert text_message.endswith("用户消息：\n原始任务文本")
+    assert isinstance(list_message, list)
+    assert list_message[1:] == ["原始任务文本", "附件引用"]

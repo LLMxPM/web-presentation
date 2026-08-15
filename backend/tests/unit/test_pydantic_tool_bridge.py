@@ -27,6 +27,7 @@ from app.ai.pydantic_tools import (
 )
 from app.ai.session_facade_pydantic import _build_continue_message_history, _build_deferred_results
 from app.ai.tool_specs import AGENT_COORDINATOR_AGENT_ID
+from app.ai.agent.runtime_context import AgentRuntimeContext
 from app.ai.tools.visual.generate_image import build_generate_image_tool
 from app.ai.tools.project.project_pages import build_create_project_page_tool
 from app.schemas.agent import AgentScopeContext
@@ -782,6 +783,23 @@ def test_continue_message_history_should_rebuild_minimal_history_when_empty() ->
     assert history[0].parts[0].content == "请调整路由"
     assert history[1].parts[0].tool_name == "update_project_route_tree"
     assert history[1].parts[0].tool_call_id == "tool-1"
+
+
+def test_continue_message_history_should_inject_focus_only_when_rebuilding_empty_history() -> None:
+    """旧的空历史续跑兜底应补一次用户上下文，已有历史由调用方直接复用。"""
+
+    history = _build_continue_message_history(
+        run_model_message_history=[],
+        run_input_payload={"message": "请调整路由"},
+        run_id="run-focus-1",
+        tool_execution={"tool_name": "update_project_route_tree", "tool_call_id": "tool-focus-1"},
+        runtime_context=AgentRuntimeContext(scope_type="page", workspace_id=1, project_id=2, source="test"),
+    )
+
+    content = history[0].parts[0].content
+    assert isinstance(content, str)
+    assert content.count("<application_context>") == 1
+    assert content.endswith("用户消息：\n请调整路由")
 
 
 @pytest.mark.asyncio

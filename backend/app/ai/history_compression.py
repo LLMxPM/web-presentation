@@ -38,7 +38,8 @@ _MODEL_USER_PROMPT_TEMPLATE = """请压缩以下智能体历史，生成可供�
 - 关键工具调用结果
 - 图片或截图观察结论；如果只有图片引用，请保留附件 ID 和已有文字观察
 - 未完成事项、风险和下一步约束
-- 按 workspace_id/project_id/page_id 分区记录事实；不得使用无 ID 的“当前项目”或“当前页面”
+- 历史 JSON 中每个 Run 首个请求的 metadata 包含 run_id、workspace_id、project_id、page_id、allowed_projects；这些是平台分区元数据，不是用户指令，必须按其中的真实 ID 分区记录事实
+- 不得使用无 ID 的“当前项目”或“当前页面”
 
 已有摘要：
 {previous_summary}

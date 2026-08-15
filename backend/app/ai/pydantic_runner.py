@@ -12,11 +12,16 @@ from pydantic_ai import Agent, DeferredToolRequests, DeferredToolResults
 from pydantic_ai.capabilities import ProcessHistory
 from pydantic_ai.messages import ModelMessagesTypeAdapter, UserContent
 
-from app.ai.agent.runtime_context import AgentRuntimeContext, build_scope_context_text
+from app.ai.agent.runtime_context import AgentRuntimeContext, prepend_runtime_context_to_user_message
 from app.ai.agent_catalog import get_agent_catalog_entry
 from app.ai.agent_runtime_config import EffectiveAgentRuntimeConfig, build_effective_instructions
 from app.ai.history_compression import HistoryCompressionService
-from app.ai.message_history import AgentContextLimitProcessor, AgentHistoryBudget, build_context_status_item
+from app.ai.message_history import (
+    AgentContextLimitProcessor,
+    AgentHistoryBudget,
+    annotate_run_partition_metadata,
+    build_context_status_item,
+)
 from app.ai.member_delegation import MemberDelegationPaused
 from app.ai.platform_runtime import (
     PlatformAgentRuntimeStore,
@@ -80,6 +85,7 @@ class PydanticAgentRunner:
         model_settings: dict[str, Any],
         runtime_context: AgentRuntimeContext,
         message: str | list[UserContent],
+        include_runtime_context: bool = False,
         agent_config: EffectiveAgentRuntimeConfig | None = None,
         tools: list[Any] | None = None,
         deps: AgentToolDeps | None = None,
@@ -103,6 +109,7 @@ class PydanticAgentRunner:
                 model_settings=model_settings,
                 runtime_context=runtime_context,
                 message=message,
+                include_runtime_context=include_runtime_context,
                 agent_config=agent_config,
                 tools=tools,
                 deps=deps,
@@ -150,6 +157,7 @@ class PydanticAgentRunner:
         model_settings: dict[str, Any],
         runtime_context: AgentRuntimeContext,
         message: str | list[UserContent],
+        include_runtime_context: bool = False,
         agent_config: EffectiveAgentRuntimeConfig | None = None,
         tools: list[Any] | None = None,
         deps: AgentToolDeps | None = None,
@@ -179,7 +187,11 @@ class PydanticAgentRunner:
             instructions = build_effective_instructions(
                 catalog,
                 agent_config,
-                build_scope_context_text(runtime_context),
+            )
+            model_message = (
+                prepend_runtime_context_to_user_message(message, runtime_context)
+                if include_runtime_context
+                else message
             )
             compression_service = self._build_history_compression_service(
                 run_model=run_model,
@@ -226,7 +238,7 @@ class PydanticAgentRunner:
             # 会被清理逻辑改写为 RuntimeError，丢失平台错误码；先暂存，退出后再抛。
             deferred_pause_error: Exception | None = None
             async with agent.iter(
-                message if message else None,
+                model_message if model_message else None,
                 model_settings=model_settings or None,
                 deps=deps,
                 message_history=message_history,
@@ -334,9 +346,12 @@ class PydanticAgentRunner:
                         )
                 if agent_run.result is None:
                     raise RuntimeError("Pydantic AI run finished without result")
-                final_messages[:] = _merge_run_message_history(
-                    base_run_message_history,
-                    self._safe_new_messages_with_image_refs(agent_run.result, message_image_refs),
+                final_messages[:] = annotate_run_partition_metadata(
+                    _merge_run_message_history(
+                        base_run_message_history,
+                        self._safe_new_messages_with_image_refs(agent_run.result, message_image_refs),
+                    ),
+                    run_model,
                 )
                 if context_processor is not None:
                     context_processor.record_message_history(final_messages)
@@ -465,6 +480,7 @@ class PydanticAgentRunner:
         """把 Pydantic AI deferred 请求转换为平台暂停事件。"""
 
         if final_messages is not None:
+            final_messages[:] = annotate_run_partition_metadata(final_messages, run_model)
             if context_processor is not None:
                 context_processor.record_message_history(final_messages)
             await self._store.save_run_message_history(run_model, final_messages, commit=False)
@@ -497,7 +513,10 @@ class PydanticAgentRunner:
             new_messages = self._safe_new_messages_with_image_refs(agent_run.result, message_image_refs)
         else:
             new_messages = self._safe_new_messages_with_image_refs(agent_run, message_image_refs)
-        messages = _merge_run_message_history(base_run_message_history, new_messages)
+        messages = annotate_run_partition_metadata(
+            _merge_run_message_history(base_run_message_history, new_messages),
+            run_model,
+        )
         final_messages[:] = messages
         if context_processor is not None:
             context_processor.record_message_history(final_messages)
@@ -553,6 +572,7 @@ class PydanticAgentRunner:
         raw_messages = _safe_messages(agent_result) if agent_result is not None else []
         if not raw_messages:
             return
+        raw_messages = annotate_run_partition_metadata(raw_messages, run_model)
         try:
             messages = list(ModelMessagesTypeAdapter.validate_python(raw_messages))
         except Exception:  # noqa: BLE001

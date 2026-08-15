@@ -22,7 +22,7 @@ from pydantic_ai.messages import (
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.ai.agent.runtime_context import AgentRuntimeContext, build_scope_context_text
+from app.ai.agent.runtime_context import AgentRuntimeContext, prepend_runtime_context_to_user_message
 from app.ai.agent_catalog import get_agent_catalog_entry
 from app.ai.agent_runtime_config import build_effective_instructions
 from app.ai.image_history_hydration import hydrate_agent_image_refs
@@ -285,7 +285,7 @@ class MemberDelegationExecutor:
                 member_run=member_run,
                 write_fence=self._write_fence,
             )
-            return await runner.run(message=input_prompt)
+            return await runner.run(message=input_prompt, include_runtime_context=True)
 
     async def _continue_member_run(
         self,
@@ -326,7 +326,9 @@ class MemberDelegationExecutor:
                     user_id=self._current.user.id,
                     member_run=member_run,
                     requirement_payload=requirement_payload,
+                    runtime_context=self._runtime_context,
                 ),
+                include_runtime_context=False,
                 deferred_tool_results=deferred_tool_results,
                 retained_tool_names=frozenset({
                     str(
@@ -441,6 +443,7 @@ class _MemberAgentRunner:
         self,
         *,
         message: str,
+        include_runtime_context: bool = False,
         message_history: list[Any] | None = None,
         deferred_tool_results: DeferredToolResults | None = None,
         retained_tool_names: frozenset[str] = frozenset(),
@@ -517,7 +520,6 @@ class _MemberAgentRunner:
                 instructions=build_effective_instructions(
                     catalog,
                     agent_config,
-                    build_scope_context_text(self._runtime_context),
                 ),
                 deps_type=type(deps),
                 tools=tools,
@@ -553,7 +555,13 @@ class _MemberAgentRunner:
                 ),
             )
             async with agent.iter(
-                message if message else None,
+                (
+                    prepend_runtime_context_to_user_message(message, self._runtime_context)
+                    if include_runtime_context
+                    else message
+                )
+                if message
+                else None,
                 model_settings=self._model_resolver.resolve_model_settings(llm_config) or None,
                 deps=deps,
                 message_history=message_history,
@@ -1120,6 +1128,7 @@ async def _member_continue_message_history(
     user_id: int,
     member_run: AiAgentMemberRun,
     requirement_payload: dict[str, Any],
+    runtime_context: AgentRuntimeContext,
 ) -> list[Any]:
     """读取成员恢复执行所需的 Pydantic AI 历史；缺失时重建最小上下文。"""
 
@@ -1149,7 +1158,14 @@ async def _member_continue_message_history(
         ],
     )
     return [
-        ModelRequest(parts=[UserPromptPart(content=message)], run_id=member_run.member_run_id),
+        ModelRequest(
+            parts=[
+                UserPromptPart(
+                    content=prepend_runtime_context_to_user_message(message, runtime_context),
+                )
+            ],
+            run_id=member_run.member_run_id,
+        ),
         ModelResponse(
             parts=[
                 ToolCallPart(

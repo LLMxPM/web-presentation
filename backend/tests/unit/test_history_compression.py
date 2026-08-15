@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import tiktoken
+from pydantic_ai.messages import ModelRequest, UserPromptPart
 
-from app.ai.history_compression import _split_text_by_tokens
+from app.ai.history_compression import _history_json_text, _split_text_by_tokens
 
 
 def test_split_text_by_tokens_should_preserve_unicode_content() -> None:
@@ -27,3 +28,26 @@ def test_split_text_by_tokens_should_respect_token_sized_chunks() -> None:
 
     assert "".join(chunks) == source
     assert all(len(encoding.encode(chunk)) <= 32 for chunk in chunks)
+
+
+def test_history_json_text_should_keep_run_partition_metadata_for_compressor() -> None:
+    """压缩器序列化历史时应保留应用侧分区 metadata。"""
+
+    text = _history_json_text([
+        ModelRequest(
+            parts=[UserPromptPart(content="历史用户消息")],
+            metadata={
+                "run_id": "run-1",
+                "workspace_id": 10,
+                "project_id": 20,
+                "page_id": 30,
+                "allowed_projects": [{"id": 20, "name": "项目"}],
+            },
+        )
+    ])
+
+    assert '"run_id": "run-1"' in text
+    assert '"workspace_id": 10' in text
+    assert '"project_id": 20' in text
+    assert '"page_id": 30' in text
+    assert '"allowed_projects"' in text
