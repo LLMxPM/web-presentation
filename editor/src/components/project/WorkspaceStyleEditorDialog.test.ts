@@ -113,6 +113,7 @@ describe('WorkspaceStyleEditorDialog', () => {
       },
     })
 
+    expect(screen.getByPlaceholderText('用 Markdown 记录版式、排版、色彩和组件使用约束')).toHaveClass('resize-none')
     await fireEvent.click(screen.getByText('创建样式'))
 
     const saveEvents = emitted('save') as Array<[WorkspaceStylePayload]> | undefined

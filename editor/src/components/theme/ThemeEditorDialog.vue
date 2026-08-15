@@ -304,9 +304,9 @@ const DEFAULT_THEME_PALETTE: ThemePalette = {
   accent: ['#2D7BB8', '#159A8C', '#D39A24', '#E07B67', '#6C73B8', '#6C9BB8'],
 }
 const form = reactive({
-  key: 'lightblue',
-  name: '明亮商务蓝',
-  description: '明亮、专业、克制的商务主题，适合汇报、方案和数据解读。',
+  key: '',
+  name: '',
+  description: '',
   logo_asset_id: null as number | null,
   invert_logo_asset_id: null as number | null,
   project_icon_asset_id: null as number | null,
@@ -410,9 +410,9 @@ async function loadOptions() {
 }
 
 function syncForm(theme: WorkspaceThemeItem | null) {
-  form.key = theme?.key || 'lightblue'
-  form.name = theme?.name || '明亮商务蓝'
-  form.description = theme?.description || '明亮、专业、克制的商务主题，适合汇报、方案和数据解读。'
+  form.key = theme?.key || ''
+  form.name = theme?.name || ''
+  form.description = theme?.description || ''
   form.logo_asset_id = theme?.logo_asset_id || null
   form.invert_logo_asset_id = theme?.invert_logo_asset_id || null
   form.project_icon_asset_id = theme?.project_icon_asset_id || null

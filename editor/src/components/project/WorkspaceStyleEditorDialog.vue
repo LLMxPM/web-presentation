@@ -17,7 +17,7 @@
     >
       <template #style>
         <div class="style-config-grid h-full min-h-0">
-          <ToolPanel class="style-editor-scroll min-h-0" title="基础配置">
+          <ToolPanel class="style-editor-scroll min-h-0" title="基础配置" body-class="flex flex-col gap-3">
           <div class="rounded-lg border border-border bg-surface p-4">
             <div class="grid grid-cols-2 gap-3">
               <UiFormField label="样式 key" required :error="errors.key"><template #default="field"><UiInput v-model="draft.key" placeholder="NEW_STYLE_KEY" required :disabled="Boolean(style)" :input-id="field.inputId" :described-by="field.describedBy" :invalid="field.invalid" /></template></UiFormField>
@@ -73,7 +73,7 @@
           </div>
           </ToolPanel>
 
-          <ToolPanel class="min-h-0">
+          <ToolPanel class="min-h-0" body-class="flex flex-col">
             <template #header>
               <div class="flex items-center justify-between gap-2">
                 <h2 class="text-title-sm font-semibold text-text">样式规范 Markdown</h2>
@@ -89,6 +89,7 @@
               v-if="specViewMode === 'edit'"
               v-model="draft.styleSpecMarkdown"
               type="textarea"
+              textarea-mode="fill"
               placeholder="用 Markdown 记录版式、排版、色彩和组件使用约束"
               :rows="22"
             />

@@ -302,7 +302,8 @@
         <UiInput
           v-model="createForm.content"
           type="textarea"
-          class="min-h-[320px] min-w-0 flex-1 font-mono text-xs leading-5"
+          textarea-mode="fill"
+          class="min-w-0 flex-1 font-mono text-xs leading-5"
           placeholder="输入 SVG 图片 / SVG 图标 / Draw.io XML / Mermaid / Chart JSON/YAML / Formula 内容"
         />
       </div>

@@ -314,6 +314,7 @@ describe('AssetsView', () => {
     })
     await fireEvent.click(screen.getByText('新建内容资源'))
 
+    expect(screen.getByPlaceholderText('输入 SVG 图片 / SVG 图标 / Draw.io XML / Mermaid / Chart JSON/YAML / Formula 内容')).toHaveClass('resize-none')
     await fireEvent.pointerDown(screen.getByRole('combobox'), { button: 0, pointerType: 'mouse' })
     const imageOption = screen.getByRole('option', { name: '图片' })
     expect(imageOption).toBeInTheDocument()

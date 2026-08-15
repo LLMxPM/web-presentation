@@ -8,7 +8,7 @@
       </slot>
     </header>
     <div v-if="$slots.toolbar" class="shrink-0 border-b border-[rgb(var(--ui-border))] px-2 py-1.5"><slot name="toolbar" /></div>
-    <div :class="bodyClass"><slot /></div>
+    <div :class="resolvedBodyClass"><slot /></div>
     <footer v-if="$slots.footer" class="shrink-0 border-t border-[rgb(var(--ui-border))] px-3 py-2"><slot name="footer" /></footer>
   </section>
 </template>
@@ -23,13 +23,17 @@ const props = withDefaults(defineProps<{
   description?: string
   /** 正文是否独立滚动，默认适用于侧栏和检查器。 */
   scrollBody?: boolean
+  /** 追加正文布局类，用于需要让子内容按面板剩余高度伸缩的场景。 */
+  bodyClass?: string
 }>(), {
   scrollBody: true,
+  bodyClass: '',
 })
 
 const titleId = useId()
-const bodyClass = computed(() => [
+const resolvedBodyClass = computed(() => [
   'min-h-0 flex-1 p-3',
+  props.bodyClass,
   props.scrollBody ? 'overflow-auto' : '',
 ])
 </script>

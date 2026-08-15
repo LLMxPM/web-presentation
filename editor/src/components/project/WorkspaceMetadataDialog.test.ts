@@ -15,6 +15,7 @@ describe('WorkspaceMetadataDialog', () => {
 
     expect(screen.getByLabelText(/工作空间名称/)).toHaveValue('产品演示')
     expect(screen.getByLabelText(/工作空间描述/)).toHaveValue('面向客户的演示内容')
+    expect(screen.getByLabelText(/工作空间描述/)).toHaveClass('resize-none')
   })
 
   it('名称为空时应显示必填错误且不提交', async () => {

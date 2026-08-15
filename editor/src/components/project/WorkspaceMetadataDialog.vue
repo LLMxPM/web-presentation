@@ -1,7 +1,7 @@
 <!-- 文件功能：提供工作空间基础信息编辑弹窗，统一承载名称与描述的修改表单。 -->
 <template>
-  <UiDialog :open="modelValue" title="编辑工作空间" size="compact" @update:open="handleVisibleChange">
-    <div class="space-y-5">
+  <UiDialog :open="modelValue" title="编辑工作空间" size="compact" body-preset="dense" @update:open="handleVisibleChange">
+    <div class="flex h-full min-h-0 flex-col gap-5">
       <UiFormField label="工作空间名称" required :error="errors.name">
         <template #default="field">
           <UiInput
@@ -15,11 +15,12 @@
         </template>
       </UiFormField>
 
-      <UiFormField label="工作空间描述">
+      <UiFormField label="工作空间描述" class="min-h-0 flex-1">
         <template #default="field">
           <UiInput
             v-model="form.description"
             type="textarea"
+            textarea-mode="fill"
             :input-id="field.inputId"
             :described-by="field.describedBy"
             placeholder="补充此工作空间的用途、归属或范围"
