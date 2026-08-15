@@ -2,9 +2,12 @@
 
 # Backend 数据库迁移
 
-当前迁移链保留两个合并节点，既支持空数据库初始化，也保留 2026-07-30 基线后的数据修复过程。
+当前迁移链从 2026-07-30 发布基线开始连续演进，当前唯一 head 为 `20260814_0100`。
 
 - `versions/20260730_0100_font_family_entities.py` 是发布基线迁移，包含截至 2026-07-30 的完整结构。
-- `versions/20260809_0100_ai_attachment_asset_lifecycle.py` 是当前唯一 head，包含基线后的结构调整与数据修复。
-- 其余开发期 revision 已按原执行顺序合并到上述两个节点，不再作为独立迁移脚本。
-- 已具备最新结构但版本号缺失的数据库，应使用 `alembic stamp 20260809_0100` 对齐；处于 `20260730_0100` 基线的数据库可直接执行 `alembic upgrade head`。
+- `versions/20260809_0100_ai_attachment_asset_lifecycle.py` 负责基线后的结构调整与数据修复。
+- `versions/20260811_0100_llm_reasoning_capabilities.py` 和 `20260811_0200_fixed_context_budget.py` 迁移模型推理与上下文预算字段。
+- `versions/20260812_0100_split_chat_image_models.py` 重建 Chat/Image 模型域及其槽位绑定表。
+- `versions/20260813_0100_unified_ai_external_tasks.py`、`20260813_0200_fixed_external_batch_timestamps.py` 和 `20260814_0100_external_continuation_handoff_guards.py` 完成外部任务运行态迁移。
+- 迁移链为单链：`20260730_0100 -> 20260809_0100 -> 20260811_0100 -> 20260811_0200 -> 20260812_0100 -> 20260813_0100 -> 20260813_0200 -> 20260814_0100`。
+- 仅当数据库结构已经人工确认与目标版本完全一致时，才允许使用 `alembic stamp 20260814_0100` 对齐版本号；普通升级应从实际版本执行 `alembic upgrade head`。
