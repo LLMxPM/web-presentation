@@ -173,7 +173,7 @@ async def synchronize_external_task_states(session_factory: async_sessionmaker[A
 
 
 async def recover_external_continuations(session_factory: async_sessionmaker[AsyncSession]) -> None:
-    """恢复过期续跑租约，并将resolving Requirement回退为可重试pending。"""
+    """恢复过期续跑租约，并同步恢复父Run的外部等待状态。"""
 
     now = utc_now()
     async with session_factory() as session:
@@ -202,29 +202,74 @@ async def recover_external_continuations(session_factory: async_sessionmaker[Asy
                 await consume_external_batch_results(session, batch=batch)
                 await _finish_legacy_domain_rows(session, batch_id=batch.batch_id)
                 continue
-            cancelled = run is None or run.cancel_requested_at is not None or run.status in {"cancelling", "cancelled", "failed"}
-            batch.status = "cancelled" if cancelled else "ready"
+            requirement_failed = requirement is not None and requirement.status == "failed"
+            cancelled = (
+                run is None
+                or run.cancel_requested_at is not None
+                or run.status in {"cancelling", "cancelled", "failed"}
+                or (requirement is not None and requirement.status == "cancelled")
+            )
+            if requirement_failed:
+                batch.status = "failed"
+                batch.error_code = "AI_EXTERNAL_CONTINUE_FAILED"
+                batch.error_message = "模型续跑失败，外部任务结果未清理。"
+            else:
+                batch.status = "cancelled" if cancelled else "ready"
             batch.worker_id = None
             batch.lease_expires_at = None
             batch.heartbeat_at = None
             batch.lease_generation += 1
-            if cancelled:
+            if requirement_failed or cancelled:
                 batch.finished_at = now
+            else:
+                batch.error_code = None
+                batch.error_message = None
+                batch.finished_at = None
             if requirement is not None and requirement.status == "resolving":
                 requirement.status = "cancelled" if cancelled else "pending"
                 requirement.resolved_at = now if cancelled else None
+            if (
+                not cancelled
+                and run is not None
+                and run.status in {"running", "paused", "waiting_external"}
+                and requirement is not None
+                and requirement.status == "pending"
+            ):
+                _restore_run_waiting_external_state(run, requirement)
         if batches:
             await session.commit()
 
 
 async def audit_external_state_consistency(session_factory: async_sessionmaker[AsyncSession]) -> None:
-    """按明确关联关系巡检waiting_external，并传播父Run终态与可修复状态。"""
+    """按明确关联关系巡检外部等待态，并修复可恢复的Run与Batch组合。"""
 
     settings = get_settings()
     grace_seconds = max(10.0, 2 * float(settings.ai_page_mutation_poll_interval_seconds))
     now = utc_now()
     cutoff = now - timedelta(seconds=grace_seconds)
     async with session_factory() as session:
+        ready_orphans = (
+            await session.execute(
+                select(AiAgentExternalBatch, AiAgentRun, AiAgentRequirement)
+                .join(AiAgentRun, AiAgentRun.run_id == AiAgentExternalBatch.run_id)
+                .join(AiAgentRequirement, AiAgentRequirement.requirement_id == AiAgentExternalBatch.requirement_id)
+                .where(
+                    AiAgentExternalBatch.status == "ready",
+                    AiAgentRun.status.in_(
+                        ("running", "paused"),
+                    ),
+                    AiAgentRequirement.status.in_(
+                        ("pending", "resolving"),
+                    ),
+                )
+            )
+        ).all()
+        for _, run, requirement in ready_orphans:
+            if requirement.status == "resolving":
+                requirement.status = "pending"
+                requirement.resolved_at = None
+            _restore_run_waiting_external_state(run, requirement)
+
         cancelling_runs = list(
             (await session.scalars(select(AiAgentRun).where(AiAgentRun.status == "cancelling"))).all()
         )
@@ -453,6 +498,15 @@ async def audit_external_state_consistency(session_factory: async_sessionmaker[A
                     await _fail_waiting_run(session, run=run, message="成员Requirement引用不存在或已终态的成员Run。")
                     requirement.status = "failed"
         await session.commit()
+
+
+def _restore_run_waiting_external_state(run: AiAgentRun, requirement: AiAgentRequirement) -> None:
+    """把可重试的外部Requirement与父Run恢复为统一等待检查点。"""
+
+    run.status = "waiting_external"
+    run.pending_requirement_json = dict(requirement.payload_json or {})
+    run.error_code = None
+    run.error_message = None
 
 
 async def _fail_waiting_run(session: AsyncSession, *, run: AiAgentRun, message: str) -> None:

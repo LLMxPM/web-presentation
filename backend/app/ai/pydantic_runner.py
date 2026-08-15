@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from contextlib import asynccontextmanager
 from collections.abc import AsyncGenerator, Sequence
 from time import monotonic
 from typing import Any
@@ -260,7 +261,7 @@ class PydanticAgentRunner:
                             run_model,
                             AgentRunEvent(event="model.request.started", run_id=run_model.run_id, session_id=run_model.session_id),
                         )
-                        async with node.stream(agent_run.ctx) as stream:
+                        async with self._model_stream_with_entry_timeout(node.stream(agent_run.ctx)) as stream:
                             async for raw_event in self._iter_stream_events(stream, run_model=run_model):
                                 should_stop, should_cancel = await self._cancel_event_if_requested(run_model)
                                 if should_stop:
@@ -648,6 +649,30 @@ class PydanticAgentRunner:
 
         stored = await self._store.append_event(run_model, event)
         return encode_sse_event(stored)
+
+    @asynccontextmanager
+    async def _model_stream_with_entry_timeout(self, stream_context: Any) -> AsyncGenerator[Any, None]:
+        """限制模型流上下文进入阶段的总等待时间，但不限制已建立流的总时长。"""
+
+        try:
+            stream = await asyncio.wait_for(
+                stream_context.__aenter__(),
+                timeout=self._stream_idle_timeout_seconds,
+            )
+        except asyncio.TimeoutError as exc:
+            raise AppException(
+                status_code=504,
+                code="AI_AGENT_STREAM_IDLE_TIMEOUT",
+                detail="模型响应长时间没有开始，本次运行已停止。",
+            ) from exc
+
+        try:
+            yield stream
+        except BaseException as exc:
+            if not await stream_context.__aexit__(type(exc), exc, exc.__traceback__):
+                raise
+        else:
+            await stream_context.__aexit__(None, None, None)
 
     async def _iter_stream_events(
         self,

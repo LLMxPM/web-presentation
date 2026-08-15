@@ -36,6 +36,7 @@ async def _seed_external_batch(
     task_status: str = "succeeded",
     result_json: dict | None = None,
     lease_expired: bool = False,
+    run_status: str = "waiting_external",
 ) -> tuple[str, str, str]:
     """创建一个最小但关联完整的waiting_external运行及统一Batch。"""
 
@@ -48,6 +49,11 @@ async def _seed_external_batch(
     batch_id = f"batch-external-{suffix}"
     task_id = f"task-external-{suffix}"
     now = utc_now()
+    requirement_payload = {
+        "id": requirement_id,
+        "kind": "external_job",
+        "tool_execution": {"tool_calls": []},
+    }
     async with get_session_factory()() as session:
         user = await session.scalar(select(User).where(User.username == "admin"))
         assert user is not None
@@ -67,13 +73,13 @@ async def _seed_external_batch(
             session_id=session_id,
             agent_id="agent-coordinator",
             user_id=user.id,
-            status="waiting_external",
+            status=run_status,
             scope_type="workspace",
             workspace_id=workspace_id,
             source="test",
             input_payload_json={"message": "测试统一续跑"},
             message_history_json=[],
-            pending_requirement_json={"id": requirement_id, "kind": "external_job"},
+            pending_requirement_json=requirement_payload if run_status == "waiting_external" else None,
             updated_at=now - timedelta(minutes=1),
         ))
         await session.flush()
@@ -85,7 +91,7 @@ async def _seed_external_batch(
             status=requirement_status,
             tool_call_id=f"tool-{suffix}",
             tool_name="create_entity",
-            payload_json={"tool_execution": {"tool_calls": []}},
+            payload_json=requirement_payload,
             resolved_at=now if requirement_status == "resolved" else None,
         ))
         session.add(AiAgentExternalBatch(
@@ -183,6 +189,81 @@ async def test_expired_resuming_batch_should_restore_ready_and_requirement_pendi
         assert batch is not None and batch.status == "ready" and batch.lease_generation == 4
         assert batch.worker_id is None and batch.lease_expires_at is None
         assert requirement is not None and requirement.status == "pending"
+
+
+async def test_expired_resuming_batch_should_restore_running_run_to_waiting_external(
+    authenticated_client: AsyncClient,
+) -> None:
+    """续跑租约过期且父Run已进入running时，必须恢复为可重试等待态。"""
+
+    run_id, requirement_id, batch_id = await _seed_external_batch(
+        authenticated_client,
+        suffix="recover-running",
+        batch_status="resuming",
+        requirement_status="resolving",
+        lease_expired=True,
+        run_status="running",
+    )
+    await recover_external_continuations(get_session_factory())
+
+    async with get_session_factory()() as session:
+        run = await session.get(AiAgentRun, run_id)
+        requirement = await session.scalar(
+            select(AiAgentRequirement).where(AiAgentRequirement.requirement_id == requirement_id)
+        )
+        batch = await session.get(AiAgentExternalBatch, batch_id)
+        assert run is not None and run.status == "waiting_external"
+        assert requirement is not None and run.pending_requirement_json == requirement.payload_json
+        assert batch is not None and batch.status == "ready"
+
+
+async def test_expired_resuming_failed_requirement_should_keep_batch_failed(
+    authenticated_client: AsyncClient,
+) -> None:
+    """Requirement已失败时，租约恢复不能把Batch重新排回ready。"""
+
+    _, requirement_id, batch_id = await _seed_external_batch(
+        authenticated_client,
+        suffix="recover-failed",
+        batch_status="resuming",
+        requirement_status="failed",
+        lease_expired=True,
+        run_status="failed",
+    )
+    await recover_external_continuations(get_session_factory())
+
+    async with get_session_factory()() as session:
+        batch = await session.get(AiAgentExternalBatch, batch_id)
+        requirement = await session.scalar(
+            select(AiAgentRequirement).where(AiAgentRequirement.requirement_id == requirement_id)
+        )
+        assert batch is not None and batch.status == "failed"
+        assert batch.error_code == "AI_EXTERNAL_CONTINUE_FAILED"
+        assert batch.worker_id is None and batch.lease_expires_at is None
+        assert requirement is not None and requirement.status == "failed"
+
+
+async def test_ready_batch_audit_should_restore_running_run_to_waiting_external(
+    authenticated_client: AsyncClient,
+) -> None:
+    """ready Batch与active Run不一致时，一致性巡检应恢复统一等待检查点。"""
+
+    run_id, requirement_id, batch_id = await _seed_external_batch(
+        authenticated_client,
+        suffix="audit-running",
+        run_status="running",
+    )
+    await audit_external_state_consistency(get_session_factory())
+
+    async with get_session_factory()() as session:
+        run = await session.get(AiAgentRun, run_id)
+        requirement = await session.scalar(
+            select(AiAgentRequirement).where(AiAgentRequirement.requirement_id == requirement_id)
+        )
+        batch = await session.get(AiAgentExternalBatch, batch_id)
+        assert run is not None and run.status == "waiting_external"
+        assert requirement is not None and run.pending_requirement_json == requirement.payload_json
+        assert batch is not None and batch.status == "ready"
 
 
 async def test_expired_resuming_batch_with_resolved_requirement_should_finish_consumption(

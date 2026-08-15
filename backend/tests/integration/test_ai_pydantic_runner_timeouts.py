@@ -9,9 +9,11 @@ from typing import Any
 from httpx import AsyncClient
 from pydantic_ai.models.function import AgentInfo, DeltaToolCall, FunctionModel
 from pydantic_ai.tools import Tool
+import pytest
 
 from app.ai.platform_runtime import PlatformAgentRuntimeStore
 from app.ai.pydantic_runner import PydanticAgentRunner
+from app.core.exceptions import AppException
 from app.db.session import get_session_factory
 from app.models.ai_agent_runtime import AiAgentRun
 from app.schemas.agent import AgentRunEvent
@@ -21,6 +23,35 @@ from tests.integration.test_ai_pydantic_runner_smoke import (
     _latest_tool_return,
     _runtime_context,
 )
+
+
+async def test_pydantic_runner_should_timeout_when_model_stream_entry_hangs() -> None:
+    """模型流上下文迟迟无法进入时，应取消入口等待并返回既有超时错误。"""
+
+    cancelled = False
+
+    class HangingStreamContext:
+        """模拟供应商一直不返回响应头的模型流上下文。"""
+
+        async def __aenter__(self) -> object:
+            nonlocal cancelled
+            try:
+                await asyncio.Event().wait()
+            except asyncio.CancelledError:
+                cancelled = True
+                raise
+
+        async def __aexit__(self, *_args: Any) -> bool:
+            return False
+
+    runner = PydanticAgentRunner(object(), stream_idle_timeout_seconds=0.02)
+
+    with pytest.raises(AppException) as exc_info:
+        async with runner._model_stream_with_entry_timeout(HangingStreamContext()):
+            raise AssertionError("模型流入口不应成功返回。")
+
+    assert exc_info.value.code == "AI_AGENT_STREAM_IDLE_TIMEOUT"
+    assert cancelled
 
 
 async def test_pydantic_runner_should_allow_tool_stream_to_exceed_model_idle_timeout(
