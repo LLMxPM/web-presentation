@@ -128,6 +128,19 @@ async def test_selected_projects_should_filter_queries_and_hide_archived_pages(a
         work_scope_mode="selected_projects",
         allowed_project_ids=[first_project_id, second_project_id],
     )
+    detail = await tools["get_entity"].entrypoint(approved_context, "page", "detail", second_page_id, None, {})
+    assert detail["data"]["id"] == second_page_id
+    assert not {
+        "created_by",
+        "updated_by",
+        "screenshot_url",
+        "screenshot_version_no",
+        "screenshot_config_hash",
+        "screenshot_viewport_width",
+        "screenshot_viewport_height",
+        "screenshot_is_latest",
+        "screenshot_updated_at",
+    }.intersection(detail["data"])
     versions = await tools["get_entity"].entrypoint(approved_context, "page", "versions", second_page_id, None, {})
     assert versions["data"][0]["version_no"] == 1
     version_content = await tools["get_entity"].entrypoint(

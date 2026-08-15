@@ -95,27 +95,41 @@
             </template>
 
             <template #prompt>
-              <div class="mx-auto max-w-5xl space-y-4">
-                <div class="flex items-start justify-between gap-4">
-                  <div>
-                    <h3 class="text-base font-bold text-text-strong">助手提示词</h3>
-                    <p class="mt-1 text-xs text-text-muted">当前{{ agent?.prompt_customized ? '使用账号自定义提示词' : '使用系统默认提示词' }}。</p>
+              <div class="prompt-editor w-full space-y-4">
+                <section class="overflow-hidden rounded-ui-lg border border-border bg-surface">
+                  <header class="flex items-center justify-between gap-3 border-b border-border-muted px-4 py-3">
+                    <div class="min-w-0">
+                      <h3 class="text-sm font-semibold text-text-strong">完整提示词</h3>
+                      <p class="mt-0.5 text-xs leading-5 text-text-muted">当前{{ agent?.prompt_customized ? '使用账号自定义提示词' : '使用系统默认提示词' }}。支持 Markdown，建议按角色、约束、流程和输出格式组织内容。</p>
+                    </div>
+                    <span
+                      class="shrink-0 rounded-full px-2 py-1 text-[11px] font-semibold"
+                      :class="agent?.prompt_customized ? 'bg-ai-muted text-ai-strong' : 'bg-surface-muted text-text-secondary'"
+                    >
+                      {{ agent?.prompt_customized ? '账号自定义' : '系统默认' }}
+                    </span>
+                  </header>
+                  <div class="p-3 sm:p-4">
+                    <label for="assistant-prompt-editor" class="sr-only">完整提示词</label>
+                    <UiInput
+                      input-id="assistant-prompt-editor"
+                      class="prompt-editor-textarea"
+                      :model-value="promptDraft"
+                      type="textarea"
+                      :rows="20"
+                      placeholder="输入内容助手提示词"
+                      @update:model-value="emit('updatePrompt', String($event))"
+                    />
                   </div>
-                  <span v-if="promptDirty" class="rounded-full bg-warning-muted px-2 py-1 text-xs font-semibold text-warning-strong">未保存</span>
-                </div>
-                <UiFormField label="完整提示词">
-                  <UiInput
-                    :model-value="promptDraft"
-                    type="textarea"
-                    :rows="20"
-                    placeholder="输入内容助手提示词"
-                    @update:model-value="emit('updatePrompt', String($event))"
-                  />
-                </UiFormField>
-                <div class="flex justify-end gap-2 border-t border-border-muted pt-4">
-                  <UiButton variant="ghost" :loading="savingPrompt" @click="emit('restorePrompt')">恢复系统默认</UiButton>
-                  <UiButton :loading="savingPrompt" :disabled="!promptDirty" @click="emit('savePrompt')">保存提示词</UiButton>
-                </div>
+                </section>
+
+                <footer class="prompt-editor-footer flex flex-wrap items-center justify-between gap-3 border-t border-border-muted py-3">
+                  <p class="text-xs text-text-muted">{{ promptDirty ? '修改尚未保存，离开前请先保存。' : '当前内容已保存。' }}</p>
+                  <div class="flex shrink-0 items-center gap-2">
+                    <UiButton variant="ghost" :loading="savingPrompt" @click="emit('restorePrompt')">恢复系统默认</UiButton>
+                    <UiButton :loading="savingPrompt" :disabled="!promptDirty" @click="emit('savePrompt')">保存提示词</UiButton>
+                  </div>
+                </footer>
               </div>
             </template>
 
@@ -452,6 +466,8 @@ function listText(items: string[], emptyText: string): string {
 
 <style scoped>
 .ai-settings-shell { grid-template-columns: 220px minmax(0, 1fr); }
+:deep(.prompt-editor-textarea) { min-height: 31rem; resize: vertical; line-height: 1.75; }
 @media (min-width: 960px) and (max-width: 1179px) { .ai-settings-shell { grid-template-columns: 72px minmax(0, 1fr); } }
 @media (max-width: 959px) { .ai-settings-shell { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); } }
+@media (max-width: 639px) { :deep(.prompt-editor-textarea) { min-height: 24rem; } }
 </style>

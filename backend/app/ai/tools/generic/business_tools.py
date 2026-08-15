@@ -49,6 +49,19 @@ from app.services.workspace_component_service import WorkspaceComponentService
 from app.services.workspace_theme_service import WorkspaceThemeService
 from app.services.agent_work_scope_service import project_is_in_work_scope
 
+AI_PAGE_DETAIL_EXCLUDED_FIELDS = {
+    "page_content",
+    "created_by",
+    "updated_by",
+    "screenshot_url",
+    "screenshot_version_no",
+    "screenshot_config_hash",
+    "screenshot_viewport_width",
+    "screenshot_viewport_height",
+    "screenshot_is_latest",
+    "screenshot_updated_at",
+}
+
 
 def build_generic_business_tools(session_factory: async_sessionmaker[AsyncSession]) -> list[Any]:
     """构建内容助手固定通用业务工具集合。"""
@@ -374,7 +387,7 @@ async def _dispatch_entity_query(
                 _ensure_project_in_work_scope(dependencies, item.project_id)
                 _ensure_active_status(item.status, "页面")
                 if action == "detail":
-                    return item.model_dump(mode="json", exclude={"page_content"})
+                    return item.model_dump(mode="json", exclude=AI_PAGE_DETAIL_EXCLUDED_FIELDS)
                 if action == "versions":
                     return [entry.model_dump(mode="json") for entry in await service.list_versions(page_id, user_id=user_id)]
                 if action == "version_content":

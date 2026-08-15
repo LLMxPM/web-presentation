@@ -731,7 +731,7 @@ _COORDINATOR_OPERATION_GUIDES = (
                      call_example={"resource_type": "project", "view": "configuration", "target_id": 8}),
     _operation_guide("page", "query", "分页查询工作空间或指定项目的页面。", _query_parameters("page", "list", PageListFilters), action="list",
                      call_example={"resource_type": "page", "filters": {"project_id": 8, "keyword": "封面"}}),
-    _operation_guide("page", "query", "读取页面元数据，不返回源码。", _query_parameters("page", "detail", EmptyArguments, target_required=True), action="detail"),
+    _operation_guide("page", "query", "读取页面元数据，不返回源码、审计字段或截图元数据。", _query_parameters("page", "detail", EmptyArguments, target_required=True), action="detail"),
     _operation_guide("page", "query", "读取页面完整源码和当前版本信息。", _query_parameters("page", "content", EmptyArguments, target_required=True), action="content",
                      prerequisites=("先通过页面列表或当前焦点取得真实页面 ID。",),
                      call_example={"resource_type": "page", "view": "content", "target_id": 31}),
