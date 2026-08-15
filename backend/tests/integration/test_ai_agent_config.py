@@ -153,9 +153,9 @@ def test_unified_prompt_should_keep_runtime_and_fixed_canvas_guidance() -> None:
     assert catalog is not None
     for phrase in (
         "page_content 要写成完整、可运行的 Vue SFC 文件源码",
-        "页面是固定画布，不是流式网页",
-        "未注入时先读取目标项目 configuration",
-        "布局的具体数值基线",
+        "演示页面是固定尺寸的画布，不是可以随着内容自然变高的网页文档",
+        "未注入时先读取项目 configuration",
+        "页面按真实画布的安全边距、模块间距、字号层级、分栏与内容密度编写，具体数值基线以项目样式规范为准",
         "PAGE_RENDER_BOTTOM_OVERFLOW",
         "Runtime 主题语义颜色键包括",
         "background-subtle 是 Runtime 提供的语义背景槽位",

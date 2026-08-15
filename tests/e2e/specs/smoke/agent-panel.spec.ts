@@ -3,13 +3,12 @@
  */
 import { expect, test } from '../../fixtures/base'
 
+import { openAgentPanel } from '../../helpers/ai-panel'
 import { gotoWorkspaceHome, openSmokePage, openSmokeProject } from '../../helpers/navigation'
 
 test('工作空间级内容助手无需进入项目即可打开，并可随页面导航继续使用', async ({ page }) => {
   await gotoWorkspaceHome(page)
-  await page.locator('[data-testid="agent-floating-trigger"]').click()
-  const panel = page.locator('[data-testid="agent-sidebar-panel"]')
-  await expect(panel).toBeVisible()
+  const panel = await openAgentPanel(page)
   await expect(panel).not.toContainText('需要先进入项目')
 
   await openSmokeProject(page)
