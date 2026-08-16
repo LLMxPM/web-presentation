@@ -415,7 +415,7 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/vue-query'
-import { Archive, FolderKanban, Layers, Plus, RefreshCw, SquarePen, Upload } from '@lucide/vue'
+import { Archive, Eye, FolderKanban, Layers, Plus, RefreshCw, SquarePen, Upload } from '@lucide/vue'
 
 import { createProject, getWorkspace, listProjects, updateProject, updateWorkspace } from '@/api/catalog'
 import { getErrorMessage } from '@/api/http'

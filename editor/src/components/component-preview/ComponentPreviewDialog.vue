@@ -2,6 +2,7 @@
 <template>
   <UiDialog
     :open="modelValue"
+    title="组件预览"
     size="workbench"
     body-preset="immersive"
     :show-header="false"
