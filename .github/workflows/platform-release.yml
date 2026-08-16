@@ -234,12 +234,11 @@ jobs:
           password: ${{ secrets.ACR_PASSWORD }}
       - uses: docker/setup-qemu-action@v4
       - uses: docker/setup-buildx-action@v4
-      - id: meta
+      # Docker Hub 支持 BuildKit attestation，保留 provenance/SBOM。
+      - id: meta-dockerhub
         uses: docker/metadata-action@v6
         with:
-          images: |
-            docker.io/llmxpm/web-presentation
-            ${{ vars.ACR_REGISTRY }}/${{ vars.ACR_NAMESPACE }}/web-presentation
+          images: docker.io/llmxpm/web-presentation
           tags: |
             type=raw,value=${{ needs.release-meta.outputs.release_tag }}
             type=raw,value=latest,enable=${{ needs.release-meta.outputs.push_latest == 'true' }}
@@ -250,17 +249,47 @@ jobs:
             org.opencontainers.image.revision=${{ github.sha }}
             com.web-presentation.runtime.sha=${{ needs.validate-runtime-image.outputs.runtime_sha }}
             com.web-presentation.runtime.image=${{ needs.validate-runtime-image.outputs.runtime_image }}
-      - uses: docker/build-push-action@v7
+      # 个人版/旧版 ACR 不接受 provenance 和 SBOM 生成的 OCI 附件，单独生成 ACR 标签。
+      - id: meta-acr
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ vars.ACR_REGISTRY }}/${{ vars.ACR_NAMESPACE }}/web-presentation
+          tags: |
+            type=raw,value=${{ needs.release-meta.outputs.release_tag }}
+            type=raw,value=latest,enable=${{ needs.release-meta.outputs.push_latest == 'true' }}
+          labels: |
+            org.opencontainers.image.title=web-presentation
+            org.opencontainers.image.description=web-presentation Backend and Editor platform image
+            org.opencontainers.image.version=${{ needs.release-meta.outputs.release_tag }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            com.web-presentation.runtime.sha=${{ needs.validate-runtime-image.outputs.runtime_sha }}
+            com.web-presentation.runtime.image=${{ needs.validate-runtime-image.outputs.runtime_image }}
+      - name: Push platform image to Docker Hub
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          annotations: ${{ steps.meta.outputs.annotations }}
+          tags: ${{ steps.meta-dockerhub.outputs.tags }}
+          labels: ${{ steps.meta-dockerhub.outputs.labels }}
+          annotations: ${{ steps.meta-dockerhub.outputs.annotations }}
           provenance: true
           sbom: true
+          cache-from: type=gha,scope=platform
+          cache-to: type=gha,mode=max,scope=platform
+      - name: Push platform image to ACR
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta-acr.outputs.tags }}
+          labels: ${{ steps.meta-acr.outputs.labels }}
+          annotations: ${{ steps.meta-acr.outputs.annotations }}
+          provenance: false
+          sbom: false
           cache-from: type=gha,scope=platform
           cache-to: type=gha,mode=max,scope=platform
 
@@ -288,12 +317,11 @@ jobs:
           password: ${{ secrets.ACR_PASSWORD }}
       - uses: docker/setup-qemu-action@v4
       - uses: docker/setup-buildx-action@v4
-      - id: meta
+      # Docker Hub 支持 BuildKit attestation，保留 provenance/SBOM。
+      - id: meta-dockerhub
         uses: docker/metadata-action@v6
         with:
-          images: |
-            docker.io/llmxpm/web-presentation
-            ${{ vars.ACR_REGISTRY }}/${{ vars.ACR_NAMESPACE }}/web-presentation
+          images: docker.io/llmxpm/web-presentation
           tags: |
             type=raw,value=sqlite-lite-${{ needs.release-meta.outputs.release_tag }}
             type=raw,value=sqlite-lite,enable=${{ needs.release-meta.outputs.push_latest == 'true' }}
@@ -306,16 +334,48 @@ jobs:
             com.web-presentation.runtime.embedded=true
             com.web-presentation.runtime.sha=${{ needs.validate-runtime-image.outputs.runtime_sha }}
             com.web-presentation.runtime.image=${{ needs.validate-runtime-image.outputs.runtime_image }}
-      - uses: docker/build-push-action@v7
+      # 个人版/旧版 ACR 不接受 provenance 和 SBOM 生成的 OCI 附件，单独生成 ACR 标签。
+      - id: meta-acr
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ vars.ACR_REGISTRY }}/${{ vars.ACR_NAMESPACE }}/web-presentation
+          tags: |
+            type=raw,value=sqlite-lite-${{ needs.release-meta.outputs.release_tag }}
+            type=raw,value=sqlite-lite,enable=${{ needs.release-meta.outputs.push_latest == 'true' }}
+          labels: |
+            org.opencontainers.image.title=web-presentation-sqlite-lite
+            org.opencontainers.image.description=web-presentation SQLite + memory runtime single-container image
+            org.opencontainers.image.version=sqlite-lite-${{ needs.release-meta.outputs.release_tag }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            com.web-presentation.image.variant=sqlite-lite
+            com.web-presentation.runtime.embedded=true
+            com.web-presentation.runtime.sha=${{ needs.validate-runtime-image.outputs.runtime_sha }}
+            com.web-presentation.runtime.image=${{ needs.validate-runtime-image.outputs.runtime_image }}
+      - name: Push SQLite lite image to Docker Hub
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: Dockerfile.lite
           platforms: linux/amd64,linux/arm64
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          annotations: ${{ steps.meta.outputs.annotations }}
+          tags: ${{ steps.meta-dockerhub.outputs.tags }}
+          labels: ${{ steps.meta-dockerhub.outputs.labels }}
+          annotations: ${{ steps.meta-dockerhub.outputs.annotations }}
           provenance: true
           sbom: true
+          cache-from: type=gha,scope=platform-lite
+          cache-to: type=gha,mode=max,scope=platform-lite
+      - name: Push SQLite lite image to ACR
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: Dockerfile.lite
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta-acr.outputs.tags }}
+          labels: ${{ steps.meta-acr.outputs.labels }}
+          annotations: ${{ steps.meta-acr.outputs.annotations }}
+          provenance: false
+          sbom: false
           cache-from: type=gha,scope=platform-lite
           cache-to: type=gha,mode=max,scope=platform-lite
