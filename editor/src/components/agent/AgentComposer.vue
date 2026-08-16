@@ -476,7 +476,13 @@ function readClipboardImageFiles(clipboardData: DataTransfer | null) {
 function normalizePastedImageFile(file: File, index: number) {
   const extension = PASTED_IMAGE_EXTENSIONS[file.type]
   if (!extension || /\.(png|jpe?g|webp)$/i.test(file.name)) return file
-  const timestamp = new Date().toISOString().replace(/[-:.TZ]/g, '')
+  const timestamp = new Date()
+    .toISOString()
+    .replaceAll('-', '')
+    .replaceAll(':', '')
+    .replaceAll('.', '')
+    .replaceAll('T', '')
+    .replaceAll('Z', '')
   return new File([file], `pasted-image-${timestamp}-${index + 1}.${extension}`, {
     type: file.type,
     lastModified: file.lastModified,
