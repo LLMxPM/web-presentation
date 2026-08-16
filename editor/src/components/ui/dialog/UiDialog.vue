@@ -5,7 +5,6 @@
       <div v-if="open" class="dialog-shell fixed inset-0 z-dialog flex items-center justify-center" :data-dialog-size="resolvedSize" :data-dialog-body-preset="resolvedBodyPreset ?? 'legacy'" :style="{ zIndex }">
       <DialogOverlay as-child><button type="button" :class="overlayButtonClass" :aria-label="title ? `关闭${title}` : '关闭弹窗'" @click="emit('update:open', false)" /></DialogOverlay>
       <DialogContent
-        v-bind="dialogContentA11yAttrs"
         class="dialog-panel fixed z-[1001] flex min-h-0 w-full flex-col overflow-hidden border border-border bg-surface shadow-2xl outline-none"
         :class="panelClass"
         :style="panelStyle"
@@ -13,7 +12,9 @@
         @interact-outside="handleInteractOutside"
         @close-auto-focus="restoreFocus"
       >
-        <DialogTitle v-if="!showHeader && title" class="sr-only">{{ title }}</DialogTitle>
+        <!-- 自定义或隐藏标题栏时只补充语义节点，不增加视觉标题。 -->
+        <DialogTitle v-if="!showHeader || $slots.header || !title" class="sr-only">{{ accessibleTitle }}</DialogTitle>
+        <DialogDescription v-if="!showHeader || $slots.header || !description" class="sr-only">{{ accessibleDescription }}</DialogDescription>
         <div v-if="showHeader" class="dialog-header flex shrink-0 items-start justify-between gap-3 border-b border-border-muted bg-canvas/50">
           <slot name="header">
             <div class="min-w-0 flex-1">
@@ -70,14 +71,10 @@ let focusRestoreTimer: ReturnType<typeof setTimeout> | null = null
 const resolvedSize = computed(() => props.size ?? 'compact')
 const resolvedBodyPreset = computed<DialogBodyPreset | null>(() => props.bodyPreset ?? (props.bodyClass ? null : 'auto'))
 const bodyPresetClass = computed(() => resolvedBodyPreset.value ? DIALOG_BODY_PRESET_CLASS[resolvedBodyPreset.value] : null)
-/**
- * 当业务明确不提供描述时，覆盖 Reka UI 自动生成的描述关联，避免无意义的警告。
- * 有描述时返回空对象，保留 Reka UI 对 DialogDescription 的默认关联。
- */
-const dialogContentA11yAttrs = computed<Record<string, undefined>>(() => (
-  props.description ? {} : { 'aria-describedby': undefined }
-))
 const showHeader = computed(() => props.showHeader && Boolean(slots.header || props.title || props.description || slots['header-extra'] || props.showCloseButton))
+/** 为没有可见标题或描述的弹窗提供屏幕阅读器语义。 */
+const accessibleTitle = computed(() => props.title || '弹窗')
+const accessibleDescription = computed(() => props.description || (props.title ? `${props.title}内容` : '弹窗内容'))
 const overlayButtonClass = computed(() => [
   'absolute inset-0',
   props.bareOverlay ? null : 'bg-overlay/40 backdrop-blur-sm',
