@@ -1,0 +1,56 @@
+# 文件功能：准备 GitHub Actions 中运行根仓 E2E 所需的 Node、Python、浏览器和服务依赖。
+name: setup-e2e
+description: 准备根仓 E2E 测试环境
+
+inputs:
+  uv-version:
+    description: uv 版本
+    required: false
+    default: 0.10.10
+  pnpm-version:
+    description: pnpm 版本
+    required: false
+    default: 10.30.3
+
+runs:
+  using: composite
+  steps:
+    - uses: astral-sh/setup-uv@v6
+      with:
+        version: ${{ inputs.uv-version }}
+
+    - uses: pnpm/action-setup@v4
+      with:
+        version: ${{ inputs.pnpm-version }}
+
+    - uses: actions/setup-node@v4
+      with:
+        node-version: 22
+        cache: pnpm
+        cache-dependency-path: |
+          pnpm-lock.yaml
+          editor/pnpm-lock.yaml
+          runtime/pnpm-lock.yaml
+
+    - uses: actions/cache@v4
+      id: playwright-cache
+      with:
+        path: ~/.cache/ms-playwright
+        key: ${{ runner.os }}-playwright-${{ hashFiles('package.json', 'pnpm-lock.yaml') }}
+        restore-keys: |
+          ${{ runner.os }}-playwright-
+
+    - run: pnpm install --frozen-lockfile
+      shell: bash
+    - run: pnpm --dir editor install --frozen-lockfile
+      shell: bash
+    - run: pnpm --dir runtime install --frozen-lockfile
+      shell: bash
+    - name: 启动 E2E 依赖
+      run: bash .github/scripts/start-e2e-dependencies.sh
+      shell: bash
+    - run: uv sync --project backend --group dev --locked
+      shell: bash
+    # 浏览器文件走缓存，但系统依赖仍需在每个全新 runner 上确认安装。
+    - run: pnpm exec playwright install --with-deps chromium
+      shell: bash

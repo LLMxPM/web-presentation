@@ -40,7 +40,7 @@ test('可视化编辑应支持循环项复制、删除并分别保存刷新', as
 
 test('可视化编辑应从画布选择标题并修改常用文字样式', async ({ page, visualEditSandbox }) => {
   await page.getByRole('button', { name: '编辑', exact: true }).click()
-  await expect(page.getByText('点击画布中的文字、区块或组件进行编辑')).toBeVisible()
+  await expect(page.getByText('点击画布中的文字、区块或组件进行编辑', { exact: true })).toBeVisible()
 
   const visualFrame = page.frameLocator('iframe[title$="可视化编辑画布"]')
   await visualFrame.getByRole('heading', { name: visualEditSandbox.pageTitle, exact: true }).click()

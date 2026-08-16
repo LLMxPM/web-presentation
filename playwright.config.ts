@@ -13,6 +13,8 @@ import { STORAGE_STATE_PATH } from './tests/e2e/helpers/e2e-env'
 const baseURL = process.env.E2E_BASE_URL || 'http://127.0.0.1:5173'
 const e2eReportDir = 'test-results/e2e/html-report'
 const e2eArtifactDir = 'test-results/e2e/artifacts'
+const configuredWorkers = Number.parseInt(process.env.PLAYWRIGHT_WORKERS || '2', 10)
+const e2eWorkers = Number.isInteger(configuredWorkers) && configuredWorkers > 0 ? configuredWorkers : 2
 
 /** 空登录态：auth project 必须覆盖未登录重定向与登录成功，不能加载全局 storageState。 */
 const emptyStorageState = { cookies: [], origins: [] }
@@ -22,6 +24,8 @@ export default defineConfig({
   globalSetup: './tests/e2e/global-setup.ts',
   timeout: 120_000,
   fullyParallel: false,
+  // 固定为与 GitHub Actions 一致的 2 workers；调试时可通过 PLAYWRIGHT_WORKERS 覆盖。
+  workers: e2eWorkers,
   expect: { timeout: 15_000 },
   reporter: [['list'], ['html', { outputFolder: e2eReportDir, open: 'never' }]],
   use: {

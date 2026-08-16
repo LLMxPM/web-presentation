@@ -56,7 +56,9 @@ jobs:
         with:
           submodules: recursive
       - uses: astral-sh/setup-uv@v6
-      - run: uv sync --project backend --group dev
+        with:
+          version: 0.10.10
+      - run: uv sync --project backend --group dev --locked
       - run: uv run --project backend pytest -c backend/pyproject.toml -m unit
       - run: uv run --project backend pytest -c backend/pyproject.toml -m api
       - if: needs.test-scope.outputs.full_tests == 'true'
@@ -92,7 +94,7 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-      - run: pnpm install --frozen-lockfile=false
+      - run: pnpm install --frozen-lockfile
       - run: pnpm run test:contracts
 
   runtime-delegated:
@@ -129,21 +131,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
-      - uses: astral-sh/setup-uv@v6
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 10.30.3
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile=false
-      - run: pnpm --dir editor install --frozen-lockfile
-      - run: pnpm --dir runtime install --frozen-lockfile
-      - name: 启动 E2E 依赖
-        run: bash .github/scripts/start-e2e-dependencies.sh
-      - run: uv sync --project backend --group dev
-      - run: pnpm exec playwright install --with-deps chromium
+      - uses: ./.github/actions/setup-e2e
       - name: 执行分层 E2E
         run: |
           if [ "${GITHUB_EVENT_NAME}" = "schedule" ] || [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
@@ -160,6 +148,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: test-results-e2e
+          retention-days: 14
           path: |
             test-results
             !test-results/e2e/storage-state.json
@@ -172,29 +161,34 @@ jobs:
       - editor-tests
       - contracts
       - runtime-delegated
-      - e2e-smoke
     if: needs.test-scope.outputs.full_tests == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: full
+            file: Dockerfile
+            tag: web-presentation:ci-smoke
+            cache_scope: platform
+          - name: lite
+            file: Dockerfile.lite
+            tag: web-presentation:sqlite-lite-ci-smoke
+            cache_scope: platform-lite
+    name: platform-image-build-smoke (${{ matrix.name }})
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
-      - uses: docker/setup-qemu-action@v4
+      # main push 只验证 amd64；定时/手动全量运行时再覆盖多架构。
+      - if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        uses: docker/setup-qemu-action@v4
       - uses: docker/setup-buildx-action@v4
       - uses: docker/build-push-action@v7
         with:
           context: .
-          file: Dockerfile
-          platforms: linux/amd64,linux/arm64
+          file: ${{ matrix.file }}
+          platforms: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && 'linux/amd64,linux/arm64' || 'linux/amd64' }}
           push: false
-          tags: web-presentation:ci-smoke
-          cache-from: type=gha,scope=platform
-          cache-to: type=gha,mode=max,scope=platform
-      - uses: docker/build-push-action@v7
-        with:
-          context: .
-          file: Dockerfile.lite
-          platforms: linux/amd64,linux/arm64
-          push: false
-          tags: web-presentation:sqlite-lite-ci-smoke
-          cache-from: type=gha,scope=platform-lite
-          cache-to: type=gha,mode=max,scope=platform-lite
+          tags: ${{ matrix.tag }}
+          cache-from: type=gha,scope=${{ matrix.cache_scope }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.cache_scope }}

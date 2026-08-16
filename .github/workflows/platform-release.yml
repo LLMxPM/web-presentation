@@ -18,6 +18,10 @@ on:
         default: false
         type: boolean
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.release.tag_name || inputs.release_tag }}
+  cancel-in-progress: false
+
 jobs:
   release-meta:
     runs-on: ubuntu-latest
@@ -60,7 +64,9 @@ jobs:
         with:
           submodules: recursive
       - uses: astral-sh/setup-uv@v6
-      - run: uv sync --project backend --group dev
+        with:
+          version: 0.10.10
+      - run: uv sync --project backend --group dev --locked
       - run: uv run --project backend pytest -c backend/pyproject.toml -m unit
       - run: uv run --project backend pytest -c backend/pyproject.toml -m api
       - run: uv run --project backend pytest -c backend/pyproject.toml -m integration
@@ -97,7 +103,7 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-      - run: pnpm install --frozen-lockfile=false
+      - run: pnpm install --frozen-lockfile
       - run: pnpm run test:contracts
 
   e2e-smoke:
@@ -111,21 +117,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
-      - uses: astral-sh/setup-uv@v6
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 10.30.3
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile=false
-      - run: pnpm --dir editor install --frozen-lockfile
-      - run: pnpm --dir runtime install --frozen-lockfile
-      - name: 启动 E2E 依赖
-        run: bash .github/scripts/start-e2e-dependencies.sh
-      - run: uv sync --project backend --group dev
-      - run: pnpm exec playwright install --with-deps chromium
+      - uses: ./.github/actions/setup-e2e
       - run: pnpm run test:e2e:all
         env:
           TESTING_START_BACKEND: 'true'
@@ -136,6 +128,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: test-results-e2e
+          retention-days: 14
           path: |
             test-results
             !test-results/e2e/storage-state.json
@@ -144,9 +137,6 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - release-meta
-      - backend-tests
-      - editor-tests
-      - contracts
     outputs:
       runtime_sha: ${{ steps.runtime.outputs.runtime_sha }}
       runtime_short_sha: ${{ steps.runtime.outputs.runtime_short_sha }}
@@ -185,13 +175,39 @@ jobs:
           RUNTIME_IMAGE: ${{ steps.runtime.outputs.runtime_image }}
           RUNTIME_ACR_IMAGE: ${{ steps.runtime.outputs.runtime_acr_image }}
         run: |
+          validate_runtime_image() {
+            local image="${1}"
+            local attempt
+            local manifest_json
+            local architectures
+
+            for ((attempt = 1; attempt <= 3; attempt += 1)); do
+              echo "检查 Runtime 镜像（第 ${attempt}/3 次）：${image}"
+              if manifest_json="$(docker buildx imagetools inspect "${image}" --format '{{json .Manifest}}' 2>&1)"; then
+                if [[ -n "${manifest_json}" && "${manifest_json}" != "null" ]] \
+                  && jq -e . >/dev/null 2>&1 <<<"${manifest_json}" \
+                  && jq -e '[(.manifests // [])[]? | select(.platform.os == "linux") | .platform.architecture] | (index("amd64") != null and index("arm64") != null)' >/dev/null <<<"${manifest_json}"; then
+                  echo "Runtime 镜像已包含 linux/amd64 和 linux/arm64：${image}"
+                  return 0
+                fi
+
+                architectures="$(jq -r '[(.manifests // [])[]? | select(.platform.os == "linux") | .platform.architecture] | unique | join(",")' <<<"${manifest_json}" 2>/dev/null || true)"
+                echo "Runtime 镜像 manifest 未包含预期平台，当前平台：${architectures:-无或格式无效}" >&2
+              else
+                echo "Runtime 镜像查询失败：${manifest_json}" >&2
+              fi
+
+              if ((attempt < 3)); then
+                sleep $((5 * attempt))
+              fi
+            done
+
+            echo "Runtime 镜像校验失败，镜像可能不存在、尚未同步或不是多架构镜像：${image}" >&2
+            return 1
+          }
+
           for image in "${RUNTIME_IMAGE}" "${RUNTIME_ACR_IMAGE}"; do
-            echo "检查 Runtime 镜像：${image}"
-            manifest_json="$(docker buildx imagetools inspect "${image}" --format '{{json .Manifest}}')"
-            echo "${manifest_json}" | jq -e '
-              [.manifests[].platform | select(.os == "linux") | .architecture]
-              | (index("amd64") != null and index("arm64") != null)
-            '
+            validate_runtime_image "${image}"
           done
 
   build-and-push:

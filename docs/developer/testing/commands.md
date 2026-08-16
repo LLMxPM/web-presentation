@@ -47,7 +47,9 @@ pnpm run test:e2e:all
 - `test:e2e:prepare`：准备 E2E 环境，等价于 `node scripts/testing/prepare-e2e-env.mjs`。未显式设置 `TESTING_START_*` / `TESTING_REUSE_BACKEND` 时进入自启模式：先校验 8000/5173/7373 端口与本地 PostgreSQL/Redis 依赖，端口被占用或依赖缺失时立即报错并给出提示；校验通过后自动注入 `TESTING_START_*` 与 `AI_TEST_MODE=mock`，随后重置数据、播种 smoke 数据并启动/确认服务。
 - `test:e2e`：准备环境后运行 `auth + smoke`。
 - `test:e2e:regression`：准备环境后运行 `visual-edit + ai + runtime-heavy`。
-- `test:e2e:all`：准备环境后运行全部 Playwright project。
+- `test:e2e:all`：准备环境后运行全部 Playwright project，默认使用 2 workers，与 GitHub Actions release/test workflow 一致；本地并行调试可通过 `PLAYWRIGHT_WORKERS` 覆盖。
+
+GitHub Actions 的 release/test workflow 共用 `.github/actions/setup-e2e`，使用锁文件安装依赖、固定 uv/pnpm 版本，并缓存 Playwright 浏览器；本地测试仍按上面的命令执行即可。
 
 复用已有服务时，显式设置 `TESTING_START_*` 或 `TESTING_REUSE_BACKEND` 会跳过端口校验；复用 Backend 必须满足 E2E 测试指纹。
 
