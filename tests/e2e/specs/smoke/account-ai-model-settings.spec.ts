@@ -6,6 +6,7 @@ import { expect, test } from '../../fixtures/base'
 test('聊天模型配置应支持创建、编辑、重开与清理', async ({ page }) => {
   const modelName = `E2E 聊天模型 ${Date.now()}`
   const updatedModelName = `${modelName} 已编辑`
+  const customModelIdValue = `e2e-custom-chat-model-${Date.now()}`
 
   await page.goto('/account/ai-settings?section=chat')
   await expect(page.getByRole('heading', { name: '聊天模型' })).toBeVisible()
@@ -19,8 +20,9 @@ test('聊天模型配置应支持创建、编辑、重开与清理', async ({ pa
   await createDialog.getByPlaceholder('选择目录模型或手工输入模型 ID').click()
   await page.getByRole('option', { name: '手工输入未收录模型 ID' }).click()
   const customModelId = createDialog.getByRole('textbox', { name: '自定义模型 ID', exact: true })
-  await customModelId.fill('gpt-5.6')
-  await expect(customModelId).toHaveValue('gpt-5.6')
+  // 使用唯一 ID，避免实时 Models.dev 目录后来收录该值后被前端重新识别为目录模型。
+  await customModelId.fill(customModelIdValue)
+  await expect(customModelId).toHaveValue(customModelIdValue)
   await expect(createDialog.getByRole('heading', { name: '模型能力' })).toBeVisible()
   const createButton = createDialog.getByRole('button', { name: '创建模型' })
   await expect(createButton).toBeEnabled()
