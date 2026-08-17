@@ -4,7 +4,7 @@
 
 export type AiSettingsSection = 'assistant' | 'chat' | 'image'
 
-export type AssistantSettingsTab = 'models' | 'prompt' | 'tools'
+export type AssistantSettingsTab = 'models' | 'tools' | 'prompt' | 'code-standards'
 
 export type EntityDialogMode = 'create' | 'detail' | 'edit'
 

@@ -973,6 +973,16 @@ export interface AgentConfigItem extends AgentCatalogItem {
   disabled_tool_count: number
 }
 
+export interface AgentCodeStandardConfigItem {
+  agent_id: string
+  standard_type: 'page' | 'component'
+  default_content: string
+  content: string
+  content_override: string | null
+  customized: boolean
+  source: 'system_default' | 'user_custom'
+}
+
 export interface AgentSessionItem {
   session_id: string
   agent_id: string

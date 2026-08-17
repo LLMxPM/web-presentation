@@ -41,6 +41,7 @@ from app.core.exceptions import AppException
 
 EXPECTED_GENERIC_TOOL_KEYS = {
     "get_operation_guide",
+    "get_code_standards",
     "list_entities",
     "get_entity",
     "create_entity",
@@ -370,6 +371,10 @@ def test_generic_tools_should_expose_discriminated_top_level_schemas() -> None:
     """常驻 Schema 应只披露合法顶层组合，复杂业务字段继续按手册查询。"""
 
     tools = {item.name: item for item in build_generic_business_tools(None)}  # type: ignore[arg-type]
+
+    standards_schema = tools["get_code_standards"].parameters
+    assert standards_schema["properties"]["standard_type"]["enum"] == ["page", "component"]
+    assert standards_schema["required"] == ["standard_type"]
 
     guide_schema = tools["get_operation_guide"].parameters
     operation_key_variants = guide_schema["properties"]["operation_key"]["anyOf"]

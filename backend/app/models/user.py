@@ -1,7 +1,7 @@
 """文件功能：定义平台用户、用户会话与登录态相关数据模型。"""
 
 from datetime import datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -9,6 +9,10 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
 from app.models.enums import RecordStatus, UserRole
 from app.models.mixins import TimestampMixin
+
+if TYPE_CHECKING:
+    from app.models.ai_agent_config import AiAgentCodeStandardUserConfig, AiAgentToolUserConfig, AiAgentUserConfig
+    from app.models.ai_llm import AiLlmConfig, AiLlmProviderConfig, AiLlmSlotBinding
 
 
 class User(TimestampMixin, Base):
@@ -31,6 +35,7 @@ class User(TimestampMixin, Base):
     llm_slot_bindings: Mapped[list["AiLlmSlotBinding"]] = relationship(back_populates="user")
     agent_configs: Mapped[list["AiAgentUserConfig"]] = relationship(back_populates="user")
     agent_tool_configs: Mapped[list["AiAgentToolUserConfig"]] = relationship(back_populates="user")
+    agent_code_standard_configs: Mapped[list["AiAgentCodeStandardUserConfig"]] = relationship(back_populates="user")
 
 
 class UserSession(TimestampMixin, Base):

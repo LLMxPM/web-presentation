@@ -37,13 +37,13 @@
             :items="assistantTabs"
             class="flex min-h-0 flex-1 flex-col bg-surface"
             list-class="shrink-0 px-5"
-            content-class="min-h-0 flex-1 overflow-y-auto p-5"
+            :content-class="assistantTab === 'code-standards' ? 'min-h-0 flex-1 overflow-hidden p-5' : 'min-h-0 flex-1 overflow-y-auto p-5'"
             @update:model-value="emit('changeAssistantTab', $event as AssistantSettingsTab)"
           >
             <template #models>
               <div class="space-y-4">
                 <div>
-                  <h3 class="text-base font-bold text-text-strong">模型与视觉能力</h3>
+                  <h3 class="text-base font-bold text-text-strong">模型配置</h3>
                   <p class="mt-1 text-xs text-text-muted">分别绑定内容生成、图片理解与图片生成模型；每一行独立保存。</p>
                 </div>
                 <div class="overflow-hidden rounded-ui-lg border border-border">
@@ -131,6 +131,20 @@
                   </div>
                 </footer>
               </div>
+            </template>
+
+            <template #code-standards>
+              <AccountAiCodeStandardsPanel
+                :selected-type="selectedCodeStandardType"
+                :selected-standard="selectedCodeStandard"
+                :draft="codeStandardDraft"
+                :dirty="codeStandardDirty"
+                :saving="savingCodeStandard"
+                @change-type="emit('changeCodeStandardType', $event)"
+                @update-draft="emit('updateCodeStandardDraft', $event)"
+                @save="emit('saveCodeStandard')"
+                @restore="emit('restoreCodeStandard')"
+              />
             </template>
 
             <template #tools>
@@ -300,6 +314,7 @@ import AccountAiModelDetail from './AccountAiModelDetail.vue'
 import AccountAiModelTable from './AccountAiModelTable.vue'
 import AccountAiProviderDetail from './AccountAiProviderDetail.vue'
 import AccountAiProviderTable from './AccountAiProviderTable.vue'
+import AccountAiCodeStandardsPanel from './AccountAiCodeStandardsPanel.vue'
 import AccountAiSettingsNavigation from './AccountAiSettingsNavigation.vue'
 import CodeBlock from '@/components/patterns/CodeBlock.vue'
 import DataState from '@/components/patterns/DataState.vue'
@@ -309,7 +324,7 @@ import { UiButton, UiCheckbox, UiCombobox, UiDialog, UiFormField, UiInput, UiSel
 import type { SelectOption } from '@/components/ui/select'
 import type { ModelCatalogSyncState } from '@/api/llm'
 import type { ChatModelCatalogItem } from '@/api/model-config'
-import type { AgentConfigItem, AgentToolConfigItem, AiModelType, LlmConfigItem, LlmModelCapabilityItem, LlmProviderCatalogItem, LlmProviderConfigItem, LlmSlotBindingItem } from '@/types/api'
+import type { AgentCodeStandardConfigItem, AgentConfigItem, AgentToolConfigItem, AiModelType, LlmConfigItem, LlmModelCapabilityItem, LlmProviderCatalogItem, LlmProviderConfigItem, LlmSlotBindingItem } from '@/types/api'
 import type { AiSettingsSection, AssistantSettingsTab, EntityDialogMode } from './account-ai-settings-types'
 
 interface ToolDraft { enabled: boolean; descriptionOverride: string; instructionsOverride: string }
@@ -321,6 +336,7 @@ const props = defineProps<{
   models: LlmConfigItem[]; providerConfigs: LlmProviderConfigItem[]; providerCatalog: LlmProviderCatalogItem[]; slots: LlmSlotBindingItem[]
   chatModelCatalog: ChatModelCatalogItem[]; catalogSyncState: ModelCatalogSyncState | null; refreshingCatalog: boolean
   slotDrafts: Record<string, number | null>; bindingSlot: string | null; promptDraft: string; promptDirty: boolean; savingPrompt: boolean
+  selectedCodeStandardType: AgentCodeStandardConfigItem['standard_type']; selectedCodeStandard: AgentCodeStandardConfigItem | null; codeStandardDraft: string; codeStandardDirty: boolean; savingCodeStandard: boolean
   toolDrafts: Record<string, ToolDraft>; savingToolKey: string | null; selectedTool: AgentToolConfigItem | null; toolDialogOpen: boolean
   providerDialogOpen: boolean; providerMode: EntityDialogMode; providerForm: ProviderForm; selectedProviderConfigId: number | null; selectedProviderConfig: LlmProviderConfigItem | null; currentProviderForProviderForm: LlmProviderCatalogItem | null; providerOptions: SelectOption[]; savingProviderConfig: boolean; deletingProviderConfigId: number | null; canCreateGlobal: boolean
   modelDialogOpen: boolean; modelMode: EntityDialogMode; modelForm: ModelForm; selectedConfigId: number | null; selectedModel: LlmConfigItem | null; currentProvider: LlmProviderCatalogItem | null; resolvedCapability?: LlmModelCapabilityItem | null; providerConfigOptions: SelectOption[]; advancedConfigText: string; advancedConfigError: string; advancedConfigCollapsed: boolean; savingConfig: boolean; deletingConfigId: number | null
@@ -330,13 +346,19 @@ const emit = defineEmits<{
   changeSection: [value: AiSettingsSection]; changeAssistantTab: [value: AssistantSettingsTab]
   updateSlotDraft: [slot: string, value: number | null]; saveSlot: [slot: string, scope: 'personal' | 'global']
   updatePrompt: [value: string]; savePrompt: []; restorePrompt: []
+  changeCodeStandardType: [value: AgentCodeStandardConfigItem['standard_type']]; updateCodeStandardDraft: [value: string]; saveCodeStandard: []; restoreCodeStandard: []
   openTool: [tool: AgentToolConfigItem]; updateToolDialogOpen: [value: boolean]; updateToolEnabled: [key: string, value: boolean]; updateToolDescription: [key: string, value: string]; updateToolInstructions: [key: string, value: string]; saveTool: [tool: AgentToolConfigItem]; restoreTool: [tool: AgentToolConfigItem]
   createProvider: [modelType?: AiModelType]; viewProvider: [config: LlmProviderConfigItem]; editProvider: [config: LlmProviderConfigItem]; deleteProvider: [config: LlmProviderConfigItem]; updateProviderDialogOpen: [value: boolean]; cancelProvider: []; startEditProvider: []; submitProvider: []
   createModel: [modelType?: AiModelType]; viewModel: [config: LlmConfigItem]; editModel: [config: LlmConfigItem]; deleteModel: [config: LlmConfigItem]; updateModelDialogOpen: [value: boolean]; cancelModel: []; startEditModel: []; submitModel: []; formatAdvanced: []; updateAdvancedConfigText: [value: string]; updateAdvancedConfigCollapsed: [value: boolean]
   refreshCatalog: []
 }>()
 
-const assistantTabs = [{ label: '模型与视觉能力', value: 'models' }, { label: '提示词', value: 'prompt' }, { label: '工具配置', value: 'tools' }]
+const assistantTabs: Array<{ label: string; value: AssistantSettingsTab }> = [
+  { label: '模型配置', value: 'models' },
+  { label: '工具配置', value: 'tools' },
+  { label: '系统提示词', value: 'prompt' },
+  { label: '代码规范', value: 'code-standards' },
+]
 const chatKeyword = ref(''); const imageKeyword = ref(''); const modelProviderFilter = ref('all'); const modelScopeFilter = ref('all')
 const providerScopeFilter = ref('all')
 const toolKeyword = ref(''); const toolGroupFilter = ref('all'); const toolRiskFilter = ref('all'); const toolEnabledFilter = ref('all')

@@ -1051,6 +1051,8 @@ _COORDINATOR_OPERATION_GUIDE_MAP = {
 _COORDINATOR_TOOL_SPECS = (
     _tool("get_operation_guide", "查询操作手册", "generic_business", "通用业务", "按稳定 operation_key 查询精确参数 Schema、前置条件、副作用、限制和示例；省略 operation_key 时返回紧凑索引。",
           default_instructions="首次使用、不确定参数或参数校验失败时查询；先省略 operation_key 获取索引，再携带选定 operation_key 获取精确手册。当前上下文已有对应精确手册时不要重复查询。", configurable=False),
+    _tool("get_code_standards", "查询代码规范", "generic_business", "通用业务", "查询当前用户生效的页面或组件代码规范 Markdown；规范类型只有 page 和 component。",
+          default_instructions="页面源码任务先查询 standard_type=page，组件源码任务先查询 standard_type=component；当前规范结果已经在消息历史中时不要重复查询。", configurable=False),
     _tool("list_entities", "罗列业务对象", "generic_business", "通用业务", "统一罗列、搜索项目、页面、组件、资源、主题、样式、Runtime Kit 和字体；支持项目范围与建议集合筛选。",
           default_instructions="只用于集合查询，不读取详情或源码；项目页面用 page + project_id，建议组件或资源使用 scope=suggested；需要视觉素材时优先按 asset 查询 active 资源，再按返回的 render_type 和 content_editable 决定是否读取详情或源码。"),
     _tool("get_entity", "读取业务对象", "generic_business", "通用业务", "统一读取详情、共享配置、源码、路由、历史版本和依赖。",
@@ -1079,7 +1081,7 @@ _COORDINATOR_GROUP_SPECS = (
         "generic_business",
         "通用业务",
         "固定通用工具，覆盖工作空间内项目、页面、组件、资源、主题和样式。",
-        ("get_operation_guide", "list_entities", "get_entity", "create_entity", "update_entity", "archive_entity", "validate_entity", "execute_action"),
+        ("get_operation_guide", "get_code_standards", "list_entities", "get_entity", "create_entity", "update_entity", "archive_entity", "validate_entity", "execute_action"),
         required_context_fields=("workspace_id",),
         token_scopes=(
             *PAGE_TOOL_READ_SCOPES,

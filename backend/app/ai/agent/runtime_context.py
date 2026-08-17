@@ -54,14 +54,12 @@ def build_runtime_context_user_block(runtime_context: AgentRuntimeContext) -> st
         "page_title": runtime_context.page_title,
         "component_id": runtime_context.component_id,
         "component_name": runtime_context.component_name,
-        "source": runtime_context.source,
         "work_scope_mode": runtime_context.work_scope_mode,
         "allowed_project_ids": list(runtime_context.allowed_project_ids),
         "allowed_projects": [
             {"id": project_id, "name": project_name}
             for project_id, project_name in runtime_context.allowed_projects
         ],
-        "focus_version": runtime_context.focus_version,
         "canvas": {
             "page_width": runtime_context.page_width,
             "page_height": runtime_context.page_height,

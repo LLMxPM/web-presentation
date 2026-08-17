@@ -1,6 +1,6 @@
 """文件功能：集中导出 ORM 模型，便于迁移与测试统一加载元数据。"""
 
-from app.models.ai_agent_config import AiAgentToolUserConfig, AiAgentUserConfig
+from app.models.ai_agent_config import AiAgentCodeStandardUserConfig, AiAgentToolUserConfig, AiAgentUserConfig
 from app.models.ai_agent_attachment import AiAgentImageAttachment
 from app.models.ai_agent_runtime import (
     AiAgentMemberRun,
@@ -59,6 +59,7 @@ __all__ = [
     "AiAgentMemberRun",
     "AiAgentUserConfig",
     "AiAgentToolUserConfig",
+    "AiAgentCodeStandardUserConfig",
     "AiPageMutationBatch",
     "AiPageMutationJob",
     "AiImageGenerationJob",

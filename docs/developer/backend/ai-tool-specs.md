@@ -21,6 +21,8 @@
 
 `get_operation_guide` 只是模型的普通只读操作手册。省略 `operation_key` 时返回紧凑索引，传入 `page.update.content` 等稳定操作键时返回精确参数 Schema。返回结果自然进入消息历史，不生成令牌、授权记录、契约快照或执行前置状态。模型未先查询手册时，写工具仍应按照真实业务 Schema 正常校验；参数错误必须返回明确校验信息，供模型查询手册后重试。
 
+`get_code_standards` 是固定装配的通用只读工具，参数仅有 `standard_type=page|component`，返回当前用户生效的整段 Markdown 规范。页面和组件规范分别包含对应的布局、组件契约以及主题 Token、字体、资源和 Icon 使用规则；账户 AI 设置允许用户按类型完整替换或恢复系统默认内容。该工具不记录查询状态，也不构成页面或组件写入工具的后端前置门禁。
+
 `AgentOperationGuideSpec` 同时登记稳定操作键、逻辑资源、操作、精确参数 Schema、处理工具 key、前端 mutation 类型、风险、确认、限制和示例。运行时通用工具只常驻合法对象、mode/action 的判别式顶层 Schema，复杂 `filters`、`payload` 和 `options` 由操作手册按需披露。`create_entity` 使用 `new/copy/upload` 区分普通创建、复制和可信附件创建；`validate_entity` 用于独立检查当前或候选页面/组件代码以及预览资源差异，不产生 mutation，页面和组件的创建、源码更新会在写工具内部自动校验，无需重复调用；`execute_action` 只承载发布等生命周期命令。项目与样式共享 presentation 和 suggested components 配置结构，并通过 `get_entity.configuration` 返回同构快照；项目可通过 `apply_style` 复制完整独立快照。主题 key 和样式 key 只在创建时指定，已有对象不开放 key 修改。
 
 通用返回 envelope 使用 `effect=read|create|update|lifecycle` 表达真实效果。创建返回新对象 `target`，复制额外返回 `source`；只读查询和校验返回 `mutation=null`。代码或布局校验不通过属于正常校验结果，工具调用仍返回 `success=true`，具体结果通过 `data.valid=false` 和 diagnostics 表达。
@@ -33,8 +35,10 @@
 
 ## 文案边界
 
-用户可以编辑智能体描述、智能体提示词、工具说明和工具提示词；工具调用契约、参数 JSON Schema 和返回示例是系统只读信息。
+用户可以编辑智能体描述、智能体提示词、工具说明、工具提示词和页面/组件代码规范内容；工具调用契约、参数 JSON Schema 和返回示例是系统只读信息。智能体提示词仍采用完整替换语义，代码规范则按 `page` 或 `component` 类型分别完整替换。
 
 ## 前端展示
 
 账户 AI 设置页应展示面向 Agent 的完整工具说明，包括当前生效说明、系统默认说明、参数 JSON Schema、调用示例、返回示例、上下文要求与运行时披露组。
+
+账户 AI 设置页的“代码规范”入口应按“页面规范 / 组件规范”切换，分别展示系统默认 Markdown、当前生效内容和可编辑的用户覆盖内容，并支持保存自定义规范和恢复默认。

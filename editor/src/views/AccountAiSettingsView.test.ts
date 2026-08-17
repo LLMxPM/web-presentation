@@ -25,7 +25,9 @@ const getModelCatalogSyncStateMock = vi.fn()
 const refreshModelCatalogMock = vi.fn()
 const listAgentCatalogMock = vi.fn()
 const listAgentConfigsMock = vi.fn()
+const listAgentCodeStandardsMock = vi.fn()
 const updateAgentConfigMock = vi.fn()
+const updateAgentCodeStandardMock = vi.fn()
 const updateAgentToolConfigMock = vi.fn()
 const messageSuccessMock = vi.fn()
 const messageErrorMock = vi.fn()
@@ -60,7 +62,9 @@ vi.mock('@/api/llm', () => ({
 vi.mock('@/api/agent-config', () => ({
   listAgentCatalog: () => listAgentCatalogMock(),
   listAgentConfigs: () => listAgentConfigsMock(),
+  listAgentCodeStandards: (...args: unknown[]) => listAgentCodeStandardsMock(...args),
   updateAgentConfig: (...args: unknown[]) => updateAgentConfigMock(...args),
+  updateAgentCodeStandard: (...args: unknown[]) => updateAgentCodeStandardMock(...args),
   updateAgentToolConfig: (...args: unknown[]) => updateAgentToolConfigMock(...args),
 }))
 
@@ -346,6 +350,26 @@ describe('AccountAiSettingsView', () => {
     deleteLlmProviderConfigMock.mockResolvedValue({ message: '供应商已删除。' })
     listAgentCatalogMock.mockResolvedValue([agentConfig])
     listAgentConfigsMock.mockResolvedValue([agentConfig])
+    listAgentCodeStandardsMock.mockResolvedValue([
+      {
+        agent_id: 'agent-coordinator',
+        standard_type: 'page',
+        default_content: '## 页面默认规范',
+        content: '## 页面默认规范',
+        content_override: null,
+        customized: false,
+        source: 'system_default',
+      },
+      {
+        agent_id: 'agent-coordinator',
+        standard_type: 'component',
+        default_content: '## 组件默认规范',
+        content: '## 组件默认规范',
+        content_override: null,
+        customized: false,
+        source: 'system_default',
+      },
+    ])
     createLlmConfigMock.mockImplementation(async (payload: Record<string, unknown>) => createLlmConfigItem({
       id: 2,
       owner_user_id: payload.scope === 'global' ? null : 1,
@@ -388,7 +412,8 @@ describe('AccountAiSettingsView', () => {
     expect(screen.getByTestId('account-ai-settings-admin')).toBeTruthy()
     expect(screen.getByRole('heading', { name: 'AI 设置' })).toBeTruthy()
     expect(screen.getByRole('heading', { name: '内容助手' })).toBeTruthy()
-    expect(screen.getByRole('tab', { name: '模型与视觉能力' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getAllByRole('tab').map(tab => tab.textContent?.trim()).slice(-4)).toEqual(['模型配置', '工具配置', '系统提示词', '代码规范'])
+    expect(screen.getByRole('tab', { name: '模型配置' })).toHaveAttribute('aria-selected', 'true')
     expect(screen.getByRole('button', { name: /内容助手/ })).toHaveAttribute('aria-current', 'page')
     expect(routerReplaceMock).toHaveBeenCalledWith({ query: { section: 'assistant', tab: 'models' } })
   })
@@ -412,7 +437,7 @@ describe('AccountAiSettingsView', () => {
     render(AccountAiSettingsView, createTestingRenderOptions())
     await waitForSettingsReady()
 
-    await fireEvent.mouseDown(screen.getByRole('tab', { name: '提示词' }), { button: 0 })
+    await fireEvent.mouseDown(screen.getByRole('tab', { name: '系统提示词' }), { button: 0 })
     const prompt = await screen.findByPlaceholderText('输入内容助手提示词')
     await fireEvent.update(prompt, '新的内容助手提示词')
     await fireEvent.click(screen.getByRole('button', { name: '保存提示词' }))
@@ -484,6 +509,28 @@ describe('AccountAiSettingsView', () => {
     expect(screen.getByLabelText(/^API Key/)).toBeTruthy()
     expect(screen.queryByText('供应商身份')).toBeNull()
     expect(screen.queryByText('目录能力')).toBeNull()
+  })
+
+  it('应按页面和组件类型编辑并保存代码规范', async () => {
+    render(AccountAiSettingsView, createTestingRenderOptions())
+    await waitForSettingsReady()
+
+    await fireEvent.mouseDown(screen.getByRole('tab', { name: '代码规范' }), { button: 0 })
+    expect(await screen.findByRole('tab', { name: '页面规范' })).toHaveAttribute('data-state', 'active')
+    expect(screen.queryByText('查看系统默认 Markdown')).toBeNull()
+    expect(screen.queryByText('## 页面默认规范')).toBeNull()
+
+    const editor = screen.getByPlaceholderText('输入页面或组件代码规范')
+    await fireEvent.update(editor, '## 我的页面规范\n\n- 使用结论性标题。')
+    await fireEvent.click(screen.getByRole('button', { name: '保存规范' }))
+
+    await waitFor(() => {
+      expect(updateAgentCodeStandardMock).toHaveBeenCalledWith(
+        'agent-coordinator',
+        'page',
+        { content_override: '## 我的页面规范\n\n- 使用结论性标题。' },
+      )
+    })
   })
 
   it('聊天与图片页面应隔离列表、筛选和新建表单域', async () => {

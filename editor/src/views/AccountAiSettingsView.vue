@@ -16,6 +16,11 @@
     :prompt-draft="promptDraft"
     :prompt-dirty="promptDirty"
     :saving-prompt="savingPrompt"
+    :selected-code-standard-type="selectedCodeStandardType"
+    :selected-code-standard="selectedCodeStandard"
+    :code-standard-draft="codeStandardDraft"
+    :code-standard-dirty="codeStandardDirty"
+    :saving-code-standard="savingCodeStandard"
     :tool-drafts="toolDrafts"
     :saving-tool-key="savingToolKey"
     :selected-tool="selectedTool"
@@ -50,6 +55,10 @@
     @update-prompt="promptDraft = $event"
     @save-prompt="handleSavePrompt"
     @restore-prompt="handleRestorePrompt"
+    @change-code-standard-type="selectedCodeStandardType = $event"
+    @update-code-standard-draft="codeStandardDrafts[selectedCodeStandardType] = $event"
+    @save-code-standard="handleSaveCodeStandard"
+    @restore-code-standard="handleRestoreCodeStandard"
     @open-tool="openToolDialog"
     @update-tool-dialog-open="handleToolDialogVisibility"
     @update-tool-enabled="(key, value) => toolDrafts[key].enabled = value"
@@ -106,8 +115,10 @@ import type { LlmConfigUpdatePayload, LlmProviderConfigUpdatePayload } from '@/a
 import type { ModelCatalogSyncState } from '@/api/llm'
 import type { ChatModelCatalogItem } from '@/api/model-config'
 import {
+  listAgentCodeStandards,
   listAgentConfigs,
   updateAgentConfig,
+  updateAgentCodeStandard,
   updateAgentToolConfig,
 } from '@/api/agent-config'
 import { getErrorMessage } from '@/api/http'
@@ -118,6 +129,7 @@ import { useAuthStore } from '@/stores/auth'
 import type {
   AiLlmConfigScope,
   AiModelType,
+  AgentCodeStandardConfigItem,
   AgentConfigItem,
   AgentToolConfigItem,
   LlmConfigItem,
@@ -128,7 +140,7 @@ import type {
 import { Message, createConfirm } from '@/utils/message'
 
 type ActiveSection = 'agents' | 'providers' | 'models'
-type ActiveAgentPanel = 'binding' | 'prompts' | 'tools'
+type ActiveAgentPanel = 'binding' | 'prompts' | 'code-standards' | 'tools'
 type ConfigPanelMode = 'create' | 'detail' | 'edit'
 
 const DEFAULT_CONTEXT_WINDOW_TOKENS = 200000
@@ -168,6 +180,9 @@ const activeAgentPanel = ref<ActiveAgentPanel>('binding')
 const selectedAgentId = ref('')
 const promptDraft = ref('')
 const savingPrompt = ref(false)
+const selectedCodeStandardType = ref<AgentCodeStandardConfigItem['standard_type']>('page')
+const codeStandardDrafts = reactive<Record<AgentCodeStandardConfigItem['standard_type'], string>>({ page: '', component: '' })
+const savingCodeStandard = ref(false)
 const savingToolKey = ref<string | null>(null)
 const editingToolKey = ref<string | null>(null)
 const toolDrafts = reactive<Record<string, ToolDraft>>({})
@@ -256,6 +271,12 @@ const adminSection = computed<AiSettingsSection>(() => {
   return activeSection.value === 'models' ? 'chat' : 'image'
 })
 
+const codeStandardsQuery = useQuery({
+  queryKey: computed(() => ['agent-code-standards', selectedAgentId.value]),
+  queryFn: () => listAgentCodeStandards(selectedAgentId.value),
+  enabled: computed(() => Boolean(selectedAgentId.value)),
+})
+
 const catalogSyncQuery = useQuery<ModelCatalogSyncState>({
   queryKey: ['model-catalog-sync'],
   queryFn: getModelCatalogSyncState,
@@ -264,8 +285,24 @@ const catalogSyncQuery = useQuery<ModelCatalogSyncState>({
 const assistantSettingsTab = computed<AssistantSettingsTab>(() => {
   if (activeAgentPanel.value === 'binding') return 'models'
   if (activeAgentPanel.value === 'prompts') return 'prompt'
+  if (activeAgentPanel.value === 'code-standards') return 'code-standards'
   return 'tools'
 })
+
+const selectedCodeStandard = computed<AgentCodeStandardConfigItem | null>(() => (
+  codeStandardsQuery.data.value?.find(item => item.standard_type === selectedCodeStandardType.value) ?? null
+))
+
+const codeStandardDraft = computed(() => codeStandardDrafts[selectedCodeStandardType.value])
+const codeStandardDirty = computed(() => (
+  selectedCodeStandard.value !== null
+  && codeStandardDraft.value.trim() !== selectedCodeStandard.value.content.trim()
+))
+const anyCodeStandardDirty = computed(() => (
+  (codeStandardsQuery.data.value ?? []).some(item => (
+    codeStandardDrafts[item.standard_type].trim() !== item.content.trim()
+  ))
+))
 
 const selectedTool = computed<AgentToolConfigItem | null>(() => (
   selectedAgentConfig.value?.tool_groups
@@ -318,7 +355,7 @@ const dirtyToolCount = computed(() => (
   ) ?? 0
 ))
 
-const assistantDirty = computed(() => promptDirty.value || dirtyToolCount.value > 0 || slotDraftDirty.value)
+const assistantDirty = computed(() => promptDirty.value || anyCodeStandardDirty.value || dirtyToolCount.value > 0 || slotDraftDirty.value)
 
 
 const providerOptions = computed<SelectOption[]>(() => (
@@ -420,6 +457,16 @@ watch(
     promptDraft.value = config.effective_prompt
     editingToolKey.value = null
     resetToolDrafts(config)
+  },
+  { immediate: true },
+)
+
+watch(
+  () => codeStandardsQuery.data.value,
+  (standards) => {
+    for (const item of standards ?? []) {
+      codeStandardDrafts[item.standard_type] = item.content
+    }
   },
   { immediate: true },
 )
@@ -591,6 +638,7 @@ function resolveLegacySection(value: unknown): ActiveSection {
 /** 将公开的助手 Tab 参数解析为旧页面内部面板标识。 */
 function resolveAssistantPanel(value: unknown): ActiveAgentPanel {
   if (value === 'prompt') return 'prompts'
+  if (value === 'code-standards') return 'code-standards'
   if (value === 'tools') return 'tools'
   return 'binding'
 }
@@ -612,6 +660,9 @@ function discardAssistantDrafts() {
   }
   for (const slot of slotsQuery.data.value ?? []) {
     slotDrafts[slot.slot] = slot.llm_config_id
+  }
+  for (const item of codeStandardsQuery.data.value ?? []) {
+    codeStandardDrafts[item.standard_type] = item.content
   }
 }
 
@@ -1111,6 +1162,38 @@ function normalizePositiveInteger(value: number, fallback: number) {
   return Number.isFinite(normalized) && normalized > 0 ? normalized : fallback
 }
 
+/** 保存当前类型的整段代码规范覆盖。 */
+async function handleSaveCodeStandard() {
+  if (!selectedAgentConfig.value || !selectedCodeStandard.value) return
+  savingCodeStandard.value = true
+  try {
+    await updateAgentCodeStandard(selectedAgentConfig.value.id, selectedCodeStandardType.value, {
+      content_override: codeStandardDraft.value.trim() || null,
+    })
+    await refreshCodeStandardQueries()
+    Message.success('代码规范已保存。')
+  } catch (error) {
+    Message.error(getErrorMessage(error, '保存代码规范失败。'))
+  } finally {
+    savingCodeStandard.value = false
+  }
+}
+
+/** 恢复当前类型的系统默认代码规范。 */
+async function handleRestoreCodeStandard() {
+  if (!selectedAgentConfig.value || !selectedCodeStandard.value) return
+  savingCodeStandard.value = true
+  try {
+    await updateAgentCodeStandard(selectedAgentConfig.value.id, selectedCodeStandardType.value, { restore_default: true })
+    await refreshCodeStandardQueries()
+    Message.success('代码规范已恢复默认。')
+  } catch (error) {
+    Message.error(getErrorMessage(error, '恢复代码规范失败。'))
+  } finally {
+    savingCodeStandard.value = false
+  }
+}
+
 /** 管理员手动刷新 Models.dev，并让供应商与模型选择立即读取新目录。 */
 async function handleRefreshCatalog() {
   refreshingCatalog.value = true
@@ -1350,5 +1433,10 @@ async function refreshAgentQueries() {
     queryClient.invalidateQueries({ queryKey: ['agent-catalog'] }),
     queryClient.invalidateQueries({ queryKey: ['ai-agents'] }),
   ])
+}
+
+/** 刷新当前 Agent 的代码规范配置。 */
+async function refreshCodeStandardQueries() {
+  await queryClient.invalidateQueries({ queryKey: ['agent-code-standards', selectedAgentId.value] })
 }
 </script>

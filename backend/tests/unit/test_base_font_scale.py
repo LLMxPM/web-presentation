@@ -76,7 +76,9 @@ def test_scope_context_should_keep_focus_payload_field_order_stable() -> None:
     assert context_text.index('"scope_type"') < context_text.index('"workspace_id"')
     assert context_text.index('"workspace_id"') < context_text.index('"project_id"')
     assert context_text.index('"project_id"') < context_text.index('"page_id"')
-    assert context_text.index('"focus_version"') < context_text.index('"canvas"')
+    assert context_text.index('"allowed_projects"') < context_text.index('"canvas"')
+    assert '"source"' not in context_text
+    assert '"focus_version"' not in context_text
 
 
 def test_scope_context_should_preserve_missing_canvas_as_explicit_nulls() -> None:

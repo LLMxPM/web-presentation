@@ -100,6 +100,36 @@ def build_generic_business_tools(session_factory: async_sessionmaker[AsyncSessio
         return guide.to_payload()
 
     @agent_tool(show_result=False)
+    async def get_code_standards(
+        run_context: AgentToolContext,
+        standard_type: Annotated[Literal["page", "component"], Field(description="要查询的代码规范类型。页面源码使用 page，组件源码使用 component。")],
+    ) -> dict[str, Any]:
+        """读取当前用户页面或组件的有效代码规范 Markdown。"""
+
+        _, claims = await resolve_tool_context(
+            session_factory,
+            run_context,
+            required_scopes=(),
+            required_dependency_fields=("workspace_id",),
+        )
+        from app.ai.tool_specs import AGENT_COORDINATOR_AGENT_ID
+        from app.services.ai_agent_config_service import AiAgentConfigService
+
+        user_id = extract_user_id(str(claims.get("sub")))
+        async with session_factory() as session:
+            configs = await AiAgentConfigService(session, user_id=user_id).list_code_standard_configs(
+                AGENT_COORDINATOR_AGENT_ID
+            )
+        config = next(item for item in configs if item.standard_type == standard_type)
+        return {
+            "agent_id": config.agent_id,
+            "standard_type": config.standard_type,
+            "source": config.source,
+            "customized": config.customized,
+            "content": config.content,
+        }
+
+    @agent_tool(show_result=False)
     async def list_entities(
         run_context: AgentToolContext,
         resource_type: Annotated[BusinessResourceType, Field(description="要罗列或搜索的业务对象类型。")],
@@ -283,6 +313,7 @@ def build_generic_business_tools(session_factory: async_sessionmaker[AsyncSessio
 
     tools = [
         get_operation_guide,
+        get_code_standards,
         list_entities,
         get_entity,
         create_entity,

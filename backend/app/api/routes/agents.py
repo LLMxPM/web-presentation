@@ -37,10 +37,13 @@ from app.schemas.agent import (
 )
 from app.schemas.common import MessageResponse
 from app.schemas.agent_config import (
+    AgentCodeStandardConfigItem,
+    AgentCodeStandardUpdateRequest,
     AgentCatalogItem,
     AgentConfigItem,
     AgentConfigUpdateRequest,
     AgentToolConfigUpdateRequest,
+    CodeStandardType,
 )
 from app.services.ai_agent_config_service import AiAgentConfigService
 from app.services.ai_image_config_service import AiImageConfigService
@@ -185,6 +188,41 @@ async def update_agent_config(
 
     return await AiAgentConfigService(session, user_id=current.user.id).update_agent_config(
         agent_id,
+        payload,
+        operator_id=current.user.id,
+    )
+
+
+@router.get(
+    "/agent-configs/{agent_id}/code-standards",
+    response_model=list[AgentCodeStandardConfigItem],
+)
+async def list_agent_code_standards(
+    agent_id: str,
+    current: Annotated[AuthContext, Depends(get_current_user)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> list[AgentCodeStandardConfigItem]:
+    """返回当前用户指定 Agent 的页面与组件代码规范。"""
+
+    return await AiAgentConfigService(session, user_id=current.user.id).list_code_standard_configs(agent_id)
+
+
+@router.patch(
+    "/agent-configs/{agent_id}/code-standards/{standard_type}",
+    response_model=list[AgentCodeStandardConfigItem],
+)
+async def update_agent_code_standard(
+    agent_id: str,
+    standard_type: CodeStandardType,
+    payload: AgentCodeStandardUpdateRequest,
+    current: Annotated[AuthContext, Depends(get_current_user)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> list[AgentCodeStandardConfigItem]:
+    """更新或恢复当前用户指定 Agent 的页面或组件代码规范。"""
+
+    return await AiAgentConfigService(session, user_id=current.user.id).update_code_standard_config(
+        agent_id,
+        standard_type,
         payload,
         operator_id=current.user.id,
     )
@@ -553,6 +591,8 @@ async def start_agent_run(
         agent_id=agent_id,
         workspace_id=workspace_id,
     )
+
+
     scope = await facade.resolve_run_focus(
         session_id=session_id,
         agent_id=agent_id,
