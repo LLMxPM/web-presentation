@@ -16,7 +16,13 @@ from app.ai.tool_specs import (
     list_agent_tool_specs,
     list_operation_guide_specs,
 )
-from app.ai.tools.generic.business_tools import ThemeCreatePayload, ThemeUpdatePayload, build_generic_business_tools
+from app.ai.tools.generic.business_tools import (
+    ThemeCreatePayload,
+    ThemeUpdatePayload,
+    _build_detail_query_message,
+    _sanitize_ai_project_item,
+    build_generic_business_tools,
+)
 from app.ai.tools.generic.operation_models import (
     AssetCreatePayload,
     AssetMetadataPayload,
@@ -124,6 +130,36 @@ def test_operation_guides_should_bind_handlers_and_expose_strict_theme_schema() 
     assert payload["handler_tool_key"] == "create_entity"
     assert payload["mutation_kind"] == "theme"
     assert payload["response_example"]["success"] is True
+
+
+def test_detail_query_message_should_describe_follow_up_views() -> None:
+    """详情查询提示应覆盖可继续读取的视图，并对不可编辑资源保持默认提示。"""
+
+    project_message = _build_detail_query_message("project", 8, {})
+    page_message = _build_detail_query_message("page", 31, {})
+    style_message = _build_detail_query_message("style", 23, {})
+    editable_asset_message = _build_detail_query_message("asset", 42, {"content_editable": True})
+    binary_asset_message = _build_detail_query_message("asset", 43, {"content_editable": False})
+    theme_message = _build_detail_query_message("theme", 12, {})
+
+    assert 'view="configuration", target_id=8' in project_message
+    assert 'view="route_tree", target_id=8' in project_message
+    assert 'view="content", target_id=31' in page_message
+    assert 'view="version_content", target_id=31' in page_message
+    assert 'options={"version_no": <version_no>}' in page_message
+    assert 'view="dependencies", target_id=31' in page_message
+    assert 'view="configuration", target_id=23' in style_message
+    assert 'view="content", target_id=42' in editable_asset_message
+    assert binary_asset_message == "查询完成。"
+    assert theme_message == "查询完成。"
+
+
+def test_project_query_item_should_hide_homepage_screenshot_url() -> None:
+    """AI 项目查询应移除首页截图地址但保留其它项目字段。"""
+
+    payload = _sanitize_ai_project_item({"id": 1, "first_page_screenshot_url": "http://example.test/1", "name": "项目"})
+
+    assert payload == {"id": 1, "name": "项目"}
 
 
 def test_operation_guides_should_expose_action_index_and_precise_schemas() -> None:

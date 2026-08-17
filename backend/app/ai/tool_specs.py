@@ -729,9 +729,9 @@ _COORDINATOR_OPERATION_GUIDES = (
                      call_example={"resource_type": "project", "view": "route_tree", "target_id": 8}),
     _operation_guide("project", "query", "读取项目完整展示配置和有序建议组件快照。", _query_parameters("project", "configuration", EmptyArguments, target_required=True), action="configuration",
                      call_example={"resource_type": "project", "view": "configuration", "target_id": 8}),
-    _operation_guide("page", "query", "分页查询工作空间或指定项目的页面。", _query_parameters("page", "list", PageListFilters), action="list",
+    _operation_guide("page", "query", "分页查询工作空间或指定项目的页面元数据。", _query_parameters("page", "list", PageListFilters), action="list",
                      call_example={"resource_type": "page", "filters": {"project_id": 8, "keyword": "封面"}}),
-    _operation_guide("page", "query", "读取页面元数据，不返回源码、审计字段或截图元数据。", _query_parameters("page", "detail", EmptyArguments, target_required=True), action="detail"),
+    _operation_guide("page", "query", "读取页面元数据。", _query_parameters("page", "detail", EmptyArguments, target_required=True), action="detail"),
     _operation_guide("page", "query", "读取页面完整源码和当前版本信息。", _query_parameters("page", "content", EmptyArguments, target_required=True), action="content",
                      prerequisites=("先通过页面列表或当前焦点取得真实页面 ID。",),
                      call_example={"resource_type": "page", "view": "content", "target_id": 31}),
@@ -1071,7 +1071,7 @@ _COORDINATOR_TOOL_SPECS = (
     _visual_analysis_tool_spec(allow_page_screenshot=True),
     _image_generation_tool_spec(),
     _tool('delegate_task_to_self', '委派自身子任务', 'self_delegation', '自委派', '把可独立执行的工作空间内容任务交给同一助手的隔离子运行。',
-          default_instructions='不需要选择成员身份；不得委派删除、清理或永久移除任务。收到 AI_MEMBER_HITL_REQUIRES_PARENT 或 AI_MEMBER_HITL_REDELEGATION_BLOCKED 后不得再次委派相同任务，必须由父级直接调用 blocked_tool 指示的工具。', risk_level='system'),
+          default_instructions='不需要选择成员身份；不得委派删除、清理或永久移除任务。若子运行需要用户确认或回答，不要再次委派；父级直接使用返回的 blocked_tool.tool_name 和 blocked_tool.tool_args 调用对应工具，由平台生成确认或问题。', risk_level='system'),
 )
 
 _COORDINATOR_GROUP_SPECS = (

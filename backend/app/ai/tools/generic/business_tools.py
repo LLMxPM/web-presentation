@@ -49,7 +49,7 @@ from app.services.workspace_component_service import WorkspaceComponentService
 from app.services.workspace_theme_service import WorkspaceThemeService
 from app.services.agent_work_scope_service import project_is_in_work_scope
 
-AI_PAGE_DETAIL_EXCLUDED_FIELDS = {
+AI_PAGE_QUERY_EXCLUDED_FIELDS = {
     "page_content",
     "created_by",
     "updated_by",
@@ -61,6 +61,7 @@ AI_PAGE_DETAIL_EXCLUDED_FIELDS = {
     "screenshot_is_latest",
     "screenshot_updated_at",
 }
+AI_PROJECT_QUERY_EXCLUDED_FIELDS = {"first_page_screenshot_url"}
 
 
 def build_generic_business_tools(session_factory: async_sessionmaker[AsyncSession]) -> list[Any]:
@@ -162,7 +163,8 @@ def build_generic_business_tools(session_factory: async_sessionmaker[AsyncSessio
             target_id=target_id,
             filters=query_options,
         )
-        return build_query_envelope(resource_type=resource_type, action=view, data=data)
+        message = _build_detail_query_message(resource_type, target_id, data) if view == "detail" else "查询完成。"
+        return build_query_envelope(resource_type=resource_type, action=view, data=data, message=message)
 
     @agent_tool(show_result=False, sequential=True)
     async def create_entity(
@@ -346,7 +348,7 @@ async def _dispatch_entity_query(
                 item = await service.get(target_id, user_id=user_id)
                 _ensure_workspace(item.workspace_id, workspace_id)
                 _ensure_active_status(item.status, "项目")
-                return item.model_dump(mode="json")
+                return _sanitize_ai_project_item(item.model_dump(mode="json"))
             if action == "configuration" and target_id is not None:
                 _ensure_project_in_work_scope(dependencies, target_id)
                 item = await service.get(target_id, user_id=user_id)
@@ -387,7 +389,7 @@ async def _dispatch_entity_query(
                 _ensure_project_in_work_scope(dependencies, item.project_id)
                 _ensure_active_status(item.status, "页面")
                 if action == "detail":
-                    return item.model_dump(mode="json", exclude=AI_PAGE_DETAIL_EXCLUDED_FIELDS)
+                    return _sanitize_ai_page_item(item.model_dump(mode="json"))
                 if action == "versions":
                     return [entry.model_dump(mode="json") for entry in await service.list_versions(page_id, user_id=user_id)]
                 if action == "version_content":
@@ -847,13 +849,20 @@ def _ensure_project_in_work_scope(dependencies: dict[str, Any], project_id: int 
 
 
 def _filter_project_items(data: dict[str, Any], dependencies: dict[str, Any]) -> dict[str, Any]:
-    """过滤项目列表，避免仅在详情和写入路径执行工作集限制。"""
+    """裁剪项目首页截图字段并按工作集过滤项目列表。"""
 
+    items = [_sanitize_ai_project_item(item) for item in data.get("items", [])]
     if str(dependencies.get("work_scope_mode") or "workspace") == "workspace":
-        return data
+        return {**data, "items": items}
     allowed = {int(item) for item in dependencies.get("allowed_project_ids") or []}
-    items = [item for item in data.get("items", []) if int(item.get("id") or 0) in allowed]
-    return {**data, "items": items, "total": len(items)}
+    filtered_items = [item for item in items if int(item.get("id") or 0) in allowed]
+    return {**data, "items": filtered_items, "total": len(filtered_items)}
+
+
+def _sanitize_ai_project_item(item: dict[str, Any]) -> dict[str, Any]:
+    """裁剪 AI 项目查询不需要的首页截图地址。"""
+
+    return {key: value for key, value in item.items() if key not in AI_PROJECT_QUERY_EXCLUDED_FIELDS}
 
 
 def _filter_suggested_items(items: list[Any], filters: dict[str, Any]) -> dict[str, Any]:
@@ -878,13 +887,53 @@ def _filter_suggested_items(items: list[Any], filters: dict[str, Any]) -> dict[s
 
 
 def _filter_page_items(data: dict[str, Any], dependencies: dict[str, Any]) -> dict[str, Any]:
-    """按页面所属项目过滤列表，空 selected_projects 返回空集合。"""
+    """裁剪页面敏感字段并按所属项目过滤列表，空 selected_projects 返回空集合。"""
 
+    items = [_sanitize_ai_page_item(item) for item in data.get("items", [])]
     if str(dependencies.get("work_scope_mode") or "workspace") == "workspace":
-        return data
+        return {**data, "items": items}
     allowed = {int(item) for item in dependencies.get("allowed_project_ids") or []}
-    items = [item for item in data.get("items", []) if int(item.get("project_id") or 0) in allowed]
-    return {**data, "items": items, "total": len(items)}
+    filtered_items = [item for item in items if int(item.get("project_id") or 0) in allowed]
+    return {**data, "items": filtered_items, "total": len(filtered_items)}
+
+
+def _sanitize_ai_page_item(item: dict[str, Any]) -> dict[str, Any]:
+    """裁剪 AI 页面查询不需要的源码、审计字段和截图元数据。"""
+
+    return {key: value for key, value in item.items() if key not in AI_PAGE_QUERY_EXCLUDED_FIELDS}
+
+
+def _build_detail_query_message(resource_type: str, target_id: int | None, data: Any) -> str:
+    """为详情查询生成后续视图调用提示，保持提示与真实工具参数一致。"""
+
+    if target_id is None:
+        return "查询完成。"
+    if resource_type == "project":
+        return (
+            f'查询完成。如需读取项目展示配置，请继续调用 get_entity(resource_type="project", '
+            f'view="configuration", target_id={target_id})；如需读取项目路由树，请调用 '
+            f'get_entity(resource_type="project", view="route_tree", target_id={target_id})。'
+        )
+    if resource_type == "page":
+        return (
+            f'查询完成。如需读取页面当前源码，请调用 get_entity(resource_type="page", view="content", '
+            f'target_id={target_id})；如需读取版本历史，请调用 get_entity(resource_type="page", '
+            f'view="versions", target_id={target_id})；如需读取指定版本源码，请先取得 version_no，'
+            f'再调用 get_entity(resource_type="page", view="version_content", target_id={target_id}, '
+            'options={"version_no": <version_no>})；如需读取依赖索引，请调用 '
+            f'get_entity(resource_type="page", view="dependencies", target_id={target_id})。'
+        )
+    if resource_type == "style":
+        return (
+            f'查询完成。如需读取样式完整展示配置和建议组件，请继续调用 get_entity(resource_type="style", '
+            f'view="configuration", target_id={target_id})。'
+        )
+    if resource_type == "asset" and isinstance(data, dict) and data.get("content_editable") is True:
+        return (
+            f'查询完成。如需读取该可编辑资源的文本内容，请继续调用 get_entity(resource_type="asset", '
+            f'view="content", target_id={target_id})。'
+        )
+    return "查询完成。"
 
 
 async def _require_page_write_confirmation(

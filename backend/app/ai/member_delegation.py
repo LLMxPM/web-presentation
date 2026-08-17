@@ -51,7 +51,7 @@ _MEMBER_HITL_SKIPPED_CODE = "AI_MEMBER_DELEGATION_HITL_SKIPPED"
 _MEMBER_HITL_SKIPPED_MESSAGE = "内容助手子运行需要用户处理，已终止该委派以保证主运行继续。"
 _MEMBER_HITL_REQUIRED_CODE = "AI_MEMBER_HITL_REQUIRES_PARENT"
 _MEMBER_HITL_REDELEGATION_CODE = "AI_MEMBER_HITL_REDELEGATION_BLOCKED"
-_MEMBER_HITL_HINT = "不要再次委派相同任务；请由父级直接调用该工具，以生成用户可处理的确认或问题。"
+_MEMBER_HITL_HINT = "若子运行需要用户确认或回答，不要再次委派；父级直接使用返回的 blocked_tool.tool_name 和 blocked_tool.tool_args 调用对应工具，由平台生成确认或问题。"
 _PARENT_MEMBER_STOP_STATUSES = {"failed", "cancelled", "completed", "cancelling"}
 _PARENT_TERMINAL_STATUSES = {"failed", "cancelled", "completed"}
 
