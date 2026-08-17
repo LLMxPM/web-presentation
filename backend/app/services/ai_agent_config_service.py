@@ -502,6 +502,7 @@ class AiAgentConfigService:
         if not properties and parameters_schema:
             branches = parameters_schema.get("oneOf")
             first_branch = branches[0] if isinstance(branches, list) and branches else {}
+            first_branch = cls._resolve_local_schema_ref(first_branch, parameters_schema)
             properties = first_branch.get("properties", {}) if isinstance(first_branch, dict) else {}
         arguments = {
             str(name): cls._sample_schema_value(schema)
@@ -512,6 +513,22 @@ class AiAgentConfigService:
             "tool_name": tool_name,
             "arguments": arguments,
         }
+
+    @staticmethod
+    def _resolve_local_schema_ref(
+        schema: object,
+        root_schema: dict[str, object],
+    ) -> dict[str, object]:
+        """解析当前工具参数 Schema 内的 `$defs` 本地引用。"""
+
+        if not isinstance(schema, dict):
+            return {}
+        reference = schema.get("$ref")
+        definitions = root_schema.get("$defs")
+        if not isinstance(reference, str) or not reference.startswith("#/$defs/") or not isinstance(definitions, dict):
+            return schema
+        definition = definitions.get(reference.removeprefix("#/$defs/"))
+        return definition if isinstance(definition, dict) else schema
 
     @classmethod
     def _sample_schema_value(cls, schema: dict[str, object]) -> object:

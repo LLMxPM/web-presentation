@@ -5,6 +5,8 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any, Iterable
 
+from app.ai.generic_business_schema_compactor import compact_generic_operation_branches
+
 
 GENERIC_BUSINESS_TOOL_KEYS = frozenset(
     {
@@ -41,10 +43,7 @@ def project_generic_business_tool_schema(
     ]
     if not branches:
         return deepcopy(source_schema)
-    return {
-        "type": "object",
-        "oneOf": branches,
-    }
+    return compact_generic_operation_branches(tool_name, branches)
 
 
 def _project_guide_lookup_schema(source_schema: dict[str, Any], guides: tuple[Any, ...]) -> dict[str, Any]:
