@@ -27,6 +27,10 @@ from app.ai.tools.generic.operation_models import (
     get_operation_payload_model,
     get_query_filters_model,
 )
+from app.ai.validation_result_formatter import (
+    build_validation_tool_result,
+    compact_mutation_result,
+)
 from app.ai.tools.page import build_apply_page_edits_tool, build_get_page_content_tool
 from app.ai.tools.project import build_project_tools
 from app.ai.tools.resource import build_resource_manager_tools
@@ -298,7 +302,7 @@ def build_generic_business_tools(session_factory: async_sessionmaker[AsyncSessio
         action: Annotated[Literal["check", "preview"], Field(description="只读校验动作；必须与 resource_type 匹配。")],
         target_id: Annotated[int | None, Field(gt=0, description="current、edits 和资源预览使用的目标 ID。")] = None,
         payload: Annotated[dict[str, Any] | None, Field(description="候选来源或预览参数；必须符合精确操作手册。")] = None,
-    ) -> dict[str, Any]:
+    ) -> Any:
         """检查当前或候选页面、组件源码，或预览资源内容差异，不写入业务数据。"""
 
         return await _validate_entity(
@@ -720,8 +724,8 @@ async def _validate_entity(
     action: str,
     target_id: int | None,
     payload: dict[str, Any],
-) -> dict[str, Any]:
-    """执行不落库校验，并把业务不通过归一化为 data.valid=false。"""
+) -> Any:
+    """执行不落库校验；页面与组件返回短文本，资源差异保持结构化结果。"""
 
     payload = _validate_operation_payload(resource_type, "validate", action, payload)
     if resource_type == "asset" and action == "preview":
@@ -735,6 +739,7 @@ async def _validate_entity(
     if action != "check" or resource_type not in {"page", "component"}:
         raise AppException(status_code=400, code="AI_ENTITY_VALIDATION_UNSUPPORTED", detail="该校验组合未开放。")
     mode = str(payload.pop("mode"))
+    detail = bool(payload.pop("detail", False))
     project_id = payload.pop("project_id", None)
     if target_id is not None and project_id is not None:
         raise AppException(status_code=422, code="AI_VALIDATION_PROJECT_CONFLICT", detail="提供 target_id 时不能再提交 project_id。")
@@ -755,7 +760,9 @@ async def _validate_entity(
         context,
         arguments,
     )
-    return build_validation_envelope(resource_type=resource_type, action=action, data=result)
+    if not isinstance(result, dict):
+        raise AppException(status_code=502, code="AI_VALIDATION_RESULT_INVALID", detail="代码检查返回了非法结果。")
+    return build_validation_tool_result(result, resource_type=resource_type, detail=detail)
 
 
 def _validate_operation_payload(
@@ -1157,17 +1164,18 @@ def _wrap_internal_mutation(
 ) -> dict[str, Any]:
     """把内部工具结果包装为统一 mutation envelope。"""
 
+    normalized_result = compact_mutation_result(result, resource_type=resource_type)
     target = None if target_id is None else {"id": target_id, "resource_type": resource_type}
     source = None if source_id is None else {"id": source_id, "resource_type": resource_type}
     return build_mutation_envelope(
         resource_type=resource_type,
         operation=operation,
         action=action,
-        message=_result_message(result, f"{resource_type} 操作已完成。"),
+        message=_result_message(normalized_result, f"{resource_type} 操作已完成。"),
         target=target,
         source=source,
         mutation_kind={"page": "project-pages", "asset": "asset"}.get(resource_type, resource_type),
-        data=result,
+        data=normalized_result,
         effect=effect,
     )
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.ai.validation_result_formatter import compact_mutation_result
 from app.ai.tools.generic.models import build_mutation_envelope
 from app.ai.tool_arguments import decode_json_container
 from app.core.exceptions import AppException
@@ -50,6 +51,7 @@ def normalize_page_mutation_result(
 ) -> dict[str, Any]:
     """让 deferred 成功结果保持原始直接工具或通用工具的返回契约。"""
 
+    result = compact_mutation_result(result, resource_type="page")
     if result.get("success") is False:
         return result
     if tool_name == "create_entity" and operation == "create_page":

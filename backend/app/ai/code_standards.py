@@ -25,7 +25,7 @@ PAGE_CODE_STANDARD = """
 
 ## 页面布局诊断判读
 
-- 读取 `layout_analysis` 时先看 `summary`，优先处理 `attention=likely_issue`，再结合 `review`。`meta.canvas_size` 是诊断使用的画布尺寸，`meta.threshold_scale` 是阈值基准；固定像素阈值会按画布短边折算，小画布判定更宽松，大画布判定更严格。
+- 页面校验结果以精简文本返回：优先处理其中的 code、message、定位和布局类别计数；需要受控布局数值时用相同目标和候选参数调用 `validate_entity(detail=true)`。不要依赖模型侧回传完整 `layout_analysis` 或浏览器几何清单。
 - `PAGE_RENDER_BOTTOM_OVERFLOW` 表示固定画布底部可能裁切，应压缩内容、调整容器高度或拆分页面。`severity=warning` 不代表写入失败，但应处理会影响可读性或布局完整性的警告。
 - 正常正文多行、正常 `flex-wrap` 分排、滚动容器和有意的装饰出血不应机械修复；越界检测已排除 `aria-hidden`、`pointer-events:none` 和绝对定位的背景/图片装饰层。优先处理真实画布越界、内容裁切、不可读重叠和意外紧贴。
 - `touching`/`tight` 在 flex/grid 组合容器内的圆角子项紧贴通常属于组合布局，不应单独修复；独立卡片或需要间距的设计仍需处理。`empty_regions` 描述内容带之间、容器内部、画布边缘的几何空白；封面和章节页的刻意留白、左右对称的居中留白不应机械压缩，正文中的明显空白带应结合安全边距、栅格和容器尺寸判断。
@@ -87,7 +87,7 @@ COMPONENT_CODE_STANDARD = """
 ## 组件发布前检查
 
 - 修改组件源码、component_type 或 preview_schema 前，读取最新草稿和版本基线，使用结构化 edits 或完整候选内容完成修改。
-- 写入前关注 Runtime 编译、默认态、预览 presets 和布局诊断结果；校验失败时根据 diagnostics 修复，不绕过组件契约或版本锁。
+- 写入前关注 Runtime 编译、默认态、预览 presets 和布局诊断结果；校验失败时根据精简文本中的 code、message、scenario、profile 和 detail facts 修复，需要更多上下文时调用 `validate_entity(detail=true)`，不绕过组件契约或版本锁。
 """.strip()
 
 

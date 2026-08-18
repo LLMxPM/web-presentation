@@ -360,6 +360,7 @@ class ValidationSourcePayload(OperationArgumentsModel):
     """页面或组件校验候选来源，确保完整源码与 edits 不混用。"""
 
     mode: Literal["current", "content", "edits"] = Field(description="校验当前内容、完整候选源码或结构化 edits。")
+    detail: bool = Field(default=False, description="validate_entity 是否返回受限的诊断明细；仅影响模型侧结果，不传入 Runtime。")
     content: str | None = Field(default=None, min_length=1, description="mode=content 时的完整候选源码。")
     edits: list[SourceEditInput] | None = Field(default=None, min_length=1, description="mode=edits 时应用到目标当前源码的编辑。")
 

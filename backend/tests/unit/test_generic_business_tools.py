@@ -10,7 +10,7 @@ from pydantic import ValidationError
 from pydantic_ai import ApprovalRequired
 
 import app.ai.tools.generic.business_tools as generic_tools_module
-from app.ai.platform_tools import AgentToolContext
+from app.ai.platform_tools import AgentToolContext, AgentToolResult, PlatformTool
 from app.ai.tool_specs import (
     AGENT_COORDINATOR_AGENT_ID,
     get_operation_guide_spec,
@@ -23,6 +23,7 @@ from app.ai.tools.generic.business_tools import (
     ThemeUpdatePayload,
     _build_detail_query_message,
     _sanitize_ai_project_item,
+    _validate_entity,
     build_generic_business_tools,
 )
 from app.ai.tools.generic.operation_models import (
@@ -394,6 +395,9 @@ def test_generic_tools_should_expose_discriminated_top_level_schemas() -> None:
         for action in branch["properties"]["action"].get("enum", [branch["properties"]["action"].get("const")])
     }
     assert validate_pairs == {("page", "check"), ("component", "check"), ("asset", "preview")}
+    for operation_key in ("page.validate.check", "component.validate.check"):
+        validate_payload_properties = get_operation_guide_spec(operation_key).parameters["properties"]["payload"]  # type: ignore[union-attr]
+        assert "detail" in validate_payload_properties["properties"]
     update_pairs = {
         (resource_type, action)
         for branch in _resolved_generic_branches(tools["update_entity"].parameters)
@@ -473,6 +477,56 @@ def test_generic_tools_should_expose_discriminated_top_level_schemas() -> None:
         "mode": "new",
         "payload": {},
     }
+
+
+@pytest.mark.asyncio
+async def test_component_validate_entity_returns_compact_text_and_passes_detail_only_to_formatter() -> None:
+    """组件 validate_entity 应返回短文本，detail 不应泄漏到 Runtime 工具参数。"""
+
+    calls: list[dict[str, object]] = []
+
+    async def check_component_code(
+        run_context: AgentToolContext,
+        component_id: int,
+        content: str,
+    ) -> dict[str, object]:
+        """返回带嵌套 facts 的组件结果，验证边界层压缩行为。"""
+
+        calls.append({"component_id": component_id, "content": content})
+        return {
+            "success": True,
+            "status": "passed_with_warnings",
+            "summary": "组件可以编译并真实渲染；存在布局或资源警告。",
+            "diagnostics": [{
+                "severity": "warning",
+                "code": "COMPONENT_RENDER_HORIZONTAL_OVERFLOW",
+                "message": "候选组件水平溢出 8px。",
+                "scenario_key": "preset:compact",
+                "profile_key": "component-content-default.v1",
+                "facts": {"overflow_px": 8, "frame": {"width": 320}},
+            }],
+            "scenarios": [{
+                "key": "preset:compact",
+                "status": "passed_with_warnings",
+                "profile_key": "component-content-default.v1",
+            }],
+        }
+
+    result = await _validate_entity(
+        None,  # type: ignore[arg-type]
+        {"check_component_code": PlatformTool("check_component_code", check_component_code)},
+        AgentToolContext(run_id="run", session_id="session"),
+        resource_type="component",
+        action="check",
+        target_id=12,
+        payload={"mode": "content", "content": "<template />", "detail": True},
+    )
+
+    assert isinstance(result, AgentToolResult)
+    assert "COMPONENT_RENDER_HORIZONTAL_OVERFLOW" in result.content
+    assert "facts=overflow_px=8" in result.content
+    assert "frame" not in result.content
+    assert calls == [{"component_id": 12, "content": "<template />"}]
 
 
 def test_update_and_route_payloads_should_reject_noop_or_conflicting_fields() -> None:

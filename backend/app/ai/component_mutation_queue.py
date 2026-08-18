@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.ai.component_mutation_executor import AiComponentMutationExecutor
 from app.ai.platform_tools import is_recoverable_tool_error_result
+from app.ai.validation_result_formatter import compact_mutation_result
 from app.core.config import get_settings
 from app.core.time_utils import utc_now
 from app.models.ai_agent_runtime import AiAgentRun
@@ -156,6 +157,7 @@ async def _execute_claimed(
                 await _cancel_task(session, task=task, worker_id=worker_id)
                 return
             result = await AiComponentMutationExecutor(session).execute(detail, operator_id=run.user_id)
+            result = compact_mutation_result(result, resource_type="component")
             # Runtime检查后、业务提交前再次核对Run取消与Task租约，防止迟到写入。
             await session.refresh(task)
             await session.refresh(run)

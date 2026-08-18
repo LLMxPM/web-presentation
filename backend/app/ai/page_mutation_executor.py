@@ -17,6 +17,7 @@ from app.ai.page_mutation_arguments import (
 )
 from app.ai.run_event_writer import is_sqlite_lock_error
 from app.ai.platform_tools import recoverable_tool_error_result
+from app.ai.validation_result_formatter import compact_mutation_result
 from app.ai.tools.page.apply_page_edits import (
     _ensure_page_base_version,
     _ensure_page_in_context,
@@ -452,6 +453,7 @@ class AiPageMutationExecutor:
     ) -> bool:
         """完成无需写页面的业务结果，并用拥有者条件防止旧 Worker 覆盖。"""
 
+        result = compact_mutation_result(result, resource_type="page")
         async with self._session_factory() as session:
             return await self._mark_succeeded(
                 session,
