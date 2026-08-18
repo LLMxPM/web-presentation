@@ -40,6 +40,7 @@ VISUAL_SCENARIO_ASSET_PREFIX = "e2e-mock-visual"
 PAGE_EXTERNAL_SCENARIO_INPUT = "请在当前项目创建一页 E2E external job 验证页。"
 PAGE_EXTERNAL_SCENARIO_TITLE = "E2E External Job Page"
 PAGE_EXTERNAL_SCENARIO_FINAL_TEXT = "页面 external job 已完成并恢复父运行。"
+PAGE_EXTERNAL_SCENARIO_PROJECT_NAME = "Smoke Project"
 
 
 def normalize_user_input(text: str) -> str:
@@ -118,13 +119,17 @@ def _build_visual_final_response(state: MockConversationState) -> ModelResponse:
 
 
 def _build_list_projects_response(state: MockConversationState) -> ModelResponse:
-    """页面链路第一步：读取当前工作集项目，避免在场景中硬编码数据库 ID。"""
+    """页面链路第一步：按 E2E 当前项目名称筛选，避免并发夹具改变目标项目。"""
 
     _ = state
     return ModelResponse(
         parts=[ToolCallPart(
             LIST_ENTITIES_TOOL,
-            {"resource_type": "project", "filters": {}, "collection": "items"},
+            {
+                "resource_type": "project",
+                "filters": {"keyword": PAGE_EXTERNAL_SCENARIO_PROJECT_NAME},
+                "collection": "items",
+            },
             tool_call_id="e2e-mock-call-list-projects",
         )]
     )
