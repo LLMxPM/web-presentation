@@ -64,7 +64,6 @@ from app.ai.tools.generic.operation_models import (
     ThemeUpdatePayload,
     VersionContentOptions,
 )
-from app.ai.tools.self_delegation import build_self_delegation_tools
 from app.ai.tools.visual import build_analyze_visuals_tool
 
 AGENT_COORDINATOR_AGENT_ID = "agent-coordinator"
@@ -417,12 +416,6 @@ def _build_user_feedback_tools(_session_factory: async_sessionmaker[AsyncSession
 
     return [ask_user]
 
-
-
-def _build_self_delegation_runtime_tools(session_factory: async_sessionmaker[AsyncSession]) -> list[Any]:
-    """构建统一内容助手的自委派工具。"""
-
-    return build_self_delegation_tools(session_factory)
 
 
 def _build_image_analysis_tools(session_factory: async_sessionmaker[AsyncSession]) -> list[Any]:
@@ -1072,8 +1065,6 @@ _COORDINATOR_TOOL_SPECS = (
           risk_level='system', response_example={'questions': []}),
     _visual_analysis_tool_spec(allow_page_screenshot=True),
     _image_generation_tool_spec(),
-    _tool('delegate_task_to_self', '委派自身子任务', 'self_delegation', '自委派', '把可独立执行的工作空间内容任务交给同一助手的隔离子运行。',
-          default_instructions='不需要选择成员身份；不得委派删除、清理或永久移除任务。若子运行需要用户确认或回答，不要再次委派；父级直接使用返回的 blocked_tool.tool_name 和 blocked_tool.tool_args 调用对应工具，由平台生成确认或问题。', risk_level='system'),
 )
 
 _COORDINATOR_GROUP_SPECS = (
@@ -1101,8 +1092,6 @@ _COORDINATOR_GROUP_SPECS = (
         disclosable=True,
     ),
     _group("user_feedback", "用户交互", "向用户提出结构化单选问题。", ("ask_user",), build_tools=_build_user_feedback_tools, disclosable=True),
-    _group("self_delegation", "自委派", "调用同一内容助手的隔离子运行处理独立任务。", ("delegate_task_to_self",),
-           required_context_fields=("workspace_id",), build_tools=_build_self_delegation_runtime_tools, disclosable=True),
     _group(IMAGE_ANALYSIS_TOOL_GROUP_KEY, "图片理解", "分析会话附件、资源或页面截图。", ("analyze_visuals",),
            required_context_fields=("workspace_id",), token_scopes=(*PAGE_TOOL_VISUAL_SCOPES, *RESOURCE_TOOL_READ_SCOPES),
            build_tools=_build_image_analysis_tools, disclosable=True),

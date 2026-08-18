@@ -6,7 +6,6 @@ import asyncio
 import json
 import logging
 from collections.abc import AsyncGenerator
-from contextlib import suppress
 from types import SimpleNamespace
 from typing import Any, Literal
 
@@ -24,29 +23,23 @@ from app.ai.message_history import (
     replace_agent_image_refs_with_placeholders,
 )
 from app.ai.image_refs import build_agent_image_ref
-from app.ai.member_delegation import MemberDelegationExecutor, MemberDelegationPaused
 from app.ai.platform_runtime import (
     ACTIVE_RUN_STATUSES,
     PlatformAgentRuntimeStore,
     new_session_id,
-    stream_live_subscribe,
     stream_replay_then_subscribe,
-    subscribe_live_run_events,
 )
 from app.ai.pydantic_model_resolver import PydanticLlmModelResolver
 from app.ai.pydantic_runner import PydanticAgentRunner
 from app.ai.pydantic_tools import build_pydantic_tools
-from app.ai.run_write_fence import AgentRunWriteFence, AgentRunWriteFenceLost
+from app.ai.run_write_fence import AgentRunWriteFence
 from app.ai.agent.runtime_context import AgentRuntimeContext, prepend_runtime_context_to_user_message
 from app.ai.runtime_context_builder import build_agent_runtime_context
-from app.ai.tool_specs import (
-    AGENT_COORDINATOR_AGENT_ID,
-)
 from app.ai.visual_tool_runtime import resolve_visual_tool_runtime
 from app.ai.run_errors import build_agent_error_log_extra, normalize_agent_run_exception
 from app.core.exceptions import AppException
 from app.db.session import get_session_factory
-from app.models.ai_agent_runtime import AiAgentMemberRun, AiAgentRequirement, AiAgentRun, AiAgentToolCall
+from app.models.ai_agent_runtime import AiAgentRequirement, AiAgentRun, AiAgentToolCall
 from app.models.ai_external_task import AiAgentExternalBatch, AiAgentExternalTask
 from app.models.ai_llm import AiLlmConfig
 from app.models.ai_image_generation import AiImageGenerationJob
@@ -512,13 +505,6 @@ class AgentSessionFacade:
             )
             agent_config = await self._agent_config_service.get_effective_runtime_config(run_model.agent_id)
             scope = _scope_from_run(run_model)
-            member_delegation_executor = self._build_member_delegation_executor(
-                agent_id=run_model.agent_id,
-                scope=scope,
-                runtime_context=runtime_context,
-                session_id=run_model.session_id,
-                run_id=run_model.run_id,
-            )
             visual_unavailable, image_generation_model, image_generation_config_id = (
                 await self._resolve_visual_tool_runtime(run_model.agent_id)
             )
@@ -535,7 +521,6 @@ class AgentSessionFacade:
                 allowed_project_ids=runtime_context.allowed_project_ids,
                 focus_version=runtime_context.focus_version,
                 unavailable_group_keys=visual_unavailable,
-                member_delegation_executor=member_delegation_executor,
                 image_generation_model=image_generation_model,
                 image_generation_config_id=image_generation_config_id,
             )
@@ -701,13 +686,6 @@ class AgentSessionFacade:
                 model = self._model_resolver.resolve_model(llm_config)
                 model_settings = self._model_resolver.resolve_model_settings(llm_config)
                 agent_config = await self._agent_config_service.get_effective_runtime_config(agent_id)
-                member_delegation_executor = self._build_member_delegation_executor(
-                    agent_id=agent_id,
-                    scope=scope,
-                    runtime_context=runtime_context,
-                    session_id=session_id,
-                    run_id=run_start.run_model.run_id,
-                )
                 visual_unavailable, image_generation_model, image_generation_config_id = (
                     await self._resolve_visual_tool_runtime(agent_id)
                 )
@@ -724,7 +702,6 @@ class AgentSessionFacade:
                     allowed_project_ids=runtime_context.allowed_project_ids,
                     focus_version=runtime_context.focus_version,
                     unavailable_group_keys=visual_unavailable,
-                    member_delegation_executor=member_delegation_executor,
                     image_generation_model=image_generation_model,
                     image_generation_config_id=image_generation_config_id,
                 )
@@ -913,14 +890,6 @@ class AgentSessionFacade:
             .values(status="cancelled", resolved_at=cancelled_at)
         )
         await self._session.execute(
-            update(AiAgentMemberRun)
-            .where(
-                AiAgentMemberRun.parent_run_id == run_model.run_id,
-                AiAgentMemberRun.status.in_(("running", "waiting_external")),
-            )
-            .values(status="cancelled", finished_at=cancelled_at)
-        )
-        await self._session.execute(
             update(AiAgentToolCall)
             .where(
                 AiAgentToolCall.run_id == run_model.run_id,
@@ -968,24 +937,6 @@ class AgentSessionFacade:
         if isinstance(requirement.payload_json, dict) and isinstance(requirement.payload_json.get("tool_execution"), dict):
             stored_tool_execution = dict(requirement.payload_json["tool_execution"])
         merged_tool_execution = {**stored_tool_execution, **(tool_execution or {})}
-        if requirement.member_run_id:
-            return self._continue_member_active_raw_sse(
-                session_id=session_id,
-                agent_id=agent_id,
-                scope=scope,
-                run_model=run_model,
-                requirement=requirement,
-                expected_tool_call_id=expected_tool_call_id,
-                merged_tool_execution=merged_tool_execution,
-                decision=decision,
-                note=note,
-                feedback_selections=feedback_selections or [],
-                runtime_context=runtime_context,
-                interruption_code=interruption_code,
-                interruption_message=interruption_message,
-                reserved_lock=reserved_lock,
-            )
-
         async def generator() -> AsyncGenerator[bytes, None]:
             lock = reserved_lock or self._get_lock(session_id=session_id, agent_id=agent_id)
             acquired = reserved_lock is not None
@@ -1019,13 +970,6 @@ class AgentSessionFacade:
                     rebuilt_history=previous_history,
                 )
                 agent_config = await self._agent_config_service.get_effective_runtime_config(agent_id)
-                member_delegation_executor = self._build_member_delegation_executor(
-                    agent_id=agent_id,
-                    scope=scope,
-                    runtime_context=runtime_context,
-                    session_id=session_id,
-                    run_id=run_model.run_id,
-                )
                 visual_unavailable, image_generation_model, image_generation_config_id = (
                     await self._resolve_visual_tool_runtime(agent_id)
                 )
@@ -1042,7 +986,6 @@ class AgentSessionFacade:
                     allowed_project_ids=runtime_context.allowed_project_ids,
                     focus_version=runtime_context.focus_version,
                     unavailable_group_keys=visual_unavailable,
-                    member_delegation_executor=member_delegation_executor,
                     image_generation_model=image_generation_model,
                     image_generation_config_id=image_generation_config_id,
                 )
@@ -1234,45 +1177,6 @@ class AgentSessionFacade:
             allowed_project_ids=list(run_input.get("allowed_project_ids") or []),
             focus_version=int(run_input.get("focus_version") or 0),
         )
-        if requirement.member_run_id:
-            stored_tool_execution = {}
-            if isinstance(requirement.payload_json, dict) and isinstance(requirement.payload_json.get("tool_execution"), dict):
-                stored_tool_execution = dict(requirement.payload_json["tool_execution"])
-            stored_calls = stored_tool_execution.get("tool_calls")
-            deferred_call_ids = [
-                str(item.get("tool_call_id") or "")
-                for item in stored_calls
-                if isinstance(item, dict) and str(item.get("tool_call_id") or "")
-            ] if isinstance(stored_calls, list) else []
-            if not deferred_call_ids:
-                deferred_call_ids = [str(stored_tool_execution.get("member_tool_call_id") or requirement.tool_call_id or "")]
-            missing_call_ids = [item for item in deferred_call_ids if item not in deferred_results.calls]
-            if missing_call_ids:
-                raise AppException(
-                    status_code=409,
-                    code="AI_EXTERNAL_RESULT_MISSING",
-                    detail=f"成员外部任务缺少待回灌结果：{', '.join(missing_call_ids)}。",
-                )
-            stored_tool_execution["external_results"] = {item: deferred_results.calls[item] for item in deferred_call_ids}
-            deferred_call_id = deferred_call_ids[0]
-            stream = self._continue_member_active_raw_sse(
-                session_id=run_model.session_id,
-                agent_id=run_model.agent_id,
-                scope=scope,
-                run_model=run_model,
-                requirement=requirement,
-                expected_tool_call_id=deferred_call_id,
-                merged_tool_execution=stored_tool_execution,
-                decision="approve",
-                note=None,
-                feedback_selections=[],
-                runtime_context=runtime_context,
-                write_fence=continuation_fence,
-                internal_execution=True,
-            )
-            async for _ in stream:
-                pass
-            return run_model.run_id
         descriptor = self._app.state.ai_registry.get_descriptor(run_model.agent_id)
         llm_config = await self.resolve_run_llm_config(
             run_model=run_model,
@@ -1296,14 +1200,6 @@ class AgentSessionFacade:
             rebuilt_history=previous_history,
         )
         agent_config = await self._agent_config_service.get_effective_runtime_config(run_model.agent_id)
-        member_delegation_executor = self._build_member_delegation_executor(
-            agent_id=run_model.agent_id,
-            scope=scope,
-            runtime_context=runtime_context,
-            session_id=run_model.session_id,
-            run_id=run_model.run_id,
-            write_fence=continuation_fence,
-        )
         visual_unavailable, image_generation_model, image_generation_config_id = (
             await self._resolve_visual_tool_runtime(
                 run_model.agent_id,
@@ -1323,7 +1219,6 @@ class AgentSessionFacade:
             allowed_project_ids=runtime_context.allowed_project_ids,
             focus_version=runtime_context.focus_version,
             unavailable_group_keys=visual_unavailable,
-            member_delegation_executor=member_delegation_executor,
             image_generation_model=image_generation_model,
             image_generation_config_id=image_generation_config_id,
             write_fence=continuation_fence,
@@ -1379,251 +1274,6 @@ class AgentSessionFacade:
         )
         await self._session.refresh(run_model, attribute_names=["status"])
         return run_model.status
-
-    def _continue_member_active_raw_sse(
-        self,
-        *,
-        session_id: str,
-        agent_id: str,
-        scope: AgentScopeContext,
-        run_model: Any,
-        requirement: Any,
-        expected_tool_call_id: str,
-        merged_tool_execution: dict[str, Any],
-        decision: str | None,
-        note: str | None,
-        feedback_selections: list[dict[str, Any]],
-        runtime_context: Any,
-        write_fence: AgentRunWriteFence | None = None,
-        interruption_code: str = "AI_RUN_CONTINUE_INTERRUPTED",
-        interruption_message: str = "智能体继续运行连接中断，运行已停止。",
-        reserved_lock: asyncio.Lock | None = None,
-        internal_execution: bool = False,
-    ) -> AsyncGenerator[bytes, None]:
-        """继续成员 requirement：先恢复成员 run，再回填父级委派工具结果。"""
-
-        async def worker() -> None:
-            store = PlatformAgentRuntimeStore(self._session, user_id=self._current.user.id, write_fence=write_fence)
-            try:
-                descriptor = self._app.state.ai_registry.get_descriptor(agent_id)
-                llm_config = await self.resolve_run_llm_config(
-                    run_model=run_model,
-                    slot=descriptor.llm_slot or "",
-                )
-                previous_history = await rebuild_agent_message_history(
-                    session=self._session,
-                    user_id=self._current.user.id,
-                    session_id=session_id,
-                    agent_id=agent_id,
-                    exclude_run_id=run_model.run_id,
-                    hydrate_images=False,
-                )
-                history_budget = build_history_budget(llm_config, runtime_context=runtime_context)
-                context_processor = build_context_limit_processor(
-                    session=self._session,
-                    user_id=self._current.user.id,
-                    session_id=session_id,
-                    agent_id=agent_id,
-                    budget=history_budget,
-                    rebuilt_history=previous_history,
-                )
-                agent_config = await self._agent_config_service.get_effective_runtime_config(agent_id)
-                member_delegation_executor = self._build_member_delegation_executor(
-                    agent_id=agent_id,
-                    scope=scope,
-                    runtime_context=runtime_context,
-                    session_id=session_id,
-                    run_id=run_model.run_id,
-                    write_fence=write_fence,
-                )
-                if member_delegation_executor is None:
-                    raise AppException(status_code=409, code="AI_MEMBER_DELEGATION_UNAVAILABLE", detail="当前运行不能恢复内容助手子运行。")
-                if requirement.kind == "external_job":
-                    member_deferred_results = DeferredToolResults()
-                    external_results = merged_tool_execution.get("external_results")
-                    if isinstance(external_results, dict):
-                        member_deferred_results.calls.update(external_results)
-                    else:
-                        member_deferred_results.calls[expected_tool_call_id] = merged_tool_execution["external_result"]
-                else:
-                    member_deferred_results = _build_deferred_results(
-                        requirement_tool_call_id=expected_tool_call_id,
-                        decision=decision,
-                        note=note,
-                        tool_execution=merged_tool_execution,
-                        feedback_selections=feedback_selections,
-                    )
-                resolution_payload = {
-                    "decision": decision,
-                    "note": note,
-                    "tool_execution": merged_tool_execution,
-                    "feedback_selections": feedback_selections,
-                }
-                await store.begin_requirement_resolution(requirement, payload=resolution_payload)
-                run_model.status = "running"
-                run_model.pending_requirement_json = None
-                await store.append_event(
-                    run_model,
-                    AgentRunEvent(event="run.continued", run_id=run_model.run_id, session_id=session_id),
-                )
-                requirement_payload = dict(requirement.payload_json or {})
-                requirement_payload["tool_execution"] = merged_tool_execution
-                delegate_result = await member_delegation_executor.continue_after_member_requirement(
-                    requirement_payload=requirement_payload,
-                    deferred_tool_results=member_deferred_results,
-                )
-                await store.resolve_requirement(requirement, payload=resolution_payload)
-                parent_delegate_call_id = str(merged_tool_execution.get("parent_delegate_tool_call_id") or "").strip()
-                parent_delegate_tool_name = str(merged_tool_execution.get("parent_delegate_tool_name") or "delegate_task_to_self").strip()
-                parent_delegate_tool_args = merged_tool_execution.get("parent_delegate_tool_args")
-                if not parent_delegate_call_id:
-                    raise AppException(status_code=409, code="AI_PARENT_DELEGATE_CALL_REQUIRED", detail="成员恢复缺少父级委派工具调用 ID。")
-                parent_deferred_results = DeferredToolResults()
-                parent_deferred_results.calls[parent_delegate_call_id] = delegate_result
-                visual_unavailable, image_generation_model, image_generation_config_id = (
-                    await self._resolve_visual_tool_runtime(agent_id)
-                )
-                tools, deps = build_pydantic_tools(
-                    agent_id=agent_id,
-                    session_factory=get_session_factory(),
-                    runtime_config=agent_config,
-                    current=self._current,
-                    scope=scope,
-                    session_id=session_id,
-                    run_id=run_model.run_id,
-                    supports_image_input=bool(llm_config.supports_image_input),
-                    work_scope_mode=runtime_context.work_scope_mode,
-                    allowed_project_ids=runtime_context.allowed_project_ids,
-                    focus_version=runtime_context.focus_version,
-                    unavailable_group_keys=visual_unavailable,
-                    member_delegation_executor=member_delegation_executor,
-                    image_generation_model=image_generation_model,
-                    image_generation_config_id=image_generation_config_id,
-                    write_fence=write_fence,
-                )
-                current_message_history_json = await _hydrate_continue_message_history_json(
-                    session=self._session,
-                    user_id=self._current.user.id,
-                    session_id=session_id,
-                    message_history=run_model.message_history_json,
-                )
-                current_run_history = _build_continue_message_history(
-                    run_model_message_history=current_message_history_json,
-                    run_input_payload=run_model.input_payload_json,
-                    run_id=run_model.run_id,
-                    tool_execution={
-                        "tool_name": parent_delegate_tool_name,
-                        "tool_call_id": parent_delegate_call_id,
-                        "tool_args": parent_delegate_tool_args if isinstance(parent_delegate_tool_args, (dict, str)) else {},
-                    },
-                    runtime_context=runtime_context,
-                )
-                await PydanticAgentRunner(store).run_to_store(
-                    run_model=run_model,
-                    agent_id=agent_id,
-                    model=self._model_resolver.resolve_model(llm_config),
-                    model_settings=self._model_resolver.resolve_model_settings(llm_config),
-                    runtime_context=runtime_context,
-                    message=note or "",
-                    include_runtime_context=False,
-                    agent_config=agent_config,
-                    tools=tools,
-                    deps=deps,
-                    message_history=[*previous_history.messages, *current_run_history],
-                    deferred_tool_results=parent_deferred_results,
-                    context_budget=history_budget,
-                    context_processor=context_processor,
-                )
-            except AgentRunWriteFenceLost:
-                await self._session.rollback()
-                raise
-            except MemberDelegationPaused as exc:
-                await store.pause_for_requirement(run_model, requirement=exc.requirement)
-            except AppException as exc:
-                logger.warning(
-                    "Member delegated run continue stopped by application error",
-                    extra=build_agent_error_log_extra(
-                        exc,
-                        event="ai.member_delegated_run.continue_app_error",
-                        run_id=run_model.run_id,
-                        session_id=session_id,
-                        agent_id=agent_id,
-                        error_code=exc.code,
-                        user_error_message=exc.detail,
-                    ),
-                )
-                await store.mark_terminal(
-                    run_model,
-                    status="failed",
-                    error_code=exc.code,
-                    error_message=exc.detail,
-                )
-            except Exception as exc:  # noqa: BLE001
-                failure = normalize_agent_run_exception(
-                    exc,
-                    fallback_code="AI_RUN_CONTINUE_FAILED",
-                    fallback_message="智能体继续运行失败，请稍后重试。",
-                )
-                logger.exception(
-                    "Member delegated run continue failed",
-                    extra=build_agent_error_log_extra(
-                        exc,
-                        event="ai.member_delegated_run.continue_exception",
-                        run_id=run_model.run_id,
-                        session_id=session_id,
-                        agent_id=agent_id,
-                        error_code=failure.code,
-                        user_error_message=failure.message,
-                        raw_error_message=failure.raw_message,
-                    ),
-                )
-                await store.mark_terminal(
-                    run_model,
-                    status="failed",
-                    error_code=failure.code,
-                    error_message=failure.message,
-                )
-
-        async def generator() -> AsyncGenerator[bytes, None]:
-            lock = reserved_lock or self._get_lock(session_id=session_id, agent_id=agent_id)
-            acquired = reserved_lock is not None
-            if not acquired and lock.locked():
-                yield _error_event(session_id=session_id, run_id=run_model.run_id, code="AI_SESSION_RUN_ACTIVE", message="当前会话已有运行中的智能体任务。")
-                return
-            if not acquired:
-                await lock.acquire()
-                acquired = True
-            if internal_execution:
-                try:
-                    await worker()
-                finally:
-                    if acquired and lock.locked():
-                        lock.release()
-                return
-            live_queue = subscribe_live_run_events(run_id=run_model.run_id)
-            task = asyncio.create_task(worker())
-            try:
-                async for chunk in stream_live_subscribe(run_id=run_model.run_id, queue=live_queue):
-                    yield chunk
-                await task
-            except asyncio.CancelledError:
-                task.cancel()
-                if write_fence is None:
-                    await self._mark_interrupted_run_terminal(
-                        run_model,
-                        fallback_code=interruption_code,
-                        fallback_message=interruption_message,
-                    )
-                raise
-            finally:
-                if not task.done():
-                    task.cancel()
-                    with suppress(asyncio.CancelledError):
-                        await task
-                if acquired and lock.locked():
-                    lock.release()
-
-        return generator()
 
     async def resolve_session_llm_config(
         self,
@@ -1725,33 +1375,6 @@ class AgentSessionFacade:
             llm_service=self._llm_service(),
             agent_id=agent_id,
             retained_tool_names=retained_tool_names,
-        )
-
-    def _build_member_delegation_executor(
-        self,
-        *,
-        agent_id: str,
-        scope: AgentScopeContext,
-        runtime_context: Any,
-        session_id: str,
-        run_id: str,
-        write_fence: AgentRunWriteFence | None = None,
-    ) -> MemberDelegationExecutor | None:
-        """为统一内容助手构建同身份子运行委派执行器。"""
-
-        if agent_id == AGENT_COORDINATOR_AGENT_ID:
-            allowed_member_ids = (AGENT_COORDINATOR_AGENT_ID,)
-        else:
-            return None
-        return MemberDelegationExecutor(
-            session_factory=get_session_factory(),
-            current=self._current,
-            scope=scope,
-            runtime_context=runtime_context,
-            parent_session_id=session_id,
-            parent_run_id=run_id,
-            write_fence=write_fence,
-            allowed_member_ids=allowed_member_ids,
         )
 
     async def _mark_interrupted_run_terminal(

@@ -34,7 +34,6 @@ EXPECTED_TOOL_KEYS = {
     "ask_user",
     "analyze_visuals",
     "generate_image",
-    "delegate_task_to_self",
 }
 
 
@@ -52,7 +51,7 @@ async def test_agent_catalog_should_only_expose_unified_content_agent(
     assert coordinator["name"] == "内容助手"
     assert coordinator["scope_type"] == "workspace"
     assert coordinator["entry_kind"] == "agent"
-    assert "delegate_task_to_self" in coordinator["default_prompt"]
+    assert "delegate_task_to_self" not in coordinator["default_prompt"]
     assert "delegate_task_to_member" not in coordinator["default_prompt"]
     assert "组件助手" not in coordinator["default_prompt"]
     assert "资源助手" not in coordinator["default_prompt"]
@@ -206,9 +205,7 @@ def test_unified_tool_specs_should_match_runtime_and_guides() -> None:
         supports_image_input=True,
     )
     assert set(specs) == EXPECTED_TOOL_KEYS == {tool.name for tool in tools}
-    delegate_tool = next(tool for tool in tools if tool.name == "delegate_task_to_self")
-    assert set(delegate_tool.parameters["properties"]) == {"task", "handoff_context", "expected_output"}
-    assert "member_id" not in str(delegate_tool.parameters)
+    assert "delegate_task_to_self" not in {tool.name for tool in tools}
     assert list_agent_tool_specs("component-manager") == ()
     assert list_agent_tool_specs("resource-manager") == ()
     assert all(guide.handler_tool_key in EXPECTED_TOOL_KEYS for guide in list_operation_guide_specs())

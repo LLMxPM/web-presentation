@@ -56,12 +56,7 @@ def build_apply_page_edits_tool(
         deferred_tool_call_id = str(
             dependencies.get("current_tool_call_id") or ""
         ).strip()
-        member_run_id = str(dependencies.get("member_run_id") or "").strip() or None
-        tool_call_id = (
-            f"{member_run_id}:{deferred_tool_call_id}"
-            if member_run_id and deferred_tool_call_id
-            else deferred_tool_call_id
-        )
+        tool_call_id = deferred_tool_call_id
         if deferred_tool_call_id:
             enqueued = await enqueue_deadline.wait(
                 enqueue_page_mutation(
@@ -71,7 +66,6 @@ def build_apply_page_edits_tool(
                     run_step=int(dependencies.get("current_run_step") or 0),
                     tool_call_id=tool_call_id,
                     deferred_tool_call_id=deferred_tool_call_id,
-                    member_run_id=member_run_id,
                     operation="apply_page_edits",
                     workspace_id=int(dependencies["workspace_id"]),
                     project_id=_coerce_optional_int(dependencies.get("project_id")),

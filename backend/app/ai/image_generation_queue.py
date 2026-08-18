@@ -18,7 +18,7 @@ from app.ai.platform_tools import recoverable_tool_error_result
 from app.core.exceptions import AppException
 from app.core.time_utils import utc_now
 from app.models.ai_agent_attachment import AiAgentImageAttachment
-from app.models.ai_agent_runtime import AiAgentMemberRun, AiAgentRun
+from app.models.ai_agent_runtime import AiAgentRun
 from app.models.ai_image_generation import AiImageGenerationJob
 from app.models.ai_image_model import AiImageModelConfig
 from app.models.asset import WorkspaceAsset
@@ -599,11 +599,10 @@ async def _append_progress(
             if run is None:
                 return
             job.progress_json = {"phase": phase, "message": message}
-            member_run = await session.get(AiAgentMemberRun, job.member_run_id) if job.member_run_id else None
             await PlatformAgentRuntimeStore(session, user_id=job.user_id).append_event(
                 run,
                 AgentRunEvent(
-                    event="member.tool.progress" if member_run is not None else "tool.progress",
+                    event="tool.progress",
                     run_id=job.run_id,
                     session_id=job.session_id,
                     data={
@@ -612,15 +611,6 @@ async def _append_progress(
                         "job_id": job.job_id,
                         "phase": phase,
                         "message": message,
-                        **(
-                            {
-                                "member_run_id": member_run.member_run_id,
-                                "member_agent_id": member_run.agent_id,
-                                "member_agent_name": member_run.agent_name,
-                            }
-                            if member_run is not None
-                            else {}
-                        ),
                     },
                 ),
                 commit=False,

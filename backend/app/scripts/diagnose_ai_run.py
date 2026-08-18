@@ -17,7 +17,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.ai.message_history_recovery import recover_run_message_history
 from app.db.session import get_session_factory
 from app.models.ai_agent_runtime import (
-    AiAgentMemberRun,
     AiAgentMessage,
     AiAgentRequirement,
     AiAgentRun,
@@ -93,13 +92,6 @@ async def collect_ai_run_diagnostics(session: AsyncSession, run_id: str) -> dict
             .order_by(AiAgentMessage.order_index.asc(), AiAgentMessage.id.asc())
         )
     ).scalars().all()
-    member_runs = (
-        await session.execute(
-            select(AiAgentMemberRun)
-            .where(AiAgentMemberRun.parent_run_id == normalized_run_id)
-            .order_by(AiAgentMemberRun.created_at.asc(), AiAgentMemberRun.member_run_id.asc())
-        )
-    ).scalars().all()
     external_batches = (
         await session.execute(
             select(AiAgentExternalBatch)
@@ -121,7 +113,6 @@ async def collect_ai_run_diagnostics(session: AsyncSession, run_id: str) -> dict
         "events": [_dump_event(item) for item in events],
         "tool_calls": [_dump_tool_call(item) for item in tool_calls],
         "requirements": [_dump_requirement(item) for item in requirements],
-        "member_runs": [_dump_member_run(item) for item in member_runs],
         "external_batches": [_dump_external_batch(item) for item in external_batches],
         "external_tasks": [_dump_external_task(item) for item in external_tasks],
         "external_consistency": _external_consistency_summary(
@@ -216,7 +207,7 @@ def format_ai_run_diagnostics_summary(payload: dict[str, Any]) -> str:
         "",
         f"External batches ({len(payload['external_batches'])}):",
         *[
-            f"- {item['batch_id']} [{item['status']}] requirement={item['requirement_id'] or '-'} member={item['member_run_id'] or '-'} lease={item['worker_id'] or '-'}#{item['lease_generation']}"
+            f"- {item['batch_id']} [{item['status']}] requirement={item['requirement_id'] or '-'} lease={item['worker_id'] or '-'}#{item['lease_generation']}"
             for item in payload["external_batches"]
         ],
         "",
@@ -457,7 +448,6 @@ def _dump_tool_call(tool_call: AiAgentToolCall) -> dict[str, Any]:
         "id": tool_call.id,
         "session_id": tool_call.session_id,
         "run_id": tool_call.run_id,
-        "member_run_id": tool_call.member_run_id,
         "tool_call_id": tool_call.tool_call_id,
         "tool_name": tool_call.tool_name,
         "status": tool_call.status,
@@ -482,30 +472,11 @@ def _dump_requirement(requirement: AiAgentRequirement) -> dict[str, Any]:
         "status": requirement.status,
         "tool_call_id": requirement.tool_call_id,
         "tool_name": requirement.tool_name,
-        "member_agent_id": requirement.member_agent_id,
-        "member_agent_name": requirement.member_agent_name,
-        "member_run_id": requirement.member_run_id,
         "payload": requirement.payload_json or {},
         "resolved_payload": requirement.resolved_payload_json,
         "resolved_at": _iso(requirement.resolved_at),
         "created_at": _iso(requirement.created_at),
         "updated_at": _iso(requirement.updated_at),
-    }
-
-
-def _dump_member_run(member_run: AiAgentMemberRun) -> dict[str, Any]:
-    """转换成员Run ORM为诊断字典。"""
-
-    return {
-        "member_run_id": member_run.member_run_id,
-        "parent_run_id": member_run.parent_run_id,
-        "agent_id": member_run.agent_id,
-        "status": member_run.status,
-        "delegate_tool_call_id": member_run.delegate_tool_call_id,
-        "pending_requirement": member_run.pending_requirement_json,
-        "error_message": member_run.error_message,
-        "started_at": _iso(member_run.started_at),
-        "finished_at": _iso(member_run.finished_at),
     }
 
 
@@ -515,7 +486,6 @@ def _dump_external_batch(batch: AiAgentExternalBatch) -> dict[str, Any]:
     return {
         "batch_id": batch.batch_id,
         "run_id": batch.run_id,
-        "member_run_id": batch.member_run_id,
         "requirement_id": batch.requirement_id,
         "sequence_no": batch.sequence_no,
         "group_key": batch.group_key,
@@ -536,7 +506,6 @@ def _dump_external_task(task: AiAgentExternalTask) -> dict[str, Any]:
         "task_id": task.task_id,
         "batch_id": task.batch_id,
         "run_id": task.run_id,
-        "member_run_id": task.member_run_id,
         "kind": task.kind,
         "tool_call_id": task.tool_call_id,
         "deferred_tool_call_id": task.deferred_tool_call_id,

@@ -456,7 +456,6 @@ const emit = defineEmits<{
   'apply-suggested-patch': [patch: AgentSuggestedPatch]
   'remove-draft-patch': [patch: AgentSuggestedPatch]
   'open-tool-detail': [toolId: string]
-  'open-member-run-detail': [toolId: string]
   'force-cancel-run': []
 }>()
 
@@ -556,24 +555,11 @@ function resolveReasoningMarkdownNodes(item: Extract<TimelineDisplayItem, { kind
   )
 }
 
-/**
- * Team 成员工具调用在消息流中展示成员来源，避免与内容助手直连工具混淆。
- */
 function resolveToolDisplayName(tool: ToolCallDetail) {
-  if (tool.delegatedMemberRuns.length === 1) {
-    return `${tool.delegatedMemberRuns[0].agent_name || '内容助手'}子运行`
-  }
-  if (tool.delegatedMemberRuns.length > 1) {
-    return `内容助手子运行 · ${tool.delegatedMemberRuns.length} 个`
-  }
-  return tool.memberAgentName ? `${tool.memberAgentName} · ${tool.toolName}` : tool.toolName
+  return tool.toolName
 }
 
 function handleToolRowClick(tool: ToolCallDetail) {
-  if (tool.delegatedMemberRuns.length) {
-    emit('open-member-run-detail', tool.id)
-    return
-  }
   emit('open-tool-detail', tool.id)
 }
 

@@ -117,7 +117,6 @@ async def test_component_enqueue_should_keep_task_and_progress_event_in_one_tran
         session_id=run.session_id,
         tool_call_id="tool-component-enqueue",
         deferred_tool_call_id="tool-component-enqueue",
-        member_run_id=None,
         operation="apply_component_edits",
         workspace_id=25,
         component_id=89,

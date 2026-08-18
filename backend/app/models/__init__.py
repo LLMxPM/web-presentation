@@ -3,7 +3,6 @@
 from app.models.ai_agent_config import AiAgentCodeStandardUserConfig, AiAgentToolUserConfig, AiAgentUserConfig
 from app.models.ai_agent_attachment import AiAgentImageAttachment
 from app.models.ai_agent_runtime import (
-    AiAgentMemberRun,
     AiAgentMessage,
     AiAgentRequirement,
     AiAgentRun,
@@ -56,7 +55,6 @@ __all__ = [
     "AiAgentMessage",
     "AiAgentToolCall",
     "AiAgentRequirement",
-    "AiAgentMemberRun",
     "AiAgentUserConfig",
     "AiAgentToolUserConfig",
     "AiAgentCodeStandardUserConfig",

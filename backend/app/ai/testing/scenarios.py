@@ -1,4 +1,4 @@
-"""文件功能：定义首批 E2E mock 场景（普通对话与视觉链路）和按输入选择场景的注册表。"""
+"""文件功能：定义 E2E mock 普通对话、视觉与页面 external job 场景及注册表。"""
 
 from __future__ import annotations
 
@@ -27,6 +27,8 @@ E2E_MOCK_MODEL_PREFIXES = (
 
 ANALYZE_VISUALS_TOOL = "analyze_visuals"
 GENERATE_IMAGE_TOOL = "generate_image"
+LIST_ENTITIES_TOOL = "list_entities"
+CREATE_ENTITY_TOOL = "create_entity"
 
 HELLO_SCENARIO_INPUT = "你好，我是 E2E mock 普通对话用例，请用一句话自我介绍。"
 HELLO_SCENARIO_FINAL_TEXT = "你好，我是内容助手的 E2E mock 响应，用于验证真实会话链路。"
@@ -35,6 +37,9 @@ VISUAL_SCENARIO_INPUT = "请先分析这张参考图，然后基于它生成一�
 VISUAL_SCENARIO_ANALYZE_INSTRUCTION = "请描述这张参考图的主题、颜色和构图。"
 VISUAL_SCENARIO_GENERATE_PROMPT = "基于参考图生成一张同风格的 E2E mock 配图。"
 VISUAL_SCENARIO_ASSET_PREFIX = "e2e-mock-visual"
+PAGE_EXTERNAL_SCENARIO_INPUT = "请在当前项目创建一页 E2E external job 验证页。"
+PAGE_EXTERNAL_SCENARIO_TITLE = "E2E External Job Page"
+PAGE_EXTERNAL_SCENARIO_FINAL_TEXT = "页面 external job 已完成并恢复父运行。"
 
 
 def normalize_user_input(text: str) -> str:
@@ -112,6 +117,70 @@ def _build_visual_final_response(state: MockConversationState) -> ModelResponse:
     )
 
 
+def _build_list_projects_response(state: MockConversationState) -> ModelResponse:
+    """页面链路第一步：读取当前工作集项目，避免在场景中硬编码数据库 ID。"""
+
+    _ = state
+    return ModelResponse(
+        parts=[ToolCallPart(
+            LIST_ENTITIES_TOOL,
+            {"resource_type": "project", "filters": {}, "collection": "items"},
+            tool_call_id="e2e-mock-call-list-projects",
+        )]
+    )
+
+
+def _build_create_page_response(state: MockConversationState) -> ModelResponse:
+    """从真实项目查询结果提取 ID，并调用重资源页面创建工具进入 external job。"""
+
+    listed = state.last_tool_return(LIST_ENTITIES_TOOL)
+    data = listed.get("data") if isinstance(listed, dict) else None
+    items = data.get("items") if isinstance(data, dict) else None
+    first = items[0] if isinstance(items, list) and items and isinstance(items[0], dict) else None
+    project_id = first.get("id") if first else None
+    if not isinstance(project_id, int):
+        raise MockScenarioError(
+            scenario_id=PAGE_EXTERNAL_SCENARIO.scenario_id,
+            model_role=AGENT_MODEL_ROLE,
+            detail="页面场景未从 list_entities 结果解析到项目 ID。",
+            observed_tools=state.called_tool_names(),
+        )
+    content = (
+        '<template><main class="page"><h1>E2E External Job</h1></main></template>'
+        '<style scoped>.page{width:1920px;height:1080px;padding:96px;background:#fff;color:#111}</style>'
+    )
+    return ModelResponse(
+        parts=[ToolCallPart(
+            CREATE_ENTITY_TOOL,
+            {
+                "resource_type": "page",
+                "mode": "new",
+                "payload": {
+                    "project_id": project_id,
+                    "title": PAGE_EXTERNAL_SCENARIO_TITLE,
+                    "content": content,
+                    "summary": "验证父 Run 直接恢复的 E2E 页面。",
+                    "route_placement": "none",
+                },
+            },
+            tool_call_id="e2e-mock-call-create-page-external",
+        )]
+    )
+
+
+def _build_page_external_final_response(state: MockConversationState) -> ModelResponse:
+    """页面任务结果回灌后返回稳定终态文本。"""
+
+    if state.has_tool_return(CREATE_ENTITY_TOOL):
+        return ModelResponse(parts=[TextPart(PAGE_EXTERNAL_SCENARIO_FINAL_TEXT)])
+    raise MockScenarioError(
+        scenario_id=PAGE_EXTERNAL_SCENARIO.scenario_id,
+        model_role=AGENT_MODEL_ROLE,
+        detail="create_entity 外部任务结果尚未回灌。",
+        observed_tools=state.called_tool_names(),
+    )
+
+
 HELLO_SCENARIO = MockScenario(
     scenario_id="e2e-agent-hello",
     model_role=AGENT_MODEL_ROLE,
@@ -151,7 +220,32 @@ VISUAL_SCENARIO = MockScenario(
     ),
 )
 
-AGENT_SCENARIOS: tuple[MockScenario, ...] = (HELLO_SCENARIO, VISUAL_SCENARIO)
+PAGE_EXTERNAL_SCENARIO = MockScenario(
+    scenario_id="e2e-agent-page-external",
+    model_role=AGENT_MODEL_ROLE,
+    initial_inputs=(PAGE_EXTERNAL_SCENARIO_INPUT,),
+    final_expectation=PAGE_EXTERNAL_SCENARIO_FINAL_TEXT,
+    transitions=(
+        ScenarioTransition(
+            name="list_projects",
+            match=lambda state: not state.tool_calls,
+            build_response=_build_list_projects_response,
+        ),
+        ScenarioTransition(
+            name="create_page_external",
+            match=lambda state: state.has_tool_return(LIST_ENTITIES_TOOL)
+            and not state.has_called(CREATE_ENTITY_TOOL),
+            build_response=_build_create_page_response,
+        ),
+        ScenarioTransition(
+            name="final_text",
+            match=lambda state: state.has_tool_return(CREATE_ENTITY_TOOL),
+            build_response=_build_page_external_final_response,
+        ),
+    ),
+)
+
+AGENT_SCENARIOS: tuple[MockScenario, ...] = (HELLO_SCENARIO, VISUAL_SCENARIO, PAGE_EXTERNAL_SCENARIO)
 
 
 def select_agent_scenario(normalized_input: str) -> MockScenario:

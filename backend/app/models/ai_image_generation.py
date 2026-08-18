@@ -24,11 +24,6 @@ class AiImageGenerationJob(TimestampMixin, Base):
     session_id: Mapped[str] = mapped_column(ForeignKey("ai_agent_sessions.session_id"), nullable=False, index=True)
     tool_call_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     deferred_tool_call_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
-    member_run_id: Mapped[str | None] = mapped_column(
-        ForeignKey("ai_agent_member_runs.member_run_id"),
-        nullable=True,
-        index=True,
-    )
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
     workspace_id: Mapped[int] = mapped_column(ForeignKey("workspaces.id"), nullable=False, index=True)
     project_id: Mapped[int | None] = mapped_column(ForeignKey("projects.id"), nullable=True, index=True)

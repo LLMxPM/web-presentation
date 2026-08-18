@@ -80,9 +80,9 @@ uv run --project backend python -m app.scripts.diagnose_ai_run --session-id <ses
 
 内容助手是工作空间级智能体，固定装配少量通用业务工具和特殊工具。`get_operation_guide` 从 `tool_specs.py` 返回参数 Schema、约束与示例，真实写入始终按当前用户权限、工作空间归属和业务 Schema 校验。`validate_entity` 用于独立检查当前或候选页面/组件代码以及预览资源差异；页面和组件的创建、源码更新由写工具自动校验，不应重复调用。内容助手不得注册永久删除能力；项目、页面、组件、资源、主题和样式支持归档，单项归档免确认，两个及以上同类型目标必须动态确认并以整批原子语义执行，项目归档不得级联归档页面、路由或工作空间共享资产。主题写工具只允许维护 key、name、description 和色板，不得暴露 Logo 或字体配置。
 
-内容助手会话只绑定工作空间；`AiAgentSession` 保存后续 Run 使用的焦点模式和项目工作集偏好，`AiAgentRun` 的 workspace/project/page/component/source 是本轮不可变焦点快照。路由切换不得修改活跃 Run，确认恢复、外部任务续跑、图片任务和自委派必须沿用原 Run 的焦点与工作集。默认上下文只注入工作空间、焦点、工作集、画布尺寸和基础字号；页面源码、完整样式和建议列表通过通用查询工具按需读取。
+内容助手会话只绑定工作空间；`AiAgentSession` 保存后续 Run 使用的焦点模式和项目工作集偏好，`AiAgentRun` 的 workspace/project/page/component/source 是本轮不可变焦点快照。路由切换不得修改活跃 Run，确认恢复、外部任务续跑和图片任务必须沿用原 Run 的焦点与工作集。默认上下文只注入工作空间、焦点、工作集、画布尺寸和基础字号；页面源码、完整样式和建议列表通过通用查询工具按需读取。
 
-Editor 和 Backend 只公开 `agent-coordinator` 一个内容助手，不再登记组件助手或资源助手。独立子任务通过 `delegate_task_to_self` 创建同一助手身份的隔离子运行，工具参数不得重新选择成员 ID；子运行不披露自委派工具，避免递归委派。组件移除统一使用归档语义，不得重新引入 `delete_component` AI 工具。
+Editor 和 Backend 只公开 `agent-coordinator` 一个内容助手，不再登记组件助手、资源助手或自委派子运行。组件移除统一使用归档语义，不得重新引入 `delete_component` AI 工具。
 
 页面创建与结构化编辑属于重资源写工具：必须通过 `ai_page_mutation_jobs` 持久化队列执行，不能在 Pydantic tool 调用中直接并发运行 Runtime/Chromium。页面工具的 deferred result 由后台 Batch 协调器自动恢复；修改该流程时必须同时检查租约、取消、页面版本复核、SSE `waiting_external` 状态和自动续跑测试。截图任务与页面渲染诊断共享 Chromium 池，任何新增浏览器调用都必须接入该池，不能自行启动无上限的浏览器实例。
 

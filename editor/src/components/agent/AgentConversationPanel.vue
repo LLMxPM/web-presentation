@@ -91,7 +91,6 @@
           @apply-suggested-patch="applySuggestedPatch"
           @remove-draft-patch="removeDraftPatch"
           @open-tool-detail="openToolDetail"
-          @open-member-run-detail="openMemberRunDetail"
           @force-cancel-run="handleForceCancelRun"
         />
 
@@ -352,9 +351,7 @@
 
   <AgentConversationDialogs
     v-model:tool-detail-visible="toolDetailDialogVisible"
-    v-model:member-run-visible="memberRunDialogVisible"
     :active-tool-detail="activeToolDetail"
-    :active-member-runs="activeMemberRuns"
     @open-tool-detail="openToolDetail"
   />
 </template>
@@ -427,7 +424,6 @@ import type {
   AgentContextStatusItem,
   AgentDescriptor,
   AgentImageAttachmentItem,
-  AgentMemberRunItem,
   AgentPendingRequirement,
   AgentRunEvent,
   AgentScopeContext,
@@ -527,7 +523,6 @@ const queryClient = useQueryClient()
 const agentSessionStore = useAgentSessionStore()
 const {
   timelineItemsBySession,
-  memberRunsBySession,
   pendingImageAttachmentsBySession,
   activeRunBySession,
   streamingBySession,
@@ -558,9 +553,7 @@ const nextRunMenuVisible = ref(false)
 const focusProjectSearch = ref('')
 const workScopeProjectSearch = ref('')
 const toolDetailDialogVisible = ref(false)
-const memberRunDialogVisible = ref(false)
 const activeToolDetailId = ref<string | null>(null)
-const activeMemberRunIds = ref<string[]>([])
 const sendInFlightBySession = ref<Record<string, boolean>>({})
 const selectedRunLlmConfigId = ref<number | null>(null)
 const selectedRunReasoning = ref<AgentReasoningPolicy>({ mode: 'auto' })
@@ -608,9 +601,6 @@ const timelineItems = computed<AgentTimelineItem[]>({
   get: () => readSessionValue(timelineItemsBySession.value, activeSessionId.value, []),
   set: value => agentSessionStore.setTimelineItems(activeSessionId.value, value),
 })
-const memberRuns = computed<AgentMemberRunItem[]>(() => (
-  readSessionValue(memberRunsBySession.value, activeSessionId.value, [])
-))
 const pendingRequirement = computed<AgentPendingRequirement | null>({
   get: () => {
     const run = activeRun.value
@@ -1083,17 +1073,9 @@ const imageUploadDisabledReason = computed(() => {
   return ''
 })
 const imageUploadDisabled = computed(() => Boolean(imageUploadDisabledReason.value))
-const resolvedToolCallDetails = computed(() => [
-  ...extractTimelineToolDetails(timelineItems.value, memberRuns.value),
-  ...memberRuns.value.flatMap(memberRun => extractTimelineToolDetails(memberRun.timeline_items)),
-])
+const resolvedToolCallDetails = computed(() => extractTimelineToolDetails(timelineItems.value))
 const activeToolDetail = computed<ToolCallDetail | null>(() => (
   resolvedToolCallDetails.value.find(item => item.id === activeToolDetailId.value) ?? null
-))
-const activeMemberRuns = computed(() => (
-  activeMemberRunIds.value
-    .map(runId => memberRuns.value.find(item => item.run_id === runId))
-    .filter((item): item is AgentMemberRunItem => Boolean(item))
 ))
 const panelShellClass = computed(() => (
   props.embedded
@@ -1102,7 +1084,6 @@ const panelShellClass = computed(() => (
 ))
 const timelineDisplayItems = computed(() => buildTimelineDisplayItems(timelineItems.value, {
   pendingRequirement: pendingRequirement.value,
-  memberRuns: memberRuns.value,
   workspaceId: props.workspaceId,
   activeRunId: activeRun.value?.run_id ?? null,
 }))
@@ -1546,9 +1527,7 @@ watch(activeSessionId, () => {
   selectedRunReasoning.value = { mode: 'auto' }
   sessionMenuVisible.value = false
   toolDetailDialogVisible.value = false
-  memberRunDialogVisible.value = false
   activeToolDetailId.value = null
-  activeMemberRunIds.value = []
   if (activeSessionId.value) {
     const session = activeSession.value
     const sessionScope = session ? resolveSessionScope(session) : null
@@ -2117,10 +2096,6 @@ function handleRunEvent(event: AgentRunEvent, fallbackSessionId = activeSessionI
       appendMutationRefreshEvents(targetSessionId, normalizedEvent)
       emitMutationRefreshEvents(targetSessionId)
       break
-    case 'member.tool.completed':
-      appendMutationRefreshEvents(targetSessionId, normalizedEvent)
-      emitMutationRefreshEvents(targetSessionId)
-      break
     case 'tool.error':
       break
     case 'run.paused':
@@ -2391,17 +2366,6 @@ function formatLlmMetadataLabel(metadata: AgentSessionLlmMetadata) {
 function openToolDetail(toolId: string) {
   activeToolDetailId.value = toolId
   toolDetailDialogVisible.value = true
-}
-
-function openMemberRunDetail(toolId: string) {
-  const tool = resolvedToolCallDetails.value.find(item => item.id === toolId)
-  const memberRunIds = tool?.delegatedMemberRuns.map(item => item.run_id) ?? []
-  if (!memberRunIds.length) {
-    openToolDetail(toolId)
-    return
-  }
-  activeMemberRunIds.value = memberRunIds
-  memberRunDialogVisible.value = true
 }
 
 /**

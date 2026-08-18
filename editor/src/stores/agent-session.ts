@@ -18,7 +18,6 @@ import type {
   AgentFeedbackSelection,
   AgentContextStatusItem,
   AgentImageAttachmentItem,
-  AgentMemberRunItem,
   AgentPendingRequirement,
   AgentRunEvent,
   AgentSessionRuntimeSnapshot,
@@ -30,7 +29,6 @@ export const useAgentSessionStore = defineStore('agent-session', {
   state: () => ({
     sessions: {} as Record<string, AgentSessionRuntimeState>,
     timelineItemsBySession: {} as Record<string, AgentTimelineItem[]>,
-    memberRunsBySession: {} as Record<string, AgentMemberRunItem[]>,
     pendingRequirementBySession: {} as Record<string, AgentPendingRequirement | null>,
     pendingImageAttachmentsBySession: {} as Record<string, AgentImageAttachmentItem[]>,
     activeRunBySession: {} as Record<string, AgentActiveRunItem | null>,
@@ -54,7 +52,6 @@ export const useAgentSessionStore = defineStore('agent-session', {
       if (!sessionId) return
       applyAgentRuntimeSnapshot(this.ensureSession(sessionId), {
         timelineItems: snapshot.timeline_items,
-        memberRuns: snapshot.member_runs ?? [],
         activeRun: snapshot.active_run,
         lastRun: snapshot.last_run,
         pendingRequirement: snapshot.pending_requirement,
@@ -163,7 +160,6 @@ export const useAgentSessionStore = defineStore('agent-session', {
     syncFlatMaps(sessionId: string): void {
       const state = this.ensureSession(sessionId)
       this.timelineItemsBySession[sessionId] = state.timelineItems
-      this.memberRunsBySession[sessionId] = state.memberRuns
       this.pendingRequirementBySession[sessionId] = state.pendingRequirement
       this.pendingImageAttachmentsBySession[sessionId] = state.pendingImageAttachments
       this.activeRunBySession[sessionId] = state.activeRun
@@ -177,9 +173,6 @@ export const useAgentSessionStore = defineStore('agent-session', {
       const state = this.ensureSession(sessionId)
       if (hasSessionValue(this.timelineItemsBySession, sessionId)) {
         state.timelineItems = this.timelineItemsBySession[sessionId]
-      }
-      if (hasSessionValue(this.memberRunsBySession, sessionId)) {
-        state.memberRuns = this.memberRunsBySession[sessionId]
       }
       if (hasSessionValue(this.pendingRequirementBySession, sessionId)) {
         state.pendingRequirement = this.pendingRequirementBySession[sessionId]

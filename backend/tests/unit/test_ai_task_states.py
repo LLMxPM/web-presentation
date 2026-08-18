@@ -5,7 +5,6 @@ import pytest
 from app.ai.task_states import (
     EXTERNAL_BATCH_TRANSITIONS,
     EXTERNAL_TASK_TRANSITIONS,
-    MEMBER_TRANSITIONS,
     REQUIREMENT_TRANSITIONS,
     RUN_TRANSITIONS,
     TOOL_TRANSITIONS,
@@ -18,7 +17,6 @@ from app.ai.task_states import (
     [
         (RUN_TRANSITIONS, "running", "waiting_external"),
         (RUN_TRANSITIONS, "waiting_external", "running"),
-        (MEMBER_TRANSITIONS, "running", "waiting_external"),
         (TOOL_TRANSITIONS, "running", "waiting_external"),
         (REQUIREMENT_TRANSITIONS, "pending", "resolving"),
         (REQUIREMENT_TRANSITIONS, "resolving", "pending"),
@@ -37,7 +35,6 @@ def test_unified_state_machine_should_allow_declared_transitions(transitions, cu
     ("transitions", "current", "target"),
     [
         (RUN_TRANSITIONS, "completed", "running"),
-        (MEMBER_TRANSITIONS, "waiting_external", "completed"),
         (TOOL_TRANSITIONS, "waiting_external", "running"),
         (REQUIREMENT_TRANSITIONS, "resolved", "pending"),
         (EXTERNAL_BATCH_TRANSITIONS, "waiting_tasks", "resuming"),

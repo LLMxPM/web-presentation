@@ -89,17 +89,13 @@ def build_pydantic_tools(
     allowed_project_ids: tuple[int, ...] | list[int] = (),
     focus_version: int = 0,
     unavailable_group_keys: AbstractSet[str] | None = None,
-    member_delegation_executor: Any | None = None,
     image_generation_model: ImageModelSpec | None = None,
     image_generation_config_id: int | None = None,
-    member_run_id: str | None = None,
     write_fence: AgentRunWriteFence | None = None,
 ) -> tuple[list[Tool[AgentToolDeps]], AgentToolDeps]:
     """构建 Pydantic AI 工具和共享 deps。"""
 
     effective_unavailable_group_keys = set(unavailable_group_keys or ())
-    if member_delegation_executor is None:
-        effective_unavailable_group_keys.add("self_delegation")
     raw_tools = build_agent_tools_from_group_specs(
         agent_id=agent_id,
         session_factory=session_factory,
@@ -118,9 +114,7 @@ def build_pydantic_tools(
         allowed_project_ids=allowed_project_ids,
         focus_version=focus_version,
         unavailable_group_keys=effective_unavailable_group_keys,
-        member_delegation_executor=member_delegation_executor,
         image_generation_config_id=image_generation_config_id,
-        member_run_id=member_run_id,
         write_fence=write_fence,
     )
     return [
@@ -146,9 +140,7 @@ def _build_dependencies(
     allowed_project_ids: tuple[int, ...] | list[int] = (),
     focus_version: int = 0,
     unavailable_group_keys: AbstractSet[str] | None = None,
-    member_delegation_executor: Any | None = None,
     image_generation_config_id: int | None = None,
-    member_run_id: str | None = None,
     write_fence: AgentRunWriteFence | None = None,
 ) -> dict[str, Any]:
     """生成平台工具上下文校验需要的 dependencies 字典。"""
@@ -190,7 +182,6 @@ def _build_dependencies(
         "focus_version": int(focus_version),
         "model_supports_image_input": supports_image_input,
         "backend_session_id": current.backend_session_id,
-        "member_tool_auth_tokens": {},
         "allowed_visual_input_types": (
             ["attachment", "asset", "page_screenshot"]
             if agent_id == AGENT_COORDINATOR_AGENT_ID
@@ -199,10 +190,6 @@ def _build_dependencies(
     }
     if image_generation_config_id is not None:
         dependencies["image_generation_config_id"] = image_generation_config_id
-    if member_run_id:
-        dependencies["member_run_id"] = member_run_id
-    if member_delegation_executor is not None:
-        dependencies["member_delegation_executor"] = member_delegation_executor
     if write_fence is not None:
         dependencies["agent_run_write_fence"] = write_fence
     dependencies["tool_auth_token"] = token

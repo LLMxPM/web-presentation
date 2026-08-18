@@ -96,7 +96,6 @@ def test_normalize_message_items_should_use_tool_ledger_as_authority() -> None:
             {
                 "id": 1,
                 "run_id": "run-ledger",
-                "member_run_id": None,
                 "tool_call_id": "call-ledger",
                 "tool_name": "update_page",
                 "status": "completed",

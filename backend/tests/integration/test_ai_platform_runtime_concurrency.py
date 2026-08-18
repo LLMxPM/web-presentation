@@ -7,12 +7,12 @@ from datetime import UTC, datetime
 
 import pytest
 from httpx import AsyncClient
-from sqlalchemy import func, select, text, update
+from sqlalchemy import select, text, update
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import app.ai.platform_runtime as platform_runtime
-from app.ai.platform_runtime import PlatformAgentRuntimeStore, get_live_run_activity_version
+from app.ai.platform_runtime import PlatformAgentRuntimeStore
 from app.ai.run_event_writer import allocate_run_event_index
 from app.db.session import get_session_factory
 from app.models.ai_agent_runtime import AiAgentRun, AiAgentRunEvent
@@ -272,51 +272,3 @@ async def test_append_event_should_avoid_process_lock_after_sqlite_write(
         )
 
     assert stored_event.event_index == 2
-
-
-async def test_member_event_should_not_append_after_parent_run_terminal(
-    authenticated_client: AsyncClient,
-) -> None:
-    """父 run 已终止后，成员事件不得递增游标或写入事件表。"""
-
-    run_id = "platform-runtime-run-terminal-member-event"
-    session_id, _ = await _create_runtime_run(authenticated_client, run_id=run_id)
-    active_version = get_live_run_activity_version(run_id)
-    session_factory = get_session_factory()
-    async with session_factory() as terminal_session:
-        terminal_store = PlatformAgentRuntimeStore(terminal_session, user_id=1)
-        run_model = await terminal_session.get(AiAgentRun, run_id)
-        assert run_model is not None
-        terminal_event = await terminal_store.mark_terminal(run_model, status="completed", content="任务完成。")
-
-    async with session_factory() as member_session:
-        member_store = PlatformAgentRuntimeStore(member_session, user_id=1)
-        terminal_run = await member_session.get(AiAgentRun, run_id)
-        assert terminal_run is not None
-        with pytest.raises(ValueError, match="AI_RUN_TERMINAL"):
-            await member_store.append_event(
-                terminal_run,
-                AgentRunEvent(
-                    event="member.message.delta",
-                    run_id=run_id,
-                    session_id=session_id,
-                    content="迟到的成员输出。",
-                ),
-            )
-
-    async with session_factory() as verify_session:
-        persisted_index = await verify_session.scalar(
-            select(AiAgentRun.event_index).where(AiAgentRun.run_id == run_id)
-        )
-        member_event_count = await verify_session.scalar(
-            select(func.count(AiAgentRunEvent.id)).where(
-                AiAgentRunEvent.run_id == run_id,
-                AiAgentRunEvent.event.like("member.%"),
-            )
-        )
-
-    assert terminal_event.event_index == 2
-    assert persisted_index == 2
-    assert member_event_count == 0
-    assert active_version > 0
-    assert get_live_run_activity_version(run_id) == 0

@@ -112,7 +112,7 @@ async def _load_run_tools(session: AsyncSession, run_id: str) -> list[AiAgentToo
 
     result = await session.execute(
         select(AiAgentToolCall)
-        .where(AiAgentToolCall.run_id == run_id, AiAgentToolCall.member_run_id.is_(None))
+        .where(AiAgentToolCall.run_id == run_id)
         .order_by(AiAgentToolCall.id.asc())
     )
     return list(result.scalars().all())

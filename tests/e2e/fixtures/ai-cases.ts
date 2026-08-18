@@ -23,6 +23,14 @@ export const AGENT_VISUAL_CASE = {
   assetNamePrefix: 'e2e-mock-visual',
 } as const
 
+/** 页面重资源写入场景：list_entities → create_entity → external job → 父 Run 续跑。 */
+export const AGENT_PAGE_EXTERNAL_CASE = {
+  scenarioId: 'e2e-agent-page-external',
+  input: '请在当前项目创建一页 E2E external job 验证页。',
+  finalText: '页面 external job 已完成并恢复父运行。',
+  pageTitle: 'E2E External Job Page',
+} as const
+
 /**
  * 视觉用例上传的参考图：1x1 合法 PNG 的 base64 内容。
  * 断言只关注真实保存与展示链路，不做像素级比较。

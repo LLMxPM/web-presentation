@@ -30,7 +30,6 @@ async def enqueue_external_task(
     kind: str,
     tool_call_id: str,
     deferred_tool_call_id: str,
-    member_run_id: str | None,
 ) -> AiAgentExternalTask:
     """创建或复用当前执行阶段的统一外部任务，并归入唯一 collecting Batch。"""
 
@@ -46,7 +45,6 @@ async def enqueue_external_task(
         select(AiAgentExternalBatch)
         .where(
             AiAgentExternalBatch.run_id == run.run_id,
-            AiAgentExternalBatch.member_run_id == member_run_id,
             AiAgentExternalBatch.status == "collecting",
         )
         .order_by(AiAgentExternalBatch.sequence_no.desc())
@@ -63,7 +61,6 @@ async def enqueue_external_task(
             batch_id=stable_external_identifier("batch", run.run_id, str(sequence_no)),
             run_id=run.run_id,
             session_id=run.session_id,
-            member_run_id=member_run_id,
             sequence_no=sequence_no,
             status="collecting",
         )
@@ -74,7 +71,6 @@ async def enqueue_external_task(
         batch_id=batch.batch_id,
         run_id=run.run_id,
         session_id=run.session_id,
-        member_run_id=member_run_id,
         kind=kind,
         tool_call_id=tool_call_id,
         deferred_tool_call_id=deferred_tool_call_id,
@@ -92,13 +88,12 @@ async def seal_external_batch_for_requirement(
     run: AiAgentRun,
     requirement: AiAgentRequirement,
 ) -> AiAgentExternalBatch:
-    """把 Deferred Requirement 与 collecting Batch 原子绑定，并更新成员和工具等待态。"""
+    """把 Deferred Requirement 与 collecting Batch 原子绑定，并更新工具等待态。"""
 
     batch = await session.scalar(
         select(AiAgentExternalBatch)
         .where(
             AiAgentExternalBatch.run_id == run.run_id,
-            AiAgentExternalBatch.member_run_id == requirement.member_run_id,
             AiAgentExternalBatch.status == "collecting",
         )
         .order_by(AiAgentExternalBatch.sequence_no.desc())

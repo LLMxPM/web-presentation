@@ -106,11 +106,8 @@ const currentQuestionOptions = computed(() => (currentQuestion.value?.options ??
   description: option.description ?? undefined,
 })))
 const currentQuestionTitle = computed(() => currentQuestion.value?.question || '需要补充信息')
-const memberSourceLabel = computed(() => props.requirement.member_agent_name ? `来自 ${props.requirement.member_agent_name}` : '')
 const questionProgressLabel = computed(() => (
-  [memberSourceLabel.value, questions.value.length > 1 ? `${currentIndex.value + 1} / ${questions.value.length}` : '请选择一个答案']
-    .filter(Boolean)
-    .join(' · ')
+  questions.value.length > 1 ? `${currentIndex.value + 1} / ${questions.value.length}` : '请选择一个答案'
 ))
 const currentAnswered = computed(() => isAnswered(currentAnswer.value))
 const allAnswered = computed(() => questions.value.length > 0 && questions.value.every((_, index) => isAnswered(answers.value[index])))

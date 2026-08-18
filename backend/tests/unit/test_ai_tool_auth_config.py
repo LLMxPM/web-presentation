@@ -11,12 +11,9 @@ from app.ai.auth_tokens import (
     RESOURCE_TOOL_READ_SCOPES,
     build_agent_tool_token,
 )
-from app.ai.agent.runtime_context import AgentRuntimeContext
-from app.ai.member_delegation import MemberDelegationExecutor
 from app.ai.tool_specs import AGENT_COORDINATOR_AGENT_ID, list_agent_group_specs
 from app.core.config import AppSettings
 from app.core.config import get_settings
-from app.schemas.agent import AgentScopeContext
 from app.services.token_service import TokenService
 
 
@@ -107,51 +104,6 @@ def test_unified_agent_group_scopes_should_cover_runtime_tools() -> None:
     assert set(COMPONENT_TOOL_WRITE_SCOPES).issubset(scopes)
     assert set(CODE_CHECK_TOOL_SCOPES).issubset(scopes)
     assert set(RESOURCE_TOOL_READ_SCOPES).issubset(scopes)
-
-
-def test_member_delegation_executor_should_preserve_parent_run_focus_without_heavy_context() -> None:
-    """自委派应继承父 Run 焦点与工作集，但不复制样式和建议列表等重上下文。"""
-
-    executor = MemberDelegationExecutor(
-        session_factory=None,  # type: ignore[arg-type]
-        current=_build_auth_context(),
-        scope=AgentScopeContext(
-            scope_type="page",
-            workspace_id=1,
-            project_id=2,
-            page_id=3,
-            component_id=4,
-            workspace_name="默认工作空间",
-            source="editor-page-detail",
-        ),
-        runtime_context=AgentRuntimeContext(
-            scope_type="page",
-            workspace_id=1,
-            project_id=2,
-            page_id=3,
-            component_id=4,
-            source="editor-page-detail",
-            page_width=1600,
-            page_height=900,
-            style_spec_markdown="样式规范",
-            suggested_reference_assets=({"name": "hero"},),
-            suggested_components=({"code": "cmp_hero"},),
-        ),
-        parent_session_id="session-test",
-        parent_run_id="run-test",
-    )
-
-    assert executor._scope.scope_type == "page"
-    assert executor._scope.project_id == 2
-    assert executor._scope.page_id == 3
-    assert executor._scope.component_id == 4
-    assert executor._runtime_context.scope_type == "page"
-    assert executor._runtime_context.project_id == 2
-    assert executor._runtime_context.page_id == 3
-    assert executor._runtime_context.component_id == 4
-    assert executor._runtime_context.style_spec_markdown is None
-    assert executor._runtime_context.suggested_reference_assets == ()
-    assert executor._runtime_context.suggested_components == ()
 
 
 def _build_auth_context() -> SimpleNamespace:

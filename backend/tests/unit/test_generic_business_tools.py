@@ -35,7 +35,6 @@ from app.ai.tools.generic.operation_models import (
     ProjectApplyStylePayload,
     ProjectCreatePayload,
 )
-from app.ai.tools.self_delegation import build_self_delegation_tools
 from app.core.exceptions import AppException
 
 
@@ -52,7 +51,6 @@ EXPECTED_GENERIC_TOOL_KEYS = {
     "ask_user",
     "analyze_visuals",
     "generate_image",
-    "delegate_task_to_self",
 }
 
 
@@ -92,27 +90,6 @@ def test_coordinator_should_only_expose_fixed_generic_and_special_tools() -> Non
 
     assert tool_keys == EXPECTED_GENERIC_TOOL_KEYS
     assert not any("delete" in tool_key or "purge" in tool_key for tool_key in tool_keys)
-
-
-async def test_self_delegation_should_inject_unified_agent_without_member_parameter() -> None:
-    """自委派工具不接收成员 ID，并固定创建同一内容助手身份的子运行。"""
-
-    class FakeExecutor:
-        async def delegate_task_to_self(self, **kwargs):  # noqa: ANN003, ANN202
-            return kwargs
-
-    tool = build_self_delegation_tools(None)[0]  # type: ignore[arg-type]
-    context = AgentToolContext(
-        run_id="run-1",
-        session_id="session-1",
-        dependencies={"member_delegation_executor": FakeExecutor(), "current_tool_call_id": "call-1"},
-    )
-
-    result = await tool.entrypoint(context, task="核对组件引用", handoff_context=None, expected_output="返回影响列表")
-
-    assert result["member_id"] == AGENT_COORDINATOR_AGENT_ID
-    assert result["delegate_tool_name"] == "delegate_task_to_self"
-    assert "member_id" not in tool.parameters["properties"]
 
 
 def test_operation_guides_should_not_define_delete_or_workspace_archive() -> None:

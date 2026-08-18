@@ -35,6 +35,6 @@ compression_trigger_tokens = context_window_tokens - runtime_headroom_tokens
 
 ## 兼容与快照
 
-旧 `thinking_enabled/thinking_effort` 请求在 Schema 层转换为新契约；同一请求不得混用新旧字段。新 Run 同时固化能力档案版本、四档映射、预算策略版本和全部绝对预算，确认恢复、外部任务及自委派不重新计算。没有预算策略版本的历史 Run 继续按旧比例快照恢复。
+旧 `thinking_enabled/thinking_effort` 请求在 Schema 层转换为新契约；同一请求不得混用新旧字段。新 Run 同时固化能力档案版本、四档映射、预算策略版本和全部绝对预算，确认恢复与外部任务不重新计算。没有预算策略版本的历史 Run 继续按旧比例快照恢复。
 
 高级 JSON 不得递归覆盖受管推理与预算字段，包括 OpenAI、OpenRouter、Google 的 thinking 设置，以及 `extra_body` 内的输出、上下文预留和压缩预算。

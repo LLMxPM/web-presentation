@@ -20,7 +20,7 @@ from app.ai.platform_runtime import PlatformAgentRuntimeStore
 from app.ai.run_write_fence import AgentRunWriteFenceLost, PageMutationContinuationWriteFence, agent_run_write_fence_scope
 from app.core.time_utils import utc_now
 from app.db.session import get_session_factory
-from app.models.ai_agent_runtime import AiAgentMemberRun, AiAgentRequirement, AiAgentRun, AiAgentSession, AiAgentToolCall
+from app.models.ai_agent_runtime import AiAgentRequirement, AiAgentRun, AiAgentSession, AiAgentToolCall
 from app.models.ai_page_mutation import AiPageMutationBatch, AiPageMutationJob
 from app.models.page import Page
 from app.models.user import User
@@ -211,50 +211,6 @@ async def test_ai_page_mutation_job_should_be_idempotent_and_lease_owned(
         assert next_batch.run_step == first_batch.run_step + 1
 
 
-async def test_member_page_job_should_store_display_and_deferred_call_ids(authenticated_client: AsyncClient) -> None:
-    """成员页面任务应持久化成员归属、命名空间 ID 和原始 deferred ID。"""
-    workspace_response = await authenticated_client.post("/api/workspaces", json={"name": "成员页面任务工作空间", "status": "active"})
-    project_response = await authenticated_client.post(
-        "/api/projects", json={"workspace_id": workspace_response.json()["id"], "name": "成员页面任务项目", "status": "active"}
-    )
-    workspace_id = workspace_response.json()["id"]
-    project_id = project_response.json()["id"]
-    session_factory = get_session_factory()
-    async with session_factory() as session:
-        user = await session.scalar(select(User).where(User.username == "admin"))
-        assert user is not None
-        session.add(AiAgentSession(
-            session_id="session-member-page-job", agent_id="agent-coordinator", user_id=user.id, workspace_id=workspace_id,
-            focus_mode="follow_route", work_scope_mode="workspace", allowed_project_ids_json=[], metadata_json={},
-        ))
-        await session.flush()
-        session.add(AiAgentRun(
-            run_id="run-member-page-job", session_id="session-member-page-job", agent_id="agent-coordinator", user_id=user.id,
-            status="running", scope_type="project", workspace_id=workspace_id, project_id=project_id, source="test",
-            input_payload_json={"message": "委派创建页面"}, message_history_json=[],
-        ))
-        await session.flush()
-        session.add(AiAgentMemberRun(
-            member_run_id="member-run-page-job", parent_run_id="run-member-page-job", session_id="session-member-page-job",
-            agent_id="agent-coordinator", agent_name="内容助手", status="running", input_payload_json={}, message_history_json=[],
-        ))
-        session.add(AiAgentToolCall(
-            session_id="session-member-page-job", run_id="run-member-page-job", member_run_id="member-run-page-job",
-            tool_call_id="member-run-page-job:raw-page-call", tool_name="create_entity", status="running",
-            input_payload_json={"resource_type": "page", "payload": {"title": "成员页面"}},
-        ))
-        await session.commit()
-    await enqueue_page_mutation(
-        session_factory, run_id="run-member-page-job", session_id="session-member-page-job", run_step=1,
-        tool_call_id="member-run-page-job:raw-page-call", deferred_tool_call_id="raw-page-call", member_run_id="member-run-page-job",
-        operation="create_page", workspace_id=workspace_id, project_id=project_id,
-    )
-    async with session_factory() as session:
-        job = await session.scalar(select(AiPageMutationJob).where(AiPageMutationJob.run_id == "run-member-page-job"))
-        assert job is not None
-        assert job.member_run_id == "member-run-page-job"
-        assert job.tool_call_id == "member-run-page-job:raw-page-call"
-        assert job.deferred_tool_call_id == "raw-page-call"
 
 
 async def test_expired_continuation_lease_should_restore_waiting_external_run(

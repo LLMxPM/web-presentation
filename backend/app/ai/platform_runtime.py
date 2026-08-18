@@ -19,14 +19,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import get_settings
 from app.ai.image_refs import sanitize_message_history_image_refs
 from app.ai.agent.runtime_context import AgentRuntimeContext
-from app.ai.member_prompts import build_member_prompt_from_payload
 from app.ai.run_event_writer import allocate_run_event_index, is_sqlite_lock_error
 from app.ai.run_write_fence import AgentRunWriteFence
 from app.ai.external_task_control import seal_external_batch_for_requirement
 from app.ai.tool_arguments import parse_tool_arguments
 from app.models.ai_agent_attachment import AiAgentImageAttachment
 from app.models.ai_agent_runtime import (
-    AiAgentMemberRun,
     AiAgentMessage,
     AiAgentRequirement,
     AiAgentRun,
@@ -39,7 +37,6 @@ from app.models.enums import RecordStatus
 from app.schemas.agent import (
     AgentActiveRunItem,
     AgentContextStatusItem,
-    AgentMemberRunItem,
     AgentMessageAttachmentItem,
     AgentMessageItem,
     AgentPendingRequirement,
@@ -385,7 +382,7 @@ class PlatformAgentRuntimeStore:
             self._session,
             run_id=run_model.run_id,
             updated_at=now,
-            require_active=event.event.startswith("member."),
+            require_active=False,
             write_fence=self._write_fence,
         )
         await self._refresh_event_projection_source(run_model, event)
@@ -665,9 +662,6 @@ class PlatformAgentRuntimeStore:
                 status="pending",
                 tool_call_id=str(requirement.tool_execution.get("tool_call_id") or "") or None,
                 tool_name=requirement.tool_name,
-                member_agent_id=requirement.member_agent_id,
-                member_agent_name=requirement.member_agent_name,
-                member_run_id=requirement.member_run_id,
                 payload_json=payload,
             )
         self._session.add(requirement_model)
@@ -817,7 +811,6 @@ class PlatformAgentRuntimeStore:
         active_run = self.map_active_run(latest_run) if latest_run is not None and latest_run.status in ACTIVE_RUN_STATUSES else None
         last_run = self.map_active_run(latest_run) if latest_run is not None and latest_run.status not in ACTIVE_RUN_STATUSES else None
         timeline_items = await self.build_timeline_items(session_id=session_id)
-        member_runs = await self.build_member_runs(session_id=session_id, parent_timeline_items=timeline_items)
         pending_requirement = active_run.pending_requirement if active_run is not None else None
         pending_attachments = await AgentImageAttachmentService(
             self._session,
@@ -829,7 +822,6 @@ class PlatformAgentRuntimeStore:
         return AgentSessionRuntimeSnapshot(
             session=self.map_session_item(session_model),
             timeline_items=timeline_items,
-            member_runs=member_runs,
             context_status=self.build_context_status(session_id=session_id, agent_id=agent_id, runtime_context=runtime_context),
             active_run=active_run,
             last_run=last_run,
@@ -1322,9 +1314,6 @@ class PlatformAgentRuntimeStore:
                 tool=AgentTimelineToolItem(
                     tool_call_id=tool_call_id or None,
                     tool_name=tool_name,
-                    member_agent_id=_optional_str(data.get("member_agent_id")),
-                    member_agent_name=_optional_str(data.get("member_agent_name")),
-                    member_run_id=_optional_str(data.get("member_run_id")),
                     status=status if status in {"running", "waiting_external", "completed", "error", "cancelled", "interrupted"} else "running",  # type: ignore[arg-type]
                     input_payload=_first_present(data, ("tool_args", "arguments", "args")),
                     output_payload=_first_present(data, ("result", "output")),
@@ -1390,189 +1379,6 @@ class PlatformAgentRuntimeStore:
             ),
             item,
         ))
-
-    async def build_member_runs(
-        self,
-        *,
-        session_id: str,
-        parent_timeline_items: list[AgentTimelineItem],
-    ) -> list[AgentMemberRunItem]:
-        """构建成员运行快照；parent_timeline_items 当前仅用于接口对齐。"""
-
-        _ = parent_timeline_items
-        result = await self._session.execute(
-            select(AiAgentMemberRun)
-            .where(AiAgentMemberRun.session_id == session_id)
-            .order_by(AiAgentMemberRun.created_at.asc())
-        )
-        event_result = await self._session.execute(
-            select(AiAgentRunEvent)
-            .where(AiAgentRunEvent.session_id == session_id, AiAgentRunEvent.event.like("member.%"))
-            .order_by(AiAgentRunEvent.event_index.asc(), AiAgentRunEvent.id.asc())
-        )
-        member_event_rows = event_result.scalars().all()
-        member_runs: list[AgentMemberRunItem] = []
-        for member_run in result.scalars().all():
-            timeline = self._member_timeline_items_from_event_rows(member_run, member_event_rows)
-            member_runs.append(
-                AgentMemberRunItem(
-                    parent_run_id=member_run.parent_run_id,
-                    run_id=member_run.member_run_id,
-                    agent_id=member_run.agent_id,
-                    agent_name=member_run.agent_name,
-                    status=_map_run_status(member_run.status),
-                    created_at=_iso(member_run.created_at),
-                    updated_at=_iso(member_run.updated_at),
-                    delegate_tool_call_id=member_run.delegate_tool_call_id,
-                    input_prompt=_member_input_prompt(member_run),
-                    output_prompt=_member_output_prompt(member_run),
-                    timeline_items=timeline,
-                )
-            )
-        return member_runs
-
-    def _member_timeline_items_from_event_rows(
-        self,
-        member_run: AiAgentMemberRun,
-        event_rows: list[AiAgentRunEvent],
-    ) -> list[AgentTimelineItem]:
-        """按 member.* 事件重建成员运行内部时间线。"""
-
-        items: list[AgentTimelineItem] = []
-        current_text: AgentTimelineItem | None = None
-        model_request_item: AgentTimelineItem | None = None
-        tool_items: dict[str, AgentTimelineItem] = {}
-
-        def clear_model_request_item() -> None:
-            """成员已有实际输出或终态时，移除过期的等待输出提示。"""
-
-            nonlocal model_request_item
-            if model_request_item is not None and model_request_item in items:
-                items.remove(model_request_item)
-            model_request_item = None
-
-        for event_row in event_rows:
-            event = AgentRunEvent.model_validate(event_row.payload_json)
-            data = event.data if isinstance(event.data, dict) else {}
-            if _optional_str(data.get("member_run_id")) != member_run.member_run_id:
-                continue
-            if event.event in {"member.message.delta", "member.reasoning.delta"}:
-                clear_model_request_item()
-                kind = "message" if event.event == "member.message.delta" else "reasoning"
-                role = "assistant" if kind == "message" else None
-                if current_text is None or current_text.kind != kind:
-                    current_text = AgentTimelineItem(
-                        id=f"member-event-{event_row.id}-{kind}",
-                        session_id=event_row.session_id,
-                        run_id=member_run.member_run_id,
-                        kind=kind,  # type: ignore[arg-type]
-                        role=role,  # type: ignore[arg-type]
-                        event_index=event_row.event_index,
-                        order_index=len(items),
-                        content="",
-                        status=None,
-                        tool=None,
-                        source="event",
-                        created_at=_iso(event_row.created_at),
-                    )
-                    items.append(current_text)
-                if event.content:
-                    current_text.content = f"{current_text.content or ''}{event.content}"
-                continue
-            if event.event in {"member.tool.started", "member.tool.completed", "member.tool.error"}:
-                clear_model_request_item()
-                current_text = None
-                status = {
-                    "member.tool.started": "running",
-                    "member.tool.completed": "completed",
-                    "member.tool.error": "interrupted" if data.get("outcome") == "unknown" else "error",
-                }[event.event]
-                tool_call_id = _optional_str(data.get("tool_call_id")) or f"member-event-{event_row.id}"
-                existing = tool_items.get(tool_call_id)
-                if existing is None:
-                    existing = AgentTimelineItem(
-                        id=f"member-tool-{member_run.member_run_id}-{tool_call_id}",
-                        session_id=event_row.session_id,
-                        run_id=member_run.member_run_id,
-                        kind="tool",
-                        role=None,
-                        event_index=event_row.event_index,
-                        order_index=len(items),
-                        content=None,
-                        status=status,
-                        tool=AgentTimelineToolItem(
-                            tool_call_id=_optional_str(data.get("tool_call_id")),
-                            tool_name=str(data.get("tool_name") or "工具调用"),
-                            member_agent_id=member_run.agent_id,
-                            member_agent_name=member_run.agent_name,
-                            member_run_id=member_run.member_run_id,
-                            status=status,  # type: ignore[arg-type]
-                            input_payload=_first_present(data, ("tool_args", "arguments", "args")),
-                            output_payload=_first_present(data, ("result", "output")),
-                            message=str(data.get("message") or event.content or ""),
-                        ),
-                        source="event",
-                        created_at=_iso(event_row.created_at),
-                    )
-                    tool_items[tool_call_id] = existing
-                    items.append(existing)
-                elif existing.tool is not None:
-                    existing.status = status
-                    existing.tool.status = status  # type: ignore[assignment]
-                    input_payload = _first_present(data, ("tool_args", "arguments", "args"))
-                    if _is_meaningful_payload(input_payload) and not _is_meaningful_payload(existing.tool.input_payload):
-                        existing.tool.input_payload = input_payload
-                    output_payload = _first_present(data, ("result", "output"))
-                    if output_payload is not None:
-                        existing.tool.output_payload = output_payload
-                    if data.get("message") or event.content:
-                        existing.tool.message = str(data.get("message") or event.content or "")
-                continue
-            if event.event == "member.model.request.completed":
-                clear_model_request_item()
-                current_text = None
-                continue
-            if event.event in {"member.model.request.started", "member.run.waiting", "member.run.paused", "member.run.completed", "member.run.cancelled", "member.run.error"}:
-                if event.event != "member.model.request.started":
-                    clear_model_request_item()
-                current_text = None
-                status = {
-                    "member.model.request.started": "model_request",
-                    "member.run.waiting": "waiting_external",
-                    "member.run.paused": "paused",
-                    "member.run.completed": "completed",
-                    "member.run.cancelled": "cancelled",
-                    "member.run.error": "failed",
-                }[event.event]
-                content = {
-                    "member.model.request.started": "等待智能体输出中",
-                    "member.run.waiting": "后台任务正在处理中。",
-                    "member.run.paused": "等待用户处理。",
-                    "member.run.completed": "运行已完成。",
-                    "member.run.cancelled": "运行已停止。",
-                    "member.run.error": str(data.get("message") or "运行失败。"),
-                }.get(event.event, "")
-                items.append(
-                    AgentTimelineItem(
-                        id=f"member-status-{event_row.id}",
-                        session_id=event_row.session_id,
-                        run_id=member_run.member_run_id,
-                        kind="run_status",
-                        role=None,
-                        event_index=event_row.event_index,
-                        order_index=len(items),
-                        content=content,
-                        status=status,
-                        tool=None,
-                        source="event",
-                        created_at=_iso(event_row.created_at),
-                    )
-                )
-                if event.event == "member.model.request.started":
-                    model_request_item = items[-1]
-        for index, item in enumerate(items):
-            item.order_index = index
-        return items
 
     def map_session_item(self, model: AiAgentSession) -> AgentSessionItem:
         """把会话 ORM 映射为接口模型。"""
@@ -1808,7 +1614,6 @@ class PlatformAgentRuntimeStore:
             tool=AgentTimelineToolItem(
                 tool_call_id=tool_call.tool_call_id,
                 tool_name=tool_call.tool_name,
-                member_run_id=tool_call.member_run_id,
                 status=tool_call.status if tool_call.status in {"running", "waiting_external", "completed", "error", "cancelled", "interrupted"} else "running",  # type: ignore[arg-type]
                 input_payload=tool_call.input_payload_json,
                 output_payload=tool_call.output_payload_json,
@@ -1852,23 +1657,18 @@ class PlatformAgentRuntimeStore:
             "tool.started",
             "tool.completed",
             "tool.error",
-            "member.tool.started",
-            "member.tool.completed",
-            "member.tool.error",
         }:
             return
         tool_name = str(event.data.get("tool_name") or "").strip()
         tool_call_id = str(event.data.get("tool_call_id") or "").strip() or None
         if not tool_name:
             return
-        normalized_event = event.event.removeprefix("member.")
-        member_run_id = _optional_str(event.data.get("member_run_id"))
         status = {
             "tool.started": "running",
             "tool.completed": "completed",
             "tool.error": "error",
-        }[normalized_event]
-        if normalized_event == "tool.error" and event.data.get("outcome") == "unknown":
+        }[event.event]
+        if event.event == "tool.error" and event.data.get("outcome") == "unknown":
             status = "interrupted"
         raw_input_payload = (
             event.data.get("tool_args")
@@ -1889,7 +1689,6 @@ class PlatformAgentRuntimeStore:
             existing = AiAgentToolCall(
                 session_id=run_model.session_id,
                 run_id=run_model.run_id,
-                member_run_id=member_run_id,
                 tool_call_id=tool_call_id,
                 tool_name=tool_name,
                 status=status,
@@ -1900,8 +1699,6 @@ class PlatformAgentRuntimeStore:
             self._session.add(existing)
             return
         existing.status = status
-        if member_run_id:
-            existing.member_run_id = member_run_id
         if _is_meaningful_payload(input_payload) and not _is_meaningful_payload(existing.input_payload_json):
             existing.input_payload_json = input_payload
         if event.data.get("result") is not None:
@@ -2096,64 +1893,6 @@ def _optional_str(value: Any) -> str | None:
     return text or None
 
 
-def _member_input_prompt(member_run: AiAgentMemberRun) -> str | None:
-    """读取成员 run 的传入提示词，兼容旧数据中仅保存委派参数的情况。"""
-
-    payload = member_run.input_payload_json if isinstance(member_run.input_payload_json, dict) else {}
-    prompt = build_member_prompt_from_payload(payload)
-    if prompt:
-        return prompt
-    return _message_history_text(
-        member_run.message_history_json,
-        message_kind="request",
-        part_kinds={"user-prompt"},
-    )
-
-
-def _member_output_prompt(member_run: AiAgentMemberRun) -> str | None:
-    """读取成员 run 返回给内容助手整合的输出提示词。"""
-
-    return (
-        _message_history_text(
-            member_run.message_history_json,
-            message_kind="response",
-            part_kinds={"text"},
-            reverse=True,
-        )
-        or _optional_str(member_run.content)
-        or _optional_str(member_run.error_message)
-    )
-
-
-def _message_history_text(
-    history: list[dict[str, Any]] | None,
-    *,
-    message_kind: str,
-    part_kinds: set[str],
-    reverse: bool = False,
-) -> str | None:
-    """从 Pydantic AI 消息历史中提取指定消息和 part 类型的文本。"""
-
-    messages = [item for item in (history or []) if isinstance(item, dict)]
-    iterable = reversed(messages) if reverse else iter(messages)
-    for message in iterable:
-        if message.get("kind") != message_kind:
-            continue
-        parts = message.get("parts")
-        if not isinstance(parts, list):
-            continue
-        texts = [
-            str(part.get("content")).strip()
-            for part in parts
-            if isinstance(part, dict)
-            and part.get("part_kind") in part_kinds
-            and _optional_str(part.get("content"))
-        ]
-        if texts:
-            return "\n\n".join(texts)
-    return None
-
-
 def _first_present(data: dict[str, Any], keys: tuple[str, ...]) -> Any:
     """按顺序读取第一个存在的 key，保留空 dict、0、False 等合法值。"""
 
@@ -2182,9 +1921,6 @@ def _normalize_tool_event_arguments(event: AgentRunEvent) -> None:
         "tool.started",
         "tool.completed",
         "tool.error",
-        "member.tool.started",
-        "member.tool.completed",
-        "member.tool.error",
     }:
         return
     for key in ("tool_args", "arguments", "args"):

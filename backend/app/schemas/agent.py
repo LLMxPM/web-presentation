@@ -200,9 +200,6 @@ class AgentPendingRequirement(SchemaBase):
     kind: Literal["confirmation", "user_feedback", "external_job"] = "confirmation"
     run_id: str
     session_id: str
-    member_agent_id: str | None = None
-    member_agent_name: str | None = None
-    member_run_id: str | None = None
     tool_name: str | None = None
     tool_execution: dict[str, Any] = Field(default_factory=dict)
     suggested_patch: AgentSuggestedPatch | None = None
@@ -261,9 +258,6 @@ class AgentTimelineToolItem(SchemaBase):
 
     tool_call_id: str | None = None
     tool_name: str
-    member_agent_id: str | None = None
-    member_agent_name: str | None = None
-    member_run_id: str | None = None
     status: Literal["running", "waiting_external", "completed", "error", "cancelled", "interrupted"]
     input_payload: Any | None = None
     output_payload: Any | None = None
@@ -308,28 +302,11 @@ class AgentTimelineItem(SchemaBase):
     created_at: str | None = None
 
 
-class AgentMemberRunItem(SchemaBase):
-    """内容助手委派成员助手后形成的子 run 运行明细。"""
-
-    parent_run_id: str
-    run_id: str
-    agent_id: str
-    agent_name: str | None = None
-    status: AgentActiveRunStatus
-    created_at: str | None = None
-    updated_at: str | None = None
-    delegate_tool_call_id: str | None = None
-    input_prompt: str | None = None
-    output_prompt: str | None = None
-    timeline_items: list[AgentTimelineItem] = Field(default_factory=list)
-
-
 class AgentSessionRuntimeSnapshot(SchemaBase):
     """会话运行时快照，供 Editor 刷新和切会话后一次性恢复状态。"""
 
     session: AgentSessionItem
     timeline_items: list[AgentTimelineItem] = Field(default_factory=list)
-    member_runs: list[AgentMemberRunItem] = Field(default_factory=list)
     context_status: AgentContextStatusItem
     active_run: AgentActiveRunItem | None = None
     last_run: AgentActiveRunItem | None = None

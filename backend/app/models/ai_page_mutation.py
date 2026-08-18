@@ -52,7 +52,6 @@ class AiPageMutationJob(TimestampMixin, Base):
     )
     run_id: Mapped[str] = mapped_column(ForeignKey("ai_agent_runs.run_id"), nullable=False, index=True)
     session_id: Mapped[str] = mapped_column(ForeignKey("ai_agent_sessions.session_id"), nullable=False, index=True)
-    member_run_id: Mapped[str | None] = mapped_column(ForeignKey("ai_agent_member_runs.member_run_id"), nullable=True, index=True)
     tool_call_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     deferred_tool_call_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     operation: Mapped[str] = mapped_column(String(32), nullable=False, index=True)

@@ -127,12 +127,7 @@ def build_generate_image_tool(session_factory: async_sessionmaker[AsyncSession])
                 code="AI_IMAGE_GENERATION_CONTEXT_REQUIRED",
                 detail="图片生成必须在持久化工具调用上下文中执行。",
             )
-        member_run_id = str(dependencies.get("member_run_id") or "").strip() or None
-        tool_call_id = (
-            f"{member_run_id}:{deferred_tool_call_id}"
-            if member_run_id
-            else deferred_tool_call_id
-        )
+        tool_call_id = deferred_tool_call_id
         enqueued = await wait_for_external_task_enqueue(
             enqueue_image_generation(
                 session_factory,
@@ -140,7 +135,6 @@ def build_generate_image_tool(session_factory: async_sessionmaker[AsyncSession])
                 session_id=run_context.session_id,
                 tool_call_id=tool_call_id,
                 deferred_tool_call_id=deferred_tool_call_id,
-                member_run_id=member_run_id,
                 user_id=int(dependencies.get("user_id") or 0),
                 workspace_id=int(dependencies.get("workspace_id") or 0),
                 project_id=int(dependencies["project_id"])

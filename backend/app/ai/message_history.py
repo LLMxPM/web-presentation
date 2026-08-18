@@ -608,7 +608,7 @@ def build_context_status_item(
 
 
 def _summarize_messages(messages: list[ModelMessage], *, existing_summary: dict[str, Any] | None, target_tokens: int) -> str:
-    """生成结构化确定性摘要，供成员运行等无模型压缩服务路径复用。"""
+    """生成结构化确定性摘要，供无模型压缩服务路径复用。"""
 
     previous = str((existing_summary or {}).get("summary") or "").strip()
     compression_input = build_local_compression_input(messages)

@@ -347,13 +347,8 @@ def build_create_component_tool(
         deferred_tool_call_id = str(
             dependencies.get("current_tool_call_id") or ""
         ).strip()
-        member_run_id = str(dependencies.get("member_run_id") or "").strip() or None
         if deferred_tool_call_id:
-            tool_call_id = (
-                f"{member_run_id}:{deferred_tool_call_id}"
-                if member_run_id
-                else deferred_tool_call_id
-            )
+            tool_call_id = deferred_tool_call_id
             enqueued = await enqueue_deadline.wait(
                 enqueue_component_mutation(
                     session_factory,
@@ -361,7 +356,6 @@ def build_create_component_tool(
                     session_id=run_context.session_id,
                     tool_call_id=tool_call_id,
                     deferred_tool_call_id=deferred_tool_call_id,
-                    member_run_id=member_run_id,
                     operation="create_component",
                     workspace_id=int(dependencies["workspace_id"]),
                     arguments={
@@ -453,13 +447,8 @@ def build_apply_component_edits_tool(
         deferred_tool_call_id = str(
             dependencies.get("current_tool_call_id") or ""
         ).strip()
-        member_run_id = str(dependencies.get("member_run_id") or "").strip() or None
         if deferred_tool_call_id:
-            tool_call_id = (
-                f"{member_run_id}:{deferred_tool_call_id}"
-                if member_run_id
-                else deferred_tool_call_id
-            )
+            tool_call_id = deferred_tool_call_id
             enqueued = await enqueue_deadline.wait(
                 enqueue_component_mutation(
                     session_factory,
@@ -467,7 +456,6 @@ def build_apply_component_edits_tool(
                     session_id=run_context.session_id,
                     tool_call_id=tool_call_id,
                     deferred_tool_call_id=deferred_tool_call_id,
-                    member_run_id=member_run_id,
                     operation="apply_component_edits",
                     workspace_id=int(dependencies["workspace_id"]),
                     component_id=int(component_id),
@@ -628,15 +616,10 @@ def build_update_component_metadata_tool(
         deferred_tool_call_id = str(
             dependencies.get("current_tool_call_id") or ""
         ).strip()
-        member_run_id = str(dependencies.get("member_run_id") or "").strip() or None
         if deferred_tool_call_id and (
             preview_schema is not None or component_type is not None
         ):
-            tool_call_id = (
-                f"{member_run_id}:{deferred_tool_call_id}"
-                if member_run_id
-                else deferred_tool_call_id
-            )
+            tool_call_id = deferred_tool_call_id
             enqueued = await enqueue_deadline.wait(
                 enqueue_component_mutation(
                     session_factory,
@@ -644,7 +627,6 @@ def build_update_component_metadata_tool(
                     session_id=run_context.session_id,
                     tool_call_id=tool_call_id,
                     deferred_tool_call_id=deferred_tool_call_id,
-                    member_run_id=member_run_id,
                     operation="update_component_metadata",
                     workspace_id=int(dependencies["workspace_id"]),
                     component_id=int(component_id),
