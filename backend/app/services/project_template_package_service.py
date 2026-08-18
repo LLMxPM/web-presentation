@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import io
 import re
 import struct
@@ -42,9 +41,8 @@ from app.schemas.asset import resolve_asset_role
 from app.schemas.component import (
     ComponentShareExportAssetSummary,
     ComponentShareExportComponentSummary,
-    ComponentSharePackageComponentSummary,
 )
-from app.schemas.project import ProjectBuildExtraAssetsConfig, normalize_project_build_extra_assets_config
+from app.schemas.project import normalize_project_build_extra_assets_config
 from app.schemas.project_template import (
     PROJECT_TEMPLATE_PACKAGE_SCHEMA_VERSION,
     PROJECT_TEMPLATE_PACKAGE_TYPE,

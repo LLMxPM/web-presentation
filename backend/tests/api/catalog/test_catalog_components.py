@@ -1,5 +1,8 @@
 """文件功能：覆盖工作空间组件目录与导入元数据校验测试。"""
 
+# 通过导入测试函数交给 pytest 收集。
+# ruff: noqa: F401
+
 from tests.api.catalog.catalog_components_cases import (
     test_content_component_should_require_size_control_preview_schema,
     test_component_package_export_should_warn_and_allow_manual_assets,
@@ -11,4 +14,4 @@ from tests.api.catalog.catalog_components_cases import (
     test_workspace_component_restore_should_reject_conflicting_import_name,
     test_workspace_component_should_persist_component_type_and_support_filter,
     test_workspace_component_should_reject_unknown_component_type,
-)
+)  # noqa: F401

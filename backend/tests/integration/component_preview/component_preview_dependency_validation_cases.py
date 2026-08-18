@@ -2,7 +2,14 @@
 
 from __future__ import annotations
 
-from tests.integration.component_preview.component_preview_cases import *  # noqa: F403
+from httpx import AsyncClient
+
+from tests.integration.component_preview.component_preview_cases import (
+    CONTENT_COMPONENT_SIZE_PREVIEW_SCHEMA,
+    create_project,
+    create_workspace,
+    publish_component,
+)
 
 
 async def test_component_references_should_query_and_upgrade_direct_page_and_component_refs(

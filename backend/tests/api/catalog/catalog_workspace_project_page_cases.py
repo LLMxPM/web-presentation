@@ -2,7 +2,14 @@
 
 from __future__ import annotations
 
-from tests.api.catalog.catalog_cases import *  # noqa: F403
+from httpx import AsyncClient
+
+from app.schemas.project_app_config import DEFAULT_PROJECT_STYLE_SPEC_MARKDOWN
+from tests.api.catalog.catalog_cases import (
+    _create_catalog_page,
+    _create_catalog_project,
+    _create_catalog_workspace,
+)
 
 
 async def test_workspace_project_and_page_crud(authenticated_client: AsyncClient) -> None:

@@ -92,7 +92,7 @@ class ProjectConfigService:
         self._ensure_yaml_not_blank(config_name, yaml_text)
 
         try:
-            parsed_value = yaml.safe_load(yaml_text)
+            yaml.safe_load(yaml_text)
         except yaml.YAMLError as exc:
             raise AppException(
                 status_code=400,

@@ -29,7 +29,6 @@ from app.models.asset import WorkspaceAsset
 from app.models.enums import AssetType, PageFileType, RecordStatus, WorkspaceComponentType
 from app.models.font import WorkspaceFontConfig
 from app.models.workspace_component import WorkspaceComponent
-from app.models.workspace_component_version import WorkspaceComponentVersion
 from app.repositories.module_dependency_repository import DEPENDENCY_KIND_COMPONENT, ModuleDependencyRepository
 from app.repositories.component_resource_index_repository import ComponentResourceIndexRepository
 from app.repositories.workspace_component_repository import WorkspaceComponentRepository

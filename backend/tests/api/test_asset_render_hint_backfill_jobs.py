@@ -10,7 +10,6 @@ from httpx import AsyncClient
 from app.core.exceptions import AppException
 from app.db.session import get_session_factory
 from app.models.asset import WorkspaceAsset
-from app.models.enums import AssetType
 from app.services.asset_render_hint_backfill_job_service import (
     AssetRenderHintBackfillJobService,
     run_asset_render_hint_backfill_job,

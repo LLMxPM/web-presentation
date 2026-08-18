@@ -1,5 +1,8 @@
 """文件功能：覆盖项目路由、运行时配置与页面版本链路测试。"""
 
+# 通过导入测试函数交给 pytest 收集。
+# ruff: noqa: F401
+
 from tests.api.catalog.catalog_routes_versioning_cases_1 import (
     test_archiving_page_should_remove_project_route_bindings,
     test_page_copy_to_project_should_append_routes_and_deduplicate,
@@ -17,9 +20,9 @@ from tests.api.catalog.catalog_routes_versioning_cases_1 import (
     test_runtime_project_config_endpoint_should_return_yaml_text,
     test_runtime_project_icon_should_follow_theme_config,
     test_snapshot_version_labels_support_major_and_sub_versions,
-)
+)  # noqa: F401
 
 from tests.api.catalog.catalog_routes_versioning_cases_2 import (
     test_get_page_current_component_index_should_return_latest_version_index,
     test_page_save_should_build_component_index_for_each_version,
-)
+)  # noqa: F401

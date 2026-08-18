@@ -62,7 +62,7 @@ describe('E2E project 收集边界', () => {
     expect(counts['smoke']).toBe(7)
     // regression 范围为写型夹具、AI 真实链路与 Runtime 重型链路。
     expect(counts['visual-edit']).toBe(3)
-    expect(counts['ai']).toBe(3)
+    expect(counts['ai']).toBe(4)
     expect(counts['runtime-heavy']).toBe(1)
   })
 })

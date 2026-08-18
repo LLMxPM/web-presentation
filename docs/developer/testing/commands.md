@@ -18,10 +18,11 @@ Backend 底层使用 `uv run --project backend pytest -c backend/pyproject.toml`
 ```powershell
 pnpm run test:editor
 pnpm run test:editor:check
+pnpm run test:editor:build
 pnpm run test:editor:gate
 ```
 
-`test:editor` 只执行 Vitest；需要类型检查和测试门禁时使用 `test:editor:gate`。
+`test:editor` 只执行 Vitest；`test:editor:check` 执行类型检查；`test:editor:build` 执行生产构建；完整门禁使用 `test:editor:gate`。
 
 ## Runtime
 

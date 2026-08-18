@@ -2,7 +2,22 @@
 
 from __future__ import annotations
 
-from tests.api.catalog.catalog_cases import *  # noqa: F403
+import io
+import json
+import zipfile
+
+from httpx import AsyncClient
+from sqlalchemy import select
+
+from app.db.session import get_session_factory
+from app.models.workspace_component import WorkspaceComponent
+from app.models.workspace_component_version import WorkspaceComponentVersion
+from tests.api.catalog.catalog_cases import (
+    CONTENT_COMPONENT_SIZE_PREVIEW_SCHEMA,
+    _create_catalog_svg_asset,
+    _create_catalog_workspace,
+    _rewrite_zip_json,
+)
 
 
 async def test_workspace_component_should_persist_component_type_and_support_filter(authenticated_client: AsyncClient) -> None:

@@ -1,5 +1,8 @@
 """文件功能：提供 Alembic 迁移运行环境，统一接入应用配置与模型元数据。"""
 
+# Ruff 视这些模型导入为未使用，但它们负责注册 Alembic 元数据。
+# ruff: noqa: F401
+
 from logging.config import fileConfig
 
 from alembic import context
@@ -19,7 +22,7 @@ from app.models import (
     Workspace,
     WorkspaceMember,
     WorkspaceFontConfig,
-)
+)  # noqa: F401
 
 config = context.config
 

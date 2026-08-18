@@ -7,6 +7,7 @@ Editor 测试入口由根仓脚本统一承接。
 ```powershell
 pnpm run test:editor
 pnpm run test:editor:check
+pnpm run test:editor:build
 pnpm run test:editor:gate
 ```
 
@@ -14,7 +15,8 @@ pnpm run test:editor:gate
 
 - `test:editor`：执行 Editor Vitest。
 - `test:editor:check`：执行 Editor 类型检查。
-- `test:editor:gate`：执行 `check + test`，用于前端质量门禁。
+- `test:editor:build`：执行 Editor 生产构建。
+- `test:editor:gate`：执行 `check + test + build`，用于前端质量门禁。
 
 ## 补测范围
 

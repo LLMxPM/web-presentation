@@ -134,6 +134,7 @@ pnpm run test:backend:api
 pnpm run test:backend:integration
 pnpm run test:editor
 pnpm run test:editor:check
+pnpm run test:editor:build
 pnpm run test:editor:gate
 pnpm run test:runtime
 pnpm run test:runtime:delegated
@@ -147,7 +148,7 @@ pnpm run test:e2e:all
 
 测试入口语义：
 
-- `test:editor` 只执行 Editor Vitest；需要 Editor 类型检查与测试门禁时使用 `test:editor:gate`。
+- `test:editor` 只执行 Editor Vitest；`test:editor:check` 执行类型检查；`test:editor:build` 执行生产构建；需要完整 Editor 质量门禁时使用 `test:editor:gate`。
 - `test:runtime` / `test:runtime:delegated` 只委托 Runtime 子项目 Vitest；需要 Runtime 完整门禁时使用 `test:runtime:gate`。
 - `test:contracts` 是根仓跨模块契约测试，不等同于 Backend 自身的 `backend/tests/contracts`。
 - `test:e2e:run` 只执行 Playwright；`test:e2e` 会先重置并播种 smoke 数据、确认服务，再执行 Playwright。

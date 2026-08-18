@@ -2,19 +2,9 @@
 
 import io
 import json
-import re
 import zipfile
-from datetime import UTC, datetime
-from zoneinfo import ZoneInfo
 
 from httpx import AsyncClient
-from sqlalchemy import select
-
-from app.db.session import get_session_factory
-from app.models.page import Page
-from app.models.workspace_component import WorkspaceComponent
-from app.models.workspace_component_version import WorkspaceComponentVersion
-from app.schemas.project_app_config import DEFAULT_PROJECT_STYLE_SPEC_MARKDOWN
 
 CONTENT_COMPONENT_SIZE_PREVIEW_SCHEMA = '{"props":{"height":{"type":"number","label":"高度","default":320}}}'
 

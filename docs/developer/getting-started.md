@@ -94,6 +94,7 @@ pnpm install
 pnpm run test:backend
 pnpm run test:editor
 pnpm run test:editor:check
+pnpm run test:editor:build
 pnpm run test:editor:gate
 pnpm run test:runtime
 pnpm run test:runtime:gate
@@ -106,7 +107,8 @@ pnpm run test:e2e
 - `pnpm run test:backend`：Backend pytest。
 - `pnpm run test:editor`：Editor Vitest。
 - `pnpm run test:editor:check`：Editor 类型检查，执行 `vue-tsc -b`。
-- `pnpm run test:editor:gate`：Editor 质量门禁，执行 `check + test`。
+- `pnpm run test:editor:build`：Editor 生产构建，执行 `vue-tsc -b && vite build`。
+- `pnpm run test:editor:gate`：Editor 质量门禁，执行 `check + test + build`。
 - `pnpm run test:runtime` / `pnpm run test:runtime:delegated`：只委托执行 Runtime 子项目 Vitest。
 - `pnpm run test:runtime:gate`：执行 Runtime `check + test + build`。
 - `pnpm run test:contracts`：根仓跨模块契约测试，不等同于 `backend/tests/contracts`。
