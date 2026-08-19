@@ -1,4 +1,4 @@
-"""文件功能：压缩通用业务工具的重复判别式 JSON Schema 分支。"""
+"""文件功能：把判别式对象 Schema 投影为模型更容易兼容的扁平参数 Schema。"""
 
 from __future__ import annotations
 
@@ -11,140 +11,145 @@ def compact_generic_operation_branches(
     tool_name: str,
     branches: list[dict[str, Any]],
 ) -> dict[str, Any]:
-    """按安全分组压缩通用工具分支，无法证明同形状时保留原始 Schema。"""
+    """把通用业务工具的分支合并为扁平 Schema，避免根级 oneOf 与本地 $ref。"""
 
-    grouped: dict[str, list[dict[str, Any]]] = {}
-    ungrouped: list[dict[str, Any]] = []
-    for branch in branches:
-        group_key = _operation_branch_group_key(tool_name, branch)
-        if group_key is None:
-            ungrouped.append(branch)
-            continue
-        grouped.setdefault(group_key, []).append(branch)
-
-    if not any(len(items) > 1 for items in grouped.values()):
-        return {"type": "object", "oneOf": branches}
-
-    definitions: dict[str, Any] = {}
-    references: list[dict[str, str]] = []
-    group_index = 0
-    for group_branches in grouped.values():
-        compacted = _build_compact_branch(
-            tool_name=tool_name,
-            group_index=group_index,
-            branches=group_branches,
-        )
-        if compacted is None:
-            for branch in group_branches:
-                definition_name = f"{tool_name}_operation_{group_index}"
-                definitions[definition_name] = branch
-                references.append({"$ref": f"#/$defs/{definition_name}"})
-                group_index += 1
-            continue
-        definition_name, definition = compacted
-        definitions[definition_name] = definition
-        references.append({"$ref": f"#/$defs/{definition_name}"})
-        group_index += 1
-
-    for branch in ungrouped:
-        definition_name = f"{tool_name}_operation_{group_index}"
-        definitions[definition_name] = branch
-        references.append({"$ref": f"#/$defs/{definition_name}"})
-        group_index += 1
-
-    return {
-        "type": "object",
-        "$defs": definitions,
-        "oneOf": references,
-    }
+    _ = tool_name
+    return flatten_discriminated_object_branches(branches)
 
 
-def _operation_branch_group_key(tool_name: str, branch: dict[str, Any]) -> str | None:
-    """根据当前分支的实际判别值选择可安全压缩的结构分组。"""
-
-    properties = branch.get("properties")
-    if not isinstance(properties, dict):
-        return None
-    constants = {
-        name: value.get("const")
-        for name, value in properties.items()
-        if isinstance(value, dict) and "const" in value
-    }
-    if tool_name == "list_entities":
-        return f"collection:{constants.get('collection')}"
-    if tool_name == "get_entity":
-        resource_type = constants.get("resource_type")
-        view = constants.get("view")
-        if resource_type in {"page", "component"} and view == "version_content":
-            return "version_content"
-        if resource_type == "runtime_kit":
-            return "runtime_detail"
-        return f"resource:{resource_type}"
-    if tool_name == "create_entity":
-        return f"mode:{constants.get('mode')}"
-    if tool_name in {"update_entity", "validate_entity"}:
-        return f"action:{constants.get('action')}"
-    if tool_name == "archive_entity":
-        return "all_resources"
-    return None
-
-
-def _normalized_branch(branch: dict[str, Any]) -> dict[str, Any]:
-    """移除判别字段 const 后生成结构指纹，避免合并不同字段形状。"""
-
-    normalized = deepcopy(branch)
-    properties = normalized.get("properties")
-    if isinstance(properties, dict):
-        for property_schema in properties.values():
-            if isinstance(property_schema, dict):
-                property_schema.pop("const", None)
-    return normalized
-
-
-def _build_compact_branch(
-    *,
-    tool_name: str,
-    group_index: int,
+def flatten_discriminated_object_branches(
     branches: list[dict[str, Any]],
-) -> tuple[str, dict[str, Any]] | None:
-    """把同形状合法分支合并为带枚举判别字段的本地定义。"""
+) -> dict[str, Any]:
+    """合并判别式对象分支，并保留字段枚举、类型和共同必填约束。"""
 
     if not branches:
-        return None
-    first = branches[0]
-    signature = json.dumps(_normalized_branch(first), ensure_ascii=False, sort_keys=True)
-    if any(
-        json.dumps(_normalized_branch(branch), ensure_ascii=False, sort_keys=True) != signature
-        for branch in branches[1:]
-    ):
-        return None
+        return {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": False,
+        }
 
-    compacted = deepcopy(first)
-    properties = compacted.get("properties")
-    if not isinstance(properties, dict):
-        return None
-    first_properties = first.get("properties")
-    if not isinstance(first_properties, dict):
-        return None
-
-    for field_name, field_schema in first_properties.items():
-        if not isinstance(field_schema, dict) or "const" not in field_schema:
+    property_names: list[str] = []
+    property_schemas: dict[str, list[dict[str, Any]]] = {}
+    for branch in branches:
+        properties = branch.get("properties")
+        if not isinstance(properties, dict):
             continue
-        values = [
-            branch["properties"][field_name]["const"]
-            for branch in branches
-            if isinstance(branch.get("properties"), dict)
-            and isinstance(branch["properties"].get(field_name), dict)
-            and "const" in branch["properties"][field_name]
+        for field_name, field_schema in properties.items():
+            if not isinstance(field_schema, dict):
+                continue
+            if field_name not in property_schemas:
+                property_names.append(field_name)
+                property_schemas[field_name] = []
+            property_schemas[field_name].append(field_schema)
+
+    properties = {
+        field_name: _merge_property_schemas(property_schemas[field_name])
+        for field_name in property_names
+    }
+    required = _common_required_fields(branches, property_names)
+    result: dict[str, Any] = {
+        "type": "object",
+        "properties": properties,
+        "additionalProperties": False,
+    }
+    if required:
+        result["required"] = required
+    return result
+
+
+def _common_required_fields(
+    branches: list[dict[str, Any]],
+    property_names: list[str],
+) -> list[str]:
+    """只保留每个分支都要求的字段，避免扁平 Schema 错误要求条件字段。"""
+
+    required_sets = [
+        set(branch.get("required", []))
+        for branch in branches
+        if isinstance(branch.get("required", []), list)
+    ]
+    if not required_sets:
+        return []
+    common = set.intersection(*required_sets)
+    return [field_name for field_name in property_names if field_name in common]
+
+
+def _merge_property_schemas(schemas: list[dict[str, Any]]) -> dict[str, Any]:
+    """合并同名字段；判别常量转为 enum，其他差异放入字段级 anyOf。"""
+
+    unique_schemas = _unique_schemas(schemas)
+    literal_values = _collect_literal_values(unique_schemas)
+    if literal_values is not None:
+        merged = deepcopy(unique_schemas[0])
+        merged.pop("const", None)
+        merged.pop("enum", None)
+        merged["type"] = _json_type_for_values(literal_values)
+        merged["enum"] = literal_values
+        return merged
+    if len(unique_schemas) == 1:
+        return deepcopy(unique_schemas[0])
+
+    variants = _unique_schemas(
+        [
+            {
+                key: deepcopy(value)
+                for key, value in schema.items()
+                if key not in {"title", "default"}
+            }
+            for schema in unique_schemas
         ]
-        unique_values = list(dict.fromkeys(values))
-        if len(unique_values) <= 1:
-            continue
-        merged_schema = deepcopy(field_schema)
-        merged_schema.pop("const", None)
-        merged_schema["type"] = "string"
-        merged_schema["enum"] = unique_values
-        properties[field_name] = merged_schema
+    )
+    merged: dict[str, Any] = {"anyOf": variants}
+    for key in ("description", "default"):
+        value = next((schema.get(key) for schema in unique_schemas if key in schema), None)
+        if value is not None:
+            merged[key] = deepcopy(value)
+    return merged
 
-    definition_name = f"{tool_name}_operation_{group_index}"
-    return definition_name, compacted
+
+def _collect_literal_values(schemas: list[dict[str, Any]]) -> list[Any] | None:
+    """读取全部为 const/enum 的字段值；普通结构字段返回 None。"""
+
+    values: list[Any] = []
+    for schema in schemas:
+        if "const" in schema:
+            current = [schema["const"]]
+        elif isinstance(schema.get("enum"), list):
+            current = list(schema["enum"])
+        else:
+            return None
+        for value in current:
+            if value not in values:
+                values.append(value)
+    return values or None
+
+
+def _json_type_for_values(values: list[Any]) -> str:
+    """根据合并后的字面量推导基础 JSON 类型。"""
+
+    if all(isinstance(value, bool) for value in values):
+        return "boolean"
+    if all(isinstance(value, int) and not isinstance(value, bool) for value in values):
+        return "integer"
+    if all(isinstance(value, (int, float)) and not isinstance(value, bool) for value in values):
+        return "number"
+    if all(isinstance(value, str) for value in values):
+        return "string"
+    if all(value is None for value in values):
+        return "null"
+    return "string"
+
+
+def _unique_schemas(schemas: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """按稳定 JSON 表示去重 Schema，保持首次出现顺序。"""
+
+    result: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for schema in schemas:
+        fingerprint = json.dumps(schema, ensure_ascii=False, sort_keys=True)
+        if fingerprint in seen:
+            continue
+        seen.add(fingerprint)
+        result.append(schema)
+    return result

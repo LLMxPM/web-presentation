@@ -55,28 +55,8 @@ EXPECTED_GENERIC_TOOL_KEYS = {
 }
 
 
-def _resolved_generic_branches(schema: dict[str, object]) -> list[dict[str, object]]:
-    """解析通用工具根 oneOf 中的本地 `$defs` 引用，便于断言实际分支。"""
-
-    definitions = schema.get("$defs", {})
-    branches = schema.get("oneOf")
-    assert isinstance(definitions, dict)
-    assert isinstance(branches, list)
-    resolved: list[dict[str, object]] = []
-    for branch in branches:
-        assert isinstance(branch, dict)
-        reference = branch.get("$ref")
-        if isinstance(reference, str) and reference.startswith("#/$defs/"):
-            definition = definitions.get(reference.removeprefix("#/$defs/"))
-            assert isinstance(definition, dict)
-            resolved.append(definition)
-        else:
-            resolved.append(branch)
-    return resolved
-
-
 def _schema_values(schema: dict[str, object]) -> list[object]:
-    """读取压缩判别字段的 const 或 enum 值。"""
+    """读取扁平 Schema 判别字段的 enum 值。"""
 
     if "const" in schema:
         return [schema["const"]]
@@ -345,8 +325,8 @@ def test_project_configuration_guides_should_replace_dangerous_actions() -> None
     assert not any("rename_key" in guide.operation_key for guide in list_operation_guide_specs())
 
 
-def test_generic_tools_should_expose_discriminated_top_level_schemas() -> None:
-    """常驻 Schema 应只披露合法顶层组合，复杂业务字段继续按手册查询。"""
+def test_generic_tools_should_expose_flat_top_level_schemas() -> None:
+    """常驻 Schema 应使用模型兼容的扁平顶层结构，复杂业务字段继续按手册查询。"""
 
     tools = {item.name: item for item in build_generic_business_tools(None)}  # type: ignore[arg-type]
 
@@ -359,7 +339,7 @@ def test_generic_tools_should_expose_discriminated_top_level_schemas() -> None:
     assert operation_key_variants[0]["enum"]
     assert "page.update.content" in operation_key_variants[0]["enum"]
 
-    expected_branch_counts = {
+    expected_tool_names = {
         "list_entities": 2,
         "get_entity": 8,
         "create_entity": 3,
@@ -369,12 +349,13 @@ def test_generic_tools_should_expose_discriminated_top_level_schemas() -> None:
         "execute_action": 1,
     }
     total_schema_bytes = 0
-    for tool_name, expected_count in expected_branch_counts.items():
+    for tool_name in expected_tool_names:
         schema = tools[tool_name].parameters
         Draft202012Validator.check_schema(schema)
-        branches = _resolved_generic_branches(schema)
-        assert len(branches) == expected_count
-        assert all(branch["additionalProperties"] is False for branch in branches)
+        assert "oneOf" not in schema
+        assert "$defs" not in schema
+        assert schema["additionalProperties"] is False
+        assert schema["properties"]
         total_schema_bytes += len(json.dumps(schema, ensure_ascii=False))
 
     assert total_schema_bytes <= 16_000
@@ -383,88 +364,35 @@ def test_generic_tools_should_expose_discriminated_top_level_schemas() -> None:
         if guide.call_example is not None:
             Draft202012Validator(tools[guide.handler_tool_key].parameters).validate(guide.call_example)
 
-    execute_pairs = {
-        (branch["properties"]["resource_type"]["const"], branch["properties"]["action"]["const"])
-        for branch in _resolved_generic_branches(tools["execute_action"].parameters)
-    }
-    assert execute_pairs == {("component", "publish")}
-    validate_pairs = {
-        (resource_type, action)
-        for branch in _resolved_generic_branches(tools["validate_entity"].parameters)
-        for resource_type in branch["properties"]["resource_type"].get("enum", [branch["properties"]["resource_type"].get("const")])
-        for action in branch["properties"]["action"].get("enum", [branch["properties"]["action"].get("const")])
-    }
-    assert validate_pairs == {("page", "check"), ("component", "check"), ("asset", "preview")}
+    execute_schema = tools["execute_action"].parameters
+    assert _schema_values(execute_schema["properties"]["resource_type"]) == ["component"]
+    assert _schema_values(execute_schema["properties"]["action"]) == ["publish"]
+    validate_schema = tools["validate_entity"].parameters
+    assert set(_schema_values(validate_schema["properties"]["resource_type"])) == {"page", "component", "asset"}
+    assert set(_schema_values(validate_schema["properties"]["action"])) == {"check", "preview"}
     for operation_key in ("page.validate.check", "component.validate.check"):
         validate_payload_properties = get_operation_guide_spec(operation_key).parameters["properties"]["payload"]  # type: ignore[union-attr]
         assert "detail" in validate_payload_properties["properties"]
-    update_pairs = {
-        (resource_type, action)
-        for branch in _resolved_generic_branches(tools["update_entity"].parameters)
-        for resource_type in branch["properties"]["resource_type"].get("enum", [branch["properties"]["resource_type"].get("const")])
-        for action in branch["properties"]["action"].get("enum", [branch["properties"]["action"].get("const")])
+    update_schema = tools["update_entity"].parameters
+    assert set(_schema_values(update_schema["properties"]["action"])) == {
+        "metadata", "configuration", "apply_style", "route_tree", "build_assets", "content",
     }
-    assert {action for resource_type, action in update_pairs if resource_type == "project"} == {
-        "metadata", "configuration", "apply_style", "route_tree", "build_assets",
-    }
-    assert ("style", "configuration") in update_pairs
     execute_validator = Draft202012Validator(tools["execute_action"].parameters)
     assert not execute_validator.is_valid({
-        "resource_type": "page",
-        "action": "publish",
-        "target_id": 8,
-        "payload": {},
+        "resource_type": "page", "action": "publish", "target_id": 8,
     })
-    archive_branches = _resolved_generic_branches(tools["archive_entity"].parameters)
-    archive_properties = archive_branches[0]["properties"]
+    archive_properties = tools["archive_entity"].parameters["properties"]
     assert "versions" not in archive_properties
-    assert {
-        resource_type
-        for branch in archive_branches
-        for resource_type in branch["properties"]["resource_type"].get("enum", [branch["properties"]["resource_type"].get("const")])
-    } == {"project", "page", "component", "asset", "theme", "style"}
-
-    create_pairs = {
-        (resource_type, mode)
-        for branch in _resolved_generic_branches(tools["create_entity"].parameters)
-        for resource_type in branch["properties"]["resource_type"].get("enum", [branch["properties"]["resource_type"].get("const")])
-        for mode in branch["properties"]["mode"].get("enum", [branch["properties"]["mode"].get("const")])
-    }
-    assert create_pairs == {
-        ("project", "new"), ("page", "new"), ("page", "copy"), ("component", "new"),
-        ("asset", "new"), ("asset", "copy"), ("asset", "upload"),
-        ("theme", "new"), ("theme", "copy"), ("style", "new"), ("style", "copy"),
+    assert set(_schema_values(archive_properties["resource_type"])) == {
+        "project", "page", "component", "asset", "theme", "style",
     }
 
-    validators = {
-        name: Draft202012Validator(tools[name].parameters)
-        for name in expected_branch_counts
-    }
-    assert not validators["create_entity"].is_valid({
-        "resource_type": "project",
-        "mode": "copy",
-        "payload": {},
-    })
-    assert not validators["update_entity"].is_valid({
-        "resource_type": "project",
-        "action": "content",
-        "target_id": 8,
-        "payload": {},
-    })
-    assert not validators["list_entities"].is_valid({
-        "resource_type": "project",
-        "collection": "tags",
-    })
-    assert not validators["get_entity"].is_valid({
-        "resource_type": "runtime_kit",
-        "view": "content",
-        "target_id": 8,
-    })
-    assert not validators["validate_entity"].is_valid({
-        "resource_type": "asset",
-        "action": "check",
-        "payload": {},
-    })
+    validators = {name: Draft202012Validator(tools[name].parameters) for name in expected_tool_names}
+    assert not validators["create_entity"].is_valid({"resource_type": "project", "mode": "new"})
+    assert not validators["update_entity"].is_valid({"resource_type": "project", "action": "content", "target_id": 8})
+    assert not validators["list_entities"].is_valid({})
+    assert not validators["get_entity"].is_valid({"resource_type": "runtime_kit"})
+    assert not validators["validate_entity"].is_valid({"resource_type": "asset", "action": "preview"})
 
     from app.services.ai_agent_config_service import AiAgentConfigService
 
@@ -562,34 +490,21 @@ def test_read_tools_should_separate_collection_and_single_entity_parameters() ->
     """集合查询与单项读取工具不得继续混用 action、target_id 和分页筛选。"""
 
     tools = {item.name: item for item in build_generic_business_tools(None)}  # type: ignore[arg-type]
-    list_branches = _resolved_generic_branches(tools["list_entities"].parameters)
-    get_branches = _resolved_generic_branches(tools["get_entity"].parameters)
-    list_properties = {name for branch in list_branches for name in branch["properties"]}
-    get_properties = {name for branch in get_branches for name in branch["properties"]}
+    list_schema = tools["list_entities"].parameters
+    get_schema = tools["get_entity"].parameters
+    list_properties = set(list_schema["properties"])
+    get_properties = set(get_schema["properties"])
 
     assert list_properties == {"resource_type", "filters", "collection"}
     assert get_properties == {"resource_type", "view", "target_id", "lookup", "options"}
     assert "action" not in list_properties | get_properties
     assert "target_id" not in list_properties
     assert "filters" not in get_properties
-    asset_tags = next(
-        branch for branch in list_branches
-        if "asset" in _schema_values(branch["properties"]["resource_type"])
-        and "tags" in _schema_values(branch["properties"]["collection"])
-    )
-    assert set(asset_tags["properties"]) == {"resource_type", "collection"}
-    page_detail = next(
-        branch for branch in get_branches
-        if "page" in _schema_values(branch["properties"]["resource_type"])
-        and "detail" in _schema_values(branch["properties"]["view"])
-    )
-    assert set(page_detail["properties"]) == {"resource_type", "view", "target_id"}
-    runtime_detail = next(
-        branch for branch in get_branches
-        if "runtime_kit" in _schema_values(branch["properties"]["resource_type"])
-    )
-    assert "lookup" in runtime_detail["properties"]
-    assert "target_id" not in runtime_detail["properties"]
+    assert set(_schema_values(list_schema["properties"]["resource_type"])) >= {"asset", "project"}
+    assert set(_schema_values(list_schema["properties"]["collection"])) == {"items", "tags"}
+    assert "detail" in _schema_values(get_schema["properties"]["view"])
+    assert "runtime_kit" in _schema_values(get_schema["properties"]["resource_type"])
+    assert {"lookup", "options"}.issubset(get_properties)
 
 
 async def test_removed_action_should_return_unsupported_business_error() -> None:

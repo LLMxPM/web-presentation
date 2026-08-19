@@ -28,6 +28,7 @@ from app.ai.pydantic_tools import (
 from app.ai.session_facade_pydantic import _build_continue_message_history, _build_deferred_results
 from app.ai.tool_specs import AGENT_COORDINATOR_AGENT_ID
 from app.ai.agent.runtime_context import AgentRuntimeContext
+from app.ai.tools.generic.business_tools import build_generic_business_tools
 from app.ai.tools.visual.generate_image import build_generate_image_tool
 from app.schemas.agent import AgentScopeContext
 from app.services.image_generation.registry import get_image_model_spec
@@ -85,6 +86,36 @@ def test_unified_visual_tool_should_not_require_content_model_image_input() -> N
     assert deps.dependencies["model_supports_image_input"] is False
 
 
+def test_pydantic_bridge_should_emit_flat_generic_tool_schemas() -> None:
+    """最终交给 Pydantic AI 的通用工具 Schema 不得恢复根级 oneOf 或本地引用。"""
+
+    generic_tools = build_generic_business_tools(None)  # type: ignore[arg-type]
+    wrapped_tools = {
+        tool.name: _wrap_platform_tool(tool)
+        for tool in generic_tools
+        if tool.name in {
+            "list_entities",
+            "get_entity",
+            "create_entity",
+            "update_entity",
+            "archive_entity",
+            "validate_entity",
+            "execute_action",
+        }
+    }
+
+    assert len(wrapped_tools) == 7
+    for tool in wrapped_tools.values():
+        schema = tool.function_schema.json_schema
+        Draft202012Validator.check_schema(schema)
+        assert schema["type"] == "object"
+        assert schema["properties"]
+        assert schema["additionalProperties"] is False
+        assert "oneOf" not in schema
+        assert "$defs" not in schema
+        assert "$ref" not in str(schema)
+
+
 def test_removed_resource_agent_should_not_build_runtime_tools() -> None:
     """已合并的资源助手 ID 不再构建独立运行时工具。"""
 
@@ -126,9 +157,11 @@ def test_generate_image_schema_should_follow_bound_model_capabilities() -> None:
     )
 
     generate_image = next(tool for tool in tools if tool.name == "generate_image")
-    branches = generate_image.function_schema.json_schema["oneOf"]
-    properties = branches[0]["properties"]
+    schema = generate_image.function_schema.json_schema
+    properties = schema["properties"]
 
+    assert "oneOf" not in schema
+    assert "$defs" not in schema
     assert "quality" not in properties
     assert "mask_attachment_id" not in properties
     assert properties["resolution_tier"]["enum"] == ["auto", "standard", "high", "ultra"]
@@ -283,31 +316,18 @@ def test_generate_image_schema_should_keep_openai_quality_and_mask() -> None:
     )
 
     generate_image = next(tool for tool in tools if tool.name == "generate_image")
-    branches = generate_image.function_schema.json_schema["oneOf"]
-    generate_properties = next(
-        branch["properties"]
-        for branch in branches
-        if branch["properties"]["operation"]["const"] == "generate"
-    )
-    edit_branch = next(
-        branch
-        for branch in branches
-        if branch["properties"]["operation"]["const"] == "edit"
-    )
-    properties = edit_branch["properties"]
+    schema = generate_image.function_schema.json_schema
+    properties = schema["properties"]
 
+    assert "oneOf" not in schema
+    assert "$defs" not in schema
     assert properties["quality"]["enum"] == ["auto", "low", "medium", "high"]
     assert "mask_attachment_id" in properties
     assert properties["resolution_tier"]["enum"] == ["auto", "standard"]
-    assert "mask_attachment_id" not in generate_properties
-    assert "reference_attachment_ids" in edit_branch["required"]
-    validator = Draft202012Validator(generate_image.function_schema.json_schema)
-    assert not validator.is_valid({"operation": "edit", "prompt": "编辑图片"})
-    assert not validator.is_valid({
-        "operation": "generate",
-        "prompt": "生成图片",
-        "mask_attachment_id": 12,
-    })
+    reference_schema = properties["reference_attachment_ids"]
+    assert any(item.get("minItems") == 1 for item in reference_schema["anyOf"])
+    assert schema["required"] == ["operation", "prompt"]
+    Draft202012Validator(schema).validate({"operation": "edit", "prompt": "编辑图片"})
 
 
 
