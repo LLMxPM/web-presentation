@@ -47,7 +47,7 @@ class PydanticLlmModelResolver:
         if provider_config.status != RecordStatus.ACTIVE.value:
             raise AppException(status_code=409, code="AI_LLM_PROVIDER_CONFIG_DISABLED", detail="当前大模型供应商配置不可用。")
         provider_key = str(provider_config.provider_key or "").strip()
-        protocol_key = str(getattr(provider_config, "protocol_key", "") or "").strip()
+        protocol_key = str(getattr(config, "protocol_key", "") or getattr(provider_config, "protocol_key", "") or "").strip()
 
         # E2E mock 仍遵守模型与供应商启用状态；仅跳过真实协议对象的创建和凭证解析。
         from app.ai.testing.dispatch import resolve_mock_chat_model
@@ -204,7 +204,8 @@ class PydanticLlmModelResolver:
     def _resolve_protocol_key(self, config: AiLlmConfig) -> str:
         """读取服务端固化的调用协议，用户不能通过高级参数覆盖。"""
 
-        return str(getattr(self._get_provider_config(config), "protocol_key", "") or "").strip()
+        provider_config = self._get_provider_config(config)
+        return str(getattr(config, "protocol_key", "") or getattr(provider_config, "protocol_key", "") or "").strip()
 
     @staticmethod
     def _merge_extra_body(settings: dict[str, Any], patch: dict[str, Any]) -> None:

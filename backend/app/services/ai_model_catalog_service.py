@@ -16,6 +16,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.ai.model_protocols import resolve_catalog_protocol, resolve_model_catalog_protocol
 from app.ai.reasoning_controls import normalize_reasoning_options
 from app.core.exceptions import AppException
 from app.core.time_utils import utc_now
@@ -46,6 +47,13 @@ class ModelsDevModalities(BaseModel):
     output: list[str] = Field(default_factory=list)
 
 
+class ModelsDevModelProvider(BaseModel):
+    """Models.dev 模型级供应商覆盖；当前只消费 SDK 包名。"""
+
+    model_config = ConfigDict(extra="allow")
+    npm: str | None = None
+
+
 class ModelsDevModel(BaseModel):
     """仅约束平台实际消费的模型字段，其余字段保存在原始快照。"""
 
@@ -63,6 +71,7 @@ class ModelsDevModel(BaseModel):
     attachment: bool = False
     reasoning: bool = False
     reasoning_options: Any = Field(default_factory=dict)
+    provider: ModelsDevModelProvider | None = None
 
 
 class ModelsDevProvider(BaseModel):
@@ -76,35 +85,6 @@ class ModelsDevProvider(BaseModel):
     env: list[str] = Field(default_factory=list)
     npm: str | None = None
     models: dict[str, ModelsDevModel] = Field(default_factory=dict)
-
-
-PROVIDER_PROTOCOL_OVERRIDES = {
-    "openai": "openai_chat",
-    "openrouter": "openrouter_chat",
-    "google": "google_chat",
-    "google-vertex": "google_chat",
-    "alibaba": "alibaba_openai_compatible",
-    "alibaba-cn": "alibaba_openai_compatible",
-    "deepseek": "deepseek_openai_compatible",
-    "xiaomi": "xiaomi_openai_compatible",
-    "ollama-cloud": "ollama_openai_compatible",
-}
-
-SUPPORTED_NPM_PROTOCOLS = {
-    "@ai-sdk/openai": "openai_chat",
-    "@ai-sdk/openai-compatible": "openai_compatible_chat",
-    "@ai-sdk/google": "google_chat",
-    "@openrouter/ai-sdk-provider": "openrouter_chat",
-}
-
-
-def resolve_catalog_protocol(provider_key: str, npm_package: str | None) -> str | None:
-    """把目录身份映射到固定协议白名单；绝不动态加载目录声明的 SDK。"""
-
-    override = PROVIDER_PROTOCOL_OVERRIDES.get(provider_key)
-    if override is not None:
-        return override
-    return SUPPORTED_NPM_PROTOCOLS.get(str(npm_package or "").strip())
 
 
 class AiModelCatalogService:
@@ -145,8 +125,26 @@ class AiModelCatalogService:
             statement = statement.where(
                 or_(AiChatModelCatalog.name.ilike(pattern), AiChatModelCatalog.model_id.ilike(pattern))
             )
-        statement = statement.order_by(AiChatModelCatalog.name.asc()).offset(max(0, offset)).limit(min(200, max(1, limit)))
-        return list((await self.session.scalars(statement)).all())
+        statement = statement.order_by(AiChatModelCatalog.name.asc())
+        provider = await self.session.get(AiChatProviderCatalog, provider_key)
+        if provider is None or not provider.is_current:
+            return []
+        models = list((await self.session.scalars(statement)).all())
+        supported_models: list[AiChatModelCatalog] = []
+        for model in models:
+            raw_provider = (model.source_json or {}).get("provider")
+            model_protocol = resolve_model_catalog_protocol(
+                provider_key,
+                provider.npm_package,
+                raw_provider.get("npm") if isinstance(raw_provider, dict) else None,
+            )
+            if model_protocol is None:
+                continue
+            # 旧缓存可能尚未写入模型级协议，读取时仍返回按快照计算的最终值。
+            model.protocol_key = model_protocol
+            supported_models.append(model)
+        start = max(0, offset)
+        return supported_models[start : start + min(200, max(1, limit))]
 
     async def get_state(self) -> AiModelCatalogSyncState:
         """读取同步状态；空库返回尚未同步的临时对象。"""
@@ -284,10 +282,20 @@ class AiModelCatalogService:
             self.session.add(provider)
             for model_key, source_model in source.models.items():
                 model_id = str(source_model.id or model_key).strip()
+                model_protocol = resolve_model_catalog_protocol(
+                    provider_key,
+                    source.npm,
+                    source_model.provider.npm if source_model.provider else None,
+                )
+                if model_protocol is None:
+                    # 供应商可能承载多个 SDK 协议；当前平台不支持的模型不能
+                    # 仅因供应商本身可用而泄漏到模型选择器。
+                    continue
                 key = (provider_key, model_id)
                 current_model_keys.add(key)
                 model = existing_models.get(key) or AiChatModelCatalog(provider_key=provider_key, model_id=model_id)
                 model.name = source_model.name or model_id
+                model.protocol_key = model_protocol
                 model.family = source_model.family
                 model.status = source_model.status
                 model.release_date = source_model.release_date

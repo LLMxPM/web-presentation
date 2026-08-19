@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from app.db.base import Base
 from app.models.ai_model_catalog import AiChatModelCatalog
 from app.services.ai_model_catalog_service import AiModelCatalogService, resolve_catalog_protocol
+from app.ai.model_protocols import resolve_model_catalog_protocol
 
 
 def test_protocol_mapping_should_reject_unimplemented_sdks() -> None:
@@ -21,6 +22,28 @@ def test_protocol_mapping_should_reject_unimplemented_sdks() -> None:
     assert resolve_catalog_protocol("community", "@ai-sdk/openai-compatible") == "openai_compatible_chat"
     assert resolve_catalog_protocol("anthropic", "@ai-sdk/anthropic") is None
     assert resolve_catalog_protocol("bedrock", "@ai-sdk/amazon-bedrock") is None
+
+
+def test_model_protocol_should_honor_models_dev_model_override() -> None:
+    """混合供应商的模型级 SDK 覆盖应优先于供应商默认协议。"""
+
+    assert resolve_model_catalog_protocol(
+        "opencode-go",
+        "@ai-sdk/openai-compatible",
+        "@ai-sdk/openai",
+    ) is None
+    assert resolve_model_catalog_protocol(
+        "opencode-go",
+        "@ai-sdk/openai-compatible",
+        "@ai-sdk/anthropic",
+    ) is None
+    assert resolve_model_catalog_protocol(
+        "opencode",
+        "@ai-sdk/openai-compatible",
+        "@ai-sdk/google",
+    ) == "google_chat"
+    assert resolve_model_catalog_protocol("openai", "@ai-sdk/openai", "@ai-sdk/openai") == "openai_chat"
+    assert resolve_model_catalog_protocol("openai", "@ai-sdk/openai", "@ai-sdk/anthropic") is None
 
 
 @pytest.mark.asyncio
@@ -37,7 +60,13 @@ async def test_catalog_sync_should_keep_only_supported_providers(tmp_path) -> No
         "demo": {"id": "demo", "name": "Demo", "api": "https://demo.test/v1", "npm": "@ai-sdk/openai-compatible", "models": {
             "demo-chat": {"id": "demo-chat", "name": "Demo Chat", "limit": {"context": 100000, "input": 90000, "output": 10000},
                 "modalities": {"input": ["text", "image"], "output": ["text"]}, "tool_call": True, "reasoning": True,
-                "reasoning_options": [{"type": "toggle"}, {"type": "effort", "values": ["none", "low", "high"]}]}
+                "reasoning_options": [{"type": "toggle"}, {"type": "effort", "values": ["none", "low", "high"]}]},
+            "demo-luna": {"id": "demo-luna", "name": "Demo Luna", "provider": {"npm": "@ai-sdk/openai"},
+                "limit": {"context": 100000, "input": 90000, "output": 10000}, "tool_call": True},
+            "demo-anthropic": {"id": "demo-anthropic", "name": "Demo Anthropic", "provider": {"npm": "@ai-sdk/anthropic"},
+                "limit": {"context": 100000, "input": 90000, "output": 10000}, "tool_call": True},
+            "demo-google": {"id": "demo-google", "name": "Demo Google", "provider": {"npm": "@ai-sdk/google"},
+                "limit": {"context": 100000, "input": 90000, "output": 10000}, "tool_call": True}
         }},
         "anthropic": {"id": "anthropic", "name": "Anthropic", "npm": "@ai-sdk/anthropic", "models": {}},
     }
@@ -50,10 +79,14 @@ async def test_catalog_sync_should_keep_only_supported_providers(tmp_path) -> No
         assert [item.provider_key for item in providers] == ["demo"]
         assert model is not None
         assert model.input_tokens == 90000
+        assert model.protocol_key == "openai_compatible_chat"
         assert model.supports_tool_call is True
         assert model.input_modalities_json == ["text", "image"]
         assert model.reasoning_options_json == {
             "types": ["toggle", "effort"],
             "effort": ["none", "low", "high"],
         }
+        catalog_models = await AiModelCatalogService(session).list_models("demo", limit=20)
+        assert {item.model_id for item in catalog_models} == {"demo-chat", "demo-google"}
+        assert next(item for item in catalog_models if item.model_id == "demo-google").protocol_key == "google_chat"
     await engine.dispose()

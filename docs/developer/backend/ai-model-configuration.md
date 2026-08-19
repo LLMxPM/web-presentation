@@ -4,7 +4,9 @@
 
 Backend 每 24 小时从 `https://models.dev/api.json` 拉取目录，经过大小限制、Schema 校验和协议白名单后，原子写入 `ai_chat_provider_catalog` 与 `ai_chat_model_catalog`。同步失败保留上一版，下架项标记为非当前但不删除用户配置。管理员可调用 `POST /ai/model-catalog-sync` 手工刷新；空库先载入最小启动目录。
 
-Models.dev 只提供身份和能力事实，不决定 SDK。服务端把目录记录映射到固定 `protocol_key`，当前不支持的 Anthropic、Bedrock 等记录不会暴露。OpenAI 使用 Pydantic AI 的 `OpenAIChatModel`，不会切换到 Responses API。自定义供应商固定为 `openai_compatible_chat` 且 Base URL 必填。
+Models.dev 只提供身份和能力事实，不动态加载 SDK。服务端分别解析供应商级和模型级 `npm`，映射到固定 `protocol_key`；模型级覆盖优先于供应商默认值，当前不支持的 `@ai-sdk/openai`（混合供应商的 Responses API）、Anthropic、Bedrock 等记录不会暴露。普通 OpenAI 供应商使用 Pydantic AI 的 `OpenAIChatModel`；`@ai-sdk/google` 模型使用已接入的 `google_chat`。自定义供应商固定为 `openai_compatible_chat` 且 Base URL 必填。
+
+`ai_chat_model_catalog.protocol_key` 和 `ai_chat_model_configs.protocol_key` 保存最终模型级协议。供应商级 `protocol_key` 只作为未收录手工模型的回退，以及没有模型级覆盖时的默认值；运行时 Resolver、推理策略校验和 Run 快照必须使用模型级值。
 
 升级迁移会一次性清空旧 AI 运行态和混合模型配置。需要在迁移后再次清理测试或异常恢复数据时，应先停止 AI 后台任务，再显式执行：
 

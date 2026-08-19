@@ -661,12 +661,27 @@ class AiLlmService:
         from app.services.ai_chat_config_service import AiChatConfigService
 
         provider = config.provider_config
-        capability, catalog_version = await AiChatConfigService(
+        chat_config_service = AiChatConfigService(
             self.session,
             user_id=self.user_id,
             user_role=self.user_role,
-        )._resolve_capability(provider, config.model_id, dict(getattr(config, "capability_override_json", {}) or {}))
-        config.model_capability_json = AiChatConfigService._legacy_capability_snapshot(provider, config.model_id, capability)
+        )
+        capability, catalog_version = await chat_config_service._resolve_capability(
+            provider,
+            config.model_id,
+            dict(getattr(config, "capability_override_json", {}) or {}),
+        )
+        config.protocol_key = await chat_config_service.resolve_model_protocol(
+            provider,
+            config.model_id,
+            reject_unsupported=True,
+        )
+        config.model_capability_json = AiChatConfigService._legacy_capability_snapshot(
+            provider,
+            config.model_id,
+            capability,
+            config.protocol_key,
+        )
         config.context_window_tokens = int(capability["input_tokens"])
         config.supports_image_input = bool(capability["supports_image_input"])
         config.catalog_version = catalog_version
@@ -677,7 +692,7 @@ class AiLlmService:
         from app.services.ai_chat_config_service import AiChatConfigService
 
         capability = dict(config.model_capability_json or {})
-        protocol_key = str(getattr(config.provider_config, "protocol_key", "") or "")
+        protocol_key = str(getattr(config, "protocol_key", "") or getattr(config.provider_config, "protocol_key", "") or "")
         AiChatConfigService(
             self.session,
             user_id=self.user_id,
@@ -747,7 +762,7 @@ class AiLlmService:
             "model_capability_json": dict(config.model_capability_json or {}),
             "usage_policy_json": dict(getattr(config, "_usage_policy_json", {}) or {}),
             "reasoning_budget_tokens": getattr(config, "_reasoning_budget_tokens", None),
-            "protocol_key": str(getattr(config.provider_config, "protocol_key", "") or ""),
+            "protocol_key": str(getattr(config, "protocol_key", "") or getattr(config.provider_config, "protocol_key", "") or ""),
             "catalog_version": getattr(config, "catalog_version", None),
             "base_url_configured": bool(config.provider_config.base_url),
         }

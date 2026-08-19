@@ -28,6 +28,7 @@ class ChatModelCatalogItem(SchemaBase):
     provider_key: str
     model_id: str
     name: str
+    protocol_key: str
     family: str | None = None
     status: str | None = None
     release_date: str | None = None

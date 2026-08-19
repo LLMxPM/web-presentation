@@ -295,6 +295,10 @@ def test_model_split_migration_should_reset_legacy_values_and_restore_empty_tabl
         assert {"ai_image_provider_configs", "ai_image_model_configs", "ai_image_slot_bindings"}.issubset(tables)
         assert connection.execute("SELECT COUNT(*) FROM ai_chat_model_configs").fetchone() == (0,)
         assert connection.execute("SELECT COUNT(*) FROM ai_image_model_configs").fetchone() == (0,)
+        catalog_columns = {row[1] for row in connection.execute("PRAGMA table_info(ai_chat_model_catalog)").fetchall()}
+        model_columns = {row[1] for row in connection.execute("PRAGMA table_info(ai_chat_model_configs)").fetchall()}
+        assert "protocol_key" in catalog_columns
+        assert "protocol_key" in model_columns
 
     _run_alembic(backend_root, env, "20260809_0100", command="downgrade")
 

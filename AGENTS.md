@@ -53,7 +53,7 @@ Backend 是平台控制面，负责用户、权限、工作空间、项目、页
 
 AI 目录承载 Pydantic AI 智能体、平台自有会话运行态、工具注册、工具披露、上下文构造和用户级 AI 配置。工具实现使用平台自有工具对象，再由 Pydantic AI runner 装配为运行时 Tool；新增运行态能力应落在平台运行态表和 Pydantic AI runner 上。
 
-AI 聊天供应商目录从 Models.dev 同步到本地缓存，但 `provider_key/npm` 只能通过服务端白名单映射到已经实现的 `protocol_key`，不得动态加载 SDK 或增加运行时 adapter 覆盖。当前只运行 Chat Completions、OpenAI-compatible、OpenRouter、Google 及已落地兼容协议，不使用 OpenAI Responses、Anthropic 或 Bedrock。Chat 与图片生成使用独立表、接口、凭证和绑定；图片能力以代码注册表为单一事实源，不参与 Models.dev 同步。
+AI 聊天供应商目录从 Models.dev 同步到本地缓存，但供应商级和模型级 `npm` 只能通过服务端白名单映射到已经实现的 `protocol_key`，不得动态加载 SDK 或增加运行时 adapter 覆盖。当前只运行 Chat Completions、OpenAI-compatible、OpenRouter、Google 及已落地兼容协议，不使用 OpenAI Responses、Anthropic 或 Bedrock；模型级声明了未实现协议的记录不会进入模型目录。模型配置保存最终模型级协议，不能只复用供应商默认协议。Chat 与图片生成使用独立表、接口、凭证和绑定；图片能力以代码注册表为单一事实源，不参与 Models.dev 同步。
 
 聊天助手槽位只保存模型绑定，不保存推理策略或 input/output token 预算。新 Run 输入预算采用当前模型 input limit，输出预算统一封顶 32K；推理策略在发起 Run 时以 Models.dev `reasoning_options` 为事实源，并保存到 Run 快照。通用 OpenAI-compatible 协议仅转换目录明确声明的标准 `effort`，toggle、budget 等供应商方言仍须固定转换器。
 
