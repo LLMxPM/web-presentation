@@ -156,6 +156,55 @@ def test_space_between_interior_gap_notes_distribution(browser: Any) -> None:
     assert "space-between" in str(interior[0].get("message") or "")
 
 
+def test_sparse_top_aligned_container_is_likely_issue(browser: Any) -> None:
+    """稀疏内容贴顶部且底部空白过大时应给出垂直平衡提示。"""
+
+    html = _root_html(
+        1920,
+        1080,
+        (
+            '<section style="display:flex;flex-direction:column;'
+            'width:900px;height:600px;background:#f5f5f5">'
+            '<div style="width:700px;height:120px;background:#eee">主体内容</div>'
+            "</section>"
+        ),
+    )
+    result = _evaluate_layout(browser, html, 1920, 1080)
+    matches = [
+        item
+        for item in result["layout_analysis"]["empty_regions"]
+        if isinstance(item, dict) and "sparse_top_aligned" in item.get("reason_codes", [])
+    ]
+    assert matches
+    assert matches[0]["attention"] == "likely_issue"
+    assert "justify-center" in str(matches[0].get("message") or "")
+
+
+def test_auto_margin_gap_is_reported_as_sparse_top_alignment(browser: Any) -> None:
+    """卡片用 mt-auto 将尾部推到底部时应提示不要制造无规划空白。"""
+
+    html = _root_html(
+        1920,
+        1080,
+        (
+            '<section style="display:flex;flex-direction:column;'
+            'width:900px;height:600px;background:#f5f5f5">'
+            '<div style="width:700px;height:120px;background:#eee">主体内容</div>'
+            '<div style="width:700px;height:80px;margin-top:auto;background:#ddd">尾部信息</div>'
+            "</section>"
+        ),
+    )
+    result = _evaluate_layout(browser, html, 1920, 1080)
+    matches = [
+        item
+        for item in result["layout_analysis"]["empty_regions"]
+        if isinstance(item, dict) and "sparse_top_aligned" in item.get("reason_codes", [])
+    ]
+    assert matches
+    assert matches[0]["attention"] == "likely_issue"
+    assert "mt-auto" in str(matches[0].get("message") or "")
+
+
 def test_rounded_adjacent_items_inside_flex_container_not_touching(browser: Any) -> None:
     """flex 组合容器内圆角子项紧贴应按组合布局豁免贴边报告。"""
 

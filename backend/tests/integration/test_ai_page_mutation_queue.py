@@ -627,6 +627,7 @@ async def test_ai_page_mutation_executor_should_apply_generic_update_payload(
         assert job.result_json["operation"] == "update"
         assert job.result_json["action"] == "content"
         assert job.result_json["data"]["page_id"] == page_id
+        assert "canonical_diff" not in job.result_json["data"]
 
 
 async def test_reconcile_cancel_should_keep_running_job_and_resuming_batch_lease(

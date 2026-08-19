@@ -73,7 +73,7 @@ _COMPACT_PAGE_VALIDATION_EXAMPLE = (
     "布局：overflows=1、empty_regions=1\n"
     "警告：\n"
     "- [PAGE_RENDER_BOTTOM_OVERFLOW] 页面底部超出画布 42px。\n"
-    "- [layout.empty_regions.large_vertical_gap] 内容区与页脚之间存在较大留白。\n"
+    "- [layout.empty_regions.sparse_top_aligned] 内容区整体靠顶部排列，底部存在不成比例的空白。\n"
     "下一步：如需查看诊断明细，请使用同一目标和候选 mode 调用 validate_entity；需要更完整信息时设置 detail=true。"
 )
 _COMPACT_COMPONENT_VALIDATION_EXAMPLE = (
@@ -1030,7 +1030,6 @@ _COORDINATOR_OPERATION_GUIDES = (
                               "applied": True,
                               "page_id": 31,
                               "version_no": 4,
-                              "canonical_diff": "@@ ...",
                               "validation": _COMPACT_PAGE_VALIDATION_EXAMPLE,
                           },
                       },
@@ -1070,7 +1069,7 @@ _COORDINATOR_OPERATION_GUIDES = (
     _operation_guide("component", "update", "通过统一后台任务对组件草稿应用结构化 edits，并在写入前自动检查真实渲染结果。", _write_parameters("component", "update", ComponentContentPayload, action="content", target_mode="single"), action="content",
                      prerequisites=("先读取组件 detail，取得源码、draft_hash 和 base_published_version_no。",),
                      constraints=("自动执行契约、Runtime 编译、默认态与有界 presets 的真实渲染和布局检查，无需提前重复调用 validate_entity。", "新增 Tailwind 类必须是完整静态字符串；动态样式使用顶层枚举映射，禁止拼接 text-${tone}、from-${color} 等类名。", "组件颜色、字体和 Logo 应使用 Runtime 主题语义类或版本化 Runtime Kit，不要绑定当前项目的具体主题值。"),
-                     side_effects=("结果只返回组件摘要、edits 计数与 canonical_diff，不回显完整源码。",), error_recovery=("编辑锁冲突时重新读取组件 detail。", "根据 validation 短文本中的 code、message、scenario 和 profile 修复 edits；需要诊断 facts 时调用 validate_entity(detail=true)；unavailable/retryable=true 时稍后原样重试。"),
+                     side_effects=("结果只返回组件摘要和 edits 计数，不回显完整源码或源码 diff。",), error_recovery=("编辑锁冲突时重新读取组件 detail。", "根据 validation 短文本中的 code、message、scenario 和 profile 修复 edits；需要诊断 facts 时调用 validate_entity(detail=true)；unavailable/retryable=true 时稍后原样重试。"),
                      response_example={
                          "success": True,
                          "resource_type": "component",
@@ -1082,7 +1081,6 @@ _COORDINATOR_OPERATION_GUIDES = (
                              "applied": True,
                              "component_id": 81,
                              "draft_hash": "sha256:…",
-                             "canonical_diff": "@@ ...",
                              "validation": _COMPACT_COMPONENT_VALIDATION_EXAMPLE,
                          },
                      },

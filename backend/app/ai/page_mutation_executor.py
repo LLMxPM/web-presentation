@@ -327,7 +327,6 @@ class AiPageMutationExecutor:
         self._raise_if_lease_lost(lease_lost)
         validation_result = _with_apply_validation_metadata(
             validation_result,
-            canonical_diff=edit_result.canonical_diff,
             edits_applied=edit_result.applied_edit_count,
             message="页面代码校验失败，未保存页面版本。",
         )
@@ -367,7 +366,6 @@ class AiPageMutationExecutor:
                 "page_code": updated_page.code,
                 "version_no": updated_page.current_version_no,
                 "edits_applied": current_edit_result.applied_edit_count,
-                "canonical_diff": current_edit_result.canonical_diff,
                 "diagnostics": _extract_diagnostics(validation_result),
                 "layout_analysis": _extract_layout_analysis(validation_result),
                 "code_check_summary": validation_result.get("summary"),

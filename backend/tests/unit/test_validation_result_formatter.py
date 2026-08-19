@@ -76,6 +76,37 @@ def test_page_layout_warnings_are_aggregated_and_keep_location() -> None:
     assert "下一步：" in text
 
 
+def test_sparse_top_aligned_layout_warning_keeps_actionable_facts() -> None:
+    """垂直失衡 warning 应向模型暴露明确原因和受控几何事实。"""
+
+    text = build_validation_text(
+        {
+            "success": True,
+            "status": "passed",
+            "summary": "代码检查通过。",
+            "diagnostics": [],
+            "layout_analysis": {
+                "empty_regions": [{
+                    "attention": "likely_issue",
+                    "reason_codes": ["sparse_top_aligned", "trailing_gap"],
+                    "message": "容器内容整体靠顶部排列，底部约有 320px 空白。",
+                    "parent": {"label": "section.card"},
+                    "top_gap_px": 24,
+                    "bottom_gap_px": 320,
+                    "content_height_px": 180,
+                    "content_ratio_of_parent": 0.34,
+                }],
+            },
+        },
+        resource_type="page",
+        detail=True,
+    )
+
+    assert "[layout.empty_regions.sparse_top_aligned] 容器内容整体靠顶部排列" in text
+    assert "定位：section.card" in text
+    assert "facts=top_gap_px=24, bottom_gap_px=320, content_height_px=180, content_ratio_of_parent=0.34" in text
+
+
 def test_validation_issues_are_capped_at_ten() -> None:
     """warning/error 合计最多返回十条，并报告隐藏数量。"""
 
@@ -211,7 +242,7 @@ def test_validate_tool_result_is_text_and_mutation_keeps_business_fields() -> No
     assert mutation["page_id"] == 31
     assert mutation["version_no"] == 4
     assert mutation["applied"] is True
-    assert mutation["canonical_diff"] == "@@ ..."
+    assert "canonical_diff" not in mutation
     assert isinstance(mutation["validation"], str)
     assert "diagnostics" not in mutation
     assert "layout_analysis" not in mutation

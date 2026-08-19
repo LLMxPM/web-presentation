@@ -26,6 +26,7 @@ _LAYOUT_REASON_MESSAGES = {
     "leading_gap": "内容顶部存在较大留白。",
     "right_gap": "内容右侧存在较大留白。",
     "interior_gap": "内容之间存在较大内部留白。",
+    "sparse_top_aligned": "内容整体靠顶部排列，底部存在不成比例的空白。",
 }
 _RESOURCE_LABELS = {"page": "页面", "component": "组件"}
 _MUTATION_VALIDATION_FIELDS = {
@@ -69,6 +70,10 @@ _FACT_KEYS = (
     "gap_bottom_px",
     "gap_left_px",
     "gap_right_px",
+    "top_gap_px",
+    "bottom_gap_px",
+    "content_height_px",
+    "content_ratio_of_parent",
     "canvas_height_px",
     "canvas_width_px",
     "intersection_area",
@@ -161,13 +166,16 @@ def compact_mutation_result(result: Any, *, resource_type: str) -> Any:
     if result.get("kind") == RECOVERABLE_TOOL_ERROR_KIND:
         data = result.get("data")
         if not isinstance(data, dict) or not isinstance(data.get("validation"), dict):
-            return result
-        return _compact_recoverable_error(deepcopy(result), resource_type=resource_type)
+            return _drop_model_canonical_diff(result, resource_type=resource_type)
+        return _drop_model_canonical_diff(
+            _compact_recoverable_error(deepcopy(result), resource_type=resource_type),
+            resource_type=resource_type,
+        )
 
     validation = result.get("validation")
     is_full_validation_result = _looks_like_validation_result(result)
     if not isinstance(validation, dict) and not is_full_validation_result:
-        return result
+        return _drop_model_canonical_diff(result, resource_type=resource_type)
 
     compacted = deepcopy(result)
     if isinstance(validation, dict):
@@ -185,7 +193,25 @@ def compact_mutation_result(result: Any, *, resource_type: str) -> Any:
         compacted.pop(field_name, None)
     if is_full_validation_result and isinstance(result.get("status"), str):
         compacted.pop("summary", None)
-    return compacted
+    return _drop_model_canonical_diff(compacted, resource_type=resource_type)
+
+
+def _drop_model_canonical_diff(result: dict[str, Any], *, resource_type: str) -> dict[str, Any]:
+    """从页面和组件模型结果移除源码 diff，保留内部校验字段。"""
+
+    if resource_type not in {"page", "component"}:
+        return result
+    data = result.get("data")
+    if "canonical_diff" not in result and not (
+        isinstance(data, dict) and "canonical_diff" in data
+    ):
+        return result
+    cleaned = deepcopy(result)
+    cleaned.pop("canonical_diff", None)
+    data = cleaned.get("data")
+    if isinstance(data, dict):
+        data.pop("canonical_diff", None)
+    return cleaned
 
 
 def _compact_recoverable_error(result: dict[str, Any], *, resource_type: str) -> dict[str, Any]:

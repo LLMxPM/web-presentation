@@ -27,6 +27,8 @@ def test_render_diagnostics_script_should_support_route_and_standalone_roots() -
     assert "large_vertical_gap" in script
     assert "large_horizontal_gap" in script
     assert "interior_gap" in script
+    assert "sparse_top_aligned" in script
+    assert "content_ratio_of_parent" in script
     assert "dedupe = true" in script
     assert "}, false);" in script
     assert "leading_gap" in script

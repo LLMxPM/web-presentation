@@ -16,6 +16,9 @@ def test_agent_default_prompt_should_keep_content_baseline_and_query_guidance() 
     assert "事实、数字、引用和来源不得凭空补全" in prompt
     assert "处理视觉内容时，先判断当前信息最适合用文字、表格、图表、示意图还是图片表达" in prompt
     assert "需要素材时优先查询工作空间资源，不满足再按可用能力创建或生成" in prompt
+    assert "主体内容区、内容面板和稀疏卡片默认应在自身可用高度内上下平衡" in prompt
+    assert "sparse_top_aligned" in prompt
+    assert "不得仅因为使用 `flex-1`、固定高度或 `mt-auto`" in prompt
     assert "每次用户发起新一轮 Run 时" in prompt
     assert "通用源码与 Runtime 基线" in prompt
     assert "页面或组件源码任务开始前，先调用 get_code_standards" not in prompt
@@ -52,6 +55,10 @@ def test_agent_default_prompt_should_keep_content_baseline_and_query_guidance() 
     assert "render_type" in page_standard
     assert "PAGE_RENDER_BOTTOM_OVERFLOW" in page_standard
     assert "empty_regions" in page_standard
+    assert "固定画布应先划分标题区、主体区和辅助区" in page_standard
+    assert "禁止把 `grid/flex-1`、固定高度、顶部排列和 `mt-auto` 组合成默认卡片结构" in page_standard
+    assert "对 `flex-col`，垂直方向由 `justify-*` 控制" in page_standard
+    assert "sparse_top_aligned" in page_standard
     assert "base_font_size / 16" in page_standard
     assert "useAssetSrc(() => props.imageName)" in page_standard
     assert "ThemeLogo" in page_standard
@@ -60,3 +67,7 @@ def test_agent_default_prompt_should_keep_content_baseline_and_query_guidance() 
     assert "Icon 和 Asset* 的 name" in component_standard
     assert "defineProps`/`defineEmits" in component_standard
     assert "2～3 个高质量 presets" in component_standard
+    assert "开始创建页面时，先查询并复用已有的页面组件" in catalog.default_prompt
+    assert "如果发现同一职责的指标卡、引用卡、图表或表格模块会跨页重复" in catalog.default_prompt
+    assert "开始创建页面时，先查询并复用已有的页面组件" in page_standard
+    assert "变化可以用稳定的 props 或 slots 表达，再沉淀为内容组件" in page_standard

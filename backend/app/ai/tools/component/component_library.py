@@ -498,7 +498,6 @@ def build_apply_component_edits_tool(
             )
             validation_result = _with_apply_validation_metadata(
                 validation_result,
-                canonical_diff=edit_result.canonical_diff,
                 edits_applied=edit_result.applied_edit_count,
                 message="组件代码校验失败，未保存草稿。",
             )
@@ -531,7 +530,6 @@ def build_apply_component_edits_tool(
                 "draft_hash": calculate_source_hash(updated.content),
                 "base_published_version_no": updated.draft_base_version_no,
                 "edits_applied": edit_result.applied_edit_count,
-                "canonical_diff": edit_result.canonical_diff,
                 "component": _component_mutation_summary(updated),
                 "validation": validation_result,
             }
@@ -569,14 +567,14 @@ def _component_mutation_summary(component: WorkspaceComponentItem) -> dict[str, 
 def _with_apply_validation_metadata(
     result: dict[str, Any],
     *,
-    canonical_diff: str,
     edits_applied: int,
     message: str,
 ) -> dict[str, Any]:
     """为组件 apply 内置校验结果补齐 edits 元数据和失败提示。"""
 
     enriched = dict(result)
-    enriched["canonical_diff"] = enriched.get("canonical_diff") or canonical_diff
+    # canonical_diff 仅供服务端内部诊断，不进入组件写工具的模型结果。
+    enriched.pop("canonical_diff", None)
     enriched["edits_applied"] = edits_applied
     if not _is_validation_passed(enriched):
         enriched["success"] = False

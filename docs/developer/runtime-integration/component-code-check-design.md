@@ -297,7 +297,7 @@ flowchart TD
 
 `CodeCheckService`、`ComponentValidationService` 和 Runtime 之间继续使用下文的完整 `ComponentValidationResult`，其中可以保留完整 `diagnostics`、`scenarios`、`facts` 和布局分析，供内部编排、日志与契约测试使用。共享格式化层只在 AI 工具返回模型前执行，不改变这些内部结果，也不修改 Runtime 诊断协议。
 
-写入/修改工具只把校验部分转换为短文本，保留对象 ID、版本、`success`、`applied`、hash 和 `canonical_diff` 等业务字段；不会回传原始 `diagnostics`、完整 `layout_analysis`、全量 scenario 或重复的 validation。warning/error 合计最多返回 10 条，超出部分标记省略数量。
+写入/修改工具只把校验部分转换为短文本，保留对象 ID、版本、`success`、`applied` 和 hash 等业务字段；不会回传原始 `diagnostics`、完整 `layout_analysis`、全量 scenario、源码 diff 或重复的 validation。页面和组件源码写入工具都不向模型返回 `canonical_diff`，避免把已由模型提交的源码变化重复回传；该字段仍可在服务端内部校验链中使用。warning/error 合计最多返回 10 条，超出部分标记省略数量。
 
 `validate_entity` 的页面/组件 check 返回短文本而非结构化完整结果：`detail=false` 保留摘要、code、message、定位以及组件的 scenario/profile；`detail=true` 仍最多返回 10 条问题，并增加受控 facts 和布局数值。两种模式都不返回正常布局项、完整浏览器几何数据或原始 JSON 清单。资源差异预览继续使用现有结构化 envelope。
 
@@ -329,6 +329,8 @@ flowchart TD
   "canonical_diff": null
 }
 ```
+
+上例中的 `canonical_diff` 属于服务端内部完整校验结果字段，不代表页面或组件源码写入工具会向模型回传该字段。
 
 状态固定为：
 
@@ -406,10 +408,10 @@ flowchart TD
 沿用现有 `apply_component_edits` 的候选 diff 机制，但把 check 从仅 compile 升级为完整三层：
 
 1. 读取当前组件快照。
-2. 应用结构化 edits，得到完整候选源码和 canonical diff。
+2. 应用结构化 edits，得到完整候选源码；canonical diff 仅作为服务端内部校验信息生成。
 3. 使用当前 `previewSchema` 执行完整 check。
 4. 通过后，在写事务中复核原始源码 hash/版本，避免检查期间发生并发修改。
-5. 写入成功后返回 canonical diff、validation 短文本和 warnings。
+5. 写入成功后返回 validation 短文本和 warnings，不向模型回传源码 diff。
 
 失败时不保存 edits，模型根据诊断重新生成 edits；不应把失败候选写成草稿再让模型修复。
 

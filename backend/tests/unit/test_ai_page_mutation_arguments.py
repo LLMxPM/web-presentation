@@ -175,7 +175,7 @@ def test_generic_deferred_validation_result_should_match_sync_compact_shape() ->
     assert "PAGE_RENDER_BOTTOM_OVERFLOW" in data["validation"]
     assert "diagnostics" not in data
     assert "layout_analysis" not in data
-    assert data["canonical_diff"] == "@@ ..."
+    assert "canonical_diff" not in data
 
 
 def test_recoverable_deferred_result_should_not_be_wrapped() -> None:
