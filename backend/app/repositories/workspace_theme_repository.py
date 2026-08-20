@@ -59,15 +59,22 @@ class WorkspaceThemeRepository:
         )
         return list(result)
 
-    async def get_by_id(self, workspace_id: int, theme_id: int) -> WorkspaceTheme | None:
+    async def get_by_id(
+        self,
+        workspace_id: int,
+        theme_id: int,
+        *,
+        include_deleted: bool = False,
+    ) -> WorkspaceTheme | None:
         """按主键获取工作空间主题。"""
 
-        return await self.session.scalar(
-            select(WorkspaceTheme)
-            .where(WorkspaceTheme.workspace_id == workspace_id)
-            .where(WorkspaceTheme.id == theme_id)
-            .where(WorkspaceTheme.deleted_at.is_(None))
+        statement = select(WorkspaceTheme).where(
+            WorkspaceTheme.workspace_id == workspace_id,
+            WorkspaceTheme.id == theme_id,
         )
+        if not include_deleted:
+            statement = statement.where(WorkspaceTheme.deleted_at.is_(None))
+        return await self.session.scalar(statement)
 
     async def get_by_key(self, workspace_id: int, key: str) -> WorkspaceTheme | None:
         """按 key 获取工作空间主题。"""

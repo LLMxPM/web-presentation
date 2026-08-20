@@ -50,6 +50,7 @@ dev = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+norecursedirs = ["cli", ".git", ".tmp", "dist", "build", "node_modules"]
 pythonpath = ["."]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"

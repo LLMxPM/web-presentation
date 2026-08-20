@@ -15,6 +15,7 @@ from app.core.config import get_settings
 from app.core.exceptions import AppException
 from app.db.session import get_session_factory
 from app.models.project_build_job import ProjectBuildJob
+from app.models.workspace import Project
 from app.models.release import Release, ReleaseModule
 from app.schemas.project_build import ProjectBuildAssetSummary, ProjectBuildCreateRequest
 from app.services.project_artifact_builder import ProjectArtifactBuilder
@@ -43,8 +44,15 @@ class ProjectBuildService:
         project_id: int,
         payload: ProjectBuildCreateRequest,
         created_by: int | None,
+        commit: bool = True,
     ) -> ProjectBuildJob:
         """创建整项目构建任务，并写入不可变构建快照。"""
+
+        project_lock = await self.session.scalar(
+            select(Project).where(Project.id == project_id).with_for_update()
+        )
+        if project_lock is None:
+            await self.artifact_builder.get_project_or_raise(project_id)
 
         active_job = await self.get_active_job(project_id)
         if active_job is not None:
@@ -110,7 +118,10 @@ class ProjectBuildService:
             created_by=created_by,
         )
         self.session.add(job)
-        await self.session.commit()
+        if commit:
+            await self.session.commit()
+        else:
+            await self.session.flush()
         await self.session.refresh(job)
         await RuntimeArtifactStore().put_build_state(
             job_id=job.id,

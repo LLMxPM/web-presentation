@@ -101,6 +101,12 @@ const routes = [
         meta: { hideSidebars: true, fullHeight: true, globalPageTitle: 'AI 设置' },
       },
       {
+        path: 'account/access-tokens',
+        name: 'accountAccessTokens',
+        component: () => import('@/views/AccountAccessTokensView.vue'),
+        meta: { hideSidebars: true, fullHeight: true, globalPageTitle: '访问令牌' },
+      },
+      {
         path: 'admin/users',
         name: 'users',
         component: () => import('@/views/UsersView.vue'),

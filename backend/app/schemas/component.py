@@ -120,6 +120,7 @@ class WorkspaceComponentItem(SchemaBase):
     workspace_name: str | None = None
     code: str
     content: str
+    draft_hash: str | None = None
     preview_schema: str | None
     current_version_no: int
     draft_base_version_no: int

@@ -3,6 +3,7 @@
 from fastapi import APIRouter
 
 from app.api.routes import (
+    access_tokens,
     agents,
     asset_render_hint_backfill_jobs,
     assets,
@@ -27,9 +28,12 @@ from app.api.routes import (
     users,
     workspaces,
 )
+from app.api.routes.external import v1_router
 
 api_router = APIRouter()
+api_router.include_router(v1_router)
 api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
+api_router.include_router(access_tokens.router, prefix="/access-tokens", tags=["access-tokens"])
 api_router.include_router(users.router, tags=["users"])
 api_router.include_router(agents.router, tags=["agents"])
 api_router.include_router(client_logs.router, prefix="/client-logs", tags=["client-logs"])

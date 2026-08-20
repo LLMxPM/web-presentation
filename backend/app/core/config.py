@@ -18,6 +18,7 @@ class AppSettings(BaseSettings):
     )
 
     app_name: str = "页面管理后台"
+    app_version: str = "1.0.0"
     app_host: str = "127.0.0.1"
     app_port: int = 8000
     app_reload: bool = True
@@ -116,6 +117,17 @@ class AppSettings(BaseSettings):
     s3_public_bucket: str | None = None
     s3_region: str | None = None
     s3_public_base_url: str | None = None
+
+    # Mutation 任务与 External API 租约/幂等/PAT 配置
+    mutation_job_lease_seconds: int = 45
+    mutation_job_heartbeat_seconds: int = 15
+    mutation_job_recovery_interval_seconds: int = 30
+    mutation_job_max_attempts: int = 3
+    mutation_job_retention_days: int = 7
+    idempotency_retention_days: int = 14
+    asset_staging_retention_hours: int = 2
+    pat_max_active_tokens: int = 25
+    pat_max_ttl_days: int = 365
 
     @field_validator("app_timezone")
     @classmethod
@@ -432,6 +444,14 @@ class AppSettings(BaseSettings):
         if value <= 0:
             raise ValueError("Redis 临时运行态配置必须为正整数。")
         return value
+
+    @model_validator(mode="after")
+    def validate_mutation_job_timing_constraints(self) -> "AppSettings":
+        """校验 Mutation 任务租约时间不小于心跳周期的 3 倍。"""
+
+        if self.mutation_job_lease_seconds < self.mutation_job_heartbeat_seconds * 3:
+            raise ValueError("MUTATION_JOB_LEASE_SECONDS 必须大于等于 MUTATION_JOB_HEARTBEAT_SECONDS * 3。")
+        return self
 
     @property
     def page_screenshot_local_root_path(self) -> Path:

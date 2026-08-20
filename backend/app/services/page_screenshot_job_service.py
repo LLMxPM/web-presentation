@@ -76,6 +76,7 @@ class PageScreenshotJobService:
         viewport_width: int | None = None,
         viewport_height: int | None = None,
         source: str = "manual",
+        commit: bool = True,
     ) -> PageScreenshotJobResponse:
         """创建或复用单页截图任务。"""
 
@@ -98,11 +99,15 @@ class PageScreenshotJobService:
             viewport=viewport,
             job_group_id=None,
         )
-        await self.session.commit()
+        if commit:
+            await self.session.commit()
+        else:
+            await self.session.flush()
         await self.session.refresh(job)
         response = PageScreenshotJobResponse.model_validate(job)
-        # refresh 会打开新的只读事务；同步等待前立即结束它，避免 SQLite 读事务滞留。
-        await self.session.rollback()
+        if commit:
+            # refresh 会打开新的只读事务；同步等待前立即结束它，避免 SQLite 读事务滞留。
+            await self.session.rollback()
         return response
 
     async def create_batch_refresh_screenshot_jobs(
