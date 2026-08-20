@@ -89,6 +89,12 @@ OPERATION_REGISTRY: dict[str, ExternalOperationSpec] = {
     "page.archive": ExternalOperationSpec(
         "page.archive", ("page:write",), requires_idempotency_key=True, description="归档页面"
     ),
+    "page.screenshot.latest": ExternalOperationSpec(
+        "page.screenshot.latest",
+        ("page:read", "preview:run"),
+        description="获取页面最新截图",
+    ),
+
 
     # Component
     "component.list": ExternalOperationSpec(

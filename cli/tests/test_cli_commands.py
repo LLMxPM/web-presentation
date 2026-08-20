@@ -27,6 +27,8 @@ def test_cli_help() -> None:
     assert "build" in result.output
     assert "validate" in result.output
     assert "doctor" in result.output
+    assert "screenshot" in result.output
+
 
 
 def test_cli_doctor_unconfigured() -> None:

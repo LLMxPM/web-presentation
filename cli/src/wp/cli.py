@@ -11,6 +11,7 @@ from wp.commands.component import component_group
 from wp.commands.doctor import doctor_cmd
 from wp.commands.page import page_group
 from wp.commands.project import project_group
+from wp.commands.screenshot import screenshot_cmd
 from wp.commands.style import style_group
 from wp.commands.theme import theme_group
 from wp.commands.validate import validate_cmd
@@ -37,6 +38,8 @@ main.add_command(logout_cmd)
 main.add_command(whoami_cmd)
 main.add_command(doctor_cmd)
 main.add_command(validate_cmd)
+main.add_command(screenshot_cmd)
+
 
 # 注册各实体资源命令组
 main.add_command(workspace_group)

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Header, Request
+from fastapi import APIRouter, Depends, Header, Request, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies_external import ExternalAuthContext, require_external_operation
@@ -21,8 +21,9 @@ from app.schemas.page import (
 from app.services.business_operation_service import BusinessOperationService
 from app.services.idempotency_service import IdempotencyService
 from app.services.page_service import PageService
-
+from app.services.page_screenshot_job_service import PageScreenshotJobService
 from app.services.project_service import ProjectService
+
 
 router = APIRouter()
 
@@ -76,6 +77,38 @@ async def get_page_source(
         "version_no": page.current_version_no,
         "source_code": page.page_content,
     }
+
+
+@router.get("/pages/{page_id}/screenshot")
+async def get_page_screenshot(
+    page_id: int,
+    auth: Annotated[ExternalAuthContext, Depends(require_external_operation("page.screenshot.latest"))],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> Response:
+
+    """获取指定页面的最新 PNG 截图。"""
+
+    page = await PageService(session)._get_page_or_raise(page_id)
+    await auth.ensure_workspace_access(page.workspace_id, session)
+    await PageService(session)._ensure_page_access(page, user_id=auth.user.id)
+
+    screenshot_result = await PageScreenshotJobService(session).ensure_latest_page_screenshot_via_queue(
+        page_id=page_id,
+        user_id=auth.user.id,
+        workspace_id=page.workspace_id,
+        project_id=page.project_id,
+    )
+    version_no = screenshot_result.page.screenshot_version_no or screenshot_result.page.current_version_no or 1
+    return Response(
+        content=screenshot_result.content,
+        media_type="image/png",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Page-ID": str(page.id),
+            "X-Page-Version-No": str(version_no),
+        },
+    )
+
 
 
 @router.get("/pages/{page_id}/versions", response_model=list[PageVersionListItem])

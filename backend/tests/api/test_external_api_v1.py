@@ -638,3 +638,119 @@ async def test_external_single_archive_restore_idempotency(client: AsyncClient) 
     res_resp2 = await client.post(f"/api/v1/themes/{theme_id}/restore", headers=restore_headers)
     assert res_resp2.status_code == 200
     assert res_resp2.json()["key"] == "custom-theme-test"
+
+
+@pytest.mark.asyncio
+async def test_external_api_page_screenshot(client: AsyncClient) -> None:
+    """测试通过 External API v1 获取页面最新截图契约。"""
+
+    from unittest.mock import AsyncMock, patch
+    from app.models.page import Page
+    from app.services.page_screenshot_service import PageScreenshotResult
+
+    session_factory = get_session_factory()
+    async with session_factory() as session:
+        user = User(
+            username="screenshot_user",
+            password_hash="hash",
+            display_name="Screenshot User",
+            role=UserRole.WORKSPACE_USER.value,
+            preview_size_presets=build_default_preview_size_presets(),
+        )
+        session.add(user)
+        await session.flush()
+
+        ws = Workspace(code="ws-shot-01", name="Screenshot Space", created_by=user.id, updated_by=user.id, status=RecordStatus.ACTIVE.value)
+        session.add(ws)
+        await session.flush()
+
+        member = WorkspaceMember(workspace_id=ws.id, user_id=user.id, role="owner", status=RecordStatus.ACTIVE.value)
+        session.add(member)
+        await session.flush()
+
+        proj = Project(workspace_id=ws.id, code="proj-shot", name="Shot Proj", theme_config_yaml="{}", created_by=user.id, updated_by=user.id, status=RecordStatus.ACTIVE.value)
+
+        session.add(proj)
+        await session.flush()
+
+        page = Page(
+            workspace_id=ws.id,
+            project_id=proj.id,
+            code="p1",
+            title="Page 1",
+            page_content="<template><div>Shot</div></template>",
+            current_version_no=1,
+            created_by=user.id,
+            updated_by=user.id,
+            status=RecordStatus.ACTIVE.value,
+        )
+
+        session.add(page)
+        await session.flush()
+        page_id = page.id
+        ws_id = ws.id
+
+        pat_service = ApiAccessTokenService(session)
+        # 1. 仅授予只读 page:read 权限
+        token_read_only_res = await pat_service.create_token(
+            user_id=user.id,
+            payload=ApiAccessTokenCreateRequest(
+                name="Page-Read-PAT",
+                workspace_ids=[ws.id],
+                scopes=["page:read"],
+                expires_in_days=30,
+            ),
+        )
+        # 2. 授予 page:read + preview:run 权限
+        token_full_res = await pat_service.create_token(
+            user_id=user.id,
+            payload=ApiAccessTokenCreateRequest(
+                name="Page-Shot-PAT",
+                workspace_ids=[ws.id],
+                scopes=["page:read", "preview:run"],
+                expires_in_days=30,
+            ),
+        )
+        token_read_only = token_read_only_res.token
+        token_full = token_full_res.token
+        await session.commit()
+
+    headers_read_only = {"Authorization": f"Bearer {token_read_only}", "X-Workspace-ID": str(ws_id)}
+    headers_full = {"Authorization": f"Bearer {token_full}", "X-Workspace-ID": str(ws_id)}
+    fake_png = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR_SHOT"
+    fake_result = PageScreenshotResult(
+        page=page,
+        page_item=None,  # type: ignore
+        storage_key="test/shot.png",
+        content=fake_png,
+        refreshed=True,
+        public_url="http://test/shot.png",
+    )
+
+    # 1. 缺少 preview:run 权限 -> 403 INSUFFICIENT_SCOPE
+    forbidden_resp = await client.get(f"/api/v1/pages/{page_id}/screenshot", headers=headers_read_only)
+    assert forbidden_resp.status_code == 403
+    assert forbidden_resp.json()["code"] == "INSUFFICIENT_SCOPE"
+
+    # 2. 具备完整的 page:read + preview:run 权限 -> 200 OK 且返回 PNG
+    with patch(
+        "app.services.page_screenshot_job_service.PageScreenshotJobService.ensure_latest_page_screenshot_via_queue",
+        new=AsyncMock(return_value=fake_result),
+    ):
+        resp = await client.get(f"/api/v1/pages/{page_id}/screenshot", headers=headers_full)
+        assert resp.status_code == 200
+        assert resp.headers["content-type"] == "image/png"
+        assert resp.headers["x-page-id"] == str(page_id)
+        assert resp.content == fake_png
+
+    # 3. 检查工作空间能力查询接口包含 page.screenshot.latest 操作注册
+    cap_resp = await client.get(f"/api/v1/workspaces/{ws_id}/capabilities", headers=headers_full)
+    assert cap_resp.status_code == 200
+    available_ops = cap_resp.json().get("operations", [])
+    assert "page.screenshot.latest" in available_ops
+
+    # 4. 仅有 page:read 权限的 Token 查 capabilities 不应包含 page.screenshot.latest
+    read_only_cap_resp = await client.get(f"/api/v1/workspaces/{ws_id}/capabilities", headers=headers_read_only)
+    assert read_only_cap_resp.status_code == 200
+    read_only_ops = read_only_cap_resp.json().get("operations", [])
+    assert "page.screenshot.latest" not in read_only_ops

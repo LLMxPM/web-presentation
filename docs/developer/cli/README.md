@@ -401,10 +401,8 @@ CLI 底层由统一的 `EntityClient` 驱动，同时提供清晰的**直观别�
 | 命令 | 阶段 | 所需 Scope | 说明 |
 | :--- | :---: | :--- | :--- |
 | `wp preview create --project-id <PID>` | MVP | `preview:run` | 生成临时预览 Artifact 与带签名的预览上下文 Token |
-| `wp screenshot start --page-id <PID>` | MVP | `preview:run` | 向 Chromium 渲染池提交页面真实截图任务，返回 `job_id` |
-| `wp screenshot status <JOB_ID>` | MVP | `preview:run` | 查看截图任务状态（`pending`, `running`, `completed`, `failed`） |
-| `wp screenshot wait <JOB_ID> [--timeout 60]` | MVP | `preview:run` | 带指数退避的轮询等待任务完成；Ctrl+C 仅停止本地等待，`--cancel-remote` 请求远程取消 |
-| `wp screenshot download <JOB_ID\|PAGE_ID> --output <FILE>` | MVP | `page:read` | 通过受保护鉴权通道将页面高清截图下载到本地，供 Agent 进行多模态视觉复核 |
+| `wp screenshot <PAGE_ID> [--output <FILE>]` | MVP | `page:read`, `preview:run` | 获取指定页面的最新 PNG 截图（自动触发服务端队列刷新，下载后原子落盘） |
+
 | `wp build start --project-id <PID>` | MVP | `build:run` | 提交项目打包构建任务，返回 `job_id` |
 | `wp build status <JOB_ID>` | MVP | `build:run` | 查看构建进度与日志摘要 |
 | `wp build wait <JOB_ID> [--timeout 180]` | MVP | `build:run` | 轮询等待构建完成 |

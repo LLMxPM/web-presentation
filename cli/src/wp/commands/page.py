@@ -7,8 +7,10 @@ from pathlib import Path
 import click
 
 from wp.client import ApiClient, ApiClientError
+from wp.commands.screenshot import screenshot_cmd
 from wp.config import get_profile, load_config
 from wp.formatter import print_code, print_error, print_json, print_success, print_table
+
 
 
 @click.group("page")
@@ -175,3 +177,6 @@ def archive_page_cmd(ctx: click.Context, page_id: int, yes: bool) -> None:
     except ApiClientError as err:
         print_error(f"归档页面失败: {err.message}", code=err.code)
         raise SystemExit(1)
+
+
+page_group.add_command(screenshot_cmd)
