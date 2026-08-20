@@ -2,127 +2,119 @@
 
 ## 1. 文档状态
 
-本文是 `web-presentation` 面向桌面 Agent 的 CLI 技术方案，当前仅用于确定边界、命令能力、认证方式、工作空间隔离和实施顺序，不代表相关接口已经实现。
+本文是 `web-presentation` 面向桌面 Agent 的 CLI 技术方案，基于平台重构后的**通用业务实体操作模型**（Generic Business Entities & Operations）、**统一自省与规范体系**和**工作空间安全底座**进行规划，用于确定模块边界、命令能力、认证方式、工作空间隔离和分阶段实施策略。
 
 方案基于以下前提：
 
-- 所有 LLM 推理、任务规划、图片生成和图片理解均由调用方 Agent 完成。
-- CLI 不内置 Agent，不调用平台 AI 会话，不管理模型供应商和 API Key。
-- CLI 是 Backend HTTP API 的客户端，不直接访问数据库、不直接调用 Runtime，也不导入 Backend 内部 Service。
-- Skill 负责告诉 Agent 如何完成创作流程，CLI 负责提供确定、可组合、可审计的原子能力。
-- 工作空间是 CLI 的强隔离边界；项目、页面、资源、组件、主题、样式、任务和产物都必须归入且校验到一个工作空间。
+- 所有 LLM 自然语言推理、任务规划、图片生成和多模态理解均由调用方桌面 Agent（如 Antigravity、Claude Desktop、Cursor、Cline 等）自行完成。
+- CLI 不内置 Agent，不调用平台内部 AI 会话（`AiAgentSession`），不管理大模型供应商和 API Key。
+- CLI 是 Backend HTTP API（及面向外部的 External API v1）的客户端，不直接访问数据库、不直接调用 Runtime，也不导入 Backend 内部 Service。
+- Skill 负责告诉 Agent 如何组织创作流程，CLI 负责提供确定、可组合、可自省、可审计的原子能力。
+- 工作空间是 CLI 的强隔离边界；项目、页面、资源、组件、主题、样式、字体、Runtime Kit、任务和产物都必须归入且严格校验到单一工作空间。
 
 ## 2. 建设目标与非目标
 
 ### 2.1 建设目标
 
-CLI 第一阶段要让具备 Shell、文件读写和图片查看能力的桌面 Agent 完成以下闭环：
+CLI 让具备 Shell 执行、文件读写和多模态查看能力的桌面 Agent 完成以下标准化创作闭环：
 
 ```text
 选择单一工作空间
+  -> 动态查询代码规范 (wp standards) 与操作手册 (wp guide)
   -> 读取项目、主题、样式、资源、组件和 Runtime Kit 上下文
-  -> 在调用方生成页面源码和图片
-  -> 上传资源并创建或修改页面
-  -> 执行确定性代码检查
-  -> 创建截图任务并下载截图
-  -> 调用方视觉复核并继续修改
-  -> 创建页面快照
-  -> 创建项目构建任务并下载产物
+  -> 在调用方生成页面/组件源码与视觉素材
+  -> 上传资源并创建/修改页面或组件源码（携带乐观锁基线）
+  -> 执行 Compact 代码检查与诊断 (wp validate)
+  -> 创建截图任务、等待并下载截图 (wp screenshot wait/download)
+  -> 调用方多模态视觉复核，进入迭代循环
+  -> 创建页面快照 (wp page snapshot)
+  -> 触发项目构建并下载产物包 (wp build wait/download)
 ```
 
-CLI 还应满足：
+CLI 核心特性要求：
 
-- 所有业务命令支持机器稳定读取的 JSON 输出。
-- 大段源码和二进制内容通过文件或 stdin/stdout 传递。
-- 写操作支持工作空间断言、版本并发控制和幂等重试。
-- 截图、构建等长任务使用统一的查询、等待和取消体验。
-- 身份凭证可吊销、可过期，并限制到明确的工作空间和操作 scope。
-- Windows、Linux 和 macOS 使用相同的参数语义，不依赖特定 Shell 的转义行为。
+- **统一实体契约**：基于平台统一实体模型，支持对 8 种核心资源（`project`, `page`, `component`, `asset`, `theme`, `style`, `runtime_kit`, `font`）的正交操作与响应解析。
+- **规范与自省发现**：直接从服务端动态拉取当前生效的代码规范（Markdown）与操作参数 Schema，杜绝外部 Skill 提示词与服务端校验规则漂移。
+- **精简紧凑的校验反馈**：代码检查默认输出 Compact 诊断结论（摘要、布局数值、最多 10 条带定位的问题），支持按需展开 `--detail`。
+- **生命周期收敛（Archive First）**：废除硬删除，全面统一为归档语义；单项直接归档，批量原子确认，保护资产安全。
+- **机器可读与大文件友好**：所有业务命令支持机器稳定读取的 JSON 输出；大段源码和二进制文件通过文件或 stdin/stdout 传递。
+- **并发控制与幂等重试**：写操作强制校验工作空间断言与版本并发基线（`base_version_no` / `source_hash`），支持 `Idempotency-Key`。
+- **统一长任务体验**：截图、构建等异步长任务使用统一的退避轮询、等待与优雅取消机制。
+- **安全凭证生命周期**：采用 Personal Access Token (PAT) 认证，支持工作空间显式授权、细粒度 Scopes、有效权限交集与主动吊销。
 
 ### 2.2 非目标
 
-第一阶段不包含：
-
 - 自然语言对话入口，例如 `wp agent run`。
-- AI session、run、SSE 消息、requirement 或工具确认恢复。
-- Chat、图片生成和图片理解模型配置。
-- MCP Server。
-- CLI 直接连接数据库或对象存储。
-- 自动替用户决定跨工作空间复制、发布或删除。
-- 用 Skill 或 CLI 参数代替 Backend 权限校验。
+- 平台内部 AI session、run、SSE 消息、requirement 或工具确认恢复。
+- 服务端 Chat 模型配置、图片生成模型配置或 API Key 管理。
+- MCP Server（未来可作为独立适配层接入，不属于 CLI 核心）。
+- CLI 直接连接底层数据库、Redis 或对象存储。
+- 自动化跨工作空间写入或默认全局跨空间搜索。
+- 破坏性永久硬删除操作（无 `wp delete` 命令）。
 
 ## 3. 总体架构
 
 ```text
 桌面 Agent + web-presentation Skill
               |
-              | 进程调用、JSON、文件
+              | 进程调用、JSON 输出、文件 I/O
               v
-        web-presentation CLI
+        web-presentation CLI (wp)
               |
-              | HTTPS + Bearer Token
+              | HTTPS + Bearer Token (PAT) + X-WP-Workspace-ID
               v
-          Backend API
+    Backend API / External API v1
               |
-              +--> Service / Repository / Database
-              +--> 截图队列 / Chromium 池
-              +--> Runtime 预览与构建
-              +--> 对象存储
+              +--> 通用实体路由 / 操作模型 (operation_models.py)
+              +--> 代码规范服务 (Code Standards) / 操作手册 (Tool Specs)
+              +--> 代码检查与诊断服务 (CodeCheckService / Chromium 池)
+              +--> 权限与工作空间校验 (DeliveryAccessContext / Token Grants)
+              +--> 截图与构建异步任务队列 (PageScreenshotJob / BuildJob)
+              +--> Runtime Kit Manifest 与版本化公共能力
 ```
 
-建议新增独立 Python 包 `cli/`，使用 `uv` 管理，命令名暂定为 `wp`：
+CLI 作为一个独立的 Python 包 `cli/` 维护，使用 `uv` 进行依赖和虚拟环境管理，命令名为 `wp`：
 
 ```text
 cli/
 ├── pyproject.toml
 ├── src/web_presentation_cli/
 │   ├── main.py
-│   ├── commands/
-│   ├── client/
-│   ├── config/
-│   ├── output/
-│   └── errors/
+│   ├── client/               # HTTP Client、PAT 鉴权、Workspace Assertion、上传下载
+│   │   ├── base.py
+│   │   ├── entity_client.py  # 统一实体操作核心客户端
+│   │   ├── standards_client.py
+│   │   └── jobs_client.py
+│   ├── commands/             # Typer 命令行参数解析与子命令组
+│   │   ├── auth.py
+│   │   ├── context.py
+│   │   ├── standards.py
+│   │   ├── guide.py
+│   │   ├── entities.py       # 通用实体操作命令
+│   │   ├── aliases/          # 友好资源别名 (page, component, asset, project...)
+│   │   ├── validate.py
+│   │   ├── screenshot.py
+│   │   └── build.py
+│   ├── config/               # Profile 配置、凭证安全存储
+│   ├── output/               # JSON Envelope 解包、Compact 诊断格式化、错误渲染
+│   └── errors/               # 错误码与退出码映射
 └── tests/
 ```
 
-模块职责：
-
-- `commands/`：参数解析与用户交互，不承载业务规则。
-- `client/`：Backend API Client、认证头、上传下载和轮询。
-- `config/`：profile、默认工作空间和本地非敏感配置。
-- `output/`：JSON、文本、文件输出和 stdout/stderr 约束。
-- `errors/`：HTTP 错误到稳定退出码的映射。
-
-CLI 与 Backend 的接口契约应显式版本化。可以继续复用现有 `/api` 路由，但对 CLI 稳定开放的接口需要形成独立契约清单；如果现有 Editor API 演进频繁，则增加 `/api/external/v1` 适配层。不要让 CLI 依赖 Editor 私有字段或页面展示逻辑。
-
 ### 3.1 技术栈选型
 
-CLI 确定使用 Python，不采用 Node.js。建议使用：
+- **语言环境**：Python 3.11 及以上。
+- **包管理与构建**：`uv` 管理依赖、虚拟环境和 CLI 工具发布。
+- **命令行框架**：`Typer`（结合 `Rich`）组织多级命令、类型提示与自动帮助文档。
+- **HTTP 通信**：`httpx` 处理 HTTP/2、连接池、超时控制与大文件流式上传下载。
+- **数据与契约**：`Pydantic v2` 定义 CLI 配置、统一 Envelope 和稳定 JSON DTO。
+- **凭证存储**：`keyring` 保存在系统凭证库；无 GUI/CI 环境通过 `WP_TOKEN` 环境变量传入。
 
-- Python 3.11 及以上。
-- `uv` 管理依赖、虚拟环境、构建和工具安装。
-- Typer 组织多级命令和参数帮助。
-- `httpx` 处理 HTTP、文件上传下载和连接超时。
-- Pydantic 定义 CLI 配置、API 响应和稳定 JSON 输出。
-- 系统 keyring 保存长期 Token；无法使用 keyring 的 CI 环境使用 `WP_TOKEN`。
+选型优势：
+- 契约高度复用：CLI DTO 可直接对齐 Backend 的 `operation_models.py` 与 `tool_specs.py`。
+- 工程一致性：完全契合仓库根目录的 Python + `uv` 规范，Backend 开发者可直接维护和编写契约测试。
 
-选型对比：
-
-| 维度 | Python | Node.js |
-| :--- | :--- | :--- |
-| 与 Backend 技术栈一致 | FastAPI、Pydantic、httpx、`uv` 均可沿用团队经验 | 需要单独维护 TypeScript API 模型和发布链路 |
-| 仓库规范 | 已明确 Python 使用 `uv` 和 venv | 前端已使用 pnpm，但 CLI 与 Editor 没有运行时耦合 |
-| HTTP、JSON、上传下载 | `httpx` 和 Pydantic 足够，异步任务轮询实现直接 | `fetch` 和 TypeScript 同样可胜任 |
-| 多级 CLI 体验 | Typer 成熟，类型声明可生成帮助 | Commander、oclif 等同样成熟 |
-| 桌面 Agent 安装 | 可通过 `uv tool install` 或 `uvx` 隔离安装 | 可通过 npm/pnpm 全局安装 |
-| 零运行时单文件分发 | 需要 PyInstaller 等额外打包 | 也需要 Node SEA、pkg 等额外打包 |
-| 后续维护成本 | Backend 开发者可以直接维护，诊断脚本和测试风格一致 | 需要同时维护 Backend Python 与 CLI TypeScript 两套工程约束 |
-
-选择 Python 的主要理由不是复用 Backend 内部代码，而是降低长期维护和契约实现成本。CLI 仍然只调用 HTTP API，不能导入 `backend/app`；API 模型可以从稳定 OpenAPI 契约生成或在 CLI 内维护最小 DTO。
-
-Node.js 的主要优势是 npm 生态和部分桌面 Agent 已自带 Node，但本项目并不需要把 CLI 嵌入 Editor、Electron 或 VS Code 扩展，因此该优势不足以抵消第二套语言和构建链路。若以后 CLI 的主要分发形态变为 Editor 内置终端、Electron 应用或 Node SDK，再重新评估 TypeScript 实现。
-
-开发和安装入口建议为：
+分发与安装方式：
 
 ```powershell
 uv sync --project cli
@@ -130,549 +122,398 @@ uv run --project cli wp --help
 uv tool install web-presentation-cli
 ```
 
-## 4. 认证和凭证模型
+## 4. 认证与凭证模型
 
-### 4.1 目标方案
+### 4.1 Personal Access Token (PAT)
 
-远程和长期使用采用 Personal Access Token，不把浏览器 Cookie 作为正式 CLI 凭证。建议新增：
+CLI 采用 Personal Access Token 作为标准凭证，不依赖浏览器 Session Cookie：
 
 ```text
 api_access_tokens
 - id
 - user_id
 - name
-- token_prefix
-- token_hash
-- expires_at
-- last_used_at
-- revoked_at
+- token_prefix          # 明文前缀，用于列表展示与快速定位 (如 wp_pat_...)
+- token_hash            # 安全哈希（Argon2 / SHA-256）
+- expires_at            # 过期时间（必须设定）
+- last_used_at          # 最近使用时间（受控节流更新）
+- revoked_at            # 吊销时间
 - created_at
 
 api_access_token_workspaces
 - token_id
-- workspace_id
+- workspace_id          # 显式授权的工作空间（支持 1 到多个，默认单个）
 
 api_access_token_scopes
 - token_id
-- scope
+- scope                 # 授予的操作范围
 ```
 
-约束：
+核心安全约束：
+1. 数据库仅存储 Token 哈希；Token 明文只在创建时向用户展示一次。
+2. Token 必须指定过期时间，且支持随时在控制台或 CLI 中主动吊销。
+3. 单空间优先：默认创建单工作空间 Token；跨空间 Token 必须显式枚举目标工作空间，不提供全局通配。
+4. **有效权限取严格交集**：
+   ```text
+   有效权限 = 用户账号处于激活状态 (active)
+             ∩ 用户在目标工作空间中持有有效成员身份 (active membership)
+             ∩ Token 的授权工作空间包含当前目标工作空间 (workspace grants)
+             ∩ Token 的 Scopes 包含当前请求所需的操作范围
+             ∩ 用户在工作空间中的角色角色 (owner / member) 允许当前动作
+   ```
+5. 任何一条不满足，Backend 一律拒绝。用户被移出工作空间或账号停用时，Token 立即失效。
 
-- 数据库只保存 Token 哈希；Token 明文仅在创建时展示一次。
-- Token 必须有过期时间，支持主动吊销。
-- Token 默认只绑定一个工作空间。
-- 多工作空间 Token 必须显式选择允许访问的工作空间，不提供隐式全空间通配权限。
-- 平台管理员也不能仅凭平台角色绕过 Token 的工作空间 grant。
-- 每次使用后更新 `last_used_at`，但需要节流，避免每个读请求都产生数据库写入。
-- 日志、异常、诊断输出和 shell 补全不得打印 Token。
+### 4.2 粗粒度 Scopes 清单
 
-有效权限计算采用交集：
-
-```text
-有效权限
-= 用户账号仍启用
-∩ 用户仍是目标工作空间的 active 成员
-∩ Token 显式授予目标工作空间
-∩ Token scopes 包含当前动作
-∩ 工作空间成员角色允许当前动作
-```
-
-其中任意条件不满足，都必须由 Backend 拒绝。用户被移出工作空间后，即使 Token 尚未过期，也应立即失去访问权。
-
-### 4.2 建议 scopes
-
-第一版使用面向领域的粗粒度 scopes：
-
-| Scope | 能力 |
+| Scope | 涵盖操作与能力 |
 | :--- | :--- |
-| `workspace:read` | 读取当前 Token 被授权的工作空间基础信息 |
-| `project:read` | 读取项目、路由、构建摘要 |
-| `project:write` | 创建和修改项目、修改路由 |
-| `page:read` | 读取页面、版本、依赖和截图状态 |
-| `page:write` | 创建、修改、快照和恢复页面 |
-| `asset:read` | 读取资源元数据和可编辑内容 |
-| `asset:write` | 上传、创建、修改和归档资源 |
-| `component:read` | 读取组件、版本和依赖 |
-| `component:write` | 创建、修改和发布组件 |
-| `design-system:read` | 读取主题、样式和字体 |
-| `design-system:write` | 修改主题和样式配置 |
-| `preview:run` | 创建预览 artifact 和截图任务 |
-| `build:run` | 创建构建任务和下载构建产物 |
-| `dangerous:delete` | 删除页面、资源、组件和构建产物 |
+| `workspace:read` | 查看工作空间基本信息、成员列表及当前授权范围 |
+| `project:read` | 读取项目元数据、路由树、配置与构建摘要 |
+| `project:write` | 创建、修改项目，整树覆盖路由，应用样式，归档项目 |
+| `page:read` | 读取页面元数据、页面源码、版本历史、依赖与截图状态 |
+| `page:write` | 创建页面、提交源码（乐观锁）、更新元数据、创建快照、归档页面 |
+| `asset:read` | 读取资源元数据、标签、预览资源内容与下载二进制文件 |
+| `asset:write` | 上传资源、保存内容更新、更新元数据、归档资源 |
+| `component:read` | 读取组件元数据、组件源码、版本历史、依赖与预览配置 |
+| `component:write` | 创建组件、提交组件源码（乐观锁）、发布组件新版本、归档组件 |
+| `design-system:read` | 读取主题（色板）、样式配置、字体列表和 Runtime Kit Manifest |
+| `design-system:write` | 创建与修改主题色板、样式快照配置，归档主题与样式 |
+| `preview:run` | 触发代码静态校验与真实渲染检查 (`validate`)、创建预览 artifact 与截图任务 |
+| `build:run` | 创建项目构建任务、查询构建状态与下载发布产物包 |
 
-删除类操作不应被普通 `*:write` 隐式覆盖。第一阶段给桌面 Agent 的默认 Token 不授予 `dangerous:delete`。
+> [!NOTE]
+> 平台已废除永久硬删除，因此不再设立 `dangerous:delete` Scope；资产清理统一通过归档（`*:write`）进行受控治理。
 
-### 4.3 本地凭证保存
+## 5. 工作空间隔离与资产治理
 
-CLI profile 保存：
+### 5.1 强隔离原则
 
-- Backend URL。
-- 工作空间 ID 或 code。
-- 默认项目 ID 或 code，可选。
-- 输出格式和超时等非敏感设置。
-- Token 的安全存储引用。
-
-Token 优先保存在操作系统凭证库；CI 可通过 `WP_TOKEN` 环境变量传入。不得把 Token 明文写进项目目录、Skill、命令历史或普通 YAML 配置。
-
-开发期可临时复用现有登录接口并保存 Cookie，但它只能作为过渡方案：Cookie 缺少独立 scope、工作空间 grant、吊销说明和面向自动化的生命周期管理。
-
-## 5. 工作空间隔离设计
-
-### 5.1 基本原则
-
-CLI 的“当前工作空间”只是减少重复输入的交互上下文，不是授权依据。Backend 必须独立验证每一个请求。
-
-每个工作空间对象都应遵循：
+CLI 的“当前工作空间”仅是本地减少重复输入的便捷上下文，不能作为服务端的授权信任凭据。
 
 ```text
-调用身份 -> Token workspace grant -> active membership
-                                     |
-请求 workspace 断言 --------------> 对象真实 workspace_id
+调用方发起请求
+  -> 请求携带 PAT Bearer Token + X-WP-Workspace-ID 断言
+  -> Backend 校验 Token 有效性、Token workspace grant 与 active membership
+  -> Backend 从数据库反查目标对象 (Project/Page/Asset/Component/Job) 真实 workspace_id
+  -> 验证：请求断言 == 对象真实 workspace_id == Token grant == Member 空间
 ```
 
-具体规则：
+1. **工作空间断言**：除 `auth`、`version`、`capabilities` 外，所有业务请求必须显式携带 `X-WP-Workspace-ID`。
+2. **完整归属链校验**：访问页面时，Backend 同时校验 `page.project_id` 与 `project.workspace_id` 是否完全匹配断言。
+3. **防止越权探测**：无权访问的对象，外部 API 统一返回 `404 OBJECT_NOT_FOUND`，杜绝通过 `403` 枚举其它工作空间的存在性。
+4. **命名空间隔离**：异步任务（截图、构建）、缓存键与幂等记录均包含 `workspace_id` 前缀，禁止跨工作空间复用。
 
-1. 除 `auth`、`version`、`capabilities` 和受限的 `workspace list` 外，所有业务命令必须解析出唯一工作空间。
-2. CLI 必须把解析后的工作空间作为路径、查询参数或 `X-WP-Workspace-ID` 断言发送给 Backend。
-3. Backend 必须从项目、页面、资源、组件、任务或产物记录反查真实 `workspace_id`。
-4. 请求断言、对象真实工作空间、Token grant 和用户 active membership 必须全部一致。
-5. 项目与页面同时出现时，Backend 还必须验证 `page.project_id` 和 `project.workspace_id` 的完整归属链。
-6. 不能因为调用方知道另一个工作空间的数字 ID、业务 code、文件哈希或 job ID 就返回对象存在性信息。
-7. 跨工作空间写入默认禁止；只有专门设计的导出/导入流程可以跨空间迁移内容。
+### 5.2 资产治理：归档优先（Archive First）
 
-### 5.2 CLI profile 隔离
+- 平台内容助手与外部 CLI 均**不提供永久硬删除命令**。
+- 清理项目、页面、组件、资源、主题和样式统一使用 `archive`：
+  - **单项归档**：免二次交互确认，直接标记为归档状态。
+  - **批量归档**（2～100 个）：要求显式确认（CLI 需提供 `--yes` 或交互确认），以整批原子语义执行。
+  - **无级联归档**：项目归档不会级联归档页面、路由或工作空间共享资产。
+- 归档后的对象在常规列表中不可见，但在需要时可通过管理端或恢复接口还原。
 
-推荐一个 profile 对应一个 Backend 和一个工作空间：
+### 5.3 双通道交付鉴权（DeliveryAccessContext）
 
-```powershell
-wp profile add client-a --server https://example.com --workspace ws_client_a
-wp profile add client-b --server https://example.com --workspace ws_client_b
-wp profile use client-a
-wp context show --json
-```
-
-工作空间解析优先级：
+资源文件、页面截图与构建站点产物必须经过鉴权保护，杜绝未鉴权的匿名下载：
 
 ```text
-显式 --workspace
-> WP_WORKSPACE 环境变量
-> 当前 profile 的 workspace
-> 无法解析则拒绝执行
+1. 用户 / CLI 下载通道：
+   携带 PAT Bearer Token -> 校验 active membership + Token grant + 对象 workspace 归属 -> 返回内容
+
+2. Runtime 内部回源通道：
+   携带短期 Runtime service token (绑定 preview/build artifact) -> Backend 校验 owner_scope -> 允许回源
 ```
 
-写操作的规则更严格：
-
-- 非交互模式下没有工作空间就直接失败，不能自动选择“最近使用”工作空间。
-- `--workspace` 与 profile 工作空间不一致时默认失败；只有显式 `--allow-profile-workspace-override` 才允许覆盖，并且 Token 仍需有对应 grant。
-- 每个写操作的 JSON 结果都返回 `workspace_id`、`project_id`、目标对象 ID 和 request ID，便于 Agent 复核。
-- Skill 应要求每轮创作开始时先执行 `wp context show --json`，但 Backend 安全不能依赖该步骤。
-
-### 5.3 列表和搜索隔离
-
-- `wp project list`、`wp page list`、`wp asset list`、`wp component list` 必须限定当前工作空间。
-- CLI 不提供默认的跨工作空间全局搜索。
-- `wp workspace list` 只返回 Token grant 与 active membership 的交集。
-- 对无权访问的对象，外部 API 建议统一返回 `404 OBJECT_NOT_FOUND`，减少通过 `403` 枚举对象存在性的机会；管理端内部接口可保留更明确的诊断语义。
-- 分页总数、标签聚合和建议列表也必须在工作空间过滤之后计算，不能泄漏其它空间数量。
-
-### 5.4 任务、缓存和幂等隔离
-
-截图、构建和其它异步任务必须在创建时持久化 `workspace_id`，后续按 `job_id` 查询、等待、取消或下载产物时重新校验工作空间，而不是只校验任务创建人。
-
-缓存和幂等键必须带命名空间：
-
-```text
-cache:{workspace_id}:{resource_type}:{resource_id}:...
-idem:{principal_id}:{workspace_id}:{command}:{idempotency_key}
-```
-
-同一个 `idempotency_key` 不能在不同工作空间复用同一结果。幂等记录应保存请求摘要；相同键对应不同请求内容时返回冲突。
-
-### 5.5 文件与产物隔离
-
-- 上传资源时由当前工作空间决定存储前缀，不能接受调用方传入任意存储路径。
-- 下载资源、截图和构建产物必须先通过受保护 API 校验身份和工作空间，再返回内容或短期签名 URL。
-- CLI 下载文件时使用临时文件写入，校验完成后再原子替换目标文件，避免失败留下半成品。
-- 文件名只能影响下载展示名，不能影响对象存储 key 或本地服务器物理路径。
-
-当前 `/public/assets/{workspace_id}/{file_hash}`、`/public/cached-assets/{workspace_id}/{file_hash}`、`/public/page-screenshots/{page_id}` 和 `/build-artifacts/{project_id}/{job_id}` 存在无用户鉴权的公开读取语义。资源、页面截图和构建站点确定改为需要鉴权，但第一阶段不引入完整的发布、分享链接或通用签名 URL 系统。
-
-采用最小双通道鉴权：
-
-```text
-用户/CLI 访问
-  -> 现有 Session Cookie 或 PAT Bearer Token
-  -> active membership + Token grant + 对象 workspace 校验
-
-Runtime 内部回源
-  -> 现有短期 Runtime service token
-  -> PreviewContextToken，或 service token 绑定的构建 artifact
-  -> artifact/job/workspace 声明一致性校验
-```
-
-具体处理：
-
-1. 保持现有资源、截图和构建站点 URL 结构，减少 Editor、Runtime 和已保存 manifest 的改动。
-2. 给这些读取路由增加统一 `DeliveryAccessContext` 依赖，而不是分别实现三套鉴权。
-3. 普通浏览器使用现有同站 Session Cookie；CLI 使用 PAT Bearer Token。
-4. Runtime 预览和截图回源继续使用已经存在的 preview context 与 Runtime service token，不新增长期服务凭证。
-5. Runtime 构建下载工作空间资源时，把当前已经持有且绑定 `artifact_id` 的 Runtime service token 一并放入资源请求；Backend 从该 artifact 的 `owner_scope` 反查工作空间并校验目标资源，不再引入另一种资源下载 Token。
-6. 构建站点入口及其静态子资源要求用户 Cookie 或 PAT；“公开发布/匿名分享构建站点”不属于 CLI 第一阶段，需要时另建显式发布能力。
-7. 页面截图要求用户 Cookie 或 PAT；CLI 下载优先走受保护 API，不依赖响应模型里的公开 URL。
-8. 模板包临时资源等同类公开入口也要纳入统一审计，至少要求用户会话或与 artifact 匹配的短期预览上下文。
-
-该方案不新增 OAuth、独立 Ticket 表、逐文件签名 URL、CDN 鉴权或分享链接管理，复杂度主要集中在一个 Backend 鉴权依赖和 Runtime 构建资源请求补充请求头。
-
-需要注意：生产环境应继续通过同一 Gateway 域名提供 Editor、Backend 和 Runtime，使 `<img>`、字体和构建站点子资源能够自动携带同站 Cookie。跨域部署不是第一阶段目标；如未来必须跨域，再评估短期签名 URL 或资源代理。
-
-### 5.6 成员角色
-
-当前 `WorkspaceMemberRole` 已有 `owner` 和 `member`。权限规则确定为：`member` 除删除内容和管理 Token 外，其它权限与 `owner` 一致。
-
-| 动作 | owner | member |
-| :--- | :---: | :---: |
-| 读取工作空间内容 | 是 | 是 |
-| 创建和修改项目、页面、资源 | 是 | 是 |
-| 修改主题、样式和项目路由 | 是 | 是 |
-| 创建和发布组件 | 是 | 是 |
-| 创建截图、预览和构建任务 | 是 | 是 |
-| 删除内容、管理 Token | 是 | 否 |
-
-删除包括页面、项目、资源、组件、主题、样式、构建产物等不可逆或难恢复操作；归档、创建快照和恢复历史版本不按删除处理，`member` 可以执行。Token 的创建、授权工作空间调整、scope 调整和吊销均只允许 `owner`。
-
-Backend 应集中实现角色到操作的授权策略，CLI 只展示服务端返回的结果。`dangerous:delete` scope 不能让 `member` 越过角色限制，即有效权限始终取角色与 Token scope 的交集。
-
-## 6. CLI 通用契约
+## 6. 通用交互契约与输出
 
 ### 6.1 输出约束
 
-所有业务命令支持 `--json`，stdout 只输出一个 JSON 文档，日志和进度写入 stderr。
+- 所有的业务命令均支持 `--json` 开关。
+- 标准输出（`stdout`）在 `--json` 模式下**只输出且严格输出一个合法的 JSON 文档**；所有诊断日志、进度条和调试信息一律写入标准错误（`stderr`）。
 
-成功结果：
+统一响应 Envelope 结构（与平台通用业务模型保持一致）：
 
 ```json
 {
   "success": true,
-  "data": {},
+  "resource_type": "page",
+  "operation": "update",
+  "action": "content",
+  "message": "页面源码更新成功。",
+  "effect": "update",
+  "mutation": {
+    "kind": "page",
+    "resource_type": "page",
+    "operation": "update",
+    "action": "content",
+    "target": { "id": 35, "version_no": 8 }
+  },
+  "data": {
+    "id": 35,
+    "current_version_no": 8,
+    "source_hash": "a1b2c3d4..."
+  },
   "context": {
     "workspace_id": 3,
     "project_id": 12
   },
-  "request_id": "req-123"
+  "request_id": "req-987654321"
 }
 ```
 
-失败结果：
+失败响应 Envelope 结构：
 
 ```json
 {
   "success": false,
   "error": {
     "code": "PAGE_VERSION_CONFLICT",
-    "message": "页面版本已变化。",
+    "message": "页面版本已发生变化，提交被拒绝。",
     "recoverable": true,
-    "hint": "重新拉取页面源码后再次提交。"
+    "hint": "请拉取最新页面源码并在当前基线上重新提交。",
+    "details": {
+      "expected_base_version": 7,
+      "current_remote_version": 8
+    }
   },
-  "request_id": "req-123"
+  "request_id": "req-987654321"
 }
 ```
 
-建议退出码：
+稳定退出码表：
 
-| 退出码 | 含义 |
-| :---: | :--- |
-| `0` | 成功 |
-| `2` | CLI 参数错误 |
-| `3` | 认证失败或凭证过期 |
-| `4` | 权限或工作空间隔离拒绝 |
-| `5` | 对象不存在 |
-| `6` | 版本、幂等或状态冲突 |
-| `7` | Backend/Runtime 暂时不可用 |
-| `8` | 长任务失败或超时 |
-| `10` | 未分类内部错误 |
+| 退出码 | 含义 | 场景示例 |
+| :---: | :--- | :--- |
+| `0` | 成功 (SUCCESS) | 命令正常执行并返回 |
+| `2` | 参数错误 (INVALID_ARGUMENTS) | 缺少必填参数、参数格式非法、互斥选项同时出现 |
+| `3` | 认证失败 (UNAUTHENTICATED) | Token 缺失、已过期、已吊销或无效 |
+| `4` | 权限拒绝 (PERMISSION_DENIED) | Scope 不足、未授权该工作空间、角色限制 |
+| `5` | 对象不存在 (NOT_FOUND) | 目标 ID 在当前工作空间不存在 |
+| `6` | 并发/状态冲突 (CONFLICT) | 乐观锁版本不一致、幂等冲突、草稿状态冲突 |
+| `7` | 服务不可用 (UNAVAILABLE) | Backend 或 Runtime 暂时不可达 |
+| `8` | 异步任务超时/失败 (TASK_FAILED) | 截图失败、构建失败或等待超时 |
+| `10` | 内部错误 (INTERNAL_ERROR) | 未分类的系统异常 |
 
-### 6.2 输入约束
+### 6.2 输入与并发约束
 
-- JSON 请求支持 `--input request.json` 和 `--stdin`。
-- 页面源码支持独立的 `--file page.vue`，不作为命令行长字符串传入。
-- 二进制只通过文件上传。
-- `--stdin` 和 `--file/--input` 互斥。
-- 覆盖本地文件默认失败，需要显式 `--overwrite`。
-- 密码和 Token 不提供普通命令行参数，避免进入 shell history 和进程列表。
-
-### 6.3 写入并发和幂等
-
-页面源码更新必须提供 `base_version_no` 或等价的 `If-Match`：
-
-```powershell
-wp page source push 35 --file page.vue --base-version 7 --idempotency-key task-a-page-35-v8 --json
-```
-
-现有普通页面 `PATCH` 可以更新源码，但 `PageUpdateRequest` 没有强制基线版本；现有 visual-edit 接口具备 `base_version_no` 和 `source_hash` 校验。CLI 正式写页面前应新增稳定的乐观锁契约，不能让 Agent 的重试覆盖其它编辑者刚提交的内容。
-
-创建页面、上传资源和创建构建任务同样应支持 `Idempotency-Key`，避免调用方在网络超时后重试产生重复对象。
+- **大段源码与配置文件**：使用 `--file <path>` 或 `--stdin` 传入，不作为命令行长参数。
+- **二进制资产**：通过 `--file <path>` 指定本地文件进行流式上传。
+- **乐观锁控制**：更新页面或组件源码必须提供 `--base-version <int>` 或 `--source-hash <str>`，拒绝静默覆盖。
+- **幂等保护**：创建对象和发起长任务支持 `--idempotency-key <key>`，防止超时重试产生重复记录。
 
 ## 7. 命令能力规划
 
-### 7.1 基础与诊断
+CLI 命令划分为**基础与认证**、**动态规范与自省**、**通用业务实体操作**、**代码校验与诊断**、**长任务流水线**五大板块。
 
-| 命令 | 阶段 | 说明 |
-| :--- | :---: | :--- |
-| `wp version` | MVP | 返回 CLI 版本和契约版本 |
-| `wp capabilities` | MVP | 返回服务端版本、功能开关和限制 |
-| `wp health` | MVP | 检查 Backend 可达性，不启动服务 |
-| `wp profile add/list/show/use/remove` | MVP | 管理本地连接 profile |
-| `wp context show` | MVP | 展示已解析的服务器、工作空间和项目 |
-| `wp completion` | 后续 | 生成 Shell 补全脚本 |
+### 7.1 基础、配置与认证
 
-### 7.2 认证与工作空间
-
-| 命令 | 阶段 | 所需 scope | 说明 |
+| 命令 | 阶段 | 所需 Scope | 说明 |
 | :--- | :---: | :--- | :--- |
-| `wp auth login` | MVP | 无 | 交互登录并换取/创建受限 Token，具体流程待接口确定 |
-| `wp auth whoami` | MVP | 无 | 返回当前用户、Token scopes 和 workspace grants |
-| `wp auth logout` | MVP | 无 | 清除本地凭证，可选吊销当前 Token |
-| `wp workspace list` | MVP | `workspace:read` | 只列出授权交集 |
-| `wp workspace get` | MVP | `workspace:read` | 读取当前工作空间 |
-| `wp workspace use` | MVP | 本地操作 | 切换 profile 或默认上下文，不改变服务端授权 |
-| `wp token create/list/revoke` | 后续 | owner | 管理自动化 Token |
+| `wp version` | MVP | 无 | 输出 CLI 版本、协议版本及环境信息 |
+| `wp capabilities` | MVP | 无 | 返回服务端功能开关、最大文件限制与支持的资源类型 |
+| `wp health` | MVP | 无 | 快速检查 Backend 服务可达性 |
+| `wp profile <add\|list\|show\|use\|remove>` | MVP | 无 | 管理本地连接配置（Server URL、默认 Workspace 等） |
+| `wp context show` | MVP | 无 | 打印当前生效的 Server、Workspace、Token 状态与上下文 |
+| `wp auth login` | MVP | 无 | 交互式生成并保存受限 PAT |
+| `wp auth whoami` | MVP | 无 | 查看当前用户、Token 有效期、授权工作空间与 Scopes |
+| `wp auth logout` | MVP | 无 | 清除本地保存的凭证，可选向服务端发起主动吊销 |
+| `wp workspace <list\|get\|use>` | MVP | `workspace:read` | 查看授权工作空间列表与详情，切换本地默认工作空间 |
+| `wp token <create\|list\|revoke>` | 后续 | `owner` 角色 | 自动化 Token 生命周期管理 |
 
-### 7.3 项目和路由
+### 7.2 动态规范与操作自省（对齐平台自省机制）
 
-| 命令 | 阶段 | 所需 scope |
-| :--- | :---: | :--- |
-| `wp project list/get` | MVP | `project:read` |
-| `wp project create/update` | MVP | `project:write` |
-| `wp project routes get` | MVP | `project:read` |
-| `wp project routes replace` | MVP | `project:write` |
-| `wp project build-assets` | MVP | `project:read` |
-| `wp project delete` | 后续 | `dangerous:delete` |
+外部桌面 Agent 通过这两个命令动态了解当前工作空间生效的代码编写规范与业务操作参数，无需外部提示词硬编码。
 
-`routes replace` 是整树覆盖操作，必须带项目当前路由版本或 ETag；没有并发基线时不应开放给自动化 Agent。
+| 命令 | 阶段 | 所需 Scope | 说明 |
+| :--- | :---: | :--- | :--- |
+| `wp standards page` | MVP | `page:read` | 获取当前生效的**页面代码规范 Markdown**（包含 Runtime Kit 引入要求、Vue 模板限制等） |
+| `wp standards component` | MVP | `component:read` | 获取当前生效的**组件代码规范 Markdown**（包含 Props 定义、previewSchema 结构等） |
+| `wp guide` | MVP | 已认证用户 | 罗列当前支持的全部通用操作键（`operation_key`）索引与风险说明 |
+| `wp guide <operation_key>` | MVP | 已认证用户 | 查询特定操作（如 `page.update.content`）的**精确参数 JSON Schema**、前置条件、副作用和调用示例 |
 
-### 7.4 页面与版本
+### 7.3 通用业务实体操作（Core Entities）
 
-| 命令 | 阶段 | 所需 scope |
-| :--- | :---: | :--- |
-| `wp page list/get` | MVP | `page:read` |
-| `wp page source pull` | MVP | `page:read` |
-| `wp page create` | MVP | `page:write` |
-| `wp page source push` | MVP | `page:write` |
-| `wp page metadata update` | MVP | `page:write` |
-| `wp page dependencies` | MVP | `page:read` |
-| `wp page components` | MVP | `page:read` |
-| `wp page versions list/get` | MVP | `page:read` |
-| `wp page snapshot` | MVP | `page:write` |
-| `wp page restore` | 后续 | `page:write`，需要显式确认 |
-| `wp page copy` | 后续 | `page:write`，只允许同空间 |
-| `wp page visual-edit preview/apply` | 后续 | `page:write` |
-| `wp page delete` | 后续 | `dangerous:delete` |
+CLI 底层由统一的 `EntityClient` 驱动，同时提供清晰的**直观别名命令**：
 
-`source pull` 默认写入文件并同时返回 `current_version_no` 和源码哈希。`source push` 必须携带其中至少一种并发基线。
+#### 项目（Project）
+- `wp project list`：罗列当前工作空间的项目（支持分页与关键词过滤）。
+- `wp project get <ID>`：读取项目详情、配置与路由摘要。
+- `wp project create --name <NAME> [--theme-id <ID>]`：创建新项目。
+- `wp project update <ID> [--name <NAME>] [--configuration <JSON_FILE>]`：更新项目元数据或配置。
+- `wp project routes get <ID>`：获取项目当前路由树。
+- `wp project routes replace <ID> --file <ROUTES_JSON> --base-version <V>`：整树覆盖项目路由（强制并发基线）。
+- `wp project apply-style <ID> --style-id <STYLE_ID>`：将指定样式快照应用到项目。
+- `wp project archive <ID...>`：归档项目（单项免确认，批量 `--yes`）。
 
-### 7.5 代码检查
+#### 页面（Page）
+- `wp page list --project-id <PID>`：罗列项目下的页面列表。
+- `wp page get <ID>`：读取页面详情、依赖和配置。
+- `wp page source pull <ID> [--output <FILE>]`：拉取页面 Vue 源码，并返回当前版本号与源码哈希。
+- `wp page create --project-id <PID> --name <NAME> --route-path <PATH> [--file <PAGE_VUE>]`：创建新页面。
+- `wp page source push <ID> --file <PAGE_VUE> --base-version <V>`：更新页面源码（必须提供并发基线，服务端自动触发实时编译与校验）。
+- `wp page update <ID> [--name <NAME>] [--route-path <PATH>]`：更新页面基本元数据。
+- `wp page snapshot <ID> [--label <LABEL>]`：为当前页面创建正式快照版本。
+- `wp page versions list <ID>`：读取页面的历史快照列表。
+- `wp page archive <ID...>`：归档页面。
 
-| 命令 | 阶段 | 所需 scope |
-| :--- | :---: | :--- |
-| `wp check page` | MVP | `page:read` 或专用 `code:check` |
-| `wp check component` | 后续 | `component:read` 或专用 `code:check` |
+#### 组件（Component）
+- `wp component list [--scope suggested|all]`：查询工作空间组件库（支持建议组件筛选）。
+- `wp component get <ID> [--view detail|source|versions]`：读取组件详情、Vue 源码或版本历史。
+- `wp component create --name <NAME> --type <TYPE> --file <COMP_VUE> --preview-schema <SCHEMA_JSON>`：创建新组件草稿。
+- `wp component source push <ID> --file <COMP_VUE> --base-version <V>`：提交组件源码更新（自动触发编译与场景渲染检查）。
+- `wp component publish <ID>`：执行生命周期发布动作（`component.action.publish`），生成正式可用版本。
+- `wp component archive <ID...>`：归档组件。
 
-当前代码检查能力主要由内部 AI 工具调用，需要补充不依赖 AI run/tool token 的确定性公共 API。检查结果至少包括：
+#### 资源（Asset）
+- `wp asset list [--scope suggested|all] [--tag <TAG>]`：查询工作空间资源库。
+- `wp asset upload --file <LOCAL_FILE> [--name <NAME>] [--tags <T1,T2>]`：上传静态图片/文件至工作空间资源库。
+- `wp asset pull <ID> [--output <FILE>]`：读取可编辑资源（如 SVG、文本）的源码内容。
+- `wp asset push <ID> --file <FILE>`：更新可编辑资源的内容。
+- `wp asset download <ID> --output <FILE>`：通过受保护的交付鉴权通道安全下载资源二进制文件。
+- `wp asset archive <ID...>`：归档资源。
 
-- `valid`。
-- `errors`、`warnings`。
-- Runtime Kit 非版本化或未授权导入。
-- 组件依赖和资源引用问题。
-- 可选的规范化源码哈希。
+#### 设计系统与公共资产（Design System & Runtime Kit）
+- `wp theme list` / `wp theme get <ID>`：读取主题色板配置。
+- `wp theme update <ID> --colors <JSON_FILE>`：修改主题色板（仅限颜色配置，不暴露 Logo/字体）。
+- `wp style list` / `wp style get <ID>`：读取样式快照配置。
+- `wp font list`：读取工作空间可用字体库。
+- `wp runtime-kit list` / `wp runtime-kit get <NAME>`：查询 Runtime Kit 公共组件与版本化导出清单（如 `<ExportName>.v1`）。
+- `wp runtime-kit manifest`：获取完整的公开能力 Manifest。
 
-### 7.6 资源
+### 7.4 代码检查与差异预览（对齐 Compact 校验机制）
 
-| 命令 | 阶段 | 所需 scope |
-| :--- | :---: | :--- |
-| `wp asset list/get/tags` | MVP | `asset:read` |
-| `wp asset content pull` | MVP | `asset:read` |
-| `wp asset upload` | MVP | `asset:write` |
-| `wp asset content create/push` | MVP | `asset:write` |
-| `wp asset metadata update` | MVP | `asset:write` |
-| `wp asset download` | MVP | `asset:read` |
-| `wp asset references` | 后续 | `asset:read` |
-| `wp asset archive/restore/copy` | 后续 | `asset:write` |
-| `wp asset import/export` | 后续 | `asset:write` / `asset:read` |
-| `wp asset delete` | 后续 | `dangerous:delete` |
+对齐平台 `validate_entity` 的 4 种检查模式与精简输出机制：
 
-CLI 不提供图片生成。调用方生成本地文件后使用 `asset upload`。
+| 命令 | 模式 (Mode) | 阶段 | 说明 |
+| :--- | :---: | :---: | :--- |
+| `wp validate page <ID> [--detail]` | `current` | MVP | 检查当前已保存页面的 Runtime 编译、真实渲染与布局溢出问题 |
+| `wp validate page --project-id <PID> --file <PAGE_VUE> [--detail]` | `content` | MVP | 预检一段新页面候选源码，不落库 |
+| `wp validate page <ID> --edits <JSON_FILE> [--detail]` | `edits` | MVP | 预检针对现有页面的局部结构化编辑，不落库 |
+| `wp validate component <ID> [--detail]` | `current` | MVP | 检查当前组件在各预设 scenario 下的真实渲染与布局情况 |
+| `wp validate component --file <COMP_VUE> --preview-schema <JSON> [--detail]` | `content` | MVP | 预检新组件候选源码及其 previewSchema |
+| `wp validate asset <ID> --file <NEW_CONTENT>` | `preview` | MVP | 预览可编辑资源内容更新后的 unified diff，不落库 |
 
-### 7.7 组件、主题、样式和字体
+> [!TIP]
+> 默认输出精简的 Compact 文本结论（包含摘要、布局数值、最多 10 条带定位的警告与建议），极度适合 Agent 上下文消费；使用 `--detail --json` 时输出完整结构化诊断事实。
 
-| 命令 | 阶段 | 所需 scope |
-| :--- | :---: | :--- |
-| `wp component list/get/versions/dependencies` | MVP | `component:read` |
-| `wp component create/update/publish` | 后续 | `component:write` |
-| `wp theme list/get` | MVP | `design-system:read` |
-| `wp style list/get` | MVP | `design-system:read` |
-| `wp font list/get` | MVP | `design-system:read` |
-| `wp theme/style create/update/copy` | 后续 | `design-system:write` |
-| `wp component/theme/style delete` | 后续 | `dangerous:delete` |
+### 7.5 预览、截图与构建长任务
 
-第一阶段重点是给调用方足够的设计系统上下文，不急于让 Agent 修改共享设计资产。
+| 命令 | 阶段 | 所需 Scope | 说明 |
+| :--- | :---: | :--- | :--- |
+| `wp preview create --project-id <PID>` | MVP | `preview:run` | 生成临时预览 Artifact 与带签名的预览上下文 Token |
+| `wp screenshot start --page-id <PID>` | MVP | `preview:run` | 向 Chromium 渲染池提交页面真实截图任务，返回 `job_id` |
+| `wp screenshot status <JOB_ID>` | MVP | `preview:run` | 查看截图任务状态（`pending`, `running`, `completed`, `failed`） |
+| `wp screenshot wait <JOB_ID> [--timeout 60]` | MVP | `preview:run` | 带指数退避的轮询等待任务完成；Ctrl+C 仅停止本地等待，`--cancel-remote` 请求远程取消 |
+| `wp screenshot download <JOB_ID\|PAGE_ID> --output <FILE>` | MVP | `page:read` | 通过受保护鉴权通道将页面高清截图下载到本地，供 Agent 进行多模态视觉复核 |
+| `wp build start --project-id <PID>` | MVP | `build:run` | 提交项目打包构建任务，返回 `job_id` |
+| `wp build status <JOB_ID>` | MVP | `build:run` | 查看构建进度与日志摘要 |
+| `wp build wait <JOB_ID> [--timeout 180]` | MVP | `build:run` | 轮询等待构建完成 |
+| `wp build download <JOB_ID> --output <ZIP_FILE>` | MVP | `build:run` | 下载最终静态发布产物 Zip 包 |
 
-### 7.8 Runtime Kit
+## 8. Skill 与 CLI 的协同契约
 
-| 命令 | 阶段 | 所需 scope |
-| :--- | :---: | :--- |
-| `wp runtime-kit list` | MVP | 已认证用户 |
-| `wp runtime-kit get` | MVP | 已认证用户 |
-| `wp runtime-kit manifest` | MVP | 已认证用户 |
-| `wp runtime-kit preview` | 后续 | `preview:run` |
+配套的桌面 Agent Skill（如 `web-presentation.skill.yaml` 或 Antigravity Skill）设计原则：
 
-输出必须保留版本化 import path、参数 Schema、previewSchema 和可预览信息，供调用方生成合法源码。
+- **自适应发现**：Skill 不再硬编码页面/组件代码规范，而是指示 Agent 在每轮创作开始时：
+  1. 运行 `wp context show --json` 确认当前工作空间与项目上下文。
+  2. 运行 `wp standards page` 或 `wp standards component` 动态拉取当前版本规范。
+  3. 不确定参数时运行 `wp guide <op>` 获取字段定义。
+- **创作与视觉循环（Visual Feedback Loop）**：
+  ```text
+  Agent 编写代码 -> wp validate 预检 -> wp page source push 提交
+  -> wp screenshot start + wait -> wp screenshot download
+  -> Agent 查看本地图片视觉复核 -> 针对排版/样式问题进行下一轮迭代
+  ```
+- **错误恢复指导**：
+  - 遇到 `PAGE_VERSION_CONFLICT`（退出码 6）：指示 Agent 重新执行 `wp page source pull` 并在最新基线上合并修改。
+  - 遇到 `CODE_CHECK_FAILED`：解析返回的定位与 hint 修复 Vue 源码。
 
-### 7.9 预览、截图和构建
+## 9. Backend 需提供的接口契约
 
-| 命令 | 阶段 | 所需 scope |
-| :--- | :---: | :--- |
-| `wp preview create` | MVP | `preview:run` |
-| `wp screenshot start` | MVP | `preview:run` |
-| `wp screenshot status/wait/cancel` | MVP | `preview:run` |
-| `wp screenshot download` | MVP | `page:read` |
-| `wp screenshot batch-start/batch-download` | 后续 | `preview:run` |
-| `wp build assets` | MVP | `project:read` |
-| `wp build start/status/wait` | MVP | `build:run` |
-| `wp build download` | MVP | `build:run` |
-| `wp build artifact delete` | 后续 | `dangerous:delete` |
+为了支撑上述 CLI 能力，Backend 需确保开放以下稳定外部接口（建议挂载在 `/api/external/v1` 下或复用统一鉴权后的路由）：
 
-CLI 可以在命令表面提供统一的 `wait` 体验，但 Backend 仍保留截图和构建各自的任务模型。`wait` 应采用带抖动的退避轮询，尊重服务端建议间隔，并在 Ctrl+C 时默认只停止本地等待；只有显式 `--cancel-remote` 才请求取消远程任务。
-
-## 8. Skill 与 CLI 的契约
-
-配套 Skill 不复制完整命令定义，只描述：
-
-- 何时使用 CLI。
-- 标准创作闭环。
-- 必须先确认工作空间上下文。
-- 如何选择组件、资源和 Runtime Kit。
-- 如何处理版本冲突、代码检查错误和任务失败。
-- 什么时候下载截图并进行视觉复核。
-- 哪些危险操作必须停止并请求用户确认。
-
-CLI 自身提供可机器读取的能力目录：
-
-```powershell
-wp capabilities --json
-wp help --json
-wp schema export --output wp-cli.schema.json
-```
-
-Skill 声明最低 CLI 和契约版本，例如：
-
-```yaml
-cli_name: wp
-minimum_cli_version: 0.1.0
-api_contract_version: 1
-```
-
-## 9. Backend 需要补齐的接口与约束
-
-现有 API 已覆盖大部分读取、资源管理、截图和构建能力，但 CLI MVP 仍需要补齐：
-
-1. PAT 创建、校验、吊销、scope 和 workspace grant。
-2. Cookie/Bearer 最终统一为同一种请求主体上下文。
-3. 面向外部调用的 workspace assertion 与对象归属校验。
-4. 页面源码更新的强制乐观锁。
-5. 项目路由整树覆盖的强制乐观锁。
-6. 创建类和长任务接口的幂等键。
-7. 不依赖 AI run/tool token 的页面和组件代码检查 API。
-8. 资源、截图、构建站点和同类临时资源的统一交付鉴权入口。
-9. 稳定的能力发现和 API 契约版本接口。
-10. 统一错误字段 `code`、`message`、可选 `data`、request ID，并由 CLI 补充 recoverable/hint 映射。
-11. 工作空间角色权限矩阵。
-
-CLI 不应为了赶进度直接调用 `backend/app/ai` 中绑定 run/session 的工具入口。可以复用这些工具背后的确定性 Service，但需要通过普通 API 和普通用户授权上下文调用。
+1. **PAT 认证与审计**：`/api/external/v1/auth/tokens`（创建、校验、吊销、工作空间授权校验）。
+2. **规范与自省接口**：
+   - `GET /api/external/v1/standards/{standard_type}`：返回 `page` 或 `component` 规范 Markdown。
+   - `GET /api/external/v1/guides` & `GET /api/external/v1/guides/{operation_key}`：返回操作手册与 JSON Schema。
+3. **统一通用实体端点**：
+   - `POST /api/external/v1/entities/list`
+   - `POST /api/external/v1/entities/get`
+   - `POST /api/external/v1/entities/create`
+   - `POST /api/external/v1/entities/update`
+   - `POST /api/external/v1/entities/archive`
+   - `POST /api/external/v1/entities/validate`
+   - `POST /api/external/v1/entities/action`
+4. **统一交付鉴权（DeliveryAccessContext）**：
+   - 静态资源下载、页面截图获取、构建产物包下载统一接入 PAT Bearer / Cookie 鉴权。
+5. **异步任务端点**：
+   - 截图任务创建、查询与取消（`/api/external/v1/jobs/screenshots/...`）。
+   - 构建任务创建、查询与取消（`/api/external/v1/jobs/builds/...`）。
 
 ## 10. 测试方案
 
-### 10.1 Backend
+### 10.1 Backend 契约与安全测试
+- PAT 哈希校验、过期、主动吊销与 Scopes 权限组合测试。
+- 双工作空间隔离测试：使用 Workspace A 的 Token 访问 Workspace B 的实体必定返回 404。
+- Workspace Assertion 冲突拒绝测试（`X-WP-Workspace-ID` 与对象实际空间不符）。
+- 乐观锁并发冲突测试（携带旧 `base_version_no` 提交被拒绝）。
+- 交付鉴权测试：匿名访问资源/截图/产物被拒绝，有效 PAT / Cookie 允许下载。
+- 批量归档原子事务与确认保护测试。
 
-- PAT 哈希、过期、吊销和 scope 单元测试。
-- Token grant、active membership、成员角色的权限组合测试。
-- 两用户、两工作空间的列表隔离测试。
-- 使用其它空间的 project/page/asset/component/job ID 访问时的拒绝测试。
-- 路径 workspace 与对象真实 workspace 不一致测试。
-- 页面版本冲突和幂等重试测试。
-- 截图、构建任务和产物下载的工作空间校验测试。
-- 资源、截图和构建站点的匿名访问拒绝测试。
-- 用户 Cookie、PAT 和 Runtime 短期服务凭证三种交付访问路径测试。
+### 10.2 CLI 单元与集成测试
+- Profile 切换与工作空间解析优先级测试（显式参数 > 环境变量 > Profile 默认）。
+- 统一 EntityClient 请求封装、Envelope 解包与退出码映射测试。
+- 标准输出纯 JSON（`stdout`）与日志分离（`stderr`）测试。
+- 大文件/源码流式上传与原子覆盖写入测试。
+- 长任务退避轮询与优雅取消（Ctrl+C）测试。
+- 凭证安全测试：日志与异常输出绝对不包含 Token 明文。
 
-### 10.2 CLI
+### 10.3 E2E 创作闭环验证
+在预设的沙箱环境中完成端到端验证：
+1. `wp auth login` 使用 PAT 完成认证并选定 Workspace 1。
+2. 调用 `wp standards page` 动态获取规范。
+3. 调用 `wp page create` 创建页面并提交源码。
+4. 调用 `wp validate page` 确认无布局溢出。
+5. 调用 `wp screenshot start` + `wp screenshot wait` 并下载截图。
+6. 调用 `wp page snapshot` 创建快照。
+7. 调用 `wp build start` + `wp build wait` 并下载构建产物 Zip 包。
+8. 验证跨工作空间探测均被安全拦截。
 
-- profile 和工作空间解析优先级测试。
-- profile 工作空间覆盖保护测试。
-- stdout 纯 JSON、stderr 日志和退出码测试。
-- stdin、源码文件、上传下载和覆盖保护测试。
-- HTTP 超时、重试、401/403/404/409/5xx 错误映射测试。
-- job wait 的成功、失败、超时和 Ctrl+C 测试。
-- Windows PowerShell、bash 的参数兼容测试。
-- Token 不进入日志、异常和配置快照的安全测试。
+## 11. 分阶段实施路线图
 
-### 10.3 E2E
+```text
+阶段 0：规范确认与安全基础 (Security & Foundations)
+  ├── 落地 PAT 数据库模型与哈希存储 (api_access_tokens)
+  ├── 统一 Bearer PAT 与 Session Cookie 鉴权解析 (DeliveryAccessContext)
+  └── 补齐 Workspace Assertion (X-WP-Workspace-ID) 强制校验中间件
 
-至少准备两个用户和两个工作空间：
+阶段 1：外部 API v1 与自省契约 (Backend External API v1)
+  ├── 开放动态代码规范端点 (/api/external/v1/standards/...)
+  ├── 开放自省操作手册端点 (/api/external/v1/guides/...)
+  └── 暴露基于 operation_models 的通用实体操作路由 (list, get, create, update, archive, validate, action)
 
-1. 使用 workspace A profile 完成读取、页面创建、源码提交、截图、快照和构建。
-2. 使用同一 Token 尝试读取 workspace B 的对象，必须失败。
-3. 使用 workspace B profile 验证其正常创作链路。
-4. 吊销 Token 后再次调用，必须立即失败。
-5. 用户成员关系失效后，未过期 Token 也必须失败。
+阶段 2：CLI MVP 核心与自省只读 (CLI Read & Self-Discovery)
+  ├── 搭建 cli/ Python 工程脚手架 (uv, Typer, httpx, Pydantic)
+  ├── 实现 profile, auth, context, standards, guide 命令
+  └── 实现项目、页面、组件、资源、主题、Runtime Kit 的通用实体查询命令
 
-## 11. 分阶段实施
+阶段 3：完整创作闭环 (CLI Write & Visual Review)
+  ├── 实现带乐观锁的页面/组件源码提交 (push)
+  ├── 实现 Compact 校验命令 (wp validate)
+  ├── 实现受控的单项与批量归档 (wp archive)
+  ├── 实现资源上传与受保护下载
+  └── 实现截图与构建长任务的启动、轮询等待与产物下载
 
-### 阶段 0：契约确认
-
-- 确认 CLI 包名、命令名和外部 API 版本策略。
-- 确认第一版 Token 是否严格单工作空间。
-- 盘点所有公开文件交付路由，确认统一 `DeliveryAccessContext` 覆盖范围。
-
-### 阶段 1：安全基础
-
-- 实现 PAT、workspace grant、scopes 和审计。
-- 统一 Cookie/Bearer 请求主体。
-- 补充 workspace assertion 和跨空间拒绝测试。
-- 增加能力与契约版本接口。
-- 为资源、截图、构建站点和同类临时资源接入统一交付鉴权。
-- 让 Runtime 构建资源请求携带现有短期服务凭证。
-
-### 阶段 2：只读 CLI
-
-- 实现 profile、auth、context 和标准输出。
-- 开放项目、页面、资源、组件、主题、样式、字体和 Runtime Kit 查询。
-- 编写第一版 Skill，让 Agent 能正确收集创作上下文。
-
-### 阶段 3：创作闭环
-
-- 页面创建、源码乐观锁更新和代码检查。
-- 资源上传和内容写入。
-- 截图任务、下载、视觉复核循环。
-- 页面快照、项目构建和产物下载。
-- 完成双工作空间 E2E。
-
-### 阶段 4：共享资产与高风险能力
-
-- 组件创建和发布。
-- 主题、样式修改。
-- visual-edit、批量截图和离线包。
-- 删除、恢复和跨空间导出/导入。
-- 根据真实 Agent 使用记录优化 Skill 和错误恢复提示。
+阶段 4：生态与桌面 Agent 适配 (Skill & Agent Integration)
+  ├── 编写面向桌面 Agent 的 web-presentation Skill 指南
+  ├── 对接 Antigravity / Claude Desktop 进行真实复杂 PPT 页面创作评测
+  └── 优化错误恢复提示与离线包导出能力
+```
 
 ## 12. 验收标准
 
-CLI MVP 达到可用需要同时满足：
-
-- 调用方 Agent 不使用平台 LLM，也能完成页面创作、截图迭代和构建交付。
-- 一次创作任务只在一个明确的工作空间内运行。
-- 任何仅替换对象 ID、job ID、文件哈希或 workspace 参数的越权尝试都无法读取其它空间内容。
-- 页面并发修改不会静默覆盖新版本。
-- 网络重试不会重复创建页面、资源或构建任务。
-- stdout JSON、错误码和退出码稳定，可被 Skill 和不同桌面 Agent 可靠消费。
-- Token 可过期、可吊销，用户失去成员资格后授权立即失效。
-- 资源、截图和构建站点拒绝匿名访问，用户访问和 Runtime 内部回源均经过工作空间校验。
+1. **零平台模型依赖**：外部桌面 Agent 仅依靠 CLI 和本地多模态能力，即可独立完成从页面创建、代码编写、校验、视觉复核到打包交付的完整闭环。
+2. **规范动态对齐**：通过 `wp standards` 和 `wp guide` 获取平台最新规则，避免客户端逻辑漂移。
+3. **强安全隔离**：跨工作空间尝试 100% 拦截，资源与截图无匿名泄漏风险。
+4. **并发与版本安全**：源码更新严格防覆盖，网络重试具备幂等保证。
+5. **生命周期稳健**：全流程归档替代硬删除，误操作风险降至最低。
