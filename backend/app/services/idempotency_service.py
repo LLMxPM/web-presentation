@@ -127,18 +127,29 @@ class IdempotencyService:
             # 更新占位为 completed 并保存响应
             record.status = "completed"
             record.status_code = status_code
-            if isinstance(result, (dict, list)):
-                record.response_body = result
-            elif hasattr(result, "model_dump"):
-                record.response_body = result.model_dump(mode="json")
-            else:
-                record.response_body = {"result": str(result)}
+            record.response_body = self._serialize_response(result)
 
             await self.session.commit()
             return status_code, result
         except Exception:
             await self.session.rollback()
             raise
+
+    @staticmethod
+    def _serialize_response(result: Any) -> dict | list:
+        """将业务操作返回值序列化为可 JSON 持久化的结构。
+
+        要求所有 external operation 返回 dict、list 或 Pydantic Model，
+        禁止返回原始标量类型，以保证首次调用与幂等重放时数据结构一致。
+        """
+        if isinstance(result, (dict, list)):
+            return result
+        if hasattr(result, "model_dump"):
+            return result.model_dump(mode="json")
+        raise TypeError(
+            f"幂等操作返回值类型 {type(result).__name__} 不受支持，"
+            "请确保 operation_func 返回 dict、list 或 Pydantic BaseModel。"
+        )
 
     async def _handle_existing_record(
         self,
@@ -194,12 +205,7 @@ class IdempotencyService:
                 status_code, result = await operation_func(existing.id)
                 existing.status = "completed"
                 existing.status_code = status_code
-                if isinstance(result, (dict, list)):
-                    existing.response_body = result
-                elif hasattr(result, "model_dump"):
-                    existing.response_body = result.model_dump(mode="json")
-                else:
-                    existing.response_body = {"result": str(result)}
+                existing.response_body = self._serialize_response(result)
                 await self.session.commit()
                 return status_code, result
             except Exception:

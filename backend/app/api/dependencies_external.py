@@ -155,8 +155,6 @@ def require_external_operation(operation_key: str):
 
     return _dependency
 
-    return _dependency
-
 
 def require_dynamic_mutation_operation(action: Literal["status", "cancel"]):
     """对通用 /jobs/mutations/{job_id} 动态按实体类型执行 page 或 component 权限鉴权。"""

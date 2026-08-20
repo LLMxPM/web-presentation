@@ -113,12 +113,15 @@ async def upload_asset(
     """上传资源文件（支持 Idempotency-Key 幂等保护）。"""
 
     parsed_tags = [t.strip() for t in tags.split(",") if t.strip()] if tags else None
-    content_bytes = await file.read()
+    # 流式分块计算文件 SHA256 指纹，避免大文件全量读入内存导致 OOM
+    file_hasher = hashlib.sha256()
+    while chunk := await file.read(65536):
+        file_hasher.update(chunk)
     await file.seek(0)
 
     # 构造包含文件哈希与表单参数的指纹
     form_fingerprint_dict = {
-        "file_hash": hashlib.sha256(content_bytes).hexdigest(),
+        "file_hash": file_hasher.hexdigest(),
         "filename": file.filename,
         "asset_type": asset_type.value,
         "name": name,

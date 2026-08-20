@@ -117,7 +117,11 @@ def create_page_cmd(
     profile = get_profile(cfg, ctx.obj.get("profile"))
     client = ApiClient(profile, workspace_id=ctx.obj.get("workspace_id"))
 
-    source_code = Path(file_path).read_text(encoding="utf-8")
+    try:
+        source_code = Path(file_path).read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        print_error(f"无法读取文件 '{file_path}': {exc}")
+        raise SystemExit(1)
     payload = {
         "project_id": project_id,
         "name": name,

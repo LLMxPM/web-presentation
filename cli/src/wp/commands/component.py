@@ -133,7 +133,11 @@ def create_component_cmd(
         raise SystemExit(1)
 
     client = ApiClient(profile, workspace_id=ws_id)
-    source_code = Path(file_path).read_text(encoding="utf-8")
+    try:
+        source_code = Path(file_path).read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        print_error(f"无法读取文件 '{file_path}': {exc}")
+        raise SystemExit(1)
     payload = {
         "workspace_id": ws_id,
         "import_name": import_name,

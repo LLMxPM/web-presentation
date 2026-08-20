@@ -22,7 +22,11 @@ def validate_cmd(ctx: click.Context, file_path: str, entity_type: str) -> None:
     profile = get_profile(cfg, ctx.obj.get("profile"))
     client = ApiClient(profile, workspace_id=ctx.obj.get("workspace_id"))
 
-    code = Path(file_path).read_text(encoding="utf-8")
+    try:
+        code = Path(file_path).read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        print_error(f"无法读取文件 '{file_path}': {exc}")
+        raise SystemExit(1)
     payload = {
         "entity_type": entity_type,
         "source_code": code,
