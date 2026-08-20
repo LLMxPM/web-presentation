@@ -17,6 +17,9 @@ AI 页面写工具
 - 页面 Job 与 Batch 使用数据库租约、心跳和拥有者条件更新。Batch 每次认领都会递增 `lease_generation`；运行态事件、消息历史和终态提交将该代次嵌入同一条条件写入，过期协调器即使仍拿到模型响应也不能覆盖新执行者。Backend 重启后仅重新认领租约已过期的任务，并把中断的 `running` run 恢复为 `waiting_external`，不干扰其他实例仍在执行的任务。
 - 任务在 Runtime/Chromium 阶段不持有数据库事务；提交前会重新检查取消状态、权限和页面版本。
 - Job 全部结束后，后台协调器将多个 deferred result 一次性交回 Pydantic AI。用户关闭浏览器或登录会话过期不会中断已授权任务；撤销成员权限、停用用户或取消 run 会阻止后续页面写入。
+- 页面代码检查使用 `page_diagnostics` 最小快照：只注入候选入口、递归组件/页面依赖和实际引用资产；无法安全解析的依赖继续按原校验错误或完整快照语义收敛，不得跳过 Vite 与 Chromium 检查。
+- Runtime 以每批最多 128 个路径读取 artifact 模块；滚动升级遇到旧 Backend 不支持批量接口时自动回退逐模块读取。
+- 页面任务提交和 Job 终态会通过进程内代次通知立即唤醒 Worker/续跑协调器，数据库轮询仍负责多实例、重启与丢通知兜底。
 
 截图继续使用独立的 `page_screenshot_jobs` 领域队列，但与 AI 渲染诊断共享 Chromium 池。截图任务组通过成员表关联，因此一个去重后的活跃截图任务可以属于多个批次。任务会固化页面版本、配置指纹和视口，截图对象使用不可变路径；页面或配置在捕获期间变化时任务收敛为 `skipped/PAGE_SCREENSHOT_JOB_STALE`，不会覆盖新截图指针。
 
@@ -65,3 +68,5 @@ Runtime：
 4. SQLite 出现 `BUSY/LOCKED` 时确认没有绕过队列的批量截图/页面写入，并保持 lite 部署的三类并发都为 1。
 
 结构化日志可直接用于采集队列指标：`playwright.task.queued/finished` 提供队列长度、等待和执行时长；`page.screenshot.job.*` 与 `ai.page_mutation.job.execution_finished` 提供任务耗时、重试、取消和租约恢复事件。心跳本身不会写入 AI 事件表，避免把监控变成 SQLite 写放大来源。
+
+单页延迟基线以任务成功入队到页面与 Job 原子提交为主指标，不包含模型生成时间。`preview.artifact.created` 分别记录快照和 artifact 存储耗时，`runtime.diagnostics.compile.finished`、`runtime.diagnostics.render.finished`、`diagnostics.modules.ready`、`diagnostics.workspace.validated`、`diagnostics.vite.finished` 与 `ai.page_mutation.save.finished` 用于拆分检查阶段。固定夹具预热两次后至少运行十次，比较 P50/P95；首期目标为 P50 降低 25%，P95 不劣化超过 10%。

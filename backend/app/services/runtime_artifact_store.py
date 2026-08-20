@@ -92,6 +92,20 @@ class RuntimeArtifactStore:
         value = await asyncio.to_thread(self.runtime.client.hget, self._modules_key(artifact_id), logical_path)
         return str(value) if value is not None else None
 
+    async def get_modules(self, artifact_id: str, logical_paths: list[str]) -> dict[str, str] | None:
+        """批量读取模块源码；artifact 不存在或任一模块缺失时返回 None。"""
+
+        if not logical_paths:
+            return {}
+        values = await asyncio.to_thread(
+            self.runtime.client.hmget,
+            self._modules_key(artifact_id),
+            logical_paths,
+        )
+        if not isinstance(values, (list, tuple)) or len(values) != len(logical_paths) or any(value is None for value in values):
+            return None
+        return {path: str(value) for path, value in zip(logical_paths, values, strict=True)}
+
     async def put_asset_blobs(
         self,
         *,

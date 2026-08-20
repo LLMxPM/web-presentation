@@ -301,6 +301,67 @@ import CheckCard from '@workspace-components/{component["code"]}/v/1'
     assert await RuntimeArtifactStore().get_manifest(str(artifact_id)) is None
 
 
+async def test_page_code_check_should_exclude_unrelated_pages_and_assets(
+    authenticated_client: AsyncClient,
+) -> None:
+    """单页诊断快照只应包含入口依赖闭包和实际引用资源。"""
+
+    workspace_id = await _create_workspace(authenticated_client, "最小诊断快照工作空间")
+    project_id = await _create_project(authenticated_client, workspace_id, "最小诊断快照项目")
+    pages: list[dict[str, object]] = []
+    for title in ("目标页面", "无关页面"):
+        response = await authenticated_client.post(
+            "/api/pages",
+            json={
+                "workspace_id": workspace_id,
+                "project_id": project_id,
+                "title": title,
+                "page_content": f"<template><main>{title}</main></template>",
+                "file_type": "vue",
+                "status": "active",
+            },
+        )
+        assert response.status_code == 200
+        pages.append(response.json())
+    route_response = await authenticated_client.put(
+        f"/api/projects/{project_id}/routes",
+        json={
+            "routes": [
+                {"route_type": "page", "route": f"page-{index}", "order": index, "page_id": page["id"]}
+                for index, page in enumerate(pages)
+            ]
+        },
+    )
+    assert route_response.status_code == 200
+    asset_response = await authenticated_client.post(
+        f"/api/workspaces/{workspace_id}/assets/upload",
+        files={"file": ("unused.svg", b"<svg />", "image/svg+xml")},
+        data={"asset_type": "image", "tags": "[]"},
+    )
+    assert asset_response.status_code == 200
+
+    fake_runtime = FakeRuntimeDiagnosticsClient()
+    async with get_session_factory()() as session:
+        result = await CodeCheckService(
+            session,
+            runtime_client=fake_runtime,
+            render_diagnostics_service=FakePageRenderDiagnosticsService(),
+        ).check_page_code(
+            page_id=int(pages[0]["id"]),
+            workspace_id=workspace_id,
+            user_id=1,
+            content="<template><main>候选目标页面</main></template>",
+        )
+
+    assert result["success"] is True
+    snapshot = fake_runtime.artifact_snapshots[str(result["artifact_id"])]
+    manifest = snapshot["manifest"]
+    assert isinstance(manifest, dict)
+    assert f"src/views/{pages[0]['code']}.vue" in manifest["modules"]
+    assert f"src/views/{pages[1]['code']}.vue" not in manifest["modules"]
+    assert "unused" not in manifest["assets"]
+
+
 async def test_page_code_check_should_accept_unsaved_project_page_content(
     authenticated_client: AsyncClient,
 ) -> None:

@@ -13,6 +13,12 @@ def test_agent_default_prompt_should_keep_content_baseline_and_query_guidance() 
     prompt = catalog.default_prompt
 
     assert "演示内容与表达原则" in prompt
+    assert "资深前端工程师、界面设计实现专家和内容结构顾问" in prompt
+    assert "尤其擅长使用 Vue 3、TypeScript、Tailwind CSS 和平台 Runtime Kit" in prompt
+    assert "营销落地页、产品官网、后台管理、数据看板、工作台、表单流程" in prompt
+    assert "优先使用 Tailwind CSS 组合语义化工具类" in prompt
+    assert "保持 Tailwind class 为源码中的静态完整字符串" in prompt
+    assert "空态、加载态和错误态" in prompt
     assert "事实、数字、引用和来源不得凭空补全" in prompt
     assert "处理视觉内容时，先判断当前信息最适合用文字、表格、图表、示意图还是图片表达" in prompt
     assert "需要素材时优先查询工作空间资源，不满足再按可用能力创建或生成" in prompt

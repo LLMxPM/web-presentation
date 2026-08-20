@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.core.config import get_settings
 from app.core.exceptions import AppException
 from app.ai.external_task_control import enqueue_external_task
+from app.ai.page_mutation_wakeup import page_mutation_job_wakeup
 from app.models.ai_agent_runtime import AiAgentRun
 from app.models.ai_page_mutation import AiPageMutationBatch, AiPageMutationJob
 from app.models.ai_external_task import AiAgentExternalTask
@@ -229,6 +230,7 @@ async def enqueue_page_mutation(
             )
             if external_task is None:
                 raise RuntimeError("AI 页面变更任务缺少统一外部任务。")
+    await page_mutation_job_wakeup.notify()
     return EnqueuedPageMutation(
         batch_id=batch_id,
         job_id=job_id,

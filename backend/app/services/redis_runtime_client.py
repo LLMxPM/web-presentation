@@ -222,6 +222,14 @@ class InMemoryRedis:
             self._purge_expired(name)
             return self._hashes.get(name, {}).get(key)
 
+    def hmget(self, name: str, keys: list[str]) -> list[str | None]:
+        """按输入顺序批量读取 Hash 字段，兼容 redis-py hmget。"""
+
+        with self._condition:
+            self._purge_expired(name)
+            target = self._hashes.get(name, {})
+            return [target.get(key) for key in keys]
+
     def hgetall(self, name: str) -> dict[str, str]:
         """读取完整 Hash。"""
 

@@ -39,6 +39,7 @@ from app.services.workspace_font_service import WorkspaceFontService
 
 AssetDeliveryMode = Literal["public", "backend_cache"]
 AssetSnapshotMode = Literal["all", "referenced"]
+ArtifactSnapshotProfile = Literal["full", "page_diagnostics"]
 
 
 @dataclass(slots=True)
@@ -116,6 +117,7 @@ class ProjectArtifactBuilder:
         transient_pages: list[Page] | None = None,
         asset_delivery_mode: AssetDeliveryMode = "public",
         asset_snapshot_mode: AssetSnapshotMode = "all",
+        snapshot_profile: ArtifactSnapshotProfile = "full",
         asset_base_url_override: str | None = None,
     ) -> ProjectArtifactSnapshot:
         """构建项目级预览/构建共用快照。"""
@@ -160,8 +162,15 @@ class ProjectArtifactBuilder:
             page for page in all_project_pages
             if f"@/views/{page.code}.{page.file_type}" in route_component_paths
         ]
-        preview_root_pages = self.merge_preview_root_pages(route_pages, standalone_entry_page)
-        manifest_page_paths = self.build_manifest_page_paths(route_pages, standalone_entry_page)
+        if snapshot_profile == "page_diagnostics" and standalone_entry_page is not None:
+            # 页面诊断只编译入口页面及其递归依赖，避免无关路由页面扩大 Vite 模块图。
+            preview_root_pages = [standalone_entry_page]
+            manifest_page_paths = {
+                f"src/views/{standalone_entry_page.code}.{standalone_entry_page.file_type}"
+            }
+        else:
+            preview_root_pages = self.merge_preview_root_pages(route_pages, standalone_entry_page)
+            manifest_page_paths = self.build_manifest_page_paths(route_pages, standalone_entry_page)
         modules_metadata, modules_data = await self.build_release_module_graph(
             preview_root_pages,
             manifest_page_paths=manifest_page_paths,
