@@ -9,7 +9,6 @@
     "test:backend:unit": "uv run --project backend pytest -c backend/pyproject.toml -m unit",
     "test:backend:api": "uv run --project backend pytest -c backend/pyproject.toml -m api",
     "test:backend:integration": "uv run --project backend pytest -c backend/pyproject.toml -m integration",
-    "test:cli": "uv run --project cli pytest -c cli/pyproject.toml cli/tests",
     "test:editor": "pnpm --dir editor test",
     "test:editor:check": "pnpm --dir editor check",
     "test:editor:build": "pnpm --dir editor build",

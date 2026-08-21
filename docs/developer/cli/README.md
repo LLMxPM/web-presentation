@@ -2,7 +2,7 @@
 
 ## 1. 文档状态
 
-本文是 `web-presentation` 面向桌面 Agent 的 CLI 技术方案，基于平台重构后的**通用业务实体操作模型**（Generic Business Entities & Operations）、**统一自省与规范体系**和**工作空间安全底座**进行规划，用于确定模块边界、命令能力、认证方式、工作空间隔离和分阶段实施策略。
+本文是 `web-presentation` 面向桌面 Agent 的 CLI 技术方案，基于平台当前的 External API v1、统一自省与规范体系和工作空间安全底座，说明 CLI 的模块边界、命令能力、认证方式、工作空间隔离和分阶段实施策略。CLI、MCP 和 Skill 的可运行代码位于同级独立仓库 `web-presentation-agent-kit`。
 
 方案基于以下前提：
 
@@ -47,7 +47,7 @@ CLI 核心特性要求：
 - 自然语言对话入口，例如 `wp agent run`。
 - 平台内部 AI session、run、SSE 消息、requirement 或工具确认恢复。
 - 服务端 Chat 模型配置、图片生成模型配置或 API Key 管理。
-- MCP Server（未来可作为独立适配层接入，不属于 CLI 核心）。
+- MCP Server 不属于 CLI 核心；其适配代码位于 `web-presentation-agent-kit/mcp-server/`。
 - CLI 直接连接底层数据库、Redis 或对象存储。
 - 自动化跨工作空间写入或默认全局跨空间搜索。
 - 破坏性永久硬删除操作（无 `wp delete` 命令）。
@@ -73,29 +73,34 @@ CLI 核心特性要求：
               +--> Runtime Kit Manifest 与版本化公共能力
 ```
 
-CLI 作为一个独立的 Python 包 `cli/` 维护，使用 `uv` 进行依赖和虚拟环境管理，命令名为 `wp`：
+CLI 在独立仓库 `web-presentation-agent-kit/packages/cli/` 中维护，使用 `uv` 进行依赖和虚拟环境管理，命令名为 `wp`。共享 HTTP 客户端位于 `packages/api-client/`：
 
 ```text
-cli/
-├── pyproject.toml
-├── src/wp/
-│   ├── cli.py                # Click 总入口与全局选项
-│   ├── client.py             # HTTP Client、PAT 鉴权、空间隔离、任务轮询
-│   ├── commands/             # Click 命令解析与资源子命令组
-│   │   ├── auth.py
-│   │   ├── workspace.py
-│   │   ├── project.py
-│   │   ├── page.py
-│   │   ├── component.py
-│   │   ├── asset.py
-│   │   ├── theme.py
-│   │   ├── style.py
-│   │   ├── validate.py
-│   │   ├── screenshot.py
-│   │   └── build.py
-│   ├── config.py             # Profile 配置与凭证存储
-│   └── formatter.py          # JSON、表格和错误输出
-└── tests/
+web-presentation-agent-kit/
+├── packages/api-client/
+│   └── src/wp_api_client/     # CLI 与 MCP 共用的 External API v1 客户端
+├── packages/cli/
+│   ├── pyproject.toml
+│   ├── src/wp/
+│   │   ├── cli.py            # Click 总入口与全局选项
+│   │   ├── client.py         # Profile 到共享 Client 的 CLI 适配
+│   │   ├── commands/         # Click 命令解析与资源子命令组
+│   │   │   ├── auth.py
+│   │   │   ├── workspace.py
+│   │   │   ├── project.py
+│   │   │   ├── page.py
+│   │   │   ├── component.py
+│   │   │   ├── asset.py
+│   │   │   ├── theme.py
+│   │   │   ├── style.py
+│   │   │   ├── validate.py
+│   │   │   ├── screenshot.py
+│   │   │   └── build.py
+│   │   ├── config.py          # Profile 配置与凭证存储
+│   │   └── formatter.py       # JSON、表格和错误输出
+│   └── tests/
+├── mcp-server/
+└── skills/web-presentation/
 ```
 
 ### 3.1 技术栈选型
@@ -114,8 +119,8 @@ cli/
 分发与安装方式：
 
 ```powershell
-uv sync --project cli
-uv run --project cli wp --help
+uv sync
+uv run --project packages/cli wp --help
 uv tool install web-presentation-cli
 ```
 
@@ -500,7 +505,7 @@ Backend 已落地 External API v1，对外统一入口为 `/api/v1`。CLI、MCP 
   └── 维护按资源拆分的项目、页面、组件、资源、主题、样式和任务端点
 
 阶段 2：CLI MVP 核心与自省只读 (CLI Read & Self-Discovery)
-  ├── 维护 cli/ Python 工程 (uv, Click, httpx, Pydantic)
+  ├── 维护 web-presentation-agent-kit 外部 Agent 工程 (uv, Click, httpx, Pydantic)
   ├── 实现 profile, auth, context, standards, guide 命令
   └── 实现项目、页面、组件、资源、主题、Runtime Kit 的按资源查询命令
 

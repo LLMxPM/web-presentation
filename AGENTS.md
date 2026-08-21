@@ -25,6 +25,8 @@
 - 通过 `runtime/` Git 子模块接入独立项目 `web-runtime-vue`。
 - 沉淀开发、测试、部署、CI/CD 和 Runtime 子模块协作规则。
 
+面向外部桌面 Agent 的 CLI、MCP Server、共享 API Client 和配套 Skill 统一维护在同级独立仓库 `web-presentation-agent-kit`；本仓只维护它们依赖的 Backend `/api/v1` External API v1 契约和集成文档。
+
 当前已落地登录、多用户隔离、工作空间/项目/页面管理、资源库、组件库、主题库、样式库、AI Agent 会话、工具确认、预览、截图、构建和容器发布；跨项目资产治理、Dashboard、项目/页面使用关系运营视图和 Runtime 反向回传仍在建设中。
 
 ## 3. 目录职责

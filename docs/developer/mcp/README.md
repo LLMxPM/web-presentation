@@ -13,7 +13,7 @@
 
 ## 2. 结论与推荐方案
 
-推荐建设一个独立的 `mcp-server/` Python 服务，通过 HTTPS 调用 Backend 的 `/api/v1` External API：
+代码已放入同级独立仓库 `web-presentation-agent-kit/mcp-server/`，作为独立的 `mcp-server/` Python 服务，通过 HTTPS 调用 Backend 的 `/api/v1` External API：
 
 ```text
 MCP Client
@@ -61,10 +61,10 @@ MCP 当前生产传输应优先使用 Streamable HTTP；旧的 HTTP+SSE 传输�
 
 ### 3.2 当前缺口
 
-- 仓库尚未引入 MCP Python SDK 或 MCP Server 目录。
+- `web-presentation-agent-kit` 已引入 MCP Python SDK 和独立 MCP Server 目录，当前先提供只读 Tools/Resource 骨架。
 - PAT 是平台自有 Bearer 凭证，并非完整 OAuth Authorization Server。
 - External API 的工作空间上下文通过 HTTP Header 传递，MCP 工具需要显式承接该上下文。
-- MCP 工具、资源、Prompt、错误码和异步任务结果尚未形成稳定契约。
+- MCP 工具、资源、Prompt、错误码和异步任务结果仍处于只读契约收敛阶段。
 - 尚未有 MCP Inspector、真实客户端连接和跨工作空间隔离测试。
 
 ### 3.3 非目标

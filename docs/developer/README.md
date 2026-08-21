@@ -2,6 +2,8 @@
 
 开发文档面向平台维护者、功能开发者和部署人员。文档按架构、Backend、Editor、Runtime 接入、测试、部署和参考资料分组，避免把运行说明、接口约束和阶段性报告混在同一层目录。
 
+外部 Agent 接入代码（CLI、MCP Server、共享 API Client 和 Skill）位于同级独立仓库 `web-presentation-agent-kit`；本目录维护平台侧 External API v1 契约和集成规划。
+
 ## 快速入口
 
 | 文档 | 内容 |
