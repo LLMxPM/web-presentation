@@ -65,8 +65,8 @@ CLI 核心特性要求：
               v
     Backend API / External API v1
               |
-              +--> 通用实体路由 / 操作模型 (operation_models.py)
-              +--> 代码规范服务 (Code Standards) / 操作手册 (Tool Specs)
+              +--> 按资源拆分的 External API 路由 / 操作注册表 (external_operations.py)
+              +--> 代码规范服务 (Code Standards) / External API 操作指南 (guides)
               +--> 代码检查与诊断服务 (CodeCheckService / Chromium 池)
               +--> 权限与工作空间校验 (DeliveryAccessContext / Token Grants)
               +--> 截图与构建异步任务队列 (PageScreenshotJob / BuildJob)
@@ -78,26 +78,23 @@ CLI 作为一个独立的 Python 包 `cli/` 维护，使用 `uv` 进行依赖和
 ```text
 cli/
 ├── pyproject.toml
-├── src/web_presentation_cli/
-│   ├── main.py
-│   ├── client/               # HTTP Client、PAT 鉴权、Workspace Assertion、上传下载
-│   │   ├── base.py
-│   │   ├── entity_client.py  # 统一实体操作核心客户端
-│   │   ├── standards_client.py
-│   │   └── jobs_client.py
-│   ├── commands/             # Typer 命令行参数解析与子命令组
+├── src/wp/
+│   ├── cli.py                # Click 总入口与全局选项
+│   ├── client.py             # HTTP Client、PAT 鉴权、空间隔离、任务轮询
+│   ├── commands/             # Click 命令解析与资源子命令组
 │   │   ├── auth.py
-│   │   ├── context.py
-│   │   ├── standards.py
-│   │   ├── guide.py
-│   │   ├── entities.py       # 通用实体操作命令
-│   │   ├── aliases/          # 友好资源别名 (page, component, asset, project...)
+│   │   ├── workspace.py
+│   │   ├── project.py
+│   │   ├── page.py
+│   │   ├── component.py
+│   │   ├── asset.py
+│   │   ├── theme.py
+│   │   ├── style.py
 │   │   ├── validate.py
 │   │   ├── screenshot.py
 │   │   └── build.py
-│   ├── config/               # Profile 配置、凭证安全存储
-│   ├── output/               # JSON Envelope 解包、Compact 诊断格式化、错误渲染
-│   └── errors/               # 错误码与退出码映射
+│   ├── config.py             # Profile 配置与凭证存储
+│   └── formatter.py          # JSON、表格和错误输出
 └── tests/
 ```
 
@@ -105,14 +102,14 @@ cli/
 
 - **语言环境**：Python 3.11 及以上。
 - **包管理与构建**：`uv` 管理依赖、虚拟环境和 CLI 工具发布。
-- **命令行框架**：`Typer`（结合 `Rich`）组织多级命令、类型提示与自动帮助文档。
+- **命令行框架**：`Click`（结合 `Rich`）组织多级命令和帮助文档。
 - **HTTP 通信**：`httpx` 处理 HTTP/2、连接池、超时控制与大文件流式上传下载。
 - **数据与契约**：`Pydantic v2` 定义 CLI 配置、统一 Envelope 和稳定 JSON DTO。
 - **凭证存储**：`keyring` 保存在系统凭证库；无 GUI/CI 环境通过 `WP_TOKEN` 环境变量传入。
 
 选型优势：
-- 契约高度复用：CLI DTO 可直接对齐 Backend 的 `operation_models.py` 与 `tool_specs.py`。
-- 工程一致性：完全契合仓库根目录的 Python + `uv` 规范，Backend 开发者可直接维护和编写契约测试。
+- 契约动态对齐：CLI 通过 `/api/v1/guides`、`/api/v1/standards/*` 和资源接口消费 External API v1 契约，不复制 Backend 内部 AI `tool_specs.py`。
+- 工程边界清晰：CLI 只依赖 Backend HTTP API，不导入 Backend Service、模型或数据库代码。
 
 分发与安装方式：
 
@@ -333,7 +330,7 @@ CLI 命令划分为**基础与认证**、**动态规范与自省**、**通用业
 
 ### 7.3 通用业务实体操作（Core Entities）
 
-CLI 底层由统一的 `EntityClient` 驱动，同时提供清晰的**直观别名命令**：
+CLI 底层由统一的 `ApiClient` 驱动，同时提供按资源划分的命令：
 
 #### 项目（Project）
 - `wp project list`：罗列当前工作空间的项目（支持分页与关键词过滤）。
@@ -426,27 +423,39 @@ CLI 底层由统一的 `EntityClient` 驱动，同时提供清晰的**直观别�
   - 遇到 `PAGE_VERSION_CONFLICT`（退出码 6）：指示 Agent 重新执行 `wp page source pull` 并在最新基线上合并修改。
   - 遇到 `CODE_CHECK_FAILED`：解析返回的定位与 hint 修复 Vue 源码。
 
-## 9. Backend 需提供的接口契约
+## 9. External API v1 接口契约（当前实现）
 
-为了支撑上述 CLI 能力，Backend 需确保开放以下稳定外部接口（建议挂载在 `/api/external/v1` 下或复用统一鉴权后的路由）：
+Backend 已落地 External API v1，对外统一入口为 `/api/v1`。CLI、MCP 和其他外部 Agent 接入均应使用该入口。
 
-1. **PAT 认证与审计**：`/api/external/v1/auth/tokens`（创建、校验、吊销、工作空间授权校验）。
-2. **规范与自省接口**：
-   - `GET /api/external/v1/standards/{standard_type}`：返回 `page` 或 `component` 规范 Markdown。
-   - `GET /api/external/v1/guides` & `GET /api/external/v1/guides/{operation_key}`：返回操作手册与 JSON Schema。
-3. **统一通用实体端点**：
-   - `POST /api/external/v1/entities/list`
-   - `POST /api/external/v1/entities/get`
-   - `POST /api/external/v1/entities/create`
-   - `POST /api/external/v1/entities/update`
-   - `POST /api/external/v1/entities/archive`
-   - `POST /api/external/v1/entities/validate`
-   - `POST /api/external/v1/entities/action`
-4. **统一交付鉴权（DeliveryAccessContext）**：
-   - 静态资源下载、页面截图获取、构建产物包下载统一接入 PAT Bearer / Cookie 鉴权。
-5. **异步任务端点**：
-   - 截图任务创建、查询与取消（`/api/external/v1/jobs/screenshots/...`）。
-   - 构建任务创建、查询与取消（`/api/external/v1/jobs/builds/...`）。
+公共接口按资源和能力拆分，不使用一套自动生成的通用 `entities/*` 端点：
+
+1. **身份、工作空间与自省**：
+   - `GET /api/v1/auth/whoami`：查询当前 PAT 身份及授权空间。
+   - `GET /api/v1/workspaces`、`GET /api/v1/workspaces/{workspace_id}`：查询已授权工作空间。
+   - `GET /api/v1/workspaces/{workspace_id}/capabilities`：查询当前 Scope 和能力矩阵。
+   - `GET /api/v1/standards/page`、`GET /api/v1/standards/component`：获取页面或组件开发规范 Markdown。
+   - `GET /api/v1/guides`：获取操作手册和参数 Schema。
+2. **业务资源**：
+   - `/api/v1/projects`、`/api/v1/projects/{project_id}/pages`、`/api/v1/pages/{page_id}`：项目和页面。
+   - `/api/v1/components`、`/api/v1/components/{component_id}`：工作空间组件。
+   - `/api/v1/assets`、`/api/v1/assets/{asset_id}`：工作空间资源。
+   - `/api/v1/themes`、`/api/v1/styles`：主题和样式方案。
+3. **代码校验与视觉交付**：
+   - `POST /api/v1/validate/code`：校验候选页面或组件源码。
+   - `GET /api/v1/pages/{page_id}/screenshot`：获取页面最新截图。
+   - `POST /api/v1/projects/{project_id}/builds`、`GET /api/v1/builds/{job_id}`：提交和查询构建任务。
+4. **异步变更任务**：
+   - `POST /api/v1/jobs/mutations/pages`、`POST /api/v1/jobs/mutations/pages/edits`：提交页面创建或编辑任务。
+   - `POST /api/v1/jobs/mutations/components`、`POST /api/v1/jobs/mutations/components/edits`：提交组件创建或编辑任务。
+   - `GET /api/v1/jobs/mutations/{job_id}`、`POST /api/v1/jobs/mutations/{job_id}/cancel`：查询或取消任务。
+5. **统一交付鉴权（DeliveryAccessContext）**：
+   - 资源、截图和构建产物必须继续经过 PAT Bearer / Cookie 或 Runtime service token 鉴权；不得生成永久公开地址。
+
+命名约定如下：
+
+- 对外 HTTP 路径使用 `/api/v1`。
+- 能力名称统一称为 **External API v1**。
+- Backend 内部目录和符号中的 `external`（例如 `routes/external`、`external_operations`）表示适配边界，可以保留，不等同于对外 URL 前缀。
 
 ## 10. 测试方案
 
@@ -460,7 +469,7 @@ CLI 底层由统一的 `EntityClient` 驱动，同时提供清晰的**直观别�
 
 ### 10.2 CLI 单元与集成测试
 - Profile 切换与工作空间解析优先级测试（显式参数 > 环境变量 > Profile 默认）。
-- 统一 EntityClient 请求封装、Envelope 解包与退出码映射测试。
+- 统一 ApiClient 请求封装、响应解析与退出码映射测试。
 - 标准输出纯 JSON（`stdout`）与日志分离（`stderr`）测试。
 - 大文件/源码流式上传与原子覆盖写入测试。
 - 长任务退避轮询与优雅取消（Ctrl+C）测试。
@@ -485,15 +494,15 @@ CLI 底层由统一的 `EntityClient` 驱动，同时提供清晰的**直观别�
   ├── 统一 Bearer PAT 与 Session Cookie 鉴权解析 (DeliveryAccessContext)
   └── 补齐 Workspace Assertion (X-WP-Workspace-ID) 强制校验中间件
 
-阶段 1：外部 API v1 与自省契约 (Backend External API v1)
-  ├── 开放动态代码规范端点 (/api/external/v1/standards/...)
-  ├── 开放自省操作手册端点 (/api/external/v1/guides/...)
-  └── 暴露基于 operation_models 的通用实体操作路由 (list, get, create, update, archive, validate, action)
+阶段 1：External API v1 与自省契约 (Backend External API v1，已基本落地)
+  ├── 维护动态代码规范端点 (/api/v1/standards/...)
+  ├── 维护自省操作手册端点 (/api/v1/guides/...)
+  └── 维护按资源拆分的项目、页面、组件、资源、主题、样式和任务端点
 
 阶段 2：CLI MVP 核心与自省只读 (CLI Read & Self-Discovery)
-  ├── 搭建 cli/ Python 工程脚手架 (uv, Typer, httpx, Pydantic)
+  ├── 维护 cli/ Python 工程 (uv, Click, httpx, Pydantic)
   ├── 实现 profile, auth, context, standards, guide 命令
-  └── 实现项目、页面、组件、资源、主题、Runtime Kit 的通用实体查询命令
+  └── 实现项目、页面、组件、资源、主题、Runtime Kit 的按资源查询命令
 
 阶段 3：完整创作闭环 (CLI Write & Visual Review)
   ├── 实现带乐观锁的页面/组件源码提交 (push)
