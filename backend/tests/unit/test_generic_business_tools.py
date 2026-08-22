@@ -297,7 +297,8 @@ def test_runtime_theme_guidance_should_cover_source_and_mutation_boundaries() ->
     assert "Runtime 主题语义类" in page_create_text
     assert "text-${tone}" in page_create_text
     assert "Runtime 主题语义类" in page_update_text
-    assert "跨项目和主题复用" in component_text
+    assert "跨页面或跨项目复用" in component_text
+    assert "重复标题区、眉题/导航、主体区和辅助区空间关系" in component_text
     assert "完整静态字符串" in component_text
     assert "未列出的主题 Token" in validation_text
     assert "模型调用前应依据 Runtime 主题契约自行复核" in validation_text

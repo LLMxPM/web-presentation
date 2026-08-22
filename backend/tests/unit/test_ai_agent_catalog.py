@@ -61,7 +61,8 @@ def test_agent_default_prompt_should_keep_content_baseline_and_query_guidance() 
     assert "render_type" in page_standard
     assert "PAGE_RENDER_BOTTOM_OVERFLOW" in page_standard
     assert "empty_regions" in page_standard
-    assert "固定画布应先划分标题区、主体区和辅助区" in page_standard
+    assert "组件复用判断与页面布局判断是两个独立步骤" in page_standard
+    assert "固定画布中的标题、眉题和导航可以顶部对齐" in page_standard
     assert "禁止把 `grid/flex-1`、固定高度、顶部排列和 `mt-auto` 组合成默认卡片结构" in page_standard
     assert "对 `flex-col`，垂直方向由 `justify-*` 控制" in page_standard
     assert "sparse_top_aligned" in page_standard
@@ -74,6 +75,10 @@ def test_agent_default_prompt_should_keep_content_baseline_and_query_guidance() 
     assert "defineProps`/`defineEmits" in component_standard
     assert "2～3 个高质量 presets" in component_standard
     assert "开始创建页面时，先查询并复用已有的页面组件" in catalog.default_prompt
-    assert "如果发现同一职责的指标卡、引用卡、图表或表格模块会跨页重复" in catalog.default_prompt
+    assert "重复的指标卡、引用卡、图表或表格等主体模块则沉淀为内容组件" in catalog.default_prompt
+    assert "重复标题区、眉题/导航、主体区和辅助区空间关系" in catalog.default_prompt
+    assert "重复的是版式结构，不是同一段标题文案" in catalog.default_prompt
     assert "开始创建页面时，先查询并复用已有的页面组件" in page_standard
-    assert "变化可以用稳定的 props 或 slots 表达，再沉淀为内容组件" in page_standard
+    assert "组件接口稳定后优先使用 props/slots 表达变化" in page_standard
+    assert "重复内容页模板" in page_standard
+    assert "不要因为主体内容不同就把共有的页面壳复制到各页面源码中" in page_standard

@@ -842,11 +842,11 @@ _COORDINATOR_OPERATION_GUIDES = (
         action="new",
         constraints=(
             "组件分三种类型：页面组件（整页模板，根部使用 DefaultContainer）、内容组件（页面内内容块，需尺寸控制字段）、原子组件（小粒度 UI 元素，不需要尺寸控制字段）。",
-            "页面组件应以 DefaultContainer 为根部提供可复用页面骨架：通过 props 或具名 slot 接收标题文本、默认 slot 接收正文内容，形成稳定契约，不硬编码具体页面内容。",
+            "页面组件应以 DefaultContainer 为根部提供可复用页面骨架；重复标题区、眉题/导航、主体区和辅助区空间关系的内容页，应创建或复用页面组件，通过 props 或具名 slot 接收可变标题和正文内容，形成稳定契约，不硬编码具体页面内容。",
             "所有组件类型都必须提供 preview_schema；根节点是 Schema 对象，不是组件 props 的实际预览值。",
             "组件属性定义必须放在 preview_schema.props 中，每个字段使用 type、default 等描述；字段名应与 Vue defineProps 保持一致。",
             "内容组件必须在 preview_schema.props 中声明至少一个尺寸控制字段，例如 width、height、minHeight 或 aspectRatio。",
-            "组件应跨项目和主题复用；颜色、字体、Logo 和强调状态优先使用 Runtime 主题语义类或 Runtime Kit，不要绑定当前项目的具体 palette、未列出的语义 Token 或硬编码品牌资源。",
+            "组件应跨页面或跨项目复用；颜色、字体、Logo 和强调状态优先使用 Runtime 主题语义类或 Runtime Kit，不要绑定当前项目的具体 palette、未列出的语义 Token 或硬编码品牌资源。",
             "组件源码中的 Tailwind 类必须是完整静态字符串；动态 tone、variant 等样式使用顶层枚举映射，禁止拼接 text-${tone}、from-${color} 等类名。",
             "写入前会自动执行契约、Runtime 编译、默认态与有界 presets 的真实渲染和布局检查；无需先调用 component.validate.check。",
             "组件不绑定项目页面尺寸或基础字号；自动检查使用版本化临时 profile，具体项目兼容性由页面检查负责。",
