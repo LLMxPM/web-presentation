@@ -6,6 +6,7 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import AppException
+from app.models.api_access_token import ApiAccessToken
 from app.models.enums import RecordStatus, UserRole
 from app.models.user import User
 from app.models.workspace import Workspace, WorkspaceMember
@@ -55,10 +56,15 @@ async def test_pat_creation_and_authentication(app_session: AsyncSession) -> Non
     assert set(res.scopes) == {"project:read", "project:write", "page:read"}
 
     # 3. 校验 Bearer 鉴权
-    authenticated_token = await service.authenticate_pat(res.token)
+    authenticated_token = await service.authenticate_pat(res.token, ip="192.0.2.10")
     assert authenticated_token.user_id == u_id
     assert authenticated_token.name == "CLI-Token"
     assert authenticated_token.is_active is True
+    await app_session.rollback()
+    persisted_token = await app_session.get(ApiAccessToken, res.id)
+    assert persisted_token is not None
+    assert persisted_token.last_used_at is not None
+    assert persisted_token.last_used_ip == "192.0.2.10"
 
     # 4. 测试错误 Token 拒绝
     with pytest.raises(AppException) as exc_info:

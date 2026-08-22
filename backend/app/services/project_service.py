@@ -219,9 +219,7 @@ class ProjectService:
             write_project,
             commit=commit,
         )
-        if commit:
-            await self.session.commit()
-        else:
+        if not commit:
             await self.session.flush()
         reloaded = await self.repository.get_by_id(project.id)
         return self._to_item(reloaded)

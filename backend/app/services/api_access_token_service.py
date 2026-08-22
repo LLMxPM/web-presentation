@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import hashlib
 import hmac
 import logging
@@ -261,13 +260,13 @@ class ApiAccessTokenService:
                 detail="用户账号已被禁用或已删除。",
             )
 
-        # 7. Redis 5 分钟节流异步更新 last_used_at
-        self._schedule_last_used_update(token.id, ip)
+        # 7. Redis 5 分钟节流更新 last_used_at；等待独立短事务收敛，避免遗留后台任务。
+        await self._update_last_used(token.id, ip)
 
         return token
 
-    def _schedule_last_used_update(self, token_id: int, ip: str | None) -> None:
-        """通过 Redis 节流在独立后台任务中更新 last_used_at 与 last_used_ip。"""
+    async def _update_last_used(self, token_id: int, ip: str | None) -> None:
+        """通过 Redis 节流在独立短事务中更新最后使用信息，失败时不阻断鉴权。"""
 
         try:
             redis = get_redis_runtime_client()
@@ -278,21 +277,14 @@ class ApiAccessTokenService:
         except Exception as exc:
             logger.warning("Redis 节流检查异常: %s", exc)
 
-        async def _update_db() -> None:
-            try:
-                session_factory = get_session_factory()
-                async with session_factory() as session:
-                    await session.execute(
-                        update(ApiAccessToken)
-                        .where(ApiAccessToken.id == token_id)
-                        .values(last_used_at=utc_now(), last_used_ip=ip)
-                    )
-                    await session.commit()
-            except Exception as err:
-                logger.warning("后台更新 PAT last_used_at 失败: %s", err)
-
         try:
-            loop = asyncio.get_running_loop()
-            loop.create_task(_update_db())
-        except RuntimeError:
-            pass
+            session_factory = get_session_factory()
+            async with session_factory() as session:
+                await session.execute(
+                    update(ApiAccessToken)
+                    .where(ApiAccessToken.id == token_id)
+                    .values(last_used_at=utc_now(), last_used_ip=ip)
+                )
+                await session.commit()
+        except Exception as err:
+            logger.warning("更新 PAT last_used_at 失败: %s", err)
