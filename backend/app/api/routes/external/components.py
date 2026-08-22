@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.dependencies_external import ExternalAuthContext, require_external_operation
 from app.core.exceptions import AppException
 from app.db.session import get_db_session
-from app.schemas.common import ListQuery, PagedResponse
+from app.schemas.common import PagedResponse
 from app.schemas.external_api import (
     ExternalBatchArchiveRequest,
     ExternalBatchArchiveResponse,
@@ -23,6 +23,7 @@ from app.schemas.external_api import (
 )
 from app.schemas.component import (
     WorkspaceComponentItem,
+    WorkspaceComponentListQuery,
     WorkspaceComponentPublishRequest,
     WorkspaceComponentVersionContent,
     WorkspaceComponentVersionListItem,
@@ -101,8 +102,14 @@ async def list_components(
             page_size=len(project_items) or page_size,
         )
 
-    query = ListQuery(page=page, page_size=page_size, keyword=keyword, status=status)
-    return await WorkspaceComponentService(session).list(x_workspace_id, query, user_id=auth.user.id)
+    query = WorkspaceComponentListQuery(
+        page=page,
+        page_size=page_size,
+        keyword=keyword,
+        status=status,
+        workspace_id=x_workspace_id,
+    )
+    return await WorkspaceComponentService(session).list(query, user_id=auth.user.id)
 
 
 @router.get("/{component_id}", response_model=WorkspaceComponentItem)

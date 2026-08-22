@@ -84,7 +84,7 @@ async def create_project(
         name=payload.name,
         description=payload.description,
         status=payload.status,
-        configuration=payload.configuration or {},
+        configuration=payload.configuration,
         build_extra_assets_json=payload.build_extra_assets_json or {},
     )
 

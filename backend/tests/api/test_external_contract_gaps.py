@@ -197,6 +197,26 @@ async def _seed_cross_workspace_targets() -> tuple[str, int, int, int, int, int]
 
 
 @pytest.mark.asyncio
+async def test_component_list_returns_workspace_scoped_items(client: AsyncClient) -> None:
+    """组件列表应按 External API 的工作空间请求头查询并返回分页结果。"""
+
+    token, workspace_id, _page_id, component_id = await _seed_contract_targets()
+    response = await client.get(
+        "/api/v1/components",
+        headers={
+            "Authorization": f"Bearer {token}",
+            "X-Workspace-ID": str(workspace_id),
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["total"] == 1
+    assert body["items"][0]["id"] == component_id
+    assert body["items"][0]["workspace_id"] == workspace_id
+
+
+@pytest.mark.asyncio
 async def test_metadata_patch_whitelist_and_idempotency(client: AsyncClient) -> None:
     """页面和组件 PATCH 仅接受安全字段，并重放首次完整实体响应。"""
 

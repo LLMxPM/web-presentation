@@ -142,7 +142,7 @@ class PageMutationPlanner:
                 code="OBJECT_NOT_FOUND",
                 detail="页面不属于指定的项目。",
             )
-        _ensure_page_base_version(page_detail, base_version_no)
+        _ensure_page_base_version(page_detail.current_version_no, base_version_no)
 
         current_content = await self.page_service.get_version_content(
             page_id, base_version_no, user_id=user_id

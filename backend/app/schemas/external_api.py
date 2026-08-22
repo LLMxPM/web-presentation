@@ -7,6 +7,8 @@ from typing import Any, Generic, Literal, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from app.schemas.presentation_style import ProjectCreateConfiguration, ProjectDefaultConfiguration
+
 T = TypeVar("T")
 
 
@@ -360,7 +362,10 @@ class ExternalProjectCreateRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=128, description="项目名称")
     description: str | None = Field(default=None, max_length=2000, description="项目描述")
     status: str = Field(default="active", description="项目状态")
-    configuration: dict[str, Any] | None = Field(default=None, description="项目展示配置")
+    configuration: ProjectCreateConfiguration = Field(
+        default_factory=ProjectDefaultConfiguration,
+        description="项目展示配置；缺省时使用工作空间 default 样式。",
+    )
     build_extra_assets_json: dict[str, Any] | None = Field(default=None, description="构建额外打包资源配置")
 
 
