@@ -518,6 +518,7 @@ class AssetService:
             await self.session.refresh(asset)
         else:
             await self.session.flush()
+            await self.session.refresh(asset)
         return asset
 
     async def batch_restore_assets(
@@ -636,6 +637,7 @@ class AssetService:
             await self.session.refresh(asset)
         else:
             await self.session.flush()
+            await self.session.refresh(asset)
         return asset
 
     async def delete_asset(self, workspace_id: int, asset_id: int) -> None:
@@ -903,6 +905,7 @@ class AssetService:
                     pass
         else:
             await self.session.flush()
+            await self.session.refresh(asset)
         return asset
 
     async def _create_history_snapshot(self, asset: WorkspaceAsset, *, reason: str | None = None) -> WorkspaceAsset:

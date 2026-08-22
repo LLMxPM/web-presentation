@@ -22,6 +22,7 @@ from app.schemas.external_api import (
     ExternalMutationJobResponse,
 )
 from app.schemas.component import (
+    SuggestedComponentItem,
     WorkspaceComponentItem,
     WorkspaceComponentListQuery,
     WorkspaceComponentPublishRequest,
@@ -73,7 +74,7 @@ async def create_component(
     return result if isinstance(result, ExternalMutationJobResponse) else ExternalMutationJobResponse.model_validate(result)
 
 
-@router.get("", response_model=PagedResponse[WorkspaceComponentItem])
+@router.get("", response_model=PagedResponse[WorkspaceComponentItem | SuggestedComponentItem])
 async def list_components(
     auth: Annotated[ExternalAuthContext, Depends(require_external_operation("component.list"))],
     session: Annotated[AsyncSession, Depends(get_db_session)],
@@ -84,7 +85,7 @@ async def list_components(
     status: str | None = None,
     scope: str = Query(default="all", pattern="^(all|suggested)$"),
     project_id: int | None = None,
-) -> PagedResponse[Any]:
+) -> PagedResponse[WorkspaceComponentItem | SuggestedComponentItem]:
     """查询指定工作空间的组件列表。"""
 
     if scope == "suggested":

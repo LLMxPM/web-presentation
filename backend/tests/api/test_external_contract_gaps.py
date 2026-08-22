@@ -9,6 +9,7 @@ from app.core.external_operations import OPERATION_REGISTRY
 from app.db.session import get_session_factory
 from app.models.enums import RecordStatus, UserRole
 from app.models.page import Page
+from app.models.project_suggested_component import ProjectSuggestedComponent
 from app.models.user import User
 from app.models.workspace import Project, Workspace, WorkspaceMember
 from app.models.workspace_component import WorkspaceComponent
@@ -17,8 +18,8 @@ from app.schemas.preview_size_preset import build_default_preview_size_presets
 from app.services.api_access_token_service import ApiAccessTokenService
 
 
-async def _seed_contract_targets() -> tuple[str, int, int, int]:
-    """创建页面、组件与具备读写权限的 PAT，返回测试请求所需标识。"""
+async def _seed_contract_targets() -> tuple[str, int, int, int, int]:
+    """创建页面、项目、组件与具备读写权限的 PAT，返回测试请求所需标识。"""
 
     async with get_session_factory()() as session:
         user = User(
@@ -78,23 +79,27 @@ async def _seed_contract_targets() -> tuple[str, int, int, int]:
         )
         session.add_all([page, component])
         await session.flush()
+        session.add(ProjectSuggestedComponent(project_id=project.id, component_id=component.id, sort_order=0))
         token = await ApiAccessTokenService(session).create_token(
             user_id=user.id,
             payload=ApiAccessTokenCreateRequest(
                 name="External-Contract-PAT",
                 workspace_ids=[workspace.id],
                 scopes=[
+                    "project:write",
                     "page:read",
                     "page:write",
                     "component:read",
                     "component:write",
                     "design-system:read",
                     "design-system:write",
+                    "asset:read",
+                    "asset:write",
                 ],
                 expires_in_days=30,
             ),
         )
-        result = token.token, workspace.id, page.id, component.id
+        result = token.token, workspace.id, project.id, page.id, component.id
         await session.commit()
         return result
 
@@ -200,7 +205,7 @@ async def _seed_cross_workspace_targets() -> tuple[str, int, int, int, int, int]
 async def test_component_list_returns_workspace_scoped_items(client: AsyncClient) -> None:
     """组件列表应按 External API 的工作空间请求头查询并返回分页结果。"""
 
-    token, workspace_id, _page_id, component_id = await _seed_contract_targets()
+    token, workspace_id, _project_id, _page_id, component_id = await _seed_contract_targets()
     response = await client.get(
         "/api/v1/components",
         headers={
@@ -217,10 +222,98 @@ async def test_component_list_returns_workspace_scoped_items(client: AsyncClient
 
 
 @pytest.mark.asyncio
+async def test_component_suggested_list_returns_summary_items(client: AsyncClient) -> None:
+    """建议组件列表应按摘要模型返回，而不是被完整组件响应模型拦截。"""
+
+    token, workspace_id, project_id, _page_id, component_id = await _seed_contract_targets()
+    response = await client.get(
+        "/api/v1/components",
+        params={"scope": "suggested", "project_id": project_id},
+        headers={
+            "Authorization": f"Bearer {token}",
+            "X-Workspace-ID": str(workspace_id),
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["total"] == 1
+    assert body["items"][0]["id"] == component_id
+    assert body["items"][0]["available"] is False
+    assert "content" not in body["items"][0]
+
+
+@pytest.mark.asyncio
+async def test_project_configuration_update_accepts_flat_presentation_fields(client: AsyncClient) -> None:
+    """项目配置更新应兼容 CLI 传入的平铺展示字段。"""
+
+    token, workspace_id, project_id, _page_id, _component_id = await _seed_contract_targets()
+    response = await client.put(
+        f"/api/v1/projects/{project_id}/configuration",
+        json={
+            "configuration": {
+                "page_width": 1920,
+                "page_height": 1080,
+                "base_font_size": "16px",
+                "icon_default_stroke_width": 2,
+                "show_pdf_export_button": True,
+            }
+        },
+        headers={
+            "Authorization": f"Bearer {token}",
+            "X-Workspace-ID": str(workspace_id),
+            "Idempotency-Key": "project-configuration-flat-fields",
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["page_width"] == 1920
+    assert response.json()["page_height"] == 1080
+
+
+@pytest.mark.asyncio
+async def test_external_asset_writes_refresh_updated_at_before_serialization(client: AsyncClient) -> None:
+    """External 资源更新应在异步 flush 后刷新时间戳再构造响应。"""
+
+    token, workspace_id, _project_id, _page_id, _component_id = await _seed_contract_targets()
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "X-Workspace-ID": str(workspace_id),
+    }
+    created = await client.post(
+        "/api/v1/assets/content",
+        json={
+            "asset_type": "mermaid",
+            "name": "external-contract-diagram",
+            "original_name": "diagram.mmd",
+            "content": "graph TD\n  A-->B",
+        },
+        headers={**headers, "Idempotency-Key": "external-asset-create"},
+    )
+    assert created.status_code == 201, created.text
+    asset_id = created.json()["id"]
+
+    metadata = await client.patch(
+        f"/api/v1/assets/{asset_id}",
+        json={"description": "updated"},
+        headers={**headers, "Idempotency-Key": "external-asset-metadata"},
+    )
+    assert metadata.status_code == 200, metadata.text
+    assert metadata.json()["description"] == "updated"
+
+    content = await client.put(
+        f"/api/v1/assets/{asset_id}/content",
+        json={"content": "graph TD\n  A-->C"},
+        headers={**headers, "Idempotency-Key": "external-asset-content"},
+    )
+    assert content.status_code == 200, content.text
+
+
+@pytest.mark.asyncio
 async def test_metadata_patch_whitelist_and_idempotency(client: AsyncClient) -> None:
     """页面和组件 PATCH 仅接受安全字段，并重放首次完整实体响应。"""
 
-    token, workspace_id, page_id, component_id = await _seed_contract_targets()
+    token, workspace_id, _project_id, page_id, component_id = await _seed_contract_targets()
     headers = {
         "Authorization": f"Bearer {token}",
         "X-Workspace-ID": str(workspace_id),
@@ -289,7 +382,7 @@ async def test_metadata_patch_whitelist_and_idempotency(client: AsyncClient) -> 
 async def test_guides_index_and_detail_do_not_require_workspace_header(client: AsyncClient) -> None:
     """Guides 使用 PAT 即可读取，并公开版本、revision、Header 与独立 DTO Schema。"""
 
-    token, _, _, _ = await _seed_contract_targets()
+    token, _, _, _, _ = await _seed_contract_targets()
     headers = {"Authorization": f"Bearer {token}"}
     index = await client.get("/api/v1/guides", headers=headers)
     assert index.status_code == 200
@@ -356,7 +449,7 @@ async def test_pat_workspace_binding_is_checked_for_object_routes(client: AsyncC
 async def test_style_create_without_key_replays_and_copy_returns_created_status(client: AsyncClient) -> None:
     """缺省样式 key 的重试应重放，复制样式应返回 201。"""
 
-    token, workspace_id, _, _ = await _seed_contract_targets()
+    token, workspace_id, _, _, _ = await _seed_contract_targets()
     headers = {
         "Authorization": f"Bearer {token}",
         "X-Workspace-ID": str(workspace_id),

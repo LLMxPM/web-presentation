@@ -31,6 +31,35 @@ from app.services.suggested_component_service import SuggestedComponentService
 router = APIRouter()
 
 
+def _normalize_external_project_configuration(configuration: dict[str, object]) -> dict[str, object]:
+    """兼容 External API 的平铺配置，并归一化为 ProjectUpdateRequest 所需结构。"""
+
+    normalized = dict(configuration)
+    mode = normalized.get("mode")
+    if mode is None:
+        return {"mode": "patch", "presentation": normalized}
+    if mode != "patch" or "presentation" in normalized:
+        return normalized
+
+    presentation_fields = {
+        field_name: normalized.pop(field_name)
+        for field_name in (
+            "page_width",
+            "page_height",
+            "base_font_size",
+            "icon_default_stroke_width",
+            "show_pdf_export_button",
+            "menu_mode",
+            "theme_key",
+            "style_spec_markdown",
+        )
+        if field_name in normalized
+    }
+    if presentation_fields:
+        normalized["presentation"] = presentation_fields
+    return normalized
+
+
 @router.get("", response_model=PagedResponse[ProjectItem])
 async def list_projects(
     request: Request,
@@ -238,7 +267,7 @@ async def update_project_configuration(
 
     project = await ProjectService(session).get(project_id, user_id=auth.user.id)
     await auth.ensure_workspace_access(project.workspace_id, session)
-    configuration = dict(payload.configuration)
+    configuration = _normalize_external_project_configuration(payload.configuration)
     configuration.setdefault("mode", "patch")
     update_payload = ProjectUpdateRequest(
         configuration=configuration,
