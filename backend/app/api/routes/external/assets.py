@@ -13,13 +13,23 @@ from app.api.routes.assets import _build_asset_response, _build_asset_responses
 from app.db.session import get_db_session
 from app.models.enums import AssetType
 from app.schemas.asset import (
+    AssetContentCreateRequest,
+    AssetContentPreviewRequest,
     AssetContentResponse,
     AssetContentUpdateRequest,
+    AssetCopyRequest,
     AssetResponse,
     AssetUpdateRequest,
 )
 from app.schemas.common import PagedResponse
-from app.schemas.external_api import ExternalBatchArchiveRequest, ExternalBatchArchiveResponse
+from app.schemas.external_api import (
+    ExternalAssetContentCreateRequest,
+    ExternalAssetContentPreviewRequest,
+    ExternalAssetContentUpdateRequest,
+    ExternalAssetCopyRequest,
+    ExternalBatchArchiveRequest,
+    ExternalBatchArchiveResponse,
+)
 from app.services.asset_service import AssetService
 from app.services.business_operation_service import BusinessOperationService
 from app.services.idempotency_service import IdempotencyService
@@ -58,6 +68,18 @@ async def list_assets(
     )
 
 
+@router.get("/tags", response_model=list[str])
+async def list_asset_tags(
+    auth: Annotated[ExternalAuthContext, Depends(require_external_operation("asset.tags"))],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+    x_workspace_id: Annotated[int, Header(alias="X-Workspace-ID", description="目标工作空间 ID")],
+    asset_type: AssetType | None = None,
+) -> list[str]:
+    """查询工作空间资源标签。"""
+
+    return await AssetService(session).list_tags(x_workspace_id, asset_type=asset_type)
+
+
 @router.get("/{asset_id}", response_model=AssetResponse)
 async def get_asset(
     asset_id: int,
@@ -74,7 +96,7 @@ async def get_asset(
 @router.get("/{asset_id}/content", response_model=AssetContentResponse)
 async def get_asset_content(
     asset_id: int,
-    auth: Annotated[ExternalAuthContext, Depends(require_external_operation("asset.get"))],
+    auth: Annotated[ExternalAuthContext, Depends(require_external_operation("asset.content.get"))],
     session: Annotated[AsyncSession, Depends(get_db_session)],
     x_workspace_id: Annotated[int, Header(alias="X-Workspace-ID", description="目标工作空间 ID")],
 ) -> AssetContentResponse:
@@ -84,15 +106,52 @@ async def get_asset_content(
     asset = await asset_service._get_asset_or_raise(x_workspace_id, asset_id)
     content = await asset_service.get_asset_content(x_workspace_id, asset_id)
     return AssetContentResponse(
-        id=asset.id,
-        workspace_id=asset.workspace_id,
-        name=asset.name,
-        original_name=asset.original_name,
-        asset_type=AssetType(asset.asset_type),
-        content_type=asset.content_type,
+        asset=await _build_asset_response(session, x_workspace_id, asset),
         content=content,
-        updated_at=asset.updated_at,
     )
+
+
+@router.post("/content", response_model=AssetResponse, status_code=201)
+async def create_asset_content(
+    request: Request,
+    response: Response,
+    payload: ExternalAssetContentCreateRequest,
+    auth: Annotated[ExternalAuthContext, Depends(require_external_operation("asset.content.create"))],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+    x_workspace_id: Annotated[int, Header(alias="X-Workspace-ID", description="目标工作空间 ID")],
+    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+) -> AssetResponse:
+    """创建 SVG、DrawIO、Mermaid、Chart 或 Formula 文本资源。"""
+
+    create_payload = AssetContentCreateRequest.model_validate(payload.model_dump())
+    fingerprint = IdempotencyService.calculate_request_fingerprint(
+        http_method="POST", path=request.url.path, json_data=payload.model_dump(mode="json")
+    )
+
+    async def _operation(record_id: int | None) -> tuple[int, AssetResponse]:
+        asset = await AssetService(session).create_content_asset(
+            x_workspace_id,
+            asset_type=create_payload.asset_type,
+            name=create_payload.name,
+            original_name=create_payload.original_name,
+            content=create_payload.content,
+            tags=create_payload.tags,
+            description=create_payload.description,
+            approx_aspect_ratio=create_payload.approx_aspect_ratio,
+            aspect_ratio_source="manual",
+        )
+        return 201, await _build_asset_response(session, x_workspace_id, asset)
+
+    status_code, result = await IdempotencyService(session).execute_idempotent_operation(
+        user_id=auth.user.id,
+        workspace_id=x_workspace_id,
+        idempotency_key=idempotency_key,
+        operation="asset.content.create",
+        fingerprint=fingerprint,
+        operation_func=_operation,
+    )
+    response.status_code = status_code
+    return result if isinstance(result, AssetResponse) else AssetResponse.model_validate(result)
 
 
 @router.post("", response_model=AssetResponse)
@@ -165,8 +224,8 @@ async def upload_asset(
 async def update_asset_content(
     request: Request,
     asset_id: int,
-    payload: AssetContentUpdateRequest,
-    auth: Annotated[ExternalAuthContext, Depends(require_external_operation("asset.update"))],
+    payload: ExternalAssetContentUpdateRequest,
+    auth: Annotated[ExternalAuthContext, Depends(require_external_operation("asset.content.update"))],
     session: Annotated[AsyncSession, Depends(get_db_session)],
     x_workspace_id: Annotated[int, Header(alias="X-Workspace-ID", description="目标工作空间 ID")],
     idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
@@ -194,10 +253,64 @@ async def update_asset_content(
         user_id=auth.user.id,
         workspace_id=x_workspace_id,
         idempotency_key=idempotency_key,
-        operation="asset.update",
+        operation="asset.content.update",
         fingerprint=fingerprint,
         operation_func=_operation,
     )
+    return result if isinstance(result, AssetResponse) else AssetResponse.model_validate(result)
+
+
+@router.post("/{asset_id}/content/preview")
+async def preview_asset_content(
+    asset_id: int,
+    payload: ExternalAssetContentPreviewRequest,
+    auth: Annotated[ExternalAuthContext, Depends(require_external_operation("asset.content.preview"))],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+    x_workspace_id: Annotated[int, Header(alias="X-Workspace-ID", description="目标工作空间 ID")],
+) -> dict[str, object]:
+    """预览文本资源内容差异，不写入数据库。"""
+
+    result = await AssetService(session).preview_content_update(x_workspace_id, asset_id, payload.content)
+    return result
+
+
+@router.post("/{asset_id}/copy", response_model=AssetResponse, status_code=201)
+async def copy_asset(
+    request: Request,
+    response: Response,
+    asset_id: int,
+    payload: ExternalAssetCopyRequest,
+    auth: Annotated[ExternalAuthContext, Depends(require_external_operation("asset.copy"))],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+    x_workspace_id: Annotated[int, Header(alias="X-Workspace-ID", description="目标工作空间 ID")],
+    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+) -> AssetResponse:
+    """复制资源记录并复用物理文件。"""
+
+    fingerprint = IdempotencyService.calculate_request_fingerprint(
+        http_method="POST", path=request.url.path, json_data=payload.model_dump(mode="json")
+    )
+
+    async def _operation(record_id: int | None) -> tuple[int, AssetResponse]:
+        asset = await AssetService(session).copy_asset(
+            x_workspace_id,
+            asset_id,
+            name=payload.name,
+            original_name=payload.original_name,
+            description=payload.description,
+            tags=payload.tags,
+        )
+        return 201, await _build_asset_response(session, x_workspace_id, asset)
+
+    status_code, result = await IdempotencyService(session).execute_idempotent_operation(
+        user_id=auth.user.id,
+        workspace_id=x_workspace_id,
+        idempotency_key=idempotency_key,
+        operation="asset.copy",
+        fingerprint=fingerprint,
+        operation_func=_operation,
+    )
+    response.status_code = status_code
     return result if isinstance(result, AssetResponse) else AssetResponse.model_validate(result)
 
 
@@ -245,7 +358,7 @@ async def update_asset_metadata(
     return result if isinstance(result, AssetResponse) else AssetResponse.model_validate(result)
 
 
-@router.delete("/{asset_id}")
+@router.post("/{asset_id}/archive")
 async def archive_asset(
     request: Request,
     asset_id: int,
@@ -257,7 +370,7 @@ async def archive_asset(
     """归档资源（支持 Idempotency-Key 幂等保护）。"""
 
     fingerprint = IdempotencyService.calculate_request_fingerprint(
-        http_method="DELETE",
+        http_method="POST",
         path=request.url.path,
         json_data={"asset_id": asset_id},
     )
@@ -275,39 +388,6 @@ async def archive_asset(
         operation_func=_operation,
     )
     return result if isinstance(result, dict) else {"message": str(result)}
-
-
-@router.post("/{asset_id}/restore", response_model=AssetResponse)
-async def restore_asset(
-    request: Request,
-    asset_id: int,
-    auth: Annotated[ExternalAuthContext, Depends(require_external_operation("asset.update"))],
-    session: Annotated[AsyncSession, Depends(get_db_session)],
-    x_workspace_id: Annotated[int, Header(alias="X-Workspace-ID", description="目标工作空间 ID")],
-    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
-) -> AssetResponse:
-    """恢复已归档资源（支持 Idempotency-Key 幂等保护）。"""
-
-    fingerprint = IdempotencyService.calculate_request_fingerprint(
-        http_method="POST",
-        path=request.url.path,
-        json_data={"asset_id": asset_id},
-    )
-
-    async def _operation(record_id: int | None) -> tuple[int, AssetResponse]:
-        restored = await AssetService(session).restore_asset(workspace_id=x_workspace_id, asset_id=asset_id, commit=False)
-        resp = await _build_asset_response(session, x_workspace_id, restored)
-        return 200, resp
-
-    status_code, result = await IdempotencyService(session).execute_idempotent_operation(
-        user_id=auth.user.id,
-        workspace_id=x_workspace_id,
-        idempotency_key=idempotency_key,
-        operation="asset.update",
-        fingerprint=fingerprint,
-        operation_func=_operation,
-    )
-    return result if isinstance(result, AssetResponse) else AssetResponse.model_validate(result)
 
 
 @router.post("/batch-archive", response_model=ExternalBatchArchiveResponse)

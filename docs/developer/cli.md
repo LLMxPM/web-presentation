@@ -20,7 +20,7 @@
 | External API 路径、DTO、Scope、错误码 | `web-presentation` | `backend/app/api/routes/external/`、`backend/app/schemas/external_api.py` |
 | operation 注册表和幂等要求 | `web-presentation` | `backend/app/core/external_operations.py` |
 | 工作空间隔离和权限校验 | `web-presentation` | External API 鉴权依赖、契约测试 |
-| Mutation/Build Job 语义 | `web-presentation` | External API 路由、任务模型和契约测试 |
+| Mutation Job 语义 | `web-presentation` | External API 路由、任务模型和契约测试 |
 | CLI 命令和参数 | `web-presentation-agent-kit` | `packages/cli/src/wp/commands/` |
 | CLI Profile、输出和退出码 | `web-presentation-agent-kit` | `packages/cli/` |
 | HTTP、PAT、Header、幂等和轮询适配 | `web-presentation-agent-kit` | `packages/api-client/` |
@@ -56,6 +56,12 @@ GET /api/v1/workspaces/{workspace_id}/capabilities
 GET /api/v1/standards/page
 GET /api/v1/standards/component
 GET /api/v1/guides
+GET /api/v1/guides/{operation_key}
+GET /api/v1/system/version
+GET /api/v1/system/health
+GET /api/v1/runtime-kit
+GET /api/v1/runtime-kit/{item}
+GET /api/v1/fonts
 ```
 
 ### 4.2 核心资源
@@ -68,22 +74,44 @@ GET /api/v1/guides
 /api/v1/assets
 /api/v1/themes
 /api/v1/styles
+GET  /api/v1/projects/{project_id}/configuration
+PUT  /api/v1/projects/{project_id}/configuration
+GET  /api/v1/projects/{project_id}/route-tree
+PUT  /api/v1/projects/{project_id}/route-tree
+POST /api/v1/projects/{project_id}/apply-style
+PUT  /api/v1/projects/{project_id}/build-assets
+POST /api/v1/pages
+POST /api/v1/pages/{page_id}/copy
+POST /api/v1/pages/{page_id}/edits
+GET  /api/v1/pages/{page_id}/dependencies
+POST /api/v1/components/{component_id}/edits
+GET  /api/v1/components/{component_id}/dependencies
+POST /api/v1/assets/content
+GET  /api/v1/assets/{asset_id}/content
+PUT  /api/v1/assets/{asset_id}/content
+POST /api/v1/assets/{asset_id}/content/preview
+POST /api/v1/assets/{asset_id}/copy
+GET  /api/v1/assets/tags
 ```
 
-### 4.3 校验、截图、构建和重任务
+### 4.3 校验、截图和重任务
 
 ```text
-POST /api/v1/validate/code
+POST /api/v1/validate/entity
 GET  /api/v1/pages/{page_id}/screenshot
-POST /api/v1/projects/{project_id}/builds
-GET  /api/v1/builds/{job_id}
 POST /api/v1/jobs/mutations/pages
 POST /api/v1/jobs/mutations/pages/edits
 POST /api/v1/jobs/mutations/components
 POST /api/v1/jobs/mutations/components/edits
 GET  /api/v1/jobs/mutations/{job_id}
 POST /api/v1/jobs/mutations/{job_id}/cancel
+POST /api/v1/jobs/mutations/components/metadata
+POST /api/v1/components
+POST /api/v1/components/{component_id}/validate
+POST /api/v1/pages/{page_id}/validate
 ```
+
+页面和组件实体校验支持 `current | content | edits` 三种模式；复杂 CLI 参数统一由 JSON 文件或 UTF-8 内容文件承载。Agent Session/Run/HITL、图片能力、Build 执行、产物下载和 MCP 不属于本期外部接口范围。
 
 具体 operation、Scope、请求字段和响应字段以主仓代码和契约测试为准，不在本文复制完整 Schema。
 
@@ -106,14 +134,14 @@ POST /api/v1/jobs/mutations/{job_id}/cancel
 - API 路径、HTTP 方法、请求/响应字段；
 - Scope、Workspace Header、幂等要求；
 - 错误码、Job 状态、取消语义；
-- 版本恢复、归档、交付 URL 和文件大小限制；
+- 归档、工作空间隔离和文件大小限制；
 - `/guides`、`/standards/*`、`/capabilities` 返回结构。
 
 主仓完成后，再由 agent-kit 更新 CLI 实施文档、适配代码和测试。
 
 ## 6. 已知契约问题
 
-页面/组件安全元数据 PATCH、版本化 Guides 详情，以及 Mutation 取消、人工重试和幂等组合语义已经冻结。剩余问题是构建产物下载地址的同源、短期有效期、PAT 转发和持久化 Worker 契约；冻结前 CLI 不提供 Build 命令。
+页面/组件安全元数据 PATCH、版本化 Guides 详情，以及 Mutation 取消、人工重试和幂等组合语义已经冻结。首版不暴露 Build 执行、产物下载或 Restore 入口。
 
 这些问题的详细记录和 agent-kit 阻塞关系见 [External API v1 契约文档](./reference/external-agent-api.md)。
 

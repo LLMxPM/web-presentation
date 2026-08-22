@@ -23,6 +23,7 @@ from app.schemas.workspace_style import (
     WorkspaceStyleItem,
     WorkspaceStyleUpdateRequest,
 )
+from app.schemas.presentation_style import StyleConfiguration
 from app.services.business_operation_service import BusinessOperationService
 from app.services.idempotency_service import IdempotencyService
 from app.services.workspace_style_service import WorkspaceStyleService
@@ -74,7 +75,7 @@ async def create_style(
         name=payload.name,
         key=style_key,
         description=payload.description,
-        theme_key=payload.theme_key,
+        configuration=StyleConfiguration.model_validate(payload.configuration),
     )
 
     fingerprint = IdempotencyService.calculate_request_fingerprint(
@@ -182,7 +183,7 @@ async def update_style(
     return result if isinstance(result, WorkspaceStyleItem) else WorkspaceStyleItem.model_validate(result)
 
 
-@router.delete("/{style_id}")
+@router.post("/{style_id}/archive")
 async def archive_style(
     request: Request,
     style_id: int,
@@ -194,7 +195,7 @@ async def archive_style(
     """归档样式方案（默认方案受保护禁止归档，支持 Idempotency-Key 幂等保护）。"""
 
     fingerprint = IdempotencyService.calculate_request_fingerprint(
-        http_method="DELETE",
+        http_method="POST",
         path=request.url.path,
         json_data={"style_id": style_id},
     )
@@ -217,44 +218,6 @@ async def archive_style(
         operation_func=_operation,
     )
     return result if isinstance(result, dict) else {"message": str(result)}
-
-
-@router.post("/{style_id}/restore", response_model=WorkspaceStyleItem)
-async def restore_style(
-    request: Request,
-    style_id: int,
-    auth: Annotated[ExternalAuthContext, Depends(require_external_operation("style.update"))],
-    session: Annotated[AsyncSession, Depends(get_db_session)],
-    x_workspace_id: Annotated[int, Header(alias="X-Workspace-ID", description="目标工作空间 ID")],
-    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
-) -> WorkspaceStyleItem:
-    """恢复已归档样式方案（支持 Idempotency-Key 幂等保护）。"""
-
-    fingerprint = IdempotencyService.calculate_request_fingerprint(
-        http_method="POST",
-        path=request.url.path,
-        json_data={"style_id": style_id},
-    )
-
-    async def _operation(record_id: int | None) -> tuple[int, WorkspaceStyleItem]:
-        await BusinessOperationService(session).restore_style(
-            workspace_id=x_workspace_id,
-            style_id=style_id,
-            operator_id=auth.user.id,
-            commit=False,
-        )
-        restored = await WorkspaceStyleService(session).get(x_workspace_id, style_id)
-        return 200, restored
-
-    status_code, result = await IdempotencyService(session).execute_idempotent_operation(
-        user_id=auth.user.id,
-        workspace_id=x_workspace_id,
-        idempotency_key=idempotency_key,
-        operation="style.update",
-        fingerprint=fingerprint,
-        operation_func=_operation,
-    )
-    return result if isinstance(result, WorkspaceStyleItem) else WorkspaceStyleItem.model_validate(result)
 
 
 @router.post("/batch-archive", response_model=ExternalBatchArchiveResponse)

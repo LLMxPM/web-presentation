@@ -14,12 +14,19 @@ from app.schemas.common import ListQuery, PagedResponse
 from app.schemas.external_api import (
     ExternalBatchArchiveRequest,
     ExternalBatchArchiveResponse,
+    ExternalProjectApplyStyleRequest,
+    ExternalProjectBuildAssetsRequest,
+    ExternalProjectConfigurationResponse,
+    ExternalProjectConfigurationUpdateRequest,
     ExternalProjectCreateRequest,
 )
 from app.schemas.project import ProjectCreateRequest, ProjectItem, ProjectUpdateRequest
+from app.schemas.project_route import ProjectRouteTreeResponse, ProjectRouteTreeWriteRequest
 from app.services.business_operation_service import BusinessOperationService
 from app.services.idempotency_service import IdempotencyService
 from app.services.project_service import ProjectService
+from app.services.project_route_service import ProjectRouteService
+from app.services.suggested_component_service import SuggestedComponentService
 
 router = APIRouter()
 
@@ -148,7 +155,7 @@ async def update_project(
     return result if isinstance(result, ProjectItem) else ProjectItem.model_validate(result)
 
 
-@router.delete("/{project_id}")
+@router.post("/{project_id}/archive")
 async def archive_project(
     request: Request,
     project_id: int,
@@ -162,7 +169,7 @@ async def archive_project(
     await auth.ensure_workspace_access(project.workspace_id, session)
 
     fingerprint = IdempotencyService.calculate_request_fingerprint(
-        http_method="DELETE",
+        http_method="POST",
         path=request.url.path,
         json_data={"project_id": project_id},
     )
@@ -184,6 +191,185 @@ async def archive_project(
         operation_func=_operation,
     )
     return result if isinstance(result, dict) else {"message": str(result)}
+
+
+@router.get("/{project_id}/configuration", response_model=ExternalProjectConfigurationResponse)
+async def get_project_configuration(
+    project_id: int,
+    auth: Annotated[ExternalAuthContext, Depends(require_external_operation("project.configuration.get"))],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> ExternalProjectConfigurationResponse:
+    """读取项目展示配置、建议组件和构建额外资源配置。"""
+
+    project = await ProjectService(session).get(project_id, user_id=auth.user.id)
+    suggested = await SuggestedComponentService(session).list_project_component_items(
+        project_id,
+        include_unavailable=True,
+    )
+    return ExternalProjectConfigurationResponse(
+        project_id=project.id,
+        workspace_id=project.workspace_id,
+        presentation={
+            "page_width": project.page_width,
+            "page_height": project.page_height,
+            "base_font_size": project.base_font_size,
+            "icon_default_stroke_width": project.icon_default_stroke_width,
+            "show_pdf_export_button": project.show_pdf_export_button,
+            "menu_mode": project.menu_mode.value if hasattr(project.menu_mode, "value") else project.menu_mode,
+            "theme_key": project.theme_key,
+            "style_spec_markdown": project.style_spec_markdown,
+        },
+        suggested_components=[item.model_dump(mode="json") for item in suggested],
+        build_extra_assets_json=project.build_extra_assets_json.model_dump(mode="json"),
+    )
+
+
+@router.put("/{project_id}/configuration", response_model=ProjectItem)
+async def update_project_configuration(
+    request: Request,
+    project_id: int,
+    payload: ExternalProjectConfigurationUpdateRequest,
+    auth: Annotated[ExternalAuthContext, Depends(require_external_operation("project.configuration.update"))],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+) -> ProjectItem:
+    """更新项目展示配置和构建额外资源配置。"""
+
+    project = await ProjectService(session).get(project_id, user_id=auth.user.id)
+    configuration = dict(payload.configuration)
+    configuration.setdefault("mode", "patch")
+    update_payload = ProjectUpdateRequest(
+        configuration=configuration,
+        build_extra_assets_json=payload.build_extra_assets_json,
+    )
+    fingerprint = IdempotencyService.calculate_request_fingerprint(
+        http_method="PUT",
+        path=request.url.path,
+        json_data=payload.model_dump(mode="json"),
+    )
+
+    async def _operation(record_id: int | None) -> tuple[int, ProjectItem]:
+        updated = await ProjectService(session).update(project_id, update_payload, auth.user.id, commit=False)
+        return 200, updated
+
+    _, result = await IdempotencyService(session).execute_idempotent_operation(
+        user_id=auth.user.id,
+        workspace_id=project.workspace_id,
+        idempotency_key=idempotency_key,
+        operation="project.configuration.update",
+        fingerprint=fingerprint,
+        operation_func=_operation,
+    )
+    return result if isinstance(result, ProjectItem) else ProjectItem.model_validate(result)
+
+
+@router.get("/{project_id}/route-tree", response_model=ProjectRouteTreeResponse)
+async def get_project_route_tree(
+    project_id: int,
+    auth: Annotated[ExternalAuthContext, Depends(require_external_operation("project.route.get"))],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> ProjectRouteTreeResponse:
+    """读取项目路由树。"""
+
+    await ProjectService(session).get(project_id, user_id=auth.user.id)
+    return await ProjectRouteService(session).get_tree(project_id)
+
+
+@router.put("/{project_id}/route-tree", response_model=ProjectRouteTreeResponse)
+async def replace_project_route_tree(
+    request: Request,
+    project_id: int,
+    payload: ProjectRouteTreeWriteRequest,
+    auth: Annotated[ExternalAuthContext, Depends(require_external_operation("project.route.update"))],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+) -> ProjectRouteTreeResponse:
+    """整体替换项目路由树。"""
+
+    project = await ProjectService(session).get(project_id, user_id=auth.user.id)
+    fingerprint = IdempotencyService.calculate_request_fingerprint(
+        http_method="PUT",
+        path=request.url.path,
+        json_data=payload.model_dump(mode="json"),
+    )
+
+    async def _operation(record_id: int | None) -> tuple[int, ProjectRouteTreeResponse]:
+        tree = await ProjectRouteService(session).replace_tree(project_id, payload, auth.user.id)
+        return 200, tree
+
+    _, result = await IdempotencyService(session).execute_idempotent_operation(
+        user_id=auth.user.id,
+        workspace_id=project.workspace_id,
+        idempotency_key=idempotency_key,
+        operation="project.route.update",
+        fingerprint=fingerprint,
+        operation_func=_operation,
+    )
+    return result if isinstance(result, ProjectRouteTreeResponse) else ProjectRouteTreeResponse.model_validate(result)
+
+
+@router.post("/{project_id}/apply-style", response_model=ProjectItem)
+async def apply_project_style(
+    request: Request,
+    project_id: int,
+    payload: ExternalProjectApplyStyleRequest,
+    auth: Annotated[ExternalAuthContext, Depends(require_external_operation("project.apply_style"))],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+) -> ProjectItem:
+    """将工作空间样式方案应用到项目。"""
+
+    project = await ProjectService(session).get(project_id, user_id=auth.user.id)
+    update_payload = ProjectUpdateRequest(configuration={"mode": "style", "style_id": payload.style_id})
+    fingerprint = IdempotencyService.calculate_request_fingerprint(
+        http_method="POST", path=request.url.path, json_data=payload.model_dump(mode="json")
+    )
+
+    async def _operation(record_id: int | None) -> tuple[int, ProjectItem]:
+        updated = await ProjectService(session).update(project_id, update_payload, auth.user.id, commit=False)
+        return 200, updated
+
+    _, result = await IdempotencyService(session).execute_idempotent_operation(
+        user_id=auth.user.id,
+        workspace_id=project.workspace_id,
+        idempotency_key=idempotency_key,
+        operation="project.apply_style",
+        fingerprint=fingerprint,
+        operation_func=_operation,
+    )
+    return result if isinstance(result, ProjectItem) else ProjectItem.model_validate(result)
+
+
+@router.put("/{project_id}/build-assets", response_model=ProjectItem)
+async def update_project_build_assets(
+    request: Request,
+    project_id: int,
+    payload: ExternalProjectBuildAssetsRequest,
+    auth: Annotated[ExternalAuthContext, Depends(require_external_operation("project.build_assets.update"))],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+) -> ProjectItem:
+    """更新项目构建额外资源配置，不启动构建任务。"""
+
+    project = await ProjectService(session).get(project_id, user_id=auth.user.id)
+    update_payload = ProjectUpdateRequest(build_extra_assets_json=payload.build_extra_assets_json)
+    fingerprint = IdempotencyService.calculate_request_fingerprint(
+        http_method="PUT", path=request.url.path, json_data=payload.model_dump(mode="json")
+    )
+
+    async def _operation(record_id: int | None) -> tuple[int, ProjectItem]:
+        updated = await ProjectService(session).update(project_id, update_payload, auth.user.id, commit=False)
+        return 200, updated
+
+    _, result = await IdempotencyService(session).execute_idempotent_operation(
+        user_id=auth.user.id,
+        workspace_id=project.workspace_id,
+        idempotency_key=idempotency_key,
+        operation="project.build_assets.update",
+        fingerprint=fingerprint,
+        operation_func=_operation,
+    )
+    return result if isinstance(result, ProjectItem) else ProjectItem.model_validate(result)
 
 
 @router.post("/batch-archive", response_model=ExternalBatchArchiveResponse)

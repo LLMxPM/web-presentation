@@ -8,7 +8,7 @@
 
 - External API v1 的公开边界、路径和版本策略；
 - PAT、Scope、工作空间隔离和错误语义；
-- 页面、组件、资源、主题、样式、构建和 Mutation Job 的后端契约；
+- 页面、组件、资源、主题、样式和 Mutation Job 的后端契约；
 - `/guides`、`/standards/*`、`/capabilities` 等自省接口；
 - 主仓库契约测试、兼容性和变更流程。
 
@@ -85,12 +85,11 @@ X-Workspace-ID: <workspace_id>
 |---|---|
 | `workspace:read` | 工作空间详情和能力矩阵 |
 | `project:read` / `project:write` | 项目读取、创建、修改和归档 |
-| `page:read` / `page:write` | 页面读取、创建、编辑、恢复和归档 |
-| `component:read` / `component:write` | 组件读取、创建、编辑、发布、恢复和归档 |
+| `page:read` / `page:write` | 页面读取、创建、编辑和归档 |
+| `component:read` / `component:write` | 组件读取、创建、编辑、发布和归档 |
 | `asset:read` / `asset:write` | 资源读取、上传、内容/元数据更新和归档 |
 | `design-system:read` / `design-system:write` | 主题、样式读取和维护 |
 | `preview:run` | 页面截图和预览相关能力 |
-| `build:run` | 项目构建、状态查询和产物交付 |
 
 具体 operation 使用的 Scope 以 `external_operations.py` 和 `/capabilities` 返回为准。
 
@@ -139,6 +138,32 @@ GET /api/v1/guides/{operation_key}
 
 资源具体视图包括详情、源码/草稿、历史版本、资源内容、配置和路由树；是否公开某个视图以实际路由和 operation 注册表为准。
 
+首版 CLI 使用的结构化资源接口包括：
+
+```text
+GET/PUT  /api/v1/projects/{project_id}/configuration
+GET/PUT  /api/v1/projects/{project_id}/route-tree
+POST     /api/v1/projects/{project_id}/apply-style
+PUT      /api/v1/projects/{project_id}/build-assets
+POST     /api/v1/pages
+POST     /api/v1/pages/{page_id}/copy
+POST     /api/v1/pages/{page_id}/edits
+GET      /api/v1/pages/{page_id}/dependencies
+GET      /api/v1/components/{component_id}/dependencies
+POST     /api/v1/components/{component_id}/edits
+POST     /api/v1/assets/content
+GET/PUT  /api/v1/assets/{asset_id}/content
+POST     /api/v1/assets/{asset_id}/content/preview
+POST     /api/v1/assets/{asset_id}/copy
+GET      /api/v1/assets/tags
+GET      /api/v1/runtime-kit
+GET      /api/v1/runtime-kit/{item}
+GET      /api/v1/fonts
+POST     /api/v1/validate/entity
+```
+
+`validate/entity` 的 `entity_type` 为 `page | component`，`mode` 为 `current | content | edits`。项目配置、路由树、主题、样式和资源内容写入均由 Backend Schema 最终校验。
+
 ### 5.2 页面和组件重任务
 
 页面、组件源码创建和编辑不得在外部接入层直接写数据库或启动 Runtime。必须使用持久化 Mutation Job：
@@ -148,6 +173,7 @@ POST /api/v1/jobs/mutations/pages
 POST /api/v1/jobs/mutations/pages/edits
 POST /api/v1/jobs/mutations/components
 POST /api/v1/jobs/mutations/components/edits
+POST /api/v1/jobs/mutations/components/metadata
 GET  /api/v1/jobs/mutations/{job_id}
 POST /api/v1/jobs/mutations/{job_id}/cancel
 POST /api/v1/jobs/mutations/{job_id}/retry
@@ -155,15 +181,13 @@ POST /api/v1/jobs/mutations/{job_id}/retry
 
 页面编辑必须携带当前版本基线；组件编辑必须携带草稿 hash 或主仓规定的等价乐观锁字段。外部客户端不得在 409 后静默覆盖重试。
 
-### 5.3 截图和构建
+### 5.3 截图
 
 ```text
 GET  /api/v1/pages/{page_id}/screenshot
-POST /api/v1/projects/{project_id}/builds
-GET  /api/v1/builds/{job_id}
 ```
 
-截图和构建的长任务、状态、失败码和产物访问策略由主仓维护。产物下载地址的同源、短期有效期、Content-Type 和大小约束未完全稳定前，CLI/MCP 不得自行扩大下载权限。
+截图任务由主仓通过预览队列完成；首版不暴露 Build 执行、构建状态、产物下载或 Restore operation。
 
 ### 5.4 幂等和归档
 
@@ -171,7 +195,7 @@ GET  /api/v1/builds/{job_id}
 - 校验等纯只读请求不应伪造写入幂等语义。
 - 外部 Agent 只使用归档，不提供永久硬删除。
 - 单对象归档和批量归档的确认、原子性、数量上限由主仓契约定义。
-- 归档后的对象退出默认查询和操作边界；恢复是否开放必须有明确的 External API operation。
+- 归档后的对象退出默认查询和操作边界；首版不提供 Restore operation。
 
 ## 6. 错误和状态
 
@@ -192,7 +216,7 @@ Mutation 对外状态固定为 `pending | running | succeeded | failed | cancele
 
 ## 7. 已知契约问题
 
-页面/组件安全元数据 PATCH、版本化 Guides、Mutation 状态/取消/重试/幂等契约已冻结。剩余问题仅为构建产物下载 URL 的同源、鉴权、短期有效期和持久化 Worker 交付契约；冻结前 agent-kit 不支持 Build。
+页面/组件安全元数据 PATCH、版本化 Guides、Mutation 状态/取消/重试/幂等契约已冻结；首版明确排除 Build 执行、产物下载、Restore、图片能力和 Agent 运行。
 
 ## 8. 变更流程和测试归属
 
@@ -204,7 +228,7 @@ Mutation 对外状态固定为 `pending | running | succeeded | failed | cancele
 - Scope、Header、幂等要求；
 - 错误码、状态和取消语义；
 - `/guides`、`/standards/*`、`/capabilities` 字段；
-- 版本、归档、恢复、交付和工作空间隔离规则。
+- 版本、归档和工作空间隔离规则。
 
 主仓至少运行：
 

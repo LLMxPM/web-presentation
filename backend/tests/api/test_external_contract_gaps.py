@@ -191,18 +191,47 @@ async def test_guides_index_and_detail_do_not_require_workspace_header(client: A
 
 
 def test_corrected_operations_have_distinct_http_contracts() -> None:
-    """恢复、创建和编辑动作不得继续复用 update/create operation。"""
+    """创建和编辑动作不得继续复用 update/create operation。"""
 
     expected = {
         "page.update": ("PATCH", "/pages/{page_id}"),
-        "page.version.restore": ("POST", "/pages/{page_id}/versions/{version_no}/restore"),
         "component.update": ("PATCH", "/components/{component_id}"),
-        "component.version.restore_draft": ("POST", "/components/{component_id}/versions/{version_no}/restore-draft"),
-        "component.restore": ("POST", "/components/{component_id}/restore"),
         "jobs.mutation.page.create": ("POST", "/jobs/mutations/pages"),
         "jobs.mutation.page.edit": ("POST", "/jobs/mutations/pages/edits"),
         "jobs.mutation.component.create": ("POST", "/jobs/mutations/components"),
         "jobs.mutation.component.edit": ("POST", "/jobs/mutations/components/edits"),
+    }
+    assert {
+        key: (OPERATION_REGISTRY[key].http_method, OPERATION_REGISTRY[key].path_template)
+        for key in expected
+    } == expected
+
+
+def test_v1_capability_operations_use_canonical_paths() -> None:
+    """首版 CLI 依赖的资源操作必须注册为独立 External API 契约。"""
+
+    expected = {
+        "project.configuration.get": ("GET", "/projects/{project_id}/configuration"),
+        "project.configuration.update": ("PUT", "/projects/{project_id}/configuration"),
+        "project.route.get": ("GET", "/projects/{project_id}/route-tree"),
+        "project.route.update": ("PUT", "/projects/{project_id}/route-tree"),
+        "project.apply_style": ("POST", "/projects/{project_id}/apply-style"),
+        "project.build_assets.update": ("PUT", "/projects/{project_id}/build-assets"),
+        "page.create": ("POST", "/pages"),
+        "page.copy": ("POST", "/pages/{page_id}/copy"),
+        "page.edit": ("POST", "/pages/{page_id}/edits"),
+        "page.dependencies": ("GET", "/pages/{page_id}/dependencies"),
+        "page.validate": ("POST", "/pages/{page_id}/validate"),
+        "component.create": ("POST", "/components"),
+        "component.edit": ("POST", "/components/{component_id}/edits"),
+        "component.dependencies": ("GET", "/components/{component_id}/dependencies"),
+        "component.validate": ("POST", "/components/{component_id}/validate"),
+        "asset.content.create": ("POST", "/assets/content"),
+        "asset.content.get": ("GET", "/assets/{asset_id}/content"),
+        "asset.content.update": ("PUT", "/assets/{asset_id}/content"),
+        "asset.content.preview": ("POST", "/assets/{asset_id}/content/preview"),
+        "asset.copy": ("POST", "/assets/{asset_id}/copy"),
+        "asset.tags": ("GET", "/assets/tags"),
     }
     assert {
         key: (OPERATION_REGISTRY[key].http_method, OPERATION_REGISTRY[key].path_template)

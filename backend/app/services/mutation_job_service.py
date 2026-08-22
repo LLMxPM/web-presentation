@@ -23,6 +23,7 @@ from app.models.workspace_component import WorkspaceComponent
 from app.schemas.external_api import (
     ExternalComponentApplyEditsMutationRequest,
     ExternalComponentCreateMutationRequest,
+    ExternalComponentMetadataMutationRequest,
     ExternalErrorDetail,
     ExternalMutationJobResponse,
     ExternalPageApplyEditsMutationRequest,
@@ -173,6 +174,34 @@ class MutationJobService:
         return job
 
     enqueue_component_apply_edits = enqueue_component_edit_job
+
+    async def enqueue_component_metadata_job(
+        self,
+        *,
+        workspace_id: int,
+        user_id: int,
+        payload: ExternalComponentMetadataMutationRequest,
+        idempotency_record_id: int | None = None,
+    ) -> ApiMutationJob:
+        """入队组件元数据重校验与更新任务。"""
+
+        job = ApiMutationJob(
+            job_id=f"job-{uuid.uuid4().hex}",
+            job_type="component_metadata",
+            workspace_id=workspace_id,
+            target_id=payload.component_id,
+            base_version_no=payload.base_version_no,
+            source_hash=payload.base_draft_hash,
+            created_by=user_id,
+            idempotency_record_id=idempotency_record_id,
+            status="pending",
+            payload_json=payload.model_dump(mode="json"),
+            max_attempts=self.settings.mutation_job_max_attempts,
+            created_at=utc_now(),
+        )
+        self.session.add(job)
+        await self.session.flush()
+        return job
 
     # ------------------ Query & Cancel ------------------
 
@@ -475,6 +504,23 @@ class MutationJobService:
                     base_published_version_no=payload.get("base_version_no", comp.current_version_no or 0),
                     edits=payload["edits"],
                 )
+            elif job.job_type == "component_metadata":
+                planner = ComponentMutationPlanner(session)
+                comp = await WorkspaceComponentService(session).get(payload["component_id"], user_id=job.created_by)
+                base_hash = job.source_hash or payload.get("base_draft_hash") or calculate_source_hash(comp.content)
+                return await planner.plan_update_metadata(
+                    workspace_id=job.workspace_id,
+                    user_id=job.created_by,
+                    component_id=payload["component_id"],
+                    base_draft_hash=base_hash,
+                    base_version_no=job.base_version_no or payload.get("base_version_no") or comp.current_version_no,
+                    name=payload.get("name"),
+                    import_name=payload.get("import_name"),
+                    component_type=payload.get("component_type"),
+                    summary=payload.get("summary"),
+                    preview_schema=payload.get("preview_schema"),
+                    change_note=payload.get("change_note"),
+                )
             else:
                 raise AppException(status_code=400, code="UNKNOWN_JOB_TYPE", detail=f"未知任务类型: {job.job_type}")
 
@@ -620,6 +666,46 @@ class MutationJobService:
                 )
                 target_id = updated_comp.id
                 result_dict = {"component_id": updated_comp.id, "version_no": updated_comp.current_version_no}
+            elif job.job_type == "component_metadata":
+                target_comp_id = plan_result.target_component_id or job.payload_json["component_id"]
+                component_lock_stmt = select(WorkspaceComponent).where(WorkspaceComponent.id == target_comp_id).with_for_update()
+                locked_component = await session.scalar(component_lock_stmt)
+                if locked_component is None:
+                    raise AppException(status_code=404, code="COMPONENT_NOT_FOUND", detail="组件不存在。")
+                comp_service = WorkspaceComponentService(session)
+                current_comp = await comp_service.get(target_comp_id, user_id=job.created_by)
+                base_ver = job.base_version_no or job.payload_json.get("base_version_no")
+                base_draft_hash = job.source_hash or job.payload_json.get("base_draft_hash")
+                if base_ver is not None and current_comp.current_version_no != base_ver:
+                    raise AppException(
+                        status_code=409,
+                        code="COMPONENT_CONCURRENT_MODIFIED",
+                        detail="组件发布版本已在诊断期间发生变更，放弃覆盖。",
+                    )
+                if base_draft_hash and calculate_source_hash(current_comp.content) != base_draft_hash:
+                    raise AppException(
+                        status_code=409,
+                        code="COMPONENT_CONCURRENT_MODIFIED",
+                        detail="组件草稿已在诊断期间发生变更，放弃覆盖。",
+                    )
+                updated_comp = await comp_service.update(
+                    component_id=target_comp_id,
+                    payload=WorkspaceComponentUpdateRequest(
+                        name=plan_result.name,
+                        import_name=plan_result.import_name,
+                        component_type=plan_result.component_type,
+                        summary=plan_result.summary,
+                        preview_schema=plan_result.preview_schema,
+                        change_note=plan_result.change_note,
+                    ),
+                    operator_id=job.created_by,
+                    commit=False,
+                )
+                target_id = updated_comp.id
+                result_dict = {
+                    "component_id": updated_comp.id,
+                    "version_no": updated_comp.current_version_no,
+                }
 
             # 3. 标记任务成功
             job.status = "succeeded"

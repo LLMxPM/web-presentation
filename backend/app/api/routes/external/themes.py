@@ -186,7 +186,7 @@ async def update_theme(
     return result if isinstance(result, WorkspaceThemeItem) else WorkspaceThemeItem.model_validate(result)
 
 
-@router.delete("/{theme_id}")
+@router.post("/{theme_id}/archive")
 async def archive_theme(
     request: Request,
     theme_id: int,
@@ -198,7 +198,7 @@ async def archive_theme(
     """归档主题（若仍被活跃项目引用则拒绝归档，支持 Idempotency-Key 幂等保护）。"""
 
     fingerprint = IdempotencyService.calculate_request_fingerprint(
-        http_method="DELETE",
+        http_method="POST",
         path=request.url.path,
         json_data={"theme_id": theme_id},
     )
@@ -221,44 +221,6 @@ async def archive_theme(
         operation_func=_operation,
     )
     return result if isinstance(result, dict) else {"message": str(result)}
-
-
-@router.post("/{theme_id}/restore", response_model=WorkspaceThemeItem)
-async def restore_theme(
-    request: Request,
-    theme_id: int,
-    auth: Annotated[ExternalAuthContext, Depends(require_external_operation("theme.update"))],
-    session: Annotated[AsyncSession, Depends(get_db_session)],
-    x_workspace_id: Annotated[int, Header(alias="X-Workspace-ID", description="目标工作空间 ID")],
-    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
-) -> WorkspaceThemeItem:
-    """恢复已归档主题（支持 Idempotency-Key 幂等保护）。"""
-
-    fingerprint = IdempotencyService.calculate_request_fingerprint(
-        http_method="POST",
-        path=request.url.path,
-        json_data={"theme_id": theme_id},
-    )
-
-    async def _operation(record_id: int | None) -> tuple[int, WorkspaceThemeItem]:
-        await BusinessOperationService(session).restore_theme(
-            workspace_id=x_workspace_id,
-            theme_id=theme_id,
-            operator_id=auth.user.id,
-            commit=False,
-        )
-        restored = await WorkspaceThemeService(session).get(x_workspace_id, theme_id)
-        return 200, restored
-
-    status_code, result = await IdempotencyService(session).execute_idempotent_operation(
-        user_id=auth.user.id,
-        workspace_id=x_workspace_id,
-        idempotency_key=idempotency_key,
-        operation="theme.update",
-        fingerprint=fingerprint,
-        operation_func=_operation,
-    )
-    return result if isinstance(result, WorkspaceThemeItem) else WorkspaceThemeItem.model_validate(result)
 
 
 @router.post("/batch-archive", response_model=ExternalBatchArchiveResponse)

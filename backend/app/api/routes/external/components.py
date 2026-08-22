@@ -2,31 +2,74 @@
 
 from __future__ import annotations
 
-from typing import Annotated
+from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Header, Request
+from fastapi import APIRouter, Depends, Header, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies_external import ExternalAuthContext, require_external_operation
+from app.core.exceptions import AppException
 from app.db.session import get_db_session
 from app.schemas.common import ListQuery, PagedResponse
 from app.schemas.external_api import (
     ExternalBatchArchiveRequest,
     ExternalBatchArchiveResponse,
     ExternalComponentMetadataUpdateRequest,
+    ExternalComponentCreateMutationRequest,
+    ExternalEntityValidationRequest,
+    ExternalEntityValidationResponse,
+    ExternalComponentApplyEditsMutationRequest,
+    ExternalMutationJobResponse,
 )
 from app.schemas.component import (
     WorkspaceComponentItem,
     WorkspaceComponentPublishRequest,
-    WorkspaceComponentRestoreDraftRequest,
     WorkspaceComponentVersionContent,
     WorkspaceComponentVersionListItem,
 )
 from app.services.business_operation_service import BusinessOperationService
 from app.services.idempotency_service import IdempotencyService
 from app.services.workspace_component_service import WorkspaceComponentService
+from app.services.suggested_component_service import SuggestedComponentService
+from app.services.mutation_job_service import MutationJobService
+from app.api.routes.external.validate import validate_entity
 
 router = APIRouter()
+
+
+@router.post("", response_model=ExternalMutationJobResponse, status_code=202)
+async def create_component(
+    request: Request,
+    payload: ExternalComponentCreateMutationRequest,
+    auth: Annotated[ExternalAuthContext, Depends(require_external_operation("component.create"))],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+) -> ExternalMutationJobResponse:
+    """提交组件创建 Mutation Job。"""
+
+    await auth.ensure_workspace_access(payload.workspace_id, session)
+    fingerprint = IdempotencyService.calculate_request_fingerprint(
+        http_method="POST", path=request.url.path, json_data=payload.model_dump(mode="json")
+    )
+
+    async def _operation(record_id: int | None) -> tuple[int, ExternalMutationJobResponse]:
+        job = await MutationJobService(session).enqueue_component_create_job(
+            workspace_id=payload.workspace_id,
+            user_id=auth.user.id,
+            payload=payload,
+            idempotency_record_id=record_id,
+        )
+        return 202, await MutationJobService(session).get_job_response(job)
+
+    _, result = await IdempotencyService(session).execute_idempotent_operation(
+        user_id=auth.user.id,
+        workspace_id=payload.workspace_id,
+        idempotency_key=idempotency_key,
+        operation="component.create",
+        fingerprint=fingerprint,
+        operation_func=_operation,
+    )
+    return result if isinstance(result, ExternalMutationJobResponse) else ExternalMutationJobResponse.model_validate(result)
 
 
 @router.get("", response_model=PagedResponse[WorkspaceComponentItem])
@@ -38,8 +81,25 @@ async def list_components(
     page_size: int = 50,
     keyword: str | None = None,
     status: str | None = None,
-) -> PagedResponse[WorkspaceComponentItem]:
+    scope: str = Query(default="all", pattern="^(all|suggested)$"),
+    project_id: int | None = None,
+) -> PagedResponse[Any]:
     """查询指定工作空间的组件列表。"""
+
+    if scope == "suggested":
+        if project_id is None:
+            raise ValueError("scope=suggested 时必须提供 project_id。")
+        project_items = await SuggestedComponentService(session).list_project_component_items(
+            project_id,
+            workspace_id=x_workspace_id,
+            include_unavailable=True,
+        )
+        return PagedResponse[Any](
+            items=[item.model_dump(mode="json") for item in project_items],
+            total=len(project_items),
+            page=1,
+            page_size=len(project_items) or page_size,
+        )
 
     query = ListQuery(page=page, page_size=page_size, keyword=keyword, status=status)
     return await WorkspaceComponentService(session).list(x_workspace_id, query, user_id=auth.user.id)
@@ -56,6 +116,72 @@ async def get_component(
     comp = await WorkspaceComponentService(session).get(component_id, user_id=auth.user.id)
     await auth.ensure_workspace_access(comp.workspace_id, session)
     return comp
+
+
+@router.get("/{component_id}/dependencies")
+async def get_component_dependencies(
+    component_id: int,
+    auth: Annotated[ExternalAuthContext, Depends(require_external_operation("component.dependencies"))],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> Any:
+    """读取组件当前版本源码依赖。"""
+
+    return await WorkspaceComponentService(session).get_current_dependencies(component_id, user_id=auth.user.id)
+
+
+@router.post("/{component_id}/validate", response_model=ExternalEntityValidationResponse)
+async def validate_component(
+    component_id: int,
+    payload: ExternalEntityValidationRequest,
+    auth: Annotated[ExternalAuthContext, Depends(require_external_operation("component.validate"))],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> ExternalEntityValidationResponse:
+    """校验组件当前源码或候选内容。"""
+
+    if payload.entity_id is not None and payload.entity_id != component_id:
+        raise AppException(status_code=400, code="COMPONENT_ID_MISMATCH", detail="请求体 entity_id 必须与路径参数一致。")
+    normalized = payload.model_copy(update={"entity_type": "component", "entity_id": component_id})
+    return await validate_entity(normalized, auth, session)
+
+
+@router.post("/{component_id}/edits", response_model=ExternalMutationJobResponse, status_code=202)
+async def edit_component(
+    request: Request,
+    component_id: int,
+    payload: ExternalComponentApplyEditsMutationRequest,
+    auth: Annotated[ExternalAuthContext, Depends(require_external_operation("component.edit"))],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+) -> ExternalMutationJobResponse:
+    """提交组件结构化源码编辑任务。"""
+
+    component = await WorkspaceComponentService(session).get(component_id, user_id=auth.user.id)
+    if payload.component_id != component_id:
+        raise AppException(status_code=400, code="COMPONENT_ID_MISMATCH", detail="请求体 component_id 必须与路径参数一致。")
+    if payload.base_draft_hash is None:
+        payload = payload.model_copy(update={"base_draft_hash": component.draft_hash})
+    fingerprint = IdempotencyService.calculate_request_fingerprint(
+        http_method="POST", path=request.url.path, json_data=payload.model_dump(mode="json")
+    )
+
+    async def _operation(record_id: int | None) -> tuple[int, ExternalMutationJobResponse]:
+        job = await MutationJobService(session).enqueue_component_edit_job(
+            workspace_id=component.workspace_id,
+            user_id=auth.user.id,
+            payload=payload,
+            idempotency_record_id=record_id,
+        )
+        return 202, await MutationJobService(session).get_job_response(job)
+
+    _, result = await IdempotencyService(session).execute_idempotent_operation(
+        user_id=auth.user.id,
+        workspace_id=component.workspace_id,
+        idempotency_key=idempotency_key,
+        operation="component.edit",
+        fingerprint=fingerprint,
+        operation_func=_operation,
+    )
+    return result if isinstance(result, ExternalMutationJobResponse) else ExternalMutationJobResponse.model_validate(result)
 
 
 @router.patch("/{component_id}", response_model=WorkspaceComponentItem)
@@ -186,49 +312,7 @@ async def publish_component(
     return result if isinstance(result, WorkspaceComponentItem) else WorkspaceComponentItem.model_validate(result)
 
 
-@router.post("/{component_id}/versions/{version_no}/restore-draft", response_model=WorkspaceComponentItem)
-async def restore_component_draft(
-    request: Request,
-    component_id: int,
-    version_no: int,
-    payload: WorkspaceComponentRestoreDraftRequest,
-    auth: Annotated[ExternalAuthContext, Depends(require_external_operation("component.version.restore_draft"))],
-    session: Annotated[AsyncSession, Depends(get_db_session)],
-    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
-) -> WorkspaceComponentItem:
-    """将历史版本内容恢复到草稿区（支持 Idempotency-Key 幂等保护）。"""
-
-    comp = await WorkspaceComponentService(session).get(component_id, user_id=auth.user.id)
-    await auth.ensure_workspace_access(comp.workspace_id, session)
-
-    fingerprint = IdempotencyService.calculate_request_fingerprint(
-        http_method="POST",
-        path=request.url.path,
-        json_data=payload.model_dump(mode="json"),
-    )
-
-    async def _operation(record_id: int | None) -> tuple[int, WorkspaceComponentItem]:
-        restored = await BusinessOperationService(session).restore_component_version_to_draft(
-            component_id=component_id,
-            version_no=version_no,
-            payload=payload,
-            operator_id=auth.user.id,
-            commit=False,
-        )
-        return 200, restored
-
-    status_code, result = await IdempotencyService(session).execute_idempotent_operation(
-        user_id=auth.user.id,
-        workspace_id=comp.workspace_id,
-        idempotency_key=idempotency_key,
-        operation="component.version.restore_draft",
-        fingerprint=fingerprint,
-        operation_func=_operation,
-    )
-    return result if isinstance(result, WorkspaceComponentItem) else WorkspaceComponentItem.model_validate(result)
-
-
-@router.delete("/{component_id}")
+@router.post("/{component_id}/archive")
 async def archive_component(
     request: Request,
     component_id: int,
@@ -242,7 +326,7 @@ async def archive_component(
     await auth.ensure_workspace_access(comp.workspace_id, session)
 
     fingerprint = IdempotencyService.calculate_request_fingerprint(
-        http_method="DELETE",
+        http_method="POST",
         path=request.url.path,
         json_data={"component_id": component_id},
     )
@@ -256,40 +340,6 @@ async def archive_component(
         workspace_id=comp.workspace_id,
         idempotency_key=idempotency_key,
         operation="component.archive",
-        fingerprint=fingerprint,
-        operation_func=_operation,
-    )
-    return result if isinstance(result, dict) else {"message": str(result)}
-
-
-@router.post("/{component_id}/restore")
-async def restore_component(
-    request: Request,
-    component_id: int,
-    auth: Annotated[ExternalAuthContext, Depends(require_external_operation("component.restore"))],
-    session: Annotated[AsyncSession, Depends(get_db_session)],
-    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
-) -> dict[str, str]:
-    """恢复已归档组件（支持 Idempotency-Key 幂等保护）。"""
-
-    comp = await WorkspaceComponentService(session).get(component_id, user_id=auth.user.id)
-    await auth.ensure_workspace_access(comp.workspace_id, session)
-
-    fingerprint = IdempotencyService.calculate_request_fingerprint(
-        http_method="POST",
-        path=request.url.path,
-        json_data={"component_id": component_id},
-    )
-
-    async def _operation(record_id: int | None) -> tuple[int, dict[str, str]]:
-        await WorkspaceComponentService(session).restore(component_id=component_id, user_id=auth.user.id, commit=False)
-        return 200, {"message": "组件已成功恢复"}
-
-    status_code, result = await IdempotencyService(session).execute_idempotent_operation(
-        user_id=auth.user.id,
-        workspace_id=comp.workspace_id,
-        idempotency_key=idempotency_key,
-        operation="component.restore",
         fingerprint=fingerprint,
         operation_func=_operation,
     )

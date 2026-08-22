@@ -80,6 +80,167 @@ class ExternalPageMetadataUpdateRequest(BaseModel):
         return self
 
 
+class ExternalProjectConfigurationUpdateRequest(BaseModel):
+    """External API 项目配置整体更新请求。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    configuration: dict[str, Any] = Field(default_factory=dict, description="项目展示与运行时配置")
+    build_extra_assets_json: dict[str, Any] | None = Field(default=None, description="构建额外资源配置")
+
+
+class ExternalProjectApplyStyleRequest(BaseModel):
+    """External API 将样式方案应用到项目的请求。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    style_id: int = Field(..., ge=1, description="目标样式方案 ID")
+
+
+class ExternalProjectBuildAssetsRequest(BaseModel):
+    """External API 项目额外资源配置更新请求。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    build_extra_assets_json: dict[str, Any] = Field(default_factory=dict)
+
+
+class ExternalProjectConfigurationResponse(BaseModel):
+    """External API 项目配置读取响应。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    project_id: int
+    workspace_id: int
+    presentation: dict[str, Any]
+    suggested_components: list[dict[str, Any]] = Field(default_factory=list)
+    build_extra_assets_json: dict[str, Any] = Field(default_factory=dict)
+
+
+class ExternalPageCopyRequest(BaseModel):
+    """External API 页面复制请求。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    target_project_id: int = Field(..., ge=1)
+    title: str | None = Field(default=None, min_length=1, max_length=128)
+    summary: str | None = Field(default=None, max_length=500)
+    route_placement: Literal["none", "root", "group"] = "none"
+    parent_route_id: int | None = Field(default=None, ge=1)
+    route: str | None = Field(default=None, min_length=1, max_length=128)
+
+
+class ExternalEntityValidationRequest(BaseModel):
+    """External API 页面/组件当前或候选内容校验请求。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    entity_type: Literal["page", "component"]
+    entity_id: int | None = Field(default=None, ge=1)
+    mode: Literal["current", "content", "edits"] = "current"
+    source_code: str | None = None
+    edits: list[dict[str, Any]] | None = None
+    preview_schema: dict[str, Any] | None = None
+    detail: bool = False
+
+
+class ExternalEntityValidationResponse(BaseModel):
+    """External API 页面/组件校验结果。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    entity_type: Literal["page", "component"]
+    entity_id: int | None = None
+    mode: Literal["current", "content", "edits"]
+    valid: bool
+    summary: str
+    errors: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    imports: list[str] = Field(default_factory=list)
+    diagnostics: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class ExternalAssetContentCreateRequest(BaseModel):
+    """External API 文本资源创建请求。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    asset_type: str
+    name: str = Field(..., min_length=1, max_length=255)
+    original_name: str = Field(..., min_length=1, max_length=255)
+    content: str = Field(..., min_length=1)
+    description: str | None = None
+    tags: list[str] = Field(default_factory=list)
+    approx_aspect_ratio: str | None = None
+
+
+class ExternalAssetContentUpdateRequest(BaseModel):
+    """External API 文本资源内容更新请求。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    content: str = Field(..., min_length=1)
+    change_note: str | None = Field(default=None, max_length=255)
+
+
+class ExternalAssetContentPreviewRequest(BaseModel):
+    """External API 文本资源差异预览请求。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    content: str = Field(..., min_length=1)
+
+
+class ExternalAssetCopyRequest(BaseModel):
+    """External API 资源复制请求。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str | None = None
+    original_name: str | None = None
+    description: str | None = None
+    tags: list[str] | None = None
+
+
+class ExternalComponentComplexUpdateRequest(BaseModel):
+    """External API 组件结构字段更新请求，进入 Mutation Job。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    component_id: int = Field(..., ge=1)
+    import_name: str | None = None
+    component_type: str | None = None
+    preview_schema: dict[str, Any] | None = None
+    change_note: str | None = Field(default=None, max_length=255)
+
+
+class ExternalComponentMetadataMutationRequest(BaseModel):
+    """External API 组件重校验元数据 Mutation 请求。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    component_id: int = Field(..., ge=1)
+    base_version_no: int | None = Field(default=None, ge=0)
+    base_draft_hash: str | None = None
+    name: str | None = Field(default=None, min_length=1, max_length=128)
+    import_name: str | None = Field(default=None, min_length=1, max_length=64)
+    component_type: str | None = None
+    summary: str | None = Field(default=None, max_length=2000)
+    preview_schema: dict[str, Any] | None = None
+    change_note: str | None = Field(default=None, max_length=255)
+
+    @model_validator(mode="after")
+    def require_update_field(self) -> "ExternalComponentMetadataMutationRequest":
+        """要求至少提供一个实际更新字段。"""
+
+        if not any(
+            field in self.model_fields_set
+            for field in ("name", "import_name", "component_type", "summary", "preview_schema")
+        ):
+            raise ValueError("组件元数据 Mutation 至少需要提供一个更新字段。")
+        return self
+
+
 class ExternalComponentMetadataUpdateRequest(BaseModel):
     """External API 组件轻量元数据更新请求，结构与源码字段继续走 Mutation。"""
 
@@ -222,7 +383,7 @@ class ExternalStyleCreateRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=128, description="样式方案名称")
     key: str | None = Field(default=None, max_length=64, description="样式唯一标识")
     description: str | None = Field(default=None, max_length=2000, description="样式描述")
-    theme_key: str | None = Field(default=None, description="绑定主题 key")
+    configuration: dict[str, Any] = Field(default_factory=dict, description="完整样式配置")
 
 
 class ExternalSystemVersionResponse(BaseModel):

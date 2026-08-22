@@ -135,6 +135,60 @@ class ComponentMutationPlanner:
             error_message=None if passed else validation.get("summary") or "组件代码校验失败",
         )
 
+    async def plan_update_metadata(
+        self,
+        *,
+        workspace_id: int,
+        user_id: int,
+        component_id: int,
+        base_draft_hash: str,
+        base_version_no: int,
+        name: str | None = None,
+        import_name: str | None = None,
+        component_type: str | WorkspaceComponentType | None = None,
+        summary: str | None = None,
+        preview_schema: dict[str, Any] | None = None,
+        change_note: str | None = None,
+    ) -> PreparedComponentMutationResult:
+        """规划组件元数据更新，并复核草稿与发布版本基线。"""
+
+        component = await self.component_service.get(component_id, user_id=user_id)
+        _ensure_component_workspace(component.workspace_id, workspace_id)
+        _ensure_component_edit_lock(
+            component,
+            base_draft_hash=base_draft_hash,
+            base_published_version_no=base_version_no,
+        )
+        resolved_type = resolve_workspace_component_type(component_type or component.component_type)
+        normalized_schema = normalize_preview_schema_argument(
+            component.preview_schema if preview_schema is None else preview_schema
+        )
+        validation = await self.code_check_service.check_component_code(
+            component_id=component.id,
+            workspace_id=workspace_id,
+            user_id=user_id,
+            preview_schema=normalized_schema,
+            component_type=resolved_type,
+        )
+        passed = _is_validation_passed(validation)
+        return PreparedComponentMutationResult(
+            success=passed,
+            operation="update_component_metadata",
+            target_component_id=component_id,
+            prepared_content=component.content,
+            name=name if name is not None else component.name,
+            import_name=import_name if import_name is not None else component.import_name,
+            component_type=resolved_type,
+            summary=summary if summary is not None else component.summary,
+            preview_schema=normalized_schema,
+            change_note=change_note,
+            validation_result=validation,
+            diagnostics=list(validation.get("diagnostics") or []),
+            message="组件元数据预检通过。" if passed else "组件元数据校验失败。",
+            error_code=None if passed else "COMPONENT_VALIDATION_FAILED",
+            error_message=None if passed else validation.get("summary") or "组件元数据校验失败",
+        )
+
     async def plan_apply_edits(
         self,
         *,

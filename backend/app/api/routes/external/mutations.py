@@ -17,6 +17,7 @@ from app.models.api_mutation_job import ApiMutationJob
 from app.schemas.external_api import (
     ExternalComponentApplyEditsMutationRequest,
     ExternalComponentCreateMutationRequest,
+    ExternalComponentMetadataMutationRequest,
     ExternalMutationJobResponse,
     ExternalPageApplyEditsMutationRequest,
     ExternalPageCreateMutationRequest,
@@ -240,6 +241,49 @@ async def cancel_mutation_job(
         workspace_id=job.workspace_id,
         idempotency_key=idempotency_key,
         operation=operation,
+        fingerprint=fingerprint,
+        operation_func=_operation,
+    )
+    response.status_code = status_code
+    return result if isinstance(result, ExternalMutationJobResponse) else ExternalMutationJobResponse.model_validate(result)
+
+
+@router.post("/components/metadata", response_model=ExternalMutationJobResponse, status_code=202)
+async def create_component_metadata_mutation(
+    request: Request,
+    response: Response,
+    payload: ExternalComponentMetadataMutationRequest,
+    auth: Annotated[ExternalAuthContext, Depends(require_external_operation("jobs.mutation.component.metadata"))],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+) -> ExternalMutationJobResponse:
+    """入队组件元数据重校验任务。"""
+
+    component = await WorkspaceComponentService(session).get(payload.component_id, user_id=auth.user.id)
+    await auth.ensure_workspace_access(component.workspace_id, session)
+    if payload.base_version_no is None:
+        payload = payload.model_copy(update={"base_version_no": component.current_version_no})
+    if payload.base_draft_hash is None:
+        payload = payload.model_copy(update={"base_draft_hash": component.draft_hash})
+    fingerprint = IdempotencyService.calculate_request_fingerprint(
+        http_method="POST", path=request.url.path, json_data=payload.model_dump(mode="json")
+    )
+
+    async def _operation(record_id: int | None) -> tuple[int, ExternalMutationJobResponse]:
+        service = MutationJobService(session)
+        job = await service.enqueue_component_metadata_job(
+            workspace_id=component.workspace_id,
+            user_id=auth.user.id,
+            payload=payload,
+            idempotency_record_id=record_id,
+        )
+        return 202, await service.get_job_response(job)
+
+    status_code, result = await IdempotencyService(session).execute_idempotent_operation(
+        user_id=auth.user.id,
+        workspace_id=component.workspace_id,
+        idempotency_key=idempotency_key,
+        operation="jobs.mutation.component.metadata",
         fingerprint=fingerprint,
         operation_func=_operation,
     )

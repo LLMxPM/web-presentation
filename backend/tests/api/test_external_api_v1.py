@@ -276,7 +276,7 @@ async def test_access_tokens_scopes_and_capabilities(authenticated_client: Async
     assert "project.list" in cap_data["operations"]
     assert "project.get" in cap_data["operations"]
     assert "page.get" in cap_data["operations"]
-    assert "validate.code" in cap_data["operations"]
+    assert "validate.entity" in cap_data["operations"]
 
 
 @pytest.mark.asyncio
@@ -624,25 +624,16 @@ async def test_external_single_archive_restore_idempotency(client: AsyncClient) 
     headers = {"Authorization": f"Bearer {token}", "X-Workspace-ID": str(ws_id), "Idempotency-Key": "idemp-theme-arch-1"}
 
     # 1. 首次归档
-    del_resp1 = await client.delete(f"/api/v1/themes/{theme_id}", headers=headers)
+    del_resp1 = await client.post(f"/api/v1/themes/{theme_id}/archive", headers=headers)
     assert del_resp1.status_code == 200
     assert del_resp1.json()["message"] == "主题已成功归档"
 
     # 2. 携带相同 Idempotency-Key 再次重试归档 -> 应重放第一次的 200 响应
-    del_resp2 = await client.delete(f"/api/v1/themes/{theme_id}", headers=headers)
+    del_resp2 = await client.post(f"/api/v1/themes/{theme_id}/archive", headers=headers)
     assert del_resp2.status_code == 200
     assert del_resp2.json()["message"] == "主题已成功归档"
 
-    # 3. 首次恢复
-    restore_headers = {"Authorization": f"Bearer {token}", "X-Workspace-ID": str(ws_id), "Idempotency-Key": "idemp-theme-res-1"}
-    res_resp1 = await client.post(f"/api/v1/themes/{theme_id}/restore", headers=restore_headers)
-    assert res_resp1.status_code == 200
-    assert res_resp1.json()["key"] == "custom-theme-test"
-
-    # 4. 重放恢复请求 -> 返回 200 且不报错 404
-    res_resp2 = await client.post(f"/api/v1/themes/{theme_id}/restore", headers=restore_headers)
-    assert res_resp2.status_code == 200
-    assert res_resp2.json()["key"] == "custom-theme-test"
+    # 首版 External API 不暴露 Restore；归档后的生命周期操作到此结束。
 
 
 @pytest.mark.asyncio
