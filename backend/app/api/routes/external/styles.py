@@ -5,6 +5,8 @@ from __future__ import annotations
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, Request, Response
+from fastapi.exceptions import RequestValidationError
+from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import uuid
@@ -29,6 +31,36 @@ from app.services.idempotency_service import IdempotencyService
 from app.services.workspace_style_service import WorkspaceStyleService
 
 router = APIRouter()
+
+_FLAT_STYLE_PRESENTATION_FIELDS = (
+    "page_width",
+    "page_height",
+    "base_font_size",
+    "icon_default_stroke_width",
+    "show_pdf_export_button",
+    "menu_mode",
+    "theme_key",
+    "style_spec_markdown",
+)
+
+
+def _build_style_configuration(payload: ExternalStyleCreateRequest) -> StyleConfiguration:
+    """将顶层完整样式字段合并到 Backend 统一的 configuration.presentation。"""
+
+    configuration = payload.configuration.model_dump(mode="python")
+    flat_presentation = {
+        field_name: getattr(payload, field_name)
+        for field_name in _FLAT_STYLE_PRESENTATION_FIELDS
+        if field_name in payload.model_fields_set
+    }
+    if flat_presentation:
+        presentation = dict(configuration.get("presentation") or {})
+        presentation.update(flat_presentation)
+        configuration["presentation"] = presentation
+    try:
+        return StyleConfiguration.model_validate(configuration)
+    except ValidationError as exc:
+        raise RequestValidationError(exc.errors()) from exc
 
 
 @router.get("", response_model=PagedResponse[WorkspaceStyleItem])
@@ -71,12 +103,15 @@ async def create_style(
     """创建新样式方案（支持 Idempotency-Key 幂等保护）。"""
 
     style_key = payload.key or f"style-{uuid.uuid4().hex[:8]}"
-    internal_payload = WorkspaceStyleCreateRequest(
-        name=payload.name,
-        key=style_key,
-        description=payload.description,
-        configuration=StyleConfiguration.model_validate(payload.configuration),
-    )
+    try:
+        internal_payload = WorkspaceStyleCreateRequest(
+            name=payload.name,
+            key=style_key,
+            description=payload.description,
+            configuration=_build_style_configuration(payload),
+        )
+    except ValidationError as exc:
+        raise RequestValidationError(exc.errors()) from exc
 
     fingerprint = IdempotencyService.calculate_request_fingerprint(
         http_method="POST",

@@ -152,7 +152,6 @@ function createProjectItem(name: string) {
     show_pdf_export_button: true,
     menu_mode: 'preview' as const,
     theme_key: 'lightblue',
-    theme_config_yaml: 'themes: {}',
     style_spec_markdown: '',
     routed_page_count: 1,
     total_page_count: 1,

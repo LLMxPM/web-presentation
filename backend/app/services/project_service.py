@@ -75,7 +75,6 @@ class ProjectService:
                 "show_pdf_export_button": project.show_pdf_export_button,
                 "menu_mode": project.menu_mode,
                 "theme_key": project.theme_key,
-                "theme_config_yaml": project.theme_config_yaml,
                 "style_spec_markdown": project.style_spec_markdown,
                 "build_extra_assets_json": normalize_project_build_extra_assets_config(
                     project.build_extra_assets_json

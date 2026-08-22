@@ -54,7 +54,6 @@ const defaultProjectConfigs = {
   show_pdf_export_button: true,
   menu_mode: 'preview',
   theme_key: 'lightblue',
-  theme_config_yaml: 'themes: {}',
   style_spec_markdown: '',
 }
 

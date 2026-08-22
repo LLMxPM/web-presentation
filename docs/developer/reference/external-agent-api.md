@@ -164,6 +164,8 @@ POST     /api/v1/validate/entity
 
 `validate/entity` 的 `entity_type` 为 `page | component`，`mode` 为 `current | content | edits`。项目配置、路由树、主题、样式和资源内容写入均由 Backend Schema 最终校验。
 
+样式创建 `POST /api/v1/styles` 同时接受规范的 `configuration.presentation` 嵌套配置和顶层完整展示字段；Guide 的 `style.create` 请求 Schema 与该接口保持一致。
+
 ### 5.2 页面和组件重任务
 
 页面、组件源码创建和编辑不得在外部接入层直接写数据库或启动 Runtime。必须使用持久化 Mutation Job：

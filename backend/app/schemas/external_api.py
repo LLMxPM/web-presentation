@@ -7,7 +7,8 @@ from typing import Any, Generic, Literal, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from app.schemas.presentation_style import ProjectCreateConfiguration, ProjectDefaultConfiguration
+from app.schemas.presentation_style import ProjectCreateConfiguration, ProjectDefaultConfiguration, StyleConfiguration
+from app.schemas.project_app_config import ProjectMenuMode
 
 T = TypeVar("T")
 
@@ -381,14 +382,22 @@ class ExternalThemeCreateRequest(BaseModel):
 
 
 class ExternalStyleCreateRequest(BaseModel):
-    """External API 样式创建请求（key 缺省时自动生成）。"""
+    """External API 样式创建请求，兼容嵌套配置与详情响应的扁平字段。"""
 
     model_config = ConfigDict(extra="forbid")
 
     name: str = Field(..., min_length=1, max_length=128, description="样式方案名称")
     key: str | None = Field(default=None, max_length=64, description="样式唯一标识")
     description: str | None = Field(default=None, max_length=2000, description="样式描述")
-    configuration: dict[str, Any] = Field(default_factory=dict, description="完整样式配置")
+    configuration: StyleConfiguration = Field(default_factory=StyleConfiguration, description="完整样式配置")
+    page_width: int | None = Field(default=None, ge=1, le=8192, description="扁平配置：页面画布宽度")
+    page_height: int | None = Field(default=None, ge=1, le=8192, description="扁平配置：页面画布高度")
+    base_font_size: str | None = Field(default=None, min_length=1, max_length=32, description="扁平配置：项目基础字号")
+    icon_default_stroke_width: int | None = Field(default=None, ge=1, le=64, description="扁平配置：图标默认描边宽度")
+    show_pdf_export_button: bool | None = Field(default=None, description="扁平配置：是否显示 PDF 导出按钮")
+    menu_mode: ProjectMenuMode | None = Field(default=None, description="扁平配置：项目菜单展示模式")
+    theme_key: str | None = Field(default=None, min_length=1, max_length=64, description="扁平配置：主题 key")
+    style_spec_markdown: str | None = Field(default=None, description="扁平配置：完整 Markdown 样式规范")
 
 
 class ExternalSystemVersionResponse(BaseModel):

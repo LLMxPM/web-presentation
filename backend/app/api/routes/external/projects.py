@@ -5,6 +5,8 @@ from __future__ import annotations
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, Request, Response
+from fastapi.exceptions import RequestValidationError
+from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies_external import ExternalAuthContext, require_external_operation
@@ -58,6 +60,22 @@ def _normalize_external_project_configuration(configuration: dict[str, object]) 
     if presentation_fields:
         normalized["presentation"] = presentation_fields
     return normalized
+
+
+def _build_external_project_update_payload(
+    payload: ExternalProjectConfigurationUpdateRequest,
+) -> ProjectUpdateRequest:
+    """归一化 External 配置并将内部模型校验错误转换为标准请求 422。"""
+
+    configuration = _normalize_external_project_configuration(payload.configuration)
+    configuration.setdefault("mode", "patch")
+    try:
+        return ProjectUpdateRequest(
+            configuration=configuration,
+            build_extra_assets_json=payload.build_extra_assets_json,
+        )
+    except ValidationError as exc:
+        raise RequestValidationError(exc.errors()) from exc
 
 
 @router.get("", response_model=PagedResponse[ProjectItem])
@@ -267,12 +285,7 @@ async def update_project_configuration(
 
     project = await ProjectService(session).get(project_id, user_id=auth.user.id)
     await auth.ensure_workspace_access(project.workspace_id, session)
-    configuration = _normalize_external_project_configuration(payload.configuration)
-    configuration.setdefault("mode", "patch")
-    update_payload = ProjectUpdateRequest(
-        configuration=configuration,
-        build_extra_assets_json=payload.build_extra_assets_json,
-    )
+    update_payload = _build_external_project_update_payload(payload)
     fingerprint = IdempotencyService.calculate_request_fingerprint(
         http_method="PUT",
         path=request.url.path,

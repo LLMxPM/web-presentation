@@ -174,7 +174,7 @@ app:
 
 - 工作空间级主题主数据由“主题库”维护，项目与组件预览默认配置优先保存 `theme_key`
 - 当存在 `theme_key` 时，`themes.config.yaml` 会在 Runtime 拉取时由 Backend 动态组装
-- 当 `theme_key` 为空时，Backend 仍兼容 legacy `theme_config_yaml`
+- 当 `theme_key` 为空时，Backend 内部仍兼容 legacy `theme_config_yaml`；该字段不再出现在项目普通响应或配置写入契约中
 - 主题只负责颜色、字体绑定、Logo 与项目图标；基础字号和默认描边宽度不再写入 `themes.config.yaml`
 - 组件预览默认配置与会话覆盖也遵循同样规则，并通过 `preview_options.page` 覆盖页面宽高和页面视觉规格
 - 样式离线包当前 schema_version 为 3，导入时不再兼容旧包；同 key 样式按包内容覆盖，包内建议组件通过组件指纹严格复用，指纹不同的同名组件会被拒绝

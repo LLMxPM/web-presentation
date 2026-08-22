@@ -269,6 +269,35 @@ async def test_project_configuration_update_accepts_flat_presentation_fields(cli
     assert response.status_code == 200, response.text
     assert response.json()["page_width"] == 1920
     assert response.json()["page_height"] == 1080
+    assert "theme_config_yaml" not in response.json()
+
+
+@pytest.mark.asyncio
+async def test_project_configuration_update_rejects_legacy_theme_config_yaml(client: AsyncClient) -> None:
+    """项目配置更新应拒绝历史 theme_config_yaml，并返回标准 422。"""
+
+    token, workspace_id, project_id, _page_id, _component_id = await _seed_contract_targets()
+    response = await client.put(
+        f"/api/v1/projects/{project_id}/configuration",
+        json={
+            "configuration": {
+                "mode": "patch",
+                "presentation": {
+                    "theme_config_yaml": "themes:\n  lightblue: {}",
+                },
+            },
+        },
+        headers={
+            "Authorization": f"Bearer {token}",
+            "X-Workspace-ID": str(workspace_id),
+            "Idempotency-Key": "project-configuration-legacy-theme-yaml",
+        },
+    )
+
+    assert response.status_code == 422, response.text
+    body = response.json()
+    assert body["code"] == "VALIDATION_ERROR"
+    assert "theme_config_yaml" in body["message"]
 
 
 @pytest.mark.asyncio
@@ -474,6 +503,68 @@ async def test_style_create_without_key_replays_and_copy_returns_created_status(
         headers={**headers, "Idempotency-Key": "style-copy-status"},
     )
     assert copied.status_code == 201
+
+
+@pytest.mark.asyncio
+async def test_style_create_accepts_flat_presentation_fields(client: AsyncClient) -> None:
+    """样式创建应兼容 CLI 使用的顶层完整展示配置字段。"""
+
+    token, workspace_id, _, _, _ = await _seed_contract_targets()
+    response = await client.post(
+        "/api/v1/styles",
+        json={
+            "key": "flat-style",
+            "name": "扁平完整样式",
+            "description": "CLI 完整 payload",
+            "page_width": 1920,
+            "page_height": 1080,
+            "base_font_size": "18px",
+            "icon_default_stroke_width": 3,
+            "show_pdf_export_button": False,
+            "menu_mode": "bottom-preview",
+            "theme_key": None,
+            "style_spec_markdown": "## 规范",
+        },
+        headers={
+            "Authorization": f"Bearer {token}",
+            "X-Workspace-ID": str(workspace_id),
+            "Idempotency-Key": "style-create-flat-payload",
+        },
+    )
+
+    assert response.status_code == 201, response.text
+    style = response.json()
+    assert style["key"] == "flat-style"
+    assert style["page_width"] == 1920
+    assert style["page_height"] == 1080
+    assert style["base_font_size"] == "18px"
+    assert style["menu_mode"] == "bottom-preview"
+    assert style["style_spec_markdown"] == "## 规范"
+
+
+@pytest.mark.asyncio
+async def test_style_create_guide_exposes_flat_presentation_fields(client: AsyncClient) -> None:
+    """样式创建 Guide 应公开与接口一致的完整字段 Schema。"""
+
+    token, _workspace_id, _project_id, _page_id, _component_id = await _seed_contract_targets()
+    response = await client.get(
+        "/api/v1/guides/style.create",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 200, response.text
+    properties = response.json()["request_schema"]["properties"]
+    for field_name in (
+        "page_width",
+        "page_height",
+        "base_font_size",
+        "icon_default_stroke_width",
+        "show_pdf_export_button",
+        "menu_mode",
+        "theme_key",
+        "style_spec_markdown",
+    ):
+        assert field_name in properties
 
 
 def test_corrected_operations_have_distinct_http_contracts() -> None:

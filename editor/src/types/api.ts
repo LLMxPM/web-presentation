@@ -106,7 +106,6 @@ export interface ProjectItem {
   show_pdf_export_button: boolean
   menu_mode: ProjectMenuMode
   theme_key: string | null
-  theme_config_yaml: string
   style_spec_markdown: string
   build_extra_assets_json?: ProjectBuildExtraAssetsJson
   routed_page_count: number

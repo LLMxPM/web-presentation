@@ -275,7 +275,9 @@ OPERATION_REGISTRY: dict[str, ExternalOperationSpec] = {
         "style.get", ("design-system:read",), description="获取样式方案详情与配置"
     ),
     "style.create": ExternalOperationSpec(
-        "style.create", ("design-system:write",), requires_idempotency_key=True, description="创建新样式方案"
+        "style.create", ("design-system:write",), requires_idempotency_key=True, description="创建新样式方案",
+        http_method="POST", path_template="/styles", request_model="app.schemas.external_api.ExternalStyleCreateRequest",
+        response_model="app.schemas.workspace_style.WorkspaceStyleItem", success_statuses=(201,),
     ),
     "style.update": ExternalOperationSpec(
         "style.update", ("design-system:write",), requires_idempotency_key=True, description="更新样式方案元数据或配置"

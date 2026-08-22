@@ -111,6 +111,8 @@ POST /api/v1/components/{component_id}/validate
 POST /api/v1/pages/{page_id}/validate
 ```
 
+`POST /api/v1/styles` 的创建请求同时兼容规范的 `configuration.presentation` 嵌套配置和 CLI/样式详情使用的顶层完整展示字段（如 `page_width`、`theme_key`、`style_spec_markdown`）；两种写法最终归一化为同一份样式快照。
+
 页面和组件实体校验支持 `current | content | edits` 三种模式；复杂 CLI 参数统一由 JSON 文件或 UTF-8 内容文件承载。Agent Session/Run/HITL、图片能力、Build 执行、产物下载和 MCP 不属于本期外部接口范围。
 
 具体 operation、Scope、请求字段和响应字段以主仓代码和契约测试为准，不在本文复制完整 Schema。
