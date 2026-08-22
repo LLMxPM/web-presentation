@@ -267,6 +267,7 @@ class AssetService:
         description: str | None = None,
         approx_aspect_ratio: str | None = None,
         aspect_ratio_source: AspectRatioSource = "manual",
+        commit: bool = True,
     ) -> WorkspaceAsset:
         """通过文本内容创建 SVG 图标、SVG 图片、Draw.io、Mermaid、Chart 或 Formula 资源。"""
 
@@ -306,8 +307,11 @@ class AssetService:
             status=RecordStatus.ACTIVE.value,
         )
         self.session.add(asset)
-        await self.session.commit()
-        await self.session.refresh(asset)
+        if commit:
+            await self.session.commit()
+            await self.session.refresh(asset)
+        else:
+            await self.session.flush()
         return asset
 
     async def get_asset_content(self, workspace_id: int, asset_id: int) -> str:

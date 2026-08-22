@@ -126,6 +126,8 @@ async def get_component_dependencies(
 ) -> Any:
     """读取组件当前版本源码依赖。"""
 
+    component = await WorkspaceComponentService(session).get(component_id, user_id=auth.user.id)
+    await auth.ensure_workspace_access(component.workspace_id, session)
     return await WorkspaceComponentService(session).get_current_dependencies(component_id, user_id=auth.user.id)
 
 
@@ -156,6 +158,7 @@ async def edit_component(
     """提交组件结构化源码编辑任务。"""
 
     component = await WorkspaceComponentService(session).get(component_id, user_id=auth.user.id)
+    await auth.ensure_workspace_access(component.workspace_id, session)
     if payload.component_id != component_id:
         raise AppException(status_code=400, code="COMPONENT_ID_MISMATCH", detail="请求体 component_id 必须与路径参数一致。")
     if payload.base_draft_hash is None:

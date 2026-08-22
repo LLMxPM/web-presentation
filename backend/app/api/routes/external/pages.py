@@ -113,6 +113,7 @@ async def get_page(
 @router.post("/pages/{page_id}/copy", response_model=PageItem)
 async def copy_page(
     request: Request,
+    response: Response,
     page_id: int,
     payload: ExternalPageCopyRequest,
     auth: Annotated[ExternalAuthContext, Depends(require_external_operation("page.copy"))],
@@ -132,7 +133,7 @@ async def copy_page(
         copied = await PageService(session).copy_to_project(page_id, copy_payload, auth.user.id, commit=False)
         return 201, copied
 
-    _, result = await IdempotencyService(session).execute_idempotent_operation(
+    status_code, result = await IdempotencyService(session).execute_idempotent_operation(
         user_id=auth.user.id,
         workspace_id=source.workspace_id,
         idempotency_key=idempotency_key,
@@ -140,6 +141,7 @@ async def copy_page(
         fingerprint=fingerprint,
         operation_func=_operation,
     )
+    response.status_code = status_code
     return result if isinstance(result, PageItem) else PageItem.model_validate(result)
 
 
@@ -214,6 +216,8 @@ async def get_page_dependencies(
 ) -> PageCurrentModuleDependencies:
     """读取页面当前版本的源码依赖。"""
 
+    page = await PageService(session).get(page_id, user_id=auth.user.id)
+    await auth.ensure_workspace_access(page.workspace_id, session)
     return await PageService(session).get_current_module_dependencies(page_id, user_id=auth.user.id)
 
 
@@ -244,6 +248,7 @@ async def edit_page(
     """提交页面结构化源码编辑任务。"""
 
     page = await PageService(session).get(page_id, user_id=auth.user.id)
+    await auth.ensure_workspace_access(page.workspace_id, session)
     if payload.page_id != page_id:
         raise AppException(status_code=400, code="PAGE_ID_MISMATCH", detail="请求体 page_id 必须与路径参数一致。")
     fingerprint = IdempotencyService.calculate_request_fingerprint(

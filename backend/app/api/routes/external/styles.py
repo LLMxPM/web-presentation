@@ -81,7 +81,7 @@ async def create_style(
     fingerprint = IdempotencyService.calculate_request_fingerprint(
         http_method="POST",
         path=request.url.path,
-        json_data=internal_payload.model_dump(mode="json"),
+        json_data=payload.model_dump(mode="json"),
     )
 
     async def _operation(record_id: int | None) -> tuple[int, WorkspaceStyleItem]:
@@ -108,6 +108,7 @@ async def create_style(
 @router.post("/{style_id}/copy", response_model=WorkspaceStyleItem)
 async def copy_style(
     request: Request,
+    response: Response,
     style_id: int,
     payload: WorkspaceStyleCopyRequest,
     auth: Annotated[ExternalAuthContext, Depends(require_external_operation("style.copy"))],
@@ -141,6 +142,7 @@ async def copy_style(
         fingerprint=fingerprint,
         operation_func=_operation,
     )
+    response.status_code = status_code
     return result if isinstance(result, WorkspaceStyleItem) else WorkspaceStyleItem.model_validate(result)
 
 

@@ -14,10 +14,7 @@ from app.db.session import get_db_session
 from app.models.enums import AssetType
 from app.schemas.asset import (
     AssetContentCreateRequest,
-    AssetContentPreviewRequest,
     AssetContentResponse,
-    AssetContentUpdateRequest,
-    AssetCopyRequest,
     AssetResponse,
     AssetUpdateRequest,
 )
@@ -139,6 +136,7 @@ async def create_asset_content(
             description=create_payload.description,
             approx_aspect_ratio=create_payload.approx_aspect_ratio,
             aspect_ratio_source="manual",
+            commit=False,
         )
         return 201, await _build_asset_response(session, x_workspace_id, asset)
 

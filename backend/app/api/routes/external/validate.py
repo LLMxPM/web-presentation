@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from typing import Annotated, Any
+from typing import Annotated
 
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -42,6 +42,7 @@ async def validate_entity(
     code_check = CodeCheckService(session)
     if payload.entity_type == "page":
         page = await PageService(session).get(payload.entity_id, user_id=auth.user.id)
+        await auth.ensure_workspace_access(page.workspace_id, session)
         if payload.mode == "content" and payload.source_code is None:
             raise AppException(status_code=400, code="VALIDATION_CONTENT_REQUIRED", detail="content 模式必须提供 source_code。")
         if payload.mode == "edits" and not payload.edits:
@@ -55,6 +56,7 @@ async def validate_entity(
         )
     else:
         component = await WorkspaceComponentService(session).get(payload.entity_id, user_id=auth.user.id)
+        await auth.ensure_workspace_access(component.workspace_id, session)
         if payload.mode == "content" and payload.source_code is None:
             raise AppException(status_code=400, code="VALIDATION_CONTENT_REQUIRED", detail="content 模式必须提供 source_code。")
         if payload.mode == "edits" and not payload.edits:

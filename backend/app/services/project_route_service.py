@@ -49,6 +49,8 @@ class ProjectRouteService:
         project_id: int,
         payload: ProjectRouteTreeWriteRequest,
         operator_id: int,
+        *,
+        commit: bool = True,
     ) -> ProjectRouteTreeResponse:
         """按整树覆盖方式保存项目路由配置。"""
 
@@ -88,7 +90,10 @@ class ProjectRouteService:
                 operator_id=operator_id,
             )
 
-        await self.session.commit()
+        if commit:
+            await self.session.commit()
+        else:
+            await self.session.flush()
         routes = await self.route_repository.list_by_project(project.id)
         return await self._build_tree_response(routes, page_map=page_map)
 

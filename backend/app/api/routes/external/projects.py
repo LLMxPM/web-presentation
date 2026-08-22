@@ -202,6 +202,7 @@ async def get_project_configuration(
     """读取项目展示配置、建议组件和构建额外资源配置。"""
 
     project = await ProjectService(session).get(project_id, user_id=auth.user.id)
+    await auth.ensure_workspace_access(project.workspace_id, session)
     suggested = await SuggestedComponentService(session).list_project_component_items(
         project_id,
         include_unavailable=True,
@@ -236,6 +237,7 @@ async def update_project_configuration(
     """更新项目展示配置和构建额外资源配置。"""
 
     project = await ProjectService(session).get(project_id, user_id=auth.user.id)
+    await auth.ensure_workspace_access(project.workspace_id, session)
     configuration = dict(payload.configuration)
     configuration.setdefault("mode", "patch")
     update_payload = ProjectUpdateRequest(
@@ -271,7 +273,8 @@ async def get_project_route_tree(
 ) -> ProjectRouteTreeResponse:
     """读取项目路由树。"""
 
-    await ProjectService(session).get(project_id, user_id=auth.user.id)
+    project = await ProjectService(session).get(project_id, user_id=auth.user.id)
+    await auth.ensure_workspace_access(project.workspace_id, session)
     return await ProjectRouteService(session).get_tree(project_id)
 
 
@@ -287,6 +290,7 @@ async def replace_project_route_tree(
     """整体替换项目路由树。"""
 
     project = await ProjectService(session).get(project_id, user_id=auth.user.id)
+    await auth.ensure_workspace_access(project.workspace_id, session)
     fingerprint = IdempotencyService.calculate_request_fingerprint(
         http_method="PUT",
         path=request.url.path,
@@ -294,7 +298,7 @@ async def replace_project_route_tree(
     )
 
     async def _operation(record_id: int | None) -> tuple[int, ProjectRouteTreeResponse]:
-        tree = await ProjectRouteService(session).replace_tree(project_id, payload, auth.user.id)
+        tree = await ProjectRouteService(session).replace_tree(project_id, payload, auth.user.id, commit=False)
         return 200, tree
 
     _, result = await IdempotencyService(session).execute_idempotent_operation(
@@ -320,6 +324,7 @@ async def apply_project_style(
     """将工作空间样式方案应用到项目。"""
 
     project = await ProjectService(session).get(project_id, user_id=auth.user.id)
+    await auth.ensure_workspace_access(project.workspace_id, session)
     update_payload = ProjectUpdateRequest(configuration={"mode": "style", "style_id": payload.style_id})
     fingerprint = IdempotencyService.calculate_request_fingerprint(
         http_method="POST", path=request.url.path, json_data=payload.model_dump(mode="json")
@@ -352,6 +357,7 @@ async def update_project_build_assets(
     """更新项目构建额外资源配置，不启动构建任务。"""
 
     project = await ProjectService(session).get(project_id, user_id=auth.user.id)
+    await auth.ensure_workspace_access(project.workspace_id, session)
     update_payload = ProjectUpdateRequest(build_extra_assets_json=payload.build_extra_assets_json)
     fingerprint = IdempotencyService.calculate_request_fingerprint(
         http_method="PUT", path=request.url.path, json_data=payload.model_dump(mode="json")

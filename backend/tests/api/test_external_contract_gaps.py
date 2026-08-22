@@ -83,11 +83,115 @@ async def _seed_contract_targets() -> tuple[str, int, int, int]:
             payload=ApiAccessTokenCreateRequest(
                 name="External-Contract-PAT",
                 workspace_ids=[workspace.id],
-                scopes=["page:read", "page:write", "component:read", "component:write"],
+                scopes=[
+                    "page:read",
+                    "page:write",
+                    "component:read",
+                    "component:write",
+                    "design-system:read",
+                    "design-system:write",
+                ],
                 expires_in_days=30,
             ),
         )
         result = token.token, workspace.id, page.id, component.id
+        await session.commit()
+        return result
+
+
+async def _seed_cross_workspace_targets() -> tuple[str, int, int, int, int, int]:
+    """创建同一用户跨工作空间的对象与仅绑定 A 空间的 PAT。"""
+
+    async with get_session_factory()() as session:
+        user = User(
+            username="external_cross_workspace_user",
+            password_hash="hash",
+            display_name="External Cross Workspace User",
+            role=UserRole.WORKSPACE_USER.value,
+            preview_size_presets=build_default_preview_size_presets(),
+        )
+        session.add(user)
+        await session.flush()
+
+        workspace_a = Workspace(
+            code="external-cross-a",
+            name="External Cross Workspace A",
+            created_by=user.id,
+            updated_by=user.id,
+            status=RecordStatus.ACTIVE.value,
+        )
+        workspace_b = Workspace(
+            code="external-cross-b",
+            name="External Cross Workspace B",
+            created_by=user.id,
+            updated_by=user.id,
+            status=RecordStatus.ACTIVE.value,
+        )
+        session.add_all([workspace_a, workspace_b])
+        await session.flush()
+        session.add_all([
+            WorkspaceMember(
+                workspace_id=workspace_a.id,
+                user_id=user.id,
+                role="owner",
+                status=RecordStatus.ACTIVE.value,
+            ),
+            WorkspaceMember(
+                workspace_id=workspace_b.id,
+                user_id=user.id,
+                role="owner",
+                status=RecordStatus.ACTIVE.value,
+            ),
+        ])
+        project = Project(
+            workspace_id=workspace_b.id,
+            code="external-cross-project",
+            name="External Cross Project",
+            theme_config_yaml="{}",
+            created_by=user.id,
+            updated_by=user.id,
+            status=RecordStatus.ACTIVE.value,
+        )
+        session.add(project)
+        await session.flush()
+        page = Page(
+            workspace_id=workspace_b.id,
+            project_id=project.id,
+            code="external-cross-page",
+            title="Cross Workspace Page",
+            page_content="<template><div /></template>",
+            created_by=user.id,
+            updated_by=user.id,
+            status=RecordStatus.ACTIVE.value,
+        )
+        component = WorkspaceComponent(
+            workspace_id=workspace_b.id,
+            code="external-cross-component",
+            name="Cross Workspace Component",
+            import_name="ExternalCrossComponent",
+            content="<template><div /></template>",
+            created_by=user.id,
+            updated_by=user.id,
+            status=RecordStatus.ACTIVE.value,
+        )
+        session.add_all([page, component])
+        await session.flush()
+        token = await ApiAccessTokenService(session).create_token(
+            user_id=user.id,
+            payload=ApiAccessTokenCreateRequest(
+                name="External-Cross-Workspace-PAT",
+                workspace_ids=[workspace_a.id],
+                scopes=[
+                    "project:read",
+                    "page:read",
+                    "page:write",
+                    "component:read",
+                    "component:write",
+                ],
+                expires_in_days=30,
+            ),
+        )
+        result = token.token, workspace_a.id, workspace_b.id, project.id, page.id, component.id
         await session.commit()
         return result
 
@@ -188,6 +292,75 @@ async def test_guides_index_and_detail_do_not_require_workspace_header(client: A
     assert missing.json()["code"] == "GUIDE_OPERATION_NOT_FOUND"
     alias = await client.get("/api/v1/guides/operation-guide", headers=headers)
     assert alias.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_pat_workspace_binding_is_checked_for_object_routes(client: AsyncClient) -> None:
+    """PAT 仅绑定 A 空间时，不能访问同一用户在 B 空间中的对象。"""
+
+    token, workspace_a_id, _workspace_b_id, project_b_id, page_b_id, component_b_id = await _seed_cross_workspace_targets()
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "X-Workspace-ID": str(workspace_a_id),
+    }
+
+    project_response = await client.get(
+        f"/api/v1/projects/{project_b_id}/configuration",
+        headers=headers,
+    )
+    assert project_response.status_code == 403
+    assert project_response.json()["code"] == "WORKSPACE_NOT_AUTHORIZED"
+
+    page_response = await client.post(
+        f"/api/v1/pages/{page_b_id}/edits",
+        json={
+            "page_id": page_b_id,
+            "base_version_no": 1,
+            "edits": [{"type": "replace_exact", "old": "div", "new": "span"}],
+        },
+        headers={**headers, "Idempotency-Key": "cross-workspace-page-edit"},
+    )
+    assert page_response.status_code == 403
+    assert page_response.json()["code"] == "WORKSPACE_NOT_AUTHORIZED"
+
+    component_response = await client.post(
+        "/api/v1/validate/entity",
+        json={"entity_type": "component", "entity_id": component_b_id, "mode": "current"},
+        headers=headers,
+    )
+    assert component_response.status_code == 403
+    assert component_response.json()["code"] == "WORKSPACE_NOT_AUTHORIZED"
+
+
+@pytest.mark.asyncio
+async def test_style_create_without_key_replays_and_copy_returns_created_status(client: AsyncClient) -> None:
+    """缺省样式 key 的重试应重放，复制样式应返回 201。"""
+
+    token, workspace_id, _, _ = await _seed_contract_targets()
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "X-Workspace-ID": str(workspace_id),
+    }
+    create_payload = {"name": "Generated Style", "configuration": {}}
+    first = await client.post(
+        "/api/v1/styles",
+        json=create_payload,
+        headers={**headers, "Idempotency-Key": "style-create-without-key"},
+    )
+    replay = await client.post(
+        "/api/v1/styles",
+        json=create_payload,
+        headers={**headers, "Idempotency-Key": "style-create-without-key"},
+    )
+    assert first.status_code == replay.status_code == 201
+    assert first.json() == replay.json()
+
+    copied = await client.post(
+        f"/api/v1/styles/{first.json()['id']}/copy",
+        json={},
+        headers={**headers, "Idempotency-Key": "style-copy-status"},
+    )
+    assert copied.status_code == 201
 
 
 def test_corrected_operations_have_distinct_http_contracts() -> None:

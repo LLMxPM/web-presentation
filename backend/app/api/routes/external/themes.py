@@ -111,6 +111,7 @@ async def create_theme(
 @router.post("/{theme_id}/copy", response_model=WorkspaceThemeItem)
 async def copy_theme(
     request: Request,
+    response: Response,
     theme_id: int,
     payload: WorkspaceThemeCopyRequest,
     auth: Annotated[ExternalAuthContext, Depends(require_external_operation("theme.copy"))],
@@ -144,6 +145,7 @@ async def copy_theme(
         fingerprint=fingerprint,
         operation_func=_operation,
     )
+    response.status_code = status_code
     return result if isinstance(result, WorkspaceThemeItem) else WorkspaceThemeItem.model_validate(result)
 
 
