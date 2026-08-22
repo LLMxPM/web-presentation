@@ -156,13 +156,14 @@ def require_external_operation(operation_key: str):
     return _dependency
 
 
-def require_dynamic_mutation_operation(action: Literal["status", "cancel"]):
+def require_dynamic_mutation_operation(action: Literal["status", "cancel", "retry"]):
     """对通用 /jobs/mutations/{job_id} 动态按实体类型执行 page 或 component 权限鉴权。"""
 
     async def _dependency(
         job_id: Annotated[str, Path(description="任务公开 UUID")],
         auth: Annotated[ExternalAuthContext, Depends(get_external_auth_context)],
         session: Annotated[AsyncSession, Depends(get_db_session)],
+        idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
     ) -> tuple[ExternalAuthContext, ApiMutationJob]:
         stmt = select(ApiMutationJob).where(ApiMutationJob.job_id == job_id)
         job = await session.scalar(stmt)
@@ -186,6 +187,21 @@ def require_dynamic_mutation_operation(action: Literal["status", "cancel"]):
                 detail=f"执行该变更任务的 {action} 操作需要 {required_scope} 权限 Scope。",
                 data={"required_scopes": [required_scope]},
             )
+
+        if action in {"cancel", "retry"}:
+            if not idempotency_key or not idempotency_key.strip():
+                raise AppException(
+                    status_code=400,
+                    code="IDEMPOTENCY_KEY_REQUIRED",
+                    detail=f"Mutation {action} 操作必须携带非空的 Idempotency-Key。",
+                )
+            key_value = idempotency_key.strip()
+            if len(key_value) > 128 or not key_value.isascii():
+                raise AppException(
+                    status_code=400,
+                    code="INVALID_IDEMPOTENCY_KEY",
+                    detail="Idempotency-Key 格式无效，必须为不超过 128 字符的 ASCII 字符串。",
+                )
 
         return auth, job
 

@@ -293,6 +293,36 @@ class PageService:
         await self.session.refresh(page_model)
         return await self._to_item(page_model)
 
+    async def update_metadata(
+        self,
+        page_id: int,
+        *,
+        title: str | None,
+        summary: str | None,
+        summary_is_set: bool,
+        speaker_notes: str | None,
+        speaker_notes_is_set: bool,
+        operator_id: int,
+        commit: bool = True,
+    ) -> PageItem:
+        """仅更新页面轻量元数据，不创建源码版本或触发内容校验。"""
+
+        page_model = await self._get_page_or_raise(page_id)
+        await self._ensure_page_access(page_model, user_id=operator_id)
+        if title is not None:
+            page_model.title = title
+        if summary_is_set:
+            page_model.summary = summary
+        if speaker_notes_is_set:
+            page_model.speaker_notes = self._normalize_optional_text(speaker_notes)
+        page_model.updated_by = operator_id
+        if commit:
+            await self.session.commit()
+        else:
+            await self.session.flush()
+        await self.session.refresh(page_model)
+        return await self._to_item(page_model)
+
     async def list_versions(self, page_id: int, *, user_id: int | None = None) -> list[PageVersionListItem]:
         """返回页面的完整版本历史，最新版本排在最前。"""
 

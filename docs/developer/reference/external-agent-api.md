@@ -113,9 +113,10 @@ GET /api/v1/workspaces/{workspace_id}/capabilities
 GET /api/v1/standards/page
 GET /api/v1/standards/component
 GET /api/v1/guides
+GET /api/v1/guides/{operation_key}
 ```
 
-当前 `/guides` 返回公开 operation 索引、Scope、幂等要求和描述。它不是 Backend 内部 AI `tool_specs.py` 的公开镜像；如果外部客户端需要精确的请求 JSON Schema，应先在主仓扩展版本化 External API 字段和契约测试。
+`/guides` 返回带 `api_version=v1`、`guide_schema_version=1`、`operation_revision` 和 `detail_url` 的轻量索引；详情接口返回 method、path、Scope、必需 Header、幂等规则、成功状态、错误码及 External API 专属 DTO 生成的请求/响应 JSON Schema。两者只要求有效 PAT，不要求工作空间 Header，也不是 Backend 内部 AI `tool_specs.py` 的公开镜像。
 
 规范和指南由 Backend 发布，agent-kit 不应复制为长期本地业务数据或静态提示词。
 
@@ -149,6 +150,7 @@ POST /api/v1/jobs/mutations/components
 POST /api/v1/jobs/mutations/components/edits
 GET  /api/v1/jobs/mutations/{job_id}
 POST /api/v1/jobs/mutations/{job_id}/cancel
+POST /api/v1/jobs/mutations/{job_id}/retry
 ```
 
 页面编辑必须携带当前版本基线；组件编辑必须携带草稿 hash 或主仓规定的等价乐观锁字段。外部客户端不得在 409 后静默覆盖重试。
@@ -165,7 +167,7 @@ GET  /api/v1/builds/{job_id}
 
 ### 5.4 幂等和归档
 
-- 所有会改变业务数据或创建任务的请求必须遵守 operation 注册表中的 `Idempotency-Key` 要求。
+- 所有会改变业务数据或创建、取消、人工重试任务的请求必须遵守 operation 注册表中的 `Idempotency-Key` 要求。相同 key、operation 和请求指纹重放首次响应；不同请求复用 key 返回 409；首个请求仍在执行时返回 409、`Retry-After` 和可重试标记。
 - 校验等纯只读请求不应伪造写入幂等语义。
 - 外部 Agent 只使用归档，不提供永久硬删除。
 - 单对象归档和批量归档的确认、原子性、数量上限由主仓契约定义。
@@ -186,16 +188,11 @@ GET  /api/v1/builds/{job_id}
 | 5xx/网络失败 | 仅对安全的幂等读操作有限重试 |
 | Job 失败 | 保留 Job 状态、业务错误码和诊断摘要 |
 
-Job 状态以 Backend 返回为准。当前 Mutation 至少包含 `queued`、`running`、`succeeded`、`failed`、`canceled` 等状态；客户端不得把“已受理”表述为“已完成”。
+Mutation 对外状态固定为 `pending | running | succeeded | failed | canceled`。`attempt_count` 表示已执行的自动重试次数，`max_attempts` 包含首次执行；自动重试沿用同一 `job_id`，人工重试创建新任务并通过 `retry_of_job_id` 关联原任务。running 取消是协作式取消，Worker 可以完成诊断，但必须在业务写入前收敛为 canceled。
 
 ## 7. 已知契约问题
 
-以下问题由主仓负责解决，agent-kit 文档只记录依赖和阻塞，不在客户端侧猜测：
-
-1. `page.update` 当前 operation 描述与实际页面路由语义存在偏差，页面元数据通用 PATCH 路由需要确认或补齐。
-2. `component.update` 当前 operation 主要用于历史版本恢复到草稿，组件元数据通用 PATCH 路由需要确认或补齐。
-3. `/guides` 当前主要提供 operation 索引；精确参数 Schema 是否公开，需要单独设计版本化响应字段。
-4. 构建产物下载 URL 的同源和短期 Delivery 契约需要在主仓冻结后，agent-kit 才能实现完整下载命令。
+页面/组件安全元数据 PATCH、版本化 Guides、Mutation 状态/取消/重试/幂等契约已冻结。剩余问题仅为构建产物下载 URL 的同源、鉴权、短期有效期和持久化 Worker 交付契约；冻结前 agent-kit 不支持 Build。
 
 ## 8. 变更流程和测试归属
 

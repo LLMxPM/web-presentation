@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Literal, Tuple
 
 
@@ -18,6 +18,13 @@ class ExternalOperationSpec:
     requires_idempotency_key: bool = False
     description: str = ""
     scope_mode: Literal["all", "any"] = "all"
+    operation_revision: int = 1
+    http_method: str = "GET"
+    path_template: str = ""
+    request_model: str | None = None
+    response_model: str | None = None
+    success_statuses: Tuple[int, ...] = (200,)
+    error_codes: Tuple[str, ...] = ()
 
 
 OPERATION_REGISTRY: dict[str, ExternalOperationSpec] = {
@@ -49,7 +56,13 @@ OPERATION_REGISTRY: dict[str, ExternalOperationSpec] = {
         "standards.component", ("component:read",), is_public=False, description="获取工作空间组件开发标准 Markdown 规范"
     ),
     "guides.read": ExternalOperationSpec(
-        "guides.read", (), is_public=False, description="查询平台操作参数 Schema 与使用手册"
+        "guides.read",
+        (),
+        is_public=False,
+        exempt_workspace_header=True,
+        description="查询平台操作参数 Schema 与使用手册",
+        path_template="/guides",
+        response_model="app.schemas.external_api.ExternalGuideResponse",
     ),
     "validate.code": ExternalOperationSpec(
         "validate.code",
@@ -84,7 +97,25 @@ OPERATION_REGISTRY: dict[str, ExternalOperationSpec] = {
         "page.get", ("page:read",), description="获取页面详情、Vue 源码、依赖或历史版本"
     ),
     "page.update": ExternalOperationSpec(
-        "page.update", ("page:write",), requires_idempotency_key=True, description="更新页面元数据"
+        "page.update",
+        ("page:write",),
+        requires_idempotency_key=True,
+        description="更新页面标题、摘要或演讲备注",
+        http_method="PATCH",
+        path_template="/pages/{page_id}",
+        request_model="app.schemas.external_api.ExternalPageMetadataUpdateRequest",
+        response_model="app.schemas.page.PageItem",
+        error_codes=("PAGE_NOT_FOUND", "IDEMPOTENCY_KEY_REUSE_WITH_DIFFERENT_PAYLOAD"),
+    ),
+    "page.version.restore": ExternalOperationSpec(
+        "page.version.restore",
+        ("page:write",),
+        requires_idempotency_key=True,
+        description="将页面历史版本恢复为最新版本",
+        http_method="POST",
+        path_template="/pages/{page_id}/versions/{version_no}/restore",
+        request_model="app.schemas.page.PageVersionRestoreRequest",
+        response_model="app.schemas.page.PageItem",
     ),
     "page.archive": ExternalOperationSpec(
         "page.archive", ("page:write",), requires_idempotency_key=True, description="归档页面"
@@ -107,7 +138,33 @@ OPERATION_REGISTRY: dict[str, ExternalOperationSpec] = {
         "component.publish", ("component:write",), requires_idempotency_key=True, description="发布组件草稿为正式版本"
     ),
     "component.update": ExternalOperationSpec(
-        "component.update", ("component:write",), requires_idempotency_key=True, description="更新组件元数据"
+        "component.update",
+        ("component:write",),
+        requires_idempotency_key=True,
+        description="更新组件名称或摘要",
+        http_method="PATCH",
+        path_template="/components/{component_id}",
+        request_model="app.schemas.external_api.ExternalComponentMetadataUpdateRequest",
+        response_model="app.schemas.component.WorkspaceComponentItem",
+        error_codes=("COMPONENT_NOT_FOUND", "IDEMPOTENCY_KEY_REUSE_WITH_DIFFERENT_PAYLOAD"),
+    ),
+    "component.version.restore_draft": ExternalOperationSpec(
+        "component.version.restore_draft",
+        ("component:write",),
+        requires_idempotency_key=True,
+        description="将组件历史发布版本恢复到草稿",
+        http_method="POST",
+        path_template="/components/{component_id}/versions/{version_no}/restore-draft",
+        request_model="app.schemas.component.WorkspaceComponentRestoreDraftRequest",
+        response_model="app.schemas.component.WorkspaceComponentItem",
+    ),
+    "component.restore": ExternalOperationSpec(
+        "component.restore",
+        ("component:write",),
+        requires_idempotency_key=True,
+        description="恢复已归档组件",
+        http_method="POST",
+        path_template="/components/{component_id}/restore",
     ),
     "component.archive": ExternalOperationSpec(
         "component.archive", ("component:write",), requires_idempotency_key=True, description="归档工作空间组件"
@@ -178,24 +235,131 @@ OPERATION_REGISTRY: dict[str, ExternalOperationSpec] = {
     ),
 
     "jobs.mutation.page.create": ExternalOperationSpec(
-        "jobs.mutation.page.create", ("page:write",), requires_idempotency_key=True, description="提交页面异步创建/源码编辑重任务"
+        "jobs.mutation.page.create", ("page:write",), requires_idempotency_key=True, description="提交页面异步创建任务",
+        http_method="POST", path_template="/jobs/mutations/pages",
+        request_model="app.schemas.external_api.ExternalPageCreateMutationRequest",
+        response_model="app.schemas.external_api.ExternalMutationJobResponse", success_statuses=(202,),
+    ),
+    "jobs.mutation.page.edit": ExternalOperationSpec(
+        "jobs.mutation.page.edit", ("page:write",), requires_idempotency_key=True, description="提交页面异步源码编辑任务",
+        http_method="POST", path_template="/jobs/mutations/pages/edits",
+        request_model="app.schemas.external_api.ExternalPageApplyEditsMutationRequest",
+        response_model="app.schemas.external_api.ExternalMutationJobResponse", success_statuses=(202,),
     ),
     "jobs.mutation.page.status": ExternalOperationSpec(
         "jobs.mutation.page.status", ("page:read",), description="查询页面 Mutation 任务状态与诊断"
     ),
     "jobs.mutation.page.cancel": ExternalOperationSpec(
-        "jobs.mutation.page.cancel", ("page:write",), description="取消页面 Mutation 任务"
+        "jobs.mutation.page.cancel", ("page:write",), requires_idempotency_key=True, description="取消页面 Mutation 任务",
+        http_method="POST", path_template="/jobs/mutations/{job_id}/cancel",
+        response_model="app.schemas.external_api.ExternalMutationJobResponse", success_statuses=(200, 202),
+        error_codes=("MUTATION_JOB_NOT_FOUND", "MUTATION_JOB_NOT_CANCELABLE"),
+    ),
+    "jobs.mutation.page.retry": ExternalOperationSpec(
+        "jobs.mutation.page.retry", ("page:write",), requires_idempotency_key=True, description="重试可重试失败的页面 Mutation 任务",
+        http_method="POST", path_template="/jobs/mutations/{job_id}/retry",
+        response_model="app.schemas.external_api.ExternalMutationJobResponse", success_statuses=(202,),
+        error_codes=("MUTATION_JOB_NOT_FOUND", "MUTATION_JOB_NOT_RETRYABLE"),
     ),
     "jobs.mutation.component.create": ExternalOperationSpec(
-        "jobs.mutation.component.create", ("component:write",), requires_idempotency_key=True, description="提交组件异步创建/源码编辑重任务"
+        "jobs.mutation.component.create", ("component:write",), requires_idempotency_key=True, description="提交组件异步创建任务",
+        http_method="POST", path_template="/jobs/mutations/components",
+        request_model="app.schemas.external_api.ExternalComponentCreateMutationRequest",
+        response_model="app.schemas.external_api.ExternalMutationJobResponse", success_statuses=(202,),
+    ),
+    "jobs.mutation.component.edit": ExternalOperationSpec(
+        "jobs.mutation.component.edit", ("component:write",), requires_idempotency_key=True, description="提交组件异步源码编辑任务",
+        http_method="POST", path_template="/jobs/mutations/components/edits",
+        request_model="app.schemas.external_api.ExternalComponentApplyEditsMutationRequest",
+        response_model="app.schemas.external_api.ExternalMutationJobResponse", success_statuses=(202,),
     ),
     "jobs.mutation.component.status": ExternalOperationSpec(
         "jobs.mutation.component.status", ("component:read",), description="查询组件 Mutation 任务状态与诊断"
     ),
     "jobs.mutation.component.cancel": ExternalOperationSpec(
-        "jobs.mutation.component.cancel", ("component:write",), description="取消组件 Mutation 任务"
+        "jobs.mutation.component.cancel", ("component:write",), requires_idempotency_key=True, description="取消组件 Mutation 任务",
+        http_method="POST", path_template="/jobs/mutations/{job_id}/cancel",
+        response_model="app.schemas.external_api.ExternalMutationJobResponse", success_statuses=(200, 202),
+        error_codes=("MUTATION_JOB_NOT_FOUND", "MUTATION_JOB_NOT_CANCELABLE"),
+    ),
+    "jobs.mutation.component.retry": ExternalOperationSpec(
+        "jobs.mutation.component.retry", ("component:write",), requires_idempotency_key=True, description="重试可重试失败的组件 Mutation 任务",
+        http_method="POST", path_template="/jobs/mutations/{job_id}/retry",
+        response_model="app.schemas.external_api.ExternalMutationJobResponse", success_statuses=(202,),
+        error_codes=("MUTATION_JOB_NOT_FOUND", "MUTATION_JOB_NOT_RETRYABLE"),
     ),
 }
+
+# 为全部稳定 operation 冻结一个用于 Guides 的主路径；同一读取 operation 的附加视图
+# 继续由资源文档描述，不把内部路由扫描结果当作公开契约。
+_OPERATION_HTTP_CONTRACTS: dict[str, tuple[str, str]] = {
+    "system.version": ("GET", "/system/version"),
+    "system.health": ("GET", "/system/health"),
+    "system.capabilities": ("GET", "/workspaces/{workspace_id}/capabilities"),
+    "auth.whoami": ("GET", "/auth/whoami"),
+    "workspace.list": ("GET", "/workspaces"),
+    "workspace.get": ("GET", "/workspaces/{workspace_id}"),
+    "standards.page": ("GET", "/standards/page"),
+    "standards.component": ("GET", "/standards/component"),
+    "guides.read": ("GET", "/guides"),
+    "validate.code": ("POST", "/validate/code"),
+    "project.list": ("GET", "/projects"),
+    "project.get": ("GET", "/projects/{project_id}"),
+    "project.create": ("POST", "/projects"),
+    "project.update": ("PATCH", "/projects/{project_id}"),
+    "project.archive": ("DELETE", "/projects/{project_id}"),
+    "page.list": ("GET", "/projects/{project_id}/pages"),
+    "page.get": ("GET", "/pages/{page_id}"),
+    "page.update": ("PATCH", "/pages/{page_id}"),
+    "page.version.restore": ("POST", "/pages/{page_id}/versions/{version_no}/restore"),
+    "page.archive": ("DELETE", "/pages/{page_id}"),
+    "page.screenshot.latest": ("GET", "/pages/{page_id}/screenshot"),
+    "component.list": ("GET", "/components"),
+    "component.get": ("GET", "/components/{component_id}"),
+    "component.publish": ("POST", "/components/{component_id}/publish"),
+    "component.update": ("PATCH", "/components/{component_id}"),
+    "component.version.restore_draft": ("POST", "/components/{component_id}/versions/{version_no}/restore-draft"),
+    "component.restore": ("POST", "/components/{component_id}/restore"),
+    "component.archive": ("DELETE", "/components/{component_id}"),
+    "asset.list": ("GET", "/assets"),
+    "asset.get": ("GET", "/assets/{asset_id}"),
+    "asset.upload": ("POST", "/assets"),
+    "asset.update": ("PATCH", "/assets/{asset_id}"),
+    "asset.archive": ("DELETE", "/assets/{asset_id}"),
+    "theme.list": ("GET", "/themes"),
+    "theme.get": ("GET", "/themes/{theme_id}"),
+    "theme.create": ("POST", "/themes"),
+    "theme.update": ("PATCH", "/themes/{theme_id}"),
+    "theme.copy": ("POST", "/themes/{theme_id}/copy"),
+    "theme.archive": ("DELETE", "/themes/{theme_id}"),
+    "style.list": ("GET", "/styles"),
+    "style.get": ("GET", "/styles/{style_id}"),
+    "style.create": ("POST", "/styles"),
+    "style.update": ("PATCH", "/styles/{style_id}"),
+    "style.copy": ("POST", "/styles/{style_id}/copy"),
+    "style.archive": ("DELETE", "/styles/{style_id}"),
+    "jobs.build.start": ("POST", "/projects/{project_id}/builds"),
+    "jobs.build.status": ("GET", "/builds/{job_id}"),
+    "jobs.mutation.page.create": ("POST", "/jobs/mutations/pages"),
+    "jobs.mutation.page.edit": ("POST", "/jobs/mutations/pages/edits"),
+    "jobs.mutation.page.status": ("GET", "/jobs/mutations/{job_id}"),
+    "jobs.mutation.page.cancel": ("POST", "/jobs/mutations/{job_id}/cancel"),
+    "jobs.mutation.page.retry": ("POST", "/jobs/mutations/{job_id}/retry"),
+    "jobs.mutation.component.create": ("POST", "/jobs/mutations/components"),
+    "jobs.mutation.component.edit": ("POST", "/jobs/mutations/components/edits"),
+    "jobs.mutation.component.status": ("GET", "/jobs/mutations/{job_id}"),
+    "jobs.mutation.component.cancel": ("POST", "/jobs/mutations/{job_id}/cancel"),
+    "jobs.mutation.component.retry": ("POST", "/jobs/mutations/{job_id}/retry"),
+}
+
+if set(_OPERATION_HTTP_CONTRACTS) != set(OPERATION_REGISTRY):
+    raise RuntimeError("External operation 注册表与 HTTP 契约映射不完整。")
+for _operation_key, (_method, _path) in _OPERATION_HTTP_CONTRACTS.items():
+    OPERATION_REGISTRY[_operation_key] = replace(
+        OPERATION_REGISTRY[_operation_key],
+        http_method=_method,
+        path_template=_path,
+    )
 
 OPERATION_SCOPE_REQUIREMENTS: dict[str, tuple[str, ...]] = {
     k: v.scopes for k, v in OPERATION_REGISTRY.items()

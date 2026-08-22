@@ -188,6 +188,12 @@ class MutationJobService:
         if job.error_json:
             err_detail = ExternalErrorDetail.model_validate(job.error_json)
 
+        retry_of_public_id = None
+        if job.retry_of_job_id is not None:
+            retry_of_public_id = await self.session.scalar(
+                select(ApiMutationJob.job_id).where(ApiMutationJob.id == job.retry_of_job_id)
+            )
+
         return ExternalMutationJobResponse(
             job_id=job.job_id,
             job_type=job.job_type,
@@ -198,6 +204,8 @@ class MutationJobService:
             max_attempts=job.max_attempts,
             next_attempt_at=job.next_attempt_at,
             last_error_code=job.last_error_code,
+            cancel_requested_at=job.cancel_requested_at,
+            retry_of_job_id=retry_of_public_id,
             result=job.result_json,
             error=err_detail,
             created_at=job.created_at,
@@ -205,11 +213,22 @@ class MutationJobService:
             finished_at=job.finished_at,
         )
 
-    async def request_cancel_job(self, job: ApiMutationJob) -> ExternalMutationJobResponse:
+    async def request_cancel_job(
+        self,
+        job: ApiMutationJob,
+        *,
+        commit: bool = True,
+    ) -> tuple[int, ExternalMutationJobResponse]:
         """请求取消异步变更任务（使用 CAS 条件更新状态，防止覆盖并发终态）。"""
 
-        if job.status in {"succeeded", "failed", "canceled"}:
-            return await self.get_job_response(job)
+        if job.status == "canceled":
+            return 200, await self.get_job_response(job)
+        if job.status in {"succeeded", "failed"}:
+            raise AppException(
+                status_code=409,
+                code="MUTATION_JOB_NOT_CANCELABLE",
+                detail=f"状态为 {job.status} 的 Mutation 任务不能取消。",
+            )
 
         now = utc_now()
         # 1. 尝试原子将 pending 转换为 canceled
@@ -225,9 +244,9 @@ class MutationJobService:
         )
         res = await self.session.execute(stmt)
         if res.rowcount > 0:
-            await self.session.commit()
+            await self._commit_or_flush(commit)
             await self.session.refresh(job)
-            return await self.get_job_response(job)
+            return 200, await self.get_job_response(job)
 
         # 2. 若任务处于 running，原子打标 cancel_requested_at 等待 Worker 安全收敛
         stmt = (
@@ -236,10 +255,56 @@ class MutationJobService:
             .where(ApiMutationJob.status == "running")
             .values(cancel_requested_at=now)
         )
-        await self.session.execute(stmt)
-        await self.session.commit()
+        res = await self.session.execute(stmt)
+        if res.rowcount == 0:
+            await self.session.refresh(job)
+            return await self.request_cancel_job(job, commit=commit)
+        await self._commit_or_flush(commit)
         await self.session.refresh(job)
-        return await self.get_job_response(job)
+        return 202, await self.get_job_response(job)
+
+    async def enqueue_retry_job(
+        self,
+        job: ApiMutationJob,
+        *,
+        user_id: int,
+        idempotency_record_id: int | None,
+    ) -> ApiMutationJob:
+        """为可重试失败任务创建不可变的新任务，保留原始 payload 与乐观锁基线。"""
+
+        retryable = bool((job.error_json or {}).get("retryable"))
+        if job.status != "failed" or not retryable:
+            raise AppException(
+                status_code=409,
+                code="MUTATION_JOB_NOT_RETRYABLE",
+                detail="仅允许重试处于 failed 且错误标记为 retryable 的 Mutation 任务。",
+            )
+        retried = ApiMutationJob(
+            job_id=f"job-{uuid.uuid4().hex}",
+            job_type=job.job_type,
+            workspace_id=job.workspace_id,
+            target_id=job.target_id,
+            base_version_no=job.base_version_no,
+            source_hash=job.source_hash,
+            status="pending",
+            payload_json=dict(job.payload_json or {}),
+            idempotency_record_id=idempotency_record_id,
+            retry_of_job_id=job.id,
+            created_by=user_id,
+            max_attempts=job.max_attempts,
+            created_at=utc_now(),
+        )
+        self.session.add(retried)
+        await self.session.flush()
+        return retried
+
+    async def _commit_or_flush(self, commit: bool) -> None:
+        """按调用方事务边界提交或仅刷新当前 Session。"""
+
+        if commit:
+            await self.session.commit()
+        else:
+            await self.session.flush()
 
     # ------------------ Three-Phase Worker Execution ------------------
 

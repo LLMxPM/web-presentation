@@ -10,7 +10,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.dependencies_external import ExternalAuthContext, require_external_operation
 from app.db.session import get_db_session
 from app.schemas.common import PagedResponse
-from app.schemas.external_api import ExternalBatchArchiveRequest, ExternalBatchArchiveResponse
+from app.schemas.external_api import (
+    ExternalBatchArchiveRequest,
+    ExternalBatchArchiveResponse,
+    ExternalPageMetadataUpdateRequest,
+)
 from app.schemas.page import (
     PageItem,
     PageListQuery,
@@ -58,6 +62,50 @@ async def get_page(
     page = await PageService(session).get(page_id, user_id=auth.user.id)
     await auth.ensure_workspace_access(page.workspace_id, session)
     return page
+
+
+@router.patch("/pages/{page_id}", response_model=PageItem)
+async def update_page_metadata(
+    request: Request,
+    page_id: int,
+    payload: ExternalPageMetadataUpdateRequest,
+    auth: Annotated[ExternalAuthContext, Depends(require_external_operation("page.update"))],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+) -> PageItem:
+    """仅更新页面轻量元数据，页面源码仍必须通过 Mutation Job 写入。"""
+
+    page = await PageService(session).get(page_id, user_id=auth.user.id)
+    await auth.ensure_workspace_access(page.workspace_id, session)
+    payload_data = payload.model_dump(mode="json", exclude_unset=True)
+    fingerprint = IdempotencyService.calculate_request_fingerprint(
+        http_method="PATCH",
+        path=request.url.path,
+        json_data=payload_data,
+    )
+
+    async def _operation(record_id: int | None) -> tuple[int, PageItem]:
+        updated = await PageService(session).update_metadata(
+            page_id,
+            title=payload.title,
+            summary=payload.summary,
+            summary_is_set="summary" in payload.model_fields_set,
+            speaker_notes=payload.speaker_notes,
+            speaker_notes_is_set="speaker_notes" in payload.model_fields_set,
+            operator_id=auth.user.id,
+            commit=False,
+        )
+        return 200, updated
+
+    _, result = await IdempotencyService(session).execute_idempotent_operation(
+        user_id=auth.user.id,
+        workspace_id=page.workspace_id,
+        idempotency_key=idempotency_key,
+        operation="page.update",
+        fingerprint=fingerprint,
+        operation_func=_operation,
+    )
+    return result if isinstance(result, PageItem) else PageItem.model_validate(result)
 
 
 @router.get("/pages/{page_id}/source")
@@ -144,7 +192,7 @@ async def restore_page_version(
     page_id: int,
     version_no: int,
     payload: PageVersionRestoreRequest,
-    auth: Annotated[ExternalAuthContext, Depends(require_external_operation("page.update"))],
+    auth: Annotated[ExternalAuthContext, Depends(require_external_operation("page.version.restore"))],
     session: Annotated[AsyncSession, Depends(get_db_session)],
     idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
 ) -> PageItem:
@@ -173,7 +221,7 @@ async def restore_page_version(
         user_id=auth.user.id,
         workspace_id=page.workspace_id,
         idempotency_key=idempotency_key,
-        operation="page.update",
+        operation="page.version.restore",
         fingerprint=fingerprint,
         operation_func=_operation,
     )

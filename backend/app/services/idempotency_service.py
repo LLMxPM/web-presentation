@@ -226,6 +226,8 @@ class IdempotencyService:
                 status_code=409,
                 code="CONCURRENT_MUTATION_IN_PROGRESS",
                 detail="具有相同幂等键的写操作正在处理中，请稍后查询或等待完成。",
+                data={"retryable": True, "retry_after_seconds": 1},
+                headers={"Retry-After": "1"},
             )
 
         # 重放已完成的成功响应

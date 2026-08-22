@@ -10,7 +10,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.dependencies_external import ExternalAuthContext, require_external_operation
 from app.db.session import get_db_session
 from app.schemas.common import ListQuery, PagedResponse
-from app.schemas.external_api import ExternalBatchArchiveRequest, ExternalBatchArchiveResponse
+from app.schemas.external_api import (
+    ExternalBatchArchiveRequest,
+    ExternalBatchArchiveResponse,
+    ExternalComponentMetadataUpdateRequest,
+)
 from app.schemas.component import (
     WorkspaceComponentItem,
     WorkspaceComponentPublishRequest,
@@ -52,6 +56,48 @@ async def get_component(
     comp = await WorkspaceComponentService(session).get(component_id, user_id=auth.user.id)
     await auth.ensure_workspace_access(comp.workspace_id, session)
     return comp
+
+
+@router.patch("/{component_id}", response_model=WorkspaceComponentItem)
+async def update_component_metadata(
+    request: Request,
+    component_id: int,
+    payload: ExternalComponentMetadataUpdateRequest,
+    auth: Annotated[ExternalAuthContext, Depends(require_external_operation("component.update"))],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+) -> WorkspaceComponentItem:
+    """仅更新组件名称或摘要，源码和结构字段继续通过 Mutation Job 写入。"""
+
+    comp = await WorkspaceComponentService(session).get(component_id, user_id=auth.user.id)
+    await auth.ensure_workspace_access(comp.workspace_id, session)
+    payload_data = payload.model_dump(mode="json", exclude_unset=True)
+    fingerprint = IdempotencyService.calculate_request_fingerprint(
+        http_method="PATCH",
+        path=request.url.path,
+        json_data=payload_data,
+    )
+
+    async def _operation(record_id: int | None) -> tuple[int, WorkspaceComponentItem]:
+        updated = await WorkspaceComponentService(session).update_metadata(
+            component_id,
+            name=payload.name,
+            summary=payload.summary,
+            summary_is_set="summary" in payload.model_fields_set,
+            operator_id=auth.user.id,
+            commit=False,
+        )
+        return 200, updated
+
+    _, result = await IdempotencyService(session).execute_idempotent_operation(
+        user_id=auth.user.id,
+        workspace_id=comp.workspace_id,
+        idempotency_key=idempotency_key,
+        operation="component.update",
+        fingerprint=fingerprint,
+        operation_func=_operation,
+    )
+    return result if isinstance(result, WorkspaceComponentItem) else WorkspaceComponentItem.model_validate(result)
 
 
 @router.get("/{component_id}/draft")
@@ -146,7 +192,7 @@ async def restore_component_draft(
     component_id: int,
     version_no: int,
     payload: WorkspaceComponentRestoreDraftRequest,
-    auth: Annotated[ExternalAuthContext, Depends(require_external_operation("component.update"))],
+    auth: Annotated[ExternalAuthContext, Depends(require_external_operation("component.version.restore_draft"))],
     session: Annotated[AsyncSession, Depends(get_db_session)],
     idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
 ) -> WorkspaceComponentItem:
@@ -175,7 +221,7 @@ async def restore_component_draft(
         user_id=auth.user.id,
         workspace_id=comp.workspace_id,
         idempotency_key=idempotency_key,
-        operation="component.update",
+        operation="component.version.restore_draft",
         fingerprint=fingerprint,
         operation_func=_operation,
     )
@@ -220,7 +266,7 @@ async def archive_component(
 async def restore_component(
     request: Request,
     component_id: int,
-    auth: Annotated[ExternalAuthContext, Depends(require_external_operation("component.update"))],
+    auth: Annotated[ExternalAuthContext, Depends(require_external_operation("component.restore"))],
     session: Annotated[AsyncSession, Depends(get_db_session)],
     idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
 ) -> dict[str, str]:
@@ -243,7 +289,7 @@ async def restore_component(
         user_id=auth.user.id,
         workspace_id=comp.workspace_id,
         idempotency_key=idempotency_key,
-        operation="component.update",
+        operation="component.restore",
         fingerprint=fingerprint,
         operation_func=_operation,
     )

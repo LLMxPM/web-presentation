@@ -113,12 +113,7 @@ POST /api/v1/jobs/mutations/{job_id}/cancel
 
 ## 6. 已知契约问题
 
-以下问题由主仓负责定稿，CLI 不得自行猜测：
-
-1. `page.update` 的 operation 描述与当前页面实际恢复路由语义不完全一致，页面元数据更新是否需要新增明确路由待确认。
-2. `component.update` 当前主要用于恢复历史版本到草稿，组件元数据更新是否需要新增明确路由待确认。
-3. `/guides` 当前主要提供 operation 索引；精确参数 Schema 的公开形态需要版本化设计。
-4. 构建产物下载地址的同源、短期有效期和 PAT 转发规则需要先冻结。
+页面/组件安全元数据 PATCH、版本化 Guides 详情，以及 Mutation 取消、人工重试和幂等组合语义已经冻结。剩余问题是构建产物下载地址的同源、短期有效期、PAT 转发和持久化 Worker 契约；冻结前 CLI 不提供 Build 命令。
 
 这些问题的详细记录和 agent-kit 阻塞关系见 [External API v1 契约文档](./reference/external-agent-api.md)。
 
@@ -138,4 +133,3 @@ uv run --project packages/cli wp --help
 ```
 
 两边联调时，先锁定目标主仓版本，再运行 agent-kit 的 CLI 适配测试和真实 External API smoke；不要只依据单边文档判断兼容性。
-

@@ -8,9 +8,19 @@ from typing import Any
 class AppException(Exception):
     """通用业务异常，包含 HTTP 状态码、业务码和面向前端的提示信息。"""
 
-    def __init__(self, status_code: int, code: str, detail: str, data: dict[str, Any] | None = None) -> None:
+    def __init__(
+        self,
+        status_code: int,
+        code: str,
+        detail: str,
+        data: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
+    ) -> None:
+        """初始化业务异常，并允许向客户端返回重试等协议头。"""
+
         self.status_code = status_code
         self.code = code
         self.detail = detail
         self.data = data
+        self.headers = headers
         super().__init__(detail)

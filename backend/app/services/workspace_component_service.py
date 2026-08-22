@@ -202,6 +202,32 @@ class WorkspaceComponentService:
         reloaded = await self.repository.get_by_id(component.id)
         return await self._to_item(reloaded)
 
+    async def update_metadata(
+        self,
+        component_id: int,
+        *,
+        name: str | None,
+        summary: str | None,
+        summary_is_set: bool,
+        operator_id: int,
+        commit: bool = True,
+    ) -> WorkspaceComponentItem:
+        """仅更新轻量元数据，不触发源码、previewSchema 或依赖校验。"""
+
+        component = await self._get_component_or_raise(component_id)
+        await self.workspace_service.ensure_access(component.workspace_id, user_id=operator_id)
+        if name is not None:
+            component.name = name
+        if summary_is_set:
+            component.summary = summary
+        component.updated_by = operator_id
+        if commit:
+            await self.session.commit()
+        else:
+            await self.session.flush()
+        reloaded = await self.repository.get_by_id(component.id)
+        return await self._to_item(reloaded)
+
     async def publish(
         self,
         component_id: int,

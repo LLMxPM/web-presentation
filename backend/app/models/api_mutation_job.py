@@ -21,6 +21,7 @@ class ApiMutationJob(Base):
         Index("ix_mutation_jobs_status_lease", "status", "lease_expires_at"),
         Index("ix_mutation_jobs_workspace_target", "workspace_id", "target_id"),
         Index("ix_mutation_jobs_claim", "status", "next_attempt_at"),
+        Index("ix_mutation_jobs_retry_of", "retry_of_job_id"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -36,6 +37,9 @@ class ApiMutationJob(Base):
     error_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     idempotency_record_id: Mapped[int | None] = mapped_column(
         ForeignKey("api_idempotency_records.id", ondelete="CASCADE"), unique=True, nullable=True
+    )
+    retry_of_job_id: Mapped[int | None] = mapped_column(
+        ForeignKey("api_mutation_jobs.id", ondelete="SET NULL"), nullable=True
     )
     created_by: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)

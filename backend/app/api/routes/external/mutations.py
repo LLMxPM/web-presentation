@@ -78,7 +78,7 @@ async def create_page_edits_mutation(
     request: Request,
     response: Response,
     payload: ExternalPageApplyEditsMutationRequest,
-    auth: Annotated[ExternalAuthContext, Depends(require_external_operation("jobs.mutation.page.create"))],
+    auth: Annotated[ExternalAuthContext, Depends(require_external_operation("jobs.mutation.page.edit"))],
     session: Annotated[AsyncSession, Depends(get_db_session)],
     idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
 ) -> ExternalMutationJobResponse:
@@ -108,7 +108,7 @@ async def create_page_edits_mutation(
         user_id=auth.user.id,
         workspace_id=page.workspace_id,
         idempotency_key=idempotency_key,
-        operation="jobs.mutation.page.create",
+        operation="jobs.mutation.page.edit",
         fingerprint=fingerprint,
         operation_func=_operation,
     )
@@ -163,7 +163,7 @@ async def create_component_edits_mutation(
     request: Request,
     response: Response,
     payload: ExternalComponentApplyEditsMutationRequest,
-    auth: Annotated[ExternalAuthContext, Depends(require_external_operation("jobs.mutation.component.create"))],
+    auth: Annotated[ExternalAuthContext, Depends(require_external_operation("jobs.mutation.component.edit"))],
     session: Annotated[AsyncSession, Depends(get_db_session)],
     idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
 ) -> ExternalMutationJobResponse:
@@ -195,7 +195,7 @@ async def create_component_edits_mutation(
         user_id=auth.user.id,
         workspace_id=comp.workspace_id,
         idempotency_key=idempotency_key,
-        operation="jobs.mutation.component.create",
+        operation="jobs.mutation.component.edit",
         fingerprint=fingerprint,
         operation_func=_operation,
     )
@@ -216,10 +216,71 @@ async def get_mutation_job_status(
 
 @router.post("/{job_id}/cancel", response_model=ExternalMutationJobResponse)
 async def cancel_mutation_job(
+    request: Request,
+    response: Response,
     context_and_job: Annotated[tuple[ExternalAuthContext, ApiMutationJob], Depends(require_dynamic_mutation_operation("cancel"))],
     session: Annotated[AsyncSession, Depends(get_db_session)],
+    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
 ) -> ExternalMutationJobResponse:
     """请求取消异步 Mutation 任务（动态 Scope 鉴权）。"""
 
-    _, job = context_and_job
-    return await MutationJobService(session).request_cancel_job(job)
+    auth, job = context_and_job
+    operation = f"jobs.mutation.{'page' if 'page' in job.job_type else 'component'}.cancel"
+    fingerprint = IdempotencyService.calculate_request_fingerprint(
+        http_method="POST",
+        path=request.url.path,
+        json_data={"job_id": job.job_id},
+    )
+
+    async def _operation(record_id: int | None) -> tuple[int, ExternalMutationJobResponse]:
+        return await MutationJobService(session).request_cancel_job(job, commit=False)
+
+    status_code, result = await IdempotencyService(session).execute_idempotent_operation(
+        user_id=auth.user.id,
+        workspace_id=job.workspace_id,
+        idempotency_key=idempotency_key,
+        operation=operation,
+        fingerprint=fingerprint,
+        operation_func=_operation,
+    )
+    response.status_code = status_code
+    return result if isinstance(result, ExternalMutationJobResponse) else ExternalMutationJobResponse.model_validate(result)
+
+
+@router.post("/{job_id}/retry", response_model=ExternalMutationJobResponse)
+async def retry_mutation_job(
+    request: Request,
+    response: Response,
+    context_and_job: Annotated[tuple[ExternalAuthContext, ApiMutationJob], Depends(require_dynamic_mutation_operation("retry"))],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+) -> ExternalMutationJobResponse:
+    """为可重试失败任务创建新的 Mutation Job。"""
+
+    auth, job = context_and_job
+    operation = f"jobs.mutation.{'page' if 'page' in job.job_type else 'component'}.retry"
+    fingerprint = IdempotencyService.calculate_request_fingerprint(
+        http_method="POST",
+        path=request.url.path,
+        json_data={"job_id": job.job_id},
+    )
+
+    async def _operation(record_id: int | None) -> tuple[int, ExternalMutationJobResponse]:
+        service = MutationJobService(session)
+        retried = await service.enqueue_retry_job(
+            job,
+            user_id=auth.user.id,
+            idempotency_record_id=record_id,
+        )
+        return 202, await service.get_job_response(retried)
+
+    status_code, result = await IdempotencyService(session).execute_idempotent_operation(
+        user_id=auth.user.id,
+        workspace_id=job.workspace_id,
+        idempotency_key=idempotency_key,
+        operation=operation,
+        fingerprint=fingerprint,
+        operation_func=_operation,
+    )
+    response.status_code = status_code
+    return result if isinstance(result, ExternalMutationJobResponse) else ExternalMutationJobResponse.model_validate(result)
