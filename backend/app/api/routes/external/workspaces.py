@@ -37,7 +37,7 @@ async def list_authorized_workspaces(
         .order_by(Workspace.id.asc())
     )
     workspaces = (await session.scalars(stmt)).all()
-    return [await WorkspaceService(session)._to_item(ws, current_user_id=auth.user.id) for ws in workspaces]
+    return [await WorkspaceService(session)._to_item(ws) for ws in workspaces]
 
 
 @router.get("/{workspace_id}", response_model=WorkspaceItem)

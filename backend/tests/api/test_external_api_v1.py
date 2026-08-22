@@ -55,17 +55,22 @@ async def test_external_api_auth_and_scope_enforcement(client: AsyncClient) -> N
 
     headers = {"Authorization": f"Bearer {token}", "X-Workspace-ID": str(ws_id)}
 
-    # 1. 正常只读请求 -> 200 OK
+    # 1. 查询 PAT 授权的工作空间 -> 200 OK
+    workspace_resp = await client.get("/api/v1/workspaces", headers={"Authorization": f"Bearer {token}"})
+    assert workspace_resp.status_code == 200
+    assert [item["id"] for item in workspace_resp.json()] == [ws_id]
+
+    # 2. 正常只读请求 -> 200 OK
     resp = await client.get("/api/v1/projects", headers=headers)
     assert resp.status_code == 200
     assert resp.json()["total"] == 0
 
-    # 2. 未授权写操作 (无 project:write) -> 必须被拦截 403 INSUFFICIENT_SCOPE
+    # 3. 未授权写操作 (无 project:write) -> 必须被拦截 403 INSUFFICIENT_SCOPE
     write_resp = await client.post("/api/v1/projects", json={"name": "Forbidden Project"}, headers=headers)
     assert write_resp.status_code == 403
     assert write_resp.json()["code"] == "INSUFFICIENT_SCOPE"
 
-    # 3. 访问未授权工作空间 -> 403 WORKSPACE_NOT_AUTHORIZED
+    # 4. 访问未授权工作空间 -> 403 WORKSPACE_NOT_AUTHORIZED
     bad_ws_headers = {"Authorization": f"Bearer {token}", "X-Workspace-ID": "99999"}
     bad_ws_resp = await client.get("/api/v1/projects", headers=bad_ws_headers)
     assert bad_ws_resp.status_code == 403
