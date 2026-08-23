@@ -90,9 +90,8 @@ const emit = defineEmits<{
 
 const toolArgs = computed(() => props.requirement.tool_execution?.['tool_args'] ?? {})
 const toolName = computed(() => resolveLogicalToolName(props.requirement.tool_name || '未知工具', toolArgs.value))
-const toolSourceName = computed(() => props.requirement.member_agent_name || '')
-const confirmTitle = computed(() => `允许执行 ${toolSourceName.value ? `${toolSourceName.value} · ` : ''}${toolName.value} 吗？`)
-const confirmSubtitle = computed(() => toolSourceName.value ? `来自 ${toolSourceName.value} 的工具正在等待你的确认。` : '该工具正在等待你的确认。')
+const confirmTitle = computed(() => `允许执行 ${toolName.value} 吗？`)
+const confirmSubtitle = computed(() => '该工具正在等待你的确认。')
 const archiveSummary = computed(() => {
   if (props.requirement.tool_name !== 'archive_entity' || typeof toolArgs.value !== 'object' || toolArgs.value === null) {
     return ''

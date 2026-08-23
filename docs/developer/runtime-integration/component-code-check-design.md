@@ -59,7 +59,7 @@
 
 当前组件已经具备候选源码的 Runtime/Vite 编译 check，但缺少浏览器真实渲染和布局诊断；同时，自动 check 只接入了 AI 结构化源码编辑，没有完整覆盖 AI 新建组件和修改 `previewSchema`。
 
-建议复用现有 `CodeCheckService`、`ComponentPreviewService`、Runtime diagnostics 工作区池和共享 Playwright 池，增加组件渲染诊断层，并由三类 AI 写工具和 `validate_entity(component.check)` 复用同一个校验内核。写工具在真正写入前必须自动调用；`validate_entity` 提供按需只读检查。check 结果直接返回给模型，让模型根据稳定诊断码、场景和修复建议重试。
+建议复用现有 `CodeCheckService`、`ComponentPreviewService`、Runtime diagnostics 工作区池和共享 Playwright 池，增加组件渲染诊断层，并由三类 AI 写工具和 `validate_entity(component.check)` 复用同一个校验内核。写工具在真正写入前必须自动调用；`validate_entity` 提供按需只读检查。内部 check 结果先经过共享格式化层，再让模型根据稳定诊断码、场景和受控 facts 重试。
 
 ## 3. 当前体系梳理
 
@@ -293,6 +293,14 @@ flowchart TD
 
 ## 6. 面向模型的结果契约
 
+### 6.0 内部完整结果与模型侧精简结果
+
+`CodeCheckService`、`ComponentValidationService` 和 Runtime 之间继续使用下文的完整 `ComponentValidationResult`，其中可以保留完整 `diagnostics`、`scenarios`、`facts` 和布局分析，供内部编排、日志与契约测试使用。共享格式化层只在 AI 工具返回模型前执行，不改变这些内部结果，也不修改 Runtime 诊断协议。
+
+写入/修改工具只把校验部分转换为短文本，保留对象 ID、版本、`success`、`applied` 和 hash 等业务字段；不会回传原始 `diagnostics`、完整 `layout_analysis`、全量 scenario、源码 diff 或重复的 validation。页面和组件源码写入工具都不向模型返回 `canonical_diff`，避免把已由模型提交的源码变化重复回传；该字段仍可在服务端内部校验链中使用。warning/error 合计最多返回 10 条，超出部分标记省略数量。
+
+`validate_entity` 的页面/组件 check 返回短文本而非结构化完整结果：`detail=false` 保留摘要、code、message、定位以及组件的 scenario/profile；`detail=true` 仍最多返回 10 条问题，并增加受控 facts 和布局数值。两种模式都不返回正常布局项、完整浏览器几何数据或原始 JSON 清单。资源差异预览继续使用现有结构化 envelope。
+
 ### 6.1 顶层结果
 
 建议新增正式 Pydantic Schema，供三类 AI 写工具共用：
@@ -321,6 +329,8 @@ flowchart TD
   "canonical_diff": null
 }
 ```
+
+上例中的 `canonical_diff` 属于服务端内部完整校验结果字段，不代表页面或组件源码写入工具会向模型回传该字段。
 
 状态固定为：
 
@@ -387,7 +397,7 @@ flowchart TD
 
 新建工具先组装完整的临时组件描述，包括源码、`previewSchema`、组件类型、引用名和依赖上下文，再创建 source preview artifact。
 
-- check failed：不创建草稿，工具返回 `applied=false` 和完整 validation。
+- check failed：不创建草稿，工具返回 `applied=false` 和精简 validation 文本；完整 validation 只保留在 Backend 内部。
 - check unavailable：不创建草稿，返回 `retryable=true`，由智能体稍后原样重试。
 - passed 或 passed_with_warnings：允许创建；warnings 随成功结果返回，提示模型是否需要继续优化。
 
@@ -398,10 +408,10 @@ flowchart TD
 沿用现有 `apply_component_edits` 的候选 diff 机制，但把 check 从仅 compile 升级为完整三层：
 
 1. 读取当前组件快照。
-2. 应用结构化 edits，得到完整候选源码和 canonical diff。
+2. 应用结构化 edits，得到完整候选源码；canonical diff 仅作为服务端内部校验信息生成。
 3. 使用当前 `previewSchema` 执行完整 check。
 4. 通过后，在写事务中复核原始源码 hash/版本，避免检查期间发生并发修改。
-5. 写入成功后返回 canonical diff、validation 摘要和 warnings。
+5. 写入成功后返回 validation 短文本和 warnings，不向模型回传源码 diff。
 
 失败时不保存 edits，模型根据诊断重新生成 edits；不应把失败候选写成草稿再让模型修复。
 
@@ -415,7 +425,7 @@ schema 修改不是普通元数据更新，应从通用组件元数据写工具�
 
 ### 7.4 工具返回封装
 
-三类工具保持一致的返回语义：
+三类工具保持一致的业务返回语义；其中 `validation` 是模型侧精简短文本，完整结果只在 Backend 内部保留：
 
 ```json
 {
@@ -423,13 +433,7 @@ schema 修改不是普通元数据更新，应从通用组件元数据写工具�
   "applied": false,
   "operation": "create_component",
   "component": null,
-  "validation": {
-    "status": "failed",
-    "valid": false,
-    "retryable": false,
-    "summary": "组件未创建：默认场景渲染失败。",
-    "diagnostics": []
-  }
+  "validation": "检查结论：failed\n摘要：组件未创建：默认场景渲染失败。\n错误：\n- [COMPONENT_RENDER_EMPTY] default 没有可见的组件根内容。\n下一步：如需查看诊断明细，请调用 validate_entity，并设置 detail=true。"
 }
 ```
 
@@ -437,8 +441,8 @@ schema 修改不是普通元数据更新，应从通用组件元数据写工具�
 
 AI 系统提示应明确：
 
-- `valid=false/retryable=false`：阅读 diagnostics，修改候选后重试。
-- `status=unavailable/retryable=true`：不要修改候选，稍后原样重试或向用户说明暂不可检查。
+- `validation` 中出现 error/warning 时，根据 code、message、定位、scenario 和 profile 修改候选；需要更多上下文时，对相同目标和候选调用 `validate_entity(detail=true)`。
+- `unavailable` 或提示基础设施不可用时：不要修改候选，稍后原样重试或向用户说明暂不可检查。
 - `passed_with_warnings`：写入已经发生；判断 warning 是否影响用户目标，必要时继续修改。
 
 ### 7.5 `validate_entity(component.check)` 独立入口
@@ -452,10 +456,10 @@ AI 系统提示应明确：
 | edits | `component_id` + 结构化 edits，可选候选 `preview_schema` | 预检基于当前源码形成的编辑结果 |
 | transient | 创建所需的工作空间、源码、schema、类型等完整候选信息 | 在尚无 `component_id` 时预检新组件 |
 
-调用结果直接返回与写工具相同的 `ComponentValidationResult`，但额外明确：
+调用结果返回与写工具一致的精简校验文本，但额外明确：
 
 - `applied=false` 固定成立，调用不会创建或修改组件。
-- 返回 `candidate_hash`、`validation_profile_version` 和 canonical diff，便于模型确认检查的具体候选与环境。
+- 写工具之外，仍可从问题文本读取 code、message、定位、scenario/profile；使用 `detail=true` 时读取受控 facts 和布局数值。内部完整结果仍保留 `candidate_hash`、`validation_profile_version` 和 canonical diff，便于日志与服务端确认具体候选与环境。
 - 默认执行 contract、compile、render 全部阶段，不允许模型只执行 render 而跳过依赖阶段。
 - warning、failed 和 unavailable 的语义与自动入口完全一致。
 - 临时 artifact 在调用结束后清理，不能把 artifact ID 当成持久检查记录。
@@ -579,7 +583,7 @@ AI 系统提示应明确：
 - Backend 统一组装候选、执行三层校验、决定是否写入并返回结构化结果。
 - Runtime 负责完整 artifact 的编译与组件预览执行，并提供可稳定等待的运行信号。
 - Playwright 诊断负责收集真实运行错误和高置信度布局事实，不判断业务审美。
-- 模型直接消费写工具返回的 diagnostics 形成修复闭环，无需重复调用独立检查工具。
+- 模型直接消费写工具返回的 validation 短文本形成修复闭环；需要受控明细时调用 `validate_entity(detail=true)`，无需重复执行无诊断目的的独立检查。
 - Editor 继续承担用户预览和报错呈现，不新增本方案专用的 check 交互。
 
 最终闭环应是：模型提交完整候选，系统在不污染已有组件的前提下真实编译和渲染，失败时返回可定位、可修复的事实，通过后再写入，并把非阻断布局问题继续反馈给模型。

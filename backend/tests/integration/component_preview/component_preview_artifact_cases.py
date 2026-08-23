@@ -2,7 +2,15 @@
 
 from __future__ import annotations
 
-from tests.integration.component_preview.component_preview_cases import *  # noqa: F403
+from httpx import AsyncClient
+
+from tests.integration.component_preview.component_preview_cases import (
+    CONTENT_COMPONENT_SIZE_PREVIEW_SCHEMA,
+    create_project,
+    create_workspace,
+    publish_component,
+    upload_icon_asset,
+)
 
 
 async def test_page_module_dependencies_should_include_component_versions_and_runtime_public_modules(
@@ -515,7 +523,7 @@ async def test_saved_component_preview_should_use_default_preview_options(
     assert config_bundle["app"]["app"]["page"] == {
         "width": 1920,
         "height": 1080,
-        "baseFontSize": "20px",
+        "baseFontSize": "24px",
         "iconDefaultStrokeWidth": 2,
     }
     assert config_bundle["icons"] == {

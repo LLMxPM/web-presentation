@@ -213,9 +213,6 @@ function createRequirement(overrides: Partial<AgentPendingRequirement> = {}): Ag
     kind: 'confirmation',
     run_id: 'run-1',
     session_id: 'session-1',
-    member_agent_id: null,
-    member_agent_name: null,
-    member_run_id: null,
     tool_name: 'apply_page_edits',
     tool_execution: {
       tool_name: 'apply_page_edits',

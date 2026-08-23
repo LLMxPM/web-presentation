@@ -147,6 +147,37 @@ def test_generic_deferred_result_should_keep_mutation_envelope() -> None:
     assert updated["target"] == {"id": 91, "resource_type": "page"}
 
 
+def test_generic_deferred_validation_result_should_match_sync_compact_shape() -> None:
+    """页面 deferred 回灌应与同步工具一样只保存短文本校验。"""
+
+    result = normalize_page_mutation_result(
+        operation="apply_page_edits",
+        tool_name="update_entity",
+        result={
+            "success": True,
+            "applied": True,
+            "page_id": 91,
+            "version_no": 4,
+            "canonical_diff": "@@ ...",
+            "diagnostics": [{
+                "severity": "warning",
+                "code": "PAGE_RENDER_BOTTOM_OVERFLOW",
+                "message": "页面底部超出画布 42px。",
+            }],
+            "layout_analysis": {"overflows": []},
+            "code_check_summary": "代码检查通过。",
+        },
+        page_id=91,
+    )
+
+    data = result["data"]
+    assert isinstance(data["validation"], str)
+    assert "PAGE_RENDER_BOTTOM_OVERFLOW" in data["validation"]
+    assert "diagnostics" not in data
+    assert "layout_analysis" not in data
+    assert "canonical_diff" not in data
+
+
 def test_recoverable_deferred_result_should_not_be_wrapped() -> None:
     """校验失败结果应原样返回，避免被成功 mutation envelope 覆盖。"""
 

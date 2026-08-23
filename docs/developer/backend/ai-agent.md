@@ -25,7 +25,6 @@ AI 会话、run、事件、消息、工具调用和 HITL 状态写入 Backend �
 | `ai_agent_run_events` | SSE 事件事实源，按 `run_id + event_index` 单调排序 |
 | `ai_agent_tool_calls` | 可展示工具调用详情 |
 | `ai_agent_requirements` | pending/resolved HITL 动作 |
-| `ai_agent_member_runs` | 内容助手自委派子运行记录（沿用内部表名） |
 | `ai_agent_image_attachments` | 会话图片附件和 run 绑定 |
 | `ai_image_generation_jobs` | 图片生成/编辑持久化任务、租约、进度、取消和输出关联 |
 
@@ -44,11 +43,11 @@ AI 会话、run、事件、消息、工具调用和 HITL 状态写入 Backend �
 
 `ask_user` 是结构化提问工具，前端回放只解析结构化 JSON 格式。不要再依赖旧的项目符号文本格式。
 
-内容助手会话固定工作空间，不保存项目或页面 scope。会话偏好支持跟随路由、固定项目和工作空间级三种焦点模式，以及全部项目或显式项目集合两种工作范围；偏好修改只影响后续 Run。每个 Run 将 workspace/project/page/component/source、工作集和 `focus_version` 固化到快照，确认恢复、页面队列、图片任务和自委派均从原 Run 恢复，不能接收新路由焦点。
+内容助手会话固定工作空间，不保存项目或页面 scope。会话偏好支持跟随路由、固定项目和工作空间级三种焦点模式，以及全部项目或显式项目集合两种工作范围；偏好修改只影响后续 Run。每个 Run 将 workspace/project/page/component/source、工作集和 `focus_version` 固化到快照，确认恢复、页面队列和图片任务均从原 Run 恢复，不能接收新路由焦点。
 
 项目工作集限制项目、页面及项目级 action；工作空间组件、资源、主题和样式不受其过滤。焦点外读取允许，焦点外写入按工具调用动态确认且不缓存授权。默认上下文同时注入工作空间、焦点对象和工作集项目的名称与 ID，名称用于模型理解和界面展示，ID 仍是工具调用与权限校验依据；不加载页面源码、完整样式、建议组件或建议资源，需要时通过 `list_entities` 罗列或搜索集合，通过 `get_entity` 读取详情、共享配置、源码、历史版本和依赖。所有业务查询只返回 active 对象，归档内容不能由内容助手读取或恢复。创建工具按 `new/copy/upload` 区分来源，校验工具不落库，生命周期命令当前只开放组件发布。Run 输入快照和 `run.focus.snapshot` 事件保存同一份带名称摘要，历史时间线据此在每轮消息开头恢复焦点与工作范围。`get_operation_guide` 通过 `operation_key` 返回精确模型操作说明，不参与授权、审批或 run 恢复。
 
-平台目录只登记 `agent-coordinator` 一个助手。`delegate_task_to_self` 会创建同一助手身份的隔离子运行，不接收成员 ID，复用同一个 `agent_coordinator` 模型槽位和工作空间权限；子运行不再披露自委派工具，避免递归委派。历史 `component_manager` 与 `resource_manager` 模型槽位不再开放。
+平台目录只登记 `agent-coordinator` 一个助手，不再创建隔离子运行或披露自委派工具。历史 `component_manager` 与 `resource_manager` 模型槽位不再开放。
 
 ## 诊断 CLI
 

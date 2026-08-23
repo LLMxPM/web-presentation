@@ -35,7 +35,6 @@ const baseProject: ProjectItem = {
   show_pdf_export_button: true,
   menu_mode: 'preview',
   theme_key: null,
-  theme_config_yaml: '',
   style_spec_markdown: '',
   routed_page_count: 2,
   total_page_count: 5,

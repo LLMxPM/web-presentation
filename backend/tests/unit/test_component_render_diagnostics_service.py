@@ -96,7 +96,7 @@ def test_component_validation_profiles_should_be_type_specific_and_project_indep
     assert page_options.placement.height_mode == "percent"
     assert content_key == "component-content-default.v1"
     assert content_options.placement.width_value == 960
-    assert content_options.page.base_font_size == "20px"
+    assert content_options.page.base_font_size == "24px"
     assert atomic_key == "component-atomic-default.v1"
     assert atomic_options.placement.width_value == 640
 

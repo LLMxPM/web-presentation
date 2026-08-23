@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from tests.api.catalog.catalog_cases import *  # noqa: F403
+from httpx import AsyncClient
+from sqlalchemy import select
+
+from tests.api.catalog.catalog_cases import _create_catalog_project, _create_catalog_workspace
 
 
 async def test_page_save_should_build_component_index_for_each_version(authenticated_client: AsyncClient) -> None:

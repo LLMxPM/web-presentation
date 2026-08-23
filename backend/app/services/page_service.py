@@ -170,6 +170,8 @@ class PageService:
         page_id: int,
         payload: PageCopyToProjectRequest,
         operator_id: int,
+        *,
+        commit: bool = True,
     ) -> PageItem:
         """将当前页面复制到同工作空间内的启用项目，目标可为源项目。"""
 
@@ -219,7 +221,10 @@ class PageService:
             Page,
             CODE_PREFIX_PAGE,
             write_page,
+            commit=commit,
         )
+        if not commit:
+            await self.session.flush()
         await self.session.refresh(page_model)
         return await self.get(page_model.id)
 
@@ -288,6 +293,36 @@ class PageService:
         await self.session.refresh(page_model)
         return await self._to_item(page_model)
 
+    async def update_metadata(
+        self,
+        page_id: int,
+        *,
+        title: str | None,
+        summary: str | None,
+        summary_is_set: bool,
+        speaker_notes: str | None,
+        speaker_notes_is_set: bool,
+        operator_id: int,
+        commit: bool = True,
+    ) -> PageItem:
+        """仅更新页面轻量元数据，不创建源码版本或触发内容校验。"""
+
+        page_model = await self._get_page_or_raise(page_id)
+        await self._ensure_page_access(page_model, user_id=operator_id)
+        if title is not None:
+            page_model.title = title
+        if summary_is_set:
+            page_model.summary = summary
+        if speaker_notes_is_set:
+            page_model.speaker_notes = self._normalize_optional_text(speaker_notes)
+        page_model.updated_by = operator_id
+        if commit:
+            await self.session.commit()
+        else:
+            await self.session.flush()
+        await self.session.refresh(page_model)
+        return await self._to_item(page_model)
+
     async def list_versions(self, page_id: int, *, user_id: int | None = None) -> list[PageVersionListItem]:
         """返回页面的完整版本历史，最新版本排在最前。"""
 
@@ -309,12 +344,17 @@ class PageService:
         page_id: int,
         version_no: int,
         payload: PageSnapshotCreateRequest,
+        *,
+        commit: bool = True,
     ) -> PageVersionContent:
         """将指定版本标记为重点快照。"""
 
         page_model = await self._get_page_or_raise(page_id)
         snapshot = await self.version_service.create_snapshot(page_model, version_no, payload.snapshot_name)
-        await self.session.commit()
+        if commit:
+            await self.session.commit()
+        else:
+            await self.session.flush()
         return snapshot
 
     async def restore_version(
@@ -323,6 +363,8 @@ class PageService:
         version_no: int,
         payload: PageVersionRestoreRequest,
         operator_id: int,
+        *,
+        commit: bool = True,
     ) -> PageItem:
         """恢复历史版本为最新版本，并返回最新页面详情。"""
 
@@ -330,17 +372,23 @@ class PageService:
         await self._ensure_page_access(page_model, user_id=operator_id)
         await self.version_service.restore_version(page_model, version_no, operator_id, payload.change_note)
         page_model.updated_by = operator_id
-        await self.session.commit()
+        if commit:
+            await self.session.commit()
+        else:
+            await self.session.flush()
         await self.session.refresh(page_model)
         return await self._to_item(page_model)
 
-    async def delete(self, page_id: int, *, user_id: int) -> None:
+    async def delete(self, page_id: int, *, user_id: int, commit: bool = True) -> None:
         """对当前用户可访问页面资源执行软删除。"""
 
         page_model = await self._get_page_or_raise(page_id)
         await self._ensure_page_access(page_model, user_id=user_id)
         page_model.deleted_at = utc_now()
-        await self.session.commit()
+        if commit:
+            await self.session.commit()
+        else:
+            await self.session.flush()
 
     async def get_current_component_index(self, page_id: int, *, user_id: int | None = None) -> PageCurrentComponentIndex:
         """读取页面当前版本的组件索引信息，供详情页快速展示。"""

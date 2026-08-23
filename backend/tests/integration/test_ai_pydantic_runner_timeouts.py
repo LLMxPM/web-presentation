@@ -15,8 +15,6 @@ from app.ai.platform_runtime import PlatformAgentRuntimeStore
 from app.ai.pydantic_runner import PydanticAgentRunner
 from app.core.exceptions import AppException
 from app.db.session import get_session_factory
-from app.models.ai_agent_runtime import AiAgentRun
-from app.schemas.agent import AgentRunEvent
 from tests.integration.test_ai_pydantic_runner_smoke import (
     _collect_runner_events,
     _create_workspace_session,
@@ -121,91 +119,6 @@ async def test_pydantic_runner_should_allow_tool_stream_to_exceed_model_idle_tim
     assert events[-1].event == "run.completed"
 
 
-async def test_pydantic_runner_should_refresh_tool_timeout_from_member_events(
-    authenticated_client: AsyncClient,
-) -> None:
-    """成员事件持续写入父 run 时，应刷新工具等待计时并允许委派继续完成。"""
-
-    run_id = "pydantic-runner-member-activity-heartbeat"
-
-    async def stream_function(messages: list[Any], info: AgentInfo) -> AsyncIterator[str | dict[int, DeltaToolCall]]:
-        """首次请求带成员心跳的慢工具，收到结果后输出最终答复。"""
-
-        _ = info
-        if _latest_tool_return(messages) is not None:
-            yield "成员任务已完成。"
-            return
-        yield {
-            0: DeltaToolCall(
-                name="member_activity_tool",
-                json_args="{}",
-                tool_call_id="tool-member-activity-heartbeat",
-            )
-        }
-
-    async def member_activity_tool() -> str:
-        """模拟成员助手在长任务期间持续向父 run 写入活动事件。"""
-
-        async with get_session_factory()() as member_session:
-            member_store = PlatformAgentRuntimeStore(member_session, user_id=1)
-            parent_run = await member_session.get(AiAgentRun, run_id)
-            assert parent_run is not None
-            for index in range(5):
-                await asyncio.sleep(0.03)
-                await member_store.append_event(
-                    parent_run,
-                    AgentRunEvent(
-                        event="member.message.delta",
-                        run_id=run_id,
-                        session_id=parent_run.session_id,
-                        content=f"成员进度 {index + 1}",
-                        data={
-                            "member_run_id": "member-run-heartbeat",
-                            "member_agent_id": "agent-coordinator",
-                        },
-                    ),
-                )
-        return "成员工具结果"
-
-    _, session_id, scope = await _create_workspace_session(
-        authenticated_client,
-        workspace_name="Pydantic Runner 成员心跳工作空间",
-        session_name="Pydantic Runner 成员心跳会话",
-    )
-    model = FunctionModel(stream_function=stream_function)
-
-    async with get_session_factory()() as db_session:
-        store = PlatformAgentRuntimeStore(db_session, user_id=1)
-        run_start = await store.start_run(
-            session_id=session_id,
-            agent_id="agent-coordinator",
-            scope=scope,
-            run_id=run_id,
-            message="执行带进度的成员任务。",
-            image_attachment_ids=[],
-        )
-        events = await _collect_runner_events(
-            PydanticAgentRunner(
-                store,
-                stream_idle_timeout_seconds=0.2,
-                tool_stream_idle_timeout_seconds=0.08,
-            ).stream_run(
-                run_model=run_start.run_model,
-                agent_id="agent-coordinator",
-                model=model,
-                model_settings={},
-                runtime_context=_runtime_context(scope),
-                message="执行带进度的成员任务。",
-                tools=[Tool(member_activity_tool, name="member_activity_tool")],
-            )
-        )
-        completed_run = await store.get_latest_run_model(session_id=session_id, agent_id="agent-coordinator")
-
-    assert completed_run is not None
-    assert completed_run.status == "completed"
-    assert completed_run.content == "成员任务已完成。"
-    assert [event.event for event in events].count("member.message.delta") == 5
-    assert events[-1].event == "run.completed"
 
 
 async def test_pydantic_runner_should_fail_when_tool_stream_exceeds_own_idle_timeout(

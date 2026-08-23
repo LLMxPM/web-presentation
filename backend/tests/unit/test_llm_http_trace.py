@@ -7,7 +7,6 @@ from pathlib import Path
 
 import httpx
 import pytest
-
 from app.ai.llm_http_trace import (
     build_llm_http_trace_client,
     build_llm_http_trace_hooks,

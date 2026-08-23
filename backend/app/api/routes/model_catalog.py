@@ -62,6 +62,7 @@ async def list_chat_model_catalog(
             provider_key=item.provider_key,
             model_id=item.model_id,
             name=item.name,
+            protocol_key=item.protocol_key,
             family=item.family,
             status=item.status,
             release_date=item.release_date,

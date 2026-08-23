@@ -9,7 +9,7 @@ import {
   isRunTerminalForEntitySummary,
   mergeEntityChanges,
 } from '@/components/agent/agent-entity-change-summary'
-import type { AgentMemberRunItem, AgentTimelineItem } from '@/types/api'
+import type { AgentTimelineItem } from '@/types/api'
 
 /**
  * 构造最小时间线项。
@@ -124,102 +124,6 @@ describe('agent-entity-change-summary', () => {
       name: '经营概览',
       effect: 'create',
     })])
-  })
-
-  it('应按 run 聚合主时间线与子运行工具，且仅终态可展示', () => {
-    const items: AgentTimelineItem[] = [
-      timelineItem({
-        id: 'ctx',
-        kind: 'run_context',
-        role: null,
-        order_index: 0,
-        run_context: {
-          focus: {
-            scope_type: 'project',
-            workspace_id: 11,
-            workspace_name: '空间',
-            project_id: 21,
-            project_name: '年报',
-            page_id: null,
-            page_title: null,
-            source: 'editor',
-          },
-          work_scope_mode: 'selected_projects',
-          allowed_projects: [{ id: 21, name: '年报' }],
-          focus_version: 1,
-        },
-      }),
-      timelineItem({
-        id: 'tool-page',
-        kind: 'tool',
-        role: null,
-        order_index: 1,
-        status: 'completed',
-        tool: {
-          tool_call_id: 'c1',
-          tool_name: 'create_entity',
-          status: 'completed',
-          input_payload: { resource_type: 'page' },
-          output_payload: {
-            success: true,
-            mutation: { resource_type: 'page', operation: 'create' },
-            target: { id: 42, resource_type: 'page' },
-            data: { page_id: 42, project_id: 21, title: '封面' },
-          },
-          message: '',
-        },
-      }),
-      timelineItem({
-        id: 'status',
-        kind: 'run_status',
-        role: null,
-        order_index: 3,
-        status: 'completed',
-        content: '运行已完成。',
-      }),
-    ]
-    const memberRuns: AgentMemberRunItem[] = [{
-      parent_run_id: 'run-1',
-      run_id: 'member-1',
-      agent_id: 'agent-coordinator',
-      agent_name: '内容助手',
-      status: 'completed',
-      created_at: null,
-      updated_at: null,
-      delegate_tool_call_id: 'd1',
-      timeline_items: [
-        timelineItem({
-          id: 'member-tool',
-          run_id: 'member-1',
-          kind: 'tool',
-          role: null,
-          order_index: 0,
-          status: 'completed',
-          tool: {
-            tool_call_id: 'c2',
-            tool_name: 'update_entity',
-            status: 'completed',
-            input_payload: { resource_type: 'project' },
-            output_payload: {
-              success: true,
-              mutation: { resource_type: 'project', operation: 'update' },
-              target: { id: 21, resource_type: 'project' },
-              data: { id: 21, name: '年报' },
-            },
-            message: '',
-          },
-        }),
-      ],
-    }]
-
-    const byRun = collectEntityChangesByRun(items, memberRuns, 11)
-    expect(byRun.get('run-1')).toEqual(expect.arrayContaining([
-      expect.objectContaining({ resourceType: 'project', id: 21, name: '年报', effect: 'update' }),
-      expect.objectContaining({ resourceType: 'page', id: 42, name: '封面', effect: 'create' }),
-    ]))
-    expect(isRunTerminalForEntitySummary('run-1', null)).toBe(true)
-    expect(isRunTerminalForEntitySummary('run-1', 'run-1')).toBe(false)
-    expect(isRunTerminalForEntitySummary('run-1', 'run-other')).toBe(true)
   })
 
   it('批量归档应生成多条 archive 变更', () => {

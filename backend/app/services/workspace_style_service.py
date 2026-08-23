@@ -5,6 +5,7 @@ from __future__ import annotations
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import AppException
+from app.core.time_utils import utc_now
 from app.models.workspace import Workspace
 from app.models.workspace_style import WorkspaceStyle
 from app.repositories.workspace_repository import WorkspaceRepository
@@ -74,8 +75,10 @@ class WorkspaceStyleService:
         workspace_id: int,
         payload: WorkspaceStyleCreateRequest,
         operator_id: int,
+        *,
+        commit: bool = True,
     ) -> WorkspaceStyleItem:
-        """创建工作空间样式。"""
+        """创建工作空间样式方案。"""
 
         await self._get_workspace_or_raise(workspace_id)
         await self._ensure_style_key_available(workspace_id, payload.key)
@@ -104,7 +107,10 @@ class WorkspaceStyleService:
             payload.configuration.suggested_components.component_ids,
             commit=False,
         )
-        await self.session.commit()
+        if commit:
+            await self.session.commit()
+        else:
+            await self.session.flush()
         return await self.get(workspace_id, style.id)
 
     async def copy(
@@ -113,6 +119,8 @@ class WorkspaceStyleService:
         style_id: int,
         payload: WorkspaceStyleCopyRequest,
         operator_id: int,
+        *,
+        commit: bool = True,
     ) -> WorkspaceStyleItem:
         """复制工作空间样式，并自动生成不冲突的 key。"""
 
@@ -141,7 +149,10 @@ class WorkspaceStyleService:
             target_style_id=copied_style.id,
             commit=False,
         )
-        await self.session.commit()
+        if commit:
+            await self.session.commit()
+        else:
+            await self.session.flush()
         return await self.get(workspace_id, copied_style.id)
 
     async def update(
@@ -150,6 +161,8 @@ class WorkspaceStyleService:
         style_id: int,
         payload: WorkspaceStyleUpdateRequest,
         operator_id: int,
+        *,
+        commit: bool = True,
     ) -> WorkspaceStyleItem:
         """更新工作空间样式；不会影响已经复制到项目中的配置。"""
 
@@ -185,17 +198,63 @@ class WorkspaceStyleService:
                 )
 
         style.updated_by = operator_id
-        await self.session.commit()
+        if commit:
+            await self.session.commit()
+        else:
+            await self.session.flush()
         return await self.get(workspace_id, style.id)
 
-    async def delete(self, workspace_id: int, style_id: int) -> None:
+    async def archive(
+        self,
+        workspace_id: int,
+        style_id: int,
+        operator_id: int,
+        *,
+        commit: bool = True,
+    ) -> None:
+        """归档样式方案（默认样式方案受保护禁止归档）。"""
+
+        style = await self._get_style_or_raise(workspace_id, style_id)
+        self.assert_style_can_delete(style)
+        style.deleted_at = utc_now()
+        style.updated_by = operator_id
+        if commit:
+            await self.session.commit()
+        else:
+            await self.session.flush()
+
+    async def restore(
+        self,
+        workspace_id: int,
+        style_id: int,
+        operator_id: int,
+        *,
+        commit: bool = True,
+    ) -> None:
+        """恢复已归档的样式方案。"""
+
+        style = await self._get_style_or_raise(workspace_id, style_id, include_deleted=True)
+        if style.deleted_at is None:
+            return
+        await self._ensure_style_key_available(workspace_id, style.key, exclude_style_id=style.id)
+        style.deleted_at = None
+        style.updated_by = operator_id
+        if commit:
+            await self.session.commit()
+        else:
+            await self.session.flush()
+
+    async def delete(self, workspace_id: int, style_id: int, *, commit: bool = True) -> None:
         """删除工作空间样式；样式不与项目关联，因此可直接硬删除。"""
 
         style = await self._get_style_or_raise(workspace_id, style_id)
         self.assert_style_can_delete(style)
         await SuggestedComponentService(self.session).clear_style_components(style.id, commit=False)
         await self.session.delete(style)
-        await self.session.commit()
+        if commit:
+            await self.session.commit()
+        else:
+            await self.session.flush()
 
     async def create_default_style_for_workspace(self, workspace: Workspace, operator_id: int | None = None) -> WorkspaceStyle:
         """为新工作空间补齐默认样式，便于项目创建时直接套用。"""
@@ -264,10 +323,20 @@ class WorkspaceStyleService:
             raise AppException(status_code=404, code="WORKSPACE_NOT_FOUND", detail="工作空间不存在。")
         return workspace
 
-    async def _get_style_or_raise(self, workspace_id: int, style_id: int) -> WorkspaceStyle:
+    async def _get_style_or_raise(
+        self,
+        workspace_id: int,
+        style_id: int,
+        *,
+        include_deleted: bool = False,
+    ) -> WorkspaceStyle:
         """读取样式实体，不存在时抛错。"""
 
-        style = await self.style_repository.get_by_id(workspace_id, style_id)
+        style = await self.style_repository.get_by_id(
+            workspace_id,
+            style_id,
+            include_deleted=include_deleted,
+        )
         if style is None:
             raise AppException(status_code=404, code="WORKSPACE_STYLE_NOT_FOUND", detail="样式不存在。")
         return style

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import dataclass
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -147,6 +148,7 @@ class CodeCheckService:
                         page_version_id=None,
                     )
                 },
+                snapshot_profile="page_diagnostics",
             )
         except AppException as exc:
             return self._failed_result(code=exc.code, message=exc.detail)
@@ -225,6 +227,7 @@ class CodeCheckService:
                     )
                 },
                 transient_pages=[draft_page],
+                snapshot_profile="page_diagnostics",
             )
         except AppException as exc:
             return self._failed_result(code=exc.code, message=exc.detail)
@@ -351,10 +354,20 @@ class CodeCheckService:
                 workspace_id=workspace_id,
                 project_id=project_id,
             )
+            compile_started_at = time.perf_counter()
             result = await self.runtime_client.dispatch_artifact_diagnostics(
                 artifact_id=artifact_id,
                 diagnostics_token=diagnostics_token,
                 label=label,
+            )
+            logger.info(
+                "Runtime 编译诊断阶段完成。",
+                extra={
+                    "event": "runtime.diagnostics.compile.finished",
+                    "artifact_id": artifact_id,
+                    "label": label,
+                    "duration_ms": round((time.perf_counter() - compile_started_at) * 1000, 2),
+                },
             )
             enriched_result = {
                 **result,
@@ -393,7 +406,15 @@ class CodeCheckService:
     ) -> dict[str, object]:
         """在页面 Runtime 检查通过后追加真实渲染诊断和布局事实。"""
 
+        render_started_at = time.perf_counter()
         render_result = await self.render_diagnostics_service.diagnose_preview(preview_url, viewport)
+        logger.info(
+            "页面 Chromium 渲染诊断阶段完成。",
+            extra={
+                "event": "runtime.diagnostics.render.finished",
+                "duration_ms": round((time.perf_counter() - render_started_at) * 1000, 2),
+            },
+        )
         if isinstance(render_result, list):
             render_diagnostics = render_result
         elif isinstance(render_result, dict) and isinstance(render_result.get("diagnostics"), list):

@@ -157,7 +157,6 @@ class AiComponentMutationExecutor:
             "draft_hash": calculate_source_hash(updated.content),
             "base_published_version_no": updated.draft_base_version_no,
             "edits_applied": edits.applied_edit_count,
-            "canonical_diff": edits.canonical_diff,
             "component": _component_mutation_summary(updated),
             "validation": validation,
         }

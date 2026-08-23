@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, Response, UploadFile
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -18,6 +19,26 @@ from app.services.runtime_artifact_store import RuntimeArtifactStore
 from app.services.token_service import TokenService
 
 router = APIRouter()
+
+MAX_BATCH_MODULE_PATHS = 128
+
+
+class RuntimeModuleBatchRequest(BaseModel):
+    """Runtime 批量读取 artifact 模块的内部请求。"""
+
+    paths: list[str] = Field(min_length=1, max_length=MAX_BATCH_MODULE_PATHS)
+
+    @field_validator("paths")
+    @classmethod
+    def validate_paths(cls, value: list[str]) -> list[str]:
+        """规范路径并拒绝空值和重复项，确保响应一一对应。"""
+
+        normalized = [str(item or "").strip() for item in value]
+        if any(not item for item in normalized):
+            raise ValueError("模块路径不能为空。")
+        if len(set(normalized)) != len(normalized):
+            raise ValueError("模块路径不能重复。")
+        return normalized
 
 
 async def _get_release_or_404(session: AsyncSession, artifact_id: str) -> Release:
@@ -96,6 +117,18 @@ def _verify_optional_preview_context(request: Request, artifact_id: str) -> None
         raise AppException(status_code=403, code="PREVIEW_ARTIFACT_MISMATCH", detail="预览上下文与目标 artifact 不一致。")
 
 
+def _allowed_artifact_module_paths(manifest: dict[str, object]) -> set[str]:
+    """返回 manifest 模块白名单，并包含受签名入口描述保护的独立页面入口。"""
+
+    allowed_paths = set(dict(manifest.get("modules") or {}).keys())
+    entry_descriptor = manifest.get("entry_descriptor")
+    if isinstance(entry_descriptor, dict) and entry_descriptor.get("entry_type") == "module":
+        entry_path = str(entry_descriptor.get("module_path") or "").strip()
+        if entry_path:
+            allowed_paths.add(entry_path)
+    return allowed_paths
+
+
 @router.get("/internal/runtime/preview-artifacts/{artifact_id}/manifest")
 async def get_preview_artifact_manifest(
     artifact_id: str,
@@ -160,6 +193,44 @@ async def get_preview_artifact_module(
         raise HTTPException(404, "MODULE_NOT_FOUND")
 
     return Response(content=module.content, media_type="text/plain")
+
+
+@router.post("/internal/runtime/preview-artifacts/{artifact_id}/modules/batch")
+async def get_preview_artifact_modules_batch(
+    artifact_id: str,
+    payload: RuntimeModuleBatchRequest,
+    request: Request,
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+):
+    """在一次内部请求中返回 manifest 白名单内的多份模块源码。"""
+
+    _verify_runtime_service_request(request, artifact_id)
+    _verify_optional_preview_context(request, artifact_id)
+    store = RuntimeArtifactStore()
+    manifest = await store.get_manifest(artifact_id)
+    if manifest is not None:
+        allowed_paths = _allowed_artifact_module_paths(manifest)
+        if any(path not in allowed_paths for path in payload.paths):
+            raise AppException(status_code=404, code="MODULE_NOT_FOUND", detail="批量请求包含 artifact 白名单外的模块。")
+        modules = await store.get_modules(artifact_id, payload.paths)
+        if modules is None:
+            raise AppException(status_code=404, code="MODULE_NOT_FOUND", detail="批量请求中的模块不存在。")
+        return {"modules": modules}
+
+    release = await _get_release_or_404(session, artifact_id)
+    allowed_paths = _allowed_artifact_module_paths(dict(release.manifest or {}))
+    if any(path not in allowed_paths for path in payload.paths):
+        raise AppException(status_code=404, code="MODULE_NOT_FOUND", detail="批量请求包含 artifact 白名单外的模块。")
+    result = await session.scalars(
+        select(ReleaseModule).where(
+            ReleaseModule.release_id == release.id,
+            ReleaseModule.logical_path.in_(payload.paths),
+        )
+    )
+    modules = {item.logical_path: item.content for item in result.all()}
+    if len(modules) != len(payload.paths):
+        raise AppException(status_code=404, code="MODULE_NOT_FOUND", detail="批量请求中的模块不存在。")
+    return {"modules": {path: modules[path] for path in payload.paths}}
 
 
 @router.post("/internal/runtime/build-jobs/{job_id}/artifact")

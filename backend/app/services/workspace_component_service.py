@@ -10,7 +10,7 @@ from app.core.component_preview_schema import (
 )
 from app.core.code_generator import create_with_generated_code
 from app.core.exceptions import AppException
-from app.core.text_normalizer import normalize_text_to_lf
+from app.core.text_normalizer import calculate_source_hash, normalize_text_to_lf
 from app.models.enums import PageFileType, RecordStatus, WorkspaceComponentType
 from app.models.workspace_component import WorkspaceComponent
 from app.repositories.workspace_component_repository import WorkspaceComponentRepository
@@ -202,7 +202,40 @@ class WorkspaceComponentService:
         reloaded = await self.repository.get_by_id(component.id)
         return await self._to_item(reloaded)
 
-    async def publish(self, component_id: int, payload: WorkspaceComponentPublishRequest, operator_id: int) -> WorkspaceComponentItem:
+    async def update_metadata(
+        self,
+        component_id: int,
+        *,
+        name: str | None,
+        summary: str | None,
+        summary_is_set: bool,
+        operator_id: int,
+        commit: bool = True,
+    ) -> WorkspaceComponentItem:
+        """仅更新轻量元数据，不触发源码、previewSchema 或依赖校验。"""
+
+        component = await self._get_component_or_raise(component_id)
+        await self.workspace_service.ensure_access(component.workspace_id, user_id=operator_id)
+        if name is not None:
+            component.name = name
+        if summary_is_set:
+            component.summary = summary
+        component.updated_by = operator_id
+        if commit:
+            await self.session.commit()
+        else:
+            await self.session.flush()
+        reloaded = await self.repository.get_by_id(component.id)
+        return await self._to_item(reloaded)
+
+    async def publish(
+        self,
+        component_id: int,
+        payload: WorkspaceComponentPublishRequest,
+        operator_id: int,
+        *,
+        commit: bool = True,
+    ) -> WorkspaceComponentItem:
         """发布组件当前草稿，生成可被外部引用的正式版本。"""
 
         component = await self._get_component_or_raise(component_id)
@@ -214,7 +247,10 @@ class WorkspaceComponentService:
             change_note=payload.change_note,
         )
         component.updated_by = operator_id
-        await self.session.commit()
+        if commit:
+            await self.session.commit()
+        else:
+            await self.session.flush()
         reloaded = await self.repository.get_by_id(component.id)
         return await self._to_item(reloaded)
 
@@ -251,6 +287,8 @@ class WorkspaceComponentService:
         version_no: int,
         payload: WorkspaceComponentRestoreDraftRequest,
         operator_id: int,
+        *,
+        commit: bool = True,
     ) -> WorkspaceComponentItem:
         """将正式发布版本恢复到草稿区，不生成新的发布版本。"""
 
@@ -261,7 +299,10 @@ class WorkspaceComponentService:
             version_no=version_no,
         )
         component.updated_by = operator_id
-        await self.session.commit()
+        if commit:
+            await self.session.commit()
+        else:
+            await self.session.flush()
         reloaded = await self.repository.get_by_id(component.id)
         return await self._to_item(reloaded)
 
@@ -288,7 +329,7 @@ class WorkspaceComponentService:
             dependencies=[WorkspaceComponentDependencyItem.model_validate(item) for item in dependencies],
         )
 
-    async def archive(self, component_id: int, *, user_id: int) -> None:
+    async def archive(self, component_id: int, *, user_id: int, commit: bool = True) -> None:
         """归档当前用户可访问的工作空间组件，使其退出普通查询并进入归档恢复视图。"""
 
         component = await self._get_component_or_raise(component_id)
@@ -297,9 +338,12 @@ class WorkspaceComponentService:
             return
         component.status = RecordStatus.ARCHIVED.value
         component.updated_by = user_id
-        await self.session.commit()
+        if commit:
+            await self.session.commit()
+        else:
+            await self.session.flush()
 
-    async def restore(self, component_id: int, *, user_id: int) -> None:
+    async def restore(self, component_id: int, *, user_id: int, commit: bool = True) -> None:
         """恢复已归档的工作空间组件；恢复前校验引用名当前仍未被启用组件占用。"""
 
         component = await self._get_component_or_raise(component_id)
@@ -314,7 +358,10 @@ class WorkspaceComponentService:
         )
         component.status = RecordStatus.ACTIVE.value
         component.updated_by = user_id
-        await self.session.commit()
+        if commit:
+            await self.session.commit()
+        else:
+            await self.session.flush()
 
     async def get_by_code(self, *, workspace_id: int, component_code: str) -> WorkspaceComponentItem:
         """按工作空间和组件编码读取单个组件详情。"""
@@ -398,6 +445,7 @@ class WorkspaceComponentService:
                 "workspace_name": getattr(component, "workspace_name", None),
                 "code": component.code,
                 "content": component.content,
+                "draft_hash": calculate_source_hash(component.content),
                 "preview_schema": component.preview_schema,
                 "current_version_no": component.current_version_no,
                 "draft_base_version_no": component.draft_base_version_no,

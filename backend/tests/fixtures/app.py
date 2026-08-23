@@ -75,6 +75,17 @@ async def client(tmp_path: Path, database_template: Path) -> AsyncClient:
 
 
 @pytest.fixture
+async def app_session(client: AsyncClient):
+    """提供基于隔离测试数据库的 AsyncSession 夹具。"""
+
+    from app.db.session import get_session_factory
+
+    session_factory = get_session_factory()
+    async with session_factory() as session:
+        yield session
+
+
+@pytest.fixture
 async def authenticated_client(client: AsyncClient) -> AsyncClient:
     """先登录默认管理员，再返回已带登录态的客户端。"""
 

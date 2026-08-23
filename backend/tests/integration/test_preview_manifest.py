@@ -254,6 +254,37 @@ async def test_page_version_preview_artifact_should_use_historical_page_content(
     assert module_response.status_code == 200
     assert module_response.text == "<template><div>历史版本 V1</div></template>"
 
+    batch_response = await authenticated_client.post(
+        f"/internal/runtime/preview-artifacts/{artifact_id}/modules/batch",
+        json={"paths": [module_path]},
+        headers=runtime_service_headers,
+    )
+    assert batch_response.status_code == 200, batch_response.text
+    assert batch_response.json() == {
+        "modules": {module_path: "<template><div>历史版本 V1</div></template>"}
+    }
+
+    missing_batch_response = await authenticated_client.post(
+        f"/internal/runtime/preview-artifacts/{artifact_id}/modules/batch",
+        json={"paths": ["src/views/not-allowed.vue"]},
+        headers=runtime_service_headers,
+    )
+    assert missing_batch_response.status_code == 404
+    assert missing_batch_response.json()["code"] == "MODULE_NOT_FOUND"
+
+    oversized_batch_response = await authenticated_client.post(
+        f"/internal/runtime/preview-artifacts/{artifact_id}/modules/batch",
+        json={"paths": [f"src/views/page-{index}.vue" for index in range(129)]},
+        headers=runtime_service_headers,
+    )
+    assert oversized_batch_response.status_code == 422
+
+    unauthenticated_batch_response = await authenticated_client.post(
+        f"/internal/runtime/preview-artifacts/{artifact_id}/modules/batch",
+        json={"paths": [module_path]},
+    )
+    assert unauthenticated_batch_response.status_code == 401
+
     config_bundle_response = await authenticated_client.get(
         f"/internal/runtime/preview-artifacts/{artifact_id}/config-bundle",
         headers=runtime_service_headers,

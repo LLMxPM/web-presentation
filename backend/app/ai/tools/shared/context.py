@@ -104,7 +104,7 @@ def _resolve_authorized_claims(
     user_id: int,
     backend_session_id: str | None,
 ) -> dict[str, Any]:
-    """按主 token 优先、成员 token 兜底的顺序解析可授权 claims。"""
+    """解析当前父 Run 的工具授权 claims。"""
 
     claims = _verify_tool_claims(
         token,
@@ -117,25 +117,6 @@ def _resolve_authorized_claims(
     )
     if _claims_include_scopes(claims, required_scopes):
         return claims
-
-    member_tokens = dependencies.get("member_tool_auth_tokens")
-    if isinstance(member_tokens, dict):
-        for raw_member_agent_id, raw_member_token in member_tokens.items():
-            member_agent_id = str(raw_member_agent_id or "").strip()
-            member_token = str(raw_member_token or "").strip()
-            if not member_agent_id or not member_token:
-                continue
-            member_claims = _verify_tool_claims(
-                member_token,
-                expected_agent_id=member_agent_id,
-                run_id=run_id,
-                session_id=session_id,
-                source=source,
-                user_id=user_id,
-                backend_session_id=backend_session_id,
-            )
-            if _claims_include_scopes(member_claims, required_scopes):
-                return member_claims
 
     raise AppException(status_code=403, code="AI_TOOL_SCOPE_DENIED", detail="当前工具缺少所需权限。")
 

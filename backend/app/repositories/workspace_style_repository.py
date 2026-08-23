@@ -52,15 +52,22 @@ class WorkspaceStyleRepository:
         result = await self.session.scalars(statement)
         return list(result), total
 
-    async def get_by_id(self, workspace_id: int, style_id: int) -> WorkspaceStyle | None:
+    async def get_by_id(
+        self,
+        workspace_id: int,
+        style_id: int,
+        *,
+        include_deleted: bool = False,
+    ) -> WorkspaceStyle | None:
         """按主键获取工作空间样式。"""
 
-        return await self.session.scalar(
-            select(WorkspaceStyle)
-            .where(WorkspaceStyle.workspace_id == workspace_id)
-            .where(WorkspaceStyle.id == style_id)
-            .where(WorkspaceStyle.deleted_at.is_(None))
+        statement = select(WorkspaceStyle).where(
+            WorkspaceStyle.workspace_id == workspace_id,
+            WorkspaceStyle.id == style_id,
         )
+        if not include_deleted:
+            statement = statement.where(WorkspaceStyle.deleted_at.is_(None))
+        return await self.session.scalar(statement)
 
     async def get_by_key(self, workspace_id: int, key: str) -> WorkspaceStyle | None:
         """按 key 获取工作空间样式。"""

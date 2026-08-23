@@ -43,6 +43,7 @@ class AiLlmConfig(TimestampMixin, AuditMixin, Base):
     name: Mapped[str] = mapped_column(String(128), nullable=False)
     provider_config_id: Mapped[int] = mapped_column(ForeignKey("ai_chat_provider_configs.id"), nullable=False, index=True)
     model_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    protocol_key: Mapped[str] = mapped_column(String(64), nullable=False, default="openai_compatible_chat", index=True)
     model_type: Mapped[str] = mapped_column(String(32), nullable=False, default=AiModelType.CHAT.value, index=True)
     supports_image_input: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     context_window_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=128_000)

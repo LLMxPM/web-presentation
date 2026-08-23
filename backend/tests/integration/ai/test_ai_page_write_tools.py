@@ -354,6 +354,7 @@ async def test_apply_page_edits_should_save_and_return_warning(
     assert result["layout_analysis"] == LAYOUT_ANALYSIS
     assert result["code_check_summary"] == "代码检查通过，发现 1 个布局警告。"
     assert result["version_no"] == page["current_version_no"] + 1
+    assert "canonical_diff" not in result
 
 
 async def _create_workspace(authenticated_client: AsyncClient, name: str) -> int:

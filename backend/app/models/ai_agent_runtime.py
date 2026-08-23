@@ -116,7 +116,6 @@ class AiAgentToolCall(TimestampMixin, Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     session_id: Mapped[str] = mapped_column(ForeignKey("ai_agent_sessions.session_id"), nullable=False, index=True)
     run_id: Mapped[str] = mapped_column(ForeignKey("ai_agent_runs.run_id"), nullable=False, index=True)
-    member_run_id: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
     tool_call_id: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
     tool_name: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
     status: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
@@ -148,31 +147,6 @@ class AiAgentRequirement(TimestampMixin, Base):
     status: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
     tool_call_id: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
     tool_name: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
-    member_agent_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    member_agent_name: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    member_run_id: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
     payload_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
     resolved_payload_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-
-
-class AiAgentMemberRun(TimestampMixin, Base):
-    """记录由总控智能体显式委派产生的成员运行。"""
-
-    __tablename__ = "ai_agent_member_runs"
-
-    member_run_id: Mapped[str] = mapped_column(String(128), primary_key=True)
-    parent_run_id: Mapped[str] = mapped_column(ForeignKey("ai_agent_runs.run_id"), nullable=False, index=True)
-    session_id: Mapped[str] = mapped_column(ForeignKey("ai_agent_sessions.session_id"), nullable=False, index=True)
-    agent_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
-    agent_name: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    status: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
-    delegate_tool_call_id: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
-    input_payload_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
-    message_history_json: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False, default=list)
-    content: Mapped[str | None] = mapped_column(Text, nullable=True)
-    reasoning_content: Mapped[str | None] = mapped_column(Text, nullable=True)
-    pending_requirement_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
-    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)

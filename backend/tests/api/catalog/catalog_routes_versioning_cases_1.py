@@ -2,7 +2,19 @@
 
 from __future__ import annotations
 
-from tests.api.catalog.catalog_cases import *  # noqa: F403
+import re
+from datetime import UTC, datetime
+from zoneinfo import ZoneInfo
+
+from httpx import AsyncClient
+
+from app.db.session import get_session_factory
+from app.models.page import Page
+from tests.api.catalog.catalog_cases import (
+    _create_catalog_page,
+    _create_catalog_project,
+    _create_catalog_workspace,
+)
 
 
 async def test_project_route_tree_should_accept_page_bindings(authenticated_client: AsyncClient) -> None:
@@ -796,7 +808,7 @@ async def test_runtime_project_config_endpoint_should_return_yaml_text(authentic
     assert "app:" in config_response.text
     assert "title: 运行时项目" in config_response.text
     assert "icon: slider" in config_response.text
-    assert "baseFontSize: 20px" in config_response.text
+    assert "baseFontSize: 24px" in config_response.text
     assert "iconDefaultSize" not in config_response.text
     assert "iconDefaultStrokeWidth: 2" in config_response.text
     assert "version:" not in config_response.text

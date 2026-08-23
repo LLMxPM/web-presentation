@@ -135,7 +135,6 @@ class ProjectItem(SchemaBase):
     show_pdf_export_button: bool
     menu_mode: ProjectMenuMode
     theme_key: str | None
-    theme_config_yaml: str
     style_spec_markdown: str
     build_extra_assets_json: ProjectBuildExtraAssetsConfig
     routed_page_count: int = 0

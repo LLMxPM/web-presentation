@@ -27,7 +27,7 @@ describe('component preview options helpers', () => {
       page: {
         width: 1280,
         height: 1080,
-        base_font_size: '20px',
+        base_font_size: '24px',
         icon_default_stroke_width: 2,
         theme_key: 'ocean',
         theme_config_yaml: null,

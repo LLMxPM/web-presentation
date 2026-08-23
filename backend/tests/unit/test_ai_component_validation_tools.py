@@ -349,6 +349,7 @@ async def test_apply_component_edits_result_should_return_summary_without_source
 
     assert result["applied"] is True
     assert result["edits_applied"] == 1
+    assert "canonical_diff" not in result
     _assert_component_summary_without_echo(result["component"], updated_item)
 
 

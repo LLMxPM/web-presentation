@@ -1,4 +1,4 @@
-"""文件功能：集中定义智能体运行、成员、工具、Requirement 与外部任务状态契约。"""
+"""文件功能：集中定义智能体运行、工具、Requirement 与外部任务状态契约。"""
 
 from __future__ import annotations
 
@@ -7,8 +7,6 @@ from collections.abc import Mapping
 
 RUN_ACTIVE_STATUSES = frozenset({"running", "paused", "waiting_external", "cancelling"})
 RUN_TERMINAL_STATUSES = frozenset({"completed", "cancelled", "failed"})
-MEMBER_ACTIVE_STATUSES = frozenset({"running", "waiting_external"})
-MEMBER_TERMINAL_STATUSES = frozenset({"completed", "cancelled", "failed"})
 TOOL_ACTIVE_STATUSES = frozenset({"running", "waiting_external"})
 TOOL_TERMINAL_STATUSES = frozenset({"completed", "error", "cancelled", "interrupted"})
 REQUIREMENT_ACTIVE_STATUSES = frozenset({"pending", "resolving"})
@@ -23,10 +21,6 @@ RUN_TRANSITIONS: Mapping[str, frozenset[str]] = {
     "paused": frozenset({"running", "cancelling", "cancelled", "failed"}),
     "waiting_external": frozenset({"running", "cancelling", "cancelled", "failed"}),
     "cancelling": frozenset({"cancelled", "failed"}),
-}
-MEMBER_TRANSITIONS: Mapping[str, frozenset[str]] = {
-    "running": frozenset({"waiting_external", "completed", "cancelled", "failed"}),
-    "waiting_external": frozenset({"running", "cancelled", "failed"}),
 }
 TOOL_TRANSITIONS: Mapping[str, frozenset[str]] = {
     "running": frozenset({"waiting_external", "completed", "error", "cancelled", "interrupted"}),

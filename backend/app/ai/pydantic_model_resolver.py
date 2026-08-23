@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic_ai.models.google import GoogleModel
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.models.openrouter import OpenRouterModel
 from pydantic_ai.providers.alibaba import AlibabaProvider
@@ -15,6 +14,7 @@ from pydantic_ai.providers.openai import OpenAIProvider
 from pydantic_ai.providers.openrouter import OpenRouterProvider
 
 from app.ai.llm_http_trace import build_llm_http_trace_client
+from app.ai.google_model_compat import GoogleCompatibleModel
 from app.ai.model_capabilities import capability_from_snapshot, resolve_model_capability
 from app.ai.model_budget import CONTEXT_WINDOW_TOKEN_DEFAULT, derive_model_run_budget
 from app.ai.provider_catalog import MIMO_MAX_COMPLETION_TOKENS, get_llm_provider_entry
@@ -47,7 +47,7 @@ class PydanticLlmModelResolver:
         if provider_config.status != RecordStatus.ACTIVE.value:
             raise AppException(status_code=409, code="AI_LLM_PROVIDER_CONFIG_DISABLED", detail="当前大模型供应商配置不可用。")
         provider_key = str(provider_config.provider_key or "").strip()
-        protocol_key = str(getattr(provider_config, "protocol_key", "") or "").strip()
+        protocol_key = str(getattr(config, "protocol_key", "") or getattr(provider_config, "protocol_key", "") or "").strip()
 
         # E2E mock 仍遵守模型与供应商启用状态；仅跳过真实协议对象的创建和凭证解析。
         from app.ai.testing.dispatch import resolve_mock_chat_model
@@ -66,7 +66,7 @@ class PydanticLlmModelResolver:
         http_client = build_llm_http_trace_client(config)
 
         if protocol_key == "google_chat" or provider_key == "google":
-            return GoogleModel(model_id, provider=GoogleProvider(api_key=api_key or None, base_url=base_url, http_client=http_client))
+            return GoogleCompatibleModel(model_id, provider=GoogleProvider(api_key=api_key or None, base_url=base_url, http_client=http_client))
         if protocol_key == "openrouter_chat" or provider_key == "openrouter":
             return OpenRouterModel(model_id, provider=OpenRouterProvider(api_key=api_key or None, http_client=http_client))
         if protocol_key == "ollama_openai_compatible" or provider_key == "ollama":
@@ -204,7 +204,8 @@ class PydanticLlmModelResolver:
     def _resolve_protocol_key(self, config: AiLlmConfig) -> str:
         """读取服务端固化的调用协议，用户不能通过高级参数覆盖。"""
 
-        return str(getattr(self._get_provider_config(config), "protocol_key", "") or "").strip()
+        provider_config = self._get_provider_config(config)
+        return str(getattr(config, "protocol_key", "") or getattr(provider_config, "protocol_key", "") or "").strip()
 
     @staticmethod
     def _merge_extra_body(settings: dict[str, Any], patch: dict[str, Any]) -> None:

@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import pytest
 from jsonschema import Draft202012Validator
 from pydantic import ValidationError
-from pydantic_ai import Agent, CallDeferred
+from pydantic_ai import Agent
 from pydantic_ai.messages import ModelResponse, TextPart, ToolCallPart
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 from pydantic_ai.models.test import TestModel
@@ -28,8 +28,8 @@ from app.ai.pydantic_tools import (
 from app.ai.session_facade_pydantic import _build_continue_message_history, _build_deferred_results
 from app.ai.tool_specs import AGENT_COORDINATOR_AGENT_ID
 from app.ai.agent.runtime_context import AgentRuntimeContext
+from app.ai.tools.generic.business_tools import build_generic_business_tools
 from app.ai.tools.visual.generate_image import build_generate_image_tool
-from app.ai.tools.project.project_pages import build_create_project_page_tool
 from app.schemas.agent import AgentScopeContext
 from app.services.image_generation.registry import get_image_model_spec
 
@@ -86,6 +86,36 @@ def test_unified_visual_tool_should_not_require_content_model_image_input() -> N
     assert deps.dependencies["model_supports_image_input"] is False
 
 
+def test_pydantic_bridge_should_emit_flat_generic_tool_schemas() -> None:
+    """最终交给 Pydantic AI 的通用工具 Schema 不得恢复根级 oneOf 或本地引用。"""
+
+    generic_tools = build_generic_business_tools(None)  # type: ignore[arg-type]
+    wrapped_tools = {
+        tool.name: _wrap_platform_tool(tool)
+        for tool in generic_tools
+        if tool.name in {
+            "list_entities",
+            "get_entity",
+            "create_entity",
+            "update_entity",
+            "archive_entity",
+            "validate_entity",
+            "execute_action",
+        }
+    }
+
+    assert len(wrapped_tools) == 7
+    for tool in wrapped_tools.values():
+        schema = tool.function_schema.json_schema
+        Draft202012Validator.check_schema(schema)
+        assert schema["type"] == "object"
+        assert schema["properties"]
+        assert schema["additionalProperties"] is False
+        assert "oneOf" not in schema
+        assert "$defs" not in schema
+        assert "$ref" not in str(schema)
+
+
 def test_removed_resource_agent_should_not_build_runtime_tools() -> None:
     """已合并的资源助手 ID 不再构建独立运行时工具。"""
 
@@ -127,9 +157,11 @@ def test_generate_image_schema_should_follow_bound_model_capabilities() -> None:
     )
 
     generate_image = next(tool for tool in tools if tool.name == "generate_image")
-    branches = generate_image.function_schema.json_schema["oneOf"]
-    properties = branches[0]["properties"]
+    schema = generate_image.function_schema.json_schema
+    properties = schema["properties"]
 
+    assert "oneOf" not in schema
+    assert "$defs" not in schema
     assert "quality" not in properties
     assert "mask_attachment_id" not in properties
     assert properties["resolution_tier"]["enum"] == ["auto", "standard", "high", "ultra"]
@@ -284,102 +316,24 @@ def test_generate_image_schema_should_keep_openai_quality_and_mask() -> None:
     )
 
     generate_image = next(tool for tool in tools if tool.name == "generate_image")
-    branches = generate_image.function_schema.json_schema["oneOf"]
-    generate_properties = next(
-        branch["properties"]
-        for branch in branches
-        if branch["properties"]["operation"]["const"] == "generate"
-    )
-    edit_branch = next(
-        branch
-        for branch in branches
-        if branch["properties"]["operation"]["const"] == "edit"
-    )
-    properties = edit_branch["properties"]
+    schema = generate_image.function_schema.json_schema
+    properties = schema["properties"]
 
+    assert "oneOf" not in schema
+    assert "$defs" not in schema
     assert properties["quality"]["enum"] == ["auto", "low", "medium", "high"]
     assert "mask_attachment_id" in properties
     assert properties["resolution_tier"]["enum"] == ["auto", "standard"]
-    assert "mask_attachment_id" not in generate_properties
-    assert "reference_attachment_ids" in edit_branch["required"]
-    validator = Draft202012Validator(generate_image.function_schema.json_schema)
-    assert not validator.is_valid({"operation": "edit", "prompt": "编辑图片"})
-    assert not validator.is_valid({
-        "operation": "generate",
-        "prompt": "生成图片",
-        "mask_attachment_id": 12,
-    })
+    reference_schema = properties["reference_attachment_ids"]
+    assert any(item.get("minItems") == 1 for item in reference_schema["anyOf"])
+    assert schema["required"] == ["operation", "prompt"]
+    Draft202012Validator(schema).validate({"operation": "edit", "prompt": "编辑图片"})
 
 
-@pytest.mark.asyncio
-async def test_member_generate_image_should_separate_display_and_deferred_call_ids(monkeypatch) -> None:
-    """成员图片任务应使用映射 ID 展示，并保留原始 ID 供 Pydantic 恢复。"""
-
-    captured: dict[str, object] = {}
-
-    async def fake_enqueue(*args, **kwargs):  # noqa: ANN002, ANN003
-        captured.update(kwargs)
-        return SimpleNamespace(as_metadata=lambda: {"kind": "image_generation", "job_id": "job-1"})
-
-    monkeypatch.setattr("app.ai.tools.visual.generate_image.enqueue_image_generation", fake_enqueue)
-    tool = build_generate_image_tool(None)  # type: ignore[arg-type]
-
-    with pytest.raises(CallDeferred):
-        await tool.entrypoint(
-            AgentToolContext(
-                run_id="run-parent",
-                session_id="session-1",
-                dependencies={
-                    "current_tool_call_id": "raw-call-1",
-                    "member_run_id": "member-run-1",
-                    "user_id": 1,
-                    "workspace_id": 2,
-                },
-            ),
-            operation="generate",
-            prompt="hero",
-        )
-
-    assert captured["tool_call_id"] == "member-run-1:raw-call-1"
-    assert captured["deferred_tool_call_id"] == "raw-call-1"
-    assert captured["member_run_id"] == "member-run-1"
 
 
-@pytest.mark.asyncio
-async def test_member_create_page_should_separate_display_and_deferred_call_ids(monkeypatch) -> None:
-    """成员页面任务应以命名空间 ID 关联事件，并保留原始 ID 用于恢复。"""
-    captured: dict[str, object] = {}
-
-    async def fake_resolve(*args, **kwargs):  # noqa: ANN002, ANN003
-        _ = args, kwargs
-        return ({"current_tool_call_id": "raw-page-call", "member_run_id": "member-run-1", "current_run_step": 1,
-                 "workspace_id": 2, "project_id": 3}, {"sub": "user:1"})
-
-    async def fake_enqueue(*args, **kwargs):  # noqa: ANN002, ANN003
-        _ = args
-        captured.update(kwargs)
-        return SimpleNamespace(as_metadata=lambda: {"kind": "page_mutation", "job_id": "job-1"})
-
-    monkeypatch.setattr("app.ai.tools.project.project_pages.resolve_tool_context", fake_resolve)
-    monkeypatch.setattr("app.ai.tools.project.project_pages.enqueue_page_mutation", fake_enqueue)
-    tool = build_create_project_page_tool(None)  # type: ignore[arg-type]
-    with pytest.raises(CallDeferred):
-        await tool.entrypoint(AgentToolContext(run_id="run-parent", session_id="session-1", dependencies={}),
-                              title="标题", page_content="<template><main /></template>")
-    assert captured["tool_call_id"] == "member-run-1:raw-page-call"
-    assert captured["deferred_tool_call_id"] == "raw-page-call"
-    assert captured["member_run_id"] == "member-run-1"
 
 
-def test_missing_member_executor_should_hide_self_delegation_tool() -> None:
-    """任何装配入口缺少执行器时都不得向模型披露自委派工具。"""
-    current = SimpleNamespace(user=SimpleNamespace(id=1), backend_session_id="backend-session-1")
-    scope = AgentScopeContext(scope_type="workspace", workspace_id=1)
-    tools, _ = build_pydantic_tools(
-        agent_id=AGENT_COORDINATOR_AGENT_ID, session_factory=SimpleNamespace(), runtime_config=None, current=current,
-        scope=scope, session_id="session-1", run_id="run-1", supports_image_input=False, member_delegation_executor=None,
-    )
-    assert "delegate_task_to_self" not in {tool.name for tool in tools}
 
 
 def test_visual_model_failure_hint_should_prevent_identical_retry() -> None:

@@ -27,6 +27,10 @@ from app.ai.tools.generic.operation_models import (
     get_operation_payload_model,
     get_query_filters_model,
 )
+from app.ai.validation_result_formatter import (
+    build_validation_tool_result,
+    compact_mutation_result,
+)
 from app.ai.tools.page import build_apply_page_edits_tool, build_get_page_content_tool
 from app.ai.tools.project import build_project_tools
 from app.ai.tools.resource import build_resource_manager_tools
@@ -49,7 +53,7 @@ from app.services.workspace_component_service import WorkspaceComponentService
 from app.services.workspace_theme_service import WorkspaceThemeService
 from app.services.agent_work_scope_service import project_is_in_work_scope
 
-AI_PAGE_DETAIL_EXCLUDED_FIELDS = {
+AI_PAGE_QUERY_EXCLUDED_FIELDS = {
     "page_content",
     "created_by",
     "updated_by",
@@ -61,6 +65,7 @@ AI_PAGE_DETAIL_EXCLUDED_FIELDS = {
     "screenshot_is_latest",
     "screenshot_updated_at",
 }
+AI_PROJECT_QUERY_EXCLUDED_FIELDS = {"first_page_screenshot_url"}
 
 
 def build_generic_business_tools(session_factory: async_sessionmaker[AsyncSession]) -> list[Any]:
@@ -97,6 +102,36 @@ def build_generic_business_tools(session_factory: async_sessionmaker[AsyncSessio
                 detail="未找到对应操作手册；请从索引中选择有效 operation_key。",
             )
         return guide.to_payload()
+
+    @agent_tool(show_result=False)
+    async def get_code_standards(
+        run_context: AgentToolContext,
+        standard_type: Annotated[Literal["page", "component"], Field(description="要查询的代码规范类型。页面源码使用 page，组件源码使用 component。")],
+    ) -> dict[str, Any]:
+        """读取当前用户页面或组件的有效代码规范 Markdown。"""
+
+        _, claims = await resolve_tool_context(
+            session_factory,
+            run_context,
+            required_scopes=(),
+            required_dependency_fields=("workspace_id",),
+        )
+        from app.ai.tool_specs import AGENT_COORDINATOR_AGENT_ID
+        from app.services.ai_agent_config_service import AiAgentConfigService
+
+        user_id = extract_user_id(str(claims.get("sub")))
+        async with session_factory() as session:
+            configs = await AiAgentConfigService(session, user_id=user_id).list_code_standard_configs(
+                AGENT_COORDINATOR_AGENT_ID
+            )
+        config = next(item for item in configs if item.standard_type == standard_type)
+        return {
+            "agent_id": config.agent_id,
+            "standard_type": config.standard_type,
+            "source": config.source,
+            "customized": config.customized,
+            "content": config.content,
+        }
 
     @agent_tool(show_result=False)
     async def list_entities(
@@ -162,7 +197,8 @@ def build_generic_business_tools(session_factory: async_sessionmaker[AsyncSessio
             target_id=target_id,
             filters=query_options,
         )
-        return build_query_envelope(resource_type=resource_type, action=view, data=data)
+        message = _build_detail_query_message(resource_type, target_id, data) if view == "detail" else "查询完成。"
+        return build_query_envelope(resource_type=resource_type, action=view, data=data, message=message)
 
     @agent_tool(show_result=False, sequential=True)
     async def create_entity(
@@ -266,7 +302,7 @@ def build_generic_business_tools(session_factory: async_sessionmaker[AsyncSessio
         action: Annotated[Literal["check", "preview"], Field(description="只读校验动作；必须与 resource_type 匹配。")],
         target_id: Annotated[int | None, Field(gt=0, description="current、edits 和资源预览使用的目标 ID。")] = None,
         payload: Annotated[dict[str, Any] | None, Field(description="候选来源或预览参数；必须符合精确操作手册。")] = None,
-    ) -> dict[str, Any]:
+    ) -> Any:
         """检查当前或候选页面、组件源码，或预览资源内容差异，不写入业务数据。"""
 
         return await _validate_entity(
@@ -281,6 +317,7 @@ def build_generic_business_tools(session_factory: async_sessionmaker[AsyncSessio
 
     tools = [
         get_operation_guide,
+        get_code_standards,
         list_entities,
         get_entity,
         create_entity,
@@ -346,7 +383,7 @@ async def _dispatch_entity_query(
                 item = await service.get(target_id, user_id=user_id)
                 _ensure_workspace(item.workspace_id, workspace_id)
                 _ensure_active_status(item.status, "项目")
-                return item.model_dump(mode="json")
+                return _sanitize_ai_project_item(item.model_dump(mode="json"))
             if action == "configuration" and target_id is not None:
                 _ensure_project_in_work_scope(dependencies, target_id)
                 item = await service.get(target_id, user_id=user_id)
@@ -387,7 +424,7 @@ async def _dispatch_entity_query(
                 _ensure_project_in_work_scope(dependencies, item.project_id)
                 _ensure_active_status(item.status, "页面")
                 if action == "detail":
-                    return item.model_dump(mode="json", exclude=AI_PAGE_DETAIL_EXCLUDED_FIELDS)
+                    return _sanitize_ai_page_item(item.model_dump(mode="json"))
                 if action == "versions":
                     return [entry.model_dump(mode="json") for entry in await service.list_versions(page_id, user_id=user_id)]
                 if action == "version_content":
@@ -687,8 +724,8 @@ async def _validate_entity(
     action: str,
     target_id: int | None,
     payload: dict[str, Any],
-) -> dict[str, Any]:
-    """执行不落库校验，并把业务不通过归一化为 data.valid=false。"""
+) -> Any:
+    """执行不落库校验；页面与组件返回短文本，资源差异保持结构化结果。"""
 
     payload = _validate_operation_payload(resource_type, "validate", action, payload)
     if resource_type == "asset" and action == "preview":
@@ -702,6 +739,7 @@ async def _validate_entity(
     if action != "check" or resource_type not in {"page", "component"}:
         raise AppException(status_code=400, code="AI_ENTITY_VALIDATION_UNSUPPORTED", detail="该校验组合未开放。")
     mode = str(payload.pop("mode"))
+    detail = bool(payload.pop("detail", False))
     project_id = payload.pop("project_id", None)
     if target_id is not None and project_id is not None:
         raise AppException(status_code=422, code="AI_VALIDATION_PROJECT_CONFLICT", detail="提供 target_id 时不能再提交 project_id。")
@@ -722,7 +760,9 @@ async def _validate_entity(
         context,
         arguments,
     )
-    return build_validation_envelope(resource_type=resource_type, action=action, data=result)
+    if not isinstance(result, dict):
+        raise AppException(status_code=502, code="AI_VALIDATION_RESULT_INVALID", detail="代码检查返回了非法结果。")
+    return build_validation_tool_result(result, resource_type=resource_type, detail=detail)
 
 
 def _validate_operation_payload(
@@ -847,13 +887,20 @@ def _ensure_project_in_work_scope(dependencies: dict[str, Any], project_id: int 
 
 
 def _filter_project_items(data: dict[str, Any], dependencies: dict[str, Any]) -> dict[str, Any]:
-    """过滤项目列表，避免仅在详情和写入路径执行工作集限制。"""
+    """裁剪项目首页截图字段并按工作集过滤项目列表。"""
 
+    items = [_sanitize_ai_project_item(item) for item in data.get("items", [])]
     if str(dependencies.get("work_scope_mode") or "workspace") == "workspace":
-        return data
+        return {**data, "items": items}
     allowed = {int(item) for item in dependencies.get("allowed_project_ids") or []}
-    items = [item for item in data.get("items", []) if int(item.get("id") or 0) in allowed]
-    return {**data, "items": items, "total": len(items)}
+    filtered_items = [item for item in items if int(item.get("id") or 0) in allowed]
+    return {**data, "items": filtered_items, "total": len(filtered_items)}
+
+
+def _sanitize_ai_project_item(item: dict[str, Any]) -> dict[str, Any]:
+    """裁剪 AI 项目查询不需要的首页截图地址。"""
+
+    return {key: value for key, value in item.items() if key not in AI_PROJECT_QUERY_EXCLUDED_FIELDS}
 
 
 def _filter_suggested_items(items: list[Any], filters: dict[str, Any]) -> dict[str, Any]:
@@ -878,13 +925,53 @@ def _filter_suggested_items(items: list[Any], filters: dict[str, Any]) -> dict[s
 
 
 def _filter_page_items(data: dict[str, Any], dependencies: dict[str, Any]) -> dict[str, Any]:
-    """按页面所属项目过滤列表，空 selected_projects 返回空集合。"""
+    """裁剪页面敏感字段并按所属项目过滤列表，空 selected_projects 返回空集合。"""
 
+    items = [_sanitize_ai_page_item(item) for item in data.get("items", [])]
     if str(dependencies.get("work_scope_mode") or "workspace") == "workspace":
-        return data
+        return {**data, "items": items}
     allowed = {int(item) for item in dependencies.get("allowed_project_ids") or []}
-    items = [item for item in data.get("items", []) if int(item.get("project_id") or 0) in allowed]
-    return {**data, "items": items, "total": len(items)}
+    filtered_items = [item for item in items if int(item.get("project_id") or 0) in allowed]
+    return {**data, "items": filtered_items, "total": len(filtered_items)}
+
+
+def _sanitize_ai_page_item(item: dict[str, Any]) -> dict[str, Any]:
+    """裁剪 AI 页面查询不需要的源码、审计字段和截图元数据。"""
+
+    return {key: value for key, value in item.items() if key not in AI_PAGE_QUERY_EXCLUDED_FIELDS}
+
+
+def _build_detail_query_message(resource_type: str, target_id: int | None, data: Any) -> str:
+    """为详情查询生成后续视图调用提示，保持提示与真实工具参数一致。"""
+
+    if target_id is None:
+        return "查询完成。"
+    if resource_type == "project":
+        return (
+            f'查询完成。如需读取项目展示配置，请继续调用 get_entity(resource_type="project", '
+            f'view="configuration", target_id={target_id})；如需读取项目路由树，请调用 '
+            f'get_entity(resource_type="project", view="route_tree", target_id={target_id})。'
+        )
+    if resource_type == "page":
+        return (
+            f'查询完成。如需读取页面当前源码，请调用 get_entity(resource_type="page", view="content", '
+            f'target_id={target_id})；如需读取版本历史，请调用 get_entity(resource_type="page", '
+            f'view="versions", target_id={target_id})；如需读取指定版本源码，请先取得 version_no，'
+            f'再调用 get_entity(resource_type="page", view="version_content", target_id={target_id}, '
+            'options={"version_no": <version_no>})；如需读取依赖索引，请调用 '
+            f'get_entity(resource_type="page", view="dependencies", target_id={target_id})。'
+        )
+    if resource_type == "style":
+        return (
+            f'查询完成。如需读取样式完整展示配置和建议组件，请继续调用 get_entity(resource_type="style", '
+            f'view="configuration", target_id={target_id})。'
+        )
+    if resource_type == "asset" and isinstance(data, dict) and data.get("content_editable") is True:
+        return (
+            f'查询完成。如需读取该可编辑资源的文本内容，请继续调用 get_entity(resource_type="asset", '
+            f'view="content", target_id={target_id})。'
+        )
+    return "查询完成。"
 
 
 async def _require_page_write_confirmation(
@@ -1077,17 +1164,18 @@ def _wrap_internal_mutation(
 ) -> dict[str, Any]:
     """把内部工具结果包装为统一 mutation envelope。"""
 
+    normalized_result = compact_mutation_result(result, resource_type=resource_type)
     target = None if target_id is None else {"id": target_id, "resource_type": resource_type}
     source = None if source_id is None else {"id": source_id, "resource_type": resource_type}
     return build_mutation_envelope(
         resource_type=resource_type,
         operation=operation,
         action=action,
-        message=_result_message(result, f"{resource_type} 操作已完成。"),
+        message=_result_message(normalized_result, f"{resource_type} 操作已完成。"),
         target=target,
         source=source,
         mutation_kind={"page": "project-pages", "asset": "asset"}.get(resource_type, resource_type),
-        data=result,
+        data=normalized_result,
         effect=effect,
     )
 

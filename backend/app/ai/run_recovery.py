@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-from sqlalchemy import select, update
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.ai.platform_runtime import PlatformAgentRuntimeStore
-from app.core.time_utils import utc_now
-from app.models.ai_agent_runtime import AiAgentMemberRun, AiAgentRun
+from app.models.ai_agent_runtime import AiAgentRun
 
 
 async def recover_interrupted_agent_runs_on_startup(
@@ -26,25 +25,6 @@ async def recover_interrupted_agent_runs_on_startup(
         )
         for run in runs:
             store = PlatformAgentRuntimeStore(session, user_id=run.user_id)
-            member_status = "cancelled" if run.status == "cancelling" or run.cancel_requested_at is not None else "failed"
-            member_message = (
-                "Backend重启后已完成取消。"
-                if member_status == "cancelled"
-                else "Backend进程已停止，成员运行无法继续执行。"
-            )
-            await session.execute(
-                update(AiAgentMemberRun)
-                .where(
-                    AiAgentMemberRun.parent_run_id == run.run_id,
-                    AiAgentMemberRun.status.in_(("running", "paused", "waiting_external")),
-                )
-                .values(
-                    status=member_status,
-                    pending_requirement_json=None,
-                    error_message=member_message,
-                    finished_at=utc_now(),
-                )
-            )
             if run.status == "cancelling" or run.cancel_requested_at is not None:
                 await store.mark_terminal(run, status="cancelled", content="Backend重启后已完成取消。")
             else:

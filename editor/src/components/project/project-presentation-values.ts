@@ -2,7 +2,7 @@
 
 export const DEFAULT_PROJECT_PAGE_WIDTH = 1920
 export const DEFAULT_PROJECT_PAGE_HEIGHT = 1080
-export const DEFAULT_PROJECT_BASE_FONT_SIZE = '20px'
+export const DEFAULT_PROJECT_BASE_FONT_SIZE = '24px'
 
 /**
  * 归一化项目页面尺寸。

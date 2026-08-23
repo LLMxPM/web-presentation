@@ -8,6 +8,7 @@ from sqlalchemy import delete, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.ai.model_protocols import resolve_model_catalog_protocol
 from app.ai.provider_catalog import PROTECTED_ADVANCED_CONFIG_KEYS
 from app.ai.reasoning_controls import (
     protocol_reasoning_controls,
@@ -141,6 +142,7 @@ class AiChatConfigService:
         provider = await self._provider(payload.provider_config_id, selectable=True)
         self._require_same_scope(payload.scope.value, provider.scope)
         capability, catalog_version = await self._resolve_capability(provider, payload.model_id, payload.capability_override)
+        protocol_key = await self.resolve_model_protocol(provider, payload.model_id, reject_unsupported=True)
         advanced = self._validate_advanced(payload.advanced_config)
         row = AiChatModelConfig(
             user_id=None if payload.scope == AiLlmConfigScope.GLOBAL else self.user_id,
@@ -148,6 +150,7 @@ class AiChatConfigService:
             name=payload.name.strip(),
             provider_config_id=provider.id,
             model_id=payload.model_id.strip(),
+            protocol_key=protocol_key,
             model_type="chat",
             reasoning_mode="auto",
             reasoning_level=None,
@@ -155,7 +158,7 @@ class AiChatConfigService:
             context_window_tokens=int(capability["input_tokens"]),
             history_token_ratio=1.0,
             advanced_config_json=advanced,
-            model_capability_json=self._legacy_capability_snapshot(provider, payload.model_id, capability),
+            model_capability_json=self._legacy_capability_snapshot(provider, payload.model_id, capability, protocol_key),
             capability_override_json=dict(payload.capability_override),
             catalog_provider_key=provider.catalog_provider_key,
             catalog_version=catalog_version,
@@ -182,14 +185,16 @@ class AiChatConfigService:
         self._reject_e2e_mock_model(model_id)
         override = payload.capability_override if payload.capability_override is not None else dict(row.capability_override_json or {})
         capability, catalog_version = await self._resolve_capability(provider, model_id, override)
+        protocol_key = await self.resolve_model_protocol(provider, model_id, reject_unsupported=True)
         if payload.name is not None:
             row.name = payload.name.strip()
         row.provider_config_id = provider.id
         row.provider_config = provider
         row.model_id = model_id
+        row.protocol_key = protocol_key
         row.supports_image_input = bool(capability["supports_image_input"])
         row.context_window_tokens = int(capability["input_tokens"])
-        row.model_capability_json = self._legacy_capability_snapshot(provider, model_id, capability)
+        row.model_capability_json = self._legacy_capability_snapshot(provider, model_id, capability, protocol_key)
         row.capability_override_json = override
         row.catalog_provider_key = provider.catalog_provider_key
         row.catalog_version = catalog_version
@@ -251,6 +256,7 @@ class AiChatConfigService:
             catalog = await self.session.scalar(select(AiChatModelCatalog).where(
                 AiChatModelCatalog.provider_key == catalog_provider_key,
                 AiChatModelCatalog.model_id == model_id,
+                AiChatModelCatalog.is_current.is_(True),
             ))
         output_tokens = int(catalog.output_tokens or DEFAULT_OUTPUT_TOKENS) if catalog else DEFAULT_OUTPUT_TOKENS
         context_tokens = int(catalog.context_tokens or DEFAULT_CONTEXT_TOKENS) if catalog else DEFAULT_CONTEXT_TOKENS
@@ -287,6 +293,56 @@ class AiChatConfigService:
         if capability["input_tokens"] + capability["output_tokens"] > capability["context_tokens"]:
             raise AppException(status_code=400, code="AI_CHAT_CAPABILITY_LIMIT_INVALID", detail="输入与输出上限之和不能超过 context。")
         return capability, catalog.catalog_version if catalog else None
+
+    async def resolve_model_protocol(
+        self,
+        provider: AiChatProviderConfig,
+        model_id: str,
+        *,
+        reject_unsupported: bool = False,
+    ) -> str:
+        """返回模型级协议；未收录模型回退，已知但不支持的模型可拒绝。"""
+
+        catalog_provider_key = getattr(provider, "catalog_provider_key", None)
+        if catalog_provider_key:
+            provider_catalog = await self.session.get(AiChatProviderCatalog, catalog_provider_key)
+            catalog = await self.session.scalar(select(AiChatModelCatalog).where(
+                AiChatModelCatalog.provider_key == catalog_provider_key,
+                AiChatModelCatalog.model_id == model_id,
+                AiChatModelCatalog.is_current.is_(True),
+            ))
+            if catalog is not None and catalog.protocol_key:
+                raw_provider = (catalog.source_json or {}).get("provider")
+                model_protocol = resolve_model_catalog_protocol(
+                    provider.provider_key,
+                    provider_catalog.npm_package if provider_catalog else None,
+                    raw_provider.get("npm") if isinstance(raw_provider, dict) else None,
+                )
+                if model_protocol is not None:
+                    return model_protocol
+                if reject_unsupported:
+                    raise AppException(
+                        status_code=409,
+                        code="AI_CHAT_MODEL_PROTOCOL_UNSUPPORTED",
+                        detail="当前模型的目录协议尚未由平台实现。",
+                    )
+                return str(getattr(provider, "protocol_key", "") or CUSTOM_PROTOCOL_KEY)
+            raw_models = (provider_catalog.source_json or {}).get("models", {}) if provider_catalog else {}
+            raw_model = raw_models.get(model_id) if isinstance(raw_models, dict) else None
+            if isinstance(raw_model, dict):
+                raw_provider = raw_model.get("provider") if isinstance(raw_model.get("provider"), dict) else {}
+                model_protocol = resolve_model_catalog_protocol(
+                    provider.provider_key,
+                    provider_catalog.npm_package if provider_catalog else None,
+                    raw_provider.get("npm"),
+                )
+                if model_protocol is None and reject_unsupported:
+                    raise AppException(
+                        status_code=409,
+                        code="AI_CHAT_MODEL_PROTOCOL_UNSUPPORTED",
+                        detail="当前模型的目录协议尚未由平台实现。",
+                    )
+        return str(getattr(provider, "protocol_key", "") or CUSTOM_PROTOCOL_KEY)
 
     def _validate_policy(self, slot: str, protocol: str, capability: dict[str, Any], reasoning: ReasoningPolicy) -> None:
         """验证运行时推理策略；输入与输出预算统一由模型能力自动计算。"""
@@ -334,9 +390,10 @@ class AiChatConfigService:
         """转换模型响应，展示能力使用最新目录而非旧配置快照。"""
 
         capability, version = await self._resolve_capability(row.provider_config, row.model_id, row.capability_override_json or {})
+        protocol_key = await self.resolve_model_protocol(row.provider_config, row.model_id)
         return ChatModelConfigItem(id=row.id, scope=row.scope, editable=self._editable(row.scope, row.user_id), name=row.name,
             provider_config_id=row.provider_config_id, provider_name=row.provider_config.name, provider_key=row.provider_config.provider_key,
-            protocol_key=row.provider_config.protocol_key, model_id=row.model_id, catalog_version=version,
+            protocol_key=protocol_key, model_id=row.model_id, catalog_version=version,
             capability=capability, capability_override=dict(row.capability_override_json or {}),
             advanced_config=dict(row.advanced_config_json or {}), status=row.status)
 
@@ -394,19 +451,25 @@ class AiChatConfigService:
             .options(selectinload(AiChatSlotBinding.llm_config).selectinload(AiChatModelConfig.provider_config)))
 
     @staticmethod
-    def _legacy_capability_snapshot(provider: AiChatProviderConfig, model_id: str, capability: dict[str, Any]) -> dict[str, Any]:
+    def _legacy_capability_snapshot(
+        provider: AiChatProviderConfig,
+        model_id: str,
+        capability: dict[str, Any],
+        protocol_key: str | None = None,
+    ) -> dict[str, Any]:
         """生成现有 Pydantic AI 运行器可读取的稳定能力快照。"""
 
+        effective_protocol = protocol_key or provider.protocol_key
         native_levels = reasoning_effort_options(capability.get("reasoning_options"))
         return {"profile_key": f"catalog:{provider.provider_key}:{model_id}", "profile_version": 3,
-            "provider_key": provider.provider_key, "protocol_key": provider.protocol_key,
+            "provider_key": provider.provider_key, "protocol_key": effective_protocol,
             "source": capability["source"], "verified": capability["verified"],
             "context_window_tokens": capability["context_tokens"], "model_max_output_tokens": capability["output_tokens"],
             "supports_image_input": capability["supports_image_input"], "supports_tool_call": capability["supports_tool_call"],
             "supports_reasoning": capability["supports_reasoning"],
             "reasoning_options": dict(capability.get("reasoning_options") or {}),
-            "supports_explicit_disable": supports_explicit_disable(capability.get("reasoning_options"), provider.protocol_key),
-            "supports_reasoning_budget": "budget_tokens" in reasoning_control_types(capability.get("reasoning_options")).intersection(protocol_reasoning_controls(provider.protocol_key)), "default_level": None,
+            "supports_explicit_disable": supports_explicit_disable(capability.get("reasoning_options"), effective_protocol),
+            "supports_reasoning_budget": "budget_tokens" in reasoning_control_types(capability.get("reasoning_options")).intersection(protocol_reasoning_controls(effective_protocol)), "default_level": None,
             "native_levels": native_levels, "level_mapping": {item: item for item in native_levels}, "warnings": []}
 
     @staticmethod

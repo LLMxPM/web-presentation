@@ -1,7 +1,7 @@
 /**
- * 文件功能：从智能体 run 时间线与子运行工具结果聚合本轮新增/修改的项目与页面，供对话内快捷卡片展示。
+ * 文件功能：从智能体 run 时间线聚合本轮新增/修改的项目与页面，供对话内快捷卡片展示。
  */
-import type { AgentMemberRunItem, AgentTimelineItem } from '@/types/api'
+import type { AgentTimelineItem } from '@/types/api'
 
 /** 实体变更效果：创建、更新或归档。 */
 export type AgentEntityChangeEffect = 'create' | 'update' | 'archive'
@@ -30,14 +30,12 @@ const PROJECT_UPDATE_TOOLS = new Set([
 ])
 
 /**
- * 从主时间线与成员子运行中，按 run 聚合成功写入的项目/页面变更。
+ * 从父 Run 时间线中，按 run 聚合成功写入的项目/页面变更。
  * @param timelineItems 会话主时间线
- * @param memberRuns 自委派子运行列表
  * @param workspaceId 当前工作空间 ID，用于卡片导航兜底
  */
 export function collectEntityChangesByRun(
   timelineItems: AgentTimelineItem[],
-  memberRuns: AgentMemberRunItem[] = [],
   workspaceId: number | null = null,
 ): Map<string, AgentEntityChangeItem[]> {
   const byRun = new Map<string, AgentEntityChangeItem[]>()
@@ -51,13 +49,12 @@ export function collectEntityChangesByRun(
     }
   }
 
-  const appendFromTools = (items: AgentTimelineItem[], parentRunId: string | null = null) => {
+  const appendFromTools = (items: AgentTimelineItem[]) => {
     for (const item of items) {
       if (item.kind !== 'tool' || !item.tool || item.tool.status !== 'completed') {
         continue
       }
-      // 子运行工具强制归属父 run，便于主时间线统一展示本轮实体卡。
-      const runId = parentRunId || item.run_id
+      const runId = item.run_id
       if (!runId) {
         continue
       }
@@ -83,11 +80,6 @@ export function collectEntityChangesByRun(
   }
 
   appendFromTools(timelineItems)
-  for (const memberRun of memberRuns) {
-    // 子运行工具归属父 run，便于在主时间线末尾统一展示本轮实体卡。
-    appendFromTools(memberRun.timeline_items, memberRun.parent_run_id || memberRun.run_id)
-  }
-
   const merged = new Map<string, AgentEntityChangeItem[]>()
   for (const [runId, changes] of byRun) {
     const deduped = mergeEntityChanges(changes)

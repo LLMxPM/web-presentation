@@ -26,25 +26,17 @@ class AiAgentExternalBatch(TimestampMixin, Base):
             postgresql_where=text("status = 'resuming'"),
         ),
         Index(
-            "uq_ai_external_batches_collecting_parent",
+            "uq_ai_external_batches_collecting_run",
             "run_id",
             unique=True,
-            sqlite_where=text("status = 'collecting' AND member_run_id IS NULL"),
-            postgresql_where=text("status = 'collecting' AND member_run_id IS NULL"),
-        ),
-        Index(
-            "uq_ai_external_batches_collecting_member",
-            "member_run_id",
-            unique=True,
-            sqlite_where=text("status = 'collecting' AND member_run_id IS NOT NULL"),
-            postgresql_where=text("status = 'collecting' AND member_run_id IS NOT NULL"),
+            sqlite_where=text("status = 'collecting'"),
+            postgresql_where=text("status = 'collecting'"),
         ),
     )
 
     batch_id: Mapped[str] = mapped_column(String(128), primary_key=True)
     run_id: Mapped[str] = mapped_column(ForeignKey("ai_agent_runs.run_id"), nullable=False, index=True)
     session_id: Mapped[str] = mapped_column(ForeignKey("ai_agent_sessions.session_id"), nullable=False, index=True)
-    member_run_id: Mapped[str | None] = mapped_column(ForeignKey("ai_agent_member_runs.member_run_id"), nullable=True, index=True)
     requirement_id: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
     sequence_no: Mapped[int] = mapped_column(Integer, nullable=False)
     group_key: Mapped[str | None] = mapped_column(String(128), nullable=True)
@@ -70,7 +62,6 @@ class AiAgentExternalTask(TimestampMixin, Base):
     batch_id: Mapped[str] = mapped_column(ForeignKey("ai_agent_external_batches.batch_id"), nullable=False, index=True)
     run_id: Mapped[str] = mapped_column(ForeignKey("ai_agent_runs.run_id"), nullable=False, index=True)
     session_id: Mapped[str] = mapped_column(ForeignKey("ai_agent_sessions.session_id"), nullable=False, index=True)
-    member_run_id: Mapped[str | None] = mapped_column(ForeignKey("ai_agent_member_runs.member_run_id"), nullable=True, index=True)
     kind: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
     tool_call_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     deferred_tool_call_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)

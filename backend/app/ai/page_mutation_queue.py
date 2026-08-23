@@ -16,6 +16,7 @@ from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.ai.page_mutation_executor import AiPageMutationExecutor
+from app.ai.page_mutation_wakeup import page_mutation_batch_wakeup, page_mutation_job_wakeup
 from app.ai.platform_runtime import PlatformAgentRuntimeStore
 from app.ai.platform_tools import recoverable_tool_error_result
 from app.ai.run_write_fence import AgentRunWriteFenceLost, PageMutationContinuationWriteFence
@@ -312,6 +313,7 @@ async def _run_job_worker(
     executor = AiPageMutationExecutor(session_factory)
     while True:
         try:
+            observed_generation = page_mutation_job_wakeup.generation
             async with session_factory() as session:
                 candidate_query = (
                     select(AiPageMutationJob.id)
@@ -333,7 +335,7 @@ async def _run_job_worker(
                     candidate_query=candidate_query,
                 )
             if not claimed:
-                await asyncio.sleep(poll_interval)
+                await page_mutation_job_wakeup.wait(observed_generation, poll_interval)
                 continue
             await _execute_claimed_job(
                 session_factory,
@@ -445,6 +447,7 @@ async def _execute_claimed_job(
         heartbeat.cancel()
         with suppress(asyncio.CancelledError):
             await heartbeat
+        await page_mutation_batch_wakeup.notify()
         logger.info(
             "AI 页面变更任务本次执行结束。",
             extra={
@@ -470,13 +473,14 @@ async def _run_continuation_coordinator(
     last_recovery_at = 0.0
     while True:
         try:
+            observed_generation = page_mutation_batch_wakeup.generation
             if monotonic() - last_recovery_at >= recovery_interval:
                 await recover_interrupted_ai_page_mutation_jobs_on_startup(session_factory)
                 last_recovery_at = monotonic()
             await _reconcile_cancelled_and_orphaned_jobs(session_factory)
             claimed_batch = await _claim_ready_batch(session_factory, worker_id=worker_id)
             if claimed_batch is None:
-                await asyncio.sleep(poll_interval)
+                await page_mutation_batch_wakeup.wait(observed_generation, poll_interval)
                 continue
             await _continue_claimed_batch(
                 session_factory,

@@ -2,7 +2,14 @@
 
 from __future__ import annotations
 
-from tests.api.catalog.catalog_cases import *  # noqa: F403
+from httpx import AsyncClient
+
+from app.schemas.project_app_config import DEFAULT_PROJECT_STYLE_SPEC_MARKDOWN
+from tests.api.catalog.catalog_cases import (
+    _create_catalog_page,
+    _create_catalog_project,
+    _create_catalog_workspace,
+)
 
 
 async def test_workspace_project_and_page_crud(authenticated_client: AsyncClient) -> None:
@@ -35,15 +42,14 @@ async def test_workspace_project_and_page_crud(authenticated_client: AsyncClient
     assert project_data["code"].startswith("PRJ")
     assert project_data["page_width"] == 1920
     assert project_data["page_height"] == 1080
-    assert project_data["base_font_size"] == "20px"
+    assert project_data["base_font_size"] == "24px"
     assert "icon_default_size" not in project_data
     assert project_data["icon_default_stroke_width"] == 2
     assert project_data["show_pdf_export_button"] is True
     assert project_data["menu_mode"] == "preview"
+    assert project_data["theme_key"] == workspace_data["default_theme_key"]
+    assert "theme_config_yaml" not in project_data
     assert project_data["style_spec_markdown"] == DEFAULT_PROJECT_STYLE_SPEC_MARKDOWN
-    assert "themes:" in project_data["theme_config_yaml"]
-    assert "baseFontSize" not in project_data["theme_config_yaml"]
-    assert "default_size" not in project_data["theme_config_yaml"]
 
     # 创建页面资源（不传 code，由后端自动生成；使用 page_content 替代 name/slug）
     page_response = await authenticated_client.post(

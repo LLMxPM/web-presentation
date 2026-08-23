@@ -412,7 +412,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/vue-query'
 import { Archive, Eye, FolderKanban, Layers, Plus, RefreshCw, SquarePen, Upload } from '@lucide/vue'
@@ -442,6 +442,7 @@ import PaginationControl from '@/components/ui/PaginationControl.vue'
 import { UiButton, UiDialog, UiIconButton } from '@/components/ui'
 import { createConfirm, Message } from '@/utils/message'
 import { downloadBlob } from '@/utils/zip-download'
+import type { AgentMutationRefreshEvent } from '@/components/agent/agent-conversation-panel'
 import type {
   PreviewArtifactResponse,
   ProjectItem,
@@ -528,6 +529,9 @@ const importPackagePending = ref(false)
 const importPreviewPending = ref(false)
 const importPreviewArtifact = ref<PreviewArtifactResponse | null>(null)
 
+/** 智能体项目类刷新事件只依赖工作空间和项目上下文，避免视图耦合完整工具结果结构。 */
+type AgentProjectMutationDetail = Pick<AgentMutationRefreshEvent, 'workspaceId' | 'projectId' | 'toolName' | 'result'>
+
 watch(projectKeyword, () => {
   if (projectSearchDebounceTimer !== null) {
     window.clearTimeout(projectSearchDebounceTimer)
@@ -603,6 +607,34 @@ function openCreateDialog() {
 function handleRefreshProjects(): void {
   void query.refetch()
   void workspaceQuery.refetch()
+}
+
+/**
+ * 接收智能体项目配置变更，刷新当前工作空间的项目列表。
+ */
+function handleGlobalAgentProjectUpdated(event: Event): void {
+  const detail = (event as CustomEvent<AgentProjectMutationDetail>).detail
+  if (detail?.workspaceId && detail.workspaceId !== workspaceId.value) return
+  void refreshProjectsAfterAgentMutation()
+}
+
+/**
+ * 接收智能体项目页面或路由变更，刷新项目卡片中的页面聚合信息。
+ */
+function handleGlobalAgentProjectPagesUpdated(event: Event): void {
+  const detail = (event as CustomEvent<AgentProjectMutationDetail>).detail
+  if (detail?.workspaceId && detail.workspaceId !== workspaceId.value) return
+  void refreshProjectsAfterAgentMutation()
+}
+
+/**
+ * 刷新当前项目列表，并使同一工作空间下的其它项目列表缓存同步失效。
+ */
+async function refreshProjectsAfterAgentMutation(): Promise<void> {
+  await Promise.all([
+    query.refetch(),
+    queryClient.invalidateQueries({ queryKey: ['projects-by-ws', workspaceId.value] }),
+  ])
 }
 
 /**
@@ -972,6 +1004,16 @@ function resolveAssetTypeLabel(type: string): string {
   }
   return labels[type] ?? type
 }
+
+onMounted(() => {
+  window.addEventListener('agent:project-updated', handleGlobalAgentProjectUpdated)
+  window.addEventListener('agent:project-pages-updated', handleGlobalAgentProjectPagesUpdated)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('agent:project-updated', handleGlobalAgentProjectUpdated)
+  window.removeEventListener('agent:project-pages-updated', handleGlobalAgentProjectPagesUpdated)
+})
 
 /**
  * 保存工作空间基础信息，并刷新当前工作空间详情。

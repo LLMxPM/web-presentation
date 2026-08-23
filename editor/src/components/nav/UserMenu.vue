@@ -1,4 +1,4 @@
-<!-- 文件功能：顶部状态栏的用户个人菜单，包含修改密码及退出登录（TailwindCSS & Lucide 版）。 -->
+<!-- 文件功能：顶部状态栏的用户个人菜单，包含修改密码、AI 设置、访问令牌及退出登录（TailwindCSS & Lucide 版）。 -->
 <template>
   <div class="user-menu relative">
     <UiDropdownMenu :items="menuItems" side="bottom" align="end" @select="handleCommand">
@@ -43,7 +43,7 @@
 <script setup lang="ts">
 import { computed, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Bot, ChevronDown, KeyRound, LogOut, UserCog } from '@lucide/vue'
+import { Bot, ChevronDown, Key, KeyRound, LogOut, UserCog } from '@lucide/vue'
 
 import { changePassword } from '@/api/auth'
 import { getErrorMessage } from '@/api/http'
@@ -80,6 +80,7 @@ const menuItems = computed<DropdownMenuEntry[]>(() => {
   const items: DropdownMenuEntry[] = [
     { label: '修改密码', value: 'password', icon: KeyRound },
     { label: 'AI 设置', value: 'ai-settings', icon: Bot },
+    { label: '访问令牌', value: 'access-tokens', icon: Key },
   ]
   if (user.value?.role === 'platform_admin') {
     items.push({ label: '用户管理', value: 'users', icon: UserCog })
@@ -100,6 +101,8 @@ async function handleCommand(command: string) {
     router.push({ name: 'login' })
   } else if (command === 'ai-settings') {
     router.push(buildGlobalPageLocation('accountAiSettings', route.fullPath))
+  } else if (command === 'access-tokens') {
+    router.push(buildGlobalPageLocation('accountAccessTokens', route.fullPath))
   } else if (command === 'users') {
     router.push(buildGlobalPageLocation('users', route.fullPath))
   } else if (command === 'password') {

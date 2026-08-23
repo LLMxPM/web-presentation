@@ -13,7 +13,7 @@ dependencies = [
     "asyncpg>=0.31.0",
     "cryptography>=48.0.0",
     "fastapi>=0.136.1",
-    "google-genai>=2.6.0",
+    "google-genai>=2.18.1",
     "httpx>=0.28.1",
     "ollama>=0.6.1",
     "openai>=2.45.0",
@@ -50,6 +50,7 @@ dev = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+norecursedirs = ["cli", ".git", ".tmp", "dist", "build", "node_modules"]
 pythonpath = ["."]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"

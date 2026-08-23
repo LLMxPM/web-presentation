@@ -13,7 +13,6 @@ import pytest
 from httpx import AsyncClient
 from pydantic_ai import Agent, DeferredToolResults
 from pydantic_ai.messages import (
-    FunctionToolCallEvent,
     ModelRequest,
     ModelMessagesTypeAdapter,
     ModelResponse,
@@ -34,7 +33,6 @@ from sqlalchemy import select
 
 from app.ai.agent.runtime_context import AgentRuntimeContext
 from app.ai.agent_runtime_config import EffectiveAgentRuntimeConfig
-from app.ai.member_delegation import MemberDelegationExecutor, MemberDelegationPaused
 from app.ai.message_history import build_context_limit_processor, build_history_budget, rebuild_agent_message_history
 from app.ai.platform_tools import AgentToolContext, agent_tool
 from app.ai.platform_runtime import PlatformAgentRuntimeStore
@@ -43,11 +41,10 @@ from app.ai.pydantic_event_projection import PydanticEventProjector
 from app.ai.pydantic_runner import PydanticAgentRunner, _requirement_from_deferred
 from app.ai.pydantic_tools import AgentToolDeps, _wrap_platform_tool
 from app.ai.session_facade_pydantic import AgentSessionFacade, _build_continue_message_history, _build_deferred_results
-from app.ai.tools.self_delegation import build_self_delegation_tools
 from app.core.exceptions import AppException
 from app.db.session import get_session_factory
-from app.models.ai_agent_runtime import AiAgentMemberRun, AiAgentRun, AiAgentRunEvent, AiAgentSession, AiAgentToolCall
-from app.schemas.agent import AgentPendingRequirement, AgentRunEvent, AgentScopeContext
+from app.models.ai_agent_runtime import AiAgentRun, AiAgentRunEvent, AiAgentSession, AiAgentToolCall
+from app.schemas.agent import AgentRunEvent, AgentScopeContext
 
 
 async def test_pydantic_runner_should_pause_continue_and_replay_ask_user(
@@ -899,270 +896,10 @@ async def test_pydantic_runner_should_trim_open_tool_call_when_run_fails(
     )
 
 
-async def test_pydantic_runner_should_return_member_delegation_result_to_coordinator(
-    authenticated_client: AsyncClient,
-) -> None:
-    """内容助手委派工具应拿到成员结果，并把当前委派 tool_call_id 传给执行器。"""
-
-    _, scope = await _create_workspace_scope(
-        authenticated_client,
-        workspace_name="Pydantic Runner 成员委派工作空间",
-        source="editor-page-detail",
-    )
-    session_id = "session-pydantic-runner-member-delegation"
-    run_id = "pydantic-runner-member-delegation"
-    model = FunctionModel(stream_function=_member_delegation_stream_function)
-    executor = _FakeMemberDelegationExecutor()
-    tools = [
-        _wrap_platform_tool(tool_item)
-        for tool_item in build_self_delegation_tools(get_session_factory())
-    ]
-
-    async with get_session_factory()() as db_session:
-        store = PlatformAgentRuntimeStore(db_session, user_id=1)
-        await store.create_session(
-            session_id=session_id,
-            agent_id="agent-coordinator",
-            session_name="Pydantic Runner 成员委派会话",
-            workspace_id=scope.workspace_id,
-            focus_mode="follow_route",
-            pinned_project_id=None,
-            work_scope_mode="workspace",
-            allowed_project_ids=[],
-        )
-        run_start = await store.start_run(
-            session_id=session_id,
-            agent_id="agent-coordinator",
-            scope=scope,
-            run_id=run_id,
-            message="请让资源助手整理封面图资源。",
-            image_attachment_ids=[],
-        )
-
-        events = await _collect_runner_events(
-            PydanticAgentRunner(store).stream_run(
-                run_model=run_start.run_model,
-                agent_id="agent-coordinator",
-                model=model,
-                model_settings={},
-                runtime_context=_runtime_context(scope),
-                message="请让资源助手整理封面图资源。",
-                tools=tools,
-                deps=AgentToolDeps(
-                    dependencies={
-                        "run_id": run_id,
-                        "session_id": session_id,
-                        "member_delegation_executor": executor,
-                    }
-                ),
-            )
-        )
-        completed_run = await store.get_latest_run_model(session_id=session_id, agent_id="agent-coordinator")
-        assert completed_run is not None
-        tool_call = await db_session.scalar(
-            select(AiAgentToolCall).where(
-                AiAgentToolCall.run_id == run_id,
-                AiAgentToolCall.tool_call_id == "tool-delegate-resource",
-            )
-        )
-
-    assert completed_run.status == "completed"
-    assert completed_run.content == "已整合资源助手结果。"
-    assert executor.calls == [
-        {
-            "member_id": "agent-coordinator",
-            "task": "整理封面图资源",
-            "handoff_context": "页面需要封面视觉资源",
-            "expected_output": "返回可引用资源名",
-            "delegate_tool_call_id": "tool-delegate-resource",
-            "delegate_tool_name": "delegate_task_to_self",
-        }
-    ]
-    assert "tool.completed" in [event.event for event in events]
-    assert events[-1].event == "run.completed"
-    assert tool_call is not None
-    assert tool_call.status == "completed"
-    assert tool_call.output_payload_json["member_run_id"] == "member-run-fake-resource"
 
 
-async def test_pydantic_runner_should_return_parallel_member_delegation_results_to_coordinator(
-    authenticated_client: AsyncClient,
-) -> None:
-    """同一轮多个单成员委派应各自返回结果，供内容助手继续整合。"""
-
-    _, scope = await _create_workspace_scope(
-        authenticated_client,
-        workspace_name="Pydantic Runner 并行成员委派工作空间",
-        source="editor-page-detail",
-    )
-    session_id = "session-pydantic-runner-parallel-member-delegation"
-    run_id = "pydantic-runner-parallel-member-delegation"
-    model = FunctionModel(stream_function=_parallel_member_delegation_stream_function)
-    executor = _FakeMemberDelegationExecutor()
-    tools = [
-        _wrap_platform_tool(tool_item)
-        for tool_item in build_self_delegation_tools(get_session_factory())
-    ]
-
-    async with get_session_factory()() as db_session:
-        store = PlatformAgentRuntimeStore(db_session, user_id=1)
-        await store.create_session(
-            session_id=session_id,
-            agent_id="agent-coordinator",
-            session_name="Pydantic Runner 并行成员委派会话",
-            workspace_id=scope.workspace_id,
-            focus_mode="follow_route",
-            pinned_project_id=None,
-            work_scope_mode="workspace",
-            allowed_project_ids=[],
-        )
-        run_start = await store.start_run(
-            session_id=session_id,
-            agent_id="agent-coordinator",
-            scope=scope,
-            run_id=run_id,
-            message="请同时整理资源和组件。",
-            image_attachment_ids=[],
-        )
-
-        events = await _collect_runner_events(
-            PydanticAgentRunner(store).stream_run(
-                run_model=run_start.run_model,
-                agent_id="agent-coordinator",
-                model=model,
-                model_settings={},
-                runtime_context=_runtime_context(scope),
-                message="请同时整理资源和组件。",
-                tools=tools,
-                deps=AgentToolDeps(
-                    dependencies={
-                        "run_id": run_id,
-                        "session_id": session_id,
-                        "member_delegation_executor": executor,
-                    }
-                ),
-            )
-        )
-        completed_run = await store.get_latest_run_model(session_id=session_id, agent_id="agent-coordinator")
-        rows = (
-            await db_session.execute(
-                select(AiAgentToolCall)
-                .where(AiAgentToolCall.run_id == run_id, AiAgentToolCall.tool_name == "delegate_task_to_self")
-                .order_by(AiAgentToolCall.tool_call_id.asc())
-            )
-        ).scalars().all()
-
-    assert completed_run is not None
-    assert completed_run.status == "completed"
-    assert completed_run.content == "已整合多个成员结果。"
-    assert {item["delegate_tool_call_id"] for item in executor.calls} == {
-        "tool-delegate-component",
-        "tool-delegate-resource",
-    }
-    assert [row.status for row in rows] == ["completed", "completed"]
-    assert {row.output_payload_json["member_id"] for row in rows} == {"agent-coordinator", "agent-coordinator"}
-    assert [event.event for event in events].count("tool.completed") == 2
-    assert events[-1].event == "run.completed"
 
 
-async def test_pydantic_runner_should_not_pause_parent_when_member_delegation_requires_hitl(
-    authenticated_client: AsyncClient,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """成员委派触发 HITL 时应转为成员失败结果，父 run 继续完成。"""
-
-    _, scope = await _create_workspace_scope(
-        authenticated_client,
-        workspace_name="Pydantic Runner 成员 HITL 降级工作空间",
-        source="editor-page-detail",
-    )
-    session_id = "session-pydantic-runner-member-hitl-skipped"
-    run_id = "pydantic-runner-member-hitl-skipped"
-    model = FunctionModel(stream_function=_member_delegation_hitl_stream_function)
-    current = SimpleNamespace(
-        user=SimpleNamespace(id=1, role="admin"),
-        session_token="token-test",
-        backend_session_id="backend-session-test",
-    )
-    executor = MemberDelegationExecutor(
-        session_factory=get_session_factory(),
-        current=current,
-        scope=scope,
-        runtime_context=_runtime_context(scope),
-        parent_session_id=session_id,
-        parent_run_id=run_id,
-    )
-    monkeypatch.setattr(MemberDelegationExecutor, "_delegate_one", _paused_member_delegate_one)
-    tools = [
-        _wrap_platform_tool(tool_item)
-        for tool_item in build_self_delegation_tools(get_session_factory())
-    ]
-
-    async with get_session_factory()() as db_session:
-        store = PlatformAgentRuntimeStore(db_session, user_id=1)
-        await store.create_session(
-            session_id=session_id,
-            agent_id="agent-coordinator",
-            session_name="Pydantic Runner 成员 HITL 降级会话",
-            workspace_id=scope.workspace_id,
-            focus_mode="follow_route",
-            pinned_project_id=None,
-            work_scope_mode="workspace",
-            allowed_project_ids=[],
-        )
-        run_start = await store.start_run(
-            session_id=session_id,
-            agent_id="agent-coordinator",
-            scope=scope,
-            run_id=run_id,
-            message="请让资源助手执行需要确认的任务。",
-            image_attachment_ids=[],
-        )
-
-        events = await _collect_runner_events(
-            PydanticAgentRunner(store).stream_run(
-                run_model=run_start.run_model,
-                agent_id="agent-coordinator",
-                model=model,
-                model_settings={},
-                runtime_context=_runtime_context(scope),
-                message="请让资源助手执行需要确认的任务。",
-                tools=tools,
-                deps=AgentToolDeps(
-                    dependencies={
-                        "run_id": run_id,
-                        "session_id": session_id,
-                        "member_delegation_executor": executor,
-                    }
-                ),
-            )
-        )
-        completed_run = await store.get_latest_run_model(session_id=session_id, agent_id="agent-coordinator")
-        tool_call = await db_session.scalar(
-            select(AiAgentToolCall).where(
-                AiAgentToolCall.run_id == run_id,
-                AiAgentToolCall.tool_call_id == "tool-delegate-hitl",
-            )
-        )
-        member_run = await db_session.get(AiAgentMemberRun, "member-run-hitl-resource")
-
-    assert completed_run is not None
-    assert completed_run.status == "completed"
-    assert completed_run.pending_requirement_json is None
-    assert completed_run.content == "已跳过需要用户处理的成员委派并继续。"
-    assert tool_call is not None
-    assert tool_call.status == "completed"
-    assert tool_call.output_payload_json["status"] == "failed"
-    assert "成员任务需要父级处理用户确认" in tool_call.output_payload_json["result"]
-    assert tool_call.output_payload_json["error"]["code"] == "AI_MEMBER_HITL_REQUIRES_PARENT"
-    assert tool_call.output_payload_json["error"]["retryable_at_parent"] is True
-    assert member_run is not None
-    assert member_run.status == "failed"
-    assert member_run.pending_requirement_json is None
-    assert "子运行不能直接请求用户确认" in (member_run.error_message or "")
-    assert "run.paused" not in [event.event for event in events]
-    assert "member.run.error" in [event.event for event in events]
-    assert events[-1].event == "run.completed"
 
 
 async def test_pydantic_runner_should_fail_fast_for_bad_ask_user_payload(
@@ -1262,66 +999,14 @@ async def test_pydantic_runner_should_buffer_consecutive_delta_chunks(
     ]
 
 
-async def test_pydantic_event_projector_should_buffer_member_delta_chunks() -> None:
-    """成员事件使用共享投影器时，连续小 chunk 应合并为较少的 member.message.delta。"""
-
-    events = await _project_member_events(
-        [
-            PartDeltaEvent(index=0, delta=TextPartDelta(content_delta="资源")),
-            PartDeltaEvent(index=0, delta=TextPartDelta(content_delta="整理")),
-            PartDeltaEvent(index=0, delta=TextPartDelta(content_delta="完成。")),
-        ],
-        flush=True,
-    )
-
-    assert [(event.event, event.content) for event in events] == [
-        ("member.message.delta", "资源整理完成。"),
-    ]
-    assert events[0].data == {
-        "member_run_id": "member-run-1",
-        "member_agent_id": "agent-coordinator",
-        "member_agent_name": "资源助手",
-        "delegate_tool_call_id": "delegate-call-1",
-    }
 
 
-async def test_pydantic_event_projector_should_flush_member_text_before_tool_start() -> None:
-    """成员工具事件开始前应先写出已缓冲文本，并保留成员 tool_call_id 映射。"""
-
-    events = await _project_member_events(
-        [
-            PartDeltaEvent(index=0, delta=TextPartDelta(content_delta="先检查现有资源。")),
-            FunctionToolCallEvent(
-                ToolCallPart(
-                    tool_name="list_workspace_render_assets",
-                    args={"workspace_id": 11},
-                    tool_call_id="tool-list-assets",
-                )
-            ),
-        ],
-        flush=False,
-    )
-
-    assert [(event.event, event.content) for event in events] == [
-        ("member.message.delta", "先检查现有资源。"),
-        ("member.tool.started", None),
-    ]
-    assert events[1].data == {
-        "member_run_id": "member-run-1",
-        "member_agent_id": "agent-coordinator",
-        "member_agent_name": "资源助手",
-        "delegate_tool_call_id": "delegate-call-1",
-        "tool_name": "list_workspace_render_assets",
-        "tool_call_id": "member-run-1:tool-list-assets",
-        "tool_args": {"workspace_id": 11},
-        "raw_tool_call_id": "tool-list-assets",
-    }
 
 
 async def test_pydantic_event_projector_should_project_output_tool_events() -> None:
     """升级到 Pydantic AI 2.x 后，输出工具事件仍应保留平台工具时间线。"""
 
-    events = await _project_member_events(
+    events = await _project_events(
         [
             OutputToolCallEvent(
                 ToolCallPart(
@@ -1342,18 +1027,18 @@ async def test_pydantic_event_projector_should_project_output_tool_events() -> N
     )
 
     assert [(event.event, event.content) for event in events] == [
-        ("member.tool.started", None),
-        ("member.tool.completed", None),
+        ("tool.started", None),
+        ("tool.completed", None),
     ]
     assert events[0].data["tool_name"] == "final_result"
-    assert events[0].data["tool_call_id"] == "member-run-1:output-call-1"
+    assert events[0].data["tool_call_id"] == "output-call-1"
     assert events[1].data["result"] == "已完成。"
 
 
 async def test_pydantic_event_projector_should_ignore_tool_part_start_until_function_call() -> None:
     """模型响应里的工具片段开始不等于工具执行，不能提前创建 running 工具。"""
 
-    events = await _project_member_events(
+    events = await _project_events(
         [
             PartDeltaEvent(index=0, delta=TextPartDelta(content_delta="准备读取资源。")),
             PartStartEvent(
@@ -1369,7 +1054,7 @@ async def test_pydantic_event_projector_should_ignore_tool_part_start_until_func
     )
 
     assert [(event.event, event.content) for event in events] == [
-        ("member.message.delta", "准备读取资源。"),
+        ("message.delta", "准备读取资源。"),
     ]
 
 
@@ -2376,8 +2061,10 @@ async def _collect_runner_events(stream: AsyncIterator[bytes]) -> list[Any]:
     return events
 
 
-async def _project_member_events(raw_events: list[Any], *, flush: bool) -> list[Any]:
-    """用共享投影器把测试原始事件转换为 member.* 平台事件。"""
+
+
+async def _project_events(raw_events: list[Any], *, flush: bool) -> list[Any]:
+    """用共享投影器把原始事件转换为父 Run 平台事件。"""
 
     stored_events: list[Any] = []
 
@@ -2391,14 +2078,7 @@ async def _project_member_events(raw_events: list[Any], *, flush: bool) -> list[
         run_id="parent-run-1",
         session_id="session-1",
         append_event=append_event,
-        event_prefix="member.",
-        base_event_data=lambda: {
-            "member_run_id": "member-run-1",
-            "member_agent_id": "agent-coordinator",
-            "member_agent_name": "资源助手",
-            "delegate_tool_call_id": "delegate-call-1",
-        },
-        map_tool_call_id=lambda raw_tool_call_id: f"member-run-1:{raw_tool_call_id}" if raw_tool_call_id else None,
+        map_tool_call_id=lambda raw_tool_call_id: raw_tool_call_id,
         extra_tool_data=lambda raw_tool_call_id: {"raw_tool_call_id": raw_tool_call_id},
     )
     for raw_event in raw_events:
@@ -2437,134 +2117,8 @@ async def fatal_error_tool(run_context: AgentToolContext) -> dict[str, Any]:
     raise AppException(status_code=500, code="TEST_FATAL_TOOL_FAILED", detail="工具执行失败。")
 
 
-class _FakeMemberDelegationExecutor:
-    """测试用成员委派执行器，只记录入参并返回固定成员结果。"""
-
-    def __init__(self) -> None:
-        """初始化调用记录。"""
-
-        self.calls: list[dict[str, Any]] = []
-
-    async def delegate_task_to_self(
-        self,
-        *,
-        member_id: str,
-        task: str,
-        handoff_context: str | None,
-        expected_output: str | None,
-        delegate_tool_call_id: str | None,
-        delegate_tool_name: str,
-    ) -> dict[str, Any]:
-        """模拟单成员委派完成，并返回可供内容助手继续推理的结果。"""
-
-        self.calls.append(
-            {
-                "member_id": member_id,
-                "task": task,
-                "handoff_context": handoff_context,
-                "expected_output": expected_output,
-                "delegate_tool_call_id": delegate_tool_call_id,
-                "delegate_tool_name": delegate_tool_name,
-            }
-        )
-        member_name = "资源助手" if member_id == "agent-coordinator" else "组件助手"
-        member_run_id = (
-            "member-run-fake-resource"
-            if delegate_tool_call_id == "tool-delegate-resource"
-            else f"member-run-fake-{delegate_tool_call_id or len(self.calls)}"
-        )
-        return {
-            "member_run_id": member_run_id,
-            "member_id": member_id,
-            "member_name": member_name,
-            "status": "completed",
-            "result": f"已完成：{task}",
-        }
 
 
-async def _paused_member_delegate_one(
-    self: MemberDelegationExecutor,
-    *,
-    member_id: str,
-    task: str,
-    handoff_context: str | None,
-    expected_output: str | None,
-    delegate_tool_call_id: str | None,
-    delegate_tool_name: str,
-    parent_delegate_tool_args: dict[str, Any],
-    completed_results: list[dict[str, Any]],
-) -> Any:
-    """测试用成员执行过程：创建暂停成员 run 后抛出 HITL 暂停。"""
-
-    _ = completed_results
-    member_run_id = "member-run-hitl-resource"
-    async with self._session_factory() as session:
-        parent_run = await self._require_parent_run(session)
-        member_run = AiAgentMemberRun(
-            member_run_id=member_run_id,
-            parent_run_id=parent_run.run_id,
-            session_id=parent_run.session_id,
-            agent_id=member_id,
-            agent_name="资源助手",
-            status="paused",
-            delegate_tool_call_id=delegate_tool_call_id,
-            input_payload_json={
-                "task": task,
-                "handoff_context": handoff_context,
-                "expected_output": expected_output,
-                "delegate_tool_name": delegate_tool_name,
-                "delegate_tool_call_id": delegate_tool_call_id,
-                "parent_delegate_tool_args": parent_delegate_tool_args,
-                "input_prompt": f"任务：{task}",
-            },
-            message_history_json=[],
-        )
-        session.add(member_run)
-        await session.flush([member_run])
-        requirement = AgentPendingRequirement(
-            id="req-member-hitl",
-            kind="user_feedback",
-            run_id=parent_run.run_id,
-            session_id=parent_run.session_id,
-            member_agent_id=member_id,
-            member_agent_name="资源助手",
-            member_run_id=member_run_id,
-            tool_name="ask_user",
-            tool_execution={
-                "tool_call_id": "member-tool-ask-user",
-                "tool_name": "ask_user",
-                "member_tool_call_id": "member-tool-ask-user",
-                "member_tool_name": "ask_user",
-                "member_run_id": member_run_id,
-                "parent_delegate_tool_call_id": delegate_tool_call_id,
-                "parent_delegate_tool_name": delegate_tool_name,
-                "parent_delegate_tool_args": parent_delegate_tool_args,
-            },
-            user_feedback_schema=[
-                {
-                    "question": "是否允许资源助手继续？",
-                    "options": [{"label": "允许"}, {"label": "跳过"}],
-                    "multi_select": False,
-                }
-            ],
-        )
-        member_run.pending_requirement_json = requirement.model_dump(mode="json")
-        await PlatformAgentRuntimeStore(session, user_id=self._current.user.id).append_event(
-            parent_run,
-            AgentRunEvent(
-                event="member.run.paused",
-                run_id=parent_run.run_id,
-                session_id=parent_run.session_id,
-                data={
-                    "member_run_id": member_run_id,
-                    "member_agent_id": member_id,
-                    "member_agent_name": "资源助手",
-                    "delegate_tool_call_id": delegate_tool_call_id,
-                    "requirement": requirement.model_dump(mode="json"),
-                },
-            ),
-        )
-    raise MemberDelegationPaused(requirement)
 
 
 async def _single_text_stream_function(
@@ -2657,78 +2211,10 @@ async def _fatal_tool_error_stream_function(
     }
 
 
-async def _member_delegation_stream_function(
-    messages: list[Any],
-    info: AgentInfo,
-) -> AsyncIterator[str | dict[int, DeltaToolCall]]:
-    """模拟内容助手先委派资源助手，收到成员结果后继续输出最终回复。"""
-
-    _ = info
-    if _latest_tool_return(messages) is not None:
-        yield "已整合资源助手结果。"
-        return
-    yield {
-        0: DeltaToolCall(
-            name="delegate_task_to_self",
-            json_args=(
-                '{"task":"整理封面图资源",'
-                '"handoff_context":"页面需要封面视觉资源","expected_output":"返回可引用资源名"}'
-            ),
-            tool_call_id="tool-delegate-resource",
-        )
-    }
 
 
-async def _parallel_member_delegation_stream_function(
-    messages: list[Any],
-    info: AgentInfo,
-) -> AsyncIterator[str | dict[int, DeltaToolCall]]:
-    """模拟内容助手在同一轮并行委派资源助手和组件助手。"""
-
-    _ = info
-    if _latest_tool_return(messages) is not None:
-        yield "已整合多个成员结果。"
-        return
-    yield {
-        0: DeltaToolCall(
-            name="delegate_task_to_self",
-            json_args=(
-                '{"task":"整理封面图资源",'
-                '"handoff_context":"页面需要封面视觉资源","expected_output":"返回可引用资源名"}'
-            ),
-            tool_call_id="tool-delegate-resource",
-        ),
-        1: DeltaToolCall(
-            name="delegate_task_to_self",
-            json_args=(
-                '{"task":"检查 Hero 组件依赖",'
-                '"handoff_context":"页面需要复用 Hero 组件","expected_output":"返回组件可用性结论"}'
-            ),
-            tool_call_id="tool-delegate-component",
-        ),
-    }
 
 
-async def _member_delegation_hitl_stream_function(
-    messages: list[Any],
-    info: AgentInfo,
-) -> AsyncIterator[str | dict[int, DeltaToolCall]]:
-    """模拟内容助手收到成员 HITL 降级结果后继续输出。"""
-
-    _ = info
-    if _latest_tool_return(messages) is not None:
-        yield "已跳过需要用户处理的成员委派并继续。"
-        return
-    yield {
-        0: DeltaToolCall(
-            name="delegate_task_to_self",
-            json_args=(
-                '{"task":"执行需要用户确认的资源维护",'
-                '"handoff_context":"测试成员 HITL 降级","expected_output":"返回处理结果"}'
-            ),
-            tool_call_id="tool-delegate-hitl",
-        )
-    }
 
 
 async def _ask_user_function(messages: list[Any], info: AgentInfo) -> ModelResponse:

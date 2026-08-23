@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-import uuid
 import logging
+import time
+import uuid
 from typing import Literal
 from urllib.parse import urlencode
 
@@ -11,7 +12,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.models.page import Page
-from app.services.project_artifact_builder import AssetDeliveryMode, ProjectArtifactBuilder, ProjectPageModuleOverride
+from app.services.project_artifact_builder import (
+    ArtifactSnapshotProfile,
+    AssetDeliveryMode,
+    ProjectArtifactBuilder,
+    ProjectPageModuleOverride,
+)
 from app.schemas.release import PreviewArtifactResponse, PreviewEntryDescriptor
 from app.services.runtime_artifact_store import RuntimeArtifactStore
 from app.services.token_service import TokenService
@@ -41,6 +47,7 @@ class PreviewService:
         asset_base_url_override: str | None = None,
         artifact_kind: PreviewArtifactKind = "preview_artifact",
         manifest_extensions: dict[str, object] | None = None,
+        snapshot_profile: ArtifactSnapshotProfile = "full",
     ) -> PreviewArtifactResponse:
         """基于项目当前状态创建无状态预览 artifact，并返回带签名的预览入口。
 
@@ -49,14 +56,18 @@ class PreviewService:
         """
 
         settings = get_settings()
+        snapshot_started_at = time.perf_counter()
         snapshot = await self.artifact_builder.build_snapshot(
             project_id=project_id,
             entry_descriptor=entry_descriptor,
             page_module_overrides=page_module_overrides,
             transient_pages=transient_pages,
             asset_delivery_mode=asset_delivery_mode,
+            asset_snapshot_mode="referenced" if snapshot_profile == "page_diagnostics" else "all",
+            snapshot_profile=snapshot_profile,
             asset_base_url_override=asset_base_url_override,
         )
+        snapshot_duration_ms = round((time.perf_counter() - snapshot_started_at) * 1000, 2)
         entry_descriptor_payload = snapshot.entry_descriptor.model_dump(mode="python", exclude_none=True)
 
         manifest: dict[str, object] = {
@@ -75,6 +86,7 @@ class PreviewService:
             "asset_metadata": snapshot.asset_metadata,
         }
         self._append_manifest_extensions(manifest, manifest_extensions)
+        artifact_store_started_at = time.perf_counter()
         artifact_id = await RuntimeArtifactStore().put_artifact(
             tenant_id=tenant_id,
             workspace_id=snapshot.project.workspace_id,
@@ -84,6 +96,7 @@ class PreviewService:
             config_bundle=snapshot.config_bundle,
             modules_data=snapshot.modules_data,
         )
+        artifact_store_duration_ms = round((time.perf_counter() - artifact_store_started_at) * 1000, 2)
         trace_id = f"req-{uuid.uuid4().hex[:8]}"
         preview_token = TokenService.generate_preview_context_token(
             tenant_id=tenant_id,
@@ -106,6 +119,9 @@ class PreviewService:
                 "workspace_id": snapshot.project.workspace_id,
                 "module_count": len(snapshot.modules_data),
                 "asset_count": len(snapshot.asset_mapping),
+                "snapshot_profile": snapshot_profile,
+                "snapshot_duration_ms": snapshot_duration_ms,
+                "artifact_store_duration_ms": artifact_store_duration_ms,
             },
         )
         preview_url = (

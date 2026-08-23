@@ -53,6 +53,9 @@ async def test_batch_archive_should_be_atomic_and_isolated_by_workspace(authenti
     assert error.value.code == "AI_ENTITY_TARGETS_NOT_FOUND"
     assert await _read_deleted_at(first_style_id) is None
 
+    style_detail = await tools["get_entity"].entrypoint(context, "style", "detail", first_style_id, None, {})
+    assert 'view="configuration", target_id=' + str(first_style_id) in style_detail["message"]
+
     result = await archive_tool.entrypoint(context, "style", [first_style_id, second_style_id], "整理")
 
     assert result["success"] is True
@@ -128,9 +131,21 @@ async def test_selected_projects_should_filter_queries_and_hide_archived_pages(a
         work_scope_mode="selected_projects",
         allowed_project_ids=[first_project_id, second_project_id],
     )
+    listed_projects = await tools["list_entities"].entrypoint(approved_context, "project", {}, "items")
+    assert not any("first_page_screenshot_url" in item for item in listed_projects["data"]["items"])
+    project_detail = await tools["get_entity"].entrypoint(approved_context, "project", "detail", second_project_id, None, {})
+    assert "first_page_screenshot_url" not in project_detail["data"]
+    assert 'view="configuration"' in project_detail["message"]
+    assert 'view="route_tree"' in project_detail["message"]
     detail = await tools["get_entity"].entrypoint(approved_context, "page", "detail", second_page_id, None, {})
     assert detail["data"]["id"] == second_page_id
+    assert 'view="content"' in detail["message"]
+    assert 'view="versions"' in detail["message"]
+    assert 'view="version_content"' in detail["message"]
+    assert 'options={"version_no": <version_no>}' in detail["message"]
+    assert 'view="dependencies"' in detail["message"]
     assert not {
+        "page_content",
         "created_by",
         "updated_by",
         "screenshot_url",
@@ -141,6 +156,25 @@ async def test_selected_projects_should_filter_queries_and_hide_archived_pages(a
         "screenshot_is_latest",
         "screenshot_updated_at",
     }.intersection(detail["data"])
+    listed_pages = await tools["list_entities"].entrypoint(
+        approved_context,
+        "page",
+        {"project_id": second_project_id},
+        "items",
+    )
+    assert listed_pages["data"]["items"][0]["id"] == second_page_id
+    assert not {
+        "page_content",
+        "created_by",
+        "updated_by",
+        "screenshot_url",
+        "screenshot_version_no",
+        "screenshot_config_hash",
+        "screenshot_viewport_width",
+        "screenshot_viewport_height",
+        "screenshot_is_latest",
+        "screenshot_updated_at",
+    }.intersection(listed_pages["data"]["items"][0])
     versions = await tools["get_entity"].entrypoint(approved_context, "page", "versions", second_page_id, None, {})
     assert versions["data"][0]["version_no"] == 1
     version_content = await tools["get_entity"].entrypoint(
@@ -291,6 +325,7 @@ async def test_asset_create_detail_and_validation_should_use_stable_envelopes(au
     assert detail["data"]["id"] == asset_id
     assert detail["data"]["content_editable"] is True
     assert detail["data"]["references"]["page_count"] == 0
+    assert 'view="content", target_id=' + str(asset_id) in detail["message"]
 
     preview = await tools["validate_entity"].entrypoint(
         context,

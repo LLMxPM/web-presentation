@@ -367,16 +367,7 @@ async def audit_external_state_consistency(session_factory: async_sessionmaker[A
                 )
                 .values(status="cancelled", resolved_at=now)
             )
-            from app.models.ai_agent_runtime import AiAgentMemberRun, AiAgentToolCall
-
-            await session.execute(
-                update(AiAgentMemberRun)
-                .where(
-                    AiAgentMemberRun.parent_run_id == run.run_id,
-                    AiAgentMemberRun.status.in_(("running", "waiting_external")),
-                )
-                .values(status="cancelled", finished_at=now)
-            )
+            from app.models.ai_agent_runtime import AiAgentToolCall
             await session.execute(
                 update(AiAgentToolCall)
                 .where(
@@ -490,13 +481,6 @@ async def audit_external_state_consistency(session_factory: async_sessionmaker[A
                 await _fail_waiting_run(session, run=run, message=batch.error_message)
                 requirement.status = "failed"
                 continue
-            if requirement.member_run_id:
-                from app.models.ai_agent_runtime import AiAgentMemberRun
-
-                member = await session.get(AiAgentMemberRun, requirement.member_run_id)
-                if member is None or member.status not in {"running", "waiting_external"}:
-                    await _fail_waiting_run(session, run=run, message="成员Requirement引用不存在或已终态的成员Run。")
-                    requirement.status = "failed"
         await session.commit()
 
 

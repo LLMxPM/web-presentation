@@ -1,4 +1,4 @@
-"""文件功能：定义用户级智能体提示词与工具配置覆盖模型。"""
+"""文件功能：定义用户级智能体提示词、代码规范与工具配置覆盖模型。"""
 
 from __future__ import annotations
 
@@ -44,3 +44,25 @@ class AiAgentToolUserConfig(TimestampMixin, AuditMixin, Base):
     instructions_override: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     user = relationship("User", back_populates="agent_tool_configs")
+
+
+class AiAgentCodeStandardUserConfig(TimestampMixin, AuditMixin, Base):
+    """保存某个用户对内置 Agent 页面或组件代码规范的整类型覆盖。"""
+
+    __tablename__ = "ai_agent_code_standard_user_configs"
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id",
+            "agent_id",
+            "standard_type",
+            name="uq_ai_agent_code_standard_user_configs_scope",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+    agent_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    standard_type: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    content_override: Mapped[str] = mapped_column(Text, nullable=False)
+
+    user = relationship("User", back_populates="agent_code_standard_configs")

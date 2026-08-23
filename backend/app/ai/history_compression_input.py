@@ -25,7 +25,7 @@ from app.ai.history_compression_values import (
     strip_internal_fields as _strip_internal_fields,
     truncate_text_by_tokens as _truncate_text_by_tokens,
 )
-from app.models.ai_agent_runtime import AiAgentMemberRun, AiAgentRun, AiAgentToolCall
+from app.models.ai_agent_runtime import AiAgentRun, AiAgentToolCall
 
 COMPRESSION_INPUT_SCHEMA_VERSION = "agent-compression-input.v1"
 
@@ -205,7 +205,6 @@ async def _load_tool_ledger(
         {
             "id": item.id,
             "run_id": item.run_id,
-            "member_run_id": item.member_run_id,
             "tool_call_id": item.tool_call_id,
             "tool_name": item.tool_name,
             "status": item.status,
@@ -224,7 +223,7 @@ async def _load_run_contexts(
     session_id: str,
     run_ids: set[str],
 ) -> dict[str, dict[str, Any]]:
-    """读取普通 Run 和成员 Run 的权威分区快照。"""
+    """读取父 Run 的权威分区快照。"""
 
     if not run_ids:
         return {}
@@ -239,27 +238,6 @@ async def _load_run_contexts(
         item.run_id: _run_context_from_run(item)
         for item in result.scalars().all()
     }
-    member_result = await session.execute(
-        select(AiAgentMemberRun, AiAgentRun)
-        .join(AiAgentRun, AiAgentMemberRun.parent_run_id == AiAgentRun.run_id)
-        .where(
-            AiAgentRun.user_id == user_id,
-            AiAgentRun.session_id == session_id,
-            AiAgentMemberRun.member_run_id.in_(run_ids),
-        )
-    )
-    for member_run, parent_run in member_result.all():
-        context = _run_context_from_run(parent_run)
-        context.update(
-            {
-                "run_id": member_run.member_run_id,
-                "member_run_id": member_run.member_run_id,
-                "member_agent_id": member_run.agent_id,
-                "member_agent_name": member_run.agent_name,
-                "source": f"member:{member_run.agent_id}",
-            }
-        )
-        contexts[member_run.member_run_id] = context
     return contexts
 
 
@@ -460,24 +438,16 @@ def _find_pending_tool(pending: Mapping[tuple[str, str], dict[str, Any]], *, run
 
 
 def _select_ledger_row(ledger_rows: Iterable[dict[str, Any]], *, run_id: str, call_id: str, tool_name: str) -> dict[str, Any] | None:
-    """选择与历史工具调用最匹配的账本行，兼容成员调用 ID 前缀。"""
+    """选择与父 Run 历史工具调用最匹配的账本行。"""
 
     rows = [row for row in ledger_rows if str(row.get("tool_name") or "") == tool_name]
     exact = [row for row in rows if str(row.get("tool_call_id") or "") == call_id]
-    same_run = [row for row in exact if str(row.get("run_id") or "") == run_id or str(row.get("member_run_id") or "") == run_id]
+    same_run = [row for row in exact if str(row.get("run_id") or "") == run_id]
     if same_run:
         return max(same_run, key=lambda row: int(row.get("id") or 0))
     if exact:
         return max(exact, key=lambda row: int(row.get("id") or 0))
-    suffix = [
-        row
-        for row in rows
-        if call_id and str(row.get("tool_call_id") or "").endswith(f":{call_id}")
-    ]
-    same_suffix_run = [row for row in suffix if str(row.get("member_run_id") or "") == run_id]
-    if same_suffix_run:
-        return max(same_suffix_run, key=lambda row: int(row.get("id") or 0))
-    return max(suffix, key=lambda row: int(row.get("id") or 0)) if suffix else None
+    return None
 
 
 def _collect_run_ids(messages: Sequence[dict[str, Any]]) -> set[str]:

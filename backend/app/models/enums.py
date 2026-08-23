@@ -44,6 +44,47 @@ class WorkspaceComponentType(str, Enum):
     ATOMIC_COMPONENT = "原子组件"
 
 
+_COMPONENT_TYPE_ALIAS_MAP: dict[str, WorkspaceComponentType] = {
+    "page": WorkspaceComponentType.PAGE_COMPONENT,
+    "page_component": WorkspaceComponentType.PAGE_COMPONENT,
+    "template": WorkspaceComponentType.PAGE_COMPONENT,
+    "页面组件": WorkspaceComponentType.PAGE_COMPONENT,
+
+    "content": WorkspaceComponentType.CONTENT_COMPONENT,
+    "content_component": WorkspaceComponentType.CONTENT_COMPONENT,
+    "custom": WorkspaceComponentType.CONTENT_COMPONENT,
+    "card": WorkspaceComponentType.CONTENT_COMPONENT,
+    "section": WorkspaceComponentType.CONTENT_COMPONENT,
+    "内容组件": WorkspaceComponentType.CONTENT_COMPONENT,
+
+    "atomic": WorkspaceComponentType.ATOMIC_COMPONENT,
+    "atomic_component": WorkspaceComponentType.ATOMIC_COMPONENT,
+    "atom": WorkspaceComponentType.ATOMIC_COMPONENT,
+    "basic": WorkspaceComponentType.ATOMIC_COMPONENT,
+    "原子组件": WorkspaceComponentType.ATOMIC_COMPONENT,
+}
+
+
+def resolve_workspace_component_type(
+    value: str | WorkspaceComponentType | None,
+) -> WorkspaceComponentType:
+    """将外部 API、CLI 或别名传入的组件类型标识归一化为内部 WorkspaceComponentType 枚举。"""
+
+    if value is None:
+        return WorkspaceComponentType.CONTENT_COMPONENT
+    if isinstance(value, WorkspaceComponentType):
+        return value
+    normalized = str(value).strip().lower()
+    if normalized in _COMPONENT_TYPE_ALIAS_MAP:
+        return _COMPONENT_TYPE_ALIAS_MAP[normalized]
+    for item in WorkspaceComponentType:
+        if item.value == value:
+            return item
+    raise ValueError(
+        f"不支持的组件类型: '{value}'。有效类型包括: content (card/section/custom), page (template), atomic (atom/basic)。"
+    )
+
+
 class PageVersionStorageType(str, Enum):
     """页面版本存储类型，区分完整快照与基于最新链路的向后 diff。"""
 

@@ -34,6 +34,6 @@ Editor 调用的 API、Runtime 回源 API、构建产物 API 和 AI 工具披露
 - 项目创建的 `configuration.mode` 支持 `default`、`style`、`custom`；未传时使用工作空间 `key=default` 样式。
 - 项目更新使用 `configuration.mode=patch` 部分修改，或使用 `mode=style` 完整应用样式快照。
 - 样式创建一次提交完整 `configuration`；样式更新通过配置 Patch 与建议组件完整替换完成。
-- `theme_config_yaml` 只保留给历史项目、模板包与 Runtime 内部兼容，不属于普通写入契约。
+- `theme_config_yaml` 只保留给历史项目、模板包与 Runtime 内部兼容，不属于 ProjectItem 响应、普通配置读取或写入契约；项目配置只使用 `theme_key`。
 - 项目和样式建议组件的独立 PUT 写入口已删除，GET 管理查询仍保留。
 - 工作空间 `default` 样式允许修改配置，但 key 不可修改，也不可删除或归档。

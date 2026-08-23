@@ -93,6 +93,17 @@ describe('WorkspaceStyleEditorDialog', () => {
     })
   })
 
+  it('新建样式默认基础字号应使用项目默认值', () => {
+    render(WorkspaceStyleEditorDialog, {
+      props: {
+        modelValue: true,
+        workspaceId: 1,
+      },
+    })
+
+    expect(screen.getByLabelText('基础字号')).toHaveValue('24px')
+  })
+
   it('提交时应包含 Markdown 样式规范字段', async () => {
     const { emitted } = render(WorkspaceStyleEditorDialog, {
       props: {

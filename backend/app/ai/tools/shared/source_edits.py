@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 from dataclasses import dataclass
 from difflib import unified_diff
 from typing import Annotated, Any, Literal
@@ -10,9 +9,15 @@ from typing import Annotated, Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.core.exceptions import AppException
-from app.core.text_normalizer import normalize_text_to_lf
+from app.core.text_normalizer import calculate_source_hash as _calculate_source_hash, normalize_text_to_lf
 
 SourceEditType = Literal["replace_exact", "insert_after", "rewrite_file"]
+
+
+def calculate_source_hash(source_content: str | None) -> str:
+    """计算源码草稿锁使用的稳定 SHA-256 指纹。"""
+
+    return _calculate_source_hash(source_content)
 
 
 class _SourceEditBase(BaseModel):
@@ -58,13 +63,6 @@ class SourceEditApplyResult:
     next_content: str
     canonical_diff: str
     applied_edit_count: int
-
-
-def calculate_source_hash(source_content: str) -> str:
-    """计算源码草稿锁使用的稳定 SHA-256 指纹。"""
-
-    normalized_content = normalize_text_to_lf(source_content or "")
-    return hashlib.sha256(normalized_content.encode("utf-8")).hexdigest()
 
 
 def apply_source_edits(current_content: str, edits: list[SourceEditPayload]) -> SourceEditApplyResult:

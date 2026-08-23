@@ -40,6 +40,7 @@ const batchRefreshPageScreenshotJobsMock = vi.fn()
 const waitForPageScreenshotJobGroupMock = vi.fn()
 const downloadPageScreenshotsArchiveMock = vi.fn()
 const createProjectPreviewArtifactMock = vi.fn()
+const restorePageVersionMock = vi.fn()
 const createPageVisualEditPreviewArtifactMock = vi.fn()
 const applyPageVisualEditOperationsMock = vi.fn()
 const messageSuccessMock = vi.fn()
@@ -57,7 +58,6 @@ const defaultProjectConfigs = {
   show_pdf_export_button: true,
   menu_mode: 'preview',
   theme_key: 'lightblue',
-  theme_config_yaml: 'themes: {}',
   style_spec_markdown: '',
 }
 
@@ -103,7 +103,7 @@ vi.mock('@/api/catalog', () => ({
   downloadPageScreenshotsArchive: (...args: unknown[]) => downloadPageScreenshotsArchiveMock(...args),
   createPageSnapshot: vi.fn(),
   getPageVersionContent: vi.fn(),
-  restorePageVersion: vi.fn(),
+  restorePageVersion: (...args: unknown[]) => restorePageVersionMock(...args),
   createPage: vi.fn(),
 }))
 
@@ -642,6 +642,70 @@ describe('page screenshot views', () => {
       expect(screen.getByText('路由刷新后的页面')).toBeInTheDocument()
     })
     expect(createProjectPreviewArtifactMock).not.toHaveBeenCalled()
+  })
+
+  it('PageDetailView 恢复页面版本后应重新生成当前 Runtime 预览', async () => {
+    const currentPage = createPageDetailPayload({
+      current_version_no: 2,
+      page_content: '<template><div>current</div></template>',
+    })
+    const restoredPage = createPageDetailPayload({
+      current_version_no: 3,
+      page_content: '<template><div>restored</div></template>',
+    })
+    getPageMock.mockResolvedValue(currentPage)
+    listPageVersionsMock.mockResolvedValue([
+      {
+        id: 102,
+        page_id: 31,
+        version_no: 2,
+        version_label: '20260402-101000',
+        file_type: 'vue',
+        storage_type: 'snapshot',
+        is_important: false,
+        is_current: true,
+        snapshot_name: null,
+        change_note: null,
+        content_size: currentPage.page_content.length,
+        created_at: '2026-04-02T10:10:00Z',
+        created_by: 1,
+      },
+      {
+        id: 101,
+        page_id: 31,
+        version_no: 1,
+        version_label: '20260402-100000',
+        file_type: 'vue',
+        storage_type: 'snapshot',
+        is_important: false,
+        is_current: false,
+        snapshot_name: null,
+        change_note: null,
+        content_size: 40,
+        created_at: '2026-04-02T10:00:00Z',
+        created_by: 1,
+      },
+    ])
+    restorePageVersionMock.mockResolvedValue(restoredPage)
+
+    render(PageDetailView, createTestingRenderOptions())
+
+    expect(await screen.findByText('页面详情')).toBeInTheDocument()
+    await waitFor(() => {
+      expect(createProjectPreviewArtifactMock).toHaveBeenCalledTimes(1)
+    })
+    createProjectPreviewArtifactMock.mockClear()
+
+    await fireEvent.click(screen.getByRole('button', { name: '版本' }))
+    await screen.findByRole('heading', { name: '版本历史' })
+    await fireEvent.click(screen.getByRole('button', { name: '恢复' }))
+
+    await waitFor(() => {
+      expect(restorePageVersionMock).toHaveBeenCalledWith(31, 1, {
+        change_note: '恢复到 20260402-100000',
+      })
+      expect(createProjectPreviewArtifactMock).toHaveBeenCalledWith(21, 'src/views/PG202604020001.vue')
+    })
   })
 
   it('PageDetailView 收到截图刷新事件后只刷新页面数据，不重建 Runtime 预览', async () => {

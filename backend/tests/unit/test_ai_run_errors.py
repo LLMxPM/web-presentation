@@ -83,11 +83,11 @@ def test_build_agent_error_log_extra_should_include_error_chain() -> None:
             event="ai.member_run.exception",
             error_code="AI_MEMBER_RUN_FAILED",
             user_error_message="智能体运行中断",
-            member_run_id="member-run-test",
+            task_id="task-test",
         )
 
     assert extra["event"] == "ai.member_run.exception"
-    assert extra["member_run_id"] == "member-run-test"
+    assert extra["task_id"] == "task-test"
     assert extra["error_code"] == "AI_MEMBER_RUN_FAILED"
     assert extra["raw_error_type"] == "RuntimeError"
     assert extra["raw_error_message"] == "member runner failed"

@@ -137,7 +137,6 @@ function createTool(patch: Partial<ToolCallDetail>): ToolCallDetail {
     progress: { phase: 'completed', message: '图片已保存。' },
     source: 'event',
     createdAt: null,
-    delegatedMemberRuns: [],
     attachments: [],
     inputAttachments: [],
     outputAttachments: [],

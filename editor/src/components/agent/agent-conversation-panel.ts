@@ -2,7 +2,6 @@
  * 文件功能：抽离内容助手面板的 run-first 时间线展示、工具详情与格式化逻辑。
  */
 import type {
-  AgentMemberRunItem,
   AgentMessageAttachmentItem,
   AgentMessageItem,
   AgentPendingRequirement,
@@ -21,9 +20,6 @@ export interface ToolCallDetail {
   runId: string | null
   toolCallId: string | null
   toolName: string
-  memberAgentId?: string | null
-  memberAgentName?: string | null
-  memberRunId?: string | null
   status: 'running' | 'waiting_external' | 'completed' | 'error' | 'cancelled' | 'interrupted'
   inputPayload: unknown
   outputPayload: unknown
@@ -31,7 +27,6 @@ export interface ToolCallDetail {
   progress: { phase?: string, message?: string, current?: number, total?: number } | null
   source: 'event' | 'message' | 'synthetic'
   createdAt: string | null
-  delegatedMemberRuns: AgentMemberRunItem[]
   attachments: AgentMessageAttachmentItem[]
   inputAttachments: AgentMessageAttachmentItem[]
   outputAttachments: AgentMessageAttachmentItem[]
@@ -77,20 +72,16 @@ export interface AgentMutationRefreshEvent {
 /**
  * 将 timeline tool item 转成弹窗与工具卡片统一使用的详情结构。
  */
-export function toolDetailFromTimelineItem(item: AgentTimelineItem, memberRuns: AgentMemberRunItem[] = []): ToolCallDetail | null {
+export function toolDetailFromTimelineItem(item: AgentTimelineItem): ToolCallDetail | null {
   if (item.kind !== 'tool' || !item.tool) {
     return null
   }
-  const delegateToolCallId = item.tool.tool_call_id || item.id
   const hideFailedGeneratedOutput = item.tool.tool_name === 'generate_image' && item.tool.status === 'error'
   return {
     id: item.id,
     runId: item.run_id || null,
     toolCallId: item.tool.tool_call_id,
     toolName: resolveLogicalToolName(item.tool.tool_name || '工具调用', item.tool.input_payload),
-    memberAgentId: item.tool.member_agent_id ?? null,
-    memberAgentName: item.tool.member_agent_name ?? null,
-    memberRunId: item.tool.member_run_id ?? null,
     status: item.tool.status,
     inputPayload: item.tool.input_payload,
     outputPayload: item.tool.output_payload,
@@ -101,15 +92,6 @@ export function toolDetailFromTimelineItem(item: AgentTimelineItem, memberRuns: 
     attachments: hideFailedGeneratedOutput ? [] : item.attachments ?? [],
     inputAttachments: item.tool.input_attachments ?? [],
     outputAttachments: hideFailedGeneratedOutput ? [] : item.tool.output_attachments ?? item.attachments ?? [],
-    delegatedMemberRuns: isDelegateToolName(item.tool.tool_name)
-      ? memberRuns.filter(memberRun => (
-          memberRun.parent_run_id === item.run_id
-          && (
-            memberRun.delegate_tool_call_id === delegateToolCallId
-            || (!memberRun.delegate_tool_call_id && delegateToolMatchesMember(item.tool?.input_payload, memberRun.agent_id))
-          )
-        ))
-      : [],
   }
 }
 
@@ -185,7 +167,6 @@ export function buildTimelineDisplayItems(
   timelineItems: AgentTimelineItem[],
   options: {
     pendingRequirement?: AgentPendingRequirement | null
-    memberRuns?: AgentMemberRunItem[]
     workspaceId?: number | null
     activeRunId?: string | null
   } = {},
@@ -193,10 +174,9 @@ export function buildTimelineDisplayItems(
   const orderedItems = [...timelineItems].sort(compareTimelineItems)
   const displayItems: TimelineDisplayItem[] = []
   const pendingRequirement = options.pendingRequirement ?? null
-  const memberRuns = options.memberRuns ?? []
   const workspaceId = options.workspaceId ?? null
   const activeRunId = options.activeRunId ?? null
-  const entityChangesByRun = collectEntityChangesByRun(orderedItems, memberRuns, workspaceId)
+  const entityChangesByRun = collectEntityChangesByRun(orderedItems, workspaceId)
   const insertedEntitySummaryRunIds = new Set<string>()
   const skippedRequirementIds = new Set<string>()
   let pendingTools: AgentTimelineItem[] = []
@@ -215,7 +195,7 @@ export function buildTimelineDisplayItems(
       return
     }
     const tools = pendingTools
-      .map(item => toolDetailFromTimelineItem(item, memberRuns))
+      .map(item => toolDetailFromTimelineItem(item))
       .filter((tool): tool is ToolCallDetail => tool !== null)
     if (tools.length) {
       displayItems.push({
@@ -241,7 +221,7 @@ export function buildTimelineDisplayItems(
         const matchedRequirement = findMatchingAskUserRequirement(orderedItems, item, pendingRequirement)
           ? pendingRequirement
           : null
-        displayItems.push(buildFeedbackRequestDisplayItem(item, matchedRequirement, toolDetailFromTimelineItem(item, memberRuns)))
+        displayItems.push(buildFeedbackRequestDisplayItem(item, matchedRequirement, toolDetailFromTimelineItem(item)))
         continue
       }
       pendingTools.push(item)
@@ -393,10 +373,10 @@ function tryInsertEntitySummaryForRun(
 /**
  * 从时间线中提取所有工具详情，供详情弹窗按 id 查询。
  */
-export function extractTimelineToolDetails(timelineItems: AgentTimelineItem[], memberRuns: AgentMemberRunItem[] = []): ToolCallDetail[] {
+export function extractTimelineToolDetails(timelineItems: AgentTimelineItem[]): ToolCallDetail[] {
   return [...timelineItems]
     .sort(compareTimelineItems)
-    .map(item => toolDetailFromTimelineItem(item, memberRuns))
+    .map(item => toolDetailFromTimelineItem(item))
     .filter((tool): tool is ToolCallDetail => tool !== null)
 }
 
@@ -545,21 +525,6 @@ function buildDisplayMessage(item: AgentTimelineItem): AgentMessageItem {
  */
 function isAskUserToolItem(item: AgentTimelineItem) {
   return item.kind === 'tool' && item.tool?.tool_name === 'ask_user'
-}
-
-/**
- * 判断工具是否为内容助手委派自身子运行的入口。
- */
-export function isDelegateToolName(toolName: string | null | undefined) {
-  return toolName === 'delegate_task_to_self'
-}
-
-function delegateToolMatchesMember(inputPayload: unknown, memberAgentId: string) {
-  if (!inputPayload || typeof inputPayload !== 'object' || Array.isArray(inputPayload)) {
-    return true
-  }
-  const memberId = (inputPayload as Record<string, unknown>).member_id
-  return typeof memberId !== 'string' || !memberId || memberId === memberAgentId
 }
 
 /**

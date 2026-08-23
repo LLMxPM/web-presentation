@@ -12,7 +12,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.core.config import get_settings
 from app.core.exceptions import AppException
 from app.ai.external_task_control import enqueue_external_task
-from app.models.ai_agent_runtime import AiAgentMemberRun, AiAgentRun
+from app.ai.page_mutation_wakeup import page_mutation_job_wakeup
+from app.models.ai_agent_runtime import AiAgentRun
 from app.models.ai_page_mutation import AiPageMutationBatch, AiPageMutationJob
 from app.models.ai_external_task import AiAgentExternalTask
 from app.schemas.agent import AgentRunEvent
@@ -51,7 +52,6 @@ async def enqueue_page_mutation(
     run_step: int,
     tool_call_id: str,
     deferred_tool_call_id: str | None = None,
-    member_run_id: str | None = None,
     operation: str,
     workspace_id: int,
     project_id: int | None,
@@ -105,18 +105,12 @@ async def enqueue_page_mutation(
             raise AppException(status_code=409, code="AI_RUN_NOT_ACTIVE", detail="页面变更对应的智能体运行不存在。")
         if run.status not in {"running", "waiting_external"} or run.cancel_requested_at is not None:
             raise AppException(status_code=409, code="AI_RUN_CANCELLED", detail="智能体运行已停止，不能继续创建页面变更任务。")
-        member_run = None
-        if member_run_id:
-            member_run = await session.get(AiAgentMemberRun, member_run_id)
-            if member_run is None or member_run.parent_run_id != normalized_run_id or member_run.session_id != normalized_session_id:
-                raise AppException(status_code=409, code="AI_MEMBER_RUN_NOT_FOUND", detail="页面变更对应的内容助手子运行不存在。")
         external_task = await enqueue_external_task(
             session,
             run=run,
             kind="page_mutation",
             tool_call_id=normalized_tool_call_id,
             deferred_tool_call_id=normalized_deferred_tool_call_id,
-            member_run_id=member_run_id,
         )
         active_count = int(
             await session.scalar(
@@ -180,7 +174,6 @@ async def enqueue_page_mutation(
                 batch_id=batch_id,
                 run_id=normalized_run_id,
                 session_id=normalized_session_id,
-                member_run_id=member_run_id,
                 tool_call_id=normalized_tool_call_id,
                 deferred_tool_call_id=normalized_deferred_tool_call_id,
                 operation=operation,
@@ -200,7 +193,7 @@ async def enqueue_page_mutation(
             await PlatformAgentRuntimeStore(session, user_id=run.user_id).append_event(
                 run,
                 AgentRunEvent(
-                    event="member.tool.progress" if member_run is not None else "tool.progress",
+                    event="tool.progress",
                     run_id=run.run_id,
                     session_id=run.session_id,
                     data={
@@ -209,11 +202,6 @@ async def enqueue_page_mutation(
                         "job_id": job_id,
                         "phase": "queued",
                         "message": "页面变更正在排队。",
-                        **({
-                            "member_run_id": member_run.member_run_id,
-                            "member_agent_id": member_run.agent_id,
-                            "member_agent_name": member_run.agent_name,
-                        } if member_run is not None else {}),
                     },
                 ),
                 commit=False,
@@ -242,6 +230,7 @@ async def enqueue_page_mutation(
             )
             if external_task is None:
                 raise RuntimeError("AI 页面变更任务缺少统一外部任务。")
+    await page_mutation_job_wakeup.notify()
     return EnqueuedPageMutation(
         batch_id=batch_id,
         job_id=job_id,

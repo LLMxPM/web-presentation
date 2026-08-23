@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+import json
+
 import pytest
 from jsonschema import Draft202012Validator
 from pydantic import ValidationError
 from pydantic_ai import ApprovalRequired
 
 import app.ai.tools.generic.business_tools as generic_tools_module
-from app.ai.platform_tools import AgentToolContext
+from app.ai.platform_tools import AgentToolContext, AgentToolResult, PlatformTool
 from app.ai.tool_specs import (
     AGENT_COORDINATOR_AGENT_ID,
     get_operation_guide_spec,
@@ -16,7 +18,14 @@ from app.ai.tool_specs import (
     list_agent_tool_specs,
     list_operation_guide_specs,
 )
-from app.ai.tools.generic.business_tools import ThemeCreatePayload, ThemeUpdatePayload, build_generic_business_tools
+from app.ai.tools.generic.business_tools import (
+    ThemeCreatePayload,
+    ThemeUpdatePayload,
+    _build_detail_query_message,
+    _sanitize_ai_project_item,
+    _validate_entity,
+    build_generic_business_tools,
+)
 from app.ai.tools.generic.operation_models import (
     AssetCreatePayload,
     AssetMetadataPayload,
@@ -27,12 +36,12 @@ from app.ai.tools.generic.operation_models import (
     ProjectApplyStylePayload,
     ProjectCreatePayload,
 )
-from app.ai.tools.self_delegation import build_self_delegation_tools
 from app.core.exceptions import AppException
 
 
 EXPECTED_GENERIC_TOOL_KEYS = {
     "get_operation_guide",
+    "get_code_standards",
     "list_entities",
     "get_entity",
     "create_entity",
@@ -43,8 +52,16 @@ EXPECTED_GENERIC_TOOL_KEYS = {
     "ask_user",
     "analyze_visuals",
     "generate_image",
-    "delegate_task_to_self",
 }
+
+
+def _schema_values(schema: dict[str, object]) -> list[object]:
+    """读取扁平 Schema 判别字段的 enum 值。"""
+
+    if "const" in schema:
+        return [schema["const"]]
+    enum_values = schema.get("enum")
+    return list(enum_values) if isinstance(enum_values, list) else []
 
 
 def test_coordinator_should_only_expose_fixed_generic_and_special_tools() -> None:
@@ -54,27 +71,6 @@ def test_coordinator_should_only_expose_fixed_generic_and_special_tools() -> Non
 
     assert tool_keys == EXPECTED_GENERIC_TOOL_KEYS
     assert not any("delete" in tool_key or "purge" in tool_key for tool_key in tool_keys)
-
-
-async def test_self_delegation_should_inject_unified_agent_without_member_parameter() -> None:
-    """自委派工具不接收成员 ID，并固定创建同一内容助手身份的子运行。"""
-
-    class FakeExecutor:
-        async def delegate_task_to_self(self, **kwargs):  # noqa: ANN003, ANN202
-            return kwargs
-
-    tool = build_self_delegation_tools(None)[0]  # type: ignore[arg-type]
-    context = AgentToolContext(
-        run_id="run-1",
-        session_id="session-1",
-        dependencies={"member_delegation_executor": FakeExecutor(), "current_tool_call_id": "call-1"},
-    )
-
-    result = await tool.entrypoint(context, task="核对组件引用", handoff_context=None, expected_output="返回影响列表")
-
-    assert result["member_id"] == AGENT_COORDINATOR_AGENT_ID
-    assert result["delegate_tool_name"] == "delegate_task_to_self"
-    assert "member_id" not in tool.parameters["properties"]
 
 
 def test_operation_guides_should_not_define_delete_or_workspace_archive() -> None:
@@ -124,6 +120,36 @@ def test_operation_guides_should_bind_handlers_and_expose_strict_theme_schema() 
     assert payload["handler_tool_key"] == "create_entity"
     assert payload["mutation_kind"] == "theme"
     assert payload["response_example"]["success"] is True
+
+
+def test_detail_query_message_should_describe_follow_up_views() -> None:
+    """详情查询提示应覆盖可继续读取的视图，并对不可编辑资源保持默认提示。"""
+
+    project_message = _build_detail_query_message("project", 8, {})
+    page_message = _build_detail_query_message("page", 31, {})
+    style_message = _build_detail_query_message("style", 23, {})
+    editable_asset_message = _build_detail_query_message("asset", 42, {"content_editable": True})
+    binary_asset_message = _build_detail_query_message("asset", 43, {"content_editable": False})
+    theme_message = _build_detail_query_message("theme", 12, {})
+
+    assert 'view="configuration", target_id=8' in project_message
+    assert 'view="route_tree", target_id=8' in project_message
+    assert 'view="content", target_id=31' in page_message
+    assert 'view="version_content", target_id=31' in page_message
+    assert 'options={"version_no": <version_no>}' in page_message
+    assert 'view="dependencies", target_id=31' in page_message
+    assert 'view="configuration", target_id=23' in style_message
+    assert 'view="content", target_id=42' in editable_asset_message
+    assert binary_asset_message == "查询完成。"
+    assert theme_message == "查询完成。"
+
+
+def test_project_query_item_should_hide_homepage_screenshot_url() -> None:
+    """AI 项目查询应移除首页截图地址但保留其它项目字段。"""
+
+    payload = _sanitize_ai_project_item({"id": 1, "first_page_screenshot_url": "http://example.test/1", "name": "项目"})
+
+    assert payload == {"id": 1, "name": "项目"}
 
 
 def test_operation_guides_should_expose_action_index_and_precise_schemas() -> None:
@@ -271,7 +297,8 @@ def test_runtime_theme_guidance_should_cover_source_and_mutation_boundaries() ->
     assert "Runtime 主题语义类" in page_create_text
     assert "text-${tone}" in page_create_text
     assert "Runtime 主题语义类" in page_update_text
-    assert "跨项目和主题复用" in component_text
+    assert "跨页面或跨项目复用" in component_text
+    assert "重复标题区、眉题/导航、主体区和辅助区空间关系" in component_text
     assert "完整静态字符串" in component_text
     assert "未列出的主题 Token" in validation_text
     assert "模型调用前应依据 Runtime 主题契约自行复核" in validation_text
@@ -299,67 +326,136 @@ def test_project_configuration_guides_should_replace_dangerous_actions() -> None
     assert not any("rename_key" in guide.operation_key for guide in list_operation_guide_specs())
 
 
-def test_generic_tools_should_expose_discriminated_top_level_schemas() -> None:
-    """常驻 Schema 应只披露合法顶层组合，复杂业务字段继续按手册查询。"""
+def test_generic_tools_should_expose_flat_top_level_schemas() -> None:
+    """常驻 Schema 应使用模型兼容的扁平顶层结构，复杂业务字段继续按手册查询。"""
 
     tools = {item.name: item for item in build_generic_business_tools(None)}  # type: ignore[arg-type]
+
+    standards_schema = tools["get_code_standards"].parameters
+    assert standards_schema["properties"]["standard_type"]["enum"] == ["page", "component"]
+    assert standards_schema["required"] == ["standard_type"]
 
     guide_schema = tools["get_operation_guide"].parameters
     operation_key_variants = guide_schema["properties"]["operation_key"]["anyOf"]
     assert operation_key_variants[0]["enum"]
     assert "page.update.content" in operation_key_variants[0]["enum"]
 
-    for tool_name in ("list_entities", "get_entity", "create_entity", "update_entity", "archive_entity", "validate_entity", "execute_action"):
+    expected_tool_names = {
+        "list_entities": 2,
+        "get_entity": 8,
+        "create_entity": 3,
+        "update_entity": 6,
+        "archive_entity": 1,
+        "validate_entity": 2,
+        "execute_action": 1,
+    }
+    total_schema_bytes = 0
+    for tool_name in expected_tool_names:
         schema = tools[tool_name].parameters
         Draft202012Validator.check_schema(schema)
-        assert schema["oneOf"]
-        assert all(branch["additionalProperties"] is False for branch in schema["oneOf"])
+        assert "oneOf" not in schema
+        assert "$defs" not in schema
+        assert schema["additionalProperties"] is False
+        assert schema["properties"]
+        total_schema_bytes += len(json.dumps(schema, ensure_ascii=False))
+
+    assert total_schema_bytes <= 16_000
 
     for guide in list_operation_guide_specs():
         if guide.call_example is not None:
             Draft202012Validator(tools[guide.handler_tool_key].parameters).validate(guide.call_example)
 
-    execute_pairs = {
-        (branch["properties"]["resource_type"]["const"], branch["properties"]["action"]["const"])
-        for branch in tools["execute_action"].parameters["oneOf"]
+    execute_schema = tools["execute_action"].parameters
+    assert _schema_values(execute_schema["properties"]["resource_type"]) == ["component"]
+    assert _schema_values(execute_schema["properties"]["action"]) == ["publish"]
+    validate_schema = tools["validate_entity"].parameters
+    assert set(_schema_values(validate_schema["properties"]["resource_type"])) == {"page", "component", "asset"}
+    assert set(_schema_values(validate_schema["properties"]["action"])) == {"check", "preview"}
+    for operation_key in ("page.validate.check", "component.validate.check"):
+        validate_payload_properties = get_operation_guide_spec(operation_key).parameters["properties"]["payload"]  # type: ignore[union-attr]
+        assert "detail" in validate_payload_properties["properties"]
+    update_schema = tools["update_entity"].parameters
+    assert set(_schema_values(update_schema["properties"]["action"])) == {
+        "metadata", "configuration", "apply_style", "route_tree", "build_assets", "content",
     }
-    assert execute_pairs == {("component", "publish")}
-    validate_pairs = {
-        (branch["properties"]["resource_type"]["const"], branch["properties"]["action"]["const"])
-        for branch in tools["validate_entity"].parameters["oneOf"]
-    }
-    assert validate_pairs == {("page", "check"), ("component", "check"), ("asset", "preview")}
-    update_pairs = {
-        (branch["properties"]["resource_type"]["const"], branch["properties"]["action"]["const"])
-        for branch in tools["update_entity"].parameters["oneOf"]
-    }
-    assert {action for resource_type, action in update_pairs if resource_type == "project"} == {
-        "metadata", "configuration", "apply_style", "route_tree", "build_assets",
-    }
-    assert ("style", "configuration") in update_pairs
     execute_validator = Draft202012Validator(tools["execute_action"].parameters)
     assert not execute_validator.is_valid({
-        "resource_type": "page",
-        "action": "publish",
-        "target_id": 8,
-        "payload": {},
+        "resource_type": "page", "action": "publish", "target_id": 8,
     })
-    archive_properties = tools["archive_entity"].parameters["oneOf"][0]["properties"]
+    archive_properties = tools["archive_entity"].parameters["properties"]
     assert "versions" not in archive_properties
-    assert {
-        branch["properties"]["resource_type"]["const"]
-        for branch in tools["archive_entity"].parameters["oneOf"]
-    } == {"project", "page", "component", "asset", "theme", "style"}
+    assert set(_schema_values(archive_properties["resource_type"])) == {
+        "project", "page", "component", "asset", "theme", "style",
+    }
 
-    create_pairs = {
-        (branch["properties"]["resource_type"]["const"], branch["properties"]["mode"]["const"])
-        for branch in tools["create_entity"].parameters["oneOf"]
+    validators = {name: Draft202012Validator(tools[name].parameters) for name in expected_tool_names}
+    assert not validators["create_entity"].is_valid({"resource_type": "project", "mode": "new"})
+    assert not validators["update_entity"].is_valid({"resource_type": "project", "action": "content", "target_id": 8})
+    assert not validators["list_entities"].is_valid({})
+    assert not validators["get_entity"].is_valid({"resource_type": "runtime_kit"})
+    assert not validators["validate_entity"].is_valid({"resource_type": "asset", "action": "preview"})
+
+    from app.services.ai_agent_config_service import AiAgentConfigService
+
+    call_example = AiAgentConfigService._build_call_example(
+        "create_entity",
+        tools["create_entity"].parameters,
+    )
+    assert call_example["arguments"] == {
+        "resource_type": "project",
+        "mode": "new",
+        "payload": {},
     }
-    assert create_pairs == {
-        ("project", "new"), ("page", "new"), ("page", "copy"), ("component", "new"),
-        ("asset", "new"), ("asset", "copy"), ("asset", "upload"),
-        ("theme", "new"), ("theme", "copy"), ("style", "new"), ("style", "copy"),
-    }
+
+
+@pytest.mark.asyncio
+async def test_component_validate_entity_returns_compact_text_and_passes_detail_only_to_formatter() -> None:
+    """组件 validate_entity 应返回短文本，detail 不应泄漏到 Runtime 工具参数。"""
+
+    calls: list[dict[str, object]] = []
+
+    async def check_component_code(
+        run_context: AgentToolContext,
+        component_id: int,
+        content: str,
+    ) -> dict[str, object]:
+        """返回带嵌套 facts 的组件结果，验证边界层压缩行为。"""
+
+        calls.append({"component_id": component_id, "content": content})
+        return {
+            "success": True,
+            "status": "passed_with_warnings",
+            "summary": "组件可以编译并真实渲染；存在布局或资源警告。",
+            "diagnostics": [{
+                "severity": "warning",
+                "code": "COMPONENT_RENDER_HORIZONTAL_OVERFLOW",
+                "message": "候选组件水平溢出 8px。",
+                "scenario_key": "preset:compact",
+                "profile_key": "component-content-default.v1",
+                "facts": {"overflow_px": 8, "frame": {"width": 320}},
+            }],
+            "scenarios": [{
+                "key": "preset:compact",
+                "status": "passed_with_warnings",
+                "profile_key": "component-content-default.v1",
+            }],
+        }
+
+    result = await _validate_entity(
+        None,  # type: ignore[arg-type]
+        {"check_component_code": PlatformTool("check_component_code", check_component_code)},
+        AgentToolContext(run_id="run", session_id="session"),
+        resource_type="component",
+        action="check",
+        target_id=12,
+        payload={"mode": "content", "content": "<template />", "detail": True},
+    )
+
+    assert isinstance(result, AgentToolResult)
+    assert "COMPONENT_RENDER_HORIZONTAL_OVERFLOW" in result.content
+    assert "facts=overflow_px=8" in result.content
+    assert "frame" not in result.content
+    assert calls == [{"component_id": 12, "content": "<template />"}]
 
 
 def test_update_and_route_payloads_should_reject_noop_or_conflicting_fields() -> None:
@@ -395,34 +491,21 @@ def test_read_tools_should_separate_collection_and_single_entity_parameters() ->
     """集合查询与单项读取工具不得继续混用 action、target_id 和分页筛选。"""
 
     tools = {item.name: item for item in build_generic_business_tools(None)}  # type: ignore[arg-type]
-    list_branches = tools["list_entities"].parameters["oneOf"]
-    get_branches = tools["get_entity"].parameters["oneOf"]
-    list_properties = {name for branch in list_branches for name in branch["properties"]}
-    get_properties = {name for branch in get_branches for name in branch["properties"]}
+    list_schema = tools["list_entities"].parameters
+    get_schema = tools["get_entity"].parameters
+    list_properties = set(list_schema["properties"])
+    get_properties = set(get_schema["properties"])
 
     assert list_properties == {"resource_type", "filters", "collection"}
     assert get_properties == {"resource_type", "view", "target_id", "lookup", "options"}
     assert "action" not in list_properties | get_properties
     assert "target_id" not in list_properties
     assert "filters" not in get_properties
-    asset_tags = next(
-        branch for branch in list_branches
-        if branch["properties"]["resource_type"]["const"] == "asset"
-        and branch["properties"]["collection"]["const"] == "tags"
-    )
-    assert set(asset_tags["properties"]) == {"resource_type", "collection"}
-    page_detail = next(
-        branch for branch in get_branches
-        if branch["properties"]["resource_type"]["const"] == "page"
-        and branch["properties"]["view"]["const"] == "detail"
-    )
-    assert set(page_detail["properties"]) == {"resource_type", "view", "target_id"}
-    runtime_detail = next(
-        branch for branch in get_branches
-        if branch["properties"]["resource_type"]["const"] == "runtime_kit"
-    )
-    assert "lookup" in runtime_detail["properties"]
-    assert "target_id" not in runtime_detail["properties"]
+    assert set(_schema_values(list_schema["properties"]["resource_type"])) >= {"asset", "project"}
+    assert set(_schema_values(list_schema["properties"]["collection"])) == {"items", "tags"}
+    assert "detail" in _schema_values(get_schema["properties"]["view"])
+    assert "runtime_kit" in _schema_values(get_schema["properties"]["resource_type"])
+    assert {"lookup", "options"}.issubset(get_properties)
 
 
 async def test_removed_action_should_return_unsupported_business_error() -> None:

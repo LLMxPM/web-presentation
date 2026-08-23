@@ -174,7 +174,6 @@ async def test_image_generation_job_should_be_idempotent_and_save_asset(
         assert jobs[0].status == "completed"
         assert jobs[0].result_json is not None
         assert jobs[0].deferred_tool_call_id == "tool-image-generation-1"
-        assert jobs[0].member_run_id is None
         attachments = list(
             (await session.scalars(
                 select(AiAgentImageAttachment).where(AiAgentImageAttachment.run_id == "run-image-generation-1")

@@ -1508,6 +1508,11 @@ async function handleRestoreVersion(versionNo: number) {
     await queryClient.invalidateQueries({ queryKey: ['page-component-index', pageId.value] })
     syncPageIntoEditor(restoredPage)
     resetRuntimePreviewState()
+    previewInitializedPageId.value = null
+    const previewSynced = await syncRuntimePreview(restoredPage, { showSuccessMessage: false })
+    if (previewSynced) {
+      previewInitializedPageId.value = restoredPage.id
+    }
     Message.success(`已恢复到 ${displayLabel}，并生成新的最新版本。`)
   } catch (error) {
     Message.error(getErrorMessage(error, '恢复页面版本失败。'))

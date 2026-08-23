@@ -1,9 +1,12 @@
 """文件功能：覆盖组件预览 schema、依赖合法性和瞬时循环校验测试。"""
 
+# 通过导入测试函数交给 pytest 收集。
+# ruff: noqa: F401
+
 from tests.integration.component_preview.component_preview_dependency_validation_cases import (
     test_component_references_should_query_and_upgrade_direct_page_and_component_refs,
     test_component_preview_schema_should_validate_slot_component_runtime_paths,
     test_component_save_should_reject_invalid_preview_schema_json,
     test_component_source_draft_preview_should_reject_transient_cycle,
     test_remote_module_save_should_reject_invalid_component_alias_and_forbidden_runtime_local_import,
-)
+)  # noqa: F401

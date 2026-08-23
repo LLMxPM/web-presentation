@@ -175,6 +175,7 @@ async def test_component_edits_should_not_read_expired_task_after_runtime_check(
 
     assert edit_result["success"] is True
     assert edit_result["applied"] is True
+    assert "canonical_diff" not in edit_result
     assert metadata_result["success"] is True
     assert metadata_result["applied"] is True
     assert component is not None

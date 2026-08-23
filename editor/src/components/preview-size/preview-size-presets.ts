@@ -2,13 +2,15 @@
  * 文件功能：提供用户级预设尺寸的前端默认值、归一化和选项匹配工具。
  */
 import type { PreviewSizePreset } from '@/types/api'
+import { DEFAULT_PROJECT_BASE_FONT_SIZE } from '@/components/project/project-presentation-values'
 
 export const DEFAULT_PREVIEW_SIZE_PRESETS: PreviewSizePreset[] = [
-  { name: '桌面 16:9', width: 1920, height: 1080, base_font_size: '20px', icon_default_stroke_width: 2 },
-  { name: '桌面 16:9 小屏', width: 1600, height: 900, base_font_size: '20px', icon_default_stroke_width: 2 },
-  { name: '笔记本', width: 1366, height: 768, base_font_size: '20px', icon_default_stroke_width: 2 },
+  { name: '桌面 16:9', width: 1920, height: 1080, base_font_size: DEFAULT_PROJECT_BASE_FONT_SIZE, icon_default_stroke_width: 2 },
+  { name: '小红书 3:4', width: 1080, height: 1440, base_font_size: DEFAULT_PROJECT_BASE_FONT_SIZE, icon_default_stroke_width: 2 },
+  { name: '正方形 1:1', width: 1080, height: 1080, base_font_size: DEFAULT_PROJECT_BASE_FONT_SIZE, icon_default_stroke_width: 2 },
+  { name: '窄屏 4:3', width: 1440, height: 1080, base_font_size: DEFAULT_PROJECT_BASE_FONT_SIZE, icon_default_stroke_width: 2 },
+  { name: '宽屏 21:9', width: 2560, height: 1080, base_font_size: DEFAULT_PROJECT_BASE_FONT_SIZE, icon_default_stroke_width: 2 },
   { name: '手机竖屏', width: 1080, height: 1920, base_font_size: '28px', icon_default_stroke_width: 3 },
-  { name: '手机竖屏小屏', width: 750, height: 1334, base_font_size: '24px', icon_default_stroke_width: 3 },
 ]
 
 /**
@@ -80,7 +82,7 @@ export function normalizePreviewSizePresets(value: unknown): PreviewSizePreset[]
         name,
         width: normalizePreviewSizeDimension(source.width, 1920),
         height: normalizePreviewSizeDimension(source.height, 1080),
-        base_font_size: normalizePreviewBaseFontSize(source.base_font_size, '20px'),
+        base_font_size: normalizePreviewBaseFontSize(source.base_font_size, DEFAULT_PROJECT_BASE_FONT_SIZE),
         icon_default_stroke_width: normalizePreviewIntegerSpec(source.icon_default_stroke_width, 2, 1, 64),
       }
     })
@@ -97,7 +99,7 @@ export function buildPreviewSizePresetKey(preset: PreviewSizePreset, index: numb
     index,
     preset.name,
     `${preset.width}x${preset.height}`,
-    preset.base_font_size || '20px',
+    preset.base_font_size || DEFAULT_PROJECT_BASE_FONT_SIZE,
     preset.icon_default_stroke_width ?? 2,
   ].join(':')
 }
@@ -119,7 +121,7 @@ export function findMatchedPreviewSizePresetIndex(
     if (baseFontSize === undefined && iconDefaultStrokeWidth === undefined) {
       return true
     }
-    return normalizePreviewBaseFontSize(item.base_font_size, '20px') === normalizePreviewBaseFontSize(baseFontSize, '20px')
+    return normalizePreviewBaseFontSize(item.base_font_size, DEFAULT_PROJECT_BASE_FONT_SIZE) === normalizePreviewBaseFontSize(baseFontSize, DEFAULT_PROJECT_BASE_FONT_SIZE)
       && normalizePreviewIntegerSpec(item.icon_default_stroke_width, 2, 1, 64) === normalizePreviewIntegerSpec(iconDefaultStrokeWidth, 2, 1, 64)
   })
 }

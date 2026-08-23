@@ -25,6 +25,8 @@
 - 通过 `runtime/` Git 子模块接入独立项目 `web-runtime-vue`。
 - 沉淀开发、测试、部署、CI/CD 和 Runtime 子模块协作规则。
 
+面向外部桌面 Agent 的 CLI、MCP Server、共享 API Client 和配套 Skill 统一维护在同级独立仓库 `web-presentation-agent-kit`；本仓只维护它们依赖的 Backend `/api/v1` External API v1 契约和集成文档。
+
 当前已落地登录、多用户隔离、工作空间/项目/页面管理、资源库、组件库、主题库、样式库、AI Agent 会话、工具确认、预览、截图、构建和容器发布；跨项目资产治理、Dashboard、项目/页面使用关系运营视图和 Runtime 反向回传仍在建设中。
 
 ## 3. 目录职责
@@ -53,7 +55,7 @@ Backend 是平台控制面，负责用户、权限、工作空间、项目、页
 
 AI 目录承载 Pydantic AI 智能体、平台自有会话运行态、工具注册、工具披露、上下文构造和用户级 AI 配置。工具实现使用平台自有工具对象，再由 Pydantic AI runner 装配为运行时 Tool；新增运行态能力应落在平台运行态表和 Pydantic AI runner 上。
 
-AI 聊天供应商目录从 Models.dev 同步到本地缓存，但 `provider_key/npm` 只能通过服务端白名单映射到已经实现的 `protocol_key`，不得动态加载 SDK 或增加运行时 adapter 覆盖。当前只运行 Chat Completions、OpenAI-compatible、OpenRouter、Google 及已落地兼容协议，不使用 OpenAI Responses、Anthropic 或 Bedrock。Chat 与图片生成使用独立表、接口、凭证和绑定；图片能力以代码注册表为单一事实源，不参与 Models.dev 同步。
+AI 聊天供应商目录从 Models.dev 同步到本地缓存，但供应商级和模型级 `npm` 只能通过服务端白名单映射到已经实现的 `protocol_key`，不得动态加载 SDK 或增加运行时 adapter 覆盖。当前只运行 Chat Completions、OpenAI-compatible、OpenRouter、Google 及已落地兼容协议，不使用 OpenAI Responses、Anthropic 或 Bedrock；模型级声明了未实现协议的记录不会进入模型目录。模型配置保存最终模型级协议，不能只复用供应商默认协议。Chat 与图片生成使用独立表、接口、凭证和绑定；图片能力以代码注册表为单一事实源，不参与 Models.dev 同步。
 
 聊天助手槽位只保存模型绑定，不保存推理策略或 input/output token 预算。新 Run 输入预算采用当前模型 input limit，输出预算统一封顶 32K；推理策略在发起 Run 时以 Models.dev `reasoning_options` 为事实源，并保存到 Run 快照。通用 OpenAI-compatible 协议仅转换目录明确声明的标准 `effort`，toggle、budget 等供应商方言仍须固定转换器。
 
@@ -78,11 +80,11 @@ uv run --project backend python -m app.scripts.diagnose_ai_run --session-id <ses
 
 不要在其它文件复制第二份工具清单、工具分组或返回示例。调整工具参数、确认要求、风险级别、上下文要求或返回结构时，应同步更新防漂移测试。
 
-内容助手是工作空间级智能体，固定装配少量通用业务工具和特殊工具。`get_operation_guide` 从 `tool_specs.py` 返回参数 Schema、约束与示例，真实写入始终按当前用户权限、工作空间归属和业务 Schema 校验。`validate_entity` 用于独立检查当前或候选页面/组件代码以及预览资源差异；页面和组件的创建、源码更新由写工具自动校验，不应重复调用。内容助手不得注册永久删除能力；项目、页面、组件、资源、主题和样式支持归档，单项归档免确认，两个及以上同类型目标必须动态确认并以整批原子语义执行，项目归档不得级联归档页面、路由或工作空间共享资产。主题写工具只允许维护 key、name、description 和色板，不得暴露 Logo 或字体配置。
+内容助手是工作空间级智能体，固定装配少量通用业务工具和特殊工具。`get_operation_guide` 从 `tool_specs.py` 返回参数 Schema、约束与示例，真实写入始终按当前用户权限、工作空间归属和业务 Schema 校验。`validate_entity` 用于独立检查当前或候选页面/组件代码以及预览资源差异；页面和组件的创建、源码更新由写工具自动校验，不应重复调用。`CodeCheckService` 和组件校验服务继续保留完整内部结果，模型侧写入/修改结果与页面/组件 `validate_entity` 只返回有界精简校验文本；需要上下文时使用相同目标和候选 mode 调用 `validate_entity(detail=true)`，资源差异预览保持结构化 envelope。内容助手不得注册永久删除能力；项目、页面、组件、资源、主题和样式支持归档，单项归档免确认，两个及以上同类型目标必须动态确认并以整批原子语义执行，项目归档不得级联归档页面、路由或工作空间共享资产。主题写工具只允许维护 key、name、description 和色板，不得暴露 Logo 或字体配置。
 
-内容助手会话只绑定工作空间；`AiAgentSession` 保存后续 Run 使用的焦点模式和项目工作集偏好，`AiAgentRun` 的 workspace/project/page/component/source 是本轮不可变焦点快照。路由切换不得修改活跃 Run，确认恢复、外部任务续跑、图片任务和自委派必须沿用原 Run 的焦点与工作集。默认上下文只注入工作空间、焦点、工作集、画布尺寸和基础字号；页面源码、完整样式和建议列表通过通用查询工具按需读取。
+内容助手会话只绑定工作空间；`AiAgentSession` 保存后续 Run 使用的焦点模式和项目工作集偏好，`AiAgentRun` 的 workspace/project/page/component/source 是本轮不可变焦点快照。路由切换不得修改活跃 Run，确认恢复、外部任务续跑和图片任务必须沿用原 Run 的焦点与工作集。默认上下文只注入工作空间、焦点、工作集、画布尺寸和基础字号；页面源码、完整样式和建议列表通过通用查询工具按需读取。
 
-Editor 和 Backend 只公开 `agent-coordinator` 一个内容助手，不再登记组件助手或资源助手。独立子任务通过 `delegate_task_to_self` 创建同一助手身份的隔离子运行，工具参数不得重新选择成员 ID；子运行不披露自委派工具，避免递归委派。组件移除统一使用归档语义，不得重新引入 `delete_component` AI 工具。
+Editor 和 Backend 只公开 `agent-coordinator` 一个内容助手，不再登记组件助手、资源助手或自委派子运行。组件移除统一使用归档语义，不得重新引入 `delete_component` AI 工具。
 
 页面创建与结构化编辑属于重资源写工具：必须通过 `ai_page_mutation_jobs` 持久化队列执行，不能在 Pydantic tool 调用中直接并发运行 Runtime/Chromium。页面工具的 deferred result 由后台 Batch 协调器自动恢复；修改该流程时必须同时检查租约、取消、页面版本复核、SSE `waiting_external` 状态和自动续跑测试。截图任务与页面渲染诊断共享 Chromium 池，任何新增浏览器调用都必须接入该池，不能自行启动无上限的浏览器实例。
 
@@ -134,6 +136,7 @@ pnpm run test:backend:api
 pnpm run test:backend:integration
 pnpm run test:editor
 pnpm run test:editor:check
+pnpm run test:editor:build
 pnpm run test:editor:gate
 pnpm run test:runtime
 pnpm run test:runtime:delegated
@@ -147,7 +150,7 @@ pnpm run test:e2e:all
 
 测试入口语义：
 
-- `test:editor` 只执行 Editor Vitest；需要 Editor 类型检查与测试门禁时使用 `test:editor:gate`。
+- `test:editor` 只执行 Editor Vitest；`test:editor:check` 执行类型检查；`test:editor:build` 执行生产构建；需要完整 Editor 质量门禁时使用 `test:editor:gate`。
 - `test:runtime` / `test:runtime:delegated` 只委托 Runtime 子项目 Vitest；需要 Runtime 完整门禁时使用 `test:runtime:gate`。
 - `test:contracts` 是根仓跨模块契约测试，不等同于 Backend 自身的 `backend/tests/contracts`。
 - `test:e2e:run` 只执行 Playwright；`test:e2e` 会先重置并播种 smoke 数据、确认服务，再执行 Playwright。

@@ -182,6 +182,7 @@ class AssetService:
         name: str | None = None,
         description: str | None = None,
         overwrite: bool = False,
+        commit: bool = True,
     ) -> WorkspaceAsset:
         """保存上传资源；覆盖写入时自动生成历史归档副本。"""
 
@@ -226,6 +227,7 @@ class AssetService:
                 file_size=file_size,
                 description=normalized_description,
                 create_history_snapshot=True,
+                commit=commit,
             )
 
         analysis_metadata = self._build_analysis_metadata(asset_type, original_name, content_type, content)
@@ -246,8 +248,11 @@ class AssetService:
             status=RecordStatus.ACTIVE.value,
         )
         self.session.add(asset)
-        await self.session.commit()
-        await self.session.refresh(asset)
+        if commit:
+            await self.session.commit()
+            await self.session.refresh(asset)
+        else:
+            await self.session.flush()
         return asset
 
     async def create_content_asset(
@@ -262,6 +267,7 @@ class AssetService:
         description: str | None = None,
         approx_aspect_ratio: str | None = None,
         aspect_ratio_source: AspectRatioSource = "manual",
+        commit: bool = True,
     ) -> WorkspaceAsset:
         """通过文本内容创建 SVG 图标、SVG 图片、Draw.io、Mermaid、Chart 或 Formula 资源。"""
 
@@ -301,8 +307,11 @@ class AssetService:
             status=RecordStatus.ACTIVE.value,
         )
         self.session.add(asset)
-        await self.session.commit()
-        await self.session.refresh(asset)
+        if commit:
+            await self.session.commit()
+            await self.session.refresh(asset)
+        else:
+            await self.session.flush()
         return asset
 
     async def get_asset_content(self, workspace_id: int, asset_id: int) -> str:
@@ -338,6 +347,7 @@ class AssetService:
         content: str,
         *,
         change_note: str | None = None,
+        commit: bool = True,
     ) -> WorkspaceAsset:
         """替换可编辑资源内容，并在写入前自动创建 archived 历史副本。"""
 
@@ -361,6 +371,7 @@ class AssetService:
             description=None,
             create_history_snapshot=True,
             history_reason=change_note,
+            commit=commit,
         )
 
     async def replace_asset_file(
@@ -445,7 +456,14 @@ class AssetService:
         await self.session.refresh(asset)
         return asset
 
-    async def archive_asset(self, workspace_id: int, asset_id: int, *, archive_reason: str | None = None) -> WorkspaceAsset:
+    async def archive_asset(
+        self,
+        workspace_id: int,
+        asset_id: int,
+        *,
+        archive_reason: str | None = None,
+        commit: bool = True,
+    ) -> WorkspaceAsset:
         """归档资源；归档后保留 name、hash 与公开访问能力。"""
 
         asset = await self._get_asset_or_raise(workspace_id, asset_id)
@@ -454,7 +472,7 @@ class AssetService:
         if asset.status == RecordStatus.ARCHIVED.value:
             return asset
         self._ensure_normal_asset_for_archive(asset)
-        return await self._archive_asset_model(asset, archive_reason=archive_reason)
+        return await self._archive_asset_model(asset, archive_reason=archive_reason, commit=commit)
 
     async def batch_archive_assets(
         self,
@@ -471,7 +489,7 @@ class AssetService:
             try:
                 asset = await self._get_asset_or_raise(workspace_id, asset_id)
                 self._ensure_normal_asset_for_archive(asset)
-                await self._archive_asset_model(asset, archive_reason=archive_reason)
+                await self._archive_asset_model(asset, archive_reason=archive_reason, commit=True)
                 succeeded_ids.append(asset_id)
             except AppException as error:
                 await self.session.rollback()
@@ -479,7 +497,14 @@ class AssetService:
 
         return self._build_batch_operation_payload(succeeded_ids, failures)
 
-    async def restore_asset(self, workspace_id: int, asset_id: int, *, restore_reason: str | None = None) -> WorkspaceAsset:
+    async def restore_asset(
+        self,
+        workspace_id: int,
+        asset_id: int,
+        *,
+        restore_reason: str | None = None,
+        commit: bool = True,
+    ) -> WorkspaceAsset:
         """恢复普通归档资源；写入历史副本保持 archived，不允许直接恢复为 active。"""
 
         asset = await self._get_asset_or_raise(workspace_id, asset_id)
@@ -488,8 +513,12 @@ class AssetService:
         asset.status = RecordStatus.ACTIVE.value
         asset.archived_at = None
         asset.archive_reason = None
-        await self.session.commit()
-        await self.session.refresh(asset)
+        if commit:
+            await self.session.commit()
+            await self.session.refresh(asset)
+        else:
+            await self.session.flush()
+            await self.session.refresh(asset)
         return asset
 
     async def batch_restore_assets(
@@ -559,6 +588,7 @@ class AssetService:
         approx_aspect_ratio: str | None = None,
         approx_aspect_ratio_provided: bool = False,
         aspect_ratio_source: AspectRatioSource = "manual",
+        commit: bool = True,
     ) -> WorkspaceAsset:
         """更新资源元数据；不改变物理文件指针，也不生成历史副本。"""
 
@@ -602,8 +632,12 @@ class AssetService:
             )
 
         await WorkspaceFontService(self.session).sync_asset_reference_name(asset)
-        await self.session.commit()
-        await self.session.refresh(asset)
+        if commit:
+            await self.session.commit()
+            await self.session.refresh(asset)
+        else:
+            await self.session.flush()
+            await self.session.refresh(asset)
         return asset
 
     async def delete_asset(self, workspace_id: int, asset_id: int) -> None:
@@ -834,6 +868,7 @@ class AssetService:
         description: str | None,
         create_history_snapshot: bool,
         history_reason: str | None = None,
+        commit: bool = True,
     ) -> WorkspaceAsset:
         """覆盖当前资源记录；写入前可复制旧文件指针为 archived 历史副本。"""
 
@@ -860,13 +895,17 @@ class AssetService:
         if description is not None:
             asset.description = description
 
-        await self.session.commit()
-        await self.session.refresh(asset)
-        if old_file_name != file_name and await self._count_file_name_references(asset.workspace_id, old_file_name) == 0:
-            try:
-                await self.driver.delete(asset.workspace_id, old_file_name)
-            except Exception:
-                pass
+        if commit:
+            await self.session.commit()
+            await self.session.refresh(asset)
+            if old_file_name != file_name and await self._count_file_name_references(asset.workspace_id, old_file_name) == 0:
+                try:
+                    await self.driver.delete(asset.workspace_id, old_file_name)
+                except Exception:
+                    pass
+        else:
+            await self.session.flush()
+            await self.session.refresh(asset)
         return asset
 
     async def _create_history_snapshot(self, asset: WorkspaceAsset, *, reason: str | None = None) -> WorkspaceAsset:
@@ -1263,14 +1302,23 @@ class AssetService:
         if asset.status != RecordStatus.ACTIVE.value:
             raise AppException(status_code=409, code="ASSET_ARCHIVE_REQUIRES_ACTIVE", detail="仅允许归档启用中的普通资源。")
 
-    async def _archive_asset_model(self, asset: WorkspaceAsset, *, archive_reason: str | None = None) -> WorkspaceAsset:
-        """把已校验的资源模型标记为 archived 并提交。"""
+    async def _archive_asset_model(
+        self,
+        asset: WorkspaceAsset,
+        *,
+        archive_reason: str | None = None,
+        commit: bool = True,
+    ) -> WorkspaceAsset:
+        """把已校验的资源模型标记为 archived 并按需提交。"""
 
         asset.status = RecordStatus.ARCHIVED.value
         asset.archived_at = utc_now()
         asset.archive_reason = self._normalize_description(archive_reason)
-        await self.session.commit()
-        await self.session.refresh(asset)
+        if commit:
+            await self.session.commit()
+            await self.session.refresh(asset)
+        else:
+            await self.session.flush()
         return asset
 
     @staticmethod

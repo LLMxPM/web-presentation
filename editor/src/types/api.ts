@@ -106,7 +106,6 @@ export interface ProjectItem {
   show_pdf_export_button: boolean
   menu_mode: ProjectMenuMode
   theme_key: string | null
-  theme_config_yaml: string
   style_spec_markdown: string
   build_extra_assets_json?: ProjectBuildExtraAssetsJson
   routed_page_count: number
@@ -973,6 +972,16 @@ export interface AgentConfigItem extends AgentCatalogItem {
   disabled_tool_count: number
 }
 
+export interface AgentCodeStandardConfigItem {
+  agent_id: string
+  standard_type: 'page' | 'component'
+  default_content: string
+  content: string
+  content_override: string | null
+  customized: boolean
+  source: 'system_default' | 'user_custom'
+}
+
 export interface AgentSessionItem {
   session_id: string
   agent_id: string
@@ -1121,9 +1130,6 @@ export interface AgentPendingRequirement {
   kind: 'confirmation' | 'user_feedback' | 'external_job'
   run_id: string
   session_id: string
-  member_agent_id?: string | null
-  member_agent_name?: string | null
-  member_run_id?: string | null
   tool_name: string | null
   tool_execution: Record<string, unknown>
   suggested_patch: AgentSuggestedPatch | null
@@ -1184,9 +1190,6 @@ export interface AgentRunStartResponse {
 export interface AgentTimelineToolItem {
   tool_call_id: string | null
   tool_name: string
-  member_agent_id?: string | null
-  member_agent_name?: string | null
-  member_run_id?: string | null
   status: 'running' | 'waiting_external' | 'completed' | 'error' | 'cancelled' | 'interrupted'
   input_payload: unknown
   output_payload: unknown
@@ -1213,24 +1216,9 @@ export interface AgentTimelineItem {
   created_at: string | null
 }
 
-export interface AgentMemberRunItem {
-  parent_run_id: string
-  run_id: string
-  agent_id: string
-  agent_name: string | null
-  status: AgentActiveRunStatus
-  created_at: string | null
-  updated_at: string | null
-  delegate_tool_call_id: string | null
-  input_prompt?: string | null
-  output_prompt?: string | null
-  timeline_items: AgentTimelineItem[]
-}
-
 export interface AgentSessionRuntimeSnapshot {
   session: AgentSessionItem
   timeline_items: AgentTimelineItem[]
-  member_runs: AgentMemberRunItem[]
   context_status: AgentContextStatusItem
   active_run: AgentActiveRunItem | null
   last_run: AgentActiveRunItem | null

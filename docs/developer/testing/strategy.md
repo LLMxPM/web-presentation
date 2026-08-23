@@ -66,6 +66,7 @@ pnpm run test:backend:api
 pnpm run test:backend:integration
 pnpm run test:editor
 pnpm run test:editor:check
+pnpm run test:editor:build
 pnpm run test:editor:gate
 pnpm run test:runtime
 pnpm run test:runtime:delegated
@@ -86,7 +87,8 @@ pnpm run test:all
 | `test:backend:*` | Backend pytest 分层入口，marker 由 `backend/tests/` 目录自动补齐。 |
 | `test:editor` | Editor Vitest。 |
 | `test:editor:check` | Editor 类型检查，执行 `vue-tsc -b`。 |
-| `test:editor:gate` | Editor 质量门禁，执行 `check + test`。 |
+| `test:editor:build` | Editor 生产构建，执行 `vue-tsc -b && vite build`。 |
+| `test:editor:gate` | Editor 质量门禁，执行 `check + test + build`。 |
 | `test:runtime` / `test:runtime:delegated` | 只委托执行 Runtime 子项目 Vitest。 |
 | `test:runtime:gate` | Runtime 子项目质量门禁，执行 `check + test + build`。 |
 | `test:contracts` | 根仓跨模块契约测试，只收集 `tests/contracts/**/*.test.ts`。不同于 `backend/tests/contracts`。 |

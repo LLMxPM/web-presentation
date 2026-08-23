@@ -6,7 +6,7 @@ import type { Page } from '@playwright/test'
 
 import { expect, test } from '../../fixtures/base'
 
-import { AGENT_HELLO_CASE, AGENT_VISUAL_CASE, buildReferenceImage } from '../../fixtures/ai-cases'
+import { AGENT_HELLO_CASE, AGENT_PAGE_EXTERNAL_CASE, AGENT_VISUAL_CASE, buildReferenceImage } from '../../fixtures/ai-cases'
 import { openAgentPanel, prepareIsolatedAgentPanel, waitForVisualCapability } from '../../helpers/ai-panel'
 import { gotoWorkspaceHome, openSmokePage, openSmokeProject } from '../../helpers/navigation'
 
@@ -18,6 +18,41 @@ test('内容助手普通对话应走真实会话链路并返回确定性终态�
   await panel.getByRole('button', { name: /发送/ }).click()
 
   await expect(panel.getByText(AGENT_HELLO_CASE.finalText).last()).toBeVisible({ timeout: 30_000 })
+})
+
+test('页面创建应经过 external job 并直接恢复父 Run', async ({ page }) => {
+  await gotoWorkspaceHome(page)
+  await openSmokeProject(page)
+  await openSmokePage(page)
+  const panel = await prepareIsolatedAgentPanel(page)
+
+  await panel.locator('textarea').fill(AGENT_PAGE_EXTERNAL_CASE.input)
+  await panel.getByRole('button', { name: /发送/ }).click()
+
+  // 并发运行其它写型夹具时，目标项目可能落在当前焦点之外，从而进入 HITL；
+  // 单独运行时则会直接进入 external job，兼容这两种合法路径。
+  const confirmation = panel.getByText('允许执行 创建页面 吗？', { exact: true })
+  const finalText = panel.getByText(AGENT_PAGE_EXTERNAL_CASE.finalText).last()
+  let confirmationRequired = false
+  await Promise.any([
+    confirmation.waitFor({ state: 'visible', timeout: 15_000 }).then(() => {
+      confirmationRequired = true
+    }),
+    finalText.waitFor({ state: 'visible', timeout: 60_000 }),
+  ])
+  if (confirmationRequired) {
+    await panel.getByRole('button', { name: '提交', exact: true }).click()
+  }
+
+  await expect(finalText).toBeVisible({ timeout: 60_000 })
+  const toolGroup = panel.locator('[data-testid="tool-call-group"]').last()
+  await expect(toolGroup).toBeVisible()
+  await expect(panel.getByRole('button', { name: `新增页面：${AGENT_PAGE_EXTERNAL_CASE.pageTitle}` })).toBeVisible()
+
+  await page.reload()
+  await page.waitForSelector('[data-testid="page-detail-view"]', { timeout: 15_000 })
+  await openAgentPanel(page)
+  await expect(panel.getByText(AGENT_PAGE_EXTERNAL_CASE.finalText).last()).toBeVisible({ timeout: 30_000 })
 })
 
 test('视觉链路应真实经历理解、生成与保存并可在刷新后恢复', async ({ page }) => {

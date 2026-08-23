@@ -23,7 +23,6 @@ from app.ai.message_history import (
     annotate_run_partition_metadata,
     build_context_status_item,
 )
-from app.ai.member_delegation import MemberDelegationPaused
 from app.ai.platform_runtime import (
     PlatformAgentRuntimeStore,
     encode_sse_event,
@@ -407,15 +406,6 @@ class PydanticAgentRunner:
                 extra={"event": "ai.page_mutation.continuation.fence_lost", "run_id": run_model.run_id},
             )
             raise
-        except MemberDelegationPaused as exc:
-            async for sse in self._flush_projector_buffer(projector, best_effort=True):
-                yield sse
-            await self._store.save_run_message_history(
-                run_model,
-                final_messages or base_run_message_history,
-            )
-            event = await self._store.pause_for_requirement(run_model, requirement=exc.requirement)
-            yield encode_sse_event(event)
         except AppException as exc:
             async for sse in self._flush_projector_buffer(projector, best_effort=True):
                 yield sse

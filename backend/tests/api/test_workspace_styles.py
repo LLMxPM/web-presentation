@@ -27,7 +27,7 @@ async def test_workspace_styles_should_crud_copy_and_not_link_projects(authentic
     default_style = styles_response.json()["items"][0]
     assert default_style["key"] == "default"
     assert default_style["theme_key"] == default_theme_key
-    assert default_style["base_font_size"] == "20px"
+    assert default_style["base_font_size"] == "24px"
     assert default_style["style_spec_markdown"] == DEFAULT_PROJECT_STYLE_SPEC_MARKDOWN
 
     create_response = await authenticated_client.post(

@@ -2,7 +2,14 @@
 
 from __future__ import annotations
 
-from tests.integration.component_preview.component_preview_cases import *  # noqa: F403
+from httpx import AsyncClient
+
+from tests.integration.component_preview.component_preview_cases import (
+    CONTENT_COMPONENT_SIZE_PREVIEW_SCHEMA,
+    create_workspace,
+    publish_component,
+    upload_icon_asset,
+)
 
 
 async def test_component_publish_should_build_versions_and_current_dependencies(

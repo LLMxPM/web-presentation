@@ -57,6 +57,7 @@
 | Backend | 平台控制面 | 负责用户、权限、数据持久化、AI Agent、预览上下文、构建任务和产物托管 |
 | Runtime | 预览与构建引擎 | 基于 Vue/Vite 渲染页面和组件，承接预览、截图、诊断和发布构建 |
 | Infra | 部署与运行环境 | 提供 Docker 镜像、compose 模板、发布流程和运行时依赖约束 |
+| Agent Kit | 外部 Agent 接入 | 同级 `web-presentation-agent-kit` 仓库提供 `wp` CLI、MCP Server、共享 API Client 和配套 Skill |
 
 详细架构、模块边界和目标业务流程见 [平台架构总览](./docs/developer/architecture/overview.md)。
 
@@ -128,3 +129,5 @@ web-presentation/
 当前仓库顶层内容采用 Apache License 2.0，见 [LICENSE](./LICENSE)。
 
 `runtime/` 是独立项目 `web-runtime-vue` 的 Git 子模块，继续遵循它自身仓库内声明的许可证，见 [runtime/LICENSE](./runtime/LICENSE)。
+
+外部 Agent 接入代码位于同级仓库 `web-presentation-agent-kit`，主仓库仅保留平台 API、架构和集成文档。

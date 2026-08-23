@@ -64,8 +64,26 @@ from app.ai.tools.generic.operation_models import (
     ThemeUpdatePayload,
     VersionContentOptions,
 )
-from app.ai.tools.self_delegation import build_self_delegation_tools
 from app.ai.tools.visual import build_analyze_visuals_tool
+
+
+_COMPACT_PAGE_VALIDATION_EXAMPLE = (
+    "检查结论：passed_with_warnings\n"
+    "摘要：页面代码检查通过，发现 2 个布局警告。\n"
+    "布局：overflows=1、empty_regions=1\n"
+    "警告：\n"
+    "- [PAGE_RENDER_BOTTOM_OVERFLOW] 页面底部超出画布 42px。\n"
+    "- [layout.empty_regions.sparse_top_aligned] 内容区整体靠顶部排列，底部存在不成比例的空白。\n"
+    "下一步：如需查看诊断明细，请使用同一目标和候选 mode 调用 validate_entity；需要更完整信息时设置 detail=true。"
+)
+_COMPACT_COMPONENT_VALIDATION_EXAMPLE = (
+    "检查结论：passed_with_warnings\n"
+    "摘要：组件可以编译并真实渲染；存在布局或资源警告。\n"
+    "场景：已检查 3 个场景，通过 2 个，警告 1 个，失败 0 个；需关注：preset:compact。\n"
+    "警告：\n"
+    "- [COMPONENT_RENDER_HORIZONTAL_OVERFLOW] preset:compact 在 placement frame 中水平溢出 8px。（scenario=preset:compact；profile=component-content-default.v1）\n"
+    "下一步：如需查看诊断明细，请使用同一目标和候选 mode 调用 validate_entity；需要更完整信息时设置 detail=true。"
+)
 
 AGENT_COORDINATOR_AGENT_ID = "agent-coordinator"
 IMAGE_ANALYSIS_TOOL_GROUP_KEY = "image_analysis"
@@ -419,12 +437,6 @@ def _build_user_feedback_tools(_session_factory: async_sessionmaker[AsyncSession
 
 
 
-def _build_self_delegation_runtime_tools(session_factory: async_sessionmaker[AsyncSession]) -> list[Any]:
-    """构建统一内容助手的自委派工具。"""
-
-    return build_self_delegation_tools(session_factory)
-
-
 def _build_image_analysis_tools(session_factory: async_sessionmaker[AsyncSession]) -> list[Any]:
     """构建统一无状态视觉分析工具。"""
 
@@ -496,7 +508,7 @@ def _image_generation_tool_spec() -> AgentToolSpec:
         "图片生成",
         "根据自足提示词创建持久化图片生成任务；结果自动保存为工作空间图片资源并在对话工具卡回显。",
         default_instructions=(
-            "只有用户明确表达生成或编辑图片的意图时才能调用，不要自行把普通内容任务扩展为图片生成。"
+            "设计页面需要图片，且素材库没有合适的图片时，可以调用此工具生成。"
             "generate 无需参考图；edit 至少传一张 reference_attachment_ids。禁止传本地路径、base64 或业务对象 URL。"
             "count 表示以同一个 prompt 生成的图片数量（变体）；prompt 只描述单张图片的内容，不要列举多张不同图片。"
             "如需视觉差异较大的多张图片，应拆为多次独立调用（分别使用不同的 prompt，每次 count=1）。"
@@ -729,9 +741,9 @@ _COORDINATOR_OPERATION_GUIDES = (
                      call_example={"resource_type": "project", "view": "route_tree", "target_id": 8}),
     _operation_guide("project", "query", "读取项目完整展示配置和有序建议组件快照。", _query_parameters("project", "configuration", EmptyArguments, target_required=True), action="configuration",
                      call_example={"resource_type": "project", "view": "configuration", "target_id": 8}),
-    _operation_guide("page", "query", "分页查询工作空间或指定项目的页面。", _query_parameters("page", "list", PageListFilters), action="list",
+    _operation_guide("page", "query", "分页查询工作空间或指定项目的页面元数据。", _query_parameters("page", "list", PageListFilters), action="list",
                      call_example={"resource_type": "page", "filters": {"project_id": 8, "keyword": "封面"}}),
-    _operation_guide("page", "query", "读取页面元数据，不返回源码、审计字段或截图元数据。", _query_parameters("page", "detail", EmptyArguments, target_required=True), action="detail"),
+    _operation_guide("page", "query", "读取页面元数据。", _query_parameters("page", "detail", EmptyArguments, target_required=True), action="detail"),
     _operation_guide("page", "query", "读取页面完整源码和当前版本信息。", _query_parameters("page", "content", EmptyArguments, target_required=True), action="content",
                      prerequisites=("先通过页面列表或当前焦点取得真实页面 ID。",),
                      call_example={"resource_type": "page", "view": "content", "target_id": 31}),
@@ -786,7 +798,21 @@ _COORDINATOR_OPERATION_GUIDES = (
                           "页面颜色、字体和品牌视觉优先使用 Runtime 主题语义类与 Runtime Kit；只使用 Runtime 契约中列出的语义键，不要引入未列出的 Token，不要硬编码品牌色、字体文件或 Logo 路径。",
                           "Tailwind 类必须是源码中的完整静态字符串；动态视觉选择使用顶层枚举映射，禁止拼接 text-${tone}、from-${color} 等类名。",
                       ),
-                     side_effects=("通过持久化页面任务队列执行并创建页面初始版本。",), risk_level="write",
+                     side_effects=("通过持久化页面任务队列执行并创建页面初始版本。",),
+                     response_example={
+                         "success": True,
+                         "resource_type": "page",
+                         "operation": "create",
+                         "target": {"id": 31, "resource_type": "page"},
+                         "data": {
+                             "success": True,
+                             "applied": True,
+                             "page_id": 31,
+                             "version_no": 1,
+                             "validation": _COMPACT_PAGE_VALIDATION_EXAMPLE,
+                         },
+                     },
+                     risk_level="write",
                      call_example={
                          "resource_type": "page",
                          "mode": "new",
@@ -816,11 +842,11 @@ _COORDINATOR_OPERATION_GUIDES = (
         action="new",
         constraints=(
             "组件分三种类型：页面组件（整页模板，根部使用 DefaultContainer）、内容组件（页面内内容块，需尺寸控制字段）、原子组件（小粒度 UI 元素，不需要尺寸控制字段）。",
-            "页面组件应以 DefaultContainer 为根部提供可复用页面骨架：通过 props 或具名 slot 接收标题文本、默认 slot 接收正文内容，形成稳定契约，不硬编码具体页面内容。",
+            "页面组件应以 DefaultContainer 为根部提供可复用页面骨架；重复标题区、眉题/导航、主体区和辅助区空间关系的内容页，应创建或复用页面组件，通过 props 或具名 slot 接收可变标题和正文内容，形成稳定契约，不硬编码具体页面内容。",
             "所有组件类型都必须提供 preview_schema；根节点是 Schema 对象，不是组件 props 的实际预览值。",
             "组件属性定义必须放在 preview_schema.props 中，每个字段使用 type、default 等描述；字段名应与 Vue defineProps 保持一致。",
             "内容组件必须在 preview_schema.props 中声明至少一个尺寸控制字段，例如 width、height、minHeight 或 aspectRatio。",
-            "组件应跨项目和主题复用；颜色、字体、Logo 和强调状态优先使用 Runtime 主题语义类或 Runtime Kit，不要绑定当前项目的具体 palette、未列出的语义 Token 或硬编码品牌资源。",
+            "组件应跨页面或跨项目复用；颜色、字体、Logo 和强调状态优先使用 Runtime 主题语义类或 Runtime Kit，不要绑定当前项目的具体 palette、未列出的语义 Token 或硬编码品牌资源。",
             "组件源码中的 Tailwind 类必须是完整静态字符串；动态 tone、variant 等样式使用顶层枚举映射，禁止拼接 text-${tone}、from-${color} 等类名。",
             "写入前会自动执行契约、Runtime 编译、默认态与有界 presets 的真实渲染和布局检查；无需先调用 component.validate.check。",
             "组件不绑定项目页面尺寸或基础字号；自动检查使用版本化临时 profile，具体项目兼容性由页面检查负责。",
@@ -829,7 +855,7 @@ _COORDINATOR_OPERATION_GUIDES = (
         error_recovery=(
             "收到 COMPONENT_PREVIEW_SCHEMA_REQUIRED 时补充合法的 preview_schema 后重试。",
             "收到 CONTENT_COMPONENT_SIZE_CONTROL_REQUIRED 时，把尺寸字段定义放入 preview_schema.props；不要把 width、height 等预览值直接放在根节点。",
-            "校验返回 valid=false 时根据 diagnostics 的 scenario_key、profile_key、facts 和 suggestion 修复后重试；unavailable/retryable=true 时不要改写候选，应稍后原样重试。",
+            "写入结果中的 validation 是精简短文本；根据其中的 code、message、定位、scenario 和 profile 修复后重试。需要受控诊断 facts 时，使用相同目标和候选参数调用 validate_entity(detail=true)；unavailable/retryable=true 时不要改写候选，应稍后原样重试。",
         ),
         risk_level="write",
         call_example={
@@ -882,7 +908,7 @@ _COORDINATOR_OPERATION_GUIDES = (
                     "has_unpublished_changes": True,
                     "status": "active",
                 },
-                "validation": {"status": "passed", "summary": "组件可以编译并真实渲染；1 个场景全部通过。"},
+                "validation": "检查通过，无警告",
             },
         },
     ),
@@ -993,7 +1019,21 @@ _COORDINATOR_OPERATION_GUIDES = (
                           "新增 Tailwind 类必须是完整静态字符串；动态样式使用顶层枚举映射，禁止拼接 text-${tone}、from-${color} 等类名。",
                       ),
                       side_effects=("通过持久化页面任务队列校验，通过后创建新版本。",),
-                      error_recovery=("版本冲突时重新读取页面 content 后重新生成 edits。", "精确文本未唯一命中时不得原样重试。"), risk_level="write"),
+                      error_recovery=("版本冲突时重新读取页面 content 后重新生成 edits。", "精确文本未唯一命中时不得原样重试。", "validation 只返回精简校验文本；需要诊断 facts 时使用相同目标和候选参数调用 validate_entity(detail=true)。"),
+                      response_example={
+                          "success": True,
+                          "resource_type": "page",
+                          "operation": "update",
+                          "target": {"id": 31, "resource_type": "page"},
+                          "data": {
+                              "success": True,
+                              "applied": True,
+                              "page_id": 31,
+                              "version_no": 4,
+                              "validation": _COMPACT_PAGE_VALIDATION_EXAMPLE,
+                          },
+                      },
+                      risk_level="write"),
     _operation_guide(
         "component",
         "update",
@@ -1006,16 +1046,45 @@ _COORDINATOR_OPERATION_GUIDES = (
             "提交 preview_schema 或 component_type 时会基于当前源码自动执行编译、真实渲染和布局检查；纯名称或摘要更新不启动 Runtime。",
             "组件视觉样式应保持跨主题可复用，优先使用 Runtime 主题语义类和完整静态 Tailwind 类，不要引入未列出的语义 Token、硬编码品牌色或动态拼接类名。",
         ),
+        side_effects=("提交 preview_schema 或 component_type 时通过统一后台任务执行；纯名称、摘要等轻量元数据保持同步。", "结果只返回组件摘要，不回显已提交的 preview_schema 与源码。",),
         error_recovery=(
             "缺少 Schema 或尺寸控制字段时，先读取组件 detail，再提交包含合法 preview_schema 的元数据更新。",
+            "validation 只返回精简校验文本；需要诊断 facts 时使用相同目标和候选参数调用 validate_entity(detail=true)。",
         ),
-        side_effects=("提交 preview_schema 或 component_type 时通过统一后台任务执行；纯名称、摘要等轻量元数据保持同步。", "结果只返回组件摘要，不回显已提交的 preview_schema 与源码。",),
+        response_example={
+            "success": True,
+            "resource_type": "component",
+            "operation": "update",
+            "action": "metadata",
+            "target": {"id": 81, "resource_type": "component"},
+            "data": {
+                "success": True,
+                "applied": True,
+                "component_id": 81,
+                "validation": "检查通过，无警告",
+            },
+        },
         risk_level="write",
     ),
     _operation_guide("component", "update", "通过统一后台任务对组件草稿应用结构化 edits，并在写入前自动检查真实渲染结果。", _write_parameters("component", "update", ComponentContentPayload, action="content", target_mode="single"), action="content",
                      prerequisites=("先读取组件 detail，取得源码、draft_hash 和 base_published_version_no。",),
                      constraints=("自动执行契约、Runtime 编译、默认态与有界 presets 的真实渲染和布局检查，无需提前重复调用 validate_entity。", "新增 Tailwind 类必须是完整静态字符串；动态样式使用顶层枚举映射，禁止拼接 text-${tone}、from-${color} 等类名。", "组件颜色、字体和 Logo 应使用 Runtime 主题语义类或版本化 Runtime Kit，不要绑定当前项目的具体主题值。"),
-                     side_effects=("结果只返回组件摘要、edits 计数与 canonical_diff，不回显完整源码。",), error_recovery=("编辑锁冲突时重新读取组件 detail。", "valid=false 时按 diagnostics 修复 edits；unavailable/retryable=true 时稍后原样重试。"), risk_level="write"),
+                     side_effects=("结果只返回组件摘要和 edits 计数，不回显完整源码或源码 diff。",), error_recovery=("编辑锁冲突时重新读取组件 detail。", "根据 validation 短文本中的 code、message、scenario 和 profile 修复 edits；需要诊断 facts 时调用 validate_entity(detail=true)；unavailable/retryable=true 时稍后原样重试。"),
+                     response_example={
+                         "success": True,
+                         "resource_type": "component",
+                         "operation": "update",
+                         "action": "content",
+                         "target": {"id": 81, "resource_type": "component"},
+                         "data": {
+                             "success": True,
+                             "applied": True,
+                             "component_id": 81,
+                             "draft_hash": "sha256:…",
+                             "validation": _COMPACT_COMPONENT_VALIDATION_EXAMPLE,
+                         },
+                     },
+                     risk_level="write"),
     _operation_guide("asset", "update", "修改资源名称、描述、标签或近似比例。", _write_parameters("asset", "update", AssetMetadataPayload, action="metadata", target_mode="single"), action="metadata", risk_level="write"),
     _operation_guide("asset", "update", "写入资源完整文本内容。", _write_parameters("asset", "update", AssetContentPayload, action="content", target_mode="single"), action="content",
                      prerequisites=("建议先用 asset.validate.preview 检查 unified diff。",), side_effects=("写入前自动创建 archived 历史副本。",), risk_level="write"),
@@ -1035,9 +1104,11 @@ _COORDINATOR_OPERATION_GUIDES = (
     _operation_guide("component", "action", "发布组件当前草稿，生成新的正式版本。", _write_parameters("component", "action", ComponentPublishPayload, action="publish", target_mode="single", payload_required=False), action="publish",
                      prerequisites=("组件必须存在可发布草稿；建议先执行 check。",), side_effects=("新版本可被页面和其他组件正式引用。", "结果返回组件摘要和 import_usage，不回显源码。",), risk_level="write"),
     _operation_guide("page", "validate", "检查当前页面、完整候选源码或结构化 edits。", _write_parameters("page", "validate", PageCheckPayload, action="check", target_mode="optional_single"), action="check",
-                     constraints=("mode=current/edits 必须提供 target_id；无 target_id 的 content 模式必须提供 project_id。", "工具实际负责候选源码的 Runtime 编译、真实渲染和布局诊断，不会单独报告未列出的主题 Token 或动态 Tailwind 类拼接；模型调用前应依据 Runtime 主题契约自行复核。Runtime Kit import path 由 manifest 与依赖校验约束，必须使用返回的版本化路径。")),
+                     constraints=("mode=current/edits 必须提供 target_id；无 target_id 的 content 模式必须提供 project_id。", "detail=false 只返回摘要、最多 10 条带 code、message 和定位的问题；detail=true 仍最多 10 条，并补充受控 facts 和布局数值，不返回完整 layout_analysis、浏览器几何或原始诊断清单。", "工具实际负责候选源码的 Runtime 编译、真实渲染和布局诊断，不会单独报告未列出的主题 Token 或动态 Tailwind 类拼接；模型调用前应依据 Runtime 主题契约自行复核。Runtime Kit import path 由 manifest 与依赖校验约束，必须使用返回的版本化路径。"),
+                     response_example=_COMPACT_PAGE_VALIDATION_EXAMPLE),
     _operation_guide("component", "validate", "只读检查当前组件或候选源码、edits 与 preview_schema 的编译、真实渲染和布局结果。", _write_parameters("component", "validate", ComponentCheckPayload, action="check", target_mode="optional_single"), action="check",
-                     constraints=("mode=current/edits 必须提供 target_id；content 模式可检查新组件候选源码。", "新组件候选应同时提供 component_type 和完整 preview_schema；页面尺寸与基础字号使用平台版本化临时 profile，不继承当前焦点项目。", "工具实际负责组件候选源码的 Runtime 编译、真实渲染和布局诊断，不会单独报告未列出的主题 Token 或动态 Tailwind 类拼接；模型调用前应依据 Runtime 主题契约自行复核。Runtime Kit import path 由 manifest 与依赖校验约束，必须使用返回的版本化路径。", "三类组件写操作已经自动执行相同检查；仅在诊断当前组件、预检大幅修改或确认修复结果时单独调用。")),
+                     constraints=("mode=current/edits 必须提供 target_id；content 模式可检查新组件候选源码。", "新组件候选应同时提供 component_type 和完整 preview_schema；页面尺寸与基础字号使用平台版本化临时 profile，不继承当前焦点项目。", "detail=false 只返回摘要、最多 10 条带 code、message、scenario 和 profile 的问题；detail=true 仍最多 10 条，并补充受控 facts，不返回完整 scenario、浏览器几何或原始诊断清单。", "工具实际负责组件候选源码的 Runtime 编译、真实渲染和布局诊断，不会单独报告未列出的主题 Token 或动态 Tailwind 类拼接；模型调用前应依据 Runtime 主题契约自行复核。Runtime Kit import path 由 manifest 与依赖校验约束，必须使用返回的版本化路径。", "三类组件写操作已经自动执行相同检查；仅在诊断当前组件、预检大幅修改或确认修复结果时单独调用。"),
+                     response_example=_COMPACT_COMPONENT_VALIDATION_EXAMPLE),
     _operation_guide("asset", "validate", "预览资源完整内容写入后的 unified diff，不落库。", _write_parameters("asset", "validate", AssetPreviewContentPayload, action="preview", target_mode="single"), action="preview"),
 )
 
@@ -1051,6 +1122,8 @@ _COORDINATOR_OPERATION_GUIDE_MAP = {
 _COORDINATOR_TOOL_SPECS = (
     _tool("get_operation_guide", "查询操作手册", "generic_business", "通用业务", "按稳定 operation_key 查询精确参数 Schema、前置条件、副作用、限制和示例；省略 operation_key 时返回紧凑索引。",
           default_instructions="首次使用、不确定参数或参数校验失败时查询；先省略 operation_key 获取索引，再携带选定 operation_key 获取精确手册。当前上下文已有对应精确手册时不要重复查询。", configurable=False),
+    _tool("get_code_standards", "查询代码规范", "generic_business", "通用业务", "查询当前用户生效的页面或组件代码规范 Markdown；规范类型只有 page 和 component。",
+          default_instructions="页面源码任务先查询 standard_type=page，组件源码任务先查询 standard_type=component；当前规范结果已经在消息历史中时不要重复查询。", configurable=False),
     _tool("list_entities", "罗列业务对象", "generic_business", "通用业务", "统一罗列、搜索项目、页面、组件、资源、主题、样式、Runtime Kit 和字体；支持项目范围与建议集合筛选。",
           default_instructions="只用于集合查询，不读取详情或源码；项目页面用 page + project_id，建议组件或资源使用 scope=suggested；需要视觉素材时优先按 asset 查询 active 资源，再按返回的 render_type 和 content_editable 决定是否读取详情或源码。"),
     _tool("get_entity", "读取业务对象", "generic_business", "通用业务", "统一读取详情、共享配置、源码、路由、历史版本和依赖。",
@@ -1070,8 +1143,6 @@ _COORDINATOR_TOOL_SPECS = (
           risk_level='system', response_example={'questions': []}),
     _visual_analysis_tool_spec(allow_page_screenshot=True),
     _image_generation_tool_spec(),
-    _tool('delegate_task_to_self', '委派自身子任务', 'self_delegation', '自委派', '把可独立执行的工作空间内容任务交给同一助手的隔离子运行。',
-          default_instructions='不需要选择成员身份；不得委派删除、清理或永久移除任务。收到 AI_MEMBER_HITL_REQUIRES_PARENT 或 AI_MEMBER_HITL_REDELEGATION_BLOCKED 后不得再次委派相同任务，必须由父级直接调用 blocked_tool 指示的工具。', risk_level='system'),
 )
 
 _COORDINATOR_GROUP_SPECS = (
@@ -1079,7 +1150,7 @@ _COORDINATOR_GROUP_SPECS = (
         "generic_business",
         "通用业务",
         "固定通用工具，覆盖工作空间内项目、页面、组件、资源、主题和样式。",
-        ("get_operation_guide", "list_entities", "get_entity", "create_entity", "update_entity", "archive_entity", "validate_entity", "execute_action"),
+        ("get_operation_guide", "get_code_standards", "list_entities", "get_entity", "create_entity", "update_entity", "archive_entity", "validate_entity", "execute_action"),
         required_context_fields=("workspace_id",),
         token_scopes=(
             *PAGE_TOOL_READ_SCOPES,
@@ -1099,8 +1170,6 @@ _COORDINATOR_GROUP_SPECS = (
         disclosable=True,
     ),
     _group("user_feedback", "用户交互", "向用户提出结构化单选问题。", ("ask_user",), build_tools=_build_user_feedback_tools, disclosable=True),
-    _group("self_delegation", "自委派", "调用同一内容助手的隔离子运行处理独立任务。", ("delegate_task_to_self",),
-           required_context_fields=("workspace_id",), build_tools=_build_self_delegation_runtime_tools, disclosable=True),
     _group(IMAGE_ANALYSIS_TOOL_GROUP_KEY, "图片理解", "分析会话附件、资源或页面截图。", ("analyze_visuals",),
            required_context_fields=("workspace_id",), token_scopes=(*PAGE_TOOL_VISUAL_SCOPES, *RESOURCE_TOOL_READ_SCOPES),
            build_tools=_build_image_analysis_tools, disclosable=True),

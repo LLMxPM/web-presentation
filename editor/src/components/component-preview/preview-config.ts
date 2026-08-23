@@ -7,12 +7,13 @@ import type {
   ComponentPreviewOptions,
   ComponentPreviewSizeMode,
 } from '@/types/api'
+import { DEFAULT_PROJECT_BASE_FONT_SIZE } from '@/components/project/project-presentation-values'
 
 export const DEFAULT_COMPONENT_PREVIEW_OPTIONS: ComponentPreviewOptions = {
   page: {
     width: 1920,
     height: 1080,
-    base_font_size: '20px',
+    base_font_size: DEFAULT_PROJECT_BASE_FONT_SIZE,
     icon_default_stroke_width: 2,
     theme_key: null,
     theme_config_yaml: null,

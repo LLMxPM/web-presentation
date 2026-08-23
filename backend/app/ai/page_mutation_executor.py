@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import logging
+import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any
@@ -17,6 +19,7 @@ from app.ai.page_mutation_arguments import (
 )
 from app.ai.run_event_writer import is_sqlite_lock_error
 from app.ai.platform_tools import recoverable_tool_error_result
+from app.ai.validation_result_formatter import compact_mutation_result
 from app.ai.tools.page.apply_page_edits import (
     _ensure_page_base_version,
     _ensure_page_in_context,
@@ -39,6 +42,9 @@ from app.schemas.page import PageCreateRequest, PageUpdateRequest
 from app.services.code_check_service import CodeCheckService, build_code_check_failed_result
 from app.services.durable_job_lease_service import transition_owned_running_job
 from app.services.page_service import PageService
+
+
+logger = logging.getLogger(__name__)
 
 ProgressCallback = Callable[[str], Awaitable[None]]
 
@@ -196,6 +202,7 @@ class AiPageMutationExecutor:
         if context.project_id is None:
             raise AppException(status_code=409, code="AI_PROJECT_CONTEXT_REQUIRED", detail="创建页面缺少项目上下文。")
 
+        validation_started_at = time.perf_counter()
         async with self._session_factory() as session:
             validation_result = await CodeCheckService(session).check_page_code(
                 page_id=None,
@@ -204,6 +211,16 @@ class AiPageMutationExecutor:
                 user_id=context.user_id,
                 content=page_content,
             )
+        logger.info(
+            "AI 页面创建检查阶段完成。",
+            extra={
+                "event": "ai.page_mutation.validation.finished",
+                "run_id": context.run_id,
+                "job_id": context.job_id,
+                "artifact_id": validation_result.get("artifact_id"),
+                "duration_ms": round((time.perf_counter() - validation_started_at) * 1000, 2),
+            },
+        )
         self._raise_if_lease_lost(lease_lost)
         if not _is_validation_passed(validation_result):
             await self._finish_without_page_write(
@@ -268,7 +285,17 @@ class AiPageMutationExecutor:
                     detail="页面变更任务租约已失效。",
                 )
             await session.commit()
+        save_started_at = time.perf_counter()
         await self._run_final_write(save)
+        logger.info(
+            "AI 页面创建保存阶段完成。",
+            extra={
+                "event": "ai.page_mutation.save.finished",
+                "run_id": context.run_id,
+                "job_id": context.job_id,
+                "duration_ms": round((time.perf_counter() - save_started_at) * 1000, 2),
+            },
+        )
 
     async def _execute_apply(
         self,
@@ -316,6 +343,7 @@ class AiPageMutationExecutor:
         if edit_result is None:  # pragma: no cover - 为类型与异常分支提供显式防线
             raise AppException(status_code=500, code="AI_SOURCE_EDITS_FAILED", detail="页面编辑结果生成失败。")
 
+        validation_started_at = time.perf_counter()
         async with self._session_factory() as session:
             validation_result = await CodeCheckService(session).check_page_code(
                 page_id=context.page_id,
@@ -323,10 +351,19 @@ class AiPageMutationExecutor:
                 user_id=context.user_id,
                 content=edit_result.next_content,
             )
+        logger.info(
+            "AI 页面更新检查阶段完成。",
+            extra={
+                "event": "ai.page_mutation.validation.finished",
+                "run_id": context.run_id,
+                "job_id": context.job_id,
+                "artifact_id": validation_result.get("artifact_id"),
+                "duration_ms": round((time.perf_counter() - validation_started_at) * 1000, 2),
+            },
+        )
         self._raise_if_lease_lost(lease_lost)
         validation_result = _with_apply_validation_metadata(
             validation_result,
-            canonical_diff=edit_result.canonical_diff,
             edits_applied=edit_result.applied_edit_count,
             message="页面代码校验失败，未保存页面版本。",
         )
@@ -366,7 +403,6 @@ class AiPageMutationExecutor:
                 "page_code": updated_page.code,
                 "version_no": updated_page.current_version_no,
                 "edits_applied": current_edit_result.applied_edit_count,
-                "canonical_diff": current_edit_result.canonical_diff,
                 "diagnostics": _extract_diagnostics(validation_result),
                 "layout_analysis": _extract_layout_analysis(validation_result),
                 "code_check_summary": validation_result.get("summary"),
@@ -391,7 +427,17 @@ class AiPageMutationExecutor:
                     detail="页面变更任务租约已失效。",
                 )
             await session.commit()
+        save_started_at = time.perf_counter()
         await self._run_final_write(save)
+        logger.info(
+            "AI 页面更新保存阶段完成。",
+            extra={
+                "event": "ai.page_mutation.save.finished",
+                "run_id": context.run_id,
+                "job_id": context.job_id,
+                "duration_ms": round((time.perf_counter() - save_started_at) * 1000, 2),
+            },
+        )
 
     async def _run_final_write(self, operation: Callable[[AsyncSession], Awaitable[None]]) -> None:
         """对 SQLite 最终写入执行有限退避重试，其他数据库错误原样上抛。"""
@@ -452,6 +498,7 @@ class AiPageMutationExecutor:
     ) -> bool:
         """完成无需写页面的业务结果，并用拥有者条件防止旧 Worker 覆盖。"""
 
+        result = compact_mutation_result(result, resource_type="page")
         async with self._session_factory() as session:
             return await self._mark_succeeded(
                 session,

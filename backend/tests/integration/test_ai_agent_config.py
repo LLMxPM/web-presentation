@@ -6,6 +6,7 @@ from httpx import AsyncClient
 from sqlalchemy import delete, select
 
 from app.ai.agent_catalog import get_agent_catalog_entry, list_agent_catalog_entries
+from app.ai.code_standards import get_default_code_standard
 from app.ai.tool_specs import (
     AGENT_COORDINATOR_AGENT_ID,
     build_agent_tools_from_group_specs,
@@ -14,12 +15,15 @@ from app.ai.tool_specs import (
 )
 from app.db.session import get_session_factory
 from app.models.ai_agent_config import AiAgentToolUserConfig
+from app.models.enums import UserRole
 from app.models.user import User
+from app.core.security import hash_password
 from app.services.ai_agent_config_service import AiAgentConfigService
 
 
 EXPECTED_TOOL_KEYS = {
     "get_operation_guide",
+    "get_code_standards",
     "list_entities",
     "get_entity",
     "create_entity",
@@ -30,7 +34,6 @@ EXPECTED_TOOL_KEYS = {
     "ask_user",
     "analyze_visuals",
     "generate_image",
-    "delegate_task_to_self",
 }
 
 
@@ -48,13 +51,16 @@ async def test_agent_catalog_should_only_expose_unified_content_agent(
     assert coordinator["name"] == "内容助手"
     assert coordinator["scope_type"] == "workspace"
     assert coordinator["entry_kind"] == "agent"
-    assert "delegate_task_to_self" in coordinator["default_prompt"]
+    assert "delegate_task_to_self" not in coordinator["default_prompt"]
     assert "delegate_task_to_member" not in coordinator["default_prompt"]
     assert "组件助手" not in coordinator["default_prompt"]
     assert "资源助手" not in coordinator["default_prompt"]
 
     tool_items = [tool for group in coordinator["tool_groups"] for tool in group["tools"]]
     assert {tool["key"] for tool in tool_items} == EXPECTED_TOOL_KEYS
+    standards_tool = next(tool for tool in tool_items if tool["key"] == "get_code_standards")
+    assert standards_tool["configurable"] is False
+    assert "standard_type=page" in standards_tool["default_instructions"]
     configs_response = await authenticated_client.get("/api/ai/agent-configs")
     assert configs_response.status_code == 200
     assert [item["id"] for item in configs_response.json()] == [AGENT_COORDINATOR_AGENT_ID]
@@ -85,6 +91,68 @@ async def test_unified_agent_config_should_still_support_prompt_and_tool_overrid
     )
     assert list_tool["enabled"] is False
     assert list_tool["description"] == "罗列业务对象。"
+
+
+async def test_code_standard_config_should_support_default_override_and_restore(
+    authenticated_client: AsyncClient,
+) -> None:
+    """页面与组件规范应按类型返回，并支持整段覆盖和恢复默认。"""
+
+    list_response = await authenticated_client.get(
+        f"/api/ai/agent-configs/{AGENT_COORDINATOR_AGENT_ID}/code-standards"
+    )
+    assert list_response.status_code == 200
+    defaults = {item["standard_type"]: item for item in list_response.json()}
+    assert set(defaults) == {"page", "component"}
+    assert defaults["page"]["source"] == "system_default"
+    assert defaults["page"]["customized"] is False
+    assert defaults["page"]["content"] == defaults["page"]["default_content"]
+
+    custom_content = "## 我的页面规范\n\n- 页面标题必须使用结论句。"
+    update_response = await authenticated_client.patch(
+        f"/api/ai/agent-configs/{AGENT_COORDINATOR_AGENT_ID}/code-standards/page",
+        json={"content_override": custom_content},
+    )
+    assert update_response.status_code == 200
+    updated = {item["standard_type"]: item for item in update_response.json()}
+    assert updated["page"]["content"] == custom_content
+    assert updated["page"]["default_content"] != custom_content
+    assert updated["page"]["source"] == "user_custom"
+    assert updated["component"]["content"] == updated["component"]["default_content"]
+
+    async with get_session_factory()() as session:
+        session.add(
+            User(
+                username="code-standard-user",
+                password_hash=hash_password("CodeStandard123456"),
+                display_name="规范测试用户",
+                role=UserRole.WORKSPACE_USER.value,
+                preview_size_presets=[],
+            )
+        )
+        await session.commit()
+
+    login_response = await authenticated_client.post(
+        "/api/auth/login",
+        json={"username": "code-standard-user", "password": "CodeStandard123456"},
+    )
+    assert login_response.status_code == 200
+    other_user_response = await authenticated_client.get(
+        f"/api/ai/agent-configs/{AGENT_COORDINATOR_AGENT_ID}/code-standards"
+    )
+    assert other_user_response.status_code == 200
+    other_user_defaults = {item["standard_type"]: item for item in other_user_response.json()}
+    assert other_user_defaults["page"]["customized"] is False
+    assert other_user_defaults["page"]["content"] == other_user_defaults["page"]["default_content"]
+
+    restore_response = await authenticated_client.patch(
+        f"/api/ai/agent-configs/{AGENT_COORDINATOR_AGENT_ID}/code-standards/page",
+        json={"restore_default": True},
+    )
+    assert restore_response.status_code == 200
+    restored = {item["standard_type"]: item for item in restore_response.json()}
+    assert restored["page"]["customized"] is False
+    assert restored["page"]["content"] == restored["page"]["default_content"]
 
 
 async def test_legacy_query_tool_config_should_apply_to_both_read_tools() -> None:
@@ -137,36 +205,35 @@ def test_unified_tool_specs_should_match_runtime_and_guides() -> None:
         supports_image_input=True,
     )
     assert set(specs) == EXPECTED_TOOL_KEYS == {tool.name for tool in tools}
-    delegate_tool = next(tool for tool in tools if tool.name == "delegate_task_to_self")
-    assert set(delegate_tool.parameters["properties"]) == {"task", "handoff_context", "expected_output"}
-    assert "member_id" not in str(delegate_tool.parameters)
+    assert "delegate_task_to_self" not in {tool.name for tool in tools}
     assert list_agent_tool_specs("component-manager") == ()
     assert list_agent_tool_specs("resource-manager") == ()
     assert all(guide.handler_tool_key in EXPECTED_TOOL_KEYS for guide in list_operation_guide_specs())
     assert not any("delete" in key or "purge" in key for key in EXPECTED_TOOL_KEYS)
 
 
-def test_unified_prompt_should_keep_runtime_and_fixed_canvas_guidance() -> None:
-    """统一提示词保留页面与组件代码工作需要的 Runtime 和固定画布约束。"""
+def test_unified_prompt_should_keep_runtime_baseline_and_query_guidance() -> None:
+    """统一提示词保留通用 Runtime 基线，并把类型细则交给规范查询。"""
 
     catalog = get_agent_catalog_entry(AGENT_COORDINATOR_AGENT_ID)
     assert catalog is not None
     for phrase in (
         "page_content 要写成完整、可运行的 Vue SFC 文件源码",
-        "演示页面是固定尺寸的画布，不是可以随着内容自然变高的网页文档",
-        "未注入时先读取项目 configuration",
-        "页面按真实画布的安全边距、模块间距、字号层级、分栏与内容密度编写，具体数值基线以项目样式规范为准",
-        "PAGE_RENDER_BOTTOM_OVERFLOW",
-        "Runtime 主题语义颜色键包括",
-        "background-subtle 是 Runtime 提供的语义背景槽位",
-        "只使用上述 Runtime 主题键，不要猜测其它语义颜色键",
-        "未列出的语义 Token 不得自行引入",
-        "不要拼接 text-${tone}、from-${color}",
-        "var(--tw-color-text-primary)",
-        "useTheme().themeStyles 提供的是 --theme-* 变量",
+        "页面和组件源码应使用 Runtime、主题、字体、资源和 Icon 的公开契约",
+        "页面或组件源码创建、写入、修改前，必须先调用 `get_code_standards`",
+        "固定画布、页面布局、组件契约以及页面或组件专属的主题、字体、资源和 Icon 细则",
     ):
         assert phrase in catalog.default_prompt
+    assert "固定演示画布与网页流式布局" not in catalog.default_prompt
+    assert "不是可以随着内容自然变高的网页文档" not in catalog.default_prompt
+    assert "Runtime 主题语义颜色键包括" not in catalog.default_prompt
+    assert "页面按真实画布的安全边距、模块间距、字号层级、分栏与内容密度编写" not in catalog.default_prompt
+    assert "useTheme().themeStyles 提供的是 --theme-* 变量" not in catalog.default_prompt
     assert "Editor" not in catalog.default_prompt
+    assert "固定尺寸的演示画布" in get_default_code_standard("page")
+    assert "Runtime 主题语义颜色键包括" in get_default_code_standard("page")
+    assert "preview_schema" in get_default_code_standard("component")
+    assert "Runtime 主题语义颜色键包括" in get_default_code_standard("component")
 
 
 def test_unified_prompt_should_describe_platform_assets_and_relations() -> None:
@@ -182,7 +249,7 @@ def test_unified_prompt_should_describe_platform_assets_and_relations() -> None:
         "项目建议资源只是优先参考集合",
         "样式应用到项目时会把当前样式完整复制为项目自己的独立快照",
         "项目样式、建议组件、建议资源、路由树、页面源码和组件源码默认不会完整注入",
-        "create_entity 创建页面或组件、update_entity 修改页面或组件源码时都会自动执行校验",
+        "页面和组件创建、源码更新，以及组件 `preview_schema` 或 `component_type` 修改，都会由平台自动执行编译、渲染和布局校验",
         "项目、页面、组件、资源、主题和样式归档后退出查询与操作边界",
     ):
         assert phrase in catalog.default_prompt

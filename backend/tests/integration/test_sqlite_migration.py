@@ -55,6 +55,148 @@ def test_alembic_head_should_migrate_sqlite_database(tmp_path: Path) -> None:
     assert database_path.exists()
 
 
+def test_remove_self_delegation_migration_should_purge_history_and_restore_empty_schema(tmp_path: Path) -> None:
+    """升级应清空 AI 历史并保留配置与业务数据，降级只恢复空 Member 结构。"""
+
+    backend_root = Path(__file__).resolve().parents[2]
+    database_path = tmp_path / "remove-self-delegation.db"
+    env = os.environ.copy()
+    env["DATABASE_URL"] = f"sqlite+aiosqlite:///{database_path.as_posix()}"
+    env["REDIS_URL"] = "memory://remove-self-delegation-test"
+    _run_alembic(backend_root, env, "20260817_0100")
+
+    with sqlite3.connect(database_path) as connection:
+        project_count = connection.execute("SELECT COUNT(*) FROM projects").fetchone()
+        connection.execute(
+            "INSERT INTO ai_agent_user_configs "
+            "(user_id, agent_id, description_override, prompt_override, prompt_mode) "
+            "VALUES (1, 'agent-coordinator', '保留描述', '保留提示词', 'override')"
+        )
+        connection.executemany(
+            "INSERT INTO ai_agent_tool_user_configs "
+            "(user_id, agent_id, tool_key, enabled, instructions_override) VALUES (1, 'agent-coordinator', ?, 1, ?)",
+            [("delegate_task_to_self", "删除此配置"), ("list_entities", "保留此配置")],
+        )
+        connection.execute(
+            "INSERT INTO ai_agent_sessions "
+            "(session_id, agent_id, user_id, workspace_id, focus_mode, work_scope_mode, "
+            "allowed_project_ids_json, focus_version, metadata_json) "
+            "VALUES ('session-remove-self', 'agent-coordinator', 1, 1, 'follow_route', 'workspace', '[]', 0, '{}')"
+        )
+        connection.execute(
+            "INSERT INTO ai_agent_runs "
+            "(run_id, session_id, agent_id, user_id, status, scope_type, workspace_id, source, "
+            "input_payload_json, message_history_json, event_index) "
+            "VALUES ('run-remove-self', 'session-remove-self', 'agent-coordinator', 1, 'paused', "
+            "'workspace', 1, 'test', '{}', '[]', 0)"
+        )
+        connection.execute(
+            "INSERT INTO ai_agent_member_runs "
+            "(member_run_id, parent_run_id, session_id, agent_id, status, input_payload_json, message_history_json) "
+            "VALUES ('member-remove-self', 'run-remove-self', 'session-remove-self', 'agent-coordinator', "
+            "'running', '{}', '[]')"
+        )
+        connection.execute(
+            "INSERT INTO ai_agent_messages (session_id, run_id, role, content, attachments_json, order_index) "
+            "VALUES ('session-remove-self', 'run-remove-self', 'assistant', '历史消息', '[]', 0)"
+        )
+        connection.execute(
+            "INSERT INTO ai_agent_run_events (session_id, run_id, event_index, event, payload_json) "
+            "VALUES ('session-remove-self', 'run-remove-self', 0, 'run.started', '{}')"
+        )
+        connection.execute(
+            "INSERT INTO ai_agent_tool_calls "
+            "(session_id, run_id, member_run_id, tool_call_id, tool_name, status) "
+            "VALUES ('session-remove-self', 'run-remove-self', 'member-remove-self', 'call-old', "
+            "'delegate_task_to_self', 'running')"
+        )
+        connection.execute(
+            "INSERT INTO ai_agent_requirements "
+            "(requirement_id, session_id, run_id, kind, status, tool_call_id, tool_name, "
+            "member_agent_id, member_agent_name, member_run_id, payload_json) "
+            "VALUES ('req-old', 'session-remove-self', 'run-remove-self', 'confirmation', 'pending', "
+            "'call-old', 'delegate_task_to_self', 'agent-coordinator', '内容助手', 'member-remove-self', '{}')"
+        )
+        connection.execute(
+            "INSERT INTO ai_agent_image_attachments "
+            "(user_id, workspace_id, session_id, run_id, source_kind, storage_key, original_name, "
+            "content_type, file_size, sha256, owned_object, status) "
+            "VALUES (1, 1, 'session-remove-self', 'run-remove-self', 'user_upload', 'orphan/key.png', "
+            "'key.png', 'image/png', 10, 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 1, 'active')"
+        )
+        connection.commit()
+
+    _run_alembic(backend_root, env, "head")
+
+    with sqlite3.connect(database_path) as connection:
+        tables = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+        assert "ai_agent_member_runs" not in tables
+        for table in (
+            "ai_agent_sessions",
+            "ai_agent_runs",
+            "ai_agent_messages",
+            "ai_agent_run_events",
+            "ai_agent_tool_calls",
+            "ai_agent_requirements",
+            "ai_agent_image_attachments",
+            "ai_agent_external_batches",
+            "ai_agent_external_tasks",
+            "ai_page_mutation_batches",
+            "ai_page_mutation_jobs",
+            "ai_image_generation_jobs",
+        ):
+            assert connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone() == (0,)
+        assert connection.execute("SELECT COUNT(*) FROM ai_agent_user_configs").fetchone() == (1,)
+        assert connection.execute(
+            "SELECT tool_key FROM ai_agent_tool_user_configs ORDER BY tool_key"
+        ).fetchall() == [("list_entities",)]
+        assert connection.execute("SELECT COUNT(*) FROM projects").fetchone() == project_count
+        for table in (
+            "ai_agent_tool_calls",
+            "ai_agent_requirements",
+            "ai_agent_external_batches",
+            "ai_agent_external_tasks",
+            "ai_page_mutation_jobs",
+            "ai_image_generation_jobs",
+        ):
+            columns = {row[1] for row in connection.execute(f"PRAGMA table_info({table})")}
+            assert "member_run_id" not in columns
+
+    _run_alembic(backend_root, env, "20260817_0100", command="downgrade")
+
+    with sqlite3.connect(database_path) as connection:
+        tables = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+        assert "ai_agent_member_runs" in tables
+        assert connection.execute("SELECT COUNT(*) FROM ai_agent_member_runs").fetchone() == (0,)
+        assert connection.execute("SELECT COUNT(*) FROM ai_agent_sessions").fetchone() == (0,)
+        for table in (
+            "ai_agent_tool_calls",
+            "ai_agent_requirements",
+            "ai_agent_external_batches",
+            "ai_agent_external_tasks",
+            "ai_page_mutation_jobs",
+            "ai_image_generation_jobs",
+        ):
+            columns = {row[1] for row in connection.execute(f"PRAGMA table_info({table})")}
+            assert "member_run_id" in columns
+
+
+def test_remove_self_delegation_migration_should_keep_postgresql_partial_index_contract() -> None:
+    """PostgreSQL 必须原地删列，并保留新旧 collecting 部分索引谓词。"""
+
+    backend_root = Path(__file__).resolve().parents[2]
+    source = (
+        backend_root / "migrations" / "versions" / "20260818_0100_remove_self_delegation.py"
+    ).read_text(encoding="utf-8")
+
+    assert 'postgresql_where=sa.text("status = \'collecting\'")' in source
+    assert "postgresql_where=sa.text(\"status = 'collecting' AND member_run_id IS NULL\")" in source
+    assert "postgresql_where=sa.text(\"status = 'collecting' AND member_run_id IS NOT NULL\")" in source
+    assert 'if op.get_bind().dialect.name == "sqlite":' in source
+    assert "inspector = sa.inspect(op.get_bind())" in source
+    assert "op.drop_column(table_name, column_name)" in source
+
+
 def test_content_agent_toolset_migration_should_reset_configs_and_runtime_history(tmp_path: Path) -> None:
     """最终模型拆分迁移应清空旧 AI 配置及运行历史。"""
 
@@ -153,6 +295,10 @@ def test_model_split_migration_should_reset_legacy_values_and_restore_empty_tabl
         assert {"ai_image_provider_configs", "ai_image_model_configs", "ai_image_slot_bindings"}.issubset(tables)
         assert connection.execute("SELECT COUNT(*) FROM ai_chat_model_configs").fetchone() == (0,)
         assert connection.execute("SELECT COUNT(*) FROM ai_image_model_configs").fetchone() == (0,)
+        catalog_columns = {row[1] for row in connection.execute("PRAGMA table_info(ai_chat_model_catalog)").fetchall()}
+        model_columns = {row[1] for row in connection.execute("PRAGMA table_info(ai_chat_model_configs)").fetchall()}
+        assert "protocol_key" in catalog_columns
+        assert "protocol_key" in model_columns
 
     _run_alembic(backend_root, env, "20260809_0100", command="downgrade")
 

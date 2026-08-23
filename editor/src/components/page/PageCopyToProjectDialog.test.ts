@@ -75,7 +75,6 @@ function createProject(id: number, name: string, workspaceId = 11, status: Recor
     show_pdf_export_button: true,
     menu_mode: 'preview',
     theme_key: null,
-    theme_config_yaml: 'themes: {}',
     style_spec_markdown: '',
     routed_page_count: 0,
     total_page_count: 0,

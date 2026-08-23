@@ -19,6 +19,7 @@ export interface ChatModelCatalogItem {
   provider_key: string
   model_id: string
   name: string
+  protocol_key: string
   context_tokens: number | null
   input_tokens: number | null
   output_tokens: number | null

@@ -10,6 +10,7 @@ from app.schemas.presentation_style import (
     StyleConfigurationPatch,
     SuggestedComponentsSelection,
 )
+from app.schemas.external_api import ExternalProjectCreateRequest
 
 
 def test_presentation_config_should_normalize_defaults_and_text() -> None:
@@ -52,3 +53,13 @@ def test_project_create_configuration_should_be_discriminated() -> None:
     assert adapter.validate_python({"mode": "custom", "presentation": {"page_width": 1600}}).mode == "custom"
     with pytest.raises(ValidationError):
         adapter.validate_python({"mode": "style", "style_id": 9, "presentation": {}})
+
+
+def test_external_project_create_should_default_configuration() -> None:
+    """External API 创建项目未传配置时，应使用 default 分支并拒绝空对象。"""
+
+    request = ExternalProjectCreateRequest(name="External Project")
+    assert request.configuration.mode == "default"
+
+    with pytest.raises(ValidationError):
+        ExternalProjectCreateRequest(name="External Project", configuration={})

@@ -178,7 +178,6 @@ function createRuntimeSnapshot(overrides: Record<string, unknown> = {}) {
       : Array.isArray(messages)
         ? timelineFromMessages(messages)
         : [],
-    member_runs: [],
     context_status: createContextStatus(),
     active_run: null,
     last_run: null,
@@ -440,7 +439,6 @@ describe('AgentConversationPanel', () => {
         },
       },
       timeline_items: [],
-      member_runs: [],
       context_status: createContextStatus(),
       active_run: null,
       last_run: null,

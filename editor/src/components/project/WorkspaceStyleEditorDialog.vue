@@ -45,7 +45,7 @@
               <UiFormField label="页面高度(px)"><template #default="field"><UiInput v-model="draft.pageHeight" placeholder="1080" :input-id="field.inputId" :described-by="field.describedBy" /></template></UiFormField>
             </div>
             <div class="mt-3 grid grid-cols-2 gap-3">
-              <UiFormField label="基础字号"><template #default="field"><UiInput v-model="draft.baseFontSize" placeholder="20px" :input-id="field.inputId" :described-by="field.describedBy" /></template></UiFormField>
+              <UiFormField label="基础字号"><template #default="field"><UiInput v-model="draft.baseFontSize" :placeholder="DEFAULT_PROJECT_BASE_FONT_SIZE" :input-id="field.inputId" :described-by="field.describedBy" /></template></UiFormField>
               <UiFormField label="图标描边"><template #default="field"><UiInput v-model="draft.iconDefaultStrokeWidth" placeholder="2" :input-id="field.inputId" :described-by="field.describedBy" /></template></UiFormField>
             </div>
           </div>
@@ -137,10 +137,10 @@ import { UiButton, UiDialog, UiFormField, UiInput, UiSegmentedControl, UiTabs } 
 import { useDefaultStyleSpec } from '@/composables/useDefaultStyleSpec'
 import type { ProjectMenuMode, SuggestedComponentItem, WorkspaceStyleItem } from '@/types/api'
 import { Message } from '@/utils/message'
+import { DEFAULT_PROJECT_BASE_FONT_SIZE } from './project-presentation-values'
 
 const DEFAULT_PROJECT_PAGE_WIDTH = 1920
 const DEFAULT_PROJECT_PAGE_HEIGHT = 1080
-const DEFAULT_PROJECT_BASE_FONT_SIZE = '20px'
 
 const props = withDefaults(defineProps<{
   modelValue: boolean

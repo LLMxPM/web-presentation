@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import AppException
+from app.core.time_utils import utc_now
 from app.core.platform_fonts import (
     MONO_FONT_PRESETS,
     PLATFORM_MONO_FONT,
@@ -105,6 +106,8 @@ class WorkspaceThemeService:
         workspace_id: int,
         payload: WorkspaceThemeCreateRequest,
         operator_id: int,
+        *,
+        commit: bool = True,
     ) -> WorkspaceThemeItem:
         """创建工作空间主题。"""
 
@@ -133,7 +136,10 @@ class WorkspaceThemeService:
             updated_by=operator_id,
         )
         await self.theme_repository.create(theme)
-        await self.session.commit()
+        if commit:
+            await self.session.commit()
+        else:
+            await self.session.flush()
         return await self.get(workspace_id, theme.id)
 
     async def copy(
@@ -142,6 +148,8 @@ class WorkspaceThemeService:
         theme_id: int,
         payload: WorkspaceThemeCopyRequest,
         operator_id: int,
+        *,
+        commit: bool = True,
     ) -> WorkspaceThemeItem:
         """复制工作空间主题，并自动生成不冲突的 key。"""
 
@@ -170,7 +178,10 @@ class WorkspaceThemeService:
             updated_by=operator_id,
         )
         await self.theme_repository.create(copied_theme)
-        await self.session.commit()
+        if commit:
+            await self.session.commit()
+        else:
+            await self.session.flush()
         return await self.get(workspace_id, copied_theme.id)
 
     async def update(
@@ -179,6 +190,8 @@ class WorkspaceThemeService:
         theme_id: int,
         payload: WorkspaceThemeUpdateRequest,
         operator_id: int,
+        *,
+        commit: bool = True,
     ) -> WorkspaceThemeItem:
         """更新工作空间主题，并在 key 变更时同步引用方。"""
 
@@ -214,16 +227,62 @@ class WorkspaceThemeService:
         if next_key != original_key:
             await self._cascade_theme_key_change(workspace_id, original_key, next_key)
 
-        await self.session.commit()
+        if commit:
+            await self.session.commit()
+        else:
+            await self.session.flush()
         return await self.get(workspace_id, theme.id)
 
-    async def delete(self, workspace_id: int, theme_id: int) -> None:
+    async def archive(
+        self,
+        workspace_id: int,
+        theme_id: int,
+        operator_id: int,
+        *,
+        commit: bool = True,
+    ) -> None:
+        """归档主题；若仍被活跃项目引用则拒绝归档并抛出 409。"""
+
+        theme = await self._get_theme_or_raise(workspace_id, theme_id)
+        await self.assert_theme_can_delete(workspace_id, theme.key)
+        theme.deleted_at = utc_now()
+        theme.updated_by = operator_id
+        if commit:
+            await self.session.commit()
+        else:
+            await self.session.flush()
+
+    async def restore(
+        self,
+        workspace_id: int,
+        theme_id: int,
+        operator_id: int,
+        *,
+        commit: bool = True,
+    ) -> None:
+        """恢复已归档的主题。"""
+
+        theme = await self._get_theme_or_raise(workspace_id, theme_id, include_deleted=True)
+        if theme.deleted_at is None:
+            return
+        await self._ensure_theme_key_available(workspace_id, theme.key, exclude_theme_id=theme.id)
+        theme.deleted_at = None
+        theme.updated_by = operator_id
+        if commit:
+            await self.session.commit()
+        else:
+            await self.session.flush()
+
+    async def delete(self, workspace_id: int, theme_id: int, *, commit: bool = True) -> None:
         """硬删除工作空间主题；若仍被引用则拒绝删除。"""
 
         theme = await self._get_theme_or_raise(workspace_id, theme_id)
         await self.assert_theme_can_delete(workspace_id, theme.key)
         await self.session.delete(theme)
-        await self.session.commit()
+        if commit:
+            await self.session.commit()
+        else:
+            await self.session.flush()
 
     async def create_default_theme_for_workspace(self, workspace: Workspace, operator_id: int | None = None) -> WorkspaceTheme:
         """为工作空间补齐系统默认主题，并在缺失默认 key 时回写工作空间。"""
@@ -521,10 +580,20 @@ class WorkspaceThemeService:
             raise AppException(status_code=404, code="WORKSPACE_NOT_FOUND", detail="工作空间不存在。")
         return workspace
 
-    async def _get_theme_or_raise(self, workspace_id: int, theme_id: int) -> WorkspaceTheme:
+    async def _get_theme_or_raise(
+        self,
+        workspace_id: int,
+        theme_id: int,
+        *,
+        include_deleted: bool = False,
+    ) -> WorkspaceTheme:
         """读取主题实体，不存在时抛错。"""
 
-        theme = await self.theme_repository.get_by_id(workspace_id, theme_id)
+        theme = await self.theme_repository.get_by_id(
+            workspace_id,
+            theme_id,
+            include_deleted=include_deleted,
+        )
         if theme is None:
             raise AppException(status_code=404, code="WORKSPACE_THEME_NOT_FOUND", detail="主题不存在。")
         return theme

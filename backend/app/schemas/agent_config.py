@@ -103,3 +103,25 @@ class AgentToolConfigUpdateRequest(BaseModel):
     description_override: str | None = Field(default=None, max_length=4000)
     instructions_override: str | None = Field(default=None, max_length=8000)
     restore_default: bool = False
+
+
+CodeStandardType = Literal["page", "component"]
+
+
+class AgentCodeStandardConfigItem(SchemaBase):
+    """返回某个 Agent 页面或组件代码规范的系统默认与当前生效内容。"""
+
+    agent_id: str
+    standard_type: CodeStandardType
+    default_content: str
+    content: str
+    content_override: str | None = None
+    customized: bool = False
+    source: Literal["system_default", "user_custom"] = "system_default"
+
+
+class AgentCodeStandardUpdateRequest(BaseModel):
+    """更新某个 Agent 页面或组件代码规范的整类型 Markdown 覆盖。"""
+
+    content_override: str | None = Field(default=None, max_length=20000)
+    restore_default: bool = False

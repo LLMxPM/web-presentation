@@ -251,6 +251,22 @@ def build_empty_area_analysis_helpers() -> str:
           const trailing = parentRect.bottom - last.rect.bottom;
           if (trailing > threshold) {
             const ratio = Math.round((trailing / parentHeight) * 1000) / 1000;
+            const contentHeight = Math.max(0, last.rect.bottom - first.rect.top);
+            const contentRatio = Math.round((contentHeight / parentHeight) * 1000) / 1000;
+            const layoutContainer = style.display.includes('flex') || style.display.includes('grid');
+            const nearTopThreshold = Math.max(scaleCanvasPx(48), parentHeight * 0.08);
+            const sparseTopAligned = (
+              !isRoot
+              && layoutContainer
+              && leading <= nearTopThreshold
+              && contentRatio <= 0.62
+              && trailing >= Math.max(scaleCanvasPx(96), parentHeight * 0.25)
+            );
+            const trailingReasonCodes = isRoot
+              ? ['trailing_bottom_gap']
+              : sparseTopAligned
+                ? ['sparse_top_aligned', 'trailing_gap']
+                : ['trailing_gap'];
             appendBand({
               kind: isRoot ? 'trailing_bottom_gap' : 'trailing_gap',
               first: last.target,
@@ -259,9 +275,15 @@ def build_empty_area_analysis_helpers() -> str:
               gap_bottom_px: Math.round(parentRect.bottom * 100) / 100,
               height_px: Math.round(trailing * 100) / 100,
               ratio_of_parent: ratio,
-              attention: 'review',
-              reason_codes: isRoot ? ['trailing_bottom_gap'] : ['trailing_gap'],
-              message: isRoot
+              top_gap_px: Math.round(leading * 100) / 100,
+              bottom_gap_px: Math.round(trailing * 100) / 100,
+              content_height_px: Math.round(contentHeight * 100) / 100,
+              content_ratio_of_parent: contentRatio,
+              attention: sparseTopAligned ? 'likely_issue' : 'review',
+              reason_codes: trailingReasonCodes,
+              message: sparseTopAligned
+                ? `${scopeLabel}内容整体靠顶部排列，底部约有 ${Math.round(trailing)}px 空白（占${scopeLabel}高度 ${Math.round(ratio * 100)}%）；若非刻意的顶部版式，优先使用 justify-center、place-items-center 或调整容器高度，避免仅用 flex-1/固定高度撑开区域。`
+                : isRoot
                 ? `内容在画布底部上方约 ${Math.round(trailing)}px 处结束（占画布高度 ${Math.round(ratio * 100)}%）；可补充内容或调整布局。`
                 : `${scopeLabel}底部存在约 ${Math.round(trailing)}px 空白带（占${scopeLabel}高度 ${Math.round(ratio * 100)}%），固定高度容器内内容可能未填满；可调整 margin/padding 或容器高度。`
             });
@@ -300,6 +322,29 @@ def build_empty_area_analysis_helpers() -> str:
               }
               seenInteriorTops.add(roundedTop);
               const ratio = Math.round((gapHeight / parentHeight) * 1000) / 1000;
+              const hasAutoTopMargin = (() => {
+                let current = lower.element;
+                while (current && current !== parentElement) {
+                  const classTokens = typeof current.className === 'string'
+                    ? current.className.split(/\s+/)
+                    : [];
+                  if (
+                    current.style.marginTop === 'auto'
+                    || classTokens.includes('mt-auto')
+                  ) {
+                    return true;
+                  }
+                  current = current.parentElement;
+                }
+                return false;
+              })();
+              const sparseTopAligned = (
+                !parentDistributed
+                && style.display.includes('flex')
+                && style.flexDirection === 'column'
+                && hasAutoTopMargin
+                && ratio >= 0.22
+              );
               appendBand({
                 kind: 'interior_gap',
                 first: upper.target,
@@ -310,9 +355,13 @@ def build_empty_area_analysis_helpers() -> str:
                 height_px: Math.round(gapHeight * 100) / 100,
                 width_px: Math.round(overlapWidth * 100) / 100,
                 ratio_of_parent: ratio,
-                attention: 'review',
-                reason_codes: ['interior_gap'],
-                message: parentDistributed
+                attention: sparseTopAligned ? 'likely_issue' : 'review',
+                reason_codes: sparseTopAligned
+                  ? ['sparse_top_aligned', 'interior_gap']
+                  : ['interior_gap'],
+                message: sparseTopAligned
+                  ? `${scopeLabel}内主体内容靠顶部排列，后续内容与前一内容块之间约有 ${Math.round(gapHeight)}px 空白（占${scopeLabel}高度 ${Math.round(ratio * 100)}%）；检测到自动上边距或固定高度可能使内容脱节，优先将完整内容组垂直居中或取消 mt-auto。`
+                  : parentDistributed
                   ? `${scopeLabel}内两个内容块之间约有 ${Math.round(gapHeight)}px 纵向空白（占${scopeLabel}高度 ${Math.round(ratio * 100)}%），由 ${style.justifyContent} 分布撑开；若为刻意留白可忽略。`
                   : `${scopeLabel}内两个内容块之间约有 ${Math.round(gapHeight)}px 纵向空白（占${scopeLabel}高度 ${Math.round(ratio * 100)}%），mt-auto、margin 或固定高度可能使内容脱节；若为刻意留白可忽略。`
               }, false);

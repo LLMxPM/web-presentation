@@ -48,14 +48,14 @@ async def test_update_preview_size_presets(authenticated_client: AsyncClient) ->
             "name": "演示大屏",
             "width": 2560,
             "height": 1440,
-            "base_font_size": "20px",
+            "base_font_size": "24px",
             "icon_default_stroke_width": 2,
         },
         {
             "name": "竖版海报",
             "width": 1080,
             "height": 1920,
-            "base_font_size": "20px",
+            "base_font_size": "24px",
             "icon_default_stroke_width": 2,
         },
     ]

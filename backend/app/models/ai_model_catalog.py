@@ -48,6 +48,7 @@ class AiChatModelCatalog(TimestampMixin, Base):
     )
     model_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    protocol_key: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     family: Mapped[str | None] = mapped_column(String(128), nullable=True)
     status: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     release_date: Mapped[str | None] = mapped_column(String(32), nullable=True)

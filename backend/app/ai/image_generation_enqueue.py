@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.exceptions import AppException
 from app.ai.external_task_control import enqueue_external_task
-from app.models.ai_agent_runtime import AiAgentMemberRun, AiAgentRun
+from app.models.ai_agent_runtime import AiAgentRun
 from app.models.ai_image_generation import AiImageGenerationJob
 from app.models.ai_external_task import AiAgentExternalTask
 from app.schemas.agent import AgentRunEvent
@@ -47,7 +47,6 @@ async def enqueue_image_generation(
     session_id: str,
     tool_call_id: str,
     deferred_tool_call_id: str | None = None,
-    member_run_id: str | None = None,
     user_id: int,
     workspace_id: int,
     project_id: int | None,
@@ -85,18 +84,12 @@ async def enqueue_image_generation(
             raise AppException(status_code=409, code="AI_RUN_NOT_ACTIVE", detail="图片生成对应的智能体运行不存在。")
         if run.status not in {"running", "waiting_external"} or run.cancel_requested_at is not None:
             raise AppException(status_code=409, code="AI_RUN_CANCELLED", detail="智能体运行已停止，不能创建图片任务。")
-        member_run = None
-        if member_run_id:
-            member_run = await session.get(AiAgentMemberRun, member_run_id)
-            if member_run is None or member_run.parent_run_id != run_id or member_run.session_id != session_id:
-                raise AppException(status_code=409, code="AI_MEMBER_RUN_NOT_FOUND", detail="图片生成对应的内容助手子运行不存在。")
         external_task = await enqueue_external_task(
             session,
             run=run,
             kind="image_generation",
             tool_call_id=tool_call_id,
             deferred_tool_call_id=deferred_tool_call_id,
-            member_run_id=member_run_id,
         )
 
         reference_ids = [int(item) for item in request_payload.get("reference_attachment_ids") or []]
@@ -121,7 +114,6 @@ async def enqueue_image_generation(
             session_id=session_id,
             tool_call_id=tool_call_id,
             deferred_tool_call_id=deferred_tool_call_id,
-            member_run_id=member_run_id,
             user_id=user_id,
             workspace_id=workspace_id,
             project_id=project_id,
@@ -147,7 +139,7 @@ async def enqueue_image_generation(
             await PlatformAgentRuntimeStore(session, user_id=user_id).append_event(
                 run,
                 AgentRunEvent(
-                    event="member.tool.progress" if member_run is not None else "tool.progress",
+                    event="tool.progress",
                     run_id=run_id,
                     session_id=session_id,
                     data={
@@ -156,15 +148,6 @@ async def enqueue_image_generation(
                         "job_id": job_id,
                         "phase": "queued",
                         "message": "图片任务正在排队。",
-                        **(
-                            {
-                                "member_run_id": member_run.member_run_id,
-                                "member_agent_id": member_run.agent_id,
-                                "member_agent_name": member_run.agent_name,
-                            }
-                            if member_run is not None
-                            else {}
-                        ),
                     },
                 ),
                 commit=False,

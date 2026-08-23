@@ -1,12 +1,12 @@
 """文件功能：验证 icon 资产结构化分析元数据与按逻辑名下发的预览配置。"""
 
 from httpx import AsyncClient
-
-CONTENT_COMPONENT_SIZE_PREVIEW_SCHEMA = '{"props":{"height":{"type":"number","label":"高度","default":320}}}'
 from sqlalchemy import select
 
 from app.db.session import get_session_factory
 from app.models.asset import WorkspaceAsset
+
+CONTENT_COMPONENT_SIZE_PREVIEW_SCHEMA = '{"props":{"height":{"type":"number","label":"高度","default":320}}}'
 
 
 async def _create_workspace(authenticated_client: AsyncClient, name: str) -> int:

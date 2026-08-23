@@ -56,12 +56,7 @@ def build_apply_page_edits_tool(
         deferred_tool_call_id = str(
             dependencies.get("current_tool_call_id") or ""
         ).strip()
-        member_run_id = str(dependencies.get("member_run_id") or "").strip() or None
-        tool_call_id = (
-            f"{member_run_id}:{deferred_tool_call_id}"
-            if member_run_id and deferred_tool_call_id
-            else deferred_tool_call_id
-        )
+        tool_call_id = deferred_tool_call_id
         if deferred_tool_call_id:
             enqueued = await enqueue_deadline.wait(
                 enqueue_page_mutation(
@@ -71,7 +66,6 @@ def build_apply_page_edits_tool(
                     run_step=int(dependencies.get("current_run_step") or 0),
                     tool_call_id=tool_call_id,
                     deferred_tool_call_id=deferred_tool_call_id,
-                    member_run_id=member_run_id,
                     operation="apply_page_edits",
                     workspace_id=int(dependencies["workspace_id"]),
                     project_id=_coerce_optional_int(dependencies.get("project_id")),
@@ -100,7 +94,6 @@ def build_apply_page_edits_tool(
             )
             validation_result = _with_apply_validation_metadata(
                 validation_result,
-                canonical_diff=edit_result.canonical_diff,
                 edits_applied=edit_result.applied_edit_count,
                 message="页面代码校验失败，未保存页面版本。",
             )
@@ -121,7 +114,6 @@ def build_apply_page_edits_tool(
                 "page_code": updated_page.code,
                 "version_no": updated_page.current_version_no,
                 "edits_applied": edit_result.applied_edit_count,
-                "canonical_diff": edit_result.canonical_diff,
                 "diagnostics": _extract_diagnostics(validation_result),
                 "layout_analysis": _extract_layout_analysis(validation_result),
                 "code_check_summary": validation_result.get("summary"),
@@ -142,14 +134,14 @@ def _is_validation_passed(result: dict[str, Any]) -> bool:
 def _with_apply_validation_metadata(
     result: dict[str, Any],
     *,
-    canonical_diff: str,
     edits_applied: int,
     message: str,
 ) -> dict[str, Any]:
     """为 apply 内置校验结果补齐 edits 元数据和失败提示。"""
 
     enriched = dict(result)
-    enriched["canonical_diff"] = enriched.get("canonical_diff") or canonical_diff
+    # canonical_diff 仅供服务端内部诊断，不进入页面写工具的模型结果。
+    enriched.pop("canonical_diff", None)
     enriched["edits_applied"] = edits_applied
     if not _is_validation_passed(enriched):
         enriched["success"] = False

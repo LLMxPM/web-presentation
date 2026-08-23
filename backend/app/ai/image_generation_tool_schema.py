@@ -5,6 +5,7 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any
 
+from app.ai.generic_business_schema_compactor import flatten_discriminated_object_branches
 from app.services.image_generation.contracts import ImageModelSpec
 
 
@@ -123,13 +124,7 @@ def _project_operation_branches(
         )
     if not branches:
         return schema
-    projected: dict[str, Any] = {
-        "type": "object",
-        "oneOf": branches,
-    }
-    if "$defs" in schema:
-        projected["$defs"] = deepcopy(schema["$defs"])
-    return projected
+    return flatten_discriminated_object_branches(branches)
 
 
 def _required_array_schema(field_schema: Any) -> dict[str, Any] | None:

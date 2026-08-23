@@ -75,7 +75,6 @@ class ProjectService:
                 "show_pdf_export_button": project.show_pdf_export_button,
                 "menu_mode": project.menu_mode,
                 "theme_key": project.theme_key,
-                "theme_config_yaml": project.theme_config_yaml,
                 "style_spec_markdown": project.style_spec_markdown,
                 "build_extra_assets_json": normalize_project_build_extra_assets_config(
                     project.build_extra_assets_json
@@ -140,7 +139,13 @@ class ProjectService:
             latest_page_updated_at=latest_page_updated_at.get(project.id),
         )
 
-    async def create(self, payload: ProjectCreateRequest, operator_id: int) -> ProjectItem:
+    async def create(
+        self,
+        payload: ProjectCreateRequest,
+        operator_id: int,
+        *,
+        commit: bool = True,
+    ) -> ProjectItem:
         """创建项目，code 由系统自动生成，并校验工作空间存在性。"""
 
         if not await self.repository.workspace_exists(payload.workspace_id):
@@ -211,11 +216,21 @@ class ProjectService:
             Project,
             CODE_PREFIX_PROJECT,
             write_project,
+            commit=commit,
         )
+        if not commit:
+            await self.session.flush()
         reloaded = await self.repository.get_by_id(project.id)
         return self._to_item(reloaded)
 
-    async def update(self, project_id: int, payload: ProjectUpdateRequest, operator_id: int) -> ProjectItem:
+    async def update(
+        self,
+        project_id: int,
+        payload: ProjectUpdateRequest,
+        operator_id: int,
+        *,
+        commit: bool = True,
+    ) -> ProjectItem:
         """更新项目元数据，编码不可修改。"""
 
         project = await self.repository.get_by_id(project_id)
@@ -297,12 +312,15 @@ class ProjectService:
         if payload.build_extra_assets_json is not None:
             project.build_extra_assets_json = payload.build_extra_assets_json.model_dump(mode="python")
         project.updated_by = operator_id
-        await self.session.commit()
+        if commit:
+            await self.session.commit()
+        else:
+            await self.session.flush()
         reloaded = await self.repository.get_by_id(project.id)
         page_counts = await self.repository.list_page_counts([project.id])
         return self._to_item(reloaded, page_counts=page_counts.get(project.id, (0, 0)))
 
-    async def delete(self, project_id: int, *, user_id: int) -> None:
+    async def delete(self, project_id: int, *, user_id: int, commit: bool = True) -> None:
         """对当前用户可访问项目执行软删除，不影响页面资源。"""
 
         project = await self.repository.get_by_id(project_id)
@@ -311,4 +329,7 @@ class ProjectService:
         await self.workspace_service.ensure_access(project.workspace_id, user_id=user_id)
 
         project.deleted_at = utc_now()
-        await self.session.commit()
+        if commit:
+            await self.session.commit()
+        else:
+            await self.session.flush()

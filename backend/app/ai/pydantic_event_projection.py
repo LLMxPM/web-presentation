@@ -36,7 +36,6 @@ _MESSAGE_DELTA_FLUSH_BYTES = 4 * 1024
 _REASONING_DELTA_FLUSH_BYTES = 8 * 1024
 
 _AppendEvent = Callable[[AgentRunEvent], Awaitable[AgentRunEvent]]
-_BaseEventData = Callable[[], dict[str, Any]]
 _DeltaCallback = Callable[[str], None]
 _DeferredHandler = Callable[[DeferredToolRequests, list[dict[str, Any]]], Awaitable[AgentRunEvent | None]]
 _ToolCallIdMapper = Callable[[str | None], Any]
@@ -53,8 +52,6 @@ class PydanticEventProjector:
         session_id: str,
         append_event: _AppendEvent,
         deferred_tool_results: DeferredToolResults | None = None,
-        event_prefix: str = "",
-        base_event_data: _BaseEventData | None = None,
         map_tool_call_id: _ToolCallIdMapper | None = None,
         extra_tool_data: _ToolExtraData | None = None,
         final_messages: list[dict[str, Any]] | None = None,
@@ -63,13 +60,11 @@ class PydanticEventProjector:
         on_reasoning_delta: _DeltaCallback | None = None,
         on_deferred: _DeferredHandler | None = None,
     ) -> None:
-        """保存投影配置；事件前缀用于生成 member.* 等命名空间事件。"""
+        """保存父 Run 的事件投影配置。"""
 
         self._run_id = run_id
         self._session_id = session_id
         self._append_event = append_event
-        self._event_prefix = event_prefix
-        self._base_event_data = base_event_data or (lambda: {})
         self._map_tool_call_id = map_tool_call_id or (lambda raw_tool_call_id: raw_tool_call_id)
         self._extra_tool_data = extra_tool_data or (lambda raw_tool_call_id: {})
         self._final_messages = final_messages if final_messages is not None else []
@@ -156,7 +151,7 @@ class PydanticEventProjector:
                 extra={
                     "run_id": self._run_id,
                     "session_id": self._session_id,
-                    "event": f"{self._event_prefix}{buffered.event}",
+                    "event": buffered.event,
                 },
             )
             if not best_effort:
@@ -209,10 +204,10 @@ class PydanticEventProjector:
     ) -> AgentRunEvent:
         """补齐命名空间、运行标识和固定数据后写入平台事件。"""
 
-        event_data = {**self._base_event_data(), **(data or {})}
+        event_data = data or {}
         return await self._append_event(
             AgentRunEvent(
-                event=f"{self._event_prefix}{event}",
+                event=event,
                 run_id=self._run_id,
                 session_id=self._session_id,
                 content=content,

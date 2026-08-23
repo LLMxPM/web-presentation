@@ -1,5 +1,8 @@
 """文件功能：覆盖组件与页面预览 artifact 组装相关测试。"""
 
+# 通过导入测试函数交给 pytest 收集。
+# ruff: noqa: F401
+
 from tests.integration.component_preview.component_preview_artifact_cases import (
     test_component_draft_preview_should_create_hidden_system_project,
     test_component_draft_preview_should_publish_component_sandbox_config_bundle,
@@ -11,4 +14,4 @@ from tests.integration.component_preview.component_preview_artifact_cases import
     test_saved_component_preview_should_include_icons_from_transitive_component_dependencies,
     test_saved_component_preview_should_use_default_preview_options,
     test_standalone_page_preview_should_keep_entry_page_out_of_manifest_whitelist,
-)
+)  # noqa: F401

@@ -20,6 +20,7 @@ from app.ai.agent_runtime_config import (
     EffectiveToolRuntimeConfig,
     resolve_effective_prompt,
 )
+from app.ai.code_standards import get_default_code_standard, list_code_standard_types
 from app.ai.tool_specs import (
     AGENT_COORDINATOR_AGENT_ID,
     apply_tool_spec_metadata,
@@ -32,8 +33,10 @@ from app.ai.tools.disclosure import get_tool_group_definitions
 from app.ai.visual_analysis_tool_schema import project_visual_analysis_schema
 from app.core.exceptions import AppException
 from app.db.session import get_session_factory
-from app.models.ai_agent_config import AiAgentToolUserConfig, AiAgentUserConfig
+from app.models.ai_agent_config import AiAgentCodeStandardUserConfig, AiAgentToolUserConfig, AiAgentUserConfig
 from app.schemas.agent_config import (
+    AgentCodeStandardConfigItem,
+    AgentCodeStandardUpdateRequest,
     AgentCatalogItem,
     AgentConfigItem,
     AgentConfigUpdateRequest,
@@ -92,6 +95,80 @@ class AiAgentConfigService:
             enabled_tool_count=len(runtime_config.enabled_tool_keys),
             disabled_tool_count=len(runtime_config.disabled_tool_keys),
         )
+
+    async def list_code_standard_configs(self, agent_id: str) -> list[AgentCodeStandardConfigItem]:
+        """返回当前用户指定 Agent 的页面与组件规范有效配置。"""
+
+        self._get_catalog_or_raise(agent_id)
+        models = await self._get_code_standard_models(agent_id)
+        model_map = {item.standard_type: item for item in models}
+        result: list[AgentCodeStandardConfigItem] = []
+        for standard_type in list_code_standard_types():
+            default_content = get_default_code_standard(standard_type)
+            override = model_map.get(standard_type)
+            content = override.content_override if override is not None else default_content
+            result.append(
+                AgentCodeStandardConfigItem(
+                    agent_id=agent_id,
+                    standard_type=standard_type,
+                    default_content=default_content,
+                    content=content,
+                    content_override=override.content_override if override is not None else None,
+                    customized=override is not None,
+                    source="user_custom" if override is not None else "system_default",
+                )
+            )
+        return result
+
+    async def update_code_standard_config(
+        self,
+        agent_id: str,
+        standard_type: str,
+        payload: AgentCodeStandardUpdateRequest,
+        *,
+        operator_id: int,
+    ) -> list[AgentCodeStandardConfigItem]:
+        """更新或恢复当前用户指定 Agent 的整类型代码规范。"""
+
+        self._get_catalog_or_raise(agent_id)
+        default_content = get_default_code_standard(standard_type)
+        config = await self._get_code_standard_model(agent_id, standard_type)
+
+        if payload.restore_default:
+            if config is not None:
+                await self.session.delete(config)
+                await self.session.commit()
+            return await self.list_code_standard_configs(agent_id)
+
+        content_override = str(payload.content_override or "").strip()
+        if not content_override:
+            raise AppException(
+                status_code=422,
+                code="AI_CODE_STANDARD_CONTENT_REQUIRED",
+                detail="自定义代码规范不能为空；如需使用系统默认，请恢复默认。",
+            )
+        if content_override == default_content:
+            if config is not None:
+                await self.session.delete(config)
+                await self.session.commit()
+            return await self.list_code_standard_configs(agent_id)
+
+        if config is None:
+            self.session.add(
+                AiAgentCodeStandardUserConfig(
+                    user_id=self.user_id,
+                    agent_id=agent_id,
+                    standard_type=standard_type,
+                    content_override=content_override,
+                    created_by=operator_id,
+                    updated_by=operator_id,
+                )
+            )
+        else:
+            config.content_override = content_override
+            config.updated_by = operator_id
+        await self.session.commit()
+        return await self.list_code_standard_configs(agent_id)
 
     async def get_effective_runtime_config(self, agent_id: str) -> EffectiveAgentRuntimeConfig:
         """合成某个智能体在当前用户下的运行时配置。"""
@@ -250,6 +327,7 @@ class AiAgentConfigService:
     async def delete_user_configs(self, *, user_id: int) -> None:
         """删除某个用户全部智能体配置，供后续账号删除或测试复用。"""
 
+        await self.session.execute(delete(AiAgentCodeStandardUserConfig).where(AiAgentCodeStandardUserConfig.user_id == user_id))
         await self.session.execute(delete(AiAgentToolUserConfig).where(AiAgentToolUserConfig.user_id == user_id))
         await self.session.execute(delete(AiAgentUserConfig).where(AiAgentUserConfig.user_id == user_id))
         await self.session.commit()
@@ -279,6 +357,25 @@ class AiAgentConfigService:
         statement = select(AiAgentToolUserConfig).where(
             AiAgentToolUserConfig.user_id == self.user_id,
             AiAgentToolUserConfig.agent_id == agent_id,
+        )
+        return list((await self.session.scalars(statement)).all())
+
+    async def _get_code_standard_model(self, agent_id: str, standard_type: str) -> AiAgentCodeStandardUserConfig | None:
+        """读取当前用户某个 Agent 和规范类型的覆盖记录。"""
+
+        statement = select(AiAgentCodeStandardUserConfig).where(
+            AiAgentCodeStandardUserConfig.user_id == self.user_id,
+            AiAgentCodeStandardUserConfig.agent_id == agent_id,
+            AiAgentCodeStandardUserConfig.standard_type == standard_type,
+        )
+        return await self.session.scalar(statement)
+
+    async def _get_code_standard_models(self, agent_id: str) -> list[AiAgentCodeStandardUserConfig]:
+        """读取当前用户某个 Agent 的全部代码规范覆盖记录。"""
+
+        statement = select(AiAgentCodeStandardUserConfig).where(
+            AiAgentCodeStandardUserConfig.user_id == self.user_id,
+            AiAgentCodeStandardUserConfig.agent_id == agent_id,
         )
         return list((await self.session.scalars(statement)).all())
 
@@ -502,6 +599,7 @@ class AiAgentConfigService:
         if not properties and parameters_schema:
             branches = parameters_schema.get("oneOf")
             first_branch = branches[0] if isinstance(branches, list) and branches else {}
+            first_branch = cls._resolve_local_schema_ref(first_branch, parameters_schema)
             properties = first_branch.get("properties", {}) if isinstance(first_branch, dict) else {}
         arguments = {
             str(name): cls._sample_schema_value(schema)
@@ -512,6 +610,22 @@ class AiAgentConfigService:
             "tool_name": tool_name,
             "arguments": arguments,
         }
+
+    @staticmethod
+    def _resolve_local_schema_ref(
+        schema: object,
+        root_schema: dict[str, object],
+    ) -> dict[str, object]:
+        """解析当前工具参数 Schema 内的 `$defs` 本地引用。"""
+
+        if not isinstance(schema, dict):
+            return {}
+        reference = schema.get("$ref")
+        definitions = root_schema.get("$defs")
+        if not isinstance(reference, str) or not reference.startswith("#/$defs/") or not isinstance(definitions, dict):
+            return schema
+        definition = definitions.get(reference.removeprefix("#/$defs/"))
+        return definition if isinstance(definition, dict) else schema
 
     @classmethod
     def _sample_schema_value(cls, schema: dict[str, object]) -> object:

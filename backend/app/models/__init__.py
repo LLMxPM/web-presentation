@@ -1,9 +1,8 @@
 """文件功能：集中导出 ORM 模型，便于迁移与测试统一加载元数据。"""
 
-from app.models.ai_agent_config import AiAgentToolUserConfig, AiAgentUserConfig
+from app.models.ai_agent_config import AiAgentCodeStandardUserConfig, AiAgentToolUserConfig, AiAgentUserConfig
 from app.models.ai_agent_attachment import AiAgentImageAttachment
 from app.models.ai_agent_runtime import (
-    AiAgentMemberRun,
     AiAgentMessage,
     AiAgentRequirement,
     AiAgentRun,
@@ -17,7 +16,9 @@ from app.models.ai_external_task import AiAgentExternalBatch, AiAgentExternalTas
 from app.models.ai_image_model import AiImageModelConfig, AiImageProviderConfig, AiImageSlotBinding
 from app.models.ai_llm import AiLlmConfig, AiLlmProviderConfig, AiLlmSlotBinding
 from app.models.ai_model_catalog import AiChatModelCatalog, AiChatProviderCatalog, AiModelCatalogSyncState
-from app.models.user import UserSession, User
+from app.models.api_access_token import ApiAccessToken, ApiAccessTokenScope, ApiAccessTokenWorkspace
+from app.models.api_idempotency_record import ApiIdempotencyRecord
+from app.models.api_mutation_job import ApiMutationJob
 from app.models.asset import WorkspaceAsset
 from app.models.asset_render_hint_backfill_job import AssetRenderHintBackfillJob
 from app.models.component_component_dependency import ComponentVersionComponentDependency
@@ -35,12 +36,13 @@ from app.models.project_route import ProjectRoute
 from app.models.project_suggested_reference_asset import ProjectSuggestedReferenceAsset
 from app.models.project_suggested_component import ProjectSuggestedComponent
 from app.models.release import Release, ReleaseModule
+from app.models.user import User, UserSession
+from app.models.workspace import Project, Workspace, WorkspaceMember
 from app.models.workspace_component import WorkspaceComponent
 from app.models.workspace_component_version import WorkspaceComponentVersion
 from app.models.workspace_style import WorkspaceStyle
 from app.models.workspace_style_suggested_component import WorkspaceStyleSuggestedComponent
 from app.models.workspace_theme import WorkspaceTheme
-from app.models.workspace import Project, Workspace, WorkspaceMember
 
 __all__ = [
     "AiLlmConfig",
@@ -56,9 +58,9 @@ __all__ = [
     "AiAgentMessage",
     "AiAgentToolCall",
     "AiAgentRequirement",
-    "AiAgentMemberRun",
     "AiAgentUserConfig",
     "AiAgentToolUserConfig",
+    "AiAgentCodeStandardUserConfig",
     "AiPageMutationBatch",
     "AiPageMutationJob",
     "AiImageGenerationJob",
@@ -68,6 +70,11 @@ __all__ = [
     "AiImageProviderConfig",
     "AiImageModelConfig",
     "AiImageSlotBinding",
+    "ApiAccessToken",
+    "ApiAccessTokenWorkspace",
+    "ApiAccessTokenScope",
+    "ApiIdempotencyRecord",
+    "ApiMutationJob",
     "UserSession",
     "User",
     "Workspace",

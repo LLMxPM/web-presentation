@@ -49,6 +49,10 @@ from app.services.asset_render_hint_backfill_job_service import (
     recover_interrupted_asset_render_hint_backfill_jobs_on_startup,
     run_asset_render_hint_backfill_queue_loop,
 )
+from app.services.mutation_job_service import (
+    run_api_mutation_sweeper_loop,
+    run_api_mutation_worker_loop,
+)
 from app.services.page_screenshot_job_service import (
     recover_interrupted_screenshot_jobs_on_startup,
     run_page_screenshot_queue_loop,
@@ -76,6 +80,8 @@ async def lifespan(app: FastAPI):
     ai_external_task_coordinator_task: asyncio.Task[None] | None = None
     ai_component_mutation_queue_task: asyncio.Task[None] | None = None
     model_catalog_sync_task: asyncio.Task[None] | None = None
+    api_mutation_worker_task: asyncio.Task[None] | None = None
+    api_mutation_sweeper_task: asyncio.Task[None] | None = None
     playwright_browser_pool = get_playwright_browser_pool()
     agent_background_run_manager: AgentBackgroundRunManager = app.state.agent_background_run_manager
     try:
@@ -101,6 +107,14 @@ async def lifespan(app: FastAPI):
         runtime_artifact_sweeper_task = asyncio.create_task(
             run_runtime_artifact_sweeper(),
             name="runtime-artifact-sweeper",
+        )
+        api_mutation_worker_task = asyncio.create_task(
+            run_api_mutation_worker_loop(session_factory),
+            name="api-mutation-worker",
+        )
+        api_mutation_sweeper_task = asyncio.create_task(
+            run_api_mutation_sweeper_loop(session_factory),
+            name="api-mutation-sweeper",
         )
         if get_settings().ai_enabled:
             ai_page_mutation_queue_task = asyncio.create_task(
@@ -141,6 +155,10 @@ async def lifespan(app: FastAPI):
             await _stop_background_task(asset_render_hint_backfill_queue_task)
         if runtime_artifact_sweeper_task is not None:
             await _stop_background_task(runtime_artifact_sweeper_task)
+        if api_mutation_worker_task is not None:
+            await _stop_background_task(api_mutation_worker_task)
+        if api_mutation_sweeper_task is not None:
+            await _stop_background_task(api_mutation_sweeper_task)
         if ai_page_mutation_queue_task is not None:
             await _stop_background_task(ai_page_mutation_queue_task)
         if ai_image_generation_queue_task is not None:
@@ -243,6 +261,7 @@ def create_app() -> FastAPI:
         return JSONResponse(
             status_code=exc.status_code,
             content=content,
+            headers=exc.headers,
         )
 
     @app.exception_handler(RequestValidationError)
