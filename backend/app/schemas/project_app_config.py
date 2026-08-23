@@ -11,7 +11,7 @@ from app.core.exceptions import AppException
 
 DEFAULT_PAGE_WIDTH = 1920
 DEFAULT_PAGE_HEIGHT = 1080
-DEFAULT_PROJECT_BASE_FONT_SIZE = "20px"
+DEFAULT_PROJECT_BASE_FONT_SIZE = "24px"
 
 
 def build_default_style_spec_markdown(page_width: int, page_height: int, base_font_size: str) -> str:
@@ -131,7 +131,7 @@ def normalize_project_base_font_size(value: object) -> object:
     if normalized.endswith("px"):
         normalized = normalized[:-2].strip()
     if not normalized.isdigit():
-        raise ValueError("base_font_size 仅支持正整数像素值，例如 20px。")
+        raise ValueError("base_font_size 仅支持正整数像素值，例如 24px。")
     numeric_value = int(normalized)
     if numeric_value < 1 or numeric_value > 200:
         raise ValueError("base_font_size 必须在 1-200px 之间。")

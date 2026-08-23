@@ -154,6 +154,7 @@ import { updatePreviewSizePresets } from '@/api/auth'
 import { getErrorMessage } from '@/api/http'
 import { useAuthStore } from '@/stores/auth'
 import { UiButton, UiIconButton, UiInput, UiPopover } from '@/components/ui'
+import { DEFAULT_PROJECT_BASE_FONT_SIZE } from '@/components/project/project-presentation-values'
 import type { PreviewSizePreset } from '@/types/api'
 import { Message } from '@/utils/message'
 import {
@@ -267,7 +268,7 @@ function startCreatePreset() {
   presetForm.name = ''
   presetForm.width = String(props.currentWidth || 1920)
   presetForm.height = String(props.currentHeight || 1080)
-  presetForm.baseFontSize = normalizePreviewBaseFontSize(props.currentBaseFontSize, '20px')
+  presetForm.baseFontSize = normalizePreviewBaseFontSize(props.currentBaseFontSize, DEFAULT_PROJECT_BASE_FONT_SIZE)
   presetForm.iconDefaultStrokeWidth = String(normalizePreviewIntegerSpec(props.currentIconDefaultStrokeWidth, 2, 1, 64))
   formVisible.value = true
 }
@@ -285,7 +286,7 @@ function startEditPreset(index: number) {
   presetForm.name = preset.name
   presetForm.width = String(preset.width)
   presetForm.height = String(preset.height)
-  presetForm.baseFontSize = normalizePreviewBaseFontSize(preset.base_font_size, '20px')
+  presetForm.baseFontSize = normalizePreviewBaseFontSize(preset.base_font_size, DEFAULT_PROJECT_BASE_FONT_SIZE)
   presetForm.iconDefaultStrokeWidth = String(normalizePreviewIntegerSpec(preset.icon_default_stroke_width, 2, 1, 64))
   formVisible.value = true
 }
@@ -379,7 +380,7 @@ async function saveDraftPresets() {
  * @param preset 预设尺寸规格
  */
 function resolvePresetSummary(preset: PreviewSizePreset) {
-  const baseFontSize = normalizePreviewBaseFontSize(preset.base_font_size, '20px')
+  const baseFontSize = normalizePreviewBaseFontSize(preset.base_font_size, DEFAULT_PROJECT_BASE_FONT_SIZE)
   const iconStroke = normalizePreviewIntegerSpec(preset.icon_default_stroke_width, 2, 1, 64)
   return `${preset.width} × ${preset.height} · ${baseFontSize} · 描边 ${iconStroke}`
 }

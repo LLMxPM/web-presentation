@@ -523,7 +523,7 @@ async def test_saved_component_preview_should_use_default_preview_options(
     assert config_bundle["app"]["app"]["page"] == {
         "width": 1920,
         "height": 1080,
-        "baseFontSize": "20px",
+        "baseFontSize": "24px",
         "iconDefaultStrokeWidth": 2,
     }
     assert config_bundle["icons"] == {

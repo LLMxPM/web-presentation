@@ -46,9 +46,9 @@
               unit="px"
               :min="1"
               :max="200"
-              :fallback="20"
+              :fallback="defaultProjectBaseFontSizeValue"
               integer
-              placeholder="20"
+              :placeholder="String(defaultProjectBaseFontSizeValue)"
               :input-id="field.inputId"
               :described-by="field.describedBy"
             />
@@ -145,6 +145,7 @@ const normalizedPageWidth = computed(() => normalizeProjectDimension(props.pageW
 const normalizedPageHeight = computed(() => normalizeProjectDimension(props.pageHeight, DEFAULT_PROJECT_PAGE_HEIGHT))
 const normalizedBaseFontSize = computed(() => normalizeProjectBaseFontSize(props.baseFontSize, DEFAULT_PROJECT_BASE_FONT_SIZE))
 const normalizedIconDefaultStrokeWidth = computed(() => normalizeProjectInteger(props.iconDefaultStrokeWidth, 2, 1, 64))
+const defaultProjectBaseFontSizeValue = Number.parseInt(DEFAULT_PROJECT_BASE_FONT_SIZE, 10)
 
 /**
  * 为字符串规格字段建立受控双向绑定。

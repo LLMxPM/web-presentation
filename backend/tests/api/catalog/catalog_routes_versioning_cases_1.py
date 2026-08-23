@@ -808,7 +808,7 @@ async def test_runtime_project_config_endpoint_should_return_yaml_text(authentic
     assert "app:" in config_response.text
     assert "title: 运行时项目" in config_response.text
     assert "icon: slider" in config_response.text
-    assert "baseFontSize: 20px" in config_response.text
+    assert "baseFontSize: 24px" in config_response.text
     assert "iconDefaultSize" not in config_response.text
     assert "iconDefaultStrokeWidth: 2" in config_response.text
     assert "version:" not in config_response.text

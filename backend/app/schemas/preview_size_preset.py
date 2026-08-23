@@ -5,6 +5,7 @@ from __future__ import annotations
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 from app.core.exceptions import AppException
+from app.schemas.project_app_config import DEFAULT_PROJECT_BASE_FONT_SIZE
 
 
 class PreviewSizePreset(BaseModel):
@@ -15,7 +16,7 @@ class PreviewSizePreset(BaseModel):
     name: str = Field(min_length=1, max_length=64)
     width: int = Field(ge=1, le=8192)
     height: int = Field(ge=1, le=8192)
-    base_font_size: str = Field(default="20px", min_length=1, max_length=16)
+    base_font_size: str = Field(default=DEFAULT_PROJECT_BASE_FONT_SIZE, min_length=1, max_length=16)
     icon_default_stroke_width: int = Field(default=2, ge=1, le=64)
 
     @field_validator("name")
@@ -51,21 +52,35 @@ DEFAULT_PREVIEW_SIZE_PRESETS: list[dict[str, int | str]] = [
         "name": "桌面 16:9",
         "width": 1920,
         "height": 1080,
-        "base_font_size": "20px",
+        "base_font_size": DEFAULT_PROJECT_BASE_FONT_SIZE,
         "icon_default_stroke_width": 2,
     },
     {
-        "name": "桌面 16:9 小屏",
-        "width": 1600,
-        "height": 900,
-        "base_font_size": "20px",
+        "name": "小红书 3:4",
+        "width": 1080,
+        "height": 1440,
+        "base_font_size": DEFAULT_PROJECT_BASE_FONT_SIZE,
         "icon_default_stroke_width": 2,
     },
     {
-        "name": "笔记本",
-        "width": 1366,
-        "height": 768,
-        "base_font_size": "20px",
+        "name": "正方形 1:1",
+        "width": 1080,
+        "height": 1080,
+        "base_font_size": DEFAULT_PROJECT_BASE_FONT_SIZE,
+        "icon_default_stroke_width": 2,
+    },
+    {
+        "name": "窄屏 4:3",
+        "width": 1440,
+        "height": 1080,
+        "base_font_size": DEFAULT_PROJECT_BASE_FONT_SIZE,
+        "icon_default_stroke_width": 2,
+    },
+    {
+        "name": "宽屏 21:9",
+        "width": 2560,
+        "height": 1080,
+        "base_font_size": DEFAULT_PROJECT_BASE_FONT_SIZE,
         "icon_default_stroke_width": 2,
     },
     {
@@ -73,13 +88,6 @@ DEFAULT_PREVIEW_SIZE_PRESETS: list[dict[str, int | str]] = [
         "width": 1080,
         "height": 1920,
         "base_font_size": "28px",
-        "icon_default_stroke_width": 3,
-    },
-    {
-        "name": "手机竖屏小屏",
-        "width": 750,
-        "height": 1334,
-        "base_font_size": "24px",
         "icon_default_stroke_width": 3,
     },
 ]

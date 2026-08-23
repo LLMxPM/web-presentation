@@ -43,6 +43,7 @@ from app.schemas.component import (
     ComponentShareExportComponentSummary,
 )
 from app.schemas.project import normalize_project_build_extra_assets_config
+from app.schemas.project_app_config import DEFAULT_PROJECT_BASE_FONT_SIZE
 from app.schemas.project_template import (
     PROJECT_TEMPLATE_PACKAGE_SCHEMA_VERSION,
     PROJECT_TEMPLATE_PACKAGE_TYPE,
@@ -617,7 +618,7 @@ class ProjectTemplatePackageService:
             status=RecordStatus.ACTIVE.value,
             page_width=int(project_payload.get("page_width") or 1920),
             page_height=int(project_payload.get("page_height") or 1080),
-            base_font_size=str(project_payload.get("base_font_size") or "20px"),
+            base_font_size=str(project_payload.get("base_font_size") or DEFAULT_PROJECT_BASE_FONT_SIZE),
             icon_default_stroke_width=int(project_payload.get("icon_default_stroke_width") or 2),
             show_pdf_export_button=bool(project_payload.get("show_pdf_export_button", True)),
             menu_mode=str(project_payload.get("menu_mode") or "preview"),
@@ -1206,7 +1207,7 @@ class ProjectTemplatePackageService:
         return {
             "width": int(project_payload.get("page_width") or 1920),
             "height": int(project_payload.get("page_height") or 1080),
-            "baseFontSize": str(project_payload.get("base_font_size") or "20px"),
+            "baseFontSize": str(project_payload.get("base_font_size") or DEFAULT_PROJECT_BASE_FONT_SIZE),
             "iconDefaultStrokeWidth": int(project_payload.get("icon_default_stroke_width") or 2),
         }
 
@@ -1687,7 +1688,7 @@ class ProjectTemplatePackageService:
             description=payload.get("description"),
             page_width=int(payload.get("page_width") or 1920),
             page_height=int(payload.get("page_height") or 1080),
-            base_font_size=str(payload.get("base_font_size") or "20px"),
+            base_font_size=str(payload.get("base_font_size") or DEFAULT_PROJECT_BASE_FONT_SIZE),
             icon_default_stroke_width=int(payload.get("icon_default_stroke_width") or 2),
             show_pdf_export_button=bool(payload.get("show_pdf_export_button", True)),
             menu_mode=str(payload.get("menu_mode") or "preview"),

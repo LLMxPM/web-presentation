@@ -42,7 +42,7 @@ async def test_workspace_project_and_page_crud(authenticated_client: AsyncClient
     assert project_data["code"].startswith("PRJ")
     assert project_data["page_width"] == 1920
     assert project_data["page_height"] == 1080
-    assert project_data["base_font_size"] == "20px"
+    assert project_data["base_font_size"] == "24px"
     assert "icon_default_size" not in project_data
     assert project_data["icon_default_stroke_width"] == 2
     assert project_data["show_pdf_export_button"] is True

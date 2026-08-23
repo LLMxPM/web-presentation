@@ -68,7 +68,7 @@ class Project(TimestampMixin, AuditMixin, SoftDeleteMixin, Base):
     archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     page_width: Mapped[int] = mapped_column(Integer, nullable=False, default=1920, server_default=text("1920"))
     page_height: Mapped[int] = mapped_column(Integer, nullable=False, default=1080, server_default=text("1080"))
-    base_font_size: Mapped[str] = mapped_column(String(32), nullable=False, default="20px", server_default=text("'20px'"))
+    base_font_size: Mapped[str] = mapped_column(String(32), nullable=False, default="24px", server_default=text("'24px'"))
     icon_default_stroke_width: Mapped[int] = mapped_column(Integer, nullable=False, default=2, server_default=text("2"))
     show_pdf_export_button: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=text("true"))
     menu_mode: Mapped[str] = mapped_column(String(16), nullable=False, default="preview", server_default=text("'preview'"))
