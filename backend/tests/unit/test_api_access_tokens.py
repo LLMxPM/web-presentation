@@ -55,6 +55,12 @@ async def test_pat_creation_and_authentication(app_session: AsyncSession) -> Non
     assert res.name == "CLI-Token"
     assert set(res.scopes) == {"project:read", "project:write", "page:read"}
 
+    # SQLite 读取 timezone=True 的时间字段后会返回 naive datetime，列表接口仍应正常工作。
+    app_session.expire_all()
+    listed_tokens = await service.list_tokens(user_id=u_id)
+    assert listed_tokens.total == 1
+    assert listed_tokens.items[0].is_active is True
+
     # 3. 校验 Bearer 鉴权
     authenticated_token = await service.authenticate_pat(res.token, ip="192.0.2.10")
     assert authenticated_token.user_id == u_id

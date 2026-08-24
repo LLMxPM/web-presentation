@@ -160,7 +160,7 @@ class ApiAccessTokenService:
                 revoked_at=t.revoked_at,
                 last_used_at=t.last_used_at,
                 last_used_ip=t.last_used_ip,
-                is_active=(t.revoked_at is None and t.expires_at > now),
+                is_active=(t.revoked_at is None and normalize_utc(t.expires_at) > now),
                 workspace_ids=[w.workspace_id for w in t.workspaces],
                 scopes=[s.scope for s in t.scopes],
                 created_at=t.created_at,
