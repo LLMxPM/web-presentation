@@ -6,11 +6,6 @@
 
 ![平台产品总览图](./docs/assets/平台总览.png)
 
-## 平台演示
-
-[![播放 web-presentation 平台演示视频](./docs/assets/平台演示-封面.jpg)](./docs/assets/平台演示.mp4)
-
-点击封面或[直接打开演示视频](./docs/assets/平台演示.mp4)，观看从一句话描述到完整演示文稿的 AI 创作流程。
 
 ## 产品特点
 
@@ -57,7 +52,7 @@
 | Backend | 平台控制面 | 负责用户、权限、数据持久化、AI Agent、预览上下文、构建任务和产物托管 |
 | Runtime | 预览与构建引擎 | 基于 Vue/Vite 渲染页面和组件，承接预览、截图、诊断和发布构建 |
 | Infra | 部署与运行环境 | 提供 Docker 镜像、compose 模板、发布流程和运行时依赖约束 |
-| Agent Kit | 外部 Agent 接入 | 同级 `web-presentation-agent-kit` 仓库提供 `wp` CLI、MCP Server、共享 API Client 和配套 Skill |
+| Agent Kit | 外部 Agent 接入 | 同级 `web-presentation-agent-kit` 仓库提供官方 `wp` CLI、共享 API Client 和配套 Skill（MCP 协议规划暂缓） |
 
 详细架构、模块边界和目标业务流程见 [平台架构总览](./docs/developer/architecture/overview.md)。
 
@@ -71,7 +66,7 @@
 
 ## 在线 Demo
 
-可以先访问 [项目网站](https://llmxpm.github.io/web-presentation-site/) 浏览产品介绍和截图，也可以直接访问公开 Demo 体验平台主流程。Demo 地址、账号密码、推荐体验步骤和 AI 设置说明见 [Demo 使用指南](./docs/user/demo-guide.md)。
+可以先访问 [项目网站](https://presentation.inputloom.com/) 浏览产品介绍和截图，也可以直接访问公开 Demo 体验平台主流程。Demo 地址、账号密码、推荐体验步骤和 AI 设置说明见 [Demo 使用指南](./docs/user/demo-guide.md)。
 
 ## 快速部署
 
@@ -93,7 +88,7 @@ docker compose -f docker-compose.sqlite.yml up -d
 
 | 文档 | 内容 |
 | :--- | :--- |
-| [项目网站](https://llmxpm.github.io/web-presentation-site/) | 产品介绍、截图、演示入口和面向使用者的说明 |
+| [项目网站](https://presentation.inputloom.com/) | 产品介绍、截图、演示入口和面向使用者的说明 |
 | [文档中心](./docs/README.md) | 用户文档、开发文档和图片资源目录 |
 | [用户文档](./docs/user/README.md) | 平台介绍、快速上手、平台特性、AI 协作、资产管理和部署入口 |
 | [平台介绍](./docs/user/platform-overview.md) | 产品定位、核心概念、典型场景和平台组成 |
@@ -128,6 +123,6 @@ web-presentation/
 
 当前仓库顶层内容采用 Apache License 2.0，见 [LICENSE](./LICENSE)。
 
-`runtime/` 是独立项目 `web-runtime-vue` 的 Git 子模块，继续遵循它自身仓库内声明的许可证，见 [runtime/LICENSE](./runtime/LICENSE)。
+`runtime/` 是独立项目 [web-runtime-vue](https://github.com/LLMxPM/web-runtime-vue) 的 Git 子模块，继续遵循它自身仓库内声明的许可证，见 [web-runtime-vue LICENSE](https://github.com/LLMxPM/web-runtime-vue/blob/main/LICENSE)。
 
-外部 Agent 接入代码位于同级仓库 `web-presentation-agent-kit`，主仓库仅保留平台 API、架构和集成文档。
+外部 Agent 接入代码位于同级独立仓库 [web-presentation-agent-kit](https://github.com/LLMxPM/web-presentation-agent-kit)，主仓库仅保留平台 API、架构和集成文档。

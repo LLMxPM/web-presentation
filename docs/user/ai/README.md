@@ -1,6 +1,6 @@
 # AI 协作创作指南
 
-本组是 AI 使用手册，回答“如何和 AI 协作、AI 能看到什么、哪些操作需要我确认”。如果只想完成一次 AI 创作任务，可先看[AI 协作创作工作流](../workflows/ai-assisted-creation.md)；如果想理解平台整体，请先看[用户快速上手](../getting-started.md)。
+本组是 AI 使用手册，回答“如何和 AI 协作、AI 能看到什么、哪些操作需要我确认”。如果只想完成一次 AI 创作任务，可先看 [AI 协作创作工作流](../workflows/ai-assisted-creation.md)；如果想通过命令行或外部桌面 Agent（如 Cursor、Claude 等）操作平台，可查看 [命令行与外部 Agent (CLI)](../workflows/cli-agent.md)；如果想理解平台整体，请先看 [用户快速上手](../getting-started.md)。
 
 ## 阅读入口
 

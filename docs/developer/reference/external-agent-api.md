@@ -21,11 +21,9 @@
 
 对应实现文档：
 
-- CLI 实现：`web-presentation-agent-kit/docs/cli-capability-completion.md`
-- MCP 实现：`web-presentation-agent-kit/docs/mcp-implementation-plan.md`
-- Skill：`web-presentation-agent-kit/skills/web-presentation/SKILL.md`
-
-如果本地两个仓库位于同级目录，可直接从主仓文档跳转到 `../../../../web-presentation-agent-kit/docs/cli-capability-completion.md`；远程镜像应使用 agent-kit 仓库的对应路径。
+- CLI 实施矩阵：[web-presentation-agent-kit/docs/cli-capability-completion.md](https://github.com/LLMxPM/web-presentation-agent-kit/blob/main/docs/cli-capability-completion.md)
+- MCP 规划参考：[web-presentation-agent-kit/docs/mcp-implementation-plan.md](https://github.com/LLMxPM/web-presentation-agent-kit/blob/main/docs/mcp-implementation-plan.md)
+- Skill 知识库：[web-presentation-agent-kit/skills/web-presentation/SKILL.md](https://github.com/LLMxPM/web-presentation-agent-kit/blob/main/skills/web-presentation/SKILL.md)
 
 ## 2. 唯一事实源
 
@@ -265,8 +263,8 @@ uv run --project packages/cli wp --help
 
 ## 9. 相关文档
 
-- 主仓 CLI 集成边界：`docs/developer/cli.md`
-- 主仓 MCP 集成边界：`docs/developer/mcp.md`
-- [CLI 实施](../../../../web-presentation-agent-kit/docs/cli-capability-completion.md)（本地同级工作区）
-- [MCP 实施](../../../../web-presentation-agent-kit/docs/mcp-implementation-plan.md)（本地同级工作区）
-- 主仓 AI 工具规格：`docs/developer/backend/ai-tool-specs.md`（仅平台内部 Agent，不作为 External API 契约）
+- 主仓 CLI 集成边界：[docs/developer/cli.md](../cli.md)
+- 主仓 MCP 集成边界：[docs/developer/mcp.md](../mcp.md)
+- CLI 实施矩阵：[web-presentation-agent-kit/docs/cli-capability-completion.md](https://github.com/LLMxPM/web-presentation-agent-kit/blob/main/docs/cli-capability-completion.md)
+- MCP 规划参考：[web-presentation-agent-kit/docs/mcp-implementation-plan.md](https://github.com/LLMxPM/web-presentation-agent-kit/blob/main/docs/mcp-implementation-plan.md)
+- 主仓 AI 工具规格：[docs/developer/backend/ai-tool-specs.md](../backend/ai-tool-specs.md)（仅平台内部 Agent，不作为 External API 契约）

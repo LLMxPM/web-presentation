@@ -11,6 +11,7 @@
 | [组件管理](./components.md) | 组件草稿、发布版本、组件工作台、previewSchema 和离线分享包 |
 | [主题、字体与样式](./design-system.md) | 主题库、字体注册、样式库和设计系统迁移 |
 | [AI 协作创作](./ai-assisted-creation.md) | 推荐协作流程、适合交给 AI 的任务和风险边界 |
+| [命令行与外部 Agent (CLI)](./cli-agent.md) | 使用 `wp` CLI 在本地终端或配合桌面 Agent（如 Cursor、Claude 等）创作 |
 | [预览、截图与构建](./preview-build-export.md) | 页面预览、组件预览、截图、项目构建和常见问题 |
 
 ## 推荐顺序
@@ -22,4 +23,5 @@
 3. [主题、字体与样式](./design-system.md)
 4. [组件管理](./components.md)
 5. [AI 协作创作](./ai-assisted-creation.md)
-6. [预览、截图与构建](./preview-build-export.md)
+6. [命令行与外部 Agent (CLI)](./cli-agent.md)
+7. [预览、截图与构建](./preview-build-export.md)

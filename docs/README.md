@@ -17,6 +17,7 @@
 | [资源管理](./user/workflows/resources.md) | 资源类型、可编辑内容、替换归档删除和引用关系 |
 | [组件管理](./user/workflows/components.md) | 组件草稿、发布版本、previewSchema、离线包和 AI 协作 |
 | [主题、字体与样式](./user/workflows/design-system.md) | 主题库、字体注册、样式库、离线包和项目应用边界 |
+| [命令行与外部 Agent (CLI)](./user/workflows/cli-agent.md) | 使用 `wp` CLI 在本地终端或配合桌面 Agent（如 Cursor、Claude 等）创作 |
 | [预览、截图与构建](./user/workflows/preview-build-export.md) | Runtime 预览、截图、构建任务和产物访问 |
 | [当前限制](./user/reference/limits.md) | 已落地能力、建设中事项和使用边界 |
 

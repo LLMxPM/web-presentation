@@ -1,6 +1,11 @@
 # MCP 主仓集成边界
 
-本文档只说明主仓库 `web-presentation` 对 MCP 的平台侧约束。MCP Server 的工具实现、协议适配和发布流程由同级仓库 `web-presentation-agent-kit` 负责。
+本文档说明主仓库 `web-presentation` 对 MCP 的平台侧约束与历史设计边界。
+
+> [!NOTE]
+> 当前阶段平台优先交付和维护 `wp` CLI 接入能力；MCP Server 处于暂缓占位状态，不属于当前交付和默认发布范围。
+
+MCP Server 的工具实现、协议适配和发布流程由同级独立仓库 [web-presentation-agent-kit](https://github.com/LLMxPM/web-presentation-agent-kit) 负责。
 
 ## 1. 权责边界
 
@@ -13,7 +18,7 @@
 
 主仓库的 API 事实源是[External API v1 契约](./reference/external-agent-api.md)，不要在此文档复制 MCP 工具清单、参数 Schema 或返回示例。
 
-MCP 的实施细节见 agent-kit 的[实施计划](../../../web-presentation-agent-kit/docs/mcp-implementation-plan.md)；工具级说明以 agent-kit 的 MCP 文档和源码为准。
+MCP 的历史实施细节见 agent-kit 的[实施计划参考](https://github.com/LLMxPM/web-presentation-agent-kit/blob/main/docs/mcp-implementation-plan.md)；工具级说明以 agent-kit 的 MCP 文档和源码为准。
 
 ## 2. MCP 依赖的主仓能力
 

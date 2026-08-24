@@ -1,16 +1,17 @@
-<!-- 文件功能：说明页面管理一期后台服务的启动方式、环境变量与常用命令。 -->
+<!-- 文件功能：说明 Backend 控制面服务的启动方式、环境变量、AI 运行态与常用命令。 -->
 # Backend
 
-`backend/` 是页面管理一期后台服务，负责：
+`backend/` 是 `web-presentation` 平台控制面服务，负责：
 
 - 多用户登录、会话与平台用户管理
 - 工作空间 CRUD 与成员隔离
-- 项目 CRUD
-- 工作空间内页面资源库 CRUD
+- 项目、页面 CRUD 及展示配置
 - 页面资源版本管理（最新基线、向后 diff、重点快照、历史恢复）
 - 工作空间组件草稿保存、正式发布版本管理与历史发布预览
-- 前端显式命名页面文件并上传到 Runtime
-- 基于 Runtime 预览页的页面截图保存
+- 工作空间资源库、主题库与样式库主数据管理
+- Runtime 预览签发、构建任务调度与页面截图生成
+- 基于 Pydantic AI 的工作空间级内容助手（`agent-coordinator`）运行态与诊断
+- External API v1 外部 Agent 接入契约与鉴权服务
 
 ## 1. 环境准备
 
@@ -192,13 +193,11 @@ app:
 
 Backend 内嵌基于 Pydantic AI 的智能体运行入口。Editor 通过 `/api/ai/*` 调用 Backend BFF，Backend 以平台自有 `ai_agent_*` 表作为会话、运行、事件回放、消息、工具调用与 HITL 状态事实源。工具实现使用平台自有工具对象，并在运行时装配为 Pydantic AI Tool。
 
-当前开放的稳定 Agent 包括：
+当前系统公开唯一的稳定 Agent：
 
-- `agent-coordinator`：内容助手 Team 入口，保留原会话入口 ID，由内容助手主执行页面/项目能力，直接查询页面可使用的现有组件和资源，并按需调用组件助手、资源助手处理维护类任务
-- `component-manager`：管理工作空间组件库，支持 Runtime Kit 公开能力查询、资源读取、组件草稿、源码 edits、元数据维护、发布与删除
-- `resource-manager`：管理工作空间资源库，支持会话附件和资源图片识别、位图生成/编辑、内容预览/写入、元数据维护、复制与归档
+- `agent-coordinator`：工作空间级内容助手，统一管理项目、页面、组件、资源、主题和样式；直接查询工作空间现有资产，由写工具执行校验与乐观锁更新，无需切换助手或模型配置。
 
-页面编辑与项目管理不再作为独立 Agent 暴露；相关能力由 `agent-coordinator` 内容助手按用户工具配置直接执行。图片理解和图片生成分别由独立视觉模型槽位控制；资源助手只识别会话附件和工作空间图片资源，不访问页面截图。内容助手可直接读取现有组件和资源用于页面生成/改写；组件/资源维护仍通过 `component-manager`、`resource-manager` 独立入口或内容助手 Team 成员协作完成。
+页面创建与结构化编辑通过持久化重资源队列执行；视觉模型槽位控制图片理解与持久化图片生成任务。组件移除统一使用归档语义，系统不注册永久删除工具。
 
 当前链路为：
 
@@ -215,21 +214,31 @@ Backend 内嵌基于 Pydantic AI 的智能体运行入口。Editor 通过 `/api/
 - Agent 工具级鉴权使用短期签名 token，承载 `run_id/session_id/agent_id/user_id/workspace/page/scopes/exp`；工具调用只校验 token、scope 和资源归属，不再查询 Redis run 状态
 - 不同 session 可并行执行；当前默认单实例或按 session/run 粘性路由部署，不额外支持跨实例实时续流
 
-当前工具按入口分组装配：
+`agent-coordinator` 工具按入口统一披露：
 
-- 所有智能体：内置不可关闭的 `ask_user`，用于一次提出一个或多个结构化单选问题；Editor 在输入区覆盖式展示，支持逐题回答、前后切换、预设选项或自定义回答，不暴露 `get_user_input` 自由字段工具
-- `agent-coordinator`：按用户工具配置启用分层披露后的通用查询、创建、更新、校验、归档和生命周期命令工具；创建按 `new/copy/upload` 区分来源，检查与差异预览不落库，`execute_action` 当前只开放组件发布；项目元数据、展示配置、样式快照应用、路由树与构建资源均由 `update_entity` 的判别 action 承载，主题 key 创建后不可修改
-- `component-manager`：`list_components`、`get_component_detail`、`list_component_versions`、`get_component_dependencies`、`list_runtime_kit_capabilities`、`get_runtime_kit_capability`、`list_resource_assets`、`get_resource_asset_content`、`list_resource_tags`、`check_component_code`、`create_component`、`apply_component_edits`、`update_component_metadata`、`publish_component`、`delete_component`
-- `resource-manager`：`list_resource_assets`、`get_resource_asset_content`、`list_resource_tags`、`create_resource_asset`、`preview_resource_content_diff`、`apply_resource_content_diff`、`update_resource_asset_metadata`、`copy_resource_asset`、`archive_resource_asset`
+- 内置不可关闭的 `ask_user`，用于一次提出一个或多个结构化单选问题；Editor 在输入区覆盖式展示，支持逐题回答、前后切换、预设选项或自定义回答，不暴露 `get_user_input` 自由字段工具
+- 通用查询与自省：`list_components`、`get_component_detail`、`list_component_versions`、`list_runtime_kit_capabilities`、`list_resource_assets`、`get_resource_asset_content`、`list_resource_tags`、`get_operation_guide`、`validate_entity` 等
+- 实体创建与更新：按 `new/copy/upload` 区分来源，检查与差异预览不落库；`apply_page_edits` 和 `apply_component_edits` 在写入前强制执行 Runtime validate，校验失败不落库
+- 归档与生命周期：支持项目、页面、组件、资源、主题和样式归档，两个及以上同类型目标必须动态确认；`execute_action` 当前只开放组件发布
 
-其中跨焦点写入、批量归档、发布和构建等操作按真实业务语义动态请求确认；项目展示配置和路由整树覆盖属于普通写入，不再使用独立危险动作工具。结构化提问同样通过 paused run 恢复；`apply_page_edits` 和 `apply_component_edits` 在写入前强制执行 Runtime validate，校验失败不落库。页面写入调用时必须显式传入目标 `page_id`，并使用 `base_version_no` 做乐观锁；组件写入使用 `base_draft_hash` 与 `base_published_version_no` 锁定当前草稿。
+其中跨焦点写入、批量归档、发布和构建等操作按真实业务语义动态请求确认；项目展示配置和路由整树覆盖属于普通写入。页面写入调用时必须显式传入目标 `page_id`，并使用 `base_version_no` 做乐观锁；组件写入使用 `base_draft_hash` 与 `base_published_version_no` 锁定当前草稿。
 
 用户级智能体配置由内置目录和用户配置合成：
 
 - 智能体入口保持系统内置，不提供用户开关；可用性仍由模型槽位、图片输入能力、用户工具配置和权限判断
-- `ai_agent_user_configs` 保存用户对智能体描述与完整提示词的配置；内容助手 Team 成员职责边界由内容助手默认提示词维护；每个智能体维护一份完整默认提示词，用户保存后以完整提示词覆盖默认值并可重置
+- `ai_agent_user_configs` 保存用户对智能体描述与完整提示词的配置；用户保存后以完整提示词覆盖默认值并可重置
 - `ai_agent_tool_user_configs` 保存单工具开关与工具说明/提示词覆盖；系统引导工具不可关闭，确认策略、工具名、参数 schema 和鉴权 scope 不允许被用户修改
 - 新 run 会读取最新用户配置；正在运行的 run 不被强制中断
+
+AI 运行排障与诊断 CLI：
+
+```powershell
+uv run python -m app.scripts.diagnose_ai_run --run-id <run_id> --format summary
+uv run python -m app.scripts.diagnose_ai_run --run-id <run_id> --format json
+uv run python -m app.scripts.diagnose_ai_run --session-id <session_id> --format summary
+```
+
+该诊断脚本只读查询 `ai_agent_*` 表，输出事件序列、工具调用、pending/resolved requirement 和消息摘要。
 
 新增环境变量：
 

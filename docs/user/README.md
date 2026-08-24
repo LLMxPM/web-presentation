@@ -2,7 +2,7 @@
 
 用户文档面向平台使用者、内容创作者和团队管理员。建议先按“我现在要做什么”选择入口，不必按目录顺序通读。
 
-项目网站：[https://llmxpm.github.io/web-presentation-site/](https://llmxpm.github.io/web-presentation-site/)
+项目网站：[https://presentation.inputloom.com/](https://presentation.inputloom.com/)
 
 ## 从这里开始
 
@@ -41,11 +41,12 @@
 | [组件管理](./workflows/components.md) | 管理工作空间组件、草稿、发布版本、引用升级和离线包 |
 | [主题、字体与样式](./workflows/design-system.md) | 维护主题库、字体注册、样式库和项目应用边界 |
 | [AI 协作创作](./workflows/ai-assisted-creation.md) | 把创作任务拆给 AI，并理解确认、上下文和边界 |
+| [命令行与外部 Agent (CLI)](./workflows/cli-agent.md) | 使用 `wp` CLI 在本地终端或配合桌面 Agent（如 Cursor、Claude 等）创作 |
 | [预览、截图与构建](./workflows/preview-build-export.md) | 使用 Runtime 预览、截图、构建和访问发布产物 |
 
 推荐的实际创作顺序是：
 
-`项目与页面` → `资源管理` → `主题、字体与样式` → `组件管理` → `AI 协作创作` → `预览、截图与构建`
+`项目与页面` → `资源管理` → `主题、字体与样式` → `组件管理` → `AI 协作创作` → `命令行与外部 Agent (CLI)` → `预览、截图与构建`
 
 ## 部署
 

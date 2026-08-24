@@ -6,10 +6,10 @@
 
 本文不维护 `wp` CLI 的具体命令实现、Click 参数、Profile 文件、终端格式、MCP Tool 或 Skill 工作流。那些内容属于同级独立仓库 `web-presentation-agent-kit`：
 
-- [CLI 实施文档](../../../web-presentation-agent-kit/docs/cli-capability-completion.md)（本地同级工作区）
-- CLI 源码：`web-presentation-agent-kit/packages/cli/`
-- 共享客户端：`web-presentation-agent-kit/packages/api-client/`
-- Skill：`web-presentation-agent-kit/skills/web-presentation/SKILL.md`
+- CLI 实施文档：[web-presentation-agent-kit/docs/cli-capability-completion.md](https://github.com/LLMxPM/web-presentation-agent-kit/blob/main/docs/cli-capability-completion.md)
+- CLI 源码：[packages/cli/](https://github.com/LLMxPM/web-presentation-agent-kit/tree/main/packages/cli)
+- 共享客户端：[packages/api-client/](https://github.com/LLMxPM/web-presentation-agent-kit/tree/main/packages/api-client)
+- Skill 知识库：[skills/web-presentation/SKILL.md](https://github.com/LLMxPM/web-presentation-agent-kit/blob/main/skills/web-presentation/SKILL.md)
 
 主仓统一契约正文见：[External API v1 契约与外部 Agent 接入边界](./reference/external-agent-api.md)。
 
