@@ -1,4 +1,4 @@
-"""文件功能：验证 External API 元数据更新、版本化 Guides 与操作注册表契约。"""
+"""文件功能：验证 External API 元数据更新、OpenAPI 请求 Schema 与操作注册表契约。"""
 
 from __future__ import annotations
 
@@ -408,32 +408,18 @@ async def test_metadata_patch_whitelist_and_idempotency(client: AsyncClient) -> 
 
 
 @pytest.mark.asyncio
-async def test_guides_index_and_detail_do_not_require_workspace_header(client: AsyncClient) -> None:
-    """Guides 使用 PAT 即可读取，并公开版本、revision、Header 与独立 DTO Schema。"""
+async def test_external_guides_are_removed_from_routes_and_openapi(client: AsyncClient) -> None:
+    """External Guide 已直接删除，旧路径返回 404 且不再进入 OpenAPI。"""
 
-    token, _, _, _, _ = await _seed_contract_targets()
-    headers = {"Authorization": f"Bearer {token}"}
-    index = await client.get("/api/v1/guides", headers=headers)
-    assert index.status_code == 200
-    assert index.json()["api_version"] == "v1"
-    assert index.json()["guide_schema_version"] == 1
-    page_item = next(item for item in index.json()["operations"] if item["operation_key"] == "page.update")
-    assert page_item["operation_revision"] == 1
-    assert page_item["detail_url"] == "/api/v1/guides/page.update"
+    index = await client.get("/api/v1/guides")
+    detail = await client.get("/api/v1/guides/page.update")
+    openapi = (await client.get("/openapi.json")).json()
 
-    detail = await client.get("/api/v1/guides/page.update", headers=headers)
-    assert detail.status_code == 200
-    body = detail.json()
-    assert (body["method"], body["path"]) == ("PATCH", "/pages/{page_id}")
-    assert body["required_headers"] == ["Authorization", "X-Workspace-ID", "Idempotency-Key"]
-    assert set(body["request_schema"]["properties"]) == {"title", "summary", "speaker_notes"}
-    assert "page_content" not in body["request_schema"]["properties"]
-
-    missing = await client.get("/api/v1/guides/not.exists", headers=headers)
-    assert missing.status_code == 404
-    assert missing.json()["code"] == "GUIDE_OPERATION_NOT_FOUND"
-    alias = await client.get("/api/v1/guides/operation-guide", headers=headers)
-    assert alias.status_code == 404
+    assert index.status_code == 404
+    assert detail.status_code == 404
+    assert "/api/v1/guides" not in openapi["paths"]
+    assert "/api/v1/guides/{operation_key}" not in openapi["paths"]
+    assert "guides.read" not in OPERATION_REGISTRY
 
 
 @pytest.mark.asyncio
@@ -543,17 +529,15 @@ async def test_style_create_accepts_flat_presentation_fields(client: AsyncClient
 
 
 @pytest.mark.asyncio
-async def test_style_create_guide_exposes_flat_presentation_fields(client: AsyncClient) -> None:
-    """样式创建 Guide 应公开与接口一致的完整字段 Schema。"""
+async def test_style_create_openapi_exposes_flat_presentation_fields(client: AsyncClient) -> None:
+    """OpenAPI 应公开与样式创建接口一致的完整字段 Schema。"""
 
-    token, _workspace_id, _project_id, _page_id, _component_id = await _seed_contract_targets()
-    response = await client.get(
-        "/api/v1/guides/style.create",
-        headers={"Authorization": f"Bearer {token}"},
-    )
-
+    response = await client.get("/openapi.json")
     assert response.status_code == 200, response.text
-    properties = response.json()["request_schema"]["properties"]
+    openapi = response.json()
+    schema_ref = openapi["paths"]["/api/v1/styles"]["post"]["requestBody"]["content"]["application/json"]["schema"]["$ref"]
+    schema_name = schema_ref.rsplit("/", 1)[-1]
+    properties = openapi["components"]["schemas"][schema_name]["properties"]
     for field_name in (
         "page_width",
         "page_height",

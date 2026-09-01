@@ -20,7 +20,6 @@ from app.models.page import Page
 from app.schemas.release import PreviewEntryDescriptor
 from app.services.capture_viewport_resolver import CaptureViewport
 from app.services.component_preview_service import ComponentPreviewService
-from app.services.component_render_diagnostics_service import ComponentRenderDiagnosticsService
 from app.services.component_validation_profile import (
     build_component_validation_profile,
 )
@@ -83,18 +82,11 @@ class CodeCheckService:
         session: AsyncSession,
         runtime_client: RuntimeDiagnosticsClient | None = None,
         render_diagnostics_service: PageRenderDiagnosticsService | None = None,
-        component_render_diagnostics_service: ComponentRenderDiagnosticsService | None = None,
     ) -> None:
         self.session = session
         self.runtime_client = runtime_client or RuntimeDiagnosticsClient()
         self.render_diagnostics_service = render_diagnostics_service or PageRenderDiagnosticsService()
-        self.component_render_diagnostics_service = (
-            component_render_diagnostics_service or ComponentRenderDiagnosticsService()
-        )
-        self.component_validation_service = ComponentValidationService(
-            self.runtime_client,
-            self.component_render_diagnostics_service,
-        )
+        self.component_validation_service = ComponentValidationService(self.runtime_client)
 
     async def check_page_code(
         self,
@@ -328,8 +320,6 @@ class CodeCheckService:
             label=f"component:{component_id or 'draft'}",
             patch_repaired=candidate.patch_repaired,
             canonical_diff=candidate.canonical_diff,
-            preview_url=preview.preview_url,
-            viewport=CaptureViewport(width=preview.viewport_width, height=preview.viewport_height),
             profile_key=profile_key,
             candidate_hash=candidate_hash,
         )

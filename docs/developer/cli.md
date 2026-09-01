@@ -55,8 +55,6 @@ GET /api/v1/workspaces/{workspace_id}
 GET /api/v1/workspaces/{workspace_id}/capabilities
 GET /api/v1/standards/page
 GET /api/v1/standards/component
-GET /api/v1/guides
-GET /api/v1/guides/{operation_key}
 GET /api/v1/system/version
 GET /api/v1/system/health
 GET /api/v1/runtime-kit
@@ -137,13 +135,13 @@ POST /api/v1/pages/{page_id}/validate
 - Scope、Workspace Header、幂等要求；
 - 错误码、Job 状态、取消语义；
 - 归档、工作空间隔离和文件大小限制；
-- `/guides`、`/standards/*`、`/capabilities` 返回结构。
+- `/standards/*`、`/capabilities` 和 OpenAPI 返回结构。
 
 主仓完成后，再由 agent-kit 更新 CLI 实施文档、适配代码和测试。
 
 ## 6. 已知契约问题
 
-页面/组件安全元数据 PATCH、版本化 Guides 详情，以及 Mutation 取消、人工重试和幂等组合语义已经冻结。首版不暴露 Build 执行、产物下载或 Restore 入口。
+页面/组件安全元数据 PATCH，以及 Mutation 取消、人工重试和幂等组合语义已经冻结。首版不暴露 Build 执行、产物下载或 Restore 入口。
 
 这些问题的详细记录和 agent-kit 阻塞关系见 [External API v1 契约文档](./reference/external-agent-api.md)。
 

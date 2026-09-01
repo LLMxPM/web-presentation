@@ -77,11 +77,8 @@ _COMPACT_PAGE_VALIDATION_EXAMPLE = (
     "下一步：如需查看诊断明细，请使用同一目标和候选 mode 调用 validate_entity；需要更完整信息时设置 detail=true。"
 )
 _COMPACT_COMPONENT_VALIDATION_EXAMPLE = (
-    "检查结论：passed_with_warnings\n"
-    "摘要：组件可以编译并真实渲染；存在布局或资源警告。\n"
-    "场景：已检查 3 个场景，通过 2 个，警告 1 个，失败 0 个；需关注：preset:compact。\n"
-    "警告：\n"
-    "- [COMPONENT_RENDER_HORIZONTAL_OVERFLOW] preset:compact 在 placement frame 中水平溢出 8px。（scenario=preset:compact；profile=component-content-default.v1）\n"
+    "检查结论：passed\n"
+    "摘要：组件 Runtime 编译通过。\n"
     "下一步：如需查看诊断明细，请使用同一目标和候选 mode 调用 validate_entity；需要更完整信息时设置 detail=true。"
 )
 
@@ -848,14 +845,14 @@ _COORDINATOR_OPERATION_GUIDES = (
             "内容组件必须在 preview_schema.props 中声明至少一个尺寸控制字段，例如 width、height、minHeight 或 aspectRatio。",
             "组件应跨页面或跨项目复用；颜色、字体、Logo 和强调状态优先使用 Runtime 主题语义类或 Runtime Kit，不要绑定当前项目的具体 palette、未列出的语义 Token 或硬编码品牌资源。",
             "组件源码中的 Tailwind 类必须是完整静态字符串；动态 tone、variant 等样式使用顶层枚举映射，禁止拼接 text-${tone}、from-${color} 等类名。",
-            "写入前会自动执行契约、Runtime 编译、默认态与有界 presets 的真实渲染和布局检查；无需先调用 component.validate.check。",
-            "组件不绑定项目页面尺寸或基础字号；自动检查使用版本化临时 profile，具体项目兼容性由页面检查负责。",
+            "写入前会自动执行契约和 Runtime 编译检查；无需先调用 component.validate.check。",
+            "组件不绑定项目页面尺寸或基础字号；组件编译 artifact 使用版本化临时 profile，具体项目兼容性由页面检查负责。",
         ),
-        side_effects=("通过统一后台任务执行契约、编译、渲染和布局检查；只创建草稿，发布后生成正式版本。", "发布后应更新项目 configuration 的 suggested_components 使后续页面可优先复用。", "结果只返回组件摘要（含 draft_hash 和版本基线），不回显已提交的 content 与 preview_schema。",),
+        side_effects=("通过统一后台任务执行契约和 Runtime 编译检查；只创建草稿，发布后生成正式版本。", "发布后应更新项目 configuration 的 suggested_components 使后续页面可优先复用。", "结果只返回组件摘要（含 draft_hash 和版本基线），不回显已提交的 content 与 preview_schema。",),
         error_recovery=(
             "收到 COMPONENT_PREVIEW_SCHEMA_REQUIRED 时补充合法的 preview_schema 后重试。",
             "收到 CONTENT_COMPONENT_SIZE_CONTROL_REQUIRED 时，把尺寸字段定义放入 preview_schema.props；不要把 width、height 等预览值直接放在根节点。",
-            "写入结果中的 validation 是精简短文本；根据其中的 code、message、定位、scenario 和 profile 修复后重试。需要受控诊断 facts 时，使用相同目标和候选参数调用 validate_entity(detail=true)；unavailable/retryable=true 时不要改写候选，应稍后原样重试。",
+            "写入结果中的 validation 是精简短文本；根据其中的 code、message 和 profile 修复后重试。需要受控诊断 facts 时，使用相同目标和候选参数调用 validate_entity(detail=true)；unavailable/retryable=true 时不要改写候选，应稍后原样重试。",
         ),
         risk_level="write",
         call_example={
@@ -1043,7 +1040,7 @@ _COORDINATOR_OPERATION_GUIDES = (
         constraints=(
             "所有组件类型都必须保留合法的 preview_schema；组件属性定义放在 preview_schema.props，不要在根节点填写预览值。",
             "内容组件必须在 preview_schema.props 中保留至少一个尺寸控制字段。",
-            "提交 preview_schema 或 component_type 时会基于当前源码自动执行编译、真实渲染和布局检查；纯名称或摘要更新不启动 Runtime。",
+            "提交 preview_schema 或 component_type 时会基于当前源码自动执行 Runtime 编译检查；纯名称或摘要更新不启动 Runtime。",
             "组件视觉样式应保持跨主题可复用，优先使用 Runtime 主题语义类和完整静态 Tailwind 类，不要引入未列出的语义 Token、硬编码品牌色或动态拼接类名。",
         ),
         side_effects=("提交 preview_schema 或 component_type 时通过统一后台任务执行；纯名称、摘要等轻量元数据保持同步。", "结果只返回组件摘要，不回显已提交的 preview_schema 与源码。",),
@@ -1066,10 +1063,10 @@ _COORDINATOR_OPERATION_GUIDES = (
         },
         risk_level="write",
     ),
-    _operation_guide("component", "update", "通过统一后台任务对组件草稿应用结构化 edits，并在写入前自动检查真实渲染结果。", _write_parameters("component", "update", ComponentContentPayload, action="content", target_mode="single"), action="content",
+    _operation_guide("component", "update", "通过统一后台任务对组件草稿应用结构化 edits，并在写入前自动执行 Runtime 编译检查。", _write_parameters("component", "update", ComponentContentPayload, action="content", target_mode="single"), action="content",
                      prerequisites=("先读取组件 detail，取得源码、draft_hash 和 base_published_version_no。",),
-                     constraints=("自动执行契约、Runtime 编译、默认态与有界 presets 的真实渲染和布局检查，无需提前重复调用 validate_entity。", "新增 Tailwind 类必须是完整静态字符串；动态样式使用顶层枚举映射，禁止拼接 text-${tone}、from-${color} 等类名。", "组件颜色、字体和 Logo 应使用 Runtime 主题语义类或版本化 Runtime Kit，不要绑定当前项目的具体主题值。"),
-                     side_effects=("结果只返回组件摘要和 edits 计数，不回显完整源码或源码 diff。",), error_recovery=("编辑锁冲突时重新读取组件 detail。", "根据 validation 短文本中的 code、message、scenario 和 profile 修复 edits；需要诊断 facts 时调用 validate_entity(detail=true)；unavailable/retryable=true 时稍后原样重试。"),
+                     constraints=("自动执行契约和 Runtime 编译检查，无需提前重复调用 validate_entity。", "新增 Tailwind 类必须是完整静态字符串；动态样式使用顶层枚举映射，禁止拼接 text-${tone}、from-${color} 等类名。", "组件颜色、字体和 Logo 应使用 Runtime 主题语义类或版本化 Runtime Kit，不要绑定当前项目的具体主题值。"),
+                     side_effects=("结果只返回组件摘要和 edits 计数，不回显完整源码或源码 diff。",), error_recovery=("编辑锁冲突时重新读取组件 detail。", "根据 validation 短文本中的 code、message 和 profile 修复 edits；需要诊断 facts 时调用 validate_entity(detail=true)；unavailable/retryable=true 时稍后原样重试。"),
                      response_example={
                          "success": True,
                          "resource_type": "component",
@@ -1106,8 +1103,8 @@ _COORDINATOR_OPERATION_GUIDES = (
     _operation_guide("page", "validate", "检查当前页面、完整候选源码或结构化 edits。", _write_parameters("page", "validate", PageCheckPayload, action="check", target_mode="optional_single"), action="check",
                      constraints=("mode=current/edits 必须提供 target_id；无 target_id 的 content 模式必须提供 project_id。", "detail=false 只返回摘要、最多 10 条带 code、message 和定位的问题；detail=true 仍最多 10 条，并补充受控 facts 和布局数值，不返回完整 layout_analysis、浏览器几何或原始诊断清单。", "工具实际负责候选源码的 Runtime 编译、真实渲染和布局诊断，不会单独报告未列出的主题 Token 或动态 Tailwind 类拼接；模型调用前应依据 Runtime 主题契约自行复核。Runtime Kit import path 由 manifest 与依赖校验约束，必须使用返回的版本化路径。"),
                      response_example=_COMPACT_PAGE_VALIDATION_EXAMPLE),
-    _operation_guide("component", "validate", "只读检查当前组件或候选源码、edits 与 preview_schema 的编译、真实渲染和布局结果。", _write_parameters("component", "validate", ComponentCheckPayload, action="check", target_mode="optional_single"), action="check",
-                     constraints=("mode=current/edits 必须提供 target_id；content 模式可检查新组件候选源码。", "新组件候选应同时提供 component_type 和完整 preview_schema；页面尺寸与基础字号使用平台版本化临时 profile，不继承当前焦点项目。", "detail=false 只返回摘要、最多 10 条带 code、message、scenario 和 profile 的问题；detail=true 仍最多 10 条，并补充受控 facts，不返回完整 scenario、浏览器几何或原始诊断清单。", "工具实际负责组件候选源码的 Runtime 编译、真实渲染和布局诊断，不会单独报告未列出的主题 Token 或动态 Tailwind 类拼接；模型调用前应依据 Runtime 主题契约自行复核。Runtime Kit import path 由 manifest 与依赖校验约束，必须使用返回的版本化路径。", "三类组件写操作已经自动执行相同检查；仅在诊断当前组件、预检大幅修改或确认修复结果时单独调用。"),
+    _operation_guide("component", "validate", "只读检查当前组件或候选源码、edits 与 preview_schema 的契约和 Runtime 编译结果。", _write_parameters("component", "validate", ComponentCheckPayload, action="check", target_mode="optional_single"), action="check",
+                     constraints=("mode=current/edits 必须提供 target_id；content 模式可检查新组件候选源码。", "新组件候选应同时提供 component_type 和完整 preview_schema。", "detail=false 只返回摘要、最多 10 条带 code 和 message 的问题；detail=true 仍最多 10 条，并补充受控 facts，不返回原始诊断清单。", "工具实际负责组件候选源码的契约和 Runtime 编译检查，不会执行浏览器渲染、preset 场景或布局诊断；模型调用前应依据 Runtime 主题契约自行复核。Runtime Kit import path 由 manifest 与依赖校验约束，必须使用返回的版本化路径。", "三类组件写操作已经自动执行相同检查；仅在诊断当前组件或预检大幅修改时单独调用。"),
                      response_example=_COMPACT_COMPONENT_VALIDATION_EXAMPLE),
     _operation_guide("asset", "validate", "预览资源完整内容写入后的 unified diff，不落库。", _write_parameters("asset", "validate", AssetPreviewContentPayload, action="preview", target_mode="single"), action="preview"),
 )

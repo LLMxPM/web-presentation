@@ -27,7 +27,7 @@ MCP Server 依赖以下平台能力，但不在主仓库登记 MCP 工具：
 - 身份认证与工作空间边界：`/api/v1/auth/*`、`/api/v1/workspaces/*`。
 - 项目、页面和源码：项目、页面查询，以及页面源码的创建、更新、归档。
 - 资源、组件、主题和样式：列表、详情、导入、创建、更新和归档。
-- 指导与规范：`/api/v1/guides`、`/api/v1/standards`。
+- 规范与契约：`/api/v1/standards`、`/openapi.json`。
 - 任务：页面/组件 Mutation 创建、状态查询、取消和人工重试。
 
 具体路径、请求体、响应体、权限和错误语义统一以[External API v1 契约](./reference/external-agent-api.md)为准。
@@ -46,4 +46,4 @@ MCP Server 依赖以下平台能力，但不在主仓库登记 MCP 工具：
 
 ## 4. 当前契约状态
 
-页面/组件安全元数据 PATCH、版本化 Guides，以及 Mutation 状态、取消、人工重试和幂等组合语义已经冻结并由 agent-kit 适配。构建产物下载 URL、鉴权方式、过期语义和持久化 Worker 契约仍未冻结，agent-kit 不注册 Build 工具。
+页面/组件安全元数据 PATCH，以及 Mutation 状态、取消、人工重试和幂等组合语义已经冻结并由 agent-kit 适配。构建产物下载 URL、鉴权方式、过期语义和持久化 Worker 契约仍未冻结，agent-kit 不注册 Build 工具。

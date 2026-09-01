@@ -9,7 +9,7 @@
 - External API v1 的公开边界、路径和版本策略；
 - PAT、Scope、工作空间隔离和错误语义；
 - 页面、组件、资源、主题、样式和 Mutation Job 的后端契约；
-- `/guides`、`/standards/*`、`/capabilities` 等自省接口；
+- `/standards/*`、`/capabilities` 和 OpenAPI 等自省接口；
 - 主仓库契约测试、兼容性和变更流程。
 
 本文不维护以下内容：
@@ -104,18 +104,15 @@ GET /api/v1/workspaces/{workspace_id}/capabilities
 
 `capabilities` 返回当前 Token 在指定空间可用的 Scope 和 operation。CLI 可以用它决定命令提示，MCP 可以用它决定工具是否披露；两者都不能把客户端判断当作最终授权。
 
-### 4.2 规范和操作指南
+### 4.2 规范和 OpenAPI
 
 ```text
 GET /api/v1/standards/page
 GET /api/v1/standards/component
-GET /api/v1/guides
-GET /api/v1/guides/{operation_key}
+GET /openapi.json
 ```
 
-`/guides` 返回带 `api_version=v1`、`guide_schema_version=1`、`operation_revision` 和 `detail_url` 的轻量索引；详情接口返回 method、path、Scope、必需 Header、幂等规则、成功状态、错误码及 External API 专属 DTO 生成的请求/响应 JSON Schema。两者只要求有效 PAT，不要求工作空间 Header，也不是 Backend 内部 AI `tool_specs.py` 的公开镜像。
-
-规范和指南由 Backend 发布，agent-kit 不应复制为长期本地业务数据或静态提示词。
+页面和组件规范由 Backend 发布；CLI 使用公开 OpenAPI 获取当前服务端的路径、参数和请求 Schema。agent-kit 不复制 Backend DTO 或维护第二份静态 Schema。
 
 ## 5. 资源和任务契约
 
@@ -162,7 +159,7 @@ POST     /api/v1/validate/entity
 
 `validate/entity` 的 `entity_type` 为 `page | component`，`mode` 为 `current | content | edits`。项目配置、路由树、主题、样式和资源内容写入均由 Backend Schema 最终校验。
 
-样式创建 `POST /api/v1/styles` 同时接受规范的 `configuration.presentation` 嵌套配置和顶层完整展示字段；Guide 的 `style.create` 请求 Schema 与该接口保持一致。
+样式创建 `POST /api/v1/styles` 同时接受规范的 `configuration.presentation` 嵌套配置和顶层完整展示字段；OpenAPI 请求 Schema 与该接口保持一致。
 
 ### 5.2 页面和组件重任务
 
@@ -216,7 +213,7 @@ Mutation 对外状态固定为 `pending | running | succeeded | failed | cancele
 
 ## 7. 已知契约问题
 
-页面/组件安全元数据 PATCH、版本化 Guides、Mutation 状态/取消/重试/幂等契约已冻结；首版明确排除 Build 执行、产物下载、Restore、图片能力和 Agent 运行。
+页面/组件安全元数据 PATCH、Mutation 状态/取消/重试/幂等契约已冻结；首版明确排除 Build 执行、产物下载、Restore、图片能力和 Agent 运行。
 
 ## 8. 变更流程和测试归属
 
@@ -227,7 +224,7 @@ Mutation 对外状态固定为 `pending | running | succeeded | failed | cancele
 - 路径、HTTP 方法、请求/响应 DTO；
 - Scope、Header、幂等要求；
 - 错误码、状态和取消语义；
-- `/guides`、`/standards/*`、`/capabilities` 字段；
+- `/standards/*`、`/capabilities` 和 OpenAPI 字段；
 - 版本、归档和工作空间隔离规则。
 
 主仓至少运行：

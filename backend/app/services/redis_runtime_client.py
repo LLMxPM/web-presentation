@@ -168,6 +168,24 @@ class InMemoryRedis:
             self._purge_expired(name)
             return self._values.get(name)
 
+    def incr(self, name: str) -> int:
+        """原子递增字符串计数器，保持 Redis INCR 的基础语义。"""
+
+        with self._condition:
+            self._purge_expired(name)
+            if name in self._hashes or name in self._streams:
+                raise TypeError(f"WRONGTYPE Operation against a key holding the wrong kind of value: {name}")
+
+            raw_value = self._values.get(name, "0")
+            try:
+                current = int(raw_value) + 1
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f"value is not an integer or out of range: {raw_value}") from exc
+
+            self._values[name] = str(current)
+            self._condition.notify_all()
+            return current
+
     def delete(self, *names: str) -> int:
         """删除一个或多个 key。"""
 
@@ -197,6 +215,19 @@ class InMemoryRedis:
                 return False
             self._set_expire(name, time)
             return True
+
+    def ttl(self, name: str) -> int:
+        """返回 key 的剩余秒数，遵循 Redis TTL 的 -1/-2 约定。"""
+
+        with self._condition:
+            self._purge_expired(name)
+            if not self.exists(name):
+                return -2
+
+            expires_at = self._expires.get(name)
+            if expires_at is None:
+                return -1
+            return max(0, int(expires_at - time.time()))
 
     def hset(self, name: str, key: str | None = None, value: Any | None = None, mapping: dict[str, Any] | None = None) -> int:
         """写入 Hash 字段。"""

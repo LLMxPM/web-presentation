@@ -1,4 +1,4 @@
-"""文件功能：定义组件候选 contract、compile、render 校验的稳定结果与诊断契约。"""
+"""文件功能：定义组件候选契约、Runtime 编译结果及兼容阶段字段。"""
 
 from __future__ import annotations
 
@@ -30,7 +30,7 @@ class ComponentValidationDiagnostic(BaseModel):
 
 
 class ComponentValidationScenarioResult(BaseModel):
-    """组件默认态或 preset 的单场景结果。"""
+    """历史组件渲染场景结果；当前自动组件校验不填充该列表。"""
 
     model_config = ConfigDict(extra="allow")
 
@@ -41,7 +41,7 @@ class ComponentValidationScenarioResult(BaseModel):
 
 
 class ComponentValidationResult(BaseModel):
-    """组件独立 check 与自动写入 check 共用的顶层结果。"""
+    """组件独立 check 与自动写入 check 共用的顶层结果，保留 render 阶段兼容字段。"""
 
     model_config = ConfigDict(extra="allow")
 

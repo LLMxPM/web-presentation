@@ -1,4 +1,4 @@
-"""文件功能：编排组件候选的 Runtime 编译、真实渲染、结果归一化与临时 artifact 清理。"""
+"""文件功能：编排组件候选的契约、Runtime 编译结果归一化与临时 artifact 清理。"""
 
 from __future__ import annotations
 
@@ -9,8 +9,6 @@ import logging
 from app.core.text_normalizer import normalize_text_to_lf
 from app.models.enums import WorkspaceComponentType
 from app.schemas.component_validation import ComponentValidationResult
-from app.services.capture_viewport_resolver import CaptureViewport
-from app.services.component_render_diagnostics_service import ComponentRenderDiagnosticsService
 from app.services.component_validation_profile import COMPONENT_VALIDATION_PROFILE_VERSION
 from app.services.runtime_artifact_store import RuntimeArtifactStore
 from app.services.runtime_diagnostics_client import RuntimeDiagnosticsClient
@@ -25,10 +23,8 @@ class ComponentValidationService:
     def __init__(
         self,
         runtime_client: RuntimeDiagnosticsClient,
-        render_diagnostics_service: ComponentRenderDiagnosticsService,
     ) -> None:
         self.runtime_client = runtime_client
-        self.render_diagnostics_service = render_diagnostics_service
 
     async def dispatch(
         self,
@@ -39,12 +35,10 @@ class ComponentValidationService:
         label: str,
         patch_repaired: bool,
         canonical_diff: str | None,
-        preview_url: str,
-        viewport: CaptureViewport,
         profile_key: str,
         candidate_hash: str,
     ) -> dict[str, object]:
-        """执行组件编译与真实渲染诊断，并保证临时 artifact 被清理。"""
+        """执行组件 Runtime 编译检查，并保证临时 artifact 被清理。"""
 
         try:
             diagnostics_token = TokenService.generate_runtime_diagnostics_command_token(
@@ -81,48 +75,24 @@ class ComponentValidationService:
                     "stages": {"contract": "passed", "compile": "failed", "render": "skipped"},
                 })
 
-            render_result = await self.render_diagnostics_service.diagnose_preview(
-                preview_url,
-                viewport,
-                profile_key=profile_key,
-            )
-            render_status = str(render_result.get("status") or "unavailable")
-            render_diagnostics = self.normalize_stage_diagnostics(
-                render_result.get("diagnostics"),
-                stage="render",
-            )
-            diagnostics = [*compile_diagnostics, *render_diagnostics]
-            if render_status == "unavailable":
-                return self.validated_result({
-                    **base_result,
-                    "success": False,
-                    "valid": False,
-                    "status": "unavailable",
-                    "retryable": True,
-                    "summary": "组件编译通过，但真实渲染诊断暂不可用。",
-                    "stages": {"contract": "passed", "compile": "passed", "render": "unavailable"},
-                    "diagnostics": diagnostics,
-                    "scenarios": render_result.get("scenarios") or [],
-                })
-
-            has_errors = any(item.get("severity") == "error" for item in diagnostics)
-            has_warnings = any(item.get("severity") == "warning" for item in diagnostics)
+            has_errors = any(item.get("severity") == "error" for item in compile_diagnostics)
+            has_warnings = any(item.get("severity") == "warning" for item in compile_diagnostics)
             status = "failed" if has_errors else ("passed_with_warnings" if has_warnings else "passed")
             return self.validated_result({
                 **base_result,
                 "success": not has_errors,
                 "valid": not has_errors,
                 "status": status,
-                "summary": self._build_summary(status, render_result.get("scenarios")),
+                "summary": self._build_compile_summary(status),
                 "stages": {
                     "contract": "passed",
-                    "compile": "passed",
-                    "render": "failed" if has_errors else (
+                    "compile": "failed" if has_errors else (
                         "passed_with_warnings" if has_warnings else "passed"
                     ),
+                    "render": "skipped",
                 },
-                "diagnostics": diagnostics,
-                "scenarios": render_result.get("scenarios") or [],
+                "diagnostics": compile_diagnostics,
+                "scenarios": [],
             })
         except Exception:  # noqa: BLE001
             logger.warning(
@@ -256,12 +226,11 @@ class ComponentValidationService:
         return bool(result.get("success") is True or result.get("status") == "passed")
 
     @staticmethod
-    def _build_summary(status: str, scenarios: object) -> str:
-        """按整体状态和已执行场景数生成模型反馈。"""
+    def _build_compile_summary(status: str) -> str:
+        """按 Runtime 编译状态生成模型反馈。"""
 
-        scenario_count = len(scenarios) if isinstance(scenarios, list) else 0
         if status == "failed":
-            return f"组件编译通过，但真实渲染检查失败；已执行 {scenario_count} 个场景。"
+            return "组件 Runtime 编译未通过。"
         if status == "passed_with_warnings":
-            return f"组件可以编译并真实渲染；已执行 {scenario_count} 个场景，存在布局或资源警告。"
-        return f"组件可以编译并真实渲染；{scenario_count} 个场景全部通过。"
+            return "组件 Runtime 编译通过，但存在编译警告。"
+        return "组件 Runtime 编译通过。"

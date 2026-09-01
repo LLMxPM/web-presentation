@@ -1,9 +1,8 @@
-"""文件功能：提供 External API v1 系统版本、健康检查、当前身份 whoami、页面/组件开发规范与操作使用指南接口。"""
+"""文件功能：提供 External API v1 系统版本、健康检查、当前身份和页面/组件开发规范接口。"""
 
 from __future__ import annotations
 
-from importlib import import_module
-from typing import Annotated, Any
+from typing import Annotated
 
 from fastapi import APIRouter, Depends
 from sqlalchemy import select, text
@@ -11,14 +10,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies_external import ExternalAuthContext, require_external_operation
 from app.core.config import get_settings
-from app.core.exceptions import AppException
-from app.core.external_operations import OPERATION_REGISTRY
 from app.db.session import get_db_session
 from app.models.workspace import Workspace, WorkspaceMember
 from app.schemas.external_api import (
-    ExternalGuideResponse,
-    ExternalGuideOperationDetail,
-    ExternalGuideOperationIndexItem,
     ExternalStandardResponse,
     ExternalSystemHealthResponse,
     ExternalSystemVersionResponse,
@@ -47,7 +41,8 @@ COMPONENT_STANDARDS_DOC = """# 工作空间组件开发规范 (Component Standar
 - 组件必须声明明确的 `props` 与可选 `previewSchema`。
 
 ## 2. 类型与 Preview Schema
-- `component_type`: `card`, `section`, `template`, `custom`。
+- `component_type` 的规范值为 `content`、`page`、`atomic`。
+- 兼容别名：`card`、`section`、`custom` 归一化为 `content`；`template` 归一化为 `page`；`atom`、`basic` 归一化为 `atomic`。
 - `previewSchema`: 遵循 JSON Schema 规范，用于在 Editor 中提供属性表单编辑与预览 mock 数据。
 """
 
@@ -169,87 +164,3 @@ async def get_component_standards(
         standard_type="component",
         markdown=COMPONENT_STANDARDS_DOC,
     )
-
-
-@router.get("/guides", response_model=ExternalGuideResponse)
-async def get_operation_guides(
-    auth: Annotated[ExternalAuthContext, Depends(require_external_operation("guides.read"))],
-) -> ExternalGuideResponse:
-    """查询平台操作参数规格与使用手册。"""
-
-    guide_items: list[ExternalGuideOperationIndexItem] = []
-    for key, spec in OPERATION_REGISTRY.items():
-        guide_items.append(
-            ExternalGuideOperationIndexItem(
-                operation_key=spec.operation_key,
-                operation_revision=spec.operation_revision,
-                description=spec.description,
-                scopes=list(spec.scopes),
-                scope_mode=spec.scope_mode,
-                is_public=spec.is_public,
-                exempt_workspace_header=spec.exempt_workspace_header,
-                requires_idempotency_key=spec.requires_idempotency_key,
-                detail_url=f"/api/v1/guides/{key}",
-            )
-        )
-
-    return ExternalGuideResponse(operations=guide_items)
-
-
-@router.get("/guides/{operation_key}", response_model=ExternalGuideOperationDetail)
-async def get_operation_guide_detail(
-    operation_key: str,
-    auth: Annotated[ExternalAuthContext, Depends(require_external_operation("guides.read"))],
-) -> ExternalGuideOperationDetail:
-    """返回单项 operation 的版本化 HTTP 和 JSON Schema 契约。"""
-
-    spec = OPERATION_REGISTRY.get(operation_key)
-    if spec is None:
-        raise AppException(
-            status_code=404,
-            code="GUIDE_OPERATION_NOT_FOUND",
-            detail=f"未找到 operation '{operation_key}' 的公开指南。",
-        )
-    required_headers = [] if spec.is_public else ["Authorization"]
-    if not spec.is_public and not spec.exempt_workspace_header:
-        required_headers.append("X-Workspace-ID")
-    if spec.requires_idempotency_key:
-        required_headers.append("Idempotency-Key")
-    error_codes = list(spec.error_codes)
-    if not spec.is_public:
-        error_codes.extend(["EXTERNAL_AUTH_REQUIRED", "INVALID_ACCESS_TOKEN"])
-    if spec.scopes:
-        error_codes.append("INSUFFICIENT_SCOPE")
-    if not spec.is_public and not spec.exempt_workspace_header:
-        error_codes.extend(["WORKSPACE_HEADER_REQUIRED", "WORKSPACE_NOT_AUTHORIZED"])
-    if spec.requires_idempotency_key:
-        error_codes.extend([
-            "IDEMPOTENCY_KEY_REQUIRED",
-            "INVALID_IDEMPOTENCY_KEY",
-            "CONCURRENT_MUTATION_IN_PROGRESS",
-        ])
-    return ExternalGuideOperationDetail(
-        operation_key=spec.operation_key,
-        operation_revision=spec.operation_revision,
-        description=spec.description,
-        method=spec.http_method,
-        path=spec.path_template,
-        scopes=list(spec.scopes),
-        scope_mode=spec.scope_mode,
-        required_headers=required_headers,
-        requires_idempotency_key=spec.requires_idempotency_key,
-        success_statuses=list(spec.success_statuses),
-        error_codes=list(dict.fromkeys(error_codes)),
-        request_schema=_resolve_model_schema(spec.request_model),
-        response_schema=_resolve_model_schema(spec.response_model),
-    )
-
-
-def _resolve_model_schema(model_path: str | None) -> dict[str, Any] | None:
-    """按注册表中的模型路径加载 Pydantic JSON Schema，避免复制第二份参数定义。"""
-
-    if not model_path:
-        return None
-    module_name, model_name = model_path.rsplit(".", 1)
-    model = getattr(import_module(module_name), model_name)
-    return model.model_json_schema()

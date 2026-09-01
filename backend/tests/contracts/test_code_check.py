@@ -120,37 +120,6 @@ class FakePageRenderDiagnosticsService:
         }
 
 
-class FakeComponentRenderDiagnosticsService:
-    """测试用组件渲染诊断服务，避免 contract 测试启动真实浏览器。"""
-
-    def __init__(self, result: dict[str, object] | None = None) -> None:
-        self.calls: list[dict[str, object]] = []
-        self.result = result or {
-            "status": "passed",
-            "retryable": False,
-            "validation_profile_version": "component-profiles.v1",
-            "diagnostics": [],
-            "scenarios": [{
-                "key": "default",
-                "profile_key": "component-content-default.v1",
-                "status": "passed",
-                "diagnostic_count": 0,
-            }],
-        }
-
-    async def diagnose_preview(
-        self,
-        preview_url: str,
-        viewport: object,
-        *,
-        profile_key: str,
-    ) -> dict[str, object]:
-        """记录组件渲染调用并返回预置结果。"""
-
-        self.calls.append({"preview_url": preview_url, "viewport": viewport, "profile_key": profile_key})
-        return dict(self.result)
-
-
 async def _create_workspace(authenticated_client: AsyncClient, name: str) -> int:
     """创建测试工作空间。"""
 
@@ -739,7 +708,6 @@ async def test_component_code_check_should_return_edits_metadata(authenticated_c
         result = await CodeCheckService(
             session,
             runtime_client=fake_runtime,
-            component_render_diagnostics_service=FakeComponentRenderDiagnosticsService(),
         ).check_component_code(
             component_id=component_response.json()["id"],
             workspace_id=workspace_id,
@@ -771,7 +739,6 @@ async def test_component_code_check_should_return_dynamic_icon_name_diagnostic(
         result = await CodeCheckService(
             session,
             runtime_client=fake_runtime,
-            component_render_diagnostics_service=FakeComponentRenderDiagnosticsService(),
         ).check_component_code(
             workspace_id=workspace_id,
             user_id=1,
@@ -785,39 +752,18 @@ async def test_component_code_check_should_return_dynamic_icon_name_diagnostic(
     assert fake_runtime.calls == []
 
 
-async def test_component_code_check_should_fail_when_real_render_failed(
+async def test_component_code_check_should_skip_real_render_check(
     authenticated_client: AsyncClient,
 ) -> None:
-    """组件可以编译但真实渲染失败时，应返回结构化失败且清理 artifact。"""
+    """组件编译通过后不再启动真实浏览器渲染检查。"""
 
-    workspace_id = await _create_workspace(authenticated_client, "组件真实渲染失败工作空间")
+    workspace_id = await _create_workspace(authenticated_client, "组件跳过渲染检查工作空间")
     fake_runtime = FakeRuntimeDiagnosticsClient()
-    fake_render = FakeComponentRenderDiagnosticsService({
-        "status": "failed",
-        "retryable": False,
-        "validation_profile_version": "component-profiles.v1",
-        "diagnostics": [{
-            "severity": "error",
-            "stage": "render",
-            "source": "component-render",
-            "code": "COMPONENT_RENDER_RUNTIME_ERROR",
-            "message": "setup 执行失败。",
-            "scenario_key": "default",
-            "profile_key": "component-content-default.v1",
-        }],
-        "scenarios": [{
-            "key": "default",
-            "profile_key": "component-content-default.v1",
-            "status": "failed",
-            "diagnostic_count": 1,
-        }],
-    })
 
     async with get_session_factory()() as session:
         result = await CodeCheckService(
             session,
             runtime_client=fake_runtime,
-            component_render_diagnostics_service=fake_render,
         ).check_component_code(
             workspace_id=workspace_id,
             user_id=1,
@@ -825,11 +771,11 @@ async def test_component_code_check_should_fail_when_real_render_failed(
             preview_schema=CONTENT_COMPONENT_SIZE_PREVIEW_SCHEMA,
         )
 
-    assert result["success"] is False
-    assert result["valid"] is False
-    assert result["status"] == "failed"
-    assert result["stages"] == {"contract": "passed", "compile": "passed", "render": "failed"}
+    assert result["success"] is True
+    assert result["valid"] is True
+    assert result["status"] == "passed"
+    assert result["stages"] == {"contract": "passed", "compile": "passed", "render": "skipped"}
+    assert result["scenarios"] == []
     assert str(result["candidate_hash"]).startswith("sha256:")
-    assert result["diagnostics"][0]["code"] == "COMPONENT_RENDER_RUNTIME_ERROR"
     artifact_id = str(result["artifact_id"])
     assert await RuntimeArtifactStore().get_manifest(artifact_id) is None

@@ -1,4 +1,4 @@
-"""文件功能：集中定义 External API 统一操作注册表与权限元数据，作为系统能力、API 鉴权、操作手册和防漂移测试的单一事实源。"""
+"""文件功能：集中定义 External API 操作权限与 HTTP 契约，作为鉴权、能力披露和防漂移测试的单一事实源。"""
 
 from __future__ import annotations
 
@@ -18,13 +18,8 @@ class ExternalOperationSpec:
     requires_idempotency_key: bool = False
     description: str = ""
     scope_mode: Literal["all", "any"] = "all"
-    operation_revision: int = 1
     http_method: str = "GET"
     path_template: str = ""
-    request_model: str | None = None
-    response_model: str | None = None
-    success_statuses: Tuple[int, ...] = (200,)
-    error_codes: Tuple[str, ...] = ()
 
 
 OPERATION_REGISTRY: dict[str, ExternalOperationSpec] = {
@@ -55,22 +50,11 @@ OPERATION_REGISTRY: dict[str, ExternalOperationSpec] = {
     "standards.component": ExternalOperationSpec(
         "standards.component", ("component:read",), is_public=False, description="获取工作空间组件开发标准 Markdown 规范"
     ),
-    "guides.read": ExternalOperationSpec(
-        "guides.read",
-        (),
-        is_public=False,
-        exempt_workspace_header=True,
-        description="查询平台操作参数 Schema 与使用手册",
-        path_template="/guides",
-        response_model="app.schemas.external_api.ExternalGuideResponse",
-    ),
     "validate.entity": ExternalOperationSpec(
         "validate.entity",
         ("page:read", "component:read"),
         description="校验页面或组件当前内容及候选内容",
         scope_mode="any",
-        request_model="app.schemas.external_api.ExternalEntityValidationRequest",
-        response_model="app.schemas.external_api.ExternalEntityValidationResponse",
     ),
     "runtime_kit.list": ExternalOperationSpec(
         "runtime_kit.list", ("workspace:read",), exempt_workspace_header=True, description="查询 Runtime Kit 公开能力目录"
@@ -100,26 +84,21 @@ OPERATION_REGISTRY: dict[str, ExternalOperationSpec] = {
     ),
     "project.configuration.get": ExternalOperationSpec(
         "project.configuration.get", ("project:read",), description="获取项目结构化配置",
-        response_model="app.schemas.external_api.ExternalProjectConfigurationResponse",
     ),
     "project.configuration.update": ExternalOperationSpec(
         "project.configuration.update", ("project:write",), requires_idempotency_key=True, description="更新项目结构化配置",
-        request_model="app.schemas.external_api.ExternalProjectConfigurationUpdateRequest", response_model="app.schemas.project.ProjectItem",
     ),
     "project.route.get": ExternalOperationSpec(
         "project.route.get", ("project:read",), description="获取项目路由树"
     ),
     "project.route.update": ExternalOperationSpec(
         "project.route.update", ("project:write",), requires_idempotency_key=True, description="整体替换项目路由树",
-        request_model="app.schemas.project_route.ProjectRouteTreeWriteRequest", response_model="app.schemas.project_route.ProjectRouteTreeResponse",
     ),
     "project.apply_style": ExternalOperationSpec(
         "project.apply_style", ("project:write", "design-system:read"), requires_idempotency_key=True, description="将样式方案应用到项目",
-        request_model="app.schemas.external_api.ExternalProjectApplyStyleRequest", response_model="app.schemas.project.ProjectItem",
     ),
     "project.build_assets.update": ExternalOperationSpec(
         "project.build_assets.update", ("project:write",), requires_idempotency_key=True, description="更新项目构建额外资源配置",
-        request_model="app.schemas.external_api.ExternalProjectBuildAssetsRequest", response_model="app.schemas.project.ProjectItem",
     ),
 
     # Page
@@ -136,9 +115,6 @@ OPERATION_REGISTRY: dict[str, ExternalOperationSpec] = {
         description="更新页面标题、摘要或演讲备注",
         http_method="PATCH",
         path_template="/pages/{page_id}",
-        request_model="app.schemas.external_api.ExternalPageMetadataUpdateRequest",
-        response_model="app.schemas.page.PageItem",
-        error_codes=("PAGE_NOT_FOUND", "IDEMPOTENCY_KEY_REUSE_WITH_DIFFERENT_PAYLOAD"),
     ),
     "page.archive": ExternalOperationSpec(
         "page.archive", ("page:write",), requires_idempotency_key=True, description="归档页面"
@@ -150,29 +126,28 @@ OPERATION_REGISTRY: dict[str, ExternalOperationSpec] = {
     ),
     "page.create": ExternalOperationSpec(
         "page.create", ("page:write",), requires_idempotency_key=True, description="提交页面异步创建任务",
-        http_method="POST", path_template="/pages", request_model="app.schemas.external_api.ExternalPageCreateMutationRequest", response_model="app.schemas.external_api.ExternalMutationJobResponse", success_statuses=(202,),
+        http_method="POST", path_template="/pages",
     ),
     "page.copy": ExternalOperationSpec(
         "page.copy", ("page:write",), requires_idempotency_key=True, description="复制页面到目标项目",
-        http_method="POST", path_template="/pages/{page_id}/copy", request_model="app.schemas.external_api.ExternalPageCopyRequest", response_model="app.schemas.page.PageItem", success_statuses=(201,),
+        http_method="POST", path_template="/pages/{page_id}/copy",
     ),
     "page.edit": ExternalOperationSpec(
         "page.edit", ("page:write",), requires_idempotency_key=True, description="提交页面异步源码编辑任务",
-        http_method="POST", path_template="/pages/{page_id}/edits", request_model="app.schemas.external_api.ExternalPageApplyEditsMutationRequest", response_model="app.schemas.external_api.ExternalMutationJobResponse", success_statuses=(202,),
+        http_method="POST", path_template="/pages/{page_id}/edits",
     ),
     "page.dependencies": ExternalOperationSpec(
         "page.dependencies", ("page:read",), description="查询页面当前版本依赖"
     ),
     "page.validate": ExternalOperationSpec(
         "page.validate", ("page:read",), description="校验页面当前或候选源码",
-        request_model="app.schemas.external_api.ExternalEntityValidationRequest", response_model="app.schemas.external_api.ExternalEntityValidationResponse",
     ),
 
 
     # Component
     "component.create": ExternalOperationSpec(
         "component.create", ("component:write",), requires_idempotency_key=True, description="提交组件异步创建任务",
-        http_method="POST", path_template="/components", request_model="app.schemas.external_api.ExternalComponentCreateMutationRequest", response_model="app.schemas.external_api.ExternalMutationJobResponse", success_statuses=(202,),
+        http_method="POST", path_template="/components",
     ),
     "component.list": ExternalOperationSpec(
         "component.list", ("component:read",), description="查询工作空间组件列表（支持 suggested/all 过滤）"
@@ -190,23 +165,19 @@ OPERATION_REGISTRY: dict[str, ExternalOperationSpec] = {
         description="更新组件名称或摘要",
         http_method="PATCH",
         path_template="/components/{component_id}",
-        request_model="app.schemas.external_api.ExternalComponentMetadataUpdateRequest",
-        response_model="app.schemas.component.WorkspaceComponentItem",
-        error_codes=("COMPONENT_NOT_FOUND", "IDEMPOTENCY_KEY_REUSE_WITH_DIFFERENT_PAYLOAD"),
     ),
     "component.archive": ExternalOperationSpec(
         "component.archive", ("component:write",), requires_idempotency_key=True, description="归档工作空间组件"
     ),
     "component.dependencies": ExternalOperationSpec(
-        "component.dependencies", ("component:read",), description="查询组件当前版本依赖", response_model="app.schemas.component.WorkspaceComponentCurrentDependencies",
+        "component.dependencies", ("component:read",), description="查询组件当前版本依赖",
     ),
     "component.edit": ExternalOperationSpec(
         "component.edit", ("component:write",), requires_idempotency_key=True, description="提交组件异步源码编辑任务",
-        http_method="POST", path_template="/components/{component_id}/edits", request_model="app.schemas.external_api.ExternalComponentApplyEditsMutationRequest", response_model="app.schemas.external_api.ExternalMutationJobResponse", success_statuses=(202,),
+        http_method="POST", path_template="/components/{component_id}/edits",
     ),
     "component.validate": ExternalOperationSpec(
         "component.validate", ("component:read",), description="校验组件当前或候选源码",
-        request_model="app.schemas.external_api.ExternalEntityValidationRequest", response_model="app.schemas.external_api.ExternalEntityValidationResponse",
     ),
 
     # Asset
@@ -227,22 +198,22 @@ OPERATION_REGISTRY: dict[str, ExternalOperationSpec] = {
     ),
     "asset.content.create": ExternalOperationSpec(
         "asset.content.create", ("asset:write",), requires_idempotency_key=True, description="创建文本内容资产",
-        http_method="POST", path_template="/assets/content", request_model="app.schemas.external_api.ExternalAssetContentCreateRequest", response_model="app.schemas.asset.AssetResponse", success_statuses=(201,),
+        http_method="POST", path_template="/assets/content",
     ),
     "asset.content.get": ExternalOperationSpec(
-        "asset.content.get", ("asset:read",), description="读取文本内容资产", response_model="app.schemas.asset.AssetContentResponse",
+        "asset.content.get", ("asset:read",), description="读取文本内容资产",
     ),
     "asset.content.update": ExternalOperationSpec(
         "asset.content.update", ("asset:write",), requires_idempotency_key=True, description="更新文本内容资产",
-        http_method="PUT", path_template="/assets/{asset_id}/content", request_model="app.schemas.external_api.ExternalAssetContentUpdateRequest", response_model="app.schemas.asset.AssetResponse",
+        http_method="PUT", path_template="/assets/{asset_id}/content",
     ),
     "asset.content.preview": ExternalOperationSpec(
         "asset.content.preview", ("asset:read",), description="预览文本内容资产差异",
-        http_method="POST", path_template="/assets/{asset_id}/content/preview", request_model="app.schemas.external_api.ExternalAssetContentPreviewRequest", response_model="app.schemas.asset.AssetContentPreviewResponse",
+        http_method="POST", path_template="/assets/{asset_id}/content/preview",
     ),
     "asset.copy": ExternalOperationSpec(
         "asset.copy", ("asset:write",), requires_idempotency_key=True, description="复制资产",
-        http_method="POST", path_template="/assets/{asset_id}/copy", request_model="app.schemas.external_api.ExternalAssetCopyRequest", response_model="app.schemas.asset.AssetResponse", success_statuses=(201,),
+        http_method="POST", path_template="/assets/{asset_id}/copy",
     ),
     "asset.tags": ExternalOperationSpec(
         "asset.tags", ("asset:read",), description="查询资产标签",
@@ -276,8 +247,7 @@ OPERATION_REGISTRY: dict[str, ExternalOperationSpec] = {
     ),
     "style.create": ExternalOperationSpec(
         "style.create", ("design-system:write",), requires_idempotency_key=True, description="创建新样式方案",
-        http_method="POST", path_template="/styles", request_model="app.schemas.external_api.ExternalStyleCreateRequest",
-        response_model="app.schemas.workspace_style.WorkspaceStyleItem", success_statuses=(201,),
+        http_method="POST", path_template="/styles",
     ),
     "style.update": ExternalOperationSpec(
         "style.update", ("design-system:write",), requires_idempotency_key=True, description="更新样式方案元数据或配置"
@@ -293,14 +263,10 @@ OPERATION_REGISTRY: dict[str, ExternalOperationSpec] = {
     "jobs.mutation.page.create": ExternalOperationSpec(
         "jobs.mutation.page.create", ("page:write",), requires_idempotency_key=True, description="提交页面异步创建任务",
         http_method="POST", path_template="/jobs/mutations/pages",
-        request_model="app.schemas.external_api.ExternalPageCreateMutationRequest",
-        response_model="app.schemas.external_api.ExternalMutationJobResponse", success_statuses=(202,),
     ),
     "jobs.mutation.page.edit": ExternalOperationSpec(
         "jobs.mutation.page.edit", ("page:write",), requires_idempotency_key=True, description="提交页面异步源码编辑任务",
         http_method="POST", path_template="/jobs/mutations/pages/edits",
-        request_model="app.schemas.external_api.ExternalPageApplyEditsMutationRequest",
-        response_model="app.schemas.external_api.ExternalMutationJobResponse", success_statuses=(202,),
     ),
     "jobs.mutation.page.status": ExternalOperationSpec(
         "jobs.mutation.page.status", ("page:read",), description="查询页面 Mutation 任务状态与诊断"
@@ -308,32 +274,22 @@ OPERATION_REGISTRY: dict[str, ExternalOperationSpec] = {
     "jobs.mutation.page.cancel": ExternalOperationSpec(
         "jobs.mutation.page.cancel", ("page:write",), requires_idempotency_key=True, description="取消页面 Mutation 任务",
         http_method="POST", path_template="/jobs/mutations/{job_id}/cancel",
-        response_model="app.schemas.external_api.ExternalMutationJobResponse", success_statuses=(200, 202),
-        error_codes=("MUTATION_JOB_NOT_FOUND", "MUTATION_JOB_NOT_CANCELABLE"),
     ),
     "jobs.mutation.page.retry": ExternalOperationSpec(
         "jobs.mutation.page.retry", ("page:write",), requires_idempotency_key=True, description="重试可重试失败的页面 Mutation 任务",
         http_method="POST", path_template="/jobs/mutations/{job_id}/retry",
-        response_model="app.schemas.external_api.ExternalMutationJobResponse", success_statuses=(202,),
-        error_codes=("MUTATION_JOB_NOT_FOUND", "MUTATION_JOB_NOT_RETRYABLE"),
     ),
     "jobs.mutation.component.create": ExternalOperationSpec(
         "jobs.mutation.component.create", ("component:write",), requires_idempotency_key=True, description="提交组件异步创建任务",
         http_method="POST", path_template="/jobs/mutations/components",
-        request_model="app.schemas.external_api.ExternalComponentCreateMutationRequest",
-        response_model="app.schemas.external_api.ExternalMutationJobResponse", success_statuses=(202,),
     ),
     "jobs.mutation.component.edit": ExternalOperationSpec(
         "jobs.mutation.component.edit", ("component:write",), requires_idempotency_key=True, description="提交组件异步源码编辑任务",
         http_method="POST", path_template="/jobs/mutations/components/edits",
-        request_model="app.schemas.external_api.ExternalComponentApplyEditsMutationRequest",
-        response_model="app.schemas.external_api.ExternalMutationJobResponse", success_statuses=(202,),
     ),
     "jobs.mutation.component.metadata": ExternalOperationSpec(
         "jobs.mutation.component.metadata", ("component:write",), requires_idempotency_key=True, description="提交组件元数据异步重校验任务",
         http_method="POST", path_template="/jobs/mutations/components/metadata",
-        request_model="app.schemas.external_api.ExternalComponentMetadataMutationRequest",
-        response_model="app.schemas.external_api.ExternalMutationJobResponse", success_statuses=(202,),
     ),
     "jobs.mutation.component.status": ExternalOperationSpec(
         "jobs.mutation.component.status", ("component:read",), description="查询组件 Mutation 任务状态与诊断"
@@ -341,19 +297,14 @@ OPERATION_REGISTRY: dict[str, ExternalOperationSpec] = {
     "jobs.mutation.component.cancel": ExternalOperationSpec(
         "jobs.mutation.component.cancel", ("component:write",), requires_idempotency_key=True, description="取消组件 Mutation 任务",
         http_method="POST", path_template="/jobs/mutations/{job_id}/cancel",
-        response_model="app.schemas.external_api.ExternalMutationJobResponse", success_statuses=(200, 202),
-        error_codes=("MUTATION_JOB_NOT_FOUND", "MUTATION_JOB_NOT_CANCELABLE"),
     ),
     "jobs.mutation.component.retry": ExternalOperationSpec(
         "jobs.mutation.component.retry", ("component:write",), requires_idempotency_key=True, description="重试可重试失败的组件 Mutation 任务",
         http_method="POST", path_template="/jobs/mutations/{job_id}/retry",
-        response_model="app.schemas.external_api.ExternalMutationJobResponse", success_statuses=(202,),
-        error_codes=("MUTATION_JOB_NOT_FOUND", "MUTATION_JOB_NOT_RETRYABLE"),
     ),
 }
 
-# 为全部稳定 operation 冻结一个用于 Guides 的主路径；同一读取 operation 的附加视图
-# 继续由资源文档描述，不把内部路由扫描结果当作公开契约。
+# 为全部稳定 operation 冻结主 HTTP 路径；同一读取 operation 的附加视图继续由资源文档描述。
 _OPERATION_HTTP_CONTRACTS: dict[str, tuple[str, str]] = {
     "system.version": ("GET", "/system/version"),
     "system.health": ("GET", "/system/health"),
@@ -363,7 +314,6 @@ _OPERATION_HTTP_CONTRACTS: dict[str, tuple[str, str]] = {
     "workspace.get": ("GET", "/workspaces/{workspace_id}"),
     "standards.page": ("GET", "/standards/page"),
     "standards.component": ("GET", "/standards/component"),
-    "guides.read": ("GET", "/guides"),
     "validate.entity": ("POST", "/validate/entity"),
     "runtime_kit.list": ("GET", "/runtime-kit"),
     "runtime_kit.get": ("GET", "/runtime-kit/{item}"),
