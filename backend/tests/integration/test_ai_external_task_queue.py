@@ -9,9 +9,10 @@ from types import SimpleNamespace
 from httpx import AsyncClient
 from fastapi import FastAPI
 import pytest
-from sqlalchemy import select
+from sqlalchemy import event, select
 from sqlalchemy.exc import IntegrityError
 
+from app.ai.external_terminal_cleanup import cleanup_terminal_run_external_state
 from app.ai.external_task_queue import (
     _claim_ready_batch,
     _continue_batch,
@@ -21,8 +22,8 @@ from app.ai.external_task_queue import (
 )
 from app.ai.run_write_fence import AgentRunWriteFenceLost, ExternalBatchContinuationWriteFence
 from app.core.time_utils import utc_now
-from app.db.session import get_session_factory
-from app.models.ai_agent_runtime import AiAgentRequirement, AiAgentRun, AiAgentSession
+from app.db.session import get_engine, get_session_factory
+from app.models.ai_agent_runtime import AiAgentRequirement, AiAgentRun, AiAgentSession, AiAgentToolCall
 from app.models.ai_external_task import AiAgentExternalBatch, AiAgentExternalTask
 from app.models.user import User
 
@@ -264,6 +265,173 @@ async def test_ready_batch_audit_should_restore_running_run_to_waiting_external(
         assert run is not None and run.status == "waiting_external"
         assert requirement is not None and run.pending_requirement_json == requirement.payload_json
         assert batch is not None and batch.status == "ready"
+
+
+async def test_terminal_run_audit_should_cleanup_external_state_in_bulk(authenticated_client: AsyncClient) -> None:
+    """终态Run应集合式收敛关联状态，非pending Task只记录取消请求。"""
+
+    pending_run_id, _, pending_batch_id = await _seed_external_batch(
+        authenticated_client,
+        suffix="terminal-pending",
+        run_status="completed",
+        batch_status="ready",
+        requirement_status="pending",
+        task_status="pending",
+    )
+    running_run_id, _, running_batch_id = await _seed_external_batch(
+        authenticated_client,
+        suffix="terminal-running",
+        run_status="failed",
+        batch_status="waiting_tasks",
+        requirement_status="resolving",
+        task_status="running",
+    )
+    async with get_session_factory()() as session:
+        for run_id, suffix, status in (
+            (pending_run_id, "terminal-pending", "running"),
+            (running_run_id, "terminal-running", "waiting_external"),
+        ):
+            run = await session.get(AiAgentRun, run_id)
+            assert run is not None
+            session.add(AiAgentToolCall(
+                session_id=run.session_id,
+                run_id=run_id,
+                tool_call_id=f"tool-call-{suffix}",
+                tool_name="create_entity",
+                status=status,
+            ))
+        await session.commit()
+
+    await audit_external_state_consistency(get_session_factory())
+
+    async with get_session_factory()() as session:
+        pending_task = await session.scalar(
+            select(AiAgentExternalTask).where(AiAgentExternalTask.run_id == pending_run_id)
+        )
+        running_task = await session.scalar(
+            select(AiAgentExternalTask).where(AiAgentExternalTask.run_id == running_run_id)
+        )
+        pending_batch = await session.get(AiAgentExternalBatch, pending_batch_id)
+        running_batch = await session.get(AiAgentExternalBatch, running_batch_id)
+        requirements = list(
+            (
+                await session.scalars(
+                    select(AiAgentRequirement).where(
+                        AiAgentRequirement.run_id.in_((pending_run_id, running_run_id))
+                    )
+                )
+            ).all()
+        )
+        tool_calls = list(
+            (
+                await session.scalars(
+                    select(AiAgentToolCall).where(
+                        AiAgentToolCall.run_id.in_((pending_run_id, running_run_id))
+                    )
+                )
+            ).all()
+        )
+        assert pending_task is not None and pending_task.status == "cancelled"
+        assert pending_task.cancel_requested_at is not None and pending_task.finished_at is not None
+        assert running_task is not None and running_task.status == "running"
+        assert running_task.cancel_requested_at is not None and running_task.finished_at is None
+        assert pending_batch is not None and pending_batch.status == "cancelled"
+        assert running_batch is not None and running_batch.status == "cancelled"
+        assert {item.status for item in requirements} == {"cancelled"}
+        assert {item.status for item in tool_calls} == {"cancelled"}
+        assert {item.message for item in tool_calls} == {"父级运行已终态。"}
+
+        repeated = await cleanup_terminal_run_external_state(session, now=utc_now())
+        assert repeated.tasks == 0
+        assert repeated.batches == 0
+        assert repeated.requirements == 0
+        assert repeated.tool_calls == 0
+
+
+async def test_terminal_run_audit_should_preserve_active_resuming_batch(authenticated_client: AsyncClient) -> None:
+    """终态Run仍有有效续跑租约时，关联状态必须完整保留给持租约协调器。"""
+
+    run_id, requirement_id, batch_id = await _seed_external_batch(
+        authenticated_client,
+        suffix="terminal-active-lease",
+        run_status="completed",
+        batch_status="resuming",
+        requirement_status="resolving",
+        task_status="running",
+    )
+    async with get_session_factory()() as session:
+        batch = await session.get(AiAgentExternalBatch, batch_id)
+        run = await session.get(AiAgentRun, run_id)
+        assert batch is not None and run is not None
+        batch.lease_expires_at = utc_now() + timedelta(minutes=5)
+        session.add(AiAgentToolCall(
+            session_id=run.session_id,
+            run_id=run_id,
+            tool_call_id="tool-call-terminal-active-lease",
+            tool_name="create_entity",
+            status="waiting_external",
+        ))
+        await session.commit()
+
+    await audit_external_state_consistency(get_session_factory())
+
+    async with get_session_factory()() as session:
+        batch = await session.get(AiAgentExternalBatch, batch_id)
+        requirement = await session.scalar(
+            select(AiAgentRequirement).where(AiAgentRequirement.requirement_id == requirement_id)
+        )
+        task = await session.scalar(select(AiAgentExternalTask).where(AiAgentExternalTask.run_id == run_id))
+        tool_call = await session.scalar(select(AiAgentToolCall).where(AiAgentToolCall.run_id == run_id))
+        assert batch is not None and batch.status == "resuming"
+        assert requirement is not None and requirement.status == "resolving"
+        assert task is not None and task.status == "running" and task.cancel_requested_at is None
+        assert tool_call is not None and tool_call.status == "waiting_external"
+
+
+async def test_terminal_cleanup_sql_shape_should_be_constant_and_skip_large_run_columns(
+    authenticated_client: AsyncClient,
+) -> None:
+    """终态清理只能执行固定数量的集合式UPDATE，不能读取Run历史大字段。"""
+
+    run_ids: list[str] = []
+    for index in range(3):
+        run_id, _, _ = await _seed_external_batch(
+            authenticated_client,
+            suffix=f"terminal-sql-shape-{index}",
+            run_status="completed",
+            batch_status="completed",
+            requirement_status="resolved",
+            task_status="succeeded",
+        )
+        run_ids.append(run_id)
+    async with get_session_factory()() as session:
+        runs = list((await session.scalars(select(AiAgentRun).where(AiAgentRun.run_id.in_(run_ids)))).all())
+        for run in runs:
+            run.message_history_json = [{"role": "user", "content": "大字段" * 100_000}]
+            run.input_payload_json = {"message": "输入" * 10_000}
+        await session.commit()
+
+    statements: list[str] = []
+
+    def capture_statement(_connection, _cursor, statement, _parameters, _context, _executemany) -> None:  # noqa: ANN001
+        """记录清理函数发出的SQL，用于约束查询数量和字段投影。"""
+
+        statements.append(str(statement))
+
+    engine = get_engine().sync_engine
+    event.listen(engine, "before_cursor_execute", capture_statement)
+    try:
+        async with get_session_factory()() as session:
+            await cleanup_terminal_run_external_state(session, now=utc_now())
+    finally:
+        event.remove(engine, "before_cursor_execute", capture_statement)
+
+    update_statements = [item for item in statements if item.lstrip().upper().startswith("UPDATE")]
+    normalized_sql = "\n".join(statements).lower()
+    assert len(update_statements) == 4
+    assert not any(item.lstrip().upper().startswith("SELECT") for item in statements)
+    assert "message_history_json" not in normalized_sql
+    assert "input_payload_json" not in normalized_sql
 
 
 async def test_expired_resuming_batch_with_resolved_requirement_should_finish_consumption(

@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import aliased
 
 from app.ai.external_task_control import consume_external_batch_results
+from app.ai.external_terminal_cleanup import cleanup_terminal_run_external_state
 from app.ai.platform_runtime import PlatformAgentRuntimeStore
 from app.ai.platform_tools import recoverable_tool_error_result
 from app.ai.run_write_fence import AgentRunWriteFenceLost, ExternalBatchContinuationWriteFence
@@ -317,65 +318,7 @@ async def audit_external_state_consistency(session_factory: async_sessionmaker[A
                 commit=False,
             )
         # 父Run终态后，统一控制面不得继续保留可执行任务。
-        terminal_runs = list(
-            (
-                await session.scalars(
-                    select(AiAgentRun).where(AiAgentRun.status.in_(("completed", "cancelled", "failed")))
-                )
-            ).all()
-        )
-        for run in terminal_runs:
-            active_resuming = await session.scalar(
-                select(AiAgentExternalBatch.batch_id).where(
-                    AiAgentExternalBatch.run_id == run.run_id,
-                    AiAgentExternalBatch.status == "resuming",
-                    AiAgentExternalBatch.lease_expires_at.is_not(None),
-                    AiAgentExternalBatch.lease_expires_at > now,
-                ).limit(1)
-            )
-            # 成功续跑已提交Run终态、Batch收尾尚未提交时，保留有效租约给协调器完成结果消费。
-            if active_resuming is not None:
-                continue
-            tasks = list(
-                (
-                    await session.scalars(
-                        select(AiAgentExternalTask).where(
-                            AiAgentExternalTask.run_id == run.run_id,
-                            AiAgentExternalTask.status.not_in(_TASK_TERMINAL),
-                        )
-                    )
-                ).all()
-            )
-            for task in tasks:
-                task.cancel_requested_at = task.cancel_requested_at or now
-                if task.status == "pending":
-                    task.status = "cancelled"
-                    task.finished_at = now
-            await session.execute(
-                update(AiAgentExternalBatch)
-                .where(
-                    AiAgentExternalBatch.run_id == run.run_id,
-                    AiAgentExternalBatch.status.in_(("collecting", "waiting_tasks", "ready")),
-                )
-                .values(status="cancelled", finished_at=now)
-            )
-            await session.execute(
-                update(AiAgentRequirement)
-                .where(
-                    AiAgentRequirement.run_id == run.run_id,
-                    AiAgentRequirement.status.in_(("pending", "resolving")),
-                )
-                .values(status="cancelled", resolved_at=now)
-            )
-            from app.models.ai_agent_runtime import AiAgentToolCall
-            await session.execute(
-                update(AiAgentToolCall)
-                .where(
-                    AiAgentToolCall.run_id == run.run_id,
-                    AiAgentToolCall.status.in_(("running", "waiting_external")),
-                )
-                .values(status="cancelled", message="父级运行已终态。")
-            )
+        await cleanup_terminal_run_external_state(session, now=now)
 
         waiting_runs = list(
             (
