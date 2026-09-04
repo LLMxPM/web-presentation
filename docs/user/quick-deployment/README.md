@@ -9,6 +9,7 @@
 | Docker 命令行 | Linux、Windows、macOS 或云服务器 | [Docker 快速部署](./docker.md) |
 | 飞牛 fnOS | 家庭服务器、软路由或国产 NAS | [飞牛 fnOS 快速部署](./fnos.md) |
 | 群晖 DSM | 群晖 NAS | [群晖 Container Manager 快速部署](./synology.md) |
+| 日常运维与升级 | 升级容器、备份还原数据、反代网络排障 | [SQLite 单体版日常维护指南](./maintenance.md) |
 
 三种方式都需要：
 

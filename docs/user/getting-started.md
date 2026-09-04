@@ -61,4 +61,5 @@
 - 想沉淀可复用版式：阅读[组件管理](./workflows/components.md)。
 - 想统一品牌视觉：阅读[主题、字体与样式](./workflows/design-system.md)。
 - 想让 AI 参与创作：阅读[AI 协作创作](./workflows/ai-assisted-creation.md)。
-- 想生成可交付产物：阅读[预览、截图与构建](./workflows/preview-build-export.md)。
+- 想在本地终端或配合桌面 Agent (Cursor/Claude) 创作：阅读[命令行与外部 Agent (CLI)](./workflows/cli-agent.md)。
+- 想生成可交付产物：阅读[预览、演示与构建交付](./workflows/preview-build-export.md)。

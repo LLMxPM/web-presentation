@@ -9,7 +9,9 @@
 | [用户文档入口](./user/README.md) | 用户文档概览 |
 | [平台介绍](./user/platform-overview.md) | 产品定位、核心概念、典型场景和平台组成 |
 | [快速部署](./user/quick-deployment/README.md) | 使用 Docker、飞牛 fnOS 或群晖 Container Manager 部署 SQLite 单体版 |
+| [单体运维指南](./user/quick-deployment/maintenance.md) | SQLite 单体版的无损升级、数据备份还原与反代网络配置 |
 | [快速上手](./user/getting-started.md) | 从登录到创建项目、编辑页面、预览和构建的基础流程 |
+| [用户与工作空间](./user/workflows/team-and-workspace.md) | 用户管理、密码修改、工作空间管理与权限边界 |
 | [Demo 使用说明](./user/demo-guide.md) | 公开 Demo 地址、体验账号、推荐流程和 AI 设置注意事项 |
 | [平台特性](./user/features/README.md) | 创作者视角理解 AI 创作、资产复用、预览构建和交付 |
 | [AI 协作创作](./user/ai/README.md) | AI 侧边栏、工具确认、上下文注入和协作建议 |
