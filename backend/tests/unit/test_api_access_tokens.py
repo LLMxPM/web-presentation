@@ -124,3 +124,59 @@ def test_pat_duplicate_workspace_ids_rejected() -> None:
             scopes=["project:read"],
             expires_in_days=7,
         )
+
+
+def test_pat_workspace_authorization_mode_must_be_unambiguous() -> None:
+    """测试全空间和指定空间授权必须二选一。"""
+
+    with pytest.raises(ValueError, match="至少需要一个 workspace_id"):
+        ApiAccessTokenCreateRequest(name="No-Workspace", scopes=["workspace:read"])
+
+    with pytest.raises(ValueError, match="不得同时传入 workspace_ids"):
+        ApiAccessTokenCreateRequest(
+            name="Ambiguous-Workspace",
+            all_workspaces=True,
+            workspace_ids=[1],
+            scopes=["workspace:read"],
+        )
+
+
+@pytest.mark.asyncio
+async def test_pat_can_be_long_lived_and_authorize_all_workspaces(app_session: AsyncSession) -> None:
+    """测试长期 PAT 可动态授权用户所有工作空间，且列表与鉴权保持活跃。"""
+
+    user = User(
+        username="pat_long_lived_user",
+        password_hash="hash123",
+        display_name="Long Lived PAT User",
+        role=UserRole.WORKSPACE_USER.value,
+        preview_size_presets=build_default_preview_size_presets(),
+    )
+    app_session.add(user)
+    await app_session.commit()
+    user_id = user.id
+
+    service = ApiAccessTokenService(app_session)
+    response = await service.create_token(
+        user_id=user_id,
+        payload=ApiAccessTokenCreateRequest(
+            name="Long-Lived-All-Workspaces",
+            all_workspaces=True,
+            scopes=["workspace:read"],
+            expires_in_days=None,
+        ),
+    )
+
+    assert response.expires_at is None
+    assert response.all_workspaces is True
+    assert response.workspace_ids == []
+
+    app_session.expire_all()
+    listed = await service.list_tokens(user_id=user_id)
+    assert listed.items[0].expires_at is None
+    assert listed.items[0].all_workspaces is True
+    assert listed.items[0].is_active is True
+
+    authenticated = await service.authenticate_pat(response.token)
+    assert authenticated.expires_at is None
+    assert authenticated.all_workspaces is True

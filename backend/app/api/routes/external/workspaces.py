@@ -30,12 +30,13 @@ async def list_authorized_workspaces(
     stmt = (
         select(Workspace)
         .join(WorkspaceMember, WorkspaceMember.workspace_id == Workspace.id)
-        .where(Workspace.id.in_(auth.workspace_ids))
         .where(WorkspaceMember.user_id == auth.user.id)
         .where(WorkspaceMember.status == RecordStatus.ACTIVE.value)
         .where(Workspace.status == RecordStatus.ACTIVE.value)
         .order_by(Workspace.id.asc())
     )
+    if not auth.all_workspaces:
+        stmt = stmt.where(Workspace.id.in_(auth.workspace_ids))
     workspaces = (await session.scalars(stmt)).all()
     return [await WorkspaceService(session)._to_item(ws) for ws in workspaces]
 

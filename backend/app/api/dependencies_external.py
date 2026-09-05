@@ -28,6 +28,7 @@ class ExternalAuthContext:
     token: ApiAccessToken
     token_id: int
     token_public_id: str
+    all_workspaces: bool
     workspace_ids: set[int]
     scopes: set[str]
 
@@ -45,7 +46,8 @@ class ExternalAuthContext:
         return self.has_all_scopes(required_scopes)
 
     def can_access_workspace(self, workspace_id: int) -> bool:
-        return workspace_id in self.workspace_ids
+        """判断令牌授权范围是否覆盖目标工作空间。"""
+        return self.all_workspaces or workspace_id in self.workspace_ids
 
     async def ensure_workspace_access(self, workspace_id: int, session: AsyncSession) -> None:
         """强制校验当前 PAT 授权空间归属与用户的活跃成员资格。"""
@@ -103,6 +105,7 @@ async def get_external_auth_context(
         token=token,
         token_id=token.id,
         token_public_id=token.token_public_id,
+        all_workspaces=token.all_workspaces,
         workspace_ids=ws_ids,
         scopes=scope_set,
     )

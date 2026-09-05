@@ -42,8 +42,11 @@
         </thead>
         <tbody class="divide-y divide-border-muted">
           <tr v-for="item in tokens" :key="item.id" class="hover:bg-surface-muted/50 transition-colors">
-            <td class="px-4 py-3.5 font-medium text-text truncate">
-              {{ item.name }}
+            <td class="px-4 py-3.5">
+              <div class="truncate font-medium text-text">{{ item.name }}</div>
+              <div class="mt-0.5 truncate text-[11px] text-text-muted">
+                {{ formatWorkspaceAuthorization(item) }}
+              </div>
             </td>
             <td class="px-4 py-3.5 font-mono text-xs text-text-secondary truncate">
               {{ item.token_masked }}
@@ -87,7 +90,7 @@
               <span v-else class="text-text-disabled">从未</span>
             </td>
             <td class="px-4 py-3.5 text-xs text-text-secondary">
-              {{ formatDate(item.expires_at) }}
+              {{ item.expires_at ? formatDate(item.expires_at) : '长期有效' }}
             </td>
             <td class="px-4 py-3.5 text-right">
               <UiButton
@@ -134,7 +137,15 @@
 
         <!-- Workspace selection -->
         <UiFormField label="授权工作空间" required :error="formErrors.workspaces">
-          <div class="border border-border rounded-lg p-3 max-h-40 overflow-y-auto space-y-2 bg-canvas">
+          <UiSegmentedControl
+            v-model="createForm.workspace_authorization"
+            aria-label="工作空间授权范围"
+            :options="workspaceAuthorizationOptions"
+          />
+          <p v-if="createForm.workspace_authorization === 'all'" class="mt-2 text-xs text-text-secondary">
+            可访问您当前及未来加入的所有工作空间；每次访问仍会校验有效成员资格。
+          </p>
+          <div v-else class="mt-2 border border-border rounded-lg p-3 max-h-40 overflow-y-auto space-y-2 bg-canvas">
             <div
               v-for="ws in availableWorkspaces"
               :key="ws.id"
@@ -268,7 +279,7 @@ import { Copy, Key, ShieldAlert } from '@lucide/vue'
 import { createAccessToken, listAccessTokens, listAccessTokenScopes, revokeAccessToken } from '@/api/accessTokens'
 import { listWorkspaces } from '@/api/catalog'
 import { getErrorMessage } from '@/api/http'
-import { UiButton, UiCheckbox, UiDialog, UiFormField, UiInput, UiSelect } from '@/components/ui'
+import { UiButton, UiCheckbox, UiDialog, UiFormField, UiInput, UiSegmentedControl, UiSelect } from '@/components/ui'
 import type { SelectOption } from '@/components/ui/select'
 import type {
   ApiAccessTokenItem,
@@ -288,13 +299,23 @@ const expiresOptions: SelectOption[] = [
   { label: '90 天', value: 90 },
   { label: '180 天', value: 180 },
   { label: '365 天', value: 365 },
+  { label: '长期有效', value: 'never' },
 ]
+
+const workspaceAuthorizationOptions = [
+  { label: '所有工作空间', value: 'all' },
+  { label: '指定工作空间', value: 'selected' },
+]
+
+type WorkspaceAuthorization = 'all' | 'selected'
+type ExpirationSelection = number | 'never'
 
 const createDialogOpen = ref(false)
 const creating = ref(false)
 const createForm = reactive({
   name: '',
-  expires_in_days: 30,
+  expires_in_days: 30 as ExpirationSelection,
+  workspace_authorization: 'selected' as WorkspaceAuthorization,
   workspace_ids: [] as number[],
   scopes: [] as string[],
 })
@@ -327,6 +348,16 @@ function formatDate(dateStr: string | null): string {
   }
 }
 
+/** 生成人类可读的工作空间授权范围，避免把空 ID 列表误解为无权限。 */
+function formatWorkspaceAuthorization(item: ApiAccessTokenItem): string {
+  if (item.all_workspaces) return '所有工作空间'
+  if (item.workspace_ids.length === 1) {
+    const workspace = availableWorkspaces.value.find((candidate) => candidate.id === item.workspace_ids[0])
+    return workspace?.name ?? `工作空间 ID: ${item.workspace_ids[0]}`
+  }
+  return `${item.workspace_ids.length} 个指定工作空间`
+}
+
 async function loadData() {
   loading.value = true
   try {
@@ -348,6 +379,7 @@ async function loadData() {
 function openCreateDialog() {
   createForm.name = ''
   createForm.expires_in_days = 30
+  createForm.workspace_authorization = 'selected'
   createForm.workspace_ids = availableWorkspaces.value.map((w) => w.id)
   createForm.scopes = availableScopes.value.map((s) => s.scope)
   formErrors.name = ''
@@ -387,7 +419,7 @@ async function handleCreateToken() {
     formErrors.name = ''
   }
 
-  if (createForm.workspace_ids.length === 0) {
+  if (createForm.workspace_authorization === 'selected' && createForm.workspace_ids.length === 0) {
     formErrors.workspaces = '请至少选择一个授权工作空间'
     hasError = true
   } else {
@@ -407,8 +439,9 @@ async function handleCreateToken() {
   try {
     const res = await createAccessToken({
       name: createForm.name.trim(),
-      expires_in_days: createForm.expires_in_days,
-      workspace_ids: createForm.workspace_ids,
+      expires_in_days: createForm.expires_in_days === 'never' ? null : createForm.expires_in_days,
+      all_workspaces: createForm.workspace_authorization === 'all',
+      workspace_ids: createForm.workspace_authorization === 'all' ? [] : createForm.workspace_ids,
       scopes: createForm.scopes,
     })
     createDialogOpen.value = false

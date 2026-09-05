@@ -108,6 +108,7 @@ async def get_auth_whoami(
             "token_public_id": auth.token_public_id,
             "scopes": sorted(auth.scopes),
             "expires_at": auth.token.expires_at,
+            "all_workspaces": auth.all_workspaces,
         }
 
     # 查询用户加入的活跃工作空间
@@ -124,7 +125,7 @@ async def get_auth_whoami(
     workspaces = []
     for ws, role in results:
         # 若 PAT 限制了工作空间，过滤非绑定空间
-        if auth.workspace_ids and ws.id not in auth.workspace_ids:
+        if not auth.all_workspaces and ws.id not in auth.workspace_ids:
             continue
         workspaces.append(
             {

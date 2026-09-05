@@ -309,6 +309,52 @@ def test_model_split_migration_should_reset_legacy_values_and_restore_empty_tabl
         assert connection.execute("SELECT COUNT(*) FROM ai_llm_configs").fetchone() == (0,)
 
 
+def test_pat_flexible_authorization_migration_preserves_old_tokens_and_downgrades_long_lived_tokens(tmp_path: Path) -> None:
+    """PAT 迁移应保留旧令牌，并能将长期令牌安全降级为有限有效期。"""
+
+    backend_root = Path(__file__).resolve().parents[2]
+    database_path = tmp_path / "pat-flexible-authorization.db"
+    env = os.environ.copy()
+    env["DATABASE_URL"] = f"sqlite+aiosqlite:///{database_path.as_posix()}"
+    env["REDIS_URL"] = "memory://pat-flexible-authorization-test"
+    _run_alembic(backend_root, env, "20260823_0100")
+
+    with sqlite3.connect(database_path) as connection:
+        connection.execute("PRAGMA foreign_keys = OFF")
+        connection.execute(
+            "INSERT INTO api_access_tokens "
+            "(user_id, name, token_public_id, token_hash, expires_at) "
+            "VALUES (999, '旧令牌', 'old-token-public', 'old-token-hash', '2027-01-01 00:00:00')"
+        )
+        connection.commit()
+
+    _run_alembic(backend_root, env, "head")
+
+    with sqlite3.connect(database_path) as connection:
+        columns = {row[1]: row for row in connection.execute("PRAGMA table_info(api_access_tokens)")}
+        assert columns["expires_at"][3] == 0
+        assert connection.execute(
+            "SELECT all_workspaces FROM api_access_tokens WHERE token_public_id = 'old-token-public'"
+        ).fetchone() == (0,)
+        connection.execute("PRAGMA foreign_keys = OFF")
+        connection.execute(
+            "INSERT INTO api_access_tokens "
+            "(user_id, name, token_public_id, token_hash, expires_at, all_workspaces) "
+            "VALUES (999, '长期令牌', 'long-token-public', 'long-token-hash', NULL, 1)"
+        )
+        connection.commit()
+
+    _run_alembic(backend_root, env, "20260823_0100", command="downgrade")
+
+    with sqlite3.connect(database_path) as connection:
+        columns = {row[1]: row for row in connection.execute("PRAGMA table_info(api_access_tokens)")}
+        assert "all_workspaces" not in columns
+        assert columns["expires_at"][3] == 1
+        assert connection.execute(
+            "SELECT expires_at IS NOT NULL FROM api_access_tokens WHERE token_public_id = 'long-token-public'"
+        ).fetchone() == (1,)
+
+
 def _run_alembic(backend_root: Path, env: dict[str, str], revision: str, *, command: str = "upgrade") -> None:
     """运行指定 Alembic 升降级，并在失败时输出完整诊断。"""
 

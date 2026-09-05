@@ -78,6 +78,80 @@ async def test_external_api_auth_and_scope_enforcement(client: AsyncClient) -> N
 
 
 @pytest.mark.asyncio
+async def test_long_lived_pat_dynamically_authorizes_all_member_workspaces(client: AsyncClient) -> None:
+    """测试全空间长期 PAT 自动覆盖创建后新增的成员空间，但不绕过成员资格。"""
+
+    session_factory = get_session_factory()
+    async with session_factory() as session:
+        user = User(
+            username="all_workspace_pat_user",
+            password_hash="hash",
+            display_name="All Workspace PAT User",
+            role=UserRole.WORKSPACE_USER.value,
+            preview_size_presets=build_default_preview_size_presets(),
+        )
+        other_user = User(
+            username="all_workspace_pat_other_user",
+            password_hash="hash",
+            display_name="Other User",
+            role=UserRole.WORKSPACE_USER.value,
+            preview_size_presets=build_default_preview_size_presets(),
+        )
+        session.add_all([user, other_user])
+        await session.flush()
+
+        first_workspace = Workspace(code="ws-pat-all-first", name="First Space", created_by=user.id, updated_by=user.id, status=RecordStatus.ACTIVE.value)
+        session.add(first_workspace)
+        await session.flush()
+        session.add(WorkspaceMember(workspace_id=first_workspace.id, user_id=user.id, role="owner", status=RecordStatus.ACTIVE.value))
+
+        token_result = await ApiAccessTokenService(session).create_token(
+            user_id=user.id,
+            payload=ApiAccessTokenCreateRequest(
+                name="Long-Lived-All-Workspaces",
+                all_workspaces=True,
+                scopes=["workspace:read", "project:read"],
+                expires_in_days=None,
+            ),
+        )
+
+        later_workspace = Workspace(code="ws-pat-all-later", name="Later Space", created_by=user.id, updated_by=user.id, status=RecordStatus.ACTIVE.value)
+        inaccessible_workspace = Workspace(code="ws-pat-all-inaccessible", name="Inaccessible Space", created_by=other_user.id, updated_by=other_user.id, status=RecordStatus.ACTIVE.value)
+        session.add_all([later_workspace, inaccessible_workspace])
+        await session.flush()
+        session.add(WorkspaceMember(workspace_id=later_workspace.id, user_id=user.id, role="owner", status=RecordStatus.ACTIVE.value))
+        await session.commit()
+
+        token = token_result.token
+        first_workspace_id = first_workspace.id
+        later_workspace_id = later_workspace.id
+        inaccessible_workspace_id = inaccessible_workspace.id
+
+    auth_headers = {"Authorization": f"Bearer {token}"}
+    workspaces_response = await client.get("/api/v1/workspaces", headers=auth_headers)
+    assert workspaces_response.status_code == 200
+    assert {item["id"] for item in workspaces_response.json()} == {first_workspace_id, later_workspace_id}
+
+    whoami_response = await client.get("/api/v1/auth/whoami", headers=auth_headers)
+    assert whoami_response.status_code == 200
+    assert whoami_response.json()["token"]["expires_at"] is None
+    assert whoami_response.json()["token"]["all_workspaces"] is True
+
+    later_response = await client.get(
+        "/api/v1/projects",
+        headers={**auth_headers, "X-Workspace-ID": str(later_workspace_id)},
+    )
+    assert later_response.status_code == 200
+
+    inaccessible_response = await client.get(
+        "/api/v1/projects",
+        headers={**auth_headers, "X-Workspace-ID": str(inaccessible_workspace_id)},
+    )
+    assert inaccessible_response.status_code == 403
+    assert inaccessible_response.json()["code"] == "PERMISSION_DENIED"
+
+
+@pytest.mark.asyncio
 async def test_external_api_theme_key_immutability(client: AsyncClient) -> None:
     """测试通过 External API 更新主题时禁止修改 theme key。"""
 

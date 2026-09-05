@@ -9,7 +9,7 @@ import re
 import secrets
 from datetime import timedelta
 
-from sqlalchemy import select, update
+from sqlalchemy import or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -60,7 +60,7 @@ class ApiAccessTokenService:
             select(ApiAccessToken)
             .where(ApiAccessToken.user_id == user_id)
             .where(ApiAccessToken.revoked_at.is_(None))
-            .where(ApiAccessToken.expires_at > utc_now())
+            .where(or_(ApiAccessToken.expires_at.is_(None), ApiAccessToken.expires_at > utc_now()))
         )
         active_tokens = (await self.session.scalars(active_count_stmt)).all()
         if len(active_tokens) >= self.settings.pat_max_active_tokens:
@@ -91,8 +91,10 @@ class ApiAccessTokenService:
         plain_token = f"wp_pat_{public_id}.{secret_hex}"
         token_hash = hashlib.sha256(plain_token.encode("utf-8")).hexdigest()
 
-        ttl_days = min(payload.expires_in_days, self.settings.pat_max_ttl_days)
-        expires_at = utc_now() + timedelta(days=ttl_days)
+        expires_at = None
+        if payload.expires_in_days is not None:
+            ttl_days = min(payload.expires_in_days, self.settings.pat_max_ttl_days)
+            expires_at = utc_now() + timedelta(days=ttl_days)
 
         token_model = ApiAccessToken(
             user_id=user_id,
@@ -100,6 +102,7 @@ class ApiAccessTokenService:
             token_public_id=public_id,
             token_hash=token_hash,
             expires_at=expires_at,
+            all_workspaces=payload.all_workspaces,
             created_at=utc_now(),
             updated_at=utc_now(),
         )
@@ -130,6 +133,7 @@ class ApiAccessTokenService:
             token_public_id=public_id,
             token=plain_token,
             expires_at=token_model.expires_at,
+            all_workspaces=token_model.all_workspaces,
             workspace_ids=payload.workspace_ids,
             scopes=payload.scopes,
             created_at=token_model.created_at,
@@ -160,7 +164,8 @@ class ApiAccessTokenService:
                 revoked_at=t.revoked_at,
                 last_used_at=t.last_used_at,
                 last_used_ip=t.last_used_ip,
-                is_active=(t.revoked_at is None and normalize_utc(t.expires_at) > now),
+                is_active=(t.revoked_at is None and (t.expires_at is None or normalize_utc(t.expires_at) > now)),
+                all_workspaces=t.all_workspaces,
                 workspace_ids=[w.workspace_id for w in t.workspaces],
                 scopes=[s.scope for s in t.scopes],
                 created_at=t.created_at,

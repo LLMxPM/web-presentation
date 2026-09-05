@@ -7,11 +7,12 @@ export interface ApiAccessTokenItem {
   name: string
   token_public_id: string
   token_masked: string
-  expires_at: string
+  expires_at: string | null
   revoked_at: string | null
   last_used_at: string | null
   last_used_ip: string | null
   is_active: boolean
+  all_workspaces: boolean
   workspace_ids: number[]
   scopes: string[]
   created_at: string
@@ -20,8 +21,9 @@ export interface ApiAccessTokenItem {
 export interface ApiAccessTokenCreateRequest {
   name: string
   workspace_ids: number[]
+  all_workspaces: boolean
   scopes: string[]
-  expires_in_days: number
+  expires_in_days: number | null
 }
 
 export interface ApiAccessTokenCreateResponse {
@@ -29,7 +31,8 @@ export interface ApiAccessTokenCreateResponse {
   name: string
   token_public_id: string
   token: string
-  expires_at: string
+  expires_at: string | null
+  all_workspaces: boolean
   workspace_ids: number[]
   scopes: string[]
   created_at: string
