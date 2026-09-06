@@ -29,6 +29,8 @@ def main() -> None:
     try:
         with tempfile.TemporaryDirectory(prefix='wp-gateway-') as temporary:
             directory = Path(temporary)
+            # Linux 临时目录默认为 0700；容器内的 nginx worker 需要遍历该挂载目录。
+            directory.chmod(0o755)
             document = {'openapi': '3.1.0', 'paths': {path: {method: {}} for path, method in [
                 ('/api/v1/themes', 'post'), ('/api/v1/styles', 'post'), ('/api/v1/projects/{project_id}/route-tree', 'put')]}}
             (directory / 'openapi.json').write_text(json.dumps(document), encoding='utf-8')
