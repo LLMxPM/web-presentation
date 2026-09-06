@@ -36,23 +36,25 @@
 
 | 文档 | 内容 |
 | :--- | :--- |
-| [项目与页面](./workflows/project-and-page.md) | 创建项目、组织页面、编辑源码、管理版本和构建入口 |
+| [用户与工作空间](./workflows/team-and-workspace.md) | 用户管理、初始密码修改、工作空间管理与资产隔离边界 |
+| [项目与页面](./workflows/project-and-page.md) | 创建项目、低代码可视化面板、源码编辑、版本与双模协作 |
 | [资源管理](./workflows/resources.md) | 管理图片、图标、字体、DrawIO、Mermaid、图表、公式等素材 |
 | [组件管理](./workflows/components.md) | 管理工作空间组件、草稿、发布版本、引用升级和离线包 |
 | [主题、字体与样式](./workflows/design-system.md) | 维护主题库、字体注册、样式库和项目应用边界 |
 | [AI 协作创作](./workflows/ai-assisted-creation.md) | 把创作任务拆给 AI，并理解确认、上下文和边界 |
 | [命令行与外部 Agent (CLI)](./workflows/cli-agent.md) | 使用 `wp` CLI 在本地终端或配合桌面 Agent（如 Cursor、Claude 等）创作 |
-| [预览、截图与构建](./workflows/preview-build-export.md) | 使用 Runtime 预览、截图、构建和访问发布产物 |
+| [预览、演示与构建交付](./workflows/preview-build-export.md) | 全屏演示播放、批量截图导出、构建任务与在线直链交付 |
 
 推荐的实际创作顺序是：
 
-`项目与页面` → `资源管理` → `主题、字体与样式` → `组件管理` → `AI 协作创作` → `命令行与外部 Agent (CLI)` → `预览、截图与构建`
+`用户与工作空间` → `项目与页面` → `资源管理` → `主题、字体与样式` → `组件管理` → `AI 协作创作` → `命令行与外部 Agent (CLI)` → `预览、演示与构建交付`
 
-## 部署
+## 部署与运维
 
 | 文档 | 内容 |
 | :--- | :--- |
 | [快速部署](./quick-deployment/README.md) | Docker、飞牛 fnOS、群晖 Container Manager 的 SQLite 单体快速部署 |
+| [单体运维指南](./quick-deployment/maintenance.md) | SQLite 单体版的无损升级、数据备份还原、机器迁移与反代网络配置 |
 | [生产部署指南](../developer/deployment/README.md) | HTTPS、外部依赖、备份、升级和生产环境配置 |
 
 ## 参考资料

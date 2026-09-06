@@ -79,3 +79,4 @@ python -c "import base64, os; print(base64.urlsafe_b64encode(os.urandom(32)).dec
 > 截图占位：Container Manager 容器运行状态、端口和日志页面。
 
 群晖 NAS 必须能够运行该镜像的 CPU 架构并访问 Docker Hub。若镜像下载失败或启动时报架构不兼容，请先确认设备架构和发布镜像支持情况。备份时应覆盖 `/docker/web-presentation/data`，不要删除容器对应的数据目录。
+后续容器无损更新、备份还原与反向代理网络排障请查阅 [SQLite 单体版日常维护指南](./maintenance.md)。

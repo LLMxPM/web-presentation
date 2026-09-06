@@ -87,4 +87,4 @@ docker logs -f web-presentation-lite
 
 SQLite 数据库、资源、截图、构建产物和 Runtime RSA 私钥保存在 `lite-data` 或 `web-presentation-lite-data` 中。升级前先备份数据卷；不要使用 `docker compose down -v`，也不要删除该数据卷。
 
-Runtime 内部回源地址、Runtime 资源路径、队列并发、日志、HTTPS、外部数据库和对象存储等高级变量已由镜像或部署模板提供默认值。需要调整这些配置时，请阅读[开发文档中的详细部署指南](../../developer/deployment/README.md)，不要在用户快速部署文件中自行复制整套高级变量。
+Runtime 内部回源地址、Runtime 资源路径、队列并发、日志、HTTPS、外部数据库和对象存储等高级变量已由镜像或部署模板提供默认值。日常升级、数据备份还原和反向代理排障请阅读 [SQLite 单体版日常维护指南](./maintenance.md)；需要更大型的多实例或对象存储方案时，请阅读[开发文档中的详细部署指南](../../developer/deployment/README.md)。

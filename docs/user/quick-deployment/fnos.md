@@ -9,7 +9,7 @@
 3. 选择标签 `sqlite-lite`，点击“拉取/下载”。
 4. 等待镜像状态变为可用。
 
-> 截图占位：fnOS 镜像仓库中搜索 `llmxpm/web-presentation:sqlite-lite` 的页面。
+![fnOS 镜像仓库中搜索与拉取镜像](../../assets/fn/fn-拉取镜像.png)
 
 ## 2. 创建容器
 
@@ -18,7 +18,7 @@
 3. 重启策略选择“除非手动停止”或“始终重启”。
 4. 如果套件提供“高级设置”，进入端口、存储和环境变量配置页面。
 
-> 截图占位：fnOS 从镜像创建容器、填写容器名称和重启策略的页面。
+![fnOS 从镜像创建容器](../../assets/fn/fn-创建容器.png)
 
 ## 3. 配置端口和存储
 
@@ -79,3 +79,4 @@ python -c "import base64, os; print(base64.urlsafe_b64encode(os.urandom(32)).dec
 > 截图占位：fnOS 容器运行状态、端口和健康状态页面。
 
 若启动失败，先检查镜像是否拉取完成、设备 CPU 架构是否受支持、数据目录是否具有读写权限，以及 `CORS_ORIGINS` 是否为合法 JSON 数组。
+后续容器更新、数据备份与网络反代配置请查阅 [SQLite 单体版日常维护指南](./maintenance.md)。
