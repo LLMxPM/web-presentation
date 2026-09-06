@@ -199,3 +199,8 @@ pnpm run test:e2e:all
 - `Runtime`：平台架构中的预览与构建执行角色。
 - `Editor`：面向用户的创作工作台。
 - `Backend`：平台控制面服务。
+
+
+## CLI 契约部署验证
+
+修改 Gateway 或 External API 契约时，运行真实 Nginx 回归 `uv run --project backend python scripts/testing/test-gateway-openapi.py`；发布后从外部 Gateway 使用 `scripts/testing/check-gateway-openapi.py` 验证契约 JSON，不能以 HTTP 200 或 Backend 直连替代。CLI 请求契约失败直接报错，不引入离线契约或缓存降级。

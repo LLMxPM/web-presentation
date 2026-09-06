@@ -192,3 +192,28 @@ jobs:
           tags: ${{ matrix.tag }}
           cache-from: type=gha,scope=${{ matrix.cache_scope }}
           cache-to: type=gha,mode=max,scope=${{ matrix.cache_scope }}
+
+  gateway-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python scripts/testing/test-gateway-openapi.py
+
+  cli-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: web-presentation
+          submodules: recursive
+      - uses: actions/checkout@v4
+        with:
+          repository: LLMxPM/web-presentation-agent-kit
+          path: web-presentation-agent-kit
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync --project web-presentation/backend --group dev --locked
+      - run: uv sync --project web-presentation-agent-kit --all-packages
+      - working-directory: web-presentation
+        run: uv run --project backend pytest -c backend/pyproject.toml backend/tests/contracts/test_cli_skill_examples.py
+      - working-directory: web-presentation-agent-kit
+        run: uv run pytest packages/cli/tests/test_backend_openapi_contract.py

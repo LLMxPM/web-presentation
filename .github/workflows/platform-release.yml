@@ -219,6 +219,7 @@ jobs:
       - contracts
       - e2e-smoke
       - validate-runtime-image
+      - gateway-contract
     steps:
       - uses: actions/checkout@v4
         with:
@@ -302,6 +303,7 @@ jobs:
       - contracts
       - e2e-smoke
       - validate-runtime-image
+      - gateway-contract
     steps:
       - uses: actions/checkout@v4
         with:
@@ -379,3 +381,9 @@ jobs:
           sbom: false
           cache-from: type=gha,scope=platform-lite
           cache-to: type=gha,mode=max,scope=platform-lite
+
+  gateway-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python scripts/testing/test-gateway-openapi.py

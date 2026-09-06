@@ -338,3 +338,18 @@ SQLite 轻量单容器版先检查 `platform-lite` 内部 `127.0.0.1:7373/__runt
 ### AI 设置保存后无法解密
 
 `AI_SECRET_ENCRYPTION_KEY` 是加密用户模型凭证的长期 Fernet 密钥。它必须是 32 字节随机值的 URL-safe base64 编码。更换该值会导致已有密文无法解密，生产环境必须妥善备份。
+
+
+### CLI OpenAPI 契约入口
+
+CLI endpoint 使用平台 Gateway 根地址，不包含 `/api/v1`。外层代理必须保留 `/openapi.json`，内置 Gateway 将该精确路径代理到 Backend；该入口不需要 PAT，不开放额外文档 UI。业务 API 健康不代表契约入口正常：错误配置可能让该路径返回 HTTP 200 的 Editor HTML。
+
+发布后执行只读检查（必须使用实际外部 Gateway 地址）：
+
+```powershell
+uv run --project backend python scripts/testing/check-gateway-openapi.py https://presentation.example.com
+```
+
+检查 JSON Content-Type、OpenAPI 根结构及主题、样式、路由操作。真实 Nginx 隔离回归入口为 `uv run --project backend python scripts/testing/test-gateway-openapi.py`，需要 Docker；覆盖契约成功、上游错误透传、现有 API 和 Editor SPA。
+
+先发布平台镜像并更新 Gateway，外部契约检查通过后再升级 CLI/Skill。CLI 契约帮助失败立即退出 1 且无部分帮助；Doctor 的 OpenAPI 检查与健康、认证分开。六页演示验收仅在测试工作空间执行，记录页面 Job、路由顺序和挂载后的截图。代码测试与生产验收分开记录，生产仍返回 HTML 时不能宣布修复完成。

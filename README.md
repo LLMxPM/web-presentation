@@ -126,3 +126,6 @@ web-presentation/
 `runtime/` 是独立项目 [web-runtime-vue](https://github.com/LLMxPM/web-runtime-vue) 的 Git 子模块，继续遵循它自身仓库内声明的许可证，见 [web-runtime-vue LICENSE](https://github.com/LLMxPM/web-runtime-vue/blob/main/LICENSE)。
 
 外部 Agent 接入代码位于同级独立仓库 [web-presentation-agent-kit](https://github.com/LLMxPM/web-presentation-agent-kit)，主仓库仅保留平台 API、架构和集成文档。
+
+
+CLI 通过平台根地址的 `/openapi.json` 获取当前请求契约。部署后应执行 [Gateway 契约验证](docs/developer/deployment/README.md#cli-openapi-契约入口)；业务 API 正常不代表该入口正常。配套 Skill 将路由挂载及挂载后的截图复核作为完整多页演示的交付检查点。
