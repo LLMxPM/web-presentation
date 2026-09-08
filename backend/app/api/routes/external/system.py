@@ -8,6 +8,8 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.ai.code_standards import get_default_code_standard
+from app.ai.tool_specs import AGENT_COORDINATOR_AGENT_ID
 from app.api.dependencies_external import ExternalAuthContext, require_external_operation
 from app.core.config import get_settings
 from app.db.session import get_db_session
@@ -18,33 +20,38 @@ from app.schemas.external_api import (
     ExternalSystemVersionResponse,
     ExternalWhoAmIResponse,
 )
+from app.services.ai_agent_config_service import AiAgentConfigService
 from app.services.redis_runtime_client import get_redis_runtime_client
 
 router = APIRouter()
 
-PAGE_STANDARDS_DOC = """# 演示文稿页面开发规范 (Page Standards)
 
-## 1. 基础规范
-- 页面必须为合法的 Single File Component (Vue 3 SFC `<template>`, `<script setup>`, `<style scoped>`)。
-- 采用 TailwindCSS 或 `@runtime-kit` 提供的样式令牌。
-- 页面导出默认必须通过标准运行时容器渲染。
+async def _resolve_standard_markdown(
+    session: AsyncSession,
+    user_id: int,
+    standard_type: str,
+) -> str:
+    """读取指定用户当前生效的规范内容；若用户未定制则返回系统默认完整规范。
 
-## 2. 依赖引入规范
-- 仅允许引入 `@runtime-kit` 公开版本化能力或 `@workspace-components/<name>` 声明组件。
-- 不得直接访问 `window` 未受控全局变量或执行恶意 DOM 操作。
-"""
+    参数:
+        session: 异步数据库会话
+        user_id: 当前操作用户主键 ID
+        standard_type: 规范类型 ('page' 或 'component')
 
-COMPONENT_STANDARDS_DOC = """# 工作空间组件开发规范 (Component Standards)
+    返回:
+        对应的 Markdown 文本内容
+    """
 
-## 1. 基础规范
-- 组件必须为 Vue 3 SFC 结构，使用 `<script setup lang="ts">`。
-- 组件必须声明明确的 `props` 与可选 `previewSchema`。
+    try:
+        service = AiAgentConfigService(session, user_id=user_id)
+        configs = await service.list_code_standard_configs(AGENT_COORDINATOR_AGENT_ID)
+        for item in configs:
+            if item.standard_type == standard_type:
+                return item.content
+    except Exception:
+        pass
+    return get_default_code_standard(standard_type)
 
-## 2. 类型与 Preview Schema
-- `component_type` 的规范值为 `content`、`page`、`atomic`。
-- 兼容别名：`card`、`section`、`custom` 归一化为 `content`；`template` 归一化为 `page`；`atom`、`basic` 归一化为 `atomic`。
-- `previewSchema`: 遵循 JSON Schema 规范，用于在 Editor 中提供属性表单编辑与预览 mock 数据。
-"""
 
 
 @router.get("/system/version", response_model=ExternalSystemVersionResponse)
@@ -146,22 +153,27 @@ async def get_auth_whoami(
 @router.get("/standards/page", response_model=ExternalStandardResponse)
 async def get_page_standards(
     auth: Annotated[ExternalAuthContext, Depends(require_external_operation("standards.page"))],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> ExternalStandardResponse:
-    """获取页面开发标准 Markdown 规范。"""
+    """获取当前用户生效的页面开发标准 Markdown 规范。"""
 
+    markdown = await _resolve_standard_markdown(session, auth.user.id, "page")
     return ExternalStandardResponse(
         standard_type="page",
-        markdown=PAGE_STANDARDS_DOC,
+        markdown=markdown,
     )
 
 
 @router.get("/standards/component", response_model=ExternalStandardResponse)
 async def get_component_standards(
     auth: Annotated[ExternalAuthContext, Depends(require_external_operation("standards.component"))],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> ExternalStandardResponse:
-    """获取工作空间组件开发标准 Markdown 规范。"""
+    """获取当前用户生效的工作空间组件开发标准 Markdown 规范。"""
 
+    markdown = await _resolve_standard_markdown(session, auth.user.id, "component")
     return ExternalStandardResponse(
         standard_type="component",
-        markdown=COMPONENT_STANDARDS_DOC,
+        markdown=markdown,
     )
+

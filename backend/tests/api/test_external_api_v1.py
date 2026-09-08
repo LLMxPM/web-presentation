@@ -5,13 +5,16 @@ from __future__ import annotations
 import pytest
 from httpx import AsyncClient
 
+from app.ai.tool_specs import AGENT_COORDINATOR_AGENT_ID
 from app.db.session import get_session_factory
+from app.models.ai_agent_config import AiAgentCodeStandardUserConfig
 from app.models.enums import RecordStatus, UserRole
 from app.models.user import User
 from app.models.workspace import Project, Workspace, WorkspaceMember
 from app.schemas.api_access_token import ApiAccessTokenCreateRequest
 from app.schemas.preview_size_preset import build_default_preview_size_presets
 from app.services.api_access_token_service import ApiAccessTokenService
+
 
 
 @pytest.mark.asyncio
@@ -385,7 +388,7 @@ async def test_external_api_whoami_and_system_info(client: AsyncClient) -> None:
             payload=ApiAccessTokenCreateRequest(
                 name="Whoami-PAT",
                 workspace_ids=[ws1.id],
-                scopes=["workspace:read", "project:read", "page:read"],
+                scopes=["workspace:read", "project:read", "page:read", "component:read"],
                 expires_in_days=30,
             ),
         )
@@ -416,6 +419,35 @@ async def test_external_api_whoami_and_system_info(client: AsyncClient) -> None:
     std_resp = await client.get("/api/v1/standards/page", headers=headers)
     assert std_resp.status_code == 200
     assert std_resp.json()["standard_type"] == "page"
+    assert "页面布局与内容规范" in std_resp.json()["markdown"]
+    assert "固定尺寸的演示画布" in std_resp.json()["markdown"]
+
+    comp_resp = await client.get("/api/v1/standards/component", headers=headers)
+    assert comp_resp.status_code == 200
+    assert comp_resp.json()["standard_type"] == "component"
+    assert "组件结构与复用规范" in comp_resp.json()["markdown"]
+    assert "preview_schema" in comp_resp.json()["markdown"]
+
+    # 3. 验证用户自定义规范覆盖能正确生效
+    async with session_factory() as session:
+        session.add(
+            AiAgentCodeStandardUserConfig(
+                user_id=user.id,
+                agent_id=AGENT_COORDINATOR_AGENT_ID,
+                standard_type="page",
+                content_override="## 自定义页面规范\n\n- 自定义约束：必须使用特定全屏布局。",
+                created_by=user.id,
+                updated_by=user.id,
+            )
+        )
+        await session.commit()
+
+    custom_std_resp = await client.get("/api/v1/standards/page", headers=headers)
+    assert custom_std_resp.status_code == 200
+    assert custom_std_resp.json()["standard_type"] == "page"
+    assert "## 自定义页面规范" in custom_std_resp.json()["markdown"]
+    assert "必须使用特定全屏布局" in custom_std_resp.json()["markdown"]
+
 
 
 @pytest.mark.asyncio
