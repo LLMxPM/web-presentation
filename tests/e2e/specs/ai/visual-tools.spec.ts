@@ -103,16 +103,12 @@ async function expectVisualToolResult(panel: ReturnType<Page['locator']>, option
 
   const toolGroup = panel.locator('[data-testid="tool-call-group"]').last()
   await expect(toolGroup).toBeVisible()
-  if (await toolGroup.getAttribute('open') === null) {
-    await toolGroup.locator(':scope > summary').click()
-  }
+  await toolGroup.locator(':scope > summary').click()
 
   const generationCard = toolGroup.locator('[data-testid="visual-tool-card"]').filter({ hasText: '图片生成' })
   await expect(toolGroup.getByText('图片理解', { exact: true })).toBeVisible()
   await expect(generationCard).toBeVisible()
-  if (await generationCard.getAttribute('open') === null) {
-    await generationCard.locator(':scope > summary').click()
-  }
+  await generationCard.locator(':scope > summary').click()
   await expect(generationCard.getByRole('button', {
     name: new RegExp(`预览图片 ${AGENT_VISUAL_CASE.assetNamePrefix}`),
   })).toBeVisible()
