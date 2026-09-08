@@ -12,6 +12,7 @@ from typing import Any, Callable
 from sqlalchemy import func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.ai.validation_result_formatter import build_validation_text
 from app.core.config import get_settings
 from app.core.exceptions import AppException
 from app.core.text_normalizer import calculate_source_hash
@@ -530,7 +531,13 @@ class MutationJobService:
         if not getattr(plan_result, "success", True):
             error_code = getattr(plan_result, "error_code", None) or "VALIDATION_FAILED"
             error_msg = getattr(plan_result, "error_message", None) or getattr(plan_result, "message", "代码校验未通过")
-            raise AppException(status_code=422, code=error_code, detail=error_msg)
+            validation_result = getattr(plan_result, "validation_result", None)
+            details = None
+            if isinstance(validation_result, dict):
+                op = str(getattr(plan_result, "operation", "") or "")
+                res_type = "component" if "component" in op else "page"
+                details = {"validation": build_validation_text(validation_result, resource_type=res_type)}
+            raise AppException(status_code=422, code=error_code, detail=error_msg, data=details)
 
         now = utc_now()
         session_factory = get_session_factory()
@@ -576,10 +583,15 @@ class MutationJobService:
                     commit=False,
                 )
                 target_id = created_page.id
+                validation_text = build_validation_text(
+                    getattr(plan_result, "validation_result", None) or {},
+                    resource_type="page",
+                )
                 result_dict = {
                     "page_id": created_page.id,
                     "page_code": created_page.code,
                     "version_no": created_page.current_version_no,
+                    "validation": validation_text,
                 }
             elif job.job_type == "page_edit":
                 target_page_id = plan_result.target_page_id or job.payload_json["page_id"]
@@ -607,9 +619,14 @@ class MutationJobService:
                     commit=False,
                 )
                 target_id = updated_page.id
+                validation_text = build_validation_text(
+                    getattr(plan_result, "validation_result", None) or {},
+                    resource_type="page",
+                )
                 result_dict = {
                     "page_id": updated_page.id,
                     "version_no": updated_page.current_version_no,
+                    "validation": validation_text,
                 }
             elif job.job_type == "component_create":
                 comp_req = WorkspaceComponentCreateRequest(
@@ -627,10 +644,15 @@ class MutationJobService:
                     commit=False,
                 )
                 target_id = created_comp.id
+                validation_text = build_validation_text(
+                    getattr(plan_result, "validation_result", None) or {},
+                    resource_type="component",
+                )
                 result_dict = {
                     "component_id": created_comp.id,
                     "import_name": created_comp.import_name,
                     "version_no": created_comp.current_version_no,
+                    "validation": validation_text,
                 }
             elif job.job_type == "component_edit":
                 target_comp_id = plan_result.target_component_id or job.payload_json["component_id"]
@@ -665,7 +687,15 @@ class MutationJobService:
                     commit=False,
                 )
                 target_id = updated_comp.id
-                result_dict = {"component_id": updated_comp.id, "version_no": updated_comp.current_version_no}
+                validation_text = build_validation_text(
+                    getattr(plan_result, "validation_result", None) or {},
+                    resource_type="component",
+                )
+                result_dict = {
+                    "component_id": updated_comp.id,
+                    "version_no": updated_comp.current_version_no,
+                    "validation": validation_text,
+                }
             elif job.job_type == "component_metadata":
                 target_comp_id = plan_result.target_component_id or job.payload_json["component_id"]
                 component_lock_stmt = select(WorkspaceComponent).where(WorkspaceComponent.id == target_comp_id).with_for_update()
@@ -702,9 +732,16 @@ class MutationJobService:
                     commit=False,
                 )
                 target_id = updated_comp.id
+                validation_res = getattr(plan_result, "validation_result", None)
+                validation_text = (
+                    build_validation_text(validation_res, resource_type="component")
+                    if isinstance(validation_res, dict)
+                    else "检查通过，无警告"
+                )
                 result_dict = {
                     "component_id": updated_comp.id,
                     "version_no": updated_comp.current_version_no,
+                    "validation": validation_text,
                 }
 
             # 3. 标记任务成功
