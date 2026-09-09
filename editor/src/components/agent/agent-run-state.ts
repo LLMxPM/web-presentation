@@ -591,7 +591,10 @@ function upsertToolTimelineItem(
     tool_name: toolName,
     status,
     input_payload: event.data.arguments ?? event.data.args ?? event.data.tool_args ?? previousTool?.input_payload ?? null,
-    output_payload: event.data.result ?? event.data.output ?? previousTool?.output_payload ?? null,
+    output_payload: mergeToolOutputPayload(
+      event.data.result ?? event.data.output,
+      previousTool?.output_payload,
+    ),
     message: String(event.data.message || event.content || previousTool?.message || ''),
     progress: event.event === 'tool.progress'
       ? {
@@ -624,14 +627,39 @@ function upsertToolTimelineItem(
     : [...state.timelineItems, nextItem]
 }
 
+/**
+ * 合并工具输出，避免晚到的状态事件用不完整 result 覆盖已经收到的资源结果。
+ */
+function mergeToolOutputPayload(value: unknown, fallback: unknown): unknown {
+  if (value === null || value === undefined) {
+    return fallback ?? null
+  }
+  if (!isRecord(value) || !isRecord(fallback)) {
+    return value
+  }
+  const merged = { ...fallback, ...value }
+  for (const key of ['assets', 'attachments', 'deleted_assets']) {
+    const previousItems = fallback[key]
+    const currentItems = value[key]
+    if (Array.isArray(previousItems) && (!Array.isArray(currentItems) || currentItems.length === 0)) {
+      merged[key] = previousItems
+    }
+  }
+  return merged
+}
+
 /** 读取后端为视觉工具 SSE 补齐的附件摘要，缺失时保留上一事件状态。 */
 function readEventAttachments(value: unknown, fallback: AgentMessageAttachmentItem[] | undefined): AgentMessageAttachmentItem[] {
   if (!Array.isArray(value)) return fallback ?? []
+  if (!value.length && fallback?.length) return fallback
+  const previousById = new Map(fallback?.map(item => [item.id, item]) ?? [])
   return value.map((item) => {
     const attachment = item as AgentMessageAttachmentItem
     return {
+      ...previousById.get(attachment.id),
       ...attachment,
       promotion_status: attachment.promotion_status
+        ?? previousById.get(attachment.id)?.promotion_status
         ?? (attachment.promoted_asset_id ? 'promoted' : 'never'),
     }
   })

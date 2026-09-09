@@ -265,8 +265,16 @@
                   </template>
                 </div>
               </template>
-              <details v-else data-testid="tool-call-group" class="tool-call-group rounded-ui-md border border-border bg-surface-hover" :open="shouldExpandToolGroup(item.tools)">
-                <summary class="flex min-h-control-sm cursor-pointer select-none items-center gap-1.5 px-2 text-xs font-medium text-text-muted transition-colors hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus">
+              <details
+                v-else
+                data-testid="tool-call-group"
+                class="tool-call-group rounded-ui-md border border-border bg-surface-hover"
+                :open="isToolGroupExpanded(item.id, item.tools)"
+              >
+                <summary
+                  class="flex min-h-control-sm cursor-pointer select-none items-center gap-1.5 px-2 text-xs font-medium text-text-muted transition-colors hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus"
+                  @click="handleToolGroupSummaryClick(item.id, $event)"
+                >
                   <ChevronRight class="h-3 w-3 transition details-chevron" />
                   <span class="min-w-0 flex-1 truncate">{{ formatToolGroupSummary(item.tools) }}</span>
                 </summary>
@@ -407,7 +415,7 @@
 import 'markstream-vue/index.css'
 import MarkdownRender, { getMarkdown, parseMarkdownToStructure } from 'markstream-vue'
 import { ChevronDown, ChevronRight, Copy, Sparkles } from '@lucide/vue'
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 
 import DataState from '@/components/patterns/DataState.vue'
 import { UiBadge, UiButton, UiIconButton } from '@/components/ui'
@@ -466,6 +474,7 @@ const scrollContainerRef = ref<HTMLElement | null>(null)
 const scrollContentRef = ref<HTMLElement | null>(null)
 const failedAttachmentIds = ref(new Set<number>())
 const userMessageCollapseOverrides = ref(new Map<string, boolean>())
+const toolGroupExpansionOverrides = ref(new Map<string, boolean>())
 const previewOpen = ref(false)
 const previewAttachment = ref<AgentMessageAttachmentItem | null>(null)
 const assistantBatchRendering = {
@@ -565,6 +574,31 @@ function handleToolRowClick(tool: ToolCallDetail) {
 
 function isVisualTool(tool: ToolCallDetail) {
   return tool.toolName === 'analyze_visuals' || tool.toolName === 'generate_image'
+}
+
+/**
+ * 返回工具组当前展开状态；用户操作后固定采用用户选择，避免 SSE 状态更新覆盖查看状态。
+ */
+function isToolGroupExpanded(groupId: string, tools: ToolCallDetail[]) {
+  return toolGroupExpansionOverrides.value.get(groupId) ?? shouldExpandToolGroup(tools)
+}
+
+/**
+ * 在原生 details 完成默认点击动作后记录用户选择，不把响应式 open 更新误判为用户操作。
+ */
+function handleToolGroupSummaryClick(groupId: string, event: MouseEvent) {
+  const summary = event.currentTarget
+  if (!(summary instanceof HTMLElement)) {
+    return
+  }
+  void nextTick(() => {
+    const details = summary.parentElement
+    if (details instanceof HTMLDetailsElement) {
+      const nextOverrides = new Map(toolGroupExpansionOverrides.value)
+      nextOverrides.set(groupId, details.open)
+      toolGroupExpansionOverrides.value = nextOverrides
+    }
+  })
 }
 
 /**
