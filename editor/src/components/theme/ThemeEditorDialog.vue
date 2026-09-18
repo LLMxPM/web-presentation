@@ -423,9 +423,16 @@ function syncForm(theme: WorkspaceThemeItem | null) {
   form.heading_font_family_id = theme?.heading_font_family_id || null
   form.body_font_family_id = theme?.body_font_family_id || null
   form.code_font_family_id = theme?.code_font_family_id || null
-  form.heading_font_preset = resolveFontPreset(theme?.heading_font_preset || theme?.heading_font_label, DEFAULT_HEADING_FONT_FAMILY)
-  form.body_font_preset = resolveFontPreset(theme?.body_font_preset || theme?.body_font_label, DEFAULT_BODY_FONT_FAMILY)
-  form.code_font_preset = resolveFontPreset(theme?.code_font_preset || theme?.code_font_label, DEFAULT_CODE_FONT_FAMILY)
+  // 有字体族时互斥，避免直接保存把 family_id 和 preset 一起提交
+  form.heading_font_preset = form.heading_font_family_id
+    ? null
+    : resolveFontPreset(theme?.heading_font_preset || theme?.heading_font_label, DEFAULT_HEADING_FONT_FAMILY)
+  form.body_font_preset = form.body_font_family_id
+    ? null
+    : resolveFontPreset(theme?.body_font_preset || theme?.body_font_label, DEFAULT_BODY_FONT_FAMILY)
+  form.code_font_preset = form.code_font_family_id
+    ? null
+    : resolveFontPreset(theme?.code_font_preset || theme?.code_font_label, DEFAULT_CODE_FONT_FAMILY)
   form.palette = JSON.parse(JSON.stringify(theme?.palette || DEFAULT_THEME_PALETTE)) as ThemePalette
 }
 

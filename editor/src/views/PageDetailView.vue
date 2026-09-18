@@ -444,12 +444,23 @@ const previewFrameUrl = computed(() => {
 })
 
 /**
- * 更新 iframe 刷新令牌，避免浏览器复用旧的预览页快照。
+ * 仅更新 iframe 刷新令牌，强制浏览器丢弃旧的预览页快照。
+ * 供 applyPreviewLink 在写入新 artifact 地址后调用，不触发 artifact 重建。
  */
-function refreshPreviewFrame() {
+function bumpPreviewFrameToken() {
   if (!previewUrl.value) return
   previewRefreshToken.value = Date.now()
   beginPreviewLoading('loading')
+}
+
+/**
+ * 手动刷新预览：基于当前已保存页面状态重建 artifact，确保展示最新代码。
+ * preview artifact 是不可变快照，仅重载 iframe 无法感知源码变更。
+ */
+function refreshPreviewFrame() {
+  const currentPage = pageDetails.value
+  if (!currentPage || isPreviewPending.value) return
+  void syncRuntimePreview(currentPage, { showSuccessMessage: false })
 }
 
 /**
@@ -460,7 +471,7 @@ function applyPreviewLink(previewLink: PreviewArtifactResponse) {
   previewArtifactId.value = previewLink.artifact_id
   previewFilePath.value = resolvePreviewFilePath(previewLink) ?? ''
   previewViewport.value = resolvePreviewViewport(previewLink)
-  refreshPreviewFrame()
+  bumpPreviewFrameToken()
 }
 
 /** 错误态重试始终创建新 artifact，避免复用过期上下文。 */

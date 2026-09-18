@@ -66,6 +66,9 @@ describe('ThemeEditorDialog', () => {
       heading_font_family_id: number | null
       body_font_family_id: number | null
       code_font_family_id: number | null
+      heading_font_preset: string | null
+      body_font_preset: string | null
+      code_font_preset: string | null
     }
 
     expect(savePayload).toMatchObject({
@@ -76,9 +79,52 @@ describe('ThemeEditorDialog', () => {
       body_font_family_id: 2,
       code_font_family_id: 3,
     })
+    // 字体族与内置预设互斥：已有 family_id 时不应再提交 preset
+    expect(savePayload.heading_font_preset).toBeNull()
+    expect(savePayload.body_font_preset).toBeNull()
+    expect(savePayload.code_font_preset).toBeNull()
     expect(savePayload).not.toHaveProperty('base_font_size')
     expect(savePayload).not.toHaveProperty('icon_default_size')
     expect(savePayload).not.toHaveProperty('icon_default_stroke_width')
+  })
+
+  it('仅配置内置字体预设时，保存不应再提交字体族 id', async () => {
+    const presetTheme = {
+      ...createThemeItem(),
+      heading_font_family_id: null,
+      body_font_family_id: null,
+      code_font_family_id: null,
+      heading_font_label: 'platform-sans',
+      body_font_label: 'system-ui',
+      code_font_label: 'monospace',
+      heading_font_family: null,
+      body_font_family: null,
+      code_font_family: null,
+    } as ReturnType<typeof createThemeItem>
+    const { emitted } = renderDialog(presetTheme)
+
+    await waitFor(() => {
+      expect(screen.getByDisplayValue('Default_Theme')).toBeInTheDocument()
+    })
+
+    await fireEvent.click(screen.getByRole('button', { name: /保存主题/ }))
+
+    const events = emitted() as Record<string, unknown[][]>
+    const savePayload = events.save[0][0] as {
+      heading_font_family_id: number | null
+      body_font_family_id: number | null
+      code_font_family_id: number | null
+      heading_font_preset: string | null
+      body_font_preset: string | null
+      code_font_preset: string | null
+    }
+
+    expect(savePayload.heading_font_family_id).toBeNull()
+    expect(savePayload.body_font_family_id).toBeNull()
+    expect(savePayload.code_font_family_id).toBeNull()
+    expect(savePayload.heading_font_preset).toBe('platform-sans')
+    expect(savePayload.body_font_preset).toBe('system-ui')
+    expect(savePayload.code_font_preset).toBe('monospace')
   })
 
   it('品牌 Logo 应仅选择图片资源，项目图标应仅选择图标资源', async () => {

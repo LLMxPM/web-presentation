@@ -178,7 +178,22 @@ POST /api/v1/jobs/mutations/{job_id}/retry
 
 页面编辑必须携带当前版本基线；组件编辑必须携带草稿 hash 或主仓规定的等价乐观锁字段。外部客户端不得在 409 后静默覆盖重试。
 
-### 5.3 截图
+### 5.3 预览地址
+
+```text
+POST /api/v1/projects/{project_id}/preview-artifact
+POST /api/v1/pages/{page_id}/preview-artifact
+```
+
+两条接口都创建短期 preview artifact，并返回统一的 `PreviewArtifactResponse`，其中
+`preview_url` 是可直接交给浏览器打开的预览地址。项目接口可以传入可选请求体
+`{"route": "/overview"}` 指定入口路由；不传时使用项目默认入口。页面接口不要求
+CLI 拼接源码模块路径，Backend 会根据页面当前的 `code` 和 `file_type` 解析单页面入口。
+
+项目预览要求 `project:read + preview:run`，页面预览要求 `page:read + preview:run`。
+预览地址和其中的签名上下文均为短期有效，客户端不应持久化或当作永久发布地址。
+
+### 5.4 截图
 
 ```text
 GET  /api/v1/pages/{page_id}/screenshot
