@@ -1,22 +1,49 @@
-<!-- 文件功能：管理用户个人访问令牌（PAT），提供创建、权限选择、明文密钥单次展示与即时吊销功能。 -->
+<!-- 文件功能：管理用户个人访问令牌（PAT），提供创建、配置编辑、明文密钥单次展示与即时吊销功能。 -->
 <template>
-  <div class="max-w-6xl mx-auto space-y-6 py-6 px-4">
-    <!-- Header -->
-    <div class="flex flex-wrap items-center justify-between gap-4">
-      <div>
-        <h1 class="text-2xl font-bold text-text-strong">个人访问令牌 (PAT)</h1>
-        <p class="text-sm text-text-secondary mt-1">
-          用于通过 External API、CLI (<code class="text-xs bg-surface-muted px-1.5 py-0.5 rounded text-accent font-mono">wp</code>) 及桌面开发工具安全访问工作空间资源与自动化构建。
-        </p>
+  <div class="space-y-4 pb-12">
+    <PageHeader
+      :icon="Key"
+      title="个人访问令牌 (PAT)"
+      description="用于通过 External API、CLI（wp）及桌面开发工具安全访问工作空间资源。"
+      description-label="查看 PAT 使用说明"
+    >
+      <template #actions>
+        <UiButton variant="primary" @click="openCreateDialog">
+          <template #icon><Key class="h-4 w-4" /></template>
+          创建新令牌
+        </UiButton>
+      </template>
+    </PageHeader>
+
+    <section class="grid grid-cols-1 gap-3 sm:grid-cols-3" aria-label="访问令牌概览">
+      <div class="rounded-lg border border-border bg-surface px-4 py-3">
+        <div class="text-xs text-text-secondary">活跃令牌</div>
+        <div class="mt-1 text-xl font-semibold text-text-strong">{{ activeTokenCount }}</div>
+        <div class="mt-0.5 text-xs text-text-muted">可立即调用 API</div>
       </div>
-      <UiButton variant="primary" @click="openCreateDialog">
-        <template #icon><Key class="w-4 h-4 mr-1.5" /></template>
-        创建新令牌
-      </UiButton>
-    </div>
+      <div class="rounded-lg border border-border bg-surface px-4 py-3">
+        <div class="text-xs text-text-secondary">已过期</div>
+        <div class="mt-1 text-xl font-semibold text-warning-strong">{{ expiredTokenCount }}</div>
+        <div class="mt-0.5 text-xs text-text-muted">可编辑有效期后恢复使用</div>
+      </div>
+      <div class="rounded-lg border border-border bg-surface px-4 py-3">
+        <div class="text-xs text-text-secondary">活跃令牌上限</div>
+        <div class="mt-1 text-xl font-semibold text-text-strong">
+          {{ activeTokenCount }}<span v-if="maxActiveTokens !== null" class="text-sm font-normal text-text-muted"> / {{ maxActiveTokens }}</span>
+        </div>
+        <div class="mt-0.5 text-xs text-text-muted">吊销或过期令牌不占用上限</div>
+      </div>
+    </section>
 
     <!-- Token Table -->
     <div class="overflow-hidden rounded-xl border border-border bg-surface shadow-sm">
+      <div class="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
+        <div>
+          <h2 class="text-sm font-semibold text-text-strong">已创建的令牌</h2>
+          <p class="mt-0.5 text-xs text-text-secondary">可编辑授权配置，密钥本身保持不变。</p>
+        </div>
+        <span class="shrink-0 text-xs text-text-muted">共 {{ tokens.length }} 个</span>
+      </div>
       <div v-if="loading" class="p-8 text-center text-sm text-text-muted">
         正在加载访问令牌...
       </div>
@@ -28,93 +55,91 @@
         </p>
         <UiButton variant="secondary" size="sm" @click="openCreateDialog">创建首个令牌</UiButton>
       </div>
-      <table v-else class="w-full table-fixed text-left text-sm">
-        <thead class="bg-canvas text-xs font-semibold uppercase text-text-muted border-b border-border">
-          <tr>
-            <th class="w-48 px-4 py-3.5">令牌名称</th>
-            <th class="w-48 px-4 py-3.5">标识</th>
-            <th class="px-4 py-3.5">权限 Scope</th>
-            <th class="w-28 px-4 py-3.5">状态</th>
-            <th class="w-40 px-4 py-3.5">最后使用</th>
-            <th class="w-40 px-4 py-3.5">到期时间</th>
-            <th class="w-24 px-4 py-3.5 text-right">操作</th>
-          </tr>
-        </thead>
-        <tbody class="divide-y divide-border-muted">
-          <tr v-for="item in tokens" :key="item.id" class="hover:bg-surface-muted/50 transition-colors">
-            <td class="px-4 py-3.5">
-              <div class="truncate font-medium text-text">{{ item.name }}</div>
-              <div class="mt-0.5 truncate text-[11px] text-text-muted">
-                {{ formatWorkspaceAuthorization(item) }}
-              </div>
-            </td>
-            <td class="px-4 py-3.5 font-mono text-xs text-text-secondary truncate">
-              {{ item.token_masked }}
-            </td>
-            <td class="px-4 py-3.5">
-              <div class="flex flex-wrap gap-1 max-h-16 overflow-y-auto">
-                <span
-                  v-for="scope in item.scopes"
-                  :key="scope"
-                  class="inline-block px-1.5 py-0.5 rounded text-[11px] font-mono bg-surface-muted text-text-secondary border border-border-muted"
-                >
-                  {{ scope }}
-                </span>
-              </div>
-            </td>
-            <td class="px-4 py-3.5">
-              <span
-                v-if="item.revoked_at"
-                class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-surface-muted text-text-disabled"
-              >
-                已吊销
-              </span>
-              <span
-                v-else-if="!item.is_active"
-                class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-warning-muted text-warning-strong"
-              >
-                已过期
-              </span>
-              <span
-                v-else
-                class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-success-muted text-success-strong"
-              >
-                活跃中
-              </span>
-            </td>
-            <td class="px-4 py-3.5 text-xs text-text-secondary">
-              <div v-if="item.last_used_at">
-                <div>{{ formatDate(item.last_used_at) }}</div>
-                <div v-if="item.last_used_ip" class="text-text-disabled text-[11px] font-mono">{{ item.last_used_ip }}</div>
-              </div>
-              <span v-else class="text-text-disabled">从未</span>
-            </td>
-            <td class="px-4 py-3.5 text-xs text-text-secondary">
-              {{ item.expires_at ? formatDate(item.expires_at) : '长期有效' }}
-            </td>
-            <td class="px-4 py-3.5 text-right">
-              <UiButton
-                v-if="item.is_active"
-                variant="ghost"
-                size="sm"
-                class="text-danger hover:text-danger-strong hover:bg-danger-muted"
-                @click="openRevokeConfirm(item)"
-              >
-                吊销
-              </UiButton>
-              <span v-else class="text-xs text-text-disabled">-</span>
-            </td>
-          </tr>
-        </tbody>
-      </table>
+      <div v-else class="overflow-x-auto">
+        <table class="w-full min-w-[980px] table-fixed text-left text-sm">
+          <thead class="border-b border-border bg-canvas text-xs font-semibold uppercase text-text-muted">
+            <tr>
+              <th class="w-48 px-4 py-3.5">令牌名称</th>
+              <th class="w-48 px-4 py-3.5">标识</th>
+              <th class="px-4 py-3.5">权限 Scope</th>
+              <th class="w-28 px-4 py-3.5">状态</th>
+              <th class="w-40 px-4 py-3.5">最后使用</th>
+              <th class="w-40 px-4 py-3.5">到期时间</th>
+              <th class="w-36 px-4 py-3.5 text-right">操作</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-border-muted">
+            <tr v-for="item in tokens" :key="item.id" class="transition-colors hover:bg-surface-muted/50">
+              <td class="px-4 py-3.5">
+                <div class="truncate font-medium text-text">{{ item.name }}</div>
+                <div class="mt-0.5 truncate text-[11px] text-text-muted">
+                  {{ formatWorkspaceAuthorization(item) }}
+                </div>
+              </td>
+              <td class="truncate px-4 py-3.5 font-mono text-xs text-text-secondary">
+                {{ item.token_masked }}
+              </td>
+              <td class="px-4 py-3.5">
+                <div class="flex max-h-16 flex-wrap gap-1 overflow-y-auto">
+                  <span
+                    v-for="scope in item.scopes"
+                    :key="scope"
+                    class="inline-block rounded border border-border-muted bg-surface-muted px-1.5 py-0.5 text-[11px] font-mono text-text-secondary"
+                  >
+                    {{ scope }}
+                  </span>
+                </div>
+              </td>
+              <td class="px-4 py-3.5">
+                <UiBadge v-if="item.revoked_at" tone="neutral">已吊销</UiBadge>
+                <UiBadge v-else-if="!item.is_active" tone="warning">已过期</UiBadge>
+                <UiBadge v-else tone="success">活跃中</UiBadge>
+              </td>
+              <td class="px-4 py-3.5 text-xs text-text-secondary">
+                <div v-if="item.last_used_at">
+                  <div>{{ formatDate(item.last_used_at) }}</div>
+                  <div v-if="item.last_used_ip" class="text-text-disabled text-[11px] font-mono">{{ item.last_used_ip }}</div>
+                </div>
+                <span v-else class="text-text-disabled">从未</span>
+              </td>
+              <td class="px-4 py-3.5 text-xs text-text-secondary">
+                {{ item.expires_at ? formatDate(item.expires_at) : '长期有效' }}
+              </td>
+              <td class="px-4 py-3.5 text-right">
+                <div class="flex justify-end gap-1">
+                  <UiButton
+                    v-if="!item.revoked_at"
+                    variant="ghost"
+                    size="sm"
+                    @click="openEditDialog(item)"
+                  >
+                    <template #icon><SquarePen class="h-3.5 w-3.5" /></template>
+                    编辑
+                  </UiButton>
+                  <UiButton
+                    v-if="item.is_active"
+                    variant="ghost"
+                    size="sm"
+                    class="text-danger hover:bg-danger-muted hover:text-danger-strong"
+                    @click="openRevokeConfirm(item)"
+                  >
+                    吊销
+                  </UiButton>
+                  <span v-if="item.revoked_at" class="text-xs text-text-disabled">-</span>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
     </div>
 
     <!-- Create Dialog -->
     <UiDialog
       :open="createDialogOpen"
-      title="创建个人访问令牌"
+      :title="editingToken ? '编辑个人访问令牌' : '创建个人访问令牌'"
       size="standard"
-      @update:open="createDialogOpen = $event"
+      @update:open="handleTokenDialogVisibility"
     >
       <div class="space-y-4 max-h-[70vh] overflow-y-auto pr-1">
         <UiFormField label="令牌名称" required :error="formErrors.name" v-slot="field">
@@ -127,12 +152,15 @@
           />
         </UiFormField>
 
-        <UiFormField label="有效期限" required v-slot="field">
+        <UiFormField :label="editingToken ? '有效期限（可选）' : '有效期限'" :required="!editingToken" v-slot="field">
           <UiSelect
             v-model="createForm.expires_in_days"
-            :options="expiresOptions"
+            :options="editingToken ? editExpiresOptions : expiresOptions"
             :input-id="field.inputId"
           />
+          <p v-if="editingToken && !editingToken.is_active" class="mt-2 text-xs text-warning-strong">
+            当前令牌已过期；保持当前设置不会恢复使用，只有选择新的有效期限后才会重新激活。
+          </p>
         </UiFormField>
 
         <!-- Workspace selection -->
@@ -198,8 +226,10 @@
       </div>
 
       <template #footer>
-        <UiButton variant="ghost" @click="createDialogOpen = false">取消</UiButton>
-        <UiButton variant="primary" :loading="creating" @click="handleCreateToken">生成令牌</UiButton>
+        <UiButton variant="ghost" @click="closeTokenDialog">取消</UiButton>
+        <UiButton variant="primary" :loading="editingToken ? updating : creating" @click="handleTokenSubmit">
+          {{ editingToken ? '保存修改' : '生成令牌' }}
+        </UiButton>
       </template>
     </UiDialog>
 
@@ -273,17 +303,25 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
-import { Copy, Key, ShieldAlert } from '@lucide/vue'
+import { computed, onMounted, reactive, ref } from 'vue'
+import { Copy, Key, ShieldAlert, SquarePen } from '@lucide/vue'
 
-import { createAccessToken, listAccessTokens, listAccessTokenScopes, revokeAccessToken } from '@/api/accessTokens'
+import {
+  createAccessToken,
+  listAccessTokens,
+  listAccessTokenScopes,
+  revokeAccessToken,
+  updateAccessToken,
+} from '@/api/accessTokens'
 import { listWorkspaces } from '@/api/catalog'
 import { getErrorMessage } from '@/api/http'
-import { UiButton, UiCheckbox, UiDialog, UiFormField, UiInput, UiSegmentedControl, UiSelect } from '@/components/ui'
+import { UiBadge, UiButton, UiCheckbox, UiDialog, UiFormField, UiInput, UiSegmentedControl, UiSelect } from '@/components/ui'
+import { PageHeader } from '@/components/patterns'
 import type { SelectOption } from '@/components/ui/select'
 import type {
   ApiAccessTokenItem,
   ApiAccessTokenScopeInfo,
+  ApiAccessTokenUpdateRequest,
 } from '@/types/accessTokens'
 import type { WorkspaceItem } from '@/types/api'
 import { Message } from '@/utils/message'
@@ -292,6 +330,9 @@ const loading = ref(false)
 const tokens = ref<ApiAccessTokenItem[]>([])
 const availableScopes = ref<ApiAccessTokenScopeInfo[]>([])
 const availableWorkspaces = ref<WorkspaceItem[]>([])
+const maxActiveTokens = ref<number | null>(null)
+const activeTokenCount = computed(() => tokens.value.filter((token) => token.is_active).length)
+const expiredTokenCount = computed(() => tokens.value.filter((token) => !token.revoked_at && !token.is_active).length)
 
 const expiresOptions: SelectOption[] = [
   { label: '7 天', value: 7 },
@@ -308,10 +349,12 @@ const workspaceAuthorizationOptions = [
 ]
 
 type WorkspaceAuthorization = 'all' | 'selected'
-type ExpirationSelection = number | 'never'
+type ExpirationSelection = number | 'never' | 'unchanged'
 
 const createDialogOpen = ref(false)
 const creating = ref(false)
+const updating = ref(false)
+const editingToken = ref<ApiAccessTokenItem | null>(null)
 const createForm = reactive({
   name: '',
   expires_in_days: 30 as ExpirationSelection,
@@ -351,12 +394,20 @@ function formatDate(dateStr: string | null): string {
 /** 生成人类可读的工作空间授权范围，避免把空 ID 列表误解为无权限。 */
 function formatWorkspaceAuthorization(item: ApiAccessTokenItem): string {
   if (item.all_workspaces) return '所有工作空间'
+  if (item.workspace_ids.length === 0) return '未授权工作空间'
   if (item.workspace_ids.length === 1) {
     const workspace = availableWorkspaces.value.find((candidate) => candidate.id === item.workspace_ids[0])
     return workspace?.name ?? `工作空间 ID: ${item.workspace_ids[0]}`
   }
   return `${item.workspace_ids.length} 个指定工作空间`
 }
+
+const editExpiresOptions = computed<SelectOption[]>(() => {
+  return [
+    { label: '保持当前设置', value: 'unchanged' },
+    ...expiresOptions,
+  ]
+})
 
 async function loadData() {
   loading.value = true
@@ -367,6 +418,7 @@ async function loadData() {
       listWorkspaces({ page: 1, page_size: 100 }),
     ])
     tokens.value = tokensRes.items
+    maxActiveTokens.value = tokensRes.max_active_tokens
     availableScopes.value = scopesRes
     availableWorkspaces.value = wsRes.items
   } catch (err) {
@@ -377,6 +429,7 @@ async function loadData() {
 }
 
 function openCreateDialog() {
+  editingToken.value = null
   createForm.name = ''
   createForm.expires_in_days = 30
   createForm.workspace_authorization = 'selected'
@@ -386,6 +439,34 @@ function openCreateDialog() {
   formErrors.workspaces = ''
   formErrors.scopes = ''
   createDialogOpen.value = true
+}
+
+/** 打开编辑弹窗并复制当前配置，避免用户取消时污染列表数据。 */
+function openEditDialog(item: ApiAccessTokenItem) {
+  if (item.revoked_at) return
+  editingToken.value = item
+  createForm.name = item.name
+  createForm.expires_in_days = 'unchanged'
+  createForm.workspace_authorization = item.all_workspaces ? 'all' : 'selected'
+  createForm.workspace_ids = [...item.workspace_ids]
+  createForm.scopes = [...item.scopes]
+  formErrors.name = ''
+  formErrors.workspaces = ''
+  formErrors.scopes = ''
+  createDialogOpen.value = true
+}
+
+function closeTokenDialog() {
+  createDialogOpen.value = false
+  editingToken.value = null
+}
+
+function handleTokenDialogVisibility(open: boolean) {
+  if (open) {
+    createDialogOpen.value = true
+  } else {
+    closeTokenDialog()
+  }
 }
 
 function toggleWorkspace(wsId: number) {
@@ -410,7 +491,7 @@ function selectAllScopes() {
   createForm.scopes = availableScopes.value.map((s) => s.scope)
 }
 
-async function handleCreateToken() {
+function validateTokenForm(): boolean {
   let hasError = false
   if (!createForm.name.trim()) {
     formErrors.name = '请输入令牌名称'
@@ -433,18 +514,45 @@ async function handleCreateToken() {
     formErrors.scopes = ''
   }
 
-  if (hasError) return
+  return !hasError
+}
+
+async function handleTokenSubmit() {
+  if (!validateTokenForm()) return
+
+  const basePayload = {
+    name: createForm.name.trim(),
+    all_workspaces: createForm.workspace_authorization === 'all',
+    workspace_ids: createForm.workspace_authorization === 'all' ? [] : createForm.workspace_ids,
+    scopes: createForm.scopes,
+  }
+
+  if (editingToken.value) {
+    const payload: ApiAccessTokenUpdateRequest = { ...basePayload }
+    if (createForm.expires_in_days !== 'unchanged') {
+      payload.expires_in_days = createForm.expires_in_days === 'never' ? null : createForm.expires_in_days
+    }
+    updating.value = true
+    try {
+      await updateAccessToken(editingToken.value.id, payload)
+      Message.success('访问令牌配置已更新')
+      closeTokenDialog()
+      await loadData()
+    } catch (err) {
+      Message.error(getErrorMessage(err, '更新访问令牌失败'))
+    } finally {
+      updating.value = false
+    }
+    return
+  }
 
   creating.value = true
   try {
-    const res = await createAccessToken({
-      name: createForm.name.trim(),
-      expires_in_days: createForm.expires_in_days === 'never' ? null : createForm.expires_in_days,
-      all_workspaces: createForm.workspace_authorization === 'all',
-      workspace_ids: createForm.workspace_authorization === 'all' ? [] : createForm.workspace_ids,
-      scopes: createForm.scopes,
-    })
-    createDialogOpen.value = false
+    const expiresInDays = createForm.expires_in_days === 'never' ? null : createForm.expires_in_days
+    if (expiresInDays === 'unchanged') return
+    const payload = { ...basePayload, expires_in_days: expiresInDays }
+    const res = await createAccessToken(payload)
+    closeTokenDialog()
     createdTokenSecret.value = res.token
     successDialogOpen.value = true
     await loadData()

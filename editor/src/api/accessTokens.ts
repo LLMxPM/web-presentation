@@ -7,6 +7,8 @@ import type {
   ApiAccessTokenCreateResponse,
   ApiAccessTokenListResponse,
   ApiAccessTokenScopeInfo,
+  ApiAccessTokenItem,
+  ApiAccessTokenUpdateRequest,
 } from '@/types/accessTokens'
 
 /**
@@ -25,6 +27,19 @@ export async function createAccessToken(
   payload: ApiAccessTokenCreateRequest,
 ): Promise<ApiAccessTokenCreateResponse> {
   const { data } = await http.post<ApiAccessTokenCreateResponse>('/access-tokens', payload)
+  return data
+}
+
+/**
+ * 更新访问令牌配置；不会重新生成或返回明文 Token。
+ * @param tokenId 令牌 ID
+ * @param payload 要更新的配置
+ */
+export async function updateAccessToken(
+  tokenId: number,
+  payload: ApiAccessTokenUpdateRequest,
+): Promise<ApiAccessTokenItem> {
+  const { data } = await http.patch<ApiAccessTokenItem>(`/access-tokens/${tokenId}`, payload)
   return data
 }
 
