@@ -1,7 +1,14 @@
 <!-- 文件功能：为图片理解与图片生成工具提供稳定的输入缩略图、进度和结果画廊回显。 -->
 <template>
-  <details data-testid="visual-tool-card" class="visual-tool-details rounded-ui-md border border-border bg-surface-hover" :open="tool.status !== 'completed'">
-    <summary class="flex min-h-control-sm cursor-pointer select-none items-center gap-1.5 px-2 text-xs font-medium text-text-muted transition-colors hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus">
+  <details
+    data-testid="visual-tool-card"
+    class="visual-tool-details rounded-ui-md border border-border bg-surface-hover"
+    :open="isExpanded"
+  >
+    <summary
+      class="flex min-h-control-sm cursor-pointer select-none items-center gap-1.5 px-2 text-xs font-medium text-text-muted transition-colors hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus"
+      @click="handleSummaryClick"
+    >
       <ChevronRight class="visual-tool-chevron h-3 w-3 shrink-0 transition" />
       <span class="min-w-0 flex-1 truncate">{{ isAnalysis ? '图片理解' : '图片生成' }}</span>
       <UiBadge :tone="statusTone" size="sm">{{ statusText }}</UiBadge>
@@ -62,7 +69,7 @@
 
 <script setup lang="ts">
 import { ChevronRight } from '@lucide/vue'
-import { computed, ref } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import AgentImagePreviewDialog from '@/components/agent/AgentImagePreviewDialog.vue'
@@ -82,7 +89,9 @@ const route = useRoute()
 const router = useRouter()
 type VisualAttachment = ToolCallDetail['outputAttachments'][number]
 const previewAttachment = ref<VisualAttachment | null>(null)
+const expansionOverride = ref<boolean | null>(null)
 const isAnalysis = computed(() => props.tool.toolName === 'analyze_visuals')
+const isExpanded = computed(() => expansionOverride.value ?? props.tool.status !== 'completed')
 const visibleOutputAttachments = computed(() => (
   props.tool.status === 'error' && !isAnalysis.value ? [] : props.tool.outputAttachments
 ))
@@ -103,22 +112,34 @@ const analysisPreviewAttachments = computed(() => {
   }
   return [...byId.values()]
 })
-const promotedAssetIds = computed(() => new Set(
-  visibleOutputAttachments.value
-    .filter(item => item.promotion_status === 'promoted' && item.promoted_asset_id)
-    .map(item => Number(item.promoted_asset_id)),
-))
+const promotedOutputAttachments = computed(() => visibleOutputAttachments.value.filter(item => (
+  item.promotion_status === 'promoted'
+  && typeof item.promoted_asset_id === 'number'
+  && Number.isFinite(item.promoted_asset_id)
+)))
 const deletedOutputAttachments = computed(() => (
   visibleOutputAttachments.value.filter(item => item.promotion_status === 'deleted')
 ))
-const outputAssets = computed(() => (
-  props.tool.status !== 'error' && Array.isArray(output.value.assets)
-    ? output.value.assets.filter((item): item is { id: number, name: string } => (
-        isRecord(item) && typeof item.id === 'number' && typeof item.name === 'string'
-        && promotedAssetIds.value.has(item.id)
-      ))
-    : []
-))
+const outputAssets = computed(() => {
+  if (props.tool.status === 'error') {
+    return []
+  }
+  const assetsById = new Map<number, { id: number, name: string }>()
+  if (Array.isArray(output.value.assets)) {
+    for (const item of output.value.assets) {
+      if (isRecord(item) && typeof item.id === 'number' && typeof item.name === 'string') {
+        assetsById.set(item.id, { id: item.id, name: item.name })
+      }
+    }
+  }
+  return promotedOutputAttachments.value.map(attachment => {
+    const assetId = Number(attachment.promoted_asset_id)
+    return assetsById.get(assetId) ?? {
+      id: assetId,
+      name: assetNameFromAttachment(attachment.original_name),
+    }
+  })
+})
 const deletedAssetStatusText = computed(() => (
   deletedOutputAttachments.value.length === 1
     ? '资源库副本已删除'
@@ -162,6 +183,36 @@ const analysisTypeLabels: Record<string, string> = {
   layout: '布局分析',
   comparison: '图片对比',
   presentation_fit: '演示适配分析',
+}
+
+watch(
+  () => props.tool.id,
+  () => {
+    expansionOverride.value = null
+  },
+)
+
+/**
+ * 在原生 details 完成默认切换后保存用户选择，避免工具状态变化时折叠用户正在查看的结果。
+ */
+function handleSummaryClick(event: MouseEvent) {
+  const summary = event.currentTarget
+  if (!(summary instanceof HTMLElement)) {
+    return
+  }
+  void nextTick(() => {
+    const details = summary.parentElement
+    if (details instanceof HTMLDetailsElement) {
+      expansionOverride.value = details.open
+    }
+  })
+}
+
+/**
+ * 从附件原始文件名生成资源名称兜底，仅在实时事件暂未带回 assets 时使用。
+ */
+function assetNameFromAttachment(originalName: string) {
+  return originalName.replace(/\.[^.]+$/, '') || originalName
 }
 
 /** 在当前页面的统一沉浸式预览层中查看工具图片。 */

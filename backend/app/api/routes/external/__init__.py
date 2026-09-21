@@ -9,6 +9,7 @@ from app.api.routes.external.catalog import router as catalog_router
 from app.api.routes.external.components import router as components_router
 from app.api.routes.external.mutations import router as mutations_router
 from app.api.routes.external.pages import router as pages_router
+from app.api.routes.external.preview import router as preview_router
 from app.api.routes.external.projects import router as projects_router
 from app.api.routes.external.styles import router as styles_router
 from app.api.routes.external.system import router as system_router
@@ -23,6 +24,7 @@ v1_router.include_router(catalog_router, tags=["External Catalog"])
 v1_router.include_router(workspaces_router, prefix="/workspaces", tags=["External Workspaces"])
 v1_router.include_router(projects_router, prefix="/projects", tags=["External Projects"])
 v1_router.include_router(pages_router, tags=["External Pages"])
+v1_router.include_router(preview_router, tags=["External Preview"])
 v1_router.include_router(components_router, prefix="/components", tags=["External Components"])
 v1_router.include_router(assets_router, prefix="/assets", tags=["External Assets"])
 v1_router.include_router(themes_router, prefix="/themes", tags=["External Themes"])

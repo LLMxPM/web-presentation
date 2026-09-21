@@ -867,7 +867,7 @@ describe('page screenshot views', () => {
     expect(screen.getByRole('button', { name: '关闭页面编辑' })).toBeInTheDocument()
   })
 
-  it('PageDetailView 预览模式应支持手动刷新当前 iframe', async () => {
+  it('PageDetailView 预览模式手动刷新应重建 artifact 并更新 iframe', async () => {
     const dateNowSpy = vi.spyOn(Date, 'now')
     getPageMock.mockResolvedValue(createPageDetailPayload())
 
@@ -884,9 +884,11 @@ describe('page screenshot views', () => {
       await fireEvent.click(screen.getByRole('button', { name: '刷新预览' }))
 
       await waitFor(() => {
+        expect(createProjectPreviewArtifactMock).toHaveBeenCalledWith(21, 'src/views/PG202604020001.vue')
+      })
+      await waitFor(() => {
         expect(screen.getByTitle('runtime-preview')).toHaveAttribute('src', 'http://runtime.local/__preview?ticket=current&t=222')
       })
-      expect(createProjectPreviewArtifactMock).not.toHaveBeenCalled()
     } finally {
       dateNowSpy.mockRestore()
     }

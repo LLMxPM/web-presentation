@@ -53,6 +53,29 @@ class PatAuditService:
         )
 
     @staticmethod
+    def log_token_updated(
+        *,
+        user_id: int,
+        token_id: int,
+        public_id: str,
+        changed_fields: list[str],
+        ip: str | None = None,
+    ) -> None:
+        """记录 PAT 配置更新审计事件，不记录密钥或完整授权数据。"""
+
+        logger.info(
+            "PAT 访问令牌配置已更新。",
+            extra={
+                "event": "pat.updated",
+                "user_id": user_id,
+                "token_id": token_id,
+                "token_public_id": public_id,
+                "changed_fields": changed_fields,
+                "ip": ip or "unknown",
+            },
+        )
+
+    @staticmethod
     def log_auth_failure(*, public_id: str | None, reason: str, ip: str | None = None) -> None:
         """记录 PAT 鉴权失败安全事件。"""
 

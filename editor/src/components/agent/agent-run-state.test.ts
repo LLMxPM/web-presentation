@@ -898,6 +898,47 @@ describe('agent-run-state timeline', () => {
     expect(tool?.output_attachments?.map(item => item.id)).toEqual([12])
   })
 
+  it('视觉工具晚到的简化完成事件不应覆盖已有资源结果', () => {
+    const state = createAgentSessionRuntimeState()
+    const options = { agentId: 'agent-coordinator', agentDisplayName: '内容助手' }
+    const outputAttachment = {
+      id: 12,
+      source_kind: 'tool_output',
+      original_name: 'output.png',
+      content_type: 'image/png',
+      file_size: 100,
+      url: '/output.png',
+      preview_available: true,
+      promoted_asset_id: 99,
+      promotion_status: 'promoted',
+    }
+
+    applyAgentRunEvent(state, event({
+      event: 'tool.started',
+      sequence: 1,
+      data: {
+        tool_call_id: 'visual-1',
+        tool_name: 'generate_image',
+        result: { assets: [{ id: 99, name: 'hero' }] },
+        output_attachments: [outputAttachment],
+      },
+    }), options)
+    applyAgentRunEvent(state, event({
+      event: 'tool.completed',
+      sequence: 2,
+      data: {
+        tool_call_id: 'visual-1',
+        tool_name: 'generate_image',
+        result: { status: 'completed' },
+        output_attachments: [],
+      },
+    }), options)
+
+    const tool = state.timelineItems.find(item => item.kind === 'tool')?.tool
+    expect(tool?.output_payload).toEqual({ status: 'completed', assets: [{ id: 99, name: 'hero' }] })
+    expect(tool?.output_attachments?.map(item => item.id)).toEqual([12])
+  })
+
   it('工具执行和完成后的空档应切换等待状态', () => {
     const state = createAgentSessionRuntimeState()
     const options = { agentId: 'agent-coordinator', agentDisplayName: '内容助手' }

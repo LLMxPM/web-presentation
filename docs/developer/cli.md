@@ -96,6 +96,8 @@ GET  /api/v1/assets/tags
 
 ```text
 POST /api/v1/validate/entity
+POST /api/v1/projects/{project_id}/preview-artifact
+POST /api/v1/pages/{page_id}/preview-artifact
 GET  /api/v1/pages/{page_id}/screenshot
 POST /api/v1/jobs/mutations/pages
 POST /api/v1/jobs/mutations/pages/edits

@@ -50,6 +50,62 @@ class ApiAccessTokenCreateRequest(BaseModel):
         return self
 
 
+class ApiAccessTokenUpdateRequest(BaseModel):
+    """Web 控制台更新个人访问令牌配置请求。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str | None = Field(default=None, min_length=1, max_length=64, description="令牌名称")
+    workspace_ids: list[int] | None = Field(default=None, description="指定授权的工作空间 ID 列表")
+    all_workspaces: bool | None = Field(default=None, description="是否授权当前及未来加入的所有工作空间")
+    scopes: list[str] | None = Field(default=None, min_length=1, description="授权权限范围列表")
+    expires_in_days: int | None = Field(
+        default=None,
+        ge=1,
+        le=365,
+        description="从更新时间起的有效天数；显式传 null 表示长期有效",
+    )
+
+    @field_validator("scopes")
+    @classmethod
+    def validate_scopes(cls, scopes: list[str] | None) -> list[str] | None:
+        """校验更新请求中的 Scope 属于系统合法 Scope 集合。"""
+
+        if scopes is None:
+            return None
+        invalid = [scope for scope in scopes if scope not in ALL_VALID_SCOPES]
+        if invalid:
+            raise ValueError(f"包含非法权限 Scope: {', '.join(invalid)}")
+        return sorted(list(set(scopes)))
+
+    @field_validator("workspace_ids")
+    @classmethod
+    def validate_workspace_ids(cls, workspace_ids: list[int] | None) -> list[int] | None:
+        """拒绝重复工作空间，避免关联表复合主键冲突。"""
+
+        if workspace_ids is not None and len(workspace_ids) != len(set(workspace_ids)):
+            raise ValueError("workspace_ids 不允许包含重复工作空间 ID")
+        return workspace_ids
+
+    @model_validator(mode="after")
+    def validate_workspace_scope(self) -> "ApiAccessTokenUpdateRequest":
+        """要求工作空间授权配置成组提交，避免部分更新产生歧义。"""
+
+        if not self.model_fields_set:
+            raise ValueError("至少需要提供一项要修改的 PAT 配置")
+        workspace_fields = {"workspace_ids", "all_workspaces"}
+        provided_workspace_fields = workspace_fields.intersection(self.model_fields_set)
+        if provided_workspace_fields and provided_workspace_fields != workspace_fields:
+            raise ValueError("修改工作空间授权时必须同时传入 all_workspaces 和 workspace_ids")
+        if provided_workspace_fields == workspace_fields and self.all_workspaces is None:
+            raise ValueError("all_workspaces 不得为空")
+        if self.all_workspaces and self.workspace_ids:
+            raise ValueError("all_workspaces=true 时不得同时传入 workspace_ids")
+        if self.all_workspaces is False and (self.workspace_ids is None or not self.workspace_ids):
+            raise ValueError("指定工作空间授权至少需要一个 workspace_id")
+        return self
+
+
 class ApiAccessTokenCreateResponse(BaseModel):
     """创建个人访问令牌响应（仅此一次返回明文 Token）。"""
 
@@ -93,3 +149,4 @@ class ApiAccessTokenListResponse(BaseModel):
 
     items: list[ApiAccessTokenItem]
     total: int
+    max_active_tokens: int = Field(description="当前系统允许的活跃 PAT 数量上限")

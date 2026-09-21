@@ -44,6 +44,14 @@ class ExternalCapabilitiesResponse(BaseModel):
     operations: list[str] = Field(..., description="当前 Token 在当前工作空间允许执行的操作列表")
 
 
+class ExternalPreviewArtifactCreateRequest(BaseModel):
+    """External API 项目预览 artifact 创建请求。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    route: str | None = Field(default=None, min_length=1, max_length=128, description="可选的项目入口路由")
+
+
 class ExternalBatchArchiveRequest(BaseModel):
     """批量归档请求模型。"""
 

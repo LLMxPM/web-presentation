@@ -1,12 +1,12 @@
 /**
  * 文件功能：验证会话正文自动贴底跟随的滚动计算，防止流式签名、阈值与滚动意图判断回归。
  */
-import { render } from '@testing-library/vue'
+import { fireEvent, render } from '@testing-library/vue'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
 
 import AgentConversationBody from '@/components/agent/AgentConversationBody.vue'
-import type { TimelineDisplayItem } from '@/components/agent/agent-conversation-panel'
+import type { TimelineDisplayItem, ToolCallDetail } from '@/components/agent/agent-conversation-panel'
 import type { AgentMessageItem, AgentTimelineItem } from '@/types/api'
 
 /**
@@ -53,6 +53,70 @@ function baseProps(content: string, sessionId = 'session-1') {
     isStreaming: true,
     streamingTimelineItemId: 'assistant-1',
     sessionId,
+  }
+}
+
+/**
+ * 构造最小普通工具调用，覆盖工具组折叠状态而不依赖具体工具输出。
+ */
+function toolDetail(id: string): ToolCallDetail {
+  return {
+    id,
+    runId: 'run-1',
+    toolCallId: id,
+    toolName: 'list_workspace_render_assets',
+    status: 'completed',
+    inputPayload: {},
+    outputPayload: {},
+    message: '',
+    progress: null,
+    source: 'event',
+    createdAt: null,
+    attachments: [],
+    inputAttachments: [],
+    outputAttachments: [],
+  }
+}
+
+/**
+ * 构造由两个已完成工具组成的折叠组，模拟最终结果到达后的回放状态。
+ */
+function completedToolGroup(): TimelineDisplayItem {
+  const first = toolDetail('tool-1')
+  const second = toolDetail('tool-2')
+  return {
+    id: 'tool-group:tool-1|tool-2',
+    kind: 'tool_group',
+    items: [
+      timelineItemForTool(first),
+      timelineItemForTool(second),
+    ],
+    tools: [first, second],
+  }
+}
+
+function timelineItemForTool(tool: ToolCallDetail): AgentTimelineItem {
+  return {
+    id: tool.id,
+    session_id: 'session-1',
+    run_id: 'run-1',
+    kind: 'tool',
+    role: null,
+    event_index: null,
+    order_index: Number(tool.id.slice(-1)),
+    content: null,
+    status: tool.status,
+    tool: {
+      tool_call_id: tool.toolCallId,
+      tool_name: tool.toolName,
+      status: tool.status,
+      input_payload: tool.inputPayload,
+      output_payload: tool.outputPayload,
+      message: tool.message,
+    },
+    attachments: [],
+    source: 'event',
+    created_at: null,
   }
 }
 
@@ -225,5 +289,26 @@ describe('AgentConversationBody 滚动跟随', () => {
     await flushAutoScroll()
 
     expect(state.scrollTop).toBe(1200)
+  })
+
+  it('用户展开工具组后，时间线更新不应再次折叠工具组', async () => {
+    const props = {
+      ...baseProps('工具完成', 'session-1'),
+      timelineDisplayItems: [completedToolGroup()],
+      isStreaming: false,
+      streamingTimelineItemId: null,
+    }
+    const { rerender } = render(AgentConversationBody, { props })
+    const details = document.querySelector('[data-testid="tool-call-group"]') as HTMLDetailsElement
+    const summary = details.querySelector(':scope > summary') as HTMLElement
+
+    expect(details.open).toBe(false)
+    await fireEvent.click(summary)
+    await nextTick()
+    expect(details.open).toBe(true)
+
+    await rerender({ ...props, timelineDisplayItems: [completedToolGroup()] })
+
+    expect(details.open).toBe(true)
   })
 })

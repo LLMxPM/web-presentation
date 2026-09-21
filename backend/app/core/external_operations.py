@@ -100,6 +100,13 @@ OPERATION_REGISTRY: dict[str, ExternalOperationSpec] = {
     "project.build_assets.update": ExternalOperationSpec(
         "project.build_assets.update", ("project:write",), requires_idempotency_key=True, description="更新项目构建额外资源配置",
     ),
+    "project.preview": ExternalOperationSpec(
+        "project.preview",
+        ("project:read", "preview:run"),
+        description="创建项目预览地址",
+        http_method="POST",
+        path_template="/projects/{project_id}/preview-artifact",
+    ),
 
     # Page
     "page.list": ExternalOperationSpec(
@@ -123,6 +130,13 @@ OPERATION_REGISTRY: dict[str, ExternalOperationSpec] = {
         "page.screenshot.latest",
         ("page:read", "preview:run"),
         description="获取页面最新截图",
+    ),
+    "page.preview": ExternalOperationSpec(
+        "page.preview",
+        ("page:read", "preview:run"),
+        description="创建单页面预览地址",
+        http_method="POST",
+        path_template="/pages/{page_id}/preview-artifact",
     ),
     "page.create": ExternalOperationSpec(
         "page.create", ("page:write",), requires_idempotency_key=True, description="提交页面异步创建任务",
@@ -329,6 +343,7 @@ _OPERATION_HTTP_CONTRACTS: dict[str, tuple[str, str]] = {
     "project.route.update": ("PUT", "/projects/{project_id}/route-tree"),
     "project.apply_style": ("POST", "/projects/{project_id}/apply-style"),
     "project.build_assets.update": ("PUT", "/projects/{project_id}/build-assets"),
+    "project.preview": ("POST", "/projects/{project_id}/preview-artifact"),
     "page.list": ("GET", "/projects/{project_id}/pages"),
     "page.get": ("GET", "/pages/{page_id}"),
     "page.update": ("PATCH", "/pages/{page_id}"),
@@ -339,6 +354,7 @@ _OPERATION_HTTP_CONTRACTS: dict[str, tuple[str, str]] = {
     "page.validate": ("POST", "/pages/{page_id}/validate"),
     "page.archive": ("POST", "/pages/{page_id}/archive"),
     "page.screenshot.latest": ("GET", "/pages/{page_id}/screenshot"),
+    "page.preview": ("POST", "/pages/{page_id}/preview-artifact"),
     "component.list": ("GET", "/components"),
     "component.create": ("POST", "/components"),
     "component.get": ("GET", "/components/{component_id}"),

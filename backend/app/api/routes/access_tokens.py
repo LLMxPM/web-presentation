@@ -16,7 +16,9 @@ from app.db.session import get_db_session
 from app.schemas.api_access_token import (
     ApiAccessTokenCreateRequest,
     ApiAccessTokenCreateResponse,
+    ApiAccessTokenItem,
     ApiAccessTokenListResponse,
+    ApiAccessTokenUpdateRequest,
 )
 from app.services.auth_service import AuthContext
 from app.services.api_access_token_service import ApiAccessTokenService
@@ -89,6 +91,26 @@ async def create_access_token(
     client_ip = request.client.host if request.client else None
     return await ApiAccessTokenService(session).create_token(
         user_id=current.user.id,
+        payload=payload,
+        ip=client_ip,
+    )
+
+
+@router.patch("/{token_id}", response_model=ApiAccessTokenItem)
+async def update_access_token(
+    request: Request,
+    token_id: int,
+    payload: ApiAccessTokenUpdateRequest,
+    current: Annotated[AuthContext, Depends(get_current_user)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> ApiAccessTokenItem:
+    """更新当前用户 PAT 配置；密钥不变，更新后的授权立即生效。"""
+
+    _verify_csrf_origin(request)
+    client_ip = request.client.host if request.client else None
+    return await ApiAccessTokenService(session).update_token(
+        user_id=current.user.id,
+        token_id=token_id,
         payload=payload,
         ip=client_ip,
     )

@@ -26,6 +26,14 @@ export interface ApiAccessTokenCreateRequest {
   expires_in_days: number | null
 }
 
+export interface ApiAccessTokenUpdateRequest {
+  name?: string
+  workspace_ids?: number[]
+  all_workspaces?: boolean
+  scopes?: string[]
+  expires_in_days?: number | null
+}
+
 export interface ApiAccessTokenCreateResponse {
   id: number
   name: string
@@ -41,6 +49,7 @@ export interface ApiAccessTokenCreateResponse {
 export interface ApiAccessTokenListResponse {
   items: ApiAccessTokenItem[]
   total: number
+  max_active_tokens: number
 }
 
 export interface ApiAccessTokenScopeInfo {

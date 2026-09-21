@@ -3,6 +3,7 @@
  */
 import { fireEvent, render, screen } from '@testing-library/vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { nextTick } from 'vue'
 
 import AgentVisualToolCard from '@/components/agent/AgentVisualToolCard.vue'
 import type { ToolCallDetail } from '@/components/agent/agent-conversation-panel'
@@ -120,6 +121,47 @@ describe('AgentVisualToolCard', () => {
     expect(screen.getByText('已生成 2 张图片；1 个资源仍在资源库，1 个副本已删除。')).toBeTruthy()
     expect(screen.getByText('active-hero')).toBeTruthy()
     expect(screen.queryByText('deleted-hero')).toBeNull()
+    expect(screen.getByRole('button', { name: /已保存到资源库/ })).toBeTruthy()
+  })
+
+  it('用户展开结果后，实时状态更新不应再次折叠工具卡', async () => {
+    const { rerender } = render(AgentVisualToolCard, {
+      props: {
+        tool: createTool({
+          outputPayload: { assets: [{ id: 102, name: 'hero' }] },
+          outputAttachments: [createAttachment(2, 'hero.png')],
+        }),
+      },
+    })
+    const details = document.querySelector('[data-testid="visual-tool-card"]') as HTMLDetailsElement
+    const summary = details.querySelector(':scope > summary') as HTMLElement
+
+    expect(details.open).toBe(false)
+    await fireEvent.click(summary)
+    await nextTick()
+    expect(details.open).toBe(true)
+
+    await rerender({
+      tool: createTool({
+        outputPayload: { status: 'completed' },
+        outputAttachments: [createAttachment(2, 'hero.png')],
+      }),
+    })
+
+    expect(details.open).toBe(true)
+  })
+
+  it('实时事件暂未带回 assets 时，已晋级附件仍显示资源库入口', () => {
+    render(AgentVisualToolCard, {
+      props: {
+        tool: createTool({
+          outputPayload: { status: 'completed' },
+          outputAttachments: [createAttachment(2, 'hero.png')],
+        }),
+      },
+    })
+
+    expect(screen.getByText('hero')).toBeTruthy()
     expect(screen.getByRole('button', { name: /已保存到资源库/ })).toBeTruthy()
   })
 })
