@@ -2,10 +2,11 @@
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
+from app.db.types import UTCDateTime
 from app.models.enums import PageFileType, RecordStatus
 from app.models.mixins import AuditMixin, SoftDeleteMixin, TimestampMixin
 
@@ -32,4 +33,4 @@ class Page(TimestampMixin, AuditMixin, SoftDeleteMixin, Base):
     # 单页面公开截图指针当前绑定的视口；避免把不同尺寸误判为同一缓存版本。
     screenshot_viewport_width: Mapped[int | None] = mapped_column(Integer, nullable=True)
     screenshot_viewport_height: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    screenshot_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    screenshot_updated_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)

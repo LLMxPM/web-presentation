@@ -9,6 +9,7 @@ import App from './App.vue'
 import { setupUnauthorizedRedirect } from './auth/unauthorized'
 import { router } from './router'
 import { installEditorClientLogger } from './utils/client-logger'
+import { initializeAppTimezone } from './utils/setup-timezone'
 import './style.css'
 
 const app = createApp(App)
@@ -26,4 +27,10 @@ app.use(VueQueryPlugin, {
     },
   },
 })
-app.mount('#app')
+/** 等待后端业务时区后再挂载，避免首屏日期和会话分组使用旧时区。 */
+async function mountApp(): Promise<void> {
+  await initializeAppTimezone()
+  app.mount('#app')
+}
+
+void mountApp()

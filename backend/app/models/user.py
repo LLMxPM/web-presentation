@@ -3,10 +3,11 @@
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import JSON, Boolean, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
+from app.db.types import UTCDateTime
 from app.models.enums import RecordStatus, UserRole
 from app.models.mixins import TimestampMixin
 
@@ -26,7 +27,7 @@ class User(TimestampMixin, Base):
     display_name: Mapped[str] = mapped_column(String(128), nullable=False)
     role: Mapped[str] = mapped_column(String(32), nullable=False, default=UserRole.WORKSPACE_USER.value)
     status: Mapped[RecordStatus] = mapped_column(String(32), nullable=False, default=RecordStatus.ACTIVE.value)
-    last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_login_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
     preview_size_presets: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
 
     sessions: Mapped[list["UserSession"]] = relationship(back_populates="user")
@@ -46,8 +47,8 @@ class UserSession(TimestampMixin, Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
     token_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
-    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    last_active_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False)
+    last_active_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
     user: Mapped[User] = relationship(back_populates="sessions")

@@ -1310,7 +1310,7 @@ describe('AgentConversationPanel', () => {
     expect(messageInfoMock).not.toHaveBeenCalledWith('已停止。')
   })
 
-  it('停止未超过 10 秒不显示强制结束入口', async () => {
+  it.each(['Z', ''])('停止未超过 10 秒不显示强制结束入口（时区后缀：%s）', async (timezoneSuffix) => {
     localStorage.setItem('agent-session:agent-coordinator:11', 'session-1')
     localStorage.setItem('agent-session:v2:agent-coordinator:page:11:21:31::editor-page-detail', 'session-1')
     listAgentSessionsMock.mockResolvedValueOnce([
@@ -1328,7 +1328,7 @@ describe('AgentConversationPanel', () => {
         },
       },
     ])
-    const cancelRequestedAt = new Date(Date.now() - 1_000).toISOString()
+    const cancelRequestedAt = new Date(Date.now() - 1_000).toISOString().replace(/Z$/, timezoneSuffix)
     const cancellingRun = {
       run_id: 'run-force-pending',
       session_id: 'session-1',
@@ -1358,7 +1358,7 @@ describe('AgentConversationPanel', () => {
     expect(screen.queryByRole('button', { name: '强制结束' })).toBeNull()
   })
 
-  it('停止超过 10 秒应显示强制结束入口并调用 force cancel', async () => {
+  it.each(['Z', ''])('停止超过 10 秒应显示强制结束入口并调用 force cancel（时区后缀：%s）', async (timezoneSuffix) => {
     localStorage.setItem('agent-session:agent-coordinator:11', 'session-1')
     localStorage.setItem('agent-session:v2:agent-coordinator:page:11:21:31::editor-page-detail', 'session-1')
     listAgentSessionsMock.mockResolvedValueOnce([
@@ -1376,7 +1376,7 @@ describe('AgentConversationPanel', () => {
         },
       },
     ])
-    const cancelRequestedAt = new Date(Date.now() - 10_500).toISOString()
+    const cancelRequestedAt = new Date(Date.now() - 10_500).toISOString().replace(/Z$/, timezoneSuffix)
     const cancellingRun = {
       run_id: 'run-force',
       session_id: 'session-1',

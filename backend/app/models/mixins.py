@@ -2,20 +2,22 @@
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, Integer, func
+from sqlalchemy import Integer, func
 from sqlalchemy.orm import Mapped, mapped_column
+
+from app.db.types import UTCDateTime
 
 
 class TimestampMixin:
     """为模型补充创建时间与更新时间字段。"""
 
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
+        UTCDateTime(),
         nullable=False,
         server_default=func.now(),
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
+        UTCDateTime(),
         nullable=False,
         server_default=func.now(),
         onupdate=func.now(),
@@ -32,4 +34,4 @@ class AuditMixin:
 class SoftDeleteMixin:
     """通过删除时间字段实现软删除，避免真实数据被直接移除。"""
 
-    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    deleted_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)

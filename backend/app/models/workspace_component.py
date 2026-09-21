@@ -2,10 +2,11 @@
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
+from app.db.types import UTCDateTime
 from app.models.enums import PageFileType, RecordStatus, WorkspaceComponentType
 from app.models.mixins import AuditMixin, SoftDeleteMixin, TimestampMixin
 
@@ -22,7 +23,7 @@ class WorkspaceComponent(TimestampMixin, AuditMixin, SoftDeleteMixin, Base):
     preview_schema: Mapped[str | None] = mapped_column(Text, nullable=True)
     current_version_no: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     draft_base_version_no: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
-    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    published_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
     file_type: Mapped[PageFileType] = mapped_column(String(32), nullable=False, default=PageFileType.VUE.value)
     name: Mapped[str] = mapped_column(String(128), nullable=False)
     import_name: Mapped[str] = mapped_column(String(64), nullable=False)

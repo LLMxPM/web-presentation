@@ -5,10 +5,11 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, JSON, String, Text
+from sqlalchemy import Boolean, ForeignKey, Integer, JSON, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
+from app.db.types import UTCDateTime
 from app.models.enums import RecordStatus
 from app.models.mixins import AuditMixin, TimestampMixin
 
@@ -35,8 +36,8 @@ class AiAgentImageAttachment(TimestampMixin, AuditMixin, Base):
     height: Mapped[int | None] = mapped_column(Integer, nullable=True)
     sha256: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     model_url: Mapped[str | None] = mapped_column(Text, nullable=True)
-    model_url_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    model_url_last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    model_url_expires_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+    model_url_last_used_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
     owned_object: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     promoted_asset_id: Mapped[int | None] = mapped_column(
         ForeignKey("workspace_assets.id", ondelete="SET NULL"),
@@ -45,5 +46,5 @@ class AiAgentImageAttachment(TimestampMixin, AuditMixin, Base):
     )
     last_promoted_asset_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     last_promoted_asset_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    promoted_asset_deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    promoted_asset_deleted_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default=RecordStatus.ACTIVE.value, index=True)

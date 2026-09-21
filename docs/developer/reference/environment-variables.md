@@ -14,6 +14,8 @@
 
 关键变量包括 `VITE_API_PROXY_TARGET`、`VITE_APP_TIMEZONE` 和 `VITE_CLIENT_ERROR_REPORTING`。
 
+Editor 启动时从 Backend 读取 `APP_TIMEZONE`；`VITE_APP_TIMEZONE` 仅作为配置请求失败时的回退值。详见[时间存储与展示](../backend/time-handling.md)。
+
 ## Runtime 本地变量
 
 模板文件：`runtime/.env.example`。

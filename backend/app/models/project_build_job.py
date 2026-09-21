@@ -2,11 +2,12 @@
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.config import get_settings
 from app.db.base import Base
+from app.db.types import UTCDateTime
 from app.models.mixins import TimestampMixin
 
 
@@ -27,8 +28,8 @@ class ProjectBuildJob(TimestampMixin, Base):
     artifact_sha256: Mapped[str | None] = mapped_column(String(128), nullable=True)
     artifact_size_bytes: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_by: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    started_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
 
     @property
     def artifact_proxy_url(self) -> str | None:

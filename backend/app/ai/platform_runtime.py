@@ -17,6 +17,7 @@ from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
+from app.core.time_utils import normalize_utc
 from app.ai.image_refs import sanitize_message_history_image_refs
 from app.ai.agent.runtime_context import AgentRuntimeContext
 from app.ai.run_event_writer import allocate_run_event_index, is_sqlite_lock_error
@@ -2032,9 +2033,9 @@ def _as_utc(value: datetime) -> datetime:
 
 
 def _iso(value: datetime | None) -> str | None:
-    """把 datetime 转为接口字符串。"""
+    """把 datetime 转为带 UTC 偏移的接口字符串，历史 naive 值直接补 UTC。"""
 
-    return value.isoformat() if value is not None else None
+    return normalize_utc(value).isoformat() if value is not None else None
 
 
 def _subscribe(run_id: str) -> asyncio.Queue[AgentRunEvent | None]:

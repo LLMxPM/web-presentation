@@ -2,10 +2,11 @@
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, JSON, String, Text, UniqueConstraint
+from sqlalchemy import ForeignKey, Integer, JSON, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
+from app.db.types import UTCDateTime
 from app.models.enums import RecordStatus
 from app.models.mixins import TimestampMixin
 
@@ -38,7 +39,7 @@ class WorkspaceAsset(TimestampMixin, Base):
         server_default=RecordStatus.ACTIVE.value,
         index=True,
     )
-    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    archived_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
     archive_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     source_asset_id: Mapped[int | None] = mapped_column(ForeignKey("workspace_assets.id"), nullable=True, index=True)
     history_kind: Mapped[str | None] = mapped_column(String(64), nullable=True)

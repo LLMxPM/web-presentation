@@ -3,10 +3,11 @@
 from datetime import datetime
 from typing import Any, Mapping
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, JSON, String, Text, UniqueConstraint, text
+from sqlalchemy import Boolean, ForeignKey, Integer, JSON, String, Text, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
+from app.db.types import UTCDateTime
 from app.models.enums import RecordStatus, WorkspaceMemberRole
 from app.models.mixins import AuditMixin, SoftDeleteMixin, TimestampMixin
 
@@ -21,7 +22,7 @@ class Workspace(TimestampMixin, AuditMixin, SoftDeleteMixin, Base):
     name: Mapped[str] = mapped_column(String(128), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[RecordStatus] = mapped_column(String(32), nullable=False, default=RecordStatus.ACTIVE.value)
-    last_opened_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_opened_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
     default_theme_key: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
     projects: Mapped[list["Project"]] = relationship(back_populates="workspace")
@@ -65,7 +66,7 @@ class Project(TimestampMixin, AuditMixin, SoftDeleteMixin, Base):
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     is_system_managed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))
     status: Mapped[RecordStatus] = mapped_column(String(32), nullable=False, default=RecordStatus.ACTIVE.value)
-    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    archived_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
     page_width: Mapped[int] = mapped_column(Integer, nullable=False, default=1920, server_default=text("1920"))
     page_height: Mapped[int] = mapped_column(Integer, nullable=False, default=1080, server_default=text("1080"))
     base_font_size: Mapped[str] = mapped_column(String(32), nullable=False, default="24px", server_default=text("'24px'"))

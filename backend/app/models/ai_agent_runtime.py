@@ -5,10 +5,11 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import DateTime, ForeignKey, Index, Integer, JSON, String, Text, UniqueConstraint, text
+from sqlalchemy import ForeignKey, Index, Integer, JSON, String, Text, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
+from app.db.types import UTCDateTime
 from app.models.mixins import AuditMixin, TimestampMixin
 
 
@@ -29,7 +30,7 @@ class AiAgentSession(TimestampMixin, AuditMixin, Base):
     focus_version: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     metadata_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
     summary_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
-    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    deleted_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True, index=True)
 
 
 class AiAgentRun(TimestampMixin, Base):
@@ -66,9 +67,9 @@ class AiAgentRun(TimestampMixin, Base):
     reasoning_content: Mapped[str | None] = mapped_column(Text, nullable=True)
     pending_requirement_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     event_index: Mapped[int] = mapped_column(Integer, nullable=False, default=-1)
-    cancel_requested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    cancel_requested_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+    started_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
     error_code: Mapped[str | None] = mapped_column(String(128), nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
 
@@ -149,4 +150,4 @@ class AiAgentRequirement(TimestampMixin, Base):
     tool_name: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
     payload_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
     resolved_payload_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
-    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    resolved_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)

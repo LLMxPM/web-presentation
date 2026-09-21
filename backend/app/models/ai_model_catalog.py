@@ -5,10 +5,11 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, JSON, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, ForeignKey, Index, Integer, JSON, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
+from app.db.types import UTCDateTime
 from app.models.mixins import TimestampMixin
 
 
@@ -28,7 +29,7 @@ class AiChatProviderCatalog(TimestampMixin, Base):
     is_current: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, index=True)
     catalog_version: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     source_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
-    synced_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    synced_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False)
 
     models: Mapped[list["AiChatModelCatalog"]] = relationship(back_populates="provider")
 
@@ -66,7 +67,7 @@ class AiChatModelCatalog(TimestampMixin, Base):
     is_current: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, index=True)
     catalog_version: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     source_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
-    synced_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    synced_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False)
 
     provider: Mapped[AiChatProviderCatalog] = relationship(back_populates="models")
 
@@ -79,8 +80,8 @@ class AiModelCatalogSyncState(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
     etag: Mapped[str | None] = mapped_column(String(512), nullable=True)
     catalog_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    last_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    last_success_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_attempt_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+    last_success_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     lease_owner: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    lease_expires_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True, index=True)

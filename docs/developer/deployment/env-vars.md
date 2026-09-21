@@ -10,7 +10,9 @@ production env 版通过 `deploy/.env` 管理环境变量，模板来自 `deploy
 | `RUNTIME_PUBLIC_BASE_URL` | Runtime 对浏览器暴露的访问地址，同域部署通常为平台地址追加 `/runtime` |
 | `CORS_ORIGINS` | 允许访问 Backend 的前端源 |
 | `SESSION_SECURE` | HTTPS 部署应设为 `true` |
-| `APP_TIMEZONE` | 业务时区，默认 `Asia/Shanghai` |
+| `APP_TIMEZONE` | 业务时区，默认 `Asia/Shanghai`；Editor 启动时自动读取，无需重建前端 |
+
+数据库与接口统一使用 UTC，历史无时区值直接补 UTC。业务时区只影响展示和业务日期生成，详见[时间存储与展示](../backend/time-handling.md)。
 
 ## 数据与缓存
 

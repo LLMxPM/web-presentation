@@ -36,7 +36,7 @@
               {{ config.has_api_key ? '密钥已配置' : '缺少密钥' }}
             </span>
           </td>
-          <td class="truncate px-4 py-3 text-xs text-text-muted">{{ formatDate(config.updated_at) }}</td>
+          <td class="truncate px-4 py-3 text-xs text-text-muted">{{ formatDateTime(config.updated_at) }}</td>
           <td class="px-4 py-3 text-right" @click.stop>
             <div class="flex justify-end gap-1">
               <UiButton variant="ghost" size="sm" @click="emit('view', config)">查看</UiButton>
@@ -53,6 +53,7 @@
 <script setup lang="ts">
 import { UiButton } from '@/components/ui'
 import type { LlmProviderConfigItem } from '@/types/api'
+import { formatDateTime } from '@/utils/format'
 
 defineProps<{ items: LlmProviderConfigItem[] }>()
 
@@ -67,10 +68,5 @@ function providerTypeLabel(config: LlmProviderConfigItem): string {
   return config.provider_type === 'image_generation' ? '图片生成' : 'Chat'
 }
 
-/** 将后端时间格式化为管理表格的紧凑日期。 */
-function formatDate(value: string | null): string {
-  if (!value) return '—'
-  return new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value))
-}
 </script>
 

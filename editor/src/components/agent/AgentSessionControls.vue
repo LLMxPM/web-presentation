@@ -86,6 +86,7 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { parseApiDate } from '@/utils/timezone'
 import { Check, ChevronDown, Plus, Search } from '@lucide/vue'
 
 import DataState from '@/components/patterns/DataState.vue'
@@ -177,7 +178,7 @@ function compareSessionRecentFirst(left: AgentSessionItem, right: AgentSessionIt
  */
 function resolveSessionTime(session: AgentSessionItem): number {
   const value = session.updated_at || session.created_at || ''
-  const timestamp = Date.parse(value)
+  const timestamp = parseApiDate(value).getTime()
   return Number.isFinite(timestamp) ? timestamp : 0
 }
 

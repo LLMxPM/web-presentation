@@ -6,7 +6,7 @@ import { parseMarkdownToStructure, type BaseNode } from 'markstream-vue'
 import type { AgentMessageItem } from '@/types/api'
 import type { ToolCallDetail } from '@/components/agent/agent-conversation-panel'
 import { formatDateTime } from '@/utils/format'
-import { APP_TIMEZONE } from '@/utils/timezone'
+import { APP_TIMEZONE, parseApiDate } from '@/utils/timezone'
 
 export const toolStatusLabelMap: Record<ToolCallDetail['status'], string> = {
   running: '进行中',
@@ -95,7 +95,7 @@ export function formatMessageTime(value: string | null | undefined) {
   if (!value) {
     return ''
   }
-  const date = new Date(value)
+  const date = parseApiDate(value)
   if (Number.isNaN(date.getTime())) {
     return formatDateTime(value)
   }

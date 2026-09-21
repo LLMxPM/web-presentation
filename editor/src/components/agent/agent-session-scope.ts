@@ -2,7 +2,7 @@
  * 文件功能：集中处理智能体会话的 scope 解析、会话选择持久化与路由定位。
  */
 import type { AgentScopeContext, AgentSessionItem } from '@/types/api'
-import { APP_TIMEZONE } from '@/utils/timezone'
+import { APP_TIMEZONE, parseApiDate } from '@/utils/timezone'
 
 export interface ScopeSummary {
   typeLabel: string
@@ -305,7 +305,7 @@ function formatScopeId(label: string, id: number | null | undefined): string {
  * 解析会话更新时间，缺失或非法时降级为 0。
  */
 function resolveSessionUpdatedTime(session: AgentSessionItem): number {
-  const timestamp = Date.parse(session.updated_at || session.created_at || '')
+  const timestamp = parseApiDate(session.updated_at || session.created_at || '').getTime()
   return Number.isFinite(timestamp) ? timestamp : 0
 }
 
@@ -316,7 +316,7 @@ function formatBriefSessionTime(value: string | null | undefined): string {
   if (!value) {
     return '刚刚'
   }
-  const date = new Date(value)
+  const date = parseApiDate(value)
   if (Number.isNaN(date.getTime())) {
     return '刚刚'
   }

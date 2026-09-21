@@ -436,6 +436,7 @@ import type {
 } from '@/types/api'
 import { useAgentSessionStore } from '@/stores/agent-session'
 import { logClientWarning } from '@/utils/client-logger'
+import { parseApiDate } from '@/utils/timezone'
 import { createClientUuid } from '@/utils/id'
 import { Message } from '@/utils/message'
 import { buildGlobalPageLocation } from '@/utils/global-page-navigation'
@@ -644,7 +645,7 @@ const cancellingRunForceAvailable = computed(() => {
   if (run?.status !== 'cancelling' || !run.cancel_requested_at) {
     return false
   }
-  return forceCancelTick.value - new Date(run.cancel_requested_at).getTime() >= FORCE_CANCEL_AVAILABLE_DELAY_MS
+  return forceCancelTick.value - parseApiDate(run.cancel_requested_at).getTime() >= FORCE_CANCEL_AVAILABLE_DELAY_MS
 })
 const hitlForceReleaseAvailable = computed(() => activeRun.value?.status === 'paused' && pendingRequirement.value !== null)
 

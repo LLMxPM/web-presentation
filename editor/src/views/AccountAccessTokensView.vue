@@ -97,13 +97,13 @@
               </td>
               <td class="px-4 py-3.5 text-xs text-text-secondary">
                 <div v-if="item.last_used_at">
-                  <div>{{ formatDate(item.last_used_at) }}</div>
+                  <div>{{ formatDateTime(item.last_used_at) }}</div>
                   <div v-if="item.last_used_ip" class="text-text-disabled text-[11px] font-mono">{{ item.last_used_ip }}</div>
                 </div>
                 <span v-else class="text-text-disabled">从未</span>
               </td>
               <td class="px-4 py-3.5 text-xs text-text-secondary">
-                {{ item.expires_at ? formatDate(item.expires_at) : '长期有效' }}
+                {{ item.expires_at ? formatDateTime(item.expires_at) : '长期有效' }}
               </td>
               <td class="px-4 py-3.5 text-right">
                 <div class="flex justify-end gap-1">
@@ -325,6 +325,7 @@ import type {
 } from '@/types/accessTokens'
 import type { WorkspaceItem } from '@/types/api'
 import { Message } from '@/utils/message'
+import { formatDateTime } from '@/utils/format'
 
 const loading = ref(false)
 const tokens = ref<ApiAccessTokenItem[]>([])
@@ -374,22 +375,6 @@ const createdTokenSecret = ref('')
 const revokeDialogOpen = ref(false)
 const revoking = ref(false)
 const tokenToRevoke = ref<ApiAccessTokenItem | null>(null)
-
-function formatDate(dateStr: string | null): string {
-  if (!dateStr) return '-'
-  try {
-    const d = new Date(dateStr)
-    return d.toLocaleString('zh-CN', {
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-    })
-  } catch {
-    return dateStr
-  }
-}
 
 /** 生成人类可读的工作空间授权范围，避免把空 ID 列表误解为无权限。 */
 function formatWorkspaceAuthorization(item: ApiAccessTokenItem): string {

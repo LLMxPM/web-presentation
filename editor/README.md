@@ -42,7 +42,9 @@ VITE_API_BASE_URL=http://127.0.0.1:8000/api
 
 说明：
 
-- `VITE_APP_TIMEZONE` 应与 Backend 的 `APP_TIMEZONE` 保持一致
+- 启动时从 Backend 的 `/api/system/settings` 读取 `APP_TIMEZONE`，作为统一业务时区
+- `VITE_APP_TIMEZONE` 只在配置请求失败时作为回退值，未配置时默认 `Asia/Shanghai`
+- 历史无时区时间按 UTC 解析，接口新时间应携带 `Z` 或明确偏移
 - 页面列表时间、版本历史时间、Runtime 预览日期目录都会按该业务时区处理
 
 ## 3. 多用户入口

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from datetime import datetime
 import hashlib
 import logging
 from pathlib import Path
@@ -13,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.exceptions import AppException
+from app.core.time_utils import utc_now
 from app.db.session import get_session_factory
 from app.models.project_build_job import ProjectBuildJob
 from app.models.workspace import Project
@@ -132,7 +132,7 @@ class ProjectBuildService:
                 "workspace_id": snapshot.project.workspace_id,
                 "base_url": job.base_url,
                 "runtime_dispatch_at": "",
-                "last_heartbeat_at": datetime.now().astimezone().isoformat(),
+                "last_heartbeat_at": utc_now().isoformat(),
                 "error_message": "",
             },
         )
@@ -290,7 +290,7 @@ class ProjectBuildService:
                 "snapshot_release_id": job.snapshot_release_id,
                 "project_id": job.project_id,
                 "base_url": job.base_url,
-                "last_heartbeat_at": datetime.now().astimezone().isoformat(),
+                "last_heartbeat_at": utc_now().isoformat(),
                 "error_message": "",
             },
         )
@@ -318,7 +318,7 @@ async def run_project_build_job(job_id: int) -> None:
 
         job.status = "running"
         job.error_message = None
-        job.started_at = datetime.now().astimezone()
+        job.started_at = utc_now()
         job.finished_at = None
         await session.commit()
         await RuntimeArtifactStore().put_build_state(
@@ -329,7 +329,7 @@ async def run_project_build_job(job_id: int) -> None:
                 "project_id": job.project_id,
                 "base_url": job.base_url,
                 "runtime_dispatch_at": "",
-                "last_heartbeat_at": datetime.now().astimezone().isoformat(),
+                "last_heartbeat_at": utc_now().isoformat(),
                 "error_message": "",
             },
         )
@@ -364,8 +364,8 @@ async def run_project_build_job(job_id: int) -> None:
                     "project_id": project_id,
                     "workspace_id": workspace_id,
                     "base_url": job.base_url,
-                    "runtime_dispatch_at": datetime.now().astimezone().isoformat(),
-                    "last_heartbeat_at": datetime.now().astimezone().isoformat(),
+                    "runtime_dispatch_at": utc_now().isoformat(),
+                    "last_heartbeat_at": utc_now().isoformat(),
                     "error_message": "",
                 },
             )
@@ -386,7 +386,7 @@ async def run_project_build_job(job_id: int) -> None:
             )
             job.status = "succeeded"
             job.error_message = None
-            job.finished_at = datetime.now().astimezone()
+            job.finished_at = utc_now()
             await session.commit()
             await RuntimeArtifactStore().put_build_state(
                 job_id=job.id,
@@ -396,7 +396,7 @@ async def run_project_build_job(job_id: int) -> None:
                     "project_id": project_id,
                     "workspace_id": workspace_id,
                     "base_url": job.base_url,
-                    "last_heartbeat_at": datetime.now().astimezone().isoformat(),
+                    "last_heartbeat_at": utc_now().isoformat(),
                     "error_message": "",
                 },
             )
@@ -407,7 +407,7 @@ async def run_project_build_job(job_id: int) -> None:
         except Exception as exc:  # noqa: BLE001
             job.status = "failed"
             job.error_message = _extract_build_error_message(exc)
-            job.finished_at = datetime.now().astimezone()
+            job.finished_at = utc_now()
             await session.commit()
             await RuntimeArtifactStore().put_build_state(
                 job_id=job.id,
@@ -416,7 +416,7 @@ async def run_project_build_job(job_id: int) -> None:
                     "snapshot_release_id": job.snapshot_release_id,
                     "project_id": job.project_id,
                     "base_url": job.base_url,
-                    "last_heartbeat_at": datetime.now().astimezone().isoformat(),
+                    "last_heartbeat_at": utc_now().isoformat(),
                     "error_message": job.error_message,
                 },
             )
@@ -440,7 +440,7 @@ async def recover_interrupted_build_jobs_on_startup(session_factory) -> int:
         for job in jobs:
             job.status = "failed"
             job.error_message = "构建进程中断或超时。"
-            job.finished_at = datetime.now().astimezone()
+            job.finished_at = utc_now()
             await RuntimeArtifactStore().put_build_state(
                 job_id=job.id,
                 mapping={
@@ -448,7 +448,7 @@ async def recover_interrupted_build_jobs_on_startup(session_factory) -> int:
                     "snapshot_release_id": job.snapshot_release_id,
                     "project_id": job.project_id,
                     "base_url": job.base_url,
-                    "last_heartbeat_at": datetime.now().astimezone().isoformat(),
+                    "last_heartbeat_at": utc_now().isoformat(),
                     "error_message": job.error_message,
                 },
             )

@@ -3,6 +3,7 @@
  */
 import { formatDateTimeInAppTimezone } from '@/utils/timezone'
 
+/** 将接口时间按业务时区展示，缺失值统一显示占位符。 */
 export function formatDateTime(value: string | null | undefined) {
   if (!value) {
     return '-'

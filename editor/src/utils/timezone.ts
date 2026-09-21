@@ -4,10 +4,22 @@
 
 const DEFAULT_APP_TIMEZONE = 'Asia/Shanghai'
 
-export const APP_TIMEZONE = import.meta.env.VITE_APP_TIMEZONE?.trim() || DEFAULT_APP_TIMEZONE
+export let APP_TIMEZONE = import.meta.env.VITE_APP_TIMEZONE?.trim() || DEFAULT_APP_TIMEZONE
 
-function normalizeDate(value: string | number | Date) {
-  return value instanceof Date ? value : new Date(value)
+/** 挂载应用前设置后端业务时区；先校验名称，非法配置不覆盖已有值。 */
+export function setAppTimezone(timezone: string): void {
+  const normalized = timezone.trim()
+  new Intl.DateTimeFormat('zh-CN', { timeZone: normalized }).format(0)
+  APP_TIMEZONE = normalized
+}
+
+/** 解析接口时间；历史无时区日期时间直接补 UTC，已有偏移保持原有时间点。 */
+export function parseApiDate(value: string | number | Date): Date {
+  if (value instanceof Date) return value
+  if (typeof value !== 'string') return new Date(value)
+  const normalized = value.trim()
+  const isNaiveDateTime = /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?$/.test(normalized)
+  return new Date(isNaiveDateTime ? `${normalized.replace(' ', 'T')}Z` : normalized)
 }
 
 /**
@@ -16,11 +28,13 @@ function normalizeDate(value: string | number | Date) {
  * @returns 业务时区下的短日期时间文本
  */
 export function formatDateTimeInAppTimezone(value: string | number | Date) {
+  const date = parseApiDate(value)
+  if (Number.isNaN(date.getTime())) return '-'
   return new Intl.DateTimeFormat('zh-CN', {
     dateStyle: 'short',
     timeStyle: 'short',
     timeZone: APP_TIMEZONE,
-  }).format(normalizeDate(value))
+  }).format(date)
 }
 
 /**
@@ -34,7 +48,7 @@ export function getAppDateSegment(value: string | number | Date = new Date()) {
     month: '2-digit',
     day: '2-digit',
     timeZone: APP_TIMEZONE,
-  }).formatToParts(normalizeDate(value))
+  }).formatToParts(parseApiDate(value))
 
   const year = parts.find(part => part.type === 'year')?.value ?? ''
   const month = parts.find(part => part.type === 'month')?.value ?? ''

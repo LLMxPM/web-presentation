@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from datetime import datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, Response, UploadFile
@@ -11,6 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import AppException
+from app.core.time_utils import utc_now
 from app.db.session import get_db_session
 from app.models.project_build_job import ProjectBuildJob
 from app.models.release import Release, ReleaseModule
@@ -265,7 +265,7 @@ async def upload_project_build_artifact(
             "snapshot_release_id": build_job.snapshot_release_id,
             "project_id": build_job.project_id,
             "base_url": build_job.base_url,
-            "last_heartbeat_at": datetime.now().astimezone().isoformat(),
+            "last_heartbeat_at": utc_now().isoformat(),
             "error_message": "",
         },
     )

@@ -120,8 +120,9 @@ Backend 直接采用多用户模型，不保留单管理员兼容层：
 
 Backend 统一采用以下时间语义：
 
-- 数据库存储统一使用 `UTC`
-- 业务编码日期、页面普通版本号、前端展示推荐统一使用业务时区
+- 数据库时间列统一使用 `UTCDateTime`：写入 UTC，读取时返回带 UTC 时区的值
+- 历史无时区值直接补 UTC，无需重写历史数据或迁移列类型
+- 业务编码日期、页面普通版本号和前端展示统一使用业务时区
 
 请通过环境变量配置业务时区：
 
@@ -131,7 +132,9 @@ Backend 统一采用以下时间语义：
 
 - `page_versions.version_label` 这类展示型版号会按 `APP_TIMEZONE` 生成
 - `WS/PRJ/PG` 业务编码中的日期段也会按 `APP_TIMEZONE` 生成
-- 若调整了 `APP_TIMEZONE` 并希望旧的普通版本号同步刷新，请重新执行 `uv run alembic upgrade head`
+- Editor 启动时从 `GET /api/system/settings` 读取业务时区；修改配置并重启 Backend 后，刷新 Editor 即可生效
+- 已保存的版本标签保持原值；修改业务时区会影响新标签，不会重写旧标签
+- 详细规则与回归验证见[时间存储与展示](../docs/developer/backend/time-handling.md)
 
 ## 7. Runtime 接入配置
 
