@@ -11,6 +11,7 @@ Backend 是平台控制面，负责 API、权限、数据持久化、AI Agent、
 | [AI 模型能力与推理策略](./ai-model-capabilities.md) | 模型能力档案、三态四档、上下文预算和兼容快照 |
 | [AI 工具规格](./ai-tool-specs.md) | `tool_specs.py` 单一事实源和防漂移要求 |
 | [重资源队列与复用运行态](./resource-queues.md) | AI 页面变更、截图、Runtime 与 Chromium 的限流、恢复和排障 |
+| [远程渲染执行服务架构设计](./remote-render-service-design.md) | 最终服务边界、统一调度、执行契约、一次性交付与整套发布验收（规划） |
 | [AI Agent 图片处理机制](./ai-image-handling.md) | 图片上传、模型水合、工具输出和历史持久化 |
 | [预览 artifact 与构建任务](./preview-artifacts.md) | 预览、截图、构建 snapshot 和产物托管 |
 | [Backend 排障](./troubleshooting.md) | 数据库、Redis、Runtime、AI 和截图常见问题 |
