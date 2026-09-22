@@ -127,7 +127,7 @@ jobs:
       - name: Push runtime image to Docker Hub
         uses: docker/build-push-action@v7
         with:
-          context: runtime
+          context: .
           file: runtime/Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
@@ -141,7 +141,7 @@ jobs:
       - name: Push runtime image to ACR
         uses: docker/build-push-action@v7
         with:
-          context: runtime
+          context: .
           file: runtime/Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true

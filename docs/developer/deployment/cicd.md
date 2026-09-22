@@ -12,7 +12,7 @@
 
 - 常规平台镜像：由 `deploy/docker/Dockerfile.platform` 构建，包含 Backend 代码、Editor 静态资源、Nginx 配置和 Backend 运行所需的 Runtime Kit manifest。
 - SQLite 轻量单容器镜像：由 `deploy/docker/Dockerfile.lite` 构建，额外内置 Runtime Vite server 运行依赖，面向 SQLite + memory runtime 单容器部署。该变体直接打包当前仓库原生 `runtime/` 源码。
-- 独立 Runtime 运行时镜像：由 `runtime/Dockerfile` 构建，提供独立 Vite server 以承载生产编排中的预览、诊断与构建接口。
+- 独立 Runtime 运行时镜像：由 `runtime/Dockerfile` 构建（构建上下文为仓库根，以共享 pnpm workspace 锁文件），提供独立 Vite server 以承载生产编排中的预览、诊断与构建接口。
 
 ## GitHub Actions
 

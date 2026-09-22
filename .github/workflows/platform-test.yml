@@ -86,7 +86,7 @@ jobs:
             cache_scope: platform-lite
           - name: runtime
             file: runtime/Dockerfile
-            context: runtime
+            context: .
             tag: web-runtime-vue:ci-smoke
             cache_scope: runtime
     name: platform-image-build-smoke (${{ matrix.name }})

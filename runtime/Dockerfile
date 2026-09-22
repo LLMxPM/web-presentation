@@ -1,7 +1,10 @@
-# syntax=docker/dockerfile:1.7
-# 文件功能：构建 web-runtime-vue 平台运行时镜像，保留 Vite dev server 以承载预览、诊断与构建接口。
+# 文件功能：构建独立 Runtime 长期镜像；Backend 镜像不再安装浏览器。
+# 构建上下文为仓库根目录（pnpm workspace 共享 pnpm-lock.yaml）。
 
 FROM node:22-bookworm-slim
+
+LABEL org.opencontainers.image.title="web-runtime-vue"
+LABEL org.opencontainers.image.description="web-presentation Runtime Vite server image"
 
 ENV PNPM_HOME="/pnpm"
 ENV PATH="${PNPM_HOME}:${PATH}"
@@ -16,10 +19,18 @@ WORKDIR /app
 
 RUN corepack enable && corepack prepare pnpm@10.30.3 --activate
 
-COPY package.json pnpm-lock.yaml ./
-RUN pnpm install --frozen-lockfile
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY editor/package.json ./editor/
+COPY runtime/package.json ./runtime/
+RUN pnpm install --frozen-lockfile --filter web-runtime-vue...
 
-COPY . .
+COPY runtime/ ./runtime/
+# deploy 产出可独立拷贝的 node_modules，避免 workspace 符号链接失效
+RUN pnpm --filter web-runtime-vue deploy --legacy --prod /app/runtime-dist \
+    && mv /app/runtime-dist /opt/runtime \
+    && rm -rf /app/runtime /app/editor /app/node_modules /app/package.json /app/pnpm-lock.yaml /app/pnpm-workspace.yaml
+
+WORKDIR /opt/runtime
 
 EXPOSE 7373
 

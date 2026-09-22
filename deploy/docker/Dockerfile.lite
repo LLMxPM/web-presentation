@@ -35,7 +35,7 @@ RUN pnpm install --frozen-lockfile --filter web-runtime-vue...
 
 COPY runtime/ ./runtime/
 # deploy 产出可独立拷贝的 node_modules，避免 workspace 符号链接跨 stage 失效
-RUN pnpm --filter web-runtime-vue deploy --prod /out/runtime
+RUN pnpm --filter web-runtime-vue deploy --legacy --prod /out/runtime
 
 
 FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim AS backend-deps
@@ -61,7 +61,6 @@ LABEL org.opencontainers.image.description="web-presentation SQLite lite image w
 ENV APP_RELOAD=false
 ENV ACCESS_LOG_ENABLED=false
 ENV PATH="/app/.venv/bin:${PATH}"
-ENV PLAYWRIGHT_BROWSERS_PATH="/ms-playwright"
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 ENV VIRTUAL_ENV="/app/.venv"
@@ -98,8 +97,6 @@ WORKDIR /app/backend
 
 COPY --from=backend-deps /app/.venv /app/.venv
 COPY --from=backend-deps /app/packages/render-contracts /app/packages/render-contracts
-RUN playwright install --with-deps --only-shell chromium \
-    && rm -rf /var/lib/apt/lists/*
 
 COPY backend/ /app/backend/
 COPY --from=runtime-deps /out/runtime /app/runtime
