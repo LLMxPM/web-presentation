@@ -70,24 +70,22 @@ uv run uvicorn app.main:app --reload
 
 ## Runtime 本地启动
 
-Runtime 是演示文稿运行时子项目。首次启动前在新的终端中，从仓库根目录进入 `runtime/` 安装依赖并启动（自动继承根目录 `.env`）：
+Runtime 是演示文稿运行时包。前端依赖统一走根目录 pnpm workspace（唯一 `pnpm-lock.yaml`）。首次启动前在新的终端中：
 
 ```powershell
-cd .\runtime
+# 仓库根目录一次性安装 workspace（含 editor / runtime）
 pnpm install
-pnpm dev
+pnpm --filter web-runtime-vue dev
 ```
 
 默认配置下 Runtime 监听 `127.0.0.1:7373`，并通过 `http://127.0.0.1:8000` 回源 Backend。所有通信地址已在根目录 `.env` 中预先对齐自洽。
 
 ## Editor 本地启动
 
-首次启动前在新的终端中，从仓库根目录进入 `editor/` 安装依赖并启动（自动继承根目录 `.env`）：
+首次启动前在新的终端中，从仓库根目录启动（依赖已在 `pnpm install` 时装好，自动继承根目录 `.env`）：
 
 ```powershell
-cd .\editor
-pnpm install
-pnpm dev
+pnpm --filter editor dev
 ```
 
 Editor 默认通过 Vite 代理把同源 `/api` 转发到 Backend（默认 `http://127.0.0.1:8000`）。本地登录时优先使用 Editor 页面入口，不要混用 `localhost` 和 `127.0.0.1`，避免 Cookie 站点不一致导致后续接口返回 `401`。
@@ -114,7 +112,7 @@ pnpm run test:e2e
 - `pnpm run test:editor:check`：Editor 类型检查，执行 `vue-tsc -b`。
 - `pnpm run test:editor:build`：Editor 生产构建，执行 `vue-tsc -b && vite build`。
 - `pnpm run test:editor:gate`：Editor 质量门禁，执行 `check + test + build`。
-- `pnpm run test:runtime` / `pnpm run test:runtime:delegated`：只委托执行 Runtime 子项目 Vitest。
+- `pnpm run test:runtime`：只执行 Runtime Vitest。
 - `pnpm run test:runtime:gate`：执行 Runtime `check + test + build`。
 - `pnpm run test:contracts`：根仓跨模块契约测试，不等同于 `backend/tests/contracts`。
 - `pnpm run test:e2e:run`：只执行 Playwright。
@@ -187,13 +185,14 @@ Redis 保存预览 artifact 与构建心跳等临时运行态，不保存 AI run
 
 AI run 状态已经切到平台自有 `ai_agent_*` 表；旧 Redis run key 不需要维护脚本清理，按已有 TTL 自然过期。
 
-## Runtime 子项目命令
+## Runtime 包命令
 
 ```powershell
-pnpm --dir runtime install
-pnpm --dir runtime check
-pnpm --dir runtime test
-pnpm --dir runtime build
+pnpm --filter web-runtime-vue install
+pnpm --filter web-runtime-vue check
+pnpm --filter web-runtime-vue test
+pnpm --filter web-runtime-vue build
+# 或使用根脚本：pnpm run test:runtime / test:runtime:gate
 ```
 
 Runtime 内部能力、运行方式和镜像发布见 [runtime/README.md](../../runtime/README.md)。

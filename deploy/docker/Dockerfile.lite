@@ -6,15 +6,17 @@ FROM node:22-bookworm-slim AS editor-build
 ENV PNPM_HOME="/pnpm"
 ENV PATH="${PNPM_HOME}:${PATH}"
 
-WORKDIR /app/editor
+WORKDIR /app
 
 RUN corepack enable && corepack prepare pnpm@10.30.3 --activate
 
-COPY editor/package.json editor/pnpm-lock.yaml editor/pnpm-workspace.yaml ./
-RUN pnpm install --frozen-lockfile
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY editor/package.json ./editor/
+COPY runtime/package.json ./runtime/
+RUN pnpm install --frozen-lockfile --filter editor...
 
-COPY editor/ ./
-RUN pnpm build
+COPY editor/ ./editor/
+RUN pnpm --filter editor run build
 
 
 FROM node:22-bookworm-slim AS runtime-deps
@@ -22,14 +24,18 @@ FROM node:22-bookworm-slim AS runtime-deps
 ENV PNPM_HOME="/pnpm"
 ENV PATH="${PNPM_HOME}:${PATH}"
 
-WORKDIR /app/runtime
+WORKDIR /app
 
 RUN corepack enable && corepack prepare pnpm@10.30.3 --activate
 
-COPY runtime/package.json runtime/pnpm-lock.yaml ./
-RUN pnpm install --frozen-lockfile
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY editor/package.json ./editor/
+COPY runtime/package.json ./runtime/
+RUN pnpm install --frozen-lockfile --filter web-runtime-vue...
 
-COPY runtime/ ./
+COPY runtime/ ./runtime/
+# deploy 产出可独立拷贝的 node_modules，避免 workspace 符号链接跨 stage 失效
+RUN pnpm --filter web-runtime-vue deploy --prod /out/runtime
 
 
 FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim AS backend-deps
@@ -96,7 +102,7 @@ RUN playwright install --with-deps --only-shell chromium \
     && rm -rf /var/lib/apt/lists/*
 
 COPY backend/ /app/backend/
-COPY --from=runtime-deps /app/runtime /app/runtime
+COPY --from=runtime-deps /out/runtime /app/runtime
 COPY --from=editor-build /app/editor/dist/ /usr/share/nginx/html/
 COPY deploy/docker/nginx/web-presentation.conf /etc/nginx/conf.d/default.conf
 COPY deploy/docker/entrypoints/start_lite.sh /app/docker/entrypoints/start_lite.sh

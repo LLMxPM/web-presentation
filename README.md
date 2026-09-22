@@ -118,6 +118,9 @@ web-presentation/
 ├── docs/                    # 用户文档、开发文档和文档图片资源
 ├── scripts/                 # 本地开发 infra、测试调度与契约校验脚本
 │   └── dev/compose.infra.yml # 本地开发/测试 PostgreSQL 与 Redis 入口，非部署模板
+├── package.json             # 根测试入口与工具链（Playwright / Vitest）
+├── pnpm-workspace.yaml      # 前端 workspace（editor + runtime），唯一 pnpm-lock.yaml
+├── pyproject.toml           # Python uv workspace，唯一 uv.lock
 └── deploy/                  # 交付部署配置中心
     ├── compose/             # SQLite lite / with-deps / 外部依赖 / production compose 模板
     ├── docker/              # 平台与 lite Dockerfile、nginx、entrypoints

@@ -27,10 +27,7 @@ runs:
       with:
         node-version: 22
         cache: pnpm
-        cache-dependency-path: |
-          pnpm-lock.yaml
-          editor/pnpm-lock.yaml
-          runtime/pnpm-lock.yaml
+        cache-dependency-path: pnpm-lock.yaml
 
     - uses: actions/cache@v4
       id: playwright-cache
@@ -41,10 +38,6 @@ runs:
           ${{ runner.os }}-playwright-
 
     - run: pnpm install --frozen-lockfile
-      shell: bash
-    - run: pnpm --dir editor install --frozen-lockfile
-      shell: bash
-    - run: pnpm --dir runtime install --frozen-lockfile
       shell: bash
     - name: 启动 E2E 依赖
       run: bash .github/scripts/start-e2e-dependencies.sh

@@ -49,8 +49,8 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-          cache-dependency-path: editor/pnpm-lock.yaml
-      - run: pnpm --dir editor install --frozen-lockfile
+          cache-dependency-path: pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
       - run: pnpm run test:editor:gate
 
   contracts:
@@ -105,8 +105,8 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-          cache-dependency-path: runtime/pnpm-lock.yaml
-      - run: pnpm --dir runtime install --frozen-lockfile
+          cache-dependency-path: pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
       - run: pnpm run test:runtime:gate
 
   gateway-contract:

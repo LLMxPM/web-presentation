@@ -12,8 +12,11 @@
 
 ## 1. 安装依赖
 
+在 `editor/` 或仓库根目录执行均可（根级 pnpm workspace，唯一 `pnpm-lock.yaml`）：
+
 ```powershell
 pnpm install
+# 或：pnpm --filter editor install
 ```
 
 ## 2. 配置后端地址

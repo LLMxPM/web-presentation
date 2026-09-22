@@ -24,8 +24,11 @@
 
 ### 1. 安装依赖
 
+在 `runtime/` 或仓库根目录执行均可（根级 pnpm workspace，唯一 `pnpm-lock.yaml`）：
+
 ```bash
 pnpm install
+# 或：pnpm --filter web-runtime-vue install
 ```
 
 ### 2. 只读 fixture 模式开发

@@ -9,7 +9,7 @@
 - 单个代码文件应控制行数；当文件职责过多、分支复杂或测试难以聚焦时，优先拆分模块。
 - 每个源代码文件开头应包含文件功能描述，Markdown 文件除外。
 - 为函数补充中文注释，优先解释职责、输入输出和关键约束，避免重复代码字面含义。
-- 前端使用 `pnpm` 管理依赖；Python 侧使用根目录 `uv` workspace（唯一 `uv.lock`）管理 `backend`、`renderer`、`packages/render-contracts`，虚拟环境默认在仓库根 `.venv`。
+- 前端使用根目录 `pnpm` workspace（唯一 `pnpm-lock.yaml`）管理根工具链、`editor` 与 `runtime`；Python 侧使用根目录 `uv` workspace（唯一 `uv.lock`）管理 `backend`、`renderer`、`packages/render-contracts`，虚拟环境默认在仓库根 `.venv`。
 - 项目通常已经启动，不要反复启动服务；需要确认运行态时先查看现有进程、端口或文档说明。
 - 可能存在用户未提交改动；不要回滚、覆盖或格式化无关文件。
 - ORM 时间列统一使用 `app.db.types.UTCDateTime`，显式取时使用 `utc_now()`；历史无时区值直接补 UTC。Editor 时间解析复用 `parseApiDate()`，展示时区以 Backend `APP_TIMEZONE` 为准，详细规则见 [`docs/developer/backend/time-handling.md`](./docs/developer/backend/time-handling.md)。
