@@ -13,7 +13,11 @@ from app.core.config import get_settings
 from app.core.exceptions import AppException
 from app.services.capture_viewport_resolver import CaptureViewport
 from app.services.rendering.domain_facade import RenderDomainFacade
-from render_contracts.errors import ERROR_CODE_INTERNAL_ERROR, ERROR_CODE_SERVICE_UNAVAILABLE
+from render_contracts.errors import (
+    ERROR_CODE_DEADLINE_EXCEEDED,
+    ERROR_CODE_INTERNAL_ERROR,
+    ERROR_CODE_SERVICE_UNAVAILABLE,
+)
 
 PAGE_RENDER_WARNING_SOURCE = "runtime-render"
 PAGE_RENDER_BOTTOM_OVERFLOW_CODE = "PAGE_RENDER_BOTTOM_OVERFLOW"
@@ -49,6 +53,7 @@ class PageRenderDiagnosticsService:
         page_id: int | None = None,
         artifact_id: str | None = None,
         preview_token: str | None = None,
+        source_override: str | None = None,
         session: AsyncSession | None = None,
     ) -> dict[str, object]:
         """打开页面预览并返回固定画布诊断与文本布局分析。"""
@@ -74,6 +79,7 @@ class PageRenderDiagnosticsService:
                 page_id=page_id,
                 artifact_id=artifact_id,
                 preview_token=preview_token,
+                source_override=source_override,
                 timeout_seconds=float(self.settings.render_request_timeout_seconds),
             )
         except AppException as exc:
@@ -82,14 +88,21 @@ class PageRenderDiagnosticsService:
                 ERROR_CODE_INTERNAL_ERROR,
                 "RENDER_BROWSER_LOST",
                 "RENDER_QUEUE_FULL",
-                "RENDER_DEADLINE_EXCEEDED",
+                ERROR_CODE_DEADLINE_EXCEEDED,
                 "RENDER_RESULT_LOST",
             }:
-                return self._build_unavailable_result(exc.detail)
+                return self._build_unavailable_result(
+                    exc.detail,
+                    defer_artifact_cleanup=exc.code == ERROR_CODE_DEADLINE_EXCEEDED,
+                )
             raise
 
     @staticmethod
-    def _build_unavailable_result(message: str) -> dict[str, object]:
+    def _build_unavailable_result(
+        message: str,
+        *,
+        defer_artifact_cleanup: bool = False,
+    ) -> dict[str, object]:
         """执行不可用：明确标注基础设施故障，并保持布局契约完整。
 
         severity 使用 warning 而非 error，避免下游把基础设施故障汇总成内容错误。
@@ -98,7 +111,7 @@ class PageRenderDiagnosticsService:
         from app.services.rendering.layout_contract import empty_layout_analysis
         from app.services.rendering.sanitize import sanitize_error_message
 
-        return {
+        result: dict[str, object] = {
             "status": "unavailable",
             "retryable": True,
             "diagnostics": [
@@ -115,6 +128,9 @@ class PageRenderDiagnosticsService:
                 truncated=True,
             ),
         }
+        if defer_artifact_cleanup:
+            result["_render_artifact_cleanup_deferred"] = True
+        return result
 
     @staticmethod
     def _sanitize_error_message(error: object) -> str:

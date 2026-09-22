@@ -26,6 +26,7 @@ from render_contracts.constants import (
     OPERATION_PAGE_DIAGNOSE,
 )
 from render_contracts.errors import (
+    ERROR_CODE_DEADLINE_EXCEEDED,
     ERROR_CODE_INTERNAL_ERROR,
     ERROR_CODE_SERVICE_UNAVAILABLE,
     RenderError,
@@ -117,6 +118,7 @@ class RenderDomainFacade:
         page_id: int | None = None,
         artifact_id: str | None = None,
         preview_token: str | None = None,
+        source_override: str | None = None,
         timeout_seconds: float | None = None,
     ) -> dict[str, object]:
         """执行 page.diagnose 并返回布局分析与 warning。"""
@@ -134,12 +136,16 @@ class RenderDomainFacade:
                 viewport=dict(viewport),
                 artifact_id=artifact_id,
                 preview_token=preview_token,
+                source_override=source_override,
                 operation_options={},
                 timeout_seconds=timeout_seconds,
             )
         except AppException as exc:
             if _is_infrastructure_error(exc.code):
-                return self._page_unavailable_result(exc.detail)
+                return self._page_unavailable_result(
+                    exc.detail,
+                    defer_artifact_cleanup=exc.code == ERROR_CODE_DEADLINE_EXCEEDED,
+                )
             raise
 
         layout = payload.get("layout") or payload.get("layout_analysis") or {}
@@ -169,6 +175,7 @@ class RenderDomainFacade:
         operation_options: dict[str, Any],
         timeout_seconds: float | None,
         extra_http_headers: Mapping[str, str] | None = None,
+        source_override: str | None = None,
     ) -> dict[str, Any]:
         """创建幂等渲染请求并等待协调器提交结果。"""
 
@@ -199,6 +206,7 @@ class RenderDomainFacade:
                     operation_options=operation_options,
                     preview_url=preview_url,
                     extra_http_headers=extra_http_headers,
+                    source_override=source_override,
                 )
             else:
                 snapshot = {
@@ -257,6 +265,10 @@ class RenderDomainFacade:
                 drive_dispatch=True,
             )
         except RenderExecutionError as exc:
+            if exc.error.code == ERROR_CODE_DEADLINE_EXCEEDED:
+                # 等待方超时不等于 Renderer 已停止；先持久化取消，阻止排队任务继续派发，
+                # 让在途 attempt 由协调器/租约流程收敛，避免调用方立刻删除其输入 artifact。
+                await self._cancel_request_after_timeout(request_id)
             raise render_error_to_app_exception(
                 RenderError.from_code(
                     exc.error.code,
@@ -287,6 +299,26 @@ class RenderDomainFacade:
             await consume_session.close()
         return payload
 
+    async def _cancel_request_after_timeout(self, request_id: int) -> None:
+        """等待超时时持久化取消标记，避免后台继续使用已结束调用方的输入。"""
+
+        cancel_session = get_session_factory()()
+        try:
+            await RenderRequestService(cancel_session).cancel_request(request_id)
+            await cancel_session.commit()
+        except Exception:  # noqa: BLE001
+            logger.warning(
+                "渲染等待超时后的取消标记写入失败。",
+                extra={"event": "render.request.cancel_after_timeout.failed", "request_id": request_id},
+                exc_info=True,
+            )
+            try:
+                await cancel_session.rollback()
+            except Exception:  # noqa: BLE001
+                pass
+        finally:
+            await cancel_session.close()
+
     async def _acquire_session(self) -> tuple[AsyncSession, bool]:
         """复用外部会话或创建短生命周期会话。"""
 
@@ -296,13 +328,17 @@ class RenderDomainFacade:
         return factory(), True
 
     @staticmethod
-    def _page_unavailable_result(message: str) -> dict[str, object]:
+    def _page_unavailable_result(
+        message: str,
+        *,
+        defer_artifact_cleanup: bool = False,
+    ) -> dict[str, object]:
         """页面校验执行不可用，不映射为源码有错。"""
 
         from app.services.rendering.layout_contract import empty_layout_analysis
         from app.services.rendering.sanitize import sanitize_error_message
 
-        return {
+        result: dict[str, object] = {
             "status": "unavailable",
             "retryable": True,
             "diagnostics": [
@@ -319,6 +355,9 @@ class RenderDomainFacade:
                 truncated=True,
             ),
         }
+        if defer_artifact_cleanup:
+            result["_render_artifact_cleanup_deferred"] = True
+        return result
 
 
 

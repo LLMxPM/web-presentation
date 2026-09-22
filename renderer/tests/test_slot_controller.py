@@ -442,6 +442,58 @@ def test_mark_consumed_race_keeps_released_state() -> None:
     assert execution.resource_state == RESOURCE_STATE_RELEASED
 
 
+def test_expired_receipt_cleanup_happens_before_history_prune(tmp_path: Path) -> None:
+    """回执被 TTL 裁剪时，关联 artifact 目录也必须同步删除。"""
+
+    from render_contracts.schema import ExecutionResult
+
+    from app.config import RendererSettings
+
+    slot = SlotController(worker_id="renderer-local", worker_epoch="epoch-1")
+    slot.settings = RendererSettings(
+        render_worker_id="renderer-local",
+        render_worker_epoch="epoch-1",
+        render_service_credential="renderer-test-secret",
+        render_service_credential_file=None,
+        render_workspace_dir=str(tmp_path),
+        render_result_ttl_seconds=1,
+    )
+    request = _make_request(attempt_id="expired-artifact")
+    artifact_dir = tmp_path / request.attempt_id
+    artifact_dir.mkdir()
+    artifact = artifact_dir / "page.png"
+    artifact.write_bytes(b"png")
+    execution = SlotExecution(
+        request=request,
+        accepted_at=datetime.now(UTC) - timedelta(seconds=3),
+        stage="terminal",
+        resource_state=RESOURCE_STATE_RETAINED,
+        finished_at=datetime.now(UTC) - timedelta(seconds=3),
+        artifacts={"page.png": artifact},
+        slot_generation=1,
+    )
+    execution.result = ExecutionResult(
+        request_id=request.request_id,
+        attempt_id=request.attempt_id,
+        worker_id="renderer-local",
+        worker_epoch="epoch-1",
+        slot_generation=1,
+        operation=request.operation,
+        input_digest=request.input_digest,
+        render_profile_digest="profile.v1",
+        request_digest=request.request_digest,
+        result_schema_version="render-result.v1",
+        environment_summary={},
+    )
+    slot._receipts[request.attempt_id] = execution  # noqa: SLF001
+
+    slot.sweep_expired_artifacts()
+
+    assert slot.get_execution(request.attempt_id) is None
+    assert not artifact.exists()
+    assert not artifact_dir.exists()
+
+
 def test_success_result_metadata_does_not_claim_cleaned() -> None:
     """成功结果骨架不得在产物仍 retained 时声称 cleaned_at/released。"""
 

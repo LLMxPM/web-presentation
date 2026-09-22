@@ -189,6 +189,54 @@ def test_stable_artifact_fallback_is_deterministic() -> None:
     assert len(first) == 32
 
 
+def test_page_snapshot_digest_uses_candidate_source_override() -> None:
+    """页面候选源码的快照 digest 不得继续绑定数据库当前版本。"""
+
+    import asyncio
+    from types import SimpleNamespace
+
+    from app.services.rendering.snapshot_service import RenderSnapshotService
+
+    page = SimpleNamespace(
+        code="demo-page",
+        page_content="<template><main>已保存版本</main></template>",
+        current_version_no=3,
+        workspace_id=1,
+        project_id=2,
+    )
+    version = SimpleNamespace(
+        page_content=page.page_content,
+        version_no=3,
+    )
+
+    class _Session:
+        async def get(self, *_args):
+            return page
+
+        async def scalar(self, *_args):
+            return version
+
+    service = RenderSnapshotService(_Session())
+
+    async def _run() -> None:
+        common = dict(
+            page_id=1,
+            artifact_id="candidate-artifact",
+            preview_token="preview-token",
+            viewport={"width": 1920, "height": 1080},
+            operation_options={},
+            preview_url="http://runtime.local/preview",
+        )
+        saved = await service.build_page_snapshot(**common)
+        candidate = await service.build_page_snapshot(
+            **common,
+            source_override="<template><main>未保存候选版本</main></template>",
+        )
+        assert saved["input_digest"] != candidate["input_digest"]
+
+    asyncio.run(_run())
+
+
 def test_request_service_reuses_active_and_recreates_failed() -> None:
     """未终态请求复用；failed 后允许 generation 重建。"""
 
@@ -346,6 +394,133 @@ def test_page_unavailable_is_not_content_error() -> None:
     assert result["retryable"] is True
     assert result["diagnostics"][0]["severity"] == "warning"
     assert result["diagnostics"][0]["source"] == "infrastructure"
+
+
+def test_page_deadline_result_defers_artifact_cleanup() -> None:
+    """远程等待超时时应标记 artifact 仍可能被在途 attempt 使用。"""
+
+    from app.services.rendering.domain_facade import RenderDomainFacade
+
+    result = RenderDomainFacade._page_unavailable_result(  # noqa: SLF001
+        "等待超时",
+        defer_artifact_cleanup=True,
+    )
+    assert result["_render_artifact_cleanup_deferred"] is True
+
+
+def test_timeout_cancellation_uses_independent_session(monkeypatch) -> None:
+    """等待超时的取消标记必须通过独立会话提交并关闭。"""
+
+    import asyncio
+
+    from app.services.rendering import domain_facade as domain_facade_module
+    from app.services.rendering.domain_facade import RenderDomainFacade
+
+    calls: dict[str, object] = {}
+
+    class _Session:
+        async def commit(self) -> None:
+            calls["commit"] = True
+
+        async def rollback(self) -> None:
+            calls["rollback"] = True
+
+        async def close(self) -> None:
+            calls["close"] = True
+
+    session = _Session()
+
+    class _RequestService:
+        def __init__(self, _session) -> None:
+            assert _session is session
+
+        async def cancel_request(self, request_id: int) -> None:
+            calls["request_id"] = request_id
+
+    monkeypatch.setattr(domain_facade_module, "get_session_factory", lambda: lambda: session)
+    monkeypatch.setattr(domain_facade_module, "RenderRequestService", _RequestService)
+
+    asyncio.run(RenderDomainFacade.__new__(RenderDomainFacade)._cancel_request_after_timeout(17))  # noqa: SLF001
+
+    assert calls == {"request_id": 17, "commit": True, "close": True}
+
+
+def test_page_render_deadline_marks_artifact_cleanup_deferred() -> None:
+    """页面渲染超时时，诊断服务必须把 artifact 生命周期交给 TTL。"""
+
+    import asyncio
+
+    from app.core.exceptions import AppException
+    from app.services.capture_viewport_resolver import CaptureViewport
+    from app.services.page_render_diagnostics_service import PageRenderDiagnosticsService
+
+    class _DeadlineFacade:
+        async def diagnose_page_preview(self, **_kwargs):
+            raise AppException(
+                status_code=504,
+                code="RENDER_DEADLINE_EXCEEDED",
+                detail="等待渲染结果超过总预算。",
+            )
+
+    service = PageRenderDiagnosticsService(facade=_DeadlineFacade())
+    result = asyncio.run(
+        service.diagnose_preview(
+            "http://runtime.local/preview?token=t",
+            CaptureViewport(width=320, height=240),
+            workspace_id=1,
+        )
+    )
+
+    assert result["_render_artifact_cleanup_deferred"] is True
+
+
+def test_code_check_does_not_delete_artifact_while_render_attempt_may_be_in_flight(monkeypatch) -> None:
+    """页面远程渲染返回 deferred 标记时，代码检查不得提前删除输入 artifact。"""
+
+    import asyncio
+    from unittest.mock import AsyncMock
+
+    import app.services.code_check_service as code_check_module
+    from app.services.capture_viewport_resolver import CaptureViewport
+    from app.services.code_check_service import CodeCheckService
+
+    class _RuntimeClient:
+        async def dispatch_artifact_diagnostics(self, **_kwargs):
+            return {"success": True, "status": "passed", "diagnostics": []}
+
+    class _RenderDiagnostics:
+        async def diagnose_preview(self, *_args, **_kwargs):
+            return {
+                "status": "unavailable",
+                "diagnostics": [],
+                "layout_analysis": {},
+                "_render_artifact_cleanup_deferred": True,
+            }
+
+    artifact_store = type("_ArtifactStore", (), {"delete_artifact": AsyncMock()})()
+    monkeypatch.setattr(code_check_module, "RuntimeArtifactStore", lambda: artifact_store)
+    service = CodeCheckService(
+        object(),
+        runtime_client=_RuntimeClient(),
+        render_diagnostics_service=_RenderDiagnostics(),
+    )
+
+    result = asyncio.run(
+        service._dispatch_diagnostics(  # noqa: SLF001
+            artifact_id="artifact-in-flight",
+            workspace_id=1,
+            project_id=2,
+            label="page:1",
+            patch_repaired=False,
+            canonical_diff=None,
+            render_preview_url="http://runtime.local/preview?token=t",
+            render_viewport=CaptureViewport(width=320, height=240),
+            page_id=1,
+        )
+    )
+
+    artifact_store.delete_artifact.assert_not_awaited()
+    assert "_render_artifact_cleanup_deferred" not in result
 
 
 def test_save_result_conflict_must_not_confirm_consumption() -> None:
@@ -548,6 +723,44 @@ def test_reserve_does_not_advance_worker_slot_generation() -> None:
         assert worker.slot_generation == 4
         assert worker.slot_state == "busy"
         assert attempt.status == "reserved"
+
+    asyncio.run(_run())
+
+
+def test_worker_heartbeat_preserves_renderer_busy_without_db_attempt() -> None:
+    """Renderer 报告 busy 且暂时没有 DB attempt 时，Worker 不得被写成 idle。"""
+
+    import asyncio
+    from unittest.mock import AsyncMock, MagicMock
+
+    from app.services.rendering.repository import RenderRepository
+
+    session = MagicMock()
+    worker = MagicMock()
+    worker.worker_id = "renderer-1"
+    worker.worker_epoch = "epoch-1"
+    worker.slot_state = "idle"
+    worker.slot_generation = 4
+    stale_rows = MagicMock()
+    stale_rows.all.return_value = []
+    session.scalar = AsyncMock(side_effect=[worker, 0])
+    session.scalars = AsyncMock(return_value=stale_rows)
+    session.flush = AsyncMock()
+    repository = RenderRepository(session)
+
+    async def _run() -> None:
+        result = await repository.upsert_worker_heartbeat(
+            worker_id="renderer-1",
+            worker_epoch="epoch-1",
+            service_base_url="http://renderer:7400",
+            render_profile_digest="profile.v1",
+            environment_summary={},
+            slot_state="busy",
+            slot_generation=5,
+        )
+
+        assert result.slot_state == "busy"
+        assert result.slot_generation == 5
 
     asyncio.run(_run())
 

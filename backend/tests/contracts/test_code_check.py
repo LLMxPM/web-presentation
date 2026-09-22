@@ -262,6 +262,7 @@ import CheckCard from '@workspace-components/{component["code"]}/v/1'
 
     assert result["success"] is True
     assert fake_render.calls
+    assert fake_render.calls[0]["source_override"] == candidate_content
     artifact_id = result["artifact_id"]
     snapshot = fake_runtime.artifact_snapshots[str(artifact_id)]
     manifest = snapshot["manifest"]

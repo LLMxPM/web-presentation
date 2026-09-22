@@ -192,8 +192,8 @@ class RenderRepository:
             worker.render_profile_digest = render_profile_digest
             worker.environment_summary = environment_summary
             if not has_active:
-                # 槽位状态未知时不得当作 idle，避免双派。
-                worker.slot_state = "idle" if slot_state in {"idle", "busy"} else "unknown"
+                # 没有 DB attempt 时仍须保留 Renderer 报告的 busy，避免错误双派。
+                worker.slot_state = slot_state if slot_state in {"idle", "busy"} else "unknown"
             worker.slot_generation = slot_generation if not has_active else worker.slot_generation
             worker.last_heartbeat_at = utc_now()
         await self._isolate_stale_worker_epochs(worker_id=worker_id, keep_epoch=worker_epoch)

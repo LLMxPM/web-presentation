@@ -155,6 +155,7 @@ class CodeCheckService:
             render_preview_url=preview.preview_url,
             render_viewport=CaptureViewport(width=preview.viewport_width, height=preview.viewport_height),
             page_id=page.id,
+            source_override=candidate.content,
         )
 
     async def _check_transient_page_code(
@@ -337,9 +338,11 @@ class CodeCheckService:
         render_preview_url: str | None = None,
         render_viewport: CaptureViewport | None = None,
         page_id: int | None = None,
+        source_override: str | None = None,
     ) -> dict[str, object]:
         """调用 Runtime 诊断接口，并补齐候选源码变更元数据。"""
 
+        defer_artifact_cleanup = False
         try:
             diagnostics_token = TokenService.generate_runtime_diagnostics_command_token(
                 artifact_id=artifact_id,
@@ -367,7 +370,10 @@ class CodeCheckService:
                 "canonical_diff": canonical_diff,
             }
             if render_preview_url and render_viewport and self._is_runtime_diagnostics_passed(enriched_result):
-                return await self._append_page_render_diagnostics(
+                # 从调用远程渲染开始，异常路径必须保留 artifact，避免后台 attempt
+                # 仍在使用时读到 404；已知终态返回后再立即清理。
+                defer_artifact_cleanup = True
+                render_result = await self._append_page_render_diagnostics(
                     enriched_result,
                     preview_url=render_preview_url,
                     viewport=render_viewport,
@@ -375,17 +381,24 @@ class CodeCheckService:
                     project_id=project_id,
                     page_id=page_id,
                     artifact_id=artifact_id,
+                    source_override=source_override,
                 )
+                if isinstance(render_result, dict) and not render_result.get("_render_artifact_cleanup_deferred"):
+                    defer_artifact_cleanup = False
+                if isinstance(render_result, dict):
+                    render_result.pop("_render_artifact_cleanup_deferred", None)
+                return render_result
             return enriched_result
         finally:
-            try:
-                await RuntimeArtifactStore().delete_artifact(artifact_id)
-            except Exception:  # noqa: BLE001
-                logger.warning(
-                    "Runtime 诊断 artifact 主动清理失败，将由 TTL 清扫兜底。",
-                    extra={"event": "runtime.artifact.cleanup.failed", "artifact_id": artifact_id},
-                    exc_info=True,
-                )
+            if not defer_artifact_cleanup:
+                try:
+                    await RuntimeArtifactStore().delete_artifact(artifact_id)
+                except Exception:  # noqa: BLE001
+                    logger.warning(
+                        "Runtime 诊断 artifact 主动清理失败，将由 TTL 清扫兜底。",
+                        extra={"event": "runtime.artifact.cleanup.failed", "artifact_id": artifact_id},
+                        exc_info=True,
+                    )
 
     async def _release_session_before_diagnostics(self) -> None:
         """结束 artifact 准备阶段的只读事务，避免等待 Runtime/Chromium 时占用 SQLite 锁。"""
@@ -403,6 +416,7 @@ class CodeCheckService:
         project_id: int | None = None,
         page_id: int | None = None,
         artifact_id: str | None = None,
+        source_override: str | None = None,
     ) -> dict[str, object]:
         """在页面 Runtime 检查通过后追加真实渲染诊断和布局事实。"""
 
@@ -425,6 +439,7 @@ class CodeCheckService:
             page_id=page_id,
             artifact_id=artifact_id,
             preview_token=preview_token or None,
+            source_override=source_override,
         )
         logger.info(
             "页面远程渲染诊断阶段完成。",
@@ -450,6 +465,8 @@ class CodeCheckService:
             "diagnostics": diagnostics,
             "layout_analysis": layout_analysis,
         }
+        if isinstance(render_result, dict) and render_result.get("_render_artifact_cleanup_deferred"):
+            enriched_result["_render_artifact_cleanup_deferred"] = True
         if render_diagnostics:
             enriched_result["summary"] = f"代码检查通过，发现 {len(render_diagnostics)} 个布局警告。"
         return enriched_result

@@ -43,8 +43,13 @@ class RenderSnapshotService:
         operation_options: dict[str, Any],
         preview_url: str = "",
         extra_http_headers: Mapping[str, str] | None = None,
+        source_override: str | None = None,
     ) -> dict[str, Any]:
-        """固定页面源码版本与展示配置，生成快照 manifest。"""
+        """固定页面源码版本与展示配置，生成快照 manifest。
+
+        ``source_override`` 用于未落库候选源码。页面诊断必须让快照 digest
+        与实际 Runtime artifact 的候选源码一致，不能只哈希数据库当前版本。
+        """
 
         page = await self.session.get(Page, page_id)
         if page is None:
@@ -56,11 +61,13 @@ class RenderSnapshotService:
             .limit(1)
         )
         source = version.page_content if version is not None else page.page_content
+        snapshot_source = source if source_override is None else source_override
         version_no = version.version_no if version is not None else page.current_version_no
         input_material = {
             "page_code": page.code,
             "version_no": version_no,
-            "source_sha256": sha256_hex(source or ""),
+            "source_sha256": sha256_hex(snapshot_source or ""),
+            "source_origin": "candidate_override" if source_override is not None else "page_version",
             "viewport": viewport,
             "operation_options": operation_options,
             "runtime_build_id": artifact_id,

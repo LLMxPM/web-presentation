@@ -252,9 +252,11 @@ class SlotController:
     def sweep_expired_artifacts(self) -> None:
         """扫描并回收过期未消费产物，同时裁剪历史回执。"""
 
-        self._prune_history()
+        # 必须先清理产物，再裁剪回执；否则回执被移除后将失去 artifact 路径，
+        # 过期的成功结果会永久遗留在 Renderer 工作目录中。
         for execution in list(self._receipts.values()):
             self._maybe_expire_artifacts(execution)
+        self._prune_history()
 
     def _mark_precancel(self, request: ExecutionRequest, *, slot_generation: int) -> ExecutionReceipt:
         """在 POST 之前收到取消时创建取消终态回执；使用已校验的目标 generation。"""
@@ -493,14 +495,19 @@ class SlotController:
             if (now - finished).total_seconds() >= ttl:
                 drop.append(attempt_id)
         for attempt_id in drop:
-            self._receipts.pop(attempt_id, None)
+            execution = self._receipts.pop(attempt_id, None)
+            if execution is not None and execution.artifacts:
+                # 容量裁剪也不能遗留无法再消费的临时产物。
+                self._cleanup_artifacts(execution)
             self._cancellations.pop(attempt_id, None)
             self._remember_recycled(attempt_id)
         self._prune_cancellations()
         self._prune_recycled()
         while len(self._receipts) > _MAX_HISTORY_ENTRIES:
             oldest = next(iter(self._receipts))
-            self._receipts.pop(oldest, None)
+            execution = self._receipts.pop(oldest, None)
+            if execution is not None and execution.artifacts:
+                self._cleanup_artifacts(execution)
             self._remember_recycled(oldest)
 
     def _prune_cancellations(self) -> None:
