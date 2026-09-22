@@ -13,8 +13,8 @@
 
 ```bash
 cd deploy
-docker compose -f docker-compose.production.yml pull
-docker compose -f docker-compose.production.yml up -d
+docker compose -f compose/compose.prod.yml pull
+docker compose -f compose/compose.prod.yml up -d
 ```
 
 production env 版会先运行 `backend-migrate`。迁移成功后再启动 Backend、Runtime 和 Gateway。

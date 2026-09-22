@@ -9,7 +9,7 @@
 - 单个代码文件应控制行数；当文件职责过多、分支复杂或测试难以聚焦时，优先拆分模块。
 - 每个源代码文件开头应包含文件功能描述，Markdown 文件除外。
 - 为函数补充中文注释，优先解释职责、输入输出和关键约束，避免重复代码字面含义。
-- 前端使用 `pnpm` 管理依赖；Python 项目使用 `uv` 管理依赖，并使用 `venv` 管理虚拟环境。
+- 前端使用 `pnpm` 管理依赖；Python 侧使用根目录 `uv` workspace（唯一 `uv.lock`）管理 `backend`、`renderer`、`packages/render-contracts`，虚拟环境默认在仓库根 `.venv`。
 - 项目通常已经启动，不要反复启动服务；需要确认运行态时先查看现有进程、端口或文档说明。
 - 可能存在用户未提交改动；不要回滚、覆盖或格式化无关文件。
 - ORM 时间列统一使用 `app.db.types.UTCDateTime`，显式取时使用 `utc_now()`；历史无时区值直接补 UTC。Editor 时间解析复用 `parseApiDate()`，展示时区以 Backend `APP_TIMEZONE` 为准，详细规则见 [`docs/developer/backend/time-handling.md`](./docs/developer/backend/time-handling.md)。
@@ -37,7 +37,7 @@
 - `README.md`：面向最终用户，说明产品定位、核心能力、典型流程、部署入口和文档导航。
 - `AGENTS.md`：面向开发者与智能代理，说明仓库内修改边界、编码规范、测试要求和文档维护规则。
 - `docs/`：承载平台文档中心，按 `user/` 用户文档、`developer/` 开发文档和 `assets/` 图片资源拆分。
-- `deploy/`：承载外部依赖简化版、内置依赖简化版、production env 版 compose 模板和部署环境变量示例。
+- `deploy/`：交付部署配置中心；`deploy/compose/` 为 compose 模板，`deploy/docker/` 为平台/lite Dockerfile、nginx 与 entrypoints，`deploy/scripts/` 为备份恢复脚本。
 - `tests/`：承载根仓跨模块契约测试和 E2E smoke。
 
 ### backend/

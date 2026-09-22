@@ -24,9 +24,12 @@ ENV UV_LINK_MODE=copy
 
 WORKDIR /app
 
-COPY backend/pyproject.toml backend/uv.lock backend/README.md ./backend/
+# uv workspace：根锁 + 全部成员元数据与 render-contracts 可编辑源码
+COPY pyproject.toml uv.lock ./
+COPY backend/pyproject.toml backend/README.md ./backend/
+COPY renderer/pyproject.toml ./renderer/
 COPY packages/render-contracts /app/packages/render-contracts
-RUN uv sync --project backend --frozen --no-dev --no-cache --no-install-project
+RUN uv sync --package backend --frozen --no-dev --no-cache --no-install-project
 
 
 FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim AS platform-runtime
@@ -36,10 +39,10 @@ LABEL org.opencontainers.image.description="web-presentation Backend and Editor 
 
 ENV APP_RELOAD=false
 ENV ACCESS_LOG_ENABLED=false
-ENV PATH="/app/backend/.venv/bin:${PATH}"
+ENV PATH="/app/.venv/bin:${PATH}"
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
-ENV VIRTUAL_ENV="/app/backend/.venv"
+ENV VIRTUAL_ENV="/app/.venv"
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates curl nginx \
@@ -48,17 +51,17 @@ RUN apt-get update \
 
 WORKDIR /app/backend
 
-COPY --from=backend-deps /app/backend/.venv /app/backend/.venv
+COPY --from=backend-deps /app/.venv /app/.venv
 COPY backend/ /app/backend/
 COPY packages/render-contracts /app/packages/render-contracts
 COPY runtime/src/runtime-kit/manifest/runtime-kit.manifest.json /app/runtime/src/runtime-kit/manifest/runtime-kit.manifest.json
 COPY --from=editor-build /app/editor/dist/ /usr/share/nginx/html/
-COPY docker/nginx/web-presentation.conf /etc/nginx/conf.d/default.conf
-COPY docker/entrypoints/start_simple_container.sh /app/docker/entrypoints/start_simple_container.sh
+COPY deploy/docker/nginx/web-presentation.conf /etc/nginx/conf.d/default.conf
+COPY deploy/docker/entrypoints/start_platform.sh /app/docker/entrypoints/start_platform.sh
 
 RUN mkdir -p /app/backend/data /run/nginx /var/cache/nginx /var/log/nginx \
-    && chmod +x /app/docker/entrypoints/start_simple_container.sh
+    && chmod +x /app/docker/entrypoints/start_platform.sh
 
 EXPOSE 80 8000
 
-CMD ["sh", "/app/docker/entrypoints/start_simple_container.sh"]
+CMD ["sh", "/app/docker/entrypoints/start_platform.sh"]

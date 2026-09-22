@@ -10,24 +10,25 @@ ENV UV_COMPILE_BYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PLAYWRIGHT_BROWSERS_PATH=/ms-playwright \
-    PATH="/app/renderer/.venv/bin:${PATH}" \
-    VIRTUAL_ENV="/app/renderer/.venv"
+    PATH="/app/.venv/bin:${PATH}" \
+    VIRTUAL_ENV="/app/.venv"
 
-# 保持与源码树一致的相对布局：
-#   /app/packages/render-contracts  ←  pyproject 中 ../packages/render-contracts
-#   /app/renderer/{pyproject.toml,app}
+# uv workspace 布局：根锁 + 全部成员元数据；可执行入口在 /app/renderer
 WORKDIR /app
 
+COPY pyproject.toml uv.lock ./
+COPY backend/pyproject.toml ./backend/
+COPY renderer/pyproject.toml ./renderer/
 COPY packages/render-contracts /app/packages/render-contracts
-COPY renderer/pyproject.toml renderer/uv.lock /app/renderer/
 COPY renderer/app /app/renderer/app
+
+RUN uv sync --package web-presentation-renderer --frozen --no-dev --no-cache \
+    && playwright install --with-deps chromium \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app/renderer
 
-RUN uv sync --frozen --no-dev --no-cache \
-    && playwright install --with-deps chromium \
-    && rm -rf /var/lib/apt/lists/* \
-    && python -c "import render_contracts, app.main"
+RUN python -c "import render_contracts, app.main"
 
 EXPOSE 7400
 

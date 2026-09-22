@@ -25,7 +25,7 @@ dev = [
 ]
 
 [tool.uv.sources]
-render-contracts = { path = "../packages/render-contracts", editable = true }
+render-contracts = { workspace = true }
 
 [tool.hatch.build.targets.wheel]
 packages = ["app"]

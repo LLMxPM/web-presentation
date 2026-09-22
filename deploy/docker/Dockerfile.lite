@@ -39,8 +39,12 @@ ENV UV_LINK_MODE=copy
 
 WORKDIR /app
 
-COPY backend/pyproject.toml backend/uv.lock backend/README.md ./backend/
-RUN uv sync --project backend --frozen --no-dev --no-cache --no-install-project
+# uv workspace：根锁 + 全部成员元数据与 render-contracts 可编辑源码
+COPY pyproject.toml uv.lock ./
+COPY backend/pyproject.toml backend/README.md ./backend/
+COPY renderer/pyproject.toml ./renderer/
+COPY packages/render-contracts /app/packages/render-contracts
+RUN uv sync --package backend --frozen --no-dev --no-cache --no-install-project
 
 
 FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim AS lite-runtime
@@ -50,11 +54,11 @@ LABEL org.opencontainers.image.description="web-presentation SQLite lite image w
 
 ENV APP_RELOAD=false
 ENV ACCESS_LOG_ENABLED=false
-ENV PATH="/app/backend/.venv/bin:${PATH}"
+ENV PATH="/app/.venv/bin:${PATH}"
 ENV PLAYWRIGHT_BROWSERS_PATH="/ms-playwright"
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
-ENV VIRTUAL_ENV="/app/backend/.venv"
+ENV VIRTUAL_ENV="/app/.venv"
 ENV DATABASE_URL="sqlite+aiosqlite:////app/backend/data/web_presentation.db"
 ENV REDIS_URL="memory://lite"
 ENV REDIS_KEY_PREFIX="web_presentation_lite"
@@ -86,20 +90,21 @@ COPY --from=runtime-deps /usr/local/bin/node /usr/local/bin/node
 
 WORKDIR /app/backend
 
-COPY --from=backend-deps /app/backend/.venv /app/backend/.venv
+COPY --from=backend-deps /app/.venv /app/.venv
+COPY --from=backend-deps /app/packages/render-contracts /app/packages/render-contracts
 RUN playwright install --with-deps --only-shell chromium \
     && rm -rf /var/lib/apt/lists/*
 
 COPY backend/ /app/backend/
 COPY --from=runtime-deps /app/runtime /app/runtime
 COPY --from=editor-build /app/editor/dist/ /usr/share/nginx/html/
-COPY docker/nginx/web-presentation.conf /etc/nginx/conf.d/default.conf
-COPY docker/entrypoints/start_lite_container.sh /app/docker/entrypoints/start_lite_container.sh
+COPY deploy/docker/nginx/web-presentation.conf /etc/nginx/conf.d/default.conf
+COPY deploy/docker/entrypoints/start_lite.sh /app/docker/entrypoints/start_lite.sh
 
 RUN mkdir -p /app/backend/data /run/nginx /var/cache/nginx /var/log/nginx \
-    && chmod +x /app/docker/entrypoints/start_lite_container.sh \
+    && chmod +x /app/docker/entrypoints/start_lite.sh \
     && node --version
 
 EXPOSE 80 8000 7373
 
-CMD ["sh", "/app/docker/entrypoints/start_lite_container.sh"]
+CMD ["sh", "/app/docker/entrypoints/start_lite.sh"]

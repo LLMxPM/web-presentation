@@ -74,13 +74,13 @@
 个人或小团队快速部署推荐使用 SQLite 轻量单容器编排。它会在一个容器内启动 Backend、Runtime 和 Gateway，主数据写入 SQLite 文件，运行态使用进程内 memory runtime，不需要额外准备 PostgreSQL 和 Redis。
 
 1. 准备 Docker Engine 与 Docker Compose v2。
-2. 打开 `deploy/docker-compose.sqlite.yml`，修改文件顶部注释列出的访问地址、默认管理员密码和 `AI_SECRET_ENCRYPTION_KEY`。
+2. 打开 `deploy/compose/compose.sqlite-lite.yml`，修改文件顶部注释列出的访问地址、默认管理员密码和 `AI_SECRET_ENCRYPTION_KEY`。
 3. 在 `deploy/` 目录启动服务：
 
 ```bash
-docker compose -f docker-compose.sqlite.yml config
-docker compose -f docker-compose.sqlite.yml pull
-docker compose -f docker-compose.sqlite.yml up -d
+docker compose -f compose/compose.sqlite-lite.yml config
+docker compose -f compose/compose.sqlite-lite.yml pull
+docker compose -f compose/compose.sqlite-lite.yml up -d
 ```
 
 默认启动后访问 `http://127.0.0.1:8080`。面向开源用户的快速部署方式见 [快速部署](./docs/user/quick-deployment/README.md)；内置 PostgreSQL/Redis、外部依赖、production env 版、HTTPS、升级和回滚见 [生产部署指南](./docs/developer/deployment/README.md)。
@@ -118,7 +118,10 @@ web-presentation/
 ├── docs/                    # 用户文档、开发文档和文档图片资源
 ├── scripts/                 # 本地开发 infra、测试调度与契约校验脚本
 │   └── dev/compose.infra.yml # 本地开发/测试 PostgreSQL 与 Redis 入口，非部署模板
-└── deploy/                  # SQLite 轻量版、外部依赖版、内置依赖版和 production env 版 compose 模板
+└── deploy/                  # 交付部署配置中心
+    ├── compose/             # SQLite lite / with-deps / 外部依赖 / production compose 模板
+    ├── docker/              # 平台与 lite Dockerfile、nginx、entrypoints
+    └── scripts/             # 生产备份/恢复脚本
 ```
 
 ## License

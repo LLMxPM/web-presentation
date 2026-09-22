@@ -1,0 +1,18 @@
+# 文件功能：定义 uv 工作区根，统一锁定 backend、renderer 与 render-contracts 的 Python 依赖。
+
+[project]
+name = "web-presentation"
+version = "0.0.0"
+description = "web-presentation 平台 Python 工作区根（不单独发布）"
+requires-python = ">=3.11"
+dependencies = []
+
+[tool.uv]
+package = false
+
+[tool.uv.workspace]
+members = [
+    "backend",
+    "renderer",
+    "packages/render-contracts",
+]

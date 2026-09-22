@@ -40,7 +40,7 @@ def main() -> None:
             docker('run', '-d', '--name', backend, '--network', network, '--network-alias', 'backend', '--network-alias', 'runtime', '-v', f'{directory.as_posix()}:/fixture:ro', '-v', f'{(directory / "upstream.conf").as_posix()}:/etc/nginx/conf.d/default.conf:ro', 'nginx:1.28-alpine')
             containers.append(backend)
             gateway = name + '-gateway'
-            docker('run', '-d', '--name', gateway, '--network', network, '-p', '127.0.0.1::80', '-v', f'{(root / "docker/nginx/web-presentation.conf").as_posix()}:/etc/nginx/conf.d/default.conf:ro', '-v', f'{directory.as_posix()}:/usr/share/nginx/html:ro', 'nginx:1.28-alpine')
+            docker('run', '-d', '--name', gateway, '--network', network, '-p', '127.0.0.1::80', '-v', f'{(root / "deploy/docker/nginx/web-presentation.conf").as_posix()}:/etc/nginx/conf.d/default.conf:ro', '-v', f'{directory.as_posix()}:/usr/share/nginx/html:ro', 'nginx:1.28-alpine')
             containers.append(gateway)
             endpoint = 'http://' + docker('port', gateway, '80/tcp')
             for attempt in range(30):

@@ -1,5 +1,5 @@
 #!/usr/bin/env sh
-# 文件功能：在 simple 容器部署模式下执行数据库迁移，并同时启动 Backend 与 Nginx Gateway。
+# 文件功能：在平台单容器模式下执行数据库迁移，并同时启动 Backend 与 Nginx Gateway。
 
 set -eu
 

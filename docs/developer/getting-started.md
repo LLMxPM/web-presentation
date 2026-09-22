@@ -50,11 +50,12 @@ pnpm run env:check
 
 ## Backend 本地启动
 
-从仓库根目录进入 `backend/` 准备依赖与数据（自动继承根目录 `.env`）：
+从仓库根目录准备 Python 依赖与数据（uv workspace，自动继承根目录 `.env`）：
 
 ```powershell
+# 根目录 uv.lock 为唯一 Python 依赖锁；本地建议装全成员避免来回卸载
+uv sync --all-packages --all-groups --all-extras
 cd .\backend
-uv sync
 uv run alembic upgrade head
 uv run python -m app.scripts.seed_admin
 ```

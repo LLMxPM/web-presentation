@@ -35,7 +35,7 @@ dependencies = [
 ]
 
 [tool.uv.sources]
-render-contracts = { path = "../packages/render-contracts", editable = true }
+render-contracts = { workspace = true }
 
 [build-system]
 requires = ["uv_build>=0.10.10,<0.11.0"]

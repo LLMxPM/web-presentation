@@ -86,4 +86,4 @@ Runtime 维护页面可引用基础能力的公开契约：`runtime/src/runtime-
 1. 在主仓 `runtime/` 目录下直接进行能力开发与本地测试（`pnpm run test:runtime`）。
 2. 如涉及 Runtime Kit 公开能力或清单变更，更新 `runtime/src/runtime-kit/manifest/runtime-kit.manifest.json`，并同步运行根仓契约测试（`pnpm run test:contracts`）。
 3. 运行 Runtime 完整质量门禁（`pnpm run test:runtime:gate`）验证类型检查、单元测试与 Vite 生产构建。
-4. 部署时通过主仓 `runtime/Dockerfile` 构建独立的 Runtime 镜像，或通过 `Dockerfile.lite` 构建单容器集成镜像。
+4. 部署时通过主仓 `runtime/Dockerfile` 构建独立的 Runtime 镜像，或通过 `deploy/docker/Dockerfile.lite` 构建单容器集成镜像。

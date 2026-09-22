@@ -8,32 +8,32 @@
 
 | 文件 | 场景 | 特点 |
 | :--- | :--- | :--- |
-| `deploy/docker-compose.sqlite.yml` | 个人/小团队轻量部署 | 单容器内置 Backend、Editor、Runtime 和 Gateway，使用 SQLite 文件与 memory runtime |
-| `deploy/docker-compose.with-deps.yml` | 单机试部署 | 内置 PostgreSQL、Redis、platform 和 runtime |
-| `deploy/docker-compose.yml` | 外部依赖简化版 | 只启动 platform 和 runtime，数据库与 Redis 使用外部服务 |
-| `deploy/docker-compose.production.yml` | 生产 env 版 | 拆分迁移、Backend、Runtime 和 Gateway，通过 `deploy/.env` 管理变量 |
+| `deploy/compose/compose.sqlite-lite.yml` | 个人/小团队轻量部署 | 单容器内置 Backend、Editor、Runtime 和 Gateway，使用 SQLite 文件与 memory runtime |
+| `deploy/compose/compose.with-deps.yml` | 单机试部署 | 内置 PostgreSQL、Redis、platform 和 runtime |
+| `deploy/compose/compose.yml` | 外部依赖简化版 | 只启动 platform 和 runtime，数据库与 Redis 使用外部服务 |
+| `deploy/compose/compose.prod.yml` | 生产 env 版 | 拆分迁移、Backend、Runtime 和 Gateway，通过 `deploy/.env` 管理变量 |
 
 ## SQLite 轻量单容器
 
 ```bash
 cd deploy
-docker compose -f docker-compose.sqlite.yml config
-docker compose -f docker-compose.sqlite.yml pull
-docker compose -f docker-compose.sqlite.yml up -d
+docker compose -f compose/compose.sqlite-lite.yml config
+docker compose -f compose/compose.sqlite-lite.yml pull
+docker compose -f compose/compose.sqlite-lite.yml up -d
 ```
 
 默认拉取 `llmxpm/web-presentation:sqlite-lite`，访问 `http://127.0.0.1:8080`。该模式不启动 PostgreSQL 和 Redis，`DATABASE_URL` 指向 `/app/backend/data/web_presentation.db`，`REDIS_URL` 使用 `memory://lite`。`lite-data` volume 同时保存 SQLite 数据库、本地资源、截图、构建产物和 Runtime RSA 私钥。
 
-需要从源码验证轻量镜像时，直接在仓库根目录执行构建；`Dockerfile.lite` 会把仓库原生的 `runtime/` 源码和依赖一起打进单容器镜像。
+需要从源码验证轻量镜像时，直接在仓库根目录执行构建；`deploy/docker/Dockerfile.lite` 会把仓库原生的 `runtime/` 源码和依赖一起打进单容器镜像。
 
 ```bash
-docker build -f Dockerfile.lite -t llmxpm/web-presentation:sqlite-lite .
+docker build -f deploy/docker/Dockerfile.lite -t llmxpm/web-presentation:sqlite-lite .
 ```
 
 交叉构建 ARM64 轻量镜像时，可执行：
 
 ```bash
-docker buildx build --platform linux/arm64 -f Dockerfile.lite -t llmxpm/web-presentation:sqlite-lite-arm64 --load .
+docker buildx build --platform linux/arm64 -f deploy/docker/Dockerfile.lite -t llmxpm/web-presentation:sqlite-lite-arm64 --load .
 ```
 
 轻量模式只支持单容器、单 Backend worker、单 Runtime server，不适合多副本或高并发写入。容器重启后短生命周期预览链接、内存锁和内存构建状态会失效，但用户、工作空间、项目、页面、资源和 AI 会话等主数据会保留在 SQLite 文件中。
@@ -42,8 +42,8 @@ docker buildx build --platform linux/arm64 -f Dockerfile.lite -t llmxpm/web-pres
 
 ```bash
 cd deploy
-docker compose -f docker-compose.with-deps.yml pull
-docker compose -f docker-compose.with-deps.yml up -d
+docker compose -f compose/compose.with-deps.yml pull
+docker compose -f compose/compose.with-deps.yml up -d
 ```
 
 默认访问 `http://127.0.0.1:8080`。上线前必须修改 compose 顶部注释要求的密码、访问地址和 `AI_SECRET_ENCRYPTION_KEY`。
@@ -55,9 +55,9 @@ docker compose -f docker-compose.with-deps.yml up -d
 ```bash
 cp deploy/.env.example deploy/.env
 cd deploy
-docker compose -f docker-compose.production.yml config
-docker compose -f docker-compose.production.yml pull
-docker compose -f docker-compose.production.yml up -d
+docker compose -f compose/compose.prod.yml config
+docker compose -f compose/compose.prod.yml pull
+docker compose -f compose/compose.prod.yml up -d
 ```
 
 production env 版适合把环境变量集中放在 `deploy/.env` 中维护。外部 PostgreSQL 和 Redis 需要提前准备。

@@ -75,12 +75,12 @@ jobs:
       matrix:
         include:
           - name: full
-            file: Dockerfile
+            file: deploy/docker/Dockerfile.platform
             context: .
             tag: web-presentation:ci-smoke
             cache_scope: platform
           - name: lite
-            file: Dockerfile.lite
+            file: deploy/docker/Dockerfile.lite
             context: .
             tag: web-presentation:sqlite-lite-ci-smoke
             cache_scope: platform-lite

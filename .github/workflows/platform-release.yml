@@ -204,7 +204,7 @@ jobs:
         uses: docker/build-push-action@v7
         with:
           context: .
-          file: Dockerfile
+          file: deploy/docker/Dockerfile.platform
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.meta-dockerhub.outputs.tags }}
@@ -218,7 +218,7 @@ jobs:
         uses: docker/build-push-action@v7
         with:
           context: .
-          file: Dockerfile
+          file: deploy/docker/Dockerfile.platform
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.meta-acr.outputs.tags }}
@@ -282,7 +282,7 @@ jobs:
         uses: docker/build-push-action@v7
         with:
           context: .
-          file: Dockerfile.lite
+          file: deploy/docker/Dockerfile.lite
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.meta-dockerhub.outputs.tags }}
@@ -296,7 +296,7 @@ jobs:
         uses: docker/build-push-action@v7
         with:
           context: .
-          file: Dockerfile.lite
+          file: deploy/docker/Dockerfile.lite
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.meta-acr.outputs.tags }}

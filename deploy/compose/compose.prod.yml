@@ -2,7 +2,8 @@
 
 x-production-env: &production-env
   env_file:
-    - .env
+    # 相对本文件目录 deploy/compose/，读取 deploy/.env
+    - ../.env
 
 services:
   backend-migrate:

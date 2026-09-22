@@ -19,18 +19,18 @@
 - `llmxpm/web-presentation:latest`：平台镜像，包含 Backend、Editor 静态资源和 Gateway Nginx。
 - `llmxpm/web-runtime-vue:latest`：Runtime 镜像，负责预览、截图、诊断和构建。
 
-SQLite 轻量单容器部署使用 `llmxpm/web-presentation:sqlite-lite`，一个容器内同时运行 Backend、Runtime 和 Gateway。该镜像由根仓 Release workflow 从 `Dockerfile.lite` 构建并推送。
+SQLite 轻量单容器部署使用 `llmxpm/web-presentation:sqlite-lite`，一个容器内同时运行 Backend、Runtime 和 Gateway。该镜像由根仓 Release workflow 从 `deploy/docker/Dockerfile.lite` 构建并推送。
 
 ## 部署文件
 
 | 文件 | 作用 |
 | :--- | :--- |
-| `deploy/docker-compose.sqlite.yml` | SQLite + memory runtime 轻量单容器版，启动 `platform-lite`，环境变量直接写在 compose 内 |
-| `deploy/docker-compose.yml` | 外部 PostgreSQL/Redis 简化版，启动 `platform` 与 `runtime`，环境变量直接写在 compose 内 |
-| `deploy/docker-compose.with-deps.yml` | 内置 PostgreSQL/Redis 简化版，启动 `postgres`、`redis`、`platform` 与 `runtime`，环境变量直接写在 compose 内 |
-| `deploy/docker-compose.production.yml` | production env 版，拆分 `backend-migrate`、`backend`、`runtime` 与 `gateway`，通过 `env_file: .env` 读取生产环境变量 |
+| `deploy/compose/compose.sqlite-lite.yml` | SQLite + memory runtime 轻量单容器版，启动 `platform-lite`，环境变量直接写在 compose 内 |
+| `deploy/compose/compose.yml` | 外部 PostgreSQL/Redis 简化版，启动 `platform` 与 `runtime`，环境变量直接写在 compose 内 |
+| `deploy/compose/compose.with-deps.yml` | 内置 PostgreSQL/Redis 简化版，启动 `postgres`、`redis`、`platform` 与 `runtime`，环境变量直接写在 compose 内 |
+| `deploy/compose/compose.prod.yml` | production env 版，拆分 `backend-migrate`、`backend`、`runtime` 与 `gateway`，通过 `env_file: .env` 读取生产环境变量 |
 | `deploy/.env.example` | 仅供 production env 版复制为 `deploy/.env` 使用 |
-| `docker/nginx/web-presentation.conf` | 平台镜像内置 Gateway 配置，托管 Editor 并代理 Backend 与 Runtime |
+| `deploy/docker/nginx/web-presentation.conf` | 平台镜像内置 Gateway 配置，托管 Editor 并代理 Backend 与 Runtime |
 
 简化版中，`platform` 容器同时运行 Backend 与 Gateway。`runtime` 默认只在 compose 内网访问。`platform` 容器内通过 `extra_hosts` 把 `backend:8000` 指向本机 Backend，compose 网络中通过别名把 `backend:8000` 暴露给 Runtime 回源。
 
@@ -129,18 +129,18 @@ SQLite 轻量单容器版：
 
 ```bash
 cd deploy
-docker compose -f docker-compose.sqlite.yml config
-docker compose -f docker-compose.sqlite.yml pull
-docker compose -f docker-compose.sqlite.yml up -d
+docker compose -f compose/compose.sqlite-lite.yml config
+docker compose -f compose/compose.sqlite-lite.yml pull
+docker compose -f compose/compose.sqlite-lite.yml up -d
 ```
 
 内置 PostgreSQL/Redis 简化版：
 
 ```bash
 cd deploy
-docker compose -f docker-compose.with-deps.yml config
-docker compose -f docker-compose.with-deps.yml pull
-docker compose -f docker-compose.with-deps.yml up -d
+docker compose -f compose/compose.with-deps.yml config
+docker compose -f compose/compose.with-deps.yml pull
+docker compose -f compose/compose.with-deps.yml up -d
 ```
 
 外部 PostgreSQL/Redis 简化版：
@@ -156,9 +156,9 @@ production env 版：
 
 ```bash
 cd deploy
-docker compose -f docker-compose.production.yml config
-docker compose -f docker-compose.production.yml pull
-docker compose -f docker-compose.production.yml up -d
+docker compose -f compose/compose.prod.yml config
+docker compose -f compose/compose.prod.yml pull
+docker compose -f compose/compose.prod.yml up -d
 ```
 
 各编排实际拉取的业务镜像为：
@@ -169,7 +169,7 @@ llmxpm/web-presentation:latest
 llmxpm/web-runtime-vue:latest
 ```
 
-`docker-compose.with-deps.yml` 还会拉取 `postgres:16` 与 `redis:7`。该文件中的 `POSTGRES_PASSWORD`、`REDIS_PASSWORD` 以及 `platform.environment` 中的 `DATABASE_URL`、`REDIS_URL` 要保持一致；如密码包含 `@`、`/`、`:` 等 URL 特殊字符，需要先进行 URL 编码，或改用只包含字母、数字、短横线和下划线的密码。
+`compose/compose.with-deps.yml` 还会拉取 `postgres:16` 与 `redis:7`。该文件中的 `POSTGRES_PASSWORD`、`REDIS_PASSWORD` 以及 `platform.environment` 中的 `DATABASE_URL`、`REDIS_URL` 要保持一致；如密码包含 `@`、`/`、`:` 等 URL 特殊字符，需要先进行 URL 编码，或改用只包含字母、数字、短横线和下划线的密码。
 
 内置 Redis 默认关闭 AOF，以降低小规模部署的磁盘写入成本。Redis 只保存短生命周期预览 artifact、构建状态和锁；主数据仍由 PostgreSQL 或 SQLite 管理。
 
@@ -183,10 +183,10 @@ SQLite 轻量单容器版由 `platform-lite` 容器入口脚本在启动时执�
 
 ```bash
 cd deploy
-docker compose -f docker-compose.with-deps.yml ps
+docker compose -f compose/compose.with-deps.yml ps
 ```
 
-SQLite 轻量单容器版把 `-f` 改为 `docker-compose.sqlite.yml`；外部依赖简化版可省略 `-f` 参数；production env 版把 `-f` 改为 `docker-compose.production.yml`。
+SQLite 轻量单容器版把 `-f` 改为 `compose/compose.sqlite-lite.yml`；外部依赖简化版可省略 `-f` 参数；production env 版把 `-f` 改为 `compose/compose.prod.yml`。
 
 检查入口健康状态：
 
@@ -206,13 +206,13 @@ Windows PowerShell 中如果 `curl` 被映射为 `Invoke-WebRequest`，可改用
 
 ```bash
 cd deploy
-docker compose -f docker-compose.with-deps.yml logs -f platform runtime postgres redis
+docker compose -f compose/compose.with-deps.yml logs -f platform runtime postgres redis
 ```
 
 SQLite 轻量单容器版使用：
 
 ```bash
-docker compose -f docker-compose.sqlite.yml logs -f platform-lite
+docker compose -f compose/compose.sqlite-lite.yml logs -f platform-lite
 ```
 
 外部依赖简化版使用：
@@ -224,7 +224,7 @@ docker compose logs -f platform runtime
 production env 版使用：
 
 ```bash
-docker compose -f docker-compose.production.yml logs -f backend runtime gateway
+docker compose -f compose/compose.prod.yml logs -f backend runtime gateway
 ```
 
 应用侧业务日志默认使用 JSON Lines 输出到容器标准输出，便于 `docker compose logs` 之后接入 Loki、ELK 或云日志采集。部署模板默认关闭 Gateway、Backend 和 Runtime 的访问日志，以降低高频预览、静态资源与 Runtime 代理请求带来的 IO 成本；错误日志、业务日志和浏览器错误上报仍保留。`gateway` 仍负责生成或透传 `X-Request-ID`，`backend` 会在响应头返回同一个请求 ID。
@@ -276,7 +276,7 @@ SQLite 轻量单容器版只管理 `lite-data` volume，用于 SQLite 数据库�
 
 外部依赖简化版和 production env 版只管理 `backend-data` volume，用于本地资源、截图和构建产物。
 
-`docker-compose.with-deps.yml` 还会管理 `postgres-data` 与 `redis-data` volume。该模式下升级前需要同时备份 PostgreSQL 数据卷和 `backend-data`。
+`compose/compose.with-deps.yml` 还会管理 `postgres-data` 与 `redis-data` volume。该模式下升级前需要同时备份 PostgreSQL 数据卷和 `backend-data`。
 
 PostgreSQL 与 Redis 使用已有基础设施时，应使用对应基础设施的备份机制。升级前至少备份 PostgreSQL 和 `backend-data`。
 
@@ -315,19 +315,19 @@ SQLite 轻量单容器版先看 `platform-lite` 日志；简化版先看 `platfo
 
 ```bash
 # 查看数据库当前记录的 Alembic revision。
-docker compose -f docker-compose.with-deps.yml exec postgres \
+docker compose -f compose/compose.with-deps.yml exec postgres \
   psql -U wp_user -d web_presentation -c "select version_num from alembic_version;"
 
 # 查看当前平台镜像内是否包含该迁移文件。
-docker compose -f docker-compose.with-deps.yml run --rm --entrypoint sh platform \
+docker compose -f compose/compose.with-deps.yml run --rm --entrypoint sh platform \
   -lc "ls -1 /app/backend/migrations/versions && alembic heads"
 
 # 重新拉取并重建使用正确平台镜像的容器。
-docker compose -f docker-compose.with-deps.yml pull platform runtime
-docker compose -f docker-compose.with-deps.yml up -d --force-recreate platform runtime
+docker compose -f compose/compose.with-deps.yml pull platform runtime
+docker compose -f compose/compose.with-deps.yml up -d --force-recreate platform runtime
 ```
 
-production env 版把命令中的 compose 文件改为 `docker-compose.production.yml`，并把 `platform` 替换为 `backend-migrate` 或 `backend`。如果镜像内 `alembic heads` 早于数据库里的 `version_num`，说明正在使用旧平台镜像，需要切到包含该迁移脚本的发布标签或等待 `latest` 更新完成。
+production env 版把命令中的 compose 文件改为 `compose/compose.prod.yml`，并把 `platform` 替换为 `backend-migrate` 或 `backend`。如果镜像内 `alembic heads` 早于数据库里的 `version_num`，说明正在使用旧平台镜像，需要切到包含该迁移脚本的发布标签或等待 `latest` 更新完成。
 
 ### Runtime 预览不可用
 

@@ -20,7 +20,7 @@
 
 ## 通用配置
 
-使用仓库中的 [`deploy/docker-compose.sqlite.yml`](../../../deploy/docker-compose.sqlite.yml)。至少修改：
+使用仓库中的 [`deploy/compose/compose.sqlite-lite.yml`](../../../deploy/compose/compose.sqlite-lite.yml)。至少修改：
 
 | 配置 | 示例 | 作用 |
 | :--- | :--- | :--- |
@@ -66,7 +66,7 @@ python -c "import base64, os; print(base64.urlsafe_b64encode(os.urandom(32)).dec
 
 ```bash
 curl -fsS http://127.0.0.1:8080/healthz
-docker compose -f docker-compose.sqlite.yml ps
+docker compose -f compose/compose.sqlite-lite.yml ps
 ```
 
 SQLite 数据库、上传资源、截图、构建产物和 Runtime RSA 私钥都保存在 `lite-data` 数据卷或 `/app/backend/data` 挂载目录中。备份时必须完整备份该数据卷或目录，不要只复制 SQLite 文件；不要执行 `docker compose down -v`。

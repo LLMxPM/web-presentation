@@ -10,8 +10,8 @@
 
 `runtime/` 已 vendored 进本仓，Runtime 独立镜像由本仓 Release 使用 `runtime/Dockerfile` 构建推送，不再依赖外部 `web-runtime-vue` 子模块 SHA 镜像。本仓镜像变体：
 
-- 常规平台镜像：由 `Dockerfile` 构建，包含 Backend 代码、Editor 静态资源、Nginx 配置和 Backend 运行所需的 Runtime Kit manifest。
-- SQLite 轻量单容器镜像：由 `Dockerfile.lite` 构建，额外内置 Runtime Vite server 运行依赖，面向 SQLite + memory runtime 单容器部署。该变体直接打包当前仓库原生 `runtime/` 源码。
+- 常规平台镜像：由 `deploy/docker/Dockerfile.platform` 构建，包含 Backend 代码、Editor 静态资源、Nginx 配置和 Backend 运行所需的 Runtime Kit manifest。
+- SQLite 轻量单容器镜像：由 `deploy/docker/Dockerfile.lite` 构建，额外内置 Runtime Vite server 运行依赖，面向 SQLite + memory runtime 单容器部署。该变体直接打包当前仓库原生 `runtime/` 源码。
 - 独立 Runtime 运行时镜像：由 `runtime/Dockerfile` 构建，提供独立 Vite server 以承载生产编排中的预览、诊断与构建接口。
 
 ## GitHub Actions
@@ -63,31 +63,31 @@ Pre-release 只推送固定版本标签，不移动 `latest` 与 `sqlite-lite`�
 
 部署模板集中在 `deploy/` 目录：
 
-- `deploy/docker-compose.yml`：外部 PostgreSQL/Redis 简化版，环境变量直接写在 compose 内。
-- `deploy/docker-compose.sqlite.yml`：SQLite + memory runtime 轻量单容器版，使用 `llmxpm/web-presentation:sqlite-lite`。
-- `deploy/docker-compose.with-deps.yml`：内置 PostgreSQL/Redis 简化版，随应用一起启动 PostgreSQL 与 Redis，环境变量直接写在 compose 内。
-- `deploy/docker-compose.production.yml`：production env 版，拆分迁移、Backend、Runtime 与 Gateway，并通过 `env_file: .env` 读取环境变量。
+- `deploy/compose/compose.yml`：外部 PostgreSQL/Redis 简化版，环境变量直接写在 compose 内。
+- `deploy/compose/compose.sqlite-lite.yml`：SQLite + memory runtime 轻量单容器版，使用 `llmxpm/web-presentation:sqlite-lite`。
+- `deploy/compose/compose.with-deps.yml`：内置 PostgreSQL/Redis 简化版，随应用一起启动 PostgreSQL 与 Redis，环境变量直接写在 compose 内。
+- `deploy/compose/compose.prod.yml`：production env 版，拆分迁移、Backend、Runtime 与 Gateway，并通过 `env_file: .env` 读取环境变量。
 - `deploy/.env.example`：仅供 production env 版复制为 `deploy/.env` 使用。
 
 SQLite 轻量单容器版启动方式：
 
 ```bash
 cd deploy
-docker compose -f docker-compose.sqlite.yml config
-docker compose -f docker-compose.sqlite.yml pull
-docker compose -f docker-compose.sqlite.yml up -d
+docker compose -f compose/compose.sqlite-lite.yml config
+docker compose -f compose/compose.sqlite-lite.yml pull
+docker compose -f compose/compose.sqlite-lite.yml up -d
 ```
 
 内置依赖简化版启动方式：
 
 ```bash
 cd deploy
-docker compose -f docker-compose.with-deps.yml config
-docker compose -f docker-compose.with-deps.yml pull
-docker compose -f docker-compose.with-deps.yml up -d
+docker compose -f compose/compose.with-deps.yml config
+docker compose -f compose/compose.with-deps.yml pull
+docker compose -f compose/compose.with-deps.yml up -d
 ```
 
-外部依赖简化版使用默认 `docker-compose.yml`；production env 版需要先复制 `deploy/.env.example` 为 `deploy/.env`，再将命令中的 compose 文件改为 `docker-compose.production.yml`。完整部署、升级、回滚和运维检查流程见 [生产部署指南](./README.md)。
+外部依赖简化版使用默认 `compose/compose.yml`；production env 版需要先复制 `deploy/.env.example` 为 `deploy/.env`，再将命令中的 compose 文件改为 `compose/compose.prod.yml`。完整部署、升级、回滚和运维检查流程见 [生产部署指南](./README.md)。
 
 正式部署前必须替换数据库密码、默认管理员密码和 `AI_SECRET_ENCRYPTION_KEY`。`AI_SECRET_ENCRYPTION_KEY` 必须是 Fernet 密钥，即 32 字节随机值的 URL-safe base64 编码，通常长度为 44 个字符并以 `=` 结尾；可用 `python -c "import base64, os; print(base64.urlsafe_b64encode(os.urandom(32)).decode())"` 生成。部署后应长期保存，随意更换会导致已有用户模型凭证密文无法解密。
 

@@ -56,5 +56,5 @@
 ## 生产变量
 
 - 模板文件：`deploy/.env.example`。
-- 由 `deploy/docker-compose.production.yml` 通过 `env_file: .env` 读取，两个简化版 compose 文件不读取该文件。
+- 由 `deploy/compose/compose.prod.yml` 通过 `env_file: .env` 读取，两个简化版 compose 文件不读取该文件。
 - 生产环境必须长期保存 `AI_SECRET_ENCRYPTION_KEY`，并使用独立的 `deploy/secrets/render_service_credential` 密钥文件。

@@ -22,7 +22,7 @@ COMPOSE_FILE=${COMPOSE_FILE:-/opt/presentation/deploy/compose.yaml}
 # 当前脚本所在目录，用于推导默认 Compose 文件路径。
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 if [ -z "$COMPOSE_FILE" ]; then
-  COMPOSE_FILE=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)/docker-compose.sqlite.yml
+  COMPOSE_FILE=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)/compose/compose.sqlite-lite.yml
 fi
 # 标记服务是否已由本脚本停止，异常退出时据此自动拉起服务。
 SERVICE_STOPPED=0

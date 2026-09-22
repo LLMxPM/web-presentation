@@ -20,7 +20,7 @@
 
 ## 镜像与部署
 
-- **单容器部署**：`Dockerfile.lite` 会直接复制 `runtime/` 目录源码与依赖并打包进单容器镜像；
+- **单容器部署**：`deploy/docker/Dockerfile.lite` 会直接复制 `runtime/` 目录源码与依赖并打包进单容器镜像；
 - **微服务部署**：`runtime/Dockerfile` 提供了独立的 Runtime 容器镜像定义，由平台 Docker Compose 或集群调度。
 
 ## 文档联动

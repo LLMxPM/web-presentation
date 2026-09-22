@@ -18,7 +18,7 @@ Editor 是创作工作台，负责平台对象管理、代码编辑、AI 侧边�
 
 ## Infra
 
-Infra 包括 `Dockerfile`、`docker/`、`deploy/`、`.github/workflows/` 和测试辅助脚本。生产部署模板只放在 `deploy/`，本地开发与 CI 共享基础服务入口维护在 `scripts/dev/compose.infra.yml`。
+Infra 包括 `deploy/docker/`（Dockerfile、nginx、entrypoints）、`deploy/compose/`、`.github/workflows/` 和测试辅助脚本。生产部署模板只放在 `deploy/compose/`，本地开发与 CI 共享基础服务入口维护在 `scripts/dev/compose.infra.yml`。
 
 ## 联动规则
 

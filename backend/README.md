@@ -37,10 +37,11 @@ docker compose -f .\scripts\dev\compose.infra.yml up -d
 
 ## 2. 常用命令
 
-安装依赖：
+安装依赖（在仓库根目录执行 uv workspace 同步，唯一锁文件为根目录 `uv.lock`）：
 
 ```powershell
-uv sync
+uv sync --package backend --group dev
+# 或全成员：uv sync --all-packages --all-groups --all-extras
 ```
 
 执行数据库迁移：
