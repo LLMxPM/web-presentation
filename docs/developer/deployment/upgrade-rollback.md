@@ -6,7 +6,7 @@
 
 - 备份 PostgreSQL。
 - 备份资源和构建产物。
-- 保存当前平台镜像标签、Runtime 镜像标签和 `runtime` 子模块 SHA。
+- 保存当前平台镜像标签、Runtime 镜像标签和代码仓库 Git commit SHA。
 - 检查 Release 说明和环境变量变化。
 
 ## 升级

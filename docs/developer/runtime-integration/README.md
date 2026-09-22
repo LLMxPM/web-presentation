@@ -1,12 +1,12 @@
 # Runtime 接入文档
 
-Runtime 接入文档说明根仓如何依赖 `web-runtime-vue` 子模块，以及页面源码、组件源码、previewSchema、构建产物和配置模板之间的契约。
+Runtime 接入文档说明平台如何组织和调用 `runtime/` 服务，以及页面源码、组件源码、previewSchema、构建产物和配置模板之间的契约。
 
 ## 文档导航
 
 | 文档 | 内容 |
 | :--- | :--- |
-| [子模块协作](./submodule-workflow.md) | Runtime 上游开发、镜像发布和根仓指针更新 |
+| [运行时开发与维护](./runtime-workflow.md) | Runtime 本地开发、质量门禁、契约验证与构建部署 |
 | [Runtime Kit 契约](./runtime-kit-contract.md) | manifest 命名、版本化 import path 和 Backend 校验 |
 | [previewSchema 契约](./preview-schema.md) | 组件预览 schema 的能力边界和校验要求 |
 | [页面可视化编辑契约](./page-visual-edit.md) | Backend 源码权威、编辑态 artifact、SFC 节点映射与受限回写协议 |
@@ -16,4 +16,4 @@ Runtime 接入文档说明根仓如何依赖 `web-runtime-vue` 子模块，以�
 
 ## 外部文档
 
-Runtime 自身能力、开发方式和内部实现见 [runtime/README.md](../../../runtime/README.md) 以及 `runtime/docs/`。
+Runtime 自身能力、开发方式和内部实现见 [runtime/README.md](../../../runtime/README.md) 以及 [docs/developer/runtime/](../runtime/)。

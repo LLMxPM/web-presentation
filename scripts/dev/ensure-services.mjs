@@ -10,9 +10,9 @@
 import fs from 'node:fs'
 import path from 'node:path'
 
-import { spawnPersistentBackground, sleep } from './process-utils.mjs'
-import { resolveServiceUrls } from './service-env.mjs'
-import { buildE2eBackendEnv, E2E_DATABASE_MARKER } from './e2e-database-env.mjs'
+import { spawnPersistentBackground, sleep } from '../testing/process-utils.mjs'
+import { resolveServiceUrls } from '../testing/service-env.mjs'
+import { buildE2eBackendEnv, E2E_DATABASE_MARKER } from '../testing/e2e-database-env.mjs'
 
 const urls = resolveServiceUrls()
 const SERVICE_LOG_DIR = path.join(process.cwd(), 'test-results', 'e2e', 'services')

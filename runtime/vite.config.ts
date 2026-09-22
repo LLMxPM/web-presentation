@@ -17,7 +17,17 @@ import runtimeVisualEdit from './src/core/plugins/runtime-visual-edit'
 import { logRuntimeServer } from './src/core/utils/runtime-logger'
 
 export default defineConfig(({ command, mode }) => {
-  const env = loadEnv(mode, __dirname, '')
+  const repoRoot = resolve(__dirname, '..')
+  const env = {
+    ...loadEnv(mode, repoRoot, ''),
+    ...loadEnv(mode, __dirname, ''),
+    ...loadEnv(mode, process.cwd(), ''),
+  }
+  for (const [key, value] of Object.entries(env)) {
+    if (process.env[key] === undefined) {
+      process.env[key] = value
+    }
+  }
   const standalonePreviewEnabled = resolveStandalonePreviewEnabled(env.RUNTIME_STANDALONE_PREVIEW_ENABLED)
   const runtimeServerHost = resolveRuntimeServerHost(env.RUNTIME_SERVER_HOST)
   const runtimeServerPort = resolveRuntimeServerPort(env.RUNTIME_SERVER_PORT)

@@ -3,7 +3,7 @@
 
 set -euo pipefail
 
-readonly compose_file="docker-compose.dev.yml"
+readonly compose_file="scripts/dev/compose.infra.yml"
 readonly max_pull_attempts=4
 
 # 以有限次数和指数退避拉取镜像，吸收 Docker Hub 的短暂网络抖动。

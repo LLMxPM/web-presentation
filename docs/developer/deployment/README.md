@@ -45,7 +45,7 @@ production env 版中，访问入口是单独的 `gateway` 容器；`backend` �
 - 外部依赖简化版和 production env 版需要已准备可访问的 PostgreSQL 与 Redis。
 - 内置依赖简化版会随应用启动 PostgreSQL 与 Redis，适合单机试部署或小规模自托管。
 - 部署机器可以拉取 `llmxpm/web-presentation:latest`、`llmxpm/web-presentation:sqlite-lite` 与 `llmxpm/web-runtime-vue:latest`。
-- 只有从源码本地构建 SQLite 轻量镜像时才需要初始化 `runtime/` 子模块；直接使用 Docker Hub 发布镜像不需要仓库源码。
+- 从源码构建镜像时直接使用仓库原生目录；直接使用 Docker Hub 发布镜像不需要仓库源码。
 - 如需要 HTTPS，建议在外层 Nginx、Traefik 或云负载均衡终止 TLS，再转发到 compose 暴露的 HTTP 端口。
 
 ## 配置方式
@@ -347,9 +347,9 @@ CLI endpoint 使用平台 Gateway 根地址，不包含 `/api/v1`。外层代理
 发布后执行只读检查（必须使用实际外部 Gateway 地址）：
 
 ```powershell
-uv run --project backend python scripts/testing/check-gateway-openapi.py https://presentation.example.com
+uv run --project backend python scripts/contracts/check-gateway-openapi.py https://presentation.example.com
 ```
 
-检查 JSON Content-Type、OpenAPI 根结构及主题、样式、路由操作。真实 Nginx 隔离回归入口为 `uv run --project backend python scripts/testing/test-gateway-openapi.py`，需要 Docker；覆盖契约成功、上游错误透传、现有 API 和 Editor SPA。
+检查 JSON Content-Type、OpenAPI 根结构及主题、样式、路由操作。真实 Nginx 隔离回归入口为 `uv run --project backend python scripts/contracts/test-gateway-openapi.py`，需要 Docker；覆盖契约成功、上游错误透传、现有 API 和 Editor SPA。
 
 先发布平台镜像并更新 Gateway，外部契约检查通过后再升级 CLI/Skill。CLI 契约帮助失败立即退出 1 且无部分帮助；Doctor 的 OpenAPI 检查与健康、认证分开。六页演示验收仅在测试工作空间执行，记录页面 Job、路由顺序和挂载后的截图。代码测试与生产验收分开记录，生产仍返回 HTML 时不能宣布修复完成。

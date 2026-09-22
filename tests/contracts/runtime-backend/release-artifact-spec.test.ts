@@ -6,7 +6,7 @@ import { resolve } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
 
-const docPath = resolve(process.cwd(), 'runtime/docs/integration/backend-api.md')
+const docPath = resolve(process.cwd(), 'docs/developer/runtime/integration/backend-api.md')
 const backendApiDoc = readFileSync(docPath, 'utf-8')
 
 describe('runtime-backend release artifact contract', () => {

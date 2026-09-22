@@ -46,7 +46,6 @@ jobs:
             runtime_changed:
               - 'runtime'
               - 'runtime/**'
-              - '.gitmodules'
 
   backend-tests:
     runs-on: ubuntu-latest
@@ -225,7 +224,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: python scripts/testing/test-gateway-openapi.py
+      - run: python scripts/contracts/test-gateway-openapi.py
 
   cli-contract:
     runs-on: ubuntu-latest

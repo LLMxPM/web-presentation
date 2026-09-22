@@ -24,10 +24,9 @@ docker compose -f docker-compose.sqlite.yml up -d
 
 默认拉取 `llmxpm/web-presentation:sqlite-lite`，访问 `http://127.0.0.1:8080`。该模式不启动 PostgreSQL 和 Redis，`DATABASE_URL` 指向 `/app/backend/data/web_presentation.db`，`REDIS_URL` 使用 `memory://lite`。`lite-data` volume 同时保存 SQLite 数据库、本地资源、截图、构建产物和 Runtime RSA 私钥。
 
-需要从源码验证轻量镜像时，必须先初始化 `runtime/` 子模块；`Dockerfile.lite` 会把当前子模块源码和依赖一起打进单容器镜像，而不是拉取 `web-runtime-vue` 镜像作为基础层。
+需要从源码验证轻量镜像时，直接在仓库根目录执行构建；`Dockerfile.lite` 会把仓库原生的 `runtime/` 源码和依赖一起打进单容器镜像。
 
 ```bash
-git submodule update --init --recursive runtime
 docker build -f Dockerfile.lite -t llmxpm/web-presentation:sqlite-lite .
 ```
 

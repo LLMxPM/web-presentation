@@ -99,11 +99,11 @@ docker compose -f docker-compose.sqlite.yml up -d
 | [Demo 使用指南](./docs/user/demo-guide.md) | 公开 Demo 地址、体验账号、推荐流程和 AI 设置注意事项 |
 | [AI 协作创作](./docs/user/ai/README.md) | AI 侧边栏、工具确认、上下文注入和协作建议 |
 | [开发文档](./docs/developer/README.md) | 架构、Backend、Editor、Runtime 接入、测试、部署和参考资料 |
-| [平台架构总览](./docs/developer/architecture/overview.md) | 平台目标、模块职责、目标流程和 Runtime 子模块协作 |
+| [平台架构总览](./docs/developer/architecture/overview.md) | 平台目标、模块职责、目标流程和 Runtime 运行时架构 |
 | [本地开发指南](./docs/developer/getting-started.md) | 本地依赖、启动流程、测试数据和运行态维护 |
 | [测试文档](./docs/developer/testing/README.md) | 测试分层、命令、契约测试和 E2E smoke |
 | [生产部署指南](./docs/developer/deployment/README.md) | compose 部署、环境变量、备份恢复、升级回滚和排障 |
-| [Runtime 项目说明](./runtime/README.md) | `web-runtime-vue` 子项目自身的能力、运行方式和对接文档 |
+| [Runtime 运行时说明](./runtime/README.md) | 平台原生演示文稿运行时（基于 Vue 3 + Vite）的能力与配置说明 |
 
 ## 仓库结构
 
@@ -111,20 +111,21 @@ docker compose -f docker-compose.sqlite.yml up -d
 web-presentation/
 ├── backend/                 # Backend 控制面服务
 ├── editor/                  # Editor 创作工作台
-├── runtime/                 # web-runtime-vue Git 子模块
+├── runtime/                 # 演示文稿/页面运行时服务（Vue 3 + Vite）
+├── renderer/                # 远程无头 Chromium 渲染服务
+├── packages/                # 跨服务共享契约库
 ├── tests/                   # 根仓契约测试与 E2E smoke
 ├── docs/                    # 用户文档、开发文档和文档图片资源
-├── deploy/                  # SQLite 轻量版、外部依赖版、内置依赖版和 production env 版 compose 模板
-├── Dockerfile               # 平台单镜像构建入口
-├── Dockerfile.lite          # SQLite 轻量单容器镜像构建入口
-└── docker-compose.dev.yml   # 本地开发/测试 PostgreSQL 与 Redis 入口，非部署模板
+├── scripts/                 # 本地开发 infra、测试调度与契约校验脚本
+│   └── dev/compose.infra.yml # 本地开发/测试 PostgreSQL 与 Redis 入口，非部署模板
+└── deploy/                  # SQLite 轻量版、外部依赖版、内置依赖版和 production env 版 compose 模板
 ```
 
 ## License
 
 当前仓库顶层内容采用 Apache License 2.0，见 [LICENSE](./LICENSE)。
 
-`runtime/` 是独立项目 [web-runtime-vue](https://github.com/LLMxPM/web-runtime-vue) 的 Git 子模块，继续遵循它自身仓库内声明的许可证，见 [web-runtime-vue LICENSE](https://github.com/LLMxPM/web-runtime-vue/blob/main/LICENSE)。
+`runtime/` 包含平台原生演示运行时服务，遵循其目录下声明的 GNU Affero General Public License v3.0 许可证，见 [runtime/LICENSE](./runtime/LICENSE)。
 
 外部 Agent 接入代码位于同级独立仓库 [web-presentation-agent-kit](https://github.com/LLMxPM/web-presentation-agent-kit)，主仓库仅保留平台 API、架构和集成文档。
 

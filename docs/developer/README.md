@@ -25,7 +25,7 @@
 | [架构](./architecture/overview.md) | 模块职责、数据模型、预览构建链路、Runtime 接入和权限 |
 | [Backend](./backend/README.md) | API 分层、AI Agent、工具规格、预览 artifact 和排障 |
 | [Editor](./editor/README.md) | 前端结构、AI 侧边栏、状态管理和测试约定 |
-| [Runtime 接入](./runtime-integration/README.md) | 子模块、Runtime Kit manifest、previewSchema、构建产物和配置模板 |
+| [Runtime 接入](./runtime-integration/README.md) | 运行时架构、Runtime Kit manifest、previewSchema、构建产物和配置模板 |
 | [测试](./testing/README.md) | 测试分层、命令、契约测试和 E2E smoke |
 | [部署](./deployment/README.md) | Compose 模板、生产环境变量、CI/CD、备份、回滚和排障 |
 | [External Agent API](./reference/external-agent-api.md) | 外部 Agent 共用的 Backend 契约和变更流程 |

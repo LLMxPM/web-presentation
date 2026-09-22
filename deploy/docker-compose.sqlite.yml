@@ -9,8 +9,7 @@
 #   通常长度为 44 个字符并以 = 结尾；可用命令生成：
 #   python -c "import base64, os; print(base64.urlsafe_b64encode(os.urandom(32)).decode())"
 # - 该模板不启动 PostgreSQL/Redis；SQLite 数据库、本地资源、截图和构建产物都保存在 lite-data volume。
-# - 默认拉取 Docker Hub 发布镜像。需要从源码验证镜像时，先初始化 runtime 子模块，再在仓库根目录执行：
-#   git submodule update --init --recursive runtime
+# - 默认拉取 Docker Hub 发布镜像。需要从源码验证镜像时，直接在仓库根目录执行：
 #   docker build -f Dockerfile.lite -t llmxpm/web-presentation:sqlite-lite .
 
 services:

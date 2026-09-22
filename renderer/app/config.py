@@ -21,11 +21,15 @@ _PLACEHOLDER_CREDENTIALS = frozenset(
 )
 
 
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+_RENDERER_DIR = Path(__file__).resolve().parents[1]
+
+
 class RendererSettings(BaseSettings):
     """Renderer 运行配置；非法静态配置启动失败。"""
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=(_REPO_ROOT / ".env", _RENDERER_DIR / ".env", ".env"),
         env_file_encoding="utf-8",
         extra="ignore",
     )

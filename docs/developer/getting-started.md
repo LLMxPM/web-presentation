@@ -5,29 +5,29 @@
 
 - 前端包管理使用 `pnpm`。
 - Backend 使用 `uv` 管理 Python 依赖。
-- 本地 PostgreSQL 与 Redis 通过根目录 `docker-compose.dev.yml` 启动。
-- `runtime/` 是独立子项目，进入子目录后按它自己的 `package.json` 执行命令。
+- 本地 PostgreSQL 与 Redis 通过 `scripts/dev/compose.infra.yml` 启动。
+- `runtime/` 是演示运行时服务，进入子目录后按它自己的 `package.json` 执行命令。
 
 ## 本地启动总览
 
 本地完整联调通常需要四类进程：
 
-1. `docker-compose.dev.yml`：只启动 PostgreSQL 与 Redis。
+1. `scripts/dev/compose.infra.yml`：只启动 PostgreSQL 与 Redis。
 2. Backend：监听 `127.0.0.1:8000`，负责 API、登录、AI Agent、预览 artifact、截图和构建任务。
 3. Runtime：监听 `127.0.0.1:7373`，负责预览、代码检查、截图和构建。
 4. Editor：监听 Vite 默认端口，负责创作工作台页面。
 
-如果这些服务已经在本机运行，先用 `docker compose -f .\docker-compose.dev.yml ps` 或查看现有终端确认状态，不要重复启动。
+如果这些服务已经在本机运行，先用 `docker compose -f .\scripts\dev\compose.infra.yml ps` 或查看现有终端确认状态，不要重复启动。
 
 ## 本地基础服务
 
 在仓库根目录启动 PostgreSQL 与 Redis：
 
 ```powershell
-docker compose -f .\docker-compose.dev.yml up -d
+docker compose -f .\scripts\dev\compose.infra.yml up -d
 ```
 
-`docker-compose.dev.yml` 保留在仓库根目录，因为它是本地开发和 CI 测试共享的基础设施入口，不属于 `deploy/` 下的交付部署模板。当前 `.github/workflows/*`、本指南、测试治理文档和 Backend README 都直接引用该路径；如果未来移动文件，需要同步更新这些引用。
+`scripts/dev/compose.infra.yml` 统一定位为本地开发和 CI 测试共享的基础设施入口，不属于 `deploy/` 下的交付部署模板。当前 `.github/scripts/*`、本指南、测试治理文档和 Backend README 都统一引用该路径。
 
 Backend 测试默认会把 `REDIS_URL` 设置为 `memory://test`，不依赖本机 Redis。手动联调预览、截图、代码检查、构建等临时 artifact 能力时必须启动 Redis；AI run/HITL 状态由 Backend 主库中的平台运行态表承担，不再依赖 Redis。
 
@@ -37,7 +37,23 @@ Backend 测试默认会把 `REDIS_URL` 设置为 `memory://test`，不依赖本�
 
 ```powershell
 cd .\backend
+## 环境变量准备（全仓统一）
+
+仓库支持全仓环境变量统一管理。推荐在根目录下一次性初始化，各子模块（Backend、Runtime、Renderer、Editor）会自动向上级联继承：
+
+```powershell
 Copy-Item .\.env.example .\.env
+pnpm run env:check
+```
+
+运行 `pnpm run env:check` 可自动验证全仓端口、跨服务内部调用地址、Audience 声明与共享密钥的一致性。如需对特定模块做临时覆盖，仍可在对应子目录下维护独立的 `.env`。
+
+## Backend 本地启动
+
+从仓库根目录进入 `backend/` 准备依赖与数据（自动继承根目录 `.env`）：
+
+```powershell
+cd .\backend
 uv sync
 uv run alembic upgrade head
 uv run python -m app.scripts.seed_admin
@@ -49,43 +65,31 @@ uv run python -m app.scripts.seed_admin
 uv run uvicorn app.main:app --reload
 ```
 
-默认管理员账号来自 `backend/.env`：`admin` / `Admin123456`。如果需要调整默认账号，修改 `DEFAULT_ADMIN_USERNAME`、`DEFAULT_ADMIN_PASSWORD` 和 `DEFAULT_ADMIN_DISPLAY_NAME` 后重新启动 Backend。
+默认管理员账号来自根目录 `.env`（或 `backend/.env`）：`admin` / `Admin123456`。如果需要调整默认账号，修改 `DEFAULT_ADMIN_USERNAME`、`DEFAULT_ADMIN_PASSWORD` 和 `DEFAULT_ADMIN_DISPLAY_NAME` 后重新启动 Backend。
 
 ## Runtime 本地启动
 
-Runtime 是独立子项目。首次启动前在新的终端中，从仓库根目录进入 `runtime/` 并准备环境变量和依赖：
+Runtime 是演示文稿运行时子项目。首次启动前在新的终端中，从仓库根目录进入 `runtime/` 安装依赖并启动（自动继承根目录 `.env`）：
 
 ```powershell
 cd .\runtime
-Copy-Item .\.env.example .\.env
 pnpm install
-```
-
-启动 Runtime 开发服务：
-
-```powershell
 pnpm dev
 ```
 
-默认配置会让 Runtime 通过 `http://127.0.0.1:8000` 回源 Backend，并监听 `127.0.0.1:7373`。如果 Backend 或 Runtime 端口变化，需要同步调整 `backend/.env` 中的 `RUNTIME_BASE_URL`、`RUNTIME_PUBLIC_BASE_URL`，以及 `runtime/.env` 中的 `RUNTIME_BACKEND_API_BASE_URL`、`RUNTIME_PREVIEW_JWKS_URL`。
+默认配置下 Runtime 监听 `127.0.0.1:7373`，并通过 `http://127.0.0.1:8000` 回源 Backend。所有通信地址已在根目录 `.env` 中预先对齐自洽。
 
 ## Editor 本地启动
 
-首次启动前在新的终端中，从仓库根目录进入 `editor/` 并准备环境变量和依赖：
+首次启动前在新的终端中，从仓库根目录进入 `editor/` 安装依赖并启动（自动继承根目录 `.env`）：
 
 ```powershell
 cd .\editor
-Copy-Item .\.env.example .\.env
 pnpm install
-```
-
-启动 Editor 开发服务：
-
-```powershell
 pnpm dev
 ```
 
-Editor 默认通过 Vite 代理把同源 `/api` 转发到 `http://127.0.0.1:8000`。本地登录时优先使用 Editor 页面入口，不要混用 `localhost` 和 `127.0.0.1`，避免 Cookie 站点不一致导致后续接口返回 `401`。
+Editor 默认通过 Vite 代理把同源 `/api` 转发到 Backend（默认 `http://127.0.0.1:8000`）。本地登录时优先使用 Editor 页面入口，不要混用 `localhost` 和 `127.0.0.1`，避免 Cookie 站点不一致导致后续接口返回 `401`。
 
 ## 根仓测试入口
 

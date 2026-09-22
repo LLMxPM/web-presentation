@@ -10,7 +10,7 @@
 | [模块边界](./module-boundaries.md) | Backend、Editor、Runtime 和 Infra 的修改边界 |
 | [核心数据模型](./data-model.md) | 用户、工作空间、项目、页面、资产、AI 运行态和构建对象 |
 | [预览与构建链路](./preview-and-build-flow.md) | 页面预览、组件预览、截图和项目构建流程 |
-| [Runtime 接入架构](./runtime-integration.md) | 子模块、Runtime Kit、平台回源和公开契约 |
+| [Runtime 接入架构](./runtime-integration.md) | 运行时架构、Runtime Kit、平台回源和公开契约 |
 | [认证与权限](./auth-and-permission.md) | 登录、工作空间隔离、Runtime 令牌和 AI 权限边界 |
 
 ## 使用建议

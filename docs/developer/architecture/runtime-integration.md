@@ -1,20 +1,23 @@
 # Runtime 接入架构
 
-Runtime 是平台的数据面执行引擎，负责预览、组件预览、截图、诊断和构建。根仓通过 `runtime/` 子模块接入独立项目 `web-runtime-vue`。
+Runtime 是平台的数据面执行引擎，负责预览、组件预览、截图、诊断和构建。源码位于主仓原生目录 `runtime/`。
 
 ## 接入方式
 
-根仓依赖 Runtime 的公开契约，而不是依赖 Runtime 内部实现。公开契约包括：
+平台依赖 Runtime 的公开契约，而不是依赖 Runtime 内部私有实现。公开契约包括：
 
 - Runtime 服务入口和环境变量。
 - Runtime Kit manifest。
 - 预览上下文读取协议。
 - 构建 snapshot 和 release artifact 规格。
-- 容器镜像标签和发布流程。
+- 容器镜像标签和发布编排。
 
-## 子模块边界
+## 模块边界与协作
 
-更新 Runtime 能力应优先在 `web-runtime-vue` 独立项目完成开发、测试和镜像发布，再回到根仓更新子模块指针。根仓更新指针时，需要补充契约测试或更新文档。
+Runtime 作为主仓原生微服务，与其他模块通过稳定公开契约交互：
+- 页面代码与组件引用严格受限于 Runtime Kit manifest 白名单；
+- 预览与构建上下文通过标准化 Backend 内部 API 交互；
+- 修改 Runtime 时运行 `pnpm run test:runtime:gate` 和 `pnpm run test:contracts` 保证契约不发生漂移。
 
 ## Runtime Kit
 

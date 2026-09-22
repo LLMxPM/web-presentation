@@ -21,10 +21,10 @@
 
 当前仓库负责：
 
-- 维护 Backend、Editor、Runtime 的模块边界与接口契约。
-- 承载平台级数据模型、AI Agent、工具规格、预览构建链路和部署模板。
-- 通过 `runtime/` Git 子模块接入独立项目 `web-runtime-vue`。
-- 沉淀开发、测试、部署、CI/CD 和 Runtime 子模块协作规则。
+- 维护 Backend、Editor、Runtime、Renderer 的模块边界与接口契约。
+- 承载平台级数据模型、AI Agent、工具规格、页面渲染与预览构建链路和部署模板。
+- 原生承载 `runtime/` 演示文稿运行时服务（Vue 3 + Vite）。
+- 沉淀开发、测试、部署与 CI/CD 协作规则。
 
 面向外部桌面 Agent 的 CLI、MCP Server、共享 API Client 和配套 Skill 统一维护在同级独立仓库 `web-presentation-agent-kit`；本仓只维护它们依赖的 Backend `/api/v1` External API v1 契约和集成文档。
 
@@ -130,7 +130,7 @@ Editor 是创作工作台，负责登录、工作空间、项目、页面、组�
 
 ### runtime/
 
-`runtime/` 是独立项目 `web-runtime-vue` 在当前仓库中的接入目录，不是根仓普通子目录。修改 Runtime 时要同时考虑它的独立项目形态和平台运行时形态。
+`runtime/` 是平台原生页面/演示文稿运行时服务（基于 Vue 3 + Vite），负责幻灯片页面渲染、组件预览、画布缩放、截图诊断、导出与构建执行。
 
 Runtime 负责：
 
@@ -200,7 +200,7 @@ pnpm run test:e2e:all
 出现以下情况时，同步更新顶层 `AGENTS.md`：
 
 - 开发协作规范、编码约束、测试要求或文档约束发生变化。
-- Backend、Editor、Runtime、AI 工具体系或子模块修改策略发生变化。
+- Backend、Editor、Runtime、Renderer 或 AI 工具体系修改策略发生变化。
 
 出现以下情况时，优先更新 `docs/developer/` 下专题文档：
 
@@ -212,17 +212,16 @@ pnpm run test:e2e:all
 - 用户理解路径、平台使用流程、AI 协作方式、项目状态路线或面向使用者的功能说明发生变化。
 - 新增或替换文档配图、截图和占位图时，图片资源应统一放在 `docs/assets/`。
 
-出现以下情况时，优先更新 `web-runtime-vue` 自身文档：
+出现以下情况时，优先更新 `docs/developer/runtime/` 下 Runtime 相关开发文档：
 
 - Runtime 新增开发命令、目录结构、插件系统、构建机制、页面体系或 Runtime Kit 能力。
-- Runtime 内部编码规范、页面开发方式或独立项目运行方式发生变化。
+- Runtime 内部编码规范、页面开发方式或运行时配置发生变化。
 
 ## 6. 命名约定
 
-- `web-presentation`：当前平台集成仓库。
-- `web-runtime-vue`：独立 Runtime 项目名称。
-- `runtime/`：`web-runtime-vue` 在当前仓库中的 Git 子模块路径。
-- `Runtime`：平台架构中的预览与构建执行角色。
+- `web-presentation`：当前平台主仓库。
+- `runtime/`：平台页面与演示运行时服务源码目录（基于 Vue 3 + Vite）。
+- `Runtime`：平台架构中的预览、渲染与构建执行角色。
 - `packages/render-contracts`：远程渲染纯契约包。
 - `renderer/`：独立远程渲染执行服务。
 - `Renderer`：执行截图与渲染诊断的单槽 Chromium 服务。

@@ -16,11 +16,12 @@ import { runCommandSync } from './process-utils.mjs'
 const SELF_START_KEYS = ['TESTING_START_BACKEND', 'TESTING_START_EDITOR', 'TESTING_START_RUNTIME', 'TESTING_REUSE_BACKEND']
 
 function main() {
-  const scriptsDir = path.dirname(fileURLToPath(import.meta.url))
+  const testingScriptsDir = path.dirname(fileURLToPath(import.meta.url))
+  const devScriptsDir = path.resolve(testingScriptsDir, '../dev')
   const userControlled = SELF_START_KEYS.some((key) => String(process.env[key] || '').trim() !== '')
 
   if (!userControlled) {
-    const portCheck = runCommandSync(process.execPath, [path.join(scriptsDir, 'assert-ports-free.mjs')])
+    const portCheck = runCommandSync(process.execPath, [path.join(devScriptsDir, 'assert-ports-free.mjs')])
     if (portCheck !== 0) {
       process.exit(portCheck)
     }
@@ -30,8 +31,12 @@ function main() {
     process.env.AI_TEST_MODE ||= 'mock'
   }
 
-  for (const script of ['reset-test-data.mjs', 'seed-smoke-data.mjs', 'ensure-services.mjs']) {
-    const code = runCommandSync(process.execPath, [path.join(scriptsDir, script)])
+  for (const scriptPath of [
+    path.join(testingScriptsDir, 'reset-test-data.mjs'),
+    path.join(testingScriptsDir, 'seed-smoke-data.mjs'),
+    path.join(devScriptsDir, 'ensure-services.mjs'),
+  ]) {
+    const code = runCommandSync(process.execPath, [scriptPath])
     if (code !== 0) {
       process.exit(code)
     }

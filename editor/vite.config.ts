@@ -1,6 +1,7 @@
 /**
  * 文件功能：定义 Editor 前端的 Vite 构建、测试与本地开发代理配置。
  */
+import { resolve } from 'node:path'
 import { fileURLToPath, URL } from 'node:url'
 
 import vue from '@vitejs/plugin-vue'
@@ -9,7 +10,13 @@ import { defineConfig } from 'vitest/config'
 
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => {
-  const env = loadEnv(mode, process.cwd(), '')
+  const currentDir = fileURLToPath(new URL('.', import.meta.url))
+  const repoRoot = resolve(currentDir, '..')
+  const env = {
+    ...loadEnv(mode, repoRoot, ''),
+    ...loadEnv(mode, currentDir, ''),
+    ...loadEnv(mode, process.cwd(), ''),
+  }
   const proxyTarget = env.VITE_API_PROXY_TARGET || 'http://127.0.0.1:8000'
 
   return {

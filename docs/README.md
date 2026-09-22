@@ -29,11 +29,11 @@
 | :--- | :--- |
 | [开发文档入口](./developer/README.md) | 架构、Backend、Editor、Runtime 接入、测试、部署和参考资料 |
 | [本地开发指南](./developer/getting-started.md) | 本地依赖、启动方式、测试数据和运行态维护 |
-| [平台架构总览](./developer/architecture/overview.md) | 平台目标、模块职责、目标流程和 Runtime 子模块协作 |
+| [平台架构总览](./developer/architecture/overview.md) | 平台目标、模块职责、目标流程和 Runtime 运行时架构 |
 | [模块边界](./developer/architecture/module-boundaries.md) | Backend、Editor、Runtime 和 Infra 修改边界 |
 | [Backend 开发文档](./developer/backend/README.md) | API、AI Agent、工具规格、预览 artifact 和排障 |
 | [Editor 开发文档](./developer/editor/README.md) | 前端结构、AI 侧边栏和 Editor 测试 |
-| [Runtime 接入文档](./developer/runtime-integration/README.md) | 子模块、Runtime Kit、previewSchema、构建产物和配置模板 |
+| [Runtime 接入文档](./developer/runtime-integration/README.md) | 运行时架构、Runtime Kit、previewSchema、构建产物和配置模板 |
 | [测试文档](./developer/testing/README.md) | 测试分层、命令、契约测试和 E2E smoke |
 | [生产部署指南](./developer/deployment/README.md) | compose 部署、环境变量、CI/CD、备份恢复、升级回滚和排障 |
 | [External Agent API v1 契约](./developer/reference/external-agent-api.md) | CLI、MCP 和其他外部 Agent 共用的 Backend 契约 |

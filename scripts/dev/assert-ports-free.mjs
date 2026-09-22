@@ -10,7 +10,7 @@
 import net from 'node:net'
 import { pathToFileURL } from 'node:url'
 
-import { resolveServiceUrls } from './service-env.mjs'
+import { resolveServiceUrls } from '../testing/service-env.mjs'
 
 const DEFAULT_PORTS = { backend: 8000, editor: 5173, runtime: 7373 }
 const DEPENDENCY_PORTS = [
@@ -92,7 +92,7 @@ export async function assertPortsFree() {
 
   if (missingDependencies.length > 0) {
     console.error('[testing] 本地 E2E 依赖未监听：' + missingDependencies.join('、'))
-    console.error('请先启动依赖容器：docker compose -f docker-compose.dev.yml up -d --wait')
+    console.error('请先启动依赖容器：docker compose -f scripts/dev/compose.infra.yml up -d --wait')
     return false
   }
 

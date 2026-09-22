@@ -54,10 +54,11 @@ COPY packages/render-contracts /app/packages/render-contracts
 COPY runtime/src/runtime-kit/manifest/runtime-kit.manifest.json /app/runtime/src/runtime-kit/manifest/runtime-kit.manifest.json
 COPY --from=editor-build /app/editor/dist/ /usr/share/nginx/html/
 COPY docker/nginx/web-presentation.conf /etc/nginx/conf.d/default.conf
+COPY docker/entrypoints/start_simple_container.sh /app/docker/entrypoints/start_simple_container.sh
 
 RUN mkdir -p /app/backend/data /run/nginx /var/cache/nginx /var/log/nginx \
-    && chmod +x /app/backend/scripts/start_simple_container.sh
+    && chmod +x /app/docker/entrypoints/start_simple_container.sh
 
 EXPOSE 80 8000
 
-CMD ["sh", "/app/backend/scripts/start_simple_container.sh"]
+CMD ["sh", "/app/docker/entrypoints/start_simple_container.sh"]

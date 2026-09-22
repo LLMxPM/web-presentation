@@ -11,22 +11,12 @@
 该仓库包含两个镜像变体：
 
 - 常规平台镜像：由 `Dockerfile` 构建，包含 Backend 代码、Editor 静态资源、Nginx 配置和 Backend 运行所需的 Runtime Kit manifest。
-- SQLite 轻量单容器镜像：由 `Dockerfile.lite` 构建，额外内置 Runtime Vite server 运行依赖，面向 SQLite + memory runtime 单容器部署。该变体直接复制当前 `runtime/` 子模块源码，不拉取 `web-runtime-vue` 镜像作为基础层。
-
-`runtime/` 仍是独立项目 `web-runtime-vue` 的子模块接入目录。根仓不会构建独立 Runtime 镜像，只会在平台 Release 前校验当前子模块 SHA 对应的 Runtime 镜像已存在：
-
-```bash
-docker buildx imagetools inspect docker.io/llmxpm/web-runtime-vue:sha-<runtime_sha_short>
-docker buildx imagetools inspect ${ACR_REGISTRY}/${ACR_NAMESPACE}/web-runtime-vue:sha-<runtime_sha_short>
-```
-
-`web-runtime-vue` 子仓库自己的 Docker Release 会将 `<release_tag>`、`sha-<runtime_sha_short>` 和稳定 Release 的 `latest` 同时发布到 Docker Hub 与阿里云 ACR。平台仓库更新 `runtime` 子模块指针前，应先让对应 Runtime 提交完成子仓库 Release；根仓 Release 会同时校验 Docker Hub 与 ACR 的 Runtime `sha-<runtime_sha_short>` 镜像。
-
-根仓 workflow 的 checkout 均使用 `submodules: recursive`。因此 `Dockerfile.lite` 构建时会使用当前根仓记录的 Runtime 子模块 SHA；本地源码构建前也必须执行 `git submodule update --init --recursive runtime`。
+- SQLite 轻量单容器镜像：由 `Dockerfile.lite` 构建，额外内置 Runtime Vite server 运行依赖，面向 SQLite + memory runtime 单容器部署。该变体直接打包当前仓库原生 `runtime/` 源码。
+- 独立 Runtime 运行时镜像：由 `runtime/Dockerfile` 构建，提供独立 Vite server 以承载生产编排中的预览、诊断与构建接口。
 
 ## GitHub Actions
 
-- PR：`.github/workflows/platform-test.yml` 执行快速质量门禁，包括 Backend unit/api、Editor、根仓 contracts；当 `runtime` 子模块或 `.gitmodules` 变化时，额外执行 Runtime 委托校验。
+- PR：`.github/workflows/platform-test.yml` 执行快速质量门禁，包括 Backend unit/api、Editor、根仓 contracts；当 `runtime/` 目录代码变化时，额外执行 Runtime 门禁校验。
 - 全量测试：`.github/workflows/platform-test.yml` 仅在 `main` push、每周一 03:00（Asia/Shanghai）定时任务或手动触发且 `full_tests=true` 时执行；全量会在快速门禁基础上补充 Backend integration、Runtime 委托校验、e2e smoke、常规平台镜像 build smoke 和 SQLite 轻量镜像 build smoke。镜像 build smoke 只构建，不推送。
 - Release：`.github/workflows/platform-release.yml` 在 GitHub Release `published` 后执行完整质量门禁；Backend、Editor 和 contracts 通过后再执行 e2e smoke 与 Runtime 镜像存在性校验，最后将常规平台镜像和 SQLite 轻量镜像同时推送到 Docker Hub 与阿里云 ACR。
 - Docker Hub 配置：
@@ -113,7 +103,7 @@ production env 版中，同一个平台镜像会拆分为三个容器：
 - `backend`：执行 `uvicorn app.main:app --host 0.0.0.0 --port 8000 --no-access-log`
 - `gateway`：执行 `nginx -g 'daemon off;'`，托管 Editor 并代理 Backend/Runtime
 
-常规 compose 默认跟随 `latest`，SQLite 轻量 compose 默认跟随 `sqlite-lite`。如果需要严格锁定 Runtime 与平台版本，常规部署应同时把对应 compose 文件中的平台 image 改为 `llmxpm/web-presentation:<release_tag>`，把 Runtime image 改为 `llmxpm/web-runtime-vue:<release_tag>` 或子项目发布的 `sha-<runtime_sha_short>` 标签；SQLite 轻量单容器版应把 image 改为 `llmxpm/web-presentation:sqlite-lite-<release_tag>`。不要只回滚平台镜像或只回滚 Runtime 镜像；数据库迁移一旦前进，平台镜像必须仍然包含数据库 `alembic_version` 指向的 revision 文件。
+常规 compose 默认跟随 `latest`，SQLite 轻量 compose 默认跟随 `sqlite-lite`。如果需要严格锁定 Runtime 与平台版本，常规部署应同时把对应 compose 文件中的平台 image 改为 `llmxpm/web-presentation:<release_tag>`，把 Runtime image 改为 `llmxpm/web-runtime-vue:<release_tag>`；SQLite 轻量单容器版应把 image 改为 `llmxpm/web-presentation:sqlite-lite-<release_tag>`。不要只回滚平台镜像或只回滚 Runtime 镜像；数据库迁移一旦前进，平台镜像必须仍然包含数据库 `alembic_version` 指向的 revision 文件。
 
 ## 关键访问关系
 

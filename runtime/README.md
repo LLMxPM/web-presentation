@@ -80,14 +80,11 @@ Backend 触发整项目构建时，Runtime 会使用专用的 `build-release-mai
 - 富文本候选标签（`p`、`span`、标题、`li`、`blockquote`、`label`）只在具有成对 opening/closing tag 时才聚合为 `rich_text` binding；自闭合写法（如 `<span class="dot" />`）按普通元素分析，保留节点、class binding 和 `v-for` 循环定位，不生成富文本插入点；成对空容器 `<span></span>` 仍生成 `start === end` 的零长度可编辑插入范围。
 - 单个富文本候选节点无法定位内部源码范围时（如隐式闭合标签），分析器不再中断整页 Manifest，而是降级为只读节点并在 `diagnostics` 中输出 `RICH_TEXT_SOURCE_RANGE_UNRESOLVED` 警告，诊断 `sourceRange` 指向整个元素。
 
-## CI/CD
+## 测试与构建
 
-- `.github/workflows/ci.yml` 在 push、pull request 与手动触发时执行 `pnpm check`、`pnpm test`、`pnpm build`，并构建 Runtime 镜像 smoke，不推送。
-- `.github/workflows/docker-release.yml` 在 GitHub Release `published` 后执行质量门禁，并将同一次多架构构建同时推送到 Docker Hub 和阿里云 ACR。
-- Docker Hub 需要配置 `vars.DOCKERHUB_NAMESPACE`、`vars.DOCKER_USERNAME`、`secrets.DOCKER_PASSWORD`。
-- 阿里云 ACR 需要配置 `vars.ACR_REGISTRY`、`vars.ACR_NAMESPACE`、`vars.ACR_USERNAME`、`secrets.ACR_PASSWORD`。`ACR_REGISTRY` 使用控制台提供的域名且不要带 `https://`。
-- 稳定 Release 推送 `<release_tag>`、`sha-<12位提交>` 和 `latest`；Pre-release 只推送 `<release_tag>` 与 `sha-<12位提交>`。
-- 平台根仓会校验 `web-runtime-vue:sha-<12位提交>` 是否存在，因此每个被平台子模块锁定的 Runtime 提交都应先完成本仓 Release。
+- 质量门禁：通过 `pnpm run test:runtime:gate` 执行类型检查、单元测试与 Vite 生产构建。
+- 根仓契约：若修改 Runtime Kit 公开能力清单，需在仓库根目录执行 `pnpm run test:contracts` 校验契约兼容性。
+- 容器镜像：由仓库根目录或 `runtime/Dockerfile` 统一打包构建。
 
 ## SaaS/平台接入方式
 

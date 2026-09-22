@@ -52,8 +52,9 @@ backend/tests/
 
 ### Runtime
 
-- Runtime 私有测试继续留在子模块仓库
+- Runtime 单元测试与组件测试位于 `runtime/src/**/*.test.ts`
 - 统一环境 mock 放在 `runtime/src/test/setup.ts`
+- 完整门禁包含类型检查、测试与生产构建：`pnpm run test:runtime:gate`
 
 ## 3. 命令入口
 
@@ -106,13 +107,13 @@ pnpm run test:seed:smoke
 pnpm run test:reset:data
 ```
 
-本地数据库与 Redis 运行态统一通过根目录 `docker-compose.dev.yml` 启动：
+本地数据库与 Redis 运行态统一通过 `scripts/dev/compose.infra.yml` 启动：
 
 ```bash
-docker compose -f docker-compose.dev.yml up -d
+docker compose -f scripts/dev/compose.infra.yml up -d
 ```
 
-该 compose 文件只服务本地开发和 CI 测试基础设施，不属于 `deploy/` 下的交付部署模板；移动它时需要同步更新文档和 `.github/workflows/*` 中的引用。
+该 compose 文件只服务本地开发和 CI 测试基础设施，不属于 `deploy/` 下的交付部署模板；统一维护在 `scripts/dev/`。
 
 Backend 测试默认把 `REDIS_URL` 设置为 `memory://test`，不依赖本机 Redis。手动联调预览、截图、代码检查或构建时必须启动 compose 中的 Redis；AI run/HITL 状态由 Backend 主库中的平台运行态表承担，不再依赖 Redis run hash 或 Redis stream。
 
@@ -166,7 +167,7 @@ PR 必跑：
 
 条件执行：
 
-- 当 `runtime` 子模块 SHA 发生变化时，执行 `pnpm run test:runtime:gate`
+- 当 `runtime/` 目录源码发生变化时，执行 `pnpm run test:runtime:gate`
 
 全量测试执行时机：
 
@@ -183,12 +184,12 @@ PR 必跑：
 3. 根仓分层 E2E（按触发类型运行 smoke 或 all）
 4. 平台镜像 build smoke：构建 `web-presentation` 单镜像但不推送
 
-全量流程中，`e2e` 冒烟依赖 Backend、Editor、contracts 和 Runtime 委托校验通过后再启动；平台镜像 build smoke 依赖 `e2e` 冒烟通过后再启动，避免基础测试失败时继续执行重型任务。
+全量流程中，`e2e` 冒烟依赖 Backend、Editor、contracts 和 Runtime 门禁通过后再启动；平台镜像 build smoke 依赖 `e2e` 冒烟通过后再启动，避免基础测试失败时继续执行重型任务。
 
 Release 发布：
 
 - GitHub Release `published` 后执行完整质量门禁。
-- 校验当前 `runtime` 子模块 SHA 对应的 Docker Hub 镜像 `web-runtime-vue:sha-<12位sha>` 已存在。
+- 编译并推送包含最新 Runtime 运行时能力的平台镜像及 Runtime 独立服务镜像。
 - 构建并推送单个平台镜像 `web-presentation:<release_tag>`；稳定 Release 同时推送 `latest`。
 
 定时、手动全量和 Release 覆盖可视化编辑、真实构建、截图与长链路 AI 测试。

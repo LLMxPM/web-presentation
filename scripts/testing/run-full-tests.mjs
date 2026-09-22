@@ -24,8 +24,9 @@ const TEST_STEPS = [
 ]
 
 function main() {
-  const scriptsDir = path.dirname(fileURLToPath(import.meta.url))
-  const portCheck = runCommandSync(process.execPath, [path.join(scriptsDir, 'assert-ports-free.mjs')])
+  const testingScriptsDir = path.dirname(fileURLToPath(import.meta.url))
+  const devScriptsDir = path.resolve(testingScriptsDir, '../dev')
+  const portCheck = runCommandSync(process.execPath, [path.join(devScriptsDir, 'assert-ports-free.mjs')])
   if (portCheck !== 0) {
     process.exit(portCheck)
   }

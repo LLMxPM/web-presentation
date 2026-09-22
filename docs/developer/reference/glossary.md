@@ -9,4 +9,4 @@
 | Runtime Kit manifest | Runtime 对页面和组件公开能力的清单 |
 | HITL | Human-in-the-loop，AI 工具调用中的用户确认机制 |
 | 契约测试 | 约束跨模块接口、manifest 和产物结构的测试 |
-| 子模块指针 | 根仓记录的 `runtime/` 上游提交引用 |
+| 远程渲染服务 | 承载 Playwright Chromium 截图与渲染诊断的独立微服务（renderer/） |

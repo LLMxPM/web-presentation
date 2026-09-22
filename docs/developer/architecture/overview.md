@@ -1,4 +1,4 @@
-<!-- 文件功能：说明 web-presentation 的平台目标、控制面/数据面架构、模块职责、目标业务流程和 Runtime 子模块协作方式。 -->
+<!-- 文件功能：说明 web-presentation 的平台目标、控制面/数据面架构、模块职责、目标业务流程和 Runtime 运行时架构。 -->
 # 平台架构总览
 
 ## 平台目标
@@ -41,7 +41,7 @@
 
 ### Runtime
 
-`runtime/` 是独立项目 `web-runtime-vue` 在当前仓库中的接入目录。它不是根仓普通子目录，而是 Git 子模块。
+`runtime/` 是平台原生的演示文稿/页面运行时服务（基于 Vue 3 + Vite）。它承载幻灯片画布渲染、组件预览、截图诊断、导出与构建执行。
 
 Runtime 维护页面可引用基础能力的公开契约：`runtime/src/runtime-kit/manifest/runtime-kit.manifest.json` 是 Backend 校验 `page_content`、工作空间组件源码与组件预览 schema 的单一事实源。公开能力采用文件名版本化，`name` 形如 `Icon.v1`，`import_path` 必须指向带 `.vN` 的文件。
 
@@ -73,17 +73,17 @@ Runtime 维护页面可引用基础能力的公开契约：`runtime/src/runtime-
 4. Runtime 将构建产物压缩为 zip 并上传回 Backend。
 5. Backend 保存产物并返回稳定下载或静态访问地址。
 
-## Runtime 子模块协作
+## Runtime 架构与开发协作
 
 命名约定：
 
-- `web-runtime-vue`：独立 Runtime 项目本身。
-- `runtime/`：`web-runtime-vue` 在当前仓库中的子模块路径。
-- `Runtime`：平台架构中的运行时角色。
+- `web-presentation`：平台主仓库。
+- `runtime/`：平台运行时服务源码目录（Vue 3 + Vite）。
+- `Runtime`：平台架构中的运行时执行角色。
 
-推荐同步流程：
+开发与维护流程：
 
-1. 在 `web-runtime-vue` 上游仓库完成能力开发、测试和镜像发布。
-2. 确认子仓库 Docker Release 已推送 `web-runtime-vue:sha-<12位提交>`。
-3. 回到当前仓库更新 `runtime` 子模块指针。
-4. 如有接口、环境变量、启动方式或 manifest 变化，同步更新根仓文档和测试。
+1. 在主仓 `runtime/` 目录下直接进行能力开发与本地测试（`pnpm run test:runtime`）。
+2. 如涉及 Runtime Kit 公开能力或清单变更，更新 `runtime/src/runtime-kit/manifest/runtime-kit.manifest.json`，并同步运行根仓契约测试（`pnpm run test:contracts`）。
+3. 运行 Runtime 完整质量门禁（`pnpm run test:runtime:gate`）验证类型检查、单元测试与 Vite 生产构建。
+4. 部署时通过主仓 `runtime/Dockerfile` 构建独立的 Runtime 镜像，或通过 `Dockerfile.lite` 构建单容器集成镜像。

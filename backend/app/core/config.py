@@ -8,11 +8,15 @@ from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+_BACKEND_DIR = Path(__file__).resolve().parents[2]
+
+
 class AppSettings(BaseSettings):
     """应用配置模型，负责约束数据库、鉴权和跨域等关键参数。"""
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=(_REPO_ROOT / ".env", _BACKEND_DIR / ".env", ".env"),
         env_file_encoding="utf-8",
         extra="ignore",
     )

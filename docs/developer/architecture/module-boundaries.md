@@ -14,11 +14,11 @@ Editor 是创作工作台，负责平台对象管理、代码编辑、AI 侧边�
 
 ## Runtime
 
-`runtime/` 是独立项目 `web-runtime-vue` 的 Git 子模块。根仓只通过子模块指针接入 Runtime，不应把 Runtime 当成普通目录随意修改。涉及 Runtime Kit、预览入口、构建产物、镜像或环境变量变化时，要同时考虑 Runtime 独立项目和平台接入形态。
+`runtime/` 是演示运行时服务。涉及 Runtime Kit、预览入口、构建产物、镜像或环境变量变化时，要保持与平台接入形态一致。
 
 ## Infra
 
-Infra 包括 `Dockerfile`、`docker/`、`deploy/`、`.github/workflows/` 和测试辅助脚本。生产部署模板只放在 `deploy/`，本地开发共享基础服务入口保留在根目录 `docker-compose.dev.yml`。
+Infra 包括 `Dockerfile`、`docker/`、`deploy/`、`.github/workflows/` 和测试辅助脚本。生产部署模板只放在 `deploy/`，本地开发与 CI 共享基础服务入口维护在 `scripts/dev/compose.infra.yml`。
 
 ## 联动规则
 

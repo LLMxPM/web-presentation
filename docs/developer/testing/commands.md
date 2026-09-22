@@ -70,7 +70,7 @@ pnpm run test:all
 
 脚本会自动完成环境准备，无需手动设置环境变量：
 
-- 先校验 Backend/Editor/Runtime 端口（默认 8000/5173/7373）未被占用，并检查本地 PostgreSQL/Redis 依赖（`docker compose -f docker-compose.dev.yml up -d --wait`）；
+- 先校验 Backend/Editor/Runtime 端口（默认 8000/5173/7373）未被占用，并检查本地 PostgreSQL/Redis 依赖（`docker compose -f scripts/dev/compose.infra.yml up -d --wait`）；
 - 校验失败立即报错并提示处理方式，不会进入任何测试阶段；
 - 校验通过后自动注入 `TESTING_START_BACKEND/EDITOR/RUNTIME=true` 与 `AI_TEST_MODE=mock` 并自启服务；
 - 任一阶段失败即中止后续阶段。

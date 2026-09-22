@@ -489,7 +489,7 @@ Renderer 临时产物总额度受实例磁盘上限约束，空间不足拒绝�
 
 开发、SQLite/lite、常规和 production compose 均包含 Renderer 服务及共享 artifact 所需依赖。lite 配置一个实例和一个全局执行额度；生产按资源预算增加实例，Backend HTTP Worker 数量不改变渲染容量。
 
-每次发布输出 Backend、Renderer、Runtime、Editor 的镜像/子模块 revision、契约版本、profile digest 和数据库迁移版本清单。部署探针必须真实打开受保护预览、加载字体与图片、生成 PNG 和诊断。
+每次发布输出 Backend、Renderer、Runtime、Editor 的镜像 revision、契约版本、profile digest 和数据库迁移版本清单。部署探针必须真实打开受保护预览、加载字体与图片、生成 PNG 和诊断。
 
 ### 11.3 可观测性
 
@@ -627,7 +627,7 @@ pnpm run test:render-e2e
 
 `test:renderer` 和 `test:render-e2e` 属于本次交付需新增的入口，不是当前已有命令。真实故障测试和数据转换测试使用隔离环境，不连接用户当前业务数据。
 
-公共契约变更必须运行 `uv run --project backend python scripts/testing/test-gateway-openapi.py`；发布后通过 `scripts/testing/check-gateway-openapi.py` 从外部 Gateway 验证契约 JSON。
+公共契约变更必须运行 `uv run --project backend python scripts/contracts/test-gateway-openapi.py`；发布后通过 `scripts/contracts/check-gateway-openapi.py` 从外部 Gateway 验证契约 JSON。
 
 记录完整版本清单、profile、运行命令、用例结果、失败证据、资源与时延基线。文档中的门禁是交付条件，不能以规划评审代替通过记录。
 
