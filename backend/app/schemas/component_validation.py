@@ -41,7 +41,7 @@ class ComponentValidationScenarioResult(BaseModel):
 
 
 class ComponentValidationResult(BaseModel):
-    """组件独立 check 与自动写入 check 共用的顶层结果，保留 render 阶段兼容字段。"""
+    """组件独立 check 与自动写入 check 共用的顶层结果；本迭代 stages 仅覆盖 contract/compile。"""
 
     model_config = ConfigDict(extra="allow")
 

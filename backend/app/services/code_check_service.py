@@ -154,6 +154,7 @@ class CodeCheckService:
             canonical_diff=candidate.canonical_diff,
             render_preview_url=preview.preview_url,
             render_viewport=CaptureViewport(width=preview.viewport_width, height=preview.viewport_height),
+            page_id=page.id,
         )
 
     async def _check_transient_page_code(
@@ -335,6 +336,7 @@ class CodeCheckService:
         canonical_diff: str | None,
         render_preview_url: str | None = None,
         render_viewport: CaptureViewport | None = None,
+        page_id: int | None = None,
     ) -> dict[str, object]:
         """调用 Runtime 诊断接口，并补齐候选源码变更元数据。"""
 
@@ -369,6 +371,10 @@ class CodeCheckService:
                     enriched_result,
                     preview_url=render_preview_url,
                     viewport=render_viewport,
+                    workspace_id=workspace_id,
+                    project_id=project_id,
+                    page_id=page_id,
+                    artifact_id=artifact_id,
                 )
             return enriched_result
         finally:
@@ -393,13 +399,35 @@ class CodeCheckService:
         *,
         preview_url: str,
         viewport: CaptureViewport,
+        workspace_id: int,
+        project_id: int | None = None,
+        page_id: int | None = None,
+        artifact_id: str | None = None,
     ) -> dict[str, object]:
         """在页面 Runtime 检查通过后追加真实渲染诊断和布局事实。"""
 
+        from urllib.parse import parse_qs, urlsplit
+
+        from app.services.rendering.layout_contract import normalize_layout_analysis
+
+        query = parse_qs(urlsplit(preview_url).query)
+        preview_token = (query.get("token") or [""])[0]
         render_started_at = time.perf_counter()
-        render_result = await self.render_diagnostics_service.diagnose_preview(preview_url, viewport)
+        render_result = await self.render_diagnostics_service.diagnose_preview(
+            preview_url,
+            viewport,
+            logical_owner_key=(
+                f"page-diagnose:{artifact_id or 'draft'}:"
+                f"{viewport.width}x{viewport.height}"
+            )[:128],
+            workspace_id=workspace_id,
+            project_id=project_id,
+            page_id=page_id,
+            artifact_id=artifact_id,
+            preview_token=preview_token or None,
+        )
         logger.info(
-            "页面 Chromium 渲染诊断阶段完成。",
+            "页面远程渲染诊断阶段完成。",
             extra={
                 "event": "runtime.diagnostics.render.finished",
                 "duration_ms": round((time.perf_counter() - render_started_at) * 1000, 2),
@@ -411,37 +439,8 @@ class CodeCheckService:
             render_diagnostics = render_result["diagnostics"]
         else:
             render_diagnostics = []
-        layout_analysis = (
-            render_result.get("layout_analysis")
-            if isinstance(render_result, dict) and isinstance(render_result.get("layout_analysis"), dict)
-            else {
-                "schema_version": 3,
-                "meta": None,
-                "summary": {
-                    "attention": "none",
-                    "message": "未发现需要关注的视觉检测结果。",
-                    "totals": {
-                        "text_layouts": 0,
-                        "item_groups": 0,
-                        "overflows": 0,
-                        "spatial_relations": 0,
-                        "empty_regions": 0,
-                    },
-                    "returned": {
-                        "text_layouts": 0,
-                        "item_groups": 0,
-                        "overflows": 0,
-                        "spatial_relations": 0,
-                        "empty_regions": 0,
-                    },
-                    "truncated": False,
-                },
-                "text_layouts": [],
-                "item_groups": [],
-                "overflows": [],
-                "spatial_relations": [],
-                "empty_regions": [],
-            }
+        layout_analysis = normalize_layout_analysis(
+            render_result.get("layout_analysis") if isinstance(render_result, dict) else None
         )
 
         diagnostics = list(result.get("diagnostics") if isinstance(result.get("diagnostics"), list) else [])

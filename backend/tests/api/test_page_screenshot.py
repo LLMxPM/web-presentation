@@ -80,6 +80,7 @@ async def test_page_screenshot_should_save_and_expose_public_url(
         viewport: CaptureViewport,
         *,
         extra_http_headers=None,  # noqa: ANN001
+        **kwargs,  # noqa: ARG001
     ) -> bytes:
         captured["preview_url"] = preview_url
         captured["viewport"] = (viewport.width, viewport.height)
@@ -217,6 +218,7 @@ async def test_page_screenshot_should_be_marked_outdated_after_page_update(
         viewport: CaptureViewport,
         *,
         extra_http_headers=None,  # noqa: ANN001
+        **kwargs,  # noqa: ARG001
     ) -> bytes:
         return b"outdated-png"
 
@@ -323,6 +325,7 @@ async def test_page_screenshot_should_be_marked_outdated_after_project_display_c
         viewport: CaptureViewport,
         *,
         extra_http_headers=None,  # noqa: ANN001
+        **kwargs,  # noqa: ARG001
     ) -> bytes:
         return b"config-png"
 
@@ -398,6 +401,7 @@ async def test_page_screenshot_should_prioritize_explicit_viewport(
         viewport: CaptureViewport,
         *,
         extra_http_headers=None,  # noqa: ANN001
+        **kwargs,  # noqa: ARG001
     ) -> bytes:
         captured["preview_url"] = preview_url
         captured["viewport"] = (viewport.width, viewport.height)
@@ -517,6 +521,7 @@ async def test_page_screenshot_preview_artifact_should_use_cached_asset_base(
         viewport: CaptureViewport,
         *,
         extra_http_headers=None,  # noqa: ANN001
+        **kwargs,  # noqa: ARG001
     ) -> bytes:
         captured["preview_url"] = preview_url
         captured["extra_http_headers"] = extra_http_headers
@@ -589,10 +594,11 @@ async def test_page_screenshot_should_not_save_when_visual_assets_not_ready(
         viewport: CaptureViewport,
         *,
         extra_http_headers=None,  # noqa: ANN001
+        **kwargs,  # noqa: ARG001
     ) -> bytes:
         raise AppException(
             status_code=502,
-            code="PAGE_SCREENSHOT_ASSET_NOT_READY",
+            code="RENDER_ASSET_NOT_READY",
             detail="页面视觉资源加载超时。",
         )
 
@@ -610,7 +616,7 @@ async def test_page_screenshot_should_not_save_when_visual_assets_not_ready(
     )
 
     assert screenshot_response.status_code == 502
-    assert screenshot_response.json()["code"] == "PAGE_SCREENSHOT_ASSET_NOT_READY"
+    assert screenshot_response.json()["code"] == "RENDER_ASSET_NOT_READY"
     assert captured["put_called"] is False
 
     detail_response = await authenticated_client.get(f"/api/pages/{page_data['id']}")
@@ -658,6 +664,7 @@ async def test_page_screenshot_job_should_reuse_and_execute_pending_job(
         viewport: CaptureViewport,
         *,
         extra_http_headers=None,  # noqa: ANN001
+        **kwargs,  # noqa: ARG001
     ) -> bytes:
         return b"job-png"
 
@@ -772,12 +779,13 @@ async def test_batch_refresh_page_screenshots_should_refresh_missing_and_outdate
         viewport: CaptureViewport,
         *,
         extra_http_headers=None,  # noqa: ANN001
+        **kwargs,  # noqa: ARG001
     ) -> bytes:
         if capture_phase == "batch":
             matched_page_id = next(page_id for page_id in page_ids if f"ticket={page_id}" in preview_url)
             captured_batch_page_ids.append(matched_page_id)
             if matched_page_id == page_ids[1]:
-                raise AppException(status_code=502, code="PAGE_SCREENSHOT_CAPTURE_FAILED", detail="模拟截图失败。")
+                raise AppException(status_code=502, code="RENDER_BROWSER_LOST", detail="模拟渲染执行中断。")
             return b"batch-png"
         return b"initial-png"
 
@@ -812,7 +820,7 @@ async def test_batch_refresh_page_screenshots_should_refresh_missing_and_outdate
     assert batch_data["succeeded_count"] == 2
     assert batch_data["failed_count"] == 1
     assert sorted(batch_data["page_ids"]) == sorted([page_ids[0], page_ids[2]])
-    assert batch_data["failures"][0]["detail"] == "模拟截图失败。"
+    assert batch_data["failures"][0]["detail"] == "模拟渲染执行中断。"
 
     success_page_response = await authenticated_client.get(f"/api/pages/{page_ids[0]}")
     assert success_page_response.status_code == 200
@@ -837,6 +845,7 @@ async def test_browser_capture_batch_should_isolate_single_job_failure(monkeypat
         viewport: CaptureViewport,
         *,
         extra_http_headers=None,  # noqa: ANN001
+        **kwargs,  # noqa: ARG001
     ) -> bytes:
         nonlocal active_count, max_active_count
         assert viewport.width == 320
@@ -867,7 +876,7 @@ async def test_browser_capture_batch_should_isolate_single_job_failure(monkeypat
     assert [result.key for result in results] == [1, 2, 3]
     assert results[0].content == b"http://runtime.local/ok-a"
     assert isinstance(results[1].error, AppException)
-    assert results[1].error.code == "PAGE_SCREENSHOT_CAPTURE_FAILED"
+    assert results[1].error.code == "RENDER_BROWSER_LOST"
     assert results[2].content == b"http://runtime.local/ok-b"
     assert captured_headers["http://runtime.local/ok-a"] == {"x-demo": "a"}
     assert captured_headers["http://runtime.local/ok-b"] == {"x-demo": "b"}

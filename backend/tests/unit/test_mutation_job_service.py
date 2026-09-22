@@ -13,10 +13,8 @@ from app.models.user import User
 from app.models.workspace import Project, Workspace, WorkspaceMember
 from app.schemas.external_api import ExternalPageCreateMutationRequest
 from app.schemas.preview_size_preset import build_default_preview_size_presets
-from app.schemas.project import ProjectCreateRequest
 from app.services.mutation_job_service import MutationJobService
 from app.services.mutation_planners.page_mutation_planner import PreparedPageMutationResult
-from app.services.project_service import ProjectService
 from app.core.exceptions import AppException
 
 

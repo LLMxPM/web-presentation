@@ -59,7 +59,7 @@ from app.services.page_screenshot_job_service import (
 )
 from app.services.page_screenshot_queue_worker import drain_page_screenshot_jobs
 from app.services.project_build_service import recover_interrupted_build_jobs_on_startup
-from app.services.playwright_browser_pool import get_playwright_browser_pool
+from app.services.rendering.coordinator import get_render_coordinator
 from app.services.redis_runtime_client import ensure_redis_runtime_available
 from app.services.runtime_artifact_store import run_runtime_artifact_sweeper
 
@@ -82,7 +82,8 @@ async def lifespan(app: FastAPI):
     model_catalog_sync_task: asyncio.Task[None] | None = None
     api_mutation_worker_task: asyncio.Task[None] | None = None
     api_mutation_sweeper_task: asyncio.Task[None] | None = None
-    playwright_browser_pool = get_playwright_browser_pool()
+    render_coordinator_task: asyncio.Task[None] | None = None
+    render_coordinator = get_render_coordinator()
     agent_background_run_manager: AgentBackgroundRunManager = app.state.agent_background_run_manager
     try:
         session_factory = get_session_factory()
@@ -99,10 +100,13 @@ async def lifespan(app: FastAPI):
             await recover_interrupted_ai_page_mutation_jobs_on_startup(session_factory)
             await recover_interrupted_image_generation_jobs_on_startup(session_factory)
             await recover_interrupted_component_mutation_tasks(session_factory)
-        # 进程内的测试或热重启可能复用全局池对象；只有明确的新应用生命周期
-        # 才允许重新开放已由上一轮 shutdown 关闭的 Chromium 池。
-        await playwright_browser_pool.start(allow_reopen=True)
+        # 远程渲染控制面：Backend 不再启动本地 Chromium，由 RenderCoordinator
+        # 通过受信 Renderer Worker API 完成调度、重试与结果落库。
         page_screenshot_queue_task = _start_page_screenshot_queue_task()
+        render_coordinator_task = asyncio.create_task(
+            render_coordinator.run_forever(),
+            name="render-coordinator",
+        )
         asset_render_hint_backfill_queue_task = _start_asset_render_hint_backfill_queue_task()
         runtime_artifact_sweeper_task = asyncio.create_task(
             run_runtime_artifact_sweeper(),
@@ -148,8 +152,10 @@ async def lifespan(app: FastAPI):
         await agent_background_run_manager.shutdown()
         if page_screenshot_queue_task is not None:
             await _stop_background_task(page_screenshot_queue_task)
-        # 请求内“提交并等待”的兼容路径也会登记真实执行任务；必须在关闭浏览器池前
-        # 等待其 Context 关闭和任务终态写入，避免留下有效租约的 running Job。
+        if render_coordinator_task is not None:
+            await _stop_background_task(render_coordinator_task)
+        # 请求内“提交并等待”的兼容路径也会登记真实执行任务；渲染链路由
+        # 协调器与 Renderer 负责回收，这里只等待领域任务安全收敛。
         await drain_page_screenshot_jobs()
         if asset_render_hint_backfill_queue_task is not None:
             await _stop_background_task(asset_render_hint_backfill_queue_task)
@@ -169,7 +175,6 @@ async def lifespan(app: FastAPI):
             await _stop_background_task(ai_component_mutation_queue_task)
         if model_catalog_sync_task is not None:
             await _stop_background_task(model_catalog_sync_task)
-        await playwright_browser_pool.stop()
 
 
 def create_app() -> FastAPI:

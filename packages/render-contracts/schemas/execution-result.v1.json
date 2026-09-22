@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://web-presentation.local/schemas/render/execution-result.v1.json",
+  "title": "RenderExecutionResult",
+  "type": "object",
+  "required": [
+    "request_id",
+    "attempt_id",
+    "worker_id",
+    "worker_epoch",
+    "slot_generation",
+    "operation",
+    "input_digest",
+    "render_profile_digest",
+    "request_digest",
+    "result_schema_version",
+    "environment_summary",
+    "resource_state"
+  ],
+  "properties": {
+    "request_id": { "type": "string" },
+    "attempt_id": { "type": "string" },
+    "worker_id": { "type": "string" },
+    "worker_epoch": { "type": "string" },
+    "slot_generation": { "type": "integer" },
+    "operation": {
+      "enum": ["page.capture", "page.diagnose", "component.diagnose"]
+    },
+    "input_digest": { "type": "string" },
+    "render_profile_digest": { "type": "string" },
+    "request_digest": { "type": "string" },
+    "result_schema_version": { "const": "render-result.v1" },
+    "environment_summary": { "type": "object" },
+    "artifacts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "content_type", "byte_length", "sha256"],
+        "properties": {
+          "name": { "type": "string" },
+          "content_type": { "type": "string" },
+          "byte_length": { "type": "integer", "minimum": 0 },
+          "sha256": { "type": "string" },
+          "width": { "type": ["integer", "null"] },
+          "height": { "type": ["integer", "null"] }
+        }
+      }
+    },
+    "diagnostics": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["severity", "code", "message"],
+        "properties": {
+          "severity": { "enum": ["error", "warning", "info"] },
+          "code": { "type": "string" },
+          "message": { "type": "string" },
+          "scenario": { "type": ["string", "null"] },
+          "evidence": { "type": "object" },
+          "truncated": { "type": "boolean" }
+        }
+      }
+    },
+    "layout": { "type": ["object", "null"] },
+    "scenarios": { "type": "array" },
+    "finished_at": { "type": "string" },
+    "cleaned_at": { "type": "string" },
+    "resource_state": { "enum": ["released", "retained", "unknown"] },
+    "truncated": { "type": "boolean" }
+  }
+}

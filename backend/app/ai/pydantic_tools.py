@@ -42,10 +42,14 @@ _NON_RECOVERABLE_TOOL_ERROR_CODES = {
 }
 _RECOVERABLE_TOOL_ERROR_CODES = {
     "AI_EXTERNAL_TASK_ENQUEUE_TIMEOUT",
-    "PAGE_SCREENSHOT_ASSET_NOT_READY",
-    "PAGE_SCREENSHOT_BROWSER_MISSING",
-    "PAGE_SCREENSHOT_CAPTURE_FAILED",
-    "PAGE_SCREENSHOT_IN_PROGRESS",
+    "RENDER_ASSET_NOT_READY",
+    "RENDER_BROWSER_LOST",
+    "RENDER_CONTENT_ERROR",
+    "RENDER_DEADLINE_EXCEEDED",
+    "RENDER_QUEUE_FULL",
+    "RENDER_RESULT_LOST",
+    "RENDER_SERVICE_UNAVAILABLE",
+    "RENDER_WORKER_BUSY",
     "PAGE_SCREENSHOT_JOB_FAILED",
     "PAGE_SCREENSHOT_JOB_INTERRUPTED",
     "PAGE_SCREENSHOT_JOB_TIMEOUT",
@@ -58,6 +62,32 @@ _RECOVERABLE_TOOL_ERROR_HINTS = {
     "AI_EXTERNAL_TASK_ENQUEUE_TIMEOUT": (
         "不要原样重试写操作。先查询目标实体的最新状态；确认操作未生效后，"
         "再使用最新版本参数重新调用。"
+    ),
+    "RENDER_SERVICE_UNAVAILABLE": (
+        "渲染执行暂时不可用，属于基础设施问题。不要依据此错误重写页面；"
+        "请稍后等待受控执行结果，或提示用户检查渲染服务健康状态。"
+    ),
+    "RENDER_BROWSER_LOST": (
+        "渲染执行进程中断。不要引导模型据此改写页面源码；等待重试结果或报告基础设施故障。"
+    ),
+    "RENDER_WORKER_BUSY": (
+        "渲染 Worker 槽位繁忙，属于容量问题。不要改写页面源码；稍后由平台重试或继续等待。"
+    ),
+    "RENDER_QUEUE_FULL": (
+        "渲染队列已满，属于容量问题。不要改写页面源码；稍后重试或继续等待受控执行结果。"
+    ),
+    "RENDER_DEADLINE_EXCEEDED": (
+        "渲染超过总预算期限，不等于源码一定有错。不要据此大改页面；先查看诊断摘要，必要时再精简页面复杂度。"
+    ),
+    "RENDER_RESULT_LOST": (
+        "渲染结果在回收/核对中丢失，属于基础设施问题。不要改写页面源码；等待重试或报告基础设施故障。"
+    ),
+    "RENDER_ASSET_NOT_READY": (
+        "页面视觉资源未在限定时间内就绪，可能是资源加载或网络问题。"
+        "不要直接断定源码布局错误；可检查资源引用是否有效，或稍后重试。"
+    ),
+    "RENDER_CONTENT_ERROR": (
+        "渲染诊断发现内容问题。请根据 diagnostics 修改页面/组件源码，不要原样重试，也不要改无关工具参数。"
     ),
     "AI_IMAGE_ANALYSIS_MODEL_FAILED": (
         "不要使用相同参数立即重试。页面任务可继续依据页面源码、组件契约和代码检查结果分析，"

@@ -30,6 +30,9 @@ from app.models.page_component_resource import PageVersionComponentResource
 from app.models.page_component_usage import PageVersionComponentUsage
 from app.models.page_screenshot_job import PageScreenshotJob
 from app.models.page_screenshot_job_group import PageScreenshotJobGroup, PageScreenshotJobGroupItem
+from app.models.render_attempt import RenderAttempt
+from app.models.render_execution import RenderResult, RenderSchedulerState, RenderWorker
+from app.models.render_request import RenderRequest
 from app.models.page_version import PageVersion
 from app.models.project_build_job import ProjectBuildJob
 from app.models.project_route import ProjectRoute
@@ -89,6 +92,11 @@ __all__ = [
     "PageScreenshotJob",
     "PageScreenshotJobGroup",
     "PageScreenshotJobGroupItem",
+    "RenderRequest",
+    "RenderAttempt",
+    "RenderWorker",
+    "RenderSchedulerState",
+    "RenderResult",
     "ProjectBuildJob",
     "ProjectSuggestedReferenceAsset",
     "ProjectSuggestedComponent",

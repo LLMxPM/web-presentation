@@ -52,10 +52,12 @@ class PageScreenshotResult:
 
 @dataclass(slots=True, frozen=True)
 class PageScreenshotCaptureTarget:
-    """截图浏览器实际访问的地址和额外请求头。"""
+    """截图浏览器实际访问的地址、额外请求头与渲染身份。"""
 
     preview_url: str
     extra_http_headers: dict[str, str] | None = None
+    artifact_id: str | None = None
+    preview_token: str | None = None
 
 
 @dataclass(slots=True, frozen=True)
@@ -305,6 +307,15 @@ class PageScreenshotService:
                 capture_target.preview_url,
                 viewport,
                 extra_http_headers=capture_target.extra_http_headers,
+                logical_owner_key=(
+                    f"page-screenshot:{page.id}:v{target_page_version_no}:"
+                    f"{config_hash}:{viewport.width}x{viewport.height}"
+                ),
+                workspace_id=page.workspace_id,
+                project_id=page.project_id,
+                page_id=page.id,
+                artifact_id=capture_target.artifact_id,
+                preview_token=capture_target.preview_token,
             )
             storage_key = await self.object_storage_service.put_object(
                 self.build_page_screenshot_storage_key(
@@ -379,7 +390,10 @@ class PageScreenshotService:
 
         preview_token = self._extract_preview_token(preview.preview_url)
         if not preview_token:
-            return PageScreenshotCaptureTarget(preview_url=preview.preview_url)
+            return PageScreenshotCaptureTarget(
+                preview_url=preview.preview_url,
+                artifact_id=self._extract_artifact_id(preview.preview_url),
+            )
 
         try:
             preview_claims = TokenService.verify_preview_context_token(preview_token)
@@ -404,6 +418,8 @@ class PageScreenshotService:
             expires_in_seconds=self._resolve_runtime_service_token_ttl(preview_claims),
         )
         runtime_public_base_url = self._resolve_browser_runtime_public_base_url()
+        # artifact_id / preview_token 必须显式下传：Runtime render-ready.v1 从 URL 查询串
+        # 读取 artifact，仅放请求头会导致协议绑定失败。
         return PageScreenshotCaptureTarget(
             preview_url=f"{settings.runtime_base_url.rstrip('/')}/__preview",
             extra_http_headers={
@@ -411,6 +427,8 @@ class PageScreenshotService:
                 RUNTIME_SERVICE_TOKEN_HEADER: runtime_service_token,
                 RUNTIME_PUBLIC_BASE_URL_HEADER: runtime_public_base_url,
             },
+            artifact_id=artifact_id,
+            preview_token=preview_token,
         )
 
     @staticmethod
@@ -437,6 +455,14 @@ class PageScreenshotService:
         if public_path:
             return f"{runtime_base_url}/{public_path}"
         return runtime_base_url
+
+    @staticmethod
+    def _extract_artifact_id(preview_url: str) -> str | None:
+        """从公开预览 URL 中读取 artifact 查询参数。"""
+
+        query = parse_qs(urlsplit(preview_url).query)
+        values = query.get("artifact") or query.get("artifact_id")
+        return values[0].strip() if values and values[0].strip() else None
 
     @staticmethod
     def _extract_preview_token(preview_url: str) -> str:

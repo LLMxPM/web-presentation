@@ -1,162 +1,97 @@
-"""文件功能：验证浏览器截图服务的请求头隔离和 BrowserContext 清理规则。"""
+"""文件功能：验证远程渲染截图业务入口的错误契约与批量结果结构。"""
+
+from __future__ import annotations
 
 import pytest
 
-from app.services.browser_capture_service import BrowserCaptureService
+from app.core.exceptions import AppException
+from app.services.browser_capture_service import BrowserCaptureJob, BrowserCaptureService
 from app.services.capture_viewport_resolver import CaptureViewport
+from app.services.page_render_diagnostics_service import (
+    PAGE_RENDER_DIAGNOSTICS_UNAVAILABLE_CODE,
+    PageRenderDiagnosticsService,
+)
+from app.services.rendering.errors import render_error_to_app_exception
+from render_contracts.errors import ERROR_CODE_QUEUE_FULL, RenderError
+
+pytestmark = pytest.mark.unit
 
 
-def test_preview_headers_should_only_attach_to_initial_preview_document() -> None:
-    """仅初始 Runtime 预览文档请求需要附加截图鉴权头。"""
+def test_render_error_maps_to_app_exception_with_trace() -> None:
+    """渲染错误应映射为统一 AppException，并携带 trace_id。"""
 
-    assert BrowserCaptureService._should_attach_initial_preview_headers(
-        request_url="http://127.0.0.1:7373/__preview",
-        preview_url="http://127.0.0.1:7373/__preview",
-        is_navigation_request=True,
-        resource_type="document",
+    error = RenderError.from_code(
+        ERROR_CODE_QUEUE_FULL,
+        message="渲染队列已满。",
+        stage="enqueue",
+        trace_id="trace-1",
     )
+    exc = render_error_to_app_exception(error)
+    assert isinstance(exc, AppException)
+    assert exc.code == ERROR_CODE_QUEUE_FULL
+    assert exc.status_code == 429
+    assert "trace-1" in exc.detail
 
 
-def test_preview_headers_should_not_attach_to_cross_origin_assets() -> None:
-    """跨源 Drawio CDN 和 Backend 资源请求不能携带 Runtime 预览鉴权头。"""
+@pytest.mark.asyncio
+async def test_browser_capture_batch_keeps_per_item_failures(monkeypatch) -> None:
+    """批量截图应保留逐项失败，不把单页失败吞成整批失败。"""
 
-    assert not BrowserCaptureService._should_attach_initial_preview_headers(
-        request_url="https://viewer.diagrams.net/js/viewer.min.js",
-        preview_url="http://127.0.0.1:7373/__preview",
-        is_navigation_request=False,
-        resource_type="script",
-    )
-    assert not BrowserCaptureService._should_attach_initial_preview_headers(
-        request_url="http://127.0.0.1:8000/public/cached-assets/1/demo",
-        preview_url="http://127.0.0.1:7373/__preview",
-        is_navigation_request=False,
-        resource_type="fetch",
-    )
+    async def fake_capture(self, preview_url, viewport, **kwargs):  # noqa: ANN001, ARG001
+        if "bad" in preview_url:
+            raise AppException(status_code=503, code="RENDER_SERVICE_UNAVAILABLE", detail="执行不可用")
+        return b"PNG"
 
-
-def test_capture_should_close_context_when_new_page_fails() -> None:
-    """页面对象创建失败时也不能泄漏长期 Chromium 槽位中的 Context。"""
-
-    class FakeContext:
-        """记录 Context 是否被关闭。"""
-
-        def __init__(self) -> None:
-            self.closed = False
-
-        def new_page(self) -> object:
-            """模拟浏览器在创建页面时断连。"""
-
-            raise RuntimeError("browser disconnected")
-
-        def close(self) -> None:
-            """记录清理调用。"""
-
-            self.closed = True
-
-    class FakeBrowser:
-        """返回可检查的 Context。"""
-
-        def __init__(self) -> None:
-            self.context = FakeContext()
-
-        def new_context(self, **_kwargs: object) -> FakeContext:
-            """创建测试 Context。"""
-
-            return self.context
-
-    browser = FakeBrowser()
+    monkeypatch.setattr(BrowserCaptureService, "capture_preview", fake_capture)
     service = BrowserCaptureService()
+    jobs = [
+        BrowserCaptureJob(key=1, preview_url="http://ok", viewport=CaptureViewport(width=10, height=10)),
+        BrowserCaptureJob(key=2, preview_url="http://bad", viewport=CaptureViewport(width=10, height=10)),
+    ]
+    results = await service.capture_preview_batch(jobs)
+    assert results[0].content == b"PNG"
+    assert results[1].content is None
+    assert isinstance(results[1].error, AppException)
+    assert results[1].error.code == "RENDER_SERVICE_UNAVAILABLE"
 
-    with pytest.raises(RuntimeError, match="disconnected"):
-        service._capture_preview_with_browser(
-            browser,
-            "http://127.0.0.1:7373/__preview",
-            CaptureViewport(width=1280, height=720),
-            timeout_ms=1,
-            visual_ready_timeout_ms=1,
-        )
-    assert browser.context.closed
+
+@pytest.mark.asyncio
+async def test_page_diagnostics_unavailable_is_infrastructure_not_content_error(monkeypatch) -> None:
+    """页面诊断执行不可用不能映射为源码有错。"""
+
+    async def fake_diagnose(self, preview_url, viewport, **kwargs):  # noqa: ANN001, ARG001
+        raise AppException(status_code=503, code="RENDER_SERVICE_UNAVAILABLE", detail="Renderer 离线")
+
+    monkeypatch.setattr(PageRenderDiagnosticsService, "diagnose_preview", fake_diagnose)
+    # 直接验证不可用结果构造
+    result = PageRenderDiagnosticsService._build_unavailable_result("Renderer 离线")
+    assert result["status"] == "unavailable"
+    diagnostics = result["diagnostics"]
+    assert diagnostics[0]["code"] == PAGE_RENDER_DIAGNOSTICS_UNAVAILABLE_CODE
+    assert diagnostics[0]["source"] == "infrastructure"
 
 
-def test_capture_should_reduce_motion_and_disable_animations() -> None:
-    """截图必须模拟 reduced-motion 并在截图瞬间禁用残留动画，避免动画中间帧导致内容缺失。"""
+@pytest.mark.asyncio
+async def test_capture_preview_batch_uses_independent_facade(monkeypatch) -> None:
+    """批量截图不得复用 self.facade 的共享 AsyncSession。"""
 
-    class FakePage:
-        """记录截图参数的页面替身。"""
+    from app.services.rendering.domain_facade import RenderDomainFacade
 
-        def __init__(self) -> None:
-            self.screenshot_kwargs: dict[str, object] = {}
+    seen: list[object] = []
 
-        def route(self, *_args: object, **_kwargs: object) -> None:
-            """无需路由拦截。"""
+    async def fake_capture(self, preview_url, viewport, **kwargs):  # noqa: ANN001, ARG001
+        seen.append(kwargs.get("facade"))
+        return b"PNG"
 
-        def on(self, *_args: object, **_kwargs: object) -> None:
-            """忽略事件监听注册。"""
-
-        def goto(self, *_args: object, **_kwargs: object) -> None:
-            """模拟导航成功。"""
-
-        def wait_for_function(self, *_args: object, **_kwargs: object) -> None:
-            """模拟预览就绪。"""
-
-        def evaluate(self, script: str, *_args: object) -> object:
-            """对视觉资源等待脚本返回就绪结果。"""
-
-            if "waitForVisualAssets" in script:
-                return {"ok": True, "total": 0, "failed": [], "pending": []}
-            return None
-
-        def wait_for_timeout(self, *_args: object) -> None:
-            """跳过固定等待。"""
-
-        def screenshot(self, **kwargs: object) -> bytes:
-            """记录截图入参并返回图片字节。"""
-
-            self.screenshot_kwargs = kwargs
-            return b"png"
-
-    class FakeContext:
-        """返回固定页面并记录关闭状态。"""
-
-        def __init__(self) -> None:
-            self.page = FakePage()
-            self.closed = False
-
-        def new_page(self) -> FakePage:
-            """返回测试页面。"""
-
-            return self.page
-
-        def close(self) -> None:
-            """记录清理调用。"""
-
-            self.closed = True
-
-    class FakeBrowser:
-        """记录 Context 创建参数。"""
-
-        def __init__(self) -> None:
-            self.context_options: dict[str, object] = {}
-            self.context = FakeContext()
-
-        def new_context(self, **kwargs: object) -> FakeContext:
-            """记录入参并返回测试 Context。"""
-
-            self.context_options = kwargs
-            return self.context
-
-    browser = FakeBrowser()
-    service = BrowserCaptureService()
-
-    content = service._capture_preview_with_browser(
-        browser,
-        "http://127.0.0.1:7373/__preview",
-        CaptureViewport(width=1280, height=720),
-        timeout_ms=1000,
-        visual_ready_timeout_ms=1000,
-    )
-
-    assert content == b"png"
-    assert browser.context_options.get("reduced_motion") == "reduce"
-    assert browser.context.page.screenshot_kwargs.get("animations") == "disabled"
-    assert browser.context.closed
+    monkeypatch.setattr(BrowserCaptureService, "capture_preview", fake_capture)
+    shared = RenderDomainFacade(None)
+    service = BrowserCaptureService(facade=shared)
+    jobs = [
+        BrowserCaptureJob(key=1, preview_url="http://a", viewport=CaptureViewport(width=10, height=10)),
+        BrowserCaptureJob(key=2, preview_url="http://b", viewport=CaptureViewport(width=10, height=10)),
+    ]
+    results = await service.capture_preview_batch(jobs)
+    assert len(results) == 2
+    assert all(item is not None for item in seen)
+    assert all(item is not shared for item in seen)
+    assert seen[0] is not seen[1]

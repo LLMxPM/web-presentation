@@ -462,8 +462,8 @@ async def test_pydantic_tool_bridge_should_return_screenshot_failure_to_model() 
         _ = run_context
         raise AppException(
             status_code=502,
-            code="PAGE_SCREENSHOT_CAPTURE_FAILED",
-            detail="页面截图失败：Page.wait_for_function: Timeout 45000ms exceeded.",
+            code="RENDER_BROWSER_LOST",
+            detail="渲染执行进程中断：Renderer 执行超时。",
         )
 
     async def model_func(messages: object, info: AgentInfo) -> ModelResponse:
@@ -491,7 +491,7 @@ async def test_pydantic_tool_bridge_should_return_screenshot_failure_to_model() 
 
     result = await agent.run("读取页面截图", deps=AgentToolDeps(dependencies={"run_id": "run-1", "session_id": "session-1"}))
 
-    assert result.output == "PAGE_SCREENSHOT_CAPTURE_FAILED"
+    assert result.output == "RENDER_BROWSER_LOST"
 
 
 def test_deferred_ask_user_should_build_feedback_requirement() -> None:

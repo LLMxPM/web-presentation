@@ -55,6 +55,7 @@ class ComponentValidationService:
                 compile_result.get("diagnostics"),
                 stage="compile",
             )
+            # 组件远程渲染诊断已从内容助手校验链路移除；本迭代只做契约 + Runtime 编译。
             base_result: dict[str, object] = {
                 **compile_result,
                 "candidate_hash": candidate_hash,
@@ -72,7 +73,7 @@ class ComponentValidationService:
                     "success": False,
                     "valid": False,
                     "status": "failed",
-                    "stages": {"contract": "passed", "compile": "failed", "render": "skipped"},
+                    "stages": {"contract": "passed", "compile": "failed"},
                 })
 
             has_errors = any(item.get("severity") == "error" for item in compile_diagnostics)
@@ -89,7 +90,6 @@ class ComponentValidationService:
                     "compile": "failed" if has_errors else (
                         "passed_with_warnings" if has_warnings else "passed"
                     ),
-                    "render": "skipped",
                 },
                 "diagnostics": compile_diagnostics,
                 "scenarios": [],
@@ -112,7 +112,7 @@ class ComponentValidationService:
                 "patch_repaired": patch_repaired,
                 "canonical_diff": canonical_diff,
                 "summary": "组件 Runtime 编译诊断暂不可用，请稍后重试。",
-                "stages": {"contract": "passed", "compile": "unavailable", "render": "skipped"},
+                "stages": {"contract": "passed", "compile": "unavailable"},
                 "diagnostics": [{
                     "severity": "error",
                     "stage": "compile",
@@ -152,7 +152,7 @@ class ComponentValidationService:
             "patch_repaired": False,
             "canonical_diff": canonical_diff,
             "validation_profile_version": COMPONENT_VALIDATION_PROFILE_VERSION,
-            "stages": {"contract": "failed", "compile": "skipped", "render": "skipped"},
+            "stages": {"contract": "failed", "compile": "skipped"},
             "diagnostics": [{
                 "severity": "error",
                 "stage": "contract",
@@ -172,7 +172,7 @@ class ComponentValidationService:
             "valid": False,
             "retryable": False,
             "validation_profile_version": COMPONENT_VALIDATION_PROFILE_VERSION,
-            "stages": {"contract": "failed", "compile": "skipped", "render": "skipped"},
+            "stages": {"contract": "failed", "compile": "skipped"},
             "diagnostics": ComponentValidationService.normalize_stage_diagnostics(
                 result.get("diagnostics"),
                 stage="contract",

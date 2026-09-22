@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://web-presentation.local/schemas/render/error.v1.json",
+  "title": "RenderError",
+  "type": "object",
+  "required": ["code", "category", "stage", "retryable", "message"],
+  "properties": {
+    "code": {
+      "enum": [
+        "RENDER_QUEUE_FULL",
+        "RENDER_WORKER_BUSY",
+        "RENDER_SERVICE_UNAVAILABLE",
+        "RENDER_CONTRACT_MISMATCH",
+        "RENDER_PROFILE_MISMATCH",
+        "RENDER_INPUT_EXPIRED",
+        "RENDER_INPUT_NOT_REPRODUCIBLE",
+        "RENDER_CONTENT_ERROR",
+        "RENDER_ASSET_NOT_READY",
+        "RENDER_BROWSER_LOST",
+        "RENDER_DEADLINE_EXCEEDED",
+        "RENDER_RESULT_LOST",
+        "RENDER_OUTPUT_LIMIT_EXCEEDED",
+        "RENDER_CANCELLED",
+        "RENDER_INTERNAL_ERROR"
+      ]
+    },
+    "category": {
+      "enum": [
+        "capacity",
+        "infrastructure",
+        "configuration",
+        "input",
+        "content",
+        "resource",
+        "timeout",
+        "cancellation",
+        "internal"
+      ]
+    },
+    "stage": { "type": "string" },
+    "retryable": { "type": "boolean" },
+    "message": { "type": "string" },
+    "trace_id": { "type": ["string", "null"] }
+  }
+}

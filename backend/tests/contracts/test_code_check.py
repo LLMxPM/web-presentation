@@ -110,10 +110,10 @@ class FakePageRenderDiagnosticsService:
             "empty_regions": [],
         }
 
-    async def diagnose_preview(self, preview_url: str, viewport: object) -> dict[str, object]:
+    async def diagnose_preview(self, preview_url: str, viewport: object, **kwargs: object) -> dict[str, object]:
         """记录渲染诊断调用并返回预置结果。"""
 
-        self.calls.append({"preview_url": preview_url, "viewport": viewport})
+        self.calls.append({"preview_url": preview_url, "viewport": viewport, **kwargs})
         return {
             "diagnostics": list(self.diagnostics),
             "layout_analysis": dict(self.layout_analysis),
@@ -774,7 +774,7 @@ async def test_component_code_check_should_skip_real_render_check(
     assert result["success"] is True
     assert result["valid"] is True
     assert result["status"] == "passed"
-    assert result["stages"] == {"contract": "passed", "compile": "passed", "render": "skipped"}
+    assert result["stages"] == {"contract": "passed", "compile": "passed"}
     assert result["scenarios"] == []
     assert str(result["candidate_hash"]).startswith("sha256:")
     artifact_id = str(result["artifact_id"])

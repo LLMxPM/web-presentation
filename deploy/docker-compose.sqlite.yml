@@ -51,9 +51,12 @@ services:
       RUNTIME_DIAGNOSTICS_WORKER_RSS_RECYCLE_RATIO: "0.75"
       RUNTIME_DIAGNOSTICS_REQUEST_TIMEOUT_SECONDS: "180"
       RUNTIME_BUILD_REQUEST_TIMEOUT_SECONDS: "900"
-      PLAYWRIGHT_BROWSER_POOL_SIZE: "1"
-      PLAYWRIGHT_TASK_QUEUE_SIZE: "16"
-      PLAYWRIGHT_BROWSER_REUSE_ENABLED: "true"
+      RENDER_GLOBAL_CONCURRENCY: "1"
+      RENDER_QUEUE_SIZE: "64"
+      RENDER_REQUEST_TIMEOUT_SECONDS: "120"
+      RENDER_WORKERS_CONFIG: '[{"worker_id":"renderer-lite","base_url":"http://renderer:7400"}]'
+      RENDER_SERVICE_CREDENTIAL_FILE: "/run/secrets/render_service_credential"
+      RENDER_PROFILE_DIGEST: "profile.v1"
       AI_PAGE_MUTATION_CONCURRENCY: "1"
       AI_PAGE_MUTATION_MAX_ACTIVE_JOBS: "16"
       AI_PAGE_MUTATION_MAX_BATCH_SIZE: "16"
@@ -73,6 +76,11 @@ services:
       - lite-data:/app/backend/data
     ports:
       - "8080:80"
+    secrets:
+      - render_service_credential
+    depends_on:
+      renderer:
+        condition: service_healthy
     healthcheck:
       test:
         - CMD-SHELL
@@ -80,6 +88,29 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
+  renderer:
+    image: llmxpm/web-presentation-renderer:latest
+    restart: unless-stopped
+    environment:
+      RENDER_WORKER_ID: "renderer-lite"
+      RENDER_SERVICE_CREDENTIAL_FILE: "/run/secrets/render_service_credential"
+      RENDER_PROFILE_DIGEST: "profile.v1"
+    expose:
+      - "7400"
+    secrets:
+      - render_service_credential
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - curl -fsS http://127.0.0.1:7400/livez >/dev/null
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+secrets:
+  render_service_credential:
+    file: ./secrets/render_service_credential
 
 volumes:
   lite-data:

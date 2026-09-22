@@ -97,6 +97,30 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm run test:contracts
 
+  render-contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: 0.10.10
+      - run: uv sync --project packages/render-contracts
+      - run: uv run --project packages/render-contracts --with pytest pytest packages/render-contracts/tests
+
+  renderer-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: 0.10.10
+      - run: uv sync --project renderer --extra dev
+      - run: uv run --project renderer --extra dev pytest -c renderer/pyproject.toml renderer/tests -m "not e2e"
+
   runtime-delegated:
     runs-on: ubuntu-latest
     needs:
@@ -125,6 +149,8 @@ jobs:
       - backend-tests
       - editor-tests
       - contracts
+      - render-contracts
+      - renderer-tests
       - runtime-delegated
     if: needs.test-scope.outputs.full_tests == 'true'
     steps:
@@ -160,6 +186,8 @@ jobs:
       - backend-tests
       - editor-tests
       - contracts
+      - render-contracts
+      - renderer-tests
       - runtime-delegated
     if: needs.test-scope.outputs.full_tests == 'true'
     strategy:

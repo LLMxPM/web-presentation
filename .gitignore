@@ -27,6 +27,10 @@ yarn-error.log*
 !.env.example
 !.env.*.example
 
+# 部署共享密钥（Backend/Renderer 服务身份凭证），禁止入库
+deploy/secrets/
+**/secrets/render_service_credential
+
 # Python
 __pycache__/
 *.py[cod]

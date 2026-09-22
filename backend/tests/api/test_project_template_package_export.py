@@ -138,6 +138,7 @@ async def test_project_template_export_should_wait_for_missing_page_screenshot(
         viewport: CaptureViewport,
         *,
         extra_http_headers=None,  # noqa: ANN001
+        **kwargs,  # noqa: ARG001
     ) -> bytes:
         """返回可与占位 PNG 区分的截图内容。"""
 

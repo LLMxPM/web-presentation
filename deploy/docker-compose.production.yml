@@ -25,8 +25,30 @@ services:
     depends_on:
       backend-migrate:
         condition: service_completed_successfully
+      renderer:
+        condition: service_healthy
+    secrets:
+      - render_service_credential
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8000/healthz >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  renderer:
+    # 不复用 *production-env：Renderer 不需要 DB/Redis/AI 等平台密钥。
+    image: llmxpm/web-presentation-renderer:latest
+    restart: unless-stopped
+    environment:
+      RENDER_WORKER_ID: "renderer-1"
+      RENDER_SERVICE_CREDENTIAL_FILE: "/run/secrets/render_service_credential"
+      RENDER_PROFILE_DIGEST: "profile.v1"
+    expose:
+      - "7400"
+    secrets:
+      - render_service_credential
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:7400/livez >/dev/null"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -66,6 +88,10 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
+secrets:
+  render_service_credential:
+    file: ./secrets/render_service_credential
 
 volumes:
   backend-data:

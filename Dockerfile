@@ -25,6 +25,7 @@ ENV UV_LINK_MODE=copy
 WORKDIR /app
 
 COPY backend/pyproject.toml backend/uv.lock backend/README.md ./backend/
+COPY packages/render-contracts /app/packages/render-contracts
 RUN uv sync --project backend --frozen --no-dev --no-cache --no-install-project
 
 
@@ -36,7 +37,6 @@ LABEL org.opencontainers.image.description="web-presentation Backend and Editor 
 ENV APP_RELOAD=false
 ENV ACCESS_LOG_ENABLED=false
 ENV PATH="/app/backend/.venv/bin:${PATH}"
-ENV PLAYWRIGHT_BROWSERS_PATH="/ms-playwright"
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 ENV VIRTUAL_ENV="/app/backend/.venv"
@@ -49,10 +49,8 @@ RUN apt-get update \
 WORKDIR /app/backend
 
 COPY --from=backend-deps /app/backend/.venv /app/backend/.venv
-RUN playwright install --with-deps --only-shell chromium \
-    && rm -rf /var/lib/apt/lists/*
-
 COPY backend/ /app/backend/
+COPY packages/render-contracts /app/packages/render-contracts
 COPY runtime/src/runtime-kit/manifest/runtime-kit.manifest.json /app/runtime/src/runtime-kit/manifest/runtime-kit.manifest.json
 COPY --from=editor-build /app/editor/dist/ /usr/share/nginx/html/
 COPY docker/nginx/web-presentation.conf /etc/nginx/conf.d/default.conf

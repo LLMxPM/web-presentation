@@ -50,12 +50,36 @@ SQLite 轻量模式不依赖外部 PostgreSQL/Redis。`memory://` 运行态只�
 | `AI_PAGE_MUTATION_CONCURRENCY` | AI 页面创建/修改的持久化 Worker 数；SQLite lite 为 `1`，常规部署为 `2` |
 | `AI_PAGE_MUTATION_MAX_ACTIVE_JOBS` | 全局活跃或等待页面变更任务上限；lite 为 `16`，常规部署为 `64` |
 | `DURABLE_JOB_LEASE_SECONDS` / `DURABLE_JOB_HEARTBEAT_SECONDS` | 截图与 AI 页面任务的跨进程租约和心跳周期 |
-| `PLAYWRIGHT_BROWSER_POOL_SIZE` | 截图和 AI 渲染检查共享的 Chromium 槽数；lite 为 `1`，常规部署为 `2` |
-| `PLAYWRIGHT_TASK_QUEUE_SIZE` | Chromium 等待队列上限，默认 `16` |
-| `PLAYWRIGHT_BROWSER_REUSE_ENABLED` | 是否复用长驻 Chromium；故障隔离时可暂设为 `false` |
+| `RENDER_WORKERS_CONFIG` | 受信 Renderer Worker 地址 JSON 数组；每个条目含 `worker_id` 与 `base_url` |
+| `RENDER_SERVICE_CREDENTIAL_FILE` | Backend/Renderer 共享服务密钥文件路径；与 `RENDER_SERVICE_CREDENTIAL` 二选一，禁止占位符与空文件 |
+| `RENDER_SERVICE_CREDENTIAL` | 共享服务密钥明文（不推荐生产使用；优先 secret 文件） |
+| `RENDER_PROFILE_DIGEST` | 当前发布要求的渲染环境指纹；与 Renderer 实际 profile 不一致时拒绝执行 |
+| `RENDER_PROFILE_MANIFEST` | 可选：环境清单文件路径，用于核对渲染环境身份 |
+| `RENDER_GLOBAL_CONCURRENCY` | 全局活动/未确认释放渲染执行上限；lite 为 `1` |
+| `RENDER_WORKSPACE_CONCURRENCY` | 单工作空间活动渲染执行上限，默认 `1` |
+| `RENDER_QUEUE_SIZE` | 全局待处理渲染请求上限，默认 `64` |
+| `RENDER_WORKSPACE_QUEUE_SIZE` | 单工作空间待处理上限，默认 `16` |
+| `RENDER_REQUEST_TIMEOUT_SECONDS` | 渲染阶段总预算（秒），默认 `120` |
+| `RENDER_MAX_ATTEMPTS` | 单请求执行尝试上限，默认 `3` |
+| `RENDER_SCHEDULER_POLL_INTERVAL_SECONDS` | 协调器调度轮询间隔，默认 `0.25` |
+| `RENDER_ATTEMPT_LEASE_SECONDS` | attempt 占用租约时长，超时由协调器收敛释放 |
+| `RENDER_UNKNOWN_RECONCILE_AFTER_SECONDS` | 未知结果 attempt 进入可回收窗口的等待秒数 |
+| `RENDER_ARTIFACT_MAX_BYTES` | 单产物字节上限，默认 32MiB |
+| `RENDER_RUNTIME_NAVIGATION_BASE_URL` | 浏览器访问预览文档的基址 |
+| `RENDER_RUNTIME_ASSET_BASE_URL` | 浏览器访问 Runtime 静态资源的基址 |
+| `RENDER_PLATFORM_ASSET_BASE_URL` | 浏览器访问平台资源的基址 |
 | `RUNTIME_ARTIFACT_SWEEP_INTERVAL_SECONDS` | `memory://` artifact 过期扫描周期，默认 `30` 秒 |
 
+Renderer 容器还应设置 `RENDER_WORKER_ID`、`RENDER_SERVICE_CREDENTIAL_FILE`、`RENDER_PROFILE_DIGEST`；可选 `RENDER_CLEANUP_GRACE_SECONDS`（默认 5）、`RENDER_RESULT_TTL_SECONDS`（默认 600）。
+
 Runtime 容器还应设置 `RUNTIME_VITE_TASK_CONCURRENCY`、`RUNTIME_VITE_TASK_QUEUE_SIZE`、`RUNTIME_DIAGNOSTICS_WORKER_REUSE_ENABLED` 和 `RUNTIME_BUILD_WORKER_MAX_OLD_SPACE_MB`。完整默认值见 `runtime/.env.example`。
+
+部署 compose 使用 Docker secrets：启动前必须创建 `deploy/secrets/render_service_credential`（强随机共享密钥，Backend 与 Renderer 一致）。示例：
+
+```powershell
+mkdir deploy/secrets
+openssl rand -base64 48 | Out-File -Encoding ascii deploy/secrets/render_service_credential
+```
 
 ## Runtime 内网关系
 

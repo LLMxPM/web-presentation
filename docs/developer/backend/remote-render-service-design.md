@@ -1,6 +1,6 @@
 # 远程渲染执行服务架构设计
 
-> 状态：待实施。本文件定义一次完整改造后的架构、接口、数据模型、部署方式和验收条件；全部内容作为同一交付范围。
+> 状态：核心运行路径已落地（见 §16）；真实多实例联调、数据转换副本演练、性能基线与 `web-presentation-agent-kit` 契约同步仍属发布窗口验收范围。本文件定义完整改造后的架构、接口、数据模型、部署方式和验收条件；全部内容作为同一交付范围。
 >
 > 交付方式：在一个维护窗口内完成数据转换和整套系统切换。研发工作可以拆分，发布结果只有一套实现。
 
@@ -12,7 +12,7 @@
 - **Renderer**：接收一次执行尝试，在隔离浏览器进程中完成截图或诊断，回收资源并提供结果。
 - **Runtime**：构建和托管固定版本的预览内容，提供统一的页面、组件与视觉资源就绪协议。
 
-截图、页面诊断和组件诊断统一进入该执行链路。所有环境均通过内部 HTTP API 使用 Renderer；开发和 lite 部署一个同机服务，生产部署多个独立实例。区别只在地址、资源额度与副本数。
+截图与页面诊断统一进入该执行链路；组件远程渲染诊断协议保留在 Renderer，内容助手业务入口本迭代不调用。所有环境均通过内部 HTTP API 使用 Renderer；开发和 lite 部署一个同机服务，生产部署多个独立实例。区别只在地址、资源额度与副本数。
 
 Renderer 内使用 Python 异步 Playwright 启动自身镜像中的 Chromium。Backend 不安装 Playwright 或 Chromium，不持有 Browser、Context、Page，不执行任何浏览器脚本。
 
@@ -106,7 +106,7 @@ Python 使用 `uv` 和独立虚拟环境；前端使用 `pnpm`。Renderer 固定
 | :--- | :--- | :--- |
 | `page.capture` | 固定画布、等待视觉资源、捕获静态 PNG | 图片、尺寸、内容摘要、渲染环境摘要 |
 | `page.diagnose` | 固定画布、等待就绪、运行布局分析 | 文本布局、分组、溢出、空间关系、空白区域与 warning |
-| `component.diagnose` | 在宿主中执行 default 与指定 presets | 各场景运行错误、布局事实和诊断 |
+| `component.diagnose` | 在宿主中执行 default 与指定 presets（协议保留；内容助手业务入口本迭代不调用） | 各场景运行错误、布局事实和诊断 |
 
 所有操作遵循同一身份、输入、deadline、取消和错误契约。请求不携带 Python callable、任意 evaluate 脚本、任意目标 URL 或 Chromium 启动参数。
 
@@ -640,4 +640,17 @@ pnpm run test:render-e2e
 - [Playwright BrowserContext：请求头作用范围](https://playwright.dev/python/docs/api/class-browsercontext#browser-context-set-extra-http-headers)
 - [Playwright Python Docker：浏览器依赖与沙箱](https://playwright.dev/python/docs/docker)
 
-本次只重写规划与文档导航，未实现以上模块或配置。已核对相关代码边界并检查文档结构与引用；未运行运行时测试、真实 Renderer 联调、数据转换或性能测试。
+## 16. 实施落地摘要（2026-09）
+
+本次代码交付已按本设计落地核心运行路径：
+
+- 新增 `packages/render-contracts/`：协议版本、错误码、执行请求/回执/结果 Schema、接入票据与 JSON Schema。
+- Backend 新增 `render_requests` / `render_attempts` / `render_workers` / `render_scheduler_state` / `render_results` 模型与迁移 `20260910_0100`。
+- Backend 新增 `backend/app/services/rendering/`：请求服务、仓储、Renderer 客户端、协调器、快照与领域门面。
+- 新增独立 `renderer/` 服务：单槽控制 API、异步 Playwright 引擎、`render-ready.v1` 等待、幂等回执与取消。
+- Runtime 新增 `runtime/src/core/utils/render-ready.ts` 强制宿主协议；`main.ts` 与组件预览挂载时写入协议状态。
+- 删除 Backend 进程内 Playwright 池、Worker、队列与相关运行时依赖；截图/页面诊断改为远程渲染业务入口。组件远程渲染诊断协议保留在 Renderer/契约层，内容助手组件校验本迭代只覆盖契约 + Runtime 编译。
+- 配置与部署模板改为 `RENDER_*` 变量；旧 `PLAYWRIGHT_*` / `PAGE_SCREENSHOT_BROWSER_EXECUTABLE_PATH` 启动即报错。
+- 新增测试入口：`pnpm run test:renderer`、`pnpm run test:render-e2e`。
+
+尚未在本仓自动完成的部分（仍属发布窗口验收范围）：真实多实例联调、数据转换副本演练、性能基线采集与 `web-presentation-agent-kit` 契约同步发布。

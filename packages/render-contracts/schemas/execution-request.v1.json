@@ -1,0 +1,113 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://web-presentation.local/schemas/render/execution-request.v1.json",
+  "title": "RenderExecutionRequest",
+  "type": "object",
+  "required": [
+    "contract_version",
+    "operation",
+    "request_id",
+    "attempt_id",
+    "request_digest",
+    "workspace_id",
+    "trace_id",
+    "snapshot_ref",
+    "input_digest",
+    "render_profile_digest",
+    "viewport",
+    "operation_options",
+    "deadline_at",
+    "remaining_budget_ms",
+    "admission_ticket",
+    "preview_access"
+  ],
+  "properties": {
+    "contract_version": { "const": "internal/render/v1" },
+    "operation": {
+      "enum": ["page.capture", "page.diagnose", "component.diagnose"]
+    },
+    "request_id": { "type": "string", "minLength": 1 },
+    "attempt_id": { "type": "string", "minLength": 1 },
+    "request_digest": { "type": "string", "minLength": 1 },
+    "workspace_id": { "type": "integer" },
+    "trace_id": { "type": "string" },
+    "snapshot_ref": {
+      "type": "object",
+      "required": ["artifact_id", "input_digest"],
+      "properties": {
+        "artifact_id": { "type": "string", "minLength": 1 },
+        "input_digest": { "type": "string", "minLength": 1 },
+        "storage_kind": { "type": "string" },
+        "storage_path": { "type": ["string", "null"] }
+      }
+    },
+    "input_digest": { "type": "string", "minLength": 1 },
+    "render_profile_digest": { "type": "string", "minLength": 1 },
+    "viewport": {
+      "type": "object",
+      "required": ["width", "height"],
+      "properties": {
+        "width": { "type": "integer", "minimum": 1 },
+        "height": { "type": "integer", "minimum": 1 },
+        "device_scale_factor": { "type": "number", "exclusiveMinimum": 0 }
+      }
+    },
+    "operation_options": { "type": "object" },
+    "deadline_at": { "type": "string" },
+    "remaining_budget_ms": { "type": "integer", "minimum": 1 },
+    "admission_ticket": { "$ref": "#/$defs/admission_ticket" },
+    "preview_access": { "$ref": "#/$defs/preview_access" },
+    "render_category": { "enum": ["interactive", "background"] }
+  },
+  "$defs": {
+    "admission_ticket": {
+      "type": "object",
+      "required": [
+        "version",
+        "ticket_id",
+        "attempt_id",
+        "request_digest",
+        "workspace_id",
+        "worker_id",
+        "worker_epoch",
+        "slot_generation",
+        "issued_at",
+        "accept_before",
+        "stop_by",
+        "signature"
+      ],
+      "properties": {
+        "version": { "const": "admission-ticket.v1" },
+        "ticket_id": { "type": "string", "minLength": 1 },
+        "attempt_id": { "type": "string", "minLength": 1 },
+        "request_digest": { "type": "string" },
+        "workspace_id": { "type": "integer" },
+        "worker_id": { "type": "string" },
+        "worker_epoch": { "type": "string" },
+        "slot_generation": { "type": "integer", "minimum": 0 },
+        "issued_at": { "type": "string" },
+        "accept_before": { "type": "string" },
+        "stop_by": { "type": "string" },
+        "signature": { "type": "string", "minLength": 1 }
+      }
+    },
+    "preview_access": {
+      "type": "object",
+      "required": [
+        "navigation_base_url",
+        "preview_token",
+        "artifact_id",
+        "expires_at"
+      ],
+      "properties": {
+        "navigation_base_url": { "type": "string" },
+        "preview_token": { "type": "string" },
+        "artifact_id": { "type": "string" },
+        "expires_at": { "type": "string" },
+        "runtime_protocol_version": { "type": "string" },
+        "asset_base_url": { "type": ["string", "null"] },
+        "platform_asset_base_url": { "type": ["string", "null"] }
+      }
+    }
+  }
+}

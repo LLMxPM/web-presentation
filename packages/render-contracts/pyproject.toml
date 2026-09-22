@@ -1,0 +1,26 @@
+# 文件功能：定义远程渲染契约包的构建元数据。
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "render-contracts"
+version = "0.1.0"
+description = "web-presentation 远程渲染纯契约 Python 包"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=9.0.3",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/render_contracts"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+markers = [
+    "unit: 契约包单元测试。",
+]

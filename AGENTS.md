@@ -87,7 +87,7 @@ uv run --project backend python -m app.scripts.diagnose_ai_run --session-id <ses
 
 Editor 和 Backend 只公开 `agent-coordinator` 一个内容助手，不再登记组件助手、资源助手或自委派子运行。组件移除统一使用归档语义，不得重新引入 `delete_component` AI 工具。
 
-页面创建与结构化编辑属于重资源写工具：必须通过 `ai_page_mutation_jobs` 持久化队列执行，不能在 Pydantic tool 调用中直接并发运行 Runtime/Chromium。页面工具的 deferred result 由后台 Batch 协调器自动恢复；修改该流程时必须同时检查租约、取消、页面版本复核、SSE `waiting_external` 状态和自动续跑测试。截图任务与页面渲染诊断共享 Chromium 池，任何新增浏览器调用都必须接入该池，不能自行启动无上限的浏览器实例。
+页面创建与结构化编辑属于重资源写工具：必须通过 `ai_page_mutation_jobs` 持久化队列执行，不能在 Pydantic tool 调用中直接并发运行 Runtime/远程渲染。页面工具的 deferred result 由后台 Batch 协调器自动恢复；修改该流程时必须同时检查租约、取消、页面版本复核、SSE `waiting_external` 状态和自动续跑测试。截图任务与页面渲染诊断统一走 `render_requests` → 远程 Renderer；Backend 不安装 Playwright/Chromium，任何新增浏览器执行都必须派发到受信 Renderer Worker，不能在 Backend 进程内自行启动浏览器。
 
 页面、图片和组件重任务统一登记到 `ai_agent_external_batches` / `ai_agent_external_tasks`：同一模型 step 整批封口、全部任务终态后只续跑一次。组件创建、组件源码 edits，以及修改 `preview_schema` / `component_type` 的操作必须进入组件外部任务；名称、摘要等轻量元数据、发布和归档保持同步。`waiting_provider` 以 `next_poll_at` 为合法存活依据，不占用 Worker 租约；`resolving` Requirement 必须对应持有有效租约的 `resuming` Batch。模型历史成功消费结果后应清空 Task 完整 `result_json`，仅保留摘要和消费时间。
 
@@ -106,6 +106,27 @@ Editor 是创作工作台，负责登录、工作空间、项目、页面、组�
 - UI 变更应优先复用 `components/ui`、`components/project`、`components/agent` 等现有组件和交互模式。
 - 账户 AI 设置页应展示面向 Agent 的完整工具说明，包括当前生效说明、系统默认说明、参数 JSON Schema、调用示例、返回示例、上下文要求与运行时披露组。
 - 工具调用契约和返回示例是系统只读信息；用户只允许编辑智能体描述、智能体提示词、工具说明和工具提示词。
+
+### packages/
+
+`packages/render-contracts/` 是远程渲染纯契约 Python 包，不依赖 Backend、ORM、Runtime 或 Playwright。
+
+开发约束：
+
+- 只维护协议版本、错误码、执行请求/回执/结果 Schema、接入票据与 JSON Schema；不要引入业务逻辑或 HTTP 客户端。
+- Python DTO 与 `schemas/*.json` 双份事实源必须同步修改，并补充对拍/往返测试。
+- 契约破坏性变更必须同步 Backend `services/rendering`、`renderer/` 调用点与 `web-presentation-agent-kit` 消费者。
+
+### renderer/
+
+`renderer/` 是独立远程渲染执行服务（单槽异步 Playwright Chromium），不连接业务数据库。
+
+开发约束：
+
+- 不导入 `backend/app`；页面布局分析脚本由 `app/engine/page_render_*.py` 与 `layout_scripts.py` 统一维护，不得复制多份。组件远程渲染诊断协议保留在契约与 Renderer，内容助手业务入口本迭代不调用。
+- 控制 API 使用服务身份凭证；浏览器网络不能访问控制 API。凭证缺失/空文件必须 fail-closed。
+- 每 attempt 新建 Chromium 与 Context，不跨请求复用；禁止对 Playwright asyncio Task 直接 `cancel()`。
+- 改动执行、取消、期限或产物协议时，同步更新 `packages/render-contracts` 与 Backend 协调器测试。
 
 ### runtime/
 
@@ -143,6 +164,9 @@ pnpm run test:runtime
 pnpm run test:runtime:delegated
 pnpm run test:runtime:gate
 pnpm run test:contracts
+pnpm run test:render-contracts
+pnpm run test:renderer
+pnpm run test:render-e2e
 pnpm run test:e2e:run
 pnpm run test:e2e
 pnpm run test:e2e:regression
@@ -154,6 +178,7 @@ pnpm run test:e2e:all
 - `test:editor` 只执行 Editor Vitest；`test:editor:check` 执行类型检查；`test:editor:build` 执行生产构建；需要完整 Editor 质量门禁时使用 `test:editor:gate`。
 - `test:runtime` / `test:runtime:delegated` 只委托 Runtime 子项目 Vitest；需要 Runtime 完整门禁时使用 `test:runtime:gate`。
 - `test:contracts` 是根仓跨模块契约测试，不等同于 Backend 自身的 `backend/tests/contracts`。
+- `test:render-contracts` 运行 `packages/render-contracts` 契约单测；`test:renderer` 只跑 Renderer 非 e2e 单测；`test:render-e2e` 依赖真实 Chromium（当前用例集可能为空，以 `renderer/tests` 中 `-m e2e` 标记为准）。
 - `test:e2e:run` 只执行 Playwright；`test:e2e` 会先重置并播种 smoke 数据、确认服务，再执行 Playwright。
 - `test:e2e:run` / `test:e2e` 默认只运行 `auth + smoke`；扩展回归使用 `test:e2e:regression`，全部 project 使用 `test:e2e:all`。
 - E2E 报告和失败产物统一写入 `test-results/e2e/`。
@@ -198,6 +223,9 @@ pnpm run test:e2e:all
 - `web-runtime-vue`：独立 Runtime 项目名称。
 - `runtime/`：`web-runtime-vue` 在当前仓库中的 Git 子模块路径。
 - `Runtime`：平台架构中的预览与构建执行角色。
+- `packages/render-contracts`：远程渲染纯契约包。
+- `renderer/`：独立远程渲染执行服务。
+- `Renderer`：执行截图与渲染诊断的单槽 Chromium 服务。
 - `Editor`：面向用户的创作工作台。
 - `Backend`：平台控制面服务。
 

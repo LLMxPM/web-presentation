@@ -17,13 +17,13 @@ dependencies = [
     "httpx>=0.28.1",
     "ollama>=0.6.1",
     "openai>=2.45.0",
-    "playwright>=1.60.0",
     "psycopg[binary]>=3.3.4",
     "pyjwt>=2.13.0",
     "pyyaml>=6.0.3",
     "pydantic-settings>=2.14.1",
     "pwdlib>=0.3.0",
     "python-multipart>=0.0.29",
+    "render-contracts",
     "sqlalchemy>=2.0.49",
     "tiktoken>=0.12.0",
     "tzdata>=2026.2",
@@ -34,6 +34,8 @@ dependencies = [
     "pydantic-ai-slim[openai,google,openrouter]==2.26.0",
 ]
 
+[tool.uv.sources]
+render-contracts = { path = "../packages/render-contracts", editable = true }
 
 [build-system]
 requires = ["uv_build>=0.10.10,<0.11.0"]
@@ -50,7 +52,7 @@ dev = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-norecursedirs = ["cli", ".git", ".tmp", "dist", "build", "node_modules"]
+norecursedirs = ["cli", ".git", ".tmp", "dist", "build", "node_modules", "scripts", "renderer", "packages", ".venv"]
 pythonpath = ["."]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"

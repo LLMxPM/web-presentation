@@ -68,9 +68,12 @@ services:
       ACCESS_LOG_ENABLED: "false"
       CLIENT_ERROR_LOG_ENABLED: "true"
       CLIENT_ERROR_LOG_MAX_BYTES: "16384"
-      PLAYWRIGHT_BROWSER_POOL_SIZE: "2"
-      PLAYWRIGHT_TASK_QUEUE_SIZE: "16"
-      PLAYWRIGHT_BROWSER_REUSE_ENABLED: "true"
+      RENDER_GLOBAL_CONCURRENCY: "1"
+      RENDER_QUEUE_SIZE: "64"
+      RENDER_REQUEST_TIMEOUT_SECONDS: "120"
+      RENDER_WORKERS_CONFIG: '[{"worker_id":"renderer-1","base_url":"http://renderer:7400"}]'
+      RENDER_SERVICE_CREDENTIAL_FILE: "/run/secrets/render_service_credential"
+      RENDER_PROFILE_DIGEST: "profile.v1"
       AI_PAGE_MUTATION_CONCURRENCY: "2"
       AI_PAGE_MUTATION_MAX_ACTIVE_JOBS: "64"
       AI_PAGE_MUTATION_MAX_BATCH_SIZE: "16"
@@ -85,6 +88,8 @@ services:
       - "8080:80"
     expose:
       - "8000"
+    secrets:
+      - render_service_credential
     extra_hosts:
       - "backend:127.0.0.1"
     networks:
@@ -98,6 +103,8 @@ services:
       postgres:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      renderer:
         condition: service_healthy
     healthcheck:
       test:
@@ -145,6 +152,33 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
+  renderer:
+    image: llmxpm/web-presentation-renderer:latest
+    restart: unless-stopped
+    environment:
+      RENDER_WORKER_ID: "renderer-1"
+      RENDER_SERVICE_CREDENTIAL_FILE: "/run/secrets/render_service_credential"
+      RENDER_PROFILE_DIGEST: "profile.v1"
+    expose:
+      - "7400"
+    networks:
+      platform-net:
+        aliases:
+          - renderer
+    secrets:
+      - render_service_credential
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - curl -fsS http://127.0.0.1:7400/livez >/dev/null
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+secrets:
+  render_service_credential:
+    file: ./secrets/render_service_credential
 
 volumes:
   backend-data:

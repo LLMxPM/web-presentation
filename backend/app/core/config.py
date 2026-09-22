@@ -45,14 +45,27 @@ class AppSettings(BaseSettings):
     runtime_diagnostics_request_timeout_seconds: float = 180.0
     runtime_build_request_timeout_seconds: float = 900.0
     backend_public_base_url: str = "http://127.0.0.1:8000"
-    playwright_browser_pool_size: int = 1
-    playwright_task_queue_size: int = 16
-    playwright_task_queue_wait_timeout_seconds: float = 60.0
-    playwright_browser_reuse_enabled: bool = True
-    playwright_browser_recycle_task_count: int = 50
-    playwright_browser_recycle_age_seconds: float = 1800.0
-    # 兼容旧部署变量；新代码优先读取 PLAYWRIGHT_BROWSER_POOL_SIZE。
-    playwright_task_concurrency: int = 1
+    # 远程渲染执行服务配置（Backend 不再安装或持有 Playwright/Chromium）
+    render_workers_config: list[dict[str, str]] = Field(
+        default_factory=lambda: [{"worker_id": "renderer-local", "base_url": "http://127.0.0.1:7400"}]
+    )
+    render_service_credential_file: str | None = None
+    render_service_credential: str = ""
+    render_profile_manifest: str | None = None
+    render_profile_digest: str = "profile.v1"
+    render_global_concurrency: int = 1
+    render_workspace_concurrency: int = 1
+    render_queue_size: int = 64
+    render_workspace_queue_size: int = 16
+    render_request_timeout_seconds: float = 120.0
+    render_max_attempts: int = 3
+    render_scheduler_poll_interval_seconds: float = 0.25
+    render_attempt_lease_seconds: float = 180.0
+    render_unknown_reconcile_after_seconds: float = 30.0
+    render_artifact_max_bytes: int = 32 * 1024 * 1024
+    render_runtime_navigation_base_url: str | None = None
+    render_runtime_asset_base_url: str | None = None
+    render_platform_asset_base_url: str | None = None
     ai_enabled: bool = True
     ai_test_mode: str = "disabled"
     ai_secret_encryption_key: str = "vmgRweOsDpMtYVW7SSpceINYcXlUHFNndAby6vRv0iA="
@@ -198,10 +211,11 @@ class AppSettings(BaseSettings):
         "page_screenshot_default_viewport_height",
         "page_screenshot_max_viewport_width",
         "page_screenshot_max_viewport_height",
-        "playwright_browser_pool_size",
-        "playwright_task_queue_size",
-        "playwright_browser_recycle_task_count",
-        "playwright_task_concurrency",
+        "render_global_concurrency",
+        "render_workspace_concurrency",
+        "render_queue_size",
+        "render_workspace_queue_size",
+        "render_max_attempts",
         "ai_page_mutation_concurrency",
         "ai_page_mutation_max_active_jobs",
         "ai_page_mutation_max_batch_size",
@@ -215,11 +229,48 @@ class AppSettings(BaseSettings):
     )
     @classmethod
     def validate_positive_int(cls, value: int) -> int:
-        """校验截图与 Playwright 相关整数配置均为正数。"""
+        """校验截图与远程渲染整数配置均为正数。"""
 
         if value <= 0:
-            raise ValueError("截图与 Playwright 整数配置必须为正整数。")
+            raise ValueError("截图与远程渲染整数配置必须为正整数。")
         return value
+
+    @model_validator(mode="after")
+    def validate_render_legacy_env_rejected(self) -> "AppSettings":
+        """旧 Playwright 运行时配置不得静默忽略，必须替换为远程渲染配置。"""
+
+        import os
+
+        forbidden = [
+            "PLAYWRIGHT_BROWSER_POOL_SIZE",
+            "PLAYWRIGHT_TASK_CONCURRENCY",
+            "PLAYWRIGHT_TASK_QUEUE_SIZE",
+            "PLAYWRIGHT_TASK_QUEUE_WAIT_TIMEOUT_SECONDS",
+            "PLAYWRIGHT_BROWSER_REUSE_ENABLED",
+            "PLAYWRIGHT_BROWSER_RECYCLE_TASK_COUNT",
+            "PLAYWRIGHT_BROWSER_RECYCLE_AGE_SECONDS",
+            "PAGE_SCREENSHOT_BROWSER_EXECUTABLE_PATH",
+        ]
+        present = [name for name in forbidden if os.environ.get(name)]
+        # .env 文件中的废弃键可能被 pydantic-settings 静默丢弃，必须单独扫描。
+        for env_path in _iter_settings_env_files():
+            try:
+                for line in env_path.read_text(encoding="utf-8").splitlines():
+                    stripped = line.strip()
+                    if not stripped or stripped.startswith("#") or "=" not in stripped:
+                        continue
+                    key = stripped.split("=", 1)[0].strip().strip('"').strip("'")
+                    if key in forbidden and key not in present:
+                        present.append(key)
+            except OSError:
+                continue
+        if present:
+            raise ValueError(
+                "检测到已废弃的本地 Playwright 配置："
+                + ", ".join(present)
+                + "。请改用 RENDER_WORKERS_CONFIG / RENDER_PROFILE_MANIFEST 等远程渲染配置。"
+            )
+        return self
 
     @model_validator(mode="after")
     def validate_durable_job_lease_ratio(self) -> "AppSettings":
@@ -232,8 +283,10 @@ class AppSettings(BaseSettings):
     @field_validator(
         "page_screenshot_timeout_seconds",
         "page_screenshot_visual_ready_timeout_seconds",
-        "playwright_task_queue_wait_timeout_seconds",
-        "playwright_browser_recycle_age_seconds",
+        "render_request_timeout_seconds",
+        "render_scheduler_poll_interval_seconds",
+        "render_attempt_lease_seconds",
+        "render_unknown_reconcile_after_seconds",
         "ai_page_mutation_poll_interval_seconds",
         "runtime_artifact_sweep_interval_seconds",
         "runtime_diagnostics_request_timeout_seconds",
@@ -244,10 +297,10 @@ class AppSettings(BaseSettings):
     )
     @classmethod
     def validate_positive_timeout(cls, value: float) -> float:
-        """校验截图超时时间有效。"""
+        """校验截图与渲染超时时间有效。"""
 
         if value <= 0:
-            raise ValueError("截图超时时间配置必须大于 0。")
+            raise ValueError("截图与渲染超时时间配置必须大于 0。")
         return value
 
     @field_validator("object_cache_idle_days", "object_cache_max_bytes")
@@ -470,6 +523,27 @@ class AppSettings(BaseSettings):
         if configured_path.is_absolute():
             return configured_path
         return (Path(__file__).resolve().parents[2] / configured_path).resolve()
+
+
+def _iter_settings_env_files() -> list[Path]:
+    """列出配置可能读取的 .env 文件路径，供废弃键扫描。"""
+
+    candidates = [
+        Path.cwd() / ".env",
+        Path(__file__).resolve().parents[2] / ".env",
+    ]
+    seen: set[Path] = set()
+    result: list[Path] = []
+    for path in candidates:
+        try:
+            resolved = path.resolve()
+        except OSError:
+            continue
+        if resolved in seen or not resolved.is_file():
+            continue
+        seen.add(resolved)
+        result.append(resolved)
+    return result
 
 
 @lru_cache

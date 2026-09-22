@@ -61,11 +61,8 @@ uv run python -m app.scripts.seed_admin
 uv run uvicorn app.main:app --reload
 ```
 
-安装 Playwright 浏览器：
-
-```powershell
-uv run playwright install chromium
-```
+截图与真实渲染诊断依赖独立 Renderer（`renderer/`），Backend 本进程不再安装 Playwright/Chromium。
+请另行启动 Renderer，并配置 `RENDER_WORKERS_CONFIG` 与 `RENDER_SERVICE_CREDENTIAL`（或 `RENDER_SERVICE_CREDENTIAL_FILE`）。两侧必须使用同一强随机共享密钥，禁止占位符。
 
 运行测试：
 
@@ -283,19 +280,25 @@ Backend 现已支持基于 Runtime 预览页生成页面截图，并将结果保
 
 相关环境变量：
 
-- `PLAYWRIGHT_TASK_CONCURRENCY`：Backend 进程内 Playwright 任务统一并发上限，覆盖页面截图和真实渲染诊断，默认 `1`
+- `RENDER_WORKERS_CONFIG`：受信 Renderer Worker 地址 JSON 数组
+- `RENDER_SERVICE_CREDENTIAL` / `RENDER_SERVICE_CREDENTIAL_FILE`：与 Renderer 共享的服务密钥（禁止占位符/空文件）
+- `RENDER_PROFILE_DIGEST`：当前发布要求的渲染环境指纹
+- `RENDER_REQUEST_TIMEOUT_SECONDS`：渲染阶段总预算，默认 `120`
+- `RENDER_MAX_ATTEMPTS`：单请求执行尝试上限，默认 `3`
+- `RENDER_GLOBAL_CONCURRENCY` / `RENDER_WORKSPACE_CONCURRENCY`：全局与单工作空间执行上限
+- `RENDER_QUEUE_SIZE` / `RENDER_WORKSPACE_QUEUE_SIZE`：全局与单工作空间待处理上限
+- `RENDER_RUNTIME_NAVIGATION_BASE_URL` / `RENDER_RUNTIME_ASSET_BASE_URL` / `RENDER_PLATFORM_ASSET_BASE_URL`：浏览器访问预览与资源基址
 - `PAGE_SCREENSHOT_DEFAULT_VIEWPORT_WIDTH`：默认截图宽度，默认 `1920`
 - `PAGE_SCREENSHOT_DEFAULT_VIEWPORT_HEIGHT`：默认截图高度，默认 `1080`
 - `PAGE_SCREENSHOT_MAX_VIEWPORT_WIDTH`：允许的最大截图宽度，默认 `4096`
 - `PAGE_SCREENSHOT_MAX_VIEWPORT_HEIGHT`：允许的最大截图高度，默认 `4096`
-- `PAGE_SCREENSHOT_TIMEOUT_SECONDS`：截图整体超时时间（秒），默认 `45`
-- `PAGE_SCREENSHOT_VISUAL_READY_TIMEOUT_SECONDS`：等待图片、背景图与字体等视觉资源就绪的超时时间（秒），默认 `25`
 - `ASSET_STORAGE_DRIVER`：统一对象存储驱动，支持 `local` 与 `s3`
 - `S3_BUCKET`：S3/R2 私有资产 bucket，用于图片、视频、文档类工作空间资源与平台内部对象
 - `S3_PUBLIC_BUCKET`：可选的公开字体 bucket；配置后字体文件（`.woff2`、`.woff`、`.ttf`、`.otf`）会写入该 bucket
 - `S3_PUBLIC_BASE_URL`：可选的公开字体访问根地址；配置后 `/public/assets/{workspace_id}/{file_hash}` 会把字体重定向到稳定公开 URL
 - `PAGE_SCREENSHOT_LOCAL_ROOT`：本地对象存储根目录，默认 `backend/data`
-- `PAGE_SCREENSHOT_BROWSER_EXECUTABLE_PATH`：可选，显式指定 Chromium 可执行文件路径
+
+> 已废弃且启动即报错：`PLAYWRIGHT_*`、`PAGE_SCREENSHOT_BROWSER_EXECUTABLE_PATH`。请改用远程渲染 `RENDER_*` 配置。
 - `OBJECT_CACHE_IDLE_DAYS`：对象存储派生缓存闲置清理天数，默认 `30`
 - `OBJECT_CACHE_MAX_BYTES`：对象存储派生缓存容量上限，默认 `10737418240`
 - `OBJECT_CACHE_SWEEP_INTERVAL_SECONDS`：对象存储派生缓存机会式扫描间隔，默认 `21600`

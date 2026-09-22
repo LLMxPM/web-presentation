@@ -68,6 +68,7 @@ def _install_capture_stubs(monkeypatch, *, capture_callback=None) -> None:  # no
         viewport: CaptureViewport,
         *,
         extra_http_headers=None,
+        **kwargs,
     ) -> bytes:
         if capture_callback is not None:
             capture_callback(preview_url, viewport)
@@ -206,6 +207,7 @@ async def test_screenshot_job_should_skip_when_page_changes_during_capture(
         viewport: CaptureViewport,
         *,
         extra_http_headers=None,
+        **kwargs,
     ) -> bytes:
         """在截图对象生成前模拟另一请求保存页面新版本。"""
 
@@ -259,6 +261,7 @@ async def test_screenshot_job_should_skip_when_display_config_changes_during_cap
         viewport: CaptureViewport,
         *,
         extra_http_headers=None,
+        **kwargs,
     ) -> bytes:
         """在截图捕获过程中提交新的项目展示配置。"""
 
