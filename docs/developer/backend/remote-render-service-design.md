@@ -625,7 +625,7 @@ pnpm run test:renderer
 pnpm run test:render-e2e
 ```
 
-`test:renderer` 和 `test:render-e2e` 属于本次交付需新增的入口，不是当前已有命令。真实故障测试和数据转换测试使用隔离环境，不连接用户当前业务数据。
+`test:renderer` 与 `test:render-e2e` 已落地；后者通过根仓 Playwright smoke 验证四服务真实截图。Renderer 的当前 Python 入口为 `wp_renderer.main:app`，源码目录为 `renderer/wp_renderer/`。真实故障测试和数据转换测试使用隔离环境，不连接用户当前业务数据。
 
 公共契约变更必须运行 `uv run --project backend python scripts/contracts/test-gateway-openapi.py`；发布后通过 `scripts/contracts/check-gateway-openapi.py` 从外部 Gateway 验证契约 JSON。
 

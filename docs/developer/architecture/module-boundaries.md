@@ -16,6 +16,10 @@ Editor 是创作工作台，负责平台对象管理、代码编辑、AI 侧边�
 
 `runtime/` 是演示运行时服务。涉及 Runtime Kit、预览入口、构建产物、镜像或环境变量变化时，要保持与平台接入形态一致。
 
+## Renderer 与共享 Python 契约
+
+Renderer 在 `renderer/wp_renderer/` 中实现远程 Chromium 执行，不导入 Backend；`packages/render-contracts` 只维护 DTO、错误码和协议。三个 Python 成员共用根虚拟环境，但顶层模块名称必须唯一。跨进程只通过受信控制 API 与契约交互。
+
 ## Infra
 
 Infra 包括 `deploy/docker/`（Dockerfile、nginx、entrypoints）、`deploy/compose/`、`.github/workflows/` 和测试辅助脚本。生产部署模板只放在 `deploy/compose/`，本地开发与 CI 共享基础服务入口维护在 `scripts/dev/compose.infra.yml`。

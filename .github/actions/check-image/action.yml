@@ -1,0 +1,33 @@
+# 文件功能：加载 amd64 交付镜像并验证实际启动，由测试与发布流水线共同使用。
+name: check-image
+description: 验证交付镜像的实际入口与健康检查
+inputs:
+  file:
+    description: Dockerfile 路径，构建上下文固定为仓库根
+    required: true
+  variant:
+    description: full、lite、runtime 或 renderer
+    required: true
+  tag:
+    description: 用于本地验证的镜像标签
+    required: true
+  cache-scope:
+    description: BuildKit 缓存范围
+    required: true
+runs:
+  using: composite
+  steps:
+    - uses: docker/build-push-action@v7
+      with:
+        context: .
+        file: ${{ inputs.file }}
+        platforms: linux/amd64
+        load: true
+        tags: ${{ inputs.tag }}
+        cache-from: type=gha,scope=${{ inputs.cache-scope }}
+    - name: 验证镜像实际启动
+      shell: bash
+      env:
+        SMOKE_IMAGE: ${{ inputs.tag }}
+        SMOKE_VARIANT: ${{ inputs.variant }}
+      run: python scripts/contracts/check-image-startup.py --image "$SMOKE_IMAGE" --variant "$SMOKE_VARIANT"

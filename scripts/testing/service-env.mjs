@@ -5,6 +5,7 @@ export const DEFAULT_SERVICE_URLS = {
   backend: 'http://127.0.0.1:8000',
   editor: 'http://127.0.0.1:5173',
   runtime: 'http://127.0.0.1:7373',
+  renderer: 'http://127.0.0.1:7400',
 }
 
 export function resolveServiceUrls() {
@@ -12,6 +13,7 @@ export function resolveServiceUrls() {
     backend: process.env.E2E_API_BASE_URL || process.env.BACKEND_BASE_URL || DEFAULT_SERVICE_URLS.backend,
     editor: process.env.E2E_BASE_URL || process.env.EDITOR_BASE_URL || DEFAULT_SERVICE_URLS.editor,
     runtime: process.env.E2E_RUNTIME_BASE_URL || process.env.RUNTIME_BASE_URL || DEFAULT_SERVICE_URLS.runtime,
+    renderer: process.env.E2E_RENDERER_BASE_URL || DEFAULT_SERVICE_URLS.renderer,
   }
 }
 

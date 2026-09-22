@@ -5,21 +5,23 @@
 
 根仓由同一次 Buildx 多架构构建同时发布到 Docker Hub 和阿里云 ACR 个人版。两个仓库使用相同的镜像标签与内容摘要；Docker Hub 作为默认公共仓库，ACR 作为中国大陆网络环境下的拉取副本。镜像仓库为：
 
-- Docker Hub：`docker.io/llmxpm/web-presentation`、`docker.io/llmxpm/web-runtime-vue`
-- 阿里云 ACR：`${ACR_REGISTRY}/${ACR_NAMESPACE}/web-presentation`、`${ACR_REGISTRY}/${ACR_NAMESPACE}/web-runtime-vue`
+- Docker Hub：`docker.io/llmxpm/web-presentation`、`docker.io/llmxpm/web-runtime-vue`、`docker.io/llmxpm/web-presentation-renderer`
+- 阿里云 ACR：`${ACR_REGISTRY}/${ACR_NAMESPACE}/web-presentation`、`${ACR_REGISTRY}/${ACR_NAMESPACE}/web-runtime-vue`、`${ACR_REGISTRY}/${ACR_NAMESPACE}/web-presentation-renderer`
 
 `runtime/` 已 vendored 进本仓，Runtime 独立镜像由本仓 Release 使用 `runtime/Dockerfile` 构建推送，不再依赖外部 `web-runtime-vue` 子模块 SHA 镜像。本仓镜像变体：
 
 - 常规平台镜像：由 `deploy/docker/Dockerfile.platform` 构建，包含 Backend 代码、Editor 静态资源、Nginx 配置和 Backend 运行所需的 Runtime Kit manifest。
-- SQLite 轻量单容器镜像：由 `deploy/docker/Dockerfile.lite` 构建，额外内置 Runtime Vite server 运行依赖，面向 SQLite + memory runtime 单容器部署。该变体直接打包当前仓库原生 `runtime/` 源码。
+- SQLite 轻量单容器镜像：由 `deploy/docker/Dockerfile.lite` 构建，额外内置 Runtime Vite server 运行依赖，面向 SQLite + memory runtime 轻量部署，截图由独立 Renderer 容器执行。该变体直接打包当前仓库原生 `runtime/` 源码。
 - 独立 Runtime 运行时镜像：由 `runtime/Dockerfile` 构建（构建上下文为仓库根，以共享 pnpm workspace 锁文件），提供独立 Vite server 以承载生产编排中的预览、诊断与构建接口。
+
+- 独立 Renderer 镜像：由 `renderer/Dockerfile` 在根构建上下文中构建，包含 `wp_renderer` 与 Python Playwright Chromium。
 
 ## GitHub Actions
 
 - 质量门禁共用 `.github/workflows/reusable-quality.yml`，测试命令统一走根目录 `package.json` 的 `test:*` 脚本。
-- PR：`platform-test.yml` 调用 reusable-quality 执行快速门禁（Backend unit/api、Editor、contracts、render-contracts、renderer、gateway）；当 `runtime/` 目录代码变化时，额外执行 Runtime 门禁。
-- 全量测试：`platform-test.yml` 在 `main` push、每周一定时任务或手动触发且 `full_tests=true` 时，在快速门禁基础上补充 Backend integration、Runtime 门禁、E2E，以及平台 / lite / runtime 三镜像 build smoke（只构建不推送）。定时与手动还会执行全部 E2E project；`cli-contract` 仅在定时/手动触发（依赖外部 agent-kit 仓库）。
-- Release：`platform-release.yml` 先调用 reusable-quality（`full=true`，E2E 全量），通过后由本仓构建并推送 Runtime、常规平台、SQLite 轻量三类镜像到 Docker Hub 与阿里云 ACR。
+- PR：`platform-test.yml` 调用 reusable-quality 执行快速门禁（Backend unit/api、Editor、contracts、render-contracts、renderer、gateway）；当 `runtime/` 或根 pnpm workspace、锁文件、工具链配置变化时，额外执行 Runtime 门禁。
+- 全量测试：`platform-test.yml` 在 `main` push、每周一定时任务或手动触发且 `full_tests=true` 时，在快速门禁基础上补充 Backend integration、Runtime 门禁、E2E，以及平台 / lite / runtime / renderer 四类镜像构建与实际启动 smoke（不推送）。定时与手动还会执行全部 E2E project；`cli-contract` 仅在定时/手动触发（依赖外部 agent-kit 仓库）。
+- Release：`platform-release.yml` 先调用 reusable-quality（`full=true`，E2E 全量），通过后构建镜像并复用 `.github/actions/check-image` 验证实际启动，再由本仓推送 Runtime、Renderer、常规平台、SQLite 轻量四类镜像到 Docker Hub 与阿里云 ACR。
 - Docker Hub 配置：
   - `vars.DOCKER_USERNAME`
   - `secrets.DOCKER_PASSWORD`
@@ -32,6 +34,9 @@
 稳定 Release 会推送：
 
 ```text
+docker.io/llmxpm/web-presentation-renderer:<release_tag>
+docker.io/llmxpm/web-presentation-renderer:latest
+docker.io/llmxpm/web-presentation-renderer:sha-<commit_sha>
 docker.io/llmxpm/web-runtime-vue:<release_tag>
 docker.io/llmxpm/web-runtime-vue:latest
 docker.io/llmxpm/web-runtime-vue:sha-<commit_sha>
@@ -39,6 +44,9 @@ docker.io/llmxpm/web-presentation:<release_tag>
 docker.io/llmxpm/web-presentation:latest
 docker.io/llmxpm/web-presentation:sqlite-lite-<release_tag>
 docker.io/llmxpm/web-presentation:sqlite-lite
+${ACR_REGISTRY}/${ACR_NAMESPACE}/web-presentation-renderer:<release_tag>
+${ACR_REGISTRY}/${ACR_NAMESPACE}/web-presentation-renderer:latest
+${ACR_REGISTRY}/${ACR_NAMESPACE}/web-presentation-renderer:sha-<commit_sha>
 ${ACR_REGISTRY}/${ACR_NAMESPACE}/web-runtime-vue:<release_tag>
 ${ACR_REGISTRY}/${ACR_NAMESPACE}/web-runtime-vue:latest
 ${ACR_REGISTRY}/${ACR_NAMESPACE}/web-runtime-vue:sha-<commit_sha>
@@ -66,7 +74,7 @@ Pre-release 只推送固定版本标签，不移动 `latest` 与 `sqlite-lite`�
 - `deploy/compose/compose.yml`：外部 PostgreSQL/Redis 简化版，环境变量直接写在 compose 内。
 - `deploy/compose/compose.sqlite-lite.yml`：SQLite + memory runtime 轻量单容器版，使用 `llmxpm/web-presentation:sqlite-lite`。
 - `deploy/compose/compose.with-deps.yml`：内置 PostgreSQL/Redis 简化版，随应用一起启动 PostgreSQL 与 Redis，环境变量直接写在 compose 内。
-- `deploy/compose/compose.prod.yml`：production env 版，拆分迁移、Backend、Runtime 与 Gateway，并通过 `env_file: .env` 读取环境变量。
+- `deploy/compose/compose.prod.yml`：production env 版，拆分迁移、Backend、Runtime 与 Gateway，并通过 `env_file: ../.env` 读取 `deploy/.env`。
 - `deploy/.env.example`：仅供 production env 版复制为 `deploy/.env` 使用。
 
 SQLite 轻量单容器版启动方式：
@@ -87,13 +95,13 @@ docker compose -f compose/compose.with-deps.yml pull
 docker compose -f compose/compose.with-deps.yml up -d
 ```
 
-外部依赖简化版使用默认 `compose/compose.yml`；production env 版需要先复制 `deploy/.env.example` 为 `deploy/.env`，再将命令中的 compose 文件改为 `compose/compose.prod.yml`。完整部署、升级、回滚和运维检查流程见 [生产部署指南](./README.md)。
+外部依赖简化版使用默认 `compose/compose.yml`；production env 版需要先复制 `deploy/.env.example` 为 `deploy/.env`，再将命令中的 compose 文件改为 `compose/compose.prod.yml`。所有模板的共享密钥文件位于 `deploy/secrets/render_service_credential`，Compose 使用 `../secrets/render_service_credential` 引用。创建方法见 [环境变量说明](./env-vars.md)。完整部署、升级、回滚和运维检查流程见 [生产部署指南](./README.md)。
 
 正式部署前必须替换数据库密码、默认管理员密码和 `AI_SECRET_ENCRYPTION_KEY`。`AI_SECRET_ENCRYPTION_KEY` 必须是 Fernet 密钥，即 32 字节随机值的 URL-safe base64 编码，通常长度为 44 个字符并以 `=` 结尾；可用 `python -c "import base64, os; print(base64.urlsafe_b64encode(os.urandom(32)).decode())"` 生成。部署后应长期保存，随意更换会导致已有用户模型凭证密文无法解密。
 
 AI 会话、run、事件、消息、工具调用和 HITL 状态写入 Backend 主库中的 `ai_agent_*` 表，随常规数据库备份和 Alembic 迁移一起管理。
 
-SQLite 轻量单容器版中，`llmxpm/web-presentation:sqlite-lite` 只启动一个长期运行的 `platform-lite` 容器。该容器入口脚本会先执行 `alembic upgrade head`，再同时启动：
+SQLite 轻量版运行 `platform-lite` 与独立 `renderer` 两个长期容器；其中 `llmxpm/web-presentation:sqlite-lite` 启动 `platform-lite`。该容器入口脚本会先执行 `alembic upgrade head`，再同时启动：
 
 - `uvicorn app.main:app --host 0.0.0.0 --port 8000 --no-access-log`
 - `node node_modules/vite/bin/vite.js`
@@ -109,6 +117,8 @@ production env 版中，同一个平台镜像会拆分为三个容器：
 - `backend-migrate`：执行 `alembic upgrade head`
 - `backend`：执行 `uvicorn app.main:app --host 0.0.0.0 --port 8000 --no-access-log`
 - `gateway`：执行 `nginx -g 'daemon off;'`，托管 Editor 并代理 Backend/Runtime
+
+Renderer 同样必须固定为 `llmxpm/web-presentation-renderer:<release_tag>`，与平台和 Runtime 一起升级或回滚。
 
 常规 compose 默认跟随 `latest`，SQLite 轻量 compose 默认跟随 `sqlite-lite`。如果需要严格锁定 Runtime 与平台版本，常规部署应同时把对应 compose 文件中的平台 image 改为 `llmxpm/web-presentation:<release_tag>`，把 Runtime image 改为 `llmxpm/web-runtime-vue:<release_tag>`；SQLite 轻量单容器版应把 image 改为 `llmxpm/web-presentation:sqlite-lite-<release_tag>`。不要只回滚平台镜像或只回滚 Runtime 镜像；数据库迁移一旦前进，平台镜像必须仍然包含数据库 `alembic_version` 指向的 revision 文件。
 

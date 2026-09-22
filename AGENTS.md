@@ -10,6 +10,7 @@
 - 每个源代码文件开头应包含文件功能描述，Markdown 文件除外。
 - 为函数补充中文注释，优先解释职责、输入输出和关键约束，避免重复代码字面含义。
 - 前端使用根目录 `pnpm` workspace（唯一 `pnpm-lock.yaml`）管理根工具链、`editor` 与 `runtime`；Python 侧使用根目录 `uv` workspace（唯一 `uv.lock`）管理 `backend`、`renderer`、`packages/render-contracts`，虚拟环境默认在仓库根 `.venv`。
+- Python workspace 成员使用独立顶层包名：Backend 为 `app`，Renderer 为 `wp_renderer`，契约为 `render_contracts`；新增成员不得依赖启动目录或 `sys.path` 注入消除重名。
 - 项目通常已经启动，不要反复启动服务；需要确认运行态时先查看现有进程、端口或文档说明。
 - 可能存在用户未提交改动；不要回滚、覆盖或格式化无关文件。
 - ORM 时间列统一使用 `app.db.types.UTCDateTime`，显式取时使用 `utc_now()`；历史无时区值直接补 UTC。Editor 时间解析复用 `parseApiDate()`，展示时区以 Backend `APP_TIMEZONE` 为准，详细规则见 [`docs/developer/backend/time-handling.md`](./docs/developer/backend/time-handling.md)。
@@ -123,7 +124,7 @@ Editor 是创作工作台，负责登录、工作空间、项目、页面、组�
 
 开发约束：
 
-- 不导入 `backend/app`；页面布局分析脚本由 `app/engine/page_render_*.py` 与 `layout_scripts.py` 统一维护，不得复制多份。组件远程渲染诊断协议保留在契约与 Renderer，内容助手业务入口本迭代不调用。
+- 不导入 `backend/app`；页面布局分析脚本由 `wp_renderer/engine/page_render_*.py` 与 `layout_scripts.py` 统一维护，不得复制多份。组件远程渲染诊断协议保留在契约与 Renderer，内容助手业务入口本迭代不调用。
 - 控制 API 使用服务身份凭证；浏览器网络不能访问控制 API。凭证缺失/空文件必须 fail-closed。
 - 每 attempt 新建 Chromium 与 Context，不跨请求复用；禁止对 Playwright asyncio Task 直接 `cancel()`。
 - 改动执行、取消、期限或产物协议时，同步更新 `packages/render-contracts` 与 Backend 协调器测试。
@@ -135,6 +136,7 @@ Editor 是创作工作台，负责登录、工作空间、项目、页面、组�
 Runtime 负责：
 
 - 基于 Vue/Vite 的页面预览、组件预览、截图、诊断和构建。
+- Runtime 的 Vite server 和动态构建工具属于生产执行依赖；镜像必须通过生产依赖裁剪后的真实启动验证。
 - 维护 `src/runtime-kit/manifest/runtime-kit.manifest.json`，作为 Backend 校验页面源码、工作空间组件源码和 previewSchema 可导入能力的公开清单。
 - 提供版本化 `@runtime-kit` 公共能力，供页面源码、工作空间组件和 AI 生成内容使用。
 
@@ -163,6 +165,9 @@ pnpm run test:editor:gate
 pnpm run test:runtime
 pnpm run test:runtime:gate
 pnpm run test:contracts
+pnpm run test:repository
+pnpm run test:python-workspace
+pnpm run test:contracts:docker-context
 pnpm run test:contracts:gateway
 pnpm run test:contracts:cli-skill
 pnpm run test:render-contracts
@@ -179,10 +184,12 @@ pnpm run test:e2e:all
 - `test:editor` 只执行 Editor Vitest；`test:editor:check` 执行类型检查；`test:editor:build` 执行生产构建；需要完整 Editor 质量门禁时使用 `test:editor:gate`。
 - `test:runtime` 只执行 Runtime Vitest；需要 Runtime 完整门禁时使用 `test:runtime:gate`。
 - `test:contracts` 是根仓跨模块契约测试，不等同于 Backend 自身的 `backend/tests/contracts`；`test:contracts:gateway` 执行真实 Nginx 网关契约回归，`test:contracts:cli-skill` 执行 CLI Skill 示例契约测试。
-- `test:render-contracts` 运行 `packages/render-contracts` 契约单测；`test:renderer` 只跑 Renderer 非 e2e 单测；`test:render-e2e` 依赖真实 Chromium（当前用例集可能为空，以 `renderer/tests` 中 `-m e2e` 标记为准）。
+- `test:repository` 检查文档链接、部署边界和环境覆盖；`test:python-workspace` 在全成员共装环境验证包解析与根目录 CLI；`test:contracts:docker-context` 用合成配置验证 Docker 排除规则。
+- `test:render-contracts` 运行 `packages/render-contracts` 契约单测；`test:renderer` 运行 Renderer 单测；`test:render-e2e` 准备 E2E 环境并运行真实页面截图 smoke，覆盖 Backend→Renderer→Runtime 和 PNG 下载，必须安装 Node/Python 两套 Playwright Chromium。
 - `test:e2e:run` 只执行 Playwright；`test:e2e` 会先重置并播种 smoke 数据、确认服务，再执行 Playwright。
 - `test:e2e:run` / `test:e2e` 默认只运行 `auth + smoke`；扩展回归使用 `test:e2e:regression`，全部 project 使用 `test:e2e:all`。
 - E2E 报告和失败产物统一写入 `test-results/e2e/`。
+- E2E 服务拓扑包含 Backend、Editor、Runtime、Renderer；测试必须覆盖远程截图实际产物，不以按钮可见或占位断言代替。交付 Dockerfile 必须纳入镜像构建、实际启动与发布矩阵。
 
 涉及以下范围时应特别补充验证：
 

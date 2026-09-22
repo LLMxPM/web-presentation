@@ -1,6 +1,8 @@
 /**
  * 文件功能：集中生成平台 E2E 测试数据库环境变量，避免本地测试误用开发库。
  */
+import { buildE2eRenderEnv } from './e2e-render-env.mjs'
+import { resolveServiceUrls } from './service-env.mjs'
 
 export const E2E_DATABASE_MARKER = '_e2e'
 export const DEFAULT_E2E_DATABASE_URL =
@@ -10,9 +12,14 @@ export const DEFAULT_E2E_REDIS_KEY_PREFIX = 'web_presentation_e2e'
 
 export function buildE2eBackendEnv(extraEnv = {}) {
   const databaseUrl = resolveE2eDatabaseUrl()
+  const urls = resolveServiceUrls()
   return {
     ...process.env,
     ...extraEnv,
+    ...buildE2eRenderEnv(),
+    BACKEND_PUBLIC_BASE_URL: urls.backend,
+    RUNTIME_BASE_URL: urls.runtime,
+    RUNTIME_PUBLIC_BASE_URL: urls.runtime,
     DATABASE_URL: databaseUrl,
     AI_DB_URL: process.env.E2E_AI_DB_URL || '',
     REDIS_URL: process.env.E2E_REDIS_URL || DEFAULT_E2E_REDIS_URL,

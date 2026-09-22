@@ -16,7 +16,7 @@ class AppSettings(BaseSettings):
     """应用配置模型，负责约束数据库、鉴权和跨域等关键参数。"""
 
     model_config = SettingsConfigDict(
-        env_file=(_REPO_ROOT / ".env", _BACKEND_DIR / ".env", ".env"),
+        env_file=(_REPO_ROOT / ".env", _BACKEND_DIR / ".env"),
         env_file_encoding="utf-8",
         extra="ignore",
     )
@@ -533,8 +533,8 @@ def _iter_settings_env_files() -> list[Path]:
     """列出配置可能读取的 .env 文件路径，供废弃键扫描。"""
 
     candidates = [
-        Path.cwd() / ".env",
-        Path(__file__).resolve().parents[2] / ".env",
+        _REPO_ROOT / ".env",
+        _BACKEND_DIR / ".env",
     ]
     seen: set[Path] = set()
     result: list[Path] = []

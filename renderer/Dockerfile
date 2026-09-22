@@ -20,16 +20,17 @@ COPY pyproject.toml uv.lock ./
 COPY backend/pyproject.toml ./backend/
 COPY renderer/pyproject.toml ./renderer/
 COPY packages/render-contracts /app/packages/render-contracts
-COPY renderer/app /app/renderer/app
+COPY renderer/wp_renderer /app/renderer/wp_renderer
 
 RUN uv sync --package web-presentation-renderer --frozen --no-dev --no-cache \
     && playwright install --with-deps chromium \
+    && apt-get install -y --no-install-recommends curl \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app/renderer
 
-RUN python -c "import render_contracts, app.main"
+RUN python -c "import render_contracts, wp_renderer"
 
 EXPOSE 7400
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "7400"]
+CMD ["uvicorn", "wp_renderer.main:app", "--host", "0.0.0.0", "--port", "7400"]

@@ -9,10 +9,6 @@ import sys
 
 import pytest
 
-ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT))
-sys.path.insert(0, str(ROOT.parent / "packages" / "render-contracts" / "src"))
-
 # 测试使用固定服务凭证；未设置时 SlotController 校验会失败。
 import os  # noqa: E402
 
@@ -20,7 +16,7 @@ os.environ.setdefault("RENDER_SERVICE_CREDENTIAL", "renderer-test-secret")
 os.environ.setdefault("RENDER_WORKER_ID", "renderer-local")
 os.environ.setdefault("RENDER_WORKER_EPOCH", "epoch-1")
 
-from app.control.slot import SlotController, SlotExecution, _is_safe_artifact_name  # noqa: E402
+from wp_renderer.control.slot import SlotController, SlotExecution, _is_safe_artifact_name  # noqa: E402
 from render_contracts.constants import (  # noqa: E402
     PROTOCOL_VERSION,
     RESOURCE_STATE_RELEASED,
@@ -157,7 +153,7 @@ def test_same_attempt_retry_returns_existing_receipt_before_ticket_validation() 
 def test_request_navigation_check_calls_playwright_method() -> None:
     """导航判断必须调用 Playwright 方法，不能把方法对象本身当作布尔值。"""
 
-    from app.engine.executor import _request_is_navigation
+    from wp_renderer.engine.executor import _request_is_navigation
 
     class _Request:
         def is_navigation_request(self) -> bool:
@@ -170,7 +166,7 @@ def test_admission_ticket_requires_next_slot_generation() -> None:
     """票据必须绑定 worker.slot_generation+1；严格相等，首次接管不得 403。"""
 
     async def _scenario() -> None:
-        import app.engine.executor as executor_module
+        import wp_renderer.engine.executor as executor_module
 
         class _HoldExecutor:
             def __init__(self, *, settings, slot, execution) -> None:
@@ -247,7 +243,7 @@ def test_cancellation_before_post_does_not_start_browser() -> None:
 def test_should_attach_initial_preview_headers_only_document() -> None:
     """仅初始文档导航可附带预览鉴权头。"""
 
-    from app.engine.executor import _should_attach_initial_preview_headers
+    from wp_renderer.engine.executor import _should_attach_initial_preview_headers
 
     assert _should_attach_initial_preview_headers(
         request_url="http://127.0.0.1:7373/__preview?token=abc",
@@ -272,7 +268,7 @@ def test_should_attach_initial_preview_headers_only_document() -> None:
 def test_layout_script_meta_matches_contract() -> None:
     """页面布局脚本 meta 必须输出 canvas_size + threshold_scale。"""
 
-    from app.engine.layout_scripts import build_page_render_layout_script
+    from wp_renderer.engine.layout_scripts import build_page_render_layout_script
 
     script = build_page_render_layout_script()
     assert "canvas_size" in script
@@ -282,7 +278,7 @@ def test_layout_script_meta_matches_contract() -> None:
 def test_component_script_requires_ready_handshake() -> None:
     """组件脚本必须等待 component-preview ready/settled 握手。"""
 
-    from app.engine.layout_scripts import build_component_render_layout_script
+    from wp_renderer.engine.layout_scripts import build_component_render_layout_script
 
     script = build_component_render_layout_script()
     assert "component-preview:ready" in script
@@ -293,7 +289,7 @@ def test_component_script_requires_ready_handshake() -> None:
 def test_component_message_capture_is_installed_before_navigation() -> None:
     """组件 ready 消息监听脚本必须在文档导航前注入。"""
 
-    from app.engine.executor import _COMPONENT_MESSAGE_CAPTURE_SCRIPT
+    from wp_renderer.engine.executor import _COMPONENT_MESSAGE_CAPTURE_SCRIPT
 
     assert "window.addEventListener('message'" in _COMPONENT_MESSAGE_CAPTURE_SCRIPT
     assert "component-preview:" in _COMPONENT_MESSAGE_CAPTURE_SCRIPT
@@ -302,7 +298,7 @@ def test_component_message_capture_is_installed_before_navigation() -> None:
 def test_credential_file_empty_fails_closed(tmp_path: Path) -> None:
     """密钥文件为空时配置加载必须失败，禁止回退空 HMAC 密钥。"""
 
-    from app.config import RendererSettings
+    from wp_renderer.config import RendererSettings
 
     empty_file = tmp_path / "empty.secret"
     empty_file.write_bytes(b"   \n")
@@ -313,7 +309,7 @@ def test_credential_file_empty_fails_closed(tmp_path: Path) -> None:
 def test_credential_file_missing_fails_closed(tmp_path: Path) -> None:
     """密钥文件缺失时配置加载必须失败。"""
 
-    from app.config import RendererSettings
+    from wp_renderer.config import RendererSettings
 
     with pytest.raises(Exception):
         RendererSettings(
@@ -325,7 +321,7 @@ def test_credential_file_missing_fails_closed(tmp_path: Path) -> None:
 def test_credential_secret_never_returns_empty_bytes(tmp_path: Path) -> None:
     """credential_secret 读取阶段同样 fail-closed，绝不返回空字节。"""
 
-    from app.config import RendererSettings
+    from wp_renderer.config import RendererSettings
 
     secret_file = tmp_path / "ok.secret"
     secret_file.write_bytes(b"strong-render-secret\n")
@@ -344,7 +340,7 @@ def test_credential_secret_never_returns_empty_bytes(tmp_path: Path) -> None:
 def test_inline_placeholder_credential_rejected() -> None:
     """内联占位密钥继续拒绝。"""
 
-    from app.config import RendererSettings
+    from wp_renderer.config import RendererSettings
 
     with pytest.raises(Exception):
         RendererSettings(render_service_credential="change-me", render_service_credential_file=None)
@@ -354,7 +350,7 @@ def test_receipt_snapshots_slot_generation_at_accept() -> None:
     """回执 generation 必须使用接管时快照，而非 live slot_generation。"""
 
     async def _scenario() -> None:
-        import app.engine.executor as executor_module
+        import wp_renderer.engine.executor as executor_module
 
         class _HoldExecutor:
             """模拟执行器：shutdown() 解除阻塞，避免 asyncio.run 收尾卡住。"""
@@ -447,7 +443,7 @@ def test_expired_receipt_cleanup_happens_before_history_prune(tmp_path: Path) ->
 
     from render_contracts.schema import ExecutionResult
 
-    from app.config import RendererSettings
+    from wp_renderer.config import RendererSettings
 
     slot = SlotController(worker_id="renderer-local", worker_epoch="epoch-1")
     slot.settings = RendererSettings(
@@ -497,7 +493,7 @@ def test_expired_receipt_cleanup_happens_before_history_prune(tmp_path: Path) ->
 def test_success_result_metadata_does_not_claim_cleaned() -> None:
     """成功结果骨架不得在产物仍 retained 时声称 cleaned_at/released。"""
 
-    from app.engine.executor import RenderExecutor
+    from wp_renderer.engine.executor import RenderExecutor
 
     request = _make_request(attempt_id="meta-1")
     execution = SlotExecution(request=request, accepted_at=datetime.now(UTC), slot_generation=2)
@@ -513,7 +509,7 @@ def test_executor_timeout_does_not_cancel_playwright_awaitable() -> None:
     """Renderer 阶段超时只能返回错误，不能取消仍需由 shutdown 解除的底层任务。"""
 
     async def _scenario() -> None:
-        from app.engine.executor import DeadlineClock, RenderExecutor
+        from wp_renderer.engine.executor import DeadlineClock, RenderExecutor
 
         request = _make_request(attempt_id="bounded-timeout")
         execution = SlotExecution(request=request, accepted_at=datetime.now(UTC), slot_generation=1)
@@ -539,7 +535,7 @@ def test_cancel_during_run_interrupts_and_shuts_down_executor() -> None:
     """运行中取消须置位 cancel_requested 并调用 executor.shutdown()。"""
 
     async def _scenario() -> None:
-        import app.engine.executor as executor_module
+        import wp_renderer.engine.executor as executor_module
 
         shutdown_calls = {"count": 0}
 
@@ -615,7 +611,7 @@ def test_artifact_name_and_path_safety() -> None:
 def test_navigation_url_allowlist_blocks_metadata_hosts() -> None:
     """导航 URL 仅允许 http/https，并拦截元数据主机。"""
 
-    from app.engine.executor import assert_safe_navigation_url, is_control_api_target
+    from wp_renderer.engine.executor import assert_safe_navigation_url, is_control_api_target
 
     assert_safe_navigation_url("http://127.0.0.1:7373/preview")
     assert_safe_navigation_url("https://preview.example.com/page")

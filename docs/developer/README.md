@@ -24,6 +24,7 @@
 | :--- | :--- |
 | [架构](./architecture/overview.md) | 模块职责、数据模型、预览构建链路、Runtime 接入和权限 |
 | [Backend](./backend/README.md) | API 分层、AI Agent、工具规格、预览 artifact 和排障 |
+| [Renderer](../../renderer/README.md) | 独立 Chromium 服务、包边界、配置和真实截图验证 |
 | [Editor](./editor/README.md) | 前端结构、AI 侧边栏、状态管理和测试约定 |
 | [Runtime 接入](./runtime-integration/README.md) | 运行时架构、Runtime Kit manifest、previewSchema、构建产物和配置模板 |
 | [测试](./testing/README.md) | 测试分层、命令、契约测试和 E2E smoke |

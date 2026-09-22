@@ -53,6 +53,11 @@ jobs:
             runtime_changed:
               - 'runtime'
               - 'runtime/**'
+              - 'package.json'
+              - 'pnpm-lock.yaml'
+              - 'pnpm-workspace.yaml'
+              - '.github/workflows/platform-test.yml'
+              - '.github/workflows/reusable-quality.yml'
 
   quality:
     needs:
@@ -89,6 +94,11 @@ jobs:
             context: .
             tag: web-runtime-vue:ci-smoke
             cache_scope: runtime
+          - name: renderer
+            file: renderer/Dockerfile
+            context: .
+            tag: web-presentation-renderer:ci-smoke
+            cache_scope: renderer
     name: platform-image-build-smoke (${{ matrix.name }})
     steps:
       - uses: actions/checkout@v4
@@ -105,6 +115,13 @@ jobs:
           tags: ${{ matrix.tag }}
           cache-from: type=gha,scope=${{ matrix.cache_scope }}
           cache-to: type=gha,mode=max,scope=${{ matrix.cache_scope }}
+      # 多架构构建后单独加载 amd64 产物，验证实际入口和健康探针。
+      - uses: ./.github/actions/check-image
+        with:
+          file: ${{ matrix.file }}
+          variant: ${{ matrix.name }}
+          tag: ${{ matrix.tag }}
+          cache-scope: ${{ matrix.cache_scope }}
 
   # CLI 跨仓契约依赖外部仓库，降级为定时/手动，不阻塞 PR 与 main 门禁。
   cli-contract:

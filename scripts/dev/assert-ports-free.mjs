@@ -12,7 +12,7 @@ import { pathToFileURL } from 'node:url'
 
 import { resolveServiceUrls } from '../testing/service-env.mjs'
 
-const DEFAULT_PORTS = { backend: 8000, editor: 5173, runtime: 7373 }
+const DEFAULT_PORTS = { backend: 8000, editor: 5173, runtime: 7373, renderer: 7400 }
 const DEPENDENCY_PORTS = [
   { label: 'PostgreSQL', port: 5432 },
   { label: 'Redis', port: 6379 },
@@ -58,6 +58,7 @@ export async function assertPortsFree() {
     { label: 'Backend', port: resolvePort(urls.backend, DEFAULT_PORTS.backend) },
     { label: 'Editor', port: resolvePort(urls.editor, DEFAULT_PORTS.editor) },
     { label: 'Runtime', port: resolvePort(urls.runtime, DEFAULT_PORTS.runtime) },
+    { label: 'Renderer', port: resolvePort(urls.renderer, DEFAULT_PORTS.renderer) },
   ]
 
   const reuseBackend = String(process.env.TESTING_REUSE_BACKEND || '').toLowerCase() === 'true'
@@ -96,7 +97,7 @@ export async function assertPortsFree() {
     return false
   }
 
-  console.log('[testing] 端口校验通过：Backend/Editor/Runtime 端口空闲，E2E 依赖已就绪')
+  console.log('[testing] 端口校验通过：Backend/Editor/Runtime/Renderer 端口空闲，E2E 依赖已就绪')
   return true
 }
 

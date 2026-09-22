@@ -44,6 +44,12 @@ uv sync --package backend --group dev
 # 或全成员：uv sync --all-packages --all-groups --all-extras
 ```
 
+以下操作在 `backend/` 目录执行：
+
+```powershell
+cd backend
+```
+
 执行数据库迁移：
 
 ```powershell

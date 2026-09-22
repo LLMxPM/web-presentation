@@ -10,12 +10,13 @@
 
 ## 本地启动总览
 
-本地完整联调通常需要四类进程：
+本地完整联调需要基础服务与四个应用进程：
 
 1. `scripts/dev/compose.infra.yml`：只启动 PostgreSQL 与 Redis。
 2. Backend：监听 `127.0.0.1:8000`，负责 API、登录、AI Agent、预览 artifact、截图和构建任务。
-3. Runtime：监听 `127.0.0.1:7373`，负责预览、代码检查、截图和构建。
+3. Runtime：监听 `127.0.0.1:7373`，负责预览、代码检查和构建。
 4. Editor：监听 Vite 默认端口，负责创作工作台页面。
+5. Renderer：监听 `127.0.0.1:7400`，运行真实 Chromium 截图和渲染诊断。
 
 如果这些服务已经在本机运行，先用 `docker compose -f .\scripts\dev\compose.infra.yml ps` 或查看现有终端确认状态，不要重复启动。
 
@@ -31,12 +32,6 @@ docker compose -f .\scripts\dev\compose.infra.yml up -d
 
 Backend 测试默认会把 `REDIS_URL` 设置为 `memory://test`，不依赖本机 Redis。手动联调预览、截图、代码检查、构建等临时 artifact 能力时必须启动 Redis；AI run/HITL 状态由 Backend 主库中的平台运行态表承担，不再依赖 Redis。
 
-## Backend 本地启动
-
-首次启动前在新的终端中，从仓库根目录进入 `backend/` 并准备环境变量和依赖：
-
-```powershell
-cd .\backend
 ## 环境变量准备（全仓统一）
 
 仓库支持全仓环境变量统一管理。推荐在根目录下一次性初始化，各子模块（Backend、Runtime、Renderer、Editor）会自动向上级联继承：
@@ -67,6 +62,19 @@ uv run uvicorn app.main:app --reload
 ```
 
 默认管理员账号来自根目录 `.env`（或 `backend/.env`）：`admin` / `Admin123456`。如果需要调整默认账号，修改 `DEFAULT_ADMIN_USERNAME`、`DEFAULT_ADMIN_PASSWORD` 和 `DEFAULT_ADMIN_DISPLAY_NAME` 后重新启动 Backend。
+
+## Renderer 本地启动
+
+依赖同步后，在仓库根目录安装 Python Playwright 对应的 Chromium，并使用独立包入口启动：
+
+```powershell
+uv run --project renderer playwright install chromium
+uv run --project renderer uvicorn wp_renderer.main:app --host 127.0.0.1 --port 7400
+```
+
+Linux 首次安装浏览器时使用 `playwright install --with-deps chromium`。Node Playwright 与 Python Playwright 的浏览器版本分别由 pnpm 和 uv 锁文件约束，两者都需要安装。
+
+Renderer 的 `RENDER_WORKER_ID`、共享凭据与 profile 必须匹配 Backend 配置。启动流程及镜像说明见 [Renderer README](../../renderer/README.md)。
 
 ## Runtime 本地启动
 
@@ -118,12 +126,13 @@ pnpm run test:e2e
 - `pnpm run test:e2e:run`：只执行 Playwright。
 - `pnpm run test:e2e`：先重置/播种 smoke 数据并确认服务，再执行 Playwright smoke。
 
-E2E 入口（`test:e2e`、`test:e2e:prepare`、`test:e2e:all`）默认由脚本自启服务：未显式设置 `TESTING_START_*` 时会先校验 8000/5173/7373 端口与本地 PostgreSQL/Redis 依赖，端口被占用时报错并给出提示。如果想复用已在运行的服务，可显式设置：
+E2E 入口（`test:e2e`、`test:e2e:prepare`、`test:e2e:all`）默认由脚本自启服务：未显式设置 `TESTING_START_*` 时会先校验 8000/5173/7373/7400 端口与本地 PostgreSQL/Redis 依赖，端口被占用时报错并给出提示。如果想复用已在运行的服务，可显式设置：
 
 ```powershell
 $env:TESTING_REUSE_BACKEND='true'   # 复用 Backend（必须满足 E2E 测试指纹）
 $env:TESTING_START_EDITOR='true'    # 未在运行时由脚本启动
 $env:TESTING_START_RUNTIME='true'
+$env:TESTING_START_RENDERER='true'
 pnpm run test:e2e
 ```
 

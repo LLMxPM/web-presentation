@@ -15,7 +15,6 @@ export default defineConfig(({ mode }) => {
   const env = {
     ...loadEnv(mode, repoRoot, ''),
     ...loadEnv(mode, currentDir, ''),
-    ...loadEnv(mode, process.cwd(), ''),
   }
   const proxyTarget = env.VITE_API_PROXY_TARGET || 'http://127.0.0.1:8000'
 

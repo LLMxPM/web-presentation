@@ -178,7 +178,7 @@ services:
 
 secrets:
   render_service_credential:
-    file: ./secrets/render_service_credential
+    file: ../secrets/render_service_credential
 
 volumes:
   backend-data:

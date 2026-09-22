@@ -10,9 +10,10 @@
 import fs from 'node:fs'
 import path from 'node:path'
 
-import { spawnPersistentBackground, sleep } from '../testing/process-utils.mjs'
+import { spawnPersistentBackground, sleep, runCommandSync } from '../testing/process-utils.mjs'
 import { resolveServiceUrls } from '../testing/service-env.mjs'
 import { buildE2eBackendEnv, E2E_DATABASE_MARKER } from '../testing/e2e-database-env.mjs'
+import { buildE2eRenderEnv } from '../testing/e2e-render-env.mjs'
 
 const urls = resolveServiceUrls()
 const SERVICE_LOG_DIR = path.join(process.cwd(), 'test-results', 'e2e', 'services')
@@ -21,32 +22,50 @@ async function main() {
   const shouldStartBackend = String(process.env.TESTING_START_BACKEND || '').toLowerCase() === 'true'
   const shouldStartEditor = String(process.env.TESTING_START_EDITOR || '').toLowerCase() === 'true'
   const shouldStartRuntime = String(process.env.TESTING_START_RUNTIME || '').toLowerCase() === 'true'
+  const shouldStartRenderer = String(process.env.TESTING_START_RENDERER || '').toLowerCase() === 'true'
   const shouldReuseBackend = String(process.env.TESTING_REUSE_BACKEND || '').toLowerCase() === 'true'
 
+  await ensureServiceReady({
+    label: 'renderer',
+    url: `${urls.renderer}/readyz`,
+    shouldStart: shouldStartRenderer,
+    start: () => spawnPersistentBackground('uv', [
+      'run', '--project', 'renderer', 'uvicorn', 'wp_renderer.main:app',
+      '--host', '127.0.0.1', '--port', new URL(urls.renderer).port || '7400',
+    ], {
+      cwd: process.cwd(),
+      env: { ...process.env, ...buildE2eRenderEnv() },
+      ...serviceLogStdio('renderer'),
+    }),
+  })
+  const rendererCheck = runCommandSync('uv', ['run', '--project', 'backend', 'python', 'scripts/testing/check-renderer-ready.py'], {
+    env: buildE2eBackendEnv(),
+  })
+  if (rendererCheck !== 0) throw new Error('Renderer 的服务凭据、Worker ID 或协议不符合 E2E 配置。')
   await ensureBackendReady({ shouldStart: shouldStartBackend, allowReuse: shouldReuseBackend || !shouldStartBackend })
   await ensureServiceReady({
     label: 'editor',
     url: urls.editor,
     shouldStart: shouldStartEditor,
     start: () =>
-      spawnPersistentBackground('pnpm', ['--dir', 'editor', 'dev', '--host', '127.0.0.1', '--port', '5173'], {
+      spawnPersistentBackground('pnpm', ['--dir', 'editor', 'dev', '--host', '127.0.0.1', '--port', new URL(urls.editor).port || '5173'], {
         cwd: process.cwd(),
-        env: process.env,
+        env: { ...process.env, VITE_API_PROXY_TARGET: urls.backend },
         ...serviceLogStdio('editor'),
       }),
   })
   await ensureServiceReady({
     label: 'runtime',
-    url: urls.runtime,
+    url: `${urls.runtime}/__runtime_healthz`,
     shouldStart: shouldStartRuntime,
     start: () =>
-      spawnPersistentBackground('pnpm', ['--dir', 'runtime', 'dev', '--host', '127.0.0.1', '--port', '7373'], {
+      spawnPersistentBackground('pnpm', ['--dir', 'runtime', 'dev', '--host', '127.0.0.1', '--port', new URL(urls.runtime).port || '7373'], {
         cwd: process.cwd(),
         env: buildE2eRuntimeEnv(urls),
         ...serviceLogStdio('runtime'),
       }),
   })
-  console.log('[testing] backend/editor/runtime are ready')
+  console.log('[testing] backend/editor/runtime/renderer are ready')
 }
 
 /** 为 ensure-services 启动的服务打开独立日志文件，保留控制台摘要便于失败诊断。 */
@@ -77,7 +96,7 @@ async function ensureBackendReady({ shouldStart, allowReuse }) {
   }
 
   console.log(`[testing] starting backend: ${urls.backend}`)
-  spawnPersistentBackground('uv', ['run', 'uvicorn', 'app.main:app', '--host', '127.0.0.1', '--port', '8000'], {
+  spawnPersistentBackground('uv', ['run', 'uvicorn', 'app.main:app', '--host', '127.0.0.1', '--port', new URL(urls.backend).port || '8000'], {
     cwd: path.join(process.cwd(), 'backend'),
     env: buildE2eBackendEnv({
       AI_TEST_MODE: process.env.AI_TEST_MODE || 'mock',
@@ -161,24 +180,32 @@ function buildE2eRuntimeEnv(urls) {
     RUNTIME_PREVIEW_JWKS_URL: `${backendUrl}/.well-known/jwks.json`,
     RUNTIME_BACKEND_API_BASE_URL: backendUrl,
     RUNTIME_PUBLIC_BASE_URL: urls.runtime.replace(/\/$/, ''),
+    RUNTIME_SERVER_BASE_PATH: new URL(urls.runtime).pathname,
   }
 }
 
 /** Editor/Runtime 等非指纹敏感服务的 HTTP 就绪检查与自动启动。 */
 async function ensureServiceReady({ label, url, shouldStart, start }) {
-  try {
-    await waitForHttpReady(url)
+  if (await isHttpReady(url)) {
     console.log(`[testing] reuse running ${label}: ${url}`)
     return
-  } catch {
-    if (!shouldStart) {
-      throw new Error(`${label} is not reachable at ${url}. Set TESTING_START_${label.toUpperCase()}=true to start it automatically.`)
-    }
+  }
+  if (!shouldStart) {
+    throw new Error(`${label} is not reachable at ${url}. Set TESTING_START_${label.toUpperCase()}=true to start it automatically.`)
   }
 
   console.log(`[testing] starting ${label}: ${url}`)
   start()
   await waitForHttpReady(url)
+}
+
+/** 先做有界探测，未启动的服务直接进入启动流程；健康端点必须返回成功。 */
+async function isHttpReady(url) {
+  try {
+    return (await fetch(url, { signal: AbortSignal.timeout(2_000) })).ok
+  } catch {
+    return false
+  }
 }
 
 /** 等待 HTTP 服务就绪，超时默认 60s。 */
@@ -187,8 +214,8 @@ async function waitForHttpReady(url, { timeoutMs = 60_000, intervalMs = 1_000 } 
   let lastError = null
   while (Date.now() < deadline) {
     try {
-      const response = await fetch(url, { method: 'GET' })
-      if (response.ok || response.status === 404) {
+      const response = await fetch(url, { method: 'GET', signal: AbortSignal.timeout(2_000) })
+      if (response.ok) {
         return
       }
       lastError = new Error(`Unexpected status ${response.status} for ${url}`)

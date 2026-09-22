@@ -139,19 +139,19 @@ Backend 触发整项目构建时，Runtime 会使用专用的 `build-release-mai
 
 ### 项目内使用文档
 
-- [页面创建指南](docs/page-creation-guide.md)
-- [主题系统使用指南](docs/theme-usage-guide.md)
-- [图标系统使用指南](docs/icon-system-guide.md)
-- [路由配置指南](docs/routes-config-guide.md)
-- [组件预览 previewSchema 指南](docs/components/component-preview-schema-guide.md)
+- [页面创建指南](../docs/developer/runtime/page-creation-guide.md)
+- [主题系统使用指南](../docs/developer/runtime/theme-usage-guide.md)
+- [图标系统使用指南](../docs/developer/runtime/icon-system-guide.md)
+- [路由配置指南](../docs/developer/runtime/routes-config-guide.md)
+- [组件预览 previewSchema 指南](../docs/developer/runtime/components/component-preview-schema-guide.md)
 
 ### 外部对接文档
 
-- [SaaS 运行时架构与时序](docs/integration/runtime-architecture.md)
-- [鉴权与安全契约](docs/integration/auth-and-security.md)
-- [Backend 对接 API](docs/integration/backend-api.md)
-- [发布产物规范](docs/integration/release-artifact-spec.md)
-- [迁移说明](docs/integration/migration-guide.md)
+- [SaaS 运行时架构与时序](../docs/developer/runtime/integration/runtime-architecture.md)
+- [鉴权与安全契约](../docs/developer/runtime/integration/auth-and-security.md)
+- [Backend 对接 API](../docs/developer/runtime/integration/backend-api.md)
+- [发布产物规范](../docs/developer/runtime/integration/release-artifact-spec.md)
+- [平台接入流程](../docs/developer/runtime-integration/runtime-workflow.md)
 
 ## 说明
 

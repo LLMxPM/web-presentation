@@ -33,7 +33,7 @@ runs:
       id: playwright-cache
       with:
         path: ~/.cache/ms-playwright
-        key: ${{ runner.os }}-playwright-${{ hashFiles('package.json', 'pnpm-lock.yaml') }}
+        key: ${{ runner.os }}-playwright-${{ hashFiles('pnpm-lock.yaml', 'uv.lock') }}
         restore-keys: |
           ${{ runner.os }}-playwright-
 
@@ -42,8 +42,10 @@ runs:
     - name: 启动 E2E 依赖
       run: bash .github/scripts/start-e2e-dependencies.sh
       shell: bash
-    - run: uv sync --project backend --group dev --locked
+    - run: uv sync --all-packages --all-groups --all-extras --locked
       shell: bash
     # 浏览器文件走缓存，但系统依赖仍需在每个全新 runner 上确认安装。
     - run: pnpm exec playwright install --with-deps chromium
+      shell: bash
+    - run: uv run --project renderer --no-sync playwright install --with-deps chromium
       shell: bash

@@ -1,4 +1,4 @@
-# 文件功能：平台 Release 流水线。复用质量门禁后，由本仓构建并推送 Runtime / 平台 / SQLite lite 镜像。
+# 文件功能：平台 Release 流水线。复用质量门禁后，由本仓构建并推送 Runtime / Renderer / 平台 / SQLite lite 镜像。
 # Runtime 镜像自 vendored 起由本仓 runtime/Dockerfile 构建，不再依赖外部 web-runtime-vue 子模块 SHA 镜像。
 
 name: platform-release
@@ -67,26 +67,25 @@ jobs:
       run_runtime: true
       e2e_scope: all
 
-  build-and-push-runtime:
+  build-and-push-services:
     runs-on: ubuntu-latest
     needs:
       - release-meta
       - quality
-    outputs:
-      runtime_image: ${{ steps.meta.outputs.runtime_image }}
-      runtime_acr_image: ${{ steps.meta.outputs.runtime_acr_image }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: runtime
+            image: web-runtime-vue
+            file: runtime/Dockerfile
+            description: web-presentation Runtime Vite server image
+          - name: renderer
+            image: web-presentation-renderer
+            file: renderer/Dockerfile
+            description: web-presentation remote Chromium Renderer image
     steps:
       - uses: actions/checkout@v4
-      - id: meta
-        env:
-          ACR_REGISTRY: ${{ vars.ACR_REGISTRY }}
-          ACR_NAMESPACE: ${{ vars.ACR_NAMESPACE }}
-          RELEASE_TAG: ${{ needs.release-meta.outputs.release_tag }}
-        run: |
-          runtime_image="docker.io/llmxpm/web-runtime-vue:${RELEASE_TAG}"
-          runtime_acr_image="${ACR_REGISTRY}/${ACR_NAMESPACE}/web-runtime-vue:${RELEASE_TAG}"
-          echo "runtime_image=${runtime_image}" >> "${GITHUB_OUTPUT}"
-          echo "runtime_acr_image=${runtime_acr_image}" >> "${GITHUB_OUTPUT}"
       - uses: docker/login-action@v4
         with:
           username: ${{ vars.DOCKER_USERNAME }}
@@ -98,37 +97,43 @@ jobs:
           password: ${{ secrets.ACR_PASSWORD }}
       - uses: docker/setup-qemu-action@v4
       - uses: docker/setup-buildx-action@v4
+      - uses: ./.github/actions/check-image
+        with:
+          file: ${{ matrix.file }}
+          variant: ${{ matrix.name }}
+          tag: wp-service:startup-${{ matrix.name }}
+          cache-scope: ${{ matrix.name }}
       - id: meta-dockerhub
         uses: docker/metadata-action@v6
         with:
-          images: docker.io/llmxpm/web-runtime-vue
+          images: docker.io/llmxpm/${{ matrix.image }}
           tags: |
             type=raw,value=${{ needs.release-meta.outputs.release_tag }}
             type=raw,value=latest,enable=${{ needs.release-meta.outputs.push_latest == 'true' }}
             type=sha,format=long,prefix=sha-
           labels: |
-            org.opencontainers.image.title=web-runtime-vue
-            org.opencontainers.image.description=web-presentation Runtime Vite server image
+            org.opencontainers.image.title=${{ matrix.image }}
+            org.opencontainers.image.description=${{ matrix.description }}
             org.opencontainers.image.version=${{ needs.release-meta.outputs.release_tag }}
             org.opencontainers.image.revision=${{ github.sha }}
       - id: meta-acr
         uses: docker/metadata-action@v6
         with:
-          images: ${{ vars.ACR_REGISTRY }}/${{ vars.ACR_NAMESPACE }}/web-runtime-vue
+          images: ${{ vars.ACR_REGISTRY }}/${{ vars.ACR_NAMESPACE }}/${{ matrix.image }}
           tags: |
             type=raw,value=${{ needs.release-meta.outputs.release_tag }}
             type=raw,value=latest,enable=${{ needs.release-meta.outputs.push_latest == 'true' }}
             type=sha,format=long,prefix=sha-
           labels: |
-            org.opencontainers.image.title=web-runtime-vue
-            org.opencontainers.image.description=web-presentation Runtime Vite server image
+            org.opencontainers.image.title=${{ matrix.image }}
+            org.opencontainers.image.description=${{ matrix.description }}
             org.opencontainers.image.version=${{ needs.release-meta.outputs.release_tag }}
             org.opencontainers.image.revision=${{ github.sha }}
-      - name: Push runtime image to Docker Hub
+      - name: Push service image to Docker Hub
         uses: docker/build-push-action@v7
         with:
           context: .
-          file: runtime/Dockerfile
+          file: ${{ matrix.file }}
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.meta-dockerhub.outputs.tags }}
@@ -136,13 +141,13 @@ jobs:
           annotations: ${{ steps.meta-dockerhub.outputs.annotations }}
           provenance: true
           sbom: true
-          cache-from: type=gha,scope=runtime
-          cache-to: type=gha,mode=max,scope=runtime
-      - name: Push runtime image to ACR
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}
+      - name: Push service image to ACR
         uses: docker/build-push-action@v7
         with:
           context: .
-          file: runtime/Dockerfile
+          file: ${{ matrix.file }}
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.meta-acr.outputs.tags }}
@@ -150,15 +155,15 @@ jobs:
           annotations: ${{ steps.meta-acr.outputs.annotations }}
           provenance: false
           sbom: false
-          cache-from: type=gha,scope=runtime
-          cache-to: type=gha,mode=max,scope=runtime
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}
 
   build-and-push:
     runs-on: ubuntu-latest
     needs:
       - release-meta
       - quality
-      - build-and-push-runtime
+      - build-and-push-services
     steps:
       - uses: actions/checkout@v4
       - uses: docker/login-action@v4
@@ -172,6 +177,12 @@ jobs:
           password: ${{ secrets.ACR_PASSWORD }}
       - uses: docker/setup-qemu-action@v4
       - uses: docker/setup-buildx-action@v4
+      - uses: ./.github/actions/check-image
+        with:
+          file: deploy/docker/Dockerfile.platform
+          variant: full
+          tag: web-presentation:startup
+          cache-scope: platform
       # Docker Hub 支持 BuildKit attestation，保留 provenance/SBOM。
       - id: meta-dockerhub
         uses: docker/metadata-action@v6
@@ -185,7 +196,8 @@ jobs:
             org.opencontainers.image.description=web-presentation Backend and Editor platform image
             org.opencontainers.image.version=${{ needs.release-meta.outputs.release_tag }}
             org.opencontainers.image.revision=${{ github.sha }}
-            com.web-presentation.runtime.image=${{ needs.build-and-push-runtime.outputs.runtime_image }}
+            com.web-presentation.runtime.image=docker.io/llmxpm/web-runtime-vue:${{ needs.release-meta.outputs.release_tag }}
+            com.web-presentation.renderer.image=docker.io/llmxpm/web-presentation-renderer:${{ needs.release-meta.outputs.release_tag }}
       # 个人版/旧版 ACR 不接受 provenance 和 SBOM 生成的 OCI 附件，单独生成 ACR 标签。
       - id: meta-acr
         uses: docker/metadata-action@v6
@@ -199,7 +211,8 @@ jobs:
             org.opencontainers.image.description=web-presentation Backend and Editor platform image
             org.opencontainers.image.version=${{ needs.release-meta.outputs.release_tag }}
             org.opencontainers.image.revision=${{ github.sha }}
-            com.web-presentation.runtime.image=${{ needs.build-and-push-runtime.outputs.runtime_image }}
+            com.web-presentation.runtime.image=docker.io/llmxpm/web-runtime-vue:${{ needs.release-meta.outputs.release_tag }}
+            com.web-presentation.renderer.image=docker.io/llmxpm/web-presentation-renderer:${{ needs.release-meta.outputs.release_tag }}
       - name: Push platform image to Docker Hub
         uses: docker/build-push-action@v7
         with:
@@ -234,7 +247,7 @@ jobs:
     needs:
       - release-meta
       - quality
-      - build-and-push-runtime
+      - build-and-push-services
     steps:
       - uses: actions/checkout@v4
       - uses: docker/login-action@v4
@@ -248,6 +261,12 @@ jobs:
           password: ${{ secrets.ACR_PASSWORD }}
       - uses: docker/setup-qemu-action@v4
       - uses: docker/setup-buildx-action@v4
+      - uses: ./.github/actions/check-image
+        with:
+          file: deploy/docker/Dockerfile.lite
+          variant: lite
+          tag: web-presentation:lite-startup
+          cache-scope: platform-lite
       # Docker Hub 支持 BuildKit attestation，保留 provenance/SBOM。
       - id: meta-dockerhub
         uses: docker/metadata-action@v6

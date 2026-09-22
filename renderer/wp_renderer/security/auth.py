@@ -13,7 +13,7 @@ def require_service_token(
 ) -> str:
     """校验 Backend 服务身份 token，成功时返回主体标识。"""
 
-    from app.config import get_renderer_settings
+    from wp_renderer.config import get_renderer_settings
 
     token = x_render_service_token
     if not token and authorization and authorization.startswith("Bearer "):

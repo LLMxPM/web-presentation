@@ -31,11 +31,11 @@ from render_contracts.errors import (
 from render_contracts.schema import ArtifactDescriptor, DiagnosticItem, ExecutionResult
 from render_contracts.tokens import sha256_hex
 
-from app.engine.layout_scripts import (
+from wp_renderer.engine.layout_scripts import (
     build_component_render_layout_script,
     build_page_render_layout_script,
 )
-from app.engine.render_ready import wait_for_render_ready
+from wp_renderer.engine.render_ready import wait_for_render_ready
 
 logger = logging.getLogger(__name__)
 
@@ -521,7 +521,7 @@ def is_control_api_target(url: str) -> bool:
         if path.startswith(prefix) or path.startswith("/internal/render/v1"):
             return True
     try:
-        from app.config import get_renderer_settings
+        from wp_renderer.config import get_renderer_settings
 
         control_ports = {int(get_renderer_settings().render_port)}
     except Exception:  # noqa: BLE001

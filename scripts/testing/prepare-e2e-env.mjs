@@ -13,7 +13,7 @@ import { fileURLToPath } from 'node:url'
 
 import { runCommandSync } from './process-utils.mjs'
 
-const SELF_START_KEYS = ['TESTING_START_BACKEND', 'TESTING_START_EDITOR', 'TESTING_START_RUNTIME', 'TESTING_REUSE_BACKEND']
+const SELF_START_KEYS = ['TESTING_START_BACKEND', 'TESTING_START_EDITOR', 'TESTING_START_RUNTIME', 'TESTING_START_RENDERER', 'TESTING_REUSE_BACKEND']
 
 function main() {
   const testingScriptsDir = path.dirname(fileURLToPath(import.meta.url))
@@ -28,6 +28,7 @@ function main() {
     process.env.TESTING_START_BACKEND ||= 'true'
     process.env.TESTING_START_EDITOR ||= 'true'
     process.env.TESTING_START_RUNTIME ||= 'true'
+    process.env.TESTING_START_RENDERER ||= 'true'
     process.env.AI_TEST_MODE ||= 'mock'
   }
 

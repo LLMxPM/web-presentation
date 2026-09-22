@@ -28,7 +28,7 @@ dev = [
 render-contracts = { workspace = true }
 
 [tool.hatch.build.targets.wheel]
-packages = ["app"]
+packages = ["wp_renderer"]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
@@ -36,5 +36,4 @@ asyncio_mode = "auto"
 testpaths = ["tests"]
 markers = [
     "unit: Renderer 控制面与契约测试。",
-    "e2e: 依赖真实 Chromium 与 Runtime 的端到端渲染测试。",
 ]

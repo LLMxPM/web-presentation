@@ -77,7 +77,7 @@ jobs:
       - uses: pnpm/action-setup@v4
         with:
           version: 10.30.3
-      - run: uv sync --project packages/render-contracts
+      - run: uv sync --project packages/render-contracts --extra dev --locked
       - run: pnpm run test:render-contracts
 
   renderer-tests:
@@ -90,8 +90,21 @@ jobs:
       - uses: pnpm/action-setup@v4
         with:
           version: 10.30.3
-      - run: uv sync --project renderer --extra dev
+      - run: uv sync --project renderer --extra dev --locked
       - run: pnpm run test:renderer
+
+  python-workspace:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: 0.10.10
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.30.3
+      - run: uv sync --all-packages --all-groups --all-extras --locked
+      - run: pnpm run test:python-workspace
 
   runtime-gate:
     runs-on: ubuntu-latest
@@ -117,6 +130,7 @@ jobs:
         with:
           version: 10.30.3
       - run: pnpm run test:contracts:gateway
+      - run: pnpm run test:contracts:docker-context
 
   e2e-smoke:
     runs-on: ubuntu-latest
@@ -126,6 +140,7 @@ jobs:
       - contracts
       - render-contracts
       - renderer-tests
+      - python-workspace
       - runtime-gate
       - gateway-contract
     # runtime-gate 被跳过时仍视为可进入 E2E；其余任一失败会阻断。
@@ -137,6 +152,7 @@ jobs:
       needs.contracts.result == 'success' &&
       needs.render-contracts.result == 'success' &&
       needs.renderer-tests.result == 'success' &&
+      needs.python-workspace.result == 'success' &&
       needs.gateway-contract.result == 'success' &&
       (needs.runtime-gate.result == 'success' || needs.runtime-gate.result == 'skipped')
     steps:
@@ -153,6 +169,7 @@ jobs:
           TESTING_START_BACKEND: 'true'
           TESTING_START_EDITOR: 'true'
           TESTING_START_RUNTIME: 'true'
+          TESTING_START_RENDERER: 'true'
           AI_TEST_MODE: mock
       - if: always()
         uses: actions/upload-artifact@v4

@@ -104,6 +104,7 @@ docker compose -f compose/compose.sqlite-lite.yml up -d
 | [测试文档](./docs/developer/testing/README.md) | 测试分层、命令、契约测试和 E2E smoke |
 | [生产部署指南](./docs/developer/deployment/README.md) | compose 部署、环境变量、备份恢复、升级回滚和排障 |
 | [Runtime 运行时说明](./runtime/README.md) | 平台原生演示文稿运行时（基于 Vue 3 + Vite）的能力与配置说明 |
+| [Renderer 运行说明](./renderer/README.md) | 远程 Chromium 服务、共享凭据、真实截图验证和镜像交付 |
 
 ## 仓库结构
 

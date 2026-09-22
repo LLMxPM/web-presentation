@@ -7,9 +7,9 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from app.api.routes import router, set_slot
-from app.config import get_renderer_settings
-from app.control.slot import SlotController
+from wp_renderer.api.routes import router, set_slot
+from wp_renderer.config import get_renderer_settings
+from wp_renderer.control.slot import SlotController
 
 logger = logging.getLogger(__name__)
 

@@ -21,7 +21,6 @@ export default defineConfig(({ command, mode }) => {
   const env = {
     ...loadEnv(mode, repoRoot, ''),
     ...loadEnv(mode, __dirname, ''),
-    ...loadEnv(mode, process.cwd(), ''),
   }
   for (const [key, value] of Object.entries(env)) {
     if (process.env[key] === undefined) {

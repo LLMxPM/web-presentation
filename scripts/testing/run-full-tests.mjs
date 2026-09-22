@@ -20,6 +20,7 @@ const TEST_STEPS = [
   'test:contracts',
   'test:render-contracts',
   'test:renderer',
+  'test:python-workspace',
   'test:e2e:all',
 ]
 
@@ -34,6 +35,7 @@ function main() {
   process.env.TESTING_START_BACKEND ||= 'true'
   process.env.TESTING_START_EDITOR ||= 'true'
   process.env.TESTING_START_RUNTIME ||= 'true'
+  process.env.TESTING_START_RENDERER ||= 'true'
   process.env.AI_TEST_MODE ||= 'mock'
 
   for (const step of TEST_STEPS) {

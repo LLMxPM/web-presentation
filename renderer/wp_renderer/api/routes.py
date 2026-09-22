@@ -9,9 +9,9 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
 
-from app.config import get_renderer_settings
-from app.control.slot import SlotController
-from app.security.auth import require_service_token
+from wp_renderer.config import get_renderer_settings
+from wp_renderer.control.slot import SlotController
+from wp_renderer.security.auth import require_service_token
 from render_contracts.constants import RESOURCE_STATE_RELEASED
 from render_contracts.schema import ExecutionRequest
 

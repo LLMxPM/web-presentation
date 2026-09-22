@@ -9,7 +9,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from app.config import get_renderer_settings
+from wp_renderer.config import get_renderer_settings
 from render_contracts.constants import (
     ATTEMPT_STATUS_ACCEPTED,
     ATTEMPT_STATUS_CLEANING,
@@ -331,7 +331,7 @@ class SlotController:
     async def _run_execution(self, execution: SlotExecution) -> None:
         """在受保护任务中执行引擎，完成清理后再发布终态。"""
 
-        from app.engine.executor import RenderExecutor
+        from wp_renderer.engine.executor import RenderExecutor
 
         request = execution.request
         artifact_dir = self._artifact_dir(request.attempt_id)

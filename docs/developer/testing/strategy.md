@@ -14,7 +14,7 @@
 
 默认原则：
 
-- `runtime/` 作为独立子项目，继续维护自身测试与 CI。
+- `runtime/` 维护自身测试；CI 与根 pnpm workspace 输入统一由主仓门禁管理。
 - 根仓不复制 Runtime 私有实现测试，只做平台集成与委托校验。
 - 第一阶段不设置统一覆盖率门槛，以关键套件通过为阻断条件。
 
@@ -72,6 +72,12 @@ pnpm run test:editor:gate
 pnpm run test:runtime
 pnpm run test:runtime:gate
 pnpm run test:contracts
+pnpm run test:repository
+pnpm run test:python-workspace
+pnpm run test:contracts:docker-context
+pnpm run test:render-contracts
+pnpm run test:renderer
+pnpm run test:render-e2e
 pnpm run test:contracts:gateway
 pnpm run test:contracts:cli-skill
 pnpm run test:e2e:run
@@ -101,7 +107,7 @@ pnpm run test:all
 | `test:e2e` | 平台 E2E smoke 默认入口，等价于 `test:e2e:prepare + test:e2e:run`。 |
 | `test:e2e:regression` | 准备环境后运行 `visual-edit + ai + runtime-heavy`。 |
 | `test:e2e:all` | 准备环境后运行全部 Playwright project。 |
-| `test:all` | 本地全量入口：Backend 全部 marker + Editor gate + Runtime gate + 根仓 contracts + 全部 E2E project。脚本先校验端口与 E2E 依赖，再自动注入 `TESTING_START_*` 与 `AI_TEST_MODE=mock` 并自启服务，无需手动设置环境变量；端口被占用或依赖未启动时立即报错并给出提示。 |
+| `test:all` | 本地全量入口：Backend 全部 marker + Editor gate + Runtime gate + 根仓 contracts + 渲染契约/Renderer + Python workspace 共装验证 + 全部 E2E project。脚本先校验端口与 E2E 依赖，再自动注入 `TESTING_START_*` 与 `AI_TEST_MODE=mock` 并自启服务，无需手动设置环境变量；端口被占用或依赖未启动时立即报错并给出提示。 |
 
 辅助测试数据命令：
 
@@ -130,7 +136,7 @@ AI run 状态切换后无需执行 Redis run 迁移脚本；旧 Redis run key �
 | :--- | :--- | :--- |
 | `test-results/e2e/html-report/` | Playwright HTML reporter | E2E HTML 报告。 |
 | `test-results/e2e/artifacts/` | Playwright `outputDir` | 失败 trace、截图、视频和 `.last-run.json`。 |
-| `test-results/e2e/services/` | E2E 服务编排 | Backend、Editor、Runtime 子进程日志。 |
+| `test-results/e2e/services/` | E2E 服务编排 | Backend、Editor、Runtime、Renderer 子进程日志。 |
 | `backend/.pytest_cache/` | pytest | Backend 测试缓存，不是报告。 |
 | `.tmp/` | 手动诊断脚本 | AI run 诊断、截图排障等人工材料。 |
 | `backend/.tmp/` | Backend 本地调试 | LLM HTTP trace、本地 smoke DB 等运行态排障材料。 |
@@ -219,3 +225,13 @@ Release 发布：
 - 先在 `runtime/` 仓库单独执行 `pnpm check && pnpm test && pnpm build`
 - 再回到根仓排查跨模块契约或平台集成问题
 - 若预览、代码检查或截图返回 artifact 缺失，优先确认 `REDIS_URL`、`REDIS_KEY_PREFIX` 与 Redis TTL 配置是否与 Backend 实例一致。
+
+## 仓库边界与真实渲染验证
+
+- `test:repository`：根契约测试的子集，校验文档本地链接、代码围栏、交付 Dockerfile 覆盖、Compose 文件位置、共享 workspace 的 CI 触发范围与环境覆盖逻辑。
+- `test:python-workspace`：在全部 Python 成员共装后，从根目录、Backend、Renderer 分别导入 `app`、`wp_renderer`、`render_contracts`，并验证根目录诊断 CLI。
+- `test:contracts:docker-context`：向 Docker 发送临时合成配置，验证所有模块的 `.env`、密钥与缓存不会进入构建上下文，示例文件仍可交付。
+- `test:render-contracts` / `test:renderer`：纯契约与 Renderer 单元测试。
+- `test:render-e2e`：准备 E2E 环境后运行真实页面截图 smoke，覆盖四服务链路并检查 PNG 文件头、尺寸与任务状态，不再使用 Renderer 目录的占位用例。
+
+运行 E2E 前分别执行 `pnpm exec playwright install chromium` 与 `uv run --project renderer playwright install chromium`；Linux 首次安装加 `--with-deps`。准备脚本会启动/确认 Renderer，并使用 Backend 真实客户端校验服务认证、Worker ID 和 profile。测试凭据使用专门的 `E2E_RENDER_SERVICE_CREDENTIAL`，可通过 `E2E_RENDERER_BASE_URL` 覆盖 Renderer 地址，禁止复用生产身份。
