@@ -1,14 +1,14 @@
-<!-- 文件功能：说明平台镜像构建、Docker Hub 发布、Runtime 子项目镜像耦合和生产 compose 部署方式。 -->
+<!-- 文件功能：说明平台与 Runtime 镜像构建、Docker Hub 发布和生产 compose 部署方式。 -->
 # CI/CD 与容器部署说明
 
 ## 发布边界
 
-根仓由同一次 Buildx 多架构构建同时发布到 Docker Hub 和阿里云 ACR 个人版。两个仓库使用相同的镜像标签与内容摘要；Docker Hub 作为默认公共仓库，ACR 作为中国大陆网络环境下的拉取副本。当前平台镜像仓库为：
+根仓由同一次 Buildx 多架构构建同时发布到 Docker Hub 和阿里云 ACR 个人版。两个仓库使用相同的镜像标签与内容摘要；Docker Hub 作为默认公共仓库，ACR 作为中国大陆网络环境下的拉取副本。镜像仓库为：
 
-- Docker Hub：`docker.io/llmxpm/web-presentation`
-- 阿里云 ACR：`${ACR_REGISTRY}/${ACR_NAMESPACE}/web-presentation`
+- Docker Hub：`docker.io/llmxpm/web-presentation`、`docker.io/llmxpm/web-runtime-vue`
+- 阿里云 ACR：`${ACR_REGISTRY}/${ACR_NAMESPACE}/web-presentation`、`${ACR_REGISTRY}/${ACR_NAMESPACE}/web-runtime-vue`
 
-该仓库包含两个镜像变体：
+`runtime/` 已 vendored 进本仓，Runtime 独立镜像由本仓 Release 使用 `runtime/Dockerfile` 构建推送，不再依赖外部 `web-runtime-vue` 子模块 SHA 镜像。本仓镜像变体：
 
 - 常规平台镜像：由 `Dockerfile` 构建，包含 Backend 代码、Editor 静态资源、Nginx 配置和 Backend 运行所需的 Runtime Kit manifest。
 - SQLite 轻量单容器镜像：由 `Dockerfile.lite` 构建，额外内置 Runtime Vite server 运行依赖，面向 SQLite + memory runtime 单容器部署。该变体直接打包当前仓库原生 `runtime/` 源码。
@@ -16,9 +16,10 @@
 
 ## GitHub Actions
 
-- PR：`.github/workflows/platform-test.yml` 执行快速质量门禁，包括 Backend unit/api、Editor、根仓 contracts；当 `runtime/` 目录代码变化时，额外执行 Runtime 门禁校验。
-- 全量测试：`.github/workflows/platform-test.yml` 仅在 `main` push、每周一 03:00（Asia/Shanghai）定时任务或手动触发且 `full_tests=true` 时执行；全量会在快速门禁基础上补充 Backend integration、Runtime 委托校验、e2e smoke、常规平台镜像 build smoke 和 SQLite 轻量镜像 build smoke。镜像 build smoke 只构建，不推送。
-- Release：`.github/workflows/platform-release.yml` 在 GitHub Release `published` 后执行完整质量门禁；Backend、Editor 和 contracts 通过后再执行 e2e smoke 与 Runtime 镜像存在性校验，最后将常规平台镜像和 SQLite 轻量镜像同时推送到 Docker Hub 与阿里云 ACR。
+- 质量门禁共用 `.github/workflows/reusable-quality.yml`，测试命令统一走根目录 `package.json` 的 `test:*` 脚本。
+- PR：`platform-test.yml` 调用 reusable-quality 执行快速门禁（Backend unit/api、Editor、contracts、render-contracts、renderer、gateway）；当 `runtime/` 目录代码变化时，额外执行 Runtime 门禁。
+- 全量测试：`platform-test.yml` 在 `main` push、每周一定时任务或手动触发且 `full_tests=true` 时，在快速门禁基础上补充 Backend integration、Runtime 门禁、E2E，以及平台 / lite / runtime 三镜像 build smoke（只构建不推送）。定时与手动还会执行全部 E2E project；`cli-contract` 仅在定时/手动触发（依赖外部 agent-kit 仓库）。
+- Release：`platform-release.yml` 先调用 reusable-quality（`full=true`，E2E 全量），通过后由本仓构建并推送 Runtime、常规平台、SQLite 轻量三类镜像到 Docker Hub 与阿里云 ACR。
 - Docker Hub 配置：
   - `vars.DOCKER_USERNAME`
   - `secrets.DOCKER_PASSWORD`
@@ -31,10 +32,16 @@
 稳定 Release 会推送：
 
 ```text
+docker.io/llmxpm/web-runtime-vue:<release_tag>
+docker.io/llmxpm/web-runtime-vue:latest
+docker.io/llmxpm/web-runtime-vue:sha-<commit_sha>
 docker.io/llmxpm/web-presentation:<release_tag>
 docker.io/llmxpm/web-presentation:latest
 docker.io/llmxpm/web-presentation:sqlite-lite-<release_tag>
 docker.io/llmxpm/web-presentation:sqlite-lite
+${ACR_REGISTRY}/${ACR_NAMESPACE}/web-runtime-vue:<release_tag>
+${ACR_REGISTRY}/${ACR_NAMESPACE}/web-runtime-vue:latest
+${ACR_REGISTRY}/${ACR_NAMESPACE}/web-runtime-vue:sha-<commit_sha>
 ${ACR_REGISTRY}/${ACR_NAMESPACE}/web-presentation:<release_tag>
 ${ACR_REGISTRY}/${ACR_NAMESPACE}/web-presentation:latest
 ${ACR_REGISTRY}/${ACR_NAMESPACE}/web-presentation:sqlite-lite-<release_tag>

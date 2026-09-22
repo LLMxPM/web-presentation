@@ -14,7 +14,7 @@ ENV RUNTIME_STANDALONE_PREVIEW_ENABLED=false
 
 WORKDIR /app
 
-RUN corepack enable && corepack prepare pnpm@10.0.0 --activate
+RUN corepack enable && corepack prepare pnpm@10.30.3 --activate
 
 COPY package.json pnpm-lock.yaml ./
 RUN pnpm install --frozen-lockfile

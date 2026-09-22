@@ -28,16 +28,17 @@ pnpm run test:editor:gate
 
 ```powershell
 pnpm run test:runtime
-pnpm run test:runtime:delegated
 pnpm run test:runtime:gate
 ```
 
-`test:runtime` 和 `test:runtime:delegated` 只委托 Runtime Vitest；完整门禁使用 `test:runtime:gate`。
+`test:runtime` 只执行 Runtime Vitest；完整门禁使用 `test:runtime:gate`。
 
 ## 契约与 E2E
 
 ```powershell
 pnpm run test:contracts
+pnpm run test:contracts:gateway
+pnpm run test:contracts:cli-skill
 pnpm run test:e2e:run
 pnpm run test:e2e
 pnpm run test:e2e:regression

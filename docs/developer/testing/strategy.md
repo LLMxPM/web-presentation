@@ -70,9 +70,10 @@ pnpm run test:editor:check
 pnpm run test:editor:build
 pnpm run test:editor:gate
 pnpm run test:runtime
-pnpm run test:runtime:delegated
 pnpm run test:runtime:gate
 pnpm run test:contracts
+pnpm run test:contracts:gateway
+pnpm run test:contracts:cli-skill
 pnpm run test:e2e:run
 pnpm run test:e2e:prepare
 pnpm run test:e2e
@@ -90,9 +91,11 @@ pnpm run test:all
 | `test:editor:check` | Editor 类型检查，执行 `vue-tsc -b`。 |
 | `test:editor:build` | Editor 生产构建，执行 `vue-tsc -b && vite build`。 |
 | `test:editor:gate` | Editor 质量门禁，执行 `check + test + build`。 |
-| `test:runtime` / `test:runtime:delegated` | 只委托执行 Runtime 子项目 Vitest。 |
+| `test:runtime` | 只执行 Runtime 子项目 Vitest。 |
 | `test:runtime:gate` | Runtime 子项目质量门禁，执行 `check + test + build`。 |
 | `test:contracts` | 根仓跨模块契约测试，只收集 `tests/contracts/**/*.test.ts`。不同于 `backend/tests/contracts`。 |
+| `test:contracts:gateway` | 真实 Nginx 网关契约回归（`scripts/contracts/test-gateway-openapi.py`）。 |
+| `test:contracts:cli-skill` | CLI Skill 示例契约测试。 |
 | `test:e2e:run` | 不准备数据，运行 `auth + smoke`；globalSetup 仍校验 Backend 与 smoke 数据指纹。 |
 | `test:e2e:prepare` | 准备 E2E 环境：未显式设置 `TESTING_START_*`/`TESTING_REUSE_BACKEND` 时先校验端口与 E2E 依赖并注入自启环境变量，再重置/播种 smoke 数据并启动或确认服务。 |
 | `test:e2e` | 平台 E2E smoke 默认入口，等价于 `test:e2e:prepare + test:e2e:run`。 |

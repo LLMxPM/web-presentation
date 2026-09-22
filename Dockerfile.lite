@@ -24,7 +24,7 @@ ENV PATH="${PNPM_HOME}:${PATH}"
 
 WORKDIR /app/runtime
 
-RUN corepack enable && corepack prepare pnpm@10.0.0 --activate
+RUN corepack enable && corepack prepare pnpm@10.30.3 --activate
 
 COPY runtime/package.json runtime/pnpm-lock.yaml ./
 RUN pnpm install --frozen-lockfile

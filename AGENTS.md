@@ -161,9 +161,10 @@ pnpm run test:editor:check
 pnpm run test:editor:build
 pnpm run test:editor:gate
 pnpm run test:runtime
-pnpm run test:runtime:delegated
 pnpm run test:runtime:gate
 pnpm run test:contracts
+pnpm run test:contracts:gateway
+pnpm run test:contracts:cli-skill
 pnpm run test:render-contracts
 pnpm run test:renderer
 pnpm run test:render-e2e
@@ -176,8 +177,8 @@ pnpm run test:e2e:all
 测试入口语义：
 
 - `test:editor` 只执行 Editor Vitest；`test:editor:check` 执行类型检查；`test:editor:build` 执行生产构建；需要完整 Editor 质量门禁时使用 `test:editor:gate`。
-- `test:runtime` / `test:runtime:delegated` 只委托 Runtime 子项目 Vitest；需要 Runtime 完整门禁时使用 `test:runtime:gate`。
-- `test:contracts` 是根仓跨模块契约测试，不等同于 Backend 自身的 `backend/tests/contracts`。
+- `test:runtime` 只执行 Runtime Vitest；需要 Runtime 完整门禁时使用 `test:runtime:gate`。
+- `test:contracts` 是根仓跨模块契约测试，不等同于 Backend 自身的 `backend/tests/contracts`；`test:contracts:gateway` 执行真实 Nginx 网关契约回归，`test:contracts:cli-skill` 执行 CLI Skill 示例契约测试。
 - `test:render-contracts` 运行 `packages/render-contracts` 契约单测；`test:renderer` 只跑 Renderer 非 e2e 单测；`test:render-e2e` 依赖真实 Chromium（当前用例集可能为空，以 `renderer/tests` 中 `-m e2e` 标记为准）。
 - `test:e2e:run` 只执行 Playwright；`test:e2e` 会先重置并播种 smoke 数据、确认服务，再执行 Playwright。
 - `test:e2e:run` / `test:e2e` 默认只运行 `auth + smoke`；扩展回归使用 `test:e2e:regression`，全部 project 使用 `test:e2e:all`。
@@ -231,4 +232,4 @@ pnpm run test:e2e:all
 
 ## CLI 契约部署验证
 
-修改 Gateway 或 External API 契约时，运行真实 Nginx 回归 `uv run --project backend python scripts/testing/test-gateway-openapi.py`；发布后从外部 Gateway 使用 `scripts/testing/check-gateway-openapi.py` 验证契约 JSON，不能以 HTTP 200 或 Backend 直连替代。CLI 请求契约失败直接报错，不引入离线契约或缓存降级。
+修改 Gateway 或 External API 契约时，运行真实 Nginx 回归 `pnpm run test:contracts:gateway`（或 `python scripts/contracts/test-gateway-openapi.py`）；发布后从外部 Gateway 使用 `scripts/contracts/check-gateway-openapi.py` 验证契约 JSON，不能以 HTTP 200 或 Backend 直连替代。CLI 请求契约失败直接报错，不引入离线契约或缓存降级。

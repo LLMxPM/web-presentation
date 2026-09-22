@@ -1,0 +1,164 @@
+# 文件功能：平台质量门禁的可复用 workflow，被 platform-test 与 platform-release 共同调用。
+# 测试命令一律通过根目录 package.json 的 test:* 脚本执行，避免 CI 与本地双轨维护。
+
+name: reusable-quality
+
+on:
+  workflow_call:
+    inputs:
+      full:
+        description: 是否执行全量门禁（Backend integration、E2E 等）
+        type: boolean
+        required: true
+      run_runtime:
+        description: 是否执行 Runtime 门禁（gate 含 check/test/build）
+        type: boolean
+        required: false
+        default: true
+      e2e_scope:
+        description: E2E 范围，smoke 为 auth+smoke，all 为全部 project
+        type: string
+        required: false
+        default: smoke
+
+jobs:
+  backend-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: 0.10.10
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.30.3
+      - run: uv sync --project backend --group dev --locked
+      - run: pnpm run test:backend:unit
+      - run: pnpm run test:backend:api
+      - if: inputs.full
+        run: pnpm run test:backend:integration
+
+  editor-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.30.3
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: editor/pnpm-lock.yaml
+      - run: pnpm --dir editor install --frozen-lockfile
+      - run: pnpm run test:editor:gate
+
+  contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.30.3
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run test:contracts
+
+  render-contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: 0.10.10
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.30.3
+      - run: uv sync --project packages/render-contracts
+      - run: pnpm run test:render-contracts
+
+  renderer-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: 0.10.10
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.30.3
+      - run: uv sync --project renderer --extra dev
+      - run: pnpm run test:renderer
+
+  runtime-gate:
+    runs-on: ubuntu-latest
+    if: inputs.run_runtime
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.30.3
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: runtime/pnpm-lock.yaml
+      - run: pnpm --dir runtime install --frozen-lockfile
+      - run: pnpm run test:runtime:gate
+
+  gateway-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.30.3
+      - run: pnpm run test:contracts:gateway
+
+  e2e-smoke:
+    runs-on: ubuntu-latest
+    needs:
+      - backend-tests
+      - editor-tests
+      - contracts
+      - render-contracts
+      - renderer-tests
+      - runtime-gate
+      - gateway-contract
+    # runtime-gate 被跳过时仍视为可进入 E2E；其余任一失败会阻断。
+    if: |
+      always() &&
+      inputs.full &&
+      needs.backend-tests.result == 'success' &&
+      needs.editor-tests.result == 'success' &&
+      needs.contracts.result == 'success' &&
+      needs.render-contracts.result == 'success' &&
+      needs.renderer-tests.result == 'success' &&
+      needs.gateway-contract.result == 'success' &&
+      (needs.runtime-gate.result == 'success' || needs.runtime-gate.result == 'skipped')
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-e2e
+      - name: 执行分层 E2E
+        run: |
+          if [ "${{ inputs.e2e_scope }}" = "all" ]; then
+            pnpm run test:e2e:all
+          else
+            pnpm run test:e2e
+          fi
+        env:
+          TESTING_START_BACKEND: 'true'
+          TESTING_START_EDITOR: 'true'
+          TESTING_START_RUNTIME: 'true'
+          AI_TEST_MODE: mock
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-e2e
+          retention-days: 14
+          path: |
+            test-results
+            !test-results/e2e/storage-state.json
