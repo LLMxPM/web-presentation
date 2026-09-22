@@ -1,0 +1,94 @@
+# 文件功能：Runtime 独立运行路由与整页过渡示例；平台配置入口待接入。
+transitionDefaults:
+  effect: fade
+  durationMs: 400
+
+routes:
+  - route: home
+    component: '@/examples/local/views/defaultpage/HomePage.vue'
+    meta:
+      title: 首页
+      order: 0
+  - route: contents
+    component: '@/examples/local/views/defaultpage/TableOfContentsPage.vue'
+    meta:
+      title: 目录
+      order: 1
+      transition:
+        effect: push
+        durationMs: 400
+  - route: feature-showcase
+    meta:
+      title: 功能展示
+      order: 2
+    children:
+      - route: index
+        component: '@/examples/local/views/feature-showcase/Index.vue'
+        meta:
+          title: 功能展示首页
+          order: 0
+      - route: theme-showcase
+        component: '@/examples/local/views/feature-showcase/ThemeShowcase.vue'
+        meta:
+          title: 主题展示
+          order: 1
+      - route: mermaid-showcase
+        component: '@/examples/local/views/feature-showcase/MermaidShowcase.vue'
+        meta:
+          title: Mermaid图表
+          order: 2
+      - route: drawio-chart-showcase
+        component: '@/examples/local/views/feature-showcase/DrawioChartShowcase.vue'
+        meta:
+          title: Draw.io图表
+          order: 3
+      - route: echarts-showcase
+        component: '@/examples/local/views/feature-showcase/EchartsShowcase.vue'
+        meta:
+          title: ECharts图表
+          order: 4
+      - route: latex-showcase
+        component: '@/examples/local/views/feature-showcase/LatexShowcase.vue'
+        meta:
+          title: LaTeX公式
+          order: 5
+      - route: video-showcase
+        component: '@/examples/local/views/feature-showcase/VideoShowcase.vue'
+        meta:
+          title: Video视频
+          order: 6
+      - route: connector-demo
+        component: '@/examples/local/views/feature-showcase/ConnectorDemo.vue'
+        meta:
+          title: 连接线演示
+          order: 7
+      - route: data-table-showcase
+        component: '@/examples/local/views/feature-showcase/DataTableShowcase.vue'
+        meta:
+          title: DataTable表格
+          order: 8
+  - route: runtime-kit-capabilities
+    meta:
+      title: Runtime Kit能力说明
+      order: 3
+    children:
+      - route: overview
+        component: '@/examples/local/views/feature-showcase/RuntimeKitOverview.vue'
+        meta:
+          title: Runtime Kit能力边界
+          order: 0
+      - route: page-runtime-shell
+        component: '@/examples/local/views/feature-showcase/PageRuntimeShell.vue'
+        meta:
+          title: 页面画布与缩放
+          order: 1
+      - route: route-system
+        component: '@/examples/local/views/feature-showcase/RouteSystemShowcase.vue'
+        meta:
+          title: 路由系统与导航
+          order: 2
+  - route: endpage
+    component: '@/examples/local/views/defaultpage/EndPage.vue'
+    meta:
+      title: 末页
+      order: 100

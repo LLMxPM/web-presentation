@@ -1,0 +1,64 @@
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+# 为部署到 GitHub Pages 授予正确的权限
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# 只允许一个部署任务并发运行
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ✅ 主要修改点：使用 pnpm/action-setup 来安装 pnpm
+      # 这比 Corepack 更简单，并且是 GitHub Actions 的标准做法
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      # 确保 setup-node 在 setup-pnpm 之后运行
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm # 关键：为 pnpm 设置缓存
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm run build
+
+      # 为单页应用 (SPA) 创建 404.html 回退页面
+      - name: Add SPA 404 fallback
+        run: cp dist/index.html dist/404.html
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  # 部署任务保持不变，它已经很完美了
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

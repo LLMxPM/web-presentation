@@ -1,0 +1,69 @@
+themes:
+  dark:
+    name: 深邃背景
+    description: 黑底白字，专业风格
+    app:
+      icon: slider
+    logo: img/logo/runtime_icon_white.svg
+    invertLogo: img/logo/runtime_icon.svg
+    palette:
+      text:
+        primary: "#F4F4F4"
+        secondary: "#9ca3af"
+        invert: "#1f2937"
+      background:
+        default: "#1f2937"
+        invert: "#F4F4F4"
+      border:
+        default: "#6b7280"
+        subtle: "#4b5563"
+      link:
+        default: "#60a5fa"
+        hover: "#3b82f6"
+        visited: "#a78bfa"
+      accent:
+        - "#6366f1"
+        - "#f87171"
+        - "#fbbf24"
+        - "#34d399"
+        - "#a78bfa"
+        - "#facc15"
+    typography:
+      headingfont: platform-sans
+      bodyfont: platform-sans
+      codefont: platform-mono
+  lightblue:
+    name: 明亮商务蓝
+    description: 明亮、专业、克制的商务主题，适合汇报、方案和数据解读。
+    app:
+      icon: slider
+    logo: img/logo/runtime_icon.svg
+    invertLogo: img/logo/runtime_icon_white.svg
+    palette:
+      text:
+        primary: "#20364D"
+        secondary: "#627487"
+        invert: "#FFFFFF"
+      background:
+        default: "#FFFFFF"
+        invert: "#173B5C"
+      border:
+        default: "#D8E2EC"
+        subtle: "#EDF2F6"
+      link:
+        default: "#1B6CA8"
+        hover: "#0F4C81"
+        visited: "#5E6CB5"
+      accent:
+        - "#2D7BB8"
+        - "#159A8C"
+        - "#D39A24"
+        - "#E07B67"
+        - "#6C73B8"
+        - "#6C9BB8"
+    typography:
+      headingfont: platform-sans
+      bodyfont: platform-sans
+      codefont: platform-mono
+default:
+  theme: lightblue

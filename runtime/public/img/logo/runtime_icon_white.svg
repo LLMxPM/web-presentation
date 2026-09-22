@@ -1,0 +1,41 @@
+<svg width="1087" height="700" xmlns="http://www.w3.org/2000/svg" aria-labelledby="title desc" role="img">
+ <title id="title">Runtime icon white</title>
+ <desc id="desc">纯白色窗口卡片图标，背景透明，保留原始图形结构。</desc>
+ <defs>
+  <clipPath id="imageClip">
+   <rect id="svg_1" rx="15" height="303" width="312" y="256" x="133"/>
+  </clipPath>
+  <mask id="frameCutouts" maskUnits="userSpaceOnUse" x="0" y="0" width="1087" height="700">
+   <rect fill="#ffffff" height="700" width="1087" y="0" x="0"/>
+   <circle fill="#000000" r="22" cy="84" cx="216"/>
+   <circle fill="#000000" r="22" cy="83" cx="286"/>
+   <rect fill="#000000" rx="44" height="492" width="750" y="160" x="68"/>
+   <circle fill="#000000" r="22" cy="83" cx="216"/>
+   <circle fill="#000000" r="22" cy="83" cx="146"/>
+  </mask>
+ </defs>
+ <g>
+  <title>Layer 1</title>
+  <path stroke="null" id="svg_2" d="m975.81818,156q0,-12 9.81818,-16l57.27273,-29.23269q22.09091,-11.27547 22.09091,47.23269l0,465q0,56 -45.81818,56l-71.18182,0q27.81818,-24 27.81818,-68l0,-455z" fill="#ffffff"/>
+  <path stroke="null" id="svg_3" d="m862.80556,113q0,-12 10.16667,-17l62.69444,-32q20.33333,-10.37777 20.33333,37l0,523q0,56 -47.44444,56l-74.55555,0q28.80556,-24 28.80556,-68l0,-499z" fill="#ffffff"/>
+  <rect id="svg_4" fill="#ffffff" rx="56" height="664" width="818" y="16" x="28" mask="url(#frameCutouts)"/>
+  <circle id="svg_5" fill="none" r="22" cy="84" cx="216"/>
+  <circle id="svg_6" fill="none" r="22" cy="83" cx="286"/>
+  <rect id="svg_7" fill="none" rx="44" height="492" width="750" y="160" x="68"/>
+  <g id="svg_8">
+   <rect id="svg_9" fill="none" rx="15" height="303" width="312" y="256" x="133"/>
+   <g id="svg_10" clip-path="url(#imageClip)">
+    <circle id="svg_11" fill="#ffffff" r="36" cy="368" cx="350"/>
+    <path id="svg_12" d="m132,526l115,-136c13,-16 37,-15 49,2l46,66c6,9 19,10 26,2l21,-24c12,-14 32,-13 44,2l13,16l0,118l-314,0l0,-46z" fill="#ffffff"/>
+    <path id="svg_13" d="m248,572l84,-98c10,-10 28,-10 38,2l76,96l-198,0z" fill="#ffffff"/>
+   </g>
+   <rect id="svg_14" stroke-width="10" stroke="#ffffff" fill="none" rx="15" height="303" width="312" y="256" x="133"/>
+  </g>
+  <rect id="svg_15" fill="#ffffff" rx="14" height="36" width="270" y="274" x="500"/>
+  <rect id="svg_16" fill="#ffffff" rx="13.5" height="27" width="270" y="364" x="500"/>
+  <rect id="svg_17" fill="#ffffff" rx="13.5" height="27" width="210" y="445" x="500"/>
+  <rect id="svg_18" fill="#ffffff" rx="14" height="66" width="165" y="515" x="500"/>
+  <circle id="svg_19" fill="none" r="22" cy="83" cx="216"/>
+  <circle id="svg_20" fill="none" r="22" cy="83" cx="146"/>
+ </g>
+</svg>

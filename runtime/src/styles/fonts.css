@@ -1,0 +1,48 @@
+/**
+ * 文件用途：提供 Runtime 本地 demo/fixture 模式的最小字体兜底。
+ * 注意事项：线上预览/发布模式的字体主注册逻辑由动态字体注册器负责，不再依赖本文件。
+ */
+
+/* 系统字体无需在此声明；本文件仅保留少量本地示例字体，方便 standalone 模式演示。 */
+
+@font-face {
+  font-family: 'Monaco';
+  src: url('../assets/runtime-shell/fonts/Monaco.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'SourceCodePro';
+  src: url('../assets/runtime-shell/fonts/SourceCodePro-Regular.ttf.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: '思源黑体';
+  src: url('../assets/runtime-shell/fonts/SourceHanSansSC-VF.otf.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: '思源宋体';
+  src: url('../assets/runtime-shell/fonts/SourceHanSerifSC-VF.otf.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+
+
+@font-face {
+  font-family: 'SourceHanSansSC-Heavy';
+  src: url('../assets/runtime-shell/fonts/SourceHanSansSC-Heavy.woff2') format('woff2');
+  font-weight: 800;
+  font-style: normal;
+  font-display: swap;
+}
