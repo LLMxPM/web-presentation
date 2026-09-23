@@ -7,16 +7,17 @@ import logging
 import secrets
 import time
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, timedelta
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.config import get_settings
+from app.core.time_utils import utc_now
 from app.db.session import get_session_factory
 from app.services.rendering.client import RendererClient
 from app.services.rendering.credentials import RenderCredentialService
-from app.services.rendering.repository import RenderRepository, utc_now
+from app.services.rendering.repository import RenderRepository
 from app.services.rendering.snapshot_service import RenderSnapshotService
 from app.services.rendering.target_resolver import RenderTargetResolver
 from render_contracts.constants import (
@@ -127,10 +128,10 @@ class RenderCoordinator:
     ) -> dict[str, Any]:
         """等待请求进入终态；可选在等待路径内驱动调度。"""
 
-        deadline = datetime.now(UTC) + timedelta(
+        deadline = utc_now() + timedelta(
             seconds=float(timeout_seconds or self.settings.render_request_timeout_seconds)
         )
-        while datetime.now(UTC) < deadline:
+        while utc_now() < deadline:
             if drive_dispatch:
                 await self.ensure_progress()
             async with self.session_factory() as session:
@@ -655,7 +656,7 @@ class RenderCoordinator:
         snapshot_ref = SnapshotRef.from_dict(dict(request.snapshot_ref or {}))
         viewport = ViewportSpec.from_dict(dict(request.viewport or {}))
         secret = self.credentials.load_secret()
-        now = datetime.now(UTC)
+        now = utc_now()
         deadline_at = request.deadline_at if request.deadline_at.tzinfo else request.deadline_at.replace(tzinfo=UTC)
         remaining_ms = max(1, int((deadline_at - now).total_seconds() * 1000))
         stop_by = deadline_at

@@ -222,8 +222,8 @@ Release 发布：
 
 ### Runtime 相关失败
 
-- 先在 `runtime/` 仓库单独执行 `pnpm check && pnpm test && pnpm build`
-- 再回到根仓排查跨模块契约或平台集成问题
+- 从仓库根目录运行 `pnpm run test:runtime` 检查 Runtime 单元测试；需要类型检查、单元测试和生产构建时运行 `pnpm run test:runtime:gate`
+- 若问题涉及 Runtime Kit、Backend 契约或平台集成，再运行对应的根仓契约与集成检查
 - 若预览、代码检查或截图返回 artifact 缺失，优先确认 `REDIS_URL`、`REDIS_KEY_PREFIX` 与 Redis TTL 配置是否与 Backend 实例一致。
 
 ## 仓库边界与真实渲染验证

@@ -5,13 +5,14 @@ from __future__ import annotations
 import logging
 import uuid
 from collections.abc import Mapping
-from datetime import UTC, datetime, timedelta
+from datetime import timedelta
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.exceptions import AppException
+from app.core.time_utils import utc_now
 from app.db.session import get_session_factory
 from app.services.rendering.coordinator import RenderCoordinator, get_render_coordinator
 from app.services.rendering.credentials import RenderCredentialService
@@ -225,7 +226,7 @@ class RenderDomainFacade:
                     "operation_options": operation_options,
                     # 与 snapshot_service 一致：预览授权必须覆盖渲染总预算，禁止写成“现在”。
                     "expires_at": (
-                        datetime.now(UTC)
+                        utc_now()
                         + timedelta(seconds=self.settings.runtime_preview_artifact_ttl_seconds)
                     ).isoformat(),
                     "storage_kind": "runtime_artifact",

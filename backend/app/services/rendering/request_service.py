@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import UTC, datetime, timedelta
+from datetime import timedelta
 from typing import Any
 
 from sqlalchemy.exc import IntegrityError
@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.exceptions import AppException
+from app.core.time_utils import utc_now
 from app.models.render_request import RenderRequest
 from app.services.rendering.repository import RenderRepository
 from render_contracts.constants import (
@@ -154,7 +155,7 @@ class RenderRequestService:
             operation_options=dict(operation_options or {}),
             viewport=viewport,
             render_profile_digest=render_profile_digest,
-            deadline_at=datetime.now(UTC) + timedelta(seconds=timeout),
+            deadline_at=utc_now() + timedelta(seconds=timeout),
             max_attempts=int(max_attempts or self.settings.render_max_attempts or DEFAULT_MAX_ATTEMPTS),
             attempt_count=0,
             cancel_version=0,

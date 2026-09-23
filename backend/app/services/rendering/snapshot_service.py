@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Mapping
-from datetime import UTC, datetime, timedelta
+from datetime import timedelta
 from typing import Any
 from urllib.parse import urlencode, urlsplit, urlunsplit
 
@@ -12,6 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
+from app.core.time_utils import utc_now
 from app.models.page import Page
 from app.models.page_version import PageVersion
 from app.models.workspace_component import WorkspaceComponent
@@ -73,7 +74,7 @@ class RenderSnapshotService:
             "runtime_build_id": artifact_id,
         }
         input_digest = sha256_hex(canonical_json(input_material))
-        now = datetime.now(UTC)
+        now = utc_now()
         credentials = RenderCredentialService(self.settings).encrypt_sensitive_payload(
             {
                 "preview_token": preview_token,
@@ -133,7 +134,7 @@ class RenderSnapshotService:
             "runtime_build_id": artifact_id,
         }
         input_digest = sha256_hex(canonical_json(input_material))
-        now = datetime.now(UTC)
+        now = utc_now()
         credentials = RenderCredentialService(self.settings).encrypt_sensitive_payload(
             {
                 "preview_token": preview_token,

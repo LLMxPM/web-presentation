@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from typing import Any
 
 from sqlalchemy import func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
+from app.core.time_utils import utc_now
 from app.models.render_attempt import RenderAttempt
 from app.models.render_execution import RenderResult, RenderSchedulerState, RenderWorker
 from app.models.render_request import RenderRequest
@@ -35,12 +36,6 @@ from render_contracts.errors import (
     ERROR_CODE_DEADLINE_EXCEEDED,
     ERROR_CODE_RESULT_LOST,
 )
-
-
-def utc_now() -> datetime:
-    """返回当前 UTC 时间。"""
-
-    return datetime.now(UTC)
 
 
 class RenderRepository:
