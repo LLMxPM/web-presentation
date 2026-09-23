@@ -506,7 +506,7 @@ class RenderCoordinator:
                         # 条件更新失败说明 attempt 已被其它路径收敛，不得确认消费。
                         logger.warning(
                             "渲染结果落库条件更新失败，跳过消费确认。",
-                            extra={"event": "render.result.save.conflict", "attempt_id": attempt.id},
+                            extra={"event": "render.result.save.conflict", "attempt_id": attempt_id},
                         )
                         continue
                     await result_session.commit()

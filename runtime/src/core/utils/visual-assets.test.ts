@@ -106,6 +106,34 @@ describe('visual asset readiness probe', () => {
     })
   })
 
+  it('已有加载错误的 img 应立即失败，无需等待下一次 error 事件', async () => {
+    document.body.innerHTML = '<img src="https://assets.example/missing.png" />'
+    const image = document.querySelector<HTMLImageElement>('img')!
+    Object.defineProperty(image, 'complete', { value: true, configurable: true })
+    Object.defineProperty(image, 'naturalWidth', { value: 0, configurable: true })
+
+    const result = await waitForEditorVisualAssets({ timeoutMs: 1000 })
+
+    expect(result.ok).toBe(false)
+    expect(result.timedOut).toBe(false)
+    expect(result.failed[0]?.type).toBe('image')
+    expect(result.waitedMs).toBeLessThan(500)
+  })
+
+  it('有回退占位的 img 加载失败后允许截图继续', async () => {
+    document.body.innerHTML = '<img src="https://assets.example/missing.png" data-runtime-image-fallback="true" />'
+    const image = document.querySelector<HTMLImageElement>('img')!
+    Object.defineProperty(image, 'complete', { value: false, configurable: true })
+    Object.defineProperty(image, 'naturalWidth', { value: 0, configurable: true })
+    window.setTimeout(() => image.dispatchEvent(new Event('error')), 0)
+
+    const result = await waitForEditorVisualAssets({ timeoutMs: 100 })
+
+    expect(result.ok).toBe(true)
+    expect(result.loaded).toBe(1)
+    expect(result.failed).toHaveLength(0)
+  })
+
   it('应等待 CSS 背景图 URL 加载完成', async () => {
     document.body.innerHTML = '<div id="card" style="background-image: url(https://assets.example/bg.png)"></div>'
     vi.stubGlobal('Image', createMockImageClass('load'))

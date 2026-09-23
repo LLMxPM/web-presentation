@@ -61,7 +61,7 @@ class RenderSnapshotService:
             .where(PageVersion.version_no == page.current_version_no)
             .limit(1)
         )
-        source = version.page_content if version is not None else page.page_content
+        source = version.content if version is not None else page.page_content
         snapshot_source = source if source_override is None else source_override
         version_no = version.version_no if version is not None else page.current_version_no
         input_material = {

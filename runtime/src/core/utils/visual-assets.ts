@@ -410,6 +410,13 @@ async function waitForTasks(tasks: VisualAssetTask[], deadlineAt: number): Promi
  * @param url 图片地址
  */
 async function waitForHtmlImage(image: HTMLImageElement, url: string): Promise<void> {
+  const hasFallback = image.dataset.runtimeImageFallback === 'true'
+  if (image.complete && !isHtmlImageLoaded(image)) {
+    if (hasFallback) {
+      return
+    }
+    throw new Error(`图片资源加载失败：${url}`)
+  }
   if (!isHtmlImageLoaded(image)) {
     await new Promise<void>((resolve, reject) => {
       const cleanup = () => {
@@ -422,7 +429,11 @@ async function waitForHtmlImage(image: HTMLImageElement, url: string): Promise<v
       }
       const handleError = () => {
         cleanup()
-        reject(new Error(`图片资源加载失败：${url}`))
+        if (hasFallback) {
+          resolve()
+        } else {
+          reject(new Error(`图片资源加载失败：${url}`))
+        }
       }
       image.addEventListener('load', handleLoad, { once: true })
       image.addEventListener('error', handleError, { once: true })
@@ -430,6 +441,9 @@ async function waitForHtmlImage(image: HTMLImageElement, url: string): Promise<v
   }
 
   if (!isHtmlImageLoaded(image)) {
+    if (hasFallback) {
+      return
+    }
     throw new Error(`图片资源加载失败：${url}`)
   }
 

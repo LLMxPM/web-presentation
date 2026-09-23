@@ -3,7 +3,15 @@
 -->
 <template>
   <figure class="image-viewer" :style="surfaceStyle" v-bind="$attrs">
-    <img v-if="src" :src="src" :alt="alt" class="image-viewer__image" :style="imageStyle" />
+    <img
+      v-if="showImage"
+      :src="src"
+      :alt="alt"
+      class="image-viewer__image"
+      :style="imageStyle"
+      data-runtime-image-fallback="true"
+      @error="handleImageError"
+    />
     <slot v-else name="fallback">
       <span v-if="showFallbackPlaceholder" class="image-viewer__placeholder" aria-hidden="true" />
     </slot>
@@ -11,7 +19,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, type CSSProperties } from 'vue'
+import { computed, ref, watch, type CSSProperties } from 'vue'
 import { useViewerSurfaceStyle, type ViewerSurfaceProps } from '@runtime-kit/internal/utils/viewer-style'
 
 interface Props extends ViewerSurfaceProps {
@@ -36,12 +44,20 @@ const props = withDefaults(defineProps<Props>(), {
 })
 
 const surfaceStyle = useViewerSurfaceStyle(props)
+const failedSrc = ref('')
+const showImage = computed(() => Boolean(props.src) && props.src !== failedSrc.value)
+watch(() => props.src, () => { failedSrc.value = '' })
 const imageStyle = computed<CSSProperties>(() => ({
   width: '100%',
   height: '100%',
   objectFit: props.fit,
   objectPosition: props.position,
 }))
+
+/** 图片请求失败时显示已有的回退内容；src 变化后允许重新加载。 */
+function handleImageError(): void {
+  failedSrc.value = props.src
+}
 </script>
 
 <style scoped>

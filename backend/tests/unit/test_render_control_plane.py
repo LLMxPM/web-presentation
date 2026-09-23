@@ -195,6 +195,7 @@ def test_page_snapshot_digest_uses_candidate_source_override() -> None:
     import asyncio
     from types import SimpleNamespace
 
+    from app.models.page_version import PageVersion
     from app.services.rendering.snapshot_service import RenderSnapshotService
 
     page = SimpleNamespace(
@@ -204,8 +205,9 @@ def test_page_snapshot_digest_uses_candidate_source_override() -> None:
         workspace_id=1,
         project_id=2,
     )
-    version = SimpleNamespace(
-        page_content=page.page_content,
+    version = PageVersion(
+        page_id=1,
+        content=page.page_content,
         version_no=3,
     )
 
