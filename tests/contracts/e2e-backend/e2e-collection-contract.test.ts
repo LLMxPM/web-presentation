@@ -38,7 +38,8 @@ function collectSpecs(suites: ListedSuite[]): ListedSpec[] {
 /** 执行 playwright --list 并按 project 统计收集到的用例数量；用 argv 直接调用 CLI，不经过 shell。 */
 function countTestsByProject(): Record<string, number> {
   const playwrightCli = path.join(repoRoot, 'node_modules/@playwright/test/cli.js')
-  const output = execFileSync(process.execPath, [playwrightCli, 'test', '--list', '--reporter=json'], {
+  const playwrightConfig = path.join(repoRoot, 'tests/config/playwright.config.ts')
+  const output = execFileSync(process.execPath, [playwrightCli, 'test', '--config', playwrightConfig, '--list', '--reporter=json'], {
     cwd: repoRoot,
     encoding: 'utf-8',
     stdio: ['ignore', 'pipe', 'pipe'],

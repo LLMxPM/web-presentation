@@ -6,13 +6,19 @@
  * - auth project 使用空 storageState，其余 project 复用 globalSetup 生成的登录状态；
  * - expect 默认 15s、action 默认 10s，异步边界在用例内显式放宽。
  */
+import { resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
 import { defineConfig, devices } from '@playwright/test'
 
-import { STORAGE_STATE_PATH } from './tests/e2e/helpers/e2e-env'
+import { STORAGE_STATE_PATH } from '../e2e/helpers/e2e-env'
 
+const repoRoot = fileURLToPath(new URL('../../', import.meta.url))
+const e2eSpecsDir = resolve(repoRoot, 'tests/e2e/specs')
 const baseURL = process.env.E2E_BASE_URL || 'http://127.0.0.1:5173'
-const e2eReportDir = 'test-results/e2e/html-report'
-const e2eArtifactDir = 'test-results/e2e/artifacts'
+const e2eReportDir = resolve(repoRoot, 'test-results/e2e/html-report')
+const e2eArtifactDir = resolve(repoRoot, 'test-results/e2e/artifacts')
+const storageStatePath = resolve(repoRoot, STORAGE_STATE_PATH)
 const configuredWorkers = Number.parseInt(process.env.PLAYWRIGHT_WORKERS || '2', 10)
 const e2eWorkers = Number.isInteger(configuredWorkers) && configuredWorkers > 0 ? configuredWorkers : 2
 
@@ -20,8 +26,8 @@ const e2eWorkers = Number.isInteger(configuredWorkers) && configuredWorkers > 0 
 const emptyStorageState = { cookies: [], origins: [] }
 
 export default defineConfig({
-  testDir: './tests/e2e/specs',
-  globalSetup: './tests/e2e/global-setup.ts',
+  testDir: e2eSpecsDir,
+  globalSetup: resolve(repoRoot, 'tests/e2e/global-setup.ts'),
   timeout: 120_000,
   fullyParallel: false,
   // 固定为与 GitHub Actions 一致的 2 workers；调试时可通过 PLAYWRIGHT_WORKERS 覆盖。
@@ -39,7 +45,7 @@ export default defineConfig({
   projects: [
     {
       name: 'auth',
-      testDir: './tests/e2e/specs/auth',
+      testDir: resolve(e2eSpecsDir, 'auth'),
       use: {
         ...devices['Desktop Chrome'],
         storageState: emptyStorageState,
@@ -47,36 +53,36 @@ export default defineConfig({
     },
     {
       name: 'smoke',
-      testDir: './tests/e2e/specs/smoke',
+      testDir: resolve(e2eSpecsDir, 'smoke'),
       use: {
         ...devices['Desktop Chrome'],
-        storageState: STORAGE_STATE_PATH,
+        storageState: storageStatePath,
       },
     },
     {
       name: 'visual-edit',
-      testDir: './tests/e2e/specs/visual-edit',
+      testDir: resolve(e2eSpecsDir, 'visual-edit'),
       use: {
         ...devices['Desktop Chrome'],
-        storageState: STORAGE_STATE_PATH,
+        storageState: storageStatePath,
       },
     },
     {
       name: 'ai',
-      testDir: './tests/e2e/specs/ai',
+      testDir: resolve(e2eSpecsDir, 'ai'),
       use: {
         ...devices['Desktop Chrome'],
-        storageState: STORAGE_STATE_PATH,
+        storageState: storageStatePath,
       },
     },
     {
       name: 'runtime-heavy',
-      testDir: './tests/e2e/specs/runtime-heavy',
+      testDir: resolve(e2eSpecsDir, 'runtime-heavy'),
       // 真实构建链路耗时较长，单独放宽用例级超时。
       timeout: 420_000,
       use: {
         ...devices['Desktop Chrome'],
-        storageState: STORAGE_STATE_PATH,
+        storageState: storageStatePath,
       },
     },
   ],
