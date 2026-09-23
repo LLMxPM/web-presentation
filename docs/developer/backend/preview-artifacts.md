@@ -8,7 +8,7 @@ preview artifact 是 Runtime 预览页面或组件时读取的短期上下文。
 
 ## 截图任务
 
-截图由 Backend 创建任务并调用 Runtime 执行。需要关注 viewport、超时、并发、visual-ready 等参数，避免截图队列阻塞。
+截图由 Backend 持久化渲染请求并调度独立 Renderer；Renderer 在 Chromium 中加载 Runtime 预览页面，回传截图结果。需要关注 viewport、超时、并发和 visual-ready 等参数，避免截图队列阻塞。Backend 不直接启动浏览器。
 
 ## build snapshot
 

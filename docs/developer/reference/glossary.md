@@ -3,7 +3,7 @@
 | 术语 | 说明 |
 | :--- | :--- |
 | 控制面 | Backend 承载的数据、权限、任务和 AI 管理职责 |
-| 数据面 | Runtime 执行预览、截图、诊断和构建的职责 |
+| 数据面 | Runtime 执行预览与构建、Renderer 执行真实浏览器截图与页面诊断的职责 |
 | preview artifact | Backend 为 Runtime 预览准备的短期上下文 |
 | build snapshot | 一次构建固化的项目输入 |
 | Runtime Kit manifest | Runtime 对页面和组件公开能力的清单 |

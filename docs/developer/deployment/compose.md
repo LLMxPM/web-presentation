@@ -1,17 +1,17 @@
 # Compose 部署说明
 
-`deploy/` 提供四类部署模板，覆盖 SQLite 轻量单容器、快速试部署、外部依赖部署和 production env 版部署。
+`deploy/` 提供四类部署模板，覆盖 SQLite 轻量版、快速试部署、外部依赖部署和 production env 版部署。每类模板都启动独立 Renderer；“单容器”仅指轻量版将 Backend、Runtime 和 Gateway 合并在一个平台容器内。
 
-官方发布的 Platform、SQLite Lite 和 Runtime 镜像同时支持 `linux/amd64` 与 `linux/arm64`。Compose 文件不固定 `platform`，Docker 会按宿主机架构自动选择镜像；需要在本机交叉构建 ARM64 镜像时，应使用已启用 QEMU 的 Buildx 环境。
+官方发布的 Platform、SQLite Lite、Runtime 和 Renderer 镜像同时支持 `linux/amd64` 与 `linux/arm64`。Compose 文件不固定 `platform`，Docker 会按宿主机架构自动选择镜像；需要在本机交叉构建 ARM64 镜像时，应使用已启用 QEMU 的 Buildx 环境。
 
 ## 模板
 
 | 文件 | 场景 | 特点 |
 | :--- | :--- | :--- |
-| `deploy/compose/compose.sqlite-lite.yml` | 个人/小团队轻量部署 | 单容器内置 Backend、Editor、Runtime 和 Gateway，使用 SQLite 文件与 memory runtime |
-| `deploy/compose/compose.with-deps.yml` | 单机试部署 | 内置 PostgreSQL、Redis、platform 和 runtime |
-| `deploy/compose/compose.yml` | 外部依赖简化版 | 只启动 platform 和 runtime，数据库与 Redis 使用外部服务 |
-| `deploy/compose/compose.prod.yml` | 生产 env 版 | 拆分迁移、Backend、Runtime 和 Gateway，通过 `deploy/.env` 管理变量 |
+| `deploy/compose/compose.sqlite-lite.yml` | 个人/小团队轻量部署 | `platform-lite` 内置 Backend、Editor、Runtime 和 Gateway，另有 Renderer；使用 SQLite 与 memory runtime |
+| `deploy/compose/compose.with-deps.yml` | 单机试部署 | 启动 PostgreSQL、Redis、platform、runtime 和 renderer |
+| `deploy/compose/compose.yml` | 外部依赖简化版 | 启动 platform、runtime 和 renderer；数据库与 Redis 使用外部服务 |
+| `deploy/compose/compose.prod.yml` | 生产 env 版 | 拆分迁移、Backend、Runtime、Renderer 和 Gateway，通过 `deploy/.env` 管理变量 |
 
 ## SQLite 轻量单容器
 
@@ -36,7 +36,7 @@ docker build -f deploy/docker/Dockerfile.lite -t llmxpm/web-presentation:sqlite-
 docker buildx build --platform linux/arm64 -f deploy/docker/Dockerfile.lite -t llmxpm/web-presentation:sqlite-lite-arm64 --load .
 ```
 
-轻量模式只支持单容器、单 Backend worker、单 Runtime server，不适合多副本或高并发写入。容器重启后短生命周期预览链接、内存锁和内存构建状态会失效，但用户、工作空间、项目、页面、资源和 AI 会话等主数据会保留在 SQLite 文件中。
+轻量模式的 `platform-lite` 只支持单实例、单 Backend worker、单 Runtime server，并配套独立 Renderer，不适合多副本或高并发写入。容器重启后短生命周期预览链接、内存锁和内存构建状态会失效，但用户、工作空间、项目、页面、资源和 AI 会话等主数据会保留在 SQLite 文件中。
 
 ## 试部署
 

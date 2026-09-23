@@ -18,6 +18,10 @@
 - Gateway 是否保留 `/runtime/` 前缀代理到 Runtime。
 - `RUNTIME_PREVIEW_JWKS_URL` 和 audience 是否一致。
 
+## 预览正常但截图失败
+
+先检查 `renderer` 容器健康与日志，再核对 Backend 的 `RENDER_WORKERS_CONFIG`、Renderer 的 `RENDER_WORKER_ID`、两侧共享凭据及 `RENDER_PROFILE_DIGEST`。Renderer 还必须能访问 Runtime 的预览文档和静态资源；Backend 不在本进程内执行 Chromium。
+
 ## AI 设置保存后无法解密
 
 通常是 `AI_SECRET_ENCRYPTION_KEY` 改变导致。恢复原密钥后重启 Backend；如果原密钥丢失，已有用户模型凭证无法自动恢复，需要用户重新配置。

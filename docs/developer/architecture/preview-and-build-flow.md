@@ -1,6 +1,6 @@
 # 预览与构建链路
 
-预览与构建是 Backend、Editor、Runtime 的核心协作链路。两条链路都以 Backend 为控制面，以 Runtime 为执行面。
+预览、截图与构建由 Backend 协调。Editor 发起用户操作，Runtime 提供页面渲染和构建能力；真实 Chromium 截图与页面诊断由独立 Renderer 执行。
 
 ## 页面预览
 
@@ -21,7 +21,11 @@
 
 ## 截图
 
-截图由 Backend 调度，Runtime 使用浏览器执行渲染并返回截图结果。截图任务需要关注 viewport、超时、并发、资源加载和页面 visual-ready 状态。
+1. Backend 持久化渲染请求，并按租约和并发限制调度受信 Renderer。
+2. Renderer 为本次执行创建独立 Chromium 和 Context，加载 Runtime 的受保护预览页面。
+3. Renderer 等待页面就绪，生成截图或诊断结果并回传 Backend；Backend 关联任务与产物。
+
+截图任务需要关注 viewport、超时、并发、资源加载和页面 visual-ready 状态。Backend 进程不直接启动浏览器。
 
 ## 项目构建
 

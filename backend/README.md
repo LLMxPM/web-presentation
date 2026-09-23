@@ -15,8 +15,8 @@
 
 ## 1. 环境准备
 
-1. 复制 `.env.example` 为 `.env`
-2. 启动 PostgreSQL
+1. 首次使用时在仓库根目录复制 `.env.example` 为 `.env`；`backend/.env` 仅用于 Backend 局部覆盖
+2. 启动 PostgreSQL 与 Redis
 3. 配置 Runtime 内网访问地址与共享密钥
 4. 使用 `uv` 安装依赖并初始化虚拟环境
 
@@ -44,28 +44,22 @@ uv sync --package backend --group dev
 # 或全成员：uv sync --all-packages --all-groups --all-extras
 ```
 
-以下操作在 `backend/` 目录执行：
+以下操作均从仓库根目录执行。首次启动先迁移数据库并初始化管理员：
 
 ```powershell
-cd backend
-```
-
-执行数据库迁移：
-
-```powershell
-uv run alembic upgrade head
+uv run --project backend alembic -c backend/alembic.ini upgrade head
 ```
 
 初始化默认平台管理员：
 
 ```powershell
-uv run python -m app.scripts.seed_admin
+uv run --project backend python -m app.scripts.seed_admin
 ```
 
 启动开发服务：
 
 ```powershell
-uv run uvicorn app.main:app --reload
+uv run --project backend uvicorn app.main:app --app-dir backend --host 127.0.0.1 --port 8000 --reload --reload-dir backend
 ```
 
 截图与真实渲染诊断依赖独立 Renderer（`renderer/`），Backend 本进程不再安装 Playwright/Chromium。
@@ -74,23 +68,23 @@ uv run uvicorn app.main:app --reload
 运行测试：
 
 ```powershell
-uv run pytest
+uv run --project backend pytest -c backend/pyproject.toml
 ```
 
 按测试层级筛选：
 
 ```powershell
-uv run pytest -m unit
-uv run pytest -m api
-uv run pytest -m integration
-uv run pytest -m contract
+uv run --project backend pytest -c backend/pyproject.toml -m unit
+uv run --project backend pytest -c backend/pyproject.toml -m api
+uv run --project backend pytest -c backend/pyproject.toml -m integration
+uv run --project backend pytest -c backend/pyproject.toml -m contract
 ```
 
 平台 smoke 数据 CLI：
 
 ```powershell
-uv run python -m app.scripts.reset_test_data
-uv run python -m app.scripts.seed_test_data --scenario smoke
+uv run --project backend python -m app.scripts.reset_test_data
+uv run --project backend python -m app.scripts.seed_test_data --scenario smoke
 ```
 
 ## 3. 默认平台管理员

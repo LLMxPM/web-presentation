@@ -3,7 +3,7 @@
 
 ## 平台目标
 
-`web-presentation` 面向 AI 演示文稿创作场景，目标是提供一套可私有化部署的 Editor + Backend + Runtime 协作体系，把页面内容代码化，并把资源、组件、主题和样式沉淀为可复用资产。
+`web-presentation` 面向 AI 演示文稿创作场景，目标是提供一套可私有化部署的 Editor、Backend、Runtime 与 Renderer 协作体系，把页面内容代码化，并把资源、组件、主题和样式沉淀为可复用资产。
 
 平台围绕四个方向设计：
 
@@ -19,6 +19,7 @@
 - **Backend**：控制中枢，负责数据持久化、任务调度、权限校验、预览 artifact、构建产物托管和 AI Agent 运行态。
 - **Editor**：用户操作界面，负责项目配置、页面编辑、组件管理、资源管理、构建触发和预览呈现。
 - **Runtime**：执行引擎，负责加载 Backend 下发的预览上下文、远程模块、配置包，并执行预览、诊断和构建。
+- **Renderer**：独立 Chromium 执行服务，按 Backend 的渲染请求加载 Runtime 页面，完成截图与页面诊断。
 - **Infra**：通过 Docker / Docker Compose / GitHub Actions 负责服务编排、镜像发布、网络隔离和容器自愈。
 
 ## 模块职责
@@ -41,11 +42,15 @@
 
 ### Runtime
 
-`runtime/` 是平台原生的演示文稿/页面运行时服务（基于 Vue 3 + Vite）。它承载幻灯片画布渲染、组件预览、截图诊断、导出与构建执行。
+`runtime/` 是平台原生的演示文稿/页面运行时服务（基于 Vue 3 + Vite）。它承载幻灯片画布渲染、组件预览、诊断入口、导出与构建执行，并向 Renderer 提供受控页面宿主。
 
 Runtime 维护页面可引用基础能力的公开契约：`runtime/src/runtime-kit/manifest/runtime-kit.manifest.json` 是 Backend 校验 `page_content`、工作空间组件源码与组件预览 schema 的单一事实源。公开能力采用文件名版本化，`name` 形如 `Icon.v1`，`import_path` 必须指向带 `.vN` 的文件。
 
 页面和工作空间组件只能通过清单中的版本化 `@runtime-kit/...` 路径引用公开能力；未带 `.vN` 的旧路径会被 Backend 拒绝。Runtime shell、component-preview 宿主页、PDF 导出、布局侧栏、Toast、ErrorBoundary 等壳层能力不进入该清单，也不进入智能体能力目录。
+
+### Renderer
+
+`renderer/` 是独立的远程渲染执行服务。Backend 持久化渲染请求并调度 Renderer；Renderer 为每次执行创建独立 Chromium 和 Context，加载 Runtime 页面后回传截图或诊断结果。Renderer 不连接业务数据库，跨服务协议由 `packages/render-contracts/` 维护。
 
 ## 目标业务流程
 

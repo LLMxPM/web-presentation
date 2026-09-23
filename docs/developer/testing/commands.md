@@ -2,6 +2,8 @@
 
 根仓通过 `package.json` 统一暴露常用测试入口。
 
+根仓 Vitest 配置位于 `tests/config/vitest.config.ts`，Playwright 配置位于 `tests/config/playwright.config.ts`。根仓相关 `pnpm run` 脚本已显式指定配置；手动直接调用 `vitest` 或 `playwright test` 时也应传入对应 `--config`。
+
 ## Backend
 
 ```powershell

@@ -7,9 +7,9 @@
 
 | 层级 | 目标 | 归属 |
 | :--- | :--- | :--- |
-| L0 单元/组件测试 | 校验纯函数、组件局部渲染、局部状态流 | `backend` / `editor` / `runtime` 各自项目 |
-| L1 子项目集成测试 | 校验 API、状态流、预览构建、Runtime 壳层行为 | `backend` / `editor` / `runtime` 各自项目 |
-| L2 跨模块契约测试 | 校验 `backend <-> runtime`、`editor <-> backend` 稳定协议 | 根仓 `tests/contracts/` |
+| L0 单元/组件测试 | 校验纯函数、组件局部渲染、局部状态流与渲染契约 DTO | `backend` / `editor` / `runtime` / `renderer` / `packages/render-contracts` |
+| L1 子项目集成测试 | 校验 API、状态流、预览构建、Runtime 壳层与 Renderer 执行控制 | 各子项目测试目录 |
+| L2 跨模块契约测试 | 校验模块协议、E2E 集合与仓库配置边界 | 根仓 `tests/contracts/` |
 | L3 平台 E2E 冒烟 | 校验登录、页面/组件/资源/主题/AI/构建等主链路 | 根仓 `tests/e2e/` |
 
 默认原则：
@@ -24,13 +24,19 @@
 
 ```text
 tests/
+├── config/
+│   ├── playwright.config.ts
+│   └── vitest.config.ts
 ├── contracts/
+│   ├── e2e-backend/
 │   ├── editor-backend/
+│   ├── repository/
 │   └── runtime-backend/
-└── e2e/
-    ├── fixtures/
-    ├── helpers/
-    └── specs/
+├── e2e/
+│   ├── fixtures/
+│   ├── helpers/
+│   └── specs/
+└── workspace/
 ```
 
 ### Backend
@@ -55,6 +61,11 @@ backend/tests/
 - Runtime 单元测试与组件测试位于 `runtime/src/**/*.test.ts`
 - 统一环境 mock 放在 `runtime/src/test/setup.ts`
 - 完整门禁包含类型检查、测试与生产构建：`pnpm run test:runtime:gate`
+
+### Renderer 与渲染契约
+
+- Renderer 测试位于 `renderer/tests/`，通过 `pnpm run test:renderer` 执行。
+- 纯契约包测试位于 `packages/render-contracts/tests/`，通过 `pnpm run test:render-contracts` 执行。
 
 ## 3. 命令入口
 
@@ -168,40 +179,11 @@ AI run 状态切换后无需执行 Redis run 迁移脚本；旧 Redis run key �
 
 ## 6. CI 策略
 
-PR 必跑：
+PR 执行 Backend unit/api、Editor gate、根仓 contracts、render-contracts、Renderer、Python workspace、Gateway 契约与 Docker context 检查。Runtime 源码或根 pnpm 工具链变化时，额外执行 Runtime gate。
 
-1. `backend`：`unit + api`
-2. `editor`：`check + Vitest`
-3. 根仓 `contracts`
+`main` push、每周一定时任务和手动 `full_tests=true` 执行全量门禁：增加 Backend integration、Runtime gate 与 E2E，并对常规平台、SQLite 轻量版、Runtime、Renderer 四类镜像执行构建及实际启动检查。`main` push 运行 `test:e2e`；定时和手动全量运行 `test:e2e:all`。跨仓 CLI 契约只在定时与手动任务中运行。
 
-条件执行：
-
-- 当 `runtime/` 目录源码发生变化时，执行 `pnpm run test:runtime:gate`
-
-全量测试执行时机：
-
-- `main` 分支 push。
-- 每周一 03:00（Asia/Shanghai）的定时任务。
-- 手动触发 `.github/workflows/platform-test.yml` 且 `full_tests=true`。
-
-`main` push 的 E2E 执行 `test:e2e`；每周定时和手动 `full_tests=true` 执行 `test:e2e:all`。Release 质量门禁同样执行 `test:e2e:all`。
-
-全量测试范围：
-
-1. `backend integration`
-2. Runtime gate
-3. 根仓分层 E2E（按触发类型运行 smoke 或 all）
-4. 平台镜像 build smoke：构建 `web-presentation` 单镜像但不推送
-
-全量流程中，`e2e` 冒烟依赖 Backend、Editor、contracts 和 Runtime 门禁通过后再启动；平台镜像 build smoke 依赖 `e2e` 冒烟通过后再启动，避免基础测试失败时继续执行重型任务。
-
-Release 发布：
-
-- GitHub Release `published` 后执行完整质量门禁。
-- 编译并推送包含最新 Runtime 运行时能力的平台镜像及 Runtime 独立服务镜像。
-- 构建并推送单个平台镜像 `web-presentation:<release_tag>`；稳定 Release 同时推送 `latest`。
-
-定时、手动全量和 Release 覆盖可视化编辑、真实构建、截图与长链路 AI 测试。
+GitHub Release 的 `published` 事件或手动发布任务触发后，先执行全量质量门禁和 `test:e2e:all`，通过后再构建、检查并推送四类镜像。具体触发条件、镜像标签及发布顺序以 [CI/CD 文档](../deployment/cicd.md) 和 `.github/workflows/` 为准。
 
 ## 7. 故障排查
 

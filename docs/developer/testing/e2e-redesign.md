@@ -160,14 +160,14 @@ FunctionModel 不需要感知 Runtime 诊断上下文。短场景应配置足够
 
 ### 3.5 断言与稳定性约定
 
-- `playwright.config.ts` 增加 `expect.timeout: 15_000`、`actionTimeout: 10_000`，用例级特殊等待显式传参。
+- `tests/config/playwright.config.ts` 设置 `expect.timeout: 15_000`、`actionTimeout: 10_000`，用例级特殊等待显式传参。
 - 禁止在 spec 内使用 `details.*`、`.tool-call-group` 等私有 class；视觉工具卡片改为语义化 `data-testid`（`visual-tool-card`、`visual-status-region`），由 Editor 补齐后用例引用。
 - AI 用例对「运行结果」只断言用户可见产物（图片、文案、已保存提示），不断言事件序列的私有结构。
 - 15s 是默认上限，不替代就绪检查。纯 UI 同步反馈优先使用更短的局部超时，预览、AI、构建等明确异步边界单独放宽。
 
 ### 3.6 Playwright project 与命令边界
 
-`playwright.config.ts` 显式定义以下 project，不能只靠目录重命名或 `@regression` 标签表达默认范围：
+`tests/config/playwright.config.ts` 显式定义以下 project，不能只靠目录重命名或 `@regression` 标签表达默认范围：
 
 | Project | 目录/范围 | 默认 `test:e2e` |
 | :--- | :--- | :--- |

@@ -71,7 +71,7 @@
 
 ## 快速部署
 
-个人或小团队快速部署推荐使用 SQLite 轻量单容器编排。它会在一个容器内启动 Backend、Runtime 和 Gateway，主数据写入 SQLite 文件，运行态使用进程内 memory runtime，不需要额外准备 PostgreSQL 和 Redis。
+个人或小团队快速部署推荐使用 SQLite 轻量编排。它在 `platform-lite` 容器内启动 Backend、Runtime 和 Gateway，另由独立 Renderer 容器执行截图；主数据写入 SQLite 文件，运行态使用进程内 memory runtime，不需要额外准备 PostgreSQL 和 Redis。
 
 1. 准备 Docker Engine 与 Docker Compose v2。
 2. 打开 `deploy/compose/compose.sqlite-lite.yml`，修改文件顶部注释列出的访问地址、默认管理员密码和 `AI_SECRET_ENCRYPTION_KEY`。
@@ -98,9 +98,10 @@ docker compose -f compose/compose.sqlite-lite.yml up -d
 | [平台特性](./docs/user/features/README.md) | 创作者视角理解 AI 创作、资产复用、预览构建和交付 |
 | [Demo 使用指南](./docs/user/demo-guide.md) | 公开 Demo 地址、体验账号、推荐流程和 AI 设置注意事项 |
 | [AI 协作创作](./docs/user/ai/README.md) | AI 侧边栏、工具确认、上下文注入和协作建议 |
-| [开发文档](./docs/developer/README.md) | 架构、Backend、Editor、Runtime 接入、测试、部署和参考资料 |
+| [开发文档](./docs/developer/README.md) | 架构、Backend、Editor、Runtime、Renderer、测试与部署资料 |
 | [平台架构总览](./docs/developer/architecture/overview.md) | 平台目标、模块职责、目标流程和 Runtime 运行时架构 |
 | [本地开发指南](./docs/developer/getting-started.md) | 本地依赖、启动流程、测试数据和运行态维护 |
+| [Runtime 开发文档](./docs/developer/runtime/README.md) | 页面、组件、Runtime Kit 与运行时内部接入细节 |
 | [测试文档](./docs/developer/testing/README.md) | 测试分层、命令、契约测试和 E2E smoke |
 | [生产部署指南](./docs/developer/deployment/README.md) | compose 部署、环境变量、备份恢复、升级回滚和排障 |
 | [Runtime 运行时说明](./runtime/README.md) | 平台原生演示文稿运行时（基于 Vue 3 + Vite）的能力与配置说明 |

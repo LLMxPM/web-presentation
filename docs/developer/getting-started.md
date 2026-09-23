@@ -37,7 +37,7 @@ Backend 测试默认会把 `REDIS_URL` 设置为 `memory://test`，不依赖本�
 仓库支持全仓环境变量统一管理。推荐在根目录下一次性初始化，各子模块（Backend、Runtime、Renderer、Editor）会自动向上级联继承：
 
 ```powershell
-Copy-Item .\.env.example .\.env
+if (-not (Test-Path .\.env)) { Copy-Item .\.env.example .\.env }
 pnpm run env:check
 ```
 
@@ -45,20 +45,18 @@ pnpm run env:check
 
 ## Backend 本地启动
 
-从仓库根目录准备 Python 依赖与数据（uv workspace，自动继承根目录 `.env`）：
+以下命令均从仓库根目录执行。首次启动先同步 Python workspace、迁移数据库并初始化管理员；已有数据时不需要重复初始化：
 
 ```powershell
-# 根目录 uv.lock 为唯一 Python 依赖锁；本地建议装全成员避免来回卸载
 uv sync --all-packages --all-groups --all-extras
-cd .\backend
-uv run alembic upgrade head
-uv run python -m app.scripts.seed_admin
+uv run --project backend alembic -c backend/alembic.ini upgrade head
+uv run --project backend python -m app.scripts.seed_admin
 ```
 
-启动 Backend 开发服务：
+从仓库根目录启动 Backend 开发服务；`--reload-dir backend` 只监听 Backend 源码，不扫描整个仓库：
 
 ```powershell
-uv run uvicorn app.main:app --reload
+uv run --project backend uvicorn app.main:app --app-dir backend --host 127.0.0.1 --port 8000 --reload --reload-dir backend
 ```
 
 默认管理员账号来自根目录 `.env`（或 `backend/.env`）：`admin` / `Admin123456`。如果需要调整默认账号，修改 `DEFAULT_ADMIN_USERNAME`、`DEFAULT_ADMIN_PASSWORD` 和 `DEFAULT_ADMIN_DISPLAY_NAME` 后重新启动 Backend。

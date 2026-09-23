@@ -2,6 +2,8 @@
 
 平台 E2E 使用 Playwright 覆盖轻量主流程、可视化编辑、真实 Backend AI mock 链路和 Runtime 重型链路，测试文件位于 `tests/e2e/`。
 
+Playwright 配置位于 `tests/config/playwright.config.ts`；根目录 `package.json` 的 E2E 脚本已显式传入该路径。
+
 ## 运行命令
 
 ```powershell
@@ -41,7 +43,7 @@ pnpm run test:e2e:run
 
 ## 服务启动
 
-E2E 入口默认由脚本自启服务：未显式设置 `TESTING_START_*` 时，`prepare` 会先校验 8000/5173/7373 端口与本地 PostgreSQL/Redis 依赖，端口被占用时立即报错并给出提示，校验通过后自动注入 `TESTING_START_*` 与 `AI_TEST_MODE=mock` 并启动服务。
+E2E 入口默认由脚本自启服务：未显式设置 `TESTING_START_*` 时，`prepare` 会先校验 Backend、Editor、Runtime、Renderer 的 8000/5173/7373/7400 端口与本地 PostgreSQL/Redis 依赖，端口被占用时立即报错并给出提示；校验通过后自动注入 `TESTING_START_*` 与 `AI_TEST_MODE=mock` 并启动服务。
 
 复用已在运行的服务时，显式设置任一 `TESTING_START_*` 或 `TESTING_REUSE_BACKEND` 会跳过端口校验：
 
@@ -54,7 +56,7 @@ pnpm run test:e2e
 
 - `test-results/e2e/html-report/`：Playwright HTML 报告。
 - `test-results/e2e/artifacts/`：trace、截图、视频和 `.last-run.json`。
-- `test-results/e2e/services/`：测试脚本启动的 Backend、Editor、Runtime 日志。
+- `test-results/e2e/services/`：测试脚本启动的 Backend、Editor、Runtime、Renderer 日志。
 - 失败用例会附加 API 4xx/5xx/requestfailed 摘要；AI run 失败时附加只读诊断 CLI 输出。
 
 `test-results/e2e/storage-state.json` 含认证 cookie，只供本地测试进程读取，不得提交或上传为 CI artifact。

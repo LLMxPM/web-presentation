@@ -1,4 +1,4 @@
-<!-- 文件功能：说明平台与 Runtime 镜像构建、Docker Hub 发布和生产 compose 部署方式。 -->
+<!-- 文件功能：说明平台、Runtime、Renderer 镜像构建、发布与生产 compose 部署方式。 -->
 # CI/CD 与容器部署说明
 
 ## 发布边界
@@ -68,13 +68,15 @@ Pre-release 只推送固定版本标签，不移动 `latest` 与 `sqlite-lite`�
 - `${ACR_REGISTRY}/${ACR_NAMESPACE}/web-presentation:sqlite-lite`
 - `llmxpm/web-runtime-vue:latest`
 - `${ACR_REGISTRY}/${ACR_NAMESPACE}/web-runtime-vue:latest`
+- `llmxpm/web-presentation-renderer:latest`
+- `${ACR_REGISTRY}/${ACR_NAMESPACE}/web-presentation-renderer:latest`
 
 部署模板集中在 `deploy/` 目录：
 
 - `deploy/compose/compose.yml`：外部 PostgreSQL/Redis 简化版，环境变量直接写在 compose 内。
-- `deploy/compose/compose.sqlite-lite.yml`：SQLite + memory runtime 轻量单容器版，使用 `llmxpm/web-presentation:sqlite-lite`。
+- `deploy/compose/compose.sqlite-lite.yml`：SQLite + memory runtime 轻量版，使用 `llmxpm/web-presentation:sqlite-lite` 与独立 Renderer 镜像。
 - `deploy/compose/compose.with-deps.yml`：内置 PostgreSQL/Redis 简化版，随应用一起启动 PostgreSQL 与 Redis，环境变量直接写在 compose 内。
-- `deploy/compose/compose.prod.yml`：production env 版，拆分迁移、Backend、Runtime 与 Gateway，并通过 `env_file: ../.env` 读取 `deploy/.env`。
+- `deploy/compose/compose.prod.yml`：production env 版，拆分迁移、Backend、Runtime、Renderer 与 Gateway，并通过 `env_file: ../.env` 读取 `deploy/.env`。
 - `deploy/.env.example`：仅供 production env 版复制为 `deploy/.env` 使用。
 
 SQLite 轻量单容器版启动方式：
@@ -120,7 +122,7 @@ production env 版中，同一个平台镜像会拆分为三个容器：
 
 Renderer 同样必须固定为 `llmxpm/web-presentation-renderer:<release_tag>`，与平台和 Runtime 一起升级或回滚。
 
-常规 compose 默认跟随 `latest`，SQLite 轻量 compose 默认跟随 `sqlite-lite`。如果需要严格锁定 Runtime 与平台版本，常规部署应同时把对应 compose 文件中的平台 image 改为 `llmxpm/web-presentation:<release_tag>`，把 Runtime image 改为 `llmxpm/web-runtime-vue:<release_tag>`；SQLite 轻量单容器版应把 image 改为 `llmxpm/web-presentation:sqlite-lite-<release_tag>`。不要只回滚平台镜像或只回滚 Runtime 镜像；数据库迁移一旦前进，平台镜像必须仍然包含数据库 `alembic_version` 指向的 revision 文件。
+常规 compose 默认跟随 `latest`，SQLite 轻量 compose 默认跟随 `sqlite-lite`。需要严格锁定版本时，常规部署应同时固定平台、Runtime 与 Renderer 的 `<release_tag>`；轻量版应同时固定 `sqlite-lite-<release_tag>` 与 Renderer 的 `<release_tag>`。不要只回滚其中一个业务镜像；数据库迁移一旦前进，平台镜像必须仍然包含数据库 `alembic_version` 指向的 revision 文件。
 
 ## 关键访问关系
 

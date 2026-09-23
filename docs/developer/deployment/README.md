@@ -1,7 +1,7 @@
 <!-- 文件功能：面向部署人员说明 web-presentation Docker Compose 部署、外部依赖接入、升级、回滚与运维检查流程。 -->
 # 生产部署指南
 
-本文档说明如何使用 `deploy/` 目录部署 `web-presentation`。所有正式部署模板默认只拉取 CI/CD 已发布镜像；SQLite 轻量单容器模板面向个人或小团队快速部署，不需要 PostgreSQL 与 Redis。
+本文档说明如何使用 `deploy/` 目录部署 `web-presentation`。所有正式部署模板默认只拉取 CI/CD 已发布镜像；SQLite 轻量版面向个人或小团队，不需要 PostgreSQL 与 Redis。该版把 Backend、Runtime 和 Gateway 放在同一个 `platform-lite` 容器中，截图仍由独立 Renderer 容器执行。
 
 ## 文档导航
 
@@ -9,42 +9,43 @@
 | :--- | :--- |
 | [Compose 部署说明](./compose.md) | 四类 compose 模板、启动方式和访问关系 |
 | [部署环境变量](./env-vars.md) | production env 版变量分组和关键约束 |
-| [CI/CD 与容器发布](./cicd.md) | 平台镜像、Runtime 镜像和 Docker Hub 发布策略 |
+| [CI/CD 与容器发布](./cicd.md) | 平台、Runtime、Renderer 镜像与发布策略 |
 | [备份与恢复](./backup-restore.md) | 数据库、资源、构建产物和密钥备份 |
 | [升级与回滚](./upgrade-rollback.md) | 镜像升级、数据库迁移和回滚注意事项 |
 | [部署排障](./troubleshooting.md) | 健康检查、Runtime、AI 设置和数据库迁移问题 |
 
-常规部署实际涉及两个业务镜像：
+常规部署涉及三个业务镜像：
 
 - `llmxpm/web-presentation:latest`：平台镜像，包含 Backend、Editor 静态资源和 Gateway Nginx。
-- `llmxpm/web-runtime-vue:latest`：Runtime 镜像，负责预览、截图、诊断和构建。
+- `llmxpm/web-runtime-vue:latest`：Runtime 镜像，负责预览、诊断入口和构建。
+- `llmxpm/web-presentation-renderer:latest`：Renderer 镜像，负责真实 Chromium 截图与页面诊断。
 
-SQLite 轻量单容器部署使用 `llmxpm/web-presentation:sqlite-lite`，一个容器内同时运行 Backend、Runtime 和 Gateway。该镜像由根仓 Release workflow 从 `deploy/docker/Dockerfile.lite` 构建并推送。
+SQLite 轻量版使用 `llmxpm/web-presentation:sqlite-lite`，在 `platform-lite` 容器内运行 Backend、Runtime 和 Gateway，并另行启动 Renderer 容器。轻量平台镜像由根仓 Release workflow 从 `deploy/docker/Dockerfile.lite` 构建并推送。
 
 ## 部署文件
 
 | 文件 | 作用 |
 | :--- | :--- |
-| `deploy/compose/compose.sqlite-lite.yml` | SQLite + memory runtime 轻量单容器版，启动 `platform-lite`，环境变量直接写在 compose 内 |
-| `deploy/compose/compose.yml` | 外部 PostgreSQL/Redis 简化版，启动 `platform` 与 `runtime`，环境变量直接写在 compose 内 |
-| `deploy/compose/compose.with-deps.yml` | 内置 PostgreSQL/Redis 简化版，启动 `postgres`、`redis`、`platform` 与 `runtime`，环境变量直接写在 compose 内 |
-| `deploy/compose/compose.prod.yml` | production env 版，拆分 `backend-migrate`、`backend`、`runtime` 与 `gateway`，通过 `env_file: .env` 读取生产环境变量 |
+| `deploy/compose/compose.sqlite-lite.yml` | SQLite + memory runtime 轻量版，启动 `platform-lite` 与 `renderer`，环境变量直接写在 compose 内 |
+| `deploy/compose/compose.yml` | 外部 PostgreSQL/Redis 简化版，启动 `platform`、`runtime` 与 `renderer`，环境变量直接写在 compose 内 |
+| `deploy/compose/compose.with-deps.yml` | 内置 PostgreSQL/Redis 简化版，启动 `postgres`、`redis`、`platform`、`runtime` 与 `renderer`，环境变量直接写在 compose 内 |
+| `deploy/compose/compose.prod.yml` | production env 版，拆分 `backend-migrate`、`backend`、`runtime`、`renderer` 与 `gateway`，通过 `env_file: .env` 读取生产环境变量 |
 | `deploy/.env.example` | 仅供 production env 版复制为 `deploy/.env` 使用 |
 | `deploy/docker/nginx/web-presentation.conf` | 平台镜像内置 Gateway 配置，托管 Editor 并代理 Backend 与 Runtime |
 
 简化版中，`platform` 容器同时运行 Backend 与 Gateway。`runtime` 默认只在 compose 内网访问。`platform` 容器内通过 `extra_hosts` 把 `backend:8000` 指向本机 Backend，compose 网络中通过别名把 `backend:8000` 暴露给 Runtime 回源。
 
-SQLite 轻量单容器版中，`platform-lite` 容器同时运行 Backend、Runtime 与 Gateway。容器入口脚本会把 `backend` 和 `runtime` 解析到本机，复用同一份 Gateway 配置。
+SQLite 轻量版中，`platform-lite` 容器同时运行 Backend、Runtime 与 Gateway，独立 `renderer` 容器执行截图。平台容器入口脚本会把 `backend` 和 `runtime` 解析到本机，复用同一份 Gateway 配置。
 
 production env 版中，访问入口是单独的 `gateway` 容器；`backend` 和 `runtime` 默认只在 compose 内网访问。
 
 ## 前置条件
 
 - 已安装 Docker Engine 与 Docker Compose v2。
-- SQLite 轻量单容器版不需要 PostgreSQL 与 Redis，但只支持单容器单实例。
+- SQLite 轻量版不需要 PostgreSQL 与 Redis；`platform-lite` 只支持单实例，并需配套独立 Renderer。
 - 外部依赖简化版和 production env 版需要已准备可访问的 PostgreSQL 与 Redis。
 - 内置依赖简化版会随应用启动 PostgreSQL 与 Redis，适合单机试部署或小规模自托管。
-- 部署机器可以拉取 `llmxpm/web-presentation:latest`、`llmxpm/web-presentation:sqlite-lite` 与 `llmxpm/web-runtime-vue:latest`。
+- 部署机器可以拉取平台、Runtime 与 Renderer 对应镜像；轻量版使用 `llmxpm/web-presentation:sqlite-lite` 加 Renderer 镜像。
 - 从源码构建镜像时直接使用仓库原生目录；直接使用 Docker Hub 发布镜像不需要仓库源码。
 - 如需要 HTTPS，建议在外层 Nginx、Traefik 或云负载均衡终止 TLS，再转发到 compose 暴露的 HTTP 端口。
 
@@ -167,13 +168,14 @@ docker compose -f compose/compose.prod.yml up -d
 llmxpm/web-presentation:sqlite-lite
 llmxpm/web-presentation:latest
 llmxpm/web-runtime-vue:latest
+llmxpm/web-presentation-renderer:latest
 ```
 
 `compose/compose.with-deps.yml` 还会拉取 `postgres:16` 与 `redis:7`。该文件中的 `POSTGRES_PASSWORD`、`REDIS_PASSWORD` 以及 `platform.environment` 中的 `DATABASE_URL`、`REDIS_URL` 要保持一致；如密码包含 `@`、`/`、`:` 等 URL 特殊字符，需要先进行 URL 编码，或改用只包含字母、数字、短横线和下划线的密码。
 
 内置 Redis 默认关闭 AOF，以降低小规模部署的磁盘写入成本。Redis 只保存短生命周期预览 artifact、构建状态和锁；主数据仍由 PostgreSQL 或 SQLite 管理。
 
-`latest` 与 `sqlite-lite` 只适合跟随稳定 Release 自动升级。如果某次部署需要严格锁定版本或准备可精确回滚，可以把 compose 中的 image 手动改成发布标签，例如常规部署使用 `llmxpm/web-presentation:v1.0.0` 和 `llmxpm/web-runtime-vue:sha-xxxxxxxxxxxx`，SQLite 轻量单容器版使用 `llmxpm/web-presentation:sqlite-lite-v1.0.0`。
+`latest` 与 `sqlite-lite` 只适合跟随稳定 Release 自动升级。需要精确回滚时，应把平台、Runtime、Renderer 的 image 一起固定到同一发布版本；轻量版固定 `sqlite-lite-<release_tag>` 与对应 Renderer 标签。
 
 SQLite 轻量单容器版由 `platform-lite` 容器入口脚本在启动时执行一次 `alembic upgrade head`，随后同时启动 Backend、Runtime 与 Nginx。两个简化版由 `platform` 容器入口脚本在启动时执行一次 `alembic upgrade head`，随后同时启动 Backend 与 Nginx。production env 版由 `backend-migrate` 容器在 `backend` 启动前执行迁移。
 
@@ -206,25 +208,25 @@ Windows PowerShell 中如果 `curl` 被映射为 `Invoke-WebRequest`，可改用
 
 ```bash
 cd deploy
-docker compose -f compose/compose.with-deps.yml logs -f platform runtime postgres redis
+docker compose -f compose/compose.with-deps.yml logs -f platform runtime renderer postgres redis
 ```
 
 SQLite 轻量单容器版使用：
 
 ```bash
-docker compose -f compose/compose.sqlite-lite.yml logs -f platform-lite
+docker compose -f compose/compose.sqlite-lite.yml logs -f platform-lite renderer
 ```
 
 外部依赖简化版使用：
 
 ```bash
-docker compose logs -f platform runtime
+docker compose logs -f platform runtime renderer
 ```
 
 production env 版使用：
 
 ```bash
-docker compose -f compose/compose.prod.yml logs -f backend runtime gateway
+docker compose -f compose/compose.prod.yml logs -f backend runtime renderer gateway
 ```
 
 应用侧业务日志默认使用 JSON Lines 输出到容器标准输出，便于 `docker compose logs` 之后接入 Loki、ELK 或云日志采集。部署模板默认关闭 Gateway、Backend 和 Runtime 的访问日志，以降低高频预览、静态资源与 Runtime 代理请求带来的 IO 成本；错误日志、业务日志和浏览器错误上报仍保留。`gateway` 仍负责生成或透传 `X-Request-ID`，`backend` 会在响应头返回同一个请求 ID。
@@ -257,6 +259,8 @@ flowchart LR
     Backend --> Database["PostgreSQL 或 SQLite"]
     Backend --> RuntimeState["Redis 或 memory runtime"]
     Backend --> Runtime
+    Backend --> Renderer["renderer:7400"]
+    Renderer --> Runtime
     Runtime --> Backend
 ```
 
@@ -266,6 +270,7 @@ flowchart LR
 - `/api`、`/public`、`/build-artifacts`、`/preview`、`/media` 代理到 Backend。
 - `/runtime/` 代理到 Runtime，并保留 `/runtime/` 前缀。
 - Backend 通过 `RUNTIME_BASE_URL` 访问 Runtime。
+- Backend 通过受信控制 API 调度 Renderer；Renderer 在 Chromium 中加载 Runtime 页面并回传截图或诊断结果。
 - Runtime 通过 `RUNTIME_BACKEND_API_BASE_URL` 回源 Backend。
 - SQLite 轻量单容器版中，两个地址默认都是 `127.0.0.1`。
 - 简化版中，`backend:8000` 在 `platform` 容器内指向本机 Backend，对 `runtime` 则是 `platform` 的网络别名；production env 版中，它是独立 `backend` 容器。
@@ -291,7 +296,7 @@ PostgreSQL 与 Redis 使用已有基础设施时，应使用对应基础设施�
 1. 备份数据库和本地文件 volume；SQLite 轻量单容器版备份 `lite-data`。
 2. 在 `deploy/` 目录执行对应 compose 文件的 `docker compose pull` 拉取最新稳定镜像。
 3. 在 `deploy/` 目录执行对应 compose 文件的 `docker compose up -d`。
-4. SQLite 轻量单容器版观察 `platform-lite` 日志；简化版观察 `platform` 与 `runtime` 日志；production env 版观察 `backend-migrate`、`backend`、`runtime` 和 `gateway` 日志。
+4. SQLite 轻量版观察 `platform-lite` 与 `renderer` 日志；简化版观察 `platform`、`runtime`、`renderer` 日志；production env 版观察 `backend-migrate`、`backend`、`runtime`、`renderer` 和 `gateway` 日志。
 
 回滚时需要把对应 compose 文件中的 image 改为上一个可用版本标签，再执行对应 compose 文件的 `docker compose pull && docker compose up -d`。数据库迁移如已执行不可逆变更，需要按对应版本的迁移说明处理。
 
