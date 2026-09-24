@@ -2,11 +2,15 @@
 
 from datetime import datetime
 
-from sqlalchemy import DateTime
+from sqlalchemy import JSON, DateTime
 from sqlalchemy.engine import Dialect
 from sqlalchemy.types import TypeDecorator
+from sqlalchemy.dialects.postgresql import JSONB
 
 from app.core.time_utils import normalize_utc
+
+# JSON 双方言别名：PG 用 JSONB，SQLite 用 JSON。模型/迁移统一 import，禁止再写 with_variant。
+JSONPayload = JSON().with_variant(JSONB(), "postgresql")
 
 
 class UTCDateTime(TypeDecorator[datetime]):

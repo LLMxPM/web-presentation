@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 
 from sqlalchemy.engine import make_url
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import OperationalError, SQLAlchemyError
 
 
 class DatabaseConnectivityError(RuntimeError):
@@ -68,6 +68,40 @@ def is_database_timeout_error(error: BaseException) -> bool:
         return True
     normalized = _collect_exception_text(error).lower()
     return any(keyword in normalized for keyword in _TIMEOUT_KEYWORDS)
+
+
+SQLITE_BUSY_ERROR_CODE = 5
+SQLITE_LOCKED_ERROR_CODE = 6
+SQLITE_LOCK_MESSAGES = ("database is locked", "database table is locked")
+# PostgreSQL 可重试写冲突
+_PG_RETRYABLE_SQLSTATES = frozenset({"40P01", "40001"})
+
+
+def detect_transient_write_conflict(error: BaseException) -> bool:
+    """判断写冲突/序列化失败是否可短暂退避后重试；命中时打点一次。
+
+    SQLite：BUSY/LOCKED（错误码 5/6 或锁消息子串）。
+    PostgreSQL：deadlock_detected(40P01) / serialization_failure(40001)。
+    打点是本函数的既定副作用，调用方不要重复记录。
+    """
+
+    matched = False
+    if isinstance(error, OperationalError):
+        original = getattr(error, "orig", None)
+        pg_code = getattr(original, "pgcode", None) or getattr(error, "pgcode", None)
+        sqlite_error_code = getattr(original, "sqlite_errorcode", None)
+        matched = (isinstance(pg_code, str) and pg_code in _PG_RETRYABLE_SQLSTATES) or (
+            isinstance(sqlite_error_code, int)
+            and sqlite_error_code & 0xFF in {SQLITE_BUSY_ERROR_CODE, SQLITE_LOCKED_ERROR_CODE}
+        )
+    if not matched:
+        message = _collect_exception_text(error).lower()
+        matched = any(fragment in message for fragment in SQLITE_LOCK_MESSAGES)
+    if matched:
+        from app.db import metrics as write_path_metrics
+
+        write_path_metrics.record_write_conflict()
+    return matched
 
 
 def describe_database_target(database_url: str) -> str:

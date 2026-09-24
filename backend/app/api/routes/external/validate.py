@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,6 +14,7 @@ from app.db.session import get_db_session
 from app.schemas.external_api import ExternalEntityValidationRequest, ExternalEntityValidationResponse
 from app.services.code_check_service import CodeCheckService
 from app.services.page_service import PageService
+from app.services.validation_result import is_validation_passed
 from app.services.workspace_component_service import WorkspaceComponentService
 
 router = APIRouter()
@@ -73,19 +74,43 @@ async def validate_entity(
             preview_schema=preview_schema,
         )
 
-    diagnostics = list(result.get("diagnostics") or [])
+    # 响应契约要求 diagnostics 为 dict 列表；一次性过滤后统一按 dict 读取。
+    diagnostics: list[dict[str, Any]] = [
+        item for item in (result.get("diagnostics") or []) if isinstance(item, dict)
+    ]
+    status = str(result.get("status") or "")
+    # 页面默认要求 render 阶段通过；组件只做契约 + 编译。
+    valid = is_validation_passed(result, require_render=payload.entity_type == "page")
     errors = [str(item.get("message") or item) for item in diagnostics if item.get("severity") == "error"]
     warnings = [str(item.get("message") or item) for item in diagnostics if item.get("severity") == "warning"]
+    error_code: str | None = None
+    if status == "unavailable":
+        # 执行不可用时把基础设施错误码与说明提升到顶层，避免调用方只看到笼统失败。
+        infrastructure = [item for item in diagnostics if item.get("source") == "infrastructure"]
+        error_code = next(
+            (str(item["code"]) for item in infrastructure if item.get("code")),
+            "VALIDATION_UNAVAILABLE",
+        )
+        for item in infrastructure:
+            message = str(item.get("message") or item)
+            if message not in errors:
+                errors.append(message)
     if not payload.detail:
         diagnostics = diagnostics[:10]
+    summary = str(result.get("summary") or result.get("message") or "校验完成。")
+    if status == "unavailable" and "不可用" not in summary:
+        summary = f"校验执行不可用（{error_code or 'VALIDATION_UNAVAILABLE'}）：{summary}"
     return ExternalEntityValidationResponse(
         entity_type=payload.entity_type,
         entity_id=payload.entity_id,
         mode=payload.mode,
-        valid=bool(result.get("success")),
-        summary=str(result.get("summary") or result.get("message") or "校验完成。"),
+        valid=valid,
+        status=status or None,
+        retryable=bool(result.get("retryable")),
+        error_code=error_code,
+        summary=summary,
         errors=errors,
         warnings=warnings,
-        imports=[str(item.get("module")) for item in diagnostics if item.get("module")],
-        diagnostics=diagnostics if payload.detail else diagnostics[:10],
+        imports=[str(item["module"]) for item in diagnostics if item.get("module")],
+        diagnostics=diagnostics,
     )

@@ -2,10 +2,11 @@
 
 from datetime import datetime
 
-from sqlalchemy import ForeignKey, Index, Integer, String, Text, text
+from sqlalchemy import ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
+from app.db.indexes import partial_index
 from app.db.types import UTCDateTime
 from app.models.mixins import TimestampMixin
 
@@ -15,16 +16,11 @@ class PageScreenshotJob(TimestampMixin, Base):
 
     __tablename__ = "page_screenshot_jobs"
     __table_args__ = (
-        Index(
+        partial_index(
             "ix_page_screenshot_jobs_dedupe_active",
-            "page_id",
-            "target_page_version_no",
-            "config_hash",
-            "viewport_width",
-            "viewport_height",
+            ("page_id", "target_page_version_no", "config_hash", "viewport_width", "viewport_height"),
+            "status IN ('pending', 'running')",
             unique=True,
-            sqlite_where=text("status IN ('pending', 'running')"),
-            postgresql_where=text("status IN ('pending', 'running')"),
         ),
     )
 

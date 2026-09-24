@@ -158,6 +158,13 @@ class PageCreatePayload(OperationArgumentsModel):
     route_placement: Literal["none", "root", "group"] = Field(default="none", description="是否同时写入项目路由树。")
     parent_route_id: int | None = Field(default=None, ge=1, description="放入分组时的目标分组路由 ID。")
     route: str | None = Field(default=None, min_length=1, max_length=128, description="可选路由片段；不传时由平台生成。")
+    skip_visual_verification: bool = Field(
+        default=False,
+        description=(
+            "Renderer 执行不可用时是否允许跳过视觉校验写入；"
+            "为 true 时会在结果中留下 skipped_visual_verification 审计标记。默认 false。"
+        ),
+    )
 
     @model_validator(mode="after")
     def validate_route_placement(self) -> "PageCreatePayload":
@@ -190,6 +197,13 @@ class PageContentPayload(OperationArgumentsModel):
     edits: list[SourceEditInput] = Field(min_length=1, description="按顺序应用的结构化源码编辑；定位文本必须来自最新页面源码。")
     base_version_no: int = Field(ge=1, description="读取页面源码时得到的当前版本号，用于防止覆盖并发修改。")
     change_note: str | None = Field(default=None, max_length=255, description="本次源码修改说明。")
+    skip_visual_verification: bool = Field(
+        default=False,
+        description=(
+            "Renderer 执行不可用时是否允许跳过视觉校验写入；"
+            "为 true 时会在结果中留下 skipped_visual_verification 审计标记。默认 false。"
+        ),
+    )
 
 
 class ComponentCreatePayload(OperationArgumentsModel):

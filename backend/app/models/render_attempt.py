@@ -5,16 +5,14 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import ForeignKey, Index, Integer, String, Text, UniqueConstraint, text
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy import ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
-from sqlalchemy.types import JSON
 
 from app.db.base import Base
+from app.db.indexes import partial_index
+from app.db.types import JSONPayload as JSONType
 from app.db.types import UTCDateTime
 from app.models.mixins import TimestampMixin
-
-JSONType = JSON().with_variant(JSONB(), "postgresql")
 
 
 class RenderAttempt(TimestampMixin, Base):
@@ -23,13 +21,11 @@ class RenderAttempt(TimestampMixin, Base):
     __tablename__ = "render_attempts"
     __table_args__ = (
         UniqueConstraint("request_id", "attempt_no", name="uq_render_attempts_request_no"),
-        Index(
+        partial_index(
             "uq_render_attempts_worker_epoch_active",
-            "worker_id",
-            "worker_epoch",
+            ("worker_id", "worker_epoch"),
+            "active_occupancy = 1",
             unique=True,
-            sqlite_where=text("active_occupancy = 1"),
-            postgresql_where=text("active_occupancy = 1"),
         ),
         Index("ix_render_attempts_status", "status"),
         Index("ix_render_attempts_worker_epoch", "worker_id", "worker_epoch"),

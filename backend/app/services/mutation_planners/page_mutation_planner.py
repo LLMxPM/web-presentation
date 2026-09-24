@@ -13,8 +13,8 @@ from app.ai.tools.page.apply_page_edits import (
 )
 from app.ai.tools.project.project_pages import (
     _has_warning_diagnostics,
-    _is_validation_passed,
 )
+from app.services.validation_result import is_validation_passed, resolve_validation_error_code
 from app.ai.tools.shared import apply_source_edits
 from app.core.exceptions import AppException
 from app.services.code_check_service import CodeCheckService
@@ -97,7 +97,7 @@ class PageMutationPlanner:
             content=page_content,
         )
 
-        passed = _is_validation_passed(validation_result)
+        passed = is_validation_passed(validation_result)
         message = "页面已完成预检。" if passed else "页面代码校验失败。"
         diagnostics = list(validation_result.get("diagnostics") or [])
         layout_analysis = validation_result.get("layout_analysis")
@@ -119,7 +119,9 @@ class PageMutationPlanner:
             layout_analysis=layout_analysis,
             code_check_summary=validation_result.get("summary"),
             message=message,
-            error_code=None if passed else "PAGE_VALIDATION_FAILED",
+            error_code=None if passed else resolve_validation_error_code(
+                validation_result, fallback="PAGE_VALIDATION_FAILED"
+            ),
             error_message=None if passed else validation_result.get("summary") or "页面代码校验失败",
         )
 
@@ -157,7 +159,7 @@ class PageMutationPlanner:
             content=applied.next_content,
         )
 
-        passed = _is_validation_passed(validation_result)
+        passed = is_validation_passed(validation_result)
         message = "页面修改预检通过。" if passed else "页面修改代码校验失败。"
         diagnostics = list(validation_result.get("diagnostics") or [])
         layout_analysis = validation_result.get("layout_analysis")
@@ -179,6 +181,8 @@ class PageMutationPlanner:
             layout_analysis=layout_analysis,
             code_check_summary=validation_result.get("summary"),
             message=message,
-            error_code=None if passed else "PAGE_VALIDATION_FAILED",
+            error_code=None if passed else resolve_validation_error_code(
+                validation_result, fallback="PAGE_VALIDATION_FAILED"
+            ),
             error_message=None if passed else validation_result.get("summary") or "页面代码校验失败",
         )

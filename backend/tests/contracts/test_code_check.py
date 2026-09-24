@@ -75,9 +75,12 @@ class FakePageRenderDiagnosticsService:
         self,
         diagnostics: list[dict[str, object]] | None = None,
         layout_analysis: dict[str, object] | None = None,
+        *,
+        status: str | None = None,
     ) -> None:
         self.calls: list[dict[str, object]] = []
         self.diagnostics = diagnostics or []
+        self.status = status
         self.layout_analysis = layout_analysis or {
             "schema_version": 3,
             "meta": {
@@ -114,10 +117,15 @@ class FakePageRenderDiagnosticsService:
         """记录渲染诊断调用并返回预置结果。"""
 
         self.calls.append({"preview_url": preview_url, "viewport": viewport, **kwargs})
-        return {
+        payload: dict[str, object] = {
             "diagnostics": list(self.diagnostics),
             "layout_analysis": dict(self.layout_analysis),
         }
+        if self.status is not None:
+            payload["status"] = self.status
+            if self.status == "unavailable":
+                payload["retryable"] = True
+        return payload
 
 
 async def _create_workspace(authenticated_client: AsyncClient, name: str) -> int:
@@ -412,7 +420,61 @@ async def test_page_code_check_should_append_render_warning_after_runtime_passed
     assert result["summary"] == "代码检查通过，发现 1 个布局警告。"
     assert result["diagnostics"][0]["severity"] == "warning"
     assert result["diagnostics"][0]["code"] == "PAGE_RENDER_BOTTOM_OVERFLOW"
+    assert result["stages"] == {"compile": "passed", "render": "warning"}
     assert fake_render.calls
+
+
+async def test_page_code_check_render_unavailable_must_not_report_passed(
+    authenticated_client: AsyncClient,
+) -> None:
+    """Runtime 编译通过 + Renderer 不可用 ⇒ status=unavailable，不得报检查通过。"""
+
+    workspace_id = await _create_workspace(authenticated_client, "代码检查渲染不可用工作空间")
+    project_id = await _create_project(authenticated_client, workspace_id, "代码检查渲染不可用项目")
+    page_response = await authenticated_client.post(
+        "/api/pages",
+        json={
+            "workspace_id": workspace_id,
+            "project_id": project_id,
+            "title": "渲染不可用页面",
+            "page_content": "<template><main>原页面</main></template>",
+            "file_type": "vue",
+            "status": "active",
+        },
+    )
+    assert page_response.status_code == 200
+    fake_runtime = FakeRuntimeDiagnosticsClient()
+    fake_render = FakePageRenderDiagnosticsService(
+        [
+            {
+                "severity": "warning",
+                "stage": "render",
+                "source": "infrastructure",
+                "code": "RENDER_SERVICE_UNAVAILABLE",
+                "message": "页面渲染布局诊断执行不可用：Renderer 离线。",
+            }
+        ],
+        status="unavailable",
+    )
+
+    async with get_session_factory()() as session:
+        result = await CodeCheckService(
+            session,
+            runtime_client=fake_runtime,
+            render_diagnostics_service=fake_render,
+        ).check_page_code(
+            page_id=page_response.json()["id"],
+            workspace_id=workspace_id,
+            user_id=1,
+            content="<template><main>新页面</main></template>",
+        )
+
+    assert result["success"] is not True
+    assert result["status"] == "unavailable"
+    assert result["retryable"] is True
+    assert result["stages"] == {"compile": "passed", "render": "unavailable"}
+    assert "代码检查通过" not in str(result.get("summary") or "")
+    assert "不可用" in str(result.get("summary") or "")
 
 
 async def test_page_code_check_should_return_visual_layout_analysis_v3(

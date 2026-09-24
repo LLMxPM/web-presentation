@@ -22,6 +22,7 @@ from app.schemas.page import (
 )
 from app.services.code_check_service import CodeCheckService
 from app.services.page_service import PageService
+from app.services.validation_result import resolve_write_gate
 
 
 def build_project_page_tools(
@@ -50,8 +51,12 @@ def build_create_project_page_tool(
         route_placement: str = "none",
         parent_route_id: int | None = None,
         route: str | None = None,
+        skip_visual_verification: bool = False,
     ) -> dict[str, Any]:
-        """在当前项目创建页面；page_content 必填，可同时写入演讲者备注。"""
+        """在当前项目创建页面；page_content 必填，可同时写入演讲者备注。
+
+        skip_visual_verification=True 且 Renderer 执行不可用时允许写入，但必须留审计标记。
+        """
 
         normalized_title = str(title or "").strip()
         normalized_page_content = str(page_content or "")
@@ -105,7 +110,11 @@ def build_create_project_page_tool(
                 user_id=operator_id,
                 content=normalized_page_content,
             )
-            if not _is_validation_passed(validation_result):
+            allow_write, skipped_visual = resolve_write_gate(
+                validation_result,
+                skip_visual_verification=skip_visual_verification,
+            )
+            if not allow_write:
                 return _with_create_validation_failure_message(validation_result)
 
             created = await PageService(session).create(
@@ -141,7 +150,10 @@ def build_create_project_page_tool(
                 "layout_analysis": _extract_layout_analysis(validation_result),
                 "code_check_summary": validation_result.get("summary"),
             }
-            if _has_warning_diagnostics(response):
+            if skipped_visual:
+                response["skipped_visual_verification"] = True
+                response["message"] = "页面已创建（已跳过视觉校验：Renderer 执行不可用）。"
+            elif _has_warning_diagnostics(response):
                 response["message"] = "页面已创建，但发现布局警告。"
             return response
 
@@ -245,19 +257,20 @@ def _ensure_page_scope(
         )
 
 
-def _is_validation_passed(result: dict[str, Any]) -> bool:
-    """判断创建前页面代码检查是否通过。"""
-
-    return bool(result.get("success") is True or result.get("status") == "passed")
-
-
 def _with_create_validation_failure_message(result: dict[str, Any]) -> dict[str, Any]:
     """为创建前校验失败结果补充不会落库的提示。"""
 
     enriched = dict(result)
     enriched["success"] = False
-    enriched["status"] = "failed"
-    enriched["message"] = "页面代码校验失败，未创建页面。"
+    if enriched.get("status") != "unavailable":
+        enriched["status"] = "failed"
+        enriched["message"] = "页面代码校验失败，未创建页面。"
+    else:
+        enriched["retryable"] = True
+        enriched["message"] = (
+            "页面渲染诊断执行不可用，未创建页面；"
+            "请确认 Renderer 可用后重试，或设置 skip_visual_verification=true。"
+        )
     return enriched
 
 

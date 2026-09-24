@@ -6,15 +6,12 @@ from datetime import datetime
 from typing import Any
 
 from sqlalchemy import BigInteger, Boolean, Integer, String, Text, UniqueConstraint
-from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
-from sqlalchemy.types import JSON
 
 from app.db.base import Base
+from app.db.types import JSONPayload as JSONType
 from app.db.types import UTCDateTime
 from app.models.mixins import TimestampMixin
-
-JSONType = JSON().with_variant(JSONB(), "postgresql")
 
 
 class RenderWorker(TimestampMixin, Base):

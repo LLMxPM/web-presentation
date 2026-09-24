@@ -9,7 +9,8 @@ from typing import Sequence, Union
 
 from alembic import op
 import sqlalchemy as sa
-from sqlalchemy.dialects import postgresql
+
+from migrations.helpers.dialect import clear_page_screenshot_pointers, json_payload_type
 
 revision: str = "20260910_0100"
 down_revision: Union[str, Sequence[str], None] = "20260904_0100"
@@ -20,8 +21,7 @@ depends_on: Union[str, Sequence[str], None] = None
 def upgrade() -> None:
     """创建远程渲染控制面数据模型。"""
 
-    bind = op.get_bind()
-    json_type = sa.JSON().with_variant(postgresql.JSONB(), "postgresql")
+    json_type = json_payload_type()
     utc_default = sa.text("(CURRENT_TIMESTAMP)")
 
     op.create_table(
@@ -189,21 +189,8 @@ def upgrade() -> None:
     op.create_index("ix_render_results_attempt_id", "render_results", ["attempt_id"])
 
     # 离线转换：清除无法证明新输入/profile 身份的当前有效截图指针，
-    # 历史对象保留，业务读取方按“待生成”处理。
-    if bind.dialect.name in {"postgresql", "sqlite"}:
-        op.execute(
-            """
-            UPDATE pages
-            SET screenshot_storage_key = NULL,
-                screenshot_version_no = NULL,
-                screenshot_config_hash = NULL,
-                screenshot_viewport_width = NULL,
-                screenshot_viewport_height = NULL,
-                screenshot_updated_at = NULL,
-                updated_at = CURRENT_TIMESTAMP
-            WHERE screenshot_storage_key IS NOT NULL
-            """
-        )
+    # 历史对象保留，业务读取方按“待生成”处理。不可逆：downgrade 不恢复。
+    clear_page_screenshot_pointers()
 
 
 def downgrade() -> None:

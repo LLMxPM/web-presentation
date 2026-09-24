@@ -58,3 +58,50 @@ async def test_plan_apply_edits_uses_page_current_version_for_base_check() -> No
     )
     planner.code_check_service.check_page_code.assert_awaited_once()
 
+
+@pytest.mark.asyncio
+async def test_plan_apply_edits_should_reject_render_unavailable() -> None:
+    """Renderer 执行不可用不得视为预检通过，且不得复用内容错误码（否则调用方不会重试）。"""
+
+    current_content = "<template><main>旧内容</main></template>"
+    next_content = "<template><main>新内容</main></template>"
+    page_detail = SimpleNamespace(
+        project_id=7,
+        current_version_no=2,
+        title="测试页面",
+        summary="页面摘要",
+        speaker_notes=None,
+    )
+
+    planner = PageMutationPlanner.__new__(PageMutationPlanner)
+    planner.page_service = SimpleNamespace(
+        get=AsyncMock(return_value=page_detail),
+        get_version_content=AsyncMock(
+            return_value=SimpleNamespace(content=current_content)
+        ),
+    )
+    planner.code_check_service = SimpleNamespace(
+        check_page_code=AsyncMock(
+            return_value={
+                "success": False,
+                "status": "unavailable",
+                "retryable": True,
+                "summary": "页面渲染诊断执行不可用。",
+                "stages": {"compile": "passed", "render": "unavailable"},
+                "diagnostics": [],
+            }
+        )
+    )
+
+    result = await planner.plan_apply_edits(
+        workspace_id=1,
+        project_id=7,
+        page_id=11,
+        base_version_no=2,
+        user_id=3,
+        edits=[{"type": "rewrite_file", "content": next_content}],
+    )
+
+    assert result.success is False
+    assert result.error_code == "RENDER_SERVICE_UNAVAILABLE"
+

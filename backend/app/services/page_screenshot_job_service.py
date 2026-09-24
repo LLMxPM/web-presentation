@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.core.config import get_settings
 from app.core.exceptions import AppException
 from app.core.time_utils import utc_now
+from app.db.errors import detect_transient_write_conflict
 from app.models.enums import PageFileType, RecordStatus
 from app.models.page import Page
 from app.models.page_screenshot_job import PageScreenshotJob
@@ -28,7 +29,6 @@ from app.services.durable_job_lease_service import (
     DurableJobRecoverySummary,
     build_durable_worker_id,
     claim_pending_jobs as claim_durable_jobs,
-    is_sqlite_lock_error,
     recover_expired_running_jobs,
     renew_running_job_lease,
     request_job_cancellation,
@@ -501,7 +501,7 @@ class PageScreenshotJobService:
                 return
             except OperationalError as error:
                 await self.session.rollback()
-                if not is_sqlite_lock_error(self.session, error) or attempt + 1 >= SQLITE_LOCK_RETRY_ATTEMPTS:
+                if not detect_transient_write_conflict(error) or attempt + 1 >= SQLITE_LOCK_RETRY_ATTEMPTS:
                     raise
                 delay_seconds = 0.05 * (2**attempt)
                 logger.warning(
@@ -785,18 +785,9 @@ class PageScreenshotJobService:
 
     @property
     def _lease_seconds(self) -> int:
-        """优先读取通用租约配置，并兼容升级前的截图专用配置。"""
+        """截图任务租约统一走通用持久化任务租约配置。"""
 
-        return max(
-            1,
-            int(
-                getattr(
-                    self.settings,
-                    "durable_job_lease_seconds",
-                    self.settings.page_screenshot_job_lease_seconds,
-                )
-            ),
-        )
+        return max(1, int(self.settings.durable_job_lease_seconds))
 
     @staticmethod
     def _log_recovery_summary(summary: DurableJobRecoverySummary) -> None:

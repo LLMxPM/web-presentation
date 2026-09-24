@@ -5,10 +5,11 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import ForeignKey, Index, Integer, JSON, String, Text, UniqueConstraint, text
+from sqlalchemy import ForeignKey, Integer, JSON, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
+from app.db.indexes import partial_index
 from app.db.types import UTCDateTime
 from app.models.mixins import TimestampMixin
 
@@ -19,19 +20,17 @@ class AiAgentExternalBatch(TimestampMixin, Base):
     __tablename__ = "ai_agent_external_batches"
     __table_args__ = (
         UniqueConstraint("run_id", "sequence_no", name="uq_ai_external_batches_run_sequence"),
-        Index(
+        partial_index(
             "uq_ai_external_batches_resuming_run",
-            "run_id",
+            ("run_id",),
+            "status = 'resuming'",
             unique=True,
-            sqlite_where=text("status = 'resuming'"),
-            postgresql_where=text("status = 'resuming'"),
         ),
-        Index(
+        partial_index(
             "uq_ai_external_batches_collecting_run",
-            "run_id",
+            ("run_id",),
+            "status = 'collecting'",
             unique=True,
-            sqlite_where=text("status = 'collecting'"),
-            postgresql_where=text("status = 'collecting'"),
         ),
     )
 

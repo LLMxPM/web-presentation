@@ -5,10 +5,11 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import ForeignKey, Index, Integer, JSON, String, Text, UniqueConstraint, text
+from sqlalchemy import ForeignKey, Integer, JSON, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
+from app.db.indexes import partial_index
 from app.db.types import UTCDateTime
 from app.models.mixins import AuditMixin, TimestampMixin
 
@@ -38,13 +39,11 @@ class AiAgentRun(TimestampMixin, Base):
 
     __tablename__ = "ai_agent_runs"
     __table_args__ = (
-        Index(
+        partial_index(
             "uq_ai_agent_runs_active_session_agent",
-            "session_id",
-            "agent_id",
+            ("session_id", "agent_id"),
+            "status IN ('running','paused','waiting_external','cancelling')",
             unique=True,
-            sqlite_where=text("status IN ('running','paused','waiting_external','cancelling')"),
-            postgresql_where=text("status IN ('running','paused','waiting_external','cancelling')"),
         ),
     )
 
@@ -131,12 +130,11 @@ class AiAgentRequirement(TimestampMixin, Base):
 
     __tablename__ = "ai_agent_requirements"
     __table_args__ = (
-        Index(
+        partial_index(
             "uq_ai_agent_requirements_active_external_run",
-            "run_id",
+            ("run_id",),
+            "kind = 'external_job' AND status IN ('pending','resolving')",
             unique=True,
-            sqlite_where=text("kind = 'external_job' AND status IN ('pending','resolving')"),
-            postgresql_where=text("kind = 'external_job' AND status IN ('pending','resolving')"),
         ),
     )
 

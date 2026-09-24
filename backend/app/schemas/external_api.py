@@ -164,6 +164,9 @@ class ExternalEntityValidationResponse(BaseModel):
     entity_id: int | None = None
     mode: Literal["current", "content", "edits"]
     valid: bool
+    status: str | None = Field(default=None, description="校验顶层状态；unavailable 表示执行不可用")
+    retryable: bool = Field(default=False, description="执行不可用时可重试")
+    error_code: str | None = Field(default=None, description="执行不可用时的基础设施错误码")
     summary: str
     errors: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)

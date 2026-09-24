@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import get_settings
 from app.core.exceptions import AppException
 from app.core.time_utils import normalize_utc, utc_now
+from app.db.errors import detect_transient_write_conflict
 from app.db.session import get_session_factory
 from app.models.api_idempotency_record import ApiIdempotencyRecord
 
@@ -24,7 +25,6 @@ logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
 
-SQLITE_BUSY_RETRIES = 3
 SQLITE_BACKOFF_DELAYS = [0.05, 0.1, 0.2]
 
 
@@ -178,7 +178,9 @@ class IdempotencyService:
                 existing = await self.session.scalar(stmt)
                 if existing is not None:
                     break
-            except OperationalError:
+            except OperationalError as exc:
+                if not detect_transient_write_conflict(exc):
+                    raise
                 await asyncio.sleep(delay)
         else:
             existing = await self.session.scalar(stmt)

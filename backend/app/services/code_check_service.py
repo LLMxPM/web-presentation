@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import time
+from collections.abc import Mapping
 from dataclasses import dataclass
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -27,6 +28,7 @@ from app.services.component_validation_service import ComponentValidationService
 from app.services.page_service import PageService
 from app.services.page_render_diagnostics_service import PageRenderDiagnosticsService
 from app.services.preview_service import PreviewService
+from app.services.validation_result import is_validation_passed
 from app.services.project_artifact_builder import ProjectPageModuleOverride
 from app.services.runtime_diagnostics_client import RuntimeDiagnosticsClient
 from app.services.runtime_artifact_store import RuntimeArtifactStore
@@ -369,7 +371,9 @@ class CodeCheckService:
                 "patch_repaired": patch_repaired,
                 "canonical_diff": canonical_diff,
             }
-            if render_preview_url and render_viewport and self._is_runtime_diagnostics_passed(enriched_result):
+            if render_preview_url and render_viewport and is_validation_passed(
+                enriched_result, require_render=False
+            ):
                 # 从调用远程渲染开始，异常路径必须保留 artifact，避免后台 attempt
                 # 仍在使用时读到 404；已知终态返回后再立即清理。
                 defer_artifact_cleanup = True
@@ -388,7 +392,13 @@ class CodeCheckService:
                 if isinstance(render_result, dict):
                     render_result.pop("_render_artifact_cleanup_deferred", None)
                 return render_result
-            return enriched_result
+            return {
+                **enriched_result,
+                "stages": {
+                    "compile": _compile_stage_status(enriched_result),
+                    "render": "skipped",
+                },
+            }
         finally:
             if not defer_artifact_cleanup:
                 try:
@@ -401,10 +411,11 @@ class CodeCheckService:
                     )
 
     async def _release_session_before_diagnostics(self) -> None:
-        """结束 artifact 准备阶段的只读事务，避免等待 Runtime/Chromium 时占用 SQLite 锁。"""
+        """结束 artifact 准备阶段的只读事务后再进入慢诊断。"""
 
-        if self.session.in_transaction():
-            await self.session.commit()
+        from app.db.tx import commit_end_read
+
+        await commit_end_read(self.session)
 
     async def _append_page_render_diagnostics(
         self,
@@ -448,27 +459,53 @@ class CodeCheckService:
                 "duration_ms": round((time.perf_counter() - render_started_at) * 1000, 2),
             },
         )
-        if isinstance(render_result, list):
-            render_diagnostics = render_result
-        elif isinstance(render_result, dict) and isinstance(render_result.get("diagnostics"), list):
-            render_diagnostics = render_result["diagnostics"]
-        else:
-            render_diagnostics = []
-        layout_analysis = normalize_layout_analysis(
-            render_result.get("layout_analysis") if isinstance(render_result, dict) else None
-        )
+        raw_diagnostics = render_result.get("diagnostics")
+        render_diagnostics: list[object] = list(raw_diagnostics) if isinstance(raw_diagnostics, list) else []
+        layout_analysis = normalize_layout_analysis(render_result.get("layout_analysis"))
 
         diagnostics = list(result.get("diagnostics") if isinstance(result.get("diagnostics"), list) else [])
         diagnostics.extend(render_diagnostics)
-        enriched_result = {
-            **result,
-            "diagnostics": diagnostics,
-            "layout_analysis": layout_analysis,
-        }
+        render_stage = _render_stage_status(render_result, render_diagnostics)
+        stages = {"compile": _compile_stage_status(result), "render": render_stage}
+        if render_stage == "unavailable":
+            # 执行不可用 ≠ 检查通过：不得继承编译的 success/status。
+            enriched_result: dict[str, object] = {
+                **result,
+                "success": False,
+                "valid": False,
+                "status": "unavailable",
+                "retryable": True,
+                "diagnostics": diagnostics,
+                "layout_analysis": layout_analysis,
+                "summary": (
+                    "页面渲染诊断执行不可用，未完成视觉校验；"
+                    "请确认 Renderer 可用后重试，或显式跳过视觉校验。"
+                ),
+                "stages": stages,
+            }
+        elif render_stage == "failed":
+            enriched_result = {
+                **result,
+                "success": False,
+                "valid": False,
+                "status": "failed",
+                "retryable": False,
+                "diagnostics": diagnostics,
+                "layout_analysis": layout_analysis,
+                "summary": "页面渲染诊断发现内容错误，代码检查未通过。",
+                "stages": stages,
+            }
+        else:
+            enriched_result = {
+                **result,
+                "diagnostics": diagnostics,
+                "layout_analysis": layout_analysis,
+                "stages": stages,
+            }
+            if render_diagnostics:
+                enriched_result["summary"] = f"代码检查通过，发现 {len(render_diagnostics)} 个布局警告。"
         if isinstance(render_result, dict) and render_result.get("_render_artifact_cleanup_deferred"):
             enriched_result["_render_artifact_cleanup_deferred"] = True
-        if render_diagnostics:
-            enriched_result["summary"] = f"代码检查通过，发现 {len(render_diagnostics)} 个布局警告。"
         return enriched_result
 
     def _resolve_candidate_source(
@@ -508,8 +545,43 @@ class CodeCheckService:
 
         return build_code_check_failed_result(code=code, message=message, source=source)
 
-    @staticmethod
-    def _is_runtime_diagnostics_passed(result: dict[str, object]) -> bool:
-        """判断 Runtime 编译诊断是否通过，只有通过后才追加渲染 warning。"""
 
-        return bool(result.get("success") is True or result.get("status") == "passed")
+def _compile_stage_status(result: Mapping[str, object]) -> str:
+    """归一化编译阶段状态。"""
+
+    status = result.get("status")
+    if status == "unavailable":
+        return "unavailable"
+    diagnostics = result.get("diagnostics")
+    has_error = isinstance(diagnostics, list) and any(
+        isinstance(item, dict) and item.get("severity") == "error" for item in diagnostics
+    )
+    has_warning = isinstance(diagnostics, list) and any(
+        isinstance(item, dict) and item.get("severity") == "warning" for item in diagnostics
+    )
+    if result.get("success") is False or status == "failed" or has_error:
+        return "failed"
+    if has_warning or status in {"passed_with_warnings", "warning"}:
+        return "passed_with_warnings"
+    return "passed"
+
+
+def _render_stage_status(render_result: Mapping[str, object], render_diagnostics: list[object]) -> str:
+    """归一化渲染阶段状态：unavailable 表示基础设施故障，不得映射为通过。"""
+
+    render_status = render_result.get("status")
+    if render_status == "unavailable":
+        return "unavailable"
+    if render_status == "failed":
+        return "failed"
+    has_error = any(
+        isinstance(item, dict) and item.get("severity") == "error" for item in render_diagnostics
+    )
+    has_warning = any(
+        isinstance(item, dict) and item.get("severity") == "warning" for item in render_diagnostics
+    )
+    if has_error:
+        return "failed"
+    if has_warning:
+        return "warning"
+    return "passed"

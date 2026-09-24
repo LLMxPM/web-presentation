@@ -104,6 +104,61 @@ async def _seed_contract_targets() -> tuple[str, int, int, int, int]:
         return result
 
 
+@pytest.mark.asyncio
+async def test_validate_entity_render_unavailable_must_not_report_valid(
+    client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """页面校验在 Renderer 不可用时必须 valid=false，并给出基础设施错误码。"""
+
+    token, workspace_id, _project_id, page_id, _component_id = await _seed_contract_targets()
+
+    class _UnavailableCodeCheck:
+        def __init__(self, session: object) -> None:
+            self.session = session
+
+        async def check_page_code(self, **_kwargs: object) -> dict[str, object]:
+            """返回编译通过但渲染执行不可用的结果。"""
+
+            return {
+                "success": False,
+                "status": "unavailable",
+                "retryable": True,
+                "summary": "页面渲染诊断执行不可用，未完成视觉校验。",
+                "stages": {"compile": "passed", "render": "unavailable"},
+                "diagnostics": [
+                    {
+                        "severity": "warning",
+                        "stage": "render",
+                        "source": "infrastructure",
+                        "code": "RENDER_SERVICE_UNAVAILABLE",
+                        "message": "页面渲染布局诊断执行不可用：Renderer 离线。",
+                    }
+                ],
+            }
+
+    monkeypatch.setattr(
+        "app.api.routes.external.validate.CodeCheckService",
+        _UnavailableCodeCheck,
+    )
+    response = await client.post(
+        "/api/v1/validate/entity",
+        json={"entity_type": "page", "entity_id": page_id, "mode": "current"},
+        headers={
+            "Authorization": f"Bearer {token}",
+            "X-Workspace-ID": str(workspace_id),
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["valid"] is False
+    assert body["status"] == "unavailable"
+    assert body["retryable"] is True
+    assert body["error_code"] == "RENDER_SERVICE_UNAVAILABLE"
+    assert any("不可用" in item for item in body["errors"])
+
+
 async def _seed_cross_workspace_targets() -> tuple[str, int, int, int, int, int]:
     """创建同一用户跨工作空间的对象与仅绑定 A 空间的 PAT。"""
 

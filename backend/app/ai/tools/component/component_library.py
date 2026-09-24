@@ -49,6 +49,7 @@ from app.services.code_check_service import (
     build_code_check_failed_result,
 )
 from app.services.workspace_component_service import WorkspaceComponentService
+from app.services.validation_result import is_validation_passed
 from app.ai.component_mutation_enqueue import enqueue_component_mutation
 from app.ai.external_task_enqueue_timeout import ExternalTaskEnqueueDeadline
 
@@ -381,7 +382,7 @@ def build_create_component_tool(
                 preview_schema=normalized_preview_schema,
                 component_type=component_type,
             )
-            if not _is_validation_passed(validation_result):
+            if not _component_validation_passed(validation_result):
                 return {
                     **validation_result,
                     "applied": False,
@@ -501,7 +502,7 @@ def build_apply_component_edits_tool(
                 edits_applied=edit_result.applied_edit_count,
                 message="组件代码校验失败，未保存草稿。",
             )
-            if not _is_validation_passed(validation_result):
+            if not _component_validation_passed(validation_result):
                 validation_result["component_id"] = component.id
                 validation_result["component_code"] = component.code
                 return validation_result
@@ -537,10 +538,10 @@ def build_apply_component_edits_tool(
     return apply_component_edits
 
 
-def _is_validation_passed(result: dict[str, Any]) -> bool:
-    """判断 Runtime 代码检查结果是否通过。"""
+def _component_validation_passed(result: dict[str, Any]) -> bool:
+    """判断组件 Runtime 代码检查结果是否通过（组件只做契约 + 编译）。"""
 
-    return bool(result.get("success") is True or result.get("status") == "passed")
+    return is_validation_passed(result, require_render=False)
 
 
 def _component_mutation_summary(component: WorkspaceComponentItem) -> dict[str, Any]:
@@ -576,7 +577,7 @@ def _with_apply_validation_metadata(
     # canonical_diff 仅供服务端内部诊断，不进入组件写工具的模型结果。
     enriched.pop("canonical_diff", None)
     enriched["edits_applied"] = edits_applied
-    if not _is_validation_passed(enriched):
+    if not _component_validation_passed(enriched):
         enriched["success"] = False
         enriched["status"] = "failed"
         enriched["message"] = message
@@ -668,7 +669,7 @@ def build_update_component_metadata_tool(
                     preview_schema=normalized_preview_schema,
                     component_type=resolved_component_type,
                 )
-                if not _is_validation_passed(validation_result):
+                if not _component_validation_passed(validation_result):
                     return {
                         **validation_result,
                         "applied": False,

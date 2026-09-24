@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from sqlalchemy import ForeignKey, Index, Integer, JSON, String, Text, text
+from sqlalchemy import ForeignKey, Integer, JSON, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
+from app.db.indexes import partial_index
 from app.models.enums import AiLlmConfigScope, AiLlmSlot, RecordStatus
 from app.models.mixins import AuditMixin, TimestampMixin
 
@@ -50,20 +51,17 @@ class AiImageSlotBinding(TimestampMixin, AuditMixin, Base):
 
     __tablename__ = "ai_image_slot_bindings"
     __table_args__ = (
-        Index(
+        partial_index(
             "uq_ai_image_slot_bindings_personal_user_slot",
-            "user_id",
-            "slot",
+            ("user_id", "slot"),
+            "scope = 'personal'",
             unique=True,
-            sqlite_where=text("scope = 'personal'"),
-            postgresql_where=text("scope = 'personal'"),
         ),
-        Index(
+        partial_index(
             "uq_ai_image_slot_bindings_global_slot",
-            "slot",
+            ("slot",),
+            "scope = 'global'",
             unique=True,
-            sqlite_where=text("scope = 'global'"),
-            postgresql_where=text("scope = 'global'"),
         ),
     )
 

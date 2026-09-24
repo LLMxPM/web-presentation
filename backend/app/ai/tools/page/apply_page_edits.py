@@ -24,6 +24,7 @@ from app.services.code_check_service import (
     build_code_check_failed_result,
 )
 from app.services.page_service import PageService
+from app.services.validation_result import resolve_write_gate
 
 
 def build_apply_page_edits_tool(
@@ -38,8 +39,12 @@ def build_apply_page_edits_tool(
         edits: list[SourceEditInput],
         base_version_no: int,
         change_note: str | None = None,
+        skip_visual_verification: bool = False,
     ) -> dict[str, Any]:
-        """对指定页面应用结构化 edits，并自动保存为新版本。"""
+        """对指定页面应用结构化 edits，并自动保存为新版本。
+
+        skip_visual_verification=True 且 Renderer 执行不可用时允许写入，但必须留审计标记。
+        """
 
         enqueue_deadline = ExternalTaskEnqueueDeadline.start()
         dependencies, claims = await enqueue_deadline.wait(
@@ -92,12 +97,17 @@ def build_apply_page_edits_tool(
                 user_id=operator_id,
                 content=edit_result.next_content,
             )
+            allow_write, skipped_visual = resolve_write_gate(
+                validation_result,
+                skip_visual_verification=skip_visual_verification,
+            )
             validation_result = _with_apply_validation_metadata(
                 validation_result,
                 edits_applied=edit_result.applied_edit_count,
                 message="页面代码校验失败，未保存页面版本。",
+                allow_write=allow_write,
             )
-            if not _is_validation_passed(validation_result):
+            if not allow_write:
                 return validation_result
             updated_page = await page_service.update(
                 target_page_id,
@@ -118,17 +128,14 @@ def build_apply_page_edits_tool(
                 "layout_analysis": _extract_layout_analysis(validation_result),
                 "code_check_summary": validation_result.get("summary"),
             }
-            if _has_warning_diagnostics(response):
+            if skipped_visual:
+                response["skipped_visual_verification"] = True
+                response["message"] = "页面代码已更新并生成新版本（已跳过视觉校验：Renderer 执行不可用）。"
+            elif _has_warning_diagnostics(response):
                 response["message"] = "页面代码已更新并生成新版本，但发现布局警告。"
             return response
 
     return apply_page_edits
-
-
-def _is_validation_passed(result: dict[str, Any]) -> bool:
-    """判断 Runtime 代码检查结果是否通过。"""
-
-    return bool(result.get("success") is True or result.get("status") == "passed")
 
 
 def _with_apply_validation_metadata(
@@ -136,6 +143,7 @@ def _with_apply_validation_metadata(
     *,
     edits_applied: int,
     message: str,
+    allow_write: bool = False,
 ) -> dict[str, Any]:
     """为 apply 内置校验结果补齐 edits 元数据和失败提示。"""
 
@@ -143,10 +151,17 @@ def _with_apply_validation_metadata(
     # canonical_diff 仅供服务端内部诊断，不进入页面写工具的模型结果。
     enriched.pop("canonical_diff", None)
     enriched["edits_applied"] = edits_applied
-    if not _is_validation_passed(enriched):
+    if not allow_write:
         enriched["success"] = False
-        enriched["status"] = "failed"
-        enriched["message"] = message
+        if enriched.get("status") != "unavailable":
+            enriched["status"] = "failed"
+            enriched["message"] = message
+        else:
+            enriched["retryable"] = True
+            enriched["message"] = (
+                "页面渲染诊断执行不可用，未保存页面版本；"
+                "请确认 Renderer 可用后重试，或设置 skip_visual_verification=true。"
+            )
     return enriched
 
 

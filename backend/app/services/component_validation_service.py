@@ -13,6 +13,7 @@ from app.services.component_validation_profile import COMPONENT_VALIDATION_PROFI
 from app.services.runtime_artifact_store import RuntimeArtifactStore
 from app.services.runtime_diagnostics_client import RuntimeDiagnosticsClient
 from app.services.token_service import TokenService
+from app.services.validation_result import is_validation_passed
 
 logger = logging.getLogger(__name__)
 
@@ -223,7 +224,7 @@ class ComponentValidationService:
     def _compile_passed(result: dict[str, object]) -> bool:
         """判断 Runtime 编译诊断是否通过。"""
 
-        return bool(result.get("success") is True or result.get("status") == "passed")
+        return is_validation_passed(result, require_render=False)
 
     @staticmethod
     def _build_compile_summary(status: str) -> str:

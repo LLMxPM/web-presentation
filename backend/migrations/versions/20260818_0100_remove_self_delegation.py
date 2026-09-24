@@ -11,6 +11,7 @@ AI 会话与运行历史；downgrade 只恢复空的表、列和索引结构，�
 from typing import Sequence, Union
 
 from alembic import op
+from migrations.helpers.dialect import is_sqlite
 import sqlalchemy as sa
 
 
@@ -127,7 +128,7 @@ def _drop_columns(
 ) -> None:
     """按数据库能力删除列；PostgreSQL 原地删除，SQLite 使用批量重建。"""
 
-    if op.get_bind().dialect.name == "sqlite":
+    if is_sqlite():
         with op.batch_alter_table(table_name, recreate="always") as batch:
             for index_name in index_names:
                 batch.drop_index(index_name)
@@ -153,7 +154,7 @@ def _restore_member_column(table_name: str, *, with_foreign_key: bool) -> None:
     column = sa.Column("member_run_id", sa.String(length=128), nullable=True)
     constraint_name = f"fk_{table_name}_member_run_id_ai_agent_member_runs"
     index_name = f"ix_{table_name}_member_run_id"
-    if op.get_bind().dialect.name == "sqlite":
+    if is_sqlite():
         with op.batch_alter_table(table_name, recreate="always") as batch:
             batch.add_column(column)
             if with_foreign_key:
@@ -186,7 +187,7 @@ def _restore_requirement_columns() -> None:
         sa.Column("member_agent_name", sa.String(length=128), nullable=True),
         sa.Column("member_run_id", sa.String(length=128), nullable=True),
     )
-    if op.get_bind().dialect.name == "sqlite":
+    if is_sqlite():
         with op.batch_alter_table("ai_agent_requirements", recreate="always") as batch:
             for column in columns:
                 batch.add_column(column)

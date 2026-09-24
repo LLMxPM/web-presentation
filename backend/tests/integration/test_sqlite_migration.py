@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import runpy
 import sqlite3
 import subprocess
@@ -22,13 +23,19 @@ def test_ai_attachment_lifecycle_foreign_key_names_fit_postgresql_limit() -> Non
 
 
 def test_llm_reasoning_migration_should_use_portable_boolean_sql() -> None:
-    """推理能力迁移不得用整数比较或写入布尔列，确保 PostgreSQL 与 SQLite 均可执行。"""
+    """推理能力迁移不得用整数比较布尔列，确保 PostgreSQL 与 SQLite 均可执行。
+
+    布尔语义写在 op.execute 的 SQL 字符串里，AST 遍历看不到，必须对源码文本断言。
+    """
 
     backend_root = Path(__file__).resolve().parents[2]
     migration_path = backend_root / "migrations" / "versions" / "20260811_0100_llm_reasoning_capabilities.py"
     source = migration_path.read_text(encoding="utf-8")
 
-    assert "thinking_enabled = 0" not in source
+    # PostgreSQL 拒绝 boolean 与整数比较；SQLite 的整数真值也不等价于布尔语义。
+    assert not re.search(r"thinking_enabled\s*(?:=|==|<>|!=)\s*[01]\b", source), (
+        "thinking_enabled 不得与整数 0/1 比较"
+    )
     assert "thinking_enabled IS FALSE" in source
     assert "THEN TRUE ELSE FALSE" in source
 
@@ -182,17 +189,16 @@ def test_remove_self_delegation_migration_should_purge_history_and_restore_empty
 
 
 def test_remove_self_delegation_migration_should_keep_postgresql_partial_index_contract() -> None:
-    """PostgreSQL 必须原地删列，并保留新旧 collecting 部分索引谓词。"""
+    """方言分支必须走 helpers.dialect，禁止迁移裸判 dialect.name；索引语义由升级行为覆盖。"""
 
     backend_root = Path(__file__).resolve().parents[2]
     source = (
         backend_root / "migrations" / "versions" / "20260818_0100_remove_self_delegation.py"
     ).read_text(encoding="utf-8")
 
-    assert 'postgresql_where=sa.text("status = \'collecting\'")' in source
-    assert "postgresql_where=sa.text(\"status = 'collecting' AND member_run_id IS NULL\")" in source
-    assert "postgresql_where=sa.text(\"status = 'collecting' AND member_run_id IS NOT NULL\")" in source
-    assert 'if op.get_bind().dialect.name == "sqlite":' in source
+    assert "from migrations.helpers.dialect import is_sqlite" in source
+    assert "is_sqlite()" in source
+    assert "dialect.name" not in source
     assert "inspector = sa.inspect(op.get_bind())" in source
     assert "op.drop_column(table_name, column_name)" in source
 

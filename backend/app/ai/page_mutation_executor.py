@@ -17,7 +17,6 @@ from app.ai.page_mutation_arguments import (
     normalize_page_mutation_arguments,
     normalize_page_mutation_result,
 )
-from app.ai.run_event_writer import is_sqlite_lock_error
 from app.ai.platform_tools import recoverable_tool_error_result
 from app.ai.validation_result_formatter import compact_mutation_result
 from app.ai.tools.page.apply_page_edits import (
@@ -27,12 +26,13 @@ from app.ai.tools.page.apply_page_edits import (
 )
 from app.ai.tools.project.project_pages import (
     _has_warning_diagnostics,
-    _is_validation_passed,
     _with_create_validation_failure_message,
 )
+from app.services.validation_result import resolve_write_gate
 from app.ai.tools.shared import apply_source_edits
 from app.core.exceptions import AppException
 from app.core.time_utils import utc_now
+from app.db.errors import detect_transient_write_conflict
 from app.models.ai_agent_runtime import AiAgentRun, AiAgentToolCall
 from app.models.ai_page_mutation import AiPageMutationJob
 from app.models.enums import PageFileType, RecordStatus
@@ -222,7 +222,12 @@ class AiPageMutationExecutor:
             },
         )
         self._raise_if_lease_lost(lease_lost)
-        if not _is_validation_passed(validation_result):
+        skip_visual = bool(context.arguments.get("skip_visual_verification"))
+        allow_write, skipped_visual = resolve_write_gate(
+            validation_result,
+            skip_visual_verification=skip_visual,
+        )
+        if not allow_write:
             await self._finish_without_page_write(
                 database_id=context.database_id,
                 worker_id=worker_id,
@@ -265,7 +270,10 @@ class AiPageMutationExecutor:
                 "layout_analysis": _extract_layout_analysis(validation_result),
                 "code_check_summary": validation_result.get("summary"),
             }
-            if _has_warning_diagnostics(response):
+            if skipped_visual:
+                response["skipped_visual_verification"] = True
+                response["message"] = "页面已创建（已跳过视觉校验：Renderer 执行不可用）。"
+            elif _has_warning_diagnostics(response):
                 response["message"] = "页面已创建，但发现布局警告。"
             if not await self._mark_succeeded(
                 session,
@@ -362,12 +370,18 @@ class AiPageMutationExecutor:
             },
         )
         self._raise_if_lease_lost(lease_lost)
+        skip_visual = bool(context.arguments.get("skip_visual_verification"))
+        allow_write, skipped_visual = resolve_write_gate(
+            validation_result,
+            skip_visual_verification=skip_visual,
+        )
         validation_result = _with_apply_validation_metadata(
             validation_result,
             edits_applied=edit_result.applied_edit_count,
             message="页面代码校验失败，未保存页面版本。",
+            allow_write=allow_write,
         )
-        if not _is_validation_passed(validation_result):
+        if not allow_write:
             await self._finish_without_page_write(
                 database_id=context.database_id,
                 worker_id=worker_id,
@@ -407,7 +421,10 @@ class AiPageMutationExecutor:
                 "layout_analysis": _extract_layout_analysis(validation_result),
                 "code_check_summary": validation_result.get("summary"),
             }
-            if _has_warning_diagnostics(response):
+            if skipped_visual:
+                response["skipped_visual_verification"] = True
+                response["message"] = "页面代码已更新并生成新版本（已跳过视觉校验：Renderer 执行不可用）。"
+            elif _has_warning_diagnostics(response):
                 response["message"] = "页面代码已更新并生成新版本，但发现布局警告。"
             if not await self._mark_succeeded(
                 session,
@@ -450,7 +467,7 @@ class AiPageMutationExecutor:
                 return
             except OperationalError as exc:
                 await session.rollback()
-                if not is_sqlite_lock_error(session, exc) or attempt + 1 >= max_attempts:
+                if not detect_transient_write_conflict(exc) or attempt + 1 >= max_attempts:
                     raise
                 await asyncio.sleep(0.05 * (2**attempt))
             finally:

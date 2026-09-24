@@ -357,6 +357,120 @@ async def test_apply_page_edits_should_save_and_return_warning(
     assert "canonical_diff" not in result
 
 
+UNAVAILABLE_RENDER_RESULT = {
+    "success": False,
+    "valid": False,
+    "status": "unavailable",
+    "retryable": True,
+    "summary": "页面渲染诊断执行不可用，未完成视觉校验；请确认 Renderer 可用后重试，或显式跳过视觉校验。",
+    "stages": {"compile": "passed", "render": "unavailable"},
+    "diagnostics": [
+        {
+            "severity": "warning",
+            "stage": "render",
+            "source": "infrastructure",
+            "code": "RENDER_SERVICE_UNAVAILABLE",
+            "message": "页面渲染布局诊断执行不可用：Renderer 离线。",
+        }
+    ],
+}
+
+
+async def test_create_project_page_should_reject_when_render_unavailable(
+    authenticated_client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Renderer 执行不可用时不得创建页面，且结果 status 必须为 unavailable。"""
+
+    workspace_id = await _create_workspace(authenticated_client, "AI 创建页面渲染不可用工作空间")
+    project_id = await _create_project(authenticated_client, workspace_id, "AI 创建页面渲染不可用项目")
+    FakeCodeCheckService.result = dict(UNAVAILABLE_RENDER_RESULT)
+    monkeypatch.setattr(project_pages_module, "CodeCheckService", FakeCodeCheckService)
+    tool = project_pages_module.build_create_project_page_tool(get_session_factory())
+
+    result = await tool.entrypoint(
+        _build_tool_run_context(
+            workspace_id=workspace_id,
+            project_id=project_id,
+            scopes=PROJECT_TOOL_WRITE_SCOPES,
+        ),
+        title="不可用页面",
+        page_content="<template><main>不可用</main></template>",
+    )
+
+    assert result["success"] is not True
+    assert result["status"] == "unavailable"
+    assert "未创建页面" in result["message"]
+    assert (await _list_project_pages(authenticated_client, project_id))["total"] == 0
+
+
+async def test_create_project_page_skip_visual_verification_writes_with_audit(
+    authenticated_client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """skip_visual_verification=true 时允许写入，但必须留下审计标记。"""
+
+    workspace_id = await _create_workspace(authenticated_client, "AI 跳过视觉校验工作空间")
+    project_id = await _create_project(authenticated_client, workspace_id, "AI 跳过视觉校验项目")
+    FakeCodeCheckService.result = dict(UNAVAILABLE_RENDER_RESULT)
+    monkeypatch.setattr(project_pages_module, "CodeCheckService", FakeCodeCheckService)
+    tool = project_pages_module.build_create_project_page_tool(get_session_factory())
+
+    result = await tool.entrypoint(
+        _build_tool_run_context(
+            workspace_id=workspace_id,
+            project_id=project_id,
+            scopes=PROJECT_TOOL_WRITE_SCOPES,
+        ),
+        title="跳过视觉校验页面",
+        page_content="<template><main>跳过</main></template>",
+        skip_visual_verification=True,
+    )
+
+    assert result["success"] is True
+    assert result["skipped_visual_verification"] is True
+    assert "跳过视觉校验" in result["message"]
+    assert (await _list_project_pages(authenticated_client, project_id))["total"] == 1
+
+
+async def test_apply_page_edits_should_reject_when_render_unavailable(
+    authenticated_client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Renderer 执行不可用时不得保存页面版本。"""
+
+    workspace_id = await _create_workspace(authenticated_client, "AI 应用页面渲染不可用工作空间")
+    project_id = await _create_project(authenticated_client, workspace_id, "AI 应用页面渲染不可用项目")
+    page = await _create_page(authenticated_client, workspace_id, project_id, "待编辑不可用页面")
+    FakeCodeCheckService.result = dict(UNAVAILABLE_RENDER_RESULT)
+    monkeypatch.setattr(apply_page_edits_module, "CodeCheckService", FakeCodeCheckService)
+    tool = apply_page_edits_module.build_apply_page_edits_tool(get_session_factory())
+
+    result = await tool.entrypoint(
+        _build_tool_run_context(
+            workspace_id=workspace_id,
+            project_id=project_id,
+            page_id=page["id"],
+            scopes=PAGE_TOOL_WRITE_SCOPES,
+        ),
+        page_id=page["id"],
+        base_version_no=page["current_version_no"],
+        edits=[
+            {
+                "type": "rewrite_file",
+                "content": "<template><main>新内容</main></template>",
+            }
+        ],
+    )
+
+    assert result["success"] is not True
+    assert result["status"] == "unavailable"
+    assert "未保存页面版本" in result["message"]
+    detail = await authenticated_client.get(f"/api/pages/{page['id']}")
+    assert detail.status_code == 200
+    assert detail.json()["current_version_no"] == page["current_version_no"]
+
+
 async def _create_workspace(authenticated_client: AsyncClient, name: str) -> int:
     """创建测试工作空间。"""
 

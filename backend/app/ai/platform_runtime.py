@@ -18,9 +18,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.time_utils import normalize_utc
+from app.db.errors import detect_transient_write_conflict
 from app.ai.image_refs import sanitize_message_history_image_refs
 from app.ai.agent.runtime_context import AgentRuntimeContext
-from app.ai.run_event_writer import allocate_run_event_index, is_sqlite_lock_error
+from app.ai.run_event_writer import allocate_run_event_index
 from app.ai.run_write_fence import AgentRunWriteFence
 from app.ai.external_task_control import seal_external_batch_for_requirement
 from app.ai.tool_arguments import parse_tool_arguments
@@ -354,7 +355,7 @@ class PlatformAgentRuntimeStore:
             try:
                 return await self._append_event_once(run_model, event, commit=True)
             except OperationalError as exc:
-                can_retry = is_sqlite_lock_error(self._session, exc)
+                can_retry = detect_transient_write_conflict(exc)
                 if not can_retry:
                     raise
                 await self._session.rollback()
@@ -463,11 +464,10 @@ class PlatformAgentRuntimeStore:
     async def _has_sqlite_write_transaction(self) -> bool:
         """判断 SQLite 连接是否已执行未提交 DML，避免进程锁与数据库写锁发生锁序反转。"""
 
-        if self._session.get_bind().dialect.name != "sqlite":
-            return False
-        connection = await self._session.connection()
-        driver_connection = connection.sync_connection.connection.driver_connection
-        return bool(getattr(driver_connection, "in_transaction", False))
+        from app.db.locks import holds_write_lock
+
+        await self._session.connection()
+        return holds_write_lock(self._session)
 
     async def append_assistant_message(
         self,

@@ -12,8 +12,8 @@ from app.ai.tools.component.component_library import (
     _ensure_component_edit_lock,
     _ensure_component_metadata_check_baseline,
     _ensure_component_workspace,
-    _is_validation_passed,
 )
+from app.services.validation_result import is_validation_passed
 from app.ai.tools.shared import (
     apply_source_edits,
     calculate_source_hash,
@@ -79,7 +79,7 @@ class AiComponentMutationExecutor:
             preview_schema=preview_schema,
             component_type=component_type,
         )
-        if not _is_validation_passed(validation):
+        if not is_validation_passed(validation, require_render=False):
             return _validation_error("组件校验失败，未创建草稿。", validation)
         created = await WorkspaceComponentService(self.session).create(
             WorkspaceComponentCreateRequest(
@@ -131,7 +131,7 @@ class AiComponentMutationExecutor:
             user_id=operator_id,
             content=edits.next_content,
         )
-        if not _is_validation_passed(validation):
+        if not is_validation_passed(validation, require_render=False):
             return _validation_error("组件代码校验失败，未保存草稿。", validation)
         self.session.expire_all()
         refreshed = await service.get(component_id, user_id=operator_id)
@@ -190,7 +190,7 @@ class AiComponentMutationExecutor:
             preview_schema=preview_schema,
             component_type=component_type,
         )
-        if not _is_validation_passed(validation):
+        if not is_validation_passed(validation, require_render=False):
             return _validation_error("组件校验失败，未更新元数据。", validation)
         self.session.expire_all()
         refreshed = await service.get(component_id, user_id=operator_id)

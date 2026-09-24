@@ -10,14 +10,9 @@ from typing import Any
 import uuid
 
 from sqlalchemy import Select, select, update
-from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.time_utils import utc_now
-
-_SQLITE_BUSY_ERROR_CODE = 5
-_SQLITE_LOCKED_ERROR_CODE = 6
-_SQLITE_LOCK_MESSAGES = ("database is locked", "database table is locked")
 
 
 @dataclass(frozen=True, slots=True)
@@ -39,22 +34,6 @@ def build_durable_worker_id() -> str:
     """构造跨进程唯一的持久化任务 Worker 标识。"""
 
     return f"{socket.gethostname()}:{os.getpid()}:{uuid.uuid4().hex}"
-
-
-def is_sqlite_lock_error(session: AsyncSession, exc: OperationalError) -> bool:
-    """判断当前会话的异常是否为 SQLite BUSY/LOCKED，供持久化任务执行短退避。"""
-
-    if session.get_bind().dialect.name != "sqlite":
-        return False
-    original_error = exc.orig
-    sqlite_error_code = getattr(original_error, "sqlite_errorcode", None)
-    if isinstance(sqlite_error_code, int) and sqlite_error_code & 0xFF in {
-        _SQLITE_BUSY_ERROR_CODE,
-        _SQLITE_LOCKED_ERROR_CODE,
-    }:
-        return True
-    message = str(original_error).lower()
-    return any(fragment in message for fragment in _SQLITE_LOCK_MESSAGES)
 
 
 async def claim_pending_jobs(

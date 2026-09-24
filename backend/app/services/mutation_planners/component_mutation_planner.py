@@ -11,9 +11,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.ai.tools.component.component_library import (
     _ensure_component_edit_lock,
     _ensure_component_workspace,
-    _is_validation_passed,
     normalize_preview_schema_argument,
 )
+from app.services.validation_result import is_validation_passed
 from app.ai.tools.shared import apply_source_edits
 from app.core.exceptions import AppException
 from app.models.enums import WorkspaceComponentType, resolve_workspace_component_type
@@ -113,7 +113,7 @@ class ComponentMutationPlanner:
             component_type=resolved_type,
         )
 
-        passed = _is_validation_passed(validation)
+        passed = is_validation_passed(validation, require_render=False)
         message = "组件预检通过。" if passed else "组件代码校验失败。"
         diagnostics = list(validation.get("diagnostics") or [])
 
@@ -170,7 +170,7 @@ class ComponentMutationPlanner:
             preview_schema=normalized_schema,
             component_type=resolved_type,
         )
-        passed = _is_validation_passed(validation)
+        passed = is_validation_passed(validation, require_render=False)
         return PreparedComponentMutationResult(
             success=passed,
             operation="update_component_metadata",
@@ -218,7 +218,7 @@ class ComponentMutationPlanner:
             content=applied.next_content,
         )
 
-        passed = _is_validation_passed(validation)
+        passed = is_validation_passed(validation, require_render=False)
         message = "组件修改预检通过。" if passed else "组件修改代码校验失败。"
         diagnostics = list(validation.get("diagnostics") or [])
 

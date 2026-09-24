@@ -796,6 +796,10 @@ _COORDINATOR_OPERATION_GUIDES = (
                           "Tailwind 类必须是源码中的完整静态字符串；动态视觉选择使用顶层枚举映射，禁止拼接 text-${tone}、from-${color} 等类名。",
                       ),
                      side_effects=("通过持久化页面任务队列执行并创建页面初始版本。",),
+                     error_recovery=(
+                         "校验返回 status=unavailable 表示 Renderer 执行不可用，属于基础设施故障而非源码错误：默认拒写，应重试或等待 Renderer 恢复，不要据此重写页面源码。",
+                         "只有在用户明确要求 Renderer 不可用时仍要写入的情况下才传 skip_visual_verification=true；此时不做视觉校验，结果会带 skipped_visual_verification 审计标记。",
+                     ),
                      response_example={
                          "success": True,
                          "resource_type": "page",
@@ -1016,7 +1020,7 @@ _COORDINATOR_OPERATION_GUIDES = (
                           "新增 Tailwind 类必须是完整静态字符串；动态样式使用顶层枚举映射，禁止拼接 text-${tone}、from-${color} 等类名。",
                       ),
                       side_effects=("通过持久化页面任务队列校验，通过后创建新版本。",),
-                      error_recovery=("版本冲突时重新读取页面 content 后重新生成 edits。", "精确文本未唯一命中时不得原样重试。", "validation 只返回精简校验文本；需要诊断 facts 时使用相同目标和候选参数调用 validate_entity(detail=true)。"),
+                      error_recovery=("版本冲突时重新读取页面 content 后重新生成 edits。", "精确文本未唯一命中时不得原样重试。", "validation 只返回精简校验文本；需要诊断 facts 时使用相同目标和候选参数调用 validate_entity(detail=true)。", "校验返回 status=unavailable 表示 Renderer 执行不可用，属于基础设施故障而非源码错误：默认拒写，应重试或等待 Renderer 恢复，不要据此重写页面源码。", "只有在用户明确要求 Renderer 不可用时仍要写入的情况下才传 skip_visual_verification=true；此时不做视觉校验，结果会带 skipped_visual_verification 审计标记。"),
                       response_example={
                           "success": True,
                           "resource_type": "page",
