@@ -1,5 +1,5 @@
 /**
- * 文件功能：封装智能体会话本地时间线的乐观更新，保持 Pinia store 聚焦状态分片同步。
+ * 文件功能：封装智能体会话本地时间线的乐观更新，由 Pinia Store 写入唯一会话分片。
  */
 import {
   buildAgentLocalTimelineItem,

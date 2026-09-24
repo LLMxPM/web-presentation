@@ -442,7 +442,7 @@ import PaginationControl from '@/components/ui/PaginationControl.vue'
 import { UiButton, UiDialog, UiIconButton } from '@/components/ui'
 import { createConfirm, Message } from '@/utils/message'
 import { downloadBlob } from '@/utils/zip-download'
-import type { AgentMutationRefreshEvent } from '@/components/agent/agent-conversation-panel'
+import type { AgentMutationRefreshEvent } from '@/components/agent/agent-mutation-refresh'
 import type {
   PreviewArtifactResponse,
   ProjectItem,

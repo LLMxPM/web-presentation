@@ -33,7 +33,7 @@
 
 <script setup lang="ts">
 import AgentConversationPanel from '@/components/agent/AgentConversationPanel.vue'
-import type { AgentMutationRefreshEvent } from '@/components/agent/agent-conversation-panel'
+import type { AgentMutationRefreshEvent } from '@/components/agent/agent-mutation-refresh'
 import type { AgentScopeContext } from '@/types/api'
 
 interface Props {

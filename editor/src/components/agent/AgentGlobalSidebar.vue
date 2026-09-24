@@ -67,7 +67,7 @@ import {
   buildPageDetailPath,
   buildProjectPagesPath,
 } from '@/utils/workspace-routes'
-import type { AgentMutationRefreshEvent } from '@/components/agent/agent-conversation-panel'
+import type { AgentMutationRefreshEvent } from '@/components/agent/agent-mutation-refresh'
 import type { AgentScopeContext } from '@/types/api'
 
 interface Props {

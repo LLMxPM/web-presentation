@@ -1388,7 +1388,11 @@ describe('AgentConversationPanel', () => {
       agentId: DEFAULT_AGENT_ID,
       projectId: undefined,
       pageId: undefined,
-      source: 'editor-assets',
+      scope: {
+        scope_type: 'workspace',
+        workspace_id: 11,
+        source: 'editor-assets',
+      },
     }))
 
     await waitFor(() => {

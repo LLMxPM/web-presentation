@@ -14,6 +14,10 @@ AI 侧边栏负责承接用户输入、展示会话消息、展示工具调用�
 
 恢复会话时，应以 Backend 返回的会话、run、消息、事件和 requirement 为事实源。前端本地状态只用于交互体验，不应覆盖服务端状态。
 
+前端运行态由 `agent-session` Pinia Store 的 `sessions[sessionId]` 保存；每个分片包含运行态与该会话的交互态。面板通过响应式读取和 Store action 更新它，不维护可写的扁平会话映射。待确认动作以暂停中 `activeRun.pending_requirement` 为唯一前端来源；服务端快照负责恢复，SSE 按事件序号推进，显式清空和失败回滚也更新同一字段。写入非空 requirement 前必须先让 `activeRun` 处于 `paused`，否则 Store 会拒绝写入并告警。
+
+`useAgentSessionContext` 负责会话查询、选择和会话自身范围解析；`useAgentSessionPreferences` 按目标会话串行保存下一轮焦点与工作集（失败时若已有更新草稿则继续提交，不丢掉后续编辑）；`useAgentModelSelection` 管理模型和推理选项；`useAgentRunLifecycle` 协调 Run 启动、订阅、取消与收尾；`useAgentSessionRunStatus` 提供会话列表徽标与首轮自动命名。面板保留视图组合与对外事件连接，路由切换后后台 Run 的恢复与收尾继续使用所属会话的范围。
+
 会话选择按 `workspace_id + agent_id` 持久化。工作空间内切换项目或页面不得创建会话、切换会话、禁用输入或触发路由回跳。单智能体侧栏不展示助手切换 Tab；顶栏在 Run 未终止时以紧凑状态标签展示当前任务焦点，空闲时显示产品标题 `Web-Presentation`，且不再单独展示当前路由范围。“跟随路由 / 固定项目 / 工作空间级”焦点模式和项目工作集收纳在输入框内；活跃 Run 期间输入框仍可配置只影响下一轮的焦点与工作范围。
 
 每个 Run 的第一条用户消息后紧跟只读的“本轮”上下文摘要，包含发送时固化的焦点和工作范围。摘要优先显示对象名称，通过悬浮信息补充对象类型与 ID；历史回放和实时 `run.focus.snapshot` 事件必须生成相同结构，避免路由变化后误解旧消息的操作范围。尚未落库的空白会话也必须允许编辑下一轮焦点和工作范围，首条消息创建会话时一次性提交草稿偏好。

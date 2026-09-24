@@ -56,19 +56,6 @@ export type TimelineDisplayItem =
   | { id: string, kind: 'run_status', item: AgentTimelineItem, status: string | null, content: string }
   | { id: string, kind: 'requirement', item: AgentTimelineItem, status: string | null, content: string }
 
-export interface AgentMutationRefreshEvent {
-  kind: 'page' | 'project-pages' | 'project' | 'component' | 'asset' | 'theme' | 'style'
-  workspaceId: number | null
-  projectId: number | null
-  pageId: number | null
-  componentId: number | null
-  assetId?: number | null
-  themeId?: number | null
-  styleId?: number | null
-  toolName: string
-  result: unknown
-}
-
 /**
  * 将 timeline tool item 转成弹窗与工具卡片统一使用的详情结构。
  */

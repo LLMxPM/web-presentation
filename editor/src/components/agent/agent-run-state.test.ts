@@ -124,7 +124,7 @@ describe('agent-run-state timeline', () => {
 
     expect(state.activeRun?.status).toBe('waiting_external')
     expect(state.stream.streaming).toBe(true)
-    expect(state.pendingRequirement).toBeNull()
+    expect(state.activeRun?.pending_requirement).toBeNull()
     expect(state.timelineItems.find(item => item.kind === 'tool')?.tool).toEqual(expect.objectContaining({
       tool_call_id: 'tool-page-1',
       status: 'running',
@@ -200,7 +200,6 @@ describe('agent-run-state timeline', () => {
         event_index: 4,
       },
       lastRun: null,
-      pendingRequirement: null,
       pendingImageAttachments: [],
       contextStatus: null,
       eventIndex: 4,
@@ -364,7 +363,7 @@ describe('agent-run-state timeline', () => {
     }), options)
 
     expect(state.activeRun?.status).toBe('paused')
-    expect(state.pendingRequirement?.id).toBe('req-1')
+    expect(state.activeRun?.pending_requirement?.id).toBe('req-1')
     expect(state.stream.streaming).toBe(false)
     expect(state.timelineItems.some(item => item.kind === 'requirement')).toBe(true)
   })
@@ -580,7 +579,6 @@ describe('agent-run-state timeline', () => {
         created_at: '2026-04-18T10:00:00+08:00',
         event_index: 3,
       },
-      pendingRequirement: null,
       pendingImageAttachments: [],
       contextStatus: null,
       eventIndex: 3,
@@ -618,7 +616,6 @@ describe('agent-run-state timeline', () => {
         event_index: 2,
       },
       lastRun: null,
-      pendingRequirement: null,
       pendingImageAttachments: [],
       contextStatus: null,
       eventIndex: 2,
@@ -680,7 +677,6 @@ describe('agent-run-state timeline', () => {
         created_at: '2026-04-18T10:00:00+08:00',
         event_index: 3,
       },
-      pendingRequirement: null,
       pendingImageAttachments: [],
       contextStatus: null,
       eventIndex: 3,
@@ -690,12 +686,12 @@ describe('agent-run-state timeline', () => {
     expect(state.lastRun?.status).toBe('cancelled')
   })
 
-  it('store 扁平缓存中的 null 应能清理嵌套 paused requirement', () => {
+  it('store 显式清空 paused requirement 后不再从其他状态恢复', () => {
     setActivePinia(createPinia())
     const store = useAgentSessionStore()
     const sessionId = 'session-1'
 
-    store.setPendingRequirement(sessionId, {
+    const requirement: AgentPendingRequirement = {
       id: 'req-1',
       kind: 'confirmation',
       run_id: 'run-1',
@@ -705,14 +701,23 @@ describe('agent-run-state timeline', () => {
       suggested_patch: null,
       user_feedback_schema: [],
       note: null,
+    }
+    store.setActiveRun(sessionId, {
+      run_id: 'run-1',
+      session_id: sessionId,
+      agent_id: 'agent-coordinator',
+      status: 'paused',
+      pending_requirement: requirement,
+      content: null,
+      created_at: null,
     })
-    store.pendingRequirementBySession[sessionId] = null
+    store.setPendingRequirement(sessionId, null)
     store.applyRunEvent(sessionId, event({ event: 'run.cancelling', sequence: 1 }), {
       agentId: 'agent-coordinator',
       agentDisplayName: '内容助手',
     })
 
-    expect(store.sessions[sessionId].pendingRequirement).toBeNull()
+    expect(store.getSession(sessionId)?.runtime.activeRun?.pending_requirement).toBeNull()
   })
 
   it('store 设置 running activeRun 时应清理旧 pending requirement', () => {
@@ -750,8 +755,7 @@ describe('agent-run-state timeline', () => {
       created_at: null,
     })
 
-    expect(store.activeRunBySession[sessionId]?.pending_requirement).toBeNull()
-    expect(store.pendingRequirementBySession[sessionId]).toBeNull()
+    expect(store.getSession(sessionId)?.runtime.activeRun?.pending_requirement).toBeNull()
   })
 
   it('平台事件应投影成运行中、消息增量和 HITL 暂停状态', () => {
@@ -787,7 +791,7 @@ describe('agent-run-state timeline', () => {
     expect(state.timelineItems.find(item => item.kind === 'message')?.content).toBe('半截输出')
     expect(state.activeRun?.status).toBe('paused')
     expect(state.activeRun?.event_index).toBe(2)
-    expect(state.pendingRequirement).toEqual(expect.objectContaining({
+    expect(state.activeRun?.pending_requirement).toEqual(expect.objectContaining({
       id: 'req-1',
       tool_name: 'apply_page_edits',
     }))

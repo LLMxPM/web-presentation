@@ -32,7 +32,6 @@ export interface AgentSessionRuntimeState {
   timelineItems: AgentTimelineItem[]
   activeRun: AgentActiveRunItem | null
   lastRun: AgentActiveRunItem | null
-  pendingRequirement: AgentPendingRequirement | null
   pendingImageAttachments: AgentImageAttachmentItem[]
   contextStatus: unknown | null
   lastIssue: { title: string, detail: string } | null
@@ -71,7 +70,6 @@ export function createAgentSessionRuntimeState(): AgentSessionRuntimeState {
     timelineItems: [],
     activeRun: null,
     lastRun: null,
-    pendingRequirement: null,
     pendingImageAttachments: [],
     contextStatus: null,
     lastIssue: null,
@@ -143,7 +141,6 @@ export function applyAgentRunEvent(
   switch (event.event) {
     case 'run.started':
     case 'run.continued':
-      state.pendingRequirement = null
       state.stream.runId = runId
       state.stream.streaming = true
       resetInlineReasoningStateForRun(state, runId)
@@ -158,7 +155,6 @@ export function applyAgentRunEvent(
       applyRunFocusSnapshot(state, event, runId)
       return { applied: true, terminal: false }
     case 'run.cancelling':
-      state.pendingRequirement = null
       state.stream.runId = runId
       state.stream.streaming = true
       state.activeRun = buildEventRunState(state, event, options.agentId, 'cancelling')
@@ -166,7 +162,6 @@ export function applyAgentRunEvent(
       appendRunStatusItem(state, event, 'cancelling', '正在停止当前运行。')
       return { applied: true, terminal: false }
     case 'model.request.started':
-      state.pendingRequirement = null
       state.stream.runId = runId
       state.stream.streaming = true
       if (!state.activeRun || state.activeRun.run_id === runId) {
@@ -247,18 +242,19 @@ export function applyAgentRunEvent(
       appendRunStatusItem(state, event, CONTEXT_COMPRESSION_STATUS, CONTEXT_COMPRESSION_FAILED_TEXT)
       return { applied: true, terminal: false }
     case 'run.paused':
-      state.pendingRequirement = (event.data.requirement as AgentPendingRequirement | null) ?? null
-      state.activeRun = buildEventRunState(state, event, options.agentId, 'paused', state.pendingRequirement)
-      state.stream.streaming = false
-      state.lastIssue = null
-      removeRunWaitingStatusItems(state, runId)
-      appendRequirementItem(state, event, state.pendingRequirement)
-      clearStreamingTextItem(state)
-      resetInlineReasoningStateForRun(state, runId)
+      {
+        const requirement = (event.data.requirement as AgentPendingRequirement | null) ?? null
+        state.activeRun = buildEventRunState(state, event, options.agentId, 'paused', requirement)
+        state.stream.streaming = false
+        state.lastIssue = null
+        removeRunWaitingStatusItems(state, runId)
+        appendRequirementItem(state, event, requirement)
+        clearStreamingTextItem(state)
+        resetInlineReasoningStateForRun(state, runId)
+      }
       return { applied: true, terminal: true }
     case 'run.waiting':
       // external_job 无需用户输入；保持运行态以便用户可随时点击停止。
-      state.pendingRequirement = null
       state.stream.runId = runId
       state.stream.streaming = true
       state.activeRun = buildEventRunState(state, event, options.agentId, 'waiting_external')
@@ -270,7 +266,6 @@ export function applyAgentRunEvent(
       return { applied: true, terminal: false }
     case 'run.cancelled':
       markLastAssistantMessageInterrupted(state, runId)
-      state.pendingRequirement = null
       state.activeRun = null
       state.lastRun = buildEventRunState(state, event, options.agentId, 'cancelled')
       removeRunWaitingStatusItems(state, runId)
@@ -317,7 +312,6 @@ export function applyAgentRuntimeSnapshot(
     timelineItems: AgentTimelineItem[]
     activeRun: AgentActiveRunItem | null
     lastRun: AgentActiveRunItem | null
-    pendingRequirement: AgentPendingRequirement | null
     pendingImageAttachments: AgentImageAttachmentItem[]
     contextStatus: unknown | null
     eventIndex: number
@@ -326,9 +320,6 @@ export function applyAgentRuntimeSnapshot(
   state.timelineItems = [...payload.timelineItems]
   state.activeRun = normalizeActiveRun(payload.activeRun)
   state.lastRun = payload.lastRun
-  state.pendingRequirement = state.activeRun?.status === 'paused'
-    ? state.activeRun.pending_requirement
-    : null
   state.pendingImageAttachments = [...payload.pendingImageAttachments]
   state.contextStatus = payload.contextStatus
   state.stream.runId = payload.activeRun?.run_id ?? null

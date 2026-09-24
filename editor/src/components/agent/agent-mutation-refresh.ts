@@ -2,7 +2,19 @@
  * 文件功能：把智能体工具写入事件归一为页面、项目、页面列表、组件或资源刷新通知。
  */
 import type { AgentRunEvent } from '@/types/api'
-import type { AgentMutationRefreshEvent } from '@/components/agent/agent-conversation-panel'
+
+export interface AgentMutationRefreshEvent {
+  kind: 'page' | 'project-pages' | 'project' | 'component' | 'asset' | 'theme' | 'style'
+  workspaceId: number | null
+  projectId: number | null
+  pageId: number | null
+  componentId: number | null
+  assetId?: number | null
+  themeId?: number | null
+  styleId?: number | null
+  toolName: string
+  result: unknown
+}
 
 export interface AgentMutationRefreshBase {
   workspaceId: number | null
