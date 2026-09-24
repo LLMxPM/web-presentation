@@ -24,11 +24,15 @@ AI 页面写工具
 
 截图继续使用独立的 `page_screenshot_jobs` 领域队列，执行阶段通过统一 `render_requests` 队列派发到远程 Renderer。截图任务组通过成员表关联，因此一个去重后的活跃截图任务可以属于多个批次。任务会固化页面版本、配置指纹和视口，截图对象使用不可变路径；页面或配置在捕获期间变化时任务收敛为 `skipped/PAGE_SCREENSHOT_JOB_STALE`，不会覆盖新截图指针。布局 warning 属于已完成诊断的内容结果；Renderer 离线或执行不可用时返回 `RENDER_*` 基础设施错误，不能映射为“源码有错”或“检查通过”。
 
+页面校验结果携带 `stages: {compile, render}`：`render` 取值 `passed | warning | unavailable | failed | skipped`。render=`unavailable` 时顶层必须输出 `status=unavailable` 且 `success is not True`，写入门槛默认拒写；调用方显式传入 `skip_visual_verification=true` 时才允许写入，并在 job result 中留下 `skipped_visual_verification` 审计标记。
+
+执行不可用不得复用内容错误码：异步页面任务在此场景必须输出 `RENDER_SERVICE_UNAVAILABLE`（已纳入 `RETRYABLE_ERROR_CODES`，按退避重试），而不是 `PAGE_VALIDATION_FAILED`（确定性失败，直接终态）。否则 Renderer 短暂离线会把可恢复的基础设施故障固化成「源码有错」。
+
 Backend 不再安装或持有 Playwright/Chromium。截图与页面诊断统一进入 `RenderRequestService` → `RenderCoordinator` → 远程 Renderer Worker；占用释放以 attempt 租约与条件更新为准。组件远程渲染诊断协议保留在 Renderer/契约层，内容助手组件校验本迭代只覆盖契约与 Runtime 编译。
 
 ## 资源上限
 
-SQLite/lite 推荐保持所有重资源并发为 1：
+SQLite/lite 推荐保持所有重资源并发为 1。SQLite 文件库为**单实例边界**：Backend 禁止 `uvicorn --workers > 1`，禁止多容器挂同一数据卷；启动时获取 `*.single-process.lock` 排他锁，冲突则拒绝启动并打印 `sqlite_single_process=true`。就绪探针使用 `/readyz`（数据库可连通、渲染 Worker 已配置），不探测 Renderer 存活以免外部抖动把 Backend 打成 not_ready；`/healthz` 保持纯 liveness。
 
 | 资源 | lite 默认 | 常规部署默认 |
 | :--- | ---: | ---: |

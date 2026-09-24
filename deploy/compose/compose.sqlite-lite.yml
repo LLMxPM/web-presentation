@@ -9,6 +9,9 @@
 #   通常长度为 44 个字符并以 = 结尾；可用命令生成：
 #   python -c "import base64, os; print(base64.urlsafe_b64encode(os.urandom(32)).decode())"
 # - 该模板不启动 PostgreSQL/Redis；SQLite 数据库、本地资源、截图和构建产物都保存在 lite-data volume。
+# - SQLite 单实例边界：Backend 必须单进程（禁止 uvicorn --workers>1），且不得多容器挂同一 lite-data 卷。
+#   并发约束固定为 1（AI_PAGE_MUTATION_CONCURRENCY / RENDER_GLOBAL_CONCURRENCY / RENDER_WORKSPACE_CONCURRENCY）。
+#   就绪探针使用 /readyz；/healthz 仅表示进程存活。
 # - 默认拉取 Docker Hub 发布镜像。需要从源码验证镜像时，直接在仓库根目录执行：
 #   docker build -f deploy/docker/Dockerfile.lite -t llmxpm/web-presentation:sqlite-lite .
 
@@ -51,12 +54,15 @@ services:
       RUNTIME_DIAGNOSTICS_REQUEST_TIMEOUT_SECONDS: "180"
       RUNTIME_BUILD_REQUEST_TIMEOUT_SECONDS: "900"
       RENDER_GLOBAL_CONCURRENCY: "1"
+      RENDER_WORKSPACE_CONCURRENCY: "1"
       RENDER_QUEUE_SIZE: "64"
       RENDER_REQUEST_TIMEOUT_SECONDS: "120"
       RENDER_WORKERS_CONFIG: '[{"worker_id":"renderer-lite","base_url":"http://renderer:7400"}]'
       RENDER_SERVICE_CREDENTIAL_FILE: "/run/secrets/render_service_credential"
       RENDER_PROFILE_DIGEST: "profile.v1"
       AI_PAGE_MUTATION_CONCURRENCY: "1"
+      PAGE_SCREENSHOT_QUEUE_CONCURRENCY: "1"
+      ASSET_RENDER_HINT_BACKFILL_QUEUE_CONCURRENCY: "1"
       AI_PAGE_MUTATION_MAX_ACTIVE_JOBS: "16"
       AI_PAGE_MUTATION_MAX_BATCH_SIZE: "16"
       DURABLE_JOB_LEASE_SECONDS: "300"
@@ -83,7 +89,7 @@ services:
     healthcheck:
       test:
         - CMD-SHELL
-        - curl -fsS http://127.0.0.1/healthz >/dev/null && curl -fsS http://127.0.0.1:8000/healthz >/dev/null && curl -fsS http://127.0.0.1:7373/__runtime_healthz >/dev/null
+        - curl -fsS http://127.0.0.1/healthz >/dev/null && curl -fsS http://127.0.0.1:8000/healthz >/dev/null && curl -fsS http://127.0.0.1:8000/readyz >/dev/null && curl -fsS http://127.0.0.1:7373/__runtime_healthz >/dev/null
       interval: 10s
       timeout: 5s
       retries: 5

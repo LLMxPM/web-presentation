@@ -180,11 +180,8 @@ async def _run_page_screenshot_job_heartbeat(
     """使用短会话续租；无法确认租约时通知主执行流放弃最终页面写入。"""
 
     settings = get_settings()
-    lease_seconds = max(
-        1,
-        int(getattr(settings, "durable_job_lease_seconds", settings.page_screenshot_job_lease_seconds)),
-    )
-    configured_interval = int(getattr(settings, "durable_job_heartbeat_seconds", max(1, lease_seconds // 3)))
+    lease_seconds = max(1, int(settings.durable_job_lease_seconds))
+    configured_interval = int(settings.durable_job_heartbeat_seconds)
     interval_seconds = max(1, min(configured_interval, max(1, lease_seconds // 2)))
     while True:
         await asyncio.sleep(interval_seconds)

@@ -34,6 +34,18 @@ async def test_sqlite_engine_should_enable_foreign_keys_busy_timeout_and_wal(tmp
         get_settings.cache_clear()
 
 
+def test_write_path_metrics_default_off() -> None:
+    """写路径打点默认关闭，生产路径不安装 SQL 监听器。"""
+
+    from app.core.config import get_settings
+
+    get_settings.cache_clear()
+    try:
+        assert get_settings().database_write_path_metrics_enabled is False
+    finally:
+        get_settings.cache_clear()
+
+
 async def test_db_session_should_finish_close_after_request_cleanup_is_cancelled(monkeypatch) -> None:  # noqa: ANN001
     """请求清理被取消时，会话关闭应在独立任务中继续完成。"""
 

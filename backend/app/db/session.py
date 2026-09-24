@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import time
 from collections.abc import AsyncGenerator
 
 from sqlalchemy import event
@@ -17,6 +18,7 @@ from sqlalchemy.ext.asyncio import (
 from app.ai.run_write_fence import AgentRunWriteFenceLost, current_agent_run_write_fence
 from app.core.config import get_settings
 from app.core.time_utils import utc_now
+from app.db import metrics as write_path_metrics
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +58,9 @@ def get_engine() -> AsyncEngine:
             ),
         )
         _configure_sqlite_engine(_engine, database_url, settings.database_connect_timeout_seconds)
+        if settings.database_write_path_metrics_enabled:
+            write_path_metrics.set_metrics_enabled(True)
+            _install_sql_metrics_listeners(_engine)
     return _engine
 
 
@@ -158,3 +163,24 @@ def _is_file_sqlite_database(url: URL) -> bool:
     if not database:
         return False
     return database not in {":memory:", "file::memory:"}
+
+
+def _install_sql_metrics_listeners(engine: AsyncEngine) -> None:
+    """挂载 SQL 执行打点；仅在 database_write_path_metrics_enabled 时安装。"""
+
+    @event.listens_for(engine.sync_engine, "before_cursor_execute")
+    def _before_cursor_execute(conn, cursor, statement, parameters, context, executemany):  # noqa: ANN001
+        conn.info["write_path_sql_started_at"] = time.perf_counter()
+
+    @event.listens_for(engine.sync_engine, "after_cursor_execute")
+    def _after_cursor_execute(conn, cursor, statement, parameters, context, executemany):  # noqa: ANN001
+        started_at = conn.info.pop("write_path_sql_started_at", None)
+        if started_at is None:
+            return
+        duration_ms = (time.perf_counter() - started_at) * 1000.0
+        rowcount = getattr(cursor, "rowcount", None)
+        write_path_metrics.record_sql(
+            statement=statement,
+            duration_ms=duration_ms,
+            rowcount=rowcount if isinstance(rowcount, int) and rowcount >= 0 else None,
+        )

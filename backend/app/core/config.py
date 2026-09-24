@@ -34,6 +34,8 @@ class AppSettings(BaseSettings):
     client_error_log_max_bytes: int = 16384
     database_url: str = "postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/web_presentation"
     database_connect_timeout_seconds: float = 10.0
+    # SQLite 写路径打点：默认关闭，仅基线采集期开启（监听器本身有开销）
+    database_write_path_metrics_enabled: bool = False
     default_admin_username: str = "admin"
     default_admin_password: str = "Admin123456"
     default_admin_display_name: str = "平台系统管理员"
@@ -64,6 +66,7 @@ class AppSettings(BaseSettings):
     render_request_timeout_seconds: float = 120.0
     render_max_attempts: int = 3
     render_scheduler_poll_interval_seconds: float = 0.25
+    render_wait_poll_interval_seconds: float = 0.25
     render_attempt_lease_seconds: float = 180.0
     render_unknown_reconcile_after_seconds: float = 30.0
     render_artifact_max_bytes: int = 32 * 1024 * 1024
@@ -95,6 +98,10 @@ class AppSettings(BaseSettings):
     ai_page_mutation_max_active_jobs: int = 16
     ai_page_mutation_max_batch_size: int = 16
     ai_page_mutation_poll_interval_seconds: float = 0.5
+    ai_external_task_poll_interval_seconds: float = 0.5
+    ai_image_generation_poll_interval_seconds: float = 0.5
+    ai_image_generation_heartbeat_seconds: int = 30
+    ai_image_generation_lease_seconds: int = 300
     redis_url: str = "redis://127.0.0.1:6379/0"
     redis_key_prefix: str = "web_presentation"
     redis_healthcheck_timeout_seconds: float = 2.0
@@ -112,7 +119,6 @@ class AppSettings(BaseSettings):
     page_screenshot_batch_concurrency: int = 2
     page_screenshot_queue_concurrency: int = 1
     page_screenshot_queue_poll_interval_seconds: float = 1.0
-    page_screenshot_job_lease_seconds: int = 180
     page_screenshot_ai_wait_timeout_seconds: float = 90.0
     asset_render_hint_backfill_queue_concurrency: int = 1
     asset_render_hint_backfill_queue_poll_interval_seconds: float = 1.0
@@ -141,6 +147,9 @@ class AppSettings(BaseSettings):
     mutation_job_recovery_interval_seconds: int = 30
     mutation_job_max_attempts: int = 3
     mutation_job_retention_days: int = 7
+    mutation_job_idle_poll_interval_seconds: float = 1.0
+    mutation_job_error_poll_interval_seconds: float = 2.0
+    mutation_job_recovery_backoff_seconds: float = 5.0
     idempotency_retention_days: int = 14
     asset_staging_retention_hours: int = 2
     pat_max_active_tokens: int = 25
@@ -227,7 +236,6 @@ class AppSettings(BaseSettings):
         "durable_job_heartbeat_seconds",
         "page_screenshot_batch_concurrency",
         "page_screenshot_queue_concurrency",
-        "page_screenshot_job_lease_seconds",
         "asset_render_hint_backfill_queue_concurrency",
         "asset_render_hint_backfill_job_lease_seconds",
     )
@@ -282,6 +290,8 @@ class AppSettings(BaseSettings):
 
         if self.durable_job_lease_seconds < self.durable_job_heartbeat_seconds * 3:
             raise ValueError("DURABLE_JOB_LEASE_SECONDS 必须至少为心跳间隔的3倍。")
+        if self.ai_image_generation_lease_seconds < self.ai_image_generation_heartbeat_seconds * 3:
+            raise ValueError("AI_IMAGE_GENERATION_LEASE_SECONDS 必须至少为心跳间隔的3倍。")
         return self
 
     @field_validator(
@@ -289,9 +299,15 @@ class AppSettings(BaseSettings):
         "page_screenshot_visual_ready_timeout_seconds",
         "render_request_timeout_seconds",
         "render_scheduler_poll_interval_seconds",
+        "render_wait_poll_interval_seconds",
         "render_attempt_lease_seconds",
         "render_unknown_reconcile_after_seconds",
         "ai_page_mutation_poll_interval_seconds",
+        "ai_external_task_poll_interval_seconds",
+        "ai_image_generation_poll_interval_seconds",
+        "mutation_job_idle_poll_interval_seconds",
+        "mutation_job_error_poll_interval_seconds",
+        "mutation_job_recovery_backoff_seconds",
         "runtime_artifact_sweep_interval_seconds",
         "runtime_diagnostics_request_timeout_seconds",
         "runtime_build_request_timeout_seconds",

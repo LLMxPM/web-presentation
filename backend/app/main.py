@@ -13,6 +13,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.ai.registry import AgentRegistry
@@ -41,7 +42,9 @@ from app.db.errors import (
     format_database_connectivity_error,
     is_database_connectivity_error,
 )
+from app.db import metrics as write_path_metrics
 from app.db.session import get_session_factory
+from app.db.sqlite_single_process import SqliteSingleProcessGuard, ensure_sqlite_single_process
 from app.services.bootstrap_service import BootstrapService
 from app.services.ai_model_catalog_service import AiModelCatalogService, run_model_catalog_sync_loop
 from app.services.object_storage_service import ObjectStorageService
@@ -85,7 +88,12 @@ async def lifespan(app: FastAPI):
     render_coordinator_task: asyncio.Task[None] | None = None
     render_coordinator = get_render_coordinator()
     agent_background_run_manager: AgentBackgroundRunManager = app.state.agent_background_run_manager
+    sqlite_single_process_guard: SqliteSingleProcessGuard | None = None
     try:
+        # SQLite 文件库必须单进程写入；多 worker / 共享数据卷直接拒绝启动。
+        # 必须在任何数据库访问之前取得，否则并发写入会绕过单写者边界。
+        sqlite_single_process_guard = ensure_sqlite_single_process(get_settings().database_url)
+        app.state.sqlite_single_process_guard = sqlite_single_process_guard
         session_factory = get_session_factory()
         await BootstrapService(session_factory).ensure_default_admin()
         async with session_factory() as catalog_session:
@@ -175,6 +183,10 @@ async def lifespan(app: FastAPI):
             await _stop_background_task(ai_component_mutation_queue_task)
         if model_catalog_sync_task is not None:
             await _stop_background_task(model_catalog_sync_task)
+        # 所有后台写入任务都已停止，最后才释放单进程写锁。
+        if sqlite_single_process_guard is not None:
+            sqlite_single_process_guard.release()
+            app.state.sqlite_single_process_guard = None
 
 
 def create_app() -> FastAPI:
@@ -190,6 +202,9 @@ def create_app() -> FastAPI:
         enforce_mock_model_request_fence()
     app = FastAPI(title=settings.app_name, lifespan=lifespan)
     app.state.agent_background_run_manager = AgentBackgroundRunManager()
+    # 单进程守卫在 lifespan 中获取：本模块底部有模块级 create_app()，
+    # 在导入期抢文件锁会让任何 import app 的脚本/测试都可能失败。
+    app.state.sqlite_single_process_guard = None
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,
@@ -210,6 +225,38 @@ def create_app() -> FastAPI:
         """返回容器存活状态；不触发数据库和外部服务探测。"""
 
         return JSONResponse({"status": "ok"})
+
+    @app.get("/readyz", include_in_schema=False)
+    async def readyz() -> JSONResponse:
+        """就绪探针：数据库可连通、渲染 Worker 已配置；不替代 /healthz 存活语义。
+
+        不探测 Renderer 存活：外部服务抖动不应把 Backend 打成 not_ready。
+        """
+
+        checks: dict[str, Any] = {}
+
+        try:
+            async with get_session_factory()() as session:
+                await session.execute(text("SELECT 1"))
+            checks["database_reachable"] = True
+        except Exception as exc:  # noqa: BLE001
+            checks["database_reachable"] = False
+            checks["database_error"] = type(exc).__name__
+
+        checks["render_workers_configured"] = bool(settings.render_workers_config)
+        checks["sqlite_single_process"] = app.state.sqlite_single_process_guard is not None
+
+        ready = checks["database_reachable"] and checks["render_workers_configured"]
+        return JSONResponse(
+            {"status": "ready" if ready else "not_ready", "checks": checks},
+            status_code=200 if ready else 503,
+        )
+
+    @app.get("/metrics/db-write", include_in_schema=False)
+    async def db_write_metrics() -> JSONResponse:
+        """导出进程内 SQLite 写路径打点快照，供基线采集；默认关闭时仍返回 enabled=false。"""
+
+        return JSONResponse(write_path_metrics.snapshot())
 
     _mount_ai_runtime(app)
     app.mount("/media", StaticFiles(directory=ObjectStorageService().ensure_local_root()), name="media")
