@@ -114,6 +114,72 @@ async def test_mutation_job_lease_sweeper(app_session: AsyncSession) -> None:
 
 
 @pytest.mark.asyncio
+async def test_mutation_job_recovery_attempt_boundary_and_null_lease(app_session: AsyncSession) -> None:
+    """恢复门槛为 attempt_count < max_attempts；租约为空的孤儿 running 也必须被回收。"""
+
+    user = User(
+        username="mutation_user_boundary",
+        password_hash="hash",
+        display_name="User",
+        role=UserRole.WORKSPACE_USER.value,
+        preview_size_presets=build_default_preview_size_presets(),
+    )
+    app_session.add(user)
+    await app_session.flush()
+
+    ws = Workspace(
+        code="ws-mut-boundary", name="WS", created_by=user.id, updated_by=user.id, status=RecordStatus.ACTIVE.value
+    )
+    app_session.add(ws)
+    await app_session.flush()
+
+    def _job(job_id: str, *, attempt_count: int, lease_expires_at) -> ApiMutationJob:
+        return ApiMutationJob(
+            job_id=job_id,
+            job_type="page_create",
+            workspace_id=ws.id,
+            payload_json={"page_code": "page-test"},
+            status="running",
+            worker_id="crashed-worker-boundary",
+            lease_generation=1,
+            lease_expires_at=lease_expires_at,
+            attempt_count=attempt_count,
+            max_attempts=3,
+            created_by=user.id,
+            created_at=utc_now(),
+        )
+
+    expired = utc_now() - timedelta(seconds=60)
+    # 边界内：attempt=2 < max=3，仍应重入 pending
+    requeued = _job("boundary-requeue", attempt_count=2, lease_expires_at=expired)
+    # 边界外：attempt=3 已达上限，必须终态失败而不是无限重入
+    exhausted = _job("boundary-exhausted", attempt_count=3, lease_expires_at=expired)
+    # 租约缺失的孤儿 running：不能被 lease_expires_at <= now 漏掉
+    null_lease = _job("boundary-null-lease", attempt_count=0, lease_expires_at=None)
+    app_session.add_all([requeued, exhausted, null_lease])
+    await app_session.commit()
+
+    recovered = await MutationJobService.recover_expired_running_jobs()
+    assert recovered == 3
+
+    await app_session.refresh(requeued)
+    await app_session.refresh(exhausted)
+    await app_session.refresh(null_lease)
+
+    assert requeued.status == "pending"
+    assert requeued.attempt_count == 3
+    assert requeued.last_error_code == "LEASE_TIMEOUT_RECOVERED"
+
+    assert exhausted.status == "failed"
+    assert exhausted.attempt_count == 3
+    assert exhausted.last_error_code == "LEASE_TIMEOUT_MAX_ATTEMPTS"
+
+    assert null_lease.status == "pending"
+    assert null_lease.attempt_count == 1
+    assert null_lease.worker_id is None
+
+
+@pytest.mark.asyncio
 async def test_mutation_cancel_and_manual_retry_contract(app_session: AsyncSession) -> None:
     """验证 pending/running 取消语义以及人工重试创建不可变的新任务。"""
 

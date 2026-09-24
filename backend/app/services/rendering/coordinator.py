@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.config import get_settings
 from app.core.time_utils import utc_now
+from app.db import metrics as write_path_metrics
 from app.db.session import get_session_factory
 from app.services.rendering.client import RendererClient
 from app.services.rendering.credentials import RenderCredentialService
@@ -116,7 +117,13 @@ class RenderCoordinator:
             extra={"event": "render.coordinator.started", "poll_interval": interval},
         )
         while True:
-            await self.tick()
+            loop_token = write_path_metrics.bind_loop_name("render-coordinator")
+            tick_started = time.perf_counter()
+            try:
+                await self.tick()
+            finally:
+                write_path_metrics.record_tick((time.perf_counter() - tick_started) * 1000.0)
+                write_path_metrics.reset_loop_name(loop_token)
             await asyncio.sleep(max(0.05, interval))
 
     async def wait_for_terminal(
@@ -165,7 +172,7 @@ class RenderCoordinator:
                         stage="wait",
                     )
                     raise RenderExecutionError(error)
-            await asyncio.sleep(0.1)
+            await asyncio.sleep(max(0.05, self.settings.render_wait_poll_interval_seconds))
         raise RenderExecutionError(
             RenderError.from_code(
                 ERROR_CODE_DEADLINE_EXCEEDED,

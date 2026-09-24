@@ -60,7 +60,7 @@ class RenderRepository:
         """写锁定调度状态，串行化队列容量检查与请求插入。"""
 
         state = await self.get_scheduler_state()
-        # UPDATE 在 PostgreSQL 中锁住单行，在 SQLite 中提前取得写事务，
+        # UPDATE 在 PostgreSQL 中锁住单行，在 SQLite 中通过单行 UPDATE 取得准入锁（SQLite 预写事务），
         # 使 queue_size/workspace_queue 与后续 INSERT 不再存在检查竞态。
         state.version = int(state.version or 0) + 1
         await self.session.flush()
@@ -190,7 +190,17 @@ class RenderRepository:
                 # 没有 DB attempt 时仍须保留 Renderer 报告的 busy，避免错误双派。
                 worker.slot_state = slot_state if slot_state in {"idle", "busy"} else "unknown"
             worker.slot_generation = slot_generation if not has_active else worker.slot_generation
-            worker.last_heartbeat_at = utc_now()
+            # 心跳节流：距上次心跳不足 5s 时不改 last_heartbeat_at，减少 4Hz 无效写。
+            previous_heartbeat = worker.last_heartbeat_at
+            now_hb = utc_now()
+            should_touch_heartbeat = True
+            if previous_heartbeat is not None:
+                try:
+                    should_touch_heartbeat = (now_hb - previous_heartbeat).total_seconds() >= 5.0
+                except TypeError:
+                    should_touch_heartbeat = True
+            if should_touch_heartbeat:
+                worker.last_heartbeat_at = now_hb
         await self._isolate_stale_worker_epochs(worker_id=worker_id, keep_epoch=worker_epoch)
         await self.session.flush()
         return worker
@@ -872,20 +882,25 @@ class RenderRepository:
         return request
 
     async def expire_requests(self, *, limit: int = 100) -> int:
-        """把超过 deadline 且无活动 attempt 的排队请求标记为过期。"""
+        """把超过 deadline 且无活动 attempt 的排队请求标记为过期。空闲态不发 UPDATE。"""
 
         now = utc_now()
         active_request_ids = select(RenderAttempt.request_id).where(
             RenderAttempt.active_occupancy == 1,
             RenderAttempt.status.in_(tuple(ATTEMPT_OCCUPYING_STATUSES)),
         )
+        # 探测与更新共用同一组条件，杜绝谓词漂移导致过期请求永不被收敛。
+        conditions = (
+            RenderRequest.status.in_((REQUEST_STATUS_QUEUED, REQUEST_STATUS_RETRY_WAIT)),
+            RenderRequest.deadline_at <= now,
+            RenderRequest.id.notin_(active_request_ids),
+        )
+
+        if await self.session.scalar(select(RenderRequest.id).where(*conditions).limit(1)) is None:
+            return 0
         result = await self.session.execute(
             update(RenderRequest)
-            .where(
-                RenderRequest.status.in_((REQUEST_STATUS_QUEUED, REQUEST_STATUS_RETRY_WAIT)),
-                RenderRequest.deadline_at <= now,
-                RenderRequest.id.notin_(active_request_ids),
-            )
+            .where(*conditions)
             .values(
                 status="expired",
                 error_code="RENDER_DEADLINE_EXCEEDED",

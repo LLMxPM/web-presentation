@@ -427,11 +427,15 @@ async def test_terminal_cleanup_sql_shape_should_be_constant_and_skip_large_run_
         event.remove(engine, "before_cursor_execute", capture_statement)
 
     update_statements = [item for item in statements if item.lstrip().upper().startswith("UPDATE")]
+    select_statements = [item for item in statements if item.lstrip().upper().startswith("SELECT")]
     normalized_sql = "\n".join(statements).lower()
-    assert len(update_statements) == 4
-    assert not any(item.lstrip().upper().startswith("SELECT") for item in statements)
+    # 空闲免写：本用例 seed 已全部终态，命中集为空时不得发 UPDATE，
+    # 但四类目标的探测 SELECT 数量必须恒定，否则说明谓词被改漏。
+    assert len(update_statements) == 0
+    assert len(select_statements) == 4
     assert "message_history_json" not in normalized_sql
     assert "input_payload_json" not in normalized_sql
+    assert "result_json" not in normalized_sql
 
 
 async def test_expired_resuming_batch_with_resolved_requirement_should_finish_consumption(

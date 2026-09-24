@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from contextlib import suppress
 from datetime import timedelta
 
@@ -15,8 +16,10 @@ from sqlalchemy.orm import selectinload
 
 from app.ai.platform_runtime import PlatformAgentRuntimeStore
 from app.ai.platform_tools import recoverable_tool_error_result
+from app.core.config import get_settings
 from app.core.exceptions import AppException
 from app.core.time_utils import utc_now
+from app.db import metrics as write_path_metrics
 from app.models.ai_agent_attachment import AiAgentImageAttachment
 from app.models.ai_agent_runtime import AiAgentRun
 from app.models.ai_image_generation import AiImageGenerationJob
@@ -35,9 +38,25 @@ from app.services.image_generation_adapters import normalize_image_request
 
 logger = logging.getLogger(__name__)
 _MAX_ATTEMPTS = 3
-_LEASE_SECONDS = 120
-_HEARTBEAT_SECONDS = 30
 _TERMINAL_JOB_STATUSES = frozenset({"completed", "error", "cancelled"})
+
+
+def _image_lease_seconds() -> int:
+    """图片任务租约；纳入 lease ≥ 3×heartbeat 校验口径。"""
+
+    return max(1, int(get_settings().ai_image_generation_lease_seconds))
+
+
+def _image_heartbeat_seconds() -> int:
+    """图片任务心跳。"""
+
+    return max(1, int(get_settings().ai_image_generation_heartbeat_seconds))
+
+
+def _image_poll_interval() -> float:
+    """图片队列轮询间隔。"""
+
+    return max(0.05, float(get_settings().ai_image_generation_poll_interval_seconds))
 
 
 async def recover_interrupted_image_generation_jobs_on_startup(
@@ -77,22 +96,28 @@ async def run_ai_image_generation_queue_loop(
 
     worker_id = f"ai-image:{build_durable_worker_id()}"
     while True:
+        loop_token = write_path_metrics.bind_loop_name("ai-image-generation-queue")
+        tick_started = time.perf_counter()
         try:
             await _cancel_one_waiting_provider_job(session_factory)
             await _promote_due_provider_jobs(session_factory)
             job_id = await _claim_one_job(session_factory, worker_id=worker_id)
+            write_path_metrics.record_poll(empty=job_id is None)
             if job_id is not None:
                 await _execute_job(session_factory, database_id=job_id, worker_id=worker_id)
             # 终态结果由统一 external coordinator 聚合并回灌模型。
             _ = app
             if job_id is None:
                 await recover_interrupted_image_generation_jobs_on_startup(session_factory)
-                await asyncio.sleep(0.5)
+                await asyncio.sleep(_image_poll_interval())
         except asyncio.CancelledError:
             raise
         except Exception:  # noqa: BLE001
             logger.exception("图片生成队列循环异常。", extra={"event": "ai.image_generation.queue_error"})
-            await asyncio.sleep(1)
+            await asyncio.sleep(max(1.0, _image_poll_interval() * 2))
+        finally:
+            write_path_metrics.record_tick((time.perf_counter() - tick_started) * 1000.0)
+            write_path_metrics.reset_loop_name(loop_token)
 
 
 async def _claim_one_job(session_factory: async_sessionmaker[AsyncSession], *, worker_id: str) -> int | None:
@@ -104,7 +129,7 @@ async def _claim_one_job(session_factory: async_sessionmaker[AsyncSession], *, w
             AiImageGenerationJob,
             worker_id=worker_id,
             limit=1,
-            lease_seconds=_LEASE_SECONDS,
+            lease_seconds=_image_lease_seconds(),
         )
         if not claimed_ids:
             return None
@@ -368,7 +393,7 @@ async def _renew_lease_loop(
     """在供应商调用和资源保存期间续租，防止其他进程重复执行同一任务。"""
 
     while True:
-        await asyncio.sleep(_HEARTBEAT_SECONDS)
+        await asyncio.sleep(_image_heartbeat_seconds())
         if not await _renew_owned_lease(session_factory, database_id=database_id, worker_id=worker_id):
             return
 
@@ -387,7 +412,7 @@ async def _renew_owned_lease(
             AiImageGenerationJob,
             job_id=database_id,
             worker_id=worker_id,
-            lease_seconds=_LEASE_SECONDS,
+            lease_seconds=_image_lease_seconds(),
         )
 
 
@@ -469,17 +494,21 @@ async def _persist_waiting_provider_result(
 
 
 async def _promote_due_provider_jobs(session_factory: async_sessionmaker[AsyncSession]) -> int:
-    """把到期的外部等待任务重新放回 pending，交由统一租约流程认领。"""
+    """把到期的外部等待任务重新放回 pending，交由统一租约流程认领。空闲态不发 UPDATE。"""
 
     async with session_factory() as session:
+        # 探测与更新共用同一组条件，杜绝谓词漂移导致到期任务永不被提升。
+        conditions = (
+            AiImageGenerationJob.status == "waiting_provider",
+            AiImageGenerationJob.cancel_requested_at.is_(None),
+            AiImageGenerationJob.next_poll_at.is_not(None),
+            AiImageGenerationJob.next_poll_at <= utc_now(),
+        )
+        if await session.scalar(select(AiImageGenerationJob.id).where(*conditions).limit(1)) is None:
+            return 0
         result = await session.execute(
             update(AiImageGenerationJob)
-            .where(
-                AiImageGenerationJob.status == "waiting_provider",
-                AiImageGenerationJob.cancel_requested_at.is_(None),
-                AiImageGenerationJob.next_poll_at.is_not(None),
-                AiImageGenerationJob.next_poll_at <= utc_now(),
-            )
+            .where(*conditions)
             .values(status="pending", next_poll_at=None)
             .execution_options(synchronize_session=False)
         )

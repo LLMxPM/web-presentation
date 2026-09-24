@@ -45,6 +45,7 @@ logger = logging.getLogger(__name__)
 
 RETRYABLE_ERROR_CODES = {
     "RUNTIME_UNAVAILABLE",
+    "RENDER_SERVICE_UNAVAILABLE",
     "CHROMIUM_TIMEOUT",
     "DATABASE_LOCK_TIMEOUT",
     "INTERNAL_NETWORK_ERROR",
@@ -827,11 +828,15 @@ class MutationJobService:
                     ApiMutationJob.max_attempts,
                 )
                 .where(ApiMutationJob.status == "running")
-                .where(ApiMutationJob.lease_expires_at <= now)
+                .where(
+                    (ApiMutationJob.lease_expires_at.is_(None))
+                    | (ApiMutationJob.lease_expires_at <= now)
+                )
             )
             candidates = (await session.execute(stmt)).all()
             for cand_id, cand_gen, attempt_count, max_attempts in candidates:
-                if (attempt_count or 0) + 1 < (max_attempts or 3):
+                # 与 durable_job_lease_service 对齐：attempt_count < max 才重入 pending
+                if (attempt_count or 0) < (max_attempts or 3):
                     update_stmt = (
                         update(ApiMutationJob)
                         .where(ApiMutationJob.id == cand_id)
@@ -843,7 +848,8 @@ class MutationJobService:
                             lease_expires_at=None,
                             lease_generation=(cand_gen or 0) + 1,
                             attempt_count=(attempt_count or 0) + 1,
-                            next_attempt_at=now + timedelta(seconds=5),
+                            next_attempt_at=now
+                            + timedelta(seconds=float(get_settings().mutation_job_recovery_backoff_seconds)),
                             last_error_code="LEASE_TIMEOUT_RECOVERED",
                         )
                     )
@@ -888,13 +894,13 @@ async def run_api_mutation_worker_loop(session_factory: Callable[..., AsyncSessi
             if job is not None:
                 await service.execute_job_with_lease(job)
             else:
-                await asyncio.sleep(1.0)
+                await asyncio.sleep(float(get_settings().mutation_job_idle_poll_interval_seconds))
         except asyncio.CancelledError:
             logger.info("ApiMutationJob Worker 循环已取消")
             break
         except Exception as exc:
             logger.warning("ApiMutationJob Worker 循环异常: %s", exc)
-            await asyncio.sleep(2.0)
+            await asyncio.sleep(float(get_settings().mutation_job_error_poll_interval_seconds))
 
 
 async def run_api_mutation_sweeper_loop(session_factory: Callable[..., AsyncSession]) -> None:

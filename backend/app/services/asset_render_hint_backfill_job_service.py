@@ -7,6 +7,7 @@ import logging
 import uuid
 from collections import Counter
 from collections.abc import Iterable
+from datetime import timedelta
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -34,7 +35,8 @@ from app.services.workspace_service import WorkspaceService
 
 ACTIVE_BACKFILL_JOB_STATUSES = ("pending", "running")
 TERMINAL_BACKFILL_JOB_STATUSES = {"succeeded", "failed", "skipped"}
-MAX_BACKFILL_JOB_ATTEMPTS = 2
+# 与 mutation_job_max_attempts / durable_job 口径一致：判定用 attempt_count < max，共 3 次执行机会。
+MAX_BACKFILL_JOB_ATTEMPTS = 3
 BACKFILL_JOB_LOCK_PREFIX = "runtime:asset-render-hint-backfill-job-lock"
 BACKFILL_RUNTIME_TYPES = {AssetType.FORMULA, AssetType.MERMAID}
 BACKFILL_STATIC_TYPES = {AssetType.IMAGE, AssetType.VIDEO, AssetType.DRAWIO}
@@ -212,9 +214,24 @@ class AssetRenderHintBackfillJobService:
             await self._release_job_lock(job_id)
 
     async def recover_interrupted_jobs(self) -> int:
-        """恢复启动前遗留的 running 回填任务。"""
+        """恢复遗留的 running 回填任务。
 
-        stmt = select(AssetRenderHintBackfillJob).where(AssetRenderHintBackfillJob.status == "running")
+        只回收 started_at 缺失或已超租约的任务：仍在租约期内的 running 可能正被
+        本进程或（PostgreSQL 多进程部署下）其它 Backend 执行，无条件回收会重复执行。
+        """
+
+        now = utc_now()
+        stale_cutoff = now - timedelta(
+            seconds=float(get_settings().asset_render_hint_backfill_job_lease_seconds)
+        )
+        stmt = (
+            select(AssetRenderHintBackfillJob)
+            .where(AssetRenderHintBackfillJob.status == "running")
+            .where(
+                (AssetRenderHintBackfillJob.started_at.is_(None))
+                | (AssetRenderHintBackfillJob.started_at <= stale_cutoff)
+            )
+        )
         jobs = list((await self.session.execute(stmt)).scalars().all())
         for job in jobs:
             if job.attempt_count < MAX_BACKFILL_JOB_ATTEMPTS:

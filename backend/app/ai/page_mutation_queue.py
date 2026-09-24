@@ -459,43 +459,6 @@ async def _execute_claimed_job(
         )
 
 
-async def _run_continuation_coordinator(
-    session_factory: async_sessionmaker[AsyncSession],
-    *,
-    app: FastAPI,
-    worker_id: str,
-) -> None:
-    """等待 Batch 全部完成，然后一次性向模型回灌所有 deferred results。"""
-
-    settings = get_settings()
-    poll_interval = max(0.05, float(getattr(settings, "ai_page_mutation_poll_interval_seconds", 0.5)))
-    recovery_interval = max(1.0, min(float(getattr(settings, "durable_job_heartbeat_seconds", 30)), 30.0))
-    last_recovery_at = 0.0
-    while True:
-        try:
-            observed_generation = page_mutation_batch_wakeup.generation
-            if monotonic() - last_recovery_at >= recovery_interval:
-                await recover_interrupted_ai_page_mutation_jobs_on_startup(session_factory)
-                last_recovery_at = monotonic()
-            await _reconcile_cancelled_and_orphaned_jobs(session_factory)
-            claimed_batch = await _claim_ready_batch(session_factory, worker_id=worker_id)
-            if claimed_batch is None:
-                await page_mutation_batch_wakeup.wait(observed_generation, poll_interval)
-                continue
-            await _continue_claimed_batch(
-                session_factory,
-                app=app,
-                batch_id=claimed_batch.batch_id,
-                lease_generation=claimed_batch.lease_generation,
-                worker_id=worker_id,
-            )
-        except asyncio.CancelledError:
-            raise
-        except Exception:  # noqa: BLE001
-            logger.exception("AI 页面变更续跑协调器异常。", extra={"event": "ai.page_mutation.coordinator.failed"})
-            await asyncio.sleep(poll_interval)
-
-
 async def _claim_ready_batch(
     session_factory: async_sessionmaker[AsyncSession],
     *,

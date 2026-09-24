@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Any
 
-from sqlalchemy import case, exists, func, or_, select, update
+from sqlalchemy import ColumnElement, case, exists, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.ai_agent_runtime import AiAgentRequirement, AiAgentRun, AiAgentToolCall
@@ -42,59 +44,79 @@ async def cleanup_terminal_run_external_state(
         ),
     )
 
-    task_result = await session.execute(
-        update(AiAgentExternalTask)
-        .where(
+    async def cancel_when_present(
+        model: type[Any],
+        probe_column: Any,
+        conditions: Sequence[ColumnElement[bool]],
+        values: dict[str, Any],
+    ) -> int:
+        """命中集非空才发 UPDATE；探测与更新共用同一组条件，杜绝谓词漂移。
+
+        空闲免写避免 2Hz 无条件写 DML（对齐 durable_job 空闲免写模式）。
+        probe_column 只取主键，不把 result_json/input_payload_json 等大列读进内存。
+        """
+
+        hit = await session.scalar(select(probe_column).where(*conditions).limit(1))
+        if hit is None:
+            return 0
+        result = await session.execute(
+            update(model).where(*conditions).values(**values).execution_options(synchronize_session=False)
+        )
+        return int(result.rowcount or 0)
+
+    tasks = await cancel_when_present(
+        AiAgentExternalTask,
+        AiAgentExternalTask.task_id,
+        [
             AiAgentExternalTask.run_id.in_(eligible_run_ids),
             AiAgentExternalTask.status.not_in(_TASK_TERMINAL),
             or_(
                 AiAgentExternalTask.cancel_requested_at.is_(None),
                 AiAgentExternalTask.status == "pending",
             ),
-        )
-        .values(
-            cancel_requested_at=func.coalesce(AiAgentExternalTask.cancel_requested_at, now),
-            status=case(
+        ],
+        {
+            "cancel_requested_at": func.coalesce(AiAgentExternalTask.cancel_requested_at, now),
+            "status": case(
                 (AiAgentExternalTask.status == "pending", "cancelled"),
                 else_=AiAgentExternalTask.status,
             ),
-            finished_at=case(
+            "finished_at": case(
                 (AiAgentExternalTask.status == "pending", now),
                 else_=AiAgentExternalTask.finished_at,
             ),
-        )
-        .execution_options(synchronize_session=False)
+        },
     )
-    batch_result = await session.execute(
-        update(AiAgentExternalBatch)
-        .where(
+    batches = await cancel_when_present(
+        AiAgentExternalBatch,
+        AiAgentExternalBatch.batch_id,
+        [
             AiAgentExternalBatch.run_id.in_(eligible_run_ids),
             AiAgentExternalBatch.status.in_(("collecting", "waiting_tasks", "ready")),
-        )
-        .values(status="cancelled", finished_at=now)
-        .execution_options(synchronize_session=False)
+        ],
+        {"status": "cancelled", "finished_at": now},
     )
-    requirement_result = await session.execute(
-        update(AiAgentRequirement)
-        .where(
+    requirements = await cancel_when_present(
+        AiAgentRequirement,
+        AiAgentRequirement.id,
+        [
             AiAgentRequirement.run_id.in_(eligible_run_ids),
             AiAgentRequirement.status.in_(("pending", "resolving")),
-        )
-        .values(status="cancelled", resolved_at=now)
-        .execution_options(synchronize_session=False)
+        ],
+        {"status": "cancelled", "resolved_at": now},
     )
-    tool_call_result = await session.execute(
-        update(AiAgentToolCall)
-        .where(
+    tool_calls = await cancel_when_present(
+        AiAgentToolCall,
+        AiAgentToolCall.id,
+        [
             AiAgentToolCall.run_id.in_(eligible_run_ids),
             AiAgentToolCall.status.in_(("running", "waiting_external")),
-        )
-        .values(status="cancelled", message="父级运行已终态。")
-        .execution_options(synchronize_session=False)
+        ],
+        {"status": "cancelled", "message": "父级运行已终态。"},
     )
     return TerminalRunCleanupResult(
-        tasks=int(task_result.rowcount or 0),
-        batches=int(batch_result.rowcount or 0),
-        requirements=int(requirement_result.rowcount or 0),
-        tool_calls=int(tool_call_result.rowcount or 0),
+        tasks=tasks,
+        batches=batches,
+        requirements=requirements,
+        tool_calls=tool_calls,
     )

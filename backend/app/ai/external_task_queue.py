@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from contextlib import suppress
 from datetime import timedelta
 from uuid import uuid4
@@ -23,6 +24,7 @@ from app.ai.run_write_fence import AgentRunWriteFenceLost, ExternalBatchContinua
 from app.ai.session_facade_pydantic import AgentSessionFacade
 from app.core.config import get_settings
 from app.core.time_utils import utc_now
+from app.db import metrics as write_path_metrics
 from app.models.ai_agent_runtime import AiAgentRequirement, AiAgentRun
 from app.models.ai_external_task import AiAgentExternalBatch, AiAgentExternalTask
 from app.models.ai_image_generation import AiImageGenerationJob
@@ -52,9 +54,11 @@ async def run_ai_external_task_coordinator(
     """持续同步领域任务、恢复过期租约并一次性回灌已就绪Batch。"""
 
     worker_id = f"ai-external-continuation-{uuid4().hex[:12]}"
-    poll_interval = max(0.05, float(get_settings().ai_page_mutation_poll_interval_seconds))
+    poll_interval = max(0.05, float(get_settings().ai_external_task_poll_interval_seconds))
     cleanup_counter = 0
     while True:
+        loop_token = write_path_metrics.bind_loop_name("ai-external-task-coordinator")
+        tick_started = time.perf_counter()
         try:
             await synchronize_external_task_states(session_factory)
             await recover_external_continuations(session_factory)
@@ -64,6 +68,7 @@ async def run_ai_external_task_coordinator(
                 await cleanup_expired_external_results(session_factory)
                 cleanup_counter = 0
             claimed = await _claim_ready_batch(session_factory, worker_id=worker_id)
+            write_path_metrics.record_poll(empty=claimed is None)
             if claimed is None:
                 await asyncio.sleep(poll_interval)
                 continue
@@ -79,6 +84,9 @@ async def run_ai_external_task_coordinator(
         except Exception:  # noqa: BLE001
             logger.exception("统一AI外部任务协调器异常。", extra={"event": "ai.external.coordinator.failed"})
             await asyncio.sleep(poll_interval)
+        finally:
+            write_path_metrics.record_tick((time.perf_counter() - tick_started) * 1000.0)
+            write_path_metrics.reset_loop_name(loop_token)
 
 
 async def synchronize_external_task_states(session_factory: async_sessionmaker[AsyncSession]) -> None:
@@ -170,7 +178,9 @@ async def synchronize_external_task_states(session_factory: async_sessionmaker[A
             if total and not nonterminal:
                 batch.status = "ready"
                 batch.updated_at = now
-        await session.commit()
+        # 空闲免写：无变更不提交
+        if session.dirty or session.new or session.deleted:
+            await session.commit()
 
 
 async def recover_external_continuations(session_factory: async_sessionmaker[AsyncSession]) -> None:
@@ -318,7 +328,7 @@ async def audit_external_state_consistency(session_factory: async_sessionmaker[A
                 commit=False,
             )
         # 父Run终态后，统一控制面不得继续保留可执行任务。
-        await cleanup_terminal_run_external_state(session, now=now)
+        cleanup = await cleanup_terminal_run_external_state(session, now=now)
 
         waiting_runs = list(
             (
@@ -424,7 +434,17 @@ async def audit_external_state_consistency(session_factory: async_sessionmaker[A
                 await _fail_waiting_run(session, run=run, message=batch.error_message)
                 requirement.status = "failed"
                 continue
-        await session.commit()
+        # 批量 UPDATE 不标记 session.dirty，必须按清理影响行数判断是否提交。
+        if (
+            session.dirty
+            or session.new
+            or session.deleted
+            or cleanup.tasks
+            or cleanup.batches
+            or cleanup.requirements
+            or cleanup.tool_calls
+        ):
+            await session.commit()
 
 
 def _restore_run_waiting_external_state(run: AiAgentRun, requirement: AiAgentRequirement) -> None:
