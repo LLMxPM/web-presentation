@@ -9,7 +9,7 @@
 | :--- | :--- |
 | [Compose 部署说明](./compose.md) | 五类 compose 模板（含分角色单机）、启动方式和访问关系 |
 | [部署环境变量](./env-vars.md) | production env 版变量分组和关键约束 |
-| [多 Backend 与密钥一致性](./multi-backend.md) | 多 Backend 共享存储/密钥前提、签名密钥轮换与旧票据语义 |
+| [多 Backend 与密钥一致性](./multi-backend.md) | 多 Backend 共享存储/密钥前提、签名密钥轮换、旧票据语义、AI Run 停机语义与协调器幂等边界 |
 | [CI/CD 与容器发布](./cicd.md) | 平台、Runtime、Renderer 镜像与发布策略 |
 | [备份与恢复](./backup-restore.md) | 数据库、资源、构建产物和密钥备份 |
 | [升级与回滚](./upgrade-rollback.md) | 镜像升级、数据库迁移和回滚注意事项 |

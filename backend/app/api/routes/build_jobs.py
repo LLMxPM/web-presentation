@@ -45,6 +45,8 @@ async def create_project_build_job(
     await ProjectService(session).get(project_id, user_id=current.user.id)
     service = ProjectBuildService(session)
     job = await service.create_build_job(project_id=project_id, payload=payload, created_by=current.user.id)
+    # BackgroundTasks 只是低延迟触发提示，不是正确性依赖：队列循环与本触发
+    # 都调用 run_project_build_job，领取 CAS 保证同一任务最多被一个执行者派发。
     background_tasks.add_task(run_project_build_job, job.id)
     return ProjectBuildJobResponse.model_validate(job)
 

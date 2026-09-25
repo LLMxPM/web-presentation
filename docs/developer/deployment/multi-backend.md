@@ -1,4 +1,4 @@
-<!-- 文件功能：面向部署人员说明多 Backend 副本的共享存储与密钥前提、签名密钥轮换与旧票据语义。 -->
+<!-- 文件功能：面向部署人员说明多 Backend 副本的共享存储与密钥前提、签名密钥轮换、旧票据语义、AI Run 停机语义与协调器幂等边界。 -->
 # 多 Backend 副本与密钥一致性
 
 多 Backend HTTP 副本是横向扩容的最后一步前置条件之一：任一副本必须能校验其它副本签发的票据、读取同一份产物，并用同一把密钥解密 AI 与 Renderer 凭证。SQLite Lite（`memory://lite` 与本地磁盘）**不支持**多 Backend；分布式部署请参考规划文档「Backend、存储与发布一致性前提」。
@@ -70,3 +70,37 @@ JWKS（`/.well-known/jwks.json`）由当前密钥与轮换期旧钥共同构成�
 - 推荐 `ASSET_STORAGE_DRIVER=s3`，各副本使用同一 `S3_*` 配置。
 - 如使用本地目录，必须是跨副本共享卷（NFS/共享盘），并显式 `OBJECT_STORAGE_SHARED_VOLUME=true` 启动放行；该路径由运维自行验证共享性。
 - `memory://lite` 与各副本本地独立磁盘不能充当共享产物存储。
+
+## 任务协调器与不重复提交
+
+多 Backend 副本下不依赖「恰好只有一个 Backend 进程」保证正确性。需要跨副本互斥的后台协调器统一使用数据库租约或条件更新（CAS）作为执行闸门：
+
+| 协调器 | 互斥机制 | 说明 |
+| :--- | :--- | :--- |
+| 项目构建领取 | `ProjectBuildJob.claim_job` 条件 UPDATE + attempt 围栏 | 双协调者竞争同一任务只成功一次；产物仅在 attempt 与有效租约匹配时提升 |
+| 页面截图队列 | `durable_job_lease_service.claim_pending_jobs` 条件 UPDATE | 请求内等待路径与队列循环共用同一租约协议 |
+| 资源比例回填 / 页面变更 / 图片生成 / 组件变更 | 同上持久化租约 | 过期租约由 `recover_expired_running_jobs` 收敛 |
+| AI 外部任务续跑 | `AiAgentExternalBatch` 租约代次 CAS | 同一 Batch 只能被一个协调者认领 |
+| 渲染 attempt | `RenderAttempt` 租约 + 未释放检查 | 迟到结果不得覆盖新 attempt |
+| 运行态 artifact 清理 | 各副本独立 sweep，操作幂等 | 仅按 TTL 释放过期键，不产生业务写入 |
+
+创建接口上的 FastAPI `BackgroundTasks`（如 `POST /projects/{id}/build-jobs`）只是低延迟触发提示，**不是正确性依赖**：队列循环与 BackgroundTasks 可能对同一任务重复调用执行入口，但领取 CAS 保证最多一个执行者派发任务或提交产物。多副本部署时不要把这些进程内触发当作跨实例队列。
+
+## 普通 AI Run 停机语义
+
+普通智能体 Run 使用 Backend 进程内后台管理器（`AgentBackgroundRunManager`）执行，**不承诺跨实例无中断续跑**，也不承诺 Backend 重启后自动恢复。这是明确的产品语义，不是待修缺陷：
+
+| 场景 | 行为 |
+| :--- | :--- |
+| 关闭侧栏 / 切换路由 / 断开 SSE | 只取消订阅，不取消执行；重新进入会话按 `event_index` 回放 |
+| 用户点击停止 | 请求取消当前 Run，终态为 `cancelled` |
+| Backend 正常退出 / 滚动重启 | 取消仍在执行的进程内任务，写入 `AI_RUN_PROCESS_STOPPED` |
+| Backend 异常退出 | 由 active-run 空闲超时收敛，或下次启动时 `recover_interrupted_agent_runs_on_startup` 终态化 |
+| 多 Backend 副本扩容 | 各副本各自收敛本进程 Run；**不得据此宣称普通 Run 可跨实例迁移或无中断续跑** |
+
+停机后的用户可理解恢复路径：
+
+1. **重试**：在原会话中基于已保留的消息、事件和工具调用记录重新发起同一目标；先确认上一轮是否已写入数据，避免重复执行。
+2. **新建 Run**：直接在会话中提交新 Run；新 Run 继承会话消息历史与焦点快照，不继承中断 Run 的执行栈。
+
+页面变更、图片生成等 external job 的领域执行走各自持久化租约队列，模型续跑统一由 `ai-external-task-coordinator` 认领 `AiAgentExternalBatch`，不与进程内 Run 管理器合并。若产品将来要求普通 Run 跨进程无中断续跑，必须另设可恢复执行与工具副作用幂等方案，不能仅替换锁提供者。
