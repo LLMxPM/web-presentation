@@ -14,7 +14,7 @@
 | 文档 | 说明 |
 | :--- | :--- |
 | [`plans/lite-memory-adapter.md`](./plans/lite-memory-adapter.md) | Lite `memory://` 运行态适配器。**代码已实施（2026-09-25）**，见文末实施记录；未覆盖项（构建产物下载、跨宿主基线、Renderer 实链）仍是缺口。 |
-| [`plans/runtime-multi-deployment-scaling-plan.md`](./plans/runtime-multi-deployment-scaling-plan.md) | Runtime 多部署形态与横向扩容路线图。**未实施**：角色拆分、预览无状态化、构建持久领取均未开始。 |
+| [`plans/runtime-multi-deployment-scaling-plan.md`](./plans/runtime-multi-deployment-scaling-plan.md) | Runtime 多部署形态与横向扩容路线图。**未实施**：09-25 依 `e2efe6c` 复核修订，改为「先计算治理与角色隔离 → 计算池扩容 → Preview 多副本」，含第 10 节任务清单；角色拆分、预览授权可恢复、构建持久领取均未开始。 |
 
 ## 归档（历史）
 
