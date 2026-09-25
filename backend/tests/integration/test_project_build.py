@@ -579,6 +579,8 @@ async def test_run_project_build_job_should_update_status_for_success_and_failur
     assert success_job.error_message is None
     assert success_job.started_at is not None
     assert success_job.finished_at is not None
+    assert success_job.attempt_count == 1
+    assert success_job.attempt_id
     assert captured_dispatch == {
         "artifact_id": str(success_job_snapshot_release_id),
         "base_url": "./",
@@ -591,6 +593,13 @@ async def test_run_project_build_job_should_update_status_for_success_and_failur
     )
     assert failed_response.status_code == 200
     failed_job_id = failed_response.json()["id"]
+
+    async with session_factory() as session:
+        failed_job_row = await session.get(ProjectBuildJob, failed_job_id)
+        assert failed_job_row is not None
+        # 用尽重试预算，验证超预算标 failed。
+        failed_job_row.max_attempts = 1
+        await session.commit()
 
     async def fake_dispatch_failure(self, *, artifact_id: str, base_url: str, build_token: str):  # noqa: ANN001, ARG001
         raise AppException(status_code=502, code="RUNTIME_BUILD_FAILED", detail="Runtime 服务暂不可用。")
@@ -656,12 +665,20 @@ async def test_project_build_artifact_upload_download_and_delete_should_persist_
         }
     )
     archive_sha256 = hashlib.sha256(archive_content).hexdigest()
+    async with get_session_factory()() as session:
+        created_job = await session.get(ProjectBuildJob, build_job["id"])
+        assert created_job is not None
+        job_attempt_id = created_job.attempt_id
+        expected_storage_key = (
+            f"build-artifacts/{project_id}/{build_job['id']}/attempts/{job_attempt_id}/dist.zip"
+        )
     build_token = TokenService.generate_runtime_build_command_token(
         job_id=build_job["id"],
         artifact_id=str(build_job["snapshot_release_id"]),
         project_id=project_id,
         workspace_id=workspace_id,
         base_url="/deploy/",
+        attempt_id=job_attempt_id,
     )
 
     upload_response = await authenticated_client.post(
@@ -680,7 +697,7 @@ async def test_project_build_artifact_upload_download_and_delete_should_persist_
     assert upload_payload["artifact_entry_file"] == "index.html"
     assert upload_payload["artifact_sha256"] == archive_sha256
     assert upload_payload["artifact_size_bytes"] == len(archive_content)
-    assert upload_payload["artifact_storage_key"] == f"build-artifacts/{project_id}/{build_job['id']}/dist.zip"
+    assert upload_payload["artifact_storage_key"] == expected_storage_key
     assert upload_payload["artifact_download_url"].endswith(
         f"/api/projects/{project_id}/build-jobs/{build_job['id']}/artifact"
     )
@@ -694,7 +711,7 @@ async def test_project_build_artifact_upload_download_and_delete_should_persist_
     assert detail_payload["artifact_entry_file"] == "index.html"
     assert detail_payload["artifact_sha256"] == archive_sha256
     assert detail_payload["artifact_size_bytes"] == len(archive_content)
-    assert detail_payload["artifact_storage_key"] == f"build-artifacts/{project_id}/{build_job['id']}/dist.zip"
+    assert detail_payload["artifact_storage_key"] == expected_storage_key
     assert detail_payload["artifact_download_url"]
     assert detail_payload["artifact_proxy_url"].endswith(
         f"/build-artifacts/{project_id}/{build_job['id']}/"
@@ -751,7 +768,7 @@ async def test_project_build_artifact_upload_download_and_delete_should_persist_
     assert persisted_job.artifact_entry_file == "index.html"
     assert persisted_job.artifact_sha256 == archive_sha256
     assert persisted_job.artifact_size_bytes == len(archive_content)
-    assert persisted_job.artifact_storage_key == f"build-artifacts/{project_id}/{build_job['id']}/dist.zip"
+    assert persisted_job.artifact_storage_key == expected_storage_key
     assert persisted_job.artifact_download_url
 
     active_delete_response = await authenticated_client.delete(

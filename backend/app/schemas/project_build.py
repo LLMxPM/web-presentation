@@ -38,6 +38,10 @@ class ProjectBuildJobResponse(SchemaBase):
     updated_at: datetime
     started_at: datetime | None
     finished_at: datetime | None
+    # attempt 与重试预算为增量观测字段，不影响既有响应兼容性。
+    attempt_id: str | None = None
+    attempt_count: int | None = None
+    max_attempts: int | None = None
 
 
 class ProjectBuildAssetSummary(BaseModel):

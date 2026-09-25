@@ -50,6 +50,12 @@ class AppSettings(BaseSettings):
     runtime_request_timeout_seconds: float = 10.0
     runtime_diagnostics_request_timeout_seconds: float = 180.0
     runtime_build_request_timeout_seconds: float = 900.0
+    # 项目整包构建持久领取：租约需覆盖 Runtime 构建请求超时，重试预算与总 deadline 由 Backend 统一裁决。
+    project_build_lease_seconds: int = 960
+    project_build_max_attempts: int = 3
+    project_build_total_deadline_seconds: int = 3600
+    project_build_queue_concurrency: int = 1
+    project_build_queue_poll_interval_seconds: float = 1.0
     backend_public_base_url: str = "http://127.0.0.1:8000"
     # 远程渲染执行服务配置（Backend 不再安装或持有 Playwright/Chromium）
     render_workers_config: list[dict[str, str]] = Field(
@@ -242,6 +248,10 @@ class AppSettings(BaseSettings):
         "page_screenshot_queue_concurrency",
         "asset_render_hint_backfill_queue_concurrency",
         "asset_render_hint_backfill_job_lease_seconds",
+        "project_build_lease_seconds",
+        "project_build_max_attempts",
+        "project_build_total_deadline_seconds",
+        "project_build_queue_concurrency",
     )
     @classmethod
     def validate_positive_int(cls, value: int) -> int:

@@ -1,4 +1,4 @@
-"""文件功能：定义项目整包构建任务模型，用于记录异步构建状态与快照关联。"""
+"""文件功能：定义项目整包构建任务模型，用于记录异步构建状态、attempt 身份与租约。"""
 
 from datetime import datetime
 
@@ -30,6 +30,17 @@ class ProjectBuildJob(TimestampMixin, Base):
     created_by: Mapped[int | None] = mapped_column(Integer, nullable=True)
     started_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+
+    # --- 持久领取、attempt 身份与租约字段 ---
+    # attempt_id 标识当前执行尝试；产物对象键与限权令牌都绑定该值，迟到上传据此被拒绝。
+    attempt_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    max_attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=3, server_default="3")
+    lease_owner: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    lease_expires_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True, index=True)
+    claimed_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+    # 总 deadline：超过后即使仍有重试预算也不再重试，避免任务无限拉长。
+    deadline_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
 
     @property
     def artifact_proxy_url(self) -> str | None:

@@ -61,7 +61,10 @@ from app.services.page_screenshot_job_service import (
     run_page_screenshot_queue_loop,
 )
 from app.services.page_screenshot_queue_worker import drain_page_screenshot_jobs
-from app.services.project_build_service import recover_interrupted_build_jobs_on_startup
+from app.services.project_build_service import (
+    recover_interrupted_build_jobs_on_startup,
+    run_project_build_queue_loop,
+)
 from app.services.rendering.coordinator import get_render_coordinator
 from app.services.redis_runtime_client import (
     ensure_redis_runtime_available,
@@ -89,6 +92,7 @@ async def lifespan(app: FastAPI):
     model_catalog_sync_task: asyncio.Task[None] | None = None
     api_mutation_worker_task: asyncio.Task[None] | None = None
     api_mutation_sweeper_task: asyncio.Task[None] | None = None
+    project_build_queue_task: asyncio.Task[None] | None = None
     render_coordinator_task: asyncio.Task[None] | None = None
     render_coordinator = get_render_coordinator()
     agent_background_run_manager: AgentBackgroundRunManager = app.state.agent_background_run_manager
@@ -133,6 +137,10 @@ async def lifespan(app: FastAPI):
         api_mutation_sweeper_task = asyncio.create_task(
             run_api_mutation_sweeper_loop(session_factory),
             name="api-mutation-sweeper",
+        )
+        project_build_queue_task = asyncio.create_task(
+            run_project_build_queue_loop(session_factory),
+            name="project-build-queue",
         )
         if get_settings().ai_enabled:
             ai_page_mutation_queue_task = asyncio.create_task(
@@ -179,6 +187,8 @@ async def lifespan(app: FastAPI):
             await _stop_background_task(api_mutation_worker_task)
         if api_mutation_sweeper_task is not None:
             await _stop_background_task(api_mutation_sweeper_task)
+        if project_build_queue_task is not None:
+            await _stop_background_task(project_build_queue_task)
         if ai_page_mutation_queue_task is not None:
             await _stop_background_task(ai_page_mutation_queue_task)
         if ai_image_generation_queue_task is not None:

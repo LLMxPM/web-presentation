@@ -258,6 +258,15 @@ async def upload_project_build_artifact(
     if str(claims.get("project_id") or "") != str(build_job.project_id):
         raise AppException(status_code=403, code="BUILD_PROJECT_MISMATCH", detail="项目与令牌声明不一致。")
 
+    token_attempt_id = str(claims.get("attempt_id") or "").strip() or None
+    token_lease_owner = str(claims.get("lease_owner") or "").strip() or None
+    # attempt 与有效租约围栏：迟到上传不得覆盖新 attempt 的结果。
+    ProjectBuildService(session).assert_attempt_fence(
+        job=build_job,
+        attempt_id=token_attempt_id,
+        lease_owner=token_lease_owner,
+    )
+
     await RuntimeArtifactStore().put_build_state(
         job_id=build_job.id,
         mapping={
@@ -277,6 +286,8 @@ async def upload_project_build_artifact(
         entry_file=entry_file,
         sha256=sha256,
         size_bytes=size_bytes,
+        attempt_id=token_attempt_id,
+        lease_owner=token_lease_owner,
     )
     await session.commit()
 

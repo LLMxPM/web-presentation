@@ -219,9 +219,11 @@ class TokenService:
         project_id: int | str,
         workspace_id: int | str,
         base_url: str,
+        attempt_id: str | None = None,
+        lease_owner: str | None = None,
         expires_in_seconds: int = 900,
     ) -> str:
-        """签发 Runtime 内部整包构建命令令牌。"""
+        """签发 Runtime 内部整包构建命令令牌；attempt 与租约拥有者绑定限权身份。"""
 
         now = int(time.time())
         payload = {
@@ -237,6 +239,10 @@ class TokenService:
             "exp": now + expires_in_seconds,
             "jti": f"runtime-build-job-{job_id}-{now}",
         }
+        if attempt_id:
+            payload["attempt_id"] = str(attempt_id)
+        if lease_owner:
+            payload["lease_owner"] = str(lease_owner)
         return cls.generate_signed_token(
             payload,
             expires_in_seconds=expires_in_seconds,
