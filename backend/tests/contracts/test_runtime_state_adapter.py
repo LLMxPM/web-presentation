@@ -170,6 +170,29 @@ async def _build_state_hash(client: RedisRuntimeClient, store: RuntimeArtifactSt
     }
 
 
+async def _empty_hset_and_bad_incr(client: RedisRuntimeClient) -> dict[str, Any]:
+    """空 HSET 不建 key；INCR 非整数必须是取值错误而不是后端不可用。"""
+
+    empty_key = client.key("parity_empty_hset")
+    added = await _to_thread(client.hset, empty_key, {})
+    empty_ttl = await _to_thread(client.ttl, empty_key)
+    text_key = client.key("parity_bad_incr")
+    await _to_thread(client.set, text_key, "abc")
+    try:
+        await _to_thread(client.incr, text_key)
+        incr_error = "none"
+    except ValueError:
+        incr_error = "value"
+    except Exception as exc:  # noqa: BLE001
+        incr_error = type(exc).__name__
+    await _to_thread(client.delete, empty_key, text_key)
+    return {
+        "empty_hset_added": added,
+        "empty_hset_creates_key": empty_ttl != -2,
+        "incr_error_kind": incr_error,
+    }
+
+
 async def _nx_and_delete(client: RedisRuntimeClient) -> dict[str, Any]:
     """SET NX 与 DELETE 计数在两种后端上必须给出相同结论。"""
 
@@ -278,6 +301,22 @@ async def test_build_state_hash_should_match(
         "error_message": "",
         "null_normalized_to_empty": "",
         "ttl_in_window": True,
+    }
+
+
+@pytest.mark.asyncio
+async def test_empty_hset_and_bad_incr_should_match(
+    parity_runtime: tuple[str, RedisRuntimeClient],
+) -> None:
+    """空 HSET 不建 key，INCR 非整数必须归类为取值错误。"""
+
+    _, client = parity_runtime
+    result = await _empty_hset_and_bad_incr(client)
+
+    assert result == {
+        "empty_hset_added": 0,
+        "empty_hset_creates_key": False,
+        "incr_error_kind": "value",
     }
 
 

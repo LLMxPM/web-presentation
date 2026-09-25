@@ -312,7 +312,11 @@ class AssetRenderHintBackfillJobService:
         return True
 
     async def _mark_job_failed_or_retry(self, *, job_id: int, worker_id: str, error: Exception) -> None:
-        """把异常压缩为回填任务失败状态；仍有重试预算时回到 pending 等待新 attempt。"""
+        """把异常压缩为回填任务失败状态；仍有重试预算时回到 pending 等待新 attempt。
+
+        有意不要求有效租约：失败路径不写资源元数据，过期后的迟到失败最多把任务标失败/回队，
+        不会覆盖新 attempt 的成功结果；成功路径才要求 `require_active_lease`。
+        """
 
         await self.session.rollback()
         job = (

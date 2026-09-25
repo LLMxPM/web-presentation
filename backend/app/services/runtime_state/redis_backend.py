@@ -114,17 +114,28 @@ class RedisRuntimeStateBackend:
         return RuntimeStateStats(backend_kind=self.kind, ephemeral=self.ephemeral)
 
     def _execute_batch(self, commands: list[tuple[str, tuple[Any, ...], dict[str, Any]]]) -> list[Any]:
-        """以事务 pipeline 执行整批命令。"""
+        """以事务 pipeline 执行整批命令；空 HSET 占位为 0，保证结果与命令一一对应。"""
 
         pipe = self._client.pipeline(transaction=True)
-        for name, args, kwargs in commands:
+        placeholders: dict[int, Any] = {}
+        for index, (name, args, kwargs) in enumerate(commands):
             if name == "hset" and not (kwargs.get("mapping") or args[1:2]):
+                placeholders[index] = 0
                 continue
             getattr(pipe, name)(*args, **kwargs)
         try:
-            return list(pipe.execute())
+            raw_results = list(pipe.execute()) if len(placeholders) < len(commands) else []
         except RedisError as exc:
             raise _map_redis_error(exc) from exc
+        results: list[Any] = []
+        raw_index = 0
+        for index in range(len(commands)):
+            if index in placeholders:
+                results.append(placeholders[index])
+                continue
+            results.append(raw_results[raw_index])
+            raw_index += 1
+        return results
 
     def _call(self, name: str, *args: Any, **kwargs: Any) -> Any:
         """执行单个已登记命令，统一转换 Redis 异常。"""
@@ -166,11 +177,15 @@ class _RedisRuntimeStateBatch:
         return self
 
 
-def _map_redis_error(error: RedisError) -> RuntimeStateUnavailableError | RuntimeStateTypeError:
-    """区分类型冲突与连接类故障，避免把业务错误误报为不可用。"""
+def _map_redis_error(error: RedisError) -> RuntimeStateUnavailableError | RuntimeStateTypeError | ValueError:
+    """区分类型冲突、取值错误与连接类故障，避免把业务错误误报为不可用。"""
 
-    if isinstance(error, ResponseError) and "WRONGTYPE" in str(error):
-        return RuntimeStateTypeError("运行态 key 类型与命令不匹配。")
+    if isinstance(error, ResponseError):
+        message = str(error)
+        if "WRONGTYPE" in message:
+            return RuntimeStateTypeError("运行态 key 类型与命令不匹配。")
+        if "not an integer" in message.lower():
+            return ValueError("运行态 INCR 的目标值不是整数。")
     return RuntimeStateUnavailableError(_format_redis_error(error))
 
 

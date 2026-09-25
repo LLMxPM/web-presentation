@@ -106,6 +106,7 @@ class InMemoryRuntimeStateBackend:
             try:
                 current = int(raw) + 1
             except (TypeError, ValueError) as exc:
+                # 与 Redis “value is not an integer” 同类：是取值错误，不是后端不可用。
                 raise ValueError(f"运行态 INCR 的目标值不是整数：{raw}") from exc
             text = str(current)
             previous_size = _byte_size(key) + _byte_size(raw) if key in self._state.strings else 0
@@ -154,8 +155,10 @@ class InMemoryRuntimeStateBackend:
             return max(0, int(expires_at - self._clock()))
 
     def hset(self, key: str, mapping: Mapping[str, Any]) -> int:
-        """写入 Hash 字段，返回新增字段数量。"""
+        """写入 Hash 字段，返回新增字段数量；空 mapping 与 Redis 一致，不创建 key。"""
 
+        if not mapping:
+            return 0
         with self._lock:
             self._purge_key(key)
             self._ensure_type_is_hash(key)
@@ -246,7 +249,8 @@ class InMemoryRuntimeStateBackend:
             try:
                 results = [getattr(self, name)(*args, **kwargs) for name, args, kwargs in commands]
                 self._ensure_total_bytes(self._state.bytes)
-            except RuntimeStateCapacityError:
+            except Exception:
+                # 类型冲突、容量拒绝或取值错误都不得留下半批写入。
                 self._restore_keys(snapshot)
                 raise
             return results

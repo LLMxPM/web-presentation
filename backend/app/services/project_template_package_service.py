@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import logging
 import re
 import struct
 import uuid
@@ -86,6 +87,8 @@ from app.services.workspace_font_service import WorkspaceFontService
 from app.services.workspace_style_package_service import WorkspaceStylePackageService
 from app.services.workspace_theme_service import WorkspaceThemeService
 from app.core.config import get_settings
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
@@ -282,7 +285,15 @@ class ProjectTemplatePackageService:
             )
         except AppException:
             # 资源未写全时不得签发可用预览 URL，也不能留下可访问的半成品 artifact。
-            await store.delete_artifact(artifact_id)
+            # 清理失败不得替换原始业务错误，否则调用方看不到真实的容量/不可用原因。
+            try:
+                await store.delete_artifact(artifact_id)
+            except Exception:  # noqa: BLE001
+                logger.warning(
+                    "模板预览半成品清理失败，将由 TTL 兜底回收。",
+                    extra={"event": "project_template.preview.cleanup_failed", "artifact_id": artifact_id},
+                    exc_info=True,
+                )
             raise
         preview_token = TokenService.generate_preview_context_token(
             tenant_id=tenant_id,

@@ -61,8 +61,19 @@ def test_incr_should_keep_ttl_and_reject_non_integer_values() -> None:
     assert backend.ttl("counter") == 50
 
     backend.set("text", "abc")
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="不是整数"):
         backend.incr("text")
+
+
+def test_empty_hset_should_not_create_key() -> None:
+    """空 HSET 与 Redis 一致：返回 0 且不创建 key。"""
+
+    backend = InMemoryRuntimeStateBackend(instance_name="test")
+
+    assert backend.hset("absent_hash", {}) == 0
+    assert backend.hgetall("absent_hash") == {}
+    assert backend.stats().active_keys == 0
+    assert "absent_hash" not in backend._state.hashes
 
 
 def test_expire_should_delete_key_on_non_positive_ttl() -> None:
@@ -222,6 +233,24 @@ def test_batch_should_roll_back_when_single_item_exceeds_limit() -> None:
     assert backend.hget("artifact:modules", "a") == "1"
     assert backend.hget("artifact:modules", "b") is None
     assert backend.ttl("artifact:modules") == -1
+
+
+def test_batch_should_roll_back_on_non_capacity_errors() -> None:
+    """批处理中途类型冲突同样必须整批回滚，不能留下半批写入。"""
+
+    backend = InMemoryRuntimeStateBackend(instance_name="test")
+    backend.set("s", "v")
+
+    batch = backend.batch()
+    batch.set("s2", "new")
+    batch.hset("s", {"f": "v"})
+    with pytest.raises(RuntimeStateTypeError):
+        batch.execute()
+
+    assert backend.get("s2") is None
+    assert backend.get("s") == "v"
+    with pytest.raises(RuntimeStateTypeError):
+        backend.hget("s", "f")
 
 
 def test_total_budget_should_cover_overwrite_hash_delete_and_expiry() -> None:
