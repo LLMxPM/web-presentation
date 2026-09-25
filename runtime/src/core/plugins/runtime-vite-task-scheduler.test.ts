@@ -88,6 +88,28 @@ describe('runtime vite task scheduler', () => {
     gate.resolve()
     await running
   })
+
+  it('snapshot 应暴露排队年龄与容量上限', async () => {
+    const scheduler = new RuntimeViteTaskScheduler({ concurrency: 1, maxQueueSize: 4 })
+    const gate = createDeferred()
+    const running = scheduler.schedule('project', async () => gate.promise)
+    scheduler.schedule('diagnostics', async () => undefined)
+
+    const snapshot = scheduler.snapshot()
+    expect(snapshot.active).toBe(1)
+    expect(snapshot.queuedDiagnostics).toBe(1)
+    expect(snapshot.queuedProject).toBe(0)
+    expect(snapshot.concurrency).toBe(1)
+    expect(snapshot.maxQueueSize).toBe(4)
+    expect(snapshot.oldestQueuedAgeMs).toBeGreaterThanOrEqual(0)
+    expect(snapshot.queueWaitTimeoutMs).toBeGreaterThan(0)
+    expect(snapshot.closed).toBe(false)
+
+    gate.resolve()
+    await running
+    await Promise.resolve()
+    scheduler.close()
+  })
 })
 
 interface Deferred {

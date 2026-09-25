@@ -37,6 +37,7 @@ import {
   isHttpUrl,
 } from './runtime-snapdom-resource-proxy'
 import { isRuntimeAccessLogEnabled, logRuntimeServer } from '../utils/runtime-logger'
+import { recordRuntimeWorkload } from './runtime-capacity'
 
 interface RuntimeSaaSPreviewOptions {
   previewPath?: string
@@ -153,6 +154,7 @@ export default function runtimeSaaSPreview(options: RuntimeSaaSPreviewOptions = 
         }
 
         try {
+          const requestStartedAt = Date.now()
           const previewToken = String(req.headers[previewHeaderName] || '')
           if (!previewToken) {
             throw new PreviewGatewayError(401, 'PREVIEW_CONTEXT_REQUIRED', '缺少预览上下文令牌。')
@@ -198,10 +200,13 @@ export default function runtimeSaaSPreview(options: RuntimeSaaSPreviewOptions = 
               manifest,
             },
           }))
+          const requestDurationMs = Date.now() - requestStartedAt
+          recordRuntimeWorkload('preview', requestDurationMs)
           if (isRuntimeAccessLogEnabled()) {
             logRuntimeServer('info', 'runtime.preview.request.completed', 'Runtime 预览入口请求完成。', {
               module: 'runtime.preview',
               request_id: String(req.headers['x-request-id'] || ''),
+              duration_ms: requestDurationMs,
               trace_id: verified.publicContext.traceId,
               artifact_id: verified.publicContext.artifactId,
               workspace_id: verified.publicContext.workspaceId,
@@ -264,41 +269,49 @@ export default function runtimeSaaSPreview(options: RuntimeSaaSPreviewOptions = 
       if (!parsed) {
         return null
       }
-      const effectivePreviewToken = parsed.previewToken || previewTokenCache.get(parsed.artifactId) || ''
-      if (!effectivePreviewToken) {
-        throw new PreviewGatewayError(401, 'PREVIEW_CONTEXT_REQUIRED', '远程模块请求缺少预览上下文令牌。')
+      const moduleLoadStartedAt = Date.now()
+      try {
+        const effectivePreviewToken = parsed.previewToken || previewTokenCache.get(parsed.artifactId) || ''
+        if (!effectivePreviewToken) {
+          throw new PreviewGatewayError(401, 'PREVIEW_CONTEXT_REQUIRED', '远程模块请求缺少预览上下文令牌。')
+        }
+
+        const verified = await verifyPreviewToken(effectivePreviewToken, {
+          jwksUrl: options.jwksUrl || process.env.RUNTIME_PREVIEW_JWKS_URL || '',
+          audience: options.previewAudience || process.env.RUNTIME_PREVIEW_TOKEN_AUDIENCE || DEFAULT_PREVIEW_AUDIENCE,
+          timeoutMs: jwksTimeoutMs,
+        })
+        if (verified.publicContext.artifactId !== parsed.artifactId) {
+          throw new PreviewGatewayError(403, 'ARTIFACT_MISMATCH', '预览 artifact 与远程模块请求不一致。')
+        }
+        previewTokenCache.set(parsed.artifactId, effectivePreviewToken)
+        const serviceToken = serviceTokenCache.get(parsed.artifactId) || ''
+        if (!serviceToken) {
+          throw new PreviewGatewayError(401, 'RUNTIME_SERVICE_TOKEN_REQUIRED', '缺少 Runtime 服务令牌缓存。')
+        }
+
+        const backendClient = createBackendClient({
+          backendApiBaseUrl: options.backendApiBaseUrl || process.env.RUNTIME_BACKEND_API_BASE_URL || '',
+          serviceToken,
+          previewToken: effectivePreviewToken,
+          requestTimeoutMs: backendRequestTimeoutMs,
+        })
+
+        const manifest = await fetchArtifactManifest(parsed.artifactId, backendClient, manifestCache)
+        assertManifestMatchesContext(manifest, verified.publicContext)
+
+        const manifestEntry = manifest.modules[parsed.modulePath]
+        if (!manifestEntry && !isPreviewEntryModuleRequest(parsed.modulePath, verified.publicContext.entryDescriptor)) {
+          throw new PreviewGatewayError(404, 'MODULE_NOT_ALLOWED', `模块未包含在发布白名单中：${parsed.modulePath}`)
+        }
+
+        const moduleSource = await backendClient.fetchModuleSource(parsed.artifactId, parsed.modulePath)
+        recordRuntimeWorkload('preview', Date.now() - moduleLoadStartedAt)
+        return moduleSource
+      } catch (error) {
+        recordRuntimeWorkload('preview', Date.now() - moduleLoadStartedAt)
+        throw error
       }
-
-      const verified = await verifyPreviewToken(effectivePreviewToken, {
-        jwksUrl: options.jwksUrl || process.env.RUNTIME_PREVIEW_JWKS_URL || '',
-        audience: options.previewAudience || process.env.RUNTIME_PREVIEW_TOKEN_AUDIENCE || DEFAULT_PREVIEW_AUDIENCE,
-        timeoutMs: jwksTimeoutMs,
-      })
-      if (verified.publicContext.artifactId !== parsed.artifactId) {
-        throw new PreviewGatewayError(403, 'ARTIFACT_MISMATCH', '预览 artifact 与远程模块请求不一致。')
-      }
-      previewTokenCache.set(parsed.artifactId, effectivePreviewToken)
-      const serviceToken = serviceTokenCache.get(parsed.artifactId) || ''
-      if (!serviceToken) {
-        throw new PreviewGatewayError(401, 'RUNTIME_SERVICE_TOKEN_REQUIRED', '缺少 Runtime 服务令牌缓存。')
-      }
-
-      const backendClient = createBackendClient({
-        backendApiBaseUrl: options.backendApiBaseUrl || process.env.RUNTIME_BACKEND_API_BASE_URL || '',
-        serviceToken,
-        previewToken: effectivePreviewToken,
-        requestTimeoutMs: backendRequestTimeoutMs,
-      })
-
-      const manifest = await fetchArtifactManifest(parsed.artifactId, backendClient, manifestCache)
-      assertManifestMatchesContext(manifest, verified.publicContext)
-
-      const manifestEntry = manifest.modules[parsed.modulePath]
-      if (!manifestEntry && !isPreviewEntryModuleRequest(parsed.modulePath, verified.publicContext.entryDescriptor)) {
-        throw new PreviewGatewayError(404, 'MODULE_NOT_ALLOWED', `模块未包含在发布白名单中：${parsed.modulePath}`)
-      }
-
-      return backendClient.fetchModuleSource(parsed.artifactId, parsed.modulePath)
     },
   }
 }

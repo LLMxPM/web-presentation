@@ -1,9 +1,14 @@
 /**
- * 文件用途：为 Runtime dev server 提供轻量健康检查端点，供容器探针和编排层判断进程存活。
+ * 文件用途：为 Runtime dev server 提供健康检查与容量快照端点，供容器探针和编排层判断进程存活与负载压力。
  */
 
 import type { ServerResponse } from 'http'
 import type { Plugin, ViteDevServer } from 'vite'
+
+import {
+  collectRuntimeCapacity,
+  startRuntimeEventLoopLagMonitor,
+} from './runtime-capacity'
 
 export const RUNTIME_HEALTH_PATH = '/__runtime_healthz'
 
@@ -17,6 +22,10 @@ export default function runtimeHealth(): Plugin {
     apply: 'serve',
     enforce: 'pre',
 
+    configResolved() {
+      startRuntimeEventLoopLagMonitor()
+    },
+
     configureServer(server: ViteDevServer) {
       server.middlewares.use((req, res, next) => {
         if (getRequestPathname(req.url || '/') !== RUNTIME_HEALTH_PATH) {
@@ -29,7 +38,7 @@ export default function runtimeHealth(): Plugin {
 }
 
 /**
- * 输出健康检查响应。
+ * 输出健康检查响应，包含存活状态与进程/角色容量快照。
  * @param res Node 响应对象
  */
 export function sendRuntimeHealthResponse(
@@ -38,7 +47,18 @@ export function sendRuntimeHealthResponse(
   res.statusCode = 200
   res.setHeader('Cache-Control', 'no-store')
   res.setHeader('Content-Type', 'application/json; charset=utf-8')
-  res.end(JSON.stringify({ status: 'ok' }))
+  res.end(JSON.stringify(buildRuntimeHealthPayload()))
+}
+
+/**
+ * 构建健康检查返回体。
+ * @returns 健康与容量结构
+ */
+export function buildRuntimeHealthPayload(): Record<string, unknown> {
+  return {
+    status: 'ok',
+    ...collectRuntimeCapacity(),
+  }
 }
 
 /**

@@ -18,6 +18,20 @@ interface QueuedTask<T> {
   resolve: (value: T | PromiseLike<T>) => void
   reject: (reason?: unknown) => void
   timeoutHandle: ReturnType<typeof setTimeout>
+  enqueuedAt: number
+}
+
+export interface RuntimeViteTaskSchedulerSnapshot {
+  active: number
+  queuedDiagnostics: number
+  queuedProject: number
+  concurrency: number
+  maxQueueSize: number
+  queueWaitTimeoutMs: number
+  /** 当前最久排队任务的等待毫秒数；无排队时为 0 */
+  oldestQueuedAgeMs: number
+  diagnosticsWeight: number
+  closed: boolean
 }
 
 const DEFAULT_CONCURRENCY = 1
@@ -115,6 +129,7 @@ export class RuntimeViteTaskScheduler {
         resolve,
         reject,
         timeoutHandle: setTimeout(() => this.expireTask(kind, id), this.queueWaitTimeoutMs),
+        enqueuedAt: Date.now(),
       }
       this.queues[kind].push(task as QueuedTask<unknown>)
       this.dispatch()
@@ -144,14 +159,34 @@ export class RuntimeViteTaskScheduler {
 
   /**
    * 返回当前运行态，供健康检查和结构化日志使用。
+   * 包含排队年龄与容量上限，便于判断压力来自 Check 还是 Build。
    */
-  snapshot(): { active: number; queuedDiagnostics: number; queuedProject: number; concurrency: number } {
+  snapshot(): RuntimeViteTaskSchedulerSnapshot {
     return {
       active: this.activeCount,
       queuedDiagnostics: this.queues.diagnostics.length,
       queuedProject: this.queues.project.length,
       concurrency: this.concurrency,
+      maxQueueSize: this.maxQueueSize,
+      queueWaitTimeoutMs: this.queueWaitTimeoutMs,
+      oldestQueuedAgeMs: this.computeOldestQueuedAgeMs(),
+      diagnosticsWeight: this.diagnosticsWeight,
+      closed: this.closed,
     }
+  }
+
+  /**
+   * 计算当前最久排队任务已等待的毫秒数。
+   */
+  private computeOldestQueuedAgeMs(): number {
+    const now = Date.now()
+    let oldest = 0
+    for (const queue of Object.values(this.queues)) {
+      for (const task of queue) {
+        oldest = Math.max(oldest, now - task.enqueuedAt)
+      }
+    }
+    return oldest
   }
 
   private get queuedCount(): number {

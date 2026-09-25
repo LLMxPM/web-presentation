@@ -1,5 +1,5 @@
 /**
- * 文件用途：隔离 Runtime 构建阶段的 Vite/Rollup 执行，避免构建 OOM 直接终止 Runtime 主进程。
+ * 文件用途：隔离 Runtime 构建阶段的 Vite/Rollup 与 ZIP 归档执行，避免构建/压缩 OOM 阻塞或终止 Runtime 主进程。
  */
 
 import { spawn, type ChildProcess } from 'child_process'
@@ -9,6 +9,8 @@ import { resolve } from 'path'
 
 const DEFAULT_WORKER_MAX_OLD_SPACE_MB = 1024
 const DEFAULT_WORKER_TIMEOUT_MS = 600000
+const DEFAULT_ARCHIVE_WORKER_TIMEOUT_MS = 120000
+const DEFAULT_ARCHIVE_COMPRESSION_LEVEL = 6
 const DEFAULT_DIAGNOSTICS_WORKER_TIMEOUT_MS = 120000
 const DEFAULT_DIAGNOSTICS_WORKER_MAX_TASKS = 25
 const DEFAULT_DIAGNOSTICS_WORKER_MAX_AGE_MS = 30 * 60 * 1000
@@ -25,6 +27,25 @@ export interface RuntimeBuildWorkerRunOptions {
   maxOldSpaceMb?: number
   timeoutMs?: number
   workerScriptSource?: string
+}
+
+export interface RuntimeZipArchiveOptions {
+  distRoot: string
+  outputPath: string
+  compressionLevel?: number
+  maxOldSpaceMb?: number
+  timeoutMs?: number
+  workerScriptSource?: string
+}
+
+export interface RuntimeZipArchiveResult {
+  archivePath: string
+  sha256: string
+  sizeBytes: number
+  fileCount: number
+  durationMs: number
+  rssBytes: number
+  compressionLevel: number
 }
 
 interface RuntimeBuildWorkerInput {
@@ -608,6 +629,195 @@ export async function runRuntimeViteBuildInWorker(options: RuntimeBuildWorkerRun
     throw new RuntimeBuildWorkerViteError(output.error)
   }
   throw buildWorkerProcessError(exit)
+}
+
+/**
+ * 在独立子进程中把 dist 目录打成 ZIP，避免同步压缩阻塞 Runtime 主进程（预览事件循环）。
+ * @param options 归档参数
+ * @returns 归档产物摘要与阶段耗时
+ */
+export async function runZipArchiveInWorker(options: RuntimeZipArchiveOptions): Promise<RuntimeZipArchiveResult> {
+  const distRoot = resolve(options.distRoot)
+  const outputPath = resolve(options.outputPath)
+  const compressionLevel = normalizeArchiveCompressionLevel(options.compressionLevel)
+  const taskRoot = resolve(outputPath, '..', '.runtime-archive')
+  await mkdir(taskRoot, { recursive: true })
+  const inputPath = resolve(taskRoot, 'runtime-archive-worker-input.json')
+  const workerOutputPath = resolve(taskRoot, 'runtime-archive-worker-output.json')
+  const workerScriptPath = resolve(taskRoot, 'runtime-archive-worker.mjs')
+  const workerInput = {
+    distRoot,
+    outputPath,
+    compressionLevel,
+  }
+
+  await writeFile(inputPath, JSON.stringify(workerInput), 'utf-8')
+  await writeFile(
+    workerScriptPath,
+    options.workerScriptSource || createRuntimeArchiveWorkerScript(),
+    'utf-8',
+  )
+
+  let exit: RuntimeBuildWorkerExit
+  try {
+    exit = await spawnRuntimeBuildWorker({
+      workerScriptPath,
+      inputPath,
+      outputPath: workerOutputPath,
+      cwd: taskRoot,
+      maxOldSpaceMb: normalizeWorkerMaxOldSpaceMb(options.maxOldSpaceMb),
+      timeoutMs: normalizeArchiveWorkerTimeoutMs(options.timeoutMs),
+    })
+  } catch (error) {
+    throw new RuntimeBuildWorkerProcessError(
+      500,
+      'RUNTIME_ARCHIVE_WORKER_FAILED',
+      error instanceof Error ? error.message : 'Runtime 归档 worker 启动失败。',
+    )
+  }
+
+  const output = await readArchiveWorkerOutput(workerOutputPath)
+  if (output?.success && output.archive) {
+    return {
+      archivePath: String(output.archive.path),
+      sha256: String(output.archive.sha256),
+      sizeBytes: Number(output.archive.sizeBytes),
+      fileCount: Number(output.archive.fileCount || 0),
+      durationMs: Number(output.archive.durationMs || 0),
+      rssBytes: Number(output.archive.rssBytes || 0),
+      compressionLevel,
+    }
+  }
+  if (output?.error) {
+    throw new RuntimeBuildWorkerProcessError(
+      500,
+      'RUNTIME_ARCHIVE_WORKER_FAILED',
+      String(output.error.message || 'Runtime ZIP 归档失败。'),
+      { stdout: exit.stdout, stderr: exit.stderr },
+    )
+  }
+  throw buildWorkerProcessError(exit)
+}
+
+/**
+ * 解析归档压缩级别；默认 6，避免无差别使用最高压缩拖慢构建。
+ * 显式 0 表示不压缩，空环境变量不得被当成 0。
+ */
+export function normalizeArchiveCompressionLevel(explicitValue?: number): number {
+  if (Number.isInteger(explicitValue) && Number(explicitValue) >= 0 && Number(explicitValue) <= 9) {
+    return Number(explicitValue)
+  }
+  const rawEnv = String(process.env.RUNTIME_ARCHIVE_COMPRESSION_LEVEL || '').trim()
+  if (rawEnv !== '') {
+    const fromEnv = Number(rawEnv)
+    if (Number.isInteger(fromEnv) && fromEnv >= 0 && fromEnv <= 9) {
+      return fromEnv
+    }
+  }
+  return DEFAULT_ARCHIVE_COMPRESSION_LEVEL
+}
+
+/**
+ * 解析归档 worker 超时时间。
+ */
+export function normalizeArchiveWorkerTimeoutMs(explicitValue?: number): number {
+  return normalizePositiveInteger(
+    explicitValue,
+    process.env.RUNTIME_ARCHIVE_WORKER_TIMEOUT_MS,
+    DEFAULT_ARCHIVE_WORKER_TIMEOUT_MS,
+  )
+}
+
+interface RuntimeArchiveWorkerOutput {
+  success: boolean
+  error?: { message?: string }
+  archive?: {
+    path: string
+    sha256: string
+    sizeBytes: number
+    fileCount: number
+    durationMs: number
+    rssBytes: number
+  }
+}
+
+/**
+ * 读取归档 worker 结构化结果。
+ */
+async function readArchiveWorkerOutput(outputPath: string): Promise<RuntimeArchiveWorkerOutput | null> {
+  try {
+    return JSON.parse(await readFile(outputPath, 'utf-8')) as RuntimeArchiveWorkerOutput
+  } catch {
+    return null
+  }
+}
+
+/**
+ * 生成可被 Node 直接执行的 ZIP 归档 worker 脚本。
+ * @returns ESM worker 脚本文本
+ */
+export function createRuntimeArchiveWorkerScript(): string {
+  return [
+    '/**',
+    ' * 文件用途：Runtime 临时归档 worker，在独立 Node 进程内将 dist 打包为 ZIP 并计算摘要。',
+    ' */',
+    "import { createHash } from 'node:crypto'",
+    "import { readdir, readFile, writeFile } from 'node:fs/promises'",
+    "import { resolve, sep } from 'node:path'",
+    "import { zipSync } from 'fflate'",
+    '',
+    'async function collectEntries(rootDir, currentDir, archiveEntries) {',
+    '  const entries = await readdir(currentDir, { withFileTypes: true })',
+    '  for (const entry of entries) {',
+    '    const entryPath = resolve(currentDir, entry.name)',
+    '    if (entry.isDirectory()) {',
+    '      await collectEntries(rootDir, entryPath, archiveEntries)',
+    '      continue',
+    '    }',
+    '    const entryBytes = await readFile(entryPath)',
+    '    const relativePath = entryPath',
+    '      .replace(rootDir, "")',
+    '      .replace(/^[\\\\/]+/, "")',
+    '      .split(sep)',
+    '      .join("/")',
+    '    archiveEntries[relativePath] = new Uint8Array(entryBytes)',
+    '  }',
+    '}',
+    '',
+    'async function main() {',
+    '  const inputPath = process.argv[2]',
+    '  const outputPath = process.argv[3]',
+    '  const input = JSON.parse(await readFile(inputPath, "utf-8"))',
+    '  const startedAt = Date.now()',
+    '  try {',
+    '    const archiveEntries = {}',
+    '    await collectEntries(input.distRoot, input.distRoot, archiveEntries)',
+    '    const zipped = zipSync(archiveEntries, { level: input.compressionLevel })',
+    '    await writeFile(input.outputPath, zipped)',
+    '    const sha256 = createHash("sha256").update(zipped).digest("hex")',
+    '    await writeFile(outputPath, JSON.stringify({',
+    '      success: true,',
+    '      archive: {',
+    '        path: input.outputPath,',
+    '        sha256,',
+    '        sizeBytes: zipped.length,',
+    '        fileCount: Object.keys(archiveEntries).length,',
+    '        durationMs: Date.now() - startedAt,',
+    '        rssBytes: process.memoryUsage().rss,',
+    '      },',
+    '    }), "utf-8")',
+    '  } catch (error) {',
+    '    await writeFile(outputPath, JSON.stringify({',
+    '      success: false,',
+    '      error: { message: String(error?.message || error || "Runtime ZIP 归档失败。") },',
+    '    }), "utf-8")',
+    '    process.exitCode = 1',
+    '  }',
+    '}',
+    '',
+    'await main()',
+    '',
+  ].join('\n')
 }
 
 /**

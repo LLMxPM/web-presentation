@@ -13,6 +13,7 @@ import {
   resolveSingleSvgAspectRatio,
 } from '../utils/svg-aspect-ratio'
 import { logRuntimeServer } from '../utils/runtime-logger'
+import { recordRuntimeWorkload } from './runtime-capacity'
 
 interface RuntimeAssetRenderHintMeasurerOptions {
   endpointPath?: string
@@ -68,6 +69,7 @@ export default function runtimeAssetRenderHintMeasurer(options: RuntimeAssetRend
           })
         }
         try {
+          const startedAt = Date.now()
           await verifyRuntimeServiceToken(String(req.headers[serviceTokenHeaderName] || ''), {
             jwksUrl: options.jwksUrl || process.env.RUNTIME_PREVIEW_JWKS_URL || '',
             audience: options.serviceAudience || process.env.RUNTIME_SERVICE_TOKEN_AUDIENCE || DEFAULT_SERVICE_AUDIENCE,
@@ -75,6 +77,7 @@ export default function runtimeAssetRenderHintMeasurer(options: RuntimeAssetRend
           const payload = await readJsonBody<MeasureRequestBody>(req)
           const result = await measureAssetRenderHint(payload)
           sendJson(res, 200, result)
+          recordRuntimeWorkload('light_tool', Date.now() - startedAt)
         } catch (error) {
           logRuntimeServer('error', 'runtime.asset_render_hint.measure.failed', 'Runtime 资源比例测量失败。', {
             module: 'runtime.asset_render_hint',

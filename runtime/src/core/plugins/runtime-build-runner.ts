@@ -1,14 +1,12 @@
 /**
- * 文件用途：提供 Runtime 内部整项目构建入口，并在临时工作区中执行程序化 Vite 构建、归档与回传。
+ * 文件用途：提供 Runtime 内部整项目构建入口，并在临时工作区中执行程序化 Vite 构建、子进程归档与回传。
  */
 
 import type { IncomingMessage, ServerResponse } from 'http'
 import { mkdir, rm, writeFile, access, readdir, readFile } from 'fs/promises'
 import { constants as fsConstants } from 'fs'
-import { createHash } from 'crypto'
 import { resolve, sep } from 'path'
 
-import { zipSync } from 'fflate'
 import { createRemoteJWKSet, jwtVerify, type JWTPayload } from 'jose'
 import type { Plugin, ViteDevServer } from 'vite'
 
@@ -33,7 +31,12 @@ import {
   normalizeDiagnosticsWorkerTimeoutMs,
   normalizeWorkerTimeoutMs,
   runRuntimeViteBuildInWorker,
+  runZipArchiveInWorker,
 } from './runtime-build-worker'
+import {
+  recordRuntimeWorkload,
+  registerRuntimeCapacityProvider,
+} from './runtime-capacity'
 import {
   RuntimeDiagnosticsWorkspaceError,
   RuntimeDiagnosticsWorkspacePool,
@@ -205,6 +208,8 @@ export default function runtimeBuildRunner(options: RuntimeBuildRunnerOptions = 
   let diagnosticsWorkspacePool: RuntimeDiagnosticsWorkspacePool | null = null
   let runtimeRoot = ''
 
+  let unregisterCapacityProvider: (() => void) | null = null
+
   return {
     name: 'runtime-build-runner',
     apply: 'serve',
@@ -215,6 +220,10 @@ export default function runtimeBuildRunner(options: RuntimeBuildRunnerOptions = 
         runtimeRoot,
         size: scheduler.snapshot().concurrency,
       })
+      unregisterCapacityProvider?.()
+      unregisterCapacityProvider = registerRuntimeCapacityProvider('viteTaskScheduler', () => ({
+        ...scheduler.snapshot(),
+      }))
     },
 
     configureServer(server: ViteDevServer) {
@@ -225,6 +234,8 @@ export default function runtimeBuildRunner(options: RuntimeBuildRunnerOptions = 
       // 工作区采用首次诊断时的惰性预热：创建动作位于 diagnostics scheduler 槽位内，
       // 避免服务启动时与正式构建并发复制完整 Runtime 源码。
       server.httpServer?.once('close', () => {
+        unregisterCapacityProvider?.()
+        unregisterCapacityProvider = null
         scheduler.close()
         void workspacePool.close()
       })
@@ -281,6 +292,7 @@ export default function runtimeBuildRunner(options: RuntimeBuildRunnerOptions = 
           }
 
           logRuntimeBuild('request.received', buildContext)
+          const requestStartedAt = Date.now()
           const serviceToken = String(req.headers[serviceTokenHeaderName] || '')
           if (!serviceToken) {
             throw new RuntimeBuildError(401, 'RUNTIME_SERVICE_TOKEN_REQUIRED', '缺少 Backend 下发的 Runtime 服务令牌。')
@@ -337,8 +349,11 @@ export default function runtimeBuildRunner(options: RuntimeBuildRunnerOptions = 
             artifact_size_bytes: buildSummary.artifactSizeBytes,
             message: buildSummary.message,
           })
+          const requestDurationMs = Date.now() - requestStartedAt
+          recordRuntimeWorkload('build', requestDurationMs)
           logRuntimeBuild('request.completed', {
             ...buildContext,
+            durationMs: requestDurationMs,
             artifactEntryFile: buildSummary.artifactEntryFile,
             artifactSha256: buildSummary.artifactSha256,
             artifactSizeBytes: buildSummary.artifactSizeBytes,
@@ -450,6 +465,7 @@ async function handleRuntimeDiagnosticsRequest(
       request_id: String(req.headers['x-request-id'] || ''),
     }
     logRuntimeBuild('diagnostics.request.received', diagnosticsContext)
+    const requestStartedAt = Date.now()
     const serviceToken = String(req.headers[options.serviceTokenHeaderName] || '')
     if (!serviceToken) {
       throw new RuntimeBuildError(401, 'RUNTIME_SERVICE_TOKEN_REQUIRED', '缺少 Backend 下发的 Runtime 服务令牌。')
@@ -495,8 +511,11 @@ async function handleRuntimeDiagnosticsRequest(
       summary: diagnosticsSummary.summary,
       diagnostics: diagnosticsSummary.diagnostics,
     })
+    const requestDurationMs = Date.now() - requestStartedAt
+    recordRuntimeWorkload('check', requestDurationMs)
     logRuntimeBuild('diagnostics.request.completed', {
       ...diagnosticsContext,
+      durationMs: requestDurationMs,
       status: diagnosticsSummary.status,
       diagnosticCount: diagnosticsSummary.diagnostics.length,
     })
@@ -966,20 +985,28 @@ async function runProjectBuild(params: {
   try {
     params.deadline.throwIfExpired()
     logRuntimeBuild('workspace.created', buildContext)
+
+    const injectStartedAt = Date.now()
     logRuntimeBuild('modules.inject.start', buildContext)
     await injectSnapshotModules(tempRoot, params.artifactId, params.manifest, params.backendClient, params.deadline)
     params.deadline.throwIfExpired()
     logRuntimeBuild('modules.inject.done', {
       ...buildContext,
+      durationMs: Date.now() - injectStartedAt,
       moduleCount: Object.keys(params.manifest.modules || {}).length,
     })
 
+    const validateStartedAt = Date.now()
     logRuntimeBuild('workspace.validate.start', buildContext)
     await validateBuildWorkspaceSources(tempRoot)
     params.deadline.throwIfExpired()
     validateConfigAssetReferences(params.manifest, params.configBundle)
-    logRuntimeBuild('workspace.validate.done', buildContext)
+    logRuntimeBuild('workspace.validate.done', {
+      ...buildContext,
+      durationMs: Date.now() - validateStartedAt,
+    })
 
+    const materializeStartedAt = Date.now()
     logRuntimeBuild('assets.materialize.start', buildContext)
     const staticAssetMapping = await materializeSnapshotAssets(
       tempRoot,
@@ -990,9 +1017,11 @@ async function runProjectBuild(params: {
     params.deadline.throwIfExpired()
     logRuntimeBuild('assets.materialize.done', {
       ...buildContext,
+      durationMs: Date.now() - materializeStartedAt,
       materializedAssetCount: Object.keys(staticAssetMapping).length,
     })
 
+    const entryStartedAt = Date.now()
     logRuntimeBuild('entry.write.start', buildContext)
     await writeBuildEntryFiles(tempRoot, {
       ...params.configBundle,
@@ -1004,8 +1033,12 @@ async function runProjectBuild(params: {
       },
     })
     params.deadline.throwIfExpired()
-    logRuntimeBuild('entry.write.done', buildContext)
+    logRuntimeBuild('entry.write.done', {
+      ...buildContext,
+      durationMs: Date.now() - entryStartedAt,
+    })
 
+    const viteStartedAt = Date.now()
     logRuntimeBuild('vite.build.start', buildContext)
     await runRuntimeViteBuildInWorker({
       tempRoot,
@@ -1015,19 +1048,33 @@ async function runProjectBuild(params: {
       timeoutMs: params.deadline.remainingMs(),
     })
     params.deadline.throwIfExpired()
-    logRuntimeBuild('vite.build.done', buildContext)
-
-    logRuntimeBuild('artifact.archive.start', buildContext)
-    const archiveBuffer = await createZipArchiveFromDirectory(distRoot)
-    params.deadline.throwIfExpired()
-    const artifactSha256 = createHash('sha256').update(archiveBuffer).digest('hex')
-    const artifactSizeBytes = archiveBuffer.length
-    logRuntimeBuild('artifact.archive.done', {
+    logRuntimeBuild('vite.build.done', {
       ...buildContext,
-      artifactSha256,
-      artifactSizeBytes,
+      durationMs: Date.now() - viteStartedAt,
     })
 
+    // ZIP 归档在独立子进程执行，避免同步压缩阻塞承载预览的主事件循环。
+    logRuntimeBuild('artifact.archive.start', buildContext)
+    const archiveResult = await runZipArchiveInWorker({
+      distRoot,
+      outputPath: resolve(tempRoot, 'artifact.zip'),
+      timeoutMs: params.deadline.remainingMs(),
+    })
+    params.deadline.throwIfExpired()
+    const archiveBuffer = await readFile(archiveResult.archivePath)
+    const artifactSha256 = archiveResult.sha256
+    const artifactSizeBytes = archiveResult.sizeBytes
+    logRuntimeBuild('artifact.archive.done', {
+      ...buildContext,
+      durationMs: archiveResult.durationMs,
+      artifactSha256,
+      artifactSizeBytes,
+      archiveFileCount: archiveResult.fileCount,
+      archiveRssBytes: archiveResult.rssBytes,
+      archiveCompressionLevel: archiveResult.compressionLevel,
+    })
+
+    const uploadStartedAt = Date.now()
     logRuntimeBuild('artifact.upload.start', {
       ...buildContext,
       artifactSha256,
@@ -1044,6 +1091,7 @@ async function runProjectBuild(params: {
     params.deadline.throwIfExpired()
     logRuntimeBuild('artifact.upload.done', {
       ...buildContext,
+      durationMs: Date.now() - uploadStartedAt,
       artifactStorageKey: uploadSummary.artifact_storage_key,
       artifactDownloadUrl: uploadSummary.artifact_download_url,
       artifactEntryFile: uploadSummary.artifact_entry_file || 'index.html',
@@ -1534,45 +1582,6 @@ async function writeBuildEntryFiles(
     createBuildIndexHtmlSource(),
     'utf-8',
   )
-}
-
-/**
- * 把 dist 目录打包为 ZIP Buffer。
- * @param distRoot Vite 构建输出目录
- * @returns ZIP 二进制内容
- */
-async function createZipArchiveFromDirectory(distRoot: string): Promise<Buffer> {
-  const archiveEntries: Record<string, Uint8Array> = {}
-  await collectArchiveEntries(distRoot, distRoot, archiveEntries)
-  return Buffer.from(zipSync(archiveEntries, { level: 9 }))
-}
-
-/**
- * 递归收集 ZIP 归档条目。
- * @param rootDir 根目录
- * @param currentDir 当前目录
- * @param archiveEntries ZIP 条目映射
- */
-async function collectArchiveEntries(
-  rootDir: string,
-  currentDir: string,
-  archiveEntries: Record<string, Uint8Array>,
-): Promise<void> {
-  const entries = await readdir(currentDir, { withFileTypes: true })
-  for (const entry of entries) {
-    const entryPath = resolve(currentDir, entry.name)
-    if (entry.isDirectory()) {
-      await collectArchiveEntries(rootDir, entryPath, archiveEntries)
-      continue
-    }
-    const entryBytes = await readFile(entryPath)
-    const relativePath = entryPath
-      .replace(rootDir, '')
-      .replace(/^[\\/]+/, '')
-      .split(sep)
-      .join('/')
-    archiveEntries[relativePath] = new Uint8Array(entryBytes)
-  }
 }
 
 /**

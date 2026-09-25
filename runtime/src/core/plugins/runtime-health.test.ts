@@ -1,12 +1,20 @@
 /**
- * 文件用途：验证 Runtime 健康检查插件的中间件注册与响应内容。
+ * 文件用途：验证 Runtime 健康检查插件的中间件注册与容量快照响应内容。
  */
 
 import { describe, expect, it, vi } from 'vitest'
 import type { ServerResponse } from 'http'
 import type { ViteDevServer } from 'vite'
 
-import runtimeHealth, { sendRuntimeHealthResponse } from './runtime-health'
+import runtimeHealth, {
+  buildRuntimeHealthPayload,
+  sendRuntimeHealthResponse,
+} from './runtime-health'
+import {
+  recordRuntimeWorkload,
+  registerRuntimeCapacityProvider,
+  resetRuntimeWorkloadCounters,
+} from './runtime-capacity'
 
 type MockResponse = ReturnType<typeof createMockResponse>
 type RuntimeHealthMiddleware = (
@@ -40,7 +48,18 @@ describe('runtime health plugin', () => {
 
     expect(response.statusCode).toBe(200)
     expect(response.headers['content-type']).toBe('application/json; charset=utf-8')
-    expect(JSON.parse(response.body)).toEqual({ status: 'ok' })
+    const payload = JSON.parse(response.body)
+    expect(payload.status).toBe('ok')
+    expect(payload.memory).toMatchObject({
+      rssBytes: expect.any(Number),
+      heapUsedBytes: expect.any(Number),
+    })
+    expect(payload.eventLoop).toMatchObject({ enabled: expect.any(Boolean) })
+    expect(payload.workloads).toMatchObject({
+      preview: expect.objectContaining({ calls: expect.any(Number) }),
+      check: expect.objectContaining({ calls: expect.any(Number) }),
+      build: expect.objectContaining({ calls: expect.any(Number) }),
+    })
     expect(next).not.toHaveBeenCalled()
 
     const passthroughResponse = createMockResponse()
@@ -50,14 +69,47 @@ describe('runtime health plugin', () => {
     expect(passthroughResponse.body).toBe('')
   })
 
-  it('应输出 no-store JSON 响应', () => {
+  it('应输出 no-store JSON 响应并包含容量字段', () => {
     const response = createMockResponse()
 
     sendRuntimeHealthResponse(response)
 
     expect(response.statusCode).toBe(200)
     expect(response.headers['cache-control']).toBe('no-store')
-    expect(response.body).toBe('{"status":"ok"}')
+    const payload = JSON.parse(response.body)
+    expect(payload.status).toBe('ok')
+    expect(payload.uptimeMs).toEqual(expect.any(Number))
+  })
+
+  it('应汇总负载计数与注册的容量提供者', () => {
+    resetRuntimeWorkloadCounters()
+    recordRuntimeWorkload('build', 120)
+    recordRuntimeWorkload('check', 30)
+    recordRuntimeWorkload('preview', 12)
+    recordRuntimeWorkload('light_tool', 5)
+
+    const unregister = registerRuntimeCapacityProvider('viteTaskScheduler', () => ({
+      active: 1,
+      queuedDiagnostics: 0,
+      queuedProject: 2,
+    }))
+
+    const payload = buildRuntimeHealthPayload()
+    expect(payload.workloads).toMatchObject({
+      build: { calls: 1, totalDurationMs: 120, lastDurationMs: 120 },
+      check: { calls: 1, totalDurationMs: 30 },
+      preview: { calls: 1, totalDurationMs: 12 },
+      light_tool: { calls: 1, totalDurationMs: 5 },
+    })
+    expect(payload.viteTaskScheduler).toEqual({
+      active: 1,
+      queuedDiagnostics: 0,
+      queuedProject: 2,
+    })
+
+    unregister()
+    resetRuntimeWorkloadCounters()
+    expect(buildRuntimeHealthPayload().viteTaskScheduler).toBeUndefined()
   })
 })
 

@@ -12,11 +12,14 @@ import {
   RuntimeDiagnosticsWorker,
   createRuntimeDiagnosticsWorkerScript,
   createRuntimeBuildWorkerScript,
+  createRuntimeArchiveWorkerScript,
   isRuntimeBuildWorkerOomFailure,
+  normalizeArchiveCompressionLevel,
   normalizeDiagnosticsWorkerTimeoutMs,
   normalizeWorkerMaxOldSpaceMb,
   normalizeWorkerTimeoutMs,
   runRuntimeViteBuildInWorker,
+  runZipArchiveInWorker,
 } from './runtime-build-worker'
 
 describe('runtime build worker', () => {
@@ -60,6 +63,62 @@ describe('runtime build worker', () => {
     expect(isRuntimeBuildWorkerOomFailure('Ineffective mark-compacts near heap limit', null)).toBe(true)
     expect(isRuntimeBuildWorkerOomFailure('', 134)).toBe(true)
     expect(isRuntimeBuildWorkerOomFailure('normal failure', 1)).toBe(false)
+  })
+
+  it('归档压缩级别默认 6，且限制在 0-9', () => {
+    const originalLevel = process.env.RUNTIME_ARCHIVE_COMPRESSION_LEVEL
+    try {
+      delete process.env.RUNTIME_ARCHIVE_COMPRESSION_LEVEL
+      expect(normalizeArchiveCompressionLevel()).toBe(6)
+      expect(normalizeArchiveCompressionLevel(9)).toBe(9)
+      expect(normalizeArchiveCompressionLevel(12)).toBe(6)
+      process.env.RUNTIME_ARCHIVE_COMPRESSION_LEVEL = '3'
+      expect(normalizeArchiveCompressionLevel()).toBe(3)
+    } finally {
+      restoreEnvValue('RUNTIME_ARCHIVE_COMPRESSION_LEVEL', originalLevel)
+    }
+  })
+
+  it('归档 worker 应生成 ZIP 并返回摘要与 RSS', async () => {
+    const tempRoot = await createWorkerFixture()
+    try {
+      await createMinimalViteFixture(tempRoot)
+      const distRoot = resolve(tempRoot, 'dist')
+      await mkdir(distRoot, { recursive: true })
+      await writeFile(resolve(distRoot, 'index.html'), '<html>ok</html>', 'utf-8')
+      await mkdir(resolve(distRoot, 'assets'), { recursive: true })
+      await writeFile(resolve(distRoot, 'assets', 'app.js'), 'console.log(1)', 'utf-8')
+      const outputPath = resolve(tempRoot, 'artifact.zip')
+
+      const result = await runZipArchiveInWorker({
+        distRoot,
+        outputPath,
+        compressionLevel: 6,
+      })
+
+      expect(result.archivePath).toBe(outputPath)
+      expect(result.sizeBytes).toBeGreaterThan(0)
+      expect(result.fileCount).toBe(2)
+      expect(result.sha256).toMatch(/^[a-f0-9]{64}$/)
+      expect(result.durationMs).toBeGreaterThanOrEqual(0)
+      expect(result.rssBytes).toBeGreaterThan(0)
+      expect(result.compressionLevel).toBe(6)
+
+      const archiveBytes = await readFile(outputPath)
+      expect(archiveBytes.length).toBe(result.sizeBytes)
+      // ZIP 本地文件头魔数
+      expect(archiveBytes[0]).toBe(0x50)
+      expect(archiveBytes[1]).toBe(0x4b)
+    } finally {
+      await rm(tempRoot, { recursive: true, force: true })
+    }
+  })
+
+  it('归档 worker 脚本应包含独立进程压缩入口', () => {
+    const source = createRuntimeArchiveWorkerScript()
+    expect(source).toContain("import { zipSync } from 'fflate'")
+    expect(source).toContain('createHash("sha256")')
+    expect(source).toContain('process.memoryUsage().rss')
   })
 
   it('worker 成功写出结果时应正常返回', async () => {
