@@ -68,5 +68,6 @@ backend/test_result.txt
 # Temporary files
 tmp/
 temp/
+!docs/temp/
 .tmp/
 *.tmp
