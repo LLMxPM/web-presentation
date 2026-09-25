@@ -21,6 +21,7 @@ from app.schemas.runtime_page_visual_edit import (
     RuntimePageVisualEditApplyResponse,
 )
 from app.services.runtime_build_client import RUNTIME_SERVICE_TOKEN_HEADER
+from app.services.runtime_target_router import request_runtime_role_json
 from app.services.token_service import TokenService
 
 
@@ -131,7 +132,7 @@ class RuntimeVisualEditClient:
     async def _request_json(
         self, path: str, payload: dict[str, object]
     ) -> dict[str, object]:
-        """发送 Runtime 内部请求，并把网络、HTTP 与 JSON 错误归一化为 AppException。"""
+        """发送 Runtime 内部请求，经选址器做多副本重试，并把错误归一化为 AppException。"""
 
         headers = {
             "X-Request-ID": get_current_request_id(),
@@ -139,62 +140,20 @@ class RuntimeVisualEditClient:
                 expires_in_seconds=900,
             ),
         }
-        try:
-            async with httpx.AsyncClient(
-                base_url=self.settings.resolve_runtime_role_base_url("check"),
-                timeout=httpx.Timeout(self.settings.runtime_request_timeout_seconds),
-                transport=self.transport,
-            ) as client:
-                response = await client.post(path, json=payload, headers=headers)
-        except httpx.TimeoutException as exc:
-            raise AppException(
-                status_code=504,
-                code="RUNTIME_VISUAL_EDIT_TIMEOUT",
-                detail="Runtime 页面可视化编辑请求超时。",
-            ) from exc
-        except httpx.RequestError as exc:
-            raise AppException(
-                status_code=502,
-                code="RUNTIME_VISUAL_EDIT_UNAVAILABLE",
-                detail="Runtime 页面可视化编辑服务不可访问。",
-            ) from exc
-
-        if response.status_code >= 500:
-            logger.error(
-                "Runtime 页面可视化编辑请求返回服务端错误。",
-                extra={
-                    "event": "runtime.visual_edit.request.failed",
-                    "path": path,
-                    "status_code": response.status_code,
-                },
-            )
-            raise self._build_http_exception(response, force_status_code=502)
-        if response.status_code >= 400:
-            logger.warning(
-                "Runtime 页面可视化编辑请求被拒绝。",
-                extra={
-                    "event": "runtime.visual_edit.request.rejected",
-                    "path": path,
-                    "status_code": response.status_code,
-                },
-            )
-            raise self._build_http_exception(response)
-
-        try:
-            result = response.json()
-        except ValueError as exc:
-            raise AppException(
-                status_code=502,
-                code="RUNTIME_VISUAL_EDIT_RESPONSE_INVALID",
-                detail="Runtime 页面可视化编辑返回了非法 JSON。",
-            ) from exc
-        if not isinstance(result, dict):
-            raise AppException(
-                status_code=502,
-                code="RUNTIME_VISUAL_EDIT_RESPONSE_INVALID",
-                detail="Runtime 页面可视化编辑响应必须是 JSON 对象。",
-            )
-        return dict(result)
+        return await request_runtime_role_json(
+            role="check",
+            method="POST",
+            path=path,
+            settings=self.settings,
+            headers=headers,
+            timeout_seconds=self.settings.runtime_request_timeout_seconds,
+            default_error_code="RUNTIME_VISUAL_EDIT_FAILED",
+            timeout_error_code="RUNTIME_VISUAL_EDIT_TIMEOUT",
+            unavailable_error_code="RUNTIME_VISUAL_EDIT_UNAVAILABLE",
+            invalid_response_code="RUNTIME_VISUAL_EDIT_RESPONSE_INVALID",
+            json_payload=payload,
+            transport=self.transport,
+        )
 
     @staticmethod
     def _validate_response(
@@ -220,24 +179,3 @@ class RuntimeVisualEditClient:
                 code="RUNTIME_VISUAL_EDIT_RESPONSE_INVALID",
                 detail="Runtime 页面可视化编辑响应结构不合法。",
             ) from exc
-
-    @staticmethod
-    def _build_http_exception(
-        response: httpx.Response, force_status_code: int | None = None
-    ) -> AppException:
-        """将 Runtime HTTP 错误转换为稳定的 Backend 业务错误。"""
-
-        code = "RUNTIME_VISUAL_EDIT_FAILED"
-        detail = response.text or "Runtime 页面可视化编辑请求失败。"
-        try:
-            payload = response.json()
-            if isinstance(payload, dict):
-                code = str(payload.get("code") or code)
-                detail = str(payload.get("message") or payload.get("detail") or detail)
-        except ValueError:
-            pass
-        return AppException(
-            status_code=force_status_code or response.status_code,
-            code=code,
-            detail=detail,
-        )

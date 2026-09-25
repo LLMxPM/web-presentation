@@ -104,3 +104,29 @@ def test_validate_runtime_role_targets_warns_on_preview_mismatch(
     with caplog.at_level("WARNING"):
         validate_runtime_role_targets(settings)
     assert any("preview" in record.message for record in caplog.records)
+
+
+def test_validate_runtime_role_targets_accepts_multi_target_lists() -> None:
+    """计算角色多副本列表中的每个目标都必须是绝对 http(s) 地址。"""
+
+    settings = _settings(
+        runtime_build_base_urls="http://build-1:7373,http://build-2:7373",
+        runtime_check_base_urls='["http://check-1:7373","http://check-2:7373"]',
+    )
+    validate_runtime_role_targets(settings)
+    assert settings.resolve_runtime_role_base_urls("build") == [
+        "http://build-1:7373",
+        "http://build-2:7373",
+    ]
+    assert settings.resolve_runtime_role_base_urls("check") == [
+        "http://check-1:7373",
+        "http://check-2:7373",
+    ]
+
+
+def test_validate_runtime_role_targets_rejects_non_http_list_entry() -> None:
+    """多副本列表中出现非法协议地址时启动校验应报错。"""
+
+    settings = _settings(runtime_check_base_urls="http://check-1:7373,ftp://bad:7373")
+    with pytest.raises(ValueError):
+        validate_runtime_role_targets(settings)

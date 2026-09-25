@@ -99,6 +99,9 @@ def is_transient_infrastructure_error(exc: BaseException) -> bool:
     if code in {
         "RUNTIME_DIAGNOSTICS_FAILED",
         "RUNTIME_RESPONSE_INVALID",
+        "RUNTIME_CAPACITY_EXCEEDED",
+        "RUNTIME_ADMISSION_FULL",
+        "RUNTIME_TARGETS_UNAVAILABLE",
         "RENDER_SERVICE_UNAVAILABLE",
         "PAGE_RENDER_DIAGNOSTICS_UNAVAILABLE",
         "COMPONENT_CHECK_UNAVAILABLE",

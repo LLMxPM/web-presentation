@@ -6,13 +6,12 @@ from dataclasses import dataclass
 import logging
 import time
 
-import httpx
-
 from app.core.config import get_settings
 from app.core.exceptions import AppException
 from app.core.logging_config import get_current_request_id
 from app.models.enums import AssetType
 from app.services.runtime_build_client import RUNTIME_SERVICE_TOKEN_HEADER
+from app.services.runtime_target_router import request_runtime_role_json
 from app.services.token_service import TokenService
 
 
@@ -93,46 +92,17 @@ class RuntimeAssetRenderHintClient:
         payload: dict[str, object],
         headers: dict[str, str] | None = None,
     ) -> dict[str, object]:
-        """发送 JSON 请求到 Runtime，并统一映射错误。"""
+        """通过选址器调用 Runtime 轻量测量入口，满载自动换副本。"""
 
-        runtime_base_url = self.settings.resolve_runtime_role_base_url("check")
-        timeout = httpx.Timeout(self.settings.runtime_request_timeout_seconds * 4)
-
-        async with httpx.AsyncClient(base_url=runtime_base_url, timeout=timeout) as client:
-            response = await client.request(method, path, json=payload, headers=headers or {})
-
-        if response.status_code >= 500:
-            logger.error(
-                "Runtime 资源比例测量返回服务端错误。",
-                extra={"event": "runtime.asset_render_hint.measure.failed", "path": path, "status_code": response.status_code},
-            )
-            raise self._build_app_exception(response, force_status_code=502)
-        if response.status_code >= 400:
-            logger.warning(
-                "Runtime 资源比例测量返回业务错误。",
-                extra={"event": "runtime.asset_render_hint.measure.rejected", "path": path, "status_code": response.status_code},
-            )
-            raise self._build_app_exception(response)
-
-        try:
-            return dict(response.json())
-        except ValueError as exc:
-            raise AppException(status_code=502, code="RUNTIME_RESPONSE_INVALID", detail="Runtime 返回了非法 JSON。") from exc
-
-    @staticmethod
-    def _build_app_exception(response: httpx.Response, force_status_code: int | None = None) -> AppException:
-        """将 Runtime 错误响应转换为统一应用错误。"""
-
-        code = "RUNTIME_ASSET_RENDER_HINT_MEASURE_FAILED"
-        detail = response.text or "Runtime 资源比例测量请求失败。"
-        try:
-            payload = response.json()
-            code = str(payload.get("code") or code)
-            detail = str(payload.get("message") or detail)
-        except ValueError:
-            pass
-        return AppException(
-            status_code=force_status_code or response.status_code,
-            code=code,
-            detail=detail,
+        return await request_runtime_role_json(
+            role="check",
+            method=method,
+            path=path,
+            settings=self.settings,
+            headers=headers or {},
+            timeout_seconds=self.settings.runtime_request_timeout_seconds * 4,
+            default_error_code="RUNTIME_ASSET_RENDER_HINT_MEASURE_FAILED",
+            timeout_error_code="RUNTIME_ASSET_RENDER_HINT_MEASURE_FAILED",
+            unavailable_error_code="RUNTIME_ASSET_RENDER_HINT_MEASURE_FAILED",
+            json_payload=payload,
         )

@@ -9,9 +9,13 @@
 # - 暴露面约束：runtime-build / runtime-check 只挂 runtime-jobs-net，不发布宿主机端口；
 #   公开 Gateway 只挂在 platform-net，且只把主机名 runtime 解析到 runtime-preview，
 #   构建与源码检查端点不经公开 Gateway 暴露。
-# - RUNTIME_ROLE 由 Runtime 角色逻辑（规划 T1-1）消费：preview 不开放构建与诊断入口，
-#   build/check 只保留对应执行面。模板可先于角色逻辑部署；此前 Backend 的 RUNTIME_BASE_URL
-#   仍指向预览角色，构建/源码检查内部目标按发布顺序逐项切换。
+# - RUNTIME_ROLE 由 Runtime 角色逻辑消费：preview 不开放构建与诊断入口，
+#   build/check 只保留对应执行面。Backend 通过 RUNTIME_PREVIEW/BUILD/CHECK_BASE_URL
+#   按职责选址，未配置时回退 RUNTIME_BASE_URL。
+# - 需要按实测瓶颈增加 build/check 副本时：复制对应角色服务并改独立别名，在 Backend
+#   配置 RUNTIME_BUILD_BASE_URLS / RUNTIME_CHECK_BASE_URLS 注册全部副本，并按
+#   「副本数 × 单副本执行预算」上调 RUNTIME_BUILD/CHECK_MAX_INFLIGHT；
+#   详见 docs/developer/deployment/compose.md「计算副本扩容」。
 
 x-production-env: &production-env
   env_file:
@@ -46,10 +50,12 @@ services:
     working_dir: /app/backend
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--no-access-log"]
     environment:
-      # 旧单一内部目标：分角色拓扑下显式指向预览角色，兼容当前只读 RUNTIME_BASE_URL 的 Backend。
-      # 构建 / 源码检查内部目标在角色路由契约（T1-1/T1-2）落地后逐项切换到
-      # http://runtime-build:7373 与 http://runtime-check:7373。
+      # 兼容回退：仍指向预览角色；角色目标未配置时 Backend 使用该地址。
       RUNTIME_BASE_URL: "http://runtime-preview:7373"
+      # 分角色内部目标：预览 / 构建 / 源码检查各自直达，不经公开 Gateway。
+      RUNTIME_PREVIEW_BASE_URL: "http://runtime-preview:7373"
+      RUNTIME_BUILD_BASE_URL: "http://runtime-build:7373"
+      RUNTIME_CHECK_BASE_URL: "http://runtime-check:7373"
     volumes:
       - backend-data:/app/backend/data
     expose:

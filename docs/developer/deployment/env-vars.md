@@ -89,13 +89,17 @@ openssl rand -base64 48 | Out-File -Encoding ascii deploy/secrets/render_service
 | 变量 | 说明 |
 | :--- | :--- |
 | `RUNTIME_BASE_URL` | Backend 调用 Runtime 的内网地址 |
+| `RUNTIME_PREVIEW/BUILD/CHECK_BASE_URL` | 分角色部署时按职责覆盖的内网目标；留空回退 `RUNTIME_BASE_URL` |
+| `RUNTIME_BUILD_BASE_URLS` / `RUNTIME_CHECK_BASE_URLS` | 计算角色多副本目标列表（JSON 数组或逗号分隔）；留空回退对应单地址。Backend 轮询选址，满载自动换副本 |
+| `RUNTIME_TARGET_FAILURE_THRESHOLD` / `RUNTIME_TARGET_COOLDOWN_SECONDS` | 选址冷却：目标连续失败达到阈值后短暂跳过，冷却到期自动恢复 |
+| `RUNTIME_BUILD_MAX_INFLIGHT` / `RUNTIME_CHECK_MAX_INFLIGHT` | 全链路准入：Backend 同时在途的 build/check 内部调用上限，超限返回 `RUNTIME_ADMISSION_FULL`；全部副本满载返回 `RUNTIME_CAPACITY_EXCEEDED`（503，可重试） |
 | `RUNTIME_BACKEND_API_BASE_URL` | Runtime 回源 Backend 的内网地址 |
 | `RUNTIME_PREVIEW_JWKS_URL` | Runtime 校验预览令牌的 JWKS 地址 |
 | `RUNTIME_SERVER_BASE_PATH` | Runtime Vite 资源挂载路径，同域部署通常为 `/runtime/` |
 | `RUNTIME_*_TOKEN_AUDIENCE` | 预览、构建和诊断令牌 audience |
 | `RUNTIME_ROLE` | Runtime 运行角色：`all`（单实例模板默认）或 `preview` / `build` / `check`；分角色模板 `compose.runtime-roles.yml` 按容器覆盖。角色语义由 Runtime 角色逻辑（规划 T1-1）消费 |
 
-分角色单机模板还会按角色容器覆盖 `RUNTIME_VITE_TASK_CONCURRENCY`、`RUNTIME_BUILD_WORKER_MAX_OLD_SPACE_MB` 等执行预算，并为每个容器设置 `deploy.resources.limits`；取值依据见 [Compose 部署说明](./compose.md)「分角色单机」。
+分角色单机模板还会按角色容器覆盖 `RUNTIME_VITE_TASK_CONCURRENCY`、`RUNTIME_BUILD_WORKER_MAX_OLD_SPACE_MB` 等执行预算，并为每个容器设置 `deploy.resources.limits`；取值依据见 [Compose 部署说明](./compose.md)「分角色单机」。按实测瓶颈增加 Check/Build 副本时，用 `RUNTIME_BUILD_BASE_URLS` / `RUNTIME_CHECK_BASE_URLS` 注册全部副本地址，并按「副本数 × 单副本执行预算」上调准入上限，详见 [Compose 部署说明](./compose.md)「计算副本扩容」。
 
 ## 日志
 

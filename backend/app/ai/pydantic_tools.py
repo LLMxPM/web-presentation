@@ -50,6 +50,8 @@ _RECOVERABLE_TOOL_ERROR_CODES = {
     "RENDER_RESULT_LOST",
     "RENDER_SERVICE_UNAVAILABLE",
     "RENDER_WORKER_BUSY",
+    "RUNTIME_CAPACITY_EXCEEDED",
+    "RUNTIME_ADMISSION_FULL",
     "PAGE_SCREENSHOT_JOB_FAILED",
     "PAGE_SCREENSHOT_JOB_INTERRUPTED",
     "PAGE_SCREENSHOT_JOB_TIMEOUT",
@@ -75,6 +77,12 @@ _RECOVERABLE_TOOL_ERROR_HINTS = {
     ),
     "RENDER_QUEUE_FULL": (
         "渲染队列已满，属于容量问题。不要改写页面源码；稍后重试或继续等待受控执行结果。"
+    ),
+    "RUNTIME_CAPACITY_EXCEEDED": (
+        "Runtime 计算副本已满载，属于容量问题。不要改写页面源码；稍后由平台重试或继续等待。"
+    ),
+    "RUNTIME_ADMISSION_FULL": (
+        "Runtime 计算在途调用已达准入上限，属于容量保护。不要改写页面源码；稍后重试。"
     ),
     "RENDER_DEADLINE_EXCEEDED": (
         "渲染超过总预算期限，不等于源码一定有错。不要据此大改页面；先查看诊断摘要，必要时再精简页面复杂度。"

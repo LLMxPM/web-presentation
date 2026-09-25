@@ -111,6 +111,16 @@ Docker 容器默认不施加 CPU/内存限制；只把一个 Runtime 拆成三�
 
 `RUNTIME_ROLE` 由 Runtime 角色逻辑（规划 T1-1）消费：`preview` 不开放构建与诊断入口，`build` / `check` 只保留对应执行面。模板可先于角色逻辑部署；在角色路由契约完成前，Backend 的 `RUNTIME_BASE_URL` 仍指向 `runtime-preview`，构建与源码检查内部目标按发布顺序逐项切换到 `runtime-build` / `runtime-check`。
 
+### 计算副本扩容（Check/Build 多副本与全链路准入）
+
+按实测瓶颈需要增加 `runtime-build` / `runtime-check` 副本时（规划 T2-3）：
+
+1. 为新副本复制对应角色服务定义，改用独立容器名/别名（如 `runtime-build-2`），保持 `RUNTIME_ROLE` 与执行预算一致；副本只挂 `runtime-jobs-net`，仍不发布宿主机端口。
+2. 在 Backend 环境用 `RUNTIME_BUILD_BASE_URLS` / `RUNTIME_CHECK_BASE_URLS` 注册全部副本内网地址（逗号分隔或 JSON 数组）。Backend 按轮询选址；某副本满载（429/503）时自动切换其它空闲副本，全部满载返回稳定错误码 `RUNTIME_CAPACITY_EXCEEDED`（503，可重试）。目标连续失败达到 `RUNTIME_TARGET_FAILURE_THRESHOLD` 后按 `RUNTIME_TARGET_COOLDOWN_SECONDS` 短暂冷却，冷却到期自动恢复。
+3. 按「副本数 × 单副本执行预算」上调 `RUNTIME_BUILD_MAX_INFLIGHT` / `RUNTIME_CHECK_MAX_INFLIGHT`，这是 Backend 侧全链路准入上限：在途调用超限立即返回 `RUNTIME_ADMISSION_FULL`（503，可重试），避免 Check 扩容后把 Renderer/Preview 打穿。`preview` 仍保持单副本，不参与多目标选址。
+
+Runtime 本地队列（`RUNTIME_VITE_TASK_*`）仅承担单实例容量保护，不做全局公平；跨副本分摊由上述选址与准入负责。满载与准入拒绝均属可重试容量问题，不应记为业务失败。
+
 ## 访问关系
 
 浏览器访问平台 Gateway。Gateway 代理 `/api`、`/public`、`/build-artifacts`、`/preview`、`/media` 到 Backend，并代理 `/runtime/` 到 Runtime。

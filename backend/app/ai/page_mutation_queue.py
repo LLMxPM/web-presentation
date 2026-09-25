@@ -37,7 +37,13 @@ logger = logging.getLogger(__name__)
 _MAX_ATTEMPTS = 3
 _ACTIVE_JOB_STATUSES = ("pending", "running")
 _FATAL_PERMISSION_ERROR_PREFIX = "AUTH_PERMISSION_DENIED"
-_RETRYABLE_RUNTIME_QUEUE_ERROR_CODES = {"RUNTIME_VITE_QUEUE_FULL", "RUNTIME_VITE_QUEUE_TIMEOUT"}
+_RETRYABLE_RUNTIME_QUEUE_ERROR_CODES = {
+    "RUNTIME_VITE_QUEUE_FULL",
+    "RUNTIME_VITE_QUEUE_TIMEOUT",
+    # 多副本容量路由与全链路准入的稳定容量错误码（T2-3），满载时后台应重排而非判失败。
+    "RUNTIME_CAPACITY_EXCEEDED",
+    "RUNTIME_ADMISSION_FULL",
+}
 
 
 async def run_ai_page_mutation_queue_loop(

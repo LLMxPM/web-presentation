@@ -2,6 +2,7 @@
 
 from pathlib import Path
 from functools import lru_cache
+import json
 import logging
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -11,6 +12,42 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _BACKEND_DIR = Path(__file__).resolve().parents[2]
+
+
+def parse_runtime_target_list(raw: str) -> list[str]:
+    """解析多副本 Runtime 目标列表：支持 JSON 字符串数组或逗号分隔。
+
+    返回去重、去尾斜杠后的地址列表；空配置返回空列表，由调用方决定回退。
+    非法 JSON 数组在启动期抛错，避免运行期才发现配置不可用。
+    """
+
+    text = str(raw or "").strip()
+    if not text:
+        return []
+
+    items: list[object]
+    if text.startswith("["):
+        try:
+            decoded = json.loads(text)
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"Runtime 目标列表必须是合法 JSON 数组：{text}") from exc
+        if not isinstance(decoded, list):
+            raise ValueError(f"Runtime 目标列表 JSON 必须是数组：{text}")
+        items = decoded
+    else:
+        items = text.split(",")
+
+    resolved: list[str] = []
+    seen: set[str] = set()
+    for item in items:
+        normalized = str(item or "").strip().rstrip("/")
+        if not normalized:
+            continue
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        resolved.append(normalized)
+    return resolved
 
 
 class AppSettings(BaseSettings):
@@ -49,6 +86,15 @@ class AppSettings(BaseSettings):
     runtime_preview_base_url: str = ""
     runtime_build_base_url: str = ""
     runtime_check_base_url: str = ""
+    # 计算角色多副本目标列表：JSON 数组或逗号分隔；留空回退对应单地址。
+    runtime_build_base_urls: str = ""
+    runtime_check_base_urls: str = ""
+    # 选址冷却：同一目标连续失败达到阈值后短暂跳过，冷却到期自动恢复参与轮询。
+    runtime_target_failure_threshold: int = 3
+    runtime_target_cooldown_seconds: float = 15.0
+    # 全链路准入：Backend 同时在途的 build/check 内部调用上限；<=0 表示不限制。
+    runtime_build_max_inflight: int = 4
+    runtime_check_max_inflight: int = 16
     runtime_public_base_url: str | None = None
     runtime_shared_secret: str = "change-me"
     runtime_service_token_audience: str = "runtime-backend"
@@ -377,6 +423,33 @@ class AppSettings(BaseSettings):
 
         return str(value or "").strip()
 
+    @field_validator("runtime_build_base_urls", "runtime_check_base_urls")
+    @classmethod
+    def validate_runtime_role_base_urls(cls, value: str) -> str:
+        """校验多副本目标列表配置可被解析；非法 JSON 在启动期直接失败。"""
+
+        normalized = str(value or "").strip()
+        parse_runtime_target_list(normalized)
+        return normalized
+
+    @field_validator("runtime_target_failure_threshold")
+    @classmethod
+    def validate_runtime_target_failure_threshold(cls, value: int) -> int:
+        """校验选址失败阈值非负；0 表示不做冷却，仅轮询。"""
+
+        if value < 0:
+            raise ValueError("RUNTIME_TARGET_FAILURE_THRESHOLD 不能小于 0。")
+        return value
+
+    @field_validator("runtime_target_cooldown_seconds")
+    @classmethod
+    def validate_runtime_target_cooldown_seconds(cls, value: float) -> float:
+        """校验选址冷却时长非负。"""
+
+        if value < 0:
+            raise ValueError("RUNTIME_TARGET_COOLDOWN_SECONDS 不能小于 0。")
+        return value
+
     @field_validator("runtime_public_base_url")
     @classmethod
     def validate_runtime_public_base_url(cls, value: str | None) -> str | None:
@@ -563,21 +636,41 @@ class AppSettings(BaseSettings):
             return configured_path
         return (Path(__file__).resolve().parents[2] / configured_path).resolve()
 
-    def resolve_runtime_role_base_url(self, role: str) -> str:
-        """按职责解析 Runtime 内部目标地址，未配置角色地址时回退 runtime_base_url。
+    def resolve_runtime_role_base_urls(self, role: str) -> list[str]:
+        """按职责解析 Runtime 内部目标列表。
 
-        role 取 preview / build / check；返回值已去掉末尾斜杠。
+        回退顺序：多副本列表（runtime_build/check_base_urls）→ 单地址 → runtime_base_url。
+        role 取 preview / build / check；preview 当前保持单目标，多副本仅开放给计算角色。
         """
 
-        mapping = {
+        plural_mapping = {
+            "build": self.runtime_build_base_urls,
+            "check": self.runtime_check_base_urls,
+        }
+        targets = parse_runtime_target_list(str(plural_mapping.get(role) or ""))
+        if targets:
+            return targets
+
+        singular_mapping = {
             "preview": self.runtime_preview_base_url,
             "build": self.runtime_build_base_url,
             "check": self.runtime_check_base_url,
         }
-        configured = str(mapping.get(role) or "").strip().rstrip("/")
+        configured = str(singular_mapping.get(role) or "").strip().rstrip("/")
         if configured:
-            return configured
-        return self.runtime_base_url.rstrip("/")
+            return [configured]
+        fallback = self.runtime_base_url.strip().rstrip("/")
+        return [fallback] if fallback else []
+
+    def resolve_runtime_role_base_url(self, role: str) -> str:
+        """按职责解析 Runtime 内部目标地址，未配置角色地址时回退 runtime_base_url。
+
+        role 取 preview / build / check；返回值已去掉末尾斜杠。
+        多副本配置下返回首个目标，完整列表见 resolve_runtime_role_base_urls。
+        """
+
+        targets = self.resolve_runtime_role_base_urls(role)
+        return targets[0] if targets else ""
 
     @property
     def ai_llm_http_trace_dir_path(self) -> Path:
@@ -621,29 +714,32 @@ def validate_runtime_role_targets(settings: AppSettings | None = None) -> None:
     """启动期校验分角色 Runtime 目标配置。
 
     - 各职责目标（preview/build/check）解析后必须是绝对 http(s) 地址（存在性校验）。
-    - 若显式配置了 preview 专属地址，而 build/check 回退到同一地址，输出告警：
+    - 计算角色多副本列表中的每个目标都要满足同一约束。
+    - 若显式配置了 preview 专属地址，而 build/check 任一目标回退到同一地址，输出告警：
       preview 角色实例不开放构建/诊断入口，不应被 Backend 当作 build/check 目标。
     """
 
     resolved = settings or get_settings()
     role_targets = {
-        "preview": resolved.resolve_runtime_role_base_url("preview"),
-        "build": resolved.resolve_runtime_role_base_url("build"),
-        "check": resolved.resolve_runtime_role_base_url("check"),
+        "preview": resolved.resolve_runtime_role_base_urls("preview"),
+        "build": resolved.resolve_runtime_role_base_urls("build"),
+        "check": resolved.resolve_runtime_role_base_urls("check"),
     }
-    for role, target in role_targets.items():
-        if not target:
+    for role, targets in role_targets.items():
+        if not targets:
             raise ValueError(f"Runtime {role} 内部目标地址为空：请配置 RUNTIME_BASE_URL 或对应角色地址。")
-        if not target.startswith(("http://", "https://")):
-            raise ValueError(f"Runtime {role} 内部目标地址必须是绝对 http(s) 地址：{target}")
+        for target in targets:
+            if not target.startswith(("http://", "https://")):
+                raise ValueError(f"Runtime {role} 内部目标地址必须是绝对 http(s) 地址：{target}")
 
     explicit_preview = str(resolved.runtime_preview_base_url or "").strip().rstrip("/")
-    if explicit_preview and explicit_preview == role_targets["preview"]:
+    preview_target = role_targets["preview"][0] if role_targets["preview"] else ""
+    if explicit_preview and explicit_preview == preview_target:
         for role in ("build", "check"):
-            if role_targets[role] == explicit_preview:
+            if explicit_preview in role_targets[role]:
                 logging.getLogger(__name__).warning(
-                    "Runtime %s 目标与 preview 专属地址相同（%s）。preview 角色不开放构建/诊断入口，"
-                    "请确认该地址不是 preview-only 实例，或改配 RUNTIME_%s_BASE_URL。",
+                    "Runtime %s 目标包含 preview 专属地址（%s）。preview 角色不开放构建/诊断入口，"
+                    "请确认该地址不是 preview-only 实例，或改配 RUNTIME_%s_BASE_URL(S)。",
                     role,
                     explicit_preview,
                     role.upper(),
